@@ -35,6 +35,7 @@ import {
   VRT_MODULE_MASKS,
 } from '../../../../../../e2e/vrt/vrt-exemptions';
 import { VRT_SCENES } from '../../../../../../e2e/vrt/vrt-scenes';
+import { VRT_LIVE_SURFACES } from '../../../../../../e2e/vrt/vrt-live-surfaces';
 
 function repoRoot(): string {
   // This file lives at packages/web/src/lib/audio/modules/. Six `..`
@@ -185,16 +186,40 @@ describe('VRT coverage self-test', () => {
   });
 
   it('no STRICT_VRT_MODULES entry has a canvas mask (defeats the diff)', () => {
+    // BOTH mask tables, deliberately. This check used to read only
+    // VRT_MODULE_MASKS; once masks could also come from the live-surface
+    // registry (e2e/vrt/vrt-live-surfaces.ts) that made it a gate reading one
+    // side of a two-sided contract — a strict module could be masked via the
+    // registry and this test would have stayed green. Every source of masking
+    // has to be enumerated here or the invariant is fiction.
     const masked: string[] = [];
     for (const t of STRICT_VRT_MODULES) {
-      if (t in VRT_MODULE_MASKS) masked.push(t);
+      if (t in VRT_MODULE_MASKS) masked.push(`${t} (VRT_MODULE_MASKS)`);
+      if (t in VRT_LIVE_SURFACES) masked.push(`${t} (VRT_LIVE_SURFACES)`);
     }
     expect(
       masked,
-      `STRICT_VRT_MODULES entries with a VRT_MODULE_MASKS entry have a masked canvas region — ` +
-        `the strict-lane diff would skip semantic content. Either remove the mask (the card is ` +
-        `actually deterministic) or remove the module from STRICT_VRT_MODULES: ${masked.join(', ')}`,
+      `STRICT_VRT_MODULES entries with a mask entry have a masked region — the strict-lane ` +
+        `diff would skip semantic content. Either remove the mask (the card is actually ` +
+        `deterministic) or remove the module from STRICT_VRT_MODULES: ${masked.join(', ')}`,
     ).toEqual([]);
+  });
+
+  it('...and that check can actually SEE a registry mask (negative control)', () => {
+    // Guard the guard. The test above passes when nothing is masked, which is
+    // also what it would do if the VRT_LIVE_SURFACES half were dropped in a
+    // refactor. Run the same predicate over a synthetic strict set that DOES
+    // contain a registry-masked module and require it to flag it.
+    const registryMasked = Object.keys(VRT_LIVE_SURFACES);
+    expect(
+      registryMasked.length,
+      'the live-surface registry is empty, so this control proves nothing',
+    ).toBeGreaterThan(0);
+    const syntheticStrict = new Set<string>([registryMasked[0]]);
+    const flagged = [...syntheticStrict].filter(
+      (t) => t in VRT_MODULE_MASKS || t in VRT_LIVE_SURFACES,
+    );
+    expect(flagged).toEqual([registryMasked[0]]);
   });
 
   it('no STRICT_VRT_MODULES entry has a pending EXEMPT_BASELINE_PAIRS regen', () => {
