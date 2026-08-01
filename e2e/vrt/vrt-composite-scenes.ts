@@ -246,14 +246,27 @@ function setupSnhSeqScope(snh: number): (page: Page) => Promise<void> {
           sourceType: 'polyPitchGate',
           targetType: 'pitch',
         },
-        // VCO sine → SCOPE ch2 (the audible waveform alongside the CV).
-        {
-          id: 'e_vco_sc',
-          from: { nodeId: 'vco', portId: 'sine' },
-          to: { nodeId: 'sc', portId: 'ch2' },
-          sourceType: 'audio',
-          targetType: 'audio',
-        },
+        // ⚠ THE VCO's SINE IS DELIBERATELY *NOT* SHOWN ON SCOPE ch2.
+        //
+        // It used to be, and it was the only nondeterminism in this scene.
+        // MEASURED 2026-07-31 (darwin, tightened budget) by cropping expected
+        // vs actual on a failing `snh-seq-scope-on`: 21 042 px differ, and the
+        // ONLY thing that moved is the ch2 sine's ANALYSER-WINDOW PHASE — the
+        // ch1 CV trace, the flat held line that IS the entire assertion of this
+        // pair of scenes, was pixel-identical. Freezing the AudioContext pins
+        // the buffer's CONTENTS but not WHICH buffer was last posted, so the
+        // ch2 waveform lands at a different x-offset on every run.
+        //
+        // The sibling `snh-seq-scope-off` scene passed only by MAGNITUDE, not
+        // by correctness: with S&H off the pitch collapses on the rest so the
+        // VCO runs far lower, fewer cycles fill the 20 ms window, and the same
+        // phase jitter moves fewer pixels than the budget allows. Both scenes
+        // carried the same latent defect; dropping the cable fixes both.
+        //
+        // The VCO stays SPAWNED and stays PATCHED from the sequencer's pitch,
+        // so the real source chain is still exercised — only its decorative
+        // waveform readout is gone. SCOPE's own rendering of an audio waveform
+        // is covered by vrt.spec.ts `scope` and by vrt-scope-modes.spec.ts.
       ],
     );
 
@@ -301,7 +314,8 @@ const SNH_COMPOSITE_SCENES: CompositeVrtScene[] = [
     label: 'VCO→SEQUENCER→SCOPE: S&H ON (mid-hold)',
     blurb:
       'Sequencer (sparse pattern, S&H ON) → SCOPE ch1: the pitch CV HOLDS the ' +
-      'note across the rest (trace stays high); ch2 = the VCO sine.',
+      'note across the rest (trace stays high). ch2 is left unpatched — see the ' +
+      'setup for why the VCO sine is deliberately not shown.',
     setup: setupSnhSeqScope(1),
     cardSelectors: SNH_SEQ_SCOPE_CARDS,
   },

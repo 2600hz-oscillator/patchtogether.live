@@ -29,6 +29,7 @@
 import { test, expect } from '@playwright/test';
 import { COMPOSITE_VRT_SCENES } from './vrt-composite-scenes';
 import { EXEMPT_BASELINE_PAIRS } from './vrt-exemptions';
+import { expectVrtSceneScreenshot } from './vrt-capture';
 
 const VRT_PLATFORM = process.platform === 'darwin' ? 'darwin' : 'linux';
 
@@ -83,9 +84,16 @@ test.describe('VRT: composite-state scenes', () => {
       // + the cable, which is the whole point of a composite snapshot.
       // The Svelte Flow background is deterministic given the pinned
       // viewport + reducedMotion + animations:disabled from vrt.config.ts.
-      await expect(page).toHaveScreenshot(`${scene.id}.png`, {
-        maskColor: '#ff00ff',
-        fullPage: false,
+      //
+      // Routed through the shared capture seam so any live surface this scene
+      // registers gets its companion + per-run negative control BEFORE the
+      // strict diff. A scene with no registry entry takes no mask and is
+      // strict everywhere — which is every composite scene but one.
+      await expectVrtSceneScreenshot({
+        page,
+        sceneId: scene.id,
+        target: page,
+        options: { fullPage: false },
       });
 
       // Filter out the AudioContext "user-gesture" warning that fires

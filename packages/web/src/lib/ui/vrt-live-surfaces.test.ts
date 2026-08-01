@@ -47,6 +47,7 @@ import {
 } from '../../../../../e2e/vrt/vrt-surface-stats';
 import { VRT_MODULE_MASKS, EXEMPT_FROM_VRT } from '../../../../../e2e/vrt/vrt-exemptions';
 import { VRT_SCENES } from '../../../../../e2e/vrt/vrt-scenes';
+import { findHandRolledMasks } from '../../../../../e2e/vrt/vrt-mask-scan';
 
 function repoRoot(): string {
   // packages/web/src/lib/ui → five hops to the repo root. Resolved from
@@ -279,15 +280,49 @@ describe('VRT live-surface registry: every mask owes a companion', () => {
         expect(c.minMeanChroma, `${where}: minMeanChroma must be > 0`).toBeGreaterThan(0);
         expect(c.minMeanChroma, `${where}: chroma is 0-255`).toBeLessThanOrEqual(255);
       }
-      if (surface.expectCount !== undefined) {
-        expect(surface.expectCount, `${where}: expectCount must be >= 1`).toBeGreaterThanOrEqual(1);
-        expect(
-          surface.nth ?? 0,
-          `${where}: nth must index inside expectCount`,
-        ).toBeLessThan(surface.expectCount);
-      }
     },
   );
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// THE PER-REGION RULE.
+//
+// The hole this closes: the registry used to allow `selector: 'canvas'` with
+// `expectCount: 3, nth: 0`. The capture seam masked ALL THREE canvases and the
+// companion measured only `nth(0)` — so the MASKED set and the COMPANIONED set
+// were different sets, and nothing checked that. Across three scenes that was
+// TEN masked canvases with no companion behind them, inside the file whose
+// entire premise is "a mask cannot silently delete coverage".
+//
+// The fix is structural, not procedural: one entry names exactly one element,
+// so `mask.length === surfaces.length === companions.length` by construction
+// and there is no index to get wrong.
+describe('VRT live-surface registry: one entry = one region = one companion', () => {
+  it.each(allSurfaces().map(({ sceneId, surface }) => [sceneId, surface.selector, surface] as const))(
+    '%s / %s masks EXACTLY ONE element',
+    (sceneId, selector, surface) => {
+      expect(
+        surface.expectCount,
+        `${sceneId} / ${selector}: expectCount must be exactly 1. A selector matching N ` +
+          'elements masks N regions but the companion measures ONE, so N-1 masked regions ' +
+          'would carry no assertion at all. Narrow the selector and register one entry ' +
+          '(with its own measured companion) per non-deterministic region.',
+      ).toBe(1);
+    },
+  );
+
+  it('no surface carries an `nth` index (the field is gone on purpose)', () => {
+    // A stale `nth` in a hand-edited entry would be silently ignored by the
+    // seam now that it masks the single matched element — and "silently
+    // ignored" is how the previous hole read too. Fail loudly instead.
+    for (const { sceneId, surface } of allSurfaces()) {
+      expect(
+        'nth' in (surface as object),
+        `${sceneId} / ${surface.selector}: \`nth\` no longer exists — a selector resolves ` +
+          'to one element or it is not a legal entry. Split it into per-region entries.',
+      ).toBe(false);
+    }
+  });
 });
 
 describe('VRT live-surface registry: the instrument itself', () => {
@@ -315,35 +350,94 @@ describe('VRT live-surface registry: the instrument itself', () => {
 });
 
 describe('VRT masks: nobody routes around the registry', () => {
-  it('no VRT spec hand-rolls a mask outside the capture seam (shrinking legacy list)', () => {
-    const specs = readdirSync(VRT_DIR).filter((f) => f.endsWith('.spec.ts'));
+  // The ONE file allowed to build a mask array: the shared capture seam.
+  // Everything else under e2e/vrt/ is scanned — specs AND helpers, because a
+  // spec that calls `liveTextMasks(page)` from a helper module would otherwise
+  // move the mask out of the scanned file and back into the blind spot.
+  const SEAM = new Set(['vrt-capture.ts', 'vrt-mask-scan.ts']);
+  const scannable = (): string[] =>
+    readdirSync(VRT_DIR).filter((f) => f.endsWith('.ts') && !SEAM.has(f));
+
+  it('no VRT file hand-rolls a mask outside the capture seam (shrinking legacy list)', () => {
     const offenders: string[] = [];
-    for (const f of specs) {
-      const src = readFileSync(resolve(VRT_DIR, f), 'utf8');
-      if (!/^\s*mask:/m.test(src)) continue;
+    for (const f of scannable()) {
+      const hits = findHandRolledMasks(readFileSync(resolve(VRT_DIR, f), 'utf8'));
+      if (hits.length === 0) continue;
       if (LEGACY_INLINE_MASK_SPECS.has(f)) continue;
-      offenders.push(f);
+      offenders.push(`${f}:${hits.map((h) => h.line).join(',')} — ${hits[0]!.text}`);
     }
     expect(
       offenders,
-      'These specs pass a `mask:` array straight to toHaveScreenshot, so the masked region has ' +
+      'These files pass a `mask` straight to toHaveScreenshot, so the masked region has ' +
         'no companion and may render nothing forever. Register the surface in ' +
         'e2e/vrt/vrt-live-surfaces.ts and capture through e2e/vrt/vrt-capture.ts instead.',
     ).toEqual([]);
   });
 
   it('the legacy inline-mask list only shrinks', () => {
-    const specs = new Set(readdirSync(VRT_DIR).filter((f) => f.endsWith('.spec.ts')));
+    const files = new Set(scannable());
     for (const f of LEGACY_INLINE_MASK_SPECS) {
-      expect(specs.has(f), `${f} is listed as a legacy inline-mask spec but does not exist`).toBe(true);
+      expect(files.has(f), `${f} is listed as a legacy inline-mask spec but does not exist`).toBe(true);
       const src = readFileSync(resolve(VRT_DIR, f), 'utf8');
       expect(
-        /^\s*mask:/m.test(src),
+        findHandRolledMasks(src).length,
         `${f} no longer hand-rolls a mask — delete it from LEGACY_INLINE_MASK_SPECS ` +
           '(the list is a ratchet; a stale entry re-opens the hole)',
-      ).toBe(true);
+      ).toBeGreaterThan(0);
     }
     expect(LEGACY_INLINE_MASK_SPECS.size).toBeLessThanOrEqual(6);
+  });
+
+  // ── GUARD THE GUARD ──────────────────────────────────────────────────────
+  //
+  // The rule above is only worth the bytes if the DETECTOR actually sees the
+  // shapes a mask can take. The previous detector was `/^\s*mask:/m` — `mask:`
+  // had to open its own line — so the repo's own one-line style
+  // `toHaveScreenshot(name, { mask: [x] })` walked straight past it. An
+  // adversarial verifier injected exactly that into vrt-aspect-16x9.spec.ts
+  // and the guard stayed GREEN.
+  //
+  // So: perturb the thing the instrument claims to measure and confirm the
+  // number moves (CLAUDE.md, "negative-control the instrument, not just the
+  // code"). Each MUST_CATCH fixture is a real way to write a mask; each
+  // MUST_IGNORE fixture is a way the word appears WITHOUT masking anything,
+  // and a detector that fires on those is one nobody will keep.
+  describe('the mask detector itself', () => {
+    const MUST_CATCH: Array<[string, string]> = [
+      [
+        'the one-liner that evaded the old ^\\s*mask: regex',
+        "await expect(card).toHaveScreenshot('x.png', { mask: [card.locator('canvas')] });",
+      ],
+      ['the prettier-wrapped form', 'await expect(c).toHaveScreenshot({\n  mask: [x],\n});'],
+      ['object shorthand', 'const mask = [x];\nawait expect(c).toHaveScreenshot({ mask });'],
+      ['a quoted property key', "await expect(c).toHaveScreenshot({ 'mask': [x] });"],
+      ['a computed property key', 'await expect(c).toHaveScreenshot({ ["mask"]: [x] });'],
+      ['extra whitespace before the colon', 'await expect(c).toHaveScreenshot({ mask : [x] });'],
+      ['a mask nested inside another option object', 'const o = { a: 1, b: { mask: [x] } };'],
+    ];
+    const MUST_IGNORE: Array<[string, string]> = [
+      ['maskColor alone (legal — it only recolours the mask)', "toHaveScreenshot({ maskColor: '#ff00ff' });"],
+      ['a line comment mentioning mask:', '// mask: [x] would be illegal here'],
+      ['a block comment mentioning mask:', '/*\n * mask: [x]\n */'],
+      ['a string containing "mask:"', "const s = 'mask: [x]';"],
+      ['a template literal containing mask:', 'const s = `mask: ${x}`;'],
+      ['an identifier merely ending in mask', 'const o = { unmask: [x] };'],
+    ];
+
+    it.each(MUST_CATCH)('CATCHES %s', (_name, src) => {
+      expect(findHandRolledMasks(src).length).toBeGreaterThan(0);
+    });
+
+    it.each(MUST_IGNORE)('ignores %s', (_name, src) => {
+      expect(findHandRolledMasks(src)).toEqual([]);
+    });
+
+    it('reports the 1-indexed line of the ORIGINAL source', () => {
+      const src = '// header\n/* block\n   comment */\nconst o = { mask: [x] };';
+      expect(findHandRolledMasks(src)).toEqual([
+        { line: 4, text: 'const o = { mask: [x] };' },
+      ]);
+    });
   });
 
   it('the un-companioned VRT_MODULE_MASKS pile only shrinks', () => {

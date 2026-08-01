@@ -91,23 +91,28 @@ export async function assertLiveSurface(
   page: Page,
   target: Locator | Page,
 ): Promise<void> {
-  const all = resolve(surface, page, target);
-  if (surface.expectCount !== undefined) {
-    await expect(
-      all,
-      `${sceneId}: live surface "${surface.selector}" element count — ` +
-        'the mask hides these regions, so their PRESENCE is only asserted here',
-    ).toHaveCount(surface.expectCount);
-  }
-  const loc = all.nth(surface.nth ?? 0);
+  const loc = resolve(surface, page, target);
+  // ONE ENTRY = ONE REGION = ONE COMPANION. This assertion is what makes the
+  // masked set and the companioned set the SAME set: everything `loc` matches
+  // is masked below, and everything `loc` matches is measured here. A selector
+  // that has quietly started matching two elements fails HERE, rather than
+  // silently masking a second region that nothing asserts.
+  await expect(
+    loc,
+    `${sceneId}: live surface "${surface.selector}" must match EXACTLY ONE element — ` +
+      'the mask hides it, so its presence (and that there is only one of it) is ' +
+      'asserted here or nowhere. A card that grew a second matching element needs a ' +
+      'narrowed selector plus its own registry entry + companion, not a wider mask.',
+  ).toHaveCount(surface.expectCount);
 
   // ── C. COMPANION ────────────────────────────────────────────────────────
   const live = await readSurfaceStats(loc);
   const verdict = evaluateCompanion(surface.companion, live);
 
   // ── E. NEGATIVE CONTROL ────────────────────────────────────────────────
-  // Cover the region with an opaque flat div — pixel-identical to a surface
-  // that rendered nothing — and re-measure through the SAME read path.
+  // Force the surface to `opacity: 0` — pixel-identical to a surface that
+  // rendered nothing, because that is literally what an unpainted canvas
+  // composites to — and re-measure through the SAME read path.
   const restore = await killSurface(loc);
   let dead: SurfaceStats;
   try {
@@ -120,14 +125,29 @@ export async function assertLiveSurface(
   logSurface(sceneId, surface, live, dead);
 
   // Two-sided, in this order, because a failure of the FIRST invalidates the
-  // second: if the kill didn't actually produce a flat region then "the
-  // companion rejected it" proves nothing about dead renders.
+  // second: if the kill didn't actually remove the content then "the companion
+  // rejected it" proves nothing about dead renders.
+  //
+  // `killSurface` already threw if the computed opacity was not 0, so the
+  // manipulation is known to have LANDED. What is checked here is that it had
+  // the expected EFFECT on the pixels we read — the read path is a separate
+  // mechanism from the DOM write and could return a stale or cached capture.
+  //
+  // The bar is INK, and only ink. `opacity: 0` reveals the CARD FACE behind
+  // the surface, which is emphatically not flat — MEASURED backdrops range
+  // from ink 0.0000 / sd 0.00 (timelorde) to ink 0.0242 / sd 9.59 (toybox,
+  // whose backdrop scores 61 % of the LIVE stdDev). So a stdDev collapse bar
+  // would assert something about each card's background rather than about the
+  // surface, and would be red on toybox for no defect at all. Ink is the
+  // statistic that actually separates them on every surface measured.
   expect(
-    dead.lumaStdDev,
-    `${sceneId}: NEGATIVE CONTROL is broken — covering "${surface.selector}" with an ` +
-      'opaque div did not produce a flat region, so the control proves nothing. ' +
-      `Measured stdDev=${dead.lumaStdDev.toFixed(3)} luma-levels (expected ~0).`,
-  ).toBeLessThan(1);
+    dead.inkFraction,
+    `${sceneId}: NEGATIVE CONTROL is broken — "${surface.selector}" reads as INKED with the ` +
+      'surface forced to opacity:0, so content survived the kill and the companion result ' +
+      'below proves nothing. ' +
+      `live ink=${live.inkFraction.toFixed(5)} → dead ink=${dead.inkFraction.toFixed(5)} ` +
+      '(fraction of pixels off the modal background; expected well under half of live).',
+  ).toBeLessThan(live.inkFraction * 0.5);
   expect(
     deadVerdict.ok,
     `${sceneId}: VACUOUS COMPANION — "${surface.selector}" masked, but the companion ` +

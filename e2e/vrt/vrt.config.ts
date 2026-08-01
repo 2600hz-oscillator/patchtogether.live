@@ -69,12 +69,19 @@ const FULL_MATCH = [
   'landing.spec.ts',
 ];
 
-// `VRT_PROBE=1` swaps the whole suite for the MEASUREMENT tool
-// (vrt-surface-probe.spec.ts): it prints the region statistics a live surface
-// scores, live vs force-killed, so a companion's floors can be DERIVED from a
-// measurement instead of guessed. It asserts nothing and never runs in CI —
-// it is not in FULL_MATCH, so no lane picks it up by accident.
-const PROBE_MATCH = ['vrt-surface-probe.spec.ts'];
+// `VRT_PROBE=1` swaps the whole suite for the two MEASUREMENT tools. Neither
+// asserts anything and neither is in FULL_MATCH, so no lane picks them up by
+// accident and they cost CI nothing.
+//
+//   * vrt-frame-stability.spec.ts — does this card SETTLE? Prints the pixels
+//     that change between consecutive frames, and the bounding box of the
+//     element responsible. This is what decides whether a surface belongs in
+//     the live-surface registry at all, because `toHaveScreenshot` needs two
+//     consecutive stable captures before it will even compare.
+//   * vrt-surface-probe.spec.ts — what does the region SCORE? Prints the
+//     statistics live vs force-killed, so a companion's floors can be DERIVED
+//     from a measurement instead of guessed.
+const PROBE_MATCH = ['vrt-surface-probe.spec.ts', 'vrt-frame-stability.spec.ts'];
 
 function testMatch(): string[] {
   if (process.env.VRT_PROBE === '1') return PROBE_MATCH;

@@ -77,11 +77,27 @@ export const VRT_SCENES: Record<string, VrtScene> = {
     freezeAudio: true,
   },
 
-  // SCOPE: drive ch1 with a 220 Hz sine (analogVco default 'sine'
-  // output, pitch defaults to 0 V/oct ≈ C4 ≈ 261 Hz). The scope's
-  // default timeMs=20 ms window holds ~5 cycles — plenty of trace
-  // pixels for the diff to mean something, but few enough that
-  // sub-cycle phase variation is bounded.
+  // SCOPE: a real analogVco sine is wired into ch1 (so the audio path is
+  // exercised), and `__scopeVrtSeed` is pinned so the trace paints a FIXED
+  // synthetic 261 Hz window instead of whichever live analyser buffer the
+  // capture happens to land on. Exactly the DOCKSCOPE pattern below.
+  //
+  // ⚠ THE SEED USED TO BE MISSING HERE, and that was the whole bug.
+  // MEASURED 2026-07-31 (darwin, tightened budget): without it, six
+  // consecutive element captures of the scope card 200 ms apart differ by
+  // ~16 000 px each, with the changing bounding box exactly the 288x293 CSS-px
+  // trace canvas — i.e. the card NEVER settles. `toHaveScreenshot` needs two
+  // consecutive stable captures before it will even compare, so the test died
+  // as "Failed to take two consecutive stable screenshots" after retrying to
+  // the 5 s timeout, while the `-actual.png` it finally wrote was byte-
+  // identical to the baseline. Suspending the AudioContext does NOT fix this:
+  // the card keeps repainting from `eng.read(node,'snapshot')` on the shared
+  // meter frame. With the seed set, the same measurement returns IDENTICAL ×5.
+  //
+  // ch2Freq: 0 makes the seeded ch2 buffer all zeros (sin(0) ≡ 0), i.e. the
+  // flat centre line an unpatched channel already showed — so the seed changes
+  // the trace's PHASE DETERMINISM and not the picture's meaning. The canvas
+  // stays fully inside the pixel diff; this is a fix, not a mask.
   scope: {
     nodes: [
       { id: 'src',   type: 'analogVco', position: { x: 60,  y: 60 }, domain: 'audio' },
@@ -96,6 +112,20 @@ export const VRT_SCENES: Record<string, VrtScene> = {
         targetType: 'audio',
       },
     ],
+    afterSpawn: async (page) => {
+      // Pin the seed BEFORE the settle so every paint is the deterministic one.
+      await page.evaluate(() => {
+        (globalThis as unknown as {
+          __scopeVrtSeed?: { ch1Freq?: number; ch2Freq?: number; ch2Phase?: number };
+        }).__scopeVrtSeed = { ch1Freq: 261, ch2Freq: 0 };
+      });
+      // A few rAFs so the seeded repaint lands before the settle window.
+      for (let i = 0; i < 3; i++) {
+        await page.evaluate(
+          () => new Promise<void>((r) => requestAnimationFrame(() => r())),
+        );
+      }
+    },
     settleMs: 300,
     freezeAudio: true,
   },

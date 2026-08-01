@@ -283,46 +283,155 @@ export async function readSurfaceStats(loc: Locator): Promise<SurfaceStats> {
   return reduceScreenshot(loc.page(), png.toString('base64'), INK_DELTA, BUCKET_PRESENCE);
 }
 
-/** How far the kill overlay is inflated beyond the surface's box, in CSS px.
- *
- *  MEASURED, not guessed. At 0 px inflation the overlay left a live fringe
- *  along the edges — `scope` scored ink=0.0103 / stdDev=4.10 with the surface
- *  supposedly dead, because `getBoundingClientRect()` returns FRACTIONAL
- *  coordinates under xyflow's viewport transform and a `position:fixed` box
- *  laid out from them rounds to a different device pixel than the canvas does.
- *  A negative control that leaves live pixels in frame is not a negative
- *  control — it is a weaker version of the thing it is supposed to disprove.
- *  3 px swallows the rounding on both axes; the screenshot is clipped to the
- *  surface's own box, so over-covering costs nothing. */
-export const KILL_INFLATE_PX = 3;
+/** Where two captures of the same region disagree. Used by the frame-stability
+ *  probe to answer "WHICH element is still repainting?" — pass/fail lives
+ *  elsewhere; this is a measurement. */
+export interface RegionDiff {
+  width: number;
+  height: number;
+  /** Pixels differing by >= `threshold` on any channel (0-255). */
+  diffPixels: number;
+  /** Bounding box of those pixels, or null when there are none. */
+  box: { x0: number; y0: number; x1: number; y1: number } | null;
+}
 
-/** Cover a surface with an opaque flat div, pixel-identical to a render that
- *  produced nothing. Returns the restore function.
+/**
+ * Compare two PNG captures and report where they differ.
  *
- *  `position: fixed` on a direct child of <body> with the maximum z-index sits
- *  above every card stacking context, and `pointer-events: none` keeps it from
- *  perturbing anything else. It is removed before the strict capture. */
+ * Decoded IN THE PAGE via <img> + a scratch canvas, exactly like
+ * `reduceScreenshot` above — deliberately NOT with a node-side PNG library.
+ * The only one available here (`pngjs`) is an undeclared transitive of
+ * Playwright's own dependency tree: it resolves today by hoisting luck and
+ * would break the probe on any install that hoists differently. The browser
+ * already has a PNG decoder and we are already driving it.
+ */
+export async function diffRegion(
+  page: Page,
+  aBase64: string,
+  bBase64: string,
+  threshold = 12,
+): Promise<RegionDiff> {
+  return page.evaluate(
+    async ({ a, b, thr }) => {
+      const decode = async (b64: string): Promise<ImageData> => {
+        const img = new Image();
+        img.src = `data:image/png;base64,${b64}`;
+        await img.decode();
+        const c = document.createElement('canvas');
+        c.width = img.naturalWidth;
+        c.height = img.naturalHeight;
+        const ctx = c.getContext('2d', { willReadFrequently: true });
+        if (!ctx) throw new Error('vrt-surface-stats: no 2D context for the scratch canvas');
+        ctx.drawImage(img, 0, 0);
+        return ctx.getImageData(0, 0, c.width, c.height);
+      };
+      const A = await decode(a);
+      const B = await decode(b);
+      if (A.width !== B.width || A.height !== B.height) {
+        return { width: A.width, height: A.height, diffPixels: -1, box: null };
+      }
+      const W = A.width;
+      const H = A.height;
+      let n = 0;
+      let x0 = W;
+      let y0 = H;
+      let x1 = -1;
+      let y1 = -1;
+      for (let y = 0; y < H; y++) {
+        for (let x = 0; x < W; x++) {
+          const i = (y * W + x) * 4;
+          const d = Math.max(
+            Math.abs(A.data[i] - B.data[i]),
+            Math.abs(A.data[i + 1] - B.data[i + 1]),
+            Math.abs(A.data[i + 2] - B.data[i + 2]),
+          );
+          if (d < thr) continue;
+          n++;
+          if (x < x0) x0 = x;
+          if (x > x1) x1 = x;
+          if (y < y0) y0 = y;
+          if (y > y1) y1 = y;
+        }
+      }
+      return {
+        width: W,
+        height: H,
+        diffPixels: n,
+        box: n === 0 ? null : { x0, y0, x1, y1 },
+      };
+    },
+    { a: aBase64, b: bBase64, thr: threshold },
+  );
+}
+
+/**
+ * Force a surface DEAD, and return the undo.
+ *
+ * ─────────────────────────────────────────────────────────────────────────
+ * THE CONTROL IS `opacity: 0` ON THE ELEMENT ITSELF — not an overlay.
+ *
+ * The first version of this covered the region with an opaque BLACK `position:
+ * fixed` div. That control had two defects, and both of them are the
+ * "validate the INSTRUMENT" failure mode:
+ *
+ *   1. IT MODELLED THE WRONG DEAD RENDER. A canvas that never painted does not
+ *      composite to black — it composites to whatever is BEHIND it, i.e. the
+ *      card face. Asserting the companion rejects a BLACK rectangle proves
+ *      nothing about whether it rejects the actual failure (a transparent
+ *      canvas showing the card background through it), and a companion whose
+ *      only floor is `minMeanChroma` or `minLumaStdDev` could plausibly pass
+ *      the real failure while failing the black one.
+ *
+ *   2. IT LEAKED. `getBoundingClientRect()` returns FRACTIONAL coordinates
+ *      under xyflow's viewport transform, so a `position:fixed` box laid out
+ *      from them rounds to a different device pixel than the canvas does and
+ *      left a LIVE FRINGE along the edges (scope measured ink=0.0103 /
+ *      stdDev=4.10 with the surface "dead"). That was patched with a 3 px
+ *      inflation — a fudge factor covering for the wrong mechanism.
+ *
+ * Setting `opacity: 0` on the element has neither problem: it is EXACTLY the
+ * pixels an unpainted surface produces, it cannot be misaligned because it is
+ * not a separate box, and it needs no magic number.
+ *
+ * ⚠ IT IS APPLIED AS A STYLESHEET RULE, NOT AS AN INLINE STYLE, and that
+ * distinction is load-bearing. The first version set `el.style.opacity = 0`
+ * inline. TIMELORDE's display canvas carries a REACTIVE inline style
+ * (`style={`--wiz-pulse:${pulse}`}`), and when Svelte re-rendered it between
+ * the kill and the read it rewrote the whole `style` attribute and silently
+ * wiped the kill — measured live: two of three runs read
+ * `dead{ink=0.0000 sd=0.00}` and the third read `dead{ink=0.5989 sd=63.22}`,
+ * i.e. the LIVE surface, reported as the dead one. A negative control that
+ * intermittently doesn't fire is worse than none: it makes a vacuous companion
+ * look proven. A rule in an injected stylesheet, keyed off an attribute the
+ * framework does not manage, survives any re-render of the element.
+ *
+ * The kill is then VERIFIED (computed opacity really is 0) before the caller
+ * measures anything — so "the control didn't take effect" can never again be
+ * mistaken for "the surface is alive".
+ */
 export async function killSurface(loc: Locator): Promise<() => Promise<void>> {
-  const id = await loc.evaluate((el, inflate) => {
-    const r = el.getBoundingClientRect();
-    const d = document.createElement('div');
-    const token = `vrt-dead-${Math.random().toString(36).slice(2)}`;
-    d.id = token;
-    d.style.cssText = [
-      'position:fixed',
-      `left:${Math.floor(r.left) - inflate}px`,
-      `top:${Math.floor(r.top) - inflate}px`,
-      `width:${Math.ceil(r.width) + inflate * 2}px`,
-      `height:${Math.ceil(r.height) + inflate * 2}px`,
-      'background:#000',
-      'z-index:2147483647',
-      'pointer-events:none',
-    ].join(';');
-    document.body.appendChild(d);
-    return token;
-  }, KILL_INFLATE_PX);
+  const token = await loc.evaluate((el) => {
+    const t = `vrt-dead-${Math.random().toString(36).slice(2)}`;
+    el.setAttribute('data-vrt-dead', t);
+    const style = document.createElement('style');
+    style.id = `style-${t}`;
+    style.textContent = `[data-vrt-dead="${t}"]{opacity:0 !important;}`;
+    document.head.appendChild(style);
+    return t;
+  });
+  const applied = await loc.evaluate((el) => getComputedStyle(el).opacity);
+  if (applied !== '0') {
+    throw new Error(
+      'vrt-surface-stats: the NEGATIVE CONTROL did not take effect — computed opacity is ' +
+        `"${applied}", expected "0". Every companion result measured after this point would ` +
+        'be meaningless, so this throws rather than reporting a live surface as dead.',
+    );
+  }
   const page = loc.page();
   return async () => {
-    await page.evaluate((token) => document.getElementById(token)?.remove(), id);
+    await page.evaluate((t) => {
+      document.getElementById(`style-${t}`)?.remove();
+      document.querySelector(`[data-vrt-dead="${t}"]`)?.removeAttribute('data-vrt-dead');
+    }, token);
   };
 }
