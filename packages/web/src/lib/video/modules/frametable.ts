@@ -44,7 +44,6 @@
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
-import { detectEdge, makeEdgeState, type EdgeState } from '$lib/doom/cv-gate-edge';
 import {
   FRAMETABLE_RING_FRAMES,
   FRAMETABLE_RENDER_SCALE,
@@ -56,6 +55,9 @@ import {
   FRAMETABLE_SMOOTH_TAPS_SOFT,
   FRAMETABLE_MORPH_TAP_CAP,
   morphKernel,
+  makeFrametableSaveLatch,
+  frametableSaveWrite,
+  frametableSaveConsume,
 } from '$lib/video/frametable-core';
 import {
   FRAMETABLE_ATLAS_COLS,
@@ -628,9 +630,36 @@ export const frametableDef: VideoModuleDef = {
     let framesElapsed = 0;
     let capturedAny = false;
 
-    // Edge state: save-trig rising edge SNAPSHOTS (cv-gate-edge hysteresis
-    // detector). FREEZE is a level-read (frozen while the gate is high), no edge.
-    const saveEdge: EdgeState = makeEdgeState();
+    // SAVE-TRIGGER one-shot latch. A rising edge on `saveTrig` SNAPSHOTS the ring.
+    //
+    // ⚠ THE EDGE IS DETECTED IN setParam, NOT IN draw() — same defect and same
+    // fix as FREEZEFRAME's gate_in (owner report 2026-07-31). `save_trig` is
+    // declared `edge: 'trigger'`, and a trigger arrives through the cross-domain
+    // bridge (PatchEngine.installGateDispatch) as a REPLAY, not a waveform: it
+    // counts rising edges on the audio thread and emits, inside ONE ~25 ms
+    // scheduler tick, `setParam(0); setParam(1)` per counted edge followed by
+    // `setParam(currentLevel)`. Measured on the live chain those three writes
+    // land in the SAME MILLISECOND, so by the time draw() runs `params.saveTrig`
+    // is back to 0 and a detector reading the LEVEL at draw time sees
+    // `0 → 0 → 0`: the rise never existed and SAVE NEVER FIRED from a patched
+    // trigger. (The faceplate SAVE button was unaffected — FrametableCard holds
+    // saveTrig at 1 for 140 ms, which straddles many frames. That is exactly why
+    // this stayed invisible: the control everyone tests worked.)
+    //
+    // Latching in setParam runs on the BRIDGE's clock, off the draw clock, so a
+    // pulse shorter than a frame cannot be missed. The latch is a BOOLEAN, not a
+    // counter: several edges inside one frame interval still snapshot ONCE (a
+    // snapshot is a whole-ring copy — coalescing is the correct, and cheap,
+    // reading). draw() CONSUMES it unconditionally.
+    //
+    // The latch itself lives in ./frametable-core (frametableSaveWrite /
+    // frametableSaveConsume) so it is unit-testable with NO GL context — and it
+    // is the ACTUAL implementation, not a mirror, so the test cannot drift from
+    // what ships.
+    const saveLatch = makeFrametableSaveLatch();
+    /** Monotonic count of snapshots taken. Diagnostic (read('saveCount')) —
+     *  the cross-check for "exactly one save per trigger". */
+    let saveCount = 0;
 
     // In-GPU SAVE-slot registry (VideoCube-ready). v1: a single default slot,
     // overwritten each save (the old texture is freed). The named-slot picker is
@@ -756,8 +785,11 @@ export const frametableDef: VideoModuleDef = {
         if (!ensurePrograms() || !progs || !u) return;
         const g = frame.gl;
 
-        // SAVE: fire ONCE per rising edge of saveTrig (idempotent per edge).
-        if (detectEdge(saveEdge, params.saveTrig)?.pressed === true) snapshotRing();
+        // SAVE: fire ONCE per rising edge of saveTrig. The edge was latched in
+        // setParam (see saveLatch) — reading the LEVEL here would miss every
+        // bridge-delivered trigger. Consume unconditionally so a stale arm can
+        // never fire a spurious snapshot on some later frame.
+        if (frametableSaveConsume(saveLatch)) { snapshotRing(); saveCount++; }
 
         // FILE LOAD: if an atlas was attached (attachExternalSource), detile it
         // into the 60 ring layers BEFORE the SELECT so the loaded table renders
@@ -904,8 +936,14 @@ export const frametableDef: VideoModuleDef = {
       domain: 'video',
       surface,
       setParam(paramId, value) {
-        // freezeGate is the live gate LEVEL (read as-is in draw); no edge here.
+        // freezeGate / chaosGate / liveGate are LEVEL reads (held WHILE high),
+        // consumed as-is in draw — correct for `edge: 'gate'` ports.
         if (paramId in params) (params as unknown as Record<string, number>)[paramId] = value;
+        // saveTrig is `edge: 'trigger'` — it MUST be edge-detected HERE, on the
+        // bridge's clock, because the bridge replays a whole trigger (0,1,level)
+        // inside one scheduler tick and the high is gone before the next draw.
+        // See the saveLatch declaration for the full account.
+        if (paramId === 'saveTrig') frametableSaveWrite(saveLatch, value);
       },
       readParam(paramId) {
         return (params as unknown as Record<string, number>)[paramId];
@@ -926,6 +964,10 @@ export const frametableDef: VideoModuleDef = {
         // is the raw write head (the NEXT slot to write = OLDEST layer), so a consumer
         // that wants "the latest frame" must use `newest`, not `head`.
         if (key === 'ringLive') return { tex: ringTex, layers: N, w: rw, h: rh, head, newest: (head - 1 + N) % N };
+        // Monotonic snapshot count — the cross-check for "EXACTLY one save per
+        // trigger" (a level-read consumer reports 0 for a bridge-delivered
+        // trigger, which is the regression this hook makes observable).
+        if (key === 'saveCount') return saveCount;
         if (typeof key === 'string' && key.startsWith('ringSnapshot:')) {
           return snapshots.get(key.slice('ringSnapshot:'.length));
         }

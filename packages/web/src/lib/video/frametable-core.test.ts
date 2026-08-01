@@ -47,6 +47,9 @@ import {
   frametableLagged,
   frametableReadCentre,
   fillOnFirstFrame,
+  makeFrametableSaveLatch,
+  frametableSaveWrite,
+  frametableSaveConsume,
 } from './frametable-core';
 
 const N = FRAMETABLE_RING_FRAMES; // 60
@@ -474,6 +477,121 @@ describe('FRAMETABLE — freeze / save reducers', () => {
     }
     // rising edges at idx 1, 6, 9 → exactly 3 snapshots (held-high never re-fires).
     expect(snapshots).toBe(3);
+  });
+
+  // --------------------------------------------------------------------
+  // THE SAVE-TRIGGER LATCH — the FREEZEFRAME sibling bug (2026-08-01).
+  //
+  // ⚠ WHAT THE TEST ABOVE CANNOT SEE, and why this one exists. It feeds
+  // detectEdge a hand-made per-frame sample stream `[0,1,1,1,0,…]`. Nothing in
+  // the running system ever produces that stream for a patched TRIGGER. The
+  // cross-domain bridge (PatchEngine.installGateDispatch) does not stream the
+  // waveform — it counts rising edges on the audio thread and REPLAYS them on
+  // the ~25 ms scheduler tick as `setParam(0); setParam(1)` per edge then
+  // `setParam(level)`, all three writes inside the SAME MILLISECOND. So the
+  // stream a DRAW sees is `0, 0, 0, …` and the old test's premise — that the
+  // consumer observes the pulse at all — was false. It passed for two months
+  // while a trigger patched into `save_trig` saved NOTHING.
+  //
+  // The tests below drive the LITERAL bridge write sequence through the shipped
+  // latch (frametableSaveWrite / frametableSaveConsume are what the factory
+  // calls — not a mirror), and interleave DRAWS at a chosen frame rate.
+  // --------------------------------------------------------------------
+  describe('SAVE-TRIGGER latch — driven with the REAL installGateDispatch sequence', () => {
+    /** ONE scheduler tick exactly as installGateDispatch replays it. */
+    function schedulerTick(l: ReturnType<typeof makeFrametableSaveLatch>, edges: number, level: number): void {
+      for (let i = 0; i < edges; i++) { frametableSaveWrite(l, 0); frametableSaveWrite(l, 1); }
+      frametableSaveWrite(l, level);
+    }
+
+    /** `levelOnly` reproduces the PRE-FIX logic — edge-detect the LEVEL at draw
+     *  time — so it is the negative control that proves these can fail. */
+    function runTriggers(o: { triggers: number; framesPerTrigger: number; levelOnly?: boolean }): number {
+      const latch = makeFrametableSaveLatch();
+      const drawEdge = makeEdgeState();
+      let level = 0;
+      let saves = 0;
+      const write = (v: number): void => { level = v; if (!o.levelOnly) frametableSaveWrite(latch, v); };
+      const tick = (edges: number, lvl: number): void => {
+        for (let i = 0; i < edges; i++) { write(0); write(1); }
+        write(lvl);
+      };
+      const draw = (): void => {
+        if (o.levelOnly) {
+          // PRE-FIX: read the LEVEL at draw time.
+          if (detectEdge(drawEdge, level)?.pressed === true) saves++;
+        } else if (frametableSaveConsume(latch)) saves++;
+      };
+      for (let t = 0; t < o.triggers; t++) {
+        tick(1, 0);                                     // the bridge replays one edge, level back to 0
+        for (let f = 0; f < o.framesPerTrigger; f++) draw();
+      }
+      return saves;
+    }
+
+    it('EXACTLY one snapshot per trigger, at every frame rate', () => {
+      // framesPerTrigger spans "many frames between triggers" (a fast display)
+      // down to 1 (a trigger every frame).
+      for (const framesPerTrigger of [1, 2, 3, 5, 8, 13]) {
+        expect(
+          runTriggers({ triggers: 8, framesPerTrigger }),
+          `8 triggers, ${framesPerTrigger} frames each`,
+        ).toBe(8);
+      }
+    });
+
+    it('NEGATIVE CONTROL: the pre-fix draw-time LEVEL read saves ZERO', () => {
+      // This is the owner-visible symptom, and it is what the sample-stream
+      // test above could never produce. If this ever returns 8, the assertion
+      // above proves nothing.
+      for (const framesPerTrigger of [1, 2, 3, 5, 8, 13]) {
+        expect(
+          runTriggers({ triggers: 8, framesPerTrigger, levelOnly: true }),
+          `pre-fix logic, ${framesPerTrigger} frames per trigger`,
+        ).toBe(0);
+      }
+    });
+
+    it('several edges inside ONE frame interval coalesce to ONE snapshot', () => {
+      // The latch is a BOOLEAN, not a counter: the ring has one state per frame,
+      // so N edges between two draws can only be worth one whole-ring copy.
+      const l = makeFrametableSaveLatch();
+      schedulerTick(l, 5, 0);
+      expect(frametableSaveConsume(l), 'five edges, one draw → one snapshot').toBe(true);
+      expect(frametableSaveConsume(l), 'and it is CONSUMED — no second fire').toBe(false);
+    });
+
+    it('a HELD-high save gate fires once and does not re-fire while held', () => {
+      const l = makeFrametableSaveLatch();
+      schedulerTick(l, 1, 1);                       // opened and still high
+      expect(frametableSaveConsume(l)).toBe(true);
+      schedulerTick(l, 0, 1); expect(frametableSaveConsume(l)).toBe(false); // still high
+      schedulerTick(l, 0, 1); expect(frametableSaveConsume(l)).toBe(false);
+      schedulerTick(l, 0, 0); expect(frametableSaveConsume(l)).toBe(false); // released
+      schedulerTick(l, 1, 1); expect(frametableSaveConsume(l)).toBe(true);  // re-armed
+    });
+
+    it('the FACEPLATE BUTTON path still works (why this stayed invisible)', () => {
+      // FrametableCard sets saveTrig=1 then back to 0 after 140 ms, which
+      // straddles many frames — so the button worked under BOTH the old and new
+      // logic. The control everyone exercises by hand was never broken; only the
+      // patched trigger was.
+      const l = makeFrametableSaveLatch();
+      frametableSaveWrite(l, 1);                    // button down
+      let saves = 0;
+      for (let f = 0; f < 9; f++) if (frametableSaveConsume(l)) saves++;  // ~140 ms of frames
+      frametableSaveWrite(l, 0);                    // button auto-release
+      for (let f = 0; f < 9; f++) if (frametableSaveConsume(l)) saves++;
+      expect(saves, 'one button press → exactly one snapshot').toBe(1);
+    });
+
+    it('a stale arm cannot fire after the cable is pulled', () => {
+      const l = makeFrametableSaveLatch();
+      schedulerTick(l, 1, 0);
+      expect(frametableSaveConsume(l)).toBe(true);
+      // No further writes at all (cable pulled). Every later draw must be quiet.
+      for (let f = 0; f < 20; f++) expect(frametableSaveConsume(l)).toBe(false);
+    });
   });
 
   it('a frozen ring never advances over a burst (ring contents pinned)', () => {

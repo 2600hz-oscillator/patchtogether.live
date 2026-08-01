@@ -25,7 +25,7 @@ import {
   type CaptureInputs,
 } from './freezeframe';
 import { detectEdge, makeEdgeState } from '$lib/doom/cv-gate-edge';
-import { GATE_HI, TRIGGER_PULSE_S } from '$lib/audio/gate-trigger';
+import { GATE_HI, TRIGGER_PULSE_S, DEFAULT_GATE_LEN_S } from '$lib/audio/gate-trigger';
 import { SCHEDULER_TICK_MS } from '$lib/audio/scheduler-clock';
 
 describe('quantLevels mapping (256 -> 32 -> 2)', () => {
@@ -168,6 +168,17 @@ describe('holdQualified — HELD vs the staircase echo of a TRIGGER', () => {
     expect(holdQualified(1000 + HOLD_QUALIFY_MS, 1000)).toBe(true);
   });
 
+  it('THE TIE-BREAK: the window is STRICTLY longer than a trigger-DERIVED gate', () => {
+    // `DEFAULT_GATE_LEN_S` is the width GATEMAIDEN widens a trigger to. At 2
+    // ticks the qualify window was EXACTLY that width, which put such a gate
+    // precisely ON the boundary — see HOLD_QUALIFY_MS's header for the
+    // arithmetic. STRICT inequality is the whole decision: it is what makes
+    // "trigger → GATEMAIDEN → FREEZEFRAME" produce the same frame count as
+    // "trigger → FREEZEFRAME". If either constant moves, this goes red.
+    expect(HOLD_QUALIFY_MS, `qualify window vs DEFAULT_GATE_LEN_S (${DEFAULT_GATE_LEN_S * 1000} ms)`)
+      .toBeGreaterThan(DEFAULT_GATE_LEN_S * 1000);
+  });
+
   it('the window is at least 2 bridge ticks and far longer than a trigger pulse', () => {
     // The bridge re-reports the level once per SCHEDULER_TICK_MS and we hold
     // the last report between ticks, so a trigger can read HIGH for one whole
@@ -241,7 +252,7 @@ describe('gateIsPatched — freshness of the bridge write (UNITS matter)', () =>
 /** Faithful CPU mirror of FREEZEFRAME's gate handling (the factory's setParam +
  *  draw, minus GL). `levelOnly` reproduces the PRE-FIX logic — the negative
  *  control that proves these assertions can actually fail. */
-function makeGateConsumer(levelOnly = false) {
+function makeGateConsumer(levelOnly = false, qualifyMs: number = HOLD_QUALIFY_MS) {
   const edge = makeEdgeState();
   let armed = false;
   let level = 0;
@@ -277,7 +288,7 @@ function makeGateConsumer(levelOnly = false) {
             gateLevel: level,
             holdSeeded: seeded,
             triggerArmed: armed,
-            levelQualified: holdQualified(nowMs, riseMs),
+            levelQualified: holdQualified(nowMs, riseMs, qualifyMs),
           });
       armed = false;
       if (capture) { seeded = true; captures++; }
@@ -295,9 +306,31 @@ function makeGateConsumer(levelOnly = false) {
  */
 function runTriggerTimeline(o: {
   framePeriodMs: number; triggerPeriodMs: number; triggers: number; phaseMs: number; levelOnly?: boolean;
+  /** Pulse WIDTH. Defaults to a real short trigger; set to DEFAULT_GATE_LEN_S ×
+   *  1000 to model a gate DERIVED from a trigger (GATEMAIDEN's widening) — the
+   *  case that sat exactly on the qualify boundary. */
+  pulseMs?: number;
+  /** Override the qualify window (negative-control lever only). */
+  qualifyMs?: number;
+  /** Deterministic PER-TICK lateness bound, in ms. The tick is a Worker timer,
+   *  so a loaded main thread delivers it late — and a late callback is what
+   *  leaves a STALE HIGH report standing past the qualify boundary. Without it
+   *  the timeline lands exactly ON the tie and resolves the same way for BOTH
+   *  windows, so the negative control would be vacuous.
+   *
+   *  ⚠ IT MUST VARY PER TICK. A UNIFORM lateness shifts the whole tick grid,
+   *  which is indistinguishable from a PHASE change — and phase is already
+   *  swept, so a uniform jitter perturbs nothing new and the negative control
+   *  silently passes (measured: 216/216 cells still exactly N). The observed
+   *  HIGH lasts `gateWidth + late(k+2) − late(k)`, so only a tick that is MORE
+   *  late than the one that reported the rise can extend it past the boundary.
+   *  Lateness is therefore a low-discrepancy (golden-ratio) sequence of the tick
+   *  index — deterministic, zero-flake, and genuinely non-uniform. */
+  tickJitterMs?: number;
 }): { captures: number; triggersFired: number } {
-  const c = makeGateConsumer(o.levelOnly);
-  const pulseMs = TRIGGER_PULSE_S * 1000;
+  const c = makeGateConsumer(o.levelOnly, o.qualifyMs);
+  const pulseMs = o.pulseMs ?? TRIGGER_PULSE_S * 1000;
+  const jitter = o.tickJitterMs ?? 0;
   const durationMs = o.triggerPeriodMs * (o.triggers + 1);
   const pulseAt = (k: number): number => o.triggerPeriodMs * (k + 1) + 0.5;
 
@@ -307,7 +340,13 @@ function runTriggerTimeline(o: {
   c.draw(0);
 
   const events: Array<{ t: number; kind: 'tick' | 'draw' }> = [];
-  for (let t = SCHEDULER_TICK_MS + o.phaseMs; t < durationMs; t += SCHEDULER_TICK_MS) events.push({ t, kind: 'tick' });
+  // Per-tick lateness: golden-ratio low-discrepancy in [0, jitter). Bounded
+  // strictly under one tick period so the actual tick times stay ORDERED.
+  const lateAt = (k: number): number => jitter * ((k * 0.61803398874989) % 1);
+  let tickIdx = 0;
+  for (let t = SCHEDULER_TICK_MS + o.phaseMs; t < durationMs; t += SCHEDULER_TICK_MS) {
+    events.push({ t: t + lateAt(tickIdx++), kind: 'tick' });
+  }
   for (let t = o.framePeriodMs; t < durationMs; t += o.framePeriodMs) events.push({ t, kind: 'draw' });
   events.sort((a, b) => a.t - b.t || (a.kind === 'tick' ? -1 : 1));
 
@@ -372,6 +411,88 @@ describe('TRIGGER → exactly ONE frame (the real installGateDispatch sequence)'
   });
 });
 
+// ---------------------------------------------------------------------------
+// THE BOUNDARY: a gate DERIVED from a trigger at the canonical default width.
+//
+// `DEFAULT_GATE_LEN_S` (50 ms) is what GATEMAIDEN widens a trigger to. With the
+// qualify window at 2 ticks it was EXACTLY 50 ms too, so such a gate sat on the
+// tie and its classification hung on scheduler jitter. The decision (see
+// HOLD_QUALIFY_MS) resolves it DOWNWARD — a derived gate at that width is a
+// TRIGGER — and the invariant that buys is:
+//
+//     inserting GATEMAIDEN into the path must NOT change the frame count.
+//
+// ⚠ INSTRUMENT NOTE. A jitter-free timeline lands exactly ON the tie and
+// resolves the same way for BOTH windows (the tick that drops the level fires
+// before the draw at the same instant), so a jitter-free negative control
+// CANNOT FAIL — it would be pure decoration. The sweep therefore includes
+// deterministic tick LATENESS, which is the real mechanism that flips the tie:
+// a late Worker callback leaves the stale HIGH report standing past the
+// boundary. The negative control below proves the sweep is sensitive to the one
+// constant under test.
+// ---------------------------------------------------------------------------
+describe('DERIVED GATE at DEFAULT_GATE_LEN_S → still EXACTLY ONE frame (the boundary)', () => {
+  const DERIVED_GATE_MS = DEFAULT_GATE_LEN_S * 1000; // 50
+  const FPS = [8, 30, 60, 120, 165, 240];
+  const PHASES = [0, 3, 7, 11, 17, 23];
+  // Sub-tick lateness only: a callback a WHOLE period late is coalesced by the
+  // scheduler, and no finite window can be proof against unbounded stalls.
+  const JITTERS = [0, 1, 4, 9, 16, 20];
+  const GATES = 6;
+
+  function sweep(qualifyMs?: number): Array<{ fps: number; phaseMs: number; jitterMs: number; captures: number }> {
+    const out: Array<{ fps: number; phaseMs: number; jitterMs: number; captures: number }> = [];
+    for (const fps of FPS) for (const phaseMs of PHASES) for (const jitterMs of JITTERS) {
+      const r = runTriggerTimeline({
+        framePeriodMs: 1000 / fps, triggerPeriodMs: 250, triggers: GATES,
+        phaseMs, pulseMs: DERIVED_GATE_MS, tickJitterMs: jitterMs, qualifyMs,
+      });
+      expect(r.triggersFired, 'timeline delivered every derived gate').toBe(GATES);
+      out.push({ fps, phaseMs, jitterMs, captures: r.captures });
+    }
+    return out;
+  }
+
+  it(`${6 * 6 * 6} cells (fps × tick phase × tick lateness): EXACTLY ${GATES} updates for ${GATES} derived gates`, () => {
+    const bad = sweep().filter((c) => c.captures !== GATES);
+    expect(
+      bad.length,
+      `cells that did NOT deliver exactly ${GATES}: ${bad
+        .map((c) => `${c.fps}fps/phase${c.phaseMs}/late${c.jitterMs}=${c.captures}`)
+        .join(' ')}`,
+    ).toBe(0);
+  });
+
+  it('NEGATIVE CONTROL: the 2-tick window (the TIE) fails this same sweep', () => {
+    // If this ever passes, the sweep above is invariant to HOLD_QUALIFY_MS and
+    // proves nothing about the boundary decision.
+    const tie = sweep(2 * SCHEDULER_TICK_MS); // 50 ms — exactly DEFAULT_GATE_LEN_S
+    const over = tie.filter((c) => c.captures !== GATES);
+    expect(
+      over.length,
+      `at the tie every cell delivered exactly ${GATES} — the sweep cannot see the constant it is testing`,
+    ).toBeGreaterThan(0);
+    // And the shape of the failure is EXTRA frames (the stale HIGH qualified),
+    // never fewer — the one-shot latch still fires in both worlds.
+    expect(
+      over.every((c) => c.captures > GATES),
+      `tie-window captures: ${over.map((c) => `${c.fps}fps/phase${c.phaseMs}/late${c.jitterMs}=${c.captures}`).join(' ')}`,
+    ).toBe(true);
+  });
+
+  it('a real 5 ms TRIGGER is unaffected by the widened window', () => {
+    // The tie-break moved the window; it must not have disturbed the case the
+    // fix exists for. Same sweep, real trigger width.
+    for (const fps of FPS) for (const jitterMs of JITTERS) {
+      const r = runTriggerTimeline({
+        framePeriodMs: 1000 / fps, triggerPeriodMs: 250, triggers: GATES,
+        phaseMs: 7, tickJitterMs: jitterMs,
+      });
+      expect(r.captures, `${fps} fps / tick late ${jitterMs} ms`).toBe(GATES);
+    }
+  });
+});
+
 describe('HELD GATE → continuous (the one-shot must not swallow the hold)', () => {
   /** Gate opens at t=0 and stays HIGH. Returns the per-frame capture pattern
    *  over `frames` frames (frame 1 is the first frame after the rise). */
@@ -418,14 +539,24 @@ describe('HELD GATE → continuous (the one-shot must not swallow the hold)', ()
   });
 
   it('the gate DROPPING low freezes immediately on the next frame', () => {
+    // Times are DERIVED from HOLD_QUALIFY_MS, not hardcoded: this timeline is a
+    // statement about the qualify RULE, and a hardcoded one silently becomes a
+    // different assertion whenever the constant moves (it did — 50 → 75).
+    const Q = HOLD_QUALIFY_MS;
+    const RISE = 10;
     const c = makeGateConsumer();
     c.tick(0, 0, 0); c.draw(0);
-    c.tick(1, 1, 10); expect(c.draw(16)).toBe(true);   // opened → one-shot
-    c.tick(0, 1, 35); expect(c.draw(40)).toBe(false);  // held, still qualifying
-    c.tick(0, 1, 60); expect(c.draw(70)).toBe(true);   // qualified → continuous
-    c.tick(0, 1, 85); expect(c.draw(90)).toBe(true);   // stays continuous
-    c.tick(0, 0, 110); expect(c.draw(115)).toBe(false); // dropped → frozen
-    c.tick(0, 0, 135); expect(c.draw(140)).toBe(false); // stays frozen
+    // opened → the one-shot latch captures regardless of qualification
+    c.tick(1, 1, RISE); expect(c.draw(RISE + 6), 'rising edge → one-shot').toBe(true);
+    // held HIGH but still inside the qualify window → frozen
+    c.tick(0, 1, RISE + Q * 0.4); expect(c.draw(RISE + Q * 0.5), 'still qualifying').toBe(false);
+    c.tick(0, 1, RISE + Q * 0.8); expect(c.draw(RISE + Q * 0.9), 'still qualifying').toBe(false);
+    // past the window with the level still high → continuous
+    c.tick(0, 1, RISE + Q); expect(c.draw(RISE + Q + 5), 'qualified → continuous').toBe(true);
+    c.tick(0, 1, RISE + Q + 25); expect(c.draw(RISE + Q + 30), 'stays continuous').toBe(true);
+    // dropped → frozen again on the very next frame
+    c.tick(0, 0, RISE + Q + 50); expect(c.draw(RISE + Q + 55), 'dropped → frozen').toBe(false);
+    c.tick(0, 0, RISE + Q + 75); expect(c.draw(RISE + Q + 80), 'stays frozen').toBe(false);
   });
 });
 

@@ -43,11 +43,19 @@
 //      the information-theoretic floor for this decision, not an implementation
 //      shortcut. Measured before the qualify window existed: 6 triggers
 //      produced 36 captures at 240 fps (6 spurious frames each, once per
-//      pulse-straddles-tick). HOLD_QUALIFY_MS is 2 ticks, so the spurious high
+//      pulse-straddles-tick). HOLD_QUALIFY_MS is 3 ticks, so the spurious high
 //      has always been overwritten before it can qualify.
 //      Cost: a genuinely held gate updates its one-shot frame immediately and
-//      then goes continuous ~50 ms later. There is no gap in coverage — the
+//      then goes continuous ~75 ms later. There is no gap in coverage — the
 //      latch already refreshed the image at the edge.
+//
+//      ⚠ WHY 3 TICKS AND NOT 2 — the DERIVED-GATE tie. 2 ticks is exactly 50 ms,
+//      which is exactly `DEFAULT_GATE_LEN_S` (the width GATEMAIDEN widens a
+//      trigger to). A gate of that width is observed HIGH over exactly one
+//      qualify window, so it sat precisely ON the boundary and its
+//      classification hung on tick jitter. Resolved DOWNWARD — see
+//      HOLD_QUALIFY_MS below for the arithmetic. The invariant it buys:
+//      **inserting GATEMAIDEN into the path does not change the frame count.**
 //
 //      WHY (i) CANNOT BE A LEVEL TEST (the bug this fixes — owner report
 //      2026-07-31, "triggers do nothing"): the cross-domain gate bridge
@@ -248,9 +256,17 @@ export function shouldCapture(i: CaptureInputs): boolean {
  * level. `-Infinity` (never observed a rise — the gate was already high when we
  * were patched, or a test hook forced the level) qualifies immediately: there
  * is no candidate trigger to confuse it with.
+ *
+ * `qualifyMs` is injectable ONLY so a test can run the NEGATIVE CONTROL (drive
+ * the identical timeline with the pre-decision 50 ms window and prove the
+ * boundary assertions go red). Production always uses the default.
  */
-export function holdQualified(nowMs: number, lastRiseMs: number): boolean {
-  return (nowMs - lastRiseMs) >= HOLD_QUALIFY_MS;
+export function holdQualified(
+  nowMs: number,
+  lastRiseMs: number,
+  qualifyMs: number = HOLD_QUALIFY_MS,
+): boolean {
+  return (nowMs - lastRiseMs) >= qualifyMs;
 }
 
 /**
@@ -403,19 +419,61 @@ export const GATE_PATCH_GRACE_MS = 500;
 /** How long (WALL CLOCK, ms) a HIGH level must stand before it counts as a HELD
  *  GATE rather than the staircase echo of a TRIGGER pulse.
  *
- *  = 2 × the cross-domain gate bridge's replay cadence (`SCHEDULER_TICK_MS`,
- *  25 ms — see PatchEngine.installGateDispatch). The bridge re-reports the
- *  level once per tick and we hold the last report in between, so a 5 ms
- *  trigger that straddles a tick instant reads HIGH for up to ONE tick period.
- *  Two ticks means such an echo is always overwritten with 0 before it can
- *  qualify, with a full tick of margin for a late callback. It CANNOT be
- *  shorter than one tick and still be correct: until the next bridge write,
- *  a trigger and a just-opened gate are the same bytes.
+ *  = **3 × the cross-domain gate bridge's replay cadence** (`SCHEDULER_TICK_MS`,
+ *  25 ms — see PatchEngine.installGateDispatch). Two independent constraints
+ *  fix this number, and the SECOND is why it is 3 ticks and not 2:
+ *
+ *  ── (1) THE FLOOR: ≥ 2 TICKS. ──
+ *  The bridge re-reports the level once per tick and we hold the last report in
+ *  between, so a 5 ms trigger that straddles a tick instant reads HIGH for up to
+ *  ONE tick period. Two ticks means such an echo is always overwritten with 0
+ *  before it can qualify, with a full tick of margin for a late Worker callback.
+ *  It CANNOT be shorter than one tick and still be correct: until the next
+ *  bridge write, a trigger and a just-opened gate are the same bytes.
+ *
+ *  ── (2) THE TIE-BREAK: STRICTLY > DEFAULT_GATE_LEN_S. ──
+ *  `$lib/audio/gate-trigger` pins `DEFAULT_GATE_LEN_S = 0.05` — the width of a
+ *  gate DERIVED from a trigger (GATEMAIDEN's trigger→gate widening). At 2 ticks
+ *  the qualify window was EXACTLY 50 ms, i.e. exactly that width, and the
+ *  arithmetic puts such a gate precisely ON the boundary:
+ *
+ *    a 50 ms gate opening at `g` is counted by the first tick `T ∈ [g, g+25)`
+ *    (reports level 1), re-reported high by `T+25` (< g+50, always), and
+ *    reported LOW by `T+50` (≥ g+50, always). So the module observes HIGH over
+ *    exactly `[T, T+50)` — and `holdQualified` needs `now − T ≥ 50`. The only
+ *    qualifying instant is the one instant the level is no longer high.
+ *
+ *  Behaviour therefore hung on sub-millisecond tick jitter: a late Worker
+ *  callback leaves the stale HIGH report standing past T+50 and the gate
+ *  suddenly qualifies, capturing a few extra frames. That is a coin flip, and a
+ *  renderer-dependent one (how many frames land in the slop is fps-dependent).
+ *
+ *  DECISION (2026-08-01): resolve the tie DOWNWARD — a gate at the canonical
+ *  derived width is a TRIGGER, deterministically. Three ticks puts the window
+ *  strictly clear of `DEFAULT_GATE_LEN_S`, so:
+ *
+ *    **inserting GATEMAIDEN into the path does not change FREEZEFRAME's frame
+ *    count** — trigger → FREEZEFRAME and trigger → GATEMAIDEN → FREEZEFRAME both
+ *    update EXACTLY ONE frame.
+ *
+ *  That invariant is the reason to prefer this direction over widening the gate
+ *  classification: the alternative (qualify at 1 tick so a 50 ms gate reads as
+ *  HELD) makes the same patch produce 3 frames at 60 fps and 12 at 240 — a
+ *  renderer-dependent result, the exact class this repo forbids — AND it spends
+ *  the entire margin that constraint (1) exists to provide.
+ *
+ *  COST, stated plainly: a genuinely HELD gate goes continuous 25 ms later than
+ *  before (there is no visible gap — the one-shot latch already refreshed the
+ *  image at the rising edge), and the knee at which a square LFO stops reading
+ *  as "continuous" and starts reading as a one-frame-per-cycle strobe moves from
+ *  ~10 Hz to ~6.6 Hz. Both are already strobe territory, where one frame per
+ *  cycle is the frame-rate-INDEPENDENT reading and arguably the better look.
  *
  *  NOT imported from `$lib/audio/scheduler-clock` on purpose — that module owns
  *  a Worker singleton and this def is loaded by the render-worker realm too.
- *  `freezeframe.test.ts` pins the relationship instead. */
-export const HOLD_QUALIFY_MS = 50;
+ *  `freezeframe.test.ts` pins BOTH relationships (≥ 2 ticks, and STRICTLY
+ *  greater than DEFAULT_GATE_LEN_S) plus the behaviour AT the boundary. */
+export const HOLD_QUALIFY_MS = 75;
 
 /** Frame-count floor, OR'd with the ms grace. Covers the opposite extreme from
  *  the one the ms grace covers: a renderer so slow that half a second passes

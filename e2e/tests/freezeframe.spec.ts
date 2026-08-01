@@ -60,6 +60,27 @@ const FF_PORT = 'video_out';
 // output pass has run, small enough to stay cheap on CI's software renderer.
 const FIXED_STEPS = 6;
 
+/** ONE discarded step+read before the first ASSERTED read.
+ *
+ *  WHY IT IS A CALL AND NOT A STEP COUNT. Under SwiftShader the FIRST
+ *  stepAndReadStats call on this chain reads ALL-BLACK no matter how many steps
+ *  it drives — measured 0.0000 nonZeroFrac at 1 step, and FIXED_STEPS (6) was
+ *  equally black; the very next call reads 0.8936 and never changes again. On a
+ *  real GPU the first call is already 0.8936. So the deficit is one pipeline
+ *  round-trip, not render time, and "more steps" cannot fix it.
+ *
+ *  This was a REAL PRE-EXISTING RED: test (a) failed under E2E_SWIFTSHADER=1 on
+ *  commit 9be2146e too (verified by running that exact spec side by side). It
+ *  was invisible because freezeframe.spec.ts runs in NO CI lane — the same gap
+ *  the @webgl-smoke tag on (e) closes.
+ *
+ *  The content is otherwise IDENTICAL across renderers (nonZeroFrac 0.8936,
+ *  variance 3213.02, mean 61.72 on both), so this is a pacing artefact, not a
+ *  rendering difference — established before touching anything. */
+async function warmRenderPipeline(page: Page): Promise<void> {
+  await stepAndReadStats(page, { nodeId: 'v-ff', portId: FF_PORT, steps: 1 });
+}
+
 /** Read FREEZEFRAME's OWN combined-output FBO ONCE and return luma stats PLUS a
  *  distinct-colour count (5-bit-per-channel buckets) — the posterize headline
  *  metric the shared harness doesn't compute. Single page.evaluate (one
@@ -173,8 +194,10 @@ async function setVideoParam(page: Page, nodeId: string, paramId: string, value:
 
 /** Mirror of freezeframe.ts's HOLD_QUALIFY_MS. A HIGH level counts as a HELD
  *  gate only after standing this long, because for one bridge tick a trigger
- *  pulse and a just-opened gate are the same bytes. */
-const HOLD_QUALIFY_MS = 50;
+ *  pulse and a just-opened gate are the same bytes. 3 scheduler ticks — the
+ *  third lifts it STRICTLY clear of DEFAULT_GATE_LEN_S so a trigger-derived gate
+ *  is classified deterministically (see the constant's header). */
+const HOLD_QUALIFY_MS = 75;
 
 /** ACIDWARP scene count. 41 is PRIME, so any stride below is automatically
  *  co-prime to it and to the trigger period — captured frames cannot alias onto
@@ -189,7 +212,16 @@ interface GateFrame {
   level: number;
 }
 
-interface FramePrint { h: string; t: number; nz: number; }
+interface FramePrint {
+  h: string;
+  t: number;
+  nz: number;
+  /** The SOURCE scene this frame was rendered with. Carried so a "the image
+   *  changed" assertion can prove the two frames were even LOOKING at different
+   *  source content — two frames on the same scene are legitimately identical,
+   *  and reading that as "it did not update" is a false negative. */
+  sc: number;
+}
 
 /** Drive FREEZEFRAME frame by frame with an explicit bridge-write plan, reading
  *  its OWN video_out FBO after each engine step. ONE page.evaluate — no await
@@ -198,8 +230,9 @@ async function driveGateFrames(
   page: Page,
   plan: GateFrame[],
   sceneStride: number,
-): Promise<{ prints: FramePrint[]; captureCount: number; gatePatched: unknown }> {
-  return page.evaluate(({ plan, sceneStride, SCENE_COUNT }) => {
+  sceneStart = 0,
+): Promise<{ prints: FramePrint[]; captureCount: number; gatePatched: unknown; sceneEnd: number }> {
+  return page.evaluate(({ plan, sceneStride, SCENE_COUNT, sceneStart }) => {
     const w = globalThis as unknown as {
       __engine: () => { getDomain: (d: string) => {
         gl: WebGL2RenderingContext;
@@ -221,9 +254,9 @@ async function driveGateFrames(
     const px = new Uint8Array(RW * RH * 4);
     const fb = gl.createFramebuffer()!;
 
-    interface FramePrintLocal { h: string; t: number; nz: number }
+    interface FramePrintLocal { h: string; t: number; nz: number; sc: number }
 
-    function fingerprint(): FramePrintLocal {
+    function fingerprint(sc: number): FramePrintLocal {
       const tex = vid.outputTexture('v-ff', 'video_out') as WebGLTexture | null;
       gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
       gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
@@ -242,7 +275,7 @@ async function driveGateFrames(
         n++;
         if ((px[i]! + px[i + 1]! + px[i + 2]!) / 3 > 8) nz++;
       }
-      return { h: hash.toString(16), t: performance.now(), nz: n ? nz / n : 0 };
+      return { h: hash.toString(16), t: performance.now(), nz: n ? nz / n : 0, sc };
     }
 
     /** ONE scheduler tick, exactly as installGateDispatch replays it. */
@@ -255,7 +288,11 @@ async function driveGateFrames(
     }
 
     const prints: FramePrintLocal[] = [];
-    let scene = 0;
+    // The scene walk CONTINUES across calls (threaded via sceneStart/sceneEnd).
+    // Restarting it at 0 each call could hand two consecutive phases the same
+    // scene across the seam, and "the source did not change" is precisely the
+    // condition that would make a freeze assertion pass vacuously.
+    let scene = sceneStart;
     for (const f of plan) {
       // The source's frozen frame CHANGES every single frame — the instrument
       // check the freeze assertions depend on.
@@ -263,15 +300,16 @@ async function driveGateFrames(
       vid.setParam('v-src', 'scene', scene);
       if (f.edges >= 0) schedulerTick(f.edges, f.level);
       vid.step();
-      prints.push(fingerprint());
+      prints.push(fingerprint(scene));
     }
     gl.deleteFramebuffer(fb);
     return {
       prints,
       captureCount: vid.read('v-ff', 'captureCount') as number,
       gatePatched: vid.read('v-ff', 'gatePatched'),
+      sceneEnd: scene,
     };
-  }, { plan, sceneStride, SCENE_COUNT });
+  }, { plan, sceneStride, SCENE_COUNT, sceneStart });
 }
 
 /** Number of frames whose fingerprint differs from the frame before it. */
@@ -327,6 +365,7 @@ test.describe('FREEZEFRAME — video sample & hold + posterize', () => {
     // Drive a fixed burst synchronously, read FREEZEFRAME's OWN output FBO once:
     // non-black + structured + exact frame delta + zero GL errors. (Replaces the
     // old waitForMoving poll, which proved "moved" by diffing animated frames.)
+    await warmRenderPipeline(page);
     const aBefore = await stepAndReadStats(page, { nodeId: 'v-ff', portId: FF_PORT, steps: FIXED_STEPS });
     assertRenderStats(aBefore, FIXED_STEPS);
     expect(aBefore.nonZeroFrac, 'ungated output renders content').toBeGreaterThan(0);
@@ -408,7 +447,14 @@ test.describe('FREEZEFRAME — video sample & hold + posterize', () => {
     expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
   });
 
-  test('(e) gate: frozen when low, EXACTLY ONE update per trigger, continuous while held', async ({ page }) => {
+  // @webgl-smoke — this test is the REGRESSION GUARD for the owner-reported bug
+  // and it is deliberately enrolled in the SwiftShader `webgl-smoke` CI floor.
+  // Rationale: freezeframe.spec.ts matches a WEBGL_HEAVY glob, and the lane that
+  // used to run those was DELETED on 2026-06-20 — so without a tag this fix ships
+  // with ZERO on-CI coverage. It is affordable there because it is a DRS (rAF
+  // paused, engine clock pinned, a fixed step() count) reading a 128×128 centre
+  // crop, not a full-frame screenshot. Measured cost is in the PR body.
+  test('(e) @webgl-smoke gate: frozen when low, EXACTLY ONE update per trigger, continuous while held', async ({ page }) => {
     test.setTimeout(120_000);
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
@@ -443,7 +489,7 @@ test.describe('FREEZEFRAME — video sample & hold + posterize', () => {
     // frame, the source is not moving and every freeze assertion below would
     // be satisfied by two identical dead frames. This is the negative control
     // for the whole test.
-    const live = await driveGateFrames(page, Array.from({ length: 12 }, () => ({ edges: -1, level: 0 })), STRIDE);
+    const live = await driveGateFrames(page, Array.from({ length: 12 }, () => ({ edges: -1, level: 0 })), STRIDE, 0);
     expect(live.gatePatched, 'no gate writes → gate reads UNPATCHED').toBe(false);
     expect(
       Math.min(...live.prints.map((p) => p.nz)),
@@ -457,7 +503,7 @@ test.describe('FREEZEFRAME — video sample & hold + posterize', () => {
     // ---- (1) GATE PATCHED, LEVEL LOW → FROZEN ----
     // The bridge ticks every frame writing 0 (a patched cable whose gate is
     // low). The source keeps re-scening underneath; the output must not move.
-    const frozen = await driveGateFrames(page, Array.from({ length: 14 }, () => ({ edges: 0, level: 0 })), STRIDE);
+    const frozen = await driveGateFrames(page, Array.from({ length: 14 }, () => ({ edges: 0, level: 0 })), STRIDE, live.sceneEnd);
     expect(frozen.gatePatched, 'gate writes arriving → gate reads PATCHED').toBe(true);
     // The FIRST frame of this phase may still capture (the transition out of
     // live passthrough), so the freeze is asserted from frame 1 on.
@@ -488,7 +534,7 @@ test.describe('FREEZEFRAME — video sample & hold + posterize', () => {
       for (let k = 1; k < TRIGGER_EVERY; k++) trigPlan.push({ edges: 0, level: 0 });
     }
     const capBeforeTrig = frozen.captureCount;
-    const trig = await driveGateFrames(page, trigPlan, STRIDE);
+    const trig = await driveGateFrames(page, trigPlan, STRIDE, frozen.sceneEnd);
     expect(
       changedFrames(trig.prints),
       `EXACTLY ${TRIGGERS} updates for ${TRIGGERS} triggers — one per rising edge, still otherwise (pattern ${bits(trig.prints)})`,
@@ -507,36 +553,96 @@ test.describe('FREEZEFRAME — video sample & hold + posterize', () => {
     // ---- (3) HELD GATE → CONTINUOUS ----
     // One rising edge, then the level stays HIGH and is RE-REPORTED by every
     // subsequent tick — which is what makes it a HOLD rather than a trigger.
-    const HELD_FRAMES = 24;
-    const heldPlan: GateFrame[] = Array.from({ length: HELD_FRAMES }, (_, i) => ({
-      edges: i === 0 ? 1 : 0, level: 1,
-    }));
-    const held = await driveGateFrames(page, heldPlan, STRIDE);
+    //
+    // ⚠ TWO CLOCKS, DELIBERATELY SEPARATED. The qualify window is a WALL-CLOCK
+    // property of the bridge's replay cadence, so waiting for it in ms is
+    // correct. The ASSERTION must not be: "N frames" is a different amount of
+    // time on every renderer (7.9 fps under SwiftShader vs ~60+ on a real GPU),
+    // so a fixed-length held burst either fails to reach the window on a fast
+    // machine or wastes seconds on a slow one. Earlier this test used a single
+    // 24-frame burst and located the boundary inside it — which silently became
+    // a different assertion per renderer, and at a 75 ms window would not span
+    // the window AT ALL on a fast GPU. Split the two: WARM until the wall clock
+    // passes the window, then assert over a FIXED frame count.
+    const HELD_WARM_CHUNK = 6;   // frames per warm-up round trip
+    const HELD_WARM_MAX = 40;    // bound the failure; ~5 s at SwiftShader's 8 fps
+    const HELD_TAIL = 8;         // the renderer-INDEPENDENT assertion window
+    let heldScene = trig.sceneEnd;
+    let warm = await driveGateFrames(
+      page,
+      Array.from({ length: HELD_WARM_CHUNK }, (_, i) => ({ edges: i === 0 ? 1 : 0, level: 1 })),
+      STRIDE, heldScene,
+    );
+    heldScene = warm.sceneEnd;
     // The rising edge updates a frame immediately (the one-shot), so there is
     // no visible gap while the hold qualifies.
-    expect(held.prints[0]!.h, 'the rising edge updated the very first held frame')
-      .not.toBe(frozen.prints[frozen.prints.length - 1]!.h);
-    // A HIGH level is only trusted as a HOLD once it has stood HOLD_QUALIFY_MS
-    // (below that it is indistinguishable from a trigger's one-tick staircase
-    // echo — see freezeframe.ts). Locate that boundary from the per-frame
-    // timestamps rather than guessing a frame count for a wall-clock window.
-    const riseMs = held.prints[0]!.t;
-    const qualifyIdx = held.prints.findIndex((p) => p.t - riseMs >= HOLD_QUALIFY_MS);
-    expect(qualifyIdx, `the ${HELD_FRAMES}-frame held burst spans the ${HOLD_QUALIFY_MS} ms qualify window`)
-      .toBeGreaterThanOrEqual(0);
-    const heldTail = held.prints.slice(qualifyIdx);
-    expect(heldTail.length, 'the qualified tail is long enough to assert on (instrument check)').toBeGreaterThan(4);
+    //
+    // ⚠ Compare against the IMMEDIATELY PRECEDING rendered frame — the last
+    // frame of the trigger phase. Comparing against an older phase is not the
+    // claim being made, and it can ALIAS: the scene walk is modular, so a frame
+    // several phases back can legitimately be rendering the same ACIDWARP scene
+    // and then "identical" means nothing. Assert the two frames were even
+    // looking at different source content before believing the pixel result.
+    const beforeHeld = trig.prints[trig.prints.length - 1]!;
+    expect(warm.prints[0]!.sc, `INSTRUMENT: the held frame and the frame before it must render DIFFERENT source scenes (both = ${beforeHeld.sc})`)
+      .not.toBe(beforeHeld.sc);
+    expect(warm.prints[0]!.h, `the rising edge updated the very first held frame (scene ${beforeHeld.sc} → ${warm.prints[0]!.sc})`)
+      .not.toBe(beforeHeld.h);
+    const riseMs = warm.prints[0]!.t;
+    let warmFrames = warm.prints.length;
+    while (warm.prints[warm.prints.length - 1]!.t - riseMs < HOLD_QUALIFY_MS && warmFrames < HELD_WARM_MAX) {
+      warm = await driveGateFrames(
+        page,
+        Array.from({ length: HELD_WARM_CHUNK }, () => ({ edges: 0, level: 1 })),
+        STRIDE, heldScene,
+      );
+      heldScene = warm.sceneEnd;
+      warmFrames += warm.prints.length;
+    }
+    const heldElapsedMs = warm.prints[warm.prints.length - 1]!.t - riseMs;
     expect(
-      changedFrames(heldTail),
-      `HELD gate updates CONTINUOUSLY — every qualified frame changes (pattern ${bits(heldTail)}, qualifyIdx=${qualifyIdx})`,
-    ).toBe(heldTail.length - 1);
+      heldElapsedMs,
+      `the held warm-up must clear the ${HOLD_QUALIFY_MS} ms qualify window (got ${heldElapsedMs.toFixed(1)} ms over ${warmFrames} frames — raise HELD_WARM_MAX if a renderer is slower than assumed)`,
+    ).toBeGreaterThanOrEqual(HOLD_QUALIFY_MS);
+
+    // Now the level is QUALIFIED. Every one of a FIXED number of frames must
+    // update — a renderer-independent assertion by construction.
+    const heldTail = await driveGateFrames(
+      page,
+      Array.from({ length: HELD_TAIL }, () => ({ edges: 0, level: 1 })),
+      STRIDE, heldScene,
+    );
+    expect(
+      changedFrames(heldTail.prints),
+      `HELD gate updates CONTINUOUSLY — every qualified frame changes (pattern ${bits(heldTail.prints)}, after ${heldElapsedMs.toFixed(1)} ms / ${warmFrames} warm frames)`,
+    ).toBe(heldTail.prints.length - 1);
+    expect(
+      Math.min(...heldTail.prints.map((p) => p.nz)),
+      'the held-gate output is real content, not black',
+    ).toBeGreaterThan(0.05);
 
     // ---- (4) BACK TO LOW → FROZEN AGAIN (the hold did not latch on) ----
-    const refrozen = await driveGateFrames(page, Array.from({ length: 10 }, () => ({ edges: 0, level: 0 })), STRIDE);
+    const refrozen = await driveGateFrames(page, Array.from({ length: 10 }, () => ({ edges: 0, level: 0 })), STRIDE, heldTail.sceneEnd);
     expect(
       changedFrames(refrozen.prints.slice(1)),
       `releasing the held gate freezes again (pattern ${bits(refrozen.prints)})`,
     ).toBe(0);
+
+    // One summary line of the MEASURED frame counts. Printed unconditionally so
+    // a CI failure is diagnosable from the log alone (the per-assertion patterns
+    // only appear on the assertion that actually broke), and so the renderer's
+    // frame pacing — the quantity that differs most between a real GPU and
+    // SwiftShader — is on the record for every run.
+    // eslint-disable-next-line no-console
+    console.log(
+      `[freezeframe] changed/total frames — unpatched ${changedFrames(live.prints)}/${live.prints.length - 1}` +
+      ` · gate low ${changedFrames(frozenTail)}/${frozenTail.length - 1}` +
+      ` · ${TRIGGERS} triggers ${changedFrames(trig.prints)}/${trig.prints.length - 1}` +
+      ` · held ${changedFrames(heldTail.prints)}/${heldTail.prints.length - 1}` +
+      ` · released ${changedFrames(refrozen.prints.slice(1))}/${refrozen.prints.length - 2}` +
+      ` | captures ${trig.captureCount - capBeforeTrig} for ${TRIGGERS} triggers` +
+      ` | hold qualified after ${heldElapsedMs.toFixed(1)} ms / ${warmFrames} frames`,
+    );
 
     expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
   });
@@ -578,6 +684,7 @@ test.describe('FREEZEFRAME — video sample & hold + posterize', () => {
     // FBO, then read it once (non-black + structured + exact frame delta + zero GL
     // errors). Capture the FULL-DEPTH distinct-colour count. (Replaces the old
     // waitForContent poll.)
+    await warmRenderPipeline(page);
     const fullStats = await stepAndReadStats(page, { nodeId: 'v-ff', portId: FF_PORT, steps: FIXED_STEPS });
     assertRenderStats(fullStats, FIXED_STEPS);
     const full = await readColorStats(page, 'v-ff', FF_PORT);
