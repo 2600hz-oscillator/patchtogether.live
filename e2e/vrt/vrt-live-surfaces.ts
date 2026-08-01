@@ -21,9 +21,15 @@
 //            different answer — and it cost 130 224 px of real coverage:
 //            analogVco (27.6 % of its card) and warrenspectrum (28.5 %) were
 //            masked on its say-so and BOTH pass STRICT + UNMASKED 10/10.
-//   ROUND 3  (this one) Every entry is the output of running THE REAL GATE,
-//            real config, real tolerance, ten times, against a FRESH UNMASKED
-//            baseline. The failure count and the diff pixels/ratio are quoted.
+//   ROUND 3  Every entry is the output of running THE REAL GATE, real config,
+//            real tolerance, ten times, against a FRESH UNMASKED baseline. The
+//            failure count and the diff pixels/ratio are quoted.
+//   ROUND 4  (this one) Round 3 was right about the METHOD and wrong about the
+//            INSTRUMENT, twice, in the same direction — both errors made an
+//            unstable card look stable. Both are fixed and every entry is
+//            re-derived. See "TWO MORE INSTRUMENT BUGS" below; the short
+//            version is that `--repeat-each=10` is not ten trials and
+//            `VRT_UNMASKED=1` was not measuring the shipping configuration.
 //
 // ⚠ THE CIRCULARITY TRAP, because it is what makes this easy to get wrong:
 // the committed baselines have the magenta mask BAKED IN. Remove a mask,
@@ -36,9 +42,9 @@
 //     #    a snapshot when the comparison fails, but always WRITES a missing one
 //     VRT_UNMASKED=1 npx playwright test --config=vrt/vrt.config.ts \
 //       --update-snapshots --grep '<scene>'
-//     # 2. the real gate, ten times
-//     VRT_UNMASKED=1 npx playwright test --config=vrt/vrt.config.ts \
-//       --repeat-each=10 --grep '<scene>'
+//     # 2. the real gate, N times, in N SEPARATE PROCESSES — NOT --repeat-each
+//     VRT_UNMASKED=1 E2E_PORT=5591 \
+//       scripts/vrt-derive-trials.sh '<scene>' 20
 //
 // `vrt-frame-stability.spec.ts` is RETIRED AS A SOURCE OF TRUTH. It is kept as
 // a diagnostic (its bounding box still names WHICH element moves, which is
@@ -47,29 +53,33 @@
 // gate is worse than no probe, because its output looks authoritative.
 //
 // ─────────────────────────────────────────────────────────────────────────
-// THE 2026-08-01 DERIVATION, IN FULL. darwin, real gate, fresh unmasked
-// baselines, 10 runs each. "cannot baseline" means `--update-snapshots` itself
-// could not produce an expected image — the card never reached two consecutive
-// agreeing captures — which is a STRONGER result than any n/10 rate.
+// THE 2026-08-01 DERIVATION, IN FULL, RE-RUN UNDER THE CORRECTED INSTRUMENTS.
+// darwin, real gate, real config, real tolerance, fresh unmasked baselines,
+// and — the round-4 change — N SEPARATE PLAYWRIGHT PROCESSES rather than
+// `--repeat-each=N` inside one. "cannot baseline" means `--update-snapshots`
+// itself could not produce an expected image (the card never reached two
+// consecutive agreeing captures), which is a STRONGER result than any n/N rate.
 //
 //   scene                          unmasked gate result             verdict
 //   ─────────────────────────────  ───────────────────────────────  ─────────
-//   analogVco                      10/10 PASS                       NO MASK ✂
-//   warrenspectrum (after fix ↓)   10/10 PASS                       NO MASK ✂
-//   toybox         (after fix ↓)   10/10 PASS                       NO MASK ✂
-//   dockscope                      10/10 PASS                       no mask
-//   cube                           10/10 PASS                       no mask
-//   hypercube                      10/10 PASS                       no mask
-//   reshaper                       10/10 PASS                       no mask
-//   scope                          10/10 PASS                       no mask
-//   snh-seq-scope-on               10/10 PASS                       no mask
-//   snh-seq-scope-off              10/10 PASS                       no mask
-//   vco-scope-audio-trace (NEW)    10/10 PASS                       no mask
-//   timelorde  (canvas mask)       1/10 pass, 9 FAIL                MASK ↓
-//   timelorde  (WRAP mask, final)  10/10 PASS                       MASK ↓
+//   analogVco                      10/10 processes PASS             NO MASK ✂
+//   warrenspectrum (after fix ↓)   10/10 processes PASS             NO MASK ✂
+//   toybox         (after fix ↓)   10/10 processes PASS             NO MASK ✂
+//   dockscope                      10/10 processes PASS             no mask
+//   hypercube                      10/10 processes PASS             no mask
+//   reshaper                       10/10 processes PASS             no mask
+//   scope                          10/10 processes PASS             no mask
+//   cube / snh-seq-scope-on/-off / vco-scope-audio-trace
+//                                  3 full sweeps + strict, PASS     no mask
+//   timelorde  (UNMASKED)          13/20 processes — 35 % FAIL      MASK ↓
+//   timelorde  (WRAP mask, final)  16/16 processes PASS             MASK ↓
 //   mandelbulb                     cannot baseline                  MASK ↓
 //   wavesculpt-blink-ribbons       cannot baseline                  MASK ↓
 //   wavesculpt-blink-gate-elec.    cannot baseline                  MASK ↓
+//
+// The seven `10/10 processes` rows are one command:
+//   E2E_PORT=5591 scripts/vrt-derive-trials.sh \
+//     '(analogVco|warrenspectrum|toybox|mandelbulb|dockscope|reshaper|hypercube|scope) card matches' 10
 //
 // THREE MASKS DELETED (registry 7 → 4). Two of them by FIXING THE CARD rather
 // than hiding it, which is always the better trade and is what `scope` did
@@ -116,6 +126,76 @@
 //      fix asserts the suspend actually landed instead of assuming it. This
 //      retro-explains the scope saga: `scope` needed a synthetic-buffer seed
 //      because the freeze meant to stabilise it never ran.
+//
+// ─────────────────────────────────────────────────────────────────────────
+// TWO MORE INSTRUMENT BUGS (round 4). Both were found by trying to CARRY OUT
+// an adversarial verifier's instruction to delete the timelorde mask, and both
+// erred in the same direction: they made an unstable card read as stable.
+//
+//   C. `--repeat-each=N` IS NOT N TRIALS. It is ONE playwright process, ONE
+//      browser launch, N tests. Rounds 2 and 3 justified every entry with an
+//      "n/10" from `--repeat-each=10`, and for any card whose non-determinism
+//      is latched PER BROWSER LAUNCH that measures a single draw of the
+//      lottery ten times and prints a confident 100 %.
+//
+//      MEASURED on timelorde, same card, same fresh unmasked baseline:
+//
+//        --repeat-each=10, x4 invocations   40/40 PASS   (4 real trials)
+//        20 SEPARATE PROCESSES              13/20 PASS   (35 % failure)
+//        16 separate processes, MASKED      16/16 PASS   (the control)
+//
+//      The 40/40 is real, reproducible, and wrong — an adversarial verify used
+//      exactly that number ("40/40 across 4 repeats") to conclude this mask was
+//      unjustified, and deleting it would have shipped a ~35 %-failing card
+//      into the gate. The instrument was invariant to the very dimension under
+//      test. `scripts/vrt-derive-trials.sh` is the corrected one, and it is
+//      what every row of the table above now quotes.
+//
+//   D. THE DERIVATION SWITCH WAS PERTURBING THE CARD. `VRT_UNMASKED=1` emptied
+//      the mask array but still ran the COMPANION + NEGATIVE CONTROL first —
+//      two `locator.screenshot()` captures of the surface plus a stylesheet
+//      injection that forces `opacity: 0` and back. Those are rasters and DOM
+//      mutations on the exact region under test, and the old comment in
+//      vrt-capture.ts asserted they were "orthogonal to whether the region is
+//      in the pixel diff".
+//
+//      MEASURED on timelorde, mask empty in BOTH arms, baseline regenerated in
+//      each: 20/20 PASS with the companion path, 7/20 PASS without it. So the
+//      switch was answering "is this stable after two extra rasters?" while the
+//      shipping question after you delete a registry entry is "is this stable
+//      with none of that?". Fixed in vrt-capture.ts: the companion path is now
+//      skipped under the flag, so the derivation measures what ships.
+//
+//      ⚠ C and D COMPOUND, and that is why round 3's timelorde number was so
+//      far off. Neither is visible in the output; both produce a clean 10/10.
+//
+// ─────────────────────────────────────────────────────────────────────────
+// THE OTHER GEOMETRY CHANGE: warrenspectrum 526x527 -> 527x527, EXPLAINED.
+//
+// One pixel of width, which is exactly the size at which "real layout shift"
+// and "capture artefact" are indistinguishable from the number alone — and
+// they need opposite responses. MEASURED (vrt-geom-probe.spec.ts, `warrenspectrum
+// capture geometry`, VRT_PROBE=1), spawning the card BOTH ways:
+//
+//   SOLO  (pre-scene, one node at 80,80)   x=377            width=526
+//                                          floor(377)..ceil(903)   = 526 px
+//   SCENE (vco at 60,60 + module at 520,60) x=601.0370483…  width=526.0000610…
+//                                          floor(601)..ceil(1127.037) = 527 px
+//
+// The CSS width is the same to within 6e-5 px — float error from multiplying
+// the card by the viewport's 0.974074 scale, NOT a resize. The viewport SCALE
+// is identical in both (0.974074); only the fitView TRANSLATE differs
+// (299.074 vs 94.5185), because the scene puts the module at graph x=520
+// instead of x=80. A Playwright element screenshot spans floor(left)..ceil(right)
+// in device px, so an identically-sized card at a FRACTIONAL screen x captures
+// one pixel wider than at an integral one.
+//
+// VERDICT: capture artefact of POSITION, not a layout change. The re-pin is
+// correct and nothing about the card needs fixing. The general rule, which
+// applies to every future scene: ADDING A VRT_SCENES ENTRY CAN MOVE A
+// BASELINE'S PIXEL DIMENSIONS BY ±1 WITHOUT ANYTHING RESIZING, because the
+// scene relocates the card. Expect it, and check it with the probe rather than
+// re-pinning blind — the probe prints both spawns side by side.
 //
 // ─────────────────────────────────────────────────────────────────────────
 // THE RULES (enforced by packages/web/src/lib/ui/vrt-live-surfaces.test.ts —
@@ -179,8 +259,19 @@
 //   * `timelorde`'s mask moved from the canvas to the wrap, so its linux
 //     baseline is stale too — that one also fails loudly (the magenta rect
 //     changes size).
+//   * `warrenspectrum`'s DARWIN baseline changed pixel geometry (526x527 ->
+//     527x527) purely because its new scene relocates the card — see the
+//     geometry section above. Expect the same ±1 on linux; it is not a resize,
+//     and it fails loudly (a dimension mismatch always does), so no `git rm` is
+//     needed for it.
 //   * Dispatch UNSCOPED. `-f grep=…` kills the run as `startup_failure` before
 //     any job starts.
+//   * ⚠ AND DO NOT TRUST A GREEN LINUX DISPATCH AS A DERIVATION. The masks here
+//     are derived on darwin with `scripts/vrt-derive-trials.sh`; a dispatch
+//     writes ONE capture per scene, which — per instrument bug C above — is one
+//     draw of the lottery for any card that is latched per browser launch. If a
+//     linux baseline lands and then flakes in the gate, re-derive on linux with
+//     the trials harness before touching the mask list.
 //
 // ⚠ Read each `rationale`'s force-killed row carefully before copying a floor:
 // `opacity: 0` reveals the CARD FACE, which is NOT black. Measured backdrops
@@ -300,17 +391,25 @@ export const VRT_LIVE_SURFACES: Record<string, LiveSurfaceScene> = {
           '(1) THE RENDER. The 220x220 display canvas blits the owl painting SCALED ' +
           '(drawImage with imageSmoothingEnabled), and under reducedMotion the card paints ' +
           'exactly ONE frame and stops — so whichever raster state Chromium had at that ' +
-          'instant is latched. GATE RESULT (2026-08-01, darwin, real config, real tolerance, ' +
-          'UNMASKED, 10 runs): 1 PASSED, 9 FAILED. The failures settle at a REPEATING EXACT ' +
-          'pixel count — 13 224 px (ratio 0.08) on three separate repeats, 5 212 px (ratio ' +
-          '0.03) on a fourth — and the actual PNGs of those three repeats are BYTE-IDENTICAL ' +
-          'to each other. An exact count recurring across independent runs is the signature ' +
-          'of a DISCRETE alternative render, not of drift or phase: the card has at least ' +
-          'three stable states and picks one per load. Cropping expected vs actual shows the ' +
-          'OWL BODY essentially unchanged and the BLUE BORDER/ear highlights alternating ' +
-          'between crisp+saturated and washed+ragged — two different downscale resamples of ' +
-          'one source image. The beat pulse is NOT the cause: it is pinned to 0 under ' +
-          'reducedMotion and applyBeatBoost early-returns at pulse<=0. ' +
+          'instant is latched. THIS ENTRY WAS CHALLENGED AND RE-DERIVED (see instrument bugs ' +
+          'C and D in the header): an adversarial verify measured 40/40 PASS unmasked and ' +
+          'called the mask unjustified. That number is reproducible and it was taken with ' +
+          '`--repeat-each` (one browser launch = ONE trial, counted ten times) and with the ' +
+          'companion path still perturbing the card. GATE RESULT under the corrected ' +
+          'instrument (2026-08-01, darwin, real config, real tolerance, UNMASKED, fresh ' +
+          'unmasked baseline, N SEPARATE PROCESSES via scripts/vrt-derive-trials.sh): ' +
+          '13/20 PASS — a 35 % FAILURE RATE — with failures at 9 086 / 9 560 / 10 236 / ' +
+          '10 263 / 11 739-12 284 px (ratio 0.05-0.07, budget 0.01). THE CONTROL, same ' +
+          'machine, same session, WITH this mask: 16/16 separate processes PASS, so the ' +
+          'instability is the card and not the environment. Independently confirmed by the ' +
+          'frame-stability probe: the display never settles at all — consecutive captures ' +
+          '1.2 s apart differ by a CONSTANT 25 246 px over four comparisons, bbox ' +
+          '(60,36)-(291,268) = 232x233, which is the display canvas plus its glow. A ' +
+          'constant delta at irregular spacing is period-2 alternation between two discrete ' +
+          'renders, matching the earlier finding that the OWL BODY is unchanged while the ' +
+          'BLUE BORDER/ear highlights alternate crisp+saturated vs washed+ragged — two ' +
+          'downscale resamples of one source image. The beat pulse is NOT the cause: it is ' +
+          'pinned to 0 under reducedMotion and applyBeatBoost early-returns at pulse<=0. ' +
           '(2) THE MASK MISSED THE GLOW — this is why the previous round measured timelorde ' +
           'FAILING WITH ITS MASK IN PLACE. `.display` carries ' +
           '`box-shadow: 0 0 calc(2px + 10px * --wiz-pulse)`, and a box-shadow paints OUTSIDE ' +
@@ -320,7 +419,10 @@ export const VRT_LIVE_SURFACES: Record<string, LiveSurfaceScene> = {
           'INSIDE the 214x214 magenta rect and 6 270 OUTSIDE it, in a ring (62,38)-(289,266). ' +
           'The mask was doing its job perfectly on everything it covered, and the test failed ' +
           'anyway. Moving the mask to the WRAP (which contains the canvas and the area its ' +
-          'glow paints into) takes the scene from 1/10 to 10/10. ' +
+          'glow paints into) is what takes the scene to 16/16 separate processes. Note the ' +
+          'alternating bbox measured above (232x233) is WIDER than the 214x214 canvas and ' +
+          'lands inside the wrap — an independent confirmation that the canvas-only mask ' +
+          'could not have covered it. ' +
           'TWO ROOT FIXES FOR (1) WERE TRIED AND BOTH MEASURED AS NOT WORKING: (a) awaiting ' +
           'img.decode() before owlReady instead of img.onload — the states stopped being ' +
           'byte-identical and became continuous (15 088 / 15 354 / 15 237 / 9 599 px), i.e. ' +

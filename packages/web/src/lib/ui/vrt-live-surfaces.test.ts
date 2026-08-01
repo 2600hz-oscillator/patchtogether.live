@@ -30,8 +30,9 @@
 // enforced on every PR, not just the ones that happen to run the VRT lane.
 
 import { describe, expect, it } from 'vitest';
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { existsSync, readFileSync, readdirSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, relative, resolve } from 'node:path';
 
 import {
   VRT_LIVE_SURFACES,
@@ -47,7 +48,12 @@ import {
 } from '../../../../../e2e/vrt/vrt-surface-stats';
 import { VRT_MODULE_MASKS, EXEMPT_FROM_VRT } from '../../../../../e2e/vrt/vrt-exemptions';
 import { VRT_SCENES } from '../../../../../e2e/vrt/vrt-scenes';
-import { findHandRolledMasks } from '../../../../../e2e/vrt/vrt-mask-scan';
+import {
+  findHandRolledMasks,
+  collectMaskScanTargets,
+  parseLocalImports,
+  type ScanFs,
+} from '../../../../../e2e/vrt/vrt-mask-scan';
 
 function repoRoot(): string {
   // packages/web/src/lib/ui → five hops to the repo root. Resolved from
@@ -386,14 +392,82 @@ describe('VRT live-surface registry: the instrument itself', () => {
   });
 });
 
+/** Real-filesystem adapter for the import-graph walk. */
+const REAL_FS: ScanFs = {
+  exists: existsSync,
+  read: (p) => readFileSync(p, 'utf8'),
+  resolve,
+  dirname,
+};
+
 describe('VRT masks: nobody routes around the registry', () => {
   // The ONE file allowed to build a mask array: the shared capture seam.
-  // Everything else under e2e/vrt/ is scanned — specs AND helpers, because a
-  // spec that calls `liveTextMasks(page)` from a helper module would otherwise
-  // move the mask out of the scanned file and back into the blind spot.
+  // Everything else under e2e/vrt/ is scanned — specs AND helpers.
   const SEAM = new Set(['vrt-capture.ts', 'vrt-mask-scan.ts']);
   const scannable = (): string[] =>
     readdirSync(VRT_DIR).filter((f) => f.endsWith('.ts') && !SEAM.has(f));
+
+  // ── THE SCAN SET, WIDENED ────────────────────────────────────────────────
+  //
+  // Scanning the DIRECTORY e2e/vrt/ was the hole. The comment above used to
+  // claim helpers were covered "because a spec that calls `liveTextMasks(page)`
+  // from a helper module would otherwise move the mask out of the scanned
+  // file" — true only for a helper that happens to live in e2e/vrt/. A helper
+  // ONE DIRECTORY OVER (`e2e/tests/_shot-opts.ts`) was invisible, and an
+  // adversarial verifier proved it with exactly that file while this guard
+  // stayed green.
+  //
+  // So the scan follows the IMPORT GRAPH out of e2e/vrt/ instead: a mask can
+  // only reach a `toHaveScreenshot` in the VRT lane if its file is reachable
+  // from a VRT file. Closed by construction, and it cannot fire on unrelated
+  // e2e specs (e2e/tests/toybox-node-batch.spec.ts's `params: { op: 0, mask:
+  // 170 }` is a legitimate DSP parameter and is reachable from no VRT spec).
+  //
+  // Files OUTSIDE e2e/vrt/ get NO legacy exemption: LEGACY_INLINE_MASK_SPECS
+  // is a ratchet over the specs that already existed, not a licence to open a
+  // new one somewhere the guard used not to look.
+  const importedOutsideVrtDir = (): string[] => {
+    const entries = readdirSync(VRT_DIR)
+      .filter((f) => f.endsWith('.ts'))
+      .map((f) => resolve(VRT_DIR, f));
+    return collectMaskScanTargets({ entries, fs: REAL_FS }).filter(
+      (p) => dirname(p) !== VRT_DIR,
+    );
+  };
+
+  it('the scan set REACHES OUT of e2e/vrt/ (else the widening is decorative)', () => {
+    // Negative-control the scan set itself. If this list is ever empty the
+    // import walk has silently stopped working and every assertion below is
+    // vacuous — which is precisely how the directory scan failed.
+    const outside = importedOutsideVrtDir();
+    expect(
+      outside.length,
+      'The import-graph walk found NO file outside e2e/vrt/. The VRT specs do import ' +
+        '../tests/_helpers and ../tests/_registry, so an empty result means the walk broke ' +
+        'and the out-of-directory hole is open again.',
+    ).toBeGreaterThan(0);
+    // Named, so a refactor that moves the helpers is a readable failure.
+    const rel = outside.map((p) => relative(resolve(repoRoot()), p));
+    expect(rel).toContain('e2e/tests/_helpers.ts');
+  });
+
+  it('no file OUTSIDE e2e/vrt/ that a VRT spec imports hand-rolls a mask', () => {
+    const offenders: string[] = [];
+    for (const abs of importedOutsideVrtDir()) {
+      if (!existsSync(abs)) continue;
+      const hits = findHandRolledMasks(readFileSync(abs, 'utf8'));
+      if (hits.length === 0) continue;
+      offenders.push(`${relative(resolve(repoRoot()), abs)}:${hits.map((h) => h.line).join(',')} — ${hits[0]!.text}`);
+    }
+    expect(
+      offenders,
+      'A module OUTSIDE e2e/vrt/ that a VRT spec imports builds a `mask` array. That is the ' +
+        'exact evasion this scan was widened to catch: the mask never appears in a scanned ' +
+        'spec, so the masked region has no companion and may render nothing forever. ' +
+        'Register the surface in e2e/vrt/vrt-live-surfaces.ts and capture through ' +
+        'e2e/vrt/vrt-capture.ts.',
+    ).toEqual([]);
+  });
 
   it('no VRT file hand-rolls a mask outside the capture seam (shrinking legacy list)', () => {
     const offenders: string[] = [];
@@ -474,6 +548,97 @@ describe('VRT masks: nobody routes around the registry', () => {
       expect(findHandRolledMasks(src)).toEqual([
         { line: 4, text: 'const o = { mask: [x] };' },
       ]);
+    });
+  });
+
+  // ── GUARD THE SCAN SET ───────────────────────────────────────────────────
+  //
+  // The detector fixtures above prove the scanner sees every SPELLING of a
+  // mask. They say nothing about whether the guard ever READS the file the
+  // mask is in — and that was the second, independent hole: a helper outside
+  // e2e/vrt/ was never opened, so the detector's quality was irrelevant.
+  //
+  // These fixtures rebuild the verifier's exact evasion on a synthetic tree —
+  // `e2e/tests/_shot-opts.ts` exporting a mask, imported by an
+  // `e2e/vrt/*.spec.ts` — and assert the walk reaches it. Synthetic rather
+  // than a real committed file, because committing the evasion would make the
+  // guard above go permanently red.
+  describe('the scan set (import-graph walk)', () => {
+    const fixtureTree = (): { vrtSpec: string; helper: string; root: string } => {
+      const root = mkdtempSync(resolve(tmpdir(), 'vrt-mask-scan-'));
+      mkdirSync(resolve(root, 'e2e/vrt'), { recursive: true });
+      mkdirSync(resolve(root, 'e2e/tests'), { recursive: true });
+      const helper = resolve(root, 'e2e/tests/_shot-opts.ts');
+      writeFileSync(
+        helper,
+        [
+          "import type { Locator } from '@playwright/test';",
+          'export const shotOpts = (card: Locator) => ({',
+          "  mask: [card.locator('canvas')],",
+          "  maskColor: '#ff00ff',",
+          '});',
+        ].join('\n'),
+      );
+      const vrtSpec = resolve(root, 'e2e/vrt/evader.spec.ts');
+      writeFileSync(
+        vrtSpec,
+        [
+          "import { shotOpts } from '../tests/_shot-opts';",
+          "await expect(card).toHaveScreenshot('x.png', shotOpts(card));",
+        ].join('\n'),
+      );
+      return { vrtSpec, helper, root };
+    };
+
+    it('parses the relative specifier out of an import', () => {
+      expect(parseLocalImports("import { a } from '../tests/_shot-opts';")).toEqual([
+        '../tests/_shot-opts',
+      ]);
+      expect(parseLocalImports("export * from './vrt-scenes';")).toEqual(['./vrt-scenes']);
+      expect(parseLocalImports("const m = await import('./late');")).toEqual(['./late']);
+      expect(parseLocalImports("import './side-effect';")).toEqual(['./side-effect']);
+      // A bare package is not ours to walk into.
+      expect(parseLocalImports("import { test } from '@playwright/test';")).toEqual([]);
+    });
+
+    it('REACHES a helper one directory over — the exact shape that evaded the guard', () => {
+      const { vrtSpec, helper } = fixtureTree();
+      const targets = collectMaskScanTargets({ entries: [vrtSpec], fs: REAL_FS });
+      expect(
+        targets,
+        'The walk must follow ../tests/_shot-opts out of e2e/vrt/ — a helper the guard never ' +
+          'opens is a mask the guard cannot see, however good the detector is.',
+      ).toContain(helper);
+    });
+
+    it('and the mask INSIDE that helper is then found', () => {
+      const { vrtSpec, helper } = fixtureTree();
+      const targets = collectMaskScanTargets({ entries: [vrtSpec], fs: REAL_FS });
+      const hits = targets
+        .filter((p) => existsSync(p))
+        .flatMap((p) => findHandRolledMasks(readFileSync(p, 'utf8')).map((h) => ({ p, ...h })));
+      expect(hits.map((h) => h.p)).toContain(helper);
+    });
+
+    it('NEGATIVE CONTROL: the same helper is NOT reached when nothing imports it', () => {
+      // Without this, the two tests above would pass on a walk that simply
+      // returned every .ts under the tmp root — proving reachability, not the
+      // import graph.
+      const { vrtSpec, helper, root } = fixtureTree();
+      writeFileSync(vrtSpec, "await expect(card).toHaveScreenshot('x.png');\n");
+      const targets = collectMaskScanTargets({ entries: [vrtSpec], fs: REAL_FS });
+      expect(targets).not.toContain(helper);
+      expect(targets).toEqual([vrtSpec]);
+      expect(existsSync(resolve(root, 'e2e/tests/_shot-opts.ts'))).toBe(true);
+    });
+
+    it('survives an import cycle instead of hanging', () => {
+      const root = mkdtempSync(resolve(tmpdir(), 'vrt-mask-cycle-'));
+      const a = resolve(root, 'a.ts');
+      const b = resolve(root, 'b.ts');
+      writeFileSync(a, "import './b';");
+      writeFileSync(b, "import './a';");
+      expect(collectMaskScanTargets({ entries: [a], fs: REAL_FS }).sort()).toEqual([a, b].sort());
     });
   });
 

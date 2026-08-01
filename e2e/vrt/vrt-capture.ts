@@ -82,9 +82,46 @@ export interface VrtScreenshotOptions {
  * scene that fails gets a mask justified by the FAILURE COUNT and the DIFF
  * PIXELS/RATIO of those failures — numbers produced by the gate itself.
  *
- * Companions and the negative control still run under the flag: they are
- * assertions about the region's CONTENT and are orthogonal to whether the
- * region is in the pixel diff.
+ * ⚠⚠ THE FLAG ALSO SUPPRESSES THE COMPANION + NEGATIVE CONTROL, AND THAT IS
+ * NOT AN OPTIMISATION — IT IS THE WHOLE POINT. THIS SWITCH USED TO BE THE
+ * FOURTH BROKEN INSTRUMENT IN THIS FILE'S HISTORY.
+ *
+ * Until 2026-08-01 the comment here read: "Companions and the negative control
+ * still run under the flag: they are assertions about the region's CONTENT and
+ * are orthogonal to whether the region is in the pixel diff." That sentence is
+ * FALSE, and it was false in the one direction that matters — it made the
+ * derivation switch measure a configuration THAT DOES NOT SHIP.
+ *
+ * `assertLiveSurface` is not a read. Before the strict screenshot it takes TWO
+ * `locator.screenshot()` element captures of the surface and mutates the
+ * document (injects a stylesheet forcing `opacity: 0`, reads
+ * `getComputedStyle`, then removes it). Every one of those forces a raster of
+ * the very region under test. So `VRT_UNMASKED=1` was answering
+ *
+ *     "is this region stable AFTER two extra rasters and a style mutation?"
+ *
+ * when the question the gate asks after you DELETE the registry entry is
+ *
+ *     "is this region stable with none of that?"
+ *
+ * MEASURED 2026-08-01 on `timelorde`, darwin, real config, real tolerance,
+ * fresh baseline regenerated in each configuration:
+ *
+ *   VRT_UNMASKED=1, registry entry PRESENT (companion path runs)   20/20 PASS
+ *   registry entry DELETED (the shipping config, no companion)      7/20 PASS
+ *                                                    (3/10, then 4/10)
+ *
+ * Same card, same mask (none, both times), same baseline procedure — a 100 %
+ * pass rate and a 35 % pass rate, and the only difference is whether the
+ * companion path ran first. An adversarial verify had already used the old
+ * behaviour to conclude the timelorde mask was unjustified ("40/40 PASS
+ * unmasked"); that number is real and reproducible and it measures the wrong
+ * configuration. Deleting the entry on its strength would have shipped a
+ * ~60 %-failing card into the gate.
+ *
+ * The control on this, so the reading above is not itself another artefact:
+ * timelorde WITH its registry mask is 10/10 on the same machine in the same
+ * session, so the instability is the card's, not the environment's.
  */
 function vrtUnmasked(): boolean {
   return process.env.VRT_UNMASKED === '1';
@@ -232,8 +269,14 @@ export async function expectVrtSceneScreenshot(args: {
   const { page, sceneId, target, options } = args;
   const surfaces = liveSurfacesFor(sceneId);
 
-  for (const surface of surfaces) {
-    await assertLiveSurface(sceneId, surface, page, target);
+  // Under the DERIVATION SWITCH the companion + negative control are skipped,
+  // because they PERTURB the card and would otherwise make the derivation
+  // measure a configuration that does not ship. See the `vrtUnmasked` block
+  // above for the timelorde measurement (20/20 with them, 7/20 without).
+  if (!vrtUnmasked()) {
+    for (const surface of surfaces) {
+      await assertLiveSurface(sceneId, surface, page, target);
+    }
   }
 
   const targetLocator = target as Locator;
