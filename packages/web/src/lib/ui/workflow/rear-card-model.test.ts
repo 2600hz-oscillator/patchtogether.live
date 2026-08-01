@@ -52,7 +52,7 @@ function expectTotal(def: RearDefLike): void {
 }
 
 describe('rear-card derivation — the six P1 prototypes (spec §4)', () => {
-  it('tidyVco: voice + 5 face-page bands, oscillator curated (pwm_cv), EG clusters, audio-rate ticks', () => {
+  it('tidyVco: play + 5 face-page bands, oscillator curated (pwm_cv), EG clusters, audio-rate ticks', () => {
     const plan = rearFieldPlan(tidyVcoDef as unknown as RearDefLike);
     expectTotal(tidyVcoDef as unknown as RearDefLike);
     expect(plan.holeCount).toBe(29); // 27 in + 2 out
@@ -65,14 +65,24 @@ describe('rear-card derivation — the six P1 prototypes (spec §4)', () => {
       'output',
     ]);
 
-    // voice: poly · pitch · gate (▬), domains poly/cv/gate.
-    const voice = plan.bands[0];
-    expect(voice.holes.map((h) => [h.portId, h.domain])).toEqual([
+    // The leading band is PINNED + renamed `play` (batch F) and split into the
+    // two MUTUALLY EXCLUSIVE sources: poly wins the moment any lane is gated
+    // and the mono pair goes dead. Derivation would head it `voice`, which
+    // names the band without teaching the arbitration.
+    const play = plan.bands[0];
+    expect(play.id, 'the leading-slot claim key is still `voice`').toBe('voice');
+    expect(play.label).toBe('play');
+    expect(play.holes, 'both sources are clustered — nothing loose').toEqual([]);
+    expect(play.clusters.map((c) => c.label)).toEqual(['poly bus', 'mono (fallback)']);
+    expect(
+      play.clusters.flatMap((c) => c.holes.map((h) => [h.portId, h.domain])),
+      'poly · pitch · gate (▬), domains poly/cv/gate',
+    ).toEqual([
       ['poly', 'poly'],
       ['pitch', 'cv'],
       ['gate', 'gate'],
     ]);
-    expect(voice.holes[2].edge).toBe('gate');
+    expect(play.clusters[1].holes[1].edge).toBe('gate');
 
     // oscillator: the CURATED band carries pwm_cv (its stem 'pwm' matches no
     // param — derivation alone would misfile it) labeled by FUNCTION.

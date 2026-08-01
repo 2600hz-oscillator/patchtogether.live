@@ -134,7 +134,26 @@ export const tidyVcoDef: AudioModuleDef = {
     { id: 'shape2', label: 'Shape 2', defaultValue: 0, min: 0, max: 1, curve: 'linear' },
     { id: 'pw', label: 'PW', defaultValue: 0.5, min: 0.05, max: 0.5, curve: 'linear' },
     { id: 'detune', label: 'Detune', defaultValue: 6, min: -50, max: 50, curve: 'linear', units: '¢' },
-    { id: 'oct2', label: 'Oct 2', defaultValue: 0, min: -1, max: 1, curve: 'discrete' },
+    // `options` NAMES the three octave states (PF-1). This param is `-1..1
+    // discrete`, so `looksLikeSwitch` (0..1-at-0) never sees it and it fell
+    // through to a bare rotary printing `0.00` — and the legacy card's Fader is
+    // exactly as uninformative, so the face INHERITS this weakness rather than
+    // causing it. Contract-transparent: contract-signature projects only
+    // id/min/max/curve/default/units, so naming a value cannot move
+    // contract-lock.txt (the `delay.ts` label precedent, stated verbatim there).
+    {
+      id: 'oct2',
+      label: 'Oct 2',
+      defaultValue: 0,
+      min: -1,
+      max: 1,
+      curve: 'discrete',
+      options: [
+        { value: -1, label: '-1', title: 'OSC2 one octave BELOW OSC1' },
+        { value: 0, label: '0', title: 'OSC2 in OSC1’s octave — DETUNE alone separates them' },
+        { value: 1, label: '+1', title: 'OSC2 one octave ABOVE OSC1' },
+      ],
+    },
     { id: 'mix', label: 'Mix', defaultValue: 0.5, min: 0, max: 1, curve: 'linear' },
     { id: 'sub', label: 'Sub', defaultValue: 0.15, min: 0, max: 1, curve: 'linear' },
     // ── Wavefolder (stereo, before the filter) ──
@@ -163,23 +182,56 @@ export const tidyVcoDef: AudioModuleDef = {
     { id: 'hold', label: 'Hold', defaultValue: 0, min: 0, max: 1, curve: 'discrete' },
   ],
 
-  // ── FACE — workflow-mode UI curation (RACKLINE ModuleShell, P1 rework) ──
-  // A DESIGNED ranking (owner mandate: rework, not transcription). The
-  // approved gallery mock is OSCILLATOR-FIRST — its hero band is the wave
-  // picker + a live wave-shape screen — so the SHAPE 1 morph leads and the
-  // 'waveform' glyph draws exactly what shape1 + pw sculpt:
-  //   mini    (1) shape1 — the oscillator identity next to the glyph.
-  //   compact (2 cells + glyph) + pw (the mock's tune-cluster hero). A
-  //               glyph-bearing face fits TWO whole knob columns beside the
-  //               wave screen (faceTierCap); cutoff (the diode ladder's front
-  //               door — the one always-hot filter control) joins at 'full'.
-  //   full    (6 whole plate cells — laneBodyPlan's no-clip cap) + detune and
-  //               oct2 (the mock's TUNE CLUSTER — the owner control-loss fix:
-  //               the tuning controls must stay visible in the full face, so
-  //               they rank INSIDE the 6-cell plate) + res (the squelch).
-  //   ranks 7+ fold (the West-Coast hero; bypass at its 0 default) and env
-  //               (the filter-EG sweep) — reachable in the dock faceplate,
-  //               which always renders EVERY control.
+  // ── FACE — workflow-mode UI curation (RACKLINE ModuleShell, batch F) ──
+  //
+  // THE RANKING QUESTION for a complete VA voice is not "what is this module
+  // ABOUT" — it is "what does the player's hand ride?". Batch F re-orders the
+  // SAME six lane controls the P1 face already had; nothing leaves the plate.
+  //
+  //   1 CUTOFF  the only control that is hot in EVERY patch state. A 303/VCS3
+  //             player literally rides it, and on this filter it is calibrated
+  //             to the RESONANT pitch, so it is also the self-osc tuning knob.
+  //             It outranks SHAPE because SHAPE is a setting and CUTOFF is a
+  //             gesture. (This is the mini tile's one cell.)
+  //   2 SHAPE 1 the oscillator identity, and the param the 'waveform' glyph
+  //             DRAWS — so at 'compact' the knob and its picture sit together.
+  //   3 RES     on a diode ladder resonance is a TIMBRE control, not a trim: it
+  //             compresses through the feedback squelch limiter and drops the
+  //             passband ~10 dB on the way up. That is the 303 squelch, and it
+  //             is half of what CUTOFF sounds like.
+  //   4 DETUNE  ┐ THE TUNE CLUSTER. These stay INSIDE the 6-cell plate on
+  //   5 OCT 2   ┘ purpose: faces-parity carries a dedicated regression block
+  //             ('tidyVco tune-cluster regression') asserting control-detune +
+  //             control-oct2 visible in the LANE full face AND in the dock
+  //             `oscillator` band, after an owner control-loss report. Moving
+  //             them to 7-8 would MANUFACTURE the invisibility it guards.
+  //   6 PW      DEMOTED from rank 2, on the DSP rather than on taste: the pulse
+  //             leg is gated out of the mix at the SHAPE default (`tidyOscSample`
+  //             — `const pul = s > 0 ? tidyPulse(…) : 0`, tidy-vco-dsp.ts), and
+  //             both `shape` defaults are 0, so PW is PROVABLY INERT AT SPAWN.
+  //             Rank 2 shipped the compact tile a knob that does nothing until
+  //             you move the knob beside it. ⚠ This is CHECKED, not asserted —
+  //             tidy-vco-face.test.ts renders the def's own pure-math mirror at
+  //             the defaults across PW's whole declared travel and requires a
+  //             bit-identical result, with the inverse (SHAPE at the pulse end)
+  //             as its negative control. The premise SURVIVES the in-flight
+  //             sine→tri→square SHAPE rework (feat/tidyvco-sine-tri-square):
+  //             there the square leg only enters at the TOP of the morph, and
+  //             PW's 0.5 default IS the true square, so PW is if anything MORE
+  //             inert at spawn. The test re-proves it either way.
+  //
+  //   ranks 7+ are DOCK-ONLY (LANE_PLATE_MAX_CELLS = PLATE_COLS × PLATE_MAX_ROWS
+  //             = 6): FOLD (the West-Coast hero — but a true bypass at its 0
+  //             default, so it cannot earn a lane cell it would spend doing
+  //             nothing) and ENV (the filter-EG sweep depth). The dock faceplate
+  //             always renders EVERY control, so nothing here is lost.
+  //
+  // ⚠ SIX cells = TWO plate rows, and `laneBodyPlan` drops the glyph whenever
+  // the cells need both rows (`glyph: hasGlyph && rows <= 1`). So the wave
+  // screen is a mini/compact affordance by construction; that is priced in, not
+  // discovered — a 5th cell would not buy the glyph back either (2 rows at 3
+  // cols starts at 4).
+  //
   // The tail stays grouped by section so the flat dock roster still reads as
   // signal flow (level sits with the output cluster at the end). Pages mirror
   // the mock's section bands (oscillator → wavefolder → diode filter →
@@ -187,12 +239,12 @@ export const tidyVcoDef: AudioModuleDef = {
   face: {
     order: [
       // the hero ladder (mini = 1 / compact = 2 + glyph / full-in-lane plate = 6)
-      'shape1',
-      'pw',
       'cutoff',
+      'shape1',
+      'res',
       'detune',
       'oct2',
-      'res',
+      'pw',
       'fold',
       'env',
       // dock tail — grouped by section, signal-flow order
@@ -214,6 +266,14 @@ export const tidyVcoDef: AudioModuleDef = {
       'level',
       'hold',
     ],
+    // FIVE pages, ids UNCHANGED. ⚠ `oscillator` is BOTH a page id and the id of
+    // the pinned rear group below — and that is REQUIRED, not a collision:
+    // `rearFieldPlan` walks `face.pages` and lets a curated group with the
+    // page's id CLAIM that page's band slot. Rename one without the other and
+    // the rear grows a stray appended 7-hole band while the totality gate stays
+    // green (every port still renders exactly once, just in a wrecked order).
+    // The collision that DOES bite is a page id equal to the LEADING group's id
+    // — see the `voice` group's note below, and dx7's `id:'patch'` scar.
     pages: [
       {
         id: 'oscillator',
@@ -230,6 +290,15 @@ export const tidyVcoDef: AudioModuleDef = {
         id: 'envelopes',
         label: 'envelopes',
         controls: ['fatk', 'fdec', 'fsus', 'frel', 'atk', 'dec', 'sus', 'rel'],
+        // PF-9 — this band is ONE IDEA TWICE (an ADSR for the filter, an ADSR
+        // for the amp), which is precisely the cluster case rather than the
+        // page case. The REAR already teaches the split; the front hid it
+        // behind eight unlabeled A/D/S/R knobs whose only distinguishing mark
+        // was the `F.` prefix. A sub-header costs ~14 px, a second page ~81.
+        clusters: [
+          { label: 'filter eg', controls: ['fatk', 'fdec', 'fsus', 'frel'] },
+          { label: 'amp eg', controls: ['atk', 'dec', 'sus', 'rel'] },
+        ],
       },
       { id: 'output', label: 'output', controls: ['width', 'level', 'hold'] },
     ],
@@ -260,6 +329,19 @@ export const tidyVcoDef: AudioModuleDef = {
     // that sends a patcher hunting growl that cannot exist.
     rear: {
       groups: [
+        // THE LEADING BAND. Derivation heads it `voice`, which says nothing a
+        // player can act on. The most consequential patch-time fact about this
+        // module is the ARBITRATION: while ANY poly lane is gated the chord bus
+        // drives the voices and the mono PITCH/GATE pair goes DEAD
+        // (tidy-vco-dsp.ts, the poly-wins branch). So the band is named by what
+        // you DO at it — `play` — and split into the two mutually-exclusive
+        // sources, which is a fact no amount of hole-labelling can convey.
+        //
+        // ⚠ The group id stays `voice` (the leading-slot claim key) while the
+        // LABEL carries the word. Giving it id `play` would append it AFTER the
+        // page bands instead — and none of the five page ids is `voice`, so
+        // there is no double-render here (the dx7 `patch`/`voice` scar).
+        { id: 'voice', label: 'play', ports: ['poly', 'pitch', 'gate'] },
         {
           id: 'oscillator',
           label: 'oscillator',
@@ -267,6 +349,8 @@ export const tidyVcoDef: AudioModuleDef = {
         },
       ],
       clusters: [
+        { group: 'voice', label: 'poly bus', ports: ['poly'] },
+        { group: 'voice', label: 'mono (fallback)', ports: ['pitch', 'gate'] },
         { group: 'envelopes', label: 'filter eg', ports: ['fatk_cv', 'fdec_cv', 'fsus_cv', 'frel_cv'] },
         { group: 'envelopes', label: 'amp eg', ports: ['atk_cv', 'dec_cv', 'sus_cv', 'rel_cv'] },
       ],
@@ -315,7 +399,7 @@ export const tidyVcoDef: AudioModuleDef = {
       shape2: 'OSC2 waveform morph, same law as SHAPE 1 (0 = saw, 1 = pulse).',
       pw: 'Shared pulse width for both oscillators’ pulse legs: 0.5 = square (even harmonics nulled) down to 0.05 = a thin reedy sliver. The PWM CV jack modulates around this — and can push the effective width past the knob’s square ceiling, up to 0.95.',
       detune: 'OSC2 detune in cents (±50): a few cents gives the classic two-osc VA shimmer — the pair beats at a rate proportional to the note’s frequency, so high notes shimmer faster — while large values approach quarter-tone clash.',
-      oct2: 'OSC2 octave switch: −1, 0, or +1 octave against OSC1.',
+      oct2: 'OSC2 octave switch — three states, not a sweep: −1 (an octave below OSC1), 0 (OSC1’s own octave, where DETUNE alone separates the pair into the classic two-osc shimmer) and +1 (an octave above). At ±1 the DETUNE beat rides on top of the interval rather than replacing it.',
       mix: 'Equal-power OSC1↔OSC2 balance: 0 = OSC1 only, 1 = OSC2 only.',
       sub: 'Sub-oscillator level: a band-limited square one octave below OSC1, mixed under the pair for floor weight.',
       fold: 'Stereo WAVEFOLDER amount, placed BEFORE the filter (the West-Coast timbre-into-lowpass voice): 0 is a true bypass (the voice sounds exactly as it did without the folder), and turning it up drives the osc bus into a reflecting triangle folder that reflects more times as you climb — a rising thicket of harmonics the diode ladder then shapes. The fold is antialiased (ADAA + 2× oversampling) and GENUINELY stereo: L and R fold at antiphase points (scaled by WIDTH) so the folder itself widens the image, more as FOLD rises. Very modulation-hungry — patch an envelope or LFO into the FOLD CV.',
