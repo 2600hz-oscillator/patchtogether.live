@@ -11,9 +11,20 @@
 // under e2e/vrt/__screenshots__/vrt.spec.ts/{platform}/<type>.png
 // (LFS-tracked).
 //
-// Per-module mask config (regions to fill with a uniform colour before
-// diff — animated canvases, scope sweep, etc.) lives in
-// vrt-exemptions.ts:VRT_MODULE_MASKS so the spec file stays terse.
+// MASKS come from ONE of two places, and the difference matters:
+//
+//   * e2e/vrt/vrt-live-surfaces.ts — the LIVE-SURFACE REGISTRY. Each masked
+//     region states WHY it is non-deterministic and carries a COMPANION
+//     assertion (plus a per-run negative control) so the mask cannot silently
+//     delete coverage. This is where new masks go.
+//   * vrt-exemptions.ts:VRT_MODULE_MASKS — the PRE-REGISTRY canvas-mask table.
+//     Those masks have no companion: the module is free to render nothing and
+//     still pass. It is capped by a shrinking ratchet in
+//     packages/web/src/lib/ui/vrt-live-surfaces.test.ts and exists only until
+//     each entry is migrated into the registry with a measured companion.
+//
+// A module in the registry is masked+companioned; a module in neither is
+// strict everywhere, which is the default and the strong position.
 
 import { test, expect } from '@playwright/test';
 import { spawnPatch } from '../tests/_helpers';
@@ -25,6 +36,7 @@ import {
   VRT_MODULE_MASKS,
 } from './vrt-exemptions';
 import { applyVrtScene, VRT_SCENES } from './vrt-scenes';
+import { expectVrtSceneScreenshot } from './vrt-capture';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
 
 const VRT_PLATFORM = process.platform === 'darwin' ? 'darwin' : 'linux';
@@ -162,22 +174,22 @@ test.describe('VRT: every module card matches its baseline', () => {
           }),
       );
 
-      // Resolve the masking rects on the actual rendered card. Masks
-      // come from VRT_MODULE_MASKS keyed by module type. Modules with
-      // a registered scene drop their default canvas mask — the
-      // freeze-after-suspend trick in applyVrtScene() makes the
-      // canvas pixel-stable, so it's safe (and useful) to include the
-      // rendered content in the diff.
-      const masks = mod.type in VRT_SCENES ? [] : (VRT_MODULE_MASKS[mod.type] ?? []);
-      const maskLocators = masks.map((m) => card.locator(m.selector));
+      // LEGACY masks (no companion). VRT_MODULE_MASKS keyed by module type.
+      // Modules with a registered scene drop their default canvas mask —
+      // applyVrtScene() drives the canvas with deterministic content, so the
+      // rendered pixels belong in the diff. A module in the live-surface
+      // registry is never also here (the anti-vacuity guard asserts the two
+      // tables are disjoint).
+      const legacyMasks = mod.type in VRT_SCENES ? [] : (VRT_MODULE_MASKS[mod.type] ?? []);
 
-      await expect(card).toHaveScreenshot(`${mod.type}.png`, {
-        // Mask non-deterministic regions (canvases, scope sweep, etc.)
-        // — Playwright fills them with maskColor in both baseline +
-        // actual before diffing.
-        mask: maskLocators,
-        maskColor: '#ff00ff',
-        // Animations frozen by config-level expect.toHaveScreenshot.
+      // The seam runs every registered companion + its negative control,
+      // THEN takes the strict masked screenshot. Animations are frozen by the
+      // config-level expect.toHaveScreenshot settings.
+      await expectVrtSceneScreenshot({
+        page,
+        sceneId: mod.type,
+        target: card,
+        legacyMaskSelectors: legacyMasks.map((m) => m.selector),
       });
 
       expect(errors, `${mod.type}: no console / page errors`).toEqual([]);

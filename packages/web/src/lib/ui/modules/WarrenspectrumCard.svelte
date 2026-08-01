@@ -84,6 +84,28 @@
   let canvasEl: HTMLCanvasElement | null = $state(null);
   let raf: number | null = null;
 
+  // VRT determinism seed — the same pattern as ScopeCard's `__scopeVrtSeed`,
+  // DockscopeCard's `__dockscopeVrtSeed` and ToyboxCard's `__toyboxFreeze`.
+  //
+  // The visualiser's hue cycle is driven by `snap.frame`, a MONOTONIC COUNTER
+  // incremented once per `readSnapshot()` — i.e. once per rAF of THIS loop, on
+  // the MAIN thread (see warrenspectrum.ts:readSnapshot). Suspending the
+  // AudioContext therefore does NOT freeze it, which is why the usual
+  // `freezeAudio` scene treatment cannot stabilise this card: the hue advances
+  // `0.5 + viznoise*7.5` degrees on every frame the card paints, forever.
+  //
+  // MEASURED 2026-08-01 through the REAL gate at the real tolerance, UNMASKED,
+  // 10 runs: 9 passed, 1 failed at 3 024 px / ratio 0.02 (budget 0.01) — a 10 %
+  // flake rate on a card whose registry mask deleted 28.5 % of its pixels
+  // (79 056 px) to prevent it. Pinning the frame makes it 10/10 with the whole
+  // visualiser still inside the pixel diff, which is strictly more coverage
+  // than the mask AND fewer failures. No effect in production (never set).
+  function vrtFrame(): number | null {
+    const v = (globalThis as unknown as { __warrenspectrumVrtSeed?: number })
+      .__warrenspectrumVrtSeed;
+    return typeof v === 'number' && Number.isFinite(v) ? v : null;
+  }
+
   $effect(() => {
     if (!canvasEl) return;
     function tick() {
@@ -91,8 +113,10 @@
       if (eng && node && canvasEl) {
         const snap = eng.read(node, 'snapshot') as WarrenspectrumSnapshot | undefined;
         if (snap) {
+          const pinned = vrtFrame();
+          const shown = pinned === null ? snap : { ...snap, frame: pinned };
           const ctx2d = canvasEl.getContext('2d');
-          if (ctx2d) drawWarrenspectrum(ctx2d, snap, canvasEl.width, canvasEl.height);
+          if (ctx2d) drawWarrenspectrum(ctx2d, shown, canvasEl.width, canvasEl.height);
         }
       }
       raf = requestAnimationFrame(tick);

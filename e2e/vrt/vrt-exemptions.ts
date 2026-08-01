@@ -34,19 +34,23 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // then freezes the audio so the trace is pixel-stable. Mask entry
   // intentionally absent (vrt.spec.ts ignores the mask map for
   // scene-driven modules anyway, but keeping the table accurate).
-  // SWOLEVCO carries a video-out preview canvas.
-  swolevco: [{ selector: 'canvas' }],
-  // CUBE: live rotating 3D WebGL2 render (issue #2) + snapshot-driven OUTPUT
-  // scope — both animate continuously (camera + rAF), so mask the canvases and
-  // gate on the deterministic card chrome. No VRT scene (removed; the canvas
-  // can't be pinned to a single frame). Render correctness covered elsewhere.
-  cube: [{ selector: 'canvas' }],
-  // HYPERCUBE: same as CUBE — a live rotating WebGL2 Schlegel-tesseract render +
-  // snapshot-driven OUTPUT scope, both animate continuously, so mask the
-  // canvases and gate on the deterministic card chrome.
-  hypercube: [{ selector: 'canvas' }],
-  // WARRENSPECTRUM has the acidwarp video viz canvas.
-  warrenspectrum: [{ selector: 'canvas' }],
+  //
+  // ⚠ DELETED, NOT MOVED — 10 entries were DEAD SELECTORS. Measured
+  // 2026-07-31 with the VRT_PROBE tool: spawned the way vrt.spec.ts spawns
+  // them, these cards contain ZERO <canvas> elements, so `{ selector:
+  // 'canvas' }` matched nothing and masked nothing. The entries read as "this
+  // region is handled" while the card was already being diffed in full. The
+  // canvases were removed from the cards at some point and the table was never
+  // swept. Removing them is a strict no-op at capture time.
+  //   swolevco, lines, inwards, picturebox, destructor, colorizer, videoMixer,
+  //   shapes, shapedramps, vdelay  — confirmed 0 canvases each
+  //   (`grep -c canvas <Card>.svelte` = 0 for all of them).
+  //
+  // MIGRATED to e2e/vrt/vrt-live-surfaces.ts (same mask, now with a measured
+  // companion + a per-run negative control, so the region can no longer go
+  // blank unnoticed): cube, hypercube, warrenspectrum, mandelbulb, reshaper,
+  // toybox, analogVco.
+  //
   // SAMSLOOP — loop-based WAV sample player. The waveform canvas is
   // static after upload, but unloaded shows "NO SAMPLE LOADED" text —
   // mask the canvas so the chrome diffs deterministically.
@@ -58,9 +62,6 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // TILER: live tiled-OUT preview canvas (non-deterministic per frame) — mask it;
   // the card chrome (TILE fader + PatchPanel) is VRT'd. Baseline via vrt-update.
   tiler: [{ selector: 'canvas' }],
-  // ----- video domain — every video module renders a preview canvas;
-  // mask it and assert the chrome around it.
-  lines: [{ selector: 'canvas' }],
   // VFPGA-RUNNER — host card with a live preview canvas + per-CV always-on
   // scope canvases (both animate off the card rAF), so mask every canvas and
   // gate on the deterministic chrome (preset select + param knob grid + CV
@@ -85,15 +86,9 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // card box). Mask the canvas + gate on the deterministic chrome (title,
   // IN/OUT/A·L/A·R handles, FILE field, RECORD button).
   recorderbox: [{ selector: 'canvas' }],
-  inwards: [{ selector: 'canvas' }],
-  picturebox: [{ selector: 'canvas' }],
-  destructor: [{ selector: 'canvas' }],
   chroma: [{ selector: 'canvas' }],
   luma: [{ selector: 'canvas' }],
-  colorizer: [{ selector: 'canvas' }],
   feedback: [{ selector: 'canvas' }],
-  videoMixer: [{ selector: 'canvas' }],
-  shapes: [{ selector: 'canvas' }],
   // SPIROGRAPHS — live spirograph generator with a continuously-animated OUT
   // preview canvas (each spiro's center drifts + bounces every frame off the
   // engine clock). Mask the canvas so the deterministic chrome (COUNT fader +
@@ -103,17 +98,6 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // MODULES once darwin/linux baselines are captured.
   spirographs: [{ selector: 'canvas' }],
   monoglitch: [{ selector: 'canvas' }],
-  // TOYBOX — swappable fragment-shader source. The card carries a live
-  // animated preview canvas (the layer-0 shader runs off the engine clock),
-  // so the canvas region is non-deterministic in the standard solo-spawn
-  // VRT; mask it and gate on the deterministic chrome (CONTENT dropdown +
-  // per-param faders + OUT handle). The real shader-render correctness is
-  // proven by the dedicated frozen VRT (vrt-toybox.spec.ts) which pins
-  // iTime via window.__toyboxFreeze and includes the canvas in the diff.
-  toybox: [{ selector: 'canvas' }],
-  // RESHAPER (formerly RUTTETRA): coord-remap; canvas masked (flat content
-  // when X/Y/Z unpatched).
-  reshaper: [{ selector: 'canvas' }],
   // RUTTETRA: authentic forward-scatter scope. Its canvas is INCLUDED in
   // the diff via the VRT scene (SHAPES → RUTTETRA) so the baseline proves
   // real 3D scanlines, not a flat quad. The scene auto-overrides this mask
@@ -123,8 +107,6 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // GRAPHIC EQ carries a live audio-reactive preview canvas; mask it (it is
   // also EXEMPT_FROM_VRT — animated bars defeat deterministic capture).
   graphicEq: [{ selector: 'canvas' }],
-  shapedramps: [{ selector: 'canvas' }],
-  vdelay: [{ selector: 'canvas' }],
   // FREEZEFRAME carries a live video_out preview canvas; mask it so the
   // deterministic chrome (4 QUANT knobs + VID/GATE/OUT/R/G/B/L handle rows)
   // is the regression gate. The S&H + posterize correctness is covered by
@@ -180,10 +162,6 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // E2E. Pinning the canvas as well would need a deterministic-time
   // hook on the engine clock — deferred to a follow-up.
   mandleblot: [{ selector: 'canvas' }],
-  // MANDELBULB — live ray-marched 3D fractal preview + auto-spin; mask the
-  // canvas so the deterministic chrome (6 knobs + SPIN/SCRN toggles + CV
-  // handle rows + VIDEO out) is the regression gate.
-  mandelbulb: [{ selector: 'canvas' }],
   // MIRRORPOOL — live orbit/free-look liquid-pool render (wind swell + rain
   // rings + Fresnel reflect/refract); the preview is animated + time-based, so
   // mask the canvas and let the deterministic chrome (two camera X-Y pads +
@@ -243,13 +221,15 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // (recolorization / mono-override clobber / palette remap) lives in
   // vrt-colourofmagic.spec.ts.
   colourofmagic: [{ selector: 'canvas' }],
-  // ANALOG VCO — now carries a live single-cycle waveform scope at the top of
-  // the card (off an AnalyserNode on the morph output). The trace is animated
-  // + device-/timing-dependent, so mask the canvas; the deterministic chrome
-  // (6 faders incl. the new Wave knob + the saw/square/triangle/sine/morph
-  // handle rows) is the regression gate. The morph DSP is covered by
-  // analog-vco-morph.test.ts; the scope-window logic by analog-vco-scope.test.ts.
-  analogVco: [{ selector: 'canvas' }],
+  // ANALOG VCO — MIGRATED to the live-surface registry
+  // (e2e/vrt/vrt-live-surfaces.ts). It used to live here as a bare
+  // `analogVco: [{ selector: 'canvas' }]`, which masked the single-cycle
+  // waveform scope out of the diff and asserted NOTHING about it: the card
+  // could have stopped drawing the trace entirely and the baseline would not
+  // have moved a pixel. It now carries a measured companion (ink / luminance
+  // spread / tonal structure) plus a per-run negative control. The morph DSP
+  // is still covered by analog-vco-morph.test.ts and the scope-window logic by
+  // analog-vco-scope.test.ts.
   // BACKDRAFT deliberately has NO mask entry, for TWO independent reasons —
   // and the wording here has flip-flopped with the card, so state both.
   //   (1) There is nothing on the faceplate to mask. The in-card display was
@@ -594,9 +574,10 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   vfpgaRunner: 'VRT baseline pending; host card with live preview + CV scope canvases defeats deterministic solo-spawn capture. Unit (snapshot + spec-validation) + e2e (vfpga-runner.spec.ts) provide coverage. Capture darwin/linux baselines (canvases masked) in a follow-up.',
   // MANDELBULB — promoted into MODULES (no longer exempt). The card carries
   // a live ray-marched 3D preview canvas that auto-spins by default, so the
-  // canvas region is non-deterministic; it's MASKED via VRT_MODULE_MASKS
-  // (`mandelbulb: [{ selector: 'canvas' }]`, same as MANDLEBLOT / CUBE /
-  // ACIDWARP-family video cards) and the surrounding deterministic chrome
+  // canvas region is non-deterministic; it's MASKED via the live-surface
+  // registry (e2e/vrt/vrt-live-surfaces.ts — same mask it used to have in
+  // VRT_MODULE_MASKS, now with a measured ink/spread/chroma companion so the
+  // preview cannot go blank unnoticed) and the surrounding deterministic chrome
   // (6 knobs ZOOM/ROT X/ROT Y/POWER/DETAIL/HUE + SPIN/SCRN toggles + 6 CV
   // handle rows + VIDEO out) is the regression gate. Darwin baseline captured
   // here; linux baseline pending a `task vrt:update` run on linux CI (see

@@ -540,7 +540,16 @@
        that feed, and video_out passes the feed through. Rendered on a 2D canvas
        by the renderDisplay rAF (one frozen frame under reduced-motion / VRT —
        the steady owl, no boost). The small owl thumbnail toggle shows/hides it. -->
-  <div class="wizard-wrap">
+  <!-- data-testid is the VRT mask target, and it is on the WRAP rather than on
+       the canvas for a measured reason. The canvas carries
+       `box-shadow: 0 0 calc(2px + 10px * --wiz-pulse)`, and a box-shadow paints
+       OUTSIDE the element's border box — which is outside the rect Playwright
+       fills for a mask. MEASURED 2026-08-01 with the canvas masked: 0 differing
+       pixels INSIDE the magenta rect (214x214 screen px) and 6 270 OUTSIDE it,
+       in a ring (62,38)-(289,266). The mask was doing its job perfectly and the
+       test still failed, because the glow is not in it. Masking the wrap
+       includes the glow. -->
+  <div class="wizard-wrap" data-testid={`timelorde-wizard-wrap-${id}`}>
     <button
       class="wizard-toggle"
       class:on={wizardOn}

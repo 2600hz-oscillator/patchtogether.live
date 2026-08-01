@@ -69,9 +69,37 @@ const FULL_MATCH = [
   'landing.spec.ts',
 ];
 
+// `VRT_PROBE=1` swaps the whole suite for the two MEASUREMENT tools. Neither
+// asserts anything and neither is in FULL_MATCH, so no lane picks them up by
+// accident and they cost CI nothing.
+//
+//   * vrt-frame-stability.spec.ts — does this card SETTLE? Prints the pixels
+//     that change between consecutive frames, and the bounding box of the
+//     element responsible. This is what decides whether a surface belongs in
+//     the live-surface registry at all, because `toHaveScreenshot` needs two
+//     consecutive stable captures before it will even compare.
+//   * vrt-surface-probe.spec.ts — what does the region SCORE? Prints the
+//     statistics live vs force-killed, so a companion's floors can be DERIVED
+//     from a measurement instead of guessed.
+//   * vrt-geom-probe.spec.ts — where does the CAPTURE BOX come from? Prints the
+//     element's layout box, its scroll container's box and the viewport, so a
+//     baseline whose PNG DIMENSIONS move can be explained instead of re-pinned.
+const PROBE_MATCH = [
+  'vrt-surface-probe.spec.ts',
+  'vrt-frame-stability.spec.ts',
+  'vrt-geom-probe.spec.ts',
+  'vrt-sr-probe.spec.ts',
+  'vrt-legacy-mask-audit.spec.ts',
+];
+
+function testMatch(): string[] {
+  if (process.env.VRT_PROBE === '1') return PROBE_MATCH;
+  return process.env.VRT_STRICT === '1' ? STRICT_MATCH : FULL_MATCH;
+}
+
 export default defineConfig({
   testDir: '.',
-  testMatch: process.env.VRT_STRICT === '1' ? STRICT_MATCH : FULL_MATCH,
+  testMatch: testMatch(),
   // Single-worker by design. VRT screenshots care about exact pixel
   // output; running multiple workers in parallel against the same dev
   // server creates GPU contention + paint-timing variability that
@@ -105,6 +133,38 @@ export default defineConfig({
   snapshotPathTemplate: '__screenshots__/{testFilePath}/{platform}/{arg}{ext}',
 
   expect: {
+    // ⚠⚠ THE SCREENSHOT SETTLE BUDGET LIVES HERE, NOT UNDER
+    // `toHaveScreenshot` — AND IT USED TO LIVE IN THE WRONG PLACE.
+    //
+    // `expect.toHaveScreenshot` accepts EXACTLY seven keys (Playwright 1.59
+    // types, node_modules/playwright/types/test.d.ts:191): threshold,
+    // maxDiffPixels, maxDiffPixelRatio, animations, caret, scale, stylePath,
+    // pathTemplate. There is NO `timeout`. A `timeout: 15_000` sat in that
+    // object with a 14-line comment explaining that it existed to stop
+    // `--update-snapshots` wedging on the heavy WebGL cards, and Playwright
+    // silently ignored it: the real budget was the 5000 ms default, and the
+    // regen kept wedging exactly as the comment said it would.
+    //
+    // MEASURED 2026-08-01 — the failure that exposed it, verbatim:
+    //     Timeout: 5000ms
+    //       Failed to take two consecutive stable screenshots.
+    //   mandelbulb  4082 / 3954 / 3936 px  (ratio 0.02)
+    //   toybox      5784 / 6604 / 5929 px  (ratio 0.02)
+    // "Timeout: 5000ms" against a config that says 15_000 is the whole tell.
+    //
+    // TypeScript would have rejected the excess property on sight — but the
+    // `e2e` workspace has NO `typecheck` script and NO tsconfig.json, so
+    // `npm run typecheck --workspaces --if-present` skips it entirely and
+    // NOTHING type-checks this file. That is why it survived. (Guarded now by
+    // packages/web/src/lib/ui/vrt-config-budget.test.ts, which asserts the
+    // budget is at a key Playwright actually reads and that no unknown key
+    // reappears inside toHaveScreenshot.)
+    //
+    // `expect.timeout` IS the knob: it bounds the whole assertion, which for
+    // toHaveScreenshot is the screenshot-until-two-consecutive-captures-agree
+    // retry loop. CI wall-time delta ≈ 0: only a screenshot that is ALREADY
+    // failing runs to the cap, and it then costs 15 s instead of 5 s.
+    timeout: 15_000,
     toHaveScreenshot: {
       // Tolerance budget. Browsers + GPU drivers emit sub-pixel
       // anti-aliasing differences that aren't semantically meaningful
@@ -113,13 +173,30 @@ export default defineConfig({
       // need to absorb cross-platform AA drift here — but small
       // intra-platform drift on text-heavy cards still does occur.
       //
-      // 0.2 = a pixel must differ by >20% per channel before it counts.
-      // maxDiffPixelRatio = 0.05 = up to 5% of pixels can be "different"
-      // under that per-channel threshold. Now that platform drift is
-      // factored out by the path template, this can be tightened toward
-      // 0.01 once baselines settle on each platform.
-      threshold: 0.2,
-      maxDiffPixelRatio: 0.05,
+      // 0.1 = a pixel must differ by >10% per channel before it counts.
+      // maxDiffPixelRatio = 0.01 = up to 1% of pixels may differ under that
+      // per-channel threshold.
+      //
+      // TIGHTENED 2026-07-31 from threshold 0.2 / ratio 0.05. The old comment
+      // said this "can be tightened toward 0.01 once baselines settle on each
+      // platform" — the per-platform `snapshotPathTemplate` above IS that
+      // settling, and it landed long ago; the tightening never followed.
+      //
+      // WHY IT MATTERS, measured, not theorised: at 5% a 320x240 card could
+      // change 3,840 pixels — a ~62x62 block, a whole knob — and stay green.
+      // The documented case is A2/#1213: swapping filter's MODE from a bare
+      // detented knob to a LABELLED SEGMENTED control, an entire primitive
+      // swap, moved the dock face by 865 px. Under the old budget the gate
+      // passed AND `--update-snapshots` refused to regenerate (Playwright only
+      // rewrites a snapshot when the comparison FAILS), so the change was both
+      // invisible and unfixable. `workflow-dock-patch` likewise sat inside its
+      // budget for months while still rendering v1.2.0-era chrome.
+      //
+      // The per-channel `threshold` compounds it: a pixel shifting up to 20%
+      // per channel was not counted as different AT ALL, so a colour or
+      // contrast change under that bar was invisible at ANY ratio.
+      threshold: 0.1,
+      maxDiffPixelRatio: 0.01,
       // Per-screenshot settle/capture timeout. Playwright's default is
       // 5000ms, which the heavy WebGL/animated cards (MANDLEBLOT,
       // MANDELBULB, WAVESCULPT-BLINK, …) intermittently blow on the CI
@@ -128,12 +205,10 @@ export default defineConfig({
       // the WHOLE darwin baseline regen (vrt-update.yml) before it can
       // commit, so a single heavy-card render stall (a different card
       // each dispatch — wavesculpt-blink, then mandleblot) repeatedly
-      // wedges the baseline refresh. The per-spec budget is already
-      // 30_000ms (above); raise the screenshot op to match so a slow
-      // GPU-bound settle has room instead of tripping the 5s default.
-      // This only ADDS settle headroom — it cannot turn a passing
-      // comparison into a failure (threshold/maxDiffPixelRatio unchanged).
-      timeout: 15_000,
+      // (The settle/capture budget that used to be MIS-SPELLED here as
+      // `timeout: 15_000` now lives on `expect.timeout` above, where
+      // Playwright actually reads it. See the note there.)
+      //
       // Disable animations so on-card LEDs / hover effects / running
       // visualizers don't bake non-deterministic frames into the
       // baseline. Note: this is on top of the prefers-reduced-motion

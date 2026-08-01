@@ -24,6 +24,7 @@
 import type { Page } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
 import { spawnPatch, type SpawnNode, type SpawnEdge } from '../tests/_helpers';
+import { freezeAudioContext } from './vrt-audio-freeze';
 
 export interface VrtScene {
   /** Extra nodes + the module under test. The module-under-test's id
@@ -77,11 +78,27 @@ export const VRT_SCENES: Record<string, VrtScene> = {
     freezeAudio: true,
   },
 
-  // SCOPE: drive ch1 with a 220 Hz sine (analogVco default 'sine'
-  // output, pitch defaults to 0 V/oct ≈ C4 ≈ 261 Hz). The scope's
-  // default timeMs=20 ms window holds ~5 cycles — plenty of trace
-  // pixels for the diff to mean something, but few enough that
-  // sub-cycle phase variation is bounded.
+  // SCOPE: a real analogVco sine is wired into ch1 (so the audio path is
+  // exercised), and `__scopeVrtSeed` is pinned so the trace paints a FIXED
+  // synthetic 261 Hz window instead of whichever live analyser buffer the
+  // capture happens to land on. Exactly the DOCKSCOPE pattern below.
+  //
+  // ⚠ THE SEED USED TO BE MISSING HERE, and that was the whole bug.
+  // MEASURED 2026-07-31 (darwin, tightened budget): without it, six
+  // consecutive element captures of the scope card 200 ms apart differ by
+  // ~16 000 px each, with the changing bounding box exactly the 288x293 CSS-px
+  // trace canvas — i.e. the card NEVER settles. `toHaveScreenshot` needs two
+  // consecutive stable captures before it will even compare, so the test died
+  // as "Failed to take two consecutive stable screenshots" after retrying to
+  // the 5 s timeout, while the `-actual.png` it finally wrote was byte-
+  // identical to the baseline. Suspending the AudioContext does NOT fix this:
+  // the card keeps repainting from `eng.read(node,'snapshot')` on the shared
+  // meter frame. With the seed set, the same measurement returns IDENTICAL ×5.
+  //
+  // ch2Freq: 0 makes the seeded ch2 buffer all zeros (sin(0) ≡ 0), i.e. the
+  // flat centre line an unpatched channel already showed — so the seed changes
+  // the trace's PHASE DETERMINISM and not the picture's meaning. The canvas
+  // stays fully inside the pixel diff; this is a fix, not a mask.
   scope: {
     nodes: [
       { id: 'src',   type: 'analogVco', position: { x: 60,  y: 60 }, domain: 'audio' },
@@ -96,6 +113,20 @@ export const VRT_SCENES: Record<string, VrtScene> = {
         targetType: 'audio',
       },
     ],
+    afterSpawn: async (page) => {
+      // Pin the seed BEFORE the settle so every paint is the deterministic one.
+      await page.evaluate(() => {
+        (globalThis as unknown as {
+          __scopeVrtSeed?: { ch1Freq?: number; ch2Freq?: number; ch2Phase?: number };
+        }).__scopeVrtSeed = { ch1Freq: 261, ch2Freq: 0 };
+      });
+      // A few rAFs so the seeded repaint lands before the settle window.
+      for (let i = 0; i < 3; i++) {
+        await page.evaluate(
+          () => new Promise<void>((r) => requestAnimationFrame(() => r())),
+        );
+      }
+    },
     settleMs: 300,
     freezeAudio: true,
   },
@@ -540,6 +571,93 @@ export const VRT_SCENES: Record<string, VrtScene> = {
     settleMs: 500,
     freezeAudio: true,
   },
+
+  // TOYBOX: FIXED AT THE ROOT INSTEAD OF MASKED.
+  //
+  // The layer-0 preview runs a fragment shader with iTime taken from the engine
+  // clock, so a solo spawn repaints every frame. MEASURED 2026-08-01 through
+  // the REAL gate at the real tolerance, UNMASKED: `--update-snapshots` could
+  // not even WRITE a baseline — 9 consecutive settle attempts differing 5 237-
+  // 6 783 px (ratio 0.02) and then "Failed to take two consecutive stable
+  // screenshots. Timeout 15000ms exceeded". That is stronger than an n/10
+  // failure rate: the gate cannot produce an expected image at all.
+  //
+  // But the card ALREADY SHIPS THE FIX: `__toyboxFreeze(time, seed)` pins iTime,
+  // renders one frame at that time, blits it into the on-card canvas, fills the
+  // six per-CV scope rings deterministically from `seed`, and sets `frozen` so
+  // the preview stops ticking. vrt-toybox.spec.ts has used it since the card
+  // landed and its baselines are pixel-stable. The main per-card scene simply
+  // never called it — the exact shape of the `scope` bug (`__scopeVrtSeed`
+  // existed and the scene did not set it), and the exact same remedy: pin it and
+  // keep the canvas fully inside the pixel diff. Strictly more coverage than the
+  // 4.6 % mask it replaces, because the six mini scopes AND the shader preview
+  // are now both diffed.
+  toybox: {
+    nodes: [{ id: 'vrt-1', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }],
+    edges: [],
+    afterSpawn: async (page) => {
+      // Wait for the hook to be installed (onMount) rather than assuming it.
+      await page.waitForFunction(
+        () => typeof (globalThis as { __toyboxFreeze?: unknown }).__toyboxFreeze === 'function',
+        undefined,
+        { timeout: 10_000 },
+      );
+      await page.evaluate(() => {
+        const g = globalThis as unknown as { __toyboxFreeze?: (t?: number, s?: number) => void };
+        g.__toyboxFreeze?.(2.0, 0xC0DE);
+      });
+      // A few frames so the pinned render + the frozen scope draws land.
+      for (let i = 0; i < 3; i++) {
+        await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
+      }
+    },
+    settleMs: 300,
+    freezeAudio: false,
+  },
+
+  // WARRENSPECTRUM: FIXED AT THE ROOT INSTEAD OF MASKED.
+  //
+  // The acidwarp visualiser's hue is `(snap.frame * (0.5 + viznoise*7.5)) % 360`,
+  // and `snap.frame` is incremented once per `readSnapshot()` — on the MAIN
+  // thread, once per card rAF. So `freezeAudio` is powerless here: suspending
+  // the AudioContext stops the worklet, not the counter. That is why this card
+  // was masked rather than scened.
+  //
+  // MEASURED 2026-08-01, REAL gate, UNMASKED, 10 runs: 9 passed / 1 failed at
+  // 3 024 px (ratio 0.02, budget 0.01). Pinning `frame` via the card's
+  // `__warrenspectrumVrtSeed` hook removes the drift at the source and keeps
+  // the whole 488x163 visualiser in the pixel diff — instead of masking 28.5 %
+  // of the card (79 056 px) to hide a 3 024 px flake.
+  //
+  // Audio is still driven + frozen so the BAND FLASH LEDs settle: a real VCO
+  // sine into a_in lights the band the trace is drawn from, so the baseline
+  // pins real spectral content and not an idle card.
+  warrenspectrum: {
+    nodes: [
+      { id: 'src', type: 'analogVco', position: { x: 60, y: 60 }, domain: 'audio' },
+      { id: 'vrt-1', type: 'warrenspectrum', position: { x: 520, y: 60 }, domain: 'audio' },
+    ],
+    edges: [
+      {
+        id: 'e_src_ws',
+        from: { nodeId: 'src', portId: 'sine' },
+        to: { nodeId: 'vrt-1', portId: 'a_in' },
+        sourceType: 'audio',
+        targetType: 'audio',
+      },
+    ],
+    afterSpawn: async (page) => {
+      await page.evaluate(() => {
+        (globalThis as unknown as { __warrenspectrumVrtSeed?: number })
+          .__warrenspectrumVrtSeed = 120;
+      });
+      for (let i = 0; i < 3; i++) {
+        await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
+      }
+    },
+    settleMs: 400,
+    freezeAudio: true,
+  },
 };
 
 /** Set up the rack for `type`. Returns true if a scene was applied
@@ -551,17 +669,16 @@ export async function applyVrtScene(page: Page, type: string): Promise<boolean> 
   if (scene.afterSpawn) await scene.afterSpawn(page);
   await page.waitForTimeout(scene.settleMs ?? 300);
   if (scene.freezeAudio !== false) {
-    // Suspend the AudioContext so the analyser-fed canvases freeze on
-    // their last-rendered buffer. Subsequent rAFs paint identical
-    // pixels until resume() — which we don't call. The Promise is
-    // safe to await: suspend() resolves once the audio thread has
-    // actually paused.
-    await page.evaluate(async () => {
-      const w = globalThis as unknown as { __engine?: () => { ctx: AudioContext } | null };
-      const eng = w.__engine?.();
-      if (!eng) return;
-      try { await eng.ctx.suspend(); } catch { /* already suspended / closed */ }
-    });
+    // Suspend the AudioContext so the analyser-fed canvases freeze on their
+    // last-rendered buffer, and ASSERT the suspend landed.
+    //
+    // ⚠ This block used to read `w.__engine?.()?.ctx.suspend()` inside a
+    // `catch { /* already suspended */ }`. The root engine has no `.ctx` — the
+    // AudioContext is on `getDomain('audio')` — so it threw on every call, the
+    // catch ate it, and NO VRT SCENE HAS EVER ACTUALLY FROZEN ITS AUDIO. See
+    // e2e/vrt/vrt-audio-freeze.ts for the measurement (`state=running` after
+    // the "freeze") and the full writeup.
+    await freezeAudioContext(page, `VRT scene "${type}"`);
     // Let one more rAF land so the last-pre-suspend buffer renders.
     await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
   }

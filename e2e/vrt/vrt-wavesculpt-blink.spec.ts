@@ -26,6 +26,7 @@
 import { test, expect } from '@playwright/test';
 import { spawnPatch } from '../tests/_helpers';
 import { EXEMPT_BASELINE_PAIRS } from './vrt-exemptions';
+import { expectVrtSceneScreenshot } from './vrt-capture';
 
 const VRT_PLATFORM = process.platform === 'darwin' ? 'darwin' : 'linux';
 
@@ -226,8 +227,14 @@ test.describe('VRT: WAVESCULPT BLINK render modes', () => {
         () => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r()))),
       );
 
-      await expect(card).toHaveScreenshot(`wavesculpt-blink-${c.name}.png`, {
-        maskColor: '#ff00ff',
+      // Through the shared capture seam: the two RIBBON-mode cases register a
+      // live surface (see e2e/vrt/vrt-live-surfaces.ts) and get their companion
+      // + per-run negative control here; the mode-1/2 cases register nothing
+      // and stay strict over the whole card, canvas included.
+      await expectVrtSceneScreenshot({
+        page,
+        sceneId: `wavesculpt-blink-${c.name}`,
+        target: card,
       });
 
       expect(errors, `wavesculpt blink ${c.name}: no console / page errors`).toEqual([]);
