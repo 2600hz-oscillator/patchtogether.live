@@ -30,6 +30,7 @@ import { test, expect } from '@playwright/test';
 import { COMPOSITE_VRT_SCENES } from './vrt-composite-scenes';
 import { EXEMPT_BASELINE_PAIRS } from './vrt-exemptions';
 import { expectVrtSceneScreenshot } from './vrt-capture';
+import { pinVrtFonts, awaitVrtFonts } from './_fonts';
 
 const VRT_PLATFORM = process.platform === 'darwin' ? 'darwin' : 'linux';
 
@@ -59,8 +60,16 @@ test.describe('VRT: composite-state scenes', () => {
         if (m.type() === 'error') errors.push(m.text());
       });
 
+      // Pin the bundled Inter/JetBrains Mono BEFORE the first navigation and
+      // await their decode after load — the app resolves card text through
+      // GENERIC stacks (system-ui / ui-monospace) that fontconfig picks
+      // nondeterministically, and document.fonts.ready can't see them. Without
+      // this the captured text metrics differ run-to-run and platform-to-platform.
+      // Full root cause: e2e/vrt/_fonts.ts.
+      await pinVrtFonts(page);
       await page.goto('/rack');
       await page.waitForLoadState('networkidle');
+      await awaitVrtFonts(page);
 
       await scene.setup(page);
 

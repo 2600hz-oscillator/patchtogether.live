@@ -1,0 +1,101 @@
+test(vrt): finish the font-settle sweep — 20 specs were pinning UNSETTLED system fonts
+
+#1269 fixed ONE spec. This is the systemic half: of the 37 specs under
+e2e/vrt/, only 15 called `pinVrtFonts`/`awaitVrtFonts`. The other 22 navigated
+straight to /rack and screenshotted whatever face the machine happened to
+resolve for the app's GENERIC stacks — `--font-ui: 'Inter', system-ui, …`
+(Inter is the DESIGN font but nothing ships an @font-face for it) and
+`ui-monospace, monospace` for every knob/fader/port label.
+
+WHY IT IS INVISIBLE. `document.fonts.ready` only tracks @font-face faces the
+DOCUMENT declares. System generic faces are not in that set, so it resolves
+instantly and the fallback selection sails straight through. There is no
+symptom to notice: the baseline just bakes in the capture machine's font
+choice, and every later run on a machine that chooses differently reads as a UI
+regression. The full root cause is already written up in e2e/vrt/_fonts.ts;
+this commit applies it everywhere.
+
+WHAT CHANGED. `pinVrtFonts(page)` before the first `page.goto` (it uses
+addInitScript, so the @font-face lands before first paint) and
+`awaitVrtFonts(page)` after `waitForLoadState('networkidle')` (decode + apply,
+then `document.fonts.ready`) at all 31 navigation sites in 20 specs. Two calls
+each, no other behaviour touched. vrt-composite-coverage.spec.ts is
+deliberately left alone — it belongs to #1269, which is still open.
+
+MEASURED — 80 darwin baselines regenerated, across 18 of the 20 specs:
+
+  * 49 of 80 changed DIMENSIONS. Playwright hard-fails a dimension mismatch
+    before it can even compute a diff ratio, so those baselines could never
+    have matched a differently-fonted machine at ANY tolerance. The deltas
+    cluster tightly (bundled Inter is narrower than macOS system-ui at these
+    sizes): -6x-4 px on 22 cards, -4x-4 on 9, -4x-2 on 8, -2x-2 on 3, and
+    three text-driven menus/palettes grew TALLER (+1, +6, +7 px) because
+    Inter's line boxes are taller.
+  * the other 31 diffed on pixels only, 2.51%-6.24% of the image
+    (median 4.02%) — every one far above the gate's 1% maxDiffPixelRatio.
+    None of this was noise.
+
+THE NEGATIVE CONTROL, and it is exact: vrt.spec.ts (114 darwin baselines)
+ALREADY pinned fonts and regenerated ZERO. vrt-toybox.spec.ts (27 baselines) is
+a WebGL-canvas capture and also regenerated ZERO. The 80 that moved are
+precisely the text-bearing captures that were not pinned — the hypothesis
+predicting its own control is what makes the 80 trustworthy rather than merely
+plausible. Content was reviewed by eye, not inferred: BEFORE/AFTER
+side-by-sides of representative scenes show identical controls, values and mask
+geometry, with only glyph metrics moving.
+
+VERIFIED: full VRT lane run 3x in a row against the regenerated baselines —
+264 passed / 9 skipped, zero failures, zero flakes each time. typecheck: 0
+errors.
+
+THE LINUX SIDE. Four of the twenty specs have committed linux baselines —
+playhead (9), vrt-composite (6), vrt-karplus-tomtom-states (6), vrt-clap (3) =
+24 PNGs — captured WITHOUT font pinning, so this change invalidates them.
+They are recaptured by a `vrt-update.yml -f platform=linux` dispatch on this
+branch; the baseline bot's PNGs land as a follow-on commit here.
+
+Two preconditions were checked FIRST, because both make a dispatch silently
+no-op:
+  * NONE of the 24 is listed in EXEMPT_BASELINE_PAIRS as `linux/<scene>`. A
+    listed pair is test.skip()-ed unconditionally, so --update-snapshots would
+    write nothing for it and the run would come back green having captured
+    zero. No drain was needed, and the vrt-meta ceiling therefore does not move
+    (it only shrinks, so this matters).
+  * none is at risk of the sub-tolerance trap, where a diff under the 1% ratio
+    PASSES and --update-snapshots then refuses to rewrite a stale baseline. On
+    darwin, 18 of the 24 changed DIMENSIONS (a hard fail before any ratio is
+    computed) and the other 6 diffed 4.80%-5.36%, ~5x the 1% threshold. Linux
+    fontconfig picks a face FURTHER from bundled Inter than macOS system-ui
+    (_fonts.ts records +14px width), so the linux diffs should be larger, not
+    smaller. No baseline needed `git rm`-ing to force a missing-snapshot write.
+
+WHAT I COULD NOT VERIFY, stated plainly: I regenerated the darwin baselines on
+macOS and cannot verify linux rendering from this machine — the linux PNGs are
+captured by CI, and I verify them by file count, not by eye. The required
+`vrt-strict` gate is NOT affected either way: it runs vrt.spec.ts only
+(STRICT_MATCH in vrt.config.ts), which was already pinned and did not move.
+
+AUDIT (this commit changes nothing about it): 280 darwin baselines vs 129
+linux, gap 151, every gap deliberately declared. All 48 STRICT_VRT_MODULES have
+committed baselines on BOTH platforms — the required lane has zero gaps. No
+exemption pair is added or removed, so the vrt-meta linux-deficit ratchet (119,
+only-shrinks) is untouched. (The 24 recaptured linux baselines are a RE-CAPTURE
+of existing files, not a platform deficit being closed, so they do not move the
+ceiling in either direction — the same distinction PF-8 drew.)
+
+FOUND, NOT FIXED HERE — two separate follow-ups, neither caused by nor changed
+by this commit; details and measurements in the PR body:
+  (A) the linux-deficit ratchet is blind to 62 of the 151 gaps (four
+      declaration mechanisms exist, vrt-meta counts one), and 15 of the entries
+      it DOES count name modules whose linux baseline is committed but never
+      compared, because a linux/<m> pair still test.skip()s them.
+  (B) #1159 (2026-07-22) recoloured the --cable-* tokens and regenerated only 9
+      PNGs; 19 of 34 token-pinned stripes in vrt.spec.ts/linux are off-palette,
+      8 of them inside STRICT_VRT_MODULES. The stripe is 2px ≈ 0.8% of a card,
+      under the 1% maxDiffPixelRatio, so the gate PASSES and --update-snapshots
+      refuses to rewrite it. That is the A2/#1213 hole live in the required
+      lane; the 2026-07-31 tightening does not catch it. Fix is `git rm` the
+      affected baselines and regenerate.
+
+Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01CdLERdDUo3ViQ8C8z5DqM2

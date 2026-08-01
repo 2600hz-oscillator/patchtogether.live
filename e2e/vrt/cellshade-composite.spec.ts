@@ -38,6 +38,7 @@
 import { test, expect } from '@playwright/test';
 import { spawnPatch } from '../tests/_helpers';
 import { EXEMPT_BASELINE_PAIRS } from './vrt-exemptions';
+import { pinVrtFonts, awaitVrtFonts } from './_fonts';
 
 const VRT_PLATFORM = process.platform === 'darwin' ? 'darwin' : 'linux';
 
@@ -118,8 +119,16 @@ test.describe('VRT: CELLSHADE rebuild composite scenes', () => {
         (globalThis as unknown as { __videoEngineFreezeTime?: number }).__videoEngineFreezeTime = 0;
       });
 
+      // Pin the bundled Inter/JetBrains Mono BEFORE the first navigation and
+      // await their decode after load — the app resolves card text through
+      // GENERIC stacks (system-ui / ui-monospace) that fontconfig picks
+      // nondeterministically, and document.fonts.ready can't see them. Without
+      // this the captured text metrics differ run-to-run and platform-to-platform.
+      // Full root cause: e2e/vrt/_fonts.ts.
+      await pinVrtFonts(page);
       await page.goto('/rack');
       await page.waitForLoadState('networkidle');
+      await awaitVrtFonts(page);
 
       // Hide SvelteFlow's floating chrome (minimap / controls / attribution)
       // for the capture — the vrt.spec.ts recipe (a page capture would

@@ -1,0 +1,619 @@
+[
+  {
+    "rel": "e2e/vrt/__screenshots__/groups.spec.ts/darwin/group-bare.png",
+    "kind": "DIM",
+    "note": "217x178 -> 215x176"
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/groups.spec.ts/darwin/group-with-exposed.png",
+    "kind": "DIM",
+    "note": "217x178 -> 215x176"
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/interactions.spec.ts/darwin/module-palette.png",
+    "kind": "DIM",
+    "note": "280x330 -> 280x337"
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/interactions.spec.ts/darwin/patch-panel-open.png",
+    "kind": "DIM",
+    "note": "281x92 -> 281x93"
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/interactions.spec.ts/darwin/saved-groups-picker.png",
+    "kind": "DIM",
+    "note": "520x248 -> 520x254"
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/playhead.spec.ts/darwin/drumseqz-step-0.png",
+    "kind": "DIM",
+    "note": "664x531 -> 658x527"
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/playhead.spec.ts/darwin/drumseqz-step-1.png",
+    "kind": "DIM",
+    "note": "664x531 -> 658x527"
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/playhead.spec.ts/darwin/drumseqz-step-15.png",
+    "kind": "DIM",
+    "note": "664x531 -> 658x527"
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/playhead.spec.ts/darwin/polyseqz-step-0.png",
+    "kind": "DIM",
+    "note": "796x531 -> 790x527"
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/playhead.spec.ts/darwin/polyseqz-step-1.png",
+    "kind": "DIM",
+    "note": "796x531 -> 790x527"
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/playhead.spec.ts/darwin/polyseqz-step-7.png",
+    "kind": "DIM",
+    "note": "796x531 -> 790x527"
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/playhead.spec.ts/darwin/sequencer-step-0.png",
+    "kind": "DIM",
+    "note": "530x531 -> 526x527"
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/playhead.spec.ts/darwin/sequencer-step-1.png",
+    "kind": "DIM",
+    "note": "530x531 -> 526x527"
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/playhead.spec.ts/darwin/sequencer-step-15.png",
+    "kind": "DIM",
+    "note": "530x531 -> 526x527"
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/vrt-clap.spec.ts/darwin/clap-909-dense.png",
+    "kind": "DIM",
+    "note": "796x531 -> 790x527"
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/vrt-clap.spec.ts/darwin/clap-dry-snap.png",
+    "kind": "DIM",
+    "note": "796x531 -> 790x527"
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/vrt-clap.spec.ts/darwin/clap-linn-room.png",
+    "kind": "DIM",
+    "note": "796x531 -> 790x527"
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/vrt-colourofmagic.spec.ts/darwin/com-override.png",
+    "kind": "DIM",
+    "note": "746x448 -> 741x445"
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/vrt-karplus-tomtom-states.spec.ts/darwin/karplus-bell-extreme.png",
+    "kind": "DIM",
+    "note": "530x531 -> 526x527"
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/vrt-karplus-tomtom-states.spec.ts/darwin/karplus-dark-mallet.png",
+    "kind": "DIM",
+    "note": "530x531 -> 526x527"
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/vrt-karplus-tomtom-states.spec.ts/darwin/karplus-scrape-bridge.png",
+    "kind": "DIM",
+    "note": "530x531 -> 526x527"
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/vrt-karplus-tomtom-states.spec.ts/darwin/tomtom-simmons-zap.png",
+    "kind": "DIM",
+    "note": "796x531 -> 790x527"
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/vrt-karplus-tomtom-states.spec.ts/darwin/tomtom-strike-held.png",
+    "kind": "DIM",
+    "note": "796x531 -> 790x527"
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/vrt-karplus-tomtom-states.spec.ts/darwin/tomtom-timbale-tight.png",
+    "kind": "DIM",
+    "note": "796x531 -> 790x527"
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/vrt-posterbox-states.spec.ts/darwin/posterbox-brutal-1bit.png",
+    "kind": "DIM",
+    "note": "530x531 -> 526x527"
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/vrt-posterbox-states.spec.ts/darwin/posterbox-dither-hatch.png",
+    "kind": "DIM",
+    "note": "530x531 -> 526x527"
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/vrt-posterbox-states.spec.ts/darwin/posterbox-subtle-565.png",
+    "kind": "DIM",
+    "note": "530x531 -> 526x527"
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/vrt-quadralogical.spec.ts/darwin/edge-add.png",
+    "kind": "DIM",
+    "note": "472x354 -> 468x352"
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/vrt-quadralogical.spec.ts/darwin/edge-chroma.png",
+    "kind": "DIM",
+    "note": "472x354 -> 468x352"
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/vrt-quadralogical.spec.ts/darwin/edge-diff.png",
+    "kind": "DIM",
+    "note": "472x354 -> 468x352"
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/vrt-quadralogical.spec.ts/darwin/edge-dissolve.png",
+    "kind": "DIM",
+    "note": "472x354 -> 468x352"
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/vrt-quadralogical.spec.ts/darwin/edge-iris.png",
+    "kind": "DIM",
+    "note": "472x354 -> 468x352"
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/vrt-quadralogical.spec.ts/darwin/edge-luma.png",
+    "kind": "DIM",
+    "note": "472x354 -> 468x352"
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/vrt-quadralogical.spec.ts/darwin/edge-multiply.png",
+    "kind": "DIM",
+    "note": "472x354 -> 468x352"
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/vrt-quadralogical.spec.ts/darwin/edge-wipe.png",
+    "kind": "DIM",
+    "note": "472x354 -> 468x352"
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/vrt-scope-modes.spec.ts/darwin/scope-intensity-dot.png",
+    "kind": "DIM",
+    "note": "342x512 -> 339x508"
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/vrt-scope-modes.spec.ts/darwin/scope-intensity-long.png",
+    "kind": "DIM",
+    "note": "342x512 -> 339x508"
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/vrt-scope-modes.spec.ts/darwin/scope-xy-lissajous.png",
+    "kind": "DIM",
+    "note": "240x358 -> 238x356"
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/vrt-synesthesia-video.spec.ts/darwin/copy-a-solid-red.png",
+    "kind": "DIM",
+    "note": "354x531 -> 352x527"
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/vrt-tidy-vco.spec.ts/darwin/tidyvco-acid.png",
+    "kind": "DIM",
+    "note": "708x531 -> 702x527"
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/vrt-tidy-vco.spec.ts/darwin/tidyvco-bass.png",
+    "kind": "DIM",
+    "note": "708x531 -> 702x527"
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/vrt-tidy-vco.spec.ts/darwin/tidyvco-pad.png",
+    "kind": "DIM",
+    "note": "708x531 -> 702x527"
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/vrt-wavesculpt-blink.spec.ts/darwin/wavesculpt-blink-gate-electricity.png",
+    "kind": "DIM",
+    "note": "849x531 -> 843x527"
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/vrt-wavesculpt-blink.spec.ts/darwin/wavesculpt-blink-reality-based.png",
+    "kind": "DIM",
+    "note": "849x531 -> 843x527"
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/vrt-wavesculpt-blink.spec.ts/darwin/wavesculpt-blink-reality-silent-osc.png",
+    "kind": "DIM",
+    "note": "849x531 -> 843x527"
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/vrt-wavesculpt-blink.spec.ts/darwin/wavesculpt-blink-ribbons.png",
+    "kind": "DIM",
+    "note": "849x531 -> 843x527"
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/vrt-wavesculpt-blink.spec.ts/darwin/wavesculpt-blink-scopes-enclosing-walls.png",
+    "kind": "DIM",
+    "note": "849x531 -> 843x527"
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/vrt-wavesculpt-walls.spec.ts/darwin/wavesculpt-walls-flat.png",
+    "kind": "DIM",
+    "note": "849x531 -> 843x527"
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/vrt-wavesculpt-walls.spec.ts/darwin/wavesculpt-walls-mid-distort.png",
+    "kind": "DIM",
+    "note": "849x531 -> 843x527"
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/cube-adsr-composite.spec.ts/darwin/cube-adsr-midilane.png",
+    "kind": "PIX",
+    "n": 57547,
+    "ratio": 0.062442491319444446,
+    "dims": "1280x720",
+    "rowsHit": 633,
+    "rowFrac": 0.8791666666666667,
+    "hueShift": 8583,
+    "hueFrac": 0.14914765322258328,
+    "maxChan": 241
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/vrt-composite.spec.ts/darwin/vco-scope-audio-trace.png",
+    "kind": "PIX",
+    "n": 56308,
+    "ratio": 0.06109809027777778,
+    "dims": "1280x720",
+    "rowsHit": 634,
+    "rowFrac": 0.8805555555555555,
+    "hueShift": 24028,
+    "hueFrac": 0.4267244441287206,
+    "maxChan": 241
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/vrt-composite.spec.ts/darwin/snh-seq-scope-on.png",
+    "kind": "PIX",
+    "n": 49382,
+    "ratio": 0.053582899305555556,
+    "dims": "1280x720",
+    "rowsHit": 634,
+    "rowFrac": 0.8805555555555555,
+    "hueShift": 15037,
+    "hueFrac": 0.3045036653031469,
+    "maxChan": 241
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/vrt-composite.spec.ts/darwin/mixer-cv-sum.png",
+    "kind": "PIX",
+    "n": 48008,
+    "ratio": 0.052092013888888886,
+    "dims": "1280x720",
+    "rowsHit": 634,
+    "rowFrac": 0.8805555555555555,
+    "hueShift": 12354,
+    "hueFrac": 0.25733211131478084,
+    "maxChan": 241
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/vrt-composite.spec.ts/darwin/adsr-sustain-low.png",
+    "kind": "PIX",
+    "n": 47776,
+    "ratio": 0.05184027777777778,
+    "dims": "1280x720",
+    "rowsHit": 634,
+    "rowFrac": 0.8805555555555555,
+    "hueShift": 13422,
+    "hueFrac": 0.28093603482920293,
+    "maxChan": 241
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/vrt-composite.spec.ts/darwin/adsr-sustain-high.png",
+    "kind": "PIX",
+    "n": 47547,
+    "ratio": 0.051591796875,
+    "dims": "1280x720",
+    "rowsHit": 634,
+    "rowFrac": 0.8805555555555555,
+    "hueShift": 13434,
+    "hueFrac": 0.2825414852672093,
+    "maxChan": 241
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/vrt-composite.spec.ts/darwin/snh-seq-scope-off.png",
+    "kind": "PIX",
+    "n": 46842,
+    "ratio": 0.05082682291666667,
+    "dims": "1280x720",
+    "rowsHit": 634,
+    "rowFrac": 0.8805555555555555,
+    "hueShift": 13715,
+    "hueFrac": 0.2927927927927928,
+    "maxChan": 241
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/cellshade-composite.spec.ts/darwin/cellshade-ink.png",
+    "kind": "PIX",
+    "n": 46343,
+    "ratio": 0.05028537326388889,
+    "dims": "1280x720",
+    "rowsHit": 613,
+    "rowFrac": 0.8513888888888889,
+    "hueShift": 8722,
+    "hueFrac": 0.18820533845456702,
+    "maxChan": 241
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/vrt-composite.spec.ts/darwin/scaler-cv-gain.png",
+    "kind": "PIX",
+    "n": 45105,
+    "ratio": 0.04894205729166667,
+    "dims": "1280x720",
+    "rowsHit": 634,
+    "rowFrac": 0.8805555555555555,
+    "hueShift": 13528,
+    "hueFrac": 0.29992240328123265,
+    "maxChan": 241
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/vrt-composite.spec.ts/darwin/polarizer-cv-bipolar.png",
+    "kind": "PIX",
+    "n": 44945,
+    "ratio": 0.04876844618055556,
+    "dims": "1280x720",
+    "rowsHit": 634,
+    "rowFrac": 0.8805555555555555,
+    "hueShift": 13524,
+    "hueFrac": 0.30090110134608966,
+    "maxChan": 241
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/vrt-composite.spec.ts/darwin/depolarizer-cv-unipolar.png",
+    "kind": "PIX",
+    "n": 44208,
+    "ratio": 0.04796875,
+    "dims": "1280x720",
+    "rowsHit": 634,
+    "rowFrac": 0.8805555555555555,
+    "hueShift": 13180,
+    "hueFrac": 0.2981360839667029,
+    "maxChan": 241
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/pentemelodica-composite.spec.ts/darwin/pentemelodica-midilane.png",
+    "kind": "PIX",
+    "n": 42971,
+    "ratio": 0.04662651909722222,
+    "dims": "1280x720",
+    "rowsHit": 433,
+    "rowFrac": 0.6013888888888889,
+    "hueShift": 9019,
+    "hueFrac": 0.20988573689232273,
+    "maxChan": 241
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/cellshade-composite.spec.ts/darwin/cellshade-smooth.png",
+    "kind": "PIX",
+    "n": 40205,
+    "ratio": 0.04362521701388889,
+    "dims": "1280x720",
+    "rowsHit": 613,
+    "rowFrac": 0.8513888888888889,
+    "hueShift": 8601,
+    "hueFrac": 0.21392861584380052,
+    "maxChan": 241
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/vrt-composite.spec.ts/darwin/nibbles-cv-max.png",
+    "kind": "PIX",
+    "n": 37296,
+    "ratio": 0.04046875,
+    "dims": "1280x720",
+    "rowsHit": 633,
+    "rowFrac": 0.8791666666666667,
+    "hueShift": 9015,
+    "hueFrac": 0.2417149292149292,
+    "maxChan": 241
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/vrt-composite.spec.ts/darwin/nibbles-cv-25.png",
+    "kind": "PIX",
+    "n": 37028,
+    "ratio": 0.04017795138888889,
+    "dims": "1280x720",
+    "rowsHit": 633,
+    "rowFrac": 0.8791666666666667,
+    "hueShift": 8762,
+    "hueFrac": 0.23663173814410715,
+    "maxChan": 241
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/vrt-composite.spec.ts/darwin/nibbles-cv-75.png",
+    "kind": "PIX",
+    "n": 37011,
+    "ratio": 0.040159505208333335,
+    "dims": "1280x720",
+    "rowsHit": 633,
+    "rowFrac": 0.8791666666666667,
+    "hueShift": 9014,
+    "hueFrac": 0.24354921509821403,
+    "maxChan": 241
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/vrt-composite.spec.ts/darwin/nibbles-cv-min.png",
+    "kind": "PIX",
+    "n": 36742,
+    "ratio": 0.03986762152777778,
+    "dims": "1280x720",
+    "rowsHit": 633,
+    "rowFrac": 0.8791666666666667,
+    "hueShift": 8476,
+    "hueFrac": 0.23068967394262696,
+    "maxChan": 241
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/vrt-composite.spec.ts/darwin/nibbles-cv-50.png",
+    "kind": "PIX",
+    "n": 36435,
+    "ratio": 0.039534505208333334,
+    "dims": "1280x720",
+    "rowsHit": 633,
+    "rowFrac": 0.8791666666666667,
+    "hueShift": 8727,
+    "hueFrac": 0.2395224372169617,
+    "maxChan": 241
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/interactions.spec.ts/darwin/node-context-menu.png",
+    "kind": "PIX",
+    "n": 1484,
+    "ratio": 0.039038249066133526,
+    "dims": "166x229",
+    "rowsHit": 227,
+    "rowFrac": 0.9912663755458515,
+    "hueShift": 15,
+    "hueFrac": 0.010107816711590296,
+    "maxChan": 160
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/vrt-synesthesia-composite.spec.ts/darwin/vco-261-band2.png",
+    "kind": "PIX",
+    "n": 35933,
+    "ratio": 0.03898980034722222,
+    "dims": "1280x720",
+    "rowsHit": 547,
+    "rowFrac": 0.7597222222222222,
+    "hueShift": 12476,
+    "hueFrac": 0.34720173656527425,
+    "maxChan": 241
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/interactions.spec.ts/darwin/palette-vcos.png",
+    "kind": "PIX",
+    "n": 4606,
+    "ratio": 0.038078703703703705,
+    "dims": "280x432",
+    "rowsHit": 171,
+    "rowFrac": 0.3958333333333333,
+    "hueShift": 0,
+    "hueFrac": 0,
+    "maxChan": 210
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/cellshade-composite.spec.ts/darwin/cellshade-bands.png",
+    "kind": "PIX",
+    "n": 31253,
+    "ratio": 0.033911675347222225,
+    "dims": "1280x720",
+    "rowsHit": 613,
+    "rowFrac": 0.8513888888888889,
+    "hueShift": 6567,
+    "hueFrac": 0.2101238281125012,
+    "maxChan": 241
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/vrt-colourofmagic.spec.ts/darwin/com-palette.png",
+    "kind": "PIX",
+    "n": 11366,
+    "ratio": 0.03272486467810665,
+    "dims": "760x457",
+    "rowsHit": 419,
+    "rowFrac": 0.9168490153172867,
+    "hueShift": 3310,
+    "hueFrac": 0.29121942635931725,
+    "maxChan": 237
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/vrt-colourofmagic.spec.ts/darwin/com-ydbdr.png",
+    "kind": "PIX",
+    "n": 10971,
+    "ratio": 0.031587584936082,
+    "dims": "760x457",
+    "rowsHit": 419,
+    "rowFrac": 0.9168490153172867,
+    "hueShift": 2784,
+    "hueFrac": 0.2537599124965819,
+    "maxChan": 228
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/vrt-colourofmagic.spec.ts/darwin/com-pass.png",
+    "kind": "PIX",
+    "n": 10935,
+    "ratio": 0.03148393412415064,
+    "dims": "760x457",
+    "rowsHit": 419,
+    "rowFrac": 0.9168490153172867,
+    "hueShift": 2754,
+    "hueFrac": 0.2518518518518518,
+    "maxChan": 242
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/vrt-colourofmagic.spec.ts/darwin/com-rgb.png",
+    "kind": "PIX",
+    "n": 10925,
+    "ratio": 0.03145514223194748,
+    "dims": "760x457",
+    "rowsHit": 420,
+    "rowFrac": 0.9190371991247265,
+    "hueShift": 2683,
+    "hueFrac": 0.24558352402745995,
+    "maxChan": 234
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/vrt-colourofmagic.spec.ts/darwin/com-ycc.png",
+    "kind": "PIX",
+    "n": 10919,
+    "ratio": 0.03143786709662559,
+    "dims": "760x457",
+    "rowsHit": 419,
+    "rowFrac": 0.9168490153172867,
+    "hueShift": 2693,
+    "hueFrac": 0.24663430717098636,
+    "maxChan": 228
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/vrt-colourofmagic.spec.ts/darwin/com-yiq.png",
+    "kind": "PIX",
+    "n": 10913,
+    "ratio": 0.031420591961303694,
+    "dims": "760x457",
+    "rowsHit": 419,
+    "rowFrac": 0.9168490153172867,
+    "hueShift": 2713,
+    "hueFrac": 0.24860258407404012,
+    "maxChan": 242
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/vrt-colourofmagic.spec.ts/darwin/com-hsv.png",
+    "kind": "PIX",
+    "n": 10911,
+    "ratio": 0.031414833582863066,
+    "dims": "760x457",
+    "rowsHit": 420,
+    "rowFrac": 0.9190371991247265,
+    "hueShift": 2650,
+    "hueFrac": 0.24287416368802126,
+    "maxChan": 242
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/vrt-colourofmagic.spec.ts/darwin/com-yiq-i-tap.png",
+    "kind": "PIX",
+    "n": 10715,
+    "ratio": 0.030850512495681215,
+    "dims": "760x457",
+    "rowsHit": 419,
+    "rowFrac": 0.9168490153172867,
+    "hueShift": 2526,
+    "hueFrac": 0.23574428371441905,
+    "maxChan": 228
+  },
+  {
+    "rel": "e2e/vrt/__screenshots__/interactions.spec.ts/darwin/port-context-menu.png",
+    "kind": "PIX",
+    "n": 316,
+    "ratio": 0.02507936507936508,
+    "dims": "200x63",
+    "rowsHit": 27,
+    "rowFrac": 0.42857142857142855,
+    "hueShift": 32,
+    "hueFrac": 0.10126582278481013,
+    "maxChan": 214
+  }
+]
