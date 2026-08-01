@@ -25,6 +25,7 @@
 // platform-agnostic; DOOM is gated on the WASM asset (skip-clean when
 // missing).
 
+import { pinVrtFonts, awaitVrtFonts } from './_fonts';
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from '../tests/_helpers';
 
@@ -189,8 +190,10 @@ test.describe('VRT: video→audio CV/gate composite pairs (#414 regression cover
         `${pair.id} on linux: composite baseline pending (capture on linux CI)`,
       );
 
+      await pinVrtFonts(page);
       await page.goto('/rack');
       await page.waitForLoadState('networkidle');
+      await awaitVrtFonts(page);
 
       if (pair.gatedOnDoomWasm) {
         const present = await doomWasmPresent(page);
