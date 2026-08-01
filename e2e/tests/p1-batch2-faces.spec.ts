@@ -38,7 +38,19 @@ import { spawnPatch } from './_helpers';
 const BATCH2 = [
   {
     type: 'dx7',
-    pages: ['patch', 'performance', 'master adsr', 'cartridge'],
+    // ⚠ These are the page LABELS, not the ids — the dock band renders
+    // `label`. dx7's first page is `{ id: 'patch', label: 'voice' }`: the ID was
+    // deliberately moved off 'voice' because `rearFieldPlan` claims a curated
+    // rear group per page id, and this module's rear curation already owns
+    // `{ id: 'voice' }` — a collision renders that band TWICE and trips the
+    // rear-totality gate. The user-facing word stayed in the label, which is
+    // the half that renders and therefore the half this spec must expect.
+    //
+    // Reshaped by the voice-edit-buffer PR: 'cartridge' folded into the first
+    // page (which now carries both the preset select and the .syx input), and
+    // the new `feedback` param brought an 'algorithm · operators' page. Still
+    // four pages, different set.
+    pages: ['voice', 'algorithm · operators', 'performance', 'master adsr'],
     holes: 4,
     /** A param the lane face must NOT be showing as a legacy card control. */
     laneParam: 'algorithm',

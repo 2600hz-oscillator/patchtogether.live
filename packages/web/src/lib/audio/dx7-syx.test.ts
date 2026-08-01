@@ -433,6 +433,38 @@ describe('parseSyxBank — full 4104-byte cartridge', () => {
     const result = parseSyxBank(fixture);
     expect(result.voices[0]?.transpose).toBe(24);
   });
+
+  it('KEEPS the raw coarse/fine bytes instead of discarding them', () => {
+    // The parser used to read these two bytes, derive `ratio`, and throw them
+    // away — so an imported cartridge reached the operator panel with nothing
+    // for the PITCH row to edit. The fixture sets coarse = opNumInVoice + 1
+    // and fine = 0 in STORAGE order (op6 first), so after the reverse
+    // operators[0] (= op1) is coarse 1 and operators[5] (= op6) is coarse 6.
+    const v = parseSyxBank(fixture).voices[0]!;
+    expect(v.operators.map((o) => o.coarse)).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(v.operators.map((o) => o.fine)).toEqual([0, 0, 0, 0, 0, 0]);
+    // …and they agree with the derived values the engine reads.
+    for (let i = 0; i < 6; i++) {
+      const o = v.operators[i]!;
+      expect(dx7Ratio(o.coarse!, o.fine!), `op${i + 1} ratio`).toBeCloseTo(o.ratio, 12);
+      expect(dx7FixedHz(o.coarse!, o.fine!), `op${i + 1} fixedHz`).toBeCloseTo(o.fixedHz!, 12);
+    }
+  });
+
+  it('round-trips a NON-ZERO fine byte, including one that aliases a lower base', () => {
+    // ×3.00 is both (3, 0) and (2, 50). Storing the bytes is the only way the
+    // panel can show which one the cartridge actually holds — the ratio alone
+    // cannot distinguish them, which is exactly why the parser keeps them.
+    const bank = buildFixtureSyx();
+    const payload = bank.subarray(6, 4102);
+    // Voice 0, storage op index 5 (= op1 after the reverse): coarse 2, fine 50.
+    payload[5 * 17 + 15] = 2 << 1;
+    payload[5 * 17 + 16] = 50;
+    bank[4102] = computeChecksum(payload);
+    const op1 = parseSyxBank(bank).voices[0]!.operators[0]!;
+    expect({ coarse: op1.coarse, fine: op1.fine }).toEqual({ coarse: 2, fine: 50 });
+    expect(op1.ratio).toBeCloseTo(3, 12);
+  });
 });
 
 describe('parseSyxBank — flexible inputs', () => {
@@ -538,6 +570,25 @@ describe('parseSyxBank — real-world AAAHGOOD.SYX cartridge', () => {
     for (const v of result.voices) {
       expect(v.operators).toHaveLength(6);
     }
+  });
+
+  it('every operator carries raw coarse/fine, and REAL cartridges use the fine byte', () => {
+    // A real bank is the honest check that keeping the bytes is worth it: if
+    // every operator in the wild were fine = 0 the ratio inverse would be
+    // lossless and this whole field pair unnecessary. It is not — assert the
+    // cartridge actually exercises fine, and that a non-trivial number of its
+    // pairs are ALIASES the inverse could not have recovered.
+    const voices = parseSyxBank(fixture).voices;
+    let nonZeroFine = 0;
+    for (const v of voices) {
+      for (const o of v.operators) {
+        expect(typeof o.coarse).toBe('number');
+        expect(typeof o.fine).toBe('number');
+        expect(dx7Ratio(o.coarse!, o.fine!)).toBeCloseTo(o.ratio, 12);
+        if (o.fine! > 0) nonZeroFine++;
+      }
+    }
+    expect(nonZeroFine).toBeGreaterThan(0);
   });
 });
 

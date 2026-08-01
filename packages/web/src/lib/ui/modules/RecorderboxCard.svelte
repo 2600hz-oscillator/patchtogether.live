@@ -741,9 +741,28 @@
     font-family: ui-monospace, monospace; letter-spacing: 0.02em;
   }
   .badge.subtle { color: var(--text-dim); }
+  /* The recovery prompt is an OVERLAY, not flow content.
+   *
+   * The card's height is HARD-PINNED by the rack tier — `_module-card.css`
+   * sets `height/min-height/max-height: calc(var(--rack-u) * var(--rack-unit))`
+   * on `.card` (recorderbox is 2u), and `.card` is `overflow: hidden`. Appended
+   * at the end of the flow the prompt landed BELOW that pinned box, so its Save
+   * and Discard buttons were clipped away and the recovery was unreachable —
+   * the user could see "Recover unsaved recording?" and could not act on it.
+   * Growing the card is not an option: the tier pin is what keeps lane geometry
+   * from thrashing on zoom.
+   *
+   * So it floats over the preview well, which is idle whenever a recovery is
+   * pending (you are not recording). Opaque, not translucent — this is a
+   * blocking question, and the controls behind it must not read as live. */
   .recover {
-    margin-top: 10px; padding: 8px; border: 1px dashed var(--accent-dim);
-    border-radius: 4px; background: rgba(255,255,255,0.03);
+    position: absolute;
+    left: 12px; right: 12px; top: 42px;
+    z-index: 6;
+    padding: 8px; border: 1px dashed var(--accent-dim);
+    border-radius: 4px;
+    background: var(--module-bg);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.55);
   }
   .recover-title { margin: 0 0 6px; font-size: 0.66rem; color: var(--accent); }
   .recover-row { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
