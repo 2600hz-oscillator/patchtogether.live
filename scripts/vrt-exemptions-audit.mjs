@@ -9,20 +9,32 @@
 // on that platform DESPITE a committed baseline — silent coverage loss. This
 // script cross-checks each pair against the baseline PNG on disk:
 //
-//   STALE   — vrt.spec.ts baseline EXISTS → the pair is dead weight; the card is
-//             skipped though it has a committed baseline. DROP the pair (restores
+//   STALE   — a baseline EXISTS → the pair is dead weight; the scene is skipped
+//             though it has a committed baseline. DROP the pair (restores
 //             coverage). This is the actionable list.
-//   PENDING — no vrt.spec.ts baseline → genuinely pending (or a composite/scope
-//             SCENE pair whose baseline lives under a different spec dir; this
-//             audit only resolves plain module-card pairs). Land it via
-//             `task vrt:commit`.
+//   PENDING — no baseline anywhere → genuinely pending. Land it via
+//             `task vrt:commit` / a vrt-update.yml dispatch.
+//
+// ⚠ 2026-08-01: this audit used to resolve ONLY
+// `__screenshots__/vrt.spec.ts/<platform>/<id>.png`, so a composite/scene pair
+// whose PNG lives under its own spec dir was reported as PENDING even when the
+// baseline was sitting right there — it under-reported STALE by 3 (the
+// darwin/wavesculpt-blink-* quarantines). It now indexes EVERY spec dir. Same
+// blindness class as the linux-deficit ratchet fixed in the same commit: a
+// checker that looks in one directory cannot speak for the tree.
+//
+// ⚠ This script reports on ONE of the FOUR mechanisms that take a scene dark on
+// a platform (the shared EXEMPT_BASELINE_PAIRS Set). For the full picture —
+// spec-local pair sets, blanket `VRT_PLATFORM === 'linux'` skips and the
+// `darwinOnly` scene flag — see e2e/vrt/vrt-platform-gaps.ts, which is what the
+// vrt-meta linux-deficit ratchet reads.
 //
 // The vrt-meta.test.ts "STALE EXEMPT_BASELINE_PAIRS ratchet" enforces the STALE
 // count toward zero so new rot can't accrue. This command just lists the
 // offenders for the cleanup pass. Exit 0 always (read-only).
 
-import { existsSync, readFileSync } from 'node:fs';
-import { resolve, dirname } from 'node:path';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -36,25 +48,36 @@ const pairs = [
   ...new Set([...block.matchAll(/['"]((?:linux|darwin)\/[^'"]+)['"]/g)].map((m) => m[1])),
 ].sort();
 
-const baselinePath = (type, platform) =>
-  resolve(root, `e2e/vrt/__screenshots__/vrt.spec.ts/${platform}/${type}.png`);
+// Index EVERY committed baseline as `<platform>/<id>`, across every spec dir —
+// NOT just vrt.spec.ts. `stalePair -> which spec dir holds its PNG` is reported
+// so the reader can go straight to it.
+const shotRoot = resolve(root, 'e2e/vrt/__screenshots__');
+const committed = new Map(); // `<platform>/<id>` -> spec dir
+if (existsSync(shotRoot)) {
+  for (const spec of readdirSync(shotRoot).sort()) {
+    for (const platform of ['linux', 'darwin']) {
+      const dir = join(shotRoot, spec, platform);
+      if (!existsSync(dir)) continue;
+      for (const f of readdirSync(dir)) {
+        if (f.endsWith('.png')) committed.set(`${platform}/${f.slice(0, -4)}`, spec);
+      }
+    }
+  }
+}
 
 const stale = [];
 const pending = [];
-for (const p of pairs) {
-  const [platform, type] = p.split('/');
-  (existsSync(baselinePath(type, platform)) ? stale : pending).push(p);
-}
+for (const p of pairs) (committed.has(p) ? stale : pending).push(p);
 
 const linux = (xs) => xs.filter((p) => p.startsWith('linux/')).length;
 
 console.log(`VRT exemption audit — EXEMPT_BASELINE_PAIRS: ${pairs.length} total`);
 console.log(`  linux pairs: ${linux(pairs)}   darwin pairs: ${pairs.length - linux(pairs)}\n`);
 
-console.log(`STALE — baseline already committed, card needlessly skipped (DROP the pair): ${stale.length}`);
-for (const p of stale) console.log(`  ✗ ${p}`);
+console.log(`STALE — baseline already committed, scene needlessly skipped (DROP the pair): ${stale.length}`);
+for (const p of stale) console.log(`  ✗ ${p}   (PNG under __screenshots__/${committed.get(p)}/)`);
 
-console.log(`\nPENDING/scene — no vrt.spec.ts baseline yet (land via \`task vrt:commit\`): ${pending.length}`);
+console.log(`\nPENDING — no baseline on that platform in ANY spec dir (land via \`task vrt:commit\`): ${pending.length}`);
 for (const p of pending) console.log(`  · ${p}`);
 
 if (stale.length) {

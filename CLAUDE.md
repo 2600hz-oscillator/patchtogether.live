@@ -190,6 +190,45 @@ Three dispatch gotchas, all confirmed on real runs:
   invisible to both the gate and the regen. Treat a "green dispatch that
   committed nothing" as a RED FLAG to investigate, never as "nothing to do".
 
+### A platform gap is declared FOUR ways — `EXEMPT_BASELINE_PAIRS` is only one
+
+CI renders on **linux**. A scene captured on darwin but skipped on linux gives
+ZERO protection while still counting as "covered" everywhere. That deficit is
+declared through **four** separate mechanisms, and for months the ratchet read
+one of them:
+
+| # | mechanism | where | gaps (2026-08-01) |
+|---|---|---|---|
+| A | `'linux/<scene>'` in the SHARED `EXEMPT_BASELINE_PAIRS` | `e2e/vrt/vrt-exemptions.ts` | 89 |
+| B | a **private** `const EXEMPT_BASELINE_PAIRS` inside a spec | 4 spec files | 10 |
+| C | `test.skip(VRT_PLATFORM === 'linux', …)` — blanket, no list | 8 spec files | 49 |
+| D | `darwinOnly: true` on a `CompositeVrtScene` | `e2e/vrt/vrt-composite-scenes.ts` | 3 |
+
+**Measured: 151 real gaps, 89 seen, 62 invisible — and the number it printed was
+119**, matching neither, because 30 of its entries named scenes that were not
+gaps at all. A count of *declarations* was being read as a count of *gaps*, so
+it was wrong in both directions at once. Nothing failed; every assertion it made
+was true about the one list it read.
+
+- **Enumerate mechanisms in ONE place.** `e2e/vrt/vrt-platform-gaps.ts` reads
+  all four; `vrt-meta.test.ts` ratchets its total (≤151, only shrinks) and fails
+  with a per-mechanism breakdown. **A bare number is what let this hide** — name
+  the contributors in the message.
+- **Anchor the metric to the ARTIFACT, not the list.** Ground truth is a darwin
+  PNG with no linux sibling; the mechanisms must then *explain* each gap. A gap
+  nobody declares is UNDECLARED → red. Adding a fifth mechanism without teaching
+  the enumerator fails automatically.
+- **A pair whose PNG is already committed is a DEADLOCK, not just waste.** The
+  pair is consulted before the PNG, so the scene is skipped despite the
+  baseline — and `--update-snapshots` writes nothing for a skipped test, so the
+  "re-capture then drop the pair" plan it waits on can never run. 15 of these
+  were drained on 2026-08-01; the stale ratchet is now capped at the 4 tracked
+  flake quarantines.
+- **A checker that resolves ONE directory cannot speak for the tree.** Both the
+  stale ratchet and `scripts/vrt-exemptions-audit.mjs` only ever built the
+  `__screenshots__/vrt.spec.ts/…` path, so stale *scene* pairs under other spec
+  dirs were structurally invisible. Widening them found 4 more immediately.
+
 ## Worktrees: hard cap of 10
 
 This repo accumulates abandoned `isolation: worktree` agent checkouts fast — each

@@ -11,7 +11,7 @@ source tree, so they cannot go stale. Prose + roadmap: `docs/testing/README.md`.
 | Bucket | What | Count |
 | --- | --- | ---: |
 | 1 | HARD SKIPS / QUARANTINES (backlog → drive to 0) | 6 |
-| 2 | COVERAGE EXEMPTIONS (deliberate auto-enrollment opt-outs) | 527 |
+| 2 | COVERAGE EXEMPTIONS (deliberate auto-enrollment opt-outs) | 512 |
 | 3 | INFORMATIONAL-ONLY CI LANES (run, never block merge) | 5 |
 
 ## CI gating truth (from `.github/workflows/ci.yml`)
@@ -46,7 +46,7 @@ _none_
 ### spawn-smoke QUARANTINE map (e2e/tests/modules.spec.ts) — 1
 - `toybox` — task #102: SwiftShader software-renderer timeout (heavy WebGL)
 
-## Bucket 2 — coverage exemptions (527)
+## Bucket 2 — coverage exemptions (512)
 
 Declarative auto-enrollment opt-out lists. A module opted out of a UNIVERSAL
 sweep still carries dedicated coverage (a bespoke spec / unit core / ART). These
@@ -474,7 +474,7 @@ tracked-to-zero backlog (reconcile = fix or delete); see the roadmap.
 - `toybox.inA` — video input only drives output when a layer selects it as its source
 - `toybox.inB` — video input only drives output when a layer selects it as its source
 
-### `EXEMPT_BASELINE_PAIRS` (127) — per-<platform>/<scene> VRT baseline pairs deferred (pending a vrt-update capture)
+### `EXEMPT_BASELINE_PAIRS` (112) — per-<platform>/<scene> VRT baseline pairs deferred (pending a vrt-update capture)
 <sub>e2e/vrt/vrt-exemptions.ts</sub>
 - `darwin/mirrorpool`
 - `darwin/mirrorpool-mirror`
@@ -484,9 +484,7 @@ tracked-to-zero backlog (reconcile = fix or delete); see the roadmap.
 - `darwin/wavesculpt-blink-custom-colors`
 - `darwin/wavesculpt-blink-scopes-trial`
 - `darwin/wavesculpt-blink-scopes-trial-wiggle`
-- `linux/analogVco`
 - `linux/aspect16x9-output`
-- `linux/audioOut`
 - `linux/cellshade`
 - `linux/cellshade-bands`
 - `linux/cellshade-ink`
@@ -526,17 +524,13 @@ tracked-to-zero backlog (reconcile = fix or delete); see the roadmap.
 - `linux/face-tomtom-compact`
 - `linux/face-tomtom-dock`
 - `linux/featurecv`
-- `linux/feedback`
 - `linux/flipper`
 - `linux/foxy`
 - `linux/freezeframe`
 - `linux/hypercube`
 - `linux/kickdrum`
 - `linux/kria`
-- `linux/lfo`
-- `linux/lines`
 - `linux/lushgarden`
-- `linux/macrooscillator`
 - `linux/mandelbulb`
 - `linux/mandleblot`
 - `linux/mapper`
@@ -544,7 +538,6 @@ tracked-to-zero backlog (reconcile = fix or delete); see the roadmap.
 - `linux/mirrorpool-mirror`
 - `linux/mirrorpool-refract`
 - `linux/mirrorpool-storm`
-- `linux/monoglitch`
 - `linux/nibbles`
 - `linux/nibbles-cv-25`
 - `linux/nibbles-cv-50`
@@ -568,12 +561,9 @@ tracked-to-zero backlog (reconcile = fix or delete); see the roadmap.
 - `linux/ringback`
 - `linux/ruttetra`
 - `linux/sampleHold`
-- `linux/samsloop`
-- `linux/scope`
 - `linux/scope-intensity-dot`
 - `linux/scope-intensity-long`
 - `linux/scope-xy-lissajous`
-- `linux/shapedramps`
 - `linux/snaredrum`
 - `linux/spectrograph`
 - `linux/stages`
@@ -583,7 +573,6 @@ tracked-to-zero backlog (reconcile = fix or delete); see the roadmap.
 - `linux/tidyvco-acid`
 - `linux/tidyvco-bass`
 - `linux/tidyvco-pad`
-- `linux/timelorde`
 - `linux/toybox`
 - `linux/toybox-combine-composite`
 - `linux/toybox-combine-editor`
@@ -595,10 +584,6 @@ tracked-to-zero backlog (reconcile = fix or delete); see the roadmap.
 - `linux/toybox-preset-flighty`
 - `linux/toybox-preset-textured-sphere`
 - `linux/toybox-truchet`
-- `linux/unityscalemathematik`
-- `linux/vdelay`
-- `linux/videoOut`
-- `linux/warrenspectrum`
 - `linux/wavesculpt`
 - `linux/workflow-audio-io`
 - `linux/workflow-dock-clip-split`
