@@ -300,9 +300,16 @@ test('dx7: changing preset updates the dropdown value', async ({ page, rack }) =
 // in memory could still fail to encode.
 //
 // ⚠ PEER PROPAGATION IS *NOT* COVERED HERE, DELIBERATELY. A two-context test
-// needs the `@collab` tag, and every `@collab`-tagged spec file is resolved
-// INTO the collab attest basis by scripts/collab-attest-lib.ts, so adding one
-// would force a relay re-attest for a synth change. The dx7 program's plan
+// needs the collab tag, and every collab-tagged spec file is resolved INTO the
+// collab attest basis by scripts/collab-attest-lib.ts, so adding one would
+// force a relay re-attest for a synth change.
+//
+// ⚠⚠ AND DO NOT WRITE THAT TAG IN ITS `@`-PREFIXED FORM ANYWHERE IN THIS FILE,
+// NOT EVEN IN A COMMENT. `collab-attest-lib.ts` resolves the basis by GREPPING
+// spec sources for the literal string — it does not parse them — so a prose
+// mention is indistinguishable from a real tag. This very comment did exactly
+// that and turned `collab-attest` RED on a PR that touches no collab code at
+// all. Write the bare word. The dx7 program's plan
 // declares attest movement NIL. What this test does cover is the same encoded
 // Y.Doc update a peer receives: the IndexedDB scratch replica round-trips the
 // stamp through exactly that binary.
