@@ -5,18 +5,28 @@
   import { vcaDef } from '$lib/audio/modules/vca';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
-  import { cardParams, portsFromDef } from './card-kit';
+  import { cardParams, paramProps, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
-  const { set, live } = cardParams(vcaDef, () => id, () => node);
+  const { set, live, paramVal } = cardParams(vcaDef, () => id, () => node);
 
-  let base = $derived(node?.params.base ?? vcaDef.params[0]!.defaultValue);
-  let cvAmount = $derived(node?.params.cvAmount ?? vcaDef.params[1]!.defaultValue);
+  // RANGES AND LABELS COME FROM THE DEF, never re-typed here. This card used to
+  // spell out both faders' min / max / defaultValue as literals — numbers that
+  // AGREED with the def, but only by maintenance rather than by construction,
+  // and no gate in this repo reads both sides (CLAUDE.md: "A CARD can silently
+  // disagree with its DEF"). Guarded by card-def-ranges.test.ts.
+  const baseProps = paramProps(vcaDef, 'base');
+  const cvAmountProps = paramProps(vcaDef, 'cvAmount');
 
+  let base = $derived(paramVal('base'));
+  let cvAmount = $derived(paramVal('cvAmount'));
 
+  // Jack labels are authored on the def (PortDef.label), so the card carries no
+  // override map: the rear card, the drill-down and this panel all say `OUT` /
+  // `OUT INV` because there is only one place that string exists.
   const inputs = portsFromDef(vcaDef.inputs);
-  const outputs = portsFromDef(vcaDef.outputs, { audio_inv: 'AUDIO INV' });
+  const outputs = portsFromDef(vcaDef.outputs);
 </script>
 
 <div class="mod-card vca-card">
@@ -25,8 +35,8 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="fader-row">
-      <Fader value={base}     min={0}  max={1} defaultValue={0}   label="Base" curve="linear" onchange={set('base')}     readLive={live('base')}     moduleId={id} paramId="base" />
-      <Fader value={cvAmount} min={-1} max={1} defaultValue={1.0} label="CV Amt" curve="linear" onchange={set('cvAmount')} readLive={live('cvAmount')} moduleId={id} paramId="cvAmount" />
+      <Fader {...baseProps}     value={base}     onchange={set('base')}     readLive={live('base')}     moduleId={id} paramId="base" />
+      <Fader {...cvAmountProps} value={cvAmount} onchange={set('cvAmount')} readLive={live('cvAmount')} moduleId={id} paramId="cvAmount" />
     </div>
   </PatchPanel>
 </div>

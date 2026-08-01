@@ -14,7 +14,7 @@
 
 import { useStore } from '@xyflow/svelte';
 import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
-import type { ModuleNode, ParamDef, PortDef } from '$lib/graph/types';
+import type { KnobCurve, ModuleNode, ParamDef, PortDef } from '$lib/graph/types';
 import { setNodeParam } from '$lib/graph/mutate';
 import { useEngine, type EngineContext } from '$lib/audio/engine-context';
 
@@ -62,6 +62,41 @@ export function portsFromDef(
     const label = labels[p.id] ?? p.label;
     return label !== undefined ? { id: p.id, label, cable: p.type } : { id: p.id, cable: p.type };
   });
+}
+
+/** The four knob/fader props every control primitive takes (`Fader`,
+ *  `KnobConic`), spreadable straight into the component. */
+export interface CardParamProps {
+  min: number;
+  max: number;
+  defaultValue: number;
+  label: string;
+  curve: KnobCurve;
+}
+
+/**
+ * The range + label a control must use, READ OFF THE DEF.
+ *
+ * WHY THIS EXISTS. A card that re-types `min={-1} max={1}` beside a def that
+ * declares something else is invisible to EVERY gate we have: `contract-lock`,
+ * `module-docs-lint` and the range assertions all read the DEF, so the card can
+ * write values the contract forbids and the model silently clamps them — the
+ * BACKDRAFT XyPad failure (±1 pads on a ±0.2 param, most of the stick dead;
+ * CLAUDE.md "A CARD can silently disagree with its DEF"). Spreading this makes
+ * the divergence impossible rather than merely detectable:
+ *
+ *     <Fader {...paramProps(vcaDef, 'base')} value={base} onchange={…} />
+ *
+ * Throws on an unknown id — a typo must fail loudly at mount, not fall back to
+ * a 0..1 default that looks plausible.
+ */
+export function paramProps(
+  def: { params: ReadonlyArray<ParamDef> },
+  id: string,
+): CardParamProps {
+  const p = def.params.find((d) => d.id === id);
+  if (!p) throw new Error(`paramProps: no param '${id}' on this def`);
+  return { min: p.min, max: p.max, defaultValue: p.defaultValue, label: p.label, curve: p.curve };
 }
 
 export interface CardParamHelpers {
