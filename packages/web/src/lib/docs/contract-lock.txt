@@ -1520,7 +1520,7 @@ kria param running 0..1 discrete default=0
 kria family kria-cell kind=cell prefix=kria-cell
 launchpadControlLeft meta domain=meta
 lfo meta domain=audio
-lfo in clock gate
+lfo in clock gate edge=trigger
 lfo in depth_cv cv param=depth cvScale=linear
 lfo in rate cv param=rate cvScale=log
 lfo in shape cv param=shape cvScale=linear

@@ -29,6 +29,7 @@ import { kickdrumDef } from '$lib/audio/modules/kickdrum';
 import { adsrDef } from '$lib/audio/modules/adsr';
 import { vcaDef } from '$lib/audio/modules/vca';
 import { lfoDef } from '$lib/audio/modules/lfo';
+import { LFO_DEPTH_GAIN } from '$lib/audio/modules/lfo-face-model';
 import { cloudseedDef } from '$lib/audio/modules/cloudseed';
 
 // ── 1. binding rules ─────────────────────────────────────────────────────────
@@ -172,7 +173,12 @@ describe('glyphBinding — pure live-source resolution', () => {
         { id: 'depth', min: 0, max: 1 },
       ],
     });
-    expect(glyphBinding(def)).toEqual({ kind: 'wave-morph', shapeParamId: 'shape', depthParamId: 'depth' });
+    expect(glyphBinding(def)).toEqual({
+      kind: 'wave-morph',
+      shapeParamId: 'shape',
+      depthParamId: 'depth',
+      depthGain: LFO_DEPTH_GAIN,
+    });
   });
 
   it('falls back to static for a glyph with no live seam, and none without a glyph', () => {
@@ -199,7 +205,17 @@ describe('glyphBinding — pure live-source resolution', () => {
       sustain: 'sustain',
       release: 'release',
     });
-    expect(glyphBinding(lfoDef)).toEqual({ kind: 'wave-morph', shapeParamId: 'shape', depthParamId: 'depth' });
+    // The DEPTH multiplier rides the binding so the generic shell never types
+    // it. Asserting the CONSTANT (not the literal 2) is what makes this a real
+    // wiring check: change LFO_DEPTH_GAIN and the glyph, the def's depth
+    // default and this row all move together.
+    expect(glyphBinding(lfoDef)).toEqual({
+      kind: 'wave-morph',
+      shapeParamId: 'shape',
+      depthParamId: 'depth',
+      depthGain: LFO_DEPTH_GAIN,
+    });
+    expect(LFO_DEPTH_GAIN, 'the worklet law: gain = max(0,depth) * 2').toBe(2);
   });
 
   it('algorithm glyph + an algorithm param → TOPOLOGY, BEATING the audio-out short-circuit', () => {

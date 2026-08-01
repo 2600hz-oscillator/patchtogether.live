@@ -237,8 +237,12 @@
       return createLiveWaveSource(
         () => [
           liveParam(b.shapeParamId),
-          // depth 0.5 = unity ±1 swing (the lfo law); display clamps at full scale.
-          b.depthParamId ? Math.min(1, 2 * liveParam(b.depthParamId)) : 1,
+          // The module's own DEPTH → gain law, carried on the binding
+          // (`depthGain`) rather than re-typed here — the shell has no business
+          // knowing a particular worklet's multiplier. Clamped to the screen's
+          // ±1 box, which is why the drawn cycle saturates at unity while the
+          // real swing keeps growing (see lfoGlyphAmp / the depth doc).
+          b.depthParamId ? Math.min(1, b.depthGain * liveParam(b.depthParamId)) : 1,
         ],
         (v) => triMorphWaveSamples(v[0] ?? 0, v[1]),
       );

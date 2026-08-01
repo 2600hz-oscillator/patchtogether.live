@@ -46,7 +46,7 @@ const FACES = [
   { type: 'kickdrum', pages: 6 },
   { type: 'adsr', pages: 1 },
   { type: 'vca', pages: 1 },
-  { type: 'lfo', pages: 2 },
+  { type: 'lfo', pages: 1 },
   { type: 'cloudseed', pages: 8 },
   // batch 2 — the two pitched voices, the two drums, the two processors
   { type: 'dx7', pages: 4 },

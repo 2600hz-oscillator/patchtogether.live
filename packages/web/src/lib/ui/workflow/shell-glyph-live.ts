@@ -34,6 +34,10 @@
 // pure sink (never connected onward) and adds no load to the audio path.
 
 import { rmsUnit } from '$lib/audio/level-meter';
+// The lfo law's ONE constant (pure, registry-free — no import cycle). This
+// resolver is already the place that knows "shape 0..2 + depth = the lfo law";
+// carrying the multiplier here is what lets the generic shell stop re-typing it.
+import { LFO_DEPTH_GAIN } from '$lib/audio/modules/lfo-face-model';
 import type { ModuleFace } from '$lib/graph/types';
 
 /** The minimal def shape the binding resolver reads (AudioModuleDef,
@@ -66,7 +70,14 @@ export type GlyphBinding =
    *  shape (tidyVco); other shape-identity sources can adopt it. */
   | { kind: 'dual'; portId: string; wave: DualWaveSpec }
   | { kind: 'env-params'; attack: string; decay: string; sustain: string; release: string }
-  | { kind: 'wave-morph'; shapeParamId: string; depthParamId?: string }
+  /**
+   * PARAM-DERIVED single-cycle morph (the lfo law). `depthGain` is the module's
+   * DEPTH → output-gain multiplier, carried on the binding so the SHELL never
+   * has to know it: it used to be a literal `2 *` inside ModuleShell, a second
+   * copy of a number whose only authoritative home is the worklet. It now comes
+   * from `LFO_DEPTH_GAIN`, which the def's `depth` default is also derived from.
+   */
+  | { kind: 'wave-morph'; shapeParamId: string; depthParamId?: string; depthGain: number }
   /**
    * TOPOLOGY (PF-15): the glyph draws the module's own SIGNAL ROUTING, derived
    * from a discrete param — no analyser, no gate, always live.
@@ -149,7 +160,12 @@ export function glyphBinding(def: GlyphDefLike | undefined): GlyphBinding {
   if (glyph === 'waveform') {
     const shape = params.find((p) => p.id === 'shape' && p.min === 0 && p.max === 2);
     if (shape) {
-      return { kind: 'wave-morph', shapeParamId: 'shape', depthParamId: has('depth') ? 'depth' : undefined };
+      return {
+        kind: 'wave-morph',
+        shapeParamId: 'shape',
+        depthParamId: has('depth') ? 'depth' : undefined,
+        depthGain: LFO_DEPTH_GAIN,
+      };
     }
   }
   return { kind: 'static' };

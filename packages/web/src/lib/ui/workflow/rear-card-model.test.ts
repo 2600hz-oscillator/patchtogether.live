@@ -192,18 +192,34 @@ describe('rear-card derivation — the six P1 prototypes (spec §4)', () => {
     expect(plan.outputs.map((h) => h.label)).toEqual(['AUDIO', 'AUDIO INV']);
   });
 
-  it('lfo: curated SYNC band + shape/engine page bands; 4-phase cv rail', () => {
+  it('lfo: curated SYNC band + ONE engine page band, signal-ordered; 4-phase cv rail', () => {
     const def = lfoDef as unknown as RearDefLike;
     expectTotal(def);
-    expect(bandIds(def)).toEqual(['voice', 'shape', 'engine']);
-    expect(bandPorts(def, 'engine')).toEqual(['rate', 'depth_cv']);
+    // The face collapsed its two pages into one (a single oscillator has no
+    // second stage to separate), and rear CV bands DERIVE from face.pages — so
+    // the rear followed. Ports run in the page's control order, which is the
+    // SIGNAL CHAIN (rate → shape → depth), not face.order's ranking.
+    expect(bandIds(def)).toEqual(['voice', 'engine']);
+    expect(bandPorts(def, 'engine')).toEqual(['rate', 'shape', 'depth_cv']);
     const plan = rearFieldPlan(def);
     // a modulation source, not a voice: the clock hole's band says 'sync'.
     expect(plan.bands[0].label).toBe('sync');
     expect(plan.bands[0].holes.map((h) => h.portId)).toEqual(['clock']);
-    // every LFO CV is sample-and-held once per block — no `~` anywhere.
-    expect(plan.bands.flatMap((b) => b.holes).some((h) => h.audioRate)).toBe(false);
+    // …and the hole now declares its consumer semantic: one reset per RISING
+    // edge, nothing on the fall, nothing while held.
+    expect(plan.bands[0].holes[0].edge).toBe('trigger');
+    // `~` ticks track the WORKLET, not a blanket claim about the module: RATE
+    // is hoisted out of the sample loop (`rateHeld`) to keep clients phase-
+    // aligned, while SHAPE and DEPTH are read per-sample. The face used to say
+    // none of them was audio-rate; two of them are.
+    const byPort = new Map(plan.bands.flatMap((b) => b.holes).map((h) => [h.portId, h]));
+    expect(byPort.get('rate')!.audioRate).toBeFalsy();
+    expect(byPort.get('shape')!.audioRate).toBe(true);
+    expect(byPort.get('depth_cv')!.audioRate).toBe(true);
     expect(plan.outputs.map((h) => h.portId)).toEqual(['phase0', 'phase90', 'phase180', 'phase270']);
+    // PF-4: the taps are named on the DEF, so the rail reads the angle rather
+    // than `PHASE0` (id derivation) — and the card cannot disagree with it.
+    expect(plan.outputs.map((h) => h.label)).toEqual(['0°', '90°', '180° (ANTI)', '270°']);
     expect(plan.denseRail).toBe(false); // 4 ≤ 8 — single-column rail
   });
 
