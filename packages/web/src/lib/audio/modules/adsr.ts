@@ -160,8 +160,8 @@ export const adsrDef: AudioModuleDef = {
     //    real input — and wrong on the rear, where it would head a band that
     //    holds four CV holes and no gate. Same four holes, canonical A/D/S/R
     //    order, split into two clusters by CV LAW — the one thing the rear can
-    //    teach that the front cannot. The
-    //    param labels are single letters (A/D/S/R), so the cluster headers are
+    //    teach that the front cannot. The param labels are single letters
+    //    (A/D/S/R), so the cluster headers are
     //    also what tells you WHICH of the four holes is a level: ATTACK/DECAY/
     //    RELEASE are log-scaled TIME jacks (±1 V = ×100 / ÷100 of the knob
     //    time), SUSTAIN is a linear LEVEL displacement (±0.5 of the 0..1 span).
