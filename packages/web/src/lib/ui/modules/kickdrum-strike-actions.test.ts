@@ -78,20 +78,29 @@ describe('kickdrum audition — resolveManualStrike (pure)', () => {
     expect(fired, 'each call is one strike — no latching, no repeat').toEqual(['kd-1', 'kd-1']);
   });
 
-  it('returns null for each of the FOUR distinct unavailable states', () => {
+  it('returns null for each of the THREE distinct unavailable branches', () => {
+    // ⚠ IT SAID **FOUR**, AND THERE ARE THREE. The old (c) `read: () => 42` and
+    // (d) `read: () => undefined` fall through the IDENTICAL guard
+    // (`typeof fn === 'function'` in resolveManualStrike) — one deletion reds
+    // both, which is what "distinct" is supposed to rule out, and the PR's own
+    // "NC5a: drop the typeof guard → 1 red" was already consistent with three
+    // rather than four. Listing a branch count that the code does not have is
+    // how a suite reads as more thorough than it is. Kept as three named
+    // branches plus an explicitly-labelled shape sweep over the fourth.
     const node = { id: 'kd-1' } as unknown as ModuleNode;
     const { engine } = fakeEngine();
 
-    // (a) the AudioContext has not booted — nothing can sound yet.
+    // (a) no engine — the AudioContext has not booted, nothing can sound yet.
     expect(resolveManualStrike(null, node)).toBeNull();
     expect(resolveManualStrike(undefined, node)).toBeNull();
-    // (b) the module was removed between render and click.
+    // (b) no node — the module was removed between render and click.
     expect(resolveManualStrike(engine, undefined)).toBeNull();
-    // (c) the handle answers the key with something not callable (a factory
-    //     that half-implemented the seam).
-    expect(resolveManualStrike({ read: () => 42 }, node)).toBeNull();
-    // (d) the handle does not implement `read` at all.
-    expect(resolveManualStrike({ read: () => undefined }, node)).toBeNull();
+    // (c) the handle answers the key with a NON-FUNCTION. One branch, several
+    //     shapes: a half-implemented seam (42), an unimplemented one
+    //     (undefined), a truthy object, null.
+    for (const v of [42, undefined, null, {}, 'fn']) {
+      expect(resolveManualStrike({ read: () => v }, node), `read → ${String(v)}`).toBeNull();
+    }
   });
 });
 

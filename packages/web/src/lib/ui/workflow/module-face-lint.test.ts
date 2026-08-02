@@ -776,6 +776,47 @@ describe('module-face lint — rear-card curation (face.rear) + derivation total
     }
     expect(missing.join('\n'), 'rear derivation not total — a hole went missing').toBe('');
   });
+
+  it('STRICT_FACES: no rear band LABEL prefixes another on the same card', async () => {
+    // ⚠ THE GATE FOR A REAL MISPATCH, not for tidiness. Every rear check above
+    // reads IDS; `rear-card-model.test.ts` asserts `bandIds(def)` and never
+    // touches a label; and `workflow-shell-faces.spec.ts` captures only
+    // `-compact` and `-dock` — there is NO VRT scene for the rear card at all.
+    // So the labels a player actually reads on the flip side are, collectively,
+    // ungated.
+    //
+    // What that let through (kickdrum): a page renamed `sub` → `strike · the
+    // pulse` — correct on the FRONT, where that band holds the strike button —
+    // resolved on the REAR to a band of five sub-layer CV holes stacked
+    // directly under the band that IS the strike. Two adjacent bands both
+    // headed STRIKE, and the second one's first hole is `tune_cv`: a sequencer
+    // gate patched into the wrong one silently DETUNES the drum instead of
+    // hitting it.
+    //
+    // Prefix, not equality: `strike` and `strike · the pulse` are distinct
+    // strings, so an equality check reads clean on exactly this bug.
+    const { rearFieldPlan } = await import('./rear-card-model');
+    const problems: string[] = [];
+    for (const def of allDefs()) {
+      if (!STRICT_FACES.has(def.type)) continue;
+      const labels = rearFieldPlan(def as unknown as import('./rear-card-model').RearDefLike)
+        .bands.map((b) => (b.label ?? '').trim().toLowerCase())
+        .filter(Boolean);
+      for (let i = 0; i < labels.length; i++) {
+        for (let j = 0; j < labels.length; j++) {
+          if (i === j) continue;
+          if (labels[j]!.startsWith(labels[i]!)) {
+            problems.push(
+              `${def.type}: rear bands '${labels[i]}' and '${labels[j]}' — one heads the other, ` +
+                `so the card shows two bands the player reads as the same jack group. ` +
+                `Re-head one with a face.rear.groups entry whose id matches the page id.`,
+            );
+          }
+        }
+      }
+    }
+    expect([...new Set(problems)].join('\n'), 'ambiguous rear band headings').toBe('');
+  });
 });
 
 describe('module-face lint — STRICT_FACES RATCHET (only grows)', () => {

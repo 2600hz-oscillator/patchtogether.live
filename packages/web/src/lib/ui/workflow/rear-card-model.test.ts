@@ -145,13 +145,21 @@ describe('rear-card derivation — the six P1 prototypes (spec §4)', () => {
     // a family key targets no port — so it contributes nothing here and the
     // hole order is unchanged. That is the property this line pins.
     expect(bandPorts(def, 'sub')).toEqual(['tune_cv', 'sub_decay_cv', 'sub_level_cv', 'sub_eq_cv', 'translate_cv']);
+    // …and that band is RE-HEADED on the rear. The front page is 'strike · the
+    // pulse' because it holds the strike BUTTON; here the same id resolves to
+    // five sub-layer CVs sitting directly under the band that IS the strike,
+    // and its first hole is `tune_cv` — a gate patched into the wrong STRIKE
+    // detunes the drum instead of hitting it. A curated group whose id matches
+    // the page id claims the slot and its label wins.
+    expect(plan.bands.find((b) => b.id === 'sub')!.label).toBe('sub · the layer');
     // the merged band's SIX holes split the same way the front's PF-9 clusters
-    // do, so both faces of the card teach the same chain.
+    // do, so both faces of the card teach the same chain — and that chain is
+    // the DSP's real one: transient → glue → LEVEL → width → CEILING.
     const dyn = plan.bands.find((b) => b.id === 'dynamics')!;
     expect(dyn.holes).toEqual([]);
-    expect(dyn.clusters.map((c) => c.label)).toEqual(['transient · glue', 'stereo · out']);
-    expect(dyn.clusters[0].holes.map((h) => h.portId)).toEqual(['attack_cv', 'sustain_cv', 'glue_cv', 'ceiling_cv']);
-    expect(dyn.clusters[1].holes.map((h) => h.portId)).toEqual(['width_cv', 'level_cv']);
+    expect(dyn.clusters.map((c) => c.label)).toEqual(['transient · glue', 'level · width · ceiling']);
+    expect(dyn.clusters[0].holes.map((h) => h.portId)).toEqual(['attack_cv', 'sustain_cv', 'glue_cv']);
+    expect(dyn.clusters[1].holes.map((h) => h.portId)).toEqual(['level_cv', 'width_cv', 'ceiling_cv']);
     // the widest band (7 holes) splits into the pitch envelope + the tone.
     const body = plan.bands.find((b) => b.id === 'body')!;
     expect(body.holes).toEqual([]);

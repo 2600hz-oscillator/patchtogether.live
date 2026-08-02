@@ -192,19 +192,37 @@ export const kickdrumDef: AudioModuleDef = {
       'pitch_time', 'tension', 'body_decay', 'body_shape', 'body_eq',
       'click_len', 'click_tone', 'attack_eq',
       'hard', 'tilt',
-      'attack', 'sustain', 'glue', 'ceiling', 'width', 'level',
+      // Tail ranks: kept in the REAL chain order (level → width → ceiling), so
+      // the ranking and the two faces cannot teach three different orders.
+      'attack', 'sustain', 'glue', 'level', 'width', 'ceiling',
     ],
     pages: [
       // FIVE bands, and the merge is justified by GROUPING SEMANTICS, not by a
-      // fold budget (the committed dock baseline shows the pane cutting off
-      // partway through band 2, so "make it fit" was never the question —
-      // everything below the first screenful is reached by scrolling either
-      // way). What merged is `dynamics` + `output`: after the drive stage this
-      // voice is ONE mastering chain — transient shaper → glue comp → ceiling →
-      // stereo → level — and PF-9 clusters carry the internal split at a ~14px
-      // sub-header instead of an ~81px second band. Nothing else moved: each
-      // band-EQ still lives with the layer it shapes, which is this face's best
-      // existing idea.
+      // fold budget ("make it fit" was never the question — the pane scrolls,
+      // and where it happens to cut off depends on the window height, not on
+      // this def). What merged is `dynamics` + `output`:
+      // after the drive stage this voice is ONE mastering chain, and PF-9
+      // clusters carry the internal split at a ~14px sub-header instead of an
+      // ~81px second band. Nothing else moved: each band-EQ still lives with
+      // the layer it shapes, which is this face's best existing idea.
+      //
+      // ⚠ THE CHAIN IS `transient → glue → LEVEL → width → CEILING`, and this
+      // comment used to say `… → ceiling → stereo → level`, which is BACKWARDS
+      // at the two stages that matter. Read the DSP, not the ranking:
+      //   kickdrum-dsp.ts `kickdrumVoiceStep` ends
+      //     `return shaped * 10^(clamp(p.level,-24,12)/20)`   ← LEVEL,
+      //     under a comment that says "pre-ceiling, so hot settings LEAN into
+      //     the clip";
+      //   `kickdrumStepStereo` then does
+      //     `sd = sideOut * lin * width; out = tanh(g * (m ± sd))`  ← CEILING,
+      //     genuinely last, and `width`'s side term is scaled BY level.
+      // The faceplate teaching the wrong order is not cosmetic: a producer who
+      // reads LEVEL as the last stage concludes that raising it ESCAPES the
+      // clipper, feeds it, and gets `tanh(2·10^0.6·m)` — more saturation, which
+      // is the exact misuse the ranking exists to prevent. The cluster split
+      // and the control order below now encode the real chain, and
+      // `kickdrum-face.test.ts` reads the DSP source to keep them honest
+      // rather than re-asserting whatever this comment happens to claim.
       //
       // ⚠ PAGE IDS ARE CHECKED AGAINST THE CURATED REAR GROUP IDS. `rearFieldPlan`
       // gives a curated group whose id is 'voice'/'signal' the LEADING band slot
@@ -215,10 +233,18 @@ export const kickdrumDef: AudioModuleDef = {
       // no page is called 'voice', and the front band that carries the STRIKE
       // BUTTON is id 'sub'. Keep it that way.
       //
-      // ⚠ The AUDITION LEADS BAND 1, and that is measured, not taste: the dock
-      // pane cuts off partway through the SECOND band, so a strike button in
-      // the trailing band would be off-screen on the one voice in the rack that
-      // makes no sound at all until something strikes it.
+      // ⚠ THE AUDITION LEADS BAND 1. The reason is ORDINAL, and the earlier
+      // "1220×425, and that is measured" framing was not: `workflow-shell-
+      // faces.spec.ts` screenshots the `dock-full-view` ELEMENT, and
+      // `playwright.config.ts` sets no `viewport`, so 425 px is what that pane
+      // resolves to inside Chromium's default 1280×720 window. On a 1080p or
+      // 1440p display the pane is far taller and "bands 3-5 are below the
+      // frame" is simply false — the instrument was invariant to the one
+      // variable (window height) that determines the answer, which is the
+      // getBoundingClientRect-under-zoom lesson in CLAUDE.md wearing a hat.
+      // What IS true at every height: this is the one voice in the rack that
+      // makes NO sound at all until something strikes it, so its audition
+      // belongs in the band a player reaches first, whichever band that is.
       { id: 'sub',      label: 'strike · the pulse', controls: ['kickdrum-strike-{n}', 'tune', 'sub_decay', 'sub_level', 'sub_eq', 'translate'] },
       { id: 'body',     label: 'body · the punch',   controls: ['pitch_amt', 'pitch_time', 'tension', 'body_decay', 'body_level', 'body_shape', 'body_eq'] },
       { id: 'click',    label: 'click · the edge',   controls: ['click_len', 'click_tone', 'click_level', 'attack_eq'] },
@@ -226,10 +252,13 @@ export const kickdrumDef: AudioModuleDef = {
       {
         id: 'dynamics',
         label: 'dynamics · out',
-        controls: ['attack', 'sustain', 'glue', 'ceiling', 'width', 'level'],
+        controls: ['attack', 'sustain', 'glue', 'level', 'width', 'ceiling'],
         clusters: [
-          { label: 'transient · glue', controls: ['attack', 'sustain', 'glue', 'ceiling'] },
-          { label: 'stereo · out', controls: ['width', 'level'] },
+          { label: 'transient · glue', controls: ['attack', 'sustain', 'glue'] },
+          // CEILING sits with LEVEL and WIDTH because it is what they run INTO
+          // — the last stage, per-channel true-peak. Grouping it with the
+          // transient shaper said the opposite.
+          { label: 'level · width · ceiling', controls: ['level', 'width', 'ceiling'] },
         ],
       },
     ],
@@ -247,8 +276,20 @@ export const kickdrumDef: AudioModuleDef = {
     //    and the TONE that follows it (decay / level / shape / EQ).
     //  * The merged 'dynamics · out' band carries SIX, and the front-side PF-9
     //    clusters above split them the same way, so the two faces of the card
-    //    teach the same chain: shape the transient and glue it, THEN place it
-    //    in the stereo field and set the level going into the ceiling.
+    //    teach the same chain: shape the transient and glue it, THEN set the
+    //    level, spread it, and run the pair into the true-peak ceiling — which
+    //    is the DSP's real order (`kickdrumVoiceStep` applies level last of
+    //    all, `kickdrumStepStereo`'s `tanh` is the actual final stage).
+    //  * THE SUB BAND IS RE-HEADED HERE, and that is the whole reason this
+    //    entry exists. Derivation labels a page band with the PAGE's label, and
+    //    the front page is 'strike · the pulse' because it holds the STRIKE
+    //    BUTTON. On the rear there is no button — the band is five sub-layer CV
+    //    holes sitting directly under the band that IS the strike, so the card
+    //    read `STRIKE` then `STRIKE · THE PULSE` and the first hole of the
+    //    second one is `tune_cv`. A player patching a sequencer gate into the
+    //    wrong `STRIKE` silently detunes the drum instead of hitting it. The
+    //    rear says `sub · the layer`; `module-face-lint` now refuses any rear
+    //    band label that PREFIXES another on the same card.
     //  * `~` on PITCH only. The worklet's four node inputs are read RAW
     //    per-sample, but only pitch is a continuous audio-rate destination
     //    (per-sample 1 V/oct → real FM of the whole voice); TRIGGER and CHOKE
@@ -258,12 +299,13 @@ export const kickdrumDef: AudioModuleDef = {
     rear: {
       groups: [
         { id: 'voice', label: 'strike', ports: ['trigger_in', 'accent_in', 'pitch_cv', 'choke_in'] },
+        { id: 'sub', label: 'sub · the layer', ports: ['tune_cv', 'sub_decay_cv', 'sub_level_cv', 'sub_eq_cv', 'translate_cv'] },
       ],
       clusters: [
         { group: 'body', label: 'pitch envelope', ports: ['pitch_amt_cv', 'pitch_time_cv', 'tension_cv'] },
         { group: 'body', label: 'tone', ports: ['body_decay_cv', 'body_level_cv', 'body_shape_cv', 'body_eq_cv'] },
-        { group: 'dynamics', label: 'transient · glue', ports: ['attack_cv', 'sustain_cv', 'glue_cv', 'ceiling_cv'] },
-        { group: 'dynamics', label: 'stereo · out', ports: ['width_cv', 'level_cv'] },
+        { group: 'dynamics', label: 'transient · glue', ports: ['attack_cv', 'sustain_cv', 'glue_cv'] },
+        { group: 'dynamics', label: 'level · width · ceiling', ports: ['level_cv', 'width_cv', 'ceiling_cv'] },
       ],
       audioRate: ['pitch_cv'],
     },

@@ -43,12 +43,15 @@ export const KICKDRUM_STRIKE_KEY = 'manualTrigger';
 
 /**
  * Resolve the node's one-shot strike function, or `null` when the audition is
- * genuinely unavailable. FOUR distinct nulls, each a real state:
+ * genuinely unavailable. THREE branches, each a real state:
  *   * no engine (the AudioContext has not booted — nothing can sound yet);
  *   * no node (the module was removed between render and click);
- *   * the handle answers the read key with something that is not callable
- *     (a factory that half-implemented the seam);
- *   * the handle does not implement `read` at all (`undefined`).
+ *   * the handle answers the read key with something that is not callable —
+ *     a half-implemented seam (a number), or no `read` at all (`undefined`).
+ *     ⚠ Those last two are ONE branch, not two: both fall through the same
+ *     `typeof fn === 'function'` guard below. The doc used to call them
+ *     distinct and the test listed "the FOUR distinct unavailable states",
+ *     which reads as more coverage than the code has.
  *
  * Returning null rather than throwing is deliberate: an audition that cannot
  * fire is a no-op, never an error dialog over a rack. PURE — the engine and
