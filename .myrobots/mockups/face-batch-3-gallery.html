@@ -1,0 +1,1750 @@
+<title>Face batch 3 — 12 proposed dock faceplates</title>
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   FACE BATCH 3 — MOCKUP GALLERY.  SPEC AND MOCKUP ONLY — nothing here is
+   implemented and no module def is touched.
+
+   Colours, type scale and geometry are taken from the SHIPPED faceplate:
+   packages/web/src/lib/styles/tokens.css  (--bg #0e1013, --surface-3 #262a31,
+   --text #eef1f5, --text-dim #9aa2ad, --border #2c3037, --tile-border #33383f,
+   --cable-audio #38d3c8, --cable-gate #f2c14e, --cable-cv #7bd66a,
+   --dock-sidebar-w 288px)
+   and from the rendered kickdrum dock face on feat/faceplate-platform-v2
+   (ModuleShell.svelte: .face-title 0.95rem/700, .face-hint 0.66rem,
+    .page-label 0.62rem/800/0.08em/uppercase, .page-hint 0.6rem/500/no-caps/
+    opacity .75, .hero-ro dt 9px/0.12em/uppercase, .hero-ro dd 17px/700 mono,
+    .hero-ctl .readout 17px, band knob .readout 9px).
+   ───────────────────────────────────────────────────────────────────────── */
+:root{
+  --bg:#0e1013; --dock:#161c25; --rail:#111520; --plate:#262a31;
+  --well:#181b1f; --line:#2c3037; --ink:#eef1f5; --dim:#9aa2ad; --faint:#646c77;
+  --tealo:#38d3c8; --teal:#34b7b0; --amber:#f2c14e; --green:#7bd66a;
+  --pink:#ff7bc2; --violet:#b57bff; --derived:#8fe6b0;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+     font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1560px;margin:0 auto;padding:26px 20px 110px}
+h1{font-size:22px;font-weight:800;margin:0 0 6px}
+.sub{color:var(--dim);font-size:13px;margin:0 0 6px;max-width:104ch}
+.sub b{color:var(--ink)}
+.sub code{font-family:var(--mono);font-size:12px;color:var(--tealo)}
+.warn{border:1px solid #6a5330;background:#1c1811;border-radius:8px;padding:10px 13px;
+  margin:16px 0 22px;font-size:12.5px;color:#e8cf9a;max-width:120ch}
+.warn b{color:var(--amber)}
+.toc{display:grid;grid-template-columns:repeat(auto-fill,minmax(232px,1fr));
+  gap:6px;margin:0 0 34px;padding:0;list-style:none}
+.toc a{display:flex;justify-content:space-between;gap:8px;text-decoration:none;
+  color:var(--ink);border:1px solid var(--line);border-radius:7px;padding:7px 10px;
+  font-size:12px;background:#12161c}
+.toc a:hover{border-color:var(--teal)}
+.toc a em{font-style:normal;color:var(--faint);font-family:var(--mono);font-size:9.5px;
+  letter-spacing:.08em;text-transform:uppercase;white-space:nowrap}
+.toc a.off{opacity:.62}
+
+/* ── one module block ────────────────────────────────────────────────── */
+.mod{margin:0 0 48px;scroll-margin-top:14px}
+.mod>header{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;
+  border-bottom:1px solid var(--line);padding-bottom:8px;margin-bottom:11px}
+.mod>header h2{font-size:17px;font-weight:800;letter-spacing:.02em;margin:0;text-transform:uppercase}
+.mod>header .id{font-family:var(--mono);font-size:11px;color:var(--faint)}
+.tag{font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;
+  border:1px solid var(--line);border-radius:4px;padding:2px 7px;color:var(--dim)}
+.tag.new{border-color:#4a6a54;color:#9ad6a6}
+.tag.redo{border-color:#5a4a6a;color:#c6a6e0}
+.tag.mine{border-color:#3f5470;color:#9dc0e8}
+.tag.rew{border-color:#6a3b3b;color:#f09a9a}
+.tag.no{border-color:#6a5330;color:var(--amber)}
+.note{color:var(--dim);font-size:12.5px;margin:0 0 12px;max-width:118ch}
+.note b{color:var(--ink);font-weight:600}
+.note code{font-family:var(--mono);font-size:11.5px;color:var(--tealo)}
+
+/* ── THE DOCK FACEPLATE ──────────────────────────────────────────────── */
+.dock{background:var(--dock);border:1px solid var(--line);border-radius:11px;
+  overflow:hidden;display:grid;grid-template-columns:minmax(0,1fr) 288px}
+.editor{padding:12px;min-width:0}
+.plate{background:var(--plate);border:1px solid #33383f;border-left:4px solid var(--teal);
+  border-radius:10px;padding:0 0 12px;min-width:0;overflow:hidden}
+.chrome{padding:9px 11px 0}
+.chrome .name{font-size:11.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase}
+.chrome .cat{font-size:8px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);
+  font-family:var(--mono);margin-top:1px}
+.fhead{padding:9px 11px 0}
+.ftitle{margin:0;font-size:15px;font-weight:700;letter-spacing:.02em}
+.fhint{margin:3px 0 0;font-size:10.5px;line-height:1.45;color:var(--dim);max-width:64ch}
+
+.hero{display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap;padding:11px 11px 4px}
+.hero .vis{flex:1 1 360px;min-width:0}
+.hero .vis svg{width:100%;height:auto}
+.hero .side{display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap}
+.ros{display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap;margin:0}
+.ro{display:flex;flex-direction:column;gap:3px}
+.ro dt{font-family:var(--mono);font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
+.ro dd{margin:0;font-family:var(--mono);font-size:17px;line-height:1.05;font-weight:700;
+  color:var(--tealo);white-space:nowrap}
+.ro.d dd{color:var(--derived)}
+.ro.d dt::after{content:" ƒ";color:var(--derived);letter-spacing:0;font-size:8px}
+.btn{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;
+  background:#1d2229;border:1px solid #3a4048;color:var(--ink);border-radius:6px;padding:8px 13px}
+.btn.hot{border-color:var(--teal);color:var(--tealo)}
+
+.bands{padding:2px 11px 0}
+.band{border-top:1px solid var(--line);padding-top:7px;margin-top:9px}
+.band:first-child{border-top:0;margin-top:3px}
+.blab{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin:0 0 6px;font-size:9.4px;
+  font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--dim)}
+.bhint{font-size:9.2px;font-weight:500;letter-spacing:.02em;text-transform:none;
+  color:var(--dim);opacity:.75}
+.row{display:flex;flex-wrap:wrap;align-items:flex-start;gap:8px 10px}
+.clab{margin:8px 0 3px;font-size:8.4px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;
+  color:var(--dim);opacity:.8}
+
+/* ── the knob primitive (a drawing of KnobConic) ─────────────────────── */
+.k{width:54px;display:flex;flex-direction:column;align-items:center;gap:3px}
+.k i{--v:.5;--kc:var(--teal);display:block;width:38px;height:38px;border-radius:50%;position:relative;
+  background:conic-gradient(from 215deg,var(--kc) 0turn calc(var(--v)*.75turn),
+    #2b3138 calc(var(--v)*.75turn) .75turn,rgba(0,0,0,0) .75turn)}
+/* the ARC, not a pie: an inner disc punches the ring out of the conic wedge */
+.k i::before{content:"";position:absolute;inset:5px;border-radius:50%;background:#20252b;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.05)}
+.k i::after{content:"";position:absolute;left:50%;top:50%;width:2px;height:12px;background:var(--ink);
+  border-radius:1px;transform-origin:50% 100%;
+  transform:translate(-50%,-100%) rotate(calc(-135deg + var(--v)*270deg))}
+.k b{font-size:7.8px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);
+  font-family:var(--mono);text-align:center;line-height:1.15}
+.k em{font-style:normal;font-family:var(--mono);font-size:9px;font-weight:700;color:var(--tealo);
+  text-align:center}
+.k.lg{width:82px} .k.lg i{width:64px;height:64px} .k.lg i::before{inset:8px} .k.lg i::after{height:21px}
+.k.lg b{font-size:10px} .k.lg em{font-size:17px}
+.k.amber i{--kc:#b08a34} .k.amber em{color:var(--amber)}
+.k.green i{--kc:#4e8f45} .k.green em{color:var(--green)}
+.k.dead i{--kc:#3b4148} .k.dead em{color:var(--faint)} .k.dead b{color:var(--faint)}
+.k.dead::after{content:"inert";font-family:var(--mono);font-size:6.5px;letter-spacing:.1em;
+  text-transform:uppercase;color:#8a6a3a}
+
+/* segmented / selector / switch / pad */
+.cell{display:flex;flex-direction:column;gap:3px;align-items:flex-start}
+.cell .cap{font-size:7.8px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--dim);font-family:var(--mono)}
+.seg{display:inline-flex;border:1px solid #3a4048;border-radius:6px;overflow:hidden}
+.seg span{font-family:var(--mono);font-size:8.6px;letter-spacing:.05em;text-transform:uppercase;
+  padding:5px 7px;color:var(--dim);border-right:1px solid #3a4048}
+.seg span:last-child{border-right:0}
+.seg span.on{background:#1f3a3a;color:var(--tealo)}
+.sel{font-family:var(--mono);font-size:10px;letter-spacing:.05em;background:#1b2027;
+  border:1px solid #3a4048;border-radius:6px;padding:6px 10px;color:var(--ink);min-width:130px;
+  display:flex;justify-content:space-between;gap:10px}
+.sel s{text-decoration:none;color:var(--faint)}
+.pad{display:grid;grid-template-columns:repeat(3,42px);gap:5px}
+.pad button,.pad span{font-family:var(--mono);font-size:11px;font-weight:700;background:#1b2027;
+  border:1px solid #3a4048;border-radius:6px;padding:8px 0;color:var(--ink);text-align:center;
+  display:block;line-height:1.1}
+.pad span small{display:block;font-size:6px;letter-spacing:.14em;color:var(--faint);font-weight:400}
+.pad span.on{border-color:var(--teal);background:#1b2c30;color:var(--tealo)}
+.pad span.blue{border-color:#5b8df0;color:#a8c4ff}
+.pad span.red{border-color:#f06060;color:#ffb0b0}
+
+/* ── the sidebar ─────────────────────────────────────────────────────── */
+.sb{background:var(--rail);border-left:1px solid var(--line);padding:12px 12px 20px;min-width:0}
+.sb h4{margin:0 0 7px;font-size:9px;font-weight:800;letter-spacing:.13em;text-transform:uppercase;color:var(--dim)}
+.sb section+section{margin-top:16px}
+.flow{list-style:none;margin:0;padding:0}
+.flow li{display:flex;align-items:baseline;gap:7px;padding:1.5px 0;font-size:10px;font-weight:700;
+  letter-spacing:.05em;text-transform:uppercase}
+.flow li .d{width:7px;height:7px;border-radius:50%;background:#4a525c;flex:0 0 auto}
+.flow li.gen .d{background:var(--tealo)}
+.flow li.par .d{background:rgba(0,0,0,0);border:1px solid #6f7883}
+.flow li.par{font-style:italic;color:var(--dim)}
+.flow li .n{margin-left:auto;font-family:var(--mono);font-size:7.6px;letter-spacing:.1em;
+  color:var(--faint);font-weight:400}
+.flegend{display:flex;gap:12px;margin-top:6px;font-family:var(--mono);font-size:7.2px;
+  letter-spacing:.12em;text-transform:uppercase;color:var(--faint)}
+.flegend i{display:inline-block;width:6px;height:6px;border-radius:50%;background:#4a525c;margin-right:4px}
+.flegend i.g{background:var(--tealo)}
+.flegend i.p{background:rgba(0,0,0,0);border:1px solid #6f7883}
+.pre{display:flex;flex-direction:column;gap:5px}
+.pre div{display:flex;justify-content:space-between;gap:8px;align-items:center;background:#202630;
+  border:1px solid #2b323c;border-radius:6px;padding:7px 9px;font-size:10px;font-weight:700;
+  letter-spacing:.06em;text-transform:uppercase}
+.pre div.on{border-color:var(--teal);background:#1b2c30}
+.pre div s{text-decoration:none;font-family:var(--mono);font-size:7.6px;letter-spacing:.1em;
+  color:var(--tealo);font-weight:400}
+.rolist{display:flex;flex-direction:column;gap:4px}
+.rolist div{display:flex;justify-content:space-between;gap:8px;font-family:var(--mono);font-size:9px;
+  letter-spacing:.05em;text-transform:uppercase;color:var(--dim)}
+.rolist div b{color:var(--tealo);font-weight:700}
+.rolist div.d b{color:var(--derived)}
+.panel{background:#151a21;border:1px solid #262d36;border-radius:7px;padding:8px}
+
+/* ── the spec strip under each drawing ───────────────────────────────── */
+.strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(292px,1fr));gap:10px;margin-top:12px}
+.strip div{border:1px solid var(--line);border-radius:8px;padding:9px 11px;background:#12161c;
+  font-size:11.5px;color:var(--dim);line-height:1.45}
+.strip div h5{margin:0 0 4px;font-size:8.6px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--faint)}
+.strip div b{color:var(--ink);font-weight:600}
+.strip div code{font-family:var(--mono);font-size:10.8px;color:var(--tealo)}
+.strip div.bad{border-color:#5a3b3b} .strip div.bad h5{color:#e08a8a}
+.strip div.der{border-color:#3b5a48} .strip div.der h5{color:var(--derived)}
+.strip div.der code{color:var(--derived)}
+svg{display:block;max-width:100%}
+@media (max-width:1040px){.dock{grid-template-columns:minmax(0,1fr)}
+  .sb{border-left:0;border-top:1px solid var(--line)}}
+</style>
+
+<div class="wrap">
+<h1>Face batch 3 — twelve proposed dock faceplates</h1>
+<p class="sub"><b>SPEC AND MOCKUP ONLY.</b> Nothing here is implemented and no module def is
+touched. Drawn against the PF-20 faceplate platform on <code>feat/faceplate-platform-v2</code>
+(PR #1301, <b>not yet merged</b>): <code>face.title</code> / <code>face.hint</code>, a per-band
+<code>hint</code>, <code>face.hero</code> (picture + promoted control + audition + readouts), a
+declarative <code>face.sidebar</code>, and <code>FaceReadout.valueId</code> for derived numbers.</p>
+<p class="sub">Every value under a knob is a <b>readout</b>. A readout tinted
+<span style="color:var(--derived)">green with a ƒ</span> is <b>DERIVED</b> — computed from the
+DSP's own law over the live params, not a readback of the knob it sits under. Each one's
+<b>negative control</b> (the perturbation that moves it while a knob readback would not) is
+stated in the strip below the drawing and argued in full in the per-module spec.</p>
+<p class="sub">Full specs: <code>.myrobots/plans/face-specs-batch-3-&lt;module&gt;.md</code> ·
+index and CI arithmetic: <code>face-specs-batch-3-INDEX.md</code></p>
+
+<div class="warn"><b>Three of the twelve I am recommending you DO NOT build.</b>
+<b>noise</b> does not deserve a face on merit — one param, zero inputs, zero modes, so all four
+face tiers would be identical. <b>cube</b> and <b>twotracks</b> are my two additions to reach
+twelve, and both come back as swap-outs: cube because seven of its twenty-four knobs do not
+survive measurement (MORPH is <em>bit-exactly</em> dead at spawn), twotracks because twelve of
+its thirty-one params are inert until a take exists and its transport is not params at all. All
+three are drawn below anyway, clearly marked, so the call is yours and not mine.</div>
+
+<ul class="toc">
+<li><a href="#analogvco">analogVco <em>promote</em></a></li>
+<li><a href="#bluebox">bluebox <em>promote</em></a></li>
+<li><a href="#clap">clap <em>promote</em></a></li>
+<li><a href="#drummergirl">drummergirl <em>promote</em></a></li>
+<li><a href="#macrooscillator">macrooscillator <em>rewrite</em></a></li>
+<li><a href="#meowbox">meowbox <em>promote</em></a></li>
+<li><a href="#pentemelodica">pentemelodica <em>promote</em></a></li>
+<li><a href="#samsloop">samsloop <em>blocked</em></a></li>
+<li><a href="#sixstrum">sixstrum <em>re-do</em></a></li>
+<li><a href="#noise" class="off">noise <em>no face</em></a></li>
+<li><a href="#cube" class="off">cube <em>swap out</em></a></li>
+<li><a href="#twotracks" class="off">twotracks <em>swap out</em></a></li>
+</ul>
+
+
+<!-- ══════════════════════════════════════════ analogVco ═══════════════ -->
+<section class="mod" id="analogvco">
+<header><h2>analogVco</h2><span class="id">analog-vco.ts · 6 params · 9 in / 6 out</span>
+<span class="tag new">new face</span></header>
+<p class="note">One phase accumulator, six taps. The face exists to say <b>which of the six
+outputs each knob addresses</b> — <code>shape</code> touches only the MORPH tap and
+<code>pw</code>'s authority over it is <code>max(0, 2·shape−1)</code>, which at the shipped
+default is <b>zero</b>. Today all six sit in one undifferentiated fader row with nothing
+saying so.</p>
+
+<div class="dock">
+<div class="editor"><div class="plate">
+  <div class="chrome"><div class="name">ANALOG VCO</div><div class="cat">SOURCES</div></div>
+  <div class="fhead"><h3 class="ftitle">Oscillator</h3>
+    <p class="fhint">One phase accumulator, six taps. SAW / SQUARE / TRIANGLE / SINE are always
+    themselves — SHAPE and PW steer the MORPH tap only. Both modulation inputs are exponential:
+    FM in octaves, PM in cycles.</p></div>
+
+  <div class="hero">
+    <div class="vis">
+      <svg viewBox="0 0 420 120" width="420" height="120" role="img" aria-label="one cycle of all five taps">
+        <rect width="420" height="120" fill="#181b1f" rx="4"/>
+        <line x1="0" y1="60" x2="420" y2="60" stroke="#2c3037" stroke-width="1"/>
+        <!-- ghosts: the four fixed taps -->
+        <path d="M0,100 L210,20 L210,100 L420,20" fill="none" stroke="#3d4750" stroke-width="1"/>
+        <path d="M0,25 L200,25 L200,95 L420,95" fill="none" stroke="#3d4750" stroke-width="1"/>
+        <path d="M0,25 L105,95 L315,25 L420,60" fill="none" stroke="#3d4750" stroke-width="1"/>
+        <path d="M0,60 Q52,15 105,60 T210,60 T315,60 T420,60" fill="none" stroke="#3d4750" stroke-width="1"/>
+        <!-- the morph tap, live -->
+        <path d="M0,98 L206,24 L206,98 L420,24" fill="none" stroke="#38d3c8" stroke-width="2"/>
+        <text x="8" y="14" font-family="ui-monospace,monospace" font-size="8" fill="#646c77" letter-spacing="1.4">MORPH TAP · SHAPE 0.00 = SAW</text>
+        <text x="300" y="114" font-family="ui-monospace,monospace" font-size="7.5" fill="#3d4750" letter-spacing="1.2">SAW · SQR · TRI · SIN (ghosted)</text>
+      </svg>
+    </div>
+    <div class="side">
+      <div class="k lg"><i style="--v:.5"></i><b>TUNE</b><em>0 ST</em></div>
+      <dl class="ros">
+        <div class="ro"><dt>knob pitch</dt><dd>261.6 Hz</dd></div>
+        <div class="ro d"><dt>FM span</dt><dd>±0 ¢</dd></div>
+        <div class="ro d"><dt>PW authority</dt><dd>0 %</dd></div>
+      </dl>
+    </div>
+  </div>
+
+  <div class="bands">
+    <div class="band"><p class="blab">1 · pitch <span class="bhint">one exponent: TUNE in semitones, FINE in cents, V/OCT in octaves — all four terms summed before the pow2</span></p>
+      <div class="row">
+        <div class="k"><i style="--v:.5"></i><b>TUNE</b><em>0 ST</em></div>
+        <div class="k"><i style="--v:.5"></i><b>FINE</b><em>0 ¢</em></div>
+      </div></div>
+    <div class="band"><p class="blab">2 · morph tap <span class="bhint">SHAPE crossfades saw → sine → square on the MORPH output only; PW sets the square end of it</span></p>
+      <div class="row">
+        <div class="k"><i style="--v:0"></i><b>SHAPE</b><em>SAW</em></div>
+        <div class="k dead"><i style="--v:.5"></i><b>PW</b><em>0.50</em></div>
+      </div></div>
+    <div class="band"><p class="blab">3 · modulation <span class="bhint">exponential FM in octaves, PM in cycles — both bipolar, and a negative value inverts the modulator rather than reversing direction</span></p>
+      <div class="row">
+        <div class="k dead"><i style="--v:.5"></i><b>FM AMT</b><em>0.00</em></div>
+        <div class="k dead"><i style="--v:.5"></i><b>PM AMT</b><em>0.00</em></div>
+      </div></div>
+  </div>
+</div></div>
+
+<aside class="sb">
+  <section><h4>signal flow</h4>
+    <ul class="flow">
+      <li class="gen"><i class="d"></i>PITCH SUM<span class="n">V/OCT + TUNE + FINE + FM</span></li>
+      <li class="gen"><i class="d"></i>PHASE ACC<span class="n">RESET ON SYNC</span></li>
+      <li class="par"><i class="d"></i>PM OFFSET<span class="n">READ ONLY</span></li>
+      <li><i class="d"></i>SAW<span class="n">TAP</span></li>
+      <li><i class="d"></i>SQUARE · PW<span class="n">TAP</span></li>
+      <li><i class="d"></i>TRIANGLE<span class="n">TAP</span></li>
+      <li><i class="d"></i>SINE<span class="n">TAP</span></li>
+      <li><i class="d"></i>MORPH<span class="n">SHAPE XFADE</span></li>
+      <li><i class="d"></i>SYNC OUT<span class="n">PRE-PM WRAP</span></li>
+    </ul>
+    <div class="flegend"><span><i class="g"></i>generator</span><span><i></i>tap</span><span><i class="p"></i>parallel</span></div>
+  </section>
+  <section><h4>aliasing</h4>
+    <div class="rolist">
+      <div class="d"><span>first aliased harmonic</span><b>91</b></div>
+      <div class="d"><span>sync out rate</span><b>261.6 Hz</b></div>
+      <div><span>band-limiting</span><b>none</b></div>
+    </div>
+  </section>
+</aside>
+</div>
+
+<div class="strip">
+<div class="der"><h5>derived · PW authority</h5><code>max(0, 2·shape − 1) × 100 %</code> —
+<b>negative control:</b> sweep SHAPE 0→1 with PW untouched. The PW dial is frozen; this walks
+0 % → 100 %. A <code>paramId:'pw'</code> readout prints 0.50 in both states.</div>
+<div class="der"><h5>derived · FM span</h5><code>1200·|fmAmount| ¢</code> and the asymmetric
+<code>f0·(2^|fm|−1) / f0·(1−2^−|fm|)</code> Hz. <b>Negative control:</b> move TUNE — the FM dial
+never moves, the Hz deviation scales. <b>Second leg:</b> flip the SIGN of fmAmount and the span
+must <em>not</em> move (the sign inverts the modulator, not the direction).</div>
+<div><h5>bespoke cell</h5>The single-cycle scope, <b>promoted into the hero and drawing all five
+taps</b>. The card already computes it with a zero-crossing lock and throws it away. Nothing else
+is bespoke — the flow and the numbers are platform blocks.</div>
+<div class="bad"><h5>already wrong</h5>The card passes <code>min={0}</code> for
+<code>fmAmount</code> and <code>pmAmount</code>, which the def declares <b>−1..1</b>. <b>The whole
+negative half of both depth controls has no UI at all</b> — and the bipolar-inversion feature it
+disables is unit-tested. Also: <code>docs.controls.pw</code> tells you to animate PW with an LFO;
+there is no <code>pw</code> CV input.</div>
+</div>
+</section>
+
+
+<!-- ══════════════════════════════════════════ bluebox ═════════════════ -->
+<section class="mod" id="bluebox">
+<header><h2>bluebox</h2><span class="id">bluebox.ts · 12 params · 12 gate in / 1 out</span>
+<span class="tag new">new face</span></header>
+<p class="note">Twelve momentary keys into <b>one</b> bank of ten sine oscillators. Two keys that
+share a tone column stack into the same slot — which is why <code>{1,4}</code> is <b>1.76 dB
+louder</b> than <code>{1,5}</code> although both hold two keys and light four tones. The hero
+bank is the only surface on which that becomes visible. ⚠ Its <code>face.order</code> is
+declaration order and <b>says so in the def</b>: a telephone keypad has no principled priority
+ranking, so the lane's information is the glyph, not a subset of the keys.</p>
+
+<div class="dock">
+<div class="editor"><div class="plate">
+  <div class="chrome"><div class="name">BLUEBOX</div><div class="cat">SOURCES</div></div>
+  <div class="fhead"><h3 class="ftitle">Dialer</h3>
+    <p class="fhint">Twelve momentary keys into ONE bank of ten sine oscillators. A digit lights a
+    ROW tone and a COLUMN tone; two keys that share a tone stack into the same oscillator. Nothing
+    is normalised — two digits is already 0 dBFS.</p></div>
+
+  <div class="hero">
+    <div class="vis">
+      <svg viewBox="0 0 420 120" width="420" height="120" role="img" aria-label="ten-slot tone bank">
+        <rect width="420" height="120" fill="#181b1f" rx="4"/>
+        <line x1="0" y1="30" x2="420" y2="30" stroke="#6a3b3b" stroke-width="1" stroke-dasharray="3 3"/>
+        <text x="4" y="26" font-family="ui-monospace,monospace" font-size="7" fill="#c98080" letter-spacing="1.2">CLIP 1.0</text>
+        <g font-family="ui-monospace,monospace" font-size="7" fill="#646c77" letter-spacing=".6">
+          <rect x="14"  y="66" width="22" height="30" fill="#2f8f88"/><text x="12" y="108">697</text>
+          <rect x="54"  y="96" width="22" height="0"  fill="#2f8f88"/><text x="52" y="108">770</text>
+          <rect x="94"  y="96" width="22" height="0"  fill="#2f8f88"/><text x="92" y="108">852</text>
+          <rect x="134" y="96" width="22" height="0"  fill="#2f8f88"/><text x="132" y="108">941</text>
+          <rect x="174" y="36" width="22" height="60" fill="#38d3c8"/><text x="170" y="108">1209</text>
+          <rect x="214" y="96" width="22" height="0"  fill="#2f8f88"/><text x="210" y="108">1336</text>
+          <rect x="254" y="96" width="22" height="0"  fill="#2f8f88"/><text x="250" y="108">1477</text>
+          <rect x="294" y="66" width="22" height="30" fill="#2f8f88"/><text x="290" y="108">1700</text>
+          <rect x="334" y="96" width="22" height="0"  fill="#2f8f88"/><text x="330" y="108">2200</text>
+          <rect x="374" y="96" width="22" height="0"  fill="#2f8f88"/><text x="370" y="108">2600</text>
+        </g>
+        <text x="176" y="32" font-family="ui-monospace,monospace" font-size="7.5" fill="#38d3c8" letter-spacing="1">×2 — KEYS 1 AND 4 SHARE THIS COLUMN</text>
+        <text x="8" y="14" font-family="ui-monospace,monospace" font-size="8" fill="#646c77" letter-spacing="1.4">TONE BANK · 10 SLOTS · HELD {1, 4}</text>
+      </svg>
+    </div>
+    <div class="side">
+      <dl class="ros">
+        <div class="ro d"><dt>level</dt><dd>−7.3 dB</dd></div>
+        <div class="ro d"><dt>headroom</dt><dd>0.0 dB</dd></div>
+        <div class="ro d"><dt>decodes</dt><dd>— 2 rows</dd></div>
+      </dl>
+    </div>
+  </div>
+
+  <div class="bands">
+    <div class="band"><p class="blab">1 · keypad <span class="bhint">the Bell grid — each digit lights one ROW tone and one COLUMN tone, summed into the shared bank</span></p>
+      <div class="row"><div class="pad">
+        <span class="on">1<small>&nbsp;</small></span><span>2<small>ABC</small></span><span>3<small>DEF</small></span>
+        <span class="on">4<small>GHI</small></span><span>5<small>JKL</small></span><span>6<small>MNO</small></span>
+        <span>7<small>PQRS</small></span><span>8<small>TUV</small></span><span>9<small>WXYZ</small></span>
+        <span style="grid-column:2">0<small>&nbsp;</small></span>
+      </div></div></div>
+    <div class="band"><p class="blab">2 · in-band <span class="bhint">single tones outside the DTMF grid: 2600 alone, and the 1700 + 2200 pair</span></p>
+      <div class="row"><div class="pad" style="grid-template-columns:repeat(2,88px)">
+        <span class="blue">BLUE<small>2600</small></span><span class="red">RED<small>1700+2200</small></span>
+      </div></div></div>
+  </div>
+</div></div>
+
+<aside class="sb">
+  <section><h4>signal flow</h4>
+    <ul class="flow">
+      <li class="gen"><i class="d"></i>KEYS<span class="n">≥ 0.5</span></li>
+      <li><i class="d"></i>TONE BANK<span class="n">10 SLOTS · += 0.25</span></li>
+      <li><i class="d"></i>AR RAMP<span class="n">τ 1 MS</span></li>
+      <li class="par"><i class="d"></i>FREE PHASE<span class="n">NEVER RESET</span></li>
+      <li><i class="d"></i>SINE SUM<span class="n">NO NORMALISE</span></li>
+      <li><i class="d"></i>OUT<span class="n">MONO</span></li>
+    </ul>
+    <div class="flegend"><span><i class="g"></i>generator</span><span><i></i>bus</span><span><i class="p"></i>parallel</span></div>
+  </section>
+  <section><h4>bell grid</h4><div class="panel">
+    <svg viewBox="0 0 240 130" width="100%" role="img" aria-label="DTMF row and column frequencies">
+      <g font-family="ui-monospace,monospace" font-size="8" fill="#646c77" letter-spacing=".8">
+        <text x="4" y="34">697</text><text x="4" y="60">770</text><text x="4" y="86">852</text><text x="4" y="112">941</text>
+        <text x="60" y="16">1209</text><text x="118" y="16">1336</text><text x="176" y="16">1477</text>
+      </g>
+      <g fill="#202630" stroke="#2b323c">
+        <rect x="52" y="22" width="48" height="20" rx="3" fill="#1b2c30" stroke="#34b7b0"/>
+        <rect x="110" y="22" width="48" height="20" rx="3"/><rect x="168" y="22" width="48" height="20" rx="3"/>
+        <rect x="52" y="48" width="48" height="20" rx="3" fill="#1b2c30" stroke="#34b7b0"/>
+        <rect x="110" y="48" width="48" height="20" rx="3"/><rect x="168" y="48" width="48" height="20" rx="3"/>
+        <rect x="52" y="74" width="48" height="20" rx="3"/><rect x="110" y="74" width="48" height="20" rx="3"/>
+        <rect x="168" y="74" width="48" height="20" rx="3"/>
+        <rect x="110" y="100" width="48" height="20" rx="3"/>
+      </g>
+      <g font-family="ui-monospace,monospace" font-size="9" fill="#9aa2ad" text-anchor="middle">
+        <text x="76" y="36" fill="#38d3c8">1</text><text x="134" y="36">2</text><text x="192" y="36">3</text>
+        <text x="76" y="62" fill="#38d3c8">4</text><text x="134" y="62">5</text><text x="192" y="62">6</text>
+        <text x="76" y="88">7</text><text x="134" y="88">8</text><text x="192" y="88">9</text>
+        <text x="134" y="114">0</text>
+      </g>
+    </svg>
+  </div></section>
+  <section><h4>bank</h4>
+    <div class="rolist">
+      <div class="d"><span>keys held</span><b>2</b></div>
+      <div class="d"><span>tones lit</span><b>3 of 10</b></div>
+      <div><span>release</span><b>≈ 15 ms</b></div>
+    </div>
+  </section>
+</aside>
+</div>
+
+<div class="strip">
+<div class="der"><h5>derived · level</h5><code>√( ½ · Σ_f (0.25·n_f)² )</code> — verified against
+the shipping worklet to 4 dp on five cases. <b>Negative control, and it is the best in the
+batch:</b> <code>{1,4}</code> vs <code>{1,5}</code>. Both hold two keys, both light four slots,
+both peak at ≈1.0. Every count-based readback returns the identical number; the true RMS differs
+by <b>1.76 dB</b> because 1 and 4 share column 1209.</div>
+<div class="der"><h5>derived · headroom</h5><code>−20·log10(0.25·T)</code>, T = total tones held.
+One digit = −6 dBFS. <b>Two digits = exactly 0 dBFS. Three clips.</b> <b>Negative control:</b>
+add key 5 to key 2 — they share column 1336, so the peak goes 0.5 → 0.75, not → 1.0. A per-key
+model predicts 1.0 and is falsified.</div>
+<div><h5>the honest weakness</h5>The lane tiers show ranks 1–6 = keys 1–6, which is arbitrary and
+the def says so. The mitigation is that the lane's <b>glyph</b> is a level meter, so a compact
+tile reads "how hot is it" — the module's real hazard — rather than a meaningless subset.</div>
+<div class="bad"><h5>already wrong</h5><code>OUTPUT_NORM = 1.0</code> against three comments
+promising a divide-by-4. Measured: four digits peak at <b>+5.78 dBFS</b>, all twelve at
+<b>+14.51 dBFS</b>. The stated guarantee fails at <b>two</b> digits. Also: "no envelope, no
+attack, no decay" — it is a one-pole with a <b>14.7 ms</b> release.</div>
+</div>
+</section>
+
+
+<!-- ══════════════════════════════════════════ clap ════════════════════ -->
+<section class="mod" id="clap">
+<header><h2>clap</h2><span class="id">clap.ts · 10 params · 5 in / 1 out</span>
+<span class="tag new">new face</span></header>
+<p class="note">The strongest candidate in the batch. A clap is <b>two envelopes on one noise
+source</b>: a burst train of N onsets, and a room tail that starts at the <em>last</em> onset, not
+at the strike. The current card shows nine peer faders with no indication that four of them change
+the same duration — and that SNAP, a balance control, is what actually decides how long the voice
+is (150 ms at snap 0.5, <b>45 ms at snap 1.0</b>, with the TAIL knob reading 150 throughout).</p>
+
+<div class="dock">
+<div class="editor"><div class="plate">
+  <div class="chrome"><div class="name">CLAP</div><div class="cat">SOURCES</div></div>
+  <div class="fhead"><h3 class="ftitle">Voice</h3>
+    <p class="fhint">Two envelopes on one band-passed noise source: a train of N hard onsets SPREAD
+    apart, and a room tail that starts at the LAST onset. SNAP crossfades them, and in doing so
+    decides how long the whole voice is.</p></div>
+
+  <div class="hero">
+    <div class="vis">
+      <svg viewBox="0 0 420 120" width="420" height="120" role="img" aria-label="burst train and room tail envelopes">
+        <rect width="420" height="120" fill="#181b1f" rx="4"/>
+        <line x1="0" y1="104" x2="420" y2="104" stroke="#2c3037"/>
+        <!-- the room tail (behind) -->
+        <path d="M96,104 L100,44 C160,60 260,92 420,102 L420,104 Z" fill="#1e4a4a" opacity=".55"/>
+        <!-- three burst pulses -->
+        <path d="M8,104 L11,26 C22,60 30,92 44,104 Z" fill="#38d3c8" opacity=".9"/>
+        <path d="M52,104 L55,26 C66,60 74,92 88,104 Z" fill="#38d3c8" opacity=".9"/>
+        <path d="M96,104 L99,26 C118,64 130,96 152,104 Z" fill="#38d3c8" opacity=".9"/>
+        <!-- markers -->
+        <line x1="96" y1="30" x2="96" y2="104" stroke="#f2c14e" stroke-dasharray="2 3"/>
+        <text x="102" y="34" font-family="ui-monospace,monospace" font-size="7.5" fill="#f2c14e" letter-spacing=".8">ROOM STARTS HERE — AT THE LAST ONSET</text>
+        <line x1="152" y1="104" x2="152" y2="112" stroke="#646c77"/>
+        <line x1="330" y1="104" x2="330" y2="112" stroke="#646c77"/>
+        <g font-family="ui-monospace,monospace" font-size="7" fill="#646c77" letter-spacing=".8">
+          <text x="4" y="118">0</text><text x="88" y="118">20 MS</text>
+          <text x="140" y="118">40 MS · BURST −60 dB</text><text x="300" y="118">174 MS · VOICE</text>
+        </g>
+        <text x="8" y="14" font-family="ui-monospace,monospace" font-size="8" fill="#646c77" letter-spacing="1.4">3 ONSETS × 10 MS · TAIL 150 MS · SNAP 0.50</text>
+      </svg>
+    </div>
+    <div class="side">
+      <div class="k lg"><i style="--v:.29"></i><b>SPREAD</b><em>10 MS</em></div>
+      <button class="btn hot">strike</button>
+      <dl class="ros">
+        <div class="ro d"><dt>burst</dt><dd>40 ms</dd></div>
+        <div class="ro d"><dt>room in</dt><dd>20 ms</dd></div>
+        <div class="ro d"><dt>voice</dt><dd>174 ms</dd></div>
+      </dl>
+    </div>
+  </div>
+
+  <div class="bands">
+    <div class="band"><p class="blab">1 · burst — the hands <span class="bhint">N onsets, SPREAD apart; each decays over SPREAD, the last over twice that</span></p>
+      <div class="row">
+        <button class="btn hot" style="align-self:center">strike</button>
+        <div class="cell"><span class="cap">PULSES</span><div class="seg"><span>2</span><span class="on">3</span><span>4</span><span>5</span></div></div>
+        <div class="k"><i style="--v:.29"></i><b>SPREAD</b><em>10 MS</em></div>
+      </div></div>
+    <div class="band"><p class="blab">2 · noise — the material <span class="bhint">one xorshift source through a COLOR pole, then a band-pass whose Q is WIDTH</span></p>
+      <div class="row">
+        <div class="k"><i style="--v:.15"></i><b>COLOR</b><em>0.15</em></div>
+        <div class="k"><i style="--v:.46"></i><b>TONE</b><em>1.0 kHz</em></div>
+        <div class="k amber"><i style="--v:.5"></i><b>WIDTH</b><em>0.50</em></div>
+      </div></div>
+    <div class="band"><p class="blab">3 · room — the tail <span class="bhint">fires at the LAST onset, one pole darker than the band, decaying over TAIL</span></p>
+      <div class="row">
+        <div class="k"><i style="--v:.49"></i><b>TAIL</b><em>150 MS</em></div>
+        <div class="k"><i style="--v:.5"></i><b>SNAP</b><em>0.50</em></div>
+      </div></div>
+    <div class="band"><p class="blab">bus · drive · out <span class="bhint">2× oversampled tanh, a 20 Hz DC block, then the level — which runs INTO the final clipper, not past it</span></p>
+      <div class="row">
+        <div class="k"><i style="--v:.2"></i><b>DRIVE</b><em>0.20</em></div>
+        <div class="k"><i style="--v:.67"></i><b>LEVEL</b><em>0.0 DB</em></div>
+      </div></div>
+  </div>
+</div></div>
+
+<aside class="sb">
+  <section><h4>signal flow</h4>
+    <ul class="flow">
+      <li class="gen"><i class="d"></i>STRIKE<span class="n">LATCHES N + SPREAD</span></li>
+      <li class="gen"><i class="d"></i>NOISE<span class="n">XORSHIFT32</span></li>
+      <li><i class="d"></i>COLOR POLE<span class="n">9K → 700 HZ</span></li>
+      <li><i class="d"></i>BAND · WIDTH<span class="n">Q 5.6 → 0.6</span></li>
+      <li><i class="d"></i>BURST VCA<span class="n">√SNAP</span></li>
+      <li class="par"><i class="d"></i>ROOM POLE<span class="n">ONE POLE DARKER</span></li>
+      <li><i class="d"></i>ROOM VCA<span class="n">√(1−SNAP)</span></li>
+      <li><i class="d"></i>DRIVE 2×OS<span class="n">TANH</span></li>
+      <li><i class="d"></i>DC BLOCK<span class="n">20 HZ</span></li>
+      <li><i class="d"></i>LEVEL → CLIP<span class="n">LEVEL FEEDS IT</span></li>
+    </ul>
+    <div class="flegend"><span><i class="g"></i>generator</span><span><i></i>bus stage</span><span><i class="p"></i>parallel</span></div>
+  </section>
+  <section><h4>presets</h4><div class="pre">
+    <div class="on">808 <s>150 MS</s></div><div>909 DENSE <s>5 × 4 MS</s></div>
+    <div>LINN ROOM <s>800 MS</s></div><div>DRY SNAP <s>SNAP 1.0</s></div>
+  </div></section>
+  <section><h4>filter</h4><div class="rolist">
+    <div class="d"><span>bandwidth</span><b>890 Hz</b></div>
+    <div class="d"><span>Q</span><b>1.12</b></div>
+    <div><span>DC block T60</span><b>55 ms</b></div>
+  </div></section>
+</aside>
+</div>
+
+<div class="strip">
+<div class="der"><h5>derived · voice length</h5>
+<code>max( snap&gt;0 ? (N+1)·S : 0 , snap&lt;1 ? (N−1)·S+T : 0 )</code>.
+<b>Negative control — SNAP.</b> Measured 181 / 174 / 151 / <b>45 ms</b> at snap 0 / 0.5 / 0.9 /
+1.0, while a <code>paramId:'tail'</code> readout prints "150 ms" at every one. <b>Second leg —
+LEVEL:</b> against a −60 dBFS floor the measured T60 moves 2.67 ms/dB, so 96 ms of tail lives on
+the LEVEL fader alone.</div>
+<div class="der"><h5>derived · room onset</h5><code>(N−1)·S</code>. Measured exactly: at snap 0,
+N 5, S 25 the output is <b>bit-zero until 100 ms</b>, then jumps to −4 dB. <b>Negative control:</b>
+PULSES and SPREAD move it; TAIL must not.</div>
+<div><h5>bespoke cell</h5>The burst-train envelope graph — N onset ticks, the last decaying over
+2·S, the room rising at <code>(N−1)·S</code>, both scaled by <code>√snap</code> / <code>√(1−snap)</code>.
+Every number above becomes a picture.</div>
+<div class="bad"><h5>already wrong</h5>WIDTH's loudness compensation has <b>the wrong sign</b> —
+measured <b>18.06 dB</b> of RMS on a control documented as "shape, not volume" — and its unit test
+is an amplitude window that <b>cannot fail on it</b>. Also: holding the strike pad <b>masks</b>
+external triggers, and the doc claims the opposite (tomtom documents the identical circuit
+correctly).</div>
+</div>
+</section>
+
+
+<!-- ══════════════════════════════════════════ drummergirl ═════════════ -->
+<section class="mod" id="drummergirl">
+<header><h2>drummergirl</h2><span class="id">drummergirl.dsp · 5 params · 6 in / 1 out</span>
+<span class="tag new">new face</span></header>
+<p class="note">Not a drum machine — one sine, one noise, one amp ADSR, one pitch ADSR. The face's
+whole job is to <b>unbundle SHAPE</b>: a single fader that moves the attack, the sustain, the
+release, the pitch-sweep depth <em>and</em> the pitch-sweep time across a 16-preset table. And to
+say the thing nothing currently says — <b>at the shipped default the pitch sweep is exactly
+zero</b>, and the default sits in a three-wide dead zone.</p>
+
+<div class="dock">
+<div class="editor"><div class="plate">
+  <div class="chrome"><div class="name">DRUMMERGIRL</div><div class="cat">SOURCES</div></div>
+  <div class="fhead"><h3 class="ftitle">Voice</h3>
+    <p class="fhint">One sine and one noise source crossfaded by TONE, through one amplitude
+    envelope. SHAPE is not a knob — it is a morph across 16 percussion presets that moves the
+    attack, the sustain, the release AND the pitch sweep together. At the shipped default the
+    sweep is zero.</p></div>
+
+  <div class="hero">
+    <div class="vis">
+      <svg viewBox="0 0 420 120" width="420" height="120" role="img" aria-label="amplitude envelope and pitch sweep">
+        <rect width="420" height="120" fill="#181b1f" rx="4"/>
+        <line x1="0" y1="102" x2="420" y2="102" stroke="#2c3037"/>
+        <path d="M4,102 L10,20 C60,52 130,84 250,98 L250,102 Z" fill="#1e4a4a" opacity=".7"/>
+        <path d="M4,102 L10,20 C60,52 130,84 250,98" fill="none" stroke="#38d3c8" stroke-width="2"/>
+        <!-- pitch sweep, flat at default -->
+        <path d="M10,70 L410,70" fill="none" stroke="#f2c14e" stroke-width="1.4" stroke-dasharray="4 3"/>
+        <text x="180" y="64" font-family="ui-monospace,monospace" font-size="7.5" fill="#f2c14e" letter-spacing=".9">PITCH SWEEP = 0 AT SHAPE 0.30 — FLAT</text>
+        <g font-family="ui-monospace,monospace" font-size="7" fill="#646c77" letter-spacing=".8">
+          <text x="4" y="116">0</text><text x="120" y="116">60 MS · SWEEP WINDOW</text><text x="242" y="116">186 MS · HIT</text>
+        </g>
+        <text x="8" y="14" font-family="ui-monospace,monospace" font-size="8" fill="#646c77" letter-spacing="1.4">AMP ENVELOPE · PRESET 4 → 5, 50 %</text>
+      </svg>
+    </div>
+    <div class="side">
+      <div class="k lg"><i style="--v:.3"></i><b>SHAPE</b><em>4 → 5</em></div>
+      <button class="btn hot">hit</button>
+      <dl class="ros">
+        <div class="ro d"><dt>strike pitch</dt><dd>65.4 Hz</dd></div>
+        <div class="ro d"><dt>sweep</dt><dd>0 st</dd></div>
+        <div class="ro d"><dt>hit length</dt><dd>186 ms</dd></div>
+      </dl>
+    </div>
+  </div>
+
+  <div class="bands">
+    <div class="band"><p class="blab">1 · shape — the preset morph <span class="bhint">one fader across 16 presets: attack, sustain, release, sweep depth and sweep time move together</span></p>
+      <div class="row">
+        <button class="btn hot" style="align-self:center">hit</button>
+        <div class="k"><i style="--v:.3"></i><b>SHAPE</b><em>4 → 5</em></div>
+      </div></div>
+    <div class="band"><p class="blab">2 · source — sine vs noise <span class="bhint">TONE is a straight crossfade — 1 is a pure sine, 0 is pure noise, and the shipped 0.30 is 70 % noise</span></p>
+      <div class="row">
+        <div class="k"><i style="--v:.3"></i><b>TONE</b><em>0.30</em></div>
+        <div class="k"><i style="--v:.5"></i><b>PITCH</b><em>0 ST</em></div>
+      </div></div>
+    <div class="band"><p class="blab">3 · amplitude <span class="bhint">DECAY replaces the preset decay for the amplitude only — the pitch sweep keeps its own, from SHAPE</span></p>
+      <div class="row">
+        <div class="k"><i style="--v:.55"></i><b>DECAY</b><em>150 MS</em></div>
+        <div class="k"><i style="--v:.5"></i><b>VOLUME</b><em>1.00</em></div>
+      </div></div>
+  </div>
+</div></div>
+
+<aside class="sb">
+  <section><h4>signal flow</h4>
+    <ul class="flow">
+      <li class="gen"><i class="d"></i>GATE<span class="n">LEVEL-SENSITIVE</span></li>
+      <li class="par"><i class="d"></i>PITCH ADSR<span class="n">OCTAVES, FROM SHAPE</span></li>
+      <li class="gen"><i class="d"></i>SINE<span class="n">FIXED WAVEFORM</span></li>
+      <li class="gen"><i class="d"></i>NOISE<span class="n">SEEDED LCG</span></li>
+      <li><i class="d"></i>TONE XFADE<span class="n">SINE ↔ NOISE</span></li>
+      <li><i class="d"></i>AMP ADSR<span class="n">A·S·R FROM SHAPE</span></li>
+      <li><i class="d"></i>VOLUME<span class="n">×0…2</span></li>
+    </ul>
+    <div class="flegend"><span><i class="g"></i>generator</span><span><i></i>bus stage</span><span><i class="p"></i>parallel</span></div>
+  </section>
+  <section><h4>preset morph</h4><div class="panel">
+    <svg viewBox="0 0 240 54" width="100%" role="img" aria-label="16 preset ticks with the current position">
+      <line x1="8" y1="30" x2="232" y2="30" stroke="#2c3037"/>
+      <g stroke="#4a525c">
+        <line x1="8" y1="24" x2="8" y2="36"/><line x1="22.9" y1="26" x2="22.9" y2="34"/>
+        <line x1="37.9" y1="26" x2="37.9" y2="34"/><line x1="52.8" y1="26" x2="52.8" y2="34"/>
+        <line x1="67.7" y1="24" x2="67.7" y2="36"/><line x1="82.7" y1="24" x2="82.7" y2="36"/>
+        <line x1="97.6" y1="26" x2="97.6" y2="34"/><line x1="112.5" y1="26" x2="112.5" y2="34"/>
+        <line x1="127.5" y1="26" x2="127.5" y2="34"/><line x1="142.4" y1="26" x2="142.4" y2="34"/>
+        <line x1="157.3" y1="26" x2="157.3" y2="34"/><line x1="172.3" y1="26" x2="172.3" y2="34"/>
+        <line x1="187.2" y1="26" x2="187.2" y2="34"/><line x1="202.1" y1="26" x2="202.1" y2="34"/>
+        <line x1="217.1" y1="26" x2="217.1" y2="34"/><line x1="232" y1="24" x2="232" y2="36"/>
+      </g>
+      <circle cx="75.2" cy="30" r="4" fill="#38d3c8"/>
+      <g font-family="ui-monospace,monospace" font-size="7" fill="#646c77" letter-spacing=".9">
+        <text x="4" y="16">0</text><text x="58" y="16" fill="#38d3c8">4 → 5 · 50 %</text><text x="214" y="16">15</text>
+        <text x="4" y="50">SWEEP 0</text><text x="180" y="50">SWEEP 0</text>
+      </g>
+      <rect x="60" y="22" width="30" height="16" fill="none" stroke="#6a5330" stroke-dasharray="2 2"/>
+      <text x="52" y="52" font-family="ui-monospace,monospace" font-size="6.5" fill="#c8a05a" letter-spacing=".8">THE DEAD ZONE — 4, 5 AND 6 ALL SWEEP 0</text>
+    </svg>
+  </div></section>
+  <section><h4>derived</h4><div class="rolist">
+    <div class="d"><span>sweep time</span><b>60 ms</b></div>
+    <div class="d"><span>sustain floor</span><b>−40 dB</b></div>
+    <div class="d"><span>body : noise</span><b>−7.4 dB</b></div>
+  </div></section>
+</aside>
+</div>
+
+<div class="strip">
+<div class="der"><h5>derived · strike pitch</h5>
+<code>65.406·2^(pitch/12) · 2^(4·sweepOf(shape))</code>. <b>Negative control:</b> hold PITCH at 0
+and move SHAPE 0.30 → 0.00 — the strike goes <b>65.4 → 1046.5 Hz (+48 st)</b> while the PITCH
+readback never moves. The knob called "Pitch" tells you where the hit <em>ends</em>; nothing tells
+you where it starts.</div>
+<div class="der"><h5>derived · sweep time</h5><code>1000·max(0.005, decayOf(shape))</code>.
+<b>Negative control, falsifiable:</b> sweep the DECAY knob across its whole range and this must
+<b>not</b> move — line 69 of the .dsp contains no <code>decayKnob</code> at all. A readout that
+tracked DECAY would be wrong, and the test says so.</div>
+<div><h5>bespoke cells</h5>The hero envelope-vs-sweep graph, and a generic <code>preset-morph</code>
+sidebar panel (a 16-tick strip with the interpolation position) that any future table-morph module
+reuses.</div>
+<div class="bad"><h5>already wrong</h5><b>TONE and SHAPE are swapped in every doc string, with the
+polarity also reversed</b> — the def says <code>shape</code> crossfades body↔noise; the .dsp does
+it with <code>tone</code>, backwards. Also "only the rising edge matters" (it is a sustaining
+ADSR), "an internal AD envelope" (it is ADSR), and a VRT comment describing a "sample preview"
+this module has never had.</div>
+</div>
+</section>
+
+
+<!-- ══════════════════════════════════════════ macrooscillator ═════════ -->
+<section class="mod" id="macrooscillator">
+<header><h2>macrooscillator</h2><span class="id">macrooscillator.ts · 6 → 9 params · 8 in / 2 out</span>
+<span class="tag rew">partial rewrite</span></header>
+<p class="note">Fourteen engines behind one four-knob scheme. The rewrite adds three params
+(<code>strike_decay</code>, <code>strike_colour</code>, <code>aux_level</code>) and a
+<b>patched-sensing strike gate</b>: unpatched, the module behaves exactly as today; patch the
+trigger and each edge fires a pitch-tracking attack into a gate that blends filter↔VCA. It also
+moves the fourteen engine names <b>into the def</b> as <code>ParamDef.options</code>, killing two
+duplicate tables. <code>aux_level</code> defaults to <b>1.0</b> — that is not taste, it is the
+compatibility contract: AUX is unscaled today, so any other default silently rewrites the level of
+an output already patched into people's racks.</p>
+
+<div class="dock">
+<div class="editor"><div class="plate">
+  <div class="chrome"><div class="name">MACROOSCILLATOR</div><div class="cat">SOURCES</div></div>
+  <div class="fhead"><h3 class="ftitle">Macro voice</h3>
+    <p class="fhint">Fourteen engines behind one four-knob scheme. MODEL picks the engine;
+    HARMONICS, TIMBRE and MORPH mean something different in each one — the readout under each dial
+    says what they mean here. OUT and AUX are two renderings of the same note, not a stereo pair.</p></div>
+
+  <div class="hero">
+    <div class="vis">
+      <svg viewBox="0 0 420 120" width="420" height="120" role="img" aria-label="out and aux waveforms with the strike envelope">
+        <rect width="420" height="120" fill="#181b1f" rx="4"/>
+        <line x1="0" y1="60" x2="420" y2="60" stroke="#2c3037"/>
+        <!-- aux, ghost, a sub-octave triangle -->
+        <path d="M0,86 L105,34 L210,86 L315,34 L420,86" fill="none" stroke="#3d4750" stroke-width="1.4"/>
+        <!-- out, solid -->
+        <path d="M0,96 L52,26 L52,96 L105,26 L105,96 L157,26 L157,96 L210,26 L210,96 L262,26 L262,96 L315,26 L315,96 L367,26 L367,96 L420,26"
+              fill="none" stroke="#38d3c8" stroke-width="1.8"/>
+        <!-- strike envelope overlay -->
+        <path d="M0,110 L18,16 C90,50 200,92 420,104" fill="none" stroke="#f2c14e" stroke-width="1.2" stroke-dasharray="4 3"/>
+        <text x="8" y="14" font-family="ui-monospace,monospace" font-size="8" fill="#646c77" letter-spacing="1.4">ENGINE 0 · VA — OUT SOLID, AUX GHOST, STRIKE DASHED</text>
+        <text x="300" y="116" font-family="ui-monospace,monospace" font-size="7" fill="#3d4750" letter-spacing="1">AUX = SUB-OCTAVE TRI</text>
+      </svg>
+    </div>
+    <div class="side">
+      <div class="k lg"><i style="--v:0"></i><b>MODEL</b><em>VA</em></div>
+      <button class="btn hot">strike</button>
+      <dl class="ros">
+        <div class="ro d"><dt>harmonics</dt><dd>detune</dd></div>
+        <div class="ro d"><dt>strike</dt><dd>420 ms</dd></div>
+        <div class="ro d"><dt>aux</dt><dd>+0.0 dB</dd></div>
+      </dl>
+    </div>
+  </div>
+
+  <div class="bands">
+    <div class="band"><p class="blab">1 · engine <span class="bhint">fourteen synthesis models on one selector — every engine runs every sample, so switching is phase-continuous</span></p>
+      <div class="row">
+        <button class="btn hot" style="align-self:center">strike</button>
+        <div class="cell"><span class="cap">MODEL</span><div class="sel">VA <s>1 / 14 ▾</s></div></div>
+      </div></div>
+    <div class="band"><p class="blab">2 · the three axes <span class="bhint">structure, brightness, shape — reinterpreted per engine; HARMONICS is a stepped selector in five of the fourteen</span></p>
+      <div class="row">
+        <div class="k"><i style="--v:.3"></i><b>HARMONICS</b><em>DETUNE</em></div>
+        <div class="k"><i style="--v:.3"></i><b>TIMBRE</b><em>PW · SYNC</em></div>
+        <div class="k"><i style="--v:.5"></i><b>MORPH</b><em>SAW ↔ SQR</em></div>
+      </div></div>
+    <div class="band"><p class="blab">3 · strike <span class="bhint">inserted only while TRIGGER is patched: a pitch-tracking attack, then a decay that slows into its own tail — and COLOUR also lengthens it</span></p>
+      <div class="row">
+        <div class="k green"><i style="--v:.35"></i><b>DECAY</b><em>420 MS</em></div>
+        <div class="k green"><i style="--v:.5"></i><b>COLOUR</b><em>0.50</em></div>
+      </div></div>
+    <div class="band"><p class="blab">out · aux <span class="bhint">AUX is a sibling rendering of the same note sharing pitch, params and envelope — a sub-octave, a clean carrier, a raw exciter, depending on the engine</span></p>
+      <div class="row">
+        <div class="k"><i style="--v:.5"></i><b>NOTE</b><em>0 ST</em></div>
+        <div class="k"><i style="--v:.8"></i><b>LEVEL</b><em>0.80</em></div>
+        <div class="k green"><i style="--v:1"></i><b>AUX</b><em>1.00</em></div>
+      </div></div>
+  </div>
+</div></div>
+
+<aside class="sb">
+  <section><h4>signal flow</h4>
+    <ul class="flow">
+      <li class="gen"><i class="d"></i>PITCH<span class="n">V/OCT + NOTE</span></li>
+      <li class="gen"><i class="d"></i>ENGINE ×14<span class="n">ALL TICK, ONE HEARD</span></li>
+      <li class="par"><i class="d"></i>STRIKE ENV<span class="n">ONLY WHEN PATCHED</span></li>
+      <li><i class="d"></i>STRIKE GATE<span class="n">FILTER ↔ VCA</span></li>
+      <li><i class="d"></i>LEVEL<span class="n">OUT ONLY</span></li>
+      <li><i class="d"></i>OUT<span class="n">THE VOICE</span></li>
+      <li class="par"><i class="d"></i>AUX<span class="n">THE SIBLING</span></li>
+    </ul>
+    <div class="flegend"><span><i class="g"></i>generator</span><span><i></i>bus stage</span><span><i class="p"></i>parallel</span></div>
+  </section>
+  <section><h4>engine map</h4><div class="panel">
+    <div class="rolist" style="font-size:8.4px;gap:2px">
+      <div style="color:#38d3c8"><span>00 VA</span><b>detune · pw · shape</b></div>
+      <div><span>01 waveshape</span><b>curve · fold · slope</b></div>
+      <div><span>02 fm 2-op</span><b>ratio ▪ · index · fb</b></div>
+      <div><span>03 fm 6-op</span><b>scale · index · env</b></div>
+      <div><span>04 chord</span><b>shape ▪ · voicing · wave</b></div>
+      <div><span>05 additive</span><b>stretch · tilt · parity</b></div>
+      <div><span>06 string</span><b>stiff · bright · damp</b></div>
+      <div><span>07 modal</span><b>preset ▪ · Q · damp</b></div>
+      <div><span>08 kick</span><b>drive · click · decay</b></div>
+      <div><span>09 snare</span><b>snap · tone · decay</b></div>
+      <div><span>10 hihat</span><b>noise · tone · decay</b></div>
+      <div><span>11 wavetable</span><b>frame ▪ · lp · warp</b></div>
+      <div><span>12 granular</span><b>spread · rate · window</b></div>
+      <div><span>13 speech</span><b>vowel ▪ · shift · source</b></div>
+    </div>
+    <div style="font-family:var(--mono);font-size:6.6px;letter-spacing:.1em;color:#646c77;margin-top:6px">▪ = HARMONICS IS A STEPPED SELECTOR HERE</div>
+  </div></section>
+  <section><h4>this engine</h4><div class="rolist">
+    <div class="d"><span>harmonics</span><b>detune, continuous</b></div>
+    <div class="d"><span>timbre</span><b>pw + sync</b></div>
+    <div class="d"><span>morph</span><b>saw ↔ square</b></div>
+    <div class="d"><span>aux is</span><b>sub-octave tri</b></div>
+    <div class="d"><span>band-limited</span><b>polyBLEP</b></div>
+  </div></section>
+</aside>
+</div>
+
+<div class="strip">
+<div class="der"><h5>derived · what HARMONICS means here</h5>Per-engine: <code>min(7, ⌊h·8⌋)</code>
+for FM2 and CHORD, <code>min(3, ⌊h·4⌋)</code> for MODAL, <code>min(5, ⌊h·6⌋)</code> for SPEECH,
+<code>h·7</code> for WAVETABLE, a noun for the other nine. <b>Negative control — change MODEL with
+HARMONICS untouched.</b> A <code>paramId</code> readout prints <code>0.75</code> in all fourteen
+states; this flips from "ratio 3:2 · step 7 of 8" to "stretch · continuous". <b>Second leg:</b>
+move harmonics 0.80 → 0.87 on FM2 — the knob moves 7 %, the bucket must <em>not</em>.</div>
+<div class="der"><h5>derived · aux offset</h5><code>20·log10(aux_level / max(level, 1e-4))</code> —
+pure law, AUX is not level-scaled. <b>Negative control:</b> turn LEVEL to 0. OUT goes silent and
+<b>AUX peak measures 1.0000</b>; a <code>paramId:'level'</code> readout prints 0.00 and says
+nothing about the output still at full scale.</div>
+<div><h5>saved racks</h5>No per-module migration substrate exists — a saved rack is a bare
+<code>Record&lt;string,number&gt;</code>. So: <b>never renumber <code>model</code></b> (it silently
+repatches every rack and nothing can detect it), <b>never narrow a range</b> (the AudioParam
+clamps in silence), and <b>never re-interpret an id</b> — which is why <code>level</code> keeps its
+meaning and accent, if wanted, arrives later as a new param.</div>
+<div class="bad"><h5>already wrong</h5><b>MODAL is inaudible</b> (−79.9 dBFS) and TIMBRE makes it
+<em>quieter</em>; WAVETABLE's MORPH 0…0.5 is a <b>bit-exact no-op</b>; four engines exceed full
+scale while the "bounded" test probes the quietest corner; <code>wavefold(x,0)</code> is not
+identity; and four places still describe a two-engine module.</div>
+</div>
+</section>
+
+
+<!-- ══════════════════════════════════════════ meowbox ═════════════════ -->
+<section class="mod" id="meowbox">
+<header><h2>meowbox</h2><span class="id">meowbox.dsp · 4 params · 5 in / 2 out</span>
+<span class="tag new">new face</span></header>
+<p class="note">Four params, and one of them secretly drives <b>thirteen tables</b>: MORPH moves
+all three formant frequencies, all three Qs, their weights, the voiced/noise balance, the pitch
+contour and the decay scale together. The headline readout is the one nothing on the module can
+tell you today — <b>the note settles 1.8 semitones sharp of what you asked for</b>, and MORPH is
+what decides by how much.</p>
+
+<div class="dock">
+<div class="editor"><div class="plate">
+  <div class="chrome"><div class="name">MEOWBOX</div><div class="cat">SOURCES</div></div>
+  <div class="fhead"><h3 class="ftitle">Voice</h3>
+    <p class="fhint">Four harmonic sines and a noise bed through three resonant band-passes. MORPH
+    is not a tone knob — it crossfades FIVE anchor presets, moving all three formant frequencies,
+    all three Qs, their weights, the voiced/noise balance, the pitch contour AND the decay scale
+    together.</p></div>
+
+  <div class="hero">
+    <div class="vis">
+      <svg viewBox="0 0 420 120" width="420" height="120" role="img" aria-label="three formant peaks over the four source partials">
+        <rect width="420" height="120" fill="#181b1f" rx="4"/>
+        <line x1="0" y1="100" x2="420" y2="100" stroke="#2c3037"/>
+        <!-- partial sticks -->
+        <g stroke="#3d4750" stroke-width="2">
+          <line x1="46" y1="100" x2="46" y2="62"/><line x1="118" y1="100" x2="118" y2="76"/>
+          <line x1="160" y1="100" x2="160" y2="86"/><line x1="190" y1="100" x2="190" y2="92"/>
+        </g>
+        <!-- formant curve -->
+        <path d="M0,98 C40,96 62,26 84,52 C112,88 140,86 172,44 C208,90 240,92 268,58 C320,90 380,96 420,98"
+              fill="none" stroke="#38d3c8" stroke-width="2"/>
+        <g font-family="ui-monospace,monospace" font-size="7" fill="#646c77" letter-spacing=".8">
+          <text x="66" y="24">F1 450</text><text x="152" y="36">F2 1300</text><text x="248" y="50">F3 2700</text>
+          <text x="34" y="114">f0</text><text x="106" y="114">2f</text><text x="150" y="114">3f</text><text x="180" y="114">4f</text>
+          <text x="300" y="114">SOURCE HAS ONLY FOUR PARTIALS — F3 IS NOISE-EXCITED ONLY</text>
+        </g>
+        <text x="8" y="14" font-family="ui-monospace,monospace" font-size="8" fill="#646c77" letter-spacing="1.4">FORMANTS AT MORPH 0.25 (ADULT) · LOG FREQUENCY</text>
+      </svg>
+    </div>
+    <div class="side">
+      <div class="k lg"><i style="--v:.25"></i><b>MORPH</b><em>ADULT</em></div>
+      <button class="btn hot">meow</button>
+      <dl class="ros">
+        <div class="ro d"><dt>formants</dt><dd>450 · 1300 · 2700</dd></div>
+        <div class="ro d"><dt>settles</dt><dd>290.3 Hz</dd></div>
+        <div class="ro d"><dt>length</dt><dd>455 ms</dd></div>
+      </dl>
+    </div>
+  </div>
+
+  <div class="bands">
+    <div class="band"><p class="blab">1 · morph — the five anchors <span class="bhint">kitten · adult · purr · yowl · hiss, linearly interpolated in Hz between neighbours</span></p>
+      <div class="row">
+        <button class="btn hot" style="align-self:center">meow</button>
+        <div class="k"><i style="--v:.25"></i><b>MORPH</b><em>ADULT</em></div>
+      </div></div>
+    <div class="band"><p class="blab">2 · note <span class="bhint">V/OCT plus PITCH in one exponent — but the contour settles SHARP of it, by an amount MORPH sets</span></p>
+      <div class="row"><div class="k"><i style="--v:.5"></i><b>PITCH</b><em>0 ST</em></div></div></div>
+    <div class="band"><p class="blab">3 · length · out <span class="bhint">DECAY is a time constant scaled by MORPH, not a duration; R is L delayed by up to 0.6 ms, so mono-summing combs</span></p>
+      <div class="row">
+        <div class="k"><i style="--v:.35"></i><b>DECAY</b><em>0.40 S</em></div>
+        <div class="k"><i style="--v:.5"></i><b>LEVEL</b><em>1.00</em></div>
+      </div></div>
+  </div>
+</div></div>
+
+<aside class="sb">
+  <section><h4>signal flow</h4>
+    <ul class="flow">
+      <li class="gen"><i class="d"></i>GATE<span class="n">SUSTAINS AT 0.4</span></li>
+      <li class="par"><i class="d"></i>PITCH CONTOUR<span class="n">SETTLES SHARP</span></li>
+      <li class="gen"><i class="d"></i>4 SINES<span class="n">F · 2F · 3F · 4F</span></li>
+      <li class="gen"><i class="d"></i>NOISE<span class="n">LCG</span></li>
+      <li><i class="d"></i>VOICED MIX<span class="n">FROM MORPH</span></li>
+      <li><i class="d"></i>15 HZ TREMOLO<span class="n">VOICED PATH ONLY</span></li>
+      <li><i class="d"></i>F1 · F2 · F3<span class="n">3 × RESONBP</span></li>
+      <li><i class="d"></i>AMP ADSR<span class="n">SUSTAIN 0.4</span></li>
+      <li class="par"><i class="d"></i>R = DELAYED L<span class="n">0–0.6 MS</span></li>
+    </ul>
+    <div class="flegend"><span><i class="g"></i>generator</span><span><i></i>bus stage</span><span><i class="p"></i>parallel</span></div>
+  </section>
+  <section><h4>formant map</h4><div class="panel">
+    <svg viewBox="0 0 240 74" width="100%" role="img" aria-label="five anchors and the interpolation position">
+      <line x1="10" y1="52" x2="230" y2="52" stroke="#2c3037"/>
+      <g stroke="#4a525c"><line x1="10" y1="46" x2="10" y2="58"/><line x1="65" y1="46" x2="65" y2="58"/>
+        <line x1="120" y1="46" x2="120" y2="58"/><line x1="175" y1="46" x2="175" y2="58"/>
+        <line x1="230" y1="46" x2="230" y2="58"/></g>
+      <circle cx="65" cy="52" r="4" fill="#38d3c8"/>
+      <g font-family="ui-monospace,monospace" font-size="6.6px" fill="#646c77" letter-spacing=".7" text-anchor="middle">
+        <text x="10" y="70">KITTEN</text><text x="65" y="70" fill="#38d3c8">ADULT</text>
+        <text x="120" y="70">PURR</text><text x="175" y="70">YOWL</text><text x="230" y="70">HISS</text>
+      </g>
+      <g font-family="ui-monospace,monospace" font-size="7" fill="#9aa2ad" letter-spacing=".8">
+        <text x="10" y="16">F1 450 Hz · Q 10</text><text x="10" y="28">F2 1300 Hz · Q 12</text>
+        <text x="10" y="40">F3 2700 Hz · Q 12</text>
+      </g>
+    </svg>
+  </div></section>
+  <section><h4>derived</h4><div class="rolist">
+    <div class="d"><span>peak gain F1/F2/F3</span><b>20 / 18.5 / 13.6 dB</b></div>
+    <div class="d"><span>tremolo depth</span><b>0.06</b></div>
+    <div class="d"><span>mono-sum null</span><b>833 → 1389 Hz</b></div>
+  </div></section>
+</aside>
+</div>
+
+<div class="strip">
+<div class="der"><h5>derived · settles at</h5>
+<code>261.6256·2^(pitchVolt + pitchSemi/12)·2^(riseAmtOf(morph))</code>. At the factory defaults
+the onset is 230.9 Hz and the sustain is <b>290.3 Hz</b> — the module never settles on the notated
+pitch. <b>Negative control:</b> move MORPH 0.25 → 0.50 and the sustained fundamental drops to
+261.6 Hz: <b>a real 1.8-semitone pitch change caused by the timbre knob</b>, with PITCH reading 0
+in both.</div>
+<div class="der"><h5>derived · formant peak gain</h5><code>aN(m)·qN(m)</code>, because
+<code>resonbp</code>'s <code>|H(fc)| = gain·Q</code> exactly. <b>Negative control:</b> morph
+0.5 → 0.75. The amplitude table <code>A1</code> is <b>1.0 at both ends and everywhere between</b>,
+so a readout of the <code>a</code> table is flat — while the F1 peak moves <b>+7.4 dB</b> because
+Q1 goes 6 → 14.</div>
+<div><h5>bespoke cells</h5>The hero formant curve over the four source partials, and a generic
+<code>formant-map</code> sidebar panel (anchors as ticks with the live interpolation).</div>
+<div class="bad"><h5>already wrong</h5><b>Vowels do not exist</b> — the STRICT_DOCS-gated prose
+names an a/e/i/o/u taxonomy the .dsp does not implement (it crossfades five cat presets). The
+<code>gate</code> doc says "responds to the edge, not how long the level stays up"; it is an ADSR
+sustaining at 0.4, and <b>a gate at level 0.5 runs the attack at half speed</b>. The tremolo
+comment has its scaling exactly inverted.</div>
+</div>
+</section>
+
+
+<!-- ══════════════════════════════════════════ pentemelodica ═══════════ -->
+<section class="mod" id="pentemelodica">
+<header><h2>pentemelodica</h2><span class="id">pentemelodica.ts · 48 params · 6 in / 7 out</span>
+<span class="tag new">new face</span></header>
+<p class="note"><b>Not a sequencer.</b> No scale table, no pentatonic anything, no PRNG, no clock —
+the name is a pun on <em>five</em>. It is a 5-voice polyphonic <em>voice</em>, a sink for a chord
+bus, and it makes <b>no sound at all</b> without one. Forty of its forty-eight params are five
+identical strips of eight, which is the one shape <code>face.order</code> cannot express — so this
+face takes the <b>dock tab rail</b> deliberately rather than merging five different ideas into one
+band.</p>
+
+<div class="dock">
+<div class="editor"><div class="plate">
+  <div class="chrome"><div class="name">PENTEMELODICA</div><div class="cat">SOURCES</div></div>
+  <div class="fhead"><h3 class="ftitle">Poly voice</h3>
+    <p class="fhint">Five band-limited oscillators, one shared amp envelope, one shared filter. It
+    makes NO sound on its own — it needs a poly gate source. An ungated voice borrows lane 1's
+    pitch, and the sum is scaled by a CONSTANT, so five notes are 4.6 dB hotter than one.</p></div>
+
+  <div class="hero">
+    <div class="vis">
+      <svg viewBox="0 0 420 120" width="420" height="120" role="img" aria-label="five voice strips">
+        <rect width="420" height="120" fill="#181b1f" rx="4"/>
+        <g font-family="ui-monospace,monospace" font-size="7" letter-spacing=".8">
+          <g>
+            <circle cx="12" cy="18" r="3.5" fill="#38d3c8"/><text x="22" y="21" fill="#9aa2ad">V1</text>
+            <path d="M44,24 L60,10 L60,24 L76,10 L76,24 L92,10" fill="none" stroke="#38d3c8" stroke-width="1.2"/>
+            <text x="104" y="21" fill="#38d3c8">C4 · 261.6 HZ</text><text x="220" y="21" fill="#646c77">LVL 0.80 · PAN C</text>
+          </g>
+          <g>
+            <circle cx="12" cy="40" r="3.5" fill="#38d3c8"/><text x="22" y="43" fill="#9aa2ad">V2</text>
+            <path d="M44,46 L60,32 L60,46 L76,32 L76,46 L92,32" fill="none" stroke="#38d3c8" stroke-width="1.2"/>
+            <text x="104" y="43" fill="#38d3c8">E4 · 329.6 HZ</text><text x="220" y="43" fill="#646c77">LVL 0.80 · PAN C</text>
+          </g>
+          <g>
+            <circle cx="12" cy="62" r="3.5" fill="#38d3c8"/><text x="22" y="65" fill="#9aa2ad">V3</text>
+            <path d="M44,68 L60,54 L60,68 L76,54 L76,68 L92,54" fill="none" stroke="#38d3c8" stroke-width="1.2"/>
+            <text x="104" y="65" fill="#38d3c8">G4 · 392.0 HZ</text><text x="220" y="65" fill="#646c77">LVL 0.80 · PAN C</text>
+          </g>
+          <g opacity=".5">
+            <circle cx="12" cy="84" r="3.5" fill="none" stroke="#4a525c"/><text x="22" y="87" fill="#646c77">V4</text>
+            <path d="M44,90 L60,76 L60,90 L76,76 L76,90 L92,76" fill="none" stroke="#3d4750" stroke-width="1.2"/>
+            <text x="104" y="87" fill="#f2c14e">C4 — BORROWED FROM LANE 1</text>
+          </g>
+          <g opacity=".5">
+            <circle cx="12" cy="106" r="3.5" fill="none" stroke="#4a525c"/><text x="22" y="109" fill="#646c77">V5</text>
+            <path d="M44,112 L60,98 L60,112 L76,98 L76,112 L92,98" fill="none" stroke="#3d4750" stroke-width="1.2"/>
+            <text x="104" y="109" fill="#f2c14e">C4 — BORROWED FROM LANE 1</text>
+          </g>
+        </g>
+      </svg>
+    </div>
+    <div class="side">
+      <div class="k lg"><i style="--v:.5"></i><b>CUTOFF</b><em>1.0 kHz</em></div>
+      <dl class="ros">
+        <div class="ro d"><dt>sounding</dt><dd>3 of 5</dd></div>
+        <div class="ro d"><dt>mode gain</dt><dd>−8.5 dB</dd></div>
+        <div class="ro d"><dt>peak</dt><dd>+0.2 dBFS</dd></div>
+      </dl>
+    </div>
+  </div>
+
+  <div class="bands">
+    <div class="band"><p class="blab">filter · envelope <span class="bhint">ONE filter and ONE ADSR shared by all five voices — DECAY is inert while SUSTAIN is 1</span></p>
+      <div class="row">
+        <div class="k"><i style="--v:.5"></i><b>CUTOFF</b><em>1.0 kHz</em></div>
+        <div class="k"><i style="--v:.2"></i><b>RESO</b><em>0.20</em></div>
+        <div class="k"><i style="--v:0"></i><b>MODE</b><em>LP</em></div>
+        <div class="k"><i style="--v:1"></i><b>WET</b><em>1.00</em></div>
+        <div class="k"><i style="--v:.02"></i><b>ATTACK</b><em>1 MS</em></div>
+        <div class="k dead"><i style="--v:.3"></i><b>DECAY</b><em>100 MS</em></div>
+        <div class="k"><i style="--v:1"></i><b>SUSTAIN</b><em>1.00</em></div>
+        <div class="k"><i style="--v:.08"></i><b>RELEASE</b><em>5 MS</em></div>
+      </div></div>
+    <div class="band"><p class="blab">voice 1 <span class="bhint">lane 1 of the poly bus — and the pitch every ungated voice falls back to</span></p>
+      <div class="row">
+        <div class="k"><i style="--v:.5"></i><b>TUNE</b><em>0 ST</em></div>
+        <div class="k"><i style="--v:.5"></i><b>FINE</b><em>0 ¢</em></div>
+        <div class="k"><i style="--v:0"></i><b>WAVE</b><em>TRI</em></div>
+        <div class="k dead"><i style="--v:.5"></i><b>PW</b><em>0.50</em></div>
+        <div class="k"><i style="--v:.8"></i><b>LEVEL</b><em>0.80</em></div>
+        <div class="k"><i style="--v:.5"></i><b>PAN</b><em>C</em></div>
+        <div class="k dead"><i style="--v:.5"></i><b>FM</b><em>0.00</em></div>
+        <div class="k dead"><i style="--v:.5"></i><b>PM</b><em>0.00</em></div>
+      </div>
+      <p class="clab">voices 2 – 5 are the same eight controls, on four more tabs</p>
+    </div>
+  </div>
+</div></div>
+
+<aside class="sb">
+  <section><h4>signal flow</h4>
+    <ul class="flow">
+      <li class="gen"><i class="d"></i>POLY BUS<span class="n">5 LANES, FIXED</span></li>
+      <li class="gen"><i class="d"></i>5 × OSC<span class="n">POLYBLEP</span></li>
+      <li class="par"><i class="d"></i>FM<span class="n">EXPONENTIAL</span></li>
+      <li class="par"><i class="d"></i>PM<span class="n">PHASE READ ONLY</span></li>
+      <li><i class="d"></i>5 × ADSR<span class="n">ONE SHARED SHAPE</span></li>
+      <li><i class="d"></i>LEVEL · PAN<span class="n">EQUAL POWER</span></li>
+      <li><i class="d"></i>SUM ×0.6<span class="n">CONSTANT, NOT 1/√N</span></li>
+      <li><i class="d"></i>SVF · MODE<span class="n">LP→BP→HP→X−BP</span></li>
+      <li><i class="d"></i>WET / DRY<span class="n">LINEAR</span></li>
+    </ul>
+    <div class="flegend"><span><i class="g"></i>generator</span><span><i></i>bus stage</span><span><i class="p"></i>parallel</span></div>
+  </section>
+  <section><h4>envelope, really</h4><div class="rolist">
+    <div class="d"><span>release tail</span><b>58 ms</b></div>
+    <div class="d"><span>decay to S</span><b>0 ms</b></div>
+    <div><span>knob says</span><b>5 ms</b></div>
+  </div></section>
+  <section><h4>per-voice pitch</h4><div class="rolist">
+    <div class="d"><span>voice 1</span><b>C4</b></div><div class="d"><span>voice 2</span><b>E4</b></div>
+    <div class="d"><span>voice 3</span><b>G4</b></div>
+    <div class="d"><span>voice 4</span><b>C4 ↩</b></div><div class="d"><span>voice 5</span><b>C4 ↩</b></div>
+  </div></section>
+</aside>
+</div>
+
+<div class="strip">
+<div class="der"><h5>derived · per-voice pitch</h5><code>261.626·2^(voct_v + tune/12 + fine/1200)</code>
+where <code>voct_v</code> is the voice's own held pitch <b>if gated or still ringing, ELSE lane
+0's</b>. <b>Negative control:</b> change the chord's octave — every knob readback is invariant, the
+resolved note moves an octave. <b>Second leg, the important one:</b> with nothing gated, voice 3
+must display <b>lane 1's</b> pitch. A per-voice-knob readout is structurally incapable of showing
+that fallback, and the fallback is the module's most confusing behaviour.</div>
+<div class="der"><h5>derived · mode gain</h5><code>|1 − 1/(2 − 2·resonance)|</code> at cutoff, MODE 1.
+<b>Negative control — turn RESONANCE.</b> Both dials read "notch, max reso" at 0.99 while the
+filter is a <b>+33.8 dB resonant boost</b> on the master bus. A readout that is a function of MODE
+alone cannot see any of it.</div>
+<div><h5>the layout call</h5>Six bands puts this past <code>DOCK_TAB_MIN_BANDS</code>, so the dock
+renders a <b>tab rail</b>. That is deliberate and the face comment says so — merging voices into
+one band would fuse five different ideas, and ranking voice 1's knobs would claim voice 1 matters
+more than voice 4, which the DSP does not.</div>
+<div class="bad"><h5>already wrong</h5>The MODE-1 tap is <code>x − bp</code> where the SVF notch is
+<code>x − k·bp</code> — <b>at resonance 0.99 the "notch" is a +33.8 dB boost</b>, and the sibling
+module in the same repo does it correctly. Also: "a single mono note source only lights one voice"
+is false — a mono pitch source produces <b>total silence</b>, because the merge feeds lane 0's
+pitch channel and nothing feeds its gate.</div>
+</div>
+</section>
+
+
+<!-- ══════════════════════════════════════════ samsloop ════════════════ -->
+<section class="mod" id="samsloop">
+<header><h2>samsloop</h2><span class="id">samsloop.ts · 4 → 7 params · 4 in / 1 out</span>
+<span class="tag new">new face</span><span class="tag no">blocked</span></header>
+<p class="note">A one-shot / looping <b>sample player</b> with a bolted-on recorder — no overdub,
+no feedback, no quantisation. Two things must land first. <b>(1)</b> The three recorder settings
+live in <code>node.data</code>, which no face block can express, so they need promoting to real
+ParamDefs. <b>(2)</b> A P0: <b>a recorded sample never plays</b> — the reader looks at
+<code>fileBytesB64</code> and <code>samples</code>, the recorder writes <code>sample.bytesB64</code>.
+REC persists, redraws, round-trips and downloads, and the module stays silent. A face whose third
+band is called "recorder" over a recorder that cannot be heard is worse than no face.</p>
+
+<div class="dock">
+<div class="editor"><div class="plate">
+  <div class="chrome"><div class="name">SAMSLOOP</div><div class="cat">SOURCES</div></div>
+  <div class="fhead"><h3 class="ftitle">Sample player</h3>
+    <p class="fhint">A one-shot or looping player over one recorded or loaded buffer. RATE is a
+    fractional-read varispeed, so speed and pitch are the same control and reverse costs no pitch.
+    Nothing plays until a trigger arrives, and nothing at all happens until a sample is in.</p></div>
+
+  <div class="hero">
+    <div class="vis">
+      <svg viewBox="0 0 420 120" width="420" height="120" role="img" aria-label="waveform with the start-end window">
+        <rect width="420" height="120" fill="#181b1f" rx="4"/>
+        <rect x="70" y="8" width="250" height="94" fill="#14282c"/>
+        <line x1="0" y1="55" x2="420" y2="55" stroke="#2c3037"/>
+        <g stroke="#38d3c8" stroke-width="1">
+          <line x1="8" y1="48" x2="8" y2="62"/><line x1="24" y1="36" x2="24" y2="74"/>
+          <line x1="40" y1="26" x2="40" y2="84"/><line x1="56" y1="40" x2="56" y2="70"/>
+          <line x1="72" y1="18" x2="72" y2="92"/><line x1="88" y1="30" x2="88" y2="80"/>
+          <line x1="104" y1="14" x2="104" y2="96"/><line x1="120" y1="34" x2="120" y2="76"/>
+          <line x1="136" y1="22" x2="136" y2="88"/><line x1="152" y1="42" x2="152" y2="68"/>
+          <line x1="168" y1="16" x2="168" y2="94"/><line x1="184" y1="38" x2="184" y2="72"/>
+          <line x1="200" y1="28" x2="200" y2="82"/><line x1="216" y1="20" x2="216" y2="90"/>
+          <line x1="232" y1="44" x2="232" y2="66"/><line x1="248" y1="24" x2="248" y2="86"/>
+          <line x1="264" y1="34" x2="264" y2="76"/><line x1="280" y1="18" x2="280" y2="92"/>
+          <line x1="296" y1="40" x2="296" y2="70"/><line x1="312" y1="30" x2="312" y2="80"/>
+          <line x1="328" y1="46" x2="328" y2="64"/><line x1="344" y1="36" x2="344" y2="74"/>
+          <line x1="360" y1="48" x2="360" y2="62"/><line x1="376" y1="50" x2="376" y2="60"/>
+          <line x1="392" y1="52" x2="392" y2="58"/><line x1="408" y1="53" x2="408" y2="57"/>
+        </g>
+        <line x1="70" y1="4" x2="70" y2="106" stroke="#7bd66a" stroke-width="1.5"/>
+        <line x1="320" y1="4" x2="320" y2="106" stroke="#f2c14e" stroke-width="1.5"/>
+        <g font-family="ui-monospace,monospace" font-size="7" letter-spacing=".8">
+          <text x="74" y="14" fill="#7bd66a">START</text><text x="286" y="14" fill="#f2c14e">END</text>
+          <text x="8" y="116" fill="#646c77">NO PLAYHEAD — THE WORKLET POSTS NOTHING BACK</text>
+        </g>
+      </svg>
+    </div>
+    <div class="side">
+      <div class="k lg"><i style="--v:.75"></i><b>RATE</b><em>1.00×</em></div>
+      <button class="btn hot">trigger</button>
+      <dl class="ros">
+        <div class="ro d"><dt>loop</dt><dd>2.31 s</dd></div>
+        <div class="ro d"><dt>pitch</dt><dd>0.0 st</dd></div>
+        <div class="ro d"><dt>fill</dt><dd>37 %</dd></div>
+      </dl>
+    </div>
+  </div>
+
+  <div class="bands">
+    <div class="band"><p class="blab">1 · playback <span class="bhint">a fractional read at RATE — |rate| is pitch AND speed, the sign is direction only, 0 freezes the head</span></p>
+      <div class="row">
+        <button class="btn hot" style="align-self:center">trigger</button>
+        <div class="k"><i style="--v:.75"></i><b>RATE</b><em>1.00×</em></div>
+        <div class="cell"><span class="cap">MODE</span><div class="seg"><span>1-SHOT</span><span class="on">LOOP</span></div></div>
+      </div></div>
+    <div class="band"><p class="blab">2 · window <span class="bhint">START and END are sample frames, not seconds — the same window is a different duration for every source rate</span></p>
+      <div class="row">
+        <div class="k green"><i style="--v:.17"></i><b>START</b><em>0.42 S</em></div>
+        <div class="k amber"><i style="--v:.76"></i><b>END</b><em>2.73 S</em></div>
+      </div></div>
+    <div class="band"><p class="blab">3 · recorder <span class="bhint">channels × bits × rate set the byte budget, and the budget is what caps the recording length</span></p>
+      <div class="row">
+        <div class="cell"><span class="cap">CHANNELS</span><div class="seg"><span class="on">MONO</span><span>STEREO</span></div></div>
+        <div class="cell"><span class="cap">BITS</span><div class="seg"><span>8</span><span class="on">12</span><span>16</span></div></div>
+        <div class="cell"><span class="cap">RATE</span><div class="seg"><span>11k</span><span class="on">22k</span><span>44k</span></div></div>
+      </div></div>
+  </div>
+</div></div>
+
+<aside class="sb">
+  <section><h4>signal flow</h4>
+    <ul class="flow">
+      <li class="gen"><i class="d"></i>AUDIO IN L·R<span class="n">TAP WORKLET</span></li>
+      <li class="par"><i class="d"></i>RECORDER<span class="n">MAIN THREAD</span></li>
+      <li><i class="d"></i>BUFFER<span class="n">WORKLET-PRIVATE</span></li>
+      <li><i class="d"></i>START..END<span class="n">FRAMES</span></li>
+      <li><i class="d"></i>LINEAR READ<span class="n">2-POINT</span></li>
+      <li><i class="d"></i>OUT<span class="n">MONO</span></li>
+    </ul>
+    <div class="flegend"><span><i class="g"></i>generator</span><span><i></i>bus stage</span><span><i class="p"></i>parallel</span></div>
+  </section>
+  <section><h4>budget</h4><div class="rolist">
+    <div class="d"><span>max length</span><b>5.68 s</b></div>
+    <div class="d"><span>source rate</span><b>22.05 kHz</b></div>
+    <div class="d"><span>implied bpm</span><b>104.0</b></div>
+  </div></section>
+  <section><h4>on the card</h4><div class="rolist">
+    <div><span>load file</span><b>card</b></div><div><span>rec / stop</span><b>card</b></div>
+    <div><span>download</span><b>card</b></div>
+    <div style="opacity:.7"><span>a panel READS;</span><b>it owns no state</b></div>
+  </div></section>
+</aside>
+</div>
+
+<div class="strip">
+<div class="der"><h5>derived · loop length</h5>
+<code>(end − start) / (|rate| · node.data.sampleRate)</code> — the context rate cancels.
+<b>Negative control:</b> load the same clip as a 48 kHz WAV and as a 22.05 kHz WAV.
+<code>end − start</code> <b>doubles</b> for the 48 k source (it is decimated to 24 k) — yet T is
+identical. A readout that omitted <code>sampleRate</code> prints a 2:1 lie.</div>
+<div class="der"><h5>derived · pitch</h5><code>12·log₂(|rate|)</code>. <b>Negative control:</b>
+flip +1 → −1: direction and cursor readouts change, semitones must stay <b>0</b>. Naive
+<code>12·log₂(rate)</code> returns NaN, so the <code>|·|</code> is load-bearing and the control is
+what proves it is there.</div>
+<div><h5>not derivable — say so</h5><b>The playhead and a PLAYING lamp cannot be drawn.</b>
+<code>playing</code> and <code>cursor</code> are worklet-private and the worklet posts nothing
+back; both need a new outbound message. The hero draws no playhead rather than drawing a guess.</div>
+<div class="bad"><h5>already wrong</h5><b>A recorded sample never plays.</b> Also: the microphone
+does not exist (no <code>getUserMedia</code> anywhere), there is no drag-and-drop, START/END are
+not draggable on the waveform, and the card binds <b>MIDI-learn in knob units</b> against a param
+declared −2..2.</div>
+</div>
+</section>
+
+
+<!-- ══════════════════════════════════════════ sixstrum ════════════════ -->
+<section class="mod" id="sixstrum">
+<header><h2>sixstrum</h2><span class="id">sixstrum.ts · 19 params · 22 in / 1 out</span>
+<span class="tag redo">re-do · already in STRICT_FACES</span></header>
+<p class="note"><b>The shipped face cannot play the instrument.</b> The card's STRUM button never
+made it into the shell, and two comments in the repo assert that it did. Worse, the pitch is
+<b>latched at the strike</b>, so of the six knobs the current face puts in the lane plate, only
+<code>ring</code> and <code>material</code> move a ringing string — and one of the six is dead in
+poly mode entirely. This re-do re-ranks on one test: <em>does it move a string that is already
+sounding?</em></p>
+
+<div class="dock">
+<div class="editor"><div class="plate">
+  <div class="chrome"><div class="name">SIXSTRUM</div><div class="cat">SOURCES</div></div>
+  <div class="fhead"><h3 class="ftitle">Instrument</h3>
+    <p class="fhint">Six Karplus-Strong strings, a strum hand and a chord voicer. The pitch is
+    LATCHED at the strike, so REGISTER, TUNING, CHORD and SPREAD change the NEXT note, not the one
+    ringing — and MATERIAL caps how long RING can actually hold.</p></div>
+
+  <div class="hero">
+    <div class="vis">
+      <svg viewBox="0 0 420 120" width="420" height="120" role="img" aria-label="six strings with the strum roll">
+        <rect width="420" height="120" fill="#181b1f" rx="4"/>
+        <g font-family="ui-monospace,monospace" font-size="7" letter-spacing=".8">
+          <line x1="52" y1="16" x2="410" y2="16" stroke="#38d3c8" stroke-width="1.6"/>
+          <line x1="52" y1="34" x2="410" y2="34" stroke="#38d3c8" stroke-width="1.4" opacity=".92"/>
+          <line x1="52" y1="52" x2="410" y2="52" stroke="#38d3c8" stroke-width="1.2" opacity=".84"/>
+          <line x1="52" y1="70" x2="410" y2="70" stroke="#38d3c8" stroke-width="1" opacity=".76"/>
+          <line x1="52" y1="88" x2="410" y2="88" stroke="#38d3c8" stroke-width=".9" opacity=".68"/>
+          <line x1="52" y1="106" x2="410" y2="106" stroke="#38d3c8" stroke-width=".8" opacity=".6"/>
+          <text x="6" y="19" fill="#9aa2ad">E2 82.2</text><text x="6" y="37" fill="#9aa2ad">A2 110</text>
+          <text x="6" y="55" fill="#9aa2ad">D3 147</text><text x="6" y="73" fill="#9aa2ad">G3 196</text>
+          <text x="6" y="91" fill="#9aa2ad">B3 247</text><text x="6" y="109" fill="#9aa2ad">E4 330</text>
+          <path d="M52,10 L64,112" stroke="#f2c14e" stroke-width="1.6" stroke-dasharray="3 2"/>
+          <text x="70" y="118" fill="#f2c14e">12.6 MS ROLL · 2.5 MS PER STRING</text>
+          <text x="300" y="12" fill="#646c77">RINGS FOR 2500 MS</text>
+        </g>
+      </svg>
+    </div>
+    <div class="side">
+      <div class="k lg"><i style="--v:.24"></i><b>RING</b><em>2.5 S</em></div>
+      <button class="btn hot">strum</button>
+      <dl class="ros">
+        <div class="ro d"><dt>rings for</dt><dd>2500 ms</dd></div>
+        <div class="ro d"><dt>chord</dt><dd>E A D G B E</dd></div>
+        <div class="ro d"><dt>roll</dt><dd>12.6 ms</dd></div>
+      </dl>
+    </div>
+  </div>
+
+  <div class="bands">
+    <div class="band"><p class="blab">1 · instrument <span class="bhint">guitar, bass or harp — the open string set AND the body filter bank; the preset stamps fourteen values at once</span></p>
+      <div class="row">
+        <div class="cell"><span class="cap">PRESET</span><div class="sel">GUITAR <s>recall ▾</s></div></div>
+        <div class="cell"><span class="cap">TUNING</span><div class="seg"><span class="on">GUITAR</span><span>BASS</span><span>HARP</span></div></div>
+        <div class="k"><i style="--v:.5"></i><b>REGISTER</b><em>0 ST</em></div>
+        <div class="cell"><span class="cap">CHORD</span><div class="sel">MAJ <s>1 / 8 ▾</s></div></div>
+      </div></div>
+    <div class="band"><p class="blab">2 · strings <span class="bhint">RING is the sustain and MATERIAL is the brightness — but the loop-gain cap means MATERIAL below ~0.10 pins the ring at 0.78 s whatever RING says</span></p>
+      <div class="row">
+        <div class="k"><i style="--v:.24"></i><b>RING</b><em>2.5 S</em></div>
+        <div class="k"><i style="--v:.55"></i><b>MATERIAL</b><em>0.55</em></div>
+        <div class="k"><i style="--v:.06"></i><b>STIFF</b><em>0.06</em></div>
+        <div class="k"><i style="--v:.25"></i><b>SPREAD</b><em>0.25</em></div>
+      </div></div>
+    <div class="band"><p class="blab">3 · strum hand <span class="bhint">one gesture rolls across six strings over the STRUM window; an unpatched string follows the nearest patched strum at or below it</span></p>
+      <div class="row">
+        <button class="btn hot" style="align-self:center">strum</button>
+        <div class="k"><i style="--v:.28"></i><b>STRUM</b><em>12.6 MS</em></div>
+        <div class="cell"><span class="cap">DIR</span><div class="seg"><span class="on">DOWN</span><span>UP</span><span>ALT</span></div></div>
+        <div class="k dead"><i style="--v:.5"></i><b>MUTE</b><em>0.50</em></div>
+      </div></div>
+    <div class="band"><p class="blab">4 · pick <span class="bhint">the excitation burst — measured in periods, so its length in milliseconds halves every octave up</span></p>
+      <div class="row">
+        <div class="k"><i style="--v:.6"></i><b>PICK TONE</b><em>0.60</em></div>
+        <div class="k"><i style="--v:.25"></i><b>GRAIN</b><em>12.1 MS</em></div>
+        <div class="k"><i style="--v:.31"></i><b>PICK POS</b><em>5.9th</em></div>
+      </div></div>
+    <div class="band"><p class="blab">5 · envelope · body · out <span class="bhint">the amp ADSR sits UNDER the string decay and at the shipped SUSTAIN 1.0 two of its four stages never run</span></p>
+      <div class="row">
+        <div class="k"><i style="--v:.05"></i><b>ATTACK</b><em>3 MS</em></div>
+        <div class="k dead"><i style="--v:.3"></i><b>DECAY</b><em>120 MS</em></div>
+        <div class="k"><i style="--v:1"></i><b>SUSTAIN</b><em>1.00</em></div>
+        <div class="k dead"><i style="--v:.4"></i><b>RELEASE</b><em>350 MS</em></div>
+        <div class="k"><i style="--v:.35"></i><b>BODY</b><em>0.35</em></div>
+        <div class="k"><i style="--v:.67"></i><b>LEVEL</b><em>0.0 DB</em></div>
+      </div></div>
+  </div>
+</div></div>
+
+<aside class="sb">
+  <section><h4>signal flow</h4>
+    <ul class="flow">
+      <li class="gen"><i class="d"></i>STRUM<span class="n">ROLLS 1→6</span></li>
+      <li class="gen"><i class="d"></i>PICK BURST<span class="n">NOISE, N PERIODS</span></li>
+      <li><i class="d"></i>COLOR LPF<span class="n">PICK TONE</span></li>
+      <li class="par"><i class="d"></i>PICK COMB<span class="n">POSITION NOTCH</span></li>
+      <li><i class="d"></i>6 × K-S LOOP<span class="n">DAMPING · STIFFNESS</span></li>
+      <li class="par"><i class="d"></i>MUTE CHOKE<span class="n">PER STRING</span></li>
+      <li><i class="d"></i>ADSR<span class="n">SHARED SHAPE</span></li>
+      <li><i class="d"></i>SUM ÷√N<span class="n">ACTIVE VOICES</span></li>
+      <li><i class="d"></i>LEVEL<span class="n">DB</span></li>
+      <li><i class="d"></i>BODY<span class="n">TWO BAND-PASSES</span></li>
+    </ul>
+    <div class="flegend"><span><i class="g"></i>generator</span><span><i></i>bus stage</span><span><i class="p"></i>parallel</span></div>
+  </section>
+  <section><h4>presets</h4><div class="pre">
+    <div class="on">GUITAR <s>E A D G B E</s></div>
+    <div>BASS <s>⚠ 3 strings clamp</s></div>
+    <div>HARP <s>open</s></div>
+  </div></section>
+  <section><h4>strings</h4><div class="rolist">
+    <div class="d"><span>string 1</span><b>82.24 Hz</b></div>
+    <div class="d"><span>damping at</span><b>949 Hz</b></div>
+    <div class="d"><span>pick notch</span><b>5.88th</b></div>
+    <div class="d"><span>burst</span><b>12.13 ms</b></div>
+  </div></section>
+</aside>
+</div>
+
+<div class="strip">
+<div class="der"><h5>derived · rings for — NOT a RING readback</h5>
+<code>t60 = ln(0.001) / (f0 · ln(g·comp))</code> through the loop-gain cap.
+<b>Negative control:</b> hold RING at 10 s and sweep MATERIAL 0.55 → 0.00 — the RING readback never
+moves, the derived number <b>collapses 10 s → 0.775 s</b>. <b>Second leg:</b> at material 0, sweep
+RING 1 → 10; the knob moves 10× and this must be <b>frozen</b>.</div>
+<div class="der"><h5>derived · chord</h5>The voiced chord as note names, each string
+<code>+ round(register)</code>. <b>Negative control, the strongest here:</b> move the CHORD root CV
+with every knob still. <b>Nothing in param space changes</b> — a knob readback <em>cannot</em> move
+— while the line goes <code>C E G C E C</code> → <code>D F♯ A D F♯ D</code>.</div>
+<div class="bad"><h5>what the shipped face gets wrong</h5><b>(a)</b> no audition — the module is
+unplayable under <code>?shell=1</code>. <b>(b)</b> three of six lane knobs cannot be heard without
+a re-pluck. <b>(c)</b> <code>quality</code> prints <code>5</code> where the card printed
+<code>sus4</code>. <b>(d)</b> no units or values on the plate at all. <b>(e)</b> the title's one
+line of prose says <b>SOURCES</b>. <b>(f)</b> the VRT gate only sees 2 of the 6 bands — including
+missing the preset selector entirely.</div>
+<div class="bad"><h5>and a shipped preset is broken</h5>The <b>BASS</b> recall puts strings 1–3
+below <code>KARPLUS_F0_MIN = 30 Hz</code>, so the clamp collapses <b>three of six strings onto one
+pitch</b>. The <code>string 1</code> readout is what finds it. Separately, the card's
+<code>paramId="tuning"</code> fader writes <b>fourteen</b> params while advertising one — so the
+same MIDI CC stamps 14 on the card and 1 in the shell.</div>
+</div>
+</section>
+
+
+<!-- ══════════════════════════════════════════ noise ═══════════════════ -->
+<section class="mod" id="noise">
+<header><h2>noise</h2><span class="id">noise.ts · 1 param · 0 in / 3 out</span>
+<span class="tag no">recommend: no face</span></header>
+<p class="note"><b>This one does not deserve a curated face, and the drawing below is a
+contingency, not a proposal.</b> One param, zero inputs, zero modes — <code>faceTierCap</code>
+gives mini 1 and compact 2, so all four tiers would be <em>identical</em>. Nothing is inert, so
+there is nothing to teach. And a default <code>meter</code> glyph would meter <code>white</code>
+(the first audio output in declaration order), which is the tap whose level is least interesting
+and 12.4 dB above pink. If it is promoted anyway to clear the placeholder, the <b>readouts</b> are
+what justify it — not the fader.</p>
+
+<div class="dock">
+<div class="editor"><div class="plate">
+  <div class="chrome"><div class="name">NOISE</div><div class="cat">SOURCES</div></div>
+  <div class="fhead"><h3 class="ftitle">Source</h3>
+    <p class="fhint">Three independent 2-second noise tables, generated once at spawn and looped.
+    LEVEL scales all three together — but they are NOT level-matched: pink sits 12.4 dB and brown
+    7.0 dB below white.</p></div>
+
+  <div class="hero">
+    <div class="vis">
+      <svg viewBox="0 0 420 120" width="420" height="120" role="img" aria-label="three tap levels and the brown corner">
+        <rect width="420" height="120" fill="#181b1f" rx="4"/>
+        <g font-family="ui-monospace,monospace" font-size="7.5" fill="#646c77" letter-spacing=".9">
+          <text x="8" y="24">WHITE</text><rect x="60" y="16" width="290" height="10" fill="#38d3c8"/><text x="360" y="24" fill="#38d3c8">−4.8 dB</text>
+          <text x="8" y="48">PINK</text> <rect x="60" y="40" width="105" height="10" fill="#2f8f88"/><text x="360" y="48" fill="#38d3c8">−17.2 dB</text>
+          <text x="8" y="72">BROWN</text><rect x="60" y="64" width="176" height="10" fill="#2f8f88"/><text x="360" y="72" fill="#38d3c8">−11.8 dB</text>
+        </g>
+        <path d="M60,110 L150,110 C210,110 260,98 410,86" fill="none" stroke="#f2c14e" stroke-width="1.4"/>
+        <line x1="150" y1="82" x2="150" y2="114" stroke="#f2c14e" stroke-dasharray="2 2"/>
+        <text x="156" y="92" font-family="ui-monospace,monospace" font-size="7" fill="#f2c14e" letter-spacing=".9">BROWN IS WHITE BELOW 77 Hz — AND THAT CORNER MOVES WITH THE INTERFACE</text>
+        <text x="8" y="14" font-family="ui-monospace,monospace" font-size="8" fill="#646c77" letter-spacing="1.4">THREE TAPS AT LEVEL 1.00</text>
+      </svg>
+    </div>
+    <div class="side">
+      <div class="k lg"><i style="--v:.5"></i><b>LEVEL</b><em>0.50</em></div>
+      <dl class="ros">
+        <div class="ro d"><dt>white</dt><dd>−10.8 dB</dd></div>
+        <div class="ro d"><dt>pink</dt><dd>−23.2 dB</dd></div>
+        <div class="ro d"><dt>brown</dt><dd>−17.8 dB</dd></div>
+      </dl>
+    </div>
+  </div>
+
+  <div class="bands">
+    <div class="band"><p class="blab">1 · three taps <span class="bhint">white is uniform, pink is Voss-McCartney over 16 rows, brown is a leaky integrator — and brown is only −6 dB/oct ABOVE its corner</span></p>
+      <div class="row"><div class="k"><i style="--v:.5"></i><b>LEVEL</b><em>0.50</em></div></div></div>
+  </div>
+</div></div>
+
+<aside class="sb">
+  <section><h4>brown corner</h4><div class="rolist">
+    <div class="d"><span>−3 dB at</span><b>76.8 Hz</b></div>
+    <div><span>below it</span><b>white, not brown</b></div>
+    <div><span>at 96 kHz</span><b>153.6 Hz</b></div>
+  </div></section>
+  <section><h4>why not a face</h4><div class="rolist" style="text-transform:none;font-size:9.6px">
+    <div><span>params</span><b>1</b></div><div><span>inputs</span><b>0</b></div>
+    <div><span>modes</span><b>0</b></div>
+    <div><span>mini / compact / full / dock</span><b>identical</b></div>
+  </div></section>
+</aside>
+</div>
+
+<div class="strip">
+<div class="der"><h5>derived · three tap levels</h5><code>white = L/√3</code>,
+<code>pink = L·√17/(√3·17)</code>, <code>brown = L·√(1/12)/(8√(1−0.99²))</code>.
+<b>Negative control:</b> change <code>NORM</code> from 1/8 to 1/4. A knob readback prints "0.50",
+unchanged; the derived brown moves −17.87 → −11.85 dBFS and its crest headroom flips from 5.3 dB
+to <b>−1.3 dB (clipping)</b>. Both perturbations are invisible to every gate this module has.</div>
+<div><h5>rejected readout, and why</h5>A spectral-<b>slope</b> number. Nothing about the slope is
+controllable — there is no morph knob — so "−3 dB/oct" would be a <b>constant string</b>.
+Decoration, not a readout. Naming the rejection because it is the obvious idea and it is wrong.</div>
+<div class="bad"><h5>already wrong</h5>Four wrong numbers in comments and tests ("RMS ~3.5" is
+2.05; "peaks under ±1" measures 1.1234; "steady-state RMS ~0.4" is 0.257), a doc that describes
+brown as a flat −6 dB/oct when it is white below 77 Hz, and an undisclosed 0.5 Hz loop-seam tick
+on brown in 169 of 200 seeds.</div>
+<div class="bad"><h5>a vacuous test</h5><code>noise.test.ts</code> asserts pink noise "can briefly
+exceed ±1". Sixteen rows plus one white, divided by 17, is <b>hard-bounded by 1 by
+construction</b> — measured peak over 400 buffers is 0.711 and zero samples exceed 1.0.
+<b>The assertion cannot fail for the stated reason.</b></div>
+</div>
+</section>
+
+
+<!-- ══════════════════════════════════════════ cube ════════════════════ -->
+<section class="mod" id="cube">
+<header><h2>cube</h2><span class="id">cube.ts · 27 params · 15 in / 4 out</span>
+<span class="tag mine">my addition</span><span class="tag no">recommend: swap out</span></header>
+<p class="note">A static 3D scalar field ray-marched by one movable plane — the 256 samples that
+plane reads <em>are</em> the waveform. Genuinely beautiful, and its card visualiser is the only one
+in the batch that is provably correct (its cut plane is built from the same rotation the DSP uses).
+<b>But seven of twenty-four knobs do not survive measurement</b>, and they share one architectural
+cause: the ray integrates over a window centred on its own origin, so translating the plane along
+its normal is very nearly a no-op. <b>Fix the DSP first; it would be an excellent face
+afterwards.</b></p>
+
+<div class="dock">
+<div class="editor"><div class="plate">
+  <div class="chrome"><div class="name">CUBE</div><div class="cat">SOURCES</div></div>
+  <div class="fhead"><h3 class="ftitle">Field oscillator</h3>
+    <p class="fhint">A static 3D scalar field, ray-marched by one movable plane. The 256 samples
+    that plane reads ARE the waveform — so the rotation knobs are the timbre controls, and the
+    pitch knobs only decide how fast that cycle is replayed.</p></div>
+
+  <div class="hero">
+    <div class="vis">
+      <svg viewBox="0 0 420 120" width="420" height="120" role="img" aria-label="the field and the cutting plane">
+        <rect width="420" height="120" fill="#181b1f" rx="4"/>
+        <g stroke="#3d4750" fill="none">
+          <path d="M40,92 L40,32 L100,14 L100,74 Z"/><path d="M40,92 L130,92 L190,74 L100,74"/>
+          <path d="M130,92 L130,32 L190,14 L190,74"/><path d="M40,32 L130,32 L190,14"/>
+        </g>
+        <path d="M55,84 L175,26" stroke="#38d3c8" stroke-width="2"/>
+        <text x="60" y="20" font-family="ui-monospace,monospace" font-size="7" fill="#38d3c8" letter-spacing=".9">CUT PLANE</text>
+        <path d="M210,64 L226,32 L242,80 L258,26 L274,72 L290,40 L306,84 L322,34 L338,70 L354,44 L370,76 L386,52 L402,66"
+              fill="none" stroke="#38d3c8" stroke-width="1.6"/>
+        <line x1="206" y1="98" x2="410" y2="98" stroke="#6a3b3b" stroke-dasharray="3 3"/>
+        <text x="210" y="112" font-family="ui-monospace,monospace" font-size="7" fill="#c98080" letter-spacing=".9">DC −0.374 — MORE DC THAN SIGNAL</text>
+        <text x="210" y="20" font-family="ui-monospace,monospace" font-size="7.5" fill="#646c77" letter-spacing="1">THE 256 SAMPLES IT READ</text>
+      </svg>
+    </div>
+    <div class="side">
+      <div class="k lg"><i style="--v:.5"></i><b>ROT Y</b><em>0.00</em></div>
+      <dl class="ros">
+        <div class="ro d"><dt>solid</dt><dd>31 %</dd></div>
+        <div class="ro d"><dt>DC</dt><dd>−0.374</dd></div>
+        <div class="ro d"><dt>turning pts</dt><dd>28</dd></div>
+      </dl>
+    </div>
+  </div>
+
+  <div class="bands">
+    <div class="band"><p class="blab">1 · the plane <span class="bhint">rotating the scan axis is what changes the timbre — these are the module's strongest controls by a wide margin</span></p>
+      <div class="row">
+        <div class="k"><i style="--v:.5"></i><b>ROT Y</b><em>0.00</em></div>
+        <div class="k"><i style="--v:.5"></i><b>ROT X</b><em>0.00</em></div>
+        <div class="k"><i style="--v:.5"></i><b>ROT Z</b><em>0.00</em></div>
+        <div class="k dead"><i style="--v:.5"></i><b>SLICE Y</b><em>0.50</em></div>
+      </div></div>
+    <div class="band"><p class="blab">2 · the field <span class="bhint">two stacked heightfields and the connector between them — MORPH is inert while both tables are the same</span></p>
+      <div class="row">
+        <div class="k dead"><i style="--v:0"></i><b>MORPH</b><em>0.00</em></div>
+        <div class="k"><i style="--v:0"></i><b>CONNECT</b><em>0.00</em></div>
+        <div class="k dead"><i style="--v:0"></i><b>CNCT STR</b><em>0.00</em></div>
+        <div class="cell"><span class="cap">MATERIAL</span><div class="seg"><span class="on">SMOOTH</span><span>HARD</span></div></div>
+        <div class="cell"><span class="cap">WRAP</span><div class="seg"><span class="on">OFF</span><span>FOLD</span></div></div>
+      </div></div>
+    <div class="band"><p class="blab">3 · shaping <span class="bhint">fold, then two independent quantisers — one on the value, one on the lookup coordinates</span></p>
+      <div class="row">
+        <div class="k"><i style="--v:0"></i><b>FOLD</b><em>0.00</em></div>
+        <div class="k dead"><i style="--v:0"></i><b>CRUSH</b><em>256</em></div>
+        <div class="k dead"><i style="--v:0"></i><b>SP CRUSH</b><em>0.00</em></div>
+        <div class="k"><i style="--v:0"></i><b>SP DIFF</b><em>0.00</em></div>
+      </div></div>
+    <div class="band"><p class="blab">4 · pitch · out <span class="bhint">the table is always 256 samples, so this is a plain wavetable oscillator with no band-limiting</span></p>
+      <div class="row">
+        <div class="k"><i style="--v:.5"></i><b>TUNE</b><em>0 ST</em></div>
+        <div class="k"><i style="--v:.5"></i><b>FINE</b><em>0 ¢</em></div>
+        <div class="k dead"><i style="--v:0"></i><b>SPREAD</b><em>0 %</em></div>
+        <div class="k"><i style="--v:.5"></i><b>LEVEL</b><em>1.00</em></div>
+      </div></div>
+  </div>
+</div></div>
+
+<aside class="sb">
+  <section><h4>measured — the reason for the swap-out</h4><div class="rolist">
+    <div><span>morph</span><b style="color:#e08a8a">rmsΔ 0.00000</b></div>
+    <div><span>spread @ max</span><b style="color:#e08a8a">−36.2 dB</b></div>
+    <div><span>space crush</span><b style="color:#c8a05a">max 0.072</b></div>
+    <div><span>crush</span><b style="color:#c8a05a">dead to 0.95</b></div>
+    <div><span>slice y</span><b style="color:#c8a05a">≤0.022 to 0.9</b></div>
+    <div><span>space diffuse</span><b style="color:#c8a05a">reverses @0.95</b></div>
+    <div><span>view rot z</span><b style="color:#e08a8a">never read</b></div>
+  </div></section>
+  <section><h4>signal flow</h4>
+    <ul class="flow">
+      <li class="gen"><i class="d"></i>3 WAVETABLES<span class="n">64 × 256</span></li>
+      <li><i class="d"></i>OCCUPANCY<span class="n">FLOOR ↔ CEILING</span></li>
+      <li><i class="d"></i>SLICE PLANE<span class="n">EULER X→Y→Z</span></li>
+      <li><i class="d"></i>96-STEP RAY<span class="n">±√3/2 WINDOW</span></li>
+      <li><i class="d"></i>256-SAMPLE TABLE<span class="n">ONE CYCLE</span></li>
+      <li><i class="d"></i>PHASE READ<span class="n">LINEAR INTERP</span></li>
+    </ul>
+    <div class="flegend"><span><i class="g"></i>generator</span><span><i></i>bus stage</span></div>
+  </section>
+</aside>
+</div>
+
+<div class="strip">
+<div class="der"><h5>derived · stereo width</h5>
+<code>20·log10( rms((L−R)/2) / rms((L+R)/2) )</code>. <b>Negative control, and it is the killer:</b>
+SPREAD at 1.00 reads "100 %" while the measured width is <b>−36.2 dB</b> and corr(L,R) = 0.999979.
+The knob is a lie and only a derived readout says so.</div>
+<div class="der"><h5>derived · turning points</h5>Sign changes of the posted cycle, already on the
+main thread. <b>Negative control:</b> MATERIAL SMOOTH → HARD moves turning points <b>28 → 50</b>
+while rmsΔ is only 0.021 — the count sees a timbral change RMS misses.</div>
+<div><h5>rejected readout, and why</h5>A "beat frequency between two rotation planes". The three
+rotations are <b>static Euler angles evaluated once per slice render</b> — there is no angular
+velocity and no time term. It is the obvious readout for a module called cube and it would be an
+invention.</div>
+<div class="bad"><h5>and a cost no other module has</h5>cube declares <code>rendersWebGL: true</code>
+and is in the WebGL attest basis, so <b>the face block must be wrapped in
+<code>docs-hash-ignore</code> markers</b> or the edit churns the GPU attest hash. It is also the
+only module in the batch with <b>zero linux VRT protection</b> today.</div>
+</div>
+</section>
+
+
+<!-- ══════════════════════════════════════════ twotracks ═══════════════ -->
+<section class="mod" id="twotracks">
+<header><h2>twotracks</h2><span class="id">twotracks.ts · 31 params · 10 in / 2 out</span>
+<span class="tag mine">my addition</span><span class="tag no">recommend: swap out</span></header>
+<p class="note">A two-reel varispeed tape deck. Real material for a face — eight derivable numbers,
+three with clean negative controls — but <b>twelve of its thirty-one params are inert until a take
+exists</b>, the face-critical interactions (REC / PLAY / STOP / SAVE / seek / scrub) are
+<b>not params at all</b>, and <b>reel B's ECHOES knob is a permanent no-op</b> because
+<code>echoes_b</code> was never declared as an AudioParam. Facing it now would bake that into a
+second surface. Land the fixes — they are small and mostly deletions — then face it in a batch
+where "dual reel" is the design problem.</p>
+
+<div class="dock">
+<div class="editor"><div class="plate">
+  <div class="chrome"><div class="name">TWOTRACKS</div><div class="cat">EFFECTS</div></div>
+  <div class="fhead"><h3 class="ftitle">Tape</h3>
+    <p class="fhint">Two 20-second reels, summed. Reel B is HARD MUTED at the shipped A/B of 0, and
+    both reels are unity at 0.5 — so the centre of that control is +6 dB, not a balance point. None
+    of the EQ or the filter does anything until a take exists.</p></div>
+
+  <div class="hero">
+    <div class="vis">
+      <svg viewBox="0 0 420 120" width="420" height="120" role="img" aria-label="reel A tape with loop window">
+        <rect width="420" height="120" fill="#181b1f" rx="4"/>
+        <rect x="40" y="14" width="220" height="52" fill="#14282c"/>
+        <line x1="0" y1="40" x2="420" y2="40" stroke="#2c3037"/>
+        <g stroke="#38d3c8" stroke-width="1">
+          <line x1="10" y1="34" x2="10" y2="46"/><line x1="30" y1="26" x2="30" y2="54"/>
+          <line x1="50" y1="18" x2="50" y2="62"/><line x1="70" y1="28" x2="70" y2="52"/>
+          <line x1="90" y1="16" x2="90" y2="64"/><line x1="110" y1="30" x2="110" y2="50"/>
+          <line x1="130" y1="20" x2="130" y2="60"/><line x1="150" y1="24" x2="150" y2="56"/>
+          <line x1="170" y1="18" x2="170" y2="62"/><line x1="190" y1="32" x2="190" y2="48"/>
+          <line x1="210" y1="22" x2="210" y2="58"/><line x1="230" y1="34" x2="230" y2="46"/>
+          <line x1="250" y1="38" x2="250" y2="42"/>
+        </g>
+        <line x1="40" y1="10" x2="40" y2="70" stroke="#7bd66a"/><line x1="260" y1="10" x2="260" y2="70" stroke="#f2c14e"/>
+        <line x1="120" y1="6" x2="120" y2="74" stroke="#eef1f5" stroke-width="1.5"/>
+        <g font-family="ui-monospace,monospace" font-size="7" letter-spacing=".8">
+          <text x="44" y="80" fill="#7bd66a">START</text><text x="228" y="80" fill="#f2c14e">END</text>
+          <text x="124" y="80" fill="#eef1f5">HEAD</text>
+          <text x="270" y="24" fill="#646c77">EMPTY — 14.8 s LEFT</text>
+        </g>
+        <g font-family="ui-monospace,monospace" font-size="7" fill="#646c77" letter-spacing=".9">
+          <text x="8" y="102">REEL B — HARD MUTED AT THE SHIPPED A/B OF 0</text>
+          <rect x="8" y="106" width="404" height="6" fill="#20252b"/>
+        </g>
+      </svg>
+    </div>
+    <div class="side">
+      <div class="k lg"><i style="--v:0"></i><b>A / B</b><em>A 100 %</em></div>
+      <dl class="ros">
+        <div class="ro d"><dt>bus</dt><dd>0.0 dB</dd></div>
+        <div class="ro d"><dt>overdub ceiling</dt><dd>+5.4 dB</dd></div>
+        <div class="ro d"><dt>remaining</dt><dd>14.8 s</dd></div>
+      </dl>
+    </div>
+  </div>
+
+  <div class="bands">
+    <div class="band"><p class="blab">reel a <span class="bhint">rate is a varispeed on the medium — record at 2× and the take is baked at 2×, and nothing stores the record rate</span></p>
+      <div class="row">
+        <div class="k"><i style="--v:.67"></i><b>RATE</b><em>1.00×</em></div>
+        <div class="cell"><span class="cap">MODE</span><div class="seg"><span>1-SHOT</span><span class="on">LOOP</span></div></div>
+        <div class="k"><i style="--v:.5"></i><b>ECHOES</b><em>3</em></div>
+        <div class="k dead"><i style="--v:0"></i><b>START</b><em>0.00</em></div>
+        <div class="k dead"><i style="--v:1"></i><b>END</b><em>1.00</em></div>
+      </div></div>
+    <div class="band"><p class="blab">reel b <span class="bhint">the same eight controls again — but ECHOES here is a permanent no-op, because echoes_b was never declared</span></p>
+      <div class="row">
+        <div class="k"><i style="--v:.67"></i><b>RATE</b><em>1.00×</em></div>
+        <div class="cell"><span class="cap">MODE</span><div class="seg"><span>1-SHOT</span><span class="on">LOOP</span></div></div>
+        <div class="k dead"><i style="--v:.5"></i><b>ECHOES</b><em>3</em></div>
+        <div class="k dead"><i style="--v:0"></i><b>START</b><em>0.00</em></div>
+        <div class="k dead"><i style="--v:1"></i><b>END</b><em>1.00</em></div>
+      </div></div>
+    <div class="band"><p class="blab">bus <span class="bhint">A/B is not a crossfade — both reels are unity at 0.5, so the centre is +6 dB</span></p>
+      <div class="row">
+        <div class="k"><i style="--v:0"></i><b>A / B</b><em>A 100 %</em></div>
+        <div class="cell"><span class="cap">LOFI</span><div class="seg"><span class="on">OFF</span><span>LOW</span><span>HIGH</span><span>ERROR</span></div></div>
+        <div class="cell"><span class="cap">MONITOR</span><div class="seg"><span class="on">OFF</span><span>ON</span></div></div>
+      </div></div>
+  </div>
+</div></div>
+
+<aside class="sb">
+  <section><h4>inert until a take exists</h4><div class="rolist">
+    <div><span>eq low / mid / high ×2</span><b style="color:#c8a05a">6</b></div>
+    <div><span>filter mode ×2</span><b style="color:#c8a05a">2</b></div>
+    <div><span>cutoff · reso ×2</span><b style="color:#c8a05a">4</b></div>
+    <div><span>total of 31</span><b style="color:#e08a8a">12</b></div>
+    <div style="opacity:.75"><span>live at spawn</span><b>lofi · monitor · a/b</b></div>
+  </div></section>
+  <section><h4>the tape model</h4><div class="rolist">
+    <div><span>saturation gain</span><b>+3.2 / +6.3 dB</b></div>
+    <div><span>DC at zero input</span><b>−38.4 / −30.1 dBFS</b></div>
+    <div><span>hiss</span><b>−58.8 … −44.8 dBFS</b></div>
+    <div><span>wow + flutter</span><b>±0.08 / ±0.30 %</b></div>
+    <div style="opacity:.75"><span>⚠ it is AMPLITUDE</span><b>not pitch</b></div>
+  </div></section>
+</aside>
+</div>
+
+<div class="strip">
+<div class="der"><h5>derived · overdub ceiling</h5><code>p∞ = a/(1−d)</code> where
+<code>d = 0.1^(1/echoes)</code>: +0.9 dB at 1 echo, <b>+5.4 dB at the default 3, +8.7 dB at 5</b>.
+<b>Negative control:</b> hold every knob still, engage OVERDUB and let it loop — the tape peak
+climbs pass by pass while an ECHOES readback prints a motionless "3".</div>
+<div class="der"><h5>derived · bus gain</h5><code>20·log10(gainA + gainB)</code> → 0 dB at ab 0,
+<b>+6.02 dB at 0.5</b>. <b>Negative control, textbook:</b> sweep ab 0 → 0.5 and <code>gainA</code>
+is <b>invariant at 1.0 the entire way</b> — the card's existing "A:100 %" readout literally cannot
+move across half the control's travel while the bus climbs 6 dB.</div>
+<div><h5>a readout that is impossible — say so</h5>A truthful <b>pitch</b> figure. The record-time
+rate is baked into the medium and the module stores no <code>recordRate</code>, so record at 2× and
+play at 1× and the knob reads 1× while the tape sounds an octave down. Printing a number here would
+be a guess wearing a formula.</div>
+<div class="bad"><h5>already wrong</h5><b>Reel B's ECHOES does nothing, ever</b> —
+<code>echoes_b</code> is not a declared AudioParam, so it falls back to 3 and the host write
+optional-chains into a no-op. A <b>186-line dead module</b> contradicts the shipped worklet twice
+and <b>two sweep exemptions cite its tests as their justification</b>. 48 kHz is hardcoded twice,
+so on a 44.1 kHz context the readout is 8.8 % wrong and exported WAVs play 8.8 % fast.</div>
+</div>
+</section>
+
+</div>
