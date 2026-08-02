@@ -75,11 +75,46 @@ h1{font-size:22px;font-weight:800;margin:0 0 6px}
 .ftitle{margin:0;font-size:15px;font-weight:700;letter-spacing:.02em}
 .fhint{margin:3px 0 0;font-size:10.5px;line-height:1.45;color:var(--dim);max-width:64ch}
 
-.hero{display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap;padding:11px 11px 4px}
-.hero .vis{flex:1 1 360px;min-width:0}
+/* ── ANNOTATIONS — OFF by default ────────────────────────────────────────
+   Owner 2026-08-02: the page-level sentence and the per-band description
+   "belong as annotation text but not on the card unless annotation is turned
+   on". The TITLE stays — it is the panel's name, not a note about it.
+
+   ⚠ THE SHIPPED PLATFORM GATES THE MARKUP, not the visibility: with
+   annotations off the prose is NOT IN THE DOM at all, so the pixel baseline
+   and the accessibility tree cannot disagree about what is shown. This is a
+   static mockup with no state, so it uses `display:none` under a body class to
+   draw BOTH states from one page — read the shipped behaviour off
+   ModuleShell.svelte, not off this rule. */
+.fhint,.bhint{display:none}
+body.annot .fhint{display:block}
+body.annot .bhint{display:inline}
+.annotbar{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:10px;
+  background:#12161c;border:1px solid var(--line);border-radius:8px;padding:9px 13px;
+  margin:0 0 22px;font-size:12.5px;color:var(--dim)}
+.annotbar label{display:flex;align-items:center;gap:7px;cursor:pointer;color:var(--ink)}
+.annotbar .chip{font-family:var(--mono);font-size:9px;letter-spacing:.16em;text-transform:uppercase;
+  font-weight:700;border:1px solid var(--line);border-radius:5px;padding:3px 8px;color:var(--dim)}
+body.annot .annotbar .chip{color:var(--tealo);border-color:var(--teal)}
+
+/* THE HERO. Owner 2026-08-02: the derived-readout row sits BELOW the graphic,
+   not inline beside the hero control. `.ros` is a direct child of `.hero` with
+   `flex:1 0 100%`, so it always breaks onto its own full-width row under the
+   stage — the shipped `.hero-rail`/`.hero-readouts` shape on
+   feat/faceplate-platform-v2. */
+.hero{display:flex;gap:16px 16px;align-items:flex-end;flex-wrap:wrap;padding:11px 11px 6px}
+/* ⚠ THE PICTURE IS CAPPED. Moving the readouts out of the row handed `.vis`
+   the width they used to occupy, and an `flex:1 1` SVG with `height:auto`
+   spent all of it — a 420×120 drawing rendered 1080×308, three times its
+   authored proportion, which is a different picture and not the one specced.
+   The cap keeps the drawing at the size it was drawn for and lets the slack
+   fall at the END of the row, which is what the shipped dock does with an
+   intrinsically-sized hero panel. */
+.hero .vis{flex:1 1 360px;min-width:0;max-width:720px}
 .hero .vis svg{width:100%;height:auto}
 .hero .side{display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap}
-.ros{display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap;margin:0}
+.ros{flex:1 0 100%;display:flex;align-items:flex-end;gap:22px;flex-wrap:wrap;margin:0;
+  padding-top:8px;border-top:1px solid var(--line);min-width:0}
 .ro{display:flex;flex-direction:column;gap:3px}
 .ro dt{font-family:var(--mono);font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
 .ro dd{margin:0;font-family:var(--mono);font-size:17px;line-height:1.05;font-weight:700;
@@ -201,6 +236,13 @@ touched. Drawn against the PF-20 faceplate platform on <code>feat/faceplate-plat
 (PR #1301, <b>not yet merged</b>): <code>face.title</code> / <code>face.hint</code>, a per-band
 <code>hint</code>, <code>face.hero</code> (picture + promoted control + audition + readouts), a
 declarative <code>face.sidebar</code>, and <code>FaceReadout.valueId</code> for derived numbers.</p>
+<p class="sub"><b>Two owner layout decisions (2026-08-02) are drawn here.</b> The
+<b>derived-readout row sits BELOW the hero graphic</b> as a full-width strip, not inline beside
+the hero control — so the picture gets the whole editor width and the numbers read as one line of
+instrumentation. And the <b>page sentence + every band description are ANNOTATION</b>: the card is
+clean at rest and the prose appears only with annotations on, from a per-viewer toggle in the dock
+title bar. The <code>face.title</code> stays either way — it is the panel's name, not a note about
+it. Both are PLATFORM behaviour: no face below asks for them.</p>
 <p class="sub">Every value under a knob is a <b>readout</b>. A readout tinted
 <span style="color:var(--derived)">green with a ƒ</span> is <b>DERIVED</b> — computed from the
 DSP's own law over the live params, not a readback of the knob it sits under. Each one's
@@ -216,6 +258,14 @@ twelve, and both come back as swap-outs: cube because seven of its twenty-four k
 survive measurement (MORPH is <em>bit-exactly</em> dead at spawn), twotracks because twelve of
 its thirty-one params are inert until a take exists and its transport is not params at all. All
 three are drawn below anyway, clearly marked, so the call is yours and not mine.</div>
+
+<div class="annotbar">
+  <label><input type="checkbox" id="annotsw"> annotations</label>
+  <span class="chip" id="annotstate">off</span>
+  <span>The DEFAULT is OFF — every face below is drawn as it actually paints at rest. Turn it on
+  to see the authored prose the dock's per-viewer <b>NOTES</b> toggle reveals: the page sentence
+  and each band's description.</span>
+</div>
 
 <ul class="toc">
 <li><a href="#analogvco">analogVco <em>promote</em></a></li>
@@ -269,12 +319,12 @@ saying so.</p>
     </div>
     <div class="side">
       <div class="k lg"><i style="--v:.5"></i><b>TUNE</b><em>0 ST</em></div>
-      <dl class="ros">
-        <div class="ro"><dt>knob pitch</dt><dd>261.6 Hz</dd></div>
-        <div class="ro d"><dt>FM span</dt><dd>±0 ¢</dd></div>
-        <div class="ro d"><dt>PW authority</dt><dd>0 %</dd></div>
-      </dl>
     </div>
+    <dl class="ros">
+      <div class="ro"><dt>knob pitch</dt><dd>261.6 Hz</dd></div>
+      <div class="ro d"><dt>FM span</dt><dd>±0 ¢</dd></div>
+      <div class="ro d"><dt>PW authority</dt><dd>0 %</dd></div>
+    </dl>
   </div>
 
   <div class="bands">
@@ -382,13 +432,11 @@ ranking, so the lane's information is the glyph, not a subset of the keys.</p>
         <text x="8" y="14" font-family="ui-monospace,monospace" font-size="8" fill="#646c77" letter-spacing="1.4">TONE BANK · 10 SLOTS · HELD {1, 4}</text>
       </svg>
     </div>
-    <div class="side">
-      <dl class="ros">
-        <div class="ro d"><dt>level</dt><dd>−7.3 dB</dd></div>
-        <div class="ro d"><dt>headroom</dt><dd>0.0 dB</dd></div>
-        <div class="ro d"><dt>decodes</dt><dd>— 2 rows</dd></div>
-      </dl>
-    </div>
+    <dl class="ros">
+      <div class="ro d"><dt>level</dt><dd>−7.3 dB</dd></div>
+      <div class="ro d"><dt>headroom</dt><dd>0.0 dB</dd></div>
+      <div class="ro d"><dt>decodes</dt><dd>— 2 rows</dd></div>
+    </dl>
   </div>
 
   <div class="bands">
@@ -516,12 +564,12 @@ is (150 ms at snap 0.5, <b>45 ms at snap 1.0</b>, with the TAIL knob reading 150
     <div class="side">
       <div class="k lg"><i style="--v:.29"></i><b>SPREAD</b><em>10 MS</em></div>
       <button class="btn hot">strike</button>
-      <dl class="ros">
-        <div class="ro d"><dt>burst</dt><dd>40 ms</dd></div>
-        <div class="ro d"><dt>room in</dt><dd>20 ms</dd></div>
-        <div class="ro d"><dt>voice</dt><dd>174 ms</dd></div>
-      </dl>
     </div>
+    <dl class="ros">
+      <div class="ro d"><dt>burst</dt><dd>40 ms</dd></div>
+      <div class="ro d"><dt>room in</dt><dd>20 ms</dd></div>
+      <div class="ro d"><dt>voice</dt><dd>174 ms</dd></div>
+    </dl>
   </div>
 
   <div class="bands">
@@ -638,12 +686,12 @@ zero</b>, and the default sits in a three-wide dead zone.</p>
     <div class="side">
       <div class="k lg"><i style="--v:.3"></i><b>SHAPE</b><em>4 → 5</em></div>
       <button class="btn hot">hit</button>
-      <dl class="ros">
-        <div class="ro d"><dt>strike pitch</dt><dd>65.4 Hz</dd></div>
-        <div class="ro d"><dt>sweep</dt><dd>0 st</dd></div>
-        <div class="ro d"><dt>hit length</dt><dd>186 ms</dd></div>
-      </dl>
     </div>
+    <dl class="ros">
+      <div class="ro d"><dt>strike pitch</dt><dd>65.4 Hz</dd></div>
+      <div class="ro d"><dt>sweep</dt><dd>0 st</dd></div>
+      <div class="ro d"><dt>hit length</dt><dd>186 ms</dd></div>
+    </dl>
   </div>
 
   <div class="bands">
@@ -770,12 +818,12 @@ an output already patched into people's racks.</p>
     <div class="side">
       <div class="k lg"><i style="--v:0"></i><b>MODEL</b><em>VA</em></div>
       <button class="btn hot">strike</button>
-      <dl class="ros">
-        <div class="ro d"><dt>harmonics</dt><dd>detune</dd></div>
-        <div class="ro d"><dt>strike</dt><dd>420 ms</dd></div>
-        <div class="ro d"><dt>aux</dt><dd>+0.0 dB</dd></div>
-      </dl>
     </div>
+    <dl class="ros">
+      <div class="ro d"><dt>harmonics</dt><dd>detune</dd></div>
+      <div class="ro d"><dt>strike</dt><dd>420 ms</dd></div>
+      <div class="ro d"><dt>aux</dt><dd>+0.0 dB</dd></div>
+    </dl>
   </div>
 
   <div class="bands">
@@ -913,12 +961,12 @@ what decides by how much.</p>
     <div class="side">
       <div class="k lg"><i style="--v:.25"></i><b>MORPH</b><em>ADULT</em></div>
       <button class="btn hot">meow</button>
-      <dl class="ros">
-        <div class="ro d"><dt>formants</dt><dd>450 · 1300 · 2700</dd></div>
-        <div class="ro d"><dt>settles</dt><dd>290.3 Hz</dd></div>
-        <div class="ro d"><dt>length</dt><dd>455 ms</dd></div>
-      </dl>
     </div>
+    <dl class="ros">
+      <div class="ro d"><dt>formants</dt><dd>450 · 1300 · 2700</dd></div>
+      <div class="ro d"><dt>settles</dt><dd>290.3 Hz</dd></div>
+      <div class="ro d"><dt>length</dt><dd>455 ms</dd></div>
+    </dl>
   </div>
 
   <div class="bands">
@@ -1054,12 +1102,12 @@ band.</p>
     </div>
     <div class="side">
       <div class="k lg"><i style="--v:.5"></i><b>CUTOFF</b><em>1.0 kHz</em></div>
-      <dl class="ros">
-        <div class="ro d"><dt>sounding</dt><dd>3 of 5</dd></div>
-        <div class="ro d"><dt>mode gain</dt><dd>−8.5 dB</dd></div>
-        <div class="ro d"><dt>peak</dt><dd>+0.2 dBFS</dd></div>
-      </dl>
     </div>
+    <dl class="ros">
+      <div class="ro d"><dt>sounding</dt><dd>3 of 5</dd></div>
+      <div class="ro d"><dt>mode gain</dt><dd>−8.5 dB</dd></div>
+      <div class="ro d"><dt>peak</dt><dd>+0.2 dBFS</dd></div>
+    </dl>
   </div>
 
   <div class="bands">
@@ -1194,12 +1242,12 @@ band is called "recorder" over a recorder that cannot be heard is worse than no 
     <div class="side">
       <div class="k lg"><i style="--v:.75"></i><b>RATE</b><em>1.00×</em></div>
       <button class="btn hot">trigger</button>
-      <dl class="ros">
-        <div class="ro d"><dt>loop</dt><dd>2.31 s</dd></div>
-        <div class="ro d"><dt>pitch</dt><dd>0.0 st</dd></div>
-        <div class="ro d"><dt>fill</dt><dd>37 %</dd></div>
-      </dl>
     </div>
+    <dl class="ros">
+      <div class="ro d"><dt>loop</dt><dd>2.31 s</dd></div>
+      <div class="ro d"><dt>pitch</dt><dd>0.0 st</dd></div>
+      <div class="ro d"><dt>fill</dt><dd>37 %</dd></div>
+    </dl>
   </div>
 
   <div class="bands">
@@ -1311,12 +1359,12 @@ sounding?</em></p>
     <div class="side">
       <div class="k lg"><i style="--v:.24"></i><b>RING</b><em>2.5 S</em></div>
       <button class="btn hot">strum</button>
-      <dl class="ros">
-        <div class="ro d"><dt>rings for</dt><dd>2500 ms</dd></div>
-        <div class="ro d"><dt>chord</dt><dd>E A D G B E</dd></div>
-        <div class="ro d"><dt>roll</dt><dd>12.6 ms</dd></div>
-      </dl>
     </div>
+    <dl class="ros">
+      <div class="ro d"><dt>rings for</dt><dd>2500 ms</dd></div>
+      <div class="ro d"><dt>chord</dt><dd>E A D G B E</dd></div>
+      <div class="ro d"><dt>roll</dt><dd>12.6 ms</dd></div>
+    </dl>
   </div>
 
   <div class="bands">
@@ -1451,12 +1499,12 @@ what justify it — not the fader.</p>
     </div>
     <div class="side">
       <div class="k lg"><i style="--v:.5"></i><b>LEVEL</b><em>0.50</em></div>
-      <dl class="ros">
-        <div class="ro d"><dt>white</dt><dd>−10.8 dB</dd></div>
-        <div class="ro d"><dt>pink</dt><dd>−23.2 dB</dd></div>
-        <div class="ro d"><dt>brown</dt><dd>−17.8 dB</dd></div>
-      </dl>
     </div>
+    <dl class="ros">
+      <div class="ro d"><dt>white</dt><dd>−10.8 dB</dd></div>
+      <div class="ro d"><dt>pink</dt><dd>−23.2 dB</dd></div>
+      <div class="ro d"><dt>brown</dt><dd>−17.8 dB</dd></div>
+    </dl>
   </div>
 
   <div class="bands">
@@ -1539,12 +1587,12 @@ afterwards.</b></p>
     </div>
     <div class="side">
       <div class="k lg"><i style="--v:.5"></i><b>ROT Y</b><em>0.00</em></div>
-      <dl class="ros">
-        <div class="ro d"><dt>solid</dt><dd>31 %</dd></div>
-        <div class="ro d"><dt>DC</dt><dd>−0.374</dd></div>
-        <div class="ro d"><dt>turning pts</dt><dd>28</dd></div>
-      </dl>
     </div>
+    <dl class="ros">
+      <div class="ro d"><dt>solid</dt><dd>31 %</dd></div>
+      <div class="ro d"><dt>DC</dt><dd>−0.374</dd></div>
+      <div class="ro d"><dt>turning pts</dt><dd>28</dd></div>
+    </dl>
   </div>
 
   <div class="bands">
@@ -1674,12 +1722,12 @@ where "dual reel" is the design problem.</p>
     </div>
     <div class="side">
       <div class="k lg"><i style="--v:0"></i><b>A / B</b><em>A 100 %</em></div>
-      <dl class="ros">
-        <div class="ro d"><dt>bus</dt><dd>0.0 dB</dd></div>
-        <div class="ro d"><dt>overdub ceiling</dt><dd>+5.4 dB</dd></div>
-        <div class="ro d"><dt>remaining</dt><dd>14.8 s</dd></div>
-      </dl>
     </div>
+    <dl class="ros">
+      <div class="ro d"><dt>bus</dt><dd>0.0 dB</dd></div>
+      <div class="ro d"><dt>overdub ceiling</dt><dd>+5.4 dB</dd></div>
+      <div class="ro d"><dt>remaining</dt><dd>14.8 s</dd></div>
+    </dl>
   </div>
 
   <div class="bands">
@@ -1748,3 +1796,17 @@ so on a 44.1 kHz context the readout is 8.8 % wrong and exported WAVs play 8.8 %
 </section>
 
 </div>
+
+<script>
+// The gallery's ANNOTATIONS switch. A static mockup has no view state of its
+// own, so ONE body class draws both halves of the shipped behaviour from one
+// page: off (the default, and how every face below actually paints at rest)
+// and on. The real platform gates the MARKUP rather than the visibility — see
+// the note beside the `.fhint,.bhint` rule.
+const annotSw = document.getElementById('annotsw');
+const annotChip = document.getElementById('annotstate');
+annotSw.addEventListener('change', () => {
+  document.body.classList.toggle('annot', annotSw.checked);
+  annotChip.textContent = annotSw.checked ? 'on' : 'off';
+});
+</script>

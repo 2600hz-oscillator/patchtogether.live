@@ -10,6 +10,9 @@ reviews these and the gallery before any building starts.
   `ModuleFaceHero` (`cell` / `control` / `action` / `readouts`),
   `FaceSidebarBlock[]` (`signal-flow` | `presets` | `readouts` | `custom`), and
   `FaceReadout.valueId` resolved through `face-readout-values.ts`.
+- **Two owner layout decisions (2026-08-02) landed on that branch after these specs
+  were written — see §1.1. Neither changes a single declaration below**; both are
+  platform behaviour, and the gallery is re-drawn to match.
 - **Quality bar:** `.myrobots/plans/dx7-and-faces-design-program-2026-07-27.md`.
 - **Defect checklist:** `.myrobots/plans/face-specs-round-2-2026-08-01.md` — its 71 defects were
   read as a list of what goes wrong, not as a design.
@@ -35,6 +38,31 @@ reviews these and the gallery before any building starts.
 
 **Modules I think should NOT get a face: `noise` (on merit), `cube` and `twotracks` (not yet).**
 That leaves **nine** to build, which is a healthier batch than twelve.
+
+### 1.1 TWO OWNER LAYOUT DECISIONS THE PLATFORM NOW MAKES FOR EVERY FACE
+
+Both landed on `feat/faceplate-platform-v2` on 2026-08-02, after these twelve specs were
+written. **Neither requires an edit to any declaration in them** — that is the point of a
+platform: the specs say what a face *declares*, the platform says how a faceplate *reads*.
+
+1. **The derived-readout row sits BELOW the hero graphic**, as a full-width strip, not
+   inline beside the hero control. Every spec below that declares `hero.readouts` gets this
+   for free, and the change is worth knowing when you read the mockups: the picture now has
+   the whole editor width, so a spec that argued its graph was cramped beside three readouts
+   (clap, meowbox, drummergirl all do) is arguing about a layout that no longer exists.
+
+2. **`face.hint` and every band `hint` are ANNOTATION, and OFF by default.** The prose is
+   still authored on the def — it is living-docs content and the specs' `hint:` strings stand
+   exactly as written — but the CARD only paints it when the viewer turns annotations on
+   from the dock title bar (per-viewer, not `node.data`, not the Y.Doc). The `face.title`
+   still always paints: it is the panel's name, not a note about it.
+
+   ⚠ **This raises the bar on a band LABEL, and lowers it on a band HINT.** At rest the label
+   is the *only* thing naming the band, so `1 · burst — the hands` has to carry the idea on
+   its own; a label that leans on its hint to make sense now reads as a bare word. Conversely
+   the hint is free to be longer and more technical than a card could otherwise afford,
+   because nobody pays for it until they ask. Read every `label` in these twelve specs
+   against that test before building.
 
 ---
 

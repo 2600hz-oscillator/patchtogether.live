@@ -106,7 +106,10 @@ Not a full spec, because the recommendation is to defer. The shape, so the defer
   which is right for a two-deck module and should be embraced, not fought.
 - **`face.title` = `Tape`, `face.hint`** must lead with the three facts that make it usable:
   *reel B is muted at ab 0, both reels are unity at ab 0.5 (+6 dB), and none of the EQ or filter
-  does anything until a take exists.*
+  does anything until a take exists.* ⚠ Since 2026-08-02 `face.hint` is ANNOTATION and OFF by
+  default (INDEX §1.1), so a fact a user must not miss cannot live only there — the first two
+  belong in a `readouts` sidebar block or a band label as well, and the third is what the
+  inert-until-a-take styling on those knobs says at rest.
 - **The hero is the tape**, not a knob: a waveform with the loop window, the playhead and the
   record head — the card already draws all of it (`TwotracksCard.svelte:342-419`).
 - **Promote nothing from `node.data`.** Unlike samsloop, twotracks' non-param controls are
