@@ -85,9 +85,34 @@ function makeFakeAudioCtx(): FakeAudioBits {
     disconnect = vi.fn();
     constructor() { workletNode = this as unknown as FakeAudioBits['workletNode']; resolveWorklet(); }
   };
-  (globalThis as unknown as { AudioWorkletNode: unknown }).AudioWorkletNode = FakeAudioWorkletNode;
+  // ⚠ RESTORE IT. This is a PROCESS-WIDE global and vitest shares one process
+  // per worker across many test FILES, so leaving the fake installed changes
+  // the behaviour of every later file in that worker. It did: with the fake
+  // still present, `ensureGateEdgeWorklet` believes the context can host a
+  // worklet, so `engine-gate-dispatch.test.ts`'s MAIN-THREAD fail-safe suite
+  // silently took the AUDIO-THREAD path and its three assertions read 0 edges.
+  // Deterministic, and invisible until the lane's file→worker split happened
+  // to put this file immediately before that one — which is to say, until an
+  // unrelated PR added a test file. `vi.restoreAllMocks()` does NOT undo a
+  // bare global assignment, so it has to be explicit. (Precedent, same repo:
+  // moog904c.test.ts already saves + restores `prevWorkletCtor`.)
+  const g = globalThis as unknown as { AudioWorkletNode?: unknown };
+  const prevWorkletCtor = g.AudioWorkletNode;
+  g.AudioWorkletNode = FakeAudioWorkletNode;
+  restoreWorkletCtor = () => {
+    if (prevWorkletCtor === undefined) delete g.AudioWorkletNode;
+    else g.AudioWorkletNode = prevWorkletCtor;
+  };
   return { ctx, workletReady, get workletNode() { return workletNode; }, gainCount: () => gains };
 }
+
+/** Undo for the global `makeFakeAudioCtx` installs (see the note above). */
+let restoreWorkletCtor: (() => void) | null = null;
+
+afterEach(() => {
+  restoreWorkletCtor?.();
+  restoreWorkletCtor = null;
+});
 
 function makeCtx(audio: FakeAudioBits | null): VideoEngineContext {
   return {
