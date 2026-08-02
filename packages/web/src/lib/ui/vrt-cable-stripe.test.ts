@@ -217,11 +217,19 @@ function measure(readBytes: (path: string) => Buffer = readFileSync): Measured {
         // `--update-snapshots` (the test never runs). Holding it to the current
         // palette would make this gate un-satisfiable, so it is reported instead
         // of asserted — see the `quarantined` list printed by the coverage test.
-        // Deleting such a file is the preferred treatment (a baseline nothing
-        // compares is not coverage, and a MISSING snapshot is what makes a later
-        // drain-then-dispatch actually capture); the survivors are the ones that
-        // must keep an image for a reason, e.g. `darwin/rasterize`, which is a
-        // canvas-timing FLAKE quarantine and is rasterize's only baseline.
+        //
+        // ⚠ DO NOT DELETE A QUARANTINED PNG AS A MATTER OF COURSE. An earlier
+        // revision of this PR removed 14 of them on the reasoning "a baseline
+        // nothing compares is not coverage". Fourteen of those exact pairs are
+        // being DRAINED by PR #1272 — after which the scenes ARE compared on
+        // linux, so deleting the PNGs would have left 10 modules with no linux
+        // baseline and turned the `unit` lane red on main. The two PRs share
+        // ZERO files, so nothing would have conflicted and nothing would have
+        // warned. They are restored, and #1272's `vrt-update.yml` dispatch has
+        // since re-captured all 15 on linux (bot commit ef29f3db) — verified
+        // to paint the CURRENT palette, so this gate stays green whichever PR
+        // lands first. Delete a quarantined baseline only when you have checked
+        // that no in-flight PR drains its pair.
         // (The Set is GLOBAL and keyed `<platform>/<sceneId>`: every card-capture
         // spec consults it with its own scene id, which is the PNG stem.)
         if (EXEMPT_BASELINE_PAIRS.has(`${platform}/${scene}`)) {
@@ -424,8 +432,15 @@ describe('VRT baselines paint the CURRENT --cable-* stripe', () => {
   // So perturb the PIXELS. For every cable token in use, take a real baseline
   // pinned to it, repaint its located stripe row, re-encode a real PNG, and
   // push those BYTES back through `measure()` — the production resolver,
-  // decoder, locator and comparison. Exactly that one baseline must go red.
-  it('NEGATIVE CONTROL: repainting a baseline stripe row reddens exactly that baseline', () => {
+  // decoder, locator and comparison. Exactly those baselines must go red.
+  //
+  // ONE re-measure, all 9 tokens perturbed at once — not 9 re-measures. The
+  // per-token loop cost 3.5-4.3 s (nine full 409-PNG scans) against vitest's
+  // 5000 ms DEFAULT TIMEOUT, so it went red once under local load, and the unit
+  // lane is ~2.5x slower on CI (CLAUDE.md) — it could not have held. Batching is
+  // also the STRONGER assertion: the post-perturbation off-palette set must
+  // equal the perturbed set EXACTLY, so a leak in either direction fails.
+  it('NEGATIVE CONTROL: repainting baseline stripe rows reddens exactly those baselines', () => {
     if (unreadable && !REQUIRED) return;
     const PERTURBED = '#ff0000'; // saturation 255 — outranks any card chrome row
     expect(
@@ -434,19 +449,43 @@ describe('VRT baselines paint the CURRENT --cable-* stripe', () => {
     ).toEqual([]);
 
     const pendingSet = new Set(PENDING_PALETTE_REGEN);
-    let controlled = 0;
-    for (const token of Object.keys(tokens)) {
+    const inUse = Object.keys(tokens).filter((t) => pinned.some((p) => p.token === t));
+    const targets: Pinned[] = [];
+    const perturbed = new Map<string, Buffer>();
+    for (const token of inUse) {
       const target = pinned.find(
         (p) => p.token === token && !pendingSet.has(p.key) && p.y !== undefined,
       );
       if (!target) continue;
-      controlled++;
-      const targetPath = resolve(SCREENSHOT_ROOT, target.spec, target.platform, `${target.scene}.png`);
-      const perturbedBytes = Buffer.from(
-        repaintStripeRow(new Uint8Array(readFileSync(targetPath)), target.y!, PERTURBED),
+      targets.push(target);
+      const path = resolve(SCREENSHOT_ROOT, target.spec, target.platform, `${target.scene}.png`);
+      perturbed.set(
+        path,
+        Buffer.from(repaintStripeRow(new Uint8Array(readFileSync(path)), target.y!, PERTURBED)),
       );
+    }
+    expect(
+      targets.length,
+      'every --cable-* token that any baseline pins must be pixel-controlled; a short list means ' +
+      'some token is only ever asserted, never measured.',
+    ).toBe(inUse.length);
+    // …and the token set itself must not quietly empty out. 8 of the 9 cable
+    // tokens are pinned by some card's `.stripe` today; `--cable-keys` is
+    // declared but no card stripes with it, so it is legitimately impossible to
+    // control from the pixel side. Pinning the SET (not a count) means a token
+    // dropping out is red — a token this gate can no longer prove it measures.
+    expect(
+      targets.map((t) => t.token).sort(),
+      'the set of pixel-controlled cable tokens changed — a token that left is a token this ' +
+      'gate can no longer prove it measures.',
+    ).toEqual([
+      '--cable-audio', '--cable-cv', '--cable-gate', '--cable-image', '--cable-mono-video',
+      '--cable-pitch', '--cable-polyPitchGate', '--cable-video',
+    ]);
 
-      const remeasured = measure((p) => (p === targetPath ? perturbedBytes : readFileSync(p)));
+    const remeasured = measure((p) => perturbed.get(p) ?? readFileSync(p));
+
+    for (const target of targets) {
       const hit = remeasured.pinned.find((p) => p.key === target.key);
       expect(
         hit?.got,
@@ -454,19 +493,12 @@ describe('VRT baselines paint the CURRENT --cable-* stripe', () => {
         `reads ${hit?.got} — it is NOT reading that file's pixels (units: #rrggbb of the modal ` +
         `colour of the most saturated uniform row in the top 12 image rows).`,
       ).toBe(PERTURBED);
-
-      const bad = offPaletteKeys(remeasured.pinned, tokens).filter((k) => !pendingSet.has(k));
-      expect(
-        bad,
-        `perturbing the PIXELS of ${target.key}.png (${token}) should redden exactly that ` +
-        `baseline and nothing else.`,
-      ).toEqual([target.key]);
     }
     expect(
-      controlled,
-      'every --cable-* token that any baseline pins must be pixel-controlled; 0 means the loop ' +
-      'never ran and this test is decoration.',
-    ).toBe(Object.keys(tokens).filter((t) => pinned.some((p) => p.token === t)).length);
-    expect(controlled, 'expected all 9 cable tokens to be in use by some baseline').toBeGreaterThan(0);
+      offPaletteKeys(remeasured.pinned, tokens).filter((k) => !pendingSet.has(k)),
+      `perturbing the PIXELS of ${targets.length} baselines (one per cable token) must redden ` +
+      'exactly those and nothing else — more means the perturbation leaked, fewer means the ' +
+      'gate is not reading the bytes it was handed.',
+    ).toEqual(targets.map((t) => t.key).sort());
   });
 });
