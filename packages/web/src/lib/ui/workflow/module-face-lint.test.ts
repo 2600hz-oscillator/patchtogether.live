@@ -777,6 +777,57 @@ describe('module-face lint — rear-card curation (face.rear) + derivation total
     expect(missing.join('\n'), 'rear derivation not total — a hole went missing').toBe('');
   });
 
+  it('every curated rear GROUP claims the leading slot or names a real page (no stray band)', () => {
+    // ⚠ GENERALIZED FROM A PER-MODULE SPEC, because the MECHANISM is shared and
+    // the hole is platform-wide. `rearFieldPlan` gives a group whose id is
+    // 'voice'/'signal' the LEADING slot, lets a group whose id matches a page
+    // id CLAIM that page's slot, and APPENDS anything else after the page
+    // bands. So a group id that is a near-miss for its page ('strings' vs
+    // 'string') silently produces a derived band holding only the leftovers
+    // plus a stray 7-hole band at the bottom.
+    //
+    // The totality gate above CANNOT SEE IT: every port still renders exactly
+    // once, just in a wrecked order — a gate that counts holes proves nothing
+    // about where they are. And the version of this check that shipped read a
+    // single hardcoded def, so it was structurally blind to the next module to
+    // get it wrong. Verified green across all STRICT_FACES at the time of
+    // writing, so there is no cost to sweeping the registry.
+    const problems: string[] = [];
+    for (const def of allDefs()) {
+      const groups = def.face?.rear?.groups ?? [];
+      if (!groups.length) continue;
+      const pageIds = new Set((def.face?.pages ?? []).map((p) => p.id));
+      for (const g of groups) {
+        const claimsLead = g.id === 'voice' || g.id === 'signal';
+        if (!claimsLead && !pageIds.has(g.id)) {
+          problems.push(
+            `${def.type}: face.rear.groups['${g.id}'] claims neither the leading slot ` +
+              `('voice'/'signal') nor a declared page id — it appends as a STRAY band after ` +
+              `every page, and the totality gate cannot see it. Page ids: ${[...pageIds].join(', ')}`,
+          );
+        }
+      }
+    }
+    expect(problems.join('\n'), 'a curated rear group would append as a stray band').toBe('');
+  });
+
+  it('no page id collides with the LEADING rear group id (the dx7 double-band scar)', () => {
+    // The one collision that DOES double-render: the leading 'voice'/'signal'
+    // band is pushed BEFORE the page loop and is not in `curatedGroups`, so
+    // nothing claims it and the page renders a second band with the same id.
+    // (A page id matching a NON-leading group id is the sanctioned re-heading
+    // mechanism — kickdrum's `sub`, tidyVco's `oscillator` — not a bug.)
+    const problems: string[] = [];
+    for (const def of allDefs()) {
+      const lead = (def.face?.rear?.groups ?? []).find((g) => g.id === 'voice' || g.id === 'signal');
+      if (!lead) continue;
+      if ((def.face?.pages ?? []).some((p) => p.id === lead.id)) {
+        problems.push(`${def.type}: page '${lead.id}' collides with the LEADING rear group — that band renders TWICE`);
+      }
+    }
+    expect(problems.join('\n'), 'a page id claiming the leading rear slot').toBe('');
+  });
+
   it('STRICT_FACES: no rear band LABEL prefixes another on the same card', async () => {
     // ⚠ THE GATE FOR A REAL MISPATCH, not for tidiness. Every rear check above
     // reads IDS; `rear-card-model.test.ts` asserts `bandIds(def)` and never
