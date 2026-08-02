@@ -295,7 +295,11 @@ describe('vrt gallery — PARITY (a darwin/linux gap is VISIBLE, not silent)', (
     // v2 tab still owes it a MISSING row. Both are real gaps; only the first is
     // visible from the tree.
     expect(countMissingTiles(real.html)).toBeGreaterThanOrEqual(absent);
-    expect(countMissingTiles(real.html)).toBeGreaterThan(0);
+    // ⚠ DELIBERATELY NOT `toBeGreaterThan(0)`. Asserting the real tree HAS a
+    // gap would make this gate go RED on the day parity is finally reached —
+    // a test that fails when the work succeeds, which is worse than no test.
+    // That the MISSING tile renders at all is proven by the fixture negative
+    // controls below, at exact counts, on trees whose answer is known.
   });
 });
 
