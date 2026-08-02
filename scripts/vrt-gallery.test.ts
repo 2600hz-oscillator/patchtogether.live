@@ -46,7 +46,7 @@
 // synthetic fixtures in an OS temp dir. Pure stdlib on the Python side (no
 // Pillow), so this runs in the ordinary `unit` lane.
 
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import {
   existsSync,
@@ -202,6 +202,12 @@ const countMissingTiles = (html: string): number =>
 // The real tree is walked once — it is ~416 files and the script is ~1 s.
 const real = build(BASELINES);
 const onDisk = walkBaselines(BASELINES);
+
+// The real build COPIES all 416 baseline PNGs (~14 MB) into a temp dir. Every
+// fixture build below cleans up after itself; this one has no owning `it`, so
+// without this it leaks a full copy of the tree per invocation — on every unit
+// lane, and on every local `task test` while iterating.
+afterAll(() => rmSync(real.outDir, { recursive: true, force: true }));
 
 describe('vrt gallery — TOTALITY (every committed baseline appears, nothing invented)', () => {
   it('the baseline tree is READABLE — refusing to pass vacuously', () => {
