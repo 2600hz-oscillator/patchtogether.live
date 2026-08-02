@@ -190,6 +190,64 @@ Three dispatch gotchas, all confirmed on real runs:
   invisible to both the gate and the regen. Treat a "green dispatch that
   committed nothing" as a RED FLAG to investigate, never as "nothing to do".
 
+### A platform gap is declared FOUR ways — `EXEMPT_BASELINE_PAIRS` is only one
+
+CI renders on **linux**. A scene captured on darwin but skipped on linux gives
+ZERO protection while still counting as "covered" everywhere. That deficit is
+declared through **four** separate mechanisms, and for months the ratchet read
+one of them:
+
+| # | mechanism | where | gaps (2026-08-01) |
+|---|---|---|---|
+| A | `'linux/<scene>'` in the SHARED `EXEMPT_BASELINE_PAIRS` | `e2e/vrt/vrt-exemptions.ts` | 89 |
+| B | a **private** `const EXEMPT_BASELINE_PAIRS` inside a spec | 4 spec files | 10 |
+| C | `test.skip(VRT_PLATFORM === 'linux', …)` — blanket, no list | 8 spec files | 49 |
+| D | `darwinOnly: true` on a `CompositeVrtScene` | `e2e/vrt/vrt-composite-scenes.ts` | 3 |
+
+**Measured: 151 real gaps, 89 seen, 62 invisible — and the number it printed was
+119**, matching neither, because 30 of its entries named scenes that were not
+gaps at all. A count of *declarations* was being read as a count of *gaps*, so
+it was wrong in both directions at once. Nothing failed; every assertion it made
+was true about the one list it read.
+
+- **Enumerate mechanisms in ONE place.** `e2e/vrt/vrt-platform-gaps.ts` reads
+  all four; `vrt-meta.test.ts` ratchets its total (≤151, only shrinks) and fails
+  with a per-mechanism breakdown. **A bare number is what let this hide** — name
+  the contributors in the message.
+- **Anchor the metric to the ARTIFACT, not the list.** Ground truth is a darwin
+  PNG with no linux sibling; the mechanisms must then *explain* each gap. A gap
+  nobody declares is UNDECLARED → red. Adding a fifth mechanism without teaching
+  the enumerator fails automatically.
+- **A pair whose PNG is already committed is a DEADLOCK, not just waste.** The
+  pair is consulted before the PNG, so the scene is skipped despite the
+  baseline — and `--update-snapshots` writes nothing for a skipped test, so the
+  "re-capture then drop the pair" plan it waits on can never run. 15 of these
+  were drained on 2026-08-01; the stale ratchet is now capped at the 4 tracked
+  flake quarantines.
+- **A checker that resolves ONE directory cannot speak for the tree.** Both the
+  stale ratchet and `scripts/vrt-exemptions-audit.mjs` only ever built the
+  `__screenshots__/vrt.spec.ts/…` path, so stale *scene* pairs under other spec
+  dirs were structurally invisible. Widening them found **3** more immediately
+  (narrow 16 → widened 19 on `77cd1bbc`) — the three `darwin/wavesculpt-blink-*`
+  quarantines. Not four: `darwin/rasterize` lives under `vrt.spec.ts`, so the
+  narrow check always saw it. The same one-directory blindness was live in the
+  cable-stripe palette gate, which read `vrt.spec.ts` only and missed 39
+  token-pinned baselines in six sibling dirs — **state a gate's directory scope
+  in the gate**, because an unstated scope reads as full coverage.
+- **A CEILING can only trip by GROWING — assert the other direction too.** A
+  drain that closes gaps and forgets to lower the number passes in total
+  silence, and the slack it leaves absorbs the next regression. Every VRT
+  ratchet now pairs `actual <= CEILING` with `CEILING - actual === 0`, so
+  "lower the ceiling by the same count" is enforced rather than advisory. It
+  fired on its first run (the shared-pair ceiling was 10 slack after a cleanup).
+- **A drain without its re-capture ships a red lane.** Removing pairs is step 1
+  of 2. The 2026-08-01 15-pair drain deferred the dispatch to "a follow-up" and
+  every one of the 15 came back as a **dimension mismatch** (212×564 vs
+  264×527 …) — Playwright hard-fails on size *before* it computes a ratio, so no
+  tolerance argument applies and `maxDiffPixelRatio` is irrelevant. Confirm the
+  committed baseline still matches the render, or `git rm` it and dispatch, in
+  the SAME PR.
+
 ## Worktrees: hard cap of 10
 
 This repo accumulates abandoned `isolation: worktree` agent checkouts fast — each

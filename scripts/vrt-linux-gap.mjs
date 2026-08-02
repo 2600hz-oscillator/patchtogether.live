@@ -4,6 +4,14 @@
 // which scenes have NO baseline (hard fail) vs a baseline that will be diffed?
 //
 // Scene id = PNG basename. Exemption key = `linux/<sceneId>`.
+//
+// ⚠ This script reads TWO of the FOUR mechanisms that take a scene dark on a
+// platform (the shared pair Set + the spec-local pair Sets). It is blind to the
+// blanket `test.skip(VRT_PLATFORM === 'linux', …)` in 8 specs and to the
+// `darwinOnly` scene flag, so its bucket C UNDER-counts by 52. The complete
+// enumeration — and the ratchet that gates on it — is
+// e2e/vrt/vrt-platform-gaps.ts + the vrt-meta LINUX-DEFICIT ratchet. Prefer
+// those; this stays for the per-scene FULL_MATCH lane breakdown they don't do.
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -15,7 +23,9 @@ const SHOT = join(ROOT, 'e2e/vrt/__screenshots__');
 // this script reported 87 hard-fails where the repo's own audit said 0, because
 // `linux/com-hsv` and friends were eaten by a match that started at a prose
 // apostrophe. Negative control: the parsed count must equal
-// `node scripts/vrt-exemptions-audit.mjs` (127).
+// `node scripts/vrt-exemptions-audit.mjs` (102 as of 2026-08-01; that script
+// had the mirror-image bug — it did NOT strip comments, so a comment quoting
+// the pair it explains counted as a live entry — and now strips too).
 function pairsFrom(file, konst = 'EXEMPT_BASELINE_PAIRS') {
   const src = readFileSync(join(ROOT, file), 'utf8');
   const i = src.indexOf(`${konst} = new Set`);
@@ -40,8 +50,18 @@ const local = new Set([
 ]);
 const exempt = new Set([...shared, ...local]);
 // Negative control on the parser itself (see pairsFrom).
-if (shared.size !== 127) {
-  console.error(`PARSER CHECK FAILED: shared EXEMPT_BASELINE_PAIRS parsed ${shared.size}, expected 127 (vrt-exemptions-audit.mjs). Fix the parser before believing anything below.`);
+// 127 → 112 (2026-08-01): the 15-pair drain of already-committed linux
+// baselines.
+// 112 → 102 (2026-08-01): the 10 misnamed `linux/toybox-*` entries deleted —
+// no such scene stem exists and vrt-toybox.spec.ts never imported the Set.
+// Keep this in lockstep with `node scripts/vrt-exemptions-audit.mjs`.
+const EXPECTED_SHARED_PAIRS = 102;
+if (shared.size !== EXPECTED_SHARED_PAIRS) {
+  // FIX THE PARSER FIRST. A drift detector whose first suggestion is "bump the
+  // constant" is a detector on its way out — that ordering was reversed here
+  // in the same commit that changed the Set, which is exactly when a silently
+  // broken parser looks like a legitimate size change.
+  console.error(`PARSER CHECK FAILED: shared EXEMPT_BASELINE_PAIRS parsed ${shared.size}, expected ${EXPECTED_SHARED_PAIRS} (vrt-exemptions-audit.mjs). Fix the parser before believing anything below; only update EXPECTED_SHARED_PAIRS once you have confirmed the Set itself changed size and by how much.`);
   process.exit(2);
 }
 
