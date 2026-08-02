@@ -37,7 +37,7 @@ acidwarp param speed 0..1 linear default=0.5
 adsr meta domain=audio
 adsr in attack cv param=attack cvScale=log
 adsr in decay cv param=decay cvScale=log
-adsr in gate gate
+adsr in gate gate edge=gate
 adsr in release cv param=release cvScale=log
 adsr in sustain cv param=sustain cvScale=linear
 adsr out env cv

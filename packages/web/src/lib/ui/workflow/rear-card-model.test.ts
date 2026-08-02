@@ -197,6 +197,11 @@ describe('rear-card derivation — the six P1 prototypes (spec §4)', () => {
     // the linear SUSTAIN level (the param labels are bare letters A/D/S/R).
     expect(bandPorts(def, 'stages')).toEqual(['attack', 'decay', 'release', 'sustain']);
     const stages = plan.bands[1];
+    // …and it is PINNED, so the band does NOT inherit the dock page's label.
+    // The front page reads 'gate → attack · decay · sustain · release' (the
+    // gate is a real control-surface input there); on the rear that would head
+    // a band of four CV holes and no gate at all.
+    expect(stages.label).toBe('stage cv');
     expect(stages.holes).toEqual([]);
     expect(stages.clusters.map((c) => c.label)).toEqual(['times', 'level']);
     expect(stages.clusters[1].holes.map((h) => h.portId)).toEqual(['sustain']);

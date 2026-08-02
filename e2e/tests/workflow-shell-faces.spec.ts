@@ -92,10 +92,13 @@ test.describe('P1 batch-1 curated faces (?shell=1)', () => {
     await expect(shell.locator('[data-glyph-kind]')).toHaveCount(0);
 
     // COMPACT (the glance tier): the row face — the designer's top-ranked
-    // control (attack, rank 1 — shows at EVERY tier) + the 'envelope' glyph
-    // sized to its cell (fluid — never the old fixed-width clip).
+    // controls (RELEASE rank 1, then ATTACK — release is the only stage that
+    // runs unconditionally, and under the rack's canonical 5 ms trigger pulse
+    // it is the whole audible envelope) + the 'envelope' glyph sized to its
+    // cell (fluid — never the old fixed-width clip).
     await setZoomTier(page, 'env', 0.45, 'compact');
     await expect(shell.locator('.tile-body')).toHaveAttribute('data-body-layout', 'row');
+    await expect(shell.locator('[data-testid="control-release"]')).toBeVisible();
     await expect(shell.locator('[data-testid="control-attack"]')).toBeVisible();
     const glyph = shell.locator('[data-glyph-kind="envelope"]');
     await expect(glyph).toBeVisible();
@@ -114,7 +117,11 @@ test.describe('P1 batch-1 curated faces (?shell=1)', () => {
     const pages = faceplate.locator('[data-testid="face-page"]');
     await expect(pages).toHaveCount(1);
     await expect(pages.first()).toHaveAttribute('data-face-page', 'stages');
-    await expect(pages.first().locator('.page-label')).toHaveText('stages');
+    // The page ID is stable ('stages'); the LABEL teaches the signal path —
+    // a gate drives the four stages, in the order they run.
+    await expect(pages.first().locator('.page-label')).toHaveText(
+      'gate → attack · decay · sustain · release',
+    );
     for (const paramId of ['attack', 'decay', 'sustain', 'release']) {
       await expect(
         pages.first().locator(`[data-testid="control-${paramId}"]`),
