@@ -83,6 +83,16 @@ const MIN_TOKEN_PINNED_BASELINES = 170;
  * 809e074a). Whichever of the two PRs merges second must merge `main`, watch
  * this assertion go red, and empty the list in the same commit. That red is
  * the point: it is the only thing tying two PRs that share no file.
+ *
+ * SIMULATED, not predicted. A local 3-way merge of #1279 + #1272 + #1281 lands
+ * with ZERO git conflicts, and on that tree: 48 of the 49 VRT-gate assertions
+ * pass — `every token-pinned baseline paints its token` included, i.e. the
+ * merged state is actually CLEAN — and the ONE failure is this assertion,
+ * reporting `[] vs 39`. Replacing the list with `[]` makes it 49/49. So the
+ * cross-PR coupling costs exactly one edit and cannot be missed; with a
+ * `<=`-style ceiling instead, that same merge would have gone green with a
+ * 39-wide hole in the ratchet and nobody would have known.
+ * (#1281 + #1272 alone, no #1279: 45/45 green.)
  */
 const PENDING_PALETTE_REGEN: readonly string[] = [
   'vrt-clap.spec.ts/darwin/clap-909-dense',
