@@ -40,14 +40,16 @@
 
   import './_dock-faceplate.css';
   import type { Component } from 'svelte';
-  import type { ModuleNode, PortDef } from '$lib/graph/types';
+  import type { ModuleNode, ParamDef, PortDef } from '$lib/graph/types';
   import { getModuleDef } from '$lib/audio/module-registry';
   import { getVideoModuleDef } from '$lib/video/module-registry';
   import { getMetaModuleDef } from '$lib/meta/module-registry';
   import { domainClassForDef, type ShellDefLike } from '$lib/ui/workflow/module-shell-model';
   import { dockFacePlan, type FaceDefLike } from '$lib/ui/workflow/curated-face';
   import { activeDockTab, dockTabPlan } from '$lib/ui/workflow/dock-tabs-model';
+  import { sidebarPlan, type FaceplateDefLike } from '$lib/ui/workflow/dock-faceplate-model';
   import ModuleShell from '$lib/ui/modules/ModuleShell.svelte';
+  import FaceSidebar from '$lib/ui/workflow/FaceSidebar.svelte';
   import RearCard from '$lib/ui/workflow/RearCard.svelte';
   import type { RearDefLike } from '$lib/ui/workflow/rear-card-model';
 
@@ -81,7 +83,9 @@
     return getModuleDef(type) ?? getVideoModuleDef(type) ?? getMetaModuleDef(type);
   }
   let def = $derived(
-    defLookup(node.type) as (ShellDefLike & { label?: string; inputs?: readonly PortDef[] }) | undefined,
+    defLookup(node.type) as
+      | (ShellDefLike & { label?: string; inputs?: readonly PortDef[]; params?: readonly ParamDef[] })
+      | undefined,
   );
 
   /** Kit domain class (.audio/.cv/.gate/.video/.poly) — paints the whole face. */
@@ -117,6 +121,22 @@
   let tabs = $derived(migrated && def ? dockTabPlan(dockFacePlan(def as FaceDefLike)) : null);
   let requestedTab = $state<string | undefined>(undefined);
   let activeTab = $derived(tabs ? activeDockTab(tabs, requestedTab) : undefined);
+
+  // ── PF-20: THE CONTEXT SIDEBAR ──────────────────────────────────────────
+  //
+  // The kit has carried `.page.has-sidebar` + `.sidebar` + `.side-h` since the
+  // faceplate was ported; nothing ever filled them, so every migrated face
+  // shipped as a full-width wall of knobs where the mock is an instrument with
+  // a context column. It mounts HERE, as the `.page` grid's second column and a
+  // SIBLING of `.editor` — deliberately OUTSIDE <ModuleShell>, because
+  // faces-parity scopes its exact `control-<paramId>` multiset and its
+  // per-cell operability sweep to the module-shell element. A sidebar that
+  // lived inside the shell would have to teach that gate a new cell kind for
+  // every block; out here a preset button is just a button.
+  //
+  // Un-migrated occupants never get one: their content is a verbatim legacy
+  // card with no declared face to read.
+  let sidebar = $derived(migrated && def ? sidebarPlan(def as FaceplateDefLike) : null);
 </script>
 
 <div
@@ -245,7 +265,7 @@
             {/if}
           </div>
 
-          <div class="page">
+          <div class="page" class:has-sidebar={!!sidebar}>
             <div class="editor" data-testid="faceplate-editor">
               {#if migrated}
                 <ModuleShell id={node.id} data={{ node, view: 'dock-full', activePage: activeTab }} />
@@ -269,6 +289,9 @@
                 </section>
               {/if}
             </div>
+            {#if sidebar && def}
+              <FaceSidebar nodeId={node.id} blocks={sidebar} params={def.params ?? []} />
+            {/if}
           </div>
           </div>
         </div>

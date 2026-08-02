@@ -135,16 +135,31 @@ test.describe('ringback face — the readouts follow the graph', () => {
     await expect(fbOut, 'the default tail is about six laps').toHaveText('6 LAPS');
     await expect(mixOut, 'a fresh RINGBACK is FULLY WET').toHaveText('WET');
 
-    // ── THE RENDERED ABSENCE. `knobReadout` returns null for a param that
-    //    declared no vocabulary, and SIZE declaring none is a decision (the
-    //    quantity that matters is size/rate, which no per-param formatter can
-    //    show). A test that only checks what IS there cannot see this, and the
-    //    regression — someone "helpfully" adding a band label — is silent. ──
+    // ── THE DECLARED ABSENCE. SIZE declares NO vocabulary, and that is a
+    //    decision: the quantity that matters is size/rate, which no per-param
+    //    formatter can show. What changed in PF-20 is WHERE that decision is
+    //    visible.
+    //
+    //    ⚠ THIS ASSERTION USED TO READ `readout-size` COUNT 0 AT THE DOCK, and
+    //    PF-20 deliberately overturned the argument under it. "A readout is
+    //    earned" was a LANE argument — a 46px knob column cannot spend a text
+    //    row on what hovering already shows — and it was silently applied to
+    //    the dock too. On a faceplate it was simply wrong: every mocked panel
+    //    prints a value under every knob, and bare labels were the single
+    //    largest share of the shell-vs-mock drift the owner reported. So the
+    //    dock now prints the NUMBER for an undeclared param, and the "earned"
+    //    rule survives where it was always true — the lane.
+    //
+    //    The absence is still asserted, and still where the regression would
+    //    be silent: SIZE must print the raw ladder here (never a NAME, which
+    //    would mean someone quietly gave it a vocabulary), and print NOTHING
+    //    in the lane. ──
     await expect(dock.locator('[data-testid="control-size"]')).toBeVisible();
     await expect(
       dock.getByTestId('readout-size'),
-      'SIZE must NOT carry a persistent readout — a readout is earned',
-    ).toHaveCount(0);
+      'the DOCK prints SIZE’s value — the raw ladder + its declared units, because it ' +
+        'declared no vocabulary (a NAME here would mean someone quietly gave it one)',
+    ).toHaveText('64.0 smp');
 
     const rateDial = dock.locator('[data-testid="control-rate"]');
     const fbDial = dock.locator('[data-testid="control-feedback"]');
@@ -272,6 +287,19 @@ test.describe('ringback face — the readouts follow the graph', () => {
 
     const readout = laneShell.getByTestId('readout-rate');
     await expect(readout).toHaveText('FULL SR');
+
+    // ── THE SURVIVING HALF OF "A READOUT IS EARNED" (PF-20). The rule moved
+    //    to the LANE, where its argument was always true: a 46px column cannot
+    //    spend a text row on what hovering already shows. SIZE is rank 2, so
+    //    the compact tile RENDERS it beside RATE — and prints nothing under it,
+    //    because it declared no vocabulary. RATE, which declared one, prints.
+    //    Asserting both in one place is what makes this a statement about the
+    //    GATE rather than about one param. ──
+    await expect(laneShell.locator('[data-testid="control-size"]')).toBeVisible();
+    await expect(
+      laneShell.getByTestId('readout-size'),
+      'the LANE still earns its readouts — SIZE declared no vocabulary, so it prints none',
+    ).toHaveCount(0);
 
     // ⚠ UNITS. `getBoundingClientRect()` on a flow node is VIEWPORT-SCALED
     // (xyflow applies a CSS transform for zoom — the measureOverflow trap in

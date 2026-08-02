@@ -1,0 +1,325 @@
+// packages/web/src/lib/ui/workflow/dock-faceplate-model.test.ts
+//
+// PF-20 — the unit pin for the dock faceplate's LAYOUT ARITHMETIC.
+//
+// The one genuinely dangerous operation in the platform is the HERO PROMOTION:
+// it MOVES a control out of its band, and both failure modes are silent in a
+// screenshot. Drop one and the dock has lost a control; copy one and the dock
+// emits `control-<paramId>` twice, which faces-parity reports as "an unbacked
+// extra control". Neither is visible to `dockFacePlan`'s own parity gate,
+// because that gate runs BEFORE the split.
+//
+// So the split is pure, and its totality is a property here rather than a
+// browser assertion: every test below that touches heroFacePlan also asserts
+// heroFacePlanIsTotal, and module-face-lint asserts it over the whole registry.
+
+import { describe, it, expect } from 'vitest';
+import type { FaceSidebarBlock, ParamDef } from '$lib/graph/types';
+import { dockFacePlan, dockPlanControls, type DockFaceBand, type FaceDefLike } from './curated-face';
+import {
+  activePresetId,
+  facePageHeader,
+  hasDockSidebar,
+  heroFacePlan,
+  heroFacePlanIsTotal,
+  isUsableReadout,
+  presetNote,
+  presetValueMatches,
+  presetWrites,
+  readoutText,
+  sidebarPlan,
+  PRESET_MATCH_REL,
+  type FaceplateDefLike,
+} from './dock-faceplate-model';
+
+const PARAMS: ParamDef[] = [
+  { id: 'tune', label: 'Tune', defaultValue: 50, min: 20, max: 120, curve: 'log', units: 'Hz' },
+  { id: 'decay', label: 'Decay', defaultValue: 450, min: 50, max: 800, curve: 'log', units: 'ms' },
+  { id: 'mix', label: 'Mix', defaultValue: 0.5, min: 0, max: 1, curve: 'linear' },
+  {
+    id: 'mode',
+    label: 'Mode',
+    defaultValue: 0,
+    min: 0,
+    max: 2,
+    curve: 'discrete',
+    options: [
+      { value: 0, label: 'LP' },
+      { value: 1, label: 'HP' },
+      { value: 2, label: 'BP' },
+    ],
+  },
+];
+
+/** A three-band face: two flat bands and one carrying a PF-9 cluster, so the
+ *  hero split is exercised against BOTH membership shapes. */
+function fixture(extra: Partial<FaceplateDefLike['face']> = {}): FaceplateDefLike {
+  return {
+    params: PARAMS,
+    controlFamilies: [{ id: 'fx-strike', label: 'Strike' }],
+    face: {
+      order: ['tune', 'decay', 'fx-strike-{n}', 'mix', 'mode'],
+      pages: [
+        { id: 'voice', label: 'voice', hint: 'the pulse', controls: ['fx-strike-{n}', 'tune', 'decay'] },
+        {
+          id: 'out',
+          label: 'out',
+          controls: ['mix', 'mode'],
+          clusters: [{ label: 'shape', controls: ['mode'] }],
+        },
+      ],
+      ...extra,
+    },
+  } as FaceplateDefLike;
+}
+
+function bandsOf(def: FaceplateDefLike): DockFaceBand[] {
+  return dockFacePlan(def as FaceDefLike)!;
+}
+
+// ── 1. THE PAGE HEADER ──────────────────────────────────────────────────────
+
+describe('facePageHeader — the title/hint rows', () => {
+  it('is null for a face that declares neither, so pre-PF-20 faceplates do not move', () => {
+    expect(facePageHeader(fixture())).toBeNull();
+    expect(facePageHeader(undefined)).toBeNull();
+  });
+
+  it('treats a BLANK declaration as absent — a typo must not paint an empty row', () => {
+    expect(facePageHeader(fixture({ title: '   ', hint: '' } as never))).toBeNull();
+  });
+
+  it('renders either row alone', () => {
+    expect(facePageHeader(fixture({ title: 'Voice' } as never))).toEqual({ title: 'Voice', hint: '' });
+    expect(facePageHeader(fixture({ hint: 'one bus' } as never))).toEqual({ title: '', hint: 'one bus' });
+  });
+
+  it('trims, so authored whitespace never becomes layout', () => {
+    expect(facePageHeader(fixture({ title: '  Voice \n', hint: ' one bus ' } as never))).toEqual({
+      title: 'Voice',
+      hint: 'one bus',
+    });
+  });
+});
+
+// ── 2. THE HERO SPLIT (the dangerous operation) ─────────────────────────────
+
+describe('heroFacePlan — PROMOTES a control, never copies it', () => {
+  it('a face with no hero is a pass-through, and total', () => {
+    const def = fixture();
+    const before = bandsOf(def);
+    const after = heroFacePlan(def, before);
+    expect(after.hero).toBeNull();
+    expect(dockPlanControls(after.bands).map((c) => c.key)).toEqual(
+      dockPlanControls(before).map((c) => c.key),
+    );
+    expect(heroFacePlanIsTotal(before, after)).toBe(true);
+  });
+
+  it('REMOVES the promoted control from its band (the multiset is conserved)', () => {
+    const def = fixture({ hero: { control: 'tune', action: 'fx-strike-{n}' } } as never);
+    const before = bandsOf(def);
+    const after = heroFacePlan(def, before);
+
+    expect(after.hero?.control?.key).toBe('tune');
+    expect(after.hero?.action?.key).toBe('fx-strike-{n}');
+    // …and neither is still sitting in a band.
+    const remaining = dockPlanControls(after.bands).map((c) => c.key);
+    expect(remaining).not.toContain('tune');
+    expect(remaining).not.toContain('fx-strike-{n}');
+    // The count dropped by exactly the two promoted cells — nothing else moved.
+    expect(remaining.length).toBe(dockPlanControls(before).length - 2);
+    expect(heroFacePlanIsTotal(before, after)).toBe(true);
+  });
+
+  it('can promote a control out of a CLUSTER, and drops the emptied sub-header', () => {
+    const def = fixture({ hero: { control: 'mode' } } as never);
+    const before = bandsOf(def);
+    const after = heroFacePlan(def, before);
+
+    expect(after.hero?.control?.key).toBe('mode');
+    const outBand = after.bands.find((b) => b.id === 'out')!;
+    expect(outBand.clusters, 'a sub-header over zero cells is a caption for nothing').toEqual([]);
+    expect(outBand.controls.map((c) => c.key)).toEqual(['mix']);
+    expect(heroFacePlanIsTotal(before, after)).toBe(true);
+  });
+
+  it('promotes a key named as BOTH control and action exactly ONCE', () => {
+    // The duplicate-emit trap: promoting the same key twice would render two
+    // `control-tune` testids and read as an unbacked extra control.
+    const def = fixture({ hero: { control: 'tune', action: 'tune' } } as never);
+    const before = bandsOf(def);
+    const after = heroFacePlan(def, before);
+    expect(after.hero?.control?.key).toBe('tune');
+    expect(after.hero?.action).toBeNull();
+    expect(heroFacePlanIsTotal(before, after)).toBe(true);
+  });
+
+  it('a STALE hero key resolves to null and changes nothing (the lint is what reddens)', () => {
+    const def = fixture({ hero: { control: 'deleted_param' } } as never);
+    const before = bandsOf(def);
+    const after = heroFacePlan(def, before);
+    expect(after.hero).toBeNull();
+    expect(heroFacePlanIsTotal(before, after)).toBe(true);
+  });
+
+  it('a hero of READOUTS ALONE still renders, and moves no control', () => {
+    const def = fixture({ hero: { readouts: [{ label: 'tail', paramId: 'decay' }] } } as never);
+    const before = bandsOf(def);
+    const after = heroFacePlan(def, before);
+    expect(after.hero?.control).toBeNull();
+    expect(after.hero?.readouts).toHaveLength(1);
+    expect(dockPlanControls(after.bands).length).toBe(dockPlanControls(before).length);
+    expect(heroFacePlanIsTotal(before, after)).toBe(true);
+  });
+
+  it('drops MALFORMED readouts rather than painting a caption over a blank', () => {
+    const def = fixture({
+      hero: {
+        readouts: [
+          { label: 'ok', paramId: 'tune' },
+          { label: 'both', paramId: 'tune', text: '5' },
+          { label: 'neither' },
+        ],
+      },
+    } as never);
+    expect(heroFacePlan(def, bandsOf(def)).hero?.readouts.map((r) => r.label)).toEqual(['ok']);
+  });
+
+  it('NEGATIVE CONTROL: a split that DROPPED a control fails heroFacePlanIsTotal', () => {
+    // Deliberately corrupt the result the way a buggy split would, and confirm
+    // the totality check actually notices. Without this the check could be
+    // vacuously true and every test above would still pass.
+    const def = fixture({ hero: { control: 'tune' } } as never);
+    const before = bandsOf(def);
+    const after = heroFacePlan(def, before);
+    expect(heroFacePlanIsTotal(before, after)).toBe(true);
+    expect(heroFacePlanIsTotal(before, { ...after, hero: null })).toBe(false);
+  });
+
+  it('NEGATIVE CONTROL: a split that DUPLICATED a control fails it too', () => {
+    const def = fixture();
+    const before = bandsOf(def);
+    const dup = { hero: { control: before[0]!.controls[0]!, action: null, readouts: [] }, bands: before };
+    expect(heroFacePlanIsTotal(before, dup)).toBe(false);
+  });
+});
+
+// ── 3. READOUTS ─────────────────────────────────────────────────────────────
+
+describe('readoutText — one ladder for the panel and the dial', () => {
+  const read = (pid: string) => ({ tune: 50, decay: 450, mix: 0.5, mode: 2 })[pid];
+
+  it('prints a literal `text` readout verbatim', () => {
+    expect(readoutText({ label: 't', text: '≈ 480 ms' }, PARAMS, read)).toBe('≈ 480 ms');
+  });
+
+  it('prints a param through the SAME ladder the dial prints (units included)', () => {
+    expect(readoutText({ label: 't', paramId: 'tune' }, PARAMS, read)).toBe('50.0 Hz');
+    expect(readoutText({ label: 't', paramId: 'decay' }, PARAMS, read)).toBe('450 ms');
+  });
+
+  it('prints the option NAME for a param that declared one, never the number', () => {
+    expect(readoutText({ label: 'm', paramId: 'mode' }, PARAMS, read)).toBe('BP');
+  });
+
+  it('prints an em dash rather than `undefined` for an unresolvable source', () => {
+    expect(readoutText({ label: 'x', paramId: 'gone' }, PARAMS, read)).toBe('—');
+    expect(readoutText({ label: 'x' }, PARAMS, read)).toBe('—');
+    expect(readoutText({ label: 'x', paramId: 'tune' }, PARAMS, () => NaN)).toBe('—');
+  });
+
+  it('isUsableReadout demands EXACTLY one source', () => {
+    expect(isUsableReadout({ label: 'a', paramId: 'tune' })).toBe(true);
+    expect(isUsableReadout({ label: 'a', text: 'x' })).toBe(true);
+    expect(isUsableReadout({ label: 'a', paramId: 'tune', text: 'x' })).toBe(false);
+    expect(isUsableReadout({ label: 'a' })).toBe(false);
+  });
+});
+
+// ── 4. THE SIDEBAR PLAN ─────────────────────────────────────────────────────
+
+describe('sidebarPlan — an EMPTY block is worse than no block', () => {
+  const withSidebar = (sidebar: FaceSidebarBlock[]) => fixture({ sidebar } as never);
+
+  it('is null for a face with no sidebar, so the editor keeps its full width', () => {
+    expect(sidebarPlan(fixture())).toBeNull();
+    expect(hasDockSidebar(fixture())).toBe(false);
+  });
+
+  it('drops every kind of empty block, and returns null when NONE survive', () => {
+    const def = withSidebar([
+      { kind: 'signal-flow', label: 'flow', stages: [] },
+      { kind: 'presets', label: 'p', entries: [] },
+      { kind: 'readouts', label: 'r', entries: [{ label: 'bad' }] },
+      { kind: 'custom', label: 'c', panelId: '  ' },
+    ]);
+    expect(sidebarPlan(def)).toBeNull();
+    expect(hasDockSidebar(def)).toBe(false);
+  });
+
+  it('keeps the blocks that will actually paint, in declaration order', () => {
+    const def = withSidebar([
+      { kind: 'presets', label: 'p', entries: [] },
+      { kind: 'signal-flow', label: 'flow', stages: [{ label: 'SUB', role: 'generator' }] },
+      { kind: 'readouts', label: 'r', entries: [{ label: 'bad' }, { label: 'good', paramId: 'tune' }] },
+      { kind: 'custom', label: 'c', panelId: 'stereo-crossover' },
+    ]);
+    expect(sidebarPlan(def)!.map((b) => b.kind)).toEqual(['signal-flow', 'readouts', 'custom']);
+    expect(hasDockSidebar(def)).toBe(true);
+  });
+});
+
+// ── 5. PRESETS ──────────────────────────────────────────────────────────────
+
+describe('preset selection', () => {
+  const ENTRIES: { id: string; values: Readonly<Record<string, number>> }[] = [
+    { id: 'deep', values: { tune: 50, decay: 620 } },
+    { id: 'punch', values: { tune: 55, decay: 320 } },
+    { id: 'empty', values: {} },
+  ];
+
+  it('lights the entry the module is actually sitting on', () => {
+    expect(activePresetId(ENTRIES, (p) => ({ tune: 50, decay: 620 })[p])).toBe('deep');
+    expect(activePresetId(ENTRIES, (p) => ({ tune: 55, decay: 320 })[p])).toBe('punch');
+  });
+
+  it('lights NOTHING once a knob moves off the preset (no stale lit row)', () => {
+    expect(activePresetId(ENTRIES, (p) => ({ tune: 50, decay: 610 })[p])).toBeNull();
+  });
+
+  it('never lights an entry that declares no values', () => {
+    expect(activePresetId([{ id: 'empty', values: {} }], () => 0)).toBeNull();
+  });
+
+  it('an unreadable param never matches', () => {
+    expect(activePresetId(ENTRIES, () => undefined)).toBeNull();
+  });
+
+  it('tolerance is RELATIVE, so one entry can span Hz and a 0..1 mix', () => {
+    // Same relative slack at both magnitudes: inside passes, outside fails.
+    expect(presetValueMatches(50 * (1 + PRESET_MATCH_REL * 0.5), 50)).toBe(true);
+    expect(presetValueMatches(50 * (1 + PRESET_MATCH_REL * 3), 50)).toBe(false);
+    expect(presetValueMatches(0.42 * (1 + PRESET_MATCH_REL * 0.5), 0.42)).toBe(true);
+    expect(presetValueMatches(0.42 * (1 + PRESET_MATCH_REL * 3), 0.42)).toBe(false);
+    // …and an exact-zero target stays comparable via the floor.
+    expect(presetValueMatches(0, 0)).toBe(true);
+    expect(presetValueMatches(0.01, 0)).toBe(false);
+  });
+
+  it('presetWrites CLAMPS to the declared range and DROPS unknown params', () => {
+    expect(presetWrites({ tune: 999, mix: -3, ghost: 1 }, PARAMS)).toEqual([
+      { paramId: 'tune', value: 120 },
+      { paramId: 'mix', value: 0 },
+    ]);
+  });
+
+  it('presetWrites drops a non-finite value rather than writing NaN into the model', () => {
+    expect(presetWrites({ tune: Number.NaN }, PARAMS)).toEqual([]);
+  });
+
+  it('presetNote prints the declared note, trimmed, else nothing', () => {
+    expect(presetNote({ note: ' 50 Hz ' })).toBe('50 Hz');
+    expect(presetNote({})).toBe('');
+  });
+});

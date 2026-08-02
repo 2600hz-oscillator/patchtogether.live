@@ -14,7 +14,7 @@
   import { makeMidiAssignable } from './midi-assignable.svelte';
   import { notifyAutomationTouch, notifyAutomationRelease } from '$lib/audio/automation-touch';
   import { knobValueToFrac, knobFracToValue, knobPointerAngle } from './knob-conic-model';
-  import { knobMarks, knobReadout } from './knob-vocabulary-model';
+  import { knobMarks, knobReadout, knobValueReadout } from './knob-vocabulary-model';
   import { formatParamNumber } from './param-format';
 
   interface Props {
@@ -51,6 +51,18 @@
     options?: readonly ParamOption[];
     landmarks?: readonly ParamLandmark[];
     format?: (v: number) => string;
+    /**
+     * PF-20 — PRINT THE VALUE WHETHER OR NOT A VOCABULARY WAS DECLARED.
+     *
+     * The gate above is a LANE argument (a 46px column cannot spend a text row
+     * on what hovering shows). It was silently applied to the DOCK too, and
+     * that is where it was wrong: every mocked faceplate carries a formatted
+     * value under every knob, and bare labels were the single largest share of
+     * the shell-vs-mock drift. ModuleShell passes this at `view='dock-full'`
+     * only, so the lane tile is untouched and only the ~19 dock baselines move
+     * — deliberately, once.
+     */
+    persistentReadout?: boolean;
   }
 
   let {
@@ -70,6 +82,7 @@
     options,
     landmarks,
     format: formatValue,
+    persistentReadout = false,
   }: Props = $props();
 
   // ---- MIDI-Learn (shared factory, kind:'cc') — getters so the factory reads
@@ -159,8 +172,12 @@
 
   // ── PARAM VOCABULARY (PF-1 / PF-3 / PF-10), resolved in the pure layer ──
   let vocab = $derived({ options, landmarks, format: formatValue });
-  /** The persistent readout text — `null` (⇒ NOT RENDERED) for a plain param. */
-  let readout = $derived(knobReadout(liveValue, vocab));
+  /** The persistent readout text — `null` (⇒ NOT RENDERED) for a plain param
+   *  in the LANE; at the dock (`persistentReadout`) a plain param falls back to
+   *  the numeric ladder, so every dial on a faceplate prints its value. */
+  let readout = $derived(
+    persistentReadout ? knobValueReadout(liveValue, vocab, units) : knobReadout(liveValue, vocab),
+  );
   /** Detent ticks around the arc. Empty unless options/landmarks were declared. */
   let marks = $derived(knobMarks(vocab, min, max, curve));
 
