@@ -154,24 +154,55 @@ export async function readMixLevels(page: Page, nodeId: string): Promise<number[
  * in the way that matters: a truly-silent channel never crosses the floor, a
  * sounding one always does within the window. Mirrors readScopePeakOverWindow so
  * percussive decays don't false-fail a single frozen read.
+ *
+ * The accumulator runs INSIDE THE PAGE, for the same reason the scope one does
+ * (CLAUDE.md "never sample a page-side quantity with a Playwright-side poll
+ * loop"): the old shape was `while (…) { await page.evaluate(read); await
+ * waitForTimeout(40) }`, one CDP round-trip per sample on the same main thread
+ * as the mixer it measures. On a contended shard that collapses a 700 ms window
+ * to one or two reads and a max-hold over two samples is not a max-hold — it is
+ * a coin flip that prints as a level. Measured on the run this was found in
+ * (PR #1303 shard 1/10): a single `waitForTimeout(60)` took 392 ms.
  */
 export async function readMixLevelsOverWindow(
   page: Page,
   nodeId: string,
   windowMs: number,
-  pollMs = 40,
+  pollMs = 20,
 ): Promise<number[]> {
-  const deadline = Date.now() + windowMs;
-  let held: number[] = [];
-  while (Date.now() < deadline) {
-    const lv = await readMixLevels(page, nodeId);
-    if (lv) {
-      if (held.length === 0) held = lv.slice();
-      else for (let i = 0; i < lv.length; i++) held[i] = Math.max(held[i]!, lv[i]!);
-    }
-    await page.waitForTimeout(pollMs);
-  }
-  return held;
+  return await page.evaluate(
+    async ({ id, windowMs, pollMs }) => {
+      const w = globalThis as unknown as {
+        __engine?: () => {
+          read: (n: { id: string; type: string; domain: string }, k: string) => unknown;
+        } | null;
+        __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
+      };
+      const read = (): number[] | null => {
+        const eng = w.__engine?.();
+        const node = w.__patch?.nodes?.[id];
+        if (!eng || !node) return null;
+        const lv = eng.read(node, 'levels') as number[] | undefined;
+        return lv ? Array.from(lv) : null;
+      };
+      return await new Promise<number[]>((resolve) => {
+        const t0 = performance.now();
+        let held: number[] = [];
+        const timer = setInterval(() => {
+          const lv = read();
+          if (lv) {
+            if (held.length === 0) held = lv.slice();
+            else for (let i = 0; i < lv.length; i++) held[i] = Math.max(held[i]!, lv[i]!);
+          }
+          if (performance.now() - t0 >= windowMs) {
+            clearInterval(timer);
+            resolve(held);
+          }
+        }, pollMs);
+      });
+    },
+    { id: nodeId, windowMs, pollMs },
+  );
 }
 
 /**
