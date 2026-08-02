@@ -408,8 +408,30 @@ describe('the AUTHORED push cards', () => {
     expect(ids('dx7')).not.toContain('voiceCount');
   });
 
+  // ⚠ THE THREE ASSERTIONS BELOW READ THE **FACE** RANKING (`ids(type, {})` —
+  // no override), which is NOT this file's to author: it is `def.face.order`,
+  // and a face rework moves it. All three were pinned against the PRE-face-
+  // rework defs and went red the moment #1276 (adsr, "release-first"), #1273
+  // (tidyVco, "CUTOFF leads, PW demoted") and #1277 (kickdrum, 5 bands) landed
+  // — three PRs that never touched this file, so nothing conflicted and the
+  // breakage reached main. This is the hazard CLAUDE.md states on
+  // PUSH_CARD_CONTROLS ("a push card is resolved from the LIVE def, so adding
+  // or renaming a param on ANY module can silently change that module's push
+  // card") arriving through the back door: not the AUTHORED card (an override
+  // REPLACES, so those goldens held green throughout) but the face-derived
+  // baseline each one is contrasted against.
+  //
+  // So when one of these fails, the question is NOT "what does the face print
+  // now" — it is "does the OVERRIDE still buy what its comment claims". Re-pin
+  // the face side, then re-read the contrast. Pasting the actual value without
+  // that second step turns a live negative control into decoration.
+
   it('adsr reorders the face ranking into ENVELOPE order', () => {
-    expect(ids('adsr', {})).toEqual(['attack', 'release', 'sustain', 'decay']);
+    // The face leads with RELEASE (#1276: the control you reach for first on a
+    // pad patch). The Push card wants the ADSR mnemonic instead, because four
+    // encoders left-to-right under the labels A/D/S/R is the reading order the
+    // hardware itself implies.
+    expect(ids('adsr', {})).toEqual(['release', 'attack', 'sustain', 'decay']);
     expect(ids('adsr')).toEqual(['attack', 'decay', 'sustain', 'release']);
   });
 
@@ -419,16 +441,31 @@ describe('the AUTHORED push cards', () => {
   });
 
   it('tidyVco groups the two oscillators before the filter', () => {
+    // #1273 put CUTOFF first and demoted PW, so the face's 8-encoder window is
+    // filter-led — and `shape2` / `mix` fall outside it ENTIRELY (ranks 9 and
+    // 10 of 25). The override is therefore not a re-shuffle of the same eight:
+    // it puts the second oscillator on the card at all, which is the whole
+    // claim in this test's name.
     expect(ids('tidyVco', {})).toEqual([
-      'shape1', 'pw', 'cutoff', 'detune', 'oct2', 'res', 'fold', 'env',
+      'cutoff', 'shape1', 'res', 'detune', 'oct2', 'pw', 'fold', 'env',
     ]);
+    const faced = ids('tidyVco', {});
+    expect(faced).not.toContain('shape2');
+    expect(faced).not.toContain('mix');
     expect(ids('tidyVco').slice(0, 3)).toEqual(['shape1', 'shape2', 'mix']);
   });
 
   it('kickdrum keeps the three pitch-envelope controls adjacent', () => {
     expect(ids('kickdrum').slice(0, 3)).toEqual(['tune', 'pitch_amt', 'pitch_time']);
-    // The face window separates them (pitch_amt rank 4, pitch_time rank 7).
+    // The face window does not merely SEPARATE the pitch pair — since #1277 it
+    // drops `pitch_time` off the card completely (rank 11 of 26, past the 8
+    // encoders), so the authored order is what makes the pitch envelope
+    // adjustable from the hardware at all. Asserted as absence + distance
+    // rather than as a signed index gap: the old `indexOf - indexOf > 1` read
+    // -1 for "missing" and quietly compared it as a position, which is how a
+    // dropped control could have passed as a merely-reordered one.
     const faced = ids('kickdrum', {});
-    expect(faced.indexOf('pitch_time') - faced.indexOf('pitch_amt')).toBeGreaterThan(1);
+    expect(faced).toContain('pitch_amt');
+    expect(faced).not.toContain('pitch_time');
   });
 });
