@@ -500,12 +500,20 @@ describe('kickdrum faceplate structure — the sidebar says what the DSP does', 
 });
 
 describe('kickdrum faceplate structure — the page header + band hints', () => {
-  it('the faceplate opens with a title and a sentence, not with a knob', () => {
-    const head = facePageHeader(kickdrumDef as unknown as FaceplateDefLike)!;
+  it('the faceplate opens with a title, and its sentence is ANNOTATION', () => {
+    // ⚠ THE SENTENCE IS STILL AUTHORED ON THE DEF — it is living-docs content
+    // and it is what the annotate toggle reveals. What changed (owner,
+    // 2026-08-02) is only whether the CARD paints it at rest, so this asserts
+    // the prose exists and is good, and that the resting header withholds it.
+    const head = facePageHeader(kickdrumDef as unknown as FaceplateDefLike, true)!;
     expect(head.title).toBe('Voice');
     expect(head.hint).toMatch(/three decoupled generators/i);
     // The hint must name the actual chain, not a generic blurb.
     expect(head.hint).toMatch(/sub, body and click/i);
+
+    const resting = facePageHeader(kickdrumDef as unknown as FaceplateDefLike)!;
+    expect(resting.title, 'the NAME is not annotation').toBe('Voice');
+    expect(resting.hint, 'the SENTENCE is, and the card is clean without it').toBe('');
   });
 
   it('every band header carries a description, and each names its GENERATOR', () => {

@@ -18,6 +18,10 @@ import { listModuleDefs } from '$lib/audio/module-registry';
 import { listVideoModuleDefs } from '$lib/video/module-registry';
 import { listMetaModuleDefs } from '$lib/meta/module-registry';
 import { STRICT_FACES } from '$lib/ui/workflow/strict-faces';
+import {
+  faceAnnotationProse,
+  type FaceplateDefLike,
+} from '$lib/ui/workflow/dock-faceplate-model';
 import { testHooksEnabled } from './test-hooks';
 
 export interface ModuleSpecPort {
@@ -83,6 +87,23 @@ export interface ModuleSpec {
    * actually painted, for every module, with no per-module test edit.
    */
   faceSidebar?: { kind: string; label: string }[];
+  /**
+   * PF-20 ANNOTATIONS — the count of prose strings this face declares, split
+   * into the page-level `face.hint` (0 or 1) and the per-band `hint`s. Emitted
+   * only when the face declares any.
+   *
+   * ⚠ SAME REASON AS `faceSidebar`, one layer over. Annotation prose is OUT of
+   * the DOM until the viewer turns the dock toggle on, so the only thing a
+   * hardcoded spec can prove is that ONE module's prose appears — and the
+   * failure that matters is the opposite one: a face that declares prose the
+   * platform never offers a way to read, or a toggle on a face with nothing to
+   * say. Publishing the counts lets the e2e assert BOTH directions for every
+   * adopter with no per-module test edit.
+   *
+   * (Band hints imply an UNTABBED face — a tabbed face suppresses band headers
+   * entirely, and module-face-lint already fails a hint declared on one.)
+   */
+  faceAnnotations?: { pageHint: number; bandHints: number };
   /** True when the type is in STRICT_FACES (a MIGRATED curated face) — the
    *  registry key the faces-parity e2e enumerates, so every future promoted
    *  module auto-enrolls in the dock render-parity sweep. Emitted only when
@@ -178,6 +199,18 @@ export function getAllModuleSpecs(): ModuleSpec[] {
         rawSidebar && rawSidebar.length
           ? rawSidebar.map((b) => ({ kind: b.kind, label: b.label }))
           : undefined;
+      // PF-20 — the ANNOTATION counts, resolved through the SAME pure function
+      // the shell and the dock toggle read (`faceAnnotationProse`), never a
+      // second walk of `face.hint` + `pages[].hint` here: two implementations
+      // of "what counts as annotation prose" is precisely the drift this
+      // projection exists to catch.
+      const faceDef = def as FaceplateDefLike;
+      const pageHint = faceDef.face?.hint?.trim() ? 1 : 0;
+      const annotationCount = faceAnnotationProse(faceDef).length;
+      const faceAnnotations =
+        annotationCount > 0
+          ? { pageHint, bandHints: annotationCount - pageHint }
+          : undefined;
       return {
         type: def.type as string,
         label: (def.label as string) ?? (def.type as string),
@@ -189,6 +222,7 @@ export function getAllModuleSpecs(): ModuleSpec[] {
         ...(stereoPairs ? { stereoPairs } : {}),
         ...(controlFamilies ? { controlFamilies } : {}),
         ...(faceSidebar ? { faceSidebar } : {}),
+        ...(faceAnnotations ? { faceAnnotations } : {}),
         ...(strictFace ? { strictFace } : {}),
         hasAudioOutput: hasOutputType(outputs, 'audio'),
         hasCvOutput: hasOutputType(outputs, 'cv'),

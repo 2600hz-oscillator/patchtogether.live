@@ -65,12 +65,60 @@ export interface FacePageHeader {
  * what keeps the ~19 existing dock baselines from moving for a feature they do
  * not use. Blank-but-present strings are treated as absent (an authoring typo
  * must not paint an empty 20px row).
+ *
+ * ⚠ `annotations` GATES THE HINT, NOT THE TITLE, and that split is the owner's
+ * (2026-08-02): the title is a NAME — one category word the panel is entitled
+ * to state at rest — while the hint is a SENTENCE ABOUT the module, which is
+ * annotation and belongs behind the annotate toggle (`faceAnnotationProse`).
+ * Default `false`, so the resting faceplate is the clean one: a caller that
+ * forgets the flag under-paints rather than leaking prose onto every card.
  */
-export function facePageHeader(def: FaceplateDefLike | undefined): FacePageHeader | null {
+export function facePageHeader(
+  def: FaceplateDefLike | undefined,
+  annotations = false,
+): FacePageHeader | null {
   const title = def?.face?.title?.trim() ?? '';
-  const hint = def?.face?.hint?.trim() ?? '';
+  const hint = annotations ? (def?.face?.hint?.trim() ?? '') : '';
   if (!title && !hint) return null;
   return { title, hint };
+}
+
+// ── 1b. THE ANNOTATION LAYER ────────────────────────────────────────────────
+
+/**
+ * Every piece of ANNOTATION PROSE a face declares — the page-level `face.hint`
+ * followed by each page's `hint`, in declaration order, blanks dropped.
+ *
+ * WHY THIS IS ONE FUNCTION AND NOT A `.filter` AT EACH CALL SITE. Two surfaces
+ * need the same answer and they must not be able to disagree: ModuleShell
+ * decides whether to PAINT each string, and DockFullView decides whether the
+ * faceplate offers the toggle AT ALL. A toggle that reveals nothing is exactly
+ * the "labelled void" the sidebar's empty-block drop already refuses, and a
+ * face whose prose is unreachable because the toggle never rendered is the
+ * mirror failure. Both read this list, so a THIRD annotation source added later
+ * is picked up by the affordance the moment it is picked up by the render.
+ *
+ * ⚠ SCOPE, stated because an unstated scope reads as full coverage: this is the
+ * DOCK FACEPLATE's prose only. It is not the module's authored living-docs
+ * (`docs.explanation`, which the on-card AnnotateLayer hover popover resolves
+ * through the same per-node annotate mode) — those two are separate content
+ * behind ONE personal switch, which is the point.
+ */
+export function faceAnnotationProse(def: FaceplateDefLike | undefined): string[] {
+  const out: string[] = [];
+  const pageHint = def?.face?.hint?.trim() ?? '';
+  if (pageHint) out.push(pageHint);
+  for (const p of def?.face?.pages ?? []) {
+    const h = p.hint?.trim() ?? '';
+    if (h) out.push(h);
+  }
+  return out;
+}
+
+/** Does this face have anything to say when annotations are turned ON? The
+ *  gate on the dock's annotate toggle — no prose, no affordance. */
+export function faceHasAnnotations(def: FaceplateDefLike | undefined): boolean {
+  return faceAnnotationProse(def).length > 0;
 }
 
 // ── 2. THE HERO SLOT ────────────────────────────────────────────────────────

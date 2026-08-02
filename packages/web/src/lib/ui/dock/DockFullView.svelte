@@ -47,7 +47,12 @@
   import { domainClassForDef, type ShellDefLike } from '$lib/ui/workflow/module-shell-model';
   import { dockFacePlan, type FaceDefLike } from '$lib/ui/workflow/curated-face';
   import { activeDockTab, dockTabPlan } from '$lib/ui/workflow/dock-tabs-model';
-  import { sidebarPlan, type FaceplateDefLike } from '$lib/ui/workflow/dock-faceplate-model';
+  import {
+    faceHasAnnotations,
+    sidebarPlan,
+    type FaceplateDefLike,
+  } from '$lib/ui/workflow/dock-faceplate-model';
+  import { isAnnotating, toggleAnnotate } from '$lib/ui/annotate-mode.svelte';
   import ModuleShell from '$lib/ui/modules/ModuleShell.svelte';
   import FaceSidebar from '$lib/ui/workflow/FaceSidebar.svelte';
   import RearCard from '$lib/ui/workflow/RearCard.svelte';
@@ -137,6 +142,36 @@
   // Un-migrated occupants never get one: their content is a verbatim legacy
   // card with no declared face to read.
   let sidebar = $derived(migrated && def ? sidebarPlan(def as FaceplateDefLike) : null);
+
+  // ── ANNOTATIONS — the DOCK-LEVEL toggle ─────────────────────────────────
+  //
+  // Owner (2026-08-02): the section prose "belongs as annotation text but not
+  // on the card unless annotation is turned on".
+  //
+  // WHY THE TOGGLE LIVES HERE, in the pane's title bar:
+  //   * It is a PANE-LEVEL VIEW control, the same class of thing as the
+  //     undock / collapse / close trio beside it — it changes how this
+  //     faceplate is shown, not what the module is. A per-card toggle would
+  //     repeat the same switch on every band; a global app-chrome switch would
+  //     annotate modules you are not looking at.
+  //   * The bar is PANE-FIXED CHROME above `.faceplate-scroll`, so it is
+  //     reachable at any pane width and any scroll position. The obvious other
+  //     home — the tab rail — is `overflow-x: auto`, so on an 8-band face
+  //     (cloudseed) a right-aligned control there scrolls out of reach.
+  //   * It is hidden on the REAR flip: the rear card is a patch field with no
+  //     prose to annotate, and the bar already swaps its content there.
+  //
+  // STATE: the EXISTING per-node `annotate-mode.svelte.ts` set — per viewer,
+  // keyed by nodeId, NOT `node.data` and NOT the Y.Doc (see the note on
+  // ModuleShell's `annotations`, and the dx7-selection precedent). So a
+  // rack-mate turning annotations on never touches this view.
+  //
+  // It renders ONLY for a face that HAS annotation prose. A toggle that
+  // reveals nothing is the same labelled void `sidebarPlan`'s empty-block drop
+  // refuses — and gating on the DECLARATION (never on a module id) is what
+  // makes the affordance appear for adopter #2 without an edit here.
+  let annotatable = $derived(migrated && def ? faceHasAnnotations(def as FaceplateDefLike) : false);
+  let annotationsOn = $derived(isAnnotating(node.id));
 </script>
 
 <div
@@ -176,6 +211,20 @@
           </div>
         </div>
         <div class="face-spacer"></div>
+        {#if annotatable && !(flipped && def)}
+          <!-- ANNOTATIONS. A real toggle button (`aria-pressed`), not a chip:
+               it is the switch that puts the face's authored prose into the
+               DOM, so AT must be able to find it and say what state it is in. -->
+          <button
+            type="button"
+            class="annot-btn"
+            class:on={annotationsOn}
+            data-testid="faceplate-annotations"
+            aria-pressed={annotationsOn}
+            title="Annotations — show this faceplate's authored notes"
+            onclick={() => toggleAnnotate(node.id)}
+          >NOTES</button>
+        {/if}
         {#if flipped && def}
           <!-- REAR state chip — the title bar's only swap on the flip side
                (the frame reads as the same object, turned around). -->
@@ -357,6 +406,35 @@
   }
   .fp-front.fp-front-hidden {
     display: none;
+  }
+  /* THE ANNOTATIONS TOGGLE. Same kit `.state-chip.ghost` vocabulary as the
+     REAR chip beside it — it sits in the same slot and must read as the same
+     class of object — but DIM until pressed, so "off" is legible at a glance
+     and "on" lights in the domain hue like every other engaged control. */
+  .annot-btn {
+    font: inherit;
+    font-family: var(--f-mono, ui-monospace, 'SF Mono', Menlo, Consolas, monospace);
+    font-size: 11px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    font-weight: 700;
+    color: var(--dim, #9aa3ad);
+    background: transparent;
+    border: 1px solid var(--line, #2c3037);
+    border-radius: 5px;
+    padding: 4px 10px;
+    margin-right: 8px;
+    cursor: pointer;
+    flex: 0 0 auto;
+    appearance: none;
+    -webkit-appearance: none;
+  }
+  .annot-btn:hover {
+    color: var(--text, #eef1f5);
+  }
+  .annot-btn.on {
+    color: var(--domain);
+    border-color: var(--domain-d);
   }
   /* REAR · PATCH state chip (kit .state-chip.ghost vocabulary). Shrinkable
      with ellipsis so at split width the CHIP truncates before the ✕ trio

@@ -62,6 +62,7 @@
     readoutText,
     type FaceplateDefLike,
   } from '$lib/ui/workflow/dock-faceplate-model';
+  import { isAnnotating } from '$lib/ui/annotate-mode.svelte';
   import { shellCellFor, type ShellCellEnv } from '$lib/ui/workflow/shell-cells';
   import { shellParamWrite } from '$lib/ui/workflow/shell-param-writes';
   import { dockBandVisible, dockTabPlan } from '$lib/ui/workflow/dock-tabs-model';
@@ -333,10 +334,36 @@
   let dockBands = $derived(allDockBands ? heroSplit.bands : null);
   let hero = $derived(heroSplit.hero);
 
+  /**
+   * ANNOTATIONS ON for this node? (owner, 2026-08-02: the section prose
+   * "belongs as annotation text but not on the card unless annotation is
+   * turned on".)
+   *
+   * ⚠ IT IS THE EXISTING PER-NODE ANNOTATE MODE, deliberately — not a second
+   * switch. `annotate-mode.svelte.ts` already is a personal lens onto ONE
+   * user's view of ONE module: a reactive `SvelteSet` of node ids, keyed by
+   * nodeId, NOT in `node.data` and NOT in the Y.Doc, for the reason it states
+   * and the dx7 operator-selection precedent repeats — a rack-mate turning it
+   * on must not change what you see, and it is not worth a collab message.
+   * Inventing a `faceAnnotations` singleton beside it would have shipped TWO
+   * personal annotation switches for one concept, so the faceplate's authored
+   * prose is simply more of what that one switch reveals (the on-card
+   * AnnotateLayer hover popover is the other). `clearAnnotate` on node delete
+   * already stops the set leaking an entry per spawned-and-deleted node.
+   *
+   * DOCK-ONLY, like every other `face` structure field: a 192×180 lane tile has
+   * no room for a sentence, so annotating a node changes nothing in the lane.
+   */
+  let annotations = $derived(view === 'dock-full' && isAnnotating(id));
+
   /** PF-20 — the faceplate's TITLE + HINT rows. `null` for a face that declares
    *  neither, which is every pre-PF-20 face: the header simply does not paint,
-   *  so their dock baselines do not move for a feature they do not use. */
-  let pageHeader = $derived(view === 'dock-full' ? facePageHeader(def as FaceplateDefLike | undefined) : null);
+   *  so their dock baselines do not move for a feature they do not use. The
+   *  HINT is annotation prose, so it only paints with annotations on; the
+   *  TITLE is the panel's name and always paints. */
+  let pageHeader = $derived(
+    view === 'dock-full' ? facePageHeader(def as FaceplateDefLike | undefined, annotations) : null,
+  );
 
   /**
    * PF-20 — does the DOCK hero band paint the shell's `glyph`?
@@ -883,11 +910,21 @@
       </div>
     {/if}
 
-    <!-- PF-20 — the HERO RAIL: the module's own PICTURE, the promoted control
-         beside it (a big dial with a big readout), its audition, and the
-         labelled readouts. Every piece is optional and the rail only renders
-         when at least one is present — a face that declares no hero keeps the
-         bare capped glyph band it has today. -->
+    <!-- PF-20 — the HERO RAIL: the module's own PICTURE + the promoted control
+         beside it (a big dial with a big readout) and its audition, then the
+         labelled readouts UNDER them as a full-width strip. Every piece is
+         optional and the rail only renders when at least one is present — a
+         face that declares no hero keeps the bare capped glyph band it has
+         today.
+
+         ⚠ THE READOUTS ARE A ROW BELOW THE STAGE, NOT A COLUMN BESIDE IT
+         (owner, 2026-08-02: "generally this row of controls should be below
+         the graphic"). They were the tail of `.hero-side`, so a face's derived
+         values competed with its own picture for horizontal room and dropped
+         to a second line at exactly the widths where the graph mattered most.
+         Below, they get the full faceplate width — which is also the reading
+         order the numbers want: the graphic states what the voice IS, the
+         strip states what it MEASURES. -->
     {#if heroGlyph || hero}
       <div
         class="tile-body dock-hero"
@@ -898,32 +935,42 @@
         {#if heroGlyph}{@render glyphCell()}{/if}
         {#if hero}
           <div class="hero-rail" data-testid="face-hero">
-            {#if hero.cell}
-              <!-- THE MODULE'S OWN PICTURE, at the top of the faceplate where
-                   the mock puts it. MOVED out of its band, not copied — see
-                   heroFacePlan — so the cell multiset is unchanged. -->
-              <div class="hero-vis">{@render controlCell(hero.cell)}</div>
+            {#if hero.cell || hero.control || hero.action}
+              <!-- THE STAGE: the picture and the big control side by side. A
+                   hero that is READOUTS ONLY (a bare measurement strip) skips
+                   it entirely rather than painting an empty 0px flex row. -->
+              <div class="hero-stage">
+                {#if hero.cell}
+                  <!-- THE MODULE'S OWN PICTURE, at the top of the faceplate
+                       where the mock puts it. MOVED out of its band, not
+                       copied — see heroFacePlan — so the cell multiset is
+                       unchanged. -->
+                  <div class="hero-vis">{@render controlCell(hero.cell)}</div>
+                {/if}
+                {#if hero.control || hero.action}
+                  <div class="hero-side">
+                    {#if hero.control}
+                      <!-- The hero CONTROL is the same cell the band would have
+                           rendered, at hero size, with a hero-size readout. -->
+                      <div class="hero-ctl">{@render controlCell(hero.control, 'xl')}</div>
+                    {/if}
+                    {#if hero.action}
+                      <div class="hero-ctl">{@render controlCell(hero.action)}</div>
+                    {/if}
+                  </div>
+                {/if}
+              </div>
             {/if}
-            <div class="hero-side">
-              {#if hero.control}
-                <!-- The hero CONTROL is the same cell the band would have
-                     rendered, at hero size, with a hero-size readout. -->
-                <div class="hero-ctl">{@render controlCell(hero.control, 'xl')}</div>
-              {/if}
-              {#if hero.action}
-                <div class="hero-ctl">{@render controlCell(hero.action)}</div>
-              {/if}
-              {#if hero.readouts.length}
-                <dl class="hero-readouts" data-testid="face-hero-readouts">
-                  {#each hero.readouts as r (r.label)}
-                    <div class="hero-ro" data-hero-readout={r.paramId ?? r.valueId ?? r.label}>
-                      <dt>{r.label}</dt>
-                      <dd>{readoutText(r, (def?.params ?? []), readoutValue)}</dd>
-                    </div>
-                  {/each}
-                </dl>
-              {/if}
-            </div>
+            {#if hero.readouts.length}
+              <dl class="hero-readouts" data-testid="face-hero-readouts">
+                {#each hero.readouts as r (r.label)}
+                  <div class="hero-ro" data-hero-readout={r.paramId ?? r.valueId ?? r.label}>
+                    <dt>{r.label}</dt>
+                    <dd>{readoutText(r, (def?.params ?? []), readoutValue)}</dd>
+                  </div>
+                {/each}
+              </dl>
+            {/if}
           </div>
         {/if}
       </div>
@@ -961,9 +1008,17 @@
                  group, the hint says what the group is. Suppressed on a TABBED
                  face along with the label itself — the rail already names the
                  band ~14px above, and printing the pair twice spends the
-                 vertical space the rail exists to buy. -->
+                 vertical space the rail exists to buy.
+
+                 ⚠ THE HINT IS ANNOTATION and is NOT IN THE DOM at rest (owner,
+                 2026-08-02). `display:none` would have been the smaller diff
+                 and the wrong one: the VRT baseline would show a card the
+                 accessibility tree disagrees with, and a screen reader would
+                 read every band a sentence the sighted user was never shown.
+                 So the annotate switch controls the MARKUP, and the two
+                 surfaces cannot drift. -->
             <h4 class="page-label">
-              {band.label}{#if band.hint}<span class="page-hint">{band.hint}</span>{/if}
+              {band.label}{#if band.hint && annotations}<span class="page-hint">{band.hint}</span>{/if}
             </h4>
           {/if}
           {#if band.controls.length}
@@ -1246,9 +1301,10 @@
     max-width: 62ch;
   }
 
-  /* PF-20 — THE HERO RAIL: the glyph, then the promoted control + audition +
-     readouts. It WRAPS rather than compressing — a half-width split pane must
-     drop the readouts to a second row instead of squeezing a 64px dial. */
+  /* PF-20 — THE HERO RAIL: the glyph, then the promoted control + audition,
+     then the readout strip. It WRAPS rather than compressing — a half-width
+     split pane must drop the hero dial below the picture instead of squeezing
+     a 64px dial. */
   .dock-hero.has-hero {
     flex-wrap: wrap;
     align-items: flex-end;
@@ -1260,11 +1316,23 @@
   .dock-hero.has-hero-cell {
     align-items: stretch;
   }
-  /* The rail is PICTURE | (control · audition · readouts). The picture takes
-     the room it needs and the side column is intrinsically sized, which is what
-     keeps a 420px graph legible in a half-width split pane instead of both
-     halves squeezing. */
+  /* The rail is a COLUMN: the STAGE (picture | control · audition), then the
+     readout strip beneath it (owner 2026-08-02 — see the markup note). The
+     strip therefore spans the whole faceplate instead of queueing behind the
+     graph for the leftover width. */
   .hero-rail {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    min-width: 0;
+    width: 100%;
+  }
+  /* The stage is PICTURE | (control · audition). The picture takes the room it
+     needs and the side column is intrinsically sized, which is what keeps a
+     420px graph legible in a half-width split pane instead of both halves
+     squeezing. */
+  .hero-stage {
     display: flex;
     align-items: stretch;
     gap: 16px;
@@ -1310,13 +1378,22 @@
     font-size: 10px;
   }
   /* Labelled hero values. A <dl> because that is what a label→value list is;
-     the visual is a column of caption-over-number pairs, at the same
-     typographic weight as the hero dial's own readout. */
+     the visual is a row of caption-over-number pairs, at the same typographic
+     weight as the hero dial's own readout.
+     A FULL-WIDTH STRIP under the stage: it starts at the faceplate's left edge
+     and gets the whole width, so a three-value strip reads as one line of
+     instrumentation rather than as the overflow of the row above it. The
+     hairline is the same 1px `--border` rule `.dock-page` uses to separate a
+     band — this strip is the hero's own footer in that same vocabulary. */
   .hero-readouts {
     display: flex;
     align-items: flex-end;
-    gap: 16px;
+    gap: 22px;
     margin: 0;
+    padding-top: 8px;
+    border-top: 1px solid var(--border, #2c3037);
+    width: 100%;
+    min-width: 0;
     flex-wrap: wrap;
   }
   .hero-ro {

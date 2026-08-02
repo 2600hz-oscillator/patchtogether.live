@@ -18,6 +18,8 @@ import type { FaceSidebarBlock, ParamDef } from '$lib/graph/types';
 import { dockFacePlan, dockPlanControls, type DockFaceBand, type FaceDefLike } from './curated-face';
 import {
   activePresetId,
+  faceAnnotationProse,
+  faceHasAnnotations,
   facePageHeader,
   heroFacePlan,
   heroFacePlanIsTotal,
@@ -85,22 +87,99 @@ describe('facePageHeader — the title/hint rows', () => {
   it('is null for a face that declares neither, so pre-PF-20 faceplates do not move', () => {
     expect(facePageHeader(fixture())).toBeNull();
     expect(facePageHeader(undefined)).toBeNull();
+    expect(facePageHeader(undefined, true)).toBeNull();
   });
 
   it('treats a BLANK declaration as absent — a typo must not paint an empty row', () => {
-    expect(facePageHeader(fixture({ title: '   ', hint: '' } as never))).toBeNull();
+    expect(facePageHeader(fixture({ title: '   ', hint: '' } as never), true)).toBeNull();
   });
 
   it('renders either row alone', () => {
-    expect(facePageHeader(fixture({ title: 'Voice' } as never))).toEqual({ title: 'Voice', hint: '' });
-    expect(facePageHeader(fixture({ hint: 'one bus' } as never))).toEqual({ title: '', hint: 'one bus' });
+    expect(facePageHeader(fixture({ title: 'Voice' } as never), true)).toEqual({
+      title: 'Voice',
+      hint: '',
+    });
+    expect(facePageHeader(fixture({ hint: 'one bus' } as never), true)).toEqual({
+      title: '',
+      hint: 'one bus',
+    });
   });
 
   it('trims, so authored whitespace never becomes layout', () => {
-    expect(facePageHeader(fixture({ title: '  Voice \n', hint: ' one bus ' } as never))).toEqual({
+    expect(facePageHeader(fixture({ title: '  Voice \n', hint: ' one bus ' } as never), true)).toEqual({
       title: 'Voice',
       hint: 'one bus',
     });
+  });
+
+  // ── THE ANNOTATION GATE (owner 2026-08-02) ────────────────────────────────
+  //
+  // The hint is a SENTENCE ABOUT the module; the title is its NAME. Only the
+  // first is annotation, and the DEFAULT is off — a resting faceplate is
+  // clean. Both directions are asserted: "hidden when off" alone would pass
+  // just as happily against a hint that never renders at all.
+  it('SUPPRESSES the hint by default, and keeps the title', () => {
+    expect(facePageHeader(fixture({ title: 'Voice', hint: 'one bus' } as never))).toEqual({
+      title: 'Voice',
+      hint: '',
+    });
+    expect(facePageHeader(fixture({ title: 'Voice', hint: 'one bus' } as never), false)).toEqual({
+      title: 'Voice',
+      hint: '',
+    });
+  });
+
+  it('a HINT-ONLY face paints NOTHING at rest — no empty header row for prose nobody asked for', () => {
+    expect(facePageHeader(fixture({ hint: 'one bus' } as never))).toBeNull();
+  });
+
+  it('…and prints the hint with annotations ON (the negative control for the above)', () => {
+    expect(facePageHeader(fixture({ title: 'Voice', hint: 'one bus' } as never), true)).toEqual({
+      title: 'Voice',
+      hint: 'one bus',
+    });
+  });
+});
+
+// ── 1b. THE ANNOTATION ROSTER ───────────────────────────────────────────────
+
+describe('faceAnnotationProse / faceHasAnnotations — what the toggle reveals', () => {
+  it('collects the page hint and every band hint, in declaration order', () => {
+    // The base fixture already declares one band hint ('the pulse').
+    expect(faceAnnotationProse(fixture({ hint: 'one bus' } as never))).toEqual([
+      'one bus',
+      'the pulse',
+    ]);
+  });
+
+  it('a face with only band hints still has annotations (the toggle must appear)', () => {
+    expect(faceAnnotationProse(fixture())).toEqual(['the pulse']);
+    expect(faceHasAnnotations(fixture())).toBe(true);
+  });
+
+  it('drops blanks and trims — an authoring typo is not an annotation', () => {
+    const def = {
+      params: PARAMS,
+      face: {
+        order: ['tune'],
+        hint: '   ',
+        pages: [
+          { id: 'a', label: 'a', hint: '  spaced  ', controls: ['tune'] },
+          { id: 'b', label: 'b', hint: '', controls: [] },
+        ],
+      },
+    } as unknown as FaceplateDefLike;
+    expect(faceAnnotationProse(def)).toEqual(['spaced']);
+  });
+
+  it('is FALSE for a face with no prose at all — no toggle over an empty layer', () => {
+    const bare = {
+      params: PARAMS,
+      face: { order: ['tune'], pages: [{ id: 'a', label: 'a', controls: ['tune'] }] },
+    } as unknown as FaceplateDefLike;
+    expect(faceAnnotationProse(bare)).toEqual([]);
+    expect(faceHasAnnotations(bare)).toBe(false);
+    expect(faceHasAnnotations(undefined)).toBe(false);
   });
 });
 
