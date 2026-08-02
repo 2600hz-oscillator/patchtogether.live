@@ -59,7 +59,10 @@ const FACES = [
   { type: 'karplus', pages: 2 },
   { type: 'filter', pages: 2 },
   { type: 'mixer', pages: 2 },
-  { type: 'delay', pages: 2 },
+  // 2 → 1: `output blend` held a single knob and was a house template copied
+  // across four defs; the three knobs are one idea and the band header now says
+  // which of them sit inside the loop.
+  { type: 'delay', pages: 1 },
   { type: 'reverb', pages: 2 },
   // batch B+ — the stereo crush
   { type: 'ringback', pages: 2 },
