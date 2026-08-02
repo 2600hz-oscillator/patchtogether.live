@@ -432,12 +432,34 @@ describe('the AUTHORED push cards', () => {
     expect([...ids('adsr', {})].sort()).toEqual([...ENVELOPE].sort());
   });
 
-  it('cloudseed promotes the preset macro to encoder 1', () => {
-    // 46 params: the face ranks the output mix first and buries the macro that
-    // moves everything else. Position 0 is the claim; where the face happens to
-    // put it today is not.
-    expect(ids('cloudseed').indexOf('preset_index')).toBe(0);
-    expect(ids('cloudseed', {}).indexOf('preset_index')).toBeGreaterThan(0);
+  it('cloudseed PINS the preset macro to encoder 1, and re-picks the tank controls', () => {
+    // 46 params — by far the widest face, so the override has the most to do.
+    //
+    // ACCEPT-LOOP (2026-08-02, the cloudseed face rework): `> 0` was the one
+    // line here still encoding where the FACE puts the macro, and the face now
+    // ranks `preset_index` FIRST too (preset recall is this module's headline
+    // gesture). The header two blocks up says exactly why that line had to go:
+    // a claim stated as a literal position in `face.order` fails when another
+    // file is legitimately edited. Position 0 on the OVERRIDE is the claim.
+    expect(ids('cloudseed').indexOf('preset_index'), 'the override pins encoder 1').toBe(0);
+
+    // And it is still not decoration, which is the property `> 0` was really
+    // standing in for. Measured: the face card is
+    //   preset_index late_out late_line_decay dry_out late_line_size
+    //   tap_predelay early_out high_cut
+    // and the override is
+    //   preset_index late_line_size late_line_decay dry_out early_out
+    //   late_out low_cut high_cut
+    // — a re-PICK (`tap_predelay` out, `low_cut` in) on top of a re-order, so
+    // the override is what puts BOTH cuts on the card. Asserted as the relation
+    // rather than as either list, so a further re-curation of either side reads
+    // as an accept-loop and not as a Push regression.
+    const faced = ids('cloudseed', {});
+    expect(faced, 'the face card is not the authored card').not.toEqual(ids('cloudseed'));
+    expect(ids('cloudseed'), 'the override puts BOTH tone cuts on the card').toEqual(
+      expect.arrayContaining(['low_cut', 'high_cut']),
+    );
+    expect(faced, '…which the face card does not').not.toContain('low_cut');
   });
 
   it('tidyVco groups the two oscillators before the filter', () => {

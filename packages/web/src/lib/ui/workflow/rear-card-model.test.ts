@@ -283,14 +283,25 @@ describe('rear-card derivation — the six P1 prototypes (spec §4)', () => {
   it('cloudseed: SPARSE CV coverage — pages with no CV holes do not render as bands', () => {
     const def = cloudseedDef as unknown as RearDefLike;
     expectTotal(def);
-    // 8 declared pages, but only blend/input/output have CV targets; the
+    // 8 declared pages, but only space/input/seeds have CV targets; the
     // curated stereo-insert band leads with the two audio ins.
-    expect(bandIds(def)).toEqual(['signal', 'blend', 'input', 'output']);
+    expect(bandIds(def)).toEqual(['signal', 'space', 'input', 'seeds']);
     expect(rearFieldPlan(def).bands[0].label).toBe('stereo in');
     expect(bandPorts(def, 'signal')).toEqual(['in_l', 'in_r']);
-    expect(bandPorts(def, 'blend')).toEqual(['dry_cv', 'early_cv', 'late_cv']);
-    expect(bandPorts(def, 'input')).toEqual(['input_mix_cv', 'low_cut_cv']);
-    expect(bandPorts(def, 'output')).toEqual(['high_cut_cv', 'cross_seed_cv']);
+    // Band membership derives in PAGE-CONTROL order, so the re-ranked face
+    // shows LATE first — the fader that means "how much reverb" now leads the
+    // rear the same way it leads the lane.
+    expect(bandPorts(def, 'space')).toEqual(['late_cv', 'dry_cv', 'early_cv']);
+    // The re-paging put BOTH wet-path cut corners on the input page (the docs
+    // always described them as one pair; the old face split them across
+    // 'input stage' and 'output stage'), and the curated cluster pulls the two
+    // of them into a `wet tone cuts` sub-header, leaving IN MIX un-clustered.
+    expect(bandPorts(def, 'input')).toEqual(['input_mix_cv', 'low_cut_cv', 'high_cut_cv']);
+    const input = rearFieldPlan(def).bands.find((b) => b.id === 'input')!;
+    expect(input.holes.map((h) => h.portId)).toEqual(['input_mix_cv']);
+    expect(input.clusters.map((c) => c.label)).toEqual(['wet tone cuts']);
+    expect(input.clusters[0].holes.map((h) => h.portId)).toEqual(['low_cut_cv', 'high_cut_cv']);
+    expect(bandPorts(def, 'seeds')).toEqual(['cross_seed_cv']);
   });
 
   it('delay: the page collapse forces the TIME CV out of derivation into its own band', () => {

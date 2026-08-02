@@ -29,6 +29,7 @@ import { fileURLToPath } from 'node:url';
 import { adsrDef } from '$lib/audio/modules/adsr';
 import { backdraftDef } from '$lib/video/modules/backdraft';
 import { delayDef } from '$lib/audio/modules/delay';
+import { ringbackDef } from '$lib/audio/modules/ringback';
 import { vcaDef } from '$lib/audio/modules/vca';
 import type { ParamDef } from '$lib/graph/types';
 
@@ -48,11 +49,19 @@ import type { ParamDef } from '$lib/graph/types';
  *    def declares `Feedback`, so one control carried two names depending on
  *    which surface you read. The nine range literals beside it all still
  *    agreed — which is exactly how this class hides.
+ *  - RingbackCard: converted with the ringback face promotion. It is the first
+ *    KNOB-based card in this set, which is why `Knob.svelte` had to grow the
+ *    `formatValue` prop `Fader.svelte` already had — the format clause below
+ *    is unsatisfiable for a Knob card without it. It also carried a THIRD
+ *    divergence neither grep can see: its caption said `FB` where the def says
+ *    `Feedback`, so the card, the rear jack and the doc page named one control
+ *    three ways. Labels are now bound too.
  */
 const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }>> = {
   'AdsrCard.svelte': adsrDef,
   'BackdraftCard.svelte': backdraftDef,
   'DelayCard.svelte': delayDef,
+  'RingbackCard.svelte': ringbackDef,
   'VcaCard.svelte': vcaDef,
 };
 
@@ -64,12 +73,13 @@ const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }
 const MAPPING_BOUND_CARDS: readonly string[] = [
   'AdsrCard.svelte',
   'DelayCard.svelte',
+  'RingbackCard.svelte',
   'VcaCard.svelte',
 ];
 
 /** The ratchet floors — lower either and this test is the thing that says no. */
-const RANGE_BOUND_FLOOR = 4;
-const MAPPING_BOUND_FLOOR = 3;
+const RANGE_BOUND_FLOOR = 5;
+const MAPPING_BOUND_FLOOR = 4;
 
 /**
  * A range-ish prop bound to a NUMERIC LITERAL. Covers `min/max/defaultValue`

@@ -64,6 +64,8 @@ const FACES = [
   // which of them sit inside the loop.
   { type: 'delay', pages: 1 },
   { type: 'reverb', pages: 2 },
+  // batch B+ — the stereo crush
+  { type: 'ringback', pages: 2 },
 ] as const;
 
 /** TIGHT per-scene diff budgets (absolute pixels; Playwright takes the MIN of

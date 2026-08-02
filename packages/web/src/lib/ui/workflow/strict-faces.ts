@@ -30,6 +30,14 @@
 // and the four workhorse processors/utilities (filter, mixer, delay, reverb) a
 // rack reaches for on every patch. Same bar: a complete co-located `face`
 // (order + pages + glyph + `rear`).
+//
+// FACE BATCH B+ (2026-08-02): ringback — the first module PROMOTED from having
+// no face at all in this wave (the batch-B reworks all rewrote existing ones).
+// It ships the same bar plus the two things batch B established: the ranges
+// live in ONE model module the def AND the card import
+// ($lib/audio/ringback-crush-model), and its `glyph`/`order` are checked
+// against measurements taken from the real DSP core rather than argued in a
+// comment.
 
 export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // P1 batch 1 — first 6 module faces
@@ -52,6 +60,8 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   'karplus',
   'mixer',
   'reverb',
+  // face batch B+ — the stereo crush (first promotion from no face at all)
+  'ringback',
 ]);
 
 /**

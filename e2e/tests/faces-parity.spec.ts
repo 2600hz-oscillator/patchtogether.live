@@ -141,6 +141,10 @@ interface RenderedCell {
   control: CellControl;
   kind: string;
   key: string;
+  /** The `face.pages` band this cell lives in. Load-bearing for a TABBED face
+   *  (PF-16): the inactive bands are CSS-hidden, so the drive loop has to open
+   *  the owning tab before it can touch the cell. */
+  page: string | null;
 }
 
 async function gotoShell(page: Page): Promise<void> {
@@ -237,15 +241,44 @@ function readPanelProbe(page: Page, type: string, key: string): Promise<PanelPro
   );
 }
 
-/** Every cell the dock faceplate rendered, in DOM order. */
+/** Every cell the dock faceplate rendered, in DOM order.
+ *
+ *  ⚠ `evaluateAll` matches HIDDEN elements, and that is what makes the PF-16
+ *  tab rail free here: a tabbed face keeps all eight bands MOUNTED and hides
+ *  seven with CSS, so this sweep still sees the whole control surface. If the
+ *  shell ever `{#if}`-unmounted an inactive page instead, a tabbed face would
+ *  read as a face that LOST forty controls — which is exactly the alarm this
+ *  gate should raise, so nothing here filters by visibility on purpose. */
 async function renderedCells(dockShell: Locator): Promise<RenderedCell[]> {
   return dockShell.locator('[data-cell-kind]').evaluateAll((els) =>
     els.map((el) => ({
       control: (el.getAttribute('data-cell-control') ?? 'inert') as CellControl,
       kind: el.getAttribute('data-cell-kind') ?? '',
       key: el.getAttribute('data-cell-key') ?? '',
+      page: el.closest('[data-face-page]')?.getAttribute('data-face-page') ?? null,
     })),
   );
+}
+
+/**
+ * PF-16 — open the tab that owns `cell`, when the face is tabbed at all.
+ *
+ * REGISTRY-DRIVEN, like everything else here: the rail's existence is read off
+ * the DOM (`[role="tab"]` chips the faceplate painted), never off a per-module
+ * list, so a face that crosses the tab threshold later auto-enrols with no
+ * edit. A face below the threshold has no rail and this is a no-op.
+ *
+ * Verifying the tab actually TOOK matters: a rail that renders but does not
+ * switch would leave the cell hidden and the failure would surface as a
+ * confusing `toBeVisible` timeout on the control rather than on the tab.
+ */
+async function openTabFor(page: Page, cell: RenderedCell): Promise<void> {
+  if (!cell.page) return;
+  const tab = page.getByTestId('dock-full-view').getByTestId(`faceplate-tab-${cell.page}`);
+  if ((await tab.count()) === 0) return; // untabbed face — one scrolling column
+  if ((await tab.getAttribute('aria-selected')) === 'true') return;
+  await tab.click();
+  await expect(tab, `tab '${cell.page}' activates`).toHaveAttribute('aria-selected', 'true');
 }
 
 /**
@@ -597,6 +630,7 @@ test.describe('faces render-parity: every STRICT_FACES dock full-view carries th
       test.setTimeout(FACE_FIXED_MS + FACE_PER_CELL_MS * cells.length);
 
       for (const cell of cells) {
+        await openTabFor(page, cell);
         await driveCell(page, dockShell, 'm', spec, cell);
       }
     });

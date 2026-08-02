@@ -35,6 +35,12 @@ test('blood in-game: drive the menu into a level + read the in-game framebuffer'
       { id: 'vout', type: 'videoOut', position: { x: 700, y: 80 }, domain: 'video' },
     ],
     [{ from: BLOOD_ID, fromPort: 'out', to: 'vout', toPort: 'in' }],
+    // A PROBE, not a requirement: the `.catch` below is the designed path, and
+    // a discardable attempt is exactly where a wall-clock cap belongs (the
+    // helper's default is a 300-FRAME budget bounded at 30 s, which would make
+    // this fallback ~6× slower to reach inside a 90 s test). 10 s is the same
+    // order the pre-frame-budget default gave it.
+    { mountTimeout: 10_000 },
   ).catch(() => spawnPatch(page, [{ id: BLOOD_ID, type: 'blood', position: { x: 120, y: 80 }, domain: 'video' }], []));
 
   await page.getByTestId('blood-card').waitFor({ state: 'visible', timeout: 10_000 });

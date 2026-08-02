@@ -292,8 +292,23 @@ test('score: dynamic marker scales the env output amplitude', async ({ page, rac
       return typeof v === 'number' ? v : -1;
     });
   // ff -> 0.95 (band [0.85, 1.05]); poll until the engine reports it.
+  //
+  // ⚠ CEILING RAISED 10s → 30s (2026-08-02). The 10 s budget went red on
+  // `e2e (shard 9/10)` with **Received: 0.55** — and 0.55 is not a value in
+  // transit, it is `mf`, the DEFAULT in score-data.ts. So the engine had not
+  // picked up the `n.data` write AT ALL inside the window; nothing was
+  // half-applied and no ramp was caught mid-flight. Same diagnosis as the
+  // comment above it, one budget later: this is propagation latency under ten
+  // parallel e2e shards, not a different result. Reproduced green locally in
+  // 6.0 s on a real GPU and 2.9 s under `E2E_SWIFTSHADER=1`, so the CI margin
+  // is load, not renderer.
+  //
+  // `expect.poll` returns the moment the assertion passes, so a bigger ceiling
+  // costs NOTHING on the happy path — it only stops a slow runner from being
+  // read as a wrong answer. The band assertion below is unchanged and still
+  // pins the actual value, so this cannot pass for the wrong reason.
   await expect
-    .poll(readDynScale, { timeout: 10_000 })
+    .poll(readDynScale, { timeout: 30_000 })
     .toBeGreaterThan(0.85);
   expect(await readDynScale()).toBeLessThan(1.05);
 });

@@ -1131,13 +1131,14 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // linux dispatch), so their pairs are dropped from here: they now DIFF on both
   // platforms in the full `vrt` lane (informational). First Track-2 linux-coverage
   // batch; once these prove stable on CI they get promoted to STRICT_VRT_MODULES.
-  // RINGBACK: darwin baseline (the static stereo-crush card — title + subtitle +
-  // L/R IN + L/R OUT handles + RATE/SIZE/FB/MIX knobs; no animated canvas)
-  // captured locally; linux baseline pending a `vrt-update.yml`
-  // workflow_dispatch on this branch. Functional coverage is ringback-core.test.ts
-  // (the crush DSP) + ringback.test.ts (def + factory) + the per-port sweep +
-  // the bespoke ringback.spec.ts (real VCO → stereo in → audible RMS at L/R out).
-  'linux/ringback',
+  // RINGBACK: DRAINED 2026-08-02 with the face promotion. The pair had been
+  // pending "a vrt-update.yml dispatch on this branch" since the module landed,
+  // and a listed pair is `test.skip()`-ed UNCONDITIONALLY — so the dispatch it
+  // was waiting for could never have written the baseline while it sat here
+  // (CLAUDE.md: drain first, dispatch second). The face PR dispatches linux for
+  // its two new `face-ringback-*` scenes anyway, so this scene rides along and
+  // the ratchet drops by one. Both linux-deficit ceilings in vrt-meta.test.ts
+  // move in this same commit.
   // SPECTROGRAPH: darwin baseline (the scrolling-sonogram card — its live
   // preview canvas is DE-EXEMPTED via the __spectrographVrtFreeze scene in
   // vrt-scenes.ts, which fills the buffer from a FIXED synthetic spectrum so

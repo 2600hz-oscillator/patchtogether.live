@@ -80,6 +80,9 @@ export interface ShellDefLike {
   category?: string;
   /** The def's palette classification (top/sub) — the role-line fallback. */
   palette?: { top: string; sub: string };
+  /** Upstream OSS credit for a ported DSP — surfaced in the dock faceplate
+   *  footer (PF-17), exactly as the legacy card surfaced it. */
+  ossAttribution?: { author: string };
 }
 
 /** The five signal DOMAINS the RACKLINE kit colours chrome by (spine, jack dots,
