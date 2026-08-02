@@ -45,6 +45,8 @@
   import { getVideoModuleDef } from '$lib/video/module-registry';
   import { getMetaModuleDef } from '$lib/meta/module-registry';
   import { domainClassForDef, type ShellDefLike } from '$lib/ui/workflow/module-shell-model';
+  import { dockFacePlan, type FaceDefLike } from '$lib/ui/workflow/curated-face';
+  import { activeDockTab, dockTabPlan } from '$lib/ui/workflow/dock-tabs-model';
   import ModuleShell from '$lib/ui/modules/ModuleShell.svelte';
   import RearCard from '$lib/ui/workflow/RearCard.svelte';
   import type { RearDefLike } from '$lib/ui/workflow/rear-card-model';
@@ -100,6 +102,21 @@
   let CardComponent = $derived(nodeTypes[node.type] as Component | undefined);
   let rackU = $derived(rackSize?.size ? parseInt(rackSize.size, 10) || 1 : null);
   let rackHp = $derived(rackSize?.hp ?? 1);
+
+  // ── PF-16: REAL PER-SECTION TABS ────────────────────────────────────────
+  //
+  // The rail used to be one hard-coded "MODULE" chip with a `real per-op tabs
+  // are P1` comment. It becomes the module's own `face.pages`, but ONLY for a
+  // face that genuinely cannot be read as one scrolling column — `dockTabPlan`
+  // owns that threshold and its measured argument, and BOTH sides go through
+  // it (this rail and ModuleShell's band hiding) so they can never disagree
+  // about whether a face is tabbed.
+  //
+  // Un-migrated (legacy-card) occupants keep the single MODULE chip: their
+  // content is one verbatim card with no declared sections to tab.
+  let tabs = $derived(migrated && def ? dockTabPlan(dockFacePlan(def as FaceDefLike)) : null);
+  let requestedTab = $state<string | undefined>(undefined);
+  let activeTab = $derived(tabs ? activeDockTab(tabs, requestedTab) : undefined);
 </script>
 
 <div
@@ -177,16 +194,61 @@
           <!-- FRONT face: hidden (not unmounted) while flipped. display:contents
                when visible keeps the layout byte-identical to pre-rear-card. -->
           <div class="fp-front" class:fp-front-hidden={flipped && def} data-testid="faceplate-front">
-          <!-- Tab-rail seam: legacy content is one active "MODULE" tab; real per-op
-               / per-section tabs are P1. -->
-          <div class="tabrail" data-testid="faceplate-tabrail">
-            <div class="tab on" data-testid="faceplate-tab"><span class="t1">MODULE</span></div>
+          <!-- Tab rail. A face whose section bands cannot fit one column
+               (dockTabPlan) gets REAL per-section tabs; everything else keeps
+               the single MODULE chip and scrolls, which is the better trade
+               below the threshold. -->
+          <div class="tabrail" role="tablist" data-testid="faceplate-tabrail">
+            {#if tabs}
+              {#each tabs as t (t.id)}
+                <!-- `id` + `aria-controls` are the half of the tabs pattern
+                     that was missing: without them a screen reader announces
+                     eight tabs that control NOTHING, because the band
+                     (`role="tabpanel"` on ModuleShell's `.dock-page`) has no
+                     way to point back. The band's `aria-labelledby` names this
+                     button, so the pairing is stated in both directions. -->
+                <button
+                  type="button"
+                  class="tab"
+                  class:on={t.id === activeTab}
+                  role="tab"
+                  id={`faceplate-tab-${t.id}`}
+                  aria-selected={t.id === activeTab}
+                  aria-controls={`face-page-${t.id}`}
+                  tabindex={t.id === activeTab ? 0 : -1}
+                  data-testid={`faceplate-tab-${t.id}`}
+                  data-face-tab={t.id}
+                  onkeydown={(e) => {
+                    // ROVING FOCUS. Arrow keys move between tabs (the pattern's
+                    // required interaction); Home/End jump to the ends. Without
+                    // this the rail is reachable but not navigable as a tablist.
+                    const i = tabs!.findIndex((x) => x.id === activeTab);
+                    const n = tabs!.length;
+                    let j = -1;
+                    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') j = (i + 1) % n;
+                    else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') j = (i - 1 + n) % n;
+                    else if (e.key === 'Home') j = 0;
+                    else if (e.key === 'End') j = n - 1;
+                    if (j < 0) return;
+                    e.preventDefault();
+                    const next = tabs![j]!.id;
+                    requestedTab = next;
+                    (e.currentTarget as HTMLElement)
+                      .parentElement?.querySelector<HTMLElement>(`[data-face-tab="${next}"]`)
+                      ?.focus();
+                  }}
+                  onclick={() => (requestedTab = t.id)}
+                ><span class="t1">{t.label}</span></button>
+              {/each}
+            {:else}
+              <div class="tab on" data-testid="faceplate-tab"><span class="t1">MODULE</span></div>
+            {/if}
           </div>
 
           <div class="page">
             <div class="editor" data-testid="faceplate-editor">
               {#if migrated}
-                <ModuleShell id={node.id} data={{ node, view: 'dock-full' }} />
+                <ModuleShell id={node.id} data={{ node, view: 'dock-full', activePage: activeTab }} />
               {:else}
                 <!-- Verbatim legacy card, plain-mount (data-dock-card* anchors +
                      node.id keying carried so PickupCable/cardRectOf + patch menu
@@ -254,6 +316,15 @@
     position: relative;
     width: max-content;
     max-width: 100%;
+  }
+  /* PF-16 — the tabs are real <button role="tab"> elements now (keyboard +
+     AT reachable). The kit's `.tab` rule already paints them; these three
+     lines only undo the UA button defaults so a tab looks byte-identical to
+     the div chip it replaced. */
+  button.tab {
+    font: inherit;
+    appearance: none;
+    -webkit-appearance: none;
   }
   /* FRONT face wrapper: layout-transparent when visible (display:contents —
      the pre-rear-card DOM shape is preserved pixel-for-pixel), display:none

@@ -47,6 +47,7 @@ import {
   sixstrumPresetName,
   sixstrumSelectorOptions,
 } from '$lib/ui/modules/sixstrum-preset-actions';
+import { clearCloudseedTail } from '$lib/ui/modules/cloudseed-preset-actions';
 import { fireKickdrumStrike } from '$lib/ui/modules/kickdrum-strike-actions';
 
 /** A dropdown over a NAMED roster that lives in node.data (not a param). */
@@ -59,12 +60,30 @@ export interface ShellSelectorCell {
   onchange: (nodeId: string, value: string) => void;
 }
 
+/**
+ * What a cell's action can reach BESIDES the graph. The graph is always
+ * reachable from a nodeId alone; the live PatchEngine is not, because it rides
+ * a Svelte context the shell owns and this registry is plain TypeScript.
+ *
+ * `engine` is typed STRUCTURALLY (just the `write` seam) so shell-cells never
+ * pulls the whole PatchEngine import chain — the same discipline the file
+ * header's circular-import note is about.
+ */
+export interface ShellCellEnv {
+  engine: { write(node: ModuleNode, key: string, value: unknown): void } | null;
+  /** The LIVE node (Y.Doc entry), or undefined before it resolves. */
+  node: ModuleNode | undefined;
+}
+
 /** A one-shot ACTION button (fires on the press edge). */
 export interface ShellActionCell {
   kind: 'action';
   label: string;
   title?: string;
-  onFire: (nodeId: string) => void;
+  /** Runs the action. `env` carries the engine handle for actions that are
+   *  ENGINE gestures rather than graph edits (a buffer flush, a re-seed) — a
+   *  nodeId alone can only reach the store. */
+  onFire: (nodeId: string, env: ShellCellEnv) => void;
 }
 
 /** A FILE-import button: opens a picker, hands the chosen file to `onFile`,
@@ -212,6 +231,21 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
         action: 'drag',
         effect: { kind: 'data-rev', key: 'voiceRev' },
       },
+    },
+  },
+  cloudseed: {
+    // CLEAR TAIL — the one gesture this reverb has that is not a value. It
+    // flushes every delay line, diffuser, shelf and lowpass in the tank
+    // (`clearBuffers`, which the worklet has always handled and the host had
+    // never sent), so a ~60 s tail stops on the spot without touching a single
+    // setting. Nothing is stored and nothing is undoable: it is the engine's
+    // state that moves, not the patch's — which is exactly why it is a control
+    // FAMILY rather than a 47th ParamDef.
+    'cloudseed-clear-{n}': {
+      kind: 'action',
+      label: 'Clear tail',
+      title: 'Flush the reverb tank — stops the tail instantly (changes no setting; not undoable)',
+      onFire: (_nodeId, env) => clearCloudseedTail(env),
     },
   },
   kickdrum: {
