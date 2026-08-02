@@ -355,10 +355,31 @@ defences, in rough order of value:
    would have exposed immediately.
 4. **Reproduce under the environment that actually failed** before theorising —
    `E2E_SWIFTSHADER=1` settled two of these.
+5. **Never sample a page-side quantity with a Playwright-side poll loop.** Added
+   2026-08-02 (`workflow-master-transport`, shard 10). A `while (Date.now() <
+   deadline) { await page.evaluate(read); await waitForTimeout(50) }` is one
+   `page.evaluate` round-trip per sample **on the same main thread as the thing
+   it measures** — so a loaded runner starves the subject and the sampler
+   *together*, and a stalled thread can burn the whole 4 s window in two reads
+   and then report "the clock never advanced" off a sample size of two.
+   "Frozen" and "never looked" both print `Received: 1` and are
+   indistinguishable from the output. **Move the accumulator INTO the page**
+   (`page.evaluate` returning a Promise, sampling on a `setInterval` finer than
+   the tick under test): it adds no protocol traffic, and the accumulated Set
+   *survives* a stall, so a thread that freezes for 3 s and then runs still
+   reports every value it computed. Report `samples` / `elapsedMs` / the values
+   seen in the assertion message — that is what makes the next red run
+   diagnosable instead of a coin flip. Measured: the reworked scan reads 200×
+   in 4 s where the old loop managed a handful.
 
 ⚠ And the meta-tell: **"the result is genuinely different here" and "the
 instrument reads differently here" look identical from the output alone.**
-Establish which before acting; they need opposite fixes.
+Establish which before acting; they need opposite fixes. ⚠ And when the fix is
+to the INSTRUMENT, negative-control it in **both** directions before believing
+it — force the subject frozen (the advance gate must go red) *and* force it
+ever-running (the freeze gate must go red). Better still, make one of those a
+PERMANENT leg of the test, so the instrument is negative-controlled on every
+run rather than once at authoring time.
 
 ## A CARD can silently disagree with its DEF — every def-reading gate is blind to it
 

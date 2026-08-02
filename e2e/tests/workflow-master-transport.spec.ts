@@ -31,18 +31,23 @@ test.describe.configure({ mode: 'parallel' });
 
 // CI (and a local E2E_SWIFTSHADER=1 flake-check) rasterizes on the SwiftShader
 // SOFTWARE renderer with 4 workers per shard. The MEASUREMENT windows below
-// cost up to ~14.1s of pure wall-clock — 2× `distinctSteps(4_000)` (early-exits
+// cost up to ~14.1s of pure wall-clock — 2× `stepScan(4_000)` (early-exits
 // on the 2nd distinct step, so it stretches toward 4s exactly when the clock is
 // slow) + 2× `readScopePeakOverWindow(…, 2_500)` (a FULL 2.5s each, no early
-// exit) + ~1.1s stop-drain waits — BEFORE bootWorkflow, the 10s reconciler-edge
-// poll, the clip seed, the drawer open and four click/assert round-trips (each
-// a ~1s page.evaluate under CI contention). That fits a warm dev box inside the
-// flat 30s default; it does NOT fit shard 10 (242 tests / 4 workers), where it
-// timed out 4/4 attempts (both `label` variants × 2 retries) mid-RESTART leg —
-// always still PROGRESSING, never a failed assertion. Repo rule
-// (ci-swiftshader-video-e2e-timeouts): scale the budget by render load, never
-// flat, and never shrink the measurement windows — the windows ARE the test.
+// exit) + ~1.1s stop-drain/freeze-scan waits — BEFORE bootWorkflow, the 10s
+// reconciler-edge poll, the clip seed, the drawer open and four click/assert
+// round-trips (each a ~1s page.evaluate under CI contention). That fits a warm
+// dev box inside the flat 30s default; it does NOT fit shard 10 (242 tests /
+// 4 workers), where it timed out 4/4 attempts (both `label` variants × 2
+// retries) mid-RESTART leg — always still PROGRESSING, never a failed
+// assertion. Repo rule (ci-swiftshader-video-e2e-timeouts): scale the budget by
+// render load, never flat, and never shrink the measurement windows — the
+// windows ARE the test.
 // Mirrors the SLOW_RENDER idiom in workflow-shell-video / videovarispeed-switch.
+//
+// ⚠ THE SECOND CI RED (2026-08-02, shard 10) was NOT that timeout: it was a
+// failed ASSERTION, `distinct steps >= 2` returning 1 on the restart leg. The
+// budget above was innocent — the INSTRUMENT was, see `stepScan`.
 const SLOW_RENDER = process.env.E2E_SWIFTSHADER === '1' || !!process.env.CI;
 
 const PINNED_CLIP = 'pinned-clipplayer';
@@ -162,32 +167,96 @@ async function lane0Playing(page: Page): Promise<unknown> {
   );
 }
 
-/** The engine-side lane-0 step counter (what the moving playhead shows). */
-async function lane0Step(page: Page): Promise<number | null> {
-  return page.evaluate((cpId) => {
-    const w = globalThis as unknown as {
-      __engine?: () => { read: (n: unknown, k: string) => unknown } | null;
-      __patch: { nodes: Record<string, unknown> };
-    };
-    const e = typeof w.__engine === 'function' ? w.__engine() : null;
-    const cp = w.__patch.nodes[cpId];
-    if (!e || !cp) return null;
-    const v = e.read(cp, 'currentStep:0');
-    return typeof v === 'number' ? v : null;
-  }, PINNED_CLIP);
+/** What one step scan actually observed — reported in the assertion message so a
+ *  red run says WHICH failure happened (see `stepScan`). */
+interface StepScan {
+  /** Distinct lane-0 step values seen. ≥2 ⇒ the clock advances. */
+  distinct: number;
+  /** How many times the counter was actually READ. */
+  samples: number;
+  /** Reads that came back with no engine / no node. */
+  nulls: number;
+  elapsedMs: number;
+  values: number[];
 }
 
-/** Count distinct step values seen over `windowMs` (≥2 ⇒ the clock advances). */
-async function distinctSteps(page: Page, windowMs: number): Promise<number> {
-  const seen = new Set<number>();
-  const deadline = Date.now() + windowMs;
-  while (Date.now() < deadline) {
-    const s = await lane0Step(page);
-    if (s !== null && s >= 0) seen.add(s);
-    if (seen.size >= 2) break;
-    await page.waitForTimeout(50);
-  }
-  return seen.size;
+/**
+ * Scan the lane-0 step counter for `windowMs` and report what was seen.
+ * The gate is `distinct >= 2` — the clock advances.
+ *
+ * ⚠ SAMPLED INSIDE THE PAGE, deliberately. The previous version was a
+ * Playwright-side `while` loop doing one `page.evaluate` round-trip per sample,
+ * and that instrument is BLIND to the difference between the two failures it
+ * can report:
+ *
+ *   · the clock genuinely froze (a real bug), and
+ *   · the sampler never got to look (a loaded runner).
+ *
+ * Both print `Received: 1` and nothing else. Worse, they are not independent:
+ * the step scheduler and a `page.evaluate` round-trip run on the SAME main
+ * thread, so whatever starves one starves the other — a stalled thread can eat
+ * the whole 4s window in two reads and then declare the clock dead on a sample
+ * size of two. Measured under `E2E_SWIFTSHADER=1` at 4 workers, the clock needs
+ * only ~150ms and 2-3 reads to show a second step (16/16 scans), so a scan that
+ * sees ONE value after 4s is never about the step rate.
+ *
+ * An in-page accumulator fixes the mechanism rather than the budget: it adds no
+ * protocol traffic, and — the point — the Set SURVIVES a stall, so a thread that
+ * freezes for 3s and then runs still reports every value it computed. The gate
+ * (≥2) and the window are UNCHANGED; only the sampling is.
+ *
+ * The instrument is negative-controlled on every run: the STOP leg scans with
+ * the transport halted and requires `distinct === 1`, so a scanner that always
+ * reported "advancing" would fail there.
+ */
+async function stepScan(page: Page, windowMs: number): Promise<StepScan> {
+  return page.evaluate(
+    ([cpId, ms]) =>
+      new Promise<StepScan>((resolve) => {
+        const w = globalThis as unknown as {
+          __engine?: () => { read: (n: unknown, k: string) => unknown } | null;
+          __patch: { nodes: Record<string, unknown> };
+        };
+        const seen = new Set<number>();
+        let samples = 0;
+        let nulls = 0;
+        const t0 = performance.now();
+        const done = () => {
+          clearInterval(timer);
+          resolve({
+            distinct: seen.size,
+            samples,
+            nulls,
+            elapsedMs: performance.now() - t0,
+            values: [...seen],
+          });
+        };
+        const read = () => {
+          const e = typeof w.__engine === 'function' ? w.__engine() : null;
+          const cp = w.__patch?.nodes?.[cpId];
+          const v = e && cp ? e.read(cp, 'currentStep:0') : null;
+          if (typeof v === 'number' && v >= 0) {
+            seen.add(v);
+            samples++;
+          } else nulls++;
+          // Early exit the moment the question is answered, so a healthy clock
+          // costs ~150ms rather than the whole window.
+          if (seen.size >= 2 || performance.now() - t0 >= ms) done();
+        };
+        // 20ms < the ~25ms scheduler tick, so no step can slip past unseen.
+        const timer = setInterval(read, 20);
+        read();
+      }),
+    [PINNED_CLIP, windowMs] as const,
+  );
+}
+
+/** The failure line a step scan deserves: the reading AND how it was taken. */
+function scanMsg(label: string, s: StepScan): string {
+  return (
+    `${label} — read ${s.samples} times (+${s.nulls} null) over ` +
+    `${Math.round(s.elapsedMs)} ms IN-PAGE; distinct step values seen: [${s.values.join(', ')}]`
+  );
 }
 
 /** The wcol edges as src.port->dst.port strings. */
@@ -261,7 +330,8 @@ for (const [label, url] of [
     // …the engine is up and the drawer transport mirror agrees (■ = running)…
     await expect(dockCard.getByTestId(`clipplayer-transport-${PINNED_CLIP}`)).toHaveText('■', { timeout: 10_000 });
     // …the step counter genuinely advances…
-    expect(await distinctSteps(page, 4_000), 'launch: steps advance').toBeGreaterThanOrEqual(2);
+    const launchScan = await stepScan(page, 4_000);
+    expect(launchScan.distinct, scanMsg('launch: steps advance', launchScan)).toBeGreaterThanOrEqual(2);
     // …and the REAL chain is audible at the pinned master.
     const runRms = await readScopePeakOverWindow(page, 'p0-scope', 2_500);
     expect(runRms.polls, 'scope polled').toBeGreaterThan(0);
@@ -273,17 +343,20 @@ for (const [label, url] of [
     await expect.poll(() => timelordeRunning(page), { timeout: 5_000 }).toBe(0);
     await expect(transport).toHaveText('▶', { timeout: 5_000 });
     await page.waitForTimeout(400); // drain scheduled steps (lookahead)
-    const s1 = await lane0Step(page);
-    await page.waitForTimeout(700);
-    const s2 = await lane0Step(page);
-    expect(s2, 'stop: the step counter freezes').toBe(s1);
+    // The freeze is scanned CONTINUOUSLY (was: two spot reads 700ms apart, which
+    // could not see a counter that moved and moved back). It doubles as the
+    // NEGATIVE CONTROL for `stepScan` on every run: a scanner that always
+    // reported "advancing" fails right here.
+    const stopScan = await stepScan(page, 700);
+    expect(stopScan.distinct, scanMsg('stop: the step counter freezes', stopScan)).toBe(1);
 
     // (3) START again from the same control: running flips back, steps move,
     // the master is audible again.
     await transport.click();
     await expect.poll(() => timelordeRunning(page), { timeout: 5_000 }).toBe(1);
     await expect(transport).toHaveText('■', { timeout: 5_000 });
-    expect(await distinctSteps(page, 4_000), 'restart: steps advance').toBeGreaterThanOrEqual(2);
+    const restartScan = await stepScan(page, 4_000);
+    expect(restartScan.distinct, scanMsg('restart: steps advance', restartScan)).toBeGreaterThanOrEqual(2);
     const restartRms = await readScopePeakOverWindow(page, 'p0-scope', 2_500);
     expect(restartRms.rms, 'audible RMS after restart').toBeGreaterThan(0.02);
 
