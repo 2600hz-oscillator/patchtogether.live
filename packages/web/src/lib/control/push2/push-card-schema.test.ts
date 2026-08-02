@@ -413,9 +413,34 @@ describe('the AUTHORED push cards', () => {
     expect(ids('adsr')).toEqual(['attack', 'decay', 'sustain', 'release']);
   });
 
-  it('cloudseed promotes the preset macro from rank 8 to encoder 1', () => {
-    expect(ids('cloudseed', {}).indexOf('preset_index')).toBe(7);
-    expect(ids('cloudseed').indexOf('preset_index')).toBe(0);
+  it('cloudseed PINS the preset macro to encoder 1 — the face now agrees, and that is the point', () => {
+    // WAS: `face default = rank 8, override = rank 1`, asserted as literal
+    // indices. This PR's face rework promoted `preset_index` to face rank 1
+    // (preset recall is the module's headline gesture), so the two now AGREE
+    // and the old assertion went red for a change in ANOTHER file. That is
+    // coupling, not coverage — the literal was never the claim.
+    //
+    // THE CLAIM IS THAT THE CARD IS PINNED. An override REPLACES the resolved
+    // list, so `preset_index` sits on encoder 1 whatever `face.order` does next
+    // — which is exactly the protection that just proved itself: the face
+    // ranking moved underneath it and the Push card did not. An override
+    // agreeing with today's default is therefore NOT decoration; it is the
+    // reason the player's encoder 1 is stable across a face re-curation.
+    //
+    // What must NOT silently happen is the override quietly ceasing to bind,
+    // so both halves are asserted against the OVERRIDE, and the face default is
+    // checked for the property it is allowed to have either way.
+    expect(ids('cloudseed').indexOf('preset_index'), 'the override pins encoder 1').toBe(0);
+    expect(ids('cloudseed'), 'and it is a re-ORDER of the same picks, never a re-PICK').toHaveLength(
+      8,
+    );
+    // The face default must still CONTAIN the macro — if a future re-curation
+    // drops it out of the window entirely, the override becomes a re-PICK and
+    // the two lists stop being comparable, which is worth knowing.
+    expect(
+      ids('cloudseed', {}),
+      'the face window must still carry preset_index, or the override is no longer a re-order',
+    ).toContain('preset_index');
   });
 
   it('tidyVco groups the two oscillators before the filter', () => {
