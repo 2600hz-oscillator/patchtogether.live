@@ -51,14 +51,22 @@ const POLLS_PER_WINDOW = 8;
 /** Wall-clock cap per window — a bound on the failure, never the gate. */
 const WINDOW_CAP_MS = SLOW_RENDER ? 20_000 : 6_000;
 
+/** A poll whose RMS clears this counts as "audio has started". Value-based, so
+ *  it is renderer-independent by construction — the same 0.01 the existing
+ *  `snaredrum-roll.spec.ts` real-chain poller uses. */
+const START_FLOOR = 0.01;
+
 interface Hold {
   /** Max-hold peak across the window (liveness — robust to a trough). */
   peak: number;
   /** Max-hold RMS. */
   rms: number;
-  /** MIN RMS across the window (continuity — a pulsed/silent roll gaps to ~0). */
+  /** MIN RMS across the windows scored AFTER audio started (continuity). */
   minRms: number;
+  /** Polls taken. */
   polls: number;
+  /** Polls that counted toward `minRms` (i.e. after the first audible one). */
+  scored: number;
 }
 
 /**
@@ -66,6 +74,19 @@ interface Hold {
  * optionally running `onTick` before each poll so an action lands INSIDE the
  * observed window. Returns the poll count so the caller can assert the window
  * was really observed rather than assuming it.
+ *
+ * ⚠ `minRms` IS ONLY ACCUMULATED ONCE AUDIO HAS STARTED, and that is not a
+ * fudge — it is the difference between the two things the continuity assertion
+ * must tell apart. The scope's analyser ring is ~200 ms, so the FIRST poll
+ * after `mouse.down()` reads a ring still mostly full of PRE-ROLL SILENCE: a
+ * STARTUP TRANSIENT, not a gap. Scoring it made the assertion a race against
+ * how fast the main thread got from the pointer event to `openGate`, which is
+ * exactly the quantity that differs between a real GPU and SwiftShader —
+ * measured, as a 1-in-3 failure at `minRms = 0.00038` under
+ * `E2E_SWIFTSHADER=1`. The `started` gate is a VALUE threshold, so it is
+ * renderer-independent; `scored` is reported so "the roll never started" cannot
+ * pass vacuously as "no gaps observed". Same discipline (and the same floor) as
+ * the existing snaredrum-roll real-chain poller.
  */
 async function hold(page: Page, scopeId: string, onTick?: (i: number) => Promise<void>): Promise<Hold> {
   const deadline = Date.now() + WINDOW_CAP_MS;
@@ -73,6 +94,8 @@ async function hold(page: Page, scopeId: string, onTick?: (i: number) => Promise
   let rms = 0;
   let minRms = Infinity;
   let polls = 0;
+  let scored = 0;
+  let started = false;
   let i = 0;
   while (polls < POLLS_PER_WINDOW && Date.now() < deadline) {
     if (onTick) await onTick(i);
@@ -81,13 +104,17 @@ async function hold(page: Page, scopeId: string, onTick?: (i: number) => Promise
       const s = summarize(snap.ch1);
       if (s.peak > peak) peak = s.peak;
       if (s.rms > rms) rms = s.rms;
-      if (s.rms < minRms) minRms = s.rms;
+      if (s.rms > START_FLOOR) started = true;
+      if (started) {
+        if (s.rms < minRms) minRms = s.rms;
+        scored++;
+      }
       polls++;
     }
     i++;
     await page.waitForTimeout(60);
   }
-  return { peak, rms, minRms: Number.isFinite(minRms) ? minRms : 0, polls };
+  return { peak, rms, minRms: Number.isFinite(minRms) ? minRms : 0, polls, scored };
 }
 
 test('snaredrum face: the dock HIT and HOLD-TO-ROLL pads audition an UNPATCHED snare, and HARD writes the graph', async ({ page }) => {
@@ -167,11 +194,18 @@ test('snaredrum face: the dock HIT and HOLD-TO-ROLL pads audition an UNPATCHED s
 
   expect(rolling.polls, `polled ${POLLS_PER_WINDOW}× during the ROLL window (units: POLLS)`).toBe(POLLS_PER_WINDOW);
   expect(rolling.peak, 'holding ROLL runs the two-hand engine').toBeGreaterThan(0.05);
-  // CONTINUITY, the claim a one-shot audition could never make: EVERY window in
-  // a held roll carries energy. A pulsed retrigger would drop some to ~0.
+  // CONTINUITY, the claim a one-shot audition could never make: once the roll is
+  // running, EVERY window carries energy. A pulsed retrigger would drop some
+  // to ~0. `scored` is asserted FIRST so "the roll never started" cannot pass
+  // as "no gaps were observed" — a minimum over the empty set is not a claim.
+  expect(
+    rolling.scored,
+    `most of the ${POLLS_PER_WINDOW} ROLL windows were scored for continuity (units: POLLS) — ` +
+      `a roll that never started, or that died immediately, scores almost none`,
+  ).toBeGreaterThanOrEqual(POLLS_PER_WINDOW - 2);
   expect(
     rolling.minRms,
-    `every one of ${POLLS_PER_WINDOW} windows carried energy — a held roll SUSTAINS ` +
+    `every SCORED window carried energy — a held roll SUSTAINS ` +
       `(a gap would mean the gate is being re-struck, not held)`,
   ).toBeGreaterThan(0.001);
 
