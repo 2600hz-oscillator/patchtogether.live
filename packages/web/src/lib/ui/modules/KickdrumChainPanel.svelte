@@ -70,10 +70,13 @@
 </script>
 
 <div class="chain" data-testid="kickdrum-chain">
-  <!-- 1 · TITLE + HINT. The dock header prints the node's NAME; this prints
-       what the instrument IS, which is the thing a player opening an unfamiliar
-       module needs first. Both strings are the def's own (label + the opening
-       clause of its authored docs), never a second copy of the prose. -->
+  <!-- 1 · EYEBROW + HINT. The dock header prints the node's NAME and the band
+       header prints the module's TITLE (`layered kick · sub + body + click`);
+       this adds the descriptive HINT, which is what a player opening an
+       unfamiliar module needs and what neither of the other two says.
+       ⚠ The hint is a LITERAL here, not read from the def: `face` has no hint
+       field yet. It is one of the strings the faceplate platform's title/hint
+       block should own — see the file header. -->
   <header>
     <p class="eyebrow">voice</p>
     <h3>signal chain</h3>
@@ -109,55 +112,56 @@
        not just seen: stacking put them below the fold, which is the difference
        between a roster that selects and a roster that decorates. -->
   <div class="foot">
-  <div class="foot-col">
-  <section class="legend" aria-label="stage legend">
-    {#each KICKDRUM_LEGEND as l (l.kind)}
-      <p class:generator={l.kind === 'generator'} class:bus={l.kind === 'bus'} title={l.note}>
-        <span class="swatch" aria-hidden="true"></span>
-        <span class="lab">{l.label}</span>
-      </p>
-    {/each}
-  </section>
+    <div class="foot-col">
+      <section class="legend" aria-label="stage legend">
+        {#each KICKDRUM_LEGEND as l (l.kind)}
+          <p class:generator={l.kind === 'generator'} class:bus={l.kind === 'bus'} title={l.note}>
+            <span class="swatch" aria-hidden="true"></span>
+            <span class="lab">{l.label}</span>
+          </p>
+        {/each}
+      </section>
 
-  <section
-    class="xover"
-    aria-label="stereo crossover"
-    data-testid="kickdrum-crossover"
-    title="the low end stays phase-coherent; only the click widens"
-  >
-    <p class="cap">stereo crossover</p>
-    <div class="bar" style={`--spread:${crossover.spread}`}>
-      <span class="mono">{crossover.monoLabel}</span>
-      <span class="wide">{crossover.wideLabel}</span>
+      <section
+        class="xover"
+        aria-label="stereo crossover"
+        data-testid="kickdrum-crossover"
+        title="the low end stays phase-coherent; only the click widens"
+      >
+        <p class="cap">stereo crossover</p>
+        <div class="bar" style={`--spread:${crossover.spread}`}>
+          <span class="mono">{crossover.monoLabel}</span>
+          <span class="wide">{crossover.wideLabel}</span>
+        </div>
+      </section>
     </div>
-  </section>
-  </div>
 
-  <!-- PRESETS. They SELECT: each row stamps its calibrated values through
-       the ordinary param path (undoable, shared over collab, editable straight
-       afterwards) and records itself on `node.data.kickPreset` so the row that
-       was last recalled stays lit. -->
-  <section class="presets" aria-label="presets">
-    <p class="cap">presets</p>
-    <ul>
-      {#each KICKDRUM_PRESETS as p (p.id)}
-        <li>
-          <button
-            type="button"
-            class:active={activePreset === p.id}
-            aria-pressed={activePreset === p.id}
-            data-testid={`kickdrum-preset-${p.id}`}
-            title={`${p.label} · ${p.note}`}
-            onclick={() => selectKickdrumPreset(nodeId, p.id)}
-            data-active={activePreset === p.id}
-          >
-            <span class="p-name">{p.label}</span>
-            <span class="p-note">{p.note}</span>
-          </button>
-        </li>
-      {/each}
-    </ul>
-  </section>
+    <!-- PRESETS. They SELECT: each row stamps its calibrated values through the
+         ordinary param path (undoable, shared over collab, editable straight
+         afterwards) and records itself on `node.data.kickPreset` so the row that
+         was last recalled stays lit. That record is a history of the last
+         RECALL, not a claim that the patch is still pristine — which is what a
+         hardware preset button does and what a producer expects. -->
+    <section class="presets" aria-label="presets">
+      <p class="cap">presets</p>
+      <ul>
+        {#each KICKDRUM_PRESETS as p (p.id)}
+          <li>
+            <button
+              type="button"
+              class:active={activePreset === p.id}
+              aria-pressed={activePreset === p.id}
+              data-testid={`kickdrum-preset-${p.id}`}
+              title={`${p.label} · ${p.note}`}
+              onclick={() => selectKickdrumPreset(nodeId, p.id)}
+            >
+              <span class="p-name">{p.label}</span>
+              <span class="p-note">{p.note}</span>
+            </button>
+          </li>
+        {/each}
+      </ul>
+    </section>
   </div>
 </div>
 

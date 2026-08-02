@@ -28,8 +28,7 @@
 // Reads are pure projections off a node; the caller owns reactivity (the shell
 // via `nodeVersion(id)`).
 
-import { setNodeParam } from '$lib/graph/mutate';
-import { mutateNode } from '$lib/graph/mutate';
+import { mutateNode, setNodeParam } from '$lib/graph/mutate';
 import type { ModuleNode } from '$lib/graph/types';
 import type { SelectorOption } from '$lib/ui/controls';
 import { KICKDRUM_PRESETS, kickdrumPreset } from './kickdrum-face-model';
