@@ -645,7 +645,8 @@ export interface ModuleFace {
   /** The one-line description under the title ("three decoupled generators
    *  through one serial bus"). Omitted = no hint row. */
   hint?: string;
-  /** The HERO SLOT — a promoted control + the big glyph, above the bands. */
+  /** The HERO SLOT — the module PICTURE, a promoted control, its audition and
+   *  a few live readouts, above the bands. */
   hero?: ModuleFaceHero;
   /** The dock SIDEBAR — typed context blocks down the faceplate's right edge.
    *  DOCK-ONLY and rendered OUTSIDE the ModuleShell (DockFullView owns the
@@ -691,7 +692,12 @@ export interface FaceReadout {
 
 /**
  * The HERO SLOT — the top of the faceplate: the module's biggest control, its
- * audition, the big glyph and a few live readouts.
+ * audition, its own picture and a few live readouts.
+ *
+ * ⚠ A face that promotes a PICTURE (`cell`) suppresses the shell glyph at the
+ * dock — the glyph is a live trace of the OUTPUT and the picture is a picture
+ * of the PATCH, so painting both put an empty black rectangle beside the graph
+ * on a silent rack. The glyph is untouched at every other tier.
  *
  * ⚠ `control` / `action` PROMOTE a key out of its band — they do NOT duplicate
  * it. A duplicated key would emit a second `data-testid="control-<paramId>"`
