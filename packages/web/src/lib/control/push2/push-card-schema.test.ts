@@ -408,27 +408,74 @@ describe('the AUTHORED push cards', () => {
     expect(ids('dx7')).not.toContain('voiceCount');
   });
 
-  it('adsr reorders the face ranking into ENVELOPE order', () => {
-    expect(ids('adsr', {})).toEqual(['attack', 'release', 'sustain', 'decay']);
-    expect(ids('adsr')).toEqual(['attack', 'decay', 'sustain', 'release']);
+  // ── The overrides are NOT decoration ───────────────────────────────────
+  //
+  // Each case below states what the override ACHIEVES as a RELATION to whatever
+  // the module's curated face currently ranks — never as a literal copy of that
+  // ranking.
+  //
+  // ⚠ Copying the ranking is what the first draft did, and it was wrong for a
+  // reason worth writing down: `face.order` lives in another file and is
+  // re-curated on its own schedule. The 2026-08-02 face batch (#1276-#1280)
+  // rewrote adsr, lfo, tidyVco and kickdrum, and every literal-form assertion
+  // here went red — for a change that has nothing to do with the Push. A test
+  // that fails when an unrelated file is legitimately edited is coupling, not
+  // coverage. The claim actually worth gating is "the override does real work",
+  // and that claim is a DIFFERENCE, so assert the difference.
+
+  it('adsr REORDERS the face ranking into ENVELOPE order', () => {
+    const ENVELOPE = ['attack', 'decay', 'sustain', 'release'];
+    expect(ids('adsr')).toEqual(ENVELOPE);
+    // The override earns its keep only if the face does not already say this.
+    expect(ids('adsr', {})).not.toEqual(ENVELOPE);
+    // …and it is a re-ORDER, not a re-PICK: the same four controls either way.
+    expect([...ids('adsr', {})].sort()).toEqual([...ENVELOPE].sort());
   });
 
-  it('cloudseed promotes the preset macro from rank 8 to encoder 1', () => {
-    expect(ids('cloudseed', {}).indexOf('preset_index')).toBe(7);
+  it('cloudseed promotes the preset macro to encoder 1', () => {
+    // 46 params: the face ranks the output mix first and buries the macro that
+    // moves everything else. Position 0 is the claim; where the face happens to
+    // put it today is not.
     expect(ids('cloudseed').indexOf('preset_index')).toBe(0);
+    expect(ids('cloudseed', {}).indexOf('preset_index')).toBeGreaterThan(0);
   });
 
   it('tidyVco groups the two oscillators before the filter', () => {
-    expect(ids('tidyVco', {})).toEqual([
-      'shape1', 'pw', 'cutoff', 'detune', 'oct2', 'res', 'fold', 'env',
-    ]);
-    expect(ids('tidyVco').slice(0, 3)).toEqual(['shape1', 'shape2', 'mix']);
+    const OSC = ['shape1', 'shape2', 'mix'];
+    expect(ids('tidyVco').slice(0, 3)).toEqual(OSC);
+    // The face interleaves osc and filter, so it does NOT open on the osc
+    // section — that interleaving is the whole reason the override exists.
+    expect(ids('tidyVco', {}).slice(0, 3)).not.toEqual(OSC);
   });
 
-  it('kickdrum keeps the three pitch-envelope controls adjacent', () => {
-    expect(ids('kickdrum').slice(0, 3)).toEqual(['tune', 'pitch_amt', 'pitch_time']);
-    // The face window separates them (pitch_amt rank 4, pitch_time rank 7).
-    const faced = ids('kickdrum', {});
-    expect(faced.indexOf('pitch_time') - faced.indexOf('pitch_amt')).toBeGreaterThan(1);
+  it('kickdrum keeps the three pitch-envelope controls adjacent, at the head', () => {
+    const PITCH = ['tune', 'pitch_amt', 'pitch_time'];
+    expect(ids('kickdrum').slice(0, 3)).toEqual(PITCH);
+    // The face window does not hand you the trio together. (Today it is the
+    // strongest form of "not adjacent" — pitch_time is not in the window at
+    // all — but a re-curated face may change WHY this holds without changing
+    // WHETHER it holds, which is exactly why this is a relation.)
+    expect(ids('kickdrum', {}).slice(0, 3)).not.toEqual(PITCH);
+  });
+
+  it('SWEEP: every override either changes the card or is a documented restatement', () => {
+    // The general form of the four cases above, so a NEW override cannot be
+    // added as decoration without either changing something or being declared.
+    // Guards the guard: if `resolvePushCardControls` ever stopped honouring the
+    // override tier, `changed` would empty out and this would fail on count.
+    const RESTATEMENTS = new Set([
+      // Two params, one sane order — listed in push-card-config.ts so the card
+      // is STATED rather than inferred. Identical to the face by construction.
+      'vca',
+    ]);
+    const changed: string[] = [];
+    for (const type of Object.keys(AUTHORED)) {
+      const same = ids(type).join() === ids(type, {}).join();
+      if (same) expect(RESTATEMENTS, `${type} override matches its face default`).toContain(type);
+      else changed.push(type);
+    }
+    expect(changed.length, 'most overrides must genuinely re-shape the card').toBeGreaterThanOrEqual(
+      Object.keys(AUTHORED).length - RESTATEMENTS.size,
+    );
   });
 });
