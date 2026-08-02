@@ -409,7 +409,11 @@ describe('the AUTHORED push cards', () => {
   });
 
   it('adsr reorders the face ranking into ENVELOPE order', () => {
-    expect(ids('adsr', {})).toEqual(['attack', 'release', 'sustain', 'decay']);
+    // ACCEPT-LOOP (2026-08-02): the face side moved because `adsr.face.order`
+    // is now RELEASE-FIRST (#1276) — release is the stage a player reaches for
+    // first when a patch rings on. The override is unchanged; the CONTRAST this
+    // test exists to prove is intact, and is what the two assertions encode.
+    expect(ids('adsr', {})).toEqual(['release', 'attack', 'sustain', 'decay']);
     expect(ids('adsr')).toEqual(['attack', 'decay', 'sustain', 'release']);
   });
 
@@ -419,16 +423,40 @@ describe('the AUTHORED push cards', () => {
   });
 
   it('tidyVco groups the two oscillators before the filter', () => {
+    // ACCEPT-LOOP (2026-08-02): the batch-F re-rank (#1273) put CUTOFF at rank 1
+    // (the one control hot in every patch state) and DEMOTED PW to rank 6 — PW
+    // is provably inert at the spawn defaults, proved on the DSP in
+    // tidy-vco-face.test.ts. Same eight ids, new order; the override is
+    // unchanged and still leads with the two oscillators.
     expect(ids('tidyVco', {})).toEqual([
-      'shape1', 'pw', 'cutoff', 'detune', 'oct2', 'res', 'fold', 'env',
+      'cutoff', 'shape1', 'res', 'detune', 'oct2', 'pw', 'fold', 'env',
     ]);
     expect(ids('tidyVco').slice(0, 3)).toEqual(['shape1', 'shape2', 'mix']);
   });
 
   it('kickdrum keeps the three pitch-envelope controls adjacent', () => {
     expect(ids('kickdrum').slice(0, 3)).toEqual(['tune', 'pitch_amt', 'pitch_time']);
-    // The face window separates them (pitch_amt rank 4, pitch_time rank 7).
+    // ACCEPT-LOOP (2026-08-02): the batch-F re-rank (#1277) ended kickdrum's
+    // LANE budget at rank 6, so `pitch_time` moved to rank 11 — DOCK-ONLY, and
+    // therefore not in the 8-slot face window at all. The old assertion read
+    // `indexOf(pitch_time) - indexOf(pitch_amt) > 1` and got -4, because
+    // indexOf returned -1 for an absent id: it was measuring POSITION on a
+    // value that no longer has one.
+    //
+    // The property this test is actually for is "the override does real work —
+    // the face window does NOT keep the pitch pair together". Absent is a
+    // STRONGER form of separated, so it is admitted, but nothing else is: the
+    // pitch_amt anchor is asserted present (otherwise the clause below could
+    // pass vacuously with BOTH ids missing), and the distance test is now
+    // |signed| so an immediately-BEFORE neighbour fails too — the original
+    // signed `> 1` would have let that through.
     const faced = ids('kickdrum', {});
-    expect(faced.indexOf('pitch_time') - faced.indexOf('pitch_amt')).toBeGreaterThan(1);
+    const iAmt = faced.indexOf('pitch_amt');
+    const iTime = faced.indexOf('pitch_time');
+    expect(iAmt, 'pitch_amt is a lane rank and must be IN the face window').toBeGreaterThanOrEqual(0);
+    expect(
+      iTime === -1 || Math.abs(iTime - iAmt) > 1,
+      `the face window must NOT hold the pitch pair adjacent — pitch_amt@${iAmt}, pitch_time@${iTime}`,
+    ).toBe(true);
   });
 });
