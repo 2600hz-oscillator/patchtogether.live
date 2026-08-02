@@ -409,7 +409,10 @@ describe('the AUTHORED push cards', () => {
   });
 
   it('adsr reorders the face ranking into ENVELOPE order', () => {
-    expect(ids('adsr', {})).toEqual(['attack', 'release', 'sustain', 'decay']);
+    // FACE side re-pinned 2026-08-02: #1276 gave adsr a deliberate RELEASE-FIRST
+    // face ranking. The contrast this test exists for is intact — the authored
+    // card still overrides the face into A-D-S-R.
+    expect(ids('adsr', {})).toEqual(['release', 'attack', 'sustain', 'decay']);
     expect(ids('adsr')).toEqual(['attack', 'decay', 'sustain', 'release']);
   });
 
@@ -419,16 +422,27 @@ describe('the AUTHORED push cards', () => {
   });
 
   it('tidyVco groups the two oscillators before the filter', () => {
+    // FACE side re-pinned 2026-08-02: #1273 made CUTOFF lead and demoted PW.
+    // The contrast is intact — the authored card still leads with the two
+    // oscillators and the mix.
     expect(ids('tidyVco', {})).toEqual([
-      'shape1', 'pw', 'cutoff', 'detune', 'oct2', 'res', 'fold', 'env',
+      'cutoff', 'shape1', 'res', 'detune', 'oct2', 'pw', 'fold', 'env',
     ]);
     expect(ids('tidyVco').slice(0, 3)).toEqual(['shape1', 'shape2', 'mix']);
   });
 
   it('kickdrum keeps the three pitch-envelope controls adjacent', () => {
     expect(ids('kickdrum').slice(0, 3)).toEqual(['tune', 'pitch_amt', 'pitch_time']);
-    // The face window separates them (pitch_amt rank 4, pitch_time rank 7).
+    // FACE side re-pinned 2026-08-02. The old assertion measured
+    // `indexOf('pitch_time') - indexOf('pitch_amt') > 1`; after #1277 rebuilt
+    // the kickdrum face into 5 bands, `pitch_time` is not in the 8-slot face
+    // window AT ALL, so that subtraction read `-1 - 3 = -4` — arithmetic on a
+    // not-found sentinel, which is a broken measurement rather than a finding.
+    // Stated directly instead, and it is the STRONGER form of the same point:
+    // the face keeps `pitch_amt` but drops `pitch_time`, so the authored card
+    // putting the three adjacent is a real override, not a coincidence.
     const faced = ids('kickdrum', {});
-    expect(faced.indexOf('pitch_time') - faced.indexOf('pitch_amt')).toBeGreaterThan(1);
+    expect(faced).toContain('pitch_amt');
+    expect(faced).not.toContain('pitch_time');
   });
 });
