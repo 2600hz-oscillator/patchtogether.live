@@ -99,9 +99,13 @@ describe('the LIVE registry — which faces are tabbed today', () => {
     const counts: string[] = [];
     for (const def of listModuleDefs() as unknown as (FaceDefLike & { type: string })[]) {
       if (!def.face) continue;
-      const n = dockFacePlan(def).length;
-      counts.push(`${def.type}=${n}`);
-      if (dockTabPlan(dockFacePlan(def))) tabbed.push(def.type);
+      // `dockFacePlan` is `FaceBand[] | null` — a faced def with nothing
+      // rankable plans no dock at all. Resolve it ONCE and narrow, rather than
+      // calling it twice and dereferencing the first result.
+      const plan = dockFacePlan(def);
+      if (!plan) continue;
+      counts.push(`${def.type}=${plan.length}`);
+      if (dockTabPlan(plan)) tabbed.push(def.type);
     }
     expect(
       tabbed.sort(),
