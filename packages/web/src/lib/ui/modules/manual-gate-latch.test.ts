@@ -1,4 +1,4 @@
-// packages/web/src/lib/ui/modules/snaredrum-roll-latch.test.ts
+// packages/web/src/lib/ui/modules/manual-gate-latch.test.ts
 //
 // The held-gate latch, proved as a state machine. The claim under test is not
 // "the functions return plausible objects" — it is THE INVARIANT: after any
@@ -8,28 +8,28 @@
 
 import { describe, it, expect } from 'vitest';
 import {
-  closeRoll,
-  emptyRollLatch,
-  isRolling,
-  openRoll,
-  panicRoll,
-  type RollLatchState,
-} from './snaredrum-roll-latch';
+  closeGate,
+  emptyGateLatch,
+  isGateOpen,
+  openGate,
+  panicGates,
+  type GateLatchState,
+} from './manual-gate-latch';
 
-describe('snaredrum roll latch — the held-gate state machine', () => {
+describe('manual gate latch — the held-audition state machine', () => {
   it('opens and closes one node, reporting each edge exactly once', () => {
-    const a = openRoll(emptyRollLatch(), 'n1');
+    const a = openGate(emptyGateLatch(), 'n1');
     expect(a.opened, 'the first press OPENS').toBe(true);
-    expect(isRolling(a.state, 'n1')).toBe(true);
+    expect(isGateOpen(a.state, 'n1')).toBe(true);
 
-    const b = closeRoll(a.state, 'n1');
+    const b = closeGate(a.state, 'n1');
     expect(b.closed, 'the release CLOSES').toBe(true);
-    expect(isRolling(b.state, 'n1')).toBe(false);
+    expect(isGateOpen(b.state, 'n1')).toBe(false);
   });
 
   it('a repeated press does NOT re-open (no duplicate openGate at one timestamp)', () => {
-    const a = openRoll(emptyRollLatch(), 'n1');
-    const again = openRoll(a.state, 'n1');
+    const a = openGate(emptyGateLatch(), 'n1');
+    const again = openGate(a.state, 'n1');
     expect(again.opened, 'the second press is a no-op').toBe(false);
     expect(again.state.open, 'and it does not double-list the node').toEqual(['n1']);
   });
@@ -37,16 +37,16 @@ describe('snaredrum roll latch — the held-gate state machine', () => {
   it('a SECOND close is a no-op — the button release and the window panic both fire', () => {
     // The real sequence on an ordinary pointerup: <Button> dispatches
     // onGate(false) AND the window-level pointerup panic runs. Both call in.
-    const held = openRoll(emptyRollLatch(), 'n1').state;
-    const viaButton = closeRoll(held, 'n1');
+    const held = openGate(emptyGateLatch(), 'n1').state;
+    const viaButton = closeGate(held, 'n1');
     expect(viaButton.closed).toBe(true);
-    const viaPanic = closeRoll(viaButton.state, 'n1');
+    const viaPanic = closeGate(viaButton.state, 'n1');
     expect(viaPanic.closed, 'the redundant close reports NOTHING to do').toBe(false);
     expect(viaPanic.state.open).toEqual([]);
   });
 
   it('closing a node that never rolled is a no-op', () => {
-    const r = closeRoll(emptyRollLatch(), 'ghost');
+    const r = closeGate(emptyGateLatch(), 'ghost');
     expect(r.closed).toBe(false);
     expect(r.state.open).toEqual([]);
   });
@@ -55,34 +55,34 @@ describe('snaredrum roll latch — the held-gate state machine', () => {
     // Two snaredrums can share the dock (fullViewNodeIds is a Set), and a
     // multi-touch player can hold both pads. An "at most one" latch would
     // silently kill the first drum's roll on the second press.
-    let s: RollLatchState = emptyRollLatch();
-    s = openRoll(s, 'n1').state;
-    s = openRoll(s, 'n2').state;
+    let s: GateLatchState = emptyGateLatch();
+    s = openGate(s, 'n1').state;
+    s = openGate(s, 'n2').state;
     expect([...s.open].sort()).toEqual(['n1', 'n2']);
 
-    const closed = closeRoll(s, 'n1');
+    const closed = closeGate(s, 'n1');
     expect(closed.closed).toBe(true);
-    expect(isRolling(closed.state, 'n1')).toBe(false);
-    expect(isRolling(closed.state, 'n2'), 'the other hand is still rolling').toBe(true);
+    expect(isGateOpen(closed.state, 'n1')).toBe(false);
+    expect(isGateOpen(closed.state, 'n2'), 'the other hand is still rolling').toBe(true);
   });
 
   it('PANIC returns EVERY open gate, in open order, and empties the latch', () => {
-    let s: RollLatchState = emptyRollLatch();
-    s = openRoll(s, 'n1').state;
-    s = openRoll(s, 'n2').state;
-    s = openRoll(s, 'n3').state;
-    s = closeRoll(s, 'n2').state;
+    let s: GateLatchState = emptyGateLatch();
+    s = openGate(s, 'n1').state;
+    s = openGate(s, 'n2').state;
+    s = openGate(s, 'n3').state;
+    s = closeGate(s, 'n2').state;
 
-    const p = panicRoll(s);
+    const p = panicGates(s);
     expect(p.closed, 'the panic hands the caller exactly the gates it must close').toEqual(['n1', 'n3']);
     expect(p.state.open, 'and the latch is empty afterwards').toEqual([]);
   });
 
   it('PANIC is idempotent — a second panic closes nothing', () => {
-    const s = openRoll(emptyRollLatch(), 'n1').state;
-    const first = panicRoll(s);
+    const s = openGate(emptyGateLatch(), 'n1').state;
+    const first = panicGates(s);
     expect(first.closed).toEqual(['n1']);
-    const second = panicRoll(first.state);
+    const second = panicGates(first.state);
     expect(second.closed).toEqual([]);
     expect(second.state.open).toEqual([]);
   });
@@ -93,7 +93,7 @@ describe('snaredrum roll latch — the held-gate state machine', () => {
     // `net` counts opens minus reported closes per node; at the end, a node
     // with net > 0 MUST still be listed as open (i.e. still reachable by a
     // panic). A node with net > 0 and NOT open is a leaked gate.
-    let s: RollLatchState = emptyRollLatch();
+    let s: GateLatchState = emptyGateLatch();
     const net = new Map<string, number>();
     const ids = ['a', 'b', 'c'];
     let seed = 20260802;
@@ -103,15 +103,15 @@ describe('snaredrum roll latch — the held-gate state machine', () => {
       const id = ids[next() % ids.length]!;
       const op = next() % 10;
       if (op < 5) {
-        const r = openRoll(s, id);
+        const r = openGate(s, id);
         s = r.state;
         if (r.opened) net.set(id, (net.get(id) ?? 0) + 1);
       } else if (op < 9) {
-        const r = closeRoll(s, id);
+        const r = closeGate(s, id);
         s = r.state;
         if (r.closed) net.set(id, (net.get(id) ?? 0) - 1);
       } else {
-        const r = panicRoll(s);
+        const r = panicGates(s);
         s = r.state;
         for (const n of r.closed) net.set(n, (net.get(n) ?? 0) - 1);
       }
@@ -121,8 +121,8 @@ describe('snaredrum roll latch — the held-gate state machine', () => {
         expect(v).toBeLessThanOrEqual(1);
         expect(
           v === 1,
-          `${n}: net=${v} but isRolling=${isRolling(s, n)} — an unreported open gate ROLLS FOREVER`,
-        ).toBe(isRolling(s, n));
+          `${n}: net=${v} but isGateOpen=${isGateOpen(s, n)} — an unreported open gate ROLLS FOREVER`,
+        ).toBe(isGateOpen(s, n));
       }
     }
   });
@@ -133,25 +133,25 @@ describe('snaredrum roll latch — the held-gate state machine', () => {
     // the FIRST gate) and assert the invariant clause catches it. This is the
     // exact bug shape — state says "nothing held", the engine still has a gate
     // open — and it must be visible to the assertion above.
-    const leakyPanic = (state: RollLatchState) => ({
-      state: emptyRollLatch(),
+    const leakyPanic = (state: GateLatchState) => ({
+      state: emptyGateLatch(),
       closed: state.open.slice(0, 1),
     });
 
-    let s: RollLatchState = emptyRollLatch();
-    s = openRoll(s, 'a').state;
-    s = openRoll(s, 'b').state;
+    let s: GateLatchState = emptyGateLatch();
+    s = openGate(s, 'a').state;
+    s = openGate(s, 'b').state;
     const p = leakyPanic(s);
     s = p.state;
     const net = new Map<string, number>([['a', 1], ['b', 1]]);
     for (const n of p.closed) net.set(n, (net.get(n) ?? 0) - 1);
 
     // 'b' reads net=1 (an open gate the caller was never told about) while
-    // isRolling(s,'b') is false — precisely the clause the sweep asserts.
+    // isGateOpen(s,'b') is false — precisely the clause the sweep asserts.
     expect(net.get('b')).toBe(1);
-    expect(isRolling(s, 'b')).toBe(false);
+    expect(isGateOpen(s, 'b')).toBe(false);
     expect(
-      () => expect(net.get('b') === 1).toBe(isRolling(s, 'b')),
+      () => expect(net.get('b') === 1).toBe(isGateOpen(s, 'b')),
       'the invariant clause must reject a leaked gate',
     ).toThrow();
   });

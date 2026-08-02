@@ -132,7 +132,9 @@ export const snaredrumDef: AudioModuleDef = {
   // would force a re-capture of a byte-identical baseline; both pads instead
   // drive host-side ConstantSources summed into the SAME worklet inputs a cable
   // feeds (see the factory), through the karplus/samsloop `read(key)` seam.
-  // ONE implementation for both surfaces: ui/modules/snaredrum-strike-actions.
+  // ONE implementation for both surfaces, and it is the RACK-WIDE one every
+  // struck voice uses: ui/modules/manual-strike-actions (fireManualStrike for
+  // the hit, setManualGate for the held roll).
   controlFamilies: [
     { id: 'snaredrum-hit',  label: 'Hit',  kind: 'other', testidPrefix: 'snaredrum-hit' },
     { id: 'snaredrum-roll', label: 'Roll', kind: 'other', testidPrefix: 'snaredrum-roll' },
@@ -530,7 +532,7 @@ export const snaredrumDef: AudioModuleDef = {
         // ⚠ CLOSE THE ROLL GATE BEFORE STOPPING ITS SOURCE. A node deleted
         // mid-hold is one of the release edges the button itself can never see
         // (its <Button> unmounts with the pane), and a gate left open is a drum
-        // that rolls forever — see ui/modules/snaredrum-roll-latch.ts.
+        // that rolls forever — see ui/modules/manual-gate-latch.ts.
         try { closeGate(rollCs, ctx.currentTime); } catch { /* */ }
         try { silence.stop(); } catch { /* already stopped */ }
         try { silence.disconnect(); } catch { /* */ }

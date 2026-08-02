@@ -3,7 +3,7 @@
 // THE HOST-SIDE AUDIO WIRING FOR THE TWO AUDITIONS, against the REAL factory.
 //
 // ⚠ WHY THIS FILE EXISTS — the kickdrum #1277 lesson, applied before it bites.
-// Every OTHER gate around this feature drives a FAKE. `snaredrum-strike-actions
+// Every OTHER gate around this feature drives a FAKE. `manual-strike-actions
 // .test.ts` injects a `fakeEngine()`; `snaredrum-face.test.ts` reads selector
 // projections; `module-face-lint`, `contract-lock` and `module-docs-*` read the
 // DEF; faces-parity presses the button and asserts `aria-pressed` moved. Delete
@@ -24,7 +24,7 @@
 
 import { describe, it, expect, vi } from 'vitest';
 import { snaredrumDef } from './snaredrum';
-import { SNAREDRUM_HIT_KEY, SNAREDRUM_ROLL_KEY } from '$lib/ui/modules/snaredrum-strike-actions';
+import { MANUAL_GATE_KEY, MANUAL_STRIKE_KEY } from '$lib/ui/modules/manual-strike-actions';
 import { GATE_HI, TRIGGER_PULSE_S } from '$lib/audio/gate-trigger';
 import type { ModuleNode } from '$lib/graph/types';
 
@@ -126,8 +126,8 @@ describe('snaredrum factory — the two auditions are really wired to their own 
 
   it('answers BOTH read keys with a callable, and nothing else', async () => {
     const { handle } = await build();
-    expect(typeof handle.read?.(SNAREDRUM_HIT_KEY)).toBe('function');
-    expect(typeof handle.read?.(SNAREDRUM_ROLL_KEY)).toBe('function');
+    expect(typeof handle.read?.(MANUAL_STRIKE_KEY)).toBe('function');
+    expect(typeof handle.read?.(MANUAL_GATE_KEY)).toBe('function');
     expect(handle.read?.('somethingElse'), 'the seam is not a catch-all').toBeUndefined();
     expect(handle.read?.('manual'), 'nor a prefix match').toBeUndefined();
   });
@@ -151,7 +151,7 @@ describe('snaredrum factory — the two auditions are really wired to their own 
     const { handle, hit, roll } = await build();
     hit.offset.events.length = 0;
     roll.offset.events.length = 0;
-    (handle.read!(SNAREDRUM_HIT_KEY) as () => void)();
+    (handle.read!(MANUAL_STRIKE_KEY) as () => void)();
 
     // The `$lib/audio/gate-trigger` triangle — asserted against the SHARED
     // constant, never a re-typed 0.005.
@@ -165,7 +165,7 @@ describe('snaredrum factory — the two auditions are really wired to their own 
 
   it('a second HIT is a second pulse — never a latch', async () => {
     const { handle, hit } = await build();
-    const fire = handle.read!(SNAREDRUM_HIT_KEY) as () => void;
+    const fire = handle.read!(MANUAL_STRIKE_KEY) as () => void;
     hit.offset.events.length = 0;
     fire();
     fire();
@@ -180,7 +180,7 @@ describe('snaredrum factory — the two auditions are really wired to their own 
     const { handle, hit, roll } = await build();
     hit.offset.events.length = 0;
     roll.offset.events.length = 0;
-    const setGate = handle.read!(SNAREDRUM_ROLL_KEY) as (high: boolean) => void;
+    const setGate = handle.read!(MANUAL_GATE_KEY) as (high: boolean) => void;
 
     setGate(true);
     expect(roll.offset.events).toEqual([{ kind: 'set', value: 1, time: NOW }]);
@@ -200,7 +200,7 @@ describe('snaredrum factory — the two auditions are really wired to their own 
     // graph saw was `openGate`. Order is load-bearing — closing AFTER stop()
     // would schedule onto a stopped source.
     const { handle, hit, roll } = await build();
-    const setGate = handle.read!(SNAREDRUM_ROLL_KEY) as (high: boolean) => void;
+    const setGate = handle.read!(MANUAL_GATE_KEY) as (high: boolean) => void;
     setGate(true);
     roll.offset.events.length = 0;
 
