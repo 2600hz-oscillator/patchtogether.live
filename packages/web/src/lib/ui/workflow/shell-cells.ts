@@ -47,7 +47,7 @@ import {
   sixstrumPresetName,
   sixstrumSelectorOptions,
 } from '$lib/ui/modules/sixstrum-preset-actions';
-import { fireKickdrumStrike } from '$lib/ui/modules/kickdrum-strike-actions';
+import { fireManualStrike } from '$lib/ui/modules/manual-strike-actions';
 
 /** A dropdown over a NAMED roster that lives in node.data (not a param). */
 export interface ShellSelectorCell {
@@ -214,18 +214,38 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
       },
     },
   },
+  karplus: {
+    // THE PLUCK. karplus has NO exciter and NO envelope generator — a noise
+    // burst is fired into a recirculating delay-line string and everything you
+    // hear is that burst dying — so with nothing patched into trigger_in the
+    // module is not quiet, it is MUTE, and the dock full-view offered nine
+    // controls over a voice that could not be heard at all.
+    //
+    // Fires the SAME host-side trigger source the legacy card's PLUCK button
+    // fires (manual-strike-actions → the factory's `manualTrigger` read key),
+    // so there is one implementation, not two. Not a param: it writes nothing
+    // to the graph (see that module's header), which is also why `strike` is
+    // not a ParamDef here — a persisted 0/1 for a one-shot, plus a ninth
+    // parameterDescriptor the worklet does not have.
+    'karplus-strike-{n}': {
+      kind: 'action',
+      label: 'pluck',
+      title: 'Audition: pluck the string once (identical to a trigger_in rising edge)',
+      onFire: (nodeId) => { fireManualStrike(nodeId); },
+    },
+  },
   kickdrum: {
     // THE AUDITION. A kick with nothing patched into trigger_in is SILENT, so
     // without this the dock full-view offers 25 controls over a voice you
     // cannot hear — while tomtom, karplus and sixstrum can all be auditioned.
     // Fires the SAME host-side trigger source the legacy card's STRIKE button
-    // fires (kickdrum-strike-actions), so there is one implementation, not two.
+    // fires (manual-strike-actions), so there is one implementation, not two.
     // Not a param: it writes nothing to the graph (see that module's header).
     'kickdrum-strike-{n}': {
       kind: 'action',
       label: 'strike',
       title: 'Audition: hit the drum once (identical to a trigger_in rising edge)',
-      onFire: (nodeId) => { fireKickdrumStrike(nodeId); },
+      onFire: (nodeId) => { fireManualStrike(nodeId); },
     },
   },
   sixstrum: {

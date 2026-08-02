@@ -1,22 +1,24 @@
-// packages/web/src/lib/ui/modules/kickdrum-strike-actions.test.ts
+// packages/web/src/lib/ui/modules/manual-strike-actions.test.ts
 //
-// The browser-free pre-gate for KICK DRUM's AUDITION — the ONE seam the legacy
-// card's STRIKE button and the RACKLINE shell's `kickdrum-strike` action cell
-// both call.
+// The browser-free pre-gate for the SHARED AUDITION seam — the ONE function a
+// struck voice's legacy-card audition button and its RACKLINE shell `action`
+// cell both call (kickdrum's STRIKE and karplus's PLUCK today).
 //
 // What it pins:
 //   1. the happy path fires EXACTLY ONE strike, at the node it was handed;
 //   2. every way the audition can be unavailable resolves to null rather than
 //      throwing (an audition that cannot fire is a no-op, never an error over
-//      a rack) — and they are four DISTINCT states, not one;
+//      a rack) — THREE distinct branches, not one (and not four: this header
+//      said four while the test body already explained why it is three);
 //   3. the strike writes NOTHING to the graph. This is the property that makes
 //      it safe to lean on, and it is the one a future refactor is most likely
 //      to break by "just making it a param";
-//   4. `fireKickdrumStrike` reports whether a strike actually happened, so a
+//   4. `fireManualStrike` reports whether a strike actually happened, so a
 //      caller's press flash follows the truth and not the click.
 //
-// The DOM-level twin is e2e/tests/kickdrum-face.spec.ts, which clicks the real
-// cell and listens for audible RMS at the output.
+// The DOM-level twins are e2e/tests/kickdrum-face.spec.ts and
+// e2e/tests/karplus-face.spec.ts, which click the real cell and listen for
+// audible RMS at the module's own output.
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { patch, ydoc, LOCAL_ORIGIN } from '$lib/graph/store';
@@ -24,11 +26,11 @@ import type { ModuleNode } from '$lib/graph/types';
 import { setActiveEngine } from '$lib/audio/engine-ref';
 import type { PatchEngine } from '$lib/audio/engine';
 import {
-  KICKDRUM_STRIKE_KEY,
-  fireKickdrumStrike,
+  MANUAL_STRIKE_KEY,
+  fireManualStrike,
   resolveManualStrike,
   type StrikeEngineLike,
-} from './kickdrum-strike-actions';
+} from './manual-strike-actions';
 
 const NID = 'kickdrum-strike-test-node';
 
@@ -56,14 +58,14 @@ function fakeEngine(): { engine: StrikeEngineLike; fired: string[]; reads: strin
     engine: {
       read(node: ModuleNode, key: string): unknown {
         reads.push(`${node.id}:${key}`);
-        if (key !== KICKDRUM_STRIKE_KEY) return undefined;
+        if (key !== MANUAL_STRIKE_KEY) return undefined;
         return () => fired.push(node.id);
       },
     },
   };
 }
 
-describe('kickdrum audition — resolveManualStrike (pure)', () => {
+describe('manual-strike audition — resolveManualStrike (pure)', () => {
   it('resolves the node’s one-shot strike and fires it EXACTLY once, at that node', () => {
     const node = { id: 'kd-1' } as unknown as ModuleNode;
     const { engine, fired, reads } = fakeEngine();
@@ -104,7 +106,7 @@ describe('kickdrum audition — resolveManualStrike (pure)', () => {
   });
 });
 
-describe('kickdrum audition — fireKickdrumStrike (the shared wiring)', () => {
+describe('manual-strike audition — fireManualStrike (the shared wiring)', () => {
   beforeEach(() => {
     makeNode();
   });
@@ -119,17 +121,17 @@ describe('kickdrum audition — fireKickdrumStrike (the shared wiring)', () => {
     const { engine, fired } = fakeEngine();
     setActiveEngine(engine as unknown as PatchEngine);
 
-    expect(fireKickdrumStrike(NID)).toBe(true);
+    expect(fireManualStrike(NID)).toBe(true);
     expect(fired).toEqual([NID]);
   });
 
   it('is a NO-OP (false, no throw) with no engine, and for an unknown node id', () => {
     setActiveEngine(null);
-    expect(fireKickdrumStrike(NID)).toBe(false);
+    expect(fireManualStrike(NID)).toBe(false);
 
     const { engine, fired } = fakeEngine();
     setActiveEngine(engine as unknown as PatchEngine);
-    expect(fireKickdrumStrike('no-such-node')).toBe(false);
+    expect(fireManualStrike('no-such-node')).toBe(false);
     expect(fired).toEqual([]);
   });
 
@@ -141,8 +143,8 @@ describe('kickdrum audition — fireKickdrumStrike (the shared wiring)', () => {
       params: patch.nodes[NID]!.params,
       data: (patch.nodes[NID] as unknown as ModuleNode).data,
     });
-    expect(fireKickdrumStrike(NID)).toBe(true);
-    expect(fireKickdrumStrike(NID)).toBe(true);
+    expect(fireManualStrike(NID)).toBe(true);
+    expect(fireManualStrike(NID)).toBe(true);
     const after = JSON.stringify({
       params: patch.nodes[NID]!.params,
       data: (patch.nodes[NID] as unknown as ModuleNode).data,

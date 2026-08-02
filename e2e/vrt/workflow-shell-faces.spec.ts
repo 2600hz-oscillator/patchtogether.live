@@ -56,7 +56,7 @@ const FACES = [
   { type: 'shimmershine', pages: 3 },
   { type: 'qbrt', pages: 2 },
   // batch 3 — the plucked-string voice + the four workhorse processors
-  { type: 'karplus', pages: 3 },
+  { type: 'karplus', pages: 2 },
   { type: 'filter', pages: 2 },
   { type: 'mixer', pages: 2 },
   { type: 'delay', pages: 2 },
