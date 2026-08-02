@@ -2289,18 +2289,20 @@ at 10 s, turn MATERIAL to 0, and <code>rings for</code> collapses to 0.775 s whi
 <h3 class="sec">the arithmetic</h3>
 <table class="arith">
 <tr><th>lane</th><th>delta across all 18</th><th>gating?</th></tr>
-<tr><td><b>contract-lock</b></td><td><b>+2 lines total</b> — qbrt's ping family and snaredrum's hero
-panel family. Sixteen of eighteen cost <b>zero</b>: <code>face</code> is UI metadata and
-<code>contract-signature.ts</code> has no <code>face</code> branch.</td><td>unit</td></tr>
+<tr><td><b>contract-lock</b></td><td><b>+3 lines total</b> — qbrt's ping family, snaredrum's hero
+panel family, karplus's hero panel family (<b>0 if the karplus hero-cell revert is taken</b>).
+Fifteen of eighteen cost <b>zero</b>: <code>face</code> is UI metadata and
+<code>contract-signature.ts</code> has no <code>face</code> branch. A <code>custom</code> SIDEBAR
+panel (filter, cloudseed) costs zero contract lines.</td><td>unit</td></tr>
 <tr><td><b>ART</b></td><td><b>NIL.</b> PF-11 already landed, so a face edit on the source-SHA-pinned
 defs (delay et al.) is free, and <code>pattern3-face-pin.test.ts</code> keeps it that way. No
 <code>.f32</code>, no <code>.sha</code>, no fingerprint manifest moves.</td><td>art</td></tr>
 <tr><td><b>attest</b></td><td><b>NIL</b> — verified per module, not assumed. All eighteen are AUDIO
 defs (out of the WebGL basis) and none of the touched shell files are in the collab or grand
 basis.</td><td>—</td></tr>
-<tr><td><b>faces-parity (REQUIRED e2e)</b></td><td><b>+2 cells total</b> (qbrt's ping, karplus's
-panel). A hero PROMOTES a key; it never adds one, so a hero costs zero cells. At the measured
-~0.8 s/cell on the SwiftShader runner that is <b>≈ +1.6 s</b>.</td><td><b>yes</b></td></tr>
+<tr><td><b>faces-parity (REQUIRED e2e)</b></td><td><b>+3 cells total</b> (qbrt's ping, karplus's
+panel, snaredrum's panel). A hero PROMOTES a key; it never adds one, so a hero costs zero cells. At
+the measured ~0.8 s/cell on the SwiftShader runner that is <b>≈ +2.4 s</b>.</td><td><b>yes</b></td></tr>
 <tr><td><b>bespoke e2e</b></td><td>one new audition spec (qbrt, ≈ +13 s) and one new panel spec
 (snaredrum, ≈ +2 s). Everything else reuses the existing rows.</td><td><b>yes</b></td></tr>
 <tr><td><b><code>vrt-strict</code> (REQUIRED)</b></td><td><b>+0 scenes</b> —
@@ -2314,7 +2316,7 @@ must NOT. Three are <b>sub-tolerance traps</b> (reverb, shimmershine, filter) wh
 <code>--update-snapshots</code> writes nothing — <code>git rm</code> first. Several are
 <b>dimension</b> changes, which hard-fail before any ratio is computed.</td><td>no</td></tr>
 <tr><td><b>total CI wall-time</b></td><td><b>≈ +20 s of gating time across the whole batch</b>
-(+1.6 s parity, +15 s of new specs, the rest unit-lane). Comfortably under the 2-minute sign-off
+(+2.4 s parity, +15 s of new specs, the rest unit-lane). Comfortably under the 2-minute sign-off
 bar — <b>and it must still be confirmed ON CI</b>, because the runner is SwiftShader at roughly 4×
 the local per-cell cost.</td><td>—</td></tr>
 </table>
