@@ -29,7 +29,7 @@ import { ringsDef } from './rings';
 import { marblesDef } from './marbles';
 import { macrooscillatorDef } from './macrooscillator';
 import { cloudseedDef } from './cloudseed';
-import { callsineDef } from './callsine';
+import { warrensspectrumDef } from './warrensspectrum';
 import { froggerDef } from './frogger';
 import { resofilterDef } from './resofilter';
 import { sidecarDef } from './sidecar';
@@ -52,7 +52,7 @@ const EXPECTED_ATTRIBUTIONS: AttributionExpectation[] = [
   { type: 'marbles',         def: marblesDef,         author: 'Émilie Gillet' },
   { type: 'macrooscillator', def: macrooscillatorDef, author: 'Émilie Gillet' },
   { type: 'cloudseed',       def: cloudseedDef,       author: 'Ghost Note Audio' },
-  { type: 'callsine',        def: callsineDef,        author: "callsine contributors (Warren's Spectrum)" },
+  { type: 'warrensspectrum', def: warrensspectrumDef, author: "callsine contributors (Warren's Spectrum)" },
   { type: 'frogger',         def: froggerDef,         author: 'Adrian Eyre (frogger, MIT)' },
   { type: 'resofilter',      def: resofilterDef,      author: 'Gabriel Soule (Resonarium, MultiFilter)' },
   {

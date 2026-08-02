@@ -150,13 +150,15 @@ describe('chainWiring override (owner "fixable in code")', () => {
 // ================================================================
 
 describe('declarative chain-role classification override', () => {
-  // The 9 FM/exciter oscillators that now DECLARE role:'source'. Their only
+  // The 8 FM/exciter oscillators that now DECLARE role:'source'. Their only
   // audio input is MODULATION (FM / PM / sync / exciter), so the port inference
-  // alone (for the single-audio-in ones — foxy/wavecel/callsine/swolevco) would
-  // mis-bin them as an FX insert.
+  // alone (for the single-audio-in ones — foxy/wavecel/swolevco) would
+  // mis-bin them as an FX insert. (callsine was the 9th until it was retired
+  // for warren's spectrum, which is a genuine EFFECT — its audio_in IS the
+  // signal-chain insert, so it correctly declares NO override.)
   const DECLARED_SOURCES = [
     'analogVco', 'moog921Vco', 'moog921b', 'wavetableVco', 'swolevco',
-    'foxy', 'wavecel', 'callsine', 'pentemelodica',
+    'foxy', 'wavecel', 'pentemelodica',
   ];
 
   it('every declared FM-oscillator classifies as a chain SOURCE (role source, no main audio-in)', () => {
@@ -173,7 +175,7 @@ describe('declarative chain-role classification override', () => {
   });
 
   it('role:source OVERRIDES the port inference — a lone FM input is NOT read as a main-in', () => {
-    // Same ports, with and without the declaration (the foxy/wavecel/callsine/
+    // Same ports, with and without the declaration (the foxy/wavecel/
     // swolevco shape: a single audio input = FM/exciter).
     const inferredFx = def([port('fm', 'audio'), port('pitch', 'pitch')], [port('out', 'audio')]);
     const declaredSrc = def([port('fm', 'audio'), port('pitch', 'pitch')], [port('out', 'audio')], undefined, { role: 'source' });

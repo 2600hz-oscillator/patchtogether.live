@@ -209,7 +209,7 @@ export const cubeDef: AudioModuleDef = {
     // Cross-domain mono-video out (issue: video out of the 3D CUBE view). The
     // card installs a frame-drawer that renders its live WebGL 3D cube into the
     // bridge's canvas each video frame; patch this into VIDEOOUT / any video
-    // module. Mirrors WAVESCULPT.video_out + WARRENSPECTRUM.viz_out.
+    // module. Mirrors WAVESCULPT.video_out.
     { id: 'video_out', type: 'mono-video' },
   ],
   // LITERAL array — the module-manifest static extractor reads this directly.

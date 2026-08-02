@@ -32,6 +32,7 @@ import { delayDef } from '$lib/audio/modules/delay';
 import { ringbackDef } from '$lib/audio/modules/ringback';
 import { snaredrumDef } from '$lib/audio/modules/snaredrum';
 import { vcaDef } from '$lib/audio/modules/vca';
+import { warrensspectrumDef } from '$lib/audio/modules/warrensspectrum';
 import type { ParamDef } from '$lib/graph/types';
 
 /**
@@ -67,6 +68,13 @@ import type { ParamDef } from '$lib/graph/types';
  *    declares 'Tone' / 'W Tone' / 'Ck Tone'), plus 'Wire' where the def says
  *    'Wires'. TWO cards in one day, found independently — the label half of
  *    this contract is worth its own grep.
+ *  - WarrensspectrumCard: BORN bound (2026-08-02) rather than converted —
+ *    the first card in this set that never re-typed anything, because the
+ *    module shipped after this guard existed. 11 params × 5 props is 55
+ *    numbers/strings that now cannot disagree with the def by construction.
+ *    Its `engineFreeze` is the format case again: the def declares a
+ *    LIVE/FREEZE formatter, and an unbound card would print `0.00`/`1.00`
+ *    on a control whose whole job is to say which state you are in.
  */
 const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }>> = {
   'AdsrCard.svelte': adsrDef,
@@ -75,6 +83,7 @@ const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }
   'RingbackCard.svelte': ringbackDef,
   'SnaredrumCard.svelte': snaredrumDef,
   'VcaCard.svelte': vcaDef,
+  'WarrensspectrumCard.svelte': warrensspectrumDef,
 };
 
 /**
@@ -88,6 +97,7 @@ const MAPPING_BOUND_CARDS: readonly string[] = [
   'RingbackCard.svelte',
   'SnaredrumCard.svelte',
   'VcaCard.svelte',
+  'WarrensspectrumCard.svelte',
 ];
 
 /** The ratchet floors — lower either and this test is the thing that says no. */
@@ -100,8 +110,8 @@ const MAPPING_BOUND_CARDS: readonly string[] = [
 // card of slack in each, and the next card to fall back out of the set is
 // absorbed in silence rather than reddening this test. Whenever this file
 // merges, RE-DERIVE the floors from the lists; never inherit the literal.
-const RANGE_BOUND_FLOOR = 6;
-const MAPPING_BOUND_FLOOR = 5;
+const RANGE_BOUND_FLOOR = 7;
+const MAPPING_BOUND_FLOOR = 6;
 
 /**
  * A range-ish prop bound to a NUMERIC LITERAL. Covers `min/max/defaultValue`

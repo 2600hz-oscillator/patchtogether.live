@@ -123,16 +123,20 @@ test('MIDI Learn: right-click a knob → learn → CC drives the param + badge s
 
 });
 
-test('MIDI Learn: a Fader (CALLSINE · Level) learns + tracks via simulated CC', async ({ page, rack, errorWatch }) => {
+test('MIDI Learn: a Fader (MACROOSCILLATOR · Level) learns + tracks via simulated CC', async ({ page, rack, errorWatch }) => {
   await page.evaluate(() => window.localStorage.removeItem('pt.midi-bindings.v1'));
 
   await spawnPatch(
     page,
-    [{ id: 'm-cs', type: 'callsine', position: { x: 120, y: 120 }, domain: 'audio', params: { level: 0.8 } }],
+    // Repointed from `callsine` when that module was retired (2026-08-02).
+    // MACROOSCILLATOR is the module CallsineCard was patterned on — the same
+    // six faders with the same aria-label="Level" on a [0,1]/0.8 param — so
+    // the fader coverage this test exists for is preserved rather than lost.
+    [{ id: 'm-cs', type: 'macrooscillator', position: { x: 120, y: 120 }, domain: 'audio', params: { level: 0.8 } }],
     [],
   );
 
-  const card = page.locator('.svelte-flow__node-callsine');
+  const card = page.locator('.svelte-flow__node-macrooscillator');
   await expect(card).toHaveCount(1);
   await installSimMidi(page);
 

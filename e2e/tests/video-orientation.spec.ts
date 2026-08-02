@@ -477,7 +477,7 @@ interface TransformCase {
 }
 
 // Every video-output module that ALSO has a video/mono-video input. Pure
-// generators (acidwarp, doom, scope/wave3d, rasterize, warrenspectrum, …) have
+// generators (acidwarp, doom, scope/wave3d, rasterize, …) have
 // no asymmetric input to drive and are covered by VRT baselines instead — see
 // the PR notes. BENTBOX + RUTTETRA already have dedicated tests above; the
 // remaining transforms/keyers are locked here.

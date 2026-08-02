@@ -111,6 +111,7 @@
     SETTINGS_MAP_KEY,
     type PatchEnvelope,
   } from '$lib/graph/persistence';
+  import { summarizeLoadDiagnostics } from '$lib/graph/load-diagnostics';
   import { flushAllCcCommits } from '$lib/ui/controls/cc-commit';
   import {
     makePerformanceBundle,
@@ -179,7 +180,16 @@
     } else {
       validated = parseEnvelope(JSON.stringify(env));
     }
-    return loadEnvelopeIntoStore(validated, ydocArg, patchArg);
+    const result = loadEnvelopeIntoStore(validated, ydocArg, patchArg);
+    // THE USER-FACING HALF of the unknown-type drop path. Until this existed
+    // the loader dropped nodes AND every cable touching them, reported it to
+    // `console.warn`, and the rack loaded "successfully" — silent data loss
+    // with a plan attached, for all 18 previously-deleted module types. This
+    // is deliberately a NON-BLOCKING notice: the rack really did load, so the
+    // user must be able to keep working. Summary logic + its unit gate live
+    // in $lib/graph/load-diagnostics.
+    loadNotice = summarizeLoadDiagnostics(result.diagnostics);
+    return result;
   }
 
   // ---------------- Cross-mode import guard (precondition) ----------------
@@ -619,6 +629,8 @@
   let reconciler: { reconcile: () => Promise<void>; dispose: () => void } | null = $state(null);
   let booting = $state(false);
   let error = $state<string | null>(null);
+  /** Non-blocking summary of the last load's diagnostics (null = clean). */
+  let loadNotice = $state<string | null>(null);
   let log = $state<string[]>([]);
 
   // Provide the engine to descendant module-card components (motorized faders
@@ -2946,7 +2958,9 @@
         return;
       }
       await ensureEngine();
-      const result = loadEnvelopeIntoStore(env, ydoc, patch);
+      // Routed through persistenceLoad (not loadEnvelopeIntoStore directly) so
+      // this path gets the same non-blocking diagnostic notice as every other.
+      const result = persistenceLoad(env, ydoc, patch);
       await reconciler?.reconcile();
       trace(`imported patch JSON (${result.nodesLoaded} nodes, ${result.edgesLoaded} edges)`);
       if (result.diagnostics.length > 0) {
@@ -7787,6 +7801,15 @@
     <pre class="error" data-testid="load-error">{error}</pre>
   {/if}
 
+  {#if loadNotice}
+    <!-- NON-BLOCKING. The rack loaded; this reports what it lost or changed.
+         Dismissible because it describes a completed event, not a state. -->
+    <div class="load-notice" data-testid="load-diagnostics" role="status" aria-live="polite">
+      <span>{loadNotice}</span>
+      <button type="button" data-testid="load-diagnostics-dismiss" onclick={() => (loadNotice = null)} aria-label="Dismiss">×</button>
+    </div>
+  {/if}
+
   {#if workflowMode}
     <!-- DOCKING P2.5a: the TOP dock rail — a reserved-space flex sibling
          ABOVE the canvas row (never an overlay inside .svelte-flow). Empty
@@ -8681,6 +8704,28 @@
     color: #fca5a5;
     font-family: ui-monospace, monospace;
     font-size: 0.8rem;
+  }
+  .load-notice {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin: 0;
+    padding: 0.5rem 1.25rem;
+    border-bottom: 1px solid #3a3320;
+    background: rgba(250, 204, 21, 0.08);
+    color: #fde68a;
+    font-family: ui-monospace, monospace;
+    font-size: 0.75rem;
+  }
+  .load-notice span { flex: 1; }
+  .load-notice button {
+    background: none;
+    border: none;
+    color: inherit;
+    cursor: pointer;
+    font-size: 1rem;
+    line-height: 1;
+    padding: 0 0.25rem;
   }
   .bottombar {
     display: flex;

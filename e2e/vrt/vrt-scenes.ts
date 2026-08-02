@@ -614,50 +614,6 @@ export const VRT_SCENES: Record<string, VrtScene> = {
     settleMs: 300,
     freezeAudio: false,
   },
-
-  // WARRENSPECTRUM: FIXED AT THE ROOT INSTEAD OF MASKED.
-  //
-  // The acidwarp visualiser's hue is `(snap.frame * (0.5 + viznoise*7.5)) % 360`,
-  // and `snap.frame` is incremented once per `readSnapshot()` — on the MAIN
-  // thread, once per card rAF. So `freezeAudio` is powerless here: suspending
-  // the AudioContext stops the worklet, not the counter. That is why this card
-  // was masked rather than scened.
-  //
-  // MEASURED 2026-08-01, REAL gate, UNMASKED, 10 runs: 9 passed / 1 failed at
-  // 3 024 px (ratio 0.02, budget 0.01). Pinning `frame` via the card's
-  // `__warrenspectrumVrtSeed` hook removes the drift at the source and keeps
-  // the whole 488x163 visualiser in the pixel diff — instead of masking 28.5 %
-  // of the card (79 056 px) to hide a 3 024 px flake.
-  //
-  // Audio is still driven + frozen so the BAND FLASH LEDs settle: a real VCO
-  // sine into a_in lights the band the trace is drawn from, so the baseline
-  // pins real spectral content and not an idle card.
-  warrenspectrum: {
-    nodes: [
-      { id: 'src', type: 'analogVco', position: { x: 60, y: 60 }, domain: 'audio' },
-      { id: 'vrt-1', type: 'warrenspectrum', position: { x: 520, y: 60 }, domain: 'audio' },
-    ],
-    edges: [
-      {
-        id: 'e_src_ws',
-        from: { nodeId: 'src', portId: 'sine' },
-        to: { nodeId: 'vrt-1', portId: 'a_in' },
-        sourceType: 'audio',
-        targetType: 'audio',
-      },
-    ],
-    afterSpawn: async (page) => {
-      await page.evaluate(() => {
-        (globalThis as unknown as { __warrenspectrumVrtSeed?: number })
-          .__warrenspectrumVrtSeed = 120;
-      });
-      for (let i = 0; i < 3; i++) {
-        await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
-      }
-    },
-    settleMs: 400,
-    freezeAudio: true,
-  },
 };
 
 /** Set up the rack for `type`. Returns true if a scene was applied
