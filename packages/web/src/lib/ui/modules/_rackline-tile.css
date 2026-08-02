@@ -130,6 +130,18 @@
   max-width: var(--kcol-max, 46px);
   min-width: 0;
 }
+/* …and the CONTROL inside it has to obey the same cap. KnobConic's wrap is an
+ * `inline-flex` sized to its widest child, so `max-width: 100%` on the label /
+ * readout resolved against a box the text itself was widening — no constraint
+ * at all. A PF-1 option name ('divine inspiration') or a PF-3 unit readout then
+ * pushed the whole column past --kcol-max and out of the fixed tile. Capping
+ * the child gives those `100%`s something real to measure against, so they
+ * ellipsize as intended. LANE ONLY: a dock band's .kcol is uncapped, so this
+ * resolves against an auto-width parent there and changes nothing. */
+.rl-tile .tile-body .kcol > * {
+  max-width: 100%;
+  min-width: 0;
+}
 .rl-tile .kcol .lab {
   font-size: var(--t-label-compact, 10px);
   color: var(--text-dim, #9aa2ad);

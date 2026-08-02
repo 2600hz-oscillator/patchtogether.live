@@ -56,8 +56,11 @@
   import Dx7AlgorithmGlyph from './dx7/Dx7AlgorithmGlyph.svelte';
   import { Button, KnobConic, ParamGrid, ScopeScreen, Segmented, Selector, Toggle, VuMeter } from '$lib/ui/controls';
   import { curatedFace, dockFacePlan, type FaceControl, type FaceTier } from '$lib/ui/workflow/curated-face';
-  import { shellCellFor } from '$lib/ui/workflow/shell-cells';
+  import { shellCellFor, type ShellCellEnv } from '$lib/ui/workflow/shell-cells';
+  import { shellParamWrite } from '$lib/ui/workflow/shell-param-writes';
+  import { dockBandVisible, dockTabPlan } from '$lib/ui/workflow/dock-tabs-model';
   import { gridParamIds, momentaryParamIds, momentaryValue, paramCellKind } from '$lib/ui/workflow/shell-control-kind';
+  import OssAttribution from '$lib/ui/modules/OssAttribution.svelte';
   import {
     spineCableVar,
     laneFaceTier,
@@ -98,6 +101,13 @@
       view?: 'lane' | 'dock-full';
       /** Test/dock override of the LOD tier; else the getLodTier() context. */
       tier?: Tier;
+      /**
+       * PF-16 — the ACTIVE dock tab (a `face.pages` page id), owned by the
+       * faceplate that paints the rail (DockFullView). Ignored unless the face
+       * is tabbed at all (`dockTabPlan`), and a stale id falls back to the
+       * first tab rather than hiding every band.
+       */
+      activePage?: string;
     };
   }
   let { id, data }: Props = $props();
@@ -307,8 +317,29 @@
   // the tidyVco tune-cluster loss class can't silently recur at this seam.
   let dockBands = $derived(view === 'dock-full' && def ? dockFacePlan(def) : null);
 
+  /** PF-16 — the tab roster (null for a face that renders as one column), and
+   *  the SAME pure answer DockFullView's rail computes. A rail without the
+   *  matching hide (or a hide without the rail) is a blank faceplate. */
+  let dockTabs = $derived(dockTabPlan(dockBands));
+
   function paramDef(pid: string): ParamDef | undefined {
     return (def?.params ?? []).find((p) => p.id === pid);
+  }
+
+  /**
+   * The durable commit for a param cell: the module's declared OVERRIDE
+   * (PF-13 — a MACRO param whose write means more than its own key) or the
+   * ordinary `setNodeParam`. Only the COMMIT is redirected — the primitive,
+   * MIDI-learn, the motorized readback and the parity drive are untouched.
+   */
+  function paramWrite(pid: string): (v: number) => void {
+    const override = shellParamWrite(node.type, pid);
+    return override ? (v: number) => override(id, v) : params.set(pid);
+  }
+
+  /** What a family/static ACTION cell can reach beyond the graph. */
+  function cellEnv(): ShellCellEnv {
+    return { engine: params.engineCtx.get(), node: (patch.nodes[id] as ModuleNode | undefined) ?? node };
   }
 
   // ── CELL PLUMBING (the P1 batch-2 INERT-CELL fix) ───────────────────────
@@ -460,7 +491,7 @@
             <Toggle
               value={params.paramVal(pd.id)}
               label={pd.label}
-              onchange={params.set(pd.id)}
+              onchange={paramWrite(pd.id)}
               readLive={params.live(pd.id)}
               moduleId={id}
               paramId={pd.id}
@@ -481,7 +512,7 @@
               value={params.paramVal(pd.id)}
               segments={pd.options ?? []}
               label={pd.label}
-              onchange={(v) => params.set(pd.id)(Number(v))}
+              onchange={(v) => paramWrite(pd.id)(Number(v))}
               readLive={params.live(pd.id)}
               moduleId={id}
               paramId={pd.id}
@@ -505,7 +536,7 @@
               options={pd.options}
               label={pd.label}
               format={pd.format}
-              onchange={params.set(pd.id)}
+              onchange={paramWrite(pd.id)}
               readLive={params.live(pd.id)}
               moduleId={id}
               paramId={pd.id}
@@ -525,7 +556,7 @@
               value={params.paramVal(pd.id)}
               options={pd.options ?? []}
               label={pd.label}
-              onchange={(v) => params.set(pd.id)(Number(v))}
+              onchange={(v) => paramWrite(pd.id)(Number(v))}
               readLive={params.live(pd.id)}
               moduleId={id}
               paramId={pd.id}
@@ -542,7 +573,7 @@
               label={pd.label}
               units={pd.units ?? ''}
               curve={pd.curve}
-              onchange={params.set(pd.id)}
+              onchange={paramWrite(pd.id)}
               readLive={params.live(pd.id)}
               moduleId={id}
               paramId={pd.id}
@@ -588,7 +619,7 @@
             label={view === 'dock-full' ? cell.label : '▸'}
             title={cell.title ?? cell.label}
             variant={view === 'dock-full' ? 'default' : 'sm'}
-            onTrigger={() => cell.onFire(id)}
+            onTrigger={() => cell.onFire(id, cellEnv())}
             testid={cellTestId(ctl)}
           />
         </div>
@@ -784,9 +815,32 @@
       </div>
     {/if}
     <div class="dock-pages" data-testid="face-pages">
+      <!-- PF-16 — a TABBED face hides its inactive bands with CSS; it NEVER
+           unmounts them. faces-parity asserts one `control-<paramId>` per def
+           param and one cell per curated control across the whole faceplate
+           (`evaluateAll`, which matches hidden elements), so unmounting would
+           make a tabbed face read as a face that LOST forty controls. Hiding
+           also keeps knob/scroll state alive across a flip. -->
       {#each dockBands as band (band.id)}
-        <section class="dock-page" data-testid="face-page" data-face-page={band.id}>
-          {#if band.label}
+        <!-- On a TABBED face the band IS the tab's panel, so it says so: the
+             rail's buttons carry `aria-controls={face-page-<id>}` and this
+             carries the matching id + `aria-labelledby`. Without the pair a
+             screen reader announced N tabs controlling nothing. On an untabbed
+             face there is no tab to point at, so neither attribute is emitted
+             (a dangling `aria-labelledby` is worse than none). -->
+        <section
+          class="dock-page"
+          data-testid="face-page"
+          data-face-page={band.id}
+          id={dockTabs ? `face-page-${band.id}` : undefined}
+          role={dockTabs ? 'tabpanel' : undefined}
+          aria-labelledby={dockTabs ? `faceplate-tab-${band.id}` : undefined}
+          hidden={!dockBandVisible(band.id, dockTabs, data.activePage)}
+        >
+          <!-- The band header is SUPPRESSED on a tabbed face: the active tab
+               already names the band, in the same words, ~14px above it.
+               Printing both spends the vertical space the rail exists to buy. -->
+          {#if band.label && !dockTabs}
             <h4 class="page-label">{band.label}</h4>
           {/if}
           {#if band.controls.length}
@@ -814,6 +868,15 @@
         </section>
       {/each}
     </div>
+    <!-- PF-17 — the OSS ATTRIBUTION footer. A module whose DSP is a port of
+         someone else's open-source work says so on its faceplate, and the
+         legacy card always did (`CloudseedCard.svelte`); the migrated shell
+         dropped the line on the floor. Licence attribution is not decoration,
+         and the dock is the surface with the room for it. Dock-only: it is a
+         credit, not a control, and a 192px lane tile has no space to spend. -->
+    {#if def?.ossAttribution?.author}
+      <OssAttribution author={def.ossAttribution.author} />
+    {/if}
   {:else}
     <!-- The lane body, FIT-PLANNED (laneBodyPlan — the no-clip guarantee):
          either the mock .body row (whole knob columns LEFT + the fluid glyph
@@ -1047,6 +1110,13 @@
   .dock-page {
     border-top: 1px solid var(--border, #2c3037);
     padding-top: 6px;
+  }
+  /* PF-16 — an INACTIVE tab's band. Explicit rather than relying on the UA's
+     `[hidden] { display: none }`, because `.dock-pages` is a flex container
+     and any `display:` on the child would beat it. Still MOUNTED (see the
+     markup note) — hidden, not gone. */
+  .dock-page[hidden] {
+    display: none;
   }
   .page-label {
     margin: 0 0 6px;
