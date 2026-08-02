@@ -27,10 +27,62 @@
 // analytic binned weights (triangularWeight) — the certification that the math
 // hack reproduces the target bell with NO per-fragment loop.
 
+import { detectEdge, makeEdgeState, type EdgeState } from '$lib/doom/cv-gate-edge';
+
 /** Ring depth — the number of rendered input frames held in the GPU frame ring
  *  (one TEXTURE_2D_ARRAY layer per frame). 60 ≪ the spec-guaranteed
  *  MAX_ARRAY_TEXTURE_LAYERS floor of 256, so the array is always allocatable. */
 export const FRAMETABLE_RING_FRAMES = 60;
+
+// ----------------------------------------------------------------------
+// SAVE-TRIGGER one-shot latch — the ACTUAL implementation the factory calls
+// (not a mirror). Lifted out of ./modules/frametable.ts so the semantics are
+// unit-testable without a GL context.
+//
+// THE RULE, and why it is not a level test: `save_trig` is declared
+// `edge: 'trigger'`. A trigger reaches a video module through
+// PatchEngine.installGateDispatch, which does NOT stream the waveform — it
+// counts rising edges on the audio thread and REPLAYS them on the ~25 ms
+// scheduler tick as `setParam(0); setParam(1)` per edge, then
+// `setParam(currentLevel)`. Measured on the live chain, all three writes land
+// in the SAME MILLISECOND. So the high is ALREADY GONE by the next draw, and a
+// detector that reads the LEVEL at draw time observes `0 → 0 → 0` and never
+// fires. `write` therefore runs on the BRIDGE's clock (setParam) and `consume`
+// on the DRAW clock — a pulse shorter than a frame cannot be missed.
+//
+// The latch is a BOOLEAN, not a counter: N edges inside one frame interval
+// snapshot ONCE. A snapshot copies the whole 60-layer ring, and the ring has
+// only one state per frame, so coalescing is both correct and the cheap answer.
+// ----------------------------------------------------------------------
+
+/** One-shot rising-edge latch for a trigger-semantics param. */
+export interface FrametableSaveLatch {
+  /** Hysteresis edge state over the VALUE STREAM arriving at setParam. */
+  edge: EdgeState;
+  /** Set by a rising edge, cleared by the next consume(). */
+  armed: boolean;
+}
+
+export function makeFrametableSaveLatch(): FrametableSaveLatch {
+  return { edge: makeEdgeState(), armed: false };
+}
+
+/** Feed ONE `setParam('saveTrig', value)` write. Returns true iff it was a
+ *  rising edge (the caller does not need this; the latch records it). */
+export function frametableSaveWrite(l: FrametableSaveLatch, value: number): boolean {
+  const rose = detectEdge(l.edge, value)?.pressed === true;
+  if (rose) l.armed = true;
+  return rose;
+}
+
+/** Consume the latch on a draw. Returns true iff this frame should snapshot.
+ *  ALWAYS clears — a draw has happened, so any edge banked before it has had
+ *  its frame, and a stale arm must not fire a spurious snapshot later. */
+export function frametableSaveConsume(l: FrametableSaveLatch): boolean {
+  const fire = l.armed;
+  l.armed = false;
+  return fire;
+}
 
 /** Reduced render resolution — half-res (512×384 at the 4:3 default), matching
  *  GRAINS / MIRRORPOOL / MANDELBULB. 60 layers × 0.75 MiB ≈ 45 MiB — safe on the
