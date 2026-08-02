@@ -48,6 +48,7 @@ import {
   sixstrumSelectorOptions,
 } from '$lib/ui/modules/sixstrum-preset-actions';
 import { fireKickdrumStrike } from '$lib/ui/modules/kickdrum-strike-actions';
+import { fireSnaredrumHit, setSnaredrumRoll } from '$lib/ui/modules/snaredrum-strike-actions';
 
 /** A dropdown over a NAMED roster that lives in node.data (not a param). */
 export interface ShellSelectorCell {
@@ -59,12 +60,37 @@ export interface ShellSelectorCell {
   onchange: (nodeId: string, value: string) => void;
 }
 
-/** A one-shot ACTION button (fires on the press edge). */
+/**
+ * An ACTION button, in one of the TWO shapes the repo's own port vocabulary
+ * already distinguishes ($lib/audio/gate-trigger `EdgeSemantic`):
+ *
+ *   mode 'trigger' (the default) — a one-shot. Fires `onFire` ONCE on the press
+ *     edge and ignores the release. dx7's loader, kickdrum's STRIKE.
+ *   mode 'gate' — a MOMENTARY pad. Fires `onGate(nodeId, true)` on press and
+ *     `onGate(nodeId, false)` on release, so a HELD action (snaredrum's ROLL
+ *     audition, which runs the two-hand engine only while the level is high)
+ *     has a representation at all.
+ *
+ * The two shapes are NOT interchangeable and the module must pick the one its
+ * seam actually is: a gate consumer driven by a click would open and never
+ * close. `shell-cells.test.ts` asserts each cell declares exactly the handler
+ * its mode needs, so a `mode:'gate'` cell carrying only `onFire` cannot ship.
+ *
+ * The primitive underneath is the SAME `<Button>` in both cases — it already
+ * carries `momentary` + `onGate` + `aria-pressed` (the `face.momentary`
+ * press-pad path uses them) — so this is a new DECLARATION, not a new control,
+ * and faces-parity's closed `data-cell-control` union is untouched.
+ */
 export interface ShellActionCell {
   kind: 'action';
   label: string;
   title?: string;
-  onFire: (nodeId: string) => void;
+  /** Press semantics. Omitted = 'trigger' (the one-shot shape). */
+  mode?: 'trigger' | 'gate';
+  /** Required for mode 'trigger'. Fired once on the press edge. */
+  onFire?: (nodeId: string) => void;
+  /** Required for mode 'gate'. Fired true on press, false on release. */
+  onGate?: (nodeId: string, high: boolean) => void;
 }
 
 /** A FILE-import button: opens a picker, hands the chosen file to `onFile`,
@@ -226,6 +252,31 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
       label: 'strike',
       title: 'Audition: hit the drum once (identical to a trigger_in rising edge)',
       onFire: (nodeId) => { fireKickdrumStrike(nodeId); },
+    },
+  },
+  snaredrum: {
+    // THE AUDITION, in TWO pads — because this voice has TWO strike inputs with
+    // DIFFERENT declared edge semantics, and one button for both would be the
+    // face contradicting the def about the thing the module exists for.
+    // Both drive host-side ConstantSources on the module's own worklet inputs
+    // (snaredrum-strike-actions → the engine handle's read keys), so they write
+    // NOTHING to the graph and a patched cable keeps working alongside them.
+    'snaredrum-hit-{n}': {
+      kind: 'action',
+      label: 'hit',
+      title: 'Audition: one snare hit (identical to a trigger_in rising edge)',
+      onFire: (nodeId) => { fireSnaredrumHit(nodeId); },
+    },
+    // ⚠ MOMENTARY, not a click. `gate_in` is declared edge:'gate' — the
+    // two-hand roll engine runs only WHILE the level is high — so a one-shot
+    // button would open a roll that never stops. The held-gate leak paths (the
+    // pane closing mid-hold, a hidden tab) are handled in the actions module.
+    'snaredrum-roll-{n}': {
+      kind: 'action',
+      mode: 'gate',
+      label: 'roll',
+      title: 'Audition: HOLD to run the two-hand roll (identical to holding gate_in high)',
+      onGate: (nodeId, high) => { setSnaredrumRoll(nodeId, high); },
     },
   },
   sixstrum: {

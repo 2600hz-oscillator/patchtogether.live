@@ -28,6 +28,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { adsrDef } from '$lib/audio/modules/adsr';
 import { backdraftDef } from '$lib/video/modules/backdraft';
+import { snaredrumDef } from '$lib/audio/modules/snaredrum';
 import { vcaDef } from '$lib/audio/modules/vca';
 import type { ParamDef } from '$lib/graph/types';
 
@@ -41,10 +42,18 @@ import type { ParamDef } from '$lib/graph/types';
  *    `formatVcaBase`, so the face prints `CLOSED` / `-12 dB` / `UNITY`, and
  *    before the conversion the card's value tag on the same param printed
  *    `0.25`. One param, two laws, and no def-reading gate could see it.
+ *  - SnaredrumCard: converted with the snaredrum face rework (binds via
+ *    paramSpec). The biggest single conversion so far — 21 continuous params,
+ *    every one of which re-typed min/max/curve/units. All 21 AGREED with the
+ *    def, so nothing was broken; the LABELS did not, which is the same
+ *    two-sided-contract hole one field over: the card painted the literal
+ *    string 'Tone' on `tone`, `wire_tone` AND `crack_tone` (the def declares
+ *    'Tone' / 'W Tone' / 'Ck Tone') and 'Wire' where the def says 'Wires'.
  */
 const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }>> = {
   'AdsrCard.svelte': adsrDef,
   'BackdraftCard.svelte': backdraftDef,
+  'SnaredrumCard.svelte': snaredrumDef,
   'VcaCard.svelte': vcaDef,
 };
 
@@ -53,11 +62,15 @@ const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }
  * subset of the above, and a separate ratchet on purpose — see the
  * curve-agreement test below for why the two halves cannot be one list yet.
  */
-const MAPPING_BOUND_CARDS: readonly string[] = ['AdsrCard.svelte', 'VcaCard.svelte'];
+const MAPPING_BOUND_CARDS: readonly string[] = [
+  'AdsrCard.svelte',
+  'SnaredrumCard.svelte',
+  'VcaCard.svelte',
+];
 
 /** The ratchet floors — lower either and this test is the thing that says no. */
-const RANGE_BOUND_FLOOR = 3;
-const MAPPING_BOUND_FLOOR = 2;
+const RANGE_BOUND_FLOOR = 4;
+const MAPPING_BOUND_FLOOR = 3;
 
 /**
  * A range-ish prop bound to a NUMERIC LITERAL. Covers `min/max/defaultValue`

@@ -583,12 +583,22 @@
           />
         </div>
       {:else if cell?.kind === 'action'}
+        <!-- ACTION cell, in the two shapes the repo's port vocabulary already
+             distinguishes (ShellActionCell): a one-shot TRIGGER (fires on the
+             press edge, ignores the release) or a MOMENTARY GATE pad (high
+             while held). The primitive is the same <Button> either way — it
+             already carries `momentary` / `onGate` / `aria-pressed` for the
+             face.momentary press-pad path — so a HELD audition needs a
+             declaration, not a new control. Button dispatches exactly one of
+             the two handlers per `momentary`, so passing both is safe. -->
         <div class="kcol ms-cell-act" data-cell-kind={ctl.kind} data-cell-control="action" data-cell-key={ctl.key}>
           <Button
             label={view === 'dock-full' ? cell.label : '▸'}
             title={cell.title ?? cell.label}
             variant={view === 'dock-full' ? 'default' : 'sm'}
-            onTrigger={() => cell.onFire(id)}
+            momentary={cell.mode === 'gate'}
+            onTrigger={() => cell.onFire?.(id)}
+            onGate={(high) => cell.onGate?.(id, high)}
             testid={cellTestId(ctl)}
           />
         </div>

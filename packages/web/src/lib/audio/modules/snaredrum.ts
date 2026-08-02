@@ -24,6 +24,7 @@
 // image survives downstream patching; stereoPairs auto-pairs them. width=0 AND
 // spread=0 → L == R exactly (mono-safe fold-down).
 
+import { closeGate, fireTrigger, openGate } from '$lib/audio/gate-trigger';
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import workletUrl from '@patchtogether.live/dsp/dist/snaredrum.js?url';
@@ -119,32 +120,102 @@ export const snaredrumDef: AudioModuleDef = {
     { id: 'level',       label: 'Level',   defaultValue: 0,    min: -24,  max: 12,   curve: 'linear',   units: 'dB' },
   ],
 
+  // THE AUDITION — two families, because this voice has TWO strike inputs with
+  // DIFFERENT declared semantics and collapsing them into one button would be
+  // the face contradicting its own def about the thing the module exists for:
+  //   snaredrum-hit  → `trigger_in`, edge:'trigger' — one hit per rising edge;
+  //   snaredrum-roll → `gate_in`,    edge:'gate'    — the two-hand roll runs
+  //                    WHILE held, which is why its pad is MOMENTARY and not a
+  //                    click (a roll you cannot hold is not this module).
+  // Neither is a PARAM. A `strike` param would need a row in the worklet's
+  // PARAM_TABLE, and the ART profile's `.sha` covers those DSP sources, so it
+  // would force a re-capture of a byte-identical baseline; both pads instead
+  // drive host-side ConstantSources summed into the SAME worklet inputs a cable
+  // feeds (see the factory), through the karplus/samsloop `read(key)` seam.
+  // ONE implementation for both surfaces: ui/modules/snaredrum-strike-actions.
+  controlFamilies: [
+    { id: 'snaredrum-hit',  label: 'Hit',  kind: 'other', testidPrefix: 'snaredrum-hit' },
+    { id: 'snaredrum-roll', label: 'Roll', kind: 'other', testidPrefix: 'snaredrum-roll' },
+  ],
+
   // ── RACKLINE face (P1 total-rework — UI CURATION only, NOT the I/O
   // contract; see ModuleFace in $lib/graph/types). DESIGNED from the voice's
   // intent + the KICK DRUM sibling's producer-intent banding, not transcribed
   // from the legacy card.
   //
-  // THE LANE. A snare is chosen by three knobs; the top TWO of them are the
-  // compact tile (a glyph-bearing face fits two whole knob columns beside the
-  // trace — faceTierCap), and the third joins from the full tier on:
-  // TUNE (the drum's size/pitch — the modal bank AND the noise body track it),
-  // WIRES (the sizzle that separates a snare from a tom — and the master of a
-  // roll's sustain, since it also sets how hard each stroke re-excites the
-  // shared bed) and TONE (the whole-drum bright↔fat tilt: it scales the tonal
-  // voice against the wire bed AND crossfades head↔body). Ranks 4–8 complete
-  // the full-in-lane face: HEAD (ring length), CRACK (the stick attack), then
-  // the module's headline pair ROLL + BOUNCE (the two-hand drumroll's rate and
-  // type — the one thing this voice has that KICK doesn't), and LEVEL closes
-  // the eight (the KICK precedent). DRIVE deliberately ranks BELOW the identity
-  // set: at its 0.2 default it is seasoning on the bus, not the voice.
+  // ⚠ `order` and `pages` ANSWER DIFFERENT QUESTIONS AND MAY DISAGREE. `order`
+  // is a PRIORITY ranking, consumed by the tiers that show a SUBSET; `pages` is
+  // FUNCTION order, consumed by the one tier that shows EVERYTHING. Do not
+  // "fix" one to match the other — the auditions rank LAST (you press them once
+  // while dialling in; you RIDE the knobs) and render FIRST (the strike is what
+  // causes everything the other bands shape).
   //
-  // THE DOCK BANDS follow producer intent, not the signal graph: the two tonal
-  // layers (modal head + noise body) read as ONE drum, so they share a band
-  // with the whole-drum GLOBAL DAMP towel; the wires and the stick transient
-  // are the noise/snap half; the ROLL gets its own band — SPREAD rides there
-  // because it is a ROLL control (the DSP centres every single trigger hit, so
-  // spread only ever moves the two hands, their detune and the wire bed's
-  // ping-pong); DRIVE·HARD·CEILING are the shared bus; WIDTH + LEVEL the output.
+  // THE LANE IS SIX CELLS AND IT ENDS THERE. laneBodyPlan's plate is
+  // PLATE_COLS(3) × PLATE_MAX_ROWS(2) = LANE_PLATE_MAX_CELLS = 6, so RANK 7 IS
+  // DOCK-ONLY. The comment this replaces promised "ranks 4–8 complete the
+  // full-in-lane face", which was stale by two: `bounce` (7) and `level` (8)
+  // rendered NOWHERE in the lane. That is what made the old ranking
+  // indefensible — the module with the rack's only roll ENGINE let you set a
+  // roll's RATE and not its CHARACTER.
+  //
+  // THE SIX, and the criterion is the repo's: a knob you RIDE during a
+  // performance belongs in the lane; a knob you SET ONCE while dialling in
+  // belongs in the dock.
+  //   1 TUNE   — the drum's size. The modal bank AND the noise body centre
+  //              track it, so nothing else about this drum is knowable first.
+  //   2 WIRES  — the knob that makes it a snare instead of a tom, AND the
+  //              master of a roll's sustain (`bed += wire × velocity`), so it
+  //              is two identities in one control. With TUNE it is the whole
+  //              compact tile: which drum, and is it even a snare.
+  //   3 ROLL   — the mechanism this voice has and its siblings do not. THE DEF
+  //              ITSELF says this knob is expected to MOVE: `roll_speed` is the
+  //              only param in the module with its own dedicated audio-rate
+  //              node input (`roll_speed_cv`, worklet input 2, read per sample
+  //              at 1 V/oct). Every other knob gets an 80 Hz-smoothed
+  //              AudioParam. A crescendo roll IS a sweep of this control.
+  //   4 BOUNCE — the roll's CHARACTER (single → double/open → buzz). Ranking
+  //              the rate without the type is exactly what the old face did.
+  //   5 G DAMP — one cell doing the work of three: it scales the head, body AND
+  //              wire-bed decays together, ×(1 − 0.6 × damp), and tightens the
+  //              modal ring with them. It is also the natural counterpart to a
+  //              buzz roll, whose overlapping tails are what turn a press roll
+  //              into mud.
+  //   6 TONE   — the whole-drum bright↔fat tilt (the tonal voice's gain rides
+  //              0.6→1.4 against the wire bed's 1.4→0.6, and the head modes
+  //              crossfade with the body noise inside the voice).
+  // DEMOTED OUT OF THE LANE, and it is a demotion, not a loss — both keep a
+  // dock cell: HEAD DEC because G DAMP moves that tail and two others from one
+  // cell, and CRACK because it is the level of a FIXED ~6 ms tick — an attack
+  // you set, not one you ride. LEVEL was ALREADY out of the lane at rank 8 and
+  // stays out on the drum-family rule: it is applied to mid and side BEFORE the
+  // ceiling, so it is a saturation lever rather than a fader.
+  //
+  // GLYPH ACCOUNTING, stated because it is easy to assume otherwise: a face
+  // with ≥4 selected cells renders NO glyph at the `full` tier
+  // (`laneBodyPlan`: `glyph = hasGlyph && rows <= 1`, and 6 cells is 2 rows).
+  // The scope trace was already dead at `full` BEFORE this re-cut — it survives
+  // at mini (1 cell), compact (2 cells) and the dock hero, and this face costs
+  // it nothing.
+  //
+  // THE DOCK BANDS follow producer intent, not the signal graph. The two
+  // AUDITION pads head band 1 — the same ordinal argument KICK DRUM's face
+  // makes: this voice is SILENT until something strikes it, so the way to hear
+  // it belongs in the band a player reaches first. Then the four layers in the
+  // order they are heard (head + body, then the wire/crack snap), the ROLL
+  // engine (SPREAD rides there because it is a ROLL control — the DSP centres
+  // every single trigger hit, so spread only ever moves the two hands, their
+  // detune and the bed's ping-pong), then the two WHOLE-DRUM scalers, then the
+  // output bus.
+  //
+  // ⚠ WHY `whole drum` IS ITS OWN 2-CELL BAND AND NOT A CLUSTER UNDER `bus`.
+  // TONE and DAMP are the only two controls that touch EVERY layer (tone tilts
+  // voice-vs-bed and crossfades head↔body; damp scales the head, body and wire
+  // decays together). Filing them as a sub-header inside a band called `bus`
+  // would teach that they are part of the output chain, which is the shape of
+  // the mis-teaching KICK DRUM's face had to be fixed for (it read
+  // `… → ceiling → stereo → level` while the DSP does `… → level → width →
+  // ceiling`). A thin band that says the true thing beats a fat band that says
+  // a false one.
   //
   // glyph 'scope' = the live analyser trace on audio_l — for a percussion voice
   // that IS the hero image: each strike's amp/noise envelope (crack spike →
@@ -153,24 +224,51 @@ export const snaredrumDef: AudioModuleDef = {
   // params — its identity is the envelope, and the envelope is only real live.)
   face: {
     order: [
-      // top-2 → the compact lane tile: which drum, how snappy (TONE joins the
-      // full-in-lane plate — a glyph tile fits two whole cells).
-      'tune', 'wire', 'tone',
-      // ranks 4–8 → the full-in-lane face: length, attack, the roll pair, gain.
-      'head_decay', 'crack', 'roll_speed', 'bounce', 'level',
-      // dock roster, band reading order — the drum, the snap, the roll, the bus.
-      'pitch_amt', 'pitch_time', 'damping', 'body_decay', 'damp',
-      'wire_tone', 'wire_decay', 'crack_tone',
+      // ── the lane budget: ranks 1–6, and it ends HERE ──
+      'tune', 'wire',              // the compact tile: which drum, is it a snare
+      'roll_speed', 'bounce',      // the ROLL — rate, then character
+      'damp', 'tone',              // the two whole-drum scalers
+      // ── dock-only tail, in FACEPLATE reading order ──
+      // The two auditions lead it exactly as they lead the faceplate. They are
+      // family cells (<Button>s, not knobs) and there is no precedent for a
+      // button inside the lane plate — laneBodyPlan's no-clip guarantee is
+      // derived entirely from knob-column geometry — so rank 7 is both their
+      // natural place in the story and the first rank that cannot reach a lane.
+      'snaredrum-hit-{n}', 'snaredrum-roll-{n}',
+      'damping', 'head_decay', 'body_decay', 'pitch_amt', 'pitch_time',
+      'wire_tone', 'wire_decay', 'crack', 'crack_tone',
       'humanize', 'spread',
-      'drive', 'hard', 'ceiling',
-      'width',
+      'drive', 'hard', 'ceiling', 'width', 'level',
     ],
     pages: [
-      { id: 'drum',   label: 'tone · body',      controls: ['tune', 'tone', 'head_decay', 'body_decay', 'damping', 'pitch_amt', 'pitch_time', 'damp'] },
-      { id: 'snap',   label: 'noise · snap',     controls: ['wire', 'wire_tone', 'wire_decay', 'crack', 'crack_tone'] },
-      { id: 'roll',   label: 'roll · two hands', controls: ['roll_speed', 'bounce', 'humanize', 'spread'] },
-      { id: 'drive',  label: 'drive · bus',      controls: ['drive', 'hard', 'ceiling'] },
-      { id: 'output', label: 'output · stereo',  controls: ['width', 'level'] },
+      // ⚠ PAGE IDS ARE CHECKED AGAINST THE CURATED REAR GROUP IDS.
+      // `rearFieldPlan` gives a curated group whose id is 'voice'/'signal' the
+      // LEADING band slot and then walks `face.pages` claiming a curated group
+      // with each page's id, so a page id colliding with the leading group's id
+      // renders that band TWICE and reddens the rear-derivation totality gate
+      // (dx7 hit exactly this). This module's only curated rear group is
+      // `voice`; no page is called 'voice', and none is called 'strike' either
+      // — the REAR already owns that word for the band where trigger_in and
+      // gate_in are patched, and two adjacent bands both headed STRIKE is the
+      // confusion KICK DRUM had to unpick (a player patching a gate into the
+      // wrong one silently detunes the drum instead of hitting it).
+      {
+        id: 'drum',
+        label: 'drum · head + body',
+        controls: ['snaredrum-hit-{n}', 'snaredrum-roll-{n}', 'tune', 'damping', 'head_decay', 'body_decay', 'pitch_amt', 'pitch_time'],
+        // ⚠ Clusters render AFTER the band's flat row (curated-face's
+        // resolvePage / ModuleShell), so a cluster can never LEAD a band —
+        // which is why the pads are un-clustered and first in `controls`.
+        clusters: [
+          // Depth + settle time are ONE envelope (the snare 'pit'). Uncaptioned
+          // they read as two more orphans among four decay knobs.
+          { label: 'pitch drop', controls: ['pitch_amt', 'pitch_time'] },
+        ],
+      },
+      { id: 'snap',  label: 'snap · wire + crack', controls: ['wire', 'wire_tone', 'wire_decay', 'crack', 'crack_tone'] },
+      { id: 'roll',  label: 'roll · two hands',    controls: ['roll_speed', 'bounce', 'humanize', 'spread'] },
+      { id: 'whole', label: 'whole drum',          controls: ['tone', 'damp'] },
+      { id: 'bus',   label: 'bus · out',           controls: ['drive', 'hard', 'ceiling', 'width', 'level'] },
     ],
     glyph: 'scope',
     // REAR CARD curation (rear-card-model). Derivation already files every
@@ -194,7 +292,12 @@ export const snaredrumDef: AudioModuleDef = {
         },
       ],
       clusters: [
-        { group: 'voice', label: 'strike', ports: ['trigger_in', 'gate_in'] },
+        // The cluster caption now TEACHES the distinction instead of restating
+        // the band header: these two jacks carry the same `gate` cable and the
+        // same voltage, and the difference is entirely in how this module reads
+        // them (PortDef.edge). That is the one fact a patcher cannot infer from
+        // the holes, and the jack field is where the decision is made.
+        { group: 'voice', label: 'strike \u00b7 hit or hold', ports: ['trigger_in', 'gate_in'] },
         { group: 'voice', label: 'per hit', ports: ['accent_in', 'pitch_cv', 'choke_in'] },
       ],
       audioRate: ['trigger_in', 'gate_in', 'roll_speed_cv', 'accent_in', 'pitch_cv', 'choke_in'],
@@ -267,6 +370,10 @@ export const snaredrumDef: AudioModuleDef = {
         "Right output — the other half of the stereo pair, the mid − side difference through its own ceiling. Carries the same centred head/body/crack as the left; the two-hand roll and the bright wire band differ from L when SPREAD / WIDTH are up, and at Spread 0 with Width 0 the two channels are exactly equal.",
     },
     controls: {
+      'snaredrum-hit-{n}':
+        "AUDITION \u2014 HIT: one press fires exactly ONE snare hit, identical to a rising edge on trigger_in. It is a button, not a knob: nothing is stored, nothing is shared with the rackspace, and it drives the same worklet input a cable does, so a sequencer patched into trigger_in keeps working while you use it. Its purpose is that this voice makes NO sound until something strikes it \u2014 without the pad the dock offers twenty-two controls over a drum you cannot hear. A hit from here is always centred and un-detuned, exactly like a hit from the jack.",
+      'snaredrum-roll-{n}':
+        "AUDITION \u2014 ROLL: a MOMENTARY pad. WHILE you hold it the internal two-hand roll engine runs, exactly as it does while gate_in is high, and it stops the instant you let go. Hold-to-roll rather than click-to-roll is not a UI preference: gate_in is declared edge:'gate', the roll exists only for as long as the level stays high, and a roll you could not hold would be a different instrument. Press it with ROLL SPEED and BOUNCE under your other hand \u2014 that is the whole reason those two rank into the lane. Like HIT it writes nothing to the graph, and the gate is force-closed if the pane is closed or the window loses focus mid-hold, so a held roll can never be left running.",
       tune: "HEAD: the snare's fundamental pitch (90–400 Hz, log). The four inharmonic modes track it at their Bessel ratios, and the body noise centres on it. Low = deep/fat snare, high = tight/piccolo. Tracks pitch_cv at 1V/oct.",
       tone: "Overall tonal TILT of the drum (0 = bright, wire/noise-forward sizzle; 1 = fat, head/body-forward). Two things move in opposition: the tonal VOICE's gain rides 0.6→1.4 while the bright wire BED's rides 1.4→0.6, and inside the voice the head modes crossfade with the body noise (the crack tick rides with the voice, not against it). 0.5 leaves both gains at unity — the everyday balance and the shipped default.",
       damping: "HEAD: mode Q / ring character (0 = open and ringy, 1 = tight and muted) — the RELATIVE resonance of the modal bank, applied on top of the damping Head Dec sets, so the knob keeps its full range at any decay length. The (0,1) fundamental pair is damped hardest by design — that is what keeps the thunk pitchless while the upper inharmonic modes carry it.",
@@ -318,6 +425,29 @@ export const snaredrumDef: AudioModuleDef = {
     silence.offset.value = 0;
     silence.start();
     for (let i = 0; i < 6; i++) silence.connect(worklet, 0, i);
+
+    // THE TWO AUDITIONS (the pads on both faces). Two DEDICATED
+    // ConstantSources, each summed into the worklet input its own jack feeds —
+    // input 0 = trigger_in (one hit per rising edge), input 1 = gate_in (the
+    // roll runs while high). Web Audio SUMS connections, so a real cable on
+    // either jack keeps working while the pad is used, and the worklet's
+    // per-sample edge/level detection cannot tell the two apart. Both waveforms
+    // come from the SHARED $lib/audio/gate-trigger seam — never re-derived
+    // here, so the pulse width and the HIGH level are the repo's, not this
+    // module's.
+    //
+    // HOST-SIDE ON PURPOSE: a `strike`/`roll` PARAM would need rows in the
+    // worklet's PARAM_TABLE, and snaredrum's ART profile pins the sha of those
+    // DSP sources, so it would force a re-capture of a byte-identical baseline.
+    const hitCs = ctx.createConstantSource();
+    hitCs.offset.value = 0;
+    hitCs.start();
+    hitCs.connect(worklet, 0, 0);
+
+    const rollCs = ctx.createConstantSource();
+    rollCs.offset.value = 0;
+    rollCs.start();
+    rollCs.connect(worklet, 0, 1);
 
     // Set initial params from the persisted node state (or defaults).
     const params = worklet.parameters as unknown as Map<string, AudioParam>;
@@ -372,9 +502,42 @@ export const snaredrumDef: AudioModuleDef = {
       readParam(paramId) {
         return params.get(paramId)?.value;
       },
+      // The AUDITION seam — the karplus/samsloop `read(key)` idiom, one key per
+      // strike input because the two have different EDGE semantics and a caller
+      // that can only do one of them must not silently get the other:
+      //   'manualTrigger' → () => void               fires ONE hit  (trigger_in)
+      //   'manualGate'    → (high: boolean) => void  holds a roll   (gate_in)
+      // Both faces (SnaredrumCard's pads and the shell's `snaredrum-hit` /
+      // `snaredrum-roll` cells) go through these, so there is no second
+      // implementation to drift.
+      read(key: string): unknown {
+        if (key === 'manualTrigger') {
+          return () => {
+            try { fireTrigger(hitCs, ctx.currentTime); } catch { /* */ }
+          };
+        }
+        if (key === 'manualGate') {
+          return (high: boolean) => {
+            try {
+              if (high) openGate(rollCs, ctx.currentTime);
+              else closeGate(rollCs, ctx.currentTime);
+            } catch { /* */ }
+          };
+        }
+        return undefined;
+      },
       dispose() {
+        // ⚠ CLOSE THE ROLL GATE BEFORE STOPPING ITS SOURCE. A node deleted
+        // mid-hold is one of the release edges the button itself can never see
+        // (its <Button> unmounts with the pane), and a gate left open is a drum
+        // that rolls forever — see ui/modules/snaredrum-roll-latch.ts.
+        try { closeGate(rollCs, ctx.currentTime); } catch { /* */ }
         try { silence.stop(); } catch { /* already stopped */ }
         try { silence.disconnect(); } catch { /* */ }
+        try { hitCs.stop(); } catch { /* */ }
+        try { hitCs.disconnect(); } catch { /* */ }
+        try { rollCs.stop(); } catch { /* */ }
+        try { rollCs.disconnect(); } catch { /* */ }
         try { splitter.disconnect(); } catch { /* */ }
         try { worklet.disconnect(); } catch { /* */ }
       },

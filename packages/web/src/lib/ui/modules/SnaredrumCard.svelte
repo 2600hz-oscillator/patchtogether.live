@@ -7,9 +7,9 @@
   //   ┌──────── HEAD ────────┬─── BODY ───┬──── WIRE ─────┐
   //   │ Tune Head Damp GDamp │ Tone Body  │ Wire WTn WDec │
   //   │ PAmt PTime           │            │               │
-  //   ├─── CRACK ───┬──────── ROLL ───────┼──── DRIVE ────┤
-  //   │ Crack CkTn  │ Roll Bounce Human   │ Drive [HARD]  │
-  //   │             │                     │ Ceil          │
+  //   ├─ CRACK ─┬─ PLAY ─┬──── ROLL ──────┼──── DRIVE ────┤
+  //   │ Crack   │ ● HIT  │ Roll Bounce    │ Drive [HARD]  │
+  //   │ CkTn    │ ▬ ROLL │ Human          │ Ceil          │
   //   ├──── STEREO ─────────┬──── OUT ─────────────────────┤
   //   │ Spread Width        │ Level                        │
   //   └─────────────────────┴──────────────────────────────┘
@@ -21,12 +21,70 @@
   import { snaredrumDef } from '$lib/audio/modules/snaredrum';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
-  import { cardParams } from './card-kit';
+  import { cardParams, paramSpec } from './card-kit';
+  import { fireSnaredrumHit, setSnaredrumRoll } from './snaredrum-strike-actions';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
   const { defaultFor, paramVal, set, live } = cardParams(snaredrumDef, () => id, () => node);
 
+  // ⚠ EVERY CONTROL'S RANGE / CURVE / UNITS / LABEL COMES FROM THE DEF.
+  // This card used to re-type all 21 continuous params' min/max/curve/units as
+  // literals. They happened to AGREE with snaredrum.ts — all 21 checked — so it
+  // was not a live bug, but it is exactly the backdraft divergence shape (a
+  // card silently disagreeing with its def) and NO gate we own can see it:
+  // contract-lock, module-docs-lint and module-face-lint all read the DEF.
+  // Held at the source level by card-range-source.test.ts.
+  //
+  // The LABELS were re-typed too, and THERE the card genuinely disagreed: it
+  // painted the literal string 'Tone' on THREE different faders (tone,
+  // wire_tone, crack_tone) with only a group header to tell them apart, while
+  // the def has always declared 'Tone' / 'W Tone' / 'Ck Tone'; and it painted
+  // 'Wire' where the def says 'Wires'. Reading them from the def removes the
+  // ambiguity and makes the card and the dock name the same knob the same way.
+  const P = {
+    tune:       paramSpec(snaredrumDef, 'tune'),
+    tone:       paramSpec(snaredrumDef, 'tone'),
+    damping:    paramSpec(snaredrumDef, 'damping'),
+    head_decay: paramSpec(snaredrumDef, 'head_decay'),
+    body_decay: paramSpec(snaredrumDef, 'body_decay'),
+    pitch_amt:  paramSpec(snaredrumDef, 'pitch_amt'),
+    pitch_time: paramSpec(snaredrumDef, 'pitch_time'),
+    wire:       paramSpec(snaredrumDef, 'wire'),
+    wire_tone:  paramSpec(snaredrumDef, 'wire_tone'),
+    wire_decay: paramSpec(snaredrumDef, 'wire_decay'),
+    crack:      paramSpec(snaredrumDef, 'crack'),
+    crack_tone: paramSpec(snaredrumDef, 'crack_tone'),
+    damp:       paramSpec(snaredrumDef, 'damp'),
+    roll_speed: paramSpec(snaredrumDef, 'roll_speed'),
+    bounce:     paramSpec(snaredrumDef, 'bounce'),
+    humanize:   paramSpec(snaredrumDef, 'humanize'),
+    spread:     paramSpec(snaredrumDef, 'spread'),
+    drive:      paramSpec(snaredrumDef, 'drive'),
+    ceiling:    paramSpec(snaredrumDef, 'ceiling'),
+    width:      paramSpec(snaredrumDef, 'width'),
+    level:      paramSpec(snaredrumDef, 'level'),
+  } as const;
+
+  // ── THE AUDITION (the `snaredrum-hit` / `snaredrum-roll` control families).
+  // Before this the card could make NO sound at all without a sequencer patched
+  // in. Both pads call the SAME seam the RACKLINE shell's cells call
+  // (snaredrum-strike-actions → the engine handle's read keys → host-side
+  // ConstantSources on trigger_in / gate_in), so there is one implementation.
+  // ROLL is press-and-HOLD, matching gate_in's declared edge:'gate'.
+  let hitPulse = $state(false);
+  let rolling = $state(false);
+  function hit(): void {
+    fireSnaredrumHit(id);
+    hitPulse = true;
+    setTimeout(() => { hitPulse = false; }, 120);
+  }
+  function rollDown(): void { rolling = true; setSnaredrumRoll(id, true); }
+  function rollUp(): void {
+    if (!rolling) return;
+    rolling = false;
+    setSnaredrumRoll(id, false);
+  }
 
 
   let tune       = $derived(paramVal('tune'));
@@ -134,29 +192,29 @@
         <div class="group wide">
           <header>HEAD</header>
           <div class="fader-row">
-            <Fader value={tune}      min={90} max={400} defaultValue={defaultFor('tune')}       label="Tune"  units="Hz" curve="log"    onchange={set('tune')}       moduleId={id} paramId="tune"       readLive={live('tune')} />
-            <Fader value={headDecay} min={30} max={600} defaultValue={defaultFor('head_decay')} label="Head"  units="ms" curve="log"    onchange={set('head_decay')} moduleId={id} paramId="head_decay" readLive={live('head_decay')} />
-            <Fader value={damping}   min={0}  max={1}   defaultValue={defaultFor('damping')}    label="Damp"             curve="linear" onchange={set('damping')}    moduleId={id} paramId="damping"    readLive={live('damping')} />
-            <Fader value={damp}      min={0}  max={1}   defaultValue={defaultFor('damp')}       label="GDmp"             curve="linear" onchange={set('damp')}       moduleId={id} paramId="damp"       readLive={live('damp')} />
+            <Fader value={tune}      min={P.tune.min}       max={P.tune.max}       defaultValue={defaultFor('tune')}       label={P.tune.label}       units={P.tune.units}       curve={P.tune.curve}       onchange={set('tune')}       moduleId={id} paramId="tune"       readLive={live('tune')} />
+            <Fader value={headDecay} min={P.head_decay.min} max={P.head_decay.max} defaultValue={defaultFor('head_decay')} label={P.head_decay.label} units={P.head_decay.units} curve={P.head_decay.curve} onchange={set('head_decay')} moduleId={id} paramId="head_decay" readLive={live('head_decay')} />
+            <Fader value={damping}   min={P.damping.min}    max={P.damping.max}    defaultValue={defaultFor('damping')}    label={P.damping.label}    units={P.damping.units}    curve={P.damping.curve}    onchange={set('damping')}    moduleId={id} paramId="damping"    readLive={live('damping')} />
+            <Fader value={damp}      min={P.damp.min}       max={P.damp.max}       defaultValue={defaultFor('damp')}       label={P.damp.label}       units={P.damp.units}       curve={P.damp.curve}       onchange={set('damp')}       moduleId={id} paramId="damp"       readLive={live('damp')} />
           </div>
           <div class="fader-row">
-            <Fader value={pitchAmt}  min={0}  max={12}  defaultValue={defaultFor('pitch_amt')}  label="PAmt"  units="st" curve="linear" onchange={set('pitch_amt')}  moduleId={id} paramId="pitch_amt"  readLive={live('pitch_amt')} />
-            <Fader value={pitchTime} min={3}  max={80}  defaultValue={defaultFor('pitch_time')} label="PTim"  units="ms" curve="log"    onchange={set('pitch_time')} moduleId={id} paramId="pitch_time" readLive={live('pitch_time')} />
+            <Fader value={pitchAmt}  min={P.pitch_amt.min}  max={P.pitch_amt.max}  defaultValue={defaultFor('pitch_amt')}  label={P.pitch_amt.label}  units={P.pitch_amt.units}  curve={P.pitch_amt.curve}  onchange={set('pitch_amt')}  moduleId={id} paramId="pitch_amt"  readLive={live('pitch_amt')} />
+            <Fader value={pitchTime} min={P.pitch_time.min} max={P.pitch_time.max} defaultValue={defaultFor('pitch_time')} label={P.pitch_time.label} units={P.pitch_time.units} curve={P.pitch_time.curve} onchange={set('pitch_time')} moduleId={id} paramId="pitch_time" readLive={live('pitch_time')} />
           </div>
         </div>
         <div class="group">
           <header>BODY</header>
           <div class="fader-row">
-            <Fader value={tone}      min={0}  max={1}   defaultValue={defaultFor('tone')}       label="Tone"             curve="linear" onchange={set('tone')}       moduleId={id} paramId="tone"       readLive={live('tone')} />
-            <Fader value={bodyDecay} min={20} max={300} defaultValue={defaultFor('body_decay')} label="Body"  units="ms" curve="log"    onchange={set('body_decay')} moduleId={id} paramId="body_decay" readLive={live('body_decay')} />
+            <Fader value={tone}      min={P.tone.min}       max={P.tone.max}       defaultValue={defaultFor('tone')}       label={P.tone.label}       units={P.tone.units}       curve={P.tone.curve}       onchange={set('tone')}       moduleId={id} paramId="tone"       readLive={live('tone')} />
+            <Fader value={bodyDecay} min={P.body_decay.min} max={P.body_decay.max} defaultValue={defaultFor('body_decay')} label={P.body_decay.label} units={P.body_decay.units} curve={P.body_decay.curve} onchange={set('body_decay')} moduleId={id} paramId="body_decay" readLive={live('body_decay')} />
           </div>
         </div>
         <div class="group">
           <header>WIRE</header>
           <div class="fader-row">
-            <Fader value={wire}      min={0}    max={1}    defaultValue={defaultFor('wire')}      label="Wire"  curve="linear" onchange={set('wire')}      moduleId={id} paramId="wire"      readLive={live('wire')} />
-            <Fader value={wireTone}  min={1500} max={9000} defaultValue={defaultFor('wire_tone')} label="Tone" units="Hz" curve="log" onchange={set('wire_tone')} moduleId={id} paramId="wire_tone" readLive={live('wire_tone')} />
-            <Fader value={wireDecay} min={40}   max={700}  defaultValue={defaultFor('wire_decay')} label="Dec" units="ms" curve="log" onchange={set('wire_decay')} moduleId={id} paramId="wire_decay" readLive={live('wire_decay')} />
+            <Fader value={wire}      min={P.wire.min}       max={P.wire.max}       defaultValue={defaultFor('wire')}       label={P.wire.label}       units={P.wire.units}       curve={P.wire.curve}       onchange={set('wire')}       moduleId={id} paramId="wire"       readLive={live('wire')} />
+            <Fader value={wireTone}  min={P.wire_tone.min}  max={P.wire_tone.max}  defaultValue={defaultFor('wire_tone')}  label={P.wire_tone.label}  units={P.wire_tone.units}  curve={P.wire_tone.curve}  onchange={set('wire_tone')}  moduleId={id} paramId="wire_tone"  readLive={live('wire_tone')} />
+            <Fader value={wireDecay} min={P.wire_decay.min} max={P.wire_decay.max} defaultValue={defaultFor('wire_decay')} label={P.wire_decay.label} units={P.wire_decay.units} curve={P.wire_decay.curve} onchange={set('wire_decay')} moduleId={id} paramId="wire_decay" readLive={live('wire_decay')} />
           </div>
         </div>
       </div>
@@ -168,22 +226,52 @@
         <div class="group">
           <header>CRACK</header>
           <div class="fader-row">
-            <Fader value={crack}     min={0}   max={1}    defaultValue={defaultFor('crack')}      label="Amt"             curve="linear" onchange={set('crack')}      moduleId={id} paramId="crack"      readLive={live('crack')} />
-            <Fader value={crackTone} min={800} max={7000} defaultValue={defaultFor('crack_tone')} label="Tone" units="Hz" curve="log"    onchange={set('crack_tone')} moduleId={id} paramId="crack_tone" readLive={live('crack_tone')} />
+            <Fader value={crack}     min={P.crack.min}      max={P.crack.max}      defaultValue={defaultFor('crack')}      label={P.crack.label}      units={P.crack.units}      curve={P.crack.curve}      onchange={set('crack')}      moduleId={id} paramId="crack"      readLive={live('crack')} />
+            <Fader value={crackTone} min={P.crack_tone.min} max={P.crack_tone.max} defaultValue={defaultFor('crack_tone')} label={P.crack_tone.label} units={P.crack_tone.units} curve={P.crack_tone.curve} onchange={set('crack_tone')} moduleId={id} paramId="crack_tone" readLive={live('crack_tone')} />
+          </div>
+        </div>
+        <!-- THE AUDITION — the `snaredrum-hit` + `snaredrum-roll` families.
+             Two pads because the module has two strike INPUTS with different
+             declared edge semantics: HIT is a one-shot (trigger_in), ROLL is
+             press-and-HOLD (gate_in, edge:'gate' — the two-hand engine runs
+             only while the level is high). They sit beside ROLL SPEED and
+             BOUNCE on purpose: those are the knobs you ride while holding. -->
+        <div class="group">
+          <header>PLAY</header>
+          <div class="pad-col">
+            <button
+              class="pad"
+              class:pulse={hitPulse}
+              onclick={hit}
+              data-testid={`snaredrum-hit-${id}-1`}
+              title="Audition: one snare hit (identical to a trigger_in rising edge)"
+            >● HIT</button>
+            <button
+              class="pad"
+              class:held={rolling}
+              aria-pressed={rolling}
+              onpointerdown={rollDown}
+              onpointerup={rollUp}
+              onpointercancel={rollUp}
+              onpointerleave={rollUp}
+              onblur={rollUp}
+              data-testid={`snaredrum-roll-${id}-1`}
+              title="Audition: HOLD to run the two-hand roll (identical to holding gate_in high)"
+            >▬ ROLL</button>
           </div>
         </div>
         <div class="group wide">
           <header>ROLL</header>
           <div class="fader-row">
-            <Fader value={rollSpeed} min={0} max={1} defaultValue={defaultFor('roll_speed')} label="Roll"   curve="linear" onchange={set('roll_speed')} moduleId={id} paramId="roll_speed" readLive={live('roll_speed')} />
-            <Fader value={bounce}    min={0} max={1} defaultValue={defaultFor('bounce')}     label="Bounce" curve="linear" onchange={set('bounce')}     moduleId={id} paramId="bounce"     readLive={live('bounce')} />
-            <Fader value={humanize}  min={0} max={1} defaultValue={defaultFor('humanize')}   label="Human"  curve="linear" onchange={set('humanize')}   moduleId={id} paramId="humanize"   readLive={live('humanize')} />
+            <Fader value={rollSpeed} min={P.roll_speed.min} max={P.roll_speed.max} defaultValue={defaultFor('roll_speed')} label={P.roll_speed.label} units={P.roll_speed.units} curve={P.roll_speed.curve} onchange={set('roll_speed')} moduleId={id} paramId="roll_speed" readLive={live('roll_speed')} />
+            <Fader value={bounce}    min={P.bounce.min}     max={P.bounce.max}     defaultValue={defaultFor('bounce')}     label={P.bounce.label}     units={P.bounce.units}     curve={P.bounce.curve}     onchange={set('bounce')}     moduleId={id} paramId="bounce"     readLive={live('bounce')} />
+            <Fader value={humanize}  min={P.humanize.min}   max={P.humanize.max}   defaultValue={defaultFor('humanize')}   label={P.humanize.label}   units={P.humanize.units}   curve={P.humanize.curve}   onchange={set('humanize')}   moduleId={id} paramId="humanize"   readLive={live('humanize')} />
           </div>
         </div>
         <div class="group">
           <header>DRIVE</header>
           <div class="fader-row">
-            <Fader value={drive} min={0} max={1} defaultValue={defaultFor('drive')} label="Drv" curve="linear" onchange={set('drive')} moduleId={id} paramId="drive" readLive={live('drive')} />
+            <Fader value={drive} min={P.drive.min} max={P.drive.max} defaultValue={defaultFor('drive')} label={P.drive.label} units={P.drive.units} curve={P.drive.curve} onchange={set('drive')} moduleId={id} paramId="drive" readLive={live('drive')} />
             <button
               class="toggle"
               class:on={hardOn}
@@ -193,7 +281,7 @@
             >HARD: {hardOn ? 'ON' : 'OFF'}</button>
           </div>
           <div class="fader-row">
-            <Fader value={ceiling} min={0} max={1} defaultValue={defaultFor('ceiling')} label="Ceil" curve="linear" onchange={set('ceiling')} moduleId={id} paramId="ceiling" readLive={live('ceiling')} />
+            <Fader value={ceiling} min={P.ceiling.min} max={P.ceiling.max} defaultValue={defaultFor('ceiling')} label={P.ceiling.label} units={P.ceiling.units} curve={P.ceiling.curve} onchange={set('ceiling')} moduleId={id} paramId="ceiling" readLive={live('ceiling')} />
           </div>
         </div>
       </div>
@@ -205,14 +293,14 @@
         <div class="group wide">
           <header>STEREO</header>
           <div class="fader-row">
-            <Fader value={spread} min={0} max={1} defaultValue={defaultFor('spread')} label="Sprd" curve="linear" onchange={set('spread')} moduleId={id} paramId="spread" readLive={live('spread')} />
-            <Fader value={width}  min={0} max={1} defaultValue={defaultFor('width')}  label="Wid"  curve="linear" onchange={set('width')}  moduleId={id} paramId="width"  readLive={live('width')} />
+            <Fader value={spread} min={P.spread.min} max={P.spread.max} defaultValue={defaultFor('spread')} label={P.spread.label} units={P.spread.units} curve={P.spread.curve} onchange={set('spread')} moduleId={id} paramId="spread" readLive={live('spread')} />
+            <Fader value={width}  min={P.width.min}  max={P.width.max}  defaultValue={defaultFor('width')}  label={P.width.label}  units={P.width.units}  curve={P.width.curve}  onchange={set('width')}  moduleId={id} paramId="width"  readLive={live('width')} />
           </div>
         </div>
         <div class="group">
           <header>OUT</header>
           <div class="fader-row">
-            <Fader value={level} min={-24} max={12} defaultValue={defaultFor('level')} label="Lvl" units="dB" curve="linear" onchange={set('level')} moduleId={id} paramId="level" readLive={live('level')} />
+            <Fader value={level} min={P.level.min} max={P.level.max} defaultValue={defaultFor('level')} label={P.level.label} units={P.level.units} curve={P.level.curve} onchange={set('level')} moduleId={id} paramId="level" readLive={live('level')} />
           </div>
         </div>
       </div>
@@ -269,6 +357,34 @@
     white-space: nowrap;
   }
   .snaredrum-card .toggle.on {
+    color: #6fb7ff;
+    border-color: #6fb7ff;
+    background: #101820;
+  }
+  .snaredrum-card .pad-col {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 2px 2px 6px;
+  }
+  .snaredrum-card .pad {
+    font-family: var(--font-mono, monospace);
+    font-size: 0.6rem;
+    letter-spacing: 0.5px;
+    padding: 7px 6px;
+    background: #14151a;
+    color: #9aa0ae;
+    border: 1px solid #2a2d36;
+    border-radius: 4px;
+    cursor: pointer;
+    white-space: nowrap;
+    touch-action: none;
+    user-select: none;
+  }
+  .snaredrum-card .pad:hover { border-color: #6fb7ff; }
+  .snaredrum-card .pad:active,
+  .snaredrum-card .pad.pulse,
+  .snaredrum-card .pad.held {
     color: #6fb7ff;
     border-color: #6fb7ff;
     background: #101820;
