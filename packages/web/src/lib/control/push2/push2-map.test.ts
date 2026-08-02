@@ -91,29 +91,57 @@ describe('classifyPush2 — parity events into the Launchpad vocabulary', () => 
 });
 
 describe('classifyPush2 — additive Push-only actions', () => {
-  it('above-display buttons → select channel 1..8 (press only)', () => {
+  it('above-display buttons → select LANE 1..8 (press only)', () => {
     expect(classifyPush2(cc(PUSH_CC_ABOVE_DISPLAY_BASE, 127))).toEqual({ kind: 'selectChannel', channel: 0 });
     expect(classifyPush2(cc(PUSH_CC_ABOVE_DISPLAY_BASE + 7, 127))).toEqual({ kind: 'selectChannel', channel: 7 });
     expect(classifyPush2(cc(PUSH_CC_ABOVE_DISPLAY_BASE, 0)), 'release ignored').toBeNull();
   });
 
-  it('display encoders → volume ch1..8; deltas decoded relative', () => {
+  it('display encoders → PUSH-CARD STRIPS 0..7; deltas decoded relative', () => {
+    // REPLACES "display encoders → MixMasters ch1..8 volume". The owner dropped
+    // the 8-knobs-as-a-mixer function; these eight now drive whichever card is
+    // on the screen.
     expect(classifyPush2(cc(PUSH_CC_ENCODER_BASE, 1))).toEqual({
       kind: 'encoder',
-      target: { param: 'volume', channel: 0 },
+      target: { kind: 'strip', index: 0 },
       delta: 1,
     });
     expect(classifyPush2(cc(PUSH_CC_ENCODER_BASE + 7, 127))).toEqual({
       kind: 'encoder',
-      target: { param: 'volume', channel: 7 },
+      target: { kind: 'strip', index: 7 },
       delta: -1,
     });
+    // Every one of the eight maps to its own strip, in order — no gaps, no
+    // off-by-one at either end of the row.
+    for (let i = 0; i < 8; i++) {
+      expect(classifyPush2(cc(PUSH_CC_ENCODER_BASE + i, 1))).toEqual({
+        kind: 'encoder',
+        target: { kind: 'strip', index: i },
+        delta: 1,
+      });
+    }
   });
 
-  it('Tempo/Swing/Master encoders → sends + master', () => {
-    expect(classifyPush2(cc(PUSH_CC_ENCODER_TEMPO, 2))).toEqual({ kind: 'encoder', target: { param: 'send1' }, delta: 2 });
-    expect(classifyPush2(cc(PUSH_CC_ENCODER_SWING, 2))).toEqual({ kind: 'encoder', target: { param: 'send2' }, delta: 2 });
-    expect(classifyPush2(cc(PUSH_CC_ENCODER_MASTER, 127))).toEqual({ kind: 'encoder', target: { param: 'master' }, delta: -1 });
+  it('Swing (#2 from the left) → FLIP CARDS; Master → master volume; Tempo is UNBOUND', () => {
+    // REPLACES "Tempo/Swing → send1/send2 of the selected channel".
+    expect(classifyPush2(cc(PUSH_CC_ENCODER_SWING, 2))).toEqual({
+      kind: 'encoder',
+      target: { kind: 'moduleScroll' },
+      delta: 2,
+    });
+    expect(classifyPush2(cc(PUSH_CC_ENCODER_SWING, 127))).toEqual({
+      kind: 'encoder',
+      target: { kind: 'moduleScroll' },
+      delta: -1,
+    });
+    expect(classifyPush2(cc(PUSH_CC_ENCODER_MASTER, 127))).toEqual({
+      kind: 'encoder',
+      target: { kind: 'master' },
+      delta: -1,
+    });
+    // CC 14 is a real encoder but deliberately bound to nothing in v1.
+    expect(classifyPush2(cc(PUSH_CC_ENCODER_TEMPO, 2)), 'Tempo is unbound').toBeNull();
+    expect(isEncoderCc(PUSH_CC_ENCODER_TEMPO), '…but still an encoder').toBe(true);
   });
 
   it('a zero encoder delta is a no-op', () => {
@@ -141,7 +169,13 @@ describe('helpers', () => {
     expect(isEncoderCc(PUSH_CC_ABOVE_DISPLAY_BASE)).toBe(false);
   });
   it('encoderTarget / dpadDir classify their CCs', () => {
-    expect(encoderTarget(PUSH_CC_ENCODER_BASE + 2)).toEqual({ param: 'volume', channel: 2 });
+    expect(encoderTarget(PUSH_CC_ENCODER_BASE + 2)).toEqual({ kind: 'strip', index: 2 });
+    expect(encoderTarget(PUSH_CC_ENCODER_SWING)).toEqual({ kind: 'moduleScroll' });
+    expect(encoderTarget(PUSH_CC_ENCODER_MASTER)).toEqual({ kind: 'master' });
+    expect(encoderTarget(PUSH_CC_ENCODER_TEMPO), 'unbound in v1').toBeNull();
+    // 71..78 is the strip row and 79 is Master, so the first CC past the whole
+    // encoder block is 80 — nothing there is an encoder target.
+    expect(encoderTarget(PUSH_CC_ENCODER_MASTER + 1), 'past the encoder block').toBeNull();
     expect(dpadDir(PUSH_CC_DPAD_UP)).toBe('up');
     expect(dpadDir(999)).toBeNull();
   });

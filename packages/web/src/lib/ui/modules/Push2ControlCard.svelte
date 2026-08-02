@@ -2,19 +2,27 @@
   // PUSH 2 CONTROL card — binds an Ableton Push 2 to a focused clip-player. The
   // Push drives the FULL Launchpad clip-launch / note-editor / arm / scene / KEYS
   // parity surface (by injecting itself as the Launchpad control surface), plus
-  // three additive features: the 8 above-display buttons SELECT channel 1-8 (the
-  // card shows "CH n · instrument"), the 11 encoders drive MixMasters, and the
-  // D-Pad scrolls the CLIP-view window. START/STOP moves to the Push Play button.
+  // the PUSH CARD surface: the 8 above-display buttons SELECT lane 1-8, the
+  // #2-from-the-left encoder flips through that lane's module cards, and the 8
+  // display encoders turn the current card's 8 controls. START/STOP moves to the
+  // Push Play button.
+  //
+  // THE PREVIEW IS THE POINT. This card renders the EXACT same PushCardView the
+  // 960×160 panel paints, through the exact same draw ops, into a canvas scaled
+  // to the card width. That makes the whole feature — schema, lane selection,
+  // curve math, layout — visible and testable with NO HARDWARE ATTACHED, which
+  // is the only reason any of it could be built without a Push on the desk.
   //
   // Modeled on LaunchpadControlCard / ElectraConnectButton: no eager MIDI prompt.
-  // "Connect Push 2" runs the gesture-gated sysex request; once connected + a
-  // clip-player exists the card binds it. All hardware state is per-machine local;
-  // LED frames never touch the Y.Doc. The 960×160 WebUSB display is Phase 2 — for
-  // now the selected channel name lives here in the card.
+  // "Connect Push 2" runs the gesture-gated sysex request; "Connect display" is a
+  // SEPARATE gesture (WebUSB is its own permission) and is never required — a
+  // missing display leaves the pads and encoders working. All hardware state is
+  // per-machine local; LED and display frames never touch the Y.Doc.
 
   import type { NodeProps } from '@xyflow/svelte';
   import ModuleTitle from './ModuleTitle.svelte';
   import { patch } from '$lib/graph/store';
+  import { nodesStructuralVersion, docVersion } from '$lib/graph/node-versions.svelte';
   import {
     midiAvailable,
     isConnected,
@@ -22,13 +30,23 @@
     bindPushToClip,
     unbindPush,
     boundClipNode,
-    channelName,
     selectedChannelIndex,
     selectChannel,
-    firstMixmstrs,
+    currentPushCardView,
+    focusedModuleId,
+    scrollPushCard,
     statusRune,
     setLaunchpadView,
   } from '$lib/control/push2/push2-control.svelte';
+  import {
+    usbAvailable,
+    connectDisplay,
+    isDisplayConnected,
+    displayStatus,
+    displayStatusRune,
+  } from '$lib/control/push2/push2-display.svelte';
+  import { renderPushCard, PUSH_SCREEN_W, PUSH_SCREEN_H } from '$lib/control/push2/push-screen-layout';
+  import { paintPushOps } from '$lib/control/push2/push-card-paint';
   import { launchpadActiveView } from '$lib/control/launchpad/launchpad-control.svelte';
   import type { SingleView } from '$lib/control/launchpad/launchpad-map';
 
@@ -42,7 +60,30 @@
   let bound = $derived((statusRune(), boundClipNode()));
   let selCh = $derived((statusRune(), selectedChannelIndex()));
   let activeView = $derived((statusRune(), launchpadActiveView()));
-  let hasMixer = $derived((statusRune(), firstMixmstrs() !== null));
+  let usbOk = usbAvailable();
+  let displayOn = $derived((displayStatusRune(), isDisplayConnected()));
+  let displaySt = $derived((displayStatusRune(), displayStatus()));
+
+  // The push card, re-derived on lane/focus change (statusRune), on any
+  // structural graph change, and on any param write (docVersion) — the same
+  // signals the panel's own repaint tick reacts to.
+  let card = $derived((statusRune(), nodesStructuralVersion(), docVersion(), currentPushCardView()));
+  let focusId = $derived((statusRune(), nodesStructuralVersion(), focusedModuleId()));
+
+  // The 960×160 preview: the SAME draw ops the panel gets.
+  let previewCanvas = $state<HTMLCanvasElement | null>(null);
+  $effect(() => {
+    const c = previewCanvas;
+    const v = card; // tracked
+    if (!c) return;
+    const ctx = c.getContext('2d');
+    if (!ctx) return;
+    paintPushOps(ctx, renderPushCard(v));
+  });
+
+  async function connectScreen() {
+    await connectDisplay(); // false on decline/unsupported — never throws
+  }
 
   /** The first clip-player node in the patch (the Push drives one). */
   function firstClipplayer(): string | null {
@@ -52,9 +93,6 @@
     return null;
   }
   let hasClip = $derived((statusRune(), firstClipplayer() !== null));
-  // The channel name shown in the top bar ("CH n · instrument"); Phase-1 stand-in
-  // for the on-device 960×160 display (WebUSB is Phase 2).
-  let chName = $derived((statusRune(), channelName(bound ?? firstClipplayer(), selCh)));
 
   async function connect() {
     if (!supported) { status = 'no-midi'; return; }
@@ -114,28 +152,64 @@
             {bound ? 'Unbind clip-player' : 'Bind to clip-player'}
           </button>
         {/if}
+        {#if usbOk && !displayOn}
+          <button
+            class="p2-btn nodrag"
+            type="button"
+            data-testid="push2-display-connect"
+            onclick={connectScreen}
+          >
+            Connect display
+          </button>
+        {/if}
+      </div>
+
+      <!-- THE PUSH CARD, exactly as the 960×160 panel draws it. Shown whether or
+           not any hardware is attached, so the schema + selection are visible
+           without a Push on the desk. -->
+      <div class="p2-screen" data-testid="push2-card-preview" aria-label="Push 2 screen preview">
+        <canvas
+          bind:this={previewCanvas}
+          width={PUSH_SCREEN_W}
+          height={PUSH_SCREEN_H}
+          data-testid="push2-card-canvas"
+          data-card-module={card.moduleType}
+          data-card-lane={card.lane}
+          data-card-empty={card.empty ?? ''}
+          data-card-focus={focusId ?? ''}
+        ></canvas>
+      </div>
+
+      <!-- Flip through the lane's cards — the #2-from-the-left encoder on the
+           hardware, two buttons here. -->
+      <div class="p2-actions p2-flip" role="group" aria-label="Push card">
+        <button class="p2-btn p2-flip-btn nodrag" type="button"
+          data-testid="push2-card-prev" onclick={() => scrollPushCard(-1)}>‹</button>
+        <span class="p2-flip-label" data-testid="push2-card-name">
+          {card.empty ? card.empty.replace('-', ' ') : card.title}
+          {#if card.index !== null && card.count}<span class="p2-flip-idx">{card.index}/{card.count}</span>{/if}
+        </span>
+        <button class="p2-btn p2-flip-btn nodrag" type="button"
+          data-testid="push2-card-next" onclick={() => scrollPushCard(1)}>›</button>
+      </div>
+
+      <!-- Lane select (mirrors the 8 above-display buttons). -->
+      <div class="p2-actions p2-ch-seg" role="group" aria-label="Push lane select">
+        {#each CHANNELS as c (c)}
+          <button
+            class="p2-btn p2-ch-btn nodrag"
+            class:active={selCh === c}
+            type="button"
+            data-testid={`push2-control-ch-${c + 1}`}
+            aria-pressed={selCh === c}
+            onclick={() => selectChannel(c)}
+          >
+            {c + 1}
+          </button>
+        {/each}
       </div>
 
       {#if connected}
-        <!-- Selected-channel name bar (Phase-1 stand-in for the on-device display). -->
-        <div class="p2-channel" data-testid="push2-control-channel">{chName}</div>
-
-        <!-- Channel select (mirrors the 8 above-display buttons). -->
-        <div class="p2-actions p2-ch-seg" role="group" aria-label="Push channel select">
-          {#each CHANNELS as c (c)}
-            <button
-              class="p2-btn p2-ch-btn nodrag"
-              class:active={selCh === c}
-              type="button"
-              data-testid={`push2-control-ch-${c + 1}`}
-              aria-pressed={selCh === c}
-              onclick={() => selectChannel(c)}
-            >
-              {c + 1}
-            </button>
-          {/each}
-        </div>
-
         <!-- Single-mode view switch (same 4 views as the Launchpad). -->
         <div class="p2-actions p2-view-seg" role="group" aria-label="Push view" data-testid="push2-control-view-seg">
           {#each VIEWS as v (v.id)}
@@ -171,9 +245,15 @@
             Push 2 ✓ — add a clip-player module to drive (auto-binds it).
           {/if}
         </div>
-        {#if connected && !hasMixer}
-          <div class="p2-hint" data-testid="push2-control-nomixer">
-            Encoders idle — add a <b>mixmstrs</b> mixer for volume/send control.
+        {#if connected && usbOk && !displayOn}
+          <div class="p2-hint" data-testid="push2-display-hint">
+            Screen not connected ({displaySt}) — hit <b>Connect display</b>. The pads
+            and encoders work without it.
+          </div>
+        {:else if connected && !usbOk}
+          <div class="p2-hint" data-testid="push2-display-nousb">
+            No WebUSB here — the on-device screen needs Chrome/Edge. Everything else
+            still works; the card above shows what the screen would.
           </div>
         {/if}
       {/if}
@@ -191,8 +271,8 @@
     flex-direction: column;
     gap: 4px;
     padding: 7px 8px;
-    min-width: 320px;
-    max-width: 340px;
+    min-width: 340px;
+    max-width: 360px;
     color: var(--text, #cfd3df);
     font-size: 12px;
   }
@@ -209,12 +289,18 @@
     color: var(--accent, #5a7); border-radius: 4px; padding: 4px 10px; font-size: 12px; cursor: pointer;
   }
   .p2-btn:hover { filter: brightness(1.2); }
-  .p2-channel {
-    font: 600 12px/1.3 ui-monospace, 'SF Mono', Menlo, monospace;
-    color: #cfe0ff; background: rgba(80, 110, 200, 0.14);
-    border: 1px solid rgba(120, 150, 230, 0.4); border-radius: 4px; padding: 5px 8px;
-    letter-spacing: 0.02em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  .p2-screen {
+    border: 1px solid #333a48; border-radius: 4px; background: #000; overflow: hidden;
+    line-height: 0;
   }
+  .p2-screen canvas { display: block; width: 100%; height: auto; image-rendering: pixelated; }
+  .p2-flip { align-items: center; flex-wrap: nowrap; gap: 4px; }
+  .p2-flip-btn { padding: 1px 8px; line-height: 1.3; }
+  .p2-flip-label {
+    flex: 1 1 auto; min-width: 0; text-align: center; font-size: 11px; color: #9aa0b2;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .p2-flip-idx { color: #6f7488; margin-left: 4px; }
   .p2-ch-seg { gap: 3px; }
   .p2-ch-btn { flex: 1 1 0; min-width: 0; text-align: center; padding: 3px 0; opacity: 0.6; }
   .p2-ch-btn.active { border-color: #6f9bd6; color: #9cc0f0; background: rgba(80, 120, 200, 0.18); opacity: 1; }

@@ -421,7 +421,12 @@
   import { installSimulatedMidiDevice, installSimulatedNoteDevice } from '$lib/midi/midi-learn.svelte';
   import { installSimulatedLaunchpad, installSimulatedLaunchpadSingle } from '$lib/control/launchpad/launchpad-device.svelte';
   import { bindLaunchpadToClip, __test_setDeployment, __test_mode as __launchpadTestMode } from '$lib/control/launchpad/launchpad-control.svelte';
-  import { installSimulatedPush2AndBind, selectedChannelIndex as __push2SelectedChannel } from '$lib/control/push2/push2-control.svelte';
+  import {
+    installSimulatedPush2AndBind,
+    selectedChannelIndex as __push2SelectedChannel,
+    currentPushCardView as __push2CardView,
+    focusedModuleId as __push2FocusedModule,
+  } from '$lib/control/push2/push2-control.svelte';
 
   // Stage B PR B-b: when mounted under /r/[id] (multi-user), the parent
   // passes the current user's id so per-user layouts are scoped correctly.
@@ -7228,8 +7233,9 @@
       // prompt), injects it as the Launchpad control surface (single deployment),
       // and binds the clip-player. Pad/CC presses route through the SAME
       // decode/classify/dispatch path real hardware uses, so the real-source-chain
-      // spec drives a pad → clip launch → audible RMS, an encoder → MixMasters, a
-      // channel-select, and a D-Pad nav. DEV-only — stripped from prod bundles.
+      // spec drives a pad → clip launch → audible RMS, a LANE select → the push
+      // card, a display encoder → that card's param, the master encoder →
+      // MixMasters, and a D-Pad nav. DEV-only — stripped from prod bundles.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__push2TestInstall = async (clipNodeId: string) => {
         const sim = await installSimulatedPush2AndBind(clipNodeId);
@@ -7243,7 +7249,27 @@
           // any Push CC (button press/release or an encoder relative tick).
           cc: (cc: number, value: number) => sim.cc(cc, value),
           // probe the parity brain's view/mode state + the Push-local channel.
-          state: () => ({ ...__launchpadTestMode(), selectedChannel: __push2SelectedChannel() }),
+          // probe the parity brain's view/mode state, the Push-local lane, and
+          // the PUSH CARD the 960×160 screen is showing (module + focus +
+          // position), so an e2e can assert the SELECTED CARD changed rather
+          // than only that a param moved.
+          state: () => {
+            const card = __push2CardView();
+            return {
+              ...__launchpadTestMode(),
+              selectedChannel: __push2SelectedChannel(),
+              pushCard: {
+                lane: card.lane,
+                moduleType: card.moduleType,
+                title: card.title,
+                empty: card.empty,
+                index: card.index,
+                count: card.count,
+                focus: __push2FocusedModule(),
+                controls: card.strips.filter((s) => s.kind === 'param').map((s) => s.paramId),
+              },
+            };
+          },
         };
         return true;
       };
