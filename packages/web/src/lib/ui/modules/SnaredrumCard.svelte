@@ -22,7 +22,7 @@
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
   import { cardParams, paramSpec } from './card-kit';
-  import { fireSnaredrumHit, setSnaredrumRoll } from './snaredrum-strike-actions';
+  import { fireManualStrike, setManualGate } from './manual-strike-actions';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -69,21 +69,24 @@
   // ── THE AUDITION (the `snaredrum-hit` / `snaredrum-roll` control families).
   // Before this the card could make NO sound at all without a sequencer patched
   // in. Both pads call the SAME seam the RACKLINE shell's cells call
-  // (snaredrum-strike-actions → the engine handle's read keys → host-side
+  // (manual-strike-actions → the engine handle's read keys → host-side
   // ConstantSources on trigger_in / gate_in), so there is one implementation.
-  // ROLL is press-and-HOLD, matching gate_in's declared edge:'gate'.
+  // ROLL is press-and-HOLD (`setManualGate`, the seam's held shape), matching
+  // gate_in's declared edge:'gate'; HIT is the one-shot (`fireManualStrike`),
+  // matching trigger_in's edge:'trigger'. Picking the wrong one here would be
+  // the card contradicting the def about the thing this voice exists for.
   let hitPulse = $state(false);
   let rolling = $state(false);
   function hit(): void {
-    fireSnaredrumHit(id);
+    fireManualStrike(id);
     hitPulse = true;
     setTimeout(() => { hitPulse = false; }, 120);
   }
-  function rollDown(): void { rolling = true; setSnaredrumRoll(id, true); }
+  function rollDown(): void { rolling = true; setManualGate(id, true); }
   function rollUp(): void {
     if (!rolling) return;
     rolling = false;
-    setSnaredrumRoll(id, false);
+    setManualGate(id, false);
   }
 
 

@@ -1,84 +1,148 @@
 // packages/web/src/lib/ui/modules/manual-strike-actions.ts
 //
-// THE AUDITION SEAM — "hit it once" — as ONE implementation for every
-// externally-struck voice in the rack.
+// THE AUDITION SEAM — "make this voice sound with nothing patched into it" —
+// as ONE implementation for every externally-struck voice in the rack, in BOTH
+// of the edge shapes the repo's own vocabulary already distinguishes.
 //
-// An externally-struck voice has no internal exciter: with nothing patched
-// into its trigger input it is SILENT, on the legacy card and in the RACKLINE
-// dock alike. kickdrum, karplus, sixstrum and samsloop all answer the SAME
-// engine read key with a one-shot firing function, so the host side of
-// "audition it" is not per-module behaviour — it is one function and a nodeId.
+// An externally-struck voice has no internal exciter: with nothing patched into
+// its strike input it is SILENT, on the legacy card and in the RACKLINE dock
+// alike. kickdrum, karplus, snaredrum, sixstrum and samsloop all answer the SAME
+// engine read keys, so the host side of "audition it" is not per-module
+// behaviour — it is these functions and a nodeId.
 //
-// ⚠ THIS FILE WAS `kickdrum-strike-actions.ts` (renamed by the karplus face
-// PR). It was already generic — the key, the resolver and the wiring never
-// mentioned kickdrum — so the choice karplus faced was a second copy of a
-// 20-line resolver or a rename. Renamed. NOTHING about the behaviour moved:
-// same key, same three branches, same return contract, same call sites.
+// TWO SHAPES, BECAUSE THE PORTS HAVE TWO SHAPES:
 //
-// The strike is NOT a param. It writes nothing to the graph — no value moves,
+//   STRIKE → read key `manualTrigger`, a `() => void`.
+//            ONE hit per call. Drives a port declared `edge: 'trigger'`.
+//            kickdrum STRIKE, karplus PLUCK, snaredrum HIT.
+//   GATE   → read key `manualGate`, a `(high: boolean) => void`.
+//            Runs WHILE high. Drives a port declared `edge: 'gate'`.
+//            snaredrum ROLL (the two-hand roll engine).
+//
+// ⚠ THE HISTORY, BECAUSE IT IS THE WHOLE ARGUMENT FOR THIS FILE'S SHAPE.
+// This was `kickdrum-strike-actions.ts`; karplus renamed it (already generic —
+// same key, same resolver, same wiring). IN PARALLEL snaredrum landed its own
+// `snaredrum-strike-actions.ts` + `snaredrum-roll-latch.ts`, because it needed
+// the HELD shape and this file modelled only the one-shot. The result was two
+// modules whose one-shot halves were identical down to the read-key STRING
+// (`SNAREDRUM_HIT_KEY === MANUAL_STRIKE_KEY === 'manualTrigger'`) — a copy, not
+// a variant — plus a genuinely-new held gate stranded behind a module-named
+// import. Merged here, deliberately, on this reasoning:
+//
+//   1. A held audition is NOT a snaredrum concept. It is the repo's second edge
+//      semantic, already modelled on BOTH sides of this layer:
+//      `PortDef.edge: 'trigger' | 'gate'` below it and
+//      `ShellActionCell.mode: 'trigger' | 'gate'` above it. A seam that carries
+//      only the trigger shape is strictly less expressive than the layers it
+//      sits between, so a gate audition can only ever be implemented in a
+//      module-named file. THAT is the duplication generator, and it would have
+//      fired again: adsr's `manualGate` is already queued.
+//   2. The held machinery is FREE to a one-shot module. `ensurePanicListeners()`
+//      is called only from the `high` branch of `setManualGate`, so a module
+//      that never opens a gate installs zero listeners and pays one empty array.
+//   3. There is now exactly ONE import target. A thin re-export shim would have
+//      left two, which is precisely how this started.
+//
+// Neither shape is a PARAM. They write nothing to the graph — no value moves,
 // nothing is persisted, nothing is shared with the rackspace, nothing lands in
-// the undo stack — it fires a host-side ConstantSource summed into the SAME
-// worklet trigger input a cable feeds (each module's factory), through the
-// engine handle's `manualTrigger` read key. So the audible effect is identical
-// to a patched sequencer gate, and a real cable on the trigger input keeps
-// working while you use it.
+// the undo stack — each fires a host-side ConstantSource summed into the SAME
+// worklet input a cable feeds (each module's factory). So the audible effect is
+// identical to a patched sequencer, and a real cable keeps working alongside it.
 //
-// SPLIT DELIBERATELY IN TWO:
-//   * `resolveManualStrike` is PURE over its injected engine + node — no
-//     store, no globals, no DOM — so the interesting half (which of the ways
-//     this can be unavailable actually returns null) is unit-testable without
-//     a browser or an AudioContext;
-//   * `fireManualStrike` is the thin process-wide wiring the shell cells and
-//     the card buttons both call.
+// SPLIT DELIBERATELY:
+//   * `resolveManualStrike` / `resolveManualGate` are PURE over their injected
+//     engine + node — no store, no globals, no DOM — so the interesting half
+//     (which of the ways this can be unavailable actually returns null) is
+//     unit-testable without a browser or an AudioContext;
+//   * `manual-gate-latch.ts` is the PURE held-gate state machine (see its
+//     header for why a boolean was not enough);
+//   * `fireManualStrike` / `setManualGate` / `panicManualGates` are the thin
+//     process-wide wiring the shell cells and the legacy cards both call.
 //
 // `getActiveEngine()` rather than the Svelte engine CONTEXT, because
 // shell-cells.ts specs are plain data called from ModuleShell — they are not
 // components and cannot `getContext`. Reading the engine at the moment of the
-// click is exactly right: that is when a non-null engine is required.
+// press is exactly right: that is when a non-null engine is required.
+//
+// The caller↔seam wiring itself is pinned by `manual-strike-wiring.test.ts`,
+// which drives the REAL shell-cell registry and asserts each audition cell's
+// declared `mode` matches the read key it actually reaches.
 
 import { getActiveEngine } from '$lib/audio/engine-ref';
 import { patch } from '$lib/graph/store';
 import type { ModuleNode } from '$lib/graph/types';
+import {
+  closeGate,
+  emptyGateLatch,
+  openGate,
+  panicGates,
+  type GateLatchState,
+} from './manual-gate-latch';
 
 /** The `read(node, key)` half of a PatchEngine — all this seam needs. */
 export interface StrikeEngineLike {
   read(node: ModuleNode, key: string): unknown;
 }
 
-/** The read key a struck voice's factory answers with a one-shot firing. */
+/** The read key a struck voice's factory answers with a ONE-SHOT firing. */
 export const MANUAL_STRIKE_KEY = 'manualTrigger';
+/** The read key a struck voice's factory answers with a HELD-GATE setter. */
+export const MANUAL_GATE_KEY = 'manualGate';
 
 /**
- * Resolve the node's one-shot strike function, or `null` when the audition is
- * genuinely unavailable. THREE branches, each a real state:
+ * Resolve a callable off the node's engine handle, or `null` when the audition
+ * is genuinely unavailable. THREE branches, each a real state:
  *   * no engine (the AudioContext has not booted — nothing can sound yet);
- *   * no node (the module was removed between render and click);
+ *   * no node (the module was removed between render and press);
  *   * the handle answers the read key with something that is not callable —
  *     a half-implemented seam (a number), or no `read` at all (`undefined`).
  *     ⚠ Those last two are ONE branch, not two: both fall through the same
- *     `typeof fn === 'function'` guard below. The doc used to call them
- *     distinct and the test listed "the FOUR distinct unavailable states",
- *     which reads as more coverage than the code has.
+ *     `typeof fn === 'function'` guard. The doc used to call them distinct and
+ *     the test listed "the FOUR distinct unavailable states", which reads as
+ *     more coverage than the code has.
  *
  * Returning null rather than throwing is deliberate: an audition that cannot
  * fire is a no-op, never an error dialog over a rack. PURE — the engine and
  * node are injected, so the resolution is testable with fakes.
  */
+function resolveKey<T>(
+  engine: StrikeEngineLike | null | undefined,
+  node: ModuleNode | undefined,
+  key: string,
+): T | null {
+  if (!engine || !node) return null;
+  const fn = engine.read(node, key);
+  return typeof fn === 'function' ? (fn as T) : null;
+}
+
+/** The node's ONE-SHOT strike function, or null (see `resolveKey`). PURE. */
 export function resolveManualStrike(
   engine: StrikeEngineLike | null | undefined,
   node: ModuleNode | undefined,
 ): (() => void) | null {
-  if (!engine || !node) return null;
-  const fn = engine.read(node, MANUAL_STRIKE_KEY);
-  return typeof fn === 'function' ? (fn as () => void) : null;
+  return resolveKey<() => void>(engine, node, MANUAL_STRIKE_KEY);
+}
+
+/**
+ * The node's HELD-GATE setter — `(high: boolean) => void` — or null on the same
+ * three unavailable states. SEPARATE KEY from the strike, and it must stay
+ * separate: a handle that implements only the one-shot must NOT silently answer
+ * the gate, because a gate that opens and never closes is the worst failure this
+ * seam has (manual-gate-latch.ts). PURE.
+ */
+export function resolveManualGate(
+  engine: StrikeEngineLike | null | undefined,
+  node: ModuleNode | undefined,
+): ((high: boolean) => void) | null {
+  return resolveKey<(high: boolean) => void>(engine, node, MANUAL_GATE_KEY);
 }
 
 /**
  * Fire ONE strike at the live node — the action both surfaces call (a module's
  * shell `action` cell and its legacy card's audition button). Silently does
- * nothing when the audition is unavailable (see resolveManualStrike). Returns
- * whether a strike actually fired, so a caller can drive a press flash off the
- * truth instead of off the click.
+ * nothing when the audition is unavailable (see `resolveKey`). Returns whether a
+ * strike actually fired, so a caller can drive a press flash off the truth
+ * instead of off the click.
  */
 export function fireManualStrike(nodeId: string): boolean {
   const node = patch.nodes[nodeId] as ModuleNode | undefined;
@@ -86,4 +150,105 @@ export function fireManualStrike(nodeId: string): boolean {
   if (!strike) return false;
   strike();
   return true;
+}
+
+// ── The HELD GATE, and its leak guard ───────────────────────────────────────
+//
+// Module-scope, process-wide, because the thing being tracked IS process-wide:
+// a ConstantSource in the live audio graph. The pure reducer owns the
+// bookkeeping; everything below is the impure edge (the engine call + the
+// window listeners that catch a release the button never saw).
+
+let gateLatch: GateLatchState = emptyGateLatch();
+let panicInstalled = false;
+
+/** Close ONE node's gate on the engine, ignoring an already-gone handle. */
+function closeOnEngine(nodeId: string): void {
+  const node = patch.nodes[nodeId] as ModuleNode | undefined;
+  const setGate = resolveManualGate(getActiveEngine(), node);
+  try { setGate?.(false); } catch { /* the handle went away with the node */ }
+}
+
+/**
+ * Close EVERY open audition gate — the panic path. Exported so a test (and a
+ * future teardown) can invoke it directly rather than synthesizing DOM events.
+ * Returns the node ids it closed.
+ */
+export function panicManualGates(): string[] {
+  const p = panicGates(gateLatch);
+  gateLatch = p.state;
+  for (const id of p.closed) closeOnEngine(id);
+  return p.closed;
+}
+
+/**
+ * Install the window-level release listeners ONCE, lazily (never at import:
+ * this module is imported by shell-cells.ts, which the unit lane loads in a
+ * node environment with no `window`). Lazily ALSO means a rack with no held
+ * audition in it never installs anything at all.
+ *
+ * WHY THESE FOUR. `<Button>` captures the pointer, so an ordinary release
+ * always reaches it — but pointer capture protects a MOVING pointer, not a
+ * DELETED element. Close the dock, delete the module, or hide the tab mid-hold
+ * and the button unmounts with the gate still open and the module never stops.
+ * The node's own `dispose()` covers deletion; these cover the rest.
+ */
+function ensurePanicListeners(): void {
+  if (panicInstalled) return;
+  // ⚠ FEATURE-DETECT, don't existence-check. `typeof window === 'undefined'`
+  // is NOT enough: the unit lane runs 630 files in one process and some of them
+  // leave a PARTIAL `window` stub behind, so this threw `addEventListener is
+  // not a function` in the full sweep while passing when the file ran alone.
+  // A guard that is right only in isolation is not a guard.
+  const w = typeof window === 'undefined' ? undefined : window;
+  if (typeof w?.addEventListener !== 'function') return;
+  panicInstalled = true;
+  const panic = () => { panicManualGates(); };
+  w.addEventListener('pointerup', panic);
+  w.addEventListener('pointercancel', panic);
+  w.addEventListener('blur', panic);
+  const d = typeof document === 'undefined' ? undefined : document;
+  if (typeof d?.addEventListener === 'function') {
+    d.addEventListener('visibilitychange', () => {
+      if (d.visibilityState === 'hidden') panic();
+    });
+  }
+}
+
+/**
+ * Open (high) or close (low) the node's HELD audition gate — the action both
+ * surfaces call (a module's `mode:'gate'` shell cell and its legacy card's
+ * momentary pad). Returns whether an edge was actually sent to the engine:
+ * `false` means either the audition is unavailable OR the latch already held
+ * that state, and in both cases nothing was scheduled.
+ */
+export function setManualGate(nodeId: string, high: boolean): boolean {
+  const node = patch.nodes[nodeId] as ModuleNode | undefined;
+  const setGate = resolveManualGate(getActiveEngine(), node);
+  if (!setGate) {
+    // The audition cannot run — but if the latch thinks this node is open,
+    // forget it, or a later panic would try to close a gate that never opened.
+    if (!high) gateLatch = closeGate(gateLatch, nodeId).state;
+    return false;
+  }
+  if (high) {
+    ensurePanicListeners();
+    const r = openGate(gateLatch, nodeId);
+    gateLatch = r.state;
+    if (!r.opened) return false;
+    setGate(true);
+    return true;
+  }
+  const r = closeGate(gateLatch, nodeId);
+  gateLatch = r.state;
+  if (!r.closed) return false;
+  setGate(false);
+  return true;
+}
+
+/** TEST SEAM: forget all latch state (and the once-only listener install)
+ *  without touching the engine. Never called from app code. */
+export function __resetManualGateLatch(): void {
+  gateLatch = emptyGateLatch();
+  panicInstalled = false;
 }

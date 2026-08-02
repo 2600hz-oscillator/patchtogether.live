@@ -48,15 +48,17 @@ import {
   sixstrumSelectorOptions,
 } from '$lib/ui/modules/sixstrum-preset-actions';
 import { clearCloudseedTail } from '$lib/ui/modules/cloudseed-preset-actions';
-// ⚠ WAS `kickdrum-strike-actions`. The file was already generic — same key,
-// same resolver, same wiring — so karplus's face renamed it rather than
-// copying it. One implementation of "audition this struck voice".
-// (This branch's `fireKickdrumStrike` import followed the rename; the old
-// module no longer exists on main, so keeping it would not have compiled.)
-import { fireManualStrike } from '$lib/ui/modules/manual-strike-actions';
-// Snaredrum keeps its OWN module: it needs a held `setSnaredrumRoll` GATE
-// alongside the one-shot, which the generic strike seam does not model.
-import { fireSnaredrumHit, setSnaredrumRoll } from '$lib/ui/modules/snaredrum-strike-actions';
+// THE ONE audition seam, in both edge shapes: `fireManualStrike` for a
+// `mode:'trigger'` cell, `setManualGate` for a `mode:'gate'` one. It briefly
+// was two modules — kickdrum/karplus's generic one-shot file and a parallel
+// `snaredrum-strike-actions` whose one-shot half was a copy down to the read-key
+// string — and they are merged: a HELD audition is not a snaredrum concept, it
+// is this file's own `mode:'gate'` on the other side of the same seam.
+// ⚠ A cell's `mode` and the function it calls must AGREE. `manual-strike-wiring
+// .test.ts` drives this registry and fails if they don't; nothing else can see
+// it, because shell-cells.test.ts checks which HANDLER FIELD is present, not
+// what the handler does.
+import { fireManualStrike, setManualGate } from '$lib/ui/modules/manual-strike-actions';
 
 /** A dropdown over a NAMED roster that lives in node.data (not a param). */
 export interface ShellSelectorCell {
@@ -331,13 +333,13 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
     // DIFFERENT declared edge semantics, and one button for both would be the
     // face contradicting the def about the thing the module exists for.
     // Both drive host-side ConstantSources on the module's own worklet inputs
-    // (snaredrum-strike-actions → the engine handle's read keys), so they write
+    // (manual-strike-actions → the engine handle's read keys), so they write
     // NOTHING to the graph and a patched cable keeps working alongside them.
     'snaredrum-hit-{n}': {
       kind: 'action',
       label: 'hit',
       title: 'Audition: one snare hit (identical to a trigger_in rising edge)',
-      onFire: (nodeId) => { fireSnaredrumHit(nodeId); },
+      onFire: (nodeId) => { fireManualStrike(nodeId); },
     },
     // ⚠ MOMENTARY, not a click. `gate_in` is declared edge:'gate' — the
     // two-hand roll engine runs only WHILE the level is high — so a one-shot
@@ -348,7 +350,7 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
       mode: 'gate',
       label: 'roll',
       title: 'Audition: HOLD to run the two-hand roll (identical to holding gate_in high)',
-      onGate: (nodeId, high) => { setSnaredrumRoll(nodeId, high); },
+      onGate: (nodeId, high) => { setManualGate(nodeId, high); },
     },
   },
   sixstrum: {
