@@ -2615,7 +2615,12 @@ jobs:
       # cable-palette generation goes stale with the screenshot gate green —
       # and `--update-snapshots` won't repair it either, because Playwright
       # only rewrites a snapshot when the comparison FAILS.
-      # Cost: ~1 s (vitest boot + 191 PNG header reads).
+      # Cost: MEASURED 1.10 s wall on darwin (vitest boot ~0.6 s + a full decode
+      # of the top 12 rows of 409 PNGs, twice — once for the sweep and once for
+      # the batched pixel negative control). The earlier "~1 s (191 PNG header
+      # reads)" was neither measured nor accurate: it fully inflates each IDAT,
+      # and the gate now reads every single-card baseline dir, not just
+      # vrt.spec.ts.
       # ---------------------------------------------------------------------
       - name: Cable-stripe palette gate (committed baselines vs --cable-* tokens)
         env:
