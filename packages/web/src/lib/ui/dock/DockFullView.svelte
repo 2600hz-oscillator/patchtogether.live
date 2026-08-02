@@ -201,14 +201,42 @@
           <div class="tabrail" role="tablist" data-testid="faceplate-tabrail">
             {#if tabs}
               {#each tabs as t (t.id)}
+                <!-- `id` + `aria-controls` are the half of the tabs pattern
+                     that was missing: without them a screen reader announces
+                     eight tabs that control NOTHING, because the band
+                     (`role="tabpanel"` on ModuleShell's `.dock-page`) has no
+                     way to point back. The band's `aria-labelledby` names this
+                     button, so the pairing is stated in both directions. -->
                 <button
                   type="button"
                   class="tab"
                   class:on={t.id === activeTab}
                   role="tab"
+                  id={`faceplate-tab-${t.id}`}
                   aria-selected={t.id === activeTab}
+                  aria-controls={`face-page-${t.id}`}
+                  tabindex={t.id === activeTab ? 0 : -1}
                   data-testid={`faceplate-tab-${t.id}`}
                   data-face-tab={t.id}
+                  onkeydown={(e) => {
+                    // ROVING FOCUS. Arrow keys move between tabs (the pattern's
+                    // required interaction); Home/End jump to the ends. Without
+                    // this the rail is reachable but not navigable as a tablist.
+                    const i = tabs!.findIndex((x) => x.id === activeTab);
+                    const n = tabs!.length;
+                    let j = -1;
+                    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') j = (i + 1) % n;
+                    else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') j = (i - 1 + n) % n;
+                    else if (e.key === 'Home') j = 0;
+                    else if (e.key === 'End') j = n - 1;
+                    if (j < 0) return;
+                    e.preventDefault();
+                    const next = tabs![j]!.id;
+                    requestedTab = next;
+                    (e.currentTarget as HTMLElement)
+                      .parentElement?.querySelector<HTMLElement>(`[data-face-tab="${next}"]`)
+                      ?.focus();
+                  }}
                   onclick={() => (requestedTab = t.id)}
                 ><span class="t1">{t.label}</span></button>
               {/each}

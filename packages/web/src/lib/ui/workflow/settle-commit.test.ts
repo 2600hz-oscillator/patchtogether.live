@@ -48,6 +48,27 @@ function harness() {
   return { clock, commits, guard };
 }
 
+/**
+ * The same harness plus a stand-in for the GRAPH: a mutable world the commit
+ * writes into and the guard's `readCurrent` reads back. `world` can also be
+ * moved from OUTSIDE the guard — which is the whole point, because
+ * `preset_index` really is moved from outside by undo, by a rack-mate and by a
+ * rack load.
+ */
+function worldHarness() {
+  const clock = makeClock();
+  const commits: [string, number][] = [];
+  const world = new Map<string, number>();
+  const guard = createSettleCommit<number>(
+    (k, v) => {
+      commits.push([k, v]);
+      world.set(k, v);
+    },
+    { schedule: clock.schedule, cancel: clock.cancel, readCurrent: (k) => world.get(k) },
+  );
+  return { clock, commits, world, guard };
+}
+
 describe('createSettleCommit — coalescing', () => {
   it('a lone write commits once, on settle', () => {
     const { clock, commits, guard } = harness();
@@ -113,6 +134,79 @@ describe('createSettleCommit — coalescing', () => {
     guard.write('n1', 3);
     clock.run();
     expect(commits).toEqual([['n1', 1], ['n1', 3]]);
+  });
+});
+
+describe('createSettleCommit — the dedupe target is REALITY, not memory', () => {
+  // ⚠ THIS BLOCK IS THE REGRESSION FOR A REPRODUCED, SILENT, TOTAL NO-OP.
+  // The guard used to fall back to its own page-lifetime `committed` memory
+  // when nothing was staged. That memory is never reconciled against anything,
+  // and the guarded value moves by paths the guard cannot see. When they
+  // disagree, a write of the REMEMBERED value was dropped entirely — not
+  // deferred, not partial. Measured in a browser on cloudseed: recall
+  // `short room`, ⌘Z, click `short room` again → nothing happens at all.
+
+  it('a RE-PICK after the world moved underneath us COMMITS (undo / rack-mate / load)', () => {
+    const { clock, commits, world, guard } = worldHarness();
+    guard.write('n1', 1);
+    clock.run();
+    expect(commits).toEqual([['n1', 1]]);
+
+    // Somebody else moves it — undo, a rack-mate, a rack load. The guard's own
+    // memory still says 1; the world says 0.
+    world.set('n1', 0);
+
+    guard.write('n1', 1); // the user clicks `short room` again
+    expect(guard.pendingKeys(), 'the re-pick must be STAGED, not swallowed').toEqual(['n1']);
+    clock.run();
+    expect(commits, 'and it must actually land').toEqual([['n1', 1], ['n1', 1]]);
+    expect(world.get('n1')).toBe(1);
+  });
+
+  it('…and a genuine REPEAT is still dropped, so the storm guard still holds', () => {
+    // The reason memory-based dedupe existed at all. Reality-based dedupe keeps
+    // the property (after a commit the world really IS that value) WITHOUT
+    // being blind to an external change — which is the distinction memory
+    // structurally cannot make.
+    const { clock, commits, guard } = worldHarness();
+    guard.write('n1', 1);
+    clock.run();
+    for (let i = 0; i < 20; i++) guard.write('n1', 1); // a stuck CC
+    expect(clock.armed, 'no timer re-armed by a repeat').toBe(0);
+    clock.run();
+    expect(commits).toEqual([['n1', 1]]);
+  });
+
+  it('a write matching the world but NOT yet committed by us is still dropped', () => {
+    // Boot case: the graph already holds slot 2 (loaded rack) and the user
+    // clicks the segment that is already active. Nothing to do — and `Segmented`
+    // blocks it anyway; this pins that the guard agrees.
+    const { clock, commits, world, guard } = worldHarness();
+    world.set('n1', 2);
+    guard.write('n1', 2);
+    expect(guard.pendingKeys()).toEqual([]);
+    clock.run();
+    expect(commits).toEqual([]);
+  });
+
+  it('AWAY-AND-BACK still wins over the world read (pending outranks current)', () => {
+    // Rule 1 must survive rule 2: mid-gesture the staged value is the intent,
+    // so a sweep 0→1→0 within one window commits 0, not the stale 1.
+    const { clock, commits, world, guard } = worldHarness();
+    world.set('n1', 0);
+    guard.write('n1', 1);
+    guard.write('n1', 0);
+    clock.run();
+    expect(commits).toEqual([['n1', 0]]);
+  });
+
+  it('an UNREADABLE world (node gone / not booted) falls back to memory, not to a storm', () => {
+    const { clock, commits, guard } = harness(); // no readCurrent at all
+    guard.write('n1', 1);
+    clock.run();
+    guard.write('n1', 1);
+    expect(clock.armed).toBe(0);
+    expect(commits).toEqual([['n1', 1]]);
   });
 });
 

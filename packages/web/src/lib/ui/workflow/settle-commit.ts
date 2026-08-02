@@ -15,16 +15,34 @@
 // `midi-cc-write-storm-fix` memo is about. The per-control pumps already
 // coalesce the STREAM; this coalesces the AMPLIFICATION the macro adds on top.
 //
-// THE TWO RULES, and why they are these two:
+// THE THREE RULES, and why they are these three:
 //
 //   1. DEDUPE AGAINST THE CURRENT INTENT, not against the last commit. The
-//      intent is the pending value when one is staged, else the last value this
-//      guard committed. Deduping against the last COMMIT alone is a real bug:
+//      intent is the pending value when one is staged, else the CURRENT state
+//      of the world. Deduping against the last COMMIT alone is a real bug:
 //      with `lastCommitted = 0` and `pending = 1`, a write of 0 would be
 //      swallowed as "already 0" and the guard would go on to commit 1 — the
 //      opposite of what the user did. A sweep away-and-back must land where it
 //      stopped.
-//   2. COMMIT ON SETTLE, not on every distinct value. A repeat does NOT
+//   2. THE "CURRENT STATE" IS READ, NOT REMEMBERED. `readCurrent` asks the
+//      caller for the value that is REALLY there right now.
+//
+//      ⚠ THIS IS A FIX FOR A REPRODUCED, SILENT BUG, not a refinement. The
+//      guard used to fall back to its own page-lifetime `committed` memory,
+//      which is never reconciled against anything. The value it guards moves by
+//      paths the guard cannot see — undo, a rack-mate's edit, a rack load, the
+//      legacy card's direct write — and the moment memory and reality disagree,
+//      a write of the REMEMBERED value is dropped ENTIRELY: not deferred, not
+//      partially applied, nothing happens at all. Measured on cloudseed in a
+//      real browser: click `short room` → ⌘Z (the graph is back at slot 0, and
+//      the segment row correctly shows `divine inspiration`) → click
+//      `short room` again → `preset_index` stays 0 and the reverb never
+//      changes. The user cannot redo their own pick by clicking it.
+//      Reality-based dedupe drops a genuine repeat (rule 3 still holds, because
+//      after a commit the world really IS that value) while letting a re-pick
+//      through, which memory-based dedupe structurally cannot distinguish.
+//      `committed` survives only as the fallback for a caller with no reader.
+//   3. COMMIT ON SETTLE, not on every distinct value. A repeat does NOT
 //      re-arm the timer, so a stuck CC repeating one value commits ONCE and
 //      then goes quiet instead of holding the window open forever.
 //
@@ -32,13 +50,20 @@
 // drives a manual clock and no test anywhere depends on a real timer.
 
 /** Injection seams + tuning for `createSettleCommit`. */
-export interface SettleCommitOptions {
+export interface SettleCommitOptions<T = number> {
   /** Quiet period after the last write before the durable commit fires. */
   settleMs?: number;
   /** Timer scheduler (defaults to `setTimeout`). */
   schedule?: (cb: () => void, ms: number) => unknown;
   /** Timer canceller (defaults to `clearTimeout`). */
   cancel?: (handle: unknown) => void;
+  /**
+   * The value REALLY held by `key` right now, or `undefined` when it cannot be
+   * read (node gone, store not booted). Rule 2 — supply this whenever the
+   * guarded value can move by a path other than this guard, which for anything
+   * living in the patch graph is always (undo / collab / load).
+   */
+  readCurrent?: (key: string) => T | undefined;
 }
 
 export interface SettleCommit<T> {
@@ -65,11 +90,12 @@ export const MACRO_SETTLE_MS = 80;
  *  injected timer. */
 export function createSettleCommit<T>(
   commit: (key: string, value: T) => void,
-  opts: SettleCommitOptions = {},
+  opts: SettleCommitOptions<T> = {},
 ): SettleCommit<T> {
   const settleMs = opts.settleMs ?? MACRO_SETTLE_MS;
   const schedule = opts.schedule ?? ((cb: () => void, ms: number) => setTimeout(cb, ms));
   const cancel = opts.cancel ?? ((h: unknown) => clearTimeout(h as ReturnType<typeof setTimeout>));
+  const readCurrent = opts.readCurrent;
 
   interface Entry {
     pending?: { value: T };
@@ -92,8 +118,13 @@ export function createSettleCommit<T>(
     write(key, value) {
       const e = entries.get(key) ?? {};
       entries.set(key, e);
-      // Rule 1 — the CURRENT INTENT is the staged value, else the last commit.
-      const intent = e.pending ?? e.committed;
+      // Rules 1 + 2 — the CURRENT INTENT is the staged value if one is staged,
+      // else the value REALLY there now. `committed` is consulted only when no
+      // reader was supplied: it is page-lifetime memory of what this guard did,
+      // and treating it as the state of the world is what silently swallowed a
+      // whole recall (see the header).
+      const live = readCurrent?.(key);
+      const intent = e.pending ?? (live !== undefined ? { value: live } : e.committed);
       if (intent && Object.is(intent.value, value)) return;
       e.pending = { value };
       if (e.timer !== undefined) cancel(e.timer);

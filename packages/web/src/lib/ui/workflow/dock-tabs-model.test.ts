@@ -96,10 +96,25 @@ describe('the LIVE registry — which faces are tabbed today', () => {
   // somebody chose. cloudseed (8 bands) is the only face over the line.
   it('cloudseed is tabbed; every other faced module is one scrolling column', () => {
     const tabbed: string[] = [];
+    const counts: string[] = [];
     for (const def of listModuleDefs() as unknown as (FaceDefLike & { type: string })[]) {
       if (!def.face) continue;
+      const n = dockFacePlan(def).length;
+      counts.push(`${def.type}=${n}`);
       if (dockTabPlan(dockFacePlan(def))) tabbed.push(def.type);
     }
-    expect(tabbed.sort()).toEqual(['cloudseed']);
+    expect(
+      tabbed.sort(),
+      // ⚠ IF YOU LANDED HERE AFTER A MERGE, READ THIS FIRST. This clause is a
+      // CROSS-PR TRIPWIRE, not a cloudseed assertion. Five face PRs were in
+      // flight when the threshold landed and none of them knows it exists, so a
+      // face that grows a 7th band — or merely FORGETS a control, since
+      // `dockFacePlan` appends a `__unpaged` "more" band for anything no page
+      // mentions — silently grows a tab rail and MOVES ITS DOCK BASELINE.
+      // Bands today: ' + the list below. The fix is never to widen this array
+      // on reflex: decide whether that face should be tabbed, regenerate its
+      // baseline if so, or give the orphaned control a page if not.
+      `dock bands per faced module — ${counts.sort().join(' ')} (threshold ${DOCK_TAB_MIN_BANDS})`,
+    ).toEqual(['cloudseed']);
   });
 });

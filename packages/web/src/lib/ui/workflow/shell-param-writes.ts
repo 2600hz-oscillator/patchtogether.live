@@ -27,15 +27,46 @@
 // settles. See `midi-cc-write-storm-fix`.
 
 import { applyCloudseedPreset } from '$lib/ui/modules/cloudseed-preset-actions';
+import { patch } from '$lib/graph/store';
+import type { ModuleNode } from '$lib/graph/types';
 import { createSettleCommit } from './settle-commit';
 
 /** A replacement durable writer for one (module type, param) pair. */
 export type ShellParamWriter = (nodeId: string, value: number) => void;
 
-/** Storm-guarded cloudseed preset recall — keyed by nodeId, so two cloudseeds
- *  being swept at once coalesce independently. */
-const cloudseedPresetCommit = createSettleCommit<number>((nodeId, slot) =>
-  applyCloudseedPreset(nodeId, slot),
+/**
+ * A single flat param off the LIVE node, or `undefined` when the node or key is
+ * absent (not yet synced, deleted, store not bound). A plain proxy read — no
+ * transaction, no undo entry, no subscription.
+ *
+ * ⚠ Read through the live `patch` ESM binding, which `bindRackspace()`
+ * REASSIGNS on rackspace change, so this must not capture it. Deliberately NOT
+ * added to `graph/mutate.ts`: that file is in the COLLAB ATTEST BASIS, and a
+ * read helper is not worth forcing a re-attest of the multiplayer semaphore.
+ */
+function readNodeParam(nodeId: string, paramId: string): number | undefined {
+  const live = patch?.nodes?.[nodeId] as ModuleNode | undefined;
+  const v = live?.params?.[paramId];
+  return typeof v === 'number' ? v : undefined;
+}
+
+/**
+ * Storm-guarded cloudseed preset recall — keyed by nodeId, so two cloudseeds
+ * being swept at once coalesce independently.
+ *
+ * ⚠ `readCurrent` IS LOAD-BEARING, not defensive. Without it the guard dedupes
+ * against its own page-lifetime memory of the last slot it committed, and
+ * `preset_index` moves by three paths it never sees — undo, a rack-mate, a rack
+ * load — plus the legacy card's direct `applyCloudseedPreset`. The moment
+ * memory and graph disagree, clicking the segment whose value equals the
+ * remembered one is a TOTAL no-op. Reproduced in a real browser: recall
+ * `short room`, ⌘Z, click `short room` again → nothing happens. Reading the
+ * live param makes the dedupe a statement about reality instead of about
+ * bookkeeping.
+ */
+const cloudseedPresetCommit = createSettleCommit<number>(
+  (nodeId, slot) => applyCloudseedPreset(nodeId, slot),
+  { readCurrent: (nodeId) => readNodeParam(nodeId, 'preset_index') },
 );
 
 /**

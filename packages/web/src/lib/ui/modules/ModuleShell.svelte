@@ -815,10 +815,19 @@
            make a tabbed face read as a face that LOST forty controls. Hiding
            also keeps knob/scroll state alive across a flip. -->
       {#each dockBands as band (band.id)}
+        <!-- On a TABBED face the band IS the tab's panel, so it says so: the
+             rail's buttons carry `aria-controls={face-page-<id>}` and this
+             carries the matching id + `aria-labelledby`. Without the pair a
+             screen reader announced N tabs controlling nothing. On an untabbed
+             face there is no tab to point at, so neither attribute is emitted
+             (a dangling `aria-labelledby` is worse than none). -->
         <section
           class="dock-page"
           data-testid="face-page"
           data-face-page={band.id}
+          id={dockTabs ? `face-page-${band.id}` : undefined}
+          role={dockTabs ? 'tabpanel' : undefined}
+          aria-labelledby={dockTabs ? `faceplate-tab-${band.id}` : undefined}
           hidden={!dockBandVisible(band.id, dockTabs, data.activePage)}
         >
           <!-- The band header is SUPPRESSED on a tabbed face: the active tab
