@@ -443,7 +443,7 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // e2e launchpad-clip-launch.spec.ts (TIMELORDE → clipplayer → simulated pad →
   // audible RMS). Same treatment as controlSurface/matrixMix (fully exempt).
   launchpadControlLeft: 'meta control-surface card (consolidated launchpad-control pair); body is device/binding-dependent (Pair/Bind state + status absent in CI), like controlSurface/electraControl. Covered by launchpad-sysex/map/control unit suites + the real-source-chain launchpad-clip-launch e2e (pad → audible RMS).',
-  push2Control: 'meta control-surface card (Ableton Push 2); body is device/binding-dependent (Connect/Bind state + channel-select + view segment absent in CI), like launchpadControlLeft/electraControl. Covered by push2-sysex/map/control unit suites + the real-source-chain push2-clip-launch e2e (sim pad → audible RMS + encoder→MixMasters + channel-select + D-Pad nav).',
+  push2Control: 'meta control-surface card (Ableton Push 2); body is device/binding-dependent (Connect/Bind state + view segment absent in CI) AND the push-card preview canvas renders whatever module happens to be in lane 1, so the card face is patch-dependent — like launchpadControlLeft/electraControl. Covered by push2-sysex/map/control/lane/schema/model/layout/paint unit suites + the real-source-chain push2-clip-launch e2e (sim pad → audible RMS + lane select → the push card + a display encoder → that card param + master encoder → MixMasters + D-Pad nav).',
   // CLOUDS first-slice PR (#166): VRT baseline pending; ART + unit + E2E
   // provide coverage. Promote into MODULES + capture baselines on both
   // platforms in a follow-up PR.
@@ -940,8 +940,51 @@ export const STRICT_VRT_MODULES = new Set<string>([
 
 /** Per-(platform, type) baselines intentionally missing while a follow-
  *  up CI capture lands the other platform's PNG. The exempted pair is
- *  SKIPPED at the test level rather than allowed to fail. */
+ *  SKIPPED at the test level rather than allowed to fail.
+ *
+ *  ⚠ This Set is ONE of FOUR mechanisms that take a scene dark on a platform.
+ *  The other three live in spec sources (`e2e/vrt/vrt-platform-gaps.ts`
+ *  enumerates all four). Reading only this Set under-counts the real linux
+ *  deficit by 41 % — that was the bug fixed on 2026-08-01; do not add a gate
+ *  that reads this Set alone and calls the answer "the deficit". */
 export const EXEMPT_BASELINE_PAIRS = new Set<string>([
+  // ===================================================================
+  // DRAIN BATCH — 2026-08-01, 15 pairs. PAID-FOR COVERAGE SITTING DARK.
+  // ===================================================================
+  // linux/{macrooscillator, samsloop, scope, videoOut, audioOut, analogVco,
+  //        lfo, feedback, lines, monoglitch, shapedramps,
+  //        unityscalemathematik, vdelay, warrenspectrum, timelorde}
+  //
+  // Every one of those had a COMMITTED linux baseline under
+  // e2e/vrt/__screenshots__/vrt.spec.ts/linux/ — and was `test.skip()`-ed on
+  // linux anyway, because the pair is consulted BEFORE the PNG. The repo had
+  // already paid for the pixels and then refused to look at them.
+  //
+  // Worse, it was a DEADLOCK, not just waste. Three of them (analogVco,
+  // audioOut, timelorde) carry a STRICT_VRT_MODULES comment reading "re-add
+  // once the linux baseline is re-captured + the pair removed" — but a pending
+  // pair is skipped UNCONDITIONALLY, so `--update-snapshots` writes NOTHING for
+  // it and the re-capture those comments wait on can never happen while the
+  // pair is listed. Draining is the only exit. (CLAUDE.md: drain first,
+  // dispatch second.)
+  //
+  // MEASURED before draining (`git log -1` per PNG): every linux baseline in
+  // this batch dates 2026-05-12 … 2026-06-13, while its darwin counterpart was
+  // re-pinned 2026-07-10 or 2026-08-01. So all 15 predate BOTH #1159's
+  // repo-wide palette change (2026-07-22) AND #1267's tolerance tightening
+  // (threshold 0.2→0.1, maxDiffPixelRatio 0.05→0.01) — the exemption is
+  // precisely why #1267's linux regen skipped them. Expect the follow-up
+  // `vrt-update.yml -f platform=linux` dispatch to REWRITE most of them.
+  // ⚠ Their linux render CANNOT be verified from a darwin dev machine; only
+  // linux CI can. None is in STRICT_VRT_MODULES, so this touches the
+  // informational `vrt` lane only, never the required `vrt-strict` gate.
+  //
+  // The vrt-meta shared-pair ceiling moves 119 → 104 in this same commit
+  // (ratchets only ever shrink). The TOTAL linux deficit is UNCHANGED at 151:
+  // a pair whose PNG is already committed was never part of the deficit —
+  // which is exactly how it hid.
+  // ===================================================================
+  //
   // MIRRORPOOL (2026-07-15): the solo-spawn masked VRT (chrome around the
   // masked animated pool canvas) AND the deterministic composite scenes are
   // DEFERRED on BOTH platforms — MIRRORPOOL is a maximally look-affecting
@@ -1146,20 +1189,26 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // on linux CI. Static card (no animation); functional coverage is
   // flipper-dsp.test.ts.
   'linux/flipper',
-  'linux/macrooscillator',
+  // DRAINED 2026-08-01 (linux/macrooscillator): its linux baseline is COMMITTED, so this pair
+  // was skipping a card we had already paid for. See the DRAIN BATCH note at the
+  // head of this Set.
   // PENTEMELODICA: darwin baseline (the 5-voice card: 5 strips + mixer +
   // filter, static computed waveform previews — no animated canvas) captured
   // locally; linux baseline pending a `vrt-update.yml` workflow_dispatch on
   // this branch. Functional coverage is pentemelodica-dsp.test.ts +
   // pentemelodica.test.ts + the per-port sweep + the bespoke e2e.
   'linux/pentemelodica',
-  'linux/samsloop',
+  // DRAINED 2026-08-01 (linux/samsloop): its linux baseline is COMMITTED, so this pair
+  // was skipping a card we had already paid for. See the DRAIN BATCH note at the
+  // head of this Set.
   'linux/stages',
   // SCOPE: this PR re-captures the darwin baseline with deterministic
   // audio content (via VRT_SCENES). The linux baseline still shows the
   // old magenta-masked canvas — a follow-up `task vrt:update` run on
   // linux will re-capture, then this entry comes out.
-  'linux/scope',
+  // DRAINED 2026-08-01 (linux/scope): its linux baseline is COMMITTED, so this pair
+  // was skipping a card we had already paid for. See the DRAIN BATCH note at the
+  // head of this Set.
   // SCOPE X/Y + INTENSITY scenes (vrt-scope-modes.spec.ts): darwin baselines
   // captured here; linux pending a `task vrt:update` on linux CI (same as the
   // base `linux/scope` card above). Without these the new scenes run on linux
@@ -1173,7 +1222,9 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // decode isn't bit-identical across platforms, so the linux baseline
   // is pending a `task vrt:update` run on linux CI; the hard non-black +
   // moving gate is e2e/tests/videobox-output.spec.ts.
-  'linux/videoOut',
+  // DRAINED 2026-08-01 (linux/videoOut): its linux baseline is COMMITTED, so this pair
+  // was skipping a card we had already paid for. See the DRAIN BATCH note at the
+  // head of this Set.
   // RASTERIZE (crossing-the-streams slice 1): the darwin baseline is
   // captured on this machine via VRT_SCENES with the deterministic
   // `__rasterizeVrtSeed` seed (fix for task #198 — see rasterize.ts +
@@ -1220,13 +1271,17 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // AUDIO OUT (device picker dropdown added): the card grew an OUT device
   // dropdown row (setSinkId picker) so the darwin baseline was regen'd in
   // this PR. Linux baseline pending a `task vrt:update` run on linux CI.
-  'linux/audioOut',
+  // DRAINED 2026-08-01 (linux/audioOut): its linux baseline is COMMITTED, so this pair
+  // was skipping a card we had already paid for. See the DRAIN BATCH note at the
+  // head of this Set.
   // ANALOG VCO (live waveform scope + Wave morph knob added): the card grew a
   // single-cycle scope canvas at the top + a 6th fader (Wave), so the darwin
   // baseline was re-captured in this PR (canvas masked). Linux baseline pending
   // a `task vrt:update` run on linux CI. Module also moved out of the strict
   // VRT lane (animated chrome).
-  'linux/analogVco',
+  // DRAINED 2026-08-01 (linux/analogVco): its linux baseline is COMMITTED, so this pair
+  // was skipping a card we had already paid for. See the DRAIN BATCH note at the
+  // head of this Set.
   // BACKDRAFT — moved to EXEMPT_FROM_VRT (above) when it gained full output
   // capabilities (corner-resize + Full Frame/Full Screen/Present): the preview
   // is now variable-size + non-deterministic, so the whole module is exempt
@@ -1235,7 +1290,9 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // LFO (DEPTH knob added): the card grew a knob row + DEPTH input port, so
   // the darwin baseline is re-captured here. The linux baseline is pending a
   // `task vrt:update` run on linux CI (this dev machine is darwin-only).
-  'linux/lfo',
+  // DRAINED 2026-08-01 (linux/lfo): its linux baseline is COMMITTED, so this pair
+  // was skipping a card we had already paid for. See the DRAIN BATCH note at the
+  // head of this Set.
   // COFEFVE DELAY (own-code analog delay, replaced COCOA DELAY): darwin
   // baseline captured on this machine (static knob/fader/dropdown card — no
   // canvas/animation, so it's deterministic). The linux baseline is pending a
@@ -1278,8 +1335,12 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // (font-size: 0.85rem, weight: 500, text-align: center, margin: 0 0 8px,
   // letter-spacing: 0.05em). Darwin baselines captured here; linux baselines
   // pending regen after in-card-title sweep — darwin captured here.
-  'linux/feedback',
-  'linux/lines',
+  // DRAINED 2026-08-01 (linux/feedback): its linux baseline is COMMITTED, so this pair
+  // was skipping a card we had already paid for. See the DRAIN BATCH note at the
+  // head of this Set.
+  // DRAINED 2026-08-01 (linux/lines): its linux baseline is COMMITTED, so this pair
+  // was skipping a card we had already paid for. See the DRAIN BATCH note at the
+  // head of this Set.
   // EDGES (Sobel edge-detection video processor): deterministic card chrome
   // (IN/threshold/thickness handles + 2 faders, no canvas/animation), so it
   // ships a REAL solo-spawn baseline. Darwin baseline captured on this
@@ -1311,11 +1372,21 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // ACIDWARP video → MAPPER → OUTPUT shows the video only in the keyed region;
   // raising threshold shrinks the keyed area).
   'linux/mapper',
-  'linux/monoglitch',
-  'linux/shapedramps',
-  'linux/unityscalemathematik',
-  'linux/vdelay',
-  'linux/warrenspectrum',
+  // DRAINED 2026-08-01 (linux/monoglitch): its linux baseline is COMMITTED, so this pair
+  // was skipping a card we had already paid for. See the DRAIN BATCH note at the
+  // head of this Set.
+  // DRAINED 2026-08-01 (linux/shapedramps): its linux baseline is COMMITTED, so this pair
+  // was skipping a card we had already paid for. See the DRAIN BATCH note at the
+  // head of this Set.
+  // DRAINED 2026-08-01 (linux/unityscalemathematik): its linux baseline is COMMITTED, so this pair
+  // was skipping a card we had already paid for. See the DRAIN BATCH note at the
+  // head of this Set.
+  // DRAINED 2026-08-01 (linux/vdelay): its linux baseline is COMMITTED, so this pair
+  // was skipping a card we had already paid for. See the DRAIN BATCH note at the
+  // head of this Set.
+  // DRAINED 2026-08-01 (linux/warrenspectrum): its linux baseline is COMMITTED, so this pair
+  // was skipping a card we had already paid for. See the DRAIN BATCH note at the
+  // head of this Set.
   // FREEZEFRAME (video sample & hold + per-channel posterize): darwin
   // baseline captured on this machine (live preview canvas masked — see
   // VRT_MODULE_MASKS). linux baseline pending a `task vrt:update` run on
@@ -1401,48 +1472,24 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // (real per-shader content, distinct across the 4 entries) lives in
   // e2e/vrt/vrt-toybox.spec.ts, also darwin-only by the same precedent.
   'linux/toybox',
-  // TOYBOX Phase 4 (the bespoke SVG combine-graph editor): the combine-composite
-  // frozen render + the deterministic editor-SVG capture are darwin baselines
-  // captured locally; linux pending a `task vrt:update` on linux CI (same
-  // shader/SVG pipeline, sub-threshold cross-platform paint timing). Functional
-  // coverage: toybox-combine*.test.ts (graph mutations + Yjs round-trip) +
-  // e2e/tests/toybox-combine-editor.spec.ts (add/connect/cycle-reject via real
-  // clicks + a live-output delta).
-  'linux/toybox-combine-composite',
-  'linux/toybox-combine-editor',
-  // TOYBOX Phase 6 texmap (OBJ surface = another layer's rendered output,
-  // UV-mapped): the obj-tex-sphere (primitive uv) + obj-tex-teapot (zero-vt
-  // PLANAR-UV fallback) frozen renders + the textured-sphere preset are darwin
-  // baselines captured locally; linux pending a `task vrt:update` on linux CI
-  // (same WebGL/shader pipeline, sub-threshold cross-platform paint timing).
-  // Functional coverage: toybox-surface.test.ts (render-order + cycle/self
-  // guard) + obj-parse.test.ts (planar-uv fallback) + the texmap e2e
-  // (e2e/tests/toybox-texture-source.spec.ts).
-  'linux/toybox-obj-tex-sphere',
-  'linux/toybox-obj-tex-teapot',
-  'linux/toybox-preset-textured-sphere',
-  // TOYBOX content-bank expansion: representative frozen baselines for the new
-  // GEN shader (truchet), the new builtin primitive (icosahedron, an OBJ-pass
-  // render), and a FRAG shader over a base layer (frag-kaleido folds layer 0
-  // via iChannel0). Darwin baselines captured locally; linux pending a
-  // `task vrt:update` on linux CI (same WebGL/shader pipeline, sub-threshold
-  // cross-platform paint timing). The remaining new shaders/builtins are
-  // covered by toybox-manifest-integrity.test.ts + primitives.test.ts + the
-  // live compile-smoke e2e — per-asset VRT baselines would bloat the gate.
-  'linux/toybox-truchet',
-  'linux/toybox-obj-icosahedron',
-  'linux/toybox-frag-kaleido',
-  // TOYBOX birds + the FLIGHTY animated scene: the flighty preset (a CC0 bird
-  // flapping over the animated flighty-sky GEN, luma-keyed) + the bird-ernest
-  // OBJ per-model baseline. Darwin baselines captured locally; linux pending a
-  // `task vrt:update` on linux CI (same WebGL/shader pipeline — the flap is
-  // plain vertex arithmetic + the sky is value-noise fBm, both renderer-
-  // tolerant, but the masked-canvas paint timing shifts sub-thresholdly on
-  // linux Chromium). Functional coverage: toybox-manifest-integrity.test.ts
-  // (bird OBJs exist + licensed, flighty-sky GEN convention) +
-  // toybox-presets.test.ts (flighty structure + cvRoutes) + the toybox e2e.
-  'linux/toybox-preset-flighty',
-  'linux/toybox-obj-bird-ernest',
+  //
+  // TEN `linux/toybox-*` ENTRIES WERE DELETED HERE (2026-08-01), not drained.
+  // They were MISNAMED and therefore read by nothing:
+  //   * the real snapshot stems under __screenshots__/vrt-toybox.spec.ts/darwin/
+  //     are `combine-composite`, `truchet`, `obj-tex-sphere`, … — there is no
+  //     `toybox-` prefix on any of them, so `EXEMPT_BASELINE_PAIRS.has(
+  //     'linux/toybox-truchet')` could never be true;
+  //   * and `vrt-toybox.spec.ts` does not import this Set AT ALL. It goes dark
+  //     on linux through mechanism C (a per-test
+  //     `test.skip(VRT_PLATFORM === 'linux', …)`), which is where the "darwin
+  //     baseline captured locally; linux pending a vrt-update" rationale for
+  //     every toybox scene now lives, next to the skip that implements it.
+  // They were previously excused in vrt-platform-gaps.test.ts as "shadowed by
+  // mechanism C and harmless". Shadowing is not what was happening — nothing
+  // resolved them at all — and had anyone "fixed" the names to the real stems,
+  // mechanisms A and C would have started claiming the same 10 gaps and broken
+  // the C negative control. Deleting is the fix (reconcile = fix or delete);
+  // the phantom-entry ceiling drops 15 → 5.
   // COMPOSITE VRT — first category (vrt-composite.spec.ts). Captures
   // NIBBLES.length_cv → SCOPE.ch1 at 5 CV levels via the
   // `__nibblesForceLength` test hook. Darwin baselines captured on this
@@ -1536,7 +1583,9 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // timelorde-wizard.test.ts (beat-pulse math, colour-key boost, gate→on/off,
   // display-mode) + timelorde.test.ts (gate→wizardOn factory write-through) +
   // the per-module-per-port sweep + timelorde-video.spec.ts (owl ↔ feed).
-  'linux/timelorde',
+  // DRAINED 2026-08-01 (linux/timelorde): its linux baseline is COMMITTED, so this pair
+  // was skipping a card we had already paid for. See the DRAIN BATCH note at the
+  // head of this Set.
   // NINE LIVES (2026-06-28): darwin baseline captured locally (the 9-output LFO
   // card is deterministic chrome — Rate + Waveform faders over the yellow
   // PatchPanel RESET/OUT1..OUT9 drill-down, NO canvas/animation); linux baseline

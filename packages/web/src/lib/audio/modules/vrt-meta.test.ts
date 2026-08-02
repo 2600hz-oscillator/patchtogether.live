@@ -17,6 +17,14 @@
 // e2e/vrt/vrt-exemptions.ts so vrt.spec.ts and this self-test agree on
 // the source of truth — no risk of skew between a spec entry and an
 // unaware self-test allowlist.
+//
+// ⚠ EXEMPT_BASELINE_PAIRS is NOT the only way a scene goes dark on a platform
+// — it is one of FOUR (2026-08-01). The LINUX-DEFICIT ratchet near the bottom
+// of this file therefore reads e2e/vrt/vrt-platform-gaps.ts, which enumerates
+// all four and anchors the count to the committed PNGs rather than to any
+// list. Read that file's header before adding a gate here that reasons about
+// platform coverage from a single list; the previous one under-reported the
+// deficit by 41 % and nothing failed.
 
 import { describe, expect, it } from 'vitest';
 import { existsSync } from 'node:fs';
@@ -36,6 +44,14 @@ import {
 } from '../../../../../../e2e/vrt/vrt-exemptions';
 import { VRT_SCENES } from '../../../../../../e2e/vrt/vrt-scenes';
 import { VRT_LIVE_SURFACES } from '../../../../../../e2e/vrt/vrt-live-surfaces';
+// The FOUR platform-gap declaration mechanisms, enumerated in one place.
+// Reading only EXEMPT_BASELINE_PAIRS (as this file used to) sees 89 of 151.
+import {
+  assertBaselineTreeIsReadable,
+  assertParsersSeeSomething,
+  collectLinuxGapReport,
+  committedBaselineKeys,
+} from '../../../../../../e2e/vrt/vrt-platform-gaps';
 
 function repoRoot(): string {
   // This file lives at packages/web/src/lib/audio/modules/. Six `..`
@@ -291,34 +307,49 @@ describe('vrt-meta — STRICT_VRT_MODULES RATCHET (only grows)', () => {
   });
 });
 
-describe('vrt-meta — LINUX-baseline deficit RATCHET (only shrinks)', () => {
-  // HONESTY GATE. CI runs on linux. A module that has only a darwin baseline +
-  // a `linux/<m>` entry in EXEMPT_BASELINE_PAIRS is rendered on darwin only and
-  // is SKIPPED on CI (vrt.spec.ts) — so it NEVER actually diffs on the platform
-  // that gates. The either-platform "covered" check above therefore OVERSTATES
-  // real CI protection by exactly this count: the linux deficit is the gap
-  // between "looks covered" and "actually gated".
+/**
+ * Shared `linux/*` pair budget. Asserted BOTH ways — see LINUX_DEFICIT_CEILING.
+ *
+ * 104 → 94 (2026-08-01): the 10 misnamed `linux/toybox-*` entries were DELETED
+ * (no such scene stem exists; vrt-toybox.spec.ts does not even import the Set —
+ * see the note in vrt-exemptions.ts). Found by the both-directions assertion
+ * below the moment the entries went: under a bare `<=` ceiling this cleanup
+ * would have left 10 counts of slack and said nothing.
+ */
+const SHARED_LINUX_PAIR_CEILING = 94;
+
+describe('vrt-meta — EXEMPT_BASELINE_PAIRS size RATCHET (only shrinks)', () => {
+  // ⚠ 2026-08-01 — READ THIS BEFORE TRUSTING THE NUMBER BELOW.
   //
-  // This ceiling makes the deficit visible + ratchets it toward ZERO: it may
-  // only SHRINK. LOWER the number when you land linux baselines (capture via
-  // `vrt-update.yml` + drop the pairs). Only RAISE it for a DELIBERATE,
-  // commented darwin-first new module — NEVER to make a red gate go green.
-  // (Mirrors the STRICT_VRT_MODULES ratchet above, inverted: that floor only
-  // grows, this ceiling only shrinks; both converge on full linux coverage.)
-  // Most deferrals are `linux/*` (darwin-first authoring); a handful of
-  // `darwin/*` deferrals exist for scene-variant captures + a module whose
-  // linux baseline already gates. The CI-protection metric is the LINUX count:
-  // CI runs on linux, so a linux-pending module never diffs on the gating
-  // platform — that count is the gap between "looks covered" and "actually
-  // gated". This ceiling ratchets it toward ZERO.
-  it('the linux-baseline deficit only shrinks toward zero', () => {
+  // This ceiling counts ONE declaration mechanism: `linux/*` strings in the
+  // SHARED EXEMPT_BASELINE_PAIRS Set. It used to be described as "the linux
+  // deficit". It is NOT, and calling it that is what let 62 dark scenes hide
+  // for months. Measured on `main` @ 77cd1bbc:
+  //
+  //   real deficit (a darwin PNG with no linux sibling)   151
+  //   this Set explains                                    89   (59 %)
+  //   the OTHER THREE mechanisms explain                   62   (41 %)
+  //
+  // …and the number this test printed was 119 — neither 151 nor 89 — because
+  // 30 of its entries named scenes that are not gaps at all (15 whose linux PNG
+  // was already committed, 15 with no PNG on either platform). A count of
+  // DECLARATIONS was being read as a count of GAPS. It was wrong in both
+  // directions simultaneously, which is the signature of a metric measuring the
+  // wrong quantity rather than measuring it badly.
+  //
+  // The REAL deficit ratchet is the describe block below, which reads all four
+  // mechanisms off `e2e/vrt/vrt-platform-gaps.ts`. This one survives as a
+  // narrower LIST-HYGIENE ratchet: the shared Set may not grow. Keep both —
+  // they fail on different things (this on list rot, that on coverage rot).
+  it('the shared EXEMPT_BASELINE_PAIRS linux entry count only shrinks', () => {
     const linuxPending = [...EXEMPT_BASELINE_PAIRS].filter((p) => p.startsWith('linux/')).length;
     expect(
       linuxPending,
-      'the linux-baseline deficit GREW. CI is linux, so a linux-pending module is never ' +
-        'actually diffed on CI — landing fewer linux baselines is a real coverage regression. ' +
-        'Capture linux baselines (vrt-update.yml workflow_dispatch) + drop the pairs to LOWER ' +
-        'this number; only RAISE it for a deliberate, commented darwin-first new module.',
+      'the shared EXEMPT_BASELINE_PAIRS linux list GREW. Each entry skips a card on the ' +
+        'platform CI gates on. Capture linux baselines (vrt-update.yml workflow_dispatch, ' +
+        'UNSCOPED) + drop the pairs to LOWER this number; only RAISE it for a deliberate, ' +
+        'commented darwin-first new module. NOTE: this is ONE of FOUR mechanisms — it is ' +
+        'NOT the deficit. See the linux-deficit ratchet below + e2e/vrt/vrt-platform-gaps.ts.',
       // 98→99 for NINE LIVES (2026-06-28, deliberate darwin-first 9-output LFO).
       // 99→95 (2026-06-29): CV-util batch linux baselines (Track-2 batch 1).
       // 95→75 (2026-06-29): the 20-card MOOG cluster linux baselines (Track-2
@@ -465,9 +496,140 @@ describe('vrt-meta — LINUX-baseline deficit RATCHET (only shrinks)', () => {
       // 119→124, and THIS RATCHET ONLY SHRINKS. A scene whose linux baseline
       // one dispatch regenerates is a re-capture, not a platform deficit;
       // letting a re-capture inflate the ceiling is how these ceilings rot.
-    ).toBeLessThanOrEqual(119);
+      //
+      // 119→104 DRAIN (2026-08-01): the 15 pairs whose linux baseline was
+      // ALREADY COMMITTED under __screenshots__/vrt.spec.ts/linux/ — the pair
+      // is consulted before the PNG, so each one skipped a card the repo had
+      // already paid to capture (macrooscillator, samsloop, scope, videoOut,
+      // audioOut, analogVco, lfo, feedback, lines, monoglitch, shapedramps,
+      // unityscalemathematik, vdelay, warrenspectrum, timelorde). It was also a
+      // deadlock: `--update-snapshots` writes nothing for a skipped test, so the
+      // "re-capture then remove the pair" plan three of them are waiting on
+      // could never run while the pair was listed. The TOTAL deficit does NOT
+      // move (151 → 151): a pair whose PNG exists was never part of it.
+    ).toBeLessThanOrEqual(SHARED_LINUX_PAIR_CEILING);
+    expect(
+      SHARED_LINUX_PAIR_CEILING - linuxPending,
+      `THE SHARED-PAIR CEILING HAS GONE SLACK: ${linuxPending} linux pair(s) under a ceiling of ` +
+        `${SHARED_LINUX_PAIR_CEILING}. Pairs were drained and the number was not lowered, so ` +
+        `${SHARED_LINUX_PAIR_CEILING - linuxPending} new darwin-first exemption(s) can now be ` +
+        `added without anything going red. Set it to ${linuxPending}.`,
+    ).toBe(0);
   });
 });
+
+/**
+ * THE LINUX-DEFICIT CEILING — and it is asserted in BOTH directions.
+ *
+ * A ceiling can only ever trip by GROWING. That makes the complementary
+ * failure — a PR that closes gaps and forgets to lower the number — completely
+ * silent, and it leaves exactly that much slack for the next regression to
+ * hide in. Every ratchet in this file now pairs `<= CEILING` with
+ * `CEILING - actual === 0`, so a drain that does not re-pin the constant is as
+ * red as a regression. Change this number in the same commit that moves the
+ * baselines, never on its own.
+ */
+const LINUX_DEFICIT_CEILING = 151;
+
+describe('vrt-meta — LINUX-baseline DEFICIT RATCHET (all four mechanisms)', () => {
+  // THE HONESTY GATE. CI renders on LINUX. A scene captured on darwin but
+  // skipped on linux contributes ZERO protection on the platform that gates,
+  // while still counting as "covered" in every either-platform check above.
+  //
+  // Ground truth is ON DISK — a darwin PNG with no linux sibling — and the four
+  // declaration mechanisms are then required to EXPLAIN each gap. That
+  // inversion is the fix: the printed number cannot drift from the baselines,
+  // an undeclared gap fails loudly, and a dead declaration is reported rather
+  // than silently inflating the count. Mechanisms + how each is read:
+  // e2e/vrt/vrt-platform-gaps.ts.
+  //
+  // RATCHET RULE: this ceiling only SHRINKS. LOWER it when a `vrt-update.yml
+  // -f platform=linux` dispatch lands baselines (drain the pending pairs
+  // FIRST — a skipped test writes no snapshot). Only RAISE it for a
+  // DELIBERATE, commented darwin-first scene — NEVER to make a red gate green.
+  it('the linux-baseline deficit only shrinks toward zero', () => {
+    // ⚠ EVERY assertion in this describe is derived from `__screenshots__`.
+    // With that tree unreadable the report is `total = 0, undeclared = []` and
+    // all of them PASS — measured. `assertBaselineTreeIsReadable()` throws
+    // first so the ratchet cannot skip-pass on a partial checkout.
+    assertBaselineTreeIsReadable();
+    const report = collectLinuxGapReport();
+    expect(
+      report.total,
+      report.format(
+        'THE LINUX-BASELINE DEFICIT GREW — more scenes are now captured on darwin ' +
+          'and never diffed on linux, which is where CI gates.',
+      ),
+      // 151 measured 2026-08-01 on `main` @ 77cd1bbc, the FIRST honest reading:
+      // 280 darwin baselines vs 129 linux. The predecessor ratchet reported 119
+      // while counting only the shared-pairs mechanism (89 real gaps + 30
+      // non-gaps), so this is not a regression from 119 — it is the first time
+      // the quantity was measured at all. Breakdown at the freeze:
+      //   89  shared-pairs
+      //   49  hardcoded-platform-skip  (27 of them vrt-toybox.spec.ts)
+      //   10  spec-local-pairs         (dashboard/groups/interactions/landing)
+      //    3  scene-darwin-only        (vco-scope-audio-trace, adsr-sustain-*)
+      //    0  UNDECLARED
+    ).toBeLessThanOrEqual(LINUX_DEFICIT_CEILING);
+    // …AND THE OTHER DIRECTION, which a ceiling structurally cannot see.
+    // `<=` only trips on GROWTH. A PR that CLOSES gaps — the whole point of
+    // the ratchet — leaves a slack ceiling behind, silently, and the next
+    // regression is absorbed by that slack instead of failing. CLAUDE.md's
+    // drain procedure says "lower the ceiling by the same count" and nothing
+    // enforced it, so the instruction was advisory. Now it is not.
+    expect(
+      LINUX_DEFICIT_CEILING - report.total,
+      `THE CEILING HAS GONE SLACK: ${report.total} real gap(s) under a ceiling of ` +
+        `${LINUX_DEFICIT_CEILING}. Somebody captured linux baselines (good) and did not lower ` +
+        `LINUX_DEFICIT_CEILING by the same count (not good) — the ratchet now tolerates ` +
+        `${LINUX_DEFICIT_CEILING - report.total} new dark scene(s) without a word. Set it to ` +
+        `${report.total}.`,
+    ).toBe(0);
+  });
+
+  it('every linux gap is DECLARED by one of the four mechanisms', () => {
+    // A gap nobody declares is the worst kind: a scene silently dark on the
+    // gating platform with no comment, no pair and no reason. Zero today —
+    // keep it zero. If this fires, either add the declaration or (better)
+    // capture the linux baseline.
+    assertBaselineTreeIsReadable();
+    const report = collectLinuxGapReport();
+    expect(
+      report.undeclared.map((g) => `${g.spec}/${g.scene}`),
+      report.format('UNDECLARED linux gap(s) — a scene goes dark on linux with nothing saying so.'),
+    ).toEqual([]);
+  });
+
+  it('a spec declared linux-dark ships NO linux baseline (the skip must not lie)', () => {
+    // `test.skip(VRT_PLATFORM === 'linux', …)` is a blanket, list-free skip: it
+    // takes the WHOLE spec dark. If such a spec also ships a linux baseline,
+    // that PNG is dead weight and the blanket skip is stale — the two sides of
+    // the contract disagree and only this check reads both.
+    assertBaselineTreeIsReadable();
+    const report = collectLinuxGapReport();
+    expect(
+      report.contradictoryDarkSpecs,
+      "spec(s) with a blanket `test.skip(VRT_PLATFORM === 'linux', …)` that nonetheless ship a " +
+        'committed linux baseline. The baseline is never compared. Either narrow the skip so ' +
+        'those scenes run on linux, or delete the dead PNG.',
+    ).toEqual([]);
+  });
+
+  it('the SOURCE-SCANNED mechanisms actually see something (instrument control)', () => {
+    // Two of the four mechanisms live in Playwright spec sources and can only
+    // be read as TEXT (importing a spec executes `test.describe()` outside the
+    // runner and throws). A regex that drifts from the source returns a clean,
+    // plausible EMPTY set and the deficit silently under-reports. Fail loudly
+    // instead — including on the happy day the mechanism is genuinely gone, so
+    // somebody deletes the parser deliberately.
+    const seen = assertParsersSeeSomething();
+    expect(seen.local, 'spec-local EXEMPT_BASELINE_PAIRS entries found').toBeGreaterThan(0);
+    expect(seen.dark, 'specs with a blanket linux skip found').toBeGreaterThan(0);
+  });
+});
+
+/** Stale-pair budget. Asserted in BOTH directions — see LINUX_DEFICIT_CEILING. */
+const STALE_PAIR_CEILING = 4;
 
 describe('vrt-meta — STALE EXEMPT_BASELINE_PAIRS RATCHET (only shrinks)', () => {
   // HYGIENE GATE for the OTHER rot direction. An EXEMPT_BASELINE_PAIRS entry
@@ -478,33 +640,77 @@ describe('vrt-meta — STALE EXEMPT_BASELINE_PAIRS RATCHET (only shrinks)', () =
   // (This is distinct from EXEMPT_FROM_VRT, which skips a card ENTIRELY on
   // purpose, with a reason; a "pending" pair whose baseline exists is just rot.)
   //
-  // We detect a pair as STALE when its vrt.spec.ts baseline PNG exists on disk.
-  // (Composite/scope SCENE pairs store baselines under a different spec dir, so
-  // they have no vrt.spec.ts path and are never counted here — this ratchet only
-  // governs plain module-card pairs, the unambiguous case.) `task vrt:audit`
-  // prints the full classified list for the cleanup pass.
+  // A pair is STALE when a baseline PNG for that `<platform>/<scene>` exists
+  // ANYWHERE under __screenshots__ — not just under vrt.spec.ts.
   //
-  // This ceiling makes the rot visible + ratchets it toward ZERO: it may only
-  // SHRINK. LOWER the number when you drop a stale pair (after confirming the
-  // committed baseline still matches the render — else `task vrt:commit` to
-  // regenerate first). Re-introducing a pair for a card that already has a
-  // baseline RAISES it → fails. Mirrors the deficit ratchet above, inverted.
+  // ⚠ 2026-08-01: this check used to resolve only the vrt.spec.ts path, so a
+  // stale composite/scene pair (whose PNG lives under its own spec dir) was
+  // structurally invisible to it. Same blindness class as the deficit ratchet
+  // above — a gate that looks in one directory cannot speak for the tree.
+  // `committedBaselineKeys()` indexes every spec dir, so the widened check now
+  // sees all of them. `task vrt:audit` prints the classified list.
+  //
+  // Widening it immediately found THREE the narrow version could not see — the
+  // three `darwin/wavesculpt-blink-*` quarantines, whose PNGs live under
+  // vrt-wavesculpt-blink.spec.ts. Re-derived on main @ 77cd1bbc: narrow = 16,
+  // widened = 19. (`darwin/rasterize` is the FOURTH member of the residue but
+  // NOT part of the delta — its PNG is `vrt.spec.ts/darwin/rasterize.png`, so
+  // the narrow check always saw it. An earlier revision of this comment, the
+  // commit message and CLAUDE.md all said "FOUR"; scripts/vrt-exemptions-audit
+  // said three, and the audit script was right.) The true count was 19, ABOVE
+  // the old ceiling of 18 — the ratchet was under its cap only because its
+  // instrument was short-sighted.
+  //
+  // Those four are the residue and are deliberately NOT drained: they are
+  // tracked FLAKE QUARANTINES (canvas-render timing variance, tasks #198 and
+  // #202), not pending captures. Their baselines are committed and correct;
+  // the scene is unstable. Dropping the pairs without the root-cause fix just
+  // re-reds the lane, which is the opposite of coverage — see
+  // `feedback_never_quarantine_fix_the_test`: they come out with the FIX.
+  //
+  // 18 → 4. The 15 pending-but-committed pairs were drained 2026-08-01, so the
+  // only remaining budget is those four named quarantines. A new "capture the
+  // baseline, forget to drop the pair" therefore fails immediately.
+  //
+  // THE PRECONDITION FOR A DRAIN (restored — it was deleted in the very commit
+  // that then violated it, and the 15-scene drain went out with all 15 linux
+  // baselines DIMENSION-MISMATCHED, turning the VRT lane red):
+  //   LOWER the number when you drop a stale pair — AFTER CONFIRMING THE
+  //   COMMITTED BASELINE STILL MATCHES THE RENDER. A pair that has been listed
+  //   for weeks has usually outlived its PNG: the card was re-laid-out and the
+  //   committed image is the wrong SIZE, which Playwright hard-fails before it
+  //   ever computes a diff ratio, so no tolerance argument applies. If in
+  //   doubt, `git rm` the stale PNG and dispatch
+  //   `vrt-update.yml -f platform=linux` in the SAME PR — a drain whose
+  //   re-capture is deferred to "a follow-up" ships a red lane.
+  // Re-introducing a pair for a card that already has a baseline RAISES this
+  // number → fails. Mirrors the deficit ratchet above, inverted.
   it('the stale-exemption count (pair listed but baseline already exists) only shrinks', () => {
-    const stale = [...EXEMPT_BASELINE_PAIRS]
-      .filter((p) => {
-        const [platform, type] = p.split('/');
-        return existsSync(baselinePath(type, platform));
-      })
-      .sort();
+    // Same vacuity trap as the deficit ratchet: with `__screenshots__` absent
+    // `committed` is empty, `stale` is 0, and `0 <= 4` passes while measuring
+    // nothing at all.
+    assertBaselineTreeIsReadable();
+    const committed = committedBaselineKeys();
+    const stale = [...EXEMPT_BASELINE_PAIRS].filter((p) => committed.has(p)).sort();
     expect(
       stale.length,
-      `EXEMPT_BASELINE_PAIRS lists pairs whose vrt.spec.ts baseline ALREADY exists — the ` +
-        `card is SKIPPED on that platform despite a committed baseline (silent coverage ` +
-        `loss). Drop the stale pair(s) to LOWER this ceiling (see \`task vrt:audit\`): ` +
-        `${stale.join(', ')}`,
-      // Frozen at today's debt (2026-06-30). Drive it to 0 by reconciling each
-      // pair: confirm the committed baseline matches the current render, then
-      // remove the pair from EXEMPT_BASELINE_PAIRS and lower this number.
-    ).toBeLessThanOrEqual(18);
+      `EXEMPT_BASELINE_PAIRS lists pairs whose baseline PNG ALREADY exists — the scene is ` +
+        `SKIPPED on that platform despite a committed baseline (silent coverage loss; the ` +
+        `pair is consulted BEFORE the PNG). It is also a deadlock: --update-snapshots writes ` +
+        `nothing for a skipped test, so the pair blocks the very re-capture it waits on. ` +
+        `Drop the stale pair(s) (see \`task vrt:audit\`): ${stale.join(', ')}`,
+      // 18→4 (2026-08-01): the drain batch removed the 15 PENDING-but-committed
+      // pairs (see the DRAIN BATCH note at the head of EXEMPT_BASELINE_PAIRS).
+      // The 4 that remain are the tracked darwin flake QUARANTINES (#198/#202)
+      // and only leave with their root-cause fix. Do not raise this: outside a
+      // quarantine, a pair whose PNG exists has no legitimate reading.
+    ).toBeLessThanOrEqual(STALE_PAIR_CEILING);
+    expect(
+      STALE_PAIR_CEILING - stale.length,
+      `THE STALE-PAIR CEILING HAS GONE SLACK: ${stale.length} stale pair(s) under a ceiling of ` +
+        `${STALE_PAIR_CEILING}. A quarantine was released and the number was not lowered, so ` +
+        `the ratchet now silently tolerates ${STALE_PAIR_CEILING - stale.length} new "captured ` +
+        `the baseline, forgot to drop the pair". Set it to ${stale.length}.`,
+    ).toBe(0);
   });
 });
