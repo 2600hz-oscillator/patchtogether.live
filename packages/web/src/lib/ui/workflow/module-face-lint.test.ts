@@ -35,6 +35,15 @@ import type { ControlFamily, ModuleFace, ParamDef } from '$lib/graph/types';
 import { staticKey, type LegendEntry } from '$lib/docs/control-doc-resolver';
 import { STRICT_FACES } from './strict-faces';
 import { curatedFace, dockFacePlan, dockPlanControls, type FaceDefLike } from './curated-face';
+import { DOCK_TAB_MIN_BANDS, dockTabPlan } from './dock-tabs-model';
+import {
+  heroFacePlan,
+  heroFacePlanIsTotal,
+  isUsableReadout,
+  sidebarPlan,
+  type FaceplateDefLike,
+} from './dock-faceplate-model';
+import { sidebarPanelIds } from './sidebar-panels';
 import { laneBodyPlan } from './module-shell-model';
 import { looksLikeSwitch } from './shell-control-kind';
 import { panelCellKeys } from './shell-cells';
@@ -879,6 +888,368 @@ describe('module-face lint — rear-card curation (face.rear) + derivation total
       }
     }
     expect([...new Set(problems)].join('\n'), 'ambiguous rear band headings').toBe('');
+  });
+});
+
+describe('module-face lint — FACEPLATE STRUCTURE (PF-20: hero / sidebar / hints)', () => {
+  // PF-20 added four DECLARATIONS to `face` — title/hint, page hints, the hero
+  // slot and the sidebar — and every one of them is the same hazard shape the
+  // paramCells block above exists for: a declaration nobody validates is a
+  // silent no-op that reads like a shipped decision. A stale hero key promotes
+  // nothing; a preset naming a deleted param writes nothing; a `custom` block
+  // with a typo'd panel id paints a blank column.
+  //
+  // Every clause is a pure predicate driven BOTH over the live registry and
+  // over synthetic defs, because kickdrum is the only adopter today and the
+  // registry sweeps would otherwise be near-vacuous.
+
+  interface StructFaceDef extends FaceDefLike {
+    type: string;
+    params?: readonly ParamDef[];
+    face?: ModuleFace;
+  }
+
+  /**
+   * Every problem with one def's HERO declaration:
+   *   (a) `control`/`action` name a key that is RANKED in `face.order` — an
+   *       unranked key never reaches `dockFacePlan`, so the promotion silently
+   *       does nothing and the hero rail renders empty;
+   *   (b) `control` and `action` are not the SAME key — heroFacePlan promotes
+   *       it once (it must, or the dock emits `control-<paramId>` twice), so
+   *       declaring both is a typo whose effect is invisible;
+   *   (c) every readout names EXACTLY ONE source and a `paramId` resolves.
+   */
+  function heroProblems(def: StructFaceDef): string[] {
+    const hero = def.face?.hero;
+    if (!hero) return [];
+    const problems: string[] = [];
+    const ranked = new Set(def.face?.order ?? []);
+    const paramIds = new Set((def.params ?? []).map((p) => p.id));
+
+    for (const [field, key] of [
+      ['control', hero.control],
+      ['action', hero.action],
+    ] as const) {
+      if (!key) continue;
+      if (!ranked.has(key)) {
+        problems.push(
+          `${def.type}: face.hero.${field} = '${key}' is not ranked in face.order, so nothing is ` +
+            `promoted and the hero rail renders EMPTY`,
+        );
+      }
+    }
+    if (hero.control && hero.action && hero.control === hero.action) {
+      problems.push(
+        `${def.type}: face.hero.control and .action are both '${hero.control}' — it can only be ` +
+          `promoted ONCE (a second cell would emit a duplicate control-<paramId> and fail ` +
+          `faces-parity), so one of the two declarations does nothing`,
+      );
+    }
+    problems.push(...readoutProblems(def, hero.readouts ?? [], 'face.hero.readouts'));
+    return problems;
+  }
+
+  /** Shared readout clause — used by the hero AND by every `readouts` sidebar
+   *  block, because "exactly one source, and it resolves" is the same rule
+   *  wherever a labelled value is declared. */
+  function readoutProblems(
+    def: StructFaceDef,
+    readouts: readonly { label: string; paramId?: string; text?: string }[],
+    where: string,
+  ): string[] {
+    const problems: string[] = [];
+    const paramIds = new Set((def.params ?? []).map((p) => p.id));
+    for (const r of readouts) {
+      if (!isUsableReadout(r)) {
+        problems.push(
+          `${def.type}: ${where}['${r.label}'] must name EXACTLY ONE source — a paramId OR a ` +
+            `text, never both and never neither (it renders as '—')`,
+        );
+        continue;
+      }
+      if (r.paramId && !paramIds.has(r.paramId)) {
+        problems.push(
+          `${def.type}: ${where}['${r.label}'].paramId = '${r.paramId}' is not a declared param — ` +
+            `it prints '—' forever`,
+        );
+      }
+    }
+    return problems;
+  }
+
+  /**
+   * Every problem with one def's SIDEBAR:
+   *   (a) a `presets` entry's every value key is a declared param, and the
+   *       value is INSIDE that param's declared range. Out-of-range is the
+   *       "the control lied about its own range" class: `presetWrites` clamps
+   *       at render time, so an out-of-range preset would silently apply a
+   *       DIFFERENT setting than the one it names;
+   *   (b) a `custom` block's `panelId` is REGISTERED (sidebar-panels.ts) — an
+   *       unregistered id renders nothing, i.e. a labelled blank column;
+   *   (c) `readouts` entries obey the shared readout clause;
+   *   (d) no block would render EMPTY (sidebarPlan drops it, so declaring it
+   *       is a no-op the author should know about).
+   */
+  function sidebarProblems(def: StructFaceDef, registered: ReadonlySet<string>): string[] {
+    const blocks = def.face?.sidebar;
+    if (!blocks) return [];
+    const problems: string[] = [];
+    const byId = new Map((def.params ?? []).map((p) => [p.id, p]));
+    const kept = new Set(sidebarPlan(def as FaceplateDefLike) ?? []);
+
+    for (const b of blocks) {
+      if (!kept.has(b)) {
+        problems.push(
+          `${def.type}: face.sidebar '${b.label}' (${b.kind}) renders EMPTY and is dropped — ` +
+            `a labelled void is worse than no block`,
+        );
+      }
+      if (b.kind === 'presets') {
+        for (const e of b.entries) {
+          for (const [pid, v] of Object.entries(e.values)) {
+            const p = byId.get(pid);
+            if (!p) {
+              problems.push(
+                `${def.type}: preset '${e.id}' writes '${pid}', which is not a declared param — ` +
+                  `presetWrites DROPS it, so the preset silently applies a different sound`,
+              );
+              continue;
+            }
+            if (!Number.isFinite(v) || v < p.min || v > p.max) {
+              problems.push(
+                `${def.type}: preset '${e.id}' sets ${pid} = ${v}, outside its declared ` +
+                  `${p.min}..${p.max} — presetWrites CLAMPS it, so the preset applies a value ` +
+                  `it does not name`,
+              );
+            }
+          }
+        }
+      } else if (b.kind === 'custom') {
+        if (!registered.has(b.panelId)) {
+          problems.push(
+            `${def.type}: face.sidebar custom panelId '${b.panelId}' is not registered in ` +
+              `sidebar-panels.ts (have: ${[...registered].join(', ') || 'none'}) — it paints a ` +
+              `labelled blank column`,
+          );
+        }
+      } else if (b.kind === 'readouts') {
+        problems.push(...readoutProblems(def, b.entries, `face.sidebar['${b.label}']`));
+      }
+    }
+    return problems;
+  }
+
+  /**
+   * A page `hint` on a TABBED face is DEAD METADATA. ModuleShell suppresses the
+   * whole band header when a rail is up (the tab already names the band ~14px
+   * above), so the hint is authored, reviewed, and never rendered — exactly the
+   * "declaration that does nothing" trap the paramCells rules exist for.
+   */
+  function deadHintProblems(def: StructFaceDef): string[] {
+    const bands = dockFacePlan(def);
+    if (!bands || !dockTabPlan(bands)) return [];
+    return bands
+      .filter((b) => b.hint)
+      .map(
+        (b) =>
+          `${def.type}: page '${b.id}' declares a hint, but this face is TABBED ` +
+            `(${bands.length} bands ≥ the rail threshold) and a tabbed face suppresses its band ` +
+            `headers — the hint can never render`,
+      );
+  }
+
+  it('every face.hero key is RANKED, promoted once, and every readout resolves', () => {
+    const problems: string[] = [];
+    for (const def of allDefs()) problems.push(...heroProblems(def as unknown as StructFaceDef));
+    expect(problems.join('\n'), 'face.hero drift — a promotion or readout that does nothing').toBe('');
+  });
+
+  it('the HERO SPLIT is TOTAL on every faced module — no control dropped or duplicated', () => {
+    // The unit-lane twin of faces-parity's DOM multiset assert, over the whole
+    // registry in milliseconds. This is the gate that makes promoting a control
+    // into the hero a safe edit rather than a gamble.
+    const problems: string[] = [];
+    for (const def of allDefs()) {
+      if (!def.face) continue;
+      const before = dockFacePlan(def as FaceDefLike);
+      const after = heroFacePlan(def as unknown as FaceplateDefLike, before);
+      if (!heroFacePlanIsTotal(before, after)) {
+        problems.push(
+          `${def.type}: the hero split changed the dock's control multiset — a promoted control ` +
+            `was dropped (a LOST control) or duplicated (an unbacked EXTRA control)`,
+        );
+      }
+    }
+    expect(problems.join('\n'), 'hero split totality').toBe('');
+  });
+
+  it('every face.sidebar block paints: real params, in-range presets, registered panels', () => {
+    const registered = new Set(sidebarPanelIds());
+    const problems: string[] = [];
+    for (const def of allDefs()) {
+      problems.push(...sidebarProblems(def as unknown as StructFaceDef, registered));
+    }
+    expect(problems.join('\n'), 'face.sidebar drift').toBe('');
+  });
+
+  it('no page hint is declared on a TABBED face (it could never render)', () => {
+    const problems: string[] = [];
+    for (const def of allDefs()) {
+      if (!def.face) continue;
+      problems.push(...deadHintProblems(def as unknown as StructFaceDef));
+    }
+    expect(problems.join('\n'), 'dead page hints').toBe('');
+  });
+
+  // ── NEGATIVE CONTROLS ─────────────────────────────────────────────────────
+  // kickdrum is the only adopter today, so without these the four sweeps above
+  // are near-vacuous and would stay green if every predicate were `return []`.
+
+  const HERO_PARAM: ParamDef = { id: 'tune', label: 'Tune', min: 20, max: 120, defaultValue: 50, curve: 'log' };
+
+  function structSynthetic(over: Partial<StructFaceDef> = {}): StructFaceDef {
+    return {
+      type: 'synthetic',
+      params: [HERO_PARAM],
+      face: { order: ['tune'], hero: { control: 'tune' } },
+      ...over,
+    };
+  }
+
+  it('NEGATIVE CONTROL: a well-formed hero + sidebar passes every clause', () => {
+    const def = structSynthetic({
+      face: {
+        order: ['tune'],
+        hero: { control: 'tune', readouts: [{ label: 'pitch', paramId: 'tune' }, { label: 'fixed', text: 'x' }] },
+        sidebar: [
+          { kind: 'signal-flow', label: 'flow', stages: [{ label: 'SUB', role: 'generator' }] },
+          { kind: 'presets', label: 'p', entries: [{ id: 'a', label: 'A', values: { tune: 60 } }] },
+          { kind: 'readouts', label: 'r', entries: [{ label: 'pitch', paramId: 'tune' }] },
+          { kind: 'custom', label: 'c', panelId: 'stereo-crossover' },
+        ],
+      },
+    });
+    expect(heroProblems(def)).toEqual([]);
+    expect(sidebarProblems(def, new Set(sidebarPanelIds()))).toEqual([]);
+  });
+
+  it('NEGATIVE CONTROL (hero a): an UNRANKED hero key FAILS', () => {
+    const problems = heroProblems(structSynthetic({ face: { order: [], hero: { control: 'tune' } } }));
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('is not ranked in face.order');
+  });
+
+  it('NEGATIVE CONTROL (hero b): control === action FAILS', () => {
+    const problems = heroProblems(
+      structSynthetic({ face: { order: ['tune'], hero: { control: 'tune', action: 'tune' } } }),
+    );
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('can only be promoted ONCE');
+  });
+
+  it('NEGATIVE CONTROL (hero c): a readout with two sources, or an unknown param, FAILS', () => {
+    const both = heroProblems(
+      structSynthetic({
+        face: { order: ['tune'], hero: { control: 'tune', readouts: [{ label: 'x', paramId: 'tune', text: 'y' }] } },
+      }),
+    );
+    expect(both).toHaveLength(1);
+    expect(both[0]).toContain('EXACTLY ONE source');
+
+    const ghost = heroProblems(
+      structSynthetic({
+        face: { order: ['tune'], hero: { control: 'tune', readouts: [{ label: 'x', paramId: 'ghost' }] } },
+      }),
+    );
+    expect(ghost).toHaveLength(1);
+    expect(ghost[0]).toContain('is not a declared param');
+  });
+
+  it('NEGATIVE CONTROL (sidebar a): a preset naming an unknown param, or out of range, FAILS', () => {
+    const ghost = sidebarProblems(
+      structSynthetic({
+        face: {
+          order: ['tune'],
+          sidebar: [{ kind: 'presets', label: 'p', entries: [{ id: 'a', label: 'A', values: { ghost: 1 } }] }],
+        },
+      }),
+      new Set(sidebarPanelIds()),
+    );
+    expect(ghost).toHaveLength(1);
+    expect(ghost[0]).toContain('is not a declared param');
+
+    const oor = sidebarProblems(
+      structSynthetic({
+        face: {
+          order: ['tune'],
+          sidebar: [{ kind: 'presets', label: 'p', entries: [{ id: 'a', label: 'A', values: { tune: 999 } }] }],
+        },
+      }),
+      new Set(sidebarPanelIds()),
+    );
+    expect(oor).toHaveLength(1);
+    expect(oor[0]).toContain('outside its declared');
+  });
+
+  it('NEGATIVE CONTROL (sidebar b): an UNREGISTERED custom panelId FAILS', () => {
+    const problems = sidebarProblems(
+      structSynthetic({
+        face: { order: ['tune'], sidebar: [{ kind: 'custom', label: 'c', panelId: 'no-such-panel' }] },
+      }),
+      new Set(sidebarPanelIds()),
+    );
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('is not registered in sidebar-panels.ts');
+  });
+
+  it('NEGATIVE CONTROL (sidebar d): an EMPTY block FAILS', () => {
+    const problems = sidebarProblems(
+      structSynthetic({
+        face: { order: ['tune'], sidebar: [{ kind: 'presets', label: 'p', entries: [] }] },
+      }),
+      new Set(sidebarPanelIds()),
+    );
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('renders EMPTY');
+  });
+
+  it('NEGATIVE CONTROL (dead hint): a hint on a face over the TAB threshold FAILS', () => {
+    // DOCK_TAB_MIN_BANDS pages, so `dockTabPlan` returns a rail and the band
+    // headers (hint included) are suppressed.
+    const params: ParamDef[] = Array.from({ length: DOCK_TAB_MIN_BANDS }, (_, i) => ({
+      id: `p${i}`,
+      label: `P${i}`,
+      min: 0,
+      max: 1,
+      defaultValue: 0,
+      curve: 'linear' as const,
+    }));
+    const def = structSynthetic({
+      params,
+      face: {
+        order: params.map((p) => p.id),
+        pages: params.map((p, i) => ({
+          id: `pg${i}`,
+          label: `PG${i}`,
+          controls: [p.id],
+          ...(i === 0 ? { hint: 'never seen' } : {}),
+        })),
+      },
+    });
+    const problems = deadHintProblems(def);
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('can never render');
+
+    // …and the SAME face under the threshold is clean (the control that proves
+    // the rule is about TABS and not about hints).
+    const untabbed = structSynthetic({
+      params,
+      face: {
+        order: params.map((p) => p.id),
+        pages: [{ id: 'only', label: 'ONLY', hint: 'seen', controls: params.map((p) => p.id) }],
+      },
+    });
+    expect(deadHintProblems(untabbed)).toEqual([]);
   });
 });
 

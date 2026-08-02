@@ -23,7 +23,7 @@ import {
 } from './dock-tabs-model';
 import '$lib/audio/modules';
 
-const band = (id: string, label = id): DockFaceBand => ({ id, label, controls: [], clusters: [] });
+const band = (id: string, label = id): DockFaceBand => ({ id, label, hint: '', controls: [], clusters: [] });
 const bands = (n: number): DockFaceBand[] =>
   Array.from({ length: n }, (_, i) => band(`p${i}`, `page ${i}`));
 

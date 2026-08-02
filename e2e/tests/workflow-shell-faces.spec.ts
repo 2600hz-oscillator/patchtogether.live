@@ -193,13 +193,30 @@ test.describe('P1 batch-1 curated faces (?shell=1)', () => {
       pages.nth(3).locator('[data-testid="control-drive"]'),
       "page 'drive' holds the drive control",
     ).toBeVisible();
-    // The AUDITION leads band 1 — the dock pane shows ~2 bands before it
-    // scrolls, so a strike button in the merged out band would be unreachable
-    // without scrolling on the one voice that is silent until you hit it.
+    // The AUDITION is the first thing a player can reach. It used to lead band
+    // 1, for the reason that still applies — this is the one voice that is
+    // SILENT until something strikes it, and the dock pane shows ~2 bands
+    // before it scrolls. PF-20 moved it one step FURTHER up: `face.hero`
+    // promotes it into the hero rail, which sits above every band.
+    //
+    // ⚠ THE `toHaveCount(1)` IS THE POINT OF THIS EDIT, not decoration. The
+    // hero PROMOTES a cell, it does not copy it, so the assertion that used to
+    // say "it is in band 1" must now say "it is in the hero AND NOWHERE ELSE".
+    // A weaker "it is visible somewhere" rewrite would have passed just as
+    // happily against a hero that duplicated the audition — which is the exact
+    // regression the promotion can cause.
+    await expect(
+      faceplate.getByTestId('face-hero').getByTestId('shell-cell-kickdrum-strike'),
+      'the STRIKE audition is promoted into the hero rail, above every band',
+    ).toBeVisible();
+    await expect(
+      faceplate.getByTestId('shell-cell-kickdrum-strike'),
+      'and it is rendered exactly ONCE across the whole faceplate',
+    ).toHaveCount(1);
     await expect(
       pages.nth(0).getByTestId('shell-cell-kickdrum-strike'),
-      "page 'sub' leads with the STRIKE audition",
-    ).toBeVisible();
+      'so band 1 no longer carries a second copy of it',
+    ).toHaveCount(0);
     // The merged 'dynamics · out' band carries BOTH ideas, split by clusters
     // (a ~14px sub-header) rather than by a sixth ~81px band.
     for (const paramId of ['ceiling', 'width', 'level']) {
