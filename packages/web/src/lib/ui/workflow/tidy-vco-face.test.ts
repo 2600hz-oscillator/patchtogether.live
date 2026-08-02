@@ -66,6 +66,26 @@ describe('tidyVco face — the LANE ladder (what the player rides)', () => {
     expect(face.glyph).toBe('waveform');
   });
 
+  it('MINI shows the glyph WITHOUT either param that determines it — priced in, not missed', () => {
+    // ⚠ THE COST OF PROMOTING CUTOFF, STATED. The report said the only
+    // tier-reachability change was `compact: shape1, pw → cutoff, shape1`. MINI
+    // moved too — `shape1 → cutoff` — and that weakens the rank-2 argument,
+    // which is "SHAPE 1 is the param the glyph DRAWS, so the knob and its
+    // picture sit together". At mini they no longer do.
+    //
+    // `laneBodyPlan` renders the glyph unconditionally at mini, and the binding
+    // is DUAL (a param-derived core wave from shape1/pw + the live trace). With
+    // nothing gated the live half is a flat line, so the mini tile now pairs a
+    // CUTOFF knob with a picture whose two determining params are both a tier
+    // away. That is a real trade — CUTOFF is the gesture you ride — but it is a
+    // trade, and pinning it here stops "the knob sits with its picture" being
+    // quoted at a tier where it is false.
+    expect(keysAt('mini')).toEqual(['cutoff']);
+    expect(keysAt('mini'), 'the glyph’s own param is NOT at mini').not.toContain('shape1');
+    expect(keysAt('mini')).not.toContain('pw');
+    expect(face.glyph, 'yet the picture is still drawn there').toBe('waveform');
+  });
+
   it('full is the whole 6-cell plate, tune cluster INSIDE it', () => {
     const full = keysAt('full');
     expect(full).toEqual(['cutoff', 'shape1', 'res', 'detune', 'oct2', 'pw']);
@@ -94,13 +114,44 @@ describe('tidyVco face — the LANE ladder (what the player rides)', () => {
 
   it('FOLD and ENV are rank 7-8 — dock-only, and that is deliberate', () => {
     // FOLD is the West-Coast hero but a TRUE BYPASS at its 0 default, so a lane
-    // cell would be spent on a control doing nothing until touched — the exact
-    // charge that demoted PW. ENV is the filter-EG depth, a patch decision.
+    // cell would be spent on a control doing nothing until touched. ENV is the
+    // filter-EG depth, a patch decision.
     expect(face.order.slice(6, 8)).toEqual(['fold', 'env']);
     for (const tier of ['mini', 'compact', 'full'] as const) {
       expect(keysAt(tier), `${tier} must not reach rank 7+`).not.toContain('fold');
       expect(keysAt(tier)).not.toContain('env');
     }
+  });
+
+  it('…and the PW-vs-FOLD asymmetry is ACTIVATOR REACH, not a double standard', () => {
+    // ⚠ THE COMMENT ABOVE USED TO SAY FOLD WAS DENIED A CELL BY "the exact
+    // charge that demoted PW" — while PW SITS AT RANK 6, INSIDE THE PLATE. As
+    // stated that is a contradiction, and PW's disqualifier is the STRONGER of
+    // the two: fold-at-0 is a bypass, whereas section B below proves PW inert
+    // BIT-EXACTLY across its entire declared travel at the defaults.
+    //
+    // The distinction that actually holds was never written down anywhere: a
+    // control that is inert at spawn still earns a plate cell IF ITS ACTIVATOR
+    // IS ON THE SAME PLATE. Twisting SHAPE 1 (rank 2) makes PW live without
+    // leaving the lane, so the pair is one gesture. FOLD has no such partner —
+    // it IS its own activator, so a lane cell for it is a cell that does
+    // nothing until you spend a second gesture on the very same knob.
+    //
+    // Stated, and now checked: PW's activator is in the plate; FOLD's is
+    // itself. Swap the ranks and this fails, which is the point — the ranking
+    // is defensible or it is not, and either way it is no longer an assertion
+    // about taste.
+    const plate = keysAt('full');
+    expect(plate, 'PW is in the plate').toContain('pw');
+    expect(plate, "…and so is SHAPE 1, the knob that makes it audible").toContain('shape1');
+    expect(plate, 'FOLD is not').not.toContain('fold');
+    // FOLD's own value is the only thing that activates FOLD: the folder's only
+    // other control is SYM, which SHAPES the folding rather than switching it
+    // on, and it is not on the plate either — so there is no lane-adjacent
+    // partner to pair FOLD with, the way SHAPE 1 pairs with PW.
+    const folderControls = (face.pages ?? []).find((p) => p.id === 'wavefolder')!.controls;
+    expect(folderControls, 'the folder section is exactly FOLD + SYM').toEqual(['fold', 'sym']);
+    expect(plate, 'and SYM is a shape control of the folder, not its switch').not.toContain('sym');
   });
 
   it('the ranking is total and duplicate-free over the 25-param surface', () => {
@@ -155,11 +206,18 @@ describe('tidyVco face — PW is rank 6 because the DSP says so, not because we 
   const pwMax = param('pw').max;
 
   it('PW is INERT at the spawn defaults — the whole travel changes nothing', () => {
-    // `tidyOscSample` gates the pulse leg on the SHAPE morph, and BOTH shape
-    // defaults are 0, so at spawn the pulse leg is out of the mix entirely.
-    // A rank-2 PW therefore shipped the compact tile a knob that does nothing
-    // until you move the knob beside it. Ranges come from the DEF (pwMin /
-    // pwMax read off the ParamDef) — never re-typed here.
+    // `tidyOscSample` CROSSFADES the two legs on the SHAPE morph and BOTH shape
+    // defaults are 0, so the pulse leg's weight is exactly zero at spawn.
+    //
+    // ⚠ THE WEIGHT, NOT THE TERNARY. This comment used to say the morph "gates"
+    // the pulse leg, pointing at `const pul = s > 0 ? tidyPulse(…) : 0`. That
+    // line is a short-circuit, not a gate — `(1 - s) * saw + s * pul` is
+    // already 0-weighted at s === 0, so deleting the ternary is bit-identical.
+    // The conclusion was right and the stated premise was wrong, which is worse
+    // than either: a future author changing the morph to a non-normalized form
+    // would check the cited line, find it intact, and ship. This test measures
+    // the OUTPUT, so it goes red on that change regardless of what any comment
+    // says. Ranges come from the DEF (pwMin/pwMax off the ParamDef).
     const wide = renderL({ pw: pwMax });
     const thin = renderL({ pw: pwMin });
     expect(maxDiff(wide, thin), `PW ${pwMin}→${pwMax} at the SHAPE default`).toBe(0);
@@ -206,8 +264,26 @@ describe('tidyVco face — OCT 2 reads as its three states (PF-1)', () => {
 
   it('renders as a NAMED ROW in the dock and keeps the dial in the lane', () => {
     expect(paramCellKind(oct2, momentary, 'dock')).toBe('segmented');
+    // ⚠ THE `'lane'` LINE IS INVARIANT TO THE FEATURE IT SITS UNDER, and the
+    // comment that used to follow it ("so the lane half is not hypothetical")
+    // claimed otherwise. `looksLikeToggle` is `curve==='discrete' && min===0 &&
+    // max===1`, which `-1..1` fails, so `paramCellKind(oct2, …, 'lane')`
+    // returned `'knob'` via the fallback BEFORE this roster existed and would
+    // return it again with the roster deleted. It cannot fail on the dimension
+    // under test. What makes the lane half real is a POSITIVE difference: the
+    // dock and the lane must resolve DIFFERENTLY for the same param, and the
+    // dock's answer must depend on the roster.
     expect(paramCellKind(oct2, momentary, 'lane')).toBe('knob');
-    // ...and it is a lane control, so the lane half is not hypothetical.
+    expect(
+      paramCellKind(oct2, momentary, 'dock'),
+      'the roster changes the DOCK primitive; a lane column cannot hold one',
+    ).not.toBe(paramCellKind(oct2, momentary, 'lane'));
+    const noRoster: ParamDef = { ...oct2, options: undefined };
+    expect(
+      paramCellKind(noRoster, momentary, 'dock'),
+      'delete the roster and the dock falls back to a dial — THAT is what the roster buys',
+    ).toBe('knob');
+    // …and oct2 really is a lane control, so the lane half is not hypothetical.
     expect(keysAt('full')).toContain('oct2');
   });
 

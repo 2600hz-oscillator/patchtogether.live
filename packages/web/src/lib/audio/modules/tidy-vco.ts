@@ -205,10 +205,63 @@ export const tidyVcoDef: AudioModuleDef = {
   //             control-oct2 visible in the LANE full face AND in the dock
   //             `oscillator` band, after an owner control-loss report. Moving
   //             them to 7-8 would MANUFACTURE the invisibility it guards.
+  //
+  //             ⚠ KNOWN, MEASURED, UNGATED — OWNER CALL (see the PR body).
+  //             OCT 2's `options` roster earns a PERSISTENT readout under the
+  //             dial (KnobConic renders `.readout` only for a param that
+  //             declared a vocabulary), and that readout is IN FLOW, not
+  //             overlaid. The arithmetic, from the CSS rather than from taste:
+  //               .knob.sm --kb          26 px   (_rackline-tile plate cells)
+  //               .knob-wrap gap          5 px
+  //               .label 9 px @ normal  ≈11 px
+  //               ────────────────────── 42 px = --plate-row-h exactly
+  //               + .knob-wrap gap        5 px
+  //               + .readout 9 px @ lh:1  9 px
+  //               ────────────────────── 56 px in a 42 px row
+  //             `.tile-body.plate` is `overflow: hidden`, and OCT 2 is rank 5 —
+  //             the LAST plate row — so the overflow has nowhere to go.
+  //             NOTHING SEES THIS: `module-face-lint` is pure-model,
+  //             faces-parity asserts `control-oct2` VISIBLE (a clipped-but-
+  //             present knob still is), `card-control-overflow` measures LEGACY
+  //             cards not `module-shell`, and `workflow-shell-faces.spec.ts`
+  //             captures only `-compact` and `-dock` — the `full` LANE plate is
+  //             the one tier where this renders and the one tier no scene
+  //             covers. The two candidate fixes (a taller `--plate-row-h`, or
+  //             suppressing the persistent readout at `size:'sm'`) both move
+  //             OTHER faces' baselines — filter's `mode` roster is rank 3 and
+  //             DOES land in a captured tier — so this is not a change to make
+  //             inside a per-module face PR. Reported, not silently absorbed.
   //   6 PW      DEMOTED from rank 2, on the DSP rather than on taste: the pulse
-  //             leg is gated out of the mix at the SHAPE default (`tidyOscSample`
-  //             — `const pul = s > 0 ? tidyPulse(…) : 0`, tidy-vco-dsp.ts), and
-  //             both `shape` defaults are 0, so PW is PROVABLY INERT AT SPAWN.
+  //             leg carries ZERO WEIGHT in the mix at the SHAPE default, so PW
+  //             is PROVABLY INERT AT SPAWN.
+  //             ⚠ THE MECHANISM IS THE CROSSFADE, NOT THE TERNARY. An earlier
+  //             draft cited `const pul = s > 0 ? tidyPulse(…) : 0` as "gating"
+  //             the pulse leg. It is not load-bearing: the next line is
+  //             `(1 - s) * saw + s * pul`, whose `s * pul` term is already 0 at
+  //             s === 0, so DELETING the ternary is BIT-IDENTICAL — it is a
+  //             short-circuit optimization. Pointing a future author at that
+  //             line would let them change the morph to a non-normalized form
+  //             (`saw + s * pul`, or a pulse floor) while leaving the cited
+  //             ternary visibly intact and concluding the invariant still
+  //             holds. The invariant is the WEIGHT; the test below measures it.
+  //             ⚠ COMPOSITION WITH `feat/tidyvco-sine-tri-square` (unmerged),
+  //             checked with `git merge-tree` rather than asserted: the two
+  //             branches have ZERO source conflicts — `tidy-vco.ts` and
+  //             `ModuleShell.svelte` auto-merge, and this face PR touches not
+  //             one `docs` string, which is all that PR rewrites here. They
+  //             conflict on exactly SIX darwin VRT baselines (vrt.spec
+  //             tidyVco, the three vrt-tidy-vco scenes, and both
+  //             face-tidyVco-*), so WHICHEVER MERGES SECOND MUST RE-CAPTURE
+  //             THOSE SIX — they are the same pixels changed for two different
+  //             reasons, not a mergeable text conflict.
+  //             The PW premise SURVIVES that rework and is if anything
+  //             stronger: its `tidyOscSample` takes the `s <= 0.5` (sine→tri)
+  //             branch at the SHAPE default with m = 0, and `pw` appears
+  //             ONLY in the `s > 0.5` branch's square leg — so at spawn the
+  //             pulse leg is not merely zero-weighted, it is never evaluated.
+  //             PW's 0.5 default is also the TRUE square there rather than a
+  //             midpoint. Section B measures the OUTPUT, so it re-proves the
+  //             inertness against whichever oscillator is in the tree.
   //             Rank 2 shipped the compact tile a knob that does nothing until
   //             you move the knob beside it. ⚠ This is CHECKED, not asserted —
   //             tidy-vco-face.test.ts renders the def's own pure-math mirror at
