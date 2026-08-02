@@ -109,85 +109,38 @@ const MIN_TOKEN_PINNED_BASELINES = 200;
  * added (new drift). A ceiling would let a drain pass silently, which is the
  * exact failure mode CLAUDE.md calls out for the linux-deficit ratchet.
  *
- * DRAIN WHEN: PR #1279 (`test/vrt-font-settle-sweep`) lands — it regenerates
- * precisely 40 of these files. MEASURED, not assumed: every one of those blobs
- * on `origin/test/vrt-font-settle-sweep` decodes to the CURRENT token (30
- * darwin captured locally, 9 linux from the `vrt-update.yml` dispatch commit
- * 809e074a, plus `vrt-synesthesia-video/copy-a-solid-red` re-measured on
- * 2026-08-02 at `#38d3c8`). Whichever of the two PRs merges second must merge
- * `main`, watch this assertion go red, and drain those 40 in the same commit.
- * That red is the point: it is the only thing tying two PRs that share no file.
- * The 16 `vrt-toybox` entries below are NOT #1279's and must stay.
+ * DRAINED 2026-08-02, and the mechanism worked EXACTLY as designed — this is
+ * the record of it firing for real, kept because the prediction and the
+ * outcome matching is the evidence that the EXACT-SET choice was right.
  *
- * SIMULATED, not predicted — RE-MEASURED 2026-08-02 in merge order
- * #1272 → #1281 → #1279, which is the order these must land:
+ * #1279 (`test/vrt-font-settle-sweep`) regenerated precisely 40 of these. The
+ * simulation run before either PR landed predicted, in merge order
+ * #1272 → #1281 → #1279:
  *
  *   main + #1272                 37/37 green
- *   main + #1272 + #1281         48/48 green  (233 baselines compared: #1272's
- *                                15-pair drain moves those linux PNGs out of
- *                                `quarantined` and INTO this gate, and all 15
- *                                paint the current palette)
+ *   main + #1272 + #1281         48/48 green
  *   + #1279                      51/52 — the ONE failure is this assertion,
  *                                reporting exactly the 40 entries #1279
  *                                regenerates; the 16 `vrt-toybox` entries stay
  *   + drain those 40             52/52 green
  *
- * So the cross-PR coupling costs exactly one edit and cannot be missed. With a
- * `<=`-style ceiling instead, that same merge would have gone green with a
- * 40-wide hole and nobody would have known.
+ * OBSERVED when #1279 actually merged and this branch merged `main`: this
+ * assertion, and ONLY this assertion, went red — declared 56 vs actual 16.
+ * Dropping the 40 non-toybox entries returned the file to green. Note what
+ * carries the proof: because this is `toEqual` on a SET and not a ceiling, the
+ * drain passing is itself the evidence that the 16 survivors are exactly the
+ * `vrt-toybox` rows and that all 40 others really were regenerated — no
+ * separate verification step is needed or trusted.
  *
- * ONE git conflict, in #1281 only: `vrt.spec.ts/darwin/kickdrum.png`, which
- * main's #1277 (kickdrum curated face) also regenerated. Resolve by taking
- * MAIN's — measured `#38d3c8`, already the current `--cable-audio`, and it
- * carries the newer face.
+ * A `<=`-style ceiling would have gone green through that same merge with a
+ * 40-wide hole and nobody would have known. That is the whole argument for
+ * paying the one-edit cost, and it is now measured rather than reasoned.
+ *
+ * THE 16 BELOW ARE NOT #1279's. `vrt-toybox` is blanket-`test.skip`-ed on
+ * linux and CI renders on linux, so nothing has ever compared these on any CI
+ * run — they need a darwin recapture, which is a separate PR.
  */
 const PENDING_PALETTE_REGEN: readonly string[] = [
-  'vrt-clap.spec.ts/darwin/clap-909-dense',
-  'vrt-clap.spec.ts/darwin/clap-dry-snap',
-  'vrt-clap.spec.ts/darwin/clap-linn-room',
-  'vrt-clap.spec.ts/linux/clap-909-dense',
-  'vrt-clap.spec.ts/linux/clap-dry-snap',
-  'vrt-clap.spec.ts/linux/clap-linn-room',
-  'vrt-colourofmagic.spec.ts/darwin/com-hsv',
-  'vrt-colourofmagic.spec.ts/darwin/com-override',
-  'vrt-colourofmagic.spec.ts/darwin/com-palette',
-  'vrt-colourofmagic.spec.ts/darwin/com-pass',
-  'vrt-colourofmagic.spec.ts/darwin/com-rgb',
-  'vrt-colourofmagic.spec.ts/darwin/com-ycc',
-  'vrt-colourofmagic.spec.ts/darwin/com-ydbdr',
-  'vrt-colourofmagic.spec.ts/darwin/com-yiq',
-  'vrt-colourofmagic.spec.ts/darwin/com-yiq-i-tap',
-  'vrt-karplus-tomtom-states.spec.ts/darwin/karplus-bell-extreme',
-  'vrt-karplus-tomtom-states.spec.ts/darwin/karplus-dark-mallet',
-  'vrt-karplus-tomtom-states.spec.ts/darwin/karplus-scrape-bridge',
-  'vrt-karplus-tomtom-states.spec.ts/darwin/tomtom-simmons-zap',
-  'vrt-karplus-tomtom-states.spec.ts/darwin/tomtom-strike-held',
-  'vrt-karplus-tomtom-states.spec.ts/darwin/tomtom-timbale-tight',
-  'vrt-karplus-tomtom-states.spec.ts/linux/karplus-bell-extreme',
-  'vrt-karplus-tomtom-states.spec.ts/linux/karplus-dark-mallet',
-  'vrt-karplus-tomtom-states.spec.ts/linux/karplus-scrape-bridge',
-  'vrt-karplus-tomtom-states.spec.ts/linux/tomtom-simmons-zap',
-  'vrt-karplus-tomtom-states.spec.ts/linux/tomtom-strike-held',
-  'vrt-karplus-tomtom-states.spec.ts/linux/tomtom-timbale-tight',
-  'vrt-posterbox-states.spec.ts/darwin/posterbox-brutal-1bit',
-  'vrt-posterbox-states.spec.ts/darwin/posterbox-dither-hatch',
-  'vrt-posterbox-states.spec.ts/darwin/posterbox-subtle-565',
-  'vrt-quadralogical.spec.ts/darwin/edge-add',
-  'vrt-quadralogical.spec.ts/darwin/edge-chroma',
-  'vrt-quadralogical.spec.ts/darwin/edge-diff',
-  'vrt-quadralogical.spec.ts/darwin/edge-dissolve',
-  'vrt-quadralogical.spec.ts/darwin/edge-iris',
-  'vrt-quadralogical.spec.ts/darwin/edge-luma',
-  'vrt-quadralogical.spec.ts/darwin/edge-multiply',
-  'vrt-quadralogical.spec.ts/darwin/edge-wipe',
-  'vrt-scope-modes.spec.ts/darwin/scope-intensity-dot',
-
-  // Also regenerated by #1279 — MEASURED, not assumed: the blob on
-  // `origin/test/vrt-font-settle-sweep` decodes to `#38d3c8`, the CURRENT
-  // `--cable-audio`. Found only on 2026-08-02, because `vrt-synesthesia-video`
-  // was mis-declared NON-card and this gate had never opened it.
-  'vrt-synesthesia-video.spec.ts/darwin/copy-a-solid-red',
-
   // ── FOUND 2026-08-02 BY VALIDATING THE EXCLUSIONS (16) ────────────────────
   // These were not "missed" — they were UNREACHABLE. `vrt-toybox` sat in
   // NON_CARD_CAPTURE_DIRS, so `measure()` never opened it and neither
