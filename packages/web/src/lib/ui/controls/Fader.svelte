@@ -20,6 +20,7 @@
   import ControlContextMenu from './ControlContextMenu.svelte';
   import { makeMidiAssignable } from './midi-assignable.svelte';
   import { notifyAutomationTouch, notifyAutomationRelease } from '$lib/audio/automation-touch';
+  import { formatParamNumber, isBipolarRange } from './param-format';
 
   // Touch-suspend cross-wire (task #183): a live grab of this fader suspends its
   // clip-automation playback until the PHYSICAL RELEASE ("live wins"), not the
@@ -83,21 +84,8 @@
     glyphs?: FaderGlyph[];
     /** Optional text labels anchored at fractions along the track. */
     ticks?: FaderTick[];
-    /**
-     * The DEF's own value formatter (`ParamDef.format`) — SAME name and SAME
-     * signature as `KnobConic`'s `format`, on purpose: `paramProps(def, id)`
-     * returns one object that spreads into EITHER primitive, so a param's
-     * readout vocabulary reaches the card and the curated face from the one
-     * place that owns it (the def). Before this existed, a def could declare
-     * `format` and the face would print `CLOSED` / `-12 dB` while the card's
-     * value tag on the SAME param still printed `0.00` — the def-owned half of
-     * "vocabulary from ONE place" simply had no route to a Fader.
-     */
-    format?: (v: number) => string;
-    /** Card-computed override for the value-tag text — NOT a def claim. For a
-     *  value that is an INDEX into a discrete list the def does not model (e.g.
-     *  Cartesian's division ratios). WINS over `format` when both are set,
-     *  because it is the more specific of the two. */
+    /** Optional override for the value-tag text. Useful when the underlying
+     *  numeric value is an index into a discrete list (e.g. division ratios). */
     formatValue?: (v: number) => string;
     /** MIDI Learn — when both moduleId + paramId are set the fader becomes
      *  right-clickable to bind a MIDI CC. Cards that don't pass these
@@ -133,7 +121,6 @@
     readLive,
     glyphs,
     ticks,
-    format: defFormat,
     formatValue,
     moduleId,
     paramId,
@@ -363,16 +350,8 @@
     if (newValue !== value) onchange(newValue);
   }
 
-  function format(v: number, u: string): string {
-    const abs = Math.abs(v);
-    let s: string;
-    if (abs >= 10000) s = `${(v / 1000).toFixed(1)}k`;
-    else if (abs >= 1000) s = `${(v / 1000).toFixed(2)}k`;
-    else if (abs >= 100) s = v.toFixed(0);
-    else if (abs >= 10) s = v.toFixed(1);
-    else s = v.toFixed(2);
-    return u ? `${s} ${u}` : s;
-  }
+  // The readout ladder lives in ONE place (param-format.ts) — see Knob.svelte.
+  const format = formatParamNumber;
 
   // Track height in pixels. Drives the thumb offset AND the glyph/tick rails,
   // and is applied to the track element inline — see the `trackHeight` prop for
@@ -388,7 +367,7 @@
    *  crossing at a glance (per the global ±1 CV convention). Unipolar
    *  sliders (e.g. cutoff freq, attack time) have no meaningful midpoint
    *  hash — we omit it to avoid implying one. */
-  let isBipolar = $derived(min < 0 && max > 0);
+  let isBipolar = $derived(isBipolarRange(min, max));
 
   /** Pick the index of the glyph closest to the current frac (highlight). */
   let activeGlyphIdx = $derived.by(() => {
@@ -414,12 +393,9 @@
     return best;
   });
 
-  /** Display string for the live value. Precedence, most specific first:
-   *  the CARD's override → the DEF's formatter → the shared number+units
-   *  formatting every unadorned control uses. */
+  /** Display string for the live value, applying the optional override. */
   function valueText(v: number): string {
     if (formatValue) return formatValue(v);
-    if (defFormat) return defFormat(v);
     return format(v, units);
   }
 

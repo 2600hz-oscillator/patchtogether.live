@@ -564,6 +564,20 @@ export interface ModuleFace {
    */
   glyph?: 'scope' | 'meter' | 'envelope' | 'waveform' | 'algorithm' | 'none';
   /**
+   * The module's DEPTH → output-gain multiplier, for a param-derived
+   * `'waveform'` glyph that draws a DEPTH-scaled cycle (the `wave-morph`
+   * binding). Omitted = 1 (the depth param IS the amplitude).
+   *
+   * ⚠ IT LIVES HERE BECAUSE IT IS A PER-MODULE NUMBER. `glyphBinding` fires for
+   * ANY def with `glyph:'waveform'` + a 0..2 `shape` + a `depth`, so a constant
+   * imported into that resolver would impose one module's worklet law on every
+   * future adopter — silently, since a test that asserts `depthGain: X` on both
+   * rows passes whatever X is. Declared on the face, the resolver stays generic
+   * and each module carries its own multiplier. UI metadata like the rest of
+   * `face`: OUT of contract-signature/contract-lock.
+   */
+  glyphDepthGain?: number;
+  /**
    * DECLARED render primitive for a param cell, keyed by param id.
    *
    * Only `'grid'` — the chip + portaled diagram-grid popover (PF-15). It is

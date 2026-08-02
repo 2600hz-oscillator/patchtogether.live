@@ -52,7 +52,7 @@ function expectTotal(def: RearDefLike): void {
 }
 
 describe('rear-card derivation — the six P1 prototypes (spec §4)', () => {
-  it('tidyVco: voice + 5 face-page bands, oscillator curated (pwm_cv), EG clusters, audio-rate ticks', () => {
+  it('tidyVco: play + 5 face-page bands, oscillator curated (pwm_cv), EG clusters, audio-rate ticks', () => {
     const plan = rearFieldPlan(tidyVcoDef as unknown as RearDefLike);
     expectTotal(tidyVcoDef as unknown as RearDefLike);
     expect(plan.holeCount).toBe(29); // 27 in + 2 out
@@ -65,14 +65,24 @@ describe('rear-card derivation — the six P1 prototypes (spec §4)', () => {
       'output',
     ]);
 
-    // voice: poly · pitch · gate (▬), domains poly/cv/gate.
-    const voice = plan.bands[0];
-    expect(voice.holes.map((h) => [h.portId, h.domain])).toEqual([
+    // The leading band is PINNED + renamed `play` (batch F) and split into the
+    // two MUTUALLY EXCLUSIVE sources: poly wins the moment any lane is gated
+    // and the mono pair goes dead. Derivation would head it `voice`, which
+    // names the band without teaching the arbitration.
+    const play = plan.bands[0];
+    expect(play.id, 'the leading-slot claim key is still `voice`').toBe('voice');
+    expect(play.label).toBe('play');
+    expect(play.holes, 'both sources are clustered — nothing loose').toEqual([]);
+    expect(play.clusters.map((c) => c.label)).toEqual(['poly bus', 'mono (fallback)']);
+    expect(
+      play.clusters.flatMap((c) => c.holes.map((h) => [h.portId, h.domain])),
+      'poly · pitch · gate (▬), domains poly/cv/gate',
+    ).toEqual([
       ['poly', 'poly'],
       ['pitch', 'cv'],
       ['gate', 'gate'],
     ]);
-    expect(voice.holes[2].edge).toBe('gate');
+    expect(play.clusters[1].holes[1].edge).toBe('gate');
 
     // oscillator: the CURATED band carries pwm_cv (its stem 'pwm' matches no
     // param — derivation alone would misfile it) labeled by FUNCTION.
@@ -117,10 +127,13 @@ describe('rear-card derivation — the six P1 prototypes (spec §4)', () => {
     expect(plan.denseRail).toBe(false);
   });
 
-  it('kickdrum: curated STRIKE band + the 6 face pages, body split into two clusters', () => {
+  it('kickdrum: curated STRIKE band + the 5 face pages, body + dynamics each split into two clusters', () => {
     const def = kickdrumDef as unknown as RearDefLike;
     expectTotal(def);
-    expect(bandIds(def)).toEqual(['voice', 'sub', 'body', 'click', 'drive', 'dynamics', 'output']);
+    // FIVE page bands, not six: `dynamics` and `output` merged on the front
+    // (one mastering chain — shaper → glue → ceiling → stereo → level), and
+    // the rear follows because rear bands are a PROJECTION of face.pages.
+    expect(bandIds(def)).toEqual(['voice', 'sub', 'body', 'click', 'drive', 'dynamics']);
     const plan = rearFieldPlan(def);
     // the four performance inputs are PINNED (pitch_cv's `_cv` stem would
     // otherwise follow any future `pitch` param into a page band) and the band
@@ -137,9 +150,26 @@ describe('rear-card derivation — the six P1 prototypes (spec §4)', () => {
     // `~` on PITCH alone: the worklet reads it raw per sample (1 V/oct FM),
     // while every per-param CV lands on an 80 Hz-smoothed AudioParam.
     expect(plan.bands[0].holes.filter((h) => h.audioRate).map((h) => h.portId)).toEqual(['pitch_cv']);
-    // page bands hold the paramTarget CVs in page-control order.
+    // page bands hold the paramTarget CVs in page-control order. The 'sub'
+    // page leads with the `kickdrum-strike-{n}` FAMILY key (the audition), and
+    // a family key targets no port — so it contributes nothing here and the
+    // hole order is unchanged. That is the property this line pins.
     expect(bandPorts(def, 'sub')).toEqual(['tune_cv', 'sub_decay_cv', 'sub_level_cv', 'sub_eq_cv', 'translate_cv']);
-    expect(bandPorts(def, 'dynamics')).toEqual(['attack_cv', 'sustain_cv', 'glue_cv', 'ceiling_cv']);
+    // …and that band is RE-HEADED on the rear. The front page is 'strike · the
+    // pulse' because it holds the strike BUTTON; here the same id resolves to
+    // five sub-layer CVs sitting directly under the band that IS the strike,
+    // and its first hole is `tune_cv` — a gate patched into the wrong STRIKE
+    // detunes the drum instead of hitting it. A curated group whose id matches
+    // the page id claims the slot and its label wins.
+    expect(plan.bands.find((b) => b.id === 'sub')!.label).toBe('sub · the layer');
+    // the merged band's SIX holes split the same way the front's PF-9 clusters
+    // do, so both faces of the card teach the same chain — and that chain is
+    // the DSP's real one: transient → glue → LEVEL → width → CEILING.
+    const dyn = plan.bands.find((b) => b.id === 'dynamics')!;
+    expect(dyn.holes).toEqual([]);
+    expect(dyn.clusters.map((c) => c.label)).toEqual(['transient · glue', 'level · width · ceiling']);
+    expect(dyn.clusters[0].holes.map((h) => h.portId)).toEqual(['attack_cv', 'sustain_cv', 'glue_cv']);
+    expect(dyn.clusters[1].holes.map((h) => h.portId)).toEqual(['level_cv', 'width_cv', 'ceiling_cv']);
     // the widest band (7 holes) splits into the pitch envelope + the tone.
     const body = plan.bands.find((b) => b.id === 'body')!;
     expect(body.holes).toEqual([]);
@@ -167,6 +197,11 @@ describe('rear-card derivation — the six P1 prototypes (spec §4)', () => {
     // the linear SUSTAIN level (the param labels are bare letters A/D/S/R).
     expect(bandPorts(def, 'stages')).toEqual(['attack', 'decay', 'release', 'sustain']);
     const stages = plan.bands[1];
+    // …and it is PINNED, so the band does NOT inherit the dock page's label.
+    // The front page reads 'gate → attack · decay · sustain · release' (the
+    // gate is a real control-surface input there); on the rear that would head
+    // a band of four CV holes and no gate at all.
+    expect(stages.label).toBe('stage cv');
     expect(stages.holes).toEqual([]);
     expect(stages.clusters.map((c) => c.label)).toEqual(['times', 'level']);
     expect(stages.clusters[1].holes.map((h) => h.portId)).toEqual(['sustain']);
@@ -213,18 +248,34 @@ describe('rear-card derivation — the six P1 prototypes (spec §4)', () => {
     expect(plan.holeCount).toBe(4);
   });
 
-  it('lfo: curated SYNC band + shape/engine page bands; 4-phase cv rail', () => {
+  it('lfo: curated SYNC band + ONE engine page band, signal-ordered; 4-phase cv rail', () => {
     const def = lfoDef as unknown as RearDefLike;
     expectTotal(def);
-    expect(bandIds(def)).toEqual(['voice', 'shape', 'engine']);
-    expect(bandPorts(def, 'engine')).toEqual(['rate', 'depth_cv']);
+    // The face collapsed its two pages into one (a single oscillator has no
+    // second stage to separate), and rear CV bands DERIVE from face.pages — so
+    // the rear followed. Ports run in the page's control order, which is the
+    // SIGNAL CHAIN (rate → shape → depth), not face.order's ranking.
+    expect(bandIds(def)).toEqual(['voice', 'engine']);
+    expect(bandPorts(def, 'engine')).toEqual(['rate', 'shape', 'depth_cv']);
     const plan = rearFieldPlan(def);
     // a modulation source, not a voice: the clock hole's band says 'sync'.
     expect(plan.bands[0].label).toBe('sync');
     expect(plan.bands[0].holes.map((h) => h.portId)).toEqual(['clock']);
-    // every LFO CV is sample-and-held once per block — no `~` anywhere.
-    expect(plan.bands.flatMap((b) => b.holes).some((h) => h.audioRate)).toBe(false);
+    // …and the hole now declares its consumer semantic: one reset per RISING
+    // edge, nothing on the fall, nothing while held.
+    expect(plan.bands[0].holes[0].edge).toBe('trigger');
+    // `~` ticks track the WORKLET, not a blanket claim about the module: RATE
+    // is hoisted out of the sample loop (`rateHeld`) to keep clients phase-
+    // aligned, while SHAPE and DEPTH are read per-sample. The face used to say
+    // none of them was audio-rate; two of them are.
+    const byPort = new Map(plan.bands.flatMap((b) => b.holes).map((h) => [h.portId, h]));
+    expect(byPort.get('rate')!.audioRate).toBeFalsy();
+    expect(byPort.get('shape')!.audioRate).toBe(true);
+    expect(byPort.get('depth_cv')!.audioRate).toBe(true);
     expect(plan.outputs.map((h) => h.portId)).toEqual(['phase0', 'phase90', 'phase180', 'phase270']);
+    // PF-4: the taps are named on the DEF, so the rail reads the angle rather
+    // than `PHASE0` (id derivation) — and the card cannot disagree with it.
+    expect(plan.outputs.map((h) => h.label)).toEqual(['0°', '90°', '180° (ANTI)', '270°']);
     expect(plan.denseRail).toBe(false); // 4 ≤ 8 — single-column rail
   });
 

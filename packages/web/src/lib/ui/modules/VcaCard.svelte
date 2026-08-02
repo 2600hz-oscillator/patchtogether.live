@@ -5,7 +5,7 @@
   import { vcaDef } from '$lib/audio/modules/vca';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
-  import { cardParams, paramProps, portsFromDef } from './card-kit';
+  import { cardParams, paramSpec, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -15,16 +15,20 @@
   // used to spell out both faders' min / max / defaultValue as literals —
   // numbers that AGREED with the def, but only by maintenance rather than by
   // construction, and no gate in this repo reads both sides (CLAUDE.md: "A CARD
-  // can silently disagree with its DEF"). Guarded by card-def-ranges.test.ts.
+  // can silently disagree with its DEF"). `card-range-source.test.ts` guards it
+  // at the SOURCE level, which is the only place the divergence is visible.
   //
-  // The spread carries `format` too, which is why these faders' value tags say
-  // `CLOSED` / `-12 dB` / `DUCK` — the same words the curated face prints —
-  // instead of the raw number. Two surfaces, one vocabulary, one source.
-  // `card-kit.test.ts` pins what the spread must contain (a DROPPED def claim
-  // is invisible to the re-typing matcher: spreading everything and spreading
-  // half look identical in source).
-  const baseProps = paramProps(vcaDef, 'base');
-  const cvAmountProps = paramProps(vcaDef, 'cvAmount');
+  // `formatValue` is the half a re-typing matcher structurally CANNOT see: a
+  // def-declared `format` the card never passes on is a DISAGREEMENT, not a
+  // downgrade — a card that binds everything and a card that binds half look
+  // identical in source. Without it these faders printed `0.25` while the
+  // curated face, reading the SAME param, printed `-12 dB`. The
+  // format-omission test in card-range-source reads the DEF and requires
+  // `formatValue={…}` on every control whose param declares one, so it cannot
+  // be quietly dropped again. ZERO-PIXEL: the value tag renders inside
+  // `{#if dragging || hovering}` and no VRT scene hovers a vca fader.
+  const pBase     = paramSpec(vcaDef, 'base');
+  const pCvAmount = paramSpec(vcaDef, 'cvAmount');
 
   let base = $derived(paramVal('base'));
   let cvAmount = $derived(paramVal('cvAmount'));
@@ -42,8 +46,8 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="fader-row">
-      <Fader {...baseProps}     value={base}     onchange={set('base')}     readLive={live('base')}     moduleId={id} paramId="base" />
-      <Fader {...cvAmountProps} value={cvAmount} onchange={set('cvAmount')} readLive={live('cvAmount')} moduleId={id} paramId="cvAmount" />
+      <Fader value={base}     min={pBase.min}     max={pBase.max}     defaultValue={pBase.defaultValue}     label={pBase.label}     units={pBase.units}     curve={pBase.curve}     formatValue={pBase.format}     onchange={set('base')}     readLive={live('base')}     moduleId={id} paramId="base" />
+      <Fader value={cvAmount} min={pCvAmount.min} max={pCvAmount.max} defaultValue={pCvAmount.defaultValue} label={pCvAmount.label} units={pCvAmount.units} curve={pCvAmount.curve} formatValue={pCvAmount.format} onchange={set('cvAmount')} readLive={live('cvAmount')} moduleId={id} paramId="cvAmount" />
     </div>
   </PatchPanel>
 </div>
