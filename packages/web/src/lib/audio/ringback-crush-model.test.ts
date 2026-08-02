@@ -227,7 +227,7 @@ const RESOLVABLE: Record<string, number> = { RINGBACK_MAX_SIZE: RINGBACK_SIZE.ma
 const DESCRIPTOR_RE =
   /\{\s*name:\s*'([^']+)',\s*defaultValue:\s*([^,]+?),\s*minValue:\s*([^,]+?),\s*maxValue:\s*([^,]+?),\s*automationRate:\s*'([^']+)'/g;
 
-export function parseDescriptors(src: string): Descriptor[] {
+function parseDescriptors(src: string): Descriptor[] {
   const num = (tok: string): number => {
     const t = tok.trim();
     if (t in RESOLVABLE) return RESOLVABLE[t]!;
