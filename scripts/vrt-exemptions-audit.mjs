@@ -19,7 +19,9 @@
 // `__screenshots__/vrt.spec.ts/<platform>/<id>.png`, so a composite/scene pair
 // whose PNG lives under its own spec dir was reported as PENDING even when the
 // baseline was sitting right there — it under-reported STALE by 3 (the
-// darwin/wavesculpt-blink-* quarantines). It now indexes EVERY spec dir. Same
+// darwin/wavesculpt-blink-* quarantines; `darwin/rasterize` was NOT part of
+// that delta — its PNG is under vrt.spec.ts, so the narrow path always found
+// it). It now indexes EVERY spec dir. Same
 // blindness class as the linux-deficit ratchet fixed in the same commit: a
 // checker that looks in one directory cannot speak for the tree.
 //
@@ -41,11 +43,21 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const src = readFileSync(resolve(root, 'e2e/vrt/vrt-exemptions.ts'), 'utf8');
 
 // Isolate the EXEMPT_BASELINE_PAIRS Set literal, then pull every quoted
-// `<platform>/<id>` string out of it (comments in the block are ignored — they
-// don't contain the quoted pair form).
+// `<platform>/<id>` string out of it.
+//
+// ⚠ STRIP `//` COMMENT LINES FIRST. This used to rely on "comments in the block
+// don't contain the quoted pair form", which is an assumption about prose, not
+// a property of the parser — and it broke the moment a comment quoted a pair it
+// was explaining (`'linux/toybox-truchet'`), which made the audit report a
+// DELETED entry as live. `e2e/vrt/vrt-platform-gaps.ts` strips for this exact
+// reason; the two readers of this Set must agree.
 const block = src.slice(src.indexOf('EXEMPT_BASELINE_PAIRS = new Set'));
+const codeOnly = block
+  .split('\n')
+  .filter((l) => !l.trimStart().startsWith('//'))
+  .join('\n');
 const pairs = [
-  ...new Set([...block.matchAll(/['"]((?:linux|darwin)\/[^'"]+)['"]/g)].map((m) => m[1])),
+  ...new Set([...codeOnly.matchAll(/['"]((?:linux|darwin)\/[^'"]+)['"]/g)].map((m) => m[1])),
 ].sort();
 
 // Index EVERY committed baseline as `<platform>/<id>`, across every spec dir —

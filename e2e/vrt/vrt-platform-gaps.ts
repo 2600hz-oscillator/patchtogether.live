@@ -57,17 +57,36 @@
 // ---------------------------------------------------------------------------
 // HOW EACH IS READ (and why the two halves differ)
 // ---------------------------------------------------------------------------
-// A and D are IMPORTED — they live in plain data modules, so we get the exact
-// values with no parsing and no chance of a regex drifting from the source.
+// A is IMPORTED — `vrt-exemptions.ts` is a plain data module, so we get the
+// exact values with no parsing and no chance of a regex drifting from source.
 //
-// B and C are SOURCE-SCANNED, and that is forced, not lazy: a Playwright spec
+// B, C and D are SOURCE-SCANNED. For B and C that is forced: a Playwright spec
 // calls `test.describe()` at module scope, so importing one from vitest throws
-// outside the Playwright runner. The declaration is only reachable as text.
-// Two guards keep the scan honest, because a parser that silently matches
+// outside the Playwright runner — the declaration is only reachable as text.
+// D is scanned for a different reason: `vrt-composite-scenes.ts` value-imports
+// `spawnPatch` from `../tests/_helpers`, which imports `@playwright/test`, so
+// importing it would drag the whole Playwright runner graph into the `unit`
+// lane just to read three booleans. (It did, briefly — that is the defect this
+// scan removes.) Its parse is anchored on FIELD INDENTATION: a scene's own
+// `id:` and its `darwinOnly:` sit at the same depth, node ids sit deeper.
+//
+// Three guards keep the scans honest, because a parser that silently matches
 // nothing returns a clean-looking zero:
-//   * `assertParsersSeeSomething()` fails if either scan comes back empty.
+//   * `assertParsersSeeSomething()` fails if any scan comes back empty.
+//   * a scanned `darwinOnly` id that is not a real gap shows up in
+//     `dead['scene-darwin-only']`, which is asserted empty — so a mis-parse
+//     that returned a NODE id instead of a SCENE id fails loudly.
 //   * a spec flagged as linux-dark (C) must have ZERO committed linux
 //     baselines — if one appears, the blanket skip is lying and we say so.
+//
+// ⚠ MECHANISM C IS DETECTED PER FILE BUT WRITTEN PER TEST. One
+// `test.skip(VRT_PLATFORM === 'linux', …)` anywhere promotes the whole file to
+// "linux-dark", yet in all 8 specs the skip lives inside individual `test()`
+// bodies. A NEW test added to such a file with NO skip would be silently
+// attributed to C and stay invisible to the UNDECLARED gate. `darkSpecCoverage`
+// closes that: a linux-dark spec must carry at least as many linux skips as it
+// has `test()` sites (or hold the skip in a `test.beforeEach`, which covers all
+// of them). Anything else is PARTIALLY dark and is reported, not absorbed.
 //
 // ---------------------------------------------------------------------------
 // GROUND TRUTH IS ON DISK, NOT IN THE DECLARATIONS
@@ -88,7 +107,6 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import { EXEMPT_BASELINE_PAIRS } from './vrt-exemptions';
-import { COMPOSITE_VRT_SCENES } from './vrt-composite-scenes';
 
 /** Directory this module lives in — `<repo>/e2e/vrt/`. */
 const VRT_DIR = fileURLToPath(new URL('.', import.meta.url));
@@ -149,6 +167,62 @@ export function listBaselineInventory(): VrtBaselineInventory[] {
   return out;
 }
 
+export interface VrtBaselineTotals {
+  specs: number;
+  darwin: number;
+  linux: number;
+}
+
+/** How many baselines the enumerator can actually see, by platform. */
+export function baselineTotals(): VrtBaselineTotals {
+  const inv = listBaselineInventory();
+  return {
+    specs: inv.length,
+    darwin: inv.reduce((n, i) => n + i.darwin.length, 0),
+    linux: inv.reduce((n, i) => n + i.linux.length, 0),
+  };
+}
+
+/**
+ * VACUITY TRIPWIRE for the whole file.
+ *
+ * Every number here is derived from `__screenshots__`. With that tree ABSENT
+ * the enumerator returns `total = 0`, `undeclared = []`, `stale = 0` — and a
+ * ceiling of "≤ 151" and a set assertion of "== []" both PASS. Measured: with
+ * the tree deleted, all four vrt-meta ratchets go green. The only thing
+ * standing between a `lfs:false`/partial checkout and a fully green,
+ * fully vacuous gate was an incidental property of git-LFS (pointer stubs keep
+ * the FILENAMES), which nothing asserted.
+ *
+ * So assert it. Floors are tripwires with headroom, not coverage targets:
+ * measured 2026-08-01 = 30 spec dirs / 280 darwin / 129 linux.
+ */
+export const MIN_BASELINE_SPECS = 25;
+export const MIN_DARWIN_BASELINES = 240;
+export const MIN_LINUX_BASELINES = 100;
+
+export function assertBaselineTreeIsReadable(): VrtBaselineTotals {
+  const totals = baselineTotals();
+  const why =
+    'the linux-deficit ratchet, the UNDECLARED gate and the stale-pair ratchet are ALL ' +
+    'derived from this tree; with it unreadable they every one pass while measuring nothing';
+  if (totals.specs < MIN_BASELINE_SPECS) {
+    throw new Error(
+      `only ${totals.specs} spec dirs found under ${SCREENSHOT_ROOT} (floor ` +
+        `${MIN_BASELINE_SPECS}) — ${why}.`,
+    );
+  }
+  if (totals.darwin < MIN_DARWIN_BASELINES || totals.linux < MIN_LINUX_BASELINES) {
+    throw new Error(
+      `only ${totals.darwin} darwin / ${totals.linux} linux baselines readable (floors ` +
+        `${MIN_DARWIN_BASELINES}/${MIN_LINUX_BASELINES}) — ${why}. If the drop is REAL ` +
+        '(baselines were deliberately deleted) lower the floors deliberately; if it is a ' +
+        'partial checkout, this lane cannot run the gate and must not pretend otherwise.',
+    );
+  }
+  return totals;
+}
+
 /** `<platform>/<scene>` keys for every committed baseline, any spec dir. */
 export function committedBaselineKeys(): Set<string> {
   const keys = new Set<string>();
@@ -202,6 +276,10 @@ export function specLocalPairScenes(): Map<string, Set<string>> {
   return out;
 }
 
+const LINUX_SKIP_RE = /test\.skip\(\s*(?:\/\/[^\n]*\n\s*)*VRT_PLATFORM\s*===\s*'linux'/g;
+/** `test(` call sites — not `test.skip(`, `test.describe(`, `test.beforeEach(`. */
+const TEST_SITE_RE = /(?<![.\w])test\(/g;
+
 /** MECHANISM C — source-scanned. Specs whose every scene is skipped on linux
  *  by a blanket `test.skip(VRT_PLATFORM === 'linux', …)`. There is no list to
  *  read: the whole spec goes dark, so its entire darwin baseline set is the
@@ -209,14 +287,98 @@ export function specLocalPairScenes(): Map<string, Set<string>> {
 export function hardcodedLinuxDarkSpecs(): Set<string> {
   const out = new Set<string>();
   for (const { spec, src } of specSources()) {
-    if (/test\.skip\(\s*(?:\/\/[^\n]*\n\s*)*VRT_PLATFORM\s*===\s*'linux'/.test(src)) out.add(spec);
+    if (new RegExp(LINUX_SKIP_RE.source).test(src)) out.add(spec);
   }
   return out;
 }
 
-/** MECHANISM D — imported, exact. Composite scenes flagged darwin-only. */
+export interface DarkSpecCoverage {
+  spec: string;
+  /** `test.skip(VRT_PLATFORM === 'linux', …)` occurrences. */
+  skips: number;
+  /** `test(` call sites in the file. */
+  tests: number;
+  /** True when a skip sits in the `test.beforeEach` that precedes every test. */
+  viaBeforeEach: boolean;
+  /** Is EVERY test in this file actually dark on linux? */
+  complete: boolean;
+}
+
+/**
+ * Is a "linux-dark" spec really dark for ALL of its tests?
+ *
+ * Detection (above) is per FILE; the skip is written per TEST. That asymmetry
+ * means one skip makes the whole file look dark, so a new test with no skip is
+ * silently attributed to mechanism C and never reaches the UNDECLARED gate.
+ * Measured 2026-08-01: all 8 dark specs carry `skips === tests` (toybox 10/10,
+ * the other seven 1/1), so this is a pure tightening today.
+ */
+export function darkSpecCoverage(): DarkSpecCoverage[] {
+  const out: DarkSpecCoverage[] = [];
+  for (const { spec, src } of specSources()) {
+    const skipIdx = [...src.matchAll(new RegExp(LINUX_SKIP_RE.source, 'g'))].map((m) => m.index ?? -1);
+    if (skipIdx.length === 0) continue;
+    const testIdx = [...src.matchAll(new RegExp(TEST_SITE_RE.source, 'g'))].map((m) => m.index ?? -1);
+    const beforeEach = src.indexOf('test.beforeEach(');
+    const firstTest = testIdx.length ? testIdx[0] : Number.MAX_SAFE_INTEGER;
+    const viaBeforeEach =
+      beforeEach >= 0 && skipIdx.some((i) => i > beforeEach && i < firstTest);
+    out.push({
+      spec,
+      skips: skipIdx.length,
+      tests: testIdx.length,
+      viaBeforeEach,
+      complete: viaBeforeEach || skipIdx.length >= testIdx.length,
+    });
+  }
+  return out;
+}
+
+/** MECHANISM D — source-scanned (see the header: importing the scene module
+ *  would pull `@playwright/test` into the unit lane). A scene's own `id:` and
+ *  its `darwinOnly:` share an indentation level; node ids are nested deeper,
+ *  so the id is the nearest preceding `id:` at the SAME depth. */
 export function darwinOnlySceneIds(): Set<string> {
-  return new Set(COMPOSITE_VRT_SCENES.filter((s) => s.darwinOnly === true).map((s) => s.id));
+  const src = readFileSync(join(VRT_DIR, 'vrt-composite-scenes.ts'), 'utf8');
+  const out = new Set<string>();
+  const lines = src.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const flag = /^(\s*)darwinOnly:\s*true\s*,?\s*$/.exec(lines[i]);
+    if (!flag) continue;
+    const depth = flag[1].length;
+    for (let j = i - 1; j >= 0; j--) {
+      const id = new RegExp(`^\\s{${depth}}id:\\s*'([^']+)'`).exec(lines[j]);
+      if (id) {
+        out.add(id[1]);
+        break;
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Scene stems that exist in MORE THAN ONE spec dir on the same platform.
+ *
+ * Mechanisms A and D key on the bare stem, so a shared pair written for
+ * `vrt.spec.ts` would silently explain a gap of the same name under another
+ * spec dir — a free pass for the first collision. Measured 2026-08-01: zero
+ * collisions across all 30 dirs, so this stays a tripwire.
+ */
+export function collidingSceneStems(): string[] {
+  const seen = new Map<string, string[]>();
+  for (const { spec, darwin, linux } of listBaselineInventory()) {
+    for (const platform of [AUTHORING_PLATFORM, GATING_PLATFORM]) {
+      for (const s of platform === AUTHORING_PLATFORM ? darwin : linux) {
+        const key = `${platform}/${s}`;
+        seen.set(key, [...(seen.get(key) ?? []), spec]);
+      }
+    }
+  }
+  return [...seen]
+    .filter(([, specs]) => specs.length > 1)
+    .map(([key, specs]) => `${key} in ${specs.join(' + ')}`)
+    .sort();
 }
 
 export interface VrtGapReport {
@@ -228,8 +390,32 @@ export interface VrtGapReport {
   undeclared: VrtPlatformGap[];
   /** Declarations naming a scene that is not a gap (list rot), by mechanism. */
   dead: Record<VrtGapMechanism, string[]>;
+  /**
+   * The `shared-pairs` rot, CLASSIFIED — never re-derived by grepping the
+   * prose in `dead['shared-pairs']`. A test that filters those strings for
+   * `'IS committed'` goes vacuously green the day somebody rewords the
+   * message, and nothing pins the wording.
+   */
+  deadShared: {
+    /** Pair listed AND its linux PNG is committed — stale, drain it. */
+    stale: string[];
+    /** Pair naming a scene with no PNG on EITHER platform — pure noise. */
+    phantom: string[];
+    /** Pair whose gap is attributed to a higher-precedence mechanism. */
+    otherMechanism: string[];
+  };
   /** Specs flagged linux-dark that nonetheless ship a linux baseline. */
   contradictoryDarkSpecs: string[];
+  /** Linux-dark specs where SOME tests carry no skip (see darkSpecCoverage). */
+  partiallyDarkSpecs: DarkSpecCoverage[];
+  /**
+   * Scenes claimed by more than one mechanism. Attribution uses a precedence
+   * order, so an overlap makes the per-mechanism counts a function of that
+   * order — and the negative control ("drop a mechanism, its gaps resurface as
+   * UNDECLARED") stops holding, because they would fall through to whichever
+   * mechanism was next in line instead. Empty today; asserted empty.
+   */
+  mechanismOverlaps: string[];
   /** Human-readable per-mechanism breakdown for an assertion message. */
   format(prefix?: string): string;
 }
@@ -292,19 +478,46 @@ export function collectLinuxGapReport(
     }
   }
 
+  // OVERLAP DETECTION, independent of the precedence order above: which gaps
+  // would MORE THAN ONE enabled mechanism have claimed? Precedence hides that,
+  // and the negative control silently stops working when it happens.
+  const mechanismOverlaps: string[] = [];
+  for (const { spec, darwin, linux } of inventory) {
+    const linuxSet = new Set(linux);
+    for (const scene of darwin) {
+      if (linuxSet.has(scene)) continue;
+      const claims: VrtGapMechanism[] = [];
+      if (dark.has(spec)) claims.push('hardcoded-platform-skip');
+      if (local.get(spec)?.has(scene)) claims.push('spec-local-pairs');
+      if (darwinOnly.has(scene)) claims.push('scene-darwin-only');
+      if (shared.has(scene)) claims.push('shared-pairs');
+      if (claims.length > 1) mechanismOverlaps.push(`${spec}/${scene}: ${claims.join(' + ')}`);
+    }
+  }
+
   const undeclared = gaps.filter((g) => g.mechanism === null);
 
   const committed = committedBaselineKeys();
-  const deadShared = [...shared]
-    .filter((s) => !matched['shared-pairs'].has(s))
-    .map((s) =>
-      committed.has(`${GATING_PLATFORM}/${s}`)
-        ? `${s} (linux baseline IS committed — pair is stale, drain it)`
-        : committed.has(`${AUTHORING_PLATFORM}/${s}`)
-          ? `${s} (declared by another mechanism)`
-          : `${s} (no baseline on EITHER platform — dead entry)`,
-    )
-    .sort();
+  // CLASSIFY FIRST, format second. The three buckets are the API; the prose is
+  // only for humans. (They used to be one array of sentences and the hygiene
+  // test recovered the buckets with `.includes('IS committed')` — a bare
+  // substring against an unpinned message, which goes vacuously green on any
+  // reword.)
+  const sharedRot = [...shared].filter((s) => !matched['shared-pairs'].has(s)).sort();
+  const deadSharedStale = sharedRot.filter((s) => committed.has(`${GATING_PLATFORM}/${s}`));
+  const deadSharedOther = sharedRot.filter(
+    (s) => !committed.has(`${GATING_PLATFORM}/${s}`) && committed.has(`${AUTHORING_PLATFORM}/${s}`),
+  );
+  const deadSharedPhantom = sharedRot.filter(
+    (s) => !committed.has(`${GATING_PLATFORM}/${s}`) && !committed.has(`${AUTHORING_PLATFORM}/${s}`),
+  );
+  const deadShared = sharedRot.map((s) =>
+    deadSharedStale.includes(s)
+      ? `${s} (linux baseline IS committed — pair is stale, drain it)`
+      : deadSharedOther.includes(s)
+        ? `${s} (declared by another mechanism)`
+        : `${s} (no baseline on EITHER platform — dead entry)`,
+  );
   const deadLocal: string[] = [];
   for (const [spec, scenes] of local) {
     for (const s of scenes) if (!matched['spec-local-pairs'].has(s)) deadLocal.push(`${spec}:${s}`);
@@ -325,7 +538,14 @@ export function collectLinuxGapReport(
       'hardcoded-platform-skip': deadDark,
       'scene-darwin-only': deadDarwinOnly,
     },
+    deadShared: {
+      stale: deadSharedStale,
+      phantom: deadSharedPhantom,
+      otherMechanism: deadSharedOther,
+    },
     contradictoryDarkSpecs,
+    partiallyDarkSpecs: darkSpecCoverage().filter((d) => !d.complete),
+    mechanismOverlaps,
     format(prefix = ''): string {
       const lines: string[] = [];
       if (prefix) lines.push(prefix);
@@ -362,15 +582,23 @@ export function collectLinuxGapReport(
 }
 
 /**
- * NEGATIVE CONTROL on the INSTRUMENT, not the data. The two source-scanned
- * mechanisms (B, C) return a clean, plausible EMPTY set if their regex ever
- * drifts from the source — the ratchet would then silently under-report and
- * look green. Assert both scans see something, and hand back what they saw so
- * a caller can print it.
+ * NEGATIVE CONTROL on the INSTRUMENT, not the data. The three source-scanned
+ * mechanisms (B, C, D) return a clean, plausible EMPTY set if their pattern
+ * ever drifts from the source — the ratchet would then silently under-report
+ * and look green. Assert every scan sees something, and hand back what it saw
+ * so a caller can print it.
  */
-export function assertParsersSeeSomething(): { local: number; dark: number } {
+export function assertParsersSeeSomething(): { local: number; dark: number; darwinOnly: number } {
   const local = [...specLocalPairScenes().values()].reduce((n, s) => n + s.size, 0);
   const dark = hardcodedLinuxDarkSpecs().size;
+  const darwinOnly = darwinOnlySceneIds().size;
+  if (darwinOnly === 0) {
+    throw new Error(
+      'darwinOnlySceneIds() found NOTHING. Either no CompositeVrtScene carries ' +
+        '`darwinOnly: true` any more (great — delete this parser) or the indentation-anchored ' +
+        'scan drifted from vrt-composite-scenes.ts and the ratchet is now blind to mechanism D.',
+    );
+  }
   if (local === 0) {
     throw new Error(
       'specLocalPairScenes() found NOTHING. Either every spec-local ' +
@@ -385,5 +613,5 @@ export function assertParsersSeeSomething(): { local: number; dark: number } {
         'the regex drifted and the ratchet is now blind to mechanism C.',
     );
   }
-  return { local, dark };
+  return { local, dark, darwinOnly };
 }

@@ -11,7 +11,7 @@ source tree, so they cannot go stale. Prose + roadmap: `docs/testing/README.md`.
 | Bucket | What | Count |
 | --- | --- | ---: |
 | 1 | HARD SKIPS / QUARANTINES (backlog → drive to 0) | 6 |
-| 2 | COVERAGE EXEMPTIONS (deliberate auto-enrollment opt-outs) | 512 |
+| 2 | COVERAGE EXEMPTIONS (deliberate auto-enrollment opt-outs) | 502 |
 | 3 | INFORMATIONAL-ONLY CI LANES (run, never block merge) | 5 |
 
 ## CI gating truth (from `.github/workflows/ci.yml`)
@@ -46,7 +46,7 @@ _none_
 ### spawn-smoke QUARANTINE map (e2e/tests/modules.spec.ts) — 1
 - `toybox` — task #102: SwiftShader software-renderer timeout (heavy WebGL)
 
-## Bucket 2 — coverage exemptions (512)
+## Bucket 2 — coverage exemptions (502)
 
 Declarative auto-enrollment opt-out lists. A module opted out of a UNIVERSAL
 sweep still carries dedicated coverage (a bespoke spec / unit core / ART). These
@@ -474,7 +474,7 @@ tracked-to-zero backlog (reconcile = fix or delete); see the roadmap.
 - `toybox.inA` — video input only drives output when a layer selects it as its source
 - `toybox.inB` — video input only drives output when a layer selects it as its source
 
-### `EXEMPT_BASELINE_PAIRS` (112) — per-<platform>/<scene> VRT baseline pairs deferred (pending a vrt-update capture)
+### `EXEMPT_BASELINE_PAIRS` (102) — per-<platform>/<scene> VRT baseline pairs deferred (pending a vrt-update capture)
 <sub>e2e/vrt/vrt-exemptions.ts</sub>
 - `darwin/mirrorpool`
 - `darwin/mirrorpool-mirror`
@@ -574,16 +574,6 @@ tracked-to-zero backlog (reconcile = fix or delete); see the roadmap.
 - `linux/tidyvco-bass`
 - `linux/tidyvco-pad`
 - `linux/toybox`
-- `linux/toybox-combine-composite`
-- `linux/toybox-combine-editor`
-- `linux/toybox-frag-kaleido`
-- `linux/toybox-obj-bird-ernest`
-- `linux/toybox-obj-icosahedron`
-- `linux/toybox-obj-tex-sphere`
-- `linux/toybox-obj-tex-teapot`
-- `linux/toybox-preset-flighty`
-- `linux/toybox-preset-textured-sphere`
-- `linux/toybox-truchet`
 - `linux/wavesculpt`
 - `linux/workflow-audio-io`
 - `linux/workflow-dock-clip-split`

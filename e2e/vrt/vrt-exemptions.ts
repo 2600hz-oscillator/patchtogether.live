@@ -1472,48 +1472,24 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // (real per-shader content, distinct across the 4 entries) lives in
   // e2e/vrt/vrt-toybox.spec.ts, also darwin-only by the same precedent.
   'linux/toybox',
-  // TOYBOX Phase 4 (the bespoke SVG combine-graph editor): the combine-composite
-  // frozen render + the deterministic editor-SVG capture are darwin baselines
-  // captured locally; linux pending a `task vrt:update` on linux CI (same
-  // shader/SVG pipeline, sub-threshold cross-platform paint timing). Functional
-  // coverage: toybox-combine*.test.ts (graph mutations + Yjs round-trip) +
-  // e2e/tests/toybox-combine-editor.spec.ts (add/connect/cycle-reject via real
-  // clicks + a live-output delta).
-  'linux/toybox-combine-composite',
-  'linux/toybox-combine-editor',
-  // TOYBOX Phase 6 texmap (OBJ surface = another layer's rendered output,
-  // UV-mapped): the obj-tex-sphere (primitive uv) + obj-tex-teapot (zero-vt
-  // PLANAR-UV fallback) frozen renders + the textured-sphere preset are darwin
-  // baselines captured locally; linux pending a `task vrt:update` on linux CI
-  // (same WebGL/shader pipeline, sub-threshold cross-platform paint timing).
-  // Functional coverage: toybox-surface.test.ts (render-order + cycle/self
-  // guard) + obj-parse.test.ts (planar-uv fallback) + the texmap e2e
-  // (e2e/tests/toybox-texture-source.spec.ts).
-  'linux/toybox-obj-tex-sphere',
-  'linux/toybox-obj-tex-teapot',
-  'linux/toybox-preset-textured-sphere',
-  // TOYBOX content-bank expansion: representative frozen baselines for the new
-  // GEN shader (truchet), the new builtin primitive (icosahedron, an OBJ-pass
-  // render), and a FRAG shader over a base layer (frag-kaleido folds layer 0
-  // via iChannel0). Darwin baselines captured locally; linux pending a
-  // `task vrt:update` on linux CI (same WebGL/shader pipeline, sub-threshold
-  // cross-platform paint timing). The remaining new shaders/builtins are
-  // covered by toybox-manifest-integrity.test.ts + primitives.test.ts + the
-  // live compile-smoke e2e — per-asset VRT baselines would bloat the gate.
-  'linux/toybox-truchet',
-  'linux/toybox-obj-icosahedron',
-  'linux/toybox-frag-kaleido',
-  // TOYBOX birds + the FLIGHTY animated scene: the flighty preset (a CC0 bird
-  // flapping over the animated flighty-sky GEN, luma-keyed) + the bird-ernest
-  // OBJ per-model baseline. Darwin baselines captured locally; linux pending a
-  // `task vrt:update` on linux CI (same WebGL/shader pipeline — the flap is
-  // plain vertex arithmetic + the sky is value-noise fBm, both renderer-
-  // tolerant, but the masked-canvas paint timing shifts sub-thresholdly on
-  // linux Chromium). Functional coverage: toybox-manifest-integrity.test.ts
-  // (bird OBJs exist + licensed, flighty-sky GEN convention) +
-  // toybox-presets.test.ts (flighty structure + cvRoutes) + the toybox e2e.
-  'linux/toybox-preset-flighty',
-  'linux/toybox-obj-bird-ernest',
+  //
+  // TEN `linux/toybox-*` ENTRIES WERE DELETED HERE (2026-08-01), not drained.
+  // They were MISNAMED and therefore read by nothing:
+  //   * the real snapshot stems under __screenshots__/vrt-toybox.spec.ts/darwin/
+  //     are `combine-composite`, `truchet`, `obj-tex-sphere`, … — there is no
+  //     `toybox-` prefix on any of them, so `EXEMPT_BASELINE_PAIRS.has(
+  //     'linux/toybox-truchet')` could never be true;
+  //   * and `vrt-toybox.spec.ts` does not import this Set AT ALL. It goes dark
+  //     on linux through mechanism C (a per-test
+  //     `test.skip(VRT_PLATFORM === 'linux', …)`), which is where the "darwin
+  //     baseline captured locally; linux pending a vrt-update" rationale for
+  //     every toybox scene now lives, next to the skip that implements it.
+  // They were previously excused in vrt-platform-gaps.test.ts as "shadowed by
+  // mechanism C and harmless". Shadowing is not what was happening — nothing
+  // resolved them at all — and had anyone "fixed" the names to the real stems,
+  // mechanisms A and C would have started claiming the same 10 gaps and broken
+  // the C negative control. Deleting is the fix (reconcile = fix or delete);
+  // the phantom-entry ceiling drops 15 → 5.
   // COMPOSITE VRT — first category (vrt-composite.spec.ts). Captures
   // NIBBLES.length_cv → SCOPE.ch1 at 5 CV levels via the
   // `__nibblesForceLength` test hook. Darwin baselines captured on this

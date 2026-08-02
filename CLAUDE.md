@@ -227,7 +227,26 @@ was true about the one list it read.
 - **A checker that resolves ONE directory cannot speak for the tree.** Both the
   stale ratchet and `scripts/vrt-exemptions-audit.mjs` only ever built the
   `__screenshots__/vrt.spec.ts/…` path, so stale *scene* pairs under other spec
-  dirs were structurally invisible. Widening them found 4 more immediately.
+  dirs were structurally invisible. Widening them found **3** more immediately
+  (narrow 16 → widened 19 on `77cd1bbc`) — the three `darwin/wavesculpt-blink-*`
+  quarantines. Not four: `darwin/rasterize` lives under `vrt.spec.ts`, so the
+  narrow check always saw it. The same one-directory blindness was live in the
+  cable-stripe palette gate, which read `vrt.spec.ts` only and missed 39
+  token-pinned baselines in six sibling dirs — **state a gate's directory scope
+  in the gate**, because an unstated scope reads as full coverage.
+- **A CEILING can only trip by GROWING — assert the other direction too.** A
+  drain that closes gaps and forgets to lower the number passes in total
+  silence, and the slack it leaves absorbs the next regression. Every VRT
+  ratchet now pairs `actual <= CEILING` with `CEILING - actual === 0`, so
+  "lower the ceiling by the same count" is enforced rather than advisory. It
+  fired on its first run (the shared-pair ceiling was 10 slack after a cleanup).
+- **A drain without its re-capture ships a red lane.** Removing pairs is step 1
+  of 2. The 2026-08-01 15-pair drain deferred the dispatch to "a follow-up" and
+  every one of the 15 came back as a **dimension mismatch** (212×564 vs
+  264×527 …) — Playwright hard-fails on size *before* it computes a ratio, so no
+  tolerance argument applies and `maxDiffPixelRatio` is irrelevant. Confirm the
+  committed baseline still matches the render, or `git rm` it and dispatch, in
+  the SAME PR.
 
 ## Worktrees: hard cap of 10
 

@@ -35,9 +35,15 @@
 
 import { describe, expect, it } from 'vitest';
 import {
+  MIN_DARWIN_BASELINES,
+  MIN_LINUX_BASELINES,
   VRT_GAP_MECHANISMS,
+  assertBaselineTreeIsReadable,
   assertParsersSeeSomething,
+  baselineTotals,
   collectLinuxGapReport,
+  collidingSceneStems,
+  darkSpecCoverage,
   darwinOnlySceneIds,
   hardcodedLinuxDarkSpecs,
   listBaselineInventory,
@@ -47,6 +53,19 @@ import {
 } from '../../../../../../e2e/vrt/vrt-platform-gaps';
 
 describe('vrt platform-gap enumerator — TOTALITY across all four mechanisms', () => {
+  it('the baseline tree is READABLE — every number below is 0 without it', () => {
+    // THE VACUITY TRIPWIRE. Measured with `__screenshots__` moved aside: the
+    // deficit ratchet (≤151), the UNDECLARED gate (== []), the contradictory-
+    // dark-spec gate (== []) and the stale-pair ratchet (≤4) ALL pass, because
+    // 0 ≤ 151 and [] == []. The only thing that kept CI honest was an
+    // incidental property of git-LFS — pointer stubs preserve FILENAMES — and
+    // nothing asserted it. `assertBaselineTreeIsReadable()` throws instead.
+    const totals = assertBaselineTreeIsReadable();
+    expect(totals.darwin).toBeGreaterThanOrEqual(MIN_DARWIN_BASELINES);
+    expect(totals.linux).toBeGreaterThanOrEqual(MIN_LINUX_BASELINES);
+    expect(baselineTotals()).toEqual(totals);
+  });
+
   it('the ground truth is read off DISK, not off the declarations', () => {
     // The deficit must be anchored to committed PNGs. A declaration-derived
     // count is what drifted: it could name scenes that do not exist (15 did)
@@ -118,14 +137,83 @@ describe('vrt platform-gap enumerator — TOTALITY across all four mechanisms', 
     }
   });
 
+  it('NO GAP is claimed by two mechanisms (precedence must never matter)', () => {
+    // The pairwise local∩shared check above covered one of six pairs. Every
+    // other overlap is equally fatal to the negative controls below: with an
+    // overlap, dropping a mechanism makes its gaps fall through to the NEXT
+    // mechanism in the precedence order rather than resurfacing as UNDECLARED,
+    // and the control fails with a message blaming the parser. Concretely: the
+    // 10 misnamed `linux/toybox-*` shared pairs are harmless only because
+    // `toybox-truchet` is not a real stem — renaming them to the real stems
+    // (`truchet`, …) makes A and C overlap and breaks the C control.
+    const report = collectLinuxGapReport();
+    expect(
+      report.mechanismOverlaps,
+      'gap(s) declared by more than one mechanism. Attribution is precedence-ordered, so the ' +
+        'per-mechanism counts (and the negative controls) become a function of that order. ' +
+        'Remove the redundant declaration — the more specific one wins.',
+    ).toEqual([]);
+  });
+
+  it('every linux-dark spec is dark for ALL of its tests (C is per-FILE, written per-TEST)', () => {
+    // The single biggest hole in the enumerator: `hardcodedLinuxDarkSpecs()`
+    // promotes a WHOLE FILE on ONE `test.skip(VRT_PLATFORM === 'linux', …)`,
+    // but every one of the 8 specs writes that skip inside individual `test()`
+    // bodies. Adding a toybox test with NO skip therefore lands its scene in
+    // mechanism C for free, invisible to the UNDECLARED gate — demonstrated by
+    // dropping a `zz-brand-new-scene.png` into vrt-toybox.spec.ts/darwin/ and
+    // watching it report `mechanism: 'hardcoded-platform-skip', undeclared: 0`.
+    const report = collectLinuxGapReport();
+    expect(
+      report.partiallyDarkSpecs.map(
+        (d) => `${d.spec}: ${d.skips} linux skip(s) for ${d.tests} test() site(s)`,
+      ),
+      'spec(s) that LOOK linux-dark but are not dark for every test. Any scene from an ' +
+        'unskipped test there is silently attributed to mechanism C and can never reach the ' +
+        'UNDECLARED gate. Either skip every test on linux, or capture the linux baselines.',
+    ).toEqual([]);
+    // …and the check itself must be looking at something.
+    expect(darkSpecCoverage().length, 'no linux-dark specs found at all').toBeGreaterThan(0);
+  });
+
+  it('scene stems do not collide across spec dirs (A and D key on the bare stem)', () => {
+    // `shared.has(scene)` and `darwinOnly.has(scene)` are spec-agnostic: a pair
+    // written for `vrt.spec.ts` would explain a same-named gap in any other
+    // dir. Zero collisions today; this keeps the first one from being a silent
+    // free pass.
+    expect(
+      collidingSceneStems(),
+      'the same <platform>/<scene> stem exists in two spec dirs. Mechanisms A and D match on ' +
+        'the stem alone, so one declaration would silently explain both gaps.',
+    ).toEqual([]);
+  });
+
   it('the source-scanned parsers see something (they fail OPEN otherwise)', () => {
-    // Mechanisms B and C are regex reads of spec sources — a drifted pattern
-    // returns a clean empty set and the deficit silently under-reports. This
-    // is the same "metric blind to the dimension under test" failure the
+    // Mechanisms B, C and D are text reads of spec/scene sources — a drifted
+    // pattern returns a clean empty set and the deficit silently under-reports.
+    // This is the same "metric blind to the dimension under test" failure the
     // original ratchet had, one level down.
     const seen = assertParsersSeeSomething();
     expect(seen.local).toBeGreaterThan(0);
     expect(seen.dark).toBeGreaterThan(0);
+    expect(seen.darwinOnly).toBeGreaterThan(0);
+  });
+
+  it('the darwinOnly SOURCE scan returns SCENE ids, not nested node ids', () => {
+    // Mechanism D stopped being a value import (it dragged `@playwright/test`
+    // into the unit lane through vrt-composite-scenes → _helpers → spawnPatch).
+    // The replacement is indentation-anchored text, so pin what it must return:
+    // every id it reports has to be a real committed darwin baseline stem. A
+    // mis-parse that grabbed a node id ('vco', 'sc') fails here AND in the
+    // dead['scene-darwin-only'] hygiene assertion.
+    const ids = [...darwinOnlySceneIds()].sort();
+    expect(ids.length, 'darwinOnly scenes found').toBeGreaterThan(0);
+    const darwinStems = new Set(listBaselineInventory().flatMap((i) => i.darwin));
+    for (const id of ids) {
+      expect(darwinStems.has(id), `darwinOnly id '${id}' is not a committed darwin baseline`).toBe(
+        true,
+      );
+    }
   });
 });
 
@@ -149,9 +237,13 @@ describe('vrt platform-gap enumerator — NEGATIVE CONTROL (drop a mechanism, it
       // …and they must reappear as UNDECLARED, in the same number.
       expect(
         crippled.undeclared.length,
-        `dropping '${mechanism}' changed NOTHING — the enumerator was never actually reading ` +
-          'it, so the totality assertions are vacuous. This is exactly the state the old ' +
-          'ratchet was in for all three mechanisms it did not know about.',
+        `dropping '${mechanism}' did not resurface its ${full.byMechanism[mechanism]} gap(s) as ` +
+          'UNDECLARED. TWO different causes, check which: (a) the enumerator was never actually ' +
+          'reading that mechanism, so the totality assertions are vacuous — the state the old ' +
+          'ratchet was in for three of the four; or (b) the mechanisms OVERLAP, so the gaps ' +
+          'fell through to the next mechanism in the precedence order instead. (b) is what the ' +
+          "`NO GAP is claimed by two mechanisms` test above exists to rule out — read its " +
+          'verdict first.',
       ).toBe(full.byMechanism[mechanism]);
 
       // Same scenes, not merely the same count.
@@ -201,22 +293,45 @@ describe('vrt platform-gap enumerator — DECLARATION HYGIENE', () => {
     // Stale LINUX pairs (baseline exists) are now zero and stay zero. The four
     // surviving stale pairs are `darwin/*` flake quarantines, which this report
     // does not classify — vrt-meta's widened stale ratchet caps those at 4.
-    const stale = report.dead['shared-pairs'].filter((s) => s.includes('IS committed'));
+    //
+    // Read the CLASSIFIED bucket, never a substring of the prose. This filtered
+    // `dead['shared-pairs']` for `'IS committed'`; nothing pinned that wording,
+    // so any reword (or translation) would have turned the assertion vacuously
+    // green forever.
     expect(
-      stale,
+      report.deadShared.stale,
       'a shared pair whose linux PNG is committed skips a card we already paid for, AND ' +
         'blocks its own re-capture (--update-snapshots writes nothing for a skipped test)',
     ).toEqual([]);
 
-    // Entries naming nothing on either platform are pure noise. They are not
-    // fixed here (the 10 dead `linux/toybox-*` names in particular are shadowed
-    // by mechanism C and harmless), but the count is FROZEN so it cannot grow.
-    const phantom = report.dead['shared-pairs'].filter((s) => s.includes('dead entry'));
+    // Entries naming nothing on either platform are pure noise. The 10 misnamed
+    // `linux/toybox-*` names were DELETED (they are not "shadowed by mechanism
+    // C and harmless" — the real toybox stems are `truchet`, `obj-tex-sphere`,
+    // …, with no `toybox-` prefix, and vrt-toybox.spec.ts never imports the
+    // shared Set, so nothing read them at all). The remaining 5 are frozen.
+    const PHANTOM_CEILING = 5;
     expect(
-      phantom.length,
+      report.deadShared.phantom.length,
       'shared EXEMPT_BASELINE_PAIRS entries naming a scene with no baseline on EITHER ' +
-        `platform — they inflate the list and explain nothing: ${phantom.join(', ')}`,
-    ).toBeLessThanOrEqual(15);
+        `platform — they inflate the list and explain nothing: ` +
+        `${report.deadShared.phantom.join(', ')}`,
+    ).toBeLessThanOrEqual(PHANTOM_CEILING);
+    // Both directions: a ceiling cannot see a cleanup that forgot to re-pin it,
+    // and the slack it leaves behind absorbs the next entry silently.
+    expect(
+      PHANTOM_CEILING - report.deadShared.phantom.length,
+      `THE PHANTOM CEILING HAS GONE SLACK: ${report.deadShared.phantom.length} phantom(s) under ` +
+        `a ceiling of ${PHANTOM_CEILING}. Set it to ${report.deadShared.phantom.length}.`,
+    ).toBe(0);
+
+    // The buckets must partition the rot — otherwise a classification bug
+    // could quietly empty `stale` into `otherMechanism`.
+    expect(
+      report.deadShared.stale.length +
+        report.deadShared.phantom.length +
+        report.deadShared.otherMechanism.length,
+      'the three deadShared buckets must partition dead[shared-pairs]',
+    ).toBe(report.dead['shared-pairs'].length);
   });
 
   it('every spec-local and darwinOnly declaration matches a real gap', () => {
