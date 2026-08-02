@@ -22,6 +22,12 @@
 
 import { describe, expect, it } from 'vitest';
 import { curatedFace } from '$lib/ui/workflow/curated-face';
+import {
+  LANE_KCOL_MAX_PX,
+  READOUT_MAX_CHARS,
+  readoutFitsLane,
+  readoutWidthPx,
+} from '$lib/ui/workflow/lane-readout-fit';
 import { laneBodyPlan } from '$lib/ui/workflow/module-shell-model';
 import { vcaDef } from './modules/vca';
 import {
@@ -151,7 +157,9 @@ describe('the readouts the face actually paints', () => {
     expect(formatVcaBase(VCA_BASE.default)).toBe('CLOSED'); // the spawn state
     expect(formatVcaBase(1)).toBe('UNITY');
     expect(formatVcaBase(0.5)).toBe('-6.0 dB');
-    expect(formatVcaBase(0.25)).toBe('-12.0 dB');
+    // Whole dB from −10 down — a FIT constraint, not a taste call. See the
+    // `|dB| ≥ 10` case below and formatVcaBase's header.
+    expect(formatVcaBase(0.25)).toBe('-12 dB');
   });
 
   it('base never prints "-0.0 dB", "-Infinity" or "NaN" anywhere in its range', () => {
@@ -180,17 +188,65 @@ describe('the readouts the face actually paints', () => {
     }
   });
 
-  it('every readout fits the 46px lane knob column (≤8 mono chars)', () => {
-    // `--kcol-max` is 46px and `.readout` is 9px mono, so a longer string
-    // ellipsizes in-lane — the readout would then say less than the number it
-    // replaced. Sweep both params rather than spot-checking.
+  it('every readout FITS the 46 CSS-px lane column — in PIXELS, not glyphs', () => {
+    // THE UNIT IS THE WHOLE ASSERTION. The first draft of this test bounded the
+    // GLYPH COUNT at 8 and called that "fits the 46px column", never converting
+    // between the two: at the measured `READOUT_CHAR_PX` (5.97) eight glyphs is
+    // 47.8 px against a 46 px cap, so the test PASSED on `-12.0 dB` — which
+    // lays out at 48 px in the real lane and escapes its column (measured; see
+    // lane-readout-fit.ts for what the overflow actually does, which is NOT the
+    // ellipsis the CSS looks like it promises). A budget stated in one unit and
+    // checked in another is not a loose bound, it is a different assertion
+    // (CLAUDE.md: "state the units in the assertion message").
+    //
+    // Sweep at a fine step: the widest string is not at an endpoint (both ends
+    // are the short NAMED landmarks) and the dB text changes precision at
+    // −10 dB, so a coarse sweep can step straight over the worst case.
     const widest = (fmt: (v: number) => string, min: number, max: number) => {
-      let w = 0;
-      for (let i = 0; i <= 400; i++) w = Math.max(w, fmt(min + ((max - min) * i) / 400).length);
-      return w;
+      let worst = '';
+      for (let i = 0; i <= 20000; i++) {
+        const s = fmt(min + ((max - min) * i) / 20000);
+        if (s.length > worst.length) worst = s;
+      }
+      return worst;
     };
-    expect(widest(formatVcaBase, VCA_BASE.min, VCA_BASE.max)).toBeLessThanOrEqual(8);
-    expect(widest(formatVcaCvAmount, VCA_CV_AMOUNT.min, VCA_CV_AMOUNT.max)).toBeLessThanOrEqual(8);
+
+    for (const [id, fmt, range] of [
+      ['base', formatVcaBase, VCA_BASE],
+      ['cvAmount', formatVcaCvAmount, VCA_CV_AMOUNT],
+    ] as const) {
+      const worst = widest(fmt, range.min, range.max);
+      expect(
+        readoutWidthPx(worst),
+        `${id}: widest readout ${JSON.stringify(worst)} is ${worst.length} glyphs = ` +
+          `${readoutWidthPx(worst).toFixed(2)} CSS px, and the lane knob column caps at ` +
+          `${LANE_KCOL_MAX_PX} CSS px (--kcol-max). This string ESCAPES that column in the ` +
+          `lane (it does not ellipsize — see lane-readout-fit.ts) — shorten the format.`,
+      ).toBeLessThanOrEqual(LANE_KCOL_MAX_PX);
+      expect(readoutFitsLane(worst), `${id}: ${JSON.stringify(worst)}`).toBe(true);
+    }
+  });
+
+  it('NEGATIVE CONTROL: the px budget rejects the string it used to pass', () => {
+    // Without this, a fit check is indistinguishable from `expect(true)`. The
+    // exact string the 8-glyph budget waved through must now be REFUSED, and
+    // the 7-glyph one it would also have waved through must still pass — so the
+    // gate is proven to bite at the right place rather than merely to bite.
+    expect(readoutFitsLane('-12.0 dB'), '8 glyphs = 47.76 px > 46 px').toBe(false);
+    expect(readoutFitsLane('-9.9 dB'), '7 glyphs = 41.79 px ≤ 46 px').toBe(true);
+    expect(READOUT_MAX_CHARS, 'the column holds 7 glyphs, not 8').toBe(7);
+  });
+
+  it('THE BAND THAT OVERFLOWED: |dB| ≥ 10 prints whole dB and stays 7 glyphs', () => {
+    // ~31 % of this linear knob (base ∈ [0.005, 0.3162]) lands at |dB| ≥ 10,
+    // and every value in it used to be an 8-glyph `-NN.N dB`. Spot the two the
+    // review named plus the two rounding boundaries: −9.96 dB is `< 10` raw but
+    // rounds to `-10.0` at one decimal, which is the 8th glyph coming back.
+    expect(formatVcaBase(0.25)).toBe('-12 dB');
+    expect(formatVcaBase(VCA_DISPLAY_EPS)).toBe('-46 dB');
+    expect(formatVcaBase(0.5)).toBe('-6.0 dB'); // fine precision survives near unity
+    expect(formatVcaBase(10 ** (-9.94 / 20))).toBe('-9.9 dB'); // just inside the fine band
+    expect(formatVcaBase(10 ** (-9.96 / 20))).toBe('-10 dB'); // rounds ACROSS the boundary
   });
 });
 
@@ -228,19 +284,65 @@ describe('the curated face — what each tier actually surfaces', () => {
     face(t).controls.map((c) => c.key),
   ]);
 
-  it('THE RANK: the ONE mini cell is cvAmount, beside the meter', () => {
+  it('THE RANK: the ONE mini cell is base, beside the meter', () => {
     // This is the entire consequence of `face.order` on this module — with 2
     // params and a glyph, compact/full/dock all show both — so it is the one
-    // thing worth pinning. The argument is in the def: the `meter` glyph
-    // already reports output level (most of what `base` sets unpatched), so the
-    // tile's single cell goes to the control the meter CANNOT show, the sense
-    // and depth of the CV.
+    // thing worth pinning. WHY `base` is the next test's job; this one only
+    // pins that the ladder is what the def says.
     expect(Object.fromEntries(tiers)).toEqual({
-      mini: ['cvAmount'],
-      compact: ['cvAmount', 'base'],
-      full: ['cvAmount', 'base'],
-      dock: ['cvAmount', 'base'],
+      mini: ['base'],
+      compact: ['base', 'cvAmount'],
+      full: ['base', 'cvAmount'],
+      dock: ['base', 'cvAmount'],
     });
+  });
+
+  it('THE MINI CELL IS NOT INERT: it can make a freshly-spawned VCA pass audio', () => {
+    // THE PROPERTY, not the choice. The mini cell is read OFF THE FACE rather
+    // than named, so this survives a re-rank and forces the re-rank to re-argue
+    // the property instead of editing a literal.
+    //
+    // The failure it exists to catch: `order: ['cvAmount','base']` put the
+    // ATTENUVERTER on the tile. At the spawn state — base 0, cvAmount 1,
+    // NOTHING PATCHED so cv = 0 — the whole `cvAmount × cv` term is zero, so
+    // sweeping that cell end to end leaves the gain at 0 for its entire travel.
+    // The tile then offers one control that provably cannot do anything AND a
+    // `meter` glyph that is dark (gain 0 ⇒ silence ⇒ no RMS to draw), i.e. no
+    // reachable way at that tier to make the module audible at all.
+    const RANGES = { base: VCA_BASE, cvAmount: VCA_CV_AMOUNT } as const;
+    const miniCells = face('mini').controls.map((c) => c.key);
+    expect(miniCells, 'the mini tier shows exactly one cell').toHaveLength(1);
+    const key = miniCells[0] as keyof typeof RANGES;
+    expect(RANGES, `mini cell '${key}' is one of the two params`).toHaveProperty(key);
+
+    // THE SPAWN STATE, verbatim: def defaults, and cv = 0 because an unpatched
+    // input contributes nothing.
+    const UNPATCHED_CV = 0;
+    const gainWithCellAt = (v: number) =>
+      vcaGain(
+        key === 'base' ? v : VCA_BASE.default,
+        key === 'cvAmount' ? v : VCA_CV_AMOUNT.default,
+        UNPATCHED_CV,
+      );
+
+    // Sweep the cell's ENTIRE declared travel and collect the gains it reaches.
+    const range = RANGES[key];
+    const reached = new Set<number>();
+    for (let i = 0; i <= 200; i++) reached.add(gainWithCellAt(range.min + ((range.max - range.min) * i) / 200));
+
+    expect(
+      reached.size,
+      `the mini tile's one cell is '${key}', and on a bare spawn (base=${VCA_BASE.default}, ` +
+        `cvAmount=${VCA_CV_AMOUNT.default}, cv unpatched) its whole travel produces exactly ` +
+        `${reached.size} distinct gain value(s). A single value means the cell is INERT — the ` +
+        `tier's only control cannot change the module, and the meter glyph beside it is dark ` +
+        `for the same reason. Rank a control that is reachable from the spawn state.`,
+    ).toBeGreaterThan(1);
+
+    expect(
+      Math.max(...reached),
+      `and '${key}' must be able to make the VCA AUDIBLE from spawn, not merely to move a number`,
+    ).toBeGreaterThan(0);
   });
 
   it('the lane never has to truncate this face (2 cells ≤ every cap)', () => {
@@ -255,10 +357,12 @@ describe('the curated face — what each tier actually surfaces', () => {
   it('ONE page, and its header is the gain law rather than a house word', () => {
     const pages = face('dock').pages ?? [];
     expect(pages.map((p) => [p.id, p.label])).toEqual([['gain', 'gain = base + cv × amount']]);
-    // `order` is PRIORITY, `pages` is FUNCTION order — they disagree here on
-    // purpose: the band reads left-to-right in the same order as the law above
-    // it, while the ranking leads with the attenuverter.
+    // `order` is PRIORITY, `pages` is FUNCTION order. They AGREE here — the
+    // band reads left-to-right in the same order as the law printed above it,
+    // and the ranking leads with the same knob for an independent reason (the
+    // not-inert property above). They are still two different fields with two
+    // different jobs; do not collapse one into the other.
     expect(pages[0].controls.map((c) => c.key)).toEqual(['base', 'cvAmount']);
-    expect(vcaDef.face?.order).toEqual(['cvAmount', 'base']);
+    expect(vcaDef.face?.order).toEqual(['base', 'cvAmount']);
   });
 });

@@ -126,14 +126,34 @@ export function formatVcaCvAmount(cvAmount: number): string {
  * half as loud — so the readout converts it. dB is the floor's gain WITH NO CV
  * PRESENT; once CV arrives the resolved gain is `base + cv × amount`, which is
  * what the band header states.
+ *
+ * THE PRECISION IS A FIT CONSTRAINT, not a taste call. The lane knob column is
+ * capped at `LANE_KCOL_MAX_PX` (46), so at `READOUT_CHAR_PX` (5.97 px/glyph,
+ * MEASURED) the readout gets 7 glyphs. A flat `toFixed(1)` spends 8 on
+ * everything from −10 dB down (`-12.0 dB`, 47.7 px) — across
+ * `base ∈ [0.005, 0.3162]`, ~31 % of a linear knob. Measured in the real lane,
+ * that string does NOT ellipsize (see lane-readout-fit.ts: `.knob-wrap` is
+ * uncapped, so the cap never reaches the text); it ESCAPES the column and pins
+ * `.kcol` to its 46 px maximum, spending the whole per-cell margin
+ * `laneBodyPlan` budgets. So the decimal is dropped once the magnitude reaches
+ * 10 dB, where a tenth of a dB is below the resolution anyone reads off a gain
+ * floor anyway: `-9.9 dB` (7) near unity, `-12 dB` / `-46 dB` (6) below it.
+ *
+ * The 10 dB switch is decided on the ROUNDED text, not on the raw magnitude:
+ * −9.96 dB is `< 10` raw but renders `-10.0` at one decimal, which is the 8th
+ * glyph again. `vca-gain-model.test.ts` sweeps the range in px and
+ * `vca-face.spec.ts` renders it in a real lane column, so neither the boundary
+ * nor the width is taken on trust.
  */
 export function formatVcaBase(base: number): string {
   if (base < VCA_DISPLAY_EPS) return 'CLOSED';
   if (base > VCA_BASE.max - VCA_DISPLAY_EPS) return 'UNITY';
+  const db = linearToDb(base);
+  const fine = db.toFixed(1);
+  const text = Math.abs(Number(fine)) >= 10 ? db.toFixed(0) : fine;
   // `toFixed` preserves the sign of a value that rounds to zero, so the thin
   // band just under the UNITY threshold would otherwise read `-0.0 dB`.
-  const db = linearToDb(base).toFixed(1);
-  return `${db === '-0.0' ? '0.0' : db} dB`;
+  return `${text === '-0.0' ? '0.0' : text} dB`;
 }
 
 /**

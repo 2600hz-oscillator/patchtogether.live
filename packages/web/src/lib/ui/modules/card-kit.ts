@@ -64,14 +64,22 @@ export function portsFromDef(
   });
 }
 
-/** The four knob/fader props every control primitive takes (`Fader`,
- *  `KnobConic`), spreadable straight into the component. */
+/** The def-owned props every control primitive takes (`Fader`, `KnobConic`),
+ *  spreadable straight into the component.
+ *
+ *  `units` rides along because it is DEF-OWNED too (`ParamDef.units`) and is
+ *  therefore just as capable of drifting as the range: a card that types
+ *  `units="Hz"` beside a def that says `'kHz'` prints the wrong unit on every
+ *  hover, and a card that simply omits it drops a unit the def declared.
+ *  `card-def-ranges.test.ts` forbids re-typing it, so this is what a promoted
+ *  card uses instead. */
 export interface CardParamProps {
   min: number;
   max: number;
   defaultValue: number;
   label: string;
   curve: KnobCurve;
+  units?: string;
 }
 
 /**
@@ -96,7 +104,14 @@ export function paramProps(
 ): CardParamProps {
   const p = def.params.find((d) => d.id === id);
   if (!p) throw new Error(`paramProps: no param '${id}' on this def`);
-  return { min: p.min, max: p.max, defaultValue: p.defaultValue, label: p.label, curve: p.curve };
+  return {
+    min: p.min,
+    max: p.max,
+    defaultValue: p.defaultValue,
+    label: p.label,
+    curve: p.curve,
+    units: p.units,
+  };
 }
 
 export interface CardParamHelpers {

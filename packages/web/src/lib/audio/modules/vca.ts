@@ -119,38 +119,51 @@ export const vcaDef: AudioModuleDef = {
   // face program, .myrobots/plans/dx7-and-faces-design-program-2026-07-27.md
   // §4). `order` is a PRIORITY ranking for the tiers that show a SUBSET;
   // `pages` is FUNCTION order for the tier that shows everything. They are
-  // allowed to disagree, and here they do — do not "fix" one to match the
-  // other.
+  // allowed to disagree; on this module they happen to agree, for two
+  // INDEPENDENT reasons (the ranking argument below, and the band reading in
+  // the same order as the law printed above it) — so keep them as two fields
+  // and do not collapse one into the other.
   //
   // THE TIER LADDER, read back as a sentence. With 2 params and a glyph the
   // caps are mini 1 / compact 2 / full 2 (laneBodyPlan keeps the ROW: 2 md
   // cells + the glyph) / dock 2. So `order` decides exactly ONE thing: which
   // knob sits on the mini tile beside the meter.
   //
-  // `cvAmount` takes it, and the GLYPH is the argument. The `meter` glyph
-  // already reports the live OUTPUT LEVEL — which is most of what `base` sets
-  // when nothing is patched — so ranking `base` first would spend the tile's
-  // one cell restating what the glyph is already showing. `cvAmount` is the
-  // one thing a meter cannot show: the SENSE of the modulation. Its sign is
-  // this module's mode switch (positive amplifies, negative ducks, and because
-  // the gain is unclamped a sum below 0 comes out phase-inverted rather than
-  // muted). The correct use of a glyph is to BUY a rank.
+  // `base` takes it, and the argument is REACHABILITY FROM THE SPAWN STATE.
   //
-  // THE COUNTER-ARGUMENT, stated because it is real: with nothing patched into
-  // `cv` the whole `cvAmount * cv` term is zero, so on a bare spawn the mini
-  // tile's one knob does nothing — the inertness-at-spawn check the program's
-  // §7 step 3 demands of every hero candidate. Priced and taken: a VCA with an
-  // empty CV jack is not a VCA, it is a volume knob, and the readout makes the
-  // inertness legible (the dial says CV OFF / OPEN / DUCK, so it announces that
-  // it is about the CV path). IF YOU DISAGREE: swap the two entries in `order`
-  // and nothing else in this file moves.
+  // This ranking was briefly `['cvAmount','base']`, bought with the glyph: the
+  // `meter` reports the live OUTPUT LEVEL, which is most of what `base` sets
+  // when nothing is patched, so ranking `base` first looked like spending the
+  // tile's one cell to restate what the glyph already shows. That argument is
+  // SELF-DEFEATING at the only state it has to survive. On a bare spawn the
+  // defaults are `base = 0`, `cvAmount = 1`, and nothing is patched, so:
+  //
+  //   * `cvAmount × cv` = 0 — the cell cannot change the gain at ANY setting;
+  //   * `gain = 0` ⇒ the output is silence ⇒ the meter is DARK, so the glyph
+  //     it was traded against is not showing anything either.
+  //
+  // A mini tile whose one control is inert beside a glyph with nothing in it is
+  // a tile with no reachable way to make the module pass audio. `base` has the
+  // opposite property at every state: it is the one control that always moves
+  // the gain, and moving it is also what LIGHTS the meter — which is what makes
+  // the glyph's claimed redundancy true rather than aspirational. The glyph
+  // earns its rank AFTER the module is audible, and the mini tile is where you
+  // get it there. Pinned by the not-inert assertion in vca-gain-model.test.ts,
+  // which derives the mini cell from the face rather than naming it, so a
+  // future re-rank has to re-argue the property instead of editing a literal.
+  //
+  // WHAT IS GIVEN UP, stated because it is real: `cvAmount`'s SIGN is this
+  // module's mode switch (positive amplifies, negative ducks, and because the
+  // gain is unclamped a sum below 0 comes out phase-inverted rather than muted),
+  // and a meter cannot show that. It reappears one zoom step later — `compact`
+  // shows both knobs — and the mini tile is the tier where "can I hear it at
+  // all" outranks "which way does the CV push".
   face: {
-    order: ['cvAmount', 'base'],
+    order: ['base', 'cvAmount'],
     // ONE page, and its header is the module: the gain LAW in eight characters,
     // which is also where "why does a negative amount invert the phase" comes
     // from. Membership is in FUNCTION order — the band reads left to right in
-    // the same order as the law printed above it — while `order` leads with
-    // cvAmount. That disagreement is the point of having both.
+    // the same order as the law printed above it, `base` then `cvAmount`.
     //
     // ⚠ The page id `gain` COLLIDES with the curated rear group id `gain`
     // below, and the collision is LOAD-BEARING: rear-card-model's page loop
