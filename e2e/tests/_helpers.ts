@@ -131,6 +131,136 @@ async function revealWorkflowNodes(page: Page, ids: string[]): Promise<void> {
     });
 }
 
+// ── THE MOUNT WAIT IS COUNTED IN FRAMES, NOT MILLISECONDS ───────────────────
+//
+// CLAUDE.md, verbatim: "NEVER express a renderer-dependent wait in
+// MILLISECONDS — count FRAMES … a wall-clock budget silently becomes a
+// DIFFERENT NUMBER OF FRAMES on every renderer, so it is not one assertion —
+// it is a different assertion per machine."
+//
+// This wait was 5000 ms flat, and the CI red it cost was
+// `hypercube: every declared output emits a measurable signal` timing out
+// INSIDE spawnPatch on shard 7/10 (run 30727526282) — first attempt AND
+// retry — while the same test passed locally under the SAME software renderer.
+//
+// MEASURED, one machine, real GPU vs `E2E_SWIFTSHADER=1`. The left pair is
+// what the old budget was denominated in; the right pair is what a mount
+// actually costs:
+//
+//     module      spawnPatch WALL CLOCK      FRAMES to mount
+//                   GPU / SwiftShader          GPU / SwiftShader
+//     hypercube    190 ms /  1437 ms  7.6×      5  /  4      ← WebGL2 tesseract
+//     b3ntb0x       62 ms /   371 ms  6.0×      4  /  4
+//     cube         161 ms /   423 ms  2.6×      4  /  4
+//     vca           66 ms /   247 ms  3.7×      4  /  3      ← plain DOM, control
+//
+// READ THE TWO COLUMNS AGAINST EACH OTHER — that is the whole argument, and it
+// is a NEGATIVE CONTROL ON THE INSTRUMENT rather than an appeal to the rule:
+// perturb the renderer and the wall clock moves 7.6×, while the frame count
+// does not move at all (3–5 everywhere). A mount is a FIXED, SMALL amount of
+// main-thread work; what the renderer changes is how long each of those frames
+// takes. Milliseconds were measuring the renderer. Frames measure the mount.
+//
+// So the old 5000 ms bought hypercube ~26× headroom on a developer GPU and
+// ~3.5× under SwiftShader — before CI's slower CPU and TEN parallel e2e
+// shards, which is where it ran out. (The 7.6× is the same SwiftShader tax
+// CLAUDE.md records for backdraft PURE TV. Not this module being special.)
+//
+// Playwright's `waitForFunction` polls on rAF, so counting invocations counts
+// FRAMES. 300 frames is ~5 s at 60 fps — byte-for-byte today's behaviour on a
+// healthy renderer, so nothing that passes now can start failing — and it is
+// 75× the measured 4-frame worst case, which is the headroom that survives
+// being carried onto a contended runner.
+//
+// WHY THIS IS NOT "BUMPING A TIMEOUT". The mount wait is a PRECONDITION of the
+// test, never its assertion — the assertion is "every declared output emits a
+// measurable signal". Its only failure mode is a false RED; no amount of
+// patience can turn a broken module green. On a passing run the wait ends the
+// instant the node mounts, so this costs ZERO CI wall-time. It only stops the
+// harness giving up early on a starved main thread.
+//
+// The wall-clock cap survives in exactly the role CLAUDE.md leaves it — "keep
+// a wall-clock cap only to BOUND THE FAILURE, never as the gate". Every caller
+// that already passes `mountTimeout` (15 s / 20 s / 30 s) keeps the cap it
+// chose.
+//
+// ⚠ NOT taken here, deliberately: `modules.spec.ts` still carries a private
+// hand-typed `HEAVY_RENDER` set naming six modules. hypercube — the slowest to
+// mount of everything measured above — was never on it, while `b3ntb0x` (4×
+// faster) was; and no other registry-driven sweep can even read the list,
+// which is why `per-module-per-port.spec.ts` auto-enrolled hypercube on the
+// bare default. That set is no longer load-bearing now the default is
+// frame-gated, but it is still a fact about modules living in one spec's
+// literal. Consolidating it is its own change.
+
+/** Frames of main-thread progress a node gets to appear in. ~5 s at 60 fps —
+ *  identical to the old wall-clock gate on a healthy renderer — and 75× the
+ *  measured 4-frame worst case (hypercube under SwiftShader). */
+export const MOUNT_FRAME_BUDGET = 300;
+
+/** Wall-clock cap. BOUNDS THE FAILURE so a wedged page cannot eat a whole
+ *  per-test budget; it is NOT the gate. Sized off the measurement above: a
+ *  mount is ~4 frames, so a page still unmounted after 30 s is wedged rather
+ *  than slow, and 30 s is ~7500× the work the wait is actually waiting on. */
+export const MOUNT_CAP_MS = 30_000;
+
+/**
+ * Wait until every `id` has a mounted SvelteFlow node wrapper, budgeted in
+ * RENDERED FRAMES with a wall-clock cap.
+ *
+ * Assert by node ID (SvelteFlow tags each wrapper with `data-id="<nodeId>"`)
+ * rather than a TOTAL-count equality: a synced rackspace auto-spawns the
+ * singleton TIMELORDE clock, and in the 2-context @collab flow that auto-spawn
+ * can land AFTER spawnPatch's clear+rebuild transact. A strict
+ * `=== nodes.length` saw `doom + timelorde` (2 ≠ 1) and timed out; waiting for
+ * the exact requested IDs is race-proof AND more precise — it verifies the
+ * nodes we asked for actually mounted, instead of trusting a count an
+ * auto-spawned node can spuriously satisfy.
+ *
+ * Exported so `spawn-mount-budget.spec.ts` can drive the policy under a
+ * deliberately starved main thread — the wait is the thing that was wrong, so
+ * the wait is the thing that gets a test.
+ */
+export async function waitForMounted(
+  page: Page,
+  ids: string[],
+  opts: { frames?: number; capMs?: number; selector?: (id: string) => string } = {},
+): Promise<void> {
+  const frames = opts.frames ?? MOUNT_FRAME_BUDGET;
+  const capMs = opts.capMs ?? MOUNT_CAP_MS;
+  // A fresh counter key per wait: the predicate is re-evaluated in the page on
+  // every rAF and has to accumulate ACROSS invocations, and two overlapping
+  // waits must not share a tally.
+  const key = `__mountFrames_${Math.random().toString(36).slice(2)}`;
+  try {
+    await page.waitForFunction(
+      ({ ids, frames, key }) => {
+        const w = globalThis as unknown as Record<string, number>;
+        w[key] = (w[key] ?? 0) + 1; // one tick per rAF = one FRAME
+        const missing = ids.filter(
+          (id) => document.querySelector(`.svelte-flow__node[data-id="${id}"]`) === null,
+        );
+        if (missing.length === 0) return true;
+        if (w[key]! >= frames) {
+          throw new Error(
+            `mount FRAME budget exhausted after ${w[key]} frames — not mounted: ` +
+              `${missing.join(', ')}`,
+          );
+        }
+        return false;
+      },
+      { ids, frames, key },
+      // `polling: 'raf'` is Playwright's default; stated explicitly because the
+      // frame COUNT above is only a frame count while it holds.
+      { timeout: capMs, polling: 'raf' },
+    );
+  } finally {
+    await page.evaluate((k) => {
+      delete (globalThis as unknown as Record<string, unknown>)[k];
+    }, key).catch(() => { /* context gone (HMR reload) — the retry loop owns it */ });
+  }
+}
+
 /**
  * Spawn a set of nodes + edges into the patch graph atomically.
  * Requires the dev-only window globals (Canvas exposes them under `import.meta.env.DEV`).
@@ -151,16 +281,14 @@ export async function spawnPatch(
   page: Page,
   nodes: SpawnNode[],
   edges: SpawnEdge[] = [],
-  /** Override the post-transact "node mounted in the DOM" wait. Defaults to
-   *  5000ms. WebGL-heavy cards (b3ntb0x's 8×-oversampled NTSC chain,
-   *  mandleblot's GPU fractal) FIRST-paint far slower on CI's SwiftShader
-   *  software renderer — even slower at 1024×768 (#662, 2.56× the pixels) —
-   *  so the generic 5s readiness wait isn't enough to mount them. Callers
-   *  iterating every module (modules.spec.ts) bump this for known-heavy types
-   *  whose deep render is covered by a dedicated heavy-lane spec. */
-  opts?: { mountTimeout?: number }
+  /** `mountTimeout` — the WALL-CLOCK CAP on the "node mounted in the DOM" wait.
+   *  It BOUNDS THE FAILURE; it is no longer the gate (see MOUNT_FRAME_BUDGET).
+   *  Callers that already pass a bigger number keep exactly the cap they chose.
+   *  `mountFrames` overrides the frame gate itself. */
+  opts?: { mountTimeout?: number; mountFrames?: number }
 ): Promise<void> {
-  const mountTimeout = opts?.mountTimeout ?? 5000;
+  const mountCapMs = opts?.mountTimeout ?? MOUNT_CAP_MS;
+  const mountFrames = opts?.mountFrames ?? MOUNT_FRAME_BUDGET;
   const MAX_ATTEMPTS = 3;
   let lastErr: unknown = null;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
@@ -227,12 +355,10 @@ export async function spawnPatch(
       // out. Waiting for the exact requested IDs is both race-proof AND more
       // precise — it verifies the nodes we asked for actually mounted, instead
       // of trusting a count that an auto-spawned node can spuriously satisfy.
-      await page.waitForFunction(
-        (ids) =>
-          ids.every((id) => document.querySelector(`.svelte-flow__node[data-id="${id}"]`) !== null),
-        nodes.map((n) => n.id),
-        { timeout: mountTimeout }
-      );
+      await waitForMounted(page, nodes.map((n) => n.id), {
+        frames: mountFrames,
+        capMs: mountCapMs,
+      });
 
       // WORKFLOW mode: the default viewport frames the far-down pinned lanes +
       // video zone (large flow-Y), so a card injected DIRECTLY at a small-Y

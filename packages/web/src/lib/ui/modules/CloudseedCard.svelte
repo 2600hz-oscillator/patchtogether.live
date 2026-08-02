@@ -21,103 +21,75 @@
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import OssAttribution from '$lib/ui/modules/OssAttribution.svelte';
-  import { setNodeParam, mutateNode } from '$lib/graph/mutate';
+  import { setNodeParam } from '$lib/graph/mutate';
   import {
     cloudseedDef,
     CLOUDSEED_PRESETS,
     formatParameter,
     CloudseedParam,
   } from '$lib/audio/modules/cloudseed';
-  import type { ModuleNode } from '$lib/graph/types';
+  import {
+    applyCloudseedPreset,
+    clearCloudseedTail,
+  } from '$lib/ui/modules/cloudseed-preset-actions';
+  import { flushShellParamWrites } from '$lib/ui/workflow/shell-param-writes';
+  import type { ModuleNode, ParamDef } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
   import { cardParams, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
-  const { paramVal, set, live } = cardParams(cloudseedDef, () => id, () => node);
+  const { paramVal, set, live, engineCtx } = cardParams(cloudseedDef, () => id, () => node);
+
+  // RANGE / DEFAULT / CURVE come from the DEF — never re-typed here.
+  //
+  // ⚠ THIS CARD USED TO HAND-TYPE 29 OF THEM (`min={0} max={1}
+  // defaultValue={0.63} curve="linear"` ×29). They all AGREED with the def, so
+  // nothing was broken — but that is the whole shape of the backdraft class:
+  // contract-lock, module-docs-lint and every range assertion read only the
+  // DEF, so ONE `defaultValue` edit on the def side and the card silently
+  // disagrees with no gate able to see it. The PR that landed the face deleted
+  // the 45-case `cppIdToParamId` switch citing exactly this reasoning and left
+  // these 29 in the same file.
+  const P = (pid: string): ParamDef => {
+    const p = cloudseedDef.params.find((q) => q.id === pid);
+    if (!p) throw new Error(`CloudseedCard: no ParamDef '${pid}' on cloudseedDef`);
+    return p;
+  };
+  const pmin = (pid: string): number => P(pid).min;
+  const pmax = (pid: string): number => P(pid).max;
+  const pdef = (pid: string): number => P(pid).defaultValue;
+  const pcurve = (pid: string): ParamDef['curve'] => P(pid).curve;
 
   function toggle(k: string): void {
     setNodeParam(id, k, paramVal(k) >= 0.5 ? 0 : 1);
   }
 
-  // Preset footer plumbing — applyPreset writes all preset values into the
-  // patch graph (engine factory pushes them through to the worklet via
-  // setParam). The preset_index param is the one piece of multiplayer
-  // state that drives the footer's selected-slot rendering.
+  // Preset footer plumbing. The recall itself lives in
+  // `cloudseed-preset-actions` so THIS card and the curated face's PRESET cell
+  // run the identical stamp — the card used to carry its own 45-case cppId
+  // switch, and the shell's `preset_index` write used to push the preset into
+  // the worklet WITHOUT touching the store (the sound changed, the saved rack
+  // did not). The preset_index param is the one piece of multiplayer state
+  // that drives the footer's selected-slot rendering.
   let presetIndex = $derived(Math.round(paramVal('preset_index')) | 0);
   function applyPreset(slot: number): void {
-    const idx = Math.max(0, Math.min(CLOUDSEED_PRESETS.length - 1, slot));
-    const preset = CLOUDSEED_PRESETS[idx];
-    if (!preset) return;
-    // Apply the whole preset as ONE undoable transaction (multi-field user edit).
-    mutateNode(id, (live) => {
-      // Map C++ cppId → our string id, then write into the live node params.
-      for (const [cppIdStr, v] of Object.entries(preset.values)) {
-        const cppId = Number(cppIdStr);
-        const def = cloudseedDef.params.find((p) => {
-          // Find the param whose default index matches the cppId, by name.
-          // Macro AudioParams use string names that don't directly include
-          // the cppId; the message-port params do (see CLOUDSEED_MESSAGE_PARAMS).
-          // For correctness we look up by name → cppId mapping table.
-          return cppIdToParamId(cppId) === p.id;
-        });
-        if (!def) continue;
-        live.params[def.id] = v; // guard:allow-raw-write — in-place write on the live node INSIDE mutateNode's origin-tagged transact (the sanctioned multi-field seam), not a bare store write
-      }
-      live.params.preset_index = idx;
-    });
+    // ⚠ DRAIN THE DOCK'S STORM GUARD FIRST — the ONE ordering hazard of having
+    // two surfaces on one macro param. The face's PRESET cell commits through
+    // `createSettleCommit` (an 80 ms quiet window); this footer commits
+    // IMMEDIATELY. Pick a slot in the dock and then a different one here inside
+    // that window and the guard's timer fires LAST, silently reverting the
+    // footer's pick. Flushing turns "last write wins by timer" into "last write
+    // wins by the order the user did them", which is the only correct answer —
+    // and gives the seam a production caller rather than a documented one.
+    flushShellParamWrites();
+    applyCloudseedPreset(id, Math.max(0, Math.min(CLOUDSEED_PRESETS.length - 1, slot)));
   }
 
-  // C++ cppId → string-id mapping. Macros first, then message-port params.
-  function cppIdToParamId(cppId: number): string | null {
-    switch (cppId) {
-      case CloudseedParam.DryOut:    return 'dry_out';
-      case CloudseedParam.EarlyOut:  return 'early_out';
-      case CloudseedParam.LateOut:   return 'late_out';
-      case CloudseedParam.InputMix:  return 'input_mix';
-      case CloudseedParam.LowCut:    return 'low_cut';
-      case CloudseedParam.HighCut:   return 'high_cut';
-      case CloudseedParam.EqCrossSeed: return 'cross_seed';
-      case CloudseedParam.Interpolation:         return 'interpolation';
-      case CloudseedParam.LowCutEnabled:         return 'low_cut_enabled';
-      case CloudseedParam.HighCutEnabled:        return 'high_cut_enabled';
-      case CloudseedParam.TapEnabled:            return 'tap_enabled';
-      case CloudseedParam.TapCount:              return 'tap_count';
-      case CloudseedParam.TapDecay:              return 'tap_decay';
-      case CloudseedParam.TapPredelay:           return 'tap_predelay';
-      case CloudseedParam.TapLength:             return 'tap_length';
-      case CloudseedParam.EarlyDiffuseEnabled:   return 'early_diffuse_enabled';
-      case CloudseedParam.EarlyDiffuseCount:     return 'early_diffuse_count';
-      case CloudseedParam.EarlyDiffuseDelay:     return 'early_diffuse_delay';
-      case CloudseedParam.EarlyDiffuseModAmount: return 'early_diffuse_mod_amt';
-      case CloudseedParam.EarlyDiffuseFeedback:  return 'early_diffuse_feedback';
-      case CloudseedParam.EarlyDiffuseModRate:   return 'early_diffuse_mod_rate';
-      case CloudseedParam.LateMode:              return 'late_mode';
-      case CloudseedParam.LateLineCount:         return 'late_line_count';
-      case CloudseedParam.LateDiffuseEnabled:    return 'late_diffuse_enabled';
-      case CloudseedParam.LateDiffuseCount:      return 'late_diffuse_count';
-      case CloudseedParam.LateLineSize:          return 'late_line_size';
-      case CloudseedParam.LateLineModAmount:     return 'late_line_mod_amt';
-      case CloudseedParam.LateDiffuseDelay:      return 'late_diffuse_delay';
-      case CloudseedParam.LateDiffuseModAmount:  return 'late_diffuse_mod_amt';
-      case CloudseedParam.LateLineDecay:         return 'late_line_decay';
-      case CloudseedParam.LateLineModRate:       return 'late_line_mod_rate';
-      case CloudseedParam.LateDiffuseFeedback:   return 'late_diffuse_feedback';
-      case CloudseedParam.LateDiffuseModRate:    return 'late_diffuse_mod_rate';
-      case CloudseedParam.EqLowShelfEnabled:     return 'eq_low_shelf_enabled';
-      case CloudseedParam.EqHighShelfEnabled:    return 'eq_high_shelf_enabled';
-      case CloudseedParam.EqLowpassEnabled:      return 'eq_lowpass_enabled';
-      case CloudseedParam.EqLowFreq:             return 'eq_low_freq';
-      case CloudseedParam.EqHighFreq:            return 'eq_high_freq';
-      case CloudseedParam.EqCutoff:              return 'eq_cutoff';
-      case CloudseedParam.EqLowGain:             return 'eq_low_gain';
-      case CloudseedParam.EqHighGain:            return 'eq_high_gain';
-      case CloudseedParam.SeedTap:               return 'seed_tap';
-      case CloudseedParam.SeedDiffusion:         return 'seed_diffusion';
-      case CloudseedParam.SeedDelay:             return 'seed_delay';
-      case CloudseedParam.SeedPostDiffusion:     return 'seed_post_diffusion';
-    }
-    return null;
+  /** CLEAR TAIL — flush the tank. Not a param: nothing is stored, and there is
+   *  nothing to undo. No-op before the audio engine boots. */
+  function clearTail(): void {
+    clearCloudseedTail({ engine: engineCtx.get(), node });
   }
 
   // Live DECAY readout in the footer — driven by LateLineDecay.
@@ -164,10 +136,10 @@
           <button type="button" class="pill" class:on={tapOn} data-testid="cs-tap-enabled" onclick={() => toggle('tap_enabled')}>{tapOn ? 'ON' : 'OFF'}</button>
         </header>
         <div class="knob-grid">
-          <Knob value={paramVal('tap_count')}    min={0} max={1} defaultValue={0.2}  label="Count"     curve="linear" onchange={set('tap_count')} moduleId={id} paramId="tap_count"    readLive={live('tap_count')} />
-          <Knob value={paramVal('tap_decay')}    min={0} max={1} defaultValue={1}    label="Decay"     curve="linear" onchange={set('tap_decay')} moduleId={id} paramId="tap_decay"    readLive={live('tap_decay')} />
-          <Knob value={paramVal('tap_predelay')} min={0} max={1} defaultValue={0}    label="Pre-Delay" curve="linear" onchange={set('tap_predelay')} moduleId={id} paramId="tap_predelay" readLive={live('tap_predelay')} />
-          <Knob value={paramVal('tap_length')}   min={0} max={1} defaultValue={0.98} label="Length"    curve="linear" onchange={set('tap_length')} moduleId={id} paramId="tap_length"   readLive={live('tap_length')} />
+          <Knob value={paramVal('tap_count')}    min={pmin('tap_count')} max={pmax('tap_count')} defaultValue={pdef('tap_count')}  label="Count"     curve={pcurve('tap_count')} onchange={set('tap_count')} moduleId={id} paramId="tap_count"    readLive={live('tap_count')} />
+          <Knob value={paramVal('tap_decay')}    min={pmin('tap_decay')} max={pmax('tap_decay')} defaultValue={pdef('tap_decay')}    label="Decay"     curve={pcurve('tap_decay')} onchange={set('tap_decay')} moduleId={id} paramId="tap_decay"    readLive={live('tap_decay')} />
+          <Knob value={paramVal('tap_predelay')} min={pmin('tap_predelay')} max={pmax('tap_predelay')} defaultValue={pdef('tap_predelay')}    label="Pre-Delay" curve={pcurve('tap_predelay')} onchange={set('tap_predelay')} moduleId={id} paramId="tap_predelay" readLive={live('tap_predelay')} />
+          <Knob value={paramVal('tap_length')}   min={pmin('tap_length')} max={pmax('tap_length')} defaultValue={pdef('tap_length')} label="Length"    curve={pcurve('tap_length')} onchange={set('tap_length')} moduleId={id} paramId="tap_length"   readLive={live('tap_length')} />
         </div>
       </section>
 
@@ -179,11 +151,11 @@
           <button type="button" class="pill" class:on={earlyDiffOn} data-testid="cs-diff-enabled" onclick={() => toggle('early_diffuse_enabled')}>{earlyDiffOn ? 'ON' : 'OFF'}</button>
         </header>
         <div class="knob-grid">
-          <Knob value={paramVal('early_diffuse_delay')}    min={0} max={1} defaultValue={0.3}  label="Delay"    curve="linear" onchange={set('early_diffuse_delay')} moduleId={id} paramId="early_diffuse_delay"    readLive={live('early_diffuse_delay')} />
-          <Knob value={paramVal('early_diffuse_mod_amt')}  min={0} max={1} defaultValue={0.14} label="Mod Amt"  curve="linear" onchange={set('early_diffuse_mod_amt')} moduleId={id} paramId="early_diffuse_mod_amt"  readLive={live('early_diffuse_mod_amt')} />
-          <Knob value={paramVal('early_diffuse_feedback')} min={0} max={1} defaultValue={0.77} label="Feedback" curve="linear" onchange={set('early_diffuse_feedback')} moduleId={id} paramId="early_diffuse_feedback" readLive={live('early_diffuse_feedback')} />
-          <Knob value={paramVal('early_diffuse_mod_rate')} min={0} max={1} defaultValue={0.25} label="Mod Rate" curve="linear" onchange={set('early_diffuse_mod_rate')} moduleId={id} paramId="early_diffuse_mod_rate" readLive={live('early_diffuse_mod_rate')} />
-          <Knob value={paramVal('early_diffuse_count')}    min={0} max={1} defaultValue={0.3}  label="Stages"   curve="linear" onchange={set('early_diffuse_count')} moduleId={id} paramId="early_diffuse_count"    readLive={live('early_diffuse_count')} />
+          <Knob value={paramVal('early_diffuse_delay')}    min={pmin('early_diffuse_delay')} max={pmax('early_diffuse_delay')} defaultValue={pdef('early_diffuse_delay')}  label="Delay"    curve={pcurve('early_diffuse_delay')} onchange={set('early_diffuse_delay')} moduleId={id} paramId="early_diffuse_delay"    readLive={live('early_diffuse_delay')} />
+          <Knob value={paramVal('early_diffuse_mod_amt')}  min={pmin('early_diffuse_mod_amt')} max={pmax('early_diffuse_mod_amt')} defaultValue={pdef('early_diffuse_mod_amt')} label="Mod Amt"  curve={pcurve('early_diffuse_mod_amt')} onchange={set('early_diffuse_mod_amt')} moduleId={id} paramId="early_diffuse_mod_amt"  readLive={live('early_diffuse_mod_amt')} />
+          <Knob value={paramVal('early_diffuse_feedback')} min={pmin('early_diffuse_feedback')} max={pmax('early_diffuse_feedback')} defaultValue={pdef('early_diffuse_feedback')} label="Feedback" curve={pcurve('early_diffuse_feedback')} onchange={set('early_diffuse_feedback')} moduleId={id} paramId="early_diffuse_feedback" readLive={live('early_diffuse_feedback')} />
+          <Knob value={paramVal('early_diffuse_mod_rate')} min={pmin('early_diffuse_mod_rate')} max={pmax('early_diffuse_mod_rate')} defaultValue={pdef('early_diffuse_mod_rate')} label="Mod Rate" curve={pcurve('early_diffuse_mod_rate')} onchange={set('early_diffuse_mod_rate')} moduleId={id} paramId="early_diffuse_mod_rate" readLive={live('early_diffuse_mod_rate')} />
+          <Knob value={paramVal('early_diffuse_count')}    min={pmin('early_diffuse_count')} max={pmax('early_diffuse_count')} defaultValue={pdef('early_diffuse_count')}  label="Stages"   curve={pcurve('early_diffuse_count')} onchange={set('early_diffuse_count')} moduleId={id} paramId="early_diffuse_count"    readLive={live('early_diffuse_count')} />
         </div>
       </section>
 
@@ -197,14 +169,14 @@
           <span class="num-readout" data-testid="cs-late-diff-count">{lateDiffCountLabel}</span>
         </header>
         <div class="knob-grid wide">
-          <Knob value={paramVal('late_line_size')}        min={0} max={1} defaultValue={0.47} label="Size"      curve="linear" onchange={set('late_line_size')} moduleId={id} paramId="late_line_size"        readLive={live('late_line_size')} />
-          <Knob value={paramVal('late_line_mod_amt')}     min={0} max={1} defaultValue={0.27} label="Mod Amt"   curve="linear" onchange={set('late_line_mod_amt')} moduleId={id} paramId="late_line_mod_amt"     readLive={live('late_line_mod_amt')} />
-          <Knob value={paramVal('late_line_mod_rate')}    min={0} max={1} defaultValue={0.23} label="Mod Rate"  curve="linear" onchange={set('late_line_mod_rate')} moduleId={id} paramId="late_line_mod_rate"    readLive={live('late_line_mod_rate')} />
-          <Knob value={paramVal('late_line_decay')}       min={0} max={1} defaultValue={0.63} label="Decay"     curve="linear" onchange={set('late_line_decay')} moduleId={id} paramId="late_line_decay"       readLive={live('late_line_decay')} />
-          <Knob value={paramVal('late_diffuse_delay')}    min={0} max={1} defaultValue={0.24} label="Diff Dly"  curve="linear" onchange={set('late_diffuse_delay')} moduleId={id} paramId="late_diffuse_delay"    readLive={live('late_diffuse_delay')} />
-          <Knob value={paramVal('late_diffuse_mod_amt')}  min={0} max={1} defaultValue={0.15} label="DMod Amt"  curve="linear" onchange={set('late_diffuse_mod_amt')} moduleId={id} paramId="late_diffuse_mod_amt"  readLive={live('late_diffuse_mod_amt')} />
-          <Knob value={paramVal('late_diffuse_feedback')} min={0} max={1} defaultValue={0.85} label="DFeedback" curve="linear" onchange={set('late_diffuse_feedback')} moduleId={id} paramId="late_diffuse_feedback" readLive={live('late_diffuse_feedback')} />
-          <Knob value={paramVal('late_diffuse_mod_rate')} min={0} max={1} defaultValue={0.17} label="DMod Rate" curve="linear" onchange={set('late_diffuse_mod_rate')} moduleId={id} paramId="late_diffuse_mod_rate" readLive={live('late_diffuse_mod_rate')} />
+          <Knob value={paramVal('late_line_size')}        min={pmin('late_line_size')} max={pmax('late_line_size')} defaultValue={pdef('late_line_size')} label="Size"      curve={pcurve('late_line_size')} onchange={set('late_line_size')} moduleId={id} paramId="late_line_size"        readLive={live('late_line_size')} />
+          <Knob value={paramVal('late_line_mod_amt')}     min={pmin('late_line_mod_amt')} max={pmax('late_line_mod_amt')} defaultValue={pdef('late_line_mod_amt')} label="Mod Amt"   curve={pcurve('late_line_mod_amt')} onchange={set('late_line_mod_amt')} moduleId={id} paramId="late_line_mod_amt"     readLive={live('late_line_mod_amt')} />
+          <Knob value={paramVal('late_line_mod_rate')}    min={pmin('late_line_mod_rate')} max={pmax('late_line_mod_rate')} defaultValue={pdef('late_line_mod_rate')} label="Mod Rate"  curve={pcurve('late_line_mod_rate')} onchange={set('late_line_mod_rate')} moduleId={id} paramId="late_line_mod_rate"    readLive={live('late_line_mod_rate')} />
+          <Knob value={paramVal('late_line_decay')}       min={pmin('late_line_decay')} max={pmax('late_line_decay')} defaultValue={pdef('late_line_decay')} label="Decay"     curve={pcurve('late_line_decay')} onchange={set('late_line_decay')} moduleId={id} paramId="late_line_decay"       readLive={live('late_line_decay')} />
+          <Knob value={paramVal('late_diffuse_delay')}    min={pmin('late_diffuse_delay')} max={pmax('late_diffuse_delay')} defaultValue={pdef('late_diffuse_delay')} label="Diff Dly"  curve={pcurve('late_diffuse_delay')} onchange={set('late_diffuse_delay')} moduleId={id} paramId="late_diffuse_delay"    readLive={live('late_diffuse_delay')} />
+          <Knob value={paramVal('late_diffuse_mod_amt')}  min={pmin('late_diffuse_mod_amt')} max={pmax('late_diffuse_mod_amt')} defaultValue={pdef('late_diffuse_mod_amt')} label="DMod Amt"  curve={pcurve('late_diffuse_mod_amt')} onchange={set('late_diffuse_mod_amt')} moduleId={id} paramId="late_diffuse_mod_amt"  readLive={live('late_diffuse_mod_amt')} />
+          <Knob value={paramVal('late_diffuse_feedback')} min={pmin('late_diffuse_feedback')} max={pmax('late_diffuse_feedback')} defaultValue={pdef('late_diffuse_feedback')} label="DFeedback" curve={pcurve('late_diffuse_feedback')} onchange={set('late_diffuse_feedback')} moduleId={id} paramId="late_diffuse_feedback" readLive={live('late_diffuse_feedback')} />
+          <Knob value={paramVal('late_diffuse_mod_rate')} min={pmin('late_diffuse_mod_rate')} max={pmax('late_diffuse_mod_rate')} defaultValue={pdef('late_diffuse_mod_rate')} label="DMod Rate" curve={pcurve('late_diffuse_mod_rate')} onchange={set('late_diffuse_mod_rate')} moduleId={id} paramId="late_diffuse_mod_rate" readLive={live('late_diffuse_mod_rate')} />
         </div>
       </section>
 
@@ -217,11 +189,11 @@
           <button type="button" class="pill" class:on={eqLp}   data-testid="cs-eq-lp"   onclick={() => toggle('eq_lowpass_enabled')}>{eqLp ? 'LP' : 'OFF'}</button>
         </header>
         <div class="knob-grid">
-          <Knob value={paramVal('eq_low_freq')}  min={0} max={1} defaultValue={0.39} label="Lo Freq" curve="linear" onchange={set('eq_low_freq')} moduleId={id} paramId="eq_low_freq"  readLive={live('eq_low_freq')} />
-          <Knob value={paramVal('eq_high_freq')} min={0} max={1} defaultValue={0.51} label="Hi Freq" curve="linear" onchange={set('eq_high_freq')} moduleId={id} paramId="eq_high_freq" readLive={live('eq_high_freq')} />
-          <Knob value={paramVal('eq_cutoff')}    min={0} max={1} defaultValue={0.97} label="Cutoff"  curve="linear" onchange={set('eq_cutoff')} moduleId={id} paramId="eq_cutoff"    readLive={live('eq_cutoff')} />
-          <Knob value={paramVal('eq_low_gain')}  min={0} max={1} defaultValue={0.56} label="Lo Gain" curve="linear" onchange={set('eq_low_gain')} moduleId={id} paramId="eq_low_gain"  readLive={live('eq_low_gain')} />
-          <Knob value={paramVal('eq_high_gain')} min={0} max={1} defaultValue={0.77} label="Hi Gain" curve="linear" onchange={set('eq_high_gain')} moduleId={id} paramId="eq_high_gain" readLive={live('eq_high_gain')} />
+          <Knob value={paramVal('eq_low_freq')}  min={pmin('eq_low_freq')} max={pmax('eq_low_freq')} defaultValue={pdef('eq_low_freq')} label="Lo Freq" curve={pcurve('eq_low_freq')} onchange={set('eq_low_freq')} moduleId={id} paramId="eq_low_freq"  readLive={live('eq_low_freq')} />
+          <Knob value={paramVal('eq_high_freq')} min={pmin('eq_high_freq')} max={pmax('eq_high_freq')} defaultValue={pdef('eq_high_freq')} label="Hi Freq" curve={pcurve('eq_high_freq')} onchange={set('eq_high_freq')} moduleId={id} paramId="eq_high_freq" readLive={live('eq_high_freq')} />
+          <Knob value={paramVal('eq_cutoff')}    min={pmin('eq_cutoff')} max={pmax('eq_cutoff')} defaultValue={pdef('eq_cutoff')} label="Cutoff"  curve={pcurve('eq_cutoff')} onchange={set('eq_cutoff')} moduleId={id} paramId="eq_cutoff"    readLive={live('eq_cutoff')} />
+          <Knob value={paramVal('eq_low_gain')}  min={pmin('eq_low_gain')} max={pmax('eq_low_gain')} defaultValue={pdef('eq_low_gain')} label="Lo Gain" curve={pcurve('eq_low_gain')} onchange={set('eq_low_gain')} moduleId={id} paramId="eq_low_gain"  readLive={live('eq_low_gain')} />
+          <Knob value={paramVal('eq_high_gain')} min={pmin('eq_high_gain')} max={pmax('eq_high_gain')} defaultValue={pdef('eq_high_gain')} label="Hi Gain" curve={pcurve('eq_high_gain')} onchange={set('eq_high_gain')} moduleId={id} paramId="eq_high_gain" readLive={live('eq_high_gain')} />
         </div>
       </section>
 
@@ -229,9 +201,9 @@
       <section class="panel bottom" data-testid="cs-panel-out">
         <div class="bottom-grid">
           <div class="bottom-faders">
-            <Fader value={paramVal('dry_out')}   min={0} max={1} defaultValue={0.87} label="Dry"   curve="linear" onchange={set('dry_out')} moduleId={id} paramId="dry_out"   readLive={live('dry_out')} />
-            <Fader value={paramVal('early_out')} min={0} max={1} defaultValue={0}    label="Early" curve="linear" onchange={set('early_out')} moduleId={id} paramId="early_out" readLive={live('early_out')} />
-            <Fader value={paramVal('late_out')}  min={0} max={1} defaultValue={0.66} label="Late"  curve="linear" onchange={set('late_out')} moduleId={id} paramId="late_out"  readLive={live('late_out')} />
+            <Fader value={paramVal('dry_out')}   min={pmin('dry_out')} max={pmax('dry_out')} defaultValue={pdef('dry_out')} label="Dry"   curve={pcurve('dry_out')} onchange={set('dry_out')} moduleId={id} paramId="dry_out"   readLive={live('dry_out')} />
+            <Fader value={paramVal('early_out')} min={pmin('early_out')} max={pmax('early_out')} defaultValue={pdef('early_out')}    label="Early" curve={pcurve('early_out')} onchange={set('early_out')} moduleId={id} paramId="early_out" readLive={live('early_out')} />
+            <Fader value={paramVal('late_out')}  min={pmin('late_out')} max={pmax('late_out')} defaultValue={pdef('late_out')} label="Late"  curve={pcurve('late_out')} onchange={set('late_out')} moduleId={id} paramId="late_out"  readLive={live('late_out')} />
           </div>
           <div class="bottom-utility">
             <div class="util-toggles">
@@ -239,10 +211,10 @@
               <button type="button" class="pill" class:on={highCutOn} data-testid="cs-hic-enabled" onclick={() => toggle('high_cut_enabled')}>{highCutOn ? 'ON' : 'OFF'}</button>
             </div>
             <div class="util-knobs">
-              <Knob value={paramVal('input_mix')}  min={0} max={1} defaultValue={0.23} label="In Mix"   curve="linear" onchange={set('input_mix')} moduleId={id} paramId="input_mix"  readLive={live('input_mix')} />
-              <Knob value={paramVal('high_cut')}   min={0} max={1} defaultValue={0.29} label="Hi Cut"   curve="linear" onchange={set('high_cut')} moduleId={id} paramId="high_cut"   readLive={live('high_cut')} />
-              <Knob value={paramVal('low_cut')}    min={0} max={1} defaultValue={0.64} label="Lo Cut"   curve="linear" onchange={set('low_cut')} moduleId={id} paramId="low_cut"    readLive={live('low_cut')} />
-              <Knob value={paramVal('cross_seed')} min={0} max={1} defaultValue={0}    label="X-Seed"   curve="linear" onchange={set('cross_seed')} moduleId={id} paramId="cross_seed" readLive={live('cross_seed')} />
+              <Knob value={paramVal('input_mix')}  min={pmin('input_mix')} max={pmax('input_mix')} defaultValue={pdef('input_mix')} label="In Mix"   curve={pcurve('input_mix')} onchange={set('input_mix')} moduleId={id} paramId="input_mix"  readLive={live('input_mix')} />
+              <Knob value={paramVal('high_cut')}   min={pmin('high_cut')} max={pmax('high_cut')} defaultValue={pdef('high_cut')} label="Hi Cut"   curve={pcurve('high_cut')} onchange={set('high_cut')} moduleId={id} paramId="high_cut"   readLive={live('high_cut')} />
+              <Knob value={paramVal('low_cut')}    min={pmin('low_cut')} max={pmax('low_cut')} defaultValue={pdef('low_cut')} label="Lo Cut"   curve={pcurve('low_cut')} onchange={set('low_cut')} moduleId={id} paramId="low_cut"    readLive={live('low_cut')} />
+              <Knob value={paramVal('cross_seed')} min={pmin('cross_seed')} max={pmax('cross_seed')} defaultValue={pdef('cross_seed')}    label="X-Seed"   curve={pcurve('cross_seed')} onchange={set('cross_seed')} moduleId={id} paramId="cross_seed" readLive={live('cross_seed')} />
             </div>
           </div>
         </div>
@@ -266,6 +238,16 @@
         <span class="preset-name" data-testid="cs-preset-name">{CLOUDSEED_PRESETS[presetIndex]?.name ?? '—'}</span>
         <button type="button" class="arrow" data-testid="cs-preset-next" onclick={nextPreset}>›</button>
         <span class="decay-readout" data-testid="cs-decay-readout">{decayLabel}</span>
+        <!-- CLEAR TAIL (controlFamily 'cloudseed-clear'): flushes every delay
+             line / diffuser / shelf / lowpass in the tank. The worklet has
+             always handled `clearBuffers`; nothing had ever sent it. -->
+        <button
+          type="button"
+          class="pill clear"
+          data-testid={`cs-clear-tail-${id}-1`}
+          title="Clear tail — flush the reverb tank (nothing is stored; not undoable)"
+          onclick={clearTail}
+        >CLEAR</button>
       </footer>
     </div>
   </PatchPanel>
@@ -414,5 +396,9 @@
   .decay-readout {
     color: var(--accent, #5da9d6);
     font-weight: 600;
+  }
+  .pill.clear {
+    margin-left: 6px;
+    flex: none;
   }
 </style>

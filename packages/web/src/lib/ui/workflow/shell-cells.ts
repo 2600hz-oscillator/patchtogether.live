@@ -47,6 +47,7 @@ import {
   sixstrumPresetName,
   sixstrumSelectorOptions,
 } from '$lib/ui/modules/sixstrum-preset-actions';
+import { clearCloudseedTail } from '$lib/ui/modules/cloudseed-preset-actions';
 import { fireKickdrumStrike } from '$lib/ui/modules/kickdrum-strike-actions';
 import { fireSnaredrumHit, setSnaredrumRoll } from '$lib/ui/modules/snaredrum-strike-actions';
 
@@ -61,15 +62,31 @@ export interface ShellSelectorCell {
 }
 
 /**
+ * What a cell's action can reach BESIDES the graph. The graph is always
+ * reachable from a nodeId alone; the live PatchEngine is not, because it rides
+ * a Svelte context the shell owns and this registry is plain TypeScript.
+ *
+ * `engine` is typed STRUCTURALLY (just the `write` seam) so shell-cells never
+ * pulls the whole PatchEngine import chain — the same discipline the file
+ * header's circular-import note is about.
+ */
+export interface ShellCellEnv {
+  engine: { write(node: ModuleNode, key: string, value: unknown): void } | null;
+  /** The LIVE node (Y.Doc entry), or undefined before it resolves. */
+  node: ModuleNode | undefined;
+}
+
+/**
  * An ACTION button, in one of the TWO shapes the repo's own port vocabulary
  * already distinguishes ($lib/audio/gate-trigger `EdgeSemantic`):
  *
  *   mode 'trigger' (the default) — a one-shot. Fires `onFire` ONCE on the press
- *     edge and ignores the release. dx7's loader, kickdrum's STRIKE.
- *   mode 'gate' — a MOMENTARY pad. Fires `onGate(nodeId, true)` on press and
- *     `onGate(nodeId, false)` on release, so a HELD action (snaredrum's ROLL
- *     audition, which runs the two-hand engine only while the level is high)
- *     has a representation at all.
+ *     edge and ignores the release. dx7's loader, kickdrum's STRIKE,
+ *     cloudseed's engine gestures.
+ *   mode 'gate' — a MOMENTARY pad. Fires `onGate(nodeId, true, env)` on press
+ *     and `onGate(nodeId, false, env)` on release, so a HELD action
+ *     (snaredrum's ROLL audition, which runs the two-hand engine only while the
+ *     level is high) has a representation at all.
  *
  * The two shapes are NOT interchangeable and the module must pick the one its
  * seam actually is: a gate consumer driven by a click would open and never
@@ -80,6 +97,11 @@ export interface ShellSelectorCell {
  * carries `momentary` + `onGate` + `aria-pressed` (the `face.momentary`
  * press-pad path uses them) — so this is a new DECLARATION, not a new control,
  * and faces-parity's closed `data-cell-control` union is untouched.
+ *
+ * BOTH handlers take the same `env` as the one-shot: an action's press
+ * semantics and what it can REACH are orthogonal, and a held gesture that
+ * needed the engine handle would otherwise be the one shape that could not
+ * have it.
  */
 export interface ShellActionCell {
   kind: 'action';
@@ -87,10 +109,13 @@ export interface ShellActionCell {
   title?: string;
   /** Press semantics. Omitted = 'trigger' (the one-shot shape). */
   mode?: 'trigger' | 'gate';
-  /** Required for mode 'trigger'. Fired once on the press edge. */
-  onFire?: (nodeId: string) => void;
+  /** Required for mode 'trigger'. Fired once on the press edge. `env` carries
+   *  the engine handle for actions that are ENGINE gestures rather than graph
+   *  edits (a buffer flush, a re-seed) — a nodeId alone can only reach the
+   *  store. */
+  onFire?: (nodeId: string, env: ShellCellEnv) => void;
   /** Required for mode 'gate'. Fired true on press, false on release. */
-  onGate?: (nodeId: string, high: boolean) => void;
+  onGate?: (nodeId: string, high: boolean, env: ShellCellEnv) => void;
 }
 
 /** A FILE-import button: opens a picker, hands the chosen file to `onFile`,
@@ -238,6 +263,21 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
         action: 'drag',
         effect: { kind: 'data-rev', key: 'voiceRev' },
       },
+    },
+  },
+  cloudseed: {
+    // CLEAR TAIL — the one gesture this reverb has that is not a value. It
+    // flushes every delay line, diffuser, shelf and lowpass in the tank
+    // (`clearBuffers`, which the worklet has always handled and the host had
+    // never sent), so a ~60 s tail stops on the spot without touching a single
+    // setting. Nothing is stored and nothing is undoable: it is the engine's
+    // state that moves, not the patch's — which is exactly why it is a control
+    // FAMILY rather than a 47th ParamDef.
+    'cloudseed-clear-{n}': {
+      kind: 'action',
+      label: 'Clear tail',
+      title: 'Flush the reverb tank — stops the tail instantly (changes no setting; not undoable)',
+      onFire: (_nodeId, env) => clearCloudseedTail(env),
     },
   },
   kickdrum: {
