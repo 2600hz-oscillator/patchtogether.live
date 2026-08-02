@@ -315,8 +315,14 @@ describe('vrt-meta — STRICT_VRT_MODULES RATCHET (only grows)', () => {
  * see the note in vrt-exemptions.ts). Found by the both-directions assertion
  * below the moment the entries went: under a bare `<=` ceiling this cleanup
  * would have left 10 counts of slack and said nothing.
+ *
+ * 94 → 92 (2026-08-02, the snaredrum face PR): `linux/face-snaredrum-compact`
+ * and `linux/face-snaredrum-dock` drained so a `vrt-update.yml -f
+ * platform=linux` dispatch on that branch could capture them (a listed pair is
+ * skipped unconditionally, and a skipped test writes no snapshot). Drain and
+ * re-capture in the SAME PR — a drain without its dispatch ships a red lane.
  */
-const SHARED_LINUX_PAIR_CEILING = 94;
+const SHARED_LINUX_PAIR_CEILING = 92;
 
 describe('vrt-meta — EXEMPT_BASELINE_PAIRS size RATCHET (only shrinks)', () => {
   // ⚠ 2026-08-01 — READ THIS BEFORE TRUSTING THE NUMBER BELOW.
@@ -529,7 +535,7 @@ describe('vrt-meta — EXEMPT_BASELINE_PAIRS size RATCHET (only shrinks)', () =>
  * red as a regression. Change this number in the same commit that moves the
  * baselines, never on its own.
  */
-const LINUX_DEFICIT_CEILING = 151;
+const LINUX_DEFICIT_CEILING = 149;
 
 describe('vrt-meta — LINUX-baseline DEFICIT RATCHET (all four mechanisms)', () => {
   // THE HONESTY GATE. CI renders on LINUX. A scene captured on darwin but
@@ -570,6 +576,14 @@ describe('vrt-meta — LINUX-baseline DEFICIT RATCHET (all four mechanisms)', ()
       //   10  spec-local-pairs         (dashboard/groups/interactions/landing)
       //    3  scene-darwin-only        (vco-scope-audio-trace, adsr-sustain-*)
       //    0  UNDECLARED
+      //
+      // 151 → 149 (2026-08-02, the snaredrum face PR): `face-snaredrum-compact`
+      // and `face-snaredrum-dock` got real linux baselines from a
+      // `vrt-update.yml -f platform=linux` dispatch on that branch, so two
+      // darwin-only scenes stopped being darwin-only. ⚠ The pairs were removed
+      // FIRST (a listed pair is skipped, and a skipped test writes no
+      // snapshot) — which means this number and the dispatch have to land in
+      // the SAME PR, or the branch ships with two UNDECLARED gaps.
     ).toBeLessThanOrEqual(LINUX_DEFICIT_CEILING);
     // …AND THE OTHER DIRECTION, which a ceiling structurally cannot see.
     // `<=` only trips on GROWTH. A PR that CLOSES gaps — the whole point of

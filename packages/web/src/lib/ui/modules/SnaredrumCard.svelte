@@ -236,7 +236,13 @@
              press-and-HOLD (gate_in, edge:'gate' — the two-hand engine runs
              only while the level is high). They sit beside ROLL SPEED and
              BOUNCE on purpose: those are the knobs you ride while holding. -->
-        <div class="group">
+        <!-- ⚠ `narrow`, NOT a flex share. Giving PLAY `flex: 1` like its
+             neighbours added a FIFTH share to a 560 px band and squeezed DRIVE
+             from ~155 px to ~128 px, which pushed the HARD toggle 11.3 CSS px
+             past the card's right edge — MEASURED by card-control-overflow,
+             not eyeballed. Two 62 px pads have an intrinsic width; they should
+             take it and give the rest back. -->
+        <div class="group narrow">
           <header>PLAY</header>
           <div class="pad-col">
             <button
@@ -268,7 +274,10 @@
             <Fader value={humanize}  min={P.humanize.min}   max={P.humanize.max}   defaultValue={defaultFor('humanize')}   label={P.humanize.label}   units={P.humanize.units}   curve={P.humanize.curve}   onchange={set('humanize')}   moduleId={id} paramId="humanize"   readLive={live('humanize')} />
           </div>
         </div>
-        <div class="group">
+        <!-- `fit`: DRIVE holds the one fixed-width control on the card (the
+             nowrap HARD toggle), so it is sized by its content rather than
+             flex-shrunk — see the .group.fit note in the styles. -->
+        <div class="group fit">
           <header>DRIVE</header>
           <div class="fader-row">
             <Fader value={drive} min={P.drive.min} max={P.drive.max} defaultValue={defaultFor('drive')} label={P.drive.label} units={P.drive.units} curve={P.drive.curve} onchange={set('drive')} moduleId={id} paramId="drive" readLive={live('drive')} />
@@ -327,6 +336,25 @@
     padding-right: 10px;
   }
   .snaredrum-card .group.wide { flex: 1.6; }
+  /* A group sized by its CONTENT and carrying NO CHROME — see the PLAY comment
+     in the markup. `.group`'s 10px padding-right + 1px border-right is 11px of
+     horizontal budget per group, and a FOURTH group in a 556px band is exactly
+     the 11px that pushed the HARD toggle off the card. The pads read as a
+     distinct control type on their own; they do not need a divider. */
+  .snaredrum-card .group.narrow {
+    flex: 0 0 auto;
+    padding-right: 0;
+    border-right: none;
+  }
+  /* CONTENT-SIZED, chrome kept. DRIVE holds the one FIXED-WIDTH control on this
+     card — the `HARD: OFF` toggle is `white-space: nowrap` at ~76px — so it is
+     the one group that must not be flex-shrunk. Under an equal flex share the
+     fourth group in band 2 squeezed it until the toggle hung 11.3 CSS px off
+     the card's right edge (card-control-overflow, measured). Sizing DRIVE to
+     its content and letting CRACK/ROLL absorb the remainder is the fix; giving
+     the space back through the flex pool was not, because a 1:1.6:1 pool
+     returns only ~28% of it to DRIVE. */
+  .snaredrum-card .group.fit { flex: 0 0 auto; }
   .snaredrum-card .group:last-child { border-right: none; padding-right: 0; }
   .snaredrum-card .group header {
     font-size: 10px;

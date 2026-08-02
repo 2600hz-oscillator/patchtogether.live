@@ -1048,8 +1048,12 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   'linux/face-dx7-dock',
   'linux/face-sixstrum-compact',
   'linux/face-sixstrum-dock',
-  'linux/face-snaredrum-compact',
-  'linux/face-snaredrum-dock',
+  // DRAINED 2026-08-02 (the snaredrum face PR): `linux/face-snaredrum-compact`
+  // and `linux/face-snaredrum-dock` came out FIRST so a `vrt-update.yml
+  // -f platform=linux` dispatch on this branch could actually capture them —
+  // a still-listed pair is `test.skip()`-ed unconditionally and
+  // `--update-snapshots` writes NOTHING for a skipped test. Both ratchets in
+  // vrt-meta.test.ts drop by 2 in the same commit.
   'linux/face-tomtom-compact',
   'linux/face-tomtom-dock',
   'linux/face-shimmershine-compact',
