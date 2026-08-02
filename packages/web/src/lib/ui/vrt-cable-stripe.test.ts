@@ -118,15 +118,27 @@ const MIN_TOKEN_PINNED_BASELINES = 200;
  * That red is the point: it is the only thing tying two PRs that share no file.
  * The 16 `vrt-toybox` entries below are NOT #1279's and must stay.
  *
- * SIMULATED, not predicted. A local 3-way merge of #1279 + #1272 + #1281 lands
- * with ZERO git conflicts, and on that tree: 48 of the 49 VRT-gate assertions
- * pass — `every token-pinned baseline paints its token` included, i.e. the
- * merged state is actually CLEAN — and the ONE failure is this assertion,
- * reporting `[] vs 39`. Replacing the list with `[]` makes it 49/49. So the
- * cross-PR coupling costs exactly one edit and cannot be missed; with a
+ * SIMULATED, not predicted — RE-MEASURED 2026-08-02 in merge order
+ * #1272 → #1281 → #1279, which is the order these must land:
+ *
+ *   main + #1272                 37/37 green
+ *   main + #1272 + #1281         48/48 green  (233 baselines compared: #1272's
+ *                                15-pair drain moves those linux PNGs out of
+ *                                `quarantined` and INTO this gate, and all 15
+ *                                paint the current palette)
+ *   + #1279                      51/52 — the ONE failure is this assertion,
+ *                                reporting exactly the 40 entries #1279
+ *                                regenerates; the 16 `vrt-toybox` entries stay
+ *   + drain those 40             52/52 green
+ *
+ * So the cross-PR coupling costs exactly one edit and cannot be missed. With a
  * `<=`-style ceiling instead, that same merge would have gone green with a
- * 39-wide hole in the ratchet and nobody would have known.
- * (#1281 + #1272 alone, no #1279: 45/45 green.)
+ * 40-wide hole and nobody would have known.
+ *
+ * ONE git conflict, in #1281 only: `vrt.spec.ts/darwin/kickdrum.png`, which
+ * main's #1277 (kickdrum curated face) also regenerated. Resolve by taking
+ * MAIN's — measured `#38d3c8`, already the current `--cable-audio`, and it
+ * carries the newer face.
  */
 const PENDING_PALETTE_REGEN: readonly string[] = [
   'vrt-clap.spec.ts/darwin/clap-909-dense',
