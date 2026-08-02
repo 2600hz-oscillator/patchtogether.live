@@ -25,7 +25,6 @@
   import { patch } from '$lib/graph/store';
   import { nodeVersion } from '$lib/graph/node-versions.svelte';
   import { useEngine } from '$lib/audio/engine-context';
-  import { onDestroy } from 'svelte';
   import { VuMeter } from '$lib/ui/controls';
   import { kickdrumDef } from '$lib/audio/modules/kickdrum';
   import { createShellGlyphTap, type ShellGlyphTap } from '$lib/ui/workflow/shell-glyph-live';
@@ -127,6 +126,12 @@
   // actually needs from a faceplate: whether the jack is PATCHED, and what the
   // voice is therefore tracking. A readout that invented a number for them
   // would be the "wrong metric reads exactly like a finding" trap in CLAUDE.md.
+  //
+  // ⚠ THE TEARDOWN IS THE `$effect` CLEANUP, and it is the ONLY teardown. Svelte
+  // runs it on destroy as well as on re-run, so a belt-and-braces `onDestroy`
+  // beside it would be a second owner of one resource — and the tap holds a
+  // live AnalyserNode plus an idle-release interval, which is exactly the kind
+  // of thing that must have one owner.
   let tap: ShellGlyphTap | null = null;
   $effect(() => {
     const t = createShellGlyphTap(() => engineCtx.get(), nodeId, 'audio_l');
@@ -136,7 +141,6 @@
       if (tap === t) tap = null;
     };
   });
-  onDestroy(() => tap?.dispose());
 
   function getLevel(): number {
     return tap?.getLevel() ?? 0;
@@ -169,12 +173,16 @@
       role="img"
       aria-label="amplitude and pitch sweep — {caption}"
     >
-      <!-- The BODY's resting pitch: an octave over the fundamental, which is
-           where the punch actually lands. Drawn because the pitch trace stops
-           there rather than at the floor (see KickdrumGraph.bodySettledY). -->
+      <!-- Time gridlines at fixed PLOT positions, labelled below with the time
+           that actually falls there (the axis is warped, so an evenly-spaced
+           grid of round numbers would be the lie). -->
       {#each ticks as t (t.x)}
         <line class="grid" x1={t.x * PLOT_W} x2={t.x * PLOT_W} y1="0" y2={PLOT_H} />
       {/each}
+      <!-- The BODY's resting pitch: an octave over the fundamental, which is
+           where the punch actually lands. Drawn because the pitch trace stops
+           THERE rather than at the floor (see KickdrumGraph.bodySettledY). -->
+
       <line
         class="octave"
         x1="0"
