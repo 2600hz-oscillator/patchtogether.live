@@ -409,11 +409,15 @@ describe('VRT baselines paint the CURRENT --cable-* stripe', () => {
     const seed = parseCssCableTokens(css);
     // Liveness: a parser that matched nothing would report perfect agreement.
     // This is the same failure the exclusion validator's `read > 0` guard ends.
+    // Compared as SETS, not counts — equal counts with different names is a
+    // real divergence (a token declared in only one of the two files), and a
+    // count check is exactly the kind of predicate that passes through it.
     expect(
-      Object.keys(seed).length,
-      'parsed ZERO --cable-* declarations out of tokens.css — the parser (or the file) moved, ' +
-      'and a parser that finds nothing agrees with everything.',
-    ).toBe(Object.keys(tokens).length);
+      Object.keys(seed).sort(),
+      'the --cable-* token NAMES in tokens.css differ from CABLE_VARS. A name present in only ' +
+      'one file is a token whose value the other never sets — and if the parse came back empty, ' +
+      'the parser (or the file) moved, and a parser that finds nothing agrees with everything.',
+    ).toEqual(Object.keys(tokens).sort());
     const disagree = Object.keys(tokens)
       .filter((k) => seed[k] !== tokens[k]!.toLowerCase())
       .map((k) => `${k}: tokens.css ${seed[k] ?? '(absent)'} vs CABLE_VARS ${tokens[k]}`);
@@ -431,7 +435,11 @@ describe('VRT baselines paint the CURRENT --cable-* stripe', () => {
     // otherwise the assertion above is decoration, which is what it replaced.
     const css = readFileSync(resolve(REPO_ROOT, 'packages/web/src/lib/styles/tokens.css'), 'utf8');
     const real = parseCssCableTokens(css);
-    const [probe, hue] = Object.entries(real)[0]!;
+    // Pick a 6-digit hue so the LSB flip below is well-defined (a `#abc`
+    // shorthand would re-pad to a different literal and prove nothing).
+    const entry = Object.entries(real).find(([, v]) => v.length === 7);
+    expect(entry, 'precondition: a #rrggbb cable hue to perturb').toBeDefined();
+    const [probe, hue] = entry!;
     const bumped = `#${(parseInt(hue.slice(1), 16) ^ 1).toString(16).padStart(6, '0')}`;
     expect(bumped, 'precondition: the perturbation must actually change the hue').not.toBe(hue);
     const perturbed = parseCssCableTokens(css.replace(`${probe}: ${hue}`, `${probe}: ${bumped}`));
