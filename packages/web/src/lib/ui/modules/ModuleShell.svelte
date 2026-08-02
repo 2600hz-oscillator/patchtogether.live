@@ -1390,11 +1390,20 @@
     align-items: flex-end;
     gap: 22px;
     margin: 0;
-    padding-top: 8px;
-    border-top: 1px solid var(--border, #2c3037);
     width: 100%;
     min-width: 0;
     flex-wrap: wrap;
+  }
+  /* ⚠ THE HAIRLINE IS CONDITIONAL, and it has to be: a hero may be READOUTS
+     ONLY (no picture, no promoted control — a bare measurement strip, which
+     `heroFacePlan` explicitly supports and the batch-3 mocks propose). Then the
+     strip IS the whole hero and a rule above it would separate it from the page
+     header — i.e. draw a line under the title. The adjacent-sibling combinator
+     says exactly what is meant: the hairline belongs BETWEEN the stage and the
+     strip, so no stage means no hairline. */
+  .hero-stage + .hero-readouts {
+    padding-top: 8px;
+    border-top: 1px solid var(--border, #2c3037);
   }
   .hero-ro {
     display: flex;
