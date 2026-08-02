@@ -506,6 +506,32 @@ async function driveCell(
   if (cell.control === 'action') {
     const btn = host.locator('button');
     await expect(btn, `${where}: a real enabled button`).toBeEnabled();
+
+    // TWO SHAPES, and which one this is comes from the DOM, not from a
+    // per-module list: `Button.svelte` emits `aria-pressed` ONLY when it is
+    // `momentary`, which is exactly when the shell rendered a `mode:'gate'`
+    // ShellActionCell. So a HELD action (snaredrum's ROLL audition, which runs
+    // the two-hand engine only while the level is high) is driven as a real
+    // press/release and asserted to RETURN TO REST — a gate pad that latched
+    // would leave the drum rolling forever, and `click()` could never see it.
+    // Generic by construction: the next gate-mode cell auto-enrols.
+    if ((await btn.getAttribute('aria-pressed')) !== null) {
+      await btn.scrollIntoViewIfNeeded();
+      const box = (await btn.boundingBox())!;
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await page.mouse.down();
+      await expect(btn, `${where}: press drives the HELD action pad high`).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      );
+      await page.mouse.up();
+      await expect(
+        btn,
+        `${where}: release RETURNS the held pad to rest — a gate action must not latch`,
+      ).toHaveAttribute('aria-pressed', 'false');
+      return;
+    }
+
     await btn.click();
     return;
   }
