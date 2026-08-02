@@ -23,6 +23,32 @@
 // "e2e/vrt/__screenshots__/**"`) with `VRT_STRIPE_PALETTE_REQUIRED=1`, which
 // turns "cannot read the bytes" from a skip into a FAILURE. Same shape as the
 // ART fingerprint drift gate's `ART_FINGERPRINTS_REQUIRED=1`.
+//
+// ── THE ACCEPT LOOP (read this BEFORE changing a `--cable-*` token) ─────────
+// Because it runs in a REQUIRED lane, editing `_cables.ts` turns this red on
+// every baseline pinned to the changed token — by design, that is the drift it
+// exists to catch — and unlike `docs:accept` / `art:update` there is no one
+// command that re-pins it, because the artifacts are SCREENSHOTS. The path is:
+//
+//   1. `git rm` every baseline the failure lists. This step is not optional and
+//      not a shortcut: a ~2px stripe is ~0.4 % of a card against a 1 %
+//      `maxDiffPixelRatio`, so the recapture PASSES the comparison and
+//      Playwright — which only rewrites a snapshot on FAILURE — writes nothing.
+//      A MISSING snapshot is always written. (CLAUDE.md, the A2/#1213 hole.)
+//   2. darwin: recapture locally (`task vrt` / `task vrt:one -- <grep>`). CI
+//      renders on linux only, so darwin baselines are authored on a dev box.
+//   3. linux: `gh workflow run vrt-update.yml -f ref=<branch> -f platform=linux`,
+//      UNSCOPED, and NEVER a hand edit on macOS. DRAIN any `EXEMPT_BASELINE_PAIRS`
+//      entry for those scenes FIRST — an exempt pair is `test.skip()`-ed
+//      unconditionally, so the dispatch writes nothing for it and comes back
+//      green having captured zero.
+//   4. Baselines the gate reports as `quarantined` cannot be repaired at all
+//      (nothing compares them, so nothing can rewrite them). They are excluded
+//      from the assertion for exactly that reason, and are printed every run so
+//      the debt stays visible rather than becoming invisible coverage.
+//
+// A palette change that cannot follow steps 1-3 must not be landed by relaxing
+// this gate.
 
 import { describe, expect, it } from 'vitest';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
