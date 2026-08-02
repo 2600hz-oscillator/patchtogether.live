@@ -10,6 +10,8 @@
 // produce identical phase values, which is the load-bearing property
 // of Phase 1 of .myrobots/plans/shared-state-sync.md.
 
+import { lfoDepthGain, LFO_DEPTH_UNITY } from './lfo-face-model';
+
 export interface LfoState {
   phase: number;
   phase90: number;
@@ -55,11 +57,15 @@ export function morphLfo(phase: number, shape: number): number {
 }
 
 /** depth → output amplitude gain. Mirrors the worklet:
- *  depth=0 → 0 (still), depth=0.5 → 1 (unity / legacy), depth=1 → 2 (2×,
- *  deliberately out of the normal [-1,1] range; NOT clamped). */
-export function lfoDepthGain(depth: number): number {
-  return Math.max(0, depth) * 2;
-}
+ *  depth=0 → 0 (still), depth=LFO_DEPTH_UNITY → 1 (unity / legacy), depth=1 →
+ *  2× (deliberately out of the normal [-1,1] range; NOT clamped).
+ *
+ *  ⚠ RE-EXPORTED, NOT RE-IMPLEMENTED. This file used to carry its own
+ *  `Math.max(0, depth) * 2` — a second export with the SAME NAME and the same
+ *  body one directory over from `lfo-face-model`'s, with nothing connecting
+ *  them. Changing the face's constant left this one at ×2 and every test here
+ *  stayed green while the face, the def default and the docs all moved. */
+export { lfoDepthGain } from './lfo-face-model';
 
 /** Instantaneous emitted output of one phase, with shape morph + depth gain
  *  applied. The bipolar resting/centre value of every shape is 0, so depth
@@ -71,7 +77,8 @@ export function computeLfoOutput(
 ): { phase0: number; phase90: number; phase180: number; phase270: number } {
   const { phase, phase90, phase180, phase270 } = computeLfoState(tMsSinceEpoch, params);
   const shape = params.shape ?? 0;
-  const gain = lfoDepthGain(params.depth ?? 0.5);
+  // The def's default, DERIVED — not a re-typed 0.5 that happens to be unity.
+  const gain = lfoDepthGain(params.depth ?? LFO_DEPTH_UNITY);
   return {
     phase0: morphLfo(phase, shape) * gain,
     phase90: morphLfo(phase90, shape) * gain,
