@@ -61,6 +61,14 @@ import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { STRICT_FACES } from '../packages/web/src/lib/ui/workflow/strict-faces';
+// The VACUITY TRIPWIRE, reused rather than re-invented. Every assertion in the
+// "real tree" blocks below compares two walks of `__screenshots__` — so with
+// that tree ABSENT or a partial checkout, both walks return empty, they agree
+// perfectly, and the whole file goes green while measuring nothing. That is the
+// same hole `vrt-platform-gaps.ts` documents for the vrt-meta ratchets, and it
+// already owns the floors; a second set of numbers here would only drift from
+// them.
+import { assertBaselineTreeIsReadable } from '../e2e/vrt/vrt-platform-gaps';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const SCRIPT = join(ROOT, 'e2e', 'vrt', 'build_gallery.py');
@@ -196,6 +204,17 @@ const real = build(BASELINES);
 const onDisk = walkBaselines(BASELINES);
 
 describe('vrt gallery — TOTALITY (every committed baseline appears, nothing invented)', () => {
+  it('the baseline tree is READABLE — refusing to pass vacuously', () => {
+    // MUST come first. Two walks of an empty tree agree on `[]`, and every
+    // other assertion in this file is an agreement between those two walks — so
+    // a deleted or partially-checked-out `__screenshots__` turns the entire
+    // suite green with zero coverage. Measured floors live in
+    // vrt-platform-gaps.ts (30 dirs / 282 darwin / 134 linux today).
+    const totals = assertBaselineTreeIsReadable();
+    expect(totals.darwin + totals.linux).toBe(real.coverage.images);
+    expect(totals.specs).toBeGreaterThanOrEqual(real.coverage.specDirs.length);
+  });
+
   it('renders exactly the scenes on disk, across EVERY spec directory', () => {
     // Both directions in one assertion. A gallery that DROPS entries and one
     // that INVENTS them are indistinguishable from a bare count, and the bug
