@@ -1,10 +1,12 @@
 # ES-9 RECORDERBOX — multitrack capture spec
 
-**Date:** 2026-08-01
+**Date:** 2026-08-01 · **owner decisions answered 2026-08-02**
 **Status:** SPEC ONLY. Nothing ships. Explicitly gated behind the new shell + Push 2.
+**Owner questions:** **all 12 ANSWERED** — see §6. Remaining unknowns are engineering, not owner
+input; they are in §6.1.
 **Repos:** `inet.modular` @ `77cd1bbc`, `../patchtogether.es9` @ `b22bf3c`
 **Inputs:** 3 research facets + 2 adversarial critiques, synthesized. Contradictions between them are
-resolved in §7 or listed in §6 — never averaged.
+resolved in §7 — never averaged.
 
 Every file:line in this document was re-read and verified during synthesis. Numbers state their
 derivation. Anything not verified is tagged **UNCONFIRMED**.
@@ -53,9 +55,11 @@ Three things must change before anyone writes code:
 > live in the same process as the audio bridge. It does not touch `outClientPlanes`, the
 > `StreamResampler`, or `engine.outputRing`, and the ES-9 need not be plugged in.
 
-**Status: RESOLVED-BY-DESIGN, NOT CONFIRMED BY THE OWNER.** This is Owner Question 1 and it gates
-everything else. Both readings of the brief agree on *which signal* is recorded (the 8 stem pairs
-feeding MIXMSTRS); they disagree on *the mechanism*. The mechanism is what needs a one-word answer.
+**Status: CONFIRMED BY THE OWNER (2026-08-02, OQ-1).** This was Owner Question 1 and it gated
+everything else. Both readings of the brief agreed on *which signal* is recorded (the 8 stem pairs
+feeding MIXMSTRS); they disagreed on *the mechanism*. The owner picked the **separate stream** — the
+helper is a pure file-writing service and the ES-9 need not be plugged in (OQ-2: "no"). Everything
+below is now built on a confirmed foundation rather than a recommended one.
 
 Everything the design gains from this choice:
 
@@ -100,7 +104,10 @@ Everything the design gains from this choice:
   Pre-fader, pre-EQ, pre-comp, pre-send. The mixer's own per-channel taps are internal VU taps, not
   module ports (`mixmstrs.ts:7-9`) — the raw stems are the correct thing to capture.
 
-So the owner's model is exact: **8 stem pairs = 16 channels = 8 tracks**, +1 optional master pair = 18.
+So the owner's model is exact: **8 stem pairs = 16 channels = 8 tracks**, + the master pair = 18.
+**OQ-4, ANSWERED: yes, record the master as a 9th pair, default on** — the +11.1 % on wire and disk
+(3.456 vs 3.072 MB/s) is accepted. `09-master.wav` is therefore **not optional**; treat 18 channels,
+not 16, as the design width everywhere below.
 
 ---
 
@@ -258,7 +265,7 @@ es9Recorderbox module
   record.worker.ts                                        ↓
     · ws.send with bufferedAmount high-water        RecordWriter thread (.utility QoS)
     · v2 record block header                          · drains ring
-                                                      · N x FileSink (WAV/RF64)
+                                                      · N x FileSink (WAV/BWF, <4 GiB)
 video half: UNCHANGED except the CFR clock            · header refresh 1 Hz
   ctx.currentTime replaces performance.now()          · statfs pre-flight + low-water stop
   → fragmented MP4 → OPFS → Save-As
@@ -299,6 +306,16 @@ speaks 2, client needs 3"}`. The card shows required-vs-actual. This is not opti
 updates itself on every deploy and the helper binary does not, so mismatch is *guaranteed* to happen
 (§7 G6).
 
+**OQ-9, ANSWERED: refuse to arm, and the card names BOTH versions** — required and actual, as above.
+Never silently degrade to the stereo browser path; a recording session that quietly becomes a
+different recording session is the worst available outcome. **No per-block `crc32c`**: this is a
+localhost loopback and TCP's checksum is sufficient, so the field is removed from the v2 header
+(§4.3) rather than reserved-but-unused.
+
+Note the two answers are load-bearing together: the layout above declares `"bitDepth": "f32"` and
+`"layout": "pairs"` as the *only* legal values (OQ-5, OQ-7/11), so the handshake carries no
+negotiation for formats that will not exist.
+
 ### 4.3 The record block — a v2 header that can actually account for gaps
 
 The v1 header cannot carry `producedFrames`; the 2 reserved bytes at offset 18 are not enough for a
@@ -306,14 +323,14 @@ frame counter. A new opcode gives a clean 32-byte header:
 
 ```
 0   u8  type          0x02 = RECORD audio block
-1   u8  flags         bit0 = planar float32; bit1 = 24-bit int packed
+1   u8  flags         bit0 = planar float32   (bit1 was 24-bit int packed — dropped, OQ-5)
 2   u16 seq           per-sender monotonic, wraps
 4   u64 sampleTime    frames SENT before this block   (as v1 — kept for continuity checks)
 12  u64 producedFrames frames the WORKLET PRODUCED before this block   <-- the fix
 20  u32 channelMask   bit c set => channel c's plane present (up to 32 record channels)
 24  u16 frameCount    <= 4096
 26  u16 reserved      0
-28  u32 crc32c        over the payload  (UNCONFIRMED value; see OQ-9)
+28  u32 reserved      0   (was crc32c — DROPPED per OQ-9: loopback, TCP's checksum suffices)
 32  ..  payload
 ```
 
@@ -364,10 +381,13 @@ so the tradeoff is visible when someone re-tunes it:
 | 524 288 | 10 922.7 | 36.00 |
 
 **On overflow the writer does NOT drop silently.** It zero-fills, increments `gapFrames`, and — per
-OQ-3 — either hard-stops the take with a clean finalize (recorder convention) or continues with a
-logged gap.
+**OQ-3, ANSWERED: hard-stop** — finalizes the take cleanly, so every file already on disk carries a
+correct header and opens in a DAW. It does **not** continue with a logged gap: a take that plays but
+is silently short is the exact failure this design exists to eliminate. ⚠ This policy is only
+implementable **after** the §6.1(2) gap-accounting fix — today's counter cannot see the overflow at
+all, so a hard-stop built on it would never fire.
 
-### 4.5 File format — N discrete stereo BWF/RF64 WAV files, 32-bit float, written natively
+### 4.5 File format — N discrete stereo BWF WAV files, 32-bit float, under 4 GiB, written natively
 
 **8 files** `TAKE-<name>-<datetime>/01-ch01-02.wav` … `08-ch15-16.wav`, plus optional
 `09-master.wav`. Video stays one MP4 (or N rolled MP4s) written by the browser as today.
@@ -402,9 +422,17 @@ a multitrack master.
    points **at** float, not away from it.
 4. The 33 % byte cost is irrelevant (§5).
 
-Ship 24-bit int behind a switch; do not default to it. (OQ-5.)
+**OQ-5, ANSWERED: 32-bit float, and the 24-bit switch is dropped from day one.** The owner's reasons
+are 1 and 2 above — no clipping (CV exceeds ±1.0) and zero conversion on the write path. Ship one
+format; a dither decision on 18 channels is not worth −25 % of a cost §5 already shows is irrelevant.
 
-**RF64 by promotion, not RF64 always.** EBU Tech 3306 prescribes exactly this: reserve a `JUNK` chunk
+**RF64 by promotion — DEFERRED past day one (OQ-7).** The owner's DAW target is mainstream commercial
+with takes kept **under 4 GiB**, so the promotion machinery below is **not day-one work**. Two things
+survive into day one regardless: the **36-byte `JUNK` placeholder** (keeping a later promotion a
+two-`pwrite` change), and the **enforced 4 GiB / 3 h 06 m 25 s per-pair ceiling** with a clean stop
+before it. The rest of this subsection is the design for when RF64 lands — see §6.2.
+
+EBU Tech 3306 prescribes exactly this: reserve a `JUNK` chunk
 the same size as `ds64` at open, and switch `RIFF`→`RF64` / `JUNK`→`ds64` on the fly at the 4 GB limit
 while recording continues. `ds64` is an 8-byte header + **28-byte payload** (`riffSize` u64,
 `dataSize` u64, `sampleCount` u64, `tableLength` u32) = **36 bytes total**, and the promotion moves
@@ -454,12 +482,16 @@ distribution on the owner's disks; measure it in Phase 3 and let it set the ring
 ### 4.6 Audio chunking — do NOT chunk the audio
 
 The video keeps its existing 10-minute roll (`MAX_CHUNK_SECONDS = 600`, `OVERLAP_SECONDS = 5`). The
-audio is **one continuous WAV per pair per take**, RF64-promoted past 4 GiB.
+audio is **one continuous WAV per pair per take**, stopped cleanly before 4 GiB (RF64 promotion is
+deferred — OQ-7).
 
 Rationale: chunking the audio would introduce a *second* sync problem at every chunk boundary, for no
 benefit — DAWs handle one long file fine, and the 4 GiB ceiling is 3 h 06 m away per pair. A 10-minute
 chunk of a stereo f32 pair is only 230.4 MB, so chunking would also mean 8 × 6 = 48 files per hour.
-(OQ-6 confirms.)
+
+**OQ-6, ANSWERED: one continuous WAV per pair.** The audio and video boundaries are therefore
+deliberately **unaligned** — the video keeps rolling every ~10 min while the audio does not roll at
+all — and **the manifest carries the alignment**. Nothing downstream may assume a shared boundary.
 
 ### 4.7 The video half — one seam changes
 
@@ -488,11 +520,18 @@ than the 33.3 ms grid slot at 30 fps. Read from the main thread it is monotonic 
 Keep the existing `framesDue` / `DEFICIT_SLACK_FRAMES = 3` deficit logic unchanged
 (`recorderbox-cfr.ts:63-79`) — it is a pace controller, not a clock, and works against either source.
 
-**Take folder layout.** The browser writes the MP4 through its existing OPFS → Save-As flow; the
-helper writes the WAVs directly to a native path. Two writers, one folder. The helper is told the
-folder once (OQ-10), creates `TAKE-<name>-<YYYYMMDD-HHMMSS>/`, and returns the absolute path in
-`status`; the card shows it and offers "reveal in Finder". The browser's Save-As then defaults to the
-same folder — which the user must confirm, because a browser cannot pre-seed a directory picker.
+**Take folder layout — OQ-10, ANSWERED: the helper owns it.** The browser writes the MP4 through its
+existing OPFS → Save-As flow; the helper writes the WAVs directly to a native path. Two writers, one
+folder. The user picks the root **once, natively**; the helper creates `TAKE-NNN/` (as
+`TAKE-<name>-<YYYYMMDD-HHMMSS>/`) and **hands the absolute path back to the browser** in `status`.
+The direction is pinned: path flows **helper → browser**, never the reverse. The card shows it and
+offers "reveal in Finder". The browser's Save-As then defaults to the same folder — which the user
+must confirm, because a browser cannot pre-seed a directory picker.
+
+**OQ-11, ANSWERED: the deliverable is a folder of files** — one MP4 plus 9 WAVs, kept together. No
+mux, no post-take remux pass. That is a deliberate durability choice, not a shortcut: a remux is a
+second place for a take to die *after* the take is already over, so **a crashed take stays usable**
+under this shape and would not under a muxed one. The container question stays closed.
 
 ### 4.8 Same-machine-only: what it buys and what it does not
 
@@ -509,10 +548,16 @@ The owner scoped this to one machine. Concretely:
 **Does NOT buy:**
 - **`https://patchtogether.live` cannot open `ws://127.0.0.1`.** Mixed-content blocking is absolute.
   The origin allowlist permits `patchtogether.live` at the *server* end, but the *browser* refuses to
-  make the request. So on the deployed site the module is inert. Options, all deferred: a `wss://`
+  make the request. So on the deployed site the module is inert. Options considered: a `wss://`
   loopback bridge with a real certificate for a `*.localhost`-style name; a packaged app (Electron —
-  already on the roadmap per `presentation-fullscreen-plan`); or accept dev-only.
-- It does not make the helper distributable (§7 G3 / OQ-8).
+  already on the roadmap per `presentation-fullscreen-plan`).
+  **OQ-12, ANSWERED: accept inert.** ES-9 RECORDERBOX works only from `http://localhost`; the
+  `wss://` bridge and Electron packaging are out of scope. **Requirement that follows:** the card must
+  **say why** on the deployed site — not merely disable itself. A dead control with no stated reason
+  is indistinguishable from a bug, and will be reported as one. The copy has to name the actual cause
+  (a secure page cannot open a plaintext localhost socket), not just "unavailable".
+- It does not make the helper distributable — and **OQ-8 accepts that**: dev-only, built from source,
+  no signing or notarization (§7 G3).
 - It does not make the two processes' *failures* coordinated — they still have to agree to stop
   (§7 G7 / §4.9).
 
@@ -598,8 +643,8 @@ feed mediabunny's AAC encoder, which this path does not use.
 | `mode` | discrete 0..1 | 0 | `0 = multitrack` (needs helper) / `1 = stereo` (today's browser path). **Never auto-switches.** |
 | `pairs` | discrete 1..8 | 8 | armed pairs; unarmed are excluded from the channel mask, saving wire + disk |
 | `master` | discrete 0..1 | 1 | also record `mstL/mstR` |
-| `bitDepth` | discrete 0..1 | 0 | `0 = 32-bit float`, `1 = 24-bit int` |
-| `fileLayout` | discrete 0..1 | 0 | `0 = per-pair stereo WAVs`, `1 = poly RF64` |
+| ~~`bitDepth`~~ | — | — | **DROPPED (OQ-5)** — 32-bit float only; no 24-bit switch |
+| ~~`fileLayout`~~ | — | — | **DROPPED (OQ-7/OQ-11)** — per-pair stereo WAVs only; no poly/RF64 layout day one |
 | `quality` | discrete 0..2 | 0 | video tier — promotes `recorderbox-quality.ts` from card-only to a real param |
 | `chunkMin` | discrete 0..2 | 1 | **video** roll interval 5 / 10 / 20 min (10 = today's 600 s) |
 
@@ -753,44 +798,84 @@ item.
 
 ---
 
-## 6. OPEN QUESTIONS FOR THE OWNER
+## 6. OWNER DECISIONS — ALL 12 ANSWERED (2026-08-02)
 
-Answer in one pass. **OQ-1 gates the entire design**; the rest gate individual phases.
+**Nothing in this section is open.** The 12 questions this document originally posed were answered by
+the owner in one pass on 2026-08-02. The decisions are recorded verbatim below; where a decision
+settles a fork the body of the plan still describes both branches, the **consequence** column names
+the section that is now single-branch.
 
-1. **MECHANISM (blocks everything).** Should the helper record the stems as a **separate stream** —
-   meaning the helper acts as a pure file-writing service and the ES-9 need not even be plugged in —
-   or must it record **only what physically goes to the ES-9 outs**? The latter caps you at **4 stereo
-   pairs** on the physical jacks, or costs you monitoring (stems would occupy the main-mix and phones
-   buses). Recommended: separate stream.
-2. **Does the ES-9 need to be present for a multitrack take?** If "no", the whole record path becomes
-   headless-testable with zero hardware, which is a very large testing win (§8).
-3. **Overflow policy.** When the disk or the socket cannot keep up: (a) **hard-stop the take with a
-   clean finalize** (field-recorder convention, recommended), (b) keep going and log the gap in the
-   take metadata, or (c) buffer in the browser until memory pressure. Pick one.
-4. **Master bus.** Record it as a 9th pair, 18 channels total? Cost is **+11.1 %** wire and disk
-   (3.456 vs 3.072 MB/s). Recommended: yes, default on.
-5. **Bit depth default.** 32-bit float (wire-transparent, zero conversion, no CV clipping, Pro Tools
-   native) or 24-bit int (−25 % disk)? Recommended: float default, 24-bit as a switch.
-6. **Audio chunking.** One continuous WAV per pair per take (recommended — 4 GiB is 3 h 06 m away), or
-   roll every 10 min like the video (would produce 48 audio files/hour)?
-7. **DAW matrix.** Which DAWs must open these files on day one? This decides whether RF64 promotion
-   and BWF `TimeReference` are day-one work or later. (Pro Tools in the list ⇒ WAV/BWF only, no CAF,
-   no W64.)
-8. **Distribution.** How does a user obtain the helper binary — signed + notarized DMG, a Homebrew
-   tap, or dev-machines-only/self-built? An unsigned helper hits Gatekeeper on every non-dev machine.
-   The standing rule permits exactly one native helper; **an exemption you cannot distribute is a demo,
-   not a feature.**
-9. **Version mismatch.** Helper older than the web app: **refuse to arm** with a clear message
-   (recommended), or silently degrade to the stereo browser path? Also: is a per-block `crc32c` worth
-   the CPU on a loopback socket, or is TCP's checksum sufficient? (Recommended: drop the CRC.)
-10. **Take folder.** Does the user pick a folder **once**, natively, and the helper owns it — or
-    per-take through the browser's Save-As? Native writing means the browser's File System Access
-    picker no longer covers the audio, so the two halves need a shared notion of "where".
-11. **Deliverable shape.** Is "one MP4 + 9 WAVs in a folder, keep them together" acceptable, or must
-    there be a single muxed deliverable? (A muxed multitrack deliverable means a post-take remux step
-    and re-opens the container question.)
-12. **`https://patchtogether.live`.** Accept that ES-9 RECORDERBOX is inert on the deployed site
-    (localhost-dev only), or is a `wss://` loopback bridge / Electron packaging in scope? See §4.8.
+Genuine engineering unknowns are **not** here — they are in §6.1, because they are things nobody
+knows yet, not things the owner has to choose.
+
+| OQ | decision | consequence |
+|---|---|---|
+| **1 MECHANISM** | **Separate record stream** on a `role:'record'` session, with its own logical channel space, decoupled from `engine.outputChannelCount`. The helper is a **pure file-writing service**. | §1's "ONE ASSUMPTION EVERYTHING RESTS ON" is now **CONFIRMED BY THE OWNER**, not merely resolved-by-design. §4.1 stands as written. |
+| **2 ES-9 present?** | **No** — implied by 1. A take needs no hardware. | §8 in full: the record path is **100 % headless-testable**. This is the single biggest testing win in the plan and it is now load-bearing, not aspirational. |
+| **3 Overflow** | **Hard-stop the take with a clean finalize.** Every file gets a correct header and opens in a DAW. | §4.4's fork collapses to (a). Never "continue with a logged gap": a short file that *plays* is the failure mode we are specifically buying our way out of. `gapFrames` is still counted — it is the **trigger** for the stop and the reason line in the take log. |
+| **4 Master bus** | **Yes** — record it as a **9th pair**, 18 channels, default on. | +11.1 % wire and disk (3.456 vs 3.072 MB/s), accepted. `09-master.wav` is not optional. |
+| **5 Bit depth** | **32-bit float.** No clipping (DC-coupled CV legitimately exceeds ±1.0) and zero conversion on the write path. | §4.5's four arguments stand. **The 24-bit switch is dropped from day one** — it buys −25 % disk in exchange for a dither decision and a clipping risk on CV, against a cost §5 already shows is irrelevant. |
+| **6 Chunking** | **One continuous WAV per pair per take.** Video keeps rolling ~10 min; the **manifest carries the alignment**. | §4.6 stands. The audio and video chunk boundaries are deliberately **not** aligned; nothing may assume they are. |
+| **7 DAW target** | **Mainstream commercial.** WAV float32 + **BWF `bext`**, kept **under 4 GiB**. **No RF64 on day one.** CAF and W64 are ruled out. | The largest change to the body. See §6.2 — the RF64 promotion machinery in §4.5 becomes **Phase-later**, and "under 4 GiB" becomes a **runtime obligation** (a 3 h 06 m per-pair ceiling that must be enforced, not just noted). |
+| **8 Distribution** | **Dev-only.** Build from source. No signing, no notarization, no Homebrew tap yet. | §7 G3's Gatekeeper argument is **deferred, not answered**. The Phase-0 remote + CI for the native repo still stands (that is about the code existing at all, not about shipping it). "An exemption you cannot distribute is a demo" is **accepted as true** — this feature is explicitly a demo for now. |
+| **9 Version skew** | **Refuse to arm**, and the card names **both** versions (required vs actual). **No per-block CRC** — it is a localhost loopback; TCP's checksum is sufficient. | §4.2 stands. The `crc32c` field at wire offset 28 (§4.3) is **removed**; do not spend the bytes or the CPU. |
+| **10 Take folder** | **The helper owns it.** Picked once, natively; the helper creates `TAKE-NNN/` and **hands the path back to the browser** so the video lands in the same folder. | §4.10 stands, with the direction pinned: path flows **helper → browser**, never the reverse. The browser's File System Access picker does not cover the audio and must not pretend to. |
+| **11 Deliverable** | **A folder of files.** No mux, no post-pass. | Deliberate: **a crashed take stays usable.** A remux step would be a second place for a take to die, after the take is already over. The container question stays closed. |
+| **12 Deployed** | **Accept inert** on `https://patchtogether.live`. Works only from `http://localhost`. | §4.8 stands. **New requirement:** the card must *explain why* — not merely disable itself. A dead control with no reason is a bug report waiting to happen. |
+
+### 6.1 ENGINEERING UNKNOWNS — not owner questions
+
+These are open because **nobody knows the answer yet**, not because a decision is pending. No owner
+input can close them; only measurement or code can. Recorded here so they are not mistaken for
+settled design.
+
+1. **The record ring size is a BUDGET, not a measurement.** 131 072 frames (2 730.7 ms, 9.00 MiB at
+   18 ch f32) was *chosen* to survive a worst-case disk stall that has never been observed on the
+   owner's machine. It is a guess with a table around it. **The design ships a `ringPeak` (high-water
+   occupancy) telemetry field in `meters` from day one precisely so week one converts it into a
+   measurement.** Until that number exists, treat the ring depth as unvalidated — and note the
+   instrument only reads true if `ringPeak` is a high-water mark that is never reset mid-take.
+2. **The `sampleTime += got` gap-accounting defect must be fixed BEFORE any drop detection can
+   work.** `bridge.worker.ts:198` counts frames **SENT**; the same function discards ring content at
+   `:179` and `:183` **without touching the counter**. The stream is therefore **gapless by
+   construction across a drop**, so any detector reading `sampleTime` can never fire — it is not a
+   weak detector, it is a *dead* one. This blocks OQ-3's hard-stop policy outright: you cannot
+   hard-stop on an overflow you are structurally unable to see. Fix = a `producedFrames` counter
+   incremented in the worklet on **every** `process()` regardless of ring acceptance, carried in the
+   v2 header, **plus a mandatory negative-control test that forces a drop and asserts the number
+   moves.** Per this repo's own VALIDATE-THE-INSTRUMENT rule, the negative control is not optional:
+   without it the new counter can be exactly as blind as the old one and nothing would say so.
+3. **The A/V drift bound is DERIVED, not measured.** The ≈0.36 s/hour worst case is
+   ±50 ppm × 2 × 3600 s — the textbook part-tolerance arithmetic, not a number observed on this
+   hardware. It is quoted as a bound to justify §4.7's rebase onto `ctx.currentTime` (which makes the
+   drift *structurally* zero and therefore makes the bound moot). **Do not cite 0.36 s/hour as a
+   measurement**, and do not use it to size anything.
+
+Carried over from §7 and still unknown, in the same category: whether Apple's `kAudioFileBW64Type`
+writer emits a correct `ds64` for a >4 GiB float file (now lower priority — OQ-7 defers RF64); the
+real worst-case APFS write-stall (item 1 above); whether `kAUDefaultMaxFramesPerSlice` should be read
+back from the AU at runtime rather than trusting the 1156 figure; whether MIXMSTRS's Faust DSP
+reports internal latency; and the fact that **no ES-9 was attached during this synthesis**, so
+channel counts come from the vendor page plus the repo's recorded live probe.
+
+### 6.2 What OQ-7 changes in the body of this plan
+
+The "no RF64 day one" decision is the only answer that contradicts text elsewhere in this document.
+Reconciled here rather than by rewriting §4.5, so the reasoning survives if the decision is revisited:
+
+- **§4.5's format line is now: discrete stereo BWF WAV, 32-bit float, under 4 GiB.** Not "BWF/RF64".
+- **The `JUNK` placeholder at 0x000C stays.** It costs 36 bytes, it is invisible to every reader, and
+  it is what makes a later RF64 promotion a two-`pwrite` change instead of a rewrite. Reserving it is
+  not the same as implementing promotion.
+- **The promotion logic, the torn-window ordering (`ds64` first, `RIFF` second), and its byte-exact
+  test move to a later phase** — they are not day-one work.
+- **"Under 4 GiB" becomes an enforced runtime limit, not a footnote.** A stereo f32 pair crosses
+  4 GiB at **3 h 06 m 25 s**. Without RF64 that is a **hard ceiling**, so the take must stop cleanly
+  before it — which is exactly OQ-3's policy, reached by a different route. A take that runs past it
+  and silently produces an invalid header is precisely the "plays fine, dies in the DAW a week later"
+  failure this plan exists to prevent.
+- **Unchanged by OQ-7:** never write `0xFFFFFFFF` placeholders (§7 G8) — the 1 Hz real-size header
+  refresh is day-one work regardless, because it is what makes a crashed take readable.
 
 ---
 
@@ -886,9 +971,12 @@ third permanent hardware exemption **plus a cap raise** — directly against `re
 **Sequencing the fixture first turns that into a cap REDUCTION.** This is the single strongest argument
 for the phase order in §9.
 
-### STILL OPEN — carried into §6
+### STILL OPEN — now ENGINEERING unknowns only (§6.1)
 
-- Which DAWs must open the files (→ OQ-7). Determines CAF/W64 exclusion and RF64 urgency.
+Every owner-facing item that used to live here has been answered — the DAW question is closed
+(**OQ-7: mainstream commercial, WAV+`bext`, under 4 GiB, no RF64 day one**), which also closes the
+CAF/W64 exclusion. What remains needs measurement, not a decision:
+
 - Whether Apple's `kAudioFileBW64Type` writer emits a correct `ds64` for a >4 GiB float file
   (**UNCONFIRMED** — must be tested by writing 5 GiB and opening it in a DAW; this is why §4.5 specs a
   hand-rolled writer rather than `AudioFile`).
@@ -918,12 +1006,18 @@ device, and it is the strongest practical argument for that choice.
 driven by `URLSessionWebSocketTask` against `SyntheticEngine`. Everything below runs there:
 
 - record-session handshake, role arbitration, `busy` on a second record client, version-mismatch refusal
-- v2 block encode/decode, channel-mask expansion, 24-bit packing
+- v2 block encode/decode, channel-mask expansion (no 24-bit packing — dropped, OQ-5)
 - `RecordRing` wrap / overflow / underflow / threaded sequence (mirrors the existing `SPSCRing` tests)
-- **the gap-accounting negative control** — force a drop, assert `gapFrames` moves (§4.3)
-- WAV/RF64 byte-exactness: header layout, `fmt ` extensible, `bext` offsets, `fact`, `data`
-- **the RF64 promotion, including the torn-window ordering** — write 4 GiB+1 through a fake sink,
-  assert `ds64` lands before `RIFF`→`RF64`
+- **the gap-accounting negative control** — force a drop, assert `gapFrames` moves (§4.3). **This one
+  is mandatory, not optional**: it is what proves the new counter is not as blind as the old one
+  (§6.1(2)). Without it, "gap accounting works" is an untested claim about an instrument.
+- **the hard-stop on overflow** (OQ-3) — force the overflow, assert the take finalizes and every file
+  on disk has a correct header
+- **the 4 GiB ceiling** (OQ-7) — assert the take stops cleanly *before* the crossing rather than
+  writing a header it cannot express
+- WAV byte-exactness: header layout, `fmt ` extensible, `bext` offsets, `fact`, `data`
+- *(deferred with RF64 — OQ-7)* the promotion and its torn-window ordering: write 4 GiB+1 through a
+  fake sink, assert `ds64` lands before `RIFF`→`RF64`
 - **crash truncation** — kill the writer mid-take, assert the last-written header describes a valid,
   openable file (not `0xFFFFFFFF`)
 - **ENOSPC** — `throw ENOSPC` from the fake sink rather than actually filling a disk
@@ -964,8 +1058,9 @@ hardware-verification.
 ### Permanently uncovered — accept and document
 
 - **The DAW import matrix.** Whether Pro Tools / Live / Logic / Reaper / Nuendo actually open these
-  files, including past 4 GiB. This is a manual checklist, run once per format change. It is the
-  reason OQ-7 exists.
+  files. This is a manual checklist, run once per format change. OQ-7 set the target
+  (**mainstream commercial, WAV float32 + `bext`, under 4 GiB**) but a target is not a verification —
+  the checklist still has to be run. "Past 4 GiB" drops off it until RF64 lands.
 - **Real sustained-write behaviour on the owner's actual disks**, including external and network
   volumes. `ringPeak` telemetry makes it observable in the field; it cannot be asserted in CI.
 - **Gatekeeper / notarization UX** on a machine that has never seen the binary.
@@ -982,7 +1077,10 @@ provable, and **independently valuable even if ES-9 RECORDERBOX is never built**
 
 - Push `../patchtogether.es9` to a remote. It currently has **none**.
 - Add `.github/workflows/ci.yml` running `swift test` — 35 hardware-free tests that nothing runs today.
-- Decide and document the signing / notarization / distribution story (**OQ-8**).
+- **OQ-8, ANSWERED: dev-only.** Build from source; no signing, no notarization, no Homebrew tap.
+  Document that decision (and that it makes this a demo, not a distributable feature) rather than
+  building a distribution pipeline now. The remote + CI above are still required — they are about the
+  code existing at all, not about shipping it.
 
 *Provable by:* a green `swift test` badge on a remote.
 *Value if abandoned here:* the existing helper stops being one disk failure away from nonexistence.
@@ -1014,7 +1112,8 @@ A real Node WS server on a test port speaking protocol v1, injected through the 
 - `role:'record'` session + arbitration + version gate.
 - v2 record block header.
 - `RecordRing` (131 072 frames) + `RecordWriter` thread at `.utility`.
-- `FileSink` protocol; WAV/BWF writer; RF64 promotion in the correct order; 1 Hz real-size header
+- `FileSink` protocol; WAV/BWF writer; the enforced 4 GiB ceiling with a clean stop before it (RF64
+  promotion **deferred** — OQ-7; keep the 36-byte `JUNK` reservation); 1 Hz real-size header
   refresh; `fsync` policy; `statfs` pre-flight; ENOSPC; `ringPeak` + `freeBytes` telemetry.
 - **The browser is not modified at all** — the client is a test harness.
 
@@ -1119,3 +1218,10 @@ e2e/vrt/vrt-exemptions.ts:309                                es9 VRT exemption
 
 *Synthesized 2026-08-01 from three research facets and two adversarial critiques. Where the facets
 disagreed, §7 records the resolution and which facet was wrong; nothing was averaged.*
+
+*Owner decisions on all 12 questions recorded 2026-08-02 (§6). Every downstream contradiction they
+created was reconciled in place rather than left for a reader to notice — §6.2 lists the OQ-7 ones
+explicitly, because deferring RF64 turns "4 GiB" from a footnote into an enforced runtime limit. The
+remaining unknowns (§6.1) are engineering, not owner input: the record ring size is a **budget**
+awaiting `ringPeak` telemetry, the `sampleTime += got` gap-accounting defect **blocks** any drop
+detection and must be fixed first, and the A/V drift bound is **derived, not measured**.*
