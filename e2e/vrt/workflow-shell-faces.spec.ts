@@ -61,6 +61,8 @@ const FACES = [
   { type: 'mixer', pages: 2 },
   { type: 'delay', pages: 2 },
   { type: 'reverb', pages: 2 },
+  // batch B+ — the stereo crush
+  { type: 'ringback', pages: 2 },
 ] as const;
 
 /** TIGHT per-scene diff budgets (absolute pixels; Playwright takes the MIN of

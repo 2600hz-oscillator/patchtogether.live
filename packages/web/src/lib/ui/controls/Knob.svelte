@@ -54,6 +54,18 @@
      * (when not being dragged) and renders that as the tick angle.
      */
     readLive?: () => number | undefined;
+    /**
+     * Optional override for the value-tag text — the `ParamDef.format` seam
+     * (PF-3), matching `Fader.svelte`'s prop of the same name.
+     *
+     * It exists because a def-declared `format` that a card never forwards is
+     * a DISAGREEMENT, not a downgrade: the curated face reads the param and
+     * prints (say) `SR/2.0` while this dial, reading the same param, prints
+     * `0.50`. `card-range-source.test.ts` requires `formatValue={p.format}` on
+     * every control whose param declares one — a requirement no Knob-based
+     * card could satisfy until this prop existed.
+     */
+    formatValue?: (v: number) => string;
     /** MIDI Learn — when both moduleId + paramId are set the knob becomes
      *  right-clickable to bind a MIDI CC. Cards that don't pass these
      *  silently skip the feature. */
@@ -71,6 +83,7 @@
     curve = 'linear',
     onchange,
     readLive,
+    formatValue,
     moduleId,
     paramId,
   }: Props = $props();
@@ -252,6 +265,13 @@
   // The readout ladder lives in ONE place (param-format.ts) — this dial, the
   // conic dial, the fader and the Push 2 card all print the same string.
   const format = formatParamNumber;
+
+  /** Display string for the live value, applying the optional override (the
+   *  same precedence Fader.svelte uses: a declared `format` outranks the
+   *  shared ladder). */
+  function valueText(v: number): string {
+    return formatValue ? formatValue(v) : format(v, units);
+  }
 </script>
 
 <div
@@ -264,7 +284,7 @@
   role="presentation"
 >
   {#if dragging || hovering}
-    <div class="value">{format(liveValue, units)}</div>
+    <div class="value">{valueText(liveValue)}</div>
   {/if}
   <div
     class="knob"
