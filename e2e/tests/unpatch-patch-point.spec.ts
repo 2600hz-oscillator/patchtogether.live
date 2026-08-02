@@ -203,10 +203,43 @@ async function seedAndRun(page: Page, lane: number): Promise<void> {
 }
 
 /** MAX mixmstrs meter RMS for channel `ch` (1-based) over `durationMs`. */
-async function pollChannelRms(page: Page, ch: number, durationMs: number): Promise<number> {
+/**
+ * Peak channel RMS over a sampling window.
+ *
+ * `untilAbove` turns the fixed WINDOW into a CONDITION WAIT: sampling stops the
+ * moment the peak clears the threshold, and `durationMs` degrades from "how
+ * long we watch" to "how long we are willing to wait".
+ *
+ * WHY THAT DISTINCTION MATTERS, measured rather than assumed. The two calls in
+ * the POLY test look symmetrical and are not:
+ *
+ *   * the BEFORE call asks "does audio START?" — a one-way event. A fixed
+ *     window makes it a race between the CI runner and a wall clock, which is
+ *     the CLAUDE.md failure (a wall-clock budget is a different assertion on
+ *     every machine). It went red on main and on every PR that merged main
+ *     with `the lane really plays before the unpatch` — the PRECONDITION, not
+ *     the behaviour under test — while passing locally in ~1.6 s of real work.
+ *     Ten e2e shards share the runner, and the boot + engine start + transport
+ *     + poly voice attack all have to land inside the window.
+ *   * the AFTER call asks "does it STAY silent?" — a property over an
+ *     interval, where an early return would be exactly wrong. That one keeps a
+ *     genuine fixed window and passes no threshold.
+ *
+ * ⚠ CI WALL-TIME DELTA IS NEGATIVE. The BEFORE call now returns as soon as the
+ * meter clears (well under a second locally) instead of always burning its
+ * whole window, so raising the ceiling to 30 s makes the happy path FASTER
+ * while removing the load dependence.
+ */
+async function pollChannelRms(
+  page: Page,
+  ch: number,
+  durationMs: number,
+  untilAbove?: number,
+): Promise<number> {
   let max = 0;
   const end = Date.now() + durationMs;
   while (Date.now() < end) {
+    if (untilAbove !== undefined && max > untilAbove) return max;
     const level = await page.evaluate((chIdx) => {
       const w = globalThis as unknown as {
         __engine?: () => { read: (n: { id: string; type: string; domain: string }, k: string) => unknown } | null;
@@ -280,7 +313,9 @@ test('rear card: unpatching POLY silences the note path at the mixer channel met
 
   // BASELINE: the pinned clip player drives lane 1 → audible energy on ch1.
   await seedAndRun(page, 0);
-  const before = await pollChannelRms(page, 1, 4000);
+  // CONDITION, not window (see pollChannelRms): wait for the meter to clear
+  // 0.02, up to 30 s, returning the instant it does.
+  const before = await pollChannelRms(page, 1, 30_000, 0.02);
   expect(before, 'the lane really plays before the unpatch').toBeGreaterThan(0.02);
 
   await openRearCard(page, strum);
