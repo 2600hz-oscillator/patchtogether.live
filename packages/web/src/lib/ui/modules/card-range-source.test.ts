@@ -28,6 +28,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { adsrDef } from '$lib/audio/modules/adsr';
 import { backdraftDef } from '$lib/video/modules/backdraft';
+import { delayDef } from '$lib/audio/modules/delay';
 import { ringbackDef } from '$lib/audio/modules/ringback';
 import { snaredrumDef } from '$lib/audio/modules/snaredrum';
 import { vcaDef } from '$lib/audio/modules/vca';
@@ -43,6 +44,12 @@ import type { ParamDef } from '$lib/graph/types';
  *    `formatVcaBase`, so the face prints `CLOSED` / `-12 dB` / `UNITY`, and
  *    before the conversion the card's value tag on the same param printed
  *    `0.25`. One param, two laws, and no def-reading gate could see it.
+ *  - DelayCard: converted with the delay face rework (binds via paramSpec).
+ *    It is the first entry here whose re-typing had ALREADY DIVERGED rather
+ *    than merely being able to: the middle fader was captioned `Fb` while the
+ *    def declares `Feedback`, so one control carried two names depending on
+ *    which surface you read. The nine range literals beside it all still
+ *    agreed — which is exactly how this class hides.
  *  - RingbackCard: converted with the ringback face promotion. It is the first
  *    KNOB-based card in this set, which is why `Knob.svelte` had to grow the
  *    `formatValue` prop `Fader.svelte` already had — the format clause below
@@ -64,6 +71,7 @@ import type { ParamDef } from '$lib/graph/types';
 const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }>> = {
   'AdsrCard.svelte': adsrDef,
   'BackdraftCard.svelte': backdraftDef,
+  'DelayCard.svelte': delayDef,
   'RingbackCard.svelte': ringbackDef,
   'SnaredrumCard.svelte': snaredrumDef,
   'VcaCard.svelte': vcaDef,
@@ -76,17 +84,24 @@ const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }
  */
 const MAPPING_BOUND_CARDS: readonly string[] = [
   'AdsrCard.svelte',
+  'DelayCard.svelte',
   'RingbackCard.svelte',
   'SnaredrumCard.svelte',
   'VcaCard.svelte',
 ];
 
 /** The ratchet floors — lower either and this test is the thing that says no. */
-// Both floors are the SUM of two same-day conversions (ringback + snaredrum)
-// on top of the previous 3/2 — taking either branch's literal would silently
-// let the other's card fall back out of the set.
-const RANGE_BOUND_FLOOR = 5;
-const MAPPING_BOUND_FLOOR = 4;
+// ⚠ A MERGE CANNOT COMPUTE THESE, AND THAT IS A SILENT HAZARD. Four cards were
+// converted the same day off a shared 3/2 base — delay, ringback, snaredrum,
+// each PR raising the floor by ONE to 5/4 (range/mapping). Git then merges the
+// LISTS cleanly (different lines) and sees NO CONFLICT on the floors, because
+// every branch wrote the identical literal. The merged truth is the UNION —
+// 6 range-bound / 5 mapping-bound — so the inherited 5/4 passes with a full
+// card of slack in each, and the next card to fall back out of the set is
+// absorbed in silence rather than reddening this test. Whenever this file
+// merges, RE-DERIVE the floors from the lists; never inherit the literal.
+const RANGE_BOUND_FLOOR = 6;
+const MAPPING_BOUND_FLOOR = 5;
 
 /**
  * A range-ish prop bound to a NUMERIC LITERAL. Covers `min/max/defaultValue`

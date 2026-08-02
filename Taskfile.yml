@@ -857,10 +857,17 @@ tasks:
     deps: [dsp:ensure, test:emit-manifest]
     cmds:
       # Build the prod bundle first when serving preview (preview needs a build).
+      # VITE_E2E_HOOKS=1 is REQUIRED at BUILD time and was missing here: the
+      # helpers drive the app through `window.__ensureEngine` / `__patch`, and
+      # those hooks are TREE-SHAKEN OUT of a prod bundle without it. ci.yml's
+      # build-web already sets it (that is why CI's preview lane works); locally
+      # the flagless build produced a bundle where EVERY `task e2e:one` died in
+      # `spawnPatch` waiting for `__ensureEngine`, which reads as a broken test
+      # rather than a broken server. Same flag, same reason, both places.
       - |
         if [ "${E2E_PREVIEW:-0}" = "1" ]; then
-          echo "[e2e:serve] E2E_PREVIEW=1 → building web for preview"
-          npm run build -w {{.WEB}}
+          echo "[e2e:serve] E2E_PREVIEW=1 → building web for preview (VITE_E2E_HOOKS=1)"
+          VITE_E2E_HOOKS=1 npm run build -w {{.WEB}}
         fi
       - bash scripts/dev-server.sh start
 

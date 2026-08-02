@@ -219,11 +219,25 @@ describe('resolvePushCardControls — the runtime typo guard', () => {
 
 describe('resolvePushCardControls — tier 2, the curated face', () => {
   it('takes the first 8 TURNABLE params of face.order, in rank order', () => {
-    // karplus has no override; its face ranks 8 params, all turnable.
+    // karplus has no override; its face ranks 8 params (all turnable) plus one
+    // control family, so the window has to step over the family AND still land
+    // eight — the same property sixstrum pins below, on a module where the
+    // family sits mid-order rather than at rank 7 of 15.
+    //
+    // ⚠ THIS GOLDEN MOVED WITH THE FACE, and that is the point rather than
+    // churn: the encoder layout is DERIVED from `face.order`, so karplus's
+    // LEVEL 8→6 / POS 6→8 re-rank re-assigns encoders 6-8. It is the hazard
+    // CLAUDE.md's push-card note names ("a re-rank can silently change a
+    // module's push card") firing as designed — visible, in an accept loop,
+    // instead of silently.
     expect(ids('karplus')).toEqual([
-      'decay', 'brightness', 'tune', 'color', 'burst', 'position', 'stiffness', 'level',
+      'decay', 'brightness', 'tune', 'color', 'burst', 'level', 'position', 'stiffness',
     ]);
-    expect(resolvePushCardControls(defByType('karplus')).source).toBe('face');
+    const spec = resolvePushCardControls(defByType('karplus'));
+    expect(spec.source).toBe('face');
+    expect(spec.skipped, 'the PLUCK is a family — an encoder cannot turn a button').toEqual([
+      'karplus-strike-{n}',
+    ]);
   });
 
   it('SKIPS a control family and keeps walking — it does not stop at rank 1', () => {
