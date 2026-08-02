@@ -250,6 +250,14 @@ test('score: currently-playing note highlight tracks engine.read currentNoteId',
 });
 
 test('score: dynamic marker scales the env output amplitude', async ({ page, rack }) => {
+  // ⚠ THE 30s POLL CEILING BELOW WAS UNREACHABLE. Playwright's DEFAULT TEST
+  // TIMEOUT is 30s (this config sets no global `timeout`), so the test budget
+  // expired before the poll could ever spend its own — the 10s → 30s bump
+  // bought only whatever was left after `spawnPatch`, roughly a third of it.
+  // The wait bound and the TEST bound have to move together or the larger one
+  // is decorative. Failure-path only: `expect.poll` returns the moment the
+  // assertion passes, so green runs are unchanged.
+  test.setTimeout(60_000);
   await spawnPatch(page, [{ id: 'score', type: 'score', params: { bpm: 240, isPlaying: 1 } }]);
 
   await page.evaluate(() => {
@@ -557,6 +565,74 @@ test('score: stop-bar + loop=off stops playback at end of sequence', async ({ pa
   expect(isPlaying).toBe(false);
 });
 
+/**
+ * Wait IN THE PAGE for a score-engine readout to reach `want`, and report the
+ * gate read in the SAME sample that saw it.
+ *
+ * ⚠ Deliberately NOT a Playwright-side `expect.poll`. A poll loop that
+ * round-trips `page.evaluate` once per sample runs on the SAME main thread as
+ * the thing it measures, so a loaded runner starves the subject and the sampler
+ * together (CLAUDE.md: "never sample a page-side quantity with a Playwright-side
+ * poll loop"). Worse, "the value never armed" and "the sampler never got to
+ * look" print the SAME `Received: -1` and are indistinguishable from the output
+ * — which is exactly the red that took main down on c31e9be9.
+ *
+ * This is ONE evaluate. Sampling happens on an in-page interval that costs no
+ * protocol traffic, and the accumulated `seen` set SURVIVES a stall, so a thread
+ * frozen for seconds and then resumed still reports every value it computed.
+ * `samples` / `elapsedMs` go into the assertion message, so the next red run is
+ * diagnosable instead of a coin flip.
+ *
+ * `deadlineMs` BOUNDS THE FAILURE — it is not the gate. The gate is the
+ * `.toBe()` at the call site, unchanged. The waiter returns on the FIRST match,
+ * so a larger bound costs nothing on the happy path.
+ */
+async function waitForScoreReadout(
+  page: import('@playwright/test').Page,
+  key: string,
+  want: number,
+  deadlineMs: number,
+): Promise<{ value: number; gate: number; samples: number; elapsedMs: number; seen: number[] }> {
+  return await page.evaluate(
+    ({ key, want, deadlineMs }) =>
+      new Promise<{
+        value: number;
+        gate: number;
+        samples: number;
+        elapsedMs: number;
+        seen: number[];
+      }>((resolve) => {
+        const w = globalThis as unknown as {
+          __engine?: () => { read: (node: unknown, key: string) => unknown } | null;
+          __patch: { nodes: Record<string, unknown> };
+        };
+        const t0 = performance.now();
+        const seen = new Set<number>();
+        let samples = 0;
+        let timer: ReturnType<typeof setInterval> | undefined;
+        const num = (v: unknown) => (typeof v === 'number' ? v : Number.NaN);
+        const read = () => {
+          const e = w.__engine?.();
+          const node = w.__patch.nodes['score'];
+          if (!e || !node) return { value: Number.NaN, gate: Number.NaN };
+          return { value: num(e.read(node, key)), gate: num(e.read(node, 'gateValue')) };
+        };
+        const tick = () => {
+          samples += 1;
+          const r = read();
+          seen.add(r.value);
+          if (r.value === want || performance.now() - t0 >= deadlineMs) {
+            if (timer !== undefined) clearInterval(timer);
+            resolve({ ...r, samples, elapsedMs: performance.now() - t0, seen: [...seen] });
+          }
+        };
+        timer = setInterval(tick, 25);
+        tick();
+      }),
+    { key, want, deadlineMs },
+  );
+}
+
 // #score-tied-gate (re-enabled, wave-3): the tied-note held-gate read used a FLAT
 // waitForTimeout(400) + a single read, so under CI load the read could land BEFORE
 // the scheduler had emitted the tie-start note A — at which point
@@ -564,10 +640,28 @@ test('score: stop-bar + loop=off stops playback at end of sequence', async ({ pa
 // chain-end tick only inside emitTick for the tied-start role) and `gateValue`
 // is still 0. That's the intermittent -1 the old comment chased; it's a timing
 // race, not an off-by-one in any search window. The fix awaits the held-gate
-// signal deterministically: poll `tiedGateHoldUntilTick` until it arms to 36
-// (the chain-end grid tick), then read the gate — which is guaranteed high once
-// the hold tick is set, since both are written together in the tied-start branch.
+// signal deterministically: wait for `tiedGateHoldUntilTick` to arm to 36 (the
+// chain-end grid tick) and read the gate in the same sample — the tied-start
+// branch writes both together.
+//
+// ⚠ RED MAIN, 2026-08-02 (c31e9be9). The wait was a Playwright-side
+// `expect.poll(..., { timeout: 10_000, intervals: [125, 250, 500] })` and it
+// expired on `e2e (shard 9/10)` with `Received: -1` — the not-yet-armed
+// sentinel — on BOTH the attempt and retry1, taking the required
+// `typecheck + unit + ART + E2E` umbrella down. 246/247 in that shard passed
+// and shard 9 ran 11m27s against 10m50s / 8m04s on the two prior GREEN main
+// runs, with four CI runs in flight: propagation latency under ten parallel
+// shards, the same diagnosis the dynamic-marker test one screen up reached one
+// budget earlier. Two things were wrong and only one was the number:
+//   1. the SAMPLER competed with its own subject (see waitForScoreReadout), and
+//   2. the 30s DEFAULT TEST TIMEOUT is the real ceiling — a poll budget at or
+//      above it can never be spent, which is why the sibling's 10s → 30s bump
+//      did not actually buy 30s either. The test budget moves WITH the wait.
 test('score: tied notes produce a single sustained envelope (engine-level held gate)', async ({ page, rack }) => {
+  // 25s in-page wait bound + spawn/goto must fit INSIDE the test budget, or the
+  // test timeout fires first and the bound is decorative. Failure-path only —
+  // the waiter returns on first match, so green runs are unchanged.
+  test.setTimeout(60_000);
   await spawnPatch(page, [
     { id: 'score', type: 'score', params: { bpm: 120, isPlaying: 1 } },
   ]);
@@ -603,38 +697,13 @@ test('score: tied notes produce a single sustained envelope (engine-level held g
 
   // Await the engine arming the held-gate hold-tick instead of a flat wait. The
   // tied-start branch sets tiedGateHoldUntilTick = 36 (chain-end grid tick) only
-  // once note A is actually emitted; before that it's the -1 sentinel. Polling
-  // for 36 makes the test deterministic regardless of how long the scheduler
-  // takes to fire A's emitTick under CI load (backed-off intervals so we don't
-  // hammer engine.read while the audio thread catches up).
-  await expect
-    .poll(
-      async () =>
-        await page.evaluate(() => {
-          const w = globalThis as unknown as {
-            __engine?: () => { read: (node: unknown, key: string) => unknown } | null;
-            __patch: { nodes: Record<string, unknown> };
-          };
-          const e = w.__engine?.();
-          if (!e) return -999;
-          const v = e.read(w.__patch.nodes['score'], 'tiedGateHoldUntilTick');
-          return typeof v === 'number' ? v : -999;
-        }),
-      { timeout: 10_000, intervals: [125, 250, 500] },
-    )
-    .toBe(36);
+  // once note A is actually emitted; before that it's the -1 sentinel.
+  const held = await waitForScoreReadout(page, 'tiedGateHoldUntilTick', 36, 25_000);
+  const where = `${held.samples} in-page samples / ${Math.round(held.elapsedMs)} ms; values seen: [${held.seen.join(', ')}]`;
+  expect(held.value, `tiedGateHoldUntilTick armed to the chain-end grid tick — ${where}`).toBe(36);
   // Gate is high (1) during the tied span. The tied-start branch writes
-  // lastEmittedGate = 1 together with the hold tick above, so once the poll
-  // sees 36 the gate read is guaranteed high — no separate race window.
-  const gate = await page.evaluate(() => {
-    const w = globalThis as unknown as {
-      __engine?: () => { read: (node: unknown, key: string) => unknown } | null;
-      __patch: { nodes: Record<string, unknown> };
-    };
-    const e = w.__engine?.();
-    if (!e) return -1;
-    const v = e.read(w.__patch.nodes['score'], 'gateValue');
-    return typeof v === 'number' ? v : -1;
-  });
-  expect(gate).toBe(1);
+  // lastEmittedGate = 1 TOGETHER WITH the hold tick, so this is read from the
+  // SAME in-page sample that saw 36 — one instant, no second round trip, and no
+  // window in which the span could end between the two reads.
+  expect(held.gate, `gate HIGH in the same sample that armed the hold — ${where}`).toBe(1);
 });
