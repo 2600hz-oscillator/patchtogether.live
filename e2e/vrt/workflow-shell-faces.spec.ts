@@ -24,11 +24,17 @@
 // (animations killed via the style tag + `animations: 'disabled'`). Tight
 // per-scene budgets, the workflow-shell-zoom precedent.
 //
-// darwin-first: darwin baselines are captured locally (3× stable); the linux
-// pairs are EXEMPT_BASELINE_PAIRS-deferred until a vrt-update.yml dispatch
-// lands them (vrt-meta's linux-deficit ratchet accounts for the pairs). Batch
-// 1's 12 linux baselines have already landed that way; batch 2's 12 and batch
-// 3's 10 are the currently-pending set.
+// PLATFORM PARITY (2026-08-02): every faced module is now pinned on BOTH
+// platforms — 36 darwin / 36 linux, 18 modules × {compact, dock}, no
+// EXEMPT_BASELINE_PAIRS entry left for this spec. The lifecycle each batch went
+// through was: capture darwin locally (3× stable) → park the linux pairs →
+// DRAIN the pairs → dispatch `vrt-update.yml -f platform=linux` (a listed pair
+// is `test.skip()`-ed unconditionally, so `--update-snapshots` writes nothing
+// while it sits there). Batches 1 and 3 completed it on 2026-07-26, snaredrum
+// and ringback on 2026-08-02, and the batch-2 remainder (dx7, qbrt,
+// shimmershine, sixstrum, tomtom) in the parity PR the same day. The `test.skip`
+// on the shared Set stays as the seam a future darwin-first face would use, but
+// it selects NOTHING today.
 
 import { test, expect, type Page } from '@playwright/test';
 import { EXEMPT_BASELINE_PAIRS } from './vrt-exemptions';

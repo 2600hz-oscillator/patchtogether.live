@@ -329,8 +329,17 @@ describe('vrt-meta — STRICT_VRT_MODULES RATCHET (only grows)', () => {
  * (ringback −1, snaredrum −2), not either branch's own −2 on top of 94 —
  * the merge is where that arithmetic has to be done, and the both-directions
  * assertion below is what refuses a guess.
+ *
+ * 91 → 79 (2026-08-02, the darwin/linux PARITY PR): the P1 BATCH-2 pending set
+ * — the LAST unfinished lifecycle in the `?shell=1` workflow-shell family —
+ * drained in one go. Ten curated-face pairs (compact + dock for dx7, qbrt,
+ * shimmershine, sixstrum, tomtom) plus two rear-card pairs (rear-dx7,
+ * rear-sixstrum), captured by a `vrt-update.yml -f platform=linux` dispatch on
+ * that branch. Drain and re-capture in the SAME PR — the pairs had to be gone
+ * BEFORE the dispatch or `--update-snapshots` would have written nothing for
+ * twelve `test.skip()`-ed scenes.
  */
-const SHARED_LINUX_PAIR_CEILING = 91;
+const SHARED_LINUX_PAIR_CEILING = 79;
 
 describe('vrt-meta — EXEMPT_BASELINE_PAIRS size RATCHET (only shrinks)', () => {
   // ⚠ 2026-08-01 — READ THIS BEFORE TRUSTING THE NUMBER BELOW.
@@ -559,7 +568,19 @@ describe('vrt-meta — EXEMPT_BASELINE_PAIRS size RATCHET (only shrinks)', () =>
 // scenes stopped being darwin-only. ⚠ SUM, not substitution: ringback's −1
 // and snaredrum's −2 are independent drains that landed the same day, and
 // taking either branch's literal would leave the other's slack behind.
-const LINUX_DEFICIT_CEILING = 148;
+//
+// 148 → 136 (2026-08-02, the darwin/linux PARITY PR): the P1 BATCH-2 pending
+// set got real linux baselines from a `vrt-update.yml -f platform=linux`
+// dispatch — the 10 curated faces (compact + dock for dx7 / qbrt /
+// shimmershine / sixstrum / tomtom) and the 2 rear cards (rear-dx7,
+// rear-sixstrum). That takes workflow-shell-faces.spec.ts to 1:1 PARITY (18
+// faced modules × 2 tiers on both platforms, 36/36) and
+// workflow-rear-card.spec.ts to 4/4 — the whole `?shell=1` family is now
+// diffed on the platform CI gates on. ⚠ Between the branch push and the bot's
+// baseline commit this test is RED at 148 with 12 UNDECLARED gaps by
+// construction; that window is the documented drain-then-dispatch flow, not a
+// slack ceiling.
+const LINUX_DEFICIT_CEILING = 136;
 
 describe('vrt-meta — LINUX-baseline DEFICIT RATCHET (all four mechanisms)', () => {
   // THE HONESTY GATE. CI renders on LINUX. A scene captured on darwin but

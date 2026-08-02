@@ -31,9 +31,13 @@
 // the boot style tag kills transitions anyway. Element-capture of the
 // faceplate, workflow-shell-faces budgets.
 //
-// darwin-first: darwin baselines captured locally (3× stable); the linux
-// pairs are EXEMPT_BASELINE_PAIRS-deferred until a vrt-update.yml dispatch
-// lands them (the workflow-shell-faces precedent).
+// PLATFORM PARITY (2026-08-02): all four scenes are now pinned on BOTH
+// platforms — 4 darwin / 4 linux, no EXEMPT_BASELINE_PAIRS entry left for this
+// spec. rear-dx7 and rear-sixstrum were the batch-2 darwin-first leftovers;
+// their linux baselines came from a `vrt-update.yml -f platform=linux`
+// dispatch. The `test.skip` on the shared Set stays as the seam a future
+// darwin-first scene would use, but it selects NOTHING today: a scene captured
+// on darwin and skipped on linux is never diffed on the platform CI gates on.
 
 import { test, expect, type Page } from '@playwright/test';
 import { EXEMPT_BASELINE_PAIRS } from './vrt-exemptions';

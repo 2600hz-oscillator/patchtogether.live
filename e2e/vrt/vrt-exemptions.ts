@@ -1033,35 +1033,38 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // `--update-snapshots` writes nothing — the #1064 drum-wave drain ordering).
   // Their linux baselines land on this branch in the bot's regen commit.
   //
-  // P1 BATCH 2 (2026-07-26, deliberate darwin-first — the batch-1 pattern
-  // above, at the point in its lifecycle BEFORE the drain): the 12 CURATED
-  // FACE scenes for the six newly-migrated modules (compact lane tile + dock
-  // full-view faceplate per module, workflow-shell-faces.spec.ts) and the 2
-  // new REAR CARD scenes (workflow-rear-card.spec.ts — dx7, the batch's most
-  // complex face on the simplest possible rear, and sixstrum, its busiest
-  // field at 23 holes). darwin baselines captured locally and flake-checked
-  // 3× (42/42 clean); the linux pairs below are pending a vrt-update.yml
-  // `platform=linux` dispatch on this branch, at which point they get DRAINED
-  // exactly like batch 1's did and the vrt-meta linux-deficit ceiling comes
-  // back down by 14.
-  'linux/face-dx7-compact',
-  'linux/face-dx7-dock',
-  'linux/face-sixstrum-compact',
-  'linux/face-sixstrum-dock',
-  // DRAINED 2026-08-02 (the snaredrum face PR): `linux/face-snaredrum-compact`
-  // and `linux/face-snaredrum-dock` came out FIRST so a `vrt-update.yml
-  // -f platform=linux` dispatch on this branch could actually capture them —
-  // a still-listed pair is `test.skip()`-ed unconditionally and
-  // `--update-snapshots` writes NOTHING for a skipped test. Both ratchets in
-  // vrt-meta.test.ts drop by 2 in the same commit.
-  'linux/face-tomtom-compact',
-  'linux/face-tomtom-dock',
-  'linux/face-shimmershine-compact',
-  'linux/face-shimmershine-dock',
-  'linux/face-qbrt-compact',
-  'linux/face-qbrt-dock',
-  'linux/rear-dx7',
-  'linux/rear-sixstrum',
+  // P1 BATCH 2 — DRAINED 2026-08-02 (the darwin/linux PARITY PR). The batch-2
+  // pending set was the LAST unfinished lifecycle in the `?shell=1`
+  // workflow-shell family: the 10 CURATED FACE scenes for the five modules
+  // whose faces landed darwin-first and never got their dispatch (dx7, qbrt,
+  // shimmershine, sixstrum, tomtom — compact lane tile + dock full-view
+  // faceplate each, workflow-shell-faces.spec.ts) plus the 2 REAR CARD scenes
+  // for that batch (rear-dx7, the batch's most complex face on the simplest
+  // possible rear, and rear-sixstrum, its busiest field at 23 holes —
+  // workflow-rear-card.spec.ts).
+  //
+  //   'linux/face-dx7-compact'          'linux/face-dx7-dock'
+  //   'linux/face-qbrt-compact'         'linux/face-qbrt-dock'
+  //   'linux/face-shimmershine-compact' 'linux/face-shimmershine-dock'
+  //   'linux/face-sixstrum-compact'     'linux/face-sixstrum-dock'
+  //   'linux/face-tomtom-compact'       'linux/face-tomtom-dock'
+  //   'linux/rear-dx7'                  'linux/rear-sixstrum'
+  //
+  // They came out FIRST so a `vrt-update.yml -f platform=linux` dispatch on
+  // this branch can actually capture them: a still-listed pair is
+  // `test.skip()`-ed UNCONDITIONALLY and `--update-snapshots` writes NOTHING
+  // for a skipped test (CLAUDE.md — drain first, dispatch second; the #1064
+  // drum-wave + batch-1/batch-3 precedent). Between this commit and the bot's
+  // regen commit the 12 gaps read as UNDECLARED, which is the intended loud
+  // state — the drain and its re-capture land in the SAME PR.
+  //
+  // With them captured, workflow-shell-faces.spec.ts reaches 1:1 parity (18
+  // faced modules × {compact, dock} on BOTH platforms) and
+  // workflow-rear-card.spec.ts reaches 4/4. Both vrt-meta ceilings drop by 12
+  // in this same commit (shared pairs 91→79, linux deficit 148→136).
+  //
+  // (`linux/face-snaredrum-*` were drained the same way on 2026-08-02 by the
+  // snaredrum face PR; batch 1's 12 and batch 3's 10 drained on 2026-07-26.)
   //
   // PF-8 DOCK LANE-RAIL REMOVAL (2026-07-27) was DRAINED here, NOT parked.
   // The migrated shell no longer paints the lane jack rail at view='dock-full'
