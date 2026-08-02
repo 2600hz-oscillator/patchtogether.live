@@ -26,31 +26,70 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { adsrDef } from '$lib/audio/modules/adsr';
+import { backdraftDef } from '$lib/video/modules/backdraft';
+import type { ParamDef } from '$lib/graph/types';
 
 /**
- * Cards whose control RANGES are bound to the def. ONLY GROWS.
+ * Cards whose control RANGES are bound to the def, and the def each one reads.
+ * ONLY GROWS.
  *  - BackdraftCard: the named regression above (binds via pmin/pmax/pdef).
  *  - AdsrCard: converted with the adsr face rework (binds via paramSpec).
  */
-const RANGE_BOUND_CARDS: readonly string[] = ['AdsrCard.svelte', 'BackdraftCard.svelte'];
-
-/** The ratchet floor — lower it and this test is the thing that says no. */
-const RANGE_BOUND_FLOOR = 2;
+const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }>> = {
+  'AdsrCard.svelte': adsrDef,
+  'BackdraftCard.svelte': backdraftDef,
+};
 
 /**
- * A range-ish prop bound to a NUMERIC LITERAL. Covers the plain
- * `min/max/defaultValue` trio every Fader/Knob takes plus the axis-prefixed
- * form an XyPad takes (`xMin`/`yMax` — the exact props backdraft got wrong).
- * A leading `-` is included: `xMin={-1}` was half the original bug.
+ * Cards whose MAPPING props (`curve`, `units`) are ALSO def-bound. A strict
+ * subset of the above, and a separate ratchet on purpose — see the
+ * curve-agreement test below for why the two halves cannot be one list yet.
  */
-const LITERAL_RANGE = /(?:^|[^A-Za-z])((?:[xy])?(?:[Mm]in|[Mm]ax)|defaultValue)=\{\s*-?[0-9]/g;
+const MAPPING_BOUND_CARDS: readonly string[] = ['AdsrCard.svelte'];
+
+/** The ratchet floors — lower either and this test is the thing that says no. */
+const RANGE_BOUND_FLOOR = 2;
+const MAPPING_BOUND_FLOOR = 1;
+
+/**
+ * A range-ish prop bound to a NUMERIC LITERAL. Covers `min/max/defaultValue`
+ * and `step`, under ANY prefix — `xMin`/`yMax` (XyPad, the exact props
+ * backdraft got wrong), `valueMin`, or a bare `min`. A leading `-` is included:
+ * `xMin={-1}` was half the original bug.
+ *
+ * ⚠ THE PREFIX IS `[A-Za-z]*`, NOT `[xy]?`, AND THAT MATTERS. The narrow form
+ * only ever anticipated the two prefixes already known to have failed, which is
+ * how a source-level guard quietly stops guarding: a `valueMin={0}` or a
+ * `startMin={…}` on the next primitive reads as clean. Measured on the shapes
+ * this file cites: `[xy]?` catches `xMin`/`yMin` but not `valueMin` or `step`.
+ */
+const LITERAL_RANGE = /(?:^|[^A-Za-z0-9_])([A-Za-z]*(?:[Mm]in|[Mm]ax)|defaultValue|step)=\{\s*-?[0-9]/g;
+
+/**
+ * A MAPPING prop bound to a string literal. `curve` is the field the range
+ * guard was structurally blind to and the one that changes how a control's
+ * travel maps onto its range: a card passing `curve="linear"` against a def
+ * declaring `curve: 'log'` puts the fader's midpoint at ~5.0 s where the def
+ * puts ~0.1 s — "most of the travel does nothing", the backdraft shape exactly,
+ * with every def-reading gate green.
+ */
+const LITERAL_MAPPING = /(?:^|[^A-Za-z0-9_])(curve|units)=(["'])([^"']*)\2/g;
 
 function cardSource(file: string): string {
   return readFileSync(fileURLToPath(new URL(`./${file}`, import.meta.url)), 'utf8');
 }
 
+/** Every `<Control … />` tag in a card, as (paramId, props) pairs. */
+function controlTags(src: string): { paramId?: string; props: string }[] {
+  return [...src.matchAll(/<[A-Z][A-Za-z]*\b([^>]*?)\/>/gs)].map((m) => ({
+    paramId: /paramId="([^"]+)"/.exec(m[1] ?? '')?.[1],
+    props: m[1] ?? '',
+  }));
+}
+
 describe('card ranges come from the DEF, not from re-typed numbers', () => {
-  it.each(RANGE_BOUND_CARDS)('%s binds every range prop to the def', (file) => {
+  it.each(Object.keys(RANGE_BOUND_CARDS))('%s binds every range prop to the def', (file) => {
     const src = cardSource(file);
     const offenders: string[] = [];
     for (const line of src.split('\n')) {
@@ -67,15 +106,88 @@ describe('card ranges come from the DEF, not from re-typed numbers', () => {
     ).toBe('');
   });
 
-  it('the converted-card set only grows', () => {
-    expect(RANGE_BOUND_CARDS.length).toBeGreaterThanOrEqual(RANGE_BOUND_FLOOR);
-    expect(new Set(RANGE_BOUND_CARDS).size, 'no duplicate entries').toBe(RANGE_BOUND_CARDS.length);
+  it.each(MAPPING_BOUND_CARDS)('%s binds curve / units to the def too', (file) => {
+    const src = cardSource(file);
+    const offenders: string[] = [];
+    for (const line of src.split('\n')) {
+      LITERAL_MAPPING.lastIndex = 0;
+      for (const m of line.matchAll(LITERAL_MAPPING)) {
+        offenders.push(`${m[1]}="${m[3]}" literal — ${line.trim().slice(0, 120)}`);
+      }
+    }
+    expect(
+      offenders.join('\n'),
+      `${file} hand-types a control MAPPING the def declares. curve is not ` +
+        `cosmetic: a "linear" card against a "log" def moves the fader's ` +
+        `midpoint by a decade. Bind it: paramSpec(def, '<id>').curve.`,
+    ).toBe('');
   });
 
-  it('the grep can actually FAIL (negative control on the instrument)', () => {
+  it.each(MAPPING_BOUND_CARDS)('%s renders a def-declared `format`, not the primitive fallback', (file) => {
+    // ⚠ THE READOUT IS A TWO-SIDED CONTRACT TOO. A `ParamDef.format` the card
+    // never passes on is not a downgrade, it is a DISAGREEMENT: `Fader.svelte`
+    // falls back to its own magnitude ladder (`abs < 10 → toFixed(2)`), so the
+    // legacy card printed the adsr attack default as `0.01 s` and flattened the
+    // entire 1–9 ms decade onto `0.00 s`/`0.01 s` while the dock — reading the
+    // same param — printed `5 MS`. Every def-reading gate stayed green, because
+    // the def was right; only the card was wrong.
+    const def = RANGE_BOUND_CARDS[file]!;
+    const missing: string[] = [];
+    for (const { paramId, props } of controlTags(cardSource(file))) {
+      if (!paramId) continue;
+      const p = def.params.find((q) => q.id === paramId);
+      if (!p?.format) continue;
+      if (!/formatValue=\{/.test(props)) missing.push(`${file}.${paramId}`);
+    }
+    expect(
+      missing.join('\n'),
+      'a control whose param declares `format` must pass formatValue={p.format} — ' +
+        'otherwise the card prints one law and the dock prints another',
+    ).toBe('');
+  });
+
+  it('a range-bound card that still hand-types `curve` must at least AGREE with its def', () => {
+    // ⚠ THE HOLE THIS CLOSES IS IN THIS FILE'S OWN CERTIFIED SET.
+    // BackdraftCard — the card this guard was written FOR — is range-bound but
+    // still passes 20 literal `curve="linear"` props, so the set the header
+    // certifies as "def-bound" contains a card re-typing a def-declared field.
+    // Converting all 20 is a follow-up; leaving it as a PROSE caveat is how the
+    // divergence class comes back. Until each card joins MAPPING_BOUND_CARDS,
+    // its hand-typed curve is checked against the def VALUE-WISE, so a def-side
+    // curve change reddens here instead of silently re-mapping a control.
+    const bad: string[] = [];
+    for (const [file, def] of Object.entries(RANGE_BOUND_CARDS)) {
+      if (MAPPING_BOUND_CARDS.includes(file)) continue;
+      for (const { paramId, props } of controlTags(cardSource(file))) {
+        const literal = /(?:^|[^A-Za-z0-9_])curve=(["'])([^"']*)\1/.exec(props)?.[2];
+        if (!literal) continue;
+        if (!paramId) {
+          bad.push(`${file}: curve="${literal}" on a control with no paramId — uncheckable`);
+          continue;
+        }
+        const declared = def.params.find((p) => p.id === paramId)?.curve ?? 'linear';
+        if (declared !== literal) {
+          bad.push(`${file}.${paramId}: card curve="${literal}" but the def declares '${declared}'`);
+        }
+      }
+    }
+    expect(bad.join('\n'), 'a card curve that disagrees with its def re-maps the control').toEqual('');
+  });
+
+  it('the converted-card sets only grow', () => {
+    const range = Object.keys(RANGE_BOUND_CARDS);
+    expect(range.length).toBeGreaterThanOrEqual(RANGE_BOUND_FLOOR);
+    expect(MAPPING_BOUND_CARDS.length).toBeGreaterThanOrEqual(MAPPING_BOUND_FLOOR);
+    expect(new Set(MAPPING_BOUND_CARDS).size, 'no duplicate entries').toBe(MAPPING_BOUND_CARDS.length);
+    // Mapping-bound is a SUBSET of range-bound: binding a curve without binding
+    // the range it maps onto is not a state this ratchet has a meaning for.
+    for (const f of MAPPING_BOUND_CARDS) expect(range, `${f} must also be range-bound`).toContain(f);
+  });
+
+  it('the greps can actually FAIL (negative control on the instrument)', () => {
     // A textual gate that matches nothing looks exactly like a clean codebase.
-    // Prove the pattern fires on the real backdraft bug text before trusting a
-    // green run on the real files.
+    // Prove the patterns fire on the real bug shapes before trusting a green
+    // run on the real files.
     const bugLine = '<XyPad xMin={-1} xMax={1} yMin={-1} yMax={1} />';
     expect([...bugLine.matchAll(LITERAL_RANGE)].map((m) => m[1])).toEqual([
       'xMin',
@@ -83,8 +195,18 @@ describe('card ranges come from the DEF, not from re-typed numbers', () => {
       'yMin',
       'yMax',
     ]);
-    // …and does NOT fire on a def-bound binding or an unrelated numeric prop.
-    const ok = '<Fader min={pAttack.min} max={pAttack.max} width={204} trackHeight={80} />';
+    // The forms the OLD `((?:[xy])?(?:[Mm]in|[Mm]ax)|defaultValue)` pattern
+    // could not see. Each of these was a silent pass.
+    for (const s of ['<Fader valueMin={0} />', '<Fader step={0.01} />', '<Knob startMax={12} />']) {
+      expect([...s.matchAll(LITERAL_RANGE)].length, `range guard must catch: ${s}`).toBeGreaterThan(0);
+    }
+    for (const s of ['<Fader curve="log" />', "<Fader units='s' />"]) {
+      expect([...s.matchAll(LITERAL_MAPPING)].length, `mapping guard must catch: ${s}`).toBeGreaterThan(0);
+    }
+    // …and neither fires on a def-bound binding or an unrelated numeric prop.
+    const ok =
+      '<Fader min={pAttack.min} max={pAttack.max} curve={pAttack.curve} units={pAttack.units} width={204} trackHeight={80} />';
     expect([...ok.matchAll(LITERAL_RANGE)]).toEqual([]);
+    expect([...ok.matchAll(LITERAL_MAPPING)]).toEqual([]);
   });
 });

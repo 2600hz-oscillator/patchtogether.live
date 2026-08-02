@@ -87,8 +87,21 @@ describe('formatStageTime — the unit-banded stage readout', () => {
   });
 
   it('is ACCURATE and MONOTONE across the declared range (parse the text back)', () => {
-    const min = 0.001;
-    const max = 10;
+    // ⚠ READ FROM THE DEF, never re-typed. This file's own thesis is "don't
+    // re-state the def's numbers", and the sweep used to open with
+    // `const min = 0.001; const max = 10;` — so widening a stage's range would
+    // have left the property test probing the OLD decade and reporting clean
+    // on a decade it never touched. The three time stages share one range;
+    // assert that rather than assume it.
+    const timeStages = ['attack', 'decay', 'release'].map(
+      (id) => adsrDef.params.find((p) => p.id === id)!,
+    );
+    const min = Math.min(...timeStages.map((p) => p.min));
+    const max = Math.max(...timeStages.map((p) => p.max));
+    for (const p of timeStages) {
+      expect([p.min, p.max], `${p.id} shares the time-stage range`).toEqual([min, max]);
+      expect(p.curve, `${p.id} is the log curve this sweep samples along`).toBe('log');
+    }
     const N = 400;
     let prev = -Infinity;
     let prevText = '';

@@ -140,6 +140,17 @@ describe('ParamDef vocabulary — options (PF-1) vs landmarks (PF-10)', () => {
     // exactly like "this param declared no vocabulary". Probe the declared
     // range AND the values a live/engine read can legitimately hand back
     // before the node has booted (undefined→NaN, an unclamped CV sum).
+    // ⚠ A ZERO-ITERATION SWEEP IS A GREEN THAT MEANS NOTHING. `format` has few
+    // consumers, so `if (!p.format) continue` turns this whole test into a
+    // no-op the moment the last one is deleted — a gate that cannot fail on
+    // the thing it is named after. Floor it: at least one param in the live
+    // registry must actually declare a formatter for the sweep to have run.
+    const withFormat = allParams().filter(({ p }) => p.format);
+    expect(
+      withFormat.length,
+      'no param declares a `format` — this totality sweep just probed nothing',
+    ).toBeGreaterThan(0);
+
     const bad: string[] = [];
     for (const { type, p } of allParams()) {
       if (!p.format) continue;
