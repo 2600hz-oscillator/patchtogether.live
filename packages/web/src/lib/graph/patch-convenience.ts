@@ -434,7 +434,7 @@ export function resolveMainAudioIn(def: ConvenienceDef): MainAudioIn | null {
   // A DECLARED chain SOURCE has NO signal-chain audio input — its audio inputs
   // are MODULATION (FM / PM / sync / exciter), never a chain insert. It is
   // head-only. This DECLARATIVE role OVERRIDES the port inference (Design-D):
-  // without it a lone FM/exciter `audio` input (foxy/wavecel/callsine/swolevco)
+  // without it a lone FM/exciter `audio` input (foxy/wavecel/swolevco)
   // is mis-read as the module's "main in", wrongly binning an oscillator as an
   // FX/insert. Returning null here keeps EVERY consumer consistent — the planner
   // (isChainSource) AND the reconciler head-candidate test (column-reconcile.ts,

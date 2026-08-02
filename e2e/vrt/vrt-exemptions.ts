@@ -48,7 +48,7 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   //
   // MIGRATED to e2e/vrt/vrt-live-surfaces.ts (same mask, now with a measured
   // companion + a per-run negative control, so the region can no longer go
-  // blank unnoticed): cube, hypercube, warrenspectrum, mandelbulb, reshaper,
+  // blank unnoticed): cube, hypercube, mandelbulb, reshaper,
   // toybox, analogVco.
   //
   // SAMSLOOP — loop-based WAV sample player. The waveform canvas is
@@ -624,11 +624,15 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // there is no rendered frame to baseline. Unit suites cover the TS shim
   // (blood-runtime) + the CV-gate scancode map (blood-keys).
   blood: 'live game-loop framebuffer + user-supplied non-redistributable data (no frame on CI) defeats deterministic capture; unit suites cover blood-runtime shim + blood-keys scancode map',
-  // CALLSINE first-slice PR: VRT baseline pending; unit + ART + E2E
-  // provide coverage. Card is a standard 6-fader layout (model + 5
-  // continuous macros) — pinning baselines in a follow-up PR after
-  // any UI tweaks.
-  callsine: 'VRT baseline pending; unit + ART + E2E provide coverage. Standard 6-fader card — pinning baselines in a follow-up PR.',
+  // WARREN'S SPECTRUM (phase 1, 2026-08-02) — inherits the exemption its
+  // `callsine` predecessor carried. The card ships with existing primitives
+  // (2 Fader rows + PatchPanel) because the generic FACEPLATE PLATFORM is
+  // still in flight (#1301, feat/faceplate-platform-v2); the curated dock
+  // face lands ON that platform in a follow-up, which will move the card
+  // face wholesale. Capturing a baseline now would pin a layout we already
+  // know is about to be replaced, on BOTH platforms. Unit (dsp engine
+  // gates) + ART (audio profile) + per-module-per-port cover it meanwhile.
+  warrensspectrum: 'VRT baseline pending: the curated dock FACE lands on the faceplate platform (#1301) in a follow-up and will replace this card layout wholesale — capturing now pins a face we know is changing. Covered by the dsp unit gates, the ART audio profile and the per-port sweep.',
   // VIDEOBOX — live <video> element + animated drop-target border + a
   // playhead readout that ticks at 100ms. Same rationale as CAMERA: the
   // moving frame defeats single-shot pixel capture. Unit suites cover
@@ -953,7 +957,7 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // ===================================================================
   // linux/{macrooscillator, samsloop, scope, videoOut, audioOut, analogVco,
   //        lfo, feedback, lines, monoglitch, shapedramps,
-  //        unityscalemathematik, vdelay, warrenspectrum, timelorde}
+  //        unityscalemathematik, vdelay, timelorde}
   //
   // Every one of those had a COMMITTED linux baseline under
   // e2e/vrt/__screenshots__/vrt.spec.ts/linux/ — and was `test.skip()`-ed on
@@ -1387,9 +1391,6 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // was skipping a card we had already paid for. See the DRAIN BATCH note at the
   // head of this Set.
   // DRAINED 2026-08-01 (linux/vdelay): its linux baseline is COMMITTED, so this pair
-  // was skipping a card we had already paid for. See the DRAIN BATCH note at the
-  // head of this Set.
-  // DRAINED 2026-08-01 (linux/warrenspectrum): its linux baseline is COMMITTED, so this pair
   // was skipping a card we had already paid for. See the DRAIN BATCH note at the
   // head of this Set.
   // FREEZEFRAME (video sample & hold + per-channel posterize): darwin

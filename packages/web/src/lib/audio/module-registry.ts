@@ -101,7 +101,7 @@ export interface AudioModuleDef {
    * parent GroupCard so the group "becomes" the viz. SCOPE is the
    * pioneering case — the on-card 2D oscilloscope canvas is hoisted to
    * the GroupCard body when SCOPE is a member of a collapsed group.
-   * Other viz-capable modules (wavviz, swolevco, warrenspectrum, …) leave
+   * Other viz-capable modules (wavviz, swolevco, …) leave
    * this UNSET for now; once their cards stabilize their canvas DOM
    * contract the flag flips on without further plumbing.
    */

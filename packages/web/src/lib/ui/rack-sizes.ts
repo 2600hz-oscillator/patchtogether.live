@@ -33,7 +33,6 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   audioOut: { size: '1u', hp: 1 }, // 200×180px  [LOCKED]
   bluebox: { size: '2u', hp: 2 }, // 360×280px
   buggles: { size: '1u', hp: 2 }, // 156×280px
-  callsine: { size: '1u', hp: 2 }, // 196×340px
   cartesian: { size: '4u', hp: 2 }, // 563×360px
   charlottesEchos: { size: '1u', hp: 2 }, // 109×320px  [LOCKED]
   clipplayer: { size: '3u', hp: 2 }, // 8×8 launch grid + piano-roll note editor + transport
@@ -141,7 +140,7 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   twotracks: { size: '3u', hp: 4 }, // 406×580px
   unityscalemathematik: { size: '3u', hp: 2 }, // 446×240px
   vca: { size: '1u', hp: 1 }, // 156×160px
-  warrenspectrum: { size: '3u', hp: 3 }, // 481×440px
+  warrensspectrum: { size: '2u', hp: 2 }, // 2 fader rows (6 + 5) + PatchPanel; replaces callsine 1u/2hp + warrenspectrum 3u/3hp
   wavecel: { size: '3u', hp: 2 }, // 398×320px
   wavetableVco: { size: '1u', hp: 2 }, // 152×240px
   writeseq: { size: '2u', hp: 5 }, // 261×880px

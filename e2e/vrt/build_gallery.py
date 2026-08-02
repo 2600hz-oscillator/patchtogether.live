@@ -89,7 +89,7 @@ MODULE_BLURB: dict[str, str] = {
     "noise": "Noise source (white/pink/brown).",
     "buggles": "Wogglebug-style chaotic CV.",
     "wavecel": "WAVECEL — stereo wavetable VCO + 3D viz.",
-    "warrenspectrum": "Stereo 8-band filterbank + acidwarp viz.",
+    "warrensspectrum": "Spectral resynth — partial tracker + SMS residual.",
     "stereovca": "Stereo VCA + ring modulator.",
     # Video domain
     "lines": "LINES — animated line geometry.",

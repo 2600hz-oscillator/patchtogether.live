@@ -114,4 +114,28 @@ export const PUSH_CARD_CONTROLS: Readonly<Record<string, readonly string[]>> = {
     'low_cut',
     'high_cut',
   ],
+
+  // ── warren's spectrum ────────────────────────────────────────────────────
+  // 11 params. The generic tier would currently pick the same eight off param
+  // order, but an EXPLICIT entry is the point: a push card is resolved from
+  // the LIVE def, so adding or renaming a param on this module (phases 2-5 add
+  // ~90 of them) would silently re-rank the card and walk the 8th control off
+  // the display. An override REPLACES, so it cannot drift.
+  //
+  // Encoders 1-4 are what the module IS — density, harmonicity, the noise/sine
+  // balance, and the analysis rate. 5 is the one PERFORMATIVE control (FREEZE
+  // is a gesture, not a setting, so it sits under a thumb rather than at the
+  // end). 6-8 are the peak gate + the voice colour. GAIN, SLEW and CENTER are
+  // deliberately off: every module has a gain, and SLEW/CENTER are set-and-
+  // leave rather than played.
+  warrensspectrum: [
+    'spectralPartials',
+    'spectralLock',
+    'spectralResidual',
+    'spectralSlice',
+    'engineFreeze',
+    'spectralFloor',
+    'spectralStab',
+    'spectralShape',
+  ],
 };

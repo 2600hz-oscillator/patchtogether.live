@@ -115,7 +115,7 @@ per-channel mute + master fader.
 ### Group 6 — Time-based effects (delay + reverb + shimmer)
 
 Module types: `reverb`, `charlottesEchos`, `shimmershine`, `qbrt`,
-`warrenspectrum`. Tail-decay tests; resonant comb; viz_out emits.
+`warrensspectrum`. Spectral resynth; partial tracking; residual balance.
 
 ### Group 7 — Drum voices
 
@@ -130,7 +130,7 @@ non-uniform pixel buffer when its source chain is wired up.
 ### Group 9 — Cross-domain (audio <-> video)
 
 audio-domain modules with mono-video outputs (scope, wavviz, swolevco,
-warrenspectrum) feed video sinks. LFO cv modulates video-module cv
+wavesculpt) feed video sinks. LFO cv modulates video-module cv
 inputs.
 
 ## Test scope: local vs autotest

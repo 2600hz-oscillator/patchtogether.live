@@ -151,9 +151,10 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   // Batch 9 — synth voices & percussion sources (2026-06-26): a coherent cluster
   // of sound-generating modules — DRUMMERGIRL (one-shot synth drum voice),
   // MEOWBOX (formant cat-vocal voice), TREE.oh.VOX (TB-303 acid-bass voice),
-  // BUGGLES (wogglebug chaotic random source), CALLSINE (spectral additive
-  // resynth), and PENTEMELODICA (5-voice poly synth). The convention-card
-  // members (drummergirl / meowbox / treeohvox / buggles / callsine —
+  // BUGGLES (wogglebug chaotic random source), and PENTEMELODICA (5-voice
+  // poly synth). (CALLSINE was here until 2026-08-02, when it was retired
+  // for WARREN'S SPECTRUM — see the batch-14 entry below.) The convention-card
+  // members (drummergirl / meowbox / treeohvox / buggles —
   // pure Fader/Knob + PatchPanel) ARE
   // interactive; PENTEMELODICA stays STATIC: it runs a
   // 2D-canvas render in the card (per-voice waveform scopes via $effect),
@@ -164,7 +165,6 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   'meowbox',
   'treeohvox',
   'buggles',
-  'callsine',
   'pentemelodica',
   // Batch 10 — sequencers, clocks & pattern generators (2026-06-26): the
   // off-cluster sequencer family — CARTESIAN (4×4 X/Y grid sequencer), DRUMSEQZ
@@ -246,11 +246,11 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   // reverb, 7 macro + 38 message-port params), FOXY (hybrid realtime-wavetable
   // oscillator), TWOTRACKS (two-reel tape looper), HYPERCUBE
   // (4D-tesseract wavetable oscillator), SYNESTHESIA (dual 4-band audio→CV/video
-  // analyser, 48 outputs), WARRENSPECTRUM (8-band ping resonator bank), MIXMSTRS
+  // analyser, 48 outputs), MIXMSTRS
   // (6-ch stereo mixer, 61 params), and BLUEBOX (DTMF/phreaker dialer). Only the
   // CONVENTION-card pure-Knob/Fader+PatchPanel member goes INTERACTIVE: cloudseed
   // (verified live by docs-virtual-module.spec.ts). The rest stay
-  // STATIC: foxy/twotracks/synesthesia/warrenspectrum run a 2D-canvas render in
+  // STATIC: foxy/twotracks/synesthesia run a 2D-canvas render in
   // the card, hypercube renders WebGL (rendersWebGL — its docs are wrapped in
   // docs-hash-ignore markers like sibling cube so authoring stays attest-neutral)
   // and its card adds a file-upload picker,
@@ -261,9 +261,17 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   'twotracks',
   'hypercube',
   'synesthesia',
-  'warrenspectrum',
   'mixmstrs',
   'bluebox',
+
+  // Batch 14 — WARREN'S SPECTRUM (2026-08-02). The spectral-resynth engine
+  // ported from the CallSine VST's SPECTRAL half; born strict (docs authored
+  // co-located on the def and fact-checked against src/dsp/SpectralResynth.cpp).
+  // It REPLACES two strict members retired in the same PR — `callsine` (aliased
+  // onto it) and `warrenspectrum` (dropped) — so the set moves 184 → 183. The
+  // frozen floor is 172, so no ratchet edit is needed; recorded here because a
+  // net shrink should never be silent.
+  'warrensspectrum',
   // Batch 14 — FINAL audio batch: the last undocumented AUDIO modules, which
   // completes the audio catalog (2026-06-26). The arcade GAME modules FROGGER /
   // MODTRIS / PONG / SKIFREE (gameplay-as-CV: gate inputs steer the game, gate
