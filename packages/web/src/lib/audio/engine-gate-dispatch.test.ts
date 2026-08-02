@@ -353,6 +353,19 @@ describe('PatchEngine — frame-independent gate dispatch (audio → video)', ()
   beforeEach(() => {
     vi.useFakeTimers();
     __resetSchedulerClockForTests();
+    // ESTABLISH the precondition, do not INHERIT it. Every test in this
+    // describe is about the MAIN-THREAD fail-safe, which is selected by
+    // `ensureGateEdgeWorklet` declining — and it declines because no
+    // `AudioWorkletNode` global exists. That was left to whatever the process
+    // happened to be carrying: vitest shares one process per worker across
+    // files, and `mandelbulb.test.ts` installed a fake and never removed it,
+    // so when the lane put the two in the same worker this suite quietly ran
+    // the WORKLET path and asserted 0 edges against the wrong implementation.
+    //
+    // The leak is fixed at its source too, but this line is the durable half:
+    // a suite whose subject is "the path taken when X is absent" must make X
+    // absent itself, or it is only ever testing the last file to run.
+    delete (globalThis as unknown as Record<string, unknown>).AudioWorkletNode;
   });
   afterEach(() => {
     __resetSchedulerClockForTests();
