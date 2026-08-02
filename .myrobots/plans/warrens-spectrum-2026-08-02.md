@@ -26,6 +26,18 @@ visible: §1.1 (a false "no precedent" claim — there are 18 deletions and 2 re
 migration's central argument, which delivered **zero** for one of the two modules it covered),
 and §2 (a deletion list that missed five red gates and named two ratchets that do not move).
 
+**Revised again 2026-08-02 (post-merge of #1296)** with a fourth in-place correction and one
+owner decision:
+- **§3.2.1(b) was overstated** — the host-sync grid *does* engage at normal block sizes; the
+  clamp is masked by a per-block re-prime and only bites at block ≥ 2048. Every line the old
+  conclusion cited resolved; the inference from them did not. The FREE-mode ceiling (§3.2.1(a))
+  is unaffected and is now corroborated by the VST's own committed ART goldens.
+- **§3.2.2 records the owner's answer to Q8: CORRECT, not faithful.** We ship SLICE reachable
+  across its full range and host-sync that works at musical tempos, and are therefore
+  **deliberately not bit-identical** to the current VST on those two axes. Everything else
+  stays 1:1.
+- The VST-side fix is specified in `.myrobots/plans/callsine-vst-slice-fix-2026-08-02.md`.
+
 ---
 
 ## 0. Corrections to the brief — read these first
@@ -776,14 +788,57 @@ division actually fits**:
 | 1/32 | 32 | 176 |
 | 1/4T · 1/8T · 1/16T | 6 · 12 · 24 | 938 · 469 · 235 |
 
-**At 120 BPM the default 1/16 requests 6000 samples and receives 2047.** And because
-`prime = clamp(hopSize_ - samplesUntilNext, 0, hopSize_-1)` primes against the **already
-clamped** hop, the bar-grid phase is discarded too: analysis fires every 2047 samples,
-unrelated to the beat. Only `1/32` above 176 BPM is reachable in normal use.
+**At 120 BPM the default 1/16 requests 6000 samples and receives 2047.**
 
 ⚠ The comment on `setHostSyncedHop` says *"Ceiling at `fftSize_-1` matches `setSliceMs`."*
 It does not — `setSliceMs` ceilings at `fftSize_·0.5`. The two paths disagree by 2×, which is
 a second, independent tell that this ceiling was never exercised.
+
+#### ⚠ CORRECTION (2026-08-02) — (b) was overstated. The grid DOES engage at normal block sizes.
+
+**An earlier revision of this subsection concluded "the bar-grid phase is discarded too:
+analysis fires every 2047 samples, unrelated to the beat." That is FALSE at every common host
+block size, and the error is instructive: every line it cited resolved, and the inference drawn
+from them did not hold.** What it missed is that `setHostSyncedHop` is called **once per
+block** from inside `processBlock` (`PluginProcessor.cpp:85`, param-apply block at `:143-189`),
+and it **re-primes `samplesSinceHop_` every block** (`SpectralResynth.cpp:387`). The clamped
+`hopSize_` therefore almost never free-runs to its own period — the priming re-establishes the
+musical alignment before the counter can drift.
+
+Simulated over the exact three cited sites (`PluginProcessor.cpp:172-175`,
+`SpectralResynth.cpp:382-387`, `SpectralResynth.cpp:922-930`), 1/16 @ 120 BPM / 48 kHz over
+20 grid periods:
+
+| host block | analyses (want 20) | max distance from the beat |
+|---:|---:|---:|
+| 64 · 128 · 256 | 25 · 23 · 22 | **1 sample** |
+| 512 · 1024 | 21 · 21 | **1 sample** |
+| **2048 · 4096** | **60 · 60** | **2946 · 2910 samples (≈61 ms)** |
+
+So the host-sync defect is **block-size-dependent**, not universal:
+
+- At **block ≤ 1024** — Ableton/Logic/Bitwig defaults — the analyser fires on the musical grid
+  at the correct period, within one sample. The clamp is *masked*. The "min BPM for the grid to
+  engage" table above describes when `hopSize_` is passed through **unclamped**; it does *not*
+  describe when the grid works, and must not be read that way.
+- At **block ≥ 2048** the clamp bites: **3× the requested analysis rate** and alignment gone.
+- The residual 1-sample error and the extra fires at small blocks are a **separate, pre-existing
+  off-by-one**: `samplesSinceHop_` is pre-incremented before the `>=` test (`:922-923`), so
+  priming to `hop - until` fires one sample early and double-fires when a block boundary lands
+  on a grid boundary. It is present with the ceiling removed too, so it is independent of it.
+
+**What survives unchanged is (a), the FREE-mode ceiling — and that one is total.** It has no
+re-priming to mask it, and it is corroborated by an artifact rather than by arithmetic: the
+committed ART goldens `test/art/golden/metrics/sweep__spectralSlice__{mid,max}.json` (37 ms and
+200 ms) are **identical in every audio field** — `dcOffset`, `peakDb`, `zeroCrossingRate`, all 8
+`rmsDb`, all 8 `spectralCentroid`. They differ only in `realtimeFactor`, a wall-clock number
+that `art_metrics.cpp:167` compares against a *ceiling* rather than against the golden. **The
+bug has been sitting in the VST's own committed baselines**, unnoticed because the ART suite
+compares each golden to itself and never to its siblings.
+
+*(Instrument note: the block-size result is a simulation of the counter logic, not of the audio.
+It is falsifiable by changing any one of the three cited sites. It was run precisely because
+the arithmetic-only argument had already produced one confident wrong answer.)*
 
 **Consequences for this plan, all of which were wrong before this section existed:**
 
@@ -798,13 +853,53 @@ a second, independent tell that this ceiling was never exercised.
    advertises. If a slower "pad" hop is wanted it needs a **larger FFT**, not a bigger SLICE
    number — 200 ms would need `fftSize ≥ 19200`, i.e. order 15, which `prepare()`'s own
    `clamp(fftOrder, 8, 14)` forbids. **The VST cannot reach its own advertised range.**
-3. **§6 phase 5 (host-tempo SLICE)** is porting a feature that does not work upstream. Either
-   drop it, or port it **fixed** — raise the ceiling to `fftSize-1` on both paths and say
-   plainly that we deviate from the VST. Do not port the bug and call it fidelity.
+3. **§6 phase 5 (host-tempo SLICE)** must be ported **fixed**, not as shipped — see the
+   correction above for what "as shipped" actually is (works at block ≤ 1024, 3× over-fires at
+   block ≥ 2048). Do not port the bug and call it fidelity.
 
-*(Instrument check: this finding is arithmetic on three cited constants — `prepare(sr, 11)`,
-the two `clamp` calls, and the `NormalisableRange`. It needs no benchmark and no listening
-test, and any reader can falsify it by changing one of the three.)*
+*(Instrument check: the (a) finding is arithmetic on three cited constants — `prepare(sr, 11)`,
+the two `clamp` calls, and the `NormalisableRange` — and is independently corroborated by the
+identical ART goldens. Any reader can falsify it by changing one of the three.)*
+
+### 3.2.2 ✅ DECISION (owner, 2026-08-02): **CORRECT, not faithful.** Resolves Q8.
+
+**Our Warren's Spectrum implements the CORRECTED behaviour on these two axes. This is settled;
+it is not an open question and not a matter for re-litigation at implementation time.**
+
+1. **SLICE is reachable across its full declared range.** Whatever range we declare, every
+   value in it changes the sound. We do **not** reproduce a ceiling that makes the top of the
+   knob inert. (§3.2.1(a) — currently ~90 % of the declared numeric range and ~61 % of the
+   knob's travel do nothing.)
+2. **Host/clock sync works at musical tempos** — and at every host block size, not only at
+   ≤ 1024 (§3.2.1(b) correction).
+
+**Stated plainly, because it changes what "1:1 copy" is allowed to mean: on these two axes we
+are deliberately NOT bit-identical to the current VST.** A faithful port of a control whose top
+61 % of travel is inert is not fidelity, it is a reproduced defect — and "1:1 copy" must never
+be read as a licence to reproduce dead knob travel. Anyone comparing the two products on a
+SLICE value above ~21 ms, or on host-sync at a large buffer, **should expect them to differ**,
+and that difference is the feature.
+
+**Everything else stays 1:1.** This decision is scoped to (i) the SLICE range ceiling and
+(ii) the host/grid-sync clamp. It authorises no other divergence: the peak tracker, the
+harmonic lock, the F0 detector, the SMS residual, the stability gate, the partial caps, the
+shape morph and every default value continue to target bit-level agreement with the VST, and
+any further deviation is a new decision, not an extension of this one.
+
+**Consequences for the rest of this plan:**
+
+- **§3.2.1(a)'s "declare `2 … fftSize/2` ms"** is superseded. That recommendation existed only
+  to stop our DEF from lying about our DSP; the decision removes the lie from the other side
+  instead. Declare a range because it is musically useful and make the DSP honour it — with
+  the analysis window and the hold time decoupled, the hold time is not bounded by `fftSize`.
+- **§4.3 item 3** (floor SLICE at ~5 ms) still stands on its own merits — it is a
+  quantum-budget argument about the *fast* end and is untouched by this decision.
+- **§5.2 rank 6** (SLICE's lane cell) is re-justified: SLICE earns the lane because it is the
+  rhythmic axis over a range that is *entirely live*, which is now true by construction.
+- The **VST-side** fix is specified separately in
+  `.myrobots/plans/callsine-vst-slice-fix-2026-08-02.md`. Landing it upstream narrows the gap
+  this decision opens; it does not gate our implementation, and our implementation does not
+  wait on it.
 
 ### 3.3 MASSPASS — the other resynthesiser
 
@@ -1406,7 +1501,10 @@ State it plainly rather than pretending:
    previously-deleted types**, whose racks have been degrading through a `console.warn` since
    #1013. Confirm it ships here rather than being split into its own PR — splitting it means
    the deletion lands silent.
-8. **§3.2.1 — SLICE.** The VST's declared `2..200 ms` is ~90 % unreachable and its host-sync
-   grid does not engage below ~352 BPM. We can be **faithful** (port the clamps, ship a knob
-   whose top 61 % does nothing) or **correct** (declare the live 5-21 ms range, fix the
-   ceiling). "1:1 copy" points one way and a usable module points the other. Which?
+8. ~~**§3.2.1 — SLICE.** faithful vs correct.~~ ✅ **RESOLVED 2026-08-02 — see §3.2.2.**
+   Owner's answer: **CORRECT, not faithful.** SLICE is reachable across its full declared
+   range and host/clock sync works at musical tempos; on those two axes we are intentionally
+   **not** bit-identical to the current VST. Everything else stays 1:1. *(The question's own
+   premise was also partly wrong — the host-sync grid does engage below 352 BPM at block sizes
+   ≤ 1024; see the §3.2.1(b) correction. The decision is unaffected: the FREE-mode ceiling is
+   total, and host-sync still breaks at block ≥ 2048.)*
