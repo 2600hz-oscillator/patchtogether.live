@@ -137,7 +137,7 @@ test.describe('P1 batch-1 curated faces (?shell=1)', () => {
     await expect(shell).toBeVisible();
   });
 
-  test('kickdrum renders its SHELL face in-lane + the dock shows all five curated pages', async ({ page }) => {
+  test('kickdrum renders its SHELL face in-lane + the dock shows all six curated pages', async ({ page }) => {
     await gotoWorkflow(page, { shell: true });
     await spawnPatch(page, [{ id: 'kd', type: 'kickdrum', position: { x: 460, y: 240 } }]);
 
@@ -176,8 +176,8 @@ test.describe('P1 batch-1 curated faces (?shell=1)', () => {
     await expect(glyph).toBeVisible();
     await expectWholeInside(glyph, (await shell.boundingBox())!, 'compact: scope glyph');
 
-    // 2) The dock full-view shows the five designed section bands, in the
-    //    designer's reading order (strike, the layers, then the bus).
+    // 2) The dock full-view shows the six designed section bands: the HERO
+    //    strip, then the three numbered generator layers, then the bus.
     await setZoomTier(page, 'kd', 0.6, 'full');
     await shell.getByTestId('shell-open-dock').click();
     const faceplate = page.getByTestId('dock-full-view');
@@ -185,26 +185,60 @@ test.describe('P1 batch-1 curated faces (?shell=1)', () => {
     await expect(faceplate.locator('[data-testid="module-shell"][data-shell-tier="dock"]')).toBeVisible();
 
     const pages = faceplate.locator('[data-testid="face-page"]');
-    await expect(pages).toHaveCount(5);
+    await expect(pages).toHaveCount(6);
     const ids = await pages.evaluateAll((els) => els.map((el) => el.getAttribute('data-face-page')));
-    expect(ids).toEqual(['sub', 'body', 'click', 'drive', 'dynamics']);
+    expect(ids).toEqual(['hero', 'sub', 'body', 'click', 'drive', 'dynamics']);
     // Spot-check band membership: the drive page holds the drive knob.
     await expect(
-      pages.nth(3).locator('[data-testid="control-drive"]'),
+      pages.nth(4).locator('[data-testid="control-drive"]'),
       "page 'drive' holds the drive control",
     ).toBeVisible();
-    // The AUDITION leads band 1 — the dock pane shows ~2 bands before it
-    // scrolls, so a strike button in the merged out band would be unreachable
-    // without scrolling on the one voice that is silent until you hit it.
+    // The AUDITION leads the faceplate — the dock pane shows ~2 bands before it
+    // scrolls, so a strike button further down would be unreachable without
+    // scrolling on the one voice that is silent until you hit it.
     await expect(
       pages.nth(0).getByTestId('shell-cell-kickdrum-strike'),
-      "page 'sub' leads with the STRIKE audition",
+      "page 'hero' leads with the STRIKE audition",
     ).toBeVisible();
+
+    // ── THE HERO BAND IS THE REDESIGN, so assert what it actually says ──
+    //
+    // The owner's finding was that the shipped face was bands of bare knobs
+    // with no title, no readouts, no chain and no presets. These four
+    // assertions are that finding, inverted: each one FAILS on the face as it
+    // shipped, so they cannot pass by accident on a regression.
+    const hero = pages.nth(0);
+    // (a) the live caption, derived from the envelope params — not a label.
+    await expect(hero.getByTestId('kickdrum-hero-caption')).toHaveText(
+      /tail ≈ \d+ ms · \+?\d+ st → \d+ Hz/,
+    );
+    // (b) the signal-flow diagram, ending where the DSP ends.
+    await expect(hero.getByTestId('kickdrum-flow-SUB')).toBeVisible();
+    await expect(hero.getByTestId('kickdrum-flow-OUT L·R')).toBeVisible();
+    // (c) the stereo-crossover picture.
+    await expect(hero.getByTestId('kickdrum-crossover')).toBeVisible();
+    // (d) the presets SELECT: clicking 909 CLASSIC stamps its tune (62 Hz),
+    //     which the TUNE readout right beside it must then print.
+    await hero.getByTestId('kickdrum-preset-909-classic').click();
+    await expect(hero.getByTestId('readout-tune')).toHaveText('62 Hz');
+    await expect(hero.getByTestId('kickdrum-preset-909-classic')).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+
+    // A VALUE UNDER EVERY KNOB — the mock's other structural demand. Sample
+    // one knob per unit family; the def-level gate (kickdrum-face-model.test)
+    // holds the completeness half.
+    await expect(faceplate.getByTestId('readout-sub_decay')).toHaveText(/^\d+ ms$/);
+    await expect(faceplate.getByTestId('readout-body_eq')).toHaveText(/^[+−-]?\d+\.\d dB$/);
+    await expect(faceplate.getByTestId('readout-click_tone')).toHaveText(/kHz$|Hz$/);
+    await expect(faceplate.getByTestId('readout-body_shape')).toHaveText(/^(SINE|TRI|RECT)$/);
+
     // The merged 'dynamics · out' band carries BOTH ideas, split by clusters
-    // (a ~14px sub-header) rather than by a sixth ~81px band.
+    // (a ~14px sub-header) rather than by a seventh ~81px band.
     for (const paramId of ['ceiling', 'width', 'level']) {
       await expect(
-        pages.nth(4).locator(`[data-testid="control-${paramId}"]`),
+        pages.nth(5).locator(`[data-testid="control-${paramId}"]`),
         `page 'dynamics' holds ${paramId}`,
       ).toBeVisible();
     }

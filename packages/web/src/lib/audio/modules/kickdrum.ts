@@ -38,6 +38,19 @@ import { fireTrigger } from '$lib/audio/gate-trigger';
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import workletUrl from '@patchtogether.live/dsp/dist/kickdrum.js?url';
+// PF-3 readouts. EVERY continuous control on this voice prints its value under
+// the dial, in ITS OWN unit — the single loudest difference between the shipped
+// face and the design mock, which never shows a bare label. The functions are
+// co-located with the def (kickdrum-format.ts) because `format` is a ParamDef
+// field: range, curve, units and readout are all authored in one place.
+import {
+  fmtAmount,
+  fmtBipolar,
+  fmtDb,
+  fmtHz,
+  fmtMs,
+  fmtSemitones,
+} from './kickdrum-format';
 
 const PROCESSOR_NAME = 'kickdrum';
 const loadedContexts = new WeakSet<BaseAudioContext>();
@@ -101,35 +114,55 @@ export const kickdrumDef: AudioModuleDef = {
     { id: 'audio_r', type: 'audio' },
   ],
   stereoPairs: [['audio_l', 'audio_r']],
+  // ⚠ EVERY continuous param carries a `format` (PF-3). That is not decoration:
+  // an un-formatted KnobConic prints NOTHING under the dial (`knobReadout`
+  // returns null unless options/landmarks/format is declared — the gate exists
+  // so ~17 dock baselines don't move for nothing), and a faceplate of bare
+  // labels was the owner's finding. `hard` is the one exception and needs no
+  // formatter: it is a 0/1 switch and renders as a <Toggle>, which states its
+  // own position. `kickdrum-face-model.test.ts` asserts the exemption list is
+  // exactly that one param, so a new knob cannot arrive silently un-formatted.
   params: [
     // ── SUB · BODY · CLICK ──
-    { id: 'tune',        label: 'Tune',      defaultValue: 50,   min: 20,  max: 120,  curve: 'log',      units: 'Hz' },
-    { id: 'pitch_amt',   label: 'P Amt',     defaultValue: 24,   min: 0,   max: 48,   curve: 'linear',   units: 'st' },
-    { id: 'pitch_time',  label: 'P Time',    defaultValue: 30,   min: 5,   max: 120,  curve: 'log',      units: 'ms' },
-    { id: 'tension',     label: 'Tension',   defaultValue: 0,    min: 0,   max: 0.6,  curve: 'linear' },
-    { id: 'sub_decay',   label: 'Sub Dec',   defaultValue: 450,  min: 50,  max: 800,  curve: 'log',      units: 'ms' },
-    { id: 'body_decay',  label: 'Body Dec',  defaultValue: 120,  min: 20,  max: 400,  curve: 'log',      units: 'ms' },
-    { id: 'click_len',   label: 'Click',     defaultValue: 12,   min: 2,   max: 60,   curve: 'log',      units: 'ms' },
-    { id: 'sub_level',   label: 'Sub',       defaultValue: 0.9,  min: 0,   max: 1,    curve: 'linear' },
-    { id: 'body_level',  label: 'Body',      defaultValue: 0.7,  min: 0,   max: 1,    curve: 'linear' },
-    { id: 'click_level', label: 'Clk Lvl',   defaultValue: 0.4,  min: 0,   max: 1,    curve: 'linear' },
-    { id: 'body_shape',  label: 'Shape',     defaultValue: 0.3,  min: 0,   max: 1,    curve: 'linear' },
-    { id: 'click_tone',  label: 'Clk Tone',  defaultValue: 2800, min: 500, max: 6000, curve: 'log',      units: 'Hz' },
+    { id: 'tune',        label: 'Tune',      defaultValue: 50,   min: 20,  max: 120,  curve: 'log',      units: 'Hz', format: fmtHz },
+    { id: 'pitch_amt',   label: 'P Amt',     defaultValue: 24,   min: 0,   max: 48,   curve: 'linear',   units: 'st', format: fmtSemitones },
+    { id: 'pitch_time',  label: 'P Time',    defaultValue: 30,   min: 5,   max: 120,  curve: 'log',      units: 'ms', format: fmtMs },
+    { id: 'tension',     label: 'Tension',   defaultValue: 0,    min: 0,   max: 0.6,  curve: 'linear',   format: fmtAmount },
+    { id: 'sub_decay',   label: 'Sub Dec',   defaultValue: 450,  min: 50,  max: 800,  curve: 'log',      units: 'ms', format: fmtMs },
+    { id: 'body_decay',  label: 'Body Dec',  defaultValue: 120,  min: 20,  max: 400,  curve: 'log',      units: 'ms', format: fmtMs },
+    { id: 'click_len',   label: 'Click',     defaultValue: 12,   min: 2,   max: 60,   curve: 'log',      units: 'ms', format: fmtMs },
+    { id: 'sub_level',   label: 'Sub',       defaultValue: 0.9,  min: 0,   max: 1,    curve: 'linear',   format: fmtAmount },
+    { id: 'body_level',  label: 'Body',      defaultValue: 0.7,  min: 0,   max: 1,    curve: 'linear',   format: fmtAmount },
+    { id: 'click_level', label: 'Clk Lvl',   defaultValue: 0.4,  min: 0,   max: 1,    curve: 'linear',   format: fmtAmount },
+    // SHAPE is a CONTINUOUS morph through three named waveforms, so it takes
+    // PF-10 `landmarks` (ticks + a nearest-name readout) rather than PF-1
+    // `options`: a Segmented would lie by hiding the in-between blends, which
+    // are most of the knob's useful travel (the worklet crossfades
+    // sine→triangle over 0..0.5 and triangle→rectangle over 0.5..1).
+    {
+      id: 'body_shape', label: 'Shape',      defaultValue: 0.3,  min: 0,   max: 1,    curve: 'linear',
+      landmarks: [
+        { value: 0,   label: 'SINE' },
+        { value: 0.5, label: 'TRI' },
+        { value: 1,   label: 'RECT' },
+      ],
+    },
+    { id: 'click_tone',  label: 'Clk Tone',  defaultValue: 2800, min: 500, max: 6000, curve: 'log',      units: 'Hz', format: fmtHz },
     // ── DRIVE · EQ · TRANSLATE ──
-    { id: 'drive',       label: 'Drive',     defaultValue: 0.4,  min: 0,   max: 1,    curve: 'linear' },
+    { id: 'drive',       label: 'Drive',     defaultValue: 0.4,  min: 0,   max: 1,    curve: 'linear',   format: fmtAmount },
     { id: 'hard',        label: 'Hard',      defaultValue: 0,    min: 0,   max: 1,    curve: 'discrete' },
-    { id: 'translate',   label: 'Translate', defaultValue: 0.3,  min: 0,   max: 1,    curve: 'linear' },
-    { id: 'sub_eq',      label: 'Sub EQ',    defaultValue: 0,    min: -12, max: 12,   curve: 'linear',   units: 'dB' },
-    { id: 'body_eq',     label: 'Body EQ',   defaultValue: 3,    min: -12, max: 12,   curve: 'linear',   units: 'dB' },
-    { id: 'attack_eq',   label: 'Atk EQ',    defaultValue: 2,    min: -12, max: 12,   curve: 'linear',   units: 'dB' },
-    { id: 'tilt',        label: 'Tilt',      defaultValue: 0,    min: -1,  max: 1,    curve: 'linear' },
+    { id: 'translate',   label: 'Translate', defaultValue: 0.3,  min: 0,   max: 1,    curve: 'linear',   format: fmtAmount },
+    { id: 'sub_eq',      label: 'Sub EQ',    defaultValue: 0,    min: -12, max: 12,   curve: 'linear',   units: 'dB', format: fmtDb },
+    { id: 'body_eq',     label: 'Body EQ',   defaultValue: 3,    min: -12, max: 12,   curve: 'linear',   units: 'dB', format: fmtDb },
+    { id: 'attack_eq',   label: 'Atk EQ',    defaultValue: 2,    min: -12, max: 12,   curve: 'linear',   units: 'dB', format: fmtDb },
+    { id: 'tilt',        label: 'Tilt',      defaultValue: 0,    min: -1,  max: 1,    curve: 'linear',   format: fmtBipolar },
     // ── DYNAMICS · STEREO · OUT ──
-    { id: 'attack',      label: 'Attack',    defaultValue: 0.2,  min: -1,  max: 1,    curve: 'linear' },
-    { id: 'sustain',     label: 'Sustain',   defaultValue: 0,    min: -1,  max: 1,    curve: 'linear' },
-    { id: 'glue',        label: 'Glue',      defaultValue: 0.3,  min: 0,   max: 1,    curve: 'linear' },
-    { id: 'ceiling',     label: 'Ceiling',   defaultValue: 0.5,  min: 0,   max: 1,    curve: 'linear' },
-    { id: 'width',       label: 'Width',     defaultValue: 0.2,  min: 0,   max: 1,    curve: 'linear' },
-    { id: 'level',       label: 'Level',     defaultValue: 0,    min: -24, max: 12,   curve: 'linear',   units: 'dB' },
+    { id: 'attack',      label: 'Attack',    defaultValue: 0.2,  min: -1,  max: 1,    curve: 'linear',   format: fmtBipolar },
+    { id: 'sustain',     label: 'Sustain',   defaultValue: 0,    min: -1,  max: 1,    curve: 'linear',   format: fmtBipolar },
+    { id: 'glue',        label: 'Glue',      defaultValue: 0.3,  min: 0,   max: 1,    curve: 'linear',   format: fmtAmount },
+    { id: 'ceiling',     label: 'Ceiling',   defaultValue: 0.5,  min: 0,   max: 1,    curve: 'linear',   format: fmtAmount },
+    { id: 'width',       label: 'Width',     defaultValue: 0.2,  min: 0,   max: 1,    curve: 'linear',   format: fmtAmount },
+    { id: 'level',       label: 'Level',     defaultValue: 0,    min: -24, max: 12,   curve: 'linear',   units: 'dB', format: fmtDb },
   ],
 
   // ── RACKLINE face (curated — UI curation only, NOT the I/O contract; see
@@ -188,6 +221,13 @@ export const kickdrumDef: AudioModuleDef = {
       // derived entirely from knob-column geometry — so rank 7 is both its
       // natural place in the story and the first rank that cannot reach a lane.
       'kickdrum-strike-{n}',
+      // The two BESPOKE PANELS of the hero band. They are ranked here for one
+      // structural reason as well as a narrative one: `module-face-lint` fails
+      // any panel SELECTED at a lane tier ("a 280px panel in a 46px knob
+      // column"), and the lane budget is six — so a panel's first legal rank is
+      // 7. They sit directly behind the audition because that is the reading
+      // order of the faceplate's top band: hear it, see it, know what it is.
+      'kickdrum-hero-{n}', 'kickdrum-chain-{n}',
       'sub_level', 'sub_eq', 'translate',
       'pitch_time', 'tension', 'body_decay', 'body_shape', 'body_eq',
       'click_len', 'click_tone', 'attack_eq',
@@ -197,8 +237,24 @@ export const kickdrumDef: AudioModuleDef = {
       'attack', 'sustain', 'glue', 'level', 'width', 'ceiling',
     ],
     pages: [
-      // FIVE bands, and the merge is justified by GROUPING SEMANTICS, not by a
-      // fold budget ("make it fit" was never the question — the pane scrolls,
+      // ── SIX bands: a HERO band plus the five the chain already had. ───────
+      //
+      // The hero band is the design mock's top strip and the reason this face
+      // was re-cut: `HERO GRAPH · STRIKE · TUNE · CHAIN SIDEBAR`. It carries no
+      // knob but TUNE, which is the point — you cannot know anything else about
+      // a kick before you know its pitch, and everything beside it exists to
+      // tell you what the voice currently IS (the envelope + sweep picture with
+      // its live `tail ≈ … · +… st → … Hz` caption, the meter, the chain
+      // diagram, the preset roster).
+      //
+      // ⚠ SIX IS A CEILING HERE, NOT A COINCIDENCE. `DOCK_TAB_MIN_BANDS` is 7:
+      // a seventh band would flip the faceplate into a TAB RAIL, hiding five
+      // sixths of it behind clicks and moving every dock baseline. If a future
+      // edit needs another band, it must MERGE one, not append.
+      //
+      // ── the five chain bands (unchanged in membership) ───────────────────
+      // The merge that produced them is justified by GROUPING SEMANTICS, not by
+      // a fold budget ("make it fit" was never the question — the pane scrolls,
       // and where it happens to cut off depends on the window height, not on
       // this def). What merged is `dynamics` + `output`:
       // after the drive stage this voice is ONE mastering chain, and PF-9
@@ -230,8 +286,8 @@ export const kickdrumDef: AudioModuleDef = {
       // so a page id colliding with the leading group's id renders that band
       // TWICE and reddens the rear-derivation totality gate (dx7 hit exactly
       // this). This module's rear group is `{ id: 'voice', label: 'strike' }` —
-      // no page is called 'voice', and the front band that carries the STRIKE
-      // BUTTON is id 'sub'. Keep it that way.
+      // no page is called 'voice' (the hero band is id 'hero' precisely because
+      // 'voice' is taken). Keep it that way.
       //
       // ⚠ THE AUDITION LEADS BAND 1. The reason is ORDINAL, and the earlier
       // "1220×425, and that is measured" framing was not: `workflow-shell-
@@ -245,13 +301,21 @@ export const kickdrumDef: AudioModuleDef = {
       // What IS true at every height: this is the one voice in the rack that
       // makes NO sound at all until something strikes it, so its audition
       // belongs in the band a player reaches first, whichever band that is.
-      { id: 'sub',      label: 'strike · the pulse', controls: ['kickdrum-strike-{n}', 'tune', 'sub_decay', 'sub_level', 'sub_eq', 'translate'] },
-      { id: 'body',     label: 'body · the punch',   controls: ['pitch_amt', 'pitch_time', 'tension', 'body_decay', 'body_level', 'body_shape', 'body_eq'] },
-      { id: 'click',    label: 'click · the edge',   controls: ['click_len', 'click_tone', 'click_level', 'attack_eq'] },
-      { id: 'drive',    label: 'drive · character',  controls: ['drive', 'hard', 'tilt'] },
+      //
+      // ⚠ THE THREE GENERATOR BANDS ARE NUMBERED AND DESCRIBED. `1 sub · depth
+      // sine · mono` says three things a bare `sub` cannot: WHICH stage of the
+      // voice you are looking at, what it is made of, and that it is mono by
+      // construction (which is why WIDTH downstream cannot thin the low end).
+      // The bus bands carry no number because they are not layers — they are
+      // one chain, and the sidebar diagram is where their order is taught.
+      { id: 'hero',     label: 'layered kick · sub + body + click', controls: ['kickdrum-hero-{n}', 'kickdrum-strike-{n}', 'tune', 'kickdrum-chain-{n}'] },
+      { id: 'sub',      label: '1 sub · depth sine · mono',         controls: ['sub_decay', 'sub_level', 'sub_eq', 'translate'] },
+      { id: 'body',     label: '2 body · punch 909 sweep',          controls: ['pitch_amt', 'pitch_time', 'tension', 'body_decay', 'body_level', 'body_shape', 'body_eq'] },
+      { id: 'click',    label: '3 click · transient noise burst',   controls: ['click_len', 'click_tone', 'click_level', 'attack_eq'] },
+      { id: 'drive',    label: 'bus · drive · character',           controls: ['drive', 'hard', 'tilt'] },
       {
         id: 'dynamics',
-        label: 'dynamics · out',
+        label: 'bus · dynamics · stereo · out',
         controls: ['attack', 'sustain', 'glue', 'level', 'width', 'ceiling'],
         clusters: [
           { label: 'transient · glue', controls: ['attack', 'sustain', 'glue'] },
@@ -324,7 +388,23 @@ export const kickdrumDef: AudioModuleDef = {
   // ART re-capture for a UI affordance, even though the rendered `.f32` is
   // byte-identical. The host-side ConstantSource in the factory below touches
   // neither file, so the pin does not move.
+  //
+  // The two BESPOKE PANELS (PF-14) that make the faceplate an instrument panel
+  // rather than bands of bare knobs — the design mock's hero visualisation and
+  // its right sidebar. They are declared as one-member control families for the
+  // same reason the audition is: a real control with no backing ParamDef, so
+  // the face can RANK it, the docs can key prose to it, and `shell-cells` can
+  // name the component. Neither writes a param except through the ordinary
+  // commit path (the preset rows), and neither emits a `control-<paramId>`
+  // testid — that would read as an unbacked extra control and fail
+  // faces-parity's exact param multiset.
+  //
+  // COST: +2 lines in contract-lock.txt (`family` lines, which carry no range
+  // or type — the I/O contract is untouched). `testidPrefix` is grep-verified
+  // against the components by the docs gate.
   controlFamilies: [
+    { id: 'kickdrum-chain', label: 'Signal chain', kind: 'cell', testidPrefix: 'kickdrum-chain' },
+    { id: 'kickdrum-hero', label: 'Envelope + sweep', kind: 'cell', testidPrefix: 'kickdrum-hero' },
     { id: 'kickdrum-strike', label: 'Strike', kind: 'other', testidPrefix: 'kickdrum-strike' },
   ],
 
@@ -423,6 +503,10 @@ export const kickdrumDef: AudioModuleDef = {
       ceiling: "DYNAMICS: how hard the voice leans into its true-peak soft-clip (0–1). The output stage is ALWAYS tanh-bounded below digital full-scale; CEILING sets the gain into that curve — low keeps the stage nearly transparent (clean headroom), high slams the voice into the clip for a denser, louder, more saturated hit. A lean-in control, not a threshold.",
       width: "OUTPUT: stereo width of the click band ONLY (0–1, mid/side). The sub AND body are identical on both channels, and the side signal is high-passed at ~120 Hz — phase-safe, mono-fold-proof by construction. What spreads is the click's decorrelated noise; 0 = a fully mono voice (L and R identical).",
       level: "OUTPUT: output level in dB (−24..+12), applied BEFORE the ceiling so hot settings lean into the clip instead of escaping it. The +12 dB makeup headroom is deliberate (vs older voices capped at 0 dB) — the ceiling keeps it true-peak-safe.",
+      "kickdrum-hero-{n}":
+        "The ENVELOPE + PITCH-SWEEP display, and the output meter beside it. The filled curve is the voice's summed amplitude (sub + body + click, each already scaled by its own mix level) and the dashed curve is the body's pitch as it sweeps down; the caption under them reads `tail ≈ 398 ms · +24 st → 50 Hz` — how long the hit rings to −60 dB of its own peak, how many semitones the punch chirps, and the fundamental it settles on. Every one of those numbers is computed from the LIVE knob values through the worklet's own envelope and frequency laws, so the picture moves the instant you turn SUB DEC, P AMT or TUNE; it is not an illustration. Two details the drawing teaches that no knob does: the faint horizontal line is where the BODY comes to rest, an octave above the fundamental (the punch never lands on the sub's pitch), and the vertical line is the tail figure's position inside the plotted window. The `600 ms` button flips to a 1200 ms window for a long tail that outruns the short view — a display setting, not a sound setting. The meter shows the live level of the LEFT output; ACCENT and V·OCT report whether those jacks are patched and what the voice is therefore tracking, because both are read inside the worklet (accent is latched per hit, pitch_cv per sample) and neither has a value the host can honestly print.",
+      "kickdrum-chain-{n}":
+        "The SIGNAL CHAIN sidebar: what this module is, how it is wired, and its preset roster. The diagram lists the bus in DSP order — the three generators (SUB / BODY / CLICK) sum into DRIVE·HARD, then EQ·TILT, then DYNAMICS, then STEREO·WIDTH, then OUT L·R — with TRANSLATE drawn as a DASHED BRANCH rather than an inline stage, because it is one: it taps a copy of the RAW sub from before the drive and rejoins the bus ahead of the EQ, which is exactly why it survives a phone speaker. Under it, the stereo crossover bar shows the split at 120 Hz — everything below it is phase-coherent mono no matter where WIDTH is set, and the widened side of the bar brightens as WIDTH comes up. The five presets RECALL: each one stamps its calibrated values onto the params through the ordinary commit path, so a recall is undoable, shared with everyone in the rackspace, and immediately editable — a starting point, never a lock. A preset stamps only the values that make it that voice and leaves the rest of your settings alone, and the row stays lit as a record of what you last recalled, not a claim that nothing has been touched since.",
       "kickdrum-strike-{n}":
         "STRIKE — the audition button: one hit, exactly as if a rising edge had arrived at trigger_in. It is the only way to HEAR an unpatched kick while you dial it in, which is most of the time you are dialling it in. Mechanically it is a host-side source summed into the same trigger input a cable feeds, fired through the shared trigger waveform, so it behaves identically to a patched sequencer gate: phases reset, every envelope retriggers, and accent_in is sampled at that instant (unpatched accent reads 0, i.e. an un-accented hit). It writes NOTHING to the patch — no param moves, nothing is shared with the rackspace, nothing is persisted or undoable — so it is safe to lean on, and a cable already patched into trigger_in keeps working while you use it (Web Audio sums the two, and the worklet edge-detects the crossing).",
     },

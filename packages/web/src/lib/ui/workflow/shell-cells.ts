@@ -34,6 +34,8 @@ import type { SelectorOption } from '$lib/ui/controls';
 import { testHooksEnabled } from '$lib/dev/test-hooks';
 import Dx7OperatorMap from '$lib/ui/modules/dx7/Dx7OperatorMap.svelte';
 import Dx7OpDetail from '$lib/ui/modules/dx7/Dx7OpDetail.svelte';
+import KickdrumHeroPanel from '$lib/ui/modules/KickdrumHeroPanel.svelte';
+import KickdrumChainPanel from '$lib/ui/modules/KickdrumChainPanel.svelte';
 import type { FaceControl } from './curated-face';
 import {
   DX7_SYX_ACCEPT,
@@ -313,6 +315,49 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
     },
   },
   kickdrum: {
+    // THE HERO VISUALISATION — the amplitude + pitch-sweep graph with its live
+    // `tail ≈ … · +… st → … Hz` caption, and the output meter beside it.
+    //
+    // A panel rather than a glyph because it is not a trace of the output: it
+    // is a picture of the PATCH, computed from the live knob values through the
+    // worklet's own envelope/frequency laws (kickdrum-face-model), so it says
+    // what the voice WILL do before anything has struck it. The shell's `scope`
+    // glyph still rides the audio out; the two answer different questions.
+    'kickdrum-hero-{n}': {
+      kind: 'panel',
+      label: 'envelope + sweep',
+      component: KickdrumHeroPanel,
+      minWidth: 420,
+      // The graph WINDOW is the panel's writable affordance and its probe. It
+      // asserts the stored window CHANGED — not that a revision counter moved —
+      // so a dead button cannot pass by bumping a counter (shell-cells rule 2).
+      probe: {
+        testid: 'kickdrum-graph-window',
+        action: 'click',
+        effect: { kind: 'data', key: 'kickGraphWindow', expect: 'changed' },
+      },
+    },
+    // THE SIGNAL-CHAIN SIDEBAR — title + hint, the flow diagram, the
+    // generator/bus legend, the stereo-crossover picture, and the five presets.
+    //
+    // ⚠ It is a PANEL because the shell has no sidebar slot yet, NOT because a
+    // sidebar is a bespoke control. When the faceplate platform's sidebar
+    // lands, the component moves into that slot unchanged and this entry goes
+    // away; nothing in KickdrumChainPanel knows where it is mounted.
+    'kickdrum-chain-{n}': {
+      kind: 'panel',
+      label: 'signal chain · presets',
+      component: KickdrumChainPanel,
+      minWidth: 300,
+      // Recalling a preset stamps ~24 params AND records the id, so the probe
+      // names the id: a preset row that lit up without stamping anything would
+      // still fail, because the stamp happens first and the id last.
+      probe: {
+        testid: 'kickdrum-preset-909-classic',
+        action: 'click',
+        effect: { kind: 'data', key: 'kickPreset', expect: 'changed' },
+      },
+    },
     // THE AUDITION. A kick with nothing patched into trigger_in is SILENT, so
     // without this the dock full-view offers 25 controls over a voice you
     // cannot hear — while tomtom, karplus and sixstrum can all be auditioned.

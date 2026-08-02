@@ -33,6 +33,7 @@ import {
 import { paramCellKind, momentaryParamIds } from '$lib/ui/workflow/shell-control-kind';
 import { shellCellFor } from '$lib/ui/workflow/shell-cells';
 import { laneBodyPlan } from '$lib/ui/workflow/module-shell-model';
+import { DOCK_TAB_MIN_BANDS, dockTabPlan } from '$lib/ui/workflow/dock-tabs-model';
 
 const def = kickdrumDef as unknown as FaceDefLike;
 
@@ -96,28 +97,69 @@ describe('kickdrum face — the tier ladder (order = PRIORITY)', () => {
 describe('kickdrum face — the dock bands (pages = FUNCTION)', () => {
   const plan = dockFacePlan(def)!;
 
-  it('renders FIVE bands, in signal order, with no defensive __unpaged tail', () => {
-    expect(plan.map((b) => b.id)).toEqual(['sub', 'body', 'click', 'drive', 'dynamics']);
+  it('renders SIX bands, in signal order, with no defensive __unpaged tail', () => {
+    expect(plan.map((b) => b.id)).toEqual(['hero', 'sub', 'body', 'click', 'drive', 'dynamics']);
     expect(plan.map((b) => b.label)).toEqual([
-      'strike · the pulse',
-      'body · the punch',
-      'click · the edge',
-      'drive · character',
-      'dynamics · out',
+      'layered kick · sub + body + click',
+      '1 sub · depth sine · mono',
+      '2 body · punch 909 sweep',
+      '3 click · transient noise burst',
+      'bus · drive · character',
+      'bus · dynamics · stereo · out',
     ]);
   });
 
-  it('band 1 LEADS with the audition — the dock pane cuts off ~2 bands down, so it cannot be buried', () => {
-    const first = plan[0]!;
-    expect(first.controls[0]!.key).toBe('kickdrum-strike-{n}');
-    expect(first.controls[0]!.kind).toBe('family');
-    expect(first.controls.slice(1).map((c) => c.key)).toEqual([
-      'tune', 'sub_decay', 'sub_level', 'sub_eq', 'translate',
-    ]);
+  it('stays UNTABBED — a seventh band would hide five sixths of the faceplate', () => {
+    // The band count is a design ceiling, not an accident: `DOCK_TAB_MIN_BANDS`
+    // is 7, so appending one more page silently converts this faceplate into a
+    // tab rail (and moves every dock baseline). Pin the consequence, not the
+    // number, by asking the same function DockFullView and ModuleShell ask.
+    expect(plan.length).toBeLessThan(DOCK_TAB_MIN_BANDS);
+    expect(dockTabPlan(plan), 'kickdrum reads as ONE scrolling column').toBeNull();
   });
 
-  it('the merged dynamics·out band carries its split as CLUSTERS, not as a sixth band', () => {
-    const dyn = plan[4]!;
+  it('the three GENERATOR bands are numbered and described; the bus bands are not', () => {
+    // The owner's finding was that a band header saying `sub` teaches nothing.
+    // `1 sub · depth sine · mono` names the stage, what it is made of, and the
+    // fact that makes WIDTH safe downstream.
+    const labels = Object.fromEntries(plan.map((b) => [b.id, b.label]));
+    expect(labels.sub).toMatch(/^1 /);
+    expect(labels.body).toMatch(/^2 /);
+    expect(labels.click).toMatch(/^3 /);
+    expect(labels.drive).toMatch(/^bus · /);
+    expect(labels.dynamics).toMatch(/^bus · /);
+    for (const id of ['sub', 'body', 'click'] as const) {
+      expect(labels[id]!.split('·').length, `${id} carries a DESCRIPTION`).toBeGreaterThan(1);
+    }
+  });
+
+  it('the HERO band is the mock top strip: graph · strike · TUNE · sidebar', () => {
+    const hero = plan[0]!;
+    expect(hero.controls.map((c) => c.key)).toEqual([
+      'kickdrum-hero-{n}',
+      'kickdrum-strike-{n}',
+      'tune',
+      'kickdrum-chain-{n}',
+    ]);
+    // The two displays are PANELS (bespoke components), the audition is a
+    // family action, and TUNE is the one real knob — that mix is the band.
+    expect(hero.controls.map((c) => c.kind)).toEqual(['family', 'family', 'param', 'family']);
+    expect(shellCellFor('kickdrum', hero.controls[0]!)?.kind).toBe('panel');
+    expect(shellCellFor('kickdrum', hero.controls[3]!)?.kind).toBe('panel');
+    expect(shellCellFor('kickdrum', hero.controls[1]!)?.kind).toBe('action');
+  });
+
+  it('band 2 is the SUB LAYER alone — the audition moved up to the hero, not away', () => {
+    const sub = plan[1]!;
+    expect(sub.controls.map((c) => c.key)).toEqual([
+      'sub_decay', 'sub_level', 'sub_eq', 'translate',
+    ]);
+    // The audition still leads the faceplate; it just leads it from the hero.
+    expect(dockPlanControls(plan).findIndex((c) => c.key === 'kickdrum-strike-{n}')).toBe(1);
+  });
+
+  it('the merged dynamics·out band carries its split as CLUSTERS, not as a seventh band', () => {
+    const dyn = plan[5]!;
     expect(dyn.controls, 'every cell is claimed by a cluster').toEqual([]);
     expect(dyn.clusters.map((c) => c.label)).toEqual(['transient · glue', 'level · width · ceiling']);
     expect(dyn.clusters[0]!.controls.map((c) => c.key)).toEqual(['attack', 'sustain', 'glue']);
@@ -150,7 +192,7 @@ describe('kickdrum face — the dock bands (pages = FUNCTION)', () => {
     ).toContain('s.sideOut * lin * clamp(p.width');
 
     // …and the faceplate's out-cluster teaches exactly that order.
-    const out = plan[4]!.clusters[1]!.controls.map((c) => c.key);
+    const out = plan[5]!.clusters[1]!.controls.map((c) => c.key);
     expect(out.indexOf('level')).toBeLessThan(out.indexOf('width'));
     expect(out.indexOf('width')).toBeLessThan(out.indexOf('ceiling'));
   });
@@ -166,11 +208,16 @@ describe('kickdrum face — the dock bands (pages = FUNCTION)', () => {
     expect(bandOf('translate')).toBe('sub');
   });
 
-  it('the dock paints all 26 cells: 25 params + the audition, each exactly once', () => {
+  it('the dock paints all 28 cells: 25 params + the audition + the two panels, each exactly once', () => {
     const flat = dockPlanControls(plan);
-    expect(flat).toHaveLength(kickdrumDef.params.length + 1);
+    expect(flat).toHaveLength(kickdrumDef.params.length + kickdrumDef.controlFamilies!.length);
     expect(new Set(flat.map((c) => c.key)).size).toBe(flat.length);
     expect(flat.filter((c) => c.kind === 'param')).toHaveLength(kickdrumDef.params.length);
+    // Every family resolves to a REAL cell spec — the inert-cell class (a
+    // dashed label that both gates fail on) cannot creep back in.
+    for (const ctl of flat.filter((c) => c.kind === 'family')) {
+      expect(shellCellFor('kickdrum', ctl), `no shell cell for '${ctl.key}'`).toBeDefined();
+    }
   });
 
   it('the REAR renders every band exactly once, and no page claims the LEADING slot', async () => {
