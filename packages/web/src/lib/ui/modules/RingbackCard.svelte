@@ -1,40 +1,48 @@
 <script lang="ts">
   // RINGBACK — stereo crush effect (the TWOTRACKS record-time artifact, made
   // intentional). Stereo in (L/R) → stereo out (L/R). Four knobs expose the
-  // mechanism: RATE (crush amount), SIZE (ring length), FB (feedback regen),
-  // MIX (dry/wet). All writes go through setNodeParam(). See
-  // packages/web/src/lib/audio/modules/ringback.ts for the signal path.
+  // mechanism: RATE (cells per sample), SIZE (ring length), FEEDBACK (regen),
+  // MIX (dry/wet). See packages/web/src/lib/audio/modules/ringback.ts.
   import type { NodeProps } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
-  import { setNodeParam } from '$lib/graph/mutate';
   import { ringbackDef } from '$lib/audio/modules/ringback';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
-  import { portsFromDef } from './card-kit';
+  import { cardParams, paramSpec, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
+  const { set, paramVal } = cardParams(ringbackDef, () => id, () => node);
 
-  const defaultFor = (k: string): number =>
-    ringbackDef.params.find((p) => p.id === k)?.defaultValue ?? 0;
+  // RANGES, MAPPING **AND VOCABULARY** COME FROM THE DEF — never re-typed here.
+  // This card used to spell out all four knobs' min / max / defaultValue /
+  // curve / units as literals, plus its own captions (`FB` where the def says
+  // `Feedback`). They agreed with the def by maintenance rather than by
+  // construction, and NO gate we own reads both sides (CLAUDE.md: "A CARD can
+  // silently disagree with its DEF"). `card-range-source.test.ts` guards it at
+  // the SOURCE level, which is the only place the divergence is visible.
+  //
+  // `formatValue` is the half a re-typing matcher structurally cannot see: a
+  // def-declared `format` the card never passes on is a DISAGREEMENT, not a
+  // downgrade — the curated face would print `SR/2.0` while this card printed
+  // `0.50` for the same param. ZERO-PIXEL here: Knob renders its value tag only
+  // inside `{#if dragging || hovering}`, and no VRT scene hovers a knob.
+  const pRate = paramSpec(ringbackDef, 'rate');
+  const pSize = paramSpec(ringbackDef, 'size');
+  const pFeedback = paramSpec(ringbackDef, 'feedback');
+  const pMix = paramSpec(ringbackDef, 'mix');
 
-  let rate     = $derived(node?.params.rate     ?? defaultFor('rate'));
-  let size     = $derived(node?.params.size     ?? defaultFor('size'));
-  let feedback = $derived(node?.params.feedback ?? defaultFor('feedback'));
-  let mix      = $derived(node?.params.mix      ?? defaultFor('mix'));
+  let rate = $derived(paramVal('rate'));
+  let size = $derived(paramVal('size'));
+  let feedback = $derived(paramVal('feedback'));
+  let mix = $derived(paramVal('mix'));
 
-  const inputs: PortDescriptor[] = [
-    { id: 'in_l', label: 'L IN', cable: 'audio' },
-    { id: 'in_r', label: 'R IN', cable: 'audio' },
-    // CV ins for the four knobs (ids match the def 1:1 — io-spec parity test).
-    { id: 'rate',     label: 'RATE CV', cable: 'cv' },
-    { id: 'size',     label: 'SIZE CV', cable: 'cv' },
-    { id: 'feedback', label: 'FB CV',   cable: 'cv' },
-    { id: 'mix',      label: 'MIX CV',  cable: 'cv' },
-  ];
-  const outputs = portsFromDef(ringbackDef.outputs, { out_l: 'L OUT', out_r: 'R OUT' });
+  // Jack labels are authored on the def (PortDef.label), so this card carries
+  // no override map: the rear card, the lane drill-down and this panel all say
+  // `L` / `R` because there is only one place that string exists.
+  const inputs = portsFromDef(ringbackDef.inputs);
+  const outputs = portsFromDef(ringbackDef.outputs);
 </script>
 
 <div class="mod-card ringback-card" data-testid="ringback-card">
@@ -44,14 +52,22 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="knob-row" data-testid="ringback-knobs">
-      <Knob value={rate} min={0.05} max={4} defaultValue={0.5} label="RATE" curve="linear"
-        onchange={(v) => setNodeParam(id, 'rate', v)} moduleId={id} paramId="rate" />
-      <Knob value={size} min={2} max={4096} defaultValue={64} label="SIZE" units="smp" curve="log"
-        onchange={(v) => setNodeParam(id, 'size', Math.round(v))} moduleId={id} paramId="size" />
-      <Knob value={feedback} min={0} max={0.98} defaultValue={0.3} label="FB" curve="linear"
-        onchange={(v) => setNodeParam(id, 'feedback', v)} moduleId={id} paramId="feedback" />
-      <Knob value={mix} min={0} max={1} defaultValue={1} label="MIX" curve="linear"
-        onchange={(v) => setNodeParam(id, 'mix', v)} moduleId={id} paramId="mix" />
+      <!-- `size` is NOT rounded on write. The DSP core rounds it itself
+           (`clampSize`), and the curated face's knob does not round either —
+           so rounding here would have made the card and the shell store
+           different numbers for an identical sound. One law, in the DSP. -->
+      <Knob value={rate} min={pRate.min} max={pRate.max} defaultValue={pRate.defaultValue}
+        label={pRate.label} units={pRate.units} curve={pRate.curve} formatValue={pRate.format}
+        onchange={set('rate')} moduleId={id} paramId="rate" />
+      <Knob value={size} min={pSize.min} max={pSize.max} defaultValue={pSize.defaultValue}
+        label={pSize.label} units={pSize.units} curve={pSize.curve} formatValue={pSize.format}
+        onchange={set('size')} moduleId={id} paramId="size" />
+      <Knob value={feedback} min={pFeedback.min} max={pFeedback.max} defaultValue={pFeedback.defaultValue}
+        label={pFeedback.label} units={pFeedback.units} curve={pFeedback.curve} formatValue={pFeedback.format}
+        onchange={set('feedback')} moduleId={id} paramId="feedback" />
+      <Knob value={mix} min={pMix.min} max={pMix.max} defaultValue={pMix.defaultValue}
+        label={pMix.label} units={pMix.units} curve={pMix.curve} formatValue={pMix.format}
+        onchange={set('mix')} moduleId={id} paramId="mix" />
     </div>
   </PatchPanel>
 </div>

@@ -315,8 +315,12 @@ describe('vrt-meta — STRICT_VRT_MODULES RATCHET (only grows)', () => {
  * see the note in vrt-exemptions.ts). Found by the both-directions assertion
  * below the moment the entries went: under a bare `<=` ceiling this cleanup
  * would have left 10 counts of slack and said nothing.
+ *
+ * 94 → 93 (2026-08-02): `linux/ringback` DRAINED with the ringback face
+ * promotion, whose PR dispatches `vrt-update.yml -f platform=linux` for its two
+ * new `face-ringback-*` scenes and picks the card scene up in the same run.
  */
-const SHARED_LINUX_PAIR_CEILING = 94;
+const SHARED_LINUX_PAIR_CEILING = 93;
 
 describe('vrt-meta — EXEMPT_BASELINE_PAIRS size RATCHET (only shrinks)', () => {
   // ⚠ 2026-08-01 — READ THIS BEFORE TRUSTING THE NUMBER BELOW.
@@ -529,7 +533,16 @@ describe('vrt-meta — EXEMPT_BASELINE_PAIRS size RATCHET (only shrinks)', () =>
  * red as a regression. Change this number in the same commit that moves the
  * baselines, never on its own.
  */
-const LINUX_DEFICIT_CEILING = 151;
+// 151 → 150 (2026-08-02, ringback face promotion). NET of two movements that
+// happen in ONE commit and must be read together, because either alone looks
+// wrong: the promotion ADDS two darwin-first scenes (face-ringback-compact /
+// -dock, +2) and DRAINS `linux/ringback` (−1), and the PR's
+// `vrt-update.yml -f platform=linux` dispatch captures all THREE — so the
+// steady state is 151 − 1 = 150. ⚠ Between the branch push and the bot's
+// baseline commit this test is RED at 153 by construction (three darwin PNGs
+// with no linux sibling and nothing declaring them); that window is the
+// documented drain-then-dispatch flow, not a slack ceiling.
+const LINUX_DEFICIT_CEILING = 150;
 
 describe('vrt-meta — LINUX-baseline DEFICIT RATCHET (all four mechanisms)', () => {
   // THE HONESTY GATE. CI renders on LINUX. A scene captured on darwin but
