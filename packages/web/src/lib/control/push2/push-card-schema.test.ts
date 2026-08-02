@@ -455,7 +455,13 @@ describe('the AUTHORED push cards', () => {
     // strongest form of "not adjacent" — pitch_time is not in the window at
     // all — but a re-curated face may change WHY this holds without changing
     // WHETHER it holds, which is exactly why this is a relation.)
-    expect(ids('kickdrum', {}).slice(0, 3)).not.toEqual(PITCH);
+    const faced = ids('kickdrum', {});
+    // NON-VACUITY ANCHOR, kept from #1287's rewrite of this clause. Without it
+    // the contrast below would also pass on an EMPTY face window — the same
+    // hole that let the previous `indexOf(pitch_time) - indexOf(pitch_amt)`
+    // subtract two -1s into -4 and read as position data.
+    expect(faced, 'pitch_amt is a lane rank and must be IN the face window').toContain('pitch_amt');
+    expect(faced.slice(0, 3)).not.toEqual(PITCH);
   });
 
   it('SWEEP: every override either changes the card or is a documented restatement', () => {
