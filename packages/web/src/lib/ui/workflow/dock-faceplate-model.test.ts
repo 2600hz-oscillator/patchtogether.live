@@ -19,15 +19,17 @@ import { dockFacePlan, dockPlanControls, type DockFaceBand, type FaceDefLike } f
 import {
   activePresetId,
   facePageHeader,
-  hasDockSidebar,
   heroFacePlan,
   heroFacePlanIsTotal,
   isUsableReadout,
   presetNote,
+  presetRowStates,
   presetValueMatches,
   presetWrites,
   readoutText,
+  recalledPresetId,
   sidebarPlan,
+  FACE_PRESET_DATA_KEY,
   PRESET_MATCH_REL,
   type FaceplateDefLike,
 } from './dock-faceplate-model';
@@ -144,6 +146,33 @@ describe('heroFacePlan — PROMOTES a control, never copies it', () => {
     expect(heroFacePlanIsTotal(before, after)).toBe(true);
   });
 
+  it('promotes the module PICTURE (hero.cell) out of its band, and stays total', () => {
+    // The picture is the one half of a faceplate that cannot be platform data,
+    // so the platform makes room for it instead — same promotion, same
+    // conservation. `fx-strike-{n}` stands in for a panel cell here: the split
+    // is about KEYS, and a fixture with a real component would prove nothing
+    // extra while dragging a Svelte import into a pure unit.
+    const def = fixture({ hero: { cell: 'fx-strike-{n}', control: 'tune' } } as never);
+    const before = bandsOf(def);
+    const after = heroFacePlan(def, before);
+
+    expect(after.hero?.cell?.key).toBe('fx-strike-{n}');
+    expect(after.hero?.control?.key).toBe('tune');
+    const remaining = dockPlanControls(after.bands).map((c) => c.key);
+    expect(remaining).not.toContain('fx-strike-{n}');
+    expect(remaining.length).toBe(dockPlanControls(before).length - 2);
+    expect(heroFacePlanIsTotal(before, after)).toBe(true);
+  });
+
+  it('a key named as BOTH cell and action is promoted ONCE — the cell wins', () => {
+    const def = fixture({ hero: { cell: 'fx-strike-{n}', action: 'fx-strike-{n}' } } as never);
+    const before = bandsOf(def);
+    const after = heroFacePlan(def, before);
+    expect(after.hero?.cell?.key).toBe('fx-strike-{n}');
+    expect(after.hero?.action, 'the second claim resolves null rather than duplicating').toBeNull();
+    expect(heroFacePlanIsTotal(before, after)).toBe(true);
+  });
+
   it('promotes a key named as BOTH control and action exactly ONCE', () => {
     // The duplicate-emit trap: promoting the same key twice would render two
     // `control-tune` testids and read as an unbacked extra control.
@@ -200,7 +229,10 @@ describe('heroFacePlan — PROMOTES a control, never copies it', () => {
   it('NEGATIVE CONTROL: a split that DUPLICATED a control fails it too', () => {
     const def = fixture();
     const before = bandsOf(def);
-    const dup = { hero: { control: before[0]!.controls[0]!, action: null, readouts: [] }, bands: before };
+    const dup = {
+      hero: { cell: null, control: before[0]!.controls[0]!, action: null, readouts: [] },
+      bands: before,
+    };
     expect(heroFacePlanIsTotal(before, dup)).toBe(false);
   });
 });
@@ -229,11 +261,45 @@ describe('readoutText — one ladder for the panel and the dial', () => {
     expect(readoutText({ label: 'x', paramId: 'tune' }, PARAMS, () => NaN)).toBe('—');
   });
 
-  it('isUsableReadout demands EXACTLY one source', () => {
+  it('isUsableReadout demands EXACTLY one of the THREE sources', () => {
     expect(isUsableReadout({ label: 'a', paramId: 'tune' })).toBe(true);
     expect(isUsableReadout({ label: 'a', text: 'x' })).toBe(true);
+    expect(isUsableReadout({ label: 'a', valueId: 'kickdrum-tail' })).toBe(true);
     expect(isUsableReadout({ label: 'a', paramId: 'tune', text: 'x' })).toBe(false);
+    expect(isUsableReadout({ label: 'a', paramId: 'tune', valueId: 'kickdrum-tail' })).toBe(false);
+    expect(isUsableReadout({ label: 'a', valueId: 'kickdrum-tail', text: 'x' })).toBe(false);
     expect(isUsableReadout({ label: 'a' })).toBe(false);
+  });
+
+  // ── the DERIVED source, and why it exists ────────────────────────────────
+  //
+  // A readout is not always a knob relabelled. `valueId` is what lets a face
+  // print a quantity that no single param carries, and the registry keeps the
+  // def declaring a STRING rather than importing a function.
+
+  it('resolves a registered valueId through the SAME param reader', () => {
+    // kickdrum's tail at the def defaults is 398 ms — NOT the 450 ms `sub_decay`
+    // knob. Reading defaults (the reader returns undefined for everything) is
+    // the case a faceplate actually renders on a freshly spawned node.
+    expect(readoutText({ label: 'tail', valueId: 'kickdrum-tail' }, PARAMS, () => undefined)).toBe(
+      '398 ms',
+    );
+  });
+
+  it('NEGATIVE CONTROL: the derived tail moves on a LEVEL change — a knob readback would not', () => {
+    // This is the assertion that distinguishes a derived readout from
+    // `{ paramId: 'sub_decay' }`. A time-only perturbation cannot: BOTH models
+    // move when SUB DEC moves. Halving SUB LEVEL is the input the blind model
+    // is structurally invariant to.
+    const at = (over: Record<string, number>): string =>
+      readoutText({ label: 'tail', valueId: 'kickdrum-tail' }, PARAMS, (pid) => over[pid]);
+    const base = at({});
+    expect(at({ sub_level: 0.2 }), `LEVEL must move the tail (base ${base})`).not.toBe(base);
+    expect(at({ sub_decay: 800 }), 'and so must TIME, obviously').not.toBe(base);
+  });
+
+  it('an UNREGISTERED valueId prints an em dash — the lint is what reddens', () => {
+    expect(readoutText({ label: 'x', valueId: 'no-such-value' }, PARAMS, () => undefined)).toBe('—');
   });
 });
 
@@ -244,7 +310,6 @@ describe('sidebarPlan — an EMPTY block is worse than no block', () => {
 
   it('is null for a face with no sidebar, so the editor keeps its full width', () => {
     expect(sidebarPlan(fixture())).toBeNull();
-    expect(hasDockSidebar(fixture())).toBe(false);
   });
 
   it('drops every kind of empty block, and returns null when NONE survive', () => {
@@ -255,7 +320,6 @@ describe('sidebarPlan — an EMPTY block is worse than no block', () => {
       { kind: 'custom', label: 'c', panelId: '  ' },
     ]);
     expect(sidebarPlan(def)).toBeNull();
-    expect(hasDockSidebar(def)).toBe(false);
   });
 
   it('keeps the blocks that will actually paint, in declaration order', () => {
@@ -266,7 +330,6 @@ describe('sidebarPlan — an EMPTY block is worse than no block', () => {
       { kind: 'custom', label: 'c', panelId: 'stereo-crossover' },
     ]);
     expect(sidebarPlan(def)!.map((b) => b.kind)).toEqual(['signal-flow', 'readouts', 'custom']);
-    expect(hasDockSidebar(def)).toBe(true);
   });
 });
 
@@ -321,5 +384,82 @@ describe('preset selection', () => {
   it('presetNote prints the declared note, trimmed, else nothing', () => {
     expect(presetNote({ note: ' 50 Hz ' })).toBe('50 Hz');
     expect(presetNote({})).toBe('');
+  });
+});
+
+// ── 6. PRESET ROW STATE — lit AND modified, because one fact is not enough ──
+//
+// The owner arbitrated this: the row STAYS LIT after a knob move and carries a
+// MODIFIED marker. Both alternatives are wrong in one direction — un-lighting
+// throws away where the sound came from, staying silently lit asserts a voice
+// the patch no longer is — so the model returns both facts and the tests pin
+// both. A test that only checked `lit` would pass on the "stays lit forever"
+// bug this design exists to avoid.
+
+describe('presetRowStates — provenance AND honesty', () => {
+  const ENTRIES: { id: string; values: Readonly<Record<string, number>> }[] = [
+    { id: 'deep', values: { tune: 50, decay: 620 } },
+    { id: 'punch', values: { tune: 55, decay: 320 } },
+  ];
+  const at = (v: Record<string, number>) => (p: string) => v[p];
+
+  it('with nothing recalled, an exact VALUE match lights (a patch loaded onto a preset)', () => {
+    const rows = presetRowStates(ENTRIES, null, at({ tune: 50, decay: 620 }));
+    expect(rows).toEqual([
+      { id: 'deep', lit: true, modified: false },
+      { id: 'punch', lit: false, modified: false },
+    ]);
+  });
+
+  it('with nothing recalled and no match, NOTHING is lit', () => {
+    const rows = presetRowStates(ENTRIES, null, at({ tune: 44, decay: 620 }));
+    expect(rows.every((r) => !r.lit && !r.modified)).toBe(true);
+  });
+
+  it('a RECALLED row whose values still match is lit and NOT modified', () => {
+    expect(presetRowStates(ENTRIES, 'punch', at({ tune: 55, decay: 320 }))[1]).toEqual({
+      id: 'punch',
+      lit: true,
+      modified: false,
+    });
+  });
+
+  it('THE DECISION: editing off a recalled preset keeps it LIT and marks it MODIFIED', () => {
+    const rows = presetRowStates(ENTRIES, 'punch', at({ tune: 44, decay: 320 }));
+    expect(rows[1], 'the row that was recalled').toEqual({
+      id: 'punch',
+      lit: true,
+      modified: true,
+    });
+    expect(rows[0]!.lit, 'and no other row lights up in its place').toBe(false);
+  });
+
+  it('exactly ONE row is ever lit, in every combination above', () => {
+    for (const [recalled, vals] of [
+      [null, { tune: 50, decay: 620 }],
+      ['punch', { tune: 55, decay: 320 }],
+      ['punch', { tune: 44, decay: 320 }],
+      ['deep', { tune: 55, decay: 320 }],
+    ] as const) {
+      const lit = presetRowStates(ENTRIES, recalled, at(vals as Record<string, number>)).filter(
+        (r) => r.lit,
+      );
+      expect(lit.length, `recalled=${recalled} values=${JSON.stringify(vals)}`).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it('NEGATIVE CONTROL: a row is never modified while it is not lit', () => {
+    // The failure this rules out is a marker that tracks "has anything been
+    // edited" globally rather than "this row's values have moved" — which would
+    // paint MODIFIED beside four presets nobody recalled.
+    const rows = presetRowStates(ENTRIES, 'punch', at({ tune: 44, decay: 320 }));
+    for (const r of rows) if (!r.lit) expect(r.modified).toBe(false);
+  });
+
+  it('recalledPresetId rejects a STALE id — a removed preset must not light a ghost row', () => {
+    expect(recalledPresetId(ENTRIES, { [FACE_PRESET_DATA_KEY]: 'punch' })).toBe('punch');
+    expect(recalledPresetId(ENTRIES, { [FACE_PRESET_DATA_KEY]: 'deleted-in-a-later-build' })).toBeNull();
+    expect(recalledPresetId(ENTRIES, { [FACE_PRESET_DATA_KEY]: 7 })).toBeNull();
+    expect(recalledPresetId(ENTRIES, undefined)).toBeNull();
   });
 });

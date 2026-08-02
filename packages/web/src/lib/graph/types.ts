@@ -655,17 +655,36 @@ export interface ModuleFace {
 }
 
 /**
- * A labelled VALUE for the hero slot or a `readouts` sidebar block. Exactly one
- * source: `paramId` prints that param's live, formatted value (through the same
- * `ParamDef.format`/`units` ladder the dial prints), `text` prints a fixed
- * string the def wants to state. Declaring both is an authoring error the face
- * lint fails.
+ * A labelled VALUE for the hero slot or a `readouts` sidebar block. EXACTLY
+ * ONE of three sources; declaring none, or more than one, is an authoring error
+ * the face lint fails and the render skips.
+ *
+ *   `paramId` — the param's live value through the same `ParamDef.format` /
+ *               `units` ladder the dial under it prints.
+ *   `valueId` — a DERIVED number: a pure function of the module's live params,
+ *               registered in face-readout-values.ts.
+ *   `text`    — a fixed string the def wants to state.
+ *
+ * ⚠ `valueId` EXISTS BECAUSE `paramId` IS NOT ALWAYS THE ANSWER, and mistaking
+ * one for the other is the blind-metric trap in miniature. Kick drum's hero
+ * wants to print how long the voice RINGS. The first draft declared
+ * `{ label: 'tail', paramId: 'sub_decay' }` — which prints 450 ms, moves when
+ * you turn SUB DEC, and reads entirely correct — while being INVARIANT to SUB
+ * LEVEL, which genuinely changes the answer (the real −60 dB tail at those
+ * defaults is 398 ms, because it is a sum of three layers at their own mix
+ * levels). A readout is not a knob relabelled; when the quantity is derived,
+ * DERIVE it, and negative-control the derivation on the input the knob
+ * readback would be blind to.
  */
 export interface FaceReadout {
   /** Caption ("PEAK", "TAIL"). */
   label: string;
   /** Print this param's live value. Must be a declared param on the def. */
   paramId?: string;
+  /** …or print a DERIVED value: an id registered in face-readout-values.ts.
+   *  The def declares a STRING, never a function, so `face` stays serialisable
+   *  data (the sidebar-panels precedent). An unregistered id fails the lint. */
+  valueId?: string;
   /** …or print this literal ("≈ 480 ms"). */
   text?: string;
 }
@@ -681,11 +700,24 @@ export interface FaceReadout {
  * and the totality of that move is what dock-faceplate-model.test.ts pins.
  */
 export interface ModuleFaceHero {
+  /**
+   * A `face.order` key promoted into the hero slot as the module's own PICTURE
+   * — a PF-14 `panel` cell (an envelope graph, a scale ring, a routing map).
+   *
+   * ⚠ THE PICTURE IS THE ONE HALF OF A FACEPLATE THAT CANNOT BE PLATFORM. A
+   * title, a hint, a sidebar, a preset roster and a readout are the same shape
+   * on every instrument, so they are DATA declared here. What a kick drum's
+   * envelope looks like is not — no amount of def introspection synthesises it.
+   * Promoting the module's panel into the hero is how the platform makes room
+   * for that without any module needing to touch the shell. A face that
+   * declares no `cell` keeps the plain `glyph` band it has today.
+   */
+  cell?: string;
   /** A `face.order` key promoted into the hero slot as the BIG control. */
   control?: string;
   /** A second `face.order` key beside it — typically the audition button. */
   action?: string;
-  /** Labelled live values printed under the hero glyph. */
+  /** Labelled live values printed beside the hero picture, at hero size. */
   readouts?: readonly FaceReadout[];
 }
 
@@ -696,6 +728,18 @@ export interface ModuleFaceHero {
 export interface FaceFlowStage {
   label: string;
   role?: 'generator' | 'bus';
+  /**
+   * TRUE for a stage that is NOT INLINE: it taps the bus earlier and rejoins
+   * it further down. Drawn as a dashed branch off the spine rather than a link
+   * in the chain.
+   *
+   * ⚠ This is a correctness field, not decoration. Kick drum's TRANSLATE
+   * exciter taps a copy of the RAW sub from before the drive; drawn inline
+   * between EQ and DYNAMICS it would teach a producer that turning it up
+   * excites the driven, EQ'd signal — the opposite of why it survives a phone
+   * speaker. A diagram that teaches the wrong chain is worse than no diagram.
+   */
+  parallel?: boolean;
   /** Optional sub-caption ("hard", "50 Hz"). */
   note?: string;
 }

@@ -137,7 +137,7 @@ test.describe('P1 batch-1 curated faces (?shell=1)', () => {
     await expect(shell).toBeVisible();
   });
 
-  test('kickdrum renders its SHELL face in-lane + the dock shows all five curated pages', async ({ page }) => {
+  test('kickdrum renders its SHELL face in-lane + a HERO slot over five curated pages', async ({ page }) => {
     await gotoWorkflow(page, { shell: true });
     await spawnPatch(page, [{ id: 'kd', type: 'kickdrum', position: { x: 460, y: 240 } }]);
 
@@ -176,8 +176,9 @@ test.describe('P1 batch-1 curated faces (?shell=1)', () => {
     await expect(glyph).toBeVisible();
     await expectWholeInside(glyph, (await shell.boundingBox())!, 'compact: scope glyph');
 
-    // 2) The dock full-view shows the five designed section bands, in the
-    //    designer's reading order (strike, the layers, then the bus).
+    // 2) The dock full-view shows the FIVE designed section bands — the three
+    //    numbered generator layers then the bus — under a HERO SLOT that is
+    //    not one of them.
     await setZoomTier(page, 'kd', 0.6, 'full');
     await shell.getByTestId('shell-open-dock').click();
     const faceplate = page.getByTestId('dock-full-view');
@@ -193,21 +194,27 @@ test.describe('P1 batch-1 curated faces (?shell=1)', () => {
       pages.nth(3).locator('[data-testid="control-drive"]'),
       "page 'drive' holds the drive control",
     ).toBeVisible();
-    // The AUDITION is the first thing a player can reach. It used to lead band
-    // 1, for the reason that still applies — this is the one voice that is
-    // SILENT until something strikes it, and the dock pane shows ~2 bands
-    // before it scrolls. PF-20 moved it one step FURTHER up: `face.hero`
-    // promotes it into the hero rail, which sits above every band.
+    // ── THE HERO SLOT IS THE REDESIGN, so assert what it actually says ──
     //
-    // ⚠ THE `toHaveCount(1)` IS THE POINT OF THIS EDIT, not decoration. The
-    // hero PROMOTES a cell, it does not copy it, so the assertion that used to
-    // say "it is in band 1" must now say "it is in the hero AND NOWHERE ELSE".
-    // A weaker "it is visible somewhere" rewrite would have passed just as
-    // happily against a hero that duplicated the audition — which is the exact
-    // regression the promotion can cause.
+    // The owner's finding was that the shipped face was five bands of bare
+    // knobs: no title, no readouts, no picture, no chain, no presets. The
+    // assertions below are that finding inverted — every one of them FAILS on
+    // the face as it shipped, so none can pass by accident on a regression.
+    const hero = faceplate.getByTestId('face-hero');
+    await expect(hero, 'the faceplate opens with a HERO, above every band').toBeVisible();
+
+    // (a) THE AUDITION is promoted into the hero — the first thing a player can
+    //     reach on the one voice that is silent until something strikes it.
+    //
+    // ⚠ THE `toHaveCount(1)` IS THE POINT, not decoration. The hero PROMOTES a
+    // cell, it does not copy it, so the assertion that used to say "it is in
+    // band 1" must now say "it is in the hero AND NOWHERE ELSE". A weaker "it
+    // is visible somewhere" rewrite would have passed just as happily against a
+    // hero that duplicated the audition — the exact regression promotion can
+    // cause, and one faces-parity's param multiset cannot see for a FAMILY key.
     await expect(
-      faceplate.getByTestId('face-hero').getByTestId('shell-cell-kickdrum-strike'),
-      'the STRIKE audition is promoted into the hero rail, above every band',
+      hero.getByTestId('shell-cell-kickdrum-strike'),
+      'the STRIKE audition is promoted into the hero rail',
     ).toBeVisible();
     await expect(
       faceplate.getByTestId('shell-cell-kickdrum-strike'),
@@ -217,6 +224,39 @@ test.describe('P1 batch-1 curated faces (?shell=1)', () => {
       pages.nth(0).getByTestId('shell-cell-kickdrum-strike'),
       'so band 1 no longer carries a second copy of it',
     ).toHaveCount(0);
+
+    // (b) THE PICTURE — the amplitude + pitch-sweep graph, in the hero, where
+    //     the mock puts it. Its absence is what got the delivered face
+    //     rejected.
+    await expect(hero.getByTestId('kickdrum-hero')).toBeVisible();
+    await expect(hero.getByTestId('kickdrum-vu'), 'and the meter beside it').toBeVisible();
+
+    // (c) THE TAIL READOUT IS DERIVED, not a knob readback. 450 ms is SUB DEC;
+    //     398 ms is what the summed three-layer voice actually rings for.
+    await expect(
+      faceplate.locator('[data-hero-readout="kickdrum-tail"]'),
+      'the hero prints the MEASURED tail, not the SUB DEC knob',
+    ).toContainText('398 ms');
+
+    // (d) THE SIDEBAR — the chain, the crossover, and presets that SELECT.
+    const side = faceplate.getByTestId('face-sidebar');
+    await expect(side.getByTestId('side-flow')).toBeVisible();
+    await expect(side.getByTestId('sidebar-panel-stereo-crossover')).toBeVisible();
+    await side.getByTestId('face-preset-909-classic').click();
+    await expect(faceplate.getByTestId('readout-tune')).toHaveText('62 Hz');
+    await expect(side.getByTestId('face-preset-909-classic')).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+
+    // A VALUE UNDER EVERY KNOB — the mock's other structural demand. Sample
+    // one knob per unit family; the def-level gate (kickdrum-face-model.test)
+    // holds the completeness half.
+    await expect(faceplate.getByTestId('readout-sub_decay')).toHaveText(/^\d+ ms$/);
+    await expect(faceplate.getByTestId('readout-body_eq')).toHaveText(/^[+−-]?\d+\.\d dB$/);
+    await expect(faceplate.getByTestId('readout-click_tone')).toHaveText(/kHz$|Hz$/);
+    await expect(faceplate.getByTestId('readout-body_shape')).toHaveText(/^(SINE|TRI|RECT)$/);
+
     // The merged 'dynamics · out' band carries BOTH ideas, split by clusters
     // (a ~14px sub-header) rather than by a sixth ~81px band.
     for (const paramId of ['ceiling', 'width', 'level']) {

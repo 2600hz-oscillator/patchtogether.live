@@ -339,6 +339,20 @@
   let pageHeader = $derived(view === 'dock-full' ? facePageHeader(def as FaceplateDefLike | undefined) : null);
 
   /**
+   * PF-20 — does the DOCK hero band paint the shell's `glyph`?
+   *
+   * ⚠ NOT when the face brought its own picture. The glyph is a LIVE trace of
+   * the output; a `hero.cell` is a picture of the PATCH. Both together is what
+   * the owner rejected: the kick's `scope` glyph flatlines with no audio, so a
+   * faceplate opened on a silent rack painted an EMPTY BLACK RECTANGLE in the
+   * exact place the mock puts the envelope graph — beside the graph itself.
+   * The glyph is untouched at every other tier (the compact lane tile genuinely
+   * wants a live trace, and that is the only place it has room to be one), so
+   * this suppresses nothing a lane baseline can see.
+   */
+  let heroGlyph = $derived(hasGlyph && !(view === 'dock-full' && hero?.cell));
+
+  /**
    * The value a hero/sidebar READOUT prints.
    *
    * ⚠ READS THE DURABLE PARAM, deliberately — the same call the topology
@@ -869,39 +883,47 @@
       </div>
     {/if}
 
-    <!-- PF-20 — the HERO RAIL. The glyph at hero size, the promoted control
+    <!-- PF-20 — the HERO RAIL: the module's own PICTURE, the promoted control
          beside it (a big dial with a big readout), its audition, and the
          labelled readouts. Every piece is optional and the rail only renders
          when at least one is present — a face that declares no hero keeps the
          bare capped glyph band it has today. -->
-    {#if hasGlyph || hero}
+    {#if heroGlyph || hero}
       <div
         class="tile-body dock-hero"
         class:has-hero={!!hero}
+        class:has-hero-cell={!!hero?.cell}
         style={`--dock-hero-glyph-w:${DOCK_HERO_GLYPH_W}px`}
       >
-        {#if hasGlyph}{@render glyphCell()}{/if}
+        {#if heroGlyph}{@render glyphCell()}{/if}
         {#if hero}
           <div class="hero-rail" data-testid="face-hero">
-            {#if hero.control}
-              <!-- The hero CELL is the same cell the band would have rendered,
-                   at hero size. It is MOVED here, not copied — see
-                   heroFacePlan — so the param multiset is unchanged. -->
-              <div class="hero-ctl">{@render controlCell(hero.control, 'xl')}</div>
+            {#if hero.cell}
+              <!-- THE MODULE'S OWN PICTURE, at the top of the faceplate where
+                   the mock puts it. MOVED out of its band, not copied — see
+                   heroFacePlan — so the cell multiset is unchanged. -->
+              <div class="hero-vis">{@render controlCell(hero.cell)}</div>
             {/if}
-            {#if hero.action}
-              <div class="hero-ctl">{@render controlCell(hero.action)}</div>
-            {/if}
-            {#if hero.readouts.length}
-              <dl class="hero-readouts" data-testid="face-hero-readouts">
-                {#each hero.readouts as r (r.label)}
-                  <div class="hero-ro" data-hero-readout={r.paramId ?? r.label}>
-                    <dt>{r.label}</dt>
-                    <dd>{readoutText(r, (def?.params ?? []), readoutValue)}</dd>
-                  </div>
-                {/each}
-              </dl>
-            {/if}
+            <div class="hero-side">
+              {#if hero.control}
+                <!-- The hero CONTROL is the same cell the band would have
+                     rendered, at hero size, with a hero-size readout. -->
+                <div class="hero-ctl">{@render controlCell(hero.control, 'xl')}</div>
+              {/if}
+              {#if hero.action}
+                <div class="hero-ctl">{@render controlCell(hero.action)}</div>
+              {/if}
+              {#if hero.readouts.length}
+                <dl class="hero-readouts" data-testid="face-hero-readouts">
+                  {#each hero.readouts as r (r.label)}
+                    <div class="hero-ro" data-hero-readout={r.paramId ?? r.valueId ?? r.label}>
+                      <dt>{r.label}</dt>
+                      <dd>{readoutText(r, (def?.params ?? []), readoutValue)}</dd>
+                    </div>
+                  {/each}
+                </dl>
+              {/if}
+            </div>
           </div>
         {/if}
       </div>
@@ -1233,7 +1255,35 @@
     gap: 14px;
     padding-bottom: 6px;
   }
+  /* With a promoted picture the rail is the full width of the editor, not a
+     capped glyph band, so the row must not centre-shrink around it. */
+  .dock-hero.has-hero-cell {
+    align-items: stretch;
+  }
+  /* The rail is PICTURE | (control · audition · readouts). The picture takes
+     the room it needs and the side column is intrinsically sized, which is what
+     keeps a 420px graph legible in a half-width split pane instead of both
+     halves squeezing. */
   .hero-rail {
+    display: flex;
+    align-items: stretch;
+    gap: 16px;
+    flex-wrap: wrap;
+    min-width: 0;
+    width: 100%;
+  }
+  .hero-vis {
+    flex: 1 1 380px;
+    min-width: 0;
+  }
+  /* A promoted PANEL keeps its own design floor (`--panel-min-w`) but must not
+     inherit the lane's 46px knob-column cap — `.dock-hero` IS a `.tile-body`,
+     whose `.kcol` rule caps width. */
+  .hero-vis :global(.kcol) {
+    max-width: none;
+    width: 100%;
+  }
+  .hero-side {
     display: flex;
     align-items: flex-end;
     gap: 16px;
@@ -1246,25 +1296,38 @@
   .hero-ctl :global(.kcol) {
     max-width: none;
   }
-  /* Labelled hero values (mock: PEAK / ACCENT / V·OCT). A <dl> because that is
-     what a label→value list is; the visual is a column of caption-over-number
-     pairs. */
+  /* ⚠ THE HERO DIAL'S VALUE IS TYPESET AS A HERO VALUE. The dial is `xl`
+     (64px), and the readout under it inherited the 9px `.readout` rule every
+     46px lane dial uses — a big dial with a lane-sized caption, which is not
+     "a big dial with a big readout" however the comment beside it read. The
+     label stays small: it is a name, and the NUMBER is the thing being read. */
+  .hero-ctl :global(.readout) {
+    font-size: 17px;
+    line-height: 1.05;
+    letter-spacing: 0.01em;
+  }
+  .hero-ctl :global(.label) {
+    font-size: 10px;
+  }
+  /* Labelled hero values. A <dl> because that is what a label→value list is;
+     the visual is a column of caption-over-number pairs, at the same
+     typographic weight as the hero dial's own readout. */
   .hero-readouts {
     display: flex;
     align-items: flex-end;
-    gap: 14px;
+    gap: 16px;
     margin: 0;
     flex-wrap: wrap;
   }
   .hero-ro {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 3px;
     min-width: 0;
   }
   .hero-ro dt {
     font-family: var(--mono, ui-monospace, monospace);
-    font-size: 8px;
+    font-size: 9px;
     letter-spacing: 0.12em;
     text-transform: uppercase;
     color: var(--text-dim, #9aa3ad);
@@ -1272,10 +1335,10 @@
   .hero-ro dd {
     margin: 0;
     font-family: var(--mono, ui-monospace, monospace);
-    font-size: 13px;
-    line-height: 1;
+    font-size: 17px;
+    line-height: 1.05;
     font-weight: 700;
-    letter-spacing: 0.02em;
+    letter-spacing: 0.01em;
     color: var(--domain, var(--accent));
     white-space: nowrap;
   }

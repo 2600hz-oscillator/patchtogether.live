@@ -34,6 +34,7 @@ import type { SelectorOption } from '$lib/ui/controls';
 import { testHooksEnabled } from '$lib/dev/test-hooks';
 import Dx7OperatorMap from '$lib/ui/modules/dx7/Dx7OperatorMap.svelte';
 import Dx7OpDetail from '$lib/ui/modules/dx7/Dx7OpDetail.svelte';
+import KickdrumHeroPanel from '$lib/ui/modules/KickdrumHeroPanel.svelte';
 import type { FaceControl } from './curated-face';
 import {
   DX7_SYX_ACCEPT,
@@ -178,17 +179,34 @@ export interface ShellPanelProbe {
   /** The natural interaction for that element. */
   action: 'click' | 'drag';
   /**
-   * The observable effect. `data` names a path into `node.data` that must
-   * CHANGE (`opOn[1]`); `data-rev` names a monotonic revision counter that must
-   * ADVANCE.
+   * The observable effect.
+   *
+   *   `data`     — a path into `node.data` that must CHANGE (`opOn[1]`).
+   *   `data-rev` — a monotonic revision counter that must ADVANCE.
+   *   `text`     — the rendered text of ANOTHER element inside the panel
+   *                (named by its own testid) that must change.
    *
    * ⚠ Prefer `data` where you can. A revision-only probe passes on a DEAD
    * button that bumps the counter without editing anything — the exact
    * green-but-broken class the whole gate exists to catch.
+   *
+   * ⚠ `text` EXISTS FOR THE PANEL AFFORDANCE THAT MUST NOT TOUCH `node.data`.
+   * `node.data` rides the Y.Doc: it is shared with every collaborator and saved
+   * with the patch. That is right for patch DESIGN (the DX7's 78 operator
+   * values) and wrong for a private VIEW setting — one player zooming their own
+   * plot must not re-zoom everyone else's screen and dirty the patch. Such a
+   * panel keeps the setting in component state, and its probe names a
+   * DIFFERENT element whose text the interaction must move: kick drum's window
+   * button drives the plot's AXIS LABELS, which a dead button cannot change,
+   * so the probe is stronger than a revision counter rather than weaker.
+   * Naming the driven element itself would be the weak form — a button that
+   * only relabels itself would pass — so `testid` here must not equal the
+   * probe's `testid`, and shell-cells.test.ts fails it if it does.
    */
   effect:
     | { kind: 'data'; key: string; expect: 'changed' }
-    | { kind: 'data-rev'; key: string };
+    | { kind: 'data-rev'; key: string }
+    | { kind: 'text'; testid: string; expect: 'changed' };
 }
 
 /** A BESPOKE panel: the module's own component, rendered inside a shell cell. */
@@ -315,6 +333,42 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
     },
   },
   kickdrum: {
+    // THE HERO VISUALISATION — the amplitude + pitch-sweep graph and the output
+    // meter beside it, promoted into the faceplate's hero slot (`face.hero
+    // .cell`).
+    //
+    // A panel rather than a glyph because it is not a trace of the output: it
+    // is a picture of the PATCH, computed from the live knob values through the
+    // worklet's own envelope/frequency laws (kickdrum-face-model), so it says
+    // what the voice WILL do before anything has struck it — which is exactly
+    // what a `scope` glyph on a silent rack cannot do, and why that glyph is
+    // suppressed at the dock for a face that brings its own picture.
+    //
+    // ⚠ THIS IS THE ONLY BESPOKE CELL THIS FACE NEEDS. Its sibling draft also
+    // declared a `kickdrum-chain` panel for the right sidebar; the sidebar is
+    // now DECLARED data on the face (`face.sidebar`) and painted by the shared
+    // FaceSidebar, because a context column is something every faceplate wants
+    // and a per-module component for it is how faces drift apart.
+    'kickdrum-hero-{n}': {
+      kind: 'panel',
+      label: 'envelope + sweep',
+      component: KickdrumHeroPanel,
+      minWidth: 380,
+      // The plot WINDOW is the panel's one writable affordance and its probe.
+      //
+      // ⚠ IT IS A `text` PROBE ON A DIFFERENT ELEMENT, deliberately. The window
+      // is a PRIVATE VIEW setting — it lives in component state, not
+      // `node.data`, so zooming your own plot does not re-zoom every
+      // collaborator's screen or dirty the patch. So the probe drives the
+      // button and asserts the AXIS LABELS moved: the axis is computed from the
+      // window through the warp, and a dead button cannot change it. That is a
+      // stronger claim than a revision counter, not a weaker one.
+      probe: {
+        testid: 'kickdrum-graph-window',
+        action: 'click',
+        effect: { kind: 'text', testid: 'kickdrum-graph-axis', expect: 'changed' },
+      },
+    },
     // THE AUDITION. A kick with nothing patched into trigger_in is SILENT, so
     // without this the dock full-view offers 25 controls over a voice you
     // cannot hear — while tomtom, karplus and sixstrum can all be auditioned.

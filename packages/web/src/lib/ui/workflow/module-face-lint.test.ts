@@ -44,9 +44,10 @@ import {
   type FaceplateDefLike,
 } from './dock-faceplate-model';
 import { sidebarPanelIds } from './sidebar-panels';
+import { faceReadoutValueIds } from './face-readout-values';
 import { laneBodyPlan } from './module-shell-model';
 import { looksLikeSwitch } from './shell-control-kind';
-import { panelCellKeys } from './shell-cells';
+import { panelCellKeys, shellCellFor } from './shell-cells';
 import { GRID_MAX_CELLS } from '$lib/ui/controls/param-grid-model';
 
 interface FaceDef {
@@ -911,25 +912,30 @@ describe('module-face lint — FACEPLATE STRUCTURE (PF-20: hero / sidebar / hint
 
   /**
    * Every problem with one def's HERO declaration:
-   *   (a) `control`/`action` name a key that is RANKED in `face.order` — an
-   *       unranked key never reaches `dockFacePlan`, so the promotion silently
-   *       does nothing and the hero rail renders empty;
-   *   (b) `control` and `action` are not the SAME key — heroFacePlan promotes
-   *       it once (it must, or the dock emits `control-<paramId>` twice), so
-   *       declaring both is a typo whose effect is invisible;
-   *   (c) every readout names EXACTLY ONE source and a `paramId` resolves.
+   *   (a) `cell`/`control`/`action` name a key that is RANKED in `face.order` —
+   *       an unranked key never reaches `dockFacePlan`, so the promotion
+   *       silently does nothing and that hero slot renders empty;
+   *   (b) no key is claimed by TWO slots — heroFacePlan promotes it once (it
+   *       must, or the dock emits the cell twice), so the second declaration is
+   *       a typo whose effect is invisible;
+   *   (c) `cell` names a key whose shell cell is a PANEL — the hero picture
+   *       slot is sized and laid out for one, and promoting a knob into it
+   *       would silently produce a 380px-wide dial;
+   *   (d) every readout names EXACTLY ONE source, and it resolves.
    */
   function heroProblems(def: StructFaceDef): string[] {
     const hero = def.face?.hero;
     if (!hero) return [];
     const problems: string[] = [];
     const ranked = new Set(def.face?.order ?? []);
-    const paramIds = new Set((def.params ?? []).map((p) => p.id));
 
-    for (const [field, key] of [
+    const slots = [
+      ['cell', hero.cell],
       ['control', hero.control],
       ['action', hero.action],
-    ] as const) {
+    ] as const;
+
+    for (const [field, key] of slots) {
       if (!key) continue;
       if (!ranked.has(key)) {
         problems.push(
@@ -938,12 +944,43 @@ describe('module-face lint — FACEPLATE STRUCTURE (PF-20: hero / sidebar / hint
         );
       }
     }
-    if (hero.control && hero.action && hero.control === hero.action) {
-      problems.push(
-        `${def.type}: face.hero.control and .action are both '${hero.control}' — it can only be ` +
-          `promoted ONCE (a second cell would emit a duplicate control-<paramId> and fail ` +
-          `faces-parity), so one of the two declarations does nothing`,
-      );
+    // Every key claimed by more than one slot, named once each.
+    const seen = new Map<string, string>();
+    for (const [field, key] of slots) {
+      if (!key) continue;
+      const first = seen.get(key);
+      if (first) {
+        problems.push(
+          `${def.type}: face.hero.${first} and .${field} are both '${key}' — it can only be ` +
+            `promoted ONCE (a second cell would emit a duplicate control-<paramId> and fail ` +
+            `faces-parity), so one of the two declarations does nothing`,
+        );
+      } else {
+        seen.set(key, field);
+      }
+    }
+    if (hero.cell) {
+      const ctl = dockPlanControls(dockFacePlan(def) ?? []).find((c) => c.key === hero.cell);
+      if (ctl?.kind === 'param') {
+        // ⚠ CHECKED OFF THE CONTROL KIND FIRST, not off the shell registry.
+        // `shellCellFor` is keyed by MODULE TYPE and returns null for a type it
+        // does not know, so a registry-only check would silently pass on every
+        // synthetic def — i.e. the negative control below could not fail, and
+        // the clause would be decoration.
+        problems.push(
+          `${def.type}: face.hero.cell = '${hero.cell}' is a PARAM control, not a panel — the ` +
+            `hero picture slot is a full-width picture bay and a dial promoted into it renders ` +
+            `stretched across it. Use face.hero.control for a knob.`,
+        );
+      } else if (ctl) {
+        const cell = shellCellFor(def.type, ctl);
+        if (cell && cell.kind !== 'panel') {
+          problems.push(
+            `${def.type}: face.hero.cell = '${hero.cell}' resolves to a '${cell.kind}' shell ` +
+              `cell, not a panel — the hero picture slot is a full-width picture bay`,
+          );
+        }
+      }
     }
     problems.push(...readoutProblems(def, hero.readouts ?? [], 'face.hero.readouts'));
     return problems;
@@ -954,16 +991,17 @@ describe('module-face lint — FACEPLATE STRUCTURE (PF-20: hero / sidebar / hint
    *  wherever a labelled value is declared. */
   function readoutProblems(
     def: StructFaceDef,
-    readouts: readonly { label: string; paramId?: string; text?: string }[],
+    readouts: readonly { label: string; paramId?: string; valueId?: string; text?: string }[],
     where: string,
   ): string[] {
     const problems: string[] = [];
     const paramIds = new Set((def.params ?? []).map((p) => p.id));
+    const values = new Set(faceReadoutValueIds());
     for (const r of readouts) {
       if (!isUsableReadout(r)) {
         problems.push(
-          `${def.type}: ${where}['${r.label}'] must name EXACTLY ONE source — a paramId OR a ` +
-            `text, never both and never neither (it renders as '—')`,
+          `${def.type}: ${where}['${r.label}'] must name EXACTLY ONE source — a paramId, a ` +
+            `valueId or a text, never two and never none (it renders as '—')`,
         );
         continue;
       }
@@ -971,6 +1009,13 @@ describe('module-face lint — FACEPLATE STRUCTURE (PF-20: hero / sidebar / hint
         problems.push(
           `${def.type}: ${where}['${r.label}'].paramId = '${r.paramId}' is not a declared param — ` +
             `it prints '—' forever`,
+        );
+      }
+      if (r.valueId && !values.has(r.valueId)) {
+        problems.push(
+          `${def.type}: ${where}['${r.label}'].valueId = '${r.valueId}' is not registered in ` +
+            `face-readout-values.ts (have: ${[...values].join(', ') || 'none'}) — it prints ` +
+            `'—' forever`,
         );
       }
     }
@@ -1120,7 +1165,14 @@ describe('module-face lint — FACEPLATE STRUCTURE (PF-20: hero / sidebar / hint
     const def = structSynthetic({
       face: {
         order: ['tune'],
-        hero: { control: 'tune', readouts: [{ label: 'pitch', paramId: 'tune' }, { label: 'fixed', text: 'x' }] },
+        hero: {
+          control: 'tune',
+          readouts: [
+            { label: 'pitch', paramId: 'tune' },
+            { label: 'derived', valueId: 'kickdrum-tail' },
+            { label: 'fixed', text: 'x' },
+          ],
+        },
         sidebar: [
           { kind: 'signal-flow', label: 'flow', stages: [{ label: 'SUB', role: 'generator' }] },
           { kind: 'presets', label: 'p', entries: [{ id: 'a', label: 'A', values: { tune: 60 } }] },
@@ -1147,7 +1199,57 @@ describe('module-face lint — FACEPLATE STRUCTURE (PF-20: hero / sidebar / hint
     expect(problems[0]).toContain('can only be promoted ONCE');
   });
 
-  it('NEGATIVE CONTROL (hero c): a readout with two sources, or an unknown param, FAILS', () => {
+  it('NEGATIVE CONTROL (hero b): cell === action FAILS too — every slot pair, not just two', () => {
+    const problems = heroProblems(
+      structSynthetic({ face: { order: ['tune'], hero: { cell: 'tune', action: 'tune' } } }),
+    );
+    // Two clauses fire, and BOTH are the point: the key is claimed twice AND
+    // the promoted `cell` is not a panel. A clause set that only reported one
+    // would leave the other authoring mistake invisible.
+    expect(problems.some((x) => x.includes('can only be promoted ONCE'))).toBe(true);
+  });
+
+  it('NEGATIVE CONTROL (hero c): a hero.cell that is NOT a panel FAILS', () => {
+    // The hero PICTURE bay is laid out for a panel. Promoting a knob into it
+    // renders a dial stretched across 380 px, which looks like a styling bug
+    // and is actually a declaration bug — nothing at runtime can tell you.
+    const problems = heroProblems(
+      structSynthetic({ face: { order: ['tune'], hero: { cell: 'tune' } } }),
+    );
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('is a PARAM control, not a panel');
+  });
+
+  it('NEGATIVE CONTROL (hero d): an UNREGISTERED readout valueId FAILS', () => {
+    // The derived-readout registry is the mechanism that stops `tail` being a
+    // `sub_decay` readback; a typo'd id would silently print '—' and the
+    // faceplate would look almost right.
+    const problems = heroProblems(
+      structSynthetic({
+        face: {
+          order: ['tune'],
+          hero: { control: 'tune', readouts: [{ label: 'tail', valueId: 'no-such-derivation' }] },
+        },
+      }),
+    );
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('is not registered in face-readout-values.ts');
+
+    // …and the registered one passes, which is what makes the clause a check
+    // rather than a blanket rejection of `valueId`.
+    expect(
+      heroProblems(
+        structSynthetic({
+          face: {
+            order: ['tune'],
+            hero: { control: 'tune', readouts: [{ label: 'tail', valueId: 'kickdrum-tail' }] },
+          },
+        }),
+      ),
+    ).toEqual([]);
+  });
+
+  it('NEGATIVE CONTROL (hero e): a readout with two sources, or an unknown param, FAILS', () => {
     const both = heroProblems(
       structSynthetic({
         face: { order: ['tune'], hero: { control: 'tune', readouts: [{ label: 'x', paramId: 'tune', text: 'y' }] } },

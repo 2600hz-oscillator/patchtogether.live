@@ -33,7 +33,7 @@ import {
 import { paramCellKind, momentaryParamIds } from '$lib/ui/workflow/shell-control-kind';
 import { shellCellFor } from '$lib/ui/workflow/shell-cells';
 import { laneBodyPlan } from '$lib/ui/workflow/module-shell-model';
-import { dockTabPlan } from '$lib/ui/workflow/dock-tabs-model';
+import { DOCK_TAB_MIN_BANDS, dockTabPlan } from '$lib/ui/workflow/dock-tabs-model';
 import {
   activePresetId,
   facePageHeader,
@@ -108,23 +108,72 @@ describe('kickdrum face — the dock bands (pages = FUNCTION)', () => {
   const plan = dockFacePlan(def)!;
 
   it('renders FIVE bands, in signal order, with no defensive __unpaged tail', () => {
+    // FIVE, not six: the hero is a SLOT above the bands, not one more band of
+    // knobs. A sixth band would also put this face one step from
+    // DOCK_TAB_MIN_BANDS, where the whole faceplate collapses into a tab rail.
     expect(plan.map((b) => b.id)).toEqual(['sub', 'body', 'click', 'drive', 'dynamics']);
     expect(plan.map((b) => b.label)).toEqual([
-      'strike · the pulse',
-      'body · the punch',
-      'click · the edge',
-      'drive · character',
-      'dynamics · out',
+      '1 · sub — the pulse',
+      '2 · body — the punch',
+      '3 · click — the edge',
+      'bus · drive',
+      'bus · dynamics · out',
     ]);
   });
 
-  it('band 1 LEADS with the audition — the dock pane cuts off ~2 bands down, so it cannot be buried', () => {
-    const first = plan[0]!;
-    expect(first.controls[0]!.key).toBe('kickdrum-strike-{n}');
-    expect(first.controls[0]!.kind).toBe('family');
-    expect(first.controls.slice(1).map((c) => c.key)).toEqual([
-      'tune', 'sub_decay', 'sub_level', 'sub_eq', 'translate',
+  it('stays UNTABBED — a seventh band would hide most of the faceplate', () => {
+    // The band count is a design ceiling, not an accident: `DOCK_TAB_MIN_BANDS`
+    // is 7, so appending one more page silently converts this faceplate into a
+    // tab rail (and moves every dock baseline). Pin the consequence, not the
+    // number, by asking the same function DockFullView and ModuleShell ask.
+    expect(plan.length).toBeLessThan(DOCK_TAB_MIN_BANDS);
+    expect(dockTabPlan(plan), 'kickdrum reads as ONE scrolling column').toBeNull();
+  });
+
+  it('the three GENERATOR bands are numbered and described; the bus bands are not', () => {
+    // The owner's finding was that a band header saying `sub` teaches nothing.
+    // `1 sub · depth sine · mono` names the stage, what it is made of, and the
+    // fact that makes WIDTH safe downstream.
+    const labels = Object.fromEntries(plan.map((b) => [b.id, b.label]));
+    const hints = Object.fromEntries(plan.map((b) => [b.id, b.hint]));
+    expect(labels.sub).toMatch(/^1 · /);
+    expect(labels.body).toMatch(/^2 · /);
+    expect(labels.click).toMatch(/^3 · /);
+    expect(labels.drive).toMatch(/^bus · /);
+    expect(labels.dynamics).toMatch(/^bus · /);
+    // ⚠ THE DESCRIPTION IS A SEPARATE FIELD, not a longer label. The two are
+    // typeset differently (a name vs a sentence), and fusing them into one
+    // string — as an earlier draft did — makes the header read as one shouted
+    // run-on and gives the platform nothing to style.
+    for (const id of ['sub', 'body', 'click', 'drive', 'dynamics'] as const) {
+      expect(hints[id]!.length, `${id} carries a DESCRIPTION of its own`).toBeGreaterThan(0);
+      expect(labels[id], `${id}'s label is not the hint fused on`).not.toContain(hints[id]!);
+    }
+  });
+
+  it('the ONE bespoke cell is the hero PICTURE — the sidebar is platform data', () => {
+    // An earlier draft declared a second panel for the right sidebar. That is
+    // the shape this face was re-cut to remove: a sidebar is what every
+    // faceplate wants, so it belongs to the platform, and only the picture no
+    // amount of def introspection can synthesise stays a component.
+    const cells = dockPlanControls(plan).filter(
+      (c) => shellCellFor('kickdrum', c)?.kind === 'panel',
+    );
+    expect(cells.map((c) => c.key)).toEqual(['kickdrum-hero-{n}']);
+    const strike = dockPlanControls(plan).find((c) => c.key === 'kickdrum-strike-{n}')!;
+    expect(shellCellFor('kickdrum', strike)?.kind).toBe('action');
+  });
+
+  it('band 1 is the SUB LAYER alone — the audition moved up to the hero, not away', () => {
+    const sub = plan[0]!;
+    expect(sub.controls.map((c) => c.key)).toEqual([
+      'kickdrum-hero-{n}', 'kickdrum-strike-{n}', 'tune',
+      'sub_decay', 'sub_level', 'sub_eq', 'translate',
     ]);
+    // …BEFORE the hero split. The three promoted keys are still band members
+    // in the raw plan — `heroFacePlan` is what lifts them out, and asserting
+    // this here is what makes the promotion test below a real MOVE rather than
+    // an assertion about a band that never had them.
   });
 
   it('the merged dynamics·out band carries its split as CLUSTERS, not as a sixth band', () => {
@@ -177,11 +226,16 @@ describe('kickdrum face — the dock bands (pages = FUNCTION)', () => {
     expect(bandOf('translate')).toBe('sub');
   });
 
-  it('the dock paints all 26 cells: 25 params + the audition, each exactly once', () => {
+  it('the dock paints all 28 cells: 25 params + the audition + the two panels, each exactly once', () => {
     const flat = dockPlanControls(plan);
-    expect(flat).toHaveLength(kickdrumDef.params.length + 1);
+    expect(flat).toHaveLength(kickdrumDef.params.length + kickdrumDef.controlFamilies!.length);
     expect(new Set(flat.map((c) => c.key)).size).toBe(flat.length);
     expect(flat.filter((c) => c.kind === 'param')).toHaveLength(kickdrumDef.params.length);
+    // Every family resolves to a REAL cell spec — the inert-cell class (a
+    // dashed label that both gates fail on) cannot creep back in.
+    for (const ctl of flat.filter((c) => c.kind === 'family')) {
+      expect(shellCellFor('kickdrum', ctl), `no shell cell for '${ctl.key}'`).toBeDefined();
+    }
   });
 
   it('the REAR renders every band exactly once, and no page claims the LEADING slot', async () => {
@@ -275,10 +329,12 @@ describe('kickdrum faceplate structure — the hero PROMOTES, it does not copy',
   const heroPlan = dockFacePlan(def)!;
   const split = heroFacePlan(kickdrumDef as unknown as FaceplateDefLike, heroPlan);
 
-  it('TUNE and the audition leave their band and land in the hero, exactly once each', () => {
+  it('the PICTURE, TUNE and the audition leave their band and land in the hero, once each', () => {
+    expect(split.hero?.cell?.key).toBe('kickdrum-hero-{n}');
     expect(split.hero?.control?.key).toBe('tune');
     expect(split.hero?.action?.key).toBe('kickdrum-strike-{n}');
     const stillInBands = dockPlanControls(split.bands).map((c) => c.key);
+    expect(stillInBands, 'the picture is not rendered twice').not.toContain('kickdrum-hero-{n}');
     expect(stillInBands, 'TUNE is not rendered twice').not.toContain('tune');
     expect(stillInBands, 'the audition is not rendered twice').not.toContain('kickdrum-strike-{n}');
     expect(heroFacePlanIsTotal(heroPlan, split), 'nothing dropped, nothing duplicated').toBe(true);
@@ -291,16 +347,30 @@ describe('kickdrum faceplate structure — the hero PROMOTES, it does not copy',
     expect(sub.controls.map((c) => c.key)).toEqual(['sub_decay', 'sub_level', 'sub_eq', 'translate']);
   });
 
-  it('the hero readouts are REAL PARAMS, printed through the dial’s own ladder', () => {
+  it('the hero readouts print the MOCK\u2019s numbers — and TAIL is DERIVED, not a knob', () => {
     // The mock bakes `tail ≈ 480 ms · +24 st → 50 Hz` into the picture. Baked
-    // strings are how a faceplate ends up printing 480 while the knob under it
-    // reads 450 — so all three read the live param, and this asserts the
-    // rendered STRING rather than the declaration.
+    // strings are how a faceplate prints 480 while the knob under it reads 450,
+    // so all three are live.
+    //
+    // ⚠ BUT `tail` IS NOT `sub_decay`. An earlier draft declared exactly that,
+    // and it printed `450 ms` here — a number that moves with SUB DEC, looks
+    // completely right, and is INVARIANT to SUB LEVEL, which genuinely changes
+    // how long this drum rings. The voice's real −60 dB tail is 398 ms. This
+    // assertion is the difference between the two models, in one line.
     const read = (pid: string) => kickdrumDef.params.find((p) => p.id === pid)?.defaultValue;
     const printed = (split.hero?.readouts ?? []).map(
       (r) => `${r.label} ${readoutText(r, kickdrumDef.params, read)}`,
     );
-    expect(printed).toEqual(['tail 450 ms', 'sweep 24.0 st', 'settles to 50.0 Hz']);
+    expect(printed).toEqual(['tail 398 ms', 'sweep +24 st', 'settles to 50 Hz']);
+    expect(printed[0], 'the blind model printed 450 ms here').not.toContain('450');
+  });
+
+  it('the hero also promotes the module\u2019s own PICTURE, which is the mock\u2019s top strip', () => {
+    // The single element whose absence got the delivered face rejected. It is a
+    // panel cell, promoted — so it renders in the hero and nowhere else.
+    const cell = split.hero?.cell;
+    expect(cell?.key).toBe('kickdrum-hero-{n}');
+    expect(shellCellFor('kickdrum', cell!)?.kind).toBe('panel');
   });
 });
 
@@ -408,7 +478,7 @@ describe('kickdrum faceplate structure — the sidebar says what the DSP does', 
     expect(byId['sub-boom']!.values.tune).toBe(38);
     // The two whose notes name a CHARACTER rather than a pitch drive HARD.
     expect(byId['techno-punch']!.values.hard).toBe(1);
-    expect(byId['lofi-thump']!.values.hard).toBe(1);
+    expect(byId['lo-fi-thump']!.values.hard).toBe(1);
   });
 
   it('a fresh kickdrum sits on NO preset — the list starts honest', () => {
@@ -444,6 +514,7 @@ describe('kickdrum faceplate structure — the page header + band hints', () => 
     expect(hints.sub).toMatch(/sine/i);
     expect(hints.body).toMatch(/sweep/i);
     expect(hints.click).toMatch(/noise/i);
+    expect(hints.drive).toMatch(/saturation/i);
     // The dynamics hint teaches the DSP's real order — the same chain the
     // cluster split above pins against the worklet source.
     expect(hints.dynamics).toBe('transient → glue → level → width → ceiling, in that order');

@@ -25,13 +25,15 @@
 
   import { patch } from '$lib/graph/store';
   import { nodeVersion } from '$lib/graph/node-versions.svelte';
-  import { setNodeParam } from '$lib/graph/mutate';
+  import { mutateNode, setNodeParam } from '$lib/graph/mutate';
   import type { FaceSidebarBlock, ModuleNode, ParamDef } from '$lib/graph/types';
   import {
-    activePresetId,
+    FACE_PRESET_DATA_KEY,
     presetNote,
+    presetRowStates,
     presetWrites,
     readoutText,
+    recalledPresetId,
     isUsableReadout,
   } from './dock-faceplate-model';
   import { sidebarPanelFor } from './sidebar-panels';
@@ -46,31 +48,48 @@
   }
   let { nodeId, blocks, params }: Props = $props();
 
+  /**
+   * ⚠ THE VERSION IS CARRIED IN THE RESULT (ModuleShell's `liveCell` pattern).
+   * `patch.nodes[id]` is a STABLE SyncedStore proxy, so a `$derived.by` that
+   * reads `nodeVersion(id)` and returns it BARE is `===` to its own previous
+   * value — Svelte suppresses the invalidation and every downstream `$derived`
+   * keeps its stale answer. Making the TICK the identity is what re-projects
+   * on every bump; without it a recall stamps every param and the row never
+   * lights.
+   */
+  let live = $derived.by(() => ({ v: nodeVersion(nodeId), n: patch.nodes[nodeId] as ModuleNode | undefined }));
+
   /** The live durable value of a param — the reader every readout + the preset
-   *  match go through. Reads through `nodeVersion` so a local edit, a remote
-   *  edit and MIDI-learn all re-derive it (see ModuleShell.readoutValue for the
-   *  full argument against reading the engine from markup). */
+   *  match go through. A missing entry resolves the DEF DEFAULT: `node.params`
+   *  is a sparse overlay of what has been TOUCHED, not the module's state. */
   function readParam(pid: string): number | undefined {
-    void nodeVersion(nodeId);
-    const n = patch.nodes[nodeId] as ModuleNode | undefined;
-    const v = (n?.params as Record<string, number> | undefined)?.[pid];
+    const v = (live.n?.params as Record<string, number> | undefined)?.[pid];
     if (typeof v === 'number') return v;
     return params.find((p) => p.id === pid)?.defaultValue;
   }
 
   /**
    * Apply a preset: the declared param values, written through the ORDINARY
-   * `setNodeParam` path one at a time.
+   * `setNodeParam` path one at a time, and THEN the recalled id recorded.
    *
-   * That is the whole point of wiring it to a real action rather than painting
-   * a list — a preset inherits undo, Y.Doc sync, the motorized readback and
-   * MIDI parity for free, because it is indistinguishable from someone turning
-   * the knobs. Range clamping + dropping keys that name no declared param
-   * happen in the pure layer (`presetWrites`), so a face whose contract moved
-   * under it cannot push the model out of range.
+   * The param path is the whole point of wiring a roster to a real action
+   * rather than painting a list — a preset inherits undo, Y.Doc sync, the
+   * motorized readback and MIDI parity for free, because it is
+   * indistinguishable from someone turning the knobs. Range clamping +
+   * dropping keys that name no declared param happen in the pure layer
+   * (`presetWrites`), so a face whose contract moved under it cannot push the
+   * model out of range.
+   *
+   * ⚠ ORDER IS LOAD-BEARING: values FIRST, the id SECOND. An observer reacting
+   * to the recorded id (this row's own highlight, the parity probe) can then
+   * never see the new NAME over the old SOUND.
    */
-  function applyPreset(values: Readonly<Record<string, number>>): void {
+  function applyPreset(id: string, values: Readonly<Record<string, number>>): void {
     for (const w of presetWrites(values, params)) setNodeParam(nodeId, w.paramId, w.value);
+    mutateNode(nodeId, (n) => {
+      if (!n.data) n.data = {};
+      n.data[FACE_PRESET_DATA_KEY] = id;
+    });
   }
 </script>
 
@@ -87,9 +106,15 @@
              swatch it never draws. -->
         <ol class="flow" data-testid="side-flow">
           {#each block.stages as st, j (st.label + j)}
-            <li class="flow-stage" data-flow-role={st.role ?? 'bus'}>
+            <li
+              class="flow-stage"
+              class:parallel={st.parallel}
+              data-flow-role={st.role ?? 'bus'}
+              data-flow-parallel={st.parallel ? 'true' : undefined}
+            >
               <span class="dot" aria-hidden="true"></span>
               <span class="fs-label">{st.label}</span>
+              {#if st.parallel}<span class="fs-branch" title="parallel branch — it taps the bus earlier and rejoins it here">∥</span>{/if}
               {#if st.note}<span class="fs-note">{st.note}</span>{/if}
             </li>
           {/each}
@@ -102,24 +127,41 @@
         {/if}
 
       {:else if block.kind === 'presets'}
-        <!-- A REAL SELECTION, not decoration. `aria-pressed` reflects the
-             CURRENT param state (activePresetId), so editing a knob away from a
-             preset un-lights it — a list that keeps a stale entry lit is lying
-             about the module. -->
-        {@const active = activePresetId(block.entries, readParam)}
+        <!-- A REAL SELECTION, not decoration — and it carries TWO facts, not
+             one (see presetRowStates for the full argument). `aria-pressed`
+             says where the sound CAME FROM: the row stays lit after you turn a
+             knob, because un-lighting throws away the only record of which
+             voice this patch started as. The MODIFIED marker says the values
+             have since moved, because a row that stayed lit and said nothing
+             else would be asserting a voice the patch no longer is. -->
+        {@const rows = presetRowStates(
+          block.entries,
+          recalledPresetId(block.entries, live.n?.data as Record<string, unknown> | undefined),
+          readParam,
+        )}
         <ul class="list" data-testid="side-presets">
-          {#each block.entries as p (p.id)}
+          {#each block.entries as p, i (p.id)}
+            {@const st = rows[i]}
             <li>
               <button
                 type="button"
                 class="preset-row"
-                class:on={p.id === active}
-                aria-pressed={p.id === active}
+                class:on={st?.lit}
+                class:modified={st?.modified}
+                aria-pressed={!!st?.lit}
+                data-preset-modified={st?.modified ? 'true' : undefined}
                 data-testid={`face-preset-${p.id}`}
-                onclick={() => applyPreset(p.values)}
+                title={st?.modified
+                  ? `${p.label} — recalled, then edited`
+                  : `${p.label} — recall this voice`}
+                onclick={() => applyPreset(p.id, p.values)}
               >
                 <span class="pr-label">{p.label}</span>
-                {#if presetNote(p)}<span class="pr-note">{presetNote(p)}</span>{/if}
+                {#if st?.modified}
+                  <span class="pr-mod" data-testid={`face-preset-${p.id}-modified`}>modified</span>
+                {:else if presetNote(p)}
+                  <span class="pr-note">{presetNote(p)}</span>
+                {/if}
               </button>
             </li>
           {/each}
@@ -215,6 +257,21 @@
     color: var(--faint, #646c77);
     white-space: nowrap;
   }
+  /* A PARALLEL stage is drawn off the spine: its dot is hollow and its
+     connector dashed, because it is not a link in the chain — it taps the bus
+     earlier and rejoins it here. */
+  .flow-stage.parallel .dot {
+    background: var(--inset, #0a0c0f);
+    box-shadow: 0 0 0 1.5px var(--mod, #7b8394), 0 0 0 3px var(--inset, #0a0c0f);
+  }
+  .flow-stage.parallel .fs-label {
+    font-style: italic;
+  }
+  .fs-branch {
+    font-family: var(--f-mono, ui-monospace, monospace);
+    font-size: 10px;
+    color: var(--faint, #646c77);
+  }
   .flow-legend {
     display: flex;
     gap: 12px;
@@ -290,6 +347,20 @@
     letter-spacing: 0.06em;
     text-transform: uppercase;
     color: var(--faint, #646c77);
+  }
+  /* MODIFIED: the row is still lit (this is where the sound came from) but the
+     values have moved. Dashed, so the lit state and the caveat read as one
+     statement rather than two competing ones. */
+  .preset-row.modified {
+    border-style: dashed;
+  }
+  .pr-mod {
+    flex: none;
+    font-family: var(--f-mono, ui-monospace, monospace);
+    font-size: 9px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--gate, #f2c14e);
   }
 
   /* ── readouts ── */

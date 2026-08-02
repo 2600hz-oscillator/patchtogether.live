@@ -38,11 +38,15 @@
     accent?: string;
     /**
      * PARAM VOCABULARY (PF-1 / PF-3 / PF-10) — what this dial's numbers MEAN.
-     * Supplying ANY of the three earns a PERSISTENT readout under the dial;
-     * supplying none keeps the classic bare knob whose value shows on
-     * hover/drag. That gate is load-bearing: an ungated persistent readout
-     * would add a text row to every knob on ~17 dock faceplates and move all
-     * of their baselines to print what hovering already printed.
+     * Supplying ANY of the three earns a PERSISTENT readout under the dial.
+     *
+     * ⚠ SUPPLYING NONE KEEPS THE BARE KNOB **IN THE LANE ONLY**. PF-20
+     * overturned the other half: at the dock, `persistentReadout` (below) makes
+     * an undeclared param fall back to the numeric ladder, because every mocked
+     * faceplate prints a value under every knob and bare labels were the single
+     * largest share of the shell-vs-mock drift. The "a readout is earned"
+     * argument survives where it was always true — a 46px lane column cannot
+     * spend a text row on what hovering already shows.
      *
      * `options` (discrete states) and `landmarks` (continuous waypoints) also
      * paint detent TICKS around the arc. They are never interchangeable — see
@@ -286,9 +290,13 @@
     {/each}
   </div>
   <div class="label">{label}</div>
-  <!-- PERSISTENT READOUT — rendered ONLY when the param declared a vocabulary
-       (knobReadout returns null otherwise). See the `options` prop note: this
-       gate is why PF-3 does not move ~17 dock baselines. -->
+  <!-- PERSISTENT READOUT. In the LANE it renders only when the param declared a
+       vocabulary (`knobReadout` returns null otherwise) — the "a readout is
+       earned" gate, which is a 46px-column argument. At the DOCK the caller
+       passes `persistentReadout` and an undeclared param falls back to the
+       numeric ladder, so every dial on a faceplate prints its value. Same
+       ladder either way, which is what stops a hero readout and the dial under
+       it disagreeing about one number. -->
   {#if readout !== null}
     <div class="readout" data-testid={paramId ? `readout-${paramId}` : undefined}>{readout}</div>
   {/if}

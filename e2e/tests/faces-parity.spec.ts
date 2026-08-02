@@ -134,7 +134,13 @@ type CellControl =
 interface PanelProbe {
   testid: string;
   action: 'click' | 'drag';
-  effect: { kind: 'data'; key: string; expect: 'changed' } | { kind: 'data-rev'; key: string };
+  effect:
+    | { kind: 'data'; key: string; expect: 'changed' }
+    | { kind: 'data-rev'; key: string }
+    /** A DIFFERENT element inside the panel whose rendered text must change —
+     *  for a panel whose affordance is deliberately NOT in `node.data` (a
+     *  private view setting must not ride the Y.Doc). See the shell-cells doc. */
+    | { kind: 'text'; testid: string; expect: 'changed' };
 }
 
 interface RenderedCell {
@@ -497,11 +503,23 @@ async function driveCell(
     const target = host.locator(`[data-testid="${probe!.testid}"]`);
     await expect(target, `${where}: the probe's target renders`).toBeVisible();
 
-    // A panel edits node.data, so the effect is read there, not in params.
-    const key = probe!.effect.key;
+    const effect = probe!.effect;
+    // A `text` probe watches a DIFFERENT element than the one it drives — the
+    // point is that the interaction moved something the driven control cannot
+    // fake by relabelling itself.
+    const witness =
+      effect.kind === 'text' ? host.locator(`[data-testid="${effect.testid}"]`) : null;
+    if (witness) {
+      await expect(
+        witness,
+        `${where}: the probe's WITNESS element (${effect.kind === 'text' ? effect.testid : ''}) renders`,
+      ).toBeVisible();
+    }
+    const key = effect.kind === 'text' ? '' : effect.key;
     const snap = async () => JSON.stringify(await readData(page, nodeId, key));
-    const beforeRaw = await readData(page, nodeId, key);
-    const before = JSON.stringify(beforeRaw);
+    const beforeRaw = key ? await readData(page, nodeId, key) : null;
+    const before = key ? JSON.stringify(beforeRaw) : '';
+    const beforeText = witness ? ((await witness.innerText()) ?? '').trim() : '';
 
     await target.scrollIntoViewIfNeeded();
     if (probe!.action === 'drag') {
@@ -516,13 +534,19 @@ async function driveCell(
       await target.click();
     }
 
-    if (probe!.effect.kind === 'data-rev') {
+    if (effect.kind === 'data-rev') {
       // A monotonic revision counter must ADVANCE.
       await expect
         .poll(async () => Number(await readData(page, nodeId, key)) || 0, {
           message: `${where}: the probe advances '${key}'`,
         })
         .toBeGreaterThan(Number(beforeRaw) || 0);
+    } else if (effect.kind === 'text') {
+      await expect(
+        witness!,
+        `${where}: driving '${probe!.testid}' must CHANGE the text of '${effect.testid}' ` +
+          `(was "${beforeText}") — a control that only relabels itself is a dead control`,
+      ).not.toHaveText(beforeText);
     } else {
       await expect
         .poll(snap, { message: `${where}: the probe CHANGES node.data['${key}']` })

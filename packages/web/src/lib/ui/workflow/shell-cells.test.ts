@@ -113,7 +113,23 @@ describe('shell cells — PANEL probes (PF-14: the parity sweep stays registry-d
           `against the def's params, so that reads as an extra control with no def backing.`,
       );
     }
-    if (!probe.effect.key.trim()) problems.push(`${where}: probe effect names no node.data key`);
+    if (probe.effect.kind === 'text') {
+      // A `text` probe watches a DIFFERENT element than the one it drives.
+      // Naming the driven element itself is the WEAK form — a button that only
+      // relabels itself would pass, which is the dead-control class the whole
+      // probe exists to catch — so it is an authoring error, not a style note.
+      if (!probe.effect.testid.trim()) {
+        problems.push(`${where}: text-probe effect names no witness testid`);
+      } else if (probe.effect.testid === probe.testid) {
+        problems.push(
+          `${where}: text-probe witness '${probe.effect.testid}' is the element it DRIVES. ` +
+            `Name a different element the interaction must move — a control that only ` +
+            `relabels itself is indistinguishable from a dead one.`,
+        );
+      }
+    } else if (!probe.effect.key.trim()) {
+      problems.push(`${where}: probe effect names no node.data key`);
+    }
     return problems;
   }
 
@@ -158,6 +174,26 @@ describe('shell cells — PANEL probes (PF-14: the parity sweep stays registry-d
     expect(
       probeProblems('x:y', { ...ok, effect: { kind: 'data-rev', key: '' } }),
     ).toHaveLength(1);
+
+    // The `text` shape, and its own hard rule. A well-formed one passes…
+    const okText: ShellPanelProbe = {
+      testid: 'kickdrum-graph-window',
+      action: 'click',
+      effect: { kind: 'text', testid: 'kickdrum-graph-axis', expect: 'changed' },
+    };
+    expect(probeProblems('x:y', okText)).toEqual([]);
+    // …a blank witness fails…
+    expect(
+      probeProblems('x:y', { ...okText, effect: { kind: 'text', testid: ' ', expect: 'changed' } }),
+    ).toHaveLength(1);
+    // …and so does the WEAK form: watching the very element you drive, which a
+    // button that merely relabels itself would satisfy while doing nothing.
+    const selfWatch = probeProblems('x:y', {
+      ...okText,
+      effect: { kind: 'text', testid: 'kickdrum-graph-window', expect: 'changed' },
+    });
+    expect(selfWatch).toHaveLength(1);
+    expect(selfWatch[0]).toContain('is the element it DRIVES');
   });
 });
 
