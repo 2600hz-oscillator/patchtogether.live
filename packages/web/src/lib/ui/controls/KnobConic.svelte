@@ -15,6 +15,7 @@
   import { notifyAutomationTouch, notifyAutomationRelease } from '$lib/audio/automation-touch';
   import { knobValueToFrac, knobFracToValue, knobPointerAngle } from './knob-conic-model';
   import { knobMarks, knobReadout } from './knob-vocabulary-model';
+  import { formatParamNumber } from './param-format';
 
   interface Props {
     value: number;
@@ -216,16 +217,8 @@
     if (newValue !== value) onchange(newValue);
   }
 
-  function format(v: number, u: string): string {
-    const abs = Math.abs(v);
-    let str: string;
-    if (abs >= 10000) str = `${(v / 1000).toFixed(1)}k`;
-    else if (abs >= 1000) str = `${(v / 1000).toFixed(2)}k`;
-    else if (abs >= 100) str = v.toFixed(0);
-    else if (abs >= 10) str = v.toFixed(1);
-    else str = v.toFixed(2);
-    return u ? `${str} ${u}` : str;
-  }
+  // The readout ladder lives in ONE place (param-format.ts) — see Knob.svelte.
+  const format = formatParamNumber;
 </script>
 
 <div

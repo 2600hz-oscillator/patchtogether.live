@@ -34,6 +34,7 @@
 // them. Level spans −24..+12 dB (deliberate headroom), guarded by the
 // voice's own true-peak ceiling stage.
 
+import { fireTrigger } from '$lib/audio/gate-trigger';
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import workletUrl from '@patchtogether.live/dsp/dist/kickdrum.js?url';
@@ -131,39 +132,135 @@ export const kickdrumDef: AudioModuleDef = {
     { id: 'level',       label: 'Level',     defaultValue: 0,    min: -24, max: 12,   curve: 'linear',   units: 'dB' },
   ],
 
-  // ── RACKLINE face (P1 total-rework — UI curation only, NOT the I/O
-  // contract; see ModuleFace in $lib/graph/types). Designed from the voice's
-  // INTENT + the approved mock (fullcard-mocks/kickdrum.html): the lane leads
-  // with the PLAYER knobs — TUNE (the kick's identity), SUB DEC (pulse
-  // length), DRIVE (aggression) — then the punch cluster (P AMT / BODY LVL /
-  // CLK LVL / P TIME) + LEVEL complete the full-in-lane eight. The dock
-  // groups by producer intent: the three GENERATOR LAYERS over the serial
-  // BUS, with each band-EQ folded into the layer it shapes (sub also owns
-  // TRANSLATE, its small-speaker reconstructor; TILT rides with DRIVE).
-  // glyph 'scope' = the mock's amp+pitch envelope hero.
+  // ── RACKLINE face (curated — UI curation only, NOT the I/O contract; see
+  // ModuleFace in $lib/graph/types).
+  //
+  // WHAT THIS MODULE IS, in one paragraph: a PRODUCER'S kick. Its siblings
+  // (tomtom, snaredrum) are one generator plus a shaper; this is three
+  // DECOUPLED layers on a serial mastering bus, so the verb a player performs
+  // on it is not "play a note" — it is TUNE THE WEIGHT AND SIZE OF ONE HIT and
+  // then decide how hard it hits the bus. Every ranking below descends from
+  // that sentence.
+  //
+  // ⚠ `order` and `pages` ANSWER DIFFERENT QUESTIONS AND MAY DISAGREE. `order`
+  // is a PRIORITY ranking, consumed by the tiers that show a SUBSET; `pages` is
+  // FUNCTION order, consumed by the one tier that shows EVERYTHING. Do not
+  // "fix" one to match the other.
+  //
+  // THE TIER LADDER, read back as a sentence:
+  //   mini    (1)              TUNE — where the kick sits. Nothing else about a
+  //                            kick is knowable before you know its pitch.
+  //   compact (2 + glyph)      + SUB DEC — pitch, then pulse LENGTH: the two
+  //                            numbers that make a kick fit a tempo.
+  //   plate   (6, and that is  + DRIVE, P AMT, BODY LVL, CLK LVL — how hard it
+  //            the WHOLE lane   hits, how far the punch chirps, and the
+  //            budget)         punch/edge balance against the sub.
+  //   dock    (all 26 cells)   everything, in the five bands below.
+  // ⚠ RANKS 7+ RENDER NOWHERE IN THE LANE. laneBodyPlan's plate is 3 cols × 2
+  // whole rows = 6 cells (LANE_PLATE_MAX_CELLS), so rank 7 is DOCK-ONLY. The
+  // previous comment here promised "ranks 4–8 → the full-in-lane face", which
+  // is why `level` was invisible: it was ranked 8th and never painted.
+  //
+  // Ranks 1–6 are UNCHANGED from the first cut — they already satisfy "the
+  // control a player rides", and churning a correct ranking is not a
+  // deliverable. What moved is the 7+ TAIL, which now reads BAND BY BAND
+  // (strike → sub → body → click → drive → dynamics) so the roster and the
+  // faceplate tell the same story.
+  //
+  // ⚠ `level` STAYS DOCK-ONLY, deliberately (the drum-family rule): this voice
+  // sets loudness with DRIVE and CEILING, and `level` is applied BEFORE the
+  // ceiling (docs.controls.level), so it is a saturation lever, not a fader.
+  // Promoting it into the lane would invite exactly the misuse it is not for.
+  //
+  // glyph 'scope' = a live trace of the struck voice (the amp+pitch envelope
+  // hero). A face with ≥4 selected cells drops the glyph at the 'full' tier
+  // (laneBodyPlan: the glyph only survives a single row), so the glyph is a
+  // mini/compact affordance here by construction.
   face: {
     order: [
-      // top-2 → the compact lane tile beside the glyph (faceTierCap: a
-      // glyph-bearing face fits two whole knob columns): tune it, size the
-      // pulse. DRIVE completes the trio from the full tier on.
+      // ── the lane budget: ranks 1–6, and it ends HERE ──
       'tune', 'sub_decay', 'drive',
-      // ranks 4–8 → the full-in-lane face: the punch cluster + output gain.
-      'pitch_amt', 'body_level', 'click_level', 'pitch_time', 'level',
-      // dock roster, mock reading order — the layers, then the bus.
+      'pitch_amt', 'body_level', 'click_level',
+      // ── dock-only tail, in FACEPLATE reading order ──
+      // The audition heads it exactly as it heads the faceplate. It is a
+      // family cell (a <Button>, not a knob), and there is no precedent for a
+      // button inside the lane plate — laneBodyPlan's no-clip guarantee is
+      // derived entirely from knob-column geometry — so rank 7 is both its
+      // natural place in the story and the first rank that cannot reach a lane.
+      'kickdrum-strike-{n}',
       'sub_level', 'sub_eq', 'translate',
-      'tension', 'body_decay', 'body_shape', 'body_eq',
+      'pitch_time', 'tension', 'body_decay', 'body_shape', 'body_eq',
       'click_len', 'click_tone', 'attack_eq',
       'hard', 'tilt',
-      'attack', 'sustain', 'glue', 'ceiling',
-      'width',
+      // Tail ranks: kept in the REAL chain order (level → width → ceiling), so
+      // the ranking and the two faces cannot teach three different orders.
+      'attack', 'sustain', 'glue', 'level', 'width', 'ceiling',
     ],
     pages: [
-      { id: 'sub',      label: 'sub · depth',       controls: ['tune', 'sub_decay', 'sub_level', 'sub_eq', 'translate'] },
-      { id: 'body',     label: 'body · punch',      controls: ['pitch_amt', 'pitch_time', 'tension', 'body_decay', 'body_level', 'body_shape', 'body_eq'] },
-      { id: 'click',    label: 'click · transient', controls: ['click_len', 'click_tone', 'click_level', 'attack_eq'] },
-      { id: 'drive',    label: 'drive · character', controls: ['drive', 'hard', 'tilt'] },
-      { id: 'dynamics', label: 'dynamics · glue',   controls: ['attack', 'sustain', 'glue', 'ceiling'] },
-      { id: 'output',   label: 'output · stereo',   controls: ['width', 'level'] },
+      // FIVE bands, and the merge is justified by GROUPING SEMANTICS, not by a
+      // fold budget ("make it fit" was never the question — the pane scrolls,
+      // and where it happens to cut off depends on the window height, not on
+      // this def). What merged is `dynamics` + `output`:
+      // after the drive stage this voice is ONE mastering chain, and PF-9
+      // clusters carry the internal split at a ~14px sub-header instead of an
+      // ~81px second band. Nothing else moved: each band-EQ still lives with
+      // the layer it shapes, which is this face's best existing idea.
+      //
+      // ⚠ THE CHAIN IS `transient → glue → LEVEL → width → CEILING`, and this
+      // comment used to say `… → ceiling → stereo → level`, which is BACKWARDS
+      // at the two stages that matter. Read the DSP, not the ranking:
+      //   kickdrum-dsp.ts `kickdrumVoiceStep` ends
+      //     `return shaped * 10^(clamp(p.level,-24,12)/20)`   ← LEVEL,
+      //     under a comment that says "pre-ceiling, so hot settings LEAN into
+      //     the clip";
+      //   `kickdrumStepStereo` then does
+      //     `sd = sideOut * lin * width; out = tanh(g * (m ± sd))`  ← CEILING,
+      //     genuinely last, and `width`'s side term is scaled BY level.
+      // The faceplate teaching the wrong order is not cosmetic: a producer who
+      // reads LEVEL as the last stage concludes that raising it ESCAPES the
+      // clipper, feeds it, and gets `tanh(2·10^0.6·m)` — more saturation, which
+      // is the exact misuse the ranking exists to prevent. The cluster split
+      // and the control order below now encode the real chain, and
+      // `kickdrum-face.test.ts` reads the DSP source to keep them honest
+      // rather than re-asserting whatever this comment happens to claim.
+      //
+      // ⚠ PAGE IDS ARE CHECKED AGAINST THE CURATED REAR GROUP IDS. `rearFieldPlan`
+      // gives a curated group whose id is 'voice'/'signal' the LEADING band slot
+      // and then walks `face.pages` claiming a curated group with each page's id,
+      // so a page id colliding with the leading group's id renders that band
+      // TWICE and reddens the rear-derivation totality gate (dx7 hit exactly
+      // this). This module's rear group is `{ id: 'voice', label: 'strike' }` —
+      // no page is called 'voice', and the front band that carries the STRIKE
+      // BUTTON is id 'sub'. Keep it that way.
+      //
+      // ⚠ THE AUDITION LEADS BAND 1. The reason is ORDINAL, and the earlier
+      // "1220×425, and that is measured" framing was not: `workflow-shell-
+      // faces.spec.ts` screenshots the `dock-full-view` ELEMENT, and
+      // `playwright.config.ts` sets no `viewport`, so 425 px is what that pane
+      // resolves to inside Chromium's default 1280×720 window. On a 1080p or
+      // 1440p display the pane is far taller and "bands 3-5 are below the
+      // frame" is simply false — the instrument was invariant to the one
+      // variable (window height) that determines the answer, which is the
+      // getBoundingClientRect-under-zoom lesson in CLAUDE.md wearing a hat.
+      // What IS true at every height: this is the one voice in the rack that
+      // makes NO sound at all until something strikes it, so its audition
+      // belongs in the band a player reaches first, whichever band that is.
+      { id: 'sub',      label: 'strike · the pulse', controls: ['kickdrum-strike-{n}', 'tune', 'sub_decay', 'sub_level', 'sub_eq', 'translate'] },
+      { id: 'body',     label: 'body · the punch',   controls: ['pitch_amt', 'pitch_time', 'tension', 'body_decay', 'body_level', 'body_shape', 'body_eq'] },
+      { id: 'click',    label: 'click · the edge',   controls: ['click_len', 'click_tone', 'click_level', 'attack_eq'] },
+      { id: 'drive',    label: 'drive · character',  controls: ['drive', 'hard', 'tilt'] },
+      {
+        id: 'dynamics',
+        label: 'dynamics · out',
+        controls: ['attack', 'sustain', 'glue', 'level', 'width', 'ceiling'],
+        clusters: [
+          { label: 'transient · glue', controls: ['attack', 'sustain', 'glue'] },
+          // CEILING sits with LEVEL and WIDTH because it is what they run INTO
+          // — the last stage, per-channel true-peak. Grouping it with the
+          // transient shaper said the opposite.
+          { label: 'level · width · ceiling', controls: ['level', 'width', 'ceiling'] },
+        ],
+      },
     ],
     glyph: 'scope',
     // REAR CARD curation (rear-card-model) — the flip-side jack field.
@@ -173,11 +270,26 @@ export const kickdrumDef: AudioModuleDef = {
     //    gate note pair this drum does not have. Pinning also nails `pitch_cv`
     //    down: its `_cv` stem is 'pitch', so the day a param named `pitch` is
     //    added, derivation would silently file it into that param's page band.
-    //  * The 'body · punch' page carries SEVEN CV holes — the widest band on
-    //    the card — so it splits into the two things the body layer really is:
-    //    the PITCH ENVELOPE that makes the punch (amount / time / tension) and
-    //    the TONE that follows it (decay / level / shape / EQ). Every other
-    //    band mirrors its dock page 1:1.
+    //  * The 'body · the punch' page carries SEVEN CV holes — the widest band
+    //    on the card — so it splits into the two things the body layer really
+    //    is: the PITCH ENVELOPE that makes the punch (amount / time / tension)
+    //    and the TONE that follows it (decay / level / shape / EQ).
+    //  * The merged 'dynamics · out' band carries SIX, and the front-side PF-9
+    //    clusters above split them the same way, so the two faces of the card
+    //    teach the same chain: shape the transient and glue it, THEN set the
+    //    level, spread it, and run the pair into the true-peak ceiling — which
+    //    is the DSP's real order (`kickdrumVoiceStep` applies level last of
+    //    all, `kickdrumStepStereo`'s `tanh` is the actual final stage).
+    //  * THE SUB BAND IS RE-HEADED HERE, and that is the whole reason this
+    //    entry exists. Derivation labels a page band with the PAGE's label, and
+    //    the front page is 'strike · the pulse' because it holds the STRIKE
+    //    BUTTON. On the rear there is no button — the band is five sub-layer CV
+    //    holes sitting directly under the band that IS the strike, so the card
+    //    read `STRIKE` then `STRIKE · THE PULSE` and the first hole of the
+    //    second one is `tune_cv`. A player patching a sequencer gate into the
+    //    wrong `STRIKE` silently detunes the drum instead of hitting it. The
+    //    rear says `sub · the layer`; `module-face-lint` now refuses any rear
+    //    band label that PREFIXES another on the same card.
     //  * `~` on PITCH only. The worklet's four node inputs are read RAW
     //    per-sample, but only pitch is a continuous audio-rate destination
     //    (per-sample 1 V/oct → real FM of the whole voice); TRIGGER and CHOKE
@@ -187,14 +299,34 @@ export const kickdrumDef: AudioModuleDef = {
     rear: {
       groups: [
         { id: 'voice', label: 'strike', ports: ['trigger_in', 'accent_in', 'pitch_cv', 'choke_in'] },
+        { id: 'sub', label: 'sub · the layer', ports: ['tune_cv', 'sub_decay_cv', 'sub_level_cv', 'sub_eq_cv', 'translate_cv'] },
       ],
       clusters: [
         { group: 'body', label: 'pitch envelope', ports: ['pitch_amt_cv', 'pitch_time_cv', 'tension_cv'] },
         { group: 'body', label: 'tone', ports: ['body_decay_cv', 'body_level_cv', 'body_shape_cv', 'body_eq_cv'] },
+        { group: 'dynamics', label: 'transient · glue', ports: ['attack_cv', 'sustain_cv', 'glue_cv'] },
+        { group: 'dynamics', label: 'level · width · ceiling', ports: ['level_cv', 'width_cv', 'ceiling_cv'] },
       ],
       audioRate: ['pitch_cv'],
     },
   },
+
+  // The AUDITION, declared as a one-member control family: a real control with
+  // no backing ParamDef, which is what lets the face rank it, the docs key
+  // prose to it, and the RACKLINE shell paint it as an action <Button>
+  // (shell-cells.ts). `testidPrefix` is grep-verified against KickdrumCard's
+  // STRIKE button by the docs gate.
+  //
+  // ⚠ DELIBERATELY NOT A `strike` PARAM (tomtom's shape). `art/scenarios/
+  // kickdrum/profile.test.ts` pins `dspSourceSha('kickdrum.ts',
+  // 'lib/kickdrum-dsp.ts', …)` — the worklet entry AND every -dsp lib — so
+  // adding a row to `packages/dsp/src/kickdrum.ts`'s PARAM_TABLE would force an
+  // ART re-capture for a UI affordance, even though the rendered `.f32` is
+  // byte-identical. The host-side ConstantSource in the factory below touches
+  // neither file, so the pin does not move.
+  controlFamilies: [
+    { id: 'kickdrum-strike', label: 'Strike', kind: 'other', testidPrefix: 'kickdrum-strike' },
+  ],
 
   docs: {
     explanation:
@@ -291,6 +423,8 @@ export const kickdrumDef: AudioModuleDef = {
       ceiling: "DYNAMICS: how hard the voice leans into its true-peak soft-clip (0–1). The output stage is ALWAYS tanh-bounded below digital full-scale; CEILING sets the gain into that curve — low keeps the stage nearly transparent (clean headroom), high slams the voice into the clip for a denser, louder, more saturated hit. A lean-in control, not a threshold.",
       width: "OUTPUT: stereo width of the click band ONLY (0–1, mid/side). The sub AND body are identical on both channels, and the side signal is high-passed at ~120 Hz — phase-safe, mono-fold-proof by construction. What spreads is the click's decorrelated noise; 0 = a fully mono voice (L and R identical).",
       level: "OUTPUT: output level in dB (−24..+12), applied BEFORE the ceiling so hot settings lean into the clip instead of escaping it. The +12 dB makeup headroom is deliberate (vs older voices capped at 0 dB) — the ceiling keeps it true-peak-safe.",
+      "kickdrum-strike-{n}":
+        "STRIKE — the audition button: one hit, exactly as if a rising edge had arrived at trigger_in. It is the only way to HEAR an unpatched kick while you dial it in, which is most of the time you are dialling it in. Mechanically it is a host-side source summed into the same trigger input a cable feeds, fired through the shared trigger waveform, so it behaves identically to a patched sequencer gate: phases reset, every envelope retriggers, and accent_in is sampled at that instant (unpatched accent reads 0, i.e. an un-accented hit). It writes NOTHING to the patch — no param moves, nothing is shared with the rackspace, nothing is persisted or undoable — so it is safe to lean on, and a cable already patched into trigger_in keeps working while you use it (Web Audio sums the two, and the worklet edge-detects the crossing).",
     },
   },
 
@@ -324,6 +458,19 @@ export const kickdrumDef: AudioModuleDef = {
     silence.connect(worklet, 0, 1);
     silence.connect(worklet, 0, 2);
     silence.connect(worklet, 0, 3);
+
+    // Manual STRIKE (the audition button on both faces): a dedicated
+    // ConstantSource summed into the TRIGGER input, fired through the SHARED
+    // $lib/audio/gate-trigger waveform (never re-derived). Works whether or not
+    // a cable is patched into trigger_in — Web Audio sums the connections and
+    // the worklet edge-detects the crossing — and it is HOST-SIDE on purpose:
+    // a `strike` PARAM would need a row in the worklet's PARAM_TABLE, and the
+    // ART profile's `.sha` covers that file, so it would force a re-capture of
+    // a byte-identical baseline (see the controlFamilies note above).
+    const strikeCs = ctx.createConstantSource();
+    strikeCs.offset.value = 0;
+    strikeCs.start();
+    strikeCs.connect(worklet, 0, 0);
 
     // Set initial params from the persisted node state (or defaults).
     const params = worklet.parameters as unknown as Map<string, AudioParam>;
@@ -380,9 +527,25 @@ export const kickdrumDef: AudioModuleDef = {
       readParam(paramId) {
         return params.get(paramId)?.value;
       },
+      // Manual STRIKE — the samsloop/karplus `manualTrigger` read-key seam:
+      // returns a function that fires ONE canonical trigger pulse at the
+      // worklet, the exact effect of a trigger_in rising edge. Both faces
+      // (the legacy card's STRIKE button and the shell's `kickdrum-strike`
+      // action cell) go through this one seam, so there is no second
+      // implementation to drift.
+      read(key: string): unknown {
+        if (key === 'manualTrigger') {
+          return () => {
+            try { fireTrigger(strikeCs, ctx.currentTime); } catch { /* */ }
+          };
+        }
+        return undefined;
+      },
       dispose() {
         try { silence.stop(); } catch { /* already stopped */ }
         try { silence.disconnect(); } catch { /* */ }
+        try { strikeCs.stop(); } catch { /* */ }
+        try { strikeCs.disconnect(); } catch { /* */ }
         try { splitter.disconnect(); } catch { /* */ }
         try { worklet.disconnect(); } catch { /* */ }
       },

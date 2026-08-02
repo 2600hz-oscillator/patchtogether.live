@@ -17,6 +17,7 @@
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from '../tests/_helpers';
+import { pinVrtFonts, awaitVrtFonts } from './_fonts';
 
 const EXEMPT_BASELINE_PAIRS = new Set<string>([
   'linux/group-bare',
@@ -45,8 +46,16 @@ async function hideJitterers(page: Page): Promise<void> {
 }
 
 async function bootCanvas(page: Page): Promise<void> {
+  // Pin the bundled Inter/JetBrains Mono BEFORE the first navigation and
+  // await their decode after load — the app resolves card text through
+  // GENERIC stacks (system-ui / ui-monospace) that fontconfig picks
+  // nondeterministically, and document.fonts.ready can't see them. Without
+  // this the captured text metrics differ run-to-run and platform-to-platform.
+  // Full root cause: e2e/vrt/_fonts.ts.
+  await pinVrtFonts(page);
   await page.goto('/rack');
   await page.waitForLoadState('networkidle');
+  await awaitVrtFonts(page);
   await hideJitterers(page);
 }
 

@@ -48,6 +48,7 @@ import {
   sixstrumSelectorOptions,
 } from '$lib/ui/modules/sixstrum-preset-actions';
 import { clearCloudseedTail } from '$lib/ui/modules/cloudseed-preset-actions';
+import { fireKickdrumStrike } from '$lib/ui/modules/kickdrum-strike-actions';
 
 /** A dropdown over a NAMED roster that lives in node.data (not a param). */
 export interface ShellSelectorCell {
@@ -245,6 +246,20 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
       label: 'Clear tail',
       title: 'Flush the reverb tank — stops the tail instantly (changes no setting; not undoable)',
       onFire: (_nodeId, env) => clearCloudseedTail(env),
+    },
+  },
+  kickdrum: {
+    // THE AUDITION. A kick with nothing patched into trigger_in is SILENT, so
+    // without this the dock full-view offers 25 controls over a voice you
+    // cannot hear — while tomtom, karplus and sixstrum can all be auditioned.
+    // Fires the SAME host-side trigger source the legacy card's STRIKE button
+    // fires (kickdrum-strike-actions), so there is one implementation, not two.
+    // Not a param: it writes nothing to the graph (see that module's header).
+    'kickdrum-strike-{n}': {
+      kind: 'action',
+      label: 'strike',
+      title: 'Audition: hit the drum once (identical to a trigger_in rising edge)',
+      onFire: (nodeId) => { fireKickdrumStrike(nodeId); },
     },
   },
   sixstrum: {

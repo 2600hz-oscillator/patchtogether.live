@@ -1,28 +1,22 @@
 {
   "schemaVersion": 1,
-  "webglContentHash": "ac6d86f107da73ec54397fecf9c2b9b69c372c7975e58ac093981fa1da0a985b",
-  "attestedAt": "2026-07-29T17:29:27.117Z",
+  "webglContentHash": "816967ffafde3805f3345ad1e58a1c45a0c52eb4144352f93dcea26263cf7f9d",
+  "attestedAt": "2026-08-02T02:04:18.327Z",
   "attestedBy": "tmayshark@gmail.com",
-  "gitHeadAtAttest": "6a25fb608bdf2b91747533ffa1c4b28571a55911",
+  "gitHeadAtAttest": "555ef5f8bfc516a7b2439be226263c355c965c89",
   "playwrightVersion": "1.50.0",
   "os": "darwin 25.4.0 (arm64)",
-  "host": "Mac.home",
+  "host": "2600hzs-MBP.home.local",
   "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5, Unspecified Version)",
   "repeatEach": 1,
   "suites": {
     "A-heavy": {
       "specFiles": 56,
-      "passed": 192,
+      "passed": 194,
       "failed": 0,
-      "flaky": 1,
+      "flaky": 0,
       "skipped": 1,
-      "flakyDetails": [
-        {
-          "test": "flag ON: TOYBOX gen layer renders in the worker; downstream OUTPUT is non-black",
-          "file": "render-worker-toybox.spec.ts",
-          "firstError": "Error: TOYBOX OUTPUT is not all-black (nonZeroFrac=0.000) |  | expect(received).toBeGreaterThan(expected) | "
-        }
-      ]
+      "flakyDetails": []
     },
     "A-serial": {
       "specFiles": 2,
@@ -49,5 +43,5 @@
       "flakyDetails": []
     }
   },
-  "durationSec": 207
+  "durationSec": 172
 }

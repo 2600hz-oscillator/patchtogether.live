@@ -37,7 +37,7 @@ acidwarp param speed 0..1 linear default=0.5
 adsr meta domain=audio
 adsr in attack cv param=attack cvScale=log
 adsr in decay cv param=decay cvScale=log
-adsr in gate gate
+adsr in gate gate edge=gate
 adsr in release cv param=release cvScale=log
 adsr in sustain cv param=sustain cvScale=linear
 adsr out env cv
@@ -1223,7 +1223,7 @@ frametable param waveShapeX 0..1 linear default=0
 frametable param waveShapeY 0..1 linear default=0
 frametable param weightShape 0..1 linear default=0
 freezeframe meta domain=video
-freezeframe in gate_in gate param=gateLevel
+freezeframe in gate_in gate param=gateLevel edge=gate
 freezeframe in video_in video
 freezeframe out b_out video
 freezeframe out g_out video
@@ -1505,6 +1505,7 @@ kickdrum param translate 0..1 linear default=0.3
 kickdrum param tune 20..120 log default=50 unit=Hz
 kickdrum param width 0..1 linear default=0.2
 kickdrum stereo audio_l+audio_r
+kickdrum family kickdrum-strike kind=other prefix=kickdrum-strike
 kria meta domain=audio
 kria in clock gate edge=trigger
 kria in reset gate edge=trigger
@@ -1521,7 +1522,7 @@ kria param running 0..1 discrete default=0
 kria family kria-cell kind=cell prefix=kria-cell
 launchpadControlLeft meta domain=meta
 lfo meta domain=audio
-lfo in clock gate
+lfo in clock gate edge=trigger
 lfo in depth_cv cv param=depth cvScale=linear
 lfo in rate cv param=rate cvScale=log
 lfo in shape cv param=shape cvScale=linear

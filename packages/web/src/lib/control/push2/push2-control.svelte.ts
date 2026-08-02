@@ -6,28 +6,54 @@
 // launchpad-control singleton (decision A, plan §3): a small adapter remaps Push
 // MIDI ⇄ the Launchpad event/frame vocabulary, so no parity logic is forked.
 //
-// ON TOP of parity, three ADDITIVE Push-only features live HERE (they never
-// touch launchpad-control):
-//   · 8 buttons above the display → select channel 1-8 (Push-LOCAL state) + the
-//     card shows "CH n · <instrument>" + the selected top button lights bright.
-//   · 11 encoders → MixMasters: 8 display encoders = ch1-8 volume, the 2 left
-//     encoders = send1/send2 of the SELECTED channel, the master encoder =
-//     master volume — all through the electra streaming-CC pump (transient
-//     engine push + coalesced bare store write, NEVER a MIDI-rate Y.Doc storm).
+// ON TOP of parity, the ADDITIVE Push-only features live HERE (they never touch
+// launchpad-control):
+//   · 8 buttons above the display → select LANE 1-8 (Push-LOCAL state), which
+//     switches the 960×160 screen to that lane's PUSH CARD + lights the button.
+//   · the 8 display encoders → the 8 CONTROLS of the current push card, through
+//     the electra streaming-CC pump (transient engine push + coalesced bare
+//     store write, NEVER a MIDI-rate Y.Doc storm).
+//   · the #2-from-the-left encoder (CC 15) → FLIP through the push cards of the
+//     modules in the selected lane, one at a time.
+//   · the master encoder (CC 79) → mixmstrs master_volume.
 //   · D-Pad → CLIP-view nav (± window, +SHIFT = ×8) via launchpad-control's
 //     shared launchpadDpadNav seam.
 // START/STOP moves to the Push Play button (routed through the parity top row).
 //
-// The WebUSB 960×160 display is DEFERRED to Phase 2 — Phase 1 shows the channel
-// name in the CARD. Binding + selected-channel are per-machine LOCAL; LED frames
-// are local render state, never synced.
+// ── WHAT WAS DELETED, AND WHY IT IS THE OWNER'S INTENT ────────────────────
+//
+// The 8 display encoders used to be a MIXMASTERS CHANNEL-VOLUME strip (encoder
+// n → ch{n+1}_volume) and the two left encoders were send1/send2 of the
+// selected channel. The owner's spec opens with "we'll lose the 8-knobs-as-
+// audio-mixer function for now" — the 8 encoders are the push card's eight
+// controls, and there is no second row to put a mixer on. `master_volume` on
+// the dedicated MASTER encoder SURVIVES: that encoder is not one of the eight,
+// it sits beside the physical master level, and dropping it would be a pure
+// regression the spec never asked for.
+//
+// ── THE DISPLAY REPAINT SEAM ──────────────────────────────────────────────
+//
+// The card is repainted from `pushSurface.setFrame` — the LED frame the
+// launchpad-control render loop already emits on every scheduler tick while the
+// Push is bound. That gives a repaint on ANY graph change (a module added to a
+// lane, a param moved by another surface, a rename) with NO new subscription
+// and, in particular, no `ydoc.on('update')` listener — whose per-transaction
+// fan-out is exactly what node-versions.svelte.ts exists to avoid. A signature
+// compare makes a static card cost one string comparison per tick instead of a
+// 320 KB pack and a USB transfer.
+//
+// Binding, selected lane and lane focus are per-machine LOCAL; LED frames and
+// display frames are local render state, never synced.
 
 import { patch } from '$lib/graph/store';
 import { getModuleDef } from '$lib/audio/module-registry';
+import { getVideoModuleDef } from '$lib/video/module-registry';
+import { getMetaModuleDef } from '$lib/meta/module-registry';
 import { resolveDisplayName } from '$lib/multiplayer/module-naming';
-import type { ModuleNode } from '$lib/graph/types';
+import type { ModuleNode, ParamDef } from '$lib/graph/types';
 import { laneAssignedModules, laneColorEff, type ClipPlayerData } from '$lib/audio/modules/clip-types';
 import { MIXMSTRS_CHANNELS } from '$lib/audio/modules/mixmstrs';
+import { PINNED_MIXER_ID } from '$lib/graph/column-reconcile';
 import { hexToRgb127 } from '$lib/control/launchpad/launchpad-map';
 import { createCcCommit, type CcCommit } from '$lib/ui/controls/cc-commit';
 import { getCcBatcher } from '$lib/ui/controls/cc-batch-store';
@@ -49,10 +75,18 @@ import {
   push2FrameToLeds,
   PUSH_CC_SHIFT,
   PUSH_CC_ABOVE_DISPLAY_BASE,
-  type EncoderTarget,
+  type PushEncoderTarget,
   type Push2LedSpec,
 } from './push2-map';
 import type { LaunchpadKeyEvent } from './push2-types';
+import { resolvePushCardControls, type PushCardDefLike, type PushCardSpec } from './push-card-schema';
+import { pushCardView, paramValue, type PushCardView } from './push-card-model';
+import { nudgeParamValue, MAX_ENCODER_STEP } from './push-card-encoder';
+import { laneMembers, resolveLaneFocus, stepLaneFocus, laneFocusIndex, PUSH_LANE_COUNT } from './push-lane';
+import { lastViewed, setLastViewed, forgetLane } from './push2-view.svelte';
+import { renderPushCard, pushCardSignature, type PushDrawOp } from './push-screen-layout';
+import { pushCardRgba } from './push-card-paint';
+import { isDisplayConnected, sendFrame } from './push2-display.svelte';
 
 const STORAGE_KEY_CHANNEL = 'pt.push2.selectedChannel';
 
@@ -105,6 +139,9 @@ const pushSurface: ControlSurfacePort = {
       specs.push({ kind: 'button', cc: PUSH_CC_ABOVE_DISPLAY_BASE + i, value: channelButtonValue(i) });
     }
     push2Device.setLeds(specs);
+    // The LED tick is also the DISPLAY tick — see the header. Dirty-checked, so
+    // a card nobody is touching costs one string compare.
+    repaintDisplay();
   },
   clearUnit(): void {
     push2Device.clear();
@@ -145,8 +182,9 @@ function onPushEvent(raw: Push2RxEvent): void {
 }
 
 // ---------------------------------------------------------------------------
-// Additive 5a — channel select (Push-LOCAL). Picks which channel the 2 left
-// encoders' send1/send2 address + which name the card's top bar shows.
+// LANE SELECT — the 8 buttons above the display (CC 102..109). Push-LOCAL.
+// Picks which lane's PUSH CARDS the screen shows (and which lane colour the
+// button row mirrors).
 // ---------------------------------------------------------------------------
 export function selectChannel(channel: number): void {
   if (channel < 0 || channel >= MIXMSTRS_CHANNELS.length) return;
@@ -156,10 +194,15 @@ export function selectChannel(channel: number): void {
   } catch {
     /* private mode — session-only */
   }
-  bump(); // card re-renders the name; the LED repaints on the next render tick
+  bump(); // card re-renders; the LEDs + screen repaint on the next render tick
+  repaintDisplay();
 }
 export function selectedChannelIndex(): number {
   return selectedChannel;
+}
+/** The selected LANE, 1-based (`selectedChannelIndex()` is 0-based). */
+export function selectedLane(): number {
+  return selectedChannel + 1;
 }
 
 // ---------------------------------------------------------------------------
@@ -217,13 +260,226 @@ export function channelName(nodeId: string | null, channel = selectedChannel): s
 }
 
 // ---------------------------------------------------------------------------
-// Additive 5b — encoders → MixMasters, through the electra streaming-CC pump
-// (transient engine push per tick + a coalesced bare store write — NEVER a
-// MIDI-rate Y.Doc write-storm; memory midi-cc-write-storm-fix).
+// THE PUSH CARD — which module's card the screen shows, for the selected lane.
 // ---------------------------------------------------------------------------
-const ENCODER_STEP = 0.01; // per detent, over the 0..1 MixMasters ranges
 
-/** The first `mixmstrs` node in the patch (the encoders' target), or null. */
+/** In-memory mirror of the per-lane "last viewed" memory, so the render path
+ *  reads localStorage at most once per lane per session. push2-view.svelte.ts
+ *  owns the durable copy. */
+const liveFocus = new Map<number, string>();
+
+/** The full def for any node type, across all three registries. Mirrors the
+ *  Canvas's own `getModuleDef ?? getVideoModuleDef ?? getMetaModuleDef` chain. */
+function anyDef(type: string): PushCardDefLike | undefined {
+  return (getModuleDef(type) ?? getVideoModuleDef(type) ?? getMetaModuleDef(type)) as
+    | PushCardDefLike
+    | undefined;
+}
+
+/** The pinned mixer's `data` — where the per-lane member ORDER lives. */
+function mixerColumnsData(): { columns?: Record<string, string[] | undefined> } | undefined {
+  const mixer = patch.nodes[PINNED_MIXER_ID] as ModuleNode | undefined;
+  return mixer?.data as { columns?: Record<string, string[] | undefined> } | undefined;
+}
+
+/** Ordered member ids of the SELECTED lane — bottom tile first, most recently
+ *  ADDED last. Empty in a non-workflow (dawless) rack, which has no columns. */
+export function selectedLaneMembers(): string[] {
+  return laneMembers(
+    patch.nodes as Record<string, ModuleNode | undefined>,
+    mixerColumnsData(),
+    selectedLane(),
+  );
+}
+
+/** Does this rack have channel columns at all? A dawless rack has no pinned
+ *  mixer, so lane select has nothing to select — the card says so rather than
+ *  pretending the lane is merely empty. */
+function hasLaneColumns(): boolean {
+  return patch.nodes[PINNED_MIXER_ID] !== undefined;
+}
+
+function rememberedFocus(lane: number): string | null {
+  const cached = liveFocus.get(lane);
+  if (cached !== undefined) return cached;
+  const stored = lastViewed(lane);
+  if (stored) liveFocus.set(lane, stored);
+  return stored;
+}
+
+/**
+ * THE OWNER'S DEFAULT RULE, resolved: the most recently VIEWED module of this
+ * lane if it is still there, else the most recently ADDED one.
+ *
+ * When the remembered module has left the lane (deleted, moved, or removed by a
+ * peer) the memory is REWRITTEN to whatever we fell back to, so it converges on
+ * what the screen actually shows instead of drifting.
+ */
+export function focusedModuleId(): string | null {
+  const lane = selectedLane();
+  const members = selectedLaneMembers();
+  const remembered = rememberedFocus(lane);
+  const resolved = resolveLaneFocus(members, remembered);
+  if (resolved !== remembered) {
+    if (resolved) {
+      liveFocus.set(lane, resolved);
+      setLastViewed(lane, resolved);
+    } else {
+      liveFocus.delete(lane);
+      forgetLane(lane);
+    }
+  }
+  return resolved;
+}
+
+/**
+ * CARD FLIP — the #2-from-the-left encoder (CC 15). Steps through the selected
+ * lane's modules, one card per detent, wrapping at both ends (see
+ * `stepLaneFocus` for why wrap and not clamp).
+ */
+export function scrollPushCard(delta: number): void {
+  const lane = selectedLane();
+  const members = selectedLaneMembers();
+  const next = stepLaneFocus(members, focusedModuleId(), delta);
+  if (!next) return;
+  if (liveFocus.get(lane) === next) return; // a no-op flick — no repaint, no write
+  liveFocus.set(lane, next);
+  setLastViewed(lane, next);
+  bump();
+  repaintDisplay();
+}
+
+/** The lane accent — the SAME `laneColorEff` hue the channel-select LED row and
+ *  the on-screen lane swatch use, so the header stripe matches the lit button. */
+function laneHexFor(lane0: number): string {
+  const nodeId = boundClipNode();
+  const node = nodeId ? (patch.nodes[nodeId] as ModuleNode | undefined) : undefined;
+  return laneColorEff(node?.data as ClipPlayerData | undefined, lane0);
+}
+
+/** A blank card that still says which lane you are on. */
+function emptyView(reason: 'no-lane' | 'no-modules'): PushCardView {
+  return {
+    moduleType: '',
+    domain: 'audio',
+    source: 'generic',
+    title: '',
+    subtitle: '',
+    lane: selectedLane(),
+    laneHex: laneHexFor(selectedChannel),
+    index: null,
+    count: reason === 'no-modules' ? 0 : null,
+    strips: [],
+    empty: reason,
+  };
+}
+
+/**
+ * THE VIEW the Push screen (and the card's DOM preview) paint. It reads the
+ * live store, but every derivation below it is a pure function.
+ */
+export function currentPushCardView(): PushCardView {
+  if (!hasLaneColumns()) return emptyView('no-lane');
+  const members = selectedLaneMembers();
+  const focus = focusedModuleId();
+  const node = focus ? (patch.nodes[focus] as ModuleNode | undefined) : undefined;
+  const def = node ? anyDef(node.type) : undefined;
+  if (!focus || !node || !def) return emptyView('no-modules');
+
+  const spec = resolvePushCardControls(def);
+  return pushCardView(spec, overlayLiveValues(focus, node, spec.slots), def, {
+    lane: selectedLane(),
+    laneHex: laneHexFor(selectedChannel),
+    index: laneFocusIndex(members, focus),
+    count: members.length,
+    nodes: patch.nodes as Record<string, ModuleNode | undefined>,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// PARAM EDIT — the 8 display encoders (CC 71..78) drive the current card's 8
+// controls, through the electra streaming-CC pump (transient engine push per
+// tick + a coalesced bare store write — NEVER a MIDI-rate Y.Doc write-storm;
+// memory midi-cc-write-storm-fix).
+// ---------------------------------------------------------------------------
+
+/**
+ * IN-FLIGHT values, keyed `${moduleId}:${paramId}`.
+ *
+ * The pump's durable write is COALESCED to ~7 Hz while a stream is hot, so
+ * `node.params[id]` LAGS a fast twist. Reading the store for the encoder's
+ * "current value" would therefore compute the SAME next value for every message
+ * inside a 150 ms window — the encoder moves one step and then goes dead until
+ * you stop turning. This is the same reason `CcCommit` exposes `.active` for
+ * knobs ("so the control never snaps back to a not-yet-committed store value");
+ * the Push needs it for the INCREMENT SOURCE, not just for the visual.
+ *
+ * Cleared when the pump goes cold, so the store is authoritative again the
+ * moment the twist settles.
+ */
+const liveValues = new Map<string, number>();
+
+function liveKey(moduleId: string, paramId: string): string {
+  return `${moduleId}:${paramId}`;
+}
+
+/** The value the encoder should increment FROM: the in-flight one while a
+ *  stream is hot, else the store's. */
+function currentValue(moduleId: string, node: ModuleNode, p: ParamDef): number {
+  const key = liveKey(moduleId, p.id);
+  if (ccPumps.get(key)?.active) {
+    const v = liveValues.get(key);
+    if (v !== undefined) return v;
+  }
+  return paramValue(node, p);
+}
+
+/** A shallow node view whose params carry any IN-FLIGHT values, so the screen
+ *  tracks the twist at full rate instead of stepping at the commit cadence.
+ *  Returns the node itself when nothing is in flight (the common case — no
+ *  allocation on the idle render path). */
+function overlayLiveValues(
+  moduleId: string,
+  node: ModuleNode,
+  slots: PushCardSpec['slots'],
+): ModuleNode {
+  let overlay: Record<string, number> | null = null;
+  for (const slot of slots) {
+    if (slot.kind !== 'param') continue;
+    const key = liveKey(moduleId, slot.paramId);
+    if (!ccPumps.get(key)?.active) continue;
+    const v = liveValues.get(key);
+    if (v === undefined) continue;
+    overlay ??= { ...(node.params ?? {}) };
+    overlay[slot.paramId] = v;
+  }
+  return overlay ? ({ ...node, params: overlay } as ModuleNode) : node;
+}
+
+/**
+ * Turn display encoder `index` (0..7) by `delta` detents. A strip with no param
+ * — a blank slot, an empty lane, a module with no turnable controls — is a
+ * silent no-op, which is what a knob that does nothing should be.
+ */
+export function pushCardEncoder(index: number, delta: number): void {
+  const focus = focusedModuleId();
+  const node = focus ? (patch.nodes[focus] as ModuleNode | undefined) : undefined;
+  const def = node ? anyDef(node.type) : undefined;
+  if (!focus || !node || !def) return;
+  const slot = resolvePushCardControls(def).slots[index];
+  if (!slot || slot.kind !== 'param') return;
+
+  const p = slot.param;
+  const cur = currentValue(focus, node, p);
+  const next = nudgeParamValue(p, cur, delta, shiftHeld);
+  if (next === cur) return; // already at the end stop — no write, no repaint
+  liveValues.set(liveKey(focus, p.id), next);
+  ccPumpFor(focus, p.id).push(next);
+  repaintDisplay();
+}
+
+/** The first `mixmstrs` node in the patch (the MASTER encoder's target), or
+ *  null. Retained from the mixer era for exactly one binding — CC 79. */
 export function firstMixmstrs(): string | null {
   for (const [id, n] of Object.entries(patch.nodes)) {
     if ((n as { type?: string } | undefined)?.type === 'mixmstrs') return id;
@@ -231,30 +487,39 @@ export function firstMixmstrs(): string | null {
   return null;
 }
 
-function paramForTarget(target: EncoderTarget): string | null {
-  switch (target.param) {
-    case 'volume':
-      return target.channel >= 0 && target.channel < MIXMSTRS_CHANNELS.length
-        ? `ch${target.channel + 1}_volume`
-        : null;
-    case 'send1':
-      return `ch${selectedChannel + 1}_send1`;
-    case 'send2':
-      return `ch${selectedChannel + 1}_send2`;
-    case 'master':
-      return 'master_volume';
-  }
+/** Per-detent step for the MASTER encoder, over master_volume's 0..1 range —
+ *  the same 0.01 the 8 display encoders used to move the mixer by. */
+const MASTER_ENCODER_STEP = 0.01;
+
+/** The MASTER encoder (CC 79) → mixmstrs `master_volume`. The one mixer binding
+ *  the push-card rework keeps: it is not one of the eight, it sits beside the
+ *  physical master level, and losing it would be a pure regression. */
+function applyMasterEncoder(delta: number): void {
+  const mixId = firstMixmstrs();
+  if (!mixId) return; // no mixer — a harmless no-op
+  const key = liveKey(mixId, 'master_volume');
+  const node = patch.nodes[mixId] as ModuleNode | undefined;
+  const stored = Number(node?.params?.['master_volume'] ?? 0.8);
+  const cur = ccPumps.get(key)?.active ? (liveValues.get(key) ?? stored) : stored;
+  const step = Math.max(-MAX_ENCODER_STEP, Math.min(MAX_ENCODER_STEP, Math.trunc(delta)));
+  const next = Math.max(0, Math.min(1, cur + step * MASTER_ENCODER_STEP));
+  if (next === cur) return;
+  liveValues.set(key, next);
+  ccPumpFor(mixId, 'master_volume').push(next);
 }
 
-function applyEncoder(target: EncoderTarget, delta: number): void {
-  const mixId = firstMixmstrs();
-  if (!mixId) return; // no mixer — a no-op (the card shows a hint)
-  const paramId = paramForTarget(target);
-  if (!paramId) return;
-  const node = patch.nodes[mixId] as ModuleNode | undefined;
-  const cur = Number(node?.params?.[paramId] ?? 0.8);
-  const next = Math.max(0, Math.min(1, cur + delta * ENCODER_STEP));
-  ccPumpFor(mixId, paramId).push(next);
+function applyEncoder(target: PushEncoderTarget, delta: number): void {
+  switch (target.kind) {
+    case 'strip':
+      pushCardEncoder(target.index, delta);
+      break;
+    case 'moduleScroll':
+      scrollPushCard(delta);
+      break;
+    case 'master':
+      applyMasterEncoder(delta);
+      break;
+  }
 }
 
 // Reuse the electra host's per-(module,param) CC pump pattern (electra/host.ts):
@@ -286,12 +551,58 @@ function ccPumpFor(moduleId: string, paramId: string): CcCommit {
         }
       },
       onActiveChange: (active) => {
-        if (!active) notifyAutomationRelease({ nodeId: moduleId, paramId }, 'midi');
+        if (!active) {
+          notifyAutomationRelease({ nodeId: moduleId, paramId }, 'midi');
+          liveValues.delete(key); // the store is authoritative again
+        }
       },
     });
     ccPumps.set(key, pump);
   }
   return pump;
+}
+
+// ---------------------------------------------------------------------------
+// THE DISPLAY — draw ops → RGBA → the WebUSB transport, dirty-checked.
+// ---------------------------------------------------------------------------
+
+/** Injectable so a node unit test can observe the exact bytes that reach the
+ *  panel (the real painter needs a canvas, which the unit lane has not got). */
+export type PushCardPainter = (ops: readonly PushDrawOp[]) => ArrayLike<number> | null;
+
+let painter: PushCardPainter = pushCardRgba;
+let lastSignature: string | null = null;
+/** Set once the painter has proved it cannot paint here (no canvas), so the
+ *  idle render tick stops building an op list nobody can use. */
+let paintUnavailable = false;
+
+/**
+ * Repaint the Push display IF the card actually changed. Called from the LED
+ * render tick and from every action that can change the card.
+ *
+ * A missing display is never an error — with no transport attached this is a
+ * pure early return and the pads/encoders carry on over Web MIDI.
+ */
+export function repaintDisplay(force = false): void {
+  if (!isDisplayConnected() || paintUnavailable) return;
+  const ops = renderPushCard(currentPushCardView());
+  const sig = pushCardSignature(ops);
+  if (!force && sig === lastSignature) return;
+  const rgba = painter(ops);
+  if (!rgba) {
+    paintUnavailable = true; // no canvas on this machine — stop trying
+    return;
+  }
+  lastSignature = sig;
+  sendFrame(rgba);
+}
+
+/** TEST/EMBED SEAM: swap the RGBA painter. Passing null restores the canvas
+ *  one and re-arms the availability probe. */
+export function setPushCardPainter(fn: PushCardPainter | null): void {
+  painter = fn ?? pushCardRgba;
+  paintUnavailable = false;
+  lastSignature = null;
 }
 
 // ---------------------------------------------------------------------------
@@ -380,4 +691,14 @@ export function __test_resetPush2Control(): void {
   selectedChannel = 0;
   for (const pump of ccPumps.values()) pump.dispose();
   ccPumps.clear();
+  liveValues.clear();
+  liveFocus.clear();
+  lastSignature = null;
+  paintUnavailable = false;
+  painter = pushCardRgba;
+}
+
+/** TEST SEAM: hold/release SHIFT without a device (the fine-step modifier). */
+export function __test_setShiftHeld(held: boolean): void {
+  shiftHeld = held;
 }

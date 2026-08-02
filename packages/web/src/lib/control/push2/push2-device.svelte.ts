@@ -1,7 +1,11 @@
 // packages/web/src/lib/control/push2/push2-device.svelte.ts
 //
 // Ableton Push 2 — Web-MIDI device singleton (the MIDI half of the Push
-// integration; the 960×160 WebUSB display is DEFERRED to Phase 2). Cloned from
+// integration). The 960×160 display is a SEPARATE, vendor-specific USB
+// interface and lives in the sibling `push2-display.svelte.ts` (WebUSB) +
+// `push2-display-frame.ts` (the pure BGR565 framebuffer codec); the two
+// transports are independent by construction, and the display being absent
+// never affects anything in this file. Cloned from
 // launchpad-device: ONE sysex-capable `navigator.requestMIDIAccess({sysex:true})`
 // behind the on-demand permission flow (no eager prompt), hot-plug via
 // `onstatechange`, a port matcher for the Push 2's LIVE port, a Set-LIVE-mode

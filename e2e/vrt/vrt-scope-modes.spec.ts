@@ -30,6 +30,7 @@ import { test, expect } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { spawnPatch, type SpawnNode, type SpawnEdge } from '../tests/_helpers';
 import { EXEMPT_BASELINE_PAIRS } from './vrt-exemptions';
+import { pinVrtFonts, awaitVrtFonts } from './_fonts';
 
 const VRT_PLATFORM = process.platform === 'darwin' ? 'darwin' : 'linux';
 
@@ -112,8 +113,16 @@ test.describe('VRT: SCOPE X/Y mode + INTENSITY persistence', () => {
       page.on('pageerror', (e) => errors.push(e.message));
       page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
+      // Pin the bundled Inter/JetBrains Mono BEFORE the first navigation and
+      // await their decode after load — the app resolves card text through
+      // GENERIC stacks (system-ui / ui-monospace) that fontconfig picks
+      // nondeterministically, and document.fonts.ready can't see them. Without
+      // this the captured text metrics differ run-to-run and platform-to-platform.
+      // Full root cause: e2e/vrt/_fonts.ts.
+      await pinVrtFonts(page);
       await page.goto('/rack');
       await page.waitForLoadState('networkidle');
+      await awaitVrtFonts(page);
 
       // Seed the on-card draw loop with a deterministic phase-locked
       // snapshot BEFORE the card mounts (during spawnPatch). The audio

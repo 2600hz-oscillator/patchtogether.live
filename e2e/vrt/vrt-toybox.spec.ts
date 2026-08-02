@@ -24,6 +24,7 @@
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch, ensureCombineOpen } from '../tests/_helpers';
+import { pinVrtFonts, awaitVrtFonts } from './_fonts';
 
 const VRT_PLATFORM = process.platform === 'darwin' ? 'darwin' : 'linux';
 
@@ -247,8 +248,16 @@ test.describe('VRT: TOYBOX per-content frozen render', () => {
         if (m.type() === 'error') errors.push(m.text());
       });
 
+      // Pin the bundled Inter/JetBrains Mono BEFORE the first navigation and
+      // await their decode after load — the app resolves card text through
+      // GENERIC stacks (system-ui / ui-monospace) that fontconfig picks
+      // nondeterministically, and document.fonts.ready can't see them. Without
+      // this the captured text metrics differ run-to-run and platform-to-platform.
+      // Full root cause: e2e/vrt/_fonts.ts.
+      await pinVrtFonts(page);
       await page.goto('/rack');
       await page.waitForLoadState('networkidle');
+      await awaitVrtFonts(page);
 
       await spawnPatch(
         page,
@@ -289,8 +298,10 @@ test.describe('VRT: TOYBOX OBJ layer frozen render', () => {
         if (msg.type() === 'error') errors.push(msg.text());
       });
 
+      await pinVrtFonts(page);
       await page.goto('/rack');
       await page.waitForLoadState('networkidle');
+      await awaitVrtFonts(page);
 
       await spawnPatch(
         page,
@@ -534,8 +545,10 @@ test.describe('VRT: TOYBOX Phase-5 CV-route proof', () => {
         if (m.type() === 'error') errors.push(m.text());
       });
 
+      await pinVrtFonts(page);
       await page.goto('/rack');
       await page.waitForLoadState('networkidle');
+      await awaitVrtFonts(page);
       await spawnPatch(
         page,
         [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }],
@@ -647,8 +660,10 @@ test.describe('VRT: TOYBOX Phase-6 presets', () => {
         if (m.type() === 'error') errors.push(m.text());
       });
 
+      await pinVrtFonts(page);
       await page.goto('/rack');
       await page.waitForLoadState('networkidle');
+      await awaitVrtFonts(page);
       await spawnPatch(
         page,
         [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }],
@@ -794,8 +809,10 @@ test.describe('VRT: TOYBOX OBJ surface-texture', () => {
         if (msg.type() === 'error') errors.push(msg.text());
       });
 
+      await pinVrtFonts(page);
       await page.goto('/rack');
       await page.waitForLoadState('networkidle');
+      await awaitVrtFonts(page);
       await spawnPatch(
         page,
         [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }],
@@ -830,8 +847,10 @@ test.describe('VRT: TOYBOX Phase-4 combine graph', () => {
       if (m.type() === 'error') errors.push(m.text());
     });
 
+    await pinVrtFonts(page);
     await page.goto('/rack');
     await page.waitForLoadState('networkidle');
+    await awaitVrtFonts(page);
     await spawnPatch(
       page,
       [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }],
@@ -863,8 +882,10 @@ test.describe('VRT: TOYBOX Phase-4 combine graph', () => {
       if (m.type() === 'error') errors.push(m.text());
     });
 
+    await pinVrtFonts(page);
     await page.goto('/rack');
     await page.waitForLoadState('networkidle');
+    await awaitVrtFonts(page);
     await spawnPatch(
       page,
       [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }],
@@ -1048,8 +1069,10 @@ test.describe('VRT: TOYBOX Shadertoy multi-buffer growing peak', () => {
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
+    await pinVrtFonts(page);
     await page.goto('/rack');
     await page.waitForLoadState('networkidle');
+    await awaitVrtFonts(page);
     await spawnPatch(
       page,
       [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }],
@@ -1166,8 +1189,10 @@ test.describe('VRT: TOYBOX FRAG over a base layer (content-bank)', () => {
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
+    await pinVrtFonts(page);
     await page.goto('/rack');
     await page.waitForLoadState('networkidle');
+    await awaitVrtFonts(page);
     await spawnPatch(
       page,
       [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }],
@@ -1293,8 +1318,10 @@ test.describe('VRT: TOYBOX feedback (stateful combine op)', () => {
         if (m.type() === 'error') errors.push(m.text());
       });
 
+      await pinVrtFonts(page);
       await page.goto('/rack');
       await page.waitForLoadState('networkidle');
+      await awaitVrtFonts(page);
       await spawnPatch(
         page,
         [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }],

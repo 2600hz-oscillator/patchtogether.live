@@ -31,6 +31,7 @@
 import { test, expect } from '@playwright/test';
 import { spawnPatch } from '../tests/_helpers';
 import { EXEMPT_BASELINE_PAIRS } from './vrt-exemptions';
+import { pinVrtFonts, awaitVrtFonts } from './_fonts';
 
 const VRT_PLATFORM = process.platform === 'darwin' ? 'darwin' : 'linux';
 
@@ -93,8 +94,16 @@ test.describe('VRT: MIRRORPOOL composite scenes', () => {
         g.__mirrorpoolForceAnalytic = true;
       });
 
+      // Pin the bundled Inter/JetBrains Mono BEFORE the first navigation and
+      // await their decode after load — the app resolves card text through
+      // GENERIC stacks (system-ui / ui-monospace) that fontconfig picks
+      // nondeterministically, and document.fonts.ready can't see them. Without
+      // this the captured text metrics differ run-to-run and platform-to-platform.
+      // Full root cause: e2e/vrt/_fonts.ts.
+      await pinVrtFonts(page);
       await page.goto('/rack');
       await page.waitForLoadState('networkidle');
+      await awaitVrtFonts(page);
       await page.addStyleTag({
         content:
           '.svelte-flow__minimap,.svelte-flow__controls,.svelte-flow__attribution{display:none !important;}',

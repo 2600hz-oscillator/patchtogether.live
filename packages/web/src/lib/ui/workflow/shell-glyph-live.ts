@@ -66,7 +66,16 @@ export type GlyphBinding =
    *  shape (tidyVco); other shape-identity sources can adopt it. */
   | { kind: 'dual'; portId: string; wave: DualWaveSpec }
   | { kind: 'env-params'; attack: string; decay: string; sustain: string; release: string }
-  | { kind: 'wave-morph'; shapeParamId: string; depthParamId?: string }
+  /**
+   * PARAM-DERIVED single-cycle morph (the lfo law). `depthGain` is the module's
+   * DEPTH → output-gain multiplier, carried on the binding so the SHELL never
+   * has to know it: it used to be a literal `2 *` inside ModuleShell, a second
+   * copy of a number whose only authoritative home is the worklet. It is read
+   * off the module's OWN `face.glyphDepthGain` — this resolver is generic and
+   * must not carry any single module's constant (see the field's doc on
+   * ModuleFace).
+   */
+  | { kind: 'wave-morph'; shapeParamId: string; depthParamId?: string; depthGain: number }
   /**
    * TOPOLOGY (PF-15): the glyph draws the module's own SIGNAL ROUTING, derived
    * from a discrete param — no analyser, no gate, always live.
@@ -149,10 +158,32 @@ export function glyphBinding(def: GlyphDefLike | undefined): GlyphBinding {
   if (glyph === 'waveform') {
     const shape = params.find((p) => p.id === 'shape' && p.min === 0 && p.max === 2);
     if (shape) {
-      return { kind: 'wave-morph', shapeParamId: 'shape', depthParamId: has('depth') ? 'depth' : undefined };
+      return {
+        kind: 'wave-morph',
+        shapeParamId: 'shape',
+        depthParamId: has('depth') ? 'depth' : undefined,
+        // The MODULE's multiplier, never this resolver's. 1 = "depth is already
+        // the amplitude" — the only law a generic resolver can assume.
+        depthGain: def?.face?.glyphDepthGain ?? 1,
+      };
     }
   }
   return { kind: 'static' };
+}
+
+/**
+ * The DISPLAY amplitude a `wave-morph` glyph draws: the module's real depth
+ * gain, CLAMPED to the screen's ±1 box.
+ *
+ * ⚠ THE ONE HOME FOR THE CLAMP. It used to be re-implemented inline in
+ * ModuleShell's wave-morph branch (`Math.min(1, b.depthGain * depth)`) while a
+ * module-side `lfoGlyphAmp` held an identical copy that NOTHING rendered
+ * through — so the module's test pinned an orphan and deleting the shell's
+ * clamp changed the picture with every assertion still green. Both callers now
+ * resolve here, which is what makes that test a real one.
+ */
+export function waveMorphGlyphAmp(depth: number, depthGain: number): number {
+  return Math.min(1, Math.max(0, depth) * depthGain);
 }
 
 // ── The LIVE param-wave source (the dual/wave-morph transient-read seam) ────
