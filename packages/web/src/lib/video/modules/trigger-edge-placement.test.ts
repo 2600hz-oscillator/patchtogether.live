@@ -416,6 +416,27 @@ describe('video modules: a TRIGGER must be edge-detected in setParam, not read i
     ).toBe(false);
   });
 
+  it('every module DEF yields a draw() range (the reachability filter cannot go silently blind)', () => {
+    // The reachability filter added here is itself a new way to see nothing: a
+    // def whose draw is written in a form `drawRanges` does not recognise (say
+    // `draw: (frame) => { … }`) would produce ZERO ranges, and then NO site in
+    // that file can ever be flagged — a clean report from a scan that never
+    // looked. Same failure shape as the `detectEdge` pre-filter this file
+    // replaced, so it gets the same treatment: assert the precondition.
+    const blind: string[] = [];
+    for (const path of moduleFiles()) {
+      const src = stripComments(readFileSync(path, 'utf8'));
+      const isDef = /VideoModuleDef/.test(src) && /factory\s*\(/.test(src);
+      if (!isDef) continue; // helper/support file, not a module def
+      if (drawRanges(src).length === 0) blind.push(path.replace(/^.*\//, ''));
+    }
+    expect(
+      blind,
+      'these video module DEFS produce no draw() range, so rule 1 is structurally unable to flag ' +
+      'anything in them — teach drawRanges() their draw form before landing them: ' + blind.join(', '),
+    ).toEqual([]);
+  });
+
   it('the scanner resolves edge helpers ACROSS FILES (frametableSaveWrite)', () => {
     // `frametableSaveWrite` is declared in $lib/video/frametable-core, OUTSIDE
     // this directory. A per-file walk can never learn it is an edge function,
