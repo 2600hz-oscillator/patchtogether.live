@@ -1,0 +1,2333 @@
+<title>Face re-do — 18 shipped faceplates against the corrected platform</title>
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   FACE RE-DO — MOCKUP GALLERY.  SPEC AND MOCKUP ONLY — nothing here is
+   implemented and no module def or card is touched.
+
+   Drawn against the PF-20 faceplate platform (PR #1301,
+   feat/faceplate-platform-v2) WITH THE OWNER'S TWO CORRECTIONS APPLIED:
+     1. the readout row is a FULL-WIDTH STRIP BELOW the hero graphic,
+        not a column inline beside the hero control;
+     2. per-band description prose (`ModuleFacePage.hint`) is ANNOTATION —
+        it paints only in annotate mode, so every card below is drawn with
+        ZERO hint prose.
+
+   Colours, type scale and geometry from the shipped faceplate:
+   packages/web/src/lib/styles/tokens.css (--bg #0e1013, --surface-3 #262a31,
+   --module-bg #1c1f24, --module-bg-deep #0a0c0f, --text #eef1f5,
+   --text-dim #9aa2ad, --border #2c3037, --tile-border #33383f,
+   --ink-faint #646c77, --cable-audio #38d3c8, --cable-gate #f2c14e,
+   --cable-cv #7bd66a, --cable-pitch #9be08a, --cable-polyPitchGate #ff7bc2,
+   --dock-sidebar-w 288px, --r-dock 11px)
+   and from the committed dock baselines under
+   e2e/vrt/__screenshots__/workflow-shell-faces.spec.ts/darwin/ (the chrome
+   row, the MODULE tab, the 4px spine, the band rule, the 9px value under
+   each dial) plus ModuleShell.svelte on the platform branch (.face-title
+   0.95rem/700, .face-hint 0.66rem, .hero-ctl .readout 17px, .hero-ro dt
+   9px/0.12em/uppercase, .hero-ro dd 17px/700 mono).
+   ───────────────────────────────────────────────────────────────────────── */
+:root{
+  --bg:#0e1013; --dock:#12161c; --rail:#111520; --plate:#262a31; --pbody:#1c1f24;
+  --well:#0a0c0f; --line:#2c3037; --tile:#33383f; --ink:#eef1f5; --dim:#9aa2ad;
+  --faint:#646c77;
+  --tealo:#38d3c8; --teal:#34b7b0; --amber:#f2c14e; --green:#7bd66a;
+  --pitch:#9be08a; --pink:#ff7bc2; --violet:#b57bff; --derived:#8fe6b0;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+  font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1580px;margin:0 auto;padding:26px 20px 120px}
+h1{font-size:22px;font-weight:800;margin:0 0 8px;letter-spacing:.01em}
+.sub{color:var(--dim);font-size:13px;margin:0 0 8px;max-width:108ch}
+.sub b{color:var(--ink)} .sub code{font-family:var(--mono);font-size:12px;color:var(--tealo)}
+.warn{border:1px solid #6a5330;background:#1c1811;border-radius:8px;padding:11px 14px;
+  margin:16px 0 10px;font-size:12.5px;color:#e8cf9a;max-width:126ch}
+.warn b{color:var(--amber)}
+.ok{border:1px solid #3b5a48;background:#111a15;border-radius:8px;padding:11px 14px;
+  margin:10px 0 22px;font-size:12.5px;color:#a9d8bd;max-width:126ch}
+.ok b{color:var(--derived)}
+h3.sec{font-size:12px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--faint);margin:34px 0 10px;border-top:1px solid var(--line);padding-top:14px}
+.toc{display:grid;grid-template-columns:repeat(auto-fill,minmax(212px,1fr));
+  gap:6px;margin:0 0 26px;padding:0;list-style:none}
+.toc a{display:flex;justify-content:space-between;gap:8px;text-decoration:none;color:var(--ink);
+  border:1px solid var(--line);border-radius:7px;padding:7px 10px;font-size:12px;background:#12161c}
+.toc a:hover{border-color:var(--teal)}
+.toc a em{font-style:normal;color:var(--faint);font-family:var(--mono);font-size:9.5px;
+  letter-spacing:.08em;text-transform:uppercase;white-space:nowrap}
+.toc a.mech em{color:#8ba4c4} .toc a.drop em{color:var(--amber)} .toc a.dl em{color:#c6a6e0}
+
+/* ── one module block ────────────────────────────────────────────────── */
+.mod{margin:0 0 46px;scroll-margin-top:14px}
+.mod>header{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;
+  border-bottom:1px solid var(--line);padding-bottom:8px;margin-bottom:11px}
+.mod>header h2{font-size:17px;font-weight:800;letter-spacing:.02em;margin:0;text-transform:uppercase}
+.mod>header .id{font-family:var(--mono);font-size:11px;color:var(--faint)}
+.tag{font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;
+  border:1px solid var(--line);border-radius:4px;padding:2px 7px;color:var(--dim)}
+.tag.redo{border-color:#5a4a6a;color:#c6a6e0}
+.tag.mech{border-color:#3f5470;color:#9dc0e8}
+.tag.drop{border-color:#6a5330;color:var(--amber)}
+.tag.dl{border-color:#4a6a54;color:#9ad6a6}
+.note{color:var(--dim);font-size:12.5px;margin:0 0 12px;max-width:122ch}
+.note b{color:var(--ink);font-weight:600}
+.note code{font-family:var(--mono);font-size:11.5px;color:var(--tealo)}
+
+/* ── THE DOCK FACEPLATE ──────────────────────────────────────────────── */
+.dock{background:var(--dock);border:1px solid var(--line);border-radius:11px;overflow:hidden;
+  display:grid;grid-template-columns:minmax(0,1fr) 288px}
+.dock.nosb{grid-template-columns:minmax(0,1fr)}
+.editor{padding:11px;min-width:0}
+.chromebar{display:flex;align-items:baseline;gap:9px;padding:0 2px 7px}
+.chromebar .ini{font-family:var(--mono);font-size:10px;color:var(--faint);letter-spacing:.1em}
+.chromebar .nm{font-size:13px;font-weight:800;letter-spacing:.03em}
+.chromebar .ln{font-family:var(--mono);font-size:8.4px;letter-spacing:.14em;color:var(--faint);
+  text-transform:uppercase}
+.tabrow{margin:0 0 -1px 2px}
+.tab{display:inline-block;border:1px solid var(--line);border-bottom-color:transparent;
+  border-radius:8px 8px 0 0;padding:5px 13px;font-size:9.4px;font-weight:800;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--ink);background:#151a21}
+.tab.off{color:var(--faint);background:#101419}
+.plate{background:var(--pbody);border:1px solid var(--tile);border-left:4px solid var(--teal);
+  border-radius:10px;padding:0 0 12px;min-width:0;overflow:hidden}
+.plate.gate{border-left-color:#b08a34} .plate.cv{border-left-color:#4e8f45}
+.plate.poly{border-left-color:#c25f96}
+.chrome{padding:9px 12px 0}
+.chrome .name{font-size:11.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase}
+.chrome .cat{font-size:8px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);
+  font-family:var(--mono);margin-top:1px}
+.fhead{padding:8px 12px 0}
+.ftitle{margin:0;font-size:15px;font-weight:700;letter-spacing:.02em}
+.fhint{margin:3px 0 0;font-size:10.5px;line-height:1.45;color:var(--dim);max-width:68ch}
+
+/* ── HERO: the picture, full width, with the promoted dial + audition beside it ── */
+.hero{display:flex;gap:15px;align-items:flex-end;flex-wrap:wrap;padding:11px 12px 0}
+.hero .vis{flex:1 1 400px;min-width:0}
+.hero .vis svg{width:100%;height:auto;display:block}
+.hero .side{display:flex;align-items:flex-end;gap:13px;flex-wrap:wrap}
+.glyphbar{height:38px;background:var(--well);border:1px solid #1d2229;border-radius:4px;
+  position:relative;overflow:hidden}
+.glyphbar i{position:absolute;left:0;right:0;top:50%;height:1px;background:var(--tealo);opacity:.6}
+
+/* ── CORRECTION 1 — THE READOUT STRIP: full width, BELOW the graphic ── */
+.strip{display:flex;flex-wrap:wrap;margin:11px 12px 0;border:1px solid #232830;
+  border-radius:8px;background:#151a21;overflow:hidden}
+.strip .ro{flex:1 1 0;min-width:120px;padding:7px 12px 8px;border-right:1px solid #232830}
+.strip .ro:last-child{border-right:0}
+.strip .ro dt{font-family:var(--mono);font-size:8.6px;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--dim);margin:0}
+.strip .ro dd{margin:2px 0 0;font-family:var(--mono);font-size:17px;line-height:1.05;font-weight:700;
+  color:var(--tealo);white-space:nowrap}
+.strip .ro.d dd{color:var(--derived)}
+.strip .ro.d dt::after{content:" \0192";color:var(--derived);letter-spacing:0;font-size:9px}
+.strip .ro.t dd{color:var(--dim);font-size:12px;font-weight:600}
+.stripcap{margin:5px 12px 0;font-family:var(--mono);font-size:7.6px;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--faint)}
+
+/* ── bands.  CORRECTION 2 — NO hint prose is painted. ── */
+.bands{padding:3px 12px 0}
+.band{border-top:1px solid var(--line);padding-top:7px;margin-top:9px}
+.band:first-child{border-top:0;margin-top:5px}
+.blab{margin:0 0 6px;font-size:9.4px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--dim)}
+.row{display:flex;flex-wrap:wrap;align-items:flex-start;gap:8px 10px}
+.clab{margin:8px 0 3px;font-size:8.4px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;
+  color:var(--dim);opacity:.8}
+
+/* ── the knob primitive (a drawing of KnobConic) ─────────────────────── */
+.k{width:54px;display:flex;flex-direction:column;align-items:center;gap:3px}
+.k i{--v:.5;--kc:var(--teal);display:block;width:38px;height:38px;border-radius:50%;position:relative;
+  background:conic-gradient(from 215deg,var(--kc) 0turn calc(var(--v)*.75turn),
+    #2b3138 calc(var(--v)*.75turn) .75turn,rgba(0,0,0,0) .75turn)}
+.k i::before{content:"";position:absolute;inset:5px;border-radius:50%;background:#20252b;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.05)}
+.k i::after{content:"";position:absolute;left:50%;top:50%;width:2px;height:12px;background:var(--ink);
+  border-radius:1px;transform-origin:50% 100%;
+  transform:translate(-50%,-100%) rotate(calc(-135deg + var(--v)*270deg))}
+.k b{font-size:7.8px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);
+  font-family:var(--mono);text-align:center;line-height:1.15}
+.k em{font-style:normal;font-family:var(--mono);font-size:9px;font-weight:700;color:var(--tealo);
+  text-align:center}
+.k.lg{width:86px} .k.lg i{width:64px;height:64px} .k.lg i::before{inset:8px} .k.lg i::after{height:21px}
+.k.lg b{font-size:10px} .k.lg em{font-size:17px}
+.k.amber i{--kc:#b08a34} .k.amber em{color:var(--amber)}
+.k.green i{--kc:#4e8f45} .k.green em{color:var(--green)}
+.k.pink i{--kc:#c25f96} .k.pink em{color:var(--pink)}
+.k.dead i{--kc:#3b4148} .k.dead em{color:var(--faint)} .k.dead b{color:var(--faint)}
+
+/* segmented / selector / switch / button */
+.cell{display:flex;flex-direction:column;gap:3px;align-items:flex-start}
+.cell .cap{font-size:7.8px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--dim);font-family:var(--mono)}
+.seg{display:inline-flex;border:1px solid #3a4048;border-radius:6px;overflow:hidden}
+.seg span{font-family:var(--mono);font-size:8.6px;letter-spacing:.05em;text-transform:uppercase;
+  padding:5px 7px;color:var(--dim);border-right:1px solid #3a4048}
+.seg span:last-child{border-right:0}
+.seg span.on{background:#1f3a3a;color:var(--tealo)}
+.sel{font-family:var(--mono);font-size:10px;letter-spacing:.05em;background:#1b2027;
+  border:1px solid #3a4048;border-radius:6px;padding:6px 10px;color:var(--ink);min-width:126px;
+  display:flex;justify-content:space-between;gap:10px}
+.sel s{text-decoration:none;color:var(--faint)}
+.sw{display:inline-flex;align-items:center;gap:6px;background:#1b2027;border:1px solid #3a4048;
+  border-radius:12px;padding:4px 9px;font-family:var(--mono);font-size:8.6px;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--dim)}
+.sw i{width:8px;height:8px;border-radius:50%;background:#3b4148}
+.sw.on{border-color:var(--teal);color:var(--tealo)} .sw.on i{background:var(--tealo)}
+.btn{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;
+  background:#1d2229;border:1px solid #3a4048;color:var(--ink);border-radius:6px;padding:9px 14px}
+.btn.hot{border-color:var(--teal);color:var(--tealo)}
+
+/* ── the sidebar ─────────────────────────────────────────────────────── */
+.sb{background:var(--rail);border-left:1px solid var(--line);padding:12px 12px 20px;min-width:0}
+.sb h4{margin:0 0 7px;font-size:9px;font-weight:800;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--dim)}
+.sb section+section{margin-top:16px}
+.flow{list-style:none;margin:0;padding:0}
+.flow li{display:flex;align-items:baseline;gap:7px;padding:1.5px 0;font-size:10px;font-weight:700;
+  letter-spacing:.05em;text-transform:uppercase}
+.flow li .d{width:7px;height:7px;border-radius:50%;background:#4a525c;flex:0 0 auto}
+.flow li.gen .d{background:var(--tealo)}
+.flow li.par .d{background:rgba(0,0,0,0);border:1px solid #6f7883}
+.flow li.par{font-style:italic;color:var(--dim)}
+.flow li .n{margin-left:auto;font-family:var(--mono);font-size:7.6px;letter-spacing:.1em;
+  color:var(--faint);font-weight:400}
+.flegend{display:flex;gap:12px;margin-top:6px;font-family:var(--mono);font-size:7.2px;
+  letter-spacing:.12em;text-transform:uppercase;color:var(--faint);flex-wrap:wrap}
+.flegend i{display:inline-block;width:6px;height:6px;border-radius:50%;background:#4a525c;margin-right:4px}
+.flegend i.g{background:var(--tealo)}
+.flegend i.p{background:rgba(0,0,0,0);border:1px solid #6f7883}
+.pre{display:flex;flex-direction:column;gap:5px}
+.pre div{display:flex;justify-content:space-between;gap:8px;align-items:center;background:#1b212a;
+  border:1px solid #2b323c;border-radius:6px;padding:7px 9px;font-size:10px;font-weight:700;
+  letter-spacing:.06em;text-transform:uppercase}
+.pre div.on{border-color:var(--teal);background:#1b2c30}
+.pre div s{text-decoration:none;font-family:var(--mono);font-size:7.6px;letter-spacing:.1em;
+  color:var(--tealo);font-weight:400}
+.rolist{display:flex;flex-direction:column;gap:4px}
+.rolist div{display:flex;justify-content:space-between;gap:8px;font-family:var(--mono);font-size:9px;
+  letter-spacing:.05em;text-transform:uppercase;color:var(--dim)}
+.rolist div b{color:var(--tealo);font-weight:700}
+.rolist div.d b{color:var(--derived)}
+.panel{background:#151a21;border:1px solid #262d36;border-radius:7px;padding:8px}
+
+/* ── the spec strip under each drawing ───────────────────────────────── */
+.strips{display:grid;grid-template-columns:repeat(auto-fit,minmax(288px,1fr));gap:10px;margin-top:12px}
+.strips div{border:1px solid var(--line);border-radius:8px;padding:9px 11px;background:#12161c;
+  font-size:11.5px;color:var(--dim);line-height:1.45}
+.strips div h5{margin:0 0 4px;font-size:8.6px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--faint)}
+.strips div b{color:var(--ink);font-weight:600}
+.strips div code{font-family:var(--mono);font-size:10.8px;color:var(--tealo)}
+.strips div.bad{border-color:#5a3b3b} .strips div.bad h5{color:#e08a8a}
+.strips div.der{border-color:#3b5a48} .strips div.der h5{color:var(--derived)}
+.strips div.der code{color:var(--derived)}
+.strips div.hid{border-color:#4a4460} .strips div.hid h5{color:#c6a6e0}
+svg{display:block;max-width:100%}
+table.arith{border-collapse:collapse;margin:10px 0 0;font-size:12px;width:100%}
+table.arith th,table.arith td{border:1px solid var(--line);padding:5px 9px;text-align:left;color:var(--dim)}
+table.arith th{color:var(--ink);font-size:10px;letter-spacing:.06em;text-transform:uppercase;background:#151a21}
+table.arith td b{color:var(--ink)}
+.twoup{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:12px}
+.demo{border:1px solid var(--line);border-radius:9px;background:var(--pbody);padding:10px 12px 12px}
+.demo h6{margin:0 0 8px;font-family:var(--mono);font-size:8.6px;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--faint)}
+.annot{font-size:9.2px;font-weight:500;letter-spacing:.02em;text-transform:none;color:#c6a6e0;
+  display:block;margin-top:2px}
+@media (max-width:1080px){.dock{grid-template-columns:minmax(0,1fr)}
+  .sb{border-left:0;border-top:1px solid var(--line)}}
+</style>
+
+<div class="wrap">
+<h1>Face re-do — all 18 shipped faceplates, against the CORRECTED platform</h1>
+<p class="sub"><b>SPEC AND MOCKUP ONLY.</b> Nothing here is implemented; no module def, card, test or
+source file is touched. Drawn against the PF-20 faceplate platform on
+<code>feat/faceplate-platform-v2</code> (PR #1301, <b>not yet merged</b>) <b>with the owner's two
+corrections applied</b>.</p>
+<p class="sub"><b>Correction 1 — the readout row sits BELOW the hero graphic, full width.</b> Not a
+column inline beside the hero control. Every card below draws it as a bordered strip spanning the
+editor, above band 1. A readout tinted <span style="color:var(--derived)">green with a ƒ</span> is
+<b>DERIVED</b> — computed from the DSP's own law over the live params, not a readback of a knob —
+and each one's <b>negative control</b> (the perturbation that moves it while a knob readback would
+not, plus the leg that must <i>not</i> move) is stated in the strip under the drawing and argued in
+full in the per-module spec.</p>
+<p class="sub"><b>Correction 2 — band description prose is ANNOTATION, hidden by default.</b> Every
+card below is drawn with <b>zero</b> <code>ModuleFacePage.hint</code> prose painted. The prose is
+still authored in every spec — it is living-docs content — and it renders when annotate mode is on
+for that node (<code>$lib/ui/annotate-mode.svelte.ts</code>, per-node, personal, not synced). The
+test each spec had to pass is: <i>does this face read correctly with every hint hidden?</i> Where the
+answer was no, the fix was to move the fact to a surface that always paints — a readout, a sidebar
+stage, a cluster label, a control's own vocabulary — <b>never to smuggle a sentence into a band
+label</b>.</p>
+<p class="sub">Full specs: <code>.myrobots/plans/face-redo-&lt;module&gt;.md</code> ·
+index, cost arithmetic and the defect ledger: <code>face-redo-INDEX.md</code></p>
+
+<div class="ok"><b>Verdicts: 11 need real rework · 5 need the mechanical change only · 2 are in
+flight · 0 should be dropped from <code>STRICT_FACES</code>.</b> Five modules came back
+<b>MECHANICAL ONLY</b> — delay, lfo, ringback, tidyVco, vca — meaning the shipped ranking, pages,
+glyph and rear are right and stay byte-identical. That is the correct answer for those five, and
+saying so was worth more than inventing a redesign. <b>vca was tested against the drop question
+directly and comes back a keep:</b> <code>STRICT_FACES</code> is the migration switch, so dropping
+it un-migrates the module to a placeholder tile, and unlike <code>noise</code> its tiers do not
+collapse (mini = 1 cell, everything else = 2), so <code>order</code> decides a real thing.</div>
+
+<div class="warn"><b>Three platform findings the corrections surfaced — the in-flight platform PR
+should absorb them.</b>
+<b>(1)</b> On a TABBED face the shell suppresses the band label <i>and</i> the hint, so
+<b>cloudseed's eight authored hints would paint nowhere even with annotation ON</b> — on the one
+face that most needs teaching. Annotate mode must paint the ACTIVE band's hint.
+<b>(2)</b> <code>heroFacePlan</code> drops an emptied <i>cluster</i> but the band loop has no such
+guard, so promoting a whole band's contents renders a <b>labelled void</b>. dx7 and mixer hit this
+independently.
+<b>(3)</b> A <code>hero.cell</code> is a ranked cell whose first legal rank is 7, and lane selection
+is not kind-aware — so <b>no module with ≤ 6 controls can ever declare a hero picture</b>. adsr and
+filter both hit it. All three are one-line-ish fixes and all three are invisible until a second
+module adopts the platform.</div>
+
+<div class="warn"><b>The design decision that recurs on nine of the eighteen, so it is worth stating
+once:</b> declaring a <code>hero.cell</code> <b>SUPPRESSES the dock glyph</b>. On dx7 that is the
+point — it deletes a duplicate diagram the dock paints twice today. On lfo, tidyVco, vca, mixer,
+delay, reverb, shimmershine, ringback and tomtom it is a <b>downgrade</b>: a live, param-derived or
+analyser-driven picture traded for a static drawing of two knob values. Only four faces take a
+bespoke picture — dx7 (the operator map), karplus (the partial ladder), snaredrum (the roll grid) and
+kickdrum (the envelope + sweep) — and each is a picture that is genuinely not three numbers.</div>
+
+<ul class="toc">
+<li><a href="#adsr">adsr <em>rework</em></a></li>
+<li><a href="#karplus">karplus <em>rework</em></a></li>
+<li><a href="#tomtom">tomtom <em>rework</em></a></li>
+<li><a href="#snaredrum">snaredrum <em>rework</em></a></li>
+<li><a href="#reverb">reverb <em>rework</em></a></li>
+<li><a href="#shimmershine">shimmershine <em>rework</em></a></li>
+<li><a href="#qbrt">qbrt <em>rework</em></a></li>
+<li><a href="#cloudseed">cloudseed <em>rework</em></a></li>
+<li><a href="#filter">filter <em>rework</em></a></li>
+<li><a href="#mixer">mixer <em>rework</em></a></li>
+<li><a href="#dx7">dx7 <em>rework</em></a></li>
+<li><a href="#delay" class="mech">delay <em>mechanical</em></a></li>
+<li><a href="#lfo" class="mech">lfo <em>mechanical</em></a></li>
+<li><a href="#ringback" class="mech">ringback <em>mechanical</em></a></li>
+<li><a href="#tidyvco" class="mech">tidyVco <em>mechanical</em></a></li>
+<li><a href="#vca" class="mech">vca <em>mechanical</em></a></li>
+<li><a href="#kickdrum" class="dl">kickdrum <em>in flight</em></a></li>
+<li><a href="#sixstrum" class="dl">sixstrum <em>in flight</em></a></li>
+</ul>
+
+<h3 class="sec">what the two corrections look like, once</h3>
+<div class="twoup">
+  <div class="demo"><h6>correction 2 — OFF (the default card)</h6>
+    <div class="band" style="border-top:0;margin-top:0">
+      <h4 class="blab">2 · body — the punch</h4>
+      <div class="row">
+        <div class="k"><i style="--v:.5"></i><b>Pitch Amt</b><em>+24 st</em></div>
+        <div class="k"><i style="--v:.35"></i><b>Pitch Time</b><em>30 ms</em></div>
+        <div class="k"><i style="--v:.4"></i><b>Body Dec</b><em>120 ms</em></div>
+      </div></div>
+    <p class="note" style="margin:10px 0 0;font-size:11.5px">A band label is a <b>name</b>. The card
+    is clean; every number under a dial is its own value; nothing asks to be read as prose.</p></div>
+  <div class="demo"><h6>correction 2 — ON (annotate mode, this node only)</h6>
+    <div class="band" style="border-top:0;margin-top:0">
+      <h4 class="blab">2 · body — the punch
+        <span class="annot">morphable wave an octave up, on the 909 downward sweep</span></h4>
+      <div class="row">
+        <div class="k"><i style="--v:.5"></i><b>Pitch Amt</b><em>+24 st</em></div>
+        <div class="k"><i style="--v:.35"></i><b>Pitch Time</b><em>30 ms</em></div>
+        <div class="k"><i style="--v:.4"></i><b>Body Dec</b><em>120 ms</em></div>
+      </div></div>
+    <p class="note" style="margin:10px 0 0;font-size:11.5px">Same authored string, same def, painted
+    only for the one user who asked. <b>Personal and un-synced</b> — a collaborator turning it on
+    must not change what anyone else sees.</p></div>
+</div>
+
+<h3 class="sec">the eleven that need real rework</h3>
+
+<section class="mod" id="adsr">
+<header><h2>adsr</h2><span class="id">adsr.ts · 4 params · glyph <code>envelope</code></span>
+<span class="tag redo">real rework — declaration only</span></header>
+<p class="note">A well-argued RANKING sitting on an <b>~85 %-empty faceplate</b> that teaches nothing
+about the one thing that decides whether the module works — the difference between a gate and a
+trigger. <b>No hero picture:</b> the <code>envelope</code> glyph already <i>is</i> the
+module-specific graph. adsr is the module that makes correction 1 obviously right: with no
+<code>cell</code>, <code>control</code> or <code>action</code>, the shipped
+<code>.hero-side</code> layout renders the readouts as a dangling list floating to the right of a
+214 px graph.</p>
+
+<div class="dock">
+  <div class="editor">
+    <div class="chromebar"><span class="ini">AD</span><span class="nm">ADSR</span>
+      <span class="ln">adsr · lane 1</span></div>
+    <div class="tabrow"><span class="tab">module</span></div>
+    <div class="plate cv">
+      <div class="chrome"><div class="name">ADSR</div><div class="cat">modulation</div></div>
+      <div class="fhead"><h3 class="ftitle">Envelope</h3>
+        <p class="fhint">A contour driven by a GATE, not a trigger: attack and decay run while the
+        gate is high, sustain holds for as long as it stays high, and release starts from wherever
+        the level is when it falls.</p></div>
+
+      <div class="hero">
+        <div class="vis">
+          <svg viewBox="0 0 420 78" role="img" aria-label="adsr contour at the current settings">
+            <rect x="0" y="0" width="420" height="78" rx="4" fill="#0a0c0f" stroke="#1d2229"/>
+            <path d="M8 70 L20 10 L92 27 L250 27 L400 70" fill="none" stroke="#7bd66a" stroke-width="1.8"/>
+            <line x1="250" y1="6" x2="250" y2="74" stroke="#f2c14e" stroke-dasharray="3 2" opacity=".6"/>
+            <text x="256" y="16" fill="#f2c14e" font-size="7" font-family="ui-monospace,monospace">GATE FALLS</text>
+            <text x="24" y="76" fill="#646c77" font-size="7" font-family="ui-monospace,monospace">A</text>
+            <text x="52" y="76" fill="#646c77" font-size="7" font-family="ui-monospace,monospace">D</text>
+            <text x="160" y="76" fill="#646c77" font-size="7" font-family="ui-monospace,monospace">S</text>
+            <text x="320" y="76" fill="#646c77" font-size="7" font-family="ui-monospace,monospace">R</text>
+          </svg>
+        </div>
+      </div>
+
+      <dl class="strip">
+        <div class="ro d"><dt>note</dt><dd>405 ms</dd></div>
+        <div class="ro d"><dt>gate to sustain</dt><dd>105 ms</dd></div>
+        <div class="ro t"><dt>from a trigger</dt><dd>2.5 ms high</dd></div>
+      </dl>
+      <p class="stripcap">ƒ derived · the two numbers the graph is invariant to by construction —
+        beside the one that says why your envelope never reaches sustain</p>
+
+      <div class="bands">
+        <div class="band"><h4 class="blab">stages</h4>
+          <div class="row">
+            <div class="k green"><i style="--v:.05"></i><b>Attack</b><em>5 MS</em></div>
+            <div class="k green"><i style="--v:.2"></i><b>Decay</b><em>100 MS</em></div>
+            <div class="k green"><i style="--v:.7"></i><b>Sustain</b><em>0.70</em></div>
+            <div class="k green"><i style="--v:.3"></i><b>Release</b><em>300 MS</em></div>
+          </div></div>
+      </div>
+    </div>
+  </div>
+  <div class="sb">
+    <section><h4>shapes</h4>
+      <div class="pre">
+        <div><span>PLUCK</span><s>no sustain</s></div>
+        <div><span>PERC</span><s>46 ms</s></div>
+        <div><span>ORGAN</span><s>gate-shaped</s></div>
+        <div><span>BASS</span><s>snap + body</s></div>
+        <div><span>PAD</span><s>slow swell</s></div>
+      </div></section>
+  </div>
+</div>
+
+<div class="strips">
+  <div class="der"><h5>note = a + (s&lt;1 ? d : 0) + (s&gt;0 ? r : 0)</h5>Both terms are step
+    functions and that is the DSP, not the readout. <b>Three legs.</b> MUST MOVE: sustain 0.70 → 1.00
+    → 305 ms (drops by exactly <code>decay</code>). <b>MUST NOT MOVE:</b> sustain 0.70 → 0.30 stays
+    405 ms — which has teeth, because <b>this repo contains a second ADSR core with a different
+    law</b> (<code>adsr-env.ts</code> is a single-pole exponential); a plausible author mirrors it
+    and is wrong. MUST MOVE: sustain 0.30 → 0.00 → 105 ms.</div>
+  <div class="der"><h5>the preset roster hand-negative-controls the strip</h5>PLUCK and PERC are the
+    <code>s == 0</code> case (release dead); ORGAN is <code>s == 1</code> (decay dead, span
+    <b>8 ms</b>). Clicking five shapes moves the two derived numbers in ways no knob readback could
+    produce — <b>the negative control becomes visible to a human on the shipped surface</b>, not
+    only in a unit test.</div>
+  <div class="hid"><h5>with the hint hidden — and the change that makes it pass</h5>Only because the
+    param labels get <b>spelled out</b> (Attack/Decay/Sustain/Release, not A/D/S/R). If the labels
+    stayed initials the answer is NO — the hidden band label would have been the only thing expanding
+    them, which is the exact “smuggled into the label” failure.</div>
+  <div><h5>cost + the one gate that moves</h5>contract <b>0</b> · adsr IS in
+    <code>STRICT_VRT_MODULES</code> · <code>workflow-shell-faces.spec.ts:117</code> asserts adsr's
+    <code>.page-label</code> TEXT — the one hard e2e break in the batch if the label is touched ·
+    adsr is alphabetically first in faces-parity and pays SvelteKit's cold compile, so do not let
+    its budget shrink.</div>
+</div>
+</section>
+
+<section class="mod" id="karplus">
+<header><h2>karplus</h2><span class="id">karplus.ts · 8 params · glyph <code>scope</code></span>
+<span class="tag redo">real rework</span></header>
+<p class="note">The ranking, the two bands and the audition are already right and stay
+byte-identical. What is missing is the whole PF-20 half — and the one thing it has instead, a
+<code>scope</code> glyph on a module that is <b>MUTE until something strikes it</b>, is a flat line
+in every dock baseline it ships. <b>The STRIKE audition DOES reach the shell</b> (checked
+independently — <code>shell-cells.ts:310-315</code>, e2e-asserted for audible RMS); karplus differs
+from sixstrum here, whose strum is still not registered.</p>
+
+<div class="dock">
+  <div class="editor">
+    <div class="chromebar"><span class="ini">KA</span><span class="nm">KARPLUS</span>
+      <span class="ln">karplus · lane 1</span></div>
+    <div class="tabrow"><span class="tab">module</span></div>
+    <div class="plate">
+      <div class="chrome"><div class="name">KARPLUS</div><div class="cat">sources</div></div>
+      <div class="fhead"><h3 class="ftitle">Voice</h3>
+        <p class="fhint">A plucked string: a noise burst trapped in a delay line one period long,
+        losing its top end on every lap. It makes no sound at all until something strikes it.</p></div>
+
+      <div class="hero">
+        <div class="vis">
+          <svg viewBox="0 0 420 96" role="img" aria-label="partial ladder with damping envelope and comb nulls">
+            <rect x="0" y="0" width="420" height="96" rx="4" fill="#0a0c0f" stroke="#1d2229"/>
+            <path d="M8 20 C120 26 260 56 412 84" fill="none" stroke="#f2c14e" stroke-width="1"
+                  stroke-dasharray="3 2" opacity=".8"/>
+            <g stroke="#38d3c8" stroke-width="2">
+              <line x1="20" y1="88" x2="20" y2="22"/><line x1="60" y1="88" x2="60" y2="27"/>
+              <line x1="100" y1="88" x2="100" y2="33"/><line x1="140" y1="88" x2="140" y2="40"/>
+              <line x1="180" y1="88" x2="180" y2="86" opacity=".35"/>
+              <line x1="220" y1="88" x2="220" y2="54"/><line x1="260" y1="88" x2="260" y2="61"/>
+              <line x1="300" y1="88" x2="300" y2="68"/><line x1="340" y1="88" x2="340" y2="74"/>
+              <line x1="380" y1="88" x2="380" y2="87" opacity=".35"/>
+            </g>
+            <text x="168" y="18" fill="#646c77" font-size="7" font-family="ui-monospace,monospace">POS NULL 5</text>
+            <text x="356" y="18" fill="#646c77" font-size="7" font-family="ui-monospace,monospace">NULL 10</text>
+            <text x="300" y="34" fill="#f2c14e" font-size="7" font-family="ui-monospace,monospace">DAMPING</text>
+          </svg>
+        </div>
+        <div class="side">
+          <div class="k lg"><i style="--v:.3"></i><b>Decay</b><em>3.0 s</em></div>
+          <button class="btn hot">▸ pluck</button>
+        </div>
+      </div>
+
+      <dl class="strip">
+        <div class="ro d"><dt>ring</dt><dd>0.29 s</dd></div>
+        <div class="ro d"><dt>damping</dt><dd>1.86 kHz</dd></div>
+        <div class="ro d"><dt>exciter</dt><dd>3.6 ms</dd></div>
+      </dl>
+      <p class="stripcap">ƒ derived · <code>ring</code> is the −60 dB decay AFTER the loop-gain
+        clamp — below BRIGHT ≈ 0.11 the note dies sooner than the knob says</p>
+
+      <div class="bands">
+        <div class="band"><h4 class="blab">string · ring</h4>
+          <div class="row">
+            <div class="k"><i style="--v:.35"></i><b>Tune</b><em>220 Hz</em></div>
+            <div class="k"><i style="--v:.3"></i><b>Bright</b><em>0.30</em></div>
+            <div class="k dead"><i style="--v:0"></i><b>Stiff</b><em>0 — inert</em></div>
+          </div></div>
+        <div class="band"><h4 class="blab">pick · strike · out</h4>
+          <div class="row">
+            <div class="k"><i style="--v:.5"></i><b>Color</b><em>0.50</em></div>
+            <div class="k"><i style="--v:.4"></i><b>Burst</b><em>0.40</em></div>
+            <div class="k"><i style="--v:.2"></i><b>Position</b><em>0.20</em></div>
+            <div class="k"><i style="--v:.7"></i><b>Level</b><em>0.0 dB</em></div>
+          </div></div>
+      </div>
+    </div>
+  </div>
+  <div class="sb">
+    <section><h4>signal flow</h4>
+      <ol class="flow">
+        <li class="gen"><span class="d"></span><span>BURST</span><span class="n">noise · N periods</span></li>
+        <li><span class="d"></span><span>COLOR LP</span><span class="n">200 Hz → 10 k</span></li>
+        <li><span class="d"></span><span>PICK COMB</span><span class="n">−β of the period</span></li>
+        <li><span class="d"></span><span>DELAY LINE</span><span class="n">sr / f0 · cubic</span></li>
+        <li><span class="d"></span><span>DAMPING LP</span><span class="n">fc tracks f0</span></li>
+        <li><span class="d"></span><span>DISPERSION</span><span class="n">2 allpass · STIFF</span></li>
+        <li><span class="d"></span><span>DC BLOCK</span><span class="n">f0 / 20</span></li>
+        <li><span class="d"></span><span>× g</span><span class="n">ρ comp · cap 1.1 → line</span></li>
+        <li class="par"><span class="d"></span><span>OUT × LEVEL ∥</span><span class="n">tapped PRE-damping</span></li>
+      </ol>
+      <div class="flegend"><span><i class="g"></i>generator</span><span><i></i>bus stage</span>
+        <span><i class="p"></i>parallel branch</span></div></section>
+    <section><h4>presets</h4>
+      <div class="pre">
+        <div><span>NYLON</span><s>soft</s></div><div><span>STEEL</span><s>bright</s></div>
+        <div><span>KOTO</span><s>stiff</s></div><div><span>MALLET</span><s>dark</s></div>
+        <div><span>HARP</span><s>long</s></div><div><span>MUTED</span><s>short</s></div>
+      </div></section>
+  </div>
+</div>
+
+<div class="strips">
+  <div class="der"><h5>ring — three legs, and the middle one is the interesting one</h5>
+    MUST MOVE: hold DECAY = 10 s, TUNE = 220, BRIGHT 0.30 → 0.05 — modelled <b>10.000 s →
+    0.603 s</b> while the knob prints “10.0 s” at both. <b>MUST NOT MOVE:</b> DECAY = 2 s,
+    BRIGHT = 0.7, sweep TUNE 110 → 1760 — <b>2.000 s at every step</b>, exact, because the ρ law is
+    frequency-compensated by construction. A derivation that wobbled there would be modelling the
+    wrong thing.</div>
+  <div><h5>the picture is HALF legitimate, and the spec says which half</h5>A delay-line block
+    diagram is decoration — the <code>signal-flow</code> block draws the topology as free data. What
+    only this module can draw is the <b>PARTIAL LADDER</b>: real partial frequencies stretched by
+    STIFF, the BRIGHT damping envelope, the POS comb nulls, the COLOR pole — the four knobs a
+    time-domain scope structurally cannot show.</div>
+  <div class="bad"><h5>the candidate the brief suggested, and why it was DROPPED</h5>“Sounding pitch
+    after the clamp” <b>fails</b>: <code>55..1760 ⊂ 30..4200</code>, so the clamp is mathematically
+    unreachable from params, and the readout reads durable params only — it cannot see the pitch
+    cable. It is <code>paramId:'tune'</code> with extra steps.</div>
+  <div class="bad"><h5>defects found</h5><b>D1</b> <code>docs.controls.stiffness</code> claims “a
+    perfectly harmonic string” — partial 8 is <b>+114 ¢ sharp</b> at BRIGHT 0, and the sonic-range
+    test never checks the STIFF = 0 baseline. <b>D2</b> BRIGHT's top travel is dead above ~1 kHz
+    (0.45·sr cap) — the docs say the knob “means the same thing at every pitch”. <b>D4</b> the dock
+    PLUCK animates even when nothing was plucked (<code>shell-cells.ts:314</code> discards
+    <code>fireManualStrike</code>'s boolean, which the legacy card honours).</div>
+</div>
+</section>
+
+<section class="mod" id="tomtom">
+<header><h2>tomtom</h2><span class="id">tomtom.ts · 9 params · glyph <code>scope</code></span>
+<span class="tag redo">real rework — small version</span></header>
+<p class="note">The third percussion voice, and the answer to “should the three drums share one
+grammar” is <b>partly, and the boundary is principled</b>. tomtom takes the parts that are DATA —
+title, hint, numbered bands, a readout strip, a flow diagram, a preset roster — because those cost
+nothing. It declines the part that is CODE: a bespoke picture would <b>suppress the live glyph</b>
+and replace a surface that is real when played with a drawing that never is, for a shape two numbers
+already describe.</p>
+
+<div class="dock">
+  <div class="editor">
+    <div class="chromebar"><span class="ini">TO</span><span class="nm">TOM TOM</span>
+      <span class="ln">tomtom · lane 1</span></div>
+    <div class="tabrow"><span class="tab">module</span></div>
+    <div class="plate">
+      <div class="chrome"><div class="name">TOM TOM</div><div class="cat">drums</div></div>
+      <div class="fhead"><h3 class="ftitle">Voice</h3>
+        <p class="fhint">One struck membrane — a fundamental plus its 1.593× mode — with a
+        band-passed breath of noise over the top. The pitch starts high and falls to TUNE.</p></div>
+
+      <div class="hero">
+        <div class="vis"><div class="glyphbar"><i></i></div></div>
+        <div class="side">
+          <div class="k lg"><i style="--v:.15"></i><b>Tune</b><em>110 Hz</em></div>
+          <button class="btn hot">▸ strike</button>
+        </div>
+      </div>
+
+      <dl class="strip">
+        <div class="ro d"><dt>starts at</dt><dd>164.8 Hz</dd></div>
+        <div class="ro"><dt>settles to</dt><dd>110 Hz</dd></div>
+        <div class="ro"><dt>ring</dt><dd>350 ms</dd></div>
+        <div class="ro d"><dt>breath</dt><dd>300 Hz</dd></div>
+      </dl>
+      <p class="stripcap">reads as a sentence · <code>bend_amt</code> is deliberately ABSENT —
+        “+7 st” beside a BEND dial one band down is exactly the noise correction 1 warns about</p>
+
+      <div class="bands">
+        <div class="band"><h4 class="blab">1 · membrane — the struck head</h4>
+          <div class="row">
+            <div class="k"><i style="--v:.29"></i><b>Bend</b><em>+7 st</em></div>
+            <div class="k"><i style="--v:.2"></i><b>Bend Time</b><em>60 ms</em></div>
+            <div class="k"><i style="--v:.24"></i><b>Decay</b><em>350 ms</em></div>
+            <div class="k"><i style="--v:.5"></i><b>Tone</b><em>0.50</em></div>
+          </div></div>
+        <div class="band"><h4 class="blab">2 · breath — the stick, then the bus</h4>
+          <div class="row">
+            <div class="k"><i style="--v:.25"></i><b>Noise</b><em>0.25</em></div>
+            <div class="k amber"><i style="--v:0"></i><b>Drive</b><em>bypass</em></div>
+            <div class="k"><i style="--v:.7"></i><b>Level</b><em>0.0 dB</em></div>
+          </div></div>
+      </div>
+    </div>
+  </div>
+  <div class="sb">
+    <section><h4>toms</h4>
+      <div class="pre">
+        <div><span>FLOOR</span><s>70 Hz</s></div><div><span>MID</span><s>110 Hz</s></div>
+        <div><span>RACK</span><s>160 Hz</s></div><div><span>SYNTH DROP</span><s>+24 st</s></div>
+        <div><span>ROTO</span><s>fast bend</s></div>
+      </div></section>
+    <section><h4>signal flow</h4>
+      <ol class="flow">
+        <li class="gen"><span class="d"></span><span>MEMBRANE</span><span class="n">fund + 1.593×</span></li>
+        <li class="gen"><span class="d"></span><span>BREATH</span><span class="n">band-passed noise</span></li>
+        <li><span class="d"></span><span>DRIVE</span><span class="n">2× tanh · bypassed at 0</span></li>
+        <li><span class="d"></span><span>DC BLOCK</span><span class="n">20 Hz</span></li>
+        <li><span class="d"></span><span>LEVEL</span><span class="n">dB, pre-bound</span></li>
+        <li><span class="d"></span><span>OUT</span><span class="n">true-peak tanh</span></li>
+      </ol></section>
+  </div>
+</div>
+
+<div class="strips">
+  <div class="der"><h5>breath — the negative control runs BACKWARDS</h5>
+    <code>clamp(clamp(tune,60,400) × 2.5, 300, 6000)</code>. At the default tune of 110 the answer is
+    <b>300 Hz — the FLOOR</b>, not 275. <b>MUST NOT MOVE:</b> sweep tune 60 → 120 and the readout
+    stays pinned while a tune readback moves every step. That cannot be faked by a relabelled
+    knob.</div>
+  <div><h5>the readout the spec refused to derive</h5><code>ring</code> is honestly
+    <code>paramId: 'decay'</code>. The agent ran the real DSP core: composite −60 dB tail is
+    <b>354 ms against a 350 ms knob</b> (+1.1 %), 47 vs 40 at the floor, 1495 vs 1500 at the ceiling.
+    <b>The kickdrum 450 → 398 trap does not reproduce here</b>, so inventing a derivation would have
+    been ceremony.</div>
+  <div class="bad"><h5>headline defect — and it survives save/reload</h5><code>strike</code> can
+    persist stuck at <b>1</b> in the Y.Doc, and because the worklet ORs <i>levels</i> not edges
+    (<code>packages/dsp/src/tomtom.ts:182</code>) that <b>permanently masks
+    <code>trigger_in</code></b> — an external sequencer stops striking the drum. The sibling
+    audition seam has <code>ensurePanicListeners()</code> for exactly this; the press-param path has
+    nothing, and <code>ModuleShell.svelte:437</code> asserts the opposite.</div>
+  <div><h5>cost</h5>contract <b>0</b> · cells unchanged at 9 · only
+    <code>darwin/face-tomtom-dock</code> moves; <b>four</b> other tomtom baselines must not (round 2
+    named two of five) · drain <code>vrt-exemptions.ts:1057-1058</code> + the shared ceiling in ONE
+    commit · CI <b>≈ 0</b>.</div>
+</div>
+</section>
+
+<section class="mod" id="snaredrum">
+<header><h2>snaredrum</h2><span class="id">snaredrum.ts · 22 params · 2 auditions</span>
+<span class="tag redo">real rework — structural</span></header>
+<p class="note">The six-cell lane and five bands from the recent curated-face PR are right and
+<b>ranks 1-6 do not move</b>. What moves the face is the hero rail — and it does <b>not</b> mirror
+kickdrum, for a structural reason: <code>ModuleFaceHero.action</code> takes exactly ONE key and
+snaredrum has TWO auditions with different declared edges. HIT goes to the hero (the universal drum
+audition); ROLL moves <i>down</i> into the roll band, which fixes a real shipped defect — the def's
+own docs say the pad exists to be held <i>while riding ROLL SPEED and BOUNCE</i>, and the face put it
+four bands away from both.</p>
+
+<div class="dock">
+  <div class="editor">
+    <div class="chromebar"><span class="ini">SN</span><span class="nm">SNARE DRUM</span>
+      <span class="ln">snaredrum · lane 1</span></div>
+    <div class="tabrow"><span class="tab">module</span></div>
+    <div class="plate">
+      <div class="chrome"><div class="name">SNARE DRUM</div><div class="cat">drums</div></div>
+      <div class="fhead"><h3 class="ftitle">Voice</h3>
+        <p class="fhint">A four-mode membrane over a shared wire bed that rings BETWEEN strokes —
+        which is why this is the one drum in the rack with a two-handed roll engine rather than a
+        repeat trigger.</p></div>
+
+      <div class="hero">
+        <div class="vis">
+          <svg viewBox="0 0 420 108" role="img" aria-label="roll grid over the wire-bed envelope">
+            <rect x="0" y="0" width="420" height="108" rx="4" fill="#0a0c0f" stroke="#1d2229"/>
+            <text x="8" y="14" fill="#646c77" font-size="7" font-family="ui-monospace,monospace">L</text>
+            <text x="8" y="34" fill="#646c77" font-size="7" font-family="ui-monospace,monospace">R</text>
+            <g stroke="#38d3c8" stroke-width="2">
+              <line x1="22" y1="6" x2="22" y2="18"/><line x1="40" y1="8" x2="40" y2="18" opacity=".6"/>
+              <line x1="54" y1="10" x2="54" y2="18" opacity=".4"/>
+              <line x1="90" y1="6" x2="90" y2="18"/><line x1="108" y1="8" x2="108" y2="18" opacity=".6"/>
+              <line x1="122" y1="10" x2="122" y2="18" opacity=".4"/>
+              <line x1="158" y1="6" x2="158" y2="18"/><line x1="176" y1="8" x2="176" y2="18" opacity=".6"/>
+              <line x1="226" y1="6" x2="226" y2="18"/><line x1="244" y1="8" x2="244" y2="18" opacity=".6"/>
+              <line x1="294" y1="6" x2="294" y2="18"/><line x1="362" y1="6" x2="362" y2="18"/>
+            </g>
+            <g stroke="#f2c14e" stroke-width="2">
+              <line x1="56" y1="26" x2="56" y2="38"/><line x1="74" y1="28" x2="74" y2="38" opacity=".6"/>
+              <line x1="124" y1="26" x2="124" y2="38"/><line x1="142" y1="28" x2="142" y2="38" opacity=".6"/>
+              <line x1="192" y1="26" x2="192" y2="38"/><line x1="260" y1="26" x2="260" y2="38"/>
+              <line x1="328" y1="26" x2="328" y2="38"/><line x1="396" y1="26" x2="396" y2="38"/>
+            </g>
+            <path d="M8 100 L22 60 L40 66 L54 72 L90 58 L108 64 L122 70 L158 56 L176 62 L226 56
+                     L244 62 L294 58 L362 58 L412 84" fill="none" stroke="#9be08a" stroke-width="1.4"/>
+            <line x1="8" y1="100" x2="412" y2="100" stroke="#2c3037"/>
+            <text x="300" y="98" fill="#646c77" font-size="7" font-family="ui-monospace,monospace">WIRE BED — never empties</text>
+          </svg>
+        </div>
+        <div class="side">
+          <div class="k lg"><i style="--v:.7"></i><b>Wire</b><em>0.70</em></div>
+          <button class="btn hot">▸ hit</button>
+        </div>
+      </div>
+
+      <dl class="strip">
+        <div class="ro d"><dt>strokes</dt><dd>59 /s</dd></div>
+        <div class="ro d"><dt>tail</dt><dd>179 ms</dd></div>
+        <div class="ro d"><dt>head</dt><dd>180 Hz</dd></div>
+      </dl>
+      <p class="stripcap">ƒ derived · three, and the spec says plainly it could not defend a fourth</p>
+
+      <div class="bands">
+        <div class="band"><h4 class="blab">1 · drum — head + body</h4>
+          <div class="row">
+            <div class="k"><i style="--v:.3"></i><b>Tune</b><em>180 Hz</em></div>
+            <div class="k"><i style="--v:.3"></i><b>Damping</b><em>0.30</em></div>
+            <div class="k"><i style="--v:.25"></i><b>Head Dec</b><em>140 ms</em></div>
+            <div class="k"><i style="--v:.3"></i><b>Body Dec</b><em>190 ms</em></div>
+          </div>
+          <p class="clab">pitch drop</p>
+          <div class="row">
+            <div class="k"><i style="--v:.3"></i><b>Pitch Amt</b><em>+6 st</em></div>
+            <div class="k"><i style="--v:.15"></i><b>Pitch Time</b><em>22 ms</em></div>
+          </div></div>
+        <div class="band"><h4 class="blab">2 · snap — wires + stick</h4>
+          <div class="row">
+            <div class="k"><i style="--v:.55"></i><b>Wire Tone</b><em>0.55</em></div>
+            <div class="k"><i style="--v:.35"></i><b>Wire Dec</b><em>0.35</em></div>
+            <div class="k"><i style="--v:.4"></i><b>Crack</b><em>0.40</em></div>
+            <div class="k"><i style="--v:.5"></i><b>Crack Tone</b><em>0.50</em></div>
+          </div></div>
+        <div class="band"><h4 class="blab">3 · roll — two hands</h4>
+          <div class="row">
+            <button class="btn">⟳ hold to roll</button>
+            <div class="k"><i style="--v:.5"></i><b>Roll Spd</b><em>0.50</em></div>
+            <div class="k"><i style="--v:.45"></i><b>Bounce</b><em>0.45</em></div>
+            <div class="k"><i style="--v:.2"></i><b>Humanize</b><em>0.20</em></div>
+            <div class="k"><i style="--v:.3"></i><b>Spread</b><em>0.30</em></div>
+          </div></div>
+        <div class="band"><h4 class="blab">whole drum</h4>
+          <div class="row">
+            <div class="k"><i style="--v:.5"></i><b>Tone</b><em>0.50</em></div>
+            <div class="k"><i style="--v:.2"></i><b>Damp</b><em>0.20</em></div>
+          </div></div>
+        <div class="band"><h4 class="blab">bus · out</h4>
+          <div class="row">
+            <div class="k amber"><i style="--v:.3"></i><b>Drive</b><em>0.30</em></div>
+            <div class="cell"><span class="cap">Hard</span><span class="sw"><i></i>off</span></div>
+            <div class="k"><i style="--v:.5"></i><b>Ceiling</b><em>0.50</em></div>
+            <div class="k"><i style="--v:.25"></i><b>Width</b><em>0.25</em></div>
+            <div class="k"><i style="--v:.7"></i><b>Level</b><em>0.0 dB</em></div>
+          </div></div>
+      </div>
+    </div>
+  </div>
+  <div class="sb">
+    <section><h4>signal flow</h4>
+      <ol class="flow">
+        <li class="gen"><span class="d"></span><span>MEMBRANE</span><span class="n">4 modes</span></li>
+        <li class="gen"><span class="d"></span><span>WIRE BED</span><span class="n">shared, between strokes</span></li>
+        <li class="gen"><span class="d"></span><span>CRACK</span><span class="n">6 ms tick</span></li>
+        <li><span class="d"></span><span>TONE · DAMP</span><span class="n">whole-drum</span></li>
+        <li><span class="d"></span><span>DRIVE · DC</span><span class="n">MID only</span></li>
+        <li class="par"><span class="d"></span><span>SIDE ∥</span><span class="n">rejoins at ceiling</span></li>
+        <li><span class="d"></span><span>CEILING · WIDTH · LEVEL</span></li>
+      </ol>
+      <div class="flegend"><span><i class="g"></i>generator</span><span><i></i>bus stage</span>
+        <span><i class="p"></i>parallel branch</span></div></section>
+    <section><h4>presets</h4>
+      <div class="pre">
+        <div><span>909 SNARE</span><s>22 params</s></div><div><span>TIGHT ROCK</span><s>22 params</s></div>
+        <div><span>PRESS ROLL</span><s>22 params</s></div><div><span>PICCOLO</span><s>22 params</s></div>
+        <div><span>RIMSHOT</span><s>22 params</s></div>
+      </div></section>
+    <section><h4>stereo</h4>
+      <div class="rolist">
+        <div><span>width</span><b>0.25</b></div>
+        <div><span>bed pan</span><b>side path</b></div>
+      </div></section>
+  </div>
+</div>
+
+<div class="strips">
+  <div class="der"><h5>strokes · tail — and a second leg that goes the WRONG way on purpose</h5>
+    <code>strokes = 2 × handHz × N(bounce, handHz)</code>: perturb <b>BOUNCE</b> and it moves 59 → 20
+    while a <code>roll_speed</code> readback stays 0.50. <code>tail</code>: WIRE 0.7 → 0 collapses it
+    179 → 109 ms — the kickdrum trap in snaredrum form. <b>The non-obvious leg:</b> CRACK 0.4 → 0
+    <i>lengthens</i> the tail to 209 ms, because crack's weight (0.4 × 5.0) dominates the peak that
+    sets the −60 dB floor.</div>
+  <div><h5>the picture, and why it is NOT kickdrum's</h5>The ROLL GRID over the WIRE-BED envelope
+    shows <b>whether the bed refills before it empties</b> — the module's central relation, currently
+    reachable only by ear. Both <code>rollHandHz</code> and <code>bounceSchedule</code> are already
+    exported, so the panel imports the DSP's own law and re-types nothing. Probe: a WINDOW button in
+    <b>component state, not <code>node.data</code></b> — a private view setting must not re-zoom
+    every collaborator's screen.</div>
+  <div class="bad"><h5>defects found</h5><b>D1</b> the wire bed pans to the <b>wrong side</b> during
+    a roll (sign traced, documented as known, still live). <b>D2 (new)</b>
+    <code>accent_in</code>'s velocity term is <b>inert on every primary stroke</b> —
+    <code>clamp(1·(1+0.5·acc),0,1) ≡ 1</code> — so a sequencer velocity lane into
+    <code>trigger_in</code> yields no dynamics at all.</div>
+  <div><h5>cost — and a consequence worth the owner's eye</h5><b>+1</b> contract line (the hero
+    panel family) · ART/attest NIL · <b>~+2 s CI</b> · the hero + strip push the dock's existing
+    282 px overflow to <b>~550-600 px</b>, so <b>the pixel gate covers LESS of this face
+    afterwards</b>.</div>
+</div>
+</section>
+
+<section class="mod" id="reverb">
+<header><h2>reverb</h2><span class="id">reverb.ts · 3 params · glyph <code>meter</code></span>
+<span class="tag redo">real rework — small</span></header>
+<p class="note">A much smaller rework than round 2 proposed. Ranks 1-3 stay; <b><code>diffusion</code>
+is REJECTED out of this wave</b> — the program's own recipe forbids folding a Faust rebuild and an
+ART re-pin into a face PR, and dropping it also removes the card edit, the REQUIRED-lane baseline
+move, and the glyph cliff (3 controls keeps <code>rows = 1</code> and the meter survives; a 4th kills
+it). The work is the PF-20 declaration plus <b>two <code>format</code> functions that make SIZE and
+DAMP print physics instead of a 0..1 fraction</b>. Contract cost: <b>zero</b>.</p>
+
+<div class="dock">
+  <div class="editor">
+    <div class="chromebar"><span class="ini">RE</span><span class="nm">REVERB</span>
+      <span class="ln">reverb · lane 1</span></div>
+    <div class="tabrow"><span class="tab">module</span></div>
+    <div class="plate">
+      <div class="chrome"><div class="name">REVERB</div><div class="cat">effects</div></div>
+      <div class="fhead"><h3 class="ftitle">Room</h3>
+        <p class="fhint">Freeverb's mono tank — eight damped combs into four allpasses, then a linear
+        dry/wet blend. The wet leg is not level-matched to the dry.</p></div>
+
+      <div class="hero">
+        <div class="vis"><div class="glyphbar"><i></i></div></div>
+        <div class="side">
+          <div class="k lg"><i style="--v:.3"></i><b>Mix</b><em>0.30</em></div>
+        </div>
+      </div>
+
+      <dl class="strip">
+        <div class="ro d"><dt>tail 1k</dt><dd>0.78 s</dd></div>
+        <div class="ro d"><dt>wet</dt><dd>+10.6 dB</dd></div>
+        <div class="ro t"><dt>onset</dt><dd>25 ms</dd></div>
+      </dl>
+      <p class="stripcap">ƒ derived · the strip prints the mid-band T60 and the SIZE dial prints the
+        low-band one — a bracket, deliberately, because no single reference frequency reproduces the
+        broadband ladder</p>
+
+      <div class="bands">
+        <div class="band"><h4 class="blab">the tank</h4>
+          <div class="row">
+            <div class="k"><i style="--v:.5"></i><b>Size</b><em>0.79 s</em></div>
+            <div class="k"><i style="--v:.3"></i><b>Damp</b><em>10.6 kHz</em></div>
+          </div></div>
+      </div>
+    </div>
+  </div>
+  <div class="sb">
+    <section><h4>signal flow</h4>
+      <ol class="flow">
+        <li><span class="d"></span><span>IN</span><span class="n">mono</span></li>
+        <li><span class="d"></span><span>8 × COMB</span><span class="n">parallel · 25–37 ms, fixed</span></li>
+        <li><span class="d"></span><span>SUM</span><span class="n">unscaled</span></li>
+        <li><span class="d"></span><span>4 × ALLPASS</span><span class="n">series · diffusion</span></li>
+        <li class="par"><span class="d"></span><span>DRY ∥</span><span class="n">tapped at IN</span></li>
+        <li><span class="d"></span><span>BLEND</span><span class="n">linear · MIX</span></li>
+      </ol></section>
+    <section><h4>presets</h4>
+      <div class="pre">
+        <div><span>SMALL ROOM</span><s>0.4 s</s></div><div><span>PLATE</span><s>bright</s></div>
+        <div><span>HALL</span><s>2.6 s</s></div><div><span>DARK CHAMBER</span><s>damped</s></div>
+      </div></section>
+  </div>
+</div>
+
+<div class="strips">
+  <div class="der"><h5>RT60 survives — per band, NOT as one broadband scalar</h5>
+    <code>T60(f) = −3·τmax / log₁₀( fb1·(1−damp) / √(1 − 2·damp·cos ω + damp²) )</code>,
+    <code>fb1 = 0.5 + 0.45·size</code>, τmax = 36.67 ms. <b>Validated, not asserted:</b> it tracks the
+    def's five documented damp-0 measurements at a constant ratio 1.107/1.123/1.109/1.116/1.122 over
+    a 13× span — the uniform offset is the Schroeder T30×2 estimator.
+    <b>Negative control:</b> damp 0 → 0.95 moves it 4.94 s → 0.24 s, and a <code>size</code> readback
+    is blind; the SAME function at f = 0 must <b>NOT</b> move on damp (provably unity-DC one-pole).</div>
+  <div class="bad"><h5>the number the spec refused to invent</h5>The <b>broadband</b> T60 is not
+    closed-form (n-fold self-convolution of a one-pole → hypergeometric), and no single reference
+    frequency reproduces the ladder — size 0.5 needs f* ≈ 4.5 kHz, size 1 needs ≈ 1.5 kHz.
+    <b>So it prints a named band, not a fiction.</b></div>
+  <div class="bad"><h5>defects found</h5>(a) DAMP's tone is <b>sample-rate dependent</b> while the
+    tank's timing is SR-adapted — the same rack is brighter at 96 kHz and no test can see it.
+    (b) <code>reverb.dsp:18</code>'s <code>spread = 0.5</code> is a <b>no-op</b> (truncated by the
+    integer delay index), which makes the program's <code>room</code>/<code>spread</code> rejection
+    <i>stronger</i> than it was argued. (c) <code>param-edit-undo.spec.ts</code> is hard-coupled to
+    <code>aria-label="Size"</code>.</div>
+  <div><h5>cost</h5>contract <b>0</b> · <code>format</code> replaces the <code>size</code> →
+    <code>Decay</code> relabel, and round 2 rejected <code>format</code> on a false premise (“a T60
+    readout would lie whenever damp ≠ 0.3” — at DC it is exactly damp-invariant) ·
+    <b>compact is a sub-tolerance trap</b>: <code>git rm</code> it before dispatch · the REQUIRED
+    legacy <code>reverb.png</code> must NOT move.</div>
+</div>
+</section>
+
+<section class="mod" id="shimmershine">
+<header><h2>shimmershine</h2><span class="id">shimmershine.ts · 5 params · glyph <code>meter</code></span>
+<span class="tag redo">real rework</span></header>
+<p class="note">Three declaration-order bands — two of them one control — collapse to <b>ONE honest
+<code>tank</code> band</b>, and the two taps off the same <code>wet</code> signal (SHIMMER in, MIX
+out) go to the hero rail. ⚠ <b>Read the defect strip before building:</b> the module's headline
+feature, “a continuous, level-bounded crystalline drone”, is a <b>pure DC rail</b> — and the shipped
+default is already past the boundary.</p>
+
+<div class="dock">
+  <div class="editor">
+    <div class="chromebar"><span class="ini">SH</span><span class="nm">SHIMMERSHINE</span>
+      <span class="ln">shimmershine · lane 1</span></div>
+    <div class="tabrow"><span class="tab">module</span></div>
+    <div class="plate">
+      <div class="chrome"><div class="name">SHIMMERSHINE</div><div class="cat">effects</div></div>
+      <div class="fhead"><h3 class="ftitle">Halo</h3>
+        <p class="fhint">Two independent tanks — four damped combs into two allpasses — with a fixed
+        +12-semitone shifter feeding the wet signal back into its own input. Stack octaves until it
+        blooms.</p></div>
+
+      <div class="hero">
+        <div class="vis"><div class="glyphbar"><i></i></div></div>
+        <div class="side">
+          <div class="k lg"><i style="--v:.4"></i><b>Shimmer</b><em>0.40</em></div>
+          <div class="k"><i style="--v:.35"></i><b>Mix</b><em>0.35</em></div>
+        </div>
+      </div>
+
+      <dl class="strip">
+        <div class="ro t"><dt>shifter</dt><dd>+12 st · 25 ms grain</dd></div>
+        <div class="ro d"><dt>tank fb</dt><dd>0.795</dd></div>
+        <div class="ro t"><dt>channels</dt><dd>2 tanks · no cross-feed</dd></div>
+      </dl>
+      <p class="stripcap">two honest <code>text</code> constants beside one exactly-derived
+        two-knob coefficient — no <code>paramId</code> entry exists that is not already a dial</p>
+
+      <div class="bands">
+        <div class="band"><h4 class="blab">tank</h4>
+          <div class="row">
+            <div class="k"><i style="--v:.6"></i><b>Size</b><em>0.60</em></div>
+            <div class="k"><i style="--v:.5"></i><b>Decay</b><em>0.50</em></div>
+            <div class="k"><i style="--v:.4"></i><b>Damp</b><em>0.40</em></div>
+          </div></div>
+      </div>
+    </div>
+  </div>
+  <div class="sb">
+    <section><h4>signal flow</h4>
+      <ol class="flow">
+        <li class="gen"><span class="d"></span><span>IN L · R</span><span class="n">two tanks</span></li>
+        <li><span class="d"></span><span>4 COMBS</span><span class="n">damped</span></li>
+        <li><span class="d"></span><span>2 ALLPASS</span><span class="n">diffuse</span></li>
+        <li><span class="d"></span><span>WET</span><span class="n">tanh</span></li>
+        <li class="par"><span class="d"></span><span>+12 SHIFTER ∥</span><span class="n">× 0.55 → tank in</span></li>
+        <li><span class="d"></span><span>DRY / WET</span><span class="n">mix</span></li>
+      </ol>
+      <div class="flegend"><span><i class="g"></i>generator</span><span><i></i>bus stage</span>
+        <span><i class="p"></i>parallel branch</span></div></section>
+  </div>
+</div>
+
+<div class="strips">
+  <div class="der"><h5>tank fb = 0.70 + 0.18 × size × (0.5 + 0.5 × decay)</h5>
+    Runs 0.700 at SIZE 0 to 0.880 wide open. <b>Both knobs move it and neither prints it:</b> DECAY
+    moves it while a <code>size</code> readback is blind, SIZE moves it while a <code>decay</code>
+    readback is blind, and SHIMMER/MIX/DAMP must <b>not</b>. At SIZE 0 it pins at exactly
+    <b>0.700</b> — the cleanest must-not-move leg in the batch. Guarded additionally by a worklet
+    <b>source grep</b> (the kickdrum <code>splitHz</code> precedent).</div>
+  <div class="bad"><h5>D1 [P0] — the drone is a DC RAIL</h5>Past the boundary the sustained state is
+    <b>100 % DC</b> — 0 Hz at −0.2 dB, every other bin −311 to −323 dB. No DC blocker exists anywhere
+    in the loop and the damping one-pole has unity DC gain, so DAMP cannot touch it. Boundary
+    = <code>(1−fb)/0.55</code>, validated to ±0.008 — and <b>the shipped default
+    <code>shimmer = 0.4</code> is already past it (0.388)</b>.</div>
+  <div class="der"><h5>the readout that was derived and then REFUSED</h5>The drone threshold matches
+    all three of the def's own measured numbers — and <b>the boundary it names IS D1</b>. Printing it
+    would enshrine a bug on the faceplate. It ships in the FIX PR, not this one. An RT60 “tail” was
+    also rejected: it prints 0.884 s while the module rings 0.25 s at DAMP 1 — the kickdrum trap in a
+    new hat.</div>
+  <div><h5>the ranking finding</h5><code>decay</code> is <b>NOT</b> inert at spawn — measured, a full
+    DECAY sweep at the default SIZE moves RT60 <b>0.64 → 0.80 s (+25 %)</b>. It is inert only at
+    SIZE 0. The real argument is <i>authority</i>: SIZE moves fb by 0.144, DECAY by 0.054 —
+    <b>2.7×</b>. Pages <b>3 → 1</b>; shimmershine is in the REQUIRED <code>vrt-strict</code> lane, so
+    do not touch the card.</div>
+</div>
+</section>
+
+<section class="mod" id="qbrt">
+<header><h2>qbrt</h2><span class="id">qbrt.ts · 4 params · glyph <code>scope</code></span>
+<span class="tag redo">real rework</span></header>
+<p class="note">Four knobs, ranked correctly, saying nothing about the module. qbrt is genuinely
+<b>two instruments sharing four knobs</b> — an always-on stereo insert filter, and a struck resonator
+that needs no oscillator in the patch — and <b>the second instrument is unreachable from every
+surface in the repo</b>: there is no PING button on the card, in the shell, or anywhere else. The two
+numbers a player most needs (how long it rings, how much louder the peak is) are derivable from the
+DSP and printed nowhere.</p>
+
+<div class="dock">
+  <div class="editor">
+    <div class="chromebar"><span class="ini">QB</span><span class="nm">QBRT</span>
+      <span class="ln">qbrt · lane 1</span></div>
+    <div class="tabrow"><span class="tab">module</span></div>
+    <div class="plate">
+      <div class="chrome"><div class="name">QBRT</div><div class="cat">filters</div></div>
+      <div class="fhead"><h3 class="ftitle">Filter · Resonator</h3>
+        <p class="fhint">A stereo two-pole bank you patch through — and, on a rising edge at PING, a
+        struck resonator that rings at CUTOFF with no oscillator in the patch. The filter never
+        self-oscillates, so PING is the only way to make it sing.</p></div>
+
+      <div class="hero">
+        <div class="vis">
+          <svg viewBox="0 0 420 78" role="img" aria-label="pinged resonator ring decaying at cutoff">
+            <rect x="0" y="0" width="420" height="78" rx="4" fill="#0a0c0f" stroke="#1d2229"/>
+            <line x1="0" y1="39" x2="420" y2="39" stroke="#20252b"/>
+            <path d="M8 39 C14 4 22 74 30 12 C38 66 46 18 54 58 C64 24 72 52 82 30
+                     C92 46 102 34 112 42 C126 36 150 40 200 39 L412 39"
+                  fill="none" stroke="#38d3c8" stroke-width="1.5"/>
+            <path d="M8 6 C60 22 120 34 200 39" fill="none" stroke="#f2c14e" stroke-width="1"
+                  stroke-dasharray="3 2" opacity=".7"/>
+            <text x="206" y="24" fill="#f2c14e" font-size="7" font-family="ui-monospace,monospace">Q +30 RELAXING</text>
+          </svg>
+        </div>
+        <div class="side">
+          <div class="k lg"><i style="--v:.55"></i><b>Cutoff</b><em>1.00 kHz</em></div>
+          <button class="btn hot">▸ ping</button>
+        </div>
+      </div>
+
+      <dl class="strip">
+        <div class="ro d"><dt>ring</dt><dd>82 ms</dd></div>
+        <div class="ro d"><dt>at cutoff</dt><dd>+23.3 dB</dd></div>
+        <div class="ro t"><dt>strike</dt><dd>≈1 ms click · Q +30</dd></div>
+      </dl>
+      <p class="stripcap">ƒ derived · <code>at cutoff</code> is the uncompensated peak — the loudest
+        thing on the module, and nothing on the panel has ever said so</p>
+
+      <div class="bands">
+        <div class="band"><h4 class="blab">filter · dual mono</h4>
+          <div class="row">
+            <div class="k"><i style="--v:.7"></i><b>Res</b><em>Q 14.7</em></div>
+            <div class="k"><i style="--v:0"></i><b>Mode</b><em>LP</em></div>
+          </div></div>
+        <div class="band"><h4 class="blab">ping · resonator</h4>
+          <div class="row">
+            <div class="k"><i style="--v:.15"></i><b>Ping Dec</b><em>0.150 s</em></div>
+          </div></div>
+      </div>
+    </div>
+  </div>
+  <div class="sb">
+    <section><h4>signal flow</h4>
+      <ol class="flow">
+        <li><span class="d"></span><span>L · R IN</span><span class="n">audio you patch</span></li>
+        <li class="par gen"><span class="d"></span><span>PING ∥</span><span class="n">click → the SAME input</span></li>
+        <li><span class="d"></span><span>TWO-POLE BANK ×2</span><span class="n">lp · bp · hp in parallel</span></li>
+        <li><span class="d"></span><span>MODE MORPH</span><span class="n">crossfade of adjacent taps</span></li>
+        <li><span class="d"></span><span>L · R OUT</span><span class="n">dual mono — no cross-feed</span></li>
+      </ol>
+      <div class="flegend"><span><i class="g"></i>generator</span><span><i></i>bus stage</span>
+        <span><i class="p"></i>parallel branch</span></div></section>
+    <section><h4>presets</h4>
+      <div class="pre">
+        <div><span>INSERT LP</span><s>gentle</s></div><div><span>ACID SWEEP</span><s>Q 20</s></div>
+        <div><span>MALLET</span><s>short ping</s></div><div><span>GONG</span><s>long ping</s></div>
+        <div><span>X-BP AIR</span><s>mode 1.0</s></div>
+      </div></section>
+  </div>
+</div>
+
+<div class="strips">
+  <div class="der"><h5>ring · at cutoff</h5>Both are functions of the SAME two knobs
+    (CUTOFF and RESONANCE) in different combinations, so each is a negative control for the other's
+    wrong model: a readout that were secretly <code>resonance</code> would move identically on both.
+    <code>ring</code> additionally moves with <b>PING DEC</b>, which neither of the other two
+    knobs sees.</div>
+  <div class="bad"><h5>round 2's BLOCKER on this module was FALSE</h5>It claimed a shell
+    <code>action</code> cell cannot reach the engine and prescribed a prerequisite platform PR.
+    <code>engine-ref.ts</code>'s <code>getActiveEngine()</code> exists for exactly this and is
+    already called from plain <code>.ts</code> modules. <b>This spec re-derived every DSP citation
+    itself</b> — round 2's were off by 1-2 lines, including the one carrying its
+    <code>X-BP</code> naming argument.</div>
+  <div><h5><code>mode</code> is <code>landmarks</code>, never <code>options</code></h5>Two independent
+    reasons: the in-between blends <i>are</i> the feature (the def's own docs sell “half band-pass,
+    half high-pass”), and the vocabulary gate <b>requires <code>curve: 'discrete'</code> for
+    <code>options</code></b> while <code>mode</code> is linear — declaring options fails the unit
+    lane immediately.</div>
+  <div><h5>cost</h5><b>+1</b> contract line (the ping family) and one MODIFIED line (the
+    <code>edge=trigger</code> declaration, which is a modification, not an addition — round 2
+    double-counted it) · qbrt IS in the REQUIRED <code>vrt-strict</code> lane, and the card must gain
+    the PING button, so <b>both legacy baselines move</b> · CI <b>≈ +13 s</b>.</div>
+</div>
+</section>
+
+<section class="mod" id="cloudseed">
+<header><h2>cloudseed</h2><span class="id">cloudseed.ts · 46 params · 8 bands · TABBED</span>
+<span class="tag redo">real rework — additive only</span></header>
+<p class="note">The 47-key ranking, the eight signal-order bands and the tab rail are right and must
+not move — round 2 executed that batch in full. cloudseed is the <b>one face where a hero is not a
+nicety</b>: the tab rail hides seven of eight bands, so the hero rail and the strip are the only
+parts of the faceplate on screen at all times. ⚠ <b>And it is the module that finds the biggest hole
+in correction 2</b> — see the strip below.</p>
+
+<div class="dock">
+  <div class="editor">
+    <div class="chromebar"><span class="ini">CL</span><span class="nm">CLOUDSEED</span>
+      <span class="ln">cloudseed · lane 1</span></div>
+    <div class="tabrow"><span class="tab">space · blend</span><span class="tab off">input</span><span
+      class="tab off">taps</span><span class="tab off">early diff</span><span class="tab off">late tank</span><span
+      class="tab off">late diff</span><span class="tab off">tail eq</span><span class="tab off">seeds</span></div>
+    <div class="plate">
+      <div class="chrome"><div class="name">CLOUDSEED</div><div class="cat">effects</div></div>
+      <div class="fhead"><h3 class="ftitle">Space</h3>
+        <p class="fhint">A constructive reverb: eight switchable stages around a modulated late tank,
+        so the room is something you build rather than a size you dial.</p></div>
+
+      <div class="hero">
+        <div class="vis"><div class="glyphbar"><i></i></div></div>
+        <div class="side">
+          <div class="k lg"><i style="--v:.47"></i><b>Late Decay</b><em>4.65 s</em></div>
+          <button class="btn">■ clear tail</button>
+        </div>
+      </div>
+
+      <dl class="strip">
+        <div class="ro"><dt>pre-delay</dt><dd>0 ms</dd></div>
+        <div class="ro"><dt>size</dt><dd>96 ms</dd></div>
+        <div class="ro d"><dt>tail 8k</dt><dd>≈1.0 s</dd></div>
+        <div class="ro"><dt>x-seed</dt><dd>0%</dd></div>
+      </dl>
+      <p class="stripcap">three of these four live on tabs you cannot see — which is exactly why the
+        strip is the highest-value surface on this face</p>
+
+      <div class="bands">
+        <div class="band"><h4 class="blab">space · blend</h4>
+          <div class="row">
+            <div class="cell"><span class="cap">Preset</span><span class="sel">bright hall<s>▾</s></span></div>
+            <div class="k"><i style="--v:.5"></i><b>Late Out</b><em>−6.0 dB</em></div>
+            <div class="k"><i style="--v:.4"></i><b>Dry Out</b><em>−4.0 dB</em></div>
+            <div class="k"><i style="--v:.3"></i><b>Early Out</b><em>−9.0 dB</em></div>
+            <div class="k"><i style="--v:.35"></i><b>Line Size</b><em>96 ms</em></div>
+          </div></div>
+      </div>
+    </div>
+  </div>
+  <div class="sb">
+    <section><h4>signal path</h4>
+      <div class="panel">
+        <svg viewBox="0 0 250 116" role="img" aria-label="live chain with bypassed stages dimmed">
+          <g font-family="ui-monospace,monospace" font-size="7.5">
+            <rect x="8" y="6" width="234" height="16" rx="3" fill="#182126" stroke="#38d3c8"/>
+            <text x="14" y="17" fill="#9aa2ad">INPUT · LOW CUT</text>
+            <rect x="8" y="28" width="234" height="16" rx="3" fill="#141820" stroke="#2b323c"/>
+            <text x="14" y="39" fill="#4a525c">TAPS — bypassed</text>
+            <rect x="8" y="50" width="234" height="16" rx="3" fill="#141820" stroke="#2b323c"/>
+            <text x="14" y="61" fill="#4a525c">EARLY DIFFUSE — bypassed</text>
+            <rect x="8" y="72" width="234" height="16" rx="3" fill="#182126" stroke="#38d3c8"/>
+            <text x="14" y="83" fill="#9aa2ad">LATE TANK · 12 LINES</text>
+            <rect x="8" y="94" width="234" height="16" rx="3" fill="#182126" stroke="#38d3c8"/>
+            <text x="14" y="105" fill="#9aa2ad">TAIL EQ · OUT</text>
+          </g>
+        </svg>
+      </div></section>
+  </div>
+</div>
+
+<div class="strips">
+  <div class="bad"><h5>⚠ CORRECTION 2 IS A STRUCTURAL NO-OP HERE — and that is a PLATFORM finding</h5>
+    <code>ModuleShell</code> suppresses the band label <b>and</b> the hint on any TABBED face, so
+    cloudseed's eight authored hints would paint <b>nowhere, even with annotation ON</b>. On the one
+    face that most needs teaching, the living-docs prose is dead.
+    <b>Recommendation for the platform PR:</b> annotate mode must paint the ACTIVE band's hint
+    between the tab rail and the band.</div>
+  <div class="der"><h5>tail 8k</h5><code>TAIL = 60·D·T / (60·D + A·T)</code>, A being the in-loop
+    shelf/LP magnitude at 8 kHz, using the def's own exported coefficient functions. At the defaults
+    DECAY reads <b>4.65 s</b> and the 8 kHz tail is <b>≈1.0 s</b>. <b>Negative control:</b>
+    <code>eq_high_gain</code> must move it — which a <code>late_line_decay</code> readback cannot —
+    and <code>dry_out</code>/<code>late_out</code> must not. Cross-checked independently against the
+    repo's own <code>measureRt60(cloudseedImpulseResponse(...))</code>.</div>
+  <div class="bad"><h5>the platform <code>presets</code> block is REJECTED, three ways</h5>
+    (a) the def's defaults are <i>rounded</i> copies of DARK_PLATE's, so ≥6 params exceed
+    <code>PRESET_MATCH_REL</code> and the block would light nothing on a fresh spawn <i>while</i> the
+    <code>preset_index</code> row shows slot 0 lit; (b) <code>FaceSidebar</code>'s apply loops
+    <code>setNodeParam</code> = <b>46 transactions / undo steps</b> against the existing one-shot
+    stamp — a straight regression of the state-consistency fix; (c) it duplicates
+    <code>face.order[0]</code>.</div>
+  <div class="bad"><h5>defects found</h5><b>D1 [P1]</b> the worklet <b>re-seeds the entire reverb
+    every 128-sample block</b> — no dedupe, all 7 macros pushed unconditionally — so ≈2.6 M BigInt
+    LCG iterations/s run on the audio thread while idle, and the comment claiming otherwise is false.
+    <b>D2</b> three MOD AMT dials print <code>round(s×100)+'%'</code> on a ×2.5-<i>millisecond</i>
+    value — full travel prints <code>250%</code>. <b>D3</b> early-diffusion modulation is gated
+    <code>&gt; 0.5</code> on a ms value while its sibling uses <code>&gt; 0</code> on samples, so MOD
+    AMT is dead below ~20 %, including at both defaults.
+    <b>Coverage gap:</b> the dock VRT scene captures only the ACTIVE tab, so 41 of 46 controls are
+    pixel-invisible — which is exactly how D2 survived.</div>
+</div>
+</section>
+
+<section class="mod" id="filter">
+<header><h2>filter</h2><span class="id">filter.ts · 5 params · glyph <code>scope</code></span>
+<span class="tag redo">real rework — additive</span></header>
+<p class="note"><code>order</code>, <code>pages</code> membership, <code>glyph</code> and
+<code>rear</code> stay <b>byte-identical</b>. What lands is the PF-20 surface: three readouts that
+are <b>none of them any knob on the panel</b>, and a <code>custom</code> sidebar magnitude curve —
+the one picture a VCF <i>is</i>, and unlike the shipped <code>scope</code> glyph (a flat line in
+both committed baselines) it is <b>param-derived, so it is alive on a silent rack</b>. The picture
+goes in the SIDEBAR, not the hero: a <code>hero.cell</code> is a ranked cell whose first legal rank
+is 7, filter has five params, so a panel would land at rank 6 and <b>fail the lint outright</b>.</p>
+
+<div class="dock">
+  <div class="editor">
+    <div class="chromebar"><span class="ini">FI</span><span class="nm">FILTER</span>
+      <span class="ln">filter · lane 1</span></div>
+    <div class="tabrow"><span class="tab">module</span></div>
+    <div class="plate">
+      <div class="chrome"><div class="name">FILTER</div><div class="cat">filters</div></div>
+      <div class="fhead"><h3 class="ftitle">Filter</h3>
+        <p class="fhint">Three two-pole sections run in parallel and MODE picks one. RES is
+        Q = res × 20 + 0.7 and is not gain-compensated, so the peak adds up to +26 dB on top of an
+        unchanged passband — it rings, and it never self-oscillates.</p></div>
+
+      <div class="hero">
+        <div class="vis"><div class="glyphbar"><i></i></div></div>
+        <div class="side">
+          <div class="k lg"><i style="--v:.55"></i><b>Cutoff</b><em>1.00 kHz</em></div>
+        </div>
+      </div>
+
+      <dl class="strip">
+        <div class="ro d"><dt>peak</dt><dd>+8.8 dB</dd></div>
+        <div class="ro d"><dt>cv reach</dt><dd>31 Hz – 20 kHz</dd></div>
+        <div class="ro d"><dt>res reach</dt><dd>0.00 – 0.30</dd></div>
+      </dl>
+      <p class="stripcap">ƒ derived · the two REACH windows collapse to a single value the moment a
+        depth hits 0 — which is how the face says “these knobs are dead until you patch something”
+        without a sentence</p>
+
+      <div class="bands">
+        <div class="band"><h4 class="blab">response · type</h4>
+          <div class="row">
+            <div class="k"><i style="--v:.3"></i><b>Res</b><em>0.30</em></div>
+            <div class="cell"><span class="cap">Mode</span>
+              <span class="seg"><span class="on">lp</span><span>hp</span><span>bp</span></span></div>
+          </div></div>
+        <div class="band"><h4 class="blab">cv depth</h4>
+          <div class="row">
+            <div class="k"><i style="--v:1"></i><b>Cutoff CV</b><em>+1.00</em></div>
+            <div class="k"><i style="--v:1"></i><b>Res CV</b><em>+1.00</em></div>
+          </div></div>
+      </div>
+    </div>
+  </div>
+  <div class="sb">
+    <section><h4>response</h4>
+      <div class="panel">
+        <svg viewBox="0 0 250 96" role="img" aria-label="magnitude response with the cv reach window">
+          <rect x="0" y="0" width="250" height="96" fill="none"/>
+          <rect x="18" y="8" width="196" height="66" fill="#101820" opacity=".7"/>
+          <line x1="8" y1="74" x2="242" y2="74" stroke="#2c3037"/>
+          <line x1="8" y1="41" x2="242" y2="41" stroke="#20252b" stroke-dasharray="2 3"/>
+          <path d="M10 44 L108 44 L128 24 L150 62 L180 76 L242 88" fill="none" stroke="#38d3c8"
+                stroke-width="1.7"/>
+          <line x1="128" y1="8" x2="128" y2="80" stroke="#f2c14e" stroke-dasharray="3 2" opacity=".8"/>
+          <text x="12" y="90" fill="#646c77" font-size="7" font-family="ui-monospace,monospace">20 Hz</text>
+          <text x="206" y="90" fill="#646c77" font-size="7" font-family="ui-monospace,monospace">20 k</text>
+          <text x="132" y="16" fill="#f2c14e" font-size="7" font-family="ui-monospace,monospace">fc 1.0 k</text>
+          <text x="150" y="34" fill="#38d3c8" font-size="7" font-family="ui-monospace,monospace">+8.8 dB</text>
+        </svg>
+      </div></section>
+    <section><h4>starting points</h4>
+      <div class="pre">
+        <div><span>GENTLE LP</span><s>12 dB/oct</s></div>
+        <div><span>SQUELCH</span><s>+24 dB peak</s></div>
+        <div><span>RUMBLE CUT</span><s>hp @ 120</s></div>
+        <div><span>EG SWEEP</span><s>±1 oct</s></div>
+      </div></section>
+  </div>
+</div>
+
+<div class="strips">
+  <div class="der"><h5>PEAK — and the negative control that a lazier test would pass</h5>
+    Hold <code>resonance = 0</code> and flip MODE 0→2: the value moves <b>0.00 → −3.10 dB</b>, and a
+    <code>resonance</code> readback is invariant to it. <b>The perturbation point is load-bearing:</b>
+    the three modes <i>converge</i> above ~Q 5 (all read +26.24 dB at res 0.99), so a control run at
+    max resonance would pass on a resonance-only model. <b>Must-not-move leg:</b> cutoff
+    1000→8000 — the magnitude response is frequency-scale-invariant.</div>
+  <div><h5>why the picture is a SIDEBAR panel, not the hero</h5>A <code>hero.cell</code> costs a
+    <code>ControlFamily</code> (+1 contract line), a probe, and rank 7 on a 5-param module — which
+    the lint refuses. A <code>custom</code> sidebar panel gets the same picture for <b>ZERO contract
+    lines and no probe</b>, in a 288 px column, and it must reuse the SAME arithmetic module as
+    <code>filter-peak-db</code>.</div>
+  <div><h5>the preset that earns the block</h5><code>EG SWEEP</code> sets
+    <code>cutoff_cv_amt: 0.2</code> — exactly the ±1-octave trim (<code>2^(5·0.2) = 2</code>) the
+    module's headline hazard needs. One click teaches what three paragraphs of docs have not.</div>
+  <div><h5>cost</h5>contract <b>0</b> · <b>+1</b> line in <code>sidebar-panels.ts</code> + one
+    component · filter IS in <code>STRICT_VRT_MODULES</code>, so only touch the card if you mean to
+    move a REQUIRED baseline · CI <b>≈ 0</b>.</div>
+</div>
+</section>
+
+<section class="mod" id="mixer">
+<header><h2>mixer</h2><span class="id">mixer.ts · 5 params · glyph <code>meter</code></span>
+<span class="tag redo">real rework — short</span></header>
+<p class="note">A <b>plain, uncompensated sum</b> — <code>mixer.dsp:12-17</code> has no
+<code>/4</code>, no clamp, no limiter — so four correlated unity channels leave at <b>×4 /
++12.04 dB</b>, and MASTER (0..1, attenuate-only) is the module's <i>only</i> headroom control. That
+number is the one thing this module owns and the panel has never shown it. Pages go <b>2 → 1</b> for
+a structural reason, not a fold budget: promoting <code>master</code> into the hero <b>empties</b>
+the <code>bus</code> band, and the shell renders a band's <code>&lt;h4&gt;</code> unconditionally —
+two pages would ship a headed, empty band.</p>
+
+<div class="dock">
+  <div class="editor">
+    <div class="chromebar"><span class="ini">MI</span><span class="nm">MIXER</span>
+      <span class="ln">mixer · lane 1</span></div>
+    <div class="tabrow"><span class="tab">module</span></div>
+    <div class="plate">
+      <div class="chrome"><div class="name">MIXER</div><div class="cat">utilities</div></div>
+      <div class="fhead"><h3 class="ftitle">Bus</h3>
+        <p class="fhint">Four inputs, each times its own level, added — a plain sum with nothing
+        after it. MASTER attenuates the result and cannot boost, so it is the only headroom you
+        have.</p></div>
+
+      <div class="hero">
+        <div class="vis"><div class="glyphbar"><i></i></div></div>
+        <div class="side">
+          <div class="k lg"><i style="--v:1"></i><b>Master</b><em>1.00</em></div>
+        </div>
+      </div>
+
+      <dl class="strip">
+        <div class="ro d"><dt>bus gain</dt><dd>×4.00 · +12.0 dB</dd></div>
+        <div class="ro d"><dt>unity at</dt><dd>master 0.25</dd></div>
+      </dl>
+      <p class="stripcap">ƒ derived from all five params · <b>bus gain</b> is a statement about the
+        SETTINGS, not a measurement of the output — the label is what keeps it honest</p>
+
+      <div class="bands">
+        <div class="band"><h4 class="blab">channel levels</h4>
+          <div class="row">
+            <div class="k"><i style="--v:1"></i><b>Ch 1</b><em>1.00</em></div>
+            <div class="k"><i style="--v:1"></i><b>Ch 2</b><em>1.00</em></div>
+            <div class="k"><i style="--v:1"></i><b>Ch 3</b><em>1.00</em></div>
+            <div class="k"><i style="--v:1"></i><b>Ch 4</b><em>1.00</em></div>
+          </div></div>
+      </div>
+    </div>
+  </div>
+  <div class="sb">
+    <section><h4>signal flow</h4>
+      <ol class="flow">
+        <li><span class="d"></span><span>IN 1-4 × CH 1-4</span><span class="n">four peers, one law</span></li>
+        <li><span class="d"></span><span>SUM</span><span class="n">plain add — no limiter</span></li>
+        <li><span class="d"></span><span>MASTER</span><span class="n">attenuate only ≤ 1.0</span></li>
+        <li><span class="d"></span><span>OUT</span><span class="n">mono</span></li>
+      </ol></section>
+  </div>
+</div>
+
+<div class="strips">
+  <div class="der"><h5>three legs, and each catches a different wrong model</h5>
+    (A) <code>ch3</code> 1.0 → 0.5 moves the derived while <b>no single-knob readback moves</b>.
+    (B) <b>exchange</b> <code>ch1</code> and <code>ch2</code> — it must <b>NOT</b> move (catches
+    “read one channel × 4”). (C) <code>master</code> 1.0 → 0.5 moves <code>bus gain</code> and must
+    <b>NOT</b> move <code>unity at</code> — two different functions, not one printed twice.</div>
+  <div class="bad"><h5>defect found (MEDIUM)</h5><code>mixer.ts:149</code> tells users to “watch the
+    face's level meter … to see it happen” when the sum clips. <b>It cannot.</b>
+    <code>rmsUnit</code> clamps (<code>level-meter.ts:24</code>), so does
+    <code>VuMeter.toUnit</code> and <code>dbfsToUnit</code> — 0 dBFS and +12 dBFS paint an identical
+    full meter — and a 43 ms RMS is not a peak detector. Follow-up PR (unclamped
+    <code>getPeak()</code> + OVER lamp), and <code>VuMeter</code> is shared by every meter face so
+    it needs its own VRT pass.</div>
+  <div><h5>why the four channels are ONE flow stage</h5>The renderer is an <code>&lt;ol&gt;</code>
+    and its only device for “off the spine” is <code>parallel</code>. Marking ch2-4 parallel against
+    a ch1 spine would teach a <b>false asymmetry on the one module whose entire design tension is
+    that the channels are peers</b>.</div>
+  <div><h5>cost</h5>contract <b>0</b> · <b>four</b> mixer VRT pairs exist, not two — the composite
+    <code>mixer-cv-sum</code> scene was missing from earlier ledgers. Only
+    <code>face-mixer-dock</code> moves; the legacy card is in the <b>REQUIRED</b>
+    <code>vrt-strict</code> subset. CI <b>≈ +0.1 s</b>.</div>
+</div>
+</section>
+
+<section class="mod" id="dx7">
+<header><h2>dx7</h2><span class="id">dx7.ts · 9 params · 4 families · glyph <code>algorithm</code></span>
+<span class="tag redo">real rework — structural</span></header>
+<p class="note">The roster, ranks, <code>paramCells</code> grid, glyph and rear are all correct and
+none of them move. Three things change. <b>The operator map becomes the hero PICTURE</b> — and the
+decisive argument is not aesthetic: <code>hero.cell</code> <i>suppresses the dock glyph</i>, which
+is how a <b>duplicate diagram gets deleted</b> (the dock paints the topology twice today, once as a
+64 px glyph and once as the 280 px map built from the same geometry). <b>Pages go 4 → 3</b> so the
+map stays directly above the 560 px detail panel. And the strip carries three derived readouts —
+inside a hard platform limit: <code>FaceReadoutValue</code> reads <b>params only</b>, so it cannot
+see <code>node.data.voice</code>, which kills the three otherwise-obvious candidates outright.</p>
+
+<div class="dock">
+  <div class="editor">
+    <div class="chromebar"><span class="ini">DX</span><span class="nm">DX7</span>
+      <span class="ln">dx7 · lane 1</span></div>
+    <div class="tabrow"><span class="tab">module</span></div>
+    <div class="plate poly">
+      <div class="chrome"><div class="name">DX7</div><div class="cat">sources</div></div>
+      <div class="fhead"><h3 class="ftitle">Voice</h3>
+        <p class="fhint">Six FM operators wired by one of 32 algorithms. Carriers reach the output;
+        modulators only bend whoever they feed — which is why the same six envelopes sound like a
+        bell in one algorithm and an organ in another.</p></div>
+
+      <div class="hero">
+        <div class="vis">
+          <svg viewBox="0 0 420 116" role="img" aria-label="operator map for the current algorithm">
+            <rect x="0" y="0" width="420" height="116" rx="4" fill="#0a0c0f" stroke="#1d2229"/>
+            <g font-family="ui-monospace,monospace" font-size="8">
+              <rect x="24" y="10" width="46" height="26" rx="3" fill="#1a2430" stroke="#7fa8ff"/>
+              <text x="29" y="26" fill="#9dc0e8">OP 6</text>
+              <rect x="24" y="46" width="46" height="26" rx="3" fill="#1a2430" stroke="#7fa8ff"/>
+              <text x="29" y="62" fill="#9dc0e8">OP 5</text>
+              <rect x="24" y="82" width="46" height="26" rx="3" fill="#2a2018" stroke="#f2c14e"/>
+              <text x="29" y="98" fill="#f2c14e">OP 4</text>
+              <rect x="126" y="28" width="46" height="26" rx="3" fill="#1a2430" stroke="#7fa8ff"/>
+              <text x="131" y="44" fill="#9dc0e8">OP 3</text>
+              <rect x="126" y="64" width="46" height="26" rx="3" fill="#1a2430" stroke="#7fa8ff"/>
+              <text x="131" y="80" fill="#9dc0e8">OP 2</text>
+              <rect x="228" y="82" width="46" height="26" rx="3" fill="#2a2018" stroke="#f2c14e"/>
+              <text x="233" y="98" fill="#f2c14e">OP 1</text>
+              <path d="M70 23 L126 41 M70 59 L126 41 M172 41 L172 95 L228 95 M70 95 L228 95"
+                    fill="none" stroke="#4a525c"/>
+              <path d="M70 14 q16 -10 0 -4" fill="none" stroke="#38d3c8"/>
+              <line x1="14" y1="112" x2="406" y2="112" stroke="#f2c14e" stroke-width="1.4"/>
+              <text x="300" y="108" fill="#f2c14e" font-size="7">CARRIER RAIL → OUT</text>
+            </g>
+          </svg>
+        </div>
+        <div class="side">
+          <div class="cell"><span class="cap">Preset</span><span class="sel">E.PIANO 1<s>▾</s></span></div>
+          <button class="btn">load .syx</button>
+        </div>
+      </div>
+
+      <dl class="strip">
+        <div class="ro d"><dt>alg carriers</dt><dd>2 of 6</dd></div>
+        <div class="ro d"><dt>feedback</dt><dd>op 6</dd></div>
+        <div class="ro d"><dt>vca close</dt><dd>57.6 ms</dd></div>
+      </dl>
+      <p class="stripcap">ƒ derived · <code>alg carriers</code> counts the ALGORITHM's carriers, not
+        the audible ones — the label says so because the registry cannot see <code>opOn</code></p>
+
+      <div class="bands">
+        <div class="band"><h4 class="blab">algorithm · operators</h4>
+          <div class="row">
+            <div class="cell"><span class="cap">Algorithm</span><span class="sel">ALG 05<s>▾ 32</s></span></div>
+            <div class="k pink"><i style="--v:.57"></i><b>Feedback</b><em>4</em></div>
+            <div class="cell"><span class="cap">Operator detail</span>
+              <span class="sel" style="min-width:230px">OP 3 · ×3.06 · L4 0 <s>EG</s></span></div>
+          </div></div>
+        <div class="band"><h4 class="blab">performance</h4>
+          <div class="row">
+            <div class="k pink"><i style="--v:.5"></i><b>Voices</b><em>5</em></div>
+            <div class="k pink"><i style="--v:.5"></i><b>Transpose</b><em>0 st</em></div>
+            <div class="k pink"><i style="--v:.7"></i><b>Level</b><em>0.0 dB</em></div>
+          </div></div>
+        <div class="band"><h4 class="blab">master adsr</h4>
+          <div class="row">
+            <div class="k pink"><i style="--v:.02"></i><b>Attack</b><em>1 ms</em></div>
+            <div class="k pink"><i style="--v:.2"></i><b>Decay</b><em>100 ms</em></div>
+            <div class="k pink"><i style="--v:1"></i><b>Sustain</b><em>1.00</em></div>
+            <div class="k pink"><i style="--v:.05"></i><b>Release</b><em>5 ms</em></div>
+          </div></div>
+      </div>
+    </div>
+  </div>
+  <div class="sb">
+    <section><h4>signal flow</h4>
+      <ol class="flow">
+        <li class="gen"><span class="d"></span><span>NOTE · POLY</span><span class="n">5 voices</span></li>
+        <li><span class="d"></span><span>6 OPERATORS</span><span class="n">per algorithm</span></li>
+        <li><span class="d"></span><span>CARRIER SUM</span><span class="n">the rail</span></li>
+        <li><span class="d"></span><span>MASTER ADSR</span><span class="n">the VCA</span></li>
+        <li><span class="d"></span><span>LEVEL</span><span class="n">dB</span></li>
+        <li><span class="d"></span><span>OUT</span></li>
+      </ol></section>
+  </div>
+</div>
+
+<div class="strips">
+  <div class="der"><h5>carriers + feedback: the negative control is EACH OTHER</h5>
+    Neither is multi-input, so the honest test is not “does it move with a knob” but
+    <b>“is it a proxy for the knob”</b> — and it is not, in both directions.
+    <b>Leg A</b> alg 1 → 2: carriers stays <code>2 of 6</code> while feedback moves
+    <code>op 6</code> → <code>op 2</code>. <b>Leg B</b> alg 5 → 32: feedback stays
+    <code>op 6</code> while carriers moves <code>3 of 6</code> → <code>6 of 6</code>. A readout that
+    were secretly <code>paramId:'algorithm'</code> moves on BOTH — and either leg alone misses it.</div>
+  <div class="der"><h5>vca close — and why NOT the −60 dB convention</h5>
+    <code>release · ln(sustain / 1e-5)</code>, traced to <code>adsr-env.ts:87-94</code>.
+    <b>Negative control:</b> hold RELEASE at 5 ms and move SUSTAIN 1 → 0.01 — 57.6 ms → 34.5 ms,
+    which a RELEASE readback is blind to. Measuring −60 dB <i>below sustain</i> gives
+    <code>release · ln(1000)</code>, which is <b>invariant to sustain</b> and would silently
+    reinstate the exact blindness the readout exists to remove.</div>
+  <div class="bad"><h5>defects found</h5>(a) the dock renders the topology <b>twice</b> from the same
+    geometry; (b) <code>topologyLabel</code> prints a bare <code>5</code> where the picker chip reads
+    <code>ALGORITHM 05</code>; (c) <b>PLATFORM</b> — <code>heroFacePlan</code> drops an emptied
+    <i>cluster</i> but the band loop has no such guard, so promoting a whole band's contents renders
+    a <b>labelled void</b>. dx7 and mixer both hit it independently.</div>
+  <div><h5>cost + constraint</h5>contract <b>0</b> · cells stay <b>13</b> · one golden moves
+    (<code>pages: 4 → 3</code>) · <code>face.order</code> must <b>NOT</b> move —
+    <code>push-card-schema.test.ts:417-423</code> asserts <code>voiceCount</code> stays inside the
+    face-derived top-8 window · linux dx7 pairs are exempt, so this face is <b>darwin-verifiable
+    only</b> and those pairs must not be drained in the same PR.</div>
+</div>
+</section>
+
+<h3 class="sec">the five that need only the mechanical change</h3>
+
+<section class="mod" id="delay">
+<header><h2>delay</h2><span class="id">delay.ts · 3 params · glyph <code>meter</code></span>
+<span class="tag mech">mechanical only</span></header>
+<p class="note">Nothing in the control surface moves. <b>PF-11 already shipped</b> — delay's
+<code>face:</code> is inside a <code>docs-hash-ignore</code> region
+(<code>delay.ts:128-303</code>), so a face edit costs <b>zero ART <code>.sha</code></b>, which is
+the cost the design program flagged as blocking. <b>No hero picture:</b> the only diagram delay
+could draw is N impulses at heights <code>gⁿ</code> — fully determined by two scalars, both of
+which the strip below already prints, one of them as a <i>product</i> the picture cannot state.</p>
+
+<div class="dock">
+  <div class="editor">
+    <div class="chromebar"><span class="ini">DE</span><span class="nm">DELAY</span>
+      <span class="ln">delay · lane 1</span></div>
+    <div class="tabrow"><span class="tab">module</span></div>
+    <div class="plate">
+      <div class="chrome"><div class="name">DELAY</div><div class="cat">effects</div></div>
+      <div class="fhead"><h3 class="ftitle">Echo</h3>
+        <p class="fhint">One tap on a fractional-read line, fed back into its own input. Moving TIME
+        varispeeds the buffer, so the repeats already in it bend pitch; MIX is the only stage after
+        the loop, so the tail keeps running while it is down.</p></div>
+
+      <div class="hero">
+        <div class="vis"><div class="glyphbar"><i></i></div></div>
+        <div class="side">
+          <div class="k lg"><i style="--v:.25"></i><b>Time</b><em>250 MS</em></div>
+        </div>
+      </div>
+
+      <dl class="strip">
+        <div class="ro d"><dt>tail</dt><dd>2.00 s</dd></div>
+        <div class="ro d"><dt>build-up</dt><dd>−0.1 dB</dd></div>
+        <div class="ro t"><dt>floor</dt><dd>−60 dB</dd></div>
+      </dl>
+      <p class="stripcap">ƒ derived · with TIME in the hero, band 1 renders only FEEDBACK and MIX —
+        so <i>every</i> param readout would be a knob directly beneath it</p>
+
+      <div class="bands">
+        <div class="band"><h4 class="blab">repeats · blend</h4>
+          <div class="row">
+            <div class="k"><i style="--v:.45"></i><b>Feedback</b><em>8 REP</em></div>
+            <div class="k"><i style="--v:.35"></i><b>Mix</b><em>35% WET</em></div>
+          </div></div>
+      </div>
+    </div>
+  </div>
+  <div class="sb">
+    <section><h4>signal flow</h4>
+      <ol class="flow">
+        <li class="gen"><span class="d"></span><span>IN</span><span class="n">mono</span></li>
+        <li><span class="d"></span><span>DELAY LINE</span><span class="n">fractional read</span></li>
+        <li><span class="d"></span><span>FEEDBACK</span><span class="n">→ input, clamp 0.95</span></li>
+        <li class="par"><span class="d"></span><span>DRY ∥</span><span class="n">bypasses the loop</span></li>
+        <li><span class="d"></span><span>MIX</span><span class="n">equal-power</span></li>
+        <li><span class="d"></span><span>OUT</span></li>
+      </ol></section>
+  </div>
+</div>
+
+<div class="strips">
+  <div class="der"><h5>tail · build-up</h5><b>tail</b> = time × ln(0.001)/ln(feedback) — two inputs,
+    so <b>negative control:</b> hold FEEDBACK and move TIME; the printed tail moves while the
+    <code>8 REP</code> caption is frozen. <b>build-up</b> is the steady-state gain of the
+    recirculation, which is what a producer actually asks (“will this run away?”) and which no
+    single dial answers.</div>
+  <div><h5>the audition rejection, stated as a COST not a blocker</h5>delay is an insert with no
+    self-sound, so an audition means synthesising a stimulus. It is <b>entirely reachable</b> —
+    <code>getActiveEngine()</code> at <code>engine-ref.ts:23</code>, plus public
+    <code>engine.nodes</code>/<code>.ctx</code> — for zero factory change. What it costs is a
+    <code>ControlFamily</code> (+1 contract line) and a shell-cells entry, on a module whose input
+    is one cable away.</div>
+  <div><h5>the ART fact worth relaying</h5>The design program listed “PF-11 FIRST” as delay's
+    blocking prerequisite. <b>It has landed</b> — and <code>pattern3-face-pin.test.ts</code> is the
+    durable half, failing any source-SHA-pinned def that grows an UNWRAPPED
+    <code>face</code>/<code>docs</code>/<code>controlFamilies</code> block.</div>
+  <div><h5>cost</h5>contract <b>0</b> · ART <code>.sha</code> <b>0</b> · pages stay <b>1</b> ·
+    CI <b>≈ 0</b>.</div>
+</div>
+</section>
+
+<section class="mod" id="lfo">
+<header><h2>lfo</h2><span class="id">lfo.ts · 3 params · glyph <code>waveform</code></span>
+<span class="tag mech">mechanical only</span></header>
+<p class="note">The shipped face already <i>is</i> the design program's BATCH B entry, implemented
+and better argued than the entry. It gains a <code>title</code>, a <code>hint</code> and a hero —
+and <b>no readout strip and no sidebar, both by argument</b>. Every derived candidate
+(<code>period = 1/rate</code>, tap spacing, output range) is a <b>single-input alias</b> with no
+perturbation that separates it from the knob readback, so declaring one would be the kickdrum
+<code>tail</code> trap inverted: a registry entry whose permanent negative control cannot fail.
+And a <code>hero.cell</code> would <b>suppress</b> the <code>waveform</code> glyph, which is
+param-derived, never flatlines, and is already a picture of the live morph.</p>
+
+<div class="dock nosb">
+  <div class="editor">
+    <div class="chromebar"><span class="ini">LF</span><span class="nm">LFO</span>
+      <span class="ln">lfo · lane 1</span></div>
+    <div class="tabrow"><span class="tab">module</span></div>
+    <div class="plate cv">
+      <div class="chrome"><div class="name">LFO</div><div class="cat">modulation</div></div>
+      <div class="fhead"><h3 class="ftitle">Modulation</h3>
+        <p class="fhint">One oscillator emitted at four quadrature taps — 0°, 90°, 180° and 270° —
+        so a single sweep drives several destinations without re-tuning. The clock hole re-zeroes
+        phase; it never sets the rate.</p></div>
+
+      <div class="hero">
+        <div class="vis">
+          <svg viewBox="0 0 420 78" role="img" aria-label="live wave morph at the current shape">
+            <rect x="0" y="0" width="420" height="78" rx="4" fill="#0a0c0f" stroke="#1d2229"/>
+            <line x1="0" y1="39" x2="420" y2="39" stroke="#20252b"/>
+            <path d="M6 39 C56 6 100 6 150 39 C200 72 244 72 294 39 C344 6 388 6 414 22"
+                  fill="none" stroke="#7bd66a" stroke-width="1.6"/>
+            <text x="352" y="14" fill="#646c77" font-size="7" font-family="ui-monospace,monospace"
+                  letter-spacing="1">SHAPE 0 · SINE</text>
+          </svg>
+        </div>
+        <div class="side">
+          <div class="k lg green"><i style="--v:.5"></i><b>Rate</b><em>1.00 Hz</em></div>
+        </div>
+      </div>
+
+      <p class="stripcap">no readout strip — every candidate is a single-input alias of the dial
+        beside it (argued in §5 of the spec)</p>
+
+      <div class="bands">
+        <div class="band"><h4 class="blab">engine</h4>
+          <div class="row">
+            <div class="k green"><i style="--v:0"></i><b>Shape</b><em>sine</em></div>
+            <div class="k green"><i style="--v:.5"></i><b>Depth</b><em>±1.00</em></div>
+          </div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="strips">
+  <div class="der"><h5>every derived candidate, rejected</h5>
+    <code>period = 1/rate</code> · <code>tap spacing = 0.25/rate</code> ·
+    <code>swing = ±2·max(0,depth)</code>. Each has exactly <b>one</b> input, so no perturbation
+    moves the derived value while the knob readback stays still. <b>Alias, not derived.</b>
+    What <i>would</i> earn a strip: the deferred <code>offset</code> DSP param — then
+    <code>range = [offset−2·depth, offset+2·depth]</code> is two-input and the control writes
+    itself. Its own PR, its own ART re-pin.</div>
+  <div class="hid"><h5>with the hint hidden</h5>The band hint (block-held RATE vs per-sample
+    SHAPE/DEPTH) is pure depth. The one fact a patcher cannot deduce — <b>four taps off one
+    oscillator</b> — is in <code>face.hint</code>, which still paints. Face reads correctly.</div>
+  <div class="bad"><h5>defects found (follow-ups)</h5><b>D1</b> <code>LfoCard.svelte:81,83</code>
+    never passes <code>formatValue={p.format}</code> — the card reads <code>0.50</code> where the
+    dock reads <code>±1.00</code>, <b>at the shipped default</b>; the card is not in
+    <code>RANGE_BOUND_CARDS</code> and the private duplicate guard predates the format clause.
+    <b>D2</b> <code>module-manifest.ts:553</code> tells the public docs site the clock "locks LFO
+    rate" — it does not. <b>D3</b> the MORPH law has <b>three</b> implementations and no
+    cross-check, next to a DEPTH law that has one and is cross-gated.</div>
+  <div><h5>cost</h5>contract <b>0</b> (declaration only) · VRT <code>face-lfo-dock</code> moves,
+    <code>face-lfo-compact</code> must not · faces-parity cells <b>unchanged</b> ·
+    CI <b>≈ 0</b>.</div>
+</div>
+</section>
+
+<section class="mod" id="ringback">
+<header><h2>ringback</h2><span class="id">ringback.ts · 4 params · stereo insert</span>
+<span class="tag mech">mechanical only + strip</span></header>
+<p class="note">The newest face in the set and the only one whose ranges already live in
+<b>one model module both the def and the card import</b>. The ranking, pages, glyph, rear and card
+are right and stay untouched. What it gains is the declaration surface it predates — and the
+best-earned readout strip in the whole re-do: the FEEDBACK dial already prints
+<code>6 LAPS</code>, which <i>reads</i> like “how long it rings” and is <b>invariant to SIZE and
+RATE</b>, which genuinely change the answer. That is the kickdrum <code>tail</code> trap already
+shipped on this module's own dial, and the strip is where the missing factor arrives.</p>
+
+<div class="dock">
+  <div class="editor">
+    <div class="chromebar"><span class="ini">RI</span><span class="nm">RINGBACK</span>
+      <span class="ln">ringback · lane 1</span></div>
+    <div class="tabrow"><span class="tab">module</span></div>
+    <div class="plate">
+      <div class="chrome"><div class="name">RINGBACK</div><div class="cat">effects</div></div>
+      <div class="fhead"><h3 class="ftitle">Crush</h3>
+        <p class="fhint">A varispeed cursor writes whole integer cells and reads them back
+        interpolated at the same moving point; the mismatch is the crush. SIZE ÷ RATE is one lap,
+        and that ratio — not either knob alone — is the comb pitch you hear.</p></div>
+
+      <div class="hero">
+        <div class="vis">
+          <svg viewBox="0 0 420 78" role="img" aria-label="stair-stepped write against interpolated read">
+            <rect x="0" y="0" width="420" height="78" rx="4" fill="#0a0c0f" stroke="#1d2229"/>
+            <line x1="0" y1="39" x2="420" y2="39" stroke="#20252b"/>
+            <path d="M6 58 L34 58 L34 30 L62 30 L62 20 L90 20 L90 44 L118 44 L118 62 L146 62
+                     L146 26 L174 26 L174 16 L202 16 L202 48 L230 48 L230 64 L258 64 L258 28
+                     L286 28 L286 18 L314 18 L314 46 L342 46 L342 60 L370 60 L370 32 L398 32 L398 22 L414 22"
+                  fill="none" stroke="#646c77" stroke-width="1"/>
+            <path d="M6 58 C20 58 24 30 48 30 C62 30 66 20 76 20 C92 20 96 44 104 44 C120 44 124 62 132 62
+                     C148 62 152 26 160 26 C176 26 180 16 188 16 C204 16 208 48 216 48 C232 48 236 64 244 64
+                     C260 64 264 28 272 28 C288 28 292 18 300 18 C316 18 320 46 328 46 C344 46 348 60 356 60
+                     C372 60 376 32 384 32 C400 32 404 22 414 22"
+                  fill="none" stroke="#38d3c8" stroke-width="1.5"/>
+            <text x="12" y="13" fill="#646c77" font-size="7" font-family="ui-monospace,monospace">WRITE · whole cells</text>
+            <text x="128" y="13" fill="#38d3c8" font-size="7" font-family="ui-monospace,monospace">READ · interpolated</text>
+          </svg>
+        </div>
+        <div class="side">
+          <div class="k lg"><i style="--v:.12"></i><b>Rate</b><em>SR / 2</em></div>
+        </div>
+      </div>
+
+      <dl class="strip">
+        <div class="ro d"><dt>lap</dt><dd>128 smp</dd></div>
+        <div class="ro d"><dt>tail</dt><dd>735 smp</dd></div>
+      </dl>
+      <p class="stripcap">ƒ derived · lap = clampSize(size) ÷ rate · tail = ln(0.001)/ln(fb) × lap</p>
+
+      <div class="bands">
+        <div class="band"><h4 class="blab">crush ring</h4>
+          <div class="row">
+            <div class="k"><i style="--v:.5"></i><b>Size</b><em>64 cells</em></div>
+            <div class="k"><i style="--v:.31"></i><b>Feedback</b><em>6 LAPS</em></div>
+          </div></div>
+        <div class="band"><h4 class="blab">output blend</h4>
+          <div class="row">
+            <div class="k"><i style="--v:1"></i><b>Mix</b><em>WET</em></div>
+          </div></div>
+      </div>
+    </div>
+  </div>
+  <div class="sb">
+    <section><h4>signal flow</h4>
+      <ol class="flow">
+        <li class="gen"><span class="d"></span><span>IN L · R</span><span class="n">mono mirrors</span></li>
+        <li><span class="d"></span><span>READ</span><span class="n">interp @ cursor</span></li>
+        <li><span class="d"></span><span>WRITE</span><span class="n">whole cells + fb</span></li>
+        <li><span class="d"></span><span>CURSOR</span><span class="n">+rate, wraps size</span></li>
+        <li class="par"><span class="d"></span><span>DRY ∥</span><span class="n">never enters the ring</span></li>
+        <li><span class="d"></span><span>MIX</span><span class="n">linear crossfade</span></li>
+        <li><span class="d"></span><span>OUT L · R</span></li>
+      </ol>
+      <div class="flegend"><span><i class="g"></i>generator</span><span><i></i>bus stage</span>
+        <span><i class="p"></i>parallel branch</span></div></section>
+    <section><h4>presets</h4>
+      <div class="pre">
+        <div class="on"><span>SR/2 CRUSH</span><s>ships here</s></div>
+        <div><span>CLEAN COMB</span><s>rate 1</s></div>
+        <div><span>OCTAVE DOWN</span><s>rate 2</s></div>
+        <div><span>GRAIN SMEAR</span><s>long ring</s></div>
+        <div><span>METAL DRONE</span><s>ringing</s></div>
+      </div></section>
+  </div>
+</div>
+
+<div class="strips">
+  <div class="der"><h5>the negative controls, three legs each</h5>
+    <b>lap:</b> (A) hold RATE, move SIZE 64→256 — must move 128→512; a <code>rate</code> readback
+    is blind. (B) hold SIZE, move RATE 0.5→1 — must move 128→64; a <code>size</code> readback is
+    blind. (C) sweep FEEDBACK and MIX — must be <b>byte-identical</b>.
+    <b>tail:</b> (A) SIZE 64→256 at fixed FEEDBACK — 735→2940 while the dial still says
+    <code>6 LAPS</code>. Permanent legs in <code>ringback-crush-model.test.ts</code>.</div>
+  <div><h5>why the presets earn a block</h5>The module is measurably smoothest at
+    <b>integer</b> rates (roughness 0.290/0.256/0.235/0.221 at 1/2/3/4 vs 0.805 at 1.25 —
+    <code>ringback-crush-model.ts:120-129</code>) and the dial has <b>no detent to aim at</b>.
+    Today that finding is reachable only from the doc page.</div>
+  <div class="hid"><h5>with the hints hidden</h5>Both load-bearing facts were <b>moved to
+    surfaces that always paint</b>: the SIZE÷RATE ratio → the LAP readout; “the dry never enters
+    the ring” → the <code>parallel</code> branch in the flow. What is left in the hints is
+    elaboration. That is the correction-2 discipline applied rather than asserted.</div>
+  <div><h5>cost</h5>contract <b>0</b> · VRT <code>face-ringback-dock</code> moves ·
+    <code>ringback-face.spec.ts</code> gains strip assertions ·
+    <code>ringback-crush-model.test.ts</code> gains group 6 · CI <b>≈ 0</b>.</div>
+</div>
+</section>
+
+<section class="mod" id="tidyvco">
+<header><h2>tidyVco</h2><span class="id">tidy-vco.ts · 26 params · 5 bands · glyph <code>waveform</code></span>
+<span class="tag mech">mechanical only</span></header>
+<p class="note"><b>It is not a VCO — it is the rack's one complete subtractive VOICE</b>, and its
+only outputs are the post-VCA stereo pair, so an unpatched tidyVco is silent. The ranking, bands,
+clusters, rear and glyph are pinned by a bespoke unit spec plus an owner-regression e2e and none of
+them should move. What it is missing is the whole PF-20 surface — and the HOLD audition, which the
+hero rail is the right home for.</p>
+
+<div class="dock">
+  <div class="editor">
+    <div class="chromebar"><span class="ini">TI</span><span class="nm">TIDY VCO</span>
+      <span class="ln">tidyVco · lane 1</span></div>
+    <div class="tabrow"><span class="tab">module</span></div>
+    <div class="plate">
+      <div class="chrome"><div class="name">TIDY VCO</div><div class="cat">sources</div></div>
+      <div class="fhead"><h3 class="ftitle">Voice</h3>
+        <p class="fhint">Two band-limited oscillators over a sub square, through a reflecting
+        wavefolder into a diode ladder and a VCA — a complete subtractive voice, so nothing comes out
+        until a gate arrives.</p></div>
+
+      <div class="hero">
+        <div class="vis">
+          <svg viewBox="0 0 420 78" role="img" aria-label="live single-cycle output trace">
+            <rect x="0" y="0" width="420" height="78" rx="4" fill="#0a0c0f" stroke="#1d2229"/>
+            <line x1="0" y1="39" x2="420" y2="39" stroke="#20252b"/>
+            <path d="M6 62 L60 16 L60 62 L114 16 L114 62 L168 16 L168 62 L222 16 L222 62
+                     L276 16 L276 62 L330 16 L330 62 L384 16 L384 62 L414 40"
+                  fill="none" stroke="#9be08a" stroke-width="1.5"/>
+          </svg>
+        </div>
+        <div class="side">
+          <div class="k lg green"><i style="--v:.42"></i><b>Cutoff</b><em>900 Hz</em></div>
+          <button class="btn hot">▸ hold</button>
+        </div>
+      </div>
+
+      <dl class="strip">
+        <div class="ro d"><dt>osc 2</dt><dd>+6 ¢</dd></div>
+        <div class="ro d"><dt>sweeps to</dt><dd>3.1 kHz</dd></div>
+        <div class="ro d"><dt>settles at</dt><dd>1.2 kHz</dd></div>
+      </dl>
+      <p class="stripcap">ƒ derived · <code>sweeps to</code> calls the DSP's own
+        <code>tidyCutoffHz()</code> — nothing is re-derived</p>
+
+      <div class="bands">
+        <div class="band"><h4 class="blab">oscillator</h4>
+          <div class="row">
+            <div class="k green"><i style="--v:.2"></i><b>Shape 1</b><em>0.20</em></div>
+            <div class="k green"><i style="--v:.2"></i><b>Shape 2</b><em>0.20</em></div>
+            <div class="k green dead"><i style="--v:.5"></i><b>PW</b><em>saw — inert</em></div>
+            <div class="k green"><i style="--v:.52"></i><b>Detune</b><em>+6 ¢</em></div>
+            <div class="k green"><i style="--v:.5"></i><b>Oct 2</b><em>0</em></div>
+            <div class="k green"><i style="--v:.5"></i><b>Mix</b><em>0.50</em></div>
+            <div class="k green"><i style="--v:.3"></i><b>Sub</b><em>0.30</em></div>
+          </div></div>
+        <div class="band"><h4 class="blab">wavefolder</h4>
+          <div class="row">
+            <div class="k green"><i style="--v:0"></i><b>Fold</b><em>bypass</em></div>
+            <div class="k green dead"><i style="--v:.5"></i><b>Sym</b><em>fold 0 — inert</em></div>
+          </div></div>
+        <div class="band"><h4 class="blab">diode filter</h4>
+          <div class="row">
+            <div class="k green"><i style="--v:.35"></i><b>Res</b><em>0.35</em></div>
+            <div class="k green"><i style="--v:.3"></i><b>Drive</b><em>0.30</em></div>
+            <div class="k green"><i style="--v:.72"></i><b>Env</b><em>+0.45</em></div>
+            <div class="k green"><i style="--v:.5"></i><b>Track</b><em>0.50</em></div>
+          </div></div>
+        <div class="band"><h4 class="blab">envelopes</h4>
+          <p class="clab">filter eg</p>
+          <div class="row">
+            <div class="k green"><i style="--v:.05"></i><b>F Atk</b><em>3 ms</em></div>
+            <div class="k green"><i style="--v:.3"></i><b>F Dec</b><em>180 ms</em></div>
+            <div class="k green"><i style="--v:.2"></i><b>F Sus</b><em>0.20</em></div>
+            <div class="k green"><i style="--v:.25"></i><b>F Rel</b><em>240 ms</em></div>
+          </div>
+          <p class="clab">amp eg</p>
+          <div class="row">
+            <div class="k green"><i style="--v:.04"></i><b>Atk</b><em>2 ms</em></div>
+            <div class="k green"><i style="--v:.35"></i><b>Dec</b><em>220 ms</em></div>
+            <div class="k green"><i style="--v:.7"></i><b>Sus</b><em>0.70</em></div>
+            <div class="k green"><i style="--v:.3"></i><b>Rel</b><em>300 ms</em></div>
+          </div></div>
+        <div class="band"><h4 class="blab">output</h4>
+          <div class="row">
+            <div class="k green"><i style="--v:.4"></i><b>Width</b><em>0.40</em></div>
+            <div class="k green"><i style="--v:.7"></i><b>Level</b><em>0.0 dB</em></div>
+          </div></div>
+      </div>
+    </div>
+  </div>
+  <div class="sb">
+    <section><h4>signal flow</h4>
+      <ol class="flow">
+        <li class="gen"><span class="d"></span><span>OSC 1 · OSC 2</span><span class="n">saw ↔ pulse</span></li>
+        <li class="gen"><span class="d"></span><span>SUB</span><span class="n">−1 oct square</span></li>
+        <li><span class="d"></span><span>WAVEFOLDER</span><span class="n">reflecting tri</span></li>
+        <li><span class="d"></span><span>DIODE LADDER</span><span class="n">EMS / 303</span></li>
+        <li class="par"><span class="d"></span><span>FILTER EG ∥</span><span class="n">±4 oct</span></li>
+        <li><span class="d"></span><span>VCA</span><span class="n">amp eg</span></li>
+        <li><span class="d"></span><span>WIDTH · LEVEL</span><span class="n">stereo out</span></li>
+      </ol>
+      <div class="flegend"><span><i class="g"></i>generator</span><span><i></i>bus stage</span>
+        <span><i class="p"></i>parallel branch</span></div></section>
+  </div>
+</div>
+
+<div class="strips">
+  <div class="der"><h5>three derived, each with a blind knob</h5>
+    <code>osc 2</code> — flip <code>oct2</code> −1↔+1: moves, while a <code>detune</code> readback is
+    invariant <i>and</i> an <code>oct2</code> readback is blind to the cents.
+    <code>sweeps to</code> — <code>env</code> 0.45 → −0.45 gives 259 Hz, a <b>12×</b> move, while a
+    <code>cutoff</code> readback does not budge. <code>settles at</code> — <code>fsus</code> 0.2 → 0.9
+    moves it while <b>both</b> <code>cutoff</code> and <code>env</code> readbacks are invariant.</div>
+  <div class="hid"><h5>the inert pair the face marks rather than hides</h5><code>pw</code> does
+    nothing until a SHAPE leaves saw; <code>sym</code> only bites while FOLD is up. With hints
+    hidden, that has to be visible <i>on the control</i> — which is what the persistent readouts do
+    (<code>saw — inert</code>, <code>fold 0 — inert</code>), not a sentence in a band header.</div>
+  <div><h5>PF-0 is NOT live — checked, not assumed</h5>The design program filed tidyVco's
+    <code>hold</code> as a live bug. It was <b>fixed 2026-07-27 and shipped</b>:
+    <code>face.momentary: ['hold']</code>, the <code>ACKNOWLEDGED_LATCHING</code> entry deleted, and
+    the shell renders a press-pad that writes REST on release. So HOLD can go straight into the hero
+    rail. It also needs <b>no PF-6f family and no engine plumbing</b> — the worklet ORs the param
+    into the gate.</div>
+  <div><h5>cost</h5>contract <b>0</b> · pages stay <b>5</b> ·
+    <code>faces-parity.spec.ts</code>'s tidyVco tune-cluster regression pins specific ranks AND a
+    dock band id — re-read it before touching anything · CI <b>≈ 0</b>.</div>
+</div>
+</section>
+
+<section class="mod" id="vca">
+<header><h2>vca</h2><span class="id">vca.ts · 2 params · glyph <code>meter</code></span>
+<span class="tag mech">mechanical only</span></header>
+<p class="note"><b>Keep it in STRICT_FACES.</b> This is the smallest module in the set and the
+question the brief asked — does a two-param utility deserve a faceplate — comes back <i>yes</i>,
+because its band label already <b>is</b> the gain law and its two persistent readouts already do
+real vocabulary work (<code>CLOSED</code>/<code>UNITY</code>, <code>OPEN</code>/<code>CV OFF</code>/
+<code>DUCK</code>). <b>No hero picture:</b> every candidate graph is a straight line whose two
+degrees of freedom are the two dials underneath it — the derived-readout trap wearing a graphic —
+and a <code>hero.cell</code> would <b>suppress the live meter</b> on a module whose whole job is
+“how loud right now”.</p>
+
+<div class="dock nosb">
+  <div class="editor">
+    <div class="chromebar"><span class="ini">VC</span><span class="nm">VCA</span>
+      <span class="ln">vca · lane 1</span></div>
+    <div class="tabrow"><span class="tab">module</span></div>
+    <div class="plate">
+      <div class="chrome"><div class="name">VCA</div><div class="cat">utilities</div></div>
+      <div class="fhead"><h3 class="ftitle">Gain</h3>
+        <p class="fhint">One multiply. The gain is BASE plus CV times AMOUNT, and the sum is never
+        clamped — above 1 it boosts past unity, below 0 it passes phase-inverted.</p></div>
+
+      <div class="hero">
+        <div class="vis"><div class="glyphbar"><i></i></div></div>
+      </div>
+
+      <dl class="strip">
+        <div class="ro d"><dt>at cv 1</dt><dd>UNITY</dd></div>
+        <div class="ro t"><dt>cv tracks</dt><dd>−3 dB at 7 Hz</dd></div>
+      </dl>
+      <p class="stripcap">two entries, not four — <code>base</code> IS the gain at cv 0, so a
+        “CV 0” entry is the knob printed twice, and a PHASE entry is redundant (the sweep inverts
+        iff entry 1 is negative)</p>
+
+      <div class="bands">
+        <div class="band"><h4 class="blab">gain = base + cv × amount</h4>
+          <div class="row">
+            <div class="k"><i style="--v:0"></i><b>Base</b><em>CLOSED</em></div>
+            <div class="k"><i style="--v:1"></i><b>CV Amt</b><em>OPEN</em></div>
+          </div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="strips">
+  <div><h5>the one sidebar block, and its whole justification is ONE stage</h5>
+    <code>AUDIO IN → (BASE + CV × AMT ∥) → (SMOOTH ∥) → × GAIN → OUT · OUT INV ∥</code>.
+    Delete <code>SMOOTH</code> and the diagram is <code>in → × → out</code>, which is furniture.
+    Keep it and it states the two facts nothing else on the face can: the one-pole sits on the
+    <b>summed gain</b> (so it lowpasses the knob too) and it sits <b>before</b> the multiply —
+    which is why audio-rate CV does not ring-modulate (43 dB down at 1 kHz).</div>
+  <div class="der"><h5>at cv 1</h5><code>vcaGain(base, cvAmount, 1) = base + cvAmount</code>,
+    unclamped exactly like <code>vca.dsp:11</code>. Prints <code>UNITY</code> / <code>+3.5 dB</code>
+    / <code>0.0 dB INV</code>. It is derived because it is <b>two</b> inputs and because it names
+    a point on the sweep neither dial shows.</div>
+  <div><h5>the DEMOTED param this face deliberately does not anticipate</h5>A transfer-curve picture
+    earns its place once <code>vca response</code> (lin/exp) exists — i.e. once the <i>shape</i>
+    changes. Building the panel now and the param later inverts the order. <b>Follow-up's UI, not
+    this wave's content.</b></div>
+  <div><h5>cost</h5>contract <b>0</b> · vca IS in <code>STRICT_VRT_MODULES</code> and
+    <code>rear-vca</code> is one of only four pinned rear VRT scenes with both platforms committed
+    — do not touch the card · CI <b>≈ 0</b>.</div>
+</div>
+</section>
+
+<h3 class="sec">the two already in flight — delta only</h3>
+
+<section class="mod" id="kickdrum">
+<header><h2>kickdrum</h2><span class="id">kickdrum.ts · 25 params · 5 bands + hero + sidebar</span>
+<span class="tag dl">in flight — delta only</span></header>
+<p class="note">Being built on <code>feat/faceplate-platform-v2</code> as the platform's <b>reference
+consumer</b>. Not re-spec'd here. The two corrections change exactly two things: the three hero
+readouts become the strip below the graph — where <b>SETTLES TO is redundant with the hero dial
+directly above it and should be dropped</b> — and the five band hints stop painting, which the face
+survives <b>because the sidebar was already carrying the same facts in a form that paints</b>. The
+one fact that does not survive is BODY's <i>octave up</i>, and the repair is a fourth derived
+readout that already exists as a pure function: <code>kickdrumSweep().startHz</code>.</p>
+
+<div class="dock">
+  <div class="editor">
+    <div class="chromebar"><span class="ini">KI</span><span class="nm">KICK DRUM</span>
+      <span class="ln">kickdrum · lane 1</span></div>
+    <div class="tabrow"><span class="tab">module</span></div>
+    <div class="plate">
+      <div class="chrome"><div class="name">KICK DRUM</div><div class="cat">drums</div></div>
+      <div class="fhead"><h3 class="ftitle">Voice</h3>
+        <p class="fhint">Three decoupled generators — sub, body and click — through one serial bus:
+        drive, EQ and tilt, translate, dynamics, then the stereo crossover.</p></div>
+
+      <div class="hero">
+        <div class="vis">
+          <svg viewBox="0 0 420 96" role="img" aria-label="kick envelope and pitch sweep">
+            <rect x="0" y="0" width="420" height="96" rx="4" fill="#0a0c0f" stroke="#1d2229"/>
+            <path d="M8 88 L8 20 C60 20 96 62 150 76 C210 88 300 90 412 91" fill="none"
+                  stroke="#38d3c8" stroke-width="1.6"/>
+            <path d="M8 88 L8 42 C34 42 52 78 92 84 C140 89 260 90 412 91" fill="none"
+                  stroke="#f2c14e" stroke-width="1.2" opacity=".8"/>
+            <path d="M8 88 L8 60 C14 60 20 84 30 87 L412 91" fill="none" stroke="#9be08a"
+                  stroke-width="1" opacity=".7"/>
+            <path d="M8 12 C42 30 78 52 130 62" fill="none" stroke="#b57bff" stroke-width="1.2"
+                  stroke-dasharray="3 2"/>
+            <text x="136" y="60" fill="#b57bff" font-size="7" font-family="ui-monospace,monospace"
+                  letter-spacing="1">PITCH SWEEP</text>
+            <text x="14" y="12" fill="#38d3c8" font-size="7" font-family="ui-monospace,monospace">SUB</text>
+            <text x="44" y="12" fill="#f2c14e" font-size="7" font-family="ui-monospace,monospace">BODY</text>
+            <text x="80" y="12" fill="#9be08a" font-size="7" font-family="ui-monospace,monospace">CLICK</text>
+          </svg>
+        </div>
+        <div class="side">
+          <div class="k lg"><i style="--v:.29"></i><b>Tune</b><em>50 Hz</em></div>
+          <button class="btn hot">▸ strike</button>
+        </div>
+      </div>
+
+      <dl class="strip">
+        <div class="ro d"><dt>tail</dt><dd>398 ms</dd></div>
+        <div class="ro d"><dt>starts at</dt><dd>199 Hz</dd></div>
+        <div class="ro"><dt>sweep</dt><dd>+24 st</dd></div>
+      </dl>
+      <p class="stripcap">ƒ = derived · dropped from the shipped draft: “settles to 50 Hz” (it is
+        the hero dial)</p>
+
+      <div class="bands">
+        <div class="band"><h4 class="blab">1 · sub — the pulse</h4>
+          <div class="row">
+            <div class="k"><i style="--v:.62"></i><b>Sub Dec</b><em>450 ms</em></div>
+            <div class="k"><i style="--v:.9"></i><b>Sub Lvl</b><em>0.90</em></div>
+            <div class="k"><i style="--v:.55"></i><b>Sub EQ</b><em>+1.0 dB</em></div>
+            <div class="k"><i style="--v:.3"></i><b>Translate</b><em>0.30</em></div>
+          </div></div>
+        <div class="band"><h4 class="blab">2 · body — the punch</h4>
+          <div class="row">
+            <div class="k"><i style="--v:.5"></i><b>Pitch Amt</b><em>+24 st</em></div>
+            <div class="k"><i style="--v:.35"></i><b>Pitch Time</b><em>30 ms</em></div>
+            <div class="k"><i style="--v:.1"></i><b>Tension</b><em>0.00</em></div>
+            <div class="k"><i style="--v:.4"></i><b>Body Dec</b><em>120 ms</em></div>
+            <div class="k"><i style="--v:.7"></i><b>Body Lvl</b><em>0.70</em></div>
+            <div class="k"><i style="--v:.3"></i><b>Shape</b><em>0.30</em></div>
+            <div class="k"><i style="--v:.55"></i><b>Body EQ</b><em>+2.0 dB</em></div>
+          </div></div>
+        <div class="band"><h4 class="blab">3 · click — the edge</h4>
+          <div class="row">
+            <div class="k"><i style="--v:.2"></i><b>Click Len</b><em>11 ms</em></div>
+            <div class="k"><i style="--v:.6"></i><b>Click Tone</b><em>2.8 kHz</em></div>
+            <div class="k"><i style="--v:.4"></i><b>Click Lvl</b><em>0.40</em></div>
+            <div class="k"><i style="--v:.5"></i><b>Attack EQ</b><em>+1.5 dB</em></div>
+          </div></div>
+        <div class="band"><h4 class="blab">bus · drive</h4>
+          <div class="row">
+            <div class="k amber"><i style="--v:.4"></i><b>Drive</b><em>0.40</em></div>
+            <div class="cell"><span class="cap">Hard</span><span class="sw"><i></i>off</span></div>
+            <div class="k"><i style="--v:.5"></i><b>Tilt</b><em>0.00</em></div>
+          </div></div>
+        <div class="band"><h4 class="blab">bus · dynamics · out</h4>
+          <p class="clab">transient · glue</p>
+          <div class="row">
+            <div class="k"><i style="--v:.55"></i><b>Attack</b><em>+0.25</em></div>
+            <div class="k"><i style="--v:.5"></i><b>Sustain</b><em>0.00</em></div>
+            <div class="k"><i style="--v:.3"></i><b>Glue</b><em>0.30</em></div>
+          </div>
+          <p class="clab">level · width · ceiling</p>
+          <div class="row">
+            <div class="k"><i style="--v:.66"></i><b>Level</b><em>0.0 dB</em></div>
+            <div class="k"><i style="--v:.2"></i><b>Width</b><em>0.20</em></div>
+            <div class="k"><i style="--v:.5"></i><b>Ceiling</b><em>0.50</em></div>
+          </div></div>
+      </div>
+    </div>
+  </div>
+  <div class="sb">
+    <section><h4>signal flow</h4>
+      <ol class="flow">
+        <li class="gen"><span class="d"></span><span>SUB</span><span class="n">sine</span></li>
+        <li class="gen"><span class="d"></span><span>BODY</span><span class="n">909 sweep</span></li>
+        <li class="gen"><span class="d"></span><span>CLICK</span><span class="n">noise</span></li>
+        <li><span class="d"></span><span>DRIVE · HARD</span><span class="n">saturate</span></li>
+        <li><span class="d"></span><span>EQ · TILT</span><span class="n">3-band</span></li>
+        <li class="par"><span class="d"></span><span>TRANSLATE ∥</span><span class="n">raw sub</span></li>
+        <li><span class="d"></span><span>DYNAMICS</span><span class="n">shape · glue</span></li>
+        <li><span class="d"></span><span>STEREO · WIDTH</span><span class="n">› 120 Hz</span></li>
+        <li><span class="d"></span><span>OUT L · R</span><span class="n">level → ceiling</span></li>
+      </ol>
+      <div class="flegend"><span><i class="g"></i>generator</span><span><i></i>bus stage</span>
+        <span><i class="p"></i>parallel branch</span></div></section>
+    <section><h4>stereo crossover</h4>
+      <div class="panel">
+        <svg viewBox="0 0 250 74" role="img" aria-label="mono below 120 Hz, sides above">
+          <text x="70" y="12" fill="#f2c14e" font-size="8" font-family="ui-monospace,monospace"
+                text-anchor="end">120 Hz</text>
+          <line x1="76" y1="16" x2="76" y2="70" stroke="#f2c14e" stroke-dasharray="3 2"/>
+          <rect x="8" y="42" width="68" height="22" fill="#1f2c30" stroke="#38d3c8"/>
+          <rect x="76" y="20" width="166" height="44" fill="#182126" stroke="#38d3c8" opacity=".8"/>
+          <text x="42" y="57" fill="#9aa2ad" font-size="8" font-family="ui-monospace,monospace"
+                text-anchor="middle">MONO</text>
+          <text x="159" y="45" fill="#9aa2ad" font-size="8" font-family="ui-monospace,monospace"
+                text-anchor="middle">SIDES × WIDTH</text>
+        </svg>
+      </div></section>
+    <section><h4>presets</h4>
+      <div class="pre">
+        <div class="on"><span>909 CLASSIC</span><s>62 Hz</s></div>
+        <div><span>DEEP CLUB</span><s>50 Hz</s></div>
+        <div><span>TECHNO PUNCH</span><s>hard</s></div>
+        <div><span>SUB BOOM</span><s>38 Hz</s></div>
+        <div><span>LO-FI THUMP</span><s>crush</s></div>
+      </div></section>
+  </div>
+</div>
+
+<div class="strips">
+  <div class="der"><h5>the new derived readout</h5><b>starts at</b> =
+    <code>kickBodyFreqHz(p, env=1, tension·body_level, accent=0)</code> —
+    <code>kickdrum-face-model.ts:216</code>, already written. <b>Negative control:</b> hold TUNE and
+    PITCH AMT, sweep <b>BODY LEVEL</b> — a readback of either knob is frozen, the derived number
+    moves (the glide term is <code>tension·body_level</code>). <b>Second leg that must NOT move:</b>
+    SUB DEC.</div>
+  <div class="hid"><h5>what the hidden hints cost</h5>SUB's <i>always mono</i> → carried by the
+    crossover panel. DYNAMICS' <i>chain order</i> → carried by the two cluster labels (clusters are
+    not hints) and the flow tail. CLICK → carried by the flow. <b>BODY's <i>octave up</i> is the
+    only real loss</b>, and <code>starts at</code> is the repair.</div>
+  <div><h5>cost</h5>contract <b>0</b> · unit <b>+1</b> registry entry + 2 assertions ·
+    VRT: <code>face-kickdrum-dock</code> was moving for correction 1 anyway;
+    <code>face-kickdrum-compact</code> must <b>not</b> move · CI <b>≈ 0</b>.</div>
+</div>
+</section>
+
+<section class="mod" id="sixstrum">
+<header><h2>sixstrum</h2><span class="id">sixstrum.ts · 19 params · 22 in / 1 out</span>
+<span class="tag dl">spec'd in #1304 — delta only</span></header>
+<p class="note">The full re-do is <code>face-specs-batch-3-sixstrum.md</code> on
+<code>docs/face-specs-batch-3</code> (PR #1304). Not re-spec'd here. The corrections add one rule and
+one repair. sixstrum is <b>the only face with two readout surfaces</b> — the strip and a sidebar
+<code>readouts</code> block — so the delta writes down which number a player reads where. And band 2's
+hidden hint turns out to be <b>carried better by the strip than it ever was by the prose</b>: hold RING
+at 10 s, turn MATERIAL to 0, and <code>rings for</code> collapses to 0.775 s while the dial still says
+10. That is the sentence, made observable instead of asserted.</p>
+
+<div class="dock">
+  <div class="editor">
+    <div class="chromebar"><span class="ini">SI</span><span class="nm">SIXSTRUM</span>
+      <span class="ln">sixstrum · lane 1</span></div>
+    <div class="tabrow"><span class="tab">module</span></div>
+    <div class="plate">
+      <div class="chrome"><div class="name">SIXSTRUM</div><div class="cat">sources</div></div>
+      <div class="fhead"><h3 class="ftitle">Instrument</h3>
+        <p class="fhint">Six Karplus-Strong strings, a strum hand and a chord voicer. The pitch is
+        LATCHED at the strike, so REGISTER, TUNING, CHORD and SPREAD change the NEXT note, not the
+        one ringing — and MATERIAL caps how long RING can actually hold.</p></div>
+
+      <div class="hero">
+        <div class="vis">
+          <svg viewBox="0 0 420 96" role="img" aria-label="six strings, roll offsets and ring">
+            <rect x="0" y="0" width="420" height="96" rx="4" fill="#0a0c0f" stroke="#1d2229"/>
+            <g stroke="#38d3c8" stroke-width="1.1" fill="none">
+              <path d="M14 14 H406" opacity=".95"/><path d="M20 27 H406" opacity=".85"/>
+              <path d="M26 40 H406" opacity=".75"/><path d="M32 53 H406" opacity=".62"/>
+              <path d="M38 66 H406" opacity=".5"/><path d="M44 79 H406" opacity=".4"/>
+            </g>
+            <g fill="#f2c14e">
+              <circle cx="14" cy="14" r="2.2"/><circle cx="20" cy="27" r="2.2"/>
+              <circle cx="26" cy="40" r="2.2"/><circle cx="32" cy="53" r="2.2"/>
+              <circle cx="38" cy="66" r="2.2"/><circle cx="44" cy="79" r="2.2"/>
+            </g>
+            <path d="M14 14 L44 79" stroke="#f2c14e" stroke-width=".8" stroke-dasharray="2 2" fill="none"/>
+            <text x="52" y="92" fill="#646c77" font-size="7" font-family="ui-monospace,monospace"
+                  letter-spacing="1">ROLL 12.6 ms · 2.5 ms / string</text>
+            <text x="330" y="92" fill="#646c77" font-size="7" font-family="ui-monospace,monospace">E2 → E4</text>
+          </svg>
+        </div>
+        <div class="side">
+          <div class="k lg"><i style="--v:.25"></i><b>Ring</b><em>2.50 s</em></div>
+          <button class="btn hot">⟋ strum</button>
+        </div>
+      </div>
+
+      <dl class="strip">
+        <div class="ro d"><dt>rings for</dt><dd>2.50 s</dd></div>
+        <div class="ro d"><dt>chord</dt><dd>E2 A2 D3 G3 B3 E4</dd></div>
+        <div class="ro d"><dt>roll</dt><dd>12.6 ms</dd></div>
+      </dl>
+      <p class="stripcap">strip = what moves under the hand · sidebar readouts = what the instrument IS</p>
+
+      <div class="bands">
+        <div class="band"><h4 class="blab">1 · instrument</h4>
+          <div class="row">
+            <div class="cell"><span class="cap">Preset</span>
+              <span class="sel">guitar<s>▾</s></span></div>
+            <div class="cell"><span class="cap">Tuning</span>
+              <span class="seg"><span class="on">guitar</span><span>bass</span><span>harp</span></span></div>
+            <div class="k"><i style="--v:.5"></i><b>Register</b><em>0 st</em></div>
+            <div class="cell"><span class="cap">Quality</span><span class="sel">maj<s>▾</s></span></div>
+          </div></div>
+        <div class="band"><h4 class="blab">2 · strings</h4>
+          <div class="row">
+            <div class="k"><i style="--v:.55"></i><b>Material</b><em>0.55</em></div>
+            <div class="k"><i style="--v:.3"></i><b>Stiffness</b><em>0.30</em></div>
+            <div class="k"><i style="--v:.25"></i><b>Spread</b><em>0.25</em></div>
+          </div></div>
+        <div class="band"><h4 class="blab">3 · strum hand</h4>
+          <div class="row">
+            <div class="k"><i style="--v:.28"></i><b>Strum</b><em>0.28</em></div>
+            <div class="cell"><span class="cap">Dir</span>
+              <span class="seg"><span class="on">down</span><span>up</span><span>alt</span></span></div>
+            <div class="k dead"><i style="--v:.5"></i><b>Mute Dep</b><em>needs cable</em></div>
+          </div></div>
+        <div class="band"><h4 class="blab">4 · pick</h4>
+          <div class="row">
+            <div class="k"><i style="--v:.6"></i><b>Pick Tone</b><em>0.60</em></div>
+            <div class="k"><i style="--v:.35"></i><b>Grain</b><em>0.35</em></div>
+            <div class="k"><i style="--v:.25"></i><b>Position</b><em>0.25</em></div>
+          </div></div>
+        <div class="band"><h4 class="blab">5 · envelope · body · out</h4>
+          <div class="row">
+            <div class="k"><i style="--v:.05"></i><b>Attack</b><em>5 ms</em></div>
+            <div class="k dead"><i style="--v:.3"></i><b>Env Dec</b><em>never runs</em></div>
+            <div class="k"><i style="--v:1"></i><b>Sustain</b><em>1.00</em></div>
+            <div class="k dead"><i style="--v:.3"></i><b>Release</b><em>never fires</em></div>
+            <div class="k"><i style="--v:.35"></i><b>Body</b><em>0.35</em></div>
+            <div class="k"><i style="--v:.6"></i><b>Level</b><em>0.0 dB</em></div>
+          </div></div>
+      </div>
+    </div>
+  </div>
+  <div class="sb">
+    <section><h4>signal flow</h4>
+      <ol class="flow">
+        <li class="gen"><span class="d"></span><span>STRUM</span><span class="n">rolls 1→6</span></li>
+        <li class="gen"><span class="d"></span><span>PICK BURST</span><span class="n">N periods</span></li>
+        <li><span class="d"></span><span>COLOR LPF</span><span class="n">pick tone</span></li>
+        <li class="par"><span class="d"></span><span>PICK COMB ∥</span><span class="n">position</span></li>
+        <li><span class="d"></span><span>6 × K-S LOOP</span><span class="n">damping</span></li>
+        <li class="par"><span class="d"></span><span>MUTE CHOKE ∥</span><span class="n">per string</span></li>
+        <li><span class="d"></span><span>ADSR</span><span class="n">shared</span></li>
+        <li><span class="d"></span><span>SUM ÷√N</span><span class="n">active</span></li>
+        <li><span class="d"></span><span>LEVEL → BODY</span><span class="n">two band-pass</span></li>
+      </ol>
+      <div class="flegend"><span><i class="g"></i>generator</span><span><i></i>bus stage</span>
+        <span><i class="p"></i>parallel branch</span></div></section>
+    <section><h4>presets</h4>
+      <div class="pre">
+        <div class="on"><span>GUITAR</span><s>14 params</s></div>
+        <div><span>BASS</span><s>14 params</s></div>
+        <div><span>HARP</span><s>14 params</s></div>
+      </div></section>
+    <section><h4>strings</h4>
+      <div class="rolist">
+        <div class="d"><span>string 1</span><b>82.24 Hz</b></div>
+        <div class="d"><span>damping at</span><b>1.86 kHz</b></div>
+        <div class="d"><span>pick notch</span><b>4th partial</b></div>
+        <div class="d"><span>burst</span><b>3.6 ms</b></div>
+      </div></section>
+  </div>
+</div>
+
+<div class="strips">
+  <div class="hid"><h5>the rule the corrections force</h5><b>The STRIP is what you read WHILE
+    PLAYING; the sidebar <code>readouts</code> block is REFERENCE.</b> A strip entry must change
+    under the hand. That is what stops the next author widening the strip to seven now that it has
+    room.</div>
+  <div class="der"><h5>hidden hint → derived readout</h5>Band 2's prose said <i>“MATERIAL below
+    ~0.10 pins the ring at 0.78 s whatever RING says”</i>. Hidden, that fact is carried by
+    <code>rings for</code>: <b>negative control</b> — hold RING at 10 s, sweep MATERIAL 0.55 → 0;
+    <b>second leg</b> — at MATERIAL 0, sweep RING 1 → 10 and the number must be <b>frozen</b>.</div>
+  <div class="bad"><h5>the one hint that does NOT survive</h5>Band 5's <i>“two of its four stages
+    never run”</i>. <b>Do not repair it with a label.</b> ENV DEC and RELEASE are genuinely inert
+    (<code>adsr-env.ts:74-84</code>; nothing calls <code>triggerSoft(false)</code> outside a MUTE
+    edge) — that is a shipped bug, filed in #1304, not a naming problem.</div>
+  <div><h5>added cost vs #1304</h5><b>+3</b> preset <code>note</code> strings (they carry the
+    “stamps 14 params” fact the hidden hint used to) and one paragraph of face comment.
+    Contract 0 · CI ≈ 0.</div>
+</div>
+</section>
+
+<h3 class="sec">the arithmetic</h3>
+<table class="arith">
+<tr><th>lane</th><th>delta across all 18</th><th>gating?</th></tr>
+<tr><td><b>contract-lock</b></td><td><b>+2 lines total</b> — qbrt's ping family and snaredrum's hero
+panel family. Sixteen of eighteen cost <b>zero</b>: <code>face</code> is UI metadata and
+<code>contract-signature.ts</code> has no <code>face</code> branch.</td><td>unit</td></tr>
+<tr><td><b>ART</b></td><td><b>NIL.</b> PF-11 already landed, so a face edit on the source-SHA-pinned
+defs (delay et al.) is free, and <code>pattern3-face-pin.test.ts</code> keeps it that way. No
+<code>.f32</code>, no <code>.sha</code>, no fingerprint manifest moves.</td><td>art</td></tr>
+<tr><td><b>attest</b></td><td><b>NIL</b> — verified per module, not assumed. All eighteen are AUDIO
+defs (out of the WebGL basis) and none of the touched shell files are in the collab or grand
+basis.</td><td>—</td></tr>
+<tr><td><b>faces-parity (REQUIRED e2e)</b></td><td><b>+2 cells total</b> (qbrt's ping, karplus's
+panel). A hero PROMOTES a key; it never adds one, so a hero costs zero cells. At the measured
+~0.8 s/cell on the SwiftShader runner that is <b>≈ +1.6 s</b>.</td><td><b>yes</b></td></tr>
+<tr><td><b>bespoke e2e</b></td><td>one new audition spec (qbrt, ≈ +13 s) and one new panel spec
+(snaredrum, ≈ +2 s). Everything else reuses the existing rows.</td><td><b>yes</b></td></tr>
+<tr><td><b><code>vrt-strict</code> (REQUIRED)</b></td><td><b>+0 scenes</b> —
+<code>workflow-shell-faces.spec.ts</code> is in the informational lane. But <b>eight of the
+eighteen are in <code>STRICT_VRT_MODULES</code></b> (adsr, dx7, filter, mixer, qbrt, reverb,
+shimmershine, vca), so any LEGACY-CARD edit re-captures a REQUIRED baseline on both platforms.
+<b>Only qbrt requires one</b> (the PING button the docs gate greps for).</td><td><b>yes, for
+qbrt</b></td></tr>
+<tr><td><b><code>vrt</code> (informational)</b></td><td>18 dock baselines move; several compact ones
+must NOT. Three are <b>sub-tolerance traps</b> (reverb, shimmershine, filter) where
+<code>--update-snapshots</code> writes nothing — <code>git rm</code> first. Several are
+<b>dimension</b> changes, which hard-fail before any ratio is computed.</td><td>no</td></tr>
+<tr><td><b>total CI wall-time</b></td><td><b>≈ +20 s of gating time across the whole batch</b>
+(+1.6 s parity, +15 s of new specs, the rest unit-lane). Comfortably under the 2-minute sign-off
+bar — <b>and it must still be confirmed ON CI</b>, because the runner is SwiftShader at roughly 4×
+the local per-cell cost.</td><td>—</td></tr>
+</table>
+
+<p class="sub" style="margin-top:18px"><b>Sequencing:</b> ship in batches of three or four, not one
+PR of eighteen. Each batch is then one <code>vrt-update.yml</code> dispatch, one ratchet decrement,
+and a differenceable <code>Run VRT</code> step — which turns the wall-time estimate above into a
+measurement by the second PR. The five MECHANICAL-ONLY faces are the cheapest first batch and prove
+the corrected platform on real faces before any of the rework lands.</p>
+
+<p class="sub" style="margin-bottom:60px"><b>The defect ledger — 30-plus shipped-code bugs found
+while reading, none of them folded into a face PR</b> — is in
+<code>.myrobots/plans/face-redo-INDEX.md</code> §4, ranked. Two are P0/P1: shimmershine's
+“crystalline drone” is a pure DC rail whose boundary the shipped default already crosses, and
+cloudseed re-seeds its entire reverb every 128-sample block on the audio thread while idle.</p>
+</div>
