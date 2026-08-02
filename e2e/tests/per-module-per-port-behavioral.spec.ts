@@ -62,7 +62,19 @@
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch, type SpawnNode, type SpawnEdge } from './_helpers';
-import { readScopeSnapshot, runFor } from './_module-coverage-helpers';
+import {
+  readScopeSnapshot,
+  runFor,
+  captureCanvasStatsFrameSpaced,
+  behavioralTimeoutMs,
+  AUDIO_CAPTURES,
+  AUDIO_CAPTURE_SPACING_MS,
+  VIDEO_CAPTURES,
+  VIDEO_CAPTURE_SPACING_FRAMES,
+  VIDEO_CAPTURE_CAP_MS,
+  SETTLE_MS,
+  type SinkKind,
+} from './_module-coverage-helpers';
 import { REGISTRY, type RegistryModule } from './_registry';
 import { driverFor, type ModuleDriver } from './_drivers';
 
@@ -2333,12 +2345,6 @@ interface AudioFingerprint {
   totalSamples: number;
 }
 
-interface SinkSample {
-  kind: 'audio' | 'video';
-  audio?: AudioFingerprint;
-  video?: { variance: number; nonBlackFrac: number };
-}
-
 /** Compute the multi-feature audio fingerprint from a Float32-like
  *  buffer. Same input as `summarize` but returns more metrics so the
  *  delta computation has multiple sensitive axes. */
@@ -2443,25 +2449,48 @@ function aggregateAudio(samples: AudioFingerprint[]): AggregatedSample {
   };
 }
 
-async function readSinkAggregated(page: Page, sink: SinkSpec, n = 5, intervalMs = 150): Promise<AggregatedSample | null> {
+/** The VIDEOOUT canvas the video sink is read back from. */
+const VIDEO_SINK_CANVAS = 'canvas[data-testid="video-out-canvas"]';
+
+async function readSinkAggregated(page: Page, sink: SinkSpec): Promise<AggregatedSample | null> {
   if (sink.node.type === 'scope') {
+    // AUDIO: spacing stays MILLISECONDS. An AnalyserNode fills at the sample
+    // rate — frames are not what paces it.
     const fps: AudioFingerprint[] = [];
-    for (let i = 0; i < n; i++) {
+    for (let i = 0; i < AUDIO_CAPTURES; i++) {
       const snap = await readScopeSnapshot(page, sink.node.id);
       if (snap) fps.push(fingerprint(snap.ch1, snap.sampleRate));
-      if (i < n - 1) await runFor(page, intervalMs);
+      if (i < AUDIO_CAPTURES - 1) await runFor(page, AUDIO_CAPTURE_SPACING_MS);
     }
     if (fps.length === 0) return null;
     return aggregateAudio(fps);
   }
-  // video: 3 samples spaced 200ms.
-  const vfs: { variance: number; nonBlackFrac: number }[] = [];
-  for (let i = 0; i < 3; i++) {
-    const s = await readSink(page, sink);
-    if (s?.video) vfs.push(s.video);
-    if (i < 2) await runFor(page, 200);
+
+  // VIDEO: spacing is RENDERED FRAMES, accumulated inside the page. Was three
+  // `locator.evaluate` round trips separated by `waitForTimeout(200)` — a
+  // window that measured 26–29 frames per gap on a free-running page and 10–11
+  // under an ~8 fps load, i.e. a different observation window per machine. See
+  // _module-coverage-helpers.ts for the measurement and the reasoning.
+  const cap = await captureCanvasStatsFrameSpaced(page, VIDEO_SINK_CANVAS, {
+    captures: VIDEO_CAPTURES,
+    spacingFrames: VIDEO_CAPTURE_SPACING_FRAMES,
+    capMs: VIDEO_CAPTURE_CAP_MS,
+  });
+  if (!cap || cap.samples.length === 0) return null;
+
+  // The instrument reports the unit it counts in, and we CHECK it rather than
+  // trusting it: a capture that silently collapsed onto one rendered frame
+  // would make `varRangeΔ` vacuous for both the control and the patched run,
+  // which reads exactly like "this input has no effect on the range".
+  const gaps = cap.frames.slice(1).map((f, i) => f - cap.frames[i]!);
+  if (gaps.some((g) => g < VIDEO_CAPTURE_SPACING_FRAMES)) {
+    throw new Error(
+      `video capture returned samples ${cap.frames.join(',')} — gaps ${gaps.join(',')} FRAMES, ` +
+      `below the ${VIDEO_CAPTURE_SPACING_FRAMES}-frame spacing asked for. The range metric ` +
+      `would be measuring within a single rendered frame.`,
+    );
   }
-  if (vfs.length === 0) return null;
+
   const meanRange = (vals: number[]) => {
     if (vals.length === 0) return { mean: 0, range: 0 };
     const mean = vals.reduce((s, v) => s + v, 0) / vals.length;
@@ -2470,41 +2499,11 @@ async function readSinkAggregated(page: Page, sink: SinkSpec, n = 5, intervalMs 
   return {
     kind: 'video',
     video: {
-      variance: meanRange(vfs.map((v) => v.variance)),
-      nonBlackFrac: meanRange(vfs.map((v) => v.nonBlackFrac)),
-      samples: vfs.length,
+      variance: meanRange(cap.samples.map((v) => v.variance)),
+      nonBlackFrac: meanRange(cap.samples.map((v) => v.nonBlackFrac)),
+      samples: cap.samples.length,
     },
   };
-}
-
-async function readSink(page: Page, sink: SinkSpec): Promise<SinkSample | null> {
-  if (sink.node.type === 'scope') {
-    const snap = await readScopeSnapshot(page, sink.node.id);
-    if (!snap) return null;
-    return { kind: 'audio', audio: fingerprint(snap.ch1, snap.sampleRate) };
-  }
-  // video sink: read the VIDEOOUT canvas.
-  const stats = await page.locator('canvas[data-testid="video-out-canvas"]').evaluate((el) => {
-    const c = el as HTMLCanvasElement;
-    const ctx = c.getContext('2d');
-    if (!ctx) return null;
-    const img = ctx.getImageData(0, 0, c.width, c.height);
-    const w = c.width, h = c.height;
-    let n = 0, sum = 0, sumSq = 0, nonBlack = 0;
-    for (let y = 0; y < h; y++) {
-      for (let x = 0; x < w; x++) {
-        const i = (y * w + x) * 4;
-        const v = (img.data[i]! + img.data[i + 1]! + img.data[i + 2]!) / 3;
-        sum += v; sumSq += v * v;
-        if (v > 1) nonBlack++;
-        n++;
-      }
-    }
-    const mean = sum / n;
-    return { variance: sumSq / n - mean * mean, nonBlackFrac: nonBlack / n };
-  });
-  if (!stats) return null;
-  return { kind: 'video', video: stats };
 }
 
 // ────────── Delta computation ──────────
@@ -2892,15 +2891,25 @@ function buildDriverEdges(
 
 // ────────── Wait window per output type ──────────
 //
+// The SETTLE, deliberately in MILLISECONDS (see _module-coverage-helpers.ts for
+// why this one is NOT a frame count): it waits on wall-clock processes — the
+// AudioContext coming up, the cross-domain bridge wiring itself, an asset
+// fetch/bake, and generators whose rate is declared per SECOND.
+//
 // Scope sink (same-domain SUT): 800ms reaches steady state for slow
 // modulators + multiple gate cycles.
 // Scope sink (cross-domain SUT): 1500ms covers the cross-domain audio
 // bridge wire-up + a few signal cycles.
-// Video sink: 1500ms covers the 60fps composite settling.
+// Video sink: 1500ms covers the composite settling + cutout/asset bake.
 function waitMsFor(sutDomain: string, sink: SinkSpec): number {
-  if (sink.node.type !== 'scope') return 1500;
-  if (sutDomain !== sink.node.domain) return 1500;
-  return 800;
+  if (sink.node.type !== 'scope') return SETTLE_MS.other;
+  if (sutDomain !== sink.node.domain) return SETTLE_MS.other;
+  return SETTLE_MS.sameDomainScope;
+}
+
+/** The sink kind drives BOTH the observation plan and the budget for it. */
+function sinkKindOf(sink: SinkSpec): SinkKind {
+  return sink.node.type === 'scope' ? 'audio' : 'video';
 }
 
 // ────────── Sequencer step population ──────────
@@ -3009,13 +3018,6 @@ test.describe('per-module per-port: BEHAVIORAL input coverage (output changes on
     }
 
     test(title, async ({ page }) => {
-      // Per input: 2× (goto ~3s + spawnPatch ~3s + settle 0.8-2s
-      //              + aggregated read 5×150ms ~0.8s).
-      // Budget ~22s per input + 30s baseline cushion. We pay this for
-      // determinism — each spawn starts from a fresh AudioContext, and
-      // the aggregated read averages out modulator jitter.
-      test.setTimeout(Math.max(90_000, drivableInputs.length * 22000 + 30_000));
-
       const errors: string[] = [];
       page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
       page.on('console', (m) => {
@@ -3028,6 +3030,33 @@ test.describe('per-module per-port: BEHAVIORAL input coverage (output changes on
       // BEHAVIORAL_HELD_NOTE_DRIVER + populateAllSequencerSteps.
       const heldNoteDriver = BEHAVIORAL_HELD_NOTE_DRIVER.has(mod.type);
       const observed = pickObservedOutput(mod, driver);
+
+      // ─── BUDGET ───────────────────────────────────────────────────────
+      // Derived from the plan this test will actually execute — the sink kind,
+      // the settle, the capture count and the capture spacing — NOT a constant.
+      //
+      // It used to be `max(90 000, inputs × 22 000 + 30 000)`, whose own
+      // comment derives the 22 000 from the AUDIO plan ("aggregated read
+      // 5×150ms") and which was then applied unchanged to the VIDEO plan. A
+      // video port is measurably more expensive: its SUT renders continuously
+      // on the same main thread every Playwright operation needs. On main
+      // (run 30742314468, shard 3) that cost `lushgarden` — 3 video ports,
+      // 96 000 ms — a timeout on BOTH attempts, and `luma` — 5 video ports,
+      // 140 000 ms — a timeout on its first, while the audio modules sharing
+      // that shard finished inside the same constant.
+      //
+      // The audio budget is NOT loosened by this: the model reproduces 22 000
+      // for the audio plan to within 1.4 %, and `behavioral-observation-window
+      // .spec.ts` asserts that it still does, so a future timeout cannot be
+      // "fixed" by inflating the shared factor.
+      if (observed) {
+        test.setTimeout(behavioralTimeoutMs(
+          drivableInputs.length,
+          sinkKindOf(observed.sink),
+          waitMsFor(mod.domain, observed.sink),
+        ));
+      }
+
       if (!observed) {
         // No scope-able / video-sinkable output → can't sample. We
         // shouldn't have gotten here (modules without outputs are
