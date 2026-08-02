@@ -66,8 +66,30 @@
 // against the on-disk file, so this can never rot into decoration again.
 // ══════════════════════════════════════════════════════════════════════════════
 //
+// ══════════════════════════════════════════════════════════════════════════════
+// ⚠ THE SECOND BLIND SPOT — found in review, fixed 2026-08-02. SAME CAUSE.
+//
+// Rule 3 filtered on `type: 'gate'`. THE DISPATCH DOES NOT. `installGateDispatch`
+// keys off the SOURCE cable (`edge.sourceType === 'gate'`, engine.ts:1491) and
+// requires only that the TARGET have no non-passthrough `cvScale` (:1503) — it
+// never reads the target's declared type, and `canConnect` puts cv/pitch/gate in
+// one interchangeable CV_FAMILY. All ten sites in rule 1's KNOWN_REMAINING are
+// `type: 'cv'`, so rule 3 could not see ONE of the defects rule 1 was ratcheting.
+//
+// MEASURED: re-typing freezeframe's port to `type: 'cv'` and deleting the
+// setParam `detectEdge` call — the literal owner-reported bug, verbatim — left
+// the suite 17/17 GREEN. Rule 1 was blind (no edge call exists to find), rule 2
+// was blind (no `edge:` key to fire on), rule 3 was blind (type is now 'cv').
+//
+// The lesson is the one this file already states and then failed to apply to
+// itself: **a gate must filter on what the RUNTIME filters on.** Both blind
+// spots were a predicate the dispatch does not share. Rule 3's predicate now
+// mirrors engine.ts:1491/1503 line for line, and the negative control re-applies
+// that exact regression so it can never come back silently.
+// ══════════════════════════════════════════════════════════════════════════════
+//
 // ── WHAT THIS GATE STILL CANNOT SEE (state it, don't imply completeness) ──
-// It matches the DIRECT form `edgeFn(state, params.<id>)`, which is the form
+// Rule 1 matches the DIRECT form `edgeFn(state, params.<id>)`, which is the form
 // both real bugs took. An edge read that launders the level through a local
 // first —
 //     const sample = params[key];  …  detectEdge(state, sample)
@@ -75,6 +97,20 @@
 // that shape and is therefore invisible here; it is listed in KNOWN_UNMATCHABLE
 // by hand so it is at least counted. Widening the matcher to arbitrary dataflow
 // needs a real AST pass; the direct form is where the value is.
+//
+// The reachability walk (`drawRanges` → `declSites`) knew only `function f(){}`
+// and `const f = () => {}` until 2026-08-02 — a NARROWING introduced with the
+// filter itself, and a bad one, since these modules are written as OBJECT
+// LITERALS. Method shorthand, property arrows and class methods are covered now
+// (with negative controls per form, plus a phantom-declaration control). What
+// remains uncovered is genuinely indirect dispatch — a helper reached through a
+// computed property, an array of callbacks, or a value passed as an argument.
+// Those need the same AST pass as the dataflow case above.
+//
+// Rule 3 reads the def as SOURCE TEXT, so a port literal built programmatically
+// (spread from a shared const, or produced by a `.map()`) is matched only for
+// its `<computed>` id, and a def assembled entirely at runtime is not matched at
+// all. `vfpga-runner` and `doom` already show up as `<computed>`.
 
 import { describe, it, expect } from 'vitest';
 import { readdirSync, readFileSync, existsSync } from 'node:fs';
@@ -118,25 +154,48 @@ function afterParens(src: string, i: number): number {
 
 interface Decl { name: string; start: number; end: number; body: string }
 
+/** Reserved words that take a `(…)  {…}` shape and would otherwise be picked up
+ *  as OBJECT-METHOD declarations named `if` / `while` / `catch` / … . Leaving
+ *  them in produces a phantom decl whose "body" is a control-flow block, which
+ *  is the 27-phantom-sites failure the header records, in a new costume. */
+const NOT_A_DECL_NAME = new Set([
+  'if', 'for', 'while', 'switch', 'catch', 'do', 'else', 'return', 'function',
+  'typeof', 'new', 'await', 'yield', 'case', 'with', 'delete', 'void', 'in', 'of',
+]);
+
 /**
  * Every named function-ish declaration WITH ITS BODY RANGE. Handles
- * `function f(…) {…}`, `const f = (…) => {…}`, `const f = (…) => expr;` and
- * `const f = function (…) {…}`.
+ * `function f(…) {…}`, `const f = (…) => {…}`, `const f = (…) => expr;`,
+ * `const f = function (…) {…}`, and — added 2026-08-02 — the three OBJECT/CLASS
+ * forms below.
+ *
+ * ⚠ THE OBJECT FORMS ARE NOT OPTIONAL, they close a NARROWING THIS FILE
+ * INTRODUCED. `drawRanges` walks from `draw()` through `declSites`, so any
+ * helper declared in a form `declSites` cannot see is a body the reachability
+ * filter never enters — a silent blind spot of exactly the shape this file was
+ * written to eliminate. And the modules in question are written as OBJECT
+ * LITERALS (`const surface = { draw(frame) {…}, tick() {…} }`), so the
+ * uncovered forms were the COMMON ones here, not exotica:
+ *
+ *     { name(a) {…} }         object-literal / class METHOD shorthand
+ *     { name: (a) => {…} }    PROPERTY ARROW
+ *     class C { name(a) {…} } class METHOD
  *
  * ⚠ The body must be delimited PROPERLY, not by "the next `{` in the file".
  * An expression-bodied arrow (`const clamp01 = (v: number) => Math.min(1, v);`)
  * has no block at all, and taking the next brace swallows an unrelated function
  * further down — which made an earlier draft of this scanner classify `clamp01`
  * and `clampSym` as edge detectors and report 27 phantom sites.
+ *
+ * ⚠ The method-shorthand form is ANCHORED to a property position (`{`, `,`, `;`
+ * or `}` before the name) precisely to avoid re-creating that failure: without
+ * the anchor, `if (foo(x)) { … }` reads as a declaration of `foo` whose body is
+ * the if-block. `NOT_A_DECL_NAME` covers the residue (`while (c) {…}` sits after
+ * a `;`, so the anchor alone does not exclude it).
  */
 function declSites(src: string): Decl[] {
   const out: Decl[] = [];
-  const re = /(?:export\s+)?function\s+([A-Za-z0-9_$]+)\s*\(|(?:const|let)\s+([A-Za-z0-9_$]+)\s*(?::[^=;]*?)?=\s*(?:async\s+)?(?:function\b\s*\*?\s*\(|\()/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(src)) !== null) {
-    const name = (m[1] ?? m[2])!;
-    const parenAt = src.indexOf('(', m.index + m[0].length - 1);
-    if (parenAt < 0) continue;
+  const push = (name: string, parenAt: number): void => {
     let p = afterParens(src, parenAt);
     // step over an optional return-type annotation and the `=>`
     while (p < src.length && src[p] !== '{' && src[p] !== ';' && src[p] !== '\n') {
@@ -158,7 +217,47 @@ function declSites(src: string): Decl[] {
       }
       out.push({ name, start: p, end: k, body: src.slice(p, k) });
     }
+  };
+
+  const re = /(?:export\s+)?function\s+([A-Za-z0-9_$]+)\s*\(|(?:const|let)\s+([A-Za-z0-9_$]+)\s*(?::[^=;]*?)?=\s*(?:async\s+)?(?:function\b\s*\*?\s*\(|\()/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(src)) !== null) {
+    const name = (m[1] ?? m[2])!;
+    const parenAt = src.indexOf('(', m.index + m[0].length - 1);
+    if (parenAt < 0) continue;
+    push(name, parenAt);
   }
+
+  // PROPERTY ARROW — `{ name: (a) => {…} }` / `name: async (a) => {…}`.
+  const arrowRe = /(?:^|[{,;])\s*(?:readonly\s+)?([A-Za-z0-9_$]+)\s*:\s*(?:async\s+)?\(/gm;
+  while ((m = arrowRe.exec(src)) !== null) {
+    const name = m[1]!;
+    if (NOT_A_DECL_NAME.has(name)) continue;
+    const parenAt = src.lastIndexOf('(', arrowRe.lastIndex);
+    const after = afterParens(src, parenAt);
+    let q = after;
+    while (q < src.length && src[q] !== '{' && src[q] !== ';' && src[q] !== '\n') {
+      if (src.startsWith('=>', q)) break;
+      q++;
+    }
+    if (!src.startsWith('=>', q)) continue; // a typed property, not an arrow
+    push(name, parenAt);
+  }
+
+  // METHOD SHORTHAND — object literals AND class bodies: `{ name(a) {…} }`.
+  const methRe = /(?:^|[{,;}])\s*(?:async\s+)?(?:static\s+)?(?:private\s+|public\s+|protected\s+)?([A-Za-z0-9_$]+)\s*\(/gm;
+  while ((m = methRe.exec(src)) !== null) {
+    const name = m[1]!;
+    if (NOT_A_DECL_NAME.has(name)) continue;
+    const parenAt = src.lastIndexOf('(', methRe.lastIndex);
+    let q = afterParens(src, parenAt);
+    // optional `: ReturnType` annotation before the body
+    while (q < src.length && /[\s:A-Za-z0-9_$<>,.|[\]]/.test(src[q]!) && src[q] !== '{') q++;
+    while (q < src.length && /\s/.test(src[q]!)) q++;
+    if (src[q] !== '{') continue; // a CALL, not a method declaration
+    push(name, parenAt);
+  }
+
   return out;
 }
 
@@ -500,6 +599,75 @@ describe('video modules: a TRIGGER must be edge-detected in setParam, not read i
     expect(hits[0]!.via).toBe('widgetGateTick');
   });
 
+  it('NEGATIVE CONTROL: it follows draw() into the OBJECT/CLASS declaration forms', () => {
+    // The reachability filter walks from draw() through `declSites`, so any
+    // helper written in a form declSites cannot see is a body the filter never
+    // enters. Before 2026-08-02 it knew only `function f(){}` and
+    // `const f = () => {}` — while these modules are written as OBJECT LITERALS,
+    // making the uncovered forms the COMMON ones. Each shape below hides the
+    // real bug one hop from draw(); all three must be flagged.
+    const shapes: Array<{ label: string; param: string; src: string }> = [
+      {
+        label: 'method shorthand',
+        param: 'methodGate',
+        src: `
+          const surface = {
+            tick() { if (detectEdge(g.x, params.methodGate)?.pressed === true) flip(); },
+            draw(frame) { tick(); },
+          };
+        `,
+      },
+      {
+        label: 'property arrow',
+        param: 'arrowGate',
+        src: `
+          const surface = {
+            tick: (n) => { if (detectEdge(g.x, params.arrowGate)?.pressed === true) flip(); },
+            draw(frame) { tick(1); },
+          };
+        `,
+      },
+      {
+        label: 'class method',
+        param: 'classGate',
+        src: `
+          class Surface {
+            tick() { if (detectEdge(g.x, params.classGate)?.pressed === true) flip(); }
+            draw(frame) { tick(); }
+          }
+        `,
+      },
+    ];
+    for (const { label, param, src } of shapes) {
+      const hits = scanModule(join(MODULES_DIR, 'freezeframe.ts'), stripComments(src));
+      expect(hits.map((h) => h.param), `${label}: the draw-time read one hop away must be flagged`)
+        .toEqual([param]);
+    }
+  });
+
+  it('the widened declSites introduces NO phantom declaration (control flow is not a decl)', () => {
+    // The counter-risk of teaching declSites the method form: `if (foo(x)) { … }`
+    // is textually `name ( … ) { … }` too. A phantom decl there would make an
+    // if-block read as a function body and re-create the 27-phantom-sites bug in
+    // a new costume. Anchoring + NOT_A_DECL_NAME are what prevent it; assert it.
+    const controlFlow = `
+      function real(a) { return a; }
+      const surface = {
+        draw(frame) {
+          if (real(1)) { const x = 1; }
+          while (real(2)) { const y = 2; }
+          for (const k of list) { real(3); }
+          switch (real(4)) { case 1: real(5); break; }
+        },
+      };
+    `;
+    const names = declSites(stripComments(controlFlow)).map((d) => d.name).sort();
+    for (const kw of ['if', 'while', 'for', 'switch', 'case']) {
+      expect(names, `'${kw}' must not be read as a declaration`).not.toContain(kw);
+    }
+    expect(names, 'the real declarations are still found').toEqual(['draw', 'real']);
+  });
+
   it('POSITIVE CONTROL: the CORRECT setParam form is NOT flagged, even naming params.<id>', () => {
     // Placement is the rule. A detector on the setParam clock is CORRECT however
     // it names its argument — the previous whole-file scan flagged this shape,
@@ -642,22 +810,89 @@ describe("video modules: a port declaring edge:'trigger' must edge-detect in set
 });
 
 // ===========================================================================
-// RULE 3 — DEF COMPLETENESS: a gate-cable INPUT that routes to a param must
+// RULE 3 — DEF COMPLETENESS: an input that installGateDispatch CAN FEED must
 // DECLARE which reading it implements (`edge: 'trigger'` or `edge: 'gate'`).
 //
 // This is the rule that flags the pre-fix FREEZEFRAME def. `PortDef.edge` is
 // how the repo declares trigger-vs-gate semantics ($lib/audio/gate-trigger), and
-// an input with a `paramTarget` on the gate cable is exactly the port that will
-// be fed by installGateDispatch's REPLAY. Leaving `edge` off does not make the
-// port neutral — it makes the promise unwritten, so no gate can check it and
-// every reader assumes their own reading. FREEZEFRAME shipped a level-only
-// consumer behind a port the owner reasonably patched a trigger into.
+// an input with a `paramTarget` that the gate bridge can reach is exactly the
+// port that will be fed installGateDispatch's REPLAY. Leaving `edge` off does
+// not make the port neutral — it makes the promise unwritten, so no gate can
+// check it and every reader assumes their own reading. FREEZEFRAME shipped a
+// level-only consumer behind a port the owner reasonably patched a trigger into.
+//
+// ══════════════════════════════════════════════════════════════════════════════
+// ⚠ THE `type: 'gate'` FILTER WAS A HOLE BIG ENOUGH TO RE-SHIP THE ORIGINAL BUG
+// (found in review, fixed 2026-08-02 — this is the SECOND blind spot this file
+// has had, and it had the same cause as the first: the gate filtered on
+// something the runtime does not filter on.)
+//
+// Rule 3 used to require `type: 'gate'` on the port literal. THE DISPATCH DOES
+// NOT LOOK AT THE TARGET'S TYPE AT ALL. `PatchEngine.installGateDispatch`
+// (audio/engine.ts) keys off the SOURCE CABLE —
+//
+//     if (edge.sourceType !== 'gate') return false;                    // :1491
+//     if (input.cvScale && input.cvScale.mode !== 'passthrough') return false;  // :1503
+//
+// — and `canConnect` puts `cv`, `pitch` and `gate` in ONE interchangeable
+// CV_FAMILY (graph/types.ts), so a gate cable patched into a `type: 'cv'` input
+// is a legal, ordinary patch that gets the REPLAY. All ten sites in rule 1's
+// KNOWN_REMAINING ratchet are `type: 'cv'` ports — i.e. the old rule 3 could not
+// see a single one of the defects its sibling rule was ratcheting.
+//
+// MEASURED, not reasoned: with the old filter, changing freezeframe's port to
+//
+//     { id: 'gate_in', type: 'cv', paramTarget: 'gateLevel' }
+//
+// and deleting the `detectEdge` call from setParam — i.e. RE-SHIPPING THE
+// LITERAL OWNER-REPORTED BUG, verbatim — left this suite 17/17 GREEN. Rule 1
+// sees nothing (a module that does no edge detection has no detectEdge call to
+// find), rule 2 sees nothing (it fires on `edge: 'trigger'`, and the def has no
+// `edge` key), and rule 3 saw nothing (the type is now 'cv'). The negative
+// control at the bottom of this describe block is that exact def, so the hole
+// cannot reopen silently.
+//
+// The predicate now MIRRORS THE DISPATCH: a `paramTarget` input, on a type a
+// gate cable can legally terminate on, with no non-passthrough `cvScale`.
+//
+// ⚠ Also fixed here: the literal matcher was `/\{[^{}]*\}/g`, which cannot match
+// a port literal CONTAINING a nested object — so any port with an inline
+// `cvScale: { … }` was invisible to rule 3 outright. Brace-matched now.
+// ══════════════════════════════════════════════════════════════════════════════
 //
 // Declaring it forces the choice, and the choice is then checked: 'trigger'
 // hands the port to rule 2; 'gate' documents that the LEVEL is what it reads.
+// A port that is a genuinely CONTINUOUS level (not a gate at all) has a third,
+// non-lying exit: give it a real `cvScale`, which both describes it accurately
+// and takes it off the gate-dispatch path in the engine.
 // ===========================================================================
 
-/** Input port literals: `{ … type: 'gate' … paramTarget: … }` inside `inputs:`. */
+/** The cable types a `gate` SOURCE may legally terminate on — CV_FAMILY
+ *  (`cv`/`pitch`/`gate`, freely interchangeable) plus `modsignal`, which opts in
+ *  explicitly. Kept in sync with `canConnect` in $lib/graph/types. Anything here
+ *  can receive installGateDispatch's replay. */
+const GATE_REACHABLE_INPUT_TYPE = /type:\s*'(gate|cv|pitch|modsignal)'/;
+
+/** Top-level `{ … }` literals inside `body`, BRACE-MATCHED so a nested object
+ *  (`cvScale: { mode: 'passthrough' }`) stays part of its port literal instead
+ *  of being matched as a literal in its own right. */
+function portLiterals(body: string): string[] {
+  const out: string[] = [];
+  let depth = 0;
+  let start = -1;
+  for (let i = 0; i < body.length; i++) {
+    const c = body[i];
+    if (c === '{') { if (depth === 0) start = i; depth++; }
+    else if (c === '}') { depth--; if (depth === 0 && start >= 0) { out.push(body.slice(start, i + 1)); start = -1; } }
+  }
+  return out;
+}
+
+/**
+ * Input ports that installGateDispatch can feed a REPLAY into but which do not
+ * declare an `edge` semantic. Mirrors the dispatch's own two conditions:
+ * a reachable cable type, and no non-passthrough `cvScale`.
+ */
 function undeclaredGateInputs(src: string): string[] {
   const at = src.search(/inputs:\s*\[/);
   if (at < 0) return [];
@@ -670,12 +905,13 @@ function undeclaredGateInputs(src: string): string[] {
   }
   const body = src.slice(open, end);
   const out: string[] = [];
-  const re = /\{[^{}]*\}/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(body)) !== null) {
-    const lit = m[0];
+  for (const lit of portLiterals(body)) {
     if (!/paramTarget:/.test(lit)) continue;
-    if (!/type:\s*'gate'/.test(lit)) continue;
+    if (!GATE_REACHABLE_INPUT_TYPE.test(lit)) continue;
+    // A non-passthrough `cvScale` means the bridge SWEEPS the param range for
+    // this input — installGateDispatch explicitly declines it (engine.ts:1503),
+    // so it is not in the bug class and needs no edge declaration.
+    if (/cvScale:/.test(lit) && !/mode:\s*'passthrough'/.test(lit)) continue;
     if (/edge:\s*'(trigger|gate)'/.test(lit)) continue;
     out.push((/id:\s*([A-Za-z0-9_$']+)/.exec(lit)?.[1] ?? '<computed>').replace(/'/g, ''));
   }
@@ -691,24 +927,39 @@ function modulesWithUndeclaredGateInputs(): Array<{ module: string; ports: strin
   return out;
 }
 
-/** THE RATCHET, shrink-only. Gate inputs whose `edge` semantic is still
- *  unwritten, counted on 2026-08-01. Not asserted to be BUGS — asserted to be
- *  UNDECLARED, which is the state pre-fix FREEZEFRAME was in. Bring one up to
- *  the bar whenever you touch its module (boy-scout rule) and lower both
- *  numbers in the same commit. */
+/** THE RATCHET, shrink-only. Bridge-reachable inputs whose `edge` semantic is
+ *  still unwritten. Not asserted to be BUGS — asserted to be UNDECLARED, which
+ *  is the state pre-fix FREEZEFRAME was in. Bring one up to the bar whenever you
+ *  touch its module (boy-scout rule) and lower both numbers in the same commit.
+ *
+ *  ⚠ RE-BASELINED 2026-08-02, and the numbers went UP: 7 modules / 17 ports
+ *  became 15 / 40. Nothing regressed — the old predicate was BLIND to `cv`-typed
+ *  ports, which is most of them. The eight modules the widened rule newly sees
+ *  are marked (+). Six of them (backdraft ×6, b3ntb0x ×2, bentbox ×2) are the
+ *  SAME sites rule 1's KNOWN_REMAINING already ratchets as real defects, now
+ *  counted by the def-side rule too — the clearest possible evidence that the
+ *  old `type: 'gate'` filter was looking in the wrong place. */
 const UNDECLARED_GATE_INPUT_MODULES: readonly string[] = [
+  '4plexvid',       // (+) gate1..gate4
+  'acidwarp',       // (+) scene_cv
+  'b3ntb0x',        // (+) mirror_x_gate, mirror_y_gate   — also in rule 1's ratchet
+  'backdraft',      // (+) delay_clock, mirror_{x,y}_gate, shape_gate, pure_geo_gate, tv_gate
+  'bentbox',        // (+) mirror_x_gate, mirror_y_gate   — also in rule 1's ratchet
+  'blood',          // (+) base
+  'doom',           // (+) <computed>, iddqd_in, idkfa_in
   'gibribbon',      // clock, gate, a, b, x_btn, y_btn
   'outlines',       // gate, collide
-  'picturebox',     // asset_gate
+  'picturebox',     // asset_pitch (+), asset_gate
+  'scoreboard',     // (+) score, reset
   'shapegen',       // clock
   'vfpga-runner',   // gate_evt_N (computed id)
   'videobox',       // play_trigger
-  'videovarispeed', // cv_start, cv_pause, cv_reset, cv_loop_toggle, asset_gate
+  'videovarispeed', // cv_start, cv_pause, cv_reset, cv_loop_toggle, asset_pitch (+), asset_gate
 ];
-const UNDECLARED_GATE_INPUT_PORTS = 17;
+const UNDECLARED_GATE_INPUT_PORTS = 40;
 
-describe('video modules: a gate INPUT with a paramTarget must DECLARE its edge semantic', () => {
-  it('no NEW undeclared gate input appears', () => {
+describe('video modules: a bridge-reachable INPUT with a paramTarget must DECLARE its edge semantic', () => {
+  it('no NEW undeclared bridge-reachable input appears', () => {
     const found = modulesWithUndeclaredGateInputs();
     const novel = found.filter((f) => !UNDECLARED_GATE_INPUT_MODULES.includes(f.module));
     expect(
@@ -717,15 +968,30 @@ describe('video modules: a gate INPUT with a paramTarget must DECLARE its edge s
         ? ''
         : [
             '',
-            "These modules declare a `type: 'gate'` INPUT with a paramTarget but no `edge:`",
-            'semantic — the shape pre-fix FREEZEFRAME shipped in:',
+            'These modules declare an INPUT that installGateDispatch can feed — a paramTarget',
+            "on a gate-reachable cable type (cv / pitch / gate / modsignal) with no",
+            'non-passthrough cvScale — but no `edge:` semantic. Two shapes, ONE bug:',
             '',
             "    { id: 'gate_in', type: 'gate', paramTarget: 'gateLevel' }   // <- no edge",
+            "    { id: 'gate_in', type: 'cv',   paramTarget: 'gateLevel' }   // <- no edge, ALSO fed",
             '',
-            'installGateDispatch feeds that port a REPLAY (setParam 0,1,level in one tick), so',
-            "a consumer must choose: edge: 'trigger' (fires once per rising edge — then rule 2",
-            "requires setParam edge detection) or edge: 'gate' (the LEVEL is what it reads).",
-            'Leaving it off does not make the port neutral; it leaves the promise unwritten.',
+            "⚠ The second one is not a lesser case. `cv`, `pitch` and `gate` are ONE",
+            'interchangeable CV_FAMILY in canConnect(), and installGateDispatch never looks at',
+            "the TARGET's type — only at the source cable being `gate` and the target having no",
+            'non-passthrough cvScale. A gate patched into a cv input gets the identical REPLAY',
+            '(setParam 0, 1, level inside one ~25 ms tick).',
+            '',
+            'So the port must choose one of THREE, and each is a real, non-lying option:',
+            "  • edge: 'trigger'  — fires once per rising edge. Rule 2 then requires setParam",
+            '                       edge detection, so the promise is checked, not just written.',
+            "  • edge: 'gate'     — the LEVEL is what it reads, acting WHILE high.",
+            '  • a real cvScale   — this is a CONTINUOUS level, not a gate at all. A',
+            '                       non-passthrough cvScale both says so and takes the port off',
+            '                       the gate-dispatch path in the engine (engine.ts:1503).',
+            '',
+            'Leaving it off does not make the port neutral; it leaves the promise unwritten,',
+            'and every reader then assumes their own reading. That is exactly what FREEZEFRAME',
+            'shipped, and what the owner reported on 2026-07-31.',
           ].join('\n'),
     ).toEqual([]);
   });
@@ -758,5 +1024,50 @@ describe('video modules: a gate INPUT with a paramTarget must DECLARE its edge s
     // control tracks the real file rather than a copy that can drift.
     const shipped = stripComments(readFileSync(join(MODULES_DIR, 'freezeframe.ts'), 'utf8'));
     expect(undeclaredGateInputs(shipped), 'the shipped freezeframe def is clean').toEqual([]);
+  });
+
+  it("NEGATIVE CONTROL: the SAME def with type 'cv' instead of 'gate' is flagged TOO", () => {
+    // THE control for the hole this rule shipped with. Under the old
+    // `type: 'gate'` filter this def passed, and with the setParam detector also
+    // removed the WHOLE SUITE stayed 17/17 green while re-shipping the literal
+    // owner-reported bug. `cv` and `gate` are one CV_FAMILY in canConnect() and
+    // installGateDispatch never reads the target's type, so the two defs below
+    // are the SAME defect and must be treated identically.
+    const asGate = "inputs: [ { id: 'gate_in', type: 'gate', paramTarget: 'gateLevel' } ],";
+    const asCv = "inputs: [ { id: 'gate_in', type: 'cv', paramTarget: 'gateLevel' } ],";
+    expect(undeclaredGateInputs(asGate), "the 'gate'-typed def is flagged").toEqual(['gate_in']);
+    expect(undeclaredGateInputs(asCv), "the 'cv'-typed def is flagged IDENTICALLY").toEqual(['gate_in']);
+    // …and pitch / modsignal, the other two a gate cable can terminate on.
+    expect(undeclaredGateInputs("inputs: [ { id: 'p', type: 'pitch', paramTarget: 'x' } ],")).toEqual(['p']);
+    expect(undeclaredGateInputs("inputs: [ { id: 'm', type: 'modsignal', paramTarget: 'x' } ],")).toEqual(['m']);
+  });
+
+  it('NEGATIVE CONTROL: the REAL shipped freezeframe.ts, re-typed to cv, is flagged', () => {
+    // Not a snippet — the on-disk def with the exact one-token regression a
+    // future editor would make. This is the def half of the 17/17-green
+    // measurement; the setParam half is rule 2's business.
+    const path = join(MODULES_DIR, 'freezeframe.ts');
+    const shipped = readFileSync(path, 'utf8');
+    const SHIPPED_PORT = "{ id: 'gate_in', type: 'gate', edge: 'gate', paramTarget: 'gateLevel' }";
+    const REGRESSED_PORT = "{ id: 'gate_in', type: 'cv', paramTarget: 'gateLevel' }";
+    expect(
+      shipped.includes(SHIPPED_PORT),
+      'the shipped gate_in port literal moved — update this control so it keeps regressing the REAL file',
+    ).toBe(true);
+    const regressed = stripComments(shipped.replace(SHIPPED_PORT, REGRESSED_PORT));
+    expect(undeclaredGateInputs(regressed), 'the re-typed real def is FLAGGED').toEqual(['gate_in']);
+  });
+
+  it('a non-passthrough cvScale takes a port OFF the rule (it is off the dispatch path too)', () => {
+    // The escape hatch has to actually work, or the rule pushes authors into
+    // writing a FALSE `edge:` on a genuinely continuous input. engine.ts:1503
+    // declines any target with a non-passthrough cvScale, so this port is not in
+    // the bug class — and the brace-matched literal scanner is what makes the
+    // nested object visible at all (the old /\{[^{}]*\}/ could not match it).
+    const scaled = "inputs: [ { id: 'c', type: 'cv', paramTarget: 'x', cvScale: { mode: 'unipolar', min: 0, max: 1 } } ],";
+    expect(undeclaredGateInputs(scaled), 'a swept/continuous input needs no edge declaration').toEqual([]);
+    // …but an EXPLICITLY passthrough cvScale is still raw, so still in scope.
+    const pass = "inputs: [ { id: 'c', type: 'cv', paramTarget: 'x', cvScale: { mode: 'passthrough' } } ],";
+    expect(undeclaredGateInputs(pass), 'an explicit passthrough cvScale is still bridge-reachable').toEqual(['c']);
   });
 });
