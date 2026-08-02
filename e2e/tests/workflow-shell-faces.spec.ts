@@ -92,10 +92,13 @@ test.describe('P1 batch-1 curated faces (?shell=1)', () => {
     await expect(shell.locator('[data-glyph-kind]')).toHaveCount(0);
 
     // COMPACT (the glance tier): the row face — the designer's top-ranked
-    // control (attack, rank 1 — shows at EVERY tier) + the 'envelope' glyph
-    // sized to its cell (fluid — never the old fixed-width clip).
+    // controls (RELEASE rank 1, then ATTACK — release is the only stage that
+    // runs unconditionally, and under the rack's canonical 5 ms trigger pulse
+    // it is the whole audible envelope) + the 'envelope' glyph sized to its
+    // cell (fluid — never the old fixed-width clip).
     await setZoomTier(page, 'env', 0.45, 'compact');
     await expect(shell.locator('.tile-body')).toHaveAttribute('data-body-layout', 'row');
+    await expect(shell.locator('[data-testid="control-release"]')).toBeVisible();
     await expect(shell.locator('[data-testid="control-attack"]')).toBeVisible();
     const glyph = shell.locator('[data-glyph-kind="envelope"]');
     await expect(glyph).toBeVisible();
@@ -114,7 +117,11 @@ test.describe('P1 batch-1 curated faces (?shell=1)', () => {
     const pages = faceplate.locator('[data-testid="face-page"]');
     await expect(pages).toHaveCount(1);
     await expect(pages.first()).toHaveAttribute('data-face-page', 'stages');
-    await expect(pages.first().locator('.page-label')).toHaveText('stages');
+    // The page ID is stable ('stages'); the LABEL teaches the signal path —
+    // a gate drives the four stages, in the order they run.
+    await expect(pages.first().locator('.page-label')).toHaveText(
+      'gate → attack · decay · sustain · release',
+    );
     for (const paramId of ['attack', 'decay', 'sustain', 'release']) {
       await expect(
         pages.first().locator(`[data-testid="control-${paramId}"]`),
@@ -130,7 +137,7 @@ test.describe('P1 batch-1 curated faces (?shell=1)', () => {
     await expect(shell).toBeVisible();
   });
 
-  test('kickdrum renders its SHELL face in-lane + the dock shows all six curated pages', async ({ page }) => {
+  test('kickdrum renders its SHELL face in-lane + the dock shows all five curated pages', async ({ page }) => {
     await gotoWorkflow(page, { shell: true });
     await spawnPatch(page, [{ id: 'kd', type: 'kickdrum', position: { x: 460, y: 240 } }]);
 
@@ -142,9 +149,10 @@ test.describe('P1 batch-1 curated faces (?shell=1)', () => {
     await expect(shell).toHaveAttribute('data-shell-type', 'kickdrum');
     await expect(laneNode.locator('[data-testid="module-shell-placeholder"]')).toHaveCount(0);
 
-    // FULL tier: kickdrum's 8-rank face → the PLATE grid, WHOLE rows only:
-    // exactly ranks 1-6 render (2 rows × 3 cols); ranks 7-8 (pitch_time,
-    // level) are NOT rendered in-lane — never clipped — and the dock has them.
+    // FULL tier: kickdrum's 26-rank face → the PLATE grid, WHOLE rows only:
+    // exactly ranks 1-6 render (2 rows × 3 cols); rank 7+ (the audition,
+    // pitch_time, level, …) are NOT rendered in-lane — never clipped — and the
+    // dock has them. Ranks 1-6 are the WHOLE lane budget, by geometry.
     await expect(shell).toHaveAttribute('data-shell-tier', 'full');
     await expect(shell.locator('.tile-body')).toHaveAttribute('data-body-layout', 'plate');
     const tileBox = (await shell.boundingBox())!;
@@ -168,8 +176,8 @@ test.describe('P1 batch-1 curated faces (?shell=1)', () => {
     await expect(glyph).toBeVisible();
     await expectWholeInside(glyph, (await shell.boundingBox())!, 'compact: scope glyph');
 
-    // 2) The dock full-view shows the six designed section bands, in the
-    //    designer's reading order (the layers, then the bus).
+    // 2) The dock full-view shows the five designed section bands, in the
+    //    designer's reading order (strike, the layers, then the bus).
     await setZoomTier(page, 'kd', 0.6, 'full');
     await shell.getByTestId('shell-open-dock').click();
     const faceplate = page.getByTestId('dock-full-view');
@@ -177,16 +185,32 @@ test.describe('P1 batch-1 curated faces (?shell=1)', () => {
     await expect(faceplate.locator('[data-testid="module-shell"][data-shell-tier="dock"]')).toBeVisible();
 
     const pages = faceplate.locator('[data-testid="face-page"]');
-    await expect(pages).toHaveCount(6);
+    await expect(pages).toHaveCount(5);
     const ids = await pages.evaluateAll((els) => els.map((el) => el.getAttribute('data-face-page')));
-    expect(ids).toEqual(['sub', 'body', 'click', 'drive', 'dynamics', 'output']);
+    expect(ids).toEqual(['sub', 'body', 'click', 'drive', 'dynamics']);
     // Spot-check band membership: the drive page holds the drive knob.
     await expect(
       pages.nth(3).locator('[data-testid="control-drive"]'),
       "page 'drive' holds the drive control",
     ).toBeVisible();
+    // The AUDITION leads band 1 — the dock pane shows ~2 bands before it
+    // scrolls, so a strike button in the merged out band would be unreachable
+    // without scrolling on the one voice that is silent until you hit it.
+    await expect(
+      pages.nth(0).getByTestId('shell-cell-kickdrum-strike'),
+      "page 'sub' leads with the STRIKE audition",
+    ).toBeVisible();
+    // The merged 'dynamics · out' band carries BOTH ideas, split by clusters
+    // (a ~14px sub-header) rather than by a sixth ~81px band.
+    for (const paramId of ['ceiling', 'width', 'level']) {
+      await expect(
+        pages.nth(4).locator(`[data-testid="control-${paramId}"]`),
+        `page 'dynamics' holds ${paramId}`,
+      ).toBeVisible();
+    }
     // The in-lane-dropped ranks are all reachable in the dock (dock = ALL).
     await expect(faceplate.locator('[data-testid="control-pitch_time"]')).toBeVisible();
+    await expect(faceplate.locator('[data-testid="control-level"]')).toBeVisible();
   });
 
   test('preview OFF stays a strict no-op for a MIGRATED module: the legacy card renders in the lane', async ({ page }) => {

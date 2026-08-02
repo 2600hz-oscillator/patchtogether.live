@@ -71,6 +71,7 @@
     glyphBinding,
     createShellGlyphTap,
     createLiveWaveSource,
+    waveMorphGlyphAmp,
     type ShellGlyphTap,
   } from '$lib/ui/workflow/shell-glyph-live';
   import {
@@ -237,8 +238,14 @@
       return createLiveWaveSource(
         () => [
           liveParam(b.shapeParamId),
-          // depth 0.5 = unity ±1 swing (the lfo law); display clamps at full scale.
-          b.depthParamId ? Math.min(1, 2 * liveParam(b.depthParamId)) : 1,
+          // The module's own DEPTH → gain law, carried on the binding
+          // (`depthGain`, declared by the def's `face.glyphDepthGain`) rather
+          // than re-typed here — the shell has no business knowing a particular
+          // worklet's multiplier. The ±1 screen clamp is `waveMorphGlyphAmp`,
+          // NOT an inline Math.min: the module-side `lfoGlyphAmp` resolves
+          // through the SAME function, so the test that pins the saturation
+          // (the whole DEPTH-outranks-SHAPE argument) pins what renders here.
+          b.depthParamId ? waveMorphGlyphAmp(liveParam(b.depthParamId), b.depthGain) : 1,
         ],
         (v) => triMorphWaveSamples(v[0] ?? 0, v[1]),
       );

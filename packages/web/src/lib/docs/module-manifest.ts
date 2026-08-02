@@ -1236,6 +1236,11 @@ export function buildModuleManifest(
       // moog-filterbank-factory.ts: buildFilterBank() shared by 907A + 914).
       // Not a ModuleDef.
       if (file.endsWith('-factory.ts')) return false;
+      // -face-model.ts: the co-located PURE arithmetic behind a module's
+      // curated FACE (readout formatters, landmark rosters, glyph amplitude
+      // laws — e.g. lfo-face-model.ts). It lives beside the def so a DSP change
+      // and the numbers the faceplate prints move in one diff. Not a ModuleDef.
+      if (file.endsWith('-face-model.ts')) return false;
       // Shared transport helpers (PR feat/sequencer-transport-quicksave) —
       // SAVE/LOAD/QUEUE plumbing used by Sequencer / DRUMSEQZ / SCORE.
       // Not a ModuleDef.
