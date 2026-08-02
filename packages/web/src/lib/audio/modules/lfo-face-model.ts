@@ -4,22 +4,33 @@
 // model` / `param-grid-model` idiom): what each of the three knobs' numbers
 // MEAN, and the one constant the glyph's amplitude is derived from.
 //
-// WHY THIS FILE EXISTS AT ALL — the single-source rule. Three surfaces read the
-// same two laws and, before this file, each one re-typed them:
+// WHY THIS FILE EXISTS AT ALL — the single-source rule. Several surfaces read
+// the same two laws and, before this file, each one re-typed them:
 //
 //   * the DEPTH→swing law lived as a literal `2 *` inside ModuleShell's
-//     wave-morph glyph derivation, a second time in `docs.controls.depth`'s
-//     prose, and a third time in `packages/dsp/src/lfo.ts` (the only one that
-//     is actually authoritative);
+//     wave-morph glyph derivation, again in `lfo-state.ts` (a second exported
+//     `lfoDepthGain` with an identical body), and a third time in
+//     `packages/dsp/src/lfo.ts` (the only one that is actually authoritative);
 //   * the SHAPE anchors (0 = sine, 1 = saw, 2 = square) lived as a bare
 //     `SHAPE_GLYPHS` array on `LfoCard.svelte` — invisible to every def-reading
 //     gate, which is exactly the divergence class CLAUDE.md's backdraft section
 //     is about.
 //
+// ⚠ WHAT THIS FILE DOES **NOT** FIX, and cannot: the def's authored
+// `docs.controls.depth` PROSE and `packages/dsp/src/lfo.ts`'s own
+// `defaultValue` are plain text / another package — neither can import a web
+// constant. They are not de-duplicated, they are CROSS-CHECKED:
+// `lfo-face-model.test.ts` reads both files and asserts they still state the
+// number this module holds, so a change here reddens them instead of leaving
+// them quietly wrong. (An earlier revision of this header claimed the prose
+// copy had been eliminated. It had not.)
+//
 // Everything here is PURE and DOM-free (no registry import, no Svelte), so the
 // unit test can perturb one constant and watch every dependent assertion move —
 // the negative control that proves the wiring is real.
 
+import { formatReadout } from '$lib/ui/controls/readout-model';
+import { waveMorphGlyphAmp } from '$lib/ui/workflow/shell-glyph-live';
 import type { ParamLandmark } from '$lib/graph/types';
 
 /**
@@ -55,9 +66,16 @@ export function lfoDepthGain(depth: number): number {
  * cannot buy back — the top half of the range (unity → ±2) draws identically,
  * so the picture stops reporting depth exactly where depth starts leaving the
  * normal CV range.
+ *
+ * ⚠ IT DELEGATES TO `waveMorphGlyphAmp` ON PURPOSE. This function used to
+ * re-implement the clamp while `ModuleShell` re-implemented it a second time
+ * inline; nothing rendered through THIS one, so the saturation test that IS the
+ * ranking argument pinned an orphan — deleting the shell's `Math.min(1, …)`
+ * changed the drawn picture with every assertion here still green. One body,
+ * two callers, and the test now covers the render path.
  */
 export function lfoGlyphAmp(depth: number): number {
-  return Math.min(1, lfoDepthGain(depth));
+  return waveMorphGlyphAmp(depth, LFO_DEPTH_GAIN);
 }
 
 /**
@@ -76,12 +94,15 @@ export const LFO_SHAPE_LANDMARKS: readonly ParamLandmark[] = [
 ] as const;
 
 /** 2 decimals under 10, 1 under 100, none above — a fixed-width-ish readout
- *  that never prints more precision than the dial can resolve. */
-function short(v: number): string {
-  if (v >= 100) return v.toFixed(0);
-  if (v >= 10) return v.toFixed(1);
-  return v.toFixed(2);
-}
+ *  that never prints more precision than the dial can resolve.
+ *
+ *  ⚠ IT IS `formatReadout`, NOT A LOCAL LADDER. This used to be a private
+ *  re-implementation of the repo's shared precision ladder minus its k-suffix
+ *  branches — a fourth copy of the rule that produces the hover value these
+ *  readouts REPLACE. They agree today (every value on this face is < 1000), so
+ *  no gate could have seen them diverge; the point of a single-source file is
+ *  that it does not need one to. */
+const short = (v: number): string => formatReadout(v);
 
 /**
  * The RATE readout (PF-3 `ParamDef.format`) — and the one place on this face

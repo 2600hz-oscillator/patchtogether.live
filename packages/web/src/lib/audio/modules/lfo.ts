@@ -35,6 +35,7 @@ import {
 } from '$lib/audio/shared-clock.svelte';
 import { computeLfoState } from './lfo-state';
 import {
+  LFO_DEPTH_GAIN,
   LFO_DEPTH_UNITY,
   LFO_SHAPE_LANDMARKS,
   lfoDepthReadout,
@@ -195,6 +196,14 @@ const baseDef: AudioModuleDef = {
         controls: ['rate', 'shape', 'depth'] },
     ],
     glyph: 'waveform',
+    // The DEPTH→swing multiplier the glyph draws with, declared on THIS module
+    // rather than imported into the shared `glyphBinding` resolver. That
+    // resolver fires for any def with `glyph:'waveform'` + a 0..2 `shape` + a
+    // `depth`, so a constant living there would silently hand the LFO's ×2 to
+    // the next adopter — and a test asserting `depthGain: LFO_DEPTH_GAIN` on
+    // both rows would pass either way. It is the same number the DSP applies
+    // and the same one `depth`'s default is derived from.
+    glyphDepthGain: LFO_DEPTH_GAIN,
     // REAR CARD curation (rear-card-model) — the flip-side jack field.
     //  * The leading band holds `clock`, and derivation would head it 'voice'
     //    (any gate-cable input claims the voice slot). An LFO is a MODULATION

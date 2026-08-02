@@ -16,6 +16,7 @@
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { lfoDef } from '$lib/audio/modules/lfo';
   import { LFO_SHAPE_LANDMARKS } from '$lib/audio/modules/lfo-face-model';
+  import { knobValueToFrac } from '$lib/ui/controls/knob-conic-model';
   import type { ModuleNode, ParamDef } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
   import { cardParams, portsFromDef } from './card-kit';
@@ -44,15 +45,24 @@
   // anchor's position along the param range; the drawn glyph is picked from the
   // anchor's own name, so adding a fourth anchor to the def adds a fourth mark
   // here with no edit.
-  const GLYPH_FOR: Record<string, 'sine' | 'tri' | 'saw' | 'square'> = {
-    sine: 'sine',
-    tri: 'tri',
-    saw: 'saw',
-    square: 'square',
+  // ⚠ NO `?? 'sine'` FALLBACK. A default here is a SILENT WRONG PICTURE: rename
+  // an anchor (or add a fourth the roster doesn't draw) and the Fader paints a
+  // sine at, say, the square position with every gate green — the landmark test
+  // pins the roster but nothing ties the roster to this map. Throwing makes the
+  // omission a boot-time programming error, which is what it is.
+  const SHAPE_GLYPH_KINDS = ['sine', 'tri', 'saw', 'square'] as const;
+  type ShapeGlyphKind = (typeof SHAPE_GLYPH_KINDS)[number];
+  const glyphKind = (label: string): ShapeGlyphKind => {
+    const k = SHAPE_GLYPH_KINDS.find((g) => g === label);
+    if (!k) throw new Error(`LfoCard: no track glyph for shape landmark '${label}'`);
+    return k;
   };
   const SHAPE_MARKS = LFO_SHAPE_LANDMARKS.map((l) => ({
-    frac: (l.value - shapeP.min) / (shapeP.max - shapeP.min),
-    kind: GLYPH_FOR[l.label] ?? 'sine',
+    // The DEF's curve, not a linear assumption — the mark has to land where the
+    // Fader actually puts that value, and `shape` being `linear` today is a
+    // property of the def, not of this card.
+    frac: knobValueToFrac(l.value, shapeP.min, shapeP.max, shapeP.curve),
+    kind: glyphKind(l.label),
   }));
 
   // Port names come from the def's co-located `PortDef.label` (PF-4) — no
