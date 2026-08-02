@@ -237,6 +237,21 @@ function readPanelProbe(page: Page, type: string, key: string): Promise<PanelPro
   );
 }
 
+/** The action-cell press MODES the SHELL published (`window.__shellActionModes`).
+ *  Read from the DECLARATION, never from the DOM — see the note on
+ *  `shellActionModes()` in shell-cells.ts for the measured reason. */
+function readActionMode(page: Page, type: string, key: string): Promise<'trigger' | 'gate' | null> {
+  return page.evaluate(
+    ({ type, key }) => {
+      const w = globalThis as unknown as {
+        __shellActionModes?: Record<string, Record<string, 'trigger' | 'gate'>>;
+      };
+      return w.__shellActionModes?.[type]?.[key] ?? null;
+    },
+    { type, key },
+  );
+}
+
 /** Every cell the dock faceplate rendered, in DOM order. */
 async function renderedCells(dockShell: Locator): Promise<RenderedCell[]> {
   return dockShell.locator('[data-cell-kind]').evaluateAll((els) =>
@@ -507,15 +522,24 @@ async function driveCell(
     const btn = host.locator('button');
     await expect(btn, `${where}: a real enabled button`).toBeEnabled();
 
-    // TWO SHAPES, and which one this is comes from the DOM, not from a
-    // per-module list: `Button.svelte` emits `aria-pressed` ONLY when it is
-    // `momentary`, which is exactly when the shell rendered a `mode:'gate'`
-    // ShellActionCell. So a HELD action (snaredrum's ROLL audition, which runs
-    // the two-hand engine only while the level is high) is driven as a real
-    // press/release and asserted to RETURN TO REST — a gate pad that latched
-    // would leave the drum rolling forever, and `click()` could never see it.
-    // Generic by construction: the next gate-mode cell auto-enrols.
-    if ((await btn.getAttribute('aria-pressed')) !== null) {
+    // TWO SHAPES, and which one this is comes from the DECLARATION
+    // (`window.__shellActionModes`), never from the DOM. ⚠ THE DOM ANSWER WAS
+    // SELF-BLINDING AND IT WAS MEASURED: this branch used to ask the button
+    // whether it carried `aria-pressed`, which `Button.svelte` emits only when
+    // `momentary` — so deleting `momentary` from ModuleShell's action branch
+    // turned the held pad into a one-shot AND deleted the check, and the whole
+    // sweep reported 21 passed. Reading the module's own declaration keeps the
+    // two sides of the contract independent. Registry-driven: the next
+    // gate-mode cell auto-enrols with no edit here.
+    const mode = await readActionMode(page, spec.type, cell.key);
+    if (mode === 'gate') {
+      // A declared HELD action MUST render as a momentary pad. This is the
+      // clause the DOM sniff could not have.
+      await expect(
+        btn,
+        `${where}: declared mode:'gate' but the shell did not render a MOMENTARY pad ` +
+          `(no aria-pressed) — a held action driven as a one-shot opens and never closes`,
+      ).toHaveAttribute('aria-pressed', 'false');
       await btn.scrollIntoViewIfNeeded();
       const box = (await btn.boundingBox())!;
       await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);

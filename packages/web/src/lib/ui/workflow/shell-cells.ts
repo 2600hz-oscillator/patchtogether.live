@@ -356,11 +356,40 @@ export function shellPanelProbes(): Record<string, Record<string, ShellPanelProb
   return out;
 }
 
-/** Expose the probe map on `window` for the faces-parity e2e (dev/autotest
+/**
+ * Every declared ACTION cell's press MODE, `moduleType → faceKey → mode`.
+ *
+ * ⚠ PUBLISHED BECAUSE A DOM-DERIVED ANSWER IS SELF-BLINDING, and that was
+ * measured, not theorised. faces-parity used to decide "is this a held pad?"
+ * by asking the button whether it had `aria-pressed` — which `Button.svelte`
+ * emits only when it is `momentary`. So DELETING `momentary` from the shell's
+ * action branch made the gate pad a one-shot AND made the check that would have
+ * caught it evaporate: the sweep silently fell back to `click()` and reported
+ * 21 passed. The instrument was invariant to the exact dimension under test.
+ *
+ * Reading the DECLARATION instead makes the two sides independent: the def says
+ * `mode:'gate'`, the DOM must therefore show a momentary pad, and a shell that
+ * stops rendering one is a MISMATCH rather than a different code path. Same
+ * shape (and the same reason) as `shellPanelProbes` above.
+ */
+export function shellActionModes(): Record<string, Record<string, 'trigger' | 'gate'>> {
+  const out: Record<string, Record<string, 'trigger' | 'gate'>> = {};
+  for (const [type, specs] of Object.entries(SHELL_CELLS)) {
+    for (const [key, spec] of Object.entries(specs)) {
+      if (spec.kind !== 'action') continue;
+      (out[type] ??= {})[key] = spec.mode ?? 'trigger';
+    }
+  }
+  return out;
+}
+
+/** Expose the shell-layer metadata the faces-parity e2e reads (dev/autotest
  *  builds only — the same `testHooksEnabled()` gate `__moduleSpecs` uses). */
 export function exposeShellPanelProbesForTests(): void {
   if (!testHooksEnabled()) return;
   if (typeof window === 'undefined') return;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (window as any).__shellPanelProbes = shellPanelProbes();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (window as any).__shellActionModes = shellActionModes();
 }
