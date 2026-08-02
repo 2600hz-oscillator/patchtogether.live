@@ -12,6 +12,7 @@
   import ControlContextMenu from './ControlContextMenu.svelte';
   import { makeMidiAssignable } from './midi-assignable.svelte';
   import { notifyAutomationTouch, notifyAutomationRelease } from '$lib/audio/automation-touch';
+  import { formatParamNumber } from './param-format';
 
   // Touch-suspend cross-wire (task #183): a live grab of this control suspends
   // its clip-automation playback until the PHYSICAL RELEASE ("live wins"), not
@@ -248,16 +249,9 @@
     if (newValue !== value) onchange(newValue);
   }
 
-  function format(v: number, u: string): string {
-    const abs = Math.abs(v);
-    let str: string;
-    if (abs >= 10000) str = `${(v / 1000).toFixed(1)}k`;
-    else if (abs >= 1000) str = `${(v / 1000).toFixed(2)}k`;
-    else if (abs >= 100) str = v.toFixed(0);
-    else if (abs >= 10) str = v.toFixed(1);
-    else str = v.toFixed(2);
-    return u ? `${str} ${u}` : str;
-  }
+  // The readout ladder lives in ONE place (param-format.ts) — this dial, the
+  // conic dial, the fader and the Push 2 card all print the same string.
+  const format = formatParamNumber;
 </script>
 
 <div

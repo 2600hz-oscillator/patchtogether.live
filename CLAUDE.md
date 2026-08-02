@@ -226,6 +226,11 @@ hand-maintained list files that concurrent PRs still collide on are:
 - `e2e/vrt/vrt-exemptions.ts` (`EXEMPT_FROM_VRT` / `EXEMPT_BASELINE_PAIRS`)
 - `packages/web/src/lib/ui/modules-card-map.test.ts` (`EXPECTED_NODE_TYPES`)
 - the per-port / VRT spec lists (`e2e/tests/per-module-per-port*.spec.ts`)
+- `packages/web/src/lib/control/push2/push-card-config.ts` (`PUSH_CARD_CONTROLS`)
+  — the owner-editable PUSH CARD schema (which 8 controls each module puts on
+  the Push 2 display). Hand-maintained like `DESCRIPTIONS`; its typo gate is
+  `push-card-schema.test.ts`, and the AUTHORED-card goldens in that same file
+  are an accept-loop — an intentional edit updates both in ONE commit.
 - `packages/web/src/lib/docs/strict-docs.ts` (`STRICT_DOCS`) — hand-maintained.
   The GENERATED living-docs golden (`contract-lock.txt`) also collides: on
   conflict, take main + re-run `flox activate -- task docs:accept` to
