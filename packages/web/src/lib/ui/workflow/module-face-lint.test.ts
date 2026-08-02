@@ -900,9 +900,11 @@ describe('module-face lint — STRICT_FACES RATCHET (only grows)', () => {
     // module branches each deliberately LEFT this at their base value to avoid
     // a five-way conflict, so the batch integrator bumps it ONCE to the true
     // final |STRICT_FACES|.
+    // 18 (2026-08-02): ringback — the stereo crush, promoted from having no
+    // face at all.
     expect(
       STRICT_FACES.size,
       'STRICT_FACES shrank below its frozen floor — see the RATCHET rule above',
-    ).toBeGreaterThanOrEqual(17);
+    ).toBeGreaterThanOrEqual(18);
   });
 });

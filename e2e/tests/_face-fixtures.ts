@@ -24,11 +24,17 @@ import { STRICT_FACES } from '../../packages/web/src/lib/ui/workflow/strict-face
  * The candidate list is an ORDERED PREFERENCE of simple, stable, cheap-to-mount
  * audio modules; we take the first that is not yet promoted. Deterministic (a
  * fixed list, not registry iteration order), and self-healing across future
- * waves — the day `noise` gets a face, this silently moves to `ringback`.
+ * waves — the day `noise` gets a face, this silently moves to `attenumix`.
  * Every entry must be `domain: 'audio'` (the bridge specs assert
  * `.faceplate.audio`) and must mount a real legacy card with controls.
+ *
+ * ⚠ A PROMOTED MODULE IS REMOVED FROM THE LIST, not left in for `find` to skip.
+ * `ringback` was consumed by the 2026-08-02 face batch and dropped here in the
+ * same commit: leaving it would have made the sentence above name a module
+ * that can never be picked, which is how a self-healing fixture quietly stops
+ * being readable.
  */
-const UNMIGRATED_CANDIDATES = ['noise', 'ringback', 'attenumix', 'gatemaiden'] as const;
+const UNMIGRATED_CANDIDATES = ['noise', 'attenumix', 'gatemaiden'] as const;
 
 export const UNMIGRATED_AUDIO_MODULE: string = (() => {
   const pick = UNMIGRATED_CANDIDATES.find((t) => !STRICT_FACES.has(t));
