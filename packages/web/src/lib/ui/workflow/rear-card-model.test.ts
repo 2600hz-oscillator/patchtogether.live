@@ -20,6 +20,7 @@ import { adsrDef } from '$lib/audio/modules/adsr';
 import { vcaDef } from '$lib/audio/modules/vca';
 import { lfoDef } from '$lib/audio/modules/lfo';
 import { cloudseedDef } from '$lib/audio/modules/cloudseed';
+import { delayDef } from '$lib/audio/modules/delay';
 
 const canConnect = (s: string, d: { type: string; accepts?: readonly string[] }) =>
   canConnectToPort(s as CableType, d as { type: CableType; accepts?: readonly CableType[] });
@@ -290,6 +291,41 @@ describe('rear-card derivation — the six P1 prototypes (spec §4)', () => {
     expect(bandPorts(def, 'blend')).toEqual(['dry_cv', 'early_cv', 'late_cv']);
     expect(bandPorts(def, 'input')).toEqual(['input_mix_cv', 'low_cut_cv']);
     expect(bandPorts(def, 'output')).toEqual(['high_cut_cv', 'cross_seed_cv']);
+  });
+
+  it('delay: the page collapse forces the TIME CV out of derivation into its own band', () => {
+    // THE CASE THE COLLAPSE CREATES. `time` is a per-param CV, so derivation
+    // files it under the band named after its param's PAGE. With two pages that
+    // was `delay line` — a fine jack label. With one page it would have become
+    // the collapsed page's whole topology sentence ('one line, fed back · mix
+    // is outside the loop'), which heads a dock band and not a rear one. The
+    // curated group RE-HEADS that page slot (the vca `gain` / kickdrum `sub`
+    // mechanism), which is why its id is the PAGE id rather than a fresh one:
+    // a non-page id would append as a stray band, which module-face-lint
+    // refuses precisely because the totality gate counts holes, not order.
+    const def = delayDef as unknown as RearDefLike;
+    expectTotal(def);
+    const plan = rearFieldPlan(def);
+    expect(plan.bands.map((b) => [b.id, b.label])).toEqual([
+      ['signal', 'mono in'],
+      ['echo', 'time cv · varispeeds the line'],
+    ]);
+    expect(bandPorts(def, 'signal')).toEqual(['audio']);
+    expect(bandPorts(def, 'echo')).toEqual(['time']);
+    // The curated LABEL wins over the page's own — that is the whole point of
+    // re-heading, and it is what keeps a dock band header off the rear card.
+    expect((def.face?.pages ?? [])[0]?.label).not.toBe(plan.bands[1].label);
+    // 3 declared ports → 3 holes. `expectTotal` proves nothing is lost; this
+    // proves nothing is DOUBLED, which is the failure mode the LEADING-slot
+    // collision produces (the dx7 scar) — `signal` here is not a page id.
+    expect(plan.bands.filter((b) => b.id === 'echo')).toHaveLength(1);
+    expect(plan.holeCount).toBe(3);
+    // The `~` tick is the module's one genuinely audio-rate destination:
+    // DelayNode.delayTime is an a-rate AudioParam and the CV reaches it through
+    // a plain WaveShaper with no de-zipping.
+    const timeHole = plan.bands[1].holes[0];
+    expect(timeHole.audioRate).toBe(true);
+    expect(plan.outputs.map((h) => [h.portId, h.domain])).toEqual([['audio', 'audio']]);
   });
 });
 

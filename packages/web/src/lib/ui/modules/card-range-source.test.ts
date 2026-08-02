@@ -28,6 +28,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { adsrDef } from '$lib/audio/modules/adsr';
 import { backdraftDef } from '$lib/video/modules/backdraft';
+import { delayDef } from '$lib/audio/modules/delay';
 import { vcaDef } from '$lib/audio/modules/vca';
 import type { ParamDef } from '$lib/graph/types';
 
@@ -41,10 +42,17 @@ import type { ParamDef } from '$lib/graph/types';
  *    `formatVcaBase`, so the face prints `CLOSED` / `-12 dB` / `UNITY`, and
  *    before the conversion the card's value tag on the same param printed
  *    `0.25`. One param, two laws, and no def-reading gate could see it.
+ *  - DelayCard: converted with the delay face rework (binds via paramSpec).
+ *    It is the first entry here whose re-typing had ALREADY DIVERGED rather
+ *    than merely being able to: the middle fader was captioned `Fb` while the
+ *    def declares `Feedback`, so one control carried two names depending on
+ *    which surface you read. The nine range literals beside it all still
+ *    agreed — which is exactly how this class hides.
  */
 const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }>> = {
   'AdsrCard.svelte': adsrDef,
   'BackdraftCard.svelte': backdraftDef,
+  'DelayCard.svelte': delayDef,
   'VcaCard.svelte': vcaDef,
 };
 
@@ -53,11 +61,15 @@ const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }
  * subset of the above, and a separate ratchet on purpose — see the
  * curve-agreement test below for why the two halves cannot be one list yet.
  */
-const MAPPING_BOUND_CARDS: readonly string[] = ['AdsrCard.svelte', 'VcaCard.svelte'];
+const MAPPING_BOUND_CARDS: readonly string[] = [
+  'AdsrCard.svelte',
+  'DelayCard.svelte',
+  'VcaCard.svelte',
+];
 
 /** The ratchet floors — lower either and this test is the thing that says no. */
-const RANGE_BOUND_FLOOR = 3;
-const MAPPING_BOUND_FLOOR = 2;
+const RANGE_BOUND_FLOOR = 4;
+const MAPPING_BOUND_FLOOR = 3;
 
 /**
  * A range-ish prop bound to a NUMERIC LITERAL. Covers `min/max/defaultValue`
