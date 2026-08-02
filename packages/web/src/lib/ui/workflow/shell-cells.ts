@@ -51,7 +51,12 @@ import { clearCloudseedTail } from '$lib/ui/modules/cloudseed-preset-actions';
 // ⚠ WAS `kickdrum-strike-actions`. The file was already generic — same key,
 // same resolver, same wiring — so karplus's face renamed it rather than
 // copying it. One implementation of "audition this struck voice".
+// (This branch's `fireKickdrumStrike` import followed the rename; the old
+// module no longer exists on main, so keeping it would not have compiled.)
 import { fireManualStrike } from '$lib/ui/modules/manual-strike-actions';
+// Snaredrum keeps its OWN module: it needs a held `setSnaredrumRoll` GATE
+// alongside the one-shot, which the generic strike seam does not model.
+import { fireSnaredrumHit, setSnaredrumRoll } from '$lib/ui/modules/snaredrum-strike-actions';
 
 /** A dropdown over a NAMED roster that lives in node.data (not a param). */
 export interface ShellSelectorCell {
@@ -78,15 +83,46 @@ export interface ShellCellEnv {
   node: ModuleNode | undefined;
 }
 
-/** A one-shot ACTION button (fires on the press edge). */
+/**
+ * An ACTION button, in one of the TWO shapes the repo's own port vocabulary
+ * already distinguishes ($lib/audio/gate-trigger `EdgeSemantic`):
+ *
+ *   mode 'trigger' (the default) — a one-shot. Fires `onFire` ONCE on the press
+ *     edge and ignores the release. dx7's loader, kickdrum's STRIKE,
+ *     cloudseed's engine gestures.
+ *   mode 'gate' — a MOMENTARY pad. Fires `onGate(nodeId, true, env)` on press
+ *     and `onGate(nodeId, false, env)` on release, so a HELD action
+ *     (snaredrum's ROLL audition, which runs the two-hand engine only while the
+ *     level is high) has a representation at all.
+ *
+ * The two shapes are NOT interchangeable and the module must pick the one its
+ * seam actually is: a gate consumer driven by a click would open and never
+ * close. `shell-cells.test.ts` asserts each cell declares exactly the handler
+ * its mode needs, so a `mode:'gate'` cell carrying only `onFire` cannot ship.
+ *
+ * The primitive underneath is the SAME `<Button>` in both cases — it already
+ * carries `momentary` + `onGate` + `aria-pressed` (the `face.momentary`
+ * press-pad path uses them) — so this is a new DECLARATION, not a new control,
+ * and faces-parity's closed `data-cell-control` union is untouched.
+ *
+ * BOTH handlers take the same `env` as the one-shot: an action's press
+ * semantics and what it can REACH are orthogonal, and a held gesture that
+ * needed the engine handle would otherwise be the one shape that could not
+ * have it.
+ */
 export interface ShellActionCell {
   kind: 'action';
   label: string;
   title?: string;
-  /** Runs the action. `env` carries the engine handle for actions that are
-   *  ENGINE gestures rather than graph edits (a buffer flush, a re-seed) — a
-   *  nodeId alone can only reach the store. */
-  onFire: (nodeId: string, env: ShellCellEnv) => void;
+  /** Press semantics. Omitted = 'trigger' (the one-shot shape). */
+  mode?: 'trigger' | 'gate';
+  /** Required for mode 'trigger'. Fired once on the press edge. `env` carries
+   *  the engine handle for actions that are ENGINE gestures rather than graph
+   *  edits (a buffer flush, a re-seed) — a nodeId alone can only reach the
+   *  store. */
+  onFire?: (nodeId: string, env: ShellCellEnv) => void;
+  /** Required for mode 'gate'. Fired true on press, false on release. */
+  onGate?: (nodeId: string, high: boolean, env: ShellCellEnv) => void;
 }
 
 /** A FILE-import button: opens a picker, hands the chosen file to `onFile`,
@@ -290,6 +326,31 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
       onFire: (nodeId) => { fireManualStrike(nodeId); },
     },
   },
+  snaredrum: {
+    // THE AUDITION, in TWO pads — because this voice has TWO strike inputs with
+    // DIFFERENT declared edge semantics, and one button for both would be the
+    // face contradicting the def about the thing the module exists for.
+    // Both drive host-side ConstantSources on the module's own worklet inputs
+    // (snaredrum-strike-actions → the engine handle's read keys), so they write
+    // NOTHING to the graph and a patched cable keeps working alongside them.
+    'snaredrum-hit-{n}': {
+      kind: 'action',
+      label: 'hit',
+      title: 'Audition: one snare hit (identical to a trigger_in rising edge)',
+      onFire: (nodeId) => { fireSnaredrumHit(nodeId); },
+    },
+    // ⚠ MOMENTARY, not a click. `gate_in` is declared edge:'gate' — the
+    // two-hand roll engine runs only WHILE the level is high — so a one-shot
+    // button would open a roll that never stops. The held-gate leak paths (the
+    // pane closing mid-hold, a hidden tab) are handled in the actions module.
+    'snaredrum-roll-{n}': {
+      kind: 'action',
+      mode: 'gate',
+      label: 'roll',
+      title: 'Audition: HOLD to run the two-hand roll (identical to holding gate_in high)',
+      onGate: (nodeId, high) => { setSnaredrumRoll(nodeId, high); },
+    },
+  },
   sixstrum: {
     // The guitar / bass / harp PRESET RECALL. Unlike dx7's, its state is not a
     // `node.data` slot — the three modes ARE knob states, so a pick stamps all
@@ -367,11 +428,40 @@ export function shellPanelProbes(): Record<string, Record<string, ShellPanelProb
   return out;
 }
 
-/** Expose the probe map on `window` for the faces-parity e2e (dev/autotest
+/**
+ * Every declared ACTION cell's press MODE, `moduleType → faceKey → mode`.
+ *
+ * ⚠ PUBLISHED BECAUSE A DOM-DERIVED ANSWER IS SELF-BLINDING, and that was
+ * measured, not theorised. faces-parity used to decide "is this a held pad?"
+ * by asking the button whether it had `aria-pressed` — which `Button.svelte`
+ * emits only when it is `momentary`. So DELETING `momentary` from the shell's
+ * action branch made the gate pad a one-shot AND made the check that would have
+ * caught it evaporate: the sweep silently fell back to `click()` and reported
+ * 21 passed. The instrument was invariant to the exact dimension under test.
+ *
+ * Reading the DECLARATION instead makes the two sides independent: the def says
+ * `mode:'gate'`, the DOM must therefore show a momentary pad, and a shell that
+ * stops rendering one is a MISMATCH rather than a different code path. Same
+ * shape (and the same reason) as `shellPanelProbes` above.
+ */
+export function shellActionModes(): Record<string, Record<string, 'trigger' | 'gate'>> {
+  const out: Record<string, Record<string, 'trigger' | 'gate'>> = {};
+  for (const [type, specs] of Object.entries(SHELL_CELLS)) {
+    for (const [key, spec] of Object.entries(specs)) {
+      if (spec.kind !== 'action') continue;
+      (out[type] ??= {})[key] = spec.mode ?? 'trigger';
+    }
+  }
+  return out;
+}
+
+/** Expose the shell-layer metadata the faces-parity e2e reads (dev/autotest
  *  builds only — the same `testHooksEnabled()` gate `__moduleSpecs` uses). */
 export function exposeShellPanelProbesForTests(): void {
   if (!testHooksEnabled()) return;
   if (typeof window === 'undefined') return;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (window as any).__shellPanelProbes = shellPanelProbes();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (window as any).__shellActionModes = shellActionModes();
 }

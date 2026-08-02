@@ -33,6 +33,7 @@ import {
   shellCellKeys,
   shellPanelProbes,
   typesWithShellCells,
+  type ShellActionCell,
   type ShellPanelProbe,
 } from './shell-cells';
 
@@ -157,6 +158,71 @@ describe('shell cells — PANEL probes (PF-14: the parity sweep stays registry-d
     expect(
       probeProblems('x:y', { ...ok, effect: { kind: 'data-rev', key: '' } }),
     ).toHaveLength(1);
+  });
+});
+
+describe('shell cells — ACTION cells declare the handler their MODE needs', () => {
+  // A `mode:'gate'` cell whose only handler is `onFire` renders as a momentary
+  // <Button>, which dispatches press/release and NEVER calls onTrigger — so the
+  // pad would be inert while looking perfectly alive (it presses, it reports
+  // aria-pressed, it does nothing). The inverse is worse: a `mode:'trigger'`
+  // cell carrying only `onGate` is a one-shot Button that never fires either
+  // handler. Neither is visible to any DOM assertion that checks the button is
+  // "enabled and clickable", which is what the existing faces-parity action
+  // probe does — so it is checked HERE, off the declaration.
+
+  /** The pure clause, driven over the live registry AND over synthetic cells. */
+  function actionProblems(where: string, cell: ShellActionCell): string[] {
+    const problems: string[] = [];
+    const mode = cell.mode ?? 'trigger';
+    if (mode === 'gate') {
+      if (!cell.onGate) problems.push(`${where}: mode 'gate' but no onGate — the held pad would do nothing`);
+      if (cell.onFire) problems.push(`${where}: mode 'gate' declares onFire, which a momentary Button never calls`);
+    } else {
+      if (!cell.onFire) problems.push(`${where}: mode 'trigger' but no onFire — the button would do nothing`);
+      if (cell.onGate) problems.push(`${where}: mode 'trigger' declares onGate, which a one-shot Button never calls`);
+    }
+    return problems;
+  }
+
+  it('every registered ACTION cell is well-formed for its mode', () => {
+    const problems: string[] = [];
+    for (const type of typesWithShellCells()) {
+      for (const key of shellCellKeys(type)) {
+        const cell = shellCellFor(type, { key, kind: 'family', label: key });
+        if (cell?.kind !== 'action') continue;
+        problems.push(...actionProblems(`${type}:${key}`, cell));
+      }
+    }
+    expect(problems.join('\n'), 'action cell(s) wired to a handler their mode never calls').toBe('');
+  });
+
+  it('NEGATIVE CONTROL: the clause actually fails on each malformed shape', () => {
+    const fire = () => {};
+    const gate = () => {};
+    // Well-formed, both shapes.
+    expect(actionProblems('x:y', { kind: 'action', label: 'a', onFire: fire })).toEqual([]);
+    expect(actionProblems('x:y', { kind: 'action', label: 'a', mode: 'trigger', onFire: fire })).toEqual([]);
+    expect(actionProblems('x:y', { kind: 'action', label: 'a', mode: 'gate', onGate: gate })).toEqual([]);
+    // The four ways to get it wrong.
+    expect(actionProblems('x:y', { kind: 'action', label: 'a', mode: 'gate' })).toHaveLength(1);
+    expect(actionProblems('x:y', { kind: 'action', label: 'a', mode: 'gate', onFire: fire })).toHaveLength(2);
+    expect(actionProblems('x:y', { kind: 'action', label: 'a' })).toHaveLength(1);
+    expect(actionProblems('x:y', { kind: 'action', label: 'a', onGate: gate })).toHaveLength(2);
+  });
+
+  it('the gate-mode shape is REACHED by a real module (the clause is not vacuous)', () => {
+    // A sweep over a registry with no gate-mode cell in it would stay green on
+    // a `return []`. snaredrum's ROLL audition is the first one; if it is ever
+    // removed, this line says so rather than the coverage silently evaporating.
+    const modes: string[] = [];
+    for (const type of typesWithShellCells()) {
+      for (const key of shellCellKeys(type)) {
+        const cell = shellCellFor(type, { key, kind: 'family', label: key });
+        if (cell?.kind === 'action' && cell.mode === 'gate') modes.push(`${type}:${key}`);
+      }
+    }
+    expect(modes, 'at least one registered action cell uses mode gate').not.toEqual([]);
   });
 });
 

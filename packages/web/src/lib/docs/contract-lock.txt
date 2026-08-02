@@ -3043,6 +3043,8 @@ snaredrum param wire 0..1 linear default=0.7
 snaredrum param wire_decay 40..700 log default=260 unit=ms
 snaredrum param wire_tone 1500..9000 log default=4500 unit=Hz
 snaredrum stereo audio_l+audio_r
+snaredrum family snaredrum-hit kind=other prefix=snaredrum-hit
+snaredrum family snaredrum-roll kind=other prefix=snaredrum-roll
 sourcery meta domain=video
 sourcery in a video
 sourcery in b video

@@ -30,6 +30,7 @@ import { adsrDef } from '$lib/audio/modules/adsr';
 import { backdraftDef } from '$lib/video/modules/backdraft';
 import { delayDef } from '$lib/audio/modules/delay';
 import { ringbackDef } from '$lib/audio/modules/ringback';
+import { snaredrumDef } from '$lib/audio/modules/snaredrum';
 import { vcaDef } from '$lib/audio/modules/vca';
 import type { ParamDef } from '$lib/graph/types';
 
@@ -56,12 +57,23 @@ import type { ParamDef } from '$lib/graph/types';
  *    divergence neither grep can see: its caption said `FB` where the def says
  *    `Feedback`, so the card, the rear jack and the doc page named one control
  *    three ways. Labels are now bound too.
+ *  - SnaredrumCard: converted with the snaredrum face rework (binds via
+ *    paramSpec). The biggest single conversion so far — 21 continuous params,
+ *    every one of which re-typed min/max/curve/units. All 21 AGREED with the
+ *    def, so nothing was broken; the LABELS did not — the same
+ *    two-sided-contract hole one field over that RingbackCard's `FB` is an
+ *    instance of, and here it bit three times at once: the card painted the
+ *    literal string 'Tone' on `tone`, `wire_tone` AND `crack_tone` (the def
+ *    declares 'Tone' / 'W Tone' / 'Ck Tone'), plus 'Wire' where the def says
+ *    'Wires'. TWO cards in one day, found independently — the label half of
+ *    this contract is worth its own grep.
  */
 const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }>> = {
   'AdsrCard.svelte': adsrDef,
   'BackdraftCard.svelte': backdraftDef,
   'DelayCard.svelte': delayDef,
   'RingbackCard.svelte': ringbackDef,
+  'SnaredrumCard.svelte': snaredrumDef,
   'VcaCard.svelte': vcaDef,
 };
 
@@ -74,12 +86,22 @@ const MAPPING_BOUND_CARDS: readonly string[] = [
   'AdsrCard.svelte',
   'DelayCard.svelte',
   'RingbackCard.svelte',
+  'SnaredrumCard.svelte',
   'VcaCard.svelte',
 ];
 
 /** The ratchet floors — lower either and this test is the thing that says no. */
-const RANGE_BOUND_FLOOR = 5;
-const MAPPING_BOUND_FLOOR = 4;
+// ⚠ A MERGE CANNOT COMPUTE THESE, AND THAT IS A SILENT HAZARD. Four cards were
+// converted the same day off a shared 3/2 base — delay, ringback, snaredrum,
+// each PR raising the floor by ONE to 5/4 (range/mapping). Git then merges the
+// LISTS cleanly (different lines) and sees NO CONFLICT on the floors, because
+// every branch wrote the identical literal. The merged truth is the UNION —
+// 6 range-bound / 5 mapping-bound — so the inherited 5/4 passes with a full
+// card of slack in each, and the next card to fall back out of the set is
+// absorbed in silence rather than reddening this test. Whenever this file
+// merges, RE-DERIVE the floors from the lists; never inherit the literal.
+const RANGE_BOUND_FLOOR = 6;
+const MAPPING_BOUND_FLOOR = 5;
 
 /**
  * A range-ish prop bound to a NUMERIC LITERAL. Covers `min/max/defaultValue`

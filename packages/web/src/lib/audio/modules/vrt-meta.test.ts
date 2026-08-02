@@ -319,8 +319,18 @@ describe('vrt-meta — STRICT_VRT_MODULES RATCHET (only grows)', () => {
  * 94 → 93 (2026-08-02): `linux/ringback` DRAINED with the ringback face
  * promotion, whose PR dispatches `vrt-update.yml -f platform=linux` for its two
  * new `face-ringback-*` scenes and picks the card scene up in the same run.
+ *
+ * 93 → 91 (2026-08-02, the snaredrum face PR): `linux/face-snaredrum-compact`
+ * and `linux/face-snaredrum-dock` drained so a `vrt-update.yml -f
+ * platform=linux` dispatch on that branch could capture them (a listed pair is
+ * skipped unconditionally, and a skipped test writes no snapshot). Drain and
+ * re-capture in the SAME PR — a drain without its dispatch ships a red lane.
+ * ⚠ This is the SUM of two independent drains that landed the same day
+ * (ringback −1, snaredrum −2), not either branch's own −2 on top of 94 —
+ * the merge is where that arithmetic has to be done, and the both-directions
+ * assertion below is what refuses a guess.
  */
-const SHARED_LINUX_PAIR_CEILING = 93;
+const SHARED_LINUX_PAIR_CEILING = 91;
 
 describe('vrt-meta — EXEMPT_BASELINE_PAIRS size RATCHET (only shrinks)', () => {
   // ⚠ 2026-08-01 — READ THIS BEFORE TRUSTING THE NUMBER BELOW.
@@ -542,7 +552,14 @@ describe('vrt-meta — EXEMPT_BASELINE_PAIRS size RATCHET (only shrinks)', () =>
 // baseline commit this test is RED at 153 by construction (three darwin PNGs
 // with no linux sibling and nothing declaring them); that window is the
 // documented drain-then-dispatch flow, not a slack ceiling.
-const LINUX_DEFICIT_CEILING = 150;
+//
+// 150 → 148 (2026-08-02, the snaredrum face PR): `face-snaredrum-compact` and
+// `face-snaredrum-dock` got real linux baselines from a `vrt-update.yml -f
+// platform=linux` dispatch on that branch (run 30737945839), so two darwin-only
+// scenes stopped being darwin-only. ⚠ SUM, not substitution: ringback's −1
+// and snaredrum's −2 are independent drains that landed the same day, and
+// taking either branch's literal would leave the other's slack behind.
+const LINUX_DEFICIT_CEILING = 148;
 
 describe('vrt-meta — LINUX-baseline DEFICIT RATCHET (all four mechanisms)', () => {
   // THE HONESTY GATE. CI renders on LINUX. A scene captured on darwin but
@@ -583,6 +600,14 @@ describe('vrt-meta — LINUX-baseline DEFICIT RATCHET (all four mechanisms)', ()
       //   10  spec-local-pairs         (dashboard/groups/interactions/landing)
       //    3  scene-darwin-only        (vco-scope-audio-trace, adsr-sustain-*)
       //    0  UNDECLARED
+      //
+      // 151 → 149 (2026-08-02, the snaredrum face PR): `face-snaredrum-compact`
+      // and `face-snaredrum-dock` got real linux baselines from a
+      // `vrt-update.yml -f platform=linux` dispatch on that branch, so two
+      // darwin-only scenes stopped being darwin-only. ⚠ The pairs were removed
+      // FIRST (a listed pair is skipped, and a skipped test writes no
+      // snapshot) — which means this number and the dispatch have to land in
+      // the SAME PR, or the branch ships with two UNDECLARED gaps.
     ).toBeLessThanOrEqual(LINUX_DEFICIT_CEILING);
     // …AND THE OTHER DIRECTION, which a ceiling structurally cannot see.
     // `<=` only trips on GROWTH. A PR that CLOSES gaps — the whole point of
