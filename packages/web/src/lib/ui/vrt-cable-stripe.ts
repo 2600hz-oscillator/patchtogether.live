@@ -34,10 +34,17 @@
 //     tree solely as a TRANSITIVE dependency of `pixelmatch`; depending on it
 //     would make the gate's ability to run a property of someone else's
 //     dependency graph.
-//   * The test negative-controls it: perturb a token and the report must go
-//     red. A checker that cannot fail is decoration.
+//   * The test negative-controls it AT THE PIXEL LEVEL: it repaints a real
+//     baseline's stripe row, re-encodes the PNG, feeds those BYTES back through
+//     the same `measure()` path and requires exactly that baseline to go red.
+//     Perturbing the TOKEN TABLE instead would be a tautology — with the
+//     baselines clean by precondition, "expected moves ⇒ verdict moves" is
+//     arithmetic that a stub returning `CABLE_VARS[token]` (an instrument that
+//     never reads a pixel) satisfies just as well. Only a PIXEL perturbation
+//     can distinguish the two. See `encodePngRgb` below, which exists solely so
+//     the control can synthesise the perturbed bytes.
 
-import { inflateSync } from 'node:zlib';
+import { deflateSync, inflateSync } from 'node:zlib';
 
 /** One decoded baseline row sample. */
 export interface StripeBand {
@@ -186,6 +193,91 @@ export function rgbToHex(r: number, g: number, b: number): string {
   return '#' + [r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('');
 }
 
+export function hexToRgb(hex: string): [number, number, number] {
+  const m = /^#([0-9a-fA-F]{6})$/.exec(hex);
+  if (!m) throw new Error(`hexToRgb: not a #rrggbb colour: ${hex}`);
+  const n = parseInt(m[1], 16);
+  return [(n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff];
+}
+
+// ── PNG ENCODER — exists ONLY for the pixel-side negative control ───────────
+//
+// The control has to hand `findStripeBand` bytes whose stripe row is a colour
+// we chose, so that a blind instrument (one that reports the EXPECTED hue
+// instead of the painted one) is forced to disagree with reality. Round-tripping
+// through a real PNG keeps the control on the SAME code path as the gate —
+// decode, locate, compare — rather than on a shortcut the gate never takes.
+
+const CRC_TABLE = (() => {
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    t[n] = c >>> 0;
+  }
+  return t;
+})();
+
+function crc32(buf: Uint8Array): number {
+  let c = 0xffffffff;
+  for (let i = 0; i < buf.length; i++) c = CRC_TABLE[(c ^ buf[i]) & 0xff] ^ (c >>> 8);
+  return (c ^ 0xffffffff) >>> 0;
+}
+
+function chunk(type: string, data: Uint8Array): Buffer {
+  const out = Buffer.alloc(12 + data.length);
+  out.writeUInt32BE(data.length, 0);
+  out.write(type, 4, 'ascii');
+  Buffer.from(data).copy(out, 8);
+  out.writeUInt32BE(crc32(out.subarray(4, 8 + data.length)), 8 + data.length);
+  return out;
+}
+
+/** Encode 8-bit RGB rows (`width * 3` bytes each) as a non-interlaced PNG. */
+export function encodePngRgb(width: number, rows: Uint8Array[]): Uint8Array {
+  const stride = width * 3;
+  const raw = Buffer.alloc(rows.length * (stride + 1));
+  rows.forEach((row, y) => {
+    if (row.length !== stride) throw new Error(`row ${y} is ${row.length} bytes, expected ${stride}`);
+    raw[y * (stride + 1)] = 0; // filter: None
+    Buffer.from(row).copy(raw, y * (stride + 1) + 1);
+  });
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(rows.length, 4);
+  ihdr[8] = 8; // bit depth
+  ihdr[9] = 2; // colour type: truecolour
+  return new Uint8Array(
+    Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      chunk('IHDR', ihdr),
+      chunk('IDAT', new Uint8Array(deflateSync(raw))),
+      chunk('IEND', new Uint8Array(0)),
+    ]),
+  );
+}
+
+/**
+ * Return a copy of `pngBytes` whose row `y` is painted a flat `hex`.
+ *
+ * Only the top `STRIPE_SCAN_ROWS` rows survive — that is the whole window
+ * `findStripeBand` looks at, so the re-encoded image is equivalent for the
+ * gate's purposes and the control stays cheap.
+ */
+export function repaintStripeRow(pngBytes: Uint8Array, y: number, hex: string): Uint8Array {
+  const { width, rows } = decodePngTopRows(pngBytes, STRIPE_SCAN_ROWS);
+  if (y >= rows.length) throw new Error(`row ${y} is outside the ${rows.length}-row scan window`);
+  const [r, g, b] = hexToRgb(hex);
+  const painted = new Uint8Array(width * 3);
+  for (let x = 0; x < width; x++) {
+    painted[x * 3] = r;
+    painted[x * 3 + 1] = g;
+    painted[x * 3 + 2] = b;
+  }
+  const out = rows.map((row, i) => (i === y ? painted : row));
+  return encodePngRgb(width, out);
+}
+
 // ── source-side half: which token is a card's stripe pinned to? ─────────────
 
 export type StripeSource =
@@ -239,3 +331,60 @@ export function stripeSourceToken(cardSource: string): StripeSource {
 export function conventionalCardBasename(type: string): string {
   return type.charAt(0).toUpperCase() + type.slice(1) + 'Card';
 }
+
+// ── WHICH BASELINE DIRECTORIES THIS GATE CAN READ ──────────────────────────
+//
+// `e2e/vrt/__screenshots__/<spec>/<platform>/<scene>.png`. Only a spec that
+// captures ONE module card (`page.locator('.svelte-flow__node-<type>')`) has a
+// card stripe in its top rows; a page-level or composite capture starts with
+// the canvas background and a multi-card frame, so the saturation locator has
+// no defined answer there.
+//
+// The first cut of this gate read `vrt.spec.ts` ONLY and called that "the VRT
+// baselines" — 191 of 409 committed PNGs, with 18 provably-stale ones sitting
+// one directory away in `vrt-clap` / `vrt-karplus-tomtom-states`, invisible.
+// A scope limit that nothing states is indistinguishable from full coverage.
+// So the scope is now DECLARED, per directory, with a reason — and
+// `vrt-cable-stripe.test.ts` fails if a directory appears under
+// `__screenshots__` that is in neither table. A new spec forces a decision.
+
+/** Spec dir → scene stem → module type. Every entry is a single-card capture. */
+export const CARD_CAPTURE_DIRS: Record<string, (stem: string) => string> = {
+  // scene id IS the module type — the registry-driven per-card sweep.
+  'vrt.spec.ts': (stem) => stem,
+  'vrt-clap.spec.ts': () => 'clap',
+  // `.svelte-flow__node-${scene.moduleType}`; stems are `karplus-*` / `tomtom-*`.
+  'vrt-karplus-tomtom-states.spec.ts': (stem) => stem.split('-')[0],
+  'vrt-posterbox-states.spec.ts': () => 'posterbox',
+  'vrt-quadralogical.spec.ts': () => 'quadralogical',
+  'vrt-colourofmagic.spec.ts': () => 'colourofmagic',
+  'vrt-tidy-vco.spec.ts': () => 'tidyVco',
+  'vrt-scope-modes.spec.ts': () => 'scope',
+  // `<type>-step-<n>.png` for polyseqz / sequencer / drumseqz.
+  'playhead.spec.ts': (stem) => stem.replace(/-step-\d+$/, ''),
+};
+
+/** Spec dir → why its baselines have no single card stripe to read. */
+export const NON_CARD_CAPTURE_DIRS: Record<string, string> = {
+  'cellshade-composite.spec.ts': 'full-page composite (multiple cards)',
+  'cube-adsr-composite.spec.ts': 'full-page composite (multiple cards)',
+  'dashboard.spec.ts': 'page chrome, no module card',
+  'groups.spec.ts': 'group frame, stripe is var(--accent) not a cable token',
+  'interactions.spec.ts': 'menus/palettes, no module card',
+  'landing.spec.ts': 'marketing page',
+  'pentemelodica-composite.spec.ts': 'full-page composite (multiple cards)',
+  'topbar.spec.ts': 'page chrome, no module card',
+  'vrt-aspect-16x9.spec.ts': 'canvas-region capture, card chrome cropped out',
+  'vrt-composite-coverage.spec.ts': 'full-page composite (multiple cards)',
+  'vrt-composite.spec.ts': 'full-page composite (multiple cards)',
+  'vrt-synesthesia-composite.spec.ts': 'full-page composite (multiple cards)',
+  'vrt-synesthesia-video.spec.ts': 'video-surface capture, not the card frame',
+  'vrt-toybox.spec.ts': 'captures [data-testid="toybox-canvas"], not the card',
+  'vrt-wavesculpt-blink.spec.ts': 'wavesculpt .stripe is a 3-hex gradient, not a cable token',
+  'vrt-wavesculpt-walls.spec.ts': 'wavesculpt .stripe is a 3-hex gradient, not a cable token',
+  'workflow-audio-io-composite.spec.ts': 'workflow shell, not a module card',
+  'workflow-dock-composite.spec.ts': 'workflow shell, not a module card',
+  'workflow-rear-card.spec.ts': 'rear/patch face, no front stripe',
+  'workflow-shell-faces.spec.ts': 'workflow shell faces, not a module card',
+  'workflow-shell-zoom.spec.ts': 'workflow shell, not a module card',
+};
