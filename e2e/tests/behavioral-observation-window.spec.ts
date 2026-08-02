@@ -61,8 +61,16 @@
 //
 // ⚠ The titles here deliberately avoid the string `BEHAVIORAL input coverage`:
 // ci.yml partitions the heavy behavioral lane out of the sharded e2e matrix
-// with `--grep-invert "@collab|@capacity|BEHAVIORAL input coverage"`, and this
-// file belongs in the sharded lane where it gates every PR.
+// with a `--grep-invert` covering the collab and capacity tags plus that
+// string, and this file belongs in the sharded lane where it gates every PR.
+//
+// ⚠⚠ The two tags are spelled WITHOUT their leading at-sign in this comment ON
+// PURPOSE, and must stay that way. `scripts/collab-attest-lib.ts` resolves the
+// collab attest basis with COLLAB_TAG_RE, which scans e2e/tests for those tags
+// in their at-prefixed form — and it matches the FILE, not the test title. So
+// merely quoting the selector verbatim in a comment enrols this spec in that
+// basis and makes every edit to it demand a collab re-attest. That is exactly
+// what happened on the first push of this PR.
 
 import { test, expect, type Page } from '@playwright/test';
 import {

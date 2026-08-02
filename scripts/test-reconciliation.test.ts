@@ -229,12 +229,28 @@ describe('behavioral exemptions are ALL reconciliation backlog (no permanent-exe
     for (const m of ['cellshade', 'chromakey', 'outlines', 'edges']) {
       expect(new RegExp(`\\b${m}:\\s*VIDEO_SINK_SWIFTSHADER_NOTE`).test(specSrc)).toBe(true);
     }
-    // And the per-test timeout is back to BASELINE — the video-scaling tokens
-    // (the ~3-4 added CI minutes) must be GONE so the lane returns to ~15 min.
+    // The VIDEO-scaling tokens stay GONE. Those are what cost the ~3-4 added CI
+    // minutes the owner rejected above, because they scaled the budget for the
+    // four heavy SwiftShader video modules — which are still module-exempt
+    // (asserted directly above), so they contribute no wall clock at all.
     expect(/\bVIDEO_PER_INPUT_MS\b/.test(specSrc)).toBe(false);
     expect(/\bVIDEO_TEST_BASE_MS\b/.test(specSrc)).toBe(false);
     expect(/\bVIDEO_MOUNT_TIMEOUT_MS\b/.test(specSrc)).toBe(false);
-    expect(/setTimeout\(Math\.max\(90_000, drivableInputs\.length \* 22000 \+ 30_000\)\)/.test(specSrc)).toBe(true);
+
+    // ⚠ The budget is NO LONGER the flat `Math.max(90_000, ports*22000+30_000)`.
+    // That literal was itself the bug this leg fixes: one wall-clock number is a
+    // DIFFERENT number of captures per module and per renderer, so it bounded
+    // lushgarden (many inputs, slow sink) and a 2-port audio module with the
+    // same 96 s and only the former ever hit it. `behavioralTimeoutMs` derives
+    // the ceiling from port count + sink kind + settle time instead.
+    //
+    // This is deliberately NOT a re-run of the scaling the owner rejected: that
+    // one raised the budget for modules that then RAN longer. A timeout is a
+    // ceiling, not a duration — a module that finishes early costs the same
+    // either way, and the four expensive ones remain skipped. If this lane's
+    // wall clock does move, THAT is the regression to chase, not this pin.
+    expect(/\bbehavioralTimeoutMs\(/.test(specSrc)).toBe(true);
+    expect(/setTimeout\(Math\.max\(90_000,/.test(specSrc)).toBe(false);
   });
 
   it('still-disabled modules carry a module-exempt note (backlog, not silent)', () => {
