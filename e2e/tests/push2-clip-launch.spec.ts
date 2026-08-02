@@ -12,9 +12,11 @@
 //   clipplayer.pitch1 → VCO.pitch ; VCO.sine → VCA.audio ;
 //   clipplayer.gate1  → VCA.cv    ; VCA.audio → SCOPE.ch1
 //
-// Plus the additive Phase-1 features on the same rack: the Play button toggles
-// the transport, an above-display button selects a channel, a display encoder
-// nudges a MixMasters volume, and the D-Pad scrolls the CLIP-view window.
+// Plus the additive features on the same rack: the Play button toggles the
+// transport, an above-display button selects a LANE and the screen switches to
+// that lane's PUSH CARD, a display encoder turns one of that card's controls,
+// the master encoder drives MixMasters master volume, and the D-Pad scrolls the
+// CLIP-view window.
 //
 // CI has no Push + no Web MIDI — everything routes through installSimulatedPush2,
 // so this is capability-independent (no getUserMedia / WebUSB / hardware encoder).
@@ -65,6 +67,28 @@ async function pushState(page: import('@playwright/test').Page) {
   });
 }
 
+/** The PUSH CARD the 960×160 screen is showing (module, lane, focus, controls). */
+async function pushCard(page: import('@playwright/test').Page) {
+  const st = await pushState(page);
+  return (st?.pushCard ?? null) as null | {
+    lane: number | null;
+    moduleType: string;
+    title: string;
+    empty: string | null;
+    index: number | null;
+    count: number | null;
+    focus: string | null;
+    controls: string[];
+  };
+}
+
+async function nodeParam(page: import('@playwright/test').Page, nodeId: string, paramId: string) {
+  return page.evaluate(([id, pid]) => {
+    const w = globalThis as unknown as { __patch: { nodes: Record<string, { params?: Record<string, number> }> } };
+    return w.__patch.nodes[id]?.params?.[pid] ?? null;
+  }, [nodeId, paramId] as const);
+}
+
 // Push 2 CC map (owner-confirmed on hardware).
 const CC_PLAY = 85;
 // CLIP (note-editor) view: the permanent-controls row button 2 (CC 22) → the
@@ -72,8 +96,9 @@ const CC_PLAY = 85;
 const CC_CLIP_VIEW = 22;
 const CC_SHIFT = 49;
 const CC_DPAD_UP = 46;
-const CC_ABOVE_DISPLAY_BASE = 102; // channel-select 1..8
-const CC_ENCODER_BASE = 71; // display encoders → ch volume
+const CC_ABOVE_DISPLAY_BASE = 102; // lane-select 1..8 (switches the push card)
+const CC_ENCODER_BASE = 71; // display encoders → the push card's 8 controls
+const CC_ENCODER_MASTER = 79; // master encoder → mixmstrs master_volume
 
 test('@push2 a simulated pad press launches a clip → audible RMS at the clipplayer voice', async ({ page, rack, errorWatch }) => {
   await spawnPatch(
@@ -156,16 +181,34 @@ test('@push2 a simulated pad press launches a clip → audible RMS at the clippl
   expect(after.rms, 'the pad launch raised the output').toBeGreaterThan(before.rms + 0.02);
 });
 
-test('@push2 Play toggles transport; a channel-select + encoder drives MixMasters; D-Pad scrolls the clip window', async ({ page, rack, errorWatch }) => {
+test('@push2 Play toggles transport; a LANE select shows that lane\u2019s PUSH CARD and its encoders drive it; D-Pad scrolls the clip window', async ({ page, rack, errorWatch }) => {
   await spawnPatch(
     page,
     [
       { id: 'q-cp', type: 'clipplayer', position: { x: 60, y: 60 }, domain: 'audio', params: { quantize: 0, stepDiv: 2 } },
-      { id: 'q-mx', type: 'mixmstrs', position: { x: 360, y: 60 }, domain: 'audio', params: { ch1_volume: 0.8 } },
+      // The workflow rack's PINNED mixer: it carries the per-lane member order
+      // AND is the master encoder's target.
+      { id: 'pinned-mixmstrs', type: 'mixmstrs', position: { x: 360, y: 60 }, domain: 'audio', params: { ch1_volume: 0.8, master_volume: 0.8 } },
+      // A lane-1 member, so lane select has a real push card to show.
+      { id: 'q-vca', type: 'vca', position: { x: 660, y: 60 }, domain: 'audio', params: { base: 0.5, cvAmount: 0 } },
       { id: 'q-tl', type: 'timelorde', position: { x: 60, y: 320 }, domain: 'audio', params: { running: 0, bpm: 120 } },
     ],
     [],
   );
+
+  // Put the vca in channel column 1. `data.channel` is the MEMBERSHIP TRUTH the
+  // reconciler (and the Push) read; the order array self-heals from it.
+  await page.evaluate(() => {
+    const w = globalThis as unknown as {
+      __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
+      __ydoc: { transact: (fn: () => void) => void };
+    };
+    w.__ydoc.transact(() => {
+      const n = w.__patch.nodes['q-vca'];
+      if (!n.data) n.data = {};
+      n.data.channel = 1;
+    });
+  });
   await expect(page.locator('.svelte-flow__node-clipplayer')).toHaveCount(1);
 
   const installed = await page.evaluate(async () => {
@@ -188,14 +231,37 @@ test('@push2 Play toggles transport; a channel-select + encoder drives MixMaster
   await cc(CC_PLAY, 127); await cc(CC_PLAY, 0);
   await expect.poll(() => timelordeRunning(page), { timeout: 3000 }).toBe(0);
 
-  // (B) Above-display button 3 (CC 104) → select channel index 2 (Push-local).
+  // (B) Above-display button 3 (CC 104) → select LANE 3 (Push-local). Lane 3 is
+  // empty, so the screen says so rather than showing a stale card.
   await cc(CC_ABOVE_DISPLAY_BASE + 2, 127);
   await expect.poll(async () => (await pushState(page))?.selectedChannel, { timeout: 3000 }).toBe(2);
+  await expect
+    .poll(async () => (await pushCard(page))?.empty, { timeout: 3000 })
+    .toBe('no-modules');
 
-  // (C) Display encoder 1 (CC 71) +5 detents → ch1_volume = 0.8 + 5*0.01 = 0.85.
-  await cc(CC_ENCODER_BASE, 5);
-  await expect.poll(() => mixParam(page, 'ch1_volume'), { timeout: 3000 }).toBeGreaterThan(0.83);
-  expect(await mixParam(page, 'ch1_volume')).toBeLessThan(0.87);
+  // (B2) Above-display button 1 (CC 102) → LANE 1, whose only member is the vca:
+  // the SELECTED CARD changes, and it is that module's card.
+  await cc(CC_ABOVE_DISPLAY_BASE, 127);
+  await expect.poll(async () => (await pushCard(page))?.focus, { timeout: 3000 }).toBe('q-vca');
+  const card = await pushCard(page);
+  expect(card?.moduleType, 'the screen shows the vca push card').toBe('vca');
+  expect(card?.lane).toBe(1);
+  expect(card?.empty).toBeNull();
+  // The authored vca card is [base, cvAmount] — encoder 1 is `base`.
+  expect(card?.controls?.slice(0, 2)).toEqual(['base', 'cvAmount']);
+
+  // (C) Display encoder 1 (CC 71) +3 detents → the FOCUSED CARD's first control
+  // (vca `base`), NOT a mixer channel. This is the owner's replacement for the
+  // 8-knobs-as-a-mixer function.
+  await cc(CC_ENCODER_BASE, 3);
+  await expect.poll(() => nodeParam(page, 'q-vca', 'base'), { timeout: 3000 }).toBeGreaterThan(0.52);
+  expect(await nodeParam(page, 'q-vca', 'base')).toBeLessThan(0.54);
+  expect(await nodeParam(page, 'q-vca', 'cvAmount'), 'only strip 1 moved').toBe(0);
+  expect(await mixParam(page, 'ch1_volume'), 'the mixer channel is NOT touched').toBe(0.8);
+
+  // (C2) The MASTER encoder (CC 79) is the one mixer binding that survives.
+  await cc(CC_ENCODER_MASTER, 3);
+  await expect.poll(() => mixParam(page, 'master_volume'), { timeout: 3000 }).toBeGreaterThan(0.82);
 
   // (D) D-Pad → CLIP-view nav. Switch to CLIP view (permanent-row button 2,
   // CC 22 → top CC 93), read the pitch-window offset, press D-Pad ↑ → +1; hold

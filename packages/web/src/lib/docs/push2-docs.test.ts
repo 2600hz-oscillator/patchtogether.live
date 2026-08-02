@@ -29,10 +29,23 @@ describe('Push2Docs', () => {
     expect(out).toContain('Push 2 control');
     expect(out).toContain('data-testid="push2-parity-table"');
     expect(out).toContain('data-testid="push2-additive-table"');
-    // The three additive features are named.
-    expect(out).toContain('Select channel 1–8');
-    expect(out).toContain('MixMasters ch1–8 volume');
+    // The additive features are named. (These three lines used to assert the
+    // MIXER wording — "Select channel 1–8" / "MixMasters ch1–8 volume". The
+    // owner dropped the 8-knobs-as-a-mixer function, so the page now documents
+    // lane select + the push card, and this gate follows it.)
+    expect(out).toContain('Select LANE 1–8');
+    expect(out).toContain('Turn the 8 controls of the current push card');
+    expect(out).toContain('Flip through the push cards');
     expect(out).toContain('CLIP-view pitch window');
+    // The MASTER encoder is the one mixer binding that survives.
+    expect(out).toContain('MixMasters master volume');
+  });
+
+  it('names the OWNER-EDITABLE config file, so the doc points at the text schema', () => {
+    // The spec's requirement is that the 8 controls are "a TEXT-DEFINED SCHEMA
+    // where I can easily change that by editing text config in the repo" — a
+    // feature nobody can find is not that.
+    expect(html()).toContain('push-card-config.ts');
   });
 
   it('documents START/STOP moving to the Play button', () => {
@@ -49,8 +62,8 @@ describe('Push2Docs', () => {
     expect(out, 'Shift CC').toContain(`CC ${PUSH_CC_SHIFT}`);
     expect(out, 'channel-select base CC').toContain(`CC ${PUSH_CC_ABOVE_DISPLAY_BASE}`);
     expect(out, 'encoder base CC').toContain(`CC ${PUSH_CC_ENCODER_BASE}`);
-    expect(out, 'Tempo (send1) CC').toContain(`CC ${PUSH_CC_ENCODER_TEMPO}`);
-    expect(out, 'Swing (send2) CC').toContain(`CC ${PUSH_CC_ENCODER_SWING}`);
+    expect(out, 'Tempo (unbound) CC').toContain(`CC ${PUSH_CC_ENCODER_TEMPO}`);
+    expect(out, 'Swing (card flip) CC').toContain(`CC ${PUSH_CC_ENCODER_SWING}`);
     expect(out, 'Master CC').toContain(`CC ${PUSH_CC_ENCODER_MASTER}`);
     expect(out, 'D-Pad up CC').toContain(`CC ${PUSH_CC_DPAD_UP}`);
     expect(out, 'D-Pad left CC').toContain(`CC ${PUSH_CC_DPAD_LEFT}`);
@@ -69,11 +82,15 @@ describe('Push2Docs', () => {
     expect(out).toContain(`CC ${PUSH_CC_SCENE_BASE}–${PUSH_CC_SCENE_BASE + 7}`);
   });
 
-  it('flags the Phase-1 LIVE-port + WebUSB-deferred caveats', () => {
+  it('flags the LIVE-port + WebUSB + unconfirmed-mapping caveats', () => {
     const out = html();
     expect(out).toContain('data-testid="push2-hardware-note"');
     expect(out).toContain('LIVE port'); // binds the Live port in Live mode
-    expect(out).toContain('Phase 2'); // the on-device display is deferred
+    expect(out).toContain('WebUSB'); // the display is a separate permission
     expect(out).toContain('stock Push palette');
+    // CC 15 as the #2-from-the-left encoder is DERIVED, not hardware-confirmed;
+    // the page must say so rather than presenting it as settled.
+    expect(out).toContain('unconfirmed on hardware');
+    expect(out).toContain(`CC ${PUSH_CC_ENCODER_SWING}`);
   });
 });

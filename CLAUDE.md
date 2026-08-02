@@ -231,6 +231,12 @@ hand-maintained list files that concurrent PRs still collide on are:
   the Push 2 display). Hand-maintained like `DESCRIPTIONS`; its typo gate is
   `push-card-schema.test.ts`, and the AUTHORED-card goldens in that same file
   are an accept-loop — an intentional edit updates both in ONE commit.
+  ⚠ Because a push card is resolved from the LIVE def, **adding or renaming a
+  param on any module can silently change that module's push card.** The face /
+  generic tiers re-rank themselves, so a new param declared early in `params`
+  walks onto the generic card and pushes the 8th control off. If a module's
+  card matters, give it an explicit entry here — an override REPLACES, so it
+  cannot drift.
 - `packages/web/src/lib/docs/strict-docs.ts` (`STRICT_DOCS`) — hand-maintained.
   The GENERATED living-docs golden (`contract-lock.txt`) also collides: on
   conflict, take main + re-run `flox activate -- task docs:accept` to
