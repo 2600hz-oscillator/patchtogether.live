@@ -214,17 +214,38 @@ describe('rear-card derivation — the six P1 prototypes (spec §4)', () => {
     expect(plan.outputs[1].pairWithPrev).toBeUndefined();
   });
 
-  it('vca: curated signal → gain stage split (neither input is a per-param CV)', () => {
+  it('vca: curated signal → gain cv split (neither input is a per-param CV)', () => {
     const def = vcaDef as unknown as RearDefLike;
     expectTotal(def);
     const plan = rearFieldPlan(def);
     expect(plan.bands.map((b) => [b.id, b.label])).toEqual([
       ['signal', 'signal'],
-      ['gain', 'gain stage'],
+      ['gain', 'gain cv'],
     ]);
     expect(bandPorts(def, 'signal')).toEqual(['audio']);
     expect(bandPorts(def, 'gain')).toEqual(['cv']);
-    expect(plan.outputs.map((h) => h.label)).toEqual(['AUDIO', 'AUDIO INV']);
+    // PF-4: the def authors these, so the rear stops printing `AUDIO` on BOTH
+    // rails (the input hole is `AUDIO`) and the pair shares a stem.
+    expect(plan.outputs.map((h) => h.label)).toEqual(['OUT', 'OUT INV']);
+    expect(plan.outputs[1].pairWithPrev).toBeUndefined(); // not an L/R pair
+  });
+
+  it('vca: the page id `gain` COLLIDING with the rear group id `gain` is intentional', () => {
+    // The curated group claims the page's rear slot and its LABEL wins, which
+    // is the whole reason the rear reads `gain cv` while the dock band header
+    // reads the gain law. It is NOT the dx7 `voice` double-render bug: that one
+    // fires because the voice/signal slot claim pushes a band BEFORE the page
+    // loop can also match it. Pin both halves so a rename of either desyncs
+    // loudly instead of silently.
+    const def = vcaDef as unknown as RearDefLike;
+    const pageIds = (def.face?.pages ?? []).map((p) => p.id);
+    const groupIds = (def.face?.rear?.groups ?? []).map((g) => g.id);
+    expect(pageIds).toEqual(['gain']);
+    expect(groupIds).toEqual(['signal', 'gain']);
+    // The colliding id renders ONCE, and every declared port still lands.
+    const plan = rearFieldPlan(def);
+    expect(plan.bands.filter((b) => b.id === 'gain')).toHaveLength(1);
+    expect(plan.holeCount).toBe(4);
   });
 
   it('lfo: curated SYNC band + ONE engine page band, signal-ordered; 4-phase cv rail', () => {
