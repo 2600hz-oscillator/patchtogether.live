@@ -1447,6 +1447,7 @@ karplus param level -24..12 linear default=0 unit=dB
 karplus param position 0.02..0.5 linear default=0.2
 karplus param stiffness 0..1 linear default=0
 karplus param tune 55..1760 log default=220 unit=Hz
+karplus family karplus-strike kind=other prefix=karplus-strike
 kickdrum meta domain=audio
 kickdrum in accent_in cv
 kickdrum in attack_cv cv param=attack cvScale=linear

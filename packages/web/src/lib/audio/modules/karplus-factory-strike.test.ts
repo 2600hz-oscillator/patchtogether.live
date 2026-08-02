@@ -1,35 +1,37 @@
-// packages/web/src/lib/audio/modules/kickdrum-factory-strike.test.ts
+// packages/web/src/lib/audio/modules/karplus-factory-strike.test.ts
 //
-// THE HOST-SIDE AUDIO WIRING FOR THE AUDITION, against the REAL factory.
+// THE HOST-SIDE AUDIO WIRING FOR THE PLUCK, against the REAL factory.
 //
-// ⚠ WHY THIS FILE EXISTS. Before it, the entire host side of the STRIKE feature
-// — the dedicated ConstantSource, its connection into the worklet's TRIGGER
-// input, and the `read('manualTrigger')` handle key both faces call — rested on
-// exactly ONE assertion anywhere in the repo: `after.peak > 0.05` in
-// `e2e/tests/kickdrum-face.spec.ts`. Delete `strikeCs` and the `read(key)`
-// block from `kickdrum.ts` and:
+// ⚠ WHY THIS FILE EXISTS. karplus has carried a `strikeCs` ConstantSource and a
+// `read('manualTrigger')` handle key since it shipped, and NOTHING in the repo
+// asserted either of them. Delete both from `karplus.ts` and, measured on this
+// branch's parent:
 //
-//   * kickdrum-face.test.ts        → 14/14 green (selector projections only)
-//   * manual-strike-actions.test → 5/5 green: EVERY test drives `fakeEngine()`
-//                                    and never the real factory, so its
-//                                    "writes NOTHING to the graph" clause would
-//                                    pass against a handle with no `read` at all
-//   * module-face-lint / contract-lock / module-docs-* → green
-//   * faces-parity                 → green (asserts the button is enabled and
-//                                    clicks it; no effect assertion)
+//   * karplus.test.ts             → green. Its "a strike rings audibly" case
+//                                   drives the WORKLET directly with a
+//                                   synthesised trigger buffer; it never calls
+//                                   the factory.
+//   * karplus-face.test.ts        → green (pure selector projections).
+//   * manual-strike-actions.test  → green: every case drives `fakeEngine()`,
+//                                   so it would pass against a handle with no
+//                                   `read` at all.
+//   * contract-lock / module-face-lint / module-docs-lint → green.
+//   * faces-parity                → green (asserts the button is enabled and
+//                                   clicks it; no effect assertion).
 //
-// …leaving one workflow-mode e2e, on the default 30 s timeout, under
-// SwiftShader, as the single point of failure for a shipped feature. That is
-// the "a gate that reads one side proves nothing about the other" shape with
-// the sides being MODEL and ENGINE.
+// …i.e. before this file the only witness to the whole feature was one
+// workflow-mode e2e under SwiftShader. That is the "a gate that reads one side
+// proves nothing about the other" shape, with the sides being MODEL and ENGINE.
+// This is the kickdrum-factory-strike.test.ts idiom applied to the module the
+// audition matters most on: karplus has no exciter, so an unpatched, unstruck
+// karplus is not quiet — it is MUTE.
 //
 // The harness is the moog905 idiom: a minimal Web Audio mock (addModule +
-// AudioWorkletNode + createConstantSource + createChannelSplitter) driving the
-// REAL `kickdrumDef.factory`, so the assertions are about the shipped wiring
-// rather than about a fake.
+// AudioWorkletNode + createConstantSource) driving the REAL `karplusDef.factory`,
+// so the assertions are about the shipped wiring rather than about a fake.
 
 import { describe, it, expect, vi } from 'vitest';
-import { kickdrumDef } from './kickdrum';
+import { karplusDef } from './karplus';
 import { MANUAL_STRIKE_KEY } from '$lib/ui/modules/manual-strike-actions';
 import { TRIGGER_PULSE_S } from '$lib/audio/gate-trigger';
 import type { ModuleNode } from '$lib/graph/types';
@@ -72,11 +74,10 @@ function mockConstantSource() {
 function makeMockCtx() {
   const sources: ReturnType<typeof mockConstantSource>[] = [];
   const worklet = {
-    parameters: new Map(kickdrumDef.params.map((p) => [p.id, mockParam(p.defaultValue)])),
+    parameters: new Map(karplusDef.params.map((p) => [p.id, mockParam(p.defaultValue)])),
     connect: vi.fn(),
     disconnect: vi.fn(),
   };
-  const splitter = { connect: vi.fn(), disconnect: vi.fn() };
 
   class FakeAudioWorkletNode {
     parameters = worklet.parameters;
@@ -95,29 +96,28 @@ function makeMockCtx() {
       sources.push(s);
       return s;
     },
-    createChannelSplitter: () => splitter,
   } as unknown as AudioContext;
 
-  return { ctx, worklet, splitter, sources };
+  return { ctx, worklet, sources };
 }
 
 const node = (): ModuleNode =>
-  ({ id: 'kd-factory', type: 'kickdrum', domain: 'audio', position: { x: 0, y: 0 }, params: {}, data: {} }) as ModuleNode;
+  ({ id: 'kp-factory', type: 'karplus', domain: 'audio', position: { x: 0, y: 0 }, params: {}, data: {} }) as ModuleNode;
 
-/** The kickdrum worklet's TRIGGER input index (factory comment: trigger 0,
- *  accent 1, pitch 2, choke 3) — asserted, not assumed, via the port map. */
+/** The karplus worklet's TRIGGER input index — asserted against the handle's
+ *  own port map below rather than trusted from the factory's comment. */
 const TRIGGER_INPUT = 0;
 
-describe('kickdrum factory — the STRIKE audition is really wired to the trigger input', () => {
+describe('karplus factory — the PLUCK audition is really wired to the trigger input', () => {
   it('answers the manualTrigger read key with a callable', async () => {
     const { ctx } = makeMockCtx();
-    const handle = await kickdrumDef.factory!(ctx, node());
+    const handle = await karplusDef.factory!(ctx, node());
     expect(typeof handle.read?.(MANUAL_STRIKE_KEY)).toBe('function');
   });
 
   it('has a DEDICATED ConstantSource on the trigger input, separate from the keep-alive', async () => {
     const { ctx, sources } = makeMockCtx();
-    await kickdrumDef.factory!(ctx, node());
+    const handle = await karplusDef.factory!(ctx, node());
 
     // Two sources: the 4-connection silence keep-alive, and the 1-connection
     // strike source. Naming them by their connection count rather than by
@@ -129,8 +129,11 @@ describe('kickdrum factory — the STRIKE audition is really wired to the trigge
     expect(silence, 'the 4-input silence keep-alive').toBeDefined();
     expect(strike).not.toBe(silence);
 
-    // It must land on the TRIGGER input specifically — an accent/pitch/choke
+    // It must land on the TRIGGER input specifically — a pitch/accent/damp
     // connection would still "work" as a graph edge and do the wrong thing.
+    // The index is read off the handle's OWN port map, so this cannot drift
+    // with the factory's comment.
+    expect(handle.inputs.get('trigger_in')!.input).toBe(TRIGGER_INPUT);
     expect(strike.connections[0]!.input).toBe(TRIGGER_INPUT);
     expect(strike.started, 'a ConstantSource that is never started emits nothing').toBe(1);
     expect(strike.offset.value, 'it must REST at 0 so it does not hold the trigger high').toBe(0);
@@ -138,7 +141,7 @@ describe('kickdrum factory — the STRIKE audition is really wired to the trigge
 
   it('firing the handle emits the SHARED canonical trigger pulse on that source', async () => {
     const { ctx, sources } = makeMockCtx();
-    const handle = await kickdrumDef.factory!(ctx, node());
+    const handle = await karplusDef.factory!(ctx, node());
     const strike = sources.find((s) => s.connections.length === 1)!;
 
     strike.offset.events.length = 0;
@@ -146,7 +149,7 @@ describe('kickdrum factory — the STRIKE audition is really wired to the trigge
 
     // The `$lib/audio/gate-trigger` triangle: 0 at now, up to 1 at now+w/2,
     // back to 0 at now+w. Asserted against the SHARED constant, never a
-    // re-typed 0.005 — the whole point of that module.
+    // re-typed number — the whole point of that module.
     const now = 7;
     expect(strike.offset.events).toEqual([
       { kind: 'set', value: 0, time: now },
@@ -155,9 +158,9 @@ describe('kickdrum factory — the STRIKE audition is really wired to the trigge
     ]);
   });
 
-  it('a second fire is a second pulse — no latching, and it never holds high', async () => {
+  it('a second pluck is a second pulse — no latching, and it never holds high', async () => {
     const { ctx, sources } = makeMockCtx();
-    const handle = await kickdrumDef.factory!(ctx, node());
+    const handle = await karplusDef.factory!(ctx, node());
     const strike = sources.find((s) => s.connections.length === 1)!;
     const fire = handle.read!(MANUAL_STRIKE_KEY) as () => void;
 
@@ -171,15 +174,29 @@ describe('kickdrum factory — the STRIKE audition is really wired to the trigge
     ).toEqual({ kind: 'ramp', value: 0, time: 7 + TRIGGER_PULSE_S });
   });
 
+  it('the PLUCK does not disturb a patched cable: it sums into the SAME input trigger_in feeds', async () => {
+    // This is the property the docs promise ("a cable already patched into
+    // trigger_in keeps working while you use it"), and it is entirely a
+    // consequence of the strike source landing on the port's own node input
+    // rather than on a private one.
+    const { ctx, sources } = makeMockCtx();
+    const handle = await karplusDef.factory!(ctx, node());
+    const strike = sources.find((s) => s.connections.length === 1)!;
+    const port = handle.inputs.get('trigger_in')!;
+    expect(strike.connections[0]!.dest, 'same destination node as the patched port').toBe(port.node);
+    expect(strike.connections[0]!.input).toBe(port.input);
+    expect(port.param, 'trigger_in is a NODE input, not an AudioParam target').toBeUndefined();
+  });
+
   it('an UNKNOWN read key is undefined — the seam is not a catch-all', async () => {
     const { ctx } = makeMockCtx();
-    const handle = await kickdrumDef.factory!(ctx, node());
+    const handle = await karplusDef.factory!(ctx, node());
     expect(handle.read?.('somethingElse')).toBeUndefined();
   });
 
   it('dispose() stops the strike source (a live ConstantSource is a leak)', async () => {
     const { ctx, sources } = makeMockCtx();
-    const handle = await kickdrumDef.factory!(ctx, node());
+    const handle = await karplusDef.factory!(ctx, node());
     const strike = sources.find((s) => s.connections.length === 1)!;
     handle.dispose?.();
     expect(strike.stopped).toBe(1);

@@ -23,7 +23,7 @@
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
   import { cardParams } from './card-kit';
-  import { fireKickdrumStrike } from './kickdrum-strike-actions';
+  import { fireManualStrike } from './manual-strike-actions';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -63,7 +63,7 @@
 
   // Manual STRIKE — the audition hit (momentary visual flash on the button).
   // Same ONE seam the RACKLINE shell's `kickdrum-strike` action cell calls
-  // (kickdrum-strike-actions → the engine handle's `manualTrigger` read key →
+  // (manual-strike-actions → the engine handle's `manualTrigger` read key →
   // a host-side ConstantSource summed into trigger_in), so the two surfaces
   // cannot drift. It sits with the SUB group because that is what a kick's
   // strike makes — the same reading the shell face's leading 'strike · the
@@ -71,7 +71,7 @@
   // with no engine booted nothing fires and nothing flashes.
   let strikePulse = $state(false);
   function strike(): void {
-    if (!fireKickdrumStrike(id)) return;
+    if (!fireManualStrike(id)) return;
     strikePulse = true;
     setTimeout(() => { strikePulse = false; }, 120);
   }

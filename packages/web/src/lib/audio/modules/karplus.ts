@@ -82,56 +82,132 @@ export const karplusDef: AudioModuleDef = {
     { id: 'level',      label: 'Level',  defaultValue: 0,   min: -24,  max: 12,   curve: 'linear', units: 'dB' },
   ],
 
-  // ── RACKLINE face (P1 batch-3 TOTAL REWORK — UI curation only, NOT the I/O
-  // contract; see ModuleFace in $lib/graph/types). Designed from what the
-  // module IS — a monophonic plucked/struck STRING played from an external
-  // trigger — rather than transcribed from the legacy card's fader bands.
+  // THE PLUCK, declared as a control family (one member). It is the module's
+  // defining affordance and it is NOT a param: `strike` as a ParamDef would
+  // persist a one-shot 0/1 into the Y.Doc, add a ninth parameterDescriptor the
+  // worklet does not have (karplus.test.ts pins descriptors 1:1 with these
+  // params), and force an ART re-pin of both baselines through
+  // art/scenarios/karplus/profile.test.ts's dspSourceSha. The audition is a
+  // host-side ConstantSource fired through the factory's `manualTrigger` read
+  // key below — it writes NOTHING to the graph.
   //
-  // THE RANKING. The legacy card led with TUNE simply because that is the
-  // first param declared. In a rack, TUNE is a SET-ONCE transpose: the note
-  // arrives on the 1 V/oct input from the lane's sequencer. The knobs a
-  // player actually RIDES on a struck string are the two that decide what
-  // instrument it is — DECAY (staccato koto plink … open piano drone) and
-  // BRIGHT (felt-damped nylon … ringing steel). So those two take the hero
-  // ranks and own the compact lane tile (2 knobs + the live glyph); TUNE
-  // demotes to rank 3. Ranks 4–6 are the STRIKE (COLOR / BURST / POS — the
-  // second-biggest character move: soft mallet ↔ hard pick ↔ bowed scrape);
-  // STIFF is rank 7 (it ships at 0 and takes the voice OUT of "string" into
-  // bell/metal — a destination, not a ride knob); LEVEL is last, as on every
-  // face.
+  // ⚠ IT IS A "FAMILY" ONLY BECAUSE THE PLATFORM HAS NO `face.actions` YET.
+  // `face.order` can rank exactly three things — a param id, a control-family
+  // template, or a numbered-legend static — and karplus has no legend file
+  // (e2e/vrt/__annotated__ holds adsr/lfo/sequencer only). So a family of one
+  // is the only key `order` can address. kickdrum reached the same conclusion
+  // for the same reason (kickdrum.ts `kickdrum-strike`); when `face.actions`
+  // lands, both retire and the contract loses two lines.
+  controlFamilies: [
+    { id: 'karplus-strike', label: 'Pluck', kind: 'other', testidPrefix: 'karplus-strike' },
+  ],
+
+  // ── RACKLINE face (UI curation only, NOT the I/O contract; see ModuleFace
+  // in $lib/graph/types). Designed from what the module IS — a monophonic
+  // plucked/struck STRING played from an external trigger — rather than
+  // transcribed from the legacy card's fader bands.
+  //
+  // ⚠ `order` and `pages` ANSWER DIFFERENT QUESTIONS AND MAY DISAGREE. `order`
+  // is a PRIORITY ranking, consumed by the tiers that show a SUBSET; `pages` is
+  // FUNCTION order, consumed by the one tier that shows EVERYTHING. The PLUCK
+  // ranks 7th and leads its band: rank 7 says "the lane cannot usefully paint
+  // this", page-first says "when the band IS painted, this is what you reach
+  // for". Do not "fix" one to match the other.
+  //
+  // THE RANKING descends from one sentence: karplus has no oscillator and no
+  // envelope generator, so the note's shape IS the string losing energy. The
+  // lane answers, in order, the questions a player asks about a struck string:
+  //   1 DECAY  — how long does it ring? It is the ONLY envelope in the module.
+  //   2 BRIGHT — what is it made of? Felt-damped nylon … ringing steel; and it
+  //              is the one knob that can shorten a note behind DECAY's back
+  //              (the loop-gain cap below BRIGHT ≈0.1 — see docs.controls.decay).
+  //   3 TUNE   — which note, when nothing is patched to 1 V/oct. A SET-ONCE
+  //              transpose in a rack: the note usually arrives on the pitch in.
+  //   4 COLOR / 5 BURST — how it is struck: the exciter's tone and its length,
+  //              the second-biggest character move (mallet ↔ pick ↔ scrape).
+  //   6 LEVEL  — how loud the result is, which nothing else on the tile decides.
+  //
+  // WHY LEVEL IS IN THE LANE AND POSITION IS NOT — the one rank that moved, and
+  // the argument is specific to this module, not "level goes last on every
+  // face" (which is what this comment used to say, and it was generic reasoning
+  // dressed as a rule):
+  //   * `out` is tapped BEFORE the damping filter, the brightest point of the
+  //     loop, and scaled by LEVEL alone (docs.outputs.out). Nothing in the
+  //     module normalises loudness across settings, and the two knobs that
+  //     cause the swing — DECAY and BRIGHT — are ranks 1 and 2 in the same
+  //     tile (docs.controls.level: "a bright, long, hard-picked note is far
+  //     hotter than a dark mallet thump"). A lane that can create the problem
+  //     and not correct it is an incomplete performance surface.
+  //   * POS is a feedforward comb on the EXCITER, so it colours each hit and
+  //     not the ring-out (docs.controls.position), and its own CV prose asks
+  //     for a per-step sample-and-hold rather than a hand on the knob
+  //     (docs.inputs.position_cv). That is a sound-design choice, not a ride
+  //     knob — rank 8, dock-only.
+  //   * STIFF stays last: it ships at 0, so the knob is inert by default, and
+  //     its travel LEAVES the instrument ("detuned metallic clang and bell").
+  //
+  // WHY THE PLUCK IS RANK 7 AND NOT RANK 1, though it is the defining
+  // affordance. The reason is RENDER, and it is checked in the code, not felt:
+  // ModuleShell paints an `action` cell as `label={view === 'dock-full' ?
+  // cell.label : '▸'}` with no `cell-cap` outside the dock — an unlabelled
+  // triangle in a 46 px column, named only by a title tooltip. Promoting it
+  // buys a mystery glyph and costs LEVEL its slot; rank 7 buys a captioned
+  // `pluck` Button under a band header that names it, one `shell-open-dock`
+  // click away at every tier. Same call, same reason, as kickdrum's rank-7
+  // `kickdrum-strike-{n}`. If ModuleShell ever captions lane action cells,
+  // swap ranks 6 and 7 — that is the whole revert.
+  //
+  // ⚠ RANKS 7+ RENDER NOWHERE IN THE LANE. laneBodyPlan's plate is 3 cols × 2
+  // whole rows = 6 cells (LANE_PLATE_MAX_CELLS), so rank 7 is DOCK-ONLY.
   //
   // GLYPH: 'scope' → a LIVE analyser trace on `out`. The legacy card showed
   // NOTHING; on a plucked voice the decay envelope IS the instrument, so the
-  // trace is the single most informative pixel budget on the tile.
+  // trace is the most informative pixel budget on the tile AT MINI, COMPACT AND
+  // AS THE DOCK HERO. ⚠ It is NOT painted at the `full` tier: six selected
+  // cells ⇒ 2 plate rows ⇒ `glyph = hasGlyph && rows <= 1` is false
+  // (module-shell-model.ts laneBodyPlan). The previous comment claimed the
+  // glyph unconditionally.
   //
-  // PAGES follow the instrument's own anatomy — the string, the thing that
-  // hits it, the output — which is also where each knob's CV jack lands on
-  // the rear card (a jack under the same header as its knob).
+  // PAGES — TWO, not three. The old `out` band spent a whole ~88 px section on
+  // ONE knob, which is the purchase the band mechanism exists to refuse (the
+  // same merge kickdrum made for `dynamics · out`). Page 1 is THE STRING —
+  // what rings, and for how long. Page 2 is EVERYTHING THAT IS NOT THE STRING:
+  // the thing that hits it and what comes out. On a Karplus-Strong voice the
+  // pick and the strike are one event — COLOR is the pick's tone, BURST its
+  // length, POS where it lands — so `pick · strike · out` names one idea plus
+  // the trim, not three ideas in a bag. (The tempting argument, that LEVEL
+  // belongs here because the exciter settings cause the level swing, is only
+  // half true: "bright" and "long" are page-1 knobs. Said plainly instead.)
+  // Each page is also where its knobs' CV jacks land on the rear card.
   face: {
     order: [
       // hero ladder: mini = DECAY / compact = DECAY + BRIGHT + glyph
       'decay',
       'brightness',
-      // the note, then the strike
+      // the note, then the strike's own two knobs
       'tune',
       'color',
       'burst',
-      'position',
-      // the destination knob, then the mix knob
-      'stiffness',
+      // the trim for a voice nothing else normalises — ranks 1–6 END HERE
       'level',
+      // ── dock-only tail, in FACEPLATE reading order ──
+      'karplus-strike-{n}',
+      'position',
+      'stiffness',
     ],
     pages: [
       { id: 'string', label: 'string · ring', controls: ['tune', 'decay', 'brightness', 'stiffness'] },
-      { id: 'pick', label: 'pick · strike', controls: ['color', 'burst', 'position'] },
-      { id: 'out', label: 'output', controls: ['level'] },
+      { id: 'pick', label: 'pick · strike · out', controls: ['karplus-strike-{n}', 'color', 'burst', 'position', 'level'] },
     ],
     glyph: 'scope',
     // REAR CARD curation (rear-card-model). The eight per-knob CVs need no
     // curation at all — each carries an explicit `paramTarget`, so every one
-    // lands under its own face page in knob order (TUNE/DECAY/BRIGHT/STIFF
-    // under 'string · ring', COLOR/BURST/POS under 'pick · strike', LEVEL
-    // under 'output'). Two real exceptions the derivation cannot see:
+    // lands under its own face page in page-control order (TUNE/DECAY/BRIGHT/
+    // STIFF under 'string · ring'; COLOR/BURST/POS/LEVEL under 'pick · strike
+    // · out', LEVEL_CV having followed LEVEL out of the retired one-knob
+    // 'output' band). Totality, counted: play 4 + string 4 + pick 4 = the 12
+    // declared inputs, + the outputs rail's 1 = 13 holes, zero orphans, no
+    // `cv` tail band. Two real exceptions the derivation cannot see:
     //
     //   * the leading band is renamed to what it DOES — the four holes that
     //     PLAY the instrument — and split into the two HANDS of playing a
@@ -140,7 +216,9 @@ export const karplusDef: AudioModuleDef = {
     //     those two jacks are one gesture, not two), while the fretting hand
     //     chooses the note and palm-mutes the ring.
     //   * audioRate = `pitch` ALONE. The worklet reads the 1 V/oct input RAW
-    //     per sample (packages/dsp/src/karplus.ts: `p.pitchCv = inPitch[s]`)
+    //     per sample (packages/dsp/src/karplus.ts:150 — `p.pitchCv = inPitch ?
+    //     (inPitch[s] ?? 0) : 0`, inside the per-sample loop; the knob CVs go
+    //     through the 80 Hz WtParamSmoothers set up at :90-99)
     //     with the delay line's ~10 ms read-pointer ease as the only
     //     smoothing, so it is genuinely FM-able. Every KNOB CV goes through
     //     an 80 Hz WtParamSmoother one-pole before it reaches the DSP —
@@ -161,10 +239,10 @@ export const karplusDef: AudioModuleDef = {
 
   docs: {
     explanation:
-      "A plucked/struck STRING voice — the extended Karplus-Strong algorithm, physical-modeling's original trick: instead of an oscillator plus filter, a short burst of noise is fired into a recirculating delay-line 'string' and everything you hear is that burst ringing around the loop, decaying naturally like a real vibrating string. There is no envelope generator anywhere in it: the note's shape IS the string losing energy. KARPLUS builds the loop on the COFEFVE DELAY's own fractional delay-line core and extends it the Jaffe–Smith/CCRMA way: the loop delay is tuned with sub-sample precision (1 V/oct is unit-gated under 3 cents across five octaves, C2–C7, at 44.1 and 48 kHz and with the tone knobs off their defaults — a naively rounded delay would be audibly sour above C5), and the per-period loop loss is frequency-COMPENSATED so the DECAY knob reads in real seconds at every pitch (classic K-S low notes drone for tens of seconds while high notes choke in milliseconds — fixed here). Six voice knobs then span the string and how it is struck: BRIGHT is the material (an in-loop damping low-pass whose cutoff tracks the note — felt-damped nylon to ringing steel), POS is where you pluck it (a comb filter: bridge-thin to hollow mid-string), STIFF bends the partials sharp toward piano wire, bells and gongs (dispersion allpasses), and COLOR + BURST shape the EXCITER itself — from a soft dark mallet thump (short, low-passed) through the classic pluck (exactly one period of noise) to a scraped/bowed attack (several periods of bright noise). It has no exciter of its own, so it needs a STRIKE: patch any trigger, clock or drum-lane gate (the card's PLUCK button auditions one hit with nothing patched). ACCENT gives each hit its own velocity — louder AND brighter, latched at the strike edge — DAMP is a palm mute while held, and EVERY one of the eight knobs has its own CV input. One mono voice: patch several for chords, or clock it fast for harp arpeggios.",
+      "A plucked/struck STRING voice — the extended Karplus-Strong algorithm, physical-modeling's original trick: instead of an oscillator plus filter, a short burst of noise is fired into a recirculating delay-line 'string' and everything you hear is that burst ringing around the loop, decaying naturally like a real vibrating string. There is no envelope generator anywhere in it: the note's shape IS the string losing energy. KARPLUS builds the loop on the COFEFVE DELAY's own fractional delay-line core and extends it the Jaffe–Smith/CCRMA way: the loop delay is tuned with sub-sample precision (1 V/oct is unit-gated under 3 cents across five octaves, C2–C7, at 44.1 and 48 kHz and with the tone knobs off their defaults — a naively rounded delay would be audibly sour above C5), and the per-period loop loss is frequency-COMPENSATED so the DECAY knob reads in real seconds at every pitch (classic K-S low notes drone for tens of seconds while high notes choke in milliseconds — fixed here). Six voice knobs then span the string and how it is struck: BRIGHT is the material (an in-loop damping low-pass whose cutoff tracks the note — felt-damped nylon to ringing steel), POS is where you pluck it (a comb filter: bridge-thin to hollow mid-string), STIFF bends the partials sharp toward piano wire, bells and gongs (dispersion allpasses), and COLOR + BURST shape the EXCITER itself — from a soft dark mallet thump (short, low-passed) through the classic pluck (exactly one period of noise) to a scraped/bowed attack (several periods of bright noise). It has no exciter of its own, so it needs a STRIKE: patch any trigger, clock or drum-lane gate (the PLUCK button — on the card, and on the dock faceplate's pick/strike band — auditions one hit with nothing patched). ACCENT gives each hit its own velocity — louder AND brighter, latched at the strike edge — DAMP is a palm mute while held, and EVERY one of the eight knobs has its own CV input. One mono voice: patch several for chords, or clock it fast for harp arpeggios.",
     inputs: {
       trigger_in:
-        "The STRIKE/pluck: each rising edge fires one excitation burst into the string. At that instant the burst noise is re-seeded (so hit N sounds bit-identical to hit 1) and the ACCENT input and BURST length are both sampled. How long the signal stays high doesn't matter — it's a trigger, not a hold. The string is NOT cleared first, so a still-ringing note is re-plucked on top of its own ring-over, exactly like a real string. Patch a sequencer gate, clock or drum-seq lane here; the card's PLUCK button fires the same pulse for auditioning.",
+        "The STRIKE/pluck: each rising edge fires one excitation burst into the string. At that instant the burst noise is re-seeded (so hit N sounds bit-identical to hit 1) and the ACCENT input and BURST length are both sampled. How long the signal stays high doesn't matter — it's a trigger, not a hold. The string is NOT cleared first, so a still-ringing note is re-plucked on top of its own ring-over, exactly like a real string. Patch a sequencer gate, clock or drum-seq lane here; the PLUCK button on either surface fires the same pulse for auditioning.",
       pitch:
         "1 V/oct pitch input: transposes the whole voice as a true frequency multiplier (f0 = Tune × 2^volts, clamped to 30 Hz–4.2 kHz). Note that 0 V plays the TUNE knob itself (220 Hz = A3 by default), not a fixed C4 — this is a free-tuned voice, like a VCO's coarse tune. Tuning is compensated stage by stage, so melodic sequences from a quantizer/sequencer play in tune (measured ≤ 0.1 cents across C2–C7). This is the ONE input the DSP reads raw at audio rate — the delay line's ~10 ms read-pointer ease is the only smoothing on it, so slow moves glide like a slide guitar and fast ones are real FM.",
       accent_in:
@@ -208,7 +286,9 @@ export const karplusDef: AudioModuleDef = {
       burst:
         "BURST — exciter length in PERIODS of the note (0.1–4, log). 0.1 = a near-impulse tick (percussive harp/marimba attack), 1 = the classic Karplus-Strong pluck (fills the string exactly once), 4 = a noisy scraped/bowed onset. Energy-normalized (1/√periods) so short ticks and long scrapes land at comparable loudness. Because it is measured in periods rather than milliseconds, the attack character stays consistent across the keyboard. The length is fixed at the strike edge, so it takes effect on the next hit.",
       level:
-        "LEVEL — output gain in dB (−24..+12, default 0). The string loop is stability-bounded on its own, but nothing normalizes the voice's loudness across settings — a bright, long, hard-picked note is far hotter than a dark mallet thump, so use LEVEL to sit it in the mix or to drive a downstream stage.",
+        "LEVEL — output gain in dB (−24..+12, default 0). The string loop is stability-bounded on its own, but nothing normalizes the voice's loudness across settings — a bright, long, hard-picked note is far hotter than a dark mallet thump, so use LEVEL to sit it in the mix or to drive a downstream stage. That is why it earns a lane rank on this module rather than sitting in the dock: the two knobs that cause the swing, DECAY and BRIGHT, are the two knobs beside it.",
+      "karplus-strike-{n}":
+        "PLUCK — the audition button: one strike, exactly as if a rising edge had arrived at trigger_in. karplus has no exciter of its own, so with nothing patched into trigger_in it is not quiet, it is MUTE — this is how you hear the string while you are dialling it in, which is most of the time you are dialling it in. Mechanically it is a host-side source summed into the same trigger input a cable feeds, fired through the shared trigger waveform, so it behaves identically to a patched sequencer gate: the burst noise is re-seeded, BURST length and accent_in are latched at that instant (unpatched accent reads 0, i.e. an un-accented pluck), and the string is NOT cleared first, so hitting it again over a ringing note re-plucks on top of the ring-over. It writes NOTHING to the patch — no param moves, nothing is shared with the rackspace, nothing is persisted or undoable — and a cable already patched into trigger_in keeps working while you use it (Web Audio sums the two, and the worklet edge-detects the crossing).",
     },
   },
 
@@ -237,7 +317,8 @@ export const karplusDef: AudioModuleDef = {
     silence.connect(worklet, 0, 2);
     silence.connect(worklet, 0, 3);
 
-    // Manual STRIKE (the on-card audition button): a dedicated
+    // Manual STRIKE (the PLUCK audition, fired from the card button AND the
+    // RACKLINE face's `karplus-strike` action cell): a dedicated
     // ConstantSource summed into the trigger input, fired through the
     // SHARED $lib/audio/gate-trigger waveform (never re-derived). Works
     // whether or not a cable is patched into trigger_in — Web Audio sums
@@ -281,7 +362,7 @@ export const karplusDef: AudioModuleDef = {
       readParam(paramId) {
         return params.get(paramId)?.value;
       },
-      // Manual STRIKE (the on-card audition button): the samsloop
+      // Manual STRIKE (the PLUCK audition — both surfaces): the samsloop
       // manualTrigger read-key seam — returns a function that fires one
       // canonical trigger pulse at the worklet, the same effect as a
       // trigger_in rising edge.
