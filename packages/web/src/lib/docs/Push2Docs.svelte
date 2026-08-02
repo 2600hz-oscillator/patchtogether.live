@@ -5,8 +5,8 @@
   // code (push2-docs.test asserts the rendered CC numbers equal the map). The
   // Push drives the full Launchpad clip-launch / note-editor / scene / KEYS
   // parity surface on its 8×8 pads; this page documents the moved + added
-  // controls (Play transport, D-Pad nav, channel-select, encoder→MixMasters) and
-  // the LIVE-port / Live-mode binding the pads + LEDs use.
+  // controls (Play transport, D-Pad nav, lane select, the PUSH CARD and its
+  // encoders) and the LIVE-port / Live-mode binding the pads + LEDs use.
 
   import Push2Diagram from './Push2Diagram.svelte';
   import {
@@ -30,9 +30,10 @@
 
   // Diagram data — pads default-filled; labels derived from the real controls.
   const pads = Array.from({ length: 64 }, (_, i) => ({ x: i % 8, y: Math.floor(i / 8), fill: GRID_FILL }));
-  // 11 encoders left→right: Tempo (send1), Swing (send2), 8 track (vol1-8), Master.
-  const encoderLabels = ['S1', 'S2', 'V1', 'V2', 'V3', 'V4', 'V5', 'V6', 'V7', 'V8', 'Mst'];
-  // 8 above-display buttons → select channel 1-8.
+  // 11 encoders left→right: Tempo (unbound), Swing (flip cards), the 8 push-card
+  // strips, Master (master volume).
+  const encoderLabels = ['—', 'CRD', 'E1', 'E2', 'E3', 'E4', 'E5', 'E6', 'E7', 'E8', 'Mst'];
+  // 8 above-display buttons → select lane 1-8.
   const upperLabels = ['CH1', 'CH2', 'CH3', 'CH4', 'CH5', 'CH6', 'CH7', 'CH8'];
   // 8 below-display buttons → the Launchpad view/function top row (default order).
   const lowerLabels = ['▶', 'GRD', 'CLP', 'ARR', 'CTL', 'UND', 'RDO', 'SFT'];
@@ -48,10 +49,10 @@
     { control: 'Shift', cc: `CC ${PUSH_CC_SHIFT}`, action: 'SHIFT modifier — editor ×8 window + arm gestures' },
   ];
   const additiveRows = [
-    { control: 'Above-display ×8', cc: `CC ${PUSH_CC_ABOVE_DISPLAY_BASE}–${PUSH_CC_ABOVE_DISPLAY_BASE + 7}`, action: 'Select channel 1–8 (Push-local; card shows “CH n · instrument”)' },
-    { control: 'Encoders 1–8', cc: `CC ${PUSH_CC_ENCODER_BASE}–${PUSH_CC_ENCODER_BASE + 7}`, action: 'MixMasters ch1–8 volume' },
-    { control: 'Tempo encoder', cc: `CC ${PUSH_CC_ENCODER_TEMPO}`, action: 'send1 of the SELECTED channel' },
-    { control: 'Swing encoder', cc: `CC ${PUSH_CC_ENCODER_SWING}`, action: 'send2 of the SELECTED channel' },
+    { control: 'Above-display ×8', cc: `CC ${PUSH_CC_ABOVE_DISPLAY_BASE}–${PUSH_CC_ABOVE_DISPLAY_BASE + 7}`, action: 'Select LANE 1–8 — the screen shows that lane\u2019s PUSH CARD (Push-local, never synced)' },
+    { control: 'Display encoders 1–8', cc: `CC ${PUSH_CC_ENCODER_BASE}–${PUSH_CC_ENCODER_BASE + 7}`, action: 'Turn the 8 controls of the current push card (SHIFT = fine)' },
+    { control: 'Tempo encoder', cc: `CC ${PUSH_CC_ENCODER_TEMPO}`, action: 'Unbound in v1' },
+    { control: 'Swing encoder', cc: `CC ${PUSH_CC_ENCODER_SWING}`, action: 'Flip through the push cards of the modules in the selected lane' },
     { control: 'Master encoder', cc: `CC ${PUSH_CC_ENCODER_MASTER}`, action: 'MixMasters master volume' },
     { control: 'D-Pad ↑ / ↓', cc: `CC ${PUSH_CC_DPAD_UP} / ${PUSH_CC_DPAD_DOWN}`, action: 'CLIP-view pitch window ±1 (SHIFT = ×8)' },
     { control: 'D-Pad ← / →', cc: `CC ${PUSH_CC_DPAD_LEFT} / ${PUSH_CC_DPAD_RIGHT}`, action: 'CLIP-view step window ±1 (SHIFT = ×8)' },
@@ -66,9 +67,10 @@
     the arm row, scenes, and the KEYS keyboard — through the same shipped brain,
     and because the Push pads are <strong>velocity-sensitive</strong>, how hard you
     hit a pad is recorded into the clip and played through the keyboard. On top of
-    that, the Push adds a <strong>hardware mixer</strong>: the 8 buttons above the
-    display pick a channel, and the 11 encoders drive the MixMasters volume and
-    sends. START/STOP lives on the dedicated <strong>Play</strong> button.
+    that, every module has a <strong>push card</strong>: the 8 buttons above the
+    display pick a lane, the 960×160 screen shows one module\u2019s card at a time,
+    and the 8 display encoders turn its controls.
+    START/STOP lives on the dedicated <strong>Play</strong> button.
   </p>
 
   <Push2Diagram
@@ -77,7 +79,7 @@
     {upperLabels}
     {lowerLabels}
     {sceneLabels}
-    caption="Push 2 — encoders on top (Tempo · Swing · 8 track · Master); channel-select above the display; the permanent-controls row below it; the 8×8 grid with the scene column + NAV arrows on its right; Play is bottom-left."
+    caption="Push 2 — encoders on top (Tempo unbound · Swing flips cards · the 8 push-card strips · Master); lane-select above the display; the permanent-controls row below it; the 8×8 grid with the scene column + NAV arrows on its right; Play is bottom-left."
   />
 
   <h2>Parity — the clip surface</h2>
@@ -95,12 +97,23 @@
     </tbody>
   </table>
 
-  <h2>Additive — the mixer + navigation</h2>
+  <h2>Additive — the push card + navigation</h2>
   <p>
-    The encoders write through the same streaming-CC pump the Electra One uses, so
-    a fast twist never storms the shared document. The selected channel is a
-    Push-local choice (never synced) — it picks which channel the two left
-    encoders' sends address and which name the card shows.
+    Every module has a <strong>push card</strong>: up to eight controls, each drawn
+    as a name, a bar graph and a readout, one per display encoder. Pick a lane with
+    a button above the screen and you get the card for the module you last looked
+    at in that lane, or — if you have never opened it — the module most recently
+    added to it. The <strong>second encoder from the left</strong> flips through the
+    other modules in that lane, one card at a time.
+  </p>
+  <p>
+    Which eight controls a module shows is a text file you can edit:
+    <code>packages/web/src/lib/control/push2/push-card-config.ts</code>. Modules
+    with no entry fall back to their curated faceplate ranking, and un-faced
+    modules to the order they declare their params in. The encoders write through
+    the same streaming-CC pump the Electra One uses, so a fast twist never storms
+    the shared document. The selected lane and the per-lane card you left off on
+    are Push-local (per machine, per rack) and are never synced.
   </p>
   <table class="p2-table" data-testid="push2-additive-table">
     <thead><tr><th>Control</th><th>MIDI</th><th>Action</th></tr></thead>
@@ -118,10 +131,13 @@
     standalone-browser path; the User port only carries pads/LEDs once switched to
     User mode, the finicky out-of-Ableton path, and is a possible future toggle).
     The pad colours use the <strong>stock Push palette</strong> (an approximate
-    mapping refined on hardware later). The 960×160 on-device display is
-    <strong>Phase 2</strong>; for now the selected channel name shows on the card.
-    Which permanent-row button maps to which view is still being confirmed on
-    hardware.
+    mapping refined on hardware later). The 960×160 display runs over
+    <strong>WebUSB</strong>, a separate one-time permission from MIDI: if it is
+    unavailable or you decline it, the pads and encoders keep working and the card
+    shows the same push card in the browser.
+    Two mappings are still <strong>unconfirmed on hardware</strong>: which
+    permanent-row button maps to which view, and that <code>CC 15</code> really is
+    the second encoder from the left (the card-flip knob).
   </p>
 </div>
 

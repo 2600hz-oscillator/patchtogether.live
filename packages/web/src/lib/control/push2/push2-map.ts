@@ -8,8 +8,8 @@
 //      `launchpad-control` already consumes (pad (x,y) / scene / top CC 91-98) —
 //      so the Push drives the full clip-launch / note-editor / scene / KEYS
 //      PARITY surface through logic that already ships (decision A, the plan
-//      §3), OR one of the three ADDITIVE Push-only actions (channel-select,
-//      encoder→mixer, D-Pad→nav) that `push2-control` handles directly.
+//      §3), OR one of the three ADDITIVE Push-only actions (lane-select,
+//      encoder→push-card, D-Pad→nav) that `push2-control` handles directly.
 //
 //   2. OUTBOUND (a LaunchpadFrame → Push LEDs): the LED frame the control layer
 //      paints (indexed by Launchpad programmer indices — pads 11..88, top CCs
@@ -28,10 +28,11 @@
 //   · Undo                   CC 119
 //   · Shift                  CC 49            (CONFIRM ON HARDWARE — unconfirmed)
 //   · D-Pad ←/→/↑/↓          CC 44 / 45 / 46 / 47
-//   · above-display ×8       CC 102..109      → select channel 1..8
+//   · above-display ×8       CC 102..109      → select LANE 1..8 (the push card)
 //   · permanent-controls ×8  CC 20..27        → Launchpad top row 91..98 (views)
 //   · scene-launch ×8        CC 36..43        (TOP 43 … BOTTOM 36) → scene column
-//   · encoders               CC 71..78 (vol), 14/15 (send1/2), 79 (master)
+//   · encoders               CC 71..78 (the 8 push-card strips),
+//                            14 (unbound) / 15 (flip cards), 79 (master volume)
 // Only WHICH permanent-row button maps to which view stays `CONFIRM ON HARDWARE`;
 // the CC ranges themselves are confirmed. NOTE the CC↔note overlap is harmless:
 // scene CCs 36..43 are MIDI CC messages; pad notes 36..99 are MIDI NOTE messages —
@@ -77,32 +78,54 @@ export const PUSH_CC_PERMANENT_BASE = 20;
  *  SCENE column. CONFIRMED: CC 36..43, TOP button = 43 … BOTTOM = 36. */
 export const PUSH_CC_SCENE_BASE = 36;
 
-/** The 8 display encoders → MixMasters ch{1..8}_volume (relative CC 71..78). CONFIRMED. */
+/** The 8 display encoders → the 8 CONTROL STRIPS of the current PUSH CARD
+ *  (relative CC 71..78, left→right). CONFIRMED CC range. Encoder n turns the
+ *  param drawn in strip n — see push-card-schema.ts for which param that is. */
 export const PUSH_CC_ENCODER_BASE = 71;
-/** Tempo encoder → send1 of the SELECTED channel (relative CC 14). CONFIRMED. */
+/** Tempo encoder — the #1-from-the-left encoder. DELIBERATELY UNBOUND in v1:
+ *  the owner's spec names only the #2 encoder, and a global tempo control is a
+ *  separate decision (obvious future home: timelorde bpm). */
 export const PUSH_CC_ENCODER_TEMPO = 14;
-/** Swing encoder → send2 of the SELECTED channel (relative CC 15). CONFIRMED. */
+/** Swing encoder — the #2-from-the-left encoder → FLIP THROUGH THE PUSH CARDS
+ *  of the selected lane, one module at a time (relative CC 15).
+ *  ⚠ CONFIRM ON HARDWARE: that CC 15 is physically the *second* encoder from
+ *  the left is derived from the encoder-row order (Tempo 14, Swing 15, then the
+ *  8 display encoders 71..78, then Master 79) — the owner has not confirmed it
+ *  by turning the knob. Everything else about the mapping is CC-confirmed. */
 export const PUSH_CC_ENCODER_SWING = 15;
-/** Master encoder → MixMasters master_volume (relative CC 79). CONFIRMED. */
+/** Master encoder → MixMasters master_volume (relative CC 79). CONFIRMED.
+ *  The ONE mixer binding that survives the push-card rework: the physical
+ *  master encoder sits next to the master volume knob, so it is not part of
+ *  the "8 knobs as a mixer" function the owner dropped. */
 export const PUSH_CC_ENCODER_MASTER = 79;
 
 // ---------------------------------------------------------------------------
 // Inbound classification — Push2RxEvent → a typed action.
 // ---------------------------------------------------------------------------
 
-/** Which MixMasters param an encoder addresses. */
-export type EncoderTarget =
-  | { param: 'volume'; channel: number } // display encoder n → ch{n+1}_volume (0-based channel)
-  | { param: 'send1' } // Tempo → ch{sel}_send1
-  | { param: 'send2' } // Swing → ch{sel}_send2
-  | { param: 'master' }; // Master → master_volume
+/**
+ * What an encoder addresses, in the PUSH CARD world.
+ *
+ * This REPLACES the old `EncoderTarget` (`volume`/`send1`/`send2`/`master`),
+ * which turned the 8 display encoders into a MixMasters channel-volume strip.
+ * The owner dropped "8 knobs as an audio mixer": the display encoders now drive
+ * the 8 controls of whatever PUSH CARD is on screen, and the #2-from-the-left
+ * encoder flips between the cards of the selected lane.
+ */
+export type PushEncoderTarget =
+  /** CC 71..78 → push-card strip 0..7 (encoder 1..8, left→right). */
+  | { kind: 'strip'; index: number }
+  /** CC 15 → step through the selected lane's modules, one card at a time. */
+  | { kind: 'moduleScroll' }
+  /** CC 79 → mixmstrs master_volume (the one surviving mixer binding). */
+  | { kind: 'master' };
 
 /** A classified Push action: either a Launchpad-vocabulary event routed into the
  *  shipped control brain (parity), or a Push-only additive action. */
 export type Push2Action =
   | { kind: 'launchpad'; ev: LaunchpadRxEvent } // parity — into launchpad-control.handleKey
-  | { kind: 'selectChannel'; channel: number } // 0..7 — Push-local selected channel (press only)
-  | { kind: 'encoder'; target: EncoderTarget; delta: number } // relative mixer nudge
+  | { kind: 'selectChannel'; channel: number } // 0..7 — Push-local selected lane (press only)
+  | { kind: 'encoder'; target: PushEncoderTarget; delta: number } // relative encoder nudge
   | { kind: 'dpad'; dir: 'up' | 'down' | 'left' | 'right' }; // clip-view nav (press only)
 
 /** Is this Push CC one of the (relative) encoders? Helps the device layer /
@@ -163,15 +186,15 @@ export function dpadDir(cc: number): 'up' | 'down' | 'left' | 'right' | null {
   }
 }
 
-/** The MixMasters encoder target a CC addresses, or null. PURE. */
-export function encoderTarget(cc: number): EncoderTarget | null {
+/** The push-card encoder target a CC addresses, or null when the encoder is
+ *  deliberately unbound (Tempo, CC 14). PURE. */
+export function encoderTarget(cc: number): PushEncoderTarget | null {
   if (cc >= PUSH_CC_ENCODER_BASE && cc < PUSH_CC_ENCODER_BASE + 8) {
-    return { param: 'volume', channel: cc - PUSH_CC_ENCODER_BASE };
+    return { kind: 'strip', index: cc - PUSH_CC_ENCODER_BASE };
   }
-  if (cc === PUSH_CC_ENCODER_TEMPO) return { param: 'send1' };
-  if (cc === PUSH_CC_ENCODER_SWING) return { param: 'send2' };
-  if (cc === PUSH_CC_ENCODER_MASTER) return { param: 'master' };
-  return null;
+  if (cc === PUSH_CC_ENCODER_SWING) return { kind: 'moduleScroll' };
+  if (cc === PUSH_CC_ENCODER_MASTER) return { kind: 'master' };
+  return null; // PUSH_CC_ENCODER_TEMPO (14) — an encoder, but bound to nothing
 }
 
 /**
