@@ -61,6 +61,7 @@ import {
   NON_CARD_CAPTURE_DIRS,
   conventionalCardBasename,
   findStripeBand,
+  parseCssCableTokens,
   repaintStripeRow,
   stripeSourceToken,
 } from '$lib/ui/vrt-cable-stripe';
@@ -440,6 +441,56 @@ describe('VRT baselines paint the CURRENT --cable-* stripe', () => {
   const { pinned, skipped, quarantined, pointers } = measure();
   const unreadable = pointers > 0;
   const tokens = CABLE_VARS as unknown as Record<string, string>;
+
+  // ── "CURRENT" MUST HAVE ONE MEANING ──────────────────────────────────────
+  //
+  // Everything below asserts a baseline paints the CURRENT value of its token,
+  // resolved from CABLE_VARS. The same nine tokens are also declared in
+  // `styles/tokens.css` (the pre-JS `:root` seed) and nothing reconciled them:
+  // `--cable-video: #00ff00` in tokens.css left this suite 11/11 GREEN, while
+  // a ONE-LSB edit to _cables.ts reddens 46 baselines. Sharp on one definition,
+  // blind to the other — see the writeup in vrt-cable-stripe.ts.
+  it('tokens.css and CABLE_VARS declare the SAME cable palette', () => {
+    // Pure source text; no LFS, no PNGs — runs on every lane.
+    const css = readFileSync(resolve(REPO_ROOT, 'packages/web/src/lib/styles/tokens.css'), 'utf8');
+    const seed = parseCssCableTokens(css);
+    // Liveness: a parser that matched nothing would report perfect agreement.
+    // This is the same failure the exclusion validator's `read > 0` guard ends.
+    expect(
+      Object.keys(seed).length,
+      'parsed ZERO --cable-* declarations out of tokens.css — the parser (or the file) moved, ' +
+      'and a parser that finds nothing agrees with everything.',
+    ).toBe(Object.keys(tokens).length);
+    const disagree = Object.keys(tokens)
+      .filter((k) => seed[k] !== tokens[k]!.toLowerCase())
+      .map((k) => `${k}: tokens.css ${seed[k] ?? '(absent)'} vs CABLE_VARS ${tokens[k]}`);
+    expect(
+      disagree,
+      'the pre-JS :root seed disagrees with the palette engine. Post-boot pixels (and therefore ' +
+      'every VRT capture) follow CABLE_VARS, because applyPaletteToRoot writes it inline on ' +
+      'documentElement — so a token changed ONLY in tokens.css repaints the pre-JS frame, moves ' +
+      'nothing this gate measures, and stays under maxDiffPixelRatio for VRT too. Change both.',
+    ).toEqual([]);
+  });
+
+  it('NEGATIVE CONTROL: a tokens.css/CABLE_VARS divergence is detected', () => {
+    // Perturb the SEED side by one LSB and confirm the comparison reports it —
+    // otherwise the assertion above is decoration, which is what it replaced.
+    const css = readFileSync(resolve(REPO_ROOT, 'packages/web/src/lib/styles/tokens.css'), 'utf8');
+    const real = parseCssCableTokens(css);
+    const [probe, hue] = Object.entries(real)[0]!;
+    const bumped = `#${(parseInt(hue.slice(1), 16) ^ 1).toString(16).padStart(6, '0')}`;
+    expect(bumped, 'precondition: the perturbation must actually change the hue').not.toBe(hue);
+    const perturbed = parseCssCableTokens(css.replace(`${probe}: ${hue}`, `${probe}: ${bumped}`));
+    // Compared against the UNPERTURBED parse, not against CABLE_VARS: this is
+    // an instrument check, so it must report the same thing whether or not the
+    // real file happens to be diverged (otherwise a genuine divergence would
+    // break the control that is supposed to be validating the detector).
+    expect(
+      Object.keys(real).filter((k) => perturbed[k] !== real[k]),
+      `flipping the low bit of ${probe} in the tokens.css text must be reported as a divergence`,
+    ).toEqual([probe]);
+  });
 
   it('every baseline directory is classified as card-capture or not', () => {
     // Pure source/dir bookkeeping — safe to run even on an lfs:false checkout.

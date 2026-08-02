@@ -413,6 +413,46 @@ export const CARD_CAPTURE_DIRS: Record<string, (stem: string) => string> = {
   'vrt-synesthesia-video.spec.ts': () => 'synesthesia',
 };
 
+// ── THE THIRD HOLE: "CURRENT" IS DEFINED TWICE (measured 2026-08-02) ────────
+//
+// This gate's entire claim is that a baseline paints the CURRENT value of its
+// `--cable-*` token. It resolves CURRENT from `CABLE_VARS`
+// (`ui/skins/palettes/_cables.ts`). But the same nine tokens are ALSO declared
+// in `styles/tokens.css`, as the pre-JS `:root` seed — and NOTHING in the repo
+// compares the two. Verified by grep: no test reads `tokens.css` at all; the
+// two "seed mirrors this" tests (`skin-store`, `module-shell-model`) re-type
+// their expected values as literals rather than parsing the stylesheet.
+//
+// MEASURED, the same way the other two holes were: editing `tokens.css` to
+// `--cable-video: #00ff00` — a pure-green cable, as loud a change as exists —
+// left this suite 11/11 GREEN. Editing `_cables.ts` by a SINGLE LSB
+// (`#b57bff` → `#b57bfe`) reddens 46 baselines. So the gate is perfectly sharp
+// on one definition of CURRENT and perfectly blind to the other.
+//
+// Why that is a real fail-open and not bookkeeping: the palette engine writes
+// `CABLE_VARS` inline on `documentElement` (`applyPaletteToRoot`), which wins
+// over `:root`, so post-boot pixels — and therefore every VRT capture — follow
+// `_cables.ts`. A palette change applied ONLY to `tokens.css` (the file whose
+// name makes it the obvious place to look) changes the pre-JS paint, changes
+// nothing this gate measures, and is invisible to VRT itself for the same
+// sub-`maxDiffPixelRatio` reason the stripe always was. Three green gates, one
+// wrong colour — the exact shape of the two holes above.
+//
+// FIX: `parseCssCableTokens` + the "tokens.css and CABLE_VARS agree" assertion
+// reconcile the two declarations by NAME and VALUE, so CURRENT has one meaning.
+
+/** `--cable-*: #rrggbb;` declarations parsed out of a CSS source, lowercased.
+ *  Used to reconcile the pre-JS `:root` seed in `styles/tokens.css` with
+ *  `CABLE_VARS`, the palette-engine values this gate measures baselines
+ *  against. Deliberately a dumb declaration scraper: it must see what the
+ *  browser's cascade would see, not what a hand-maintained mirror claims. */
+export function parseCssCableTokens(css: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  const re = /(--cable-[A-Za-z0-9_-]+)\s*:\s*(#[0-9a-fA-F]{3,8})\s*(?:;|})/g;
+  for (let m = re.exec(css); m; m = re.exec(css)) out[m[1]!] = m[2]!.toLowerCase();
+  return out;
+}
+
 /**
  * Every hue the `--cable-*` language has worn. Used ONLY to falsify an
  * exclusion: a directory this gate refuses to read must not be painting a
