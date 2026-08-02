@@ -399,12 +399,14 @@ const MIS_EXCLUDED_MSG =
  * PNGs the gate refuses to read, which is the only evidence that can falsify
  * "there is nothing here to check".
  */
-function cableBandedDirs(dirs: string[]): string[] {
+function scanExcluded(dirs: string[]): { banded: string[]; read: number; stubs: number } {
   const hue: Record<string, string> = { ...CABLE_HUES_ALL_GENERATIONS };
   for (const [name, value] of Object.entries(CABLE_VARS as unknown as Record<string, string>)) {
     hue[value.toLowerCase()] = `current ${name}`;
   }
-  const bad: string[] = [];
+  const banded: string[] = [];
+  let read = 0;
+  let stubs = 0;
   for (const spec of [...dirs].sort()) {
     const dir = resolve(SCREENSHOT_ROOT, spec);
     if (!existsSync(dir)) continue;
@@ -416,19 +418,23 @@ function cableBandedDirs(dirs: string[]): string[] {
         if (!f.endsWith('.png')) continue;
         const bytes = readFileSync(resolve(pd, f));
         if (bytes.subarray(0, LFS_POINTER_PREFIX.length).toString('utf8') === LFS_POINTER_PREFIX) {
+          stubs++;
           continue;
         }
+        read++;
         const band = findStripeBand(new Uint8Array(bytes));
         const label = band && hue[band.hex.toLowerCase()];
         if (label) hits.push(`${platform}/${f} y=${band!.y} ${band!.hex} (${label})`);
       }
     }
     if (hits.length) {
-      bad.push(`${spec}: ${hits.length} baseline(s) paint a cable hue — e.g. ${hits[0]}`);
+      banded.push(`${spec}: ${hits.length} baseline(s) paint a cable hue — e.g. ${hits[0]}`);
     }
   }
-  return bad;
+  return { banded, read, stubs };
 }
+
+const cableBandedDirs = (dirs: string[]): string[] => scanExcluded(dirs).banded;
 
 describe('VRT baselines paint the CURRENT --cable-* stripe', () => {
   const { pinned, skipped, quarantined, pointers } = measure();
@@ -485,7 +491,24 @@ describe('VRT baselines paint the CURRENT --cable-* stripe', () => {
   // that can falsify an exclusion — asking the table is circular.
   it('every NON_CARD_CAPTURE_DIRS claim is TRUE (no cable band in the scan window)', () => {
     if (unreadable && !REQUIRED) return;
-    expect(cableBandedDirs(Object.keys(NON_CARD_CAPTURE_DIRS)), MIS_EXCLUDED_MSG).toEqual([]);
+    const { banded, read, stubs } = scanExcluded(Object.keys(NON_CARD_CAPTURE_DIRS));
+    expect(banded, MIS_EXCLUDED_MSG).toEqual([]);
+    // This validator reads the ONE set of PNGs no other assertion touches, so
+    // it needs its own liveness guards — otherwise it reports "all claims true"
+    // having opened nothing, which is the failure mode it was written to end.
+    expect(
+      read,
+      'the exclusion validator opened ZERO baselines — it would report every claim TRUE without ' +
+      'reading anything. Same shape as the hole it closes.',
+    ).toBeGreaterThan(0);
+    if (REQUIRED) {
+      expect(
+        stubs,
+        `VRT_STRIPE_PALETTE_REQUIRED=1 but ${stubs} baseline(s) in EXCLUDED dirs are LFS pointer ` +
+        `stubs. The pointer check above only covers card/edge dirs, so without this an excluded ` +
+        `dir could be skipped unread and still pass — refusing to skip-pass.`,
+      ).toBe(0);
+    }
   });
 
   it('NEGATIVE CONTROL: a mis-declared exclusion is detected', () => {
