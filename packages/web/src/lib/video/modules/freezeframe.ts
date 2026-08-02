@@ -12,7 +12,11 @@
 //        patched, level LOW → FROZEN. The hold buffer is not written, so the
 //                             last captured frame persists.
 //        RISING EDGE        → EXACTLY ONE frame update, then still again.
-//        level HELD HIGH    → continuous update (live) for as long as it is high.
+//        level HELD HIGH    → the one-shot frame at the edge, then continuous
+//                             update once the level has STOOD high for
+//                             HOLD_QUALIFY_MS (75 ms — see below; a high
+//                             shorter than that is a TRIGGER, by definition of
+//                             what the bridge can tell us).
 //
 //      ── THE SEMANTICS RULE (how a HELD GATE is told apart from a TRIGGER) ──
 //      We never measure pulse WIDTH at the source. Two independent conditions:
@@ -448,6 +452,19 @@ export const GATE_PATCH_GRACE_MS = 500;
  *  suddenly qualifies, capturing a few extra frames. That is a coin flip, and a
  *  renderer-dependent one (how many frames land in the slop is fps-dependent).
  *
+ *  ── (3) THE CEILING: STRICTLY < 4 TICKS. ──
+ *  The window is pure added latency on a held gate, so it also needs an UPPER
+ *  bound — and for a while it had none, which is its own defect: every held-gate
+ *  test derived its frame counts FROM this constant, so the suite stayed green
+ *  at 300 ms, 5 s and 60 s (measured). At 4 ticks (100 ms) a 5 Hz square LFO —
+ *  whose HIGH phase is exactly 100 ms — collapses to one captured frame per
+ *  cycle, i.e. the "plays while open" reading this module documents stops
+ *  existing. `freezeframe.test.ts` now pins that structurally AND behaviourally
+ *  (the 5 Hz sweep), so the window can no longer grow unobserved.
+ *
+ *  Floor (≥ 2 ticks) + tie-break (> 50 ms) + ceiling (< 100 ms) leave exactly one
+ *  value on the 25 ms tick grid.
+ *
  *  DECISION (2026-08-01): resolve the tie DOWNWARD — a gate at the canonical
  *  derived width is a TRIGGER, deterministically. Three ticks puts the window
  *  strictly clear of `DEFAULT_GATE_LEN_S`, so:
@@ -457,22 +474,46 @@ export const GATE_PATCH_GRACE_MS = 500;
  *    update EXACTLY ONE frame.
  *
  *  That invariant is the reason to prefer this direction over widening the gate
- *  classification: the alternative (qualify at 1 tick so a 50 ms gate reads as
- *  HELD) makes the same patch produce 3 frames at 60 fps and 12 at 240 — a
- *  renderer-dependent result, the exact class this repo forbids — AND it spends
- *  the entire margin that constraint (1) exists to provide.
+ *  classification. MEASURED, 20 derived gates of exactly DEFAULT_GATE_LEN_S,
+ *  captured frames at 60 / 120 / 240 fps:
  *
- *  COST, stated plainly: a genuinely HELD gate goes continuous 25 ms later than
- *  before (there is no visible gap — the one-shot latch already refreshed the
- *  image at the rising edge), and the knee at which a square LFO stops reading
- *  as "continuous" and starts reading as a one-frame-per-cycle strobe moves from
- *  ~10 Hz to ~6.6 Hz. Both are already strobe territory, where one frame per
- *  cycle is the frame-rate-INDEPENDENT reading and arguably the better look.
+ *      no window at all   59 / 120 / 241     (≈ 3, 6, 12 frames per gate)
+ *      1 tick  (25 ms)    52 /  80 / 141     (≈ 2.6, 4, 7 per gate)
+ *      3 ticks (75 ms)    20 /  20 /  20     ← one frame per gate, on every renderer
+ *
+ *  A fixed-width gate producing a frame count that scales with the DISPLAY is
+ *  the class of result this repo forbids; a 1-tick window does not fix it and
+ *  spends the whole margin constraint (1) exists to provide.
+ *
+ *  ⚠ NOT a general renderer-independence claim. Below the strobe knee a square
+ *  LFO's capture count is still fps-proportional — that is what "live while
+ *  open" MEANS, exactly as unpatched passthrough is. Measured, 20 cycles at
+ *  60 / 240 fps with this window: 6 Hz → 30 / 62 (proportional), 8 Hz → 20 / 20,
+ *  10 Hz → 20 / 20. The window RAISES the frequency above which the count is
+ *  renderer-independent (10 Hz at 2 ticks → 8 Hz at 3); it does not make every
+ *  gate patch renderer-independent, and an earlier version of this note implied
+ *  it did.
+ *
+ *  COST, stated plainly and MEASURED AGAINST `main` — i.e. against what users
+ *  actually have, not against the earlier commit on this same branch (an earlier
+ *  version of this note quoted the 50 → 75 delta, a baseline that never shipped):
+ *
+ *    · every gate opening now waits 75 ms before it reads as HELD, where main
+ *      waited 0. There is no visible gap — the one-shot latch already refreshed
+ *      the image at the rising edge — but the latency is 75 ms, not 25.
+ *    · main had NO strobe knee at all (any high level captured); there is now
+ *      one at ~6.6 Hz. Measured captures over 20 cycles at 60 fps, no-window vs
+ *      shipped: 1 Hz 600→533, 2 Hz 301→227, 4 Hz 147→80, 6 Hz 102→30,
+ *      10 Hz 60→20. Above the knee one frame per cycle is the frame-rate-
+ *      INDEPENDENT reading and arguably the better look — but it IS a change.
+ *    · main's actual behaviour for the case that motivated all of this — a
+ *      patched TRIGGER — was ZERO frames, which is the bug.
  *
  *  NOT imported from `$lib/audio/scheduler-clock` on purpose — that module owns
  *  a Worker singleton and this def is loaded by the render-worker realm too.
- *  `freezeframe.test.ts` pins BOTH relationships (≥ 2 ticks, and STRICTLY
- *  greater than DEFAULT_GATE_LEN_S) plus the behaviour AT the boundary. */
+ *  `freezeframe.test.ts` pins ALL THREE relationships (≥ 2 ticks, STRICTLY
+ *  greater than DEFAULT_GATE_LEN_S, STRICTLY less than 4 ticks) plus the
+ *  behaviour AT the boundary. */
 export const HOLD_QUALIFY_MS = 75;
 
 /** Frame-count floor, OR'd with the ms grace. Covers the opposite extreme from
@@ -521,10 +562,10 @@ export const freezeframeDef: VideoModuleDef = {
 
   // docs-hash-ignore:start
   docs: {
-    explanation: "FREEZEFRAME fuses two video effects in one card. First, a SAMPLE & HOLD \"freeze\": with nothing patched to GATE the source passes through live; patch a gate and the image FREEZES, and the GATE jack then honours both readings of the gate cable at once. Hold the gate HIGH (level >= 0.5) and it updates CONTINUOUSLY for as long as it stays high (so it looks live, and an LFO square plays while open then stutter-freezes the instant it closes); send a TRIGGER at it and each rising edge updates EXACTLY ONE frame, after which it is still again. Short pulses cannot be missed or double-counted — the rising edge is detected as the gate value arrives rather than sampled once per rendered frame, and the one-shot is a latch a single frame consumes. The first frame always captures so the buffer seeds with real content instead of black. Second, a PER-CHANNEL POSTERIZE: four QUANT knobs each reduce one channel's colour depth, mapping the sweep geometrically in log2 from 256 levels (full depth) at min, through 32 at midway, to 2 (on/off) at max — crank all four for a hard few-bit posterized look. The shader posterizes each channel with floor(c*levels)/(levels-1); the combined output also applies the QUANT-luma reduction as a hue-preserving luma ratio so that knob still shapes the main out. Five outputs let you tap the recombined image, each isolated channel as a grey intensity image, or the Rec.601 luma. Usage hint: drive GATE from an LFO or clock to strobe/freeze a video feed, then dial the QUANT knobs for VHS/8-bit colour crushing; fan the R/G/B/LUMA taps into separate processors for channel-split effects.",
+    explanation: "FREEZEFRAME fuses two video effects in one card. First, a SAMPLE & HOLD \"freeze\": with nothing patched to GATE the source passes through live; patch a gate and the image FREEZES, and the GATE jack then honours both readings of the gate cable at once. Send a TRIGGER at it and each rising edge updates EXACTLY ONE frame, after which it is still again. Hold the gate HIGH (level >= 0.5) and you get that same one-frame update at the edge, and then — once the level has STOOD high for about 75 ms — continuous live updating for as long as it stays high. That 75 ms is deliberate and is the shortest honest answer available: the patch bridge does not stream the gate waveform to a video module, it re-reports the level roughly every 25 ms, so for the first tick or two a 5 ms trigger and a gate that has just opened are literally the same bytes. Anything held shorter than the window is therefore classified as a TRIGGER and updates exactly one frame — including a gate DERIVED from a trigger by GATEMAIDEN, whose default width is 50 ms, so inserting GATEMAIDEN into the path does not change the frame count. In practice a square LFO below roughly 6.6 Hz plays while open and stutter-freezes the instant it closes (at 1 Hz about 44 percent of frames update, at 4 Hz about 26 percent); faster than that knee each cycle contributes only its one edge frame and the module reads as a strobe, which is the frame-rate-independent reading anyway. Short pulses cannot be missed or double-counted — the rising edge is detected as the gate value arrives rather than sampled once per rendered frame, and the one-shot is a latch a single frame consumes. The first frame always captures so the buffer seeds with real content instead of black. Second, a PER-CHANNEL POSTERIZE: four QUANT knobs each reduce one channel's colour depth, mapping the sweep geometrically in log2 from 256 levels (full depth) at min, through 32 at midway, to 2 (on/off) at max — crank all four for a hard few-bit posterized look. The shader posterizes each channel with floor(c*levels)/(levels-1); the combined output also applies the QUANT-luma reduction as a hue-preserving luma ratio so that knob still shapes the main out. Five outputs let you tap the recombined image, each isolated channel as a grey intensity image, or the Rec.601 luma. Usage hint: drive GATE from an LFO or clock to strobe/freeze a video feed, then dial the QUANT knobs for VHS/8-bit colour crushing; fan the R/G/B/LUMA taps into separate processors for channel-split effects.",
     inputs: {
       video_in: "The source video frame fed into the sample-and-hold buffer and posterizer.",
-      gate_in: "Sample-and-hold gate. Unpatched = continuous live passthrough. Patched, the image is FROZEN while the level is LOW; it updates CONTINUOUSLY for as long as the level is HELD HIGH (>= 0.5), reacting to both edges as a gate; and each RISING EDGE additionally updates EXACTLY ONE frame, so a short trigger pulse re-samples once and then holds still. Both readings come from this one jack — patch a held gate for live-while-open, or a clock/trigger for one frame per tick.",
+      gate_in: "Sample-and-hold gate. Unpatched = continuous live passthrough. Patched, the image is FROZEN while the level is LOW. Each RISING EDGE updates EXACTLY ONE frame, so a trigger pulse re-samples once and then holds still. A gate HELD HIGH gets that edge frame too, and then updates CONTINUOUSLY once the level has stood high for about 75 ms — three reports of the ~25 ms patch bridge, which is the soonest a held gate can be told apart from a trigger at all, since until the level is re-reported the two are identical. A high shorter than that window reads as a TRIGGER: notably a 50 ms gate derived from a trigger by GATEMAIDEN, which is why inserting GATEMAIDEN does not change the frame count. Both readings come from this one jack — patch a held gate or slow square LFO for live-while-open, or a clock/trigger for one frame per tick.",
     },
     outputs: {
       video_out: "The recombined R/G/B image with each channel's posterize applied, plus the QUANT-LUMA reduction as a hue-preserving luma ratio. The card's on-screen preview shows this output.",
@@ -538,7 +579,7 @@ export const freezeframeDef: VideoModuleDef = {
       quant_g: "QUANT G — posterize amount for the green channel, 256 levels at min down to 2 at max. Affects video_out and g_out.",
       quant_b: "QUANT B — posterize amount for the blue channel, 256 levels at min down to 2 at max. Affects video_out and b_out.",
       quant_luma: "QUANT LUMA — posterize amount for the Rec.601 luma, 256 levels at min down to 2 at max. Drives luma_out and applies an overall luma-depth reduction to video_out as a hue-preserving ratio.",
-      gateLevel: "GATE — hidden synthetic param the cross-domain CV bridge writes from gate_in; it carries the live gate level into the sample-and-hold decision, is rising-edge detected on arrival for the one-shot trigger, and the fact that it is written at all is how the module detects the gate is patched. Exposed only as the gate cv jack, not as a knob.",
+      gateLevel: "GATE — hidden synthetic param the cross-domain CV bridge writes from gate_in; it carries the live gate level into the sample-and-hold decision, is rising-edge detected on arrival for the one-shot trigger, and the fact that it is written at all is how the module detects the gate is patched. The wall clock of the last rising edge is what the 75 ms hold-qualification window is measured from, so a level that has not yet stood that long counts as a trigger rather than a hold. Exposed only as the gate cv jack, not as a knob.",
     },
   },
   // docs-hash-ignore:end

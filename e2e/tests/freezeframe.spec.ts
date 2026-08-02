@@ -49,6 +49,17 @@
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 import { installRenderSmokeHooks, stepAndReadStats, assertRenderStats } from './_render-smoke';
+// THE constant, imported from the module that owns it — never re-typed here.
+// A held HIGH level counts as a HELD gate only after standing this long, because
+// for one bridge tick a trigger pulse and a just-opened gate are the same bytes.
+// (Same one-source-of-truth rule as the backdraft card-vs-def defect: a control
+// re-typing a number its def already declares is not a duplicate, it is a second
+// value that silently disagrees. This spec WARMS for the window and then asserts
+// "every qualified frame changed" — a stale mirror would warm for the wrong
+// window and assert continuity against a module that had not qualified yet.)
+// Precedent for reaching into the web package from a spec:
+// voice-pitch-accuracy.spec.ts, picturebox-asset-select.spec.ts, vfpga-p2-cells.spec.ts.
+import { HOLD_QUALIFY_MS } from '../../packages/web/src/lib/video/modules/freezeframe';
 
 // FREEZEFRAME's own combined output port (video_out). The harness reads a node's
 // OWN FBO by node id (+ optional port); FREEZEFRAME publishes video_out via
@@ -62,21 +73,48 @@ const FIXED_STEPS = 6;
 
 /** ONE discarded step+read before the first ASSERTED read.
  *
- *  WHY IT IS A CALL AND NOT A STEP COUNT. Under SwiftShader the FIRST
- *  stepAndReadStats call on this chain reads ALL-BLACK no matter how many steps
- *  it drives — measured 0.0000 nonZeroFrac at 1 step, and FIXED_STEPS (6) was
- *  equally black; the very next call reads 0.8936 and never changes again. On a
- *  real GPU the first call is already 0.8936. So the deficit is one pipeline
- *  round-trip, not render time, and "more steps" cannot fix it.
+ *  ── THE REAL CAUSE, BISECTED (corrected 2026-08-01) ──
+ *  An earlier version of this comment said "the FIRST stepAndReadStats call
+ *  reads ALL-BLACK no matter how many steps it drives … the deficit is one
+ *  pipeline round-trip". That was WRONG, and it was falsifiable from inside this
+ *  very file: test (e) does NOT warm, its first assertion covers prints[0], and
+ *  it is GREEN under E2E_SWIFTSHADER=1 (verified, 3 separate processes). A
+ *  "first readback is always black" cause predicts (e) is red. It isn't.
+ *
+ *  Bisected on the real chain (acidwarp → freezeframe → videoOut, 6 × step(),
+ *  full-frame readPixels of v-ff/video_out, nonZeroFrac):
+ *
+ *    what runs BEFORE the step() burst          SwiftShader   real GPU
+ *    ─────────────────────────────────────────  ───────────   ────────
+ *    nothing                                       0.8936      0.8936
+ *    gl.getParameter(MAX_TEXTURE_SIZE)             0.8936        —
+ *    gl.flush()                                    0.8936        —
+ *    while (gl.getError() !== NO_ERROR) {}         0.0000      0.8936
+ *      …the same drain + gl.finish()               0.0000        —
+ *
+ *  So it is not the reader, not the read size, not render time and not a warm-up
+ *  period: it is `_render-smoke.ts`'s PRE-STEP `gl.getError()` drain (line 69),
+ *  which drains ZERO errors and still blanks that burst's readback, under
+ *  SwiftShader only, on the FIRST call in the page. Every later call does the
+ *  same drain and reads 0.8936, so absorbing exactly one call fixes it. Another
+ *  synchronous query in the same position does NOT reproduce it, and finish()
+ *  does not repair it — it is specific to getError(), which is why "more steps"
+ *  cannot help and why a discarded CALL is the right shape of workaround.
+ *
+ *  ⚠ THIS IS A SHARED-HARNESS DEFECT, NOT A FREEZEFRAME ONE. Any DRS spec whose
+ *  FIRST stepAndReadStats result is asserted on is exposed under SwiftShader.
+ *  It is worked around here rather than fixed in _render-smoke.ts because that
+ *  file is loaded by every DRS spec and re-validating them all is out of scope
+ *  for this PR — filed as follow-up, with the bisection above so it needs no
+ *  re-derivation. (e) is immune because driveGateFrames never calls getError().
  *
  *  This was a REAL PRE-EXISTING RED: test (a) failed under E2E_SWIFTSHADER=1 on
- *  commit 9be2146e too (verified by running that exact spec side by side). It
- *  was invisible because freezeframe.spec.ts runs in NO CI lane — the same gap
- *  the @webgl-smoke tag on (e) closes.
+ *  commit 9be2146e too. It was invisible because freezeframe.spec.ts ran in NO
+ *  CI lane — which is why (a) is now tagged @webgl-smoke alongside (e).
  *
  *  The content is otherwise IDENTICAL across renderers (nonZeroFrac 0.8936,
- *  variance 3213.02, mean 61.72 on both), so this is a pacing artefact, not a
- *  rendering difference — established before touching anything. */
+ *  variance 3213.02, mean 61.72 on both), so this is a command-stream artefact,
+ *  not a rendering difference — established before touching anything. */
 async function warmRenderPipeline(page: Page): Promise<void> {
   await stepAndReadStats(page, { nodeId: 'v-ff', portId: FF_PORT, steps: 1 });
 }
@@ -191,13 +229,6 @@ async function setVideoParam(page: Page, nodeId: string, paramId: string, value:
 // timestamps are returned so the assertion can locate that window exactly
 // instead of guessing a frame count for it.
 // ---------------------------------------------------------------------------
-
-/** Mirror of freezeframe.ts's HOLD_QUALIFY_MS. A HIGH level counts as a HELD
- *  gate only after standing this long, because for one bridge tick a trigger
- *  pulse and a just-opened gate are the same bytes. 3 scheduler ticks — the
- *  third lifts it STRICTLY clear of DEFAULT_GATE_LEN_S so a trigger-derived gate
- *  is classified deterministically (see the constant's header). */
-const HOLD_QUALIFY_MS = 75;
 
 /** ACIDWARP scene count. 41 is PRIME, so any stride below is automatically
  *  co-prime to it and to the trigger period — captured frames cannot alias onto
@@ -323,7 +354,12 @@ const bits = (prints: FramePrint[]): string =>
   prints.map((p, i) => (i > 0 && p.h !== prints[i - 1]!.h ? '1' : '0')).join('');
 
 test.describe('FREEZEFRAME — video sample & hold + posterize', () => {
-  test('(a) ungated = live passthrough; (b/c) gate high updates / gate low freezes', async ({ page }) => {
+  // @webgl-smoke — (a) is the test that was ACTUALLY RED under SwiftShader (see
+  // warmRenderPipeline's bisection) and it ran in NO CI lane, so the fix for it
+  // was unverifiable anywhere. It is also the only coverage of the
+  // __freezeframeForceGate LEVEL path and of the shared _render-smoke harness on
+  // this chain. Measured cost under E2E_SWIFTSHADER=1 on a warm server: 6.1 s.
+  test('(a) @webgl-smoke ungated = live passthrough; (b/c) gate high updates / gate low freezes', async ({ page }) => {
     test.setTimeout(60_000);
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
@@ -453,7 +489,10 @@ test.describe('FREEZEFRAME — video sample & hold + posterize', () => {
   // used to run those was DELETED on 2026-06-20 — so without a tag this fix ships
   // with ZERO on-CI coverage. It is affordable there because it is a DRS (rAF
   // paused, engine clock pinned, a fixed step() count) reading a 128×128 centre
-  // crop, not a full-frame screenshot. Measured cost is in the PR body.
+  // crop, not a full-frame screenshot. Measured under E2E_SWIFTSHADER=1 on a
+  // warm server: (a) 6.4 s + (e) 3.9 s ≈ 10 s of test time; expect ~20-40 s on a
+  // loaded runner including browser launch — well under the ~2 min flag
+  // threshold. (d) stays untagged: posterize is unrelated to this fix.
   test('(e) @webgl-smoke gate: frozen when low, EXACTLY ONE update per trigger, continuous while held', async ({ page }) => {
     test.setTimeout(120_000);
     const errors: string[] = [];

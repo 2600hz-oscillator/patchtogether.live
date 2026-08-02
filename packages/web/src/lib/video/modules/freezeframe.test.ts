@@ -186,6 +186,33 @@ describe('holdQualified — HELD vs the staircase echo of a TRIGGER', () => {
     expect(HOLD_QUALIFY_MS).toBeGreaterThanOrEqual(2 * SCHEDULER_TICK_MS);
     expect(HOLD_QUALIFY_MS).toBeGreaterThan(TRIGGER_PULSE_S * 1000);
   });
+
+  it('THE CEILING: the window is STRICTLY SHORTER than 4 bridge ticks', () => {
+    // ⚠ THIS TEST EXISTS BECAUSE THE CONSTANT WAS UNPINNED FROM ABOVE.
+    // Every other assertion about the qualify window is a LOWER bound (>= 2
+    // ticks, > DEFAULT_GATE_LEN_S, > TRIGGER_PULSE_S), and every HELD-gate test
+    // below derives its own frame counts FROM the constant — so the whole suite
+    // was invariant to the window growing. Measured: at HOLD_QUALIFY_MS = 300,
+    // 5000 or 60000 the entire file stayed GREEN, while a held gate froze for a
+    // full minute after opening. The one user-visible latency this module
+    // deliberately changed was the one quantity nothing bounded.
+    //
+    // WHY 4 TICKS IS THE CEILING. The window is pure added latency on a HELD
+    // gate: the level cannot read as "continuous" until it has stood that long.
+    // Past 4 ticks (100 ms) a 5 Hz square LFO — whose HIGH phase is 100 ms —
+    // degenerates to exactly one captured frame per cycle, i.e. it stops
+    // behaving like the "plays while open" gate the docs promise and becomes a
+    // pure strobe. The behavioural half of this bound is the 5 Hz sweep below;
+    // this is the structural half, so a future edit trips it at review time
+    // rather than at render time.
+    //
+    // Floor (2 ticks) + tie-break (> 50 ms) + ceiling (< 100 ms) leave exactly
+    // one value on the 25 ms tick grid: 75 ms.
+    expect(
+      HOLD_QUALIFY_MS,
+      `qualify window vs the 4-tick ceiling (${4 * SCHEDULER_TICK_MS} ms) — a longer window turns a held gate into a strobe`,
+    ).toBeLessThan(4 * SCHEDULER_TICK_MS);
+  });
 });
 
 describe('gateIsPatched — freshness of the bridge write (UNITS matter)', () => {
@@ -371,31 +398,88 @@ function runTriggerTimeline(o: {
 }
 
 describe('TRIGGER → exactly ONE frame (the real installGateDispatch sequence)', () => {
-  // Frame rates spanning CI's SwiftShader floor to a 240 Hz display, and tick
-  // phases chosen CO-PRIME-ish to the frame grid so no run can pass by lucky
-  // alignment (an even phase against a periodic signal aliases to a constant).
+  // ── WHICH GRID THE SWEEP HAS TO BEAT (corrected 2026-08-01) ──
+  // An earlier version swept these phases against a 250 ms trigger period and
+  // said they were "chosen CO-PRIME-ish to the FRAME grid". That named the wrong
+  // grid, and the sweep was ~92 % decoration as a result.
+  //
+  // The mechanism the qualify window exists to suppress is the STAIRCASE ECHO:
+  // the bridge re-reports the level once per SCHEDULER_TICK_MS, so a 5 ms pulse
+  // produces a spurious whole-tick HIGH *only if a tick instant lands inside the
+  // pulse*. Whether that happens is decided by the pulse's offset inside the
+  // 25 ms TICK period — the frame grid decides only how many frames the echo
+  // then covers. With a 250 ms trigger period (10 whole ticks) EVERY pulse in a
+  // run sits at the SAME offset, and with these phases only one of six put a
+  // tick inside a pulse at all. Measured: removing the qualify window entirely
+  // (`qualifyMs: 0`) changed 3 of 36 cells. 33 cells could not tell the
+  // window's presence from its absence.
+  //
+  // FIX: make the trigger period CO-PRIME TO THE TICK PERIOD. 241 ms is prime,
+  // so successive pulses walk the whole 25 ms tick window (241 mod 25 = 16, a
+  // generator of Z/25), and 10 triggers per run sample 10 distinct offsets. Now
+  // every cell whose FRAME period is shorter than a tick — the only cells where
+  // an echo can span a draw at all — is sensitive to the constant. Measured:
+  // 24 of 36 cells change when the window is removed, and the 12 that don't are
+  // exactly the 8 fps and 30 fps rows (125 ms and 33.3 ms per frame, both longer
+  // than a 25 ms tick, so no draw can land inside the echo). The negative
+  // control below asserts that predicate rather than a bare "some cells moved".
   const FPS = [8, 30, 60, 120, 165, 240];
   const PHASES = [0, 3, 7, 11, 17, 23];
+  const TRIGGER_PERIOD_MS = 241; // PRIME → co-prime to SCHEDULER_TICK_MS (25)
+  const TRIGGERS = 10;
 
   for (const fps of FPS) {
     for (const phaseMs of PHASES) {
-      it(`${fps} fps, tick phase +${phaseMs} ms: 6 triggers → EXACTLY 6 updates`, () => {
+      it(`${fps} fps, tick phase +${phaseMs} ms: ${TRIGGERS} triggers → EXACTLY ${TRIGGERS} updates`, () => {
         const r = runTriggerTimeline({
-          framePeriodMs: 1000 / fps, triggerPeriodMs: 250, triggers: 6, phaseMs,
+          framePeriodMs: 1000 / fps, triggerPeriodMs: TRIGGER_PERIOD_MS, triggers: TRIGGERS, phaseMs,
         });
-        expect(r.triggersFired, 'timeline actually delivered 6 pulses').toBe(6);
-        expect(r.captures, `captures at ${fps} fps / phase ${phaseMs} ms`).toBe(6);
+        expect(r.triggersFired, `timeline actually delivered ${TRIGGERS} pulses`).toBe(TRIGGERS);
+        expect(r.captures, `captures at ${fps} fps / phase ${phaseMs} ms`).toBe(TRIGGERS);
       });
     }
   }
+
+  it('INSTRUMENT: the sweep is SENSITIVE to the qualify window it is testing', () => {
+    // Negative-control the INSTRUMENT, not just the code: remove the qualify
+    // window and the sweep must break wherever it physically can. If it does
+    // not, these 36 cells are decoration — which is precisely what they were
+    // before the trigger period was made co-prime to the tick.
+    //
+    // The predicate is exact, not a vague floor: an echo lasts one TICK period,
+    // so a draw can only land inside it when the frame period is SHORTER than a
+    // tick. Every such cell must differ; the rest cannot.
+    const insensitiveButShould: string[] = [];
+    const sensitiveButCant: string[] = [];
+    for (const fps of FPS) {
+      const framePeriodMs = 1000 / fps;
+      const echoCanSpanADraw = framePeriodMs < SCHEDULER_TICK_MS;
+      for (const phaseMs of PHASES) {
+        const args = { framePeriodMs, triggerPeriodMs: TRIGGER_PERIOD_MS, triggers: TRIGGERS, phaseMs };
+        const shipped = runTriggerTimeline(args).captures;
+        const noWindow = runTriggerTimeline({ ...args, qualifyMs: 0 }).captures;
+        const differs = shipped !== noWindow;
+        if (echoCanSpanADraw && !differs) insensitiveButShould.push(`${fps}fps/phase${phaseMs} (=${shipped})`);
+        if (!echoCanSpanADraw && differs) sensitiveButCant.push(`${fps}fps/phase${phaseMs} (${shipped}→${noWindow})`);
+      }
+    }
+    expect(
+      insensitiveButShould,
+      `these cells have a frame period shorter than the ${SCHEDULER_TICK_MS} ms bridge tick, so removing the qualify window MUST change them — if it does not, the sweep cannot see the constant it is testing: ${insensitiveButShould.join(' ')}`,
+    ).toEqual([]);
+    expect(
+      sensitiveButCant,
+      `these cells draw more slowly than the bridge ticks, so no echo can span a draw and the window is unobservable — a difference here means the model changed: ${sensitiveButCant.join(' ')}`,
+    ).toEqual([]);
+  });
 
   it('NEGATIVE CONTROL: the pre-fix LEVEL-ONLY logic fails this same timeline', () => {
     // If this ever passes, the assertion above proves nothing — the timeline
     // would be satisfiable without edge detection at all.
     const bad = FPS.flatMap((fps) => PHASES.map((phaseMs) => runTriggerTimeline({
-      framePeriodMs: 1000 / fps, triggerPeriodMs: 250, triggers: 6, phaseMs, levelOnly: true,
+      framePeriodMs: 1000 / fps, triggerPeriodMs: TRIGGER_PERIOD_MS, triggers: TRIGGERS, phaseMs, levelOnly: true,
     }).captures));
-    expect(bad.every((n) => n === 6), `level-only captures across the sweep: [${bad.join(',')}]`).toBe(false);
+    expect(bad.every((n) => n === TRIGGERS), `level-only captures across the sweep: [${bad.join(',')}]`).toBe(false);
     // And the headline shape of the owner's report: at the common phases the
     // level-only consumer sees NOTHING at all.
     expect(bad.some((n) => n === 0), `level-only produced zero updates somewhere: [${bad.join(',')}]`).toBe(true);
@@ -558,6 +642,111 @@ describe('HELD GATE → continuous (the one-shot must not swallow the hold)', ()
     c.tick(0, 0, RISE + Q + 50); expect(c.draw(RISE + Q + 55), 'dropped → frozen').toBe(false);
     c.tick(0, 0, RISE + Q + 75); expect(c.draw(RISE + Q + 80), 'stays frozen').toBe(false);
   });
+
+  // -------------------------------------------------------------------------
+  // THE UPPER BOUND, BEHAVIOURALLY. Everything above this line derives its frame
+  // counts FROM HOLD_QUALIFY_MS, so all of it stays green at any window length —
+  // measured green at 300 ms, 5 s and 60 s. These two assertions use ABSOLUTE
+  // times taken from the BRIDGE cadence (SCHEDULER_TICK_MS) and from a stated
+  // musical requirement, never from the constant under test, so they go red when
+  // the window grows.
+  // -------------------------------------------------------------------------
+
+  /** A square LFO on the gate: `hz` cycles/s, 50 % duty, driven through the real
+   *  bridge cadence (a scheduler tick every SCHEDULER_TICK_MS re-reports the
+   *  level; the tick that sees the level go high also counts the rising edge).
+   *  Returns how many of the drawn frames captured. */
+  function runSquareGate(o: { fps: number; hz: number; cycles: number; qualifyMs?: number }): {
+    captured: number; frames: number;
+  } {
+    const c = makeGateConsumer(false, o.qualifyMs);
+    const framePeriodMs = 1000 / o.fps;
+    const periodMs = 1000 / o.hz;
+    const durationMs = periodMs * o.cycles;
+    const high = (t: number): boolean => (t % periodMs) < periodMs / 2;
+    const events: Array<{ t: number; kind: 'tick' | 'draw' }> = [];
+    for (let t = 0; t < durationMs; t += SCHEDULER_TICK_MS) events.push({ t, kind: 'tick' });
+    for (let t = 0; t < durationMs; t += framePeriodMs) events.push({ t, kind: 'draw' });
+    events.sort((a, b) => a.t - b.t || (a.kind === 'tick' ? -1 : 1));
+    let prevHigh = false;
+    let captured = 0;
+    let frames = 0;
+    for (const e of events) {
+      if (e.kind === 'tick') {
+        const h = high(e.t);
+        c.tick(h && !prevHigh ? 1 : 0, h ? 1 : 0, e.t);
+        prevHigh = h;
+      } else {
+        frames++;
+        const before = c.captures;
+        c.draw(e.t);
+        if (c.captures > before) captured++;
+      }
+    }
+    return { captured, frames };
+  }
+
+  it('CEILING (behaviour): a 5 Hz square gate still PLAYS while open, it does not strobe', () => {
+    // The doc promise for a held gate is "it updates CONTINUOUSLY for as long as
+    // it stays high (so an LFO square plays while open then stutter-freezes the
+    // instant it closes)". A 5 Hz square holds the gate high for 100 ms per
+    // cycle. If the qualify window ever reaches that, the ONLY capture left in a
+    // cycle is the one-shot at the rising edge and the module becomes a pure
+    // strobe — the promise breaks with no test noticing, because every other
+    // held-gate assertion scales itself by the window.
+    //
+    // CYCLES is the yardstick, deliberately: "captures > cycles" means "more
+    // than the one-shot", which is exactly the qualitative claim.
+    const CYCLES = 10;
+    for (const fps of [60, 120, 240]) {
+      const r = runSquareGate({ fps, hz: 5, cycles: CYCLES });
+      expect(
+        r.captured,
+        `${fps} fps, 5 Hz square: ${r.captured} captures over ${CYCLES} cycles (${r.frames} frames). ` +
+        'At most one per cycle means the qualify window has eaten the entire 100 ms high phase and the ' +
+        'gate now strobes instead of playing.',
+      ).toBeGreaterThan(CYCLES);
+    }
+  });
+
+  it('NEGATIVE CONTROL: a 4-tick (100 ms) window turns that same 5 Hz square into a strobe', () => {
+    // Proves the assertion above is sensitive to the constant it bounds — and
+    // shows exactly where the ceiling comes from.
+    const CYCLES = 10;
+    const r = runSquareGate({ fps: 60, hz: 5, cycles: CYCLES, qualifyMs: 4 * SCHEDULER_TICK_MS });
+    expect(
+      r.captured,
+      `at a ${4 * SCHEDULER_TICK_MS} ms window a 5 Hz square must collapse to one capture per cycle (got ${r.captured})`,
+    ).toBeLessThanOrEqual(CYCLES);
+    // …and the shipped window does NOT. Same timeline, one constant changed.
+    expect(runSquareGate({ fps: 60, hz: 5, cycles: CYCLES }).captured).toBeGreaterThan(r.captured);
+  });
+
+  it('CEILING (latency): a held gate goes continuous within 4 bridge ticks of the rise', () => {
+    // The one user-visible cost of the window, pinned in ABSOLUTE ms. The bound
+    // is 4 ticks PLUS one frame period, because a renderer slower than the bound
+    // cannot report a capture sooner than its own next frame (SwiftShader draws
+    // at ~8 fps = 125 ms/frame, and that is a renderer fact, not a window fact).
+    const CEILING_MS = 4 * SCHEDULER_TICK_MS; // 100
+    for (const fps of [8, 60, 120, 240]) {
+      const framePeriodMs = 1000 / fps;
+      const frames = Math.ceil((CEILING_MS * 4) / framePeriodMs) + 10; // NOT derived from the window
+      const got = runHeld(fps, frames);
+      const firstSteadyIdx = got.findIndex((_, i) => got.slice(i).every(Boolean));
+      expect(firstSteadyIdx, `${fps} fps: never went continuous — [${got.map((b) => (b ? 1 : 0)).join('')}]`)
+        .toBeGreaterThanOrEqual(0);
+      // runHeld puts the opening tick half a frame BEFORE frame 1, so the rise
+      // is at framePeriodMs/2 — measure the latency from the rise, not from 0.
+      const riseAtMs = framePeriodMs / 2;
+      const sinceRiseMs = (firstSteadyIdx + 1) * framePeriodMs - riseAtMs;
+      expect(
+        sinceRiseMs,
+        `${fps} fps: continuous only ${sinceRiseMs.toFixed(1)} ms after the rise — the ceiling is ` +
+        `${CEILING_MS} ms + one frame (${framePeriodMs.toFixed(1)} ms), because a renderer cannot report ` +
+        `sooner than its own next frame. Pattern [${got.map((b) => (b ? 1 : 0)).join('')}]`,
+      ).toBeLessThanOrEqual(CEILING_MS + framePeriodMs);
+    }
+  });
 });
 
 describe('freezeframe def — gate_in declares its edge semantic', () => {
@@ -570,6 +759,65 @@ describe('freezeframe def — gate_in declares its edge semantic', () => {
     // an ADDITIONAL guarantee on the same port.
     expect(p!.edge).toBe('gate');
     expect(p!.paramTarget).toBe('gateLevel');
+  });
+});
+
+describe('freezeframe docs — the PROSE must not contradict the shipped behaviour', () => {
+  // ⚠ WHY THIS EXISTS. `contract-lock` pins the CONTRACT SHAPE and
+  // `module-docs-lint` pins KEY COVERAGE and vocabulary. Neither compares the
+  // authored sentence to the factory, so the docs shipped saying a held gate
+  // "updates CONTINUOUSLY for as long as it stays high" while the module in fact
+  // waits HOLD_QUALIFY_MS first — and, at the GATEMAIDEN-derived width, updates
+  // exactly ONE frame. Three measured contradictions the whole gate set missed:
+  //     GATEMAIDEN default (50 ms gate) : promised continuous → actually 1 frame
+  //     4 Hz square, 60 fps             : promised "plays"    → 26 % of frames
+  //     1 Hz square, 60 fps             : promised continuous → 44 % of frames
+  // A full prose-vs-behaviour gate is not buildable, but the two facts a reader
+  // is actively misled without ARE checkable, and the NUMBER can be tied to the
+  // constant so the doc cannot silently go stale when the window moves.
+  const docs = freezeframeDef.docs;
+  const gateProse = (): string =>
+    `${docs?.explanation ?? ''}\n${docs?.inputs?.gate_in ?? ''}\n${docs?.controls?.gateLevel ?? ''}`;
+
+  it('the authored prose states the qualification window, with the SHIPPED number', () => {
+    const prose = gateProse();
+    expect(prose.length, 'gate docs are authored at all').toBeGreaterThan(200);
+    expect(
+      prose,
+      `the docs must quote the real window (${HOLD_QUALIFY_MS} ms). If HOLD_QUALIFY_MS moved, the ` +
+      'prose is now wrong — re-author it and run `task docs:accept`.',
+    ).toContain(`${HOLD_QUALIFY_MS} ms`);
+    // …and no stale number from an earlier revision is left lying around.
+    for (const stale of [50, 100, 25].filter((n) => n !== HOLD_QUALIFY_MS)) {
+      expect(
+        new RegExp(`\\b${stale} ms\\b(?![^.]*GATEMAIDEN)`).test(docs?.controls?.gateLevel ?? ''),
+        `the gateLevel control doc quotes ${stale} ms, which is not the shipped window`,
+      ).toBe(false);
+    }
+  });
+
+  it('the authored prose states the GATEMAIDEN-derived-gate outcome', () => {
+    // The commit message called this a FEATURE ("inserting GATEMAIDEN does not
+    // change the frame count") and never wrote it into the doc the user reads —
+    // while the doc simultaneously promised such a gate would run continuously.
+    const prose = gateProse();
+    expect(prose, 'the derived-gate case is documented').toMatch(/GATEMAIDEN/);
+    expect(
+      prose,
+      `and its width (${DEFAULT_GATE_LEN_S * 1000} ms) is quoted, so the reader can see WHY it reads as a trigger`,
+    ).toContain(`${DEFAULT_GATE_LEN_S * 1000} ms`);
+  });
+
+  it('the authored prose does not promise UNCONDITIONAL continuity', () => {
+    // The exact sentence that was wrong. A held gate is continuous only AFTER
+    // the window, so an unqualified "for as long as it stays high" is a false
+    // statement about this module, however natural it reads.
+    const explanation = docs?.explanation ?? '';
+    expect(
+      /updates CONTINUOUSLY for as long as it stays high/.test(explanation),
+      'the docs make the unconditional-continuity claim again — it is false for the first ' +
+      `${HOLD_QUALIFY_MS} ms after every rising edge`,
+    ).toBe(false);
   });
 });
 
