@@ -62,12 +62,11 @@ function specFacts(): SpecFacts[] {
     .map((spec) => {
       const src = readFileSync(resolve(VRT_DIR, spec), 'utf8');
       const gotos = count(src, /page\.goto\(/);
-      const pins = count(src, /pinVrtFonts\(/).filter((i) => !src.slice(0, i).endsWith('import { '));
-      const awaits = count(src, /awaitVrtFonts\(/);
-      // The import line mentions both helpers; drop it from the call counts.
-      const importIdx = src.indexOf("from './_fonts'");
-      const callPins = pins.filter((i) => importIdx < 0 || i > importIdx);
-      const callAwaits = awaits.filter((i) => importIdx < 0 || i > importIdx);
+      // The `import { pinVrtFonts, awaitVrtFonts } from './_fonts'` line names
+      // both helpers without calling either — count only the `name(` CALL form,
+      // which the import (a bare identifier in a binding list) never matches.
+      const callPins = count(src, /pinVrtFonts\(/);
+      const callAwaits = count(src, /awaitVrtFonts\(/);
       return {
         spec,
         gotos: gotos.length,
