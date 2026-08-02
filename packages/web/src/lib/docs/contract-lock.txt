@@ -991,6 +991,8 @@ dx7 param release 0.001..5 log default=0.005 unit=s
 dx7 param sustain 0..1 linear default=1
 dx7 param transpose -24..24 linear default=0 unit=st
 dx7 param voiceCount 1..5 discrete default=5
+dx7 family dx7-op-detail kind=other prefix=dx7-op-detail
+dx7 family dx7-operator-map kind=cell prefix=dx7-op-tile
 dx7 family dx7-preset-select kind=other prefix=dx7-preset-select
 dx7 family dx7-syx-input kind=other prefix=dx7-syx-input
 edges meta domain=video
