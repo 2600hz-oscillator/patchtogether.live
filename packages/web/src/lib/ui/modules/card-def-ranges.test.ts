@@ -35,13 +35,22 @@
 //   * a control that binds a param through a variable the file computes
 //     elsewhere (`const c = 'exp'; <Knob curve={c} …>`) — an expression is a
 //     read, and this gate cannot tell a read of the def from a read of a lie;
+//   * an INLINE FORMATTER (`format={(v) => …}`) shadowing a `ParamDef.format`.
+//     B's shapes are all literals, and a function body is not one;
 //   * `step`, `trackHeight`, `size`, and every other purely-presentational
 //     prop — `ParamDef` does not declare them, so there is nothing to disagree
 //     WITH;
 //   * a card that OMITS a prop the def declares (a def with `units: 'Hz'` and a
-//     card that never passes units). `paramProps` closes that by construction —
-//     it returns every def-owned prop — but a card that hand-writes the ones it
-//     wants is invisible here.
+//     card that never passes units). ⚠ THIS GATE IS STRUCTURALLY BLIND TO IT
+//     and cannot be fixed here: a card that spreads `paramProps(def, id)` and a
+//     card that spreads an object missing half the def's vocabulary are
+//     TEXTUALLY IDENTICAL. "`paramProps` closes it by construction" was the
+//     round-1 claim and it was a comment, not a gate — nothing asserted the
+//     function forwarded anything, so deleting `units: p.units` from it would
+//     have kept every check in this repo green. The omission half now lives in
+//     `card-kit.test.ts`, which pins what `paramProps` must forward and makes
+//     the roster derive from `ParamDef`'s own field list. Re-typing and
+//     dropping are opposite halves of one contract; each needs its own gate.
 //
 // A RATCHET, not a sweep. ~70 legacy cards hand-type their ranges today, so a
 // repo-wide assertion would be a 70-file migration wearing a test's clothes.

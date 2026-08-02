@@ -11,11 +11,18 @@
   let node = $derived(data?.node as ModuleNode);
   const { set, live, paramVal } = cardParams(vcaDef, () => id, () => node);
 
-  // RANGES AND LABELS COME FROM THE DEF, never re-typed here. This card used to
-  // spell out both faders' min / max / defaultValue as literals — numbers that
-  // AGREED with the def, but only by maintenance rather than by construction,
-  // and no gate in this repo reads both sides (CLAUDE.md: "A CARD can silently
-  // disagree with its DEF"). Guarded by card-def-ranges.test.ts.
+  // RANGES **AND VOCABULARY** COME FROM THE DEF, never re-typed here. This card
+  // used to spell out both faders' min / max / defaultValue as literals —
+  // numbers that AGREED with the def, but only by maintenance rather than by
+  // construction, and no gate in this repo reads both sides (CLAUDE.md: "A CARD
+  // can silently disagree with its DEF"). Guarded by card-def-ranges.test.ts.
+  //
+  // The spread carries `format` too, which is why these faders' value tags say
+  // `CLOSED` / `-12 dB` / `DUCK` — the same words the curated face prints —
+  // instead of the raw number. Two surfaces, one vocabulary, one source.
+  // `card-kit.test.ts` pins what the spread must contain (a DROPPED def claim
+  // is invisible to the re-typing matcher: spreading everything and spreading
+  // half look identical in source).
   const baseProps = paramProps(vcaDef, 'base');
   const cvAmountProps = paramProps(vcaDef, 'cvAmount');
 

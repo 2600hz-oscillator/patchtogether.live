@@ -368,3 +368,52 @@ test.describe('vca face — the knob readouts follow the graph', () => {
     }
   });
 });
+
+// ── THE OTHER SURFACE: the LEGACY CARD, and the seam that feeds it. ─────────
+//
+// Everything above renders the CURATED FACE, which reads the def DIRECTLY
+// (`ModuleShell` passes `units={pd.units}` / `format={pd.format}` off the
+// ParamDef). The legacy card reaches the same def through `paramProps(def, id)`
+// — a SECOND route to the same vocabulary, and until now an unwitnessed one.
+//
+// The gap that motivated this: `paramProps` did not forward `format`, so the
+// face printed `CLOSED` / `-12 dB` / `UNITY` while the card's value tag on the
+// SAME param still printed `0.00`. One param, two vocabularies. Nothing could
+// see it — `card-def-ranges` only forbids a card from RE-TYPING a def claim and
+// is textually blind to one being DROPPED, and the tag renders on HOVER, so no
+// VRT baseline contains it either.
+//
+// `card-kit.test.ts` pins what the seam must forward; this pins that the
+// forwarded value reaches a REAL rendered control. (`units` is proved at the
+// unit tier only — VCA declares none, and inventing one to make a browser
+// assertion possible would be a contract change written for a test.)
+test.describe('VCA legacy card — the def-owned readout reaches the card too', () => {
+  test('the base fader prints the DEF formatter, not the raw number', async ({ page }) => {
+    test.setTimeout(SLOW_RENDER ? 60_000 : 30_000);
+    // NO `shell=1`: this is the legacy card path, the one `paramProps` feeds.
+    await page.goto('/rack?mode=workflow');
+    await page.locator('.svelte-flow__pane:visible').first().waitFor({
+      state: 'visible',
+      timeout: SLOW_RENDER ? 30_000 : 15_000,
+    });
+    await spawnPatch(page, [
+      { id: 'v', type: 'vca', position: { x: 460, y: 240 }, params: { base: 0.25 } },
+    ]);
+
+    const card = page.locator('.svelte-flow__node[data-id="v"]');
+    const baseFader = card.getByTestId('control-base');
+    await expect(baseFader).toBeVisible();
+
+    // The tag exists only while hovering/dragging — which is exactly why no
+    // screenshot gate could ever have caught the divergence.
+    await baseFader.hover();
+    const tag = card.locator('.value-tag').first();
+    await expect(tag).toBeVisible();
+    await expect(
+      tag,
+      `the card's value tag must speak the DEF's vocabulary (ParamDef.format via ` +
+        `paramProps), not a bare number — the curated face already prints ` +
+        `${JSON.stringify(formatVcaBase(0.25))} for this same param.`,
+    ).toHaveText(formatVcaBase(0.25));
+  });
+});

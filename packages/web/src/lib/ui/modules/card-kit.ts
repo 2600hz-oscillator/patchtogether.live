@@ -67,12 +67,23 @@ export function portsFromDef(
 /** The def-owned props every control primitive takes (`Fader`, `KnobConic`),
  *  spreadable straight into the component.
  *
- *  `units` rides along because it is DEF-OWNED too (`ParamDef.units`) and is
- *  therefore just as capable of drifting as the range: a card that types
- *  `units="Hz"` beside a def that says `'kHz'` prints the wrong unit on every
- *  hover, and a card that simply omits it drops a unit the def declared.
- *  `card-def-ranges.test.ts` forbids re-typing it, so this is what a promoted
- *  card uses instead. */
+ *  `units` and `format` ride along because they are DEF-OWNED too
+ *  (`ParamDef.units` / `ParamDef.format`) and are therefore just as capable of
+ *  drifting as the range: a card that types `units="Hz"` beside a def that says
+ *  `'kHz'` prints the wrong unit on every hover, and a card that simply OMITS
+ *  one drops vocabulary the def declared — the half a source-level "don't
+ *  re-type it" matcher structurally CANNOT see, because a card that spreads
+ *  everything and a card that spreads half are textually identical.
+ *  `card-def-ranges.test.ts` forbids re-typing; `card-kit.test.ts` pins what
+ *  this seam must forward. Both halves of "one place" are gated, not one.
+ *
+ *  ⚠ `options` / `landmarks` are deliberately NOT here, and the exclusion is
+ *  ARGUED in card-kit.test.ts's `NOT_FORWARDED` roster rather than left to be
+ *  discovered: they paint detent TICKS in PARAM space, which only `KnobConic`
+ *  models (`Fader.ticks` is a different shape — a label at a normalized
+ *  fraction of the TRACK). A card that binds a discrete param to a Fader
+ *  therefore cannot be promoted yet; that is the ratchet's current edge, stated
+ *  rather than silent. */
 export interface CardParamProps {
   min: number;
   max: number;
@@ -80,6 +91,7 @@ export interface CardParamProps {
   label: string;
   curve: KnobCurve;
   units?: string;
+  format?: (v: number) => string;
 }
 
 /**
@@ -97,6 +109,15 @@ export interface CardParamProps {
  *
  * Throws on an unknown id — a typo must fail loudly at mount, not fall back to
  * a 0..1 default that looks plausible.
+ *
+ * WHAT IT FORWARDS IS GATED, not merely intended. `card-def-ranges.test.ts`
+ * only forbids a card from RE-TYPING a def claim; nothing there can see this
+ * function silently DROPPING one — opposite halves of the same contract, and a
+ * source matcher reads only the first. So `card-kit.test.ts` derives
+ * `ParamDef`'s field list from its own source and requires every field to be
+ * either forwarded here or listed in an ARGUED `NOT_FORWARDED` roster: a new
+ * def-owned prop cannot land on `ParamDef` without someone deciding whether a
+ * promoted card receives it.
  */
 export function paramProps(
   def: { params: ReadonlyArray<ParamDef> },
@@ -111,6 +132,7 @@ export function paramProps(
     label: p.label,
     curve: p.curve,
     units: p.units,
+    format: p.format,
   };
 }
 
