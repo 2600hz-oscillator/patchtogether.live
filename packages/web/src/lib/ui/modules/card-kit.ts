@@ -64,6 +64,29 @@ export function portsFromDef(
   });
 }
 
+/**
+ * ONE declared param, by id — so a card BINDS a control's range/curve/default
+ * to the def instead of re-typing the numbers next to it.
+ *
+ * This exists because of a shipped bug class, not for tidiness: a card can
+ * silently disagree with its def and EVERY def-reading gate is blind to it.
+ * BackdraftCard passed literal `xMin={-1} xMax={1}` to XyPads whose def clamps
+ * ±0.2 — so the pads wrote values the contract forbids, the model clamped them,
+ * most of the stick's travel did nothing, and contract-lock, module-docs-lint
+ * and the range assertions ALL passed because they only ever read the def.
+ * Re-typed numbers are the whole mechanism, so the fix is to have exactly one
+ * copy of them.
+ *
+ * THROWS on an unknown id (loudly, at card init) rather than returning a
+ * fallback: a param rename that silently degrades a control to a 0..1 dial is
+ * the same invisible-divergence failure in a new costume.
+ */
+export function paramSpec(def: { params: readonly ParamDef[] }, id: string): ParamDef {
+  const p = def.params.find((q) => q.id === id);
+  if (!p) throw new Error(`paramSpec: '${id}' is not a declared param of this module`);
+  return p;
+}
+
 export interface CardParamHelpers {
   /** The def's declared defaultValue for a param id (0 when unknown). */
   defaultFor: (k: string) => number;

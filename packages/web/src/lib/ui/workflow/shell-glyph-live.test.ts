@@ -29,6 +29,7 @@ import { kickdrumDef } from '$lib/audio/modules/kickdrum';
 import { adsrDef } from '$lib/audio/modules/adsr';
 import { vcaDef } from '$lib/audio/modules/vca';
 import { lfoDef } from '$lib/audio/modules/lfo';
+import { LFO_DEPTH_GAIN } from '$lib/audio/modules/lfo-face-model';
 import { cloudseedDef } from '$lib/audio/modules/cloudseed';
 
 // ── 1. binding rules ─────────────────────────────────────────────────────────
@@ -36,10 +37,11 @@ import { cloudseedDef } from '$lib/audio/modules/cloudseed';
 function faceDef(
   partial: Partial<GlyphDefLike> & {
     glyph: 'scope' | 'meter' | 'envelope' | 'waveform' | 'algorithm' | 'none';
+    glyphDepthGain?: number;
   },
 ): GlyphDefLike {
   return {
-    face: { order: [], glyph: partial.glyph },
+    face: { order: [], glyph: partial.glyph, glyphDepthGain: partial.glyphDepthGain },
     outputs: partial.outputs ?? [],
     params: partial.params ?? [],
   };
@@ -163,16 +165,35 @@ describe('glyphBinding — pure live-source resolution', () => {
   });
 
   it('waveform glyph, CV-only outputs, a 0..2 shape morph param → wave-morph + depth swing (lfo)', () => {
-    const def = faceDef({
-      glyph: 'waveform',
+    const shapeAndDepth = {
+      glyph: 'waveform' as const,
       outputs: [{ id: 'phase0', type: 'cv' }],
       params: [
         { id: 'rate', min: 0.01, max: 100 },
         { id: 'shape', min: 0, max: 2 },
         { id: 'depth', min: 0, max: 1 },
       ],
+    };
+    // ⚠ THE MULTIPLIER IS THE MODULE'S, NOT THIS RESOLVER'S. It used to be a
+    // `depthGain: LFO_DEPTH_GAIN` literal in `glyphBinding`, which meant the
+    // SECOND module to declare this glyph shape silently inherited the lfo's
+    // ×2 — and a test asserting `LFO_DEPTH_GAIN` on every row (this one did)
+    // passes no matter what the number is. So: an UNDECLARED face gets 1, and
+    // a face declaring its own law gets that law. Neither fixture is the lfo.
+    expect(glyphBinding(faceDef({ ...shapeAndDepth }))).toEqual({
+      kind: 'wave-morph',
+      shapeParamId: 'shape',
+      depthParamId: 'depth',
+      depthGain: 1,
     });
-    expect(glyphBinding(def)).toEqual({ kind: 'wave-morph', shapeParamId: 'shape', depthParamId: 'depth' });
+    expect(
+      glyphBinding(faceDef({ ...shapeAndDepth, glyphDepthGain: 7 })),
+    ).toEqual({
+      kind: 'wave-morph',
+      shapeParamId: 'shape',
+      depthParamId: 'depth',
+      depthGain: 7,
+    });
   });
 
   it('falls back to static for a glyph with no live seam, and none without a glyph', () => {
@@ -199,7 +220,18 @@ describe('glyphBinding — pure live-source resolution', () => {
       sustain: 'sustain',
       release: 'release',
     });
-    expect(glyphBinding(lfoDef)).toEqual({ kind: 'wave-morph', shapeParamId: 'shape', depthParamId: 'depth' });
+    // The DEPTH multiplier rides the binding so the generic shell never types
+    // it — but it comes off the LFO'S OWN `face.glyphDepthGain`, so this row
+    // is a real wiring check only in combination with the fixture rows above,
+    // which prove a def that does NOT declare one gets 1 rather than the lfo's.
+    expect(glyphBinding(lfoDef)).toEqual({
+      kind: 'wave-morph',
+      shapeParamId: 'shape',
+      depthParamId: 'depth',
+      depthGain: LFO_DEPTH_GAIN,
+    });
+    expect(lfoDef.face?.glyphDepthGain, 'the lfo declares its own law on its face').toBe(LFO_DEPTH_GAIN);
+    expect(LFO_DEPTH_GAIN, 'the worklet law: gain = max(0,depth) * 2').toBe(2);
   });
 
   it('algorithm glyph + an algorithm param → TOPOLOGY, BEATING the audio-out short-circuit', () => {
