@@ -348,6 +348,48 @@ export function conventionalCardBasename(type: string): string {
 // `vrt-cable-stripe.test.ts` fails if a directory appears under
 // `__screenshots__` that is in neither table. A new spec forces a decision.
 
+// ── THE SECOND HOLE: AN EXCLUSION NOTHING VALIDATED (measured 2026-08-02) ───
+//
+// Declaring the scope fixed "a scope limit that nothing states". It did NOT fix
+// a scope limit that nothing CHECKS. `NON_CARD_CAPTURE_DIRS` was 21 one-line
+// prose claims, and the gate's two instrument controls could not reach a single
+// one of them:
+//
+//   * the spec-agreement test iterates `Object.entries(CARD_CAPTURE_DIRS)` — it
+//     validates the INCLUSIONS only;
+//   * the pixel negative control re-measures rows `measure()` already returned,
+//     and `measure()` does `if (!sceneType) continue` for every excluded dir, so
+//     those PNGs are unreachable by the control BY CONSTRUCTION.
+//
+// So the one scan neither control covered was THE SCAN THAT NEVER HAPPENS. Two
+// of the 21 claims were false, and reading their committed pixels proves it:
+//
+//   * `vrt-aspect-16x9.spec.ts` — declared "canvas-region capture, card chrome
+//     cropped out". The spec screenshots
+//     `page.locator('.svelte-flow__node-' + sinkCardClass)` — it is a
+//     SINGLE-CARD capture of `videoOut`, the exact thing CARD_CAPTURE_DIRS is
+//     for. Its band reads `#b57bff` = the CURRENT `--cable-video`.
+//   * `vrt-toybox.spec.ts` — declared "captures [data-testid=toybox-canvas],
+//     not the card". True about the locator, false about the pixels: the canvas
+//     wrapper is `border: 1px solid var(--cable-video)`, so row 0 of every
+//     capture is a cable token. 27 baselines split cleanly in two —
+//     11 `#b57bff` (current) and 16 `#f472b6` (the pre-#1159 video hue), all at
+//     99 % row uniformity. Bimodal on exactly two cable hues is not noise.
+//
+// INSTRUMENT VALIDATION, because a wrong metric reads exactly like a finding:
+// the pixel decode and the CSS are INDEPENDENT instruments and they agree — the
+// hue says `--cable-video`, and the stylesheet says `var(--cable-video)` is
+// painted on the captured element's frame. The spec's own locator settles
+// aspect-16x9 without reference to any pixel.
+//
+// Those 16 rotted unseen because `vrt-toybox` is blanket-`test.skip`-ed on
+// linux and CI renders on linux — nothing has compared them on any CI run.
+//
+// FIX: exclusions are now VALIDATED like inclusions. A directory the gate
+// refuses to read must be shown to carry no cable-token band in the scan
+// window (`vrt-cable-stripe.test.ts`, "every NON_CARD_CAPTURE_DIRS claim is
+// TRUE"), so a false exclusion is RED instead of silent.
+
 /** Spec dir → scene stem → module type. Every entry is a single-card capture. */
 export const CARD_CAPTURE_DIRS: Record<string, (stem: string) => string> = {
   // scene id IS the module type — the registry-driven per-card sweep.
@@ -362,9 +404,65 @@ export const CARD_CAPTURE_DIRS: Record<string, (stem: string) => string> = {
   'vrt-scope-modes.spec.ts': () => 'scope',
   // `<type>-step-<n>.png` for polyseqz / sequencer / drumseqz.
   'playhead.spec.ts': (stem) => stem.replace(/-step-\d+$/, ''),
+  // Captures `.svelte-flow__node-${sinkCardClass}` — a single `videoOut` card.
+  // Was declared NON-card until 2026-08-02; see the writeup above.
+  'vrt-aspect-16x9.spec.ts': () => 'videoOut',
+  // Captures `.svelte-flow__node-synesthesia`. Also mis-declared until
+  // 2026-08-02 ("video-surface capture") — it screenshots the CARD, and its
+  // baseline still paints the pre-#1159 `--cable-audio`.
+  'vrt-synesthesia-video.spec.ts': () => 'synesthesia',
 };
 
-/** Spec dir → why its baselines have no single card stripe to read. */
+/**
+ * Every hue the `--cable-*` language has worn. Used ONLY to falsify an
+ * exclusion: a directory this gate refuses to read must not be painting a
+ * cable colour in its scan window.
+ *
+ * BOTH generations, because the stale case is the one that matters —
+ * `vrt-synesthesia-video` was excluded while painting `#fbbf24`, and matching
+ * only the CURRENT palette would have called that directory clean.
+ *
+ * A SATURATION THRESHOLD CANNOT DO THIS JOB — measured, not assumed. Excluded
+ * dirs legitimately reach saturation 255: `groups` paints `#00f0ff`
+ * (`--accent`) and `vrt-wavesculpt-blink` `#ff00ff` (Playwright's `maskColor`).
+ * Any threshold separating those from a cable band does not exist. Hue
+ * identity does, with zero false positives on all 21 excluded directories.
+ *
+ * ⚠ A future palette generation appends its predecessor's hues here, the same
+ * way `PENDING_PALETTE_REGEN` is drained. Forgetting weakens this validator
+ * only — never the main assertion.
+ */
+export const CABLE_HUES_ALL_GENERATIONS: Record<string, string> = {
+  // pre-#1159, retired 2026-07-22
+  '#fbbf24': 'pre-#1159 audio', '#f472b6': 'pre-#1159 video', '#f87171': 'pre-#1159 gate',
+  '#34d399': 'pre-#1159 cv', '#60a5fa': 'pre-#1159 pitch', '#a78bfa': 'pre-#1159 poly',
+  '#c084fc': 'pre-#1159 mono-video',
+};
+
+/**
+ * Spec dir → a `--cable-*` token painted on the captured element's FRAME.
+ *
+ * Not a card capture, but not stripe-less either: the screenshot target sits
+ * inside chrome that a cable token colours, so the top row IS a cable token and
+ * rots exactly like a card stripe. `evidence` is the source-side proof, checked
+ * against the card component so the table is a verified claim rather than more
+ * prose (the failure mode the whole 2026-08-02 writeup above is about).
+ */
+export const CABLE_EDGE_DIRS: Record<
+  string,
+  { type: string; token: string; evidence: RegExp }
+> = {
+  'vrt-toybox.spec.ts': {
+    type: 'toybox',
+    token: '--cable-video',
+    evidence: /border:\s*1px\s+solid\s+var\(--cable-video\)/,
+  },
+};
+
+/** Spec dir → why its baselines have no cable-coloured band to read.
+ *  ⚠ Every claim here is ASSERTED against the committed pixels — see
+ *  "every NON_CARD_CAPTURE_DIRS claim is TRUE". Adding an entry does not
+ *  make it true. */
 export const NON_CARD_CAPTURE_DIRS: Record<string, string> = {
   'cellshade-composite.spec.ts': 'full-page composite (multiple cards)',
   'cube-adsr-composite.spec.ts': 'full-page composite (multiple cards)',
@@ -374,12 +472,9 @@ export const NON_CARD_CAPTURE_DIRS: Record<string, string> = {
   'landing.spec.ts': 'marketing page',
   'pentemelodica-composite.spec.ts': 'full-page composite (multiple cards)',
   'topbar.spec.ts': 'page chrome, no module card',
-  'vrt-aspect-16x9.spec.ts': 'canvas-region capture, card chrome cropped out',
   'vrt-composite-coverage.spec.ts': 'full-page composite (multiple cards)',
   'vrt-composite.spec.ts': 'full-page composite (multiple cards)',
   'vrt-synesthesia-composite.spec.ts': 'full-page composite (multiple cards)',
-  'vrt-synesthesia-video.spec.ts': 'video-surface capture, not the card frame',
-  'vrt-toybox.spec.ts': 'captures [data-testid="toybox-canvas"], not the card',
   'vrt-wavesculpt-blink.spec.ts': 'wavesculpt .stripe is a 3-hex gradient, not a cable token',
   'vrt-wavesculpt-walls.spec.ts': 'wavesculpt .stripe is a 3-hex gradient, not a cable token',
   'workflow-audio-io-composite.spec.ts': 'workflow shell, not a module card',

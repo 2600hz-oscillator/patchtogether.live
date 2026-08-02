@@ -55,6 +55,8 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { CABLE_VARS } from '$lib/ui/skins/palettes/_cables';
 import {
+  CABLE_EDGE_DIRS,
+  CABLE_HUES_ALL_GENERATIONS,
   CARD_CAPTURE_DIRS,
   NON_CARD_CAPTURE_DIRS,
   conventionalCardBasename,
@@ -90,8 +92,12 @@ const LFS_POINTER_PREFIX = 'version https://git-lfs';
  *
  * Measured 2026-08-01 with the widened directory scope: 190 token-pinned
  * baselines (128 in `vrt.spec.ts`, 62 across the other 8 single-card dirs).
+ * Re-measured 2026-08-02 after validating the exclusions: 219 (+27 `vrt-toybox`
+ * as a cable-edge dir, +1 `vrt-aspect-16x9`, +1 `vrt-synesthesia-video` — all
+ * three were mis-declared NON-card and therefore unreachable). Floor keeps its
+ * original ~20 rows of headroom.
  */
-const MIN_TOKEN_PINNED_BASELINES = 170;
+const MIN_TOKEN_PINNED_BASELINES = 200;
 
 /**
  * Baselines that are token-pinned, COMPARED by a test, and still painting a
@@ -160,6 +166,37 @@ const PENDING_PALETTE_REGEN: readonly string[] = [
   'vrt-quadralogical.spec.ts/darwin/edge-multiply',
   'vrt-quadralogical.spec.ts/darwin/edge-wipe',
   'vrt-scope-modes.spec.ts/darwin/scope-intensity-dot',
+
+  // ── FOUND 2026-08-02 BY VALIDATING THE EXCLUSIONS (17) ────────────────────
+  // These were not "missed" — they were UNREACHABLE. Both directories sat in
+  // NON_CARD_CAPTURE_DIRS, so `measure()` never opened them and neither
+  // instrument control could: the pixel control only re-measures rows
+  // `measure()` returned. The exclusion claims were simply false.
+  //
+  // DRAIN WHEN: the baselines are recaptured. Deliberately NOT done here —
+  // both are darwin-only GPU captures (`vrt-toybox` is blanket-skipped on
+  // linux, which is why nothing on CI has ever compared it), and regenerating
+  // 17 look-affecting WebGL baselines belongs in its own PR with owner eyes,
+  // not smuggled into a gate change. `git rm` them first: a ~1px frame on a
+  // 200x150 capture is under `maxDiffPixelRatio`, so `--update-snapshots`
+  // writes nothing (the A2/#1213 trap this whole gate exists for).
+  'vrt-synesthesia-video.spec.ts/darwin/copy-a-solid-red',
+  'vrt-toybox.spec.ts/darwin/combine-composite',
+  'vrt-toybox.spec.ts/darwin/cos-gradient',
+  'vrt-toybox.spec.ts/darwin/feedback-blur',
+  'vrt-toybox.spec.ts/darwin/feedback-tunnel',
+  'vrt-toybox.spec.ts/darwin/frag-kaleido',
+  'vrt-toybox.spec.ts/darwin/hsv-plasma',
+  'vrt-toybox.spec.ts/darwin/noise-fbm',
+  'vrt-toybox.spec.ts/darwin/obj-bird-ernest',
+  'vrt-toybox.spec.ts/darwin/obj-icosahedron',
+  'vrt-toybox.spec.ts/darwin/obj-sphere',
+  'vrt-toybox.spec.ts/darwin/obj-spot',
+  'vrt-toybox.spec.ts/darwin/obj-teapot',
+  'vrt-toybox.spec.ts/darwin/preset-flighty',
+  'vrt-toybox.spec.ts/darwin/preset-worley-bloom',
+  'vrt-toybox.spec.ts/darwin/truchet',
+  'vrt-toybox.spec.ts/darwin/worley-cells',
 ];
 
 /**
@@ -239,7 +276,8 @@ function measure(readBytes: (path: string) => Buffer = readFileSync): Measured {
   let pointers = 0;
   for (const spec of baselineDirs()) {
     const sceneType = CARD_CAPTURE_DIRS[spec];
-    if (!sceneType) continue; // declared non-card, or unclassified (asserted below)
+    const edge = CABLE_EDGE_DIRS[spec];
+    if (!sceneType && !edge) continue; // declared non-card, or unclassified (asserted below)
     const specDir = resolve(SCREENSHOT_ROOT, spec);
     for (const platform of readdirSync(specDir).sort()) {
       const dir = resolve(specDir, platform);
@@ -272,17 +310,26 @@ function measure(readBytes: (path: string) => Buffer = readFileSync): Measured {
           quarantined.push(key);
           continue;
         }
-        const type = sceneType(scene);
+        const type = edge ? edge.type : sceneType!(scene);
         const card = explicit[type] ?? conventionalCardBasename(type);
-        const cardPath = resolve(CARD_DIR, `${card}.svelte`);
-        if (!existsSync(cardPath)) {
-          skipped.push(`${key}: no card component (${card}.svelte)`);
-          continue;
-        }
-        const source = stripeSourceToken(readFileSync(cardPath, 'utf8'));
-        if (source.kind !== 'token') {
-          skipped.push(`${key}: ${source.reason}`);
-          continue;
+        let token: string;
+        if (edge) {
+          // The token comes from the declared table, not from `.stripe` — the
+          // captured element is framed by card chrome, not by the stripe. The
+          // table's claim is proved against the card source in its own test.
+          token = edge.token;
+        } else {
+          const cardPath = resolve(CARD_DIR, `${card}.svelte`);
+          if (!existsSync(cardPath)) {
+            skipped.push(`${key}: no card component (${card}.svelte)`);
+            continue;
+          }
+          const source = stripeSourceToken(readFileSync(cardPath, 'utf8'));
+          if (source.kind !== 'token') {
+            skipped.push(`${key}: ${source.reason}`);
+            continue;
+          }
+          token = source.token;
         }
         const bytes = readBytes(resolve(dir, file));
         if (bytes.subarray(0, LFS_POINTER_PREFIX.length).toString('utf8') === LFS_POINTER_PREFIX) {
@@ -291,7 +338,7 @@ function measure(readBytes: (path: string) => Buffer = readFileSync): Measured {
         }
         const band = findStripeBand(new Uint8Array(bytes));
         pinned.push({
-          key, spec, platform, scene, type, card, token: source.token,
+          key, spec, platform, scene, type, card, token,
           got: band?.hex, y: band?.y, saturation: band?.saturation,
         });
       }
@@ -317,6 +364,51 @@ function offPaletteKeys(pinned: Pinned[], tokens: Record<string, string>): strin
   return pinned.filter((p) => p.got !== tokens[p.token]).map((p) => p.key).sort();
 }
 
+const MIS_EXCLUDED_MSG =
+  'these directories are EXCLUDED from the palette gate, yet their committed pixels paint a ' +
+  'cable colour in the scan window — so the exclusion is false and their baselines rot unseen. ' +
+  'An exclusion is a claim about pixels and must be checked against pixels; asking the table is ' +
+  'circular. Move the directory to CARD_CAPTURE_DIRS (it screenshots one card) or to ' +
+  'CABLE_EDGE_DIRS (a cable token frames the captured element), in vrt-cable-stripe.ts.';
+
+/**
+ * Which of `dirs` paint a cable colour — of ANY generation — in the top rows?
+ *
+ * The instrument for the exclusion claim, deliberately pixel-side: it reads the
+ * PNGs the gate refuses to read, which is the only evidence that can falsify
+ * "there is nothing here to check".
+ */
+function cableBandedDirs(dirs: string[]): string[] {
+  const hue: Record<string, string> = { ...CABLE_HUES_ALL_GENERATIONS };
+  for (const [name, value] of Object.entries(CABLE_VARS as unknown as Record<string, string>)) {
+    hue[value.toLowerCase()] = `current ${name}`;
+  }
+  const bad: string[] = [];
+  for (const spec of [...dirs].sort()) {
+    const dir = resolve(SCREENSHOT_ROOT, spec);
+    if (!existsSync(dir)) continue;
+    const hits: string[] = [];
+    for (const platform of readdirSync(dir).sort()) {
+      const pd = resolve(dir, platform);
+      if (!statSync(pd).isDirectory()) continue;
+      for (const f of readdirSync(pd).sort()) {
+        if (!f.endsWith('.png')) continue;
+        const bytes = readFileSync(resolve(pd, f));
+        if (bytes.subarray(0, LFS_POINTER_PREFIX.length).toString('utf8') === LFS_POINTER_PREFIX) {
+          continue;
+        }
+        const band = findStripeBand(new Uint8Array(bytes));
+        const label = band && hue[band.hex.toLowerCase()];
+        if (label) hits.push(`${platform}/${f} y=${band!.y} ${band!.hex} (${label})`);
+      }
+    }
+    if (hits.length) {
+      bad.push(`${spec}: ${hits.length} baseline(s) paint a cable hue — e.g. ${hits[0]}`);
+    }
+  }
+  return bad;
+}
+
 describe('VRT baselines paint the CURRENT --cable-* stripe', () => {
   const { pinned, skipped, quarantined, pointers } = measure();
   const unreadable = pointers > 0;
@@ -325,22 +417,90 @@ describe('VRT baselines paint the CURRENT --cable-* stripe', () => {
   it('every baseline directory is classified as card-capture or not', () => {
     // Pure source/dir bookkeeping — safe to run even on an lfs:false checkout.
     const unclassified = baselineDirs().filter(
-      (d) => !CARD_CAPTURE_DIRS[d] && !NON_CARD_CAPTURE_DIRS[d],
+      (d) => !CARD_CAPTURE_DIRS[d] && !CABLE_EDGE_DIRS[d] && !NON_CARD_CAPTURE_DIRS[d],
     );
     expect(
       unclassified,
       `new VRT spec directories under e2e/vrt/__screenshots__ that this gate has never been ` +
       `told about. A gate whose scope is undeclared reads as full coverage: add each to ` +
-      `CARD_CAPTURE_DIRS (single-card capture — give the stem → module type mapping) or to ` +
-      `NON_CARD_CAPTURE_DIRS (with the reason it has no card stripe), in vrt-cable-stripe.ts.`,
+      `CARD_CAPTURE_DIRS (single-card capture — give the stem → module type mapping), to ` +
+      `CABLE_EDGE_DIRS (a cable token frames the captured element), or to ` +
+      `NON_CARD_CAPTURE_DIRS (with the reason it has no cable band), in vrt-cable-stripe.ts.`,
     ).toEqual([]);
     // ...and the reverse: a table entry for a directory that no longer exists is
     // dead weight that quietly shrinks the gate's real scope.
     const dirs = new Set(baselineDirs());
-    const dead = [...Object.keys(CARD_CAPTURE_DIRS), ...Object.keys(NON_CARD_CAPTURE_DIRS)]
+    const dead = [
+      ...Object.keys(CARD_CAPTURE_DIRS),
+      ...Object.keys(CABLE_EDGE_DIRS),
+      ...Object.keys(NON_CARD_CAPTURE_DIRS),
+    ]
       .filter((d) => !dirs.has(d))
       .sort();
     expect(dead, 'classification entries for baseline dirs that no longer exist').toEqual([]);
+    // A directory may not be claimed by two tables at once — overlapping claims
+    // make "which rule applied?" unanswerable and hide one of them.
+    const claimed = [
+      ...Object.keys(CARD_CAPTURE_DIRS),
+      ...Object.keys(CABLE_EDGE_DIRS),
+      ...Object.keys(NON_CARD_CAPTURE_DIRS),
+    ];
+    expect(claimed.length, 'a baseline dir is classified by more than one table').toBe(
+      new Set(claimed).size,
+    );
+  });
+
+  // ── THE CLOSURE: EXCLUSIONS ARE VALIDATED, NOT ASSERTED ───────────────────
+  //
+  // The gate's two controls both operate on rows `measure()` RETURNED, and
+  // `measure()` skips every NON_CARD dir outright — so the excluded directories
+  // were the one scan no control could reach, and 2 of the 21 claims were false
+  // (`vrt-aspect-16x9` is a single-card capture; `vrt-toybox`'s canvas wrapper
+  // is `border: 1px solid var(--cable-video)`, and 16 of its 27 baselines still
+  // paint the pre-#1159 `#f472b6`). Both were promoted; this assertion is what
+  // stops the next one.
+  //
+  // Reading the pixels of the dirs the gate refuses to read is the only check
+  // that can falsify an exclusion — asking the table is circular.
+  it('every NON_CARD_CAPTURE_DIRS claim is TRUE (no cable band in the scan window)', () => {
+    if (unreadable && !REQUIRED) return;
+    expect(cableBandedDirs(Object.keys(NON_CARD_CAPTURE_DIRS)), MIS_EXCLUDED_MSG).toEqual([]);
+  });
+
+  it('NEGATIVE CONTROL: a mis-declared exclusion is detected', () => {
+    if (unreadable && !REQUIRED) return;
+    // Put a KNOWN cable-edge dir back into the excluded set. If the validator
+    // still reports nothing it is not reading those pixels, and the assertion
+    // above is decoration — which is precisely the state it replaced.
+    const edgeDirs = Object.keys(CABLE_EDGE_DIRS);
+    expect(edgeDirs.length, 'precondition: a cable-edge dir is needed to plant').toBeGreaterThan(0);
+    expect(
+      cableBandedDirs([...Object.keys(NON_CARD_CAPTURE_DIRS), ...edgeDirs]).map((s) =>
+        s.split(':')[0],
+      ),
+      'excluding a directory that demonstrably carries a cable-token band must be reported',
+    ).toEqual(edgeDirs.sort());
+  });
+
+  it('CABLE_EDGE_DIRS: the card source really paints the token the table claims', () => {
+    // Source-side proof, so the table is a verified claim and not more prose.
+    const wrong: string[] = [];
+    const explicit = cardBasenameByType();
+    for (const [spec, e] of Object.entries(CABLE_EDGE_DIRS)) {
+      const card = explicit[e.type] ?? conventionalCardBasename(e.type);
+      const cardPath = resolve(CARD_DIR, `${card}.svelte`);
+      if (!existsSync(cardPath)) {
+        wrong.push(`${spec}: no card component (${card}.svelte)`);
+        continue;
+      }
+      if (!e.evidence.test(readFileSync(cardPath, 'utf8'))) {
+        wrong.push(
+          `${spec}: ${card}.svelte no longer matches ${e.evidence} — the frame that made these ` +
+          `captures carry ${e.token} has changed, so the table's claim is stale`,
+        );
+      }
+    }
+    expect(wrong, 'CABLE_EDGE_DIRS disagrees with the card it describes').toEqual([]);
   });
 
   it('each card-capture directory really captures the module card it claims', () => {
@@ -367,10 +527,16 @@ describe('VRT baselines paint the CURRENT --cable-* stripe', () => {
         }
       }
       for (const t of types) {
+        // The recognised ways a spec can name the module it screenshots. A spec
+        // that builds its locator from a variable (`.svelte-flow__node-${x}`)
+        // names the type at the declaration instead — `sinkType:` / `cardClass:`
+        // in vrt-aspect-16x9 — so those key forms count too. Still a real
+        // check: a spec that never mentions the type at all fails.
         const named =
           src.includes(`svelte-flow__node-${t}`) ||
           new RegExp(`moduleType:\\s*'${t}'`).test(src) ||
-          new RegExp(`type:\\s*'${t}'`).test(src);
+          new RegExp(`[A-Za-z]*[Tt]ype:\\s*'${t}'`).test(src) ||
+          new RegExp(`cardClass:\\s*'${t}'`).test(src);
         if (!named) wrong.push(`${spec}: maps a scene to module '${t}', which the spec never names`);
       }
     }
@@ -402,7 +568,9 @@ describe('VRT baselines paint the CURRENT --cable-* stripe', () => {
     // and a card that stopped being token-pinned would leave silently.
     console.info(
       `[vrt-cable-stripe] compared ${pinned.length} token-pinned baselines across ` +
-      `${Object.keys(CARD_CAPTURE_DIRS).length} card-capture dirs.\n` +
+      `${Object.keys(CARD_CAPTURE_DIRS).length} card-capture + ` +
+      `${Object.keys(CABLE_EDGE_DIRS).length} cable-edge dirs ` +
+      `(${Object.keys(NON_CARD_CAPTURE_DIRS).length} excluded, each claim asserted).\n` +
       `  EXEMPT_BASELINE_PAIRS (never compared by any test, so their pixels can be neither ` +
       `asserted nor repaired): ${quarantined.join(', ') || '(none)'}\n` +
       `  not token-pinned (${skipped.length}):\n    ${skipped.join('\n    ')}`,
