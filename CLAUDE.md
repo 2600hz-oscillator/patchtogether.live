@@ -159,7 +159,13 @@ dispatch second:**
 1. Remove the pending `<platform>/<scene>` pairs from `EXEMPT_BASELINE_PAIRS`
    **and** lower the vrt-meta linux-deficit ratchet by the same count
    (`packages/web/src/lib/audio/modules/vrt-meta.test.ts` — the ceiling only
-   shrinks, so it moves in the SAME commit). Push that commit.
+   shrinks, so it moves in the SAME commit) **and** re-run `flox activate --
+   task test:ledger:accept`. That third one is easy to miss and it is a hard
+   red: `docs/testing/test-ledger.generated.md` counts `EXEMPT_BASELINE_PAIRS`
+   (bucket 2, `scripts/test-ledger.mjs`), so ANY edit to an exemption list
+   leaves the generated ledger stale and `scripts/test-ledger.test.ts` fails in
+   the unit lane. It is a GENERATED artifact — re-pin it, never hand-edit it,
+   and land it in the SAME commit as the drain. Push that commit.
 2. *Then* dispatch against the branch that now has the pairs removed:
    `flox activate -- gh workflow run vrt-update.yml -f ref=<branch> -f
    platform=linux` (pick the ONE platform you need — the other runner is
@@ -189,6 +195,20 @@ Three dispatch gotchas, all confirmed on real runs:
   would not have flagged that swap either; a sub-tolerance render change is
   invisible to both the gate and the regen. Treat a "green dispatch that
   committed nothing" as a RED FLAG to investigate, never as "nothing to do".
+- **`git rm`-ing a LINUX baseline is not free — it manufactures an UNDECLARED
+  platform gap.** Ground truth for the deficit ratchet is "a darwin PNG with no
+  linux sibling", so deleting the linux PNG creates exactly that, and a gap no
+  mechanism explains is RED (`vrt-platform-gaps.ts` → `vrt-meta.test.ts`) for
+  the whole window until the bot's capture lands. So the `git rm` route costs a
+  temporary `EXEMPT_BASELINE_PAIRS` entry **plus** its ratchet move **plus** the
+  ledger re-pin — and then the reverse of all three. **MEASURE FIRST, then
+  choose**: run the scene locally and read the printed pixel diff. Over
+  `DOCK_MAX_DIFF` (measured 20516 px on the 2026-08-02 faceplate hero/annotation
+  change, 13.7× the 1500 budget) the comparison FAILS, so `--update-snapshots`
+  rewrites the baseline on its own and you should NOT remove it. Reserve the
+  `git rm` for the genuinely sub-tolerance case that motivated the rule. Either
+  way, **COUNT the files the bot commits against what you expected** — that is
+  the check that catches the miss, not the choice of route.
 
 ### A platform gap is declared FOUR ways — `EXEMPT_BASELINE_PAIRS` is only one
 

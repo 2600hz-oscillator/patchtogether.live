@@ -1239,6 +1239,12 @@ export function buildModuleManifest(
       // laws — e.g. lfo-face-model.ts). It lives beside the def so a DSP change
       // and the numbers the faceplate prints move in one diff. Not a ModuleDef.
       if (file.endsWith('-face-model.ts')) return false;
+      // -format.ts: a module's `ParamDef.format` readout vocabulary (the PF-3
+      // formatters its params carry — `450 ms`, `2.8 kHz`, `+3.0 dB`). It lives
+      // beside the def because `format` is a ParamDef field, so a param's
+      // range, curve, units and readout are all authored in one place.
+      // Not a ModuleDef.
+      if (file.endsWith('-format.ts')) return false;
       // Shared transport helpers (PR feat/sequencer-transport-quicksave) —
       // SAVE/LOAD/QUEUE plumbing used by Sequencer / DRUMSEQZ / SCORE.
       // Not a ModuleDef.

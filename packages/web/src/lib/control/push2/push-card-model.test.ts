@@ -254,7 +254,22 @@ describe('the readout says exactly what the on-screen dial says', () => {
   it('falls back to the shared number ladder with units', () => {
     expect(pushStrip(paramOf('filter', 'cutoff'), 1000, 1).valueText).toBe('1.00k Hz');
     expect(pushStrip(paramOf('reverb', 'mix'), 0.3, 1).valueText).toBe('0.30');
-    expect(pushStrip(paramOf('kickdrum', 'level'), -6, 1).valueText).toBe('-6.00 dB');
+    // A dB param with NO declared formatter still gets the shared ladder.
+    // (kickdrum's `level` used to be this example and no longer is — it now
+    // declares one. See the next case, which is the point of that change.)
+    expect(pushStrip(paramOf('karplus', 'level'), -6, 1).valueText).toBe('-6.00 dB');
+  });
+
+  it('a DECLARED ParamDef.format wins — the hardware screen and the dial agree', () => {
+    // param-format.ts exists because the readout ladder was copy-pasted three
+    // times and the Push card is its fourth consumer; the SAME argument applies
+    // to a bespoke `format`. kickdrum declares `+3.0 dB` / `2.8 kHz` / `450 ms`
+    // for its own units, and the hardware must print those, not `-6.00 dB` and
+    // `2.80k Hz`, or the two surfaces drift digit by digit with no gate able to
+    // see it (the exact divergence class CLAUDE.md names).
+    expect(pushStrip(paramOf('kickdrum', 'level'), -6, 1).valueText).toBe('-6.0 dB');
+    expect(pushStrip(paramOf('kickdrum', 'click_tone'), 2800, 1).valueText).toBe('2.8 kHz');
+    expect(pushStrip(paramOf('kickdrum', 'sub_decay'), 450, 1).valueText).toBe('450 ms');
   });
 
   it('UPPERCASES the label for the hardware screen', () => {

@@ -109,6 +109,9 @@ export interface FaceCluster {
 export interface ResolvedFacePage {
   id: string;
   label: string;
+  /** PF-20 — the band header's description line (`ModuleFacePage.hint`), '' when
+   *  the page declares none. */
+  hint: string;
   controls: FaceControl[];
   clusters: FaceCluster[];
 }
@@ -183,9 +186,10 @@ export function resolveFaceControl(key: string, def: FaceDefLike): FaceControl {
  */
 function resolvePage(page: ModuleFacePage, def: FaceDefLike): ResolvedFacePage {
   const all = page.controls.map((k) => resolveFaceControl(k, def));
+  const hint = page.hint?.trim() ?? '';
   const declared = page.clusters ?? [];
   if (!declared.length) {
-    return { id: page.id, label: page.label, controls: all, clusters: [] };
+    return { id: page.id, label: page.label, hint, controls: all, clusters: [] };
   }
   const byKey = new Map(all.map((c) => [c.key, c]));
   const claimed = new Set<string>();
@@ -205,6 +209,7 @@ function resolvePage(page: ModuleFacePage, def: FaceDefLike): ResolvedFacePage {
   return {
     id: page.id,
     label: page.label,
+    hint,
     controls: all.filter((c) => !claimed.has(c.key)),
     clusters,
   };
@@ -261,6 +266,8 @@ export const DOCK_ALL_BAND_ID = '__all';
 export interface DockFaceBand {
   id: string;
   label: string;
+  /** PF-20 — the band header's description line, '' when none is declared. */
+  hint: string;
   controls: FaceControl[];
   clusters: FaceCluster[];
 }
@@ -286,12 +293,13 @@ export function dockFacePlan(def: FaceDefLike): DockFaceBand[] | null {
 
   const pages = dock.pages ?? [];
   if (!pages.length) {
-    return [{ id: DOCK_ALL_BAND_ID, label: '', controls: dock.controls, clusters: [] }];
+    return [{ id: DOCK_ALL_BAND_ID, label: '', hint: '', controls: dock.controls, clusters: [] }];
   }
 
   const bands: DockFaceBand[] = pages.map((p) => ({
     id: p.id,
     label: p.label,
+    hint: p.hint,
     controls: p.controls,
     clusters: p.clusters,
   }));
@@ -302,7 +310,7 @@ export function dockFacePlan(def: FaceDefLike): DockFaceBand[] | null {
   );
   const unpaged = dock.controls.filter((c) => !claimed.has(c.key));
   if (unpaged.length) {
-    bands.push({ id: DOCK_UNPAGED_BAND_ID, label: 'more', controls: unpaged, clusters: [] });
+    bands.push({ id: DOCK_UNPAGED_BAND_ID, label: 'more', hint: '', controls: unpaged, clusters: [] });
   }
   return bands;
 }
