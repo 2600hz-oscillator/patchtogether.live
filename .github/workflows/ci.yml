@@ -803,6 +803,10 @@ jobs:
       # to 8-10 min) and runs in its own dedicated `behavioral-coverage`
       # job below. The test titles are matched via the
       # "BEHAVIORAL input coverage" describe block name.
+      # The global timeout that stops a slow shard destroying its own evidence
+      # is set ONCE in e2e/playwright.config.ts (`globalTimeout`), not per
+      # invocation — see the rationale there. Jobs whose `timeout-minutes`
+      # differs from the 20-min default override it with PW_GLOBAL_TIMEOUT_MS.
       - name: Run E2E (shard ${{ matrix.shard }}/10, blob reporter, no @collab, no @capacity, no behavioral)
         run: |
           flox activate -- npx --workspace e2e playwright test \
@@ -1094,6 +1098,10 @@ jobs:
       - name: Run @collab specs (single non-sharded runner, html report)
         env:
           PLAYWRIGHT_HTML_OPEN: never
+          # This job's ceiling is 40 min, not the 20 the config default assumes,
+          # and it runs FULLY SERIAL (--workers=1) by design. 33 min keeps the
+          # graceful-exit property without shortening the lane.
+          PW_GLOBAL_TIMEOUT_MS: '1980000'
         run: |
           flox activate -- npx --workspace e2e playwright test \
             --grep "@collab|@capacity" \
@@ -1406,6 +1414,11 @@ jobs:
     # exactly what we must look past; a failed collab-attest must still be seen).
     if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
     timeout-minutes: 30
+    # Ceiling is 30, not the 20 the playwright.config default assumes — 24 keeps
+    # the graceful-exit property without shortening the lane. See the
+    # `globalTimeout` rationale in e2e/playwright.config.ts.
+    env:
+      PW_GLOBAL_TIMEOUT_MS: '1440000'
     permissions:
       contents: write        # push the rollback/behavioral-<sha> branch
       issues: write          # open the p0 alert issue (the reused alert path)
@@ -1720,6 +1733,13 @@ jobs:
     needs: [dsp-build, build-web]
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # ⚠ Ceiling is 10 — BELOW the 15-min playwright.config default, which would
+    # therefore NEVER fire here and leave this job in exactly the mute-death
+    # state the default exists to prevent. A guard above its own ceiling is not
+    # a guard. 7 min leaves room to exit and upload. See the `globalTimeout`
+    # rationale in e2e/playwright.config.ts.
+    env:
+      PW_GLOBAL_TIMEOUT_MS: '420000'
 
     services:
       postgres:
@@ -2024,6 +2044,11 @@ jobs:
     needs: [dsp-build, build-web]
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # ⚠ Ceiling is 15 — EQUAL to the playwright.config default, so that default
+    # can never fire first and this job would still die mute. This is a REQUIRED
+    # check, so a mute death here blocks every PR with no evidence. 11 min.
+    env:
+      PW_GLOBAL_TIMEOUT_MS: '660000'
     services:
       postgres:
         # AWS ECR Public mirror (same as the other DB-backed jobs) — avoids the
