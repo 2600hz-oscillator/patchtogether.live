@@ -71,6 +71,7 @@ const FACES = [
   // unless a promotion empties a band (heroFacePlan drops an emptied band).
   { type: 'analogVco', pages: 2 },
   { type: 'clap', pages: 4 },
+  { type: 'drummergirl', pages: 2 },
   // ⚠ 8 bands trips DOCK_TAB_MIN_BANDS: this face renders as a TAB RAIL, by
   // design (five identical voice strips have no other shape). Do not merge it
   // back under seven.

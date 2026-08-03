@@ -65,6 +65,223 @@ export const drummergirlDef: AudioModuleDef = {
     { id: 'decay',  label: 'Decay',  defaultValue: 0.15, min: 0.001,  max: 0.5, curve: 'log',    units: 's' },
   ],
 
+  // ⚠ NO HERO PICTURE AND NO AUDITION PAD IN THIS PR, AND BOTH ARE STRUCTURAL
+  // RATHER THAN ARBITRARY. They are ONE decision, because a hero `panel` needs
+  // a sixth rankable key to exist:
+  //
+  //   * `module-face-lint` refuses a PANEL cell SELECTED at a lane tier ("a
+  //     380px panel in a 46px knob column"), and the 'full' lane cap is SIX.
+  //     drummergirl has FIVE params, so a picture at rank 6 is selected into
+  //     the plate and is illegal — the only legal ranking puts an audition at
+  //     6 and the picture at 7.
+  //   * The audition itself must be a HELD gate, not a one-shot: `en.adsr` is
+  //     LEVEL-sensitive here (it holds at `sustainOf(shape)` while the gate is
+  //     high and releases only when the gate reaches 0), and the shared
+  //     `TRIGGER_PULSE_S` is 5 ms — which releases the envelope ~4 ms into a
+  //     150 ms decay and would audition a ~40 ms blip rather than the 186 ms
+  //     hit any sequencer produces.
+  //   * Shipping THAT needs a factory `manualGate` seam, a
+  //     `manual-strike-wiring` roster line, AND a card pad to satisfy the
+  //     control-family testid grep — and the card pad moves drummergirl's
+  //     REQUIRED `vrt-strict` baseline on BOTH platforms, which cannot be
+  //     regenerated locally.
+  //
+  // So the pair is deferred to its own PR rather than half-landed here. The
+  // face below carries its whole thesis without them: the five derived
+  // readouts and the 16-row preset roster ARE the unbundling of `shape`.
+
+  // ── FACE — RACKLINE UI curation + the PF-20 faceplate structure. UI metadata,
+  // NOT the I/O contract (see ModuleFace in $lib/graph/types).
+  //
+  // THE FACE HAS EXACTLY ONE JOB: UNBUNDLE `shape`.
+  // drummergirl is not a drum machine — it is ONE sine, ONE noise source, ONE
+  // amplitude ADSR and ONE pitch ADSR (`process(gate) = mixed(gate) * env(gate)
+  // * volumeKnob`, drummergirl.dsp:84). Four of its five knobs do one thing
+  // each. The fifth, SHAPE, indexes five 16-entry tables through a linear
+  // crossfade between two neighbouring presets (:27-45, :48-57), so ONE fader
+  // moves FIVE independent quantities at once: the amp envelope's attack,
+  // sustain and release, plus the pitch sweep's DEPTH *and* its DURATION. No
+  // surface in the rack says so.
+  //
+  // AND THE HEADLINE FACT: AT THE SHIPPED DEFAULT THE PITCH SWEEP IS ZERO.
+  // shape 0.30 → shapeIdx 4.5 → seg 4 / seg2 5 / frac 0.5, and `sweepAt` is
+  // 0.0 at BOTH 4 and 5 (:44), so line :69 multiplies by zero. Index 6 is 0.0
+  // too — the default sits in the middle of a THREE-WIDE dead zone, so nudging
+  // the fader either way does not wake the sweep up. The module's most
+  // characteristic behaviour is off out of the box and nothing tells you. The
+  // hero prints it as `0 st`, and the preset roster shows three adjacent rows
+  // reading `0 st` so it needs no sentence at all.
+  //
+  // RANKING. The five params in the order a player reaches for them: shape =
+  // the identity; tone = the single largest timbral lever, the sine ↔ noise
+  // crossfade at :74; pitch = the register; decay = the tail; volume = the
+  // trim. All five reach every lane tier's plate, so ranks 1-5 only decide the
+  // mini/compact tile.
+  //
+  // TWO BANDS, AND THE REASON IS STRUCTURAL. `face.hero` PROMOTES (does not
+  // copy) SHAPE out of whichever band declares it, and `heroFacePlan` DROPS a
+  // band the promotion empties — taking its `hint` with it, which then fails
+  // the annotation-reachability clause. So SHAPE is declared in the band it
+  // genuinely belongs to — it *is* the amp envelope's A, S and R (:77, :79,
+  // :80) — which keeps [decay, volume] behind after the split.
+  //
+  // glyph 'scope': the module has a primary audio output, so `glyphBinding`
+  // resolves it to the live trace (the kickdrum precedent for a struck voice).
+  // 'envelope' would NOT work — `env-params` requires params literally named
+  // attack/decay/sustain/release and this def has only `decay`, so it would
+  // silently fall through to a dead `static` trace.
+  face: {
+    order: [
+      // The five params, in the order a player reaches for them. There is no
+      // rank 6: this face declares no non-param control (see the note above).
+      'shape', 'tone', 'pitch', 'decay', 'volume',
+    ],
+    pages: [
+      {
+        id: 'source',
+        label: '1 · source — sine ↔ noise',
+        hint:
+          'TONE is a straight crossfade and the only thing that changes what the voice is made of: ' +
+          '1 is a pure sine, 0 is pure noise, and the shipped 0.30 is 70 percent noise. PITCH tunes ' +
+          'the sine alone, in semitones from C2 (65.4 Hz) — the noise has no pitch to tune.',
+        controls: ['tone', 'pitch'],
+      },
+      {
+        // ⚠ THE PROMOTED KEYS ARE DECLARED HERE AND THEY MUST BE: `face.hero`
+        // can only MOVE a key some band already claims, and a promoted key left
+        // off the pages falls into the defensive `__unpaged` band instead.
+        // After the split this band renders [decay, volume].
+        id: 'amp',
+        label: '2 · amp envelope · level',
+        hint:
+          'SHAPE sets this envelope’s attack, sustain and release; the DECAY knob replaces the ' +
+          'preset decay for the AMPLITUDE only. The pitch sweep keeps its own decay, from SHAPE — ' +
+          'so turning DECAY never moves the sweep, in either depth or duration.',
+        controls: ['shape', 'decay', 'volume'],
+      },
+    ],
+    glyph: 'scope',
+
+    // ⚠ `title` AND `hint` ARE BOTH ANNOTATION AND BOTH GATED — `facePageHeader`
+    // returns null with the switch off, title included. At rest this faceplate
+    // paints its NAME (the dock title bar), its bands and its numbers, and
+    // nothing else. Everything prose below is opt-in, which is exactly why it
+    // can afford to be this technical.
+    title: 'Voice',
+    hint:
+      'One sine and one noise source, crossfaded by TONE, through one amplitude envelope. SHAPE is ' +
+      'not a knob — it is a morph across 16 percussion presets that moves the attack, the sustain, ' +
+      'the release, the pitch sweep’s DEPTH and the pitch sweep’s DURATION, all at once. At the ' +
+      'shipped 0.30 that sweep is zero, and it is zero for three presets either side.',
+
+    // THE HERO. SHAPE is PROMOTED out of band 2, not copied (heroFacePlan
+    // removes it, so the param multiset faces-parity asserts is unchanged), and
+    // it leads because it IS the module. With no `cell` the shell keeps its
+    // plain `scope` glyph band at the dock.
+    hero: {
+      control: 'shape',
+      // ⚠ ALL THREE ARE `valueId`, NOT `paramId`, AND THAT IS THE WHOLE POINT.
+      // Every one of these numbers is a function of SHAPE through the preset
+      // tables, and SHAPE's own readback (`0.30`) is blind to all three. A
+      // `paramId: 'pitch'` "starts at" readout would print `0 st` while the hit
+      // genuinely starts 48 semitones higher; a `paramId: 'decay'` "hit"
+      // readout would print `150 ms` at both shape 0.30 (186 ms) and shape 0.90
+      // (601 ms). Each derivation is negative-controlled on the knob a naive
+      // readout would follow — see drummergirl-face-model.test.ts.
+      readouts: [
+        { label: 'sweep',     valueId: 'drummergirl-sweep-depth' },
+        { label: 'starts at', valueId: 'drummergirl-start-hz' },
+        { label: 'hit',       valueId: 'drummergirl-hit-ms' },
+      ],
+    },
+
+    sidebar: [
+      {
+        kind: 'signal-flow',
+        label: 'signal flow',
+        // The chain as the .dsp actually builds it.
+        //
+        // ⚠ PITCH ENV IS `parallel`, and this is the diagram's one real claim.
+        // It is not in the audio path at all: it multiplies the SINE's
+        // frequency (`vco(g) = os.osc(baseFreq * pow(2, pitchEnv(g)))`, :71) and
+        // never touches the noise or the amplitude. Drawn inline between GATE
+        // and SINE it would teach that the pitch envelope shapes the hit's
+        // loudness — which is precisely the DECAY-vs-sweep confusion this face
+        // exists to dispel.
+        //
+        // ⚠ GATE IS MARKED `generator` ON PURPOSE. In this voice the gate is
+        // the excitation: with nothing patched the module is not quiet, it is
+        // silent. Its note states the level-sensitivity the def's own prose
+        // currently denies.
+        stages: [
+          { label: 'GATE',      role: 'generator', note: 'level — release on the fall' },
+          { label: 'PITCH ENV', role: 'generator', parallel: true, note: 'SHAPE · octaves · sine only' },
+          { label: 'SINE',      role: 'generator', note: 'C2 × PITCH' },
+          { label: 'NOISE',     role: 'generator', note: 'seeded — deterministic' },
+          { label: 'TONE',      role: 'bus',       note: 'sine ↔ noise' },
+          { label: 'AMP ENV',   role: 'bus',       note: 'A·S·R from SHAPE, D from DECAY' },
+          { label: 'VOLUME',    role: 'bus',       note: '× 0…2' },
+        ],
+      },
+      {
+        // THE UNBUNDLING, AS FIVE LIVE NUMBERS. One fader is claimed to move
+        // five independent quantities; this block is that claim made falsifiable
+        // — drag SHAPE and watch all five move, drag DECAY and watch none of
+        // them move. That second half is the negative control, and it is the
+        // reason this is a block of five rather than a sentence.
+        kind: 'readouts',
+        label: 'what SHAPE is doing',
+        entries: [
+          { label: 'preset',     valueId: 'drummergirl-shape-index' },
+          { label: 'attack',     valueId: 'drummergirl-attack-ms' },
+          { label: 'sustain',    valueId: 'drummergirl-sustain-db' },
+          { label: 'release',    valueId: 'drummergirl-release-ms' },
+          { label: 'sweep time', valueId: 'drummergirl-sweep-ms' },
+        ],
+      },
+      {
+        // THE 16 PRESETS, AS A REAL SELECTION. `shape` is a continuous fader
+        // over a 16-entry table, so landing exactly on a preset by hand is
+        // impossible — every hand-set value is a crossfade between two of them.
+        // Each row writes `shape = k/15`, the exact index, through the ORDINARY
+        // param path (undoable, synced, immediately editable).
+        //
+        // ⚠ ONE PARAM PER ROW IS A COMPLETE RECALL HERE, unlike kickdrum's
+        // 25-param voices. `shape` is the ONLY input to all five tables, so
+        // writing it recalls the whole preset axis by construction;
+        // tone/pitch/decay/volume are orthogonal to it and are deliberately left
+        // where the player put them.
+        //
+        // ⚠ EVERY `note` IS DERIVED DATA, NOT PROSE — `round(48 · sweepAt[i])`
+        // and `round(1000 · releaseAt[i])`. It is pinned by
+        // drummergirl-face-model.test.ts, which parses the tables out of
+        // packages/dsp/src/drummergirl.dsp and fails if either number drifts.
+        // Read rows 4, 5 and 6 together: `0 st` three times in a row is the
+        // dead zone the shipped default sits in the middle of.
+        kind: 'presets',
+        label: 'shape presets',
+        entries: [
+          { id: 'shape-0', label: '0', note: '48 st · 100 ms', values: { shape: 0 / 15 } },
+          { id: 'shape-1', label: '1', note: '41 st · 100 ms', values: { shape: 1 / 15 } },
+          { id: 'shape-2', label: '2', note: '29 st · 120 ms', values: { shape: 2 / 15 } },
+          { id: 'shape-3', label: '3', note: '24 st · 100 ms', values: { shape: 3 / 15 } },
+          { id: 'shape-4', label: '4', note: '0 st · 20 ms', values: { shape: 4 / 15 } },
+          { id: 'shape-5', label: '5', note: '0 st · 50 ms', values: { shape: 5 / 15 } },
+          { id: 'shape-6', label: '6', note: '0 st · 100 ms', values: { shape: 6 / 15 } },
+          { id: 'shape-7', label: '7', note: '34 st · 120 ms', values: { shape: 7 / 15 } },
+          { id: 'shape-8', label: '8', note: '38 st · 150 ms', values: { shape: 8 / 15 } },
+          { id: 'shape-9', label: '9', note: '29 st · 180 ms', values: { shape: 9 / 15 } },
+          { id: 'shape-10', label: '10', note: '19 st · 150 ms', values: { shape: 10 / 15 } },
+          { id: 'shape-11', label: '11', note: '0 st · 200 ms', values: { shape: 11 / 15 } },
+          { id: 'shape-12', label: '12', note: '0 st · 180 ms', values: { shape: 12 / 15 } },
+          { id: 'shape-13', label: '13', note: '0 st · 400 ms', values: { shape: 13 / 15 } },
+          { id: 'shape-14', label: '14', note: '0 st · 500 ms', values: { shape: 14 / 15 } },
+          { id: 'shape-15', label: '15', note: '0 st · 600 ms', values: { shape: 15 / 15 } },
+        ],
+      },
+    ],
+  },
+
   docs: {
     explanation:
       "A one-shot synth drum voice: fire a gate and it plays a single percussion hit. Mental model — a pitched body oscillator crossfaded against a noise/transient layer, gain-shaped by an internal attack/decay envelope, so one module covers everything from a tuned tom or kick to a noisy snare or hat. There is no separate trigger and tone path to wire: pitch, tone, shape, level, and decay are all on the faceplate (and CV-modulatable), and the gate edge is the only thing you have to patch.",

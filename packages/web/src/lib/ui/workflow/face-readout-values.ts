@@ -32,7 +32,7 @@
 // PURE: no DOM, no engine, no store. Each entry takes a param reader and
 // returns the formatted string.
 
-import { fmtDb, fmtHz, fmtMs } from '$lib/audio/modules/kickdrum-format';
+import { fmtDb, fmtHz, fmtMs, fmtSemitones } from '$lib/audio/modules/kickdrum-format';
 import {
   fmtVcoHz,
   vcoFaceParams,
@@ -50,6 +50,17 @@ import {
   clapVoiceMs,
   clapVoiceParams,
 } from '$lib/ui/modules/clap-face-model';
+import {
+  drummergirlAttackMs,
+  drummergirlHitText,
+  drummergirlParams,
+  drummergirlReleaseMs,
+  drummergirlShapeIndexText,
+  drummergirlStartHz,
+  drummergirlSustainText,
+  drummergirlSweepMs,
+  drummergirlSweepSemitones,
+} from '$lib/ui/modules/drummergirl-face-model';
 import {
   kickdrumEnvelopeParams,
   kickdrumTailMs,
@@ -116,6 +127,23 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
   'clap-voice-ms': (read) => fmtMs(clapVoiceMs(clapVoiceParams(read))),
   'clap-bandwidth-hz': (read) => fmtHz(clapBandwidthHz(clapVoiceParams(read))),
   'clap-q': (read) => clapQ(clapVoiceParams(read)).toFixed(2),
+
+  // ── DRUMMERGIRL ──────────────────────────────────────────────────────────
+  // The five quantities SHAPE moves, plus the three the hero prints. Every one
+  // is a function of SHAPE through the preset tables, and SHAPE's own readback
+  // (`0.30`) is blind to all of them: a `paramId: 'pitch'` "starts at" readout
+  // prints `0 st` while the hit genuinely starts 48 semitones higher, and a
+  // `paramId: 'decay'` "hit" readout prints 150 ms at both shape 0.30 (186 ms)
+  // and shape 0.90 (601 ms). The `sweep` pair is the sharpest: line :69 of the
+  // .dsp contains no `decayKnob` at all, so DECAY must move NEITHER of them.
+  'drummergirl-sweep-depth': (read) => fmtSemitones(drummergirlSweepSemitones(drummergirlParams(read))),
+  'drummergirl-start-hz': (read) => fmtHz(drummergirlStartHz(drummergirlParams(read))),
+  'drummergirl-hit-ms': (read) => drummergirlHitText(drummergirlParams(read)),
+  'drummergirl-shape-index': (read) => drummergirlShapeIndexText(drummergirlParams(read)),
+  'drummergirl-attack-ms': (read) => fmtMs(drummergirlAttackMs(drummergirlParams(read))),
+  'drummergirl-sustain-db': (read) => drummergirlSustainText(drummergirlParams(read)),
+  'drummergirl-release-ms': (read) => fmtMs(drummergirlReleaseMs(drummergirlParams(read))),
+  'drummergirl-sweep-ms': (read) => fmtMs(drummergirlSweepMs(drummergirlParams(read))),
 
   // ── PENTEMELODICA ────────────────────────────────────────────────────────
   // `at cutoff` is a function of MODE **and** RESONANCE — a MODE readout would

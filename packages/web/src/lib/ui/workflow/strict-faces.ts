@@ -73,6 +73,7 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // FACE BATCH 3 (2026-08-03) — see the header note above.
   'analogVco',
   'clap',
+  'drummergirl',
   'pentemelodica',
 ]);
 
