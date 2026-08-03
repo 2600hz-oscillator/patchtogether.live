@@ -473,11 +473,20 @@ const EXEMPT_OUTPUT_EMIT: Record<string, string> = {
 // direction, only about whether a human looked.
 //
 // THIS TEST IS DELIBERATELY TOP-LEVEL — do NOT wrap it in a `test.describe`.
-// The required e2e lane runs `--grep-invert "@collab|@capacity|BEHAVIORAL input
-// coverage"` (ci.yml) and shards by title, so an un-tagged, top-level title
-// survives every filter. Nesting it under a describe that later picks up a tag
-// would silently demote this gate to informational without changing one line of
-// its body.
+// The required e2e lane runs a `--grep-invert` that drops the collab and
+// capacity tag families plus the BEHAVIORAL input-coverage sweep (ci.yml holds
+// the literal pattern), and it shards by title — so an un-tagged, top-level
+// title survives every filter. Nesting this under a describe that later picks
+// up one of those tags would silently demote the gate to informational without
+// changing one line of its body.
+//
+// The tag literals are deliberately NOT reproduced here, in prose or anywhere
+// else in this file. The collab attest BASIS is resolved by grepping spec
+// CONTENT for those two tokens in their sigil form (COLLAB_TAG_RE in
+// scripts/collab-attest-lib.ts), so merely quoting them in a comment enrols
+// this spec in the basis, moves the collab content hash, and reddens
+// collab-attest — after which every future edit to this file costs a re-attest.
+// Write them bare when you need to name them.
 //
 // SCOPE — what this gate is structurally UNABLE to see, stated here so a green
 // run is not read as more than it is:
