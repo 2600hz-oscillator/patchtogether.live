@@ -95,6 +95,27 @@ the gate.**
 | tier caps are GEOMETRY, not an authored ladder | `curated-face.ts:62-79` | mini 1 · compact 2 with a glyph / 3 without · plate 6 · dock all. **Ranks 1–6 are the entire lane budget; rank 7+ is dock-only.** |
 | ≥7 bands ⇒ TAB RAIL | `dock-tabs-model.ts:56,72` | `DOCK_TAB_MIN_BANDS = 7`. A tabbed face never packs rows and prints no band hints where the rail names them. |
 
+### The authoring consequence: WRITE FOR THE HINT-OFF STATE
+
+Annotations are OFF by default, per node, and never synced. **So the resting
+faceplate is: the module name in the dock title bar, band LABELS, and control
+labels. Nothing else.** Author against that, not against the annotated view you
+have open while you work.
+
+- **A band label must stand alone.** `1 · burst — the hands` reads as a section;
+  a label that leans on its hint reads as a bare word. Every page's `hint` is a
+  sentence the reader may never see.
+- **`face.title` and `face.hint` are annotation-only** — do not put anything
+  load-bearing in them. No category word, no subtitle, no type text; the owner
+  has been emphatic and repeatedly.
+- **Do not add a page just to get a header.** A page costs a ~81 px band on a
+  dock that folds at 720p; a cluster costs a ~14 px sub-header
+  (`graph/types.ts:499-504`). A page is a different IDEA; a cluster is the same
+  idea twice (a filter EG next to an amp EG).
+- A hint declared on a TABBED face used to be authored, reviewed and rendered
+  NOWHERE (the coupled `{#if band.label && !dockTabs}`). Fixed — but the lint
+  now asserts the hint COUNT, so check yours actually paints.
+
 ### Band packing (PF-21, `dock-row-plan.ts`)
 
 Consecutive bands share a row. The rule, as implemented:
