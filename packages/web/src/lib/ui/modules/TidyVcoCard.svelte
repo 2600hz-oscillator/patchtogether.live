@@ -8,17 +8,17 @@
   //   │ F.A F.D F.S F.R      │ A D S R       │ Wdth Lvl [HOLD]         │
   //   └──────────────────────┴───────────────┴─────────────────────────┘
   //
-  // The HOLD pad is press-to-drone (the clap-pad press-param pattern):
-  // pointerdown writes 1 to the `hold` param + setParam-pushes it to the
-  // engine; pointerup writes 0. The worklet ORs the pad with the mono gate
-  // input, so holding it opens the amp/filter EGs like a held note.
+  // The HOLD pad is press-to-drone: pointerdown pushes 1 at the `hold`
+  // AudioParam, pointerup pushes rest — through `setMomentaryParam`, which
+  // touches the ENGINE ONLY and never the Y.Doc. The worklet ORs the pad with
+  // the mono gate input, so holding it opens the amp/filter EGs like a held
+  // note; persisting that OR level is how a rack got saved mid-drone.
 
   import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import ScopeScreen from '$lib/ui/controls/ScopeScreen.svelte';
-  import { setNodeParam } from '$lib/graph/mutate';
-  import { useEngine } from '$lib/audio/engine-context';
+  import { clearStuckMomentaryParams, setMomentaryParam } from './manual-strike-actions';
   import { tidyVcoDef } from '$lib/audio/modules/tidy-vco';
   import type { ModuleNode } from '$lib/graph/types';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
@@ -27,7 +27,6 @@
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
-  const engineCtx = useEngine();
   const { defaultFor, paramVal, set, live } = cardParams(tidyVcoDef, () => id, () => node);
 
   // Per-param reactive reads.
@@ -56,14 +55,33 @@
   let width = $derived(paramVal('width'));
   let level = $derived(paramVal('level'));
 
-  let holding = $derived((node?.params?.['hold'] ?? 0) >= 0.5);
+  // LOCAL, not a document value — this surface's own finger. Reading it from
+  // `node.params.hold` is what made the press durable in the first place.
+  let holding = $state(false);
 
-  /** Press/release the HOLD pad — write the param (peers + store see the
-   *  held state) AND push straight to the engine for immediate gating. */
+  // Repair a rack SAVED mid-drone. `AudioEngine.addNode` already refuses to
+  // apply a stuck pad value, so the voice no longer boots droning; this clears
+  // the dead number out of the document so a re-save is clean.
+  $effect(() => {
+    if (node) clearStuckMomentaryParams(id, tidyVcoDef);
+  });
+
+  /**
+   * Press/release the HOLD pad — ENGINE ONLY, never the Y.Doc.
+   *
+   * ⚠ It used to `setNodeParam(id, 'hold', v)` too, which made a MOMENTARY
+   * action write DURABLE state. When the release edge went missing (the card
+   * unmounts mid-hold: pointer capture protects a moving pointer, not a
+   * deleted element) the 1 persisted — it saved, it synced, and since the
+   * worklet does `monoGate = max(gateIn, hold)` the voice **reloaded already
+   * droning, with nothing in the rack able to stop it**. Same class as
+   * tomtom's stuck STRIKE; see $lib/audio/momentary-params. The seam also
+   * registers the pad with the window-level panic listeners, so a release this
+   * button never sees still reaches the engine.
+   */
   function setHold(v: 0 | 1): void {
-    setNodeParam(id, 'hold', v);
-    const e = engineCtx.get();
-    if (e && node) e.setParam(node, 'hold', v);
+    holding = v === 1;
+    setMomentaryParam(id, 'hold', v === 1, defaultFor('hold'));
   }
   function onHoldDown(ev: PointerEvent): void {
     try {

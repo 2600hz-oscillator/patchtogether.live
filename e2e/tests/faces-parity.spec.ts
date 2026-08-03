@@ -298,8 +298,12 @@ function readAuditionLog(page: Page): Promise<AuditionRecord[]> {
 interface AuditionRecord {
   seq: number;
   nodeId: string;
-  seam: 'manual-strike' | 'manual-gate' | 'engine-message';
+  /** `manual-press` is the MOMENTARY PAD seam — see the `momentary` branch and
+   *  audition-ledger.ts for why it is a fourth member, not an alias of
+   *  `manual-gate`. An ACTION cell must never declare it (shell-cells.test.ts). */
+  seam: 'manual-strike' | 'manual-gate' | 'engine-message' | 'manual-press';
   high?: boolean;
+  paramId?: string;
   delivered: boolean;
 }
 
@@ -319,6 +323,7 @@ const delivered = (
   seam: AuditionRecord['seam'],
   sinceSeq: number,
   high?: boolean,
+  paramId?: string,
 ): boolean =>
   log.some(
     (r) =>
@@ -326,7 +331,8 @@ const delivered = (
       r.nodeId === nodeId &&
       r.seam === seam &&
       r.delivered &&
-      (high === undefined || r.high === high),
+      (high === undefined || r.high === high) &&
+      (paramId === undefined || r.paramId === paramId),
   );
 
 const lastSeq = (log: AuditionRecord[]): number => (log.length ? log[log.length - 1]!.seq : 0);
@@ -337,7 +343,11 @@ const lastSeq = (log: AuditionRecord[]): number => (log.length ? log[log.length 
 const dumpLog = (log: AuditionRecord[], since: number): string =>
   log
     .filter((r) => r.seq > since)
-    .map((r) => `${r.seam}${r.high === undefined ? '' : r.high ? '/high' : '/low'}→${r.delivered}`)
+    .map(
+      (r) =>
+        `${r.seam}${r.paramId ? `[${r.paramId}]` : ''}` +
+        `${r.high === undefined ? '' : r.high ? '/high' : '/low'}→${r.delivered}`,
+    )
     .join(', ') || '(no audition records at all)';
 
 /** Every cell the dock faceplate rendered, in DOM order.
@@ -457,26 +467,78 @@ async function driveCell(
   }
 
   if (cell.control === 'momentary') {
-    // A press-pad must go HIGH while held and RETURN TO REST on release —
-    // never latch, and never leave a stuck value behind in the Y.Doc.
+    // A press-pad must go HIGH while held and RETURN TO REST on release — never
+    // latch — and it must leave NOTHING behind in the Y.Doc.
+    //
+    // ⚠ THE ORACLE MOVED, AND NOT COSMETICALLY. A press-pad writes the ENGINE
+    // ONLY (manual-strike-actions.ts `setMomentaryParam`) precisely so a lost
+    // release cannot persist a stuck value — which means `readParam` is now
+    // STRUCTURALLY BLIND to it, exactly like the audition seams above. This
+    // branch used to read:
+    //
+    //     .poll(() => readParam(page, nodeId, pid) ?? rest).toBe(rest)
+    //
+    // With the param permanently absent that is `rest === rest` —
+    // UNCONDITIONALLY TRUE. The headline "a momentary pad must not latch"
+    // assertion would have shipped vacuous, passing on a pad that latched, on a
+    // pad that never fired, and on a pad whose handler was deleted. Fixing only
+    // the HIGH poll (which fails loudly, so it gets noticed) while leaving the
+    // release clause is the trap: it looks like the whole repair.
+    //
+    // So both edges are asserted against the AUDITION LEDGER, the same
+    // observable the `action` branch uses and for the same reason — and both
+    // can fail. The graph is then asserted to be UNTOUCHED, which is the third
+    // independent leg and the one that would catch a re-introduced Y.Doc write.
     const pid = cell.key;
-    const rest = spec.params.find((p) => p.id === pid)?.defaultValue ?? 0;
     const pad = host.locator(`[data-testid="control-${pid}"]`);
     await pad.scrollIntoViewIfNeeded();
     const box = (await pad.boundingBox())!;
+    // Snapshot BOTH oracles before the gesture: the ledger cursor so an earlier
+    // module's press cannot satisfy this one, and the graph value so "untouched"
+    // is a comparison rather than an assumption about what spawn seeded.
+    const beforeSeq = lastSeq(await readAuditionLog(page));
+    const beforeParam = await readParam(page, nodeId, pid);
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
     await page.mouse.down();
     await expect
-      .poll(() => readParam(page, nodeId, pid), { message: `${where}: press drives the pad HIGH` })
-      .toBeGreaterThanOrEqual(0.5);
+      .poll(
+        async () =>
+          delivered(await readAuditionLog(page), nodeId, 'manual-press', beforeSeq, true, pid),
+        {
+          message:
+            `${where}: the PRESS reached the momentary seam and DELIVERED. A false here means ` +
+            `the pad ran its handler and the engine took nothing — the pad is dead while it ` +
+            `still lights up.`,
+        },
+      )
+      .toBe(true);
     await expect(pad, `${where}: reports its held state`).toHaveAttribute('aria-pressed', 'true');
+    // ⚠ READ WHILE STILL HELD. This is the anti-latch check's graph half, and it
+    // only means anything before the release: if the press wrote the Y.Doc, THIS
+    // is where it is visible.
+    expect(
+      await readParam(page, nodeId, pid),
+      `${where}: the press must write the ENGINE ONLY — a durable param value here is the ` +
+        `stuck-pad defect (a lost release then persists it, syncs it, and survives reload)`,
+    ).toBe(beforeParam);
+
     await page.mouse.up();
-    await expect
-      .poll(() => readParam(page, nodeId, pid) ?? rest, {
-        message: `${where}: release RETURNS TO REST — a momentary pad must not latch`,
-      })
-      .toBe(rest);
+    // ⚠ ASSERTED ON THE RELEASE EDGE ITSELF, not on an end state. A pad that
+    // never pressed and a pad that pressed-and-released both end with
+    // `aria-pressed="false"` and both leave the graph untouched — only the LOW
+    // record distinguishes "the release reached the seam" from "the release went
+    // nowhere and the engine is still holding the pad down".
     await expect(pad, `${where}: not left pressed`).toHaveAttribute('aria-pressed', 'false');
+    const pLog = await readAuditionLog(page);
+    expect(
+      delivered(pLog, nodeId, 'manual-press', beforeSeq, false, pid),
+      `${where}: the RELEASE reached the seam and returned the pad to REST — a momentary pad ` +
+        `must not latch. Ledger since press: ${dumpLog(pLog, beforeSeq)}`,
+    ).toBe(true);
+    expect(
+      await readParam(page, nodeId, pid),
+      `${where}: the gesture left NOTHING in the Y.Doc`,
+    ).toBe(beforeParam);
     return;
   }
 
