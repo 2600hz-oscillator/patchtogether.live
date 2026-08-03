@@ -2081,6 +2081,26 @@ jobs:
         run: flox activate -- task test:emit-manifest
       # The SUBSET grep. `<mod>: each declared` anchors to the per-module row
       # title; `vca` also matches `stereovca` (intended — both are in the set).
+      #
+      # ⚠ The LEADING `\b` is load-bearing, not decoration. Playwright's --grep
+      # is an UNANCHORED regex over the full title, so a bare `filter` substring-
+      # matched `resofilter: each declared` and silently enrolled RESOFILTER in a
+      # REQUIRED check for every PR (it was the row that kept going red — and it
+      # had never been chosen for the subset). `\b` requires a word boundary
+      # before the alternative, which `resofilter`/`stereovca`-style compounds do
+      # not have, so the subset is now exactly the seven names written here.
+      # (`^` cannot be used: --grep matches the describe-prefixed title.)
+      #
+      # `noise` currently selects NOTHING — the module declares zero inputs, so
+      # the sweep registers no row for it (`if (mod.inputs.length === 0) continue`).
+      # It is kept so the module re-enters the subset automatically if it ever
+      # gains one, and packages/web/src/lib/dev/behavioral-smoke-subset.test.ts
+      # asserts this is the ONLY dead alternative rather than letting a typo hide
+      # as one.
+      #
+      # That unit test is the real guard: it parses THIS line and fails if the
+      # selected set ever drifts from the declared intent. Edit both together.
+      #
       # retries=1 mirrors the real CI gate. If this ever flakes, fix or narrow
       # the subset — do NOT bump retries to mask it (it's meant to be bulletproof).
       - name: Run behavioral smoke subset (core signal-path modules)
@@ -2089,7 +2109,7 @@ jobs:
         run: |
           flox activate -- npx --workspace e2e playwright test \
             per-module-per-port-behavioral.spec.ts \
-            --grep "(adsr|analogVco|filter|lfo|noise|stereovca|vca): each declared" \
+            --grep "\b(adsr|analogVco|filter|lfo|noise|stereovca|vca): each declared" \
             --workers=4 \
             --retries=1 \
             --reporter=line

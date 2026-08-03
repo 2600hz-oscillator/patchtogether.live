@@ -853,6 +853,27 @@ const BEHAVIORAL_PARAMS: Record<string, Record<string, number>> = {
     r1s1: 0.0, r1s2: 0.14, r1s3: 0.29, r1s4: 0.43,
     r1s5: 0.57, r1s6: 0.71, r1s7: 0.86, r1s8: 1.0,
   },
+  // resofilter: the RESONANCE knob is the gating knob for `reso_cv`. The param
+  // is linear 0..1 and `cvScale: linear` gives ±1 V a ±0.5 excursion, so at the
+  // shipped default 0.3 a full +1 V CV only reaches r=0.8 → damping k = 2−2r =
+  // 0.4, i.e. Q ≈ 2.5 on a filter fed BROADBAND NOISE: the resonant peak is a
+  // small fraction of the total passband energy and the output level barely
+  // moves. Pinning the knob at 0.45 puts +1 V at r=0.95 → k = 0.1, Q ≈ 10 —
+  // still INSIDE the declared range (no clamp; 0.5 would pin it exactly at the
+  // 1.0 ceiling and test the clamp instead of the CV path) and the peak now
+  // dominates the output.
+  //   MEASURED (5 control + 5 patched spawns each, local, deterministic +1 V
+  //   source — see BEHAVIORAL_PORT_TEST_SOURCE['resofilter.reso_cv']):
+  //     knob 0.30  Δμrms 0.0434  worst control↔patched pair 0.0388 =  3.9× floor
+  //     knob 0.45  Δμrms 0.1214  worst control↔patched pair 0.1063 = 10.6× floor
+  //   The knob is what buys the 2.7× margin improvement; the deterministic
+  //   source is what makes there BE a margin (BUGGLES gives Δμrms 0.0019).
+  // The other two ports are unharmed by the bump and slightly better off —
+  // measured 5×5 at knob 0.45 vs the default: `audio` (silent control) keeps 6
+  // deciding metrics at 2.2-18.9× floor, `cutoff_cv` goes 5 → 6 metrics
+  // (rmsRange 3.5×, crestRange 6.3×, zcMean 2.9×, zcRange 9.2×, centMean 3.1×,
+  // centRange 7.8×). Neither needs a BEHAVIORAL_DECIDING_METRICS entry.
+  resofilter: { resonance: 0.45 },
   // macrooscillator: harmonics/timbre/morph default tuned for clean; boost.
   macrooscillator: { harmonics: 0.5, timbre: 0.5, morph: 0.5, level: 0.8 },
   // vca: default base=0 means the VCA is silent until CV opens it.
@@ -1875,6 +1896,72 @@ const BEHAVIORAL_PORT_TEST_SOURCE: Record<string, InputSource> = {
     outPort: 'phase0',
     sourceType: 'cv',
   },
+  // RESOFILTER reso_cv — the row that put this whole calibration exercise on the
+  // board. It sat in the `behavioral smoke (required subset)` job (see the
+  // grep-anchoring note in ci.yml) passing on NOISE, not on signal.
+  //
+  // THE DIAGNOSIS, measured rather than argued. Across 5 control + 5 patched
+  // spawns of the SHIPPED configuration (BUGGLES.smooth on reso_cv, defaults on
+  // the SUT) EVERY metric's control and patched populations OVERLAP:
+  //
+  //   rmsMean    C 0.0475-0.0519  P 0.0501-0.0520   Δμ 0.0019  ← floor 0.01, 5× short
+  //   centMean   C  321-368 Hz    P  318-373 Hz     Δμ 0.35 Hz ← floor 30
+  //   zcMean     C   80.6-86.0    P   76.8-82.8     Δμ 1.96    ← floor 8
+  //
+  // …while the RANGE metrics scatter WIDER than their own floors — control
+  // centroid-range spans 52-216 Hz against a 60 Hz floor on the delta, control
+  // zc-range 12-22 against a floor of 20 — so two draws of the SAME condition
+  // routinely differ by more than the decision threshold. Nine OR-ed floors on
+  // metrics that noisy pass largely by chance; the green runs were green on the
+  // white-noise bed. See BEHAVIORAL_DECIDING_METRICS['resofilter.reso_cv'] for
+  // the full per-metric control-scatter table.
+  //
+  // ROOT CAUSE of the missing signal: BUGGLES.smooth is a correlated random walk
+  // from 0 V whose steps are ±0.2 max at chaos 0.3, scaled by level 0.7 — the
+  // same ±~0.15 V excursion documented on adsr.release / tomtom.bend_cv above.
+  // Resonance is a linear 0..1 param, so ±0.15 V moves it by ±0.075 around the
+  // knob: damping k = 2−2r barely changes and the filter's output level barely
+  // changes with it. The port is fine; the STIMULUS was ~7 % of the range the
+  // port declares.
+  //
+  // THE FIX is the same remedy the entries above use — a DETERMINISTIC full-scale
+  // CV. A SQUARE LFO at the rate floor (0.01 Hz = 100 s period) is constant for
+  // its first half-cycle (50 s vs the ~5 s from node creation to the last read),
+  // so it is a steady DC for the whole observation: no phase lottery, no PRNG.
+  //   * `phase0` (not phase180) picks the POSITIVE half — measured +1 V at t=0.
+  //     Sign is load-bearing: resonance UP is what makes the filter ring, and
+  //     with the knob at 0.45 (BEHAVIORAL_PARAMS.resofilter) +1 V lands r=0.95,
+  //     Q ≈ 10. −1 V would land r=0 (k=2, Q=0.5), a much smaller move away from
+  //     the knob and in the direction where the output only gets duller.
+  //   * `depth: 0.5` is unity per lfo.ts (0.5 → ±1 swing) = exactly the ±1 V the
+  //     cv cable documents.
+  //   * `shape: 2` = pure square per lfo.ts's morph().
+  //
+  // MEASURED with this source (5 control + 5 patched spawns, local):
+  //   rmsMean   C 0.0543-0.0600 → P 0.1663-0.1911  worst pair Δ 0.1063 = 10.6× floor
+  //   peakMean  C 0.1636-0.1782 → P 0.4742-0.5904  worst pair Δ 0.2960 = 14.8× floor
+  // Both populations fully SEPARATED — the smallest control↔patched gap over all
+  // 25 draw pairings is still an order of magnitude past the floor, versus the
+  // shipped configuration where the two populations interleave.
+  //
+  // NEGATIVE CONTROL (`depth: 0` — a wired, spawned, EMITTING but information-
+  // free source, 5×5): Δμrms 0.0001, Δμpeak 0.0067 — both an order of magnitude
+  // UNDER their floors, so the row goes red. That is the leg the old
+  // configuration could not pass: with the full 13-term OR the same depth-0
+  // negative control still had draws whose centroid-range differed by 165 Hz
+  // (control 107-349 Hz) against a 60 Hz floor, i.e. it could have passed on
+  // nothing at all.
+  'resofilter.reso_cv': {
+    node: {
+      id: 'up-resocv-lfosq',
+      type: 'lfo',
+      position: { x: 60, y: 60 },
+      domain: 'audio',
+      params: { rate: 0.01, shape: 2, depth: 0.5 },
+    },
+    outPort: 'phase0',
+    sourceType: 'cv',
+  },
 };
 
 // ────────── Per-PORT context-source override ──────────
@@ -2163,6 +2250,81 @@ function thresholdsFor(modType: string, portId: string): AudioThresholds {
     BEHAVIORAL_DELTA_THRESHOLDS[`${modType}.${portId}`] ??
     BEHAVIORAL_DELTA_THRESHOLDS[modType];
   return override ? { ...UNIVERSAL_AUDIO_THRESHOLDS, ...override } : UNIVERSAL_AUDIO_THRESHOLDS;
+}
+
+// ────────── Per-port DECIDING-METRIC restriction ──────────
+//
+// The pass predicate is an OR over THIRTEEN terms (9 absolute floors + 4 ratio
+// gates). That is a deliberate sensitivity trade — any one metric catching the
+// effect is proof the module consumed the input — but it has a failure mode the
+// floors alone cannot express:
+//
+//   **If a port's own CONTROL-vs-CONTROL scatter on some metric is LARGER than
+//   that metric's floor, the metric can fire with no module involvement at all.**
+//   OR-ed together, enough such metrics make the row pass mostly by chance.
+//
+// Measured on `resofilter.reso_cv` (5 control spawns, identical patch, local):
+//
+//   metric      control-vs-control spread   its floor   can fire on NOISE?
+//   ────────    ─────────────────────────   ─────────   ──────────────────
+//   rmsMean               0.0057              0.01        no  (0.57×)
+//   peakMean              0.0146              0.02        no  (0.73×)
+//   rmsRange              0.0047              0.02        no  (0.24×)
+//   zcRange              15                  20           no  (0.75×)
+//   crestMean             0.2675              0.15       YES  (1.8×)
+//   crestRange            0.3237              0.2        YES  (1.6×)
+//   zcMean                8.8                 8          YES  (1.1×)
+//   centMean             92.5                30          YES  (3.1×)
+//   centRange            97.7                60          YES  (1.6×)
+//   centMeanRatio         1.27 (346→439 Hz)   1.15       YES  (1.1×)
+//
+// So SIX of the thirteen terms are decided by the white-noise excitation rather
+// than by the port. An entry here NAMES the metrics allowed to decide that row;
+// every other term is ignored FOR THAT PORT ONLY. Ports with no entry keep the
+// full thirteen-term OR byte-for-byte (`ALL_DECIDING_METRICS`), so this is a
+// deny-list of one row, not a change to the sweep.
+//
+// The rule for adding one: measure the control-vs-control spread per metric
+// (spawn the CONTROL patch N times, no test input), then name only the metrics
+// whose floor sits ABOVE that spread AND below the perturbed separation — and
+// record both numbers in the comment so the sandwich is auditable.
+type DecidingMetric =
+  | 'rmsMean' | 'rmsRange' | 'peakMean'
+  | 'crestMean' | 'crestRange'
+  | 'zcMean' | 'zcRange'
+  | 'centMean' | 'centRange'
+  | 'centMeanRatio' | 'zcRangeRatio' | 'centRangeRatio' | 'rmsRangeRatio';
+
+const ALL_DECIDING_METRICS: readonly DecidingMetric[] = [
+  'rmsMean', 'rmsRange', 'peakMean', 'crestMean', 'crestRange',
+  'zcMean', 'zcRange', 'centMean', 'centRange',
+  'centMeanRatio', 'zcRangeRatio', 'centRangeRatio', 'rmsRangeRatio',
+];
+
+const BEHAVIORAL_DECIDING_METRICS: Record<string, readonly DecidingMetric[]> = {
+  // RESOFILTER reso_cv — see BEHAVIORAL_PORT_TEST_SOURCE['resofilter.reso_cv']
+  // for the stimulus and the full measurement. With the deterministic +1 V CV
+  // and resonance pinned at 0.45 (BEHAVIORAL_PARAMS.resofilter), the two mean
+  // levels separate CLEANLY and nothing else does:
+  //
+  //   rmsMean   C 0.0543-0.0600 → P 0.1663-0.1911   worst pair Δ 0.1063 = 10.6× floor 0.01
+  //   peakMean  C 0.1636-0.1782 → P 0.4742-0.5904   worst pair Δ 0.2960 = 14.8× floor 0.02
+  //
+  // "worst pair" = min over ALL (control_i, patched_j) draws, which is what the
+  // gate actually sees — it compares ONE control run against ONE patched run.
+  // Both floors are UNCHANGED from universal; they need no recalibration because
+  // this port's control scatter already sits below them (0.57× / 0.73×). The
+  // other eleven terms are dropped per the table above: five of them can fire on
+  // the noise bed alone, and the rest add nothing this pair doesn't already give.
+  'resofilter.reso_cv': ['rmsMean', 'peakMean'],
+};
+
+function decidingMetricsFor(modType: string, portId: string): readonly DecidingMetric[] {
+  return (
+    BEHAVIORAL_DECIDING_METRICS[`${modType}.${portId}`] ??
+    BEHAVIORAL_DECIDING_METRICS[modType] ??
+    ALL_DECIDING_METRICS
+  );
 }
 
 // ────────── Sink picker for SUT's primary output ──────────
@@ -2485,6 +2647,7 @@ function computeDelta(
   control: AggregatedSample,
   patched: AggregatedSample,
   thresholds: AudioThresholds = UNIVERSAL_AUDIO_THRESHOLDS,
+  deciding: readonly DecidingMetric[] = ALL_DECIDING_METRICS,
 ): DeltaResult {
   if (control.kind === 'audio' && patched.kind === 'audio') {
     const c = control.audio!;
@@ -2533,23 +2696,38 @@ function computeDelta(
     // per-module entry in BEHAVIORAL_DELTA_THRESHOLDS overrides only the
     // floors that need recalibrating for that specific port.
     const t = thresholds;
-    const exceeded =
-      rmsMeanΔ > t.rmsMean ||
-      rmsRangeΔ > t.rmsRange ||
-      peakMeanΔ > t.peakMean ||
-      crestMeanΔ > t.crestMean ||
-      crestRangeΔ > t.crestRange ||
-      zcMeanΔ > t.zcMean ||
-      zcRangeΔ > t.zcRange ||
-      centMeanΔ > t.centMean ||
-      centRangeΔ > t.centRange ||
-      (centMeanRatio > 1.15 && Math.max(c.spectralCentroid.mean, p.spectralCentroid.mean) > 50) ||
+    // Each term evaluated independently, then OR-ed over the DECIDING set. With
+    // the default `ALL_DECIDING_METRICS` this is exactly the OR it replaced,
+    // term for term; a per-port entry in BEHAVIORAL_DECIDING_METRICS narrows the
+    // set for that row alone (see the table there for why a row would need it).
+    const fired: Record<DecidingMetric, boolean> = {
+      rmsMean: rmsMeanΔ > t.rmsMean,
+      rmsRange: rmsRangeΔ > t.rmsRange,
+      peakMean: peakMeanΔ > t.peakMean,
+      crestMean: crestMeanΔ > t.crestMean,
+      crestRange: crestRangeΔ > t.crestRange,
+      zcMean: zcMeanΔ > t.zcMean,
+      zcRange: zcRangeΔ > t.zcRange,
+      centMean: centMeanΔ > t.centMean,
+      centRange: centRangeΔ > t.centRange,
+      centMeanRatio:
+        centMeanRatio > 1.15 && Math.max(c.spectralCentroid.mean, p.spectralCentroid.mean) > 50,
       // Range-ratio gates: control's range must be small enough that
       // expansion is meaningful, and patched's range must clear an
       // absolute floor (so 0.0001 → 0.0005 doesn't trigger).
-      (zcRangeRatio > 4 && Math.max(c.zeroCrossings.range, p.zeroCrossings.range) > 5) ||
-      (centRangeRatio > 4 && Math.max(c.spectralCentroid.range, p.spectralCentroid.range) > 30) ||
-      (rmsRangeRatio > 4 && Math.max(c.rms.range, p.rms.range) > 0.01);
+      zcRangeRatio: zcRangeRatio > 4 && Math.max(c.zeroCrossings.range, p.zeroCrossings.range) > 5,
+      centRangeRatio:
+        centRangeRatio > 4 && Math.max(c.spectralCentroid.range, p.spectralCentroid.range) > 30,
+      rmsRangeRatio: rmsRangeRatio > 4 && Math.max(c.rms.range, p.rms.range) > 0.01,
+    };
+    const exceeded = deciding.some((m) => fired[m]);
+    // A restricted row PRINTS its restriction — a red run has to be diagnosable
+    // without reading this file, and "which metrics were even allowed to decide"
+    // is the first thing you need.
+    const restricted =
+      deciding.length === ALL_DECIDING_METRICS.length
+        ? ''
+        : ` | deciding=[${deciding.join(',')}] fired=[${deciding.filter((m) => fired[m]).join(',') || 'none'}]`;
 
     return {
       exceeded,
@@ -2563,8 +2741,9 @@ function computeDelta(
         `zc=${p.zeroCrossings.mean.toFixed(0)}±${p.zeroCrossings.range.toFixed(0)} ` +
         `cent=${p.spectralCentroid.mean.toFixed(0)}±${p.spectralCentroid.range.toFixed(0)}Hz ` +
         `crest=${p.crest.mean.toFixed(2)}±${p.crest.range.toFixed(2)}) ` +
-        `| Δμ(rms=${rmsMeanΔ.toFixed(3)} zc=${zcMeanΔ.toFixed(0)} cent=${centMeanΔ.toFixed(0)}Hz crest=${crestMeanΔ.toFixed(2)}) ` +
-        `Δr(rms=${rmsRangeΔ.toFixed(3)} zc=${zcRangeΔ.toFixed(0)} cent=${centRangeΔ.toFixed(0)}Hz)`,
+        `| Δμ(rms=${rmsMeanΔ.toFixed(3)} peak=${peakMeanΔ.toFixed(3)} zc=${zcMeanΔ.toFixed(0)} cent=${centMeanΔ.toFixed(0)}Hz crest=${crestMeanΔ.toFixed(2)}) ` +
+        `Δr(rms=${rmsRangeΔ.toFixed(3)} zc=${zcRangeΔ.toFixed(0)} cent=${centRangeΔ.toFixed(0)}Hz)` +
+        restricted,
     };
   }
   if (control.kind === 'video' && patched.kind === 'video') {
@@ -3141,7 +3320,12 @@ test.describe('per-module per-port: BEHAVIORAL input coverage (output changes on
           continue;
         }
 
-        const delta = computeDelta(controlSample, patchedSample, thresholdsFor(mod.type, port.id));
+        const delta = computeDelta(
+          controlSample,
+          patchedSample,
+          thresholdsFor(mod.type, port.id),
+          decidingMetricsFor(mod.type, port.id),
+        );
         if (delta.exceeded) {
           passes.push(`${mod.type}.${port.id} (type=${port.type}) → ${observed.outPort} (type=${observed.outType}): ${delta.description}`);
         } else {
