@@ -95,44 +95,6 @@ export default defineConfig({
   workers: process.env.CI ? 4 : undefined, // undefined = Playwright default (≈ half cores)
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
-  // ⚠ A RUN THAT OUTLIVES ITS JOB DESTROYS ITS OWN EVIDENCE. Every CI job here
-  // has a `timeout-minutes` ceiling; when Playwright is still running at that
-  // moment GitHub HARD-KILLS the runner, which happens BEFORE the
-  // `if: always()` report upload — so no blob/HTML report is written, and the
-  // raw log is purged later. What reaches you is `cancelled` and a duration,
-  // with no record of which tests were in flight.
-  //
-  // Not hypothetical. #1309's `e2e (shard 4/10)` returned exactly that —
-  // "exceeded the maximum execution time of 20m0s" and nothing else — and
-  // clearing the PR took elimination rather than evidence: merge base green at
-  // 9m49s, a concurrent run green at 9m41s, and two local reproductions
-  // (3.0 min on dev, 1.5 min against the preview bundle with CI=1). Hours, to
-  // establish that a green thing was green.
-  //
-  // 15 min is the default because it sits under the 20-min ceiling most jobs
-  // use, leaving room for checkout + flox + artifact download + the upload
-  // itself. It adds NO new failure surface: the slowest shard uses ~11 of the
-  // ~17 minutes actually available inside a 20-min job, so anything tripping
-  // 15 was already going to trip 20 — it just used to die mute.
-  //
-  // ⚠ NO BLANKET CI DEFAULT, ON PURPOSE. A default has to be a single number,
-  // but the six Playwright jobs have ceilings of 10/15/20/20/30/40 min — so any
-  // default is ABOVE two of them and can never fire there, which is a guard
-  // that isn't guarding. That is the same shape as the bug it would be trying
-  // to fix, and this repo has been bitten by it repeatedly (UNCHECKABLE_CEILING
-  // measured against a tree that had moved; a required-lane grep unanchored so
-  // it silently matched an extra module).
-  //
-  // So: opt-in per job, set from the workflow where the ceiling is visible.
-  // `scripts/ci-playwright-timeout.test.ts` asserts every value that IS set
-  // sits under its job's `timeout-minutes` with margin, and lists the jobs
-  // running unguarded so the gap is declared rather than assumed.
-  //
-  // Local runs stay unbounded: an interactive debugging session must not be
-  // killed mid-investigation.
-  globalTimeout: process.env.PW_GLOBAL_TIMEOUT_MS
-    ? Number(process.env.PW_GLOBAL_TIMEOUT_MS)
-    : undefined,
   reporter: process.env.CI
     ? [['github'], ['html', { open: 'never' }]]
     : [['list'], ['html', { open: 'never' }]],

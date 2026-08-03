@@ -36,6 +36,10 @@ vrt/test-results/
 vrt/playwright-report/
 e2e/test-results/
 e2e/playwright-report/
+# `--reporter=blob` (what the sharded e2e job uses) writes here, so anyone who
+# reproduces a shard locally leaves an untracked zip behind. The sibling
+# report dirs were ignored; this one was not.
+e2e/blob-report/
 e2e/vrt/test-results-annotated/
 coverage/
 
