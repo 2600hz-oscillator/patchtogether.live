@@ -56,8 +56,68 @@
 // BOTH units at once — neither a fixed frame count nor a fixed 200 ms (at
 // 250 ms/frame those "200 ms" gaps cost ~2.5 s of wall clock each).
 //
-// COST: ~15 s on one e2e shard, nearly all of it deliberate CPU burn inside
-// this one page. It adds nothing to any other spec.
+// ── THE INSTRUMENT WAS THE BUG (2026-08-03, main RED on run 30791843249) ────
+//
+// The negative control below shipped comparing the two arms by the ABSOLUTE
+// number of frames each "200 ms" gap bought — 29,26 vs 11,11 locally — and
+// required a difference of ≥5. On a loaded CI runner it read 15,14 vs 11,11 and
+// went red. The tempting reading is "throttling isn't separable on CI". It is
+// wrong, and the numbers say so:
+//
+//   |                             | free arm | hogged arm | true ratio | old metric |
+//   |-----------------------------|----------|------------|------------|------------|
+//   | local real GPU, quiet       | 119.8fps |  8.33 fps  |   14.4×    | 26 vs 11   |
+//   | local SwiftShader, quiet    | 119.8fps |  8.32 fps  |   14.4×    | 26 vs 11   |
+//   | local SwiftShader, load 15.5| 111.8fps |  8.27 fps  |   13.5×    | 26,25 vs 11|
+//   | CI shard 1/10 (the red run) |  ~71 fps |  ≤8.33 fps |   ~8.5×    | 15 vs 11   |
+//
+// The property held on CI with an 8.5× margin and the gate failed anyway. That
+// makes this the INSTRUMENT, not the result — the two look identical from the
+// output, which is the whole reason CLAUDE.md insists on establishing which.
+//
+// WHY THE METRIC LIED. `readFramesWallClockSpaced` does not measure "what a
+// 200 ms wall-clock spacing buys". It measures "what 200 ms PLUS an unbounded,
+// frame-rate-dependent Playwright round trip buys" — and that second term is
+// ~100× larger on the hogged arm, because every `locator.evaluate` must wait
+// for a main thread that yields once per 120 ms frame. MEASURED per gap:
+//
+//     free-running   26 frames in  215 ms   (round trip     8 ms —  4 %)
+//     hogged         11 frames in 1323 ms   (round trip   963 ms — 73 %)
+//
+// So the metric inflates the hogged arm 6.6× (a true 1.66 frames reads as 11)
+// and leaves the free arm alone (23.96 reads as 26). A genuine 14.4× separation
+// is compressed to 2.4×, and the gate was an ABSOLUTE difference on the
+// compressed pair — which means its margin was set by the free arm's
+// uncontrolled fps, not by the effect under test. It is the file's own defence
+// #5 committed inside the file: a page-side quantity sampled by a
+// Playwright-side poll loop over the very main thread it is measuring.
+//
+// AND IT WAS UNSOUND, NOT MERELY TIGHT — ask why the GREEN runs were green.
+// The hogged arm's raw count is pinned near 11 by the round trip almost
+// regardless of the hog (the table above: 30 ms/frame → 16, 250 ms/frame → 10;
+// an 8.3× change in frame cost moves it 1.6×). So `fast − slow ≥ 5` needs the
+// free arm to clear ~16 frames/gap, i.e. ~76 fps. This file's own header
+// records free-running rates as low as 33.9 fps, which would buy ~7 frames —
+// a separation of MINUS four. The bound was never satisfiable across the range
+// this repo had already measured; it passed where the probe page happened to
+// run at 120 fps.
+//
+// THE FIX, and why it is not a widened tolerance. Both arms are compared by
+// their ACHIEVED rAF RATE, measured inside the page, and the bound is a RATIO
+// with a floor derived from the hog's own construction ceiling
+// (1000/HOG_MS_PER_FRAME). The hogged arm cannot exceed that ceiling on any
+// machine — a busy-wait is not something contention can speed up — so exactly
+// one of the two arms is at the runner's mercy, and that one gets an explicit,
+// loud floor instead of being allowed to silently drag the comparison down.
+// The raw wall-clock counts are still taken and still printed, because they are
+// the demonstration; they are no longer what anything is gated on.
+//
+// COST: ~34 s for the whole file on one e2e shard (measured under
+// `E2E_SWIFTSHADER=1`), nearly all of it deliberate CPU burn inside this one
+// page. The rate probe added by the rewrite is +~5 s of that — 4 windows of
+// 500 ms on each of two legs, and the hogged leg's windows overrun to ~720 ms
+// because a 120 ms frame cannot end sooner. Well inside CLAUDE.md's ~2 min
+// sign-off threshold, and it adds nothing to any other spec.
 //
 // ⚠ The titles here deliberately avoid the string `BEHAVIORAL input coverage`:
 // ci.yml partitions the heavy behavioral lane out of the sharded e2e matrix
@@ -90,6 +150,75 @@ import {
 /** ~8 fps — the SwiftShader frame rate CLAUDE.md records for backdraft. */
 const HOG_MS_PER_FRAME = 120;
 
+/**
+ * The rate the hog PINS the page to — BY CONSTRUCTION, not by measurement.
+ *
+ * The hog busy-waits `HOG_MS_PER_FRAME` *inside* the rAF callback before
+ * scheduling the next one, so a frame cannot cost less than that on any
+ * machine. Contention can only push the achieved rate BELOW this ceiling; no
+ * amount of it can push the rate above. That asymmetry is what makes the
+ * comparison below robust rather than tuned: only ONE of the two arms is at the
+ * mercy of the runner, so only one of them needs a floor.
+ *
+ * MEASURED against it, on this box: 8.32 fps quiet, 8.27 fps under a 15.5 load
+ * average (14 CPU burners on 10 cores). The ceiling holds to 0.6 %.
+ */
+const HOG_CEILING_FPS = 1000 / HOG_MS_PER_FRAME; // 8.33
+
+/**
+ * How far apart the two arms must be, as a RATE RATIO.
+ *
+ * ⚠ This is deliberately NOT an absolute frame count. See the header: an
+ * absolute count of what a 200 ms spacing "bought" is contaminated by the
+ * Playwright round trip, asymmetrically, in the arm that makes the separation
+ * look SMALL — so its margin is set by the fast arm's uncontrolled fps rather
+ * than by the effect under test. A rate ratio divides that contamination out.
+ *
+ * WHAT IT STILL CATCHES, which is the question a loosened bound has to answer.
+ * The gate pins the hog to within 4× of its configured strength:
+ *   - hog removed entirely  → ratio 1.0     → RED
+ *   - hog at 30 ms/frame (33 fps, the file's own measured mid-point) → ~3.4 → RED
+ *   - hog at 60 ms/frame (16.7 fps)         → ~6.7 → green, correctly: still an
+ *     order-of-magnitude-ish separation, which is all this leg claims.
+ * So a hog that silently stops biting, or is weakened by more than ~4×, fails.
+ *
+ * MEASURED ratios: 14.4× (real GPU, quiet), 14.4× (SwiftShader, quiet), 13.5×
+ * (SwiftShader under load 15.5), and ~8.5× on the CI runner whose red run
+ * prompted this rewrite. 4 is under half the worst of those.
+ */
+const SEPARATION_FLOOR = 4;
+
+/**
+ * The floor the FREE-RUNNING arm must clear — DERIVED from the two constants
+ * above, never chosen. If a runner cannot deliver this, the hog is not the only
+ * thing throttling the page and NOTHING in this file is discriminating; that is
+ * a loud red, not a skip (CLAUDE.md: a gate that cannot fail is decoration).
+ *
+ * MEASURED headroom: 111.8 fps under a 15.5 load average locally (3.4×), and
+ * ~71 fps on the CI runner that went red (2.1×).
+ */
+const FAST_ARM_FLOOR_FPS = SEPARATION_FLOOR * HOG_CEILING_FPS; // 33.3
+
+/**
+ * The rate probe: N windows, and the arm's rate is the BEST of them.
+ *
+ * NOT an average. Contention is BURSTY, and a single window is at its mercy —
+ * MEASURED on the free-running arm under a 15.5 load average, three consecutive
+ * 500 ms windows read 3.0, 2.4 and 111.8 fps. A mean (or any one window) would
+ * have reported a page "at 3 fps" that is demonstrably capable of 112, and the
+ * ratio gate would have gone red with a FALSE verdict — the exact
+ * instrument-under-load failure this rewrite exists to remove. Even quiet, the
+ * first window routinely reads low (12.0 / 14.0 fps) because the page is still
+ * settling.
+ *
+ * The estimator's BIAS is the reason a max is legitimate here: it can only make
+ * the hogged arm look FASTER (harder to pass), because that arm's ceiling is
+ * fixed by construction — so the max can never manufacture a separation, only
+ * fail to hide behind a stall.
+ */
+const FPS_WINDOW_MS = 500;
+const FPS_WINDOWS = 4;
+
 /** The wall-clock spacing the video capture used to use. */
 const OLD_MS_SPACING = 200;
 
@@ -119,6 +248,13 @@ async function installFrameProbeCanvas(
     document.body.appendChild(c);
     const ctx = c.getContext('2d')!;
     let frame = 0;
+    // Publish the counter BEFORE the first rAF fires. `page.evaluate` returns
+    // as soon as the rAF is SCHEDULED, so a reader that arrives inside the
+    // first frame period would otherwise see `undefined` and silently compute
+    // NaN — and at 120 ms/frame that window is 120 ms wide, i.e. hit every
+    // time on the hogged leg and never on the free-running one. A measurement
+    // that is NaN on exactly one of the two arms is the worst kind.
+    (globalThis as unknown as { __probeFrame: number }).__probeFrame = 0;
     const tick = () => {
       frame++;
       // A flat field whose LEVEL is the frame number (mod 256). Distinct
@@ -141,22 +277,86 @@ async function installFrameProbeCanvas(
   }, { msPerFrame: opts.msPerFrame });
 }
 
-/** Read the probe canvas the OLD way: one round trip per sample, separated by
- *  a wall-clock wait. Returns the painted frame index of each sample. */
-async function readFramesWallClockSpaced(page: Page, n: number, spacingMs: number): Promise<number[]> {
-  const frames: number[] = [];
+type RateWindow = { frames: number; elapsedMs: number; fps: number };
+
+/**
+ * The page's ACHIEVED rAF rate, accumulated ENTIRELY INSIDE THE PAGE.
+ *
+ * This is the ground truth the assertions below are built on, and it is
+ * measured the way CLAUDE.md's defence #5 requires: one `page.evaluate`, all
+ * `FPS_WINDOWS` windows inside it, zero protocol traffic between samples. The
+ * previous instrument did the opposite — it inferred the rate from a
+ * Playwright-side loop whose own round trips landed on the very main thread it
+ * was measuring — and that is precisely why it read the hogged arm ~6.6× too
+ * fast (see the header).
+ *
+ * Every window is returned, not just the best, so a red run says whether the
+ * runner stalled once or was slow throughout. "Starved for 1.5 s then fine" and
+ * "genuinely slow" are different facts and must not print the same number.
+ */
+async function measureRafRate(page: Page): Promise<{ fps: number; windows: RateWindow[] }> {
+  const windows = await page.evaluate(
+    async ({ windowMs, count }) => {
+      const g = globalThis as unknown as { __probeFrame: number };
+      const out: { frames: number; elapsedMs: number; fps: number }[] = [];
+      for (let i = 0; i < count; i++) {
+        const t0 = performance.now();
+        const f0 = g.__probeFrame;
+        await new Promise((r) => setTimeout(r, windowMs));
+        // Elapsed is measured, never assumed: a starved thread fires the
+        // timeout late, and dividing by the REQUESTED window would then report
+        // a rate that never happened.
+        const elapsedMs = performance.now() - t0;
+        const frames = g.__probeFrame - f0;
+        out.push({ frames, elapsedMs, fps: (frames * 1000) / elapsedMs });
+      }
+      return out;
+    },
+    { windowMs: FPS_WINDOW_MS, count: FPS_WINDOWS },
+  );
+  return { fps: Math.max(...windows.map((w) => w.fps)), windows };
+}
+
+const fmtWindows = (ws: RateWindow[]) =>
+  ws.map((w) => `${w.frames}f/${Math.round(w.elapsedMs)}ms=${w.fps.toFixed(1)}fps`).join(' ');
+
+type WallGap = { frames: number; gapMs: number; roundTripMs: number };
+
+/**
+ * Read the probe canvas the OLD way: one round trip per sample, separated by a
+ * wall-clock wait — the defective pattern, reproduced verbatim so the file is
+ * still exercising the real thing.
+ *
+ * INSTRUMENTED, though, which is the new part: each gap reports the wall clock
+ * it ACTUALLY spent and how much of that was the Playwright round trip. That
+ * decomposition is what turns "200 ms bought 11 frames" from a mystery into a
+ * finding — the gap was never 200 ms.
+ */
+async function readFramesWallClockSpaced(
+  page: Page,
+  n: number,
+  spacingMs: number,
+): Promise<{ frames: number[]; gaps: WallGap[] }> {
+  const rows: { frame: number; tBefore: number; tAfter: number }[] = [];
   for (let i = 0; i < n; i++) {
-    frames.push(
-      await page.locator(PROBE_CANVAS).evaluate((el) => {
-        const c = el as HTMLCanvasElement;
-        const ctx = c.getContext('2d')!;
-        // Pixel (1,0) carries the flat field = frame % 256.
-        return ctx.getImageData(1, 0, 1, 1).data[0]!;
-      }),
-    );
+    const tBefore = Date.now();
+    const frame = await page.locator(PROBE_CANVAS).evaluate((el) => {
+      const c = el as HTMLCanvasElement;
+      const ctx = c.getContext('2d')!;
+      // Pixel (1,0) carries the flat field = frame % 256.
+      return ctx.getImageData(1, 0, 1, 1).data[0]!;
+    });
+    rows.push({ frame, tBefore, tAfter: Date.now() });
     if (i < n - 1) await page.waitForTimeout(spacingMs);
   }
-  return frames;
+  return {
+    frames: rows.map((r) => r.frame),
+    gaps: rows.slice(1).map((r, i) => ({
+      frames: r.frame - rows[i]!.frame,
+      gapMs: r.tAfter - rows[i]!.tAfter,
+      roundTripMs: r.tAfter - r.tBefore,
+    })),
+  };
 }
 
 test.describe('behavioral sweep — the video observation window is FRAMES, not milliseconds', () => {
@@ -222,51 +422,122 @@ test.describe('behavioral sweep — the video observation window is FRAMES, not 
       await page.goto('/rack');
       await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
       await installFrameProbeCanvas(page, { msPerFrame });
+      // GROUND TRUTH first, in the page. Everything else on this leg is a
+      // consequence of this number.
+      const rate = await measureRafRate(page);
       const wall = await readFramesWallClockSpaced(page, VIDEO_CAPTURES, OLD_MS_SPACING);
       const frameSpaced = await captureCanvasStatsFrameSpaced(page, PROBE_CANVAS, {
         captures: VIDEO_CAPTURES,
         spacingFrames: VIDEO_CAPTURE_SPACING_FRAMES,
         capMs: VIDEO_CAPTURE_CAP_MS,
       });
-      const gaps = (xs: number[]) => xs.slice(1).map((f, i) => f - xs[i]!);
-      return { wall: gaps(wall), frames: gaps(frameSpaced!.frames) };
+      return {
+        rate,
+        wall,
+        frames: frameSpaced!.frames.slice(1).map((f, i) => f - frameSpaced!.frames[i]!),
+      };
     };
 
     const fast = await leg(0);
     const slow = await leg(HOG_MS_PER_FRAME);
 
-    // THE DEFECT, REPRODUCED, as a PERMANENT leg of the suite rather than a
-    // one-off check at authoring time. MEASURED on one box, one renderer, one
-    // page, varying ONLY the per-frame cost:
-    //
-    //     hog 0 ms/frame   → 200 ms bought 29, 26 frames
-    //     hog 30 ms/frame  → 200 ms bought 16, 16 frames
-    //     hog 120 ms/frame → 200 ms bought 11, 11 frames
-    //     hog 250 ms/frame → 200 ms bought 10, 10 frames
-    //
-    // Same code, same assertion text, a 2.9× different observation window. That
-    // is CLAUDE.md's "it is not one assertion — it is a different assertion per
-    // machine", reproduced on demand. (It does not collapse all the way to one
-    // frame because the Playwright round trip dominates once frames are
-    // expensive — which is its own indictment: the window was never 200 ms of
-    // anything either. At 250 ms/frame those "200 ms" gaps cost ~2.5 s each.)
-    const fastMax = Math.max(...fast.wall);
-    const slowMax = Math.max(...slow.wall);
-    expect(
-      fastMax - slowMax,
-      `a ${OLD_MS_SPACING} ms WALL-CLOCK spacing bought ${fast.wall.join(',')} frames on a free-running ` +
-        `page and ${slow.wall.join(',')} frames at ~${(1000 / HOG_MS_PER_FRAME).toFixed(1)} fps. If those ` +
-        `are the same, the main-thread hog is not biting and NOTHING in this file is ` +
-        `discriminating — fix the hog before trusting any green here.`,
-    ).toBeGreaterThanOrEqual(5);
+    const nominal = (fps: number) => ((fps * OLD_MS_SPACING) / 1000).toFixed(2);
+    const context =
+      `free-running arm ${fast.rate.fps.toFixed(1)} fps [${fmtWindows(fast.rate.windows)}] · ` +
+      `hogged arm ${slow.rate.fps.toFixed(1)} fps [${fmtWindows(slow.rate.windows)}]`;
 
-    // …and the fix, measured the same way on the same two pages: the FRAME
-    // spacing is the same window on both, which is the entire property a
-    // renderer-independent wait is supposed to have.
+    // ── 1. THE HOG BITES. ────────────────────────────────────────────────────
+    // Asserted against the CONSTRUCTION ceiling, so contention cannot fake a
+    // pass: a loaded runner can only push this arm further below the bound.
+    expect(
+      slow.rate.fps,
+      `the hogged arm must be pinned at or under its ${HOG_CEILING_FPS.toFixed(2)} fps ` +
+        `CONSTRUCTION ceiling (a ${HOG_MS_PER_FRAME} ms busy-wait inside the rAF callback). ` +
+        `It read ${slow.rate.fps.toFixed(1)} fps. Above the ceiling means the burn loop is not ` +
+        `running — the hog has stopped biting and NOTHING in this file is discriminating. ` +
+        `Windows: ${fmtWindows(slow.rate.windows)}`,
+    ).toBeLessThanOrEqual(HOG_CEILING_FPS * 1.15);
+
+    // ── 2. THE RUNNER COULD DELIVER A GENUINE FAST ARM. ──────────────────────
+    // The one quantity here that the machine controls. Loud on failure and
+    // never skipped: if this box cannot outrun the hog by ${SEPARATION_FLOOR}×,
+    // the comparison below is untestable HERE, which is a red, not a pass.
+    expect(
+      fast.rate.fps,
+      `the free-running arm reached only ${fast.rate.fps.toFixed(1)} fps, under the ` +
+        `${FAST_ARM_FLOOR_FPS.toFixed(1)} fps floor DERIVED from ${SEPARATION_FLOOR}× the ` +
+        `${HOG_CEILING_FPS.toFixed(2)} fps hog ceiling. Something other than the hog is throttling ` +
+        `this page, so the separation this file asserts cannot be evaluated here — this is not a ` +
+        `budget to raise. Windows (best-of-${FPS_WINDOWS} is used, so a single stall is already ` +
+        `tolerated): ${fmtWindows(fast.rate.windows)}`,
+    ).toBeGreaterThanOrEqual(FAST_ARM_FLOOR_FPS);
+
+    // ── 3. THE DEFECT, REPRODUCED — IN THE UNIT THAT SURVIVES A LOADED RUNNER.
+    // A wall-clock spacing is a DIFFERENT observation window at a different
+    // frame rate; the size of that difference is a RATE RATIO. MEASURED on this
+    // box, varying ONLY the per-frame cost (page-side rate, then what a nominal
+    // 200 ms is worth at it):
+    //
+    //     hog   0 ms/frame → 119.8 fps → 200 ms is 23.96 frames
+    //     hog 120 ms/frame →   8.3 fps → 200 ms is  1.66 frames
+    //
+    // 14.4×. Same code, same assertion text, a 14.4× different observation
+    // window — CLAUDE.md's "it is not one assertion, it is a different
+    // assertion per machine", reproduced on demand and kept as a PERMANENT leg
+    // rather than a one-off check at authoring time.
+    //
+    // ⚠ WHAT THIS ONE ADDS OVER 1 AND 2, honestly: not much arithmetic. Gates 1
+    // and 2 together already force the ratio above 33.3 / (8.33 × 1.15) = 3.48,
+    // so this bound only claims the last 15 %. It is kept because it is the
+    // only place the PROPERTY is stated in the unit the file exists to defend,
+    // and because it stays the invariant if either individual bound is ever
+    // re-derived. It is NOT a third independent measurement — gate 4 is.
+    expect(
+      fast.rate.fps / slow.rate.fps,
+      `a ${OLD_MS_SPACING} ms WALL-CLOCK spacing is worth ${nominal(fast.rate.fps)} rendered frames on ` +
+        `the free-running page and ${nominal(slow.rate.fps)} at ~${HOG_CEILING_FPS.toFixed(1)} fps — a ` +
+        `${(fast.rate.fps / slow.rate.fps).toFixed(1)}× different window from ONE unchanged constant. ` +
+        `If that ratio collapses toward 1 the hog is not biting and NOTHING in this file is ` +
+        `discriminating. ${context}`,
+    ).toBeGreaterThanOrEqual(SEPARATION_FLOOR);
+
+    // ── 4. …AND THE SPACING WAS NEVER 200 ms OF ANYTHING EITHER. ─────────────
+    // An INDEPENDENT indictment of the old window, in the other unit. Each
+    // "200 ms" gap on the hogged arm is dominated by the Playwright round trip,
+    // because every `locator.evaluate` has to wait for a main thread that
+    // yields once per ${HOG_MS_PER_FRAME} ms frame. MEASURED: 1323–1350 ms per
+    // gap, of which 963–990 ms is round trip — the wait is 15 % of its own
+    // window. Robust by construction: contention can only make this bigger.
+    //
+    // This is also exactly why the raw wall-clock FRAME COUNTS below are
+    // reported and NOT gated on. That round-trip term inflates the hogged arm's
+    // count ~6.6× (a true 1.66 frames reads as 11) while leaving the
+    // free-running arm's alone (23.96 reads as 26), so an ABSOLUTE difference
+    // between the two counts is compressed 14.4× → 2.4× and its margin ends up
+    // set by the free-running arm's uncontrolled fps rather than by the effect.
+    // On the CI runner of run 30791843249 that arm ran at ~71 fps instead of
+    // ~120 and the counts came out 15 vs 11 — a 4-frame difference against a
+    // ≥5 bound, RED, while the underlying separation was still ~8.5×.
+    const slowGapMs = Math.max(...slow.wall.gaps.map((g) => g.gapMs));
+    const fmtGaps = (gs: WallGap[]) =>
+      gs.map((g) => `${g.frames}f in ${g.gapMs}ms (round trip ${g.roundTripMs}ms)`).join(' · ');
+    expect(
+      slowGapMs,
+      `each "${OLD_MS_SPACING} ms" gap on the hogged arm must actually COST far more than ` +
+        `${OLD_MS_SPACING} ms of wall clock — that is the second half of "uncontrolled in BOTH ` +
+        `units". Hogged: ${fmtGaps(slow.wall.gaps)}. Free-running, for contrast: ` +
+        `${fmtGaps(fast.wall.gaps)}.`,
+    ).toBeGreaterThan(OLD_MS_SPACING * 2);
+
+    // ── 5. THE FIX. ──────────────────────────────────────────────────────────
+    // Measured the same way on the same two pages: the FRAME spacing is the
+    // same window on both, which is the entire property a renderer-independent
+    // wait is supposed to have.
     expect(
       { fast: fast.frames, slow: slow.frames },
       `the FRAME spacing must be identical at both frame rates — that invariance is the fix. ` +
-        `Wall-clock, for contrast, moved ${slowMax} → ${fastMax} frames.`,
+        `The wall clock, for contrast, moved ${nominal(slow.rate.fps)} → ${nominal(fast.rate.fps)} ` +
+        `frames per ${OLD_MS_SPACING} ms across the same two pages. ${context}`,
     ).toEqual({
       fast: fast.frames.map(() => VIDEO_CAPTURE_SPACING_FRAMES),
       slow: slow.frames.map(() => VIDEO_CAPTURE_SPACING_FRAMES),
