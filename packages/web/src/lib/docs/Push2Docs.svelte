@@ -24,7 +24,10 @@
     PUSH_CC_ENCODER_TEMPO,
     PUSH_CC_ENCODER_SWING,
     PUSH_CC_ENCODER_MASTER,
+    PUSH_CC_LEGEND,
+    PUSH_CC_ELECTRA_MODE,
   } from '$lib/control/push2/push2-map';
+  import { ELECTRA_MODE_KNOBS, ELECTRA_MODE_ROWS } from '$lib/control/push2/push-electra-model';
 
   const GRID_FILL = '#243044';
 
@@ -46,7 +49,7 @@
     { control: 'Permanent-controls row ×8', cc: `CC ${PUSH_CC_PERMANENT_BASE}–${PUSH_CC_PERMANENT_BASE + 7}`, action: 'The 8 buttons BELOW the display → the Launchpad view/function top row (91–98): session / clip-note / scene / arm / KEYS' },
     { control: 'Scene launch ×8', cc: `CC ${PUSH_CC_SCENE_BASE}–${PUSH_CC_SCENE_BASE + 7}`, action: 'The 8 buttons RIGHT of the grid → the scene column (launch / editor functions / KEYS scale). TOP button = 43 … BOTTOM = 36' },
     { control: 'Undo', cc: `CC ${PUSH_CC_UNDO}`, action: 'Undo' },
-    { control: 'Shift', cc: `CC ${PUSH_CC_SHIFT}`, action: 'SHIFT modifier — editor ×8 window + arm gestures' },
+    { control: 'SHIFT (permanent row, above channel 8)', cc: `CC ${PUSH_CC_SHIFT}`, action: 'SHIFT modifier — editor ×8 window, encoder fine-nudge, arm gestures, the LEGEND shift layer. NOT the button labelled “Shift”: that one is CC ' + PUSH_CC_ELECTRA_MODE },
   ];
   const additiveRows = [
     { control: 'Above-display ×8', cc: `CC ${PUSH_CC_ABOVE_DISPLAY_BASE}–${PUSH_CC_ABOVE_DISPLAY_BASE + 7}`, action: 'Select LANE 1–8 — the screen shows that lane\u2019s PUSH CARD (Push-local, never synced)' },
@@ -56,6 +59,16 @@
     { control: 'Master encoder', cc: `CC ${PUSH_CC_ENCODER_MASTER}`, action: 'MixMasters master volume' },
     { control: 'D-Pad ↑ / ↓', cc: `CC ${PUSH_CC_DPAD_UP} / ${PUSH_CC_DPAD_DOWN}`, action: 'CLIP-view pitch window ±1 (SHIFT = ×8)' },
     { control: 'D-Pad ← / →', cc: `CC ${PUSH_CC_DPAD_LEFT} / ${PUSH_CC_DPAD_RIGHT}`, action: 'CLIP-view step window ±1 (SHIFT = ×8)' },
+    { control: 'LEGEND (hold)', cc: `CC ${PUSH_CC_LEGEND}`, action: 'Hold to turn the display into on-device documentation of the current view. Momentary + display-only' },
+    { control: '“Shift” button (lower right)', cc: `CC ${PUSH_CC_ELECTRA_MODE}`, action: `ELECTRA CONTROL MODE — press to toggle. The button lights while the mode is on` },
+  ];
+  // ELECTRA CONTROL MODE — what each encoder does while the mode is latched.
+  const electraRows = [
+    { control: `Display encoders 1–${ELECTRA_MODE_KNOBS}`, cc: `CC ${PUSH_CC_ENCODER_BASE}–${PUSH_CC_ENCODER_BASE + ELECTRA_MODE_KNOBS - 1}`, action: `The ${ELECTRA_MODE_KNOBS} controls of the selected ELECTRA CONTROL row — same name + readout as the card and the Electra One (SHIFT = fine)` },
+    { control: 'Display encoders 7–8', cc: `CC ${PUSH_CC_ENCODER_BASE + 6}–${PUSH_CC_ENCODER_BASE + 7}`, action: 'INERT — deliberately unassigned in this mode; the space above them shows the row number instead' },
+    { control: 'Scroll encoder', cc: `CC ${PUSH_CC_ENCODER_SWING}`, action: `Scroll the ROW 1–${ELECTRA_MODE_ROWS} (wraps at both ends)` },
+    { control: 'Master encoder', cc: `CC ${PUSH_CC_ENCODER_MASTER}`, action: 'MixMasters master volume — unchanged in this mode' },
+    { control: 'Everything else', cc: '—', action: 'Pads, scene column, permanent row, D-Pad, lane select, Play, Undo all route EXACTLY as outside the mode' },
   ];
 </script>
 
@@ -124,6 +137,47 @@
     </tbody>
   </table>
 
+  <h2>ElectraControl mode</h2>
+  <p>
+    Press the button labelled <strong>Shift</strong> in the lower right
+    (<code>CC {PUSH_CC_ELECTRA_MODE}</code>) and the Push becomes an
+    <strong>ELECTRA CONTROL</strong> surface — one row at a time. The six leftmost
+    display encoders drive the six controls of the selected row of the rack's
+    ElectraControl 6×6 grid, and each strip shows the same name and readout you
+    see on that slot's knob on the card and on the Electra One itself. The space
+    above encoders 7 and 8 becomes a <strong>ROW</strong> readout, and the scroll
+    encoder steps it through rows 1–{ELECTRA_MODE_ROWS}. Press the button again to leave.
+    It is a <em>latched</em> mode and the button lights while it is on.
+  </p>
+  <p>
+    This is the <strong>control part only</strong>: it does not reproduce the
+    Electra's touchscreen functions, its MixMaster page or its Control page. Every
+    other button on the Push keeps doing exactly what it does outside the mode, so
+    entering it can never strand a transport or a clip launch. The mode itself is
+    not remembered across a reload — a latched mode you cannot see without the
+    hardware in front of you should not come back on its own — but the row you
+    left off on is.
+  </p>
+  <table class="p2-table" data-testid="push2-electra-table">
+    <thead><tr><th>Control</th><th>MIDI</th><th>Action</th></tr></thead>
+    <tbody>
+      {#each electraRows as r (r.control)}
+        <tr><td>{r.control}</td><td><code>{r.cc}</code></td><td>{r.action}</td></tr>
+      {/each}
+    </tbody>
+  </table>
+
+  <p class="note" data-testid="push2-shift-note">
+    <strong>Two different buttons are both called “shift”.</strong> The
+    <strong>SHIFT modifier</strong> — the editor's ×8 window, the encoder
+    fine-nudge, the arm gestures and the LEGEND shift layer — is the
+    permanent-row button <em>above channel 8</em> (<code>CC {PUSH_CC_SHIFT}</code>),
+    which is the one that maps to the Launchpad's own shift. The button physically
+    <em>labelled</em> “Shift” in the lower right (<code>CC {PUSH_CC_ELECTRA_MODE}</code>)
+    is the ElectraControl mode toggle. Until 2026-08-03 it was a duplicate second
+    route to the same modifier; reassigning it took nothing away.
+  </p>
+
   <p class="note" data-testid="push2-hardware-note">
     <strong>Phase 1 note:</strong> the Push binds its <strong>LIVE port</strong> and
     stays in the device's default <strong>Live mode</strong> — both the pad presses
@@ -136,8 +190,11 @@
     unavailable or you decline it, the pads and encoders keep working and the card
     shows the same push card in the browser.
     Two mappings are still <strong>unconfirmed on hardware</strong>: which
-    permanent-row button maps to which view, and that <code>CC 15</code> really is
-    the second encoder from the left (the card-flip knob).
+    permanent-row button maps to which view, and where the <strong>scroll
+    encoder</strong> (<code>CC {PUSH_CC_ENCODER_SWING}</code>) physically sits. That
+    knob is identified by its FUNCTION — the one that scrolls through the
+    instruments of a lane, and now through ElectraControl rows — not by a position
+    anyone has verified by turning it.
   </p>
 </div>
 

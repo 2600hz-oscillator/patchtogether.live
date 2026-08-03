@@ -76,19 +76,38 @@ import {
   push2FrameToLeds,
   PUSH_CC_SHIFT,
   PUSH_CC_LEGEND,
+  PUSH_CC_ELECTRA_MODE,
   PUSH_CC_ABOVE_DISPLAY_BASE,
   type PushEncoderTarget,
   type Push2LedSpec,
 } from './push2-map';
+import {
+  listElectraControls,
+  readElectraData,
+  bindingAtSlot,
+  electraName,
+  electraSlotLabel,
+  slotIndex,
+} from '$lib/graph/electra-control';
+import { resolveSurfaceParam } from '$lib/graph/control-surface-params';
+import {
+  pushElectraView,
+  electraModeEncoder,
+  stepElectraRow,
+  clampRow,
+  ELECTRA_MODE_ROWS,
+  type PushElectraView,
+} from './push-electra-model';
 import type { LaunchpadKeyEvent } from './push2-types';
 import { resolvePushCardControls, type PushCardDefLike, type PushCardSpec } from './push-card-schema';
 import { pushCardView, paramValue, type PushCardView } from './push-card-model';
-import { nudgeParamValue, MAX_ENCODER_STEP } from './push-card-encoder';
+import { nudgeParamValue, clampEncoderDelta, MAX_ENCODER_STEP } from './push-card-encoder';
 import { laneMembers, resolveLaneFocus, stepLaneFocus, laneFocusIndex, PUSH_LANE_COUNT } from './push-lane';
 import { lastViewed, setLastViewed, forgetLane } from './push2-view.svelte';
 import {
   renderPushCard,
   renderPushLegend,
+  renderPushElectra,
   pushCardSignature,
   type PushDrawOp,
 } from './push-screen-layout';
@@ -97,15 +116,27 @@ import { pushCardRgba } from './push-card-paint';
 import { isDisplayConnected, sendFrame } from './push2-display.svelte';
 
 const STORAGE_KEY_CHANNEL = 'pt.push2.selectedChannel';
+/** The ElectraControl-mode ROW survives a reload; the MODE deliberately does
+ *  not — see `toggleElectraMode`. */
+const STORAGE_KEY_ELECTRA_ROW = 'pt.push2.electraRow';
 
 // ---------------------------------------------------------------------------
 // Push-LOCAL surface state (never synced — like the launchpad's activeView).
 // ---------------------------------------------------------------------------
 let selectedChannel = readSelectedChannel(); // 0..7
-let shiftHeld = false; // the Push Shift button (for the D-Pad ×8)
+/** The SHIFT modifier — the permanent-row button above channel 8 (`PUSH_CC_SHIFT`
+ *  = CC 27, which is also the Launchpad-shift route). Consumed by the D-Pad ×8
+ *  window, the encoder fine-nudge and the LEGEND shift-layer repaint.
+ *  ⚠ NOT the physical button labelled "Shift" — that is CC 49, the
+ *  ElectraControl mode toggle. See push2-map.ts for why they are different. */
+let shiftHeld = false;
 /** LEGEND MODE: the legend button is physically held. DISPLAY-ONLY — nothing
  *  reads this except the display-ops seam, so it cannot change any routing. */
 let legendHeld = false;
+/** ELECTRA CONTROL MODE: latched by the lower-right "Shift" button (CC 49). */
+let electraMode = false;
+/** The row 1..6 that mode drives. Persisted; the mode is not. */
+let electraRow = readElectraRow();
 let unsubDevice: (() => void) | null = null;
 /** The cb launchpad-control's start() registered through the adapter's onKey —
  *  we hand PARITY events (translated to the Launchpad vocab) to it. */
@@ -129,6 +160,14 @@ function readSelectedChannel(): number {
   }
 }
 
+function readElectraRow(): number {
+  try {
+    return clampRow(Number(localStorage.getItem(STORAGE_KEY_ELECTRA_ROW)));
+  } catch {
+    return 1;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // The CONTROL-SURFACE ADAPTER — the Push presented in the Launchpad vocabulary.
 // ---------------------------------------------------------------------------
@@ -149,6 +188,13 @@ const pushSurface: ControlSurfacePort = {
     for (let i = 0; i < MIXMSTRS_CHANNELS.length; i++) {
       specs.push({ kind: 'button', cc: PUSH_CC_ABOVE_DISPLAY_BASE + i, value: channelButtonValue(i) });
     }
+    // ELECTRA CONTROL MODE is LATCHED, so unlike every momentary button its
+    // state is not visible from the panel alone — the button lights while the
+    // mode is on. Appended here for the same reason the channel row is: it is
+    // PUSH-LOCAL state and never appears in a Launchpad frame, so the per-frame
+    // diff would otherwise drop it. CC 49 is a white/mono button (not in
+    // `RGB_BUTTON_CCS`), hence a brightness rather than a palette index.
+    specs.push({ kind: 'button', cc: PUSH_CC_ELECTRA_MODE, value: electraMode ? 127 : 0 });
     push2Device.setLeds(specs);
     // The LED tick is also the DISPLAY tick — see the header. Dirty-checked, so
     // a card nobody is touching costs one string compare.
@@ -170,8 +216,10 @@ const pushSurface: ControlSurfacePort = {
 // additive → the local handlers.
 // ---------------------------------------------------------------------------
 function onPushEvent(raw: Push2RxEvent): void {
-  // Track the Shift hold locally for the D-Pad ×8 (it is ALSO routed to the
-  // Launchpad top row by classifyPush2 so the parity editor windowing works).
+  // Track the SHIFT hold locally for the D-Pad ×8 + the fine-nudge. This is the
+  // permanent-row button above channel 8 (CC 27) — the same press classifyPush2
+  // routes to Launchpad top CC 98, so the parity editor windowing and this local
+  // copy are two readings of ONE button, not two buttons.
   if (raw.type === 'cc' && raw.cc === PUSH_CC_SHIFT) {
     shiftHeld = raw.s === 1;
     // While LEGEND MODE is held, SHIFT swaps every cell to its shift layer —
@@ -202,7 +250,152 @@ function onPushEvent(raw: Push2RxEvent): void {
     case 'legend':
       setLegendHeld(action.held);
       break;
+    case 'electraMode':
+      toggleElectraMode();
+      break;
   }
+}
+
+// ---------------------------------------------------------------------------
+// ELECTRA CONTROL MODE — latched, entered/left by the lower-right "Shift"
+// button (CC 49). The six leftmost display encoders drive ONE ROW of the rack's
+// ElectraControl 6×6 grid; the scroll encoder picks the row; encoders 7 and 8
+// are inert.
+//
+// SCOPE, stated so it is not read as coverage: this changes the ENCODERS and the
+// SCREEN and nothing else. Pads, the scene column, the function row, the D-Pad,
+// the channel-select row, Play and Undo route EXACTLY as they do outside the
+// mode — a deliberate choice, so entering it can never strand a transport or a
+// clip launch. The owner's spec is "we're just doing the control part".
+// ---------------------------------------------------------------------------
+
+/** Enter or leave ElectraControl mode. A PLAIN TOGGLE, per the owner's spec
+ *  ("we don't need to hold the key, press is a toggle"). */
+export function toggleElectraMode(): void {
+  setElectraMode(!electraMode);
+}
+
+/**
+ * Set the mode explicitly (the card's on-screen toggle + the tests use this).
+ *
+ * The mode is deliberately NOT persisted. A latched mode is invisible without
+ * the hardware in front of you, so restoring it on a page load would leave the
+ * Push showing a surface the user never asked for and could not explain. The
+ * ROW is persisted, because that is a position within the mode and costs
+ * nothing to be wrong about.
+ */
+export function setElectraMode(on: boolean): void {
+  if (electraMode === on) return;
+  electraMode = on;
+  bump(); // the card's DOM preview mirrors the panel
+  repaintDisplay();
+}
+
+/** Is ElectraControl mode latched on? */
+export function isElectraMode(): boolean {
+  return electraMode;
+}
+
+/** The selected ElectraControl row, 1..6. */
+export function electraRowIndex(): number {
+  return electraRow;
+}
+
+/** Select an ElectraControl row (1..6), clamped. Persisted. */
+export function setElectraRow(row: number): void {
+  const next = clampRow(row);
+  if (next === electraRow) return;
+  electraRow = next;
+  try {
+    localStorage.setItem(STORAGE_KEY_ELECTRA_ROW, String(next));
+  } catch {
+    /* private mode — session-only */
+  }
+  bump();
+  repaintDisplay();
+}
+
+/** ROW SCROLL — the scroll encoder (CC 15) in ElectraControl mode. Wraps at both
+ *  ends, like the card flip it shares a knob with. */
+export function scrollElectraRow(delta: number): void {
+  setElectraRow(stepElectraRow(electraRow, clampEncoderDelta(delta)));
+}
+
+/** The ElectraControl node this mode drives, or null. The FIRST one, id-sorted —
+ *  the SAME choice `electra/host.ts` `electraControlBindings()` makes when it
+ *  builds the preset, so the Push drives the surface the hardware Electra was
+ *  flashed from rather than a different one. */
+export function electraSurfaceId(): string | null {
+  return listElectraControls(patch.nodes as Record<string, ModuleNode | undefined>)[0]?.id ?? null;
+}
+
+/**
+ * Resolve one grid slot against the live rack: the source param's def, its
+ * current value, and the name the CARD shows for it (`electraSlotLabel`).
+ *
+ * Routed through `resolveSurfaceParam` — the SAME adapter the card, MIDI-learn
+ * and the Electra flash use — so a TOYBOX nested param resolves identically on
+ * the Push and an unresolvable binding yields null (a blank knob) instead of a
+ * thrown render.
+ */
+function resolveElectraSlot(surfaceId: string, slot: number) {
+  const data = readElectraData(patch.nodes[surfaceId]);
+  const b = bindingAtSlot(data, slot);
+  if (!b) return null;
+  const source = patch.nodes[b.moduleId] as ModuleNode | undefined;
+  const resolved = source ? resolveSurfaceParam(source, b.paramId) : null;
+  if (!resolved) return null;
+  const key = liveKey(b.moduleId, b.paramId);
+  // An in-flight twist reads from the pump for the same reason the push card
+  // does: the durable write is coalesced, so the store LAGS a fast turn.
+  const live = ccPumps.get(key)?.active ? liveValues.get(key) : undefined;
+  return {
+    moduleId: b.moduleId,
+    paramId: b.paramId,
+    def: resolved.def,
+    value: live ?? resolved.get(),
+    label: electraSlotLabel(b, resolved.def.label ?? b.paramId),
+  };
+}
+
+/** The slot under display encoder `knob` (1..6) of the SELECTED row, resolved
+ *  against the live rack — the ONE seam the screen and the encoders share, so
+ *  the value a strip draws and the value a turn increments from cannot come
+ *  from two different expressions. */
+function resolveElectraKnob(knob: number) {
+  const surfaceId = electraSurfaceId();
+  if (!surfaceId) return null;
+  return resolveElectraSlot(surfaceId, slotIndex(electraRow, knob));
+}
+
+/** THE VIEW the Push screen paints in ElectraControl mode. Reads the live store;
+ *  every derivation below it is pure. */
+export function currentPushElectraView(): PushElectraView {
+  const surfaceId = electraSurfaceId();
+  return pushElectraView({
+    surfaceName: surfaceId ? electraName(patch.nodes[surfaceId]) : null,
+    row: electraRow,
+    resolveSlot: (slot) => (surfaceId ? resolveElectraSlot(surfaceId, slot) : null),
+  });
+}
+
+/**
+ * Turn ElectraControl knob `knob` (1..6) of the selected row by `delta` detents.
+ *
+ * Writes through the SAME cc pump the push-card encoders use, so a hardware
+ * twist here is indistinguishable from one on the Electra One itself: transient
+ * engine push per message + a coalesced bare store write, never a MIDI-rate
+ * Y.Doc storm. An empty or unresolvable slot is a silent no-op.
+ */
+export function electraEncoder(knob: number, delta: number): void {
+  const slot = resolveElectraKnob(knob);
+  if (!slot) return; // empty or unresolvable — a silent no-op, like a blank strip
+  const cur = slot.value;
+  const next = nudgeParamValue(slot.def, cur, delta, shiftHeld);
+  if (next === cur) return; // already at the end stop — no write, no repaint
+  liveValues.set(liveKey(slot.moduleId, slot.paramId), next);
+  ccPumpFor(slot.moduleId, slot.paramId).push(next);
+  repaintDisplay();
 }
 
 /**
@@ -572,6 +765,26 @@ function applyMasterEncoder(delta: number): void {
 }
 
 function applyEncoder(target: PushEncoderTarget, delta: number): void {
+  // ELECTRA CONTROL MODE re-interprets the SAME classified target rather than
+  // consulting a second CC map — see `electraModeEncoder`. That is why there is
+  // no way for the two modes to disagree about which knob is which.
+  if (electraMode) {
+    const role = electraModeEncoder(target);
+    switch (role.kind) {
+      case 'knob':
+        electraEncoder(role.knob, delta);
+        break;
+      case 'rowScroll':
+        scrollElectraRow(delta);
+        break;
+      case 'master':
+        applyMasterEncoder(delta);
+        break;
+      case 'inert':
+        break; // display encoders 7 and 8 — deliberately unassigned here
+    }
+    return;
+  }
   switch (target.kind) {
     case 'strip':
       pushCardEncoder(target.index, delta);
@@ -656,16 +869,25 @@ export function currentPushLegendView(): PushLegendView {
 }
 
 /**
- * WHAT THE PANEL SHOWS: the LEGEND while its button is held, else the push card.
+ * WHAT THE PANEL SHOWS, in precedence order: the LEGEND while its button is
+ * held, else ELECTRA CONTROL MODE while it is latched, else the push card.
  *
- * ONE seam for both consumers — the WebUSB frame pump below and the card's DOM
+ * LEGEND WINS over ElectraControl mode, and that is not arbitrary: the legend is
+ * MOMENTARY and documents the pads / scene column / function row, none of which
+ * ElectraControl mode changes. So the legend is still telling the truth while
+ * the mode is on, and a momentary overlay that a latched mode could suppress
+ * would be a button that sometimes does nothing.
+ *
+ * ONE seam for all consumers — the WebUSB frame pump below and the card's DOM
  * preview canvas — so the on-screen preview cannot disagree with the hardware
  * about what is being displayed. It is also why "release restores the previous
  * display" needs no saved bitmap: the ops are re-derived, the signature returns
- * to the card's, and the dirty check ships exactly one frame.
+ * to the previous one, and the dirty check ships exactly one frame.
  */
 export function pushDisplayOps(): PushDrawOp[] {
-  return legendHeld ? renderPushLegend(currentPushLegendView()) : renderPushCard(currentPushCardView());
+  if (legendHeld) return renderPushLegend(currentPushLegendView());
+  if (electraMode) return renderPushElectra(currentPushElectraView());
+  return renderPushCard(currentPushCardView());
 }
 
 export function repaintDisplay(force = false): void {
@@ -774,6 +996,8 @@ export function __test_resetPush2Control(): void {
   launchpadCb = null;
   shiftHeld = false;
   legendHeld = false;
+  electraMode = false;
+  electraRow = 1;
   loggedUnboundCcs.clear();
   selectedChannel = 0;
   for (const pump of ccPumps.values()) pump.dispose();

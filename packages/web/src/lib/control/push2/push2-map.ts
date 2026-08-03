@@ -26,7 +26,7 @@
 //   · 8×8 pads               notes 36..99 (bottom-left 36, top-right 99)
 //   · Play (transport)       CC 85
 //   · Undo                   CC 119
-//   · Shift                  CC 49            (CONFIRM ON HARDWARE — unconfirmed)
+//   · "Shift" (lower right)  CC 49            → ELECTRA CONTROL MODE toggle
 //   · D-Pad ←/→/↑/↓          CC 44 / 45 / 46 / 47
 //   · above-display ×8       CC 102..109      → select LANE 1..8 (the push card)
 //   · permanent-controls ×8  CC 20..27        → Launchpad top row 91..98 (views)
@@ -58,8 +58,44 @@ import {
 export const PUSH_CC_PLAY = 85;
 /** Undo button → undo. CONFIRMED (owner-requested mapping). */
 export const PUSH_CC_UNDO = 119;
-/** Shift button → the SHIFT modifier (editor ×8 windowing + arm gestures). */
-export const PUSH_CC_SHIFT = 49; // CONFIRM ON HARDWARE (owner did not confirm Shift)
+
+/**
+ * THE SHIFT MODIFIER — the button ABOVE THE CHANNEL-8 COLUMN, in the
+ * permanent-controls row. It is `PUSH_CC_PERMANENT_BASE + 7` **by construction**,
+ * not by an independent number: the permanent row mirrors the Launchpad top row
+ * cell-for-cell (20→91 … 27→98) and Launchpad CC 98 IS `action: 'shift'` (see
+ * `TOP_ROW_BINDINGS`), so this constant cannot drift away from the row it lives
+ * in — change the base and it follows.
+ *
+ * ⚠ THE PHYSICAL BUTTON LABELLED "Shift" (lower right) IS **NOT** THIS ONE.
+ * That button is CC 49 and it is now `PUSH_CC_ELECTRA_MODE` (below). Until
+ * 2026-08-03 CC 49 was a SECOND, duplicate route to the same Launchpad shift —
+ * so the SHIFT function had two owners and CC 49 had no identity of its own.
+ * The owner reassigned CC 49; the shift function did not move, it merely stopped
+ * being reachable from two places. Everything that keys off SHIFT — the D-Pad ×8
+ * window, the encoder fine-nudge, the LEGEND shift layer, the per-lane arm
+ * gestures — now keys off THIS CC and behaves exactly as before.
+ */
+export const PUSH_CC_SHIFT = 27; // = PUSH_CC_PERMANENT_BASE + 7; asserted in push2-map.test.ts
+
+/**
+ * ELECTRA CONTROL MODE — the physical button labelled "Shift" in the LOWER RIGHT
+ * of the Push (CC 49). A PLAIN PRESS TOGGLE: press enters the mode, press again
+ * leaves it. The release edge is deliberately not reported (a toggle that fired
+ * on both edges would enter and immediately leave).
+ *
+ * In this mode the six LEFTMOST display encoders drive one ROW of the rack's
+ * ELECTRA CONTROL 6×6 grid and the screen shows that row — see
+ * `push-electra-model.ts`. It is a LATCHED DISPLAY+ENCODER mode, unlike LEGEND
+ * (momentary, display-only): the pads, the scene column, the function row and
+ * the D-Pad keep routing exactly as they do outside it.
+ *
+ * ⚠ CC 49 was previously a duplicate inbound route to Launchpad shift AND an
+ * outbound LED mirror of it. Both are gone: 49 now reports only this action, and
+ * its LED shows whether the mode is ON (a Push-LOCAL state, never a Launchpad
+ * frame mirror). `pushCcToLaunchpadTopCc(49)` returns null — asserted.
+ */
+export const PUSH_CC_ELECTRA_MODE = 49;
 
 /**
  * LEGEND MODE — hold to turn the 960×160 display into on-device documentation of
@@ -115,12 +151,29 @@ export const PUSH_CC_ENCODER_BASE = 71;
  *  the owner's spec names only the #2 encoder, and a global tempo control is a
  *  separate decision (obvious future home: timelorde bpm). */
 export const PUSH_CC_ENCODER_TEMPO = 14;
-/** Swing encoder — the #2-from-the-left encoder → FLIP THROUGH THE PUSH CARDS
- *  of the selected lane, one module at a time (relative CC 15).
- *  ⚠ CONFIRM ON HARDWARE: that CC 15 is physically the *second* encoder from
- *  the left is derived from the encoder-row order (Tempo 14, Swing 15, then the
- *  8 display encoders 71..78, then Master 79) — the owner has not confirmed it
- *  by turning the knob. Everything else about the mapping is CC-confirmed. */
+/**
+ * The "Swing" encoder (relative CC 15) — the SCROLL encoder. It FLIPS THROUGH
+ * THE PUSH CARDS of the selected lane outside ElectraControl mode, and SCROLLS
+ * THE ROW 1..6 inside it. One physical knob, one job: "step through the list on
+ * screen".
+ *
+ * ⚠ ITS PHYSICAL POSITION IS NOT HARDWARE-CONFIRMED, AND THE BINDING DOES NOT
+ * REST ON ONE. The owner identifies this knob BY FUNCTION — "the same one that
+ * scrolls through instruments in our other view" — and that function is
+ * unambiguously CC 15 in this file. The owner describes it as the UPPER-RIGHTMOST
+ * encoder; an earlier revision of this comment asserted it was the #2-from-the-
+ * LEFT encoder, inferred from the encoder-row order (Tempo 14, Swing 15, then
+ * the display encoders 71..78, then Master 79). NEITHER position has been
+ * verified by turning the knob, so no position claim is made here.
+ *
+ * If the owner turns it and it reports a different CC, THIS ONE LINE changes —
+ * `push2-control` logs the CC of any unbound button press, and an encoder's CC
+ * is equally readable from a port dump.
+ *
+ * ⚠ Do NOT "fix" this by binding to the Master encoder (CC 79) on the grounds
+ * that it is the upper-rightmost by this file's own ordering: CC 79 is CONFIRMED
+ * bound to mixmstrs `master_volume` and sits beside the physical master level.
+ */
 export const PUSH_CC_ENCODER_SWING = 15;
 /** Master encoder → MixMasters master_volume (relative CC 79). CONFIRMED.
  *  The ONE mixer binding that survives the push-card rework: the physical
@@ -156,7 +209,8 @@ export type Push2Action =
   | { kind: 'selectChannel'; channel: number } // 0..7 — Push-local selected lane (press only)
   | { kind: 'encoder'; target: PushEncoderTarget; delta: number } // relative encoder nudge
   | { kind: 'dpad'; dir: 'up' | 'down' | 'left' | 'right' } // clip-view nav (press only)
-  | { kind: 'legend'; held: boolean }; // DISPLAY-ONLY momentary overlay (both edges)
+  | { kind: 'legend'; held: boolean } // DISPLAY-ONLY momentary overlay (both edges)
+  | { kind: 'electraMode' }; // LATCHED ElectraControl mode toggle (press only)
 
 /** Is this Push CC one of the (relative) encoders? Helps the device layer /
  *  control keep encoder + button handling separate. PURE. */
@@ -172,9 +226,15 @@ export function isEncoderCc(cc: number): boolean {
 /** The Launchpad top-row CC a mapped Push function button drives, or null. The
  *  Push reaches the parity view-switching / transport / undo / shift on TWO
  *  surfaces: (1) the "permanent controls" row (CC 20..27, left→right) mirrors the
- *  Launchpad permanent TOP ROW (CC 91..98) cell-for-cell; (2) the dedicated Play /
- *  Undo / Shift hardware buttons ALSO reach transport / undo / shift (redundant
- *  with the row — real Push buttons the owner will press). PURE. */
+ *  Launchpad permanent TOP ROW (CC 91..98) cell-for-cell — this is where SHIFT
+ *  lives (27→98); (2) the dedicated Play / Undo hardware buttons ALSO reach
+ *  transport / undo (redundant with the row — real Push buttons the owner will
+ *  press).
+ *
+ *  ⚠ The lower-right "Shift" button (CC 49) is NO LONGER a third route to
+ *  Launchpad shift — it is the ElectraControl mode toggle and returns null here.
+ *  SHIFT itself is unchanged: CC 27 reaches it through the permanent-row branch
+ *  exactly as it always did. PURE. */
 export function pushCcToLaunchpadTopCc(cc: number): number | null {
   // The permanent-controls row → the 8 Launchpad top-row functions, in order.
   if (cc >= PUSH_CC_PERMANENT_BASE && cc < PUSH_CC_PERMANENT_BASE + 8) {
@@ -186,8 +246,6 @@ export function pushCcToLaunchpadTopCc(cc: number): number | null {
       return CC_UP; // 91 transport
     case PUSH_CC_UNDO:
       return CC_TOP_SPARE_6; // 96 undo
-    case PUSH_CC_SHIFT:
-      return CC_TOP_SPARE_8; // 98 shift
     default:
       return null;
   }
@@ -249,6 +307,15 @@ export function classifyPush2(ev: Push2RxEvent): Push2Action | null {
   // what restores the previous screen, so swallowing it would strand the
   // overlay. It never reaches launchpad-control, so it cannot change routing.
   if (cc === PUSH_CC_LEGEND) return { kind: 'legend', held: ev.s === 1 };
+
+  // ELECTRA CONTROL MODE — a LATCHED toggle, so PRESS ONLY. Reporting the
+  // release too would enter the mode and leave it again in one tap, which is
+  // exactly the bug the LEGEND button's both-edges rule exists to avoid for the
+  // opposite (momentary) case. Like LEGEND it never reaches launchpad-control.
+  if (cc === PUSH_CC_ELECTRA_MODE) {
+    if (ev.s !== 1) return null; // press-only
+    return { kind: 'electraMode' };
+  }
 
   // ENCODERS (relative). Fire on any non-zero delta (no press/release semantics).
   if (isEncoderCc(cc)) {
@@ -330,14 +397,19 @@ function buttonValue(cc: number, r: number, g: number, b: number): number {
 }
 
 /** The Push button CC(s) that mirror a Launchpad top-row CC 91..98. The permanent
- *  row (20..27) always mirrors it; transport / undo / shift ALSO light their
- *  dedicated Play / Undo / Shift buttons. Empty for a non-top-row index. PURE. */
+ *  row (20..27) always mirrors it; transport / undo ALSO light their dedicated
+ *  Play / Undo buttons. Empty for a non-top-row index.
+ *
+ *  ⚠ The lower-right "Shift" button (CC 49) is NOT in this fan-out any more.
+ *  It is `PUSH_CC_ELECTRA_MODE`, whose LED reports a PUSH-LOCAL mode, not a
+ *  Launchpad frame value — `push2-control` appends it to the LED specs the way
+ *  it appends the channel-select row. Mirroring Launchpad shift onto it would
+ *  light the button for a function it no longer performs. PURE. */
 function launchpadTopCcToPushCcs(cc: number): number[] {
   if (cc < CC_UP || cc > CC_TOP_SPARE_8) return [];
-  const out = [PUSH_CC_PERMANENT_BASE + (cc - CC_UP)]; // 91→20 … 98→27
+  const out = [PUSH_CC_PERMANENT_BASE + (cc - CC_UP)]; // 91→20 … 98→27 (SHIFT)
   if (cc === CC_UP) out.push(PUSH_CC_PLAY);
   else if (cc === CC_TOP_SPARE_6) out.push(PUSH_CC_UNDO);
-  else if (cc === CC_TOP_SPARE_8) out.push(PUSH_CC_SHIFT);
   return out;
 }
 

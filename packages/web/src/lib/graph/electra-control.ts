@@ -138,6 +138,30 @@ export function listElectraControls(
   return out;
 }
 
+/**
+ * THE DISPLAYED NAME of a slot: the user's CUSTOM name when they set one, else
+ * the source param's own label.
+ *
+ * ONE function, THREE consumers — `ElectraControlCard.svelte`, the Push 2's
+ * ElectraControl mode (`push-electra-model.ts`), and any future surface. It is
+ * extracted rather than re-typed because a name rule copied into a second
+ * renderer is precisely the "a card silently disagrees with its source" class:
+ * the owner's spec for the Push mode is "the same name/status info that we see
+ * on electra / the card", and the only way to guarantee sameness is to have one
+ * expression produce it.
+ *
+ * A whitespace-only custom name is NOT a name (`setSlotName` deletes the key on
+ * a blank string, but a name synced from an older peer may still be blank), so
+ * it falls back rather than rendering an empty label. PURE.
+ */
+export function electraSlotLabel(
+  binding: { name?: string } | undefined,
+  paramLabel: string,
+): string {
+  const custom = typeof binding?.name === 'string' ? binding.name.trim() : '';
+  return custom.length > 0 ? custom : paramLabel;
+}
+
 /** The binding occupying a slot (or undefined). */
 export function bindingAtSlot(data: ElectraControlData, slot: number): ControlBinding | undefined {
   return data.slots?.[String(slot)];

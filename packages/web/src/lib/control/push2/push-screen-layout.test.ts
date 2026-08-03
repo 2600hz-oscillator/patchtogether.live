@@ -9,7 +9,6 @@
 // PERTURBATION OF THE INPUT MUST MOVE A PIXEL — the negative-control discipline
 // applied to the instrument, not just to the code.
 import { describe, it, expect } from 'vitest';
-
 import type { PushCardView, PushStripView } from './push-card-model';
 import { emptyStrip, pushStrip } from './push-card-model';
 import type { ParamDef } from '$lib/graph/types';
@@ -41,6 +40,12 @@ import {
   COL_DIVIDER,
   EMPTY_MESSAGES,
   renderPushLegend,
+  renderPushElectra,
+  renderStrip,
+  ELECTRA_PANEL_STRIP,
+  ELECTRA_PANEL_X,
+  ELECTRA_PANEL_W,
+  ELECTRA_SEL_Y,
   wrapToWidth,
   legendLabelY,
   LEGEND_BANNER_H,
@@ -55,6 +60,7 @@ import {
   type PushTextOp,
 } from './push-screen-layout';
 import { pushLegendView } from './push-legend-model';
+import type { PushElectraView } from './push-electra-model';
 import type { LaunchpadLegendContext } from '$lib/control/launchpad/launchpad-control.svelte';
 
 // ── fixtures ───────────────────────────────────────────────────────────────
@@ -474,5 +480,126 @@ describe('wrapToWidth', () => {
   it('is empty for empty input or a zero-width box', () => {
     expect(wrapToWidth('', 15, 108, 2)).toEqual([]);
     expect(wrapToWidth('X', 15, 0, 2)).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ELECTRA CONTROL MODE — the third display mode's geometry.
+//
+// The claim worth gating is that it REUSES the card's machinery rather than
+// re-implementing it: six strips drawn by the same `renderStrip`, on the same
+// exact-integer 960/8 grid, so encoder n's strip sits over encoder n in both
+// modes. A second strip renderer would be a second chance for the bar to lie.
+// ---------------------------------------------------------------------------
+
+describe('renderPushElectra', () => {
+  const knob: ParamDef = {
+    id: 'cutoff', label: 'Cutoff', min: 20, max: 20000, defaultValue: 1000, curve: 'log', units: 'Hz',
+  };
+
+  function view(over: Partial<PushElectraView> = {}): PushElectraView {
+    return {
+      surfaceName: 'my surface',
+      row: 3,
+      rowCount: 6,
+      bank: 'MID',
+      strips: Array.from({ length: 6 }, (_, i) => (i === 0 ? pushStrip(knob, 1000, 1) : emptyStrip(i + 1))),
+      empty: null,
+      ...over,
+    };
+  }
+  const textsOf = (ops: PushDrawOp[]) =>
+    ops.filter((o): o is PushDrawOp & { op: 'text' } => o.op === 'text').map((o) => o.text);
+
+  it('draws SIX strips through the SAME renderStrip the card uses', () => {
+    const ops = renderPushElectra(view());
+    // Op-for-op: strip 0's ops are exactly what the card would emit for it.
+    const mine = renderStrip(pushStrip(knob, 1000, 1), 0);
+    for (const op of mine) expect(ops).toContainEqual(op);
+  });
+
+  it('the strips occupy encoders 1-6 and the PANEL starts exactly at encoder 7', () => {
+    expect(ELECTRA_PANEL_STRIP).toBe(6);
+    expect(ELECTRA_PANEL_X).toBe(stripX(6));
+    expect(ELECTRA_PANEL_X).toBe(720);
+    expect(ELECTRA_PANEL_W).toBe(240);
+    expect(ELECTRA_PANEL_X + ELECTRA_PANEL_W).toBe(PUSH_SCREEN_W); // no gap at the edge
+  });
+
+  it('the ROW panel says ROW, the number, and numbers the two INERT encoders', () => {
+    const t = textsOf(renderPushElectra(view({ row: 4 })));
+    expect(t).toContain('ROW');
+    expect(t).toContain('4');
+    // The physical encoders are still there, so a numbered blank says "this
+    // knob does nothing here" rather than leaving the eye to guess.
+    expect(t).toContain('7');
+    expect(t).toContain('8');
+  });
+
+  it('the row SELECTOR lights exactly one cell — a mode, not a quantity', () => {
+    const ops = renderPushElectra(view({ row: 2 }));
+    const sel = ops.filter((o) => o.op === 'rect' && o.y === ELECTRA_SEL_Y) as PushRectOp[];
+    expect(sel).toHaveLength(6);
+    const lit = sel.filter((r) => r.fill === COL_FILL);
+    expect(lit).toHaveLength(1);
+    expect(sel.indexOf(lit[0])).toBe(1); // 0-based cell for row 2
+    // …and the selector spans the panel, inset, without leaving the panel.
+    expect(sel[0].x).toBeGreaterThanOrEqual(ELECTRA_PANEL_X);
+    expect(sel[5].x + sel[5].w).toBeLessThanOrEqual(ELECTRA_PANEL_X + ELECTRA_PANEL_W);
+  });
+
+  it('the selector MOVES with the row — negative control for the cell above', () => {
+    const litIndex = (row: number) => {
+      const sel = renderPushElectra(view({ row })).filter(
+        (o) => o.op === 'rect' && o.y === ELECTRA_SEL_Y,
+      ) as PushRectOp[];
+      return sel.findIndex((r) => r.fill === COL_FILL);
+    };
+    expect([1, 2, 3, 4, 5, 6].map(litIndex)).toEqual([0, 1, 2, 3, 4, 5]);
+  });
+
+  it('the header names the mode, the surface, the bank and the row counter', () => {
+    const t = textsOf(renderPushElectra(view({ row: 5, bank: 'BOT' })));
+    expect(t).toContain('ELECTRA');
+    expect(t).toContain('my surface');
+    expect(t).toContain('BANK BOT');
+    expect(t).toContain('5/6');
+  });
+
+  it('the empty state says WHY, and still shows the header', () => {
+    const ops = renderPushElectra(view({ empty: 'no-surface', surfaceName: '' }));
+    const t = textsOf(ops);
+    expect(t.join(' ')).toContain('no ELECTRA CONTROL in this rack');
+    expect(t).toContain('ELECTRA'); // you still know which mode you are in
+    // …and it draws no strips at all.
+    expect(ops.filter((o) => o.op === 'rect' && o.y === ELECTRA_SEL_Y)).toHaveLength(0);
+  });
+
+  it('every op is inside the 960×160 panel', () => {
+    for (const row of [1, 6]) {
+      for (const op of renderPushElectra(view({ row }))) {
+        if (op.op !== 'rect') continue;
+        expect(op.x).toBeGreaterThanOrEqual(0);
+        expect(op.y).toBeGreaterThanOrEqual(0);
+        expect(op.x + op.w).toBeLessThanOrEqual(PUSH_SCREEN_W);
+        expect(op.y + op.h).toBeLessThanOrEqual(PUSH_SCREEN_H);
+      }
+    }
+  });
+
+  it('the signature moves when the ROW moves — the dirty check can see it', () => {
+    // The display pump repaints only on a signature change, so a mode whose
+    // only visible change did not reach the signature would never redraw.
+    const a = pushCardSignature(renderPushElectra(view({ row: 1 })));
+    const b = pushCardSignature(renderPushElectra(view({ row: 2 })));
+    expect(a).not.toBe(b);
+  });
+
+  it('cellRects rounds identically at any track width — one rounding rule', () => {
+    // The selector reuses the card's cell math with a wider track. If it had
+    // its own, the two cell rows could drift apart at the right-hand edge.
+    const wide = cellRects(6, 0, 188);
+    expect(wide[5].x + wide[5].w).toBeLessThanOrEqual(188);
+    expect(cellRects(3, 0)).toEqual(cellRects(3, 0, TRACK_W)); // default is TRACK_W
   });
 });
