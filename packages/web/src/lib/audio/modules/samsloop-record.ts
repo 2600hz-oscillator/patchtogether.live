@@ -22,11 +22,13 @@
 // MessagePort handler at ≈3 ms / block (48 kHz / 128), and quantize +
 // downsample fire ONCE on STOP. Optimize for clarity, not throughput.
 
-/** Hard ceiling on stored PCM bytes per SAMSLOOP recording. 250 000 bytes
- *  — matches the existing 250 KB SAMSLOOP_MAX_FILE_BYTES uploaded-file
- *  budget, so the persistence-layer cost (one Yjs update per recording,
- *  carrying the bytes inside node.data) stays bounded at ≤250 KB
- *  regardless of which RATE × BITS × CHANNELS the user picks. */
+/** Hard ceiling on stored PCM bytes per SAMSLOOP recording. 250 000 bytes.
+ *  Deliberately FAR TIGHTER than the uploaded-file budget
+ *  (`SAMSLOOP_MAX_FILE_BYTES` = 2 MB): the persistence-layer cost is one Yjs
+ *  update per recording carrying the bytes inside node.data, so a recording
+ *  stays bounded at ≤250 kB regardless of which RATE × BITS × CHANNELS the
+ *  user picks. (This comment used to call the upload cap "250 KB" too — it was
+ *  raised to 2 MB and this sentence was not; the two numbers are 8× apart.) */
 export const SAMSLOOP_RECORD_BUDGET_BYTES = 250_000;
 
 /** Discrete option sets — the card's three toggle switches. Exposed as
@@ -50,18 +52,25 @@ export const SAMSLOOP_REC_DEFAULTS = {
   channels: 2      as SamsloopRecChannels,
 } as const;
 
-/** Persisted shape on `node.data.sample` for a finished SAMSLOOP recording.
- *  Mirrors the PICTUREBOX persistence pattern (`imageBytes` rides the Yjs
- *  envelope as plain data) — the bytes here are a plain `number[]` of raw
- *  PCM samples (no header; the WAV header is synthesized only on export).
+/** The persisted shape of a finished SAMSLOOP recording — `node.data.sample`.
+ *  Mirrors the PICTUREBOX persistence pattern: the raw PCM rides the Yjs
+ *  envelope as ONE opaque base64 string (never a `number[]`, which syncedstore
+ *  wraps in a per-byte YArray and which blows the stack at insert).
  *
- *  The downloader + player both rebuild a typed array on read by combining
- *  bytes + bits (which width to read) + channels (interleaving). */
+ *  The payload is HEADER-LESS PCM — interleaved when `channels === 2`,
+ *  little-endian for 16-bit, signed-int8 for 8-bit. The WAV header is
+ *  synthesized only on export (`makeWavBlob`); the PLAYBACK path decodes it
+ *  back to Float32 via `decodeRecordedPcm` below.
+ *
+ *  ⚠ This interface previously declared `bytes: number[]` — a shape the card
+ *  has never written and nothing has ever read (it had zero importers
+ *  repo-wide while the shipped write path used `bytesB64: string`). It is now
+ *  the REAL shape and is the single declaration both writers and readers use,
+ *  so a drift like that one is a type error rather than dead documentation. */
 export interface SamsloopRecordedSample {
-  /** Raw PCM bytes as a plain number[] so it serializes cleanly into
-   *  Yjs / JSON. Interleaved if `channels === 2`. Little-endian for
-   *  16-bit samples (matches the WAV spec). */
-  bytes: number[];
+  /** Base64-encoded raw PCM bytes. One flat Yjs value; length bounded by
+   *  SAMSLOOP_RECORD_BUDGET_BYTES pre-encode (the string is ~4/3 of that). */
+  bytesB64: string;
   /** Sample rate the recording was downsampled to. One of the entries
    *  in SAMSLOOP_RATE_OPTIONS. */
   rate: SamsloopRecRate;
@@ -69,9 +78,20 @@ export interface SamsloopRecordedSample {
   bits: SamsloopRecBits;
   /** Channel count. One of SAMSLOOP_CHANNELS_OPTIONS. */
   channels: SamsloopRecChannels;
-  /** Convenience field — same as bytes.length / (channels * bytesPerSample) /
+  /** Raw byte length pre-base64 (so the card can show "8 kB" without
+   *  decoding to count). */
+  byteLength: number;
+  /** Convenience field — same as byteLength / (channels * bytesPerSample) /
    *  rate. Stored so the card can show the duration without recomputing. */
   durationSec: number;
+  /** `Date.now()` at commit. NOT decoration: it is what makes the playback
+   *  poll's change-signature EXACT. Every other field of a re-recording at
+   *  unchanged settings can repeat (same length ⇒ same byteLength, rate, bits,
+   *  channels), so a signature built from them alone would alias two different
+   *  takes and the worklet would keep playing the FIRST one. Optional because
+   *  recordings persisted before it existed do not carry it — those fall back
+   *  to the length-based signature, which is exactly as good as it ever was. */
+  recordedAt?: number;
 }
 
 /**
@@ -362,6 +382,137 @@ export function encodeRecordingBytes(
     const q = quantizeF32ToI8(pre);
     return new Uint8Array(q.buffer, q.byteOffset, q.byteLength);
   }
+}
+
+/**
+ * The `node.data` keys an UPLOAD owns. The RECORD commit deletes every one of
+ * them, and the upload commit deletes `sample` — that pair of deletes IS the
+ * module's one-sample invariant ("a new upload or recording REPLACES the
+ * previous one", samsloop.ts header) expressed in the data rather than in
+ * prose. It lives here, as one list both writers import, because the failure
+ * mode is a writer that forgets one key: the two sources then coexist and the
+ * READER's precedence, not the user's last action, silently decides what
+ * plays. That is the shape of the P0 this file's decoder exists to fix.
+ */
+export const SAMSLOOP_UPLOAD_DATA_KEYS = [
+  'fileBytesB64',
+  'samples',
+  'fileName',
+  'fileSize',
+  'fileMime',
+  'sampleLength',
+  'sampleRate',
+] as const;
+
+/**
+ * Delete every upload key from a LIVE `node.data`, guarding each one on
+ * presence.
+ *
+ * ⚠ THE GUARD IS NOT DEFENSIVE PADDING — an unguarded `delete` here THROWS.
+ * `node.data` is a syncedStore proxy over a Y.Map and its `deleteProperty`
+ * trap returns falsish for a key the map does not hold, which V8 reports as
+ * `TypeError: 'deleteProperty' on proxy: trap returned falsish`. So the
+ * ordinary case — REC with no previous upload, i.e. most recordings — is
+ * exactly the case that would blow up mid-commit and abandon the take. (The
+ * shipped card only ever deleted under an `if (d.samples)`, which is why this
+ * never surfaced; it is stated here so the next writer does not rediscover it
+ * in production.)
+ */
+export function clearSamsloopUploadKeys(d: Record<string, unknown>): void {
+  for (const k of SAMSLOOP_UPLOAD_DATA_KEYS) {
+    if (k in d) delete d[k];
+  }
+}
+
+/**
+ * Assemble the persisted record of a finished take — the whole of what REC
+ * commits, as a pure function of the encoded bytes and the three settings.
+ *
+ * Extracted from the card so the commit SHAPE is unit-testable: the P0 was a
+ * writer and a reader that disagreed about a key, and neither side had a test
+ * that named the other. Now `resolveSamsloopSource` can be asserted directly
+ * against this function's output, so "what REC writes is what playback reads"
+ * is a checkable statement rather than two files that happen to agree.
+ *
+ * `frames` is the DECODED length — `decodeRecordedPcm` of the returned sample
+ * returns exactly this many samples — which is what the START/END window and
+ * the card's faders bound against.
+ */
+export function buildRecordedSample(
+  bytes: Uint8Array,
+  rate: SamsloopRecRate,
+  bits: SamsloopRecBits,
+  channels: SamsloopRecChannels,
+  now: number = Date.now(),
+): { sample: SamsloopRecordedSample; frames: number } {
+  const bytesPerSample = Math.ceil(bits / 8);
+  const frames = Math.floor(bytes.byteLength / (bytesPerSample * channels));
+  return {
+    frames,
+    sample: {
+      bytesB64: bytesToBase64(bytes),
+      rate,
+      bits,
+      channels,
+      byteLength: bytes.byteLength,
+      durationSec: frames / rate,
+      recordedAt: now,
+    },
+  };
+}
+
+/**
+ * THE INVERSE OF `encodeRecordingBytes` — persisted PCM bytes back to Float32.
+ *
+ * ⚠ THIS FUNCTION EXISTS BECAUSE ITS ABSENCE WAS A P0. The record path wrote
+ * `node.data.sample.bytesB64` and the engine factory read only
+ * `node.data.fileBytesB64` / `node.data.samples`, so **a recorded sample never
+ * reached the worklet and the module was silent after REC** — while the
+ * waveform redrew, the download worked and the bytes round-tripped through
+ * save/load intact. The two sides now share ONE decoder: the playback path and
+ * the card's waveform preview call this, so a future change to the storage
+ * form cannot make one of them right and the other wrong.
+ *
+ * `channel` picks what a stereo recording collapses to:
+ *   * `'mix'`  — average L+R. What PLAYBACK wants: the worklet buffer is mono
+ *                and this is the same collapse the upload path applies to a
+ *                stereo file (samsloop.ts's decode → mono-mix).
+ *   * `'left'` — L only. What the WAVEFORM draws (a peak trace of one channel
+ *                keeps its shape stable regardless of the CHAN setting).
+ *
+ * Mono recordings are identical under both. Returns an EMPTY array — never
+ * null — for an empty/undecodable payload, so callers can treat "no audio" and
+ * "zero frames" the same way.
+ */
+export function decodeRecordedPcm(
+  sample: Pick<SamsloopRecordedSample, 'bytesB64' | 'bits' | 'channels'>,
+  channel: 'mix' | 'left' = 'mix',
+): Float32Array {
+  if (!sample.bytesB64) return new Float32Array(0);
+  const bytes = base64ToBytes(sample.bytesB64);
+  const bytesPerSample = Math.ceil(sample.bits / 8);
+  const stride = bytesPerSample * sample.channels;
+  if (stride <= 0) return new Float32Array(0);
+  const frames = Math.floor(bytes.byteLength / stride);
+  const out = new Float32Array(frames);
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const stereoMix = sample.channels === 2 && channel === 'mix';
+  for (let i = 0; i < frames; i++) {
+    const off = i * stride;
+    if (sample.bits === 16) {
+      // Little-endian signed int16, scaled by 0x7fff — the exact inverse of
+      // quantizeF32ToI16's symmetric clip-and-scale.
+      const l = view.getInt16(off, true) / 0x7fff;
+      out[i] = stereoMix ? (l + view.getInt16(off + 2, true) / 0x7fff) * 0.5 : l;
+    } else {
+      // 8-bit is stored as SIGNED int8 (our quantizer's output cast to uint8 =
+      // the raw two's-complement byte), NOT the unsigned form WAV files use —
+      // makeWavBlob does the +128 shift only on export.
+      const l = ((view.getUint8(off) << 24) >> 24) / 0x7f;
+      out[i] = stereoMix ? (l + (((view.getUint8(off + 1) << 24) >> 24) / 0x7f)) * 0.5 : l;
+    }
+  }
+  return out;
 }
 
 /**

@@ -13,10 +13,20 @@
 //   * force it CONNECTED → the predicate must go TRUE. If it does not, the
 //     probe is crying wolf and will be turned off.
 //
-// It drives the REAL `fireManualStrike` / `setManualGate` against a fake engine
-// rather than the pure predicate alone, because the interesting half is whether
-// the SEAM records what it did — a predicate over a hand-built array proves
-// nothing about the call site that was throwing the boolean away.
+// It drives the REAL `fireManualStrike` / `setManualGate` / `setMomentaryParam`
+// against a fake engine rather than the pure predicate alone, because the
+// interesting half is whether the SEAM records what it did — a predicate over a
+// hand-built array proves nothing about the call site that was throwing the
+// boolean away.
+//
+// ── The MOMENTARY PAD joined this file when it stopped writing the Y.Doc ─────
+// A press-pad now writes the ENGINE ONLY, which is what makes a lost release
+// harmless — and it is also what made `readParam` blind to it, so faces-parity's
+// release clause (`readParam(…) ?? rest → toBe(rest)`) silently reduced to
+// `rest === rest`: the headline "a momentary pad must not latch" assertion was
+// unconditionally true. Same shape as the `action` cell above, one seam later.
+// The RELEASE-edge legs below are therefore not symmetry for its own sake; they
+// are the permanent control on the exact assertion that went vacuous.
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 
@@ -27,6 +37,7 @@ import type { ModuleNode } from '$lib/graph/types';
 import {
   fireManualStrike,
   setManualGate,
+  setMomentaryParam,
   __resetManualGateLatch,
   MANUAL_GATE_KEY,
   MANUAL_STRIKE_KEY,
@@ -60,6 +71,16 @@ function fakeEngine(answers: string[]): PatchEngine {
   return {
     read: (_node: ModuleNode, key: string) => (answers.includes(key) ? () => {} : undefined),
   } as unknown as PatchEngine;
+}
+
+/** A press-pad reaches the engine through `setParam`, NOT a read key — so its
+ *  connected/disconnected pair is a different fake. Omitting `setParam` is the
+ *  DISCONNECTED press: `pushParamOnEngine` calls it, throws, and catches. */
+function fakeParamEngine(): PatchEngine {
+  return { read: () => undefined, setParam: () => {} } as unknown as PatchEngine;
+}
+function deadParamEngine(): PatchEngine {
+  return { read: () => undefined } as unknown as PatchEngine;
 }
 
 beforeEach(() => {
@@ -159,5 +180,75 @@ describe('audition ledger — the probe predicate, negative-controlled BOTH ways
     expect(auditionDelivered(auditionLog(), 'b', 'manual-strike'), 'wrong node').toBe(false);
     expect(auditionDelivered(auditionLog(), 'a', 'manual-gate'), 'wrong seam').toBe(false);
     expect(auditionDelivered(auditionLog(), 'a', 'engine-message'), 'wrong seam').toBe(false);
+    expect(auditionDelivered(auditionLog(), 'a', 'manual-press'), 'wrong seam').toBe(false);
+  });
+
+  // ── THE MOMENTARY PAD (`manual-press`) ────────────────────────────────────
+
+  it('a PRESS-PAD must deliver on BOTH edges, and each edge is separable', () => {
+    setActiveEngine(fakeParamEngine());
+    const before = auditionSeq(auditionLog());
+    expect(setMomentaryParam(NODE, 'strike', true, 0)).toBe(true);
+    expect(
+      auditionDelivered(auditionLog(), NODE, 'manual-press', before, { high: true }),
+      'the PRESS edge delivered',
+    ).toBe(true);
+    // ⚠ THE LEG THAT WENT VACUOUS IN THE E2E, asserted here as its permanent
+    // control: before the release, the LOW edge must NOT already read satisfied.
+    // A pad that presses and never releases is exactly the latch this seam
+    // exists to make impossible, and it must be VISIBLE as a false here.
+    expect(
+      auditionDelivered(auditionLog(), NODE, 'manual-press', before, { high: false }),
+      'the RELEASE edge has not happened yet',
+    ).toBe(false);
+    expect(setMomentaryParam(NODE, 'strike', false, 0)).toBe(true);
+    expect(auditionDelivered(auditionLog(), NODE, 'manual-press', before, { high: false })).toBe(
+      true,
+    );
+  });
+
+  it('a press-pad the engine cannot take is recorded delivered=FALSE', () => {
+    // The direction that matters, one seam over: the pad lights up (its lit
+    // state is local to the surface holding the finger) while nothing sounds.
+    setActiveEngine(deadParamEngine());
+    const before = auditionSeq(auditionLog());
+    expect(setMomentaryParam(NODE, 'strike', true, 0)).toBe(false);
+    expect(auditionLog().length, 'the failed press is RECORDED, not dropped').toBe(1);
+    expect(auditionLog()[0]!.delivered).toBe(false);
+    expect(auditionDelivered(auditionLog(), NODE, 'manual-press', before, { high: true })).toBe(
+      false,
+    );
+  });
+
+  it('the predicate discriminates on paramId — two pads on ONE node do not alias', () => {
+    // `face.momentary` is a LIST, so a module may declare several pads and they
+    // share a nodeId. Without the paramId filter a probe for `hold` would be
+    // satisfied by a press on `strike`, which is the same aliasing
+    // `manual-strike-actions.ts` keeps a separate latch to avoid.
+    setActiveEngine(fakeParamEngine());
+    const before = auditionSeq(auditionLog());
+    expect(setMomentaryParam(NODE, 'hold', true, 0)).toBe(true);
+    expect(
+      auditionDelivered(auditionLog(), NODE, 'manual-press', before, { high: true, paramId: 'hold' }),
+      'the pad that was pressed',
+    ).toBe(true);
+    expect(
+      auditionDelivered(auditionLog(), NODE, 'manual-press', before, {
+        high: true,
+        paramId: 'strike',
+      }),
+      'a DIFFERENT pad on the same node must not be satisfied',
+    ).toBe(false);
+  });
+
+  it('the press-pad writes NOTHING to the document — which is WHY the ledger is the oracle', () => {
+    // Pinned here rather than assumed: this is the property that made every
+    // graph-shaped assertion blind, so if a Y.Doc write is ever re-introduced
+    // the contract change surfaces next to the probe that depends on it.
+    setActiveEngine(fakeParamEngine());
+    setMomentaryParam(NODE, 'strike', true, 0);
+    expect(patch.nodes[NODE]!.params, 'the press wrote a param').toEqual({});
+    setMomentaryParam(NODE, 'strike', false, 0);
+    expect(patch.nodes[NODE]!.params, 'the release wrote a param').toEqual({});
   });
 });

@@ -12,6 +12,7 @@ import type { Edge, ModuleDef, ModuleNode, CvScaleHint, ParamDef } from '$lib/gr
 import { getModuleDef, type AudioModuleDef } from './module-registry';
 import { POLY_CHANNELS, resolveConnection } from './poly';
 import { attachCvScale } from './cv-scale';
+import { restedParams, type MomentaryDefLike } from './momentary-params';
 import { holdParamAtSeam, HOLD_NOW_EPS_S } from './hold-param';
 import { createEdgeCounter } from './edge-detect';
 import { GATE_HI } from './gate-trigger';
@@ -282,7 +283,25 @@ export class AudioEngine implements DomainEngine {
         this.nodeTypes.delete(evictId);
       }
     }
-    const handle = await (def.factory as AudioModuleFactory)(this.ctx, node);
+    // A PRESS IS NOT STATE. Every `face.momentary` param spawns at its REST
+    // value, never at whatever was persisted — see $lib/audio/momentary-params.
+    // A pad's pressed value can become durable when the release edge is lost
+    // (the card unmounts mid-hold), and on tomtom a persisted `strike: 1` holds
+    // the worklet's OR-ed trigger permanently high, masking `trigger_in`
+    // FOREVER: a rack saved in that state could never be played again. This is
+    // the one seam every arrival route passes through — file load, multiplayer
+    // join, duplicate, reload, audio restart — so repairing it here repairs all
+    // of them, and it must sit BEFORE the factory call because factories seed
+    // their AudioParams straight from `node.params`.
+    //
+    // A SHALLOW VIEW, not a mutation: the live node is a syncedStore proxy and
+    // correcting it in place would be an untagged Y.Doc write from the engine.
+    // `restedParams` returns the original object by identity when nothing is
+    // stuck, so the ordinary spawn allocates nothing and passes `node` through
+    // untouched.
+    const restParams = restedParams(def as MomentaryDefLike, node.params);
+    const spawnNode = restParams === node.params ? node : { ...node, params: restParams };
+    const handle = await (def.factory as AudioModuleFactory)(this.ctx, spawnNode as ModuleNode);
     // Re-check after the await: another reconcile may have raced and added it.
     if (this.nodes.has(node.id)) {
       handle.dispose();
@@ -292,9 +311,12 @@ export class AudioEngine implements DomainEngine {
     this.nodeTypes.set(node.id, String(node.type));
     // Seed the knob cache with the patch-graph values + the def's defaults
     // for any unseeded params. addEdge will read these to bake the LUT.
+    // Reads the RESTED params for the same reason the factory did: a cached
+    // knob value of 1 on a press-pad would be baked into any CV LUT built for
+    // it, re-introducing the stuck level one layer down.
     const moduleDef = def as AudioModuleDef;
     for (const paramDef of moduleDef.params) {
-      const v = (node.params ?? {})[paramDef.id] ?? paramDef.defaultValue;
+      const v = (restParams ?? {})[paramDef.id] ?? paramDef.defaultValue;
       this.knobValues.set(this.knobKey(node.id, paramDef.id), v);
     }
   }

@@ -16,10 +16,23 @@
   // is half the point of a linear-FM index), and their `cv` jacks have always
   // driven the full ±1. The card re-typed `min={0}`, so the knob could only
   // reach the positive half while the DEF-DRIVEN dock face reached both — one
-  // param, two ranges, depending on which surface you were looking at. Bound to
-  // the def so the two cannot disagree again.
-  const pFm = paramSpec(analogVcoDef, 'fmAmount');
-  const pPm = paramSpec(analogVcoDef, 'pmAmount');
+  // param, two ranges, depending on which surface you were looking at.
+  //
+  // Binding only THOSE TWO left the other four re-typed, agreeing with the def
+  // by coincidence — which is the same latent defect, one edit away, and is what
+  // `dead-control-fixes.test.ts` reddens on. So EVERY fader spreads its range
+  // from the def and the card states no bound of its own.
+  //
+  // Deliberately narrow: `min` / `max` / `defaultValue` only. `label`, `units`
+  // and `curve` stay authored in the markup because the card's display strings
+  // differ from the def's canonical `units` on purpose (`st` vs `semi`, `¢` vs
+  // `cent`) — spreading those would be a RENDER change smuggled into a
+  // single-source-of-truth refactor. Verified value-identical to the six
+  // ParamDefs at the time of the change, so nothing about this card moves.
+  const spec = (pid: string) => {
+    const p = paramSpec(analogVcoDef, pid);
+    return { min: p.min, max: p.max, defaultValue: p.defaultValue };
+  };
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -115,12 +128,12 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="fader-row">
-      <Fader value={tune}     min={-36} max={36}     defaultValue={0}   label="Tune" units="st" curve="linear" onchange={setParam('tune')} moduleId={id} paramId="tune"     readLive={readLive('tune')} />
-      <Fader value={fine}     min={-100} max={100}   defaultValue={0}   label="Fine" units="¢"  curve="linear" onchange={setParam('fine')} moduleId={id} paramId="fine"     readLive={readLive('fine')} />
-      <Fader value={fmAmount} min={pFm.min} max={pFm.max} defaultValue={pFm.defaultValue} label="FM"              curve="linear" onchange={setParam('fmAmount')} moduleId={id} paramId="fmAmount" readLive={readLive('fmAmount')} />
-      <Fader value={pmAmount} min={pPm.min} max={pPm.max} defaultValue={pPm.defaultValue} label="PM"              curve="linear" onchange={setParam('pmAmount')} moduleId={id} paramId="pmAmount" readLive={readLive('pmAmount')} />
-      <Fader value={pw}       min={0.05} max={0.95}  defaultValue={0.5} label="PW"              curve="linear" onchange={setParam('pw')} moduleId={id} paramId="pw"       readLive={readLive('pw')} />
-      <Fader value={shape}    min={0}   max={1}      defaultValue={0}   label="Wave"            curve="linear" onchange={setParam('shape')} moduleId={id} paramId="shape"    readLive={readLive('shape')} />
+      <Fader value={tune}     {...spec('tune')}     label="Tune" units="st" curve="linear" onchange={setParam('tune')} moduleId={id} paramId="tune"     readLive={readLive('tune')} />
+      <Fader value={fine}     {...spec('fine')}     label="Fine" units="¢"  curve="linear" onchange={setParam('fine')} moduleId={id} paramId="fine"     readLive={readLive('fine')} />
+      <Fader value={fmAmount} {...spec('fmAmount')} label="FM"              curve="linear" onchange={setParam('fmAmount')} moduleId={id} paramId="fmAmount" readLive={readLive('fmAmount')} />
+      <Fader value={pmAmount} {...spec('pmAmount')} label="PM"              curve="linear" onchange={setParam('pmAmount')} moduleId={id} paramId="pmAmount" readLive={readLive('pmAmount')} />
+      <Fader value={pw}       {...spec('pw')}       label="PW"              curve="linear" onchange={setParam('pw')} moduleId={id} paramId="pw"       readLive={readLive('pw')} />
+      <Fader value={shape}    {...spec('shape')}    label="Wave"            curve="linear" onchange={setParam('shape')} moduleId={id} paramId="shape"    readLive={readLive('shape')} />
     </div>
   </PatchPanel>
 </div>
