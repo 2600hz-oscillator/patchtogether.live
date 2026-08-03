@@ -5,7 +5,7 @@
 // generally for grid and how we assign things in electracontrol, do not
 // conflict."
 //
-// Four independent collision surfaces, each gated separately because each has a
+// FIVE independent collision surfaces, each gated separately because each has a
 // different failure mode:
 //
 //   1. CC ↔ CC, WITHIN the Push, in BOTH modes. A full 0..127 sweep of the
@@ -19,8 +19,10 @@
 //      Asserted to be a cross-DEVICE overlap, and asserted NON-EMPTY so the
 //      exemption cannot go vacuous.
 //   4. WHO OWNS THE INPUT STREAM. The real one. `MIDIInput.onmidimessage` is a
-//      SINGLE-SLOT property, and four subsystems assign it — three of them over
-//      EVERY input, not just their own device's. See ATTACH_LEDGER.
+//      SINGLE-SLOT property, and eight subsystems assign it — three claim EVERY
+//      input and FOUR null every input. See ATTACH_LEDGER.
+//   5. A DUPLICATED CC LITERAL IN AN E2E SPEC. Added after one shipped: a spec
+//      that re-types a CC keeps testing the OLD binding after a rename, silently.
 //
 // ── WHAT THIS FILE STRUCTURALLY CANNOT SEE ────────────────────────────────
 //
@@ -35,6 +37,9 @@
 //     handler and over what scope; it does not execute a browser MIDI stack.
 
 import { describe, it, expect } from 'vitest';
+import { readdirSync, readFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   classifyPush2,
   encoderTarget,
@@ -581,6 +586,92 @@ describe('4 — MIDIInput.onmidimessage has ONE slot and eight claimants', () =>
       'midi/midi-clock-source.ts',
       'midi/midi-learn.svelte.ts',
     ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 5 — A DUPLICATED CC LITERAL IS A GATE THAT CANNOT SEE A RENAME.
+// ---------------------------------------------------------------------------
+//
+// Found the hard way on 2026-08-03. `push2-clip-launch.spec.ts` hardcoded seven
+// Push CC literals, including `const CC_SHIFT = 49`. When SHIFT moved to CC 27,
+// the spec kept pressing 49 — so the ×8 D-Pad gesture silently degraded to ×1
+// and the spec went on asserting a contract that no longer existed. No unit test
+// could catch it: the unit tests read the CONSTANT while the spec read a COPY.
+//
+// Same class as `RANGE_BOUND_CARDS` (a card re-typing a range its def declares)
+// and `RAW_PARAM_WRITE` (a filter that redefined its own subject). A second
+// source of truth for a binding does not fail on a rename — it quietly starts
+// testing something else.
+//
+// SCOPE, stated inside the gate so an unstated scope cannot read as full
+// coverage: this checks `e2e/tests/push2-*.spec.ts` ONLY. It deliberately does
+// NOT flag the LAUNCHPAD specs, which legitimately declare `CC_SHIFT = 98` and
+// `SCENE_CCS = [89, 79, …, 49, …]` — those are the LAUNCHPAD's own CC
+// vocabulary, a different device, and 49 there is a scene button, not this
+// button. Conflating the two is the exact confusion this file exists to prevent.
+
+const E2E_TESTS_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '../../../../../../e2e/tests');
+
+/** Every Push CC value the shipping map exports — the numbers a spec must not
+ *  re-type. Derived from the ledger, which is itself derived from the map. */
+const PUSH_CC_VALUES = new Set(Object.keys(CC_LEDGER).map(Number));
+
+describe('5 — no Push e2e spec re-types a CC the map already owns', () => {
+  const specs = readdirSync(E2E_TESTS_DIR)
+    .filter((f) => /^push2-.*\.spec\.ts$/.test(f))
+    .map((f) => ({ file: f, src: readFileSync(join(E2E_TESTS_DIR, f), 'utf8') }));
+
+  it('NEGATIVE CONTROL: the gate actually found Push specs to check', () => {
+    // Without this, a rename of the spec file would silently empty the sweep
+    // and every assertion below would pass against nothing.
+    expect(specs.length, `no push2-*.spec.ts under ${E2E_TESTS_DIR}`).toBeGreaterThan(0);
+    expect(specs.map((s) => s.file)).toContain('push2-clip-launch.spec.ts');
+  });
+
+  it('every Push spec IMPORTS its CC numbers from push2-map', () => {
+    for (const { file, src } of specs) {
+      expect(src, `${file} must import the Push CC constants, not re-type them`).toMatch(
+        /from '.*control\/push2\/push2-map'/,
+      );
+    }
+  });
+
+  it('DENY BY DEFAULT — no `const CC_… = <a Push CC>` literal in a Push spec', () => {
+    const offenders: string[] = [];
+    for (const { file, src } of specs) {
+      const decl = /const\s+(\w+)\s*=\s*(\d+)\s*;/g;
+      for (let m = decl.exec(src); m; m = decl.exec(src)) {
+        const [, name, valueStr] = m;
+        const value = Number(valueStr);
+        if (!/cc/i.test(name)) continue; // only CC-shaped constants
+        if (!PUSH_CC_VALUES.has(value)) continue; // not a number the map owns
+        offenders.push(
+          `${file}: \`const ${name} = ${value}\` duplicates a Push CC the map owns — import it instead`,
+        );
+      }
+    }
+    expect(offenders, offenders.join('\n')).toEqual([]);
+  });
+
+  it('NEGATIVE CONTROL for the detector — it catches the exact shape that broke', () => {
+    // The instrument, perturbed: feed it the literal that actually shipped and
+    // confirm it fires, and a non-Push number and confirm it does not. Without
+    // this, "no offenders" could equally mean "the regex matches nothing".
+    const probe = (src: string) => {
+      const out: string[] = [];
+      const decl = /const\s+(\w+)\s*=\s*(\d+)\s*;/g;
+      for (let m = decl.exec(src); m; m = decl.exec(src)) {
+        if (!/cc/i.test(m[1])) continue;
+        if (!PUSH_CC_VALUES.has(Number(m[2]))) continue;
+        out.push(m[1]);
+      }
+      return out;
+    };
+    expect(probe('const CC_SHIFT = 49;'), 'the literal that shipped').toEqual(['CC_SHIFT']);
+    expect(probe('const CC_SHIFT = 27;'), 'the corrected literal is ALSO a duplicate').toEqual(['CC_SHIFT']);
+    expect(probe('const CC_SHIFT = 98;'), 'a LAUNCHPAD CC is not a Push CC').toEqual([]);
+    expect(probe('const TIMEOUT = 49;'), 'a non-CC constant is not a binding').toEqual([]);
   });
 });
 
