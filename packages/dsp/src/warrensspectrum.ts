@@ -72,6 +72,14 @@ class WarrensSpectrumProcessor extends AudioWorkletProcessor {
       { name: 'spectralSlice', defaultValue: 10, minValue: 2, maxValue: 200, automationRate: 'k-rate' as const },
       { name: 'spectralCenter', defaultValue: 0, minValue: -3600, maxValue: 3600, automationRate: 'k-rate' as const },
       { name: 'engineFreeze', defaultValue: 0, minValue: 0, maxValue: 1, automationRate: 'k-rate' as const },
+      // ENGINE MODE (phase 4). 0 = SPECTRAL, 1 = MASSPASS. Indices append in
+      // IMPLEMENTATION order, deliberately NOT the VST's (where MASSPASS is
+      // 2) — see WS_ENGINE_MASSPASS for why a reachable-but-unimplemented
+      // index 1 was rejected.
+      { name: 'engineMode', defaultValue: 0, minValue: 0, maxValue: 1, automationRate: 'k-rate' as const },
+      // MASSPASS BAND COUNT, as an INDEX into WS_MASSPASS_BAND_COUNTS
+      // (0→16, 1→24, 2→33, 3→48, 4→66, 5→99). Ignored in SPECTRAL.
+      { name: 'spectralBandCount', defaultValue: 1, minValue: 0, maxValue: 5, automationRate: 'k-rate' as const },
       // FILTERBANK WET. ⚠ DEFAULT 0 — a deliberate divergence from the VST's
       // 1.0, so phase 2 cannot re-voice a rack saved under phase 1. The
       // reason lives on the engine field; the gate that holds it is
@@ -115,9 +123,19 @@ class WarrensSpectrumProcessor extends AudioWorkletProcessor {
     const gateIn = inputs[2]?.[0] ?? null;
 
     const e = this.engine;
+    // Once per quantum, BEFORE the sample loop: re-runs MASSPASS's
+    // loudest-band selection, mirroring the C++'s once-per-block selection
+    // (`MassPass.cpp:236-247`). No-op cost in SPECTRAL.
+    e.beginBlock();
     // k-rate: one pull per render quantum. The analyser commits at most once
     // every 96 samples (SLICE's 2 ms floor), so a per-quantum parameter pull
     // cannot skip a commit's worth of change.
+    //
+    // ⚠ BAND COUNT before ENGINE MODE and PARTIALS before both: the band
+    // count re-clamps the active-band limit, so the bank must be sized
+    // before PARTIALS is re-applied to it.
+    e.setBandCountIndex(parameters.spectralBandCount![0]!);
+    e.setEngineMode(parameters.engineMode![0]!);
     e.setPartials(parameters.spectralPartials![0]!);
     e.setFloorDb(parameters.spectralFloor![0]!);
     e.setStabilityFrames(parameters.spectralStab![0]!);

@@ -3622,9 +3622,11 @@ warrensspectrum in shape_cv cv param=spectralShape cvScale=linear
 warrensspectrum in slice_cv cv param=spectralSlice cvScale=linear
 warrensspectrum out out audio
 warrensspectrum param engineFreeze 0..1 discrete default=0
+warrensspectrum param engineMode 0..1 discrete default=0
 warrensspectrum param gain -60..12 linear default=0 unit=dB
 warrensspectrum param inputMix 0..1 linear default=0
 warrensspectrum param resynthLevel 0..1 linear default=0
+warrensspectrum param spectralBandCount 0..5 discrete default=1
 warrensspectrum param spectralCenter -3600..3600 linear default=0 unit=cents
 warrensspectrum param spectralFloor -90..-20 linear default=-42 unit=dB
 warrensspectrum param spectralLock 0..1 linear default=0.75
