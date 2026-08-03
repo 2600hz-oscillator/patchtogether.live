@@ -31,6 +31,7 @@
 // the strips cannot drift apart at the right-hand edge.
 
 import type { PushCardView, PushStripView } from './push-card-model';
+import type { PushLegendRow, PushLegendView } from './push-legend-model';
 
 // ── The panel ──────────────────────────────────────────────────────────────
 
@@ -146,6 +147,48 @@ export function truncateToWidth(text: string, px: number, maxW: number): string 
   if (text.length <= budget) return text;
   if (budget === 1) return '…';
   return text.slice(0, budget - 1) + '…';
+}
+
+/**
+ * Break `text` into at most `maxLines` lines that each fit `maxW` at `px`,
+ * splitting on SPACES only (a legend label is words, never a hyphenated run).
+ * The last line is truncated with '…' if the words ran out of room, so a long
+ * label degrades instead of vanishing.
+ *
+ * Same pure character budget as `truncateToWidth` — no font metrics, so the
+ * result is identical on every platform and asserted without a canvas. A word
+ * that is itself wider than the line is hard-cut rather than dropped.
+ */
+export function wrapToWidth(
+  text: string,
+  px: number,
+  maxW: number,
+  maxLines: number,
+): string[] {
+  const budget = Math.floor(maxW / (px * GLYPH_ADVANCE));
+  if (budget <= 0 || maxLines <= 0) return [];
+  const words = text.split(' ').filter((w) => w.length > 0);
+  if (words.length === 0) return [];
+  const lines: string[] = [];
+  let cur = '';
+  for (let i = 0; i < words.length; i++) {
+    const next = cur ? `${cur} ${words[i]}` : words[i];
+    if (next.length <= budget) {
+      cur = next;
+      continue;
+    }
+    if (cur) lines.push(cur);
+    if (lines.length === maxLines) {
+      // Out of lines with words still to place — re-fold the remainder onto the
+      // last line so truncation SAYS there was more, rather than dropping it.
+      const rest = [lines[maxLines - 1], ...words.slice(i)].join(' ');
+      lines[maxLines - 1] = truncateToWidth(rest, px, maxW);
+      return lines;
+    }
+    cur = truncateToWidth(words[i], px, maxW); // a single over-long word is hard-cut
+  }
+  if (cur) lines.push(cur);
+  return lines.slice(0, maxLines);
 }
 
 function text(
@@ -323,6 +366,126 @@ export function renderPushCard(view: PushCardView): PushDrawOp[] {
     const strip = view.strips[i];
     if (strip) ops.push(...renderStrip(strip, i));
   }
+  return ops;
+}
+
+// ── LEGEND MODE ────────────────────────────────────────────────────────────
+//
+// The held-button overlay: a banner plus TWO rows of 8 cells, one cell per
+// physical button. Same op vocabulary, same signature function, same 960-wide
+// exact-integer geometry as the card — so the display pump, the dirty check and
+// the DOM preview all work on it unchanged.
+//
+// The BOTTOM row sits directly above the 8 function buttons under the screen, so
+// cell i is physically over button i: the spatial mapping IS the documentation.
+// The TOP row documents the 8 scene buttons beside the grid, left→right =
+// top→bottom (the codebase's own scene-index order).
+
+/** Banner height — view name + SHIFT indicator. */
+export const LEGEND_BANNER_H = 18;
+/** 1px rule under the banner. */
+export const LEGEND_BANNER_RULE_Y = LEGEND_BANNER_H; // 18
+/** First row's top edge. */
+export const LEGEND_ROW_A_Y = LEGEND_BANNER_RULE_Y + 1; // 19
+/** Each row's height — (160 − 19 − 1) / 2 = 70, exact, so the rows can't drift. */
+export const LEGEND_ROW_H = (PUSH_SCREEN_H - LEGEND_ROW_A_Y - 1) / 2; // 70
+/** 1px rule between the rows. */
+export const LEGEND_ROW_RULE_Y = LEGEND_ROW_A_Y + LEGEND_ROW_H; // 89
+/** Second row's top edge. */
+export const LEGEND_ROW_B_Y = LEGEND_ROW_RULE_Y + 1; // 90
+/** Horizontal padding inside a cell. */
+export const LEGEND_CELL_PAD_X = 6;
+/** Usable label width in a cell: 120 − 12 = 108. */
+export const LEGEND_CELL_W = STRIP_W - LEGEND_CELL_PAD_X * 2; // 108
+/** Label size. 15 px over a 108 px cell is ~12 characters per line — every
+ *  shipped legend fits one or two lines, verified by the layout spec. */
+export const LEGEND_LABEL_PX = 15;
+export const LEGEND_LABEL_LINE_H = 18;
+export const LEGEND_MAX_LINES = 2;
+/** Position tag ('S1' / '1') size — small, so it reads as a marker not a word. */
+export const LEGEND_TAG_PX = 9;
+
+export const COL_LEGEND_BG = '#000000';
+export const COL_LEGEND_LABEL = '#FFFFFF';
+export const COL_LEGEND_TAG = '#6A6A6A';
+export const COL_LEGEND_CAPTION = '#9AA0A6';
+/** SHIFT layer accent — the banner pill + the tags, so the layer you are on is
+ *  readable from across a room without reading a word of it. */
+export const COL_LEGEND_SHIFT = '#F2B441';
+/** An UNBOUND cell's placeholder: dim, and drawn as a dash rather than left
+ *  blank, so "this button does nothing here" is an ANSWER and not a gap. */
+export const COL_LEGEND_UNBOUND = '#3A3A3A';
+export const LEGEND_UNBOUND_MARK = '—';
+
+/** Y centre of line `n` of a `lines`-line label block inside a row. */
+export function legendLabelY(rowY: number, lines: number, n: number): number {
+  const blockH = lines * LEGEND_LABEL_LINE_H;
+  const top = rowY + (LEGEND_ROW_H - blockH) / 2 + 4; // +4 clears the tag band
+  return top + n * LEGEND_LABEL_LINE_H + LEGEND_LABEL_LINE_H / 2;
+}
+
+/** Every op for one legend row of 8 cells. */
+export function renderLegendRow(row: PushLegendRow, rowY: number, shift: boolean): PushDrawOp[] {
+  const ops: PushDrawOp[] = [];
+  for (let i = 1; i < STRIP_COUNT; i++) {
+    ops.push(rect(stripX(i), rowY, 1, LEGEND_ROW_H, COL_DIVIDER));
+  }
+  for (const c of row.cells) {
+    const cx = stripCenterX(c.index);
+    ops.push(
+      text(cx, rowY + 9, c.tag, shift ? COL_LEGEND_SHIFT : COL_LEGEND_TAG, LEGEND_TAG_PX, 'center', LEGEND_CELL_W),
+    );
+    if (!c.bound) {
+      ops.push(
+        text(cx, rowY + LEGEND_ROW_H / 2 + 4, LEGEND_UNBOUND_MARK, COL_LEGEND_UNBOUND, LEGEND_LABEL_PX, 'center', LEGEND_CELL_W),
+      );
+      continue;
+    }
+    const lines = wrapToWidth(c.label, LEGEND_LABEL_PX, LEGEND_CELL_W, LEGEND_MAX_LINES);
+    for (let n = 0; n < lines.length; n++) {
+      ops.push(
+        text(
+          cx,
+          legendLabelY(rowY, lines.length, n),
+          lines[n],
+          COL_LEGEND_LABEL,
+          LEGEND_LABEL_PX,
+          'center',
+          LEGEND_CELL_W,
+          'bold',
+        ),
+      );
+    }
+  }
+  return ops;
+}
+
+/**
+ * Every op needed to paint LEGEND MODE. The SCENE row is drawn on TOP and the
+ * FUNCTION row on the BOTTOM — the bottom row must sit directly above the
+ * physical buttons it names, which is the whole spatial argument for the layout.
+ */
+export function renderPushLegend(v: PushLegendView): PushDrawOp[] {
+  const ops: PushDrawOp[] = [rect(0, 0, PUSH_SCREEN_W, PUSH_SCREEN_H, COL_LEGEND_BG)];
+  const mid = LEGEND_BANNER_H / 2;
+  ops.push(text(8, mid, 'LEGEND', COL_LEGEND_LABEL, 11, 'left', 70, 'bold'));
+  ops.push(text(64, mid, v.context, COL_LEGEND_CAPTION, 11, 'left', 120, 'bold'));
+  ops.push(text(196, mid, v.scene.caption, COL_LEGEND_CAPTION, 10, 'left', 300));
+  // The note and the function caption share one band — a note only appears in
+  // the exceptional "nothing is bound" state, and it is the more useful of the
+  // two there, so it REPLACES the caption rather than overlapping it.
+  ops.push(
+    v.note
+      ? text(520, mid, v.note, COL_LEGEND_UNBOUND, 9, 'left', 320)
+      : text(520, mid, v.function.caption, COL_LEGEND_CAPTION, 10, 'left', 320),
+  );
+  if (v.shift) {
+    ops.push(text(PUSH_SCREEN_W - 8, mid, 'SHIFT', COL_LEGEND_SHIFT, 11, 'right', 80, 'bold'));
+  }
+  ops.push(rect(0, LEGEND_BANNER_RULE_Y, PUSH_SCREEN_W, 1, COL_RULE));
+  ops.push(...renderLegendRow(v.scene, LEGEND_ROW_A_Y, v.shift));
+  ops.push(rect(0, LEGEND_ROW_RULE_Y, PUSH_SCREEN_W, 1, COL_RULE));
+  ops.push(...renderLegendRow(v.function, LEGEND_ROW_B_Y, v.shift));
   return ops;
 }
 

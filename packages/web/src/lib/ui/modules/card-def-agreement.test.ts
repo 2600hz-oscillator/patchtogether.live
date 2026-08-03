@@ -163,10 +163,28 @@ describe('card ↔ def AGREEMENT (deny-by-default across every registered card)'
     // is the point. A control addressed POSITIONALLY (`def.params[3]`) carries
     // no `paramId` for this scan to key on, so it is not "clean", it is
     // UNMEASURED — the same distinction the `if (!p.edge) continue` hole turned
-    // on. 87 such controls exist today (qbrt, reverb and filter are the cards
+    // on. 88 such controls exist today (qbrt, reverb and filter are the cards
     // the face-redo ledger names; there are more). The count only shrinks, so a
     // new positional control cannot quietly widen the blind spot.
-    const UNCHECKABLE_CEILING = 87;
+    //
+    // 87 → 88 (2026-08-02): NOT a new blind spot, a MERGE-ORDER correction. This
+    // ceiling was calibrated on this gate's own merge base (ef946a3c), where the
+    // count measures exactly 87. `b4a7cb95` (warrens-spectrum phase 2, #1308)
+    // landed BETWEEN that base and this gate reaching main, adding
+    // `WarrensspectrumCard.svelte:182` — so both PRs were green on their own
+    // bases and `main` went red on the merge. A COUNT ratchet has no textual
+    // conflict, so the post-merge conflict sweep is structurally unable to see
+    // this; measuring the base is the only way to tell "stale ceiling" from
+    // "real regression", and it was measured (87 at ef946a3c, 88 from b4a7cb95
+    // onward, byte-identical to main's own red: defs 194 | cards 193 | 649).
+    //
+    // That entry is genuinely UNCHECKABLE rather than lazily unlabelled: it is
+    // the per-band `<Fader>` whose id is a TEMPLATE (`wsBand${selectedBand}-${f}`,
+    // which `controlTags` only reads as a literal) and whose bands live in node
+    // DATA (`wsBands`), not `params` — so there is no def param to compare it
+    // against, and its min/max already come from ONE place (`bandSpec`), which
+    // is what the divergence class this gate guards actually asks for.
+    const UNCHECKABLE_CEILING = 88;
     expect(
       blind.length,
       `UNCHECKABLE controls grew — a control with range props but no paramId cannot be ` +
