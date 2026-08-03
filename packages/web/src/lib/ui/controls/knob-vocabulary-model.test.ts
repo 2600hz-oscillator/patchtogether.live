@@ -6,7 +6,7 @@
 // roster — because those are the ones a live rack actually produces.
 
 import { describe, expect, it } from 'vitest';
-import { knobMarks, knobReadout, nearestByValue } from './knob-vocabulary-model';
+import { knobMarks, knobReadout, knobValueReadout, nearestByValue } from './knob-vocabulary-model';
 import { knobValueToFrac } from './knob-conic-model';
 
 const MODES = [
@@ -42,6 +42,34 @@ describe('nearestByValue', () => {
 
   it('is undefined for an empty roster', () => {
     expect(nearestByValue(0, [])).toBeUndefined();
+  });
+});
+
+describe('knobValueReadout — the PF-20 DOCK readout (the gate moves, it does not vanish)', () => {
+  it('prints the NUMBER where knobReadout prints nothing — the bare-label fix', () => {
+    // The dock faceplate's largest single drift from its mock: a column of
+    // knobs with labels and no values. `knobReadout` is still null here; the
+    // dock asks this instead.
+    expect(knobReadout(0.42, {})).toBeNull();
+    expect(knobValueReadout(0.42, {})).toBe('0.42');
+    expect(knobValueReadout(50, {}, 'Hz')).toBe('50.0 Hz');
+    expect(knobValueReadout(450, {}, 'ms')).toBe('450 ms');
+  });
+
+  it('still prefers the declared vocabulary — a named state never prints as a number', () => {
+    expect(knobValueReadout(2, { options: MODES }, 'Hz')).toBe('BP');
+    expect(knobValueReadout(0.9, { landmarks: SHAPES })).toBe('SAW');
+    expect(knobValueReadout(0.5, { format: (v) => `${(v * 100).toFixed(0)}%` }, 'Hz')).toBe('50%');
+  });
+
+  it('is the SAME ladder the hero readout uses, so the two cannot disagree', () => {
+    // dock-faceplate-model's readoutText routes through this function; the
+    // assertion pins the shared string rather than two lookalike formatters.
+    expect(knobValueReadout(50, {}, 'Hz')).toBe('50.0 Hz');
+  });
+
+  it('is TOTAL — a non-finite value prints rather than throwing', () => {
+    expect(knobValueReadout(Number.NaN, {})).toBe('NaN');
   });
 });
 

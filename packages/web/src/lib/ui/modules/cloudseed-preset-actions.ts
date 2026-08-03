@@ -31,6 +31,7 @@
 
 import { mutateNode } from '$lib/graph/mutate';
 import type { ModuleNode } from '$lib/graph/types';
+import { recordAudition } from './audition-ledger';
 import {
   CLOUDSEED_CLEAR_TAIL_KEY,
   CLOUDSEED_MACRO_CPP_MAP,
@@ -117,9 +118,24 @@ export interface CloudseedClearEnv {
   node: ModuleNode | undefined;
 }
 
-/** Flush the reverb tank (every delay line / diffuser / shelf / lowpass).
- *  A no-op before the audio engine boots — there is no tail to clear. */
-export function clearCloudseedTail(env: CloudseedClearEnv): void {
-  if (!env.engine || !env.node) return;
+/**
+ * Flush the reverb tank (every delay line / diffuser / shelf / lowpass).
+ * A no-op before the audio engine boots — there is no tail to clear.
+ *
+ * ⚠ RETURNS WHETHER THE MESSAGE WAS ACTUALLY SENT, and records it, for the same
+ * reason `fireManualStrike` does: the shell's `action` cell had no probe at all
+ * and "clicked a live button" was indistinguishable from "clicked a dead one".
+ * The return value is what `ShellActionProbe`'s `engine-message` effect reads
+ * (audition-ledger.ts). A no-engine press is recorded as `delivered: false`,
+ * never dropped.
+ */
+export function clearCloudseedTail(env: CloudseedClearEnv, nodeId?: string): boolean {
+  const id = nodeId ?? env.node?.id ?? '?';
+  if (!env.engine || !env.node) {
+    recordAudition({ nodeId: id, seam: 'engine-message', delivered: false });
+    return false;
+  }
   env.engine.write(env.node, CLOUDSEED_CLEAR_TAIL_KEY, 1);
+  recordAudition({ nodeId: id, seam: 'engine-message', delivered: true });
+  return true;
 }

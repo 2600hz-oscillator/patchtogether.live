@@ -159,7 +159,13 @@ dispatch second:**
 1. Remove the pending `<platform>/<scene>` pairs from `EXEMPT_BASELINE_PAIRS`
    **and** lower the vrt-meta linux-deficit ratchet by the same count
    (`packages/web/src/lib/audio/modules/vrt-meta.test.ts` — the ceiling only
-   shrinks, so it moves in the SAME commit). Push that commit.
+   shrinks, so it moves in the SAME commit) **and** re-run `flox activate --
+   task test:ledger:accept`. That third one is easy to miss and it is a hard
+   red: `docs/testing/test-ledger.generated.md` counts `EXEMPT_BASELINE_PAIRS`
+   (bucket 2, `scripts/test-ledger.mjs`), so ANY edit to an exemption list
+   leaves the generated ledger stale and `scripts/test-ledger.test.ts` fails in
+   the unit lane. It is a GENERATED artifact — re-pin it, never hand-edit it,
+   and land it in the SAME commit as the drain. Push that commit.
 2. *Then* dispatch against the branch that now has the pairs removed:
    `flox activate -- gh workflow run vrt-update.yml -f ref=<branch> -f
    platform=linux` (pick the ONE platform you need — the other runner is
@@ -189,6 +195,20 @@ Three dispatch gotchas, all confirmed on real runs:
   would not have flagged that swap either; a sub-tolerance render change is
   invisible to both the gate and the regen. Treat a "green dispatch that
   committed nothing" as a RED FLAG to investigate, never as "nothing to do".
+- **`git rm`-ing a LINUX baseline is not free — it manufactures an UNDECLARED
+  platform gap.** Ground truth for the deficit ratchet is "a darwin PNG with no
+  linux sibling", so deleting the linux PNG creates exactly that, and a gap no
+  mechanism explains is RED (`vrt-platform-gaps.ts` → `vrt-meta.test.ts`) for
+  the whole window until the bot's capture lands. So the `git rm` route costs a
+  temporary `EXEMPT_BASELINE_PAIRS` entry **plus** its ratchet move **plus** the
+  ledger re-pin — and then the reverse of all three. **MEASURE FIRST, then
+  choose**: run the scene locally and read the printed pixel diff. Over
+  `DOCK_MAX_DIFF` (measured 20516 px on the 2026-08-02 faceplate hero/annotation
+  change, 13.7× the 1500 budget) the comparison FAILS, so `--update-snapshots`
+  rewrites the baseline on its own and you should NOT remove it. Reserve the
+  `git rm` for the genuinely sub-tolerance case that motivated the rule. Either
+  way, **COUNT the files the bot commits against what you expected** — that is
+  the check that catches the miss, not the choice of route.
 
 ### A platform gap is declared FOUR ways — `EXEMPT_BASELINE_PAIRS` is only one
 
@@ -405,6 +425,59 @@ was honestly reported as "ranges constrained ✓" while the UI was still ±1.
   `module-docs-lint.test.ts`, which exists for this same divergence class.
 - The general rule: **a gate that reads only one side of a two-sided contract
   proves nothing about the other side.**
+
+### A GUARD FOR THAT CLASS THAT IS OPT-IN IS ITSELF AN INSTANCE OF IT
+
+**Audited 2026-08-02. Four gates, all green, all structurally unable to see the
+bug class they exist to catch — because each applied a FILTER before the check
+that quietly redefined the check's subject.** Coverage before → after:
+
+| gate | the filter | saw | could not see |
+|---|---|---|---|
+| `mutate.guard`'s `RAW_PARAM_WRITE` | `\.params\[…\]` — **bracket only** | 3 | **96** dotted writes |
+| `card-range-source`'s `RANGE_BOUND_CARDS` | an **opt-in filename list** | 7 cards | **186** cards |
+| `module-docs-lint`'s edge check | `if (!p.edge) continue` | 63 ports | **299** gate ports |
+| `faces-parity`'s `action` branch | *no probe at all* | 0 | **every** dead audition |
+
+The self-tests were blind the same way (the raw-write self-test only ever fed
+itself the bracket form), so nothing could have gone red. **Ask of any new gate:
+what is it structurally unable to see — and would its green run look any
+different if the answer were "everything"?**
+
+The three inversions, applied to all four (details + measured numbers in the
+`blind-gates` skill):
+
+1. **Deny by default with a NAMED exemption per instance** — the exact
+   `(file, key)` / `(module, port)` / `(card, param, field)` triple, never a
+   filename, so a new defect in an already-listed file still reddens.
+2. **Anchor to the ARTIFACT, not the list** — a ledger entry naming something
+   that no longer exists is RED. A stale exemption is one nobody is watching.
+3. **Ratchet in BOTH directions** — `actual <= CEILING` *and*
+   `CEILING - actual === 0`.
+
+Plus: **state the gate's scope inside the gate**, asserting what it still cannot
+see at zero or under its own ratchet.
+
+⚠ **Before "fixing" a declaration to satisfy a gate, check the consumer reads
+it.** Four cards pass `curve="linear"` where the def says `discrete`; writing
+`curve="discrete"` would green the gate and change nothing, because all four are
+`<Knob>` and `Knob.svelte` has no `discrete` branch (`Fader.svelte` and
+`knob-conic-model.ts` both do). That is a green gate certifying a live bug.
+
+### An ACTION-shaped cell needs a probe, exactly like a PANEL does
+
+`ShellActionCell.probe` is **required**. An audition writes nothing to the graph
+by design, so `readParam`/`readData` are structurally blind to it — the
+observable is the **audition ledger** (`$lib/ui/modules/audition-ledger`), which
+records per press whether the seam resolved a callable off the live engine handle
+and called it. `delivered: false` is recorded, never dropped: "pressed and
+reached nothing" must be distinguishable from "never pressed".
+
+The predicate is negative-controlled in **both** directions in the unit lane on
+every run (`audition-ledger.test.ts`), which is the permanent leg; the e2e side
+was verified once by disconnecting karplus's `manualTrigger` read key and
+watching `faces-parity` go red at the probe — with `toBeEnabled()` and `click()`
+both still passing, which is the finding in one line.
 
 **The sibling hole, same card, same day.** `card-control-overflow` only ever
 spawned the module in its DEFAULT state, so controls revealed by a mode switch

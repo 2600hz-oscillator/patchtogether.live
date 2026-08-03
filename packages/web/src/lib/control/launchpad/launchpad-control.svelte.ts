@@ -125,6 +125,7 @@ import {
   computeSingleKeysFrame,
   computeSingleControlFrame,
   computeSingleArrangerFrame,
+  SHIFT_JUMP,
 } from './launchpad-map';
 import { keyboardCellToMidi } from '$lib/audio/modules/keyboard-map';
 import { recordNoteAt, extendRecordedNote } from '$lib/audio/modules/clip-record';
@@ -331,7 +332,9 @@ export const STORAGE_KEY_VIEW = 'pt.launchpad.activeView';
 
 // Blink toggles every BLINK_TICKS scheduler ticks (~25ms each) → ~2 Hz.
 const BLINK_TICKS = 10;
-const SHIFT_JUMP = 8; // SHIFT magnifies a nav step by a full screen (8 pads).
+// SHIFT_JUMP (a full screen = 8 pads) now lives in launchpad-map beside the
+// CLIP right-column table, whose SHIFT legends print the magnitude — one
+// constant, so the screen cannot advertise a jump size this file does not use.
 
 let boundNodeId: string | null = null;
 let unsubKey: (() => void) | null = null;
@@ -354,7 +357,7 @@ let selectedClipIndex = 0;
 
 // Mode state (R unit's view; L is always the matrix — EXCEPT 'keys', which takes
 // BOTH units for the note/keyboard + clip-record view, owner-locked Q4).
-type LaunchpadMode = 'session' | 'edit' | 'lengthEdit' | 'keys';
+export type LaunchpadMode = 'session' | 'edit' | 'lengthEdit' | 'keys';
 let mode: LaunchpadMode = 'session';
 let editClipIndex = 0;
 // Held modifiers on R's deck.
@@ -563,6 +566,48 @@ export function launchpadDeployment(): 'pair' | 'single' {
  *  in pair mode (returns whatever the single machine last held). */
 export function launchpadActiveView(): SingleView {
   return singleView;
+}
+
+/**
+ * The routing state a LEGEND overlay needs to name the buttons of the CURRENT
+ * view — the Push 2's LEGEND MODE (`push2/push-legend-model.ts`) is the only
+ * consumer today.
+ *
+ * It is a PRODUCTION accessor, not a test seam (`__test_mode` exists for that
+ * and returns 40 fields): the legend must read the LIVE routing state, and a
+ * screen that quietly read a stale or test-only copy would be exactly the drift
+ * this feature exists to make impossible. Everything here is state the key
+ * router itself branches on, so a legend built from it is a legend of what the
+ * next press will actually do.
+ */
+export interface LaunchpadLegendContext {
+  deployment: 'pair' | 'single';
+  /** The active single-unit view. Meaningless in pair mode. */
+  view: SingleView;
+  /** The mode machine — 'keys' and 'lengthEdit' TAKE OVER the scene column. */
+  mode: LaunchpadMode;
+  /** SHIFT held (single mode's momentary CC-98 hold). */
+  shift: boolean;
+  /** The GRID button held — opens the repeat-count layer, which the legend does
+   *  NOT model (see the scope note in push-legend-model.ts). */
+  gridHeld: boolean;
+  /** The Grid view's scene-window scroll offset — what makes 'SCENE 12' say 12. */
+  sceneScrollOffset: number;
+  /** Is a clip-player bound at all? Nothing routes anywhere when it is not. */
+  bound: boolean;
+}
+
+/** Snapshot the live routing state a legend overlay reads. PURE read. */
+export function launchpadLegendContext(): LaunchpadLegendContext {
+  return {
+    deployment,
+    view: singleView,
+    mode,
+    shift: shiftHeldSingle,
+    gridHeld: gridHeldSingle,
+    sceneScrollOffset,
+    bound: boundNodeId !== null && livePatch.nodes[boundNodeId] !== undefined,
+  };
 }
 /** Migrate a persisted STORAGE_KEY_VIEW value → a valid SingleView. Legacy 'clip'
  *  (the old always-live matrix) → 'grid'; legacy 'control' → 'control'. */

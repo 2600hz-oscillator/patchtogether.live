@@ -478,6 +478,14 @@ export interface ModuleFacePage {
   id: string;
   /** Human tab label (e.g. 'GLOBAL', 'OP 1'). */
   label: string;
+  /**
+   * PF-20 — the band header's DESCRIPTION line ("depth sine · mono"). A band
+   * label names the group; the hint says what the group IS, which is the
+   * difference between a faceplate and a wall of knobs. DOCK-ONLY (a 192px
+   * lane tile has no room), and never rendered on a TABBED face — there the
+   * rail already names the band and the hint would print twice.
+   */
+  hint?: string;
   /** Control keys on this page, in display order — a subset of `order`. Keys
    *  use the same unified control-key space as `order` (see ModuleFace). */
   controls: readonly string[];
@@ -615,7 +623,171 @@ export interface ModuleFace {
    *  exactly like the rest of `face`: OUT of contract-signature/contract-lock,
    *  linted by module-face-lint.test.ts. */
   rear?: ModuleFaceRear;
+
+  // ── PF-20 — THE FACEPLATE PLATFORM (dock-only structure) ─────────────────
+  //
+  // Everything below exists because the shell was STRUCTURALLY INCAPABLE of
+  // rendering a designed instrument panel: it painted bands of bare knobs and
+  // a spine, where the mocks are a titled page with a hero, described sections
+  // and a context sidebar. That was reported six times as per-card drift; it
+  // was never per-card. These four fields are the declaration surface that
+  // closes it, and they are GENERIC by construction — no field names a module.
+  //
+  // ALL FOUR ARE DOCK-ONLY. Ranks 1-6 are the LANE budget (faceTierCap); the
+  // dock shows everything, so the title, the hint, the hero and the sidebar
+  // never reach a 192×180 tile. Like the rest of `face` they are UI metadata:
+  // OUT of contract-signature.ts / contract-lock.txt (declaring a sidebar is
+  // not an I/O change), linted by module-face-lint.test.ts.
+
+  /** The faceplate's PAGE TITLE — the mock's "Voice". A short category word,
+   *  above the hint. Omitted = no title row. */
+  title?: string;
+  /** The one-line description under the title ("three decoupled generators
+   *  through one serial bus"). Omitted = no hint row. */
+  hint?: string;
+  /** The HERO SLOT — the module PICTURE, a promoted control, its audition and
+   *  a few live readouts, above the bands. */
+  hero?: ModuleFaceHero;
+  /** The dock SIDEBAR — typed context blocks down the faceplate's right edge.
+   *  DOCK-ONLY and rendered OUTSIDE the ModuleShell (DockFullView owns the
+   *  `.page.has-sidebar` grid), so a sidebar block can never be mistaken for a
+   *  control cell by the parity gates. */
+  sidebar?: readonly FaceSidebarBlock[];
 }
+
+/**
+ * A labelled VALUE for the hero slot or a `readouts` sidebar block. EXACTLY
+ * ONE of three sources; declaring none, or more than one, is an authoring error
+ * the face lint fails and the render skips.
+ *
+ *   `paramId` — the param's live value through the same `ParamDef.format` /
+ *               `units` ladder the dial under it prints.
+ *   `valueId` — a DERIVED number: a pure function of the module's live params,
+ *               registered in face-readout-values.ts.
+ *   `text`    — a fixed string the def wants to state.
+ *
+ * ⚠ `valueId` EXISTS BECAUSE `paramId` IS NOT ALWAYS THE ANSWER, and mistaking
+ * one for the other is the blind-metric trap in miniature. Kick drum's hero
+ * wants to print how long the voice RINGS. The first draft declared
+ * `{ label: 'tail', paramId: 'sub_decay' }` — which prints 450 ms, moves when
+ * you turn SUB DEC, and reads entirely correct — while being INVARIANT to SUB
+ * LEVEL, which genuinely changes the answer (the real −60 dB tail at those
+ * defaults is 398 ms, because it is a sum of three layers at their own mix
+ * levels). A readout is not a knob relabelled; when the quantity is derived,
+ * DERIVE it, and negative-control the derivation on the input the knob
+ * readback would be blind to.
+ */
+export interface FaceReadout {
+  /** Caption ("PEAK", "TAIL"). */
+  label: string;
+  /** Print this param's live value. Must be a declared param on the def. */
+  paramId?: string;
+  /** …or print a DERIVED value: an id registered in face-readout-values.ts.
+   *  The def declares a STRING, never a function, so `face` stays serialisable
+   *  data (the sidebar-panels precedent). An unregistered id fails the lint. */
+  valueId?: string;
+  /** …or print this literal ("≈ 480 ms"). */
+  text?: string;
+}
+
+/**
+ * The HERO SLOT — the top of the faceplate: the module's biggest control, its
+ * audition, its own picture and a few live readouts.
+ *
+ * ⚠ A face that promotes a PICTURE (`cell`) suppresses the shell glyph at the
+ * dock — the glyph is a live trace of the OUTPUT and the picture is a picture
+ * of the PATCH, so painting both put an empty black rectangle beside the graph
+ * on a silent rack. The glyph is untouched at every other tier.
+ *
+ * ⚠ `control` / `action` PROMOTE a key out of its band — they do NOT duplicate
+ * it. A duplicated key would emit a second `data-testid="control-<paramId>"`
+ * and fail faces-parity's exact param multiset (`duplicate/unknown = an
+ * unbacked extra`), so `heroFacePlan` REMOVES the promoted keys from the bands
+ * and the totality of that move is what dock-faceplate-model.test.ts pins.
+ */
+export interface ModuleFaceHero {
+  /**
+   * A `face.order` key promoted into the hero slot as the module's own PICTURE
+   * — a PF-14 `panel` cell (an envelope graph, a scale ring, a routing map).
+   *
+   * ⚠ THE PICTURE IS THE ONE HALF OF A FACEPLATE THAT CANNOT BE PLATFORM. A
+   * title, a hint, a sidebar, a preset roster and a readout are the same shape
+   * on every instrument, so they are DATA declared here. What a kick drum's
+   * envelope looks like is not — no amount of def introspection synthesises it.
+   * Promoting the module's panel into the hero is how the platform makes room
+   * for that without any module needing to touch the shell. A face that
+   * declares no `cell` keeps the plain `glyph` band it has today.
+   */
+  cell?: string;
+  /** A `face.order` key promoted into the hero slot as the BIG control. */
+  control?: string;
+  /** A second `face.order` key beside it — typically the audition button. */
+  action?: string;
+  /** Labelled live values printed beside the hero picture, at hero size. */
+  readouts?: readonly FaceReadout[];
+}
+
+/** One stage of a `signal-flow` sidebar block. `role` carries the ONE
+ *  distinction a signal chain needs to be readable — a GENERATOR makes sound,
+ *  a BUS stage processes what reaches it — and the block prints a legend for
+ *  it, so the diagram explains its own colours. */
+export interface FaceFlowStage {
+  label: string;
+  role?: 'generator' | 'bus';
+  /**
+   * TRUE for a stage that is NOT INLINE: it taps the bus earlier and rejoins
+   * it further down. Drawn as a dashed branch off the spine rather than a link
+   * in the chain.
+   *
+   * ⚠ This is a correctness field, not decoration. Kick drum's TRANSLATE
+   * exciter taps a copy of the RAW sub from before the drive; drawn inline
+   * between EQ and DYNAMICS it would teach a producer that turning it up
+   * excites the driven, EQ'd signal — the opposite of why it survives a phone
+   * speaker. A diagram that teaches the wrong chain is worse than no diagram.
+   */
+  parallel?: boolean;
+  /** Optional sub-caption ("hard", "50 Hz"). */
+  note?: string;
+}
+
+/**
+ * One entry of a `presets` sidebar block. `values` is a param-id → value map
+ * applied through the ORDINARY param write path when the entry is selected —
+ * so a preset is a real action with real undo/sync, never a decorative list.
+ * Every key must be a declared param whose value is in range (face lint).
+ */
+export interface FacePreset {
+  id: string;
+  label: string;
+  /** Optional right-aligned annotation ("50 Hz", "hard"). */
+  note?: string;
+  values: Readonly<Record<string, number>>;
+}
+
+/**
+ * A typed SIDEBAR block. The kinds are deliberately few and generic: three
+ * that cover what a faceplate's context column actually says (the chain, the
+ * presets, the numbers) plus `custom` for the genuinely bespoke picture, which
+ * resolves through a REGISTRY (sidebar-panels.ts) exactly like PF-14's panel
+ * cells — the def declares an id, never a component, so `face` stays data.
+ */
+export type FaceSidebarBlock =
+  | { kind: 'signal-flow'; label: string; stages: readonly FaceFlowStage[] }
+  | { kind: 'presets'; label: string; entries: readonly FacePreset[] }
+  | { kind: 'readouts'; label: string; entries: readonly FaceReadout[] }
+  | {
+      kind: 'custom';
+      label: string;
+      /** A key registered in sidebar-panels.ts. The def declares a STRING, not
+       *  a component, so `face` stays serialisable data and the shell never
+       *  imports a module. An unregistered id fails module-face-lint. */
+      panelId: string;
+      /** Declared inputs for the panel (a split frequency, a param id to
+       *  read). Keeping them here rather than inside the component is what
+       *  makes a `custom` panel REUSABLE — the picture is generic, the numbers
+       *  are the module's. Values must be primitives so `face` stays data. */
+      props?: Readonly<Record<string, string | number>>;
+    };
 
 /** Rear-card curation block (see ModuleFace.rear). */
 export interface ModuleFaceRear {

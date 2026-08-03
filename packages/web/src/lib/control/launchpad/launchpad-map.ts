@@ -1243,30 +1243,56 @@ export type TopRowAction =
   | 'redo'
   | 'shift';
 
-/** Classify a permanent top-row CC (91..98) → its nav action, or null. This row
- *  NEVER changes meaning per view: CC91 transport · 92 Grid · 93 Clip · 94
- *  Arranger · 95 Control · 96 undo · 97 redo · 98 shift. PURE. */
+/**
+ * ONE permanent top-row button: the CC that ROUTES it, the action it dispatches,
+ * and the LEGEND that names it on a screen. One entry, two consumers.
+ *
+ * The legend is deliberately CO-LOCATED with the action rather than kept in a
+ * parallel list, for the same reason a module's `docs` sit on its def: a second
+ * list is a second thing to forget. `topRowAction` (dispatch) and the Push 2
+ * LEGEND overlay (`push2/push-legend-model.ts`) read the SAME row, and
+ * `push-legend-model.test.ts` fails if a row ever dispatches without a legend or
+ * carries a legend that no longer dispatches.
+ *
+ * There is no `shiftLegend` field on purpose: the SHIFT layer of this row is the
+ * per-lane automation arm, whose lane comes from `armTopLane(cc)` — so the
+ * legend for it is DERIVED from that classifier and cannot drift from it.
+ */
+export interface TopRowBinding {
+  /** The permanent top-row CC (91..98). */
+  cc: number;
+  /** What pressing it does (identical in every view). */
+  action: TopRowAction;
+  /** Screen legend, ≤ ~10 chars so it fits a 120 px display slice. */
+  legend: string;
+}
+
+/** The permanent top row, LEFT→RIGHT (column 0..7 = CC 91..98). This row NEVER
+ *  changes meaning per view: transport · Grid · Clip · Arranger · Control · undo ·
+ *  redo · shift. Order IS the physical order — index 0 is the leftmost button. */
+export const TOP_ROW_BINDINGS: readonly TopRowBinding[] = [
+  { cc: CC_UP, action: 'transport', legend: 'PLAY/STOP' }, // 91
+  { cc: CC_DOWN, action: 'grid', legend: 'GRID' }, // 92
+  { cc: CC_LEFT, action: 'clip', legend: 'CLIP' }, // 93
+  { cc: CC_RIGHT, action: 'arranger', legend: 'ARRANGER' }, // 94
+  { cc: CC_SESSION, action: 'control', legend: 'CONTROL' }, // 95
+  { cc: CC_TOP_SPARE_6, action: 'undo', legend: 'UNDO' }, // 96
+  { cc: CC_TOP_SPARE_7, action: 'redo', legend: 'REDO' }, // 97
+  { cc: CC_TOP_SPARE_8, action: 'shift', legend: 'SHIFT' }, // 98
+];
+
+/** cc → binding, built once (the row is fixed at 8 entries). */
+const TOP_ROW_BY_CC = new Map<number, TopRowBinding>(TOP_ROW_BINDINGS.map((b) => [b.cc, b]));
+
+/** The permanent top-row binding for a CC (91..98), or null. PURE. */
+export function topRowBinding(cc: number): TopRowBinding | null {
+  return TOP_ROW_BY_CC.get(cc) ?? null;
+}
+
+/** Classify a permanent top-row CC (91..98) → its nav action, or null. Reads the
+ *  SAME `TOP_ROW_BINDINGS` table the on-screen legend reads. PURE. */
 export function topRowAction(cc: number): TopRowAction | null {
-  switch (cc) {
-    case CC_UP:
-      return 'transport'; // 91
-    case CC_DOWN:
-      return 'grid'; // 92
-    case CC_LEFT:
-      return 'clip'; // 93
-    case CC_RIGHT:
-      return 'arranger'; // 94
-    case CC_SESSION:
-      return 'control'; // 95
-    case CC_TOP_SPARE_6:
-      return 'undo'; // 96
-    case CC_TOP_SPARE_7:
-      return 'redo'; // 97
-    case CC_TOP_SPARE_8:
-      return 'shift'; // 98
-    default:
-      return null;
-  }
+  return TOP_ROW_BY_CC.get(cc)?.action ?? null;
 }
 
 /** Scene INDEX (0 = top … 7 = bottom) for a right-column CC, or null. Inverse of
@@ -1506,6 +1532,34 @@ function paintProbBar(frame: LaunchpadFrame, prob: number, rgb: Rgb = RGB_PROB):
 }
 
 // ── Right-column classifiers (per view). All take a SCENE INDEX (0 = top). ──
+
+/**
+ * SHIFT magnifies a nav step by a full screen (8 pads / 8 scale degrees). Lives
+ * HERE, beside the classifiers, because the CLIP-view legends print the number
+ * (`PITCH +8`) — deriving the printed magnitude from the same constant the
+ * handler adds means the screen cannot claim a jump size the dispatch does not
+ * use. `launchpad-control` imports it rather than re-declaring 8.
+ */
+export const SHIFT_JUMP = LP_WIDTH; // 8
+
+/**
+ * ONE right-column (scene) button of ONE view: the action it dispatches plus the
+ * LEGEND that names it on a screen, and — where the view's handler reads SHIFT —
+ * the legend of its SHIFT layer.
+ *
+ * `shiftLegend: null` means "SHIFT does not change this button" (the base legend
+ * is shown on both layers). An EMPTY STRING would mean something different and
+ * wrong: "this button does nothing under shift". The distinction is asserted in
+ * `push2/push-legend-model.test.ts`.
+ */
+export interface SceneBinding<T extends string> {
+  action: T;
+  /** Screen legend, ≤ ~11 chars so it fits a 120 px display slice. */
+  legend: string;
+  /** Legend under SHIFT, or null when SHIFT does not alter this button. */
+  shiftLegend: string | null;
+}
+
 export type GridShiftAction =
   | 'copy'
   | 'paste'
@@ -1520,21 +1574,25 @@ export type GridShiftAction =
  *  armedRightAction. */
 export type GridArmAction = 'copy' | 'paste' | 'clipDiv' | 'len';
 
-const GRID_SHIFT_ACTIONS: readonly GridShiftAction[] = [
-  'copy', // 0 (top)
-  'paste', // 1
-  'clipDiv', // 2
-  'swingUp', // 3
-  'swingDown', // 4
-  'len', // 5
-  'scrollUp', // 6 — was PASTE-REV; repurposed to the amber scene-window UP button
-  'scrollDown', // 7 (bottom) — was NOW; repurposed to the amber scene-window DOWN button
+/** The GRID view's SHIFT right column, top→bottom. This table IS the shift
+ *  layer, so no entry carries a `shiftLegend` (there is no shift-of-shift). */
+export const GRID_SHIFT_BINDINGS: readonly SceneBinding<GridShiftAction>[] = [
+  { action: 'copy', legend: 'COPY', shiftLegend: null }, // 0 (top)
+  { action: 'paste', legend: 'PASTE', shiftLegend: null }, // 1
+  { action: 'clipDiv', legend: 'CLIP DIV', shiftLegend: null }, // 2
+  { action: 'swingUp', legend: 'SWING +', shiftLegend: null }, // 3
+  { action: 'swingDown', legend: 'SWING −', shiftLegend: null }, // 4
+  { action: 'len', legend: 'LENGTH', shiftLegend: null }, // 5
+  // 6/7 were PASTE-REV / NOW; repurposed to the amber scene-window scroll pair.
+  { action: 'scrollUp', legend: 'SCENES ▲', shiftLegend: null }, // 6
+  { action: 'scrollDown', legend: 'SCENES ▼', shiftLegend: null }, // 7 (bottom)
 ];
 /** Grid + shift right column (scene 0..7 top→bottom): Copy · Paste · ClipDiv ·
- *  Swing+ · Swing− · Len · PasteRev · Now. Null out of range. PURE. */
+ *  Swing+ · Swing− · Len · Scenes▲ · Scenes▼. Null out of range. Reads the SAME
+ *  table the on-screen legend reads. PURE. */
 export function gridShiftRight(sceneIndex: number): GridShiftAction | null {
-  return sceneIndex >= 0 && sceneIndex < GRID_SHIFT_ACTIONS.length
-    ? GRID_SHIFT_ACTIONS[sceneIndex]
+  return sceneIndex >= 0 && sceneIndex < GRID_SHIFT_BINDINGS.length
+    ? GRID_SHIFT_BINDINGS[sceneIndex].action
     : null;
 }
 
@@ -1547,21 +1605,32 @@ export type ClipRightAction =
   | 'rowDown'
   | 'stepLeft'
   | 'stepRight';
-const CLIP_RIGHT_ACTIONS: readonly ClipRightAction[] = [
-  'double', // 0 (top)
-  'lengthEdit', // 1
-  'follow', // 2
-  'keys', // 3
-  'rowUp', // 4
-  'rowDown', // 5
-  'stepLeft', // 6
-  'stepRight', // 7 (bottom)
+/**
+ * The CLIP view's right column, top→bottom.
+ *
+ * FOUR of these rows read SHIFT in `handleClipRight` (the nav pair and the step
+ * pair magnify by `SHIFT_JUMP`), and the FOLLOW row is the odd one out: with no
+ * shift it is the momentary VEL modifier, with shift it is the FOLLOW toggle.
+ * Those are the rows whose `shiftLegend` is non-null; the rest declare `null`
+ * ("shift does not change this button"), which is what the base legend showing
+ * on both layers means.
+ */
+export const CLIP_RIGHT_BINDINGS: readonly SceneBinding<ClipRightAction>[] = [
+  { action: 'double', legend: 'DOUBLE', shiftLegend: null }, // 0 (top)
+  { action: 'lengthEdit', legend: 'LENGTH', shiftLegend: null }, // 1
+  { action: 'follow', legend: 'VEL HOLD', shiftLegend: 'FOLLOW' }, // 2
+  { action: 'keys', legend: 'KEYS', shiftLegend: null }, // 3
+  { action: 'rowUp', legend: 'PITCH +1', shiftLegend: `PITCH +${SHIFT_JUMP}` }, // 4
+  { action: 'rowDown', legend: 'PITCH −1', shiftLegend: `PITCH −${SHIFT_JUMP}` }, // 5
+  { action: 'stepLeft', legend: 'STEP ◀', shiftLegend: `STEP ◀${SHIFT_JUMP}` }, // 6
+  { action: 'stepRight', legend: 'STEP ▶', shiftLegend: `STEP ▶${SHIFT_JUMP}` }, // 7 (bottom)
 ];
 /** Clip view right column (scene 0..7): Double · LengthEdit · Follow · Keys ·
- *  RowUp · RowDown · Step◀ · Step▶. Null out of range. PURE. */
+ *  RowUp · RowDown · Step◀ · Step▶. Null out of range. Reads the SAME table the
+ *  on-screen legend reads. PURE. */
 export function clipRight(sceneIndex: number): ClipRightAction | null {
-  return sceneIndex >= 0 && sceneIndex < CLIP_RIGHT_ACTIONS.length
-    ? CLIP_RIGHT_ACTIONS[sceneIndex]
+  return sceneIndex >= 0 && sceneIndex < CLIP_RIGHT_BINDINGS.length
+    ? CLIP_RIGHT_BINDINGS[sceneIndex].action
     : null;
 }
 
@@ -1587,21 +1656,24 @@ export type KeysArpAction =
   | 'arpRangeUp'
   | 'arpRangeDown'
   | 'arpLatch';
-const KEYS_ARP_ACTIONS: readonly KeysArpAction[] = [
-  'arpDivUp', // 0 (top)
-  'arpDivDown', // 1
-  'arpUp', // 2
-  'arpDown', // 3
-  'arpUpDown', // 4
-  'arpRangeUp', // 5
-  'arpRangeDown', // 6
-  'arpLatch', // 7 (bottom)
+/** The KEYS view's SHIFT right column (the arp control column), top→bottom.
+ *  This table IS the shift layer, so no entry carries a `shiftLegend`. */
+export const KEYS_ARP_BINDINGS: readonly SceneBinding<KeysArpAction>[] = [
+  { action: 'arpDivUp', legend: 'ARP DIV +', shiftLegend: null }, // 0 (top)
+  { action: 'arpDivDown', legend: 'ARP DIV −', shiftLegend: null }, // 1
+  { action: 'arpUp', legend: 'ARP UP', shiftLegend: null }, // 2
+  { action: 'arpDown', legend: 'ARP DOWN', shiftLegend: null }, // 3
+  { action: 'arpUpDown', legend: 'ARP UP-DN', shiftLegend: null }, // 4
+  { action: 'arpRangeUp', legend: 'RANGE +', shiftLegend: null }, // 5
+  { action: 'arpRangeDown', legend: 'RANGE −', shiftLegend: null }, // 6
+  { action: 'arpLatch', legend: 'ARP LATCH', shiftLegend: null }, // 7 (bottom)
 ];
 /** Keys view (+ shift) right column (scene 0..7): ArpDiv+ · ArpDiv− · ArpUp ·
- *  ArpDown · ArpUpDown · ArpRange+ · ArpRange− · ArpLatch. Null out of range. PURE. */
+ *  ArpDown · ArpUpDown · ArpRange+ · ArpRange− · ArpLatch. Null out of range.
+ *  Reads the SAME table the on-screen legend reads. PURE. */
 export function keysArpShiftRight(sceneIndex: number): KeysArpAction | null {
-  return sceneIndex >= 0 && sceneIndex < KEYS_ARP_ACTIONS.length
-    ? KEYS_ARP_ACTIONS[sceneIndex]
+  return sceneIndex >= 0 && sceneIndex < KEYS_ARP_BINDINGS.length
+    ? KEYS_ARP_BINDINGS[sceneIndex].action
     : null;
 }
 

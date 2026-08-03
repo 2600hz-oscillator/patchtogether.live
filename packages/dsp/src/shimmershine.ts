@@ -28,9 +28,25 @@
 //
 // Feedback runaway prevention:
 //   Tank decay × shimmer × pitch-shifter can pile up. We:
+//     - block DC in the feedback path (see below — this is the one that
+//       decides whether the module makes SOUND)
 //     - clamp shimmer effective amount at 0.55 in the feedback path
 //     - hard-tanh saturate at the feedback summer
-//   Internal tank comb feedback also self-caps at 0.92.
+//   Internal tank comb feedback self-caps at 0.88 (fb = 0.70 + 0.18*size).
+//
+// WHY THE DC BLOCKER IS LOAD-BEARING, not hygiene:
+//   Every stage in the regeneration loop passes DC at unity or better. The
+//   comb's steady-state DC gain is 1/(1-fb) ≈ 4.67 at the defaults; the
+//   damping one-pole is (1-damp)/(1-damp) = 1 at DC for any damp < 1, so DAMP
+//   cannot touch it; the Schroeder allpass passes DC at unity; and the
+//   shifter's two Hann head gains sum to exactly 1, so it does too. The
+//   round-trip DC gain was therefore shimmer x 0.55 / (1 - fb), crossing 1 at
+//   shimmer = (1 - fb)/0.55 ~ 0.388 — BELOW THE SHIPPED DEFAULT OF 0.4.
+//   Measured on the verbatim math: at shimmer 1 the "crystalline drone" was
+//   0 Hz at -0.2 dB with every other bin at -311 dB, i.e. 100 % DC and a
+//   +0.98 rail. The tanh bounded the LEVEL, which is why it never blew up and
+//   never sounded like anything either. One 20 Hz one-pole in the loop takes
+//   the DC round-trip gain to zero and leaves the audio band untouched.
 
 declare const sampleRate: number;
 declare class AudioWorkletProcessor {
@@ -66,6 +82,26 @@ class CombLP {
     this.fbStore = this.fbStore * damp + y * (1 - damp);
     this.buf[this.idx] = x + this.fbStore * fb;
     this.idx = (this.idx + 1) % this.buf.length;
+    return y;
+  }
+}
+
+/** One-pole DC blocker, `y = x - x1 + R*y1`, matching lib/dsp-utils'
+ *  `dcBlockStep` law (inlined so this worklet keeps its zero-import shape and
+ *  the web mirror can hold the same six lines). 20 Hz — below anything the
+ *  shimmer is meant to regenerate. */
+const DC_BLOCK_HZ = 20;
+class DcBlock {
+  private x1 = 0;
+  private y1 = 0;
+  private readonly r: number;
+  constructor(sr: number) {
+    this.r = Math.exp((-2 * Math.PI * DC_BLOCK_HZ) / sr);
+  }
+  tick(x: number): number {
+    const y = x - this.x1 + this.r * this.y1;
+    this.x1 = x;
+    this.y1 = y;
     return y;
   }
 }
@@ -206,6 +242,11 @@ class ShimmershineProcessor extends AudioWorkletProcessor {
   private tankR: SchroederTank;
   private shifterL: GranularPitchShifter;
   private shifterR: GranularPitchShifter;
+  // DC blockers IN the regeneration loop — see the header. Without these the
+  // loop's DC gain exceeds 1 at the shipped default and the tail charges to a
+  // rail instead of shimmering.
+  private dcL: DcBlock;
+  private dcR: DcBlock;
   // Last wet samples — feed back into the input of the next tick after
   // pitch-shift + gain scaling.
   private fbL = 0;
@@ -224,6 +265,8 @@ class ShimmershineProcessor extends AudioWorkletProcessor {
     // intact, long enough that the wrap discontinuity sits below audibility.
     this.shifterL = new GranularPitchShifter(sampleRate, 2.0, 25);
     this.shifterR = new GranularPitchShifter(sampleRate, 2.0, 25);
+    this.dcL = new DcBlock(sampleRate);
+    this.dcR = new DcBlock(sampleRate);
   }
 
   process(
@@ -259,14 +302,23 @@ class ShimmershineProcessor extends AudioWorkletProcessor {
 
       // Through the tank, then tanh-limit so even with damp=0 + size=1 +
       // ongoing input the recirculating energy can't blow past ±1.
-      const wetL = Math.tanh(this.tankL.tick(tankInL, effSize, damp));
-      const wetR = Math.tanh(this.tankR.tick(tankInR, effSize, damp));
+      // DC-block the TANK OUTPUT, which is both the wet send AND the loop's
+      // source — so one filter per channel takes the regeneration loop's DC
+      // gain to zero *and* guarantees the module never emits a DC offset.
+      // (Placing it here rather than inside the feedback branch also catches
+      // the DC that asymmetric tanh clipping generates at the extreme corner:
+      // measured 17.5 % DC on the output at size=decay=shimmer=1, damp=0 with
+      // the blocker in the branch, 0.0 % here.)
+      const wetL = this.dcL.tick(Math.tanh(this.tankL.tick(tankInL, effSize, damp)));
+      const wetR = this.dcR.tick(Math.tanh(this.tankR.tick(tankInR, effSize, damp)));
 
       // Pitch shift the wet output for next-cycle feedback.
       const shiftedL = this.shifterL.tick(wetL);
       const shiftedR = this.shifterR.tick(wetR);
-      // tanh soft-limit again on the feedback — guarantees |fb| < 1 even
-      // at decay=shimmer=1.
+      // tanh soft-limit on the feedback — guarantees |fb| < 1 even at
+      // decay=shimmer=1. DC is already gone: `wet` was DC-blocked above and
+      // the shifter's two Hann head gains sum to 1, so it neither adds nor
+      // removes any.
       this.fbL = Math.tanh(shiftedL * fbGain);
       this.fbR = Math.tanh(shiftedR * fbGain);
 

@@ -40,10 +40,22 @@ import {
   COL_CELL_OFF,
   COL_DIVIDER,
   EMPTY_MESSAGES,
+  renderPushLegend,
+  wrapToWidth,
+  legendLabelY,
+  LEGEND_BANNER_H,
+  LEGEND_ROW_H,
+  LEGEND_ROW_B_Y,
+  LEGEND_LABEL_LINE_H,
+  LEGEND_UNBOUND_MARK,
+  COL_LEGEND_SHIFT,
+  COL_LEGEND_UNBOUND,
   type PushDrawOp,
   type PushRectOp,
   type PushTextOp,
 } from './push-screen-layout';
+import { pushLegendView } from './push-legend-model';
+import type { LaunchpadLegendContext } from '$lib/control/launchpad/launchpad-control.svelte';
 
 // ── fixtures ───────────────────────────────────────────────────────────────
 
@@ -313,5 +325,154 @@ describe('pushCardSignature — the repaint dirty check', () => {
     expect(pushCardSignature(renderPushCard(view({ title: 'other' })))).not.toBe(base);
     expect(pushCardSignature(renderPushCard(view({ lane: 4 })))).not.toBe(base);
     expect(pushCardSignature(renderPushCard(view({ index: 3 })))).not.toBe(base);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// LEGEND MODE — the held overlay. Same op vocabulary, so the same "assert the
+// geometry, not the pixels" discipline applies. The load-bearing claim here is
+// SPATIAL: the bottom row of cells must sit over the physical buttons under the
+// display, and every cell must line up with exactly one 120 px slice.
+// ---------------------------------------------------------------------------
+
+function lctx(over: Partial<LaunchpadLegendContext> = {}): LaunchpadLegendContext {
+  return {
+    deployment: 'single',
+    view: 'clip',
+    mode: 'session',
+    shift: false,
+    gridHeld: false,
+    sceneScrollOffset: 0,
+    bound: true,
+    ...over,
+  };
+}
+
+describe('renderPushLegend — geometry', () => {
+  it('fills the panel and splits it into a banner + two equal rows', () => {
+    const ops = renderPushLegend(pushLegendView(lctx()));
+    expect(ops[0]).toMatchObject({ op: 'rect', x: 0, y: 0, w: PUSH_SCREEN_W, h: PUSH_SCREEN_H });
+    // The two rows are the SAME height and, with the banner + 2 rules, account
+    // for every one of the 160 lines — no drift at the bottom edge.
+    expect(LEGEND_ROW_H).toBe(70);
+    expect(LEGEND_BANNER_H + 1 + LEGEND_ROW_H + 1 + LEGEND_ROW_H).toBe(PUSH_SCREEN_H);
+    expect(LEGEND_ROW_B_Y + LEGEND_ROW_H).toBe(PUSH_SCREEN_H);
+  });
+
+  it('the BOTTOM row is the FUNCTION row — it must sit over the buttons it names', () => {
+    // This is the whole spatial argument: cell i of the bottom row is directly
+    // above physical function button i. Swap the rows and the legend becomes
+    // actively misleading, so it is asserted rather than assumed.
+    const v = pushLegendView(lctx({ view: 'clip' }));
+    const ops = renderPushLegend(v);
+    const inRowB = texts(ops).filter((t) => t.y >= LEGEND_ROW_B_Y);
+    for (const label of v.function.cells.map((c) => c.label)) {
+      if (!label) continue;
+      expect(inRowB.some((t) => t.text === label), `${label} not in the bottom row`).toBe(true);
+    }
+    // …and a SCENE-row label is not down there.
+    expect(inRowB.some((t) => t.text === 'PITCH +1')).toBe(false);
+  });
+
+  it('every cell is centred on its own 120 px slice', () => {
+    const ops = renderPushLegend(pushLegendView(lctx({ view: 'control' })));
+    for (let i = 0; i < STRIP_COUNT; i++) {
+      const cx = stripCenterX(i);
+      expect(texts(ops).some((t) => t.x === cx && t.text === `STOP L${8 - i}`)).toBe(true);
+    }
+    expect(stripX(STRIP_COUNT - 1) + STRIP_W).toBe(PUSH_SCREEN_W); // 8 × 120 = 960 exactly
+  });
+
+  it('an UNBOUND cell draws a DASH — "does nothing here" is an answer, not a gap', () => {
+    const ops = renderPushLegend(pushLegendView(lctx({ view: 'arranger' })));
+    const dashes = texts(ops).filter((t) => t.text === LEGEND_UNBOUND_MARK);
+    expect(dashes).toHaveLength(8); // the arranger's 8 inert scene buttons
+    expect(dashes.every((d) => d.fill === COL_LEGEND_UNBOUND)).toBe(true);
+  });
+
+  it('the SHIFT layer is visibly different — chrome AND content', () => {
+    const base = renderPushLegend(pushLegendView(lctx({ view: 'clip' })));
+    const shifted = renderPushLegend(pushLegendView(lctx({ view: 'clip', shift: true })));
+    expect(texts(base).some((t) => t.text === 'SHIFT' && t.fill === COL_LEGEND_SHIFT)).toBe(false);
+    expect(texts(shifted).some((t) => t.text === 'SHIFT' && t.fill === COL_LEGEND_SHIFT)).toBe(true);
+    expect(texts(shifted).some((t) => t.text === 'PITCH +8')).toBe(true);
+    expect(texts(base).some((t) => t.text === 'PITCH +8')).toBe(false);
+  });
+
+  it('every shipped legend fits its cell without ellipsis', () => {
+    // LEGIBILITY asserted rather than eyeballed: a label that had to be cut
+    // would print '…' and stop being documentation.
+    for (const c of [
+      lctx({ view: 'grid' }),
+      lctx({ view: 'grid', shift: true }),
+      lctx({ view: 'clip' }),
+      lctx({ view: 'clip', shift: true }),
+      lctx({ view: 'control' }),
+      lctx({ mode: 'keys' }),
+      lctx({ mode: 'keys', shift: true }),
+      lctx({ shift: true }),
+    ]) {
+      for (const t of texts(renderPushLegend(pushLegendView(c)))) {
+        expect(t.text.includes('…'), `"${t.text}" was truncated`).toBe(false);
+      }
+    }
+  });
+
+  it('the "nothing bound" note REPLACES the function caption — no overlap', () => {
+    const bound = texts(renderPushLegend(pushLegendView(lctx({ bound: true }))));
+    const unbound = texts(renderPushLegend(pushLegendView(lctx({ bound: false }))));
+    const captionAt = (ts: typeof bound) => ts.filter((t) => t.y < LEGEND_BANNER_H && t.x === 520);
+    expect(captionAt(bound)).toHaveLength(1);
+    expect(captionAt(bound)[0].text).toMatch(/FUNCTION ROW/);
+    // Exactly ONE run in that slot either way — two would be drawn on top of
+    // each other and read as a smear on a 160 px panel.
+    expect(captionAt(unbound)).toHaveLength(1);
+    expect(captionAt(unbound)[0].text).toMatch(/no clip player bound/);
+  });
+
+  it('a two-line label stacks by the line height and stays inside its row', () => {
+    const y0 = legendLabelY(LEGEND_ROW_B_Y, 2, 0);
+    const y1 = legendLabelY(LEGEND_ROW_B_Y, 2, 1);
+    expect(y1 - y0).toBe(LEGEND_LABEL_LINE_H);
+    expect(y0).toBeGreaterThan(LEGEND_ROW_B_Y);
+    expect(y1).toBeLessThan(LEGEND_ROW_B_Y + LEGEND_ROW_H);
+  });
+
+  it('the signature CHANGES between card and legend, and between layers', () => {
+    // This is what makes "release restores the previous display" cost exactly
+    // one frame: the dirty check sees a different image, so it repaints once.
+    const card = pushCardSignature(renderPushCard(view()));
+    const legend = pushCardSignature(renderPushLegend(pushLegendView(lctx())));
+    const shifted = pushCardSignature(renderPushLegend(pushLegendView(lctx({ shift: true }))));
+    expect(legend).not.toBe(card);
+    expect(shifted).not.toBe(legend);
+    // …and re-deriving the same state is byte-identical, so a static legend
+    // costs one string compare per tick exactly like the card.
+    expect(pushCardSignature(renderPushLegend(pushLegendView(lctx())))).toBe(legend);
+  });
+});
+
+describe('wrapToWidth', () => {
+  it('keeps a short label on one line', () => {
+    expect(wrapToWidth('COPY', 15, 108, 2)).toEqual(['COPY']);
+  });
+  it('breaks on spaces into at most maxLines', () => {
+    // 60 px at 15 px ⇒ a 6-character budget: 'ARP' fits, 'ARP UP-DN' does not.
+    expect(wrapToWidth('ARP UP-DN', 15, 60, 2)).toEqual(['ARP', 'UP-DN']);
+    expect(wrapToWidth('ARM LANE 1', 15, 80, 2)).toEqual(['ARM LANE', '1']);
+  });
+  it('truncates the last line instead of dropping words', () => {
+    const out = wrapToWidth('one two three four five six', 15, 40, 2);
+    expect(out).toHaveLength(2);
+    expect(out[1].endsWith('…')).toBe(true);
+  });
+  it('hard-cuts a single word wider than the line', () => {
+    const out = wrapToWidth('supercalifragilistic', 15, 40, 2);
+    expect(out).toHaveLength(1);
+    expect(out[0].endsWith('…')).toBe(true);
+  });
+  it('is empty for empty input or a zero-width box', () => {
+    expect(wrapToWidth('', 15, 108, 2)).toEqual([]);
+    expect(wrapToWidth('X', 15, 0, 2)).toEqual([]);
   });
 });

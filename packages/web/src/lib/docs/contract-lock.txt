@@ -1489,6 +1489,7 @@ kickdrum param translate 0..1 linear default=0.3
 kickdrum param tune 20..120 log default=50 unit=Hz
 kickdrum param width 0..1 linear default=0.2
 kickdrum stereo audio_l+audio_r
+kickdrum family kickdrum-hero kind=cell prefix=kickdrum-hero
 kickdrum family kickdrum-strike kind=other prefix=kickdrum-strike
 kria meta domain=audio
 kria in clock gate edge=trigger
