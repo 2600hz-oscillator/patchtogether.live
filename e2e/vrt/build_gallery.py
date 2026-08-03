@@ -138,7 +138,7 @@ MODULE_BLURB: Dict[str, str] = {
     "noise": "Noise source (white/pink/brown).",
     "buggles": "Wogglebug-style chaotic CV.",
     "wavecel": "WAVECEL — stereo wavetable VCO + 3D viz.",
-    "warrenspectrum": "Stereo 8-band filterbank + acidwarp viz.",
+    "warrensspectrum": "Spectral resynth — partial tracker + SMS residual.",
     "stereovca": "Stereo VCA + ring modulator.",
     "kickdrum": "KICKDRUM — synthesized kick voice.",
     "snaredrum": "SNAREDRUM — banded snare voice.",

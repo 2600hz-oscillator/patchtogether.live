@@ -33,7 +33,6 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   audioOut: { size: '1u', hp: 1 }, // 200×180px  [LOCKED]
   bluebox: { size: '2u', hp: 2 }, // 360×280px
   buggles: { size: '1u', hp: 2 }, // 156×280px
-  callsine: { size: '1u', hp: 2 }, // 196×340px
   cartesian: { size: '4u', hp: 2 }, // 563×360px
   charlottesEchos: { size: '1u', hp: 2 }, // 109×320px  [LOCKED]
   clipplayer: { size: '3u', hp: 2 }, // 8×8 launch grid + piano-roll note editor + transport
@@ -141,7 +140,14 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   twotracks: { size: '3u', hp: 4 }, // 406×580px
   unityscalemathematik: { size: '3u', hp: 2 }, // 446×240px
   vca: { size: '1u', hp: 1 }, // 156×160px
-  warrenspectrum: { size: '3u', hp: 3 }, // 481×440px
+  // 2u→3u (phase 2): the module gained a whole SUBSYSTEM. The 2u tier was
+  // measured against "2 fader rows (6 + 5) + PatchPanel"; the filterbank adds
+  // the 8-band strip, the selected band's 5 controls and the BANK WET / INPUT
+  // MIX pair, which put the natural height 168.7 CSS px past a 360 px box
+  // (card-control-overflow, shard 2). hp stays 2 — right overflow was 0.
+  // Its predecessor `warrenspectrum` was 3u/3hp, so this is not a new
+  // footprint for a Warren's Spectrum, it is the one it always had.
+  warrensspectrum: { size: '3u', hp: 2 },
   wavecel: { size: '3u', hp: 2 }, // 398×320px
   wavetableVco: { size: '1u', hp: 2 }, // 152×240px
   writeseq: { size: '2u', hp: 5 }, // 261×880px

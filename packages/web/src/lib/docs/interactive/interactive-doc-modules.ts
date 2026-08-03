@@ -112,14 +112,19 @@ export const INTERACTIVE_DOC_MODULES: ReadonlySet<string> = new Set<string>([
   // pure Fader/Knob + PatchPanel with NO onMount/$effect, no canvas/rAF/WebGL,
   // no Web-MIDI panel, no file input — the macrooscillator profile — so it
   // mounts cleanly in the engine-less doc sandbox. Verified live by
-  // docs-virtual-module.spec.ts (treeohvox / callsine also exercise the CV→param
+  // docs-virtual-module.spec.ts (treeohvox also exercises the CV→param
   // dual context). The STATIC siblings stay off this list: pentemelodica
   // runs per-voice waveform scopes ($effect) — see strict-docs.ts.
   'drummergirl',
   'meowbox',
   'treeohvox',
   'buggles',
-  'callsine',
+  // Batch 14 — WARREN'S SPECTRUM (2026-08-02): the spectral-resynth engine
+  // that replaced callsine + warrenspectrum. Convention card (Faders +
+  // PatchPanel + OssAttribution, no onMount/$effect/canvas/rAF), so it mounts
+  // in the engine-less doc sandbox; verified live by docs-virtual-module.spec.ts
+  // (partials_cv→spectralPartials exercises the CV→param dual context).
+  'warrensspectrum',
   // Batch 10 — sequencers, clocks & pattern generators (2026-06-26): the
   // convention-card members (no `card:` override, so the doc route's defLite
   // resolves `<Type>Card` and the live virtual module mounts). Each card is a
@@ -159,7 +164,7 @@ export const INTERACTIVE_DOC_MODULES: ReadonlySet<string> = new Set<string>([
   // cleanly in the engine-less doc sandbox. cloudseed (Knobs/Faders + ON/OFF
   // pills + preset footer) qualifies; verified live by docs-virtual-module.spec.ts
   // (cloudseed late_cv→late_out exercises the CV→param dual context). The
-  // STATIC siblings stay off this list: foxy/twotracks/synesthesia/warrenspectrum
+  // STATIC siblings stay off this list: foxy/twotracks/synesthesia
   // run a 2D-canvas render in the card, hypercube renders WebGL + has a file
   // picker, and bluebox has no
   // control-<paramId> Knob/Fader to hover (its keys are press-and-hold buttons)

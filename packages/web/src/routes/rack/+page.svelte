@@ -43,10 +43,27 @@
   // E2E REPLICA OPT-OUT (default OFF only under an ACTUAL automated run). The
   // general e2e / per-module-per-port suite tests MODULE CORRECTNESS on `/rack`;
   // that is ORTHOGONAL to persistence, so those runs must stay ISOLATED from the
-  // IndexedDB replica — otherwise the replica's mount-time attach can race a
-  // cross-domain module's audio-graph build (the nibbles video→audio bridge)
-  // and its cross-navigation persistence pollutes specs that re-`goto('/rack')`
-  // expecting an ephemeral canvas.
+  // IndexedDB replica — its cross-navigation persistence pollutes specs that
+  // re-`goto('/rack')` expecting an ephemeral canvas (livecode:258 "recreate
+  // Load example" got duplicate node types from the re-seeded phase-1 patch).
+  // THAT is the reason this opt-out exists, and it still holds.
+  //
+  // ⚠ CORRECTION (2026-08-02). #1131 ALSO claimed the replica's mount-time
+  // attach races a cross-domain module's audio-graph build (nibbles' video→audio
+  // `snake` output emitting 0), and left "engine-level fix (replica-attach vs
+  // bridge-build ordering)" as an open follow-up. That claim does NOT reproduce:
+  // driven with the replica explicitly opted IN, across 5 reload+re-seed rounds,
+  // `nibbles.snake` carried audio every time with `pendingBridges=0`,
+  // `appliedBridges=1` — and so did `videocube.audio_out` and
+  // `mandelbulb.audio_out`. The engine already implements the "robust to an
+  // endpoint arriving mid-build" half: a bridge that cannot wire is PARKED in
+  // `PatchEngine.pendingBridges` and drained by `drainPendingForNode` /
+  // `reapplyAudioBridgesForSource` when the node materializes or a video module
+  // publishes its `audioSources` entry late (engine.ts ~919-1075). Verified
+  // positively on mandelbulb, whose `audio_out` only surfaces once SLICE is on:
+  // with SLICE off the bridge sits parked (pending=1, applied=0) and with SLICE
+  // on it wires and sounds. So do NOT reach for this opt-out to explain a silent
+  // cross-domain output — measure the observation window first.
   //
   // We key the opt-out on `navigator.webdriver` — TRUE only inside a live
   // Playwright/WebDriver session (nothing in e2e/playwright.config.ts disables
