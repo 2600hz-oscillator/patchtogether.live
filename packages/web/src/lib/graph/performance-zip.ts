@@ -108,8 +108,43 @@ function sanitize(name: string): string {
   return (name || 'video').replace(/[^a-zA-Z0-9._-]+/g, '_').slice(0, 80);
 }
 
+/**
+ * ZIP ENTRY MOD-TIME — the one clock read this format used to have, and the
+ * reason "deterministic for a fixed input" was FALSE of the container.
+ *
+ * `zipSync` stamps every entry's DOS mod-time from `Date.now()` when none is
+ * supplied. DOS time has **2-second** granularity, so two builds of byte-
+ * identical input straddling a 2 s boundary differ — in the mod-time low byte,
+ * written TWICE PER ENTRY (once in the local file header, once in the central
+ * directory). Measured directly: a 1-entry zip moves at offsets 10 and 67
+ * (39 → 40 across a 2.5 s gap); this module's 2-entry test bundle moves at
+ * 10, 723, 800 and 862.
+ *
+ * That made `performance-zip.test.ts`'s determinism leg a latent flake — it
+ * passed whenever both `buildPerformanceZip` calls happened to land in the same
+ * 2 s bucket, which is nearly always locally and less often on a loaded runner.
+ * It is also a real defect beyond the test: a `.ptperf` saved twice from
+ * identical state produced different bytes, so nothing downstream could
+ * content-hash, dedupe or diff a bundle.
+ *
+ * Supplying the mtime from the input's own `savedAt` makes the archive a pure
+ * function of its input while keeping a meaningful timestamp (production passes
+ * `Date.now()`). The clamp exists because fflate hard-throws
+ * `date not in range 1980-2099` — and it converts using LOCAL time, so a UTC
+ * 1980-01-01 floor is already out of range west of Greenwich. 1981 gives a full
+ * year of slack in either direction.
+ */
+const DOS_SAFE_MIN_MS = Date.UTC(1981, 0, 1);
+const DOS_SAFE_MAX_MS = Date.UTC(2098, 0, 1);
+function zipEntryMtime(savedAt: number): number {
+  return Number.isFinite(savedAt) && savedAt >= DOS_SAFE_MIN_MS && savedAt <= DOS_SAFE_MAX_MS
+    ? savedAt
+    : DOS_SAFE_MIN_MS;
+}
+
 /** Build the `.zip` bytes for a whole-rack performance bundle. Deterministic
- *  for a fixed input (no clock/random read here — `savedAt` is supplied). */
+ *  for a fixed input — no clock or random read anywhere, INCLUDING the zip
+ *  container's own entry mod-times (see `zipEntryMtime`). */
 export function buildPerformanceZip(input: PerformanceZipBundle): Uint8Array {
   const files: Record<string, Uint8Array> = {};
   const media: MediaEntry[] = input.media.map((m, i) => ({
@@ -139,7 +174,7 @@ export function buildPerformanceZip(input: PerformanceZipBundle): Uint8Array {
   input.media.forEach((m, i) => {
     files[media[i]!.path] = m.bytes;
   });
-  return zipSync(files);
+  return zipSync(files, { mtime: zipEntryMtime(manifest.savedAt) });
 }
 
 /** Parse a performance `.zip` back into a bundle. Throws a user-surfaceable

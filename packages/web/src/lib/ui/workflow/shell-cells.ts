@@ -34,6 +34,7 @@ import type { SelectorOption } from '$lib/ui/controls';
 import { testHooksEnabled } from '$lib/dev/test-hooks';
 import Dx7OperatorMap from '$lib/ui/modules/dx7/Dx7OperatorMap.svelte';
 import Dx7OpDetail from '$lib/ui/modules/dx7/Dx7OpDetail.svelte';
+import KickdrumHeroPanel from '$lib/ui/modules/KickdrumHeroPanel.svelte';
 import type { FaceControl } from './curated-face';
 import {
   DX7_SYX_ACCEPT,
@@ -48,6 +49,10 @@ import {
   sixstrumSelectorOptions,
 } from '$lib/ui/modules/sixstrum-preset-actions';
 import { clearCloudseedTail } from '$lib/ui/modules/cloudseed-preset-actions';
+import {
+  exposeAuditionLedgerForTests,
+  type AuditionSeam,
+} from '$lib/ui/modules/audition-ledger';
 // THE ONE audition seam, in both edge shapes: `fireManualStrike` for a
 // `mode:'trigger'` cell, `setManualGate` for a `mode:'gate'` one. It briefly
 // was two modules — kickdrum/karplus's generic one-shot file and a parallel
@@ -112,12 +117,42 @@ export interface ShellCellEnv {
  * needed the engine handle would otherwise be the one shape that could not
  * have it.
  */
+/**
+ * How faces-parity proves an ACTION cell's press actually DID something.
+ *
+ * ⚠ REQUIRED, and that is the point. Until 2026-08-02 the sweep's `action`
+ * branch asserted `toBeEnabled()`, clicked, and asserted NO EFFECT — the only
+ * cell kind in the whole gate with no probe, on the kind whose entire purpose
+ * is to do something. A dead audition passed the face green. That is the
+ * revision-only-probe pathology this file already outlaws for PANEL cells, one
+ * kind over, in its terminal form.
+ *
+ * An audition writes NOTHING to the graph by design (manual-strike-actions.ts),
+ * so `readParam`/`readData` — the two oracles every other branch uses — are
+ * structurally unable to see it. The observable is the AUDITION LEDGER: the
+ * seam records, per press, whether it resolved a callable off the live engine
+ * handle and called it. See `$lib/ui/modules/audition-ledger` for the full
+ * argument, including why audible RMS is the right bar elsewhere and not here.
+ */
+export interface ShellActionProbe {
+  effect:
+    | {
+        /** The press must reach `seam` and report DELIVERED. */
+        kind: 'audition';
+        seam: AuditionSeam;
+      }
+    | { kind: 'data'; key: string; expect: 'changed' }
+    | { kind: 'data-rev'; key: string };
+}
+
 export interface ShellActionCell {
   kind: 'action';
   label: string;
   title?: string;
   /** Press semantics. Omitted = 'trigger' (the one-shot shape). */
   mode?: 'trigger' | 'gate';
+  /** REQUIRED — how the parity sweep proves the press was not a no-op. */
+  probe: ShellActionProbe;
   /** Required for mode 'trigger'. Fired once on the press edge. `env` carries
    *  the engine handle for actions that are ENGINE gestures rather than graph
    *  edits (a buffer flush, a re-seed) — a nodeId alone can only reach the
@@ -178,17 +213,34 @@ export interface ShellPanelProbe {
   /** The natural interaction for that element. */
   action: 'click' | 'drag';
   /**
-   * The observable effect. `data` names a path into `node.data` that must
-   * CHANGE (`opOn[1]`); `data-rev` names a monotonic revision counter that must
-   * ADVANCE.
+   * The observable effect.
+   *
+   *   `data`     — a path into `node.data` that must CHANGE (`opOn[1]`).
+   *   `data-rev` — a monotonic revision counter that must ADVANCE.
+   *   `text`     — the rendered text of ANOTHER element inside the panel
+   *                (named by its own testid) that must change.
    *
    * ⚠ Prefer `data` where you can. A revision-only probe passes on a DEAD
    * button that bumps the counter without editing anything — the exact
    * green-but-broken class the whole gate exists to catch.
+   *
+   * ⚠ `text` EXISTS FOR THE PANEL AFFORDANCE THAT MUST NOT TOUCH `node.data`.
+   * `node.data` rides the Y.Doc: it is shared with every collaborator and saved
+   * with the patch. That is right for patch DESIGN (the DX7's 78 operator
+   * values) and wrong for a private VIEW setting — one player zooming their own
+   * plot must not re-zoom everyone else's screen and dirty the patch. Such a
+   * panel keeps the setting in component state, and its probe names a
+   * DIFFERENT element whose text the interaction must move: kick drum's window
+   * button drives the plot's AXIS LABELS, which a dead button cannot change,
+   * so the probe is stronger than a revision counter rather than weaker.
+   * Naming the driven element itself would be the weak form — a button that
+   * only relabels itself would pass — so `testid` here must not equal the
+   * probe's `testid`, and shell-cells.test.ts fails it if it does.
    */
   effect:
     | { kind: 'data'; key: string; expect: 'changed' }
-    | { kind: 'data-rev'; key: string };
+    | { kind: 'data-rev'; key: string }
+    | { kind: 'text'; testid: string; expect: 'changed' };
 }
 
 /** A BESPOKE panel: the module's own component, rendered inside a shell cell. */
@@ -286,7 +338,11 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
       kind: 'action',
       label: 'Clear tail',
       title: 'Flush the reverb tank — stops the tail instantly (changes no setting; not undoable)',
-      onFire: (_nodeId, env) => clearCloudseedTail(env),
+      onFire: (nodeId, env) => { clearCloudseedTail(env, nodeId); },
+      // The tank flush is an ENGINE MESSAGE, not a graph edit — there is no
+      // param and no node.data to watch, which is exactly why this cell could
+      // sit behind an assertion-free click for as long as it did.
+      probe: { effect: { kind: 'audition', seam: 'engine-message' } },
     },
   },
   karplus: {
@@ -312,9 +368,52 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
       label: 'pluck',
       title: 'Audition: pluck the string once (identical to a trigger_in rising edge)',
       onFire: (nodeId) => { fireManualStrike(nodeId); },
+      // ⚠ THIS IS THE CELL THE MISSING PROBE COST MOST. karplus's dock PLUCK
+      // animates its press flash off the CLICK, not off `fireManualStrike`'s
+      // return value (the legacy card honours it) — so the button flashed on a
+      // string that was never plucked, and the sweep asserted only that the
+      // button was enabled. `delivered` is precisely the boolean being thrown
+      // away (face-redo ledger defect #22).
+      probe: { effect: { kind: 'audition', seam: 'manual-strike' } },
     },
   },
   kickdrum: {
+    // THE HERO VISUALISATION — the amplitude + pitch-sweep graph and the output
+    // meter beside it, promoted into the faceplate's hero slot (`face.hero
+    // .cell`).
+    //
+    // A panel rather than a glyph because it is not a trace of the output: it
+    // is a picture of the PATCH, computed from the live knob values through the
+    // worklet's own envelope/frequency laws (kickdrum-face-model), so it says
+    // what the voice WILL do before anything has struck it — which is exactly
+    // what a `scope` glyph on a silent rack cannot do, and why that glyph is
+    // suppressed at the dock for a face that brings its own picture.
+    //
+    // ⚠ THIS IS THE ONLY BESPOKE CELL THIS FACE NEEDS. Its sibling draft also
+    // declared a `kickdrum-chain` panel for the right sidebar; the sidebar is
+    // now DECLARED data on the face (`face.sidebar`) and painted by the shared
+    // FaceSidebar, because a context column is something every faceplate wants
+    // and a per-module component for it is how faces drift apart.
+    'kickdrum-hero-{n}': {
+      kind: 'panel',
+      label: 'envelope + sweep',
+      component: KickdrumHeroPanel,
+      minWidth: 380,
+      // The plot WINDOW is the panel's one writable affordance and its probe.
+      //
+      // ⚠ IT IS A `text` PROBE ON A DIFFERENT ELEMENT, deliberately. The window
+      // is a PRIVATE VIEW setting — it lives in component state, not
+      // `node.data`, so zooming your own plot does not re-zoom every
+      // collaborator's screen or dirty the patch. So the probe drives the
+      // button and asserts the AXIS LABELS moved: the axis is computed from the
+      // window through the warp, and a dead button cannot change it. That is a
+      // stronger claim than a revision counter, not a weaker one.
+      probe: {
+        testid: 'kickdrum-graph-window',
+        action: 'click',
+        effect: { kind: 'text', testid: 'kickdrum-graph-axis', expect: 'changed' },
+      },
+    },
     // THE AUDITION. A kick with nothing patched into trigger_in is SILENT, so
     // without this the dock full-view offers 25 controls over a voice you
     // cannot hear — while tomtom, karplus and sixstrum can all be auditioned.
@@ -326,6 +425,7 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
       label: 'strike',
       title: 'Audition: hit the drum once (identical to a trigger_in rising edge)',
       onFire: (nodeId) => { fireManualStrike(nodeId); },
+      probe: { effect: { kind: 'audition', seam: 'manual-strike' } },
     },
   },
   snaredrum: {
@@ -340,6 +440,7 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
       label: 'hit',
       title: 'Audition: one snare hit (identical to a trigger_in rising edge)',
       onFire: (nodeId) => { fireManualStrike(nodeId); },
+      probe: { effect: { kind: 'audition', seam: 'manual-strike' } },
     },
     // ⚠ MOMENTARY, not a click. `gate_in` is declared edge:'gate' — the
     // two-hand roll engine runs only WHILE the level is high — so a one-shot
@@ -351,6 +452,11 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
       label: 'roll',
       title: 'Audition: HOLD to run the two-hand roll (identical to holding gate_in high)',
       onGate: (nodeId, high) => { setManualGate(nodeId, high); },
+      // A gate audition is asserted on BOTH edges by the sweep — the open must
+      // deliver AND the close must deliver. A roll that opens and never closes
+      // is the worst failure this seam has (manual-gate-latch.ts), and a
+      // one-edge probe would be blind to exactly it.
+      probe: { effect: { kind: 'audition', seam: 'manual-gate' } },
     },
   },
   sixstrum: {
@@ -457,6 +563,23 @@ export function shellActionModes(): Record<string, Record<string, 'trigger' | 'g
   return out;
 }
 
+/**
+ * Every declared ACTION cell's PROBE, `moduleType → faceKey → probe`. Same
+ * shape and the same reason as `shellPanelProbes`: the sweep stays
+ * registry-driven off `STRICT_FACES` instead of growing a per-module branch,
+ * and the module declares what its press must be observed to do.
+ */
+export function shellActionProbes(): Record<string, Record<string, ShellActionProbe>> {
+  const out: Record<string, Record<string, ShellActionProbe>> = {};
+  for (const [type, specs] of Object.entries(SHELL_CELLS)) {
+    for (const [key, spec] of Object.entries(specs)) {
+      if (spec.kind !== 'action') continue;
+      (out[type] ??= {})[key] = spec.probe;
+    }
+  }
+  return out;
+}
+
 /** Expose the shell-layer metadata the faces-parity e2e reads (dev/autotest
  *  builds only — the same `testHooksEnabled()` gate `__moduleSpecs` uses). */
 export function exposeShellPanelProbesForTests(): void {
@@ -466,4 +589,7 @@ export function exposeShellPanelProbesForTests(): void {
   (window as any).__shellPanelProbes = shellPanelProbes();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (window as any).__shellActionModes = shellActionModes();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (window as any).__shellActionProbes = shellActionProbes();
+  exposeAuditionLedgerForTests();
 }

@@ -291,6 +291,20 @@ export const ringbackDef: AudioModuleDef = {
       outputChannelCount: [2], // stereo
     });
 
+    // STEREO IS A SPLITTER, NOT TWO REFERENCES TO THE SAME BUS.
+    //
+    // The worklet has ONE output carrying TWO channels. Mapping both port
+    // handles at `{ node: worklet, output: 0 }` — which is what shipped —
+    // makes `out_l` and `out_r` the same graph edge, so patching them into two
+    // mono destinations hands each one the whole 2-channel bus and Web Audio
+    // down-mixes it to (L+R)/2 at BOTH. The module advertises two independent
+    // channels (and declares a `stereoPairs` entry the auto-wire helper uses),
+    // so it has to actually deliver them. A mono source gives L === R, which
+    // is why this survived: the collapse is invisible unless the two channels
+    // genuinely differ.
+    const splitter = ctx.createChannelSplitter(2);
+    worklet.connect(splitter, 0, 0);
+
     const params = worklet.parameters as unknown as Map<string, AudioParam>;
     const initial = node.params ?? {};
     for (const def of ringbackDef.params) {
@@ -311,8 +325,8 @@ export const ringbackDef: AudioModuleDef = {
         ['mix',      { node: worklet, input: 0, param: params.get('mix')! }],
       ]),
       outputs: new Map([
-        ['out_l', { node: worklet, output: 0 }],
-        ['out_r', { node: worklet, output: 0 }],
+        ['out_l', { node: splitter, output: 0 }],
+        ['out_r', { node: splitter, output: 1 }],
       ]),
       setParam(paramId, value) {
         params.get(paramId)?.setValueAtTime(value, ctx.currentTime);
@@ -322,6 +336,7 @@ export const ringbackDef: AudioModuleDef = {
       },
       dispose() {
         try { worklet.disconnect(); } catch { /* */ }
+        try { splitter.disconnect(); } catch { /* */ }
       },
     };
   },
