@@ -949,13 +949,84 @@ function touchesVideo(mod: RegistryModule): boolean {
   );
 }
 
-// Heavy floor for any video-touching module's per-port test. The default
-// 30s (or output/input-scaled) budget leaves cold-SwiftShader GL mounts
-// short — lift to a uniform 90s heavy tier (matches the old foxy/doom
-// special-case), still scaling UP for many-port modules so the per-iteration
-// budget never shrinks below the generic scaling.
+// ────────── The heavy-GL budget: a TAX that ADDS, not a floor that SWALLOWS ──
+//
+// WHAT WAS WRONG (main, run 30791843249 / PR #1319 shard 8). This was
+//
+//     Math.max(90_000, perPortScaled)
+//
+// which reads as "scaled, with a floor" and BEHAVED as a flat constant. At the
+// wire-up call site the scaled term is `inputs * 2_000 + 30_000`, so the floor
+// only stops binding at **31 inputs**. MEASURED against the live registry:
+// **74 of the 78 touchesVideo modules are under that crossover**, so 95 % of
+// the sweep got the identical 90 000 ms — a 3-input module and a 26-input
+// module were budgeted the same.
+//
+// That is worse than an honest constant, because it DEFEATS REVIEW: the
+// formula reads as though someone had already priced per-port cost, so nobody
+// re-derives it. It is the same shape as the ratchets audited on 2026-08-02 —
+// a filter applied before the check that quietly redefines the check's subject.
+//
+// The module it hurt most is the one that went red. `wavesculpt` has 26 inputs
+// → derives 82 000 → floored back up to 90 000, i.e. **8 000 ms of its own
+// scaling silently discarded**, and it is the largest module below the
+// crossover. (videocube loses 16 000; b3ntb0x / grainsOfVision / quadralogical
+// lose 22 000 each.)
+//
+// WHY ADDITIVE IS THE HONEST MODEL, not a bigger number. The 90 000 was never
+// a port-count budget at all. The modules it was calibrated on are small:
+// foxy has 5 inputs, mandelbulb 10, mandleblot 1. It prices the COLD
+// SwiftShader first-paint / shader-compile mount, which is a fixed per-TEST
+// cost that does not care how many ports the module has. So it belongs on the
+// BASE, added to the per-port term — not maxed against it, which throws the
+// per-port term away.
+//
+// THE CONSTANT IS PRESERVED, NOT RAISED. `HEAVY_GL_MOUNT_MS` is pinned by the
+// requirement that a heavy-GL module with ZERO ports still budget exactly the
+// historical 90 000 (30_000 base + 0 + 60_000). Every module's budget is
+// therefore >= what it gets today, with equality at zero ports — asserted
+// below, so this cannot silently become a loosening.
+const HEAVY_GL_MOUNT_MS = 60_000;
+
 function heavyVideoTimeout(perPortScaled: number): number {
-  return Math.max(90_000, perPortScaled);
+  return perPortScaled + HEAVY_GL_MOUNT_MS;
+}
+
+/** Base cost of ONE per-port test: nav + spawn + fixed setup, port count aside. */
+const PER_PORT_BASE_MS = 30_000;
+/** Marginal cost of ONE more wired input on the wire-up sweep. */
+const PER_INPUT_MS = 2_000;
+
+/**
+ * The wire-up sweep's budget for a heavy-GL module with `inputs` inputs.
+ *
+ * The per-input term is LIVE AT EVERY PORT COUNT — the crossover is 0, where it
+ * used to be 31. That is the whole change; `heavyVideoBudgetCrossoverInputs`
+ * below computes it from these constants rather than restating it, so it cannot
+ * drift out of the comment.
+ */
+function wireUpBudgetMs(inputs: number): number {
+  return heavyVideoTimeout(inputs * PER_INPUT_MS + PER_PORT_BASE_MS);
+}
+
+/** The OLD budget, kept only so the gates can prove nothing shrank. */
+function legacyWireUpBudgetMs(inputs: number): number {
+  return Math.max(90_000, Math.max(45_000, inputs * PER_INPUT_MS + PER_PORT_BASE_MS));
+}
+
+/**
+ * The LARGEST input count still sitting on a budget's flat floor — i.e. the
+ * width of its dead zone. The per-port term starts binding at this value **+ 1**.
+ *
+ * STATED AS CODE, not prose, because the defect this replaces was invisible
+ * precisely because the crossover was never written down: a reader could not
+ * tell at a glance whether the scaling was live for the modules they cared
+ * about. 0 means every port pays. The old budget returned **30** — inputs 0
+ * through 30 all got the identical 90 000 ms, and scaling began at 31.
+ */
+function budgetFlatUntilInputs(budget: (inputs: number) => number, limit = 200): number {
+  for (let i = 0; i < limit; i++) if (budget(i + 1) > budget(i)) return i;
+  return limit;
 }
 
 // ────────── Heavy-WebGL render suppression ──────────
@@ -1618,7 +1689,12 @@ test.describe('per-module per-port: inputs accept signal (wire-up)', () => {
       // render + get the heavy budget instead of timing out wiring inputs.
       if (touchesVideo(mod)) {
         await freezeVideoRender(page);
-        test.setTimeout(heavyVideoTimeout(Math.max(45_000, mod.inputs.length * 2_000 + 30_000)));
+        // The inner `Math.max(45_000, …)` that used to sit here is GONE. It was
+        // a second floor stacked under the first — binding below 8 inputs, and
+        // then swallowed whole by the 90 000 above it, so it could never change
+        // any budget. With the tax additive, the 30_000 base carries that job
+        // honestly. See wireUpBudgetMs for the derivation and its gates.
+        test.setTimeout(wireUpBudgetMs(mod.inputs.length));
       }
 
       const errors: string[] = [];
@@ -1717,4 +1793,184 @@ test.describe('per-module per-port: inputs accept signal (wire-up)', () => {
       ).toEqual([]);
     });
   }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// THE HEAVY-GL BUDGET IS DERIVED, NOT FLOORED
+//
+// Pure arithmetic against the LIVE registry — no page, no renderer, ~1 ms. These
+// are the gates that would have caught the defect: a budget that reads as scaled
+// and behaves as a constant passes every runtime check there is, because a
+// timeout only spends wall clock when it FIRES. Nothing observes it otherwise.
+//
+// ⚠ WHAT THIS BUDGET CANNOT ABSORB, stated plainly so nobody sizes to it. The
+// runner that went red printed `[perf-midi-cc] FPS diagnostic: idle=2.0` and had
+// a 79-SECOND window with zero `/rack` navigations across all four workers. At
+// ~2 fps a single `spawnPatch` can legally consume its whole 30 s mount cap, so
+// 26 of them do not fit in any budget worth writing down. This change fixes the
+// REVIEW defect — the per-port term is live again, and wavesculpt gets the
+// 52 000 ms the floor was discarding — and it buys real margin on an ordinarily
+// slow runner. It does NOT and must not try to cover a 79 s dead window. If that
+// environment recurs, the answer is a CHEAPER PLAN for 26-port modules (fewer
+// spawns, or the sweep split per-port), not a bigger number.
+// ─────────────────────────────────────────────────────────────────────────────
+test.describe('per-port heavy-GL budget: DERIVED, not floored', () => {
+  const heavyGl = REGISTRY.filter(touchesVideo);
+
+  test('the per-port term is LIVE AT EVERY PORT COUNT — the crossover is 0', () => {
+    // THE DEFECT, as one number. The old budget's per-port term did not start
+    // binding until 31 inputs, so it was dead for 74 of the 78 heavy-GL modules.
+    const legacy = budgetFlatUntilInputs(legacyWireUpBudgetMs);
+    const now = budgetFlatUntilInputs(wireUpBudgetMs);
+    const deadUnderLegacy = heavyGl.filter((m) => m.inputs.length <= legacy);
+    expect(
+      legacy + 1,
+      `sanity: the OLD budget's per-port term must still compute as starting to bind at the 31 ` +
+        `inputs this change documents — if this moved, the arithmetic under the fix changed too ` +
+        `and every number in the comments needs re-deriving.`,
+    ).toBe(31);
+    expect(
+      deadUnderLegacy.length,
+      `…and that crossover left ${deadUnderLegacy.length}/${heavyGl.length} heavy-GL modules on a ` +
+        `FLAT budget, including the largest one under it (${
+          [...deadUnderLegacy].sort((a, b) => b.inputs.length - a.inputs.length)[0]?.type
+        }).`,
+    ).toBeGreaterThan(0);
+    expect(
+      now,
+      `the NEW budget's per-port term must bind from the FIRST port (crossover 0, got ${now}). ` +
+        `Any value above 0 means the budget is flat for every module below it — the defect this ` +
+        `replaces. Crossover is COMPUTED from the constants, so it cannot drift from the prose.`,
+    ).toBe(0);
+  });
+
+  test('NEGATIVE CONTROL: modules with different port counts get DIFFERENT budgets', () => {
+    // The property the old budget failed. Perturb the input the budget claims to
+    // price and require the number to move — for the REAL registry, not a
+    // synthetic pair, because "the formula responds" and "the formula responds
+    // over the range that actually exists" are different claims and only the
+    // second one matters here.
+    const distinctPortCounts = new Set(heavyGl.map((m) => m.inputs.length)).size;
+    const distinctBudgets = new Set(heavyGl.map((m) => wireUpBudgetMs(m.inputs.length))).size;
+    const distinctLegacy = new Set(heavyGl.map((m) => legacyWireUpBudgetMs(m.inputs.length))).size;
+    expect(
+      distinctBudgets,
+      `${heavyGl.length} heavy-GL modules span ${distinctPortCounts} distinct port counts and must ` +
+        `therefore get ${distinctPortCounts} distinct budgets — one per plan. The OLD budget ` +
+        `produced only ${distinctLegacy}, which is what a flat number wearing a scaled costume ` +
+        `looks like from the outside.`,
+    ).toBe(distinctPortCounts);
+    // And the pair that motivated this: the module that went red vs a small one.
+    const wavesculpt = heavyGl.find((m) => m.type === 'wavesculpt');
+    const mandleblot = heavyGl.find((m) => m.type === 'mandleblot');
+    if (wavesculpt && mandleblot) {
+      expect(
+        wireUpBudgetMs(wavesculpt.inputs.length) - wireUpBudgetMs(mandleblot.inputs.length),
+        `wavesculpt (${wavesculpt.inputs.length} inputs) must out-budget mandleblot ` +
+          `(${mandleblot.inputs.length} inputs) by their port difference × ${PER_INPUT_MS} ms. ` +
+          `Under the old floor both got exactly 90 000 ms.`,
+      ).toBe((wavesculpt.inputs.length - mandleblot.inputs.length) * PER_INPUT_MS);
+    }
+  });
+
+  test('the historical 90 000 ms constant is PRESERVED, and no module SHRANK', () => {
+    // This change must not be readable as "the timeout was raised until it
+    // passed". The constant survives verbatim as the zero-port budget, and the
+    // direction of every other move is asserted rather than asserted about.
+    expect(
+      wireUpBudgetMs(0),
+      `a heavy-GL module with ZERO inputs must still budget exactly the historical 90 000 ms — ` +
+        `that anchor is what pins HEAVY_GL_MOUNT_MS (${HEAVY_GL_MOUNT_MS}) instead of leaving it free.`,
+    ).toBe(90_000);
+    const shrunk = heavyGl.filter(
+      (m) => wireUpBudgetMs(m.inputs.length) < legacyWireUpBudgetMs(m.inputs.length),
+    );
+    expect(
+      shrunk.map((m) => m.type),
+      'no module may end up with LESS budget than it has today — a re-derivation that quietly ' +
+        'tightens somebody is a new timeout class, not a fix.',
+    ).toEqual([]);
+  });
+
+  test('the worst-case budget still fits the e2e shard job, with the margin stated', () => {
+    // What a derived budget is structurally unable to see: ITSELF GROWING. A
+    // timeout only spends wall clock when it FIRES, so the first symptom of an
+    // over-large one is a shard dying on the JOB ceiling — which reports as
+    // infrastructure trouble, not as a test failure.
+    const ATTEMPTS = 2; // playwright.config.ts: retries: 1 on CI
+    const JOB_TIMEOUT_MS = 20 * 60_000; // ci.yml: e2e (shard N/10) timeout-minutes
+    const CEILING = JOB_TIMEOUT_MS * 0.5; // the shard has ~1/10 of the suite to run too
+    const worstModule = [...heavyGl].sort((a, b) => b.inputs.length - a.inputs.length)[0]!;
+    const worst = wireUpBudgetMs(worstModule.inputs.length) * ATTEMPTS;
+    expect(
+      worst,
+      `the largest heavy-GL plan in the sweep (${worstModule.type}, ${worstModule.inputs.length} ` +
+        `inputs) can burn ${Math.round(worst / 1000)} s across ${ATTEMPTS} attempts against a ` +
+        `${JOB_TIMEOUT_MS / 60_000}-minute shard ceiling that also has ~1/10 of the suite to run. ` +
+        `If this trips, the fix is a CHEAPER PLAN — fewer spawns per port — not a bigger job timeout.`,
+    ).toBeLessThan(CEILING);
+
+    // THE OTHER CALL SITE. `heavyVideoTimeout` is also applied to the EMIT
+    // sweep's output-scaled accumulator, and a gate that priced only the
+    // wire-up site would be exactly the partial-scope blindness this file is
+    // being fixed for. Mirrors the accumulator above it, exemptions included —
+    // a module whose outputs are all exempt never runs, so it must not be
+    // priced. (`doom`, 32 outputs, is skipped for precisely that reason and
+    // would otherwise dominate this number.)
+    const emitBudgetMs = (mod: RegistryModule): number => {
+      if (EXEMPT_OUTPUT_EMIT_MODULES[mod.type]) return 0;
+      const nonExempt = mod.outputs.filter((p) => !EXEMPT_OUTPUT_EMIT[`${mod.type}.${p.id}`]).length;
+      if (nonExempt === 0) return 0;
+      let scaled = PER_PORT_BASE_MS;
+      if (mod.outputs.length > 8) scaled = Math.max(scaled, mod.outputs.length * 5_000 + 30_000);
+      if (nonExempt >= 2) scaled = Math.max(scaled, nonExempt * 20_000 + 10_000);
+      if (touchesVideo(mod)) scaled = heavyVideoTimeout(scaled);
+      if (mod.type === 'doom') scaled = Math.max(scaled, 90_000);
+      return scaled;
+    };
+    const worstEmit = [...REGISTRY].sort((a, b) => emitBudgetMs(b) - emitBudgetMs(a))[0]!;
+    const worstEmitMs = emitBudgetMs(worstEmit) * ATTEMPTS;
+
+    // ⚠ DECLARED DEBT, surfaced by writing this gate and NOT introduced by it.
+    // The emit site is scaled at 20 000 ms per live OUTPUT, so it grows an order
+    // of magnitude faster than the wire-up site's 2 000 ms per input. Its worst
+    // live plan already budgets 85 % of the whole shard job across two attempts
+    // — and it did so BEFORE this change too (900 s of the 1 020 s below is
+    // pre-existing; the additive GL tax accounts for 120 s of it).
+    //
+    // A `toBeLessThan(CEILING)` here would simply be red on arrival, and a
+    // ceiling set above the observed value would be decoration. So this is a
+    // SHRINK-ONLY RATCHET pinned at exactly today's number, asserted in BOTH
+    // directions per the repo's ratchet rule: it cannot grow, and it cannot
+    // carry silent slack. The remedy when it next moves is a CHEAPER PLAN —
+    // fewer live outputs per test, or the emit sweep split per-output — never a
+    // bigger job timeout. Tracked as the follow-up this PR does not take on.
+    const EMIT_WORST_CEILING_MS = 1_020_000;
+    expect(
+      worstEmitMs,
+      `the EMIT sweep's largest live plan (${worstEmit.type}, ${worstEmit.outputs.length} outputs) ` +
+        `budgets ${Math.round(worstEmitMs / 1000)} s across ${ATTEMPTS} attempts — ` +
+        `${Math.round((100 * worstEmitMs) / JOB_TIMEOUT_MS)} % of the ` +
+        `${JOB_TIMEOUT_MS / 60_000}-minute shard job, for ONE test. That is over the ` +
+        `${Math.round((100 * CEILING) / JOB_TIMEOUT_MS)} % healthy share and is KNOWN DEBT; this ` +
+        `ratchet exists so it cannot grow further. If it grew, make the plan cheaper.`,
+    ).toBeLessThanOrEqual(EMIT_WORST_CEILING_MS);
+    expect(
+      EMIT_WORST_CEILING_MS - worstEmitMs,
+      'and the ratchet must carry NO SLACK — a ceiling that can only trip by growing absorbs the ' +
+        'next regression in silence. If you made this plan cheaper, lower the ceiling by the ' +
+        'same amount in the same commit.',
+    ).toBe(0);
+    // …and the headroom, expressed as the port count the envelope carries, which
+    // is the number a future author actually needs.
+    const capacityPorts = Math.floor(
+      (CEILING / ATTEMPTS - PER_PORT_BASE_MS - HEAVY_GL_MOUNT_MS) / PER_INPUT_MS,
+    );
+    expect(
+      capacityPorts,
+      `the shard envelope carries ${capacityPorts} inputs in ONE wire-up test; the biggest module ` +
+        `in the sweep needs ${worstModule.inputs.length}. Keep at least 10 inputs of headroom so ` +
+        `the next big video module does not land straight on the cliff.`,
+    ).toBeGreaterThanOrEqual(worstModule.inputs.length + 10);
+  });
 });
