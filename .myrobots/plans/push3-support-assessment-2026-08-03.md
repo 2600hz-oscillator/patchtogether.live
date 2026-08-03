@@ -14,6 +14,12 @@ exist is an authoritative spec** — Ableton has published no Push 3 interface m
 request open for 2.5 years — so every device fact we would rely on is reverse-engineered, and a
 firmware update can silently break us with no changelog to read.
 
+**One caveat sharp enough to belong in the verdict:** the *display* half carries a risk the MIDI half
+does not — a host-side process named `Push3` may already own the display endpoint, and a web page
+cannot evict it (§8.4). If that process runs whenever Live is *installed* rather than *running*, the
+browser display path is dead on most Push-owning machines. **MIDI-only is unaffected**, which is a
+real argument for sequencing it first.
+
 The one thing that would bite a naive port immediately, and that is *not* an information gap but a
 real behavioural change:
 
@@ -63,10 +69,17 @@ Ableton's term is **"Control Mode"**. Three consequences that matter to us:
 
 - **Plugging in USB-C does not switch modes.** The manual describes no automatic transition.
 - **Push boots into Standalone Mode on first power-on. [OFFICIAL]** (§2).
-- In Standalone Mode the internal computer owns the audio/MIDI hardware and does not present it to a
-  host. **[FORUM]** — a coherent, well-argued [Ableton Forum
-  explanation](https://forum.ableton.com/viewtopic.php?t=248949), but **no packet capture, `lsusb`,
-  or official statement confirms it.** Unverified.
+- **In Standalone Mode the device presents nothing usable to a host.** The internal x86 computer owns
+  the audio and MIDI hardware exclusively — *"in standalone mode the computer inside the Push 3 is
+  using that stuff as an audio interface so it's not available for other computers."* **[FORUM]**, but
+  now corroborated by a second independent thread and consistent with the zero-probe result in §2.3.
+  Still **no packet capture, `lsusb`, or official statement.** Treat as very likely, not established.
+- **In Control Mode it presents MIDI ports, an audio interface ("Ableton Push 3 Audio"), and the
+  display**, all over the one USB-C cable. **[OFFICIAL]** manual §2.2.1.
+- ⚠ **Ableton never states that Push 3 itself is class-compliant.** Every "class-compliant" in their
+  documentation refers to gear you plug *into* Push's USB-A **host** port. The evidence that Push 3 is
+  class-compliant to a host is an iPadOS report (iPadOS loads no vendor drivers, so enumeration there
+  implies class-compliance) — strong reasoning, but **[FORUM]**.
 
 So the Standalone is usable by us, but the user journey starts with two on-device presses we cannot
 perform for them. The **Controller** (tethered) SKU is always in Control Mode and is therefore the
@@ -96,30 +109,55 @@ The four sources, all read as source code rather than README claims:
 
 Our two constants live at `push2-display-frame.ts:49-51`. This is genuinely a one-line delta.
 
-### 2.2 The interface class — our single biggest unverified assumption
+### 2.2 The interface class — strongly evidenced, still not a descriptor read
 
 Our whole WebUSB-and-WebMIDI-coexist-on-one-page argument rests on the display interface being
 **vendor-specific (class `0xFF`)**, which is not on Chrome's WebUSB blocklist. `push2-display.svelte.ts:8-12`
 states this explicitly for Push 2, and it is **[OFFICIAL]** there.
 
-**For Push 3 it is [INFERENCE].** No source anywhere prints Push 3's `bInterfaceClass`.
+**For Push 3, no source anywhere prints `bInterfaceClass`.** But three independent lines of evidence
+now converge on vendor-specific, and none of them is a guess:
 
-What we do have is strong *functional* evidence: `jaekong/pushDisplayTest` drives the Push 3 display
-through the **WebUSB API shape specifically** — `requestDevice` → `selectConfiguration(1)` →
-`claimInterface` → `transferOut` — selecting the interface whose USB string descriptor is
-**`"Ableton Push 3 Display"`**. WebUSB refuses to claim USB-Audio- and HID-class interfaces, so a
-successful claim is good evidence the interface is vendor-specific. **It is not a descriptor read.**
-This is the single highest-value thing to measure with hardware (§8).
+1. **[RE-HW]** `jaekong/pushDisplayTest` drives the Push 3 display through the **WebUSB API shape
+   specifically** — `requestDevice` → `selectConfiguration(1)` → `claimInterface` → `transferOut` —
+   selecting the interface whose USB string descriptor is **`"Ableton Push 3 Display"`**. WebUSB
+   refuses to claim USB-Audio- and HID-class interfaces, so a successful claim is strong evidence the
+   interface is vendor-specific.
+2. **[OFFICIAL]** On Windows, Ableton's Push **3** display driver installs the device under
+   *Universal Serial Bus devices*, **not** under *Sound, video and game controllers* — and the MIDI
+   ports need no driver at all. That device-category split is the signature of a vendor-specific bulk
+   function sitting alongside a class-compliant MIDI function, which is exactly the Push 2 topology.
+3. **[RE]** linux-hardware.org's probe database resolves Push 2 (`usb:2982-1967`) as
+   **`Class ff-ff-ff`** — vendor-specific, confirming our Push 2 assumption from a third,
+   independent corpus.
+
+**It remains [INFERENCE] for Push 3 until someone reads the descriptor.** This is still the single
+highest-value thing to measure with hardware (§8) — and see §2.3 for just how unmeasured it is.
 
 ### 2.3 Negative findings — verified, not assumed
 
-- **`usb.ids` contains no Ableton entry at all.** The file was downloaded and grepped: no `2982`
-  vendor line. Entries jump `2972 FiiO` → `298d Next Biometrics`. **This is true of Push 2 as well** —
-  the USB-ID databases are simply not a source here. **[NOT FOUND — verified]**
+- **`usb.ids` contains no Ableton entry at all** (hwdata `Version: 2026.06.26`). Downloaded and
+  grepped twice, independently: no `2982` vendor line; entries jump `2972 FiiO` → `298d Next
+  Biometrics`. **This is true of Push 2 as well** — the USB-ID databases are simply not a source
+  here. **[NOT FOUND — verified ×2]**
 - **The Linux kernel has no Ableton quirk** (`sound/usb/quirks*.c`): zero matches. **[NOT FOUND — verified]**
-- **No `lsusb -v` dump of any Push 3 exists publicly, on any platform.** **[NOT FOUND]**
-- **No source distinguishes the Standalone's USB identity from the Controller's.** Whether they
-  enumerate identically is **[INFERENCE]**.
+- **linux-hardware.org has never seen a Push 3.** `usb:2982-1967` (Push 2) returns 1 probe,
+  `Class ff-ff-ff`. `usb:2982-1969` (Push 3) returns an **empty page — zero probes, ever.** The Push 2
+  hit is the negative control proving the lookup works. **[NOT FOUND — verified with a working control]**
+- **No `lsusb -v` dump of any Push 3 exists publicly, on any platform.** As far as two independent
+  research passes can determine, running `lsusb -v -d 2982:1969` on a Control-Mode Push 3 would
+  produce **the first public descriptor dump in existence.** **[NOT FOUND]**
+- **[RE]** DrivenByMoss ships a udev rule,
+  [`resources/99-userusbdevices.rules`](https://github.com/git-moss/DrivenByMoss/blob/master/resources/99-userusbdevices.rules),
+  containing `ATTR{idProduct}=="1969"` — a runtime file exercised on real Linux hardware rather than
+  a constant in a source tree. Independent corroboration of the PID.
+- **Whether the two SKUs share a PID: [INFERENCE], now leaning YES.** The manual says the
+  configurations are feature-identical **[OFFICIAL]** and the FAQ says *"Any configuration of Push 3
+  can be connected to a computer and used in Control Mode"* **[OFFICIAL]**; DrivenByMoss ships a
+  *single* `0x1969` matcher used successfully by owners of both variants **[RE]**. A competing claim
+  of `0x1968` for the controller-only SKU appears in `yonkolevel/AbletonPushDisplayKit`, but that
+  repo's constants show signs of being AI-authored and it is the weaker source. **Still unresolved
+  without a dump of each.**
 
 ---
 
@@ -458,8 +496,12 @@ One session with a Push 3, Chrome DevTools, `lsusb -v`, and a MIDI monitor settl
 already have the two diagnostics this needs: `dumpPortNames()` on connect, and the per-CC console
 logger the legend branch added for unbound buttons.
 
-1. **`lsusb -v` → read `bInterfaceClass` on the display interface.** Settles §2.2, our single biggest
-   unverified assumption.
+0. **Does a `Push3` process already hold the display endpoint (§8.4.1)?** Check with Live *closed*,
+   then with Live *never having been launched this boot*. **Do this first** — a negative result kills
+   the browser display path regardless of how the other six go, and it costs one `lsof`/Process
+   Explorer look.
+1. **`lsusb -v` → read `bInterfaceClass` on the display interface.** Settles §2.2, and would be the
+   first public Push 3 descriptor dump in existence (§2.3).
 2. Confirm PID `0x1969`; confirm WebUSB and WebMIDI actually coexist on one page (Push 2's headline property).
 3. Blit one frame with our **unmodified** packer — confirms the whole of §3 in one shot.
 4. Walk every button and encoder: settle the §4.3 contradictions (display-row direction, scene order),
@@ -484,7 +526,35 @@ document Ableton published; Push 3 support would rest on four strangers' repos a
 session.
 
 A second, softer item: fully settling whether the two SKUs enumerate identically needs **both** SKUs,
-not one. No public data exists either way.
+not one — though §2.3 now leans toward a shared PID.
+
+### 8.4 Three risks that are neither blind work nor information gaps
+
+These are real technical constraints. None is a documentation problem; none is fixed by buying a
+device; each could individually sink the *display* half of the feature while leaving MIDI intact.
+
+1. **⚠ A host-side process may already own the display endpoint.** Reported on `push-interface`
+   issue #33: a process named **`Push3`** holds the display interface. A USB interface can be claimed
+   by exactly one client, and **a web page cannot terminate a host process.** If that process is
+   spawned only by a running Ableton Live, this is the same situation as Push 2 and the answer is
+   "don't run Live at the same time". **If it is a background helper installed alongside Live and
+   running regardless, it is a hard blocker for the browser on any machine that has Live installed** —
+   which is most of our Push-owning users. **[FORUM] — and the single most important thing to
+   determine in the bring-up session (§8.2).**
+2. **Windows requires the interface bound to WinUSB**, which is precisely what Ableton's
+   `push2-display-driver-installer` provides. We **cannot ship that from a web page.** Live users will
+   already have it; a Push 3 owner who has never installed Live would have no path to the display
+   through us. Our existing `failed` status already degrades correctly here
+   (`push2-display.svelte.ts:94`), so this is a documentation and expectation-setting problem, not a
+   code one. **[OFFICIAL]**
+3. **An undocumented fourth USB function, `Ableton Push 3 xPort`**, appears with a yellow bang in
+   Windows Device Manager and has no public driver; Ableton Support reportedly describes it as *"an
+   internal debugging tool that is not distributed along with Push."* Unlikely to affect us, but it
+   means the Push 3's USB topology has at least one function nobody outside Ableton understands.
+   **[FORUM]**
+
+**Net effect: the MIDI-only slice is unaffected by all three.** That is a real argument for
+sequencing MIDI first and treating the display as a separate, hardware-gated decision.
 
 ---
 
@@ -514,6 +584,11 @@ bring-up session on bus power alone could produce a dim panel and get misread as
 3. **Should the MPE guard (§5.2, option 3) ship for Push 2 now, independent of any Push 3 work?** It is
    device-independent, costs a few lines, and hardens us against any future MPE controller. It is the
    one item here with value even if Push 3 support is never built.
+4. **Do we split MIDI from display?** §8.4 makes MIDI-only strictly safer: it is unaffected by the
+   `Push3` endpoint-ownership risk, the Windows WinUSB dependency, and the `xPort` unknown. A
+   MIDI-first Push 3 slice would be ~2 of the ~3–4 blind days and could ship without ever resolving
+   the display questions — at the cost of shipping a Push 3 integration whose headline feature (the
+   screen) is missing.
 
 ---
 
@@ -528,4 +603,12 @@ bring-up session on bus power alone could produce a dim panel and get misread as
 - [ffont/push2-python issue #9](https://github.com/ffont/push2-python/issues/9)
 - [Sound On Sound — Ableton Push 3 review](https://www.soundonsound.com/reviews/ableton-push-3)
 - [Ableton Forum — Push 3 Standalone audio interface / USB MIDI](https://forum.ableton.com/viewtopic.php?t=248949)
-- [linux-usb.org/usb.ids](http://www.linux-usb.org/usb.ids) — negative finding, verified
+- [linux-usb.org/usb.ids](http://www.linux-usb.org/usb.ids) — negative finding, verified ×2 (hwdata 2026.06.26)
+- [linux-hardware.org USB probe database](https://linux-hardware.org/?view=search) — Push 2 `2982:1967` = `Class ff-ff-ff` (1 probe); Push 3 `2982:1969` = **zero probes ever**
+- [DrivenByMoss `99-userusbdevices.rules`](https://github.com/git-moss/DrivenByMoss/blob/master/resources/99-userusbdevices.rules) — udev rule carrying `idProduct 1969`
+
+**Method note.** This document is the merge of two independent research passes plus direct
+verification of the decisive claims. Where the passes disagreed, both are reported rather than
+averaged — see §4.3 and §4.4. One arithmetic error propagated between sources during research
+(`20 × 0x4000` rendered as 327,664 rather than **327,680**); it originates in
+`push3-protocol-docs` and is corrected wherever it appears above.
