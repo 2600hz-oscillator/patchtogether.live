@@ -102,29 +102,28 @@ export const PUSH_CC_ELECTRA_MODE = 49;
  * the current view's buttons. DISPLAY-ONLY and MOMENTARY: it changes nothing
  * about what any button does, and releasing restores whatever was on screen.
  *
- * ⚠ CONFIRM ON HARDWARE. The owner's words were "the black button in the far
- * right corner of the controller, beyond the grid". Public documentation pins
- * the NUMBER but not the POSITION, so this is the best-evidence identification,
- * not a hardware confirmation:
- *   · Ableton's own MIDI implementation chart (push-interface,
- *     AbletonPush2MIDIDisplayInterface) lists CC 28 = "master button" and
- *     CC 29 = "stop clip button" — the only two lit buttons that are neither in
- *     the 8×8 grid nor in the scene column, and the pair that continues the
- *     lower-display row (CC 20..27) rightwards.
- *   · Sound On Sound's Push 2 review places "the Mute, Solo and Stop Clip
- *     buttons" on the LEFT-HAND side and "the controls involved with
- *     navigation, device browsing, playing and sequencing" on the RIGHT — which
- *     rules CC 29 out of the far-right corner and leaves MASTER (28), the
- *     button beside the master volume encoder at the top-right.
- *   · It is UNBOUND today: `classifyPush2` falls through to null for 28, and no
- *     LED path addresses it (it is not in `RGB_BUTTON_CCS`), so claiming it as a
- *     momentary display modifier steals nothing.
+ * ✅ CONFIRMED ON HARDWARE (owner, 2026-08-03). The owner pressed the button they
+ * wanted and read the CC off the app's own MIDI-bind flow: it is **CC 48**, in the
+ * lower-right cluster beside SHIFT (49) and just past the D-pad (44..47).
  *
- * If the owner's button turns out to be a different CC, this ONE line changes —
- * push2-control logs the CC of any UNBOUND button press to the console (once per
- * CC), so identifying the real one takes a single press with DevTools open.
+ * ⚠ The previous value (28) was a paper identification and it was WRONG. It was
+ * inferred from Ableton's MIDI implementation chart (CC 28 = "master button") plus
+ * a Sound On Sound review placing the navigation controls on the right — reasoning
+ * that pinned the NUMBER from one source and the POSITION from another and got a
+ * button at the TOP-right rather than the lower-right one the owner meant. The
+ * comment that shipped with it said so ("best-evidence identification, not a
+ * hardware confirmation") and predicted this fix: "If the owner's button turns out
+ * to be a different CC, this ONE line changes." It did, and it was.
+ *
+ * CC 48 steals nothing, on the same test the old comment applied to 28:
+ * `classifyPush2` falls through to null for it, and no LED path addresses it — it
+ * is absent from `RGB_BUTTON_CCS` (20..27, 36..43, 102..109).
+ *
+ * Sitting next to SHIFT is a feature, not a hazard: LEGEND is momentary and
+ * display-only, so holding 48 with 49 is how you read the SHIFTED legend — the
+ * two are separate CCs and compose.
  */
-export const PUSH_CC_LEGEND = 28;
+export const PUSH_CC_LEGEND = 48;
 
 /** D-Pad arrows → CLIP-view nav (± window; +SHIFT = ×8 full screen). CONFIRMED. */
 export const PUSH_CC_DPAD_UP = 46;
