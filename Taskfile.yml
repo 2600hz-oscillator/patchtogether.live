@@ -329,9 +329,12 @@ tasks:
 
   test:scripts:
     desc: Run repo-root scripts/ tests (scaffolder + future repo-wide tooling)
-    # Uses vitest.scripts.config.ts (include: scripts/**/*.test.ts). The
-    # scaffolder mutates real registry files + then undoes — single-fork
-    # so tests don't race.
+    # Uses vitest.scripts.config.ts (include: scripts/**/*.test.ts).
+    # The scaffolder tests drive scaffold()/undo() against a throwaway FIXTURE
+    # TREE (NEW_MODULE_REPO_ROOT), so this lane leaves the working copy clean.
+    # It did NOT used to: undo() was a line short of byte-exact and every run
+    # appended blank lines to modules-card-map.test.ts. Kept single-fork so
+    # scripts tests don't race on shared temp state.
     #
     # NOTE: config file is NOT named vitest.config.ts on purpose — per-package
     # `vitest run` would auto-discover it and shadow the package's own config,

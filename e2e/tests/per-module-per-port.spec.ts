@@ -432,24 +432,277 @@ const EXEMPT_OUTPUT_EMIT: Record<string, string> = {
   'gibribbon.health_cv':    'idle DC (healthy=0.75) is constant + AC-coupled below the scope floor; covered by gibribbon-events.test.ts (healthToCv) + gibribbon.spec.ts',
 };
 
-// ─── RATCHET — output-emit exemption caps ────────────────────────────────
-// EXEMPT_OUTPUT_EMIT_MODULES (whole-module) + EXEMPT_OUTPUT_EMIT (per-port)
-// let a module/port OPT OUT of the per-port output-emit signal-flow assertion.
-// Every entry is coverage we still owe. These caps FREEZE the lists at today's
-// size so they can only SHRINK as coverage is reconciled — adding a NEW
-// exemption fails this test on purpose.
-//   RATCHET RULE: exemptions only shrink. LOWER the number when you fix
-//   coverage and delete an entry. Only RAISE it for a genuinely new,
-//   documented exemption — NEVER to make a red sweep go green.
-test('RATCHET: output-emit exemption lists only shrink', () => {
+// ─── DENY BY DEFAULT — the output-emit exemption lists are pinned KEY BY KEY ──
+//
+// EXEMPT_OUTPUT_EMIT_MODULES (whole-module) + EXEMPT_OUTPUT_EMIT (per-port) let
+// a module/port OPT OUT of the per-port output-emit signal-flow assertion.
+// Every entry is coverage we still owe, so every edit to either list has to be
+// reviewed — which means every edit has to be VISIBLE and has to FAIL a gate.
+//
+// WHY A KEY LIST AND NOT A COUNT (changed 2026-08-03). These were COUNT
+// ratchets: `Object.keys(…).length <= 43` and `<= 65`. Three failure modes,
+// all three observed in this repo, and the first two were LIVE right here:
+//
+//   1. SLACK IS PRE-AUTHORISATION. The caps read 43 / 65 against an ACTUAL
+//      40 / 63 — FIVE unreviewed exemption slots standing open. Under a cap
+//      with slack, adding a missing-coverage exemption is GREEN and there is
+//      nothing in the diff a reviewer is prompted to look at. The old cap
+//      comments recorded four historical adds doing exactly that, verbatim:
+//      "count 40 ≤ 43, fits within slack, no raise". Commit 72734704
+//      (sixstrum.out) added an entry without touching the cap at all.
+//   2. A NUMBER CANNOT MERGE-CONFLICT. Two PRs can each be green ALONE and RED
+//      COMBINED — #1311 pinned a count against a tree that lacked a module,
+//      #1308 added that module, and main went red twice in one day. A key LIST
+//      collides textually, so git forces the reconciliation at rebase time
+//      rather than on main.
+//   3. A COUNT IS BLIND TO A SWAP. Delete one entry, add another: the length
+//      is unchanged and a brand-new exemption lands in total silence.
+//
+// So both lists are pinned KEY BY KEY against a sorted frozen array AND
+// ANCHORED TO THE ARTIFACT: every module key must still name a live REGISTRY
+// module, and every per-port key a live OUTPUT port on that module. An
+// exemption that outlives the thing it exempts is RED — a stale exemption is
+// one nobody is watching.
+//
+// TO EDIT: change the map above AND the frozen array below in the SAME commit,
+// then re-pin the generated ledger (`flox activate -- task test:ledger:accept`
+// — scripts/test-ledger.mjs counts BOTH maps into
+// docs/testing/test-ledger.generated.md, and a stale ledger is a hard red in
+// the unit lane). Removing an entry is the good direction and is exactly as
+// loud as adding one. That is the point: the gate has no opinion about the
+// direction, only about whether a human looked.
+//
+// THIS TEST IS DELIBERATELY TOP-LEVEL — do NOT wrap it in a `test.describe`.
+// The required e2e lane runs a `--grep-invert` that drops the collab and
+// capacity tag families plus the BEHAVIORAL input-coverage sweep (ci.yml holds
+// the literal pattern), and it shards by title — so an un-tagged, top-level
+// title survives every filter. Nesting this under a describe that later picks
+// up one of those tags would silently demote the gate to informational without
+// changing one line of its body.
+//
+// The tag literals are deliberately NOT reproduced here, in prose or anywhere
+// else in this file. The collab attest BASIS is resolved by grepping spec
+// CONTENT for those two tokens in their sigil form (COLLAB_TAG_RE in
+// scripts/collab-attest-lib.ts), so merely quoting them in a comment enrols
+// this spec in the basis, moves the collab content hash, and reddens
+// collab-attest — after which every future edit to this file costs a re-attest.
+// Write them bare when you need to name them.
+//
+// SCOPE — what this gate is structurally UNABLE to see, stated here so a green
+// run is not read as more than it is:
+//   * The two AUTO-skips in the emit sweep below — the effect-shape heuristic
+//     (an audio/video/image input ⇒ "needs an upstream") and
+//     PURE_CV_GATE_UTILITY — exempt modules with NO list entry at all. They
+//     are COMPUTED, not DECLARED, so nothing here can enumerate them.
+//   * SKIP_SPAWN and EXEMPT_INPUT_DRIVE are separate lists and are not pinned
+//     key-by-key (they are counted in the generated ledger only).
+//   * Whether an entry's cited "covered by …" spec exists, or asserts what its
+//     prose claims. The anchor proves the PORT is real; it proves exactly
+//     nothing about the coverage the reason promises.
+
+// The EXACT key set of EXEMPT_OUTPUT_EMIT_MODULES, sorted. Deliberate
+// duplication: this array is the review surface and the merge-conflict surface.
+const PINNED_MODULE_EXEMPT_KEYS: readonly string[] = Object.freeze([
+  'archivist', 'audioIn', 'blood', 'bluebox', 'cvBuddy', 'drumseqz', 'es9',
+  'fader', 'featurecv', 'flipper', 'gamepad', 'illogic', 'joystick', 'macseq',
+  'marbles', 'midiCvBuddy', 'midiOutBuddy', 'midiclock', 'milkdrop', 'modtris',
+  'moog911a', 'moog956', 'moog962', 'moog992', 'moog993', 'numpadPlus',
+  'peertube', 'polyseqz', 'pong', 'samsloop', 'score', 'sequencer',
+  'slewSwitch', 'synesthesia', 'timelorde', 'tvLibrarian', 'twotracks',
+  'videobox', 'videocube', 'videovarispeed',
+]);
+
+// The EXACT key set of EXEMPT_OUTPUT_EMIT, sorted. `<moduleType>.<outputPortId>`
+// — split on the FIRST '.', which is what the sweep's `${mod.type}.${p.id}`
+// lookup does (module types contain no dot; port ids may contain '/', e.g.
+// 'timelorde.1/8').
+const PINNED_PER_PORT_EXEMPT_KEYS: readonly string[] = Object.freeze([
+  'buggles.burst', 'buggles.clock',
+  'doom.audio_l', 'doom.audio_r', 'doom.evt_door', 'doom.evt_gun_p1',
+  'doom.evt_gun_p2', 'doom.evt_gun_p3', 'doom.evt_gun_p4', 'doom.evt_kill',
+  'doom.evt_kill_arachnotron', 'doom.evt_kill_baron', 'doom.evt_kill_caco',
+  'doom.evt_kill_chainguy', 'doom.evt_kill_cyber', 'doom.evt_kill_demon',
+  'doom.evt_kill_imp', 'doom.evt_kill_keen', 'doom.evt_kill_knight',
+  'doom.evt_kill_lostsoul', 'doom.evt_kill_mancubus', 'doom.evt_kill_pain',
+  'doom.evt_kill_revenant', 'doom.evt_kill_shotguy', 'doom.evt_kill_spectre',
+  'doom.evt_kill_spidermind', 'doom.evt_kill_vile', 'doom.evt_kill_wolfss',
+  'doom.evt_kill_zombieman', 'doom.evt_p1_dies', 'doom.evt_p2_dies',
+  'doom.evt_p3_dies', 'doom.evt_p4_dies', 'doom.out',
+  'gibribbon.evt_fire', 'gibribbon.evt_gameover', 'gibribbon.evt_hit',
+  'gibribbon.evt_kill', 'gibribbon.evt_miss', 'gibribbon.health_cv',
+  'illogic.and', 'illogic.nand', 'illogic.not', 'illogic.or',
+  'mandelbulb.audio_out',
+  'midiLane.note_gate', 'midiLane.poly',
+  'moogCp3.minus_six', 'moogCp3.plus_twelve',
+  'nibbles.death', 'nibbles.dir_change', 'nibbles.gated', 'nibbles.length_cv',
+  'nibbles.pellet',
+  'outlines.mapped',
+  'sixstrum.out',
+  'skifree.gate', 'skifree.out',
+  'timelorde.1/12', 'timelorde.1/16', 'timelorde.1/32', 'timelorde.1/64',
+  'timelorde.1/8',
+]);
+
+// ─── REACHABILITY LEDGER — entries that exist but can never be READ ───────────
+//
+// Anchoring "the key names a live port" is necessary but not sufficient: an
+// entry can name a perfectly real port and still be DEAD CODE, because an
+// earlier branch of the emit sweep already skipped the module. Those are stale
+// in the sense that matters — nobody is watching them — while looking pristine
+// to a name-only check. Found 2026-08-03 while replacing the caps; the audit
+// that commissioned this work reported "0 of 63 keys are stale" and by its own
+// definition (does the key resolve?) that was correct. Both are pinned so a
+// NEW dead entry is RED, and so is a module leaving the whole-module list and
+// silently resurrecting its per-port entries without a re-read.
+
+// EXEMPT_OUTPUT_EMIT_MODULES is consulted BEFORE EXEMPT_OUTPUT_EMIT (see the
+// `moduleExempt` branch in the emit sweep — it `test.fixme`s and `continue`s),
+// so a per-port entry on an already-whole-module-exempt module is UNREACHABLE.
+// ILLOGIC (4) and TIMELORDE (5) each carry both. Kept rather than deleted: if
+// either module ever earns a driver and leaves the whole-module list, these
+// ports go live again and each reason deserves a fresh review, not a silent
+// resurrection.
+const PINNED_SHADOWED_PER_PORT_KEYS: readonly string[] = Object.freeze([
+  'illogic.and', 'illogic.nand', 'illogic.not', 'illogic.or',
+  'timelorde.1/12', 'timelorde.1/16', 'timelorde.1/32', 'timelorde.1/64',
+  'timelorde.1/8',
+]);
+
+// The emit sweep `continue`s on `mod.outputs.length === 0` BEFORE it reads
+// EXEMPT_OUTPUT_EMIT_MODULES, so a whole-module entry for an output-LESS module
+// is documentation only (MIDI-OUT-BUDDY's own comment says exactly that — it is
+// listed so the sweep records the intentional absence). Pinned so a SECOND one
+// cannot appear unnoticed and be mistaken for real coverage bookkeeping.
+const PINNED_MODULE_EXEMPT_WITHOUT_OUTPUTS: readonly string[] = Object.freeze([
+  'midiOutBuddy',
+]);
+
+test('output-emit exemption lists are pinned key-by-key and anchored to REGISTRY', () => {
+  const modulesByType = new Map(REGISTRY.map((m) => [m.type, m]));
+  const totalOutputPorts = REGISTRY.reduce((n, m) => n + m.outputs.length, 0);
+
+  // ── 0. VACUITY FLOOR ──
+  // Every assertion below is a lookup against REGISTRY. If REGISTRY resolved
+  // nothing, "no key is stale" would be trivially true and this test would pass
+  // while proving NOTHING — the RAW_PARAM_WRITE failure mode (a bracket-only
+  // filter that saw 3 of 99 writes; every assertion it made was true). These
+  // are sanity FLOORS, not ratchets: the tree carries ~195 modules / ~674
+  // output ports, so they only trip if the manifest is empty or truncated.
   expect(
-    Object.keys(EXEMPT_OUTPUT_EMIT_MODULES).length,
-    'EXEMPT_OUTPUT_EMIT_MODULES grew past its frozen cap — see the RATCHET rule above',
-  ).toBeLessThanOrEqual(43); // videocube ADDED (8 outputs incl. 6 per-port-gated slice-viz jacks; video-out-canvas SwiftShader timeout class ×N + audio-derived/gated jacks; folds the former per-port audio_out entry; covered by videocube.spec.ts + videocube-core.test.ts + videocube.test.ts) — fits within the existing cap, no raise. // +1 featurecv (input-conditional outputs); +1 blood (data-gated emulator — outputs idle without the non-redistributable WAD, absent in CI); +1 milkdrop (video out needs async butterchurn preset-chunk load + warmup before emit; covered by milkdrop-render-smoke.spec.ts) // +1 cvBuddy (passthrough note outputs silent until driven + owner-only run/clock need a running TIMELORDE transport; covered by cv-buddy slot-alloc/clock-math/es9-reconcile unit tests + owner hardware-verify) — count 40 ≤ 43, fits within slack, no raise
+    REGISTRY.length,
+    'VACUITY: REGISTRY resolved almost no modules — every anchor below would pass trivially. '
+    + 'Run `flox activate -- task test:emit-manifest` (e2e/.generated/registry-manifest.json).',
+  ).toBeGreaterThan(100);
   expect(
-    Object.keys(EXEMPT_OUTPUT_EMIT).length,
-    'EXEMPT_OUTPUT_EMIT grew past its frozen cap — see the RATCHET rule above',
-  ).toBeLessThanOrEqual(65); // −1 videocube.audio_out (folded into the whole-module videocube exempt in EXEMPT_OUTPUT_EMIT_MODULES; net shrink)
+    totalOutputPorts,
+    `VACUITY: REGISTRY declares ${totalOutputPorts} output ports across ${REGISTRY.length} modules — `
+    + 'far too few for the anchor to be able to fail. The manifest emitter is broken.',
+  ).toBeGreaterThan(300);
+
+  // ── 1. SET EQUALITY — deny by default ──
+  expect(
+    Object.keys(EXEMPT_OUTPUT_EMIT_MODULES).sort(),
+    'EXEMPT_OUTPUT_EMIT_MODULES no longer matches PINNED_MODULE_EXEMPT_KEYS. '
+    + 'ADDING an exemption is missing coverage — justify it in the PR and add the key below. '
+    + 'REMOVING one is coverage reclaimed — delete the key below too. '
+    + 'Either way also re-pin the ledger: `flox activate -- task test:ledger:accept`.',
+  ).toEqual([...PINNED_MODULE_EXEMPT_KEYS]);
+  expect(
+    Object.keys(EXEMPT_OUTPUT_EMIT).sort(),
+    'EXEMPT_OUTPUT_EMIT no longer matches PINNED_PER_PORT_EXEMPT_KEYS. '
+    + 'ADDING an exemption is missing coverage — justify it in the PR and add the key below. '
+    + 'REMOVING one is coverage reclaimed — delete the key below too. '
+    + 'Either way also re-pin the ledger: `flox activate -- task test:ledger:accept`.',
+  ).toEqual([...PINNED_PER_PORT_EXEMPT_KEYS]);
+
+  // ── 2. ARTIFACT ANCHOR — every key must still name something that exists ──
+  // Ground truth is the REGISTRY module/port, not the list. A list entry that
+  // outlives its port is RED.
+  const moduleKeyIsLive = (moduleType: string): boolean => modulesByType.has(moduleType);
+  const portKeyIsLive = (key: string): boolean => {
+    const dot = key.indexOf('.');
+    if (dot < 0) return false;
+    const mod = modulesByType.get(key.slice(0, dot));
+    if (!mod) return false;
+    const portId = key.slice(dot + 1);
+    return mod.outputs.some((p) => p.id === portId);
+  };
+
+  expect(
+    Object.keys(EXEMPT_OUTPUT_EMIT_MODULES).filter((k) => !moduleKeyIsLive(k)),
+    'STALE EXEMPTION: these EXEMPT_OUTPUT_EMIT_MODULES keys name modules that are no longer in '
+    + 'REGISTRY. The module was renamed or deleted — delete the exemption (and re-pin the ledger).',
+  ).toEqual([]);
+  expect(
+    Object.keys(EXEMPT_OUTPUT_EMIT).filter((k) => !portKeyIsLive(k)),
+    'STALE EXEMPTION: these EXEMPT_OUTPUT_EMIT keys name a `<moduleType>.<outputPortId>` pair that '
+    + 'no longer exists in REGISTRY (module gone, or the OUTPUT port was renamed/dropped). If the '
+    + 'port was dropped deliberately, delete the exemption; if it was dropped by accident, that is '
+    + 'the DOOM #393 bug class and the handle-presence sweep should also be red.',
+  ).toEqual([]);
+
+  // ── 3. PERMANENT NEGATIVE CONTROL, BOTH DIRECTIONS ──
+  // Runs on EVERY execution, not once at authoring time. Without it, an anchor
+  // that silently resolved nothing (wrong split, empty map, a refactor that
+  // made the resolver return `true` unconditionally) prints the same empty
+  // array as a genuinely clean tree — "no stale keys" and "never looked" are
+  // indistinguishable from the output. So force both answers out of the same
+  // resolvers the assertions above used.
+  const liveModule = REGISTRY.find((m) => m.outputs.length > 0);
+  expect(liveModule, 'NEGATIVE CONTROL: no REGISTRY module has an output port').toBeTruthy();
+  const liveType = liveModule!.type;
+  const livePort = liveModule!.outputs[0].id;
+
+  expect(
+    moduleKeyIsLive('__no_such_module__'),
+    'NEGATIVE CONTROL (false leg): the module resolver called a non-existent module type LIVE — '
+    + 'it accepts anything, so the stale-module assertion above is decoration.',
+  ).toBe(false);
+  expect(
+    moduleKeyIsLive(liveType),
+    `NEGATIVE CONTROL (true leg): the module resolver called the real module "${liveType}" STALE — `
+    + 'it rejects everything, so it would have reddened on a clean tree.',
+  ).toBe(true);
+  expect(
+    portKeyIsLive('__no_such_module__.out'),
+    'NEGATIVE CONTROL (false leg, module half): the port resolver called a port on a non-existent '
+    + 'module LIVE.',
+  ).toBe(false);
+  expect(
+    portKeyIsLive(`${liveType}.__no_such_port__`),
+    `NEGATIVE CONTROL (false leg, PORT half): the port resolver called "${liveType}.__no_such_port__" `
+    + 'LIVE — it only checks the module and never looks at the port id, so a renamed port would '
+    + 'never be caught.',
+  ).toBe(false);
+  expect(
+    portKeyIsLive(`${liveType}.${livePort}`),
+    `NEGATIVE CONTROL (true leg): the port resolver called the real port "${liveType}.${livePort}" `
+    + 'STALE — it rejects everything, so the empty stale-list above proves nothing.',
+  ).toBe(true);
+
+  // ── 4. REACHABILITY LEDGER — an entry that can never be READ is also stale ──
+  const shadowed = Object.keys(EXEMPT_OUTPUT_EMIT)
+    .filter((k) => EXEMPT_OUTPUT_EMIT_MODULES[k.slice(0, k.indexOf('.'))])
+    .sort();
+  expect(
+    shadowed,
+    'UNREACHABLE EXEMPTION: these per-port EXEMPT_OUTPUT_EMIT entries sit on a module that is ALSO '
+    + 'whole-module exempt. The emit sweep reads EXEMPT_OUTPUT_EMIT_MODULES first and skips the '
+    + 'whole test, so these reasons are never consulted. If the list SHRANK, a module just left '
+    + 'EXEMPT_OUTPUT_EMIT_MODULES and its per-port entries are live again — RE-READ each reason '
+    + 'before updating this pin. If it GREW, prefer one whole-module entry over N per-port ones.',
+  ).toEqual([...PINNED_SHADOWED_PER_PORT_KEYS]);
+
+  const exemptWithoutOutputs = Object.keys(EXEMPT_OUTPUT_EMIT_MODULES)
+    .filter((t) => modulesByType.get(t)?.outputs.length === 0)
+    .sort();
+  expect(
+    exemptWithoutOutputs,
+    'UNREACHABLE EXEMPTION: these EXEMPT_OUTPUT_EMIT_MODULES entries name modules with ZERO output '
+    + 'ports. The emit sweep `continue`s on an empty output list BEFORE it reads the exemption, so '
+    + 'the entry is documentation only and buys no coverage bookkeeping. Intentional for '
+    + 'midiOutBuddy (it emits MIDI to external gear); anything else here is a mistake.',
+  ).toEqual([...PINNED_MODULE_EXEMPT_WITHOUT_OUTPUTS]);
 });
 
 // ────────── Per-port input-drive exemptions ──────────
@@ -696,13 +949,84 @@ function touchesVideo(mod: RegistryModule): boolean {
   );
 }
 
-// Heavy floor for any video-touching module's per-port test. The default
-// 30s (or output/input-scaled) budget leaves cold-SwiftShader GL mounts
-// short — lift to a uniform 90s heavy tier (matches the old foxy/doom
-// special-case), still scaling UP for many-port modules so the per-iteration
-// budget never shrinks below the generic scaling.
+// ────────── The heavy-GL budget: a TAX that ADDS, not a floor that SWALLOWS ──
+//
+// WHAT WAS WRONG (main, run 30791843249 / PR #1319 shard 8). This was
+//
+//     Math.max(90_000, perPortScaled)
+//
+// which reads as "scaled, with a floor" and BEHAVED as a flat constant. At the
+// wire-up call site the scaled term is `inputs * 2_000 + 30_000`, so the floor
+// only stops binding at **31 inputs**. MEASURED against the live registry:
+// **74 of the 78 touchesVideo modules are under that crossover**, so 95 % of
+// the sweep got the identical 90 000 ms — a 3-input module and a 26-input
+// module were budgeted the same.
+//
+// That is worse than an honest constant, because it DEFEATS REVIEW: the
+// formula reads as though someone had already priced per-port cost, so nobody
+// re-derives it. It is the same shape as the ratchets audited on 2026-08-02 —
+// a filter applied before the check that quietly redefines the check's subject.
+//
+// The module it hurt most is the one that went red. `wavesculpt` has 26 inputs
+// → derives 82 000 → floored back up to 90 000, i.e. **8 000 ms of its own
+// scaling silently discarded**, and it is the largest module below the
+// crossover. (videocube loses 16 000; b3ntb0x / grainsOfVision / quadralogical
+// lose 22 000 each.)
+//
+// WHY ADDITIVE IS THE HONEST MODEL, not a bigger number. The 90 000 was never
+// a port-count budget at all. The modules it was calibrated on are small:
+// foxy has 5 inputs, mandelbulb 10, mandleblot 1. It prices the COLD
+// SwiftShader first-paint / shader-compile mount, which is a fixed per-TEST
+// cost that does not care how many ports the module has. So it belongs on the
+// BASE, added to the per-port term — not maxed against it, which throws the
+// per-port term away.
+//
+// THE CONSTANT IS PRESERVED, NOT RAISED. `HEAVY_GL_MOUNT_MS` is pinned by the
+// requirement that a heavy-GL module with ZERO ports still budget exactly the
+// historical 90 000 (30_000 base + 0 + 60_000). Every module's budget is
+// therefore >= what it gets today, with equality at zero ports — asserted
+// below, so this cannot silently become a loosening.
+const HEAVY_GL_MOUNT_MS = 60_000;
+
 function heavyVideoTimeout(perPortScaled: number): number {
-  return Math.max(90_000, perPortScaled);
+  return perPortScaled + HEAVY_GL_MOUNT_MS;
+}
+
+/** Base cost of ONE per-port test: nav + spawn + fixed setup, port count aside. */
+const PER_PORT_BASE_MS = 30_000;
+/** Marginal cost of ONE more wired input on the wire-up sweep. */
+const PER_INPUT_MS = 2_000;
+
+/**
+ * The wire-up sweep's budget for a heavy-GL module with `inputs` inputs.
+ *
+ * The per-input term is LIVE AT EVERY PORT COUNT — the crossover is 0, where it
+ * used to be 31. That is the whole change; `heavyVideoBudgetCrossoverInputs`
+ * below computes it from these constants rather than restating it, so it cannot
+ * drift out of the comment.
+ */
+function wireUpBudgetMs(inputs: number): number {
+  return heavyVideoTimeout(inputs * PER_INPUT_MS + PER_PORT_BASE_MS);
+}
+
+/** The OLD budget, kept only so the gates can prove nothing shrank. */
+function legacyWireUpBudgetMs(inputs: number): number {
+  return Math.max(90_000, Math.max(45_000, inputs * PER_INPUT_MS + PER_PORT_BASE_MS));
+}
+
+/**
+ * The LARGEST input count still sitting on a budget's flat floor — i.e. the
+ * width of its dead zone. The per-port term starts binding at this value **+ 1**.
+ *
+ * STATED AS CODE, not prose, because the defect this replaces was invisible
+ * precisely because the crossover was never written down: a reader could not
+ * tell at a glance whether the scaling was live for the modules they cared
+ * about. 0 means every port pays. The old budget returned **30** — inputs 0
+ * through 30 all got the identical 90 000 ms, and scaling began at 31.
+ */
+function budgetFlatUntilInputs(budget: (inputs: number) => number, limit = 200): number {
+  for (let i = 0; i < limit; i++) if (budget(i + 1) > budget(i)) return i;
+  return limit;
 }
 
 // ────────── Heavy-WebGL render suppression ──────────
@@ -1365,7 +1689,12 @@ test.describe('per-module per-port: inputs accept signal (wire-up)', () => {
       // render + get the heavy budget instead of timing out wiring inputs.
       if (touchesVideo(mod)) {
         await freezeVideoRender(page);
-        test.setTimeout(heavyVideoTimeout(Math.max(45_000, mod.inputs.length * 2_000 + 30_000)));
+        // The inner `Math.max(45_000, …)` that used to sit here is GONE. It was
+        // a second floor stacked under the first — binding below 8 inputs, and
+        // then swallowed whole by the 90 000 above it, so it could never change
+        // any budget. With the tax additive, the 30_000 base carries that job
+        // honestly. See wireUpBudgetMs for the derivation and its gates.
+        test.setTimeout(wireUpBudgetMs(mod.inputs.length));
       }
 
       const errors: string[] = [];
@@ -1464,4 +1793,184 @@ test.describe('per-module per-port: inputs accept signal (wire-up)', () => {
       ).toEqual([]);
     });
   }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// THE HEAVY-GL BUDGET IS DERIVED, NOT FLOORED
+//
+// Pure arithmetic against the LIVE registry — no page, no renderer, ~1 ms. These
+// are the gates that would have caught the defect: a budget that reads as scaled
+// and behaves as a constant passes every runtime check there is, because a
+// timeout only spends wall clock when it FIRES. Nothing observes it otherwise.
+//
+// ⚠ WHAT THIS BUDGET CANNOT ABSORB, stated plainly so nobody sizes to it. The
+// runner that went red printed `[perf-midi-cc] FPS diagnostic: idle=2.0` and had
+// a 79-SECOND window with zero `/rack` navigations across all four workers. At
+// ~2 fps a single `spawnPatch` can legally consume its whole 30 s mount cap, so
+// 26 of them do not fit in any budget worth writing down. This change fixes the
+// REVIEW defect — the per-port term is live again, and wavesculpt gets the
+// 52 000 ms the floor was discarding — and it buys real margin on an ordinarily
+// slow runner. It does NOT and must not try to cover a 79 s dead window. If that
+// environment recurs, the answer is a CHEAPER PLAN for 26-port modules (fewer
+// spawns, or the sweep split per-port), not a bigger number.
+// ─────────────────────────────────────────────────────────────────────────────
+test.describe('per-port heavy-GL budget: DERIVED, not floored', () => {
+  const heavyGl = REGISTRY.filter(touchesVideo);
+
+  test('the per-port term is LIVE AT EVERY PORT COUNT — the crossover is 0', () => {
+    // THE DEFECT, as one number. The old budget's per-port term did not start
+    // binding until 31 inputs, so it was dead for 74 of the 78 heavy-GL modules.
+    const legacy = budgetFlatUntilInputs(legacyWireUpBudgetMs);
+    const now = budgetFlatUntilInputs(wireUpBudgetMs);
+    const deadUnderLegacy = heavyGl.filter((m) => m.inputs.length <= legacy);
+    expect(
+      legacy + 1,
+      `sanity: the OLD budget's per-port term must still compute as starting to bind at the 31 ` +
+        `inputs this change documents — if this moved, the arithmetic under the fix changed too ` +
+        `and every number in the comments needs re-deriving.`,
+    ).toBe(31);
+    expect(
+      deadUnderLegacy.length,
+      `…and that crossover left ${deadUnderLegacy.length}/${heavyGl.length} heavy-GL modules on a ` +
+        `FLAT budget, including the largest one under it (${
+          [...deadUnderLegacy].sort((a, b) => b.inputs.length - a.inputs.length)[0]?.type
+        }).`,
+    ).toBeGreaterThan(0);
+    expect(
+      now,
+      `the NEW budget's per-port term must bind from the FIRST port (crossover 0, got ${now}). ` +
+        `Any value above 0 means the budget is flat for every module below it — the defect this ` +
+        `replaces. Crossover is COMPUTED from the constants, so it cannot drift from the prose.`,
+    ).toBe(0);
+  });
+
+  test('NEGATIVE CONTROL: modules with different port counts get DIFFERENT budgets', () => {
+    // The property the old budget failed. Perturb the input the budget claims to
+    // price and require the number to move — for the REAL registry, not a
+    // synthetic pair, because "the formula responds" and "the formula responds
+    // over the range that actually exists" are different claims and only the
+    // second one matters here.
+    const distinctPortCounts = new Set(heavyGl.map((m) => m.inputs.length)).size;
+    const distinctBudgets = new Set(heavyGl.map((m) => wireUpBudgetMs(m.inputs.length))).size;
+    const distinctLegacy = new Set(heavyGl.map((m) => legacyWireUpBudgetMs(m.inputs.length))).size;
+    expect(
+      distinctBudgets,
+      `${heavyGl.length} heavy-GL modules span ${distinctPortCounts} distinct port counts and must ` +
+        `therefore get ${distinctPortCounts} distinct budgets — one per plan. The OLD budget ` +
+        `produced only ${distinctLegacy}, which is what a flat number wearing a scaled costume ` +
+        `looks like from the outside.`,
+    ).toBe(distinctPortCounts);
+    // And the pair that motivated this: the module that went red vs a small one.
+    const wavesculpt = heavyGl.find((m) => m.type === 'wavesculpt');
+    const mandleblot = heavyGl.find((m) => m.type === 'mandleblot');
+    if (wavesculpt && mandleblot) {
+      expect(
+        wireUpBudgetMs(wavesculpt.inputs.length) - wireUpBudgetMs(mandleblot.inputs.length),
+        `wavesculpt (${wavesculpt.inputs.length} inputs) must out-budget mandleblot ` +
+          `(${mandleblot.inputs.length} inputs) by their port difference × ${PER_INPUT_MS} ms. ` +
+          `Under the old floor both got exactly 90 000 ms.`,
+      ).toBe((wavesculpt.inputs.length - mandleblot.inputs.length) * PER_INPUT_MS);
+    }
+  });
+
+  test('the historical 90 000 ms constant is PRESERVED, and no module SHRANK', () => {
+    // This change must not be readable as "the timeout was raised until it
+    // passed". The constant survives verbatim as the zero-port budget, and the
+    // direction of every other move is asserted rather than asserted about.
+    expect(
+      wireUpBudgetMs(0),
+      `a heavy-GL module with ZERO inputs must still budget exactly the historical 90 000 ms — ` +
+        `that anchor is what pins HEAVY_GL_MOUNT_MS (${HEAVY_GL_MOUNT_MS}) instead of leaving it free.`,
+    ).toBe(90_000);
+    const shrunk = heavyGl.filter(
+      (m) => wireUpBudgetMs(m.inputs.length) < legacyWireUpBudgetMs(m.inputs.length),
+    );
+    expect(
+      shrunk.map((m) => m.type),
+      'no module may end up with LESS budget than it has today — a re-derivation that quietly ' +
+        'tightens somebody is a new timeout class, not a fix.',
+    ).toEqual([]);
+  });
+
+  test('the worst-case budget still fits the e2e shard job, with the margin stated', () => {
+    // What a derived budget is structurally unable to see: ITSELF GROWING. A
+    // timeout only spends wall clock when it FIRES, so the first symptom of an
+    // over-large one is a shard dying on the JOB ceiling — which reports as
+    // infrastructure trouble, not as a test failure.
+    const ATTEMPTS = 2; // playwright.config.ts: retries: 1 on CI
+    const JOB_TIMEOUT_MS = 20 * 60_000; // ci.yml: e2e (shard N/10) timeout-minutes
+    const CEILING = JOB_TIMEOUT_MS * 0.5; // the shard has ~1/10 of the suite to run too
+    const worstModule = [...heavyGl].sort((a, b) => b.inputs.length - a.inputs.length)[0]!;
+    const worst = wireUpBudgetMs(worstModule.inputs.length) * ATTEMPTS;
+    expect(
+      worst,
+      `the largest heavy-GL plan in the sweep (${worstModule.type}, ${worstModule.inputs.length} ` +
+        `inputs) can burn ${Math.round(worst / 1000)} s across ${ATTEMPTS} attempts against a ` +
+        `${JOB_TIMEOUT_MS / 60_000}-minute shard ceiling that also has ~1/10 of the suite to run. ` +
+        `If this trips, the fix is a CHEAPER PLAN — fewer spawns per port — not a bigger job timeout.`,
+    ).toBeLessThan(CEILING);
+
+    // THE OTHER CALL SITE. `heavyVideoTimeout` is also applied to the EMIT
+    // sweep's output-scaled accumulator, and a gate that priced only the
+    // wire-up site would be exactly the partial-scope blindness this file is
+    // being fixed for. Mirrors the accumulator above it, exemptions included —
+    // a module whose outputs are all exempt never runs, so it must not be
+    // priced. (`doom`, 32 outputs, is skipped for precisely that reason and
+    // would otherwise dominate this number.)
+    const emitBudgetMs = (mod: RegistryModule): number => {
+      if (EXEMPT_OUTPUT_EMIT_MODULES[mod.type]) return 0;
+      const nonExempt = mod.outputs.filter((p) => !EXEMPT_OUTPUT_EMIT[`${mod.type}.${p.id}`]).length;
+      if (nonExempt === 0) return 0;
+      let scaled = PER_PORT_BASE_MS;
+      if (mod.outputs.length > 8) scaled = Math.max(scaled, mod.outputs.length * 5_000 + 30_000);
+      if (nonExempt >= 2) scaled = Math.max(scaled, nonExempt * 20_000 + 10_000);
+      if (touchesVideo(mod)) scaled = heavyVideoTimeout(scaled);
+      if (mod.type === 'doom') scaled = Math.max(scaled, 90_000);
+      return scaled;
+    };
+    const worstEmit = [...REGISTRY].sort((a, b) => emitBudgetMs(b) - emitBudgetMs(a))[0]!;
+    const worstEmitMs = emitBudgetMs(worstEmit) * ATTEMPTS;
+
+    // ⚠ DECLARED DEBT, surfaced by writing this gate and NOT introduced by it.
+    // The emit site is scaled at 20 000 ms per live OUTPUT, so it grows an order
+    // of magnitude faster than the wire-up site's 2 000 ms per input. Its worst
+    // live plan already budgets 85 % of the whole shard job across two attempts
+    // — and it did so BEFORE this change too (900 s of the 1 020 s below is
+    // pre-existing; the additive GL tax accounts for 120 s of it).
+    //
+    // A `toBeLessThan(CEILING)` here would simply be red on arrival, and a
+    // ceiling set above the observed value would be decoration. So this is a
+    // SHRINK-ONLY RATCHET pinned at exactly today's number, asserted in BOTH
+    // directions per the repo's ratchet rule: it cannot grow, and it cannot
+    // carry silent slack. The remedy when it next moves is a CHEAPER PLAN —
+    // fewer live outputs per test, or the emit sweep split per-output — never a
+    // bigger job timeout. Tracked as the follow-up this PR does not take on.
+    const EMIT_WORST_CEILING_MS = 1_020_000;
+    expect(
+      worstEmitMs,
+      `the EMIT sweep's largest live plan (${worstEmit.type}, ${worstEmit.outputs.length} outputs) ` +
+        `budgets ${Math.round(worstEmitMs / 1000)} s across ${ATTEMPTS} attempts — ` +
+        `${Math.round((100 * worstEmitMs) / JOB_TIMEOUT_MS)} % of the ` +
+        `${JOB_TIMEOUT_MS / 60_000}-minute shard job, for ONE test. That is over the ` +
+        `${Math.round((100 * CEILING) / JOB_TIMEOUT_MS)} % healthy share and is KNOWN DEBT; this ` +
+        `ratchet exists so it cannot grow further. If it grew, make the plan cheaper.`,
+    ).toBeLessThanOrEqual(EMIT_WORST_CEILING_MS);
+    expect(
+      EMIT_WORST_CEILING_MS - worstEmitMs,
+      'and the ratchet must carry NO SLACK — a ceiling that can only trip by growing absorbs the ' +
+        'next regression in silence. If you made this plan cheaper, lower the ceiling by the ' +
+        'same amount in the same commit.',
+    ).toBe(0);
+    // …and the headroom, expressed as the port count the envelope carries, which
+    // is the number a future author actually needs.
+    const capacityPorts = Math.floor(
+      (CEILING / ATTEMPTS - PER_PORT_BASE_MS - HEAVY_GL_MOUNT_MS) / PER_INPUT_MS,
+    );
+    expect(
+      capacityPorts,
+      `the shard envelope carries ${capacityPorts} inputs in ONE wire-up test; the biggest module ` +
+        `in the sweep needs ${worstModule.inputs.length}. Keep at least 10 inputs of headroom so ` +
+        `the next big video module does not land straight on the cliff.`,
+    ).toBeGreaterThanOrEqual(worstModule.inputs.length + 10);
+  });
 });
