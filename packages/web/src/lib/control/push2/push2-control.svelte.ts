@@ -66,6 +66,7 @@ import {
   launchpadDpadNav,
   boundClipNode,
   setLaunchpadView,
+  launchpadLegendContext,
   type ControlSurfacePort,
 } from '$lib/control/launchpad/launchpad-control.svelte';
 import * as push2Device from './push2-device.svelte';
@@ -74,6 +75,7 @@ import {
   classifyPush2,
   push2FrameToLeds,
   PUSH_CC_SHIFT,
+  PUSH_CC_LEGEND,
   PUSH_CC_ABOVE_DISPLAY_BASE,
   type PushEncoderTarget,
   type Push2LedSpec,
@@ -84,7 +86,13 @@ import { pushCardView, paramValue, type PushCardView } from './push-card-model';
 import { nudgeParamValue, MAX_ENCODER_STEP } from './push-card-encoder';
 import { laneMembers, resolveLaneFocus, stepLaneFocus, laneFocusIndex, PUSH_LANE_COUNT } from './push-lane';
 import { lastViewed, setLastViewed, forgetLane } from './push2-view.svelte';
-import { renderPushCard, pushCardSignature, type PushDrawOp } from './push-screen-layout';
+import {
+  renderPushCard,
+  renderPushLegend,
+  pushCardSignature,
+  type PushDrawOp,
+} from './push-screen-layout';
+import { pushLegendView, type PushLegendView } from './push-legend-model';
 import { pushCardRgba } from './push-card-paint';
 import { isDisplayConnected, sendFrame } from './push2-display.svelte';
 
@@ -95,6 +103,9 @@ const STORAGE_KEY_CHANNEL = 'pt.push2.selectedChannel';
 // ---------------------------------------------------------------------------
 let selectedChannel = readSelectedChannel(); // 0..7
 let shiftHeld = false; // the Push Shift button (for the D-Pad ×8)
+/** LEGEND MODE: the legend button is physically held. DISPLAY-ONLY — nothing
+ *  reads this except the display-ops seam, so it cannot change any routing. */
+let legendHeld = false;
 let unsubDevice: (() => void) | null = null;
 /** The cb launchpad-control's start() registered through the adapter's onKey —
  *  we hand PARITY events (translated to the Launchpad vocab) to it. */
@@ -161,10 +172,20 @@ const pushSurface: ControlSurfacePort = {
 function onPushEvent(raw: Push2RxEvent): void {
   // Track the Shift hold locally for the D-Pad ×8 (it is ALSO routed to the
   // Launchpad top row by classifyPush2 so the parity editor windowing works).
-  if (raw.type === 'cc' && raw.cc === PUSH_CC_SHIFT) shiftHeld = raw.s === 1;
+  if (raw.type === 'cc' && raw.cc === PUSH_CC_SHIFT) {
+    shiftHeld = raw.s === 1;
+    // While LEGEND MODE is held, SHIFT swaps every cell to its shift layer —
+    // the owner's "both layers reachable without releasing legend". The shift
+    // press still routes normally (it is a real modifier); the repaint is the
+    // only thing legend adds.
+    if (legendHeld) repaintDisplay();
+  }
 
   const action = classifyPush2(raw);
-  if (!action) return;
+  if (!action) {
+    logUnboundPushCc(raw);
+    return;
+  }
   switch (action.kind) {
     case 'launchpad':
       launchpadCb?.({ unit: 'L', ev: action.ev });
@@ -178,6 +199,48 @@ function onPushEvent(raw: Push2RxEvent): void {
     case 'encoder':
       applyEncoder(action.target, action.delta);
       break;
+    case 'legend':
+      setLegendHeld(action.held);
+      break;
+  }
+}
+
+/**
+ * LEGEND MODE hold. Momentary and DISPLAY-ONLY: press swaps the screen to the
+ * legend, release swaps it back to whatever it was showing. There is no
+ * persistence and no mode state — `legendHeld` is the entire feature's state,
+ * and it is false the instant the button comes up.
+ */
+export function setLegendHeld(held: boolean): void {
+  if (legendHeld === held) return;
+  legendHeld = held;
+  bump(); // the card's DOM preview mirrors the panel
+  repaintDisplay();
+}
+
+/** Is the legend overlay showing? (The card preview + tests read this.) */
+export function isLegendHeld(): boolean {
+  return legendHeld;
+}
+
+/**
+ * Print the CC of a button press we do not route — ONCE per CC, at info level.
+ *
+ * This exists because the Push 2's CC↔physical-button map is documented by
+ * NUMBER but not by POSITION, so identifying "the black button in the far right
+ * corner" from a chair with no device is guesswork. With this, the owner presses
+ * the button with DevTools open and reads the answer. Bounded by construction:
+ * at most one line per distinct CC for the life of the page.
+ */
+const loggedUnboundCcs = new Set<number>();
+function logUnboundPushCc(raw: Push2RxEvent): void {
+  if (raw.type !== 'cc' || raw.s !== 1) return;
+  if (loggedUnboundCcs.has(raw.cc)) return;
+  loggedUnboundCcs.add(raw.cc);
+  try {
+    console.info(`[push2] unbound button pressed: CC ${raw.cc}`);
+  } catch {
+    /* non-fatal diagnostic */
   }
 }
 
@@ -583,9 +646,31 @@ let paintUnavailable = false;
  * A missing display is never an error — with no transport attached this is a
  * pure early return and the pads/encoders carry on over Web MIDI.
  */
+/**
+ * The CURRENT legend, for whatever the shared brain is routing right now. PURE
+ * apart from reading the live routing context — which is the point: the legend
+ * is a function of the router's own state, never of a copy.
+ */
+export function currentPushLegendView(): PushLegendView {
+  return pushLegendView(launchpadLegendContext());
+}
+
+/**
+ * WHAT THE PANEL SHOWS: the LEGEND while its button is held, else the push card.
+ *
+ * ONE seam for both consumers — the WebUSB frame pump below and the card's DOM
+ * preview canvas — so the on-screen preview cannot disagree with the hardware
+ * about what is being displayed. It is also why "release restores the previous
+ * display" needs no saved bitmap: the ops are re-derived, the signature returns
+ * to the card's, and the dirty check ships exactly one frame.
+ */
+export function pushDisplayOps(): PushDrawOp[] {
+  return legendHeld ? renderPushLegend(currentPushLegendView()) : renderPushCard(currentPushCardView());
+}
+
 export function repaintDisplay(force = false): void {
   if (!isDisplayConnected() || paintUnavailable) return;
-  const ops = renderPushCard(currentPushCardView());
+  const ops = pushDisplayOps();
   const sig = pushCardSignature(ops);
   if (!force && sig === lastSignature) return;
   const rgba = painter(ops);
@@ -688,6 +773,8 @@ export function __test_resetPush2Control(): void {
   }
   launchpadCb = null;
   shiftHeld = false;
+  legendHeld = false;
+  loggedUnboundCcs.clear();
   selectedChannel = 0;
   for (const pump of ccPumps.values()) pump.dispose();
   ccPumps.clear();

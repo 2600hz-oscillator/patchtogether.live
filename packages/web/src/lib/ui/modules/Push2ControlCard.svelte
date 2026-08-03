@@ -7,11 +7,14 @@
   // display encoders turn the current card's 8 controls. START/STOP moves to the
   // Push Play button.
   //
-  // THE PREVIEW IS THE POINT. This card renders the EXACT same PushCardView the
-  // 960×160 panel paints, through the exact same draw ops, into a canvas scaled
-  // to the card width. That makes the whole feature — schema, lane selection,
-  // curve math, layout — visible and testable with NO HARDWARE ATTACHED, which
-  // is the only reason any of it could be built without a Push on the desk.
+  // THE PREVIEW IS THE POINT. This card renders EXACTLY what the 960×160 panel
+  // paints, through the exact same draw ops, into a canvas scaled to the card
+  // width. That makes the whole feature — schema, lane selection, curve math,
+  // layout — visible and testable with NO HARDWARE ATTACHED, which is the only
+  // reason any of it could be built without a Push on the desk. It reads the
+  // SHARED `pushDisplayOps()` seam rather than re-deriving the card, so while
+  // the hardware LEGEND button is held this preview shows the legend too — one
+  // seam, so the preview cannot disagree with the panel about what is on screen.
   //
   // Modeled on LaunchpadControlCard / ElectraConnectButton: no eager MIDI prompt.
   // "Connect Push 2" runs the gesture-gated sysex request; "Connect display" is a
@@ -37,6 +40,8 @@
     scrollPushCard,
     statusRune,
     setLaunchpadView,
+    pushDisplayOps,
+    isLegendHeld,
   } from '$lib/control/push2/push2-control.svelte';
   import {
     usbAvailable,
@@ -45,7 +50,7 @@
     displayStatus,
     displayStatusRune,
   } from '$lib/control/push2/push2-display.svelte';
-  import { renderPushCard, PUSH_SCREEN_W, PUSH_SCREEN_H } from '$lib/control/push2/push-screen-layout';
+  import { PUSH_SCREEN_W, PUSH_SCREEN_H } from '$lib/control/push2/push-screen-layout';
   import { paintPushOps } from '$lib/control/push2/push-card-paint';
   import { launchpadActiveView } from '$lib/control/launchpad/launchpad-control.svelte';
   import type { SingleView } from '$lib/control/launchpad/launchpad-map';
@@ -70,15 +75,21 @@
   let card = $derived((statusRune(), nodesStructuralVersion(), docVersion(), currentPushCardView()));
   let focusId = $derived((statusRune(), nodesStructuralVersion(), focusedModuleId()));
 
-  // The 960×160 preview: the SAME draw ops the panel gets.
+  // Is the hardware LEGEND button held? The preview follows the panel through
+  // the shared `pushDisplayOps` seam, so holding it on the device shows the
+  // legend HERE too — one seam, no second renderer to disagree.
+  let legendOn = $derived((statusRune(), isLegendHeld()));
+
+  // The 960×160 preview: the SAME draw ops the panel gets — card or legend.
   let previewCanvas = $state<HTMLCanvasElement | null>(null);
   $effect(() => {
     const c = previewCanvas;
-    const v = card; // tracked
+    void card; // tracked — repaint on any card change
+    void legendOn; // tracked — repaint when the legend overlay comes/goes
     if (!c) return;
     const ctx = c.getContext('2d');
     if (!ctx) return;
-    paintPushOps(ctx, renderPushCard(v));
+    paintPushOps(ctx, pushDisplayOps());
   });
 
   async function connectScreen() {
