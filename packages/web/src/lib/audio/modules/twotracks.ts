@@ -168,9 +168,12 @@ export const twotracksDef: AudioModuleDef = {
 
   // Workflow channel-columns override (owner "fixable in code" directive):
   // TWOTRACKS is "too weird to be a source easily" — it has FOUR audio inputs
-  // (reel A + reel B stereo pairs) and no declared stereoPairs, so the default
-  // main-in resolution would guess across them. Declare the insert IN = reel A's
-  // stereo audio input and the chain OUT = the mixed A/B stereo output. Role
+  // (reel A + reel B stereo pairs), so which pair is "the" insert input is
+  // genuinely ambiguous to the default main-in resolution. Declare the insert
+  // IN = reel A's stereo audio input and the chain OUT = the mixed A/B stereo
+  // output. (This override is precedence 0 — it wins over the `stereoPairs`
+  // branch below, which would otherwise resolve reel A by declaration order.
+  // Same answer either way; the override is what pins it.) Role
   // 'both': dropped on an EMPTY column it acts as a source (out → mixer);
   // inserted UNDER a source (e.g. tidyvco) it takes tidyvco → reel-A-in and its
   // A-side out → downstream, exactly the owner's TWOTRACKS scenario.
@@ -198,6 +201,24 @@ export const twotracksDef: AudioModuleDef = {
   outputs: [
     { id: 'out_l', type: 'audio' },
     { id: 'out_r', type: 'audio' },
+  ],
+
+  // The module's stereo topology, declared. THREE pairs: reel A's stereo input,
+  // reel B's stereo input, and the mixed stereo output. All three are genuinely
+  // two-channel in the DSP — reel A reads worklet inputs 0/1 and reel B 2/3,
+  // each reel keeps parallel L/R ring buffers, and the output bus carries two
+  // channels — so the def has to say so. This is what the stereo auto-wire
+  // planner reads (`$lib/graph/stereo-autowire`): patching a stereo source's L
+  // into `audio_l_in_a` now also wires its R into `audio_r_in_a`, and
+  // `out_l` → a stereo target's L also wires `out_r` → its R.
+  //
+  // It does NOT change chain/column wiring: `chainWiring` below is precedence 0
+  // in resolveMainAudioIn/Out, ahead of the stereoPairs branch, and
+  // patch-convenience-columns.test.ts pins that resolution.
+  stereoPairs: [
+    ['audio_l_in_a', 'audio_r_in_a'],
+    ['audio_l_in_b', 'audio_r_in_b'],
+    ['out_l', 'out_r'],
   ],
 
   params: [
@@ -306,6 +327,27 @@ export const twotracksDef: AudioModuleDef = {
       numberOfOutputs: 1,
       outputChannelCount: [2], // stereo
     });
+
+    // STEREO IS A SPLITTER, NOT TWO REFERENCES TO THE SAME BUS.
+    //
+    // The worklet has ONE output carrying TWO channels (numberOfOutputs: 1,
+    // outputChannelCount: [2]). Mapping both port handles at
+    // `{ node: workletNode, output: 0 }` — which is what shipped — makes
+    // `out_l` and `out_r` the SAME graph edge, so patching them into two mono
+    // destinations hands each one the whole 2-channel bus and Web Audio
+    // down-mixes it to (L+R)/2 at BOTH. The tape is genuinely stereo (the reel
+    // ring buffers are parallel L/R, the WAV export writes interleaved stereo,
+    // and the docs describe OUT L / OUT R as separate channels), so the module
+    // has to actually deliver two channels. Note the INPUT side was always
+    // right — reel A takes worklet inputs 0/1 and reel B 2/3 — which is what
+    // makes this an output-side mistake rather than a mono design.
+    //
+    // Why it survived: a mono source recorded to both reel channels gives
+    // L === R, so the collapse is inaudible unless the two channels genuinely
+    // differ (a stereo source, or per-channel processing). Same failure and
+    // same fix as RINGBACK — see ringback.ts.
+    const splitter = ctx.createChannelSplitter(2);
+    workletNode.connect(splitter, 0, 0);
 
     // Muted keep-alive
     const sink = ctx.createGain();
@@ -515,9 +557,11 @@ export const twotracksDef: AudioModuleDef = {
         ['overdub_b',    { node: workletNode, input: 0, param: params.get('overdub_toggle_b')! }],
       ]),
 
+      // Two DIFFERENT splitter outputs — not two references to one stereo bus.
+      // See the ChannelSplitter comment in the factory body above.
       outputs: new Map([
-        ['out_l', { node: workletNode, output: 0 }],
-        ['out_r', { node: workletNode, output: 0 }],
+        ['out_l', { node: splitter, output: 0 }],
+        ['out_r', { node: splitter, output: 1 }],
       ]),
 
       setParam(paramId: string, value: number) {
@@ -594,6 +638,7 @@ export const twotracksDef: AudioModuleDef = {
         if (pollTimer !== null) clearTimeout(pollTimer);
         try { workletNode.port.onmessage = null; } catch { /* */ }
         try { workletNode.disconnect(); } catch { /* */ }
+        try { splitter.disconnect(); } catch { /* */ }
         try { sink.disconnect(); } catch { /* */ }
       },
     };

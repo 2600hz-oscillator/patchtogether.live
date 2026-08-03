@@ -3428,6 +3428,9 @@ twotracks param reso_a 0..1 linear default=0
 twotracks param reso_b 0..1 linear default=0
 twotracks param start_a 0..1 linear default=0
 twotracks param start_b 0..1 linear default=0
+twotracks stereo audio_l_in_a+audio_r_in_a
+twotracks stereo audio_l_in_b+audio_r_in_b
+twotracks stereo out_l+out_r
 unityscalemathematik meta domain=audio
 unityscalemathematik in a_atten_cv cv param=aAtten cvScale=linear
 unityscalemathematik in a_curve_cv cv param=aCurve cvScale=linear
