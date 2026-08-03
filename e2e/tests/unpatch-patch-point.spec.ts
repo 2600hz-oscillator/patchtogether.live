@@ -263,6 +263,29 @@ async function pollChannelRms(
 test("rear card: right-click UNPATCH removes a lane's auto-wired POLY cable (and it stays gone); undo restores it", async ({
   page,
 }) => {
+  // ⚠ THE BUDGET IS NOT A GATE — it BOUNDS the failure. See the block comment
+  // above `pollChannelRms`: a wall-clock budget is a different assertion on
+  // every machine. This test never had one that was sized; it inherited
+  // Playwright's STOCK 30 s default, which nobody chose for a scenario that
+  // boots the workflow shell, palette-drops through the reconciler, opens a
+  // dock full view, flips it, drives two real pointer clicks, and then holds a
+  // MANDATORY 2.5 s window open to prove the cable stays detached.
+  //
+  // MEASURED (main @ 9b2c922a, CI run 30851519718, shard 10/10 — the P0):
+  //   attempt 1  every assertion PASSED, last one finished at 32.06 s
+  //   retry 1    every assertion PASSED, last one finished at 30.77 s
+  // Both were killed at 30.00 s having already proved the behaviour correct —
+  // the retry missed by 0.77 s. On the previous GREEN run (30839088507) this
+  // same test took 26.86 s, i.e. it was shipping at 89.5 % of its budget and
+  // had been a coin flip since it was written.
+  //
+  // `test.slow()` (×3 → 90 s) rather than a hand-picked constant: it scales
+  // with the suite default instead of pinning a second magic number, and it
+  // costs ZERO wall time on the happy path — a timeout is a ceiling, not a
+  // sleep. 90 s is ~2.8× the worst observed 32.06 s and stays well inside the
+  // shard's `timeout-minutes`, so a genuine hang still reports its own trace
+  // rather than being killed with the job (#1319).
+  test.slow();
   await gotoWorkflow(page);
   const strum = await dropSixStrumInLane1(page);
   const polyEdge = `pinned-clipplayer.pitch1 -> ${strum}.poly`;
@@ -338,6 +361,11 @@ test('rear card: unpatching POLY silences the note path at the mixer channel met
 test('rear card: a fanned-out OUTPUT lists every cable + "Unpatch all (N)", stays viewport-clamped, and an unpatched hole opens NO menu', async ({
   page,
 }) => {
+  // Same shape, same shell boot, and MEASURED WORSE than the test above:
+  // 27.06 s of a 30 s budget (90.2 %) on the last GREEN run. It survived that
+  // run only because it landed on a less contended shard slot. Budgeted with
+  // the test above rather than left as the next P0. (Reasoning: see there.)
+  test.slow();
   await gotoWorkflow(page);
   const strum = await dropSixStrumInLane1(page);
   await openRearCard(page, strum);

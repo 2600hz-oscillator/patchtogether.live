@@ -306,6 +306,10 @@ test.describe('workflow channel columns', () => {
   });
 
   test('MULTI-SOURCE: two instruments in ONE column → BOTH clip-driven, but ONLY the head sends (2nd is automation-only)', async ({ page }) => {
+    // MEASURED 27.01 s of 30 s (90.0 %) on the last GREEN run — above the test
+    // that actually reddened main. Two palette drops through the reconciler
+    // plus an audio-RMS read; the work is genuine, the budget was not sized.
+    test.slow();
     await page.goto('/rack?mode=workflow');
     await waitForPinnedTrio(page);
 
@@ -666,6 +670,13 @@ test.describe('workflow channel columns', () => {
   });
 
   test('ADDITIVE: adding a CV Buddy tap to an in-app source lane leaves its audio RMS unchanged', async ({ page }) => {
+    // The single closest test to its budget in the whole e2e suite: MEASURED
+    // 30.06 s of a 30 s default on a GREEN run (100.2 %) — it reported passed
+    // only because the last assertion landed inside the tick the timeout fired
+    // on. Same root cause as the unpatch-patch-point P0 (CI run 30851519718):
+    // a stock Playwright default doing gating work nobody sized it for.
+    // ×3 → 90 s; costs nothing when green.
+    test.slow();
     await page.goto('/rack?mode=workflow');
     await waitForPinnedTrio(page);
 
