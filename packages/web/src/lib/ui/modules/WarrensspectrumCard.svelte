@@ -171,7 +171,7 @@
             aria-label={`Band ${i + 1}: ${Math.round(b.cutoffHz)} Hz`}
             onclick={() => (selectedBand = i)}
           >
-            <span class="band-bar" style={`height:${Math.round(4 + b.send * 22)}px`}></span>
+            <span class="band-bar" style={`height:${Math.round(3 + b.send * 14)}px`}></span>
             <span class="band-hz">{b.cutoffHz >= 1000 ? `${(b.cutoffHz / 1000).toFixed(1)}k` : Math.round(b.cutoffHz)}</span>
           </button>
         {/each}
@@ -221,9 +221,13 @@
     gap: 8px;
     padding: 0 12px;
   }
+  /* The bank is the tallest block on the card, so its chrome is where the
+     height budget is won or lost. Everything here is trimmed to the minimum
+     that stays legible — the card is 3u (540 CSS px) and the measured
+     natural height must leave real slack, not scrape the tier boundary. */
   .warrensspectrum-card .bank {
-    margin-top: 6px;
-    padding: 4px 12px 2px;
+    margin-top: 4px;
+    padding: 3px 12px 0;
     border-top: 1px solid var(--border-subtle, #333);
     opacity: 0.55;
   }
@@ -232,17 +236,18 @@
     display: flex;
     justify-content: space-between;
     align-items: baseline;
-    font-size: 0.6rem;
+    font-size: 0.55rem;
+    line-height: 1.1;
     letter-spacing: 0.08em;
     color: var(--text-muted, #999);
   }
-  .warrensspectrum-card .bank-state { font-size: 0.55rem; }
+  .warrensspectrum-card .bank-state { font-size: 0.5rem; }
   .warrensspectrum-card .bank.live .bank-state { color: var(--cable-audio, #d97); }
   .warrensspectrum-card .band-strip {
     display: flex;
     justify-content: space-between;
     gap: 3px;
-    margin-top: 3px;
+    margin-top: 2px;
   }
   .warrensspectrum-card .band-cell {
     flex: 1 1 0;
@@ -250,8 +255,8 @@
     flex-direction: column;
     align-items: center;
     justify-content: flex-end;
-    gap: 2px;
-    height: 40px;
+    gap: 1px;
+    height: 30px;
     padding: 2px 0 1px;
     background: var(--surface-sunken, #1a1a1a);
     border: 1px solid var(--border-subtle, #333);
