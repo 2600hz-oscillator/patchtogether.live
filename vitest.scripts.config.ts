@@ -22,8 +22,9 @@ export default defineConfig({
     include: ['scripts/**/*.test.ts'],
     environment: 'node',
     globals: false,
-    // The scaffolder mutates real files; force a single fork so two
-    // tests don't trample each other's edits to module-categories.ts.
+    // The scaffolder tests run against a throwaway fixture tree, never the
+    // real registry files (see scripts/new-module.test.ts). Single fork is
+    // kept so scripts tests don't race on shared temp/process state.
     pool: 'forks',
     poolOptions: { forks: { singleFork: true } },
   },

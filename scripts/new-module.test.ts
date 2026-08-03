@@ -1,19 +1,95 @@
 // scripts/new-module.test.ts
 //
-// Tests for the new-module scaffolder. These are HEAVY by unit-test
-// standards: each test calls scaffold() against the real codebase + then
-// undo()s to leave the tree clean. We avoid the typecheck step inside
-// the tests (it takes ~30s and the test harness is what's flaky-prone if
-// typecheck slows down); a separate "scaffolder roundtrip is typecheck-
-// clean" assertion can be added as a `task` target if it ever matters.
+// Tests for the new-module scaffolder.
+//
+// ⚠ THESE TESTS USED TO MUTATE THE REAL WORKING COPY. scaffold() wrote into
+// the tracked registry files and undo() put them back — except undo() was not
+// byte-exact, so every `task test:scripts` run appended +5 blank lines to
+// packages/web/src/lib/ui/modules-card-map.test.ts and left them there. That
+// file is one of the hand-maintained lists concurrent PRs already collide on
+// (see CLAUDE.md's post-merge conflict sweep), so the residue manufactured
+// conflicts between unrelated PRs and corrupted the "did my additions
+// survive?" git-grep check the sweep depends on. 200 stray blank lines had
+// accumulated in it by the time this was found.
+//
+// The scaffolder's insert/undo asymmetry is fixed at the source
+// (insertMarkerLine in new-module.ts). This file removes the whole CLASS on
+// top of that: the scaffolder is pointed at a throwaway FIXTURE TREE via
+// NEW_MODULE_REPO_ROOT, so it cannot open a tracked file even if a future
+// edit reintroduces an asymmetry. The final describe() block is the guard
+// that keeps it that way.
+//
+// We avoid the typecheck step inside the tests (it takes ~30s); a separate
+// "scaffolder roundtrip is typecheck-clean" assertion can be added as a
+// `task` target if it ever matters.
 //
 // All tests use a guard-rail beforeEach to make sure no orphan markers /
 // stub files survive from a previous failed run.
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { existsSync, readFileSync } from 'node:fs';
+import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-import { __test_internals } from './new-module.ts';
+// ───────────────────────────────────────────────────────────────────────────
+// The REAL checkout. Only ever READ here — never handed to the scaffolder.
+
+const REAL_REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const real = (rel: string): string => join(REAL_REPO_ROOT, rel);
+
+/** Every tracked file the scaffolder is capable of writing to. Copied into
+ *  the fixture tree below, and byte-compared in the guard at the bottom. */
+const REGISTRY_FILES = [
+  'packages/web/src/lib/audio/modules/index.ts',
+  'packages/web/src/lib/video/modules/index.ts',
+  'packages/web/src/lib/meta/modules/index.ts',
+  'packages/web/src/lib/graph/types.ts',
+  'packages/web/src/lib/ui/Canvas.svelte',
+  'packages/web/src/lib/ui/module-categories.ts',
+  'packages/web/src/lib/docs/module-manifest.ts',
+  'e2e/vrt/vrt-exemptions.ts',
+  'packages/web/src/lib/ui/modules-card-map.test.ts',
+] as const;
+
+/** Read by loadCloneShape('resofilter') — a real def, so the clone assertions
+ *  keep testing the real port shape rather than a hand-written stand-in. */
+const CLONE_SOURCE_FILES = ['packages/web/src/lib/audio/modules/resofilter.ts'] as const;
+
+/** Directories the scaffolder writes new files into (and loadCloneShape scans). */
+const FIXTURE_DIRS = [
+  'packages/web/src/lib/audio/modules',
+  'packages/web/src/lib/video/modules',
+  'packages/web/src/lib/meta/modules',
+  'packages/web/src/lib/ui/modules',
+] as const;
+
+// Snapshot the REAL files BEFORE anything runs. This is the guard's baseline.
+const REAL_BEFORE = new Map<string, string>(
+  REGISTRY_FILES.map((rel) => [rel, readFileSync(real(rel), 'utf8')]),
+);
+
+// ───────────────────────────────────────────────────────────────────────────
+// The FIXTURE TREE. Built before new-module.ts is imported, because that
+// module resolves its path constants eagerly at load time.
+
+const SANDBOX = mkdtempSync(join(tmpdir(), 'new-module-sandbox-'));
+
+for (const rel of [...REGISTRY_FILES, ...CLONE_SOURCE_FILES]) {
+  const dest = join(SANDBOX, rel);
+  mkdirSync(dirname(dest), { recursive: true });
+  cpSync(real(rel), dest);
+}
+for (const rel of FIXTURE_DIRS) mkdirSync(join(SANDBOX, rel), { recursive: true });
+
+process.env.NEW_MODULE_REPO_ROOT = SANDBOX;
+
+// Dynamic import so the assignment above lands first.
+const { __test_internals } = await import('./new-module.ts');
+
+afterAll(() => {
+  rmSync(SANDBOX, { recursive: true, force: true });
+});
 
 const {
   toCamel,
@@ -22,6 +98,8 @@ const {
   scaffold,
   undo,
   loadCloneShape,
+  insertMarkerLine,
+  REPO_ROOT,
   GRAPH_TYPES_PATH,
   REGISTRY_PATHS,
   CANVAS_PATH,
@@ -264,6 +342,45 @@ describe('undo', () => {
     expect(result.filesDeleted).toEqual([]);
     expect(result.filesEdited).toEqual([]);
   });
+
+  // ── The regression this file exists for. ────────────────────────────────
+  //
+  // scaffold() → undo() must return every edited file to its EXACT prior
+  // bytes. The historical defect was addCardMapTestEntry() inserting TWO
+  // newlines while removeMarkerLines() dropped ONE line, so each cycle left
+  // a blank line behind. The `.includes(marker) === false` assertion above is
+  // structurally blind to that: the marker really is gone, and the file is
+  // still wrong.
+  it('is BYTE-EXACT — a scaffold/undo cycle leaves every edited file unchanged', () => {
+    const before = new Map<string, string>(
+      [MANIFEST_PATH, VRT_EXEMPTIONS_PATH, CARD_MAP_TEST_PATH].map(
+        (f) => [f, readFileSync(f, 'utf8')],
+      ),
+    );
+
+    // Two full cycles: residue of this class ACCUMULATES, so a second pass
+    // makes an off-by-one-line bug twice as visible and proves the first
+    // cycle didn't merely get lucky.
+    for (const pass of [1, 2]) {
+      scaffold({
+        type: TEST_TYPE_A, domain: 'audio',
+        label: 'MYTESTMOD', category: 'Effects',
+        fromType: null, noCard: false, noTypecheck: true,
+      });
+      undo(TEST_TYPE_A);
+
+      for (const [f, prior] of before) {
+        const now = readFileSync(f, 'utf8');
+        expect(
+          now === prior,
+          `pass ${pass}: ${f} is NOT byte-identical after scaffold+undo — ` +
+          `${prior.split('\n').length} → ${now.split('\n').length} lines. ` +
+          `An insert that adds more than the ONE line undo removes leaks residue ` +
+          `into a tracked registry file on every run.`,
+        ).toBe(true);
+      }
+    }
+  });
 });
 
 describe('scaffold — video / meta domain stubs', () => {
@@ -293,3 +410,119 @@ describe('scaffold — video / meta domain stubs', () => {
     expect(readFileSync(REGISTRY_PATHS.meta, 'utf8')).not.toContain(`${toCamel(TEST_TYPE_A)}Def`);
   });
 });
+
+// ───────────────────────────────────────────────────────────────────────────
+// insertMarkerLine — the invariant that makes undo byte-exact, asserted at
+// the seam so the rule is stated once and cannot be quietly reintroduced.
+
+describe('insertMarkerLine (byte-exact-undo invariant)', () => {
+  const SRC = "const A = [\n  'a',\n];\n";
+  const endIdx = SRC.indexOf(']');
+
+  it('inserts EXACTLY one line', () => {
+    const next = insertMarkerLine(SRC, endIdx, "  'b', // [new-module:b]\n", 'fixture.ts');
+    expect(next).toBe("const A = [\n  'a',\n  'b', // [new-module:b]\n];\n");
+    expect(next.split('\n').length).toBe(SRC.split('\n').length + 1);
+  });
+
+  it('REJECTS a leading newline — the exact shape that leaked 200 blank lines', () => {
+    expect(() => insertMarkerLine(SRC, endIdx, "\n  'b', // [new-module:b]\n", 'fixture.ts'))
+      .toThrow(/EXACTLY one/);
+  });
+
+  it('REJECTS an unterminated line', () => {
+    expect(() => insertMarkerLine(SRC, endIdx, "  'b', // [new-module:b]", 'fixture.ts'))
+      .toThrow(/EXACTLY one/);
+  });
+
+  it('REJECTS splicing into the middle of an existing line', () => {
+    const inline = "const A = ['a'];\n";
+    expect(() => insertMarkerLine(inline, inline.indexOf(']'), "  'b', // [new-module:b]\n", 'fixture.ts'))
+      .toThrow(/newline before the closing bracket/);
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// THE GUARD. Declared last so it runs after every test above (vitest executes
+// in declaration order). It asserts the thing this whole file is about: the
+// suite does not touch the real working copy.
+
+describe('GUARD — the scaffolder suite never touches the real working copy', () => {
+  // Permanent instrument negative-control. Without this, a broken sandbox
+  // (typo'd env var, an eagerly-cached import, a path constant that stopped
+  // going through rp()) would silently send every test above back at the real
+  // tree — and the byte-comparison below would STILL pass, because
+  // scaffold+undo is byte-exact again. "Sandboxed" and "not sandboxed but
+  // tidy" are indistinguishable from that comparison alone, so the redirect
+  // is proved separately, on every run.
+  it('the scaffolder resolved its paths INSIDE the fixture tree, not the repo', () => {
+    expect(SANDBOX).not.toBe(REAL_REPO_ROOT);
+    expect(REPO_ROOT, 'new-module.ts did not honour NEW_MODULE_REPO_ROOT').toBe(SANDBOX);
+
+    for (const p of [
+      CARD_MAP_TEST_PATH, MANIFEST_PATH, VRT_EXEMPTIONS_PATH, GRAPH_TYPES_PATH,
+      CANVAS_PATH, MODULE_CATEGORIES_PATH,
+      REGISTRY_PATHS.audio, REGISTRY_PATHS.video, REGISTRY_PATHS.meta,
+      audioModulePath(TEST_TYPE_A), cardPath(toPascal(TEST_TYPE_A)),
+      moduleTestPath('audio', TEST_TYPE_A),
+    ]) {
+      expect(p.startsWith(SANDBOX + sep), `${p} must resolve inside the fixture tree`).toBe(true);
+      expect(
+        p.startsWith(REAL_REPO_ROOT + sep),
+        `${p} resolves inside the REAL repo — the scaffolder would edit tracked files`,
+      ).toBe(false);
+    }
+  });
+
+  it('every tracked registry file is byte-identical to its pre-test content', () => {
+    for (const [rel, before] of REAL_BEFORE) {
+      const after = readFileSync(real(rel), 'utf8');
+      expect(after === before, mutationReport(rel, before, after)).toBe(true);
+    }
+  });
+
+  it('left no scaffolded stub files behind in the real tree', () => {
+    const candidates: string[] = [];
+    for (const type of [TEST_TYPE_A, TEST_TYPE_B]) {
+      for (const domain of ['audio', 'video', 'meta']) {
+        candidates.push(`packages/web/src/lib/${domain}/modules/${type}.ts`);
+        candidates.push(`packages/web/src/lib/${domain}/modules/${type}.test.ts`);
+      }
+      candidates.push(`packages/web/src/lib/ui/modules/${toPascal(type)}Card.svelte`);
+    }
+    const found = candidates.filter((rel) => existsSync(real(rel)));
+    expect(found, `scaffolded stubs leaked into the real tree: ${found.join(', ')}`).toEqual([]);
+  });
+});
+
+/** A readable line-level report — vitest's default diff on a 300-line source
+ *  file is unusable, and "which line moved" is the whole diagnosis here. */
+function mutationReport(rel: string, before: string, after: string): string {
+  if (before === after) return `${rel} unchanged`;
+  const a = before.split('\n');
+  const b = after.split('\n');
+  let head = 0;
+  while (head < a.length && head < b.length && a[head] === b[head]) head++;
+  let tail = 0;
+  while (
+    tail < a.length - head && tail < b.length - head &&
+    a[a.length - 1 - tail] === b[b.length - 1 - tail]
+  ) tail++;
+
+  const show = (lines: string[], mark: string): string[] =>
+    lines.slice(0, 8).map((l) => `    ${mark} ${JSON.stringify(l)}`)
+      .concat(lines.length > 8 ? [`    ${mark} …and ${lines.length - 8} more`] : []);
+
+  return [
+    ``,
+    `${rel} was MUTATED by the scaffolder test suite.`,
+    `  ${a.length} → ${b.length} lines; first divergence at line ${head + 1}.`,
+    ...show(a.slice(head, a.length - tail), '-'),
+    ...show(b.slice(head, b.length - tail), '+'),
+    ``,
+    `  This suite must run entirely inside the NEW_MODULE_REPO_ROOT fixture tree.`,
+    `  A mutation here means either the sandbox redirect broke, or scaffold()/undo()`,
+    `  stopped being byte-exact (see insertMarkerLine in scripts/new-module.ts).`,
+    ``,
+  ].join('\n');
+}
