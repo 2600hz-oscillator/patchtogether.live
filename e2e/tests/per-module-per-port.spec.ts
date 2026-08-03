@@ -48,7 +48,7 @@
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch, type SpawnNode, type SpawnEdge } from './_helpers';
-import { readScopeSnapshot, summarize, runFor } from './_module-coverage-helpers';
+import { observeScopePeak, runFor } from './_module-coverage-helpers';
 import { REGISTRY, type RegistryModule, type RegistryPort } from './_registry';
 import { driverFor } from './_drivers';
 import { perPortDriverFor } from './_per-port-drivers';
@@ -1160,34 +1160,26 @@ test.describe('per-module per-port: handle presence', () => {
 // internally + emits exempt-skipped notes inline so a failure message
 // pinpoints the offending port.
 
-test.describe('per-module per-port: outputs emit signal', () => {
-  for (const mod of REGISTRY) {
-    if (mod.outputs.length === 0) continue;
-    const skipReason = SKIP_SPAWN[mod.type];
-    const title = `${mod.type}: every declared output emits a measurable signal`;
-    if (skipReason) {
-      test.fixme(`${title} [SKIPPED: ${skipReason}]`, () => {});
-      continue;
-    }
+// ────────── The emit sweep's SKIP DECISION — ONE definition ──────────
+//
+// Every reason the emit sweep declines to run for a module, in one place, so
+// the test loop and the budget ratchet below cannot disagree about which tests
+// EXIST. They did disagree: the ratchet's private mirror re-read the two
+// EXEMPT_* lists and nothing else, so it was structurally blind to the
+// SKIP_SPAWN, effect-shape and pure-CV-utility skips — three of the five
+// reasons. It therefore priced `colourofmagic` (22 outputs, 1 020 s across two
+// attempts) as "the worst LIVE plan" when that test is `test.fixme`-d and has
+// never executed. A mirror that re-derives half a predicate reports a number
+// about a test that does not run; anchoring both callers to this function is
+// what makes the ratchet's subject the same as the loop's.
+//
+// Returns the skip reason (the suffix the fixme title carries) or null when the
+// module's emit test really runs.
 
-    // Effect-shape skip: modules whose primary audio path is "audio in
-    // → audio/cv/gate/video out" (filters, reverbs, delays, mixers,
-    // SCOPE passthrough, video-domain compositors) can't emit anything
-    // without an upstream source. The dedicated specs cover their
-    // outputs against real sources; here we'd just re-assert the
-    // bare-spawn-emits-silence trivial case. Mirrors the same heuristic
-    // in per-module.spec.ts.
-    //
-    // Heuristic: `audio` or `video` typed input present → effect shape.
-    // (Many MI Eurorack ports — RINGS, ELEMENTS, WARPS — also fall in
-    // this bucket.)
-    //
-    // Exception: a module that has an `audio` input AND self-running
-    // outputs (FOXY's out_l/out_r ring even with no upstream because the
-    // wavetable oscillator is ticking; the `fm` input is OPTIONAL) needs
-    // override. We list those modules in NOT_EFFECT_DESPITE_AUDIO_INPUT
-    // so they go through the normal output-emit path.
-    const NOT_EFFECT_DESPITE_AUDIO_INPUT = new Set([
+/** A module that has an `audio`/`video` input AND self-running outputs (FOXY's
+ *  out_l/out_r ring even with no upstream because the wavetable oscillator is
+ *  ticking; the `fm` input is OPTIONAL), so it takes the normal emit path. */
+const NOT_EFFECT_DESPITE_AUDIO_INPUT = new Set([
       'foxy',     // out_l/out_r ring at default tune=0
       'wavetableVco',
       'swolevco',
@@ -1214,132 +1206,141 @@ test.describe('per-module per-port: outputs emit signal', () => {
       // cycle. Its audio-typed fm / pm / sync inputs are OPTIONAL modulation,
       // not a required source — so the outputs-emit sweep (incl. the new
       // sync_out) applies, same as moog921Vco / wavetableVco.
-      'analogVco',
-    ]);
-    const hasUpstreamMediaInput = mod.inputs.some(
-      (p) => p.type === 'audio' || p.type === 'video' || p.type === 'mono-video' || p.type === 'image',
-    );
-    // If a per-port driver registers extra setup for this module
-    // (upstream graph, seeded params, seeded data, page init, post-spawn
-    // event dispatch), it's SUPPLYING what the effect needs — bypass the
-    // effect-shape skip. (Example: VIDEOOUT has a video input but the
-    // VIDEOOUT driver wires ACIDWARP.out into it, so the .out passthrough
-    // becomes assertable. POLYSEQZ has cv inputs but the driver seeds
-    // isPlaying=1 + steps so it self-runs.)
-    const ppDriverModule = perPortDriverFor(mod.type);
-    const hasDriverSetup = !!(
-      ppDriverModule
-      && (ppDriverModule.upstream || ppDriverModule.params || ppDriverModule.data || ppDriverModule.pageSetup || ppDriverModule.postSpawn)
-    );
-    if (
-      hasUpstreamMediaInput
-      && !NOT_EFFECT_DESPITE_AUDIO_INPUT.has(mod.type)
-      && !hasDriverSetup
-    ) {
-      test.fixme(`${title} [SKIPPED: effect-shape (audio/video input — needs upstream source); covered by dedicated specs]`, () => {});
-      continue;
-    }
+  'analogVco',
+]);
 
-    // Second effect-shape pattern: pure CV/gate modulator with NO
-    // audio/video output AND at least one cv/gate INPUT. These modules
-    // are arithmetic / logic / clock-divider utilities (ANALOGLOGICMATHS,
-    // FOURPLEXER, UNITYSCALEMATHEMATIK, ILLOGIC, CARTESIAN, POLYSEQZ,
-    // FROGGER game module) whose outputs are functions of their inputs.
-    // Without an upstream the outputs are deterministic but typically
-    // 0V / gate low — indistinguishable from "wire dead" via the scope-
-    // peak smoke. Covered by the dedicated specs at their respective
-    // names. Per-input exemptions (EXEMPT_OUTPUT_EMIT entries above)
-    // catch the per-port slivers; this catches whole-module shape.
-    const PURE_CV_GATE_UTILITY = new Set([
-      'analogLogicMaths', 'fourplexer', 'unityscalemathematik',
-      'cartesian', 'polyseqz', 'frogger',
-    ]);
-    // Same driver-setup bypass as the media-input shape.
-    if (PURE_CV_GATE_UTILITY.has(mod.type) && !hasDriverSetup) {
-      test.fixme(`${title} [SKIPPED: pure CV/gate utility (output = f(inputs); needs upstream CV/gate); covered by dedicated specs]`, () => {});
-      continue;
-    }
+/** Pure CV/gate modulator with NO audio/video output AND at least one cv/gate
+ *  INPUT — arithmetic / logic / clock-divider utilities whose outputs are
+ *  functions of their inputs. Without an upstream the outputs are deterministic
+ *  but typically 0 V / gate low, indistinguishable from "wire dead" via the
+ *  scope-peak smoke. Covered by the dedicated specs at their respective names;
+ *  per-port EXEMPT_OUTPUT_EMIT entries catch the slivers, this catches shape. */
+const PURE_CV_GATE_UTILITY = new Set([
+  'analogLogicMaths', 'fourplexer', 'unityscalemathematik',
+  'cartesian', 'polyseqz', 'frogger',
+]);
 
-    // Module-level explicit exempt (file-input, MIDI-driven, hardware,
-    // clock-divider, user-toggled sequencer, etc.). Documented in
-    // EXEMPT_OUTPUT_EMIT_MODULES at the top of the file.
-    const moduleExempt = EXEMPT_OUTPUT_EMIT_MODULES[mod.type];
-    if (moduleExempt) {
-      test.fixme(`${title} [SKIPPED: ${moduleExempt}]`, () => {});
-      continue;
-    }
+function emitSkipReason(mod: RegistryModule): string | null {
+  if (mod.outputs.length === 0) return 'no outputs';
+  if (SKIP_SPAWN[mod.type]) return SKIP_SPAWN[mod.type]!;
 
-    // If ALL of the module's outputs are exempt at the per-port level,
-    // skip the whole test (handle-presence already pins them).
-    const allExempt = mod.outputs.every((p) => EXEMPT_OUTPUT_EMIT[`${mod.type}.${p.id}`]);
-    if (allExempt) {
-      test.fixme(`${title} [SKIPPED: all outputs exempt — see EXEMPT_OUTPUT_EMIT]`, () => {});
+  // If a per-port driver registers extra setup for this module (upstream graph,
+  // seeded params, seeded data, page init, post-spawn event dispatch), it is
+  // SUPPLYING what the effect needs — bypass both effect-shape skips. (Example:
+  // VIDEOOUT has a video input but the VIDEOOUT driver wires ACIDWARP.out into
+  // it, so the .out passthrough becomes assertable. POLYSEQZ has cv inputs but
+  // the driver seeds isPlaying=1 + steps so it self-runs.)
+  const ppDriverModule = perPortDriverFor(mod.type);
+  const hasDriverSetup = !!(
+    ppDriverModule
+    && (ppDriverModule.upstream || ppDriverModule.params || ppDriverModule.data || ppDriverModule.pageSetup || ppDriverModule.postSpawn)
+  );
+
+  // Effect-shape skip: modules whose primary path is "audio/video in →
+  // audio/cv/gate/video out" (filters, reverbs, delays, mixers, SCOPE
+  // passthrough, video-domain compositors) can't emit anything without an
+  // upstream source. The dedicated specs cover their outputs against real
+  // sources; here we'd just re-assert the bare-spawn-emits-silence trivial
+  // case. Mirrors the same heuristic in per-module.spec.ts. (Many MI Eurorack
+  // ports — RINGS, ELEMENTS, WARPS — also fall in this bucket.)
+  const hasUpstreamMediaInput = mod.inputs.some(
+    (p) => p.type === 'audio' || p.type === 'video' || p.type === 'mono-video' || p.type === 'image',
+  );
+  if (hasUpstreamMediaInput && !NOT_EFFECT_DESPITE_AUDIO_INPUT.has(mod.type) && !hasDriverSetup) {
+    return 'effect-shape (audio/video input — needs upstream source); covered by dedicated specs';
+  }
+  if (PURE_CV_GATE_UTILITY.has(mod.type) && !hasDriverSetup) {
+    return 'pure CV/gate utility (output = f(inputs); needs upstream CV/gate); covered by dedicated specs';
+  }
+
+  // Module-level explicit exempt (file-input, MIDI-driven, hardware,
+  // clock-divider, user-toggled sequencer, etc.).
+  if (EXEMPT_OUTPUT_EMIT_MODULES[mod.type]) return EXEMPT_OUTPUT_EMIT_MODULES[mod.type]!;
+
+  // If ALL of the module's outputs are exempt at the per-port level, skip the
+  // whole test (handle-presence already pins them).
+  if (mod.outputs.every((p) => EXEMPT_OUTPUT_EMIT[`${mod.type}.${p.id}`])) {
+    return 'all outputs exempt — see EXEMPT_OUTPUT_EMIT';
+  }
+  return null;
+}
+
+/** Outputs the emit sweep actually visits — the ones it does NOT `continue` past. */
+function liveEmitOutputs(mod: RegistryModule): number {
+  return mod.outputs.filter((p) => !EXEMPT_OUTPUT_EMIT[`${mod.type}.${p.id}`]).length;
+}
+
+/**
+ * Marginal cost of ONE more visited output on the emit sweep.
+ *
+ * WAS 20 000 ms, and the old accumulator stacked a SECOND scaled term under it
+ * (`outputs > 8 → outputs × 5 000 + 30 000`) that the first one always
+ * swallowed — the same floor-under-a-floor shape #1327 removed from the wire-up
+ * site. One term now, so the number is reviewable.
+ *
+ * WHY 5 000. MEASURED end-to-end against the PREVIEW bundle (what CI serves —
+ * `E2E_USE_PREVIEW=1`, not the dev server) under `E2E_SWIFTSHADER=1`:
+ *
+ *   clipplayer  24 outputs   6.3 s total   → ~0.26 s per output
+ *   foxy         5 outputs  10.5 s total   → ~2.1 s per output (heavy-GL)
+ *   midiLane     5 outputs   1.5 s total   → ~0.30 s per output
+ *
+ * 5 000 ms per output is ~19× the measured cost on the widest module and ~2.4×
+ * on the most expensive per-port one, on top of a 30 000 ms base that already
+ * carries the cold first navigation (~1.8 s measured) and, for heavy-GL, the
+ * 60 000 ms mount tax. For reference the worst renderer penalty this repo has
+ * ever measured is 7.6× (backdraft PURE TV, #1214), and that is a per-FRAME GL
+ * number — the emit sweep's cost is dominated by navigation and engine boot,
+ * not by frames.
+ */
+const PER_OUTPUT_MS = 5_000;
+
+/**
+ * The emit sweep's budget for ONE module — the SINGLE definition, used by the
+ * test that spends it and by the shard-envelope gate that prices it.
+ *
+ * The gate used to keep its own hand-rolled copy of the accumulator. Two copies
+ * of a formula is one drift away from a gate that certifies a number nothing
+ * uses; anchoring both here is the same fix as `emitSkipReason` above.
+ *
+ * Returns 0 for a module whose emit test does not exist, so "the worst plan"
+ * means the worst plan that RUNS.
+ */
+function emitBudgetMs(mod: RegistryModule): number {
+  if (emitSkipReason(mod)) return 0;
+  const live = liveEmitOutputs(mod);
+  if (live === 0) return 0;
+  const scaled = live * PER_OUTPUT_MS + PER_PORT_BASE_MS;
+  // ANY module that mounts the VideoEngine GL pipeline (touchesVideo: a video
+  // port on either side, NOT just domain === 'video') pays the heavy-GL mount
+  // tax — its per-pixel first paint on CI's SwiftShader software renderer is
+  // far slower than a real GPU (ci-swiftshader-video-e2e-timeouts). Keying on
+  // the video PORT rather than the domain field catches WAVESCULPT
+  // (domain: 'audio' + a 3D cube viewport) with zero per-module maintenance.
+  //
+  // NOTE: the emit sweep does NOT freezeVideoRender — unlike the handle-presence
+  // and inputs-accept sweeps (DOM-only asserts), it reads real pixels off the
+  // VIDEOOUT canvas for video-typed outputs, so the GL draw must keep running.
+  //
+  // The old explicit `doom → max(scaled, 90_000)` floor is GONE because it can
+  // no longer bind: doom is touchesVideo, and a heavy-GL module with even ONE
+  // live output already budgets 5 000 + 30 000 + 60 000 = 95 000 > 90 000. That
+  // is asserted in the gate below rather than asserted about here.
+  return touchesVideo(mod) ? heavyVideoTimeout(scaled) : scaled;
+}
+
+test.describe('per-module per-port: outputs emit signal', () => {
+  for (const mod of REGISTRY) {
+    if (mod.outputs.length === 0) continue;
+    const title = `${mod.type}: every declared output emits a measurable signal`;
+    const skipReason = emitSkipReason(mod);
+    if (skipReason) {
+      test.fixme(`${title} [SKIPPED: ${skipReason}]`, () => {});
       continue;
     }
 
     test(title, async ({ page }) => {
-      // Build the per-test budget in a single `scaled` accumulator, then set it
-      // ONCE at the end (Playwright's test.setTimeout is last-call-wins, so a
-      // single authoritative call avoids an earlier call being silently
-      // clobbered by a later default).
-      let scaled = 30_000;
-
-      // Per-output iteration costs ~3-4 s (goto + spawn + wait + read).
-      // Modules with many outputs (GAMEPAD has 18, TIMELORDE has 13,
-      // DRUMSEQZ has 9) need a scaled timeout. The default 30 s only
-      // covers ~8 outputs. Scale to 5s per output + 30s baseline.
-      if (mod.outputs.length > 8) {
-        scaled = Math.max(scaled, mod.outputs.length * 5_000 + 30_000);
-      }
-
-      // Per-iteration budget: each non-exempt output drives a FULL fresh
-      // page navigation (goto + networkidle) + spawnPatch + driver wait +
-      // sink-readout. On a quiet machine that's ~6s per iteration; under
-      // CI shard contention (4 workers + cold CPU + WebGL shader compile
-      // on video sinks) it climbs to 15-20s. The default 30s test
-      // timeout is fine for a 1-output module but blows up at 2 outputs
-      // — chronic shard-6 flake on MANDLEBLOT.color_out (PRs #439/#446/
-      // #449/#450), where iter 1 (mono_out) consumed enough budget that
-      // iter 2's 5s `toHaveCount` got cancelled by the overall test
-      // timeout. Scale linearly with the count of NON-exempt outputs so
-      // every iteration gets ~20s of headroom. Floored at 30s so
-      // single-output modules keep the existing budget.
-      const nonExemptOutputs = mod.outputs.filter(
-        (p) => !EXEMPT_OUTPUT_EMIT[`${mod.type}.${p.id}`],
-      ).length;
-      if (nonExemptOutputs >= 2) {
-        scaled = Math.max(scaled, nonExemptOutputs * 20_000 + 10_000);
-      }
-
-      // GENERIC heavy-WebGL floor (replaces the old per-module allow-list of
-      // foxy / mandleblot / mandelbulb — all now caught by touchesVideo). ANY
-      // module that mounts the VideoEngine GL pipeline (touchesVideo: a video
-      // port on either side, NOT just domain==='video') gets the 90s heavy
-      // tier — its per-pixel first-paint on CI's SwiftShader software renderer
-      // is far slower than a real GPU (ci-swiftshader-video-e2e-timeouts), so
-      // the output-scaled budget above falls short and the test times out
-      // mid-poll (the recurring shard flake: mandleblot 50s timeout #709,
-      // WAVESCULPT "peak=0, polls=1" — the emit poll cancelled before the
-      // signal ramped). Keying on the video PORT, not the domain field,
-      // catches WAVESCULPT (domain:'audio' + a 3D cube viewport) and every
-      // future heavy-GL card with zero per-module maintenance.
-      //
-      // NOTE: we do NOT freezeVideoRender here — unlike the handle-presence /
-      // inputs-accept sweeps (DOM-only asserts), the EMIT test reads real
-      // pixels from the VIDEOOUT canvas for video-typed outputs, so the GL
-      // draw must keep running. The extra wall-clock budget is the whole fix
-      // for the timeout class; the per-port emit poll has its own widened
-      // settle/poll window below for the slow-ramp ("peak=0") symptom.
-      if (touchesVideo(mod)) {
-        scaled = heavyVideoTimeout(scaled);
-      }
-      // DOOM's first-frame WASM load is ~6-12s; it IS touchesVideo (so it's
-      // already at the 90s heavy tier above), but keep an explicit floor as a
-      // belt-and-suspenders guard in case its def ever loses its video output.
-      // (Today all DOOM outputs are emit-exempt, so this whole test is skipped.)
-      if (mod.type === 'doom') scaled = Math.max(scaled, 90_000);
-
-      test.setTimeout(scaled);
+      test.setTimeout(emitBudgetMs(mod));
 
       const errors: string[] = [];
       page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
@@ -1383,8 +1384,24 @@ test.describe('per-module per-port: outputs emit signal', () => {
           continue;
         }
 
+        // FRESH NAVIGATION PER PORT — deliberate, and NOT the expensive part.
+        // Re-using one page would let iteration N-1's still-running audio source
+        // (an AudioBufferSourceNode's .start() is sticky) leak into iteration N
+        // and turn a dead port GREEN, so the nav stays.
+        //
+        // What is gone is the `waitForLoadState('networkidle')` that used to sit
+        // right here. MEASURED on clipplayer (24 ports, E2E_SWIFTSHADER=1):
+        // goto ~10 ms, networkidle ~1000 ms, spawn ~80 ms, read ~50 ms — the
+        // fixed wait was ~85 % of every iteration and ~24 s of the test's 30 s.
+        // It bought nothing: `networkidle` resolves 500 ms after the last
+        // request, which is a PROXY for app readiness, and the very next call —
+        // `spawnPatch` — waits for `__ensureEngine` to be bound, awaits the
+        // engine boot, and then waits for the requested node ids to mount on a
+        // FRAME budget. That chain is strictly stronger AND event-driven, so the
+        // quiet-window wait was a fixed cost in front of the real gate.
+        // (_helpers.ts already says as much at its HMR retry: "networkidle is
+        // too strict here".)
         await page.goto('/rack');
-        await page.waitForLoadState('networkidle');
 
         const sink = pickOutputSink(port.type);
         if (!sink) {
@@ -1496,72 +1513,75 @@ test.describe('per-module per-port: outputs emit signal', () => {
           });
         }
 
-        // Drive window:
-        //  * scope-sink + same-domain SUT      → 800 ms (matches
-        //    per-module.spec.ts; covers wavetable load + several gate
-        //    cycles)
-        //  * scope-sink + cross-domain SUT     → 2000 ms (cross-domain
-        //    audio bridge takes ~400ms to wire the CSN/audio source from
-        //    video engine into scope's analyser input; same pattern as
-        //    video-audio-cvgate-coverage.spec.ts which waits 400ms then
-        //    polls. We do a single longer wait here for simplicity.)
-        //  * video-sink                        → 1500 ms (video bridge
-        //    tick rate ~60 Hz; thin waveform-scope mono-video traces
-        //    need many frames to paint)
-        const crossDomain = mod.domain !== sink.node.domain;
-        const waitMs = sink.node.type !== 'scope' ? 1500
-          : crossDomain ? 2000 : 800;
+        // ── THE OBSERVATION WINDOW IS A BOUND, NOT A GATE ──────────────────
+        //
+        // It used to be a GATE, sized by guesswork: 800 ms for a same-domain
+        // scope read, 1 200 for a gate port, 2 000 cross-domain, ≥3 000 for a
+        // heavy-GL module. Every one of those numbers was fiction, because the
+        // loop underneath spent `polls × round-trip` rather than `totalMs` —
+        // MEASURED at 11.4 s for a stated 1 200 ms. The tiering was therefore
+        // never doing the job it was written for; the OVERRUN was.
+        //
+        // Proof that the overrun was load-bearing, not incidental: with the
+        // window made real at its stated 800 ms, `sampleHold.cv_quant` FAILED
+        // (`samples=25 over 811 ms`, peak 0.0000) — and probing it with a
+        // 20 s window shows why. Its signal appears at **1 141 ms**. The stated
+        // window had been too small for that port since it was written; only
+        // the accidental ~10× overrun ever covered it. Restoring the tiering
+        // as-is would ship a real timeout.
+        //
+        // So the window is now sized as what it actually is — a FAILURE BOUND,
+        // per CLAUDE.md ("keep a wall-clock cap only to bound the failure,
+        // never as the gate"). The GATE is the early-out: `observeScopePeak`
+        // returns the instant ch1 clears the floor, so a healthy port pays its
+        // own signal latency (MEASURED: 30–90 ms for continuous CV/audio,
+        // 1 141 ms for the slowest live port) and NOT the window. Making the
+        // bound generous therefore costs the happy path nothing, while removing
+        // the whole class of "the guessed number was 40 % too small".
+        //
+        // The tiering is gone with it: three tiers that were never the real
+        // window are three numbers to get wrong. One bound, one heavy-GL bound.
+        const HEAVY_GL = touchesVideo(mod);
+        // Bounds a dead port. 4.4× the slowest measured live port (1 141 ms),
+        // so a CI runner would have to be >4× slower than a local preview run
+        // before this became the gate again.
+        const OBSERVE_BOUND_MS = 5_000;
+        // Heavy-WebGL modules (touchesVideo) mount a GL pipeline on CI's
+        // SwiftShader before the audio graph warms up, so a continuous tap
+        // (WAVESCULPT.L) can still be ramping — the "peak=0, polls=1" symptom
+        // the old ≥3 s floor was added for. Same reasoning, bigger bound.
+        const OBSERVE_BOUND_HEAVY_GL_MS = 8_000;
 
         // Read the sink. Audio-domain sink (SCOPE) → analyser snapshot.
         // Video-domain sink (VIDEOOUT) → canvas-pixel statistics.
         if (sink.node.type === 'scope') {
-          // For gate-typed outputs (pulses every 200..500 ms at typical
-          // clock rates), the scope analyser only holds the most-recent
-          // ~43 ms (fftSize=2048 / 48 kHz). A single read at the end of
-          // the wait window will miss most pulses. POLL the analyser at
-          // < analyser-window intervals (30 ms here, fits ~10 polls into
-          // 300 ms of contiguous coverage) AND extend the total poll
-          // budget enough to catch >=1 pulse from a 2 Hz source — that's
-          // a worst-case slow-clock module like TIMELORDE.1x. This is
-          // the same "fire-N-times + poll-many-times" pattern that
-          // video-audio-cvgate-coverage.spec.ts uses for gate pulses
-          // (analyser fftSize=2048 → 43ms refresh; close-packed polls
-          // build a sliding peak-hold across the test window).
-          // CV / audio outputs are continuous so the first poll wins;
-          // gate outputs may need the full budget.
-          const pollMs = 30;
-          // Gates can be as slow as TIMELORDE.1x (2 Hz @ 120 BPM, so ~500
-          // ms period). Budget 1.2 s of poll window for gate ports; the
-          // 800 ms `waitMs` baseline isn't enough on the 1x port.
-          const isGate = port.type === 'gate';
-          let totalMs = isGate ? Math.max(waitMs, 1200) : waitMs;
-          // Heavy-WebGL modules (touchesVideo): on CI's SwiftShader the GL
-          // mount + audio-graph warm-up is slower, so a continuous audio/CV
-          // tap (e.g. WAVESCULPT.L) can still be ramping when the default
-          // window's first polls sample it ("peak=0, polls=1"). Give the poll
-          // budget a ≥3s floor so a heavy module's signal is actually observed
-          // after it ramps. The assertion stays MEANINGFUL — a genuinely
-          // silent output still polls the whole budget and fails at 0 — and
-          // the early-out keeps the happy path fast (it bails the instant the
-          // tap crosses the floor, usually within the first poll or two).
-          if (touchesVideo(mod)) totalMs = Math.max(totalMs, 3_000);
-          const polls = Math.max(1, Math.ceil(totalMs / pollMs));
-          let maxPeak = 0;
-          let lastRms = 0;
-          for (let i = 0; i < polls; i++) {
-            await runFor(page, pollMs);
-            const snap = await readScopeSnapshot(page, sink.node.id);
-            if (!snap) continue;
-            const sum = summarize(snap.ch1);
-            if (sum.peak > maxPeak) maxPeak = sum.peak;
-            lastRms = sum.rms;
-            // Early-out once we cross the floor — avoids the full poll
-            // budget on the easy cases (continuous audio / CV).
-            if (maxPeak > 0.005) break;
-          }
+          // The peak-hold runs IN THE PAGE on a 30 ms interval — below the
+          // analyser's ~43 ms refresh (fftSize 2048 @ 48 kHz), so a gate pulse
+          // cannot fall between two readings — and comes back over ONE round
+          // trip. That contiguity is what the old loop's comment claimed and
+          // its ~420 ms real spacing could not deliver. See observeScopePeak.
+          const boundMs = HEAVY_GL ? OBSERVE_BOUND_HEAVY_GL_MS : OBSERVE_BOUND_MS;
+          const obs = await observeScopePeak(page, sink.node.id, {
+            windowMs: boundMs,
+            floor: 0.005,
+          });
+          // INSTRUMENT BEFORE FINDING. `maxPeak = 0` from a window that took no
+          // readings is not evidence about the port — the old loop's
+          // `if (!snap) continue` made "the engine handle never resolved" print
+          // exactly like "the output is dead". Fail as an instrument first.
           expect(
-            maxPeak,
-            `${mod.type}.${port.id} (type=${port.type}): scope.ch1 peak above floor (maxPeak=${maxPeak.toFixed(4)}, lastRms=${lastRms.toFixed(4)})`,
+            obs.samples,
+            `${mod.type}.${port.id}: the scope observation took NO readings in `
+            + `${Math.round(obs.elapsedMs)} ms (bound=${boundMs} ms) — the engine/scope handle `
+            + `never resolved, so this run says NOTHING about whether the port emits. `
+            + `This is an instrument failure, not a dead port.`,
+          ).toBeGreaterThan(0);
+          expect(
+            obs.maxPeak,
+            `${mod.type}.${port.id} (type=${port.type}): scope.ch1 peak above floor `
+            + `(maxPeak=${obs.maxPeak.toFixed(4)}, lastRms=${obs.lastRms.toFixed(4)}, `
+            + `samples=${obs.samples} over ${Math.round(obs.elapsedMs)} ms of a ${boundMs} ms `
+            + `bound, unpatched ch2 peak=${obs.maxPeakCh2.toFixed(4)})`,
           ).toBeGreaterThan(0.005);
         } else {
           // Video output → VIDEOOUT canvas stats. We assert TWO floors:
@@ -1911,49 +1931,78 @@ test.describe('per-port heavy-GL budget: DERIVED, not floored', () => {
     ).toBeLessThan(CEILING);
 
     // THE OTHER CALL SITE. `heavyVideoTimeout` is also applied to the EMIT
-    // sweep's output-scaled accumulator, and a gate that priced only the
-    // wire-up site would be exactly the partial-scope blindness this file is
-    // being fixed for. Mirrors the accumulator above it, exemptions included —
-    // a module whose outputs are all exempt never runs, so it must not be
-    // priced. (`doom`, 32 outputs, is skipped for precisely that reason and
-    // would otherwise dominate this number.)
-    const emitBudgetMs = (mod: RegistryModule): number => {
-      if (EXEMPT_OUTPUT_EMIT_MODULES[mod.type]) return 0;
-      const nonExempt = mod.outputs.filter((p) => !EXEMPT_OUTPUT_EMIT[`${mod.type}.${p.id}`]).length;
-      if (nonExempt === 0) return 0;
-      let scaled = PER_PORT_BASE_MS;
-      if (mod.outputs.length > 8) scaled = Math.max(scaled, mod.outputs.length * 5_000 + 30_000);
-      if (nonExempt >= 2) scaled = Math.max(scaled, nonExempt * 20_000 + 10_000);
-      if (touchesVideo(mod)) scaled = heavyVideoTimeout(scaled);
-      if (mod.type === 'doom') scaled = Math.max(scaled, 90_000);
-      return scaled;
-    };
+    // sweep's budget, and a gate that priced only the wire-up site would be
+    // exactly the partial-scope blindness this file keeps being fixed for.
+    //
+    // It now calls the REAL `emitBudgetMs` the sweep itself spends. It used to
+    // keep a private hand-rolled copy, and that copy was wrong in the way a
+    // copy always eventually is: it re-read the two EXEMPT_* lists and nothing
+    // else, so it could not see the SKIP_SPAWN, effect-shape or pure-CV-utility
+    // skips — three of the five reasons an emit test does not exist. It
+    // therefore nominated `colourofmagic` (22 outputs, 1 020 s across two
+    // attempts) as "the worst LIVE plan" when that test is `test.fixme`-d and
+    // has never run. The number the ratchet was pinned to described a
+    // hypothetical test. Measured against the real skip set, the worst plan
+    // that actually runs was `clipplayer` at 980 s.
     const worstEmit = [...REGISTRY].sort((a, b) => emitBudgetMs(b) - emitBudgetMs(a))[0]!;
     const worstEmitMs = emitBudgetMs(worstEmit) * ATTEMPTS;
 
-    // ⚠ DECLARED DEBT, surfaced by writing this gate and NOT introduced by it.
-    // The emit site is scaled at 20 000 ms per live OUTPUT, so it grows an order
-    // of magnitude faster than the wire-up site's 2 000 ms per input. Its worst
-    // live plan already budgets 85 % of the whole shard job across two attempts
-    // — and it did so BEFORE this change too (900 s of the 1 020 s below is
-    // pre-existing; the additive GL tax accounts for 120 s of it).
+    // The emit sweep must be priced against tests that EXIST. Anchor the gate
+    // to the artifact: every module it prices must be one Playwright will run.
+    expect(
+      [...REGISTRY].filter((m) => emitBudgetMs(m) > 0 && emitSkipReason(m) !== null).map((m) => m.type),
+      'a module with a NON-ZERO emit budget whose emit test is skipped means the budget function '
+      + 'and the sweep disagree about which tests exist — the exact defect that pinned this '
+      + 'ratchet to colourofmagic, a test that never runs.',
+    ).toEqual([]);
+
+    // The `doom → max(scaled, 90 000)` floor the old accumulator carried is
+    // gone. Prove it could not bind rather than leaving a dead branch: doom is
+    // heavy-GL, and ONE live output on a heavy-GL module already exceeds it.
+    expect(
+      heavyVideoTimeout(1 * PER_OUTPUT_MS + PER_PORT_BASE_MS),
+      'a heavy-GL module with ONE live output must already budget more than the 90 000 ms the '
+      + 'removed doom floor asked for, or that floor was load-bearing and should not have gone.',
+    ).toBeGreaterThan(90_000);
+
+    // THE PLAN GOT CHEAPER, so the ratchet comes down with it — in the same
+    // commit, per the rule that a ceiling left slack absorbs the next
+    // regression in silence.
     //
-    // A `toBeLessThan(CEILING)` here would simply be red on arrival, and a
-    // ceiling set above the observed value would be decoration. So this is a
-    // SHRINK-ONLY RATCHET pinned at exactly today's number, asserted in BOTH
-    // directions per the repo's ratchet rule: it cannot grow, and it cannot
-    // carry silent slack. The remedy when it next moves is a CHEAPER PLAN —
-    // fewer live outputs per test, or the emit sweep split per-output — never a
-    // bigger job timeout. Tracked as the follow-up this PR does not take on.
-    const EMIT_WORST_CEILING_MS = 1_020_000;
+    // 980 s → 300 s for the worst live plan (clipplayer, 24 outputs), from two
+    // changes to the PLAN and none to the tolerance:
+    //
+    //   * the per-port `waitForLoadState('networkidle')` is gone. MEASURED at
+    //     ~1 000 ms of every ~1 150 ms iteration — a fixed quiet-window wait
+    //     sitting in front of `spawnPatch`, which already waits for
+    //     `__ensureEngine`, the engine boot and a frame-budgeted mount. Event-
+    //     driven readiness was always there; the fixed wait was pure cost.
+    //   * the scope read is ONE in-page peak-hold instead of `ceil(window/30)`
+    //     Playwright-side polls, each serialising ~4 096 floats over CDP.
+    //     MEASURED at 11.4 s for a stated 1 200 ms window, at a ~10 % sampling
+    //     duty cycle. See `observeScopePeak`.
+    //
+    // MEASURED end-to-end, full emit sweep, `E2E_USE_PREVIEW=1` (the bundle CI
+    // serves) + `E2E_SWIFTSHADER=1`, 1 worker: 2.9 min → 1.8 min, and the worst
+    // module 17.9 s → 6.3 s. The 300 s budget is therefore ~24× the measured
+    // cost of the plan it covers.
+    //
+    // That retires the debt rather than shrinking it: this is now a real
+    // `toBeLessThan(CEILING)` — the worst plan fits inside the healthy share of
+    // the shard job — with the shrink-only ratchet kept UNDER it so the number
+    // still cannot drift upward unnoticed.
+    const EMIT_WORST_CEILING_MS = 300_000;
     expect(
       worstEmitMs,
-      `the EMIT sweep's largest live plan (${worstEmit.type}, ${worstEmit.outputs.length} outputs) ` +
-        `budgets ${Math.round(worstEmitMs / 1000)} s across ${ATTEMPTS} attempts — ` +
-        `${Math.round((100 * worstEmitMs) / JOB_TIMEOUT_MS)} % of the ` +
-        `${JOB_TIMEOUT_MS / 60_000}-minute shard job, for ONE test. That is over the ` +
-        `${Math.round((100 * CEILING) / JOB_TIMEOUT_MS)} % healthy share and is KNOWN DEBT; this ` +
-        `ratchet exists so it cannot grow further. If it grew, make the plan cheaper.`,
+      `the EMIT sweep's largest live plan (${worstEmit.type}, ${liveEmitOutputs(worstEmit)} live of ` +
+        `${worstEmit.outputs.length} outputs) budgets ${Math.round(worstEmitMs / 1000)} s across ` +
+        `${ATTEMPTS} attempts — ${Math.round((100 * worstEmitMs) / JOB_TIMEOUT_MS)} % of the ` +
+        `${JOB_TIMEOUT_MS / 60_000}-minute shard job, for ONE test. If this trips, the fix is a ` +
+        `CHEAPER PLAN — fewer spawns per port — not a bigger job timeout.`,
+    ).toBeLessThan(CEILING);
+    expect(
+      worstEmitMs,
+      `and it must not creep back up: pinned at ${EMIT_WORST_CEILING_MS} ms, shrink-only.`,
     ).toBeLessThanOrEqual(EMIT_WORST_CEILING_MS);
     expect(
       EMIT_WORST_CEILING_MS - worstEmitMs,
