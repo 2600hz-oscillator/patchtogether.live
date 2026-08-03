@@ -49,6 +49,10 @@ import {
   sixstrumSelectorOptions,
 } from '$lib/ui/modules/sixstrum-preset-actions';
 import { clearCloudseedTail } from '$lib/ui/modules/cloudseed-preset-actions';
+import {
+  exposeAuditionLedgerForTests,
+  type AuditionSeam,
+} from '$lib/ui/modules/audition-ledger';
 // THE ONE audition seam, in both edge shapes: `fireManualStrike` for a
 // `mode:'trigger'` cell, `setManualGate` for a `mode:'gate'` one. It briefly
 // was two modules — kickdrum/karplus's generic one-shot file and a parallel
@@ -113,12 +117,42 @@ export interface ShellCellEnv {
  * needed the engine handle would otherwise be the one shape that could not
  * have it.
  */
+/**
+ * How faces-parity proves an ACTION cell's press actually DID something.
+ *
+ * ⚠ REQUIRED, and that is the point. Until 2026-08-02 the sweep's `action`
+ * branch asserted `toBeEnabled()`, clicked, and asserted NO EFFECT — the only
+ * cell kind in the whole gate with no probe, on the kind whose entire purpose
+ * is to do something. A dead audition passed the face green. That is the
+ * revision-only-probe pathology this file already outlaws for PANEL cells, one
+ * kind over, in its terminal form.
+ *
+ * An audition writes NOTHING to the graph by design (manual-strike-actions.ts),
+ * so `readParam`/`readData` — the two oracles every other branch uses — are
+ * structurally unable to see it. The observable is the AUDITION LEDGER: the
+ * seam records, per press, whether it resolved a callable off the live engine
+ * handle and called it. See `$lib/ui/modules/audition-ledger` for the full
+ * argument, including why audible RMS is the right bar elsewhere and not here.
+ */
+export interface ShellActionProbe {
+  effect:
+    | {
+        /** The press must reach `seam` and report DELIVERED. */
+        kind: 'audition';
+        seam: AuditionSeam;
+      }
+    | { kind: 'data'; key: string; expect: 'changed' }
+    | { kind: 'data-rev'; key: string };
+}
+
 export interface ShellActionCell {
   kind: 'action';
   label: string;
   title?: string;
   /** Press semantics. Omitted = 'trigger' (the one-shot shape). */
   mode?: 'trigger' | 'gate';
+  /** REQUIRED — how the parity sweep proves the press was not a no-op. */
+  probe: ShellActionProbe;
   /** Required for mode 'trigger'. Fired once on the press edge. `env` carries
    *  the engine handle for actions that are ENGINE gestures rather than graph
    *  edits (a buffer flush, a re-seed) — a nodeId alone can only reach the
@@ -304,7 +338,11 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
       kind: 'action',
       label: 'Clear tail',
       title: 'Flush the reverb tank — stops the tail instantly (changes no setting; not undoable)',
-      onFire: (_nodeId, env) => clearCloudseedTail(env),
+      onFire: (nodeId, env) => { clearCloudseedTail(env, nodeId); },
+      // The tank flush is an ENGINE MESSAGE, not a graph edit — there is no
+      // param and no node.data to watch, which is exactly why this cell could
+      // sit behind an assertion-free click for as long as it did.
+      probe: { effect: { kind: 'audition', seam: 'engine-message' } },
     },
   },
   karplus: {
@@ -330,6 +368,13 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
       label: 'pluck',
       title: 'Audition: pluck the string once (identical to a trigger_in rising edge)',
       onFire: (nodeId) => { fireManualStrike(nodeId); },
+      // ⚠ THIS IS THE CELL THE MISSING PROBE COST MOST. karplus's dock PLUCK
+      // animates its press flash off the CLICK, not off `fireManualStrike`'s
+      // return value (the legacy card honours it) — so the button flashed on a
+      // string that was never plucked, and the sweep asserted only that the
+      // button was enabled. `delivered` is precisely the boolean being thrown
+      // away (face-redo ledger defect #22).
+      probe: { effect: { kind: 'audition', seam: 'manual-strike' } },
     },
   },
   kickdrum: {
@@ -380,6 +425,7 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
       label: 'strike',
       title: 'Audition: hit the drum once (identical to a trigger_in rising edge)',
       onFire: (nodeId) => { fireManualStrike(nodeId); },
+      probe: { effect: { kind: 'audition', seam: 'manual-strike' } },
     },
   },
   snaredrum: {
@@ -394,6 +440,7 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
       label: 'hit',
       title: 'Audition: one snare hit (identical to a trigger_in rising edge)',
       onFire: (nodeId) => { fireManualStrike(nodeId); },
+      probe: { effect: { kind: 'audition', seam: 'manual-strike' } },
     },
     // ⚠ MOMENTARY, not a click. `gate_in` is declared edge:'gate' — the
     // two-hand roll engine runs only WHILE the level is high — so a one-shot
@@ -405,6 +452,11 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
       label: 'roll',
       title: 'Audition: HOLD to run the two-hand roll (identical to holding gate_in high)',
       onGate: (nodeId, high) => { setManualGate(nodeId, high); },
+      // A gate audition is asserted on BOTH edges by the sweep — the open must
+      // deliver AND the close must deliver. A roll that opens and never closes
+      // is the worst failure this seam has (manual-gate-latch.ts), and a
+      // one-edge probe would be blind to exactly it.
+      probe: { effect: { kind: 'audition', seam: 'manual-gate' } },
     },
   },
   sixstrum: {
@@ -511,6 +563,23 @@ export function shellActionModes(): Record<string, Record<string, 'trigger' | 'g
   return out;
 }
 
+/**
+ * Every declared ACTION cell's PROBE, `moduleType → faceKey → probe`. Same
+ * shape and the same reason as `shellPanelProbes`: the sweep stays
+ * registry-driven off `STRICT_FACES` instead of growing a per-module branch,
+ * and the module declares what its press must be observed to do.
+ */
+export function shellActionProbes(): Record<string, Record<string, ShellActionProbe>> {
+  const out: Record<string, Record<string, ShellActionProbe>> = {};
+  for (const [type, specs] of Object.entries(SHELL_CELLS)) {
+    for (const [key, spec] of Object.entries(specs)) {
+      if (spec.kind !== 'action') continue;
+      (out[type] ??= {})[key] = spec.probe;
+    }
+  }
+  return out;
+}
+
 /** Expose the shell-layer metadata the faces-parity e2e reads (dev/autotest
  *  builds only — the same `testHooksEnabled()` gate `__moduleSpecs` uses). */
 export function exposeShellPanelProbesForTests(): void {
@@ -520,4 +589,7 @@ export function exposeShellPanelProbesForTests(): void {
   (window as any).__shellPanelProbes = shellPanelProbes();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (window as any).__shellActionModes = shellActionModes();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (window as any).__shellActionProbes = shellActionProbes();
+  exposeAuditionLedgerForTests();
 }

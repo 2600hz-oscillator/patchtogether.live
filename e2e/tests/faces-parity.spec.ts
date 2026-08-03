@@ -41,7 +41,9 @@
 //                    (no latch, nothing stuck persisted)
 //        toggle    → click flips the switch's aria-checked state
 //        selector  → choosing another option changes the displayed value
-//        action    → the button fires (a real enabled <button>, pressed)
+//        action    → the press REACHES ITS DECLARED SEAM and is reported
+//                    DELIVERED (2026-08-02 — this branch used to click and
+//                    assert nothing at all; see driveCell's `action` case)
 //        file      → a real <input type=file> that ACCEPTS a file and runs
 //                    its import action (asserted via the cell's status line)
 //      An inert cell has no natural interaction, so it fails by construction.
@@ -261,6 +263,82 @@ function readActionMode(page: Page, type: string, key: string): Promise<'trigger
     { type, key },
   );
 }
+
+/** An ACTION cell's declared operability probe (`window.__shellActionProbes`). */
+function readActionProbe(page: Page, type: string, key: string): Promise<ActionProbe | null> {
+  return page.evaluate(
+    ({ type, key }) => {
+      const w = globalThis as unknown as {
+        __shellActionProbes?: Record<string, Record<string, ActionProbe>>;
+      };
+      return w.__shellActionProbes?.[type]?.[key] ?? null;
+    },
+    { type, key },
+  );
+}
+
+/**
+ * Read the AUDITION LEDGER out of the page.
+ *
+ * ⚠ IT IS ACCUMULATED IN THE PAGE, NOT POLLED FROM HERE. The repo rule
+ * (CLAUDE.md, "never sample a page-side quantity with a Playwright-side poll
+ * loop") applies exactly: an audition is a single synchronous call on the main
+ * thread, and a protocol-round-trip poll on that same thread would be racing
+ * the thing it measures on a loaded runner. The seams push into a module-scope
+ * array, so a record SURVIVES a stall and one `evaluate` after the press reads
+ * everything that happened.
+ */
+function readAuditionLog(page: Page): Promise<AuditionRecord[]> {
+  return page.evaluate(() => {
+    const w = globalThis as unknown as { __auditionLog?: () => AuditionRecord[] };
+    return w.__auditionLog ? w.__auditionLog() : [];
+  });
+}
+
+interface AuditionRecord {
+  seq: number;
+  nodeId: string;
+  seam: 'manual-strike' | 'manual-gate' | 'engine-message';
+  high?: boolean;
+  delivered: boolean;
+}
+
+interface ActionProbe {
+  effect:
+    | { kind: 'audition'; seam: AuditionRecord['seam'] }
+    | { kind: 'data'; key: string; expect: 'changed' }
+    | { kind: 'data-rev'; key: string };
+}
+
+/** The pure predicate, mirroring `auditionDelivered` in audition-ledger.ts —
+ *  which is negative-controlled in BOTH directions in the unit lane on every
+ *  run (`audition-ledger.test.ts`), so this side stays a thin read. */
+const delivered = (
+  log: AuditionRecord[],
+  nodeId: string,
+  seam: AuditionRecord['seam'],
+  sinceSeq: number,
+  high?: boolean,
+): boolean =>
+  log.some(
+    (r) =>
+      r.seq > sinceSeq &&
+      r.nodeId === nodeId &&
+      r.seam === seam &&
+      r.delivered &&
+      (high === undefined || r.high === high),
+  );
+
+const lastSeq = (log: AuditionRecord[]): number => (log.length ? log[log.length - 1]!.seq : 0);
+
+/** A one-line dump of what the ledger DID see, so a red run is diagnosable
+ *  rather than a coin flip ("frozen" and "never looked" must not print the
+ *  same thing). */
+const dumpLog = (log: AuditionRecord[], since: number): string =>
+  log
+    .filter((r) => r.seq > since)
+    .map((r) => `${r.seam}${r.high === undefined ? '' : r.high ? '/high' : '/low'}→${r.delivered}`)
+    .join(', ') || '(no audition records at all)';
 
 /** Every cell the dock faceplate rendered, in DOM order.
  *
@@ -588,7 +666,33 @@ async function driveCell(
     // sweep reported 21 passed. Reading the module's own declaration keeps the
     // two sides of the contract independent. Registry-driven: the next
     // gate-mode cell auto-enrols with no edit here.
+    // ── THE PROBE. ⚠ THIS BRANCH USED TO END `await btn.click(); return;` ──
+    // It asserted the button existed and was ENABLED, then clicked it and
+    // asserted NOTHING — the only cell kind in this sweep with no probe at all,
+    // on the kind whose entire purpose is to DO something. A dead audition
+    // passed the whole face green; karplus's dock PLUCK animated its press
+    // flash on a string that was never plucked, and the sweep called it
+    // operable. Every other branch here proves an observable effect, and a
+    // PANEL has been required to DECLARE one since PF-14; an `action` is now
+    // held to the same bar.
+    //
+    // An audition writes NOTHING to the graph on purpose
+    // (manual-strike-actions.ts), so `readParam`/`readData` are structurally
+    // blind to it. The observable is whether the seam RESOLVED a callable off
+    // the live engine handle and called it — the boolean all three seams
+    // already computed and every call site threw away.
+    const probe = await readActionProbe(page, spec.type, cell.key);
+    expect(
+      probe,
+      `${where}: declares no operability probe. Add one to its shell-cell spec ` +
+        `(packages/web/src/lib/ui/workflow/shell-cells.ts) — the sweep will not ` +
+        `special-case a module, and a press with no declared observable is ` +
+        `indistinguishable from a dead one.`,
+    ).toBeTruthy();
+
     const mode = await readActionMode(page, spec.type, cell.key);
+    const before = lastSeq(await readAuditionLog(page));
+
     if (mode === 'gate') {
       // A declared HELD action MUST render as a momentary pad. This is the
       // clause the DOM sniff could not have.
@@ -605,15 +709,62 @@ async function driveCell(
         'aria-pressed',
         'true',
       );
+      // ⚠ ASSERTED ON THE OPEN EDGE, BEFORE THE RELEASE. A held audition that
+      // never opened and a held audition that opened-and-closed both end with
+      // `aria-pressed="false"`, so an end-state-only check cannot tell them
+      // apart. Both edges are proven, separately.
+      await expect
+        .poll(async () => delivered(await readAuditionLog(page), nodeId, 'manual-gate', before, true), {
+          message: `${where}: the PRESS reached the held audition seam and delivered`,
+        })
+        .toBe(true);
+
       await page.mouse.up();
       await expect(
         btn,
         `${where}: release RETURNS the held pad to rest — a gate action must not latch`,
       ).toHaveAttribute('aria-pressed', 'false');
+      const gLog = await readAuditionLog(page);
+      expect(
+        delivered(gLog, nodeId, 'manual-gate', before, false),
+        `${where}: the RELEASE reached the seam and CLOSED the gate — a roll that opens and ` +
+          `never closes is the worst failure this seam has. Ledger since press: ${dumpLog(gLog, before)}`,
+      ).toBe(true);
       return;
     }
 
     await btn.click();
+
+    if (probe!.effect.kind === 'audition') {
+      const seam = probe!.effect.seam;
+      await expect
+        .poll(async () => delivered(await readAuditionLog(page), nodeId, seam, before), {
+          message:
+            `${where}: the press reached the '${seam}' seam and DELIVERED. A false here means ` +
+            `the button ran its handler and the engine handle answered nothing — the audition ` +
+            `is dead while the control looks perfectly alive.`,
+        })
+        .toBe(true);
+      return;
+    }
+
+    // A future action cell that edits node.data instead of firing a seam.
+    const key = probe!.effect.key;
+    const beforeRaw = await readData(page, nodeId, key);
+    if (probe!.effect.kind === 'data-rev') {
+      await expect
+        .poll(async () => Number(await readData(page, nodeId, key)) || 0, {
+          message: `${where}: the press advances '${key}'`,
+        })
+        .toBeGreaterThan(Number(beforeRaw) || 0);
+    } else {
+      const snap = JSON.stringify(beforeRaw);
+      await expect
+        .poll(async () => JSON.stringify(await readData(page, nodeId, key)), {
+          message: `${where}: the press CHANGES node.data['${key}']`,
+        })
+        .not.toBe(snap);
+    }
     return;
   }
 

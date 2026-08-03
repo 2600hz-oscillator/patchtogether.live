@@ -2,7 +2,6 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import { patch } from '$lib/graph/store';
   import { filterDef } from '$lib/audio/modules/filter';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
@@ -18,9 +17,12 @@
 
 
   const MODES = ['LP', 'HP', 'BP'] as const;
-  function selectMode(m: number) {
-    const t = patch.nodes[id]; if (t) t.params.mode = m;
-  }
+  // ⚠ Routed through the SAME `setNodeParam` seam as cutoff/resonance. Until
+  // 2026-08-02 this was a bare `t.params.mode = m`, so MODE — the control that
+  // decides whether CUTOFF sounds dark, thin or narrow — was the one param on
+  // this card that was NOT undoable and did NOT ride the LOCAL_ORIGIN tag.
+  // `mutate.guard`'s RAW_PARAM_WRITE was bracket-only and could not see it.
+  const selectMode = (m: number) => set('mode')(m);
 
   const inputs = portsFromDef(filterDef.inputs);
   const outputs = portsFromDef(filterDef.outputs, { audio: 'OUT' });

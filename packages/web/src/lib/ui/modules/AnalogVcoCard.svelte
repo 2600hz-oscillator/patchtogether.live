@@ -9,7 +9,17 @@
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
-  import { portsFromDef } from './card-kit';
+  import { paramSpec, portsFromDef } from './card-kit';
+
+  // ⚠ FM / PM ARE BIPOLAR IN THE DEF AND THIS CARD SAID THEY WERE NOT.
+  // `fmAmount` / `pmAmount` are declared `min: -1, max: 1` (inverted modulation
+  // is half the point of a linear-FM index), and their `cv` jacks have always
+  // driven the full ±1. The card re-typed `min={0}`, so the knob could only
+  // reach the positive half while the DEF-DRIVEN dock face reached both — one
+  // param, two ranges, depending on which surface you were looking at. Bound to
+  // the def so the two cannot disagree again.
+  const pFm = paramSpec(analogVcoDef, 'fmAmount');
+  const pPm = paramSpec(analogVcoDef, 'pmAmount');
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -107,8 +117,8 @@
     <div class="fader-row">
       <Fader value={tune}     min={-36} max={36}     defaultValue={0}   label="Tune" units="st" curve="linear" onchange={setParam('tune')} moduleId={id} paramId="tune"     readLive={readLive('tune')} />
       <Fader value={fine}     min={-100} max={100}   defaultValue={0}   label="Fine" units="¢"  curve="linear" onchange={setParam('fine')} moduleId={id} paramId="fine"     readLive={readLive('fine')} />
-      <Fader value={fmAmount} min={0}   max={1}      defaultValue={0}   label="FM"              curve="linear" onchange={setParam('fmAmount')} moduleId={id} paramId="fmAmount" readLive={readLive('fmAmount')} />
-      <Fader value={pmAmount} min={0}   max={1}      defaultValue={0}   label="PM"              curve="linear" onchange={setParam('pmAmount')} moduleId={id} paramId="pmAmount" readLive={readLive('pmAmount')} />
+      <Fader value={fmAmount} min={pFm.min} max={pFm.max} defaultValue={pFm.defaultValue} label="FM"              curve="linear" onchange={setParam('fmAmount')} moduleId={id} paramId="fmAmount" readLive={readLive('fmAmount')} />
+      <Fader value={pmAmount} min={pPm.min} max={pPm.max} defaultValue={pPm.defaultValue} label="PM"              curve="linear" onchange={setParam('pmAmount')} moduleId={id} paramId="pmAmount" readLive={readLive('pmAmount')} />
       <Fader value={pw}       min={0.05} max={0.95}  defaultValue={0.5} label="PW"              curve="linear" onchange={setParam('pw')} moduleId={id} paramId="pw"       readLive={readLive('pw')} />
       <Fader value={shape}    min={0}   max={1}      defaultValue={0}   label="Wave"            curve="linear" onchange={setParam('shape')} moduleId={id} paramId="shape"    readLive={readLive('shape')} />
     </div>
