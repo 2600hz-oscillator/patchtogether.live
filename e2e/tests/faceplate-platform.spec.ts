@@ -119,6 +119,39 @@ async function migratedFaces(page: Page): Promise<SidebarSpec[]> {
   });
 }
 
+/**
+ * THE BUDGET FOR A REGISTRY-DRIVEN SWEEP MUST SCALE WITH THE ROSTER IT SWEEPS.
+ *
+ * Both sweeps below cost ONE FULL SHELL BOOT per adopter — `gotoShell()` (a
+ * real navigation plus the topbar/pane waits) then `spawnPatch` then
+ * `openFaceplate` — and the adopter roster GROWS every time a face is authored.
+ * Face batch 3 took it from **1 to 5** in a single PR (kickdrum was the only
+ * adopter; clap, drummergirl, pentemelodica and sixstrum joined at once), i.e.
+ * a 5x cost increase against a per-test timeout that did not move.
+ *
+ * A fixed budget is therefore not one assertion — it is a weaker assertion
+ * after every batch, silently approaching its own edge until a loaded shard
+ * tips it. MEASURED on this branch: the annotation sweep runs 6.1 s on a real
+ * GPU but **14.4 s under `E2E_SWIFTSHADER=1`** (the software renderer CI
+ * actually uses) and the sidebar sweep 11.9 s — 48 % and 40 % of the old
+ * 30 000 ms default consumed *before* the ten-way parallel shard contention CI
+ * adds on top. That is what reddened `e2e (shard 3/10)` on #1332.
+ *
+ * ⚠ The reported failure named `gotoShell`'s `getByTestId('workflow-topbar')`
+ * wait — which reads like a broken app boot and is NOT one. It is simply where
+ * the outer test budget happened to expire, on a later loop iteration.
+ * Verified against the real page: the `?shell=1` route mounts its topbar in
+ * 828 ms with ZERO pageerrors, and all four batch-3 faces mount and render, so
+ * "one of the new faces throws during shell boot" is disproven.
+ *
+ * This is a CAP, not a duration: the sweeps still finish in 6-15 s, so a
+ * generous per-adopter allowance costs no CI wall time at all. 20 s each leaves
+ * ~8x headroom over the measured SwiftShader cost per adopter.
+ */
+function sweepBudgetMs(adopterCount: number): number {
+  return 30_000 + adopterCount * 20_000;
+}
+
 test.describe('PF-20 dock faceplate platform (kickdrum)', () => {
   test('the faceplate is a designed panel: header, hero picture, big readouts, hints, sidebar rail', async ({ page }) => {
     await gotoShell(page);
@@ -464,6 +497,10 @@ test.describe('PF-20 annotations — declared prose ⇔ the toggle that reveals 
       adopters.map((a) => a.type),
       'at least one face declares annotation prose (an empty sweep proves nothing)',
     ).not.toHaveLength(0);
+    // One full shell boot per adopter — the budget scales with the roster.
+    // See sweepBudgetMs(): a fixed 30 s silently weakened with every authored
+    // face and is what reddened e2e shard 3/10 when this went 1 -> 5 adopters.
+    test.setTimeout(sweepBudgetMs(adopters.length));
 
     for (const spec of adopters) {
       await gotoShell(page);
@@ -538,6 +575,8 @@ test.describe('PF-20 sidebar — every DECLARED block paints, for every adopter'
       adopters.map((a) => a.type),
       'at least one module declares a dock sidebar (an empty sweep proves nothing)',
     ).not.toHaveLength(0);
+    // Same shape, same growth, same fix as the annotation sweep above.
+    test.setTimeout(sweepBudgetMs(adopters.length));
 
     for (const spec of adopters) {
       expect(
