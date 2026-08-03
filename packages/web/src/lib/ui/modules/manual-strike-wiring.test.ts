@@ -66,6 +66,10 @@ const EXPECTED_AUDITIONS: Record<string, string[]> = {
   'snaredrum:snaredrum-hit-{n}': [MANUAL_STRIKE_KEY],
   // press + release ⇒ the gate setter is resolved twice, once per edge.
   'snaredrum:snaredrum-roll-{n}': [MANUAL_GATE_KEY, MANUAL_GATE_KEY],
+  // face batch 3 — RECOVERED. The legacy card's ⟋ STRUM button always drove
+  // this seam; the shell registry did not, so `?shell=1` offered twenty
+  // controls over an instrument that could not be sounded.
+  'sixstrum:sixstrum-strum-{n}': [MANUAL_STRIKE_KEY],
 };
 
 interface Drive {

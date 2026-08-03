@@ -132,7 +132,7 @@ export const analogVcoDef: AudioModuleDef = {
         "Depth of frequency modulation from the FM input (−1 to +1) — 0 means the fm input has no effect. Positive sweeps pitch upward, negative downward; patch an LFO here to add vibrato or ramp it from an envelope for dramatic pitch drops.",
       pmAmount:
         "Depth of phase modulation from the PM input (−1 to +1) — 0 means the pm input has no effect. Higher values shift the morph timbre more dramatically per unit of PM signal; use this to add envelope-driven color changes.",
-      pw: "Pulse width of the square waveform (0.05 to 0.95, duty cycle) — 0.5 is a perfect square, lower values create thin nasal pulses, higher values create inverted thin pulses. Animate this with an LFO for a classic PWM (pulse-width modulation) sweep.",
+      pw: "Pulse width of the square waveform (0.05 to 0.95, duty cycle) — 0.5 is a perfect square, lower values create thin nasal pulses, higher values create inverted thin pulses. It is live on the SQUARE output from the moment the module spawns; it reaches the MORPH output only in proportion to 2 x Wave - 1, so at the shipped Wave of 0 it does nothing to the morph at all. Note there is no PW CV jack (the five CV inputs are tune, fine, fmAmount, pmAmount and shape), so a PWM sweep has to come from automation or MIDI-learn rather than from a cable.",
       shape:
         "Waveform selector for the morph output (0 to 1) — 0 = sawtooth, 0.5 = sine, 1 = square. Knob + CV modulation add together, so a sequencer or LFO can smoothly sweep through all three classic waveforms.",
     },

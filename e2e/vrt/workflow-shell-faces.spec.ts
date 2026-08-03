@@ -50,7 +50,7 @@ const FACES = [
   { type: 'cloudseed', pages: 8 },
   // batch 2 — the two pitched voices, the two drums, the two processors
   { type: 'dx7', pages: 4 },
-  { type: 'sixstrum', pages: 6 },
+  { type: 'sixstrum', pages: 5 },
   { type: 'snaredrum', pages: 5 },
   { type: 'tomtom', pages: 4 },
   { type: 'shimmershine', pages: 3 },
@@ -66,6 +66,15 @@ const FACES = [
   { type: 'reverb', pages: 2 },
   // batch B+ — the stereo crush
   { type: 'ringback', pages: 2 },
+  // FACE BATCH 3 (2026-08-03) — the PF-20 wave. `pages` is the POST-hero-split
+  // band count the dock renders, which is the declared `face.pages` length
+  // unless a promotion empties a band (heroFacePlan drops an emptied band).
+  { type: 'clap', pages: 4 },
+  { type: 'drummergirl', pages: 2 },
+  // ⚠ 8 bands trips DOCK_TAB_MIN_BANDS: this face renders as a TAB RAIL, by
+  // design (five identical voice strips have no other shape). Do not merge it
+  // back under seven.
+  { type: 'pentemelodica', pages: 8 },
 ] as const;
 
 /** TIGHT per-scene diff budgets (absolute pixels; Playwright takes the MIN of
@@ -77,6 +86,32 @@ const FACES = [
  *  workflow-shell-zoom scene budget. */
 const COMPACT_MAX_DIFF = 150;
 const DOCK_MAX_DIFF = 1500;
+
+/**
+ * ⚠ STATE THE GATE'S SCOPE INSIDE THE GATE — this dock scene sees THE TOP ~425
+ * px OF THE FACEPLATE AND NOTHING ELSE, and an unstated scope reads as full
+ * coverage.
+ *
+ * The captured element is the whole pane, but the pane is
+ * `max-height: min(60vh, 680px)` (DockFullView) with its own scroll region, so
+ * on any face whose hero rail is tall the SECTION BANDS sit below the fold and
+ * are simply not in the image.
+ *
+ * MEASURED 2026-08-03 while landing PF-21 (row packing), which re-grouped the
+ * section bands of THIRTEEN faces: nine dock baselines went red — and
+ * sixstrum's, dx7's, kickdrum's, snaredrum's and drummergirl's stayed GREEN,
+ * pixel-identical, while the layout underneath them changed completely. The
+ * gate is blind to band layout on precisely the faces with the most bands.
+ *
+ * So: a green dock scene is NOT evidence that a band-level change is a no-op.
+ * The band structure is gated by `faceplate-platform.spec.ts` (the PF-21 row
+ * sweep + the annotation/sidebar sweeps) and by the pure `dock-row-plan` /
+ * `module-face-lint` units, which read the whole faceplate. Widening the
+ * capture — a taller VRT viewport, or a `.faceplate-body`-scoped shot — is a
+ * real improvement and is deliberately NOT bundled here: it would move every
+ * dock baseline on both platforms for a reason unrelated to the change that
+ * found it.
+ */
 
 /** Wait until the Canvas dev spawn/viewport hooks are registered. */
 async function waitForHooks(page: Page): Promise<void> {

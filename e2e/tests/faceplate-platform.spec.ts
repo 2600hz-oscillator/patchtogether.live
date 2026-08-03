@@ -119,6 +119,39 @@ async function migratedFaces(page: Page): Promise<SidebarSpec[]> {
   });
 }
 
+/**
+ * THE BUDGET FOR A REGISTRY-DRIVEN SWEEP MUST SCALE WITH THE ROSTER IT SWEEPS.
+ *
+ * Both sweeps below cost ONE FULL SHELL BOOT per adopter — `gotoShell()` (a
+ * real navigation plus the topbar/pane waits) then `spawnPatch` then
+ * `openFaceplate` — and the adopter roster GROWS every time a face is authored.
+ * Face batch 3 took it from **1 to 5** in a single PR (kickdrum was the only
+ * adopter; clap, drummergirl, pentemelodica and sixstrum joined at once), i.e.
+ * a 5x cost increase against a per-test timeout that did not move.
+ *
+ * A fixed budget is therefore not one assertion — it is a weaker assertion
+ * after every batch, silently approaching its own edge until a loaded shard
+ * tips it. MEASURED on this branch: the annotation sweep runs 6.1 s on a real
+ * GPU but **14.4 s under `E2E_SWIFTSHADER=1`** (the software renderer CI
+ * actually uses) and the sidebar sweep 11.9 s — 48 % and 40 % of the old
+ * 30 000 ms default consumed *before* the ten-way parallel shard contention CI
+ * adds on top. That is what reddened `e2e (shard 3/10)` on #1332.
+ *
+ * ⚠ The reported failure named `gotoShell`'s `getByTestId('workflow-topbar')`
+ * wait — which reads like a broken app boot and is NOT one. It is simply where
+ * the outer test budget happened to expire, on a later loop iteration.
+ * Verified against the real page: the `?shell=1` route mounts its topbar in
+ * 828 ms with ZERO pageerrors, and all four batch-3 faces mount and render, so
+ * "one of the new faces throws during shell boot" is disproven.
+ *
+ * This is a CAP, not a duration: the sweeps still finish in 6-15 s, so a
+ * generous per-adopter allowance costs no CI wall time at all. 20 s each leaves
+ * ~8x headroom over the measured SwiftShader cost per adopter.
+ */
+function sweepBudgetMs(adopterCount: number): number {
+  return 30_000 + adopterCount * 20_000;
+}
+
 test.describe('PF-20 dock faceplate platform (kickdrum)', () => {
   test('the faceplate is a designed panel: header, hero picture, big readouts, hints, sidebar rail', async ({ page }) => {
     await gotoShell(page);
@@ -464,6 +497,10 @@ test.describe('PF-20 annotations — declared prose ⇔ the toggle that reveals 
       adopters.map((a) => a.type),
       'at least one face declares annotation prose (an empty sweep proves nothing)',
     ).not.toHaveLength(0);
+    // One full shell boot per adopter — the budget scales with the roster.
+    // See sweepBudgetMs(): a fixed 30 s silently weakened with every authored
+    // face and is what reddened e2e shard 3/10 when this went 1 -> 5 adopters.
+    test.setTimeout(sweepBudgetMs(adopters.length));
 
     for (const spec of adopters) {
       await gotoShell(page);
@@ -538,6 +575,8 @@ test.describe('PF-20 sidebar — every DECLARED block paints, for every adopter'
       adopters.map((a) => a.type),
       'at least one module declares a dock sidebar (an empty sweep proves nothing)',
     ).not.toHaveLength(0);
+    // Same shape, same growth, same fix as the annotation sweep above.
+    test.setTimeout(sweepBudgetMs(adopters.length));
 
     for (const spec of adopters) {
       expect(
@@ -585,4 +624,157 @@ test.describe('PF-20 sidebar — every DECLARED block paints, for every adopter'
       }
     }
   });
+});
+
+// ── PF-21: THE ROW PLAN — two labelled sections on one row ───────────────────
+//
+// The pure model (dock-row-plan.test.ts) proves the GROUPING: minimum rows,
+// then evenness, then the heaviest row last, with a solo row for any band
+// carrying a roster or a panel. It is structurally blind to two things that
+// only exist in a browser, and both are the reason the model deliberately
+// carries NO pixel budget:
+//
+//   1. A PACKED ROW MUST NOT OVERFLOW. The ceiling is a control COUNT, not a
+//      width, so the physical fit is delegated to `flex-wrap` on `.dock-row`.
+//      That delegation is a claim about the browser and has to be measured in
+//      one. ⚠ These are HONEST CSS PIXELS: the dock faceplate is a sibling of
+//      the flow pane, NOT inside it, so xyflow's zoom transform — the thing
+//      that makes `card-control-overflow`'s magnitudes viewport-scaled — does
+//      not apply here.
+//   2. EVERY PACKED SECTION MUST STILL SHOW ITS OWN LABEL. The label is what
+//      makes two sections on one row legible rather than a jumble, and since
+//      the hints became annotation-only it is the ONLY thing naming a band at
+//      rest. A packing rule that quietly dropped it would still pass the model.
+test.describe('PF-21 row plan — sections share a row, legibly and without overflow', () => {
+  // ⚠ TWO WIDTHS, AND THE NARROW ONE IS THE TEST — with the negative control
+  // stated exactly, because measuring it changed what this test asserts.
+  //
+  // First draft asserted only "a packed row does not overflow its column", at
+  // the default 1280 px viewport. Forcing `flex-wrap: nowrap` on `.dock-row`
+  // did not redden it — at ANY width. The reason is structural and worth
+  // recording: `.dock-row > .dock-page` is `flex: 0 1 auto; min-width: 0`, and
+  // `.page-controls` inside each section is itself `flex-wrap: wrap`. So with
+  // wrapping off the sections SQUEEZE and their knobs re-wrap internally; the
+  // row never spills. The overflow assertion therefore cannot fail for this
+  // component as built, and is kept only as a cheap guard for a future change
+  // that pins a width or drops the `min-width: 0`.
+  //
+  // What DOES distinguish the two behaviours is whether a section that no
+  // longer fits MOVES TO THE NEXT LINE or is crushed in place — which is the
+  // whole reason `.dock-row` wraps. So the live negative control is the WRAP
+  // leg below: at 820 px the kit's own floors bind (`.faceplate-body` min-width
+  // 900, `.page.has-sidebar` reserving 288 for the rail) and the column bottoms
+  // out near 548 px, narrower than the widest packed row, so a wrap MUST be
+  // observed. Measured: with `nowrap` forced on, that leg goes red and this
+  // one still passes — which is exactly why it ships as a permanent leg.
+  const WIDTHS = [
+    { label: 'wide', size: { width: 1280, height: 900 } },
+    { label: 'narrow', size: { width: 820, height: 900 } },
+  ] as const;
+
+  for (const { label, size } of WIDTHS) {
+  test(`every packed row keeps its section labels and fits its column (${label} pane)`, async ({ page }) => {
+    await page.setViewportSize(size);
+    await gotoShell(page);
+    const faces = await migratedFaces(page);
+    expect(faces.length, 'the registry publishes migrated faces').toBeGreaterThan(0);
+    test.setTimeout(sweepBudgetMs(faces.length));
+
+    let packedRows = 0;
+    let packedFaces = 0;
+    let wrappedRows = 0;
+    const shapes: string[] = [];
+
+    for (const spec of faces) {
+      await gotoShell(page);
+      await spawnPatch(page, [{ id: 'rp', type: spec.type, position: { x: 460, y: 240 } }]);
+      const fp = await openFaceplate(page, 'rp');
+      const shell = fp.locator('[data-testid="module-shell"]');
+
+      const rows = await shell.evaluate((root) => {
+        const pages = root.querySelector('[data-testid="face-pages"]') as HTMLElement | null;
+        // ⚠ THE COLUMN, not the row's own box. A flex ITEM sizes to its content,
+        // so `row.scrollWidth <= row.clientWidth` is true even when the row is
+        // spilling out of the faceplate — measured: with `flex-wrap: nowrap`
+        // forced on, that comparison still passed. The honest question is
+        // whether the row fits the COLUMN it lives in.
+        const colW = pages?.clientWidth ?? 0;
+        return [...(pages?.children ?? [])].map((child) => {
+          const el = child as HTMLElement;
+          const packed = el.matches('[data-testid="face-row"]');
+          const secs = packed
+            ? [...el.querySelectorAll('[data-testid="face-page"]')]
+            : [el];
+          return {
+            packed,
+            ids: secs.map((s) => s.getAttribute('data-face-page') ?? '?'),
+            labels: secs.map((s) => (s.querySelector('.page-label')?.textContent ?? '').trim()),
+            controls: secs.reduce((n, s) => n + s.querySelectorAll('[data-cell-key]').length, 0),
+            // CSS px — see the note above.
+            scrollW: el.scrollWidth,
+            clientW: colW,
+            // Did the row actually WRAP? Sections on one visual line share a
+            // top offset; a wrapped one does not.
+            wrapped: new Set(secs.map((sec) => (sec as HTMLElement).offsetTop)).size > 1,
+          };
+        });
+      });
+
+      shapes.push(`${spec.type}: ${rows.map((r) => r.ids.join('+')).join(' | ')}`);
+      // ⚠ NOT `faceplate-tabrail` — that element ALWAYS renders (it holds the
+      // single MODULE chip below the threshold), so probing it answers 'true'
+      // for every face and is invariant to the dimension under test. The rail
+      // is RAILED exactly when it painted per-section tab buttons.
+      const tabbed = (await fp.locator('[data-face-tab]').count()) > 0;
+
+      for (const row of rows) {
+        if (!row.packed) continue;
+        packedRows++;
+        expect(
+          tabbed,
+          `${spec.type}: a TAB RAIL shows one band at a time — it must never pack`,
+        ).toBe(false);
+        expect(
+          row.ids.length,
+          `${spec.type} row ${row.ids.join('+')}: a packed row holds two or more sections`,
+        ).toBeGreaterThan(1);
+        for (let i = 0; i < row.ids.length; i++) {
+          expect(
+            row.labels[i],
+            `${spec.type} row ${row.ids.join('+')}: section '${row.ids[i]}' still shows its own label`,
+          ).not.toBe('');
+        }
+        expect(
+          row.scrollW,
+          `${spec.type} row ${row.ids.join('+')}: ${row.controls} cells overflow the column ` +
+            `(${row.scrollW} > ${row.clientW} CSS px of column, ${label} pane) — flex-wrap did not absorb it`,
+        ).toBeLessThanOrEqual(row.clientW + 1);
+        if (row.wrapped) wrappedRows++;
+      }
+      if (rows.some((r) => r.packed)) packedFaces++;
+    }
+
+    // ⚠ THE NEGATIVE CONTROL, permanent leg. Every assertion above is inside
+    // `if (!row.packed) continue`, so a rule that stopped packing ANYTHING —
+    // a broken classifier, a ceiling accidentally set to 1 — would sweep 22
+    // faces and assert nothing at all, in total silence. Naming the faces makes
+    // a shrinking roster visible in the failure rather than invisible in a pass.
+    expect(
+      packedFaces,
+      `no face packed a single row — the sweep asserted nothing. shapes:\n${shapes.join('\n')}`,
+    ).toBeGreaterThanOrEqual(10);
+    expect(packedRows, 'packed rows observed').toBeGreaterThanOrEqual(10);
+
+    // …and the SECOND half of the negative control: at the narrow pane the
+    // wrap has to have actually engaged somewhere, or the no-overflow claim
+    // above is again being satisfied by rows that simply fit.
+    if (label === 'narrow') {
+      expect(
+        wrappedRows,
+        `no packed row WRAPPED at ${size.width}px — the no-overflow assertion is ` +
+          `vacuous at this width, so it cannot prove flex-wrap does anything. shapes:\n${shapes.join('\n')}`,
+      ).toBeGreaterThan(0);
+    }
+  });
+  }
 });

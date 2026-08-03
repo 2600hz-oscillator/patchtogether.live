@@ -34,7 +34,9 @@ import type { SelectorOption } from '$lib/ui/controls';
 import { testHooksEnabled } from '$lib/dev/test-hooks';
 import Dx7OperatorMap from '$lib/ui/modules/dx7/Dx7OperatorMap.svelte';
 import Dx7OpDetail from '$lib/ui/modules/dx7/Dx7OpDetail.svelte';
+import ClapHeroPanel from '$lib/ui/modules/ClapHeroPanel.svelte';
 import KickdrumHeroPanel from '$lib/ui/modules/KickdrumHeroPanel.svelte';
+import PentemelodicaVoicesPanel from '$lib/ui/modules/PentemelodicaVoicesPanel.svelte';
 import type { FaceControl } from './curated-face';
 import {
   DX7_SYX_ACCEPT,
@@ -326,6 +328,38 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
       },
     },
   },
+  clap: {
+    // THE HERO VISUALISATION — the burst train and the room tail, promoted into
+    // the faceplate's hero slot (`face.hero.cell`). A panel rather than a glyph
+    // because it is not a trace of the output: it is a picture of the PATCH,
+    // computed from the live knobs through the worklet's own control laws, so
+    // it says what the voice WILL do before anything strikes it — which is what
+    // a `scope` glyph on a silent rack cannot do, and why that glyph is
+    // suppressed at the dock for a face that brings its own picture.
+    //
+    // ⚠ THERE IS NO `clap-strike` CELL. clap's audition is the `strike`
+    // ParamDef the def already declares, rendered as a momentary <Button> via
+    // `face.momentary` — the canonical press-param (graph/types cites
+    // "tomtom/clap `strike`"), which keeps the pad inside faces-parity's param
+    // multiset and makes `setMomentaryParam` the leak-proof write path. A
+    // family cell here would be a second implementation of a control the def
+    // already owns.
+    'clap-hero-{n}': {
+      kind: 'panel',
+      label: 'burst + room',
+      component: ClapHeroPanel,
+      minWidth: 380,
+      // A `text` probe on a DIFFERENT element, for the kickdrum reason: the
+      // plot window is a PRIVATE view setting in component state, so there is
+      // no node.data key to watch. The button drives the axis labels, which a
+      // dead button cannot change — a stronger claim than a revision counter.
+      probe: {
+        testid: 'clap-graph-window',
+        action: 'click',
+        effect: { kind: 'text', testid: 'clap-graph-axis', expect: 'changed' },
+      },
+    },
+  },
   cloudseed: {
     // CLEAR TAIL — the one gesture this reverb has that is not a value. It
     // flushes every delay line, diffuser, shelf and lowpass in the tank
@@ -459,6 +493,31 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
       probe: { effect: { kind: 'audition', seam: 'manual-gate' } },
     },
   },
+  pentemelodica: {
+    // THE FIVE-VOICE PICTURE, promoted into the hero slot. It exists because
+    // this faceplate is TABBED (eight bands trip DOCK_TAB_MIN_BANDS), so four
+    // of the five voice strips are hidden at any moment and this is the ONE
+    // place the whole instrument is visible.
+    'pentemelodica-voices-{n}': {
+      kind: 'panel',
+      label: 'five voices',
+      component: PentemelodicaVoicesPanel,
+      minWidth: 420,
+      // A `text` probe on a DIFFERENT element: the lane SELECTION is private
+      // view state (component state, not node.data — a rack-mate must not have
+      // their panel yanked), so there is no key to watch. Clicking lane 2 must
+      // change the detail line, which is computed from the selected voice's
+      // params. ⚠ At DEFAULTS all five voices are byte-identical, which is why
+      // the detail line leads with the voice NUMBER — the probe has to fire on
+      // a freshly spawned module, where nothing else about voice 1 and voice 2
+      // differs.
+      probe: {
+        testid: 'pentemelodica-hero-lane-2',
+        action: 'click',
+        effect: { kind: 'text', testid: 'pentemelodica-hero-detail', expect: 'changed' },
+      },
+    },
+  },
   sixstrum: {
     // The guitar / bass / harp PRESET RECALL. Unlike dx7's, its state is not a
     // `node.data` slot — the three modes ARE knob states, so a pick stamps all
@@ -473,6 +532,26 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
       options: () => sixstrumSelectorOptions(),
       value: (node) => sixstrumPresetName(node),
       onchange: (nodeId, value) => selectSixstrumPreset(nodeId, value),
+    },
+    // THE AUDITION, RECOVERED — the cell whose ABSENCE is the whole reason for
+    // the sixstrum face re-do. The legacy card's ⟋ STRUM button drives
+    // `read('manualTrigger')` on the factory handle; this registry held only the
+    // preset selector and `face.order` had no strike key, so under `?shell=1`
+    // the dock offered twenty controls over a voice that could not be sounded
+    // at all. (Two repo comments — this file's karplus note and
+    // manual-strike-actions' header — asserted the opposite; both are true
+    // again now.)
+    //
+    // Fires the SAME host-side trigger source the card fires
+    // (manual-strike-actions), so there is one implementation, not two. STRUM
+    // #1 is normalled to all six, so a single press barres the whole chord,
+    // rolled by STRUM and DIR — a complete performance gesture, not a test tone.
+    'sixstrum-strum-{n}': {
+      kind: 'action',
+      label: 'strum',
+      title: 'Audition: strum all six strings once (identical to a strum1 rising edge)',
+      onFire: (nodeId) => { fireManualStrike(nodeId); },
+      probe: { effect: { kind: 'audition', seam: 'manual-strike' } },
     },
   },
 };

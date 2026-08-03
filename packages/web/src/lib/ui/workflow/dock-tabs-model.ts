@@ -36,6 +36,16 @@
 //
 // Lowering this number is a deliberate design decision that MOVES EVERY DOCK
 // BASELINE it newly captures — do it in its own PR, with the regen.
+//
+// ⚠ PF-21 (ROW PACKING) DOES NOT CHANGE THIS THRESHOLD, and the reason is worth
+// stating because the arithmetic above now has a second reading. Bands may
+// share a ROW (dock-row-plan.ts), so N bands no longer means N × 90 px — but a
+// RAILED face never packs (a rail shows one band at a time, so there is no
+// "beside" to pack into), and this predicate is evaluated on the BAND count
+// before any packing. Re-checked against both current adopters at the packing
+// rule: cloudseed's eight bands still pack to SIX rows and pentemelodica's to
+// SIX, both far past the ~3.3 the window holds. The rail is still the right
+// trade for them, so the number stays where it is.
 
 import type { DockFaceBand } from './curated-face';
 

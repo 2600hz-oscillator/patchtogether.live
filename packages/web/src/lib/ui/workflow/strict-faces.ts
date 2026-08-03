@@ -38,6 +38,28 @@
 // ($lib/audio/ringback-crush-model), and its `glyph`/`order` are checked
 // against measurements taken from the real DSP core rather than argued in a
 // comment.
+//
+// FACE BATCH 3 (2026-08-03): the PF-20 wave — clap, drummergirl and
+// pentemelodica, plus a RE-DO of sixstrum's shipped face. Faceplates authored
+// against what each module IS rather than against its legacy card, each with a
+// hero, a declared sidebar and DERIVED readouts registered in
+// face-readout-values.ts (never a knob relabelled), negative-controlled
+// PERMANENTLY in a per-module `*-face-model.test.ts`.
+//
+// sixstrum is a RE-DO rather than a promotion, and it is the entry that fixes a
+// live defect: its shipped face ranked three next-STRIKE-only controls into the
+// lane and had no strike key at all, so under `?shell=1` the dock offered
+// twenty controls over an instrument that could not be sounded.
+//
+// ⚠ analogVco was authored, verified and then DROPPED from this batch. Its
+// `face-analogVco-compact` VRT scene is NOT pixel-deterministic: unlike every
+// other faced module, analogVco is a FREE-RUNNING oscillator, so its live
+// `scope` glyph is drawing a genuinely moving saw rather than the flat
+// centreline the spec header assumes (measured 254 / 154 / 315 px across three
+// consecutive captures of the same tile). Its DOCK scene is stable, which
+// confirms the diagnosis — a `hero.cell` suppresses the glyph there. The fix
+// belongs in `VRT_LIVE_SURFACES` (a mask plus a measured companion), which
+// e2e/vrt/vrt-exemptions.ts already claims analogVco has and it does not.
 
 export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // P1 batch 1 — first 6 module faces
@@ -62,6 +84,10 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   'reverb',
   // face batch B+ — the stereo crush (first promotion from no face at all)
   'ringback',
+  // FACE BATCH 3 (2026-08-03) — see the header note above.
+  'clap',
+  'drummergirl',
+  'pentemelodica',
 ]);
 
 /**

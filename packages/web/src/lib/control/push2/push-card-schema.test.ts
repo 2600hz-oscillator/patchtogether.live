@@ -240,15 +240,24 @@ describe('resolvePushCardControls — tier 2, the curated face', () => {
     ]);
   });
 
-  it('SKIPS a control family and keeps walking — it does not stop at rank 1', () => {
-    // sixstrum's face ranks its PRESET family 7th. The window must step over
-    // it and pull rank 8 in, not come back one control short.
+  it('SKIPS control families and keeps walking — it does not stop at rank 1', () => {
+    // sixstrum's face ranks TWO families back to back at 7 and 8 (the STRUM
+    // audition, then the PRESET recall). The window must step over BOTH and
+    // pull ranks 9-10 in, not come back two controls short.
+    //
+    // ⚠ THIS CARD MOVED IN FACE BATCH 3, and deliberately. The face re-do
+    // re-ranked on one test — does this knob move a string that is ALREADY
+    // RINGING? — so the encoders now carry the five controls that are live on a
+    // sounding string (RING, MATERIAL, BODY, LEVEL, STIFF) plus the namesake
+    // STRUM, where they used to carry three next-strike-only ones (PICK TONE,
+    // REGISTER, plus DIR/TUNING). No override pins this module, so accepting
+    // the drift here is the deliberate act CLAUDE.md asks for.
     const spec = resolvePushCardControls(defByType('sixstrum'));
     expect(spec.source).toBe('face');
-    expect(spec.skipped).toEqual(['sixstrum-preset-{n}']);
+    expect(spec.skipped).toEqual(['sixstrum-strum-{n}', 'sixstrum-preset-{n}']);
     expect(pushCardParams(spec)).toHaveLength(8);
     expect(pushCardParams(spec).map((q) => q.id)).toEqual([
-      'strumSpread', 'ring', 'material', 'pickTone', 'muteDepth', 'register', 'strumDir', 'tuning',
+      'ring', 'material', 'body', 'strumSpread', 'level', 'stiffness', 'tuning', 'register',
     ]);
   });
 
