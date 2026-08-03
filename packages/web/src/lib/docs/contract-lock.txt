@@ -340,23 +340,6 @@ buggles param level 0..1 linear default=0.7
 buggles param rate 0..1 linear default=0.4
 buggles param smoothness 0..1 linear default=0.5
 cadillac meta domain=meta maxInstances=1
-callsine meta domain=audio
-callsine in audio_in audio
-callsine in gate gate
-callsine in harm_cv cv param=harmonics cvScale=linear
-callsine in level_cv cv param=level cvScale=linear
-callsine in model_cv cv param=model cvScale=discrete
-callsine in morph_cv cv param=morph cvScale=linear
-callsine in note_cv cv param=note cvScale=linear
-callsine in pitch pitch
-callsine in timb_cv cv param=timbre cvScale=linear
-callsine out out audio
-callsine param harmonics 0..1 linear default=0.6
-callsine param level 0..1 linear default=0.8
-callsine param model 0..13 discrete default=0
-callsine param morph 0..1 linear default=0
-callsine param note -60..60 linear default=0 unit=st
-callsine param timbre 0..1 linear default=0.4
 cameraInput meta domain=video maxInstances=4
 cameraInput in gain cv param=gain cvScale=linear
 cameraInput in mirror gate param=mirror edge=gate
@@ -3620,68 +3603,31 @@ videovarispeed param speed 0..1 linear default=0.5
 videovarispeed param speedCv -1..1 linear default=0
 videovarispeed param start 0..1 linear default=0
 videovarispeed param startCv -1..1 linear default=0
-warrenspectrum meta domain=audio
-warrenspectrum in band1_in audio
-warrenspectrum in band2_in audio
-warrenspectrum in band3_in audio
-warrenspectrum in band4_in audio
-warrenspectrum in band5_in audio
-warrenspectrum in band6_in audio
-warrenspectrum in band7_in audio
-warrenspectrum in band8_in audio
-warrenspectrum in decay_cv cv param=ping_decay cvScale=linear
-warrenspectrum in global_ping gate
-warrenspectrum in in_l audio
-warrenspectrum in in_r audio
-warrenspectrum in level1_cv cv param=level1 cvScale=linear
-warrenspectrum in level2_cv cv param=level2 cvScale=linear
-warrenspectrum in level3_cv cv param=level3 cvScale=linear
-warrenspectrum in level4_cv cv param=level4 cvScale=linear
-warrenspectrum in level5_cv cv param=level5 cvScale=linear
-warrenspectrum in level6_cv cv param=level6 cvScale=linear
-warrenspectrum in level7_cv cv param=level7 cvScale=linear
-warrenspectrum in level8_cv cv param=level8 cvScale=linear
-warrenspectrum in ping1 gate
-warrenspectrum in ping2 gate
-warrenspectrum in ping3 gate
-warrenspectrum in ping4 gate
-warrenspectrum in ping5 gate
-warrenspectrum in ping6 gate
-warrenspectrum in ping7 gate
-warrenspectrum in ping8 gate
-warrenspectrum in q_cv cv param=q cvScale=linear
-warrenspectrum in root_cv cv param=root cvScale=linear
-warrenspectrum in spread_cv cv param=spread cvScale=linear
-warrenspectrum in viznoise_cv cv param=viznoise cvScale=linear
-warrenspectrum out band1_out audio
-warrenspectrum out band2_out audio
-warrenspectrum out band3_out audio
-warrenspectrum out band4_out audio
-warrenspectrum out band5_out audio
-warrenspectrum out band6_out audio
-warrenspectrum out band7_out audio
-warrenspectrum out band8_out audio
-warrenspectrum out out_l audio
-warrenspectrum out out_r audio
-warrenspectrum out viz_out mono-video
-warrenspectrum param bleed 0..1 linear default=1
-warrenspectrum param level1 0..2 linear default=1
-warrenspectrum param level2 0..2 linear default=1
-warrenspectrum param level3 0..2 linear default=1
-warrenspectrum param level4 0..2 linear default=1
-warrenspectrum param level5 0..2 linear default=1
-warrenspectrum param level6 0..2 linear default=1
-warrenspectrum param level7 0..2 linear default=1
-warrenspectrum param level8 0..2 linear default=1
-warrenspectrum param master 0..2 linear default=1
-warrenspectrum param ping_decay 0..1 linear default=0.5
-warrenspectrum param q 1..40 linear default=6
-warrenspectrum param root 24..108 linear default=60
-warrenspectrum param spread 0..1 linear default=0
-warrenspectrum param tuning_mode 0..1 discrete default=0
-warrenspectrum param viznoise 0..1 linear default=0.3
-warrenspectrum stereo in_l+in_r
-warrenspectrum stereo out_l+out_r
+warrensspectrum meta domain=audio
+warrensspectrum in audio_in audio
+warrensspectrum in center_cv cv param=spectralCenter cvScale=linear
+warrensspectrum in gate gate edge=gate
+warrensspectrum in lock_cv cv param=spectralLock cvScale=linear
+warrensspectrum in partials_cv cv param=spectralPartials cvScale=linear
+warrensspectrum in pitch pitch
+warrensspectrum in residual_cv cv param=spectralResidual cvScale=linear
+warrensspectrum in shape_cv cv param=spectralShape cvScale=linear
+warrensspectrum in slice_cv cv param=spectralSlice cvScale=linear
+warrensspectrum out out audio
+warrensspectrum param engineFreeze 0..1 discrete default=0
+warrensspectrum param gain -60..12 linear default=0 unit=dB
+warrensspectrum param inputMix 0..1 linear default=0
+warrensspectrum param resynthLevel 0..1 linear default=0
+warrensspectrum param spectralCenter -3600..3600 linear default=0 unit=cents
+warrensspectrum param spectralFloor -90..-20 linear default=-42 unit=dB
+warrensspectrum param spectralLock 0..1 linear default=0.75
+warrensspectrum param spectralPartials 1..256 discrete default=64
+warrensspectrum param spectralResidual 0..2 linear default=0.5
+warrensspectrum param spectralShape 0..1 linear default=0
+warrensspectrum param spectralSlew 0.02..4 linear default=0.6 unit=s
+warrensspectrum param spectralSlice 2..200 linear default=10 unit=ms
+warrensspectrum param spectralStab 1..16 discrete default=3
+warrensspectrum family ws-filterbank kind=cell prefix=ws-band
 wavecel meta domain=audio
 wavecel in fm audio
 wavecel in fold_cv cv param=fold cvScale=linear

@@ -353,8 +353,8 @@ const PROBES: Probe[] = [
   // this proves the live card mounts cleanly and a
   // control hover updates the pane. The CV→param dual-context check runs where the
   // module has a CV input with a paramTarget (drummergirl pitch→pitch, meowbox
-  // morph→morph, treeohvox cutoff_cv→cutoff, callsine
-  // note_cv→note); buggles' CV inputs are raw sampled values (no paramTarget), so
+  // morph→morph, treeohvox cutoff_cv→cutoff, warren's spectrum
+  // partials_cv→spectralPartials); buggles' CV inputs are raw sampled values (no paramTarget), so
   // cvPort '' skips it. pentemelodica stays STATIC (canvas) — no probe. ---
   {
     id: 'drummergirl',
@@ -389,11 +389,14 @@ const PROBES: Probe[] = [
     modulates: /./,
   },
   {
-    id: 'callsine',
-    heading: /callsine/i,
-    controlParam: 'harmonics',
-    controlDescIncludes: /partial|harmonic|count/i,
-    cvPort: 'note_cv', // CV (paramTarget=note) → note transpose
+    // Repointed from `callsine` when that module was retired (2026-08-02):
+    // the replacement carries the coverage, so the NEW module's doc page is
+    // the one under test.
+    id: 'warrensspectrum',
+    heading: /warren/i,
+    controlParam: 'spectralPartials',
+    controlDescIncludes: /partial|salience|bank/i,
+    cvPort: 'partials_cv', // CV (paramTarget=spectralPartials) → partial count
     modulates: /modulates/i,
   },
   // --- Batch 10 — sequencers, clocks & pattern generators (2026-06-26). Each is
@@ -477,7 +480,7 @@ const PROBES: Probe[] = [
   // interactive; this proves the live card mounts cleanly and a control hover
   // updates the pane. The CV→param dual-context check runs on each (cloudseed
   // late_cv→late_out). The STATIC siblings (foxy /
-  // twotracks / hypercube / synesthesia / warrenspectrum / mixmstrs /
+  // twotracks / hypercube / synesthesia / mixmstrs /
   // bluebox) have no live-card probe — see interactive-doc-modules.ts. ---
   {
     id: 'cloudseed',

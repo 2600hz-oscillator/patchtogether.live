@@ -35,7 +35,7 @@ import { buildNodeTypes, conventionalCardName, type CardDefLike } from './module
 const EXPECTED_NODE_TYPES = [
   '4plexvid', 'acidwarp', 'adsr', 'analogLogicMaths', 'analogVco', 'archivist',
   'attenumix', 'audioIn', 'audioOut', 'backdraft', 'bentbox',
-  'blood', 'bluebox', 'buggles', 'callsine', 'cameraInput', 'cartesian',
+  'blood', 'bluebox', 'buggles', 'cameraInput', 'cartesian',
   'charlottesEchos', 'chroma', 'chromakey', 'clap', 'clipplayer', 'clockedRunner', 'clouds',
   'cloudseed', 'cofefve', 'colorizer', 'colourofmagic', 'cube', 'cvBuddy', 'delay', 'depolarizer', 'destroy', 'destructor',
   'dockscope',
@@ -56,9 +56,19 @@ const EXPECTED_NODE_TYPES = [
   'swolevco', 'synesthesia', 'tempest', 'timelorde', 'treeohvox', 'tvLibrarian',
   'launchpadControlLeft', 'push2Control',
   'unityscalemathematik', 'vca', 'vdelay', 'vfpgaRunner', 'videoMixer', 'videoOut',
-  'videobox', 'videocube', 'videovarispeed', 'warrenspectrum', 'wavecel', 'wavesculpt',
+  'videobox', 'videocube', 'videovarispeed', 'warrensspectrum', 'wavecel', 'wavesculpt',
   'twotracks', 'wavetableVco', 'writeseq', 'textmarquee', 'tiler', 'spirographs',
   'milkdrop',
+
+
+
+
+
+
+
+
+
+
 
 
 

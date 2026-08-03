@@ -21,7 +21,7 @@
 # — and `set -e` tore the scan down at the FIRST added file, silently skipping
 # every path after it. The branch that shipped this script also added a
 # baseline, so the audit aborted partway through its own range and a SECOND
-# undocumented geometry change (warrenspectrum 526x527 → 527x527) sat
+# undocumented geometry change (the since-retired warrenspectrum, 526x527 → 527x527) sat
 # unreported behind the abort. A gate that cannot run is decoration; a gate
 # that runs halfway and exits 0 is worse, because it looks like it ran.
 #

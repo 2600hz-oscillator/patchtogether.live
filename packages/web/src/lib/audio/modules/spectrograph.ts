@@ -18,7 +18,7 @@
 // (GPU-free, unit-tested). The scroll buffer is owned HERE and advanced
 // at most once per ~frame (time-gated) so that BOTH outputs being
 // patched — each gets its own drawFrame call within one bridge tick —
-// does NOT double-advance the scroll (the WARRENSPECTRUM/scope precedent
+// does NOT double-advance the scroll (the scope precedent
 // for a shared analyser tap; the gate keeps a steady scroll rate
 // independent of how many outputs are patched).
 //

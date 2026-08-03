@@ -11,7 +11,7 @@ source tree, so they cannot go stale. Prose + roadmap: `docs/testing/README.md`.
 | Bucket | What | Count |
 | --- | --- | ---: |
 | 1 | HARD SKIPS / QUARANTINES (backlog → drive to 0) | 6 |
-| 2 | COVERAGE EXEMPTIONS (deliberate auto-enrollment opt-outs) | 499 |
+| 2 | COVERAGE EXEMPTIONS (deliberate auto-enrollment opt-outs) | 477 |
 | 3 | INFORMATIONAL-ONLY CI LANES (run, never block merge) | 5 |
 
 ## CI gating truth (from `.github/workflows/ci.yml`)
@@ -46,7 +46,7 @@ _none_
 ### spawn-smoke QUARANTINE map (e2e/tests/modules.spec.ts) — 1
 - `toybox` — task #102: SwiftShader software-renderer timeout (heavy WebGL)
 
-## Bucket 2 — coverage exemptions (499)
+## Bucket 2 — coverage exemptions (477)
 
 Declarative auto-enrollment opt-out lists. A module opted out of a UNIVERSAL
 sweep still carries dedicated coverage (a bespoke spec / unit core / ART). These
@@ -67,7 +67,6 @@ tracked-to-zero backlog (reconcile = fix or delete); see the roadmap.
 - `blood` — live game-loop framebuffer + user-supplied non-redistributable data (no frame on CI) defeats deterministic capture
 - `bluebox` — VRT baseline pending — deterministic keypad card (12 static buttons, no canvas/animation)
 - `cadillac` — no card render — roaming overlay sprite, not a SvelteFlow node body.
-- `callsine` — VRT baseline pending
 - `cameraInput` — live MediaStream defeats deterministic capture
 - `chroma` — VRT baseline pending — v3 reshape (PR feat/keyers-and-restore-chroma-luma) deleted obsolete baselines
 - `chromakey` — VRT baseline pending
@@ -135,6 +134,7 @@ tracked-to-zero backlog (reconcile = fix or delete); see the roadmap.
 - `videobox` — live <video> element + ticking playhead readout defeat deterministic capture
 - `videocube` — VRT baseline pending owner look-approval (look-affecting WebGL video CUBE isomorph)
 - `videovarispeed` — live <video> element streamed at varispeed + ticking playhead readout defeat deterministic capture
+- `warrensspectrum` — VRT baseline pending: the curated dock FACE lands on the faceplate platform (#1301) in a follow-up and will replace t…
 - `writeseq` — VRT baseline pending
 
 ### `BEHAVIORAL_MODULE_EXEMPT` (77) — whole-module skips of the behavioral CONTROL→PATCHED delta sweep
@@ -217,7 +217,7 @@ tracked-to-zero backlog (reconcile = fix or delete); see the roadmap.
 - `videovarispeed` — needs uploaded video file to emit
 - `wavesculpt` — multi-voice cluster
 
-### `BEHAVIORAL_SWEEP_EXEMPT` (135) — per-PORT skips of the behavioral delta sweep (module still enrolled)
+### `BEHAVIORAL_SWEEP_EXEMPT` (113) — per-PORT skips of the behavioral delta sweep (module still enrolled)
 <sub>e2e/tests/per-module-per-port-behavioral.spec.ts</sub>
 - `acidwarp.scene_cv` — infrequent scene transitions may not land inside the 1.5s window
 - `acidwarp.speed_cv` — palette-rotation RATE of an already-full-screen high-variance plasma
@@ -319,28 +319,6 @@ tracked-to-zero backlog (reconcile = fix or delete); see the roadmap.
 - `treeohvox.pitch_in` — pitch CV on a held-note baseline: the centroid swing flakes run-to-run (Δrms.range≈0.012-0.015 straddling the 0.02 floor
 - `treeohvox.res_cv` — resonance CV: the resonant-peak shift sits at the gate-retrigger jitter floor (passes on Δr.rms one run / Δr.zc the n…
 - `treeohvox.tune_cv` — tune (±12 st) CV: the fine pitch shift on a held note straddles the floor (Δr cent 20→69 Hz, Δμrms<0.01 both runs) —…
-- `warrenspectrum.decay_cv` — resonator-decay CV
-- `warrenspectrum.global_ping` — percussive vactrol ping (all bands)
-- `warrenspectrum.level1_cv` — per-band level scaler on summed out_l
-- `warrenspectrum.level2_cv` — per-band level scaler on summed out_l
-- `warrenspectrum.level3_cv` — per-band level scaler on summed out_l
-- `warrenspectrum.level4_cv` — per-band level scaler on summed out_l
-- `warrenspectrum.level5_cv` — per-band level scaler on summed out_l
-- `warrenspectrum.level6_cv` — per-band level scaler on summed out_l
-- `warrenspectrum.level7_cv` — per-band level scaler on summed out_l
-- `warrenspectrum.level8_cv` — per-band level scaler on summed out_l
-- `warrenspectrum.ping1` — percussive vactrol ping
-- `warrenspectrum.ping2` — percussive vactrol ping
-- `warrenspectrum.ping3` — percussive vactrol ping
-- `warrenspectrum.ping4` — percussive vactrol ping
-- `warrenspectrum.ping5` — percussive vactrol ping
-- `warrenspectrum.ping6` — percussive vactrol ping
-- `warrenspectrum.ping7` — percussive vactrol ping
-- `warrenspectrum.ping8` — percussive vactrol ping
-- `warrenspectrum.q_cv` — resonator-Q CV
-- `warrenspectrum.root_cv` — resonator root-tuning CV
-- `warrenspectrum.spread_cv` — stereo-pan WIDTH only
-- `warrenspectrum.viznoise_cv` — drives the viz_out visualizer hue/noise mix, NOT the observed out_l audio
 - `wavecel.poly` — single gated voice at default ~pass-through ADSR ≈ the lane-0 drone (env→1, 1/sqrt(1) norm) → no delta vs the drone c…
 - `wavecel.trigger` — gating the mono TRIGGER opens lane-0\'s env to ≈1 over the drone oscillator → ≈ the drone waveform → no delta vs the…
 - `wavetableVco.fine` — cv on small-range knob (±100 cents)
@@ -578,7 +556,7 @@ tracked-to-zero backlog (reconcile = fix or delete); see the roadmap.
 
 ### Opt-IN completeness ratchets (the more members the better)
 
-- `STRICT_DOCS`: **184** — modules held to the FULL living-docs completeness bar (deny-missing-docs) <sub>(packages/web/src/lib/docs/strict-docs.ts)</sub>
+- `STRICT_DOCS`: **183** — modules held to the FULL living-docs completeness bar (deny-missing-docs) <sub>(packages/web/src/lib/docs/strict-docs.ts)</sub>
 - `STRICT_VRT_MODULES`: **48** — modules whose card MUST ship a VRT baseline (deny-missing-baseline) <sub>(e2e/vrt/vrt-exemptions.ts)</sub>
 
 ## Bucket 3 — informational-only CI lanes (5)

@@ -4,7 +4,7 @@
 // e2e/MODULE-COVERAGE-PLAN.md):
 //
 //   Group 6 — time-based effects: reverb, charlottesEchos, shimmershine,
-//             qbrt, warrenspectrum.
+//             qbrt.
 //   Group 7 — drum voices: drummergirl, meowbox.
 //   Group 8 — video sources + effects: every video-domain module spawns
 //             and the canvas of a downstream videoOut renders non-trivial
@@ -120,26 +120,6 @@ test('qbrt: ping → resonant L output emits audio', async ({ page, rack }) => {
   const snap = await readScopeSnapshot(page, 'scp');
   const sum = summarize(snap!.ch1);
   expect(sum.peak, `qbrt L peak=${sum.peak.toFixed(4)}`).toBeGreaterThan(0.005);
-});
-
-test('warrenspectrum: stereo input → out_l emits audio', async ({ page, rack }) => {
-  await spawnPatch(
-    page,
-    [
-      { id: 'n',   type: 'noise',          params: { level: 0.6 } },
-      { id: 'ws',  type: 'warrenspectrum', params: {} },
-      { id: 'scp', type: 'scope',          params: { timeMs: 50 } },
-    ],
-    [
-      { id: 'e1', from: { nodeId: 'n',  portId: 'white' }, to: { nodeId: 'ws',  portId: 'in_l' } },
-      { id: 'e2', from: { nodeId: 'ws', portId: 'out_l' }, to: { nodeId: 'scp', portId: 'ch1'  } },
-    ],
-  );
-  await runFor(page, 700);
-  const snap = await readScopeSnapshot(page, 'scp');
-  const sum = summarize(snap!.ch1);
-  // Filterbank attenuates broadband; require small but non-zero peak.
-  expect(sum.peak, `warrenspectrum out_l peak=${sum.peak.toFixed(4)}`).toBeGreaterThan(0.001);
 });
 
 test('integration (Group 6): voice → reverb → audioOut produces wider/longer tail than dry', async ({ page, rack }) => {

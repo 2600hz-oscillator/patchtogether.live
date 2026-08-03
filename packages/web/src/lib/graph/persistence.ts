@@ -22,6 +22,11 @@ import { getVideoModuleDef } from '$lib/video/module-registry';
 import { getMetaModuleDef } from '$lib/meta/module-registry';
 import type { ModuleNode, Edge } from './types';
 import { validateEdge, type ResolveDef } from './validate-edge';
+// The two reason strings the summariser BUCKETS ON live with the summariser,
+// so the producer and the consumer cannot drift into disagreement (a
+// re-worded reason here would otherwise silently fall into the "migrated"
+// bucket and read as good news).
+import { LOAD_DIAGNOSTIC_REASONS } from './load-diagnostics';
 
 /** Is `type` registered in ANY per-domain registry? The persistence loader only
  *  needs to know whether a saved node's type still resolves to a def — an
@@ -33,6 +38,54 @@ function isKnownModuleType(type: string): boolean {
     getAudioModuleDef(type) ?? getVideoModuleDef(type) ?? getMetaModuleDef(type),
   );
 }
+
+/**
+ * RETIRED module types → the type that replaces them. Consulted ONCE, at
+ * load, BEFORE the unknown-type drop.
+ *
+ * NOT a general migration substrate: no value reshaping, no per-module hooks,
+ * no `schemaVersion`. This is the shallow TYPE-ONLY aliasing the VIDEO
+ * registry carried as `LEGACY_TYPE_ALIASES` (ruttetra→reshaper,
+ * circles→outlines) until #1027 retired it, re-introduced with the same
+ * finite life. The node survives at its saved id and position — the two
+ * things a user cannot reconstruct — and its edges are then re-validated by
+ * the ordinary `validateEdge` pass, so a port that exists on the new def
+ * keeps its cable and a port that doesn't is dropped with its own diagnostic.
+ * PARAMS ARE NOT MAPPED: the node loads at the new module's defaults, because
+ * silently reinterpreting one instrument's control as another's is worse than
+ * resetting it.
+ *
+ * ⚠ `warrenspectrum` (one 's') is DELIBERATELY ABSENT. It was a stereo 8-band
+ * vactrol-ping resonator bank: 0 of its 43 ports and 0 of its 16 params exist
+ * on the mono spectral contract, and its rack footprint was 3u/3hp against
+ * the replacement's 2u/2hp. An aliased node would keep no cable and no value
+ * — a card wearing the old node's identity with none of its behaviour. It
+ * takes the ordinary unknown-type drop path instead (the repo's declared
+ * answer, exercised by 18 previously-deleted types), which is now VISIBLE:
+ * see `summarizeLoadDiagnostics` in ./load-diagnostics. A dropped node is
+ * visibly absent and the user knows to rebuild; a silently-migrated one lies.
+ *
+ * REMOVAL CONDITION: drop this table two minor releases after ship, at which
+ * point live patches have been re-saved under the canonical id and the drop
+ * path handles the stragglers — exactly the argument #1027 used to retire the
+ * video aliases.
+ */
+export const RETIRED_TYPE_ALIASES: Readonly<Record<string, string>> = {
+  callsine: 'warrensspectrum',
+};
+
+/** Per-alias diagnostic wording. A migrated node is NOT the generic "controls
+ *  reset" case: `callsine` declared `chainWiring: { role: 'source' }` — it was
+ *  a pitch+gate VOICE — while Warren's Spectrum is an EFFECT that resynthesises
+ *  whatever is patched into `audio_in`. **A migrated node with nothing patched
+ *  into `audio_in` is silent.** That is the one failure this migration can
+ *  still produce and the one a user is least likely to diagnose, so the
+ *  diagnostic says it out loud. */
+export const RETIRED_TYPE_ALIAS_NOTES: Readonly<Record<string, string>> = {
+  callsine:
+    "migrated from callsine to warren's spectrum (controls reset to defaults); " +
+    "warren's spectrum ANALYSES audio — patch a source into audio_in or it is silent",
+};
 
 /** SyncedStore-shaped patch — keys map to their value or undefined (post-delete).
  * Mirrors MappedTypeDescription<PatchStore> so this module accepts the live
@@ -362,6 +415,23 @@ export function loadEnvelopeIntoStore(
   const diagnostics: LoadDiagnostic[] = [];
   const keptNodes: Record<string, ModuleNode> = {};
   for (const [id, node] of Object.entries(loadedNodes)) {
+    // RETIRED-TYPE ALIAS, consulted BEFORE the unknown-type drop. Rewrites
+    // `node.type` IN PLACE, so a subsequent save persists the canonical id and
+    // the table can eventually be retired (the #1027 lifecycle). Params are
+    // dropped rather than mapped — see RETIRED_TYPE_ALIASES.
+    const aliasTarget = RETIRED_TYPE_ALIASES[node.type];
+    if (aliasTarget && !isKnownModuleType(node.type) && isKnownModuleType(aliasTarget)) {
+      const from = String(node.type);
+      node.type = aliasTarget;
+      node.params = {};
+      diagnostics.push({
+        nodeId: id,
+        type: from,
+        reason:
+          RETIRED_TYPE_ALIAS_NOTES[from] ??
+          `migrated from ${from} to ${aliasTarget} (controls reset to defaults)`,
+      });
+    }
     // Look up across both per-domain registries — video modules
     // (PICTUREBOX, CAMERA, LINES, ...) live in the video registry and
     // would otherwise be silently dropped on load. See
@@ -370,7 +440,7 @@ export function loadEnvelopeIntoStore(
       diagnostics.push({
         nodeId: id,
         type: String(node.type),
-        reason: 'module type not registered in this build',
+        reason: LOAD_DIAGNOSTIC_REASONS.unknownType,
       });
       continue; // Phase 1: skip. Future: insert placeholder error node.
     }
@@ -412,7 +482,7 @@ export function loadEnvelopeIntoStore(
         diagnostics.push({
           nodeId: edge.id,
           type: 'edge',
-          reason: 'edge references a dropped node',
+          reason: LOAD_DIAGNOSTIC_REASONS.orphanEdge,
         });
         continue;
       }
