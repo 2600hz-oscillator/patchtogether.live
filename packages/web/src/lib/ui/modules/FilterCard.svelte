@@ -2,7 +2,6 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import { patch } from '$lib/graph/store';
   import { filterDef } from '$lib/audio/modules/filter';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
@@ -18,9 +17,17 @@
 
 
   const MODES = ['LP', 'HP', 'BP'] as const;
-  function selectMode(m: number) {
-    const t = patch.nodes[id]; if (t) t.params.mode = m;
-  }
+  /**
+   * ⚠ MODE used to commit as `patch.nodes[id].params.mode = m` — a BARE proxy
+   * assignment, outside any origin-tagged transaction. The UndoManager tracks
+   * only `LOCAL_ORIGIN` (graph/store.ts), so the write reached the document and
+   * synced to peers but **never landed on the undo stack**: Cmd-Z after
+   * switching LP→BP silently did nothing, or undid the knob move before it,
+   * while CUTOFF and RES on the very same card were undoable. `set()` is
+   * `setNodeParam`, which is that transaction — the same commit every other
+   * control on every other card uses.
+   */
+  const selectMode = (m: number) => set('mode')(m);
 
   const inputs = portsFromDef(filterDef.inputs);
   const outputs = portsFromDef(filterDef.outputs, { audio: 'OUT' });
