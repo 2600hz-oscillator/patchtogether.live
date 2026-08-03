@@ -1185,6 +1185,123 @@ describe('module-face lint — FACEPLATE STRUCTURE (PF-20: hero / sidebar / hint
     expect(problems.join('\n'), 'unreachable annotation prose').toBe('');
   });
 
+  /**
+   * THE MARKUP HALF, guarded at the SOURCE — and the honest reason it has to be.
+   *
+   * The sweep above asks the MODEL whether a hint is reachable. The model is not
+   * what renders it. `bandHeaderPlan` can be perfectly correct while the shell
+   * re-nests the hint inside the label's `{#if}` and the prose paints nowhere
+   * again — which is precisely the two-sided-contract blindness CLAUDE.md
+   * describes, and precisely the bug this commit fixed.
+   *
+   * A runtime gate cannot see it TODAY: the failing case needs a hint declared
+   * on a TABBED face, and no def declares one (the lint used to forbid it;
+   * cloudseed's eight land in #1307). So until an adopter exists, the only place
+   * the coupling can be caught is the source — the same argument, and the same
+   * technique, as the `controlFamilies` → card-testid grep below.
+   *
+   * ⚠ WHAT THIS IS NOT: it is not a claim the markup renders correctly. It is a
+   * claim the markup asks the MODEL and has SOMEWHERE to put a rail-less hint.
+   * The moment a tabbed face declares one, the registry e2e sweep's per-surface
+   * COUNT (`.page-hint` === declared `bandHints`) takes over as the real gate
+   * and this becomes belt-and-braces.
+   */
+  /**
+   * Strip what a source grep must NOT read: HTML comments, block comments and
+   * line comments.
+   *
+   * ⚠ NOT tidiness — the gate below tripped on ITSELF the first time it ran.
+   * The fix for the coupling documents the coupling, so `{#if band.label &&
+   * !dockTabs}` appears verbatim in the very comment explaining why it is gone.
+   * A grep that cannot tell prose from code turns "explain the bug you fixed"
+   * into a lint failure, which trains the next author to delete the
+   * explanation. So the predicate reads CODE, and a comment quoting the old
+   * form is required to stay green (asserted in the negative control).
+   */
+  function codeOnly(src: string): string {
+    return src
+      .replace(/<!--[\s\S]*?-->/g, ' ')
+      .replace(/\/\*[\s\S]*?\*\//g, ' ')
+      .replace(/(^|[^:])\/\/[^\n]*/g, '$1 ');
+  }
+
+  /** The three source facts, as a pure predicate so the negative control can
+   *  feed it a deliberately-recoupled shell and require the report. */
+  function bandHeaderMarkupProblems(rawSrc: string): string[] {
+    const src = codeOnly(rawSrc);
+    const problems: string[] = [];
+    if (!/bandHeaderPlan\(\s*band\s*,/.test(src)) {
+      problems.push(
+        'ModuleShell no longer calls bandHeaderPlan(band, …) — the band header decides ' +
+          'label/hint suppression on its own again, so the model this file gates is not what renders',
+      );
+    }
+    // The coupled predicate, whitespace-insensitive: `band.label && !dockTabs`.
+    if (/band\.label\s*&&\s*!\s*dockTabs/.test(src)) {
+      problems.push(
+        'ModuleShell gates the band header on `band.label && !dockTabs` again. That couples the ' +
+          'HINT to the tab RAIL: a tabbed face then paints no prose in ANY state, even with ' +
+          'annotations on. The two suppressions are independent — see bandHeaderPlan.',
+      );
+    }
+    if (!src.includes('page-hint-solo')) {
+      problems.push(
+        'ModuleShell has no `page-hint-solo` branch — with a rail up there is no <h4> to hang the ' +
+          'hint inside, so a tabbed face’s prose has nowhere to land and silently paints nowhere',
+      );
+    }
+    return problems;
+  }
+
+  const MODULE_SHELL_SRC = () =>
+    readFileSync(fileURLToPath(new URL('../modules/ModuleShell.svelte', import.meta.url)), 'utf8');
+
+  it('ModuleShell asks bandHeaderPlan — the band hint is NOT re-nested inside the label', () => {
+    expect(bandHeaderMarkupProblems(MODULE_SHELL_SRC()).join('\n'), 'ModuleShell band-header markup').toBe('');
+  });
+
+  it('NEGATIVE CONTROL (markup): the OLD COUPLED shell markup FAILS all three clauses', () => {
+    // Without this the grep above is three `includes` that could each be
+    // inverted and stay green. The stub is the markup that actually shipped.
+    const coupled = `
+      {#each dockBands as band (band.id)}
+        <section class="dock-page">
+          {#if band.label && !dockTabs}
+            <h4 class="page-label">
+              {band.label}{#if band.hint && annotations}<span class="page-hint">{band.hint}</span>{/if}
+            </h4>
+          {/if}
+        </section>
+      {/each}`;
+    const problems = bandHeaderMarkupProblems(coupled);
+    expect(problems).toHaveLength(3);
+    expect(problems.join('\n')).toContain('no longer calls bandHeaderPlan');
+    expect(problems.join('\n')).toContain('couples the HINT to the tab RAIL');
+    expect(problems.join('\n')).toContain('no `page-hint-solo` branch');
+
+    // …and whitespace does not let the coupled predicate slip past.
+    expect(bandHeaderMarkupProblems('band.label   &&  ! dockTabs page-hint-solo bandHeaderPlan(band ,')).toHaveLength(1);
+  });
+
+  it('NEGATIVE CONTROL (markup): a COMMENT quoting the old form is not a violation', () => {
+    // The other direction, and it is the one that bit: this gate tripped on the
+    // very comment that explains the coupling it forbids. A lint that punishes
+    // documenting the bug teaches the next author to delete the documentation,
+    // so "prose may name the old form" is an asserted property, not a habit.
+    const documented = `
+      <!-- the old \`{#if band.label && !dockTabs}\` nested the hint inside the label -->
+      /* also band.label && !dockTabs, in a block comment */
+      // and band.label && !dockTabs on a line
+      {@const head = bandHeaderPlan(band, { tabbed: !!dockTabs, annotations })}
+      {#if head.label}<h4 class="page-label"></h4>
+      {:else if head.hint}<p class="page-hint page-hint-solo">{head.hint}</p>{/if}`;
+    expect(bandHeaderMarkupProblems(documented)).toEqual([]);
+
+    // …while the SAME file with one live occurrence still fails, so the
+    // comment-stripping cannot be the thing making it green.
+    expect(bandHeaderMarkupProblems(`${documented}\n{#if band.label && !dockTabs}{/if}`)).toHaveLength(1);
+  });
+
   // ── NEGATIVE CONTROLS ─────────────────────────────────────────────────────
   // kickdrum is the only adopter today, so without these the four sweeps above
   // are near-vacuous and would stay green if every predicate were `return []`.
