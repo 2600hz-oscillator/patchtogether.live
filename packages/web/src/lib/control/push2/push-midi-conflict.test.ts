@@ -5,7 +5,7 @@
 // generally for grid and how we assign things in electracontrol, do not
 // conflict."
 //
-// FIVE independent collision surfaces, each gated separately because each has a
+// FOUR independent collision surfaces, each gated separately because each has a
 // different failure mode:
 //
 //   1. CC ↔ CC, WITHIN the Push, in BOTH modes. A full 0..127 sweep of the
@@ -16,13 +16,33 @@
 //      argument.
 //   3. Push CC ↔ ELECTRA-allocation CC. The Electra One's generated preset
 //      allocates CCs from 0 upward, so it genuinely overlaps the Push's map.
-//      Asserted to be a cross-DEVICE overlap, and asserted NON-EMPTY so the
-//      exemption cannot go vacuous.
-//   4. WHO OWNS THE INPUT STREAM. The real one. `MIDIInput.onmidimessage` is a
-//      SINGLE-SLOT property, and eight subsystems assign it — three claim EVERY
-//      input and FOUR null every input. See ATTACH_LEDGER.
-//   5. A DUPLICATED CC LITERAL IN AN E2E SPEC. Added after one shipped: a spec
+//      Asserted NON-EMPTY so the observation cannot go vacuous. Whether that
+//      overlap is HARMFUL is decided by inbound routing, which this file does
+//      not own — see the scope note below.
+//   4. A DUPLICATED CC LITERAL IN AN E2E SPEC. Added after one shipped: a spec
 //      that re-types a CC keeps testing the OLD binding after a rename, silently.
+//
+// ── RETIRED: the inbound-attachment surface ───────────────────────────────
+//
+// An earlier revision carried a fifth surface — an `ATTACH_LEDGER` source-shape
+// gate over every `MIDIInput.onmidimessage` assignment. It is GONE, superseded
+// by `midi-input-ownership.test.ts` (the shared input fan-out), which covers
+// strictly more: it adds the per-subscriber FILTER column, and the filter — not
+// the assignment count — is what actually decides device collisions.
+//
+// ⚠ IT WAS ALSO WRONG ABOUT THE CONSEQUENCE, and the correction matters more
+// than the deletion. The ledger inferred from "N subscribers null every input"
+// that touching a MIDI LANE would SILENCE the Push. Measured in Chromium with
+// the Push attached, that does not happen: `requestMIDIAccess()` returns a
+// DISTINCT MIDIAccess per call, `a1.inputs.get(id) === a2.inputs.get(id)` is
+// FALSE for every port, and a destructive sweep over one access leaves the
+// other's handler installed. The ledger read the source shape correctly and the
+// runtime consequence incorrectly — it did flag that inference as unverified,
+// which is the only reason it was caught rather than believed.
+//
+// NOTHING BELOW RESTS ON THE SILENCING PREMISE. Where the old text used it to
+// argue surface 3 was harmless, surface 3 now states what it actually proves and
+// hands the routing question to the file that owns it.
 //
 // ── WHAT THIS FILE STRUCTURALLY CANNOT SEE ────────────────────────────────
 //
@@ -33,8 +53,10 @@
 //   · It reads the Push's own dispatch and the Electra's GENERATED allocation.
 //     It does not model a user's hand-learned MIDI bindings (midi-learn stores
 //     those per-rack in the Y.Doc), which can name any CC on any device.
-//   · Surface 4 is a SOURCE-SHAPE gate. It proves how many places assign the
-//     handler and over what scope; it does not execute a browser MIDI stack.
+//   · IT DOES NOT MODEL INBOUND ROUTING AT ALL — which subscriber receives which
+//     device's stream. That is `midi-input-ownership.test.ts`. So this file can
+//     say two CC numbers collide; it cannot say whether a message ever reaches
+//     the wrong handler.
 
 import { describe, it, expect } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
@@ -50,6 +72,8 @@ import {
   PUSH_CC_LEGEND,
   PUSH_CC_SHIFT,
   PUSH_CC_SCENE_BASE,
+  PUSH_CC_ENCODER_SWING,
+  PUSH_CC_ENCODER_MASTER,
   type Push2Action,
   type PushEncoderTarget,
 } from './push2-map';
@@ -326,8 +350,9 @@ describe('2 — the CC/NOTE number overlap is a non-collision, proven through th
 });
 
 // ---------------------------------------------------------------------------
-// 3 — Push CC ↔ ELECTRA-allocation CC. Numerically overlapping, on different
-// devices.
+// 3 — Push CC ↔ ELECTRA-allocation CC. A LATENT overlap: the numbers really do
+// collide; whether a message crosses is an inbound-ROUTING question this file
+// does not own.
 // ---------------------------------------------------------------------------
 
 describe('3 — Push CCs vs the Electra One preset allocation', () => {
@@ -349,25 +374,51 @@ describe('3 — Push CCs vs the Electra One preset allocation', () => {
   it('THE NUMBERS DO OVERLAP — stated as a fact, not waved away', () => {
     // The generator allocates from 0 upward, so it walks straight through the
     // Push's permanent row and scene column. This assertion exists so the
-    // exemption below can never become vacuous by the overlap disappearing.
+    // observation below can never become vacuous by the overlap disappearing.
     const shared = [...electraCcs].filter((n) => pushCcs.has(n)).sort((a, b) => a - b);
     expect(shared.length).toBeGreaterThan(5);
     expect(shared).toContain(PUSH_CC_SHIFT); // CC 27 is allocated by the Electra too
   });
 
-  it('…and it is a CROSS-DEVICE overlap: neither dispatch can see the other stream', () => {
-    // The Electra allocation is matched against `${messageType}:${number}` by
-    // ElectraAutoconfig on the ELECTRA broker's inbound fan-out; the Push map is
-    // matched by push2-device on the PUSH's bound input. Two devices, two
-    // handlers, two number spaces that never meet — the collision is nominal.
+  it('the overlap reaches the CONTROL-CARRYING CCs, not just spare numbers', () => {
+    // WHY THIS IS SHARPER THAN A COUNT. An earlier revision concluded the
+    // overlap was "nominal — two devices, two handlers, two number spaces that
+    // never meet". That was WRONG, and wrong in the opposite direction from the
+    // one it worried about: the risk is CROSSTALK, not silencing.
     //
-    // What makes that argument checkable rather than rhetorical is surface 4
-    // below: it is only true while each subsystem reads its OWN input.
+    // `ElectraBroker.attachInputs()` claimed EVERY input and filtered only by
+    // status byte, and `ElectraAutoconfig.handleCc` writes the bound rack param
+    // straight off the CC NUMBER. With an Electra connected, a Push encoder
+    // could therefore move an Electra-mapped parameter. So the numbers that
+    // matter are the ones the Push actually SENDS while being turned — the
+    // encoders and the permanent row — not the total size of the intersection.
+    const shared = new Set([...electraCcs].filter((n) => pushCcs.has(n)));
+    const liveOnThePush = [
+      PUSH_CC_ENCODER_SWING, // 15 — the scroll encoder
+      ...Array.from({ length: 8 }, (_, i) => 20 + i), // 20..27 permanent row (incl. SHIFT)
+      ...Array.from({ length: 8 }, (_, i) => 71 + i), // 71..78 display encoders
+      PUSH_CC_ENCODER_MASTER, // 79
+    ].filter((cc) => shared.has(cc));
+    expect(liveOnThePush.length, 'the overlap is on controls the Push transmits').toBeGreaterThan(0);
+  });
+
+  it('SCOPE: whether that overlap is HARMFUL is decided elsewhere, and is asserted there', () => {
+    // What this file CAN prove: the two number spaces intersect, and the Electra
+    // side is structured per logical device / hardware port.
     expect(generated.allocations.every((a) => a.deviceId === 1 || a.deviceId === 2)).toBe(true);
-    // The Electra's own two logical devices are on separate hardware PORTS, so
-    // its CC stream is not even self-colliding across them.
     const ports = new Set(generated.preset.devices.map((d) => d.port));
     expect(ports.size).toBe(generated.preset.devices.length);
+    // What it CANNOT prove, and must not claim: that a Push message never
+    // reaches the Electra dispatch. That depends on which subscriber receives
+    // which device's stream — inbound routing — which lives in the shared fan-out
+    // and is gated by `midi-input-ownership.test.ts` (the per-subscriber FILTER
+    // column). A numeric overlap is only ever a LATENT collision here; the
+    // routing gate is what makes it latent rather than live.
+    //
+    // Deliberately NOT re-derived from the source shape: the previous attempt to
+    // settle this question by counting `onmidimessage` assignment sites produced
+    // a confident, plausible and FALSE conclusion in both directions. A guard
+    // that cannot fire would be decoration; the scope note is the deliverable.
   });
 
   it('ELECTRA CONTROL mode drives the same slots the Electra flash reads', () => {
@@ -383,214 +434,7 @@ describe('3 — Push CCs vs the Electra One preset allocation', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 4 — WHO OWNS THE INPUT STREAM. The collision that is actually live.
-// ---------------------------------------------------------------------------
-
-const LIB_SOURCES = import.meta.glob('../../**/*.{ts,svelte}', {
-  eager: true,
-  query: '?raw',
-  import: 'default',
-}) as Record<string, string>;
-
-/** Vite returns the SHORTEST relative key, so the same tree comes back as
- *  './x', '../y/x' and '../../a/b/x'. Resolve them all against this file's own
- *  directory so the ledger can be keyed on ONE spelling. */
-function toLibPath(key: string): string {
-  const segs = ['control', 'push2']; // this file's directory, relative to lib/
-  for (const part of key.split('/')) {
-    if (part === '.' || part === '') continue;
-    if (part === '..') segs.pop();
-    else segs.push(part);
-  }
-  return segs.join('/');
-}
-
-/**
- * Every place that assigns `MIDIInput.onmidimessage`, on TWO axes.
- *
- * `onmidimessage` is a SINGLE-SLOT property (not `addEventListener`), so the
- * last assignment to a given input wins and silently displaces whoever held it.
- * Two different ways to hurt a neighbour, hence two fields:
- *
- *   · `claims`   — 'own-port' assigns only to a port this subsystem selected;
- *                  'every-port' iterates the whole MIDIAccess and takes the lot.
- *   · `detaches` — 'own-port' nulls only a handler it previously installed;
- *                  'every-port' nulls EVERY input before/after doing its work,
- *                  which tears down other subsystems that were not consulted;
- *                  'none' never detaches.
- *
- * ⚠ THE FINDING, recorded here because it is live and it is NOT introduced by
- * this PR: FOUR subsystems null EVERY input's handler. Three of them
- * (`midi-lane`, `midi-cv-buddy`, `midiclock`) do it on every device re-target
- * AND on `dispose()`. So spawning, re-pointing or deleting a MIDI LANE — the
- * default poly source — silently kills the Push 2's inbound stream, along with
- * the Launchpad's, the Electra's and MIDI-learn's. ElectraControl mode inherits
- * that hazard exactly as the rest of the Push integration already does.
- *
- * DENY BY DEFAULT: a new assignment site, or an existing one that changes
- * scope, is RED. This gate does NOT fix the hazard — a shared input fan-out is a
- * cross-subsystem refactor with real behaviour changes to MIDI-learn, the
- * external clock, three audio modules and the Electra, and it needs its own
- * hardware review. It makes the hazard impossible to grow silently, and it puts
- * the exact file list in front of whoever picks that work up.
- */
-interface AttachRow {
-  claims: 'own-port' | 'every-port';
-  detaches: 'own-port' | 'every-port' | 'none';
-  why: string;
-}
-
-const ATTACH_LEDGER: Record<string, AttachRow> = {
-  'control/push2/push2-device.svelte.ts': {
-    claims: 'own-port',
-    detaches: 'own-port',
-    why: 'binds ONLY the enumerated Push 2 port and clears only the previous port it owned',
-  },
-  'control/launchpad/launchpad-device.svelte.ts': {
-    claims: 'own-port',
-    detaches: 'own-port',
-    why: 'binds ONLY the enumerated Launchpad port(s); detaches a previous input only when truly orphaned',
-  },
-  'electra/broker.ts': {
-    claims: 'every-port',
-    detaches: 'none',
-    why: 'attachInputs() claims EVERY input, so connecting the Electra displaces the Push handler',
-  },
-  'midi/midi-learn.svelte.ts': {
-    claims: 'every-port',
-    detaches: 'none',
-    why: 'attachAllInputs() claims EVERY input so a knob can be learned from any device',
-  },
-  'midi/midi-clock-source.ts': {
-    claims: 'every-port',
-    detaches: 'every-port',
-    why: 'claims EVERY input to find clock bytes, and nulls EVERY input on destroy()',
-  },
-  'audio/modules/midi-lane.ts': {
-    claims: 'own-port',
-    detaches: 'every-port',
-    why: 'attachToDevice() nulls EVERY input before claiming its one — and dispose() nulls them all again',
-  },
-  'audio/modules/midi-cv-buddy.ts': {
-    claims: 'own-port',
-    detaches: 'every-port',
-    why: 'attachToDevice() nulls EVERY input before claiming its one — and dispose() nulls them all again',
-  },
-  'audio/modules/midiclock.ts': {
-    claims: 'own-port',
-    detaches: 'every-port',
-    why: 'attachToDevice() nulls EVERY input before claiming its one — and dispose() nulls them all again',
-  },
-};
-
-/** Ratchets. Both may only SHRINK — a fix lowers them in the same commit. */
-const EVERY_PORT_CLAIMANTS = 3;
-const EVERY_PORT_DETACHERS = 4;
-
-describe('4 — MIDIInput.onmidimessage has ONE slot and eight claimants', () => {
-  const sites = new Map<string, string>();
-  for (const [key, src] of Object.entries(LIB_SOURCES)) {
-    if (/\.(test|spec)\.ts$/.test(key)) continue;
-    if (!/onmidimessage\s*=/.test(src)) continue;
-    // The simulated-device getters/setters DEFINE the property rather than
-    // claim a stream, so they are not assignment sites.
-    const touches = src
-      .split('\n')
-      .filter((l) => /onmidimessage\s*=/.test(l))
-      .filter((l) => !/^\s*(get|set)\s+onmidimessage/.test(l));
-    if (touches.length === 0) continue;
-    sites.set(toLibPath(key), src);
-  }
-
-  it('DENY BY DEFAULT — every claimant is named in the ledger', () => {
-    const undeclared = [...sites.keys()].filter((k) => !ATTACH_LEDGER[k]).sort();
-    expect(
-      undeclared,
-      `a subsystem touches MIDIInput.onmidimessage and is not in ATTACH_LEDGER:\n${undeclared.join('\n')}`,
-    ).toEqual([]);
-  });
-
-  it('ANCHORED TO THE ARTIFACT — a ledger entry for a file that no longer touches it is RED', () => {
-    const stale = Object.keys(ATTACH_LEDGER).filter((k) => !sites.has(k)).sort();
-    expect(stale, `stale ATTACH_LEDGER entries:\n${stale.join('\n')}`).toEqual([]);
-  });
-
-  /**
-   * Does this file assign `onmidimessage` ON THE LOOP VARIABLE of a sweep over
-   * every input? Precise on purpose: a bare `inputs.values()` is innocent —
-   * both device layers iterate inputs to FILTER them by port name, which is how
-   * they find their own hardware. The destructive shape is specifically writing
-   * the handler slot of every input the loop yields.
-   */
-  function sweepsEveryInput(src: string): boolean {
-    const loop = /for\s*\(\s*const\s+(\w+)\s+of\s+[^)]*inputs\.values\(\)\s*\)/g;
-    for (let m = loop.exec(src); m; m = loop.exec(src)) {
-      const body = src.slice(m.index, m.index + 300);
-      if (new RegExp(`\\b${m[1]}\\.onmidimessage\\s*=`).test(body)) return true;
-    }
-    return false;
-  }
-
-  it('the DECLARED scope matches the source — an every-port sweep is detectable', () => {
-    for (const [file, src] of sites) {
-      const row = ATTACH_LEDGER[file];
-      expect(row.why.length, `${file} needs a stated reason`).toBeGreaterThan(20);
-      const sweeps = sweepsEveryInput(src);
-      if (row.claims === 'every-port' || row.detaches === 'every-port') {
-        expect(sweeps, `${file} declares an every-port scope but writes no handler in an input sweep`).toBe(true);
-      } else {
-        // NEGATIVE CONTROL in the other direction: a file declared polite must
-        // NOT write handlers across a sweep, or the declaration is a fiction.
-        expect(sweeps, `${file} declares own-port only but writes handlers across every input`).toBe(false);
-      }
-    }
-  });
-
-  it('NEGATIVE CONTROL for the probe itself — it separates the two shapes', () => {
-    // The probe is the instrument; if it said "true" (or "false") for everything
-    // the scope test above would be decoration. Feed it both shapes directly.
-    const destructive = 'for (const inp of access.inputs.values()) inp.onmidimessage = null;';
-    const benign = 'for (const inp of access.inputs.values()) {\n  if (isPortName(inp.name)) ins.push(inp);\n}';
-    expect(sweepsEveryInput(destructive)).toBe(true);
-    expect(sweepsEveryInput(benign)).toBe(false);
-    // …and the block form the three audio modules actually use.
-    expect(
-      sweepsEveryInput('for (const inp of access.inputs.values()) {\n  inp.onmidimessage = null;\n}'),
-    ).toBe(true);
-  });
-
-  it('RATCHET (both directions) — the every-port claimants and detachers may only shrink', () => {
-    const claimants = Object.values(ATTACH_LEDGER).filter((v) => v.claims === 'every-port').length;
-    const detachers = Object.values(ATTACH_LEDGER).filter((v) => v.detaches === 'every-port').length;
-    expect(claimants).toBeLessThanOrEqual(EVERY_PORT_CLAIMANTS);
-    expect(EVERY_PORT_CLAIMANTS - claimants, 'lower EVERY_PORT_CLAIMANTS in the same commit').toBe(0);
-    expect(detachers).toBeLessThanOrEqual(EVERY_PORT_DETACHERS);
-    expect(EVERY_PORT_DETACHERS - detachers, 'lower EVERY_PORT_DETACHERS in the same commit').toBe(0);
-  });
-
-  it('THE PUSH IS IN THE BLAST RADIUS — named, so it is not rediscovered later', () => {
-    // push2-device owns exactly one input and is polite about it. It is the
-    // OTHER subsystems that can take its stream away, and this pins which.
-    const push = ATTACH_LEDGER['control/push2/push2-device.svelte.ts'];
-    expect(push.claims).toBe('own-port');
-    expect(push.detaches).toBe('own-port');
-    const canKillThePush = Object.entries(ATTACH_LEDGER)
-      .filter(([, v]) => v.claims === 'every-port' || v.detaches === 'every-port')
-      .map(([k]) => k)
-      .sort();
-    expect(canKillThePush).toEqual([
-      'audio/modules/midi-cv-buddy.ts',
-      'audio/modules/midi-lane.ts',
-      'audio/modules/midiclock.ts',
-      'electra/broker.ts',
-      'midi/midi-clock-source.ts',
-      'midi/midi-learn.svelte.ts',
-    ]);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// 5 — A DUPLICATED CC LITERAL IS A GATE THAT CANNOT SEE A RENAME.
+// 4 — A DUPLICATED CC LITERAL IS A GATE THAT CANNOT SEE A RENAME.
 // ---------------------------------------------------------------------------
 //
 // Found the hard way on 2026-08-03. `push2-clip-launch.spec.ts` hardcoded seven
@@ -617,7 +461,7 @@ const E2E_TESTS_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '../../..
  *  re-type. Derived from the ledger, which is itself derived from the map. */
 const PUSH_CC_VALUES = new Set(Object.keys(CC_LEDGER).map(Number));
 
-describe('5 — no Push e2e spec re-types a CC the map already owns', () => {
+describe('4 — no Push e2e spec re-types a CC the map already owns', () => {
   const specs = readdirSync(E2E_TESTS_DIR)
     .filter((f) => /^push2-.*\.spec\.ts$/.test(f))
     .map((f) => ({ file: f, src: readFileSync(join(E2E_TESTS_DIR, f), 'utf8') }));
