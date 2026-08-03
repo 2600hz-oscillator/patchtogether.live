@@ -75,7 +75,21 @@ import { fileURLToPath } from 'node:url';
 // Repo + path helpers.
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = resolvePath(SCRIPT_DIR, '..');
+
+// The repo the scaffolder reads + writes. Normally the checkout this script
+// lives in. `NEW_MODULE_REPO_ROOT` redirects it at a throwaway FIXTURE TREE so
+// the scaffolder's OWN test suite can exercise scaffold()/undo() end-to-end
+// without ever opening a tracked file — see scripts/new-module.test.ts. Read
+// ONCE at module load, because the path constants below are eager.
+const REPO_ROOT = process.env.NEW_MODULE_REPO_ROOT
+  ? resolvePath(process.env.NEW_MODULE_REPO_ROOT)
+  : resolvePath(SCRIPT_DIR, '..');
+
+if (process.env.NEW_MODULE_REPO_ROOT) {
+  // Loud on purpose: if this ever prints during a real scaffold, the operator
+  // is writing somewhere other than their checkout.
+  console.warn(`[new-module] NEW_MODULE_REPO_ROOT override active — reading/writing under ${REPO_ROOT}`);
+}
 
 function rp(...parts: string[]): string {
   return resolvePath(REPO_ROOT, ...parts);
@@ -756,6 +770,38 @@ function cardStub(type: string, pascal: string, label: string, domain: Domain): 
 // `// [new-module:<type>]` line as a sentinel for the undo pass. We don't
 // modify any existing line in-place except to splice these markers in.
 
+/** Splice ONE marker line into `src` immediately before the closing bracket at
+ *  `endIdx`, and return the new source.
+ *
+ *  ⚠ INVARIANT — BYTE-EXACT UNDO. `undo()` reverses these inserts with
+ *  `removeMarkerLines()`, which drops exactly the ONE line carrying the
+ *  marker. So the insert must add exactly ONE `\n`-terminated line and
+ *  nothing else. Any additional `\n` SURVIVES the undo as a stray blank line
+ *  and accumulates on EVERY scaffold/undo cycle — which is precisely what put
+ *  200 blank lines into modules-card-map.test.ts (addCardMapTestEntry used to
+ *  emit a LEADING `\n` as well as a trailing one, so `task test:scripts` left
+ *  +5 blank lines in a tracked, conflict-prone registry file every run).
+ *
+ *  Both halves of that contract are enforced here rather than trusted, because
+ *  the failure is silent: the scaffold looks right, the undo reports success,
+ *  and the damage only shows up in `git status`. */
+function insertMarkerLine(src: string, endIdx: number, line: string, filePath: string): string {
+  if (!line.endsWith('\n') || line.slice(0, -1).includes('\n')) {
+    throw new Error(
+      `[new-module] internal: marker insert for ${filePath} must be EXACTLY one ` +
+      `\\n-terminated line (undo removes exactly one line); got ${JSON.stringify(line)}`,
+    );
+  }
+  if (endIdx > 0 && src[endIdx - 1] !== '\n') {
+    throw new Error(
+      `[new-module] internal: expected a newline before the closing bracket at ` +
+      `offset ${endIdx} in ${filePath}; refusing to splice into an existing line ` +
+      `because undo could not restore it byte-exactly`,
+    );
+  }
+  return src.slice(0, endIdx) + line + src.slice(endIdx);
+}
+
 function appendBeforeMatch(filePath: string, pattern: RegExp, block: string): void {
   const src = readFileSync(filePath, 'utf8');
   const m = src.match(pattern);
@@ -780,9 +826,8 @@ function addCardMapTestEntry(type: string): void {
   }
   const openIdx = src.indexOf('[', startM.index);
   const { endIdx } = sliceMatchedBrackets(src, openIdx, '[', ']');
-  const entry = `\n  '${camel}', // [new-module:${type}]`;
-  const next = src.slice(0, endIdx) + entry + '\n' + src.slice(endIdx);
-  writeFileSync(CARD_MAP_TEST_PATH, next);
+  const entry = `  '${camel}', // [new-module:${type}]\n`;
+  writeFileSync(CARD_MAP_TEST_PATH, insertMarkerLine(src, endIdx, entry, CARD_MAP_TEST_PATH));
 }
 
 function addManifestDescriptionEntry(type: string, label: string): void {
@@ -805,8 +850,7 @@ function addManifestDescriptionEntry(type: string, label: string): void {
   }
   const openIdx = src.indexOf('{', startM.index);
   const { endIdx } = sliceMatchedBrackets(src, openIdx, '{', '}');
-  const next = src.slice(0, endIdx) + entry + src.slice(endIdx);
-  writeFileSync(MANIFEST_PATH, next);
+  writeFileSync(MANIFEST_PATH, insertMarkerLine(src, endIdx, entry, MANIFEST_PATH));
 }
 
 function addVrtExemption(type: string): void {
@@ -825,8 +869,7 @@ function addVrtExemption(type: string): void {
   }
   const openIdx = src.indexOf('{', startM.index);
   const { endIdx } = sliceMatchedBrackets(src, openIdx, '{', '}');
-  const next = src.slice(0, endIdx) + entry + src.slice(endIdx);
-  writeFileSync(VRT_EXEMPTIONS_PATH, next);
+  writeFileSync(VRT_EXEMPTIONS_PATH, insertMarkerLine(src, endIdx, entry, VRT_EXEMPTIONS_PATH));
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -1105,6 +1148,8 @@ export const __test_internals = {
   scaffold,
   undo,
   loadCloneShape,
+  insertMarkerLine,
+  REPO_ROOT,
   REGISTRY_PATHS,
   GRAPH_TYPES_PATH,
   CANVAS_PATH,
