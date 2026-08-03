@@ -97,11 +97,31 @@ function randomBufferGenerate(seed: number, count: number): Float32Array {
 // clears the hook immediately after.
 let modPhaseRng: (() => number) | null = null;
 
+/**
+ * MEASUREMENT SEAM — the cost of a seeded rebuild, counted.
+ *
+ * `randomBufferGenerateCrossSeed` is the expensive primitive in this reverb:
+ * every call runs `2 × count` BigInt LCG iterations and allocates three
+ * Float32Arrays. It is reached from `setCrossSeed` / `setSeed` / `updateLines`
+ * / `updatePostDiffusion`, i.e. from `ReverbChannel.setParameter` — which the
+ * processor drives once per macro per 128-sample block.
+ *
+ * These counters exist so `cloudseed-idle-cost.test.ts` can assert the number
+ * directly instead of inferring it from a wall-clock timing (a timing measure
+ * is invariant to *why* it is slow and flakes under CI load; a call count is
+ * neither). Two integer adds inside a function that already allocates three
+ * typed arrays is not a measurable cost, and on the fixed path this runs only
+ * when a parameter genuinely moves.
+ */
+export const cloudseedRebuildStats = { buffers: 0, lcgIterations: 0 };
+
 function randomBufferGenerateCrossSeed(
   seed: number,
   count: number,
   crossSeed: number,
 ): Float32Array {
+  cloudseedRebuildStats.buffers++;
+  cloudseedRebuildStats.lcgIterations += count * 2;
   // Per RandomBuffer::Generate overload: blends two seeded series A + B
   // where B's seed is the bitwise-NOT of A. Implementing as the same
   // 32-bit complement so the seeds match the C++.
@@ -579,6 +599,9 @@ class AllpassDiffuser {
   private filters: ModulatedAllpass[];
   private delay = 100;
   private modRate = 0;
+  /** The UN-scaled mod depth, kept so `applyMod()` can re-derive every stage's
+   *  seed-scaled depth after the seed buffer is regenerated. */
+  private modAmount = 0;
   private seedValues: Float32Array;
   private seed = 23456;
   private crossSeed = 0;
@@ -611,15 +634,31 @@ class AllpassDiffuser {
   setFeedback(fb: number): void {
     for (const f of this.filters) f.feedback = fb;
   }
+  // MOD DEPTH AND RATE ARE SEED-SCALED, so they must be RE-DERIVED whenever the
+  // seed buffer changes — they were not, and that made the whole class
+  // order-dependent: pushing a SEED after a MOD AMT left every stage's depth
+  // still scaled by the retired seeds, and nothing recomputed it until MOD AMT
+  // itself was touched again. The shipped worklet hid it by re-pushing
+  // EqCrossSeed (→ updateLines → setModAmount) on every 128-sample block, which
+  // re-scaled the LINE diffusers one block later; the channel's EARLY diffuser
+  // had no such second chance and stayed stale for the life of the node.
+  // Keeping the un-scaled values here and re-applying them from updateSeeds()
+  // makes a seed change self-consistent on the FIRST call, which is what lets
+  // the audio thread stop re-deriving the reverb every block.
   setModAmount(amount: number): void {
-    for (let i = 0; i < AllpassDiffuser.MaxStageCount; i++) {
-      this.filters[i]!.modAmount = amount * (0.85 + 0.3 * this.seedValues[AllpassDiffuser.MaxStageCount + i]!);
-    }
+    this.modAmount = amount;
+    this.applyMod();
   }
   setModRate(rate: number): void {
     this.modRate = rate;
+    this.applyMod();
+  }
+  private applyMod(): void {
     for (let i = 0; i < AllpassDiffuser.MaxStageCount; i++) {
-      this.filters[i]!.modRate = rate * (0.85 + 0.3 * this.seedValues[AllpassDiffuser.MaxStageCount * 2 + i]!) / this.samplerate;
+      this.filters[i]!.modAmount =
+        this.modAmount * (0.85 + 0.3 * this.seedValues[AllpassDiffuser.MaxStageCount + i]!);
+      this.filters[i]!.modRate =
+        this.modRate * (0.85 + 0.3 * this.seedValues[AllpassDiffuser.MaxStageCount * 2 + i]!) / this.samplerate;
     }
   }
 
@@ -651,6 +690,9 @@ class AllpassDiffuser {
   private updateSeeds(): void {
     this.seedValues = randomBufferGenerateCrossSeed(this.seed, AllpassDiffuser.MaxStageCount * 3, this.crossSeed);
     this.update();
+    // The stage delays are not the only seed-scaled quantity — re-derive the
+    // per-stage mod depth and rate too, or they keep the retired seeds' scaling.
+    this.applyMod();
   }
 
   private static _tempBlock = new Float32Array(BUFFER_SIZE);
@@ -1181,8 +1223,19 @@ export class ReverbChannel {
         this.crossSeed = this.channelLr === 'R' ? 0.5 * scaled : 1 - 0.5 * scaled;
         this.multitap.setCrossSeed(this.crossSeed);
         this.diffuser.setCrossSeed(this.crossSeed);
-        this.updateLines();
+        // ORDER IS LOAD-BEARING, and it used to be the other way round.
+        // updatePostDiffusion() REPLACES each line diffuser's seed buffer;
+        // updateLines() then reads that buffer to scale the per-stage
+        // modulation depth and rate (setDiffuserModAmount/-ModRate →
+        // AllpassDiffuser.setModAmount/-ModRate, which index seedValues).
+        // Run in the old order, one call left the mod depths derived from the
+        // PREVIOUS seed set and it took a SECOND identical call to settle —
+        // which the shipped code got for free only because the processor
+        // re-pushed this parameter on every 128-sample block. Post-diffusion
+        // first makes a single call land on that same settled state, so the
+        // case is idempotent and the dedupe above is sound-transparent.
         this.updatePostDiffusion();
+        this.updateLines();
         break;
 
       case Param.SeedTap:       this.multitap.setSeed(scaled | 0); break;
@@ -1296,6 +1349,15 @@ export class ReverbChannel {
 
 export class ReverbController {
   parameters = new Float32Array(Param.COUNT);
+  /** Which parameter ids have ever been pushed. The dedupe below cannot read
+   *  "same as before" off a zero-filled array: a legitimate FIRST write of 0
+   *  (DRY OUT's own default, and every seed's) is indistinguishable from
+   *  "never written". This is the bit that tells the two apart. */
+  private written = new Uint8Array(Param.COUNT);
+  /** Last value pushed per id, at FULL double precision. `parameters` is a
+   *  Float32Array, so comparing against it would round the stored value and
+   *  make the dedupe miss every double the main thread sends over the port. */
+  private lastWritten = new Float64Array(Param.COUNT);
   private samplerate: number;
   channelL: ReverbChannel;
   channelR: ReverbChannel;
@@ -1310,9 +1372,36 @@ export class ReverbController {
     this.samplerate = sr;
     this.channelL.setSamplerate(sr);
     this.channelR.setSamplerate(sr);
+    // Every ms→samples and Hz→coefficient derivation downstream is a function
+    // of the sample rate, so a rate change invalidates all of them: forget the
+    // dedupe state so the next push of each parameter re-derives.
+    this.written.fill(0);
   }
 
   setParameter(id: number, value: number): void {
+    // DEDUPE — the audio thread must not re-derive a reverb that has not moved.
+    //
+    // CloudseedProcessor.process pushes all seven k-rate macros EVERY
+    // 128-sample block. Several of the cases below are expensive rebuilds
+    // rather than assignments — Param.EqCrossSeed alone re-runs the multitap
+    // seed buffer (768 cross-seeded LCG values + a 256-iteration Math.pow
+    // loop), the diffuser seeds, updateLines() and updatePostDiffusion()
+    // (twelve lines × a full re-seed), PER CHANNEL. Measured before this
+    // guard: 54 seeded-buffer rebuilds per block = 6 816 BigInt LCG iterations
+    // per block = 2 556 000 per second at 48 kHz, for a reverb sitting
+    // completely still (cloudseed-idle-cost.test.ts).
+    //
+    // Skipping is SOUND-TRANSPARENT only because ReverbChannel.setParameter is
+    // now IDEMPOTENT — which it was not before: AllpassDiffuser.updateSeeds()
+    // used to leave the seed-scaled mod depth/rate derived from the retired
+    // seeds, and the EqCrossSeed case re-seeded the line diffusers AFTER
+    // reading them, so a single push landed somewhere a second identical push
+    // would move away from. Both are fixed above. Verified byte-exact: a
+    // 600-block render per factory preset, with a mid-render sweep of all
+    // seven macros, is IDENTICAL with this guard on and off.
+    if (this.written[id] === 1 && this.lastWritten[id] === value) return;
+    this.written[id] = 1;
+    this.lastWritten[id] = value;
     this.parameters[id] = value;
     const scaled = scaleParam(value, id);
     this.channelL.setParameter(id, scaled);
@@ -1424,8 +1513,12 @@ class CloudseedProcessor extends AudioWorkletProcessor {
     const outR = outputs[1]?.[0];
     if (!outL || !outR) return true;
     // Pull AudioParam values + push into the reverb (k-rate, so we just
-    // need [0]). Values that don't move trigger no re-derivation; the
-    // ScaleParam call is a small switch.
+    // need [0]). These pushes are UNCONDITIONAL — the dedupe that makes an
+    // unchanged value free lives in ReverbController.setParameter, which is
+    // also where the port-message path arrives, so both routes are covered by
+    // one guard. (This comment used to claim the no-op property here, where it
+    // was not true and there was no guard anywhere; the cost was 2.5 M BigInt
+    // LCG iterations/s on the audio thread while idle.)
     const dry = parameters['dry_out']?.[0];
     const early = parameters['early_out']?.[0];
     const late = parameters['late_out']?.[0];
