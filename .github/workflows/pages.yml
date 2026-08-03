@@ -4,8 +4,10 @@ name: Deploy GitHub Pages (VRT gallery + ART gallery)
 # Pages site per repo, so this single workflow owns the whole `docs/` tree:
 #
 #   docs/vrt/                  — VRT gallery (e2e/vrt/build_gallery.py renders
-#                                docs/vrt/index.html from
-#                                e2e/vrt/__screenshots__/**). LFS checkout is
+#                                docs/vrt/index.html + coverage.json from
+#                                e2e/vrt/__screenshots__/**, EVERY spec dir and
+#                                BOTH platforms side by side, plus a UI v2 tab
+#                                driven from STRICT_FACES). LFS checkout is
 #                                required or the gallery embeds pointer-file PNGs
 #                                that render as broken images.
 #   docs/art/                  — ART gallery (art/build_gallery.py renders
@@ -31,6 +33,11 @@ on:
     paths:
       - 'e2e/vrt/__screenshots__/**'
       - 'e2e/vrt/build_gallery.py'
+      # The gallery's UI v2 tab is DRIVEN from the STRICT_FACES ratchet set, so
+      # promoting or demoting a face changes the rendered page with no baseline
+      # and no gallery-script edit. Without this path the newly promoted face
+      # would sit un-rendered until some unrelated push happened to redeploy.
+      - 'packages/web/src/lib/ui/workflow/strict-faces.ts'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
 

@@ -803,11 +803,30 @@ jobs:
       # to 8-10 min) and runs in its own dedicated `behavioral-coverage`
       # job below. The test titles are matched via the
       # "BEHAVIORAL input coverage" describe block name.
-      # The global timeout that stops a slow shard destroying its own evidence
-      # is set ONCE in e2e/playwright.config.ts (`globalTimeout`), not per
-      # invocation — see the rationale there. Jobs whose `timeout-minutes`
-      # differs from the 20-min default override it with PW_GLOBAL_TIMEOUT_MS.
+      # ⚠ PW_GLOBAL_TIMEOUT_MS STOPS THIS SHARD DESTROYING ITS OWN EVIDENCE.
+      # The job ceiling is 20 min (above). If Playwright is still running then,
+      # GitHub HARD-KILLS the runner — which happens BEFORE the `if: always()`
+      # upload below, so no report is written and the raw log is purged later.
+      # What reaches you is `cancelled` plus a duration and nothing else.
+      #
+      # #1309's shard 4 did exactly that, and clearing the PR took elimination
+      # rather than evidence: merge base green at 9m49s, a concurrent run green
+      # at 9m41s, two local reproductions (3.0 min dev, 1.5 min preview+CI=1).
+      #
+      # 15 min because the slowest shard uses ~11 of the ~17 minutes actually
+      # available inside the 20 — so anything tripping 15 was already tripping
+      # 20; it just used to die mute.
+      #
+      # ⚠ THIS IS THE ONLY JOB GUARDED, DELIBERATELY. It is the only one that
+      # has actually died this way. Guarding the other five Playwright jobs
+      # speculatively would mean five more numbers that must each stay under a
+      # ceiling they cannot see — the drift class this repo keeps getting bitten
+      # by. `scripts/ci-playwright-timeout.test.ts` enforces the invariant for
+      # whatever IS guarded and reports what is not, so adding a guard later is
+      # cheap and forgetting one is visible.
       - name: Run E2E (shard ${{ matrix.shard }}/10, blob reporter, no @collab, no @capacity, no behavioral)
+        env:
+          PW_GLOBAL_TIMEOUT_MS: '900000'
         run: |
           flox activate -- npx --workspace e2e playwright test \
             --grep-invert "@collab|@capacity|BEHAVIORAL input coverage" \
@@ -1098,10 +1117,6 @@ jobs:
       - name: Run @collab specs (single non-sharded runner, html report)
         env:
           PLAYWRIGHT_HTML_OPEN: never
-          # This job's ceiling is 40 min, not the 20 the config default assumes,
-          # and it runs FULLY SERIAL (--workers=1) by design. 33 min keeps the
-          # graceful-exit property without shortening the lane.
-          PW_GLOBAL_TIMEOUT_MS: '1980000'
         run: |
           flox activate -- npx --workspace e2e playwright test \
             --grep "@collab|@capacity" \
@@ -1414,11 +1429,6 @@ jobs:
     # exactly what we must look past; a failed collab-attest must still be seen).
     if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
     timeout-minutes: 30
-    # Ceiling is 30, not the 20 the playwright.config default assumes — 24 keeps
-    # the graceful-exit property without shortening the lane. See the
-    # `globalTimeout` rationale in e2e/playwright.config.ts.
-    env:
-      PW_GLOBAL_TIMEOUT_MS: '1440000'
     permissions:
       contents: write        # push the rollback/behavioral-<sha> branch
       issues: write          # open the p0 alert issue (the reused alert path)
@@ -1733,14 +1743,6 @@ jobs:
     needs: [dsp-build, build-web]
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # ⚠ Ceiling is 10 — BELOW the 15-min playwright.config default, which would
-    # therefore NEVER fire here and leave this job in exactly the mute-death
-    # state the default exists to prevent. A guard above its own ceiling is not
-    # a guard. 7 min leaves room to exit and upload. See the `globalTimeout`
-    # rationale in e2e/playwright.config.ts.
-    env:
-      PW_GLOBAL_TIMEOUT_MS: '420000'
-
     services:
       postgres:
         image: public.ecr.aws/docker/library/postgres:17
@@ -2044,11 +2046,6 @@ jobs:
     needs: [dsp-build, build-web]
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # ⚠ Ceiling is 15 — EQUAL to the playwright.config default, so that default
-    # can never fire first and this job would still die mute. This is a REQUIRED
-    # check, so a mute death here blocks every PR with no evidence. 11 min.
-    env:
-      PW_GLOBAL_TIMEOUT_MS: '660000'
     services:
       postgres:
         # AWS ECR Public mirror (same as the other DB-backed jobs) — avoids the
@@ -2106,6 +2103,26 @@ jobs:
         run: flox activate -- task test:emit-manifest
       # The SUBSET grep. `<mod>: each declared` anchors to the per-module row
       # title; `vca` also matches `stereovca` (intended — both are in the set).
+      #
+      # ⚠ The LEADING `\b` is load-bearing, not decoration. Playwright's --grep
+      # is an UNANCHORED regex over the full title, so a bare `filter` substring-
+      # matched `resofilter: each declared` and silently enrolled RESOFILTER in a
+      # REQUIRED check for every PR (it was the row that kept going red — and it
+      # had never been chosen for the subset). `\b` requires a word boundary
+      # before the alternative, which `resofilter`/`stereovca`-style compounds do
+      # not have, so the subset is now exactly the seven names written here.
+      # (`^` cannot be used: --grep matches the describe-prefixed title.)
+      #
+      # `noise` currently selects NOTHING — the module declares zero inputs, so
+      # the sweep registers no row for it (`if (mod.inputs.length === 0) continue`).
+      # It is kept so the module re-enters the subset automatically if it ever
+      # gains one, and packages/web/src/lib/dev/behavioral-smoke-subset.test.ts
+      # asserts this is the ONLY dead alternative rather than letting a typo hide
+      # as one.
+      #
+      # That unit test is the real guard: it parses THIS line and fails if the
+      # selected set ever drifts from the declared intent. Edit both together.
+      #
       # retries=1 mirrors the real CI gate. If this ever flakes, fix or narrow
       # the subset — do NOT bump retries to mask it (it's meant to be bulletproof).
       - name: Run behavioral smoke subset (core signal-path modules)
@@ -2114,7 +2131,7 @@ jobs:
         run: |
           flox activate -- npx --workspace e2e playwright test \
             per-module-per-port-behavioral.spec.ts \
-            --grep "(adsr|analogVco|filter|lfo|noise|stereovca|vca): each declared" \
+            --grep "\b(adsr|analogVco|filter|lfo|noise|stereovca|vca): each declared" \
             --workers=4 \
             --retries=1 \
             --reporter=line

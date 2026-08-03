@@ -115,14 +115,24 @@ export default defineConfig({
   // ~17 minutes actually available inside a 20-min job, so anything tripping
   // 15 was already going to trip 20 — it just used to die mute.
   //
-  // Jobs with a different ceiling (collab 40, behavioral-watchdog 30) set
-  // PW_GLOBAL_TIMEOUT_MS. Local runs stay unbounded: an interactive debugging
-  // session must not be killed mid-investigation.
+  // ⚠ NO BLANKET CI DEFAULT, ON PURPOSE. A default has to be a single number,
+  // but the six Playwright jobs have ceilings of 10/15/20/20/30/40 min — so any
+  // default is ABOVE two of them and can never fire there, which is a guard
+  // that isn't guarding. That is the same shape as the bug it would be trying
+  // to fix, and this repo has been bitten by it repeatedly (UNCHECKABLE_CEILING
+  // measured against a tree that had moved; a required-lane grep unanchored so
+  // it silently matched an extra module).
+  //
+  // So: opt-in per job, set from the workflow where the ceiling is visible.
+  // `scripts/ci-playwright-timeout.test.ts` asserts every value that IS set
+  // sits under its job's `timeout-minutes` with margin, and lists the jobs
+  // running unguarded so the gap is declared rather than assumed.
+  //
+  // Local runs stay unbounded: an interactive debugging session must not be
+  // killed mid-investigation.
   globalTimeout: process.env.PW_GLOBAL_TIMEOUT_MS
     ? Number(process.env.PW_GLOBAL_TIMEOUT_MS)
-    : process.env.CI
-      ? 15 * 60 * 1000
-      : undefined,
+    : undefined,
   reporter: process.env.CI
     ? [['github'], ['html', { open: 'never' }]]
     : [['list'], ['html', { open: 'never' }]],
