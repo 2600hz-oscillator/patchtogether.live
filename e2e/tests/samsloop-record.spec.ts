@@ -13,9 +13,28 @@
 //   5. CHAN / BITS / RATE buttons are disabled while a recording is in
 //      flight (settings change mid-recording should stop the recording
 //      cleanly — separately exercised in the unit-level state-machine).
+//   6. ⚠ THE ONE THAT MATTERS, AND THE ONE THAT WAS MISSING:
+//      **the recording PLAYS.** Record → trigger → audible RMS at `out`.
+//
+// ⚠ WHY 6 EXISTS. Read 1-5 again: every assertion above is about BYTES
+// (`node.data.sample` populated, inside the budget, right rate/bits/channels),
+// PIXELS (the waveform canvas has variance) or CHROME (a button label, a
+// disabled state, a max-seconds readout). Not one of them listens. And for the
+// whole life of the feature the module was **SILENT after REC** — the card
+// wrote `node.data.sample.bytesB64` and the engine factory read only
+// `node.data.fileBytesB64` / `node.data.samples`, so a recorded buffer never
+// reached the worklet at all. Bytes: correct. Waveform: drawn. Save/load:
+// round-tripped. Download: a valid WAV. Sound: none. This whole file was green
+// throughout, and so was `samsloop.spec.ts`, whose audio test drives the
+// UPLOAD path.
+//
+// The lesson is the repo's own: ask what a suite is structurally unable to
+// see. A recorder's test set that never asserts audio can only ever prove the
+// recorder writes a file.
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+import { readScopePeakOverWindow } from './_module-coverage-helpers';
 
 async function setupPage(page: Page) {
   const errors: string[] = [];
@@ -115,6 +134,77 @@ test.describe('SAMSLOOP audio-input record', () => {
       return Math.sqrt(variance);
     });
     expect(variance, `red-channel stdev across waveform canvas: ${variance}`).toBeGreaterThan(5);
+
+    expect(errors, errors.join('; ')).toEqual([]);
+  });
+
+  test('a RECORDED sample PLAYS — record → trigger → audible at the output', async ({ page }) => {
+    // THE P0 REGRESSION LOCK. NOISE → samsloop.audio_l_in (the record chain)
+    // and samsloop.out → SCOPE.ch1 (the playback chain), in one patch, so the
+    // recorder's write and the player's read are joined by a cable rather than
+    // by an assumption.
+    const errors = await setupPage(page);
+    await spawnPatch(
+      page,
+      [
+        { id: 'n',   type: 'noise',    position: { x: 100, y: 200 } },
+        { id: 's',   type: 'samsloop', position: { x: 400, y: 200 }, domain: 'audio', params: { mode: 1 } },
+        { id: 'scp', type: 'scope',    position: { x: 800, y: 200 }, domain: 'audio' },
+      ],
+      [
+        { id: 'e1', from: { nodeId: 'n', portId: 'white' }, to: { nodeId: 's', portId: 'audio_l_in' },
+          sourceType: 'noise', targetType: 'samsloop' },
+        { id: 'e2', from: { nodeId: 's', portId: 'out' }, to: { nodeId: 'scp', portId: 'ch1' },
+          sourceType: 'audio', targetType: 'audio' },
+      ],
+    );
+
+    // (a) NEGATIVE CONTROL, BEFORE. Nothing recorded yet and no trigger, so
+    //     the output must be silent. Without this leg a leaky patch (noise
+    //     bleeding to the scope through some other route) would make the
+    //     post-trigger assertion pass for the wrong reason — which is exactly
+    //     the failure mode that let the silent recorder ship.
+    const beforeRec = await readScopePeakOverWindow(page, 'scp', 400);
+    expect(
+      beforeRec.peak,
+      `pre-record peak ${beforeRec.peak} — samsloop must be silent with no sample and no trigger`,
+    ).toBeLessThan(0.02);
+
+    // (b) Record ~700 ms of noise.
+    const rec = page.locator('[data-testid="samsloop-rec-button"]');
+    await expect(rec).toBeVisible();
+    await rec.click();
+    await expect(rec).toContainText('STOP', { timeout: 3000 });
+    await page.waitForTimeout(700);
+    await rec.click();
+    await expect(rec).toContainText('REC');
+
+    // The bytes landed — asserted here too so a failure below is diagnosable
+    // as "recorded but does not play" rather than "did not record".
+    const sample = await readSample(page, 's');
+    expect(sample, 'nothing was recorded — the failure below would be about the wrong thing').not.toBeNull();
+    expect(sample!.bytesLen).toBeGreaterThan(0);
+
+    // (c) NEGATIVE CONTROL, MIDDLE. SAMSLOOP is idle-by-default: a loaded
+    //     sample does NOT auto-play. So it must STILL be silent here, which
+    //     also proves the audible reading in (d) comes from the TRIGGER and
+    //     not from the record tap leaking into the output.
+    await page.waitForTimeout(600); // the factory polls node.data every 200 ms
+    const loaded = await readScopePeakOverWindow(page, 'scp', 500);
+    expect(
+      loaded.peak,
+      `post-record pre-trigger peak ${loaded.peak} — a loaded sample must stay idle`,
+    ).toBeLessThan(0.02);
+
+    // (d) THE ASSERTION THE MODULE SHIPPED WITHOUT: trigger it and listen.
+    //     Renderer-tolerant — a max-held peak over a window with a generous
+    //     floor, because the claim is "audible vs silent", not a level.
+    await page.locator('[data-testid="samsloop-trigger-button"]').click();
+    const playing = await readScopePeakOverWindow(page, 'scp', 1500);
+    expect(
+      playing.peak,
+      `post-trigger peak ${playing.peak} over ${playing.polls} polls — a recorded sample MUST play`,
+    ).toBeGreaterThan(0.05);
 
     expect(errors, errors.join('; ')).toEqual([]);
   });

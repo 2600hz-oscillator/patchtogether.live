@@ -72,12 +72,27 @@
 //                              // the same reason.
 //   fileName?: string          // for display + download filename.
 //
+// Data shape on node.data (RECORD path):
+//   sample: { bytesB64, rate, bits, channels, byteLength, durationSec,
+//             recordedAt }     // header-less PCM as ONE base64 string.
+//                              // Decoded to Float32 by decodeRecordedPcm
+//                              // (samsloop-record.ts) and pushed to the same
+//                              // worklet the upload path feeds.
+//
 // Legacy field (read-only, no longer written):
 //   samples?: number[]         // pre-PR-#XXX patches stored the decoded
 //                              // PCM directly as a YArray. The engine
 //                              // factory still reads this so old patches
 //                              // hydrate; new uploads write fileBytesB64
 //                              // instead.
+//
+// THE ONE-SAMPLE INVARIANT, IN THE DATA. The upload keys and `sample` are
+// MUTUALLY EXCLUSIVE: committing a recording deletes fileBytesB64/samples and
+// the upload metadata, and an upload deletes `sample`. That is the data-level
+// expression of the "one instance, one buffer" rule above, and it is what
+// makes `resolveSamsloopSource`'s precedence unobservable on anything written
+// after 2026-08-02. Racks saved BEFORE then can hold both — see that function
+// for exactly which one wins and why it is the upload.
 //
 // Hard limit: 2 MB on the raw upload file. Larger files are rejected.
 // (Compressed formats at 2 MB decode to roughly a minute of audio at
@@ -101,6 +116,7 @@
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
+import { decodeRecordedPcm, type SamsloopRecordedSample } from '$lib/audio/modules/samsloop-record';
 import { patch as livePatch } from '$lib/graph/store';
 import workletUrl from '@patchtogether.live/dsp/dist/samsloop.js?url';
 import tapWorkletUrl from '@patchtogether.live/dsp/dist/samsloop-tap.js?url';
@@ -199,32 +215,97 @@ export interface SamsloopData {
   recBits?: 8 | 16;
   recChannels?: 1 | 2;
 
-  /** Most-recently-recorded sample (the recording feature, separate from
-   *  the file-upload `samples`/`sampleRate` fields above). Same persistence
-   *  trick PICTUREBOX uses for `imageBytes`: raw bytes are base64-encoded
-   *  and stored as a string so Yjs treats them as one opaque value (NO
-   *  per-byte YArray recursion — a 144 kB Array.from(uint8Array) into a
-   *  YArray slot blows the stack at insert time, and re-broadcasts a
-   *  per-byte update to every peer). Strings are flat values; one Yjs
-   *  update per recording, deserialized on every peer via atob().
+  /** Most-recently-recorded sample (the RECORD path; the file-upload path
+   *  writes `fileBytesB64` above). Same persistence trick PICTUREBOX uses for
+   *  `imageBytes`: raw bytes are base64-encoded and stored as a string so Yjs
+   *  treats them as one opaque value (NO per-byte YArray recursion — a 144 kB
+   *  Array.from(uint8Array) into a YArray slot blows the stack at insert time,
+   *  and re-broadcasts a per-byte update to every peer). Strings are flat
+   *  values; one Yjs update per recording, decoded on every peer via atob().
    *
    *  The byte payload is header-less PCM — interleaved if channels === 2,
-   *  little-endian for 16-bit. The WAV header is synthesized only when
-   *  the user clicks DOWNLOAD (via makeWavBlob in samsloop-record.ts). */
-  sample?: {
-    /** base64-encoded raw PCM bytes. Length is bounded by
-     *  SAMSLOOP_RECORD_BUDGET_BYTES = 250 000 (raw bytes pre-encode;
-     *  the base64 string is ~4/3 of that). */
-    bytesB64: string;
-    rate: 22050 | 44100;
-    bits: 8 | 16;
-    channels: 1 | 2;
-    /** Raw byte length pre-base64 (useful so the card can show "8 kB"
-     *  without decoding to count). */
-    byteLength: number;
-    /** durationSec = byteLength / (channels * bytesPerSample * rate). */
-    durationSec: number;
-  };
+   *  little-endian for 16-bit. The WAV header is synthesized only when the
+   *  user clicks DOWNLOAD (makeWavBlob); PLAYBACK decodes it via
+   *  `decodeRecordedPcm`, and `resolveSamsloopSource` below is the ONE place
+   *  that decides whether this or an upload is the live buffer.
+   *
+   *  ⚠ ONE-SAMPLE INVARIANT (file header): this key and `fileBytesB64` /
+   *  `samples` are MUTUALLY EXCLUSIVE on anything written after the 2026-08-02
+   *  fix — committing a recording deletes the upload keys and vice versa.
+   *  Racks saved BEFORE that fix can carry both; see `resolveSamsloopSource`
+   *  for exactly what happens to them. */
+  sample?: SamsloopRecordedSample;
+}
+
+/**
+ * WHERE THE LIVE BUFFER COMES FROM — the ONE answer both the engine factory
+ * and the card read, as a pure function of `node.data`.
+ *
+ * ⚠ THIS FUNCTION IS THE P0 FIX. It used to be an inline if/else inside the
+ * factory's `pushSampleIfChanged` that knew about `fileBytesB64` and `samples`
+ * and **had never heard of `sample`** — the key the record path writes. So a
+ * recording persisted, redrew, round-tripped through save/load and downloaded
+ * as a correct WAV, and **the module stayed silent**. Making the resolution a
+ * named pure function is what lets a unit test assert "the record path's write
+ * resolves to a playable source" without an AudioContext — which is the test
+ * whose absence let this ship.
+ *
+ * PRECEDENCE, and why it is this order. It is the order that was ALREADY LIVE
+ * for uploads, kept deliberately: any rack that makes sound today makes the
+ * same sound after this fix, and only racks that were silent change. Going
+ * forward the question cannot arise — each write path deletes the other's keys
+ * (the module's one-sample invariant), so at most one branch can match.
+ *
+ *   1. `fileBytesB64` — an upload. What the factory has always played.
+ *   2. `samples`      — the legacy pre-base64 YArray upload. Ditto.
+ *   3. `sample`       — a recording. NEW: previously unreachable.
+ *
+ * A rack saved before the fix that holds BOTH (upload, then record) therefore
+ * keeps playing its upload rather than silently swapping to the recording, and
+ * the recording is one REC press (or one DOWNLOAD) away — nothing is lost. A
+ * rack that holds ONLY a recording — the silent case, the bug — starts playing
+ * it on the next load with no migration step and no user action.
+ *
+ * The `signature` is what the factory's poll loop compares to decide whether to
+ * re-push; it must change whenever the BYTES change. Pure.
+ */
+export type SamsloopSource =
+  | { kind: 'file';   signature: string; b64: string }
+  | { kind: 'legacy'; signature: string; samples: readonly number[]; sampleRate?: number }
+  | { kind: 'record'; signature: string; sample: SamsloopRecordedSample }
+  | null;
+
+export function resolveSamsloopSource(d: SamsloopData | undefined): SamsloopSource {
+  if (d?.fileBytesB64 && typeof d.fileBytesB64 === 'string' && d.fileBytesB64.length > 0) {
+    return {
+      kind: 'file',
+      signature: `bytes:${d.fileSize ?? d.fileBytesB64.length}:${d.fileName ?? ''}`,
+      b64: d.fileBytesB64,
+    };
+  }
+  if (d?.samples && d.samples.length > 0) {
+    return {
+      kind: 'legacy',
+      signature: `legacy:${d.samples.length}:${d.fileName ?? ''}`,
+      samples: d.samples,
+      sampleRate: d.sampleRate,
+    };
+  }
+  const s = d?.sample;
+  if (s && typeof s.bytesB64 === 'string' && s.bytesB64.length > 0 && s.byteLength > 0) {
+    // `recordedAt` is what makes this EXACT — every other field repeats across
+    // two takes of the same length at unchanged settings, so without it a
+    // re-record would alias the previous signature and the worklet would keep
+    // playing the first take. Legacy recordings have no stamp and fall back to
+    // the shape-only signature.
+    return {
+      kind: 'record',
+      signature:
+        `record:${s.recordedAt ?? 0}:${s.byteLength}:${s.rate}:${s.bits}:${s.channels}`,
+      sample: s,
+    };
+  }
+  return null;
 }
 
 /** Result of attempting to decode + size-check an audio upload. The card
@@ -1034,58 +1115,83 @@ export const samsloopDef: AudioModuleDef = {
       }
     }
 
+    /** Post a decoded mono buffer to the worklet. `sampleRate` is the rate the
+     *  buffer was CAPTURED at — the worklet scales its cursor by
+     *  bufferRate/contextRate so rate=1.0 plays at natural pitch whatever the
+     *  AudioContext is running at. Transfers the buffer (zero-copy). */
+    function postBuffer(f32: Float32Array, bufferRate: number | undefined): void {
+      try {
+        workletNode.port.postMessage(
+          { type: 'loadSample', samples: f32.buffer, sampleRate: bufferRate },
+          [f32.buffer],
+        );
+      } catch {
+        // The node can be torn down between the read and the post.
+      }
+    }
+
     // Send the initial sample (if present in node.data — typically not on
     // first spawn, but rehydrated from a saved patch envelope or multiplayer
-    // join). Poll-on-data-change: when the card's upload handler mutates
-    // node.data, the loop picks it up within POLL_MS and reposts to the
-    // worklet.
+    // join). Poll-on-data-change: when the card's upload or RECORD handler
+    // mutates node.data, the loop picks it up within POLL_MS and reposts to
+    // the worklet.
     //
-    // Two source paths:
-    //   - `fileBytesB64` (new path, written by uploads since PR-#XXX):
-    //       base64-encoded original file bytes. The factory decodes them
-    //       to Float32 via the AudioContext, posts to the worklet, and
-    //       — crucially — caches the decoded length back into node.data
-    //       (sampleLength / sampleRate) so the card's faders re-bound
-    //       without us re-decoding on every render. Decode is async; we
-    //       guard against re-entrancy with `decodeInFlight`.
-    //   - `samples` (legacy path, pre-PR-#XXX patches): plain number[]
-    //       stored in Yjs as a YArray. Kept read-only for back-compat;
-    //       old patches still hydrate without any migration step.
+    // WHICH source it is, and the precedence between them, is `resolveSamsloopSource`
+    // (top of this file) — a pure function so a unit test can assert every
+    // branch without an AudioContext. That matters: this loop used to inline
+    // the decision and knew only about the two UPLOAD keys, so **a recording
+    // never reached the worklet at all**. Three kinds:
+    //   - 'file'   — base64 original upload bytes. Decoded through the
+    //                AudioContext (async ⇒ the `decodeInFlight` re-entrancy
+    //                guard), which also caches sampleLength / sampleRate back
+    //                into node.data so the card's faders re-bound.
+    //   - 'legacy' — pre-base64 patches with the decoded YArray. Read-only.
+    //   - 'record' — the RECORD path's header-less PCM. Decoded SYNCHRONOUSLY
+    //                (we own the format; no AudioContext round-trip needed).
     let lastSignature: string | null = null;
     let decodeInFlight = false;
     function pushSampleIfChanged(): void {
       const live = livePatch.nodes[node.id];
       const d = live?.data as SamsloopData | undefined;
-      // New path takes precedence: if the user re-uploaded since this
-      // node hydrated, fileBytesB64 is the source of truth.
-      if (d?.fileBytesB64 && typeof d.fileBytesB64 === 'string' && d.fileBytesB64.length > 0) {
-        const sig = `bytes:${d.fileSize ?? d.fileBytesB64.length}:${d.fileName ?? ''}`;
-        if (sig === lastSignature) return;
+      const src = resolveSamsloopSource(d);
+      const sig = src?.signature ?? 'empty';
+      if (sig === lastSignature) return;
+      if (src?.kind === 'file') {
+        // The async branch guards re-entrancy BEFORE claiming the signature,
+        // so a decode still in flight is retried on the next poll rather than
+        // dropped.
         if (decodeInFlight) return;
         lastSignature = sig;
         decodeInFlight = true;
-        const b64 = d.fileBytesB64;
-        decodeBytesAndPush(b64).finally(() => {
+        decodeBytesAndPush(src.b64).finally(() => {
           decodeInFlight = false;
         });
         return;
       }
-      // Legacy path: pre-PR-#XXX patches with the decoded YArray.
-      const samples = d?.samples;
-      const sig = samples ? `legacy:${samples.length}:${d?.fileName ?? ''}` : 'empty';
-      if (sig === lastSignature) return;
       lastSignature = sig;
-      if (!samples || samples.length === 0) return;
-      // Transfer the underlying buffer to the worklet (zero-copy when the
-      // browser supports transferables — falls back to structuredClone
-      // otherwise). Pass the buffer's captured sampleRate so the worklet
-      // can scale the cursor — rate=1.0 must play at the sample's natural
-      // pitch even when the AudioContext runs at a different rate.
-      const f32 = new Float32Array(samples);
-      workletNode.port.postMessage(
-        { type: 'loadSample', samples: f32.buffer, sampleRate: d?.sampleRate },
-        [f32.buffer],
-      );
+      if (!src) return;
+      if (src.kind === 'legacy') {
+        postBuffer(new Float32Array(src.samples), src.sampleRate);
+        return;
+      }
+      // 'record' — mono-mix a stereo take, exactly as the upload path
+      // mono-mixes a stereo file. An empty decode posts nothing rather than
+      // clearing a buffer that is already playing.
+      const f32 = decodeRecordedPcm(src.sample, 'mix');
+      if (f32.length === 0) return;
+      postBuffer(f32, src.sample.rate);
+      // Cache the derived metadata the START/END faders bound against, the
+      // same way decodeBytesAndPush does for an upload — without it the card
+      // sizes both faders to `Math.max(1, 0)` and the loop window is unusable
+      // on a recording.
+      try {
+        const ld = live?.data as SamsloopData | undefined;
+        if (!ld) return;
+        if (ld.sampleLength !== f32.length) ld.sampleLength = f32.length;
+        if (ld.sampleRate !== src.sample.rate) ld.sampleRate = src.sample.rate;
+      } catch {
+        // syncedstore writes throw if the node was deleted; ignore.
+      }
     }
     pushSampleIfChanged();
 

@@ -56,6 +56,9 @@
     samsloopMaxSeconds,
     samsloopMaxSecondsExact,
     encodeRecordingBytes,
+    decodeRecordedPcm,
+    buildRecordedSample,
+    clearSamsloopUploadKeys,
     makeWavBlob,
     samsloopDownloadFilename,
     bytesToBase64,
@@ -386,17 +389,27 @@
     // Base64 the bytes for Yjs storage — see SamsloopData.sample comment.
     // A 144 kB number[] would recurse syncedstore's YArray wrapper and
     // blow the stack; a base64 string is one opaque value, one Yjs update.
-    const bytesB64 = bytesToBase64(trimmed);
-    const bytesPerSample = Math.ceil(recBits / 8);
-    const totalSamples = trimmed.byteLength / (bytesPerSample * recChannels);
-    d.sample = {
-      bytesB64,
-      rate: recRate,
-      bits: recBits,
-      channels: recChannels,
-      byteLength: trimmed.byteLength,
-      durationSec: totalSamples / recRate,
-    };
+    // THE ONE-SAMPLE INVARIANT (samsloop.ts header): "a new mic recording
+    // REPLACES the previously loaded sample". Nothing used to enforce that in
+    // the DATA — a record-after-upload left both keys on node.data, and since
+    // the factory read only the upload keys the recording was SILENT. Clear
+    // the upload first, then commit; the upload path mirrors this on `sample`.
+    clearSamsloopUploadKeys(d as Record<string, unknown>);
+    const { sample, frames } = buildRecordedSample(trimmed, recRate, recBits, recChannels);
+    d.sample = sample;
+    // The window faders bound against these. Written straight from the encode
+    // rather than waiting on the factory's poll, so they are correct the
+    // instant REC stops. The factory still derives them independently — that
+    // path is what repairs a rack RECORDED BEFORE this fix, which has the
+    // bytes but no metadata.
+    d.sampleLength = frames;
+    d.sampleRate = recRate;
+    // …and open the loop window over the whole take, exactly as the upload
+    // path does. Left at the declared default (end = 1e6) the worklet clamps
+    // to the buffer and plays it all, but the FADERS would read a window 700×
+    // longer than the sample.
+    t.params.start = 0;
+    t.params.end = frames;
   }
 
   function toggleRecord() {
@@ -521,6 +534,10 @@
       // alongside fresh fileBytesB64; the factory prefers fileBytesB64
       // but cleaning up keeps the patch envelope sane.
       if (d.samples) delete d.samples;
+      // Same reason, the other direction: an upload REPLACES a recording (the
+      // one-sample invariant). Without this the two keys coexist and the
+      // reader's precedence — not the user's last action — decides what plays.
+      if (d.sample) delete d.sample;
       d.sampleRate = result.sampleRate;
       d.sampleLength = samples.length;
       d.fileName = file.name;
@@ -670,28 +687,12 @@
       samplesForDraw = new Float32Array(d.samples);
     } else if (d?.sample && d.sample.byteLength > 0) {
       // Decode the persisted PCM bytes back to Float32 for the waveform
-      // preview. Only L channel for the visual (stereo files draw the
-      // left channel's peaks).
-      const s = d.sample;
-      const bytesPerSample = Math.ceil(s.bits / 8);
-      const bytes = base64ToBytes(s.bytesB64);
-      const frames = Math.floor(bytes.byteLength / (bytesPerSample * s.channels));
-      samplesForDraw = new Float32Array(frames);
-      const view = new DataView(bytes.buffer);
-      if (s.bits === 16) {
-        for (let i = 0; i < frames; i++) {
-          samplesForDraw[i] = view.getInt16(i * bytesPerSample * s.channels, true) / 0x7fff;
-        }
-      } else {
-        // 8-bit signed (as stored — we used Int8 in our quantizer; bytes
-        // in node.data are the SIGNED int8 values cast to uint8 = the
-        // raw two's-complement byte).
-        for (let i = 0; i < frames; i++) {
-          const u = view.getUint8(i * bytesPerSample * s.channels);
-          const signed = (u << 24) >> 24;
-          samplesForDraw[i] = signed / 0x7f;
-        }
-      }
+      // preview, through the SAME decoder the playback path uses. It used to
+      // be a second hand-rolled copy of this arithmetic here — and the two
+      // sides drifting is precisely how the recording came to draw correctly
+      // while making no sound. `'left'` keeps the trace's shape stable
+      // regardless of the CHAN setting; playback asks for `'mix'`.
+      samplesForDraw = decodeRecordedPcm(d.sample, 'left');
     }
     if (!samplesForDraw || samplesForDraw.length === 0) {
       ctx2d.fillStyle = '#5a6275';
@@ -701,14 +702,13 @@
       return;
     }
     const samples = samplesForDraw;
-    // For file-upload samples we keep the start/end highlight band; for
-    // recorded-only samples the start/end params haven't been touched
-    // yet, so skip the band. "File-upload" is now detected by EITHER
-    // the new fileBytesB64 path OR the legacy samples field.
-    const isFileUpload =
-      (d?.fileBytesB64 && d.fileBytesB64.length > 0) ||
-      (d?.samples && d.samples.length > 0);
-    if (isFileUpload) {
+    // The START..END highlight band. It used to be drawn for UPLOADS ONLY, on
+    // the reasoning that "for recorded-only samples the start/end params
+    // haven't been touched yet" — which was true only because a recording did
+    // not play at all, so its window meant nothing. Now that it does, the
+    // window is exactly as real for a take as for an upload and the band has
+    // to show it: whatever is drawn here is the slice the worklet loops.
+    {
       const wStartFrac = Math.max(0, Math.min(1, start / samples.length));
       const wEndFrac = Math.max(wStartFrac, Math.min(1, end / samples.length));
       ctx2d.fillStyle = 'rgba(80, 160, 220, 0.18)';
