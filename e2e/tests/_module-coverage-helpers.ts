@@ -422,43 +422,239 @@ export async function captureCanvasStatsFrameSpaced(
   );
 }
 
+// ── THE AUDIO OBSERVATION WINDOW LIVES IN THE PAGE, NOT IN PLAYWRIGHT ───────
+//
+// CLAUDE.md, "VALIDATE THE INSTRUMENT", defence #5, verbatim: "NEVER sample a
+// page-side quantity with a Playwright-side poll loop. […] a stalled thread can
+// burn the whole window in two reads and then report […] off a sample size of
+// two. […] Move the accumulator INTO the page."
+//
+// This helper was that exact anti-pattern —
+//   while (Date.now() < deadline) { await page.evaluate(read); await waitForTimeout(60) }
+// — one CDP round-trip per sample, on the SAME main thread as the audio graph,
+// the scheduler tick and the WebGL cards it is measuring. On a contended runner
+// the sampler starves together with its subject, and the "600 ms window"
+// silently becomes ONE 42 ms peek at an arbitrary instant.
+//
+// MEASURED, from the trace of the run that failed (PR #1303, e2e shard 1/10,
+// run 30758889295, `cube poly chord (POLYSEQZ → poly)`), BOTH attempts:
+//
+//     attempt      seed steps    ONE readScopeSnapshot   ONE waitForTimeout(60)
+//     initial       @5.75 s         255 ms                   392 ms
+//     retry #1      @6.34 s         325 ms                   393 ms
+//
+// 255 + 392 = 647 ms > the 600 ms deadline, so the loop exited after ONE
+// iteration. `polls === 1`. The assertion then reported `Received: 0` — and
+// "the voice is silent" and "we looked once, 250 ms after seeding, and the
+// first gated step had not sounded yet" are INDISTINGUISHABLE from that
+// output. That is the whole bug: the instrument, not the module.
+//
+// THE FIX, three parts, all of which are properties rather than tuning:
+//
+//  1. ONE `page.evaluate` for the whole window; the accumulator runs on a
+//     `setInterval` INSIDE the page. Zero protocol traffic during the window,
+//     so the sampler no longer competes with the subject, and the accumulated
+//     max SURVIVES a stall (a thread frozen for 400 ms and then released still
+//     reports every value it managed to compute).
+//  2. `pollMs` drops 60 → 20, comfortably finer than the ~42 ms AnalyserNode
+//     ring at 48 kHz/2048, so consecutive samples overlap and a transient
+//     cannot fall between two reads. This is only affordable because of (1).
+//  3. `untilPeak` turns "observe for a fixed wall-clock window" into "observe
+//     UNTIL the thing happens, bounded by a cap" for the callers that are
+//     asking `does this ever make sound?`. A fixed window is a DIFFERENT
+//     assertion on every machine (the CLAUDE.md frames-vs-milliseconds
+//     argument, in the audio domain: a gated voice needs the main-thread
+//     scheduler to tick, and how many ticks fit in 600 ms is a property of the
+//     runner). A bounded condition-wait is the same assertion everywhere, and
+//     on a healthy machine it returns EARLIER than the old fixed window — so
+//     this is a CI wall-time saving, not a cost. Callers asserting SILENCE
+//     deliberately omit it and observe the full window.
+//
+// `polls === 0` THROWS. "The instrument never looked" must never be able to
+// masquerade as "the module is silent" — that ambiguity is what cost this run,
+// and every one of the ~40 call sites now gets the guard for free.
+
+/** What one observation window saw. `polls` / `elapsedMs` / `audioAdvancedS`
+ *  are the INSTRUMENT's own vitals — put them in assertion messages so a red
+ *  run says whether the subject was quiet or the sampler was starved. */
+export interface ScopeWindow {
+  /** Max |sample| over every snapshot taken (max-hold). */
+  peak: number;
+  /** Max per-snapshot RMS (max-hold). */
+  rms: number;
+  /** Max per-snapshot count of samples above 1e-6 (the most-structured window). */
+  nonzeroSamples: number;
+  /** Snapshots actually taken IN THE PAGE. Never 0 (the helper throws). */
+  polls: number;
+  /** Wall clock the PAGE measured for the window (not Playwright's). */
+  elapsedMs: number;
+  /** Largest gap between two consecutive samples, in ms. This is a DIRECT,
+   *  free measure of main-thread starvation: it should sit near `pollMs`, and a
+   *  value many times larger says the thread was wedged — i.e. a low `peak`
+   *  may mean "we could not look", not "it was quiet". The old Playwright-side
+   *  loop had no way to report this at all, which is why a 600 ms window that
+   *  collapsed to one 42 ms peek was indistinguishable from silence. */
+  maxSampleGapMs: number;
+  /** True when the window ended early because `untilPeak` was reached. */
+  reachedTarget: boolean;
+}
+
+export interface ScopeWindowOptions {
+  /** Sampling period inside the page. Default 20 ms — finer than the ~42 ms
+   *  analyser ring, so consecutive snapshots overlap. */
+  pollMs?: number;
+  /** Stop as soon as the running max peak exceeds this. Turns the window into
+   *  a BOUNDED CONDITION WAIT (`windowMs` becomes the cap that BOUNDS THE
+   *  FAILURE, not the gate). Omit it to always observe the full window — which
+   *  is what an assertion of SILENCE needs. */
+  untilPeak?: number;
+  /** Minimum observation before `untilPeak` may end the window. Defaults to 0.
+   *  Only useful when a caller wants both an early exit and a floor. */
+  minMs?: number;
+}
+
 /**
- * Poll a scope's analyser over `windowMs` and return the MAX peak seen.
- * A single readScopeSnapshot only captures the ~50ms analyser buffer at
- * one instant — for envelope-driven voices (e.g. a 303's single-decay
- * amp env retriggered at 240 BPM) that instant can land in a decay
- * trough, so the one-shot peak dips under the alive-floor and the test
- * flakes. Max-holding across the whole drive window makes "does this
- * voice ever make sound?" robust for percussive/decaying/gated sources
- * without weakening the assertion (a truly silent module never crosses
- * the floor). Returns running max peak/rms + the max single-window
- * nonzero-sample count (the most-structured window seen, so an "is this a
- * sustained signal not a one-off glitch?" check stays meaningful under
- * max-hold) + the snapshot count.
+ * Observe a scope module's analyser for a window and return the MAX peak seen.
+ *
+ * A single `readScopeSnapshot` only captures the ~42 ms analyser ring at one
+ * instant — for envelope-driven voices (a 303's single-decay amp env
+ * retriggered at 240 BPM, a poly chord whose lanes are gated by a main-thread
+ * step scheduler) that instant can land in a trough, or before the first note
+ * has been scheduled at all. Max-holding across a window makes "does this voice
+ * ever make sound?" robust for percussive / decaying / gated sources without
+ * weakening the assertion: a truly silent module never crosses the floor no
+ * matter how long or how densely you look.
+ *
+ * The sampling loop runs INSIDE THE PAGE (see the block comment above) — that
+ * is the load-bearing property, not the window length.
  */
 export async function readScopePeakOverWindow(
   page: Page,
   scopeNodeId: string,
   windowMs: number,
-  pollMs = 60,
-): Promise<{ peak: number; rms: number; nonzeroSamples: number; polls: number }> {
-  const deadline = Date.now() + windowMs;
-  let peak = 0;
-  let rms = 0;
-  let nonzeroSamples = 0;
-  let polls = 0;
-  while (Date.now() < deadline) {
-    const snap = await readScopeSnapshot(page, scopeNodeId);
-    if (snap) {
-      const s = summarize(snap.ch1);
-      if (s.peak > peak) peak = s.peak;
-      if (s.rms > rms) rms = s.rms;
-      if (s.nonzeroSamples > nonzeroSamples) nonzeroSamples = s.nonzeroSamples;
-      polls++;
-    }
-    await page.waitForTimeout(pollMs);
+  opts: ScopeWindowOptions = {},
+): Promise<ScopeWindow> {
+  const pollMs = opts.pollMs ?? 20;
+  const untilPeak = opts.untilPeak ?? Number.POSITIVE_INFINITY;
+  const minMs = opts.minMs ?? 0;
+
+  const result = await page.evaluate(
+    async ({ id, windowMs, pollMs, untilPeak, minMs }) => {
+      const w = globalThis as unknown as {
+        __engine?: () => {
+          read: (n: { id: string; type: string; domain: string }, k: string) => unknown;
+        } | null;
+        __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
+      };
+
+      // Summarize IN THE PAGE — the Float32Array never crosses the protocol
+      // boundary, which is most of why this is cheap enough to run at 20 ms.
+      const grab = (): { peak: number; rms: number; nonzero: number } | null => {
+        const eng = w.__engine?.();
+        if (!eng) return null;
+        const node = w.__patch?.nodes?.[id];
+        if (!node) return null;
+        const snap = eng.read(node, 'snapshot') as
+          | { ch1: Float32Array; sampleRate: number }
+          | undefined;
+        if (!snap?.ch1) return null;
+        const ch1 = snap.ch1;
+        let peak = 0;
+        let energy = 0;
+        let nonzero = 0;
+        for (let i = 0; i < ch1.length; i++) {
+          const v = ch1[i] ?? 0;
+          const a = v < 0 ? -v : v;
+          if (a > peak) peak = a;
+          energy += v * v;
+          if (a > 1e-6) nonzero++;
+        }
+        return { peak, rms: Math.sqrt(energy / Math.max(1, ch1.length)), nonzero };
+      };
+
+      return await new Promise<{
+        peak: number;
+        rms: number;
+        nonzeroSamples: number;
+        polls: number;
+        elapsedMs: number;
+        maxSampleGapMs: number;
+        reachedTarget: boolean;
+      }>((resolve) => {
+        const t0 = performance.now();
+        let peak = 0;
+        let rms = 0;
+        let nonzeroSamples = 0;
+        let polls = 0;
+        let lastSampleAt = t0;
+        let maxSampleGapMs = 0;
+        let reachedTarget = false;
+
+        const finish = (): void => {
+          clearInterval(timer);
+          resolve({
+            peak,
+            rms,
+            nonzeroSamples,
+            polls,
+            elapsedMs: performance.now() - t0,
+            maxSampleGapMs,
+            reachedTarget,
+          });
+        };
+
+        const sample = (): void => {
+          const at = performance.now();
+          const gap = at - lastSampleAt;
+          if (gap > maxSampleGapMs) maxSampleGapMs = gap;
+          lastSampleAt = at;
+          const s = grab();
+          if (s) {
+            if (s.peak > peak) peak = s.peak;
+            if (s.rms > rms) rms = s.rms;
+            if (s.nonzero > nonzeroSamples) nonzeroSamples = s.nonzero;
+            polls++;
+          }
+          const elapsed = at - t0;
+          if (peak > untilPeak && elapsed >= minMs) {
+            reachedTarget = true;
+            finish();
+            return;
+          }
+          if (elapsed >= windowMs) finish();
+        };
+
+        const timer = setInterval(sample, pollMs);
+        // Sample immediately too, so a window shorter than one interval still
+        // takes at least one reading.
+        sample();
+      });
+    },
+    { id: scopeNodeId, windowMs, pollMs, untilPeak, minMs },
+  );
+
+  if (result.polls === 0) {
+    // NEVER let "we never looked" print as "it was silent" — that ambiguity is
+    // the failure this helper was rewritten to remove.
+    throw new Error(
+      `readScopePeakOverWindow('${scopeNodeId}'): the instrument took ZERO samples in ` +
+        `${Math.round(result.elapsedMs)} ms (requested window ${windowMs} ms @ ${pollMs} ms). ` +
+        `The engine or the scope node was unreadable for the whole window — this is an ` +
+        `INSTRUMENT failure, not a silent module. Do NOT read the peak as 0.`,
+    );
   }
-  return { peak, rms, nonzeroSamples, polls };
+  return result;
+}
+
+/** One-line vitals for an assertion message. Makes a red run diagnosable:
+ *  "silent" and "starved sampler" print differently. */
+export function describeScopeWindow(w: ScopeWindow): string {
+  return (
+    `peak=${w.peak.toFixed(4)} rms=${w.rms.toFixed(4)} ` +
+    `polls=${w.polls} elapsed=${Math.round(w.elapsedMs)}ms ` +
+    `maxSampleGap=${Math.round(w.maxSampleGapMs)}ms` +
+    (w.reachedTarget ? ' (hit target early)' : '')
+  );
 }
 
 /**
