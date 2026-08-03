@@ -9,7 +9,17 @@
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
-  import { portsFromDef } from './card-kit';
+  import { paramSpec, portsFromDef } from './card-kit';
+
+  // ⚠ FM / PM ARE BIPOLAR IN THE DEF AND THIS CARD SAID THEY WERE NOT.
+  // `fmAmount` / `pmAmount` are declared `min: -1, max: 1` (inverted modulation
+  // is half the point of a linear-FM index), and their `cv` jacks have always
+  // driven the full ±1. The card re-typed `min={0}`, so the knob could only
+  // reach the positive half while the DEF-DRIVEN dock face reached both — one
+  // param, two ranges, depending on which surface you were looking at. Bound to
+  // the def so the two cannot disagree again.
+  const pFm = paramSpec(analogVcoDef, 'fmAmount');
+  const pPm = paramSpec(analogVcoDef, 'pmAmount');
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -22,24 +32,6 @@
   let pmAmount = $derived(node?.params.pmAmount ?? analogVcoDef.params.find((p) => p.id === 'pmAmount')!.defaultValue);
   let pw       = $derived(node?.params.pw       ?? analogVcoDef.params.find((p) => p.id === 'pw')!.defaultValue);
   let shape    = $derived(node?.params.shape    ?? analogVcoDef.params.find((p) => p.id === 'shape')!.defaultValue);
-
-  /**
-   * A control's range comes from the DEF, never re-typed in the card.
-   *
-   * ⚠ THIS CARD IS WHY. It hardcoded `min={0}` on FM and PM while the def
-   * declares both `-1..1` — so **the entire negative half of both modulation-
-   * depth controls had no user interface at all**, on a module whose inverted
-   * depth is a real, deliberately-implemented, unit-tested feature
-   * (`analog-vco-modulation.test.ts`: "negative PM depth inverts the phase
-   * offset (bipolar)"). Nothing caught it: contract-lock, the docs lint and
-   * every range assertion read the DEF, and the def was correct — a card
-   * disagreeing with its own def is invisible to all of them. Same class as
-   * backdraft's ±0.2 camera pads driven by ±1 XyPads.
-   */
-  const spec = (paramId: string) => {
-    const p = analogVcoDef.params.find((q) => q.id === paramId)!;
-    return { min: p.min, max: p.max, defaultValue: p.defaultValue };
-  };
 
   function setParam(paramId: string) {
     return (v: number) => setNodeParam(id, paramId, v);
@@ -123,12 +115,12 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="fader-row">
-      <Fader value={tune}     {...spec('tune')}     label="Tune" units="st" curve="linear" onchange={setParam('tune')} moduleId={id} paramId="tune"     readLive={readLive('tune')} />
-      <Fader value={fine}     {...spec('fine')}     label="Fine" units="¢"  curve="linear" onchange={setParam('fine')} moduleId={id} paramId="fine"     readLive={readLive('fine')} />
-      <Fader value={fmAmount} {...spec('fmAmount')} label="FM"              curve="linear" onchange={setParam('fmAmount')} moduleId={id} paramId="fmAmount" readLive={readLive('fmAmount')} />
-      <Fader value={pmAmount} {...spec('pmAmount')} label="PM"              curve="linear" onchange={setParam('pmAmount')} moduleId={id} paramId="pmAmount" readLive={readLive('pmAmount')} />
-      <Fader value={pw}       {...spec('pw')}       label="PW"              curve="linear" onchange={setParam('pw')} moduleId={id} paramId="pw"       readLive={readLive('pw')} />
-      <Fader value={shape}    {...spec('shape')}    label="Wave"            curve="linear" onchange={setParam('shape')} moduleId={id} paramId="shape"    readLive={readLive('shape')} />
+      <Fader value={tune}     min={-36} max={36}     defaultValue={0}   label="Tune" units="st" curve="linear" onchange={setParam('tune')} moduleId={id} paramId="tune"     readLive={readLive('tune')} />
+      <Fader value={fine}     min={-100} max={100}   defaultValue={0}   label="Fine" units="¢"  curve="linear" onchange={setParam('fine')} moduleId={id} paramId="fine"     readLive={readLive('fine')} />
+      <Fader value={fmAmount} min={pFm.min} max={pFm.max} defaultValue={pFm.defaultValue} label="FM"              curve="linear" onchange={setParam('fmAmount')} moduleId={id} paramId="fmAmount" readLive={readLive('fmAmount')} />
+      <Fader value={pmAmount} min={pPm.min} max={pPm.max} defaultValue={pPm.defaultValue} label="PM"              curve="linear" onchange={setParam('pmAmount')} moduleId={id} paramId="pmAmount" readLive={readLive('pmAmount')} />
+      <Fader value={pw}       min={0.05} max={0.95}  defaultValue={0.5} label="PW"              curve="linear" onchange={setParam('pw')} moduleId={id} paramId="pw"       readLive={readLive('pw')} />
+      <Fader value={shape}    min={0}   max={1}      defaultValue={0}   label="Wave"            curve="linear" onchange={setParam('shape')} moduleId={id} paramId="shape"    readLive={readLive('shape')} />
     </div>
   </PatchPanel>
 </div>

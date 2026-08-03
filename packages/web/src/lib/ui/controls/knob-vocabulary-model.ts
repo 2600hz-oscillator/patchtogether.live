@@ -21,6 +21,7 @@
 
 import type { KnobCurve, ParamLandmark, ParamOption } from '$lib/graph/types';
 import { knobValueToFrac } from './knob-conic-model';
+import { formatParamNumber } from './param-format';
 
 /** What a param declared about the meaning of its numbers. All optional; a
  *  param that declares none of it gets the classic bare dial. */
@@ -86,6 +87,28 @@ export function knobReadout(value: number, vocab: KnobVocabulary): string | null
   if (vocab.options?.length) return nearestByValue(value, vocab.options)?.label ?? null;
   if (vocab.landmarks?.length) return nearestByValue(value, vocab.landmarks)?.label ?? null;
   return null;
+}
+
+/**
+ * The DOCK-TIER readout: the declared vocabulary NAME when there is one, else
+ * the plain numeric ladder with units. Never null.
+ *
+ * PF-20 — WHY THIS EXISTS AND WHY IT IS NOT `knobReadout`. The PF-3 gate above
+ * is right for a LANE tile: a 46px knob column cannot afford a text row for
+ * something hovering already shows. It was wrong for the DOCK. Every mocked
+ * faceplate prints a value under every knob (`SUB DEC 450 ms`, `P AMT 24 st`),
+ * and shipping bare labels there is the single largest share of the drift the
+ * owner put next to the mock — a readout you must hover to see does not exist
+ * on a panel you are reading.
+ *
+ * So the GATE MOVES TO THE CALLER instead of disappearing: `knobReadout` still
+ * answers "did this param declare a meaning", this answers "print the value
+ * whatever it declared", and KnobConic picks per view. The lane keeps the bare
+ * dial; the dock always prints. Same ladder either way, which is what stops the
+ * hero readout and the dial under it from disagreeing about one number.
+ */
+export function knobValueReadout(value: number, vocab: KnobVocabulary, units = ''): string {
+  return knobReadout(value, vocab) ?? formatParamNumber(value, units);
 }
 
 /**

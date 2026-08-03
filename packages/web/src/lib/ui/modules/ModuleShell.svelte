@@ -56,6 +56,14 @@
   import Dx7AlgorithmGlyph from './dx7/Dx7AlgorithmGlyph.svelte';
   import { Button, KnobConic, ParamGrid, ScopeScreen, Segmented, Selector, Toggle, VuMeter } from '$lib/ui/controls';
   import { curatedFace, dockFacePlan, type FaceControl, type FaceTier } from '$lib/ui/workflow/curated-face';
+  import {
+    bandHeaderPlan,
+    facePageHeader,
+    heroFacePlan,
+    readoutText,
+    type FaceplateDefLike,
+  } from '$lib/ui/workflow/dock-faceplate-model';
+  import { isAnnotating } from '$lib/ui/annotate-mode.svelte';
   import { shellCellFor, type ShellCellEnv } from '$lib/ui/workflow/shell-cells';
   import { shellParamWrite } from '$lib/ui/workflow/shell-param-writes';
   import { dockBandVisible, dockTabPlan } from '$lib/ui/workflow/dock-tabs-model';
@@ -317,7 +325,80 @@
   // control (dock = all). The render-parity gates (module-face-lint unit +
   // the faces-parity e2e) pin this plan to the def's full control surface —
   // the tidyVco tune-cluster loss class can't silently recur at this seam.
-  let dockBands = $derived(view === 'dock-full' && def ? dockFacePlan(def) : null);
+  let allDockBands = $derived(view === 'dock-full' && def ? dockFacePlan(def) : null);
+
+  // PF-20 — THE HERO SPLIT. `face.hero` PROMOTES a ranked key out of its band
+  // into the hero rail; it never copies it (a duplicated key would emit a
+  // second `control-<paramId>` and fail faces-parity's exact param multiset).
+  // The move is arithmetic, so it lives in the pure model and its TOTALITY —
+  // hero + bands === the plan that went in, exactly once each — is asserted on
+  // every faced module by module-face-lint, not discovered in a browser.
+  let heroSplit = $derived(heroFacePlan(def as FaceplateDefLike | undefined, allDockBands));
+  let dockBands = $derived(allDockBands ? heroSplit.bands : null);
+  let hero = $derived(heroSplit.hero);
+
+  /**
+   * ANNOTATIONS ON for this node? (owner, 2026-08-02: the section prose
+   * "belongs as annotation text but not on the card unless annotation is
+   * turned on".)
+   *
+   * ⚠ IT IS THE EXISTING PER-NODE ANNOTATE MODE, deliberately — not a second
+   * switch. `annotate-mode.svelte.ts` already is a personal lens onto ONE
+   * user's view of ONE module: a reactive `SvelteSet` of node ids, keyed by
+   * nodeId, NOT in `node.data` and NOT in the Y.Doc, for the reason it states
+   * and the dx7 operator-selection precedent repeats — a rack-mate turning it
+   * on must not change what you see, and it is not worth a collab message.
+   * Inventing a `faceAnnotations` singleton beside it would have shipped TWO
+   * personal annotation switches for one concept, so the faceplate's authored
+   * prose is simply more of what that one switch reveals (the on-card
+   * AnnotateLayer hover popover is the other). `clearAnnotate` on node delete
+   * already stops the set leaking an entry per spawned-and-deleted node.
+   *
+   * DOCK-ONLY, like every other `face` structure field: a 192×180 lane tile has
+   * no room for a sentence, so annotating a node changes nothing in the lane.
+   */
+  let annotations = $derived(view === 'dock-full' && isAnnotating(id));
+
+  /** PF-20 — the faceplate's TITLE + HINT rows, and BOTH are annotation prose
+   *  (owner, 2026-08-02): at rest the faceplate carries NO section title and no
+   *  description — the module's name is the dock TITLE BAR's job and it is
+   *  untouched. `null` for a face that declares neither, and `null` for every
+   *  face while annotations are off, so the resting card is clean. */
+  let pageHeader = $derived(
+    view === 'dock-full' ? facePageHeader(def as FaceplateDefLike | undefined, annotations) : null,
+  );
+
+  /**
+   * PF-20 — does the DOCK hero band paint the shell's `glyph`?
+   *
+   * ⚠ NOT when the face brought its own picture. The glyph is a LIVE trace of
+   * the output; a `hero.cell` is a picture of the PATCH. Both together is what
+   * the owner rejected: the kick's `scope` glyph flatlines with no audio, so a
+   * faceplate opened on a silent rack painted an EMPTY BLACK RECTANGLE in the
+   * exact place the mock puts the envelope graph — beside the graph itself.
+   * The glyph is untouched at every other tier (the compact lane tile genuinely
+   * wants a live trace, and that is the only place it has room to be one), so
+   * this suppresses nothing a lane baseline can see.
+   */
+  let heroGlyph = $derived(hasGlyph && !(view === 'dock-full' && hero?.cell));
+
+  /**
+   * The value a hero/sidebar READOUT prints.
+   *
+   * ⚠ READS THE DURABLE PARAM, deliberately — the same call the topology
+   * caption makes and for the same reason. `params.live` asks the ENGINE, and
+   * an engine reader polled from MARKUP is not reactive: Svelte tracks the
+   * signals read during render, and `readParam` is a plain function call, so
+   * the readout would freeze at whatever the first render happened to see.
+   * Worse, with no audio engine booted it hands back a construction-time shadow
+   * that is a NUMBER, so the `??` fallback never fires and the panel prints a
+   * value the patch abandoned. The durable param re-derives on `nodeVersion`,
+   * which is what a local edit, a remote edit and MIDI-learn all bump.
+   */
+  function readoutValue(pid: string): number | undefined {
+    void nodeVersion(id);
+    return params.paramVal(pid);
+  }
 
   /** PF-16 — the tab roster (null for a face that renders as one column), and
    *  the SAME pure answer DockFullView's rail computes. A rail without the
@@ -478,7 +559,7 @@
     <span class="tile-badge">{roleLine}</span>
   </div>
 
-  {#snippet controlCell(ctl: FaceControl, knobSize: 'sm' | 'md' = 'md')}
+  {#snippet controlCell(ctl: FaceControl, knobSize: 'sm' | 'md' | 'lg' | 'xl' = 'md')}
     {#if ctl.kind === 'param'}
       {@const pd = paramDef(ctl.paramId ?? ctl.key)}
       {#if pd}
@@ -600,6 +681,7 @@
               options={pd.options}
               landmarks={pd.landmarks}
               format={pd.format}
+              persistentReadout={view === 'dock-full'}
             />
           </div>
         {/if}
@@ -837,9 +919,82 @@
          is CAPPED to the first four knob columns of the control grid (owner
          feedback), left-aligned with blank space right; a video face's
          thumbnail rides the same capped hero band. -->
-    {#if hasGlyph}
-      <div class="tile-body dock-hero" style={`--dock-hero-glyph-w:${DOCK_HERO_GLYPH_W}px`}>
-        {@render glyphCell()}
+    <!-- PF-20 — the PAGE HEADER: a category word + a sentence that says what
+         the instrument IS. ANNOTATION IN FULL (owner, 2026-08-02) — the title
+         is NOT the module's name (the dock title bar paints that, always), it
+         is a description of the page, so it is out of the DOM at rest along
+         with the sentence. Only paints for a face that declares one, so the
+         ~19 pre-PF-20 faceplates are byte-identical here in every state. -->
+    {#if pageHeader}
+      <div class="face-head" data-testid="face-head">
+        {#if pageHeader.title}<h3 class="face-title">{pageHeader.title}</h3>{/if}
+        {#if pageHeader.hint}<p class="face-hint">{pageHeader.hint}</p>{/if}
+      </div>
+    {/if}
+
+    <!-- PF-20 — the HERO RAIL: the module's own PICTURE + the promoted control
+         beside it (a big dial with a big readout) and its audition, then the
+         labelled readouts UNDER them as a full-width strip. Every piece is
+         optional and the rail only renders when at least one is present — a
+         face that declares no hero keeps the bare capped glyph band it has
+         today.
+
+         ⚠ THE READOUTS ARE A ROW BELOW THE STAGE, NOT A COLUMN BESIDE IT
+         (owner, 2026-08-02: "generally this row of controls should be below
+         the graphic"). They were the tail of `.hero-side`, so a face's derived
+         values competed with its own picture for horizontal room and dropped
+         to a second line at exactly the widths where the graph mattered most.
+         Below, they get the full faceplate width — which is also the reading
+         order the numbers want: the graphic states what the voice IS, the
+         strip states what it MEASURES. -->
+    {#if heroGlyph || hero}
+      <div
+        class="tile-body dock-hero"
+        class:has-hero={!!hero}
+        class:has-hero-cell={!!hero?.cell}
+        style={`--dock-hero-glyph-w:${DOCK_HERO_GLYPH_W}px`}
+      >
+        {#if heroGlyph}{@render glyphCell()}{/if}
+        {#if hero}
+          <div class="hero-rail" data-testid="face-hero">
+            {#if hero.cell || hero.control || hero.action}
+              <!-- THE STAGE: the picture and the big control side by side. A
+                   hero that is READOUTS ONLY (a bare measurement strip) skips
+                   it entirely rather than painting an empty 0px flex row. -->
+              <div class="hero-stage">
+                {#if hero.cell}
+                  <!-- THE MODULE'S OWN PICTURE, at the top of the faceplate
+                       where the mock puts it. MOVED out of its band, not
+                       copied — see heroFacePlan — so the cell multiset is
+                       unchanged. -->
+                  <div class="hero-vis">{@render controlCell(hero.cell)}</div>
+                {/if}
+                {#if hero.control || hero.action}
+                  <div class="hero-side">
+                    {#if hero.control}
+                      <!-- The hero CONTROL is the same cell the band would have
+                           rendered, at hero size, with a hero-size readout. -->
+                      <div class="hero-ctl">{@render controlCell(hero.control, 'xl')}</div>
+                    {/if}
+                    {#if hero.action}
+                      <div class="hero-ctl">{@render controlCell(hero.action)}</div>
+                    {/if}
+                  </div>
+                {/if}
+              </div>
+            {/if}
+            {#if hero.readouts.length}
+              <dl class="hero-readouts" data-testid="face-hero-readouts">
+                {#each hero.readouts as r (r.label)}
+                  <div class="hero-ro" data-hero-readout={r.paramId ?? r.valueId ?? r.label}>
+                    <dt>{r.label}</dt>
+                    <dd>{readoutText(r, (def?.params ?? []), readoutValue)}</dd>
+                  </div>
+                {/each}
+              </dl>
+            {/if}
+          </div>
+        {/if}
       </div>
     {/if}
     <div class="dock-pages" data-testid="face-pages">
@@ -850,6 +1005,13 @@
            make a tabbed face read as a face that LOST forty controls. Hiding
            also keeps knob/scroll state alive across a flip. -->
       {#each dockBands as band (band.id)}
+        <!-- THE BAND HEADER, as TWO independent questions (bandHeaderPlan).
+             The LABEL answers "is there a tab rail already naming this band?";
+             the HINT answers "are annotations on?" — and nothing else. Asking
+             them together (the old `{#if band.label && !dockTabs}` with the
+             hint nested inside) made the hint answer to the RAIL, so a tabbed
+             face could not paint its prose in any state. See the model. -->
+        {@const head = bandHeaderPlan(band, { tabbed: !!dockTabs, annotations })}
         <!-- On a TABBED face the band IS the tab's panel, so it says so: the
              rail's buttons carry `aria-controls={face-page-<id>}` and this
              carries the matching id + `aria-labelledby`. Without the pair a
@@ -865,11 +1027,33 @@
           aria-labelledby={dockTabs ? `faceplate-tab-${band.id}` : undefined}
           hidden={!dockBandVisible(band.id, dockTabs, data.activePage)}
         >
-          <!-- The band header is SUPPRESSED on a tabbed face: the active tab
-               already names the band, in the same words, ~14px above it.
-               Printing both spends the vertical space the rail exists to buy. -->
-          {#if band.label && !dockTabs}
-            <h4 class="page-label">{band.label}</h4>
+          <!-- The LABEL is suppressed on a tabbed face: the active tab already
+               names the band, in the same words, ~14px above it, and printing
+               both spends the vertical space the rail exists to buy.
+
+               THE BAND LABEL IS NOT ANNOTATION and stays at rest. It is a
+               fieldset legend — the structural name of the group — and with the
+               hints gone it is the ONLY thing that says what the row of knobs
+               under it belongs to. (Flagged to the owner: if "no text on the
+               module" is meant to reach the legends too, this is the line.)
+
+               ⚠ THE HINT IS ANNOTATION and is NOT IN THE DOM at rest (owner,
+               2026-08-02). `display:none` would have been the smaller diff and
+               the wrong one: the VRT baseline would show a card the
+               accessibility tree disagrees with, and a screen reader would read
+               every band a sentence the sighted user was never shown. So the
+               annotate switch controls the MARKUP, and the two surfaces cannot
+               drift.
+
+               With a rail up there is no `<h4>` to hang the hint inside, so it
+               paints as its own quiet line ('page-hint-solo') — the tabbed
+               face's prose has to land SOMEWHERE, and nowhere was the bug. -->
+          {#if head.label}
+            <h4 class="page-label">
+              {head.label}{#if head.hint}<span class="page-hint">{head.hint}</span>{/if}
+            </h4>
+          {:else if head.hint}
+            <p class="page-hint page-hint-solo">{head.hint}</p>
           {/if}
           {#if band.controls.length}
             <div class="page-controls">
@@ -1128,6 +1312,156 @@
     width: min(var(--dock-hero-glyph-w, 214px), 100%);
     min-width: 0;
   }
+
+  /* PF-20 — THE PAGE HEADER (mock `.page-title` + `.page-hint`). A faceplate
+     that opens with a category word and one sentence reads as an instrument;
+     one that opens with a knob reads as a settings dialog. */
+  .face-head {
+    padding: 10px 10px 0;
+  }
+  .face-title {
+    margin: 0;
+    font-size: 0.95rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: var(--text, #eef1f5);
+  }
+  .face-hint {
+    margin: 3px 0 0;
+    font-size: 0.66rem;
+    line-height: 1.45;
+    letter-spacing: 0.02em;
+    color: var(--text-dim, #9aa3ad);
+    max-width: 62ch;
+  }
+
+  /* PF-20 — THE HERO RAIL: the glyph, then the promoted control + audition,
+     then the readout strip. It WRAPS rather than compressing — a half-width
+     split pane must drop the hero dial below the picture instead of squeezing
+     a 64px dial. */
+  .dock-hero.has-hero {
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 14px;
+    padding-bottom: 6px;
+  }
+  /* With a promoted picture the rail is the full width of the editor, not a
+     capped glyph band, so the row must not centre-shrink around it. */
+  .dock-hero.has-hero-cell {
+    align-items: stretch;
+  }
+  /* The rail is a COLUMN: the STAGE (picture | control · audition), then the
+     readout strip beneath it (owner 2026-08-02 — see the markup note). The
+     strip therefore spans the whole faceplate instead of queueing behind the
+     graph for the leftover width. */
+  .hero-rail {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    min-width: 0;
+    width: 100%;
+  }
+  /* The stage is PICTURE | (control · audition). The picture takes the room it
+     needs and the side column is intrinsically sized, which is what keeps a
+     420px graph legible in a half-width split pane instead of both halves
+     squeezing. */
+  .hero-stage {
+    display: flex;
+    align-items: stretch;
+    gap: 16px;
+    flex-wrap: wrap;
+    min-width: 0;
+    width: 100%;
+  }
+  .hero-vis {
+    flex: 1 1 380px;
+    min-width: 0;
+  }
+  /* A promoted PANEL keeps its own design floor (`--panel-min-w`) but must not
+     inherit the lane's 46px knob-column cap — `.dock-hero` IS a `.tile-body`,
+     whose `.kcol` rule caps width. */
+  .hero-vis :global(.kcol) {
+    max-width: none;
+    width: 100%;
+  }
+  .hero-side {
+    display: flex;
+    align-items: flex-end;
+    gap: 16px;
+    flex-wrap: wrap;
+    min-width: 0;
+  }
+  /* The hero cell keeps its own natural width — the lane's 46px `--kcol-max`
+     is scoped to `.tile-body .kcol` and `.dock-hero` IS a `.tile-body`, so
+     without this the xl dial would be capped to a lane column. */
+  .hero-ctl :global(.kcol) {
+    max-width: none;
+  }
+  /* ⚠ THE HERO DIAL'S VALUE IS TYPESET AS A HERO VALUE. The dial is `xl`
+     (64px), and the readout under it inherited the 9px `.readout` rule every
+     46px lane dial uses — a big dial with a lane-sized caption, which is not
+     "a big dial with a big readout" however the comment beside it read. The
+     label stays small: it is a name, and the NUMBER is the thing being read. */
+  .hero-ctl :global(.readout) {
+    font-size: 17px;
+    line-height: 1.05;
+    letter-spacing: 0.01em;
+  }
+  .hero-ctl :global(.label) {
+    font-size: 10px;
+  }
+  /* Labelled hero values. A <dl> because that is what a label→value list is;
+     the visual is a row of caption-over-number pairs, at the same typographic
+     weight as the hero dial's own readout.
+     A FULL-WIDTH STRIP under the stage: it starts at the faceplate's left edge
+     and gets the whole width, so a three-value strip reads as one line of
+     instrumentation rather than as the overflow of the row above it. The
+     hairline is the same 1px `--border` rule `.dock-page` uses to separate a
+     band — this strip is the hero's own footer in that same vocabulary. */
+  .hero-readouts {
+    display: flex;
+    align-items: flex-end;
+    gap: 22px;
+    margin: 0;
+    width: 100%;
+    min-width: 0;
+    flex-wrap: wrap;
+  }
+  /* ⚠ THE HAIRLINE IS CONDITIONAL, and it has to be: a hero may be READOUTS
+     ONLY (no picture, no promoted control — a bare measurement strip, which
+     `heroFacePlan` explicitly supports and the batch-3 mocks propose). Then the
+     strip IS the whole hero and a rule above it would separate it from the page
+     header — i.e. draw a line under the title. The adjacent-sibling combinator
+     says exactly what is meant: the hairline belongs BETWEEN the stage and the
+     strip, so no stage means no hairline. */
+  .hero-stage + .hero-readouts {
+    padding-top: 8px;
+    border-top: 1px solid var(--border, #2c3037);
+  }
+  .hero-ro {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+  }
+  .hero-ro dt {
+    font-family: var(--mono, ui-monospace, monospace);
+    font-size: 9px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-dim, #9aa3ad);
+  }
+  .hero-ro dd {
+    margin: 0;
+    font-family: var(--mono, ui-monospace, monospace);
+    font-size: 17px;
+    line-height: 1.05;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    color: var(--domain, var(--accent));
+    white-space: nowrap;
+  }
   .dock-pages {
     display: flex;
     flex-direction: column;
@@ -1147,12 +1481,37 @@
     display: none;
   }
   .page-label {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    flex-wrap: wrap;
     margin: 0 0 6px;
     font-size: 0.62rem;
     font-weight: 800;
     letter-spacing: 0.08em;
     text-transform: uppercase;
     color: var(--text-dim, #9aa3ad);
+  }
+  /* PF-20 — the band DESCRIPTION beside its label. Quieter and NOT uppercased:
+     the label is a name, the hint is a sentence, and typesetting them alike
+     would make the header read as one long shouted string. */
+  .page-hint {
+    font-size: 0.6rem;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    text-transform: none;
+    color: var(--text-dim, #9aa3ad);
+    opacity: 0.75;
+  }
+  /* …and the same hint with NO label to sit beside it — a TABBED face, where
+     the rail carries the name. It becomes its own block line and takes over the
+     `.page-label` bottom margin, so the band's controls sit exactly where they
+     do with a header above them. */
+  .page-hint-solo {
+    display: block;
+    margin: 0 0 6px;
+    max-width: 62ch;
+    line-height: 1.45;
   }
   .page-controls {
     display: flex;

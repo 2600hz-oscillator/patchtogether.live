@@ -17,16 +17,11 @@
 
 
   const MODES = ['LP', 'HP', 'BP'] as const;
-  /**
-   * ⚠ MODE used to commit as `patch.nodes[id].params.mode = m` — a BARE proxy
-   * assignment, outside any origin-tagged transaction. The UndoManager tracks
-   * only `LOCAL_ORIGIN` (graph/store.ts), so the write reached the document and
-   * synced to peers but **never landed on the undo stack**: Cmd-Z after
-   * switching LP→BP silently did nothing, or undid the knob move before it,
-   * while CUTOFF and RES on the very same card were undoable. `set()` is
-   * `setNodeParam`, which is that transaction — the same commit every other
-   * control on every other card uses.
-   */
+  // ⚠ Routed through the SAME `setNodeParam` seam as cutoff/resonance. Until
+  // 2026-08-02 this was a bare `t.params.mode = m`, so MODE — the control that
+  // decides whether CUTOFF sounds dark, thin or narrow — was the one param on
+  // this card that was NOT undoable and did NOT ride the LOCAL_ORIGIN tag.
+  // `mutate.guard`'s RAW_PARAM_WRITE was bracket-only and could not see it.
   const selectMode = (m: number) => set('mode')(m);
 
   const inputs = portsFromDef(filterDef.inputs);

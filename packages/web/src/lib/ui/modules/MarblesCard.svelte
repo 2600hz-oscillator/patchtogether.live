@@ -9,7 +9,7 @@
   import { marblesDef, MARBLES_T_MODEL_NAMES, MARBLES_SCALE_NAMES } from '$lib/audio/modules/marbles';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
-  import { cardParams, portsFromDef } from './card-kit';
+  import { cardParams, paramSpec, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -18,6 +18,8 @@
   const defaultFor = (k: string): number =>
     marblesDef.params.find((p) => p.id === k)!.defaultValue;
   const paramVal = (k: string): number => node?.params?.[k] ?? defaultFor(k);
+  const pLength = paramSpec(marblesDef, 'length');
+  const pXLength = paramSpec(marblesDef, 'x_length');
 
   let tModel = $derived(paramVal('t_model'));
   let scale = $derived(paramVal('scale'));
@@ -59,11 +61,15 @@
       <Fader value={paramVal('t_bias')}   min={0}   max={1}  defaultValue={0.5} label="T Bias"   curve="linear" onchange={set('t_bias')}   moduleId={id} paramId="t_bias"   readLive={live('t_bias')} />
       <Fader value={paramVal('t_jitter')} min={0}   max={1}  defaultValue={0}   label="Jitter"   curve="linear" onchange={set('t_jitter')} moduleId={id} paramId="t_jitter" readLive={live('t_jitter')} />
       <Fader value={paramVal('deja_vu')}  min={0}   max={1}  defaultValue={0}   label="Déjà Vu"  curve="linear" onchange={set('deja_vu')}  moduleId={id} paramId="deja_vu"  readLive={live('deja_vu')} />
-      <Fader value={paramVal('length')}   min={1}   max={16} defaultValue={8}   label="Length"   curve="linear" onchange={set('length')}   moduleId={id} paramId="length"   readLive={live('length')} />
+      <!-- `curve` is bound, not re-typed: the def declares BOTH loop lengths
+           `discrete`, and a hand-typed `curve="linear"` here let the fader
+           commit 8.37 into a param the engine then floors — the dial's
+           position and the value it stored disagreed by up to half a step. -->
+      <Fader value={paramVal('length')}   min={1}   max={16} defaultValue={8}   label="Length"   curve={pLength.curve} onchange={set('length')}   moduleId={id} paramId="length"   readLive={live('length')} />
       <Fader value={paramVal('spread')}   min={0}   max={1}  defaultValue={0.5} label="Spread"   curve="linear" onchange={set('spread')}   moduleId={id} paramId="spread"   readLive={live('spread')} />
       <Fader value={paramVal('x_bias')}   min={0}   max={1}  defaultValue={0.5} label="X Bias"   curve="linear" onchange={set('x_bias')}   moduleId={id} paramId="x_bias"   readLive={live('x_bias')} />
       <Fader value={paramVal('steps')}    min={0}   max={1}  defaultValue={0.5} label="Steps"    curve="linear" onchange={set('steps')}    moduleId={id} paramId="steps"    readLive={live('steps')} />
-      <Fader value={paramVal('x_length')} min={1}   max={16} defaultValue={8}   label="X Len"    curve="linear" onchange={set('x_length')} moduleId={id} paramId="x_length" readLive={live('x_length')} />
+      <Fader value={paramVal('x_length')} min={1}   max={16} defaultValue={8}   label="X Len"    curve={pXLength.curve} onchange={set('x_length')} moduleId={id} paramId="x_length" readLive={live('x_length')} />
     </div>
   </PatchPanel>
   <OssAttribution author={marblesDef.ossAttribution?.author} />
