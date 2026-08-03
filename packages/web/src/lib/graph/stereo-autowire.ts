@@ -13,8 +13,28 @@
 // DECIDED DEFAULTS (per the spec):
 //   * Only auto-wire when the SOURCE module ALSO declares a matching stereoPairs
 //     sibling — so out_l→in_l implies out_r→in_r, NEVER out_l→in_r.
-//   * A MONO source into a stereo target's L leaves the sibling UNPATCHED (the
-//     engine already normals R←L), so a source with no matching pair → null.
+//   * A MONO source into a stereo target's L leaves the sibling UNPATCHED, so a
+//     source with no matching pair → null.
+//
+//     ⚠ This bullet used to justify itself with "the engine already normals
+//     R←L". THAT WAS FALSE, and it was false in a way that shipped silent right
+//     channels for months. engine.ts contains NO normalling code whatsoever —
+//     it connects one edge per patch and nothing else. Where R-from-L normalling
+//     exists at all it is a PER-MODULE DSP behaviour (`inputs[1]?.[0] ??
+//     inputs[0]?.[0]` inside the worklet), which each module opts into and which
+//     its own factory can silently defeat by pinning anything to worklet input 1
+//     — as clouds, shimmershine, charlottes-echos and cofefve all did, and as
+//     resofilter did by a different route (a 'discrete' up-mix law zero-filling
+//     channel 1). All five measured OUT R at exactly 0.0 for a mono source into
+//     L. Fixed + gated by mono-normal-not-defeated.test.ts.
+//
+//     So leaving the sibling unpatched is safe ONLY for a target whose DSP
+//     normals. A stereo module with no mono normal still renders a silent R —
+//     that is a real, still-open gap in this policy, not something the engine
+//     covers. The owner-locked direction (.myrobots/stereo-audio-plan/plan.md
+//     §1 Q1) is for this planner to DOUBLE-PATCH mono→stereo, which removes the
+//     dependency on per-module normalling entirely; until that lands, do not
+//     write "the engine normals" anywhere — it never has.
 //   * Fire per the EXACT stereoPairs tuple containing the clicked port.
 //   * Skip if the sibling TARGET input is already occupied.
 //
@@ -101,7 +121,8 @@ export interface StereoAutowirePlan {
  *      (resolves a `siblingToPortId` that ACTUALLY EXISTS as an INPUT port).
  *   2. The SOURCE def ALSO declares a matching sibling for `fromPortId` that
  *      ACTUALLY EXISTS as an OUTPUT port (so mono→stereo and "no matching
- *      source pair" both fall through to null — the engine normals R←L).
+ *      source pair" both fall through to null — the TARGET's own DSP normals
+ *      R←L, if it implements one; the engine does not. See the header note).
  *   3. The sibling TARGET input is currently UNPATCHED (skip if occupied —
  *      never overwrite an existing connection).
  *   4. canConnectToPort(sourceSiblingType, targetSiblingPort) passes (the
@@ -128,7 +149,8 @@ export function planStereoAutowire(args: PlanStereoAutowireArgs): StereoAutowire
 
   // 2) Source sibling must exist (the source ALSO declares the matching pair,
   //    and its sibling resolves to a real OUTPUT port). A mono source — no
-  //    matching pair — falls through to null here (engine normals R←L).
+  //    matching pair — falls through to null here, leaving the target's own DSP
+  //    to normal R←L (the ENGINE does not — see the header note).
   const siblingFromPortId = findStereoSibling(fromDef, fromPortId);
   if (!siblingFromPortId) return null;
   const siblingFromPort = fromDef.outputs.find((p) => p.id === siblingFromPortId);

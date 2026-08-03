@@ -67,7 +67,7 @@ export const charlottesEchosDef: AudioModuleDef = {
       "A destructive multi-head stereo delay — a four-stage cascade of echoes that colour and degrade the source rather than repeating it cleanly. Each of the four stages tap the delayed signal in turn; FEEDBACK is fed to every stage so repeats compound across the chain into smeared, endless tails, DECAY progressively tapers each later stage's level and adds in-loop drive and high-frequency loss for a darkening, dub-like decay, and PITCHUP shifts each stage up by a compounding ratio so the cascaded echoes climb in pitch — the classic ascending-shimmer effect. It is the audio sibling of the video-domain VDELAY, and roughly the sound of four COFEFVE analog delays stacked in serial. Reach for it when you want the wet path to abuse the signal.",
     inputs: {
       L: 'Left-channel input feeding the multi-head delay cascade.',
-      R: 'Right-channel input feeding the cascade.',
+      R: 'Right-channel input feeding the cascade. If unpatched it is normalled from L, so a mono source into L alone drives both channels of the cascade and the echoes come back centred rather than hard-left.',
       delay: 'CV that scales the DELAY-time knob (log-scaled), shifting all tap times together — sweep it for tape-warble and pitch-bend smears on the echoes.',
     },
     outputs: {
@@ -95,15 +95,15 @@ export const charlottesEchosDef: AudioModuleDef = {
       outputChannelCount: [1, 1],
     });
 
-    // Silence keeps the node active even when nothing is patched in.
+    // Silence keeps the node active even when nothing is patched in — pinned to
+    // input 0 ONLY. A ConstantSource on input 1 makes Chrome hand the processor
+    // a (silent) channel for input 1 forever, which defeats the DSP's
+    // `inputs[1]?.[0] ?? inputs[0]?.[0]` mono normal and renders an unpatched R
+    // as digital silence. Enforced by mono-normal-not-defeated.test.ts.
     const silenceL = ctx.createConstantSource();
-    const silenceR = ctx.createConstantSource();
     silenceL.offset.value = 0;
-    silenceR.offset.value = 0;
     silenceL.start();
-    silenceR.start();
     silenceL.connect(workletNode, 0, 0);
-    silenceR.connect(workletNode, 0, 1);
 
     const params = workletNode.parameters as unknown as Map<string, AudioParam>;
     for (const def of charlottesEchosDef.params) {
@@ -135,9 +135,7 @@ export const charlottesEchosDef: AudioModuleDef = {
       },
       dispose() {
         try { silenceL.stop(); } catch { /* */ }
-        try { silenceR.stop(); } catch { /* */ }
         silenceL.disconnect();
-        silenceR.disconnect();
         workletNode.disconnect();
       },
     };

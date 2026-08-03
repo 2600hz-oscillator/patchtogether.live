@@ -208,18 +208,20 @@ export const cofefveDelayDef: AudioModuleDef = {
       outputChannelCount: [1, 1],
     });
 
-    // Keep the node alive when nothing is patched in.
+    // Keep the node alive when nothing is patched in. Pinned to input 0 (audio
+    // L) and input 2 (clock) ONLY — NEVER input 1. A ConstantSource on input 1
+    // makes Chrome hand the processor a (silent) channel for it forever, which
+    // defeats the DSP's `inputs[1]?.[0] ?? inputs[0]?.[0]` mono normal and
+    // renders an unpatched inR as digital silence, contradicting inR's own doc
+    // ("normals to inL when left unpatched"). Enforced by
+    // mono-normal-not-defeated.test.ts.
     const silenceL = ctx.createConstantSource();
-    const silenceR = ctx.createConstantSource();
     const silenceClk = ctx.createConstantSource();
     silenceL.offset.value = 0;
-    silenceR.offset.value = 0;
     silenceClk.offset.value = 0;
     silenceL.start();
-    silenceR.start();
     silenceClk.start();
     silenceL.connect(workletNode, 0, 0);
-    silenceR.connect(workletNode, 0, 1);
     silenceClk.connect(workletNode, 0, 2);
 
     const params = workletNode.parameters as unknown as Map<string, AudioParam>;
@@ -294,10 +296,8 @@ export const cofefveDelayDef: AudioModuleDef = {
       dispose() {
         if (syncTimer !== null) clearInterval(syncTimer);
         try { silenceL.stop(); } catch { /* */ }
-        try { silenceR.stop(); } catch { /* */ }
         try { silenceClk.stop(); } catch { /* */ }
         silenceL.disconnect();
-        silenceR.disconnect();
         silenceClk.disconnect();
         workletNode.disconnect();
       },

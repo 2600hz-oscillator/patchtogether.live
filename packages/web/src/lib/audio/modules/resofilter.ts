@@ -135,9 +135,20 @@ export const resofilterDef: AudioModuleDef = {
       numberOfInputs: 1,
       numberOfOutputs: 2,
       // 2-channel input so a stereo source feeds L/R filter channels.
+      //
+      // 'speakers' (NOT 'discrete') is load-bearing. resofilter's stereo lives
+      // on two CHANNELS of ONE input, so the up-mix law — not a connection —
+      // decides what a MONO source puts on channel 1. Under 'discrete' a
+      // 1-channel source up-mixes by ZERO-FILLING channel 1, so the DSP's
+      // `inAudio[1] ?? inAudio[0]` mono normal can never fall through
+      // (channel 1 exists, it is just silent) and OUT R was digital silence on
+      // every patch the app can build. 'speakers' up-mixes mono by DUPLICATING
+      // it to both channels, which is the normal the port's own doc promises
+      // ("a mono source feeds both channels"); a real 2-channel source is
+      // unaffected by either law. Enforced by mono-normal-not-defeated.test.ts.
       channelCount: 2,
       channelCountMode: 'explicit',
-      channelInterpretation: 'discrete',
+      channelInterpretation: 'speakers',
       outputChannelCount: [1, 1],
     });
 

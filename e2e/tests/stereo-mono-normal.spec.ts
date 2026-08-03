@@ -1,0 +1,221 @@
+// e2e/tests/stereo-mono-normal.spec.ts
+//
+// A MONO SOURCE INTO A STEREO MODULE'S LEFT INPUT MUST NOT LEAVE ITS RIGHT
+// OUTPUT AT DIGITAL SILENCE.
+//
+// ── WHAT SHIPPED ─────────────────────────────────────────────────────────
+// Five modules declared a mono normal in their DSP (`inputs[1]?.[0] ??
+// inputs[0]?.[0]`, cofefve even commenting "// R normals to L") and then
+// defeated it in their FACTORY. Four pinned a 0-valued ConstantSource to
+// worklet input 1 for "liveness" — a connected input is never absent, so
+// Chrome handed the processor a permanently-silent channel and the `??` could
+// never fall through. resofilter carries stereo on two CHANNELS of one input
+// and set `channelInterpretation: 'discrete'`, whose up-mix ZERO-FILLS
+// channel 1 for a mono source, with the same result by a different route.
+//
+// Measured OUT R peak for a mono source into L, before → after:
+//   clouds 0.0000e+0 → 6.8858e-1 | shimmershine 0.0000e+0 → 4.4212e-1
+//   charlottes-echos 0.0000e+0 → 8.5852e-1 | cofefve 0.0000e+0 → 9.3254e-1
+//   resofilter 0.0000e+0 → 4.9990e-1
+//
+// ── WHY NO EXISTING LANE CAUGHT IT ───────────────────────────────────────
+// The ART scenarios for all four pinned modules drive the DSP class DIRECTLY
+// (`renderWorklet(new Proc(), { inputs: [input, null] })`, or a pure-TS core
+// mirror) and never call `def.factory()` — charlottes-echos' ART actually
+// EXERCISES the normal and passes, because the layer it tests was never
+// broken. The per-port sweep measures through a SCOPE against a fixed floor
+// and never compares a module's own L to its own R. So this spec is the only
+// place the REAL factory, the REAL worklet and a REAL cable meet.
+//
+// The source-level counterpart is
+// packages/web/src/lib/audio/mono-normal-not-defeated.test.ts, which stops a
+// sixth module joining the class.
+//
+// ── THE INSTRUMENT ───────────────────────────────────────────────────────
+// Both jacks are resolved through `getOutputNode(nodeId, portId)` — the same
+// seam the patch engine uses to materialise a cable — so this measures what a
+// user's cable receives, not an internal node. Sampling happens INSIDE the
+// page on a timer finer than one analyser window: a Playwright-side poll loop
+// would be one protocol round trip per sample on the same main thread as the
+// audio graph it measures, and a stalled thread would report "silent" and
+// "never looked" identically.
+//
+// Every module runs BOTH legs on EVERY execution, so the instrument is
+// negative-controlled permanently rather than once at authoring time:
+//   leg 1  nothing patched → OUT R silent  (a probe that manufactures signal,
+//                                           or a self-oscillating module,
+//                                           would make leg 2 vacuous)
+//   leg 2  mono into L     → OUT R AUDIBLE (the claim; 0.0000 before the fix)
+
+import { test, expect } from './_fixtures';
+import { spawnPatch } from './_helpers';
+
+const SUT = 'sut';
+const SRC = 'src';
+
+/** Below this, a jack is silence for our purposes (the defect read EXACTLY 0). */
+const SILENT_MAX = 1e-5;
+/** Above this, a jack is audibly making sound (matches the per-port sweep floor). */
+const AUDIBLE_MIN = 0.005;
+/** Sampling window per leg. */
+const WINDOW_MS = 1500;
+
+interface Sut {
+  /** Registry type. */
+  type: string;
+  /** The LEFT audio input a mono source gets patched into. */
+  inL: string;
+  /** The two output jacks. */
+  outL: string;
+  outR: string;
+  /** Why an unpatched R used to be silent — quoted in the failure message. */
+  mechanism: string;
+}
+
+const SUTS: readonly Sut[] = [
+  { type: 'clouds',          inL: 'in_l',  outL: 'out_l', outR: 'out_r', mechanism: 'ConstantSource pinned to worklet input 1' },
+  { type: 'shimmershine',    inL: 'in_l',  outL: 'out_l', outR: 'out_r', mechanism: 'ConstantSource pinned to worklet input 1' },
+  { type: 'charlottesEchos', inL: 'L',     outL: 'L',     outR: 'R',     mechanism: 'ConstantSource pinned to worklet input 1' },
+  { type: 'cofefve',         inL: 'inL',   outL: 'outL',  outR: 'outR',  mechanism: 'ConstantSource pinned to worklet input 1' },
+  // resofilter's stereo is two CHANNELS of ONE input, so it has no in_r to
+  // patch at all — the normal is the ONLY way its OUT R can ever speak.
+  { type: 'resofilter',      inL: 'audio', outL: 'out_l', outR: 'out_r', mechanism: "channelInterpretation: 'discrete' zero-filling channel 1" },
+];
+
+interface Probe { outL: AnalyserNode; outR: AnalyserNode; sameEdge: boolean }
+
+/** Hang an analyser on each output PORT, via the cable-materialising seam. */
+async function installProbe(page: import('@playwright/test').Page, sut: Sut): Promise<void> {
+  await page.evaluate(({ SUT, outL, outR }) => {
+    const w = globalThis as unknown as {
+      __engine: () => {
+        getDomain(d: string): {
+          getOutputNode(nodeId: string, portId: string): { node: AudioNode; output: number } | null;
+        };
+      };
+      __mnProbe?: Probe;
+    };
+    const audio = w.__engine().getDomain('audio');
+    const l = audio.getOutputNode(SUT, outL);
+    const r = audio.getOutputNode(SUT, outR);
+    if (!l) throw new Error(`\`${outL}\` port has no audio node`);
+    if (!r) throw new Error(`\`${outR}\` port has no audio node`);
+    const ctx = l.node.context as AudioContext;
+
+    // Reported, not asserted: if both jacks were ONE edge, "R follows L" would
+    // be trivially true for the wrong reason. That is a different defect
+    // (twotracks-stereo.spec.ts owns it) and must be distinguishable here.
+    const sameEdge = l.node === r.node && l.output === r.output;
+
+    const mk = (ref: { node: AudioNode; output: number }) => {
+      const a = ctx.createAnalyser();
+      a.fftSize = 2048;
+      ref.node.connect(a, ref.output);
+      return a;
+    };
+    w.__mnProbe = { outL: mk(l), outR: mk(r), sameEdge };
+  }, { SUT, outL: sut.outL, outR: sut.outR });
+}
+
+/**
+ * Peak-hold both jacks over `ms`, accumulating IN the page. The accumulator
+ * survives a main-thread stall, so a loaded runner reports every value it
+ * managed to compute — and reports its own sample count, so "silent" and
+ * "never sampled" are never confused for one another.
+ */
+async function measure(
+  page: import('@playwright/test').Page,
+  ms: number,
+): Promise<{ lPeak: number; rPeak: number; samples: number; sameEdge: boolean }> {
+  return page.evaluate(
+    ({ ms }) =>
+      new Promise<{ lPeak: number; rPeak: number; samples: number; sameEdge: boolean }>((resolve) => {
+        const p = (globalThis as unknown as { __mnProbe: Probe }).__mnProbe;
+        const lBuf = new Float32Array(p.outL.fftSize);
+        const rBuf = new Float32Array(p.outR.fftSize);
+        let lPeak = 0, rPeak = 0, samples = 0;
+        const peak = (b: Float32Array) => {
+          let m = 0;
+          for (let i = 0; i < b.length; i++) { const a = Math.abs(b[i]!); if (a > m) m = a; }
+          return m;
+        };
+        const timer = setInterval(() => {
+          p.outL.getFloatTimeDomainData(lBuf);
+          p.outR.getFloatTimeDomainData(rBuf);
+          lPeak = Math.max(lPeak, peak(lBuf));
+          rPeak = Math.max(rPeak, peak(rBuf));
+          samples++;
+        }, 10);
+        setTimeout(() => { clearInterval(timer); resolve({ lPeak, rPeak, samples, sameEdge: p.sameEdge }); }, ms);
+      }),
+    { ms },
+  );
+}
+
+test.describe('stereo modules: an unpatched R output follows L (mono normal)', () => {
+  for (const sut of SUTS) {
+    test(`${sut.type}: a MONO source into ${sut.inL} makes ${sut.outR} audible`, async ({ page }) => {
+      // ── LEG 1: NOTHING PATCHED. The permanent negative control. If the probe
+      //    manufactured signal of its own, or the module self-oscillated, leg 2
+      //    would pass no matter what the factory did.
+      await page.goto('/rack');
+      await spawnPatch(page, [{ id: SUT, type: sut.type }]);
+      await installProbe(page, sut);
+      const idle = await measure(page, WINDOW_MS);
+
+      expect(
+        idle.samples,
+        `${sut.type}: the probe never sampled — instrument failure, not a reading `
+        + `(sameEdge=${idle.sameEdge})`,
+      ).toBeGreaterThan(0);
+      expect(
+        idle.rPeak,
+        `${sut.type}: with NOTHING patched, ${sut.outR} must be silent. A non-zero value here `
+        + `means this probe manufactures signal, which would make the real assertion below `
+        + `vacuous (L=${idle.lPeak.toExponential(4)}, R=${idle.rPeak.toExponential(4)}, `
+        + `samples=${idle.samples})`,
+      ).toBeLessThan(SILENT_MAX);
+
+      // ── LEG 2: MONO SOURCE INTO L ONLY. `noise` declares no stereoPairs, so
+      //    the stereo auto-wire correctly writes ONE edge — the exact patch the
+      //    defect made half-silent. Nothing is connected to the R input, so the
+      //    DSP's own normal is the only thing that can make OUT R speak.
+      await page.goto('/rack');
+      await spawnPatch(
+        page,
+        [{ id: SRC, type: 'noise', params: { level: 0.8 } }, { id: SUT, type: sut.type }],
+        [{ id: 'e1', from: { nodeId: SRC, portId: 'white' }, to: { nodeId: SUT, portId: sut.inL } }],
+      );
+      await installProbe(page, sut);
+      const mono = await measure(page, WINDOW_MS);
+
+      const vitals =
+        `L=${mono.lPeak.toExponential(4)}, R=${mono.rPeak.toExponential(4)}, `
+        + `samples=${mono.samples}, sameEdge=${mono.sameEdge}`;
+
+      // Vacuity guard first: a silent module would pass any claim about R.
+      expect(
+        mono.lPeak,
+        `${sut.type}: ${sut.outL} must be making sound at all, or the claim about `
+        + `${sut.outR} is vacuous (${vitals})`,
+      ).toBeGreaterThan(AUDIBLE_MIN);
+
+      // THE CLAIM. Read exactly 0.0000e+0 before the fix, for all five modules.
+      expect(
+        mono.rPeak,
+        `${sut.type}: a MONO source patched into ${sut.inL} alone must drive ${sut.outR} via the `
+        + `DSP's mono normal. Digital silence here means the factory defeated that normal again `
+        + `(${sut.mechanism}) and half of this module's output is dead for every mono patch `
+        + `a user can build (${vitals})`,
+      ).toBeGreaterThan(AUDIBLE_MIN);
+
+      // Diagnosis LAST, so a regression fails on what a listener would notice
+      // rather than short-circuiting on graph shape before measuring a sample.
+      expect(
+        mono.sameEdge,
+        `${sut.type}: ${sut.outL} and ${sut.outR} must not resolve to the same node+output — `
+        + `that would make "R follows L" true for the wrong reason (${vitals})`,
+      ).toBe(false);
+    });
+  }
+});
