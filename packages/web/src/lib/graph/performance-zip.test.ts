@@ -143,6 +143,99 @@ describe('buildPerformanceZip / parsePerformanceZip', () => {
     const z2 = buildPerformanceZip({ bundle, media, savedAt: 7 });
     expect(Array.from(z1)).toEqual(Array.from(z2));
   });
+
+  // ── THE LEG THE TEST ABOVE COULD ONLY PASS BY LUCK ──────────────────────
+  //
+  // Two back-to-back calls almost always land in the same 2-second DOS-time
+  // bucket, so the assertion above was blind to the clock read it is NAMED
+  // after — until a loaded CI runner spaced the two calls across a boundary
+  // and it went red in exactly two bytes (the mod-time low byte, written once
+  // in the local file header and once in the central directory).
+  //
+  // Faking the clock is what makes this DETERMINISTICALLY able to fail: the
+  // two builds are now guaranteed to sit on opposite sides of a boundary, so
+  // a regression to `zipSync(files)` fails EVERY run rather than one in N.
+  it('stays byte-identical when the wall clock advances between builds', () => {
+    const { bundle } = realBundle();
+    const media: PerformanceMedia[] = [
+      { nodeId: 'v1', handleId: 'h-vid-1', role: 'video', name: 'clip.webm', bytes: VIDEO_BYTES },
+    ];
+    const RealDate = Date;
+    const realNow = Date.now;
+    try {
+      // fflate reads the ambient clock via `new Date()`, so move the whole
+      // clock, not just Date.now.
+      let t = Date.UTC(2024, 0, 1, 12, 0, 0);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).Date = class extends RealDate {
+        constructor(...args: unknown[]) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          if (args.length === 0) super(t as any);
+          else super(...(args as []));
+        }
+        static now(): number { return t; }
+      };
+
+      const z1 = buildPerformanceZip({ bundle, media, savedAt: 7 });
+      t += 10_000; // five DOS ticks later — far past the 2 s granularity
+      const z2 = buildPerformanceZip({ bundle, media, savedAt: 7 });
+
+      const a = Array.from(z1);
+      const b = Array.from(z2);
+      const offsets: number[] = [];
+      for (let i = 0; i < Math.min(a.length, b.length); i++) if (a[i] !== b[i]) offsets.push(i);
+      expect(
+        offsets,
+        `the archive changed at byte offsets [${offsets.join(', ')}] purely ` +
+          `because 10 s of wall clock passed. That is the ZIP entry mod-time ` +
+          `(DOS, 2 s granularity), written into BOTH the local file header and ` +
+          `the central directory — pass an explicit \`mtime\` to zipSync.`,
+      ).toEqual([]);
+      expect(a.length, 'and the length must not move either').toBe(b.length);
+    } finally {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).Date = RealDate;
+      Date.now = realNow;
+    }
+  });
+
+  // NEGATIVE CONTROL on the clock-faking harness itself: if the fake did not
+  // actually move the ambient clock, the leg above would pass against the very
+  // bug it exists to catch. Prove the fake is real by showing that a RAW
+  // `zipSync` — with no explicit mtime — DOES move under the same fake.
+  it('NEGATIVE CONTROL: the faked clock really does reach fflate', async () => {
+    const { zipSync, strToU8 } = await import('fflate');
+    const files = { 'x.json': strToU8('{"a":1}') };
+    const RealDate = Date;
+    const realNow = Date.now;
+    try {
+      let t = Date.UTC(2024, 0, 1, 12, 0, 0);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).Date = class extends RealDate {
+        constructor(...args: unknown[]) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          if (args.length === 0) super(t as any);
+          else super(...(args as []));
+        }
+        static now(): number { return t; }
+      };
+      const a = zipSync(files);
+      t += 10_000;
+      const b = zipSync(files);
+      let diffs = 0;
+      for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) diffs++;
+      expect(
+        diffs,
+        'an UNPINNED zipSync must differ under the faked clock — if it does ' +
+          'not, the fake is not reaching fflate and the determinism leg above ' +
+          'is vacuous',
+      ).toBeGreaterThan(0);
+    } finally {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).Date = RealDate;
+      Date.now = realNow;
+    }
+  });
 });
 
 // --- Fix B: ALL per-slot media (VIDEOVARISPEED 7 videos + PICTUREBOX 7 images)
