@@ -272,6 +272,147 @@ describe('buildPolyLanes: chord allocation', () => {
 // 3. Factory wiring (mock requestMIDIAccess + drive synthetic MIDI)
 // ════════════════════════════════════════════════════════════════════
 
+// ════════════════════════════════════════════════════════════════════
+// 3a. THE PR REGRESSION — a MIDI LANE must not silence a control surface
+//     that shares its MIDIAccess.
+//
+// Drives the REAL `midiLaneDef.factory` through the full user gesture set —
+// spawn, connect, re-point the device, dispose — while a "Push-shaped"
+// bystander holds one port of the SAME access, and asserts the bystander keeps
+// receiving throughout.
+//
+// WHY A SHARED ACCESS. Measured on Chromium 2026-08-03 against real CoreMIDI
+// hardware: `navigator.requestMIDIAccess()` returns a distinct MIDIAccess per
+// call and `a1.inputs.get(id) !== a2.inputs.get(id)` for every port, so in
+// production the lane and the Push hold DIFFERENT MIDIInput objects and the old
+// sweep could not reach across. The shared-access world modelled here is the
+// pessimistic one — and it is exactly what the e2e/unit MIDI doubles hand every
+// caller (`e2e/_helpers/midi.ts` returns one `access` object to all of them).
+// The lane must be correct in both, and this is the harder of the two.
+//
+// The NEGATIVE CONTROL is permanent: the pre-fix routine is reproduced verbatim
+// and asserted to kill the bystander on every run, so this test cannot quietly
+// stop being able to fail.
+// ════════════════════════════════════════════════════════════════════
+
+describe('midiLaneDef.factory — a lane must not silence a surface sharing its access', () => {
+  let originalRequestMIDIAccess: unknown;
+
+  beforeEach(() => {
+    originalRequestMIDIAccess = (
+      globalThis as { navigator?: { requestMIDIAccess?: unknown } }
+    ).navigator?.requestMIDIAccess;
+  });
+
+  function install(access: MidiAccessLike): void {
+    const nav = (globalThis as unknown as { navigator?: Record<string, unknown> }).navigator;
+    if (!nav) {
+      (globalThis as unknown as { navigator?: Record<string, unknown> }).navigator = {
+        requestMIDIAccess: vi.fn(async () => access),
+      };
+    } else {
+      nav.requestMIDIAccess = vi.fn(async () => access);
+    }
+  }
+  function restore(): void {
+    const nav = (globalThis as unknown as { navigator?: Record<string, unknown> }).navigator;
+    if (nav && originalRequestMIDIAccess === undefined) delete nav.requestMIDIAccess;
+    else if (nav) nav.requestMIDIAccess = originalRequestMIDIAccess;
+  }
+
+  /** One access, two ports: the control surface's and a keyboard's. */
+  function stage() {
+    const surface = makeMidiInput('Ableton Push 2 Live Port');
+    const keyboard = makeMidiInput('Some Keyboard');
+    // Keyboard FIRST: `pickDefaultDevice()` auto-selects `inputs.values()`'s
+    // first entry, so this models the ordinary rack (the lane lands on the
+    // keyboard, not on the surface). The deliberate collision — a lane pointed
+    // AT the surface's port — is its own case below.
+    const access = makeMidiAccess(keyboard, surface);
+    install(access);
+    const heard: number[][] = [];
+    // The surface installs its handler FIRST, exactly as push2-device.bind does.
+    surface.onmidimessage = (ev) => heard.push([...ev.data]);
+    return { surface, keyboard, access, heard };
+  }
+
+  const PAD = [0x90, 36, 100];
+
+  it('NEGATIVE CONTROL — the PRE-FIX sweep silences the surface', () => {
+    const { surface, access, heard } = stage();
+    try {
+      // Verbatim the routine `attachToDevice`/`dispose` used to run:
+      for (const inp of access.inputs.values()) inp.onmidimessage = null;
+      surface.fire({ data: new Uint8Array(PAD), timeStamp: 0 });
+      expect(heard, 'the old sweep evicts a handler the lane never installed').toEqual([]);
+    } finally {
+      restore();
+    }
+  });
+
+  it('spawn → re-point → dispose: the surface keeps receiving throughout', async () => {
+    const { surface, keyboard, heard } = stage();
+    try {
+      const ctx = makeMockCtx();
+      const handle = await midiLaneDef.factory(ctx as unknown as AudioContext, makeNode());
+      const api = handle.read?.('card-api') as MidiLaneApi;
+      expect(await api.connect(), 'lane connected').toBe(true);
+
+      // SPAWN — the lane auto-picked the first device on the access.
+      surface.fire({ data: new Uint8Array(PAD), timeStamp: 0 });
+      expect(heard.length, 'surface alive after the lane spawned').toBe(1);
+
+      // RE-POINT — every device the picker can offer, including the surface's
+      // own port and "none". Each of these used to run the sweep.
+      api.selectDevice(keyboard.id);
+      surface.fire({ data: new Uint8Array(PAD), timeStamp: 0 });
+      api.selectDevice(null);
+      surface.fire({ data: new Uint8Array(PAD), timeStamp: 0 });
+      api.selectDevice(keyboard.id);
+      surface.fire({ data: new Uint8Array(PAD), timeStamp: 0 });
+      expect(heard.length, 'surface alive across three re-points').toBe(4);
+
+      // DISPOSE — the module is deleted from the rack.
+      handle.dispose?.();
+      surface.fire({ data: new Uint8Array(PAD), timeStamp: 0 });
+      expect(heard.length, 'surface alive after the lane was deleted').toBe(5);
+      expect(
+        typeof surface.onmidimessage,
+        "the surface's slot still holds its own handler",
+      ).toBe('function');
+    } finally {
+      restore();
+    }
+  });
+
+  it('a lane pointed AT the surface releases only what it took (last-writer, then clean)', async () => {
+    // The one genuinely ambiguous case: the user points the lane at the same
+    // port the surface owns. Last writer wins the slot (the browser has one),
+    // but disposing the lane must not leave the port dead — it releases the
+    // handler IT installed, and the port is free for the surface to re-bind.
+    const { surface, heard } = stage();
+    try {
+      const ctx = makeMockCtx();
+      const handle = await midiLaneDef.factory(ctx as unknown as AudioContext, makeNode());
+      const api = handle.read?.('card-api') as MidiLaneApi;
+      await api.connect();
+      api.selectDevice(surface.id);
+      surface.fire({ data: new Uint8Array(PAD), timeStamp: 0 });
+      expect(heard.length, 'the lane took the slot — surface no longer hears it').toBe(0);
+
+      handle.dispose?.();
+      expect(surface.onmidimessage, 'the lane released what it took').toBeNull();
+      // The surface re-binds (what push2-device.bind() does on hot-plug).
+      surface.onmidimessage = (ev) => heard.push([...ev.data]);
+      surface.fire({ data: new Uint8Array(PAD), timeStamp: 0 });
+      expect(heard.length, 'surface recovers').toBe(1);
+    } finally {
+      restore();
+    }
+  });
+});
+
+
 describe('midiLaneDef.factory — MIDI demux → ConstantSourceNode automation', () => {
   let originalRequestMIDIAccess: unknown;
 

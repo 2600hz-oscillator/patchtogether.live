@@ -43,6 +43,7 @@ import {
 // can't silently drift into "fixed in 1 of 3" again (the original root cause of
 // note-jitter under load). See packages/web/src/lib/audio/midi-timing.ts.
 import { createMidiScheduler } from '$lib/audio/midi-timing';
+import { createMidiInputClaim } from '$lib/midi/input-attach';
 // Re-exported for callers/tests that historically imported these from midiclock.
 export {
   MIDI_PPQN,
@@ -184,6 +185,8 @@ export const midiclockDef: AudioModuleDef = {
     let selectedDeviceId: string | null = savedData.lastDeviceId ?? DEFAULT_DATA.lastDeviceId;
 
     let access: MidiAccessLike | null = null;
+    /** Identity-scoped handler-slot claim — see $lib/midi/input-attach. */
+    const claim = createMidiInputClaim('midiclock');
     let permissionDenied = false;
     let subscriber: ((s: MidiclockCardState) => void) | null = null;
 
@@ -277,13 +280,12 @@ export const midiclockDef: AudioModuleDef = {
       // 0xFE Active Sensing and 0xFF Reset are intentionally ignored.
     }
 
+    /** Listen on EXACTLY the chosen device; re-targeting releases only the
+     *  port THIS module held (see $lib/midi/input-attach). */
     function attachToDevice(deviceId: string | null): void {
       if (!access) return;
-      for (const inp of access.inputs.values()) inp.onmidimessage = null;
-      if (deviceId === null) return;
-      const inp = access.inputs.get(deviceId);
-      if (!inp) return;
-      inp.onmidimessage = handleMidiMessage;
+      const inp = deviceId === null ? undefined : access.inputs.get(deviceId);
+      claim.attachOnly(inp ? [inp] : [], handleMidiMessage);
     }
 
     function pickDefaultDevice(): string | null {
@@ -372,8 +374,9 @@ export const midiclockDef: AudioModuleDef = {
         return undefined;
       },
       dispose() {
+        // Release ONLY the port this clock installed a handler on.
+        claim.detach();
         if (access) {
-          for (const inp of access.inputs.values()) inp.onmidimessage = null;
           access.onstatechange = null;
           access = null;
         }

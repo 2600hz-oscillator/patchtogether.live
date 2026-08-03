@@ -18,6 +18,7 @@ import type {
   MidiEventLike,
 } from '$lib/audio/modules/midi-cv-buddy';
 import { webMidiAvailable } from '$lib/audio/modules/midi-cv-buddy';
+import { createMidiInputClaim } from './input-attach';
 import {
   parseNoteMessage,
   noteMatches,
@@ -118,6 +119,8 @@ export function parseCcMessage(data: Uint8Array): { channel: number; cc: number;
 // ---------------- Internal singleton state ----------------
 
 let access: MidiAccessLike | null = null;
+/** Identity-scoped handler-slot claim — see $lib/midi/input-attach. */
+const claim = createMidiInputClaim('midi-learn');
 let connectStarted = false;
 let connectFailed = false;
 
@@ -297,13 +300,26 @@ export async function connect(): Promise<boolean> {
   }
 }
 
+/** EVERY-PORT BY DESIGN, and now declared rather than incidental: MIDI Learn
+ *  binds a knob to whatever the user physically touches, so it must hear every
+ *  device. It filters by MESSAGE TYPE (CC vs note) and by ADDRESS (channel +
+ *  cc/note) — never by device. See `MIDI_SUBSCRIBER_LEDGER`.
+ *
+ *  ⚠ Consequence, now stated where it is true instead of assumed away: control
+ *  surfaces are NOT excluded. Arming a learn and then touching a Push 2 encoder
+ *  or a Launchpad button captures THAT control. `push2-device.svelte.ts` used
+ *  to claim its own sysex access prevented this; it does not — a separately
+ *  requested MIDIAccess has its own MIDIInput objects and its own handler
+ *  slots, so both subsystems receive the same physical message. Whether learn
+ *  should skip bound surfaces is an owner decision, deliberately NOT taken
+ *  here. */
 function attachAllInputs(): void {
   if (!access) return;
-  for (const inp of access.inputs.values()) attachInput(inp);
+  claim.attachOnly([...access.inputs.values()], handleMidi);
 }
 
 function attachInput(inp: MidiInputLike): void {
-  inp.onmidimessage = handleMidi;
+  claim.attach(inp, handleMidi);
 }
 
 // ---------------- Incoming CC dispatch ----------------

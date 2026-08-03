@@ -52,6 +52,7 @@ import {
   type Push2RxEvent,
 } from './push2-sysex';
 import type { Push2LedSpec } from './push2-map';
+import { createMidiInputClaim } from '$lib/midi/input-attach';
 
 // ---------------------------------------------------------------------------
 // Singleton state
@@ -69,6 +70,11 @@ interface Binding {
   lastSent: Map<string, number>;
 }
 const unit: Binding = { inputId: null, outputId: null, input: null, output: null, lastSent: new Map() };
+
+/** Identity-scoped handler-slot claim — see $lib/midi/input-attach. ONE stable
+ *  handler reference so the claim recognises its own slot on release. */
+const claim = createMidiInputClaim('push2');
+const inbound = (ev: MidiEventLike): void => handleInbound(ev);
 
 const keyListeners = new Set<(e: Push2RxEvent) => void>();
 
@@ -275,14 +281,14 @@ export function bind(inputId: string, outputId: string): boolean {
   const input = access.inputs.get(inputId) ?? null;
   const output = access.outputs.get(outputId) ?? null;
   if (!input || !output) return false;
-  const prevInput = unit.input;
   unit.inputId = inputId;
   unit.outputId = outputId;
   unit.input = input;
   unit.output = output;
   unit.lastSent.clear();
-  input.onmidimessage = (ev: MidiEventLike) => handleInbound(ev);
-  if (prevInput && prevInput !== input) prevInput.onmidimessage = null;
+  // Listen on EXACTLY the newly bound port; the previous one is released only
+  // if it still holds OUR handler (never another subsystem's).
+  claim.attachOnly([input], inbound);
   setLiveMode();
   try {
     console.info('[push2] bound — IN:', input.name ?? input.id, '· OUT:', output.name ?? output.id);
@@ -308,7 +314,7 @@ function reattachBoundPort(): void {
   const output = access.outputs.get(unit.outputId) ?? null;
   if (input && input !== unit.input) {
     unit.input = input;
-    input.onmidimessage = (ev: MidiEventLike) => handleInbound(ev);
+    claim.attachOnly([input], inbound);
   }
   if (output && output !== unit.output) {
     unit.output = output;
@@ -336,7 +342,7 @@ export function setLiveMode(): void {
  *  (no mode SysEx on release — it powered up in Live and we never left it). */
 export function unbind(): void {
   if (unit.output) clear();
-  if (unit.input) unit.input.onmidimessage = null;
+  claim.detach();
   unit.inputId = null;
   unit.outputId = null;
   unit.input = null;
@@ -491,7 +497,7 @@ export async function installSimulatedPush2(): Promise<SimulatedPush2> {
 
 /** Reset ALL singleton state — test isolation between cases. */
 export function __test_resetPush2(): void {
-  if (unit.input) unit.input.onmidimessage = null;
+  claim.detach();
   unit.inputId = null;
   unit.outputId = null;
   unit.input = null;

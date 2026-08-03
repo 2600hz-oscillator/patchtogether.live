@@ -37,6 +37,7 @@ import type {
 } from '$lib/audio/modules/midi-cv-buddy';
 import type { MidiOutputLike } from '$lib/audio/modules/midi-out-buddy';
 import { webMidiAvailable } from '$lib/audio/modules/midi-cv-buddy';
+import { createMidiInputClaim } from '$lib/midi/input-attach';
 import {
   LP_CELLS,
   LP_WIDTH,
@@ -110,6 +111,20 @@ let connectStarted = false;
 let connectFailed = false;
 
 const units: Record<LaunchpadUnit, UnitBinding> = { L: newUnit(), R: newUnit() };
+
+/** Identity-scoped handler-slot claims, ONE PER UNIT — see $lib/midi/input-attach.
+ *  Per-unit rather than per-file because L and R can legitimately swap input
+ *  objects during a re-pair, and each must release only its own slot.
+ *  `inbound` holds one stable function reference per unit so the claim can
+ *  recognise its own handler by identity. */
+const claims: Record<LaunchpadUnit, ReturnType<typeof createMidiInputClaim>> = {
+  L: createMidiInputClaim('launchpad-L'),
+  R: createMidiInputClaim('launchpad-R'),
+};
+const inbound: Record<LaunchpadUnit, (ev: MidiEventLike) => void> = {
+  L: (ev) => handleInbound('L', ev),
+  R: (ev) => handleInbound('R', ev),
+};
 
 const keyListeners = new Set<(e: LaunchpadKeyEvent) => void>();
 
@@ -314,31 +329,21 @@ export function bindUnit(unit: LaunchpadUnit, inputId: string, outputId: string)
   const output = access.outputs.get(outputId) ?? null;
   if (!input || !output) return false;
   const u = units[unit];
-  const prevInput = u.input;
   u.inputId = inputId;
   u.outputId = outputId;
   u.input = input;
   u.output = output;
   u.lastRgb.clear();
-  input.onmidimessage = (ev: MidiEventLike) => handleInbound(unit, ev);
-  // Detach this unit's PREVIOUS input — but ONLY if no unit still references it.
-  // During an L↔R pairing swap, the two units exchange input objects; binding L
-  // to the other unit's old input must NOT null that input (it's about to be /
-  // already is owned by this unit), and re-binding R must NOT null L's new input.
-  // Nulling by object-identity alone killed the freshly-wired LEFT input on real
-  // hardware (LEFT pads dead, RIGHT working). Detach only a truly-orphaned input.
-  if (prevInput && prevInput !== input && !inputStillBound(prevInput)) {
-    prevInput.onmidimessage = null;
-  }
+  // Listen on EXACTLY this unit's port. The L↔R pairing swap used to need a
+  // bespoke `inputStillBound()` guard here: the two units exchange input
+  // objects, and nulling the previous one by object identity alone killed the
+  // freshly-wired LEFT input on real hardware (LEFT pads dead, RIGHT working).
+  // The claim seam generalises that fix — release only clears a slot that still
+  // holds THIS unit's own handler, so the unit that took it over keeps running.
+  claims[unit].attachOnly([input], inbound[unit]);
   enterProgrammerMode(unit);
   bumpStatus();
   return true;
-}
-
-/** Is a MIDI input still referenced by EITHER bound unit? (Guards the L↔R swap
- *  detach: an input being handed from one unit to the other is NOT orphaned.) */
-function inputStillBound(input: MidiInputLike): boolean {
-  return units.L.input === input || units.R.input === input;
 }
 
 /** Re-resolve a unit's MidiInput/Output objects from the current access by the
@@ -352,7 +357,7 @@ function reattachBoundPorts(): void {
     const output = access.outputs.get(u.outputId) ?? null;
     if (input && input !== u.input) {
       u.input = input;
-      input.onmidimessage = (ev: MidiEventLike) => handleInbound(unit, ev);
+      claims[unit].attachOnly([input], inbound[unit]);
     }
     if (output && output !== u.output) {
       u.output = output;
@@ -378,7 +383,10 @@ export function unbindUnit(unit: LaunchpadUnit): void {
     clearUnit(unit);
     exitProgrammerMode(unit);
   }
-  if (u.input) u.input.onmidimessage = null;
+  // Release only THIS unit's slot. (Was: an unconditional null, which during a
+  // pairing swap would evict the other unit's freshly-installed handler — the
+  // hole `inputStillBound()` plugged in bindUnit but never here.)
+  claims[unit].detach();
   u.inputId = null;
   u.outputId = null;
   u.input = null;
@@ -805,8 +813,7 @@ export async function installSimulatedLaunchpadSingle(): Promise<SimulatedLaunch
 /** Reset ALL singleton state — test isolation between cases. */
 export function __test_resetLaunchpad(): void {
   for (const unit of ['L', 'R'] as const) {
-    const u = units[unit];
-    if (u.input) u.input.onmidimessage = null;
+    claims[unit].detach();
     units[unit] = newUnit();
   }
   access = null;
