@@ -432,24 +432,277 @@ const EXEMPT_OUTPUT_EMIT: Record<string, string> = {
   'gibribbon.health_cv':    'idle DC (healthy=0.75) is constant + AC-coupled below the scope floor; covered by gibribbon-events.test.ts (healthToCv) + gibribbon.spec.ts',
 };
 
-// ─── RATCHET — output-emit exemption caps ────────────────────────────────
-// EXEMPT_OUTPUT_EMIT_MODULES (whole-module) + EXEMPT_OUTPUT_EMIT (per-port)
-// let a module/port OPT OUT of the per-port output-emit signal-flow assertion.
-// Every entry is coverage we still owe. These caps FREEZE the lists at today's
-// size so they can only SHRINK as coverage is reconciled — adding a NEW
-// exemption fails this test on purpose.
-//   RATCHET RULE: exemptions only shrink. LOWER the number when you fix
-//   coverage and delete an entry. Only RAISE it for a genuinely new,
-//   documented exemption — NEVER to make a red sweep go green.
-test('RATCHET: output-emit exemption lists only shrink', () => {
+// ─── DENY BY DEFAULT — the output-emit exemption lists are pinned KEY BY KEY ──
+//
+// EXEMPT_OUTPUT_EMIT_MODULES (whole-module) + EXEMPT_OUTPUT_EMIT (per-port) let
+// a module/port OPT OUT of the per-port output-emit signal-flow assertion.
+// Every entry is coverage we still owe, so every edit to either list has to be
+// reviewed — which means every edit has to be VISIBLE and has to FAIL a gate.
+//
+// WHY A KEY LIST AND NOT A COUNT (changed 2026-08-03). These were COUNT
+// ratchets: `Object.keys(…).length <= 43` and `<= 65`. Three failure modes,
+// all three observed in this repo, and the first two were LIVE right here:
+//
+//   1. SLACK IS PRE-AUTHORISATION. The caps read 43 / 65 against an ACTUAL
+//      40 / 63 — FIVE unreviewed exemption slots standing open. Under a cap
+//      with slack, adding a missing-coverage exemption is GREEN and there is
+//      nothing in the diff a reviewer is prompted to look at. The old cap
+//      comments recorded four historical adds doing exactly that, verbatim:
+//      "count 40 ≤ 43, fits within slack, no raise". Commit 72734704
+//      (sixstrum.out) added an entry without touching the cap at all.
+//   2. A NUMBER CANNOT MERGE-CONFLICT. Two PRs can each be green ALONE and RED
+//      COMBINED — #1311 pinned a count against a tree that lacked a module,
+//      #1308 added that module, and main went red twice in one day. A key LIST
+//      collides textually, so git forces the reconciliation at rebase time
+//      rather than on main.
+//   3. A COUNT IS BLIND TO A SWAP. Delete one entry, add another: the length
+//      is unchanged and a brand-new exemption lands in total silence.
+//
+// So both lists are pinned KEY BY KEY against a sorted frozen array AND
+// ANCHORED TO THE ARTIFACT: every module key must still name a live REGISTRY
+// module, and every per-port key a live OUTPUT port on that module. An
+// exemption that outlives the thing it exempts is RED — a stale exemption is
+// one nobody is watching.
+//
+// TO EDIT: change the map above AND the frozen array below in the SAME commit,
+// then re-pin the generated ledger (`flox activate -- task test:ledger:accept`
+// — scripts/test-ledger.mjs counts BOTH maps into
+// docs/testing/test-ledger.generated.md, and a stale ledger is a hard red in
+// the unit lane). Removing an entry is the good direction and is exactly as
+// loud as adding one. That is the point: the gate has no opinion about the
+// direction, only about whether a human looked.
+//
+// THIS TEST IS DELIBERATELY TOP-LEVEL — do NOT wrap it in a `test.describe`.
+// The required e2e lane runs a `--grep-invert` that drops the collab and
+// capacity tag families plus the BEHAVIORAL input-coverage sweep (ci.yml holds
+// the literal pattern), and it shards by title — so an un-tagged, top-level
+// title survives every filter. Nesting this under a describe that later picks
+// up one of those tags would silently demote the gate to informational without
+// changing one line of its body.
+//
+// The tag literals are deliberately NOT reproduced here, in prose or anywhere
+// else in this file. The collab attest BASIS is resolved by grepping spec
+// CONTENT for those two tokens in their sigil form (COLLAB_TAG_RE in
+// scripts/collab-attest-lib.ts), so merely quoting them in a comment enrols
+// this spec in the basis, moves the collab content hash, and reddens
+// collab-attest — after which every future edit to this file costs a re-attest.
+// Write them bare when you need to name them.
+//
+// SCOPE — what this gate is structurally UNABLE to see, stated here so a green
+// run is not read as more than it is:
+//   * The two AUTO-skips in the emit sweep below — the effect-shape heuristic
+//     (an audio/video/image input ⇒ "needs an upstream") and
+//     PURE_CV_GATE_UTILITY — exempt modules with NO list entry at all. They
+//     are COMPUTED, not DECLARED, so nothing here can enumerate them.
+//   * SKIP_SPAWN and EXEMPT_INPUT_DRIVE are separate lists and are not pinned
+//     key-by-key (they are counted in the generated ledger only).
+//   * Whether an entry's cited "covered by …" spec exists, or asserts what its
+//     prose claims. The anchor proves the PORT is real; it proves exactly
+//     nothing about the coverage the reason promises.
+
+// The EXACT key set of EXEMPT_OUTPUT_EMIT_MODULES, sorted. Deliberate
+// duplication: this array is the review surface and the merge-conflict surface.
+const PINNED_MODULE_EXEMPT_KEYS: readonly string[] = Object.freeze([
+  'archivist', 'audioIn', 'blood', 'bluebox', 'cvBuddy', 'drumseqz', 'es9',
+  'fader', 'featurecv', 'flipper', 'gamepad', 'illogic', 'joystick', 'macseq',
+  'marbles', 'midiCvBuddy', 'midiOutBuddy', 'midiclock', 'milkdrop', 'modtris',
+  'moog911a', 'moog956', 'moog962', 'moog992', 'moog993', 'numpadPlus',
+  'peertube', 'polyseqz', 'pong', 'samsloop', 'score', 'sequencer',
+  'slewSwitch', 'synesthesia', 'timelorde', 'tvLibrarian', 'twotracks',
+  'videobox', 'videocube', 'videovarispeed',
+]);
+
+// The EXACT key set of EXEMPT_OUTPUT_EMIT, sorted. `<moduleType>.<outputPortId>`
+// — split on the FIRST '.', which is what the sweep's `${mod.type}.${p.id}`
+// lookup does (module types contain no dot; port ids may contain '/', e.g.
+// 'timelorde.1/8').
+const PINNED_PER_PORT_EXEMPT_KEYS: readonly string[] = Object.freeze([
+  'buggles.burst', 'buggles.clock',
+  'doom.audio_l', 'doom.audio_r', 'doom.evt_door', 'doom.evt_gun_p1',
+  'doom.evt_gun_p2', 'doom.evt_gun_p3', 'doom.evt_gun_p4', 'doom.evt_kill',
+  'doom.evt_kill_arachnotron', 'doom.evt_kill_baron', 'doom.evt_kill_caco',
+  'doom.evt_kill_chainguy', 'doom.evt_kill_cyber', 'doom.evt_kill_demon',
+  'doom.evt_kill_imp', 'doom.evt_kill_keen', 'doom.evt_kill_knight',
+  'doom.evt_kill_lostsoul', 'doom.evt_kill_mancubus', 'doom.evt_kill_pain',
+  'doom.evt_kill_revenant', 'doom.evt_kill_shotguy', 'doom.evt_kill_spectre',
+  'doom.evt_kill_spidermind', 'doom.evt_kill_vile', 'doom.evt_kill_wolfss',
+  'doom.evt_kill_zombieman', 'doom.evt_p1_dies', 'doom.evt_p2_dies',
+  'doom.evt_p3_dies', 'doom.evt_p4_dies', 'doom.out',
+  'gibribbon.evt_fire', 'gibribbon.evt_gameover', 'gibribbon.evt_hit',
+  'gibribbon.evt_kill', 'gibribbon.evt_miss', 'gibribbon.health_cv',
+  'illogic.and', 'illogic.nand', 'illogic.not', 'illogic.or',
+  'mandelbulb.audio_out',
+  'midiLane.note_gate', 'midiLane.poly',
+  'moogCp3.minus_six', 'moogCp3.plus_twelve',
+  'nibbles.death', 'nibbles.dir_change', 'nibbles.gated', 'nibbles.length_cv',
+  'nibbles.pellet',
+  'outlines.mapped',
+  'sixstrum.out',
+  'skifree.gate', 'skifree.out',
+  'timelorde.1/12', 'timelorde.1/16', 'timelorde.1/32', 'timelorde.1/64',
+  'timelorde.1/8',
+]);
+
+// ─── REACHABILITY LEDGER — entries that exist but can never be READ ───────────
+//
+// Anchoring "the key names a live port" is necessary but not sufficient: an
+// entry can name a perfectly real port and still be DEAD CODE, because an
+// earlier branch of the emit sweep already skipped the module. Those are stale
+// in the sense that matters — nobody is watching them — while looking pristine
+// to a name-only check. Found 2026-08-03 while replacing the caps; the audit
+// that commissioned this work reported "0 of 63 keys are stale" and by its own
+// definition (does the key resolve?) that was correct. Both are pinned so a
+// NEW dead entry is RED, and so is a module leaving the whole-module list and
+// silently resurrecting its per-port entries without a re-read.
+
+// EXEMPT_OUTPUT_EMIT_MODULES is consulted BEFORE EXEMPT_OUTPUT_EMIT (see the
+// `moduleExempt` branch in the emit sweep — it `test.fixme`s and `continue`s),
+// so a per-port entry on an already-whole-module-exempt module is UNREACHABLE.
+// ILLOGIC (4) and TIMELORDE (5) each carry both. Kept rather than deleted: if
+// either module ever earns a driver and leaves the whole-module list, these
+// ports go live again and each reason deserves a fresh review, not a silent
+// resurrection.
+const PINNED_SHADOWED_PER_PORT_KEYS: readonly string[] = Object.freeze([
+  'illogic.and', 'illogic.nand', 'illogic.not', 'illogic.or',
+  'timelorde.1/12', 'timelorde.1/16', 'timelorde.1/32', 'timelorde.1/64',
+  'timelorde.1/8',
+]);
+
+// The emit sweep `continue`s on `mod.outputs.length === 0` BEFORE it reads
+// EXEMPT_OUTPUT_EMIT_MODULES, so a whole-module entry for an output-LESS module
+// is documentation only (MIDI-OUT-BUDDY's own comment says exactly that — it is
+// listed so the sweep records the intentional absence). Pinned so a SECOND one
+// cannot appear unnoticed and be mistaken for real coverage bookkeeping.
+const PINNED_MODULE_EXEMPT_WITHOUT_OUTPUTS: readonly string[] = Object.freeze([
+  'midiOutBuddy',
+]);
+
+test('output-emit exemption lists are pinned key-by-key and anchored to REGISTRY', () => {
+  const modulesByType = new Map(REGISTRY.map((m) => [m.type, m]));
+  const totalOutputPorts = REGISTRY.reduce((n, m) => n + m.outputs.length, 0);
+
+  // ── 0. VACUITY FLOOR ──
+  // Every assertion below is a lookup against REGISTRY. If REGISTRY resolved
+  // nothing, "no key is stale" would be trivially true and this test would pass
+  // while proving NOTHING — the RAW_PARAM_WRITE failure mode (a bracket-only
+  // filter that saw 3 of 99 writes; every assertion it made was true). These
+  // are sanity FLOORS, not ratchets: the tree carries ~195 modules / ~674
+  // output ports, so they only trip if the manifest is empty or truncated.
   expect(
-    Object.keys(EXEMPT_OUTPUT_EMIT_MODULES).length,
-    'EXEMPT_OUTPUT_EMIT_MODULES grew past its frozen cap — see the RATCHET rule above',
-  ).toBeLessThanOrEqual(43); // videocube ADDED (8 outputs incl. 6 per-port-gated slice-viz jacks; video-out-canvas SwiftShader timeout class ×N + audio-derived/gated jacks; folds the former per-port audio_out entry; covered by videocube.spec.ts + videocube-core.test.ts + videocube.test.ts) — fits within the existing cap, no raise. // +1 featurecv (input-conditional outputs); +1 blood (data-gated emulator — outputs idle without the non-redistributable WAD, absent in CI); +1 milkdrop (video out needs async butterchurn preset-chunk load + warmup before emit; covered by milkdrop-render-smoke.spec.ts) // +1 cvBuddy (passthrough note outputs silent until driven + owner-only run/clock need a running TIMELORDE transport; covered by cv-buddy slot-alloc/clock-math/es9-reconcile unit tests + owner hardware-verify) — count 40 ≤ 43, fits within slack, no raise
+    REGISTRY.length,
+    'VACUITY: REGISTRY resolved almost no modules — every anchor below would pass trivially. '
+    + 'Run `flox activate -- task test:emit-manifest` (e2e/.generated/registry-manifest.json).',
+  ).toBeGreaterThan(100);
   expect(
-    Object.keys(EXEMPT_OUTPUT_EMIT).length,
-    'EXEMPT_OUTPUT_EMIT grew past its frozen cap — see the RATCHET rule above',
-  ).toBeLessThanOrEqual(65); // −1 videocube.audio_out (folded into the whole-module videocube exempt in EXEMPT_OUTPUT_EMIT_MODULES; net shrink)
+    totalOutputPorts,
+    `VACUITY: REGISTRY declares ${totalOutputPorts} output ports across ${REGISTRY.length} modules — `
+    + 'far too few for the anchor to be able to fail. The manifest emitter is broken.',
+  ).toBeGreaterThan(300);
+
+  // ── 1. SET EQUALITY — deny by default ──
+  expect(
+    Object.keys(EXEMPT_OUTPUT_EMIT_MODULES).sort(),
+    'EXEMPT_OUTPUT_EMIT_MODULES no longer matches PINNED_MODULE_EXEMPT_KEYS. '
+    + 'ADDING an exemption is missing coverage — justify it in the PR and add the key below. '
+    + 'REMOVING one is coverage reclaimed — delete the key below too. '
+    + 'Either way also re-pin the ledger: `flox activate -- task test:ledger:accept`.',
+  ).toEqual([...PINNED_MODULE_EXEMPT_KEYS]);
+  expect(
+    Object.keys(EXEMPT_OUTPUT_EMIT).sort(),
+    'EXEMPT_OUTPUT_EMIT no longer matches PINNED_PER_PORT_EXEMPT_KEYS. '
+    + 'ADDING an exemption is missing coverage — justify it in the PR and add the key below. '
+    + 'REMOVING one is coverage reclaimed — delete the key below too. '
+    + 'Either way also re-pin the ledger: `flox activate -- task test:ledger:accept`.',
+  ).toEqual([...PINNED_PER_PORT_EXEMPT_KEYS]);
+
+  // ── 2. ARTIFACT ANCHOR — every key must still name something that exists ──
+  // Ground truth is the REGISTRY module/port, not the list. A list entry that
+  // outlives its port is RED.
+  const moduleKeyIsLive = (moduleType: string): boolean => modulesByType.has(moduleType);
+  const portKeyIsLive = (key: string): boolean => {
+    const dot = key.indexOf('.');
+    if (dot < 0) return false;
+    const mod = modulesByType.get(key.slice(0, dot));
+    if (!mod) return false;
+    const portId = key.slice(dot + 1);
+    return mod.outputs.some((p) => p.id === portId);
+  };
+
+  expect(
+    Object.keys(EXEMPT_OUTPUT_EMIT_MODULES).filter((k) => !moduleKeyIsLive(k)),
+    'STALE EXEMPTION: these EXEMPT_OUTPUT_EMIT_MODULES keys name modules that are no longer in '
+    + 'REGISTRY. The module was renamed or deleted — delete the exemption (and re-pin the ledger).',
+  ).toEqual([]);
+  expect(
+    Object.keys(EXEMPT_OUTPUT_EMIT).filter((k) => !portKeyIsLive(k)),
+    'STALE EXEMPTION: these EXEMPT_OUTPUT_EMIT keys name a `<moduleType>.<outputPortId>` pair that '
+    + 'no longer exists in REGISTRY (module gone, or the OUTPUT port was renamed/dropped). If the '
+    + 'port was dropped deliberately, delete the exemption; if it was dropped by accident, that is '
+    + 'the DOOM #393 bug class and the handle-presence sweep should also be red.',
+  ).toEqual([]);
+
+  // ── 3. PERMANENT NEGATIVE CONTROL, BOTH DIRECTIONS ──
+  // Runs on EVERY execution, not once at authoring time. Without it, an anchor
+  // that silently resolved nothing (wrong split, empty map, a refactor that
+  // made the resolver return `true` unconditionally) prints the same empty
+  // array as a genuinely clean tree — "no stale keys" and "never looked" are
+  // indistinguishable from the output. So force both answers out of the same
+  // resolvers the assertions above used.
+  const liveModule = REGISTRY.find((m) => m.outputs.length > 0);
+  expect(liveModule, 'NEGATIVE CONTROL: no REGISTRY module has an output port').toBeTruthy();
+  const liveType = liveModule!.type;
+  const livePort = liveModule!.outputs[0].id;
+
+  expect(
+    moduleKeyIsLive('__no_such_module__'),
+    'NEGATIVE CONTROL (false leg): the module resolver called a non-existent module type LIVE — '
+    + 'it accepts anything, so the stale-module assertion above is decoration.',
+  ).toBe(false);
+  expect(
+    moduleKeyIsLive(liveType),
+    `NEGATIVE CONTROL (true leg): the module resolver called the real module "${liveType}" STALE — `
+    + 'it rejects everything, so it would have reddened on a clean tree.',
+  ).toBe(true);
+  expect(
+    portKeyIsLive('__no_such_module__.out'),
+    'NEGATIVE CONTROL (false leg, module half): the port resolver called a port on a non-existent '
+    + 'module LIVE.',
+  ).toBe(false);
+  expect(
+    portKeyIsLive(`${liveType}.__no_such_port__`),
+    `NEGATIVE CONTROL (false leg, PORT half): the port resolver called "${liveType}.__no_such_port__" `
+    + 'LIVE — it only checks the module and never looks at the port id, so a renamed port would '
+    + 'never be caught.',
+  ).toBe(false);
+  expect(
+    portKeyIsLive(`${liveType}.${livePort}`),
+    `NEGATIVE CONTROL (true leg): the port resolver called the real port "${liveType}.${livePort}" `
+    + 'STALE — it rejects everything, so the empty stale-list above proves nothing.',
+  ).toBe(true);
+
+  // ── 4. REACHABILITY LEDGER — an entry that can never be READ is also stale ──
+  const shadowed = Object.keys(EXEMPT_OUTPUT_EMIT)
+    .filter((k) => EXEMPT_OUTPUT_EMIT_MODULES[k.slice(0, k.indexOf('.'))])
+    .sort();
+  expect(
+    shadowed,
+    'UNREACHABLE EXEMPTION: these per-port EXEMPT_OUTPUT_EMIT entries sit on a module that is ALSO '
+    + 'whole-module exempt. The emit sweep reads EXEMPT_OUTPUT_EMIT_MODULES first and skips the '
+    + 'whole test, so these reasons are never consulted. If the list SHRANK, a module just left '
+    + 'EXEMPT_OUTPUT_EMIT_MODULES and its per-port entries are live again — RE-READ each reason '
+    + 'before updating this pin. If it GREW, prefer one whole-module entry over N per-port ones.',
+  ).toEqual([...PINNED_SHADOWED_PER_PORT_KEYS]);
+
+  const exemptWithoutOutputs = Object.keys(EXEMPT_OUTPUT_EMIT_MODULES)
+    .filter((t) => modulesByType.get(t)?.outputs.length === 0)
+    .sort();
+  expect(
+    exemptWithoutOutputs,
+    'UNREACHABLE EXEMPTION: these EXEMPT_OUTPUT_EMIT_MODULES entries name modules with ZERO output '
+    + 'ports. The emit sweep `continue`s on an empty output list BEFORE it reads the exemption, so '
+    + 'the entry is documentation only and buys no coverage bookkeeping. Intentional for '
+    + 'midiOutBuddy (it emits MIDI to external gear); anything else here is a mistake.',
+  ).toEqual([...PINNED_MODULE_EXEMPT_WITHOUT_OUTPUTS]);
 });
 
 // ────────── Per-port input-drive exemptions ──────────
