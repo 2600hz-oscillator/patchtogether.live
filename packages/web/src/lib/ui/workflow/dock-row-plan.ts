@@ -170,10 +170,27 @@ export interface DockFaceRow {
 /** The comparison the packer optimises, in strict priority order. */
 interface PackCandidate {
   rows: number;
-  /** The largest row in this partition (fewest-rows ties break on evenness). */
+  /** The largest row's CONTROL COUNT (fewest-rows ties break on evenness). */
   max: number;
-  /** Row sizes in order — the final tie-break. */
-  sizes: number[];
+  /**
+   * Each row's CONTROL COUNT, in order — the final tie-break.
+   *
+   * ⚠ CONTROLS, NOT BANDS — and the reason to say so is that the two ARE THE
+   * SAME ORDER here, which is not obvious and is worth recording rather than
+   * rediscovering. A first draft compared band counts. Trying to write a test
+   * that told them apart proved it cannot exist: rows are PREFIXES, so a
+   * longer first row has both more sections and (every band holding ≥ 1 cell)
+   * more weight. The two lexicographic orders are therefore identical for any
+   * plan `heroFacePlan` can produce, since it already drops emptied bands.
+   *
+   * Weight is kept because it is the quantity the rule is ABOUT ("lightest row
+   * first / no runt final row") and because the equivalence rests on that
+   * ≥ 1-cell precondition — if a zero-cell band ever reached this packer the
+   * band-count version would silently start answering a different question.
+   */
+  weights: number[];
+  /** Each row's BAND count, in order — used only to rebuild the groups. */
+  lens: number[];
 }
 
 function better(a: PackCandidate, b: PackCandidate): boolean {
@@ -184,15 +201,16 @@ function better(a: PackCandidate, b: PackCandidate): boolean {
   // 2. EVENEST — minimise the largest row, so one row is never a wall of ten
   //    knobs beside a neighbour holding two.
   if (a.max !== b.max) return a.max < b.max;
-  // 3. HEAVIEST ROW LAST — lexicographically smallest size sequence. This is
-  //    the paragraph-balancing rule (no runt final line), and it is what turns
-  //    sixstrum's [3,3,3,6] into (3+3) then (3+6) rather than (3+3+3) then (6):
-  //    both are two rows with a max of 9, and the owner asked for the first.
-  const n = Math.min(a.sizes.length, b.sizes.length);
+  // 3. HEAVIEST ROW LAST — the lexicographically smallest sequence of row
+  //    CONTROL COUNTS. This is the paragraph-balancing rule (no runt final
+  //    line), and it is what turns sixstrum's [3,3,3,6] into (3+3) then (3+6)
+  //    rather than (3+3+3) then (6): both are two rows with a max of 9 — so
+  //    rules 1 and 2 tie — and (6,9) is lexicographically before (9,6).
+  const n = Math.min(a.weights.length, b.weights.length);
   for (let i = 0; i < n; i++) {
-    if (a.sizes[i] !== b.sizes[i]) return a.sizes[i] < b.sizes[i];
+    if (a.weights[i] !== b.weights[i]) return a.weights[i] < b.weights[i];
   }
-  return a.sizes.length < b.sizes.length;
+  return a.weights.length < b.weights.length;
 }
 
 /**
@@ -214,7 +232,7 @@ export function packRun(counts: readonly number[], cap = DOCK_ROW_MAX_CONTROLS):
   if (n === 0) return [];
   // best[i] = the optimal packing of counts[i..n-1]
   const best: (PackCandidate | null)[] = new Array(n + 1).fill(null);
-  best[n] = { rows: 0, max: 0, sizes: [] };
+  best[n] = { rows: 0, max: 0, weights: [], lens: [] };
   for (let i = n - 1; i >= 0; i--) {
     let sum = 0;
     for (let j = i; j < n; j++) {
@@ -225,15 +243,16 @@ export function packRun(counts: readonly number[], cap = DOCK_ROW_MAX_CONTROLS):
       const cand: PackCandidate = {
         rows: 1 + tail.rows,
         max: Math.max(sum, tail.max),
-        sizes: [j - i + 1, ...tail.sizes],
+        weights: [sum, ...tail.weights],
+        lens: [j - i + 1, ...tail.lens],
       };
       if (!best[i] || better(cand, best[i]!)) best[i] = cand;
     }
   }
-  // Re-walk the chosen sizes into index groups.
+  // Re-walk the chosen row lengths into index groups.
   const out: number[][] = [];
   let at = 0;
-  for (const len of best[0]!.sizes) {
+  for (const len of best[0]!.lens) {
     out.push(Array.from({ length: len }, (_, k) => at + k));
     at += len;
   }

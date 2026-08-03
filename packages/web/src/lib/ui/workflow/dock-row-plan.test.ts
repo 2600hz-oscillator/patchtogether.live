@@ -371,3 +371,80 @@ describe('the live faces', () => {
     expect(bandControlCount(band)).toBe(3);
   });
 });
+
+// ── 5. THE TIE-BREAK QUANTITY ───────────────────────────────────────────────
+//
+// ⚠ THIS SECTION EXISTS BECAUSE THE TEST I SET OUT TO WRITE CANNOT EXIST, and
+// that is the finding.
+//
+// The packer's third tie-break compares each row's CONTROL WEIGHT. Reviewing
+// it, the field being compared was the row's BAND COUNT — a different quantity
+// from the one the rule documents — which looked like exactly the class of
+// defect this repo keeps finding (a metric that is not the thing under test).
+// Attempting to construct a face shape where the two disagree proved they
+// cannot: rows are PREFIXES of the band list, so a longer first row has both
+// more sections AND more weight whenever every band holds at least one cell —
+// and `heroFacePlan` already drops any band a hero promotion emptied. The two
+// lexicographic orders are identical over the whole reachable input space.
+//
+// So the code now compares the quantity the rule names (weight), the
+// equivalence is recorded at the field, and the tests below pin the OBSERVABLE
+// behaviour plus the ≥1-cell precondition the equivalence rests on.
+describe('the tie-break quantity', () => {
+  it('splits a run of equal bands evenly (the degenerate case)', () => {
+    expect(packRun([5, 5, 5, 5], 10)).toEqual([
+      [0, 1],
+      [2, 3],
+    ]);
+  });
+
+  it('the chosen partition has the lexicographically smallest WEIGHT sequence', () => {
+    // Enumerate every legal partition and confirm the packer picked the
+    // optimum under the DOCUMENTED objective — rather than re-asserting the
+    // implementation's own answer back at itself.
+    const counts = [3, 3, 3, 6];
+    const cap = 10;
+    const all: number[][][] = [];
+    const walk = (at: number, acc: number[][]) => {
+      if (at === counts.length) { all.push(acc.map((g) => [...g])); return; }
+      for (let j = at; j < counts.length; j++) {
+        const group = counts.slice(at, j + 1);
+        const w = group.reduce((a, b) => a + b, 0);
+        if (j > at && w > cap) break;
+        walk(j + 1, [...acc, Array.from({ length: j - at + 1 }, (_, k) => at + k)]);
+      }
+    };
+    walk(0, []);
+    const weigh = (p: number[][]) => p.map((g) => g.reduce((n, i) => n + counts[i], 0));
+    const legal = all.filter((p) => p.every((g, i) => p.length === 1 || g.length === 1 || weigh(p)[i] <= cap));
+    const rank = (p: number[][]) => {
+      const w = weigh(p);
+      return [p.length, Math.max(...w), ...w];
+    };
+    const best = legal.reduce((a, b) => {
+      const ra = rank(a), rb = rank(b);
+      for (let i = 0; i < Math.max(ra.length, rb.length); i++) {
+        const x = ra[i] ?? -1, y = rb[i] ?? -1;
+        if (x !== y) return x < y ? a : b;
+      }
+      return a;
+    });
+    expect(weigh(best)).toEqual([6, 9]);
+    expect(packRun(counts, cap)).toEqual(best);
+  });
+
+  it('EVERY band that reaches the packer holds at least one cell — the precondition', () => {
+    // The band-count/weight equivalence recorded on `PackCandidate.weights`
+    // holds only while this is true, and `heroFacePlan` is what makes it true
+    // (it drops a band a hero promotion emptied). Asserted over the live
+    // registry so a future face cannot quietly invalidate the reasoning.
+    for (const raw of listModuleDefs()) {
+      const def = raw as unknown as FaceDefLike & { type: string };
+      if (!def.face) continue;
+      const split = heroFacePlan(def as FaceplateDefLike, dockFacePlan(def));
+      for (const b of split.bands) {
+        expect(bandControlCount(b), `${def.type} band '${b.id}' reaches the packer empty`).toBeGreaterThan(0);
+      }
+    }
+  });
+});
