@@ -30,6 +30,7 @@
     warrensspectrumBands,
     warrensspectrumDef,
     wsDefaultBands,
+    WS_ENGINE_MASSPASS,
     type WsBandSettings,
   } from '$lib/audio/modules/warrensspectrum';
   import { mutateNode } from '$lib/graph/mutate';
@@ -42,6 +43,8 @@
   const { set, live, paramVal } = cardParams(warrensspectrumDef, () => id, () => node);
 
   const p = (pid: string) => paramSpec(warrensspectrumDef, pid);
+  const pMode     = p('engineMode');
+  const pBands    = p('spectralBandCount');
   const pPartials = p('spectralPartials');
   const pLock     = p('spectralLock');
   const pResidual = p('spectralResidual');
@@ -56,7 +59,22 @@
   const pInMix    = p('inputMix');
   const pGain     = p('gain');
 
+  let mode = $derived(paramVal('engineMode'));
+  // NB: `bandCountIdx`, NOT `bands` — `bands` is the 8-entry FILTERBANK table
+  // further down. Two different "bands" on one card; keep them apart.
+  let bandCountIdx = $derived(paramVal('spectralBandCount'));
   let partials = $derived(paramVal('spectralPartials'));
+
+  // MASSPASS selected? Drives the DIM on the controls that engine owns.
+  //
+  // ⚠ DIM, never hide and never `disabled` — the convention
+  // `card-control-ranges.test.ts` enforces on BackdraftCard, for two reasons
+  // that both apply here: a `{#if}`-ed control makes the card's height
+  // mode-dependent (and so its VRT baseline unstable), and a `disabled`
+  // control is unreachable by the user while CV and automation keep writing
+  // the very same param. A dimmed control keeps its drag, its double-click
+  // reset and its MIDI-learn, and explains itself in a `title`.
+  let massPassOn = $derived(Math.round(mode) === WS_ENGINE_MASSPASS);
   let lock     = $derived(paramVal('spectralLock'));
   let residual = $derived(paramVal('spectralResidual'));
   let slice    = $derived(paramVal('spectralSlice'));
@@ -130,23 +148,69 @@
 <div class="mod-card warrensspectrum-card" data-testid="warrensspectrum-card">
   <div class="stripe" style="background: var(--cable-audio);"></div>
   <ModuleTitle {id} {data} defaultLabel="WARREN'S SPECTRUM" />
+  <!-- The readout names the ENGINE as well as the freeze state: with two DSP
+       classes behind one switch, "which one am I hearing" is the first
+       question the card has to answer. -->
   <div class="state-readout" class:frozen data-testid="warrensspectrum-state">
-    {frozen ? 'FROZEN' : 'RESYNTH'}
+    {massPassOn ? 'MASSPASS' : 'SPECTRAL'} · {frozen ? 'FROZEN' : 'RESYNTH'}
   </div>
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
+    <!-- ⚠ MODE and BANDS are folded into the EXISTING two rows rather than
+         given a third. The card is 3u (540 CSS px) and had no vertical slack:
+         a third row pushed the OSS attribution 68 CSS px past the bottom edge
+         and `card-control-overflow.spec.ts` caught it. Horizontally there is
+         room to spare — a Fader is ~22-30 px in a ~41 px slot at 7 across. -->
     <div class="fader-row">
+      <Fader value={mode}     min={pMode.min}     max={pMode.max}     defaultValue={pMode.defaultValue}     label={pMode.label}     units={pMode.units}     curve={pMode.curve}     formatValue={pMode.format}     onchange={set('engineMode')}      readLive={live('engineMode')}      moduleId={id} paramId="engineMode" />
       <Fader value={partials} min={pPartials.min} max={pPartials.max} defaultValue={pPartials.defaultValue} label={pPartials.label} units={pPartials.units} curve={pPartials.curve} formatValue={pPartials.format} onchange={set('spectralPartials')} readLive={live('spectralPartials')} moduleId={id} paramId="spectralPartials" />
-      <Fader value={lock}     min={pLock.min}     max={pLock.max}     defaultValue={pLock.defaultValue}     label={pLock.label}     units={pLock.units}     curve={pLock.curve}     formatValue={pLock.format}     onchange={set('spectralLock')}     readLive={live('spectralLock')}     moduleId={id} paramId="spectralLock" />
-      <Fader value={residual} min={pResidual.min} max={pResidual.max} defaultValue={pResidual.defaultValue} label={pResidual.label} units={pResidual.units} curve={pResidual.curve} formatValue={pResidual.format} onchange={set('spectralResidual')} readLive={live('spectralResidual')} moduleId={id} paramId="spectralResidual" />
+      <div class="mode-scoped" class:dim={massPassOn}
+           title={massPassOn
+             ? 'LOCK snaps tracked partials onto a harmonic comb — it applies to the SPECTRAL engine only, and MODE is on MASSPASS'
+             : 'LOCK snaps tracked partials onto a harmonic comb'}>
+        <Fader value={lock}     min={pLock.min}     max={pLock.max}     defaultValue={pLock.defaultValue}     label={pLock.label}     units={pLock.units}     curve={pLock.curve}     formatValue={pLock.format}     onchange={set('spectralLock')}     readLive={live('spectralLock')}     moduleId={id} paramId="spectralLock" />
+      </div>
+      <div class="mode-scoped" class:dim={massPassOn}
+           title={massPassOn
+             ? 'RESIDUAL is the SMS noise half of the spectral rebuild — it applies to the SPECTRAL engine only, and MODE is on MASSPASS'
+             : 'RESIDUAL is the SMS noise half of the spectral rebuild'}>
+        <Fader value={residual} min={pResidual.min} max={pResidual.max} defaultValue={pResidual.defaultValue} label={pResidual.label} units={pResidual.units} curve={pResidual.curve} formatValue={pResidual.format} onchange={set('spectralResidual')} readLive={live('spectralResidual')} moduleId={id} paramId="spectralResidual" />
+      </div>
       <Fader value={slice}    min={pSlice.min}    max={pSlice.max}    defaultValue={pSlice.defaultValue}    label={pSlice.label}    units={pSlice.units}    curve={pSlice.curve}    formatValue={pSlice.format}    onchange={set('spectralSlice')}    readLive={live('spectralSlice')}    moduleId={id} paramId="spectralSlice" />
       <Fader value={freeze}   min={pFreeze.min}   max={pFreeze.max}   defaultValue={pFreeze.defaultValue}   label={pFreeze.label}   units={pFreeze.units}   curve={pFreeze.curve}   formatValue={pFreeze.format}   onchange={set('engineFreeze')}     readLive={live('engineFreeze')}     moduleId={id} paramId="engineFreeze" />
       <Fader value={shape}    min={pShape.min}    max={pShape.max}    defaultValue={pShape.defaultValue}    label={pShape.label}    units={pShape.units}    curve={pShape.curve}    formatValue={pShape.format}    onchange={set('spectralShape')}    readLive={live('spectralShape')}    moduleId={id} paramId="spectralShape" />
     </div>
     <div class="fader-row">
-      <Fader value={floorDb} min={pFloor.min}  max={pFloor.max}  defaultValue={pFloor.defaultValue}  label={pFloor.label}  units={pFloor.units}  curve={pFloor.curve}  formatValue={pFloor.format}  onchange={set('spectralFloor')}  readLive={live('spectralFloor')}  moduleId={id} paramId="spectralFloor" />
-      <Fader value={stab}    min={pStab.min}   max={pStab.max}   defaultValue={pStab.defaultValue}   label={pStab.label}   units={pStab.units}   curve={pStab.curve}   formatValue={pStab.format}   onchange={set('spectralStab')}   readLive={live('spectralStab')}   moduleId={id} paramId="spectralStab" />
-      <Fader value={slew}    min={pSlew.min}   max={pSlew.max}   defaultValue={pSlew.defaultValue}   label={pSlew.label}   units={pSlew.units}   curve={pSlew.curve}   formatValue={pSlew.format}   onchange={set('spectralSlew')}   readLive={live('spectralSlew')}   moduleId={id} paramId="spectralSlew" />
+      <!-- BANDS lives in the ANALYSIS row: it is a setup control, not a
+           performative one. DIMMED while SPECTRAL is selected. -->
+      <div
+        class="mode-scoped"
+        class:dim={!massPassOn}
+        data-testid="warrensspectrum-bands-cell"
+        title={massPassOn
+          ? 'MASSPASS band count — how many bandpass filters the input is split across'
+          : 'BANDS applies to the MASSPASS engine only — switch MODE to MASSPASS to hear it'}
+      >
+        <Fader value={bandCountIdx} min={pBands.min} max={pBands.max} defaultValue={pBands.defaultValue} label={pBands.label} units={pBands.units} curve={pBands.curve} formatValue={pBands.format} onchange={set('spectralBandCount')} readLive={live('spectralBandCount')} moduleId={id} paramId="spectralBandCount" />
+      </div>
+      <div class="mode-scoped" class:dim={massPassOn}
+           title={massPassOn
+             ? 'FLOOR is the peak-detection threshold — it applies to the SPECTRAL engine only, and MODE is on MASSPASS'
+             : 'FLOOR is the peak-detection threshold'}>
+        <Fader value={floorDb} min={pFloor.min}  max={pFloor.max}  defaultValue={pFloor.defaultValue}  label={pFloor.label}  units={pFloor.units}  curve={pFloor.curve}  formatValue={pFloor.format}  onchange={set('spectralFloor')}  readLive={live('spectralFloor')}  moduleId={id} paramId="spectralFloor" />
+      </div>
+      <div class="mode-scoped" class:dim={massPassOn}
+           title={massPassOn
+             ? 'STABILITY gates how long a partial must persist — it applies to the SPECTRAL engine only, and MODE is on MASSPASS'
+             : 'STABILITY gates how long a partial must persist'}>
+        <Fader value={stab}    min={pStab.min}   max={pStab.max}   defaultValue={pStab.defaultValue}   label={pStab.label}   units={pStab.units}   curve={pStab.curve}   formatValue={pStab.format}   onchange={set('spectralStab')}   readLive={live('spectralStab')}   moduleId={id} paramId="spectralStab" />
+      </div>
+      <div class="mode-scoped" class:dim={massPassOn}
+           title={massPassOn
+             ? 'SLEW smooths each tracked partial — it applies to the SPECTRAL engine only, and MODE is on MASSPASS'
+             : 'SLEW smooths each tracked partial'}>
+        <Fader value={slew}    min={pSlew.min}   max={pSlew.max}   defaultValue={pSlew.defaultValue}   label={pSlew.label}   units={pSlew.units}   curve={pSlew.curve}   formatValue={pSlew.format}   onchange={set('spectralSlew')}   readLive={live('spectralSlew')}   moduleId={id} paramId="spectralSlew" />
+      </div>
       <Fader value={center}  min={pCenter.min} max={pCenter.max} defaultValue={pCenter.defaultValue} label={pCenter.label} units={pCenter.units} curve={pCenter.curve} formatValue={pCenter.format} onchange={set('spectralCenter')} readLive={live('spectralCenter')} moduleId={id} paramId="spectralCenter" />
       <Fader value={gain}    min={pGain.min}   max={pGain.max}   defaultValue={pGain.defaultValue}   label={pGain.label}   units={pGain.units}   curve={pGain.curve}   formatValue={pGain.format}   onchange={set('gain')}           readLive={live('gain')}           moduleId={id} paramId="gain" />
     </div>
@@ -214,6 +278,12 @@
     margin-bottom: 0;
   }
   .warrensspectrum-card .state-readout.frozen { color: var(--cable-gate, #7fd); }
+  /* DIM, never hide and never disable — the card-control-ranges.test.ts
+     convention. A dimmed control keeps its box (so card height does not
+     depend on mode, which would destabilise the VRT baseline), keeps its
+     drag/reset/MIDI-learn, and explains itself in a title. */
+  .warrensspectrum-card .mode-scoped { display: flex; }
+  .warrensspectrum-card .mode-scoped.dim { opacity: 0.45; }
   .warrensspectrum-card .fader-row {
     margin-top: 3px;
     display: flex;

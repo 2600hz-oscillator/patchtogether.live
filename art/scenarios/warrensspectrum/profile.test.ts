@@ -34,8 +34,14 @@
 // bug shows up as slow drift rather than as an obvious break.
 
 import { describe, expect, it } from 'vitest';
-import { WarrensSpectrumEngine } from '../../../packages/dsp/src/lib/warrensspectrum-dsp';
+import {
+  WarrensSpectrumEngine,
+  WS_ENGINE_MASSPASS,
+} from '../../../packages/dsp/src/lib/warrensspectrum-dsp';
 import { captureOutputs, dspSourceSha, pinAll, SAMPLE_RATE } from '../../setup/capture';
+
+/** AudioWorklet render-quantum size — the engine's `beginBlock()` cadence. */
+const QUANTUM = 128;
 
 const SR = SAMPLE_RATE;
 const DURATION_S = 0.75;
@@ -149,6 +155,28 @@ function renderFreeze(): Record<string, Float32Array> {
   });
 }
 
+/**
+ * MASSPASS render at the shipped defaults, at a chosen BAND COUNT INDEX.
+ *
+ * `beginBlock()` is called on the 128-sample quantum boundary, exactly as the
+ * worklet calls it — MASSPASS re-runs its loudest-band selection there, so a
+ * render that skipped it would pin a picture the real module never produces.
+ */
+function renderMassPass(bandCountIdx: number, durationS = DURATION_S): Record<string, Float32Array> {
+  const input = source(durationS);
+  const e = makeEngine();
+  e.setBandCountIndex(bandCountIdx);
+  e.setEngineMode(WS_ENGINE_MASSPASS);
+  // Run the mode-change declick out before capture starts, so the baseline
+  // pins the ENGINE and not the 6 ms ramp into it.
+  e.beginBlock();
+  for (let i = 0; i < QUANTUM * 4; i++) e.processSample(0);
+  return captureOutputs({ durationS, outputs: ['out'] }, (i) => {
+    if (i % QUANTUM === 0) e.beginBlock();
+    return { out: e.processSample(input[i]!) };
+  });
+}
+
 describe("ART warren's spectrum / audio profile (spectral resynth)", () => {
   it('renders audible, bounded, deterministic output at the shipped defaults', () => {
     const buf = renderProfile().out!;
@@ -182,12 +210,70 @@ describe("ART warren's spectrum / audio profile (spectral resynth)", () => {
     ).toBeGreaterThan(0.1);
   });
 
-  it('pins the spectral-resynth profiles (SHA-gated, RMS tier B)', async () => {
-    const srcSha = await dspSourceSha('lib/warrensspectrum-dsp.ts', 'warrensspectrum.ts');
+  it('MASSPASS is a DIFFERENT ENGINE, not a variation — and both are audible', () => {
+    // The attribution test for the two MASSPASS pins below. If SPECTRAL and
+    // MASSPASS ever rendered the same thing, `masspass-24` would silently be
+    // a third copy of `resynth` and the second engine would be unprotected.
+    const spectral = renderProfile().out!;
+    const mass = renderMassPass(1).out!;
+    const from = Math.round(0.2 * SR);
+    const rmsOf = (b: Float32Array) => {
+      let s = 0;
+      for (let i = from; i < b.length; i++) s += b[i]! * b[i]!;
+      return Math.sqrt(s / (b.length - from));
+    };
+    expect(rmsOf(spectral), 'SPECTRAL must be audible').toBeGreaterThan(0.02);
+    expect(rmsOf(mass), 'MASSPASS must be audible').toBeGreaterThan(0.005);
+
+    let diff = 0;
+    let ref = 0;
+    for (let i = from; i < spectral.length; i++) {
+      diff += (spectral[i]! - mass[i]!) ** 2;
+      ref += Math.max(spectral[i]! ** 2, mass[i]! ** 2);
+    }
+    expect(
+      Math.sqrt(diff / Math.max(ref, 1e-12)),
+      'relative RMS difference between SPECTRAL and MASSPASS (dimensionless)',
+    ).toBeGreaterThan(0.5);
+  });
+
+  it('BAND COUNT is a real axis — 16 bands and 99 bands are different renders', () => {
+    // Guards `masspass-24` / `masspass-99` from pinning the same audio twice.
+    const lo = renderMassPass(0).out!; // 16
+    const hi = renderMassPass(5).out!; // 99
+    let diff = 0;
+    let ref = 0;
+    for (let i = 0; i < lo.length; i++) {
+      diff += (lo[i]! - hi[i]!) ** 2;
+      ref += Math.max(lo[i]! ** 2, hi[i]! ** 2);
+    }
+    expect(
+      Math.sqrt(diff / Math.max(ref, 1e-12)),
+      'relative RMS difference between 16 and 99 bands (dimensionless)',
+    ).toBeGreaterThan(0.1);
+  });
+
+  it('pins the spectral-resynth AND masspass profiles (SHA-gated, RMS tier B)', async () => {
+    // ⚠ The SHA basis includes the MASSPASS core and the shared voice module.
+    // Without them a change to the second engine (or to the shape morph both
+    // engines render through) would leave every baseline here PASSING while
+    // the audio moved — the pin would be gated on a file the change never
+    // touched. Adding a scenario means adding its sources here.
+    const srcSha = await dspSourceSha(
+      'lib/warrensspectrum-dsp.ts',
+      'lib/warrensspectrum-masspass.ts',
+      'lib/warrensspectrum-voice.ts',
+      'warrensspectrum.ts',
+    );
     await pinAll('warrensspectrum', srcSha, {
       resynth: renderProfile().out!,
       'residual-off': renderProfile({ residual: 0 }).out!,
       'freeze-hold': renderFreeze().out!,
+      // MASSPASS at its default 24 bands and at the 99-band maximum — the
+      // two ends of the engine's one structural control, and the pair that
+      // makes a band-count regression localise instead of just reddening.
+      'masspass-24': renderMassPass(1).out!,
+      'masspass-99': renderMassPass(5).out!,
     });
   });
 });

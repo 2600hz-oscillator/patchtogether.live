@@ -27,18 +27,25 @@
 // asserts all four by exact id, so a rename fails a test rather than a user's
 // rack.
 //
-// ── SCOPE (phase 1 + phase 2) ─────────────────────────────────────────────
+// ── SCOPE (phase 1 + phase 2 + phase 4) ───────────────────────────────────
 // PHASE 1 shipped the SPECTRAL engine, MONO.
 // PHASE 2 adds the 8-band resonant FILTERBANK — and with it STEREO, because
 // the per-band equal-power pan is the only stage in the plugin's whole chain
 // that makes an image (`PluginProcessor::processBlock` sums to mono before
 // the engine and `resynthBuf_` is one channel). It also adds the bank's two
 // routing controls, FILTERBANK WET (`resynthLevel`) and INPUT MIX.
+// PHASE 4 adds the SECOND ENGINE, MASSPASS (`engineMode`), plus its band-count
+// choice (`spectralBandCount`). MASSPASS is a separate 326-line DSP class
+// upstream and a separate module here (`warrensspectrum-masspass.ts`) — no
+// FFT, no peak tracking: N log-spaced bandpasses each reporting their own
+// level and zero-crossing pitch, sampled and held at SLICE. Everything
+// downstream of the DRY bus (wet crossfade, input mix, filterbank, gain) is
+// mode-agnostic and shared, exactly as it is upstream.
 //
-// STILL ABSENT: the WAVETABLE and MASSPASS engines, the feedback loop, the
-// two FX slots (and so the bands' `fx1Send`/`fx2Send`, which would be
-// controls with nowhere to send), the master filter, host-tempo SLICE, and
-// `.wspr` fingerprint interchange. Patch the rack for the rest — we have one.
+// STILL ABSENT: the WAVETABLE engine, the feedback loop, the two FX slots
+// (and so the bands' `fx1Send`/`fx2Send`, which would be controls with
+// nowhere to send), the master filter, host-tempo SLICE, and `.wspr`
+// fingerprint interchange. Patch the rack for the rest — we have one.
 //
 // ── DELIBERATE DIVERGENCES FROM THE VST ───────────────────────────────────
 // 1. SLICE is CORRECT, not faithful: the whole declared 2..200 ms range works
@@ -99,7 +106,22 @@
 //   spectralSlice (linear 2..200 ms, default 10): analysis period.
 //   spectralCenter (linear -3600..3600 cents, default 0): output transposition.
 //   engineFreeze (discrete 0..1, default 0): FREEZE latch.
+//   engineMode (discrete 0..1, default 0): 0 = SPECTRAL, 1 = MASSPASS.
+//   spectralBandCount (discrete 0..5, default 1): MASSPASS band count, as an
+//     INDEX into {16,24,33,48,66,99}. Inert in SPECTRAL.
 //   gain (linear -60..12 dB, default 0): output level.
+//
+// ── PHASE-4 DIVERGENCES (in addition to 1-4 above) ────────────────────────
+// 5. `engineMode`'s INDICES are ours, not the VST's (upstream MASSPASS is 2,
+//    behind WAVETABLE at 1). Reserving the gap would have left index 1 live
+//    but inert — dead control travel, which divergence 1 exists to refuse.
+//    Ours append in implementation order; WAVETABLE takes 2.
+// 6. FREEZE and the V/oct PITCH input WORK IN MASSPASS. Upstream both are
+//    silently inert there (`PluginProcessor.cpp:219` freezes `resynth_`
+//    only, and `MassPass` has no transposition at all). We expose FREEZE as
+//    a gate INPUT PORT and pitch as a V/oct PORT, and a port that accepts a
+//    cable and does nothing is a worse lie than a dead knob — it is
+//    invisible until patched.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
@@ -110,8 +132,16 @@ import type { AudioModuleDef } from '$lib/audio/module-registry';
 // out of node_modules/@patchtogether.live/dsp/src. Importing them is what
 // keeps the def's declared ranges and the DSP's clamps from drifting apart.
 import {
+  WS_BAND_COUNT_IDX_DEFAULT,
+  WS_BAND_COUNT_IDX_MAX,
+  WS_BAND_COUNT_IDX_MIN,
+  WS_ENGINE_MASSPASS,
+  WS_ENGINE_MODE_MAX,
+  WS_ENGINE_MODE_MIN,
+  WS_ENGINE_SPECTRAL,
   WS_INPUT_MIX_MAX,
   WS_INPUT_MIX_MIN,
+  WS_MASSPASS_BAND_COUNTS,
   WS_MAX_TRACKS,
   WS_SLICE_MAX_MS,
   WS_SLICE_MIN_MS,
@@ -137,6 +167,10 @@ import {
 // avoids the `@patchtogether.live/dsp` alias (a worktree may not symlink the
 // workspace package into node_modules).
 export { WS_NUM_BANDS, wsDefaultBands };
+// The card needs the MASSPASS mode index to decide what to DIM. It reads it
+// from the DEF (which re-exports the engine's constant) rather than writing
+// `=== 1` — a re-typed literal is the same drift class as a re-typed range.
+export { WS_ENGINE_MASSPASS, WS_ENGINE_SPECTRAL, WS_MASSPASS_BAND_COUNTS };
 export type { WsBandSettings };
 import workletUrl from '@patchtogether.live/dsp/dist/warrensspectrum.js?url';
 
@@ -163,6 +197,19 @@ export const WARRENSSPECTRUM_RANGES = {
   spectralSlice: { min: WS_SLICE_MIN_MS, max: WS_SLICE_MAX_MS, defaultValue: 10 },
   spectralCenter: { min: -3600, max: 3600, defaultValue: 0 },
   engineFreeze: { min: 0, max: 1, defaultValue: 0 },
+  // ENGINE MODE (phase 4). Range 0..1 — EVERY index in it is implemented.
+  // Our numbering appends in implementation order and is deliberately not the
+  // VST's; see WS_ENGINE_MASSPASS in the engine for why.
+  engineMode: { min: WS_ENGINE_MODE_MIN, max: WS_ENGINE_MODE_MAX, defaultValue: WS_ENGINE_SPECTRAL },
+  // MASSPASS BAND COUNT — an INDEX into WS_MASSPASS_BAND_COUNTS, exactly as
+  // the VST declares it. Declaring the raw counts (16..99) instead would
+  // require an 84-entry options roster to satisfy param-vocabulary's
+  // "every discrete step is named" rule.
+  spectralBandCount: {
+    min: WS_BAND_COUNT_IDX_MIN,
+    max: WS_BAND_COUNT_IDX_MAX,
+    defaultValue: WS_BAND_COUNT_IDX_DEFAULT,
+  },
   // ⚠ FILTERBANK WET defaults to 0, NOT the VST's 1.0. See the DIVERGENCES
   // block at the top of this file (divergence 4).
   resynthLevel: { min: WS_WET_MIN, max: WS_WET_MAX, defaultValue: 0 },
@@ -255,6 +302,31 @@ export const warrensspectrumDef: AudioModuleDef = {
   ],
   outputs: [{ id: 'out', type: 'audio' }],
   params: [
+    // ENGINE MODE first: it selects between two different DSP CLASSES, so no
+    // other control on the module changes more (plan §5.2 ranks it 1).
+    //
+    // ⚠ The roster names EVERY reachable index, and the range stops at the
+    // last implemented one. The VST declares three modes and we ship two, so
+    // rather than reserving its WAVETABLE slot (index 1) and leaving a live
+    // control position that does nothing, our indices append in
+    // implementation order — WAVETABLE will be 2. `param-vocabulary.test.ts`
+    // enforces exactly this and caught the first draft, which had reserved
+    // the gap.
+    { id: 'engineMode', label: 'Mode', ...WARRENSSPECTRUM_RANGES.engineMode, curve: 'discrete',
+      format: (v) => (Math.round(v) === WS_ENGINE_MASSPASS ? 'MASSPASS' : 'SPECTRAL'),
+      options: [
+        { value: WS_ENGINE_SPECTRAL, label: 'SPECTRAL',
+          title: 'FFT peak-tracking resynthesis — follows a pitch, rebuilds it as tracked partials plus noise residual' },
+        { value: WS_ENGINE_MASSPASS, label: 'MASSPASS',
+          title: 'Filterbank resynthesis — N tuned resonators, each reporting what it hears, sampled and held at SLICE' },
+      ] },
+    { id: 'spectralBandCount', label: 'Bands', ...WARRENSSPECTRUM_RANGES.spectralBandCount, curve: 'discrete',
+      format: (v) => String(WS_MASSPASS_BAND_COUNTS[Math.max(0, Math.min(WS_MASSPASS_BAND_COUNTS.length - 1, Math.round(v)))]),
+      options: WS_MASSPASS_BAND_COUNTS.map((count, i) => ({
+        value: i,
+        label: String(count),
+        title: `${count} bandpass filters, 50 Hz to 12 kHz — MASSPASS only`,
+      })) },
     { id: 'spectralPartials', label: 'Partials', ...WARRENSSPECTRUM_RANGES.spectralPartials, curve: 'discrete' },
     { id: 'spectralLock', label: 'Lock', ...WARRENSSPECTRUM_RANGES.spectralLock, curve: 'linear' },
     { id: 'spectralResidual', label: 'Residual', ...WARRENSSPECTRUM_RANGES.spectralResidual, curve: 'linear' },
@@ -295,7 +367,7 @@ export const warrensspectrumDef: AudioModuleDef = {
 
   docs: {
     explanation:
-      "A spectral-analysis resynthesizer — a port of the SPECTRAL engine of the Warren's Spectrum VST. It listens to whatever audio you patch into AUDIO IN, runs a rolling 2048-point FFT, finds the loudest sinusoidal peaks, tracks them from frame to frame, and rebuilds the sound as a bank of up to 256 oscillators. Crucially it ALSO rebuilds the part a partial tracker normally throws away: the energy left over after the peaks are claimed is measured in 16 log-spaced bands and replayed as filtered noise (the SMS \"residual\"). That residual is what keeps breath, air and sibilance in the sound — the plugin's own source calls it the number-one fix for the vocoder/robot vibe — so at RESIDUAL 0 an \"sss\" vanishes and at RESIDUAL 2 it comes back. Because the rebuild is an oscillator bank you can transpose it cleanly (CENTER, or a V/oct cable), thin it out (PARTIALS), recolour every partial from sine through saw to square (SHAPE), snap the partials onto a harmonic series (LOCK), smear it in time (SLEW), change how often it re-analyses (SLICE), or hold the current spectrum forever (FREEZE). It is an EFFECT, not a synth: with nothing patched into AUDIO IN it is silent. It is also mono and monophonic — N voices means N instances.",
+      "A resynthesizer with TWO different engines behind one MODE switch — a port of the Warren's Spectrum VST. MODE picks between them and they are separate DSP code, not two settings of one algorithm. MASSPASS is the other engine: it never runs an FFT at all, instead splitting the input across 16 to 99 log-spaced bandpass filters from 50 Hz to 12 kHz and letting each band report its own level (a 3 ms / 80 ms envelope follower) and its own pitch (a smoothed zero-crossing rate). Those per-band readings are sampled and HELD at the SLICE interval, and each band's oscillator runs on the held values — that sample-and-hold is the engine's signature stepping, and it makes SLICE far more dramatic here than in SPECTRAL. Only the loudest PARTIALS-many bands sound; the rest keep tracking and keep their phase advancing so nothing pops when they return. It is coarser and more vocoder-like than SPECTRAL, and at low band counts it is also cheaper, because there is no FFT and no partial matcher. BANDS sets the count and is a timbre control, not a level one (the bank is normalised by 1/sqrt(N)). SHAPE, SLICE, FREEZE, CENTER and the V/oct input all work in both modes; LOCK, RESIDUAL, FLOOR, STABILITY and SLEW are SPECTRAL-only, because they describe peak-tracking machinery MASSPASS does not have. Switching modes is click-free: the output dips to silence for about 6 ms and returns on the new engine. The default engine is SPECTRAL, described next.\n\nA spectral-analysis resynthesizer — a port of the SPECTRAL engine of the Warren's Spectrum VST. It listens to whatever audio you patch into AUDIO IN, runs a rolling 2048-point FFT, finds the loudest sinusoidal peaks, tracks them from frame to frame, and rebuilds the sound as a bank of up to 256 oscillators. Crucially it ALSO rebuilds the part a partial tracker normally throws away: the energy left over after the peaks are claimed is measured in 16 log-spaced bands and replayed as filtered noise (the SMS \"residual\"). That residual is what keeps breath, air and sibilance in the sound — the plugin's own source calls it the number-one fix for the vocoder/robot vibe — so at RESIDUAL 0 an \"sss\" vanishes and at RESIDUAL 2 it comes back. Because the rebuild is an oscillator bank you can transpose it cleanly (CENTER, or a V/oct cable), thin it out (PARTIALS), recolour every partial from sine through saw to square (SHAPE), snap the partials onto a harmonic series (LOCK), smear it in time (SLEW), change how often it re-analyses (SLICE), or hold the current spectrum forever (FREEZE). It is an EFFECT, not a synth: with nothing patched into AUDIO IN it is silent. It is also mono and monophonic — N voices means N instances.",
     inputs: {
       audio_in:
         'The mono audio to analyse and rebuild — a synth voice, a drum loop, a vocal, a whole mix. Nothing patched here means no output: this module resynthesizes what it hears, it does not generate on its own.',
@@ -314,26 +386,30 @@ export const warrensspectrumDef: AudioModuleDef = {
       out: 'The resynthesis: the tracked partials rendered by the oscillator bank, plus the 16-band noise residual, transposed and levelled. Held steady while FREEZE is engaged. It is a STEREO output, but it only carries a stereo image once BANK WET is up and the filterbank\'s bands are panned — the spectral engine ahead of it is mono, so with the bank out of circuit both channels carry the identical signal.',
     },
     controls: {
+      engineMode:
+        'Which of the two resynthesis engines is running — they are different DSP code, not two settings of one algorithm, so this changes more than any other control here. SPECTRAL runs a 2048-point FFT, finds and tracks sinusoidal peaks, and rebuilds the sound as tracked partials plus a noise residual; it follows pitch and sounds like the source rebuilt. MASSPASS never transforms anything: it splits the input across 16 to 99 tuned bandpass filters and lets each band report its own level and its own zero-crossing pitch, sampled and held at SLICE. The result is coarser, more vocoder-like and much more obviously stepped, and because MASSPASS has no FFT it is also cheaper at low band counts. Switching is click-free — the output dips to silence for about 6 ms and comes back on the new engine. The original plugin also has a WAVETABLE mode, which is not implemented here yet; a preset saved in it opens in SPECTRAL rather than silent, and it will be added as a third position rather than renumbering these two.',
+      spectralBandCount:
+        'How many bandpass filters MASSPASS splits the input across — 16, 24, 33, 48, 66 or 99, log-spaced from 50 Hz to 12 kHz. Used ONLY in MASSPASS mode; it does nothing in SPECTRAL. Higher counts narrow each band (Q rises to about 10 at 66 bands and 17 at 99), which sharpens the resynthesis toward a classic vocoder and resolves closely-spaced partials, while low counts are broader, blurrier and cheaper. It is not a volume control — the bank is normalised by 1/sqrt(N) so changing it changes timbre and not level. It is the engine\'s CPU dial: 99 bands costs roughly six times what 16 does.',
       spectralPartials:
-        'How many tracked partials the oscillator bank plays, 1 to 256, ranked by SALIENCE rather than raw loudness — so turning it down collapses toward the fundamental and its low harmonics instead of toward whichever formant happened to be loudest. It is also the CPU dial, and it scales the residual by the cube root of (PARTIALS−1)/47, so thinning the bank cleans up the noise too. 1 is a bare fundamental; 64 (the plugin default) is a full rebuild.',
+        'In SPECTRAL: how many tracked partials the oscillator bank plays, 1 to 256, ranked by SALIENCE rather than raw loudness — so turning it down collapses toward the fundamental and its low harmonics instead of toward whichever formant happened to be loudest. It is also the CPU dial, and it scales the residual by the cube root of (PARTIALS−1)/47, so thinning the bank cleans up the noise too. 1 is a bare fundamental; 64 (the plugin default) is a full rebuild. In MASSPASS the SAME knob becomes the active-band limiter, re-clamped to 1..BANDS: only the loudest that many bands sound, and the rest keep tracking and keep their oscillator phase advancing so that a band coming back does not pop. Turning it down there thins the vocoder to its strongest formants.',
       spectralLock:
-        'Pulls each tracked partial toward the nearest exact multiple of the detected fundamental. 0 leaves partials where the analysis found them (faithful, inharmonic, a bit warbly on voice); 1 snaps them onto a harmonic comb (musical, more synthetic). Only partials already within about 100 cents of a harmonic are moved, so formants and noise are left alone — and the whole effect is multiplied by the pitch-detector confidence, so it self-disengages on unpitched material.',
+        'Pulls each tracked partial toward the nearest exact multiple of the detected fundamental. 0 leaves partials where the analysis found them (faithful, inharmonic, a bit warbly on voice); 1 snaps them onto a harmonic comb (musical, more synthetic). Only partials already within about 100 cents of a harmonic are moved, so formants and noise are left alone — and the whole effect is multiplied by the pitch-detector confidence, so it self-disengages on unpitched material. Used only in SPECTRAL mode: MASSPASS has no global pitch detector to snap to, because each band estimates its own frequency independently.',
       spectralResidual:
-        'Level of the SMS noise residual: the energy left in the spectrum after every tracked peak is masked out, measured in 16 log-spaced bands from 80 Hz up and replayed through band-passed noise. 0 gives you the pure sinusoidal bank (the classic vocoder/robot sound); 0.5 is the plugin default; 2 puts back more breath and air than the input had. This is the control that decides whether the module sounds like a machine or like the source.',
+        'Level of the SMS noise residual: the energy left in the spectrum after every tracked peak is masked out, measured in 16 log-spaced bands from 80 Hz up and replayed through band-passed noise. 0 gives you the pure sinusoidal bank (the classic vocoder/robot sound); 0.5 is the plugin default; 2 puts back more breath and air than the input had. This is the control that decides whether the module sounds like a machine or like the source. Used only in SPECTRAL mode: the residual is what is left over after peak-picking, and MASSPASS never picks peaks.',
       spectralSlice:
-        'How often the spectrum is re-analysed, 2 to 200 ms. Short values track transients and make the module chatter with the source; long values sample it and hold, which is where the stuttering, stepping, pad-like character lives. The analysis WINDOW is always 2048 samples (about 43 ms), so a long SLICE slows the update rate without blurring what each frame sees. Note: the original plugin declares this same 2–200 ms range but internally clamps it at about 21 ms, so most of its knob does nothing — here the whole range works.',
+        'The rate at which the engine re-reads the input, 2 to 200 ms — and it means something different, and much stronger, in each mode. In SPECTRAL it is how often the spectrum is re-analysed: short values track transients and chatter with the source, long values sample and hold. The analysis WINDOW is always 2048 samples (about 43 ms), so a long SLICE slows the update rate without blurring what each frame sees. In MASSPASS it is the sample-and-hold interval on every band\'s level and pitch at once — between snapshots each band\'s oscillator is literally frozen in amplitude and frequency, which is where that engine\'s hard stepping comes from. Note: the original plugin declares this same 2–200 ms range but internally clamps SPECTRAL at about 21 ms, so most of its knob does nothing there — here the whole range works in both modes.',
       engineFreeze:
-        'Holds the current set of partials — their frequencies and amplitudes — so the bank drones on that spectrum no matter what the input does. It holds oscillator state rather than looping a buffer, which is why it sustains rather than stutters, and why SHAPE, CENTER and SLEW still change a frozen sound. The GATE input does the same thing while it is high; the two OR together.',
+        'Holds the current picture so the module drones on it no matter what the input does. In SPECTRAL that is the tracked partials — their frequencies and amplitudes — held as oscillator state rather than a looped buffer, which is why it sustains rather than stutters, and why SHAPE, CENTER and SLEW still change a frozen sound. In MASSPASS it holds the per-band level and pitch snapshot instead, with the oscillators still running, so it sustains the same way. The GATE input does the same thing while it is high; the two OR together. Note: in the original plugin FREEZE is wired to the spectral engine only and does nothing in MASSPASS — here it works in both, because a gate input that accepts a cable and silently ignores it is worse than a missing feature.',
       spectralShape:
-        'The waveform every partial uses: sine at 0, band-limited saw at 0.5, band-limited square at 1, crossfading smoothly in between. At 0 this is a faithful additive resynthesis; past that each partial sprouts its own harmonic series, which thickens and dirties the whole rebuild.',
+        'The waveform every voice uses: sine at 0, band-limited saw at 0.5, band-limited square at 1, crossfading smoothly in between. At 0 this is a faithful additive resynthesis; past that each voice sprouts its own harmonic series, which thickens and dirties the whole rebuild. It works identically in both modes — the two engines render their voices through the same shared waveform function, so the knob means exactly the same thing whichever is selected.',
       spectralFloor:
-        'The peak-detection threshold, in dB BELOW THE LOUDEST BIN of each frame — not an absolute level. Stricter (toward −20 dB) admits only the dominant peaks and starves the bank; more permissive (toward −90 dB) lets quiet detail and noise floor become tracked partials. Works together with STABILITY: FLOOR decides what is loud enough, STABILITY decides what has lasted long enough.',
+        'The peak-detection threshold, in dB BELOW THE LOUDEST BIN of each frame — not an absolute level. Stricter (toward −20 dB) admits only the dominant peaks and starves the bank; more permissive (toward −90 dB) lets quiet detail and noise floor become tracked partials. Works together with STABILITY: FLOOR decides what is loud enough, STABILITY decides what has lasted long enough. Used only in SPECTRAL mode — MASSPASS has no peak detector, so nothing reads this.',
       spectralStab:
-        'How many consecutive analysis frames a partial must survive before it is allowed to make sound, 1 to 16. It fades in over that window rather than hard-unmuting. Low values track fast and chirp on noisy material; high values suppress the short-lived flickering peaks that make a partial tracker sound like beeping robots.',
+        'How many consecutive analysis frames a partial must survive before it is allowed to make sound, 1 to 16. It fades in over that window rather than hard-unmuting. Low values track fast and chirp on noisy material; high values suppress the short-lived flickering peaks that make a partial tracker sound like beeping robots. Used only in SPECTRAL mode — MASSPASS bands are permanent, so there is no birth to gate.',
       spectralSlew:
-        'Smoothing time for each partial, 0.02 to 4 seconds — applied to amplitude per sample and to frequency per analysis frame. Short values follow the input crisply; long values glide partials between analyses, smearing the resynthesis into an evolving pad. Frequency smoothing is also why a partial drifting between FFT bins glides instead of chirping.',
+        'Smoothing time for each partial, 0.02 to 4 seconds — applied to amplitude per sample and to frequency per analysis frame. Short values follow the input crisply; long values glide partials between analyses, smearing the resynthesis into an evolving pad. Frequency smoothing is also why a partial drifting between FFT bins glides instead of chirping. Used only in SPECTRAL mode: MASSPASS does its own smoothing with a fixed 3 ms attack / 80 ms release envelope follower per band, which this knob does not reach.',
       spectralCenter:
-        'Transposes the rebuilt spectrum by up to ±3600 cents (±3 octaves), applied after analysis so the whole bank moves coherently and the tracking is unaffected. Adds to whatever the V/oct PITCH input contributes.',
+        'Transposes the rebuilt spectrum by up to ±3600 cents (±3 octaves), applied after analysis so the whole bank moves coherently and the tracking is unaffected. Adds to whatever the V/oct PITCH input contributes. Works in both modes — in MASSPASS it transposes every band\'s oscillator while leaving the analysis filters where they are, so the resynthesis moves in pitch but keeps reading the same part of the spectrum. (The original plugin has no transposition in MASSPASS at all; ours honours it so the PITCH input is never a dead jack.)',
       resynthLevel:
         'How much of the output comes through the 8-band FILTERBANK: 0 is the bare resynthesis, 1 is the resynthesis heard ONLY through the bands. It is a crossfade, not a level — turning it up does not make the module louder, it swaps one path for the other. It also decides whether this module is mono or stereo, because the per-band PAN is the only stage in the whole chain that makes a stereo image. NOTE: the original plugin ships this at 1, with the bank always in circuit; here it defaults to 0 so that adding the filterbank cannot change how a rack you already saved sounds. Turn it up and the bank is exactly the plugin\'s.',
       inputMix:

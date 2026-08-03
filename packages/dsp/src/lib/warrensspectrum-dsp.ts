@@ -116,6 +116,13 @@ import {
   WsFilterBank,
   type WsBandSettings,
 } from './warrensspectrum-filterbank';
+import { WsMassPass, wsBandCountForIndex, WS_MASSPASS_BAND_COUNTS } from './warrensspectrum-masspass';
+import { wsVoiceWaveform } from './warrensspectrum-voice';
+
+// The SHAPE morph moved to ./warrensspectrum-voice.ts so MASSPASS can share
+// the EXACT same function rather than the VST's hand-synchronised copy. It is
+// re-exported here because that is where every existing importer looks for it.
+export { wsVoiceWaveform };
 
 // ---------------------------------------------------------------------------
 // Fixed algorithm constants.
@@ -164,6 +171,64 @@ const RESIDUAL_ENV_TAU_S = 0.025;
 /** xorshift32 seed — `SpectralResynth.h:200`. Constant so the engine is
  *  BYTE-REPRODUCIBLE, which is what makes an ART golden possible at all. */
 export const WS_RESIDUAL_NOISE_SEED = 0x9e3779b9;
+
+// ---------------------------------------------------------------------------
+// ENGINE MODE (phase 4) — `engineMode`, `PluginParams.h:119-126`.
+// ---------------------------------------------------------------------------
+
+/**
+ * `engineMode` values. The VST declares THREE
+ * (`{ "SPECTRAL", "WAVETABLE", "MASSPASS" }`, `PluginParams.h:126`); we ship
+ * two.
+ *
+ * ⚠ OUR INDICES ARE NOT THE VST'S, and that is deliberate. Upstream MASSPASS
+ * is index 2 with WAVETABLE at 1. Carrying that numbering would have made
+ * index 1 REACHABLE — by knob, by automation, by a CV cable — while doing
+ * nothing but falling back to SPECTRAL. That is dead control travel, which is
+ * exactly what the owner's "CORRECT, not faithful" decision (plan §3.2.2)
+ * forbids us from reproducing, and `param-vocabulary.test.ts` rejects it
+ * outright: every reachable state of a discrete param must be named.
+ *
+ * So our indices append IN IMPLEMENTATION ORDER: SPECTRAL 0, MASSPASS 1, and
+ * WAVETABLE will take 2 when it lands. Appending means a rack saved today
+ * keeps its meaning forever. The cost is that a `.wspr` fingerprint (§3.5)
+ * needs a two-entry translation on `engineMode` at the import boundary —
+ * which is a job for the importer, in the PR that adds it, not a reason to
+ * ship a live control position that does nothing.
+ */
+export const WS_ENGINE_SPECTRAL = 0;
+export const WS_ENGINE_MASSPASS = 1;
+
+/** The declared `engineMode` range — every index in it is implemented. */
+export const WS_ENGINE_MODE_MIN = 0;
+export const WS_ENGINE_MODE_MAX = 1;
+
+/** Re-exported so the def and the worklet read the band-count roster from the
+ *  engine rather than re-typing six integers. */
+export { WS_MASSPASS_BAND_COUNTS };
+
+/** `spectralBandCount` is an INDEX into `WS_MASSPASS_BAND_COUNTS`, exactly as
+ *  the VST declares it (`PluginParams.h:14`, `PluginProcessor.cpp:209-211`).
+ *  Declaring the raw counts instead would need an 84-entry `options` roster
+ *  to satisfy the "every discrete step is named" vocabulary gate. */
+export const WS_BAND_COUNT_IDX_MIN = 0;
+export const WS_BAND_COUNT_IDX_MAX = WS_MASSPASS_BAND_COUNTS.length - 1;
+/** Default index 1 → 24 bands, the VST's `MassPass` default (`MassPass.h:96`). */
+export const WS_BAND_COUNT_IDX_DEFAULT = 1;
+
+/**
+ * Mode-change DECLICK, in seconds.
+ *
+ * Switching `engineMode` swaps one DSP class for another whose output is
+ * uncorrelated with it — the sample either side of the switch has no reason
+ * to be continuous, so a raw swap is an audible click at any amplitude.
+ * Rather than run BOTH engines through a crossfade (which would mean paying
+ * SPECTRAL's full FFT cost during a MASSPASS switch, the one thing MASSPASS
+ * exists to avoid), the engine ramps the DRY bus down to 0, swaps, and ramps
+ * back up. 6 ms total is below the ~10 ms where a gap reads as a dropout and
+ * far above the ~0.2 ms where a ramp stops suppressing the click.
+ */
+const MODE_XFADE_S = 0.003;
 
 /** FILTERBANK WET / INPUT MIX declared ranges (phase 2). Exported for the
  *  same one-place-only reason as the SLICE bounds above. */
@@ -242,48 +307,6 @@ function inPlaceFFT(re: Float32Array, im: Float32Array): void {
       }
     }
   }
-}
-
-// ---------------------------------------------------------------------------
-// Waveform morph — `SpectralResynth.cpp:42-98`.
-// ---------------------------------------------------------------------------
-
-function polyBlep(t: number, dt: number): number {
-  if (t < dt) {
-    const x = t / dt;
-    return x + x - x * x - 1;
-  }
-  if (t > 1 - dt) {
-    const x = (t - 1) / dt;
-    return x * x + x + x + 1;
-  }
-  return 0;
-}
-
-function bandLimitedSaw(phase01: number, dt: number): number {
-  return 2 * phase01 - 1 - polyBlep(phase01, dt);
-}
-
-function bandLimitedSquare(phase01: number, dt: number): number {
-  const naive = phase01 < 0.5 ? 1 : -1;
-  let falling = phase01 + 0.5;
-  if (falling >= 1) falling -= 1;
-  return naive + polyBlep(phase01, dt) - polyBlep(falling, dt);
-}
-
-/**
- * SHAPE morph: sine → saw → square. Verbatim from `voiceWaveform()`
- * (`SpectralResynth.cpp:83-98`) including both 1e-4 endpoint snaps.
- */
-export function wsVoiceWaveform(phase01: number, dt: number, shape01: number): number {
-  if (shape01 <= 1e-4) return Math.sin(2 * Math.PI * phase01);
-  if (shape01 < 0.5) {
-    const a = shape01 * 2;
-    return (1 - a) * Math.sin(2 * Math.PI * phase01) + a * bandLimitedSaw(phase01, dt);
-  }
-  if (shape01 >= 1 - 1e-4) return bandLimitedSquare(phase01, dt);
-  const a = (shape01 - 0.5) * 2;
-  return (1 - a) * bandLimitedSaw(phase01, dt) + a * bandLimitedSquare(phase01, dt);
 }
 
 /**
@@ -440,6 +463,21 @@ export class WarrensSpectrumEngine {
   private gainLinear = 1;
   private frozen = false;
 
+  // ---- engine mode (phase 4) ----
+  /** Which DSP class produces the DRY bus. Defaults to SPECTRAL, so an
+   *  untouched rack takes exactly the phase-1/2 code path. */
+  private engineMode: number = WS_ENGINE_SPECTRAL;
+  /** The MASSPASS engine. Constructed eagerly (allocation is forbidden on the
+   *  audio thread) but it costs NOTHING while SPECTRAL is selected — its
+   *  `processSample` is simply never called. */
+  private massPass!: WsMassPass;
+  /** Samples remaining in the mode-change declick ramp; 0 = not switching. */
+  private modeXfadeRemaining = 0;
+  /** Total length of the current declick ramp, for normalising the gain. */
+  private modeXfadeTotal = 0;
+  /** The mode the ramp is heading TO — applied at the ramp's midpoint. */
+  private modeXfadePending: number = WS_ENGINE_SPECTRAL;
+
   // ---- filterbank (phase 2) ----
   /** FILTERBANK WET target. ⚠ DEFAULT 0, and that is a DELIBERATE DIVERGENCE
    *  from the VST's 1.0 (`PluginParams.h` "Filterbank Wet"). Upstream the bank
@@ -494,6 +532,7 @@ export class WarrensSpectrumEngine {
     const tauSamples = Math.max(1, sampleRate * RESIDUAL_ENV_TAU_S);
     this.residualEnvCoef = 1 - Math.exp(-1 / tauSamples);
     this.bank = new WsFilterBank(sampleRate);
+    this.massPass = new WsMassPass(sampleRate, wsBandCountForIndex(WS_BAND_COUNT_IDX_DEFAULT));
     // ~5 ms one-pole on WET. Short enough to feel immediate, long enough that
     // a per-quantum k-rate step (2.67 ms at 128/48k) does not read as a step.
     this.wetSmoothCoef = 1 - Math.exp(-1 / Math.max(1, sampleRate * WET_SMOOTH_TAU_S));
@@ -525,13 +564,94 @@ export class WarrensSpectrumEngine {
     this.wetSmoothed = 0;
     this.bankRunning = false;
     this.rightOut = 0;
+    this.massPass.reset();
+    this.modeXfadeRemaining = 0;
+    this.modeXfadeTotal = 0;
   }
 
   // ---- setters (all idempotent; only `slice`/`slew` recompute anything) ----
 
-  /** PARTIALS — the oscillator-bank size. Clamped to [1, WS_MAX_TRACKS]. */
+  /**
+   * PARTIALS — the oscillator-bank size, clamped to [1, WS_MAX_TRACKS].
+   *
+   * In MASSPASS this same control is the ACTIVE-BAND limiter, re-clamped to
+   * [1, bandCount] — exactly the VST's reuse of the slider
+   * (`PluginProcessor.cpp:215-217`). One knob, two engines, two meanings; the
+   * def documents both.
+   */
   setPartials(n: number): void {
     this.partials = Math.max(1, Math.min(WS_MAX_TRACKS, Math.round(n)));
+    this.massPass.setActiveBands(n);
+  }
+
+  /**
+   * ENGINE MODE — `WS_ENGINE_SPECTRAL` or `WS_ENGINE_MASSPASS`.
+   *
+   * An unrecognised value (notably index 1, WAVETABLE, which is declared by
+   * the VST but not implemented here) falls back to SPECTRAL rather than
+   * silencing the module. A saved rack or a `.wspr` fingerprint written by
+   * the plugin can legitimately carry a 1, and "the module went quiet" is a
+   * far worse answer to that than "it played the default engine".
+   *
+   * A real change starts the declick ramp; setting the mode it is already in
+   * is a no-op, so a per-quantum k-rate re-set cannot retrigger the ramp and
+   * turn a steady setting into a 3 ms tremolo.
+   */
+  setEngineMode(mode: number): void {
+    const wanted = Math.round(mode) === WS_ENGINE_MASSPASS ? WS_ENGINE_MASSPASS : WS_ENGINE_SPECTRAL;
+    // Compare against the PENDING mode, not the live one — mid-ramp the live
+    // mode may not have flipped yet, and comparing against it would restart
+    // the ramp on every quantum until it completed.
+    if (wanted === this.modeXfadePending) return;
+    this.modeXfadePending = wanted;
+    this.modeXfadeTotal = Math.max(2, Math.round(this.sampleRate * MODE_XFADE_S) * 2);
+    this.modeXfadeRemaining = this.modeXfadeTotal;
+  }
+
+  /** The live engine mode. */
+  getEngineMode(): number {
+    return this.engineMode;
+  }
+
+  /** True while the mode-change declick ramp is running. */
+  isModeSwitching(): boolean {
+    return this.modeXfadeRemaining > 0;
+  }
+
+  /**
+   * MASSPASS BAND COUNT, as an INDEX into `WS_MASSPASS_BAND_COUNTS`
+   * (0→16 … 5→99). Ignored by SPECTRAL. Changing it re-derives 99 filter
+   * coefficients, so `WsMassPass.setBandCount` no-ops when unchanged.
+   */
+  setBandCountIndex(idx: number): void {
+    this.massPass.setBandCount(wsBandCountForIndex(idx));
+    // Re-apply PARTIALS: the active-band limit is clamped to the band count,
+    // so growing the bank must be able to re-widen it.
+    this.massPass.setActiveBands(this.partials);
+  }
+
+  /** The MASSPASS engine, for the unit gates and the ART profile. */
+  getMassPass(): WsMassPass {
+    return this.massPass;
+  }
+
+  /**
+   * Per-render-quantum hook. The worklet calls this ONCE before each block.
+   *
+   * It re-runs MASSPASS's loudest-band selection, mirroring the C++, which
+   * does the selection at the top of `MassPass::process` — i.e. once per
+   * block (`MassPass.cpp:236-247`). It MUST be called periodically: band
+   * envelopes evolve continuously, so a selection taken once and never
+   * refreshed would pin whichever bands happened to be loudest at startup
+   * and PARTIALS would stop tracking the music. Doing it per SAMPLE instead
+   * would multiply its O(N^2) cost by 128 and turn 0.35 % of a quantum into
+   * ~45 % of one.
+   *
+   * Cheap and safe to call in SPECTRAL mode (it touches only MASSPASS
+   * state), so the worklet does not need to know which engine is live.
+   */
+  beginBlock(): void {
+    this.massPass.beginBlock();
   }
 
   /** FLOOR — peak threshold in dB BELOW THE LOUDEST BIN, not absolute dBFS. */
@@ -557,6 +677,9 @@ export class WarrensSpectrumEngine {
   /** SHAPE — per-voice sine→saw→square morph. */
   setShape(v: number): void {
     this.shape = Math.max(0, Math.min(1, v));
+    // SHAPE is genuinely shared: both engines render voices through the SAME
+    // `wsVoiceWaveform`, so the knob means the same thing in either mode.
+    this.massPass.setShape(v);
   }
 
   /** SLEW — amplitude/frequency smoothing time in seconds. */
@@ -579,6 +702,10 @@ export class WarrensSpectrumEngine {
     this.syncedActive = false;
     this.recomputeSlice();
     this.recomputeSlew(); // freqCoefPerHop is expressed in HOPS
+    // SLICE drives MASSPASS's sample-and-hold interval. Same knob, same
+    // units, but a much more dramatic effect — in SPECTRAL it sets the
+    // re-analysis rate, in MASSPASS it IS the stepping.
+    this.massPass.setSliceMs(v, WS_SLICE_MIN_MS, WS_SLICE_MAX_MS);
   }
 
   /**
@@ -625,6 +752,9 @@ export class WarrensSpectrumEngine {
   /** FREEZE — stop committing analysis frames; the bank keeps playing. */
   setFrozen(f: boolean): void {
     this.frozen = f;
+    // FREEZE reaches MASSPASS too — see `WsMassPass.setFrozen` for why this
+    // DIVERGES from the VST, where the FREEZE button is inert in this mode.
+    this.massPass.setFrozen(f);
   }
 
   // ---- filterbank (phase 2) ----
@@ -1073,11 +1203,26 @@ export class WarrensSpectrumEngine {
     // (1) Push into the circular buffer; commit an analysis frame on the
     //     SLICE boundary. Freeze skips the COMMIT, never the buffer write —
     //     so un-freezing resumes from live audio, not stale audio.
+    // The circular WRITE happens in BOTH modes — it is two operations, and
+    // keeping it means switching back to SPECTRAL analyses the audio that
+    // just played rather than whatever was in the buffer before the user
+    // left SPECTRAL. Only the ANALYSIS (the FFT + matcher, i.e. all of the
+    // cost) is skipped in MASSPASS.
     this.circular[this.circularWrite] = input;
     this.circularWrite = (this.circularWrite + 1) % WS_FFT_SIZE;
+    const spectralActive = this.engineMode === WS_ENGINE_SPECTRAL;
     if (++this.samplesSinceHop >= this.hopSamples) {
       this.samplesSinceHop = 0;
-      if (!this.frozen) this.analyzeFrame();
+      if (!this.frozen && spectralActive) this.analyzeFrame();
+    }
+
+    // MASSPASS — an entirely separate DSP class. It produces the DRY bus and
+    // everything downstream (WET crossfade, INPUT MIX, filterbank, gain) is
+    // mode-agnostic, exactly as upstream's `resynthBuf_` is
+    // (`PluginProcessor.cpp:296-298`).
+    if (!spectralActive) {
+      const massDry = this.massPass.processSample(input, this.transposeRatio * pitchTranspose);
+      return this.finishSample(massDry, input);
     }
 
     const sr = this.sampleRate;
@@ -1154,6 +1299,55 @@ export class WarrensSpectrumEngine {
     //     crossfade + INPUT MIX add) followed by the master gain at [6].
     const dry = sample + residual * effResidual;
 
+    return this.finishSample(dry, input);
+  }
+
+  /**
+   * The mode-change DECLICK — a V-shaped gain on the DRY bus that reaches
+   * exactly 0 at its midpoint, where the engine swap happens.
+   *
+   * The two engines' outputs are uncorrelated, so a bare swap steps the
+   * waveform by an arbitrary amount and clicks. Crossfading the two SIGNALS
+   * would be smoother still, but it would mean running SPECTRAL's FFT and
+   * matcher throughout every switch INTO MassPass — paying the exact cost
+   * MassPass exists to avoid, at the one moment the user is already asking
+   * the CPU for something new. A 6 ms dip is the cheaper honest answer.
+   *
+   * Returns `dry` UNTOUCHED when no switch is in flight — an early return,
+   * not `dry * 1.0`, so the steady-state path adds no float operation and
+   * SPECTRAL stays byte-identical to phase 2.
+   */
+  private applyModeXfade(dry: number): number {
+    if (this.modeXfadeRemaining <= 0) return dry;
+    const half = this.modeXfadeTotal >> 1;
+    const rem = --this.modeXfadeRemaining;
+    // Swap at the midpoint, where the ramp gain is 0 and the discontinuity
+    // is therefore multiplied by nothing.
+    if (rem === half) this.engineMode = this.modeXfadePending;
+    const g = rem >= half ? (rem - half) / half : (half - rem) / half;
+    return dry * g;
+  }
+
+  /**
+   * The MODE-AGNOSTIC tail: declick → FILTERBANK WET → INPUT MIX → gain.
+   *
+   * Both engines hand their mono DRY bus to this, exactly as upstream's two
+   * engines both write `resynthBuf_` and share everything after it
+   * (`PluginProcessor.cpp:290-300`). Splitting it out is what stops MASSPASS
+   * from needing its own copy of the wet/mix/gain logic — a copy that could
+   * drift, which is the whole failure mode the shared voice module above
+   * also exists to prevent.
+   *
+   * ⚠ For SPECTRAL with no mode switch in flight this is the SAME SEQUENCE
+   * OF FLOAT OPERATIONS phase 2 executed, in the same order — `applyModeXfade`
+   * returns `dry` unchanged (an early `return`, not a multiply by 1.0), so
+   * there is no extra rounding step. That is what keeps the three committed
+   * ART baselines byte-identical, and `warrensspectrum-dsp.test.ts` asserts
+   * it rather than leaving it as an argument.
+   */
+  private finishSample(dryIn: number, input: number): number {
+    const dry = this.applyModeXfade(dryIn);
+
     // (5) WET, smoothed, with an exact-zero snap on the way down.
     //     The snap is to the TARGET, not just to zero. A one-pole reaches
     //     neither end, and both ends are load-bearing: at 0 an un-snapped
@@ -1227,6 +1421,7 @@ export class WarrensSpectrumEngine {
   /** Convenience block render — used by the unit gates and the ART profile. */
   processBlock(input: Float32Array, out?: Float32Array, pitchTranspose = 1): Float32Array {
     const dst = out ?? new Float32Array(input.length);
+    this.beginBlock();
     for (let i = 0; i < input.length; i++) dst[i] = this.processSample(input[i]!, pitchTranspose);
     return dst;
   }
