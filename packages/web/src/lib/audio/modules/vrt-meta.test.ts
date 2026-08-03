@@ -330,7 +330,14 @@ describe('vrt-meta — STRICT_VRT_MODULES RATCHET (only grows)', () => {
  * the merge is where that arithmetic has to be done, and the both-directions
  * assertion below is what refuses a guess.
  */
-const SHARED_LINUX_PAIR_CEILING = 91;
+// FACE BATCH 3 (2026-08-03): 91 → 97. SIX deliberate darwin-first pairs — the
+// compact + dock face scenes for clap, drummergirl and pentemelodica, the three
+// modules PROMOTED in that batch. Commented at the declaration site in
+// vrt-exemptions.ts. They come back OUT, and this number back down to 91, the
+// moment a `vrt-update.yml -f platform=linux` dispatch on this branch lands
+// their linux siblings. (sixstrum's face RE-DO needed no new pair: its two
+// linux entries have been listed since batch 2.)
+const SHARED_LINUX_PAIR_CEILING = 97;
 
 describe('vrt-meta — EXEMPT_BASELINE_PAIRS size RATCHET (only shrinks)', () => {
   // ⚠ 2026-08-01 — READ THIS BEFORE TRUSTING THE NUMBER BELOW.
@@ -559,7 +566,11 @@ describe('vrt-meta — EXEMPT_BASELINE_PAIRS size RATCHET (only shrinks)', () =>
 // scenes stopped being darwin-only. ⚠ SUM, not substitution: ringback's −1
 // and snaredrum's −2 are independent drains that landed the same day, and
 // taking either branch's literal would leave the other's slack behind.
-const LINUX_DEFICIT_CEILING = 148;
+// FACE BATCH 3 (2026-08-03): 148 → 154. The SAME six scenes as the shared-pair
+// ceiling above — a new darwin-first face scene is a real gap until its linux
+// sibling is captured, and it is declared rather than invisible. Lower BOTH by
+// 6 in the same commit as the drain.
+const LINUX_DEFICIT_CEILING = 154;
 
 describe('vrt-meta — LINUX-baseline DEFICIT RATCHET (all four mechanisms)', () => {
   // THE HONESTY GATE. CI renders on LINUX. A scene captured on darwin but

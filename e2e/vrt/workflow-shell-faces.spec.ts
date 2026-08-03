@@ -69,7 +69,6 @@ const FACES = [
   // FACE BATCH 3 (2026-08-03) — the PF-20 wave. `pages` is the POST-hero-split
   // band count the dock renders, which is the declared `face.pages` length
   // unless a promotion empties a band (heroFacePlan drops an emptied band).
-  { type: 'analogVco', pages: 2 },
   { type: 'clap', pages: 4 },
   { type: 'drummergirl', pages: 2 },
   // ⚠ 8 bands trips DOCK_TAB_MIN_BANDS: this face renders as a TAB RAIL, by

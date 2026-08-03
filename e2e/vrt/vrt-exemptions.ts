@@ -1067,6 +1067,28 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   'linux/rear-dx7',
   'linux/rear-sixstrum',
   //
+  // FACE BATCH 3 (2026-08-03, deliberate darwin-first — the batch-1/2 pattern
+  // above, at the point in its lifecycle BEFORE the drain): the 6 CURATED FACE
+  // scenes for the three newly-promoted modules (clap, drummergirl,
+  // pentemelodica — compact lane tile + dock full-view faceplate each). darwin
+  // baselines captured locally; the linux pairs below are pending a
+  // `vrt-update.yml -f platform=linux` dispatch on this branch, at which point
+  // they get DRAINED exactly like batch 1's did and BOTH vrt-meta ceilings come
+  // back down by 6.
+  //
+  // ⚠ sixstrum needs NO new pair: `linux/face-sixstrum-{compact,dock}` are
+  // already listed above (batch 2, never captured), so its face RE-DO is free
+  // on linux. Its two DARWIN baselines did move and were re-captured here —
+  // measured 205 px (compact) and 11379 px (dock, 7.6x the 1500 budget), i.e.
+  // both genuinely FAIL, so `--update-snapshots` rewrote them and the `git rm`
+  // route (which would have manufactured an undeclared gap) was not needed.
+  'linux/face-clap-compact',
+  'linux/face-clap-dock',
+  'linux/face-drummergirl-compact',
+  'linux/face-drummergirl-dock',
+  'linux/face-pentemelodica-compact',
+  'linux/face-pentemelodica-dock',
+  //
   // PF-8 DOCK LANE-RAIL REMOVAL (2026-07-27) was DRAINED here, NOT parked.
   // The migrated shell no longer paints the lane jack rail at view='dock-full'
   // — it was a DUPLICATE patch surface under the faceplate's real one (the

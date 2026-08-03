@@ -80,7 +80,6 @@ analogVco param pmAmount -1..1 linear default=0
 analogVco param pw 0.05..0.95 linear default=0.5
 analogVco param shape 0..1 linear default=0
 analogVco param tune -36..36 linear default=0 unit=semi
-analogVco family analogvco-cycle kind=cell prefix=analogvco-cycle
 archivist meta domain=video
 archivist in play_trigger gate param=cv_play_trigger edge=gate
 archivist out audio_l audio
