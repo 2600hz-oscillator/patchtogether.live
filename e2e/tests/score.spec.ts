@@ -11,7 +11,8 @@
 // - Bar overflow rejected (red shake CSS, second whole note not added)
 
 import { test, expect } from './_fixtures';
-import { seedScoreThenPlay, spawnPatch } from './_helpers';
+import { spawnPatch } from './_helpers';
+import { seedScoreThenPlay } from './_score-helpers';
 
 test.describe.configure({ mode: 'parallel' });
 

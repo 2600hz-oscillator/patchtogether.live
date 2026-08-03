@@ -36,7 +36,8 @@
 
 import { test, expect } from './_fixtures';
 import { type Page } from '@playwright/test';
-import { seedScoreThenPlay, spawnPatch } from './_helpers';
+import { spawnPatch } from './_helpers';
+import { seedScoreThenPlay } from './_score-helpers';
 import {
   readScopeSnapshot,
   summarize,
