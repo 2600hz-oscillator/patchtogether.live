@@ -330,14 +330,18 @@ describe('vrt-meta — STRICT_VRT_MODULES RATCHET (only grows)', () => {
  * the merge is where that arithmetic has to be done, and the both-directions
  * assertion below is what refuses a guess.
  */
-// FACE BATCH 3 (2026-08-03): 91 → 97. SIX deliberate darwin-first pairs — the
-// compact + dock face scenes for clap, drummergirl and pentemelodica, the three
-// modules PROMOTED in that batch. Commented at the declaration site in
-// vrt-exemptions.ts. They come back OUT, and this number back down to 91, the
-// moment a `vrt-update.yml -f platform=linux` dispatch on this branch lands
-// their linux siblings. (sixstrum's face RE-DO needed no new pair: its two
-// linux entries have been listed since batch 2.)
-const SHARED_LINUX_PAIR_CEILING = 97;
+// FACE BATCH 3 (2026-08-03): 97 → 91, DRAINED. The six darwin-first pairs added
+// by that batch — the compact + dock face scenes for clap, drummergirl and
+// pentemelodica, the three modules PROMOTED in it — came back OUT of
+// EXEMPT_BASELINE_PAIRS in the same commit as this number, so that a
+// `vrt-update.yml -f platform=linux` dispatch on this branch could capture
+// them at all (a listed pair is skipped unconditionally and a skipped test
+// writes no snapshot). This ceiling is LIST-anchored, so it drops the instant
+// those 6 lines go — unlike LINUX_DEFICIT_CEILING below, which is
+// ARTIFACT-anchored and only falls when the PNGs actually land.
+// (sixstrum's face RE-DO needed no new pair: its two linux entries have been
+// listed since batch 2 and stay listed.)
+const SHARED_LINUX_PAIR_CEILING = 91;
 
 describe('vrt-meta — EXEMPT_BASELINE_PAIRS size RATCHET (only shrinks)', () => {
   // ⚠ 2026-08-01 — READ THIS BEFORE TRUSTING THE NUMBER BELOW.
@@ -566,11 +570,20 @@ describe('vrt-meta — EXEMPT_BASELINE_PAIRS size RATCHET (only shrinks)', () =>
 // scenes stopped being darwin-only. ⚠ SUM, not substitution: ringback's −1
 // and snaredrum's −2 are independent drains that landed the same day, and
 // taking either branch's literal would leave the other's slack behind.
-// FACE BATCH 3 (2026-08-03): 148 → 154. The SAME six scenes as the shared-pair
-// ceiling above — a new darwin-first face scene is a real gap until its linux
-// sibling is captured, and it is declared rather than invisible. Lower BOTH by
-// 6 in the same commit as the drain.
-const LINUX_DEFICIT_CEILING = 154;
+// FACE BATCH 3 (2026-08-03): 154 → 148, the DRAIN half of the same six scenes
+// as the shared-pair ceiling above (clap / drummergirl / pentemelodica, compact
+// + dock). ⚠ Unlike that one, this ceiling is ARTIFACT-anchored: ground truth
+// is "a darwin PNG with no linux sibling", so removing the six pairs from
+// EXEMPT_BASELINE_PAIRS does NOT by itself move `report.total` — the six stay
+// real gaps until the `vrt-update.yml -f platform=linux` dispatch on this
+// branch actually commits their linux PNGs, at which point total falls 154 → 148
+// and meets this number exactly. The interval between the drain push and that
+// capture is the known-red window CLAUDE.md names ("a drain without its
+// re-capture ships a red lane"); it closes inside this same PR. If this gate is
+// red with 6 UNDECLARED gaps named clap/drummergirl/pentemelodica, the dispatch
+// has not landed yet — that is the expected reading, not a reason to raise the
+// number back.
+const LINUX_DEFICIT_CEILING = 148;
 
 describe('vrt-meta — LINUX-baseline DEFICIT RATCHET (all four mechanisms)', () => {
   // THE HONESTY GATE. CI renders on LINUX. A scene captured on darwin but

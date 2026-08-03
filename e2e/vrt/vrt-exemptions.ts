@@ -1067,27 +1067,43 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   'linux/rear-dx7',
   'linux/rear-sixstrum',
   //
-  // FACE BATCH 3 (2026-08-03, deliberate darwin-first — the batch-1/2 pattern
-  // above, at the point in its lifecycle BEFORE the drain): the 6 CURATED FACE
-  // scenes for the three newly-promoted modules (clap, drummergirl,
-  // pentemelodica — compact lane tile + dock full-view faceplate each). darwin
-  // baselines captured locally; the linux pairs below are pending a
-  // `vrt-update.yml -f platform=linux` dispatch on this branch, at which point
-  // they get DRAINED exactly like batch 1's did and BOTH vrt-meta ceilings come
-  // back down by 6.
+  // FACE BATCH 3 (2026-08-03) — DRAINED IN THIS PR, not parked. The 6 CURATED
+  // FACE scenes for the three newly-promoted modules (clap, drummergirl,
+  // pentemelodica — compact lane tile + dock full-view faceplate each) were
+  // captured darwin-first, then `linux/face-{clap,drummergirl,pentemelodica}-
+  // {compact,dock}` came OUT here so a `vrt-update.yml -f platform=linux`
+  // dispatch on this branch could actually capture them: a still-listed pair is
+  // `test.skip()`-ed UNCONDITIONALLY and `--update-snapshots` writes NOTHING
+  // for a skipped test, so the dispatch would have come back green having
+  // captured exactly zero. Drain first, dispatch second.
+  //
+  // BOTH vrt-meta ratchets move in the SAME commit as this drain:
+  // SHARED_LINUX_PAIR_CEILING 97 → 91 (list-anchored — it drops the moment
+  // these 6 lines go) and LINUX_DEFICIT_CEILING 154 → 148 (ARTIFACT-anchored —
+  // ground truth is "a darwin PNG with no linux sibling", so it only actually
+  // reaches 148 when the bot's 6 linux PNGs land; the window between this push
+  // and that capture is the known-red interval CLAUDE.md calls "a drain without
+  // its re-capture", and it closes in this same PR).
   //
   // ⚠ sixstrum needs NO new pair: `linux/face-sixstrum-{compact,dock}` are
   // already listed above (batch 2, never captured), so its face RE-DO is free
-  // on linux. Its two DARWIN baselines did move and were re-captured here —
-  // measured 205 px (compact) and 11379 px (dock, 7.6x the 1500 budget), i.e.
-  // both genuinely FAIL, so `--update-snapshots` rewrote them and the `git rm`
+  // on linux — and they stay listed, so the unscoped dispatch will skip them.
+  // Its two DARWIN baselines did move and were re-captured here — measured
+  // 205 px (compact) and 11379 px (dock, 7.6x the 1500 budget), i.e. both
+  // genuinely FAIL, so `--update-snapshots` rewrote them and the `git rm`
   // route (which would have manufactured an undeclared gap) was not needed.
-  'linux/face-clap-compact',
-  'linux/face-clap-dock',
-  'linux/face-drummergirl-compact',
-  'linux/face-drummergirl-dock',
-  'linux/face-pentemelodica-compact',
-  'linux/face-pentemelodica-dock',
+  //
+  // ⚠ `darwin/rear-sixstrum` was a THIRD moved baseline that this batch first
+  // MISSED, and it is the sub-tolerance case: `rearFieldPlan` derives the rear
+  // card's per-page CV band ids/labels/order straight from `face.pages`
+  // (rear-card-model.ts:287-300), so the re-do's five relabelled+reordered
+  // pages moved it — but only ONE band header falls inside the 1220x425
+  // element capture, so the change measured just **611 px**, UNDER the 1500 px
+  // REAR_MAX_DIFF. It therefore PASSED, and `--update-snapshots` rewrote
+  // nothing (verified: byte-identical sha256 after a full --update run). It was
+  // fixed by `git rm`-ing the darwin baseline so Playwright wrote a MISSING
+  // snapshot — safe precisely because it is darwin: `git rm`-ing a LINUX
+  // baseline would manufacture an undeclared platform gap.
   //
   // PF-8 DOCK LANE-RAIL REMOVAL (2026-07-27) was DRAINED here, NOT parked.
   // The migrated shell no longer paints the lane jack rail at view='dock-full'
