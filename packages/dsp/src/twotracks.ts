@@ -407,7 +407,13 @@ class TwoTracksProcessor extends AudioWorkletProcessor {
       { name: 'mode_b',           defaultValue: 1,      minValue: 0,  maxValue: 1,     automationRate: 'k-rate' as const },
       { name: 'start_b',          defaultValue: 0,      minValue: 0,  maxValue: 1,     automationRate: 'k-rate' as const },
       { name: 'end_b',            defaultValue: 1,      minValue: 0,  maxValue: 1,     automationRate: 'k-rate' as const },
-      { name: 'decay_b',          defaultValue: 0,      minValue: 0,  maxValue: 1,     automationRate: 'k-rate' as const },
+      // ECHOES: reel B's half of the rename that never happened. This slot was
+      // declared `decay_b` (0..1, default 0) — a name NOTHING in this file has
+      // ever read — while `processReel` reads `echoes_b`, which was not
+      // declared at all. `kv('echoes_b', 3)` therefore always returned its
+      // literal fallback, so reel B ran at 3 repeats no matter where the knob
+      // sat. Same range as reel A's `echoes`, because it is the same control.
+      { name: 'echoes_b',         defaultValue: 3,      minValue: 1,  maxValue: 5,     automationRate: 'k-rate' as const },
       { name: 'rec_start_b',      defaultValue: 0,      minValue: 0,  maxValue: 1,     automationRate: 'a-rate' as const },
       { name: 'rec_arm_b',        defaultValue: 0,      minValue: 0,  maxValue: 1,     automationRate: 'a-rate' as const },
       { name: 'overdub_toggle_b', defaultValue: 0,      minValue: 0,  maxValue: 1,     automationRate: 'a-rate' as const },

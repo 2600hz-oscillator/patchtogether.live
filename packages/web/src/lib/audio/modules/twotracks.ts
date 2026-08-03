@@ -9,7 +9,7 @@
 //
 // Phase 2 additions:
 //   inputs (reel B): audio_l_in_b, audio_r_in_b, rec_start_b, rec_arm_b, overdub_b
-//   params (reel B): rate_b, mode_b, decay_b, start_b, end_b, overdub_flag_b,
+//   params (reel B): rate_b, mode_b, echoes_b, start_b, end_b, overdub_flag_b,
 //                    playhead_b
 //   per-reel EQ (both reels):
 //     eqLow_a, eqMid_a, eqHigh_a  — reel A 3-band EQ (dB ±12, default 0)
@@ -603,8 +603,14 @@ export const twotracksDef: AudioModuleDef = {
 /**
  * Map a card-side param ID to the worklet AudioParam name.
  * Returns null for display-only params (playhead_{a,b}).
+ *
+ * EXPORTED for `twotracks-worklet-params.test.ts`, which cross-checks every
+ * value here against the worklet.s own `parameterDescriptors`. A name in this
+ * table that the worklet does not declare is a PERMANENT NO-OP knob —
+ * `params.get(name)` returns undefined and the optional-chained
+ * `setValueAtTime` silently does nothing. That is exactly what `echoes_b` was.
  */
-function cardParamToWorkletParam(cardId: string): string | null {
+export function cardParamToWorkletParam(cardId: string): string | null {
   const MAP: Record<string, string> = {
     // Reel A — core (keep backward-compat worklet param names)
     rate_a:          'rate',
