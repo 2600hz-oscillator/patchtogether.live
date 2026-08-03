@@ -325,13 +325,57 @@ describe('clap: sonic range proofs (spectrum + balance)', () => {
     const narrow = contrast(render(w, P({ ...base, width: 0 }), SR));
     const broad = contrast(render(w, P({ ...base, width: 1 }), SR));
     expect(narrow).toBeGreaterThan(4 * broad);
-    // Loudness compensation: both extremes stay audible + bounded.
-    const pN = peakOf(render(Math.round(0.2 * SR), P({ ...base, width: 0 }), SR));
-    const pB = peakOf(render(Math.round(0.2 * SR), P({ ...base, width: 1 }), SR));
-    expect(pN).toBeGreaterThan(0.15);
-    expect(pB).toBeGreaterThan(0.15);
-    expect(pN).toBeLessThan(1);
-    expect(pB).toBeLessThan(1);
+  });
+
+  // WHY THIS TEST EXISTS, AND WHAT THE OLD ONE COULD NOT SEE.
+  //
+  // The loudness clause of the WIDTH test above used to be an AMPLITUDE
+  // WINDOW — `peak > 0.15 && peak < 1` at both extremes. That assertion is
+  // structurally incapable of failing on a loudness tilt: the chain ends in
+  // `tanh`, so at the shipped LEVEL of 0 dB the narrow end pinned at 0.9998
+  // and the broad end sat at 0.6115 — both comfortably inside the window
+  // while the RMS between them differed by 18.06 dB. The bug it was meant to
+  // guard was fully visible in the numbers it never looked at.
+  //
+  // Three things make this version able to fail:
+  //   1. it measures RMS, the quantity "comparably loud" is about, not peak;
+  //   2. it renders at LEVEL −24 dB so the final tanh is far from saturation
+  //      — a compressor upstream of the metric is a metric that hides tilt;
+  //   3. it sweeps the MIDDLE of the travel as well as the ends, so a
+  //      compensation that happens to match at 0 and 1 but bows in between
+  //      still fails.
+  //
+  // Measured with the shipped (inverted) `1/√q` trim: −33.96 / −43.00 /
+  // −47.16 / −49.93 / −52.02 dB across width 0 … 1.
+  it('WIDTH is a SHAPE control, not a volume knob: RMS is flat across its travel', () => {
+    const base = { tone: 1000, color: 0, snap: 1, pulses: 3, spread: 10, drive: 0, level: -24 };
+    const w = Math.round(0.2 * SR);
+    const dbs = [0, 0.25, 0.5, 0.75, 1].map((width) => {
+      const buf = render(w, P({ ...base, width }), SR);
+      // Un-saturated by construction — assert it, so a future LEVEL change
+      // cannot quietly re-introduce the compressor this metric was blind to.
+      expect(peakOf(buf), 'render must stay out of the final tanh').toBeLessThan(0.5);
+      return 20 * Math.log10(rmsOf(buf));
+    });
+    const spread = Math.max(...dbs) - Math.min(...dbs);
+    expect(
+      spread,
+      `RMS across WIDTH 0→1 spans ${spread.toFixed(2)} dB ` +
+        `(${dbs.map((d) => d.toFixed(2)).join(' / ')} dB). WIDTH must change the ` +
+        `SHAPE of the band, not its loudness — a band-pass's peak gain is already ` +
+        `1/q, so white-noise RMS through it is already ∝ 1/√q and the trim must ` +
+        `MULTIPLY by √q. Dividing (the shipped bug) squares the tilt to ∝ 1/q.`,
+    ).toBeLessThan(2.0);
+    // NEGATIVE CONTROL — the metric is not simply insensitive. TONE moves the
+    // band onto a different part of the (flat) noise spectrum and barely
+    // changes RMS, but COLOR tilts the source and must move it.
+    const dark = 20 * Math.log10(rmsOf(render(w, P({ ...base, width: 0.5, color: 1 }), SR)));
+    const white = dbs[2]!;
+    expect(
+      Math.abs(dark - white),
+      `COLOR 0 vs 1 read ${white.toFixed(2)} / ${dark.toFixed(2)} dB — if this ` +
+        `is ~0 the RMS metric is broken, not the module`,
+    ).toBeGreaterThan(1.0);
   });
 
   it('COLOR: centroid falls white → dark (>1.4×), monotonic through mid', () => {
@@ -502,7 +546,12 @@ describe('clap: determinism + hygiene', () => {
       const buf = render(Math.round(0.5 * SR), P(over), SR);
       expect(buf.every(Number.isFinite)).toBe(true);
       expect(peakOf(buf)).toBeLessThan(1);
-      expect(peakOf(buf)).toBeGreaterThan(0.02); // never dead at a rail
+      // Never dead at a rail. 0.01 (−40 dBFS), not the old 0.02: the quietest
+      // corner here is LEVEL −24 + WIDTH 0 + SNAP 0, and WIDTH 0 lost 13.8 dB
+      // when the band trim's sign was corrected (it used to BOOST the narrow
+      // end by that much). Measured at the corner: 0.0163 = −35.7 dBFS, which
+      // is quiet-but-alive, exactly as intended.
+      expect(peakOf(buf)).toBeGreaterThan(0.01);
     }
   });
 });

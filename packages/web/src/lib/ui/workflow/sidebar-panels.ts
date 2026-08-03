@@ -1,0 +1,70 @@
+// packages/web/src/lib/ui/workflow/sidebar-panels.ts
+//
+// PF-20 — the REGISTRY for `custom` dock-sidebar blocks.
+//
+// The other three sidebar kinds (`signal-flow`, `presets`, `readouts`) are pure
+// data the shared renderer paints. `custom` is the escape hatch for the picture
+// only the module can draw — a crossover split, a routing map, a scale ring —
+// and it resolves THROUGH HERE so the escape hatch stays generic: a def
+// declares a string id, never a component, so `face` remains serialisable data
+// and the shell never imports a module.
+//
+// The precedent is PF-14's `ShellPanelCell` (shell-cells.ts), and the same two
+// hard rules carry over:
+//
+//  1. A panel must NEVER emit `data-testid="control-<paramId>"`. faces-parity
+//     asserts exact multiset equality between the dock's `control-*` testids
+//     and the def's param ids, so a control-shaped testid inside a panel reads
+//     as an unbacked extra control. (A sidebar panel is additionally rendered
+//     OUTSIDE the ModuleShell subtree the gate scopes to, so it is doubly out
+//     of reach — but the rule is stated because the day someone moves the
+//     sidebar inside the shell, only this comment stands between them and a
+//     red parity gate.)
+//  2. A panel READS; it does not own state. It takes a nodeId and derives
+//     everything from the live node + def.
+//
+// Adding a panel is: write the component, register it here, declare the id on a
+// face. `module-face-lint` fails a `custom` block naming an unregistered id, so
+// a typo cannot ship as a blank column.
+
+import type { Component } from 'svelte';
+import type { ParamDef } from '$lib/graph/types';
+import StereoCrossoverPanel from './panels/StereoCrossoverPanel.svelte';
+
+/** The props every sidebar panel takes: the node it describes, plus whatever
+ *  primitives its block DECLARED. Keeping the module's numbers in the
+ *  declaration rather than in the component is what makes a panel reusable —
+ *  the picture is generic, the frequencies are the module's. */
+export interface SidebarPanelProps {
+  nodeId: string;
+  props?: Readonly<Record<string, string | number>>;
+  /**
+   * The def's params.
+   *
+   * ⚠ A panel that reads a param MUST resolve the def DEFAULT when
+   * `node.params` has no entry — that map is a sparse overlay of what has been
+   * TOUCHED, not the module's state. Reading it bare made the crossover panel
+   * print `WIDTH 0%` beside a dial reading 0.20 on a fresh spawn.
+   */
+  params?: readonly ParamDef[];
+}
+
+/** id → component. Keys are the strings a face's `custom` block declares. */
+const SIDEBAR_PANELS: Readonly<Record<string, Component<SidebarPanelProps>>> = {
+  // The STEREO CROSSOVER picture: below the split the signal is summed to
+  // mono, above it the sides open by WIDTH. Generic across any def that
+  // declares a crossover frequency + a width param through the panel's own
+  // param-id resolution (see the component).
+  'stereo-crossover': StereoCrossoverPanel as unknown as Component<SidebarPanelProps>,
+};
+
+/** The component for a declared `custom` panel id, or `null`. */
+export function sidebarPanelFor(panelId: string): Component<SidebarPanelProps> | null {
+  return SIDEBAR_PANELS[panelId] ?? null;
+}
+
+/** Every registered panel id — the roster module-face-lint checks a declared
+ *  `custom` block against. */
+export function sidebarPanelIds(): string[] {
+  return Object.keys(SIDEBAR_PANELS).sort();
+}

@@ -19,7 +19,7 @@
 //                   SNAP low (room-dominant).
 //
 // DSP: packages/dsp/src/lib/clap-dsp.ts (seeded noise → COLOR pole →
-// Chamberlin band-pass at TONE/WIDTH with 1/√q loudness compensation →
+// Chamberlin band-pass at TONE/WIDTH with ×√q loudness compensation →
 // PULSES×SPREAD retrigger burst VCA + reverb-TAIL VCA fired at the last
 // pulse, SNAP equal-power balance, 2×-oversampled warm-tanh DRIVE, DC
 // block, true-peak bound). Mono voice, mono output.
@@ -100,7 +100,7 @@ export const clapDef: AudioModuleDef = {
       pulses: "How many hands land (2–5 burst onsets, latched per hit). 3 = the 808's comparator cycles, 4–5 = the 909's denser 'T-T-T' machine burst, 2 = a tight flam. The last pulse always rings 2× longer (the final discharge) and hands off to the room tail.",
       spread: "Milliseconds between burst onsets (4–25, log, latched per hit). Short = one thick crack; the 808 sits at 10 ms; long reads as distinct micro-claps — the ClapTrap's spread into small-crowd 'applause' territory. Each pulse's decay time equals the spacing, so the sawtooth troughs stay deep at every setting. spread_cv adds ±1.3 oct/V.",
       tone: "Band-pass center (400–3000 Hz, log). ~1 kHz = the 808's palm-cavity resonance; up = the 909's brighter snap; down = a soft dark pat. The room tail tracks it one pole darker. tone_cv sweeps ±1.5 oct/V.",
-      width: "Filter shape (0–1): 0 = ringy tuned slap (Q≈5.5 — the narrow disco clap that almost pitches), 1 = a broad noise splash. Loudness-compensated (1/√q), so it changes the shape of the noise, not the volume.",
+      width: "Filter shape (0–1): 0 = ringy tuned slap (Q≈5.5 — the narrow disco clap that almost pitches), 1 = a broad noise splash. Loudness-compensated (the band trim scales with √q, normalised at the 0.5 default), so it changes the shape of the noise, not the volume: measured RMS moves 0.85 dB across the whole travel.",
       tail: "The room's −60 dB ring time (30–800 ms, log). The 808's fake-reverb envelope sits near 100–150 ms; short = a dry stage, long = a hall bloom. Fired at the LAST burst pulse so the crack stays articulated. tail_cv doubles/halves per volt.",
       color: "Noise color (0–1): a log-swept low-pass on the noise source from ~white (9 kHz pole — 909 shift-register bright) down to dark 700 Hz heft (the LinnDrum-era read), gain-compensated so dark stays loud. Upstream of the band-pass, so it tilts the whole voice including the room.",
       snap: "Burst ↔ room balance (0–1, equal-power): 1 = bone-dry machine-gun burst only, 0 = the room envelope only (a ghost clap / reverb layer), 0.5 = the classic 808 sum. This is the 'how close is the mic' knob.",

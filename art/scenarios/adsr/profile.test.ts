@@ -12,18 +12,39 @@
 // `env_inv` is skipped as a non-distinct inverse (1 − env carries no
 // independent information).
 //
-// Rendering path: the pure-TS envelope core (packages/dsp/src/lib/adsr-env.ts
-// `Envelope`, the shared per-voice ADSR state machine) — the accepted TS-pure
-// canonical path (owner decision §6b.3); the live module's Faust en.adsr
-// worklet cannot run under node-web-audio-api. Envelope stage times/sustain
-// use the module's own defaults (packages/dsp/src/adsr.dsp sliders). The .sha
-// therefore pins BOTH sources: a change to adsr.dsp OR adsr-env.ts forces an
-// intentional `task art:update` re-capture.
+// ⚠ THIS PROFILE USED TO RENDER A DIFFERENT SYNTH.
+//
+// It drove `packages/dsp/src/lib/adsr-env.ts` `Envelope` — the shared per-voice
+// state machine used by the POLY modules — and pinned that as "the ADSR audio
+// profile". The module the rack actually ships is Faust `en.adsr`
+// (packages/dsp/src/adsr.dsp), and the two are different envelopes:
+//
+//   adsr-env.ts   EXPONENTIAL, time-CONSTANT   release never reaches 0
+//   en.adsr       LINEAR,      exact-DURATION  release reaches exactly 0 at +R
+//
+// The substitution was documented and deliberate ("the live module's Faust
+// en.adsr worklet cannot run under node-web-audio-api"), and it was true when
+// written — but batch 6 added the FAUST-IN-NODE harness
+// (art/setup/faust-offline.ts, already used by vca/reverb/mixmstrs), which runs
+// the real compiled `.wasm` headlessly. The justification was stale, and the
+// lane was green about a synth nobody plays.
+//
+// It was not a harmless stand-in: this file's own
+// `expect(buf[last]).toBeGreaterThan(0)` — at gate-off + 2× release — is FALSE
+// of the shipped module. Measured through the real wasm, `en.adsr` is at
+// EXACTLY 0.000000 by then, because a linear release of duration R is finished
+// at +R. A test asserting the opposite of the shipping behaviour is worse than
+// no test.
+//
+// Rendering path is now `renderFaustOffline` against the committed
+// dist/adsr.{wasm,json} — the exact bytes the browser ships. The `.sha` pins
+// `adsr.dsp` ALONE now; `lib/adsr-env.ts` is no longer part of this profile
+// and a change to it must no longer invalidate this baseline.
 
 import { describe, expect, it } from 'vitest';
-import { Envelope } from '../../../packages/dsp/src/lib/adsr-env';
-import { captureOutputs, dspSourceSha, pinAll, SAMPLE_RATE } from '../../setup/capture';
-import { GATE_HI, heldGate } from '../../setup/drivers';
+import { dspSourceSha, pinAll, SAMPLE_RATE } from '../../setup/capture';
+import { heldGate } from '../../setup/drivers';
+import { renderFaustOffline } from '../../setup/faust-offline';
 
 const SR = SAMPLE_RATE;
 const DURATION_S = 1.2;
@@ -35,23 +56,19 @@ const DECAY_S = 0.1;
 const SUSTAIN = 0.7;
 const RELEASE_S = 0.3;
 
-function renderProfile(): Record<string, Float32Array> {
-  const gate = heldGate({ totalS: DURATION_S, onS: GATE_ON_S });
-  const env = new Envelope();
-  let prevHigh = false;
-  return captureOutputs({ durationS: DURATION_S, outputs: ['env'] }, (i) => {
-    const high = gate[i]! >= GATE_HI;
-    if (high !== prevHigh) {
-      env.triggerHard(high);
-      prevHigh = high;
-    }
-    return { env: env.tick(ATTACK_S, DECAY_S, SUSTAIN, RELEASE_S, SR) };
+async function renderProfile(): Promise<Record<string, Float32Array>> {
+  return renderFaustOffline({
+    name: 'adsr',
+    totalSamples: Math.round(SR * DURATION_S),
+    inputs: [heldGate({ totalS: DURATION_S, onS: GATE_ON_S })],
+    params: { attack: ATTACK_S, decay: DECAY_S, sustain: SUSTAIN, release: RELEASE_S },
+    outputs: ['env'], // Faust output 0 = the `env` port
   });
 }
 
-describe('ART adsr / audio profile (canonical held gate)', () => {
-  it('renders the full A-D-S-R shape, bounded and deterministic', () => {
-    const buf = renderProfile().env!;
+describe('ART adsr / audio profile (canonical held gate, the REAL Faust en.adsr)', () => {
+  it('renders the full A-D-S-R shape, bounded and deterministic', async () => {
+    const buf = (await renderProfile()).env!;
     expect(buf.length).toBe(Math.round(SR * DURATION_S));
     expect(buf.every((v) => Number.isFinite(v) && v >= 0 && v <= 1)).toBe(true);
     // ATTACK: reaches the top within ~2× the 5 ms attack time.
@@ -60,18 +77,33 @@ describe('ART adsr / audio profile (canonical held gate)', () => {
     expect(peak).toBeGreaterThan(0.99);
     // SUSTAIN: settled at the 0.7 plateau well after the 100 ms decay.
     expect(buf[Math.round(0.5 * SR)]!).toBeCloseTo(SUSTAIN, 2);
-    // RELEASE: exponential fall after the gate drops at 0.6 s
-    // (0.7·e^(−t/0.3): ≈0.257 at +300 ms, ≈0.095 at +600 ms).
-    expect(buf[Math.round(0.9 * SR)]!).toBeLessThan(0.3);
-    expect(buf[buf.length - 1]!).toBeLessThan(0.12);
-    expect(buf[buf.length - 1]!).toBeGreaterThan(0);
-    // Deterministic re-render.
-    const again = renderProfile().env!;
-    for (let i = 0; i < buf.length; i += 997) expect(again[i]).toBe(buf[i]);
+
+    // RELEASE — LINEAR and exact-duration, which is what makes this module
+    // different from adsr-env.ts and is the reason this file was rewritten.
+    // From SUSTAIN 0.7 over 0.3 s, measured through the real wasm:
+    //   +100 ms → 0.4666  (0.7 × 2/3)
+    //   +150 ms → 0.3500  (0.7 × 1/2)
+    //   +300 ms → 0.0000  (finished, exactly)
+    const at = (s: number): number => buf[Math.round(s * SR)]!;
+    expect(at(0.7), 'release +100 ms').toBeCloseTo(SUSTAIN * (2 / 3), 2);
+    expect(at(0.75), 'release +150 ms').toBeCloseTo(SUSTAIN * 0.5, 2);
+    expect(
+      at(GATE_ON_S + RELEASE_S),
+      'a LINEAR release of duration R is at exactly 0 at +R — the previous ' +
+        'version of this file asserted the opposite (> 0), which is true of ' +
+        'the exponential adsr-env.ts core it was rendering instead',
+    ).toBe(0);
+    expect(buf[buf.length - 1]!).toBe(0);
+
+    // Byte-deterministic re-render (headless Faust compute is pure).
+    const again = (await renderProfile()).env!;
+    let diff = 0;
+    for (let i = 0; i < buf.length; i++) diff = Math.max(diff, Math.abs(buf[i]! - again[i]!));
+    expect(diff).toBe(0);
   });
 
-  it('pins the env profile baseline (SHA-gated, RMS tier B)', async () => {
-    const srcSha = await dspSourceSha('adsr.dsp', 'lib/adsr-env.ts');
-    await pinAll('adsr', srcSha, renderProfile());
+  it('pins the env profile baseline (SHA-gated on adsr.dsp, RMS tier B)', async () => {
+    const srcSha = await dspSourceSha('adsr.dsp');
+    await pinAll('adsr', srcSha, await renderProfile());
   });
 });

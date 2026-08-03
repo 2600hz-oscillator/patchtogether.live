@@ -29,7 +29,8 @@
 //   decay (linear 0..1, default 0.6): multiplies SIZE's comb feedback —
 //     effSize = size * (0.5 + 0.5*decay). Inert when size = 0.
 //   shimmer (linear 0..1, default 0.4): +1 octave feedback amount (knob*0.55
-//     into the loop, tanh-saturated) — the shimmer tail intensity.
+//     into the loop, DC-blocked then tanh-saturated) — the shimmer tail
+//     intensity. Self-sustains above ~0.75 at the default tank.
 //   size (linear 0..1, default 0.6): comb feedback 0.70..0.88. Does NOT
 //     rescale the delay lines — the tank's geometry is fixed at build time.
 //   damp (linear 0..1, default 0.4): one-pole LP inside each comb's feedback
@@ -63,6 +64,24 @@ class _CombLP {
     this.fbStore = this.fbStore * damp + y * (1 - damp);
     this.buf[this.idx] = x + this.fbStore * fb;
     this.idx = (this.idx + 1) % this.buf.length;
+    return y;
+  }
+}
+
+/** One-pole DC blocker in the regeneration loop. MIRROR of the worklet's
+ *  `DcBlock` — read that class's header for why it is load-bearing rather
+ *  than hygiene (without it the loop's DC gain crosses 1 at shimmer ≈ 0.388,
+ *  under the shipped 0.4 default, and the tail charges to a rail). */
+const DC_BLOCK_HZ = 20;
+class _DcBlock {
+  private x1 = 0;
+  private y1 = 0;
+  private readonly r: number;
+  constructor(sr: number) { this.r = Math.exp((-2 * Math.PI * DC_BLOCK_HZ) / sr); }
+  tick(x: number): number {
+    const y = x - this.x1 + this.r * this.y1;
+    this.x1 = x;
+    this.y1 = y;
     return y;
   }
 }
@@ -188,6 +207,7 @@ export const shimmershineMath = {
   ): Float32Array {
     const tank = new _SchroederTank(sr);
     const shifter = new _GranularPitchShifter(sr, 2.0, 25);
+    const dc = new _DcBlock(sr);
     const out = new Float32Array(input.length);
     const effSize = params.size * (0.5 + 0.5 * params.decay);
     const FB_CAP = 0.55;
@@ -198,7 +218,9 @@ export const shimmershineMath = {
       // tanh-limit the tank input too — a defensive cap on what the
       // combs can ever see, so even with damp=0 + size=1 + ongoing
       // input the recirculating energy can't blow past ±1.
-      const wet = Math.tanh(tank.tick(dry + fb, effSize, params.damp));
+      // DC-block the TANK OUTPUT — mirrors the worklet exactly. One filter
+      // serves both the wet send and the regeneration loop's source.
+      const wet = dc.tick(Math.tanh(tank.tick(dry + fb, effSize, params.damp)));
       const shifted = shifter.tick(wet);
       fb = Math.tanh(shifted * fbGain);
       out[i] = dry * (1 - params.mix) + wet * params.mix;
@@ -284,7 +306,7 @@ export const shimmershineDef: AudioModuleDef = {
 
   docs: {
     explanation:
-      "A stereo shimmer reverb: a plain Schroeder tank wired into an octave-up regeneration loop. Each channel gets its own tank — four parallel comb filters, each with a one-pole lowpass in its feedback path, then two series allpasses for diffusion (the first four of Freeverb's comb tunings and its first two allpasses — 1116/1188/1277/1356 and 556/441 samples at 44.1 kHz, rescaled to the running sample rate). What makes it SHIMMER is what happens to the tank's output: it is fed through a +12-semitone granular pitch shifter (two read heads chasing the write head at 2× speed, cosine-crossfaded over a 25 ms window to hide each wrap) and summed back into the tank input, so every trip round the loop transposes the tail up another octave and a held note grows a rising ladder of octaves above itself. Only the tank output is blended to the outs, so the shimmer never touches the direct sound — it emerges in the tail, tens of milliseconds behind the note. The loop gain is hard-capped at 0.55 with a tanh saturator on each side of it, which bounds the LEVEL but not the SUSTAIN: with SHIMMER off this is a modest room — a measured RT60 of about 0.45–1.3 s over the DECAY / SIZE plane at the default DAMP, stretching to ~1.55 s with DAMP at 0 and collapsing to ~0.15 s with DAMP full up — and once SHIMMER is high enough the loop stops decaying and settles into a continuous, level-bounded crystalline drone. Where that tipping point sits depends on the tank: with the tank at its defaults it is right around SHIMMER's own 0.4 default, it drops to about 0.2 with SIZE and DECAY up and DAMP at 0, and with SIZE at 0 it takes about 0.55 (DAMP at 1 kills the loop outright, so it never sustains). Left and right run independent, identically-tuned tanks with no cross-feed, so it faithfully passes on the stereo image it is given rather than synthesising width. Patch it as a stereo insert and ride MIX, or feed it from an aux send with MIX at 1.",
+      "A stereo shimmer reverb: a plain Schroeder tank wired into an octave-up regeneration loop. Each channel gets its own tank — four parallel comb filters, each with a one-pole lowpass in its feedback path, then two series allpasses for diffusion (the first four of Freeverb's comb tunings and its first two allpasses — 1116/1188/1277/1356 and 556/441 samples at 44.1 kHz, rescaled to the running sample rate). What makes it SHIMMER is what happens to the tank's output: it is fed through a +12-semitone granular pitch shifter (two read heads chasing the write head at 2× speed, cosine-crossfaded over a 25 ms window to hide each wrap) and summed back into the tank input, so every trip round the loop transposes the tail up another octave and a held note grows a rising ladder of octaves above itself. Only the tank output is blended to the outs, so the shimmer never touches the direct sound — it emerges in the tail, tens of milliseconds behind the note. A 20 Hz DC blocker sits on the tank output, in the loop, so the regeneration can only recirculate audio: without it every stage in the loop passed 0 Hz at unity or better and the tail charged a DC offset instead of shimmering. The loop gain is hard-capped at 0.55 with a tanh saturator, which bounds the LEVEL but not the SUSTAIN: with SHIMMER off this is a modest room — a measured RT60 of about 0.45–1.3 s over the DECAY / SIZE plane at the default DAMP, stretching to ~1.55 s with DAMP at 0 and collapsing to ~0.15 s with DAMP full up — and once SHIMMER is high enough the loop stops decaying and settles into a continuous, level-bounded crystalline drone of stacked octaves. Where that tipping point sits depends on the tank: with the tank at its defaults it is around SHIMMER 0.75, it drops to about 0.15 with SIZE and DECAY up and DAMP at 0, and with SIZE at 0 it takes about 0.85 (DAMP at 1 kills the loop outright, so it never sustains). Below the tipping point the tail decays, all the way down: SHIMMER's own 0.4 default is a shimmering room, not a drone. Left and right run independent, identically-tuned tanks with no cross-feed, so it faithfully passes on the stereo image it is given rather than synthesising width. Patch it as a stereo insert and ride MIX, or feed it from an aux send with MIX at 1.",
     inputs: {
       in_l: 'Left channel of the stereo input. It is summed with the loop’s pitch-shifted feedback and drives the LEFT reverb tank; left and right are separate, identically-tuned tanks that never cross-feed.',
       in_r: 'Right channel of the stereo input, driving the right-hand tank on the same signal path. It is NOT normalled from IN L: leaving this jack empty means the right tank sees silence, so a mono source patched to IN L alone comes back hard-left — split it to both inputs if you want the halo centred.',
@@ -299,7 +321,7 @@ export const shimmershineDef: AudioModuleDef = {
     },
     outputs: {
       out_l:
-        'Left output: dry × (1 − MIX) + left-tank wet × MIX. The wet half is the TANK output, so the octave-up shimmer only reaches here after it has recirculated — the direct signal is never pitch-shifted. That tank output is tanh-limited, so however hard the loop is driven the wet half stays inside ±1.',
+        'Left output: dry × (1 − MIX) + left-tank wet × MIX. The wet half is the TANK output, so the octave-up shimmer only reaches here after it has recirculated — the direct signal is never pitch-shifted. That tank output is tanh-limited and then DC-blocked at 20 Hz, so it carries no DC offset at all (measured under 0.1 % of RMS even at the runaway corner) and stays within a few percent of ±1 — the highpass transient can carry a hot onset to about 1.17 before it settles.',
       out_r:
         'Right output — the same blend computed on the right-hand tank, which keeps entirely separate comb, allpass and pitch-shifter state. The two sides never cross-feed and the two tanks are tuned identically, so the module adds no width of its own: the field that comes out is exactly as wide as the one you patched in.',
     },
@@ -307,7 +329,7 @@ export const shimmershineDef: AudioModuleDef = {
       decay:
         'Stretches the tail. DECAY and SIZE multiply internally — the tank’s comb feedback is set by size × (0.5 + 0.5 × decay) — so this scales SIZE’s effect rather than setting an absolute time, and with SIZE at 0 it does nothing at all. With SHIMMER off, the whole DECAY / SIZE plane spans a measured RT60 of roughly 0.45–1.3 s at the default DAMP (0.55–1.55 s with DAMP at 0): it is a room control, not an infinite-reverb control (that is what SHIMMER is for).',
       shimmer:
-        "The module's signature: how much of the tank's output is transposed +1 octave and fed back into it. At 0 this is a plain Schroeder reverb. Turn it up and each recirculation stacks another octave, so a held note grows a rising crystalline ladder above itself. The loop gain is the knob × 0.55 with a tanh saturator on both sides, so the LEVEL is always bounded — but the sustain is not: past a threshold the loop stops decaying and rings on as a continuous drone until you pull the knob back. That threshold sits right about AT the 0.4 default with the tank at its defaults (measured: 0.36 still dies away over ~40 s, 0.4 slowly blooms instead), falls to about 0.2 with SIZE and DECAY up and DAMP at 0, and rises to about 0.55 with SIZE at 0 — with DAMP at 1 there is no loop left to sustain at all. So the 0.4 default is deliberately parked on the edge: the tail keeps a faint halo that very slowly blooms rather than fading to nothing.",
+        "The module's signature: how much of the tank's output is transposed +1 octave and fed back into it. At 0 this is a plain Schroeder reverb. Turn it up and each recirculation stacks another octave, so a held note grows a rising crystalline ladder above itself. The loop gain is the knob × 0.55 with a tanh saturator and a 20 Hz DC blocker, so the LEVEL is always bounded and only audio can recirculate — but the sustain is not bounded: past a threshold the loop stops decaying and rings on as a continuous drone until you pull the knob back. With the tank at its defaults that threshold sits around 0.75 (measured on a 25 s tail: 0.7 has died to −148 dB, 0.8 is still ringing at −10 dB); it falls to about 0.15 with SIZE and DECAY up and DAMP at 0, and rises to about 0.85 with SIZE at 0 — with DAMP at 1 there is no loop left to sustain at all. The 0.4 default therefore sits well inside the decaying region: a bright shimmering room whose tail fades. Go to ~0.8 for the endless pad.",
       size:
         'Sets the tank’s comb feedback — 0.70 with SIZE at 0, rising to 0.88 with SIZE and DECAY both wide open — which reads as a longer, denser, more sustained space. It does NOT resize the room: the comb and allpass delay lines are fixed at build time, so the tank’s timbre and modal colour stay put and only the ring time changes. Nothing is being re-tuned, so you can sweep it without the pitch artifact a real delay-length morph would give.',
       damp:
