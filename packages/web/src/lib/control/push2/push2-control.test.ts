@@ -45,6 +45,8 @@ import {
   currentPushCardView,
   setPushCardPainter,
   setLaunchpadView,
+  isLegendHeld,
+  pushDisplayOps,
 } from './push2-control.svelte';
 import {
   PUSH_CC_ABOVE_DISPLAY_BASE,
@@ -52,12 +54,14 @@ import {
   PUSH_CC_ENCODER_BASE,
   PUSH_CC_ENCODER_SWING,
   PUSH_CC_ENCODER_MASTER,
+  PUSH_CC_LEGEND,
+  PUSH_CC_SHIFT,
 } from './push2-map';
 import { pushColorIndex } from './push2-sysex';
 import { hexToRgb127 } from '$lib/control/launchpad/launchpad-map';
 import { laneColorEff } from '$lib/audio/modules/clip-types';
 import { PINNED_MIXER_ID } from '$lib/graph/column-reconcile';
-import { pushCardSignature, type PushDrawOp } from './push-screen-layout';
+import { pushCardSignature, renderPushCard, type PushDrawOp } from './push-screen-layout';
 import { lastViewed, __test_resetPushView } from './push2-view.svelte';
 import { PUSH_DISPLAY_RGBA_BYTES } from './push2-display-frame';
 import {
@@ -824,5 +828,160 @@ describe('velocity capture — the Push pads ARE velocity-sensitive', () => {
     const on = drainAudition(CP).find((e) => e.on);
     expect(on, 'a note-on auditioned').toBeTruthy();
     expect(on!.velocity, 'the played velocity is the pad hit, not VEL_DEFAULT (76)').toBe(96);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// LEGEND MODE — the held on-device documentation overlay.
+//
+// Every case drives the REAL rx path (raw MIDI bytes → the shipping codec → the
+// shipping map → the shipping control layer → the shipping display pump), so
+// "the hold is wired to the screen" is asserted, not assumed. What is NOT
+// asserted here — and cannot be, anywhere in CI — is that CC 28 is the physical
+// button the owner meant; that needs the device. See push2-map.ts.
+// ---------------------------------------------------------------------------
+
+describe('LEGEND MODE (display only)', () => {
+  /** Painter that RECORDS the op list handed to it, so the assertions read the
+   *  words on screen rather than a byte hash. Everything after it — dirty check,
+   *  pack, chunk, transferOut — is still the shipping code. */
+  const painted: PushDrawOp[][] = [];
+  function recorder(ops: readonly PushDrawOp[]): Uint8ClampedArray {
+    painted.push([...ops]);
+    return new Uint8ClampedArray(PUSH_DISPLAY_RGBA_BYTES);
+  }
+  /** Text drawn by the most recent paint. */
+  function lastText(): string[] {
+    const ops = painted[painted.length - 1] ?? [];
+    return ops.filter((o): o is PushDrawOp & { op: 'text' } => o.op === 'text').map((o) => o.text);
+  }
+
+  async function withLegendDisplay() {
+    seedClipPlayer();
+    seedPinnedMixer({ '1': ['gain1'] });
+    seedMember('gain1', 'vca', 1, { base: 0.5 });
+    sim = await installSimulatedPush2AndBind(CP);
+    let t = 0;
+    __test_setDisplayClock(() => (t += 1000)); // always past the ~33 ms frame gate
+    const display = await installSimulatedPush2Display();
+    setPushCardPainter(recorder);
+    painted.length = 0;
+    sim.cc(PUSH_CC_ABOVE_DISPLAY_BASE, 127); // lane 1 → a real card on screen
+    await flushDisplayWrites();
+    return display;
+  }
+
+  it('HOLD paints the legend; RELEASE restores the exact previous display', async () => {
+    const display = await withLegendDisplay();
+    const cardOps = painted[painted.length - 1];
+    expect(lastText(), 'the card is up, not the legend').not.toContain('PLAY/STOP');
+
+    sim.cc(PUSH_CC_LEGEND, 127); // hold
+    await flushDisplayWrites();
+    expect(isLegendHeld()).toBe(true);
+    expect(lastText()).toContain('LEGEND');
+    expect(lastText(), 'the function row is named').toContain('PLAY/STOP');
+    expect(display.frameCount(), 'the panel actually received it').toBeGreaterThan(0);
+
+    sim.cc(PUSH_CC_LEGEND, 0); // release
+    await flushDisplayWrites();
+    expect(isLegendHeld()).toBe(false);
+    // "Restores whatever it was showing" asserted as OP-FOR-OP IDENTITY, which
+    // is stronger than "the legend went away" — no saved bitmap, the ops are
+    // simply re-derived from unchanged state.
+    expect(painted[painted.length - 1]).toEqual(cardOps);
+  });
+
+  it('SHIFT swaps every cell to its shift layer WITHOUT releasing legend', async () => {
+    await withLegendDisplay();
+    sim.cc(PUSH_CC_LEGEND, 127);
+    await flushDisplayWrites();
+    expect(lastText()).toContain('PLAY/STOP');
+    expect(lastText()).not.toContain('ARM L1');
+
+    sim.cc(PUSH_CC_SHIFT, 127); // shift DOWN while legend is still held
+    await flushDisplayWrites();
+    expect(isLegendHeld(), 'still holding legend').toBe(true);
+    expect(__test_mode().shiftHeldSingle, 'shift is a real modifier, not faked').toBe(true);
+    expect(lastText(), 'the shift layer').toContain('ARM L1');
+    expect(lastText()).toContain('SHIFT');
+    expect(lastText()).not.toContain('PLAY/STOP');
+
+    sim.cc(PUSH_CC_SHIFT, 0); // and back, still without releasing legend
+    await flushDisplayWrites();
+    expect(lastText()).toContain('PLAY/STOP');
+    expect(lastText()).not.toContain('ARM L1');
+  });
+
+  it('follows the ACTIVE VIEW — it documents what the next press will do', async () => {
+    await withLegendDisplay();
+    setLaunchpadView('clip');
+    sim.cc(PUSH_CC_LEGEND, 127);
+    await flushDisplayWrites();
+    expect(lastText(), 'CLIP scene column').toEqual(expect.arrayContaining(['DOUBLE', 'PITCH +1']));
+    sim.cc(PUSH_CC_LEGEND, 0);
+
+    setLaunchpadView('control');
+    sim.cc(PUSH_CC_LEGEND, 127);
+    await flushDisplayWrites();
+    expect(lastText(), 'CONTROL scene column').toContain('STOP L8');
+    expect(lastText()).not.toContain('DOUBLE');
+  });
+
+  it('is DISPLAY-ONLY — holding it changes no routing and writes nothing', async () => {
+    // The scope guarantee, asserted through the real path: with LEGEND held, a
+    // pad press must launch exactly as it would without it.
+    seedClipPlayer({
+      clips: {
+        '0': { kind: 'note', lengthSteps: 4, root: 48, loop: true, steps: [{ step: 0, midi: 72, velocity: 100, lengthSteps: 1 }] },
+      },
+    });
+    sim = await installSimulatedPush2AndBind(CP);
+    const before = JSON.stringify(__test_mode());
+    sim.cc(PUSH_CC_LEGEND, 127);
+    expect(JSON.stringify(__test_mode()), 'the brain never saw the legend press').toBe(before);
+    sim.press(0, 7); // grid pad, legend still held
+    const data = livePatch.nodes[CP]!.data as { queued?: (number | 'stop' | null)[] };
+    expect(data.queued![0], 'the clip still launched').not.toBeNull();
+    sim.cc(PUSH_CC_LEGEND, 0);
+  });
+
+  it('NEGATIVE CONTROL: no legend text is ever painted while it is not held', async () => {
+    // Without this, "the legend appears on hold" would also pass if the legend
+    // were painted permanently.
+    await withLegendDisplay();
+    for (let i = 0; i < 5; i++) hoisted.tick?.();
+    sim.cc(PUSH_CC_ENCODER_BASE, 3); // move a control — a normal repaint
+    await flushDisplayWrites();
+    for (const frame of painted) {
+      const words = frame.filter((o) => o.op === 'text').map((o) => (o as { text: string }).text);
+      expect(words).not.toContain('LEGEND');
+      expect(words).not.toContain('PLAY/STOP');
+    }
+  });
+
+  it('with the button UP the display ops are the card, op for op', async () => {
+    // The card's DOM preview now reads `pushDisplayOps()` instead of rendering
+    // the card itself. This asserts that swap is a NO-OP in the default state —
+    // which is the whole argument that no VRT baseline moves.
+    await withLegendDisplay();
+    expect(isLegendHeld()).toBe(false);
+    expect(pushDisplayOps()).toEqual(renderPushCard(currentPushCardView()));
+    sim.cc(PUSH_CC_LEGEND, 127);
+    expect(pushDisplayOps()).not.toEqual(renderPushCard(currentPushCardView()));
+    sim.cc(PUSH_CC_LEGEND, 0);
+    expect(pushDisplayOps()).toEqual(renderPushCard(currentPushCardView()));
+  });
+
+  it('survives with NO display attached — a missing panel is not an error', async () => {
+    seedClipPlayer();
+    sim = await installSimulatedPush2AndBind(CP);
+    expect(() => {
+      sim.cc(PUSH_CC_LEGEND, 127);
+      sim.cc(PUSH_CC_SHIFT, 127);
+      sim.cc(PUSH_CC_SHIFT, 0);
+      sim.cc(PUSH_CC_LEGEND, 0);
+    }).not.toThrow();
+    expect(isLegendHeld()).toBe(false);
   });
 });
