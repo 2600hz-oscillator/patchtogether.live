@@ -42,6 +42,40 @@ import {
 const FLUSH = 1e-20;
 
 // ─────────────────────────────────────────────────────────────────────────
+// Stereo placement — THE ONE SOURCE OF TRUTH FOR THE PAN SIGN
+// ─────────────────────────────────────────────────────────────────────────
+//
+// This module sums in M/S and folds down as `L = mid + side`, `R = mid − side`.
+// `pan = +1` is hard RIGHT, so a right pan needs a NEGATIVE side term. Both
+// gains are a cos/sin pair scaled by √2 (midGain² + sideGain² = 2 → constant
+// power) and written so `pan = 0` yields a side gain of EXACTLY 0 — a bare
+// cos/sin pair differs by 1 ULP at π/4, which would leak a ~1e-16 L≠R and break
+// the mono-safe fold-down that `width=0 && spread=0 → out[0] === out[1]` rests on.
+//
+// EVERY stereo placement in this file goes through these two functions: the pool
+// voices AND the shared wire bed. That is the fix for #1293 — the voices NEGATED
+// their side term while the bed ADDED its placement term, two hand-typed
+// conventions for one sign, so the roll's sizzle landed on the side AWAY from the
+// hand that struck it (a left-hand stroke threw its sizzle right). Nothing could
+// see it: the two halves of one stroke were each internally consistent. Place a
+// signal by calling these — never by re-typing a ±sin/cos in the summing loop.
+// (They live HERE rather than in a shared lib on purpose: the ART profile's
+// `dspSourceSha` pin enumerates this file, so a coefficient change is forced
+// through an intentional `task art:update`. A new lib file would sit outside
+// that pin.)
+
+/** Constant-power MID gain for `pan` ∈ [−1, 1] (`L = mid + side`). */
+export function panMidGain(pan: number): number {
+  return Math.SQRT2 * Math.cos((clamp(pan, -1, 1) * Math.PI) / 4);
+}
+
+/** Constant-power SIDE gain for `pan` ∈ [−1, 1]. NEGATIVE for a RIGHT pan, so
+ *  `R = mid − side` is the louder channel. Exactly 0 at `pan = 0`. */
+export function panSideGain(pan: number): number {
+  return -Math.SQRT2 * Math.sin((clamp(pan, -1, 1) * Math.PI) / 4);
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // Physical constants (design §2)
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -508,14 +542,11 @@ export function snaredrumStepStereo(
     const v = s.voices[i]!;
     if (!v.active) continue;
     const o = snareVoiceStep(v, p, sr);
-    // Constant-power pan expressed so pan=0 gives a side gain of EXACTLY 0
-    // (a cos/sin pair differs by 1 ULP at π/4, which would leak a ~1e-16 L≠R;
-    // midGain²+sideGain² = 2, so power is preserved). Right pan → negative
-    // side so out[1] (=mid−side) is the louder channel.
-    const midGain = Math.SQRT2 * Math.cos((v.pan * Math.PI) / 4);
-    const sideGain = -Math.SQRT2 * Math.sin((v.pan * Math.PI) / 4);
-    poolMid += o * midGain * 0.5;
-    poolSide += o * sideGain * 0.5;
+    // Constant-power pan through the SHARED placement helpers (see the header
+    // block) — the wire bed below places itself with the SAME two functions, so
+    // a stroke's body and its sizzle cannot fly apart again (#1293).
+    poolMid += o * panMidGain(v.pan) * 0.5;
+    poolSide += o * panSideGain(v.pan) * 0.5;
     headDisplSum += v.headOut;
     nact++;
     if (v.headAmp < EPS_ACTIVE && v.bodyAmp < EPS_ACTIVE && v.crackEnv < EPS_ACTIVE) {
@@ -557,9 +588,12 @@ export function snaredrumStepStereo(
   // wire MID (mono-safe: added equally to both channels), tilted by `tone`;
   // wire SIDE = width-decorrelation + the spread-panned placement, also tilted
   // by `tone`. The pool side keeps its own `voiceG` tilt (no double-count).
+  // The placement term goes through the SAME `panSideGain` the voices use, so
+  // the sizzle lands on the side of the hand that struck it (#1293).
   const wireMono = 0.5 * (wireL + wireR);
   mid += wireMono * bedG;
-  const wireSide = (0.5 * (wireL - wireR) * clamp(p.width, 0, 1) + wireMono * s.bedPan) * bedG;
+  const wireSide =
+    (0.5 * (wireL - wireR) * clamp(p.width, 0, 1) + wireMono * panSideGain(s.bedPan)) * bedG;
   const side = sidePool + wireSide;
 
   // ── 5. shared bus: oversampled drive (gated behind drive>0) → DC block →

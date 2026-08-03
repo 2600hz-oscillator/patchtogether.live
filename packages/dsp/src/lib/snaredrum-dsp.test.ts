@@ -7,16 +7,26 @@
 // load-bearing one — that a sustained gate rolls CONTINUOUSLY (the wire bed's
 // RMS never returns to 0 between strokes). Deterministic — no Math.random.
 
+import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import {
   SNAREDRUM_DEFAULTS,
   MODE_RATIO_TEST,
   decayCoeff,
   makeSnaredrumState,
+  panMidGain,
+  panSideGain,
   snareHeadFreqHz,
   snaredrumStepStereo,
   type SnaredrumParams,
 } from './snaredrum-dsp';
+import {
+  makeBiquad,
+  biquadStep,
+  updateHighpass,
+  updateLowpass,
+  type Biquad,
+} from './rbj-biquad';
 
 const P = (over: Partial<SnaredrumParams> = {}): SnaredrumParams => ({ ...SNAREDRUM_DEFAULTS, ...over });
 
@@ -259,6 +269,175 @@ describe('snaredrum: stereo (mono-safe)', () => {
     const b = renderStereo(8192, oneStrike, () => 1, P({ width: 0.7, spread: 0.7 }), sr);
     expect(a.l).toEqual(b.l);
     expect(a.r).toEqual(b.r);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// STEREO PLACEMENT — the sizzle must land on the side of the hand that struck
+// it (#1293). The voices placed themselves with a NEGATED constant-power side
+// term while the shared wire bed ADDED its placement term, so a left-hand
+// stroke threw its sizzle RIGHT. Nothing in the suite could see it: each half
+// of a stroke was internally consistent, and every existing stereo assertion
+// (mono-safety, "L and R differ", side-ENERGY sensitivity) is blind to WHICH
+// side the energy is on.
+//
+// The instrument is a BAND-SPLIT balance — the wire bed is HF sizzle (HP'd at
+// `wire_tone`), the voice body/head is LF — because broadband RMS cannot
+// separate the two components that disagreed. It carries a PERMANENT negative
+// control: with the bed switched off (`wire=0`) the same HF metric must still
+// read the hand, which is what proves it is measuring placement and not merely
+// reporting whichever component happens to dominate.
+describe('snaredrum: stereo PLACEMENT — the sizzle follows the hand (#1293)', () => {
+  const sr = 48000;
+
+  /** Cascaded RBJ pair = 4th-order band split. Pure measurement, not under test. */
+  const cascade = (buf: Float32Array, tune: (bq: Biquad) => void): Float32Array => {
+    const a = makeBiquad();
+    const b = makeBiquad();
+    tune(a);
+    tune(b);
+    const o = new Float32Array(buf.length);
+    for (let i = 0; i < buf.length; i++) o[i] = biquadStep(b, biquadStep(a, buf[i]!));
+    return o;
+  };
+  const hf = (buf: Float32Array) => cascade(buf, (bq) => updateHighpass(bq, 4000, sr));
+  const lf = (buf: Float32Array) => cascade(buf, (bq) => updateLowpass(bq, 800, sr));
+
+  const bandEnergy = (b: Float32Array, s: number, e: number): number => {
+    let x = 0;
+    for (let i = s; i < Math.min(e, b.length); i++) x += b[i]! * b[i]!;
+    return x;
+  };
+  /** (E_L − E_R) / (E_L + E_R) ∈ [−1, 1]. POSITIVE ⇒ the energy is on the LEFT. */
+  const balance = (fl: Float32Array, fr: Float32Array, s: number, e: number): number => {
+    const el = bandEnergy(fl, s, e);
+    const er = bandEnergy(fr, s, e);
+    return (el - er) / Math.max(1e-30, el + er);
+  };
+
+  /**
+   * Roll one second of hard-spread two-hand sticking and return the mean HF
+   * (sizzle) and LF (voice) L/R balance of the strokes each hand fired.
+   *
+   * `width=0` removes the decorrelation side term, so the ONLY side content the
+   * bed contributes is its placement; `crack=0` removes the HF stick transient,
+   * so the HF band is the wire bed; `humanize=0`/`bounce=0`/`rollSpeed=0` give
+   * clean single strokes 125 ms apart. Strokes are located from `bedPanTarget`,
+   * which the engine sets to the firing hand's pan — the same quantity the
+   * placement is supposed to follow.
+   */
+  function handBalances(wire: number) {
+    const p = P({
+      spread: 1,
+      humanize: 0,
+      bounce: 0,
+      rollSpeed: 0,
+      width: 0,
+      drive: 0,
+      ceiling: 0,
+      level: -12,
+      crack: 0,
+      wire,
+    });
+    const n = Math.round(1.2 * sr);
+    const st = makeSnaredrumState();
+    const l = new Float32Array(n);
+    const r = new Float32Array(n);
+    const out = new Float32Array(2);
+    const strokes: { at: number; pan: number }[] = [];
+    let prev = 0;
+    for (let i = 0; i < n; i++) {
+      snaredrumStepStereo(0, 1, 0, p, sr, st, out);
+      l[i] = out[0]!;
+      r[i] = out[1]!;
+      if (st.bedPanTarget !== prev) {
+        strokes.push({ at: i, pan: st.bedPanTarget });
+        prev = st.bedPanTarget;
+      }
+    }
+    const hfL = hf(l);
+    const hfR = hf(r);
+    const lfL = lf(l);
+    const lfR = lf(r);
+    const win = Math.round(0.08 * sr);
+    const skip = Math.round(0.02 * sr); // let the 5 ms bed-pan slew settle
+    const left = { hf: [] as number[], lf: [] as number[] };
+    const right = { hf: [] as number[], lf: [] as number[] };
+    for (const s of strokes) {
+      if (s.at < 0.2 * sr || s.pan === 0) continue; // settle; skip centred
+      const acc = s.pan < 0 ? left : right;
+      acc.hf.push(balance(hfL, hfR, s.at + skip, s.at + skip + win));
+      acc.lf.push(balance(lfL, lfR, s.at + skip, s.at + skip + win));
+    }
+    const mean = (a: number[]) => a.reduce((x, y) => x + y, 0) / Math.max(1, a.length);
+    return {
+      count: { left: left.hf.length, right: right.hf.length },
+      leftHandHf: mean(left.hf),
+      leftHandLf: mean(left.lf),
+      rightHandHf: mean(right.hf),
+      rightHandLf: mean(right.lf),
+    };
+  }
+
+  it('the pan helpers are ONE sign convention: pan=+1 is hard RIGHT, pan=0 is EXACTLY centred', () => {
+    // L = mid + side, R = mid − side ⇒ a RIGHT pan needs a NEGATIVE side.
+    expect(panSideGain(1)).toBeLessThan(0);
+    expect(panSideGain(-1)).toBeGreaterThan(0);
+    // Exactly 0 at centre — the mono-safe fold-down depends on it (no 1 ULP leak).
+    expect(Math.abs(panSideGain(0))).toBe(0);
+    expect(panMidGain(0)).toBe(Math.SQRT2);
+    // Constant power: mid² + side² = 2 across the range.
+    for (const pan of [-1, -0.5, -0.13, 0, 0.37, 0.5, 1]) {
+      expect(panMidGain(pan) ** 2 + panSideGain(pan) ** 2).toBeCloseTo(2, 12);
+    }
+    // Hard pans fully null the opposite channel (mid ± side → 0).
+    expect(panMidGain(1) + panSideGain(1)).toBeCloseTo(0, 12);
+    expect(panMidGain(-1) - panSideGain(-1)).toBeCloseTo(0, 12);
+  });
+
+  it('NEGATIVE CONTROL: with the wire bed OFF, the HF metric already tracks the hand', () => {
+    // If this leg ever passes vacuously the subject test below proves nothing —
+    // it is what rules out "the HF band just reports whatever is loudest".
+    const b = handBalances(0);
+    expect(b.count.left).toBeGreaterThanOrEqual(3);
+    expect(b.count.right).toBeGreaterThanOrEqual(3);
+    expect(b.leftHandHf).toBeGreaterThan(0.5); // left hand → HF energy LEFT
+    expect(b.rightHandHf).toBeLessThan(-0.5); // right hand → HF energy RIGHT
+  });
+
+  it('the wire-bed SIZZLE lands on the SAME side as the voice that struck it', () => {
+    const b = handBalances(1);
+    expect(b.count.left).toBeGreaterThanOrEqual(3);
+    expect(b.count.right).toBeGreaterThanOrEqual(3);
+    // LEFT hand: both bands positive ⇒ both on the LEFT.
+    expect(b.leftHandLf).toBeGreaterThan(0.5);
+    expect(b.leftHandHf).toBeGreaterThan(0.5);
+    // RIGHT hand: both bands negative ⇒ both on the RIGHT.
+    expect(b.rightHandLf).toBeLessThan(-0.5);
+    expect(b.rightHandHf).toBeLessThan(-0.5);
+    // …and stated as the property itself: sizzle and body share a side.
+    expect(Math.sign(b.leftHandHf)).toBe(Math.sign(b.leftHandLf));
+    expect(Math.sign(b.rightHandHf)).toBe(Math.sign(b.rightHandLf));
+  });
+
+  it('SOURCE GUARD: the pan sign is typed in exactly ONE place', () => {
+    // No runtime gate can see a SECOND hand-typed cos/sin pan pair — that is
+    // precisely how #1293 hid. Both √2 constants must live inside the shared
+    // helpers; a new placement site must call them, not re-derive them.
+    const src = readFileSync(new URL('./snaredrum-dsp.ts', import.meta.url), 'utf8');
+    const helperStart = src.indexOf('export function panMidGain');
+    const helperEnd = src.indexOf('\n}', src.indexOf('export function panSideGain'));
+    expect(helperStart).toBeGreaterThan(0);
+    expect(helperEnd).toBeGreaterThan(helperStart);
+    const offsets: number[] = [];
+    for (let i = src.indexOf('Math.SQRT2'); i !== -1; i = src.indexOf('Math.SQRT2', i + 1)) {
+      offsets.push(i);
+    }
+    expect(offsets.length).toBe(2); // one in panMidGain, one in panSideGain
+    for (const off of offsets) {
+      expect(off).toBeGreaterThan(helperStart);
+      expect(off).toBeLessThan(helperEnd);
+    }
   });
 });
 
