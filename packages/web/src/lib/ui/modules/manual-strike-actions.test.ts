@@ -37,19 +37,22 @@
 // and listen for audible RMS at the module's own output.
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { patch, ydoc, LOCAL_ORIGIN } from '$lib/graph/store';
+import { patch, ydoc, undoManager, LOCAL_ORIGIN } from '$lib/graph/store';
 import type { ModuleNode } from '$lib/graph/types';
 import { setActiveEngine } from '$lib/audio/engine-ref';
 import type { PatchEngine } from '$lib/audio/engine';
+import { tomtomDef } from '$lib/audio/modules/tomtom';
 import {
   MANUAL_GATE_KEY,
   MANUAL_STRIKE_KEY,
   __resetManualGateLatch,
+  clearStuckMomentaryParams,
   fireManualStrike,
   panicManualGates,
   resolveManualGate,
   resolveManualStrike,
   setManualGate,
+  setMomentaryParam,
   type StrikeEngineLike,
 } from './manual-strike-actions';
 
@@ -70,20 +73,24 @@ function makeNode(id = NID, type = 'kickdrum'): ModuleNode {
   return patch.nodes[id] as unknown as ModuleNode;
 }
 
-/** A fake engine answering BOTH audition keys with recorders. */
+/** A fake engine answering BOTH audition keys with recorders, plus the
+ *  `setParam` the PRESS-PAD shape pushes at (`sets`). */
 function fakeEngine(): {
   engine: StrikeEngineLike;
   fired: string[];
   gates: string[];
   reads: string[];
+  sets: string[];
 } {
   const fired: string[] = [];
   const gates: string[] = [];
   const reads: string[] = [];
+  const sets: string[] = [];
   return {
     fired,
     gates,
     reads,
+    sets,
     engine: {
       read(node: ModuleNode, key: string): unknown {
         reads.push(`${node.id}:${key}`);
@@ -93,7 +100,10 @@ function fakeEngine(): {
         }
         return undefined;
       },
-    },
+      setParam(node: ModuleNode, paramId: string, value: number): void {
+        sets.push(`${node.id}:${paramId}=${value}`);
+      },
+    } as StrikeEngineLike,
   };
 }
 
@@ -348,7 +358,7 @@ describe('manual audition — the LEAK GUARD is really installed and really fire
 });
 
 describe('manual audition — the graph is NOT touched', () => {
-  it('neither shape writes a param, a data key, or a node', () => {
+  it('NO shape writes a param, a data key, or a node — including the press-pad', () => {
     const f = fakeEngine();
     install(f.engine);
     makeNode(NID, 'snaredrum');
@@ -362,6 +372,11 @@ describe('manual audition — the graph is NOT touched', () => {
     fireManualStrike(NID);
     setManualGate(NID, true);
     setManualGate(NID, false);
+    // THE REGRESSION. This is the shape that DID write the Y.Doc, and it is
+    // why a rack could be saved with tomtom's STRIKE stuck at 1 — permanently
+    // masking `trigger_in`, because the worklet ORs pad and jack as LEVELS.
+    setMomentaryParam(NID, 'strike', true);
+    setMomentaryParam(NID, 'strike', false);
     panicManualGates();
 
     const after = JSON.stringify({
@@ -372,5 +387,131 @@ describe('manual audition — the graph is NOT touched', () => {
     expect(after, 'an audition must never reach the Y.Doc (no persist, no undo, no sync)').toBe(
       before,
     );
+    // …and the negative control: it DID reach the engine, so "nothing was
+    // written" is not passing because nothing happened at all.
+    expect(f.sets).toEqual([`${NID}:strike=1`, `${NID}:strike=0`]);
+  });
+});
+
+// ── THE PRESS-PAD (setMomentaryParam / clearStuckMomentaryParams) ───────────
+
+describe('press-pad — the engine gets the edge, the document gets nothing', () => {
+  it('pushes 1 on press and the REST value on release', () => {
+    const f = fakeEngine();
+    install(f.engine);
+    makeNode(NID, 'tomtom');
+    expect(setMomentaryParam(NID, 'strike', true, 0)).toBe(true);
+    expect(setMomentaryParam(NID, 'strike', false, 0)).toBe(true);
+    expect(f.sets).toEqual([`${NID}:strike=1`, `${NID}:strike=0`]);
+  });
+
+  it('rest is whatever the CALLER declares, not a hardcoded 0', () => {
+    const f = fakeEngine();
+    install(f.engine);
+    makeNode(NID, 'tomtom');
+    setMomentaryParam(NID, 'strike', true, 0.25);
+    setMomentaryParam(NID, 'strike', false, 0.25);
+    expect(f.sets).toEqual([`${NID}:strike=1`, `${NID}:strike=0.25`]);
+  });
+
+  it('a repeated press does not re-fire, and a redundant release does not re-push', () => {
+    // Keyboard auto-repeat sends a stream of pointerdown-equivalents; the pad
+    // must not schedule a second AudioParam event at the same context time.
+    const f = fakeEngine();
+    install(f.engine);
+    makeNode(NID, 'tomtom');
+    expect(setMomentaryParam(NID, 'strike', true, 0)).toBe(true);
+    expect(setMomentaryParam(NID, 'strike', true, 0)).toBe(false);
+    expect(setMomentaryParam(NID, 'strike', false, 0)).toBe(true);
+    expect(setMomentaryParam(NID, 'strike', false, 0)).toBe(false);
+    expect(f.sets).toEqual([`${NID}:strike=1`, `${NID}:strike=0`]);
+  });
+
+  it('two pads on the SAME node do not steal each other\'s release', () => {
+    // The reason this uses its own latch instead of the gate latch, whose
+    // header states the constraint: keyed by node id, one held thing per node.
+    const f = fakeEngine();
+    install(f.engine);
+    makeNode(NID, 'tidyVco');
+    setMomentaryParam(NID, 'hold', true, 0);
+    setMomentaryParam(NID, 'strike', true, 0);
+    setMomentaryParam(NID, 'hold', false, 0);
+    // `strike` is still held — a shared node-keyed latch would have closed it.
+    expect(setMomentaryParam(NID, 'strike', false, 0)).toBe(true);
+    expect(f.sets).toEqual([
+      `${NID}:hold=1`, `${NID}:strike=1`, `${NID}:hold=0`, `${NID}:strike=0`,
+    ]);
+  });
+
+  it('THE PANIC PATH releases a pad whose button never saw the pointerup', () => {
+    // The whole failure mode, reproduced: the surface goes away mid-hold and
+    // the release edge is lost. Under the old code that left a DURABLE 1 in
+    // the Y.Doc; now the window-level listeners the seam installs push rest at
+    // the engine instead, and there was never anything durable to leak.
+    const f = fakeEngine();
+    install(f.engine);
+    makeNode(NID, 'tomtom');
+    setMomentaryParam(NID, 'strike', true, 0);
+    expect(f.sets).toEqual([`${NID}:strike=1`]);
+    expect(panicManualGates()).toEqual([`${NID} strike`]);
+    expect(f.sets).toEqual([`${NID}:strike=1`, `${NID}:strike=0`]);
+    // Idempotent — a second panic (pointerup AND blur both fire) is a no-op.
+    expect(panicManualGates()).toEqual([]);
+    expect(f.sets).toHaveLength(2);
+  });
+
+  it('a press with NO engine leaves the latch clean (a later panic must not "release" it)', () => {
+    install(null);
+    makeNode(NID, 'tomtom');
+    expect(setMomentaryParam(NID, 'strike', true, 0)).toBe(false);
+    expect(panicManualGates()).toEqual([]);
+  });
+});
+
+describe('press-pad — REPAIRING a rack already saved with the pad stuck', () => {
+  /** Save the node the way a lost release left it: `strike` durable at 1. */
+  function makeStuckTomtom(): void {
+    ydoc.transact(() => {
+      patch.nodes[NID] = {
+        id: NID,
+        type: 'tomtom',
+        domain: 'audio',
+        position: { x: 0, y: 0 },
+        params: { strike: 1, tune: 180 },
+        data: {},
+      } as unknown as ModuleNode;
+    }, LOCAL_ORIGIN);
+  }
+
+  it('clears the stuck pad, reports it, and touches nothing else', () => {
+    makeStuckTomtom();
+    expect(patch.nodes[NID]!.params.strike).toBe(1);
+    expect(clearStuckMomentaryParams(NID, tomtomDef)).toEqual(['strike']);
+    expect(patch.nodes[NID]!.params.strike).toBe(0);
+    expect(patch.nodes[NID]!.params.tune, 'the rack\'s knobs are not a repair target').toBe(180);
+  });
+
+  it('is a NO-OP on a healthy node, and on a module with no press-pad at all', () => {
+    makeNode(NID, 'tomtom'); // params: { tune: 50 } — no strike key
+    expect(clearStuckMomentaryParams(NID, tomtomDef)).toEqual([]);
+    makeNode(NID2, 'kickdrum');
+    expect(clearStuckMomentaryParams(NID2, undefined)).toEqual([]);
+  });
+
+  it('the repair is NOT an undo entry — Cmd-Z must not restore the broken state', () => {
+    // A tracked repair would let one Cmd-Z put `strike: 1` back and re-brick
+    // the module, which is worse than leaving it: the user would have no idea
+    // what they had just done.
+    makeStuckTomtom();
+    undoManager.clear();
+    undoManager.stopCapturing();
+    const depth = undoManager.undoStack.length;
+    clearStuckMomentaryParams(NID, tomtomDef);
+    expect(undoManager.undoStack.length, 'the repair must not land on the undo stack').toBe(depth);
+    expect(patch.nodes[NID]!.params.strike).toBe(0);
+  });
+
+  it('a node that is gone is a no-op, not a throw', () => {
+    expect(clearStuckMomentaryParams('no-such-node', tomtomDef)).toEqual([]);
   });
 });

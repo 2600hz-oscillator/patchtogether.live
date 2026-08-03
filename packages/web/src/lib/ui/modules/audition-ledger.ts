@@ -64,17 +64,35 @@
 
 import { testHooksEnabled } from '$lib/dev/test-hooks';
 
-/** The seams an action cell can reach. Mirrors `ShellActionCell.mode` plus the
- *  engine-message shape cloudseed's CLEAR TAIL uses. */
-export type AuditionSeam = 'manual-strike' | 'manual-gate' | 'engine-message';
+/**
+ * The seams an audition can reach. The first three mirror `ShellActionCell.mode`
+ * plus the engine-message shape cloudseed's CLEAR TAIL uses.
+ *
+ * `manual-press` is the MOMENTARY PAD (`face.momentary` — tomtom STRIKE, tidyVco
+ * HOLD), added when that seam stopped writing the Y.Doc. It is deliberately a
+ * FOURTH member and NOT an alias of `manual-gate`: `manual-strike-actions.ts`
+ * keeps the press-pad on its own latch precisely so a node can hold a gate
+ * audition and a press-pad at the same time without one stealing the other's
+ * release, and a ledger that collapsed them would re-introduce exactly that
+ * aliasing one layer up — a probe watching `manual-gate` would be satisfied by a
+ * press-pad edge on the same node. (An ACTION cell must never DECLARE this seam;
+ * `shell-cells.test.ts`'s `SEAMS` allowlist keeps it out by omission.)
+ */
+export type AuditionSeam = 'manual-strike' | 'manual-gate' | 'engine-message' | 'manual-press';
 
 export interface AuditionRecord {
   /** Monotonic, so a probe can ask "since I looked" without clock skew. */
   seq: number;
   nodeId: string;
   seam: AuditionSeam;
-  /** For `manual-gate`: which edge. Undefined for the one-shot seams. */
+  /** For `manual-gate` / `manual-press`: which edge. Undefined for the one-shot
+   *  seams. Both edges are recorded, because "opened" and "opened then closed"
+   *  are different facts and an end-state read cannot tell them apart. */
   high?: boolean;
+  /** For `manual-press`: WHICH pad. A module may declare several `momentary`
+   *  params (`face.momentary` is a list), and they share a nodeId — so without
+   *  this a probe for one pad would be satisfied by a press on its neighbour. */
+  paramId?: string;
   /** ⚠ THE FIELD THE WHOLE GATE TURNS ON. False = the press happened and
    *  reached NOTHING (no engine, no node, or a handle that does not answer the
    *  read key). A dead audition is recorded, loudly, rather than absent. */
@@ -118,7 +136,7 @@ export function auditionDelivered(
   nodeId: string,
   seam: AuditionSeam,
   sinceSeq = 0,
-  opts?: { high?: boolean },
+  opts?: { high?: boolean; paramId?: string },
 ): boolean {
   return entries.some(
     (r) =>
@@ -126,7 +144,8 @@ export function auditionDelivered(
       r.nodeId === nodeId &&
       r.seam === seam &&
       r.delivered &&
-      (opts?.high === undefined || r.high === opts.high),
+      (opts?.high === undefined || r.high === opts.high) &&
+      (opts?.paramId === undefined || r.paramId === opts.paramId),
   );
 }
 
