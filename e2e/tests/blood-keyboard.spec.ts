@@ -127,6 +127,11 @@ test('BLOOD: focused card forwards keys; capture releases when card unfocused', 
 // exact state (selected + blurred) and asserts the module does NOT slide and the
 // arrows still reach the game.
 test('BLOOD selected but unfocused: arrows still claimed (module does not slide)', async ({ page }) => {
+  // MEASURED 29.13 s of a 30 s default (97.1 %) on the last GREEN run — the
+  // second-closest test in the suite to its budget, and it boots a WASM game
+  // engine before it can assert anything. Same class as the unpatch-patch-point
+  // P0 (CI run 30851519718). ×3 → 90 s; no cost while it stays green.
+  test.slow();
   const ready = await spawnBloodReady(page);
   test.skip(!ready, 'engine not ready');
   const spied = await installForwardSpy(page, BLOOD_ID);
