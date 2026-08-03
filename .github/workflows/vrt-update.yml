@@ -58,6 +58,11 @@ jobs:
     if: ${{ inputs.platform != 'darwin' }}
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    outputs:
+      # 'true' only when a baseline commit was actually pushed. A capture that
+      # rewrote nothing still SUCCEEDS, so `revalidate` needs this to tell
+      # "captured" from "ran and changed nothing" — see the revalidate `if:`.
+      pushed: ${{ steps.commit.outputs.pushed }}
     services:
       postgres:
         image: postgres:17
@@ -125,6 +130,7 @@ jobs:
           fi
 
       - name: Commit + push linux baselines
+        id: commit
         run: flox activate -- bash .github/scripts/vrt-commit-baselines.sh "${{ inputs.ref }}" "linux"
 
   # ---------------------------------------------------------------------------
@@ -138,6 +144,8 @@ jobs:
     if: ${{ always() && inputs.platform != 'linux' && (needs.linux.result == 'success' || needs.linux.result == 'skipped') }}
     runs-on: macos-latest
     timeout-minutes: 60
+    outputs:
+      pushed: ${{ steps.commit.outputs.pushed }}
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/patchtogether_test
     steps:
@@ -203,6 +211,7 @@ jobs:
           fi
 
       - name: Commit + push darwin baselines
+        id: commit
         run: flox activate -- bash .github/scripts/vrt-commit-baselines.sh "${{ inputs.ref }}" "darwin"
 
   # ---------------------------------------------------------------------------
@@ -225,11 +234,48 @@ jobs:
   # touch the commits, only re-fires the event. No-open-PR is handled gracefully
   # (the baselines are already pushed; whoever opens the PR later gets a normal
   # pull_request run).
+  #
+  # ── WHY THE `if:` IS LOAD-BEARING (and why its ABSENCE was silent) ─────────
+  # A job with `needs:` and NO `if:` defaults to `success()`, which requires
+  # every needed job to have SUCCEEDED. A SKIPPED dependency does not satisfy
+  # that — GitHub propagates the skip. So `needs: [linux, darwin]` with no `if:`
+  # meant revalidate only ever ran for `platform=both`:
+  #   platform=linux  → darwin skips (its own `if:`) → revalidate SKIPPED
+  #   platform=darwin → linux  skips (its own `if:`) → revalidate SKIPPED
+  # …which is precisely the single-platform dispatch CLAUDE.md RECOMMENDS in
+  # order to save the redundant runner. The documented close+reopen — the whole
+  # reason a bot-pushed baseline gets validated at all — was therefore notional
+  # for every single-platform capture, and nothing reported it: a skipped job is
+  # a grey check on a GREEN run.
+  #
+  # `always()` ALONE would be worse than the bug: it would close+reopen the PR
+  # after a FAILED capture too, re-firing ~25 min of CI against baselines that
+  # were never regenerated. So it is `always()` (evaluate me even though a
+  # dependency skipped) narrowed by four clauses:
+  #   1+2. each platform job is `success` or `skipped` — never `failure` or
+  #        `cancelled`. Covers one-fails, both-fail, and a cancelled run.
+  #   3.   at least ONE platform job actually RAN and succeeded, so a dispatch
+  #        that somehow skips both cannot reach here.
+  #   4.   at least one job actually PUSHED a commit. A capture that rewrote
+  #        nothing still SUCCEEDS (Playwright only rewrites a snapshot whose
+  #        comparison FAILS), and re-validating an unchanged branch is a wasted
+  #        CI cycle plus pointless close/reopen churn on the PR.
+  # The `darwin` job above already uses this `always() && …` idiom, as does
+  # `flake-check` in flake-check-3x.yml, whose comment documents this exact
+  # hazard. This job was the one place that needed it and did not have it.
+  # Guarded by scripts/vrt-update-revalidate.test.ts, which simulates GitHub's
+  # skip propagation over the real YAML for every dispatch case.
   # ---------------------------------------------------------------------------
   revalidate:
     name: re-validate CI on ${{ inputs.ref }} (close+reopen PR)
     runs-on: ubuntu-latest
     needs: [linux, darwin]
+    if: |
+      always()
+      && (needs.linux.result == 'success' || needs.linux.result == 'skipped')
+      && (needs.darwin.result == 'success' || needs.darwin.result == 'skipped')
+      && (needs.linux.result == 'success' || needs.darwin.result == 'success')
+      && (needs.linux.outputs.pushed == 'true' || needs.darwin.outputs.pushed == 'true')
     permissions:
       pull-requests: write   # close + reopen the PR to re-fire pull_request
     steps:

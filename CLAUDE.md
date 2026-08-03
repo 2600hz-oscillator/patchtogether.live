@@ -173,6 +173,14 @@ dispatch second:**
 3. The bot commits the PNGs onto the branch and close+reopens the PR so a real
    `pull_request` run re-validates them (a GITHUB_TOKEN push doesn't fire CI,
    and a `workflow_dispatch` run doesn't count toward required checks).
+   ⚠ That step (`revalidate`) declared `needs: [linux, darwin]` with no `if:`,
+   and a skipped `needs` **skips its dependents** — so from the single-platform
+   dispatch recommended in step 2 it **never ran**, silently, on a green run.
+   Fixed 2026-08-03; every baseline captured single-platform before that date
+   went in WITHOUT the documented re-validation. It now runs whenever at least
+   one platform succeeded *and* actually pushed a commit, and a capture that
+   committed nothing emits a `::warning::` and suppresses the re-validation
+   instead of burning a CI cycle on an unchanged branch.
 
 Three dispatch gotchas, all confirmed on real runs:
 
