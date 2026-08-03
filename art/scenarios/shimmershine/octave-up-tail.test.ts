@@ -123,10 +123,39 @@ describe('ART shimmershine / octave-up tail spectrum', () => {
     }
     expect(peak, `extreme-settings peak ${peak}`).toBeLessThan(2.0);
 
-    // And the late tail should not be DC-loaded or NaN-poisoned.
+    // And the late tail must not be DC-loaded or NaN-poisoned.
+    //
+    // ⚠ THIS LEG USED TO SAY "DC-loaded" AND ONLY CHECK `Number.isFinite`.
+    // It was the closest thing in the repo to a DC assertion on this module
+    // and it could not see DC at all — which is how the module shipped with a
+    // regeneration loop whose DC gain exceeded 1 at the SHIPPED DEFAULT, so
+    // that its advertised "crystalline drone" was a 100 %-DC rail (0 Hz at
+    // −0.2 dB, every other bin −311 dB). The sibling Goertzel legs above are
+    // blind to DC by construction: a single-bin DFT at 440 or 880 Hz cannot
+    // report anything about the 0 Hz bin. Two instruments, both blind to the
+    // exact quantity one of them was named after.
     const lateStart = Math.round(4.0 * SR);
     const late = out.slice(lateStart, out.length);
     const badIdx = late.findIndex((v) => !Number.isFinite(v));
     expect(badIdx, `non-finite at late-tail index ${badIdx}`).toBe(-1);
+
+    let sum = 0;
+    for (const v of late) sum += v;
+    const mean = sum / late.length;
+    let sq = 0;
+    for (const v of late) sq += v * v;
+    const rms = Math.sqrt(sq / late.length);
+    expect(
+      Math.abs(mean) / Math.max(rms, 1e-30),
+      `late tail is ${((Math.abs(mean) / Math.max(rms, 1e-30)) * 100).toFixed(1)} % DC ` +
+        `(mean ${mean.toExponential(3)}, rms ${rms.toExponential(3)}) at ` +
+        `decay=shimmer=size=1, damp=0 — the runaway corner. Before the loop DC ` +
+        `blocker this read 100.0 % at a mean of +0.98.`,
+    ).toBeLessThan(0.05);
+    // NEGATIVE CONTROL on the metric: it must report a rail as a rail.
+    const rail = new Float32Array(1024).fill(0.5);
+    let rsum = 0;
+    for (const v of rail) rsum += v;
+    expect(Math.abs(rsum / rail.length) / 0.5).toBeGreaterThan(0.99);
   });
 });

@@ -43,7 +43,7 @@
 //            (log-swept 9 kHz → 700 Hz: white → dark, gain-compensated).
 //   BAND   — Chamberlin SVF band-pass at TONE (400–3 kHz), WIDTH mapping
 //            the resonance from ringy Q≈5.5 to a broad splash, with
-//            1/√q loudness compensation so WIDTH is a shape, not a
+//            ×√q loudness compensation so WIDTH is a shape, not a
 //            volume, knob.
 //   BURST  — PULSES (2–5) retriggered fast envelopes SPREAD ms apart;
 //            each pulse's −60 dB time equals the spacing (deep sawtooth
@@ -84,8 +84,22 @@ const COLOR_COMP = 2.0;
 const WIDTH_Q_MIN = 0.18;
 const WIDTH_Q_MAX = 1.6;
 /** Band-pass output trim: white noise through the Chamberlin band output
- *  lands well under unity; 1/√q keeps narrow/wide comparably loud. */
+ *  lands well under unity, and the trim also has to keep narrow and wide
+ *  comparably loud so WIDTH is a SHAPE control.
+ *
+ *  ⚠ THE SIGN USED TO BE WRONG. A band-pass's peak gain is already `1/q`, so
+ *  white noise through it already comes out with RMS ∝ `1/√q` — the
+ *  compensation must MULTIPLY by `√q`. The shipped code DIVIDED, squaring the
+ *  tilt to `∝ 1/q`: measured RMS fell 18.06 dB from WIDTH 0 to WIDTH 1
+ *  (−33.96 → −52.02 dB at LEVEL −24), so "the ringy disco slap" was mostly
+ *  just 18 dB louder than "the broad splash".
+ *
+ *  `WIDTH_Q_REF` is the q at the DEFAULT WIDTH (0.5). Normalising there means
+ *  a clap sitting at its default sounds exactly as loud as it always did —
+ *  the correction shows up only as you move WIDTH away from centre, which is
+ *  precisely where the knob was lying. */
 const BP_GAIN = 3.0;
+const WIDTH_Q_REF = (WIDTH_Q_MIN + WIDTH_Q_MAX) / 2; // = clapWidthQ(0.5) = 0.89
 /** The FINAL burst pulse rings this × the inter-pulse spacing (the 808's
  *  last comparator discharge runs ~20 ms against the 10 ms cycles). */
 const FINAL_PULSE_RATIO = 2;
@@ -363,7 +377,7 @@ export function clapStep(
   if (Math.abs(s.colorLp) < FLUSH) s.colorLp = 0;
   const colored = s.colorLp * (1 + COLOR_COMP * colorAmt);
 
-  // ── BAND: Chamberlin band-pass at TONE, WIDTH-mapped q, 1/√q trim. ──
+  // ── BAND: Chamberlin band-pass at TONE, WIDTH-mapped q, √q trim. ──
   const fcHz = clapToneHz(p.tone, p.toneCv);
   const fB = svfF(fcHz, sr);
   const qB = clapWidthQ(p.width);
@@ -372,7 +386,9 @@ export function clapStep(
   s.svfLow += fB * s.svfBand;
   if (Math.abs(s.svfBand) < FLUSH) s.svfBand = 0;
   if (Math.abs(s.svfLow) < FLUSH) s.svfLow = 0;
-  const band = (s.svfBand * BP_GAIN) / Math.sqrt(qB);
+  // × √(q/q_ref) — see BP_GAIN. Multiplying is the compensation; the shipped
+  // code divided, which doubled the tilt instead of cancelling it.
+  const band = s.svfBand * BP_GAIN * Math.sqrt(qB / WIDTH_Q_REF) / Math.sqrt(WIDTH_Q_REF);
 
   // ── TAIL feed: one extra pole at the band center (the room eats the
   // top end first), so the tail sits under the burst's crack. ──
