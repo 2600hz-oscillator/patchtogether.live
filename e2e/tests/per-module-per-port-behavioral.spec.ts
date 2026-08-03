@@ -1751,6 +1751,78 @@ const BEHAVIORAL_PORT_TEST_SOURCE: Record<string, InputSource> = {
     outPort: 'phase180',
     sourceType: 'cv',
   },
+  // ANALOGLOGICMATHS a / b / attA_cv / attB_cv — all four for the same reason,
+  // and the reason is the one already written up on 'adsr.release' above: the
+  // generic cv test source is BUGGLES.smooth, a setTimeout-scheduled random
+  // walk, so the perturbation's SIZE and SIGN are a timing lottery. Here BOTH
+  // sides were a lottery — the CV *context* is a second BUGGLES (fixed by the
+  // module-level BEHAVIORAL_PORT_CONTEXT_SOURCE entry, which see for the
+  // measured control-vs-control numbers).
+  //
+  // A constant is the right stimulus for all four: a square LFO at the 0.01 Hz
+  // rate FLOOR is a 100 s period, so its first half-cycle (50 s) is a steady DC
+  // across the ~5 s from node creation to the last read. phase0 measures +1 V
+  // (phase180 is the −1 V tap — see the adsr.release note). depth 0.5 = unity
+  // ±1 V per lfo.ts, which is exactly the range these ports document.
+  //
+  // With the 80 Hz sine context S (±1 V) and attA=attB=0.5:
+  //   a / b       control  sum = tanh(0.5·S)        — bipolar, crosses zero
+  //               patched  sum = tanh(0.5 + 0.5·S)  — DC-offset, NEVER negative
+  //     so rms rises AND the zero-crossing count collapses: two independent
+  //     metrics move, in a fixed direction, with no phase relationship between
+  //     source and context to get unlucky about.
+  //   attA_cv /   control  sum = tanh(1.0·S)   (a and b carry the SAME S)
+  //   attB_cv     patched  attenuvert 0.5 → 1.0 (clamped from 1.5), so
+  //               sum = tanh(1.5·S) — more tanh saturation, so rms AND crest
+  //     move together. +1 V (not −1 V) on purpose: −1 V drives the attenuvert
+  //     to −0.5, which makes a·attA + b·attB EXACTLY cancel and the output
+  //     degenerate to digital silence. That is a bigger delta but a worse test
+  //     — every metric on a 0.000 buffer is trivially "different", which is
+  //     indistinguishable from the module having died. Keep both arms audible.
+  'analogLogicMaths.a': {
+    node: {
+      id: 'up-a-lfodc',
+      type: 'lfo',
+      position: { x: 60, y: 60 },
+      domain: 'audio',
+      params: { rate: 0.01, shape: 2, depth: 0.5 },
+    },
+    outPort: 'phase0',
+    sourceType: 'cv',
+  },
+  'analogLogicMaths.b': {
+    node: {
+      id: 'up-b-lfodc',
+      type: 'lfo',
+      position: { x: 60, y: 60 },
+      domain: 'audio',
+      params: { rate: 0.01, shape: 2, depth: 0.5 },
+    },
+    outPort: 'phase0',
+    sourceType: 'cv',
+  },
+  'analogLogicMaths.attA_cv': {
+    node: {
+      id: 'up-attacv-lfodc',
+      type: 'lfo',
+      position: { x: 60, y: 60 },
+      domain: 'audio',
+      params: { rate: 0.01, shape: 2, depth: 0.5 },
+    },
+    outPort: 'phase0',
+    sourceType: 'cv',
+  },
+  'analogLogicMaths.attB_cv': {
+    node: {
+      id: 'up-attbcv-lfodc',
+      type: 'lfo',
+      position: { x: 60, y: 60 },
+      domain: 'audio',
+      params: { rate: 0.01, shape: 2, depth: 0.5 },
+    },
+    outPort: 'phase0',
+    sourceType: 'cv',
+  },
   'moog911a.trig1': {
     node: {
       id: 'up-trig1-lfosq',
@@ -2042,7 +2114,62 @@ const BEHAVIORAL_PORT_CONTEXT_SOURCE: Record<string, ContextCvOverride> = {
     },
     outPort: 'phase0',
   },
+  // ANALOGLOGICMATHS — a MODULE-level entry (see contextCvSourceFor): all four
+  // of its ports want the same deterministic context, so keying each one
+  // separately would be four copies of this comment.
+  //
+  // WHY the default BUGGLES context cannot work here. ALM is a pure CV utility,
+  // so buildContextEdges fans BUGGLES.smooth into every primary cv input that
+  // isn't under test — i.e. the CONTROL's entire observable output is a random
+  // walk. BUGGLES's PRNG is seeded from the node id, so the value SEQUENCE is
+  // deterministic, but the woggle scheduler runs off setTimeout, so WHICH
+  // values are in effect during the 5 reads is pure main-thread timing. That is
+  // the SAME mechanism already documented on BEHAVIORAL_PORT_TEST_SOURCE
+  // ['adsr.release'] — and it lands the same way: a coin flip on a loaded
+  // runner.
+  //
+  // The walk's correlation time (~1/0.6 Hz ≈ 1.7 s) is 30× LONGER than the
+  // 50 ms scope window, so each window's rms is a sample of the walk's position
+  // rather than a property of the module. Measured on main @ 7d048c01 (run
+  // 30842128606, shard 1/6) the CONTROL's own rms for the identical patch read
+  // 0.079 / 0.096 / 0.137 / 0.164 / 0.166 / 0.175 across attempts, and
+  // attB_cv's Δμrms sampled 0.000 and 0.105 on the SAME commit — straddling
+  // the 0.01 floor in both directions, which is how the row went red.
+  //
+  // The fix is a source whose correlation time is SHORTER than the observation
+  // window instead of longer: an 80 Hz sine puts ~4 full cycles inside every
+  // 50 ms read, so the window statistics are the same no matter WHEN the window
+  // opens. That is renderer/load-independent BY CONSTRUCTION rather than by
+  // tuning — the CV-domain form of CLAUDE.md's "count frames, don't wait ms".
+  // depth 0.5 = unity ±1 V per lfo.ts; shape 0 = pure sine per morph().
+  //
+  // NEGATIVE CONTROL (BEHAVIORAL_NEGATIVE_CONTROL=1, which re-runs the control
+  // patch as BOTH arms — see the PERTURBATION EDGE block in the per-port loop):
+  // the walk gave a control-vs-control Δμrms that reached 0.0104 and FIRED the
+  // 0.01 rmsMean floor — the harness reporting "this port perturbs the output"
+  // about a patch containing no perturbation at all. With this source the same
+  // sweep reads Δμrms 0.000 on every port, every run. Numbers in the PR body.
+  analogLogicMaths: {
+    node: {
+      id: 'ctx-buggles',
+      type: 'lfo',
+      position: { x: 60, y: 740 },
+      domain: 'audio',
+      params: { rate: 80, shape: 0, depth: 0.5 },
+    },
+    outPort: 'phase0',
+  },
 };
+
+/** Per-port entry first, then a MODULE-level fallback — the same idiom as
+ *  `thresholdsFor` / `decidingMetricsFor`. A module whose ports all want one
+ *  context (ANALOGLOGICMATHS) declares it once. */
+function contextCvSourceFor(modType: string, portId: string): ContextCvOverride | undefined {
+  return (
+    BEHAVIORAL_PORT_CONTEXT_SOURCE[`${modType}.${portId}`] ??
+    BEHAVIORAL_PORT_CONTEXT_SOURCE[modType]
+  );
+}
 
 // ────────── Per-PORT SUT param override ──────────
 //
@@ -2812,7 +2939,7 @@ function buildContextEdges(
 
   // Per-port CV-context override (e.g. sampleHold.gate_in wants an LFO
   // ramp on cv_in, not the default BUGGLES random walk).
-  const cvCtxOverride = BEHAVIORAL_PORT_CONTEXT_SOURCE[`${mod.type}.${testInputPortId}`];
+  const cvCtxOverride = contextCvSourceFor(mod.type, testInputPortId);
 
   if (NEEDS_AUDIO_CONTEXT_CATEGORIES.has(mod.category)) {
     // Feed sustained noise into EVERY non-test audio input (fan-out from ONE
@@ -3291,15 +3418,40 @@ test.describe('per-module per-port: BEHAVIORAL input coverage (output changes on
           source.node,
           ...(source.extraNode ? [source.extraNode] : []),
         ];
+        // ─── THE PERTURBATION EDGE ───────────────────────────────────
+        // BEHAVIORAL_NEGATIVE_CONTROL=1 omits it, so the "patched" arm is the
+        // CONTROL patch run a second time and every Δ the sweep then prints is
+        // the instrument's own control-vs-control scatter. It is a DIAGNOSTIC
+        // switch, never set in CI — with it set every row SHOULD fail, so a
+        // green run under it is itself the bug.
+        //
+        // This exists because BEHAVIORAL_DECIDING_METRICS' own instructions
+        // ("measure the control-vs-control spread per metric, then name only
+        // the metrics whose floor sits ABOVE that spread") described a
+        // measurement the harness gave you no way to take — so the numbers in
+        // that table had to be produced by hand-editing this file, and the
+        // sandwich could not be re-checked later without redoing that edit.
+        //
+        // It pays for itself: run against `analogLogicMaths` on main it caught
+        // the harness reporting PASS — "this port perturbs the output" — on a
+        // patch with NO perturbation in it (attB_cv, Δμrms 0.0104 vs a 0.01
+        // rmsMean floor). That is a FALSE POSITIVE in a coverage gate, which is
+        // strictly worse than the red row that led us here, and nothing in the
+        // ordinary output distinguishes it.
+        //
+        //   flox activate -- env BEHAVIORAL_NEGATIVE_CONTROL=1 \
+        //     E2E_SKIP_WEBSERVER=1 npx playwright test \
+        //     per-module-per-port-behavioral --grep <module> --workers=1
+        const negativeControl = process.env.BEHAVIORAL_NEGATIVE_CONTROL === '1';
         const patchedEdges: SpawnEdge[] = [
           ...controlEdges,
-          {
+          ...(negativeControl ? [] : [{
             id: 'e-test-up-sut',
             from: { nodeId: source.node.id, portId: source.outPort },
             to:   { nodeId: 'sut',           portId: port.id },
             sourceType: source.sourceType,
             targetType: port.type,
-          },
+          }]),
         ];
         if (source.extraNode) {
           patchedEdges.push({
