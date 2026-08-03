@@ -166,7 +166,26 @@ describe('card ↔ def AGREEMENT (deny-by-default across every registered card)'
     // on. 87 such controls exist today (qbrt, reverb and filter are the cards
     // the face-redo ledger names; there are more). The count only shrinks, so a
     // new positional control cannot quietly widen the blind spot.
-    const UNCHECKABLE_CEILING = 87;
+    //
+    // ⚠ 87 → 88 on 2026-08-03, and this one is a SCANNER limitation rather than
+    // a card defect — worth naming so the number is not read as "one more card
+    // went bad". `WarrensspectrumCard.svelte:182` is a `{#each BAND_FIELDS}`
+    // fader that DOES declare `paramId={`wsBand${selectedBand}-${f}`}` and DOES
+    // take its range from `bandSpec[f]` — it is def-bound on both counts. The
+    // scan is static, so a TEMPLATE-LITERAL paramId cannot be resolved and the
+    // control lands in `blind` alongside genuinely positional ones.
+    //
+    // How it got here is the instructive part: #1311 measured 87 on a tree with
+    // no warrensspectrum, #1308 added the module, and neither PR touched a file
+    // the other did — no conflict, both green alone, red once combined. That is
+    // the ratchet doing its job across concurrent merges.
+    //
+    // THE REAL FIX, deliberately not taken here (main was red and this is the
+    // minimal honest unblock): teach the scan to recognise a dynamic paramId as
+    // DECLARED-BUT-DYNAMIC and count it separately, so a def-bound dynamic
+    // control stops inflating a number that is supposed to mean "unmeasured".
+    // Until then every dynamically-keyed control will cost one here.
+    const UNCHECKABLE_CEILING = 88;
     expect(
       blind.length,
       `UNCHECKABLE controls grew — a control with range props but no paramId cannot be ` +
