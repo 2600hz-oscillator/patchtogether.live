@@ -1894,12 +1894,15 @@ jobs:
   # dispatch-only `e2e-video` lane was deleted the same day.) The umbrella name
   # never changed, so any future retirement needs no ruleset edit. (§11.)
   #
-  # Cheap (< 1 min: checkout + flox + one hash). No LFS, no DB, no bundle.
+  # ⚠ NOT "cheap (< 1 min)" as this comment used to claim — see the ATTEST-JOB
+  # BUDGET note above the `attest-npm-cache` anchor below. The hash check is
+  # ~1 s; `task install` is ~116 s and is the entire job.
   # -----------------------------------------------------------------------
   webgl-attest:
     name: webgl-attest (real-GPU attestation gate)
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    # 10 min, not 5 — see the ATTEST-JOB BUDGET note on the npm-cache step.
+    timeout-minutes: 10
     # GATING (re-armed 2026-06-11, Phase 4): the heavy-WebGL triage campaign
     # landed (#752 green baseline + #753 lean lane, retries=0 clean) and the first
     # real-GPU attestation (ci-webgl-attest/<hash>.json) is committed, so this
@@ -1913,6 +1916,38 @@ jobs:
 
       - name: Install Flox
         uses: flox/install-flox-action@v2
+
+      # ─── ATTEST-JOB BUDGET (anchor: attest-npm-cache) ───────────────────
+      # These three attest jobs (webgl / collab / grand) are all the same
+      # shape: checkout → flox → `task install` → run a hash script. The hash
+      # script is the POINT of the job and it takes ~1 SECOND. `task install`
+      # (a full 5-workspace `npm install`, previously UNCACHED here while every
+      # other npm job in this file caches ~/.npm) took ~116 s — i.e. >99 % of
+      # the job — and it is the one step whose duration depends on the npm
+      # registry rather than on us.
+      #
+      # On 2026-08-03 that bit: run 30842128606 (push, main @ 7d048c01) had
+      # `Install workspace deps` run 296 s against the old 5-minute ceiling.
+      # GitHub reports a timed-out job as CANCELLED, so `webgl-attest` came
+      # back `cancelled` → the `$WEBGL_ATTEST` clause in the `ci` umbrella's
+      # failing `if` fired → the REQUIRED check went red on main with every
+      # other gating job green. Measured across the 13 preceding main runs the
+      # same step was 120-136 s, so the ceiling carried only ~2.2× headroom
+      # over the median of an operation with an unbounded network tail.
+      #
+      # Two independent things were wrong; fix both:
+      #   1. no cache on the dominant step  → cache ~/.npm (this step)
+      #   2. ceiling ~2.2× the median       → timeout-minutes 5 → 10
+      # Distinct key from the `${{ runner.os }}-deps-` entry the browser-
+      # running jobs share: those also cache ~/.cache/ms-playwright (~1 GB of
+      # browser binaries), and these three jobs never launch a browser.
+      - name: Cache npm (attest jobs never launch a browser — no ms-playwright)
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-attest-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-npm-attest-
 
       - name: Install workspace deps (tsx + minimatch for the hash script)
         run: flox activate -- task install
@@ -1960,7 +1995,9 @@ jobs:
   collab-attest:
     name: collab-attest (local-relay attestation gate)
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    # 10 min, not 5 — see the ATTEST-JOB BUDGET note on webgl-attest's npm-cache
+    # step (anchor: attest-npm-cache). Same shape, same exposure.
+    timeout-minutes: 10
     # GATING (armed 2026-06-20, final step of the @collab de-flake campaign): the
     # @collab multi-context lane is now a reliable real green lane (#844 — sync
     # budgets + vacuity-skips→asserts + a basis guard unit test), and a fresh
@@ -1976,6 +2013,15 @@ jobs:
 
       - name: Install Flox
         uses: flox/install-flox-action@v2
+
+      # See the ATTEST-JOB BUDGET note on webgl-attest (anchor: attest-npm-cache).
+      - name: Cache npm (attest jobs never launch a browser — no ms-playwright)
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-attest-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-npm-attest-
 
       - name: Install workspace deps (tsx for the hash script)
         run: flox activate -- task install
@@ -2017,7 +2063,11 @@ jobs:
   grand-attest:
     name: grand-attest (local-GPU attestation gate — informational)
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    # 10 min, not 5 — see the ATTEST-JOB BUDGET note on webgl-attest's npm-cache
+    # step (anchor: attest-npm-cache). Same shape, same exposure. This one is
+    # informational, so a timeout here only ever cost a confusing log — but it
+    # sits in the umbrella's `needs:`, so it still stalls the merge signal.
+    timeout-minutes: 10
     steps:
       - name: Checkout (no LFS — only needs source + ci-grand-attest/)
         uses: actions/checkout@v4
@@ -2026,6 +2076,15 @@ jobs:
 
       - name: Install Flox
         uses: flox/install-flox-action@v2
+
+      # See the ATTEST-JOB BUDGET note on webgl-attest (anchor: attest-npm-cache).
+      - name: Cache npm (attest jobs never launch a browser — no ms-playwright)
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-attest-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-npm-attest-
 
       - name: Install workspace deps (tsx for the hash script)
         run: flox activate -- task install
