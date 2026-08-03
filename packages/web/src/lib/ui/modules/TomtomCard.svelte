@@ -14,8 +14,7 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import { setNodeParam } from '$lib/graph/mutate';
-  import { useEngine } from '$lib/audio/engine-context';
+  import { clearStuckMomentaryParams, setMomentaryParam } from './manual-strike-actions';
   import { tomtomDef } from '$lib/audio/modules/tomtom';
   import type { ModuleNode } from '$lib/graph/types';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
@@ -24,7 +23,6 @@
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
-  const engineCtx = useEngine();
   const { defaultFor, paramVal, set, live } = cardParams(tomtomDef, () => id, () => node);
 
   // Per-param reactive reads.
@@ -37,14 +35,36 @@
   let drive    = $derived(paramVal('drive'));
   let level    = $derived(paramVal('level'));
 
-  let striking = $derived((node?.params?.['strike'] ?? 0) >= 0.5);
+  // The pad's lit state is LOCAL — this surface's own finger, not a value in
+  // the document. It used to read `node.params.strike`, which is what made the
+  // press durable in the first place (see the setStrike comment below).
+  let striking = $state(false);
 
-  /** Press/release the STRIKE pad — write the param (peers + store see the
-   *  held state) AND push straight to the engine for immediate strike. */
+  // Repair a rack SAVED with the pad stuck down. `AudioEngine.addNode` already
+  // refuses to apply such a value, so the drum is playable again regardless;
+  // this clears the dead number out of the document so a re-save is clean.
+  // Untracked origin — a Cmd-Z that restored `strike: 1` would re-brick it.
+  $effect(() => {
+    if (node) clearStuckMomentaryParams(id, tomtomDef);
+  });
+
+  /**
+   * Press/release the STRIKE pad — ENGINE ONLY, never the Y.Doc.
+   *
+   * ⚠ It used to `setNodeParam(id, 'strike', v)` as well, so peers and the
+   * store saw the hold. That made a MOMENTARY action write DURABLE state, and
+   * when the release edge went missing (the card unmounts mid-hold — pointer
+   * capture protects a moving pointer, not a deleted element) the 1 persisted:
+   * it saved, it synced, it survived reload, and because the worklet ORs the
+   * pad with `trigger_in` as LEVELS the combined trigger stayed permanently
+   * high and **no external trigger could ever strike the drum again**. See
+   * $lib/audio/momentary-params. `setMomentaryParam` also registers the pad
+   * with the window-level panic listeners, so a release this button never sees
+   * still reaches the engine.
+   */
   function setStrike(v: 0 | 1): void {
-    setNodeParam(id, 'strike', v);
-    const e = engineCtx.get();
-    if (e && node) e.setParam(node, 'strike', v);
+    striking = v === 1;
+    setMomentaryParam(id, 'strike', v === 1, defaultFor('strike'));
   }
   function onStrikeDown(ev: PointerEvent): void {
     try {

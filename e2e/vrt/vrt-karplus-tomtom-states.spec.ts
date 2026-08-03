@@ -39,6 +39,30 @@ interface StateScene {
   moduleType: 'karplus' | 'tomtom';
   blurb: string;
   params: Record<string, number>;
+  /**
+   * A `data-testid` to hold DOWN (pointerdown, no release) before the capture.
+   *
+   * ⚠ ADDED 2026-08-02, AND THE REASON IS THE POINT. `tomtom-strike-held` used
+   * to reach the pad's `.held` styling by seeding `params: { strike: 1 }` — a
+   * momentary pad's pressed value, persisted. That value is exactly the
+   * data-integrity bug that was just fixed: a press is not state, it no longer
+   * survives in the Y.Doc, and the pad's lit state is now LOCAL to the surface
+   * holding the finger ($lib/audio/momentary-params). Seeding the param
+   * therefore stopped lighting the pad, and **the scene silently became a
+   * duplicate of the default card**.
+   *
+   * ⚠⚠ AND THE GATE DID NOT NOTICE. Measured: the change moved 859 px in an
+   * 84×60 box — the whole pad — against a `maxDiffPixelRatio: 0.01` budget of
+   * 4163 px on this 790×527 capture. 21 % of budget, so the assertion passed
+   * AND `--update-snapshots` refused to rewrite the baseline (Playwright only
+   * rewrites on FAILURE). That is the A2/#1213 sub-tolerance staleness trap,
+   * reproduced exactly; the baseline had to be `git rm`-ed to re-capture.
+   *
+   * Pressing the real pad is also STRONGER than what it replaced: it proves
+   * the press PATH lights the pad, where the old form only proved a stored
+   * number did.
+   */
+  hold?: string;
 }
 
 const SCENES: StateScene[] = [
@@ -92,10 +116,11 @@ const SCENES: StateScene[] = [
     id: 'tomtom-strike-held',
     moduleType: 'tomtom',
     blurb:
-      'The STRIKE pad HELD (strike=1): the pad renders its orange .held ' +
-      'state — the one stateful CSS surface on either card — over otherwise ' +
-      'default knobs.',
-    params: { strike: 1 },
+      'The STRIKE pad HELD (a real pointerdown, not a seeded param): the pad ' +
+      'renders its orange .held state — the one stateful CSS surface on ' +
+      'either card — over otherwise default knobs.',
+    params: {},
+    hold: 'tomtom-strike',
   },
 ];
 
@@ -136,6 +161,22 @@ test.describe('VRT: KARPLUS + TOM DRUM composite states', () => {
 
       const card = page.locator(`.svelte-flow__node-${scene.moduleType}`).first();
       await card.waitFor({ state: 'visible', timeout: 15_000 });
+
+      // HOLD a momentary pad DOWN for the capture (see StateScene.hold).
+      // `dispatchEvent` rather than `mouse.down()` so no release is implied by
+      // any later interaction, and so the pointer never has to sit over the
+      // element while the settle loop runs.
+      if (scene.hold) {
+        const pad = page.locator(`[data-testid="${scene.hold}"]`);
+        await pad.waitFor({ state: 'visible', timeout: 15_000 });
+        await pad.dispatchEvent('pointerdown');
+        // NEGATIVE CONTROL, on every run rather than once at authoring time:
+        // the pad must ACTUALLY be lit. Without this the scene would silently
+        // fall back to capturing an unheld pad the moment the press path
+        // changed again — which is precisely how it broke the first time, and
+        // the pixel gate could not see it (859 px against a 4163 px budget).
+        await expect(pad).toHaveClass(/\bheld\b/);
+      }
 
       // Height-stability settle: text-row raster determinism (the ±1 px
       // layout-rounding flake class — see vrt.spec.ts / the memory note).

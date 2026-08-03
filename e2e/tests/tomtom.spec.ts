@@ -167,3 +167,108 @@ test('TOM DRUM real chain: SEQUENCER → trigger_in → AUDIOOUT — audible RMS
   // high-band frame.
   expect(maxLow).toBeGreaterThan(maxHigh);
 });
+
+// ── THE STUCK-STRIKE REGRESSION ─────────────────────────────────────────────
+//
+// A rack could be SAVED with tomtom's momentary STRIKE pad durable at 1, and
+// that state was unrecoverable from inside the app.
+//
+// How it happened: the pad wrote `setNodeParam(id, 'strike', 1)` on
+// pointerdown and 0 on pointerup, so a MOMENTARY action wrote DURABLE state,
+// and the release edge is not guaranteed — pointer capture protects a MOVING
+// pointer, not a DELETED element, so unmounting the card mid-hold (close the
+// dock, delete the module, hide the tab, navigate away) left the 1 behind. It
+// then persisted, synced to peers, and survived reload.
+//
+// Why it was fatal rather than cosmetic: `packages/dsp/src/tomtom.ts` does
+// `trig = max(trigger_in[s], strike)` — it ORs the pad and the jack as LEVELS,
+// not as edges. With `strike` pinned at 1 the combined trigger is permanently
+// HIGH, so the rising-edge detector never fires again and **no external
+// sequencer can ever strike the drum**. Save that rack and the module is dead
+// for good.
+//
+// The fix is two-sided; this test covers the half that matters to users who
+// ALREADY have such a rack: `AudioEngine.addNode` forces every declared
+// `face.momentary` param to REST before the factory sees it
+// ($lib/audio/momentary-params), so the persisted press never reaches the
+// worklet on ANY arrival route — file load, multiplayer join, duplicate,
+// reload, audio restart. (The other half — a press never becoming durable in
+// the first place — is pinned in manual-strike-actions.test.ts.)
+//
+// ⚠ THE PATCH BELOW IS THE CORRUPT STATE ITSELF: `params: { strike: 1 }` is
+// exactly what a rack saved mid-press contains. `spawnPatch` seeds the Y.Doc
+// and the engine reconciles from it, which is the same path a loaded envelope
+// takes — so this is a load-path test, not a simulation of one.
+test('a rack SAVED with STRIKE stuck at 1 still responds to trigger_in', async ({ page, rack, errorWatch }) => {
+  await spawnPatch(
+    page,
+    [
+      { id: 'b-seq', type: 'sequencer', position: { x: 60,  y: 60 }, domain: 'audio',
+        params: { bpm: 120, length: 4, isPlaying: 1, gateLength: 0.25 } },
+      // THE BRICKED MODULE, as persisted.
+      { id: 'b-tom', type: 'tomtom',    position: { x: 360, y: 60 }, domain: 'audio',
+        params: { level: 0, strike: 1 } },
+      { id: 'b-scp', type: 'scope',     position: { x: 820, y: 320 }, domain: 'audio',
+        params: { timeMs: 200 } },
+    ],
+    [
+      { id: 'f1', from: { nodeId: 'b-seq', portId: 'gate' },      to: { nodeId: 'b-tom', portId: 'trigger_in' },
+        sourceType: 'gate', targetType: 'gate' },
+      { id: 'f2', from: { nodeId: 'b-tom', portId: 'audio_out' }, to: { nodeId: 'b-scp', portId: 'ch1' } },
+    ],
+  );
+
+  await expect(page.locator('.svelte-flow__node-tomtom')).toHaveCount(1);
+
+  await page.evaluate(() => {
+    const w = globalThis as unknown as {
+      __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
+      __ydoc: { transact: (fn: () => void) => void };
+    };
+    w.__ydoc.transact(() => {
+      const seq = w.__patch.nodes['b-seq'];
+      if (!seq.data) seq.data = {};
+      seq.data.steps = [
+        { on: true, midi: 60 },
+        { on: false, midi: null },
+        { on: true, midi: 60 },
+        { on: false, midi: null },
+        ...Array.from({ length: 28 }, () => ({ on: false, midi: null })),
+      ];
+    });
+  });
+
+  // ⚠⚠ SETTLE FIRST — AND THIS LINE IS THE WHOLE TEST.
+  //
+  // Without it this test PASSES ON THE BROKEN CODE, and it did: measured
+  // 1 passed with the repair disabled in all three layers. The reason is a
+  // transient that looks exactly like success. The factory seeds the `strike`
+  // AudioParam from `node.params` with `setValueAtTime(1, …)`, and the param's
+  // own value before that is 0 — so the worklet's edge detector sees a genuine
+  // 0 → 1 rising edge AT SPAWN and fires EXACTLY ONE HIT. After that the OR is
+  // pinned high forever and nothing can strike it again. A capture window that
+  // opens at spawn therefore records a real drum hit on a permanently-bricked
+  // module.
+  //
+  // (That transient is also why the bug is easy to miss by hand: load the
+  // saved rack, hear one thump, conclude the drum works.)
+  //
+  // Waiting past it means every strike this test can see must have come from
+  // the SEQUENCER through `trigger_in`, which is the property under test.
+  // Measured with the repair disabled and this settle in place: peak 1.9e-13
+  // across 28 polls — silence to thirteen decimal places.
+  await page.waitForTimeout(1500);
+
+  // THE ASSERTION. At BPM 120 / length 4 with steps 0 and 2 ON, a strike lands
+  // every ~1 s, so a 2.5 s window straddles at least two. Under the bug this is
+  // flatly zero for the whole window — the trigger never has a rising edge to
+  // detect, because the OR is already high.
+  const hold = await readScopePeakOverWindow(page, 'b-scp', 2500);
+  expect(hold.polls, 'SCOPE was polled across the capture window').toBeGreaterThan(0);
+  expect(
+    hold.peak,
+    `peak ${hold.peak} over ${hold.polls} polls, measured AFTER the spawn transient — ` +
+      `a saved STRIKE:1 must not mask trigger_in`,
+  ).toBeGreaterThan(0.05);
+  expect(hold.nonzeroSamples).toBeGreaterThan(50);
+});

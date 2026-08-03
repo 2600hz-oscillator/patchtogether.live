@@ -60,6 +60,8 @@
   import { shellParamWrite } from '$lib/ui/workflow/shell-param-writes';
   import { dockBandVisible, dockTabPlan } from '$lib/ui/workflow/dock-tabs-model';
   import { gridParamIds, momentaryParamIds, momentaryValue, paramCellKind } from '$lib/ui/workflow/shell-control-kind';
+  import type { MomentaryDefLike } from '$lib/audio/momentary-params';
+  import { clearStuckMomentaryParams, setMomentaryParam } from './manual-strike-actions';
   import OssAttribution from '$lib/ui/modules/OssAttribution.svelte';
   import {
     spineCableVar,
@@ -377,19 +379,35 @@
   }));
 
   /**
-   * Fire a MOMENTARY press-param: high on press, back to REST on release. Same
-   * two writes the legacy pad does (TomtomCard/ClapCard) — the durable param so
-   * the state is shared + the UI reflects the hold, and a direct engine push so
-   * the hit is immediate rather than waiting on the commit path. Because the
-   * release always writes REST back, nothing latched survives in the Y.Doc.
+   * Fire a MOMENTARY press-param: high on press, back to REST on release —
+   * through the shared audition seam, which pushes the ENGINE and writes
+   * NOTHING to the Y.Doc.
+   *
+   * ⚠ IT USED TO ALSO WRITE THE DURABLE PARAM, on the reasoning stated here
+   * verbatim: *"Because the release always writes REST back, nothing latched
+   * survives in the Y.Doc."* That is false whenever the release edge does not
+   * arrive — this button unmounts mid-hold when the dock closes, the module is
+   * deleted or the tab is hidden, and pointer capture protects a MOVING
+   * pointer, not a DELETED element. The pressed value then persisted, synced
+   * and survived reload; on tomtom it masked `trigger_in` permanently, because
+   * the worklet ORs pad and jack as LEVELS. `setMomentaryParam` registers the
+   * pad with the same window-level panic listeners the held-gate audition
+   * already uses, so a release this button never sees still reaches the
+   * engine. See $lib/audio/momentary-params for the whole argument.
    */
   function firePressParam(pd: ParamDef, high: boolean): void {
-    const v = momentaryValue(high, pd.defaultValue);
-    params.set(pd.id)(v);
-    const e = params.engineCtx.get();
-    const live = patch.nodes[id] as ModuleNode | undefined;
-    if (e && live) e.setParam(live, pd.id, v);
+    // The pad's own lit state is <Button>'s internal `pressed` — local to this
+    // surface, which is what a finger is. `momentaryValue(false, …)` names the
+    // REST value through the same helper the render side uses.
+    setMomentaryParam(id, pd.id, high, momentaryValue(false, pd.defaultValue));
   }
+
+  // Repair a rack saved with a pad stuck down. `AudioEngine.addNode` already
+  // refuses to apply such a value; this clears the dead number from the
+  // document, under an untracked origin so it is not an undo entry.
+  $effect(() => {
+    if (def) clearStuckMomentaryParams(id, def as MomentaryDefLike);
+  });
 
   /** Per-cell status/error line for a FILE cell (keyed by the face key). */
   let cellStatus = $state<Record<string, { status: string | null; error: string | null }>>({});
