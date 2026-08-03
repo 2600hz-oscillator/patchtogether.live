@@ -35,12 +35,23 @@ import { listMetaModuleDefs } from '$lib/meta/module-registry';
 import type { ControlFamily, ModuleDocs } from '$lib/graph/types';
 import { STRICT_DOCS } from './strict-docs';
 import { resolveLegend, staticKey, type LegendEntry } from './control-doc-resolver';
+import {
+  UNDECLARED_EDGE_DEBT,
+  UNDECLARED_EDGE_CEILING,
+  undeclaredEdgePairs,
+} from './undeclared-edge-ledger';
+
+interface DocPort {
+  id: string;
+  type?: string;
+  edge?: 'trigger' | 'gate';
+}
 
 interface DocDef {
   type: string;
   card?: string;
-  inputs?: readonly { id: string; edge?: 'trigger' | 'gate' }[];
-  outputs?: readonly { id: string; edge?: 'trigger' | 'gate' }[];
+  inputs?: readonly DocPort[];
+  outputs?: readonly DocPort[];
   params?: readonly { id: string; label?: string }[];
   controlFamilies?: readonly ControlFamily[];
   docs?: ModuleDocs;
@@ -204,17 +215,60 @@ describe('module-docs lint — numbered card KEY resolves (STRICT_DOCS set)', ()
   });
 });
 
+// ── EDGE COHERENCE — and the `if (!p.edge) continue` that hollowed it out ───
+//
+// ⚠ A MISSING DECLARATION IS NOT "NOT APPLICABLE", IT IS "UNCHECKED".
+// The vocabulary check below used to open `if (!p.edge) continue`, so the only
+// ports it could ever fail were the ones whose author had already declared an
+// edge — and the ports nobody declared, whose prose is therefore entirely
+// unreviewed, were exactly the ones it skipped. Same shape as a `<=` ceiling
+// that can only trip by growing.
+//
+// MEASURED at the time of the fix: 362 gate-cable ports, 63 declared and
+// checked, 299 skipped — the gate covered 17 % of its subject and printed
+// nothing about the rest. `undeclared-edge-ledger.ts` now names every one, and
+// the demand is deny-by-default.
+//
+/** Every gate-cable port, with the doc prose (if any) that describes it. */
+function gatePorts(): {
+  type: string;
+  id: string;
+  dir: 'in' | 'out';
+  edge?: 'trigger' | 'gate';
+  desc?: string;
+}[] {
+  const out: { type: string; id: string; dir: 'in' | 'out'; edge?: 'trigger' | 'gate'; desc?: string }[] = [];
+  for (const def of allDefs()) {
+    for (const [dir, ports] of [['in', def.inputs], ['out', def.outputs]] as const) {
+      for (const p of ports ?? []) {
+        if (p.type !== 'gate') continue;
+        out.push({
+          type: def.type,
+          id: p.id,
+          dir,
+          edge: p.edge,
+          desc: dir === 'in' ? def.docs?.inputs?.[p.id] : def.docs?.outputs?.[p.id],
+        });
+      }
+    }
+  }
+  return out;
+}
+
 describe('module-docs lint — edge/gate vocabulary coherence', () => {
   it('a documented trigger/gate port uses its declared edge vocabulary', () => {
     const mismatches: string[] = [];
     for (const def of allDefs()) {
       if (!def.docs) continue;
-      const probes: { p: { id: string; edge?: 'trigger' | 'gate' }; desc?: string }[] = [
+      const probes: { p: DocPort; desc?: string }[] = [
         ...(def.inputs ?? []).map((p) => ({ p, desc: def.docs!.inputs?.[p.id] })),
         ...(def.outputs ?? []).map((p) => ({ p, desc: def.docs!.outputs?.[p.id] })),
       ];
       for (const { p, desc } of probes) {
-        if (!p.edge) continue;
+        if (!p.edge) continue; // ← DELIBERATE HERE: undeclared ports are the
+        // subject of the DEDICATED clause below, not silently dropped. The
+        // split matters: this clause is about prose-vs-declaration agreement
+        // and is meaningless without a declaration to disagree with.
         if (!desc) continue;
         const ownVocab = p.edge === 'trigger' ? TRIGGER_VOCAB : GATE_VOCAB;
         if (!hasAny(desc, ownVocab)) {
@@ -225,6 +279,89 @@ describe('module-docs lint — edge/gate vocabulary coherence', () => {
       }
     }
     expect(mismatches.join('\n'), 'edge/gate doc vocabulary mismatch — fix the prose or the declared edge').toBe('');
+  });
+
+  it('EVERY gate-cable port declares `edge`, or is named in the ledger (deny-by-default)', () => {
+    const ports = gatePorts();
+    const known = new Set(undeclaredEdgePairs());
+    const undeclared: string[] = [];
+    for (const p of ports) {
+      if (p.edge) continue;
+      const pair = `${p.type}.${p.id}`;
+      if (known.has(pair)) continue;
+      undeclared.push(`${pair} (${p.dir})`);
+    }
+    expect(
+      undeclared.sort().join('\n'),
+      `gate-cable port(s) with NO \`edge\` declaration and no ledger entry.\n` +
+        `A trigger fires ONCE per rising edge; a gate acts WHILE high. The consumer's\n` +
+        `interpretation is DECLARED on the port ($lib/audio/gate-trigger), and an\n` +
+        `undeclared port is UNCHECKED, not exempt — the vocabulary clause above cannot\n` +
+        `see it. Declare \`edge: 'trigger' | 'gate'\` (then \`task docs:accept\`), or add it\n` +
+        `to packages/web/src/lib/docs/undeclared-edge-ledger.ts.`,
+    ).toBe('');
+  });
+
+  it('the edge ledger is anchored to the DEFS — no stale entries', () => {
+    // Ground truth is the def, not the list. An entry for a port that has since
+    // declared `edge` (or been deleted) is an exemption nobody is watching, and
+    // it would silently re-exempt a future undeclared port of the same name.
+    const live = new Map(gatePorts().map((p) => [`${p.type}.${p.id}`, p]));
+    const stale: string[] = [];
+    for (const [type, ids] of Object.entries(UNDECLARED_EDGE_DEBT)) {
+      for (const id of ids) {
+        const p = live.get(`${type}.${id}`);
+        if (!p) stale.push(`${type}.${id} — no such gate-cable port`);
+        else if (p.edge) stale.push(`${type}.${id} — now declares edge='${p.edge}'`);
+      }
+    }
+    expect(
+      stale.sort().join('\n'),
+      'stale edge-ledger entr(ies) — delete them AND lower UNDECLARED_EDGE_CEILING by the same count',
+    ).toBe('');
+  });
+
+  it('the edge ratchet moves in BOTH directions, and reports COVERAGE not a bare number', () => {
+    const ports = gatePorts();
+    const declared = ports.filter((p) => p.edge).length;
+    const pairs = undeclaredEdgePairs().length;
+    const pct = ((declared / ports.length) * 100).toFixed(1);
+    const breakdown =
+      `gate-cable ports: ${ports.length} | declared+checked: ${declared} (${pct}%) | ` +
+      `undeclared (ledgered): ${pairs} across ${Object.keys(UNDECLARED_EDGE_DEBT).length} modules`;
+
+    expect(pairs, `undeclared-edge debt GREW. ${breakdown}`).toBeLessThanOrEqual(
+      UNDECLARED_EDGE_CEILING,
+    );
+    // A ceiling can only trip by GROWING, so assert the other direction too: a
+    // drain that declares an edge and forgets to lower the number passes in
+    // total silence and leaves slack for the next undeclared port.
+    expect(
+      UNDECLARED_EDGE_CEILING - pairs,
+      `undeclared-edge debt is ${pairs} but UNDECLARED_EDGE_CEILING still says ` +
+        `${UNDECLARED_EDGE_CEILING} — lower it by the difference in the SAME commit. ${breakdown}`,
+    ).toBe(0);
+  });
+
+  it('NEGATIVE CONTROL: the deny-by-default clause really fires on a missing declaration', () => {
+    // ⚠ A textual/structural gate that matches nothing looks exactly like a
+    // clean tree. Perturb the thing the clause claims to measure and confirm
+    // the answer MOVES — in both directions — on every run, not once at
+    // authoring time.
+    const known = new Set(undeclaredEdgePairs());
+    const check = (p: { type: string; id: string; edge?: 'trigger' | 'gate' }) =>
+      !!p.edge || known.has(`${p.type}.${p.id}`);
+
+    // (a) a NEW gate port that declares nothing and is not ledgered → caught.
+    expect(check({ type: 'brandNew', id: 'strike' }), 'undeclared + unledgered must FAIL').toBe(false);
+    // (b) the same port, once it declares an edge → passes.
+    expect(check({ type: 'brandNew', id: 'strike', edge: 'trigger' }), 'declared must PASS').toBe(true);
+    // (c) a real ledgered port passes today…
+    expect(check({ type: 'qbrt', id: 'ping' }), 'ledgered must PASS').toBe(true);
+    // (d) …and the ledger is not vacuously matching everything.
+    expect(check({ type: 'qbrt', id: 'not_a_port' }), 'the ledger must not match by module alone').toBe(
+      false,
+    );
   });
 });
 

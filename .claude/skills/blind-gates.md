@@ -85,6 +85,54 @@ doc, a shader constant, a fixture — either **derive it from the definition** o
 control ranges by asserting the card source references the exported constants and
 contains no hardcoded unit range.
 
+## Pattern 5 — the gate is OPT-IN, so the case nobody enrolled is the case it misses
+
+**Case (2026-08-02, the four-gate sweep).** Four gates in this repo were audited
+for what they were *structurally unable to see*. Every one had the same shape:
+a filter applied BEFORE the check, which quietly redefined the check's subject.
+Measured coverage, before → after:
+
+| gate | the filter | saw | could not see |
+|---|---|---|---|
+| `mutate.guard`'s `RAW_PARAM_WRITE` | `\.params\[…\]` — **bracket only** | 3 writes | **96** dotted (`node.params.mode = m`) |
+| `card-range-source`'s `RANGE_BOUND_CARDS` | an **opt-in filename list** | 7 cards | **186** cards |
+| `module-docs-lint`'s edge check | `if (!p.edge) continue` | 63 ports | **299** gate ports |
+| `faces-parity`'s `action` branch | *(no probe at all)* | 0 effects | **every** dead audition |
+
+**The tell in each case was that nothing had ever failed.** A gate whose green
+run means "no instances of the shape I look for" reads identically to one whose
+green run means "no instances exist" — and only the second is what anyone
+believes when they read it.
+
+**Three inversions that fix it, in preference order:**
+
+1. **Deny by default, with a NAMED exemption per instance.** Not a filename —
+   the exact `(file, key)` / `(module, port)` / `(card, param, field)` triple, so
+   a *new* defect in an *already-listed* file still reddens. An opt-in list
+   cannot do this; it exempts a whole file forever.
+2. **Anchor the metric to the ARTIFACT, not the list.** Ground truth is the raw
+   write in the tree, the gate-cable port on the def, the divergence in the card.
+   The exemptions must then *explain* each one. An entry naming something that no
+   longer exists is RED — a stale exemption is an exemption nobody is watching,
+   and it silently re-exempts the next regression on that key.
+3. **Ratchet in BOTH directions.** `actual <= CEILING` **and**
+   `CEILING - actual === 0`. A ceiling can only trip by growing; without the
+   second clause a drain that forgets to lower the number passes in total
+   silence and leaves slack that absorbs the next regression.
+
+**And state the gate's SCOPE inside the gate.** Every one of these now asserts
+what it still cannot see (`Object.assign(node.params, …)`; a control with no
+`paramId`; a whole-bag `params = {…}`), either at zero or ratcheted. An unstated
+scope reads as full coverage — that is the whole pattern, one level up.
+
+### The corollary: fixing a card prop can be a GREEN GATE OVER A LIVE BUG
+
+Four cards pass `curve="linear"` on a param the def declares `discrete`. Writing
+`curve="discrete"` would turn the gate green and change **nothing**: all four are
+`<Knob>`, and `Knob.svelte` has no `discrete` branch — `Fader.svelte` and the
+shell's `knob-conic-model.ts` both do. **Before "fixing" a declaration to satisfy
+a gate, check the consumer reads it.** Otherwise the gate now certifies the bug.
+
 ---
 
 ## The negative control is the antidote

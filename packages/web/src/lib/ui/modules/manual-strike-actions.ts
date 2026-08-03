@@ -71,6 +71,7 @@
 import { getActiveEngine } from '$lib/audio/engine-ref';
 import { patch } from '$lib/graph/store';
 import type { ModuleNode } from '$lib/graph/types';
+import { recordAudition } from './audition-ledger';
 import {
   closeGate,
   emptyGateLatch,
@@ -147,8 +148,16 @@ export function resolveManualGate(
 export function fireManualStrike(nodeId: string): boolean {
   const node = patch.nodes[nodeId] as ModuleNode | undefined;
   const strike = resolveManualStrike(getActiveEngine(), node);
-  if (!strike) return false;
+  if (!strike) {
+    // ⚠ RECORDED, NOT SILENT. `delivered: false` is the state the whole
+    // action-cell probe turns on: "pressed and reached nothing" must be
+    // distinguishable from "never pressed", and returning early without a
+    // record would collapse them (audition-ledger.ts).
+    recordAudition({ nodeId, seam: 'manual-strike', delivered: false });
+    return false;
+  }
   strike();
+  recordAudition({ nodeId, seam: 'manual-strike', delivered: true });
   return true;
 }
 
@@ -225,24 +234,35 @@ function ensurePanicListeners(): void {
 export function setManualGate(nodeId: string, high: boolean): boolean {
   const node = patch.nodes[nodeId] as ModuleNode | undefined;
   const setGate = resolveManualGate(getActiveEngine(), node);
+  const record = (delivered: boolean) =>
+    recordAudition({ nodeId, seam: 'manual-gate', high, delivered });
   if (!setGate) {
     // The audition cannot run — but if the latch thinks this node is open,
     // forget it, or a later panic would try to close a gate that never opened.
     if (!high) gateLatch = closeGate(gateLatch, nodeId).state;
+    record(false);
     return false;
   }
   if (high) {
     ensurePanicListeners();
     const r = openGate(gateLatch, nodeId);
     gateLatch = r.state;
-    if (!r.opened) return false;
+    if (!r.opened) {
+      record(false);
+      return false;
+    }
     setGate(true);
+    record(true);
     return true;
   }
   const r = closeGate(gateLatch, nodeId);
   gateLatch = r.state;
-  if (!r.closed) return false;
+  if (!r.closed) {
+    record(false);
+    return false;
+  }
   setGate(false);
+  record(true);
   return true;
 }
 

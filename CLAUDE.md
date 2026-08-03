@@ -406,6 +406,59 @@ was honestly reported as "ranges constrained ✓" while the UI was still ±1.
 - The general rule: **a gate that reads only one side of a two-sided contract
   proves nothing about the other side.**
 
+### A GUARD FOR THAT CLASS THAT IS OPT-IN IS ITSELF AN INSTANCE OF IT
+
+**Audited 2026-08-02. Four gates, all green, all structurally unable to see the
+bug class they exist to catch — because each applied a FILTER before the check
+that quietly redefined the check's subject.** Coverage before → after:
+
+| gate | the filter | saw | could not see |
+|---|---|---|---|
+| `mutate.guard`'s `RAW_PARAM_WRITE` | `\.params\[…\]` — **bracket only** | 3 | **96** dotted writes |
+| `card-range-source`'s `RANGE_BOUND_CARDS` | an **opt-in filename list** | 7 cards | **186** cards |
+| `module-docs-lint`'s edge check | `if (!p.edge) continue` | 63 ports | **299** gate ports |
+| `faces-parity`'s `action` branch | *no probe at all* | 0 | **every** dead audition |
+
+The self-tests were blind the same way (the raw-write self-test only ever fed
+itself the bracket form), so nothing could have gone red. **Ask of any new gate:
+what is it structurally unable to see — and would its green run look any
+different if the answer were "everything"?**
+
+The three inversions, applied to all four (details + measured numbers in the
+`blind-gates` skill):
+
+1. **Deny by default with a NAMED exemption per instance** — the exact
+   `(file, key)` / `(module, port)` / `(card, param, field)` triple, never a
+   filename, so a new defect in an already-listed file still reddens.
+2. **Anchor to the ARTIFACT, not the list** — a ledger entry naming something
+   that no longer exists is RED. A stale exemption is one nobody is watching.
+3. **Ratchet in BOTH directions** — `actual <= CEILING` *and*
+   `CEILING - actual === 0`.
+
+Plus: **state the gate's scope inside the gate**, asserting what it still cannot
+see at zero or under its own ratchet.
+
+⚠ **Before "fixing" a declaration to satisfy a gate, check the consumer reads
+it.** Four cards pass `curve="linear"` where the def says `discrete`; writing
+`curve="discrete"` would green the gate and change nothing, because all four are
+`<Knob>` and `Knob.svelte` has no `discrete` branch (`Fader.svelte` and
+`knob-conic-model.ts` both do). That is a green gate certifying a live bug.
+
+### An ACTION-shaped cell needs a probe, exactly like a PANEL does
+
+`ShellActionCell.probe` is **required**. An audition writes nothing to the graph
+by design, so `readParam`/`readData` are structurally blind to it — the
+observable is the **audition ledger** (`$lib/ui/modules/audition-ledger`), which
+records per press whether the seam resolved a callable off the live engine handle
+and called it. `delivered: false` is recorded, never dropped: "pressed and
+reached nothing" must be distinguishable from "never pressed".
+
+The predicate is negative-controlled in **both** directions in the unit lane on
+every run (`audition-ledger.test.ts`), which is the permanent leg; the e2e side
+was verified once by disconnecting karplus's `manualTrigger` read key and
+watching `faces-parity` go red at the probe — with `toBeEnabled()` and `click()`
+both still passing, which is the finding in one line.
+
 **The sibling hole, same card, same day.** `card-control-overflow` only ever
 spawned the module in its DEFAULT state, so controls revealed by a mode switch
 were never measured — it missed a ~310 px overflow for hours. When a module has

@@ -34,6 +34,7 @@ import {
   shellPanelProbes,
   typesWithShellCells,
   type ShellActionCell,
+  type ShellActionProbe,
   type ShellPanelProbe,
 } from './shell-cells';
 
@@ -182,6 +183,37 @@ describe('shell cells — ACTION cells declare the handler their MODE needs', ()
       if (!cell.onFire) problems.push(`${where}: mode 'trigger' but no onFire — the button would do nothing`);
       if (cell.onGate) problems.push(`${where}: mode 'trigger' declares onGate, which a one-shot Button never calls`);
     }
+    // ⚠ THE PROBE IS REQUIRED (2026-08-02). Until this clause existed,
+    // faces-parity's `action` branch asserted `toBeEnabled()`, clicked, and
+    // asserted NO EFFECT — the only cell kind in that sweep with no probe at
+    // all, on the kind whose whole purpose is to do something. An action cell
+    // with no declared observable is indistinguishable from a dead one, which
+    // is the exact class this gate set exists to catch.
+    const probe = (cell as { probe?: ShellActionProbe }).probe;
+    if (!probe) {
+      problems.push(
+        `${where}: declares no operability probe. Add one to its shell-cell spec — ` +
+          `an audition writes nothing to the graph, so the sweep has NO other way to ` +
+          `tell a live press from a dead one.`,
+      );
+    } else if (probe.effect.kind === 'audition') {
+      const SEAMS = ['manual-strike', 'manual-gate', 'engine-message'];
+      if (!SEAMS.includes(probe.effect.seam)) {
+        problems.push(`${where}: unknown audition seam '${probe.effect.seam}'`);
+      } else if (mode === 'gate' && probe.effect.seam !== 'manual-gate') {
+        // A HELD action whose probe watches the one-shot seam would be asserted
+        // against a seam it never reaches — a probe that can only fail, which
+        // gets deleted, which is how a gate dies.
+        problems.push(
+          `${where}: mode 'gate' but the probe watches seam '${probe.effect.seam}' — a held ` +
+            `action reaches 'manual-gate'`,
+        );
+      } else if (mode === 'trigger' && probe.effect.seam === 'manual-gate') {
+        problems.push(`${where}: mode 'trigger' but the probe watches the HELD seam`);
+      }
+    } else if (!probe.effect.key.trim()) {
+      problems.push(`${where}: probe effect names no node.data key`);
+    }
     return problems;
   }
 
@@ -200,15 +232,30 @@ describe('shell cells — ACTION cells declare the handler their MODE needs', ()
   it('NEGATIVE CONTROL: the clause actually fails on each malformed shape', () => {
     const fire = () => {};
     const gate = () => {};
+    const trigProbe: ShellActionProbe = { effect: { kind: 'audition', seam: 'manual-strike' } };
+    const gateProbe: ShellActionProbe = { effect: { kind: 'audition', seam: 'manual-gate' } };
     // Well-formed, both shapes.
-    expect(actionProblems('x:y', { kind: 'action', label: 'a', onFire: fire })).toEqual([]);
-    expect(actionProblems('x:y', { kind: 'action', label: 'a', mode: 'trigger', onFire: fire })).toEqual([]);
-    expect(actionProblems('x:y', { kind: 'action', label: 'a', mode: 'gate', onGate: gate })).toEqual([]);
-    // The four ways to get it wrong.
-    expect(actionProblems('x:y', { kind: 'action', label: 'a', mode: 'gate' })).toHaveLength(1);
-    expect(actionProblems('x:y', { kind: 'action', label: 'a', mode: 'gate', onFire: fire })).toHaveLength(2);
-    expect(actionProblems('x:y', { kind: 'action', label: 'a' })).toHaveLength(1);
-    expect(actionProblems('x:y', { kind: 'action', label: 'a', onGate: gate })).toHaveLength(2);
+    expect(actionProblems('x:y', { kind: 'action', label: 'a', onFire: fire, probe: trigProbe })).toEqual([]);
+    expect(actionProblems('x:y', { kind: 'action', label: 'a', mode: 'trigger', onFire: fire, probe: trigProbe })).toEqual([]);
+    expect(actionProblems('x:y', { kind: 'action', label: 'a', mode: 'gate', onGate: gate, probe: gateProbe })).toEqual([]);
+    // The four ways to get the HANDLER wrong.
+    expect(actionProblems('x:y', { kind: 'action', label: 'a', mode: 'gate', probe: gateProbe })).toHaveLength(1);
+    expect(actionProblems('x:y', { kind: 'action', label: 'a', mode: 'gate', onFire: fire, probe: gateProbe })).toHaveLength(2);
+    expect(actionProblems('x:y', { kind: 'action', label: 'a', probe: trigProbe })).toHaveLength(1);
+    expect(actionProblems('x:y', { kind: 'action', label: 'a', onGate: gate, probe: trigProbe })).toHaveLength(2);
+    // …and the three ways to get the PROBE wrong. THE FIRST IS THE SHIPPED
+    // STATE this clause was written for: a cell with no probe at all.
+    const noProbe = { kind: 'action', label: 'a', onFire: fire } as unknown as ShellActionCell;
+    expect(actionProblems('x:y', noProbe)).toHaveLength(1);
+    expect(actionProblems('x:y', noProbe)[0]).toContain('no operability probe');
+    // A held pad probed against the one-shot seam — a probe that could only fail.
+    expect(
+      actionProblems('x:y', { kind: 'action', label: 'a', mode: 'gate', onGate: gate, probe: trigProbe }),
+    ).toHaveLength(1);
+    // …and a one-shot probed against the held seam.
+    expect(
+      actionProblems('x:y', { kind: 'action', label: 'a', onFire: fire, probe: gateProbe }),
+    ).toHaveLength(1);
   });
 
   it('the gate-mode shape is REACHED by a real module (the clause is not vacuous)', () => {
