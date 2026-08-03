@@ -268,6 +268,19 @@ describe('LEGEND freshness gate — deny-missing AND deny-orphan', () => {
       expect(b.legend.trim(), `TOP_ROW_BINDINGS: ${b.action} has an empty legend`).not.toBe('');
     }
   });
+
+  it('a table that IS the shift layer declares no shift-of-shift', () => {
+    // GRID_SHIFT and KEYS_ARP are only ever consulted WITH shift held, so the
+    // model reads their `.legend` and never their `.shiftLegend`. A value set
+    // there would be silently ignored — a field that can be written and is
+    // never read is the same species of lie this whole feature exists to kill.
+    for (const b of [...GRID_SHIFT_BINDINGS, ...KEYS_ARP_BINDINGS]) {
+      expect(b.shiftLegend, `${b.action}: this table IS the shift layer`).toBeNull();
+    }
+    // NEGATIVE CONTROL for the assertion's reach: the CLIP table — the one that
+    // IS consulted on both layers — genuinely uses the field.
+    expect(CLIP_RIGHT_BINDINGS.some((b) => b.shiftLegend !== null)).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------
