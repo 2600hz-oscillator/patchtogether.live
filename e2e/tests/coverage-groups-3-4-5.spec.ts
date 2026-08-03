@@ -36,7 +36,7 @@
 
 import { test, expect } from './_fixtures';
 import { type Page } from '@playwright/test';
-import { spawnPatch } from './_helpers';
+import { seedScoreThenPlay, spawnPatch } from './_helpers';
 import {
   readScopeSnapshot,
   summarize,
@@ -436,29 +436,24 @@ for (const seq of [
 
 // task #12 (re-enabled, wave-3): SCORE-playhead `currentNoteId` was read after a
 // FLAT runFor(200) + a single read, so under CI load the read could land on a
-// tick before the scheduler had emitted n0 at all (emitTick reads the score data
-// live, and the playhead only reports a note once its scheduled atTime has passed
-// in audio time). The fix is to AWAIT the deterministic playhead signal: poll
-// `currentNoteId` until it resolves to the laid-down note, with a bounded budget.
-// Once n0 has sounded the playhead latches it (createPlayheadTrackerOf keeps the
-// last-sounding value), so this is monotonic — no before/after race remains. The
-// poll backs off (250→500→1000ms) so we don't hammer engine.read under contention.
+// tick before the scheduler had emitted n0 at all. The poll below awaits the
+// deterministic playhead signal instead; the playhead latches the last-sounding
+// note id (createPlayheadTrackerOf), so it is monotonic once n0 has sounded.
+//
+// ⚠ BUT THE POLL WAS NEVER THE MISSING PIECE — this test carried the SAME
+// permanent-loss ordering defect that reddened main on the tied-notes test
+// (score.spec.ts, run 30784972908). n0 is the ONLY note, it sits at grid tick 0,
+// and `loop: false`, so if the seed landed after the engine's first tick the
+// playhead could never latch it and NO poll budget could recover. Fixed at the
+// ordering: spawn STOPPED, seed, then start the transport (seedScoreThenPlay).
 test('score: tickIndex advances + currentNoteId resolves to laid-down note', async ({ page, rack }) => {
   await spawnPatch(page, [
-    { id: 'sc', type: 'score', params: { bpm: 480, isPlaying: 1, attack: 0.01, decay: 0.05, sustain: 0.7, release: 0.05 } },
+    { id: 'sc', type: 'score', params: { bpm: 480, isPlaying: 0, attack: 0.01, decay: 0.05, sustain: 0.7, release: 0.05 } },
   ]);
 
-  await page.evaluate(() => {
-    const w = globalThis as unknown as {
-      __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
-      __ydoc: { transact: (fn: () => void) => void };
-    };
-    w.__ydoc.transact(() => {
-      w.__patch.nodes['sc'].data = {
-        notes: [{ id: 'n0', bar: 0, tick: 0, midi: 60, duration: 'quarter' }],
-        ties: [], dynamics: [], keySignature: 0, pages: 1, loop: false,
-      };
-    });
+  await seedScoreThenPlay(page, 'sc', {
+    notes: [{ id: 'n0', bar: 0, tick: 0, midi: 60, duration: 'quarter' }],
+    ties: [], dynamics: [], keySignature: 0, pages: 1, loop: false,
   });
 
   // Await the playhead reaching n0 instead of a flat wait + single read. The
