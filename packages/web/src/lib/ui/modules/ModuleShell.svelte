@@ -55,7 +55,13 @@
   // here would be one indirection serving one caller.
   import Dx7AlgorithmGlyph from './dx7/Dx7AlgorithmGlyph.svelte';
   import { Button, KnobConic, ParamGrid, ScopeScreen, Segmented, Selector, Toggle, VuMeter } from '$lib/ui/controls';
-  import { curatedFace, dockFacePlan, type FaceControl, type FaceTier } from '$lib/ui/workflow/curated-face';
+  import {
+    curatedFace,
+    dockFacePlan,
+    type DockFaceBand,
+    type FaceControl,
+    type FaceTier,
+  } from '$lib/ui/workflow/curated-face';
   import {
     bandHeaderPlan,
     facePageHeader,
@@ -67,6 +73,7 @@
   import { shellCellFor, type ShellCellEnv } from '$lib/ui/workflow/shell-cells';
   import { shellParamWrite } from '$lib/ui/workflow/shell-param-writes';
   import { dockBandVisible, dockTabPlan } from '$lib/ui/workflow/dock-tabs-model';
+  import { dockRowPlan, type RowPlanDefLike } from '$lib/ui/workflow/dock-row-plan';
   import { gridParamIds, momentaryParamIds, momentaryValue, paramCellKind } from '$lib/ui/workflow/shell-control-kind';
   import type { MomentaryDefLike } from '$lib/audio/momentary-params';
   import { clearStuckMomentaryParams, setMomentaryParam } from './manual-strike-actions';
@@ -404,6 +411,23 @@
    *  the SAME pure answer DockFullView's rail computes. A rail without the
    *  matching hide (or a hide without the rail) is a blank faceplate. */
   let dockTabs = $derived(dockTabPlan(dockBands));
+
+  /**
+   * PF-21 — the ROW PLAN: which section bands share a horizontal row.
+   *
+   * ⚠ THE DOM IS UNCHANGED FOR AN UNPACKED FACE. A row holding ONE band renders
+   * the `<section>` as a direct child of `.dock-pages`, exactly as it always
+   * has — no wrapper element, no extra class. So every faceplate the rule does
+   * not pack (a single-band face, a face of solo bands, and every TABBED face)
+   * is byte-identical to before this landed, and its VRT baseline does not move.
+   * Only a genuinely packed row gets the `.dock-row` flex wrapper.
+   */
+  let rowPlanDef: RowPlanDefLike = $derived({
+    type: node.type,
+    params: def?.params,
+    face: (def as FaceplateDefLike | undefined)?.face,
+  });
+  let dockRows = $derived(dockRowPlan(dockBands, rowPlanDef));
 
   function paramDef(pid: string): ParamDef | undefined {
     return (def?.params ?? []).find((p) => p.id === pid);
@@ -1004,7 +1028,26 @@
            (`evaluateAll`, which matches hidden elements), so unmounting would
            make a tabbed face read as a face that LOST forty controls. Hiding
            also keeps knob/scroll state alive across a flip. -->
-      {#each dockBands as band (band.id)}
+      <!-- PF-21 — THE ROW PLAN. A row of ONE band renders the `<section>` as a
+           DIRECT child of `.dock-pages`, with no wrapper and no extra class —
+           byte-identical to the layout every faceplate had before packing
+           landed, which is what keeps an unpacked face's VRT baseline still. A
+           row of TWO OR MORE gets the `.dock-row` flex wrapper, and each
+           section keeps its own visible `.page-label`: the label is what makes
+           two sections on one row legible rather than a jumble, and since the
+           hints became annotation-only it is the ONLY thing naming a band at
+           rest. -->
+      {#each dockRows as row (row.id)}
+        {#if row.bands.length > 1}
+          <div class="dock-row" data-testid="face-row" data-face-row={row.id}>
+            {#each row.bands as band (band.id)}{@render bandSection(band)}{/each}
+          </div>
+        {:else}
+          {@render bandSection(row.bands[0])}
+        {/if}
+      {/each}
+    </div>
+    {#snippet bandSection(band: DockFaceBand)}
         <!-- THE BAND HEADER, as TWO independent questions (bandHeaderPlan).
              The LABEL answers "is there a tab rail already naming this band?";
              the HINT answers "are annotations on?" — and nothing else. Asking
@@ -1078,8 +1121,7 @@
             </div>
           {/each}
         </section>
-      {/each}
-    </div>
+    {/snippet}
     <!-- PF-17 — the OSS ATTRIBUTION footer. A module whose DSP is a port of
          someone else's open-source work says so on its faceplate, and the
          legacy card always did (`CloudseedCard.svelte`); the migrated shell
@@ -1472,6 +1514,38 @@
   .dock-page {
     border-top: 1px solid var(--border, #2c3037);
     padding-top: 6px;
+  }
+  /* PF-21 — TWO OR MORE SECTIONS ON ONE ROW (the owner's "make better use of
+     horizontal space" direction). Only a PACKED row gets this element at all,
+     so a faceplate the rule leaves alone has the DOM it always had.
+
+     `flex-wrap: wrap` is load-bearing, not defensive. The row plan's ceiling is
+     a CONTROL COUNT, not a width — so the browser is what decides whether the
+     sections physically fit, and a pane too narrow for them degrades into the
+     stacked column this faceplate has today instead of overflowing. That keeps
+     the whole change safe at any pane width without a px constant anywhere in
+     the model (see dock-row-plan.ts).
+
+     `align-items: flex-start` rather than `stretch`: a 1-knob section beside a
+     6-knob one must not grow a 90px empty box under its label. */
+  .dock-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 10px 18px;
+  }
+  .dock-row > .dock-page {
+    flex: 0 1 auto;
+    min-width: 0;
+  }
+  /* THE SECTION DIVIDER. Each section already carries its own top rule over its
+     OWN width, which is what reads as "two groups" rather than one long row;
+     the hairline between them is what stops the second section's knobs looking
+     like a continuation of the first's. It rides the section AFTER the break so
+     a row of one never paints one. */
+  .dock-row > .dock-page + .dock-page {
+    border-left: 1px solid var(--border, #2c3037);
+    padding-left: 18px;
   }
   /* PF-16 — an INACTIVE tab's band. Explicit rather than relying on the UA's
      `[hidden] { display: none }`, because `.dock-pages` is a flex container
