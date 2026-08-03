@@ -57,6 +57,7 @@
   import { Button, KnobConic, ParamGrid, ScopeScreen, Segmented, Selector, Toggle, VuMeter } from '$lib/ui/controls';
   import { curatedFace, dockFacePlan, type FaceControl, type FaceTier } from '$lib/ui/workflow/curated-face';
   import {
+    bandHeaderPlan,
     facePageHeader,
     heroFacePlan,
     readoutText,
@@ -356,11 +357,11 @@
    */
   let annotations = $derived(view === 'dock-full' && isAnnotating(id));
 
-  /** PF-20 — the faceplate's TITLE + HINT rows. `null` for a face that declares
-   *  neither, which is every pre-PF-20 face: the header simply does not paint,
-   *  so their dock baselines do not move for a feature they do not use. The
-   *  HINT is annotation prose, so it only paints with annotations on; the
-   *  TITLE is the panel's name and always paints. */
+  /** PF-20 — the faceplate's TITLE + HINT rows, and BOTH are annotation prose
+   *  (owner, 2026-08-02): at rest the faceplate carries NO section title and no
+   *  description — the module's name is the dock TITLE BAR's job and it is
+   *  untouched. `null` for a face that declares neither, and `null` for every
+   *  face while annotations are off, so the resting card is clean. */
   let pageHeader = $derived(
     view === 'dock-full' ? facePageHeader(def as FaceplateDefLike | undefined, annotations) : null,
   );
@@ -900,9 +901,12 @@
          is CAPPED to the first four knob columns of the control grid (owner
          feedback), left-aligned with blank space right; a video face's
          thumbnail rides the same capped hero band. -->
-    <!-- PF-20 — the PAGE HEADER. A title + a sentence that says what the
-         instrument IS. Only paints for a face that declares one, so the ~19
-         pre-PF-20 faceplates are byte-identical here. -->
+    <!-- PF-20 — the PAGE HEADER: a category word + a sentence that says what
+         the instrument IS. ANNOTATION IN FULL (owner, 2026-08-02) — the title
+         is NOT the module's name (the dock title bar paints that, always), it
+         is a description of the page, so it is out of the DOM at rest along
+         with the sentence. Only paints for a face that declares one, so the
+         ~19 pre-PF-20 faceplates are byte-identical here in every state. -->
     {#if pageHeader}
       <div class="face-head" data-testid="face-head">
         {#if pageHeader.title}<h3 class="face-title">{pageHeader.title}</h3>{/if}
@@ -983,6 +987,13 @@
            make a tabbed face read as a face that LOST forty controls. Hiding
            also keeps knob/scroll state alive across a flip. -->
       {#each dockBands as band (band.id)}
+        <!-- THE BAND HEADER, as TWO independent questions (bandHeaderPlan).
+             The LABEL answers "is there a tab rail already naming this band?";
+             the HINT answers "are annotations on?" — and nothing else. Asking
+             them together (the old `{#if band.label && !dockTabs}` with the
+             hint nested inside) made the hint answer to the RAIL, so a tabbed
+             face could not paint its prose in any state. See the model. -->
+        {@const head = bandHeaderPlan(band, { tabbed: !!dockTabs, annotations })}
         <!-- On a TABBED face the band IS the tab's panel, so it says so: the
              rail's buttons carry `aria-controls={face-page-<id>}` and this
              carries the matching id + `aria-labelledby`. Without the pair a
@@ -998,28 +1009,33 @@
           aria-labelledby={dockTabs ? `faceplate-tab-${band.id}` : undefined}
           hidden={!dockBandVisible(band.id, dockTabs, data.activePage)}
         >
-          <!-- The band header is SUPPRESSED on a tabbed face: the active tab
-               already names the band, in the same words, ~14px above it.
-               Printing both spends the vertical space the rail exists to buy. -->
-          {#if band.label && !dockTabs}
-            <!-- PF-20 — the band header carries its DESCRIPTION beside the
-                 label ("1 Sub · depth sine · mono"), on the kit's
-                 `.section > header .accent` proportion: the label says which
-                 group, the hint says what the group is. Suppressed on a TABBED
-                 face along with the label itself — the rail already names the
-                 band ~14px above, and printing the pair twice spends the
-                 vertical space the rail exists to buy.
+          <!-- The LABEL is suppressed on a tabbed face: the active tab already
+               names the band, in the same words, ~14px above it, and printing
+               both spends the vertical space the rail exists to buy.
 
-                 ⚠ THE HINT IS ANNOTATION and is NOT IN THE DOM at rest (owner,
-                 2026-08-02). `display:none` would have been the smaller diff
-                 and the wrong one: the VRT baseline would show a card the
-                 accessibility tree disagrees with, and a screen reader would
-                 read every band a sentence the sighted user was never shown.
-                 So the annotate switch controls the MARKUP, and the two
-                 surfaces cannot drift. -->
+               THE BAND LABEL IS NOT ANNOTATION and stays at rest. It is a
+               fieldset legend — the structural name of the group — and with the
+               hints gone it is the ONLY thing that says what the row of knobs
+               under it belongs to. (Flagged to the owner: if "no text on the
+               module" is meant to reach the legends too, this is the line.)
+
+               ⚠ THE HINT IS ANNOTATION and is NOT IN THE DOM at rest (owner,
+               2026-08-02). `display:none` would have been the smaller diff and
+               the wrong one: the VRT baseline would show a card the
+               accessibility tree disagrees with, and a screen reader would read
+               every band a sentence the sighted user was never shown. So the
+               annotate switch controls the MARKUP, and the two surfaces cannot
+               drift.
+
+               With a rail up there is no `<h4>` to hang the hint inside, so it
+               paints as its own quiet line ('page-hint-solo') — the tabbed
+               face's prose has to land SOMEWHERE, and nowhere was the bug. -->
+          {#if head.label}
             <h4 class="page-label">
-              {band.label}{#if band.hint && annotations}<span class="page-hint">{band.hint}</span>{/if}
+              {head.label}{#if head.hint}<span class="page-hint">{head.hint}</span>{/if}
             </h4>
+          {:else if head.hint}
+            <p class="page-hint page-hint-solo">{head.hint}</p>
           {/if}
           {#if band.controls.length}
             <div class="page-controls">
@@ -1468,6 +1484,16 @@
     text-transform: none;
     color: var(--text-dim, #9aa3ad);
     opacity: 0.75;
+  }
+  /* …and the same hint with NO label to sit beside it — a TABBED face, where
+     the rail carries the name. It becomes its own block line and takes over the
+     `.page-label` bottom margin, so the band's controls sit exactly where they
+     do with a header above them. */
+  .page-hint-solo {
+    display: block;
+    margin: 0 0 6px;
+    max-width: 62ch;
+    line-height: 1.45;
   }
   .page-controls {
     display: flex;

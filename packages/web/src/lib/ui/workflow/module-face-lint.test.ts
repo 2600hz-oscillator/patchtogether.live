@@ -37,6 +37,9 @@ import { STRICT_FACES } from './strict-faces';
 import { curatedFace, dockFacePlan, dockPlanControls, type FaceDefLike } from './curated-face';
 import { DOCK_TAB_MIN_BANDS, dockTabPlan } from './dock-tabs-model';
 import {
+  bandHeaderPlan,
+  faceAnnotations,
+  facePageHeader,
   heroFacePlan,
   heroFacePlanIsTotal,
   isUsableReadout,
@@ -1085,21 +1088,57 @@ describe('module-face lint — FACEPLATE STRUCTURE (PF-20: hero / sidebar / hint
   }
 
   /**
-   * A page `hint` on a TABBED face is DEAD METADATA. ModuleShell suppresses the
-   * whole band header when a rail is up (the tab already names the band ~14px
-   * above), so the hint is authored, reviewed, and never rendered — exactly the
-   * "declaration that does nothing" trap the paramCells rules exist for.
+   * EVERY DECLARED ANNOTATION MUST BE PAINTABLE with the switch on — the
+   * `face.title`, the page `face.hint`, and every band `hint`.
+   *
+   * ⚠ THIS REPLACED AN AUTHORING RULE THAT WAS STANDING IN FOR A SHELL BUG.
+   * The old clause said "a page `hint` on a TABBED face is dead metadata,
+   * so do not declare one". True at the time and for the wrong reason: the
+   * shell gated the whole band header on `{#if band.label && !dockTabs}` with
+   * the hint NESTED inside, so suppressing the label on a tabbed face
+   * suppressed the hint as a SIDE EFFECT — and it would have painted nowhere
+   * even with annotations ON. The lint then forbade the correct declaration in
+   * order to keep the incorrect renderer consistent, which is the wrong half to
+   * pin. `bandHeaderPlan` asks the two questions separately, so a tabbed face
+   * paints its hints, and this asserts REACHABILITY instead of prohibiting the
+   * declaration.
+   *
+   * ⚠ AND IT IS THE SHELL'S OWN ARITHMETIC IT ASKS, not a re-derivation:
+   * `heroFacePlan` → `bandHeaderPlan` / `facePageHeader` are the exact calls
+   * ModuleShell makes. A gate that re-implements the layout it is checking can
+   * only prove the two implementations agree. `plan` is injectable for exactly
+   * one reason — the negative control feeds it the OLD coupled implementation
+   * and requires this to go red, so the sweep is proven able to catch the bug
+   * that actually shipped rather than merely being green about it.
    */
-  function deadHintProblems(def: StructFaceDef): string[] {
-    const bands = dockFacePlan(def);
-    if (!bands || !dockTabPlan(bands)) return [];
-    return bands
-      .filter((b) => b.hint)
+  function unreachableAnnotationProblems(
+    def: StructFaceDef,
+    plan: typeof bandHeaderPlan = bandHeaderPlan,
+  ): string[] {
+    const faceDef = def as unknown as FaceplateDefLike;
+    const declared = faceAnnotations(faceDef);
+    if (!declared.length) return [];
+
+    // The bands the SHELL renders — post-hero-split, since a band the hero
+    // emptied is dropped and its hint goes with it.
+    const bands = heroFacePlan(faceDef, dockFacePlan(def)).bands;
+    const tabbed = !!dockTabPlan(bands);
+    const painted = new Set<string>();
+    const header = facePageHeader(faceDef, true);
+    if (header?.title) painted.add(header.title);
+    if (header?.hint) painted.add(header.hint);
+    for (const b of bands) {
+      const h = plan(b, { tabbed, annotations: true }).hint;
+      if (h) painted.add(h);
+    }
+
+    return declared
+      .filter((a) => !painted.has(a.text))
       .map(
-        (b) =>
-          `${def.type}: page '${b.id}' declares a hint, but this face is TABBED ` +
-            `(${bands.length} bands ≥ the rail threshold) and a tabbed face suppresses its band ` +
-            `headers — the hint can never render`,
+        (a) =>
+          `${def.type}: the ${a.kind} annotation “${a.text.slice(0, 56)}…” is DECLARED but the ` +
+            `shell paints it NOWHERE, even with annotations ON (tabbed=${tabbed}) — authored, ` +
+            `reviewed and rendered nowhere`,
       );
   }
 
@@ -1137,13 +1176,13 @@ describe('module-face lint — FACEPLATE STRUCTURE (PF-20: hero / sidebar / hint
     expect(problems.join('\n'), 'face.sidebar drift').toBe('');
   });
 
-  it('no page hint is declared on a TABBED face (it could never render)', () => {
+  it('every declared ANNOTATION is reachable — title, page hint and band hints all paint', () => {
     const problems: string[] = [];
     for (const def of allDefs()) {
       if (!def.face) continue;
-      problems.push(...deadHintProblems(def as unknown as StructFaceDef));
+      problems.push(...unreachableAnnotationProblems(def as unknown as StructFaceDef));
     }
-    expect(problems.join('\n'), 'dead page hints').toBe('');
+    expect(problems.join('\n'), 'unreachable annotation prose').toBe('');
   });
 
   // ── NEGATIVE CONTROLS ─────────────────────────────────────────────────────
@@ -1315,9 +1354,10 @@ describe('module-face lint — FACEPLATE STRUCTURE (PF-20: hero / sidebar / hint
     expect(problems[0]).toContain('renders EMPTY');
   });
 
-  it('NEGATIVE CONTROL (dead hint): a hint on a face over the TAB threshold FAILS', () => {
-    // DOCK_TAB_MIN_BANDS pages, so `dockTabPlan` returns a rail and the band
-    // headers (hint included) are suppressed.
+  /** A TABBED face (DOCK_TAB_MIN_BANDS pages, so `dockTabPlan` returns a rail)
+   *  whose first band declares a hint — the exact shape that rendered nowhere
+   *  before `bandHeaderPlan` split the two suppressions apart. */
+  function tabbedFaceWithHint(hint = 'the band prose'): StructFaceDef {
     const params: ParamDef[] = Array.from({ length: DOCK_TAB_MIN_BANDS }, (_, i) => ({
       id: `p${i}`,
       label: `P${i}`,
@@ -1326,7 +1366,7 @@ describe('module-face lint — FACEPLATE STRUCTURE (PF-20: hero / sidebar / hint
       defaultValue: 0,
       curve: 'linear' as const,
     }));
-    const def = structSynthetic({
+    return structSynthetic({
       params,
       face: {
         order: params.map((p) => p.id),
@@ -1334,24 +1374,77 @@ describe('module-face lint — FACEPLATE STRUCTURE (PF-20: hero / sidebar / hint
           id: `pg${i}`,
           label: `PG${i}`,
           controls: [p.id],
-          ...(i === 0 ? { hint: 'never seen' } : {}),
+          ...(i === 0 ? { hint } : {}),
         })),
       },
     });
-    const problems = deadHintProblems(def);
-    expect(problems).toHaveLength(1);
-    expect(problems[0]).toContain('can never render');
+  }
 
-    // …and the SAME face under the threshold is clean (the control that proves
-    // the rule is about TABS and not about hints).
+  it('NEGATIVE CONTROL (annotation reach): the OLD COUPLED header planner FAILS on a tabbed face', () => {
+    // THE INSTRUMENT'S OWN NEGATIVE CONTROL, and it ships permanently. The
+    // sweep above is green today; that is only meaningful if it can go red for
+    // the bug it was written for. So feed it the header rule the shell actually
+    // had — hint nested inside `label && !tabbed` — and require the report.
+    const coupled: typeof bandHeaderPlan = (band, opts) => {
+      const label = opts.tabbed ? '' : (band.label?.trim() ?? '');
+      return { label, hint: label && opts.annotations ? (band.hint?.trim() ?? '') : '' };
+    };
+
+    const def = tabbedFaceWithHint();
+    const problems = unreachableAnnotationProblems(def, coupled);
+    expect(problems, 'the coupled planner drops the tabbed face’s hint').toHaveLength(1);
+    expect(problems[0]).toContain('paints it NOWHERE');
+    expect(problems[0]).toContain('tabbed=true');
+
+    // …and the REAL planner is clean on the SAME face — the control that proves
+    // the report is about the COUPLING and not about tabs or hints as such.
+    expect(unreachableAnnotationProblems(def)).toEqual([]);
+
+    // …and the coupled planner is clean on an UNTABBED face, so the negative
+    // control is not simply "this stub always fails".
     const untabbed = structSynthetic({
-      params,
       face: {
-        order: params.map((p) => p.id),
-        pages: [{ id: 'only', label: 'ONLY', hint: 'seen', controls: params.map((p) => p.id) }],
+        order: ['tune'],
+        pages: [{ id: 'only', label: 'ONLY', hint: 'seen', controls: ['tune'] }],
       },
     });
-    expect(deadHintProblems(untabbed)).toEqual([]);
+    expect(unreachableAnnotationProblems(untabbed, coupled)).toEqual([]);
+  });
+
+  it('NEGATIVE CONTROL (annotation reach): a hint on a band NOTHING renders FAILS', () => {
+    // The other unreachable shape, and the one Change C makes possible: the
+    // hero PROMOTES the band's only control, `heroFacePlan` drops the emptied
+    // band, and the hint declared on it now has no header to live in.
+    const def = structSynthetic({
+      face: {
+        order: ['tune'],
+        hero: { control: 'tune' },
+        pages: [{ id: 'solo', label: 'SOLO', hint: 'orphaned by the hero', controls: ['tune'] }],
+      },
+    });
+    const problems = unreachableAnnotationProblems(def);
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('orphaned by the hero');
+    expect(problems[0]).toContain('band-hint');
+  });
+
+  it('NEGATIVE CONTROL (annotation reach): a face.title + face.hint both resolve', () => {
+    const def = structSynthetic({
+      face: {
+        order: ['tune'],
+        title: 'Voice',
+        hint: 'one bus',
+        pages: [{ id: 'a', label: 'A', hint: 'a band note', controls: ['tune'] }],
+      },
+    });
+    expect(unreachableAnnotationProblems(def)).toEqual([]);
+    // …and all three are in the roster, so the toggle appears for a face that
+    // declares ONLY a title (which, since 2026-08-02, paints nowhere without it).
+    expect(faceAnnotations(def as unknown as FaceplateDefLike).map((a) => a.kind)).toEqual([
+      'title',
+      'page-hint',
+      'band-hint',
+    ]);
   });
 });
 

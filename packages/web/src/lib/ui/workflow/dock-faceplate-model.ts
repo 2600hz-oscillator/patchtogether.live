@@ -60,16 +60,26 @@ export interface FacePageHeader {
 
 /**
  * The page header for a face. Returns `null` unless at least one of
- * `face.title` / `face.hint` is a non-blank string, so a face that declares
- * nothing renders byte-identically to before this platform landed — which is
- * what keeps the ~19 existing dock baselines from moving for a feature they do
- * not use. Blank-but-present strings are treated as absent (an authoring typo
- * must not paint an empty 20px row).
+ * `face.title` / `face.hint` is a non-blank string AND `annotations` is on, so
+ * a face that declares nothing renders byte-identically to before this platform
+ * landed — which is what keeps the ~19 existing dock baselines from moving for a
+ * feature they do not use. Blank-but-present strings are treated as absent (an
+ * authoring typo must not paint an empty 20px row).
  *
- * ⚠ `annotations` GATES THE HINT, NOT THE TITLE, and that split is the owner's
- * (2026-08-02): the title is a NAME — one category word the panel is entitled
- * to state at rest — while the hint is a SENTENCE ABOUT the module, which is
- * annotation and belongs behind the annotate toggle (`faceAnnotationProse`).
+ * ⚠ `annotations` GATES THE WHOLE HEADER — TITLE INCLUDED (owner, 2026-08-02):
+ * "this text is still here, i said this is annotation mode text but otherwise
+ * we don't want it. in all cases. no 'voice' etc section, no text on the
+ * module… the name of the module as text is fine, it's the type/description
+ * text that needs to go away."
+ *
+ * The first draft of this function exempted the title on the reasoning that it
+ * is "a name, not a note". That reasoning was OVERRULED, and the distinction it
+ * missed is worth stating so it is not re-derived: the module's NAME is already
+ * painted, once, by the dock's TITLE BAR (`SHIMMERSHINE`, `KICKDRUM`) and that
+ * is untouched. `face.title` is not that name — it is a CATEGORY WORD for the
+ * page ("Voice", "halo"), which is description, and description is annotation.
+ * Two names on one panel was the actual complaint.
+ *
  * Default `false`, so the resting faceplate is the clean one: a caller that
  * forgets the flag under-paints rather than leaking prose onto every card.
  */
@@ -77,26 +87,91 @@ export function facePageHeader(
   def: FaceplateDefLike | undefined,
   annotations = false,
 ): FacePageHeader | null {
+  if (!annotations) return null;
   const title = def?.face?.title?.trim() ?? '';
-  const hint = annotations ? (def?.face?.hint?.trim() ?? '') : '';
+  const hint = def?.face?.hint?.trim() ?? '';
   if (!title && !hint) return null;
   return { title, hint };
 }
 
-// ── 1b. THE ANNOTATION LAYER ────────────────────────────────────────────────
+// ── 1a. THE BAND HEADER ─────────────────────────────────────────────────────
+
+/** What a band's header actually paints: its label, its hint, or neither.
+ *  Blank means "do not emit the element" — never "emit an empty one". */
+export interface BandHeaderPlan {
+  label: string;
+  hint: string;
+}
 
 /**
- * Every piece of ANNOTATION PROSE a face declares — the page-level `face.hint`
- * followed by each page's `hint`, in declaration order, blanks dropped.
+ * THE TWO SUPPRESSIONS ARE INDEPENDENT, and this function exists because the
+ * markup asked them as ONE question and got the wrong answer for free.
  *
- * WHY THIS IS ONE FUNCTION AND NOT A `.filter` AT EACH CALL SITE. Two surfaces
+ * The shell used to gate the whole header on `{#if band.label && !dockTabs}`,
+ * with the hint nested inside it. That reads as one rule and is two:
+ *
+ *   * THE LABEL is suppressed on a TABBED face because the rail already names
+ *     the band, in the same words, ~14 px above it. Nothing to do with prose.
+ *   * THE HINT is suppressed unless ANNOTATIONS are on, because it is a
+ *     sentence about the band and that is what the switch reveals.
+ *
+ * Coupling them made the hint answer to `dockTabs`, so on a tabbed face it
+ * could not paint even with annotations ON — the declaration was authored,
+ * reviewed and rendered NOWHERE. That was latent only because
+ * `module-face-lint` forbade declaring a hint on a tabbed face at all, which is
+ * the lint standing in for a shell bug: an authoring rule invented to describe
+ * a rendering defect. Both go together, and the lint's replacement asserts the
+ * hint COUNT instead, so a tabbed adopter enrols itself.
+ *
+ * Pure and total: an absent field is `''`, whitespace is trimmed to `''`.
+ */
+export function bandHeaderPlan(
+  band: { label?: string; hint?: string },
+  opts: { tabbed: boolean; annotations: boolean },
+): BandHeaderPlan {
+  return {
+    // the rail already says it
+    label: opts.tabbed ? '' : (band.label?.trim() ?? ''),
+    // answers to the switch, and to nothing else
+    hint: opts.annotations ? (band.hint?.trim() ?? '') : '',
+  };
+}
+
+// ── 1b. THE ANNOTATION LAYER ────────────────────────────────────────────────
+
+/** Where one piece of annotation prose was declared. The KIND is carried rather
+ *  than recovered by arithmetic downstream: `bandHints = total - pageHint` was
+ *  the projection's old sum, and adding a third source to the total silently
+ *  made it wrong by one. */
+export type FaceAnnotationKind = 'title' | 'page-hint' | 'band-hint';
+
+/** One declared annotation string, tagged with the field it came from. */
+export interface FaceAnnotation {
+  kind: FaceAnnotationKind;
+  text: string;
+}
+
+/**
+ * Every piece of ANNOTATION PROSE a face declares — the page-level `face.title`
+ * and `face.hint`, then each page's `hint`, in declaration order, blanks
+ * dropped.
+ *
+ * WHY THIS IS ONE FUNCTION AND NOT A `.filter` AT EACH CALL SITE. Three surfaces
  * need the same answer and they must not be able to disagree: ModuleShell
- * decides whether to PAINT each string, and DockFullView decides whether the
- * faceplate offers the toggle AT ALL. A toggle that reveals nothing is exactly
- * the "labelled void" the sidebar's empty-block drop already refuses, and a
- * face whose prose is unreachable because the toggle never rendered is the
- * mirror failure. Both read this list, so a THIRD annotation source added later
- * is picked up by the affordance the moment it is picked up by the render.
+ * decides whether to PAINT each string, DockFullView decides whether the
+ * faceplate offers the toggle AT ALL, and `module-specs` publishes the counts
+ * the registry-driven e2e sweep asserts against the DOM. A toggle that reveals
+ * nothing is exactly the "labelled void" the sidebar's empty-block drop already
+ * refuses, and a face whose prose is unreachable because the toggle never
+ * rendered is the mirror failure. All three read this list, so a FOURTH
+ * annotation source added later is picked up by the affordance and by the sweep
+ * the moment it is picked up by the render.
+ *
+ * ⚠ `title` IS IN THIS LIST as of the owner's 2026-08-02 direction (see
+ * `facePageHeader`). That is not cosmetic bookkeeping: the title now paints
+ * ONLY behind the toggle, so a face declaring a title and nothing else would —
+ * had the roster not learned about it — get no toggle, and its title would be
+ * authored, reviewed and unreachable in every state of the UI.
  *
  * ⚠ SCOPE, stated because an unstated scope reads as full coverage: this is the
  * DOCK FACEPLATE's prose only. It is not the module's authored living-docs
@@ -104,15 +179,41 @@ export function facePageHeader(
  * through the same per-node annotate mode) — those two are separate content
  * behind ONE personal switch, which is the point.
  */
-export function faceAnnotationProse(def: FaceplateDefLike | undefined): string[] {
-  const out: string[] = [];
+export function faceAnnotations(def: FaceplateDefLike | undefined): FaceAnnotation[] {
+  const out: FaceAnnotation[] = [];
+  const title = def?.face?.title?.trim() ?? '';
+  if (title) out.push({ kind: 'title', text: title });
   const pageHint = def?.face?.hint?.trim() ?? '';
-  if (pageHint) out.push(pageHint);
+  if (pageHint) out.push({ kind: 'page-hint', text: pageHint });
   for (const p of def?.face?.pages ?? []) {
     const h = p.hint?.trim() ?? '';
-    if (h) out.push(h);
+    if (h) out.push({ kind: 'band-hint', text: h });
   }
   return out;
+}
+
+/** The prose strings alone, in the same order — the shape the emptiness check
+ *  and the tests read. */
+export function faceAnnotationProse(def: FaceplateDefLike | undefined): string[] {
+  return faceAnnotations(def).map((a) => a.text);
+}
+
+/** How many annotations of each kind a face declares. The `module-specs`
+ *  projection publishes this verbatim so the e2e sweep can assert a DOM count
+ *  PER SURFACE (`.face-title`, `.face-hint`, `.page-hint`) rather than one
+ *  aggregate that a miss in either direction can satisfy. */
+export interface FaceAnnotationTally {
+  title: number;
+  pageHint: number;
+  bandHints: number;
+  total: number;
+}
+
+/** Count the declared annotations by kind. */
+export function faceAnnotationTally(def: FaceplateDefLike | undefined): FaceAnnotationTally {
+  const all = faceAnnotations(def);
+  const n = (k: FaceAnnotationKind) => all.filter((a) => a.kind === k).length;
+  return { title: n('title'), pageHint: n('page-hint'), bandHints: n('band-hint'), total: all.length };
 }
 
 /** Does this face have anything to say when annotations are turned ON? The
@@ -202,7 +303,23 @@ export function heroFacePlan(
 
   return {
     hero: { cell, control, action, readouts },
-    bands: bands.map((b) => withoutKeys(b, promoted)),
+    // ⚠ AND THE BAND ITSELF GOES when the promotion empties it. `withoutKeys`
+    // already drops an emptied CLUSTER for exactly this reason — "a sub-header
+    // over zero cells is a caption for nothing" — and then left the identical
+    // defect one level up: promote a whole band's contents into the hero and
+    // the face keeps a LABELLED VOID where they were, plus (on a tabbed face) a
+    // tab that opens onto nothing. dx7 and mixer hit this independently while
+    // drafting their heroes, which is what makes it a platform bug rather than
+    // two authoring mistakes.
+    //
+    // SAFE FOR `heroFacePlanIsTotal` by construction: a band with no controls
+    // and no clusters contributes zero keys to `dockPlanControls`, so removing
+    // it cannot change the multiset the totality check compares. It is a no-op
+    // on every face declared today (no current hero empties its band) — landed
+    // now so the first face that needs it does not have to discover it.
+    bands: bands
+      .map((b) => withoutKeys(b, promoted))
+      .filter((b) => b.controls.length > 0 || b.clusters.length > 0),
   };
 }
 

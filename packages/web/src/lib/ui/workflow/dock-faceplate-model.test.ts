@@ -18,7 +18,10 @@ import type { FaceSidebarBlock, ParamDef } from '$lib/graph/types';
 import { dockFacePlan, dockPlanControls, type DockFaceBand, type FaceDefLike } from './curated-face';
 import {
   activePresetId,
+  bandHeaderPlan,
   faceAnnotationProse,
+  faceAnnotationTally,
+  faceAnnotations,
   faceHasAnnotations,
   facePageHeader,
   heroFacePlan,
@@ -86,6 +89,7 @@ function bandsOf(def: FaceplateDefLike): DockFaceBand[] {
 describe('facePageHeader — the title/hint rows', () => {
   it('is null for a face that declares neither, so pre-PF-20 faceplates do not move', () => {
     expect(facePageHeader(fixture())).toBeNull();
+    expect(facePageHeader(fixture(), true)).toBeNull();
     expect(facePageHeader(undefined)).toBeNull();
     expect(facePageHeader(undefined, true)).toBeNull();
   });
@@ -114,26 +118,26 @@ describe('facePageHeader — the title/hint rows', () => {
 
   // ── THE ANNOTATION GATE (owner 2026-08-02) ────────────────────────────────
   //
-  // The hint is a SENTENCE ABOUT the module; the title is its NAME. Only the
-  // first is annotation, and the DEFAULT is off — a resting faceplate is
-  // clean. Both directions are asserted: "hidden when off" alone would pass
-  // just as happily against a hint that never renders at all.
-  it('SUPPRESSES the hint by default, and keeps the title', () => {
-    expect(facePageHeader(fixture({ title: 'Voice', hint: 'one bus' } as never))).toEqual({
-      title: 'Voice',
-      hint: '',
-    });
-    expect(facePageHeader(fixture({ title: 'Voice', hint: 'one bus' } as never), false)).toEqual({
-      title: 'Voice',
-      hint: '',
-    });
+  // BOTH ROWS ARE ANNOTATION, title included. The first draft exempted the
+  // title as "a name, not a note" and the owner overruled it: the module's name
+  // is the dock TITLE BAR's, and `face.title` is a category word describing the
+  // page. Both directions are asserted, because "hidden when off" alone would
+  // pass just as happily against a header that never renders at all.
+  it('SUPPRESSES THE WHOLE HEADER by default — title as well as hint', () => {
+    const titled = fixture({ title: 'Voice', hint: 'one bus' } as never);
+    expect(facePageHeader(titled), 'the default is OFF').toBeNull();
+    expect(facePageHeader(titled, false), 'and explicitly off is the same').toBeNull();
+  });
+
+  it('a TITLE-ONLY face is also blank at rest — the resting card carries no section name', () => {
+    expect(facePageHeader(fixture({ title: 'Voice' } as never))).toBeNull();
   });
 
   it('a HINT-ONLY face paints NOTHING at rest — no empty header row for prose nobody asked for', () => {
     expect(facePageHeader(fixture({ hint: 'one bus' } as never))).toBeNull();
   });
 
-  it('…and prints the hint with annotations ON (the negative control for the above)', () => {
+  it('…and prints BOTH with annotations ON (the negative control for the above)', () => {
     expect(facePageHeader(fixture({ title: 'Voice', hint: 'one bus' } as never), true)).toEqual({
       title: 'Voice',
       hint: 'one bus',
@@ -141,15 +145,92 @@ describe('facePageHeader — the title/hint rows', () => {
   });
 });
 
+// ── 1a. THE BAND HEADER ─────────────────────────────────────────────────────
+
+describe('bandHeaderPlan — TWO independent suppressions, asked separately', () => {
+  const band = { label: 'strike', hint: 'the pulse' };
+
+  // The whole point of the function, so the whole matrix is pinned. Before it,
+  // the shell asked one question and the (tabbed, annotations=on) cell answered
+  // '' for the hint — the prose rendered NOWHERE.
+  it('covers all four tabbed × annotations combinations', () => {
+    expect(bandHeaderPlan(band, { tabbed: false, annotations: false })).toEqual({
+      label: 'strike',
+      hint: '',
+    });
+    expect(bandHeaderPlan(band, { tabbed: false, annotations: true })).toEqual({
+      label: 'strike',
+      hint: 'the pulse',
+    });
+    expect(
+      bandHeaderPlan(band, { tabbed: true, annotations: false }),
+      'a rail suppresses the label — it already says the name ~14px above',
+    ).toEqual({ label: '', hint: '' });
+    expect(
+      bandHeaderPlan(band, { tabbed: true, annotations: true }),
+      'THE REGRESSION: a tabbed face still paints its hint. Coupled, this was ""',
+    ).toEqual({ label: '', hint: 'the pulse' });
+  });
+
+  it('the LABEL is invariant to annotations, and the HINT is invariant to tabs', () => {
+    // Stated as invariances because that is what "independent" means, and it is
+    // the property a future edit is most likely to break by re-nesting them.
+    for (const annotations of [false, true]) {
+      expect(bandHeaderPlan(band, { tabbed: false, annotations }).label).toBe('strike');
+      expect(bandHeaderPlan(band, { tabbed: true, annotations }).label).toBe('');
+    }
+    for (const tabbed of [false, true]) {
+      expect(bandHeaderPlan(band, { tabbed, annotations: true }).hint).toBe('the pulse');
+      expect(bandHeaderPlan(band, { tabbed, annotations: false }).hint).toBe('');
+    }
+  });
+
+  it('is TOTAL: absent and whitespace-only fields are the empty string, never undefined', () => {
+    expect(bandHeaderPlan({}, { tabbed: false, annotations: true })).toEqual({ label: '', hint: '' });
+    expect(
+      bandHeaderPlan({ label: '  ', hint: '\n ' }, { tabbed: false, annotations: true }),
+      'blank is absent — the markup must not emit an empty <h4>',
+    ).toEqual({ label: '', hint: '' });
+  });
+
+  it('trims, so authored whitespace never becomes layout', () => {
+    expect(bandHeaderPlan({ label: ' out ', hint: '  wet  ' }, { tabbed: false, annotations: true })).toEqual({
+      label: 'out',
+      hint: 'wet',
+    });
+  });
+});
+
 // ── 1b. THE ANNOTATION ROSTER ───────────────────────────────────────────────
 
-describe('faceAnnotationProse / faceHasAnnotations — what the toggle reveals', () => {
-  it('collects the page hint and every band hint, in declaration order', () => {
+describe('faceAnnotations / faceAnnotationProse / faceHasAnnotations — what the toggle reveals', () => {
+  it('collects the title, the page hint and every band hint, in declaration order', () => {
     // The base fixture already declares one band hint ('the pulse').
-    expect(faceAnnotationProse(fixture({ hint: 'one bus' } as never))).toEqual([
+    expect(faceAnnotationProse(fixture({ title: 'Voice', hint: 'one bus' } as never))).toEqual([
+      'Voice',
       'one bus',
       'the pulse',
     ]);
+  });
+
+  it('TAGS each string with the surface it paints on', () => {
+    expect(faceAnnotations(fixture({ title: 'Voice', hint: 'one bus' } as never))).toEqual([
+      { kind: 'title', text: 'Voice' },
+      { kind: 'page-hint', text: 'one bus' },
+      { kind: 'band-hint', text: 'the pulse' },
+    ]);
+  });
+
+  it('a TITLE-ONLY face HAS annotations — otherwise its title is unreachable', () => {
+    // The load-bearing consequence of the owner's 2026-08-02 direction: the
+    // title now paints only behind the toggle, so a roster blind to it would
+    // withhold the toggle and strand the title in no state of the UI at all.
+    const titleOnly = {
+      params: PARAMS,
+      face: { order: ['tune'], title: 'Voice', pages: [{ id: 'a', label: 'a', controls: ['tune'] }] },
+    } as unknown as FaceplateDefLike;
+    expect(faceAnnotationProse(titleOnly)).toEqual(['Voice']);
+    expect(faceHasAnnotations(titleOnly)).toBe(true);
   });
 
   it('a face with only band hints still has annotations (the toggle must appear)', () => {
@@ -162,6 +243,7 @@ describe('faceAnnotationProse / faceHasAnnotations — what the toggle reveals',
       params: PARAMS,
       face: {
         order: ['tune'],
+        title: '  ',
         hint: '   ',
         pages: [
           { id: 'a', label: 'a', hint: '  spaced  ', controls: ['tune'] },
@@ -180,6 +262,31 @@ describe('faceAnnotationProse / faceHasAnnotations — what the toggle reveals',
     expect(faceAnnotationProse(bare)).toEqual([]);
     expect(faceHasAnnotations(bare)).toBe(false);
     expect(faceHasAnnotations(undefined)).toBe(false);
+  });
+});
+
+describe('faceAnnotationTally — the per-SURFACE counts module-specs publishes', () => {
+  it('counts each kind at the source, so no consumer recovers one by subtraction', () => {
+    expect(faceAnnotationTally(fixture({ title: 'Voice', hint: 'one bus' } as never))).toEqual({
+      title: 1,
+      pageHint: 1,
+      bandHints: 1,
+      total: 3,
+    });
+  });
+
+  it('THE ARITHMETIC THE OLD PROJECTION USED IS WRONG NOW — and this is why it is gone', () => {
+    // `module-specs` published `bandHints: total - pageHint`. On a titled face
+    // that over-counts band hints by exactly one, and the e2e sweep would have
+    // failed against markup that was correct. Pinned as a REGRESSION so nobody
+    // re-derives the cheaper-looking sum.
+    const t = faceAnnotationTally(fixture({ title: 'Voice', hint: 'one bus' } as never));
+    expect(t.total - t.pageHint, 'the naive sum').toBe(2);
+    expect(t.bandHints, 'the truth').toBe(1);
+  });
+
+  it('is all zeroes for a face with no prose', () => {
+    expect(faceAnnotationTally(undefined)).toEqual({ title: 0, pageHint: 0, bandHints: 0, total: 0 });
   });
 });
 
@@ -313,6 +420,72 @@ describe('heroFacePlan — PROMOTES a control, never copies it', () => {
       bands: before,
     };
     expect(heroFacePlanIsTotal(before, dup)).toBe(false);
+  });
+
+  // ── THE EMPTIED BAND ──────────────────────────────────────────────────────
+  //
+  // `withoutKeys` already dropped an emptied CLUSTER — "a sub-header over zero
+  // cells is a caption for nothing" — and left the identical defect one level
+  // up. Promoting a whole band's contents into the hero left a LABELLED VOID
+  // where they were, and on a tabbed face a tab that opens onto nothing. dx7
+  // and mixer hit it independently.
+
+  it('DROPS a band the hero emptied — a labelled void is worse than no band', () => {
+    const def = {
+      params: PARAMS,
+      face: {
+        order: ['tune', 'mix'],
+        hero: { control: 'tune' },
+        pages: [
+          { id: 'lead', label: 'lead', hint: 'the promoted one', controls: ['tune'] },
+          { id: 'out', label: 'out', controls: ['mix'] },
+        ],
+      },
+    } as unknown as FaceplateDefLike;
+    const before = bandsOf(def);
+    expect(before.map((b) => b.id), 'both bands exist before the split').toEqual(['lead', 'out']);
+
+    const after = heroFacePlan(def, before);
+    expect(after.hero?.control?.key).toBe('tune');
+    expect(after.bands.map((b) => b.id), "'lead' has nothing left to label").toEqual(['out']);
+    expect(
+      heroFacePlanIsTotal(before, after),
+      'and it is still TOTAL: an empty band contributes zero keys, so dropping it ' +
+        'cannot change the multiset',
+    ).toBe(true);
+  });
+
+  it('KEEPS a band the hero only partly emptied, and one holding a surviving CLUSTER', () => {
+    // The control that proves the filter is about EMPTINESS, not about being
+    // touched by the hero at all.
+    const partly = fixture({ hero: { control: 'tune' } } as never);
+    expect(heroFacePlan(partly, bandsOf(partly)).bands.map((b) => b.id)).toEqual(['voice', 'out']);
+
+    // 'out' holds `mix` flat plus a `shape` cluster over `mode`; promote the
+    // flat control and the band survives on its cluster alone.
+    const clusterOnly = fixture({ hero: { control: 'mix' } } as never);
+    const after = heroFacePlan(clusterOnly, bandsOf(clusterOnly));
+    const out = after.bands.find((b) => b.id === 'out')!;
+    expect(out.controls, 'the flat control was promoted away').toHaveLength(0);
+    expect(out.clusters.map((c) => c.label), 'but the cluster keeps the band alive').toEqual(['shape']);
+  });
+
+  it('a face with NO hero keeps every band, empty or not (the filter is hero-scoped)', () => {
+    // `heroFacePlan` returns early for a face declaring no hero, so a band that
+    // is empty for some OTHER reason is untouched — this change must not
+    // silently start pruning the plan for faces that never asked for a hero.
+    const def = {
+      params: PARAMS,
+      face: {
+        order: ['tune'],
+        pages: [
+          { id: 'a', label: 'a', controls: ['tune'] },
+          { id: 'empty', label: 'empty', controls: [] },
+        ],
+      },
+    } as unknown as FaceplateDefLike;
+    const before = bandsOf(def);
+    expect(heroFacePlan(def, before).bands).toEqual(before);
   });
 });
 

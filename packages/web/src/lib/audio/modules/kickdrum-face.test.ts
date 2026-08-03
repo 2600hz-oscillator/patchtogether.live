@@ -36,6 +36,8 @@ import { laneBodyPlan } from '$lib/ui/workflow/module-shell-model';
 import { DOCK_TAB_MIN_BANDS, dockTabPlan } from '$lib/ui/workflow/dock-tabs-model';
 import {
   activePresetId,
+  faceAnnotationTally,
+  faceAnnotations,
   facePageHeader,
   heroFacePlan,
   heroFacePlanIsTotal,
@@ -500,20 +502,37 @@ describe('kickdrum faceplate structure — the sidebar says what the DSP does', 
 });
 
 describe('kickdrum faceplate structure — the page header + band hints', () => {
-  it('the faceplate opens with a title, and its sentence is ANNOTATION', () => {
-    // ⚠ THE SENTENCE IS STILL AUTHORED ON THE DEF — it is living-docs content
-    // and it is what the annotate toggle reveals. What changed (owner,
-    // 2026-08-02) is only whether the CARD paints it at rest, so this asserts
-    // the prose exists and is good, and that the resting header withholds it.
+  it('the faceplate header is ANNOTATION IN FULL — title as well as sentence', () => {
+    // ⚠ BOTH ARE STILL AUTHORED ON THE DEF — they are living-docs content and
+    // they are what the annotate toggle reveals. What changed (owner,
+    // 2026-08-02) is only whether the CARD paints them at rest: "no 'voice' etc
+    // section, no text on the module". Nothing was deleted from the def, so
+    // this asserts the prose exists and is good, AND that the resting faceplate
+    // withholds all of it.
     const head = facePageHeader(kickdrumDef as unknown as FaceplateDefLike, true)!;
     expect(head.title).toBe('Voice');
     expect(head.hint).toMatch(/three decoupled generators/i);
     // The hint must name the actual chain, not a generic blurb.
     expect(head.hint).toMatch(/sub, body and click/i);
 
-    const resting = facePageHeader(kickdrumDef as unknown as FaceplateDefLike)!;
-    expect(resting.title, 'the NAME is not annotation').toBe('Voice');
-    expect(resting.hint, 'the SENTENCE is, and the card is clean without it').toBe('');
+    expect(
+      facePageHeader(kickdrumDef as unknown as FaceplateDefLike),
+      'at rest the faceplate paints NO header at all — the module name is the ' +
+        'dock title bar’s job, and “Voice” is a description of the page',
+    ).toBeNull();
+  });
+
+  it('…and BOTH are in the annotation roster, so the toggle can reach them', () => {
+    // The failure this forecloses: the title paints only behind the switch, so
+    // a roster that did not count it could leave a face offering no switch and
+    // a title reachable in no state of the UI.
+    const kinds = faceAnnotations(kickdrumDef as unknown as FaceplateDefLike).map((a) => a.kind);
+    expect(kinds.filter((k) => k === 'title')).toHaveLength(1);
+    expect(kinds.filter((k) => k === 'page-hint')).toHaveLength(1);
+    expect(
+      faceAnnotationTally(kickdrumDef as unknown as FaceplateDefLike),
+      'five bands each describe themselves (asserted below), plus the title and the sentence',
+    ).toEqual({ title: 1, pageHint: 1, bandHints: 5, total: 7 });
   });
 
   it('every band header carries a description, and each names its GENERATOR', () => {

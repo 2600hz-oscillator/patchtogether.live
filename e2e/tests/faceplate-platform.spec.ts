@@ -34,7 +34,7 @@ interface SidebarSpec {
   type: string;
   strictFace?: boolean;
   faceSidebar?: { kind: string; label: string }[];
-  faceAnnotations?: { pageHint: number; bandHints: number };
+  faceAnnotations?: { title: number; pageHint: number; bandHints: number };
 }
 
 /** Set the viewport ZOOM and wait for the LOD tier to settle on `nodeId` — the
@@ -126,17 +126,16 @@ test.describe('PF-20 dock faceplate platform (kickdrum)', () => {
     const fp = await openFaceplate(page, 'k');
     const shell = fp.locator('[data-testid="module-shell"]');
 
-    // ── 1. THE PAGE HEADER — the TITLE, and no prose at rest. ──
+    // ── 1. THE PAGE HEADER — ABSENT at rest, in full. ──
     //
-    // The title is the panel's NAME and always paints. The hint is a sentence
-    // ABOUT the module — annotation — and §6 below owns it.
-    const head = shell.getByTestId('face-head');
-    await expect(head, 'the faceplate declares a page header').toBeVisible();
-    await expect(head).toContainText('Voice');
+    // The title ("Voice") is a description of the PAGE, not the module's name,
+    // so it is annotation along with the sentence under it (owner 2026-08-02).
+    // §6 below owns the both-directions proof; this is the resting state, which
+    // is what the VRT baselines pin.
     await expect(
-      head,
-      'the DEFAULT faceplate is clean: the descriptive sentence is annotation, and off',
-    ).not.toContainText(/three decoupled generators/i);
+      shell.getByTestId('face-head'),
+      'the DEFAULT faceplate carries no section title and no prose',
+    ).toHaveCount(0);
 
     // ── 2. A VALUE UNDER EVERY KNOB (the largest single share of the drift). ──
     //
@@ -250,20 +249,45 @@ test.describe('PF-20 dock faceplate platform (kickdrum)', () => {
       'a face that brings its own hero picture does not also paint the live-trace glyph',
     ).toHaveCount(0);
 
-    // ── 6. BAND HINTS ARE ANNOTATION: OUT of the DOM until the toggle is on. ──
+    // ── 6. THE SECTION TITLE AND EVERY HINT ARE ANNOTATION: OUT of the DOM
+    //      until the toggle is on. ──
     //
-    // Owner (2026-08-02): the section prose "belongs as annotation text but not
-    // on the card unless annotation is turned on". Asserted in BOTH directions
-    // in one test, because either half alone is satisfied by a bug: "absent
-    // when off" passes against prose that never renders at all, and "present
-    // when on" passes against prose that is always there.
+    // Owner (2026-08-02): "this text is still here, i said this is annotation
+    // mode text but otherwise we don't want it. in all cases. no 'voice' etc
+    // section, no text on the module" — and, clarifying: "the name of the
+    // module as text is fine, it's the type/description text that needs to go
+    // away. so 'shimmershine' should show but not 'halo' or the text below it."
+    //
+    // So the MODULE NAME stays (the dock title bar, asserted below) and the
+    // page's own title goes with the prose. Asserted in BOTH directions in one
+    // test, because either half alone is satisfied by a bug: "absent when off"
+    // passes against text that never renders at all, and "present when on"
+    // passes against text that is always there.
     const subBand = shell.locator('[data-face-page="sub"]');
-    await expect(subBand.locator('.page-label')).toContainText('1 · sub');
+    await expect(
+      subBand.locator('.page-label'),
+      'BAND LABELS STAY — a fieldset legend, and with the hints gone it is the ' +
+        'only thing naming the group of knobs under it',
+    ).toContainText('1 · sub');
     await expect(
       shell.locator('.page-hint'),
       'NOT rendered by default — not merely hidden, or the a11y tree would ' +
         'disagree with the pixels the VRT baseline pins',
     ).toHaveCount(0);
+    await expect(
+      shell.getByTestId('face-head'),
+      'and the whole page header is gone with it — no “Voice”, no sentence',
+    ).toHaveCount(0);
+
+    // THE MODULE'S NAME IS UNTOUCHED, and this is the half of the owner's
+    // direction a "remove the text" change is most likely to overshoot. It is
+    // the dock TITLE BAR's identity, outside the shell entirely — asserted here
+    // so the two halves are pinned by ONE test and cannot be satisfied
+    // separately.
+    await expect(
+      fp.locator('.face-id'),
+      'the module still names itself at rest — “shimmershine should show”',
+    ).toContainText(/kickdrum/i);
 
     const annot = fp.getByTestId('faceplate-annotations');
     await expect(annot, 'the faceplate offers the toggle — it HAS prose to show').toBeVisible();
@@ -277,14 +301,18 @@ test.describe('PF-20 dock faceplate platform (kickdrum)', () => {
       'every band that declares one paints it — this face declares five',
     ).toHaveCount(5);
     await expect(
-      head,
-      'and the page-level sentence comes back with them (the same layer)',
+      shell.locator('.face-title'),
+      'and the section title comes back with them (the same layer)',
+    ).toHaveText('Voice');
+    await expect(
+      shell.locator('.face-hint'),
+      'as does the page-level sentence',
     ).toContainText(/three decoupled generators/i);
 
     // …and OFF again returns the clean card, so the switch is a switch.
     await annot.click();
     await expect(shell.locator('.page-hint')).toHaveCount(0);
-    await expect(head, 'the title never leaves — it is a name, not a note').toContainText('Voice');
+    await expect(shell.getByTestId('face-head')).toHaveCount(0);
 
     // ── 7. THE SIDEBAR IS A RIGHT RAIL — a real grid column, not a band. ──
     const side = fp.getByTestId('face-sidebar');
@@ -416,6 +444,15 @@ test.describe('PF-20 dock faceplate platform (kickdrum)', () => {
 // bounded on purpose: every ADOPTER is visited (that set is what grows as faces
 // are authored), plus exactly ONE non-annotating migrated face as the negative
 // control — chosen off the registry, never named here, so it cannot rot.
+//
+// ⚠ EVERY ASSERTION IS A COUNT, PER SURFACE — never "is it present". A count is
+// what makes a TABBED adopter enrol itself: the shell used to gate a band hint
+// on the band LABEL, which a tab rail suppresses, so a tabbed face's prose
+// rendered NOWHERE with the switch on. `toBeVisible()` on the first `.page-hint`
+// would have passed that (there was no first one to be invisible); `toHaveCount(
+// declared)` goes red on 0 ≠ 8. The split by surface matters for the same
+// reason — one aggregate cannot tell "the title painted and a band hint did
+// not" from a correct render.
 test.describe('PF-20 annotations — declared prose ⇔ the toggle that reveals it', () => {
   test('every adopter offers the toggle and paints its bands; a face with no prose has no toggle', async ({ page }) => {
     await gotoShell(page);
@@ -433,10 +470,17 @@ test.describe('PF-20 annotations — declared prose ⇔ the toggle that reveals 
       await spawnPatch(page, [{ id: 'an', type: spec.type, position: { x: 460, y: 240 } }]);
       const fp = await openFaceplate(page, 'an');
       const shell = fp.locator('[data-testid="module-shell"]');
-      const bandHints = spec.faceAnnotations!.bandHints;
+      const { title, pageHint, bandHints } = spec.faceAnnotations!;
+      const tabbed = await fp.getByTestId('faceplate-tabrail').count();
 
       // OFF is the default, and it is the DOM that is clean — not just CSS.
-      await expect(shell.locator('.page-hint'), `${spec.type}: no prose at rest`).toHaveCount(0);
+      // ALL THREE surfaces, so a title left painting at rest cannot hide behind
+      // a clean band-hint count (owner 2026-08-02: "no text on the module").
+      await expect(shell.locator('.page-hint'), `${spec.type}: no band prose at rest`).toHaveCount(0);
+      await expect(
+        shell.getByTestId('face-head'),
+        `${spec.type}: no section title and no page prose at rest`,
+      ).toHaveCount(0);
       const annot = fp.getByTestId('faceplate-annotations');
       await expect(annot, `${spec.type}: declares prose ⇒ offers the toggle`).toBeVisible();
       await expect(annot).toHaveAttribute('aria-pressed', 'false');
@@ -445,14 +489,18 @@ test.describe('PF-20 annotations — declared prose ⇔ the toggle that reveals 
       await expect(annot).toHaveAttribute('aria-pressed', 'true');
       await expect(
         shell.locator('.page-hint'),
-        `${spec.type}: every declared band hint paints (declared ${bandHints})`,
+        `${spec.type}: every declared band hint paints — declared ${bandHints}, ` +
+          `tabrail=${tabbed} (a tabbed face must paint them too: the hint answers ` +
+          `to the SWITCH, not to the rail)`,
       ).toHaveCount(bandHints);
-      if (spec.faceAnnotations!.pageHint) {
-        await expect(
-          shell.getByTestId('face-head'),
-          `${spec.type}: the page-level sentence paints too`,
-        ).not.toHaveText(/^\s*$/);
-      }
+      await expect(
+        shell.locator('.face-title'),
+        `${spec.type}: the section title paints (declared ${title})`,
+      ).toHaveCount(title);
+      await expect(
+        shell.locator('.face-hint'),
+        `${spec.type}: the page-level sentence paints (declared ${pageHint})`,
+      ).toHaveCount(pageHint);
     }
 
     // THE NEGATIVE CONTROL, and it ships permanently: "the toggle appears for
