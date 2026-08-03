@@ -27,6 +27,7 @@ import {
   PUSH_CC_ENCODER_TEMPO,
   PUSH_CC_ENCODER_SWING,
   PUSH_CC_ENCODER_MASTER,
+  PUSH_CC_LEGEND,
 } from './push2-map';
 import type { Push2RxEvent } from './push2-sysex';
 import { pushPadNote, pushColorIndex } from './push2-sysex';
@@ -269,5 +270,59 @@ describe('push2FrameToLeds — LaunchpadFrame → Push LED specs', () => {
     expect(leds).toContainEqual({ kind: 'button', cc: PUSH_CC_PLAY, value: 0 });
     expect(leds).toContainEqual({ kind: 'button', cc: PUSH_CC_PERMANENT_BASE, value: 0 });
     expect(leds).toContainEqual({ kind: 'button', cc: PUSH_CC_SHIFT, value: 0 });
+  });
+});
+
+describe('LEGEND MODE button', () => {
+  it('reports BOTH edges — the release is what restores the previous screen', () => {
+    expect(classifyPush2({ type: 'cc', cc: PUSH_CC_LEGEND, s: 1, value: 127 })).toEqual({
+      kind: 'legend',
+      held: true,
+    });
+    expect(classifyPush2({ type: 'cc', cc: PUSH_CC_LEGEND, s: 0, value: 0 })).toEqual({
+      kind: 'legend',
+      held: false,
+    });
+  });
+
+  it('never becomes a launchpad event — it cannot reach the routing brain', () => {
+    for (const s of [0, 1] as const) {
+      const a = classifyPush2({ type: 'cc', cc: PUSH_CC_LEGEND, s, value: s ? 127 : 0 });
+      expect(a?.kind).toBe('legend');
+    }
+    // …and it is not an encoder, a channel select, a scene or a D-Pad key.
+    expect(isEncoderCc(PUSH_CC_LEGEND)).toBe(false);
+    expect(encoderTarget(PUSH_CC_LEGEND)).toBeNull();
+    expect(dpadDir(PUSH_CC_LEGEND)).toBeNull();
+    expect(sceneRowForCc(PUSH_CC_LEGEND)).toBeNull();
+    expect(pushCcToLaunchpadTopCc(PUSH_CC_LEGEND)).toBeNull();
+  });
+
+  it('CLAIMS A CC NOTHING ELSE OWNS — the whole bound surface is disjoint from it', () => {
+    // The owner asked for confirmation that the legend button is not already
+    // bound. Asserted exhaustively rather than by inspection: every CC the map
+    // routes anywhere is enumerated, and the legend CC is in none of them.
+    const bound = new Set<number>([
+      PUSH_CC_PLAY,
+      PUSH_CC_UNDO,
+      PUSH_CC_SHIFT,
+      PUSH_CC_ENCODER_TEMPO,
+      PUSH_CC_ENCODER_SWING,
+      PUSH_CC_ENCODER_MASTER,
+    ]);
+    for (let i = 0; i < 8; i++) {
+      bound.add(PUSH_CC_ABOVE_DISPLAY_BASE + i);
+      bound.add(PUSH_CC_PERMANENT_BASE + i);
+      bound.add(PUSH_CC_SCENE_BASE + i);
+      bound.add(PUSH_CC_ENCODER_BASE + i);
+    }
+    for (const cc of [PUSH_CC_DPAD_UP, PUSH_CC_DPAD_LEFT, PUSH_CC_DPAD_UP + 1, PUSH_CC_DPAD_LEFT + 1]) {
+      bound.add(cc);
+    }
+    expect(bound.has(PUSH_CC_LEGEND), `CC ${PUSH_CC_LEGEND} is already bound`).toBe(false);
+    // NEGATIVE CONTROL for the enumeration itself: it must actually contain the
+    // CCs we know are bound, or "not in the set" would be meaningless.
+    expect(bound.has(PUSH_CC_SHIFT)).toBe(true);
+    expect(bound.has(PUSH_CC_SCENE_BASE + 7)).toBe(true);
   });
 });

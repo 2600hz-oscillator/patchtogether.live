@@ -20,6 +20,18 @@
 // START/STOP moves to the Push Play button. Which 8 controls a module shows is
 // an owner-editable text schema: $lib/control/push2/push-card-config.ts.
 //
+// LEGEND MODE — hold the LEGEND button (`PUSH_CC_LEGEND`) and the screen becomes
+// 2 rows × 8 slices naming what the surrounding buttons do IN THE CURRENT VIEW:
+// the BOTTOM row sits directly above the 8 function buttons under the display,
+// the TOP row documents the 8 scene buttons beside the grid (left→right =
+// top→bottom). SHIFT swaps every cell to its shift layer without releasing.
+// MOMENTARY and DISPLAY-ONLY — no button changes what it does, and release
+// restores the previous screen. The text is not a written list: it lives ON the
+// routing table rows themselves ($lib/control/launchpad/launchpad-map.ts) or is
+// computed from the router's own classifiers, and a unit gate
+// (push-legend-model.test.ts) fails in BOTH directions if a binding loses its
+// legend or a legend loses its binding.
+//
 // The 960×160 display runs over WebUSB and degrades to nothing if it is
 // unavailable or declined — pads and encoders keep working over Web MIDI, and
 // the card renders the same push card in the browser. Modeled on

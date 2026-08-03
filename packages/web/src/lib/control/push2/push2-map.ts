@@ -61,6 +61,35 @@ export const PUSH_CC_UNDO = 119;
 /** Shift button → the SHIFT modifier (editor ×8 windowing + arm gestures). */
 export const PUSH_CC_SHIFT = 49; // CONFIRM ON HARDWARE (owner did not confirm Shift)
 
+/**
+ * LEGEND MODE — hold to turn the 960×160 display into on-device documentation of
+ * the current view's buttons. DISPLAY-ONLY and MOMENTARY: it changes nothing
+ * about what any button does, and releasing restores whatever was on screen.
+ *
+ * ⚠ CONFIRM ON HARDWARE. The owner's words were "the black button in the far
+ * right corner of the controller, beyond the grid". Public documentation pins
+ * the NUMBER but not the POSITION, so this is the best-evidence identification,
+ * not a hardware confirmation:
+ *   · Ableton's own MIDI implementation chart (push-interface,
+ *     AbletonPush2MIDIDisplayInterface) lists CC 28 = "master button" and
+ *     CC 29 = "stop clip button" — the only two lit buttons that are neither in
+ *     the 8×8 grid nor in the scene column, and the pair that continues the
+ *     lower-display row (CC 20..27) rightwards.
+ *   · Sound On Sound's Push 2 review places "the Mute, Solo and Stop Clip
+ *     buttons" on the LEFT-HAND side and "the controls involved with
+ *     navigation, device browsing, playing and sequencing" on the RIGHT — which
+ *     rules CC 29 out of the far-right corner and leaves MASTER (28), the
+ *     button beside the master volume encoder at the top-right.
+ *   · It is UNBOUND today: `classifyPush2` falls through to null for 28, and no
+ *     LED path addresses it (it is not in `RGB_BUTTON_CCS`), so claiming it as a
+ *     momentary display modifier steals nothing.
+ *
+ * If the owner's button turns out to be a different CC, this ONE line changes —
+ * push2-control logs the CC of any UNBOUND button press to the console (once per
+ * CC), so identifying the real one takes a single press with DevTools open.
+ */
+export const PUSH_CC_LEGEND = 28;
+
 /** D-Pad arrows → CLIP-view nav (± window; +SHIFT = ×8 full screen). CONFIRMED. */
 export const PUSH_CC_DPAD_UP = 46;
 export const PUSH_CC_DPAD_DOWN = 47;
@@ -126,7 +155,8 @@ export type Push2Action =
   | { kind: 'launchpad'; ev: LaunchpadRxEvent } // parity — into launchpad-control.handleKey
   | { kind: 'selectChannel'; channel: number } // 0..7 — Push-local selected lane (press only)
   | { kind: 'encoder'; target: PushEncoderTarget; delta: number } // relative encoder nudge
-  | { kind: 'dpad'; dir: 'up' | 'down' | 'left' | 'right' }; // clip-view nav (press only)
+  | { kind: 'dpad'; dir: 'up' | 'down' | 'left' | 'right' } // clip-view nav (press only)
+  | { kind: 'legend'; held: boolean }; // DISPLAY-ONLY momentary overlay (both edges)
 
 /** Is this Push CC one of the (relative) encoders? Helps the device layer /
  *  control keep encoder + button handling separate. PURE. */
@@ -213,6 +243,12 @@ export function classifyPush2(ev: Push2RxEvent): Push2Action | null {
 
   // ev.type === 'cc'
   const cc = ev.cc;
+
+  // LEGEND MODE — a MOMENTARY, DISPLAY-ONLY overlay. Classified FIRST and both
+  // edges are reported (unlike the press-only buttons below): the release is
+  // what restores the previous screen, so swallowing it would strand the
+  // overlay. It never reaches launchpad-control, so it cannot change routing.
+  if (cc === PUSH_CC_LEGEND) return { kind: 'legend', held: ev.s === 1 };
 
   // ENCODERS (relative). Fire on any non-zero delta (no press/release semantics).
   if (isEncoderCc(cc)) {
