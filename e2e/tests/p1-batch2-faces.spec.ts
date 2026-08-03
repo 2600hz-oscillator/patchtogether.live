@@ -57,7 +57,13 @@ const BATCH2 = [
   },
   {
     type: 'sixstrum',
-    pages: ['strum · damp', 'string', 'pick', 'tuning · chord', 'envelope', 'body · out'],
+    pages: [
+      '1 · instrument · chord',
+      '2 · the six strings',
+      '3 · the strum hand',
+      '4 · the pick',
+      '5 · amp envelope · body · out',
+    ],
     holes: 23,
     laneParam: 'ring',
   },

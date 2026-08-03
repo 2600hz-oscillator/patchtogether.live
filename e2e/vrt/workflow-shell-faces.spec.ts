@@ -50,7 +50,7 @@ const FACES = [
   { type: 'cloudseed', pages: 8 },
   // batch 2 — the two pitched voices, the two drums, the two processors
   { type: 'dx7', pages: 4 },
-  { type: 'sixstrum', pages: 6 },
+  { type: 'sixstrum', pages: 5 },
   { type: 'snaredrum', pages: 5 },
   { type: 'tomtom', pages: 4 },
   { type: 'shimmershine', pages: 3 },
@@ -66,6 +66,15 @@ const FACES = [
   { type: 'reverb', pages: 2 },
   // batch B+ — the stereo crush
   { type: 'ringback', pages: 2 },
+  // FACE BATCH 3 (2026-08-03) — the PF-20 wave. `pages` is the POST-hero-split
+  // band count the dock renders, which is the declared `face.pages` length
+  // unless a promotion empties a band (heroFacePlan drops an emptied band).
+  { type: 'analogVco', pages: 2 },
+  { type: 'clap', pages: 4 },
+  // ⚠ 8 bands trips DOCK_TAB_MIN_BANDS: this face renders as a TAB RAIL, by
+  // design (five identical voice strips have no other shape). Do not merge it
+  // back under seven.
+  { type: 'pentemelodica', pages: 8 },
 ] as const;
 
 /** TIGHT per-scene diff budgets (absolute pixels; Playwright takes the MIN of

@@ -94,7 +94,7 @@ describe('the LIVE registry — which faces are tabbed today', () => {
   // The clause that turns the threshold into a decision instead of a constant:
   // if a face crosses it, its dock BASELINE moves, and that must be a thing
   // somebody chose. cloudseed (8 bands) is the only face over the line.
-  it('cloudseed is tabbed; every other faced module is one scrolling column', () => {
+  it('cloudseed + pentemelodica are tabbed; every other faced module is one column', () => {
     const tabbed: string[] = [];
     const counts: string[] = [];
     for (const def of listModuleDefs() as unknown as (FaceDefLike & { type: string })[]) {
@@ -119,6 +119,11 @@ describe('the LIVE registry — which faces are tabbed today', () => {
       // on reflex: decide whether that face should be tabbed, regenerate its
       // baseline if so, or give the orphaned control a page if not.
       `dock bands per faced module — ${counts.sort().join(' ')} (threshold ${DOCK_TAB_MIN_BANDS})`,
-    ).toEqual(['cloudseed']);
+      // ⚠ pentemelodica (face batch 3) is the SECOND deliberate rail, and the
+      // count is FORCED rather than chosen: 40 of its 48 params are five
+      // IDENTICAL strips of eight, which neither a flat `order` nor a flat
+      // `pages` list can express as "this group, five times". Its dock baseline
+      // is captured as a tabbed face from the start.
+    ).toEqual(['cloudseed', 'pentemelodica']);
   });
 });

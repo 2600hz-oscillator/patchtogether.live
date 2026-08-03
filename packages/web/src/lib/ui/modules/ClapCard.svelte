@@ -14,16 +14,14 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import { setNodeParam } from '$lib/graph/mutate';
-  import { useEngine } from '$lib/audio/engine-context';
   import { clapDef } from '$lib/audio/modules/clap';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
   import { cardParams, portsFromDef } from './card-kit';
+  import { clearStuckMomentaryParams, setMomentaryParam } from './manual-strike-actions';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
-  const engineCtx = useEngine();
   const { defaultFor, paramVal, set, live } = cardParams(clapDef, () => id, () => node);
 
   // Per-param reactive reads.
@@ -37,14 +35,37 @@
   let drive  = $derived(paramVal('drive'));
   let level  = $derived(paramVal('level'));
 
-  let clapping = $derived((node?.params?.['strike'] ?? 0) >= 0.5);
+  // ⚠ COMPONENT STATE, not a `node.params` read. The pad is MOMENTARY: it
+  // never reaches the Y.Doc (see setStrike), so a param readback would be
+  // permanently false and the pressed styling would never appear.
+  let clapping = $state(false);
 
-  /** Press/release the CLAP pad — write the param (peers + store see the
-   *  held state) AND push straight to the engine for immediate strike. */
+  // Repair a rack SAVED with the pad stuck down (the durable-write era below).
+  // `AudioEngine.addNode` already refuses to apply such a value, so the voice
+  // is playable regardless; this clears the dead number out of the document so
+  // a re-save is clean.
+  $effect(() => {
+    if (node) clearStuckMomentaryParams(id, clapDef);
+  });
+
+  /**
+   * Press/release the CLAP pad — ENGINE ONLY, never the Y.Doc.
+   *
+   * ⚠ It used to `setNodeParam(id, 'strike', v)`, which made a MOMENTARY
+   * action write DURABLE state. When the release edge goes missing (the dock
+   * closes, the module is deleted, the tab hides mid-hold — pointer capture
+   * protects a moving pointer, not a deleted element) the 1 PERSISTS: it saves,
+   * it syncs to every peer, and because packages/dsp/src/clap.ts ORs the pad
+   * with `trigger_in` as LEVELS (`Math.max(inTrig[s], strike)`) the combined
+   * trigger stays permanently high and NO external trigger can strike the
+   * voice again for the rest of the session. tomtom and tidyVco were migrated
+   * to `setMomentaryParam` for exactly this; clap was missed. It also registers
+   * the pad with the window-level panic listeners, so a release this button
+   * never sees still reaches the engine.
+   */
   function setStrike(v: 0 | 1): void {
-    setNodeParam(id, 'strike', v);
-    const e = engineCtx.get();
-    if (e && node) e.setParam(node, 'strike', v);
+    clapping = v === 1;
+    setMomentaryParam(id, 'strike', v === 1, defaultFor('strike'));
   }
   function onClapDown(ev: PointerEvent): void {
     try {

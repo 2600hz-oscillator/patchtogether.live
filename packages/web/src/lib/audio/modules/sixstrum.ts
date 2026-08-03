@@ -103,94 +103,239 @@ export const sixstrumDef: AudioModuleDef = {
     { id: 'quality', label: 'Chord', defaultValue: 0, min: 0, max: 7, curve: 'discrete' },
   ],
 
-  // ── FACE — RACKLINE UI curation (P1 batch-2 TOTAL REWORK; UI metadata, NOT
-  // the I/O contract — see ModuleFace in $lib/graph/types). Designed from the
-  // instrument's INTENT, not transcribed from the legacy two-band card: SIX
-  // STRUM is PLAYED, so the ranking is what a player's hands ride, in order.
-  //   mini    (1 cell + glyph) strumSpread — the namesake gesture: 0 = a block
-  //             chord, up = a rolled strum / harp gliss across the six strings.
-  //   compact (2 cells + glyph) + ring — the string's OWN sustain, the
-  //             let-ring ↔ staccato lever you reach for second.
-  //   full-in-lane (the 6-cell plate) + material (nylon ↔ steel — the primary
-  //             bright↔dark voice), pickTone (soft thumb ↔ hard pick),
-  //             muteDepth (how dead the MUTE gates go) and register (the
-  //             octave that places the instrument): strum · damp · pluck ·
-  //             pitch, the four things a player actually works.
-  //   ranks 7–9 the PRESET recall + strumDir + tuning — the controls you SET
-  //             rather than ride (they only reach the dock, where a discrete
-  //             cell can show its step; a name readout for the two discrete
-  //             params is a shell follow-up). PRESET leads them: it is the
-  //             "make it a guitar / bass / harp" lever — one pick stamps the
-  //             whole calibrated knob state — where `tuning` below it only
-  //             swaps the string set. It is deliberately NOT in the hero
-  //             ladder: the plate is what a player's HANDS ride, and a preset
-  //             is chosen once, then edited.
-  // The dock tail then runs page by page in faceplate reading order, so the
-  // flat roster still reads as the instrument: hand → string → pick → tuning →
-  // envelope → body/out. Pages are the player's sections (lowercase labels),
-  // NOT the legacy card's two space-driven bands.
-  // glyph 'scope': SIX STRUM is GATE-STRUCK, so the honest live view is the
-  // analyser trace on OUT — a plucked attack with the string's exponential
-  // decay (the kickdrum precedent), never a static oscillator cycle. It has no
-  // assigned-shape morph, so the tidyVco DUAL binding does not apply.
+  // ── FACE — RACKLINE UI curation (PF-20 RE-DO of the shipped batch-2 face).
+  // UI metadata, NOT the I/O contract (see ModuleFace in $lib/graph/types).
+  //
+  // WHY A RE-DO AND NOT A TWEAK. The shipped face could not PLAY THE
+  // INSTRUMENT. The legacy card's ⟋ STRUM button drives the factory's
+  // `manualTrigger` seam; `SHELL_CELLS.sixstrum` registered ONLY the preset
+  // selector, and `face.order` had no strike key — so under `?shell=1` the dock
+  // offered twenty controls over a voice that could not be sounded at all. (Two
+  // repo comments asserted the opposite; both are true again now.) The audition
+  // is recovered as a one-member control family below and PROMOTED into the
+  // hero, where a hand reaches first.
+  //
+  // AND THE RANKING IS RE-DERIVED ON ONE TEST — does this knob move a string
+  // that is ALREADY RINGING? The DSP answers it flatly: the pitch is LATCHED
+  // into `heldPitchCv[i]` at the strike and the voice reads the held value, so
+  // REGISTER, TUNING, CHORD and SPREAD change the NEXT note and nothing else.
+  // Only RING, MATERIAL, STIFF, BODY and LEVEL are live on a sounding string;
+  // MUTE needs one of six rear gates before it does anything at all. The old
+  // plate led with `strumSpread` (next-gesture only) and carried `pickTone` +
+  // `register` (both next-strike): three of six hero cells changed nothing you
+  // could hear, on a module you could not strike.
+  //
+  // glyph 'scope' stays, and the audition is what makes it honest: SIX STRUM is
+  // GATE-STRUCK, so the trace is a plucked attack decaying at exactly the rate
+  // the hero's `rings for` predicts. Before the strike button it was a flat line
+  // on every screenshot.
   face: {
     order: [
-      // the hero ladder (mini = 1 / compact = 2 / full-in-lane plate = 6)
-      'strumSpread',
-      'ring',
-      'material',
-      'pickTone',
-      'muteDepth',
-      'register',
-      // ranks 7–9: the set-it controls (dock-only past the lane's 6-cell plate)
+      // ── THE LANE BUDGET: ranks 1–6, and it ends HERE (faceTierCap). ──
+      'ring',        // 1 — kp.decay → ρ → loop gain, per sample. The sustain.
+      'material',    // 2 — note-tracking damping cutoff, AND the cap on RING.
+      'body',        // 3 — post-sum wet/dry box; always audible (default 0.35).
+      'strumSpread', // 4 — the namesake, and the audition is what earns it this
+                     //     rank: a knob whose effect you can provoke in one
+                     //     click is not a set-it control.
+      'level',       // 5 — pre-body gain in dB.
+      'stiffness',   // 6 — the in-loop allpasses. Live, but a fine trim.
+      //
+      // ── rank 7: the AUDITION, the first rank that CANNOT reach a lane ──
+      // Same placement and the same argument as kickdrum / snaredrum / karplus:
+      // it is a <Button>, and laneBodyPlan's no-clip guarantee is derived
+      // entirely from knob-column geometry, so a button has no precedent inside
+      // the plate. It is nevertheless the first thing a hand reaches for on a
+      // voice that cannot sound itself — which is what `face.hero.action` is
+      // for, and where it actually paints.
+      'sixstrum-strum-{n}',
+      // rank 8: the 14-value guitar/bass/harp recall. Chosen once, then edited.
       'sixstrum-preset-{n}',
-      'strumDir',
-      'tuning',
-      // dock tail — page order, so the roster reads as the instrument
-      'stiffness',
+      // ── dock tail, in FACEPLATE READING ORDER, so the flat roster still reads
+      //    as the instrument: what it is → the strings → the hand → the pick →
+      //    the amp envelope and the out. ──
+      'tuning', 'register', 'quality',
       'spread',
-      'pickGrain',
-      'pickPos',
-      'quality',
-      'attack',
-      'envDecay',
-      'sustain',
-      'release',
-      'body',
-      'level',
+      'strumDir', 'muteDepth',
+      'pickTone', 'pickGrain', 'pickPos',
+      'attack', 'envDecay', 'sustain', 'release',
     ],
+
+    // ── FIVE BANDS, under a HERO SLOT that is not one of them. ───────────────
+    //
+    // ⚠ EVERY LABEL BELOW IS AUDITED WITH ITS HINT HIDDEN, because that is the
+    // RESTING state: `hint` is ANNOTATION and paints only behind the dock's
+    // annotate toggle. A label that needed its hint to make sense would read as
+    // a bare word to everyone who never turns the switch on. The shipped labels
+    // failed that test — `strum · damp`, `string`, `pick`, `tuning · chord`,
+    // `envelope`, `body · out` are group nouns naming the furniture. These name
+    // the IDEA, and three of them carry a fact the old ones dropped:
+    //   `the six strings` says SPREAD is a string-TO-string quantity;
+    //   `the strum hand`  says roll, direction and palm-mute are ONE gesture;
+    //   `amp envelope`    says this ADSR is NOT the string's own ring — the
+    //                     single most common misreading of this module.
+    //
+    // ⚠ THE TWO PROMOTED KEYS ARE LISTED HERE, in the bands they come from, and
+    // they must be: `face.hero` MOVES a key, and heroFacePlan can only move one
+    // that some band already claims. Neither promotion empties its band, so no
+    // band (and no hint) is dropped.
+    //
+    // ⚠ PAGE IDS vs THE CURATED REAR GROUP. `rearFieldPlan` gives a curated
+    // group whose id is 'voice'/'signal' the LEADING band slot unconditionally,
+    // so a page id colliding with it renders that band TWICE (the dx7 scar).
+    // This module's only curated rear group is `{ id: 'voice', label: 'play' }`
+    // — no page is called 'voice' or 'signal'. Keep it that way.
     pages: [
-      // the strumming hand: how the chord is rolled, which way, how hard the
-      // MUTE gates damp.
-      { id: 'strum', label: 'strum · damp', controls: ['strumSpread', 'strumDir', 'muteDepth'] },
-      // the six strings themselves (ring/brightness/inharmonicity + the
-      // string-to-string detune that makes a barre chord sound like six).
-      { id: 'string', label: 'string', controls: ['ring', 'material', 'stiffness', 'spread'] },
-      // the plucking agent: how hard, how long, where along the string.
-      { id: 'pick', label: 'pick', controls: ['pickTone', 'pickGrain', 'pickPos'] },
-      // what the strings are tuned to and what chord they voice. PRESET leads
-      // the page: it is the whole-instrument recall, and TUNING sits right
-      // under it as the one value of that preset you can still swap alone.
-      { id: 'tuning', label: 'tuning · chord', controls: ['sixstrum-preset-{n}', 'tuning', 'register', 'quality'] },
-      { id: 'envelope', label: 'envelope', controls: ['attack', 'envDecay', 'sustain', 'release'] },
-      { id: 'output', label: 'body · out', controls: ['body', 'level'] },
+      {
+        id: 'instrument',
+        label: '1 · instrument · chord',
+        hint:
+          'PRESET stamps fourteen calibrated values at once; TUNING alone swaps only the open ' +
+          'string set and the body resonances. CHORD does nothing until a cable reaches the chord input.',
+        controls: ['sixstrum-preset-{n}', 'tuning', 'register', 'quality'],
+      },
+      {
+        id: 'string',
+        label: '2 · the six strings',
+        hint:
+          'the loop gain is capped, so MATERIAL below ≈0.10 pins the ring near 0.77 s whatever RING ' +
+          'says — hold RING at 10 s, turn MATERIAL to 0 and watch the hero read 775 ms while the dial still says 10.',
+        controls: ['ring', 'material', 'stiffness', 'spread'],
+      },
+      {
+        id: 'strum',
+        label: '3 · the strum hand',
+        hint:
+          'one gesture rolls across the six strings over the STRUM window, and an unpatched strum jack ' +
+          'follows the nearest patched one at or below it. With STRUM at 0 all three DIR settings are bit-identical.',
+        controls: ['sixstrum-strum-{n}', 'strumSpread', 'strumDir', 'muteDepth'],
+      },
+      {
+        id: 'pick',
+        label: '4 · the pick',
+        hint:
+          'the excitation burst. GRAIN is measured in PERIODS of the note, so its length in ' +
+          'milliseconds halves every octave up; POS cancels the partial the sidebar prints.',
+        controls: ['pickTone', 'pickGrain', 'pickPos'],
+      },
+      {
+        id: 'output',
+        label: '5 · amp envelope · body · out',
+        hint:
+          'the amp ADSR sits UNDER the string’s own decay — at the shipped SUSTAIN 1.0 the DECAY stage ' +
+          'jumps out on its first tick and RELEASE never fires unless a MUTE gate or a POLY note-off arrives.',
+        controls: ['attack', 'envDecay', 'sustain', 'release', 'body', 'level'],
+      },
     ],
     glyph: 'scope',
-    // REAR CARD curation (rear-card-model). Derivation alone would drop all 15
-    // non-CV inputs into ONE flat 'voice' band; this instrument's rear IS its
-    // per-string field, so the leading band is curated into "how you play it"
-    // (the three global note sources) + two function-named sub-header clusters
-    // for the twelve PER-STRING jacks — strum triggers (normalled 1→all) and
-    // mute gates, the per-string vs global split. The seven per-knob CVs need
-    // no curation: each one's paramTarget lands it under its face page (TONE +
-    // GRAIN under 'pick', SPREAD under 'string', STRUM + DIR under 'strum',
-    // CHORD-quality under 'tuning · chord', BODY under 'body · out') — note the
-    // 'play' band's CHORD is the 1 V/oct ROOT, the 'tuning · chord' band's is
-    // the chord-QUALITY CV.
-    // audioRate: the worklet reads poly, the six strums, the six mutes and
-    // accent PER SAMPLE (sample-accurate strike edges + a per-hit accent
-    // latch); the CHORD root is read once per block and the seven knob CVs
-    // land on k-rate AudioParams, so neither takes the `~` tick.
+
+    // ── PF-20 — THE FACEPLATE STRUCTURE ─────────────────────────────────────
+    // DECLARATION ONLY: nothing here adds a param or a port, so the I/O
+    // contract moves by exactly the ONE control-family line below.
+
+    title: 'Instrument',
+    // ⚠ THE LATCH SENTENCE LIVES HERE, at page level, and it must stay here.
+    // It is the one fact that explains why five of this module's knobs appear
+    // to do nothing, and it is true of the whole faceplate rather than of any
+    // one band — pushing it down into a band hint would file the instrument's
+    // governing rule under a section most players never open.
+    hint:
+      'Six Karplus-Strong strings, a strum hand and a chord voicer. The pitch is LATCHED at the ' +
+      'strike, so TUNING, REGISTER, CHORD and SPREAD change the NEXT note and never the one already ' +
+      'ringing — and MATERIAL caps how long RING can actually hold.',
+
+    // THE HERO. RING and the strum are PROMOTED out of their bands, not copied
+    // (heroFacePlan removes them, so the param multiset faces-parity asserts is
+    // unchanged). RING leads because on a string voice the sustain IS the
+    // instrument; the audition rides beside it because nothing here makes a
+    // sound until something strikes it. NO `hero.cell`: this face brings no
+    // picture, so the `scope` glyph keeps its dock band — and now that the
+    // instrument can be struck from the panel, that trace is a real plucked
+    // decay instead of the flat line the shipped baseline captured.
+    //
+    // ⚠ THE STRIP IS WHAT YOU READ WHILE PLAYING; the sidebar `readouts` block
+    // is REFERENCE. Each of these three is the live answer of a rank-1/2/4 knob,
+    // and NONE of them is a knob readback:
+    //   `rings for`  — RING's and MATERIAL's JOINT answer through the worklet's
+    //                  own loop-gain law. At the defaults it equals the RING
+    //                  dial (2.50 s), which is correct and is also exactly why
+    //                  a readback looks right; hold RING at 10 s and sweep
+    //                  MATERIAL to 0 and it collapses to 775 ms while the dial
+    //                  still says 10. That negative control is a permanent leg
+    //                  of sixstrum-face-model.test.ts, in BOTH directions.
+    //   `damps above`— MATERIAL's own answer, published as a PARTIAL INDEX
+    //                  rather than a frequency ON PURPOSE: the damping cutoff
+    //                  is f0 · 2^(0.5 + 5.5·knob), i.e. the SAME multiple of
+    //                  the note on every string, so the index needs no
+    //                  reference pitch and REGISTER must not move it. Printing
+    //                  Hz would have silently meant "at the low string".
+    //   `roll`       — the STRUM window and its per-string step. Moves with
+    //                  STRUM SPREAD; DIR only permutes the order, so a readout
+    //                  that reacted to DIR would be instrumented wrong.
+    hero: {
+      control: 'ring',
+      action: 'sixstrum-strum-{n}',
+      readouts: [
+        { label: 'rings for', valueId: 'sixstrum-ring-t60' },
+        { label: 'damps above', valueId: 'sixstrum-damp-partial' },
+        { label: 'roll', valueId: 'sixstrum-roll-ms' },
+      ],
+    },
+
+    sidebar: [
+      {
+        kind: 'signal-flow',
+        label: 'signal flow',
+        // The real chain, per string and then on the sum. BODY is the one
+        // `parallel` stage and the mark is load-bearing: it is a wet/dry blend
+        // of two band-passes tapped off the finished mix (`master * (1 - body)
+        // + wet * body`), so drawing it inline would teach that turning BODY up
+        // REPLACES the strings rather than adding air behind them.
+        stages: [
+          { label: 'PLUCK', role: 'generator', note: 'strum · poly · chord' },
+          { label: 'PICK BURST', role: 'generator', note: 'seeded noise' },
+          { label: 'PICK TONE', role: 'bus', note: 'burst low-pass' },
+          { label: 'PICK POS', role: 'bus', note: 'comb notch' },
+          { label: '6 × STRING', role: 'bus', note: 'damping · stiffness' },
+          { label: 'MUTE CHOKE', role: 'bus', note: 'per string' },
+          { label: 'AMP ADSR', role: 'bus', note: 'per string' },
+          { label: 'SUM ÷ √n', role: 'bus', note: 'sounding strings' },
+          { label: 'LEVEL', role: 'bus', note: 'dB' },
+          { label: 'BODY', role: 'bus', parallel: true, note: 'two band-passes' },
+          { label: 'OUT', role: 'bus', note: 'mono' },
+        ],
+      },
+      {
+        kind: 'readouts',
+        // ⚠ THE BLOCK LABEL IS THE RULE. Every number here is a NEXT-STRIKE
+        // quantity — the pitches are latched at the strike, and the comb notch
+        // and the burst length are both resolved when the burst is fired — so
+        // the label teaches the module's governing fact without spending a
+        // hint on it. It is also what stops the next author widening the hero
+        // strip: a value that cannot move under the hand belongs here.
+        label: 'next strike',
+        entries: [
+          { label: 'open strings', valueId: 'sixstrum-open-strings' },
+          // ⚠ `low string` IS THE ONE THAT FINDS THE SHIPPED BUG. The BASS
+          // recall (tuning 1, register −12, spread 0.15) puts strings 1-3 at
+          // 15.4 / 20.6 / 27.5 Hz — all under KARPLUS_F0_MIN = 30 — so
+          // karplusF0's clamp collapses three of six bass strings onto one
+          // pitch. `open strings` prints `B0 B0 B0 D1 G1 C2` and this prints
+          // `30 Hz`, sitting exactly on the floor. Pinned as a DEFECT, not
+          // approved: the model test fails the day the preset is fixed.
+          { label: 'low string', valueId: 'sixstrum-low-string-hz' },
+          { label: 'pick notch', valueId: 'sixstrum-pick-notch' },
+          { label: 'burst', valueId: 'sixstrum-burst-ms' },
+        ],
+      },
+    ],
+
+    // REAR CARD curation — UNCHANGED from the shipped face (the rear was
+    // already right): the leading band is "how you play it" (the three global
+    // note sources) plus two function-named sub-header clusters for the twelve
+    // per-string jacks. The seven per-knob CVs need no curation — each one's
+    // paramTarget files it under its own face page, and the five renamed pages
+    // re-label those five rear bands with it. 23 holes, unchanged.
     rear: {
       groups: [{ id: 'voice', label: 'play', ports: ['poly', 'chord', 'accent'] }],
       clusters: [
@@ -296,18 +441,27 @@ export const sixstrumDef: AudioModuleDef = {
         "TUNING — which open-string set (and which body) the engine uses, a 3-way selector: 0 GUITAR (E2 A2 D3 G3 B3 E4), 1 BASS (a low six-string B0 E1 A1 D2 G2 C3), 2 HARP (a C-major run C3 D3 E3 G3 A3 C4). It sets the pitches a bare strum rings, the shape the CHORD voicer walks, and the BODY resonances. On its own it swaps ONLY that string set + body and leaves every other knob untouched — reach for the PRESET recall above it when you want the whole calibrated guitar / bass / harp knob state, and for this when you want (say) harp strings with the guitar's pick and ring.",
       quality:
         "CHORD — which chord quality the CHORD input's root is voiced into, an 8-way selector: 0 maj, 1 min, 2 dom7, 3 maj7, 4 min7, 5 sus4, 6 power(5), 7 octaves. Pure voicing: it decides which chord tones the six strings take (each takes the lowest one at or above its own open pitch), not the tone. It does nothing while CHORD is unpatched — bare strings ring their open tuning.",
+      "sixstrum-strum-{n}":
+        "STRUM — the audition button: one strum of all six strings, exactly as if a rising edge had arrived at strum1. Because the six STRUM inputs are normalled low\u2192high, strum1 barres the whole chord, staggered by the STRUM roll and DIR, so this button is a complete performance gesture and not a test tone. SIX STRUM has no exciter of its own: with nothing patched into strum1..strum6 and no POLY source it is not quiet, it is MUTE \u2014 this is how you hear the instrument while you are dialling it in, which is most of the time you are dialling it in. Mechanically it is a host-side source summed into the same worklet input a cable feeds, fired through the shared trigger waveform, so it behaves identically to a patched sequencer gate: every string's burst noise is re-seeded, PICK GRAIN and the ACCENT input are latched at that instant, and \u2014 the part worth knowing \u2014 each string's PITCH is latched then too, which is why TUNING, REGISTER, CHORD and SPREAD are heard on the NEXT strum rather than on the one still ringing. It writes NOTHING to the patch: no param moves, nothing is shared with the rackspace, nothing is persisted or undoable, and a cable already patched into strum1 keeps working while you use it (Web Audio sums the two and the worklet edge-detects the crossing). On the classic card this is the \u27cb button, and it is the same implementation \u2014 one seam, two surfaces.",
       "sixstrum-preset-{n}":
         "PRESET — the guitar / bass / harp recall, and the one control that makes this the instrument you meant. Picking a mode STAMPS its whole calibrated knob state onto the panel — all fourteen values: tuning, register, ring, material, pickPos, stiffness, pickTone, pickGrain, strumSpread, strumDir, muteDepth, quality, body and spread — so GUITAR lands a ~2.5 s ring on standard tuning at concert pitch, BASS a long dark 6 s ring an octave down with a near-block strum and a power-chord voicing, HARP a 9 s bright ring seven semitones up with a wide upward gliss. Nothing is hidden: these are knob STATES of the same engine, not DSP branches, so every stamped knob stays visible and editable the moment the recall lands — a starting point, never a lock — and each write is a normal param change (undoable, shared with everyone in the rackspace). Distinct from TUNING below it, which alone only switches WHICH open strings and body resonances the engine uses and leaves the rest of the panel exactly where you left it. (On the classic card this same recall is the MODE knob.)",
     },
   },
 
-  // The PRESET RECALL, declared as a one-member control family: it is a real
-  // control with no backing ParamDef (its state IS the params it stamps), so
-  // this is what lets the face rank it, the docs key prose to it, and the
-  // RACKLINE shell paint it as a Selector (shell-cells.ts). testidPrefix is
-  // grep-verified against SixstrumCard's MODE cell by the docs gate.
+  // TWO one-member control families — the two real controls that have no
+  // backing ParamDef, because neither is a VALUE.
+  //   sixstrum-preset — the guitar/bass/harp recall (its state IS the params it
+  //     stamps).
+  //   sixstrum-strum  — the AUDITION. It writes nothing at all: it fires a
+  //     host-side ConstantSource into strum #1 through the factory's
+  //     `manualTrigger` seam, which is exactly why it is not a `strike` param
+  //     (a persisted 0/1 for a one-shot, plus a 20th parameterDescriptor the
+  //     worklet does not have). Without it the shell had no strike key and the
+  //     instrument was unplayable under `?shell=1`.
+  // Both testidPrefixes are grep-verified against SixstrumCard by the docs gate.
   controlFamilies: [
     { id: 'sixstrum-preset', label: 'Preset — guitar / bass / harp', kind: 'other', testidPrefix: 'sixstrum-preset' },
+    { id: 'sixstrum-strum', label: 'Strum — audition all six strings', kind: 'other', testidPrefix: 'sixstrum-strum' },
   ],
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {

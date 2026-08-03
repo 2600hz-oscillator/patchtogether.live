@@ -80,6 +80,7 @@ analogVco param pmAmount -1..1 linear default=0
 analogVco param pw 0.05..0.95 linear default=0.5
 analogVco param shape 0..1 linear default=0
 analogVco param tune -36..36 linear default=0 unit=semi
+analogVco family analogvco-cycle kind=cell prefix=analogvco-cycle
 archivist meta domain=video
 archivist in play_trigger gate param=cv_play_trigger edge=gate
 archivist out audio_l audio
@@ -440,6 +441,7 @@ clap param strike 0..1 discrete default=0
 clap param tail 30..800 log default=150 unit=ms
 clap param tone 400..3000 log default=1000 unit=Hz
 clap param width 0..1 linear default=0.5
+clap family clap-hero kind=cell prefix=clap-hero
 clipplayer meta domain=audio exposesSequence
 clipplayer in reset gate edge=trigger
 clipplayer in stop_all gate edge=trigger
@@ -2493,6 +2495,7 @@ pentemelodica param v5_tune -36..36 linear default=0 unit=st
 pentemelodica param v5_wave 0..1 linear default=0
 pentemelodica param wetdry 0..1 linear default=1
 pentemelodica stereo out_l+out_r
+pentemelodica family pentemelodica-voices kind=cell prefix=pentemelodica-voice
 picturebox meta domain=video maxInstances=8
 picturebox in asset_gate gate param=asset_gate
 picturebox in asset_pitch pitch param=asset_pitch
@@ -2944,6 +2947,7 @@ sixstrum param strumSpread 0..1 linear default=0.28
 sixstrum param sustain 0..1 linear default=1
 sixstrum param tuning 0..2 discrete default=0
 sixstrum family sixstrum-preset kind=other prefix=sixstrum-preset
+sixstrum family sixstrum-strum kind=other prefix=sixstrum-strum
 skifree meta domain=audio maxInstances=1 vizPassthrough
 skifree in x cv
 skifree in y cv

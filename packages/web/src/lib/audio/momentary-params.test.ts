@@ -144,7 +144,7 @@ describe('the REAL defs that declare a press-pad', () => {
     // rest-at-spawn guarantee asserted the day it lands, without an edit here.
     const declaring = (listModuleDefs() as unknown as (MomentaryDefLike & { type: string })[])
       .filter((d) => (d.face?.momentary ?? []).length > 0);
-    expect(declaring.map((d) => d.type).sort()).toEqual(['tidyVco', 'tomtom']);
+    expect(declaring.map((d) => d.type).sort()).toEqual(['clap', 'tidyVco', 'tomtom']);
     for (const def of declaring) {
       for (const pid of momentaryIds(def as MomentaryDefLike)) {
         const rest = momentaryRest(def as MomentaryDefLike, pid);
