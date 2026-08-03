@@ -14,7 +14,9 @@
 // cubeCeiling, each { source, frames?, label? } like WAVESCULPT's per-osc data).
 // The factory polls livePatch.nodes[id].data and reposts changed tables to the
 // worklet via { type:'loadWavetable', slot, frames }. Defaults on spawn:
-//   FLOOR=basic-shapes, WALL=harmonic-sweep, CEILING=basic-shapes.
+//   FLOOR=basic-shapes, WALL=harmonic-sweep, CEILING=harmonic-sweep.
+// CEILING must DIFFER from FLOOR or MORPH is algebraically inert — see the
+// CUBE_DEFAULT_TABLES comment.
 //
 // Params (LITERAL arrays — the module-manifest static extractor can't read
 // computed/spread arrays): see `params` below + PLAN §6.
@@ -91,11 +93,23 @@ export function uninstallCubeFrameDrawer(nodeId: string): void {
 export type CubeSlot = 'floor' | 'wall' | 'ceiling';
 export const CUBE_SLOTS: readonly CubeSlot[] = ['floor', 'wall', 'ceiling'];
 
-/** Per-slot wavetable defaults (PLAN §4). */
+/** Per-slot wavetable defaults (PLAN §4).
+ *
+ *  ⚠ CEILING MUST NOT EQUAL FLOOR. The field is
+ *  `f3 = (1−morph)·occ(z, floorH, wallH) + morph·occ(z, ceilH, wallH)` and
+ *  `columnHeights` reads both at the SAME (x, y) — so identical tables make
+ *  `dF ≡ dC` and MORPH algebraically inert: `(1−m)·dF + m·dF = dF` at every
+ *  position. CEILING shipped as `basic-shapes`, the same as FLOOR, which made
+ *  the module's headline knob and its CV jack a BIT-EXACT no-op on every
+ *  freshly spawned CUBE (measured: RMS difference EXACTLY 0.000e+0 between
+ *  morph 0 and morph 1). `cube-morph-default.test.ts` renders the slice and
+ *  holds the line. `harmonic-sweep` is the only other factory table, and is
+ *  also what WALL uses — floor↔ceiling is the axis MORPH travels, so it is the
+ *  two ENDS that have to differ. */
 export const CUBE_DEFAULT_TABLES: Record<CubeSlot, string> = {
   floor: 'basic-shapes',
   wall: 'harmonic-sweep',
-  ceiling: 'basic-shapes',
+  ceiling: 'harmonic-sweep',
 };
 
 /** Per-slot wavetable selection, persisted on node.data. Mirrors WAVESCULPT's
