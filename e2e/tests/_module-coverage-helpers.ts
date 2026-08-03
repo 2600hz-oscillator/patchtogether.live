@@ -86,6 +86,140 @@ export async function runFor(page: Page, ms: number): Promise<void> {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// SCOPE PEAK-HOLD — the accumulator lives IN THE PAGE
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// `readScopeSnapshot` in a Playwright-side `for` loop is the exact pattern
+// CLAUDE.md forbids ("Never sample a page-side quantity with a Playwright-side
+// poll loop"), and here it was also the emit sweep's single largest cost. Each
+// poll is a `waitForTimeout` PLUS a `page.evaluate` that serialises the whole
+// analyser buffer — `Array.from(snap.ch1)` + `ch2`, i.e. ~4 096 numbers as JSON
+// per sample — and every one of those crosses CDP on the same main thread as
+// the audio graph and the (SwiftShader) GL draw it is measuring.
+//
+// MEASURED, E2E_SWIFTSHADER=1, `midiLane` (5 live outputs): the loop asked for
+// `totalMs = 1 200` and spent **11.4 s per port**. A poll intended to cost
+// 30 ms actually cost ~420 ms. The variable named `totalMs` was not a window at
+// all — it was `polls × round-trip`, wrong by ~10×, so the code's stated "1.2 s
+// of poll window" and its real behaviour had nothing to do with each other.
+//
+// It is ALSO the weaker observation, which is the part worth noticing. The
+// analyser holds ~43 ms (fftSize 2048 @ 48 kHz), so sampling every ~420 ms sees
+// ~43 ms out of every ~420 — a **~10 % duty cycle**. Over 27 polls that is
+// ~1.2 s of signal timeline observed, scattered across 11.4 s of wall clock,
+// and a gate pulse landing in one of the ~90 % blind gaps is simply missed. The
+// pass was partly luck.
+//
+// Sampling in-page on a `setInterval` finer than the analyser window makes the
+// coverage CONTIGUOUS: ~40 samples at 30 ms spacing over a real 1 200 ms window
+// observe the same ~1.2 s of signal timeline with NO gaps, in 1/10 the wall
+// clock. Same evidence, tenth the cost, and a 2 Hz gate (TIMELORDE.1x, the
+// worst case the window is sized for) can no longer fall through a gap.
+//
+// Three further properties, all from CLAUDE.md's treatment of this pattern:
+//   * ONE round trip total, and it carries four numbers instead of 4 096.
+//   * The accumulated peak SURVIVES a main-thread stall — a page frozen for
+//     3 s and then released still reports every value it computed.
+//   * `samples` / `elapsedMs` come back with the result, so "polled the whole
+//     window and it was silent" is DISTINGUISHABLE from "never got a reading".
+//     Both used to print `maxPeak=0.0000`: the old loop's `if (!snap) continue`
+//     swallowed a permanently unresolvable engine handle and reported it as a
+//     dead port. Callers assert `samples > 0` so the instrument fails as an
+//     instrument rather than as a finding.
+
+export interface ScopeObservation {
+  /** Peak-hold over ch1 (the patched channel) across the whole window. */
+  maxPeak: number;
+  /** RMS of the LAST sample taken — a level hint for the failure message. */
+  lastRms: number;
+  /** Peak-hold over ch2. NOTHING is patched there by the emit sweep, so a hot
+   *  ch2 means the sink was wired wrong, not that the port is alive. Reported
+   *  in the message only. */
+  maxPeakCh2: number;
+  /** How many readings were actually taken. 0 ⇒ the instrument never read. */
+  samples: number;
+  /** Real wall-clock span of the observation, for the same reason. */
+  elapsedMs: number;
+}
+
+/**
+ * Peak-hold a scope's analyser for `windowMs`, sampling every `sampleMs`
+ * INSIDE the page, and stop early once ch1 crosses `floor`.
+ *
+ * `sampleMs` must stay BELOW the analyser's ~43 ms refresh or the coverage
+ * goes sparse again — that bound is the whole point of the default.
+ */
+export async function observeScopePeak(
+  page: Page,
+  scopeNodeId: string,
+  opts: { windowMs: number; floor: number; sampleMs?: number },
+): Promise<ScopeObservation> {
+  const { windowMs, floor } = opts;
+  const sampleMs = opts.sampleMs ?? 30;
+  return await page.evaluate(
+    ({ id, windowMs, floor, sampleMs }) =>
+      new Promise<ScopeObservation>((resolve) => {
+        const w = globalThis as unknown as {
+          __engine?: () => {
+            read: (n: { id: string; type: string; domain: string }, k: string) => unknown;
+          } | null;
+          __patch?: { nodes: Record<string, { id: string; type: string; domain: string }> };
+        };
+        const t0 = performance.now();
+        let maxPeak = 0;
+        let maxPeakCh2 = 0;
+        let lastRms = 0;
+        let samples = 0;
+        let timer = 0;
+        const finish = (): void => {
+          clearInterval(timer);
+          resolve({ maxPeak, lastRms, maxPeakCh2, samples, elapsedMs: performance.now() - t0 });
+        };
+        const sample = (): void => {
+          const eng = w.__engine?.();
+          const node = w.__patch?.nodes?.[id];
+          if (eng && node) {
+            const snap = eng.read(node, 'snapshot') as
+              | { ch1: Float32Array; ch2?: Float32Array }
+              | undefined;
+            if (snap?.ch1) {
+              samples++;
+              const a = snap.ch1;
+              let peak = 0;
+              let energy = 0;
+              for (let i = 0; i < a.length; i++) {
+                const v = a[i]!;
+                const abs = v < 0 ? -v : v;
+                if (abs > peak) peak = abs;
+                energy += v * v;
+              }
+              if (peak > maxPeak) maxPeak = peak;
+              lastRms = Math.sqrt(energy / Math.max(1, a.length));
+              const b = snap.ch2;
+              if (b) {
+                let p2 = 0;
+                for (let i = 0; i < b.length; i++) {
+                  const v = b[i]!;
+                  const abs = v < 0 ? -v : v;
+                  if (abs > p2) p2 = abs;
+                }
+                if (p2 > maxPeakCh2) maxPeakCh2 = p2;
+              }
+            }
+          }
+          // Early-out the instant the tap clears the floor (continuous audio /
+          // CV cases bail on the first reading), else run the window out — a
+          // genuinely silent output pays the FULL window and still fails at 0.
+          if (maxPeak > floor || performance.now() - t0 >= windowMs) finish();
+        };
+        timer = setInterval(sample, sampleMs) as unknown as number;
+        sample();
+      }),
+    { id: scopeNodeId, windowMs, floor, sampleMs },
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // THE OBSERVATION PLAN — and the BUDGET derived from it
 // ═══════════════════════════════════════════════════════════════════════════
 //
