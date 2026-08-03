@@ -233,6 +233,14 @@ describe('shell cells — ACTION cells declare the handler their MODE needs', ()
           `tell a live press from a dead one.`,
       );
     } else if (probe.effect.kind === 'audition') {
+      // ⚠ `manual-press` is DELIBERATELY ABSENT. It is a real `AuditionSeam`,
+      // but it belongs to the MOMENTARY PAD (`face.momentary`), which the shell
+      // renders as a `momentary` CONTROL — not an `action` CELL. An action cell
+      // declaring it would be asserted against a seam it can never reach, i.e.
+      // a probe that can only fail, which is how a gate gets deleted. Omission
+      // here is what makes that a loud "unknown audition seam" rather than a
+      // silently-accepted mis-wiring; the pad's own coverage is the `momentary`
+      // branch of faces-parity + audition-ledger.test.ts.
       const SEAMS = ['manual-strike', 'manual-gate', 'engine-message'];
       if (!SEAMS.includes(probe.effect.seam)) {
         problems.push(`${where}: unknown audition seam '${probe.effect.seam}'`);

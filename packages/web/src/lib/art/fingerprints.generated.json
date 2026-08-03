@@ -1631,7 +1631,7 @@
       }
     },
     "bluebox/out": {
-      "sourceSha256": "f58056a83ab749f9a4a036e62c4443e1ddd120c65fea8dcefab2034fb2f87dc3",
+      "sourceSha256": "083d749b510614c58d2e22b262ca53df9a5fbc37959d0f05da0343f080e99636",
       "spectrum": [
         0,
         0,
@@ -1688,8 +1688,8 @@
         "centroid": 153
       },
       "labels": {
-        "peakDb": -6.02,
-        "rmsDb": -14.11,
+        "peakDb": -18.06,
+        "rmsDb": -26.15,
         "durS": 1.2,
         "samples": 57600
       }
