@@ -3616,6 +3616,8 @@ warrensspectrum in slice_cv cv param=spectralSlice cvScale=linear
 warrensspectrum out out audio
 warrensspectrum param engineFreeze 0..1 discrete default=0
 warrensspectrum param gain -60..12 linear default=0 unit=dB
+warrensspectrum param inputMix 0..1 linear default=0
+warrensspectrum param resynthLevel 0..1 linear default=0
 warrensspectrum param spectralCenter -3600..3600 linear default=0 unit=cents
 warrensspectrum param spectralFloor -90..-20 linear default=-42 unit=dB
 warrensspectrum param spectralLock 0..1 linear default=0.75
@@ -3625,6 +3627,7 @@ warrensspectrum param spectralShape 0..1 linear default=0
 warrensspectrum param spectralSlew 0.02..4 linear default=0.6 unit=s
 warrensspectrum param spectralSlice 2..200 linear default=10 unit=ms
 warrensspectrum param spectralStab 1..16 discrete default=3
+warrensspectrum family ws-filterbank kind=cell prefix=ws-band
 wavecel meta domain=audio
 wavecel in fm audio
 wavecel in fold_cv cv param=fold cvScale=linear
