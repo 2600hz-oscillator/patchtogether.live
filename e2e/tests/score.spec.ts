@@ -12,6 +12,7 @@
 
 import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
+import { seedScoreThenPlay } from './_score-helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
@@ -209,28 +210,20 @@ test('score: tie tool — picking two notes creates a Tie object + SVG path', as
 });
 
 test('score: currently-playing note highlight tracks engine.read currentNoteId', async ({ page, rack }) => {
-  await spawnPatch(page, [{ id: 'score', type: 'score', params: { bpm: 240, isPlaying: 1 } }]);
+  // Spawn STOPPED — seedScoreThenPlay starts the transport after the music
+  // exists, so grid tick 0 is emitted with notes in place (see its header).
+  await spawnPatch(page, [{ id: 'score', type: 'score', params: { bpm: 240, isPlaying: 0 } }]);
 
   // Seed a few notes spanning bars so the engine has something to play.
-  await page.evaluate(() => {
-    const w = globalThis as unknown as {
-      __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
-      __ydoc: { transact: (fn: () => void) => void };
-    };
-    w.__ydoc.transact(() => {
-      const n = w.__patch.nodes['score'];
-      if (!n) return;
-      n.data = {
-        notes: [
-          { id: 'n1', bar: 0, tick: 0, duration: 'quarter', midi: 77, staffStep: 0, accidental: null },
-          { id: 'n2', bar: 0, tick: 12, duration: 'quarter', midi: 76, staffStep: 1, accidental: null },
-          { id: 'n3', bar: 0, tick: 24, duration: 'quarter', midi: 74, staffStep: 3, accidental: null },
-        ],
-        dynamics: [],
-        ties: [],
-        keySignature: 0,
-      };
-    });
+  await seedScoreThenPlay(page, 'score', {
+    notes: [
+      { id: 'n1', bar: 0, tick: 0, duration: 'quarter', midi: 77, staffStep: 0, accidental: null },
+      { id: 'n2', bar: 0, tick: 12, duration: 'quarter', midi: 76, staffStep: 1, accidental: null },
+      { id: 'n3', bar: 0, tick: 24, duration: 'quarter', midi: 74, staffStep: 3, accidental: null },
+    ],
+    dynamics: [],
+    ties: [],
+    keySignature: 0,
   });
 
   // Wait long enough for at least one note to fire (240 BPM 16th = 16/sec).
@@ -257,35 +250,30 @@ test('score: dynamic marker scales the env output amplitude', async ({ page, rac
   // The wait bound and the TEST bound have to move together or the larger one
   // is decorative. Failure-path only: `expect.poll` returns the moment the
   // assertion passes, so green runs are unchanged.
+  //
+  // ⚠⚠ AND THE BUDGET WAS NEVER THE BUG. This test carried the SAME latent
+  // defect as the tied-notes one below — its only note sits at grid tick 0 and
+  // `lastDynamicScale` moves off the mf default ONLY when a note fires, so a
+  // seed landing after the engine's first tick left it stuck at mf for the
+  // whole poll. Same permanent loss, same "slow propagation" mis-diagnosis.
+  // Fixed at the ordering, not the budget: seed first, play second.
   test.setTimeout(60_000);
-  await spawnPatch(page, [{ id: 'score', type: 'score', params: { bpm: 240, isPlaying: 1 } }]);
+  await spawnPatch(page, [{ id: 'score', type: 'score', params: { bpm: 240, isPlaying: 0 } }]);
 
-  await page.evaluate(() => {
-    const w = globalThis as unknown as {
-      __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
-      __ydoc: { transact: (fn: () => void) => void };
-    };
-    w.__ydoc.transact(() => {
-      const n = w.__patch.nodes['score'];
-      if (!n) return;
-      n.data = {
-        notes: [
-          { id: 'n1', bar: 0, tick: 0, duration: 'quarter', midi: 72, staffStep: 5, accidental: null },
-        ],
-        dynamics: [
-          { id: 'd1', bar: 0, tick: 0, level: 'ff' },
-        ],
-        ties: [],
-        keySignature: 0,
-      };
-    });
+  await seedScoreThenPlay(page, 'score', {
+    notes: [
+      { id: 'n1', bar: 0, tick: 0, duration: 'quarter', midi: 72, staffStep: 5, accidental: null },
+    ],
+    dynamics: [
+      { id: 'd1', bar: 0, tick: 0, level: 'ff' },
+    ],
+    ties: [],
+    keySignature: 0,
   });
 
-  // CI-load robustness: dynamicScale is a DETERMINISTIC value (ff → 0.95), but
-  // a fixed 500ms wait raced the engine picking up the n.data write under CI
-  // load (score env-amplitude `toBeGreaterThan` flake). Poll the live read
-  // until it settles into the expected band instead of a one-shot read after a
-  // fixed sleep — same correctness assertion, tolerant of slow propagation.
+  // dynamicScale is a DETERMINISTIC value (ff → 0.95). Poll the live read until
+  // it settles into the expected band rather than a one-shot read after a fixed
+  // sleep — same correctness assertion, tolerant of a slow first tick.
   const readDynScale = () =>
     page.evaluate(() => {
       const w = globalThis as unknown as {
@@ -480,30 +468,20 @@ test('score: stop-bar — placing the marker writes to score data', async ({ pag
 
 test('score: stop-bar + loop=on wraps tickIndex back to 0 at end of sequence', async ({ page, rack }) => {
   await spawnPatch(page, [
-    { id: 'score', type: 'score', params: { bpm: 240, isPlaying: 1 } },
+    { id: 'score', type: 'score', params: { bpm: 240, isPlaying: 0 } },
   ]);
 
   // Tiny sequence: notes only in bars 0..1, stop-bar at bar 2, loop ON.
-  await page.evaluate(() => {
-    const w = globalThis as unknown as {
-      __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
-      __ydoc: { transact: (fn: () => void) => void };
-    };
-    w.__ydoc.transact(() => {
-      const n = w.__patch.nodes['score'];
-      if (!n) return;
-      n.data = {
-        notes: [
-          { id: 'n1', bar: 0, tick: 0, duration: 'quarter', midi: 60, staffStep: 10, accidental: null },
-        ],
-        dynamics: [],
-        ties: [],
-        keySignature: 0,
-        pages: 1,
-        loop: true,
-        stopBar: { bar: 2, tick: 0 },
-      };
-    });
+  await seedScoreThenPlay(page, 'score', {
+    notes: [
+      { id: 'n1', bar: 0, tick: 0, duration: 'quarter', midi: 60, staffStep: 10, accidental: null },
+    ],
+    dynamics: [],
+    ties: [],
+    keySignature: 0,
+    pages: 1,
+    loop: true,
+    stopBar: { bar: 2, tick: 0 },
   });
 
   // Wait long enough for several wraps. 240 BPM 16th = ~15.625ms;
@@ -527,30 +505,20 @@ test('score: stop-bar + loop=on wraps tickIndex back to 0 at end of sequence', a
 
 test('score: stop-bar + loop=off stops playback at end of sequence', async ({ page, rack }) => {
   await spawnPatch(page, [
-    { id: 'score', type: 'score', params: { bpm: 480, isPlaying: 1 } },
+    { id: 'score', type: 'score', params: { bpm: 480, isPlaying: 0 } },
   ]);
 
   // Stop after just 1 bar at high BPM → ~125ms total.
-  await page.evaluate(() => {
-    const w = globalThis as unknown as {
-      __patch: { nodes: Record<string, { data?: Record<string, unknown>; params?: Record<string, number> }> };
-      __ydoc: { transact: (fn: () => void) => void };
-    };
-    w.__ydoc.transact(() => {
-      const n = w.__patch.nodes['score'];
-      if (!n) return;
-      n.data = {
-        notes: [
-          { id: 'n1', bar: 0, tick: 0, duration: 'quarter', midi: 60, staffStep: 10, accidental: null },
-        ],
-        dynamics: [],
-        ties: [],
-        keySignature: 0,
-        pages: 1,
-        loop: false,
-        stopBar: { bar: 1, tick: 0 },
-      };
-    });
+  await seedScoreThenPlay(page, 'score', {
+    notes: [
+      { id: 'n1', bar: 0, tick: 0, duration: 'quarter', midi: 60, staffStep: 10, accidental: null },
+    ],
+    dynamics: [],
+    ties: [],
+    keySignature: 0,
+    pages: 1,
+    loop: false,
+    stopBar: { bar: 1, tick: 0 },
   });
 
   // Wait well past end-of-sequence.
@@ -644,55 +612,51 @@ async function waitForScoreReadout(
 // chain-end grid tick) and read the gate in the same sample — the tied-start
 // branch writes both together.
 //
-// ⚠ RED MAIN, 2026-08-02 (c31e9be9). The wait was a Playwright-side
-// `expect.poll(..., { timeout: 10_000, intervals: [125, 250, 500] })` and it
-// expired on `e2e (shard 9/10)` with `Received: -1` — the not-yet-armed
-// sentinel — on BOTH the attempt and retry1, taking the required
-// `typecheck + unit + ART + E2E` umbrella down. 246/247 in that shard passed
-// and shard 9 ran 11m27s against 10m50s / 8m04s on the two prior GREEN main
-// runs, with four CI runs in flight: propagation latency under ten parallel
-// shards, the same diagnosis the dynamic-marker test one screen up reached one
-// budget earlier. Two things were wrong and only one was the number:
-//   1. the SAMPLER competed with its own subject (see waitForScoreReadout), and
-//   2. the 30s DEFAULT TEST TIMEOUT is the real ceiling — a poll budget at or
-//      above it can never be spent, which is why the sibling's 10s → 30s bump
-//      did not actually buy 30s either. The test budget moves WITH the wait.
+// ⚠ RED MAIN, 2026-08-02 (c31e9be9) and AGAIN 2026-08-03 (run 30784972908),
+// both on `e2e (shard 9/10)`, both `Received: -1` on the attempt AND the retry.
+// #1294 blamed propagation latency under ten parallel shards and enlarged the
+// wait. THAT DIAGNOSIS WAS WRONG, and the second red disproved it outright: the
+// sampler was healthy (1001 in-page samples / 25000 ms is exactly the 25 ms
+// cadence — zero starvation) and shard 9 ran 8.6 min against 8.4 min on a green
+// main run. Nothing was slow. The subject genuinely never armed, for 25 full
+// seconds, because it never could:
+//
+//   the test spawned the node ALREADY PLAYING and seeded the music in a SECOND
+//   round trip, so grid tick 0 — the tie-START slot, the only role that writes
+//   tiedGateHoldUntilTick — could be consumed while the score was still empty.
+//   loop:false means tick 0 never comes round again. A permanent loss, and
+//   `seen: [-1]` with no NaN is its exact fingerprint: engine and node readable
+//   throughout, just never asked to play anything.
+//
+// See `seedScoreThenPlay` for the measurement and the fix. The lesson for the
+// next one: "slower here" and "genuinely different here" print the same red,
+// and a budget was the answer to neither.
 test('score: tied notes produce a single sustained envelope (engine-level held gate)', async ({ page, rack }) => {
   // 25s in-page wait bound + spawn/goto must fit INSIDE the test budget, or the
   // test timeout fires first and the bound is decorative. Failure-path only —
   // the waiter returns on first match, so green runs are unchanged.
   test.setTimeout(60_000);
   await spawnPatch(page, [
-    { id: 'score', type: 'score', params: { bpm: 120, isPlaying: 1 } },
+    { id: 'score', type: 'score', params: { bpm: 120, isPlaying: 0 } },
   ]);
 
   // Tied chain: A -> B -> C, three quarters at MIDI 60. With our held-gate
   // emission the engine reports `currentNoteId` as 'A' for the entire span,
   // and `tiedGateHoldUntilTick` is the chain-end grid tick (36).
-  await page.evaluate(() => {
-    const w = globalThis as unknown as {
-      __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
-      __ydoc: { transact: (fn: () => void) => void };
-    };
-    w.__ydoc.transact(() => {
-      const n = w.__patch.nodes['score'];
-      if (!n) return;
-      n.data = {
-        notes: [
-          { id: 'A', bar: 0, tick: 0, duration: 'quarter', midi: 60, staffStep: 10, accidental: null },
-          { id: 'B', bar: 0, tick: 12, duration: 'quarter', midi: 60, staffStep: 10, accidental: null },
-          { id: 'C', bar: 0, tick: 24, duration: 'quarter', midi: 60, staffStep: 10, accidental: null },
-        ],
-        dynamics: [],
-        ties: [
-          { id: 't1', fromNoteId: 'A', toNoteId: 'B' },
-          { id: 't2', fromNoteId: 'B', toNoteId: 'C' },
-        ],
-        keySignature: 0,
-        pages: 1,
-        loop: false,
-      };
-    });
+  await seedScoreThenPlay(page, 'score', {
+    notes: [
+      { id: 'A', bar: 0, tick: 0, duration: 'quarter', midi: 60, staffStep: 10, accidental: null },
+      { id: 'B', bar: 0, tick: 12, duration: 'quarter', midi: 60, staffStep: 10, accidental: null },
+      { id: 'C', bar: 0, tick: 24, duration: 'quarter', midi: 60, staffStep: 10, accidental: null },
+    ],
+    dynamics: [],
+    ties: [
+      { id: 't1', fromNoteId: 'A', toNoteId: 'B' },
+      { id: 't2', fromNoteId: 'B', toNoteId: 'C' },
+    ],
+    keySignature: 0,
+    pages: 1,
+    loop: false,
   });
 
   // Await the engine arming the held-gate hold-tick instead of a flat wait. The
