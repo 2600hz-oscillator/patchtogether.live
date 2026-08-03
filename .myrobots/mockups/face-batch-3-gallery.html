@@ -76,9 +76,24 @@ h1{font-size:22px;font-weight:800;margin:0 0 6px}
 .fhint{margin:3px 0 0;font-size:10.5px;line-height:1.45;color:var(--dim);max-width:64ch}
 
 /* ── ANNOTATIONS — OFF by default ────────────────────────────────────────
-   Owner 2026-08-02: the page-level sentence and the per-band description
-   "belong as annotation text but not on the card unless annotation is turned
-   on". The TITLE stays — it is the panel's name, not a note about it.
+   Owner 2026-08-02, VERBATIM: "this text is still here, i said this is
+   annotation mode text but otherwise we don't want it. in all cases. no
+   'voice' etc section, no text on the module." And, clarifying: "the name of
+   the module as text is fine, it's the type/description text that needs to go
+   away. so 'shimmershine' should show but not 'halo' or the text below it."
+
+   So the SECTION TITLE goes behind the switch with the prose. An earlier draft
+   of this gallery (and of the platform) exempted it as "the panel's name" —
+   which it is not. The panel's name is `.chrome .name`, the dock's title bar,
+   and that is untouched and always painted. `.ftitle` is a CATEGORY WORD for
+   the page ("Oscillator", "Voice", "halo"), i.e. description, and two names on
+   one panel was the complaint.
+
+   BAND LABELS (.blab) STAY. They are fieldset legends — the structural name of
+   the group of knobs beneath them — and with the hints hidden a label is the
+   only thing that says what its row belongs to. Flagged for the owner: if "no
+   text on the module" is meant to reach the legends too, this is the line to
+   move.
 
    ⚠ THE SHIPPED PLATFORM GATES THE MARKUP, not the visibility: with
    annotations off the prose is NOT IN THE DOM at all, so the pixel baseline
@@ -86,8 +101,8 @@ h1{font-size:22px;font-weight:800;margin:0 0 6px}
    static mockup with no state, so it uses `display:none` under a body class to
    draw BOTH states from one page — read the shipped behaviour off
    ModuleShell.svelte, not off this rule. */
-.fhint,.bhint{display:none}
-body.annot .fhint{display:block}
+.fhead,.bhint{display:none}
+body.annot .fhead{display:block}
 body.annot .bhint{display:inline}
 .annotbar{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:10px;
   background:#12161c;border:1px solid var(--line);border-radius:8px;padding:9px 13px;
@@ -239,10 +254,13 @@ declarative <code>face.sidebar</code>, and <code>FaceReadout.valueId</code> for 
 <p class="sub"><b>Two owner layout decisions (2026-08-02) are drawn here.</b> The
 <b>derived-readout row sits BELOW the hero graphic</b> as a full-width strip, not inline beside
 the hero control — so the picture gets the whole editor width and the numbers read as one line of
-instrumentation. And the <b>page sentence + every band description are ANNOTATION</b>: the card is
-clean at rest and the prose appears only with annotations on, from a per-viewer toggle in the dock
-title bar. The <code>face.title</code> stays either way — it is the panel's name, not a note about
-it. Both are PLATFORM behaviour: no face below asks for them.</p>
+instrumentation. And <b>the section title, the page sentence and every band description are
+ANNOTATION</b>: the card carries <b>no descriptive text at all</b> at rest, and all of it appears
+only with annotations on, from a per-viewer toggle in the dock title bar. The module's own
+<b>name</b> is unaffected — it is the title bar's, and it always paints; <code>face.title</code>
+("Oscillator", "Voice") is a category word for the PAGE, so it goes behind the switch with the
+prose. <b>Band labels stay</b> — a legend over a row of knobs is structure, not description. Both
+are PLATFORM behaviour: no face below asks for them.</p>
 <p class="sub">Every value under a knob is a <b>readout</b>. A readout tinted
 <span style="color:var(--derived)">green with a ƒ</span> is <b>DERIVED</b> — computed from the
 DSP's own law over the live params, not a readback of the knob it sits under. Each one's
@@ -262,9 +280,11 @@ three are drawn below anyway, clearly marked, so the call is yours and not mine.
 <div class="annotbar">
   <label><input type="checkbox" id="annotsw"> annotations</label>
   <span class="chip" id="annotstate">off</span>
-  <span>The DEFAULT is OFF — every face below is drawn as it actually paints at rest. Turn it on
-  to see the authored prose the dock's per-viewer <b>NOTES</b> toggle reveals: the page sentence
-  and each band's description.</span>
+  <span>The DEFAULT is OFF — every face below is drawn as it actually paints at rest, which since
+  2026-08-02 means <b>no section title and no description anywhere on the module</b>. The module's
+  own name stays (the title bar). Turn this on to see the authored prose the dock's per-viewer
+  <b>NOTES</b> toggle reveals: the section title, the page sentence, and each band's
+  description.</span>
 </div>
 
 <ul class="toc">
