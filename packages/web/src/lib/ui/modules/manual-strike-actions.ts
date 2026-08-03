@@ -357,6 +357,17 @@ function releasePressOnEngine(key: string): void {
  * the engine/node was unavailable OR the latch already held that state, and in
  * both cases nothing was scheduled (a repeated pointerdown from keyboard
  * auto-repeat must not re-fire a strike).
+ *
+ * ⚠ AND IT RECORDS, ON BOTH EDGES. Writing the engine only is what makes this
+ * seam safe, and it is ALSO what makes it invisible: `readParam` returns null
+ * for a param that never reaches the Y.Doc, so every graph-shaped oracle is now
+ * structurally blind to a press-pad — exactly the position the `action` cell was
+ * in before the ledger existed (audition-ledger.ts). The release edge is the
+ * dangerous half: with the param permanently absent, faces-parity's
+ * `readParam(…) ?? rest → toBe(rest)` release check reduced to `rest === rest`,
+ * so the headline "a momentary pad must not latch" assertion became
+ * unconditionally true the moment this function stopped writing. Both edges are
+ * recorded so both legs can fail again.
  */
 export function setMomentaryParam(
   nodeId: string,
@@ -365,26 +376,38 @@ export function setMomentaryParam(
   restValue = 0,
 ): boolean {
   const key = pressKey(nodeId, paramId);
+  const record = (delivered: boolean) =>
+    recordAudition({ nodeId, seam: 'manual-press', paramId, high, delivered });
   if (high) {
     ensurePanicListeners();
     const r = openGate(pressLatch, key);
     pressLatch = r.state;
-    if (!r.opened) return false;
+    if (!r.opened) {
+      record(false);
+      return false;
+    }
     pressRest.set(key, restValue);
     if (!pushParamOnEngine(nodeId, paramId, 1)) {
       // The engine was not there to take it — forget the latch entry, or a
       // later panic would "release" a pad that never pressed.
       pressLatch = closeGate(pressLatch, key).state;
       pressRest.delete(key);
+      record(false);
       return false;
     }
+    record(true);
     return true;
   }
   const r = closeGate(pressLatch, key);
   pressLatch = r.state;
-  if (!r.closed) return false;
+  if (!r.closed) {
+    record(false);
+    return false;
+  }
   pressRest.delete(key);
-  return pushParamOnEngine(nodeId, paramId, restValue);
+  const landed = pushParamOnEngine(nodeId, paramId, restValue);
+  record(landed);
+  return landed;
 }
 
 /**
