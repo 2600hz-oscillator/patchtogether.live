@@ -803,9 +803,43 @@ jobs:
       # to 8-10 min) and runs in its own dedicated `behavioral-coverage`
       # job below. The test titles are matched via the
       # "BEHAVIORAL input coverage" describe block name.
+      # ⚠ --global-timeout STOPS THIS SHARD DESTROYING ITS OWN EVIDENCE.
+      # The job ceiling is 20 min (above). If Playwright is still running then,
+      # GitHub HARD-KILLS the runner — which happens BEFORE the `if: always()`
+      # upload below, so no report is written and the raw log is purged later.
+      # What reaches you is `cancelled` plus a duration and nothing else.
+      # Playwright exiting on its OWN terms first still writes a blob report
+      # naming which tests were in flight.
+      #
+      # #1309's shard 4 did exactly that, and clearing the PR took elimination
+      # rather than evidence: merge base green at 9m49s, a concurrent run green
+      # at 9m41s, two local reproductions (3.0 min dev, 1.5 min preview+CI=1).
+      #
+      # 15 min (900000 ms) because the slowest shard uses ~11 of the ~17 minutes
+      # actually available inside the 20 — so anything tripping 15 was already
+      # tripping 20; it just used to die mute.
+      #
+      # ⚠ ON THE COMMAND LINE, NOT IN e2e/playwright.config.ts, DELIBERATELY.
+      # A `globalTimeout` in the config would be one number shared by all six
+      # Playwright jobs, whose ceilings are 10/15/20/20/30/40 min — so any single
+      # default sits ABOVE two of them and can never fire there: a guard that is
+      # not guarding, which is the same shape as the bug it would be fixing.
+      # It would also cost TWO re-attests for a pure-CI change: playwright.config
+      # .ts is in the WebGL basis (webgl-attest-lib STANDALONE_BASIS_FILES) AND
+      # the collab basis. This file is in neither. The flag lives HERE, where the
+      # ceiling is visible three lines up.
+      #
+      # ⚠ THIS IS THE ONLY JOB GUARDED, DELIBERATELY. It is the only one that
+      # has actually died this way, and the only one whose runtime was measured.
+      # Guarding the other five speculatively would mean five more numbers that
+      # must each stay under a ceiling they cannot see — the drift class this
+      # repo keeps getting bitten by. `scripts/ci-playwright-timeout.test.ts`
+      # enforces the invariant for whatever IS guarded and PINS the unguarded
+      # set, so adding a guard later is cheap and forgetting one is visible.
       - name: Run E2E (shard ${{ matrix.shard }}/10, blob reporter, no @collab, no @capacity, no behavioral)
         run: |
           flox activate -- npx --workspace e2e playwright test \
+            --global-timeout 900000 \
             --grep-invert "@collab|@capacity|BEHAVIORAL input coverage" \
             --shard=${{ matrix.shard }}/10 \
             --reporter=blob
