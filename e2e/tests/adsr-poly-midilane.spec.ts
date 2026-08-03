@@ -17,18 +17,74 @@
 // CI is on a software renderer; audio-capture e2e is slow there, so timeouts
 // scale with the number of capture windows rather than a flat value, and we keep
 // the capture count modest.
+//
+// ── THE OBSERVATION WINDOW IS A BOUNDED CONDITION, NOT A FIXED 600 ms ───────
+//
+// This file went red on PR #1303 e2e shard 1/10 (run 30758889295) with
+// `Received: 0` on `cube poly chord`, on the initial attempt AND the retry. It
+// was NOT a silent module: the trace shows the "600 ms capture window"
+// collapsed to a SINGLE analyser peek on both attempts —
+//
+//     attempt     ONE readScopeSnapshot     ONE waitForTimeout(60)
+//     initial          255 ms                    392 ms      → 647 ms > 600 ms
+//     retry #1         325 ms                    393 ms      → 718 ms > 600 ms
+//
+// — because the old `readScopePeakOverWindow` polled from PLAYWRIGHT, one CDP
+// round-trip per sample, on the same starved main thread as the audio graph and
+// the step scheduler it was measuring. One 42 ms peek, ~250 ms after the chord
+// steps were seeded, and CUBE's poly gating means an un-gated lane is EXACTLY
+// 0.0000 — so "not yet sounding" and "silent" printed identically. See the
+// block comment on `readScopePeakOverWindow`; the sampler now runs INSIDE the
+// page and reports its own vitals.
+//
+// The tests that ask "does this ever make sound?" therefore observe UNTIL the
+// voice is audible, bounded by a cap — the same assertion on every machine,
+// where a fixed wall-clock window is a different assertion per runner (the
+// CLAUDE.md frames-not-milliseconds argument, in the audio domain: a gated
+// voice needs the MAIN-THREAD step scheduler to tick, and how many ticks fit in
+// 600 ms is a property of the runner, not of the module). On a healthy machine
+// they return in well under the old 600 ms, so this SAVES CI wall time.
+//
+// ── THIS FILE NEGATIVE-CONTROLS ITS OWN INSTRUMENT, ON EVERY RUN ────────────
+//
+// Both directions are permanent legs here rather than one-off authoring-time
+// checks, so the sampler is re-validated by every run of this spec:
+//
+//   * MUST-READ-NONZERO — `cube back-compat` drives a free-running drone with
+//     nothing patched to poly/trigger. No gate, no scheduler, no envelope: the
+//     signal is unconditionally present. If the sampler ever stops seeing audio
+//     that is there, that test goes RED.
+//   * MUST-READ-ZERO — `cube no-stray-drone` patches a TRIGGER that never fires
+//     and asserts SILENCE over the FULL window (deliberately no `untilPeak`).
+//     If the sampler ever manufactures signal, or the early-exit leaks into a
+//     silence assertion, that test goes RED.
+//
+// And `readScopePeakOverWindow` itself throws when it took ZERO samples, so
+// "the instrument never looked" can no longer print as "the module is silent".
 
 import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
-import { readScopePeakOverWindow } from './_module-coverage-helpers';
+import { readScopePeakOverWindow, describeScopeWindow } from './_module-coverage-helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
-// Each audio-capture window polls ~0.6s. Scale the per-test timeout by the
-// number of windows a test runs (CI SwiftShader is slow on audio-capture e2e).
-const CAPTURE_MS = 600;
+/** Full-window observation for the SILENCE assertion — no early exit, because
+ *  "it never got loud" is only meaningful if we watched the whole time. */
+const SILENCE_WINDOW_MS = 600;
+
+/** CAP on the "wait until audible" observation. BOUNDS THE FAILURE; it is NOT
+ *  the gate — a sounding voice ends the window the moment it crosses the floor,
+ *  typically in a couple of hundred ms. Sized for a contended CI shard where a
+ *  main-thread step scheduler can stall for most of a second at a time (the
+ *  trace above measured a single `waitForTimeout(60)` taking 392 ms). */
+const AUDIBLE_CAP_MS = 8_000;
+
+/** The audible floor every "does it make sound?" assertion in this file uses.
+ *  Shared so the wait target and the assertion can never drift apart. */
+const AUDIBLE_FLOOR = 0.01;
+
 function timeoutFor(captureWindows: number): number {
-  return 30_000 + captureWindows * 8_000;
+  return 30_000 + captureWindows * 12_000;
 }
 
 /** Seed a SEQUENCER with always-on C4 steps so its gate fires every step. */
@@ -82,8 +138,13 @@ test('dx7 master-ADSR: a gated poly note carries audio through the master VCA', 
     });
   });
 
-  const { peak } = await readScopePeakOverWindow(page, 'sc', CAPTURE_MS);
-  expect(peak, 'DX7 OUT should carry audio when gated (master ADSR open)').toBeGreaterThan(0.01);
+  const w = await readScopePeakOverWindow(page, 'sc', AUDIBLE_CAP_MS, {
+    untilPeak: AUDIBLE_FLOOR,
+  });
+  expect(
+    w.peak,
+    `DX7 OUT should carry audio when gated (master ADSR open) — ${describeScopeWindow(w)}`,
+  ).toBeGreaterThan(AUDIBLE_FLOOR);
 });
 
 test('cube mono TRIGGER gates the per-voice envelope (audio opens on trigger)', async ({ page, rack, errorWatch }) => {
@@ -104,8 +165,13 @@ test('cube mono TRIGGER gates the per-voice envelope (audio opens on trigger)', 
   );
   await seedSeqSteps(page, 'seq');
 
-  const { peak } = await readScopePeakOverWindow(page, 'sc', CAPTURE_MS);
-  expect(peak, 'CUBE L should carry audio when the TRIGGER gate fires').toBeGreaterThan(0.01);
+  const w = await readScopePeakOverWindow(page, 'sc', AUDIBLE_CAP_MS, {
+    untilPeak: AUDIBLE_FLOOR,
+  });
+  expect(
+    w.peak,
+    `CUBE L should carry audio when the TRIGGER gate fires — ${describeScopeWindow(w)}`,
+  ).toBeGreaterThan(AUDIBLE_FLOOR);
 });
 
 test('cube back-compat: an unpatched TRIGGER keeps CUBE droning (env skipped)', async ({ page, rack, errorWatch }) => {
@@ -124,8 +190,16 @@ test('cube back-compat: an unpatched TRIGGER keeps CUBE droning (env skipped)', 
     ],
   );
 
-  const { peak } = await readScopePeakOverWindow(page, 'sc', CAPTURE_MS);
-  expect(peak, 'CUBE must keep droning with no TRIGGER patched (legacy free-run)').toBeGreaterThan(0.01);
+  // PERMANENT NEGATIVE CONTROL, must-read-NONZERO direction: an unconditional
+  // drone — no gate, no scheduler, no envelope. If the sampler ever goes blind
+  // to audio that is genuinely present, this is the test that says so.
+  const w = await readScopePeakOverWindow(page, 'sc', AUDIBLE_CAP_MS, {
+    untilPeak: AUDIBLE_FLOOR,
+  });
+  expect(
+    w.peak,
+    `CUBE must keep droning with no TRIGGER patched (legacy free-run) — ${describeScopeWindow(w)}`,
+  ).toBeGreaterThan(AUDIBLE_FLOOR);
 });
 
 test('cube no-stray-drone: a TRIGGER patched but NEVER gated is SILENT (gated, not droning)', async ({ page, rack, errorWatch }) => {
@@ -151,8 +225,15 @@ test('cube no-stray-drone: a TRIGGER patched but NEVER gated is SILENT (gated, n
     ],
   );
 
-  const { peak } = await readScopePeakOverWindow(page, 'sc', CAPTURE_MS);
-  expect(peak, 'a patched-but-never-gated TRIGGER must keep CUBE SILENT (no stray drone)').toBeLessThan(0.01);
+  // PERMANENT NEGATIVE CONTROL, must-read-ZERO direction: the FULL window, no
+  // `untilPeak` (an early exit has no meaning for an assertion of silence, and
+  // omitting it here also proves the early exit cannot leak into one). If the
+  // sampler ever manufactures signal, this is the test that says so.
+  const w = await readScopePeakOverWindow(page, 'sc', SILENCE_WINDOW_MS);
+  expect(
+    w.peak,
+    `a patched-but-never-gated TRIGGER must keep CUBE SILENT (no stray drone) — ${describeScopeWindow(w)}`,
+  ).toBeLessThan(AUDIBLE_FLOOR);
 });
 
 test('wavecel mono TRIGGER gates the per-voice envelope (audio opens on trigger)', async ({ page, rack, errorWatch }) => {
@@ -173,8 +254,13 @@ test('wavecel mono TRIGGER gates the per-voice envelope (audio opens on trigger)
   );
   await seedSeqSteps(page, 'seq');
 
-  const { peak } = await readScopePeakOverWindow(page, 'sc', CAPTURE_MS);
-  expect(peak, 'WAVECEL out_l should carry audio when the TRIGGER gate fires').toBeGreaterThan(0.01);
+  const w = await readScopePeakOverWindow(page, 'sc', AUDIBLE_CAP_MS, {
+    untilPeak: AUDIBLE_FLOOR,
+  });
+  expect(
+    w.peak,
+    `WAVECEL out_l should carry audio when the TRIGGER gate fires — ${describeScopeWindow(w)}`,
+  ).toBeGreaterThan(AUDIBLE_FLOOR);
 });
 
 test('cube poly chord (POLYSEQZ → poly) drives the per-voice envelopes', async ({ page, rack, errorWatch }) => {
@@ -213,6 +299,18 @@ test('cube poly chord (POLYSEQZ → poly) drives the per-voice envelopes', async
     });
   });
 
-  const { peak } = await readScopePeakOverWindow(page, 'sc', CAPTURE_MS);
-  expect(peak, 'CUBE L should carry audio when a poly chord gates the voices').toBeGreaterThan(0.01);
+  // THE REGRESSION THIS FILE'S REWRITE EXISTS FOR. CUBE's poly gating makes an
+  // un-gated lane contribute EXACTLY 0.0000 (packages/dsp/src/cube.ts — the
+  // no-stray-drone rule), and POLYSEQZ's first gated chord cannot reach the
+  // audio thread until the MAIN-THREAD step scheduler ticks past its 200 ms
+  // lookahead with the freshly-seeded steps. Observing for a fixed 600 ms of
+  // Playwright wall clock asked a question whose answer depended on the
+  // runner's load; observing UNTIL audible, bounded, asks the module.
+  const w = await readScopePeakOverWindow(page, 'sc', AUDIBLE_CAP_MS, {
+    untilPeak: AUDIBLE_FLOOR,
+  });
+  expect(
+    w.peak,
+    `CUBE L should carry audio when a poly chord gates the voices — ${describeScopeWindow(w)}`,
+  ).toBeGreaterThan(AUDIBLE_FLOOR);
 });

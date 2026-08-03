@@ -1,6 +1,8 @@
 // packages/dsp/src/lib/warrensspectrum-dsp.ts
 //
-// WARREN'S SPECTRUM — the SPECTRAL RESYNTH engine, phase 1.
+// WARREN'S SPECTRUM — the SPECTRAL RESYNTH engine (phase 1) + the routing
+// into the 8-band FILTERBANK (phase 2; the bank itself is in
+// ./warrensspectrum-filterbank.ts).
 //
 // A port of the SPECTRAL engine of the Warren's Spectrum VST (project id
 // `callsine`), MIT-licensed:
@@ -103,6 +105,17 @@
 //
 // 5. `fastSin2Pi` is NOT ported: measured 1.01× against V8's `Math.sin`
 //    intrinsic (the ~4× the polynomial buys in C++ does not exist in JS).
+//
+// ⚠ Divergence 4 above was written for phase 1 and is now PARTLY SUPERSEDED:
+// the filterbank IS ported (phase 2), so the module is mono-in / STEREO-out.
+// The FX sends, the feedback loop, the Wavetabler and the master filter are
+// still absent — see ./warrensspectrum-filterbank.ts for what phase 2 does
+// and does not include.
+
+import {
+  WsFilterBank,
+  type WsBandSettings,
+} from './warrensspectrum-filterbank';
 
 // ---------------------------------------------------------------------------
 // Fixed algorithm constants.
@@ -151,6 +164,22 @@ const RESIDUAL_ENV_TAU_S = 0.025;
 /** xorshift32 seed — `SpectralResynth.h:200`. Constant so the engine is
  *  BYTE-REPRODUCIBLE, which is what makes an ART golden possible at all. */
 export const WS_RESIDUAL_NOISE_SEED = 0x9e3779b9;
+
+/** FILTERBANK WET / INPUT MIX declared ranges (phase 2). Exported for the
+ *  same one-place-only reason as the SLICE bounds above. */
+export const WS_WET_MIN = 0;
+export const WS_WET_MAX = 1;
+export const WS_INPUT_MIX_MIN = 0;
+export const WS_INPUT_MIX_MAX = 1;
+
+/** One-pole time constant on WET, seconds. */
+const WET_SMOOTH_TAU_S = 0.005;
+/** Below this the smoothed WET SNAPS to exactly 0 (only while the target is
+ *  0). A one-pole never reaches its target, so without the snap a bank that
+ *  was turned off would run forever on denormal-scale coefficients — and,
+ *  worse, the "default costs nothing" claim would be false by an epsilon that
+ *  no test could see. */
+const WET_OFF_EPSILON = 1e-6;
 
 // ---------------------------------------------------------------------------
 // Precomputed tables (module scope — shared by every instance, read-only).
@@ -411,6 +440,33 @@ export class WarrensSpectrumEngine {
   private gainLinear = 1;
   private frozen = false;
 
+  // ---- filterbank (phase 2) ----
+  /** FILTERBANK WET target. ⚠ DEFAULT 0, and that is a DELIBERATE DIVERGENCE
+   *  from the VST's 1.0 (`PluginParams.h` "Filterbank Wet"). Upstream the bank
+   *  is the only audio path from the first launch; here the module SHIPPED in
+   *  phase 1 without a bank, so defaulting it in would silently re-voice every
+   *  rack already saved against phase 1. Opt-in keeps a saved rack sounding
+   *  exactly as it was recorded — see the bit-identity assertion in
+   *  warrensspectrum-dsp.test.ts, which is what holds this honest. */
+  private filterbankWet = 0;
+  /** Raw input added on top of the main bus. 0 upstream and here. */
+  private inputMix = 0;
+  /** Assigned in the constructor — a field initializer would run before
+   *  `this.sampleRate` is set. */
+  private bank!: WsFilterBank;
+  /** One-pole-smoothed WET. Automating a k-rate gain in per-quantum steps
+   *  zippers; more importantly the smoother is what lets the bank be SKIPPED
+   *  at 0 without a click when it is opened. At target 0 from rest it holds
+   *  EXACTLY 0, so the default path stays bit-identical. */
+  private wetSmoothed = 0;
+  private wetSmoothCoef = 0;
+  /** True while the bank has been running — so the reset on the way down
+   *  happens ONCE, not every sample. */
+  private bankRunning = false;
+  /** Right channel of the last `processSample`. See `processSample`'s note on
+   *  why the stereo half is a field rather than a returned pair. */
+  private rightOut = 0;
+
   // ---- derived ----
   private ampCoef = 0;
   private freqCoefPerHop = 0;
@@ -437,6 +493,10 @@ export class WarrensSpectrumEngine {
     }
     const tauSamples = Math.max(1, sampleRate * RESIDUAL_ENV_TAU_S);
     this.residualEnvCoef = 1 - Math.exp(-1 / tauSamples);
+    this.bank = new WsFilterBank(sampleRate);
+    // ~5 ms one-pole on WET. Short enough to feel immediate, long enough that
+    // a per-quantum k-rate step (2.67 ms at 128/48k) does not read as a step.
+    this.wetSmoothCoef = 1 - Math.exp(-1 / Math.max(1, sampleRate * WET_SMOOTH_TAU_S));
     this.recomputeSlice();
     this.recomputeSlew();
   }
@@ -461,6 +521,10 @@ export class WarrensSpectrumEngine {
     this.f0Hz = 0;
     this.f0Conf = 0;
     this.committedFrames = 0;
+    this.bank.reset();
+    this.wetSmoothed = 0;
+    this.bankRunning = false;
+    this.rightOut = 0;
   }
 
   // ---- setters (all idempotent; only `slice`/`slew` recompute anything) ----
@@ -561,6 +625,39 @@ export class WarrensSpectrumEngine {
   /** FREEZE — stop committing analysis frames; the bank keeps playing. */
   setFrozen(f: boolean): void {
     this.frozen = f;
+  }
+
+  // ---- filterbank (phase 2) ----
+
+  /** FILTERBANK WET, 0..1. 0 = the bank is out of circuit entirely (and
+   *  costs nothing); 1 = the resynth is heard ONLY through the bands. */
+  setFilterbankWet(v: number): void {
+    this.filterbankWet = Math.max(WS_WET_MIN, Math.min(WS_WET_MAX, v));
+  }
+
+  /** INPUT MIX, 0..1 — the RAW analysed input added on top of the main bus.
+   *  Independent of WET: it is the only way to hear the unprocessed source. */
+  setInputMix(v: number): void {
+    this.inputMix = Math.max(WS_INPUT_MIX_MIN, Math.min(WS_INPUT_MIX_MAX, v));
+  }
+
+  /** Replace the whole 8-band table. Callers pass NORMALIZED bands —
+   *  `wsNormalizeBands` is the one range-checking seam (see its comment for
+   *  why this table cannot lean on AudioParam clamping). */
+  setBands(bands: readonly WsBandSettings[]): void {
+    this.bank.setBands(bands);
+  }
+
+  /** Right channel of the most recent `processSample`. */
+  get rightChannel(): number {
+    return this.rightOut;
+  }
+
+  /** Is the bank actually running this sample? Exported for the CPU budget
+   *  test, which must be able to prove the default path SKIPS it rather than
+   *  merely multiplying its result by zero. */
+  get bankActive(): boolean {
+    return this.bankRunning;
   }
 
   // ---- SLICE introspection (the negative control reads these) ----
@@ -1052,7 +1149,79 @@ export class WarrensSpectrumEngine {
       }
     }
 
-    return (sample + residual * effResidual) * this.gainLinear;
+    // (4) The mono resynth, PRE-GAIN. Upstream this is `resynthBuf_`, and
+    //     everything below is `processBlock`'s step [3] (the FILTERBANK WET
+    //     crossfade + INPUT MIX add) followed by the master gain at [6].
+    const dry = sample + residual * effResidual;
+
+    // (5) WET, smoothed, with an exact-zero snap on the way down.
+    //     The snap is to the TARGET, not just to zero. A one-pole reaches
+    //     neither end, and both ends are load-bearing: at 0 an un-snapped
+    //     residue would keep the bank running forever on denormal-scale
+    //     coefficients and make "the default costs nothing" false by an
+    //     epsilon no test could see; at 1 it would leak ~-80 dB of DRY into
+    //     a bus the user asked to be 100 % wet, so "WET 1 is the bank alone"
+    //     would be approximately-true prose over a literally-false signal —
+    //     and a hard-panned band would measurably bleed into the far channel.
+    const wetTarget = this.filterbankWet;
+    let wet = this.wetSmoothed + this.wetSmoothCoef * (wetTarget - this.wetSmoothed);
+    if (Math.abs(wetTarget - wet) < WET_OFF_EPSILON) wet = wetTarget;
+    this.wetSmoothed = wet;
+    const mix = this.inputMix;
+
+    // (6) THE DEFAULT PATH — and the reason phase 2 does not re-voice a rack
+    //     saved against phase 1.
+    //
+    //     ⚠ This is NOT an optimisation with a numerically-equal slow path
+    //     standing behind it; it is the SAME EXPRESSION phase 1 returned,
+    //     `(sample + residual * effResidual) * gainLinear`, reached by the
+    //     same two float operations in the same order. The general path below
+    //     would also be bit-identical here on IEEE-754 (`0*b + 1*d + 0*r`
+    //     collapses exactly), but that is an argument, and an argument is not
+    //     what the ART `.f32` files are pinned to. Taking the untouched
+    //     expression makes the byte-identity a property of the code rather
+    //     than of a floating-point proof — and it makes the default rack pay
+    //     literally zero for a bank it is not using (8 SVFs/sample), which
+    //     the CPU-budget test asserts by reading `bankActive`.
+    if (wet <= 0) {
+      if (this.bankRunning) {
+        this.bank.reset();
+        this.bankRunning = false;
+      }
+      if (mix <= 0) {
+        const monoOut = dry * this.gainLinear;
+        this.rightOut = monoOut;
+        return monoOut;
+      }
+      const bothOut = (dry + mix * input) * this.gainLinear;
+      this.rightOut = bothOut;
+      return bothOut;
+    }
+
+    // (7) Bank in circuit — this is where the module becomes STEREO. The
+    //     engine above is mono; `WsFilterBank`'s equal-power per-band pan is
+    //     the only stereo-producing stage in the whole chain.
+    this.bank.process(dry);
+    this.bankRunning = true;
+    const dryPart = (1 - wet) * dry;
+    const inPart = mix * input;
+    const g = this.gainLinear;
+    this.rightOut = (wet * this.bank.outR + dryPart + inPart) * g;
+    return (wet * this.bank.outL + dryPart + inPart) * g;
+  }
+
+  /**
+   * Advance one sample and write BOTH channels into `out` (length >= 2).
+   *
+   * The mono `processSample` above is still the primary entry point — it
+   * returns LEFT and stashes RIGHT — because that is the signature the ART
+   * profile and every phase-1 unit gate already drive, and changing it would
+   * have re-pinned three baselines for no audible reason. This is the
+   * convenience wrapper for the worklet's two-channel write.
+   */
+  processSampleStereo(out: Float32Array, input: number, pitchTranspose = 1): void {
+    out[0] = this.processSample(input, pitchTranspose);
+    out[1] = this.rightOut;
   }
 
   /** Convenience block render — used by the unit gates and the ART profile. */

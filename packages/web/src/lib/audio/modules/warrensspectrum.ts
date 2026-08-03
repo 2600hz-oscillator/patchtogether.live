@@ -27,12 +27,18 @@
 // asserts all four by exact id, so a rename fails a test rather than a user's
 // rack.
 //
-// ── PHASE 1 SCOPE ─────────────────────────────────────────────────────────
-// SPECTRAL engine only, MONO. NOT in phase 1: the 8-band filterbank (and so
-// no stereo — pan lives in the bank), the WAVETABLE and MASSPASS engines, the
-// feedback loop, the two FX slots, the master filter, host-tempo SLICE, and
-// `.wspr` fingerprint interchange. That is ~11 of the plugin's 104 runtime
-// params. Patch the rack for the rest — we have one.
+// ── SCOPE (phase 1 + phase 2) ─────────────────────────────────────────────
+// PHASE 1 shipped the SPECTRAL engine, MONO.
+// PHASE 2 adds the 8-band resonant FILTERBANK — and with it STEREO, because
+// the per-band equal-power pan is the only stage in the plugin's whole chain
+// that makes an image (`PluginProcessor::processBlock` sums to mono before
+// the engine and `resynthBuf_` is one channel). It also adds the bank's two
+// routing controls, FILTERBANK WET (`resynthLevel`) and INPUT MIX.
+//
+// STILL ABSENT: the WAVETABLE and MASSPASS engines, the feedback loop, the
+// two FX slots (and so the bands' `fx1Send`/`fx2Send`, which would be
+// controls with nowhere to send), the master filter, host-tempo SLICE, and
+// `.wspr` fingerprint interchange. Patch the rack for the rest — we have one.
 //
 // ── DELIBERATE DIVERGENCES FROM THE VST ───────────────────────────────────
 // 1. SLICE is CORRECT, not faithful: the whole declared 2..200 ms range works
@@ -52,6 +58,17 @@
 //    of one AudioWorklet quantum on a fast machine, for ONE instance.
 // 3. The VST's separate PARTIAL CAP choice param is NOT ported: the 256
 //    ceiling IS the cap, so a second control would only restate the range.
+// 4. FILTERBANK WET (`resynthLevel`) defaults to **0**; upstream it is 1.
+//    This is the one divergence that is about OUR history rather than the
+//    plugin's: the bank is always in circuit upstream because it has always
+//    been there, whereas this module SHIPPED without one, so defaulting it
+//    in would silently re-voice every rack saved against phase 1. Opt-in
+//    keeps a saved rack sounding exactly as recorded; turn it to 1 and the
+//    routing is the plugin's. Evidence, not assertion: adding the bank left
+//    all three ART `.f32` baselines byte-for-byte identical (only the `.sha`
+//    pins moved), and `warrensspectrum-filterbank.test.ts` proves at the
+//    unit level that a scrambled band table cannot move ONE sample at WET 0
+//    while moving it a great deal at WET 1.
 //
 // Param ids deliberately match the VST's `RangedAudioParameter` ids
 // (`src/PluginParams.h`) so a future `.wspr` fingerprint import/export
@@ -93,10 +110,34 @@ import type { AudioModuleDef } from '$lib/audio/module-registry';
 // out of node_modules/@patchtogether.live/dsp/src. Importing them is what
 // keeps the def's declared ranges and the DSP's clamps from drifting apart.
 import {
+  WS_INPUT_MIX_MAX,
+  WS_INPUT_MIX_MIN,
   WS_MAX_TRACKS,
   WS_SLICE_MAX_MS,
   WS_SLICE_MIN_MS,
+  WS_WET_MAX,
+  WS_WET_MIN,
 } from '../../../../../dsp/src/lib/warrensspectrum-dsp';
+import {
+  WS_BAND_CUTOFF_MAX_HZ,
+  WS_BAND_CUTOFF_MIN_HZ,
+  WS_BAND_Q_MAX,
+  WS_BAND_Q_MIN,
+  WS_BAND_SEND_MAX,
+  WS_BAND_SEND_MIN,
+  WS_NUM_BANDS,
+  wsDefaultBands,
+  wsNormalizeBands,
+  type WsBandSettings,
+} from '../../../../../dsp/src/lib/warrensspectrum-filterbank';
+
+// Re-exported so the CARD imports its band ranges from the DEF, never from
+// the dsp package directly — same one-place-only rule as
+// WARRENSSPECTRUM_RANGES, and the same relative-path reason the import above
+// avoids the `@patchtogether.live/dsp` alias (a worktree may not symlink the
+// workspace package into node_modules).
+export { WS_NUM_BANDS, wsDefaultBands };
+export type { WsBandSettings };
 import workletUrl from '@patchtogether.live/dsp/dist/warrensspectrum.js?url';
 
 const loadedContexts = new WeakSet<BaseAudioContext>();
@@ -122,8 +163,57 @@ export const WARRENSSPECTRUM_RANGES = {
   spectralSlice: { min: WS_SLICE_MIN_MS, max: WS_SLICE_MAX_MS, defaultValue: 10 },
   spectralCenter: { min: -3600, max: 3600, defaultValue: 0 },
   engineFreeze: { min: 0, max: 1, defaultValue: 0 },
+  // ⚠ FILTERBANK WET defaults to 0, NOT the VST's 1.0. See the DIVERGENCES
+  // block at the top of this file (divergence 4).
+  resynthLevel: { min: WS_WET_MIN, max: WS_WET_MAX, defaultValue: 0 },
+  inputMix: { min: WS_INPUT_MIX_MIN, max: WS_INPUT_MIX_MAX, defaultValue: 0 },
   gain: { min: -60, max: 12, defaultValue: 0 },
 } as const satisfies Record<string, { min: number; max: number; defaultValue: number }>;
+
+/**
+ * The five per-band controls, declared ONCE — ranges, curve, units and label.
+ *
+ * These are NOT `ParamDef`s (the bank is a control FAMILY, not 40 params), so
+ * `paramSpec()` cannot serve them and the card would otherwise hand-type
+ * `min={20} max={20000} curve="log" units="Hz"`. That is precisely the
+ * divergence class `card-range-source.test.ts` exists to stop, and it does
+ * not care whether the control is backed by a ParamDef — a re-typed `curve`
+ * puts the fader's midpoint a decade away from where the DSP's clamp is,
+ * ParamDef or no ParamDef. So the family gets the same single source of
+ * truth a param would have, with the bounds imported from the engine.
+ */
+export const WARRENSSPECTRUM_BAND_SPEC = {
+  cutoffHz: { min: WS_BAND_CUTOFF_MIN_HZ, max: WS_BAND_CUTOFF_MAX_HZ, curve: 'log', units: 'Hz', label: 'Cutoff' },
+  q: { min: WS_BAND_Q_MIN, max: WS_BAND_Q_MAX, curve: 'log', units: undefined, label: 'Res' },
+  type: { min: 0, max: 1, curve: 'linear', units: undefined, label: 'Type' },
+  pan: { min: -1, max: 1, curve: 'linear', units: undefined, label: 'Pan' },
+  send: { min: WS_BAND_SEND_MIN, max: WS_BAND_SEND_MAX, curve: 'linear', units: undefined, label: 'Send' },
+} as const satisfies Record<
+  keyof WsBandSettings,
+  { min: number; max: number; curve: 'log' | 'linear'; units: string | undefined; label: string }
+>;
+
+/** `node.data` key holding the 8-band table. */
+export const WARRENSSPECTRUM_BANDS_KEY = 'wsBands';
+/** `node.data` key holding the band-table revision counter — bumped by the
+ *  card on every edit. The factory polls it, exactly as DX7 polls `voiceRev`,
+ *  because a Yjs map mutation from a REMOTE peer arrives with no local
+ *  callback and would otherwise never reach the worklet. */
+export const WARRENSSPECTRUM_BANDS_REV_KEY = 'wsBandsRev';
+
+/** Read the band table off a node, normalized. The card, the factory and the
+ *  tests all come through here so an old/absent/partial table resolves to the
+ *  SAME 8 bands everywhere. */
+export function warrensspectrumBands(node: { data?: Record<string, unknown> } | undefined): WsBandSettings[] {
+  const raw = node?.data?.[WARRENSSPECTRUM_BANDS_KEY];
+  // A Yjs array proxy is not `Array.isArray`, so unwrap it to a plain array
+  // first — `wsNormalizeBands` would otherwise fall back to the defaults for
+  // a table that is genuinely present (the DX7 structured-clone scar).
+  const arr = Array.isArray(raw) ? raw : raw && typeof (raw as { toJSON?: unknown }).toJSON === 'function'
+    ? (raw as { toJSON(): unknown }).toJSON()
+    : raw;
+  return wsNormalizeBands(arr);
+}
 
 export const warrensspectrumDef: AudioModuleDef = {
   // ⚠ DOUBLE-S, deliberately. The retired resonator bank was `warrenspectrum`
@@ -185,7 +275,22 @@ export const warrensspectrumDef: AudioModuleDef = {
     { id: 'spectralStab', label: 'Stability', ...WARRENSSPECTRUM_RANGES.spectralStab, curve: 'discrete' },
     { id: 'spectralSlew', label: 'Slew', ...WARRENSSPECTRUM_RANGES.spectralSlew, curve: 'linear', units: 's' },
     { id: 'spectralCenter', label: 'Center', ...WARRENSSPECTRUM_RANGES.spectralCenter, curve: 'linear', units: 'cents' },
+    { id: 'resynthLevel', label: 'Bank Wet', ...WARRENSSPECTRUM_RANGES.resynthLevel, curve: 'linear' },
+    { id: 'inputMix', label: 'Input Mix', ...WARRENSSPECTRUM_RANGES.inputMix, curve: 'linear' },
     { id: 'gain', label: 'Gain', ...WARRENSSPECTRUM_RANGES.gain, curve: 'linear', units: 'dB' },
+  ],
+
+  // The 8-band filterbank is ONE panel, not 40 cells. Per the plan's §5.3
+  // ("the only honest way to fit this module"), the bank's five per-band
+  // values live in `node.data` and are edited by a single addressable strip,
+  // so they cost one doc blob and one face cell instead of forty.
+  controlFamilies: [
+    {
+      id: 'ws-filterbank',
+      label: 'Filterbank — 8 bands',
+      kind: 'cell',
+      testidPrefix: 'ws-band',
+    },
   ],
 
   docs: {
@@ -206,7 +311,7 @@ export const warrensspectrumDef: AudioModuleDef = {
       center_cv: 'CV that adds to CENTER, transposing the output in cents.',
     },
     outputs: {
-      out: 'The mono resynthesis: the tracked partials rendered by the oscillator bank, plus the 16-band noise residual, transposed and levelled. Held steady while FREEZE is engaged.',
+      out: 'The resynthesis: the tracked partials rendered by the oscillator bank, plus the 16-band noise residual, transposed and levelled. Held steady while FREEZE is engaged. It is a STEREO output, but it only carries a stereo image once BANK WET is up and the filterbank\'s bands are panned — the spectral engine ahead of it is mono, so with the bank out of circuit both channels carry the identical signal.',
     },
     controls: {
       spectralPartials:
@@ -229,6 +334,12 @@ export const warrensspectrumDef: AudioModuleDef = {
         'Smoothing time for each partial, 0.02 to 4 seconds — applied to amplitude per sample and to frequency per analysis frame. Short values follow the input crisply; long values glide partials between analyses, smearing the resynthesis into an evolving pad. Frequency smoothing is also why a partial drifting between FFT bins glides instead of chirping.',
       spectralCenter:
         'Transposes the rebuilt spectrum by up to ±3600 cents (±3 octaves), applied after analysis so the whole bank moves coherently and the tracking is unaffected. Adds to whatever the V/oct PITCH input contributes.',
+      resynthLevel:
+        'How much of the output comes through the 8-band FILTERBANK: 0 is the bare resynthesis, 1 is the resynthesis heard ONLY through the bands. It is a crossfade, not a level — turning it up does not make the module louder, it swaps one path for the other. It also decides whether this module is mono or stereo, because the per-band PAN is the only stage in the whole chain that makes a stereo image. NOTE: the original plugin ships this at 1, with the bank always in circuit; here it defaults to 0 so that adding the filterbank cannot change how a rack you already saved sounds. Turn it up and the bank is exactly the plugin\'s.',
+      inputMix:
+        'Adds the RAW audio from AUDIO IN straight onto the output, on top of everything else. Independent of BANK WET — it is the only way to hear the unprocessed source, so it is what you reach for to blend a little of the real signal back under a heavily-thinned resynthesis, or to use the module as a parallel effect rather than an insert. It arrives equally in both channels, since the input is mono.',
+      'ws-filterbank-{n}':
+        'One of the 8 parallel resonant bands the output passes through when BANK WET is up. Each band is a filter with its own CUTOFF (20 Hz–20 kHz), RESONANCE (0.5–20), TYPE (a continuous morph from low-pass through band-pass to high-pass), PAN and SEND. SEND is the band\'s level into the output and doubles as its on/off switch — a band at 0 is skipped entirely and costs nothing. PAN is where stereo comes from: the engine ahead of this is mono, so spreading the bands across the image is the only way to widen the module. The defaults are the plugin\'s own opening layout — cutoffs log-spaced at 60/120/250/500 Hz and 1/2/4/8 kHz, the three lowest bands high-pass, the two middle band-pass, the three highest low-pass — which reads as a broad EQ rather than a resonator comb until you raise RESONANCE.',
       gain: 'Output level in dB, −60 to +12.',
     },
   },
@@ -245,7 +356,10 @@ export const warrensspectrumDef: AudioModuleDef = {
     const workletNode = new AudioWorkletNode(ctx, 'warrensspectrum', {
       numberOfInputs: 3,
       numberOfOutputs: 1,
-      outputChannelCount: [1],
+      // STEREO from phase 2 — the filterbank's per-band pan needs somewhere
+      // to put an image. Both channels carry the identical sample while
+      // BANK WET is 0 (the default), so a mono rack is unaffected.
+      outputChannelCount: [2],
     });
 
     const params = workletNode.parameters as unknown as Map<string, AudioParam>;
@@ -253,6 +367,44 @@ export const warrensspectrumDef: AudioModuleDef = {
       const v = (node.params ?? {})[def.id] ?? def.defaultValue;
       params.get(def.id)?.setValueAtTime(v, ctx.currentTime);
     }
+
+    // ---- the 8-band table (NOT AudioParams — see the worklet header) ----
+    //
+    // Sent once at boot so a saved rack starts on ITS bands rather than the
+    // defaults, then re-sent whenever the revision counter moves. The poll
+    // mirrors DX7's `voiceRev`: a band edited by a REMOTE collaborator lands
+    // in the Y.Doc with no local callback, so a change-event subscription
+    // would deliver local edits and silently drop everyone else's.
+    let lastBandsRev = -1;
+    function pushBands(): void {
+      const bands = warrensspectrumBands(node);
+      // Hand-built plain objects: `postMessage` structured-clones, and a Yjs
+      // proxy throws "could not be cloned" — the exact failure that left DX7
+      // playing a stale patch while the UI showed the new one.
+      workletNode.port.postMessage({
+        type: 'bands',
+        bands: bands.map((b) => ({
+          cutoffHz: Number(b.cutoffHz),
+          q: Number(b.q),
+          type: Number(b.type),
+          pan: Number(b.pan),
+          send: Number(b.send),
+        })),
+      });
+    }
+    pushBands();
+    const BANDS_POLL_MS = 120;
+    let bandsTimer: ReturnType<typeof setTimeout> | undefined;
+    function pollBands(): void {
+      const rev = Number(node.data?.[WARRENSSPECTRUM_BANDS_REV_KEY] ?? 0);
+      if (rev !== lastBandsRev) {
+        lastBandsRev = rev;
+        pushBands();
+      }
+      bandsTimer = setTimeout(pollBands, BANDS_POLL_MS);
+    }
+    lastBandsRev = Number(node.data?.[WARRENSSPECTRUM_BANDS_REV_KEY] ?? 0);
+    bandsTimer = setTimeout(pollBands, BANDS_POLL_MS);
 
     return {
       domain: 'audio',
@@ -275,6 +427,7 @@ export const warrensspectrumDef: AudioModuleDef = {
         return params.get(paramId)?.value;
       },
       dispose() {
+        if (bandsTimer !== undefined) clearTimeout(bandsTimer);
         try {
           workletNode.disconnect();
         } catch {

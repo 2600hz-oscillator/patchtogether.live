@@ -14,8 +14,12 @@
 import { describe, it, expect } from 'vitest';
 import {
   warrensspectrumDef,
+  warrensspectrumBands,
+  wsDefaultBands,
   WARRENSSPECTRUM_ALIASED_PORT_IDS,
+  WARRENSSPECTRUM_BAND_SPEC,
   WARRENSSPECTRUM_RANGES,
+  WS_NUM_BANDS,
 } from './warrensspectrum';
 import {
   WS_MAX_TRACKS,
@@ -23,6 +27,12 @@ import {
   WS_SLICE_MIN_MS,
   WarrensSpectrumEngine,
 } from '../../../../../dsp/src/lib/warrensspectrum-dsp';
+import {
+  WS_BAND_CUTOFF_MAX_HZ,
+  WS_BAND_CUTOFF_MIN_HZ,
+  WS_BAND_Q_MAX,
+  WS_BAND_Q_MIN,
+} from '../../../../../dsp/src/lib/warrensspectrum-filterbank';
 
 describe("warren's spectrum — the ALIASED PORT-ID CONTRACT", () => {
   // A saved `callsine` node keeps exactly four cables across the alias
@@ -131,7 +141,11 @@ describe("warren's spectrum — contract shape", () => {
     expect(gate.edge).toBe('gate');
   });
 
-  it('is MONO in and MONO out (phase 1 has no filterbank, so no pan exists)', () => {
+  it('is MONO in and has exactly ONE audio out (stereo rides the channels)', () => {
+    // Phase 2 made the OUTPUT stereo without adding a port: the worklet node
+    // declares `outputChannelCount: [2]` and the single `out` port carries
+    // both channels, which is how every other stereo module here works. The
+    // input stays mono — upstream sums to mono before the engine too.
     expect(warrensspectrumDef.outputs).toHaveLength(1);
     expect(warrensspectrumDef.inputs.filter((p) => p.type === 'audio')).toHaveLength(1);
   });
@@ -153,5 +167,67 @@ describe("warren's spectrum — contract shape", () => {
 
   it('has a lowercase label (the repo-wide guard)', () => {
     expect(warrensspectrumDef.label).toBe(warrensspectrumDef.label.toLowerCase());
+  });
+});
+
+describe("warren's spectrum — the FILTERBANK contract (phase 2)", () => {
+  it('BANK WET defaults to 0 — the divergence that protects a saved rack', () => {
+    // If this ever defaults non-zero, every rack saved under phase 1 changes
+    // sound on load. The engine-level proof is in
+    // warrensspectrum-filterbank.test.ts; this is the contract-level one, and
+    // it is deliberately stated as an EQUALITY to 0 rather than "falsy".
+    const wet = warrensspectrumDef.params.find((p) => p.id === 'resynthLevel');
+    expect(wet?.defaultValue, "FILTERBANK WET must ship OFF (the VST's 1.0 would re-voice phase-1 racks)").toBe(0);
+    const mix = warrensspectrumDef.params.find((p) => p.id === 'inputMix');
+    expect(mix?.defaultValue).toBe(0);
+  });
+
+  it('the bank is ONE control family, not 40 params', () => {
+    // The plan's §5.3 decision, mechanised: if someone later promotes the
+    // band values to ParamDefs, the param count explodes past every other
+    // module here and this fails rather than the face silently breaking.
+    const fam = warrensspectrumDef.controlFamilies?.find((f) => f.id === 'ws-filterbank');
+    expect(fam, 'the filterbank must be declared as a control family').toBeDefined();
+    expect(fam?.testidPrefix).toBe('ws-band');
+    const bandParams = warrensspectrumDef.params.filter((p) => /^wsBand/i.test(p.id));
+    expect(bandParams.map((p) => p.id), 'per-band values must NOT be ParamDefs').toEqual([]);
+  });
+
+  it('the band spec covers EVERY band field, with bounds from the engine', () => {
+    // The card binds to this and nothing else; a field missing here is a
+    // control the card would have to hand-type, which card-range-source
+    // catches — but only after someone writes the literal. This catches it
+    // at the source.
+    const covered = Object.keys(WARRENSSPECTRUM_BAND_SPEC).sort();
+    expect(covered).toEqual(['cutoffHz', 'pan', 'q', 'send', 'type']);
+    expect(WARRENSSPECTRUM_BAND_SPEC.cutoffHz.min).toBe(WS_BAND_CUTOFF_MIN_HZ);
+    expect(WARRENSSPECTRUM_BAND_SPEC.cutoffHz.max).toBe(WS_BAND_CUTOFF_MAX_HZ);
+    expect(WARRENSSPECTRUM_BAND_SPEC.q.min).toBe(WS_BAND_Q_MIN);
+    expect(WARRENSSPECTRUM_BAND_SPEC.q.max).toBe(WS_BAND_Q_MAX);
+    // CUTOFF and Q are LOG. A linear card against a log range puts the
+    // fader's midpoint at 10 kHz instead of ~630 Hz.
+    expect(WARRENSSPECTRUM_BAND_SPEC.cutoffHz.curve).toBe('log');
+    expect(WARRENSSPECTRUM_BAND_SPEC.q.curve).toBe('log');
+  });
+
+  it('warrensspectrumBands resolves an absent / partial / proxied table to 8 bands', () => {
+    expect(warrensspectrumBands(undefined)).toHaveLength(WS_NUM_BANDS);
+    expect(warrensspectrumBands({ data: {} })).toHaveLength(WS_NUM_BANDS);
+    expect(warrensspectrumBands({ data: { wsBands: [{ send: 1 }] } })).toHaveLength(WS_NUM_BANDS);
+    // A Yjs array proxy is NOT `Array.isArray`, so a table that is genuinely
+    // present would silently resolve to the defaults without the toJSON
+    // unwrap — the DX7 structured-clone scar, in its read direction.
+    const proxied = { toJSON: () => [{ cutoffHz: 999, q: 3, type: 1, pan: -1, send: 1 }] };
+    const out = warrensspectrumBands({ data: { wsBands: proxied } });
+    expect(out[0]!.cutoffHz, 'a Yjs-proxied band table must not read as absent').toBe(999);
+  });
+
+  it('a saved table survives the round trip the worklet message makes of it', () => {
+    // The factory hand-builds plain numbers for postMessage; this proves the
+    // shape it builds is the shape the normalizer accepts, so the two cannot
+    // drift into a silently-defaulted bank.
+    const saved = wsDefaultBands().map((b, i) => ({ ...b, pan: i % 2 ? 1 : -1, send: 0.25 }));
+    const roundTripped = warrensspectrumBands({ data: { wsBands: saved } });
+    expect(roundTripped).toEqual(saved);
   });
 });
