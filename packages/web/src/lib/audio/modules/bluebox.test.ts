@@ -345,3 +345,91 @@ describe('blueboxProcessor — gate input drives the button (no param needed)', 
     expect(bandAmp(out, colHz, SR, skip)).toBeGreaterThan(0.05);
   });
 });
+
+// ─── Layer 3: OUTPUT HEADROOM ───────────────────────────────────────────────
+//
+// ⚠ THE DEFECT THIS PINS, and why nothing above could see it.
+//
+// Three separate comments in packages/dsp/src/bluebox.ts promised a divide by
+// four — the module header's *"mono sum, normalized so 4 held buttons don't
+// clip"*, `BUTTON_VOICE_AMP`'s *"NORM below divides by 4 (the max simultaneous
+// buttons) so the worst case stays inside [-1, 1]"*, and `OUTPUT_NORM`'s own
+// *"we scale by 1/4 of the per-voice amp"*. The constant was `1.0`. **Measured
+// on the shipped code: one digit −6.02 dBFS, TWO digits 0.9988 — exactly full
+// scale — three digits 1.4858 (+3.44 dBFS), four 1.9454 (+5.78 dBFS), all
+// twelve 5.3153 (+14.51 dBFS).** The guarantee failed at two, not four.
+//
+// Every assertion above is a RELATIVE one: `bandAmp` at the target bin beats
+// an off-bin probe by 10×, which is scale-invariant and therefore structurally
+// blind to the output gain. The ART profile holds one digit at a time, so it
+// pins −6.02 dBFS and never reaches a sum. So the whole suite was green about
+// a module that clipped on a two-digit dial — the "what is this metric
+// invariant to?" question, answered the hard way.
+//
+// These are ABSOLUTE peaks, and they are the negative control on each other:
+// a change to OUTPUT_NORM moves every row, and a change to BUTTON_VOICE_AMP
+// alone moves them all by the same ratio while leaving the RATIOS below fixed.
+describe('blueboxProcessor — output headroom (absolute peaks, not ratios)', () => {
+  /** Peak of the mono output with `held` buttons down, past the click ramp. */
+  async function heldPeak(held: readonly string[]): Promise<number> {
+    const Proc = await loadProcessor();
+    const proc = new Proc();
+    const BLOCK = 128;
+    // 1.5 s: the DTMF frequencies are mutually prime, so every relative phase
+    // is swept within ~1 s and the peak is the true coherent worst case rather
+    // than an artefact of where the window happened to start.
+    const blocks = Math.ceil((1.5 * SR) / BLOCK);
+    const params: Record<string, Float32Array> = {};
+    for (const name of BLUEBOX_BUTTON_NAMES) {
+      const arr = new Float32Array(BLOCK);
+      if (held.includes(name)) arr.fill(1);
+      params[`btn_${name}`] = arr;
+    }
+    const inputs: Float32Array[][] = BLUEBOX_BUTTON_NAMES.map(() => []);
+    let peak = 0;
+    const skip = Math.round(0.25 * SR);
+    let n = 0;
+    for (let blk = 0; blk < blocks; blk++) {
+      const o = [[new Float32Array(BLOCK)]];
+      proc.process(inputs, o, params);
+      for (const v of o[0]![0]!) {
+        if (n++ >= skip) peak = Math.max(peak, Math.abs(v));
+      }
+    }
+    return peak;
+  }
+
+  const CASES: ReadonlyArray<readonly [string, readonly string[], number]> = [
+    ['one digit',        ['1'],                          0.1250],
+    ['BLUEBOX alone',    ['bluebox'],                    0.0625],
+    ['two digits',       ['1', '4'],                     0.2497],
+    ['three digits',     ['1', '2', '3'],                0.3715],
+    ['four digits',      ['2', '5', '8', '0'],           0.4864],
+    ['all twelve',       [...BLUEBOX_BUTTON_NAMES],      1.3288],
+  ];
+
+  for (const [label, held, expected] of CASES) {
+    it(`${label} peaks at ${expected.toFixed(4)} (${(20 * Math.log10(expected)).toFixed(2)} dBFS)`, async () => {
+      const peak = await heldPeak(held);
+      expect(peak, `${label} peak=${peak.toFixed(4)}`).toBeCloseTo(expected, 2);
+    });
+  }
+
+  it('THE GUARANTEE: four held buttons stay inside [-1, +1]', () => {
+    // The sentence three comments in the DSP make, as an assertion. Stated
+    // separately from the table so a future re-tuning has to break this
+    // explicitly rather than by editing a number in a list.
+    const fourDigits = CASES.find((c) => c[0] === 'four digits')![2];
+    expect(fourDigits, 'four held buttons must not clip — the module header promises it').toBeLessThan(1);
+  });
+
+  it('all twelve overshoots, and that is the DOCUMENTED pathological case', () => {
+    // `OUTPUT_NORM`'s comment calls 12-held "the pathological every-button-held
+    // scenario" and puts it near 1.5 — so this is accepted, not a regression.
+    // Asserted so the accepted overshoot is a number in the suite rather than
+    // a claim in a comment, and so a change that made it WORSE is visible.
+    const all = CASES.find((c) => c[0] === 'all twelve')![2];
+    expect(all).toBeGreaterThan(1);
+    expect(all, 'the accepted overshoot ceiling from the DSP comment').toBeLessThan(1.5);
+  });
+});

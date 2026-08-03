@@ -145,18 +145,40 @@ describe('ART bluebox / audio profile (dial 2-6-0-0, then the 2600 Hz tone)', ()
     const at = (s: number) => Math.round(s * SR);
     expect(out.length).toBe(Math.round(SR * DURATION_S));
     expect(out.every(Number.isFinite)).toBe(true);
+    // ⚠ THE FLOORS BELOW ARE ABSOLUTE LEVELS and were retuned on 2026-08-02
+    // when `OUTPUT_NORM` went from 1.0 to the 0.25 three comments in the DSP
+    // had always promised (see packages/dsp/src/bluebox.ts). Every one is the
+    // old figure ÷ 4 — measured: the '2' row bin was 0.249, now 0.0623 — and
+    // the SILENCE ceilings are deliberately NOT scaled, because a floor that
+    // shrinks with the signal would still pass on a module that had gone
+    // quiet, while an unscaled silence ceiling only gets harder to satisfy.
+    //
+    // ⚠ AND THE REASON THESE MATTER: they are the only ABSOLUTE assertions in
+    // BLUEBOX's whole suite. Every processor test in bluebox.test.ts compares
+    // a target bin to an off-bin, which is scale-invariant and so cannot see
+    // an output-gain error at all — which is exactly how a module that clipped
+    // on a two-digit dial stayed green for its entire life.
+    //
     // '2' = DTMF 697 + 1336 Hz (and NO 2600) — probe mid-segment.
-    expect(goertzel(out, at(0.03), at(0.13), 697)).toBeGreaterThan(0.15);
-    expect(goertzel(out, at(0.03), at(0.13), 1336)).toBeGreaterThan(0.15);
+    expect(goertzel(out, at(0.03), at(0.13), 697)).toBeGreaterThan(0.0375);
+    expect(goertzel(out, at(0.03), at(0.13), 1336)).toBeGreaterThan(0.0375);
     expect(goertzel(out, at(0.03), at(0.13), 2600)).toBeLessThan(0.01);
     // '0' = 941 + 1336 Hz.
-    expect(goertzel(out, at(0.43), at(0.53), 941)).toBeGreaterThan(0.15);
+    expect(goertzel(out, at(0.43), at(0.53), 941)).toBeGreaterThan(0.0375);
     // BLUEBOX = the lone 2600 Hz supervisory tone (no DTMF rows).
-    expect(goertzel(out, at(0.9), at(1.05), 2600)).toBeGreaterThan(0.2);
+    expect(goertzel(out, at(0.9), at(1.05), 2600)).toBeGreaterThan(0.05);
     expect(goertzel(out, at(0.9), at(1.05), 697)).toBeLessThan(0.01);
     // Gaps are silent (1 ms click ramp has fully settled ~20 ms in).
     expect(rms(out, at(0.17), at(0.19))).toBeLessThan(0.005);
     expect(rms(out, at(0.77), at(0.79))).toBeLessThan(0.005);
+    // THE HEADROOM CEILING, absolute and one-sided — the property the missing
+    // normaliser broke. One button is held at a time here, so 0.25 is the
+    // whole scale: nothing in this profile may reach even half of full scale,
+    // and a regression back to OUTPUT_NORM = 1.0 puts it at 0.5 and fails.
+    let peak = 0;
+    for (let i = 0; i < out.length; i++) peak = Math.max(peak, Math.abs(out[i]!));
+    expect(peak, `single-button peak=${peak.toFixed(4)}`).toBeLessThan(0.35);
+    expect(peak, `single-button peak=${peak.toFixed(4)}`).toBeGreaterThan(0.1);
     // Deterministic re-render is bit-identical (fresh processor instance).
     const again = (await renderProfile()).out!;
     let diff = 0;

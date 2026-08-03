@@ -100,17 +100,42 @@ const CLICK_RAMP_MS = 1.0;
 
 /** Per-button-voice amplitude contribution. With 4 active buttons each
  *  emitting 1 or 2 tones, the maximum sum is ~8 sines × 0.25 = 2.0
- *  pre-normalisation. NORM below divides by 4 (the max simultaneous
- *  buttons) so the worst case stays inside [-1, 1]. */
+ *  pre-normalisation (measured: 1.9454 on `2,5,8,0`). NORM below divides by
+ *  4 (the max simultaneous buttons) so the worst case stays inside [-1, 1]
+ *  — measured 0.4864 after normalisation. See `OUTPUT_NORM`: that divisor
+ *  was missing from the code for the whole of this comment's life. */
 const BUTTON_VOICE_AMP = 0.25;
 
 /** Output normalisation. The card supports 12 buttons in principle, but
  *  no realistic patch holds more than ~4 at once (4 fingers / 4 gate
- *  cables); we scale by 1/4 of the per-voice amp to keep the worst case
- *  bounded. (12 buttons × 2 tones × 0.25 / 4 = 1.5 worst case is the
- *  pathological "every button held" scenario; downstream VCA / level can
- *  trim further.) */
-const OUTPUT_NORM = 1.0;
+ *  cables); we scale by 1/4 so the worst case stays bounded.
+ *
+ *  ⚠ THIS CONSTANT WAS `1.0`, against three separate comments in this file
+ *  promising the divide-by-four (the module header's "normalized so 4 held
+ *  buttons don't clip", `BUTTON_VOICE_AMP`'s "NORM below divides by 4 … so
+ *  the worst case stays inside [-1, 1]", and this block's own "we scale by
+ *  1/4"). MEASURED on the un-normalised code: one digit 0.5000 (−6.02 dBFS),
+ *  **two digits 0.9988 — exactly full scale — three 1.4858 (+3.44 dBFS)**,
+ *  four 1.9454 (+5.78 dBFS), all twelve 5.3153 (+14.51 dBFS). The promised
+ *  guarantee failed at TWO digits, not four, and a three-digit dial clipped.
+ *  Nothing caught it: every processor assertion in bluebox.test.ts is a
+ *  RATIO (target bin vs off-bin), which is scale-invariant by construction,
+ *  and the ART profile holds one button at a time so it never forms a sum.
+ *  The absolute-peak table in bluebox.test.ts now pins all six cases.
+ *
+ *  ⚠ AND THE COMMENTS' OWN ARITHMETIC WAS WRONG TOO: "12 buttons × 2 tones ×
+ *  0.25 / 4 = 1.5" over-counts, because BLUEBOX emits ONE tone, not two —
+ *  the twelve buttons light 23 tone-slots, not 24, and shared row/column
+ *  frequencies sum coherently rather than adding a slot each. The true
+ *  all-held peak at this normalisation is 1.3288 (+2.46 dBFS), which is the
+ *  same accepted "pathological every-button-held" overshoot the comment
+ *  described, just measured instead of estimated.
+ *
+ *  ⚠ AUDIBLE CHANGE: this is a uniform −12.04 dB on every patch using
+ *  BLUEBOX. The ART baseline moves by exactly that on peakDb and rmsDb with
+ *  a byte-identical spectrum — the ×0.25 scalar-gain signature — and is
+ *  re-pinned in the same commit. */
+const OUTPUT_NORM = 0.25;
 
 // ─── frequency table → unique frequency list ────────────────────────────────
 //
