@@ -51,6 +51,36 @@ export const C4_HZ = 261.626;
 /** ma.frac */
 export const frac = (x: number): number => x - Math.floor(x);
 
+/** Faust's `si.smoo` pole. EVERY knob in analog-vco.dsp is `: si.smoo`
+ *  (lines 8-20), and the smoother's state starts at ZERO — not at the
+ *  slider's default. So the first ~100 ms of any render is a parameter RAMP,
+ *  not the steady state the knob is set to. */
+export const SMOO_POLE = 0.999;
+
+/** One-pole parameter smoother: `y[n] = pole*y[n-1] + (1-pole)*x[n]`, y[-1]=0.
+ *
+ *  ⚠ THE EXISTING SCENARIO MIRRORS MODEL NO SMOOTHING AT ALL — they apply each
+ *  knob instantly. Measured on the shipped wasm at pw=0.5, the square's +1 duty
+ *  falls 91 % → 73 % → 54 % → 51 % over the first 60 ms and only then settles at
+ *  50 %. An un-smoothed mirror is therefore wrong for a large fraction of a
+ *  0.25 s baseline, and every `.f32` in this directory is pinned to that.
+ *
+ *  This also resolved a measurement that looked contradictory for a whole
+ *  session: reading the FIRST samples said one square polarity, and comparing
+ *  over a LONG buffer said the opposite, with agreement decaying as the buffer
+ *  grew (43 % @400 → 20 % @2400 → 4 % @12000). Both readings were correct — at
+ *  t=0 the smoothed pw is ~0 so `p < pw` is false, and in steady state it is
+ *  0.5 so `p < pw` is true. The transient was the whole discrepancy. */
+export function smooRamp(target: number, n: number, pole = SMOO_POLE): Float32Array {
+  const out = new Float32Array(n);
+  let y = 0;
+  for (let i = 0; i < n; i++) {
+    y = pole * y + (1 - pole) * target;
+    out[i] = y;
+  }
+  return out;
+}
+
 /** The .dsp clamps the computed frequency into a sane audio band. */
 export function freqHz(
   pitchVolts: number,
@@ -162,6 +192,15 @@ export function renderVcoMirror(opts: VcoRenderOptions): VcoTaps {
     syncPulse: new Float32Array(n),
   };
 
+  // EVERY knob is `: si.smoo` in the .dsp — ramp each from 0, exactly as the
+  // shipped DSP does, instead of applying it instantly.
+  const tuneR = smooRamp(tune, n);
+  const fineR = smooRamp(fine, n);
+  const fmAmtR = smooRamp(fmAmount, n);
+  const pmAmtR = smooRamp(pmAmount, n);
+  const pwR = smooRamp(pw, n);
+  const shapeR = smooRamp(shape, n);
+
   let pRaw = 0;
   let prevRaw = 0;
   let prevSync = 0;
@@ -172,19 +211,19 @@ export function renderVcoMirror(opts: VcoRenderOptions): VcoTaps {
     const pmIn = pm ? (pm[i] ?? 0) : 0;
     const syncIn = sync ? (sync[i] ?? 0) : 0;
 
-    const f = freqHz(v, fmIn, { tune, fine, fmAmount });
+    const f = freqHz(v, fmIn, { tune: tuneR[i]!, fine: fineR[i]!, fmAmount: fmAmtR[i]! });
     const reset = syncEdge(syncIn, prevSync);
     prevSync = syncIn;
 
     prevRaw = pRaw;
     pRaw = phasorResetStep(pRaw, f, reset, sr);
-    const p = frac(pRaw + pmAmount * pmIn);
+    const p = frac(pRaw + pmAmtR[i]! * pmIn);
 
     out.saw[i] = saw(p);
-    out.sqr[i] = sqr(p, pw);
+    out.sqr[i] = sqr(p, pwR[i]!);
     out.tri[i] = tri(p);
     out.sn[i] = sn(p);
-    out.morph[i] = morph(p, shape, pw);
+    out.morph[i] = morph(p, shapeR[i]!, pwR[i]!);
     out.syncPulse[i] = syncPulse(pRaw, prevRaw);
   }
 
