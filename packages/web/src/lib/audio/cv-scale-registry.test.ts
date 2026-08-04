@@ -9,6 +9,7 @@
 import { describe, it, expect } from 'vitest';
 import '$lib/audio/modules'; // side-effect: register all modules
 import { listModuleDefs } from '$lib/audio/module-registry';
+import { buildCvCurve, sampleCvCurve, scaleCv } from '$lib/audio/cv-scale';
 
 // Modules whose CV input(s) intentionally omit cvScale because the
 // destination DSP (Faust .dsp source) implements its own ±1-cv-sweeps-
@@ -291,6 +292,65 @@ describe('cv-scale / registry coverage', () => {
       offenders,
       `Modules with CV inputs lacking cvScale (and not in PASSTHROUGH_BY_DESIGN):\n` +
         offenders.map((o) => `  - ${o.module}.${o.port}: ${o.reason}`).join('\n'),
+    ).toEqual([]);
+  });
+
+  // ───────────────────────────────────────────────────────────────────────
+  // EVERY curve-backed port: a cable sitting at cv=0 adds EXACTLY nothing.
+  //
+  // The per-mode gate lives in cv-scale.test.ts on hand-picked shapes. This is
+  // the artifact-anchored half: it sweeps the LIVE registry, so a module added
+  // later with a range/knob combination nobody thought of is enrolled without
+  // anyone editing a list. It reads the curve through `sampleCvCurve` (the Web
+  // Audio transfer function) because a nearest-index read measures something
+  // the audio thread never emits — see cv-scale.ts.
+  //
+  // At CURVE_LEN=4096 this found 130 of 317 ports biased at cv=0: 74 clamped
+  // linear (≈0.0061 % of range), 39 log (≤1.1e-5 %), and 17 discrete, of which
+  // 16 returned a half-integer that is not a valid bucket at all.
+  // ───────────────────────────────────────────────────────────────────────
+  it('every curve-backed cvScale port emits its unmodulated delta at cv=0', () => {
+    interface Off { id: string; mode: string; range: string; knob: number; got: number; want: number }
+    const offenders: Off[] = [];
+    let checked = 0;
+    for (const def of listModuleDefs()) {
+      for (const port of def.inputs) {
+        if (!port.cvScale || !port.paramTarget) continue;
+        // passthrough never gets a shaper — engine.addEdge connects direct.
+        if (port.cvScale.mode === 'passthrough') continue;
+        const param = def.params.find((p) => p.id === port.paramTarget);
+        if (!param) continue; // covered by the paramTarget test below
+        // The engine bakes the LIVE knob in; defaultValue is the shipped one.
+        const knob = param.defaultValue;
+        const curve = buildCvCurve(param.min, param.max, knob, port.cvScale);
+        const got = sampleCvCurve(curve, 0);
+        const want = Math.fround(scaleCv(0, knob, param.min, param.max, port.cvScale) - knob);
+        checked++;
+        if (!Object.is(got, want) && got !== want) {
+          offenders.push({
+            id: `${String(def.type)}.${port.id}`,
+            mode: port.cvScale.mode,
+            range: `[${param.min}, ${param.max}]`,
+            knob,
+            got,
+            want,
+          });
+        }
+      }
+    }
+    // Scope, asserted rather than assumed: if the sweep ever stops finding
+    // ports, an empty offender list would read as success.
+    expect(checked, 'the sweep found no curve-backed cvScale ports at all').toBeGreaterThan(250);
+    expect(
+      offenders,
+      `Ports where a patched-but-idle CV cable (cv=0) shifts the param:\n` +
+        offenders
+          .map(
+            (o) =>
+              `  - ${o.id} (${o.mode}, range ${o.range}, knob ${o.knob}): ` +
+              `emits ${o.got}, should emit ${o.want}`,
+          )
+          .join('\n'),
     ).toEqual([]);
   });
 

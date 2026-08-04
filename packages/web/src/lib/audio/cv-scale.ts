@@ -30,6 +30,16 @@
 // param's `min..max` clamp pins outliers — which matches Eurorack
 // semantics ("CV pushes the knob around its current setting; outside the
 // natural range, it pins").
+//
+// ⚠ `discrete` is the ONE mode where "cv=0 ⇒ no modulation" does NOT hold,
+// and that is DELIBERATE, not a defect: a bucket selector is an ABSOLUTE map
+// (cv=-1 → min bucket, cv=+1 → max bucket, IGNORING the knob) so that a
+// full-scale LFO reaches every model/scale/mode regardless of where the knob
+// sits — see the `discrete` branch of `scaleCv`. cv=0 therefore selects the
+// MIDDLE bucket. What `CURVE_LEN` guarantees for discrete is narrower but no
+// less real: that the LUT returns that bucket EXACTLY, rather than a
+// half-integer wedged between two buckets, which is a value the mode can
+// never legitimately produce.
 
 import type { CvScaleHint, ParamDef } from '$lib/graph/types';
 
@@ -133,8 +143,9 @@ function clamp(v: number, lo: number, hi: number): number {
  * `param.value + delta` equals the EFFECTIVE param value scaleCv(...) computes.
  * Web Audio's `output.connect(targetParam)` adds delta to the param at audio
  * rate; the AudioParam's intrinsic value is `knob` (set by setParam from the
- * fader). When cv=0, delta=0 → no modulation. When cv=±1, delta=±halfSpan
- * (linear) or knob*(ratio - 1) (log).
+ * fader). When cv=0, delta=0 → no modulation (exactly 0, guaranteed by the odd
+ * `CURVE_LEN` — see its comment; `discrete` selects the middle bucket instead,
+ * by design). When cv=±1, delta=±halfSpan (linear) or knob*(ratio - 1) (log).
  *
  * For `passthrough`, no scaling node is interposed — the source connects
  * directly to the target param (caller may skip calling this function).
@@ -180,30 +191,104 @@ export function attachCvScale(
 }
 
 /**
- * Build a 4096-sample curve mapping cv ∈ [-1, +1] to the *delta* that
- * should be added to the param's intrinsic value. Outputs >|max-min|/2
- * are clamped to keep the chain well-behaved.
+ * LUT size. **ODD ON PURPOSE — do not "round" it back to a power of two.**
+ *
+ * A WaveShaperNode maps its input to a fractional table position
+ * `v = (N-1)/2 · (x+1)` and LINEARLY INTERPOLATES between `curve[⌊v⌋]` and
+ * `curve[⌊v⌋+1]`. With an EVEN `N` there is no table entry at the centre, so
+ * `cv = 0` — the value a patched-but-idle cable holds — lands at `v = (N-1)/2`,
+ * i.e. exactly HALFWAY between two samples, and the shaper emits their MEAN
+ * rather than the curve's true value at zero.
+ *
+ * That mean equals the true value only where the delta function happens to be
+ * ODD-SYMMETRIC about cv=0. It is not, in three cases, all of them real:
+ *
+ *   1. `discrete` — the buckets straddling the centre differ by one, so the
+ *      mean is a HALF-INTEGER: a value the mode can never legitimately produce.
+ *      Measured on the registry at N=4096: 16 of 17 discrete ports emitted a
+ *      non-bucket value at cv=0 (macrooscillator.model_cv read 6.5 of 0..13;
+ *      qbrt.mode / rings.model_cv / the 8 mixmstrs compEnable switches read
+ *      0.5 of 0..1 — a boolean stuck exactly between off and on).
+ *   2. `linear` with the knob AT a range end — the min/max clamp flattens one
+ *      side, so the two neighbours are not ∓equal. 74 registry ports, biased by
+ *      `range / (4·(N-1))` ≈ 0.0061 % of range (e.g. analogVco.shape 0..1 at
+ *      knob 0 idled at 6.105e-5 instead of 0).
+ *   3. `log` — the exponential is convex, so the mean of the neighbours sits
+ *      above the true value. All 39 log ports, ≤ 1.1e-5 % of range.
+ *
+ * 130 of 317 curve-backed ports were affected. An ODD `N` puts a sample
+ * EXACTLY at cv=0 (index `(N-1)/2`), so the shaper reads it directly (f=0) and
+ * the guarantee "cv=0 ⇒ the unmodulated value" holds BY CONSTRUCTION for every
+ * mode — including modes added later — instead of by accident of symmetry.
+ *
+ * The ENDS are unaffected: `i=0 → cv=-1` and `i=N-1 → cv=+1` hold for any `N`,
+ * and the shaper clamps `v` to `[0, N-1]`, so `cv=±1` still reads `curve[0]` /
+ * `curve[N-1]` exactly. 4097 additionally makes EVERY sample position an exact
+ * dyadic rational (`i/2048 - 1`), removing the float rounding that 4095ths
+ * carried. Cost is 4 bytes per curve.
  */
-const CURVE_LEN = 4096;
+export const CURVE_LEN = 4097;
 
+/**
+ * Build the curve mapping cv ∈ [-1, +1] to the *delta* that should be added to
+ * the param's intrinsic value. Outputs are clamped to the param's own bounds.
+ *
+ * `len` exists ONLY so tests can drive this REAL builder with a different table
+ * shape (the negative control pins that an EVEN table fails the cv=0 gate).
+ * Production always uses `CURVE_LEN`.
+ */
 export function buildCvCurve(
   paramMin: number,
   paramMax: number,
   knob: number,
   hint: CvScaleHint,
   depth: number = hint.depth ?? 1.0,
+  len: number = CURVE_LEN,
 ): Float32Array<ArrayBuffer> {
   // Allocate on a fresh ArrayBuffer to satisfy WaveShaperNode.curve's strict
   // typed-array signature (cf. illogic.ts and fold-curve.ts).
-  const curve = new Float32Array(new ArrayBuffer(CURVE_LEN * 4));
-  for (let i = 0; i < CURVE_LEN; i++) {
-    // Map index [0, CURVE_LEN-1] → cv ∈ [-1, +1] (the WaveShaperNode's
-    // standard input domain).
-    const cv = (i / (CURVE_LEN - 1)) * 2 - 1;
+  const curve = new Float32Array(new ArrayBuffer(len * 4));
+  for (let i = 0; i < len; i++) {
+    // Map index [0, len-1] → cv ∈ [-1, +1] (the WaveShaperNode's standard
+    // input domain).
+    const cv = (i / (len - 1)) * 2 - 1;
     const effective = scaleCv(cv, knob, paramMin, paramMax, { ...hint, depth });
     // Web Audio sums (delta + knob) into the param. We want effective; so
     // delta = effective - knob.
     curve[i] = effective - knob;
   }
   return curve;
+}
+
+/**
+ * Read a curve THE WAY THE AUDIO THREAD DOES — the Web Audio spec's
+ * WaveShaperNode transfer function, verbatim:
+ *
+ *   v = (N-1)/2 · (x+1);  k = ⌊v⌋;  f = v - k
+ *   v ≤ 0    → curve[0]          (input below -1 clamps)
+ *   v ≥ N-1  → curve[N-1]        (input above +1 clamps)
+ *   else     → (1-f)·curve[k] + f·curve[k+1]
+ *
+ * **Use this, never `curve[Math.round(…)]`, to assert anything about a curve.**
+ * Nearest-index sampling is a DIFFERENT function: for an even-length table it
+ * reports `curve[N/2]` at cv=0 — one whole half-step off — which is how a
+ * ±3-range port came to look like it idled at 7.326e-4 when a real
+ * WaveShaperNode renders it as exactly 0. The instrument was reading a sample
+ * the audio thread never emits on its own.
+ *
+ * Validated against a real Chromium `OfflineAudioContext` in both directions:
+ * spiking one centre sample of an odd table moves the rendered output to it,
+ * and spiking BOTH neighbours of an even table renders their mean.
+ */
+export function sampleCvCurve(curve: Float32Array, cv: number): number {
+  const n = curve.length;
+  const v = ((n - 1) / 2) * (cv + 1);
+  if (v <= 0) return curve[0] as number;
+  if (v >= n - 1) return curve[n - 1] as number;
+  const k = Math.floor(v);
+  const f = v - k;
+  // Exact table hit — return the sample untouched rather than letting an
+  // arithmetic round-trip perturb it.
+  if (f === 0) return curve[k] as number;
+  return (1 - f) * (curve[k] as number) + f * (curve[k + 1] as number);
 }
