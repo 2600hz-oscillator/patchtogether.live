@@ -63,6 +63,28 @@ export type ResofilterMode = 0 | 1 | 2 | 3 | 4;
 export const RESOFILTER_MODE_COUNT = RESOFILTER_MODE_NAMES.length;
 export const RESOFILTER_MAX_MODE = RESOFILTER_MODE_COUNT - 1;
 
+// ── Denormal floor ──
+//
+// The two TPT integrator states decay exponentially once the input goes silent
+// and, left alone, fall through the f64 denormal boundary (2.225e-308) and
+// LATCH there instead of reaching zero — so an IDLE filter keeps its state on
+// the FPU's denormal slow path indefinitely. Same defect, same fix, as
+// lib/moog-ladder-dsp.ts (see the measured decay table there); these two shared
+// filter cores were the pair that had no floor, while chowkick/karplus/clap all
+// flush. The P2-A5 audit item names both.
+//
+// 1e-20 is the repo's existing floor (karplus-dsp.ts:158, clap-dsp.ts:66) and
+// sits far ABOVE the denormal boundary at −400 dBFS, so flushing there cannot
+// alter audible output.
+const FLUSH = 1e-20;
+
+/** Flush a decayed integrator state to zero. Deliberately NOT `Math.abs(x) <
+ *  FLUSH`: this form leaves NaN untouched, so a genuine NaN bug still
+ *  propagates and is visible instead of being silently zeroed. */
+function fz(x: number): number {
+  return x > -FLUSH && x < FLUSH ? 0 : x;
+}
+
 export interface SvfState { ic1: number; ic2: number; }
 
 /** Allocate a zeroed SVF state. */
@@ -100,8 +122,8 @@ export function svfStep(
   const v3 = input - state.ic2;
   const v1 = a1 * state.ic1 + a2 * v3;
   const v2 = state.ic2 + a2 * state.ic1 + a3 * v3;
-  state.ic1 = 2 * v1 - state.ic1;
-  state.ic2 = 2 * v2 - state.ic2;
+  state.ic1 = fz(2 * v1 - state.ic1);
+  state.ic2 = fz(2 * v2 - state.ic2);
   return { lp: v2, bp: v1, hp: input - k * v1 - v2 };
 }
 
