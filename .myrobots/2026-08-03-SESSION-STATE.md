@@ -205,9 +205,60 @@ Coverage is instead made *provable* by a residual audit: 13 normal / 42 default 
 | **`cube` has wavecel's exact envelope bypass** | `cube.ts:405` `base_vol` default 1; `:753` `readFrame(…) * baseVol * level` | `poly-osc-sum.ts` was left untouched precisely so cube and pentemelodica would not move. Needs its own PR |
 | **`cloudseed` — a THIRD stereo-silence mechanism** | `cloudseed.ts:1510-11` reads `inputs[0]`/`inputs[1]` with **no `??` at all** — a mono patch leaves `inR` undefined | a *missing* normal, not a defeated one; audio behaviour change needing an owner ear + ART re-pin. Carried as a named ledger row in #1351 |
 | **`buildCvCurve`'s LUT is 4096 points — EVEN** | `cv = 0` lands between samples and reads **0.000733**, a ≤0.0015× offset on a patched-but-idle cable | shared by **every** `cvScale` port in the repo; not folded into an atomic module PR |
-| **Three `packages/dsp` tests have thin timeout headroom** | `snaredrum-dsp`, `tidy-vco-dsp.sonic-range`, `warrensspectrum-masspass` — all 5000 ms vitest timeouts under concurrent load, **all pass in isolation** (masspass: 23/23, one test at 2935 ms) | reported independently by **three** agents. Same class as the 27 e2e tests #1341 budgeted, different lane |
+| ~~**Three `packages/dsp` tests have thin timeout headroom**~~ **← EVIDENCE CONTAMINATED, see below** | `snaredrum-dsp`, `tidy-vco-dsp.sonic-range`, `warrensspectrum-masspass` — 5000 ms vitest timeouts, failed "under load", **all pass in isolation** | the "load" was 16 runaway CPU burners I leaked. **Do not act on this finding as written** |
 | **samsloop faders are not cross-clamped** | END can be dragged below START → silent one-sample window, no on-screen explanation | pre-existing; the clamp is a behaviour call for the owner. Flagged for the revamp |
 | **`vrt-meta.test.ts` barrel-import test** | 3.3–3.6 s against vitest's 5 s default; timed out once under contention | same thin-headroom class |
+
+### ⚠ I LEAKED 16 CPU BURNERS AND THEN MEASURED AGAINST THEM
+
+**The single worst instrument failure of the session, and it ran for 5 h 41 m.**
+
+Two of my own earlier commands deliberately loaded the box to reproduce a
+CI-contention flake:
+
+```sh
+for i in $(seq 1 8); do (while :; do :; done) & done
+BURNERS=$(jobs -p)
+... playwright ... | head -20      # ← the pipeline that never returned
+kill $BURNERS 2>/dev/null          # ← THIS LINE NEVER RAN
+```
+
+Both invocations leaked all 8. Sixteen spinners, `PPID 1` (orphaned), **~172
+minutes of CPU each**, holding a 10-core box at **~990 % total** — roughly 8.5
+cores — for nearly six hours.
+
+**Everything measured on this machine during that window is suspect**, and at
+least four "findings" trace directly to it:
+
+- The three `packages/dsp` "thin timeout headroom" tests. They pass in
+  isolation and fail "under concurrent load" — but the load was 85 % artificial.
+  **Three separate agents reported this independently**, which read as
+  corroboration and was actually three agents measuring the same contamination.
+- The `vrt-meta` barrel-import test at 3.3–3.6 s against a 5 s default.
+- The `flox activate` "waiting for another activation" stalls, and the watch
+  task that gave up after ~50 min.
+- My earlier "Edge has settled to 4.6 %" reading, and the agent sweep that
+  aliased against a ~4 s oscillation — that oscillation is what a starved
+  scheduler looks like.
+
+**The lesson is the one already in CLAUDE.md, applied to myself: I injected the
+confounder, forgot it, and then read its effects as properties of the code.**
+A negative control would have caught it in one step — re-run the "slow" test
+with the load removed. I never did, because I did not know the load was there.
+
+**Two rules that would have prevented it:**
+
+1. **Never leak a load generator.** `kill $BURNERS` after a pipeline containing
+   `| head -N` is unreachable whenever the pipeline hangs — `head` closing the
+   pipe does not reliably end the upstream. Use a `trap` on EXIT, or write the
+   PIDs to a file and reap them from a separate command that always runs.
+2. **Before attributing ANY timing result to "load", enumerate what is actually
+   running.** `ps -A -o %cpu,etime,command | sort -rn | head` costs one command.
+   An `ELAPSED` of 5 h on a test-shaped process is not contention, it is a leak.
+
+⚠ **`ps` %CPU on macOS is a lifetime average, not instantaneous** — a spinner
+and a busy-then-idle process can print the same number. Confirm with
+`top -l 2` and read `STATE`.
 
 ---
 
