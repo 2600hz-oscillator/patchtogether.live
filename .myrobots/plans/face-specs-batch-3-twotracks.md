@@ -1,6 +1,20 @@
 # FACE SPEC — `twotracks` (batch 3) — **MY ADDITION TO REACH 12 · RECOMMENDATION: SWAP IT OUT**
 
-**Status:** SPEC + MOCKUP ONLY. PF-20 platform (PR #1301, unmerged). Citations file:line.
+> ⚠ **STATUS CORRECTED 2026-08-04.** PF-20 (**PR #1301**) **HAS MERGED** (`c6ff9253`) — read
+> the def on `main`. twotracks is **UNBUILT and this spec's own verdict is SWAP OUT (do not
+> face)**. **Three of the facts it is built on have since changed:**
+> - ✅ **§5-A · reel B's ECHOES knob is a permanent no-op** — **FIXED in #1313**
+>   (`290dcdb5`): `parameterDescriptors` declared a `decay_b` nothing read and omitted
+>   `echoes_b`, which `processReel` reads every block. A `twotracks-worklet-params.test.ts`
+>   now walks the whole def→worklet map in BOTH directions. **"A faceplate that ranks and
+>   labels a dead control" (§2) is no longer the objection it was.**
+> - ✅ **OUT L and OUT R were the same graph edge** — fixed in **#1323** (`16bf310e`).
+> - ⚠ **The param count has MOVED.** #1352 (`f3c2a966`) added RATE CV in for both decks
+>   (owner HIGH PRIORITY), so "31 params" and every rank/lane-budget number below is stale.
+> - ⚠ "12 inert until a take exists" and "the transport is not params at all" were **not
+>   re-verified** on 2026-08-04.
+
+**Status:** SPEC + MOCKUP ONLY — **UNBUILT, verdict SWAP OUT.** PF-20 platform (PR #1301 — MERGED, `c6ff9253`). Citations file:line.
 
 ⚠ **The owner named ten modules. `cube` and `twotracks` are MY additions to reach twelve, and
 both are flagged as swappable.** Both come back as swap-outs.

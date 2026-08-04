@@ -1,12 +1,25 @@
 # face re-do — ringback
 
+> ⚠ **STATUS CORRECTED 2026-08-04 — read `face-redo-INDEX.md` §0 before building.**
+> PF-20 (**PR #1301**) **HAS MERGED** (`c6ff9253`); every "unmerged branch" citation below
+> now resolves on `main`. **`face.title` and `face.hint` do NOT paint by default** —
+> `facePageHeader()` returns `null` before reading anything unless annotate mode is on
+> (`packages/web/src/lib/ui/workflow/dock-faceplate-model.ts:90`), and the owner ruled on
+> 2026-08-03 that `face.title` stays annotation-only. **Any argument below that parks a
+> load-bearing fact in `face.hint` because it "still paints" is VOID.** PF-21 dock ROW
+> PACKING (`9bf12df7`) also landed after this was written. **This re-do is NOT built** —
+> the module's shipped `face` still declares no `hero` and no `sidebar`. Live backlog.
+> ✅ The re-do ledger's ringback defect #6 (`out_l`/`out_r` both mapped to output 0, so
+> two mono destinations collapsed to (L+R)/2) **is FIXED** — a `ChannelSplitter(2)` landed
+> in **#1313** (`290dcdb5`).
+
 **Verdict: MECHANICAL ONLY.** The shipped face is right — the ranking, the pages, the glyph, the
 rear card, the ranges and the card are all correct and *measured*, and this spec changes **none of
 them**. What it adds is the PF-20 declaration surface the face predates (`title`, `hint`, two band
 hints, a hero with a two-entry derived readout strip, a two-block sidebar) plus one small
 vocabulary fix that the platform's own "the dock always prints a value" correction newly exposes.
 
-> Status: SPEC ONLY. Designed against `origin/feat/faceplate-platform-v2` (PR #1301, unmerged) with
+> Status: SPEC ONLY. Designed against `origin/feat/faceplate-platform-v2` (PR #1301 — **MERGED**, `c6ff9253`) with
 > the two owner corrections applied: readouts are a full-width STRIP BELOW the graphic, and band
 > `hint` prose is ANNOTATION-ONLY. Citations are `file:line`; inferences are labelled.
 

@@ -1,11 +1,23 @@
 # face re-do — tomtom
 
+> ⚠ **STATUS CORRECTED 2026-08-04 — read `face-redo-INDEX.md` §0 before building.**
+> PF-20 (**PR #1301**) **HAS MERGED** (`c6ff9253`); every "unmerged branch" citation below
+> now resolves on `main`. **`face.title` and `face.hint` do NOT paint by default** —
+> `facePageHeader()` returns `null` before reading anything unless annotate mode is on
+> (`packages/web/src/lib/ui/workflow/dock-faceplate-model.ts:90`), and the owner ruled on
+> 2026-08-03 that `face.title` stays annotation-only. **Any argument below that parks a
+> load-bearing fact in `face.hint` because it "still paints" is VOID.** PF-21 dock ROW
+> PACKING (`9bf12df7`) also landed after this was written. **This re-do is NOT built** —
+> the module's shipped `face` still declares no `hero` and no `sidebar`. Live backlog.
+> ✅ The re-do ledger's tomtom defect #4 (`strike` persisting stuck at 1 in the Y.Doc and
+> permanently masking `trigger_in`) **is FIXED** — **#1316** (`bbba5b5d`).
+
 **Verdict: REAL REWORK — but the SMALL version of the drum-family grammar, deliberately.**
 tomtom keeps its ranking, gains a title/hint, a hero of `tune` + the **already-shipped STRIKE pad**
 + a 4-entry readout strip, merges 4 bands → 2, and takes a two-block sidebar (presets + signal
 flow). It does **NOT** get kickdrum's bespoke hero PICTURE, and §5 argues that on the merits.
 
-Designed against PF-20 (`origin/feat/faceplate-platform-v2`, PR #1301, unmerged) **plus the two
+Designed against PF-20 (`origin/feat/faceplate-platform-v2`, PR #1301 — **MERGED**, `c6ff9253`) **plus the two
 owner corrections** (readouts = a strip BELOW the graphic; band hints = annotation-only). Claims
 carry `file:line`; inferences are labelled. **[measured]** = run of the real DSP core
 (`packages/dsp/src/lib/tomtom-dsp.ts`) at 48 kHz in a scratch harness.

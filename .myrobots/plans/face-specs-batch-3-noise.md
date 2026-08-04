@@ -1,6 +1,13 @@
 # FACE SPEC — `noise` (batch 3) — **RECOMMENDATION: DO NOT SHIP A FACE**
 
-**Status:** SPEC + MOCKUP ONLY. PF-20 platform (PR #1301, unmerged). Citations file:line.
+> ⚠ **STATUS CORRECTED 2026-08-04.** PF-20 (**PR #1301**) **HAS MERGED** (`c6ff9253`) — read
+> the def on `main`. noise is **UNBUILT and this spec's own verdict is NO FACE ON MERIT**
+> (one param, zero inputs, zero modes — all four face tiers would be identical), so it stays
+> as an AUDIT, not as backlog: its real yield is the five wrong comments and the one vacuous
+> test. `packages/web/src/lib/audio/modules/noise.ts` has not been touched since
+> 2026-08-01, so those findings were still live when this was checked.
+
+**Status:** SPEC + MOCKUP ONLY — **UNBUILT, verdict NO FACE ON MERIT.** PF-20 platform (PR #1301 — MERGED, `c6ff9253`). Citations file:line.
 
 **Verdict: NO CURATED FACE ON MERIT.** The brief asked me to say so rather than invent one, so
 this file is the argument, the contingency design if the owner overrules it, and the pile of real

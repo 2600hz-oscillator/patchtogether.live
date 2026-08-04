@@ -1,5 +1,16 @@
 # face re-do — lfo
 
+> ⚠ **STATUS CORRECTED 2026-08-04 — read `face-redo-INDEX.md` §0 before building.**
+> PF-20 (**PR #1301**) **HAS MERGED** (`c6ff9253`); every "unmerged branch" citation below
+> now resolves on `main`. **`face.title` and `face.hint` do NOT paint by default** —
+> `facePageHeader()` returns `null` before reading anything unless annotate mode is on
+> (`packages/web/src/lib/ui/workflow/dock-faceplate-model.ts:90`), and the owner ruled on
+> 2026-08-03 that `face.title` stays annotation-only. **This spec leans on "`face.hint`,
+> which still paints by default" three times (§2, §4, §7) and that premise is FALSE** —
+> re-derive those three decisions before building. PF-21 dock ROW PACKING (`9bf12df7`)
+> also landed after this was written. **This re-do is NOT built** — the shipped `face`
+> still declares no `hero` and no `sidebar`. Live backlog.
+
 **Verdict: MECHANICAL ONLY.** The shipped face already *is* the design program's §4 BATCH B
 lfo entry, implemented in full and better-argued than the entry itself; it needs the two PF-20
 platform corrections plus a `title`/`hint`/`hero` declaration — and **no readout strip, no

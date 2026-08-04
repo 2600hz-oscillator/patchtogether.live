@@ -1,6 +1,19 @@
 # FACE SPEC — `pentemelodica` (batch 3)
 
-**Status:** SPEC + MOCKUP ONLY. PF-20 platform (PR #1301, unmerged). Citations file:line.
+> ⚠ **STATUS CORRECTED 2026-08-04 — THE FACE SHIPPED.** pentemelodica was PROMOTED in
+> **#1332** (`2d111616`) and is in `STRICT_FACES`. PF-20 (**PR #1301**) has MERGED
+> (`c6ff9253`). **The face half of this spec is spent — read the shipped def, not this.**
+> **§6 IS THE REASON THIS FILE SURVIVES, AND IT IS STILL LIVE:**
+> - ⚠ **§6-A · the notch is not a notch.** Still open — `pentemelodica-dsp.ts:176` still
+>   comments *"notch = x − bp (the SVF identity)"* and `:193` still computes `x - taps.bp`.
+>   The identity is `x − k·bp`, done correctly by the sibling `resofilter-dsp.ts`. This is a
+>   real DSP defect + a master-bus gain hazard and it is **its own owner-audition PR**, not
+>   face work.
+> - ⚠ **§6-B..G** (the false "a mono note source lights one voice" doc, the inert `decay`,
+>   the time-constant `release`, the "60 params" stale comment, no headroom guard, zero
+>   `edge:` declarations) were **not re-verified** on 2026-08-04.
+
+**Status:** ~~SPEC + MOCKUP ONLY~~ **BUILT.** PF-20 platform (PR #1301 — MERGED, `c6ff9253`). Citations file:line.
 
 **Verdict: PROMOTE — and it is the batch's hardest layout problem, because 48 params in five
 identical strips is the one shape `face.order` cannot express.** · archetype:

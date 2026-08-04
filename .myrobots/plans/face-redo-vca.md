@@ -1,5 +1,19 @@
 # face re-do — vca
 
+> ⚠ **STATUS CORRECTED 2026-08-04 — read `face-redo-INDEX.md` §0 before building.**
+> PF-20 (**PR #1301**) **HAS MERGED** (`c6ff9253`); every "unmerged branch" citation below
+> now resolves on `main`. **`face.title` and `face.hint` do NOT paint by default** —
+> `facePageHeader()` returns `null` before reading anything unless annotate mode is on
+> (`packages/web/src/lib/ui/workflow/dock-faceplate-model.ts:90`), and the owner ruled on
+> 2026-08-03 that `face.title` stays annotation-only. **Any argument below that parks a
+> load-bearing fact in `face.hint` because it "still paints" is VOID.** PF-21 dock ROW
+> PACKING (`9bf12df7`) also landed after this was written. **This re-do is NOT built** —
+> the module's shipped `face` still declares no `hero` and no `sidebar`. Live backlog.
+> ✅ The re-do ledger's vca defects **are FIXED** in **#1313** (`290dcdb5`): #3 (`si.smoo`
+> applied to the SUM, so a 1 ms and a 5 ms attack produced a bit-identical 49.79 ms rise —
+> now 0.81 ms / 4.00 ms) and #33 (the ART comment claiming "a VCA attenuates, never
+> boosts"). **Any timing argument below that cites the 22.66 ms slew is now WRONG.**
+
 **Verdict: MECHANICAL ONLY** (+ exactly one derived readout). The shipped face is already right —
 its ranking is argued *and* property-tested, its band label is the gain law, and its two persistent
 readouts do real vocabulary work. It needs `title` + `hint` + a band `hint` + a **2-entry readout

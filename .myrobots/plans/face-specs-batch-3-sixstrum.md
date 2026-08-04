@@ -1,6 +1,26 @@
 # FACE SPEC — `sixstrum` (batch 3) — **RE-DO of a SHIPPED face**
 
-**Status:** SPEC + MOCKUP ONLY. PF-20 platform (PR #1301, unmerged). Citations file:line.
+> ⚠ **STATUS CORRECTED 2026-08-04 — THE RE-DO SHIPPED.** sixstrum's face was re-cut in
+> **#1332** (`2d111616`): the STRUM audition reached `SHELL_CELLS`, the hero took it, and
+> §1's headline defect (*the shipped face could not play the instrument*) is **FIXED**.
+> PF-20 (**PR #1301**) has MERGED (`c6ff9253`). The companion delta
+> `.myrobots/plans/face-redo-sixstrum.md` was **deleted on 2026-08-04** — its one live
+> proposal (the STRIP-is-for-playing / SIDEBAR-is-reference rule) shipped verbatim at
+> `sixstrum.ts:256-257`, and its `note: '14 params'` half is moot because the shipped
+> sidebar carries `signal-flow` + `readouts` and no `presets` block. **This file is the sole
+> surviving record of that delta's four defects.**
+>
+> **STILL OPEN — this is why the file is kept:**
+> - **§4-D · the BASS preset collapses three of six strings onto one pitch** (`tuning: 1,
+>   register: −12, spread: 0.15` puts strings 1-3 under `KARPLUS_F0_MIN = 30 Hz`). A
+>   shipped preset; a preset-value change, so an owner call.
+> - **§2 · `ENV DECAY` and `RELEASE` are inert at the shipped `sustain = 1`** — the def's
+>   own band-5 hint now says so (`sixstrum.ts:224-226`), which documents it rather than
+>   fixing it.
+> - **§1 · `tuning` writes 14 params while advertising one**, so the same MIDI CC stamps 14
+>   on the card and 1 in the shell.
+
+**Status:** ~~SPEC + MOCKUP ONLY~~ **BUILT (the face) — the defect list is what remains.** PF-20 platform (PR #1301 — MERGED, `c6ff9253`). Citations file:line.
 
 **Verdict: RE-DO, and the current face is worse than the batch's un-faced modules in one specific
 way — the instrument cannot be played from it at all.** · archetype:

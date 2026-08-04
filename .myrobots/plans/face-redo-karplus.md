@@ -1,5 +1,18 @@
 # face re-do — karplus
 
+> ⚠ **STATUS CORRECTED 2026-08-04 — read `face-redo-INDEX.md` §0 before building.**
+> PF-20 (**PR #1301**) **HAS MERGED** (`c6ff9253`); every "unmerged branch" citation below
+> now resolves on `main`. **`face.title` and `face.hint` do NOT paint by default** —
+> `facePageHeader()` returns `null` before reading anything unless annotate mode is on
+> (`packages/web/src/lib/ui/workflow/dock-faceplate-model.ts:90`), and the owner ruled on
+> 2026-08-03 that `face.title` stays annotation-only. **§2's "the PAGE HEADER … still
+> paints by default" is FALSE**, and any argument below that rests on it is VOID. PF-21
+> dock ROW PACKING (`9bf12df7`) also landed after this was written. **This re-do is NOT
+> built** — the shipped `face` still declares no `hero` and no `sidebar`. Live backlog.
+> ✅ The re-do ledger's karplus defect #22 (the dock PLUCK animating when nothing was
+> plucked) **is FIXED** — `ShellActionCell.probe` is now REQUIRED (`shell-cells.ts:157`)
+> and the audition ledger records `delivered`.
+
 **Verdict: REAL REWORK** — the ranking, the bands and the audition are already right and stay
 byte-identical; what this face is missing is the entire PF-20 half (title, hint, hero, readout
 strip, sidebar), and the one thing it has instead — a `scope` glyph on a module that is MUTE
@@ -7,7 +20,7 @@ until something strikes it — is a flat line in every dock baseline it ships. P
 DECAY + the PLUCK into the hero, add a bespoke PARTIAL-LADDER picture, and print three DERIVED
 numbers (ring · damping · exciter) that turn three abstract knobs into physical units.
 
-Spec against the PF-20 platform on `origin/feat/faceplate-platform-v2` (PR #1301, unmerged);
+Spec against the PF-20 platform on `origin/feat/faceplate-platform-v2` (PR #1301 — **MERGED**, `c6ff9253`);
 "platform branch" below means that ref. Everything else is this worktree (`main`, `6622304d`).
 
 ---

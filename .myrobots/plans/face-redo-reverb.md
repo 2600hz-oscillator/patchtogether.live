@@ -1,5 +1,15 @@
 # face re-do — reverb
 
+> ⚠ **STATUS CORRECTED 2026-08-04 — read `face-redo-INDEX.md` §0 before building.**
+> PF-20 (**PR #1301**) **HAS MERGED** (`c6ff9253`); every "unmerged branch" citation below
+> now resolves on `main`. **`face.title` and `face.hint` do NOT paint by default** —
+> `facePageHeader()` returns `null` before reading anything unless annotate mode is on
+> (`packages/web/src/lib/ui/workflow/dock-faceplate-model.ts:90`), and the owner ruled on
+> 2026-08-03 that `face.title` stays annotation-only. **Any argument below that parks a
+> load-bearing fact in `face.hint` because it "still paints" is VOID.** PF-21 dock ROW
+> PACKING (`9bf12df7`) also landed after this was written. **This re-do is NOT built** —
+> the module's shipped `face` still declares no `hero` and no `sidebar`. Live backlog.
+
 **Verdict: REAL REWORK** — but a much *smaller* one than round-2 proposed: the shipped 3-knob ranking is right and stays, `diffusion` is REJECTED out of this wave (no DSP edit, no card edit, no ART re-pin), and the real work is the PF-20 declaration (title/hint/hero/**readout strip**/sidebar), the 2→1 band merge, and **two `ParamDef.format` functions that make SIZE and DAMP print physics instead of a 0..1 fraction** — all at ZERO contract cost.
 
 ---

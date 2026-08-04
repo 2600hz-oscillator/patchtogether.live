@@ -1,5 +1,15 @@
 # face re-do — cloudseed
 
+> ⚠ **STATUS CORRECTED 2026-08-04 — read `face-redo-INDEX.md` §0 before building.**
+> PF-20 (**PR #1301**) **HAS MERGED** (`c6ff9253`); every "unmerged branch" citation below
+> now resolves on `main`. **`face.title` and `face.hint` do NOT paint by default** —
+> `facePageHeader()` returns `null` before reading anything unless annotate mode is on
+> (`packages/web/src/lib/ui/workflow/dock-faceplate-model.ts:90`), and the owner ruled on
+> 2026-08-03 that `face.title` stays annotation-only. **Any argument below that parks a
+> load-bearing fact in `face.hint` because it "still paints" is VOID.** PF-21 dock ROW
+> PACKING (`9bf12df7`) also landed after this was written. **This re-do is NOT built** —
+> the module's shipped `face` still declares no `hero` and no `sidebar`. Live backlog.
+
 **Verdict: REAL REWORK, ADDITIVE ONLY.** The 47-key ranking, the eight-band paging and the tab
 rail are right and must not move; what is missing is the whole PF-20 layer — and cloudseed is the
 ONE face where a hero is not a nicety, because the tab rail hides seven of eight bands and the

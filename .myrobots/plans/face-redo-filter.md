@@ -1,5 +1,17 @@
 # face re-do — filter
 
+> ⚠ **STATUS CORRECTED 2026-08-04 — read `face-redo-INDEX.md` §0 before building.**
+> PF-20 (**PR #1301**) **HAS MERGED** (`c6ff9253`); every "unmerged branch" citation below
+> now resolves on `main`. **`face.title` and `face.hint` do NOT paint by default** —
+> `facePageHeader()` returns `null` before reading anything unless annotate mode is on
+> (`packages/web/src/lib/ui/workflow/dock-faceplate-model.ts:90`), and the owner ruled on
+> 2026-08-03 that `face.title` stays annotation-only. **Any argument below that parks a
+> load-bearing fact in `face.hint` because it "still paints" is VOID.** PF-21 dock ROW
+> PACKING (`9bf12df7`) also landed after this was written. **This re-do is NOT built** —
+> the module's shipped `face` still declares no `hero` and no `sidebar`. Live backlog.
+> ✅ The re-do ledger's filter defect (#7, `FilterCard`'s origin-less `t.params.mode = m`)
+> **is FIXED** — see `FilterCard.svelte:21`.
+
 **Verdict: REAL REWORK — but STRICTLY ADDITIVE.** `order`, `pages` membership, `glyph` and `rear`
 are correct today and stay **byte-identical**; the rework is the PF-20 surface this face predates —
 a `title`/`hint`, a hero strip of **three genuinely derived readouts** (the two CV-jack REACH
@@ -7,7 +19,7 @@ windows and the resonant PEAK, none of which is any knob on the panel), and a **
 MAGNITUDE-RESPONSE panel** that draws the one picture a VCF is, and that — unlike the shipped
 `scope` glyph, which is a flat line in both committed baselines — is alive on a silent rack.
 
-Written against `origin/feat/faceplate-platform-v2` (PR #1301, unmerged) + the two owner
+Written against `origin/feat/faceplate-platform-v2` (PR #1301 — **MERGED**, `c6ff9253`) + the two owner
 corrections (readouts BELOW the graphic as a strip; band hints are ANNOTATION-only).
 Every `file:line` below was re-grepped in this worktree, not copied from a plan.
 

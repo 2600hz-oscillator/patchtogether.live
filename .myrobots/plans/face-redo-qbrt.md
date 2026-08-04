@@ -1,8 +1,23 @@
 # face re-do — qbrt
 
+> ⚠ **STATUS CORRECTED 2026-08-04 — read `face-redo-INDEX.md` §0 before building.**
+> PF-20 (**PR #1301**) **HAS MERGED** (`c6ff9253`); every "unmerged branch" citation below
+> now resolves on `main`. **`face.title` and `face.hint` do NOT paint by default** —
+> `facePageHeader()` returns `null` before reading anything unless annotate mode is on
+> (`packages/web/src/lib/ui/workflow/dock-faceplate-model.ts:90`), and the owner ruled on
+> 2026-08-03 that `face.title` stays annotation-only. **§4's "with zero prose painted the
+> dock shows … the module hint (`face.hint` still paints)" is FALSE** — re-derive that
+> read-through. PF-21 dock ROW PACKING (`9bf12df7`) also landed after this was written.
+> **This re-do is NOT built** — the shipped `face` still declares no `hero` and no
+> `sidebar`. Live backlog.
+> ⚠ Ledger defect #12 (`ping` declares no `edge:`) is **still open in the def**
+> (`qbrt.ts:32` still calls it a CONTRACT GAP), but the *gate blindness* is fixed — the
+> undeclared-edge ledger (`packages/web/src/lib/docs/undeclared-edge-ledger.ts:57`) now
+> tracks it by name.
+
 **Verdict: REAL REWORK** — the shipped face ranks four knobs correctly and says nothing about the module: qbrt genuinely is **two instruments sharing four knobs** (an always-on stereo insert filter, and a struck resonator needing no oscillator); the second instrument is **unreachable from every surface in the repo**; and the two numbers a player most needs — how long it rings, how much louder the peak is — are **derivable from the DSP and printed nowhere**.
 
-Platform: `origin/feat/faceplate-platform-v2` (PR #1301, unmerged). Every `file:line` re-derived against the code, never copied from a plan (round-2's DSP citations are off by 1–2 lines; its BLOCKER is false — §9).
+Platform: `origin/feat/faceplate-platform-v2` (PR #1301 — **MERGED**, `c6ff9253`). Every `file:line` re-derived against the code, never copied from a plan (round-2's DSP citations are off by 1–2 lines; its BLOCKER is false — §9).
 
 ---
 

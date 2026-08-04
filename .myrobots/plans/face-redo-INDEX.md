@@ -1,12 +1,59 @@
 # FACE RE-DO — the 18 shipped faces against the CORRECTED platform · THE INDEX
 
+## 0. STATUS — CORRECTED 2026-08-04 (verified against `main`, not against this doc)
+
+**These specs are STILL LIVE BACKLOG. Sixteen of the eighteen re-dos are UNBUILT.** Ground
+truth, not a status line: only `clap`, `drummergirl`, `kickdrum`, `pentemelodica` and
+`sixstrum` declare a `face.sidebar`/`face.hero` in
+`packages/web/src/lib/audio/modules/*.ts`. Every other module named below still ships the
+`order`/`pages`/`glyph`/`rear` face this doc proposes to replace.
+
+| what this doc said | what is true on `main` today |
+|---|---|
+| PF-20 platform is **PR #1301, NOT yet merged** | **MERGED** — `c6ff9253`. Every `origin/feat/faceplate-platform-v2` citation resolves on `main`. |
+| batch-3 specs are **PR #1304**, spec-only | **MERGED** — `6b4a8968`. |
+| these 18 specs are **PR #1307**, spec-only | **MERGED** — `9187fd84`. |
+| kickdrum is **IN FLIGHT on #1301** | kickdrum's PF-20 face **SHIPPED**; this doc's kickdrum DELTA did **not** — `settles to` is still declared at `kickdrum.ts:387`. |
+| sixstrum is **IN FLIGHT, spec'd in #1304** | **SHIPPED** in **#1332** (`2d111616`), and this doc's sixstrum delta shipped with it — the strip-vs-sidebar rule is verbatim at `sixstrum.ts:256-257`. **`face-redo-sixstrum.md` was therefore DELETED on 2026-08-04**; its four defects live on in `face-specs-batch-3-sixstrum.md` §4-D/§6, which is where it said they came from. |
+
+### ⚠ THE ONE PREMISE IN §1 THAT IS FALSE
+
+Correction 2 is stated below as "band prose is ANNOTATION" while the page header keeps
+painting. **The page header does not keep painting.** `facePageHeader(def, annotations =
+false)` returns `null` before it reads anything — `face.title` and `face.hint` included
+(`packages/web/src/lib/ui/workflow/dock-faceplate-model.ts:90`). The owner ruled on
+2026-08-03 that **`face.title` stays annotation-only** ("two names on one panel was the
+actual complaint"), so this is a decision, not a bug to file.
+
+That matters because **eight of these specs park a load-bearing fact in `face.hint` and
+justify it with "which still paints"** — delay §3, karplus §2, lfo §2/§4/§7, mixer §5,
+qbrt §4, shimmershine §5, and kickdrum's §3. **Re-derive each of those before building.**
+The §1 discipline itself survives intact: move the fact to a surface that *does* paint —
+which now means the readout strip, the sidebar, a PF-9 cluster label or a `FacePreset.note`,
+and never the page hint.
+
+### Two platform changes that landed AFTER these specs were written
+
+- **PF-21 dock ROW PACKING** (`9bf12df7`, `8241fe97`): consecutive packable bands now share
+  a row, ≤ 10 cells. Thirteen faces re-grouped; a tabbed face never packs. Any "the dock is
+  too vertical" argument below is already answered by the platform.
+- The **dock VRT scene captures only the top ~425 px** (`71909ed0`) — a green dock baseline
+  is *not* evidence that a band-level change was a no-op on a tall face.
+
+---
+
 **SPEC AND MOCKUP ONLY. Nothing here is implemented; no module def, card, test or source file is
 touched.** The owner reviews this and the gallery before any building starts.
 
 - **Mockup gallery (one self-contained file):** `.myrobots/mockups/face-redo-gallery.html`
-- **Per-module specs:** `.myrobots/plans/face-redo-<module>.md` — eighteen files
+  — **KEPT** (this index is its only referrer). It draws the eighteen PROPOSED faces, of
+  which sixteen are still unbuilt, so it is the live visual reference for the backlog.
+  ⚠ It predates PF-21 row packing and it draws the page header as if it painted at rest.
+- **Per-module specs:** `.myrobots/plans/face-redo-<module>.md` — ~~eighteen~~ **seventeen**
+  files (sixstrum's delta shipped and was deleted 2026-08-04 — see §0)
 - **Designed against:** the PF-20 faceplate platform on `feat/faceplate-platform-v2`
-  (**PR #1301, NOT yet merged**) **with the owner's two corrections applied** (§1).
+  (**PR #1301 — MERGED 2026-08-02 as `c6ff9253`; read `main`**) **with the owner's two
+  corrections applied** (§1 — but see §0 for the one part of correction 2 that is false).
 - **Quality bar:** `.myrobots/plans/dx7-and-faces-design-program-2026-07-27.md` (§7 "THE RECIPE").
 - **Format:** `.myrobots/plans/face-specs-batch-3-*.md` (PR #1304).
 - **Defect checklist read as "what not to repeat":**
@@ -87,10 +134,11 @@ the answers converged on:
 | **ringback** | MECHANICAL ONLY | The one face whose ranges already live in ONE model module. Gains the best-earned strip in the batch: the FEEDBACK dial's `6 LAPS` is the kickdrum trap **already shipped on this module's own dial**. |
 | **tidyVco** | MECHANICAL ONLY | Not a VCO — the rack's one complete subtractive VOICE, silent until gated. Gains the whole PF-20 surface + the HOLD audition in the hero. **PF-0 is NOT live** — fixed 2026-07-27. |
 | **vca** | MECHANICAL ONLY | **Keep it in `STRICT_FACES`** (§6). No hero picture: every candidate graph is a straight line whose two degrees of freedom are the two dials under it. Strip = 2 entries, and the spec names the two it refused to pad with. |
-| **kickdrum** | IN FLIGHT — delta only | Being built on #1301. Delta: drop `settles to`, add a derived `starts at` (the function already exists), and confirm the five hidden hints survive — four of five do, via the sidebar. |
-| **sixstrum** | IN FLIGHT — delta only | Spec'd in #1304. Delta: the strip-vs-sidebar rule, `note: '14 params'` on the preset rows, and the observation that its most important fact was already in `face.hint` — which correction 2 makes the load-bearing decision of that spec. |
+| **kickdrum** | ~~IN FLIGHT~~ → **face SHIPPED (#1301), DELTA STILL OPEN** | Delta: drop `settles to`, add a derived `starts at` (the function already exists), and confirm the five hidden hints survive — four of five do, via the sidebar. **Not applied: `kickdrum.ts:387` still declares `settles to`.** |
+| **sixstrum** | ~~IN FLIGHT~~ → **SHIPPED, spec RETIRED** | Shipped in **#1332** (`2d111616`) with the delta's strip-vs-sidebar rule (`sixstrum.ts:256-257`). The `note: '14 params'` half is MOOT — the shipped sidebar carries `signal-flow` + `readouts` and no `presets` block. `face-redo-sixstrum.md` deleted 2026-08-04. |
 
-**11 real rework · 5 mechanical only · 2 in flight · 0 drops.**
+**11 real rework · 5 mechanical only · 2 in flight · 0 drops** *(as authored; on 2026-08-04
+that reads: **16 unbuilt**, kickdrum's face shipped with its delta open, sixstrum done)*.
 
 ---
 
@@ -141,6 +189,32 @@ it is worth doing before a fourth spec re-derives the same wall.
 
 **None of these is spec content. Every one is its own follow-up PR**, and the DSP ones are
 owner-audition PRs. Ranked by how much they hurt.
+
+> ⚠ **THE ROW NUMBERS BELOW ARE CITED FROM LIVE SOURCE** — `shell-cells.ts:410`,
+> `audition-ledger.ts:25`, `mutate.guard.test.ts:26`, `undeclared-edge-ledger.ts:57` and
+> `card-def-agreement.test.ts:167` all say "face-redo ledger defect #N". **Never renumber
+> this table.**
+>
+> **CLOSED AS OF 2026-08-04** (verified against `main`, evidence in the PR, not in this doc):
+>
+> | # | module | closed by |
+> |---|---|---|
+> | 1 | shimmershine — the "crystalline drone" is a pure DC rail | **#1313** `290dcdb5` — 20 Hz DC blocker in the loop and on the wet send. ⚠ The self-sustain threshold MOVED (default tank ~0.75, was ~0.39). |
+> | 3 | vca — `si.smoo` lowpassed the CV | **#1313** `290dcdb5` — 1 ms → 0.81 ms, 5 ms → 4.00 ms (was 49.79 ms for both). |
+> | 4 | tomtom — `strike` stuck at 1 masks `trigger_in` forever | **#1316** `bbba5b5d`. |
+> | 5 | adsr — the ART lane is green about a different synth | **#1313** `290dcdb5` — re-pointed at `renderFaustOffline`. |
+> | 6 | ringback — `out_l`/`out_r` both map to output 0 | **#1313** `290dcdb5` — `ChannelSplitter(2)`. |
+> | 7 | filter — `t.params.mode = m` is an origin-less raw write | fixed 2026-08-02; see `FilterCard.svelte:21`. The `RAW_PARAM_WRITE` bracket-only blindness is fixed too (`mutate.guard.test.ts:26`). |
+> | 22 | karplus — the dock PLUCK animates when nothing was plucked | `ShellActionCell.probe` is now **REQUIRED** (`shell-cells.ts:157`) and the audition ledger records `delivered: false`. |
+> | 25 | snaredrum — the roll's sizzle pans to the wrong side | **#1328** `1446f1c5`. |
+> | 33 | vca — the ART comment "a VCA attenuates, never boosts" | **#1313** `290dcdb5`. |
+> | 35 | sixstrum — the shipped face cannot play the instrument | **#1332** `2d111616`. ⚠ **Only the face half.** The BASS-preset `F0_MIN` collapse, the inert `ENV DECAY`/`RELEASE` and `tuning` writing 14 params while advertising one are all **STILL OPEN**. |
+>
+> **PARTIALLY closed:** #12 (qbrt's `ping` declares no `edge:`) — the *gate* is no longer
+> blind (`undeclared-edge-ledger.ts:57` names it), but the declaration is still missing;
+> `qbrt.ts:32` still calls it a CONTRACT GAP.
+>
+> **Everything not listed above was still open when this was checked on 2026-08-04.**
 
 | # | module | defect | why nothing caught it |
 |---|---|---|---|

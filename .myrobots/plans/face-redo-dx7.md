@@ -1,5 +1,16 @@
 # face re-do — dx7
 
+> ⚠ **STATUS CORRECTED 2026-08-04 — read `face-redo-INDEX.md` §0 before building.**
+> PF-20 (**PR #1301**) **HAS MERGED** (`c6ff9253`); every "unmerged branch" citation below
+> now resolves on `main`. **`face.title` and `face.hint` do NOT paint by default** —
+> `facePageHeader()` returns `null` before reading anything unless annotate mode is on
+> (`packages/web/src/lib/ui/workflow/dock-faceplate-model.ts:90`), and the owner ruled on
+> 2026-08-03 that `face.title` stays annotation-only. **Any argument below that parks a
+> load-bearing fact in `face.hint` because it "still paints" is VOID.** PF-21 dock ROW
+> PACKING (`9bf12df7`) also landed after this was written. **This re-do is NOT built** —
+> dx7 declares a `hero` (from the DX7 operator-map wave) but still no `sidebar`, and none
+> of the re-cut below is in the def. Live backlog.
+
 **Verdict: REAL REWORK — STRUCTURAL ONLY.** The control roster, the rank order, the
 `paramCells` grid, the `algorithm` glyph choice and the rear curation are all correct and
 this spec changes NONE of them; what changes is that the operator map becomes the hero

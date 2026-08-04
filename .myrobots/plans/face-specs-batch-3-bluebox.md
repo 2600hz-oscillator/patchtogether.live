@@ -1,7 +1,15 @@
 # FACE SPEC — `bluebox` (batch 3)
 
 **Status:** SPEC + MOCKUP ONLY. Designed against the PF-20 platform on
-`feat/faceplate-platform-v2` (PR #1301, unmerged). Every claim about current behaviour
+> ⚠ **STATUS CORRECTED 2026-08-04.** PF-20 (**PR #1301**) **HAS MERGED** (`c6ff9253`) — read
+> the def on `main`, not `origin/feat/faceplate-platform-v2`. **bluebox is UNBUILT: this is
+> LIVE BACKLOG, not stale.** `packages/web/src/lib/audio/modules/bluebox.ts` has not been
+> touched since 2026-08-01, so the measurements below still stand. Two platform facts landed
+> after this was written: **PF-21 dock ROW PACKING** (`9bf12df7`), and **`face.title` /
+> `face.hint` are ANNOTATION-ONLY** — `facePageHeader()` returns `null` unless annotate mode
+> is on (`dock-faceplate-model.ts:90`; owner decision 2026-08-03).
+
+`feat/faceplate-platform-v2` (PR #1301 — MERGED, `c6ff9253`). Every claim about current behaviour
 carries a file:line; inferences are labelled.
 
 **Verdict: PROMOTE — but the face is a KEYPAD, not a knob rank, and that changes what

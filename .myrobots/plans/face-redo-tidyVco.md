@@ -1,5 +1,16 @@
 # face re-do — tidyVco
 
+> ⚠ **STATUS CORRECTED 2026-08-04 — read `face-redo-INDEX.md` §0 before building.**
+> PF-20 (**PR #1301**) **HAS MERGED** (`c6ff9253`); every "unmerged branch" citation below
+> now resolves on `main` — including §11's "on the **unmerged** platform branch, not main,
+> so not a shipped defect", which no longer holds. **`face.title` and `face.hint` do NOT
+> paint by default** — `facePageHeader()` returns `null` before reading anything unless
+> annotate mode is on (`packages/web/src/lib/ui/workflow/dock-faceplate-model.ts:90`), and
+> the owner ruled on 2026-08-03 that `face.title` stays annotation-only. **Any argument
+> below that parks a load-bearing fact in `face.hint` because it "still paints" is VOID.**
+> PF-21 dock ROW PACKING (`9bf12df7`) also landed after this was written. **This re-do is
+> NOT built** — the shipped `face` still declares no `hero` and no `sidebar`. Live backlog.
+
 **Verdict: MECHANICAL ONLY.** The shipped ranking, bands, clusters, rear and glyph are right and are
 pinned by a bespoke unit spec plus an owner-regression e2e — nothing in them should move. What this
 face is missing is the PF-20 declaration surface: a title, a hint, five band hints, a hero
