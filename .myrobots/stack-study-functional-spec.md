@@ -1,5 +1,37 @@
 # patchtogether — Functional Specification (stack-agnostic)
 
+> **STATUS 2026-08-04: CURRENT — this is the reference behavioral spec of the shipped
+> product, and it is KEPT.** It is genuinely stack-agnostic (zero mentions of Svelte,
+> Yjs, Clerk, Cloudflare, Faust, WebGL — verified by grep across all 618 lines), which
+> is what makes it reusable. Landed in the planning-corpus bulk commit `dd847ee5`
+> (#1175, 2026-07-26); the **content** cutoff is earlier — around 2026-07-10…22.
+>
+> Three corrections a reader must carry, none of which supersede the document:
+>
+> 1. ⚠ **"roughly 170 audio-domain entries" was NEVER TRUE and is the one hard error
+>    here.** The live registry exports **119 audio defs + 67 video defs = 186** (the
+>    footer count). 170 is the raw *file* count in `audio/modules/`, ~50 of which are
+>    helper/engine-mirror files the glob registry deliberately skips. The historical
+>    peak was 126 defs (2026-07-01). The spec's own arithmetic contradicts it —
+>    170 + 61 > 180. **This error propagates into `stack-study-executive-report.md`'s
+>    rewrite-cost math ("~1.5–3 senior-years porting 170 audio modules"), inflating it
+>    by ~40 %.** It does not change that report's verdict.
+> 2. **Missing, all post-cutoff:** the **Ableton Push 2** integration (shipped #1165,
+>    2026-07-23, through LEGEND MODE #1309 — §7's hardware roster omits it entirely,
+>    which is the sharpest dating evidence); CLIP PLAYER **song / arrangement mode**
+>    (`clip-song.ts`, `clip-arrange.ts`, `ClipArrangeEditor.svelte`); and the module
+>    **face PLATFORM** (#1301 — §10's faceplate paragraph describes the *docs* view,
+>    a different thing). ~18 modules were also deleted in #1013/#1033.
+> 3. **One claim went from aspirational to true after authorship:** §11's "unpatched
+>    outputs render at zero cost" was shipped by sink-driven pull evaluation (#1045,
+>    2026-07-11). §14's health-probe "hard 1.5-second budget" could not be verified
+>    against the live probe.
+>
+> Everything else spot-checked held: 9 cable types + legality, the 180 px rack unit,
+> the four latency modes (Tight 0.012 default / Stable 0.045), capacity 4, the
+> 25-module Moog System, auth (Clerk + anon HMAC invite), deploy topology, and the
+> testing constitution.
+
 ## 1. Product summary
 
 patchtogether is a collaborative modular synthesis studio: an infinite virtual rack where users wire modules together with typed patch cables to build live audio, video, and hybrid instruments. The catalog spans ~180 module types (live count shown in the app footer): roughly 170 audio-domain entries — oscillators, filters, envelopes, sequencers, effects, samplers, and a complete 25-module Moog System 35/55 recreation — plus ~61 dedicated video-synthesis modules (~90 video-domain palette entries including hybrids and games) and playable game modules (DOOM, BLOOD, and a family of arcade CV games). Everything is a signal: sequencers play synths, audio drives visuals, game events fire drums, and hardware controllers drive all of it.

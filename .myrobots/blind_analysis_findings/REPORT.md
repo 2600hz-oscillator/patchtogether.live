@@ -4,7 +4,21 @@
 **Method:** The repo (origin/main) was exported via `git archive` (tracked files only — no git history, no ignored files), then purged of ALL context: `.myrobots/`, `.claude/`, every `*.md` file (README, docs, plans), and 8.6 MB of comments stripped from 2,462 code files (TypeScript-parser-based for TS/JS/Svelte incl. GLSL-in-template-literals; state machines for C/GLSL/CSS; line rules for shell/YAML). Parse-verified: 1,828 TS/JS files + 262 Svelte script blocks all still parse. Corpus: `~/Documents/workspace/subject-a` (kept for reproduction).
 **Analysts:** six fresh headless `claude -p` processes launched *from inside the corpus* — no CLAUDE.md on their path, no project memory (verified no CLAUDE.md exists anywhere above the corpus), read-only tool allowlist. One question each: identity / testing / correctness bugs / lifecycle bugs / performance / stability.
 **Adversaries:** one equally blind process per report, instructed to independently locate every citation and rule CONFIRMED / REFUTED / UNVERIFIABLE.
-**Raw outputs:** `raw/<lane>.analysis.md` + `raw/<lane>.verification.md` in this directory.
+**Raw outputs:** ~~`raw/<lane>.analysis.md` + `raw/<lane>.verification.md` in this directory.~~
+⚠ **2026-08-04: the `raw/` directory does not exist and was never committed** — this
+directory contains only `REPORT.md` and `DSP_BUGS_OWNER_DECISION.md`. The twelve raw
+analyst + verifier transcripts are gone; the same applies to §8's closing sentence.
+This report and the decision doc are the only surviving artifacts of the exercise, which
+is why they are kept rather than trimmed. The corpus (`~/Documents/workspace/subject-a`)
+was outside the repo and its existence today is unverified.
+
+> **STATUS 2026-08-04.** This is a *findings* record, not a plan — kept as the provenance
+> for the decision doc beside it. §5's action plan has aged: several targets no longer
+> exist (`helm`, `elements` and 13 other modules were deleted in #1013/#1033), and several
+> items shipped by other routes (video sink-driven pull eval #1045; reconciler/engine
+> hardening in part). The **live** residue is tracked per-item in
+> `DSP_BUGS_OWNER_DECISION.md`, which was re-verified against `origin/main` on the same
+> date — read that for current status, not the table in §7 below.
 
 ---
 

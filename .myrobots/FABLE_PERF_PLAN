@@ -5,12 +5,70 @@ Verification legend: **[V]** = adversarially verified true · **[V↓]** = verif
 
 ---
 
+> # ⚠ RE-VERIFIED 2026-08-04 — STILL LIVE BACKLOG, BUT READ THIS FIRST
+>
+> **This plan is NOT spent: 4 of its 31 items shipped, ~24 are still open, and it is
+> the largest unexecuted perf backlog in the repo.** It is kept for that reason.
+>
+> **But it is a 2026-07-01 snapshot and two of its §2 "already fixed — do NOT
+> relitigate" claims are now FALSE in the opposite direction — they describe work as
+> parked/in-flight that has since MERGED.** Acting on §2 unread would re-park a
+> shipped feature. Corrections are inline (`▸ 2026-08-04:`); the summary:
+>
+> ### Shipped since
+>
+> | item | shipped as |
+> |---|---|
+> | **P1-6** flowNodes/flowEdges memoization + snapshot structural sharing + observer scoping (all three seams) — the doc's "still-open #719 TODO" and its own riskiest item | **#1031** (`57dfd2de`, 2026-07-06) |
+> | **P2-3** reachability culling → generalized **sink-driven pull evaluation** | **#1045** (`a1fb05d1`, 2026-07-11) |
+> | **P2-5** Fix-E worker co-processor **DEFAULT FLIPPED ON** (`worker-bridge.ts:64-69` — "default is ON as of PR V2") | **#1047** (`aaed22b7`, 2026-07-10) |
+> | **P3-4** flowEdges hover churn (folded into #1031) | `Canvas.svelte:2545-2553` |
+> | §2's "A4 DSP oversampler is IN PROGRESS on this branch" | **merged #997** (`543a986c`, 2026-07-01) — the file is tracked with a committed test |
+>
+> ### Premises that no longer hold
+>
+> - **P0-2 / P1-11's route model is obsolete.** `/` is now a **prerendered SSR landing
+>   page** (`routes/+page.ts` `prerender=true, ssr=true`); the canvas moved to `/rack`
+>   (`routes/rack/+page.ts` `ssr=false`). The measured 1.96 MB Link-header total no
+>   longer describes `/`. **The eager card glob is still there and still worth
+>   splitting** (`modules-card-map.ts:26-28`, untouched) — but re-measure against
+>   `/rack`, don't reuse the numbers.
+> - **#1033 deleted 15 modules.** P2-2's `elements.ts` denormal target, P2-9's snes9x
+>   half, and P1-4's qbert reference all name **files that no longer exist**.
+> - **§2's adopter list is wrong in composition, not count.** It says
+>   Drumseqz/**Kria**/Macseq/Polyseqz/Scope. **Kria never adopted it** — `KriaCard.svelte:17`
+>   is still a dead import with zero `onMeterFrame(` calls and the raw playhead loop
+>   still at `:213-226`. The fifth adopter is **Dockscope**. The doc's own "2-line fix"
+>   never landed.
+> - **Every file:line citation should be re-derived before use.** `Canvas.svelte` is
+>   now 8,821 lines against the doc's ~5,227-line references; `transport-cv.ts`,
+>   `drag-commit.ts`, `recorderbox-recorder.ts` and `PatchPanel.svelte` have all moved.
+>
+> ### Confirmed STILL OPEN (the reason to keep this file)
+>
+> **P0-1** (73 card files, **239** raw rAF sites; only 5 cards + 2 shared controls on the
+> ticker; `VideoOutCard.svelte:240-296` still has the raw loop *and* the busy-poll
+> retry branches) · **P0-2** (still `{ eager: true }`) · **P0-3** (0 `destroy()` call
+> sites, 0 dispose port messages, 0 lifecycle `return false`) · **P1-1** · **P1-2**
+> (`playoutStats|renderCapacity|onprocessorerror` = **0 hits**; default still `'tight'`)
+> · **P1-4** · **P1-7** (no `audioCtx.close()`; `WEBGL_lose_context` = 0 hits repo-wide)
+> · **P1-8** (`video/engine.ts:1404` draw still unguarded, still reschedules at the
+> tail) · **P1-9** · **P1-10** · **P2-1** · **P2-2** · **P2-4** · **P2-6** · **P2-7** ·
+> **P2-8** · **P2-10** · **P3-1** · **P3-2** · **P3-3** · **P3-5** · **P3-6/7**.
+> **P1-3** and **P1-5** are PARTIAL.
+>
+> ⚠ Instrument note for whoever re-audits: plain `grep` **silently skips**
+> `packages/web/src/lib/video/engine.ts` (binary-detected). Use `grep -a`, or a
+> negative result there means nothing.
+
+---
+
 ## 1. Executive summary — the five biggest wins
 
 1. **Finish the #996 rAF coalescing everywhere** — migrate the ~55 remaining audio/meter card loops **and** the 29 video-preview present loops (full-res GL blit + drawImage sync each frame, zero off-screen gating) onto the shared `onMeterFrame` ticker. Single largest remaining slice of the SHOES1 main-thread contention → output-underrun class. [V / P0]
 2. **Split the 5 MB boot mega-chunk** — `/` ships 1.96 MB compressed JS (one 1.45 MB-br chunk: all 191 cards + 271 defs + doc prose, eagerly globbed) before ANY pixel or sound. Lazy per-card imports + docs-prose dedupe target boot < 700 KB compressed. [V / P0]
 3. **Actually terminate AudioWorklet processors on module delete** — 0 of 69 processors ever `return false`, Faust `destroy()` has zero call sites; every delete/preset-slot cycle permanently accumulates live processors on the render thread. Monotonic render-budget drain compounding the underrun class. [U / P0]
-4. **Kill the per-Yjs-update full-graph cascade** — every doc update synchronously rebuilds the whole snapshot, hands xyflow all-new flowNodes/flowEdges identities, re-walks the reconciler, and fans out to per-card `ydoc.on('update')` observers doing O(E) proxy walks. The still-open #719 memoization TODO. [V(partial)/U / P1]
+4. ~~**Kill the per-Yjs-update full-graph cascade**~~ **← DONE, #1031 (2026-07-06).** Every doc update synchronously rebuilt the whole snapshot, handed xyflow all-new flowNodes/flowEdges identities, re-walked the reconciler, and fanned out to per-card `ydoc.on('update')` observers doing O(E) proxy walks. All three seams of P1-6 shipped; the #719 memoization TODO is closed. [V(partial)/U / P1]
 5. **Make underruns visible and self-mitigating** — zero runtime underrun detection today (grep `renderCapacity|playoutStats` = 0) with a Tight-12 ms default; add the detector + "switch to Stable" nudge + an audio-first video frame governor (video halves to 30 fps under audio pressure). [V / P1]
 
 ---
@@ -18,11 +76,15 @@ Verification legend: **[V]** = adversarially verified true · **[V↓]** = verif
 ## 2. Current state — already fixed; do NOT relitigate
 
 - **#996 meter-frame ticker** shipped and works (`packages/web/src/lib/ui/meter-frame.ts:86-103`, IntersectionObserver + document.hidden gating, per-subscriber error guards). Only 5 cards adopted (Drumseqz/Kria/Macseq/Polyseqz/Scope) — and KriaCard's migration is incomplete (dead `onMeterFrame` import at KriaCard.svelte:17; raw playhead loop still at :214-224). The remaining ~55 audio + 29 video card loops are §3's P0-1.
+  - ▸ **2026-08-04:** still 5 card adopters, but the LIST is wrong — **Kria was never one of them.** Its import at `:17` is still dead and the raw playhead loop is still there, now at `:213-226`. The fifth is **Dockscope**. Two shared controls (`VuMeter.svelte`, `ScopeScreen.svelte`, reaching 6 cards) and `workflow/shell-glyph-live.ts` also went on the ticker. Against that: **73 card files still hold 239 raw `requestAnimationFrame` sites.** P0-1 is barely started.
 - **#996 also fixed** the MACSEQ stall/edge correctness (macseq now uses `createEdgeCounter`).
 - **#719 write-storm fix** landed (render-local CV clone) — but only the **store→render** direction. The read-side (per-tick SyncedStore proxy scans) and the render-loop→store reflect writes (Backdraft family) are still open (P1-3, P2-7).
+  - ▸ **2026-08-04:** the **memoization** half — §1 item 4's "still-open #719 memoization TODO", i.e. **P1-6** — **SHIPPED in #1031** (`57dfd2de`, 2026-07-06), all three seams: Canvas identity reuse (`Canvas.svelte:2500-2510`, `:2577-2587`), dirty-set structural sharing in `graph/snapshot.ts:54-76,191-235,354-412`, and scoped observers (`PatchPanel.svelte:267-300`, `ModuleTitle.svelte:70-71`). P1-3 and P2-7 are still open as written.
 - **Drag input paths are already correct** — knob/fader writes rAF-coalesced via `drag-commit.ts:73-117`; node positions write on dragstop only (Canvas.svelte:2275-2298). Prior measurement proved the clock/graph survive the storm; remaining drag cost is downstream fan-out. **Do not re-optimize input handlers.**
-- **Fix-E worker co-processor**: shipped flag-OFF (`worker-bridge.ts:~29-49`; `renderLocus:'worker'` at acidwarp.ts:134 / toybox.ts:303 / vfpga-runner.ts:136; transparent fallback in worker-proxy-handle.ts). **Owner PARKED 2026-07-01** — default flip requires explicit un-park + Phase-A A/B measurement + the currently-blocked webgl re-attest. Only the worker was parked; per-card present coalescing was explicitly NOT parked (folded into P0-1).
-- **A4 DSP oversampler is IN PROGRESS on this branch** (`feat/dsp-oversampler`, untracked `packages/dsp/src/lib/oversample.ts`) — do not re-propose.
+- ~~**Fix-E worker co-processor**: shipped flag-OFF (`worker-bridge.ts:~29-49`; `renderLocus:'worker'` at acidwarp.ts:134 / toybox.ts:303 / vfpga-runner.ts:136; transparent fallback in worker-proxy-handle.ts). **Owner PARKED 2026-07-01** — default flip requires explicit un-park + Phase-A A/B measurement + the currently-blocked webgl re-attest.~~ Only the worker was parked; per-card present coalescing was explicitly NOT parked (folded into P0-1).
+  - ▸ **2026-08-04: FALSE — the park was lifted and the DEFAULT IS ON.** PR **#1047** (`aaed22b7`, 2026-07-10) flipped it, nine days after this was written; `worker-bridge.ts:64-69` now reads "default is ON as of PR V2" and adds parity tiers. **Do not re-park it on the strength of this paragraph.** §5 item 9 and P2-5's sequencing block are obsolete with it.
+- ~~**A4 DSP oversampler is IN PROGRESS on this branch** (`feat/dsp-oversampler`, untracked `packages/dsp/src/lib/oversample.ts`) — do not re-propose.~~
+  - ▸ **2026-08-04: MERGED as #997** (`543a986c`, 2026-07-01). `packages/dsp/src/lib/oversample.ts` is tracked and has a committed test. The branch survives only as a stale `origin/feat/dsp-oversampler`. Still "do not re-propose" — but because it is *done*, not because it is in flight.
 - **#991 LRU voice allocator / #990 held-note gates** are sound; only a P3 lane-write dedup remains.
 - **Verified-good surfaces (anti-churn guardrail — spend nothing here):** CF Pages immutable + brotli caching (`cache-control: public, max-age=31536000, immutable` verified live); lazy per-module worklet/wasm loading with per-context dedupe (faust-runtime.ts:21,47-50; clouds.ts:322-325); save/quicksave one-shots (persistence.ts:178,252; IndexedDB preset slots); relay store debounce 2 s/5 s; docs fully prerendered (the 7.6 MB server manifest chunk is build-time only, no `?raw` leakage into client chunks); scheduler-clock design (worker ticker, 25 ms tick, 200 ms lookahead, per-subscriber guards); cross-domain CV bridges (32-sample tail reads — cheap); OUTLINES trig hoisting (#699); milkdrop already allocate-once + texSubImage2D (see §5!).
 - **Unshipped from the prior dsp-stack audit, tracked THERE not here:** A1 limiter pump (audio-out.ts:133-140) and A2a 48 kHz pin (Canvas.svelte:4414). Owner question in §6.
@@ -49,6 +111,7 @@ Format per item: What / Evidence / Expected win / Effort / Risk + test-gate chur
 #### P0-2 · Split the landing-route boot mega-chunk (lazy cards) [V — startup#1 P0]
 - **What:** Convert `modules-card-map.ts:26-28` from an eager glob of all 191 `*Card.svelte` (2.8 MB source) to non-eager `() => import()` loaders behind a `LazyCard` wrapper registered per type in SvelteFlow nodeTypes (placeholder sized by existing rack-size tags). Keep def registries (audio index.ts:35-38, video :19-22, meta :16-19; 271 files) **eager** — graph semantics need port shapes synchronously.
 - **Evidence:** Live-verified: `/` Link header = 43 modulepreloads totaling 1,961,168 B compressed; dominant chunk B4GYW3O4.js = 1,447,168 B br (local twin ChGKs5oR.js = 4,971,896 B raw / 1,510,136 B gz; contains 71 `AudioWorkletNode` hits + 182 docs blobs). routes/+page.svelte:22 renders Canvas → the chunk gates first paint AND first sound. Neither modules-card-map.ts nor Canvas.svelte is in any attest basis (verifier checked resolveWebglBasis + collab-attest-lib).
+  - ▸ **2026-08-04: THE ITEM STANDS, THE MEASUREMENT DOES NOT.** `modules-card-map.ts:26-28` is still `import.meta.glob(…, { eager: true })`, untouched since this was written — so the fix is still worth doing. But `/` is no longer the canvas route: it is a **prerendered SSR landing page** (`routes/+page.ts`, `prerender=true, ssr=true`) and the canvas moved to **`/rack`** (`routes/rack/+page.ts`, `ssr=false`). **Re-measure the Link-header total against `/rack`; do not reuse the 1.96 MB figure.** (Same applies to P1-11, whose premise is now moot.)
 - **Expected win:** ~2.8 MB card source (+ per-card deps) off the critical path; with P1-5 docs dedupe, boot JS from 1.96 MB → target < 700 KB compressed. Directly cuts time-to-first-canvas and time-to-first-sound.
 - **Effort:** L.
 - **Risk + gates:** Cards mount one microtask later → possible VRT baseline churn (settle-loop should absorb; regen linux+darwin via vrt-update.yml if not); 3×-flake-check the lazy-mount path against per-module-per-port + behavioral rows (awaited locators → low churn). Worklet `?url` imports live in defs, not cards — unaffected.
@@ -101,7 +164,7 @@ Format per item: What / Evidence / Expected win / Effort / Risk + test-gate chur
 - **Effort:** S (step 1) + M (step 2). Attest-free (Canvas in neither basis; vite.config.ts not in the webgl basis; video def sources unmodified → docs-hash-transparency honored).
 - **Measure:** Bundle-size diff of the two chunks (gzip bytes) + Link-header total.
 
-#### P1-6 · Kill the per-update full-graph cascade: memoize flowNodes/flowEdges + structural-share the snapshot + scope per-card observers [U (mainthread#3, #4; startup#4) — highest-value unadjudicated item; re-verify citations first]
+#### ~~P1-6 · Kill the per-update full-graph cascade~~ — **✅ SHIPPED 2026-07-06, PR #1031 (`57dfd2de`). All three seams (a), (b), (c) landed. Do not rebuild.** [U (mainthread#3, #4; startup#4) — highest-value unadjudicated item; re-verify citations first]
 - **What:** Three coordinated seams:
   - (a) **Canvas-side (attest-free, do first):** flowNodes/flowEdges $effects (Canvas.svelte:821-917) rebuild ALL FlowNode/FlowEdge objects with fresh identities on every snapshot → xyflow re-diffs everything and every card's `$derived(data.node)` tree wakes. Reuse prior objects when inputs are reference-equal.
   - (b) **Bus-side:** structural sharing in buildPatchSnapshot (snapshot.ts:145-186 clones every node + 2 sorts per update; doc.on('update') → synchronous recompute at :283-286) with per-node dirty tracking; optionally coalesce emits to ≤1/frame with trailing flush. **snapshot.ts IS in the collab-attest basis (collab-attest-lib.ts:73) → one-time DB+relay re-attest.** Reconciler param-diff (reconciler.ts:168-180) becomes skippable for reference-equal nodes.

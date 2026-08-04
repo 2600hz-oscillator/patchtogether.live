@@ -1,5 +1,23 @@
 # Pick-up note — 2026-08-01 (VRT hardening · DX7 complete · freezeframe)
 
+> ## ⚠ MOSTLY DISCHARGED — re-verified 2026-08-04
+>
+> Everything this note left pending has landed **except §4**. Kept for that one
+> item and for the two still-open VRT observations; the rest is history.
+>
+> | this note said | 2026-08-04 |
+> |---|---|
+> | §2 font-settle sweep — "PUSHED, NO PR YET", branch `test/vrt-font-settle-sweep` | **MERGED as #1279**, including the 24 linux baselines. Branch gone from `origin`. |
+> | §2 finding **(A)** the required lane pins a STALE CABLE PALETTE | **FIXED — #1281**, 76 baselines + a pixel-side gate |
+> | §2 finding **(B)** the linux-deficit ratchet is blind to 62 of 151 gaps | **FIXED** — `e2e/vrt/vrt-platform-gaps.ts` now enumerates all four mechanisms and `vrt-meta.test.ts` ratchets the total in both directions (see CLAUDE.md) |
+> | §2 "12 legacy uncompanioned VRT masks" | **LARGELY DRAINED** — 10 were **dead selectors** masking nothing and were deleted; 6 migrated to `e2e/vrt/vrt-live-surfaces.ts` with measured companions + a per-run negative control. ~17 uncompanioned entries remain in `VRT_MODULE_MASKS`. Still a live class, smaller. |
+> | §2 the `combine-editor` fresh-spawn collapse | **NOT re-verified.** Believed still open. |
+> | §3 FREEZEFRAME, "FIXED but NOT MERGED", branch `fix/freezeframe-gate-trigger` | **MERGED as #1274** — trigger + the FRAMETABLE sibling + a CI lane + a structural guard. All four listed blockers were closed in it. Branch gone from `origin`. |
+> | **§4 `feat/tidyvco-sine-tri-square`** | **STILL UNMERGED — the only live item here.** Branch is on `origin` at `30a5e8b6`, **no PR was ever opened**, and it is now **85 commits behind `main`**. Still needs owner ears. |
+> | §5 standing constraints | All now in `CLAUDE.md` / project memory. |
+>
+> Later handoffs supersede everything else here: `2026-08-03-SESSION-STATE.md`.
+
 Shut down mid-campaign. `main` is GREEN and everything below is either merged
 or on a pushed branch. Nothing is lost on disk only.
 

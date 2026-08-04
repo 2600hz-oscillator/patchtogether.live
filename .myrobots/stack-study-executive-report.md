@@ -1,5 +1,36 @@
 # Stack Study — Executive Report
 
+> ## STATUS 2026-08-04 — KEPT. The verdict stands; the shortlist is a live scoreboard.
+>
+> Re-verified against `origin/main`. **The rewrite verdict ("no, three times") is
+> unchanged and nothing since contradicts it.** What has moved is §3's adoption
+> shortlist, which is the actionable half of this document:
+>
+> | # | item | 2026-08-04 |
+> |---|---|---|
+> | 1 | video pull-eval + worker hoist | **PARTIAL — and this is the finding.** Pull eval LANDED (#1045). The worker hoist landed the *mechanism* (#1047, default ON) then **stalled at 1 of 67 video modules**: only `acidwarp` is `renderLocus:'worker'`; toybox/vfpga are `'worker-experimental'`; and **every video module shipped since is main-thread** (backdraft, frametable, videocube declare no `renderLocus`). The study's own #1-ranked item, aimed at the confirmed real-hardware defect, is the one that stopped. |
+> | 2 | relay ops bundle (CD + R2 + journal + alarms) | **LANDED — all four.** `deploy.yml:687-794` relay CD; `server/src/journal.ts` + `db/schema/004_rack_update_journal.sql` (#1043/#1044); `server/src/r2-sigv4.ts` + `snapshot-store.ts`; `rack-accounting.ts` alarms. Hocuspocus kept, as recommended. |
+> | 3 | y-indexeddb local replica | **LANDED** — #1046, `multiplayer/local-replica.ts` (its header cites this study by name). |
+> | 4 | headless CRDT + DOOM lockstep harnesses | **OPEN** — no N-client randomized-interleaving harness; `doom-lockstep.ts` is production transport, not a sim harness. |
+> | 5 | pinned software rasterizer as the declared baseline | **PARTIAL** — SwiftShader is the de-facto CI floor, but `webgl-attest` is still the real-GPU gate. The treadmill was not retired. |
+> | 6 | worklet-clock migration | **PARTIAL, no movement since.** The four named modules use the **Worker** scheduler tick, not audio-thread time; only `gate-edge-worklet.ts` genuinely owns time. SAB rings not attempted. |
+> | 7 | per-module perf budgets in CI | **OPEN** — no render-cost sweep, no per-worklet self-timing. |
+> | 8 | relay admission hardening | **PARTIAL** — membership enforced (predates the study); **edge-legality validation of relay updates is still absent**, so the poisoned-client hole is open, and the cap is still in-memory with no DB constraint. |
+> | 9 | snapshot compaction + doc telemetry | **PARTIAL** — telemetry landed (`/metrics`); compaction covers the **journal**, not Yjs tombstones. The stated scale risk is unaddressed. |
+> | 10 | CI wall-time delta report | **OPEN** — still the CLAUDE.md honor rule. |
+> | 11 | `new-module` scaffolder | **LANDED** — `scripts/new-module.ts`, actively maintained. |
+> | 12 | small wins | **SPLIT** — OPFS recorder scratch LANDED; DOOM WAD cache LANDED; **DeviceGate OPEN** (device permission calls still scattered across ~20 files). |
+>
+> **Scorecard: 4 landed, 5 partial, 3 open.** The legible pattern: essentially the
+> whole delivered set shipped in the 48-hour burst of 2026-07-10/11 (#1043–#1047),
+> and the shortlist has not moved since.
+>
+> Two figures in §5 have drifted and understate the moat rather than overstating it:
+> **ART goldens are 136 `.f32` files, not 84**, and **the "170 audio modules" the
+> rewrite math rests on is really ~119 defs** (see the correction banner on
+> `stack-study-functional-spec.md`) — which cuts the porting estimate ~40 % without
+> changing the conclusion.
+
 ## 1. Summary (one page)
 
 **Method.** A functional spec was extracted from the shipped product (patchtogether.live). Three outside designs were produced blind from that spec — **A-velocity** (React/Next/Vercel, Rust DSP, Liveblocks), **B-native-performance** (SolidJS-adjacent shell, monolithic Rust/WASM audio core, wgpu render graph, Yrs relay), **C-local-first** (SolidJS, single rack-processor worklet + SAB rings, Durable-Object-per-rack relay, y-indexeddb replica). Each was then adversarially compared against the actual codebase.
