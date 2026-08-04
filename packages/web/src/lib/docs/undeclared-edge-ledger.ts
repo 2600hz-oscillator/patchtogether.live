@@ -21,7 +21,11 @@
 // were checked. **299** did not and were silently skipped — so the gate covered
 // **17 %** of its subject and said nothing at all about the other 83 %.
 // Deduplicated by `(module, portId)` — a handful of modules expose the same id
-// as both an input and an output — that is the **291** pairs listed below.
+// as both an input and an output — that was the **291** pairs originally
+// listed. **289** remain: treeohvox's `gate_in` / `accent_in` were drained
+// when the gate's FALLING edge was wired up (it had never been read, so the
+// gate's LENGTH was ignored outright) — declaring the semantic and making it
+// true landed in the same change.
 //
 // And the vocabulary really is unreviewed on them: **295 of the 299** carry
 // authored doc prose that ALREADY uses trigger or gate vocabulary. The docs say
@@ -104,7 +108,6 @@ export const UNDECLARED_EDGE_DEBT: Readonly<Record<string, readonly string[]>> =
   slewSwitch: ['eoc', 'reset', 'step_clock'],
   synesthesia: ['a_band1_gate', 'a_band1_trig', 'a_band2_gate', 'a_band2_trig', 'a_band3_gate', 'a_band3_trig', 'a_band4_gate', 'a_band4_trig', 'b_band1_gate', 'b_band1_trig', 'b_band2_gate', 'b_band2_trig', 'b_band3_gate', 'b_band3_trig', 'b_band4_gate', 'b_band4_trig'],
   timelorde: ['1/12', '1/16', '1/2', '1/3', '1/32', '1/4', '1/64', '1/8', '1x', '2x', '4x', '8x', 'clock', 'start_in', 'stop_in', 'swing'],
-  treeohvox: ['accent_in', 'gate_in'],
   twotracks: ['overdub_a', 'overdub_b', 'rec_arm_a', 'rec_arm_b', 'rec_start_a', 'rec_start_b'],
   vfpgaRunner: ['g1', 'g2', 'g3', 'g4'],
   videobox: ['play_trigger'],
@@ -116,7 +119,7 @@ export const UNDECLARED_EDGE_DEBT: Readonly<Record<string, readonly string[]>> =
 
 /** The number of `(module, port)` pairs still owed an `edge` declaration.
  *  ⚠ ONLY SHRINKS — asserted from BOTH sides in module-docs-lint.test.ts. */
-export const UNDECLARED_EDGE_CEILING = 291;
+export const UNDECLARED_EDGE_CEILING = 289;
 
 /** Flattened `module.port` pairs (the countable form). */
 export function undeclaredEdgePairs(): string[] {

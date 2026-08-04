@@ -28,6 +28,7 @@ import {
   crossCorrelation,
   rmsWindow,
   C4_HZ,
+  TB303_CUTOFF_FLOOR_HZ,
   type VoiceParams,
 } from '../../../../../dsp/src/lib/treeohvox-dsp';
 
@@ -167,13 +168,23 @@ describe('treeohvox-dsp / tb303Coeffs', () => {
     expect(kHi).toBeGreaterThan(kLo);
   });
 
-  it('cutoff floor clamps at 200 Hz', () => {
-    const c1 = tb303Coeffs(50, resonanceSkew(0.5), SR);
-    const c2 = tb303Coeffs(200, resonanceSkew(0.5), SR);
+  // ⚠ This assertion used to read `clamps at 200 Hz` and it PINNED A DEFECT.
+  // The def offers CUTOFF from 40 Hz; clamping the ladder at 200 made the
+  // bottom ~25 % of a log knob bit-exactly dead (measured by bisection at
+  // ENVELOPE 0: 40 Hz .. 139.5 Hz all rendered byte-identical). The floor is
+  // now the KNOB's floor, in one place — TB303_CUTOFF_FLOOR_HZ.
+  it(`cutoff floor clamps at the knob's own floor (${TB303_CUTOFF_FLOOR_HZ} Hz), not above it`, () => {
+    const c1 = tb303Coeffs(TB303_CUTOFF_FLOOR_HZ * 0.25, resonanceSkew(0.5), SR);
+    const c2 = tb303Coeffs(TB303_CUTOFF_FLOOR_HZ, resonanceSkew(0.5), SR);
     // Below-floor input should produce the SAME coefficients as the floor.
     expect(c1.b0).toBeCloseTo(c2.b0, 10);
     expect(c1.g).toBeCloseTo(c2.g, 10);
     expect(c1.k).toBeCloseTo(c2.k, 10);
+    // …and everything the knob CAN reach is distinct from the floor.
+    expect(tb303Coeffs(TB303_CUTOFF_FLOOR_HZ * 1.25, resonanceSkew(0.5), SR).b0).not.toBe(c2.b0);
+    expect(tb303Coeffs(199, resonanceSkew(0.5), SR).b0).not.toBe(
+      tb303Coeffs(200, resonanceSkew(0.5), SR).b0,
+    );
   });
 
   it('cutoff ceiling clamps at 20 kHz', () => {

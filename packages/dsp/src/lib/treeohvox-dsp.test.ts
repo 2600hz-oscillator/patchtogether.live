@@ -30,6 +30,7 @@ import {
   renderVoiceSequence,
   crossCorrelation,
   rmsWindow,
+  TB303_CUTOFF_FLOOR_HZ,
   type VoiceParams,
 } from './treeohvox-dsp';
 
@@ -74,9 +75,17 @@ describe('tb303Coeffs', () => {
     expect(c.g).toBeCloseTo(1, 12);
     expect(c.b0).toBeGreaterThan(0);
   });
-  it('clamps cutoff to [200, 20000]', () => {
-    expect(tb303Coeffs(50, 0.5, SR)).toEqual(tb303Coeffs(200, 0.5, SR));
+  // ⚠ This used to read `clamps cutoff to [200, 20000]` and it PINNED A DEFECT:
+  // the def offers CUTOFF from 40 Hz, so a 200 Hz clamp made the bottom ~25 %
+  // of a log knob bit-exactly dead (measured at ENVELOPE 0: 40 Hz .. 139.5 Hz
+  // all rendered byte-identical). The floor is the KNOB's floor now, in one
+  // place — TB303_CUTOFF_FLOOR_HZ.
+  it(`clamps cutoff to [${TB303_CUTOFF_FLOOR_HZ}, 20000] — the knob's own floor`, () => {
+    expect(tb303Coeffs(TB303_CUTOFF_FLOOR_HZ * 0.25, 0.5, SR))
+      .toEqual(tb303Coeffs(TB303_CUTOFF_FLOOR_HZ, 0.5, SR));
     expect(tb303Coeffs(99999, 0.5, SR)).toEqual(tb303Coeffs(20000, 0.5, SR));
+    // …and everything the knob CAN reach stays distinct.
+    expect(tb303Coeffs(199, 0.5, SR).b0).not.toBe(tb303Coeffs(200, 0.5, SR).b0);
   });
   it('k grows with resonance', () => {
     expect(tb303Coeffs(1000, 0.8, SR).k).toBeGreaterThan(tb303Coeffs(1000, 0.2, SR).k);

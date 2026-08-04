@@ -3359,11 +3359,11 @@ toybox in inB video
 toybox out out video
 treeohvox meta domain=audio
 treeohvox in accent_cv cv param=accent cvScale=linear
-treeohvox in accent_in gate
+treeohvox in accent_in gate edge=gate
 treeohvox in cutoff_cv cv param=cutoff cvScale=linear
 treeohvox in decay_cv cv param=decay cvScale=linear
 treeohvox in env_cv cv param=envelope cvScale=linear
-treeohvox in gate_in gate
+treeohvox in gate_in gate edge=gate
 treeohvox in pitch_in pitch
 treeohvox in res_cv cv param=resonance cvScale=linear
 treeohvox in tune_cv cv param=tune cvScale=linear
