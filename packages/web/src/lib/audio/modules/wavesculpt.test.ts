@@ -12,6 +12,8 @@
 //     '@patchtogether.live/dsp/dist/wavesculpt-engine.js' instead of
 //     building OscillatorNodes on the WebAudio graph.
 
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   wavesculptDef,
@@ -40,6 +42,10 @@ import {
   lineWallCrossings,
   setWavesculptLuma,
   getWavesculptLuma,
+  clampMasterGain,
+  MASTER_GAIN_MIN,
+  MASTER_GAIN_MAX,
+  MASTER_GAIN_DEFAULT,
 } from './wavesculpt';
 
 describe('wavesculpt v2: module-def shape', () => {
@@ -702,7 +708,11 @@ function makeWavesculptMockEnv() {
     return {
       value: initial,
       setValueAtTime: vi.fn(function (this: { value: number }, v: number) { this.value = v; }),
-      setTargetAtTime: vi.fn(),
+      // The mock COLLAPSES the exponential ramp: `.value` reads the TARGET the
+      // moment it is scheduled. Real Web Audio approaches it over ~7·τ. Every
+      // assertion below is about the target the module asked for, which is the
+      // thing the module actually controls — units: LINEAR GAIN, not dB.
+      setTargetAtTime: vi.fn(function (this: { value: number }, v: number) { this.value = v; }),
       cancelScheduledValues: vi.fn(),
       linearRampToValueAtTime: vi.fn(),
     };
@@ -894,6 +904,200 @@ describe('wavesculpt factory: per-osc audio output routing (RED/GRN/BLU/ALP)', (
     );
     expect(pannerIds.has(l.__id)).toBe(false);
     expect(pannerIds.has(r.__id)).toBe(false);
+    handle.dispose?.();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// MASTER GAIN → the summed L/R audio bus.
+//
+// THE BUG THIS PINS (Tier-A-2 of the DSP decision doc). `master_gain` was a
+// DEAD KNOB on the audio path: the factory pinned `busL.gain.value = 1;
+// busR.gain.value = 1;` and `setParam` had no `master_gain` branch, so nothing
+// on the audio path ever read it — while the card fed the SAME param to its
+// `uMasterGain` shader uniform, and the shipped doc string told the user it was
+// "the overall output level of the summed audio mix (L/R)". The knob moved the
+// picture and lied about the sound.
+//
+// THE INSTRUMENT. `busGainTracks()` reads the gain of the nodes the handle
+// actually PUBLISHES as L and R — the exact nodes the patch graph connects
+// downstream — never a node the test reaches by some private route. It is
+// negative-controlled on EVERY run by `legacyPinnedOutputs()`, a stand-in for
+// the pre-fix topology (both bus gains hard 1). If the predicate ever stops
+// being able to tell those apart it goes red on its own, without needing the
+// module to regress first.
+// ---------------------------------------------------------------------------
+
+/** The observable: do BOTH published output nodes carry `expected` as their
+ *  gain? Units: LINEAR GAIN (0..2), not dB. Returns the reason on failure so a
+ *  red run says WHICH side and WHAT it read. */
+function busGainTracks(
+  outputs: Map<string, { node: AudioNode; output: number }>,
+  expected: number,
+): { ok: boolean; detail: string } {
+  const read = (id: string): number | null => {
+    const n = outputs.get(id)?.node as unknown as { gain?: { value: number } } | undefined;
+    return typeof n?.gain?.value === 'number' ? n.gain.value : null;
+  };
+  const l = read('L');
+  const r = read('R');
+  if (l === null || r === null) return { ok: false, detail: `L/R not gain nodes (L=${l}, R=${r})` };
+  const near = (a: number) => Math.abs(a - expected) < 1e-9;
+  if (!near(l) || !near(r)) {
+    return { ok: false, detail: `expected linear gain ${expected}, read L=${l} R=${r}` };
+  }
+  return { ok: true, detail: `L=${l} R=${r}` };
+}
+
+/** The PRE-FIX topology, reconstructed: two gain nodes pinned at 1 that no
+ *  `setParam` can move. The permanent negative control — the predicate above
+ *  MUST reject this for a non-unity knob, or it is not measuring anything. */
+function legacyPinnedOutputs(): Map<string, { node: AudioNode; output: number }> {
+  const pinned = () => ({ node: { gain: { value: 1 } } as unknown as AudioNode, output: 0 });
+  return new Map([['L', pinned()], ['R', pinned()]]);
+}
+
+describe('wavesculpt MASTER GAIN drives the summed L/R audio bus', () => {
+  afterEach(() => {
+    delete (globalThis as unknown as { AudioWorkletNode?: unknown }).AudioWorkletNode;
+    vi.restoreAllMocks();
+  });
+
+  // ---- the permanent negative control, run on every invocation ----
+  it('NEGATIVE CONTROL: the predicate REJECTS the pre-fix pinned-to-1 topology', () => {
+    // A patch saved with the knob at 0.25: the old code left the bus at 1.
+    const legacy = busGainTracks(legacyPinnedOutputs(), 0.25);
+    expect(
+      legacy.ok,
+      'a bus pinned at 1 must NOT read as tracking a 0.25 knob — if this passes, ' +
+        'busGainTracks() is blind to the very thing it exists to measure',
+    ).toBe(false);
+    // ...and it must still ACCEPT the value that topology genuinely holds, so
+    // the predicate isn't merely "always false" (the other blind direction).
+    expect(busGainTracks(legacyPinnedOutputs(), 1).ok).toBe(true);
+  });
+
+  it('defaults to UNITY — an untouched knob leaves the mix exactly as before', async () => {
+    // THE FACT THAT BOUNDS THE RETROACTIVE RISK. master_gain's defaultValue is
+    // 1, so every saved rack in which the user never moved this knob comes up
+    // at unity and is unaffected by wiring it to the bus.
+    expect(wavesculptDef.params.find((p) => p.id === 'master_gain')!.defaultValue).toBe(1);
+    const { ctx } = makeWavesculptMockEnv();
+    const handle = await wavesculptDef.factory(ctx as unknown as AudioContext, makeWsNode());
+    const res = busGainTracks(handle.outputs, 1);
+    expect(res.ok, `default patch must sit at unity — ${res.detail}`).toBe(true);
+    handle.dispose?.();
+  });
+
+  it('SEEDS the bus from the PERSISTED knob (a reloaded patch keeps its level)', async () => {
+    const { ctx } = makeWavesculptMockEnv();
+    const handle = await wavesculptDef.factory(
+      ctx as unknown as AudioContext,
+      makeWsNode({ master_gain: 0.25 }),
+    );
+    const res = busGainTracks(handle.outputs, 0.25);
+    expect(res.ok, `saved master_gain=0.25 must seed the bus — ${res.detail}`).toBe(true);
+    handle.dispose?.();
+  });
+
+  it('setParam MOVES the audible level — 0.25 / 1.75 / 0 (mute) / 2 (max)', async () => {
+    const { ctx } = makeWavesculptMockEnv();
+    const handle = await wavesculptDef.factory(ctx as unknown as AudioContext, makeWsNode());
+    for (const v of [0.25, 1.75, 0, 2]) {
+      handle.setParam('master_gain', v);
+      const res = busGainTracks(handle.outputs, v);
+      expect(res.ok, `setParam('master_gain', ${v}) — ${res.detail}`).toBe(true);
+    }
+    handle.dispose?.();
+  });
+
+  it('clamps to the DECLARED range and survives a non-finite write', async () => {
+    const { ctx } = makeWavesculptMockEnv();
+    const handle = await wavesculptDef.factory(ctx as unknown as AudioContext, makeWsNode());
+    const def = wavesculptDef.params.find((p) => p.id === 'master_gain')!;
+    handle.setParam('master_gain', -5);
+    expect(busGainTracks(handle.outputs, def.min!).ok, 'below-min clamps to def.min').toBe(true);
+    handle.setParam('master_gain', 99);
+    expect(busGainTracks(handle.outputs, def.max!).ok, 'above-max clamps to def.max').toBe(true);
+    handle.setParam('master_gain', Number.NaN);
+    expect(
+      busGainTracks(handle.outputs, 1).ok,
+      'NaN falls back to unity rather than muting or blasting the bus',
+    ).toBe(true);
+    handle.dispose?.();
+  });
+
+  it('the clamp helper the CARD uses is the SAME one the bus uses (one range, two domains)', () => {
+    // The card feeds clampMasterGain(...) to uMasterGain; the factory feeds the
+    // same helper to busL/busR. Pinning the helper pins BOTH consumers, so the
+    // video path cannot silently diverge from the audio path again.
+    const def = wavesculptDef.params.find((p) => p.id === 'master_gain')!;
+    expect([MASTER_GAIN_MIN, MASTER_GAIN_MAX, MASTER_GAIN_DEFAULT])
+      .toEqual([def.min, def.max, def.defaultValue]);
+    expect(clampMasterGain(-1)).toBe(MASTER_GAIN_MIN);
+    expect(clampMasterGain(3)).toBe(MASTER_GAIN_MAX);
+    expect(clampMasterGain(0.5)).toBe(0.5);
+    expect(clampMasterGain(Number.NaN)).toBe(MASTER_GAIN_DEFAULT);
+  });
+
+  // ---- the VIDEO half of the same knob ----
+  //
+  // Wiring the audio must not cost the render. No runtime gate in this repo can
+  // see a shader uniform stop being fed — the VRT baselines only prove the
+  // DEFAULT (unity) frame, where a dropped uniform and a correct one can look
+  // identical. So the video consumer is pinned at the SOURCE level, the same
+  // technique module-docs-lint uses for controlFamilies → card testids.
+  //
+  // SCOPE, stated so a green run is not misread: this reads ONE file
+  // (WavesculptCard.svelte) and proves the uniform is DECLARED, FED from
+  // `master_gain` through the shared clamp, and CONSUMED in the shader body.
+  // It cannot prove what the GPU then draws — that is the VRT's job.
+  it('the CARD still feeds uMasterGain from master_gain (video consumer kept alive)', () => {
+    const card = readFileSync(
+      fileURLToPath(new URL('../../ui/modules/WavesculptCard.svelte', import.meta.url)),
+      'utf8',
+    );
+    expect(card, 'uMasterGain is declared in the shader').toMatch(/uniform\s+float\s+uMasterGain\s*;/);
+    // FED: the uniform1f call must name uMasterGain, read master_gain, and go
+    // through the shared clamp (so the card cannot re-type the range).
+    const feed = card
+      .split('\n')
+      .filter((l) => l.includes("'uMasterGain'") || l.includes('"uMasterGain"'));
+    expect(feed.length, 'exactly one uniform1f feed for uMasterGain').toBe(1);
+    expect(feed[0], 'the feed reads the master_gain param').toContain('master_gain');
+    expect(feed[0], 'the feed clamps via the shared helper, not re-typed numbers')
+      .toContain('clampMasterGain(');
+    expect(feed[0], 'no hand-retyped 0..2 bounds on the feed line').not.toMatch(/Math\.(min|max)\(/);
+    // CONSUMED: the shader body must actually multiply by it — a declared-but-
+    // unused uniform is the dead-knob bug all over again, in the other domain.
+    const uses = [...card.matchAll(/uMasterGain/g)].length;
+    expect(uses, 'declared + fed + used at least once in the shader body').toBeGreaterThanOrEqual(4);
+    expect(card, 'the composite is scaled by it').toMatch(/comp\s*\*\s*uMasterGain/);
+  });
+
+  it('lands ONLY on the bus — the per-osc taps out_red/grn/blu/alp are not scaled', async () => {
+    // The doc says master gain is the level of the SUMMED mix; the per-osc taps
+    // are documented as the raw voice. Nothing but busL/busR may carry 0.25.
+    const { ctx, nodes } = makeWavesculptMockEnv();
+    const handle = await wavesculptDef.factory(ctx as unknown as AudioContext, makeWsNode());
+    handle.setParam('master_gain', 0.25);
+    const busIds = ['L', 'R']
+      .map((id) => (handle.outputs.get(id)!.node as unknown as MockNode).__id)
+      .sort((a, b) => a - b);
+    const carryingIds = nodes
+      .filter((n) => Math.abs(((n.gain as { value: number } | undefined)?.value ?? NaN) - 0.25) < 1e-9)
+      .map((n) => n.__id)
+      .sort((a, b) => a - b);
+    expect(
+      carryingIds,
+      'exactly busL + busR may carry the master value — any other node means ' +
+        'master gain leaked onto a per-voice path',
+    ).toEqual(busIds);
+    // And the per-osc taps are panners, which have no gain stage to scale.
+    for (const id of ['out_red', 'out_grn', 'out_blu', 'out_alp']) {
+      const n = handle.outputs.get(id)!.node as unknown as MockNode;
+      expect((n as { gain?: unknown }).gain, `${id} is a panner, not a gain stage`).toBeUndefined();
+    }
     handle.dispose?.();
   });
 });

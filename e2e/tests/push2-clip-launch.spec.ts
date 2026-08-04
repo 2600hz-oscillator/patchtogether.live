@@ -25,6 +25,32 @@ import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 import { readScopePeakOverWindow } from './_module-coverage-helpers';
 
+// Push 2 CC map — IMPORTED FROM THE SHIPPING MAP, never re-typed here.
+//
+// ⚠ This block used to hardcode seven literals, and on 2026-08-03 one of them
+// went stale in exactly the way a duplicated constant always does: SHIFT moved
+// off CC 49 (which became the ElectraControl mode toggle) onto CC 27, and this
+// file kept pressing 49. The gesture silently degraded from a ×8 window to ×1 —
+// the spec was pinning a contract that no longer existed, and no unit test could
+// see it because the unit tests read the constant while this file read a copy.
+//
+// A literal in a spec is a SECOND SOURCE OF TRUTH for a binding, so a rename
+// cannot redden it — it just quietly tests something else. Importing means a CC
+// change either updates this spec automatically or fails to compile.
+//
+// `$lib` resolves for Playwright through packages/web/.svelte-kit/tsconfig.json
+// (the same route freezeframe.spec.ts already relies on for a value import).
+import {
+  PUSH_CC_PLAY as CC_PLAY,
+  PUSH_CC_SHIFT as CC_SHIFT,
+  PUSH_CC_ELECTRA_MODE as CC_ELECTRA_MODE,
+  PUSH_CC_DPAD_UP as CC_DPAD_UP,
+  PUSH_CC_PERMANENT_BASE,
+  PUSH_CC_ABOVE_DISPLAY_BASE as CC_ABOVE_DISPLAY_BASE,
+  PUSH_CC_ENCODER_BASE as CC_ENCODER_BASE,
+  PUSH_CC_ENCODER_MASTER as CC_ENCODER_MASTER,
+} from '../../packages/web/src/lib/control/push2/push2-map';
+
 test.describe.configure({ mode: 'parallel' });
 
 async function setTransport(page: import('@playwright/test').Page, running: number) {
@@ -89,16 +115,10 @@ async function nodeParam(page: import('@playwright/test').Page, nodeId: string, 
   }, [nodeId, paramId] as const);
 }
 
-// Push 2 CC map (owner-confirmed on hardware).
-const CC_PLAY = 85;
-// CLIP (note-editor) view: the permanent-controls row button 2 (CC 22) → the
-// Launchpad top-row CLIP CC (93). The dedicated "Note" button was a wrong guess.
-const CC_CLIP_VIEW = 22;
-const CC_SHIFT = 49;
-const CC_DPAD_UP = 46;
-const CC_ABOVE_DISPLAY_BASE = 102; // lane-select 1..8 (switches the push card)
-const CC_ENCODER_BASE = 71; // display encoders → the push card's 8 controls
-const CC_ENCODER_MASTER = 79; // master encoder → mixmstrs master_volume
+// CLIP (note-editor) view: the permanent-controls row button 2 → the Launchpad
+// top-row CLIP CC (93). Derived from the row base rather than written as 22, so
+// it moves with the row. The dedicated "Note" button was a wrong guess.
+const CC_CLIP_VIEW = PUSH_CC_PERMANENT_BASE + 2;
 
 test('@push2 a simulated pad press launches a clip → audible RMS at the clipplayer voice', async ({ page, rack, errorWatch }) => {
   await spawnPatch(
@@ -263,16 +283,32 @@ test('@push2 Play toggles transport; a LANE select shows that lane\u2019s PUSH C
   await cc(CC_ENCODER_MASTER, 3);
   await expect.poll(() => mixParam(page, 'master_volume'), { timeout: 3000 }).toBeGreaterThan(0.82);
 
-  // (D) D-Pad → CLIP-view nav. Switch to CLIP view (permanent-row button 2,
-  // CC 22 → top CC 93), read the pitch-window offset, press D-Pad ↑ → +1; hold
-  // SHIFT (CC 49) + ↑ → +8.
+  // (D) D-Pad → CLIP-view nav. Switch to CLIP view (permanent-row button 2 →
+  // top CC 93), read the pitch-window offset, press D-Pad ↑ → +1; hold SHIFT
+  // (the permanent-row button above channel 8, PUSH_CC_SHIFT = CC 27) + ↑ → +8.
   await cc(CC_CLIP_VIEW, 127); await cc(CC_CLIP_VIEW, 0);
   await expect.poll(async () => (await pushState(page))?.singleView, { timeout: 3000 }).toBe('clip');
   const base = Number((await pushState(page))?.editRowOffset ?? 0);
   await cc(CC_DPAD_UP, 127); await cc(CC_DPAD_UP, 0);
   await expect.poll(async () => (await pushState(page))?.editRowOffset, { timeout: 3000 }).toBe(base + 1);
-  await cc(CC_SHIFT, 127); // hold shift
+  await cc(CC_SHIFT, 127); // hold SHIFT (CC 27)
   await cc(CC_DPAD_UP, 127); await cc(CC_DPAD_UP, 0);
-  await cc(CC_SHIFT, 0); // release shift
+  await cc(CC_SHIFT, 0); // release SHIFT
   await expect.poll(async () => (await pushState(page))?.editRowOffset, { timeout: 3000 }).toBe(base + 1 + 8);
+
+  // (D2) NEGATIVE CONTROL, through the real device + brain: the button LABELLED
+  // "Shift" (CC 49) is the ElectraControl mode toggle and is NOT a modifier, so
+  // the SAME gesture on it must advance by ONE, not eight.
+  //
+  // This pins the direction the suite was missing. Before it, reverting SHIFT to
+  // CC 49 would have made the (D) case above go green again while the new
+  // ElectraControl binding silently died — i.e. the regression would have been
+  // invisible to the very spec that just caught the move.
+  const beforeElectra = Number((await pushState(page))?.editRowOffset ?? 0);
+  await cc(CC_ELECTRA_MODE, 127); // "hold" the labelled Shift button
+  await cc(CC_DPAD_UP, 127); await cc(CC_DPAD_UP, 0);
+  await cc(CC_ELECTRA_MODE, 127); // press again to leave the mode it toggled
+  await expect
+    .poll(async () => (await pushState(page))?.editRowOffset, { timeout: 3000 })
+    .toBe(beforeElectra + 1);
 });

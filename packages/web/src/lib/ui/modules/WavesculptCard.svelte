@@ -57,6 +57,8 @@
     DEFAULT_OSC_COLOR_PACKED,
     lineWallCrossings,
     setWavesculptLuma,
+    clampMasterGain,
+    MASTER_GAIN_DEFAULT,
     type WavesculptData,
     type WavesculptOscData,
   } from '$lib/audio/modules/wavesculpt';
@@ -2349,7 +2351,10 @@ void main() {
     g.uniform1f(g.getUniformLocation(bentboxProgram, 'uWavefold'),          clamp01(node?.params?.wavefold as number ?? 0));
     g.uniform1f(g.getUniformLocation(bentboxProgram, 'uBloom'),             clamp01(node?.params?.bloom as number ?? 0.4));
     g.uniform1f(g.getUniformLocation(bentboxProgram, 'uNoise'),             clamp01(node?.params?.noise as number ?? 0.05));
-    g.uniform1f(g.getUniformLocation(bentboxProgram, 'uMasterGain'),        Math.max(0, Math.min(2, node?.params?.master_gain as number ?? 1)));
+    // MASTER GAIN drives the audio bus (wavesculpt.ts setParam) AND this
+    // uniform off the SAME param, clamped by the SAME helper — the def owns
+    // the range, so the two consumers cannot drift apart.
+    g.uniform1f(g.getUniformLocation(bentboxProgram, 'uMasterGain'),        clampMasterGain(node?.params?.master_gain as number ?? MASTER_GAIN_DEFAULT));
     g.bindVertexArray(quadVao);
     g.drawArrays(g.TRIANGLE_STRIP, 0, 4);
     g.bindVertexArray(null);

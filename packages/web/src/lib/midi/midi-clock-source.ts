@@ -27,6 +27,7 @@ import {
   type MidiAccessLike,
   type MidiEventLike,
 } from '$lib/audio/modules/midi-cv-buddy';
+import { createMidiInputClaim } from '$lib/midi/input-attach';
 
 /** MIDI clock is fixed at 24 pulses per quarter note. */
 const MIDI_PPQN = 24;
@@ -77,6 +78,8 @@ export function createMidiClockSource(depsOverride: Partial<Deps> = {}): MidiClo
   // Smoothed period in ms PER PULSE (24 of these = one quarter note).
   let pulsePeriodMs: number | null = null;
   let access: MidiAccessLike | null = null;
+  /** Identity-scoped handler-slot claim — see $lib/midi/input-attach. */
+  const claim = createMidiInputClaim('midi-clock-source');
   let running = true; // assume free-running clock if no Start/Stop framing
   // ON-DEMAND access: not requested at construction. ensureAccess() fires the
   // browser permission prompt exactly once, lazily, on the first tempo read.
@@ -137,9 +140,14 @@ export function createMidiClockSource(depsOverride: Partial<Deps> = {}): MidiClo
     if (data.length < 1) return;
     ingest(data[0]!, deps.now());
   }
+  /** EVERY-PORT BY DESIGN, and that scope is declared, not accidental: a MIDI
+   *  clock master can be any device, so the tempo source listens on all of
+   *  them. What changed is the RELEASE side — `claim` only ever clears slots
+   *  this source installed, so a re-attach after hot-plug and `destroy()` can
+   *  no longer evict a handler belonging to anyone else on the same access. */
   function attachAll(): void {
     if (!access) return;
-    for (const inp of access.inputs.values()) inp.onmidimessage = handle;
+    claim.attachOnly([...access.inputs.values()], handle);
   }
   /** Fire navigator.requestMIDIAccess() once, lazily. No-op after the first
    *  call (and after destroy()), so polling getBpm() prompts at most once. */
@@ -151,8 +159,9 @@ export function createMidiClockSource(depsOverride: Partial<Deps> = {}): MidiClo
       .requestAccess()
       .then((a) => {
         if (destroyed) {
-          // destroyed mid-flight — don't attach a now-orphaned access.
-          for (const inp of a.inputs.values()) inp.onmidimessage = null;
+          // Destroyed mid-flight — we never attached to this access, so there
+          // is nothing of ours to release and nothing of anyone else's to
+          // touch. (Was: null EVERY input on it, evicting other consumers.)
           a.onstatechange = null;
           return;
         }
@@ -171,8 +180,8 @@ export function createMidiClockSource(depsOverride: Partial<Deps> = {}): MidiClo
     ingest,
     destroy() {
       destroyed = true;
+      claim.detach();
       if (access) {
-        for (const inp of access.inputs.values()) inp.onmidimessage = null;
         access.onstatechange = null;
         access = null;
       }

@@ -28,6 +28,7 @@ import {
   PUSH_CC_ENCODER_SWING,
   PUSH_CC_ENCODER_MASTER,
   PUSH_CC_LEGEND,
+  PUSH_CC_ELECTRA_MODE,
 } from './push2-map';
 import type { Push2RxEvent } from './push2-sysex';
 import { pushPadNote, pushColorIndex } from './push2-sysex';
@@ -70,11 +71,39 @@ describe('classifyPush2 — parity events into the Launchpad vocabulary', () => 
     expect(classifyPush2(cc(PUSH_CC_PERMANENT_BASE + 2, 127))).toEqual({ kind: 'launchpad', ev: { type: 'top', cc: 93, s: 1 } });
   });
 
-  it('the dedicated Undo (119) / Shift (49) buttons reach the top row (96/98)', () => {
+  it('the dedicated Undo button (119) reaches the top row (96)', () => {
     expect(classifyPush2(cc(PUSH_CC_UNDO, 127))).toEqual({ kind: 'launchpad', ev: { type: 'top', cc: CC_TOP_SPARE_6, s: 1 } });
-    expect(classifyPush2(cc(PUSH_CC_SHIFT, 127))).toEqual({ kind: 'launchpad', ev: { type: 'top', cc: CC_TOP_SPARE_8, s: 1 } });
     expect(CC_TOP_SPARE_6).toBe(96);
+  });
+
+  // ── WHERE SHIFT ACTUALLY LIVES ───────────────────────────────────────────
+  //
+  // This block exists because the project has now twice shipped a wrong Push
+  // button from a paper inference. SHIFT is the permanent-row button above
+  // channel 8; the button physically LABELLED "Shift" (lower right, CC 49) is
+  // a different button and is now the ElectraControl mode toggle.
+  it('SHIFT is the permanent-row button above channel 8 — CC 27, by construction', () => {
+    // Not "27 happens to equal 27": the constant must BE the 8th permanent-row
+    // button, so moving the row moves shift with it.
+    expect(PUSH_CC_SHIFT).toBe(PUSH_CC_PERMANENT_BASE + 7);
+    expect(PUSH_CC_SHIFT).toBe(27);
+    // …and that button reaches Launchpad shift (CC 98), which is what makes the
+    // D-Pad ×8 window, the fine-nudge and the legend shift layer work.
+    expect(classifyPush2(cc(PUSH_CC_SHIFT, 127))).toEqual({ kind: 'launchpad', ev: { type: 'top', cc: CC_TOP_SPARE_8, s: 1 } });
+    expect(pushCcToLaunchpadTopCc(PUSH_CC_SHIFT)).toBe(CC_TOP_SPARE_8);
     expect(CC_TOP_SPARE_8).toBe(98);
+  });
+
+  it('CC 49 is the ELECTRA-MODE toggle and no longer a second route to shift', () => {
+    expect(PUSH_CC_ELECTRA_MODE).toBe(49);
+    expect(PUSH_CC_ELECTRA_MODE).not.toBe(PUSH_CC_SHIFT);
+    // The duplicate route is GONE — this is the assertion that would have
+    // caught the old two-owners-for-one-function state.
+    expect(pushCcToLaunchpadTopCc(PUSH_CC_ELECTRA_MODE)).toBeNull();
+    expect(classifyPush2(cc(PUSH_CC_ELECTRA_MODE, 127))).toEqual({ kind: 'electraMode' });
+    // PRESS-ONLY: a latched toggle that fired on the release too would enter
+    // the mode and leave it again in one tap.
+    expect(classifyPush2(cc(PUSH_CC_ELECTRA_MODE, 0))).toBeNull();
   });
 
   it('scene-launch column (CC 36..43, TOP 43 … BOTTOM 36) → the Launchpad scene column', () => {
@@ -240,9 +269,10 @@ describe('push2FrameToLeds — LaunchpadFrame → Push LED specs', () => {
     expect(leds).toContainEqual({ kind: 'button', cc: PUSH_CC_PERMANENT_BASE, value: 122 });
   });
 
-  it('the white/mono dedicated buttons (Undo 119, Shift 49) stay max-white 127', () => {
-    // The Launchpad UNDO index (96) lights the RGB permanent-row button 26 AND the
-    // white/mono Undo (119); SHIFT (98) lights RGB button 27 AND white/mono Shift (49).
+  it('the white/mono dedicated Undo (119) stays max-white 127; its RGB twin takes a palette index', () => {
+    // The Launchpad UNDO index (96) lights the RGB permanent-row button 25 AND
+    // the white/mono Undo (119). SHIFT (98) lights ONLY its RGB permanent-row
+    // button 27 — which IS `PUSH_CC_SHIFT`.
     const frame: LaunchpadFrame = {
       leds: new Map<number, [number, number, number]>([
         [CC_TOP_SPARE_6, [0, 127, 0]], // undo function lit GREEN
@@ -252,24 +282,40 @@ describe('push2FrameToLeds — LaunchpadFrame → Push LED specs', () => {
     const leds = push2FrameToLeds(frame);
     // White/mono → brightness 127 (unchanged; correct there).
     expect(leds).toContainEqual({ kind: 'button', cc: PUSH_CC_UNDO, value: 127 });
-    expect(leds).toContainEqual({ kind: 'button', cc: PUSH_CC_SHIFT, value: 127 });
-    // …while their RGB permanent-row twins carry the palette index (green = 126).
+    // …while the RGB permanent-row buttons carry the palette index (green = 126).
     // Undo function = top CC 96 → permanent CC 25 (96−91+20); Shift = 98 → CC 27.
     expect(leds).toContainEqual({ kind: 'button', cc: PUSH_CC_PERMANENT_BASE + 5, value: 126 }); // CC 25
-    expect(leds).toContainEqual({ kind: 'button', cc: PUSH_CC_PERMANENT_BASE + 7, value: 126 }); // CC 27
+    expect(leds).toContainEqual({ kind: 'button', cc: PUSH_CC_SHIFT, value: 126 }); // CC 27, the SHIFT button
+  });
+
+  it('the ELECTRA-MODE button (CC 49) is NEVER painted from a Launchpad frame', () => {
+    // CC 49 used to mirror Launchpad shift as a white/mono LED. It is now a
+    // PUSH-LOCAL latched mode indicator, appended by push2-control — so a frame
+    // that lights shift, or lights EVERY top-row index, must still not address
+    // it. Asserted over the whole top row rather than just CC 98, because the
+    // bug this replaces was a single stray `out.push` in a fan-out.
+    const leds = push2FrameToLeds({
+      leds: new Map<number, [number, number, number]>(
+        Array.from({ length: 8 }, (_, i) => [CC_UP + i, [127, 127, 127]] as const),
+      ),
+    });
+    expect(leds.map((l) => (l.kind === 'button' ? l.cc : -1))).not.toContain(PUSH_CC_ELECTRA_MODE);
+    // NEGATIVE CONTROL for the enumeration: the frame DID paint buttons, so
+    // "does not contain 49" is a real absence rather than an empty list.
+    expect(leds.map((l) => (l.kind === 'button' ? l.cc : -1))).toContain(PUSH_CC_SHIFT);
   });
 
   it('a black (off) LED emits value 0 (both RGB and white/mono buttons)', () => {
     const frame: LaunchpadFrame = {
       leds: new Map<number, [number, number, number]>([
         [CC_UP, [0, 0, 0]], // RGB Play/permanent-row → off
-        [CC_TOP_SPARE_8, [0, 0, 0]], // white/mono Shift → off
+        [CC_TOP_SPARE_6, [0, 0, 0]], // white/mono Undo → off
       ]),
     };
     const leds = push2FrameToLeds(frame);
     expect(leds).toContainEqual({ kind: 'button', cc: PUSH_CC_PLAY, value: 0 });
     expect(leds).toContainEqual({ kind: 'button', cc: PUSH_CC_PERMANENT_BASE, value: 0 });
-    expect(leds).toContainEqual({ kind: 'button', cc: PUSH_CC_SHIFT, value: 0 });
+    expect(leds).toContainEqual({ kind: 'button', cc: PUSH_CC_UNDO, value: 0 });
   });
 });
 

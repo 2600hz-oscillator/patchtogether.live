@@ -30,6 +30,7 @@ import type {
 } from '$lib/audio/modules/midi-cv-buddy';
 import type { MidiOutputLike } from '$lib/audio/modules/midi-out-buddy';
 import { webMidiAvailable } from '$lib/audio/modules/midi-cv-buddy';
+import { createMidiInputClaim } from '$lib/midi/input-attach';
 import type { ElectraIdentity } from './types';
 
 /** Combined sysex-capable access (inputs + outputs). */
@@ -154,6 +155,9 @@ export class ElectraBroker {
    *  routes/forwards by these), NOT the CTRL management port. */
   private portOut: Record<number, MidiOutputLike | null> = { 1: null, 2: null };
 
+  /** Identity-scoped handler-slot claim — see $lib/midi/input-attach. */
+  private readonly claim = createMidiInputClaim('electra-broker');
+
   private sysexListeners = new Set<(data: Uint8Array) => void>();
   private ccListeners = new Set<(ev: CcEvent) => void>();
   private noteListeners = new Set<(ev: NoteEvent) => void>();
@@ -189,12 +193,42 @@ export class ElectraBroker {
     }
   }
 
+  /**
+   * Inputs this broker listens on — the Electra's OWN ports when they can be
+   * identified, every port otherwise.
+   *
+   * ⚠ THIS IS A REAL BUG FIX, not plumbing. `attachInputs()` used to claim
+   * EVERY input on its access, and `handleInbound` filters only by STATUS BYTE
+   * (sysex / CC / note) — never by device and never by channel. Downstream,
+   * `ElectraAutoconfig.handleCc` looks a CC up in `allocByNumber` and WRITES
+   * the bound rack param. The Electra preset generator allocates CC numbers
+   * from the bottom of the range upward, so its allocations overlap the Push 2
+   * map (CC 15, 20-27, 71-79) and an ordinary keyboard's mod wheel (CC 1).
+   * With an Electra connected, turning a Push encoder or pressing a Launchpad
+   * top-row button could therefore write an Electra-mapped parameter.
+   *
+   * This mirrors `resolvePorts()`, which has always resolved the OUTPUT side by
+   * the same "Electra Controller …" name heuristic — the input side simply
+   * never got the same treatment. FAIL-SAFE: when no input is named for an
+   * Electra (unknown platform naming, or the pre-identification probe window)
+   * the pool falls back to every input, so identification and any oddly-named
+   * device keep working exactly as before.
+   */
+  private electraInputs(): MidiInputLike[] {
+    if (!this.access) return [];
+    const ins = [...this.access.inputs.values()];
+    const named = ins.filter((i) => /electra/i.test(i.name ?? ''));
+    return named.length ? named : ins;
+  }
+
   private attachInputs(): void {
     if (!this.access) return;
-    for (const inp of this.access.inputs.values()) {
-      inp.onmidimessage = (ev: MidiEventLike) => this.handleInbound(ev);
-    }
+    this.claim.attachOnly(this.electraInputs(), this.inbound);
   }
+
+  /** ONE stable function reference for the whole broker lifetime, so the claim
+   *  can recognise its own handler by identity on release. */
+  private readonly inbound = (ev: MidiEventLike): void => this.handleInbound(ev);
 
   private handleInbound(ev: MidiEventLike): void {
     const data = ev.data;
@@ -359,6 +393,8 @@ export class ElectraBroker {
       this.attachInputs();
       this.resolvePorts();
     } else {
+      // Release only the slots THIS broker installed — never a sweep.
+      this.claim.detach();
       this.ctrlOut = null;
       this.playOut = null;
     }

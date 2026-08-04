@@ -265,16 +265,16 @@ describe('wouldCreateCycle', () => {
     // would close a loop because op1 → ... → OUTPUT already exists.
     const out = outputNode(g)!;
     const op1 = g.nodes.find((n) => n.id === 'op1')!;
-    expect(wouldCreateCycle(g, out.id, op1.id)).toBe(true);
+    expect(wouldCreateCycle(g, out.id, op1.id, 'in0')).toBe(true);
   });
   it('allows a forward edge', () => {
     const g = defGraph();
     // src0 → op2.in1 does not create a cycle (op2 doesn't reach src0).
-    expect(wouldCreateCycle(g, 'src0', 'op2')).toBe(false);
+    expect(wouldCreateCycle(g, 'src0', 'op2', 'in1')).toBe(false);
   });
   it('treats a self-edge as a cycle', () => {
     const g = defGraph();
-    expect(wouldCreateCycle(g, 'op1', 'op1')).toBe(true);
+    expect(wouldCreateCycle(g, 'op1', 'op1', 'in0')).toBe(true);
   });
 });
 
@@ -400,6 +400,215 @@ describe('LAYER INPUT (feedback-tap) edges', () => {
     expect(order).toHaveLength(g.nodes.length);
     // src0 still orders before op1 (the tap edge added no same-frame dependency).
     expect(order.indexOf('src0')).toBeLessThan(order.indexOf('op1'));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The reported defect: a layer-input tap ALREADY in the graph poisoned the
+// cycle walk for every LATER connection.
+//
+// validateConnect exempted only the edge BEING ADDED (`!isLayerInputEdge(g, to,
+// toPort) && wouldCreateCycle(...)`), while wouldCreateCycle built its adjacency
+// from ALL of g.edges — taps included. So the moment a legal feedback tap was
+// wired, the raw edge set contained a loop and the walk reported a cycle for
+// forward edges that create none.
+//
+// The three cases below are (a) the reported false positive, (b) the negative
+// control that a GENUINE same-frame cycle is still refused (the easy wrong fix
+// is to weaken cycle detection into uselessness), and (c) the pre-existing
+// edge-being-added exemption, which must survive.
+// ---------------------------------------------------------------------------
+describe('cycle detection with a LAYER-INPUT tap ALREADY wired', () => {
+  /**
+   * The reported topology, minimally:
+   *
+   *        ┌──────────────── tap (op3 -> src0.in0) ────────────────┐
+   *        ▼                                                       │
+   *      src0 ──in0──▶ op1 ──in0──▶ op2 ──in0──▶ op3 ──in0──▶ out  ┘
+   *                                              ▲
+   *      src1 ─────────────────────in1───────────┘
+   *
+   * The tap is legal BY DESIGN (it is how TOYBOX feedback is expressed) and is
+   * NOT a same-frame dependency — topoSort drops it. So the SAME-FRAME
+   * dependency graph, the only one cycle detection is about, is exactly
+   * src0 -> op1 -> op2 -> op3 -> out plus src1 -> op3: a clean DAG.
+   *
+   * FREE input ports (so `occupied` never pre-empts the cycle verdict):
+   * op1.in1, op2.in1, src1.in0.
+   */
+  function tappedGraph(): ToyboxCombineGraph {
+    return {
+      nodes: [
+        { id: 'src0', kind: 'source', x: 0, y: 0, layer: 0 },
+        { id: 'src1', kind: 'source', x: 0, y: 0, layer: 1 },
+        { id: 'op1', kind: 'fade', x: 0, y: 0, params: {} },
+        { id: 'op2', kind: 'fade', x: 0, y: 0, params: {} },
+        { id: 'op3', kind: 'fade', x: 0, y: 0, params: {} },
+        { id: 'out', kind: 'output', x: 0, y: 0 },
+      ],
+      edges: [
+        { id: 'e1', from: 'src0', to: 'op1', toPort: 'in0' },
+        { id: 'e2', from: 'op1', to: 'op2', toPort: 'in0' },
+        { id: 'e3', from: 'op2', to: 'op3', toPort: 'in0' },
+        { id: 'e4', from: 'src1', to: 'op3', toPort: 'in1' },
+        { id: 'e5', from: 'op3', to: 'out', toPort: 'in0' },
+        // The LAYER-INPUT feedback tap, already present. validateConnect accepts
+        // this edge today (asserted in the sibling describe) — this graph is a
+        // state the editor can actually reach.
+        { id: 'tap', from: 'op3', to: 'src0', toPort: 'in0' },
+      ],
+    };
+  }
+
+  it('the fixture is a state the editor can reach (the tap really is accepted)', () => {
+    // Guard against the fixture drifting into an impossible graph: rebuild the
+    // tap through the real validator rather than trusting the literal above.
+    const g = tappedGraph();
+    g.edges = g.edges.filter((e) => e.id !== 'tap');
+    const v = validateConnect(g, 'op3', 'src0', 'in0');
+    expect(v.ok).toBe(true);
+    expect(v.edge).toMatchObject({ from: 'op3', to: 'src0', toPort: 'in0' });
+  });
+
+  it('the tap adds NO same-frame dependency (topoSort orders every node)', () => {
+    // The premise of the whole fix: the evaluator already ignores this edge, so
+    // the cycle walk reading it is the walk disagreeing with the evaluator.
+    const g = tappedGraph();
+    const { ok, order } = topoSort(g);
+    expect(ok).toBe(true);
+    expect(order).toHaveLength(6);
+    expect(order.indexOf('src0')).toBeLessThan(order.indexOf('op1'));
+  });
+
+  // (a) THE REPORTED CASE — a forward edge refused because of a tap it has
+  //     nothing to do with.
+  it('(a) a legal FORWARD edge is still allowed after the tap is wired', () => {
+    const g = tappedGraph();
+    // src0 -> op2.in1 is a plain fan-out: src0 ALREADY precedes op2 in the
+    // same-frame order, so the edge cannot close a same-frame loop. Before the
+    // fix the walk reached src0 from op2 only by traversing the tap
+    // (op2 -> op3 -> src0) and returned true.
+    expect(wouldCreateCycle(g, 'src0', 'op2', 'in1')).toBe(false);
+    expect(validateConnect(g, 'src0', 'op2', 'in1').ok).toBe(true);
+
+    // Same defect one hop along: op1 -> op2.in1.
+    expect(wouldCreateCycle(g, 'op1', 'op2', 'in1')).toBe(false);
+    expect(validateConnect(g, 'op1', 'op2', 'in1').ok).toBe(true);
+  });
+
+  it('(a) and the accepted edge really does keep the eval acyclic', () => {
+    // The verdict is only trustworthy if the graph it green-lights still sorts:
+    // this is what separates "the refusal was a false positive" from "we just
+    // stopped checking".
+    const g = tappedGraph();
+    const v = validateConnect(g, 'src0', 'op2', 'in1');
+    expect(v.ok).toBe(true);
+    g.edges.push(v.edge!);
+    const { ok, order } = topoSort(g);
+    expect(ok).toBe(true);
+    expect(order).toHaveLength(g.nodes.length);
+  });
+
+  // (b) NEGATIVE CONTROL — the check must still have teeth. Both of these close
+  //     a REAL loop in the same-frame graph the evaluator walks.
+  it('(b) a GENUINE same-frame cycle is still refused, tap or no tap', () => {
+    const g = tappedGraph();
+    // op3 -> op1.in1 closes op1 -> op2 -> op3 -> op1: a real infinite eval.
+    expect(wouldCreateCycle(g, 'op3', 'op1', 'in1')).toBe(true);
+    expect(validateConnect(g, 'op3', 'op1', 'in1').error).toBe('cycle');
+    // op2 -> op1.in1 closes the shorter loop op1 -> op2 -> op1.
+    expect(wouldCreateCycle(g, 'op2', 'op1', 'in1')).toBe(true);
+    expect(validateConnect(g, 'op2', 'op1', 'in1').error).toBe('cycle');
+    // A self-edge is still a cycle.
+    expect(wouldCreateCycle(g, 'op2', 'op2', 'in1')).toBe(true);
+    // And the same verdicts hold with the tap removed — the tap is irrelevant
+    // to a genuine cycle, in BOTH directions.
+    const noTap: ToyboxCombineGraph = { ...g, edges: g.edges.filter((e) => e.id !== 'tap') };
+    expect(wouldCreateCycle(noTap, 'op3', 'op1', 'in1')).toBe(true);
+    expect(validateConnect(noTap, 'op3', 'op1', 'in1').error).toBe('cycle');
+  });
+
+  it('(b) refusing the genuine cycle is load-bearing: forcing it in strands the eval', () => {
+    // Negative-control the CONTROL — prove the edge (b) rejects would really
+    // break the evaluator, so a green (b) is not green by accident.
+    const g = tappedGraph();
+    g.edges.push({ id: 'forced', from: 'op3', to: 'op1', toPort: 'in1' });
+    const { ok, order } = topoSort(g);
+    expect(ok).toBe(false);
+    // op1/op2/op3 are stranded inside the loop; only the two sources + out-of-loop
+    // nodes can be ordered.
+    expect(order).not.toContain('op1');
+    expect(order).not.toContain('op2');
+    expect(order).not.toContain('op3');
+  });
+
+  // (c) THE PRE-EXISTING EXEMPTION — the edge BEING ADDED, when it is itself a
+  //     tap, is still exempt. This is what moved from the caller into the walk.
+  it('(c) a NEW layer-input tap is still exempt, even when it closes a raw loop', () => {
+    const g = tappedGraph();
+    // src1 -> op3 already exists, so op3 -> src1.in0 closes src1 -> op3 -> src1
+    // in the RAW edge set. It is a tap, so it is legal.
+    expect(wouldCreateCycle(g, 'op3', 'src1', 'in0')).toBe(false);
+    const v = validateConnect(g, 'op3', 'src1', 'in0');
+    expect(v.ok).toBe(true);
+    // Two taps wired at once still leaves the eval acyclic.
+    g.edges.push(v.edge!);
+    expect(topoSort(g).ok).toBe(true);
+  });
+
+  // The predicate's ground truth is the EVALUATOR, not another hand-written
+  // walk: `wouldCreateCycle` is only correct if it agrees with topoSort about
+  // the graph that results from adding the edge. Sweeping every candidate triple
+  // makes that agreement a property rather than four examples — and it is what
+  // would have caught the original defect without anyone naming the case.
+  //
+  // MEASURED on this fixture (54 triples; 19 genuinely strand the eval):
+  //   old wouldCreateCycle .............................. 23 disagreements
+  //   old validateConnect guard (caller-side exemption) .. 12 disagreements
+  // The caller-side exemption masked 11 of the 23; the 12 it structurally could
+  // not see are legal forward connections the editor refused — the report.
+  it('agrees with topoSort on EVERY candidate edge (the evaluator is the truth)', () => {
+    const base = tappedGraph();
+    const ids = base.nodes.map((n) => n.id);
+    let checked = 0;
+    let cycles = 0;
+    for (const from of ids) {
+      for (const to of ids) {
+        const toNode = base.nodes.find((n) => n.id === to)!;
+        for (const toPort of inPortsFor(toNode.kind)) {
+          const verdict = wouldCreateCycle(base, from, to, toPort);
+          const probe: ToyboxCombineGraph = {
+            nodes: base.nodes,
+            edges: [...base.edges, { id: 'probe', from, to, toPort }],
+          };
+          // topoSort strands exactly the nodes inside a cycle, so `!ok` IS
+          // "adding this edge made the eval non-evaluable".
+          expect(
+            verdict,
+            `wouldCreateCycle(${from} -> ${to}.${toPort}) disagreed with topoSort ` +
+              `(topoSort ok=${topoSort(probe).ok})`,
+          ).toBe(!topoSort(probe).ok);
+          checked++;
+          if (verdict) cycles++;
+        }
+      }
+    }
+    // Negative-control the sweep itself: a run that checked nothing, or that
+    // found every edge acyclic, would pass the loop above in silence. 6 nodes ×
+    // (src0 1 + src1 1 + op1 2 + op2 2 + op3 2 + out 1) destination ports = 54.
+    expect(checked).toBe(54);
+    expect(cycles).toBe(19);
+  });
+
+  it('(c) toPort is load-bearing: the SAME endpoints on a non-tap port DO cycle', () => {
+    // The exemption is a property of the destination PORT, not the node pair —
+    // which is exactly why wouldCreateCycle takes toPort. A source has no in1,
+    // so this pair is only ever legal through in0.
+    const g = tappedGraph();
+    expect(wouldCreateCycle(g, 'op3', 'src1', 'in0')).toBe(false);
+    expect(wouldCreateCycle(g, 'op3', 'src1', 'in1')).toBe(true);
+    // validateConnect rejects the in1 form earlier, as a bad port.
+    expect(validateConnect(g, 'op3', 'src1', 'in1').error).toBe('bad-in-port');
   });
 });
 

@@ -5,7 +5,7 @@
 >
 > | item | verdict | evidence |
 > |---|---|---|
-> | **P0-A1** master "limiter" ducks/pumps the sub | ❌ **NOT DONE — still live** | `audio-out.ts` still builds a plain `createDynamicsCompressor()` at `threshold -6 / ratio 4 / knee 6 / attack 0.003 / release 0.05` feeding `ctx.destination` — the exact full-band stereo-linked compressor this audit indicts |
+> | **P0-A1** master "limiter" ducks/pumps the sub | ⏳ **FIX IN FLIGHT — #1369** (see the correction block below) | `audio-out.ts` still builds a plain `createDynamicsCompressor()` at `threshold -6 / ratio 4 / knee 6 / attack 0.003 / release 0.05` feeding `ctx.destination` — the exact full-band stereo-linked compressor this audit indicts |
 > | **P0-A2a** pin AudioContext to 48 kHz | ✅ done | `Canvas.svelte:6981` `sampleRate: 48000` |
 > | **P1-A2b** kill baked 48000/44100 | ✅ effectively done | no `48000`/`44100` left in `chowkick-dsp.ts`; **`cocoadelay` no longer exists** (superseded by `cofefve`), so its half of A2b is moot |
 > | **P1-A3** band-limit the Faust analog VCO | ❌ **NOT DONE** | `analog-vco.dsp:56-58` is still raw-phasor `saw(p)=2p-1`, `sqr`, `tri` — no BLEP anywhere |
@@ -18,6 +18,41 @@
 > `art-backfill-audio-profiles-2026-07-01.md`), so A1's "no golden protects it"
 > claim must be re-checked before the re-pin plan is followed — and `task
 > art:update` now chains `art:fingerprints:accept`, which did not exist then.
+>
+> ### ⚡ 2026-08-04 — P0-A1 FIX IN FLIGHT (#1369), AND THE AUDIT IS WRONG IN THREE PLACES
+>
+> Implemented the prescribed **option 2** — an own-code look-ahead brickwall
+> limiter worklet at a −1 dBFS ceiling, replacing the `DynamicsCompressorNode`.
+> Measured on a sustained 40 Hz sub + a kick every 500 ms:
+>
+> | input peak | OLD ripple → out peak | NEW ripple → out peak |
+> |---|---|---|
+> | −2.90 dBFS | 0.210 dB → 0.8048 | **0.000** → 0.7071 |
+> | +3.12 dBFS | 2.671 dB → **1.2395 CLIPS** | 1.203 → 0.8913 |
+> | +9.14 dBFS | 4.279 dB → **1.6022 CLIPS** | 3.136 → 0.8913 |
+>
+> **Three corrections to this audit, from measurement:**
+>
+> 1. **"Engaged during normal play, continuously attenuating low end" is
+>    OVERSTATED.** `DynamicsCompressorNode` uses an averaging detector, so real
+>    engagement is ~−3 dBFS, not the nominal −6. At −5.4 dBFS the measured ripple
+>    is **0.003 dB**.
+> 2. **The audit MISSES the two larger defects.** The node never bounded the
+>    output at all — its sole purpose — and it applied **+1.35 dB of automatic
+>    makeup to every patch**.
+> 3. **"1 ART scenario re-pin" is wrong — ZERO moved.** All 136 fingerprints
+>    byte-identical; nothing renders through `audio-out`. `grand-integration`
+>    did not move either (it sums the four cores directly), so **no grand
+>    re-attest was needed**. The audit's own adversarial-review Finding 1 already
+>    said this and is the correct half.
+>
+> ⚠ **Two owner-visible consequences**: every patch is now ~1.35 dB quieter
+> (that makeup is gone), and the release is **1.5 s** — deliberately long,
+> because shorter releases just relocate the pumping onto the beat. Trade-off
+> table in the PR.
+>
+> **A3** (raw-phasor Faust VCO, no BLEP) and **A5** (zero denormal floors in
+> `moog-ladder-dsp.ts`) remain **NOT DONE**.
 >
 > **Keep — this is live backlog with its P0 unresolved.**
 

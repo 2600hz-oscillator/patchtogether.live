@@ -64,6 +64,7 @@ import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import { midiToVOct } from '$lib/audio/note-entry';
 import { createMidiScheduler } from '$lib/audio/midi-timing';
+import { createMidiInputClaim } from '$lib/midi/input-attach';
 
 // ---------------- Web MIDI minimal types ----------------
 //
@@ -373,6 +374,8 @@ export const midiCvBuddyDef: AudioModuleDef = {
     let lastNote: number | null = null;
     let lastVelocity = 0;
     let access: MidiAccessLike | null = null;
+    /** Identity-scoped handler-slot claim — see $lib/midi/input-attach. */
+    const claim = createMidiInputClaim('midi-cv-buddy');
     let permissionDenied = false;
     let subscriber: ((s: MidiCvBuddyCardState) => void) | null = null;
 
@@ -501,16 +504,13 @@ export const midiCvBuddyDef: AudioModuleDef = {
       }
     }
 
+    /** Listen on EXACTLY the chosen device. Re-targeting releases only the
+     *  port THIS module held (see $lib/midi/input-attach) — it does not clear
+     *  handler slots installed by anything else sharing the access. */
     function attachToDevice(deviceId: string | null): void {
       if (!access) return;
-      // Detach handlers from everything first; we only listen on the chosen device.
-      for (const inp of access.inputs.values()) {
-        inp.onmidimessage = null;
-      }
-      if (deviceId === null) return;
-      const inp = access.inputs.get(deviceId);
-      if (!inp) return;
-      inp.onmidimessage = handleMidiMessage;
+      const inp = deviceId === null ? undefined : access.inputs.get(deviceId);
+      claim.attachOnly(inp ? [inp] : [], handleMidiMessage);
     }
 
     function pickDefaultDevice(): string | null {
@@ -635,9 +635,10 @@ export const midiCvBuddyDef: AudioModuleDef = {
         return undefined;
       },
       dispose() {
-        // Detach MIDI handlers before tearing down audio nodes.
+        // Detach OUR MIDI handler before tearing down audio nodes — only the
+        // port we installed on, never a sweep across the whole access.
+        claim.detach();
         if (access) {
-          for (const inp of access.inputs.values()) inp.onmidimessage = null;
           access.onstatechange = null;
           access = null;
         }

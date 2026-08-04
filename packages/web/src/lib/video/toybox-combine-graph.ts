@@ -605,10 +605,15 @@ export const LAYER_INPUT_SOURCE = -2;
  * True if edge `to`/`toPort` is a LAYER-INPUT (feedback-tap) edge: an in0 wire
  * into a SOURCE node. SOURCE nodes are emit-only in the forward eval; their in0
  * port exists ONLY to express a feedback tap that the render resolves one frame
- * late (prev-frame OUT). Such an edge is BY DEFINITION a cycle (OUT -> src ->
- * graph -> OUT), so it is exempted from cycle rejection (validateConnect) and
- * dropped from the same-frame dependency order (topoSort) — exactly the discipline
+ * late (prev-frame OUT). Such an edge is BY DEFINITION a loop in the RAW edge
+ * set (OUT -> src -> graph -> OUT) but NOT an edge of the graph evaluated this
+ * frame, so it is dropped from the same-frame dependency order (topoSort) and
+ * from the same-frame cycle walk (wouldCreateCycle) — exactly the discipline
  * the shadertoy 'self' channel + propagateFreshness already use for a tap.
+ *
+ * This predicate is the ONE definition of "is a tap"; every consumer that walks
+ * `g.edges` as a dependency graph must filter through it, or it is walking a
+ * different graph from the evaluator.
  */
 export function isLayerInputEdge(
   g: ToyboxCombineGraph,
@@ -860,13 +865,53 @@ export function videoLayerFresh(uploadCount: number, lastUploadCount: number): b
 }
 
 /**
- * Would adding edge `from → to` create a cycle? True if `to` already reaches
- * `from` (so the new edge would close a loop). Pure — does NOT mutate `g`.
+ * Would adding edge `from → to:toPort` close a cycle in the SAME-FRAME
+ * dependency graph — i.e. the edge set `topoSort` actually evaluates?
+ *
+ * **A LAYER-INPUT edge is not a cycle participant.** "Legal to wire" and
+ * "cannot loop forever" are two different properties, and only the second is
+ * this predicate's business. An in0 wire into a SOURCE node is a feedback TAP:
+ * the render resolves it from the PREVIOUS frame's OUT composite, so it carries
+ * no same-frame dependency at all, and `topoSort` drops it (see
+ * `isLayerInputEdge`). The walk must honour that on BOTH sides of the question:
+ *
+ *  1. **Every tap already in `g` is dropped from the adjacency.** Reading them
+ *     made a legal tap poison the walk for every LATER connection: with
+ *     `op3 → src0.in0` wired, the RAW edge set contains
+ *     `src0 → op1 → op2 → op3 → src0`, so `to` reaches `from` for any pair
+ *     inside that loop — and an ordinary forward fan-out like `src0 → op2.in1`
+ *     was refused as a cycle it does not create. That is the owner-reported
+ *     defect: wire the feedback, then a perfectly valid forward connection
+ *     stops working.
+ *  2. **The edge UNDER CONSIDERATION, when it is itself a tap, adds no
+ *     same-frame dependency either** — hence `toPort`. It is REQUIRED, not
+ *     optional: an edge is identifiable as a tap only by its destination PORT,
+ *     so a caller cannot pose this question correctly without naming it.
+ *
+ * (2) used to live in `validateConnect` as a `!isLayerInputEdge(...) &&` guard
+ * on the call. That exempted only the edge being added and left (1) unfixed, and
+ * it put the rule in the caller — where the next caller would not inherit it.
+ * Both halves now belong to the walk, so the property holds for any caller.
+ *
+ * Pure — does NOT mutate `g`.
  */
-export function wouldCreateCycle(g: ToyboxCombineGraph, from: string, to: string): boolean {
+export function wouldCreateCycle(
+  g: ToyboxCombineGraph,
+  from: string,
+  to: string,
+  toPort: ToyboxInPort,
+): boolean {
+  // (2) The prospective edge is a tap → it introduces no same-frame edge, so it
+  // can close no same-frame cycle. (Including the degenerate self-tap; a node
+  // wired to itself is separately named `self-loop` by validateConnect, which
+  // runs that guard BEFORE it asks this question.)
+  if (isLayerInputEdge(g, to, toPort)) return false;
   if (from === to) return true;
   const adj = new Map<string, string[]>();
   for (const e of g.edges) {
+    // (1) The same drop topoSort applies — a tap is resolved one frame late, so
+    // it is not an edge of the graph being evaluated this frame.
+    if (isLayerInputEdge(g, e.to, e.toPort)) continue;
     if (!adj.has(e.from)) adj.set(e.from, []);
     adj.get(e.from)!.push(e.to);
   }
@@ -931,13 +976,13 @@ export function validateConnect(
   if (g.edges.some((e) => e.to === to && e.toPort === toPort)) {
     return { ok: false, error: 'occupied' };
   }
-  // A LAYER-INPUT edge (in0 into a SOURCE node) is BY DEFINITION a feedback tap
-  // (e.g. OUT -> src0.in0), so it is EXEMPT from cycle rejection — the render
-  // resolves it one frame late (prev-frame OUT), never a same-frame loop, and
-  // topoSort drops it so the eval stays acyclic. The self-loop / no-out-port /
-  // occupied guards above still apply. A non-SOURCE destination keeps cycle
-  // rejection exactly as before.
-  if (!isLayerInputEdge(g, to, toPort) && wouldCreateCycle(g, from, to)) {
+  // Cycle rejection is asked of the SAME-FRAME dependency graph, so LAYER-INPUT
+  // feedback taps are excluded by `wouldCreateCycle` itself — both the ones
+  // already wired and the one being added (that is what `toPort` tells it).
+  // This caller deliberately carries NO exemption of its own: the rule belongs
+  // to the walk, so every caller gets it. The self-loop / no-out-port /
+  // occupied guards above still apply and run first.
+  if (wouldCreateCycle(g, from, to, toPort)) {
     return { ok: false, error: 'cycle' };
   }
   return { ok: true, edge: { id: nextEdgeId(g), from, to, toPort } };

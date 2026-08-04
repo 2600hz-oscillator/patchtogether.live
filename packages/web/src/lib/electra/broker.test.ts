@@ -104,6 +104,107 @@ function makeFakeAccess() {
   };
 }
 
+// ───────────────── inbound port SCOPE (device crosstalk) ─────────────────
+//
+// `attachInputs()` used to claim EVERY input on the broker's access, and
+// `handleInbound` filters only by STATUS BYTE — never by device, never by
+// channel. Downstream, `ElectraAutoconfig.handleCc` looks the CC up in
+// `allocByNumber` and WRITES the bound rack param. The preset generator
+// allocates CCs from the bottom of the range upward, so its allocations overlap
+// the Push 2 map (CC 15, 20-27, 71-79) and a keyboard's mod wheel (CC 1) —
+// meaning a Push encoder turn could move an Electra-mapped parameter.
+//
+// The broker now listens on the Electra's OWN ports, resolved by the same
+// name heuristic `resolvePorts()` has always used for the OUTPUT side, with a
+// fail-safe fallback to every input when nothing is named for an Electra.
+
+function makeMixedAccess(electraInputName: string | null) {
+  const heard: number[][] = [];
+  const mk = (id: string, name: string) => {
+    let h: ((ev: MidiEventLike) => void) | null = null;
+    return {
+      port: {
+        id, name, state: 'connected',
+        get onmidimessage() { return h; },
+        set onmidimessage(fn: ((ev: MidiEventLike) => void) | null) { h = fn; },
+      } as MidiInputLike,
+      fire: (data: number[]) => h?.({ data: Uint8Array.from(data), timeStamp: 0 }),
+      attached: () => typeof h === 'function',
+    };
+  };
+  const push = mk('push-in', 'Ableton Push 2 Live Port');
+  const inputs = new Map<string, MidiInputLike>([[push.port.id, push.port]]);
+  let electra: ReturnType<typeof mk> | null = null;
+  if (electraInputName !== null) {
+    electra = mk('electra-in', electraInputName);
+    inputs.set(electra.port.id, electra.port);
+  }
+  const out: MidiOutputLike = {
+    id: 'electra-ctrl', name: 'Electra Controller CTRL', state: 'connected',
+    send: () => {},
+  };
+  const access: MidiFullAccessLike = {
+    inputs,
+    outputs: new Map([[out.id, out]]),
+    onstatechange: null,
+  };
+  return { access, push, electra, heard };
+}
+
+describe('ElectraBroker inbound scope: the Electra hears its OWN device', () => {
+  it('a Push CC does NOT reach the CC listeners when an Electra port is present', () => {
+    const f = makeMixedAccess('Electra Controller CTRL');
+    const b = new ElectraBroker();
+    const seen: number[] = [];
+    b.onCC((ev) => seen.push(ev.cc));
+    b.__test_setAccess(f.access);
+
+    // CC 27 — allocated by the preset generator AND the Push's SHIFT modifier.
+    f.push.fire([0xb0, 27, 127]);
+    expect(seen, 'a Push CC must not be read as an Electra CC').toEqual([]);
+    expect(f.push.attached(), "the broker never claimed the Push's slot").toBe(false);
+
+    // POSITIVE CONTROL — the same CC on the Electra's own port DOES arrive, so
+    // the assertion above is scope, not a dead listener.
+    f.electra!.fire([0xb0, 27, 127]);
+    expect(seen, "the Electra's own CC still arrives").toEqual([27]);
+  });
+
+  it('notes are scoped the same way (the tap pad / button pads)', () => {
+    const f = makeMixedAccess('Electra Controller Port 1');
+    const b = new ElectraBroker();
+    const seen: number[] = [];
+    b.onNote((ev) => seen.push(ev.note));
+    b.__test_setAccess(f.access);
+    f.push.fire([0x90, 36, 100]); // a Push PAD — note 36 is also an Electra pad
+    expect(seen).toEqual([]);
+    f.electra!.fire([0x90, 36, 100]);
+    expect(seen).toEqual([36]);
+  });
+
+  it('FAIL-SAFE — with no Electra-named input it still listens to everything', () => {
+    // Unknown platform naming, or the pre-identification probe window. Losing
+    // identification would be worse than the crosstalk, so the pool falls back.
+    const f = makeMixedAccess(null);
+    const b = new ElectraBroker();
+    const seen: number[] = [];
+    b.onCC((ev) => seen.push(ev.cc));
+    b.__test_setAccess(f.access);
+    f.push.fire([0xb0, 27, 127]);
+    expect(seen, 'fallback: every input, exactly as before').toEqual([27]);
+  });
+
+  it('setting a null access releases only the slots the broker installed', () => {
+    const f = makeMixedAccess('Electra Controller CTRL');
+    const foreign = (): void => {};
+    f.push.port.onmidimessage = foreign; // another subsystem owns the Push port
+    const b = new ElectraBroker();
+    b.__test_setAccess(f.access);
+    b.__test_setAccess(null);
+    expect(f.push.port.onmidimessage, 'a foreign handler survives').toBe(foreign);
+  });
+});
+
 describe('ElectraBroker with a fake device', () => {
   it('resolves CTRL vs PLAY ports by name + routes sends', () => {
     const fake = makeFakeAccess();
