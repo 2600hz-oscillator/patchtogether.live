@@ -64,27 +64,39 @@ export interface SpreadTap {
   pan: number;
 }
 
+/** The widest half-span, at spread = 5. Pan is proportional to a tap's
+ *  DISTANCE FROM CENTRE MEASURED AGAINST THIS — see the DSP copy. */
+const SPREAD_MAX_HALF_SPAN = 2;
+
 /** Compute the active-tap descriptors for the given spread + center frame.
  *  Used by both the audio worklet (for stereo mixing — see wavecel.ts) and
  *  the on-card visualizer (for highlighting active frames in WavecelCard.svelte).
  *
- *  spread=1 → single tap at center, weight=1, pan=0 (mono).
- *  spread=N>1 → ceil(N) taps spaced 1 frame apart around center; outermost
- *  tap weights fade as the fractional spread leaves them behind. */
+ *  spread=1   → single tap at center, weight=1, pan=0 (mono).
+ *  spread=N>1 → an ODD, CENTRE-INCLUSIVE bank at integer frame offsets;
+ *  off-centre taps fade IN from weight 0 and pan widens with the span.
+ *
+ *  ⚠ THIS MUST STAY IDENTICAL TO packages/dsp/src/lib/wavetable-osc.ts — the
+ *  card draws what the worklet plays, and nothing but
+ *  `wavecel-spread-parity.test.ts` joins the two copies. The full rationale
+ *  (the 43 dB cliff and the exactly-zero stereo the previous layout produced)
+ *  lives in the DSP copy's docstring; do not let the two drift. */
 export function spreadTaps(spread: number, centerFrame: number): SpreadTap[] {
   const N = clampRange(spread, 1, 5);
-  const halfSpan = (N - 1) / 2;
+  const halfSpan = (N - 1) / 2; // 0 .. 2
   if (halfSpan === 0) {
     return [{ frameFloat: centerFrame, weight: 1, pan: 0 }];
   }
-  const tapCount = Math.max(1, Math.ceil(N));
+  const outer = Math.ceil(halfSpan); // 1 or 2
   const taps: SpreadTap[] = [];
-  for (let t = 0; t < tapCount; t++) {
-    const offset = t - (tapCount - 1) / 2;
-    const edgeWeight = Math.max(0, Math.min(1, halfSpan + 0.5 - Math.abs(offset)));
-    if (edgeWeight <= 0) continue;
-    const norm = clampRange(offset / halfSpan, -1, 1);
-    taps.push({ frameFloat: centerFrame + offset, weight: edgeWeight, pan: norm });
+  for (let k = -outer; k <= outer; k++) {
+    const weight = k === 0 ? 1 : clamp01(halfSpan - Math.abs(k) + 1);
+    if (weight <= 0) continue;
+    taps.push({
+      frameFloat: centerFrame + k,
+      weight,
+      pan: clampRange(k / SPREAD_MAX_HALF_SPAN, -1, 1),
+    });
   }
   return taps;
 }
@@ -94,12 +106,11 @@ export function spreadTaps(spread: number, centerFrame: number): SpreadTap[] {
  *  inner loop in wavecel.ts — sample fetch is left to the caller (in the
  *  worklet it reads from the live frames; in tests it's a stub function).
  *
- *  Each tap is offset by `(t - (tapCount-1)/2)` from center; equal-power
- *  panning maps the tap's normalized position into the [-1, +1] range
- *  spanning ±halfSpan, then panAngle = π/4 * (1 + norm).
- *
- *  Returns the (L, R) gain pair plus the running weight sum used to
- *  normalize spread changes (sqrt(weightSum) keeps RMS roughly flat). */
+ *  Equal-power panning maps each tap's offset into [-1, +1] against the
+ *  WIDEST half-span, then panAngle = π/4 * (1 + pan). Each channel is
+ *  normalised by ITS OWN weight sum — a weighted AVERAGE — so identical taps
+ *  reproduce the sample exactly at any spread and SPREAD cannot act as a
+ *  level control. */
 export function spreadMix(
   spread: number,
   centerFrame: number,
@@ -112,14 +123,17 @@ export function spreadMix(
   }
   let sumL = 0;
   let sumR = 0;
-  let weightSum = 0;
+  let gainL = 0;
+  let gainR = 0;
   for (const tap of taps) {
     const sample = fetchSampleAtFrame(tap.frameFloat);
     const panAngle = (Math.PI / 4) * (1 + tap.pan);
-    sumL += sample * Math.cos(panAngle) * tap.weight;
-    sumR += sample * Math.sin(panAngle) * tap.weight;
-    weightSum += tap.weight;
+    const gl = Math.cos(panAngle) * tap.weight;
+    const gr = Math.sin(panAngle) * tap.weight;
+    sumL += sample * gl;
+    sumR += sample * gr;
+    gainL += gl;
+    gainR += gr;
   }
-  const norm = weightSum > 0 ? 1 / Math.sqrt(weightSum) : 0;
-  return { l: sumL * norm, r: sumR * norm };
+  return { l: gainL > 0 ? sumL / gainL : 0, r: gainR > 0 ? sumR / gainR : 0 };
 }

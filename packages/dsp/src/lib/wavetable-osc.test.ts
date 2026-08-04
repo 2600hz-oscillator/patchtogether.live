@@ -138,11 +138,46 @@ describe('spreadTaps', () => {
   it('spread 1 → single centered mono tap', () => {
     expect(spreadTaps(1, 5)).toEqual([{ frameFloat: 5, weight: 1, pan: 0 }]);
   });
-  it('spread 3 → three taps spaced 1 frame, symmetric pan, edge weights 0.5', () => {
+  it('spread 3 → three taps spaced 1 frame, symmetric pan at half width', () => {
     const taps = spreadTaps(3, 5);
     expect(taps.map((t) => t.frameFloat)).toEqual([4, 5, 6]);
-    expect(taps.map((t) => t.pan)).toEqual([-1, 0, 1]);
-    expect(taps.map((t) => t.weight)).toEqual([0.5, 1, 0.5]);
+    // Pan is measured against the WIDEST half-span (2, at spread 5), not
+    // against the current one — so spread 3 is half-width, and the image opens
+    // progressively instead of snapping to hard L/R the instant SPREAD leaves 1.
+    expect(taps.map((t) => t.pan)).toEqual([-0.5, 0, 0.5]);
+    expect(taps.map((t) => t.weight)).toEqual([1, 1, 1]);
+  });
+  it('spread 5 → five taps reaching FULL pan', () => {
+    const taps = spreadTaps(5, 5);
+    expect(taps.map((t) => t.frameFloat)).toEqual([3, 4, 5, 6, 7]);
+    expect(taps.map((t) => t.pan)).toEqual([-1, -0.5, 0, 0.5, 1]);
+    expect(taps.map((t) => t.weight)).toEqual([1, 1, 1, 1, 1]);
+  });
+  it('THE CENTRE TAP IS ALWAYS PRESENT — the bank is continuous with spread 1', () => {
+    // ⚠ The previous layout had NO centre tap at spread just above 1: it placed
+    // ceil(N) taps at ±0.5 with weights that BOTH went to 0 as N → 1⁺. With
+    // nothing to fade FROM, the mix collapsed (a measured 43 dB level cliff
+    // between spread 1.0 and 1.0001) and, at the table edges, the two ±0.5 taps
+    // aliased onto the same interpolation under sampleFrame's clamp — killing
+    // the stereo outright at the def-default morph.
+    for (const spread of [1.0001, 1.1, 1.5, 2, 2.5, 3, 4, 5]) {
+      const taps = spreadTaps(spread, 5);
+      const centre = taps.find((t) => t.frameFloat === 5);
+      expect(centre, `spread ${spread} has no centre tap`).toBeTruthy();
+      expect(centre!.weight).toBe(1);
+      expect(centre!.pan).toBe(0);
+      // …and taps sit on WHOLE frames, so symmetric offsets cannot alias onto
+      // each other under the index clamp.
+      for (const t of taps) expect(Number.isInteger(t.frameFloat - 5)).toBe(true);
+    }
+  });
+  it('off-centre taps FADE IN from zero as spread opens (no discontinuity)', () => {
+    const w = (spread: number): number =>
+      spreadTaps(spread, 5).find((t) => t.frameFloat === 4)?.weight ?? 0;
+    expect(w(1.0001)).toBeLessThan(1e-4);
+    expect(w(1.5)).toBeCloseTo(0.25, 12);
+    expect(w(3)).toBe(1);
+    expect(w(5)).toBe(1);
   });
   it('clamps spread to [1,5]', () => {
     expect(spreadTaps(0.2, 5)).toHaveLength(1); // floored to 1 → mono
@@ -172,9 +207,48 @@ describe('spreadMix (equal-power stereo)', () => {
     const frames: Float32Array[] = [];
     for (let k = 0; k < 11; k++) frames.push(constFrame(k));
     const m = spreadMix(frames, 5, 3, s1, s2, sFrac);
-    expect(m.l).toBeCloseTo(3.9142, 3);
-    expect(m.r).toBeCloseTo(4.6213, 3);
+    expect(m.l).toBeCloseTo(4.73124, 4);
+    expect(m.r).toBeCloseTo(5.26876, 4);
     expect(m.l).toBeLessThan(m.r);
+    // AMPLITUDE-PRESERVING: each channel is a weighted AVERAGE of its taps, so
+    // the mid stays exactly on the centre frame's value however wide it opens.
+    // (The old normalisation was a weighted SUM × 1/sqrt(weightSum), which is
+    // what turned SPREAD into a level control.)
+    expect((m.l + m.r) / 2).toBeCloseTo(5, 10);
+  });
+  it('NO LEVEL CLIFF anywhere in the travel — including just above spread 1', () => {
+    // MEASURED before the fix, through the real worklet: rms −5.99 dB at
+    // spread 1.0 → −49.11 dB at spread 1.0001.
+    const frames: Float32Array[] = [];
+    for (let k = 0; k < 11; k++) frames.push(constFrame(k));
+    let prevMid = spreadMix(frames, 5, 1, s1, s2, sFrac).l;
+    for (const spread of [1.0001, 1.05, 1.25, 1.5, 2, 2.5, 3, 4, 5]) {
+      const m = spreadMix(frames, 5, spread, s1, s2, sFrac);
+      const mid = (m.l + m.r) / 2;
+      expect(Math.abs(mid - prevMid), `spread ${spread}: mid level jumped`).toBeLessThan(0.05);
+      prevMid = mid;
+    }
+  });
+  it('identical taps reproduce the sample EXACTLY at any spread', () => {
+    // The property that makes SPREAD a width control: no level change when the
+    // table gives the taps nothing to spread.
+    const frames = Array.from({ length: 11 }, () => constFrame(0.42));
+    const exact = frames[0]![0]!; // the float32-rounded value the taps read
+    for (const spread of [1, 1.0001, 1.5, 2.5, 3, 4, 5]) {
+      const m = spreadMix(frames, 5, spread, s1, s2, sFrac);
+      expect(m.l, `L @ spread ${spread}`).toBeCloseTo(exact, 12);
+      expect(m.r, `R @ spread ${spread}`).toBeCloseTo(exact, 12);
+    }
+  });
+  it('stereo survives at the TABLE EDGES (centre frame 0) — it did not', () => {
+    // MEASURED before the fix at the def-default morph of 0:
+    // |L−R| = 0.0000e+0 for spread 1.25 / 1.50 / 1.75 / 2.00.
+    const frames: Float32Array[] = [];
+    for (let k = 0; k < 8; k++) frames.push(constFrame(k));
+    for (const spread of [1.25, 1.5, 1.75, 2, 3, 5]) {
+      const m = spreadMix(frames, 0, spread, s1, s2, sFrac);
+      expect(Math.abs(m.l - m.r), `centre 0, spread ${spread}`).toBeGreaterThan(0.01);
+    }
   });
 });
 

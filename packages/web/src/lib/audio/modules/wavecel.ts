@@ -20,7 +20,7 @@
 //   pitch (pitch): V/oct pitch input, 0V = C4.
 //   fm (audio): audio-rate FM modulator.
 //   morph_cv (cv, linear, paramTarget=morph): displaces the wavetable morph position.
-//   spread_cv (cv, linear, paramTarget=spread): displaces the stereo spread (detune voices).
+//   spread_cv (cv, linear, paramTarget=spread): displaces the stereo spread (frame-spread taps).
 //   fold_cv (cv, linear, paramTarget=fold): displaces the wavefold amount.
 //   poly (polyPitchGate): 5-voice chord bus from MIDI LANE (mode='poly') /
 //     POLYSEQZ. When ANY lane is gated WAVECEL renders one wavetable voice per
@@ -38,7 +38,7 @@
 //   tune (linear -36..36 st, default 0): coarse tune semitones.
 //   fine (linear -100..100 ¢, default 0): fine tune cents.
 //   morph (linear 0..1, default 0): wavetable frame morph position.
-//   spread (linear 1..5, default 1): stereo voice spread (detune width).
+//   spread (linear 1..5, default 1): stereo voice spread (wavetable-frame width).
 //   fold (linear 0..1, default 0): wavefolder amount.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
@@ -174,11 +174,19 @@ export const wavecelDef: AudioModuleDef = {
     { id: 'sustain', label: 'S', defaultValue: 1,     min: 0,     max: 1, curve: 'linear' },
     { id: 'release', label: 'R', defaultValue: 0.005, min: 0.001, max: 5, curve: 'log', units: 's' },
     // BASE VOL — per-voice VCA FLOOR the ADSR rides on top of: gain =
-    // base + (1-base)*env per ACTIVE voice. Sits next to the ADSR. Default 1 →
-    // gain=1, the env does nothing → the raw-VCO drone (nothing patched) is
-    // byte-identical (back-compat / unchanged ART+VRT baselines). 0 → pure ADSR
-    // (silent between notes); 0.5 → floors at 0.5, rises to 1.0 as the env peaks.
-    { id: 'base_vol', label: 'Base', defaultValue: 1, min: 0, max: 1, curve: 'linear' },
+    // base + (1-base)*env per ACTIVE voice. Sits next to the ADSR. 0 (the
+    // DEFAULT) → pure ADSR; 0.5 → floors at 0.5 and rises to 1.0 as the env
+    // peaks; 1 → gain=1 and the env does nothing.
+    // ⚠ The default WAS 1, which made the entire amp ADSR a no-op out of the
+    // box (gain = 1 + 0·env). Measured: identical rise-to-90 % at ATTACK 1 ms
+    // and ATTACK 2 s, a gated render BYTE-IDENTICAL to the undriven drone over
+    // the gate-high window, and a 0.869 full-scale note-off cut. The raw-VCO
+    // drone that the default of 1 existed to preserve is now preserved
+    // DIRECTLY in the worklet's unpatched branch (verified byte-identical),
+    // so the two no longer trade off. Must stay in step with the `base_vol`
+    // AudioParam descriptor in packages/dsp/src/wavecel.ts — joined by
+    // wavecel-envelope.test.ts.
+    { id: 'base_vol', label: 'Base', defaultValue: 0, min: 0, max: 1, curve: 'linear' },
   ],
 
   // DYNAMIC, DOM-only controls (no ParamDef): the wavetable selector cluster +
@@ -196,7 +204,7 @@ export const wavecelDef: AudioModuleDef = {
 
   docs: {
     explanation:
-      "A stereo WAVETABLE oscillator: it scans through a stack of single-cycle waveforms (a wavetable) and plays back the one MORPH points at, smoothly cross-fading between adjacent frames so turning MORPH sweeps the timbre. SPREAD layers several detuned copies of the voice across the stereo field for a wide, chorused image, and FOLD runs the result through a wavefolder to fold the peaks back on themselves and add bright harmonics. It is polyphonic: patch a poly chord bus into POLY and it renders one wavetable voice per gated lane at that lane's pitch and sums them (the morph/spread/fold timbre is shared across all voices); with nothing in POLY it plays the single mono PITCH. A per-voice amplitude ADSR (A/D/S/R) rides on top of a BASE-volume floor and shapes each note once a poly lane or the TRIG gate fires — at the default BASE of 1 the envelope does nothing and WAVECEL is a continuous drone. Load one of the factory wavetables, pick a built-in preset, or upload your own WAV, and watch the on-card screen as either an oscilloscope trace or an animated 3D view of the whole table.",
+      "A stereo WAVETABLE oscillator: it scans through a stack of single-cycle waveforms (a wavetable) and plays back the one MORPH points at, smoothly cross-fading between adjacent frames so turning MORPH sweeps the timbre. SPREAD layers several copies of the voice reading NEIGHBOURING frames of the table across the stereo field for a wide, shimmering image (a wavetable spread, not a pitch detune — one shared phase, several frames), and FOLD runs the result through a wavefolder to fold the peaks back on themselves and add bright harmonics. It is polyphonic: patch a poly chord bus into POLY and it renders one wavetable voice per gated lane at that lane's pitch and sums them (the morph/spread/fold timbre is shared across all voices); with nothing in POLY it plays the single mono PITCH. A per-voice amplitude ADSR (A/D/S/R) shapes each note once a poly lane or the TRIG gate fires, riding on top of a BASE-volume floor: at the default BASE of 0 the envelope has full control of each note, and turning BASE up floors the voice so the envelope only swells it the rest of the way. With nothing patched into POLY or TRIG there is no note to shape and WAVECEL free-runs as a continuous full-level drone. Load one of the factory wavetables, pick a built-in preset, or upload your own WAV, and watch the on-card screen as either an oscilloscope trace or an animated 3D view of the whole table.",
     inputs: {
       pitch:
         "1V/octave pitch CV setting the oscillator's frequency (0V = C4), summed with the Tune and Fine knobs. This is the MONO voice and is used whenever nothing is gating the POLY input.",
@@ -205,19 +213,19 @@ export const wavecelDef: AudioModuleDef = {
       morph_cv:
         "CV that offsets the Morph control, sliding the wavetable scan position up or down so an LFO or envelope can sweep the timbre hands-free (added to the knob, then clamped to 0..1).",
       spread_cv:
-        "CV that offsets the Spread control, widening or narrowing the detuned stereo spread under modulation (added to the knob, then clamped to the 1..5 range).",
+        "CV that offsets the Spread control, widening or narrowing the stereo spread under modulation (added to the knob, then clamped to the 1..5 range). Level holds steady across the sweep, so it is safe to modulate at audio rate.",
       fold_cv:
         "CV that offsets the Fold control, driving the wavefolder harder or softer over time for evolving brightness (added to the knob, then clamped to 0..1).",
       poly:
         "The polyphonic chord bus from a poly source (MIDI LANE in poly mode / POLYSEQZ): each lane carries a pitch plus a note-on/off gate, and while a lane's gate is high WAVECEL renders one wavetable voice at that lane's pitch and sums all the gated voices into the stereo output — so a held chord plays a chord. The per-voice ADSR opens on each lane's note-on and releases on its note-off. When nothing is patched here (or no lane is gated) WAVECEL falls back to the single mono PITCH path unchanged.",
       trigger:
-        "A mono note GATE for the per-voice amplitude envelope: while the level is high the note is held — a rising edge starts the ADSR attack (note-on) and the falling edge starts its release (note-off) — so it is level-sensitive, not just a one-shot. The first rising edge turns WAVECEL into a gated voice (it tracks the gate from then on); before any gate, and when this input is unpatched, the amplitude env is bypassed and WAVECEL free-runs as a continuous drone.",
+        "A mono note GATE for the per-voice amplitude envelope: while the level is high the note is held — a rising edge starts the ADSR attack (note-on) and the falling edge starts its release (note-off) — so it is level-sensitive, not just a one-shot. PATCHING it turns WAVECEL into a gated voice: it is silent until the first gate and then follows every one. When this input (and POLY) is unpatched the amplitude env has nothing to shape and WAVECEL free-runs as a continuous drone.",
     },
     outputs: {
       out_l:
-        "Left channel of the stereo wavetable output (the lower-detuned half of the spread voices); pair it with OUT R for the full wide stereo image.",
+        "Left channel of the stereo wavetable output — weighted toward the spread taps reading frames BELOW the Morph position; pair it with OUT R for the full wide stereo image. At Spread 1 it is identical to OUT R (a centred mono voice).",
       out_r:
-        "Right channel of the stereo wavetable output (the upper-detuned half of the spread voices); the L/R pair widens as Spread increases.",
+        "Right channel of the stereo wavetable output — weighted toward the spread taps reading frames ABOVE the Morph position; the L/R pair widens as Spread increases, at any Morph position.",
       scope_out:
         "A mono-video oscilloscope trace of the currently-morphed waveform (single-color line on a dark background). It ALWAYS renders this scope view regardless of which mode the on-card preview toggle is showing — patch it into a video destination to see the wave even while the card shows the 3D view.",
       wave3d_out:
@@ -231,7 +239,7 @@ export const wavecelDef: AudioModuleDef = {
       morph:
         "The wavetable scan position from 0 to 1: it picks which single-cycle frame plays and smoothly cross-fades between adjacent frames, so sweeping it morphs the timbre across the loaded table (the active frame is highlighted in the visualizer). Morph CV adds to this knob.",
       spread:
-        "Stereo spread / detune width from 1 (a single centered voice, no spread) to 5 (several voices detuned and panned hard across L/R) for a wide, chorused image. Spread CV adds to this knob.",
+        "Stereo WIDTH, from 1 (a single centred voice — mono, L and R identical) to 5 (five taps reading neighbouring wavetable frames, panned progressively harder across L/R) for a wide, shimmering image. The taps are spread across the TABLE, not detuned in pitch: each one reads a frame either side of where Morph is pointing, so the width you hear is the difference between neighbouring waveshapes — widest where the table changes fastest. Level stays put as you sweep it. Spread CV adds to this knob.",
       fold:
         "Wavefolder amount from 0 (clean, no folding) to 1 (heavy folding): it folds the waveform's peaks back on themselves to add bright upper harmonics, getting more aggressive as you turn it up. Fold CV adds to this knob.",
       attack:
@@ -243,7 +251,7 @@ export const wavecelDef: AudioModuleDef = {
       release:
         "Release time of the amplitude ADSR (1 ms to 5 s, log): how long the note takes to fade to silence after its gate closes (a poly lane note-off or the TRIG falling edge).",
       base_vol:
-        "The per-voice VCA floor the amplitude ADSR rides on top of (gain = base + (1-base)×env): at 1 (default) gain is always full so the envelope does nothing and WAVECEL is a raw, continuous drone; at 0 the envelope has full control (silent between notes); 0.5 floors each voice at half and the env swells it up to full on note-on.",
+        "The per-voice VCA floor the amplitude ADSR rides on top of (gain = base + (1-base)×env): at 0 (default) the envelope has full control of every note and the voice is silent between notes; 0.5 floors each voice at half and the env swells it up to full on note-on; at 1 gain is always full while a voice is active, so the envelope does nothing. It only applies to GATED voices — with nothing patched into POLY or TRIG, WAVECEL free-runs at full level whatever this is set to.",
       "wavecel-source-select-{n}":
         "Factory wavetable picker — a dropdown of the bundled tables (BASIC SHAPES, HARMONIC SWEEP, …); choosing one loads it as the oscillator's wavetable. If you've uploaded a WAV or loaded a preset it also shows a USER entry for the current custom table. The choice is saved with the patch and synced to everyone in the rack.",
       "wavecel-preset-select-{n}":

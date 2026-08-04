@@ -117,36 +117,83 @@ export function sampleFrame(
   return va + (vb - va) * frameFrac;
 }
 
-/** Compute the active-tap descriptors for the given spread + center frame.
- *  spread=1 → single tap at center, weight=1, pan=0 (mono).
- *  spread=N>1 → ceil(N) taps spaced 1 frame apart around center; outermost
- *  tap weights fade as the fractional spread leaves them behind. */
+/** Per-tap descriptor. `frameFloat` is the (possibly out-of-range) fractional
+ *  frame index sampled; `weight` is the fade-in weight in [0,1]; `pan` is in
+ *  [-1,+1] (-1 = full L, +1 = full R, 0 = center). */
 export interface SpreadTap {
   frameFloat: number;
   weight: number;
   pan: number;
 }
+
+/** The widest half-span, at spread = 5. Pan is proportional to a tap's
+ *  DISTANCE FROM CENTRE MEASURED AGAINST THIS — not against the current
+ *  half-span — so the image widens with SPREAD instead of snapping to hard
+ *  L/R the instant SPREAD leaves 1. */
+const SPREAD_MAX_HALF_SPAN = 2;
+
+/**
+ * Compute the active-tap descriptors for the given spread + center frame.
+ *
+ *   spread = 1   → a single tap at centre, weight 1, pan 0 (mono).
+ *   spread = N>1 → an ODD, CENTRE-INCLUSIVE bank at integer frame offsets
+ *                  −outer … 0 … +outer. Off-centre taps FADE IN from weight 0
+ *                  as the half-span reaches them; pan grows with the span.
+ *
+ * ⚠ TWO SHIPPED DEFECTS LIVED IN THE PREVIOUS LAYOUT, and both came from the
+ * same thing: at spread just above 1 the tap bank had NO CENTRE TAP.
+ *
+ *  1. A 43 dB VOLUME CLIFF. `ceil(N)` taps at offsets ±0.5 with edge weights
+ *     `halfSpan + 0.5 − |offset|` → both weights → 0 as N → 1⁺, and the old
+ *     `1/sqrt(weightSum)` normalisation grows only as 1/√w while the signal
+ *     shrinks as w, so the output collapsed as √w.
+ *     MEASURED: rms −5.99 dB at spread 1.0 → −49.11 dB at spread 1.0001; an
+ *     a-rate 1 → 5 ramp swung 13.96 dB. SPREAD was a volume control.
+ *  2. NO STEREO AT THE DEFAULT MORPH. Those two taps sat at centre ± 0.5
+ *     frames, and at morph 0 (`centerFrame` = 0) `sampleFrame`'s index clamp
+ *     maps BOTH of them onto the same frames[0]/frames[1] interpolation — so
+ *     hard-panning two IDENTICAL samples gave L == R exactly.
+ *     MEASURED: |L−R|max = 0.0000e+0 at spread 1.25 / 1.50 / 1.75 / 2.00.
+ *
+ * The bank below always contains the centre tap, so the mix is CONTINUOUS with
+ * the spread = 1 case (the off-centre taps arrive at weight 0), and its taps
+ * sit at ±1 whole frames, which do not alias onto each other under the clamp.
+ */
 export function spreadTaps(spread: number, centerFrame: number): SpreadTap[] {
   const N = clampRange(spread, 1, 5);
-  const halfSpan = (N - 1) / 2;
+  const halfSpan = (N - 1) / 2; // 0 .. 2
   if (halfSpan === 0) {
     return [{ frameFloat: centerFrame, weight: 1, pan: 0 }];
   }
-  const tapCount = Math.max(1, Math.ceil(N));
+  const outer = Math.ceil(halfSpan); // 1 or 2
   const taps: SpreadTap[] = [];
-  for (let t = 0; t < tapCount; t++) {
-    const offset = t - (tapCount - 1) / 2;
-    const edgeWeight = Math.max(0, Math.min(1, halfSpan + 0.5 - Math.abs(offset)));
-    if (edgeWeight <= 0) continue;
-    const norm = clampRange(offset / halfSpan, -1, 1);
-    taps.push({ frameFloat: centerFrame + offset, weight: edgeWeight, pan: norm });
+  for (let k = -outer; k <= outer; k++) {
+    // The centre tap is always fully present. An off-centre tap fades in over
+    // the one frame BEFORE the span reaches it: weight 0 at |k| = halfSpan + 1,
+    // rising to 1 once |k| <= halfSpan.
+    const weight = k === 0 ? 1 : clamp01(halfSpan - Math.abs(k) + 1);
+    if (weight <= 0) continue;
+    taps.push({
+      frameFloat: centerFrame + k,
+      weight,
+      pan: clampRange(k / SPREAD_MAX_HALF_SPAN, -1, 1),
+    });
   }
   return taps;
 }
 
-/** Per-sample stereo spread mix. Equal-power pan across taps; sqrt(weight)
- *  normalization keeps RMS roughly flat as spread crosses integer
- *  boundaries (so a slow CV ramp on spread doesn't audibly click). */
+/**
+ * Per-sample stereo spread mix. Equal-power pan across taps, normalised
+ * PER CHANNEL by that channel's own weight sum — i.e. each output is a
+ * weighted AVERAGE of its taps, not a weighted sum with a global scalar.
+ *
+ * That choice is what makes SPREAD a width control instead of a level control:
+ * feed the bank identical samples and every channel returns exactly that
+ * sample at ANY spread, so there is no discontinuity at spread = 1 and no
+ * cliff anywhere in the travel. (Wavetable frames one apart are strongly
+ * correlated, so amplitude-preserving is the right normalisation here;
+ * power-preserving would still leave a 3 dB step at spread = 1⁺.)
+ */
 export function spreadMix(
   frames: readonly Float32Array[],
   centerFrame: number,
@@ -163,16 +210,22 @@ export function spreadMix(
   }
   let sumL = 0;
   let sumR = 0;
-  let weightSum = 0;
+  let gainL = 0;
+  let gainR = 0;
   for (const tap of taps) {
     const sample = sampleFrame(frames, tap.frameFloat, FC, s1, s2, sFrac);
     const panAngle = (Math.PI / 4) * (1 + tap.pan);
-    sumL += sample * Math.cos(panAngle) * tap.weight;
-    sumR += sample * Math.sin(panAngle) * tap.weight;
-    weightSum += tap.weight;
+    const gl = Math.cos(panAngle) * tap.weight;
+    const gr = Math.sin(panAngle) * tap.weight;
+    sumL += sample * gl;
+    sumR += sample * gr;
+    gainL += gl;
+    gainR += gr;
   }
-  const norm = weightSum > 0 ? 1 / Math.sqrt(weightSum) : 0;
-  return { l: sumL * norm, r: sumR * norm };
+  return {
+    l: gainL > 0 ? sumL / gainL : 0,
+    r: gainR > 0 ? sumR / gainR : 0,
+  };
 }
 
 /** Pre-compute the (s1, s2, sFrac) sample-interpolation triplet from a
