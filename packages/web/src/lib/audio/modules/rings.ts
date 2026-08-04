@@ -43,19 +43,53 @@ const loadedContexts = new WeakSet<BaseAudioContext>();
 
 const _MODAL_MAX_PARTIALS = 24;
 
+// DAMPING → Q for the modal bank. Q is set PROPORTIONAL to each partial's
+// frequency (reference resonator.cc:80-82 `set_f_q(f, 1 + f*q)`), which makes
+// the decay TIME uniform across the bank: tau = q / (pi * sr). So MODAL_Q_BASE
+// / MODAL_Q_DECADES are read directly as a ring-time range —
+//   DAMPING 1 → q =     500 → tau = 3.3 ms
+//   DAMPING 0 → q = 500_000 → tau = 3.3 s
+// The reference spans FOUR decades (`lut_4_decades` = 10^4x, q up to 5e6);
+// three is where the top of our knob stops being a ring and starts being a
+// drone (4 decades puts -60 dB past 200 s).
+const _MODAL_Q_BASE = 500;
+const _MODAL_Q_DECADES = 3;
+// Peak gain of each partial's band-pass, as Q**MODAL_Q_GAIN_EXP. Bounded by
+// two MEASURED constraints, both at the shipped defaults over a 2 s render:
+//   exp 1.0 — the reference's SVF band-pass gain (peak gain = Q). Correct for
+//     the reference's chain, which has a per-model gain AND a look-ahead
+//     limiter; this port has neither, and it pins our tanh: peak 0.9997-1.0000
+//     for DAMPING 0..0.75, i.e. hard-limiting across most of the knob.
+//   exp 0.5 — energy-preserving (captured noise power ~ g^2 * f/Q, so
+//     g = sqrt(Q) makes it Q-independent). Safe, but DAMPING then changes ring
+//     LENGTH with no loudness change at all: RMS 6.78e-3 .. 6.31e-3, flat
+//     within 0.7 dB across the whole sweep.
+//   exp 0.6 — keeps the reference's DIRECTION (damp it up, it gets quieter:
+//     RMS 1.71e-2 -> 8.01e-3, -6.5 dB across the sweep), stays out of the
+//     limiter (peak <= 0.386), and holds the shipped default within 1 dB of
+//     the level this module shipped with (RMS 1.165e-2 vs 1.286e-2).
+// It is a VOICING choice between those two measured bounds, not a transcription
+// of the reference — the numbers above are what it is accountable to.
+const _MODAL_Q_GAIN_EXP = 0.6;
+
 class _Biquad {
   x1 = 0; x2 = 0; y1 = 0; y2 = 0;
   b0 = 0; b1 = 0; b2 = 0; a1 = 0; a2 = 0;
   reset(): void { this.x1 = 0; this.x2 = 0; this.y1 = 0; this.y2 = 0; }
+  /** RBJ band-pass with peak gain Q**MODAL_Q_GAIN_EXP (the textbook forms are
+   *  the exp-0 "constant 0 dB peak gain" and the exp-1 "constant skirt gain,
+   *  peak gain = Q"; we sit between them — see MODAL_Q_GAIN_EXP). */
   setBandpass(freq: number, q: number, sr: number): void {
     const w0 = 2 * Math.PI * Math.min(freq, sr * 0.49) / sr;
     const cosW0 = Math.cos(w0);
     const sinW0 = Math.sin(w0);
-    const alpha = sinW0 / (2 * Math.max(0.5, q));
+    const qq = Math.max(0.5, q);
+    const alpha = sinW0 / (2 * qq);
     const a0 = 1 + alpha;
-    this.b0 =  alpha / a0;
+    const b = alpha * Math.pow(qq, _MODAL_Q_GAIN_EXP) / a0;
+    this.b0 =  b;
     this.b1 = 0;
-    this.b2 = -alpha / a0;
+    this.b2 = -b;
     this.a1 = -2 * cosW0 / a0;
     this.a2 = (1 - alpha) / a0;
   }
@@ -81,7 +115,31 @@ class _RingsModal {
   }
   configure(freq: number, structure: number, brightness: number, damping: number, sr: number): void {
     const stiffness = structure * 0.5;
-    const q = 5 + Math.pow(1 - damping, 2) * 495;
+    // DAMPING → Q. Reference resonator.cc:59-62 + :80-82:
+    //     q = 500 * Interpolate(lut_4_decades, damping)   // lut_4_decades = 10^(4x)
+    //     f_[i].set_f_q(f_norm, 1.0f + f_norm * q)        // Q ∝ PARTIAL FREQUENCY
+    // Two things were missing here and both are audible:
+    //   1. RANGE. The old `5 + (1-damping)^2 * 495` then scaled by 0.05 gave an
+    //      EFFECTIVE Q of 0.5..25, so the WHOLE knob sweep was 12.8..46.6 ms of
+    //      ring (measured, -60 dB, POSITION 0) while the docs promise "low
+    //      DAMPING resonates long". It is now 23.4 ms .. seconds.
+    //   2. Q PROPORTIONAL TO PARTIAL FREQUENCY. A constant Q makes the decay
+    //      TIME collapse on the high partials (tau = Q/(pi*f)); Q ∝ f makes it
+    //      uniform across the bank (tau = q/(pi*sr)), which is what lets a
+    //      struck bar hang together instead of thinning out instantly.
+    // The related defect — damping it UP got LOUDER (RMS 5.65e-3 @ DAMPING 0 vs
+    // 1.65e-2 @ DAMPING 1) — is a consequence of the constant-0 dB-peak-gain
+    // band-pass, not of the Q curve: a wide filter captures more of the strike.
+    // It is fixed by the Q-dependent filter gain, see MODAL_Q_GAIN_EXP.
+    //
+    // DELIBERATE DEVIATION — knob polarity. The reference's control is
+    // "more damping = LONGER decay". Ours is labelled and documented the other
+    // way ("low DAMPING resonates long"), the SYMPATHETIC model already obeys
+    // that polarity, and every saved rack stores a value under that meaning —
+    // so we drive the SAME decade curve with (1 - damping) rather than silently
+    // reversing every existing patch.
+    const dClamped = Math.max(0, Math.min(1, damping));
+    const q = _MODAL_Q_BASE * Math.pow(10, _MODAL_Q_DECADES * (1 - dClamped));
     const bClamped = Math.max(0, Math.min(1, brightness));
     let qLoss = bClamped * (2 - bClamped) * 0.85 + 0.15;
     const qLossDampingRate = structure * (2 - structure) * 0.1;
@@ -91,7 +149,8 @@ class _RingsModal {
     for (let i = 0; i < _MODAL_MAX_PARTIALS; i++) {
       const partialFreq = freq * (i + 1) * stretch;
       if (partialFreq < sr * 0.49) activeModes = i + 1;
-      this.filters[i]!.setBandpass(partialFreq, qCurrent * 0.05, sr);
+      const fNorm = Math.min(partialFreq, sr * 0.49) / sr;
+      this.filters[i]!.setBandpass(partialFreq, 1 + fNorm * qCurrent, sr);
       stretch += stiffness;
       qLoss += qLossDampingRate * (1 - qLoss);
       qCurrent *= qLoss;
@@ -99,11 +158,26 @@ class _RingsModal {
     this.numModes = activeModes;
   }
   process(input: number): [number, number] {
-    const p = this.position * Math.PI;
+    // POSITION → per-partial pickup weight. Reference resonator.cc:104-118 runs
+    // a stmlib CosineOscillator initialised to `position` and pulls ONE value
+    // per partial while the loop interleaves the odd/even accumulators, i.e.
+    // the weight of partial n is cos(2*PI*position*n) (the oscillator emits
+    // 0.5*cos(n*w); we drop the global 0.5 because this port carries neither
+    // the reference's model_gain nor its limiter, so keeping it would be a flat
+    // -6 dB on the whole model).
+    //
+    // This used to be cos(position*PI*(i+1)) — WRONG on both the frequency
+    // (PI vs 2*PI) and the index base (i+1 vs i). At the SHIPPED DEFAULT
+    // position 0.5 that evaluates to cos(PI/2 * (i+1)), which is EXACTLY ZERO
+    // for every even i — and every even i is the ODD accumulator. So ODD, the
+    // first-declared and docs-designated mono/primary output, was digital
+    // silence at the default: measured peak 8.486e-16 at position 0.5 vs
+    // 4.735e-1 at position 0.0, about -278 dB.
+    const w0 = 2 * Math.PI * this.position;
     let odd = 0;
     let even = 0;
     for (let i = 0; i < this.numModes; i++) {
-      const w = Math.cos(p * (i + 1));
+      const w = Math.cos(w0 * i);
       const y = this.filters[i]!.process(input * 0.125);
       if ((i & 1) === 0) odd += w * y;
       else even += w * y;
@@ -135,7 +209,13 @@ class _KSString {
     this.damping = damping;
     this.brightness = brightness;
   }
-  process(input: number, sr: number): number {
+  /** Returns [bridge, pickup] — the two taps the reference String exposes.
+   *  `bridge` is the sample written back into the loop (reference string.cc:207
+   *  `out_sample_[0] = s`); `pickup` is a SECOND read further down the delay
+   *  line (reference :208 `aux_sample_[0] = string_.Read(comb_delay)`, with
+   *  `comb_delay = delay * (0.5 - 0.98*|position - 0.5|)`, :92 + :136). The
+   *  pickup is where POSITION physically lives on a string. */
+  process(input: number, sr: number, position: number): [number, number] {
     const delayLen = Math.max(2, Math.min(_KS_MAX_DELAY - 1, Math.round(sr / this.freq)));
     const readIdx = (this.writeIdx - delayLen + _KS_MAX_DELAY) % _KS_MAX_DELAY;
     const delayed = this.buf[readIdx]!;
@@ -150,7 +230,10 @@ class _KSString {
     const looped = this.dampLpState * loopGain;
     this.buf[this.writeIdx] = looped;
     this.writeIdx = (this.writeIdx + 1) % _KS_MAX_DELAY;
-    return looped;
+    const clampedPos = 0.5 - 0.98 * Math.abs(Math.max(0, Math.min(1, position)) - 0.5);
+    const combDelay = Math.max(1, Math.min(_KS_MAX_DELAY - 2, Math.round(delayLen * clampedPos)));
+    const pickupIdx = (this.writeIdx - 1 - combDelay + _KS_MAX_DELAY) % _KS_MAX_DELAY;
+    return [looped, this.buf[pickupIdx]!];
   }
 }
 
@@ -192,10 +275,29 @@ class _RingsSympatheticStrings {
     const burstB = burst * (1 - (1 - position) * 0.4);
     const inputA = externalExciter + burstA;
     const inputB = externalExciter + burstB;
-    const yA = this.strings[0]!.process(inputA, sr);
-    const yB = this.strings[1]!.process(inputB, sr);
-    const odd  = yA * position + yB * (1 - position);
-    const even = yA * (1 - position) + yB * position;
+    const [bridgeA, pickupA] = this.strings[0]!.process(inputA, sr, position);
+    const [bridgeB, pickupB] = this.strings[1]!.process(inputB, sr, position);
+    // ODD / EVEN are the BRIDGE and PICKUP taps, both summed across the string
+    // pair — the reference shape (part.cc:411-446: every string accumulates
+    // into out_buffer_ AND aux_buffer_; string.cc:207-208 is what makes those
+    // two buffers different signals).
+    //
+    // They used to be a POSITION crossfade of the two strings:
+    //     odd  = yA*position + yB*(1-position)
+    //     even = yA*(1-position) + yB*position
+    // — a matrix that is RANK 1 at position 0.5, so at the shipped default both
+    // outputs collapsed to the same 0.5*(yA+yB). Measured max|ODD-EVEN| over
+    // 0.5 s: EXACTLY 0.000e+0 at position 0.5 (4.134e-1 at 0.25). `stereoPairs`
+    // auto-wires odd/even as a stereo pair, so the default patch produced a
+    // dual-mono "stereo" image. (That crossfade is a transcription of the
+    // reference's STRING_AND_REVERB stereo widener at part.cc:550-551, which
+    // operates on out/aux AFTER they already differ — it is a widener, never
+    // the thing that separates them.)
+    //
+    // The 0.5 keeps ODD at exactly the level the old crossfade produced at
+    // position 0.5, so the DEFAULT patch's primary output is bit-identical.
+    const odd  = 0.5 * (bridgeA + bridgeB);
+    const even = 0.5 * (pickupA + pickupB);
     return [odd, even];
   }
 }
@@ -337,16 +439,16 @@ export const ringsDef: AudioModuleDef = {
       level_cv: "CV into LEVEL (0..1): it displaces the soft-limited output gain, letting an envelope or LFO swell or duck the output.",
     },
     outputs: {
-      odd: "One of the resonator's two complementary output taps (the cosine-weighted ODD-indexed partial sum in MODAL, the position-crossfaded string mix in SYMPATHETIC), passed through a tanh soft-limiter. Use it alone for a mono resonator output, or pair it with EVEN.",
-      even: "The companion tap to ODD — the EVEN-indexed partial sum / opposite string-mix, also tanh soft-limited. ODD and EVEN carry different partial content from the same resonator, so patching both into a stereo bus gives a wide pseudo-stereo image; summing them back to mono recombines the body.",
+      odd: "One of the resonator's two complementary output taps (the cosine-weighted ODD-indexed partial sum in MODAL, the bridge tap of the string pair in SYMPATHETIC), passed through a tanh soft-limiter. Use it alone for a mono resonator output, or pair it with EVEN.",
+      even: "The companion tap to ODD — the EVEN-indexed partial sum in MODAL, a second pickup read further along the string in SYMPATHETIC — also tanh soft-limited. ODD and EVEN carry different content from the same resonator, so patching both into a stereo bus gives a wide pseudo-stereo image; summing them back to mono recombines the body. In MODAL, POSITION 0.25 and 0.75 sit exactly on a pickup NODE for every odd-indexed partial, so EVEN falls silent there while ODD stays full — that null is real resonator behaviour (it is where the pickup lands on a mode's standing-wave zero), not a fault; nudge POSITION off the quarter-marks to bring EVEN back.",
     },
     controls: {
       model: "The resonator MODEL selector (the on-card button cycles it): MODAL (0) is a 24-partial stiffness-stretched resonant bandpass bank — a struck bar / bell / metal character — and SYMPATHETIC (1) is a pair of Karplus–Strong plucked strings detuned by STRUCTURE. The other macros mean the same thing in both models but the timbre changes substantially between them.",
       note: "A fixed semitone offset (-60..+60 st) added on top of the PITCH input, so you can tune the resonator without an external pitch source or transpose it relative to one. At 0 the resonator tracks PITCH (or middle C with PITCH unpatched).",
       structure: "The inharmonicity / structure macro (0..1): in MODAL it stretches the partial spacing from harmonic (0) toward bell-/metal-like (1); in SYMPATHETIC it detunes the second string from unison (0) up to about +19 semitones. The single biggest control over how 'tuned' versus 'clangy' the resonance sounds.",
       brightness: "Sculpts the high-frequency content of the resonance (0..1): low values are dark and muted, high values let the upper partials sing through. In SYMPATHETIC it also opens the brightness shaper on each string's input.",
-      damping: "Sets the ring/decay time (0..1): low DAMPING resonates long (high Q in MODAL, a near-lossless string loop in SYMPATHETIC), high DAMPING damps the energy quickly for a short, plucky decay. A natural target for an envelope to vary decay per note.",
-      position: "The pickup position along the resonator (0..1): it changes which partials are emphasized via a cosine-weighted tap, and because it weights the ODD and EVEN sums differently it also shifts the balance and stereo image between the two outputs.",
+      damping: "Sets the ring/decay time (0..1) across roughly three decades: low DAMPING resonates long (in MODAL a struck-bar tail measured in seconds; in SYMPATHETIC a near-lossless string loop), high DAMPING damps the energy quickly for a short, plucky decay of a few tens of milliseconds. In MODAL the partial Q is set proportional to partial frequency, so the whole bank decays together rather than the top of the spectrum dying first. A natural target for an envelope to vary decay per note.",
+      position: "The pickup position along the resonator (0..1). In MODAL it is the classic Rings cosine pickup — partial n is weighted by cos(2*PI*POSITION*n) — so sweeping it moves a comb of emphasis and nulls across the bank and continuously rebalances ODD against EVEN (at 0.25 and 0.75 every odd-indexed partial sits on a node and EVEN goes silent, which is the pickup landing on a standing-wave zero). In SYMPATHETIC it places the second pickup along the string that feeds EVEN, and biases the strike formant of the internal pluck.",
       level: "Output gain (0..1) feeding a tanh soft-limiter, so pushing it adds gentle saturation rather than hard clipping. Sets the overall loudness of both ODD and EVEN.",
     },
   },
