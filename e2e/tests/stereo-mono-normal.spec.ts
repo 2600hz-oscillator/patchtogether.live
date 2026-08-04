@@ -70,6 +70,20 @@ interface Sut {
   outR: string;
   /** Why an unpatched R used to be silent — quoted in the failure message. */
   mechanism: string;
+  /**
+   * Params needed to OPEN the module's own signal path, applied to BOTH legs.
+   *
+   * This is not tuning. Some modules are *designed* to be silent at their
+   * defaults, so without this the mono-normal claim is untestable rather than
+   * false — the vacuity guard fires and the run reads as a regression in a
+   * module that is behaving exactly as documented. Keep it to the minimum that
+   * opens the path, and say WHY in a comment on the row.
+   *
+   * ⚠ It is applied to leg 1 as well, on purpose: the negative control must
+   * hold in the SAME configuration the claim is made in. A param that opened
+   * the path only for leg 2 would weaken the control to a different module.
+   */
+  openPath?: Record<string, number>;
 }
 
 const SUTS: readonly Sut[] = [
@@ -88,12 +102,28 @@ const SUTS: readonly Sut[] = [
   // only matched the literal `inputs[1]?.[0] ?? inputs[0]?.[0]` form. Two
   // independent blind spots lined up on one module.
   //
-  // Measured before adding: OUT R peak 0.500000 for a mono source into in_l
-  // (real Chrome, real dist), so this row asserts a live property rather than
-  // pending a fix. Roster drift is now itself gated —
+  // ⚠ stereovca NEEDS `offset: 1`, and the first version of this row omitted it
+  // and went red on CI at the vacuity guard with L=0.0000e+0 EXACTLY. That
+  // reading was CORRECT and the row was wrong. stereovca is a ring modulator:
+  //
+  //     stL = (strength_l ?? 0) + offset
+  //     outL = in_l * stL * level
+  //
+  // With no strength CV patched and `offset` at its 0.0 default, stL is 0 and
+  // the output is silence BY DESIGN — the module's own docs say so verbatim:
+  // "At 0 an unpatched strength (0 V) mutes the channel; turn offset up toward
+  // +1 to lift the floor so the channel stays open at unity even with no
+  // modulator." So the sweep was asserting something the contract documents as
+  // impossible. `offset: 1` gives stL = 1 and unity passthrough, which is the
+  // ONLY configuration in which "does OUT R follow IN L?" is a real question.
+  //
+  // The negative control is unharmed: with offset lifted but NOTHING patched,
+  // in_l is 0, so out = 0 * 1 * 1 = 0 and leg 1 still demands silence.
+  //
+  // Roster drift is now itself gated —
   // packages/web/src/lib/audio/mono-normal-not-defeated.test.ts requires every
   // normal-bearing module to appear here or carry a named exemption.
-  { type: 'stereovca',       inL: 'in_l',  outL: 'out_l', outR: 'out_r', mechanism: 'never defeated — the normal is spelled through intermediate consts, so the source gate could not see it' },
+  { type: 'stereovca',       inL: 'in_l',  outL: 'out_l', outR: 'out_r', openPath: { offset: 1 }, mechanism: 'never defeated — the normal is spelled through intermediate consts, so the source gate could not see it' },
 ];
 
 interface Probe { outL: AnalyserNode; outR: AnalyserNode; sameEdge: boolean }
@@ -173,7 +203,7 @@ test.describe('stereo modules: an unpatched R output follows L (mono normal)', (
       //    manufactured signal of its own, or the module self-oscillated, leg 2
       //    would pass no matter what the factory did.
       await page.goto('/rack');
-      await spawnPatch(page, [{ id: SUT, type: sut.type }]);
+      await spawnPatch(page, [{ id: SUT, type: sut.type, ...(sut.openPath ? { params: sut.openPath } : {}) }]);
       await installProbe(page, sut);
       const idle = await measure(page, WINDOW_MS);
 
@@ -197,7 +227,10 @@ test.describe('stereo modules: an unpatched R output follows L (mono normal)', (
       await page.goto('/rack');
       await spawnPatch(
         page,
-        [{ id: SRC, type: 'noise', params: { level: 0.8 } }, { id: SUT, type: sut.type }],
+        [
+          { id: SRC, type: 'noise', params: { level: 0.8 } },
+          { id: SUT, type: sut.type, ...(sut.openPath ? { params: sut.openPath } : {}) },
+        ],
         [{ id: 'e1', from: { nodeId: SRC, portId: 'white' }, to: { nodeId: SUT, portId: sut.inL } }],
       );
       await installProbe(page, sut);
