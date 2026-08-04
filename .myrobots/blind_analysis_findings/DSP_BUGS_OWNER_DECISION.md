@@ -9,7 +9,7 @@
 >
 > | tier | item | 2026-08-04 |
 > |---|---|---|
-> | A | rbj-biquad `updatePeaking` Q not in cache key | **STILL OPEN** |
+> | A | rbj-biquad `updatePeaking` Q not in cache key | **FIXED** — reproduced, fixed + tested; ART did not move |
 > | A | wavesculpt `master_gain` dead knob | **STILL OPEN** (and the shipped doc string is now false — see below) |
 > | B | helm 7th voice silent + slot-leaked | MOOT — helm deleted |
 > | B | elements `rawBuffer` never written | MOOT — elements deleted |
@@ -25,6 +25,42 @@ The blind analysis found 7 verified DSP correctness bugs (all independently re-c
 ## Tier A — SAFE to fix now (no change to existing patches; I'll just do these unless you say stop)
 - **`rbj-biquad.ts` `updatePeaking` Q not in cache key** — a Q-only change would return stale coefficients. *This is my own kick-drum code.* Zero behavior change today (both callers pass constant Q), pure latent-defect guard. One-line fix + a unit test that varies Q. **Recommend: fix.**
   - ▸ **2026-08-04: STILL OPEN.** `packages/dsp/src/lib/rbj-biquad.ts:56` is still `if (bq.k1 === fc && bq.k2 === dbGain) return;` — Q is a parameter of the function and absent from the guard.
+  - ▸ **2026-08-04: FIXED.** Reproduced first: with fc=150 Hz / +6 dB held and Q
+    moved 1.0 → 8.0 on one live biquad, all five coefficients came back
+    **bit-identical** (`1.006869130 -1.985813485 0.979327213 -1.985813485
+    0.986196343`), a **1.85 dB** response error one octave above fc. Fixed with a
+    third cache slot (`k3` = Q); post-fix the live filter matches a
+    never-cached reference to 0.0000 dB. **Blast radius measured, not assumed:**
+    `updatePeaking` has exactly two production call sites
+    (`kickdrum-dsp.ts:481-482`) and **both pass Q as a literal** (`1.0`, `0.8`),
+    kickdrum's def declares no Q param and no CV lane reaches one, so **no
+    shipped patch ever changed sound** — full ART is green with **zero `.f32`
+    movement** and a byte-identical fingerprint manifest. Two sibling omissions
+    found in the same file and left OPEN — see below.
+  - ▸ **NEW, same file, NOT fixed (needs your call — both are latent, zero
+    reachable callers today):** (1) **`sr` is absent from ALL FIVE guards.**
+    Measured: every updater returns stale coefficients across a 48 k → 44.1 k
+    change on a reused state, and the correct 44.1 k coefficients genuinely
+    differ. Unreachable today only because `sr` is fixed for an AudioContext's
+    lifetime. (2) **`k1`/`k2` mean different things per updater, so ONE biquad
+    shared between two updaters false-hits.** Measured: `updateLowShelf(250, 4)`
+    then `updateHighShelf(250, 4)` returns the LOW shelf verbatim
+    (`1.005353 -1.958514 …` where the high shelf is `1.576454 -3.087891 …`);
+    `updateHighpass(300)` then `updateLowpass(300)` returns the highpass;
+    `updatePeaking(150, 6, Q1)` then `updateLowShelf(150, 6)` returns the
+    peaking. Unreachable today only because every one of the 13 live biquad
+    objects is bound to exactly one updater. A `kind` tag in the key closes the
+    whole class; it is a bigger edit than the authorized one-liner, so it is
+    parked here rather than shipped.
+  - ▸ **NEW, ART pin gap (FIXED in the same PR):** `art/scenarios/kickdrum/profile.test.ts`
+    pinned `kickdrum.ts` + `lib/kickdrum-dsp.ts` + `lib/moog-vco-dsp.ts` +
+    `lib/dsp-utils.ts` but **neither `lib/rbj-biquad.ts` nor `lib/oversample.ts`**,
+    though `kickdrumStepStereo` renders through both. So the ONLY module in the
+    tree that calls `updatePeaking` was the one module whose ART baseline a
+    change to this file could not invalidate — while snaredrum, which uses a
+    single highpass, pinned both. Now pinned; negative-controlled by confirming a
+    comment-only edit to `rbj-biquad.ts` reddens kickdrum's pin, which it did not
+    before.
 - **`wavesculpt.ts` `master_gain` dead knob** — declared "overall output level" (0..2) but the bus gains are pinned to 1 and never read it; moving the knob does nothing. Fixing it wires the knob to the bus gain. Existing patches sit at the default — as long as I keep the default = unity (1.0), no existing patch changes; only someone who *moves* the (currently dead) knob is affected, which is the intended behavior. **Recommend: fix (default-unity, verified).**
   - ▸ **2026-08-04: STILL OPEN, and now worse.** `wavesculpt.ts:1038-1039` still pins `busL.gain.value = 1; busR.gain.value = 1;` with no `setParam` handler for `master_gain`. Meanwhile the param DID acquire a consumer — but a **video** one: `WavesculptCard.svelte:2352` feeds it to the `uMasterGain` shader uniform. So the knob is live on the picture and dead on the audio, while the shipped co-located doc string (`wavesculpt.ts:932`) still tells the user it is the "overall output level of the summed audio mix (L/R)". **That doc sentence is currently false** — a docs gate reading only the def cannot see it.
 

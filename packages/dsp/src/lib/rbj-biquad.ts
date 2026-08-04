@@ -24,12 +24,33 @@ export interface Biquad {
   y1: number;
   y2: number;
   // Coefficient cache key (params packed by the updater).
+  //
+  // ⚠ EVERY parameter the updater's math reads must appear here. `updatePeaking`
+  // takes THREE (fc, dbGain, Q) against what used to be a two-slot key, so a
+  // Q-only change early-returned the previous filter's coefficients verbatim —
+  // measured bit-identical b0..a2, a 1.85 dB response error one octave above fc
+  // (Q 1.0 vs 8.0 @ fc 150 Hz, +6 dB). `k3` exists for that third slot; it is
+  // NaN for the updaters that only need two.
   k1: number;
   k2: number;
+  k3: number;
 }
 
 export function makeBiquad(): Biquad {
-  return { b0: 1, b1: 0, b2: 0, a1: 0, a2: 0, x1: 0, x2: 0, y1: 0, y2: 0, k1: NaN, k2: NaN };
+  return {
+    b0: 1,
+    b1: 0,
+    b2: 0,
+    a1: 0,
+    a2: 0,
+    x1: 0,
+    x2: 0,
+    y1: 0,
+    y2: 0,
+    k1: NaN,
+    k2: NaN,
+    k3: NaN,
+  };
 }
 
 const FLUSH = 1e-20;
@@ -53,9 +74,10 @@ export function resetBiquad(bq: Biquad): void {
 
 /** Peaking EQ: `dbGain` at `fc`, bandwidth via Q. */
 export function updatePeaking(bq: Biquad, fc: number, dbGain: number, Q: number, sr: number): void {
-  if (bq.k1 === fc && bq.k2 === dbGain) return;
+  if (bq.k1 === fc && bq.k2 === dbGain && bq.k3 === Q) return;
   bq.k1 = fc;
   bq.k2 = dbGain;
+  bq.k3 = Q;
   const A = Math.pow(10, dbGain / 40);
   const w0 = (2 * Math.PI * Math.min(fc, sr * 0.45)) / sr;
   const alpha = Math.sin(w0) / (2 * Q);
