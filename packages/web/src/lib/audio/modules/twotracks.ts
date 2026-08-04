@@ -183,6 +183,26 @@ export const twotracksDef: AudioModuleDef = {
     outPorts: ['out_l', 'out_r'],
   },
 
+  // VARISPEED CV — one jack per reel, the tape-deck's speed control input.
+  //
+  // Both reels already ran their RATE knob through an **a-rate** AudioParam
+  // (`rate` / `rate_b`, ±3, read per-SAMPLE by `processReel` as
+  // `av(pRate, i, 1)` and handed straight to `advanceCursor`) — so the DSP
+  // side of varispeed CV was already there and only the jack was missing.
+  // That is why these route through the engine's CV→AudioParam fast path
+  // (`paramTarget` + `cvScale`) rather than a new worklet node input: the
+  // param the CV must move IS an AudioParam, at audio rate.
+  //
+  // `cvScale: { mode: 'linear' }` is REQUIRED, not decorative. RATE's natural
+  // span is 6 units wide (−3..+3); Web Audio's default sum-into-AudioParam
+  // would let a full-scale ±1 LFO command only a 2-unit swing — 33 % of the
+  // control — and from the default knob (1) it would never reach EITHER end.
+  // With the hint, `attachCvScale` interposes a WaveShaper whose curve is
+  // cv → (clamp(knob + cv·3, −3, 3) − knob), so ±1 commands the full 6-unit
+  // span centred on the knob. This is exactly the declaration `wavetableVco`'s
+  // WAVE POSITION omits, and the reason half a bipolar LFO is bit-exactly dead
+  // there. Proof for both reels — both ends reached, plus the passthrough
+  // negative control — lives in `twotracks-rate-cv.test.ts`.
   inputs: [
     // Reel A
     { id: 'audio_l_in_a', type: 'audio' },
@@ -190,12 +210,14 @@ export const twotracksDef: AudioModuleDef = {
     { id: 'rec_start_a',  type: 'gate' },
     { id: 'rec_arm_a',    type: 'gate' },
     { id: 'overdub_a',    type: 'gate' },
+    { id: 'rate_cv_a',    type: 'cv', paramTarget: 'rate_a', cvScale: { mode: 'linear' } },
     // Reel B
     { id: 'audio_l_in_b', type: 'audio' },
     { id: 'audio_r_in_b', type: 'audio' },
     { id: 'rec_start_b',  type: 'gate' },
     { id: 'rec_arm_b',    type: 'gate' },
     { id: 'overdub_b',    type: 'gate' },
+    { id: 'rate_cv_b',    type: 'cv', paramTarget: 'rate_b', cvScale: { mode: 'linear' } },
   ],
 
   outputs: [
@@ -279,6 +301,7 @@ export const twotracksDef: AudioModuleDef = {
       inputs[`rec_start_${s}`] = `Reel ${R} record START gate: a rising edge starts (or restarts) recording onto reel ${R} from the head of the tape. Drive it from a clock/button to capture a take hands-free.`;
       inputs[`rec_arm_${s}`] = `Reel ${R} record ARM gate: a rising edge arms reel ${R} so the next pass (or the next REC START) drops into record — the "ready to record" toggle.`;
       inputs[`overdub_${s}`] = `Reel ${R} OVERDUB gate: a rising edge toggles overdub (sound-on-sound) mode, layering new input onto the existing loop instead of erasing it.`;
+      inputs[`rate_cv_${s}`] = `Reel ${R} RATE CV — varispeed control voltage for reel ${R}'s tape speed. A bipolar −1..+1 CV sweeps the RATE control across its full −3..+3 span centred on wherever you left the knob, so an LFO here wows and flutters the tape, an envelope does a tape-stop, and a slow ramp through zero turns the reel around into reverse. Modulates the same speed the record head runs at, so it varispeeds a take being recorded as well as one being played back.`;
       // Per-reel params.
       controls[`rate_${s}`] = `Reel ${R} tape RATE (−3..+3) — playback/record speed and direction; 1 = normal, fractions slow it down and pitch it lower, negatives play the tape backwards.`;
       controls[`mode_${s}`] = `Reel ${R} MODE (LOOP vs ONE-SHOT) — whether the reel loops continuously or plays its take once.`;
@@ -549,12 +572,22 @@ export const twotracksDef: AudioModuleDef = {
         ['rec_start_a',  { node: workletNode, input: 0, param: params.get('rec_start')! }],
         ['rec_arm_a',    { node: workletNode, input: 0, param: params.get('rec_arm')! }],
         ['overdub_a',    { node: workletNode, input: 0, param: params.get('overdub_toggle')! }],
+        // Reel A varispeed CV → the SAME a-rate AudioParam the RATE knob writes.
+        // NOTE the worklet-side name is the un-suffixed `rate` (reel A keeps the
+        // pre-reel-B param names for back-compat) — hence the indirection
+        // through cardParamToWorkletParam rather than a literal, so a rename on
+        // one side can't leave this pointing at an AudioParam that doesn't
+        // exist (`params.get` would return undefined and the jack would be a
+        // silent no-op — the exact `echoes_b` failure twotracks already shipped
+        // once, which twotracks-worklet-params.test.ts now pins).
+        ['rate_cv_a',    { node: workletNode, input: 0, param: params.get(cardParamToWorkletParam('rate_a')!)! }],
         // Reel B audio + gates
         ['audio_l_in_b', { node: workletNode, input: 2 }],
         ['audio_r_in_b', { node: workletNode, input: 3 }],
         ['rec_start_b',  { node: workletNode, input: 0, param: params.get('rec_start_b')! }],
         ['rec_arm_b',    { node: workletNode, input: 0, param: params.get('rec_arm_b')! }],
         ['overdub_b',    { node: workletNode, input: 0, param: params.get('overdub_toggle_b')! }],
+        ['rate_cv_b',    { node: workletNode, input: 0, param: params.get(cardParamToWorkletParam('rate_b')!)! }],
       ]),
 
       // Two DIFFERENT splitter outputs — not two references to one stereo bus.

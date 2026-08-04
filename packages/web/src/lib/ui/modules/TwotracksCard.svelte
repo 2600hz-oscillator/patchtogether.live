@@ -172,9 +172,10 @@
 
   const inputs = portsFromDef(twotracksDef.inputs, {
     audio_l_in_a: 'L IN A', audio_r_in_a: 'R IN A', rec_start_a: 'REC START A',
-    rec_arm_a: 'REC ARM A', overdub_a: 'OVERDUB A', audio_l_in_b: 'L IN B',
+    rec_arm_a: 'REC ARM A', overdub_a: 'OVERDUB A', rate_cv_a: 'RATE CV A',
+    audio_l_in_b: 'L IN B',
     audio_r_in_b: 'R IN B', rec_start_b: 'REC START B', rec_arm_b: 'REC ARM B',
-    overdub_b: 'OVERDUB B',
+    overdub_b: 'OVERDUB B', rate_cv_b: 'RATE CV B',
   });
   const outputs = portsFromDef(twotracksDef.outputs, { out_l: 'OUT L', out_r: 'OUT R' });
 
