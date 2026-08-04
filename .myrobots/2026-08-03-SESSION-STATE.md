@@ -157,25 +157,51 @@ Fix shape worth copying: `postSampleBuffer` captures the frame count **before** 
 transfer and returns it, so the correct number is the only one available after the
 call. **The mistake becomes unwritable, not merely fixed once.**
 
-### ⚠ `E2E_PORT` DOES NOT ISOLATE VRT/e2e — the dev server always binds 5173
+### ~~`E2E_PORT` DOES NOT ISOLATE VRT/e2e~~ — **RETRACTED 2026-08-04. THIS WAS FALSE.**
 
-`packages/web/vite.config.ts` declares no `server.port`, so
-`npm run dev -w packages/web` **always binds 5173**. `E2E_PORT` only rewrites
-Playwright's *client* URL. An "isolated-port" VRT run therefore captures **from
-whatever answers 5173**.
+**`E2E_PORT` DOES isolate.** It has since **#1216 (2026-07-28)**, whose title is
+literally *"make E2E_PORT actually isolate — e2e:one and vrt:one ignored it"* —
+a week BEFORE I claimed to have found the hole. Both Taskfile targets compute
+`PORT="${E2E_PORT:-5173}"` and export `E2E_BASE_URL`, and `scripts/dev-server.sh`
+passes `--port "$PORT" --strictPort`.
 
-**Proved**: a card label edited to `ZZZZ` and confirmed live in the file;
-`E2E_PORT=5199 task vrt:one -- wavecel` **passed at threshold 0 / ratio 0**, and a
-forced re-capture wrote a **byte-identical** PNG.
+**Why my "proof" was worthless.** I edited `wavecelDef.label` to a sentinel and
+concluded, when the VRT still passed, that the capture came from another server.
+It did not. **The card never renders `def.label`** —
+`WavecelCard.svelte:216` is `<ModuleTitle {id} {data} defaultLabel="WAVECEL" />`,
+and `ModuleTitle` routes through `node.data.name`. My perturbation was
+**invisible to the image**, so a passing VRT was the CORRECT result.
 
-Consequences for anyone giving agents port instructions:
-- "Use a non-5173 port" works for unit tests and for a plain dev server. For **VRT and
-  e2e it is partly fiction** — the capture may come from another process entirely.
-- Worktree copies of `Taskfile.yml` carry a comment: *"HONOUR E2E_PORT — … this line
-  used to NOT, which made `E2E_PORT=N task e2e:one` actively dangerous."* Someone hit
-  this before. **Check whether that fix is on main.**
-- **#1350 (wavecel) expects VRT red on CI.** If it returns green, treat it as the
-  sub-tolerance case: `git rm` the baseline, then dispatch `vrt-update.yml`.
+This is the exact failure CLAUDE.md warns about, committed by the person who
+wrote the warning down four hours earlier: *"Negative-control the INSTRUMENT,
+not just the code — perturb the thing it claims to measure and confirm the
+number moves."* I never checked that the sentinel reached a pixel. A metric
+blind to the dimension under test returns a clean number, and I read that clean
+number as a finding.
+
+**How it was settled**: served source on the isolated port contained the
+sentinel (so the server WAS mine), then `WavecelCard.svelte:216` showed the
+title comes from a hardcoded string. Both halves needed; either alone is
+ambiguous.
+
+**The ONE narrow thing that IS true**, and is not the above: with **no server
+already running**, Playwright's own `webServer` boots on its config's port
+(5173 / 4173) and does not consult `E2E_PORT`. The documented workflow — start
+your own server, then run against it — isolates correctly. So:
+
+> Start your own dev server on your own port FIRST (`npm run dev -w packages/web
+> -- --port N --strictPort`), then `E2E_PORT=N task vrt:one -- …`. Do not rely
+> on the auto-boot path to honour `E2E_PORT`.
+
+**A real (smaller) defect found while disproving the fake one.** 190 cards pass
+a **hardcoded** `defaultLabel="…"` rather than deriving it from the def — the
+same second-source-of-truth class as the AnalogVcoCard `min={0}` range bug. At
+least one genuinely disagrees: `clocked-runner.ts` declares `label: 'clocked'`
+while `ClockedRunnerCard.svelte` shows `'clockedRunner'`. ⚠ My first scan
+reported "17 mismatches"; most were artifacts of my own comparison (HTML
+entities — `CHARLOTTE&#39;S ECHOS` vs `charlotte's echos` — and case, `LFO` vs
+`lfo`). **The 17 is NOT a verified number.** Anyone picking this up must
+re-derive it with entity decoding and case folding before quoting it.
 
 ### The mono-normal gate was 46 % blind, not 30 %
 
