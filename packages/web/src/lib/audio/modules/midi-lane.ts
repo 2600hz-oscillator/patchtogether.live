@@ -97,6 +97,7 @@ import type { AudioModuleDef } from '$lib/audio/module-registry';
 import { midiToVOct } from '$lib/audio/note-entry';
 import { createPolySender, type PolySender } from '$lib/audio/poly';
 import { createMidiScheduler } from '$lib/audio/midi-timing';
+import { createMidiInputClaim } from '$lib/midi/input-attach';
 import type {
   MidiAccessLike,
   MidiEventLike,
@@ -353,6 +354,8 @@ export const midiLaneDef: AudioModuleDef = {
     let learningCcA = false;
     let learningCcB = false;
     let access: MidiAccessLike | null = null;
+    /** Identity-scoped handler-slot claim — see $lib/midi/input-attach. */
+    const claim = createMidiInputClaim('midi-lane');
     let permissionDenied = false;
     let subscriber: ((s: MidiLaneCardState) => void) | null = null;
 
@@ -543,15 +546,13 @@ export const midiLaneDef: AudioModuleDef = {
       }
     }
 
+    /** Listen on EXACTLY the selected device. Re-targeting releases only the
+     *  port THIS lane held — it never sweeps the access clearing slots other
+     *  subsystems installed (see $lib/midi/input-attach). */
     function attachToDevice(deviceId: string | null): void {
       if (!access) return;
-      for (const inp of access.inputs.values()) {
-        inp.onmidimessage = null;
-      }
-      if (deviceId === null) return;
-      const inp = access.inputs.get(deviceId);
-      if (!inp) return;
-      inp.onmidimessage = handleMidiMessage;
+      const inp = deviceId === null ? undefined : access.inputs.get(deviceId);
+      claim.attachOnly(inp ? [inp] : [], handleMidiMessage);
     }
 
     function pickDefaultDevice(): string | null {
@@ -715,8 +716,11 @@ export const midiLaneDef: AudioModuleDef = {
         return undefined;
       },
       dispose() {
+        // Release ONLY the port this lane installed a handler on. (Was: null
+        // every input on the access — which evicts any other consumer of the
+        // same MIDIAccess, and is the shape this seam exists to forbid.)
+        claim.detach();
         if (access) {
-          for (const inp of access.inputs.values()) inp.onmidimessage = null;
           access.onstatechange = null;
           access = null;
         }

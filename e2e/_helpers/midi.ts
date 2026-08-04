@@ -163,8 +163,14 @@ export async function installMidiMock(page: Page): Promise<void> {
 
 /** Wait until at least one mock-input has had its `onmidimessage` handler
  *  attached by the app. Returns once the count is >= `minHandlers`.
- *  Default minimum is 1 — sufficient for midi-learn alone. For specs that
- *  exercise both midi-learn AND midi-clock-source, pass 2. */
+ *
+ *  ⚠ The count is per INPUT PORT, not per subscriber, and this mock exposes
+ *  exactly ONE input — so `minHandlers` can never exceed 1 and a caller passing
+ *  2 would wait forever. (`onmidimessage` is a single slot: two subsystems on
+ *  one port do not make two handlers, the second replaces the first.) The old
+ *  doc here advertised "pass 2 for midi-learn AND midi-clock-source"; nothing
+ *  ever did, and it could not have worked. Add a second mock input first if a
+ *  spec genuinely needs two live ports. */
 export async function waitForMidiSubscription(page: Page, minHandlers = 1): Promise<void> {
   await page.waitForFunction(
     (n) => {
