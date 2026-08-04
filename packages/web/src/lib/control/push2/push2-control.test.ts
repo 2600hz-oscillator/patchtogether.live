@@ -221,9 +221,41 @@ describe('channel-select LEDs mirror the lane colour (selected bright / others d
     expect(ledFor(0)).toBe(idxDim(c0)); // ch1 now dim
   });
 
-  it('with no bound clip every channel button is OFF (no colours to mirror)', () => {
+  it('with NO bound clip every channel button still shows its default lane hue (never off)', () => {
     // beforeEach leaves the binding reset — boundClipNode() is null.
-    for (let ch = 0; ch < 8; ch++) expect(channelButtonValue(ch)).toBe(0);
+    //
+    // THIS TEST WAS INVERTED. It used to assert all eight buttons were OFF, which
+    // pinned the `if (!nodeId) return 0` gate in channelButtonValue. That gate was
+    // the first half of the owner's "the rows at the top of the lanes ... do not
+    // show the channel color" report: lane select is PUSH-LOCAL (it picks which
+    // lane's push card the display shows, off the pinned mixer's columns) and works
+    // with no clip player bound, so blanking the row painted eight live buttons as
+    // dead. `laneColorEff` is total, so there is always a hue to show.
+    for (let ch = 0; ch < 8; ch++) {
+      expect(channelButtonValue(ch)).toBe(
+        ch === selectedChannelIndex() ? idxFull(effHex(ch)) : idxDim(effHex(ch)),
+      );
+      expect(channelButtonValue(ch)).not.toBe(0);
+    }
+  });
+
+  it('EVERY lane hue stays lit and stays distinguishable at BOTH brightnesses', () => {
+    // The second half of the owner's report, and the half no per-lane assertion
+    // above could see: the three lanes it happens to name are not the eight the
+    // hardware has. Six of the eight default hues quantised to palette 0 when
+    // dimmed (and the green lane hit the near-black neutral even SELECTED), so the
+    // row read as "only the one I just pressed lights up".
+    //
+    // Sweeps all eight rather than sampling, and asserts the two properties that
+    // do not depend on which palette index a tier resolves to.
+    for (let lane = 0; lane < 8; lane++) {
+      const hex = effHex(lane);
+      const full = idxFull(hex);
+      const dimmed = idxDim(hex);
+      expect(full, `lane ${lane} (${hex}) SELECTED must not be off`).not.toBe(0);
+      expect(dimmed, `lane ${lane} (${hex}) unselected must not be off`).not.toBe(0);
+      expect(full, `lane ${lane} (${hex}) selected must differ from unselected`).not.toBe(dimmed);
+    }
   });
 });
 
