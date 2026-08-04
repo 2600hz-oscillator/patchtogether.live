@@ -9,6 +9,28 @@ is the evidence file behind it.
 **The unifying shape: a check that verifies the wrong invariant is
 indistinguishable, from its output alone, from a check that passes.**
 
+> ## KEPT — re-verified 2026-08-04. This is the EVIDENCE, not a duplicate of the skill.
+> `.claude/skills/blind-gates.md` carries the five *patterns*; **none of the eight
+> cases in Part 1, the twelve-row instrument table in Part 2, or the shard-1
+> click-cost table in Part 3 appear there or in CLAUDE.md.** Deleting this loses
+> the measurements.
+>
+> ⚠ **And on one point this file is RIGHT where the skill is WRONG.** The skill
+> (`blind-gates.md`, "The negative control is the antidote") still asserts that
+> E4's `zoom: 0.8` "makes it exercise the real path". Case 4 below says that
+> remedy **does not work** — and the live spec agrees with this file, not the
+> skill: `e2e/tests/backdraft-pure-tv.spec.ts:278-297` spawns `zoom: 0.8`, then
+> states in its own comment that there is *no structure to assert*, that "a flat
+> clipped field is the genuine legacy result for this scene", and that "the real
+> contrast is with E1 — the pair is the control, not this test alone", backed by
+> an explicit anti-vacuity luma floor. **If the two disagree, this file and the
+> spec are current; the skill's sentence is stale.**
+>
+> Cases still live in the tree: the peakstate fix is still the spec-local
+> `BEHAVIORAL_OBSERVED_OUTPUT` override
+> (`e2e/tests/per-module-per-port-behavioral.spec.ts:2524`), deliberately not an
+> `_drivers.ts` entry, exactly as described.
+
 ---
 
 ## Part 1 — Gates that passed for the wrong reason

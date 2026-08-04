@@ -3,6 +3,33 @@
 Not asked for as a document. Written because the diagnosis cost ~4.5 M tokens of
 agent work and the numbers should not have to be re-measured.
 
+> ## ✅ RE-VERIFIED 2026-08-04 — STILL LIVE, nothing here has been superseded
+>
+> Every item in "Remaining work, ranked" is still open, and the six owner
+> questions at the bottom are still unanswered:
+>
+> - **#2 cap the video engine to 60 fps** — no governor or fps cap in
+>   `video/engine.ts`. OPEN, still needs owner sign-off.
+> - **#3 narrow `recorderbox`'s pull-exempt** — `isPullExempt`
+>   (`video/engine.ts:1013-1020`) still returns `true` for **any** node with
+>   non-empty `audioInputs`, and the comment names RECORDERBOX explicitly. So
+>   recorderbox still pins the whole upstream chain whether or not it is armed.
+>   OPEN, exactly as diagnosed.
+> - **#4 card-layer rAF coalescing** — **73 card files still hold 239 raw
+>   `requestAnimationFrame` sites**; only 5 cards plus 2 shared controls use the
+>   ticker. (The doc's "72 of ~80 cards / only 8 use `onMeterFrame`" was the same
+>   measurement in different units.) OPEN. Tracked as P0-1 in `FABLE_PERF_PLAN`.
+> - **#5 per-module render-cost CI gate** — still does not exist. OPEN.
+> - **The separate P0 preset-load DOM leak still has no ticket.** ⚠ Note the
+>   later, narrower finding in `2026-08-03-SESSION-STATE.md` §1: #1262 concluded
+>   *one* patch-load DOM leak was a **dev-server artifact**. That does not
+>   obviously cover the 5-load 4,626 → 52,938 measurement here, but whoever picks
+>   this up must reconcile the two before re-measuring.
+> - **The two refuted fixes stay refuted** — but note the Fix-E worker default was
+>   flipped ON by #1047 (2026-07-10) for unrelated reasons. That does not revive
+>   it as a fix for *this* symptom: the cost is peakstate's Canvas2D rasterization,
+>   which the texture co-processor does not touch.
+
 **Owner's report:** `performance.ptperf.zip` — *"even in balanced audio mode I have
 an issue with the audio engine bogging down and or stopping completely. without
 any of the video stuff in the patch that doesn't happen."*

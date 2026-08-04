@@ -1,6 +1,7 @@
 # Stereo audio normalization — implementation plan
 
 **Status: FINAL — all 7 owner questions answered 2026-08-03. Ready to implement, starting at PR-0.**
+*(Re-verified 2026-08-04: none of the 7 PRs has landed. `stereovca` is still the module id in `packages/dsp/src/`, `art/scenarios/`, `art/baselines/` and both VRT baselines; `reconciler.ts:143`'s `await engine.addNode(node)` is still unguarded, exactly as PR-0 describes. The whole sequence is live backlog.)*
 Source: 12-agent ultracode analysis (8 subsystem surveys → 2 competing designs → adversarial + completeness critics), all findings verified against the actual code with file:line cites. Draft questions + owner answers recorded in §1.
 
 ## 0. Executive summary

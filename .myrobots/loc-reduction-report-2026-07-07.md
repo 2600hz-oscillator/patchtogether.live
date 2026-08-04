@@ -2,6 +2,50 @@
 
 **Repo:** patchtogether.live (`inet.modular`) · **Date:** 2026-07-07 · **Method:** 7 investigator reports, adversarially spot-checked (cited files read; the largest estimates recomputed from their own arithmetic; overlaps merged; double-counts removed).
 
+> # STATUS 2026-08-04 — KEPT. Waves 0–3 shipped in 48 hours, then the campaign STOPPED.
+>
+> This is a **campaign plan with a 21-row ranked backlog**, not a completion
+> report. `git log --grep="chore(loc)"` returns exactly **5 merged PRs, all
+> between 2026-07-07 and 2026-07-09, and nothing since.**
+>
+> **SHIPPED — rows 1, 2, 3, 4, 5, 6, 7, 10, 11, 16:**
+>
+> | rows | PR | verified |
+> |---|---|---|
+> | 1 — def-shape unit tests | **#1035** | `delay.test.ts` / `adsr.test.ts` / `vca.test.ts` all gone |
+> | 2 + 3 + 10 + 16 — e2e smokes, `_fixtures.ts`, dead probes, helper prune | **#1036** | `attenumix.spec.ts` + `doom-mp-probe.spec.ts` gone; `e2e/tests/_fixtures.ts` exists |
+> | 4 — uncommit `module-docs.generated.ts` | **#1037** | file absent; CLAUDE.md now documents it as a gitignored build artifact |
+> | 7 + 11 — dead scripts/assets + DOOM harnesses | **#1034** | 51 files, **3,552 deletions**; `blood-frame-harness.mjs` deliberately kept, exactly as recommended |
+> | 5 + 6 — card helpers + shared CSS | **#1040** | `card-kit.ts` → `portsFromDef` (**144 of 193** cards), `cardParams` (71 files, shipped under a different name than the report's `useCardParams`), `captureFlowStore`; `_module-card.css` = 523 lines |
+>
+> **STILL OPEN — 11 rows, untouched, and this file is their only record:**
+>
+> | row | check run 2026-08-04 | result |
+> |---|---|---|
+> | 8 worklet factory helper | `grep createWorkletFactory` | 0 hits |
+> | 9 video fragment-effect runtime | `grep defineFragmentEffect` | 0 hits; **86** modules still call `compileFragment` (report said 59) |
+> | 12 dsp ambient types / `defineWorklet` | `packages/dsp/src/worklet-globals.d.ts` | missing; **61** files still carry per-file `declare` blocks (report said 56) |
+> | 13 worklet test-harness dedup | — | no shared util |
+> | 14 ART `goertzel`/`rms` helpers | `art/setup/analysis.ts` | missing; **28** files still carry their own `goertzel` |
+> | 15 workflow YAML composite | `.github/actions/` | no such dir; the two flake-purge workflows are still twins |
+> | 17 GL utils dedup | — | `video/mat4.ts` exists, but `WavesculptCard.svelte:1006` still defines its own `compileShader` |
+> | 18 Canvas.svelte internal dedup | `wc -l` | **8,821 lines — it GREW** |
+> | **19 AutoCard — DECISION POINT** | `find AutoCard*` | 0 hits. The report says take the go/no-go "after #5/#6 land on ~50 cards". **144 cards landed. The decision was never taken or recorded anywhere.** |
+> | **20 VFPGA bitstream/census — OWNER CALL** | — | both files still present; **the call was never made** |
+> | 21 sequencer transport core | — | deferred to PR-C by design |
+>
+> ⚠ **Do not quote its baselines without re-deriving them.** The measured surfaces
+> have grown *past* them: cards 63,070 → **69,352** lines (178 → **193**
+> `*Card.svelte`); `e2e/tests/*.spec.ts` 314 → **396**. The campaign's ~15k
+> deletions were absorbed by new modules, so the "realistic 30,000–45,000" ceiling
+> needs recomputing.
+>
+> The **"What NOT to do"** section is the other reason this is kept: comment-stripping,
+> pruning the 695 test-only exports, a def-declaration DSL, uncommitting
+> `contract-lock.txt` or the ART fingerprints golden, booking Canvas decomposition as
+> savings, trusting `knip --production` on Svelte — **each was measured and rejected.**
+> Losing that invites a future agent to re-propose all seven.
+
 ---
 
 ## Executive summary

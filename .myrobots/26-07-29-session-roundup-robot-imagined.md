@@ -3,6 +3,25 @@
 Not asked for. State-of-the-world at shutdown, so the next session doesn't
 re-derive it.
 
+> ## ⚠ SUPERSEDED as a status file — kept for two live owner decisions
+> **Re-verified 2026-08-04.** The "where things stand" / "merged this session"
+> sections are history; later handoffs replace them
+> (`26-08-01-pickup-vrt-dx7-freezeframe.md`, then `2026-08-03-SESSION-STATE.md`).
+>
+> **What is still LIVE here, and recorded nowhere else:**
+>
+> - **The duplicate `[CRIT]` alert issues are still open** — #987 (2026-07-01) plus
+>   #1255/#1257/#1258/#1259 and the rest. Closing them was offered and never
+>   confirmed; per the note above, **do not close without asking**.
+> - **Backdraft is still in `EXEMPT_FROM_VRT`** (`e2e/vrt/vrt-exemptions.ts:245`)
+>   with no baseline PNGs on either platform, and both original reasons for the
+>   exemption are still gone. Still an un-actioned promotion candidate.
+>
+> The other four "awaiting an owner decision" items (Buffer→Stable, the 60 fps
+> engine cap, the preset-load leak, the per-module render-cost CI gate) are all
+> also carried — with their measurements — in
+> `26-07-29-audio-bogging-diagnosis-robot-imagined.md`, which is the better source.
+
 ## Where things stand
 
 - **Main: `366988fb`**, green. Push run for the last two merges was still
