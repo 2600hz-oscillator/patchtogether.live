@@ -288,6 +288,41 @@ and a busy-then-idle process can print the same number. Confirm with
 
 ---
 
+### ⚠ AN ATTEST'S PRECONDITION IS "NO OTHER BROWSER IS RENDERING" — NOT "load is low"
+
+**I nearly quarantined a healthy test over this.** Worth reading before touching
+`webgl:attest` or `grand:attest`.
+
+`task webgl:attest` on the cube branch refused: **193 passed, 1 failed** —
+`toybox-feedback.spec.ts:227`, unrelated to the change, which passes **3/3 in
+isolation**. I checked the box was quiet by **load average** and **free
+dev-server ports**, saw both clean, and concluded the failure must be the
+already-tracked "flaky toybox WebGL tests in the attest basis" item. I
+recommended **quarantining that spec out of the basis** so cube could land.
+
+That would have removed a working test from the gate. The owner corrected it in
+one line — *"you didn't have exclusive gpu use, now you do"* — and the re-run on
+a genuinely exclusive box **PASSED**, 0 failures.
+
+**Both my checks were blind to the actual precondition.** Two agents were still
+finishing their own Chromium runs. Load average and a free port say the **CPU**
+is idle; they say **nothing** about whether another browser holds the **GPU**.
+
+- **Check the right thing**: enumerate the contenders, don't read a scalar —
+  `ps -A -o comm | grep -ciE "chromium|chrome-headless|playwright"` must be
+  **0**, plus no dev server on 5173/4173. A load average cannot express this.
+- Contrast with the **grand-attest** the same session, where the pre-flight's
+  own `load(1m)` refusal was CORRECT (16 leaked burners, a real CPU problem).
+  Same-looking symptom, different resource, opposite conclusion. **Name which
+  resource you are claiming is free.**
+- ⚠ `toybox-feedback.spec.ts` is **NOT known-flaky on this evidence**. If you
+  find it red in an attest, check for other browsers before believing it. The
+  tracked "flaky toybox" item is not corroborated by this run.
+- Consistent with the standing rule: a refusal is worth more than a green run.
+  It refused, and it was right to; my reading of *why* was what was wrong.
+
+---
+
 ## 7. STANDING OPERATIONAL FACTS
 
 - **Port 5173 is the owner's dev server. `task e2e:serve` binds it BY DEFAULT** — an
