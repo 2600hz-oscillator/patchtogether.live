@@ -40,9 +40,23 @@
 //   out_c       = dry_c · dryVolume + wet_c · wetVolume
 //
 // STABILITY: |feedback| is clamped < 1 and the in-loop low-pass removes energy
-// on every pass, so the loop cannot grow unbounded; a NaN/Inf scrub on the
-// write guards pathological states. The co-located test drives feedback 0.95
-// for a full second and asserts a finite, bounded output.
+// on every pass, so the loop cannot grow unbounded. The co-located test drives
+// feedback 0.95 for a full second and asserts a finite, bounded output.
+//
+// …and that argument had TWO holes, both closed 2026-08-03 (see SVF_F_MAX and
+// TAPE_MAX below). They are SEPARATE defects and both needed fixing:
+//   1. DIVERGENCE — the MODE 3 Chamberlin SVF's coefficient was clamped at 1.4
+//      while the topology is stable only below 2 − damping = 1.1. The "in-loop
+//      low-pass removes energy" premise is simply FALSE for a filter that is
+//      itself unstable. Measured peak 8.7127e+37 at LOW CUT 1.0.
+//   2. NO RECOVERY — every state in this file is recursive, so once ANY of
+//      them takes a NaN it holds it forever and the node is dead until it is
+//      re-spawned. Fixing only (1) leaves every already-diverged node dead;
+//      fixing only (2) leaves it diverging. There are four such states —
+//      ToneFilter's, DriveStage's, `duckEnv` and `smoothedDelay` — and each
+//      now re-seeds itself rather than latching. Every guard is behind a
+//      `Number.isFinite` test or a clamp far outside the audio range, so the
+//      finite path is BIT-IDENTICAL and the ART `.f32` goldens do not move.
 //
 // DETERMINISM: the DRIFT walk runs on a fixed-seed xorshift32 (never
 // Math.random), so two renders with the same settings are bit-identical — the
@@ -59,6 +73,42 @@ export const MAX_DELAY_S = 10;
 /** Hard ceiling on |feedback| — keeps the echo loop stable at the knob
  *  extremes (the −1..+1 knob maps through this). */
 export const FEEDBACK_MAX = 0.995;
+
+/** Chamberlin SVF damping (the `q` term, ≈ 1/Q) used by filter MODE 3. */
+export const SVF_DAMPING = 0.9;
+
+/**
+ * Hard ceiling on the Chamberlin SVF's frequency coefficient
+ * `f = 2·sin(π·fc/fs)`.
+ *
+ * The topology is stable only while **f < 2 − damping** — 1.1 at
+ * SVF_DAMPING 0.9. Until 2026-08-03 this clamp was **1.4**, i.e. ABOVE its own
+ * stability bound, so MODE 3 ("State-var") diverged for LOW CUT past ≈ 0.867
+ * (where the raw f crosses 1.1). Measured with DRIVE at 0 (its tanh was the
+ * only thing masking this at the shipping default), 220 Hz in, feedback 0.5:
+ *   lowCut 0.87 (f 1.0796) → peak 9.8696e-1     stable
+ *   lowCut 0.90 (f 1.2932) → peak 6.6636e+12    divergent
+ *   lowCut 1.00 (f 1.4000) → peak 8.7127e+37    divergent, |x|>10 by 0.401 s
+ * Note the clamp value was not the whole story: the RAW coefficient already
+ * exceeds the bound below where 1.4 ever bites, so this had to move DOWN, not
+ * up. 1.0 is the textbook fs/6 cutoff limit and leaves a 9 % margin under
+ * 2 − damping; `analog-delay-core.test.ts` asserts that relation directly so
+ * the two constants can never drift apart.
+ */
+export const SVF_F_MAX = 2 - SVF_DAMPING - 0.1;
+
+/**
+ * Largest magnitude the tape will hold.
+ *
+ * Audio lives at |x| ≤ ~4, so this is unreachable in normal operation — it
+ * exists because the `Number.isFinite` scrub in `DelayChannel.write` was BLIND
+ * to the way ±Infinity actually got into the buffer: the check runs on the
+ * **float64** value, and the store then narrows it to **float32**, whose max is
+ * ≈ 3.4e38. A finite 8.7e37 passes the check, and a finite 5e38 passes it too
+ * and lands as `Infinity`. Reading that back poisons the in-loop filters. A
+ * magnitude clamp is the guard the isFinite check was believed to be.
+ */
+export const TAPE_MAX = 1e6;
 
 /**
  * Tempo-sync beat multipliers, in BEATS where a quarter note = 1 beat.
@@ -190,10 +240,11 @@ class ToneFilter {
 
     const mode = Math.round(clamp(s.filterMode, 0, 3));
     if (mode === 3) {
-      // Chamberlin state-variable low-pass with mild fixed resonance.
+      // Chamberlin state-variable low-pass with mild fixed resonance. `f` is
+      // capped at SVF_F_MAX — see that constant for why 1.4 was divergent.
       const hz = 20 * Math.pow((sampleRate * 0.45) / 20, clamp(s.lowCut, 0.0001, 1));
-      const f = clamp(2 * Math.sin((Math.PI * hz) / sampleRate), 0, 1.4);
-      const q = 0.9; // damping (higher = less resonance)
+      const f = clamp(2 * Math.sin((Math.PI * hz) / sampleRate), 0, SVF_F_MAX);
+      const q = SVF_DAMPING; // damping (higher = less resonance)
       const high = y - this.svfLow - q * this.svfBand;
       this.svfBand += f * high;
       this.svfLow += f * this.svfBand;
@@ -205,6 +256,16 @@ class ToneFilter {
         this.lp[i]! += a * (y - this.lp[i]!);
         y = this.lp[i]!;
       }
+    }
+    // SELF-HEAL. Every state in this class is RECURSIVE, so a single
+    // non-finite sample latches NaN into it FOREVER — the filter then returns
+    // NaN for the life of the node and the loop it sits in stops carrying
+    // signal at all. Detect at the output (hpState, the lp cascade and the SVF
+    // pair all surface here) and re-seed instead of propagating. A no-op on
+    // the finite path, so renders stay bit-identical.
+    if (!Number.isFinite(y)) {
+      this.reset();
+      return 0;
     }
     return y;
   }
@@ -237,6 +298,12 @@ class DriveStage {
       const mixed = y + (sat - y) * mix;
       this.lpState += a * (mixed - this.lpState);
       y = this.lpState;
+    }
+    // SELF-HEAL — `lpState` is recursive, same latch-forever hazard as
+    // ToneFilter. No-op on the finite path.
+    if (!Number.isFinite(y)) {
+      this.reset();
+      return 0;
     }
     return y;
   }
@@ -275,6 +342,11 @@ export class DelayChannel {
    *  the first call so a fresh line reads at the target immediately (no ramp
    *  from zero). Returns the eased delay in samples. */
   private easeDelay(targetSamples: number, easeCoeff: number): number {
+    // `smoothedDelay` is recursive: one non-finite target pins it at NaN for
+    // the life of the channel, and the caller's clamp then floors every later
+    // read to 1 sample — a silently mistuned delay line that never recovers.
+    // Hold the last good value instead. No-op on the finite path.
+    if (!Number.isFinite(targetSamples)) return Math.max(1, this.smoothedDelay);
     if (this.smoothedDelay < 0) this.smoothedDelay = targetSamples;
     else this.smoothedDelay += easeCoeff * (targetSamples - this.smoothedDelay);
     return this.smoothedDelay;
@@ -308,6 +380,12 @@ export class DelayChannel {
   write(x: number): void {
     let v = x;
     if (!Number.isFinite(v)) v = 0;
+    // …and bound the magnitude, because the isFinite check above runs on the
+    // FLOAT64 value while the store below narrows to FLOAT32 (max ≈ 3.4e38).
+    // A finite-but-astronomical excursion therefore lands in the tape as
+    // ±Infinity, and reading it back poisons the in-loop filters. See TAPE_MAX.
+    else if (v > TAPE_MAX) v = TAPE_MAX;
+    else if (v < -TAPE_MAX) v = -TAPE_MAX;
     this.buf[this.writeIdx] = v;
     this.writeIdx++;
     if (this.writeIdx >= this.size) this.writeIdx -= this.size;
@@ -434,6 +512,15 @@ export class AnalogDelayCore {
         ? 1 - Math.exp(-1 / ((atkMs / 1000) * sr))
         : 1 - Math.exp(-1 / ((relMs / 1000) * sr));
     this.duckEnv += coeff * (dryMag - this.duckEnv);
+    // SELF-HEAL — the third recursive state in this file, and the one that
+    // bricks the module on a merely non-finite INPUT sample (any upstream
+    // module can emit one). Once duckEnv is NaN, duckGain is NaN — and note
+    // that DUCK AMOUNT 0 does NOT save it, because `0 * Infinity` is NaN — so
+    // every later wet sample is NaN and the output scrub below turns it into
+    // EXACTLY 0.0 for the life of the node while dry keeps passing.
+    // MEASURED before this line: one Infinity input → wet RMS 0.0000e+0
+    // against a fresh node's 6.3561e-1, on BOTH cofefve and charlottes-echos.
+    if (!Number.isFinite(this.duckEnv)) this.duckEnv = 0;
     const duckGain = 1 / (1 + clamp(s.duckAmount, 0, 10) * this.duckEnv);
 
     // ── Pan the wet image ──────────────────────────────────────────────────
