@@ -194,6 +194,56 @@ change SAMPLE_RATE, or a future 44.1k fallback path).
 0 ART, new unit test. Low-moderate. Parallel-safe.
 
 ### P1-A3 — Band-limit the Faust analog VCO (aliasing folds into the low end)
+
+> ### ⚡ 2026-08-04 — A3 MEASURED ON THE SHIPPED WASM, AND ITS PREMISE IS HALF WRONG
+>
+> A3 was never measured — the audit asserted the aliasing from reading the
+> source (`saw(p)=2p-1`, no BLEP). It is now measurable: #1376 established that
+> `art/setup/faust-offline.ts` renders the real analog-vco wasm headlessly, so
+> the "no faithful automated gate exists" objection in Finding 2 is GONE.
+>
+> **Measured** — worst inharmonic image in the AUDIBLE band (20 Hz–16 kHz),
+> relative to the fundamental, on the shipped `saw` tap:
+>
+> | pitch | worst audible alias | where | vs fundamental | leakage floor | REAL? |
+> |---|---|---|---|---|---|
+> | C4  262 Hz | −31.7 dB | 245 Hz | **−27.8 dB** | **−28.9 dB** | ❌ **NO — instrument** |
+> | C5  523 Hz | −32.7 dB | 490 Hz | −28.8 dB | −56.0 dB | ✅ yes |
+> | C6 1047 Hz | −33.8 dB | 15558 Hz | −29.9 dB | ~−76 dB | ✅ yes |
+> | C7 2093 Hz | −28.0 dB | 14512 Hz | −24.1 dB | ~−76 dB | ✅ yes |
+> | C8 4186 Hz | −22.0 dB | 14512 Hz | **−18.1 dB** | ~−76 dB | ✅ yes |
+>
+> ⚠ **THE C4 ROW IS AN ARTEFACT, AND IT IS THE ROW THE AUDIT'S PREMISE RESTS
+> ON.** A3's stated motivation is that images "fold back down into the audible/
+> low band, muddying bass". At C4 the worst thing I could find sits at 245 Hz —
+> 17 Hz from the fundamental, about 4 bins of an unwindowed Goertzel. Feeding
+> the SAME estimator a pure sine (zero aliasing by construction) returns
+> **−28.9 dB at that exact bin**. The measurement was spectral leakage from the
+> fundamental, not aliasing. At 490 Hz the same control reads −56 dB and at
+> 14512 Hz −76 dB, so the other four rows clear their floor by 27–58 dB and
+> ARE real.
+>
+> **What that changes:**
+> * The aliasing is **real and worth fixing at high pitch** — −18.1 dB at C8 is
+>   plainly audible, and it worsens monotonically with pitch, exactly as theory
+>   says for a raw phasor.
+> * The **low-end/bass premise is NOT demonstrated**. Anyone re-opening A3
+>   should either measure it with a windowed estimator or drop that
+>   justification. Do not repeat "muddies the bass" as established.
+> * **Route 2 (polyBLEP in the `.dsp`) is no longer the weaker option.**
+>   Finding 2 preferred Route 1 *because* Route 2 had no automated proof. The
+>   offline harness supplies exactly that proof now — re-render the shipped wasm
+>   and re-run the table above. Re-decide the route on quality alone.
+>
+> **Still owner-gated.** Band-limiting audibly changes the VCO's character and
+> `analogVco`/`swolevco` are shipped; the audit's "owner-review the timbre
+> change before merge" stands. This entry supplies the numbers that decision
+> needs; it does not make it.
+>
+> ⚠ Method note, since it cost a false finding here: a bare Goertzel has no
+> window, so its sidelobes read ~−29 dB only a few bins out. ALWAYS negative-
+> control an alias measurement against a signal known to have none.
+
 **Evidence.** `packages/dsp/src/analog-vco.dsp` — `saw(p)=2p-1`, `sqr(p)=select2(p<pw,1,-1)`,
 `tri(p)=4*abs(p-0.5)-1`, `sn(p)=sin(2πp)` — all derived from a raw phasor (`phasorReset`/`phasorPm`) with
 **no polyBLEP/polyBLAMP**. Contrast the own-code `packages/dsp/src/lib/moog-vco-dsp.ts:78-150`, which *does*
