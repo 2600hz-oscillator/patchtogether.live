@@ -323,6 +323,48 @@ is idle; they say **nothing** about whether another browser holds the **GPU**.
 
 ---
 
+### ⚠ PUSH 2 SPECIAL-ROW LIGHTING — owner-reported, TWO causes confirmed in code
+
+> Owner, 2026-08-04: *"the launch keys are dark except for clip mode… the rows at
+> the top of the lanes which should just show the channel color, do not, but they
+> do turn on and off when hit sometimes. so there's a discrepancy there between
+> how they illuminate on push, and on launchpad"*
+
+**NOT a colour-encoding bug.** `RGB_BUTTON_CCS` (`push2-map.ts:378`) correctly
+lists 20–27, 36–43 and 102–109 as palette-indexed, and `buttonValue` sends a real
+`pushColorIndex(...)` for them (127 only for white/mono buttons). Both causes are
+about the LED spec's **source**, not its encoding.
+
+**1. Channel-select row (CC 102–109) — gated off entirely.**
+`channelButtonValue` (`push2-control.svelte.ts:487`) opens with
+`const nodeId = boundClipNode(); if (!nodeId) return 0;` → **all eight buttons
+dark whenever no clipplayer is bound.** The colour path below it is correct
+(`laneColorEff` → `hexToRgb127` → `pushColorIndex`, full for the selected lane,
+`CHANNEL_DIM = 0.3` for the rest) — it simply never runs. This row is APPENDED
+per-frame by `setFrame` and never appears in a Launchpad frame.
+
+**2. Scene / launch column (CC 36–43) — only two of six views emit it.**
+Scene LEDs are `put()` by `computeLSessionFrame` (`launchpad-map.ts:794`) and
+`computeRDeckFrame` (`:931`) ONLY. `computeREditFrame`, `computeRLengthFrame`
+and `computeKeysFrame` emit none — and `setLeds` (`push2-device.svelte.ts:383`)
+**actively blanks any button lit last frame but absent now**. Hence "dark except
+for clip mode".
+
+**⚠ WHAT I COULD NOT EXPLAIN — the actual question.** Push and Launchpad consume
+the SAME `LaunchpadFrame`, so on this reading the scene column should be dark on
+BOTH outside clip/deck view. The owner reports they differ. That difference is
+real (he has the hardware) and is NOT accounted for by either cause above.
+Candidates: a Launchpad-side paint path Push lacks; Launchpad hardware
+self-lighting on press (which would also explain "turn on and off when hit");
+or the TOP FUNCTION ROW (Push CC 20–27 ← Launchpad 91–98) being a THIRD,
+separately-broken zone — the owner named three zones and only two are diagnosed
+above.
+
+Fix in flight at the time of writing. It is unit-testable without hardware —
+the whole path is pure `Push2LedSpec[]` computation.
+
+---
+
 ## 7. STANDING OPERATIONAL FACTS
 
 - **Port 5173 is the owner's dev server. `task e2e:serve` binds it BY DEFAULT** — an
