@@ -400,9 +400,29 @@ class CubeProcessor extends AudioWorkletProcessor {
       { name: 'sustain', defaultValue: 1,     minValue: 0,     maxValue: 1, automationRate: 'k-rate' as const },
       { name: 'release', defaultValue: 0.005, minValue: 0.001, maxValue: 5, automationRate: 'k-rate' as const },
       // Per-voice VCA FLOOR the envelope rides on top of: gain = base+(1-base)*env
-      // per ACTIVE voice. base=1 (default) → gain=1, the env does nothing → the
-      // raw-VCO drone is byte-identical (back-compat). base=0 → pure ADSR. k-rate.
-      { name: 'base_vol', defaultValue: 1, minValue: 0, maxValue: 1, automationRate: 'k-rate' as const },
+      // per ACTIVE voice. base=0 (the DEFAULT) → pure ADSR; base=1 → gain=1 and
+      // the env does nothing. k-rate.
+      //
+      // ⚠ THE DEFAULT WAS 1, AND THAT MADE THE WHOLE AMP ADSR A NO-OP OUT OF THE
+      // BOX — the identical defect fixed in WAVECEL by #1350, flagged there and
+      // deliberately scoped out because it is a second module, not one fix.
+      // gain = 1 + 0·env = 1 for every envelope value, so A/D/S/R moved nothing:
+      // MEASURED through this worklet's own process(), rise-to-90 % was 1.33 ms
+      // at ATTACK 0.001 s AND at ATTACK 2 s (identical, mono AND poly), and a
+      // gated render was BYTE-IDENTICAL to the undriven drone over the gate-high
+      // window (maxAbsDiff 0.0000e+0; at base 0 the same comparison reads
+      // 6.7962e-1). It also produced a full-scale note-off click, because a
+      // floored voice holds gain 1 until its envelope crosses ENV_AUDIBLE_EPS and
+      // is then CUT: measured note-off step 0.504980 mono / 0.425601 poly against
+      // the waveform's own largest step while sounding, 0.027922 — i.e. 18×; at
+      // base 0 the same step is 0.024020, below the waveform's own slope.
+      //
+      // The property the default of 1 existed to protect ("the raw-VCO drone is
+      // byte-identical") is NOT lost — see the raw-VCO branch in process(), which
+      // no longer routes the drone through this knob at all. The no-stray-drone
+      // half never depended on base_vol either: it is the ACTIVE gating
+      // (gated-or-releasing) in polyEnvSum/monoEnvSample, which is untouched.
+      { name: 'base_vol', defaultValue: 0, minValue: 0, maxValue: 1, automationRate: 'k-rate' as const },
       // CONNECTEDNESS flags (k-rate, 0/1) pushed by the web factory from the live
       // patch edges — NOT from bus presence, which the trigger keep-alive
       // ConstantSource masks (the input is always present). When poly OR trigger
@@ -590,7 +610,7 @@ class CubeProcessor extends AudioWorkletProcessor {
       release: this.kval(parameters, 'release', 0.005),
     };
     // Per-voice VCA floor (gain = base + (1-base)*env per ACTIVE voice).
-    const baseVol = this.kval(parameters, 'base_vol', 1);
+    const baseVol = this.kval(parameters, 'base_vol', 0);
     // CONNECTEDNESS (from the factory via k-rate params, not bus presence).
     const polyConnParam = this.kval(parameters, 'poly_connected', 0) >= 0.5;
     const trigConnParam = this.kval(parameters, 'trigger_connected', 0) >= 0.5;
@@ -660,9 +680,8 @@ class CubeProcessor extends AudioWorkletProcessor {
     // GATED-MONO mode: trigger connected (poly not) → lane-0's env shapes the mono
     // oscillator; silent until the first hit, base-floored once active.
     const gatedMono = !polyActive && trigConn;
-    // Otherwise (NOTHING connected): the continuous raw VCO. The single voice is
-    // "always active"; with no gate the env is idle (0) so its gain = baseVol —
-    // baseVol=1 (default) reproduces the legacy continuous drone byte-identically.
+    // Otherwise (NOTHING connected): the continuous raw VCO at unity — the legacy
+    // drone, and now independent of BASE (see the branch below).
 
     /** Advance a [0,1) phase accumulator by one sample at a V/oct pitch. */
     const advance = (ph: number, voct: number): number => {
@@ -741,17 +760,24 @@ class CubeProcessor extends AudioWorkletProcessor {
         if (outR && outR !== outL) outR[i] = clampRange(er * level, -4, 4);
         if (outSync) outSync[i] = Math.sin(2 * Math.PI * phaseN);
       } else {
-        // Raw VCO (NOTHING connected to poly or trigger): the single mono voice is
-        // "always active". With no gate the env is idle (0), so its VCA gain is
-        // baseVol — baseVol=1 (default) reproduces the legacy continuous drone
-        // BYTE-IDENTICALLY (no env multiply), baseVol=0 is silent. baseVol IS the
-        // raw-VCO level, replacing the old first-edge drone latch with a user knob.
+        // Raw VCO (NOTHING connected to poly or trigger). There is no gate, so
+        // there is no note to shape — the voice is permanently "fully open".
+        // Substituting env = 1 into the per-voice VCA law gives
+        //     gain = base + (1 − base)·1 = 1
+        // for EVERY value of base, so the legacy continuous drone is preserved
+        // BYTE-IDENTICALLY and, unlike before, it no longer depends on where BASE
+        // happens to sit. (It used to be `readFrame(...) * baseVol * level`, which
+        // is why the default had to be 1 — and that default is exactly what made
+        // the amp ADSR inert in the two GATED branches above. Decoupling the two
+        // is the whole fix: the drone keeps its property, the envelope gets its
+        // job.) We multiply by nothing rather than by a computed 1: `base +
+        // (1−base)` is NOT exactly 1 in IEEE-754 for most values of base.
         const pitch = pIn ? (pIn[i] ?? 0) : 0;
         this.phase = advance(this.phase, pitch + trim);
         // Phase maps to a fractional column index across the 256-sample frame.
         const phaseN = this.phase;
-        const l = readFrame(this.waveL, phaseN) * baseVol * level;
-        const r = readFrame(this.waveR, phaseN) * baseVol * level;
+        const l = readFrame(this.waveL, phaseN) * level;
+        const r = readFrame(this.waveR, phaseN) * level;
         if (outL) outL[i] = clampRange(l, -4, 4);
         if (outR && outR !== outL) outR[i] = clampRange(r, -4, 4);
         // SYNC: a pure SINE at the playback fundamental, read from the SAME phase

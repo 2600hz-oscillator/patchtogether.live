@@ -137,6 +137,89 @@ describe('resolveSlotFrames — per-slot wavetable defaults', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────
+// 1b) DEF ↔ AudioParam DESCRIPTOR parity — the two-sided contract.
+//
+// The def's `defaultValue` is what the knob shows and what the factory writes;
+// the worklet descriptor's `defaultValue` is what the AudioParam holds when the
+// factory writes nothing. NOTHING joined them. That is the same class as the
+// backdraft card-vs-def divergence in CLAUDE.md: a gate reading ONE side of a
+// two-sided contract proves nothing about the other. When base_vol's default
+// moved from 1 to 0 (the amp ADSR was inert at the shipped default — see
+// packages/dsp/src/lib/cube-envelope.test.ts) it had to be changed in two files
+// by hand, with no gate to catch a half-done edit.
+//
+// DENY BY DEFAULT: every param present on BOTH sides must agree, with a NAMED
+// per-param exemption (not a filename) for the ones that legitimately differ.
+// ─────────────────────────────────────────────────────────────────────────
+
+describe('CUBE def ↔ worklet descriptor parity', () => {
+  /** Params whose def default deliberately differs from the descriptor default.
+   *  Each entry states WHY. An entry naming a param that no longer differs is
+   *  RED (anchored to the artifact, not the list). */
+  const DEFAULT_MISMATCH_EXEMPT: Record<string, string> = {};
+
+  it('every shared param has the SAME defaultValue on both sides', async () => {
+    const Proc = await loadProcessor();
+    const descriptors = (Proc as unknown as {
+      parameterDescriptors: { name: string; defaultValue: number }[];
+    }).parameterDescriptors;
+    const byName = new Map(descriptors.map((d) => [d.name, d.defaultValue]));
+
+    const mismatches: string[] = [];
+    const shared: string[] = [];
+    for (const p of cubeDef.params) {
+      if (!byName.has(p.id)) continue; // view-only / card-only params
+      shared.push(p.id);
+      if (byName.get(p.id) === p.defaultValue) continue;
+      if (p.id in DEFAULT_MISMATCH_EXEMPT) continue;
+      mismatches.push(`${p.id}: def=${p.defaultValue} descriptor=${byName.get(p.id)}`);
+    }
+    expect(mismatches, `def/descriptor default drift:\n  ${mismatches.join('\n  ')}`).toEqual([]);
+
+    // The gate's OWN scope, stated in the gate: it can only speak for params
+    // that exist on both sides. If that set ever collapses the gate is vacuous,
+    // so assert it is non-trivial and that base_vol — the param this gate was
+    // built for — is actually in it.
+    expect(shared.length, 'def/descriptor shared-param set').toBeGreaterThan(15);
+    expect(shared).toContain('base_vol');
+  });
+
+  it('every exemption names a param that REALLY differs (no stale entries)', async () => {
+    const Proc = await loadProcessor();
+    const descriptors = (Proc as unknown as {
+      parameterDescriptors: { name: string; defaultValue: number }[];
+    }).parameterDescriptors;
+    const byName = new Map(descriptors.map((d) => [d.name, d.defaultValue]));
+    for (const id of Object.keys(DEFAULT_MISMATCH_EXEMPT)) {
+      const p = cubeDef.params.find((x) => x.id === id);
+      expect(p, `exemption "${id}" names a param the def does not declare`).toBeTruthy();
+      expect(byName.has(id), `exemption "${id}" names a param the worklet does not declare`).toBe(true);
+      expect(
+        byName.get(id),
+        `exemption "${id}" is STALE — the two sides now agree, so delete it`,
+      ).not.toBe(p!.defaultValue);
+    }
+  });
+
+  it('NEGATIVE CONTROL · the comparison can actually detect a mismatch', async () => {
+    // Without this, a bug in the lookup (a wrong key, an empty descriptor list)
+    // would make the gate above pass with zero real comparisons.
+    const Proc = await loadProcessor();
+    const descriptors = (Proc as unknown as {
+      parameterDescriptors: { name: string; defaultValue: number }[];
+    }).parameterDescriptors;
+    const byName = new Map(descriptors.map((d) => [d.name, d.defaultValue]));
+    const base = byName.get('base_vol');
+    expect(base).toBe(0);
+    // Perturb one side and confirm the same comparison goes the other way.
+    byName.set('base_vol', 1);
+    expect(byName.get('base_vol')).not.toBe(
+      cubeDef.params.find((p) => p.id === 'base_vol')!.defaultValue,
+    );
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
 // 2) Worklet DSP behavior.
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -684,9 +767,11 @@ describe('CUBE worklet — poly input (polyPitchGate)', () => {
 // the factory from the live patch EDGES — NOT bus presence (the trigger keep-alive
 // ConstantSource masks it). When poly OR trigger is CONNECTED, CUBE is GATED: a
 // voice sounds only while gated-or-releasing; a never-gated voice is SILENT
-// (patching poly never auto-drones). Nothing connected → a raw VCO whose level IS
-// base_vol (env idle). gain = base + (1-base)*env per ACTIVE voice; default base=1
-// keeps the raw-VCO drone byte-identical.
+// (patching poly never auto-drones). Nothing connected → a raw VCO at UNITY,
+// independent of base_vol. gain = base + (1-base)*env per ACTIVE voice; base
+// ships at 0 (pure ADSR) — see the base_vol descriptor in packages/dsp/src/cube.ts
+// for why the old default of 1 made the whole amp envelope inert, and
+// packages/dsp/src/lib/cube-envelope.test.ts for the measurements.
 // ─────────────────────────────────────────────────────────────────────────
 describe('CUBE worklet — no-stray-drone gating + BASE VOL floor', () => {
   const C2 = Math.log2(65.41 / 261.626);
@@ -763,28 +848,50 @@ describe('CUBE worklet — no-stray-drone gating + BASE VOL floor', () => {
     expect(peak(ungated.L)).toBe(0);
   });
 
-  it('base=1 raw VCO (nothing connected) is BYTE-IDENTICAL to the legacy drone', async () => {
+  // The raw-VCO drone is BYTE-IDENTICAL to the legacy one — which is the property
+  // the old default of 1 existed to protect. It is now protected DIRECTLY in the
+  // unpatched branch (which multiplies by nothing) instead of via the default, so
+  // "the drone survives" and "the envelope works" no longer trade off. Asserted
+  // at EVERY base, which is strictly stronger than the old base=1-only leg.
+  it('raw VCO (nothing connected) is byte-identical at EVERY base_vol', async () => {
     const Proc = await loadProcessor();
     const voct = Math.log2(98 / 261.626);
     const ps = makeParams({ morph_fc: 0.5, slice_rx: 0.4, spread: 0.6, level: 1 });
     const pRef = new Proc(); loadAllTables(pRef);
-    const ref = runProc(pRef, ps, 0.2, voct); // legacy mono drone (base_vol default 1)
-    const pBase1 = new Proc(); loadAllTables(pBase1);
-    const base1 = runWith(pBase1, makeParams({ morph_fc: 0.5, slice_rx: 0.4, spread: 0.6, level: 1, base_vol: 1 }), 0.2, {
-      pitchV: voct,
-    });
-    let maxDiff = 0;
-    for (let i = 0; i < ref.L.length; i++) {
-      maxDiff = Math.max(maxDiff, Math.abs(ref.L[i]! - base1.L[i]!), Math.abs(ref.R[i]! - base1.R[i]!));
+    const ref = runProc(pRef, ps, 0.2, voct); // the shipped-default raw drone
+    expect(peak(ref.L), 'the unpatched drone must be audible at all').toBeGreaterThan(0.1);
+    for (const base of [0, 0.25, 0.5, 1]) {
+      const p = new Proc(); loadAllTables(p);
+      const out = runWith(p, makeParams({ morph_fc: 0.5, slice_rx: 0.4, spread: 0.6, level: 1, base_vol: base }), 0.2, {
+        pitchV: voct,
+      });
+      let maxDiff = 0;
+      for (let i = 0; i < ref.L.length; i++) {
+        maxDiff = Math.max(maxDiff, Math.abs(ref.L[i]! - out.L[i]!), Math.abs(ref.R[i]! - out.R[i]!));
+      }
+      expect(maxDiff, `raw VCO at BASE ${base} must equal the legacy drone byte-for-byte`).toBe(0);
     }
-    expect(maxDiff, 'base=1 raw VCO must equal the legacy drone byte-for-byte').toBe(0);
   });
 
-  it('base=0 raw VCO (nothing connected) is SILENT', async () => {
+  // ⚠ REWRITTEN. This assertion used to read `expect(peak(out.L)).toBe(0)` — it
+  // PINNED the defect. "base 0 mutes an unpatched CUBE" was the raw-VCO branch
+  // multiplying the drone by base_vol, and that coupling is precisely what forced
+  // the default to 1, which made the amp ADSR a no-op out of the box (identical
+  // rise-to-90 % at ATTACK 1 ms and 2 s; a gated render byte-identical to the
+  // drone; a 0.505 full-scale note-off cut — see cube-envelope.test.ts). The
+  // property is DELIBERATELY TRADED: BASE is documented everywhere as the ADSR
+  // floor, never as an output level, and CUBE already has a LEVEL knob for that
+  // job. Asserted in the opposite direction so the coupling cannot come back.
+  it('base=0 raw VCO (nothing connected) is NOT muted — BASE is not an output level', async () => {
     const Proc = await loadProcessor();
     const p = new Proc(); loadAllTables(p);
     const out = runWith(p, makeParams({ base_vol: 0, level: 1, spread: 0 }), 0.1, { pitchV: C2 });
-    expect(peak(out.L)).toBe(0);
+    expect(peak(out.L), 'BASE 0 must not silence an UNPATCHED cube').toBeGreaterThan(0.1);
+    // NEGATIVE CONTROL for this leg's metric: the knob that IS the output level
+    // still silences it, so "peak > 0.1" is not simply blind to gain.
+    const pQuiet = new Proc(); loadAllTables(pQuiet);
+    const quiet = runWith(pQuiet, makeParams({ base_vol: 0, level: 0, spread: 0 }), 0.1, { pitchV: C2 });
+    expect(peak(quiet.L), 'LEVEL 0 must still silence it').toBe(0);
   });
 
   it('base=0.5 gated mono: silent until the gate, then lifts to ~full at env peak', async () => {

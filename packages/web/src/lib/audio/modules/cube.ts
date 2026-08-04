@@ -262,11 +262,21 @@ export const cubeDef: AudioModuleDef = {
     { id: 'sustain', label: 'S', defaultValue: 1,     min: 0,     max: 1, curve: 'linear' },
     { id: 'release', label: 'R', defaultValue: 0.005, min: 0.001, max: 5, curve: 'log', units: 's' },
     // BASE VOL — per-voice VCA FLOOR the ADSR rides on top of: gain =
-    // base + (1-base)*env per ACTIVE voice. Sits next to the ADSR. Default 1 →
-    // gain=1, the env does nothing → the raw-VCO drone (nothing patched) is
-    // byte-identical (back-compat / unchanged ART+VRT baselines). 0 → pure ADSR
-    // (silent between notes); 0.5 → floors at 0.5, rises to 1.0 as the env peaks.
-    { id: 'base_vol', label: 'Base', defaultValue: 1, min: 0, max: 1, curve: 'linear' },
+    // base + (1-base)*env per ACTIVE voice. Sits next to the ADSR. 0 (the
+    // DEFAULT) → pure ADSR; 0.5 → floors at 0.5 and rises to 1.0 as the env
+    // peaks; 1 → gain=1 and the env does nothing.
+    // ⚠ The default WAS 1, which made the entire amp ADSR a no-op out of the box
+    // (gain = 1 + 0·env) — the same defect #1350 fixed in WAVECEL and explicitly
+    // flagged here. Measured through the real worklet: identical rise-to-90 %
+    // (1.33 ms) at ATTACK 1 ms and ATTACK 2 s in BOTH the mono-TRIG and the poly
+    // path, a gated render BYTE-IDENTICAL to the undriven drone over the
+    // gate-high window, and a 0.505 (mono) / 0.426 (poly) full-scale note-off cut
+    // against a 0.028 in-note slope. The raw-VCO drone that the default of 1
+    // existed to preserve is now preserved DIRECTLY in the worklet's unpatched
+    // branch (verified byte-identical), so the two no longer trade off. Must stay
+    // in step with the `base_vol` AudioParam descriptor in packages/dsp/src/
+    // cube.ts — joined by cube-envelope.test.ts.
+    { id: 'base_vol', label: 'Base', defaultValue: 0, min: 0, max: 1, curve: 'linear' },
     // Toggles (discrete). wrap: 0=silent-outside, 1=mirror-fold. material:
     // 0=SMOOTH (continuous density), 1=HARD (binary solid).
     { id: 'wrap',     label: 'Wrap',     defaultValue: 0, min: 0, max: 1, curve: 'discrete' },
@@ -293,14 +303,14 @@ export const cubeDef: AudioModuleDef = {
   // hashes" — see scripts/webgl-attest-lib.ts stripDocsForHash.)
   docs: {
     explanation:
-      "A 3D wavetable-terrain oscillator. CUBE stacks THREE e352-style wavetables — FLOOR, WALL, and CEILING (each chosen from a factory table, a baked preset, or a loaded .wav) — into a solid 3D scalar field, then plays the heightmap of an arbitrary flat plane sliced through that field as its waveform. You aim the slicing plane with one height knob (Y) and three rotation knobs (Rot X / Y / Z); as the plane tilts and rises it carves a different surface contour, so sweeping those knobs (or their CV inputs) morphs the timbre continuously. MORPH cross-fades the floor↔ceiling layers, CONNECT (with CONNECT STRENGTH) bulges the field's interior, CRUSH bit-reduces the read-out waveform while SPACE CRUSH voxelizes and SPACE DIFFUSE warps the 3D lookup coordinates, and FOLD is a west-coast wavefolder on the output — together they sculpt the slice from clean to mangled. It is a pitched V/oct oscillator with a stereo ±5% SPREAD (the L and R taps read slightly offset planes for width) and an internal per-voice A/D/S/R envelope that, riding a BASE volume floor, shapes amplitude once a note arrives on the poly bus or the TRIG gate; with nothing patched there it free-runs as a continuous drone. A live WebGL 3D render of the cube, the cut plane, the slice cross-section, and the output waveform is shown on the card and can be sent out the VIDEO port; the screen can be switched off to save GPU when you only want sound.",
+      "A 3D wavetable-terrain oscillator. CUBE stacks THREE e352-style wavetables — FLOOR, WALL, and CEILING (each chosen from a factory table, a baked preset, or a loaded .wav) — into a solid 3D scalar field, then plays the heightmap of an arbitrary flat plane sliced through that field as its waveform. You aim the slicing plane with one height knob (Y) and three rotation knobs (Rot X / Y / Z); as the plane tilts and rises it carves a different surface contour, so sweeping those knobs (or their CV inputs) morphs the timbre continuously. MORPH cross-fades the floor↔ceiling layers, CONNECT (with CONNECT STRENGTH) bulges the field's interior, CRUSH bit-reduces the read-out waveform while SPACE CRUSH voxelizes and SPACE DIFFUSE warps the 3D lookup coordinates, and FOLD is a west-coast wavefolder on the output — together they sculpt the slice from clean to mangled. It is a pitched V/oct oscillator with a stereo ±5% SPREAD (the L and R taps read slightly offset planes for width) and an internal per-voice A/D/S/R envelope that shapes amplitude once a note arrives on the poly bus or the TRIG gate, riding on top of a BASE volume floor: at the default BASE of 0 the envelope has full control of each note, and turning BASE up floors the voice so the envelope only swells it the rest of the way. With nothing patched into POLY or TRIG there is no note to shape and CUBE free-runs as a continuous full-level drone. A live WebGL 3D render of the cube, the cut plane, the slice cross-section, and the output waveform is shown on the card and can be sent out the VIDEO port; the screen can be switched off to save GPU when you only want sound.",
     inputs: {
       pitch:
         "Mono V/oct pitch control voltage — the standard 1V-per-octave oscillator pitch input, read directly by the worklet. This is the fallback voice when nothing is patched into POLY; summed with the TUNE and FINE offsets to set the playback fundamental.",
       poly:
         "Polyphonic chord bus (the 10-channel pitch+gate cable from MIDI LANE in poly mode or POLYSEQZ). Each gated lane renders its own phase accumulator through the same sliced waveform at that lane's pitch and they sum — so CUBE plays a whole chord. While any lane is gated this bus drives the voices; with nothing patched here the mono PITCH path runs instead (back-compat).",
       trigger:
-        "Mono gate for the per-voice amplitude envelope: while the level is high the ADSR holds open (attack→decay→sustain) and on the falling edge it releases. The first rising edge ever seen converts CUBE from a free-running drone into a gated voice shaped by the lane-0 envelope; before any note (and when unpatched) it drones continuously.",
+        "Mono gate for the per-voice amplitude envelope: while the level is high the ADSR holds open (attack→decay→sustain) and on the falling edge it releases. PATCHING it turns CUBE into a gated voice shaped by the lane-0 envelope: it is silent until the first gate and then follows every one. When this input (and POLY) is unpatched the amplitude env has nothing to shape and CUBE free-runs as a continuous drone.",
       slice_y:
         "CV that offsets the Y param — raises or lowers the slicing plane's height through the cube, scanning it across the floor→ceiling stack.",
       slice_rx:
@@ -354,7 +364,7 @@ export const cubeDef: AudioModuleDef = {
       decay: "Per-voice envelope DECAY time (0.001..5 s, log) — how long the level falls from the attack peak down to the SUSTAIN level.",
       sustain: "Per-voice envelope SUSTAIN level (0..1) — the level held while the note's gate stays high after the decay stage.",
       release: "Per-voice envelope RELEASE time (0.001..5 s, log) — how long the level fades to silence after the note's gate falls.",
-      base_vol: "Per-voice VCA floor the ADSR rides on top of (gain = base + (1−base)·env). 1 (default) = the envelope does nothing and CUBE plays its raw drone; 0 = pure ADSR (silent between notes); 0.5 = floors at 0.5 and rises to 1.0 as the envelope peaks.",
+      base_vol: "Per-voice VCA floor the ADSR rides on top of (gain = base + (1−base)·env): at 0 (default) the envelope has full control of every note and the voice is silent between notes; 0.5 floors each voice at half and the env swells it up to full on note-on; at 1 gain is always full while a voice is active, so the envelope does nothing. It only applies to GATED voices — with nothing patched into POLY or TRIG, CUBE free-runs at full level whatever this is set to.",
       wrap: "What happens when the slicing plane reads outside the cube: OFF = those regions are silent, ON = the coordinates mirror-fold back inside so the slice stays full.",
       material: "Field density model: SMOOTH (0) = continuous density gradients, HARD (1) = a binary solid (sharp inside/outside), which makes the sliced waveform edgier.",
       view_zoom: "Visualization-only camera zoom for the 3D cube view (does not affect the sound or the selected slice).",

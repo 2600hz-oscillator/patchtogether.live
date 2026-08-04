@@ -731,7 +731,7 @@ cube out R audio
 cube out sync audio
 cube out video_out mono-video
 cube param attack 0.001..5 log default=0.001 unit=s
-cube param base_vol 0..1 linear default=1
+cube param base_vol 0..1 linear default=0
 cube param connect 0..1 linear default=0
 cube param connect_strength 0..1 linear default=0
 cube param crush 0..1 linear default=0
