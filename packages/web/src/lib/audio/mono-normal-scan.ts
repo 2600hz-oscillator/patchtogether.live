@@ -649,9 +649,40 @@ export function factoriesFor(
   return hits;
 }
 
-/** The registry `type:` a factory file declares, e.g. `charlottesEchos`. */
+/**
+ * The registry `type:` a factory file declares, e.g. `charlottesEchos`.
+ *
+ * ⚠ ANCHORED TO THE DEF DECLARATION, NEVER "the first `type:` in the file".
+ *
+ * The first version of this read `/type:\s*'(\w+)'/` against the whole source
+ * and took the earliest match. That is not reading the module's registry type —
+ * it is reading TEXTUAL POSITION, and `type:` is a wildly common key. It broke
+ * on main within hours, and nothing about the break was semantic:
+ *
+ *   before #1353   samsloop.ts:846  type: 'samsloop'      ← def, FIRST
+ *                  samsloop.ts:982  type: 'loadSample'    ← postMessage payload
+ *   after  #1353   samsloop.ts:972  type: 'loadSample'    ← postMessage, FIRST
+ *                  samsloop.ts:982  type: 'samsloop'      ← def
+ *
+ * #1353 extracted `postSampleBuffer` and hoisted it above the def. No `type:`
+ * was added, removed or renamed — the two simply swapped order — and this
+ * function's answer silently changed from `samsloop` to `loadSample`. The
+ * roster-parity gate then reported that samsloop had lost its mono normal and
+ * that an unknown module was unmeasured. Both were false, and both were RED on
+ * main, from a pure code motion in an unrelated PR.
+ *
+ * Every module def in the tree is declared exactly one way —
+ * `export const <name>Def: <Audio|Video|Synced>ModuleDef = {` (verified across
+ * all audio + video module files) — so that declaration is a real anchor.
+ * Helper files that export no def return null, which is correct: they are not
+ * modules.
+ */
 export function moduleTypeOf(factorySrc: string): string | null {
-  return /(^|[^A-Za-z0-9_$])type:\s*'([A-Za-z0-9_$]+)'/m.exec(blankComments(factorySrc))?.[2] ?? null;
+  const src = blankComments(factorySrc);
+  const decl = /export\s+const\s+[A-Za-z0-9_$]*Def\s*:\s*[A-Za-z0-9_$]*ModuleDef\s*=\s*\{/.exec(src);
+  if (!decl) return null;
+  const body = src.slice(decl.index + decl[0].length);
+  return /(^|[^A-Za-z0-9_$])type:\s*'([A-Za-z0-9_$]+)'/m.exec(body)?.[2] ?? null;
 }
 
 // ---------------------------------------------------------------------------
