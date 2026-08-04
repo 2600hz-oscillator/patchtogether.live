@@ -602,6 +602,30 @@ export function chordQualityFromKnob(v: number): ChordQuality {
   return v >= 0.5 ? 'minor' : 'major';
 }
 
+// ---------- MASTER GAIN ----------
+
+/** MASTER GAIN's declared range — the SINGLE place these numbers live.
+ *  The def's ParamDef, the audio bus (busL/busR), and the card's
+ *  `uMasterGain` shader uniform all clamp through {@link clampMasterGain},
+ *  so the audio path and the video path cannot drift apart the way they did
+ *  before this knob was wired (audio pinned at 1, video reading the knob). */
+export const MASTER_GAIN_MIN = 0;
+export const MASTER_GAIN_MAX = 2;
+export const MASTER_GAIN_DEFAULT = 1;
+
+/** Time constant for the busL/busR `setTargetAtTime` ramp. A master level is
+ *  directly audible, so a step write would zipper on every knob frame; 10 ms
+ *  is the same order as the per-osc env write (5 ms) and inaudible as a lag. */
+export const MASTER_GAIN_SMOOTH_S = 0.01;
+
+/** Clamp a raw master-gain value into the declared range. Non-finite input
+ *  (a corrupt param, a NaN out of an automation lane) falls back to unity
+ *  rather than muting or blasting the bus. */
+export function clampMasterGain(v: number): number {
+  if (!Number.isFinite(v)) return MASTER_GAIN_DEFAULT;
+  return Math.max(MASTER_GAIN_MIN, Math.min(MASTER_GAIN_MAX, v));
+}
+
 // ---------- per-osc wavetable data (rides node.data) ----------
 
 export interface WavesculptOscData {
@@ -828,7 +852,10 @@ export const wavesculptDef: AudioModuleDef = {
     ps.push({ id: 'wavefold',           defaultValue: 0,    min: 0,  max: 1, curve: 'linear', label: 'Wavefold' });
     ps.push({ id: 'bloom',              defaultValue: 0.4,  min: 0,  max: 1, curve: 'linear', label: 'Bloom' });
     ps.push({ id: 'noise',              defaultValue: 0.05, min: 0,  max: 1, curve: 'linear', label: 'Noise' });
-    ps.push({ id: 'master_gain',        defaultValue: 1,    min: 0,  max: 2, curve: 'linear', label: 'Gain' });
+    // MASTER GAIN drives BOTH the summed audio bus (busL/busR, see the factory)
+    // and the render's uMasterGain shader uniform. Range from the shared
+    // constants so the def, the bus and the card cannot disagree.
+    ps.push({ id: 'master_gain',        defaultValue: MASTER_GAIN_DEFAULT, min: MASTER_GAIN_MIN, max: MASTER_GAIN_MAX, curve: 'linear', label: 'Gain' });
     // ---------------- VIDEO WALL controls (per face × 6) ----------------
     // wall{N}_alpha   — TRANSPARENCY, 0..100 (%): 0 = wall invisible,
     //                   100 = fully opaque. The card blends the wall video
@@ -929,7 +956,7 @@ export const wavesculptDef: AudioModuleDef = {
     controls.wavefold = 'WAVEFOLD (0..1) — a video-domain wavefold of the rendered image (folds bright values back for a posterized look).';
     controls.bloom = 'BLOOM (0..1, default 0.4) — glow/bloom on bright parts of the render.';
     controls.noise = 'NOISE (0..1, default 0.05) — analog-style video noise/grain over the image.';
-    controls.master_gain = 'MASTER GAIN (0..2, default 1) — overall output level of the summed audio mix (L/R).';
+    controls.master_gain = 'MASTER GAIN (0..2, default 1) — overall output level of the summed audio mix (L/R), AND the composite drive of the CRT post-process on the render. One knob, both domains: 1 = unity (audio unchanged, picture undistorted), above 1 the mix gets louder while the picture overdrives into wavefold/soft-clip white smear, 0 mutes L/R and blacks the composite. The per-oscillator taps (out_red/grn/blu/alp) are PRE master gain and are not affected.';
     // Per-oscillator wavetable selector (DOM-only family).
     controls['wavesculpt-osc-{n}'] =
       "Oscillator {n}'s wavetable-source strip: a colour-wheel swatch (its base tint), a PRESET dropdown, a FACTORY-table dropdown, and a LOAD button to upload your own .wav as that oscillator's wavetable. The chosen table is the wave each oscillator plays + draws as its ribbon; selection persists on the patch.";
@@ -1035,8 +1062,11 @@ export const wavesculptDef: AudioModuleDef = {
     const oscChains: OscChain[] = [];
     const busL = ctx.createGain();
     const busR = ctx.createGain();
-    busL.gain.value = 1;
-    busR.gain.value = 1;
+    // MASTER GAIN. Seeded from the PERSISTED knob (live[] is loaded from
+    // node.params above), not pinned to 1 — a reloaded patch must come up at
+    // the level it was saved at. setParam() below keeps it live.
+    busL.gain.value = clampMasterGain(live.master_gain ?? MASTER_GAIN_DEFAULT);
+    busR.gain.value = clampMasterGain(live.master_gain ?? MASTER_GAIN_DEFAULT);
     // Master stereo bus = StereoPanner inputs summed via a ChannelSplitter
     // (panners are stereo-in stereo-out; busL/busR want mono per side).
     const masterSplitter = ctx.createChannelSplitter(2);
@@ -1717,6 +1747,15 @@ export const wavesculptDef: AudioModuleDef = {
         if (paramId === 'rot')   sRot.gain.gain.setValueAtTime(value, ctx.currentTime);
         if (paramId === 'scale')  sScale.gain.gain.setValueAtTime(value, ctx.currentTime);
         if (paramId === 'wiggle') sWiggle.gain.gain.setValueAtTime(value, ctx.currentTime);
+        // MASTER GAIN → the summed L/R bus. Ramped (not stepped) because this
+        // is the audible output level; a raw setValueAtTime zippers audibly on
+        // a knob drag. The card reads the SAME param for its uMasterGain
+        // uniform, so audio and video move together off one control.
+        if (paramId === 'master_gain') {
+          const g = clampMasterGain(value);
+          busL.gain.setTargetAtTime(g, ctx.currentTime, MASTER_GAIN_SMOOTH_S);
+          busR.gain.setTargetAtTime(g, ctx.currentTime, MASTER_GAIN_SMOOTH_S);
+        }
         // Luminosity-bandpass depth → worklet lumDepth (tick() also pushes it,
         // but write immediately so a knob turn responds without a tick delay).
         if (paramId === 'lum_depth') {
