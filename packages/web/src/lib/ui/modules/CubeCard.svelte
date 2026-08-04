@@ -1038,8 +1038,10 @@
     { pid: 'sustain', label: 'S', curve: 'linear' },
     { pid: 'release', label: 'R', units: 's', curve: 'log' },
     // BASE VOL — per-voice VCA floor the ADSR rides on top of (gain =
-    // base + (1-base)*env). Default 1 = full (env does nothing → raw-VCO drone);
-    // 0 = pure ADSR. Sits right next to the ADSR knobs.
+    // base + (1-base)*env). Default 0 = pure ADSR (the envelope owns the note);
+    // 1 = full, the env does nothing. Sits right next to the ADSR knobs.
+    // The range/default come from the def via minFor/maxFor/defaultFor — never
+    // re-type them here (the card-vs-def divergence class in CLAUDE.md).
     { pid: 'base_vol', label: 'Base', curve: 'linear' },
   ];
 </script>
