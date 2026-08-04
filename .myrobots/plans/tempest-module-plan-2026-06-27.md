@@ -1,5 +1,17 @@
 # TEMPEST module — build plan (owner-specced 2026-06-27)
 
+> **TRIAGE 2026-08-04 — P0 + P1 SHIPPED; P2–P6 are the live remainder.**
+> **#933** built the pure-TS GL-free `tempest-core` (the "Architecture" section
+> below). **#935** built P1 — the vector well + CV-driven claw, the first visible
+> tube. `packages/web/src/lib/video/modules/tempest.ts:1-11` states the remainder
+> in its own header: *"Enemies, fire, scoring, the audio-breathing tube, and the
+> video-textured surface land in P2–P6."*
+> The **owner decisions** at the top (faithful full game; fixed 16 lanes with
+> audio-breathing radii; vector enemies) are unchanged and are the reason this
+> file is kept. Per the memory `project_tempest_module`, #935 was awaiting owner
+> preview — a look-affecting module never auto-merges.
+> This file is cited from source (`tempest.ts:6`).
+
 A playable, **faithful** TEMPEST (Atari 1981 tube shooter) as a video-domain
 WebGL2 module with synth-native I/O. Prior-art research (this session) →
 build-from-scratch (no permissive WebGL clone; the video-textured surface needs a

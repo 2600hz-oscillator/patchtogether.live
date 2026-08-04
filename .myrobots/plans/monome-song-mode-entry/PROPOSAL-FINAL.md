@@ -1,7 +1,18 @@
 # Driving SONG mode (REC + SES⇄ARR) from the monome grid — FINAL recommendation
 
 **Status:** design + docs only (NO source changes). Implementation-ready spec for owner accept/reject.
-**Date:** 2026-06-19. Supersedes PROPOSAL-v1.md after a 3-lens adversarial review (gesture-conflict,
+**Date:** 2026-06-19.
+
+> **TRIAGE 2026-08-04 — NEVER BUILT, NEVER ANSWERED. Awaiting the owner, not the
+> engineer.** `SONG_PAD` / `SONG_REC_PAD` / `SONG_MODE_PAD` appear **nowhere** in
+> `packages/web/src/lib/control/`, so `(15,1)` is still the free pad this proposal
+> is built around and §1.3's census should still hold.
+> **OQ-1 … OQ-4 at the bottom are still open owner questions** — that alone makes
+> this un-deletable. Re-verify the `grid-clip-binding` / `grid-clip-map` line
+> numbers before implementing: the clip-player surface has moved since
+> (scene repeats **#1091**, SHIFT hold-only **#1094**, card parity **#1100**,
+> ARRANGER/SONG phase 1 **#1099**) — in particular §7's cross-controller mapping
+> now has a third peer (Push 2) that did not exist when this was written. Supersedes PROPOSAL-v1.md after a 3-lens adversarial review (gesture-conflict,
 first-class-docs, launchpad-coherence). Every blocker raised is resolved below with file:line, and
 two design changes were made as a result (the read-out scope shrank; the ARR LED level changed).
 

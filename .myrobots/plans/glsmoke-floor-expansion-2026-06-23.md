@@ -15,6 +15,25 @@ NOT the 4090 self-hosted runner (shelved; memo
 - **Floor +11** (this PR): the 11 cheap render-smoke specs added to the webgl-smoke
   job (by file, no spec edits → no re-attest). EXCLUDED peakstate-render-smoke
   (fails SwiftShader = real-GPU dep) + outlines-render-smoke (~48s, too slow).
+- **Waves 2–3 (partially)** — `#882` (this PR, floor +11), **`#883`** (convert 5
+  heavy specs to SwiftShader-cheap), **`#885`** (Phase 3 — convert 4 more).
+
+> **TRIAGE 2026-08-04 — PARTIALLY EXECUTED; the "Execution order" below is still
+> the live plan from step 2 onward.**
+> - Steps 1–3 are partly done via #882/#883/#885, but **`peakstate-render-smoke`
+>   is still NOT on the floor** (it carries no `@webgl-smoke` tag), so the
+>   specific LOW-effort fix described for it — the one-shot `__peakstateVrtSeed`
+>   opaque-clear + gating unread `mono_out`/`out_3d` behind
+>   `frame.isOutputConnected` — is un-built and still the cheapest win here.
+> - ⚠ **One premise has changed underneath this doc.** It repeatedly says
+>   "remove from heavy globs" as if that RELOCATES a spec. The `e2e-video` lane
+>   that used to run the excluded set **was deleted on 2026-06-20 (#839)** — three
+>   days before this was written — so `e2e/webgl-heavy-globs.ts` now carries a
+>   banner: *"ADDING A SPEC TO THIS LIST DELETES ITS PR COVERAGE. IT DOES NOT MOVE
+>   IT."* Removing a spec from the globs is still correct and still what this plan
+>   wants; just do not read the reverse operation as free.
+> - The REAL-GPU-ONLY / INFRA-GATED classification below is the durable part and
+>   is still the reference for what can never join the floor.
 
 ## The classification of the 21 SwiftShader-FAILING heavy specs (gl-ci-viability workflow)
 **14 convertible-to-SwiftShader · 5 real-gpu-only · 2 infra-gated.**

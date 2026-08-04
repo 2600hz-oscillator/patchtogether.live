@@ -5,6 +5,19 @@
 (`chore/v0.6.0-instrumentation` @ `88f4886`) · **Companion:**
 `.myrobots/plans/warrens-spectrum-2026-08-02.md` §3.2.1 / §3.2.2
 
+> **TRIAGE 2026-08-04 — NOT VERIFIABLE FROM THIS REPO. Kept; flagged for the
+> owner.** Every claim in this file is a `file:line` citation into
+> **`../callsine`**, a repo this triage cannot see, so whether the two-line fix
+> landed upstream is unknown here.
+> What IS confirmed on our side: the companion plan shipped — `callsine` was
+> **deleted** from this repo (**#1305**) and replaced by `warrensspectrum`, and
+> the owner's Q8 answer (**CORRECT, not faithful**) means our module deliberately
+> does **not** wait on this upstream fix. So nothing in patchtogether.live is
+> blocked on it.
+> **Delete only after checking `../callsine`** — this is the only record of the
+> SLICE-ceiling diagnosis and of the two existing SLICE tests identified as blind
+> gates (§7.1).
+
 This plan fixes the plugin. The decision about **our** module is separate and already made
 (§3.2.2 of the companion plan: *correct, not faithful*) — our implementation does not wait on
 this landing upstream.

@@ -1,5 +1,26 @@
 # DSP-stack bass / freq-response improvement plan (2026-07-01)
 
+> **TRIAGE 2026-08-04 — HALF-EXECUTED. The P0 headline item is STILL OPEN.**
+> Verified item by item against the tree:
+>
+> | item | verdict | evidence |
+> |---|---|---|
+> | **P0-A1** master "limiter" ducks/pumps the sub | ❌ **NOT DONE — still live** | `audio-out.ts` still builds a plain `createDynamicsCompressor()` at `threshold -6 / ratio 4 / knee 6 / attack 0.003 / release 0.05` feeding `ctx.destination` — the exact full-band stereo-linked compressor this audit indicts |
+> | **P0-A2a** pin AudioContext to 48 kHz | ✅ done | `Canvas.svelte:6981` `sampleRate: 48000` |
+> | **P1-A2b** kill baked 48000/44100 | ✅ effectively done | no `48000`/`44100` left in `chowkick-dsp.ts`; **`cocoadelay` no longer exists** (superseded by `cofefve`), so its half of A2b is moot |
+> | **P1-A3** band-limit the Faust analog VCO | ❌ **NOT DONE** | `analog-vco.dsp:56-58` is still raw-phasor `saw(p)=2p-1`, `sqr`, `tri` — no BLEP anywhere |
+> | **P2-A4** shared 2×/4× oversampling wrapper | ✅ done | **#997** "shared 2×/4× oversampler for nonlinear stages (audit A4, kick prereq)"; consumed by tidyVco's wavefolder (#1075) |
+> | **P2-A5** denormal floors in ladder/SVF | ❌ **NOT DONE** | `packages/dsp/src/lib/moog-ladder-dsp.ts` still has **zero** `1e-` flush sites |
+> | **P2-A6 / P2-LIC** | ⚠ unverified | A6 folds into A1 (open); the resonarium licence question is not answered in-tree |
+>
+> ⚠ The ART re-pin advice in the ADVERSARIAL REVIEW section is also stale in one
+> respect: ART has grown from 48 to 136 `.f32` baselines since (see
+> `art-backfill-audio-profiles-2026-07-01.md`), so A1's "no golden protects it"
+> claim must be re-checked before the re-pin plan is followed — and `task
+> art:update` now chains `art:fingerprints:accept`, which did not exist then.
+>
+> **Keep — this is live backlog with its P0 unresolved.**
+
 **Scope.** This is the SEPARATE, parallel work block the owner asked for: fixing what is
 genuinely wrong (or 48 kHz-fragile) in the *existing* DSP stack's low-end behavior. It is
 **not** the new kick voice — the kick is a net-new module built alongside this (see

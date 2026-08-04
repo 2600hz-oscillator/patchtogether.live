@@ -1,8 +1,20 @@
 # A coherent GATE / HELD-NOTE model for patchtogether.live
 
 Date: 2026-07-01
-Status: PLAN (design + phased implementation). No code changed here.
+Status: **PHASES 1 + 2a SHIPPED; phases 2b–5 are the remainder.**
 Author perspective: CV-instrument correctness first. We are not a MIDI instrument.
+
+> **TRIAGE 2026-08-04.** §1.4's "Bug #1 (highest priority, real)" — the tied/held
+> note releasing one step early on the POLY bus — **is FIXED**: **#990**
+> ("held/tied notes hold the POLY gate across the span (gate/held-note Phase 1)",
+> merged 2026-07-01). **Phase 2a** shipped as **#991** (stable LRU voice allocator
+> for KEYS audition). Do not read the TL;DR's "real, shipping bug" as current.
+> **Still open:** Phase 2b (per-lane gate-off), Phase 3 (explicit legato/mono/poly
+> mode), Phase 4 (unify the scattered pulse-width constants + gate-length
+> ceilings), Phase 5, and §1.9 (step sequencers cannot express held/tied notes).
+> Context that moved underneath §1.5: the polyphony ceiling went 5 → **16** lanes
+> (**#1086**), so any "5 voices" arithmetic below is stale.
+> This file is cited from source — do not delete without fixing the citation.
 
 ---
 

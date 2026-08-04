@@ -1,5 +1,19 @@
 # Fix E — video-off-main-thread, scoped to the SHOES1 underrun (2026-07-01)
 
+> **TRIAGE 2026-08-04 — STILL LIVE BACKLOG. §0 is accurate; §3's Phase A and
+> Phase B are both un-done.**
+> The shipped infra §0 describes is intact and still flag-gated: `acidwarp.ts:135`
+> is `renderLocus: 'worker'`; `toybox.ts:344` and `vfpga-runner.ts:143` are
+> `'worker-experimental'`.
+> **Phase B has not started** — `video/worker/protocol.ts` still carries no
+> per-frame input-`ImageBitmap` transfer, and **backdraft is NOT on the worker
+> path**, so §2's "the real obstacle" is unchanged. There is no record of Phase A
+> (the copy-back economics measurement) having been run, which is the gate on
+> Phase B by this plan's own sequencing — do that first.
+> ⚠ Backdraft itself has moved a great deal since (PURE TV **#1214**, virtual
+> camera **#1223/#1231**, "lose the display" **#1260**), so re-measure rather than
+> reusing the "heaviest GL cost in the SHOES1 patch" claim as given.
+
 Reconstructed after the original `fixe-offscreen-canvas-plan-2026-06-09.md` was found
 MISSING from disk + git. Sources: three read-only scouts (video pipeline map, shipped
 Fix-E artifacts, per-module fit for synesthesia/backdraft) + memory

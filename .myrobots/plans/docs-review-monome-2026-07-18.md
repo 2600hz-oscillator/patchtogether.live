@@ -8,6 +8,18 @@ to the Launchpad; (3) a phased plan with effort, risks, and owner questions.
 
 This is DESIGN ONLY. Nothing below was built. All paths are absolute-from-repo-root.
 
+> **TRIAGE 2026-08-04 — STILL UN-BUILT AND STILL THE LIVE SPEC. Re-verified.**
+> §2's central asymmetry is unchanged: `packages/web/src/lib/meta/modules/`
+> contains `launchpad-control.ts` and (new since) `push2-control.ts`, but **there
+> is still no monome module def** — the monome remains a bare adapter under
+> `lib/control/monome` with no first-class card, exactly as §0.4 describes. None
+> of Phases 1–3 shipped.
+> The one thing that moved: a THIRD controller (Push 2) shipped in the interim,
+> which strengthens §2.3's file-for-file argument — there are now two peers to
+> pattern-match against, not one. Re-check §0's file:line citations against the
+> tree before building; the clip-player surface has changed (scene repeats
+> **#1091**, SHIFT hold-only **#1094**, card parity **#1100**).
+
 ---
 
 ## 0. Ground truth (what the code actually is, file:line-verified)

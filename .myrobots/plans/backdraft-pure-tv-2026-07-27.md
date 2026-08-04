@@ -1,6 +1,19 @@
 # BACKDRAFT — PURE TV (Crutchfield bounded-screen mode)
 
-**Date:** 2026-07-27 · **Status:** design, corrected after two adversarial reviews · **Repo state:** read-only pass, nothing modified.
+**Date:** 2026-07-27 · **Status:** ~~design~~ **BUILT AND MERGED** · corrected after two adversarial reviews
+
+> **TRIAGE 2026-08-04 — SHIPPED as #1214** ("BACKDRAFT: PURE TV + CRITICAL — the
+> bounded-screen (Crutchfield) mode"). The Dirichlet-zero substitution this doc
+> argues for is live at `packages/web/src/lib/video/modules/backdraft.ts:401-449`
+> (`TV MODE positions: 0 = OFF (the legacy composite), 1 = PURE TV`) with the
+> marginal-gain reference at `:618`. The "**Repo state:** read-only pass, nothing
+> modified" line above is therefore no longer true and is struck.
+> It shipped hard: **#1234, #1249, #1256** are all P0 main-red follow-ups from
+> this feature, and the frame-count-not-milliseconds rule now in CLAUDE.md was
+> learned here (7.9 fps SwiftShader vs ~60 fps real GPU). BACKDRAFT was then
+> re-laid-out twice (**#1231**, **#1260**), so the card geometry here is stale.
+> Kept for the Crutchfield derivation, which the shipped shader is built on and
+> which `backdraft.ts` cites by path.
 
 **Owner's request (verbatim, load-bearing):**
 > "backdraft still not doing crutchfield thing. lets try another gate for a 'pure tv' mode. see how loopback goes recursive when we zoom in out it? this is what we want for a crutchfield / pure tv mode for backdraft. the tv has a frame and each recursing image is shown only inside the boundaries of the interior box. we want to simulate actual crutchfield space/time simulation and the only way this works is if each loop iteration completely constrains the visual field of the suceeding iterations. what we want in this mode is an exact simulation of pointing a camera at a tv screen showing the image that camera sees, and we want delay to cascade through it by simulating phosphor."

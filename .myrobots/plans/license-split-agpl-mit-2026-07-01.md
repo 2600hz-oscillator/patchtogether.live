@@ -10,6 +10,17 @@ arm's-length service. See §10 for the itemized legal-review resolution._
 **I am not a lawyer. Items tagged ⚖️ need counsel before anything ships under new
 labels.**
 
+> **TRIAGE 2026-08-04 — NOT EXECUTED; nothing here has been acted on.** `LICENSE`
+> is still the single AGPL-3.0-or-later file ("patchtogether.live / Copyright (C)
+> 2026 2600hz-oscillator") and there is no second licence file, no MIT subtree and
+> no private tier. So this remains a live decision document, and the ⚖️ items
+> still need counsel before anything moves.
+> One factual note for whoever picks it up: the specific evidence in §1 that
+> `packages/dsp/dist/clouds.js` ships unminified with its `// src/clouds.ts`
+> header is a 2026-07-01 observation about a **build artifact** — re-check the
+> current dist before quoting it, since the AGPL §13 Corresponding-Source argument
+> is built on it.
+
 ## 1. Executive summary + recommendation
 
 patchtogether.live is today a **single public monorepo, uniformly licensed

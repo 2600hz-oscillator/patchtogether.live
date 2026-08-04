@@ -5,6 +5,20 @@ and the [adversarial-review adoption plan](./adversarial-review-adoption.md). **
 PR at a time** — small, independently green, conflict-sweep-friendly. Each phase
 lands before the next starts.
 
+> **TRIAGE 2026-08-04 — PHASES 1–5 ARE DONE; 6 IS UN-STARTED; 7 stands as
+> decided-not-to-build. Live backlog from Phase 6 onward.**
+> Phase 1 shipped as **#703**; Phases 2–5 are all on main (the `graph/mutate.ts`
+> seam, `validate-edge.ts`, `cap.ts`, the 158-file param-write migration **#721**
+> and its source-scan guard **#723**). Re-verified today: **Phase 6 has not
+> started** — `@collab` is still informational in `ci.yml`, there is no
+> `task db:migrate` and no `schema_migrations` ledger, and
+> `e2e/playwright.config.ts:97` is still `retries: CI ? 1 : 0`.
+> ⚠ Both link targets above (`repo-retrospective-2026-06-08.md`,
+> `adversarial-review-adoption.md`) **no longer exist** — they were removed in the
+> 117→40 corpus triage (**#1175**). The surviving one-page pickup is
+> `adversarial-review-REMAINING-2026-06-09.md`, which duplicates Phases 6–7; this
+> file is the canonical roadmap of the two.
+
 The phases combine the two analyses: foundational workstreams **FW1-FW3** and waves
 0-4 come from the adversarial-review adoption plan; the docs-truth + codified-rules
 work comes from the retrospective.

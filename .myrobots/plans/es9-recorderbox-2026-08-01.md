@@ -2,6 +2,17 @@
 
 **Date:** 2026-08-01 · **owner decisions answered 2026-08-02**
 **Status:** SPEC ONLY. Nothing ships. Explicitly gated behind the new shell + Push 2.
+
+> **TRIAGE 2026-08-04 — CONFIRMED STILL UN-BUILT; the spec itself is current.**
+> Merged as a docs-only PR (**#1286**) and nothing has been implemented against
+> it: there is no multitrack/stem capture path in the recorderbox sources under
+> `packages/web/src/lib/video/recorderbox-*.ts`. All **12 owner questions are
+> answered in §6**, so this is build-ready the moment the gate (new shell +
+> Push 2) opens — and those answers are the reason it is kept verbatim.
+> §1's three corrections (the capture point, the "gap accounting is free" claim
+> being false against the code it cites, and the lossy skip-on-full transport) are
+> the load-bearing part; re-confirm them against `../patchtogether.es9` before
+> building, since that repo moves independently of this one.
 **Owner questions:** **all 12 ANSWERED** — see §6. Remaining unknowns are engineering, not owner
 input; they are in §6.1.
 **Repos:** `inet.modular` @ `77cd1bbc`, `../patchtogether.es9` @ `b22bf3c`

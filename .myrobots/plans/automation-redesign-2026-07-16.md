@@ -1,5 +1,21 @@
 # Clip-player automation — adversarial redesign brief (2026-07-16)
 
+> **TRIAGE 2026-08-04 — the ARCHITECTURE WAS ADOPTED and shipped; kept for the
+> owner-locked model and the un-built layers.**
+> BLOCKER 1's fix is live: automation is stored as a **sibling keyed object, not
+> on the note clip** — `d.auto[clipIndex]` with a nested per-target map
+> (`packages/web/src/lib/audio/modules/clip-types.ts:237-240, :462, :654-656`;
+> `clip-automation-{controller,engine,render}.ts`). Landed via **#1088**
+> (automation lane) and **#1092** (video params + no stuck control).
+> The owner's FINAL locked model is recorded at **line ~249** of this file —
+> module-level assignment, per-lane arm, CV never recorded, clip-length-only
+> automation, long-form deferred to ARRANGER mode. **That paragraph is the reason
+> this file is not deletable**; several of the 13 findings below were explicitly
+> *banked* by it rather than fixed, and they are still the backlog for the card
+> envelope editor, arranger automation, and Deluge-style clip-repeats.
+> The §"Param-jump policy" Phase 0 stack and the launchpad-first §UX are the
+> parts to re-check against today's code before building on them.
+
 Source: workflow automation-adversarial-review (10 agents; Bitwig/Ableton/Deluge/Elektron prior art + 5 adversarial dimensions). Reviews current branch feat/clip-automation-lane @ 5b095107. Raw dimension dumps: see workflow output waqryhvlj.
 
 ## Executive summary

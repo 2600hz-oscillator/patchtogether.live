@@ -1,5 +1,24 @@
 # Drive EXEMPT_FROM_VRT → zero (owner directive: ≥1 VRT for every module)
 
+> **TRIAGE 2026-08-04 — NOT EXECUTED. The count went UP, and the durable fix was
+> never built. Live backlog; the owner directive still stands.**
+> - `EXEMPT_FROM_VRT` is **81 entries** today, not 76 — batches 1–5 below never
+>   ran, and new modules kept self-exempting through exactly the >10-char-reason
+>   escape hatch this doc identifies.
+> - **The "Gate-tightening (the durable fix)" is the highest-value un-built item
+>   here**: there is still no `ALLOWED_PERMANENT_EXEMPT` frozen allowlist anywhere
+>   in the tree, so a new module can still exempt itself without review. That
+>   single change is what stops the list growing while the batches are worked.
+> - What DID happen in this area is the *other* axis — linux/platform coverage,
+>   not per-module coverage: `EXEMPT_BASELINE_PAIRS` is now empty, and the
+>   deficit ratchet was rebuilt in **#1272** to count all four gap mechanisms and
+>   assert in both directions (`vrt-meta.test.ts`: `SHARED_LINUX_PAIR_CEILING`,
+>   `LINUX_DEFICIT_CEILING`, `STALE_PAIR_CEILING`). The line below calling
+>   `EXEMPT_BASELINE_PAIRS` "~140, legitimate, keep" is therefore obsolete.
+> - The A/B/C/D categorisation and the PatchPanel-migration-first ordering are
+>   still the correct execution plan; re-derive the per-category membership,
+>   since six weeks of new modules have landed on top of it.
+
 Investigated 2026-06-21. `e2e/vrt/vrt-exemptions.ts` has **76 EXEMPT_FROM_VRT entries**. **75 of 76 are reachable**; only `cadillac` is genuinely infeasible as a per-card VRT (it's a roaming overlay sprite — no SvelteFlow card body).
 
 ## Mechanisms (already exist)

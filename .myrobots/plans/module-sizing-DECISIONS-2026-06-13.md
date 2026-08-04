@@ -1,6 +1,25 @@
 # Module sizing / rack — LOCKED DECISIONS (user, 2026-06-13)
 
 Companion to `module-sizing-rack-format.md`. These override/confirm the plan.
+(That companion file no longer exists — removed in the 117→40 corpus triage,
+**#1175**. This decisions file is now the surviving record.)
+
+> **TRIAGE 2026-08-04 — DECISIONS RECORD. All three phases have since landed;
+> kept because it is the only statement of WHY the rack is shaped this way.**
+> - **Phase 1 — shipped** as **#759** ("exact Nu module sizing — pixel-perfect
+>   rack grid (Phase 1)"). The `size?: RackSize` / `hp?: number` def fields the
+>   "Width + grid model" section specifies are live at
+>   `packages/web/src/lib/graph/types.ts:937,939`, with `lib/ui/rack-sizes.ts` as
+>   the mapping.
+> - **Phase 2 (lock a module to a slot) — shipped**: `node.data.rackLocked` is
+>   read in `Canvas.svelte:2480-2482, :4389`, and per the decision it is a
+>   right-click Lock/Unlock persisted in the patch, not a drag-to-screw
+>   affordance.
+> - **Phase 3 ("back of rack" — jacks only) — shipped** as the rear-card flip on
+>   TAB (**#1169**; `Canvas.svelte:7526` `rearView`).
+> Nothing here is outstanding work. Do not delete: the per-module 1u/3u table and
+> the "uniform 3u slot grid + 1u sub-positioning" simplification are user rulings
+> that the code implements but does not explain.
 
 ## 1. Tall tier = `3u` — CONFIRMED.
 `--rack-3u-h = 3 × --rack-1u-h`. 1u = stereoVCA (180px wide, fixed-height token

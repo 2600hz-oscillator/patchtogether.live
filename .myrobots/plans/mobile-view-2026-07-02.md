@@ -1,5 +1,17 @@
 # BUILD SPEC — patchtogether.live MOBILE PROTOTYPE (`/m`): Glitch Cam + Pocket Modular
 
+> **TRIAGE 2026-08-04 — NEVER SHIPPED. The attempt was CLOSED, not merged.**
+> **PR #1008** (`feat/mobile`, "/m prototype — glitch cam + pocket modular") was
+> **closed on 2026-07-29** after sitting as a conflicting draft since 2026-07-03
+> (`shell-ui-refactor-resume-2026-07-26.md` flagged it as "revive or close"; it
+> was closed). There is **no `packages/web/src/routes/m/` directory** in the tree.
+> So this remains an un-executed build spec, and every `file:line` in it dates
+> from 2026-07-02 — the shell/faceplate refactor has moved most of them since,
+> and §2's Canvas line numbers in particular will not resolve.
+> **Kept deliberately** (it is un-executed design, not spent work), but it needs a
+> re-verification pass before anyone builds from it, and the owner may simply want
+> it dropped now that the mobile attempt was abandoned — flagged for that call.
+
 Single branch, single build agent. Two experiences as alternative VIEWS over the existing store/engine — zero engine forks, zero module-def edits, zero contract changes. Where the three designs conflicted, the decision + one-line rationale is inline, marked **DECISION**.
 
 Governing constraint (verified): the WebGL attest basis walks `packages/web/src/lib/video/**` and `packages/web/src/lib/ui/modules/**` (`scripts/webgl-attest-lib.ts:231,237`). ALL new code lives in `packages/web/src/routes/m/**` and `packages/web/src/lib/mobile/**`. The only shared-file edits allowed are the four listed in §8.

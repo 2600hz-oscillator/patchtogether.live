@@ -1,5 +1,24 @@
 # VRT golden-image CI flow — proposal (2026-06-29)
 
+> **TRIAGE 2026-08-04 — PIECES A AND B SHIPPED; PIECE C IS THE REMAINDER, AND
+> THE TWO OWNER QUESTIONS AT THE BOTTOM ARE STILL UNANSWERED.**
+> - **Piece A (gallery from the FAILING run) — DONE.**
+>   `scripts/vrt-changeset-gallery.mjs:75-80` implements `--from-results <dir>`,
+>   with the doc's exact rationale in its comment ("a code change that SHIFTS a
+>   render commits no PNGs, so the git-diff mode finds nothing").
+> - **Piece B (slider + onion-skin) — DONE** in the same script.
+> - **Piece C — PARTIAL.** The accept loop exists as **`task vrt:commit`**
+>   (**#970**, "task vrt:commit accept-button + stale-exemption ratchet"), but the
+>   `/vrt-accept` PR-comment trigger was never built — there is no
+>   `issue_comment` workflow; `.github/workflows/` has only `vrt-update.yml` and
+>   `vrt-changeset-gallery.yml`.
+> - The full `vrt` lane is still informational and `vrt-strict` is still the
+>   REQUIRED gate, i.e. the "optional later" flip was correctly not taken.
+> ⚠ Two things the proposal could not know, both now hard-won rules in CLAUDE.md:
+> `--update-snapshots` **cannot** regenerate a passing-but-stale baseline, and a
+> single-platform dispatch used to silently skip its own re-validation step
+> (fixed 2026-08-03). Read the "vrt:commit" ergonomics here alongside those.
+
 Goal (owner): adopt a golden-images CI flow — **VRT changes FAIL a job → a
 results artifact makes it easy to see what changed (A vs B side-by-side + a
 slider/onion-skin diff) → a `vrt:commit` job can be run → that commits the new

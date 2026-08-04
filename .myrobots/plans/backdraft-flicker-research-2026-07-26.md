@@ -9,6 +9,16 @@ display flicker as seen by our virtual camera.
 of light build up and fade away with zero or extremely subtle variations in camera
 position, orientation, etc."*
 
+> **TRIAGE 2026-08-04 — SHIPPED. Kept as the derivation, not as a plan.**
+> FLICKER is live in `packages/web/src/lib/video/modules/backdraft.ts` (the
+> emission-frequency table at `:310`, the `sinc` shutter argument at `:119/:343`),
+> and that file cites this document by path at `:105`. v1 = **#1181**; v2 landed
+> on top. BACKDRAFT has since been reworked twice more around it (**#1223/#1231**
+> the virtual camera + display, **#1260** "lose the display"), so treat the CARD
+> LAYOUT described here as historical while the physics stands.
+> Nothing in this file is outstanding work — it is the sourced model behind
+> shipped code, and it is referenced from source.
+
 > **UPDATE 2026-07-27 — v2 (`feat/backdraft-flicker-v2`).** v1 (PR #1181) shipped
 > the model in §5 and **strobed**. §0–§6 below are preserved as the v1 record —
 > in particular **§5.7's numbers are v1's and are no longer current** (the

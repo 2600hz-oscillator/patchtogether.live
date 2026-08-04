@@ -8,6 +8,21 @@
 
 ---
 
+> **TRIAGE 2026-08-04 — WAVE 1 IS ESSENTIALLY COMPLETE; WAVE 4 IS NOT, AND THE
+> DEFECT IT WOULD FIX IS STILL LIVE.**
+> Shipped since: `packages/web/src/lib/video/vfpga/` now contains **`census.ts`
+> (A2)**, **`bitstream.ts` (A3)** and **`techmap.ts` (A5)** with tests — the
+> Wave-1 "free metadata spine" landed as scoped, and B1/B2/B4 were correctly
+> never built per decision 1.
+> ⚠ **The `lut16.ts` monochrome collapse is STILL THERE** —
+> `packages/web/src/lib/video/vfpga/cells/lut16.ts:67` is still
+> `outColor = vec4(vec3(bit), 1.0)`. So §0's "single highest-leverage real
+> authenticity jump" (Wave 4 C1, the bit-plane k-LUT/BLE) remains un-built **and**
+> the confirmed picture defect it also fixes remains shipped. That is the item to
+> pick up.
+> The **OWNER DECISIONS block below is unchanged and still binding** — it is the
+> reason this file is kept.
+
 ## OWNER DECISIONS (2026-06-27) — build to these
 
 Ratified after reviewing this analysis:

@@ -1,7 +1,18 @@
 # Clip-player card parity + dual-Launchpad rework — DESIGN
 
 **Date:** 2026-07-18
-**Status:** DESIGN ONLY (no source changes; no PR). Read/research/spec.
+**Status:** ~~DESIGN ONLY~~ **PARTS A + B SHIPPED; PART C IS THE REMAINDER.**
+
+> **TRIAGE 2026-08-04.** **#1100** ("card parity control strip + keyboard 1-8
+> (Parts A+B)", merged 2026-07-18) built PART A (full card parity with the
+> single-pad Launchpad) and PART B (computer-keyboard 1–8 → the 8 top control
+> buttons, with hold). **PART C — the dual-Launchpad rework (two independent
+> single-pad controllers + the combined 16-step view) — was NOT built**; the
+> single-pad rework (#1078) shipped single-only and the double was deliberately
+> left as the follow-up. Read PART C as the live spec; read the §0 enumeration as
+> a snapshot of the single-pad surface *at that date* and re-verify it against
+> `launchpad-map.ts` before building (scene repeats #1091 and the SHIFT
+> hold-only fix #1094 both landed after this was written).
 **Scope:** three owner asks against the clip-player surface stack —
 1. FULL CARD PARITY with the single-pad Launchpad control.
 2. Computer-keyboard **1–8** → the card's 8 top control buttons (with **hold**).

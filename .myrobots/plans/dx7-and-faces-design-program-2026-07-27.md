@@ -1,9 +1,29 @@
 # DX7 operator views + the 16-module face redesign — PROGRAM PLAN
 
-**Status:** corrected design, ready to execute. Every adversarial verdict has been folded in; rejected
+**Status:** ~~ready to execute~~ **EXECUTED — both arms shipped.** Every adversarial verdict has been folded in; rejected
 items are demoted with the reason inline, not appended. Verified against the tree at `aa883ca9`.
 **Rule for the executing agent:** this file supersedes the research/spec drafts it was synthesised from.
 Where it contradicts an earlier `.myrobots` draft, this file wins.
+
+> **TRIAGE 2026-08-04 — the program RAN. Kept because `.claude/skills/module-faceplates.md:433`
+> cites §7 as the working recipe, and because §0's engine verdict is the record of *why* the
+> DX7 was rebuilt before a pixel was drawn.**
+>
+> **DX7 arm — 8/8 complete.** §0's three blocking DSP items all shipped, in the order this
+> plan set: **#1187** (the 32-algorithm routing table + per-algorithm feedback — the
+> "op6-into-op2 cross-feed" bug named in §0), **#1190** (incremental non-destructive operator
+> messages, i.e. the `applyPatch`-resets-everything problem), **#1210** (authentic operator
+> envelope + the fixed-frequency law). Then the UI: **#1265** (PR3 pure model layer),
+> **#1268** (PR4 algorithm glyph + 32-diagram picker), **#1266** (PR5 voice edit buffer +
+> preset STAMP), **#1270** (PR6 operator map + detail panel). Owner decisions on PR0 are in
+> **#1189**. The "exactly ONE new param (`feedback`)" call held.
+>
+> **FACES arm — shipped and then re-done.** Batches A–F landed across **#1169 / #1171 / #1174**
+> and the batch D/E wave (**#1276** adsr, **#1289** karplus, …); the platform gaps §4 predicted
+> were built out (Segmented cells, `PortDef.label`). **18 faceplates now ship**, and they were
+> subsequently re-specced wholesale against the corrected platform — see the `face-redo-*` and
+> `face-specs-round-2-*` files, which SUPERSEDE the per-module face specs in §4 of this doc.
+> Read §2 (platform) and §7 (recipe) as current; read §4's per-module specs as historical.
 
 ---
 

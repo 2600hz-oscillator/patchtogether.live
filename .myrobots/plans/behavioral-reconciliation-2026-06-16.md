@@ -1,5 +1,20 @@
 # Behavioral reconciliation campaign — plan (2026-06-16)
 
+> **TRIAGE 2026-08-04 — STILL UN-EXECUTED, and the numbers moved the WRONG WAY.**
+> The step-1 blocker — "build the shared **structural-diff video metric** +
+> spawn-once-perturb helper" — was never built, so the ~25 animated-video class
+> is still parked exactly as described. Counted against the tree today:
+> **`BEHAVIORAL_MODULE_EXEMPT` = 77** (was 67 when this was written) and
+> **`BEHAVIORAL_SWEEP_EXEMPT` = 113** (was ~165). So module-level exemptions GREW
+> by 10 while per-port shrank — the campaign never started and new modules
+> enrolled themselves into the exempt map.
+> What DID change around it: **#986** added a fast REQUIRED `behavioral-smoke`
+> subset gate, and **#1318** found that a member of that required subset
+> (`resofilter.reso_cv`) was passing on noise — i.e. the "metric must FIT the
+> output shape" thesis below has since been independently re-confirmed on a row
+> that was supposedly already covered.
+> Keep: this is live backlog with the codebase standard stated correctly.
+
 Goal: drive the **behavioral** disabled count to ~0. Dashboard: 110 parametrized,
 **67 disabled** = whole-module `test.fixme` entries in `BEHAVIORAL_MODULE_EXEMPT`
 (`e2e/tests/per-module-per-port-behavioral.spec.ts`). Plus ~165 per-port entries

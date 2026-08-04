@@ -4,6 +4,21 @@
 gets ART coverage, and every *output* of every audio module is profiled where
 possible. Deliver in batches.
 
+> **TRIAGE 2026-08-04 — IN PROGRESS; §0's headline numbers are STALE.**
+> The batch plan was accepted and is running. Shipped: **Phase 0 (#999** — capture
+> harness + the coverage-gate ratchet + pilots**), batch 1 (#1001), batch 2
+> (#1002), batch 3 (#1005), batch 4 (#1006)**, and batches 5–6 (see the ledger in
+> `art/setup/profile-coverage.ts:47-59`). The ratchet has walked
+> **101 → 95 → 89 → 83 → 75 → 67 → 59 → 56**; `ART_BACKLOG_MAX` in that file is
+> the live number, and `art/scenarios/_meta/audio-profile-gate.test.ts` is the
+> gate the owner asked for in §6b.
+> **Do not read §0's numbers as current:** "48 `.f32` files / 7 covered modules"
+> was true on 2026-07-01; the tree now has **136 `.f32` baselines across 57
+> baseline groups**. §0's *method*, the exclusion-list reasoning and the batch
+> ordering are still the working plan; only the counts moved.
+> §6b (the owner's verbatim answers: "1 - gate. 2 - signature, distinct.") is the
+> reason this file is kept rather than deleted.
+
 ---
 
 ## 0. Executive summary

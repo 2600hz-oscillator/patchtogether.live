@@ -1,5 +1,28 @@
 # Test-infra remediation — sequenced plan (2026-06-27)
 
+> **TRIAGE 2026-08-04 — WAVES 0–1 LANDED; WAVES 2–4 ARE PARTIAL AND STILL THE
+> BACKLOG.**
+> - **Wave 0 — DONE**, as **#940** ("honesty quick-wins — ART md5 guard + delete
+>   stub baselines + exemption ratchets").
+> - **Wave 1 — DONE** in substance: the WebGL basis fail-OPEN hole was closed
+>   (`webgl-attest-coverage.test.ts` now asserts no WebGL-rendering source escapes
+>   the basis), and **#946** landed the honest linux-coverage ratchet.
+> - **Wave 2 — PARTIAL.** "Behavioral → blocking for its stable subset" SHIPPED as
+>   **#986** (a fast REQUIRED `behavioral-smoke` subset) — but **#1318** later
+>   found a member of that required subset passing on noise, so the subset is
+>   proven, not trusted. `collab-nightly` / making `@collab` required is **still
+>   not done** (`ci.yml`: the per-PR multi-context lane "stays informational
+>   here"). The `waitForTimeout` replacement barely moved: **639** remain under
+>   `e2e/` today.
+> - **Wave 3 — PARTIAL.** Linux VRT is real now and the ratchet counts all four
+>   gap mechanisms (**#1272**), and the REQUIRED lane's stale-palette hole was
+>   closed (**#1281**). The DSP-pure-core ratchet and the three "missing safety
+>   nets" tracks are un-built.
+> - **Wave 4 — DONE in spirit**: `docs-hash-ignore` markers exist and are enforced.
+> ⚠ One premise moved: the "serialized e2e-video lane" this plan and its parent
+> roast assume was **deleted on 2026-06-20 (#839)** — see the banner in
+> `e2e/webgl-heavy-globs.ts`.
+
 Derived from the adversarial roast (`test-infra-roast-2026-06-27.md`). Discipline:
 **one wave = one PR (mostly), fire CI once per solid branch, never flood.** Each wave
 is gated on the prior landing green. Workflows are used for the parallelizable

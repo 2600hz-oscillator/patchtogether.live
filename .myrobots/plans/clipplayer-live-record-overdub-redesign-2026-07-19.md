@@ -1,7 +1,18 @@
 # Clip Player — Live Record + Overdub Redesign
 
-**Status:** DESIGN — for owner review before any build. Nuanced music-UX; do not assume the build.
+**Status:** ~~DESIGN — for owner review before any build~~ **CORE BUILT AND MERGED (#1133); phase-2 items below are the remainder.**
 **Date:** 2026-07-19
+
+> **TRIAGE 2026-08-04.** **#1133** ("live-record + overdub redesign — CORE",
+> merged 2026-07-20) shipped the §2.1 state machine, the §4 deterministic capture
+> (killing the polled-integer race), the §3 stale-note fix, and additive overdub.
+> The engine lives in
+> `packages/web/src/lib/audio/modules/clip-record-machine.ts` +
+> `clip-record-capture.ts` and this file is cited from source.
+> **Still open:** the phase-2 follow-ups — re-read §2.2 (the RED/WHITE loop-length
+> fork), §2.4 count-in, §2.6 held-note reconciliation at boundaries, §4.4
+> atomic-pass undo and §5 Launchpad mapping against today's code before treating
+> any of them as un-built; several were partially absorbed by the CORE PR.
 **Scope:** The KEYS note-recorder on the clip player (live-playing notes into a step/note clip from the Launchpad + note editor). NOT the arranger launch-log (`recording`/`recordMode`) and NOT the per-lane automation recorder.
 
 ---
