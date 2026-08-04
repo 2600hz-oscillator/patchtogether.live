@@ -17,7 +17,7 @@
 //
 // Input port layout (audio-rate node connections):
 //   pitch_in    → input 0  (V/oct, summed into voice's pitch)
-//   gate_in     → input 1  (0/1, rising edge triggers the envelope)
+//   gate_in     → input 1  (0/1 GATE: rising edge = note on, falling = note off)
 //   accent_in   → input 2  (0/1, latched at the gate edge to flag accent)
 //   tune_cv     → input 3  (CV → tune AudioParam)
 //   cutoff_cv   → input 4  (CV → cutoff AudioParam)
@@ -50,8 +50,16 @@ export const treeohvoxDef: AudioModuleDef = {
     // AudioParam (an AudioParam would smooth across the gate edge and
     // smear retriggers).
     { id: 'pitch_in',  type: 'pitch' },
-    { id: 'gate_in',   type: 'gate' },
-    { id: 'accent_in', type: 'gate' },
+    // BOTH are level-sensitive, so both declare `edge: 'gate'`:
+    //   gate_in   — the rising edge starts the note, the FALLING EDGE ENDS IT.
+    //               The falling edge used to be unread, so gate length was
+    //               ignored outright (a 10 ms gate and a 1 s gate rendered
+    //               byte-identical audio). It is a gate, and now it behaves
+    //               like one.
+    //   accent_in — read as a LEVEL at the moment gate_in rises, not as an
+    //               edge of its own.
+    { id: 'gate_in',   type: 'gate', edge: 'gate' },
+    { id: 'accent_in', type: 'gate', edge: 'gate' },
     // CV inputs targeting AudioParams. Linear cvScale = sum-into-param;
     // matches the rest of the rack's convention for knob CV.
     { id: 'tune_cv',     type: 'cv', paramTarget: 'tune',      cvScale: { mode: 'linear' } },
@@ -72,6 +80,13 @@ export const treeohvoxDef: AudioModuleDef = {
     // The aggressive 6 kHz ceiling is the 303 character; modern filters
     // push to 20 kHz but the 303 polynomial approx + post chain assume
     // a much lower top end.
+    // ⚠ THESE TWO NUMBERS ARE NOT FREE-TYPED. They must equal
+    // TB303_CUTOFF_FLOOR_HZ / TB303_CUTOFF_CEILING_HZ in
+    // packages/dsp/src/lib/treeohvox-dsp.ts — the ladder clamps to the floor,
+    // so a def offering travel below it is a DEAD CONTROL (it was: the ladder
+    // clamped at 200 Hz while the knob started at 40, and the bottom ~25 % of
+    // the travel was bit-exactly dead). treeohvox-range-source.test.ts joins
+    // the def, the AudioParam descriptor and the DSP constant.
     { id: 'cutoff',    label: 'Cutoff',   defaultValue: 1000, min: 40,   max: 6000,  curve: 'log',    units: 'Hz' },
     // RESONANCE — 0..1 raw; the worklet skews it exponentially to match
     // Open303's resonanceSkewed math.
@@ -98,10 +113,10 @@ export const treeohvoxDef: AudioModuleDef = {
 
   docs: {
     explanation:
-      "A TB-303 acid-bass voice in one card: a band-limited saw↔square oscillator into the classic 303 ladder-style resonant low-pass, with the cutoff swept by a snappy decay envelope. It's a port of Robin Schmidt's Open303, so the squelch, the resonance scream, and the accent boost behave like the real 303 voice. Play it from a pitch + gate source (a sequencer, keyboard, or MIDI lane): each gate edge re-triggers the filter envelope, and the dedicated ACCENT gate latches an accent on that note for the louder, brighter, more resonant 303 accent character. This card is the VOICE only — the full 303 sequencer/slide/transpose lives in the planned 404 module.",
+      "A TB-303 acid-bass voice in one card: a band-limited saw↔square oscillator into the classic 303 ladder-style resonant low-pass, with the cutoff swept by a snappy decay envelope. It's a port of Robin Schmidt's Open303, so the squelch, the resonance scream, and the accent boost behave like the real 303 voice. Play it from a pitch + gate source (a sequencer, keyboard, or MIDI lane): the gate's rising edge starts the note and its falling edge ends it (so gate length is note length), and the dedicated ACCENT gate latches an accent on that note for the louder, brighter, more resonant 303 accent character. This card is the VOICE only — the full 303 sequencer/slide/transpose lives in the planned 404 module.",
     inputs: {
       pitch_in: "1V/oct pitch input — patch a sequencer or keyboard pitch CV here to set the note; the Tune knob adds a ±12-semitone offset on top.",
-      gate_in: "The note gate: a rising edge triggers the amplitude + filter envelopes for a new note. The 303's gate length affects how the envelopes overlap between consecutive notes; patch a sequencer/clock gate here.",
+      gate_in: "The note gate, and it is a GATE, not a trigger: the rising edge starts the note (amplitude + filter envelopes) and the FALLING edge ends it, so how long you hold the gate is how long the note lasts. Patch a sequencer/clock gate here. If you hold the gate longer than the 303's fixed VCA decay (~1.2 s) the note fades out under you anyway — that is the hardware's behaviour. Retriggering while a note is still sounding glides into the new note instead of cutting it, so overlapping steps stay click-free.",
       accent_in: "The accent gate, latched at the moment the note gate fires: when it's high on a note, that note gets the 303 accent — louder, with extra filter-envelope drive for the signature accented squelch. Drive it from a sequencer's accent lane.",
       tune_cv: "CV that adds to the Tune knob, shifting pitch in semitones (on top of the 1V/oct input).",
       cutoff_cv: "CV that adds to the Cutoff knob — the classic patch point for an LFO or envelope filter-sweep.",
@@ -116,12 +131,12 @@ export const treeohvoxDef: AudioModuleDef = {
     },
     controls: {
       tune: "Coarse tune in semitones (-12 to +12), added to the 1V/oct pitch input — for transposing the line or tuning to a track.",
-      cutoff: "The filter corner frequency (40 Hz–6 kHz, log): the main timbre control. The 303 deliberately tops out around 6 kHz for its dark, focused voice; the filter envelope sweeps up from wherever you set this.",
+      cutoff: "The filter corner frequency (40 Hz–6 kHz, log): the main timbre control. The 303 deliberately tops out around 6 kHz for its dark, focused voice; the filter envelope sweeps up from wherever you set this. The WHOLE travel is live — the bottom of the knob really does reach a 40 Hz corner, which with EnvMod low is a near-sub-audible thump.",
       resonance: "Filter resonance/emphasis (0..1): low for a round bass, high for the whistling 303 squelch that nearly self-oscillates.",
       envelope: "Env-mod depth (0..1): how far the filter envelope pushes the cutoff up on each note — 0 is a static filter, high values give the dramatic per-note sweep.",
-      decay: "Filter-envelope decay time (50 ms–3 s, log): short for tight blips, long for sustained sweeps; the canonical 303 range sits around 200 ms–2 s, extended here into doom-y territory.",
+      decay: "FILTER-envelope decay time (50 ms–3 s, log) — how fast the cutoff falls back after each note: short for tight blips, long for slow sweeps; the canonical 303 range sits around 200 ms–2 s, extended here into doom-y territory. Like the hardware DECAY knob it shapes the TIMBRE, not the note's length — the note lasts as long as you hold the GATE.",
       accent: "Accent amount (0..1): how much louder and brighter an accented note (one whose ACCENT gate is high) gets — 0 makes accents identical to normal notes, 1 is the full 303 accent boost.",
-      waveform: "Morphs the oscillator from saw (0, the classic 303 voice) to square (1) and the blend between.",
+      waveform: "Morphs the oscillator from saw (0, the classic 303 voice) to square (1) and every blend between. The morph is monotone — the fundamental only ever gets stronger as you turn it up — so there is no dead spot or octave jump anywhere in the travel.",
     },
   },
 

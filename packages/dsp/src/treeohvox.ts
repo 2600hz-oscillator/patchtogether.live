@@ -195,14 +195,22 @@ class TreeohvoxProcessor extends AudioWorkletProcessor {
         waveform: wave,
       });
 
-      // 2) Gate edge detection. The accent value is sampled AT the
-      //    transition so a brief accent pulse coinciding with the gate
-      //    edge counts even if accent_in falls before the next sample.
+      // 2) Gate edge detection — BOTH edges. `gate_in` is declared
+      //    `edge: 'gate'` (see the def): the RISING edge starts the note and
+      //    the FALLING edge ENDS it. Without the falling-edge branch the gate's
+      //    length was ignored outright — a 10 ms gate and a 1 s gate rendered
+      //    byte-identical audio (measured maxAbsDiff 0.0000e+0 over 3 s) and
+      //    every note rang on the fixed 1230 ms VCA decay.
+      //    The accent value is sampled AT the rising transition so a brief
+      //    accent pulse coinciding with the gate edge counts even if accent_in
+      //    falls before the next sample.
       const gate = gateIn ? (gateIn[s] ?? 0) : 0;
       if (gate >= 0.5 && this.lastGate < 0.5) {
         const accentHigh = accIn ? ((accIn[s] ?? 0) >= 0.5) : false;
         const pitch = pitchIn ? (pitchIn[s] ?? 0) : 0;
         this.voice.trigger({ pitchCv: pitch, accented: accentHigh });
+      } else if (gate < 0.5 && this.lastGate >= 0.5) {
+        this.voice.release();
       }
       this.lastGate = gate;
 

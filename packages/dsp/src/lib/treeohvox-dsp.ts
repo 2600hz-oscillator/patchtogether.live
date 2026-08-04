@@ -130,6 +130,23 @@ export class TbVoxFeedbackHp {
 
 const SKEW_DENOM = 1 - Math.exp(-3); // matches rosic literal
 
+// ---------------------------------------------------------------------------
+// THE CUTOFF RANGE LIVES HERE, ONCE.
+//
+// `treeohvoxDef.params.cutoff` (min/max) and the `cutoff` AudioParam descriptor
+// in packages/dsp/src/treeohvox.ts BOTH have to agree with the value the ladder
+// actually clamps to — a card/def that offers travel the DSP floors away is a
+// dead control, and that is exactly the defect this pair of constants closes
+// (the def offered 40 Hz; the filter clamped at 200; the bottom ~25 % of the
+// knob was bit-exactly dead). `treeohvox-range-source.test.ts` asserts the def
+// and the descriptor still match these — the numbers are never re-typed.
+// ---------------------------------------------------------------------------
+/** Lowest cutoff the TB_303 ladder will honour (Hz). Also the def's knob min. */
+export const TB303_CUTOFF_FLOOR_HZ = 40;
+/** Highest cutoff the def exposes (Hz). The ladder itself runs to 20 kHz; the
+ *  303's dark voice deliberately tops out far below that. */
+export const TB303_CUTOFF_CEILING_HZ = 6000;
+
 export function resonanceSkew(resRaw01: number): number {
   const r = resRaw01 < 0 ? 0 : resRaw01 > 1 ? 1 : resRaw01;
   return (1 - Math.exp(-3 * r)) / SKEW_DENOM;
@@ -151,11 +168,17 @@ export interface Tb303Coeffs {
  * a single-precision rounding would shift the resonance curve audibly.
  */
 export function tb303Coeffs(cutoffHz: number, resSkewed: number, sr: number): Tb303Coeffs {
-  // Clamp cutoff to the same floor/ceiling rosic uses (TeeBeeFilter::setCutoff
-  // lines 154-160 of the header). Below 200 Hz the polynomial approximation
-  // diverges; above 20 kHz it's pointless at any consumer sample rate.
+  // Clamp cutoff to the filter's supported range. Upstream rosic clamps at
+  // 200 Hz (TeeBeeFilter::setCutoff) because that is the bottom of a real
+  // 303's CUTOFF knob — NOT because the approximation breaks there. We expose
+  // the knob from TB303_CUTOFF_FLOOR_HZ, so clamping at 200 made the bottom
+  // quarter of our own knob BIT-EXACTLY dead (measured: at ENVELOPE 0 every
+  // setting from 40 Hz to 139.5 Hz rendered byte-identical output). Both
+  // polynomials are well-conditioned below 200 Hz — fx is simply smaller, so
+  // b0 → 4.1e-3 and k → 17.13 monotonically — so the floor is the KNOB's, and
+  // it lives in ONE place (see TB303_CUTOFF_FLOOR_HZ).
   let cutoff = cutoffHz;
-  if (cutoff < 200) cutoff = 200;
+  if (cutoff < TB303_CUTOFF_FLOOR_HZ) cutoff = TB303_CUTOFF_FLOOR_HZ;
   else if (cutoff > 20000) cutoff = 20000;
 
   const ONE_OVER_SQRT2 = 1 / Math.SQRT2;
@@ -273,36 +296,59 @@ export class TbVoxDecayEnv {
 }
 
 // ---------------------------------------------------------------------------
-// TbVoxAmpEnv — Attack-Decay envelope. This is a simplification of
+// TbVoxAmpEnv — Attack-Decay-Release envelope. This is a simplification of
 // rosic::AnalogEnvelope (which is AHDSR-with-RC). The 303 voice doesn't
 // expose A/H/D/S/R individually — it has a fast fixed attack
-// (de-clicker), then a long decay to silence. We model it as:
+// (de-clicker), a long decay toward silence, and a very fast RELEASE that the
+// note-off (gate falling edge) switches into. We model it as:
 //
 //   - On trigger(false): y → 0, then exponentially approach `peak` with
 //     `attackCoeff`. After `attackTimeMs` the target switches to 0 and
 //     the rate switches to `decayCoeff`.
 //   - On trigger(true): same shape but with `peak = 1 + accentGain` (an
 //     "accented" note is louder).
+//   - On noteOff(): the target stays 0 but the rate switches to
+//     `releaseCoeff` — upstream's `ampEnv.setRelease(1.0)`. THIS is what makes
+//     GATE LENGTH the note length, exactly like Open303::releaseNote().
 //
-// All four constants match the rosic per-sample form:
+// All the constants match the rosic per-sample form:
 //
 //     y[n+1] = y[n] + coeff * (target[n] - y[n])
 // ---------------------------------------------------------------------------
+
+/** Upstream's `ampEnv.setRelease(1.0)` — the 303's note-off is near-instant
+ *  but still an exponential, so it de-clicks. rosic::Open303 constructor. */
+export const TBVOX_AMP_RELEASE_MS = 1;
+/** Upstream's `ampEnv.setDecay(1230.0)`. The VCA envelope decays even while
+ *  the gate is HELD (upstream's sustain level is 0); the DECAY knob drives the
+ *  FILTER envelope only, which is what a real 303's DECAY knob does. */
+export const TBVOX_AMP_DECAY_MS = 1230;
+/** Upstream's `normalAttack` — the VCA de-clicker. */
+export const TBVOX_AMP_ATTACK_MS = 3;
+
 export class TbVoxAmpEnv {
   private y = 0;
   private peak = 1;
   private attackCoeff = 0;
   private decayCoeff = 0;
+  private releaseCoeff = 0;
   private inAttack = false;
+  private inRelease = false;
   private samplesInPhase = 0;
   private attackSamples = 0;
   private active = false;
   private sr: number;
 
-  constructor(sr: number, attackMs = 3, decayMs = 1230) {
+  constructor(
+    sr: number,
+    attackMs = TBVOX_AMP_ATTACK_MS,
+    decayMs = TBVOX_AMP_DECAY_MS,
+    releaseMs = TBVOX_AMP_RELEASE_MS,
+  ) {
     this.sr = sr;
     this.setAttack(attackMs);
     this.setDecay(decayMs);
+    this.setRelease(releaseMs);
   }
 
   setAttack(attackMs: number): void {
@@ -316,11 +362,17 @@ export class TbVoxAmpEnv {
     this.decayCoeff = 1 - Math.exp(-1 / tau);
   }
 
+  setRelease(releaseMs: number): void {
+    const tau = Math.max(0.1, releaseMs) * 1e-3 * this.sr;
+    this.releaseCoeff = 1 - Math.exp(-1 / tau);
+  }
+
   /** Trigger a new note. `peakLevel` is typically 1 for normal notes and
    *  >1 for accented notes (the amp boost on accent). */
   trigger(peakLevel = 1): void {
     this.peak = peakLevel;
     this.inAttack = true;
+    this.inRelease = false;
     this.samplesInPhase = 0;
     this.active = true;
     // We do NOT reset y to 0 — Open303's noteOn(startFromCurrentLevel=true)
@@ -328,9 +380,28 @@ export class TbVoxAmpEnv {
     // click-free.
   }
 
+  /** NOTE OFF — the gate's FALLING edge. Mirrors Open303::releaseNote():
+   *  the target is already 0, only the RATE changes (decay → release), so the
+   *  envelope value is continuous across the switch and cannot click. An
+   *  already-idle envelope is untouched, so a stray falling edge on an unpatched
+   *  gate is a no-op. */
+  noteOff(): void {
+    if (!this.active) return;
+    this.inAttack = false;
+    this.inRelease = true;
+  }
+
   /** True iff the envelope is still meaningfully above 0. */
   isActive(): boolean {
     return this.active && this.y > 1e-6;
+  }
+
+  /** Which phase the envelope is in — used by the note-off/retrigger tests so
+   *  they assert the STATE MACHINE, not just a sampled level. */
+  phase(): 'idle' | 'attack' | 'decay' | 'release' {
+    if (!this.active) return 'idle';
+    if (this.inAttack) return 'attack';
+    return this.inRelease ? 'release' : 'decay';
   }
 
   step(): number {
@@ -339,10 +410,12 @@ export class TbVoxAmpEnv {
       this.samplesInPhase++;
       if (this.samplesInPhase >= this.attackSamples) this.inAttack = false;
     } else {
-      this.y += this.decayCoeff * (0 - this.y);
+      // Same target (0), different rate. Release is the note-off rate.
+      this.y += (this.inRelease ? this.releaseCoeff : this.decayCoeff) * (0 - this.y);
       if (this.y < 1e-6) {
         this.y = 0;
         this.active = false;
+        this.inRelease = false;
       }
     }
     return this.y;
@@ -402,6 +475,22 @@ export class PolyBlepSaw {
 // aliased at any blend. At blend == 0 the output is BIT-IDENTICAL to
 // PolyBlepSaw (same naive ramp + same correction + same phase advance), so the
 // existing saw-only voice behaviour — and its ART baselines — are preserved.
+//
+// ⚠ THE SQUARE TAP SHARES THE SAW'S POLARITY — it is sign(saw), i.e. −1 for
+// the first half-cycle and +1 for the second. This is load-bearing, not a
+// stylistic choice. A saw ramp `2t−1` has Fourier series −(2/π)Σ sin(2πkt)/k;
+// an OPPOSITELY-signed square `t<0.5 ? +1 : −1` has +(4/π)Σ_odd sin(2πkt)/k.
+// Crossfading those two gives odd-harmonic amplitude
+//
+//     (2/(πk)) · (3w − 1)      (k odd)
+//
+// which is EXACTLY ZERO at w = 1/3 for EVERY odd harmonic at once — the
+// fundamental included. That was the shipped behaviour: at one third of the
+// WAVE knob's travel the note lost its fundamental, jumped an octave (only
+// even harmonics survive) and dropped 8.7 dB, and blend 0.5 was provably
+// `0.5 × saw(φ+180°)`. Measured DFT at 100 Hz, blend 1/3: h1 = 0.00000 AND
+// h3 = 0.00000. With the polarities aligned the odd amplitude is
+// (2/(πk))·(1 + w), monotone over the whole travel, and nothing cancels.
 // ---------------------------------------------------------------------------
 export class PolyBlepBlendOsc {
   private phase = 0;
@@ -428,25 +517,27 @@ export class PolyBlepBlendOsc {
     const w = blend < 0 ? 0 : blend > 1 ? 1 : blend;
     let out = saw;
     if (w > 0) {
-      // --- square tap (50% duty): +2 rising edge at t=0, -2 falling at t=0.5 ---
-      let sq = t < 0.5 ? 1 : -1;
-      // Rising edge at 0 is the OPPOSITE sign to the saw's drop → ADD the blep.
+      // --- square tap = sign(saw) (50% duty): -2 falling edge at t=0 (the SAME
+      //     discontinuity the saw has), +2 rising edge at t=0.5 ---
+      let sq = t < 0.5 ? -1 : 1;
+      // Falling edge at 0: SAME sign as the saw's drop → SUBTRACT the blep,
+      // exactly as the saw tap above does.
       if (t < dt) {
         const x = t / dt;
-        sq += x + x - x * x - 1;
+        sq -= x + x - x * x - 1;
       } else if (t > 1 - dt) {
         const x = (t - 1) / dt;
-        sq += x * x + x + x + 1;
+        sq -= x * x + x + x + 1;
       }
-      // Falling edge at 0.5: shift phase so the 0.5 boundary maps to 0/1, then
-      // SUBTRACT (same sign as the saw's downward step).
+      // Rising edge at 0.5: shift phase so the 0.5 boundary maps to 0/1, then
+      // ADD (opposite sign to a downward step).
       const tt = t < 0.5 ? t + 0.5 : t - 0.5;
       if (tt < dt) {
         const x = tt / dt;
-        sq -= x + x - x * x - 1;
+        sq += x + x - x * x - 1;
       } else if (tt > 1 - dt) {
         const x = (tt - 1) / dt;
-        sq -= x * x + x + x + 1;
+        sq += x * x + x + x + 1;
       }
       out = (1 - w) * saw + w * sq;
     }
@@ -567,8 +658,11 @@ export class TreeohvoxVoice {
     this.osc = new PolyBlepBlendOsc(sr);
     this.filter = new TbVoxFilter(sr);
     this.decayEnv = new TbVoxDecayEnv(sr, initial.decayMs);
-    // 3 ms attack matches Open303's normalAttack default.
-    this.ampEnv = new TbVoxAmpEnv(sr, 3, 1230);
+    // 3 ms attack / 1230 ms decay / 1 ms release — all three are Open303's
+    // ampEnv constructor values. The DECAY knob drives the FILTER envelope, as
+    // it does on the hardware; the VCA envelope is fixed and the NOTE LENGTH
+    // is the gate's.
+    this.ampEnv = new TbVoxAmpEnv(sr, TBVOX_AMP_ATTACK_MS, TBVOX_AMP_DECAY_MS, TBVOX_AMP_RELEASE_MS);
     this.params = { ...initial };
     this.filter.setCutoffRes(initial.cutoffHz, initial.resonance);
   }
@@ -587,11 +681,19 @@ export class TreeohvoxVoice {
    *  sequencer + slide branches removed. */
   trigger(trig: NoteTrigger): void {
     this.pitchHz = pitchCvToFreq(trig.pitchCv, this.params.tuneSemitones);
-    // Phase reset on note-on — this IS part of the 303 character
-    // (rosic_Open303.cpp:218, only resets when idle, but for the voice
-    // slice every gate edge is treated as a fresh trigger).
-    this.osc.resetPhase();
-    this.filter.reset();
+    // Phase + filter reset on note-on — this IS part of the 303 character, but
+    // ONLY WHEN THE VOICE IS IDLE (rosic_Open303.cpp:218). Resetting on every
+    // gate edge forced sample 0 of every retrigger to exactly 0.0 — a hard step
+    // on top of a still-ringing note (measured: 0.06633 → 0.00000, a jump 3.8×
+    // the largest sample-to-sample delta anywhere else in the render). It was
+    // also self-inconsistent: TbVoxAmpEnv.trigger deliberately does NOT reset
+    // its own state for exactly this reason ("keeps overlapping retriggers
+    // click-free"). Now the two agree — a fresh note starts from zero state, an
+    // overlapping retrigger glides.
+    if (!this.ampEnv.isActive()) {
+      this.osc.resetPhase();
+      this.filter.reset();
+    }
     this.decayEnv.trigger();
     // Accent: peakLevel jumps from 1 to (1 + accent) on accented notes.
     // accentGain controls how much extra the filter envelope opens (it's
@@ -604,6 +706,17 @@ export class TreeohvoxVoice {
       this.accentGain = 0;
     }
     this.hadAccentLast = trig.accented;
+  }
+
+  /** NOTE OFF — the gate's FALLING edge (Open303::releaseNote). Without this
+   *  the gate's LENGTH was ignored entirely: a 10 ms gate and a 1 s gate
+   *  produced byte-identical output (measured maxAbsDiff 0.0000e+0 over 3 s),
+   *  and every note rang for seconds off the fixed 1230 ms VCA decay. The
+   *  FILTER envelope is deliberately NOT released — on a 303 the filter sweep
+   *  keeps running under the note's own tail, which is where the squelch
+   *  comes from. */
+  release(): void {
+    this.ampEnv.noteOff();
   }
 
   /**
@@ -625,8 +738,9 @@ export class TreeohvoxVoice {
     // knob).
     const cutoffMod = map.scaler * (env - map.offset) + this.accentGain * env;
     let instCutoff = this.params.cutoffHz * Math.pow(2, cutoffMod);
-    // Clamp to filter's stable range (TeeBeeFilter::setCutoff bounds).
-    if (instCutoff < 200) instCutoff = 200;
+    // Clamp to the filter's supported range — the SAME floor the coefficient
+    // helper uses (one constant, see TB303_CUTOFF_FLOOR_HZ).
+    if (instCutoff < TB303_CUTOFF_FLOOR_HZ) instCutoff = TB303_CUTOFF_FLOOR_HZ;
     else if (instCutoff > 20000) instCutoff = 20000;
     this.filter.setCutoffRes(instCutoff, this.params.resonance);
 
@@ -661,6 +775,11 @@ export interface ScheduledNote {
   atSample: number;
   pitchCv: number;
   accented: boolean;
+  /** GATE LENGTH in samples. The note ends here — `renderVoiceSequence` calls
+   *  `voice.release()` at `atSample + gateDurationSamples`, exactly as the
+   *  worklet does on the gate's falling edge. (It used to be DECLARED AND
+   *  UNREAD: every scenario passed a length and every note rang on regardless,
+   *  which is why nothing in ART could see the missing note-off.) */
   gateDurationSamples: number;
 }
 
@@ -675,8 +794,21 @@ export function renderVoiceSequence(
   // Sort defensively — the ART scenarios construct notes in order, but
   // it's cheap insurance.
   const sorted = [...notes].sort((a, b) => a.atSample - b.atSample);
+  // Gate-OFF schedule, in ascending sample order. A note whose gate length is
+  // <= 0 (or non-finite) is treated as "no note-off" — a held gate.
+  const offs = sorted
+    .filter((n) => Number.isFinite(n.gateDurationSamples) && n.gateDurationSamples > 0)
+    .map((n) => n.atSample + n.gateDurationSamples)
+    .sort((a, b) => a - b);
   let nextIdx = 0;
+  let nextOff = 0;
   for (let i = 0; i < totalSamples; i++) {
+    // Note-OFF first, so a gate that ends on the same sample the next note
+    // starts does not release the note that just began (back-to-back steps).
+    while (nextOff < offs.length && offs[nextOff]! === i) {
+      voice.release();
+      nextOff++;
+    }
     while (nextIdx < sorted.length && sorted[nextIdx]!.atSample === i) {
       voice.trigger(sorted[nextIdx]!);
       nextIdx++;
