@@ -23,22 +23,69 @@
 //   resofilter 0.0000e+0 → 4.9990e-1
 //
 // WHY NOTHING CAUGHT IT. Every existing gate reads the side that was right.
-// The ART scenarios for all four pinned modules drive the DSP class DIRECTLY
-// (`renderWorklet(new Proc(), { inputs: [input, null] })` and pure-TS core
-// mirrors) — they never call `def.factory()`, so the pin is structurally
-// invisible to ART, and charlottes-echos' ART actually EXERCISES the normal and
-// passes. The per-port sweep measures through a SCOPE against a fixed floor and
-// never compares a module's own L to its own R. The docs gate reads prose:
-// cofefve's and resofilter's docs PROMISED the normal while the code delivered
-// silence, and shimmershine's doc had been rewritten to describe the defect as
-// intended ("the right tank sees silence"). Three surfaces, three different
-// wrong answers, zero red.
+// The ART scenarios drive the DSP class DIRECTLY and never call `def.factory()`;
+// the per-port sweep measures against a fixed floor and never compares a
+// module's own L to its own R; the docs gate reads prose, and cofefve's and
+// resofilter's docs PROMISED the normal while the code delivered silence.
 //
-// So this gate is textual and DENY-BY-DEFAULT: every mono normal found in
-// packages/dsp/src must be reachable through its factory, or be named here with
-// a reason. It is anchored to the ARTIFACT — a KNOWN_MONO_NORMALS entry that no
-// longer exists in the source is RED, so a normal cannot silently vanish, and a
-// stale exemption cannot sit unwatched.
+// ─────────────────────────────────────────────────────────────────────────────
+// AND THEN THIS GATE — the one written to stop a SIXTH module joining that
+// class — SHIPPED BLIND TO 46 % OF THE POPULATION IT GUARDS.
+//
+// The detector it shipped with (#1343) was a single regex matching a single
+// expression on a single line:
+//
+//     /inputs\[(\d+)\]\?\.\[0\]\s*\?\?\s*inputs\[(\d+)\]\?\.\[0\]/
+//
+// Run verbatim over all 63 files in packages/dsp/src it finds 7 normals.
+// THERE ARE 13. It missed six, in five modules, every one of which spells the
+// same fallback through intermediate consts:
+//
+//     stereovca.ts:65,66        const inR = inRRaw ?? inLBuf;          (×2)
+//     samsloop-tap.ts:67        const rNorm = rRaw ?? lRaw;
+//     ringback.ts:72            const inR = inputs[1]?.[0] ?? inL;
+//     twotracks.ts:606          const inR = inputs[inputOffset + 1]?.[0] ?? inL;
+//     recorderbox-capture.ts:53 const r = input?.[1] ?? l;
+//
+// It reported "0 violations" and every assertion it made was TRUE — about the
+// 54 % it could see. This is the repo's signature defect, for the fifth
+// recorded time: A FILTER APPLIED BEFORE THE CHECK SILENTLY REDEFINES THE
+// CHECK'S SUBJECT. `RAW_PARAM_WRITE` matched only the bracket form (3 of 99);
+// `RANGE_BOUND_CARDS` was an opt-in filename list (7 of 193); `if (!p.edge)
+// continue` skipped 299 of 362 ports; `Math.max(90_000, …)` was flat for 74 of
+// 78. Here the filter was a regex literal.
+//
+// The shipped NEGATIVE CONTROLS did not help, because they only ever fed the
+// detector the shape it could already see — `findMonoNormals('x.ts',
+// 'const inR = inputs[1]?.[0] ?? inputs[0]?.[0] ?? null;')`. A control built
+// from the instrument's own assumptions cannot discover the instrument's blind
+// spot. The matrix below feeds it EVERY supported spelling, in both polarities,
+// and feeds it the REAL source of every module that was missed.
+//
+// The blindness was also masking a CRASH: the shipped `factoryFor()` assumed
+// "same basename for every module today", but samsloop-tap.ts's worklet is
+// built by samsloop.ts and recorderbox-capture.ts's by a VIDEO module. The
+// moment the detector could see either normal, the gate would have thrown
+// ENOENT. Factory resolution is now DERIVED from the registered processor name
+// across both module directories.
+//
+// ─────────────────────────────────────────────────────────────────────────────
+// HOW THIS IS NOW HELD OPEN. The scan itself lives in ./mono-normal-scan.ts and
+// resolves NAMES to input references, so spelling stopped mattering. But a
+// resolver is still a finite set of forms, so the gate does not rely on it
+// alone. Three independent legs, each blind in a DIFFERENT way:
+//
+//   1. THE RESIDUAL AUDIT. Every fallback expression in the tree is classified;
+//      one whose left operand denotes a worklet input but whose fallback the
+//      resolver cannot account for is `unclassified` → RED. A new unmatchable
+//      spelling reddens instead of shrinking the subject.
+//   2. THE DEF-ANCHORED POPULATION. Independently of any DSP text, a module
+//      whose DEF declares an L/R audio input pair AND an L/R audio output pair
+//      is in the defect class by construction. Each must have a normal or a
+//      named reason. A normal spelled unreadably shows up HERE.
+//   3. THE E2E ROSTER PARITY. The behavioural spec's hand-written SUTS roster
+//      is checked against the found-set, so it cannot drift the way the VRT
+//      FACES set did — which is exactly how stereovca went unmeasured.
 //
 // The behavioural counterpart is e2e/tests/stereo-mono-normal.spec.ts, which
 // measures the real factory through the real engine.
@@ -46,151 +93,143 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import {
+  scanDspTree, scanSource, factoriesFor, defeatReason, normalKey, moduleTypeOf,
+  findStereoModules, isLiteralIdx, lrPairs, lrSplit, blankNonCode, blankComments,
+  resolveOperand, buildEnv, SCOPE, DSP_DIR,
+  type MonoNormal, type Spelling,
+} from './mono-normal-scan';
 
-const dspDir = fileURLToPath(new URL('../../../../dsp/src/', import.meta.url));
-const factoryDir = fileURLToPath(new URL('./modules/', import.meta.url));
-
-/** A mono normal declared inside a worklet's `process()`. */
-interface MonoNormal {
-  /** DSP source file, e.g. `clouds.ts`. */
-  dspFile: string;
-  /**
-   * `input`   — `inputs[N]?.[0] ?? inputs[M]?.[0]`: worklet INPUT N normals
-   *             from input M. Defeated by connecting anything to input N.
-   * `channel` — `x[N] ?? x[M]` where `x = inputs[K]`: CHANNEL N of input K
-   *             normals from channel M. Defeated by a 'discrete' up-mix law.
-   */
-  kind: 'input' | 'channel';
-  /** The index that falls back (the one that must stay genuinely absent). */
-  normalled: number;
-  /** The index it falls back TO. */
-  from: number;
-  /** For `channel`, the worklet input the channel array came from. */
-  onInput?: number;
-  line: number;
-  text: string;
-}
+const E2E_SPEC = fileURLToPath(
+  new URL('../../../../../e2e/tests/stereo-mono-normal.spec.ts', import.meta.url),
+);
 
 // ---------------------------------------------------------------------------
-// Detectors. Exported shape kept pure + string-in so the negative control below
-// can feed them known-defective source WITHOUT touching the repo.
+// THE PINNED POPULATION. Anchored to the artifact: each entry must still be
+// found in the source, and the found-set must contain nothing unpinned. Add a
+// row when you add a mono normal.
+//
+// 13 entries. The shipped gate pinned 7 — see the header for the six it could
+// not see.
 // ---------------------------------------------------------------------------
 
-export function findMonoNormals(dspFile: string, src: string): MonoNormal[] {
-  const found: MonoNormal[] = [];
-  const lines = src.split('\n');
-
-  // (a) input-index normals: inputs[N]?.[0] ?? inputs[M]?.[0]
-  const inputRe = /inputs\[(\d+)\]\?\.\[0\]\s*\?\?\s*inputs\[(\d+)\]\?\.\[0\]/;
-  // (b) channel normals: first bind `const x = inputs[K]`, then `x[N] ?? x[M]`.
-  const bindRe = /(?:const|let)\s+(\w+)\s*=\s*inputs\[(\d+)\]/g;
-  const bound = new Map<string, number>();
-  for (const m of src.matchAll(bindRe)) bound.set(m[1]!, Number(m[2]));
-
-  lines.forEach((line, i) => {
-    const im = inputRe.exec(line);
-    if (im) {
-      found.push({
-        dspFile, kind: 'input', normalled: Number(im[1]), from: Number(im[2]),
-        line: i + 1, text: line.trim(),
-      });
-      return;
-    }
-    for (const [name, onInput] of bound) {
-      const chRe = new RegExp(`\\b${name}\\[(\\d+)\\]\\s*\\?\\?\\s*${name}\\[(\\d+)\\]`);
-      const cm = chRe.exec(line);
-      if (cm) {
-        found.push({
-          dspFile, kind: 'channel', normalled: Number(cm[1]), from: Number(cm[2]),
-          onInput, line: i + 1, text: line.trim(),
-        });
-        return;
-      }
-    }
-  });
-  return found;
-}
-
-/**
- * Does `factorySrc` DEFEAT `normal`? Returns the reason, or null if the normal
- * is reachable.
- *
- * A real patch cable is realised by the ENGINE (`sout.node.connect(din.node,
- * …)`) using the index the handle's `inputs` map declares — it never appears as
- * a literal `.connect(node, n, IDX)` inside a factory. So a literal connect to
- * the normalled input in the factory is, by construction, a pin.
- */
-export function defeatReason(normal: MonoNormal, factorySrc: string): string | null {
-  if (normal.kind === 'input') {
-    const pinRe = new RegExp(`\\.connect\\(\\s*\\w+\\s*,\\s*\\d+\\s*,\\s*${normal.normalled}\\s*\\)`);
-    const m = pinRe.exec(factorySrc);
-    if (m) {
-      return `factory pins worklet input ${normal.normalled} (\`${m[0]}\`), so Chrome always `
-        + `hands process() a channel for it and \`${normal.text}\` can never fall through`;
-    }
-    return null;
-  }
-  // channel kind: a 'discrete' up-mix zero-fills the normalled channel.
-  if (/channelInterpretation:\s*'discrete'/.test(factorySrc)) {
-    return `factory sets channelInterpretation: 'discrete', whose up-mix ZERO-FILLS channel `
-      + `${normal.normalled} for a mono source, so \`${normal.text}\` can never fall through `
-      + `(channel ${normal.normalled} exists, it is merely silent). Use 'speakers'.`;
-  }
-  return null;
-}
-
-// ---------------------------------------------------------------------------
-// The pinned population. Anchored to the artifact: each entry must still be
-// found in the source. Add a row when you add a mono normal.
-// ---------------------------------------------------------------------------
-
-/** `${dspFile}:${kind}:${normalled}` for every mono normal that must exist. */
 const KNOWN_MONO_NORMALS: readonly string[] = [
   'charlottes-echos.ts:input:1',
   'clouds.ts:input:1',
   'cofefve.ts:input:1',
-  'shimmershine.ts:input:1',
-  'sidecar.ts:input:1', // MAIN  audio_r → audio_l
-  'sidecar.ts:input:3', // SIDECHAIN sc_r → sc_l
+  'recorderbox-capture.ts:channel:1',   // capture tap: R channel ← L channel
   'resofilter.ts:channel:1',
+  'ringback.ts:input:1',
+  'samsloop-tap.ts:input:1',
+  'shimmershine.ts:input:1',
+  'sidecar.ts:input:1',                 // MAIN  audio_r → audio_l
+  'sidecar.ts:input:3',                 // SIDECHAIN sc_r → sc_l
+  'stereovca.ts:input:1',               // MAIN  in_r → in_l
+  'stereovca.ts:input:3',               // STRENGTH strength_r → strength_l
+  'twotracks.ts:input:inputOffset + 1', // symbolic — see SYMBOLIC_INDEX_EXPANSIONS
 ];
 
 /**
- * Mono normals allowed to stay defeated, keyed `${dspFile}:${kind}:${normalled}`
- * with the reason. DENY BY DEFAULT — a module is not exempt because its file is
- * listed, only that exact normal is.
+ * A normal whose worklet-input index is a computed expression rather than a
+ * literal. The scanner still FINDS it (that is the point — a symbolic index
+ * must not make a normal invisible), but it cannot check a factory pin without
+ * knowing which concrete inputs the symbol takes. So the concrete set is
+ * declared here, with the evidence, and every one of them is checked.
+ *
+ * DENY BY DEFAULT: a symbolic normal that is not listed here is RED.
+ */
+const SYMBOLIC_INDEX_EXPANSIONS: Readonly<Record<string, { indices: number[]; why: string }>> = {
+  'twotracks.ts:input:inputOffset + 1': {
+    indices: [1, 3],
+    why: 'twotracks runs ONE reel routine twice — `processReel(…, inputs, 0, …)` for reel A '
+      + '(twotracks.ts:904) and `…, inputs, 2, …` for reel B (twotracks.ts:916) — so '
+      + '`inputOffset + 1` is worklet input 1 and input 3. Both are checked.',
+  },
+};
+
+/**
+ * Mono normals allowed to stay defeated, keyed by `normalKey`, with the reason.
+ * DENY BY DEFAULT — a module is not exempt because its file is listed, only
+ * that exact normal is.
  *
  * EMPTY, and it should stay that way: a defeated normal is a silent channel.
  */
 const DEFEAT_EXEMPT: Readonly<Record<string, string>> = {};
 
-/** Maps a DSP file to its factory. Same basename for every module today. */
-function factoryFor(dspFile: string): { path: string; src: string } {
-  const path = `${factoryDir}${dspFile}`;
-  return { path, src: readFileSync(path, 'utf8') };
-}
+/**
+ * Modules whose DEF is a true L/R stereo pair in AND out — so they are in the
+ * silent-OUT-R class by construction — but which declare NO mono normal at all.
+ *
+ * This is the def-anchored leg (#2), and it found two the text scan never
+ * could, because there is no fallback expression to find. Each needs a reason.
+ *
+ * ⚠ Neither is fixed here: changing what a module renders is an audio behaviour
+ * change needing an owner ear and an ART re-pin, and this PR is a gate fix.
+ */
+const STEREO_WITHOUT_NORMAL: Readonly<Record<string, string>> = {
+  'cloudseed.ts': 'SUSPECTED SIXTH MEMBER OF THE CLASS, by a THIRD mechanism. cloudseed.ts:1510-11 '
+    + 'reads `const inL = inputs[0]?.[0]; const inR = inputs[1]?.[0];` with NO `??` fallback, so a '
+    + 'mono patch into in_l leaves inR undefined rather than normalled. Its factory pins nothing, '
+    + 'so this is not a DEFEATED normal — it is a MISSING one, which is outside what this gate '
+    + 'asserts (that a DECLARED normal stays reachable). Flagged for a follow-up that measures '
+    + 'OUT R through the real engine BEFORE any DSP change.',
+  'qbrt.ts': 'FAUST module: its DSP is packages/dsp/src/qbrt.dsp and this scanner reads only '
+    + '*.ts. A Faust-generated processor cannot express the TS normal shape at all, so this is a '
+    + 'stated blind spot rather than a defect claim — see SCOPE.notScanned.',
+};
 
-function scanRepo(): MonoNormal[] {
-  const out: MonoNormal[] = [];
-  for (const f of readdirSync(dspDir)) {
-    if (!f.endsWith('.ts') || f.endsWith('.test.ts') || f.endsWith('.d.ts')) continue;
-    out.push(...findMonoNormals(f, readFileSync(`${dspDir}${f}`, 'utf8')));
-  }
-  return out;
-}
+/**
+ * Modules that DO declare a normal but are deliberately absent from the
+ * behavioural roster of e2e/tests/stereo-mono-normal.spec.ts, with the reason.
+ * Keyed by registry type. DENY BY DEFAULT: a normal-bearing module missing from
+ * both the roster and this list is RED.
+ */
+const E2E_ROSTER_EXEMPT: Readonly<Record<string, string>> = {
+  sidecar: 'PASSES and always did — it is this gate\'s positive control below (two normals, '
+    + 'factory pins nothing). Adding it to the e2e roster costs ~10 s of CI wall-time to '
+    + 're-prove what the source leg already proves; revisit if it ever regresses.',
+  twotracks: 'Its stereo path is already measured end-to-end by e2e/tests/twotracks-stereo.spec.ts, '
+    + 'which asserts out_l and out_r are separable jacks via a sample-aligned difference node. '
+    + 'That spec does not drive a MONO source specifically, so this is PARTIAL coverage and a '
+    + 'known follow-up.',
+  ringback: 'FOLLOW-UP. A true stereo pair with a live normal (`inputs[1]?.[0] ?? inL`) and a '
+    + 'factory that pins nothing, so it is expected clean — but unlike stereovca it has NOT been '
+    + 'measured through the real engine, and this PR does not add an unmeasured module to a '
+    + 'roster whose entire purpose is measurement.',
+  samsloop: 'STRUCTURALLY OUT OF THE CLASS: the samsloop-tap normal feeds a recording TAP, and '
+    + 'the samsloop def exposes a single mono `out` port — there is no OUT R jack to measure.',
+  recorderbox: 'STRUCTURALLY OUT OF THE CLASS: recorderbox-capture is a video-domain capture tap '
+    + 'whose def exposes no audio OUTPUT ports at all.',
+};
 
-const key = (n: MonoNormal) => `${n.dspFile}:${n.kind}:${n.normalled}`;
+// ---------------------------------------------------------------------------
+
+const scan = scanDspTree();
+const normals = scan.normals;
+
+/** Concrete worklet-input indices to check a pin against. */
+function concreteIndices(n: MonoNormal): number[] {
+  if (isLiteralIdx(n.normalled)) return [n.normalled];
+  return SYMBOLIC_INDEX_EXPANSIONS[normalKey(n)]?.indices ?? [];
+}
 
 describe('mono normals are not defeated by their factory', () => {
-  const normals = scanRepo();
-
   it('every mono normal in the DSP is REACHABLE through its factory', () => {
     const defeated: string[] = [];
     for (const n of normals) {
-      if (key(n) in DEFEAT_EXEMPT) continue;
-      const { src } = factoryFor(n.dspFile);
-      const reason = defeatReason(n, src);
-      if (reason) defeated.push(`${n.dspFile}:${n.line} — ${reason}`);
+      if (normalKey(n) in DEFEAT_EXEMPT) continue;
+      const factories = factoriesFor(n.dspFile);
+      expect(
+        factories.length,
+        `no factory found for ${n.dspFile} — the processor-name derivation failed, so this `
+        + 'normal is UNCHECKED rather than clean',
+      ).toBeGreaterThan(0);
+      for (const idx of concreteIndices(n)) {
+        for (const f of factories) {
+          const reason = defeatReason(n, f.src, idx);
+          if (reason) defeated.push(`${n.dspFile}:${n.line} (via ${f.file}) — ${reason}`);
+        }
+      }
     }
     expect(
       defeated,
@@ -199,114 +238,436 @@ describe('mono normals are not defeated by their factory', () => {
     ).toEqual([]);
   });
 
-  it('is ANCHORED to the artifact — no pinned normal has silently vanished', () => {
-    const seen = new Set(normals.map(key));
-    const missing = KNOWN_MONO_NORMALS.filter((k) => !seen.has(k));
+  it('is ANCHORED to the artifact, and ratchets in BOTH directions', () => {
+    const seen = normals.map(normalKey).sort();
+    const pinned = [...KNOWN_MONO_NORMALS].sort();
+
+    // (a) nothing pinned has vanished — a refactor that drops a normal silently
+    //     re-opens the silent-channel defect.
     expect(
-      missing,
-      'These mono normals are pinned but no longer present in packages/dsp/src. A refactor '
-      + 'that drops one silently re-opens the silent-channel defect — restore it, or remove '
-      + `the row deliberately:\n  ${missing.join('\n  ')}`,
+      pinned.filter((k) => !seen.includes(k)),
+      'These mono normals are pinned but no longer present in packages/dsp/src. Restore it, '
+      + 'or remove the row deliberately.',
     ).toEqual([]);
+
+    // (b) …AND nothing found is unpinned. A ceiling can only trip by GROWING;
+    //     without this direction a NEW module could join the class and the gate
+    //     would quietly widen to accommodate it.
+    expect(
+      seen.filter((k) => !pinned.includes(k)),
+      'A mono normal exists in packages/dsp/src that is NOT pinned in KNOWN_MONO_NORMALS. '
+      + 'Add it, and give the module e2e coverage or an E2E_ROSTER_EXEMPT reason.',
+    ).toEqual([]);
+
+    expect(seen).toEqual(pinned);
   });
 
-  it('states its own SCOPE, and ratchets the exemption list in BOTH directions', () => {
-    // Only shrinks. A defeated normal is a user-audible silent channel.
-    expect(Object.keys(DEFEAT_EXEMPT)).toHaveLength(0);
+  it('every SYMBOLIC index is expanded to concrete inputs, and none is stale', () => {
+    for (const n of normals) {
+      if (isLiteralIdx(n.normalled)) continue;
+      const k = normalKey(n);
+      expect(
+        SYMBOLIC_INDEX_EXPANSIONS[k],
+        `${k} has a computed worklet-input index, so no factory pin can be checked for it `
+        + 'until the concrete inputs are declared. Add a SYMBOLIC_INDEX_EXPANSIONS entry.',
+      ).toBeDefined();
+      expect(SYMBOLIC_INDEX_EXPANSIONS[k]!.indices.length).toBeGreaterThan(0);
+    }
+    // Anchored: a declared expansion naming a normal that no longer exists is a
+    // stale entry nobody is watching.
+    const symbolic = new Set(normals.filter((n) => !isLiteralIdx(n.normalled)).map(normalKey));
+    for (const k of Object.keys(SYMBOLIC_INDEX_EXPANSIONS)) {
+      expect(symbolic.has(k), `SYMBOLIC_INDEX_EXPANSIONS names "${k}", not a symbolic normal`).toBe(true);
+    }
+  });
 
-    // A stale exemption is one nobody is watching: every key must name a real,
-    // currently-discovered normal.
-    const seen = new Set(normals.map(key));
+  it('ratchets DEFEAT_EXEMPT in both directions and keeps no stale entry', () => {
+    expect(Object.keys(DEFEAT_EXEMPT)).toHaveLength(0);
+    const seen = new Set(normals.map(normalKey));
     for (const k of Object.keys(DEFEAT_EXEMPT)) {
       expect(seen.has(k), `DEFEAT_EXEMPT names "${k}", which is not a mono normal in the source`).toBe(true);
     }
-
-    // SCOPE, stated in the gate: this reads packages/dsp/src only, and knows
-    // exactly two ways to defeat a normal (a factory pin on the normalled
-    // INPUT; a 'discrete' up-mix law on a normalled CHANNEL). A third mechanism
-    // — e.g. a factory that up-mixes upstream of the worklet, or a normal
-    // expressed with a shape these regexes miss — is INVISIBLE here. The
-    // negative control below is what keeps that honest.
-    expect(normals.length).toBeGreaterThanOrEqual(KNOWN_MONO_NORMALS.length);
   });
 
   // -------------------------------------------------------------------------
-  // NEGATIVE CONTROL — the permanent leg. After the fix every assertion above
-  // passes, and a gate that detected NOTHING would look exactly the same. These
-  // feed the detectors the real pre-fix source and require them to go red.
+  // LEG 1 — THE RESIDUAL AUDIT. This is what makes the coverage PROVED rather
+  // than asserted, and it is the leg the shipped gate had no analogue of.
   // -------------------------------------------------------------------------
-  describe('negative control: the detectors can actually FAIL', () => {
-    const PRE_FIX_PIN = `
-      const silenceL = ctx.createConstantSource();
-      const silenceR = ctx.createConstantSource();
-      silenceL.connect(workletNode, 0, 0);
-      silenceR.connect(workletNode, 0, 1);
-    `;
-    const PRE_FIX_DISCRETE = `
-      const workletNode = new AudioWorkletNode(ctx, PROCESSOR_NAME, {
-        channelCount: 2,
-        channelCountMode: 'explicit',
-        channelInterpretation: 'discrete',
-      });
-    `;
-
-    it('flags the ConstantSource pin that broke the four worklet-input modules', () => {
-      const n: MonoNormal = {
-        dspFile: 'clouds.ts', kind: 'input', normalled: 1, from: 0, line: 266,
-        text: 'const inRBlock = inputs[1]?.[0] ?? inputs[0]?.[0] ?? null;',
-      };
-      expect(defeatReason(n, PRE_FIX_PIN)).toMatch(/pins worklet input 1/);
-      // …and does NOT fire once the R pin is removed (the shipped fix).
-      expect(defeatReason(n, PRE_FIX_PIN.replace('silenceR.connect(workletNode, 0, 1);', ''))).toBeNull();
+  describe('residual audit: no fallback expression is left unaccounted for', () => {
+    it('classifies every candidate; UNCLASSIFIED is zero', () => {
+      const unclassified = scan.candidates.filter((c) => c.verdict === 'unclassified');
+      expect(
+        unclassified.map((c) => `${c.dspFile}:${c.line} \`${c.left}\` ?? \`${c.right}\` — ${c.why}`),
+        'A fallback whose LEFT operand denotes a worklet input could not be accounted for. '
+        + 'If it is a mono normal, this gate is BLIND to it — the exact defect this file exists '
+        + 'to prevent. Teach resolveOperand the spelling, or classify it.',
+      ).toEqual([]);
+      // Ratchet the other way too: the audit must actually be looking at things.
+      // A scanner that silently matched nothing would satisfy the line above.
+      expect(scan.candidates.length).toBeGreaterThan(300);
     });
 
-    it('flags the discrete up-mix that broke resofilter', () => {
-      const n: MonoNormal = {
-        dspFile: 'resofilter.ts', kind: 'channel', normalled: 1, from: 0, onInput: 0, line: 109,
-        text: 'const inR = inAudio[1] ?? inAudio[0] ?? null;',
-      };
-      expect(defeatReason(n, PRE_FIX_DISCRETE)).toMatch(/discrete/);
-      expect(defeatReason(n, PRE_FIX_DISCRETE.replace("'discrete'", "'speakers'"))).toBeNull();
+    it('resolves every identifier unambiguously', () => {
+      expect(
+        scan.ambiguous,
+        'These identifiers are bound to two DIFFERENT input references in one file. Resolution '
+        + 'is file-global, so the scanner refuses to guess — rename, or scope the analysis.',
+      ).toEqual([]);
     });
 
-    it('does not confuse a pin on a DIFFERENT input with a pin on the normalled one', () => {
-      // cofefve legitimately pins input 0 (audio L) and input 2 (clock). Only a
-      // pin on input 1 defeats its normal — a detector that matched any connect
-      // would be unable to tell the fix from the defect.
-      const n: MonoNormal = {
-        dspFile: 'cofefve.ts', kind: 'input', normalled: 1, from: 0, line: 138,
-        text: 'const inR = inputs[1]?.[0] ?? inputs[0]?.[0] ?? null;',
-      };
-      const fixed = `
-        silenceL.connect(workletNode, 0, 0);
-        silenceClk.connect(workletNode, 0, 2);
-      `;
-      expect(defeatReason(n, fixed)).toBeNull();
-      expect(defeatReason(n, `${fixed}\nsilenceR.connect(workletNode, 0, 1);`)).toMatch(/pins worklet input 1/);
+    it('scanned the whole DSP tree, not a subset', () => {
+      expect(scan.files.length).toBeGreaterThanOrEqual(63);
+      expect(normals.length).toBe(KNOWN_MONO_NORMALS.length);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // LEG 2 — THE DEF-ANCHORED POPULATION. Blind in a different way from the text
+  // scan: it never reads a fallback expression at all.
+  // -------------------------------------------------------------------------
+  describe('def-anchored population: every L/R stereo module is accounted for', () => {
+    const stereo = findStereoModules();
+    const withNormal = new Set(normals.map((n) => n.dspFile));
+
+    it('every stereo-in/stereo-out module has a normal or a NAMED reason', () => {
+      const unexplained = stereo
+        .filter((m) => !(m.dspFile && withNormal.has(m.dspFile)))
+        .filter((m) => !(m.file in STEREO_WITHOUT_NORMAL))
+        .map((m) => `${m.file} (in ${JSON.stringify(m.inPairs)} → out ${JSON.stringify(m.outPairs)})`);
+      expect(
+        unexplained,
+        'This module declares an L/R audio input pair AND an L/R audio output pair, so a mono '
+        + 'patch into its LEFT input can leave OUT R at digital silence — but no mono normal was '
+        + 'detected for it. Either it has one the scanner cannot read (this gate is then BLIND — '
+        + 'fix the scanner), or it genuinely has none (a defect — measure OUT R). Do not add a '
+        + 'STEREO_WITHOUT_NORMAL row without doing one of those.',
+      ).toEqual([]);
     });
 
-    it('finds BOTH normal shapes in real source (the finder itself is controlled)', () => {
-      const inputForm = findMonoNormals('x.ts', 'const inR = inputs[1]?.[0] ?? inputs[0]?.[0] ?? null;');
-      expect(inputForm).toHaveLength(1);
-      expect(inputForm[0]).toMatchObject({ kind: 'input', normalled: 1, from: 0 });
-
-      const channelForm = findMonoNormals(
-        'y.ts',
-        'const inAudio = inputs[0] ?? [];\nconst inR = inAudio[1] ?? inAudio[0] ?? null;',
+    it('keeps no stale STEREO_WITHOUT_NORMAL row, and ratchets it BOTH ways', () => {
+      const gaps = new Set(
+        stereo.filter((m) => !(m.dspFile && withNormal.has(m.dspFile))).map((m) => m.file),
       );
-      expect(channelForm).toHaveLength(1);
-      expect(channelForm[0]).toMatchObject({ kind: 'channel', normalled: 1, from: 0, onInput: 0 });
-
-      // and does not invent normals where there are none
-      expect(findMonoNormals('z.ts', 'const inL = inputs[0]?.[0] ?? null;')).toEqual([]);
+      for (const f of Object.keys(STEREO_WITHOUT_NORMAL)) {
+        expect(
+          gaps.has(f),
+          `STEREO_WITHOUT_NORMAL names "${f}", which either is no longer a stereo module or now `
+          + 'HAS a normal. A stale exemption is one nobody is watching — remove the row.',
+        ).toBe(true);
+      }
+      const CEILING = 2; // only shrinks
+      expect(Object.keys(STEREO_WITHOUT_NORMAL).length).toBeLessThanOrEqual(CEILING);
+      expect(CEILING - Object.keys(STEREO_WITHOUT_NORMAL).length).toBe(0);
     });
 
-    it('sidecar — the module that always WORKED — is detected, proving coverage is real', () => {
-      // sidecar declares two normals and its factory pins nothing. If the
-      // scanner silently missed it, "0 defeated" would be meaningless.
-      const seen = scanRepo().filter((n) => n.dspFile === 'sidecar.ts');
-      expect(seen.map(key).sort()).toEqual(['sidecar.ts:input:1', 'sidecar.ts:input:3']);
-      for (const n of seen) expect(defeatReason(n, factoryFor('sidecar.ts').src)).toBeNull();
+    it('the def-anchored instrument is non-vacuous', () => {
+      // If the def parser silently read nothing, every assertion above passes.
+      expect(stereo.length).toBeGreaterThanOrEqual(10);
+      expect(stereo.map((m) => m.file)).toContain('stereovca.ts');
+      expect(stereo.every((m) => m.inPairs.length > 0 && m.outPairs.length > 0)).toBe(true);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // LEG 3 — E2E ROSTER PARITY. The behavioural spec's SUTS list is
+  // hand-maintained, exactly like the VRT FACES set; without this it drifts.
+  // -------------------------------------------------------------------------
+  describe('e2e roster parity: the behavioural spec cannot silently omit a module', () => {
+    const specSrc = readFileSync(E2E_SPEC, 'utf8');
+    const rosterSection = /const SUTS:[\s\S]*?\n\];/.exec(blankComments(specSrc))?.[0] ?? '';
+    const roster = new Set(
+      [...rosterSection.matchAll(/\btype:\s*'([A-Za-z0-9_$]+)'/g)].map((m) => m[1]!),
+    );
+
+    it('parsed a non-empty roster (the parser fails OPEN otherwise)', () => {
+      expect(rosterSection).not.toBe('');
+      expect(roster.size).toBeGreaterThanOrEqual(6);
+      expect(roster).toContain('clouds');
+    });
+
+    it('every normal-bearing module is in the roster or NAMED as exempt', () => {
+      const missing: string[] = [];
+      for (const dspFile of new Set(normals.map((n) => n.dspFile))) {
+        const types = factoriesFor(dspFile)
+          .map((f) => moduleTypeOf(f.src))
+          .filter((t): t is string => !!t);
+        if (types.length === 0) continue;
+        if (types.some((t) => roster.has(t) || t in E2E_ROSTER_EXEMPT)) continue;
+        missing.push(`${dspFile} → type(s) ${types.join('/')}`);
+      }
+      expect(
+        missing,
+        'This module declares a mono normal, but nothing in ANY lane measures its right channel: '
+        + 'it is absent from the SUTS roster of e2e/tests/stereo-mono-normal.spec.ts and has no '
+        + 'E2E_ROSTER_EXEMPT reason. This is exactly how stereovca went unseen.',
+      ).toEqual([]);
+    });
+
+    it('stereovca — the specific miss — is now IN the behavioural roster', () => {
+      // Not merely detected by the source scan: actually measured. Confirmed
+      // clean by hand at OUT R peak 0.500000 (real Chrome, real dist) before
+      // this row was added, so it is a live assertion and not a pending fix.
+      expect(roster).toContain('stereovca');
+    });
+
+    it('keeps no stale E2E_ROSTER_EXEMPT row', () => {
+      const liveTypes = new Set<string>();
+      for (const dspFile of new Set(normals.map((n) => n.dspFile))) {
+        for (const f of factoriesFor(dspFile)) {
+          const t = moduleTypeOf(f.src);
+          if (t) liveTypes.add(t);
+        }
+      }
+      for (const t of Object.keys(E2E_ROSTER_EXEMPT)) {
+        expect(
+          liveTypes.has(t),
+          `E2E_ROSTER_EXEMPT names "${t}", which no longer has a mono normal — remove the row.`,
+        ).toBe(true);
+        expect(
+          roster.has(t),
+          `"${t}" is BOTH in the e2e roster and in E2E_ROSTER_EXEMPT — drop the exemption.`,
+        ).toBe(false);
+      }
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // SCOPE — stated in the gate, and asserted rather than left as prose.
+  // -------------------------------------------------------------------------
+  describe('states what it CANNOT see', () => {
+    it('reads only the top level of packages/dsp/src, and that is sufficient', () => {
+      expect(SCOPE.dspDir).toBe('packages/dsp/src/*.ts');
+      // The claim that skipping lib/** is safe: a pure core receives
+      // Float32Arrays from a worklet entry, so it cannot declare a
+      // worklet-input normal. If one ever does, this fails and scope must widen.
+      const libDir = `${DSP_DIR}lib/`;
+      const strays: string[] = [];
+      for (const f of readdirSync(libDir)) {
+        if (!f.endsWith('.ts') || f.endsWith('.test.ts')) continue;
+        const found = scanSource(f, readFileSync(`${libDir}${f}`, 'utf8')).normals;
+        if (found.length) strays.push(`lib/${f}:${found[0]!.line}`);
+      }
+      expect(
+        strays,
+        'A mono normal was found in packages/dsp/src/lib/**, which this gate does NOT scan. '
+        + 'Widen SCOPE.dspDir — until then that normal is unguarded.',
+      ).toEqual([]);
+    });
+
+    it('names the defeat mechanisms it knows, and admits a third would be invisible', () => {
+      expect(SCOPE.defeats).toHaveLength(2);
+      expect(SCOPE.defeats).toContain('factory pin on the normalled worklet INPUT');
+      // A factory that up-mixes UPSTREAM of the worklet, or feeds the normalled
+      // input from a ChannelMerger, defeats a normal by a mechanism nothing here
+      // models. Only the e2e counterpart can see that — which is why LEG 3
+      // exists and why the roster is gated rather than advisory.
+    });
+
+    it('names the sources it does not read at all', () => {
+      expect(SCOPE.notScanned).toContain('packages/dsp/src/*.dsp (Faust)');
+      expect(Object.keys(STEREO_WITHOUT_NORMAL)).toContain('qbrt.ts');
+    });
+  });
+
+  // =========================================================================
+  // NEGATIVE-CONTROL MATRIX.
+  //
+  // The shipped controls fed the detector only the one shape it could see, so a
+  // detector seeing 54 % of the population looked identical to one seeing all
+  // of it. These fix that three ways:
+  //   (a) EVERY supported spelling is fed in, and must be FOUND;
+  //   (b) every spelling is fed in DEFEATED, and must go RED;
+  //   (c) the REAL source of every module that was missed is fed in.
+  // Plus a PERMANENT leg: the found-count may never fall below the known
+  // population, so the next unmatchable spelling cannot pass silently.
+  // =========================================================================
+  describe('negative control: the detector can actually FAIL, in every spelling', () => {
+    /** One row per supported spelling, each declaring `input:1 ← 0`. */
+    const SPELLINGS: { spelling: Spelling; src: string }[] = [
+      {
+        spelling: 'direct',
+        src: 'const inR = inputs[1]?.[0] ?? inputs[0]?.[0] ?? null;',
+      },
+      {
+        spelling: 'alias',
+        src: 'const inLBuf = inputs[0]?.[0];\nconst inRRaw = inputs[1]?.[0];\nconst inR = inRRaw ?? inLBuf;',
+      },
+      {
+        spelling: 'mixed',
+        src: 'const inL = inputs[0]?.[0];\nconst inR = inputs[1]?.[0] ?? inL;',
+      },
+      {
+        spelling: 'destructured',
+        src: 'const [l, r] = inputs[0];\nconst chR = r ?? l;',
+      },
+      {
+        spelling: 'ternary',
+        src: 'const inL = inputs[0]?.[0];\nconst inRRaw = inputs[1]?.[0];\nconst inR = inRRaw ? inRRaw : inL;',
+      },
+      {
+        spelling: 'or',
+        src: 'const inL = inputs[0]?.[0];\nconst inRRaw = inputs[1]?.[0];\nconst inR = inRRaw || inL;',
+      },
+    ];
+
+    it.each(SPELLINGS)('FINDS the normal spelled $spelling', ({ spelling, src }) => {
+      const found = scanSource('probe.ts', src).normals;
+      expect(found.length, `spelling "${spelling}" was NOT detected:\n${src}`).toBe(1);
+      expect(found[0]!.spelling).toBe(spelling);
+      // `destructured` names two CHANNELS of input 0; the rest name input 1 ← 0.
+      if (spelling === 'destructured') {
+        expect(found[0]).toMatchObject({ kind: 'channel', normalled: 1, from: 0, onInput: 0 });
+      } else {
+        expect(found[0]).toMatchObject({ kind: 'input', normalled: 1, from: 0 });
+      }
+    });
+
+    const PIN = 'silenceR.connect(workletNode, 0, 1);';
+    const CLEAN_FACTORY = 'silenceL.connect(workletNode, 0, 0);\nsilenceClk.connect(workletNode, 0, 2);';
+
+    it.each(SPELLINGS)('goes RED when the normal spelled $spelling is DEFEATED', ({ spelling, src }) => {
+      const n = scanSource('probe.ts', src).normals[0]!;
+      if (spelling === 'destructured') {
+        // A CHANNEL normal is defeated by the up-mix law, not by a pin.
+        expect(defeatReason(n, "channelInterpretation: 'discrete',")).toMatch(/discrete/);
+        expect(defeatReason(n, "channelInterpretation: 'speakers',")).toBeNull();
+        return;
+      }
+      expect(defeatReason(n, `${CLEAN_FACTORY}\n${PIN}`)).toMatch(/pins worklet input 1/);
+      // …and does NOT fire on the fixed factory. A detector that flagged any
+      // .connect() could not tell the fix from the defect: cofefve legitimately
+      // pins input 0 (audio L) and input 2 (clock).
+      expect(defeatReason(n, CLEAN_FACTORY)).toBeNull();
+    });
+
+    it('feeds it stereovca\'s REAL source — the specific miss — and sees BOTH normals', () => {
+      const src = readFileSync(`${DSP_DIR}stereovca.ts`, 'utf8');
+      const found = scanSource('stereovca.ts', src).normals;
+      expect(found.map(normalKey).sort()).toEqual(['stereovca.ts:input:1', 'stereovca.ts:input:3']);
+      expect(found.every((n) => n.spelling === 'alias')).toBe(true);
+      // The SHIPPED regex, verbatim, on the same bytes: zero. This is the
+      // measurement, kept executable so it cannot rot into a claim.
+      const SHIPPED = /inputs\[(\d+)\]\?\.\[0\]\s*\?\?\s*inputs\[(\d+)\]\?\.\[0\]/;
+      expect(src.split('\n').filter((l) => SHIPPED.test(l))).toEqual([]);
+      // …and stereovca is CLEAN: measured OUT R peak 0.500000 in real Chrome.
+      for (const n of found) {
+        for (const f of factoriesFor('stereovca.ts')) expect(defeatReason(n, f.src)).toBeNull();
+      }
+    });
+
+    it('feeds it samsloop-tap\'s REAL source, and resolves its NON-obvious factory', () => {
+      const found = scanSource(
+        'samsloop-tap.ts', readFileSync(`${DSP_DIR}samsloop-tap.ts`, 'utf8'),
+      ).normals;
+      expect(found.map(normalKey)).toEqual(['samsloop-tap.ts:input:1']);
+      // The shipped gate assumed factory == same basename. There is no
+      // modules/samsloop-tap.ts, so it would have thrown ENOENT right here.
+      const factories = factoriesFor('samsloop-tap.ts');
+      expect(factories.map((f) => f.file)).toEqual(['samsloop.ts']);
+      expect(defeatReason(found[0]!, factories[0]!.src, 1)).toBeNull();
+    });
+
+    it('feeds it the OTHER real misses (ringback, twotracks, recorderbox-capture)', () => {
+      for (const [file, key, spelling] of [
+        ['ringback.ts', 'ringback.ts:input:1', 'mixed'],
+        ['twotracks.ts', 'twotracks.ts:input:inputOffset + 1', 'mixed'],
+        ['recorderbox-capture.ts', 'recorderbox-capture.ts:channel:1', 'alias'],
+      ] as const) {
+        const found = scanSource(file, readFileSync(`${DSP_DIR}${file}`, 'utf8')).normals;
+        expect(found.map(normalKey), `${file} normal not found`).toContain(key);
+        expect(found.find((n) => normalKey(n) === key)!.spelling).toBe(spelling);
+      }
+      // recorderbox-capture's factory is a VIDEO module — a search resolving
+      // only lib/audio/modules/ finds nothing and reports clean.
+      expect(factoriesFor('recorderbox-capture.ts').map((f) => f.file)).toEqual(['recorderbox.ts']);
+    });
+
+    it('does not INVENT normals where there are none', () => {
+      expect(scanSource('z.ts', 'const inL = inputs[0]?.[0] ?? null;').normals).toEqual([]);
+      expect(scanSource('z.ts', 'const x = a ?? b;').normals).toEqual([]);
+      // the same index on both sides is degenerate, not a normal
+      expect(scanSource('z.ts', 'const x = inputs[0]?.[0] ?? inputs[0]?.[0];').normals).toEqual([]);
+      // outputs are not inputs
+      expect(scanSource('z.ts', 'const o = outputs[1]?.[0] ?? outputs[0]?.[0];').normals).toEqual([]);
+      // a per-sample guard resolves to a SAMPLE, not a channel
+      expect(scanSource('z.ts', 'const inL = inputs[0]?.[0];\nconst v = inL ? inL[i] : 0;').normals).toEqual([]);
+    });
+
+    it('cannot be fooled by PROSE — comments and strings are not code', () => {
+      // cofefve's real comment is "// R normals to L"; this file's own header
+      // quotes the defective expression several times.
+      const proseOnly = '// const inR = inputs[1]?.[0] ?? inputs[0]?.[0];\n'
+        + 'const label = "inputs[1]?.[0] ?? inputs[0]?.[0]";';
+      expect(scanSource('z.ts', proseOnly).normals).toEqual([]);
+      // …but the real thing on the SAME line as a comment still counts.
+      expect(scanSource('z.ts', 'const inR = inputs[1]?.[0] ?? inputs[0]?.[0]; // R normals to L').normals)
+        .toHaveLength(1);
+    });
+
+    it('blankComments keeps the string literals that blankNonCode destroys', () => {
+      // Load-bearing: factory resolution and def parsing search for string
+      // LITERALS (a processor name, a port id). Running them over blankNonCode
+      // output matches nothing and silently reports "clean" — the same class of
+      // bug as the original regex, one level down. This was a real defect in
+      // the first draft of this scanner.
+      const src = "registerProcessor('stereovca', P);";
+      expect(blankComments(src)).toContain('stereovca');
+      expect(blankNonCode(src)).not.toContain('stereovca');
+      expect(blankNonCode(src)).toHaveLength(src.length); // offsets preserved
+      expect(blankComments(src)).toHaveLength(src.length);
+    });
+
+    it('the RESIDUAL AUDIT itself goes red on a spelling the resolver cannot read', () => {
+      // The permanent control on LEG 1. A fallback whose LEFT side resolves to a
+      // worklet input but whose right side the resolver cannot account for must
+      // be FLAGGED, never silently dropped.
+      const halfKnown = 'const inR = inputs[1]?.[0] ?? mysteryBuffer;';
+      const flagged = scanSource('probe.ts', halfKnown).candidates
+        .filter((c) => c.verdict === 'unclassified');
+      expect(flagged).toHaveLength(1);
+      expect(flagged[0]!.why).toMatch(/BLIND/);
+
+      // And the other polarity: an exotic left operand yields no normal, but is
+      // still VISIBLE as a candidate rather than vanishing from the accounting.
+      const exotic = 'const inL = inputs[0]?.[0];\nconst inR = someUnknownHelper(inputs) ?? inL;';
+      const r = scanSource('probe.ts', exotic);
+      expect(r.normals).toEqual([]);
+      expect(r.candidates.length).toBeGreaterThan(0);
+    });
+
+    it('PERMANENT: the found-count may never fall below the known population', () => {
+      // The leg that makes the next unmatchable spelling impossible to ship
+      // silently. If someone rewrites a module and the scanner stops seeing its
+      // normal, this is red even though every "no violations" assertion above
+      // would still pass.
+      expect(normals.length).toBeGreaterThanOrEqual(13);
+      expect(normals.length).toBe(KNOWN_MONO_NORMALS.length);
+      // …and the spellings actually present in-tree are pinned, so a refactor
+      // that changes HOW a normal is written is a visible, reviewed diff.
+      const live = [...new Set(normals.map((n) => n.spelling))].sort();
+      expect(live).toEqual(['alias', 'direct', 'mixed']);
+    });
+
+    it('the L/R pairing used by LEG 2 is controlled in both directions', () => {
+      expect(lrPairs(['in_l', 'in_r'])).toEqual([['in_l', 'in_r']]);
+      expect(lrPairs(['inL', 'inR'])).toEqual([['inL', 'inR']]);
+      expect(lrPairs(['L', 'R'])).toEqual([['L', 'R']]);
+      expect(lrPairs(['audio_l_in', 'audio_r_in'])).toEqual([['audio_l_in', 'audio_r_in']]);
+      // …and does NOT invent pairs out of unrelated multi-input utilities,
+      // which is what keeps the STEREO_WITHOUT_NORMAL ledger readable: 22
+      // modules have 2+ audio ports each way, only 10 are real stereo pairs.
+      expect(lrPairs(['in1', 'in2', 'in3', 'in4'])).toEqual([]);
+      expect(lrPairs(['a_in', 'b_in'])).toEqual([]);
+      expect(lrPairs(['ch1', 'ch2'])).toEqual([]);
+      expect(lrSplit('out_positive')).toBeNull();
+    });
+
+    it('the alias resolver is controlled: it follows a chain and refuses a sample', () => {
+      const { env } = buildEnv('const a = inputs[1];\nconst b = a;\nconst c = b[0];');
+      expect(resolveOperand('c', env)).toEqual({ kind: 'channel', input: 1, channel: 0 });
+      // indexing a CHANNEL yields a sample — must not resolve as a channel
+      expect(resolveOperand('c[0]', env)).toBeNull();
+      expect(resolveOperand('nothing', env)).toBeNull();
     });
   });
 });
