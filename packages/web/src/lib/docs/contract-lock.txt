@@ -3394,6 +3394,8 @@ twotracks in audio_r_in_a audio
 twotracks in audio_r_in_b audio
 twotracks in overdub_a gate
 twotracks in overdub_b gate
+twotracks in rate_cv_a cv param=rate_a cvScale=linear
+twotracks in rate_cv_b cv param=rate_b cvScale=linear
 twotracks in rec_arm_a gate
 twotracks in rec_arm_b gate
 twotracks in rec_start_a gate
