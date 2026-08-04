@@ -128,6 +128,89 @@ A fix agent was dispatched for this at session end. **Verify it landed.**
 
 ---
 
+## 6b. LATE FINDINGS — after the first draft of this file
+
+### The samsloop regression was OURS, same day (#1316 → fixed in #1353)
+
+The owner reported START inert, END blanking the clip, playback stopping — and was
+right that it had worked before. **Breaking commit `bbba5b5d` (#1316), merged ~12 h
+earlier.** Its new record branch does:
+
+```ts
+postBuffer(f32, src.sample.rate);                                  // NEW in #1316
+if (ld.sampleLength !== f32.length) ld.sampleLength = f32.length;  // NEW in #1316
+```
+
+`postBuffer` calls `postMessage(msg, [f32.buffer])`, which **TRANSFERS the ArrayBuffer
+and detaches every view onto it**. One line later `f32.length` is `0`, so every
+recording persisted `sampleLength = 0`. The upload branch measures a different,
+un-transferred array — which is why this was record-path-only and the upload e2e
+stayed green.
+
+**One cause, three symptoms**, because the card sizes both window faders with
+`max={Math.max(1, sampleLength)}` — a `0` there is a **[0,1] slider on a 39 680-frame
+take**. Dragging START to 80 % set it to **0.7999998 of a sample**. END wrote ≤1 → a
+one-sample window → DC → silence. The highlight band is `end / samples.length` wide,
+so it collapsed: band px **12387 → 0**. "Black" *is* the band losing its width.
+
+Fix shape worth copying: `postSampleBuffer` captures the frame count **before** the
+transfer and returns it, so the correct number is the only one available after the
+call. **The mistake becomes unwritable, not merely fixed once.**
+
+### ⚠ `E2E_PORT` DOES NOT ISOLATE VRT/e2e — the dev server always binds 5173
+
+`packages/web/vite.config.ts` declares no `server.port`, so
+`npm run dev -w packages/web` **always binds 5173**. `E2E_PORT` only rewrites
+Playwright's *client* URL. An "isolated-port" VRT run therefore captures **from
+whatever answers 5173**.
+
+**Proved**: a card label edited to `ZZZZ` and confirmed live in the file;
+`E2E_PORT=5199 task vrt:one -- wavecel` **passed at threshold 0 / ratio 0**, and a
+forced re-capture wrote a **byte-identical** PNG.
+
+Consequences for anyone giving agents port instructions:
+- "Use a non-5173 port" works for unit tests and for a plain dev server. For **VRT and
+  e2e it is partly fiction** — the capture may come from another process entirely.
+- Worktree copies of `Taskfile.yml` carry a comment: *"HONOUR E2E_PORT — … this line
+  used to NOT, which made `E2E_PORT=N task e2e:one` actively dangerous."* Someone hit
+  this before. **Check whether that fix is on main.**
+- **#1350 (wavecel) expects VRT red on CI.** If it returns green, treat it as the
+  sub-tolerance case: `git rm` the baseline, then dispatch `vrt-update.yml`.
+
+### The mono-normal gate was 46 % blind, not 30 %
+
+Corrected figures: the real population is **13** normals, not 10. Shipped detector
+found **7**; **6 missed (46 %)**. Beyond stereovca ×2 and `samsloop-tap.ts:67`, also
+missed: `ringback.ts:72`, `recorderbox-capture.ts:53`, and `twotracks.ts:606` (a
+**computed** index, `inputs[inputOffset + 1]`).
+
+Two things that finding surfaced:
+- **The blindness was masking a crash.** `factoryFor()` assumed same-basename;
+  samsloop-tap's factory is `samsloop.ts` and recorderbox-capture's is a *video*
+  module — the gate would have thrown ENOENT the moment it could see either.
+- **The fix's own first draft had the same defect one level down**:
+  `defeatReason()` used `blankNonCode()`, which blanks string literals, so the
+  `'discrete'` search could never fire and the channel-defeat leg was silently dead.
+  Caught only because the negative-control matrix required every spelling to go red.
+
+Fixed in **#1351**. Note: this repo has **no AST-gate precedent** — zero uses of the
+TypeScript compiler API, and `module-manifest.ts:9-16` documents a decision against it.
+Coverage is instead made *provable* by a residual audit: 13 normal / 42 default /
+399 not-input / **0 unclassified**.
+
+### OPEN, UNFIXED, DELIBERATELY — carry these forward
+
+| item | evidence | why not fixed |
+|---|---|---|
+| **`cube` has wavecel's exact envelope bypass** | `cube.ts:405` `base_vol` default 1; `:753` `readFrame(…) * baseVol * level` | `poly-osc-sum.ts` was left untouched precisely so cube and pentemelodica would not move. Needs its own PR |
+| **`cloudseed` — a THIRD stereo-silence mechanism** | `cloudseed.ts:1510-11` reads `inputs[0]`/`inputs[1]` with **no `??` at all** — a mono patch leaves `inR` undefined | a *missing* normal, not a defeated one; audio behaviour change needing an owner ear + ART re-pin. Carried as a named ledger row in #1351 |
+| **`buildCvCurve`'s LUT is 4096 points — EVEN** | `cv = 0` lands between samples and reads **0.000733**, a ≤0.0015× offset on a patched-but-idle cable | shared by **every** `cvScale` port in the repo; not folded into an atomic module PR |
+| **Three `packages/dsp` tests have thin timeout headroom** | `snaredrum-dsp`, `tidy-vco-dsp.sonic-range`, `warrensspectrum-masspass` — all 5000 ms vitest timeouts under concurrent load, **all pass in isolation** (masspass: 23/23, one test at 2935 ms) | reported independently by **three** agents. Same class as the 27 e2e tests #1341 budgeted, different lane |
+| **samsloop faders are not cross-clamped** | END can be dragged below START → silent one-sample window, no on-screen explanation | pre-existing; the clamp is a behaviour call for the owner. Flagged for the revamp |
+| **`vrt-meta.test.ts` barrel-import test** | 3.3–3.6 s against vitest's 5 s default; timed out once under contention | same thin-headroom class |
+
+---
+
 ## 7. STANDING OPERATIONAL FACTS
 
 - **Port 5173 is the owner's dev server. `task e2e:serve` binds it BY DEFAULT** — an
