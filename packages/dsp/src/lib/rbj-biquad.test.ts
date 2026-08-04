@@ -112,3 +112,79 @@ describe('rbj-biquad: response at the design points', () => {
     expect(Math.abs(bq.b0 - b0)).toBeLessThan(0.01);
   });
 });
+
+// ---------------------------------------------------------------------------
+// The cache key must contain EVERY parameter the math reads.
+//
+// `updatePeaking` guarded on (fc, dbGain) only, so a Q-ONLY change early-
+// returned the previous filter verbatim — measured bit-identical b0..a2 and a
+// 1.85 dB response error one octave above fc. The three legs below are a set:
+// leg 1 is the regression, legs 2 and 3 are its negative controls, and leg 1
+// goes vacuous the moment either control stops holding.
+// ---------------------------------------------------------------------------
+describe('rbj-biquad: Q is part of the peaking cache key', () => {
+  const COEFFS = ['b0', 'b1', 'b2', 'a1', 'a2'] as const;
+  const coeffs = (bq: Biquad) => COEFFS.map((k) => bq[k]);
+  const FC = 150;
+  const DB = 6;
+  const Q_WIDE = 1.0;
+  const Q_NARROW = 8.0;
+  const BIN_OCT_UP = 51; // ≈299 Hz — one octave above fc, where Q shows
+
+  // Leg 1 — THE REGRESSION. Red against `k1 === fc && k2 === dbGain`.
+  it('a Q-ONLY change recomputes the coefficients', () => {
+    const live = makeBiquad();
+    updatePeaking(live, FC, DB, Q_WIDE, SR);
+    const wide = coeffs(live);
+    updatePeaking(live, FC, DB, Q_NARROW, SR); // fc and dbGain unchanged
+    const narrow = coeffs(live);
+
+    expect(narrow).not.toEqual(wide);
+
+    // …and it lands on the RIGHT coefficients, not merely different ones: a
+    // biquad that never saw Q_WIDE must agree bit-for-bit.
+    const reference = makeBiquad();
+    updatePeaking(reference, FC, DB, Q_NARROW, SR);
+    expect(narrow).toEqual(coeffs(reference));
+
+    // The audible consequence, in dB (units stated so a red run is readable):
+    // the stale wide bell boosts ≈1.90 dB an octave up; the narrow one ≈0.05.
+    const liveDb = gainDbAt(live, BIN_OCT_UP);
+    const wantDb = gainDbAt(reference, BIN_OCT_UP);
+    expect(Math.abs(liveDb - wantDb)).toBeLessThan(0.01); // dB @≈299 Hz
+  });
+
+  // Leg 2 — NEGATIVE CONTROL on the FIX: "recompute unconditionally" would
+  // satisfy leg 1 while throwing the cache away. The sentinel proves an
+  // all-params-equal call still early-returns.
+  it('negative control: an all-params-equal call still hits the cache', () => {
+    const bq = makeBiquad();
+    updatePeaking(bq, FC, DB, Q_NARROW, SR);
+    bq.b0 = 123; // sentinel — any recompute overwrites it
+    updatePeaking(bq, FC, DB, Q_NARROW, SR);
+    expect(bq.b0).toBe(123);
+    updatePeaking(bq, FC, DB, Q_WIDE, SR); // Q differs → must recompute
+    expect(bq.b0).not.toBe(123);
+  });
+
+  // Leg 3 — NEGATIVE CONTROL on the INSTRUMENT: leg 1 asserts two coefficient
+  // sets differ, which proves nothing if Q were a no-op in the math. On FRESH
+  // biquads the cache cannot hit at all, so this measures the math alone — and
+  // it is what makes the chosen Q pair a real perturbation rather than a
+  // decorative one.
+  it('negative control: Q genuinely changes the math (fresh biquads, no cache)', () => {
+    const wide = makeBiquad();
+    updatePeaking(wide, FC, DB, Q_WIDE, SR);
+    const narrow = makeBiquad();
+    updatePeaking(narrow, FC, DB, Q_NARROW, SR);
+    expect(coeffs(narrow)).not.toEqual(coeffs(wide));
+
+    // Both hit their design gain AT fc — Q moves the skirt, not the peak, so
+    // an fc-only probe would have been blind to this whole defect.
+    expect(gainDbAt(wide, BIN_150HZ)).toBeGreaterThan(5.4);
+    expect(gainDbAt(narrow, BIN_150HZ)).toBeGreaterThan(5.4);
+    // One octave up the two are far apart (measured 1.900 vs 0.045 dB).
+    expect(gainDbAt(wide, BIN_OCT_UP)).toBeGreaterThan(1.5); // dB
+    expect(gainDbAt(narrow, BIN_OCT_UP)).toBeLessThan(0.3); // dB
+  });
+});

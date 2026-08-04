@@ -89,11 +89,21 @@ describe('ART kickdrum / audio profile (default patch, 2-strike trigger train)',
   });
 
   it('pins the audio_l profile baseline (SHA-gated, RMS tier B)', async () => {
+    // Pin EVERY file this render steps through (capture.ts's dspSourceSha
+    // contract). `lib/rbj-biquad.ts` and `lib/oversample.ts` were MISSING:
+    // kickdrumStepStereo runs the whole EQ chain (updateHighpass/LowShelf/
+    // Peaking/HighShelf/Lowpass) and the 2×/4× oversampled drive through them,
+    // so a change to either moved this render with the baseline never noticing.
+    // The gap was pointed the wrong way round — kickdrum is the ONLY caller of
+    // updatePeaking in the tree, yet snaredrum (which uses one highpass) pinned
+    // both files and kickdrum pinned neither.
     const srcSha = await dspSourceSha(
       'kickdrum.ts',
       'lib/kickdrum-dsp.ts',
       'lib/moog-vco-dsp.ts',
       'lib/dsp-utils.ts',
+      'lib/oversample.ts',
+      'lib/rbj-biquad.ts',
     );
     await pinAll('kickdrum', srcSha, renderProfile());
   });
