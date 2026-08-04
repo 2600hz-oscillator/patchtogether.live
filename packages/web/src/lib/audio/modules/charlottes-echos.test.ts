@@ -1,10 +1,32 @@
 // packages/web/src/lib/audio/modules/charlottes-echos.test.ts
 //
-// CHARLOTTE'S ECHOS — now a 4× Cocoa Delay cascade. Tests assert:
+// CHARLOTTE'S ECHOS — a 4-stage AnalogDelayCore cascade. Tests assert:
 //   • the module def is UNCHANGED (id + ports + params) so old patches load.
-//   • signal passes through all 4 stages and the first full-wet echo lands
-//     at ≈ the SUM of the four stage delays (≈ 4 × delay).
+//   • DELAY means what the def declares: the TIME TO THE FIRST ECHO, in
+//     seconds, across the whole travel (the 2026-08-03 defect, below).
 //   • feedback + decay behave sensibly; output stays finite at extremes.
+//
+// ── DEFECT, 2026-08-03: DELAY was off by the STAGE COUNT ────────────────────
+// The four stages are in SERIES, so their delays SUM — but every stage was set
+// to the FULL `delay`, putting the first echo at 4 × delay. The def declares
+// `units: 's'` over 0.001..1.5 and documents DELAY as "the spacing of the first
+// echo". MEASURED at the 0.4 s default: the first echo landed at 1.6000 s and
+// the fully-wet output was BIT-ZERO — peak 0.0000e+0 — over the entire
+// [0, 1.5 s) window. The ratio was exactly 4.0000 at every knob position tested
+// (0.05 / 0.1 / 0.2 / 0.4 / 0.8 / 1.5 s). Fixed by running each stage at
+// delay / NUM_STAGES; the ratio is now 1.0000 everywhere from 2 ms up.
+//
+// WHY NOTHING CAUGHT IT — and this is the uncomfortable part: the test that
+// used to sit here ASSERTED THE DEFECT. It read
+//   `expect(echoSec).toBeGreaterThan(delay * 1.5)`  // "definitely multi-stage"
+//   `expect(echoSec).toBeGreaterThan(sum * 0.45)`   // sum = 4 × delay
+// because it was written from the DSP file's implementation comment instead of
+// from the def's declared unit. `contract-lock` pinned `units: 's'`,
+// `module-docs-lint` checked the control was documented, and `per-module-per-
+// port` proved the `delay` CV jack materialises an edge — every one of them
+// read a DECLARATION, and none of them rendered the module and asked how long
+// the echo actually took. No gate in the repo joins a param's declared `units`
+// to a measured observable. The sweep below is that join for this module.
 
 import { describe, it, expect, beforeAll } from 'vitest';
 
@@ -105,25 +127,98 @@ function spectralCentroid(buf: Float32Array, start: number, end: number): number
   return den > 0 ? num / den : 0;
 }
 
-describe('charlottesEchos 4-stage cascade DSP', () => {
-  it('first full-wet echo lands near the SUM of the 4 stage delays (≈ 4 × delay)', async () => {
+describe('charlottesEchos DELAY unit — seconds to the first echo', () => {
+  // Fully wet, no feedback, no decay-drive: a clean impulse whose only path to
+  // the output is through all four series stages, so the onset IS the cascade
+  // time. Fresh processor per position — a reused node carries tape state.
+  function onsetSeconds(Proc: ProcCtor, delay: number, mix = 1): number {
+    const proc = new Proc();
+    const params = makeParams({ delay, feedback: 0, decay: 0, pitchUp: 0, mix });
+    const { L } = runProcessor(proc, params, Math.max(0.2, delay * 2.5), (n) => (n === 0 ? 1 : 0));
+    // from = 1 skips the dry impulse at sample 0 (present only when mix < 1).
+    return firstEchoIndex(L, 0.02, 1) / SR;
+  }
+
+  it('DELAY is the time to the FIRST echo — ratio 1.00 across the WHOLE travel', async () => {
+    const Proc = await loadProcessor();
+    // The MIDDLE of the travel, not only the endpoints. Before the fix every
+    // one of these read 4.0000.
+    const positions = [0.05, 0.1, 0.2, 0.4, 0.8, 1.5];
+    const ratios: number[] = [];
+    for (const d of positions) {
+      const t = onsetSeconds(Proc, d);
+      const ratio = t / d;
+      ratios.push(ratio);
+      expect(
+        ratio,
+        `DELAY ${d} s: first echo at ${t.toFixed(4)} s → ratio ${ratio.toFixed(4)} ` +
+          `(the def declares units:'s', so this must be 1.00; it was 4.0000 before 2026-08-03)`,
+      ).toBeGreaterThan(0.97);
+      expect(ratio, `DELAY ${d} s: ratio ${ratio.toFixed(4)}`).toBeLessThan(1.03);
+    }
+    // Negative control ON THE METRIC: the onsets must MOVE with the knob. A
+    // probe that returned a constant (or one hard-coded to echo `delay` back)
+    // would satisfy the ratio clause above and fail here.
+    const onsets = positions.map((d, i) => d * ratios[i]!);
+    for (let i = 1; i < onsets.length; i++) {
+      expect(
+        onsets[i]!,
+        `onset must grow with DELAY: ${onsets[i]!.toFixed(4)} s at ${positions[i]} s ` +
+          `vs ${onsets[i - 1]!.toFixed(4)} s at ${positions[i - 1]}`,
+      ).toBeGreaterThan(onsets[i - 1]!);
+    }
+  });
+
+  it('at the 0.4 s DEFAULT the wet output is NOT silent over [0, 1.5 s)', async () => {
+    // The headline measurement. Before the fix this window was BIT-ZERO:
+    // peak 0.0000e+0, because the only echo arrived at 1.6000 s.
+    const Proc = await loadProcessor();
+    const { L } = runProcessor(
+      new Proc(),
+      makeParams({ delay: 0.4, feedback: 0, decay: 0, pitchUp: 0, mix: 1 }),
+      2.5,
+      (n) => (n === 0 ? 1 : 0),
+    );
+    let peak = 0;
+    const end = Math.round(1.5 * SR);
+    for (let i = 0; i < end; i++) peak = Math.max(peak, Math.abs(L[i]!));
+    expect(
+      peak,
+      `peak over [0, 1.5 s) = ${peak.toExponential(4)} (was exactly 0.0000e+0 before 2026-08-03)`,
+    ).toBeGreaterThan(0.5);
+  });
+
+  it('the onset probe is not blind: a fully DRY render reports onset ≈ 0', async () => {
+    // Permanent negative control on the instrument itself. `onsetSeconds`
+    // measures "when did the output first exceed 0.02". At mix = 0 the output
+    // IS the dry impulse, so a correct probe reports sample 0 — not `delay`.
+    // If this ever reports ≈ delay the probe has stopped measuring onset and
+    // every ratio above is meaningless.
     const Proc = await loadProcessor();
     const proc = new Proc();
-    const delay = 0.08; // 80 ms per stage → cascade ≈ 320 ms
-    // Fully wet, no feedback, no decay-drive so the impulse stays clean and
-    // we can see the cascade's first emergence.
-    const params = makeParams({ delay, feedback: 0, decay: 0, pitchUp: 0, mix: 1 });
-    const { L } = runProcessor(proc, params, 0.8, (n) => (n === 0 ? 1 : 0));
-    const idx = firstEchoIndex(L, 0.02, 1);
-    expect(idx).toBeGreaterThan(0);
-    const echoSec = idx / SR;
-    const sum = delay * 4;
-    // Hermite + read-position easing smear the onset; allow a wide window
-    // but require it to be clearly past a single stage (≈ delay).
-    expect(echoSec).toBeGreaterThan(delay * 1.5); // definitely multi-stage
-    expect(echoSec).toBeGreaterThan(sum * 0.45);
-    expect(echoSec).toBeLessThan(sum * 1.7);
+    const { L } = runProcessor(
+      proc,
+      makeParams({ delay: 0.4, feedback: 0, decay: 0, pitchUp: 0, mix: 0 }),
+      1.0,
+      (n) => (n === 0 ? 1 : 0),
+    );
+    const idx = firstEchoIndex(L, 0.02, 0);
+    expect(idx, `dry-only onset index ${idx} (expect 0, the impulse itself)`).toBe(0);
   });
+
+  it('below ~2 ms the cascade holds at the core floor (stated scope of the fix)', async () => {
+    // AnalogDelayCore clamps each stage at 0.5 ms, and there are four of them,
+    // so a total under 2 ms is not reachable even though the def's min is
+    // 1 ms. Asserted rather than left implicit: this is the ONE knob position
+    // where the ratio above is deliberately not 1.00.
+    const Proc = await loadProcessor();
+    const t = onsetSeconds(Proc, 0.001);
+    expect(t, `DELAY 1 ms floors at ${(t * 1000).toFixed(2)} ms`).toBeGreaterThan(0.0015);
+    expect(t, `DELAY 1 ms floors at ${(t * 1000).toFixed(2)} ms`).toBeLessThan(0.0025);
+  });
+});
+
+describe('charlottesEchos 4-stage cascade DSP', () => {
 
   it('signal energy passes through to the output (all 4 stages connected)', async () => {
     const Proc = await loadProcessor();
