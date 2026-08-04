@@ -3320,7 +3320,7 @@ timelorde param bpm 10..300 log default=120 unit=bpm
 timelorde param muteOutputs 0..1 discrete default=0
 timelorde param running 0..1 discrete default=1
 timelorde param swingAmount 0..90 linear default=0 unit=deg
-timelorde param swingSource 0..10 discrete default=0
+timelorde param swingSource 0..11 discrete default=0
 timelorde param wizardOn 0..1 discrete default=1
 timelorde expose bpm param=bpm kind=knob
 timelorde expose swingAmount param=swingAmount kind=knob

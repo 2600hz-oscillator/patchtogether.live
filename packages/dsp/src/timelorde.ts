@@ -43,7 +43,7 @@ class TimelordeProcessor extends AudioWorkletProcessor {
     return [
       { name: 'bpm',          defaultValue: 120, minValue: 10,  maxValue: 300, automationRate: 'k-rate' as const },
       { name: 'swingAmount',  defaultValue: 0,   minValue: 0,   maxValue: 90,  automationRate: 'k-rate' as const },
-      { name: 'swingSource',  defaultValue: 0,   minValue: 0,   maxValue: 10,  automationRate: 'k-rate' as const },
+      { name: 'swingSource',  defaultValue: 0,   minValue: 0,   maxValue: 11,  automationRate: 'k-rate' as const },
       // muteOutputs (v2; was isPlaying in v1): 0 = unmuted/audible,
       // 1 = muted. The internal clock generation ALWAYS runs
       // regardless — LIVECODE's clocked() callbacks + any other

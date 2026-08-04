@@ -47,7 +47,7 @@ export interface ElectraDevice {
 }
 
 /** A discrete-value overlay (named choices) for list-style controls —
- *  swingSource (0..10), compEnable (0/1), INT/EXT source label. */
+ *  swingSource (0..11, one per gate output), compEnable (0/1), INT/EXT source label. */
 export interface ElectraOverlay {
   id: number;
   items: Array<{ value: number; label: string }>;

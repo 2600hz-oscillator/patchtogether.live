@@ -626,7 +626,7 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
       "curve": "discrete",
       "deviceId": 1,
       "key": "tl:swingSource",
-      "max": 10,
+      "max": 11,
       "messageType": "cc7",
       "min": 0,
       "number": 47,
@@ -2553,7 +2553,7 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
             "id": "value",
             "message": {
               "deviceId": 1,
-              "max": 10,
+              "max": 11,
               "min": 0,
               "parameterNumber": 47,
               "type": "cc7",
@@ -3004,48 +3004,52 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
         "id": 3,
         "items": [
           {
-            "label": "0",
+            "label": "1x",
             "value": 0,
           },
           {
-            "label": "1",
+            "label": "8x",
             "value": 1,
           },
           {
-            "label": "2",
+            "label": "4x",
             "value": 2,
           },
           {
-            "label": "3",
+            "label": "2x",
             "value": 3,
           },
           {
-            "label": "4",
+            "label": "1/2",
             "value": 4,
           },
           {
-            "label": "5",
+            "label": "1/3",
             "value": 5,
           },
           {
-            "label": "6",
+            "label": "1/4",
             "value": 6,
           },
           {
-            "label": "7",
+            "label": "1/8",
             "value": 7,
           },
           {
-            "label": "8",
+            "label": "1/12",
             "value": 8,
           },
           {
-            "label": "9",
+            "label": "1/16",
             "value": 9,
           },
           {
-            "label": "10",
+            "label": "1/32",
             "value": 10,
+          },
+          {
+            "label": "1/64",
+            "value": 11,
           },
         ],
       },

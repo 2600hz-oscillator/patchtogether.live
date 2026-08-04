@@ -484,17 +484,21 @@ export function generatePreset(input: PresetGenInput): GeneratedPreset {
     {
       const cc = alloc.nextCc();
       const ovId = nextOverlayId();
-      overlays.push({ id: ovId, items: Array.from({ length: 11 }, (_, i) => ({ value: i, label: String(i) })) });
+      // One item per TIMELORDE gate output (SWING_SOURCES has 12: 1x .. 1/64).
+      // Labelled with the division rather than the raw index — the Electra shows
+      // the overlay text, and "11" told the player nothing.
+      const SWING_SRC_LABELS = ['1x', '8x', '4x', '2x', '1/2', '1/3', '1/4', '1/8', '1/12', '1/16', '1/32', '1/64'];
+      overlays.push({ id: ovId, items: SWING_SRC_LABELS.map((label, i) => ({ value: i, label })) });
       const cs = csId(); const pot = potId();
       controls.push({
         id: nextControlId(), pageId: PAGE_SYSTEM, controlSetId: cs, potId: pot,
         type: 'list', name: 'SwSrc',
         inputs: [{ potId: pot, valueId: 'value' }],
-        values: [{ message: { deviceId: DEVICE_CTRL, type: 'cc7', parameterNumber: cc, min: 0, max: 10 }, overlayId: ovId }],
+        values: [{ message: { deviceId: DEVICE_CTRL, type: 'cc7', parameterNumber: cc, min: 0, max: SWING_SRC_LABELS.length - 1 }, overlayId: ovId }],
       });
       allocations.push({
         key: `${tl}:swingSource`, pageId: PAGE_SYSTEM, controlSetId: cs, potId: pot,
-        deviceId: DEVICE_CTRL, messageType: 'cc7', number: cc, min: 0, max: 10, curve: 'discrete', role: 'rw',
+        deviceId: DEVICE_CTRL, messageType: 'cc7', number: cc, min: 0, max: SWING_SRC_LABELS.length - 1, curve: 'discrete', role: 'rw',
       });
       s++;
     }

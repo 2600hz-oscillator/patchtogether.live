@@ -32,12 +32,15 @@
 //   1x (gate): quarter-note pulse at the master BPM.
 //   2x / 4x / 8x (gate): faster subdivisions of the quarter (eighth / sixteenth / 32nd).
 //   1/2 / 1/3 / 1/4 / 1/8 / 1/12 / 1/16 / 1/32 / 1/64 (gate): multiples of the quarter (half-note .. 64-bar).
-//   swing (gate): same as 2x but offset by the swingAmount; use as a swung 8th-note clock.
+//   swing (gate): shadows whichever train swingSource selects, holding its OFF-BEATS
+//     back by swingAmount (a fraction of that train's own pulse interval); use as a
+//     swung clock.
 //
 // Params:
 //   bpm (log 10..300, default 120): master tempo.
 //   swingAmount (linear 0..90°, default 0): swing offset applied to the `swing` output.
-//   swingSource (discrete 0..10, default 0): which division feeds the swing tap.
+//   swingSource (discrete 0..11, default 0): which division feeds the swing tap
+//     (one entry per gate output, 1x .. 1/64 — SWING_SOURCES has 12).
 //   muteOutputs (discrete 0..1, default 0): 1 = silence every gate output but the internal
 //                clock keeps running for LIVECODE / tick subscribers. Bound to the card's
 //                MUTE button.
@@ -159,7 +162,7 @@ export const timelordeDef: AudioModuleDef = {
   params: [
     { id: 'bpm',          label: 'BPM',   defaultValue: 120, min: 10, max: 300, curve: 'log',      units: 'bpm' },
     { id: 'swingAmount',  label: 'Swing', defaultValue: 0,   min: 0,  max: 90,  curve: 'linear',   units: 'deg' },
-    { id: 'swingSource',  label: 'Src',   defaultValue: 0,   min: 0,  max: 10,  curve: 'discrete' },
+    { id: 'swingSource',  label: 'Src',   defaultValue: 0,   min: 0,  max: 11,  curve: 'discrete' },
     // muteOutputs (v2): 0 (default) = running + gates fire normally;
     // 1 = gates muted but the INTERNAL clock keeps generating so
     // LIVECODE's clocked() callbacks + any other consumers stay
@@ -223,21 +226,21 @@ export const timelordeDef: AudioModuleDef = {
       "2x": "Eighth-note clock — two pulses per beat.",
       "1/2": "Half-note clock — one pulse every two beats.",
       "1/3": "One pulse every three beats (dotted/triplet-feel longer division).",
-      "1/4": "One pulse every four beats — once per bar in 4/4.",
+      "1/4": "One pulse every four beats — once per bar in 4/4. Like every divider it fires on the FIRST beat of its group, coincident with 1x, so it lands on the downbeat.",
       "1/8": "One pulse every eight beats — once every two bars.",
       "1/12": "One pulse every twelve beats — once every three bars.",
       "1/16": "One pulse every sixteen beats — once every four bars.",
       "1/32": "One pulse every thirty-two beats — once every eight bars.",
       "1/64": "One pulse every sixty-four beats — once every sixteen bars (the slowest tap, for very long-form modulation).",
       swing:
-        "A swung version of the eighth-note (2x) clock, offset by the SWING amount and taken from the division the SRC control selects — patch it where you want a shuffled rather than straight clock.",
+        "A SHUFFLED copy of whichever division SRC selects (1x by default): its on-beats fire dead on time and its off-beats are held back by the SWING amount, so the pulses alternate long-short instead of arriving evenly. At SWING 0 it is an exact duplicate of the source, which makes it safe to patch permanently and dial the shuffle in later. Patch it where you want a swung rather than straight clock.",
       video_out:
         "Cross-domain video output: the picture the card's big display shows — the live feed when something is patched into VIDEO IN, otherwise the beat-pulsing wizard — passed on for downstream video modules.",
     },
     controls: {
       bpm: "BPM — the master tempo every division output is derived from (10–300). When an external clock is patched it's overridden by the measured external tempo.",
-      swingAmount: "SWING — how far the SWING output's off-beats are pushed late (0–90°); 0 is dead-straight, higher values deepen the shuffle.",
-      swingSource: "SRC — which clock division feeds the SWING tap, so you can swing a faster or slower subdivision than the default eighth.",
+      swingAmount: "SWING — how far the SWING output's off-beats are pushed late, as an angle of the SOURCE division's own pulse interval (0–90°, so at most a quarter of the way to the next pulse); 0 is dead-straight, higher values deepen the shuffle. Because it is measured against the SRC train rather than the master beat, the same setting means the same feel whichever division you swing.",
+      swingSource: "SRC — which clock division feeds the SWING tap (0–11, one per gate output in the order 1x, 8x, 4x, 2x, 1/2, 1/3, 1/4, 1/8, 1/12, 1/16, 1/32, 1/64), so you can shuffle a faster or slower subdivision than the default 1x quarter-note.",
       muteOutputs:
         "MUTE — silences every gate output while the internal clock keeps running underneath (so LIVECODE's clocked() callbacks and other tick subscribers stay alive). Bound to the card's MUTE button. Different from a transport STOP, which actually halts the clock.",
       running:
