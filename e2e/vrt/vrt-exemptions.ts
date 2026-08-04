@@ -839,6 +839,61 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // baselines (captured via vrt-update.yml). New modules don't grow this list.
 };
 
+/** THE FROZEN PERMANENT-EXEMPT ALLOWLIST — the brake on EXEMPT_FROM_VRT.
+ *
+ *  WHY THIS EXISTS. EXEMPT_FROM_VRT was a pure OPT-OUT: any module could
+ *  remove itself from visual coverage by adding a key with a >10-character
+ *  reason. The reason gate proved the string was long, never that skipping was
+ *  justified — so the list grew 76 -> 81 with nothing able to notice, and each
+ *  addition silently shrank the visual gate. That is the repo's deny-by-default
+ *  inversion applied to VRT: a guard that is OPT-IN is itself an instance of
+ *  the class it guards.
+ *
+ *  THE RULE. Every EXEMPT_FROM_VRT key must appear here. This set is FROZEN at
+ *  the 81 that existed when the brake landed (2026-08-04), so:
+ *
+ *    * a NEW module CANNOT self-exempt — adding a key to EXEMPT_FROM_VRT
+ *      without an allowlist edit fails vrt-meta.test.ts in ~1 s. Shipping a
+ *      module with no VRT is now a REVIEWED decision, not a side effect.
+ *    * the set only ever SHRINKS. When a module earns baselines, delete it
+ *      from BOTH lists and lower PERMANENT_EXEMPT_CEILING by the same count.
+ *
+ *  NOT AN ENDORSEMENT. Membership records that a module was exempt on the day
+ *  the brake landed — nothing more. Many entries are mechanical ("no baseline
+ *  captured yet") rather than permanent, and draining them is the
+ *  vrt-zero-exemptions campaign
+ *  (.myrobots/plans/vrt-zero-exemptions-campaign-2026-06-21.md), whose target
+ *  is a handful of genuinely-chaotic renderers (doom, mandelbulb, milkdrop).
+ *  This PR builds the brake the campaign always assumed and never had; it does
+ *  not do the draining.
+ *
+ *  ANCHORED TO THE ARTIFACT: an entry here naming a module that is NOT in
+ *  EXEMPT_FROM_VRT is RED, so a drained module cannot leave a stale licence to
+ *  re-exempt itself lying around. */
+export const ALLOWED_PERMANENT_EXEMPT: ReadonlySet<string> = new Set([
+  'milkdrop', 'graphicEq', 'archivist', '4plexvid',
+  'cvBuddy', 'outToLaunch', 'es9', 'onetonine',
+  'shapegen', 'sixstrum', 'mirrorpool', 'grainsOfVision',
+  'frametable', 'videocube', 'sourcery', 'scoreboard',
+  'cameraInput', 'loopback', 'audioIn', 'group',
+  'cadillac', 'controlSurface', 'matrixMix', 'launchpadControlLeft',
+  'push2Control', 'clouds', 'macseq', 'writeseq',
+  'rings', 'marbles', 'attenumix', 'sidecar',
+  'cloudseed', 'livecode', 'clockedRunner', 'midiCvBuddy',
+  'midiOutBuddy', 'midiclock', 'midiLane', 'pong',
+  'modtris', 'gibribbon', 'frogger', 'skifree',
+  'analogLogicMaths', 'bentbox', 'b3ntb0x', 'acidwarp',
+  'tempest', 'vfpgaRunner', 'joystick', 'gamepad',
+  'numpadPlus', 'slewSwitch', 'delay', 'doom',
+  'blood', 'warrensspectrum', 'videobox', 'tvLibrarian',
+  'peertube', 'videovarispeed', 'chromakey', 'fader',
+  'lumakey', 'quadralogical', 'colourofmagic', 'mappy',
+  'chroma', 'luma', 'fourplexer', 'treeohvox',
+  'bluebox', 'moog921Vco', 'moogCp3', 'moog904a',
+  'moog911', 'moog902', 'painter', 'twotracks',
+  'backdraft',
+]);
+
 /** Strict VRT subset — the deterministic, pure-DOM/CSS knob-and-fader cards
  *  that ship a baseline on BOTH platforms (darwin + linux), aren't masked
  *  for canvas non-determinism, and aren't in EXEMPT_BASELINE_PAIRS pending a

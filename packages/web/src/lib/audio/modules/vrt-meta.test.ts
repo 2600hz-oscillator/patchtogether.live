@@ -38,6 +38,7 @@ import { listMetaModuleDefs } from '$lib/meta/module-registry';
 // without explicit config, so we use a relative path here.
 import {
   EXEMPT_FROM_VRT,
+  ALLOWED_PERMANENT_EXEMPT,
   EXEMPT_BASELINE_PAIRS,
   STRICT_VRT_MODULES,
   VRT_MODULE_MASKS,
@@ -304,6 +305,82 @@ describe('vrt-meta — STRICT_VRT_MODULES RATCHET (only grows)', () => {
       STRICT_VRT_MODULES.size,
       'STRICT_VRT_MODULES shrank below its frozen floor — see the RATCHET rule above',
     ).toBeGreaterThanOrEqual(48);
+  });
+});
+
+/**
+ * THE PERMANENT-EXEMPT CEILING. Frozen at the 81 entries that existed when the
+ * brake landed (2026-08-04). Asserted in BOTH directions, like every other
+ * ratchet in this file: a ceiling can only trip by GROWING, so a drain that
+ * forgets to lower the number passes in total silence and leaves slack for the
+ * next regression to hide in.
+ *
+ * LOWER this by exactly the number of modules you drain out of
+ * EXEMPT_FROM_VRT + ALLOWED_PERMANENT_EXEMPT, in the SAME commit. NEVER raise
+ * it to make a red gate green — a new module needing an exemption is a
+ * reviewed decision, and raising the ceiling is how you record having made it.
+ */
+const PERMANENT_EXEMPT_CEILING = 81;
+
+describe('vrt-meta — EXEMPT_FROM_VRT is DENY-BY-DEFAULT (frozen allowlist)', () => {
+  // EXEMPT_FROM_VRT used to be a pure OPT-OUT: any module could remove itself
+  // from visual coverage by adding a key with a >10-char reason. That gate
+  // proved the string was long, never that skipping was justified — so the list
+  // grew 76 → 81 with nothing able to notice. These four assertions are the
+  // brake the vrt-zero-exemptions campaign always assumed existed.
+
+  it('every exempted module is on the frozen allowlist (a new module CANNOT self-exempt)', () => {
+    const unlisted = Object.keys(EXEMPT_FROM_VRT).filter((t) => !ALLOWED_PERMANENT_EXEMPT.has(t));
+    expect(
+      unlisted,
+      `these modules exempted themselves from VRT without an allowlist entry: ${unlisted.join(', ')}.\n` +
+        'Shipping a module with NO visual coverage is a reviewed decision. Either give it a ' +
+        'VRT baseline (the strongly preferred path — see vrt-update.yml), or add it to ' +
+        'ALLOWED_PERMANENT_EXEMPT in e2e/vrt/vrt-exemptions.ts AND raise ' +
+        'PERMANENT_EXEMPT_CEILING, so the exemption shows up in review.',
+    ).toEqual([]);
+  });
+
+  it('no allowlist entry is STALE (anchored to the artifact, not the list)', () => {
+    // A drained module must not leave a licence to silently re-exempt itself.
+    const stale = [...ALLOWED_PERMANENT_EXEMPT].filter((t) => !(t in EXEMPT_FROM_VRT));
+    expect(
+      stale,
+      `ALLOWED_PERMANENT_EXEMPT names modules that are no longer in EXEMPT_FROM_VRT: ${stale.join(', ')}. ` +
+        'Delete them from the allowlist and lower PERMANENT_EXEMPT_CEILING by the same count.',
+    ).toEqual([]);
+  });
+
+  it('the exemption count only SHRINKS — and the ceiling has no slack', () => {
+    const actual = Object.keys(EXEMPT_FROM_VRT).length;
+    expect(
+      actual,
+      `EXEMPT_FROM_VRT grew to ${actual} over a ceiling of ${PERMANENT_EXEMPT_CEILING} — see the RATCHET rule`,
+    ).toBeLessThanOrEqual(PERMANENT_EXEMPT_CEILING);
+    expect(
+      PERMANENT_EXEMPT_CEILING - actual,
+      `THE PERMANENT-EXEMPT CEILING HAS GONE SLACK: ${actual} exemption(s) under a ceiling of ` +
+        `${PERMANENT_EXEMPT_CEILING}. Modules were drained and the number was not lowered, so ` +
+        `${PERMANENT_EXEMPT_CEILING - actual} new module(s) can now self-exempt for free. ` +
+        `Lower PERMANENT_EXEMPT_CEILING to ${actual}.`,
+    ).toBe(0);
+  });
+
+  it('...and that check can actually SEE an unlisted exemption (negative control)', () => {
+    // Guard against the gate silently reading an empty/short-circuited set —
+    // the exact "green gate that checked nothing" failure this brake exists for.
+    const syntheticExempt = { ...EXEMPT_FROM_VRT, someBrandNewModule: 'a plausible-looking ten-plus-character reason' };
+    const unlisted = Object.keys(syntheticExempt).filter((t) => !ALLOWED_PERMANENT_EXEMPT.has(t));
+    expect(unlisted).toEqual(['someBrandNewModule']);
+    // ...and the stale check must see a phantom allowlist entry too.
+    const syntheticAllow = new Set([...ALLOWED_PERMANENT_EXEMPT, 'aModuleThatWasDrained']);
+    const stale = [...syntheticAllow].filter((t) => !(t in EXEMPT_FROM_VRT));
+    expect(stale).toEqual(['aModuleThatWasDrained']);
+  });
+
+  it('the allowlist is non-empty and matches the live list exactly (no drift in either direction)', () => {
+    expect(ALLOWED_PERMANENT_EXEMPT.size).toBeGreaterThan(0);
+    expect([...ALLOWED_PERMANENT_EXEMPT].sort()).toEqual(Object.keys(EXEMPT_FROM_VRT).sort());
   });
 });
 
