@@ -6,9 +6,24 @@ arbitrary graphics on the on-device 960×160 color LCD driven from the
 browser over WebUSB. "Show us arbitrary stuff on the screen" is the
 differentiator and the reason to do this.
 
-**Status:** RESEARCH COMPLETE (2026-07-13). No code written. This doc is
-the hand-off for the implementing agent. Feature scope (§7 open
-questions) still to be locked with the owner before build.
+**Status:** ~~RESEARCH COMPLETE. No code written.~~ **FULLY BUILT.**
+
+> **TRIAGE 2026-08-04 — SHIPPED END TO END, including the differentiator.**
+> `packages/web/src/lib/control/push2/` now holds the whole stack the VERDICT
+> predicted: WebMIDI pads/encoders (`push2-device.svelte.ts`, `push2-sysex.ts`,
+> `push2-map.ts`) **and** the WebUSB 960×160 display (`push2-display.svelte.ts`,
+> `push2-display-frame.ts`, `push-screen-layout.ts`, `push-card-paint.ts`), plus a
+> `push2-control` meta module. It went well past this doc: per-module PUSH CARDs
+> with an owner-editable schema (`push-card-config.ts`, now a documented
+> conflict surface in CLAUDE.md) and LEGEND MODE (**#1309**).
+> §7's open questions were answered by building. **The Push 3 port assessment
+> that supersedes this for protocol facts is
+> `push3-support-assessment-2026-08-03.md`** — it re-derives the device layer
+> against our actual shipped code.
+> ⚠ **FLAGGED FOR THE OWNER as a deletion candidate.** It is spent research; the
+> only reason it was not deleted in this pass is that it is the sourced record of
+> the WebUSB display protocol and the third-party prior art, which a Push 3
+> bring-up may still want alongside the newer assessment.
 
 ---
 

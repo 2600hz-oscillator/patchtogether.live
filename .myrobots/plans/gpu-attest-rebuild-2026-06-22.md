@@ -5,6 +5,21 @@
 > correctness coverage we actually care about. This plan converts a wall-clock
 > guessing suite into a layered, freeze-driven, single-sample-immune suite.
 
+> **TRIAGE 2026-08-04 — PHASES 0–2b LANDED; PHASES 3–4 HAVE NOT. Live backlog.**
+> The DRS/freeze pattern is real and in use (`__videoEngineFreezeRender` and
+> friends appear in ~32 places across `e2e/`, `scripts/` and `packages/web/src`),
+> and the conversion waves shipped via **#883 / #885** (see
+> `glsmoke-floor-expansion-2026-06-23.md`).
+> **The goal in the epigraph is NOT met:** `e2e/playwright.config.ts:97` is still
+> `retries: process.env.CI ? 1 : 0`, so Phase 4 ("flip the attest to the
+> deterministic gate; drop retries") is outstanding, and Phase 3 ("delete
+> wall-clock specs") is at best partial — **639 `waitForTimeout` calls remain
+> under `e2e/`** against the 602 counted in §1. So §1's headline count has not
+> come down; it has gone slightly up as the suite grew.
+> The Layer-A/B/C architecture (PCU / DRS / DBU+OAC) and the §4 hook-gap
+> inventory are the parts to execute from. Also re-read §1's "4 known live
+> failures" as historical.
+
 ---
 
 ## 1. Executive summary

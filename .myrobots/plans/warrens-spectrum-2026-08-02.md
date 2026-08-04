@@ -1,7 +1,21 @@
 # Warren's Spectrum — kill two modules, ship one
 
-**Date:** 2026-08-02 · **Status:** PLAN (docs-only; no code in this PR)
+**Date:** 2026-08-02 · **Status:** ~~PLAN (docs-only; no code in this PR)~~ **PHASES 1–3 SHIPPED**
 **Owner directive, verbatim:**
+
+> **TRIAGE 2026-08-04.** The owner directive was carried out. **#1305** (phase 1)
+> deleted BOTH `callsine` and the old `warrenspectrum` and shipped the spectral
+> resynth as one module — `packages/web/src/lib/audio/modules/warrensspectrum.ts`,
+> with an `art/baselines/warrensspectrum/` profile. **#1308** (phase 2) added the
+> 8-band FILTERBANK and the stereo it creates. **#1334** added MASSPASS, the
+> second engine. The §2 deletion list executed cleanly.
+> §3.2.2 records the **owner's answer to Q8 — CORRECT, not faithful** (SLICE
+> reachable across its full range; host-sync that works at musical tempos;
+> deliberately not bit-identical to the VST on those two axes, 1:1 elsewhere).
+> **That decision is the reason this file is kept** — it is the only record of a
+> deliberate divergence from the reference plugin.
+> Later phases (§4/§5 onward) should be re-checked against the shipped module
+> before being treated as outstanding.
 
 > "for callsine yes we need to do the rewrite as the vst. but also look at our warren's
 > spectrum module. i want to get rid of our existing warren's spectrum and callsine modules,

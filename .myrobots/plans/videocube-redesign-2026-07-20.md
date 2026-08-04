@@ -1,5 +1,20 @@
 # VideoCube REDESIGN — volumetric 3D spatial video (owner-rejected the flat v1)
 
+> **TRIAGE 2026-08-04 — BUILT. Kept for the OWNER DECISIONS, which are the only
+> record of why VIDEOCUBE looks the way it does.**
+> The redesign shipped: `packages/web/src/lib/video/modules/videocube.ts` now
+> carries the ray-march (`:29` "The picture ray-march (COMBINE_FRAG) is a 1:1
+> GLSL" mirror), the orbit camera params `view_zoom / view_rot_x / view_rot_y /
+> view_rot_z` (`:158-161, :192-193`), the `screen_on` perf gate (`:165`), and the
+> `cube-dsp.fieldFromHeights` unified field (`:13, :32, :441`). The Z-collapse
+> root cause named below (`z = (lA+lB+lC)/3`) is gone.
+> **The three locked owner decisions of 2026-07-20** — (1) `video_out` is a
+> VOLUMETRIC RENDER, not a flat composite; (2) RAY-MARCH over slice-stack, with
+> the GPU cost accepted because the pixel-truth test is the local-GPU WebGL attest
+> rather than CI SwiftShader; (3) UNIFIED FIELD so audio and video read the SAME
+> 3D field — are what this file is preserved for. It also went on to gain SCAN
+> (the FrameTable MORPH partner to SPREAD), which post-dates this plan.
+
 Owner reviewed VideoCube #1136 (2026-07-20): "most controls do nothing; no cube-slice /
 volumetric visualization; NOT generating volumetric 3D spatial video data based on the source
 data connecting to each other through space. Needs to work the same way Cube works for audio.

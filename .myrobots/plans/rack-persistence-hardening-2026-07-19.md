@@ -1,5 +1,25 @@
 # Rack persistence hardening — plan (2026-07-19)
 
+> **TRIAGE 2026-08-04 — FIX A and P4 SHIPPED; P1–P3 still open.**
+> - **FIX A (the urgent anon-refresh-loss bug) — DONE**, as **#1131**
+>   ("persist scratch canvas across refresh (IndexedDB local replica)"). The
+>   implementation is `packages/web/src/lib/storage/local-scratch.ts`, which mints
+>   the stable per-device id §0 called for and keys it BY MODE (dawless |
+>   workflow) — a refinement the plan did not anticipate. Note it deliberately
+>   lives under `lib/storage`, **not** `lib/multiplayer`, because that directory
+>   is a whole-dir collab-attest basis root.
+> - **P4 (import-JSON confirm before a destructive wipe) — DONE**:
+>   `packages/web/src/lib/ui/canvas/import-confirm.ts` (+ its test), wired at
+>   `Canvas.svelte:168-172` with the comment "P4: destructive-import confirm
+>   (persistence hardening)".
+> - **P1 (Restoring…/Offline status), P2 (saving indicator + unsaved-changes
+>   guard), P3 (prod memory-mode alert + `ALLOW_MEMORY_STORE` audit) — NOT
+>   BUILT.** No restoring/offline/saving surface exists; `ALLOW_MEMORY_STORE` is
+>   only exercised in `packages/server/src/db.test.ts`, i.e. the escape hatch
+>   from the earlier adversarial work, not P3's ops audit.
+> - The **OWNER DECISION** in "Migration into a real rack" is preserved and is
+>   part of why this file stays.
+
 Owner-approved work off the refresh-persistence investigation. One urgent user
 bug (FIX A) plus four hardening items (P1-P4). This doc is build-ready:
 file-by-file, with the approach, the proving test, and effort for each.

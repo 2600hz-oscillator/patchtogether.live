@@ -5,6 +5,28 @@
 green-on-CI between steps)
 **Supersedes:** `.myrobots/plans/test-stability-restoration.md` (2026-06-07). That plan was the
 post-#662 recovery doc; this one is the current, ground-truth-verified campaign and replaces it.
+(That file no longer exists — removed in the 117→40 corpus triage, **#1175**.)
+
+> **TRIAGE 2026-08-04 — KEEP FOR THE OWNER DIRECTIVE; THE §1 SCORECARD IS STALE
+> AND SHOULD NOT BE READ AS CURRENT.**
+> The four-point **owner directive of 2026-06-20** (no informational lanes; every
+> disabled test is FIX-or-DELETE with no permanent exempt bucket; re-enable
+> slowly; retries → 0) is the durable content and is why this file survives — it
+> is the origin of the `reconcile-means-fix-or-delete` and
+> `never-quarantine-fix-the-test` standards.
+> Against the tree today, the §1 table is wrong in several rows:
+> - **e2e-video** is not "DISABLED (dispatch-only)" — the lane was **DELETED on
+>   2026-06-20 (#839)**, the same day this was written. Anything listed as
+>   "excluded to e2e-video" now has **no PR coverage at all**.
+> - **behavioral** is no longer purely informational: **#986** added a REQUIRED
+>   `behavioral-smoke` subset. Its exempt counts moved 63 → **77** module and
+>   160 → **113** sweep.
+> - **VRT** counts all moved (76 → **81** `EXEMPT_FROM_VRT`), and the linux-pair
+>   accounting was rebuilt entirely in **#1272** (four gap mechanisms, ratcheted
+>   in both directions).
+> - **retries → 0 was never done** — `e2e/playwright.config.ts:97` is unchanged.
+> Re-derive any number before using it; the directive, not the scorecard, is the
+> reason to keep this.
 
 ## Owner directive (2026-06-20)
 

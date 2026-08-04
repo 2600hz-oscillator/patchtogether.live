@@ -1,5 +1,16 @@
 # CLIP PLAYER — full SONG MODE / arranger (design) — 2026-07-18
 
+> **TRIAGE 2026-08-04 — PARTIALLY BUILT; the rest is live backlog.**
+> **Phase 1 shipped as #1099** ("ARRANGER / SONG MODE phase 1 — record → print →
+> play core", merged 2026-07-18) — i.e. the §0 recommendation was accepted: the
+> launch-event-log was thrown out as the song source of truth and replaced by
+> printed layers. The §3.4 dependency also shipped: the per-clip sibling `auto`
+> map is live (`packages/web/src/lib/audio/modules/clip-types.ts:237` — "PER-CLIP
+> AUTOMATION — the sibling `auto` map (automation redesign Phase 1)").
+> **Still un-built:** the §5 SONG view rebuild, the arranger-automation lane, and
+> §7's later phases. Read §7 for what remains, not the doc's "DESIGN ONLY" header.
+> This file is cited from source — do not delete it without fixing the citation.
+
 DESIGN ONLY. No code in this pass. Supersedes
 `.myrobots/plans/song-mode-arranger-2026-06-16.md` (the launch-event-log skeleton
 that shipped as the "experimental red ● arranger record").

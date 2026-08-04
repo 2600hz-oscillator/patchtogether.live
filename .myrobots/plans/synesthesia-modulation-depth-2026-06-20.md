@@ -1,7 +1,25 @@
 # Synesthesia → Lines orient under-modulation: diagnosis + plan
 
 **Date:** 2026-06-20
-**Status:** Diagnosis only — NO code changes, NO PR. Owner decision pending.
+**Status:** Diagnosis — **finding 3 has since been FIXED; findings 1 and 2 still hold.**
+
+> **TRIAGE 2026-08-04 — re-verified finding by finding.**
+> - **Finding 1 (a CV cable only reaches half a param's range because it is
+>   additive around the knob)** — STILL TRUE. It is the documented convention,
+>   `docs/adr/004-cv-range-convention.md`. Not a bug; the recipe ("bipolar source
+>   + knob at centre") is still the answer.
+> - **Finding 2 (synesthesia's envelope outputs are unipolar by default; the
+>   per-copy Polarity toggle exists but is OFF)** — STILL TRUE:
+>   `synesthesia.ts:190-191` still declares `a_bipolar` / `b_bipolar` with
+>   `defaultValue: 0`.
+> - **Finding 3 — "SCALER's knob is dead… This is a real defect" — FIXED.**
+>   SCALER is now **type-transparent**: `packages/web/src/lib/audio/modules/scaler.ts:66`
+>   declares `{ id: 'out', type: 'audio', adoptsUpstreamFrom: 'in' }`, so a CV
+>   source makes it emit CV and the cross-domain RMS envelope-follower that
+>   clamped the knob at 1.0 is no longer in the path. The doc's "Through SCALER it
+>   is *not* achievable" conclusion is therefore **no longer true** — do not cite
+>   it.
+> This file is cited from source. Kept for findings 1–2 and the worked numbers.
 **Patch under investigation:** `/Users/2600hz/Downloads/patch.imp (31).json`
 **Reported by:** owner
 

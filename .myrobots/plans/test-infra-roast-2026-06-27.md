@@ -2,6 +2,29 @@
 
 _8 domain critics, 73 raw findings, synthesized + honesty-discounted._
 
+> **TRIAGE 2026-08-04 — this is the EVIDENCE doc behind
+> `test-infra-remediation-plan-2026-06-27.md`; read that file for what to do.
+> Several of the headline findings are now FIXED, so do not quote this as
+> current state.**
+>
+> | finding | today |
+> |---|---|
+> | "the entire Moog batch is 11 byte-identical 440 Hz sine stubs" — the headline | **FIXED.** The stubs were deleted and an md5-uniqueness guard added (**#940**); ART then grew 48 → **136** real `.f32` baselines under an explicit coverage ratchet (`art/setup/profile-coverage.ts`, backlog 101 → 56) |
+> | "MilkdropCard escapes the fail-closed WebGL basis" | **FIXED** — `webgl-attest-coverage.test.ts` now fails on any WebGL-rendering source outside the basis |
+> | "behavioral is informational and doesn't run on a normal PR" | **PARTLY FIXED** — **#986** made a fast subset REQUIRED; the full lane is still informational, and **#1318** showed a required row passing on noise |
+> | "exemption lists are unenforced graveyards past their own caps" | **PARTLY FIXED** — ratchets are now assertions and are checked in BOTH directions; but `BEHAVIORAL_MODULE_EXEMPT` has grown 64 → **77** and `EXEMPT_FROM_VRT` 76 → **81** |
+> | "the blocking VRT gate covers 13% of modules; linux baselines perpetually pending" | **PARTLY FIXED** — linux baselines are captured routinely now and the deficit ratchet counts all four gap mechanisms (**#1272**); a stale-palette hole in the REQUIRED lane was found and closed as late as **#1281** |
+> | "retries=1 launders flakes" | **NOT FIXED** — `e2e/playwright.config.ts:97` is still `retries: CI ? 1 : 0` |
+> | "555 waitForTimeout sleeps" | **NOT FIXED** — **639** under `e2e/` today |
+> | "@collab / real multiplayer never runs on PR CI" | **NOT FIXED** — still informational |
+>
+> ⚠ The "heavy WebGL specs are excluded from PR and run in a serialized
+> `e2e-video` lane" framing is **wrong as of 2026-06-20 (#839)**: that lane was
+> deleted, so exclusion now means no PR coverage at all.
+> Kept because the *reasoning* (what each gate is structurally unable to see) is
+> the ancestor of the "VALIDATE THE INSTRUMENT" / "blind gates" standards now in
+> CLAUDE.md.
+
 ## Headline
 The product is a synth, yet enforced audio-correctness coverage is near-zero: the ART "baselines" for the entire Moog batch (plus polyhelm, pentemelodica, analog-vco) are 11 byte-identical 440 Hz sine stubs (md5 8313a1e7…), so a required CI gate is literally comparing a stub against itself and stamping it green.
 

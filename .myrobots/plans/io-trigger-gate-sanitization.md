@@ -1,9 +1,24 @@
 # I/O Trigger ↔ Gate Sanitization — Audit, Critique & Plan
 
-**Status:** Plan only — no code written. Read-only investigation.
+**Status:** ~~Plan only — no code written~~ **BUILT AND MERGED (#758).**
 **Date:** 2026-06-13
 **Motivating bug:** NUMPAD+ → TIMELORDE advances more than one step per single tick.
 **Author:** investigation agent (Opus 4.8)
+
+> **TRIAGE 2026-08-04 — SHIPPED as #758** ("fix(io): trigger/gate sanitization —
+> windowed edge-counter seam + GATEMAIDEN + double-count fix", merged 2026-06-13).
+> Everything in §5 exists: `packages/web/src/lib/audio/edge-detect.ts` (plus
+> `edge-detect.test.ts` **and** `edge-detect-guard.test.ts`, a source-scan guard
+> that did not exist in the plan), `$lib/audio/gate-trigger` with `GATE_HI` /
+> `TRIGGER_PULSE_S`, the `PortDef.edge: 'trigger' | 'gate'` declaration, and the
+> `gatemaiden` module. The rule has since been promoted into CLAUDE.md
+> ("Triggers vs gates: edge-detect through the shared seam"), which is now the
+> authority — this file is the derivation behind it.
+> ⚠ **§5.3's `edge` semantic was "declared but not enforced" and that gap
+> persisted**: `module-docs-lint`'s edge check was later found to `continue` past
+> every port without `p.edge`, so it saw 63 ports and was blind to 299 gate ports
+> (CLAUDE.md, 2026-08-02 audit). Fixed there, not here.
+> Kept as the sourced hardware/derivation record; cited from source.
 
 ---
 

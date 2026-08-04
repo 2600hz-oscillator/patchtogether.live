@@ -2,6 +2,31 @@
 
 Written at shutdown. This is the file to read first when picking the work back up.
 
+> **TRIAGE 2026-08-04 — the OWNER DECISIONS section is still authoritative; the
+> "NEXT UP" list is SPENT and must not be worked from.**
+> **Keep this file for §"OWNER DECISIONS — recorded 2026-07-26"** (reverb's hot
+> wet path left as-is; delay's equal-power fix approved; filter's two
+> attenuverters approved; the catalogue-overlap note; the dock full-view gating
+> ruling "SETTLED — leave as is") **and for §"Hard-won lessons"** — both are the
+> only record of those calls. Everything else below has been overtaken:
+>
+> - **"12 modules are faced"** → **18 faceplates ship** today (`STRICT_FACES` has
+>   21 entries), and all 18 were then RE-SPECCED against the corrected platform
+>   (`face-redo-*`). Read the batch tables as history.
+> - **NEXT UP 2 (dx7 face / "looks nothing like its mock")** → resolved by
+>   running the whole DX7 program: **#1187, #1190, #1210** (engine) then
+>   **#1265, #1266, #1268, #1270** (UI, PR3–PR6). See
+>   `dx7-and-faces-design-program-2026-07-27.md`.
+> - **NEXT UP 4 (platform gaps)** → `PortDef.label` shipped
+>   (`packages/web/src/lib/graph/types.ts:268`); the labelled-selector gap was
+>   addressed in the batch-D/E face wave.
+> - **NEXT UP 5 (karplus's PLUCK unreachable)** → fixed by **#1289** ("KARPLUS
+>   face — the PLUCK reaches the dock"); the general fix became the required
+>   `ShellActionCell.probe` + audition-ledger rule now in CLAUDE.md.
+> - **#1008 (`feat/mobile-view`) "revive or close"** → **CLOSED 2026-07-29.**
+> - The `?shell=1`-vs-dock gating background is superseded by the memory
+>   `shell-flag-not-a-complete-gate`.
+
 ---
 
 ## Where things stand
