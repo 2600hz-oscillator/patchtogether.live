@@ -10,8 +10,12 @@
 // then silence — the cocoadelay batch-2 precedent), so the compounding
 // multi-stage tail IS the profile.
 //
-// Patch: delay 0.15 s (a 2 s window can't show the default 0.4 s × 4-stage
-// cascade), pitchUp 0.08 — the module's SIGNATURE ascending-shimmer: stage k's
+// Patch: delay 0.15 s — short enough that the 2 s window holds many repeats.
+// (This was chosen when DELAY was off by the stage count and 0.4 s put the
+// FIRST echo at 1.6 s, outside the window entirely; since the 2026-08-03 fix
+// DELAY is the true seconds-to-first-echo, so 0.15 s now means 0.15 s. The
+// baseline moved by that fix — see the PR.) pitchUp 0.08 — the module's
+// SIGNATURE ascending-shimmer: stage k's
 // wet output is transposed up by (1.08)^k by the own-code VarispeedShifter on
 // the forward cascade path, so content traversing stages 1–3 in series is
 // pitched up by at least 1.08·1.08²·1.08³ ≈ ×1.587 (stage 0 is unity) and

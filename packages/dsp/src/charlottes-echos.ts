@@ -22,9 +22,22 @@
 // pitchUp / mix) are all UNCHANGED, so existing patches load with no
 // migration. The params drive the 4-stage engine:
 //
-//   delay    — base per-stage delay time. Every stage delays by `delay`, so the
-//              cascade's first full-wet echo lands at ≈ 4 × delay (the SUM of
-//              the four stage delays), with intermediate taps at 1–3 × delay.
+//   delay    — TOTAL time to the first echo, in seconds, exactly as the module
+//              def declares it (`units: 's'`, 0.001..1.5). The four stages are
+//              in SERIES, so their delays SUM: each stage runs at
+//              delay / NUM_STAGES and the cascade's first full-wet echo lands
+//              at `delay`.
+//              ⚠ Only the LAST stage's output leaves the module — the
+//              intermediate stage outputs are the next stage's input and are
+//              never summed into the mix, so there is no audible tap before
+//              `delay`. (Pre-2026-08-03 this file ran EVERY stage at the full
+//              `delay`, which put the first echo at 4 × delay: the knob said
+//              0.4 s and the echo arrived at 1.6000 s, with the output BIT-ZERO
+//              over the whole [0, 1.5 s) window. See
+//              charlottes-echos.test.ts 'DELAY is the time to the FIRST echo'.)
+//              FLOOR: AnalogDelayCore clamps each stage at 0.5 ms, so below a
+//              2 ms total the cascade holds at ~2 ms rather than following the
+//              knob's 1 ms minimum.
 //   feedback — feedback amount fed to EVERY stage (compounds across the chain).
 //   decay    — progressively tapers each stage's wet level + adds in-loop tanh
 //              drive + darkens the in-loop low-pass, so later stages are
@@ -163,7 +176,12 @@ class CharlottesEchosProcessor extends AudioWorkletProcessor {
 
     for (let i = 0; i < n; i++) {
       const delay = Math.max(MIN_DELAY_S, this.aval(parameters, 'delay', i, 0.4));
-      s.delayTime = delay;
+      // The four stages are in SERIES, so their delays SUM. `delay` is the
+      // TOTAL time to the first echo (the def's declared `units: 's'`), so each
+      // stage must run at a QUARTER of it. Setting every stage to the full
+      // `delay` puts the first echo at 4 × delay — the knob's unit off by the
+      // stage count across its entire travel.
+      s.delayTime = delay / NUM_STAGES;
 
       // Cascade: stage 0 takes the dry input; each subsequent stage takes the
       // previous stage's pitch-shifted WET output. Final stage output is the

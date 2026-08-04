@@ -169,33 +169,37 @@ describe("charlottes-echos / wet-output regression", () => {
     expect(p, `wet peak ${p.toFixed(4)} (must be bounded)`).toBeLessThan(1.6);
   });
 
-  it("mix=1.0 output is delayed: silence before the cascade delay, signal after", () => {
-    // CHARLOTTE is now FOUR Cocoa Delay stages in SERIES. At mix=1.0 each
-    // stage is pure-wet, so the dry signal only emerges after passing through
-    // all four delay lines → the first echo lands at ≈ the SUM of the stage
-    // delays (≈ 4 × delay). With delay=0.4 that's ≈1.6 s, so render long
-    // enough to capture it.
+  it("mix=1.0 output is delayed: silence before DELAY seconds, signal after", () => {
+    // CHARLOTTE is FOUR AnalogDelayCore stages in SERIES. At mix=1.0 each stage
+    // is pure-wet, so the dry signal only emerges after traversing all four
+    // lines — and because their delays SUM, each stage runs at delay/4 so the
+    // first echo lands at DELAY itself, the unit the def declares (`units: 's'`).
+    //
+    // ⚠ This assertion used to read `const cascade = 4 * delay` and window
+    // itself around 1.6 s for a 0.4 s knob. It was GREEN and it was WRONG: it
+    // pinned the 2026-08-03 stage-count defect rather than the declared
+    // contract, because it was written from the DSP's implementation comment.
+    // See packages/web/src/lib/audio/modules/charlottes-echos.test.ts.
     const delay = 0.4;
-    const cascade = 4 * delay; // ≈ first-echo arrival
     const { output } = renderProcessor({
       delay,
       feedback: 0.5,
       decay: 0.2,
       pitchUp: 0,
       mix: 1.0,
-      durationS: cascade + 0.6,
+      durationS: delay + 0.6,
       inputAmp: 0.5,
       inputHz: 440,
     });
-    // Silent until the signal has traversed all four stages.
-    const preDelay = peakAbs(output, 0, Math.round((cascade - 0.05) * SAMPLE_RATE));
+    // Silent until the signal has traversed all four stages (= DELAY seconds).
+    const preDelay = peakAbs(output, 0, Math.round((delay - 0.05) * SAMPLE_RATE));
     const postDelay = peakAbs(
       output,
-      Math.round((cascade + 0.02) * SAMPLE_RATE),
-      Math.round((cascade + 0.4) * SAMPLE_RATE),
+      Math.round((delay + 0.02) * SAMPLE_RATE),
+      Math.round((delay + 0.4) * SAMPLE_RATE),
     );
-    expect(preDelay, `pre-cascade peak ${preDelay}`).toBeLessThan(0.01);
-    expect(postDelay, `post-cascade peak ${postDelay}`).toBeGreaterThan(0.1);
+    expect(preDelay, `pre-delay peak ${preDelay} (must be silent before ${delay} s)`).toBeLessThan(0.01);
+    expect(postDelay, `post-delay peak ${postDelay} (must sound after ${delay} s)`).toBeGreaterThan(0.1);
   });
 
   it("wet output differs from dry input (delay actually happened)", () => {
