@@ -108,45 +108,169 @@ export function decodeRelativeCc(value: number): number {
 // ---------------------------------------------------------------------------
 // Stock-palette colour mapping. The Push pad LED takes a VELOCITY (0..127) that
 // indexes a 128-entry palette; arbitrary per-pad RGB needs palette reprogramming
-// (deferred). v1 maps an RGB colour to the nearest of a small set of STOCK
-// palette anchors, so the STATE distinctions the clip brain paints
-// (empty / loaded / queued / playing) stay visible. Approximate — the exact hue
-// language is refined on hardware later (research §2: "v1 use the stock palette
-// by velocity index"). PURE.
+// (deferred). We map an RGB colour to a STOCK palette entry, so the STATE
+// distinctions the clip brain paints (empty / loaded / queued / playing) stay
+// visible. Approximate — the exact hue language is refined on hardware later
+// (research §2: "v1 use the stock palette by velocity index"). PURE.
+//
+// ── WHY THIS IS TWO-TIER AND NOT A FLAT NEAREST-ANCHOR SEARCH ──────────────
+//
+// The original mapping was ONE flat nearest-anchor search over a table whose
+// entries were all FULL brightness except black. Squared-Euclidean distance in
+// linear RGB then put every DIM colour nearer BLACK than any lit anchor, so the
+// whole "dim" half of the Launchpad's design language was EXTINGUISHED:
+//
+//   RGB_VIEW_IDLE  [16,6,30] → 0   the 3 view buttons you are not on
+//   RGB_SHIFT_OFF  [24,20,0] → 0   the SHIFT button at rest
+//   RGB_SYS_DIM    [22,10,0] → 0   undo/redo with an empty stack
+//   RGB_SCENE_DIM  [24,17,4] → 0   a scene-scroll button at its clamp
+//   a lane hue × 0.30        → 0   every UNSELECTED channel-select button
+//   a lane hue × 0.32        → 0   every LOADED-but-not-playing clip pad
+//
+// and the survivors (RGB_PATTERN, RGB_STOP_IDLE, RGB_TIMING) collapsed onto the
+// neutral grey at index 1, losing their hue. The LAUNCHPAD never had this bug
+// because it takes true per-LED RGB (`encodeLedRgb`, spec type 3, R/G/B each
+// 0..127) — it renders [16,6,30] as an actual dim purple. Both surfaces consume
+// the SAME LaunchpadFrame; the divergence was entirely in this encoder. That is
+// the whole of the owner's "the launch keys are dark except for clip mode / the
+// channel row doesn't show the channel colour" report — in clip (grid) view the
+// scene column uses full-brightness RGB_SCENE, which survived.
+//
+// So the mapping now separates the two things the palette index conflates:
+//   1. HUE  — matched on the BRIGHTNESS-NORMALISED colour, so a dim purple and a
+//      bright purple pick the SAME hue row instead of one of them picking black.
+//   2. LEVEL — selects that row's `bright`, `mid` or `dim` palette entry.
+// A colour is OFF only when it is TRUE black, which is the invariant the three
+// LED zones actually depend on.
+//
+// THREE levels, not two, and the third is not padding: the surface genuinely
+// paints three brightnesses of one hue. RGB_FUNC_ON/RGB_FUNC/RGB_FUNC_DIM
+// (peaks 122/70/14) is a three-step ladder, and RGB_MONO_ON [8,78,92] vs
+// RGB_MONO_OFF [4,16,20] are both BELOW a two-tier cut, so a two-tier mapping
+// collapsed mono-engaged onto poly and lost the state. `pushColorTiers` in
+// push2-sysex.test.ts sweeps every RGB_* constant launchpad-map exports and
+// fails if any semantic pair collides, so this is enforced rather than asserted.
 // ---------------------------------------------------------------------------
 
-/** Stock-palette anchors: { index, [r,g,b] } — the reference colours we snap to.
- *  0/125/126/127 are the research-confirmed defaults (black/blue/green/red);
- *  white + the mixed hues are the common stock entries (CONFIRM ON HARDWARE). */
-export const PUSH_PALETTE_ANCHORS: readonly { i: number; rgb: readonly [number, number, number] }[] = [
-  { i: 0, rgb: [0, 0, 0] }, // black / off (research-confirmed)
-  { i: 127, rgb: [127, 0, 0] }, // red (research-confirmed)
-  { i: 126, rgb: [0, 127, 0] }, // green (research-confirmed)
-  { i: 125, rgb: [0, 0, 127] }, // blue (research-confirmed)
-  { i: 122, rgb: [127, 127, 127] }, // white
-  { i: 8, rgb: [127, 80, 0] }, // amber / orange
-  { i: 13, rgb: [127, 127, 0] }, // yellow
-  { i: 37, rgb: [0, 127, 127] }, // cyan
-  { i: 49, rgb: [80, 0, 127] }, // purple / violet
-  { i: 1, rgb: [40, 40, 40] }, // dim grey (dim/idle states)
+/** One hue row of the stock palette: a reference full-brightness colour plus the
+ *  palette entry to use for it at each of three brightness levels. */
+export interface PushPaletteHue {
+  readonly name: string;
+  /** Reference FULL-brightness RGB (0..127) — the hue-match target only. */
+  readonly rgb: readonly [number, number, number];
+  /** Stock palette index for this hue at full brightness. */
+  readonly bright: number;
+  /** Stock palette index for the SAME hue at medium brightness. */
+  readonly mid: number;
+  /** Stock palette index for the SAME hue at low brightness. */
+  readonly dim: number;
+}
+
+/**
+ * The stock-palette hue rows.
+ *
+ * ⚠ PROVENANCE, stated so it is not read as more confirmed than it is. Only the
+ * BRIGHT entries 0 / 125 / 126 / 127 (black / blue / green / red) are
+ * research-confirmed defaults. The remaining bright entries (122 white, 8 amber,
+ * 13 yellow, 37 cyan, 49 purple) are unchanged from the shipped table — the
+ * owner's hardware reports say the full-brightness colours read correctly, so
+ * they are left exactly as they are and every full-brightness golden is
+ * untouched by this change.
+ *
+ * The `mid` and `dim` columns are INFERRED, not confirmed, from the layout the
+ * shipped indices already follow: the Launchpad-family palette groups each hue
+ * into FOUR consecutive entries running bright→dim, which is exactly why 13 is
+ * yellow, 37 is cyan, 49 is purple and 1 is a dim neutral — four independent
+ * corroborations of the same 4-wide grouping. Stepping WITHIN a hue's group is
+ * therefore the same hue, darker. For the three pure colours that sit at the TOP
+ * of the palette (125/126/127) there is no group to step within, so their mid
+ * and dim entries are taken from that hue's low-index group instead.
+ *
+ * CONFIRM ON HARDWARE. If a mid/dim entry shows the WRONG HUE that is a one-line
+ * fix here and nothing else changes — and it is still strictly better than the
+ * black it replaced. The gates in push2-sysex.test.ts assert the properties that
+ * hold whatever the indices turn out to be: a lit colour never goes dark, and
+ * the levels of one hue never collide with each other.
+ */
+export const PUSH_PALETTE_HUES: readonly PushPaletteHue[] = [
+  { name: 'red', rgb: [127, 0, 0], bright: 127, mid: 6, dim: 7 }, // bright research-confirmed
+  { name: 'amber', rgb: [127, 80, 0], bright: 8, mid: 9, dim: 10 },
+  { name: 'yellow', rgb: [127, 127, 0], bright: 13, mid: 14, dim: 15 },
+  { name: 'green', rgb: [0, 127, 0], bright: 126, mid: 22, dim: 23 }, // bright research-confirmed
+  { name: 'cyan', rgb: [0, 127, 127], bright: 37, mid: 38, dim: 39 },
+  { name: 'blue', rgb: [0, 0, 127], bright: 125, mid: 46, dim: 47 }, // bright research-confirmed
+  { name: 'purple', rgb: [80, 0, 127], bright: 49, mid: 50, dim: 51 },
+  { name: 'white', rgb: [127, 127, 127], bright: 122, mid: 2, dim: 1 }, // 1 = the shipped dim neutral
 ];
 
 /**
- * Map an RGB colour (each 0..127, the Launchpad frame's component range) to the
- * nearest stock Push palette index. Nearest by squared Euclidean distance over
- * the anchor table. PURE. Approximate — CONFIRM/refine the exact palette on
- * hardware.
+ * Peak-component cuts between the three brightness tiers: a colour whose peak
+ * component is `> PUSH_BRIGHT_PEAK_MIN` is BRIGHT, `> PUSH_MID_PEAK_MIN` is MID,
+ * otherwise DIM.
+ *
+ * MEASURED against every `RGB_*` constant `launchpad-map.ts` exports rather than
+ * picked round — the sweep in push2-sysex.test.ts recomputes it, so these cannot
+ * drift away from the colours they separate. The tight ones are:
+ *   · BRIGHT/MID at 95: RGB_TIMING (peak 84) must not read as RGB_TIMING_ARMED
+ *     (127), and RGB_STOP_ACTIVE (104) must not read as RGB_STOP_IDLE (69).
+ *   · MID/DIM at 55: RGB_MONO_ON (92) must not read as RGB_MONO_OFF (20), and
+ *     RGB_FUNC (70) must not read as RGB_FUNC_DIM (14).
+ */
+export const PUSH_BRIGHT_PEAK_MIN = 95;
+export const PUSH_MID_PEAK_MIN = 55;
+
+/** The palette index for OFF. A colour maps here only when it is TRUE black. */
+export const PUSH_PALETTE_OFF = 0;
+
+/** The brightness tier a colour renders at. Exported so the tier sweep can name
+ *  the tier in its failure message instead of printing a bare index. */
+export type PushColorTier = 'off' | 'dim' | 'mid' | 'bright';
+
+/** The tier a colour's PEAK COMPONENT falls in. PURE. */
+export function pushColorTier(r: number, g: number, b: number): PushColorTier {
+  const peak = Math.max(clamp7(r), clamp7(g), clamp7(b));
+  if (peak === 0) return 'off';
+  if (peak > PUSH_BRIGHT_PEAK_MIN) return 'bright';
+  if (peak > PUSH_MID_PEAK_MIN) return 'mid';
+  return 'dim';
+}
+
+/** The hue row a colour matches, ignoring its brightness. PURE. Exported so a
+ *  test can assert hue PRESERVATION independently of which index a tier picks. */
+export function pushColorHue(r: number, g: number, b: number): PushPaletteHue {
+  const rr = clamp7(r), gg = clamp7(g), bb = clamp7(b);
+  const peak = Math.max(rr, gg, bb);
+  // Normalise to full brightness before matching, so the hue search is not also
+  // a brightness search — which is exactly what used to drag every dim colour
+  // onto the black anchor and extinguish it.
+  const k = peak === 0 ? 0 : 127 / peak;
+  const nr = rr * k, ng = gg * k, nb = bb * k;
+  let best = PUSH_PALETTE_HUES[0];
+  let bestD = Infinity;
+  for (const h of PUSH_PALETTE_HUES) {
+    const dr = nr - h.rgb[0], dg = ng - h.rgb[1], db = nb - h.rgb[2];
+    const d = dr * dr + dg * dg + db * db;
+    if (d < bestD) { bestD = d; best = h; }
+  }
+  return best;
+}
+
+/**
+ * Map an RGB colour (each 0..127, the Launchpad frame's component range) to a
+ * stock Push palette index.
+ *
+ * HUE is matched on the brightness-normalised colour (so dim and bright variants
+ * of one colour agree on the hue), and the peak component then selects that
+ * hue's bright / mid / dim palette entry. Only TRUE black maps to 0 — a lit
+ * colour is never extinguished, which is the property the scene column, the
+ * function row and the channel-select row all depend on. PURE. Approximate —
+ * CONFIRM/refine the exact palette on hardware.
  */
 export function pushColorIndex(r: number, g: number, b: number): number {
-  const rr = clamp7(r), gg = clamp7(g), bb = clamp7(b);
-  let best = PUSH_PALETTE_ANCHORS[0];
-  let bestD = Infinity;
-  for (const a of PUSH_PALETTE_ANCHORS) {
-    const dr = rr - a.rgb[0], dg = gg - a.rgb[1], db = bb - a.rgb[2];
-    const d = dr * dr + dg * dg + db * db;
-    if (d < bestD) { bestD = d; best = a; }
-  }
-  return best.i;
+  const tier = pushColorTier(r, g, b);
+  if (tier === 'off') return PUSH_PALETTE_OFF; // true black — the ONLY way to go dark
+  const hue = pushColorHue(r, g, b);
+  return tier === 'bright' ? hue.bright : tier === 'mid' ? hue.mid : hue.dim;
 }
 
 // ---------------------------------------------------------------------------

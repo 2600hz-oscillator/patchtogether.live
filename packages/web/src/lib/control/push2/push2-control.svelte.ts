@@ -466,13 +466,20 @@ export function selectedLane(): number {
 // channel's LANE COLOUR (owner decision, replacing the placeholder red/yellow):
 // the SELECTED channel at full brightness, the unselected channels dimmed, so
 // the Push row matches the on-screen channel colours. Every channel shows its
-// EFFECTIVE hue (the default fill for un-picked lanes) — matching Launchpad — so
-// only a channel with no bound clip at all is OFF.
+// EFFECTIVE hue (the default fill for un-picked lanes) — matching Launchpad —
+// so NO channel button is ever off. See `channelButtonValue` for why the old
+// "no bound clip → all 8 dark" gate was removed rather than kept.
 // ---------------------------------------------------------------------------
 
 /** Unselected channel-select buttons show their colour at ~30% brightness so the
  *  SELECTED channel (full brightness) reads as the current one — `pushColorIndex`
- *  snaps the scaled RGB to a dimmer stock-palette entry. */
+ *  snaps the scaled RGB to the SAME HUE's dim palette entry.
+ *
+ *  ⚠ 0.30 of full is ~38 on the 0..127 scale, which lands in the DIM tier
+ *  (peak ≤ 55) while a full lane hue lands in BRIGHT (peak > 95). That
+ *  separation is what makes "selected" readable at a glance, and it is asserted
+ *  in push2-control.test.ts — before the tier rework this scaling quantised to
+ *  palette 0 and every unselected button went out. */
 const CHANNEL_DIM = 0.3;
 
 /**
@@ -481,13 +488,27 @@ const CHANNEL_DIM = 0.3;
  * channel, ~30% dimmed for the rest — through the SAME `hexToRgb127`→
  * `pushColorIndex` path the pads use, so a button matches its clip column. An
  * un-picked lane shows its default hue (via `laneColorEff`, mirroring the card
- * swatch and Launchpad LEDs), NOT off; only no bound clip at all is OFF (0).
- * Reads the live bound clip node.
+ * swatch and Launchpad LEDs), NOT off. Reads the live bound clip node.
+ *
+ * ⚠ THERE IS NO "no bound clip → all 8 dark" GATE, and removing it was a FIX.
+ * `laneColorEff` is TOTAL — `laneColor(data, lane) ?? defaultLaneColorHex(lane)`
+ * — so it answers with the lane's default hue for `undefined` data just as it
+ * does for a clip player with no picked colours. The old `if (!nodeId) return 0`
+ * therefore did not express "there are no colours to mirror" (there always
+ * are); it blanked the row.
+ *
+ * That mattered because THIS ROW IS NOT PART OF THE CLIP SURFACE. It is
+ * Push-LOCAL lane select: it picks which lane's PUSH CARD the 960×160 display
+ * shows, resolved from the pinned mixer's columns, and it keeps working with no
+ * clip player bound at all. Painting eight dead-looking buttons over eight live
+ * ones is the worst of both — the owner reported exactly this ("the rows at the
+ * top of the lanes which should just show the channel color, do not"). So the
+ * distinction the gate tried to draw is one the surface does not have: an
+ * unbound Push still has eight selectable lanes, and they light.
  */
 export function channelButtonValue(lane: number): number {
   const nodeId = boundClipNode();
-  if (!nodeId) return 0; // no bound clip → no channel colours to mirror
-  const node = patch.nodes[nodeId] as ModuleNode | undefined;
+  const node = nodeId ? (patch.nodes[nodeId] as ModuleNode | undefined) : undefined;
   const hex = laneColorEff(node?.data as ClipPlayerData | undefined, lane);
   const [r, g, b] = hexToRgb127(hex);
   if (lane === selectedChannel) return pushColorIndex(r, g, b); // selected → full brightness
