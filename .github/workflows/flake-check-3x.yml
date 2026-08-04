@@ -254,6 +254,17 @@ jobs:
         if: inputs.suite != 'unit'
         run: flox activate -- task setup
 
+      # Applies to EVERY suite, unit included: the Postgres service is up and
+      # DATABASE_URL is set for all of them, and rackspaces-capacity.test.ts is
+      # written to HARD-FAIL rather than skip-pass when its tables are missing
+      # (the "refusing to skip-pass" precedent). This step used to carry
+      # `if: inputs.suite != 'unit'`, which left a unit flake-check running
+      # against a table-less database — either red for the wrong reason or
+      # vacuous for that test. A flake-check exists to reproduce the real lane
+      # 3×; ci.yml's unit job applies the schema, so this one must too.
+      - name: Apply DB schema
+        run: flox activate -- scripts/apply-db-schema.sh "$DATABASE_URL"
+
       # --- Playwright-suite-only prep (skipped for unit) ---
       - name: Download DSP dist artifact
         if: inputs.suite != 'unit'
@@ -268,10 +279,6 @@ jobs:
         with:
           name: web-preview-dist
           path: packages/web/.svelte-kit/output
-
-      - name: Apply DB schema
-        if: inputs.suite != 'unit'
-        run: flox activate -- psql "$DATABASE_URL" -f db/schema/001_init.sql -f db/schema/005_rackspace_mode.sql
 
       - name: Emit registry manifest for E2E
         if: inputs.suite != 'unit'
