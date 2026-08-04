@@ -923,6 +923,61 @@ export const samsloopMath = {
 
 const POLL_MS = 200;
 
+/** The subset of `MessagePort` this module posts through. Narrowed so a unit
+ *  test can drive the real transfer semantics with a plain `MessageChannel`
+ *  port and no AudioContext. */
+export interface SamsloopSamplePort {
+  postMessage(message: unknown, transfer: Transferable[]): void;
+}
+
+/**
+ * Post a decoded mono buffer into a SAMSLOOP worklet and RETURN ITS FRAME COUNT.
+ *
+ * `bufferRate` is the rate the buffer was CAPTURED at — the worklet scales its
+ * read cursor by bufferRate/contextRate so rate=1.0 plays at natural pitch
+ * whatever the AudioContext runs at. The ArrayBuffer is TRANSFERRED (zero-copy).
+ *
+ * ⚠ THE RETURN VALUE IS THE WHOLE POINT — read it, never `f32.length`
+ * afterwards. `postMessage(..., [f32.buffer])` transfers the ArrayBuffer, which
+ * **DETACHES every view onto it**, so `f32.length` is `0` the instant this call
+ * returns. That is not a theoretical hazard: the factory's RECORD branch cached
+ * `node.data.sampleLength = f32.length` AFTER posting, so every recording
+ * persisted a length of ZERO, and `SamsloopCard` sizes both window faders to
+ * `Math.max(1, sampleLength)`. All three of the reported symptoms are that one
+ * detached read:
+ *   * START became a [0, 1] slider on a 40 000-frame take — full travel moved
+ *     the play head by at most one sample, i.e. a control that does nothing;
+ *   * touching END wrote an `end` ≤ 1, which the worklet clamps to
+ *     `max(start+1, …)` — a ONE-SAMPLE window, so playback went to DC/silence;
+ *   * the card's START..END highlight band is `end / samples.length` wide, so it
+ *     collapsed to zero and the waveform panel lost its lit wash — it reads as
+ *     black.
+ *
+ * Capturing the length HERE, before the transfer, is what makes that class of
+ * mistake UNWRITABLE at the call site rather than merely fixed once.
+ * Negative-controlled in both directions by `samsloop-post-buffer.test.ts`.
+ *
+ * Exceptions are swallowed: the node can be torn down between the decode and
+ * the post, and a teardown race must not break the caller's bookkeeping. The
+ * frame count is still returned — it describes the BUFFER, not the delivery.
+ */
+export function postSampleBuffer(
+  port: SamsloopSamplePort,
+  f32: Float32Array,
+  bufferRate: number | undefined,
+): number {
+  const frames = f32.length; // BEFORE the transfer detaches the view
+  try {
+    port.postMessage(
+      { type: 'loadSample', samples: f32.buffer, sampleRate: bufferRate },
+      [f32.buffer as Transferable],
+    );
+  } catch {
+    // The node can be torn down between the read and the post.
+  }
+  return frames;
+}
+
 export const samsloopDef: AudioModuleDef = {
   type: 'samsloop',
   palette: { top: 'Audio modules', sub: 'VCOs' },
@@ -1077,6 +1132,10 @@ export const samsloopDef: AudioModuleDef = {
         if (!live) return;
         if (!live.data) live.data = {} as never;
         const ld = live.data as SamsloopData;
+        // ⚠ `result.samples`, NOT `f32` — `f32` is a COPY whose buffer was just
+        // TRANSFERRED to the worklet, so `f32.length` is 0 here. (`result.samples`
+        // is a different buffer and survives.) See postBuffer below for the
+        // regression this exact read caused on the record branch.
         const newLen = result.samples.length;
         // BOUNDARY-RESTORE FIX: the saved loop start/end are ABSOLUTE indices
         // against the length the buffer had at SAVE time (ld.sampleLength, just
@@ -1115,19 +1174,10 @@ export const samsloopDef: AudioModuleDef = {
       }
     }
 
-    /** Post a decoded mono buffer to the worklet. `sampleRate` is the rate the
-     *  buffer was CAPTURED at — the worklet scales its cursor by
-     *  bufferRate/contextRate so rate=1.0 plays at natural pitch whatever the
-     *  AudioContext is running at. Transfers the buffer (zero-copy). */
-    function postBuffer(f32: Float32Array, bufferRate: number | undefined): void {
-      try {
-        workletNode.port.postMessage(
-          { type: 'loadSample', samples: f32.buffer, sampleRate: bufferRate },
-          [f32.buffer],
-        );
-      } catch {
-        // The node can be torn down between the read and the post.
-      }
+    /** The factory's bound form of `postSampleBuffer` (module scope, above) —
+     *  posts into THIS node's worklet port and returns the frame count. */
+    function postBuffer(f32: Float32Array, bufferRate: number | undefined): number {
+      return postSampleBuffer(workletNode.port, f32, bufferRate);
     }
 
     // Send the initial sample (if present in node.data — typically not on
@@ -1179,7 +1229,11 @@ export const samsloopDef: AudioModuleDef = {
       // clearing a buffer that is already playing.
       const f32 = decodeRecordedPcm(src.sample, 'mix');
       if (f32.length === 0) return;
-      postBuffer(f32, src.sample.rate);
+      // `frames` comes from postBuffer's RETURN, not from f32 — the post
+      // transfers (and therefore detaches) f32.buffer, so `f32.length` is 0
+      // from here on. See postBuffer's comment: reading it here is what wrote
+      // `sampleLength: 0` onto every recording and broke both window faders.
+      const frames = postBuffer(f32, src.sample.rate);
       // Cache the derived metadata the START/END faders bound against, the
       // same way decodeBytesAndPush does for an upload — without it the card
       // sizes both faders to `Math.max(1, 0)` and the loop window is unusable
@@ -1187,7 +1241,7 @@ export const samsloopDef: AudioModuleDef = {
       try {
         const ld = live?.data as SamsloopData | undefined;
         if (!ld) return;
-        if (ld.sampleLength !== f32.length) ld.sampleLength = f32.length;
+        if (ld.sampleLength !== frames) ld.sampleLength = frames;
         if (ld.sampleRate !== src.sample.rate) ld.sampleRate = src.sample.rate;
       } catch {
         // syncedstore writes throw if the node was deleted; ignore.
