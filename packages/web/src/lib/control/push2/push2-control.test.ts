@@ -47,6 +47,8 @@ import {
   setLaunchpadView,
   isLegendHeld,
   pushDisplayOps,
+  isElectraMode,
+  electraRowIndex,
 } from './push2-control.svelte';
 import {
   PUSH_CC_ABOVE_DISPLAY_BASE,
@@ -56,12 +58,15 @@ import {
   PUSH_CC_ENCODER_MASTER,
   PUSH_CC_LEGEND,
   PUSH_CC_SHIFT,
+  PUSH_CC_ELECTRA_MODE,
+  PUSH_CC_DPAD_UP,
 } from './push2-map';
 import { pushColorIndex } from './push2-sysex';
 import { hexToRgb127 } from '$lib/control/launchpad/launchpad-map';
 import { laneColorEff } from '$lib/audio/modules/clip-types';
 import { PINNED_MIXER_ID } from '$lib/graph/column-reconcile';
 import { pushCardSignature, renderPushCard, type PushDrawOp } from './push-screen-layout';
+import { ELECTRA_MODE_ROWS } from './push-electra-model';
 import { lastViewed, __test_resetPushView } from './push2-view.svelte';
 import { PUSH_DISPLAY_RGBA_BYTES } from './push2-display-frame';
 import {
@@ -983,5 +988,337 @@ describe('LEGEND MODE (display only)', () => {
       sim.cc(PUSH_CC_LEGEND, 0);
     }).not.toThrow();
     expect(isLegendHeld()).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ELECTRA CONTROL MODE — the latched third mode, and the SHIFT reassignment
+// that made room for it.
+//
+// Every case drives the REAL rx path: raw MIDI bytes → the shipping codec → the
+// shipping map → the shipping control layer. Nothing calls a handler directly.
+//
+// What is NOT asserted here, and cannot be anywhere in CI: that CC 49 is the
+// physical button labelled "Shift", that CC 27 is the permanent-row button
+// above channel 8, or where CC 15 physically sits. Those need the device.
+// ---------------------------------------------------------------------------
+
+describe('ELECTRA CONTROL MODE', () => {
+  const EC = 'ec1';
+  const SRC = 'flt1';
+
+  /** An ElectraControl node whose row 1 knob 2 and row 3 knob 1 point at a
+   *  filter's cutoff / resonance. Slots are the row-major storage keys. */
+  function seedElectra(slots: Record<string, { moduleId: string; paramId: string; name?: string }>) {
+    livePatch.nodes[EC] = {
+      id: EC, type: 'electraControl', domain: 'audio', position: { x: 0, y: 0 },
+      params: {}, data: { name: 'my surface', slots },
+    } as never;
+  }
+  function seedFilter(params: Record<string, number> = {}) {
+    livePatch.nodes[SRC] = {
+      id: SRC, type: 'filter', domain: 'audio', position: { x: 0, y: 0 },
+      params: { cutoff: 1000, resonance: 0.3, ...params }, data: {},
+    } as never;
+  }
+  function cutoffNow(): number {
+    flushAllCcCommits();
+    return livePatch.nodes[SRC]!.params.cutoff as number;
+  }
+
+  it('CC 49 TOGGLES the mode — press on, press again off (the release does nothing)', async () => {
+    seedClipPlayer();
+    sim = await installSimulatedPush2AndBind(CP);
+    expect(isElectraMode()).toBe(false);
+    sim.cc(PUSH_CC_ELECTRA_MODE, 127);
+    expect(isElectraMode(), 'the press latched it ON').toBe(true);
+    sim.cc(PUSH_CC_ELECTRA_MODE, 0);
+    expect(isElectraMode(), 'the RELEASE must not toggle it back off').toBe(true);
+    sim.cc(PUSH_CC_ELECTRA_MODE, 127);
+    expect(isElectraMode(), 'the second press latched it OFF').toBe(false);
+  });
+
+  it('the six leftmost encoders drive the SELECTED ROW of the ElectraControl grid', async () => {
+    seedClipPlayer();
+    seedFilter();
+    seedElectra({ '1': { moduleId: SRC, paramId: 'cutoff' } }); // row 1, knob 2
+    sim = await installSimulatedPush2AndBind(CP);
+    sim.cc(PUSH_CC_ELECTRA_MODE, 127);
+    const before = cutoffNow();
+    sim.cc(PUSH_CC_ENCODER_BASE + 1, 1); // display encoder 2 → knob 2 → cutoff
+    expect(cutoffNow(), 'the source param moved').toBeGreaterThan(before);
+  });
+
+  it('NEGATIVE CONTROL: the SAME encoder drives the PUSH CARD when the mode is off', async () => {
+    // Without this, "encoder 2 moved cutoff" would also pass if the mode were
+    // permanently on — or if it did nothing and the card path had moved it.
+    seedClipPlayer();
+    seedFilter();
+    seedElectra({ '1': { moduleId: SRC, paramId: 'cutoff' } });
+    seedPinnedMixer({ '1': ['gain1'] });
+    seedMember('gain1', 'vca', 1, { base: 0.5 });
+    sim = await installSimulatedPush2AndBind(CP);
+    sim.cc(PUSH_CC_ABOVE_DISPLAY_BASE, 127); // lane 1 → the vca's push card
+    const cutoffBefore = cutoffNow();
+    sim.cc(PUSH_CC_ENCODER_BASE + 1, 1); // mode OFF → this is a card strip
+    expect(cutoffNow(), 'the ElectraControl slot was NOT touched').toBe(cutoffBefore);
+    // …and now the same message with the mode ON does reach it.
+    sim.cc(PUSH_CC_ELECTRA_MODE, 127);
+    sim.cc(PUSH_CC_ENCODER_BASE + 1, 1);
+    expect(cutoffNow()).toBeGreaterThan(cutoffBefore);
+  });
+
+  it('encoders 7 and 8 are INERT in the mode — and NOT inert outside it', async () => {
+    seedClipPlayer();
+    seedFilter();
+    // There is no "knob 7" to point at — the grid is 6 wide, which is exactly
+    // why encoders 7-8 have nothing to do here. The negative control uses a
+    // lane card that DOES have an 8th control (tidyVco's push card is the
+    // curated 8-control one) to prove encoder 7 is a live knob outside the mode.
+    seedPinnedMixer({ '1': ['vco7'] });
+    seedMember('vco7', 'tidyVco', 1);
+    seedElectra({ '0': { moduleId: SRC, paramId: 'cutoff' } });
+    sim = await installSimulatedPush2AndBind(CP);
+    sim.cc(PUSH_CC_ABOVE_DISPLAY_BASE, 127);
+    const strip7 = currentPushCardView().strips[6];
+    sim.cc(PUSH_CC_ELECTRA_MODE, 127);
+    const cutoffBefore = cutoffNow();
+    sim.cc(PUSH_CC_ENCODER_BASE + 6, 1); // encoder 7
+    sim.cc(PUSH_CC_ENCODER_BASE + 7, 1); // encoder 8
+    expect(cutoffNow(), 'neither inert encoder wrote anything').toBe(cutoffBefore);
+    // NEGATIVE CONTROL: encoder 7 is a REAL control outside the mode, so
+    // "nothing happened" is the mode's doing and not a dead knob.
+    expect(strip7.kind, 'the filter card really does have a 7th strip').toBe('param');
+    sim.cc(PUSH_CC_ELECTRA_MODE, 127); // back out of the mode
+    flushAllCcCommits();
+    const v7 = livePatch.nodes['vco7']!.params[strip7.paramId] as number | undefined;
+    sim.cc(PUSH_CC_ENCODER_BASE + 6, 1);
+    flushAllCcCommits();
+    expect(livePatch.nodes['vco7']!.params[strip7.paramId]).not.toBe(v7);
+  });
+
+  it('the scroll encoder scrolls the ROW, and wraps', async () => {
+    seedClipPlayer();
+    sim = await installSimulatedPush2AndBind(CP);
+    sim.cc(PUSH_CC_ELECTRA_MODE, 127);
+    expect(electraRowIndex()).toBe(1);
+    sim.cc(PUSH_CC_ENCODER_SWING, 1);
+    expect(electraRowIndex()).toBe(2);
+    sim.cc(PUSH_CC_ENCODER_SWING, 127); // −1 detent (2's complement)
+    expect(electraRowIndex()).toBe(1);
+    sim.cc(PUSH_CC_ENCODER_SWING, 127); // wraps off the bottom
+    expect(electraRowIndex()).toBe(ELECTRA_MODE_ROWS);
+  });
+
+  it('scrolling the ROW re-points the encoders at that row’s controls', async () => {
+    seedClipPlayer();
+    seedFilter();
+    seedElectra({
+      '0': { moduleId: SRC, paramId: 'cutoff' },    // row 1, knob 1
+      '6': { moduleId: SRC, paramId: 'resonance' }, // row 2, knob 1
+    });
+    sim = await installSimulatedPush2AndBind(CP);
+    sim.cc(PUSH_CC_ELECTRA_MODE, 127);
+    const c0 = cutoffNow();
+    const r0 = livePatch.nodes[SRC]!.params.resonance as number;
+    sim.cc(PUSH_CC_ENCODER_BASE, 1); // row 1 knob 1 → cutoff
+    expect(cutoffNow()).toBeGreaterThan(c0);
+    flushAllCcCommits();
+    expect(livePatch.nodes[SRC]!.params.resonance, 'row 2 untouched').toBe(r0);
+    sim.cc(PUSH_CC_ENCODER_SWING, 1); // → row 2
+    const c1 = cutoffNow();
+    sim.cc(PUSH_CC_ENCODER_BASE, 1); // the SAME encoder now drives resonance
+    flushAllCcCommits();
+    expect(livePatch.nodes[SRC]!.params.resonance).toBeGreaterThan(r0);
+    expect(cutoffNow(), 'row 1 is no longer under encoder 1').toBe(c1);
+  });
+
+  it('the screen shows the row’s NAMES and READOUTS, and "Row n" over encoders 7-8', async () => {
+    seedClipPlayer();
+    seedFilter();
+    seedElectra({ '0': { moduleId: SRC, paramId: 'cutoff', name: 'brightness' } });
+    sim = await installSimulatedPush2AndBind(CP);
+    sim.cc(PUSH_CC_ELECTRA_MODE, 127);
+    const words = pushDisplayOps()
+      .filter((o): o is PushDrawOp & { op: 'text' } => o.op === 'text')
+      .map((o) => o.text);
+    expect(words, 'the mode names itself').toContain('ELECTRA');
+    expect(words, 'the surface name').toContain('my surface');
+    expect(words, 'the CUSTOM slot name, exactly as the card shows it').toContain('BRIGHTNESS');
+    expect(words, 'the row readout over encoders 7-8').toContain('ROW');
+    expect(words).toContain('1');
+    expect(words, 'the inert encoders are still numbered').toEqual(expect.arrayContaining(['7', '8']));
+    // The readout is the param's own, resolved through the shared knob vocabulary.
+    expect(words.some((w) => w.includes('1.00') || w.includes('1000'))).toBe(true);
+  });
+
+  it('an empty rack says WHY rather than showing six blank knobs', async () => {
+    seedClipPlayer();
+    sim = await installSimulatedPush2AndBind(CP);
+    sim.cc(PUSH_CC_ELECTRA_MODE, 127);
+    const words = pushDisplayOps()
+      .filter((o): o is PushDrawOp & { op: 'text' } => o.op === 'text')
+      .map((o) => o.text);
+    expect(words.join(' ')).toContain('no ELECTRA CONTROL in this rack');
+  });
+
+  it('LEGEND still wins the screen while the mode is latched, and gives it back', async () => {
+    seedClipPlayer();
+    seedFilter();
+    seedElectra({ '0': { moduleId: SRC, paramId: 'cutoff' } });
+    sim = await installSimulatedPush2AndBind(CP);
+    sim.cc(PUSH_CC_ELECTRA_MODE, 127);
+    const modeOps = pushDisplayOps();
+    sim.cc(PUSH_CC_LEGEND, 127);
+    expect(isLegendHeld()).toBe(true);
+    expect(isElectraMode(), 'the legend did not cancel the mode').toBe(true);
+    expect(pushDisplayOps()).not.toEqual(modeOps);
+    sim.cc(PUSH_CC_LEGEND, 0);
+    // OP-FOR-OP identity: the mode screen is re-derived, not restored from a copy.
+    expect(pushDisplayOps()).toEqual(modeOps);
+  });
+
+  it('the mode changes the ENCODERS and the SCREEN only — every button still routes', async () => {
+    seedClipPlayer({
+      clips: {
+        '0': { kind: 'note', lengthSteps: 4, root: 48, loop: true, steps: [{ step: 0, midi: 72, velocity: 100, lengthSteps: 1 }] },
+      },
+    });
+    sim = await installSimulatedPush2AndBind(CP);
+    sim.cc(PUSH_CC_ELECTRA_MODE, 127);
+    sim.press(0, 7); // a grid pad, with the mode latched on
+    const data = livePatch.nodes[CP]!.data as { queued?: (number | 'stop' | null)[] };
+    expect(data.queued![0], 'the clip still launched').not.toBeNull();
+    // …and lane select still selects.
+    sim.cc(PUSH_CC_ABOVE_DISPLAY_BASE + 3, 127);
+    expect(selectedChannelIndex()).toBe(3);
+  });
+
+  it('the mode LIGHTS its button, and unlights it — latched state has to be visible', async () => {
+    seedClipPlayer();
+    sim = await installSimulatedPush2AndBind(CP);
+    hoisted.tick?.();
+    const modeLed = () => sim.ledAt('b' + PUSH_CC_ELECTRA_MODE);
+    expect(modeLed(), 'dark while the mode is off').toBe(0);
+    sim.cc(PUSH_CC_ELECTRA_MODE, 127);
+    hoisted.tick?.();
+    expect(modeLed(), 'lit while the mode is on').toBe(127);
+    sim.cc(PUSH_CC_ELECTRA_MODE, 127);
+    hoisted.tick?.();
+    expect(modeLed(), 'dark again').toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// THE SHIFT REASSIGNMENT — the negative controls, in BOTH directions.
+//
+// CC 49 (the button labelled "Shift") used to be a second route to the SHIFT
+// modifier. It is now the ElectraControl toggle. CC 27 (the permanent-row button
+// above channel 8) was ALWAYS the shift route and is now the only one. These
+// cases assert that each button does its own job and NOT the other's — the
+// direction that catches a half-applied move.
+// ---------------------------------------------------------------------------
+
+describe('SHIFT is CC 27; the button labelled "Shift" (CC 49) is the mode toggle', () => {
+  it('CC 27 gives the ×8 D-Pad window; CC 49 does NOT', async () => {
+    seedClipPlayer({ clips: { '0': { kind: 'note', lengthSteps: 16, root: 48, loop: true, steps: [] } } });
+    sim = await installSimulatedPush2AndBind(CP);
+    setLaunchpadView('clip'); // launchpadDpadNav only acts in the clip view
+
+    // Baseline: no modifier at all = ±1.
+    const base = __test_mode().editRowOffset;
+    sim.cc(PUSH_CC_DPAD_UP, 127);
+    sim.cc(PUSH_CC_DPAD_UP, 0);
+    expect(__test_mode().editRowOffset - base, 'unmodified nav is one row').toBe(1);
+
+    // CC 27 held → ×8.
+    sim.cc(PUSH_CC_SHIFT, 127);
+    expect(__test_mode().shiftHeldSingle, 'CC 27 IS the shift modifier').toBe(true);
+    const withShift = __test_mode().editRowOffset;
+    sim.cc(PUSH_CC_DPAD_UP, 127);
+    sim.cc(PUSH_CC_DPAD_UP, 0);
+    expect(__test_mode().editRowOffset - withShift, 'CC 27 gives the ×8 window').toBe(8);
+    sim.cc(PUSH_CC_SHIFT, 0);
+
+    // CC 49 "held" → the mode toggles, and nav stays ±1.
+    sim.cc(PUSH_CC_ELECTRA_MODE, 127);
+    expect(isElectraMode(), 'CC 49 toggled the mode').toBe(true);
+    expect(__test_mode().shiftHeldSingle, 'CC 49 is NOT a shift modifier').toBe(false);
+    const withElectra = __test_mode().editRowOffset;
+    sim.cc(PUSH_CC_DPAD_UP, 127);
+    sim.cc(PUSH_CC_DPAD_UP, 0);
+    expect(__test_mode().editRowOffset - withElectra, 'CC 49 must NOT ×8-nav').toBe(1);
+  });
+
+  it('CC 27 gives the FINE encoder step; CC 49 does NOT', async () => {
+    seedClipPlayer();
+    seedPinnedMixer({ '1': ['gain1'] });
+    seedMember('gain1', 'vca', 1, { base: 0.5 });
+    sim = await installSimulatedPush2AndBind(CP);
+    sim.cc(PUSH_CC_ABOVE_DISPLAY_BASE, 127);
+    const paramId = currentPushCardView().strips[0].paramId;
+    const read = () => {
+      flushAllCcCommits();
+      return livePatch.nodes['gain1']!.params[paramId] as number;
+    };
+
+    const a0 = read();
+    sim.cc(PUSH_CC_ENCODER_BASE, 1); // coarse
+    const coarse = Math.abs(read() - a0);
+
+    const b0 = read();
+    sim.cc(PUSH_CC_SHIFT, 127);
+    sim.cc(PUSH_CC_ENCODER_BASE, 1); // fine, under CC 27
+    const fine = Math.abs(read() - b0);
+    sim.cc(PUSH_CC_SHIFT, 0);
+    expect(fine, 'CC 27 makes the step SMALLER').toBeLessThan(coarse);
+
+    // CC 49 does not; it toggles the mode instead, so leave the mode again
+    // first and re-measure a coarse step with 49 "down".
+    sim.cc(PUSH_CC_ELECTRA_MODE, 127);
+    sim.cc(PUSH_CC_ELECTRA_MODE, 127); // back out of the mode
+    expect(isElectraMode()).toBe(false);
+    const c0 = read();
+    sim.cc(PUSH_CC_ENCODER_BASE, 1);
+    expect(Math.abs(read() - c0), 'CC 49 left the step COARSE').toBeCloseTo(coarse, 10);
+  });
+
+  it('CC 27 swaps the LEGEND shift layer; CC 49 does not (it toggles the mode)', async () => {
+    seedClipPlayer();
+    sim = await installSimulatedPush2AndBind(CP);
+    sim.cc(PUSH_CC_LEGEND, 127);
+    const words = () =>
+      pushDisplayOps()
+        .filter((o): o is PushDrawOp & { op: 'text' } => o.op === 'text')
+        .map((o) => o.text);
+    expect(words()).toContain('PLAY/STOP');
+    expect(words()).not.toContain('ARM L1');
+
+    sim.cc(PUSH_CC_SHIFT, 127); // CC 27, legend still held
+    expect(words(), 'CC 27 swaps to the shift layer').toContain('ARM L1');
+    expect(words()).toContain('SHIFT');
+    sim.cc(PUSH_CC_SHIFT, 0);
+    expect(words()).toContain('PLAY/STOP');
+
+    // CC 49 while the legend is held: it toggles the mode (the legend still
+    // wins the screen), and it does NOT produce the shift layer.
+    sim.cc(PUSH_CC_ELECTRA_MODE, 127);
+    expect(isElectraMode()).toBe(true);
+    expect(words(), 'CC 49 is not a shift modifier').not.toContain('ARM L1');
+    expect(words()).toContain('PLAY/STOP');
+    sim.cc(PUSH_CC_LEGEND, 0);
+  });
+
+  it('CC 49 no longer reaches the routing brain at all', async () => {
+    seedClipPlayer();
+    sim = await installSimulatedPush2AndBind(CP);
+    const before = JSON.stringify(__test_mode());
+    sim.cc(PUSH_CC_ELECTRA_MODE, 127);
+    sim.cc(PUSH_CC_ELECTRA_MODE, 0);
+    expect(JSON.stringify(__test_mode()), 'the brain never saw either edge').toBe(before);
+    // …while CC 27 very much does.
+    sim.cc(PUSH_CC_SHIFT, 127);
+    expect(JSON.stringify(__test_mode())).not.toBe(before);
+    sim.cc(PUSH_CC_SHIFT, 0);
   });
 });

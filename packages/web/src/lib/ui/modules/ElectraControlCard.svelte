@@ -40,6 +40,7 @@
     bindingAtSlot,
     setSlotName,
     pruneElectraDangling,
+    electraSlotLabel,
     ELECTRA_BANKS,
   } from '$lib/graph/electra-control';
   import { resolveSurfaceParam } from '$lib/graph/control-surface-params';
@@ -124,8 +125,10 @@
             if (resolved) {
               def = resolved.def;
               customName = typeof b.name === 'string' ? b.name.trim() : '';
-              const baseLabel = resolved.def.label ?? b.paramId;
-              label = customName.length > 0 ? customName : baseLabel;
+              // SHARED name rule — the SAME expression the Push 2's ElectraControl
+              // mode renders, so the hardware strip and this knob cannot disagree
+              // about what a slot is called. Never re-type it here.
+              label = electraSlotLabel(b, resolved.def.label ?? b.paramId);
               // LIVE read of the source module's control colour (passthrough).
               color = resolveControlColor(sourceNode);
             }

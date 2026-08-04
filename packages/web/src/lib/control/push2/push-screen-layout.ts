@@ -32,6 +32,7 @@
 
 import type { PushCardView, PushStripView } from './push-card-model';
 import type { PushLegendRow, PushLegendView } from './push-legend-model';
+import type { PushElectraView } from './push-electra-model';
 
 // ── The panel ──────────────────────────────────────────────────────────────
 
@@ -266,18 +267,24 @@ export function barFillSpan(strip: PushStripView, x0: number): { x: number; w: n
 }
 
 /** The cell rects of a DISCRETE param — one per state, evenly divided across
- *  the track with a 1px gap, so a 3-state MODE cannot read as a sweep. */
-export function cellRects(cells: number, x0: number): { x: number; w: number }[] {
+ *  the track with a 1px gap, so a 3-state MODE cannot read as a sweep.
+ *  `trackW` defaults to a strip's track; the ElectraControl-mode ROW selector
+ *  reuses this with its own (wider) track so the two cell rows round identically
+ *  instead of growing a second rounding rule. */
+export function cellRects(cells: number, x0: number, trackW: number = TRACK_W): { x: number; w: number }[] {
   const out: { x: number; w: number }[] = [];
   for (let i = 0; i < cells; i++) {
-    const a = x0 + Math.round((i * TRACK_W) / cells);
-    const b = x0 + Math.round(((i + 1) * TRACK_W) / cells);
+    const a = x0 + Math.round((i * trackW) / cells);
+    const b = x0 + Math.round(((i + 1) * trackW) / cells);
     out.push({ x: a, w: Math.max(1, b - a - 1) });
   }
   return out;
 }
 
-function renderStrip(strip: PushStripView, i: number): PushDrawOp[] {
+/** Every op for ONE encoder strip. Exported so ELECTRA CONTROL MODE paints its
+ *  six knobs through the SAME function the push card does — a second strip
+ *  renderer would be a second chance for the bar to lie. */
+export function renderStrip(strip: PushStripView, i: number): PushDrawOp[] {
   const ops: PushDrawOp[] = [];
   const cx = stripCenterX(i);
   const bx = stripX(i) + STRIP_PAD_X;
@@ -486,6 +493,142 @@ export function renderPushLegend(v: PushLegendView): PushDrawOp[] {
   ops.push(...renderLegendRow(v.scene, LEGEND_ROW_A_Y, v.shift));
   ops.push(rect(0, LEGEND_ROW_RULE_Y, PUSH_SCREEN_W, 1, COL_RULE));
   ops.push(...renderLegendRow(v.function, LEGEND_ROW_B_Y, v.shift));
+  return ops;
+}
+
+// ── ELECTRA CONTROL MODE ───────────────────────────────────────────────────
+//
+// The latched third display mode: SIX encoder strips (identical to the card's,
+// drawn by the same `renderStrip`) plus a ROW PANEL spanning the space above
+// encoders 7 and 8 — the two the mode leaves inert.
+//
+// Geometry stays on the same exact-integer 960/8 grid, so the six strips line up
+// with the six physical encoders under them and the panel starts exactly at the
+// 7th encoder's left edge. Nothing about a strip is re-derived here; only the
+// panel is new.
+
+/** First strip index the ROW panel covers (0-based) — encoder 7. */
+export const ELECTRA_PANEL_STRIP = 6;
+/** The panel's left edge — exactly encoder 7's strip boundary (720). */
+export const ELECTRA_PANEL_X = STRIP_W * ELECTRA_PANEL_STRIP; // 720
+/** Two strips wide (240), i.e. the whole space above encoders 7 and 8. */
+export const ELECTRA_PANEL_W = STRIP_W * 2; // 240
+/** Horizontal centre of the panel (840). */
+export const ELECTRA_PANEL_CX = ELECTRA_PANEL_X + ELECTRA_PANEL_W / 2; // 840
+/** Vertical centre of the big row NUMBER. */
+export const ELECTRA_ROW_NUM_Y = 84;
+export const ELECTRA_ROW_NUM_PX = 44;
+/** The 1-of-6 selector row: top edge + height. */
+export const ELECTRA_SEL_Y = 118;
+export const ELECTRA_SEL_H = 10;
+/** Inset of the selector track inside the panel, per side. */
+export const ELECTRA_SEL_PAD_X = 26;
+/** Selector track width — 240 − 52 = 188. */
+export const ELECTRA_SEL_W = ELECTRA_PANEL_W - ELECTRA_SEL_PAD_X * 2; // 188
+
+/** ELECTRA CONTROL MODE accent — distinct from any lane hue, so a glance at the
+ *  header stripe says "this is not a push card" before a word is read. */
+export const COL_ELECTRA_ACCENT = '#7FC4D8';
+
+/** The mode's empty state — a real answer, not a blank screen. */
+export const ELECTRA_EMPTY_MESSAGE =
+  'no ELECTRA CONTROL in this rack — add one and assign controls to its 6×6 grid';
+
+/**
+ * The header band, in the card's geometry so the two modes sit at the same
+ * height: accent swatch, the mode name, the surface's name, its bank, and the
+ * row counter where the card prints its module counter.
+ */
+export function renderElectraHeader(v: PushElectraView): PushDrawOp[] {
+  const ops: PushDrawOp[] = [
+    rect(0, 0, SWATCH_W, HEADER_H, COL_ELECTRA_ACCENT),
+    rect(0, HEADER_RULE_Y, PUSH_SCREEN_W, 1, COL_RULE),
+    text(12, HEADER_MID, 'ELECTRA', COL_ELECTRA_ACCENT, 12, 'left', 60, 'bold'),
+  ];
+  if (v.surfaceName) {
+    ops.push(text(TITLE_X, HEADER_MID, v.surfaceName, COL_VALUE, 14, 'left', TITLE_MAX_W, 'bold'));
+  }
+  if (v.bank) {
+    ops.push(text(SUBTITLE_X, HEADER_MID, `BANK ${v.bank}`, COL_MUTED, 11, 'left', SUBTITLE_MAX_W));
+  }
+  ops.push(text(COUNTER_X, HEADER_MID, `${v.row}/${v.rowCount}`, COL_MUTED, 12, 'right', 72));
+  return ops;
+}
+
+/**
+ * The ROW panel over encoders 7 and 8: the word ROW, the row number set large
+ * enough to read from behind a keyboard, a 1-of-6 selector so the position is
+ * legible without reading the digit, and the two encoder numbers in the flag
+ * band — drawn in the same dim colour a blank card strip uses, which is how the
+ * screen SAYS those two knobs do nothing here instead of leaving a gap.
+ */
+export function renderElectraRowPanel(v: PushElectraView): PushDrawOp[] {
+  const ops: PushDrawOp[] = [
+    text(ELECTRA_PANEL_CX, LABEL_Y + LABEL_H / 2, 'ROW', COL_LABEL, 11, 'center', ELECTRA_PANEL_W - 16),
+    text(
+      ELECTRA_PANEL_CX,
+      ELECTRA_ROW_NUM_Y,
+      String(v.row),
+      COL_VALUE,
+      ELECTRA_ROW_NUM_PX,
+      'center',
+      ELECTRA_PANEL_W - 16,
+      'bold',
+    ),
+  ];
+  const selX0 = ELECTRA_PANEL_X + ELECTRA_SEL_PAD_X;
+  const cells = cellRects(v.rowCount, selX0, ELECTRA_SEL_W);
+  for (let i = 0; i < cells.length; i++) {
+    // 'select' semantics, exactly like a named discrete param: ONLY the current
+    // cell lights, because "3 of 6 lit" would read as a quantity.
+    ops.push(rect(cells[i].x, ELECTRA_SEL_Y, cells[i].w, ELECTRA_SEL_H, i === v.row - 1 ? COL_FILL : COL_CELL_OFF));
+  }
+  for (let i = 0; i < 2; i++) {
+    const strip = ELECTRA_PANEL_STRIP + i;
+    ops.push(
+      text(stripCenterX(strip), FLAG_Y + FLAG_H / 2, String(strip + 1), COL_FLAG, 9, 'center', STRIP_CONTENT_W),
+    );
+  }
+  return ops;
+}
+
+/**
+ * Every op needed to paint ELECTRA CONTROL MODE, back to front: background,
+ * header, dividers, the six strips, the divider that opens the panel, the panel.
+ *
+ * On the empty state (no ElectraControl node in the rack) the body is one centred
+ * sentence, exactly as the card does — the header still says which mode you are
+ * in and which row you are on.
+ */
+export function renderPushElectra(v: PushElectraView): PushDrawOp[] {
+  const ops: PushDrawOp[] = [rect(0, 0, PUSH_SCREEN_W, PUSH_SCREEN_H, COL_BG)];
+  ops.push(...renderElectraHeader(v));
+
+  if (v.empty) {
+    ops.push(
+      text(
+        PUSH_SCREEN_W / 2,
+        BODY_Y + (PUSH_SCREEN_H - BODY_Y) / 2,
+        ELECTRA_EMPTY_MESSAGE,
+        COL_MUTED,
+        16,
+        'center',
+        PUSH_SCREEN_W - 48,
+      ),
+    );
+    return ops;
+  }
+
+  // Dividers between the six strips, plus the one that separates them from the
+  // panel — so the inert pair reads as a single block, not as two dead strips.
+  for (let i = 1; i <= ELECTRA_PANEL_STRIP; i++) {
+    ops.push(rect(stripX(i), BODY_Y, 1, PUSH_SCREEN_H - BODY_Y, COL_DIVIDER));
+  }
+  for (let i = 0; i < ELECTRA_PANEL_STRIP; i++) {
+    const strip = v.strips[i];
+    if (strip) ops.push(...renderStrip(strip, i));
+  }
+  ops.push(...renderElectraRowPanel(v));
   return ops;
 }
 
