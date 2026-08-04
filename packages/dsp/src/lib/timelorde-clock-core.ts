@@ -118,6 +118,15 @@ export class TimelordeClockCore {
   // Pending pulses queue (multipliers + swing). Sorted by startSample.
   private pending: PendingPulse[] = [];
 
+  // Pulse index WITHIN THE SWUNG TRAIN. Swing means "hold the off-beats back",
+  // so only the ODD-indexed pulses of the source train take the lag; the
+  // even-indexed (on-beat) ones fire dead on time. Reset whenever the swing
+  // SOURCE changes so which pulses count as off-beats is deterministic from
+  // the moment the user picks a source rather than a function of how long the
+  // clock happened to be running.
+  private swingPulseIndex = 0;
+  private lastSwingTarget = -1;
+
   // Currently-firing pulses: 13 entries (indices 0..11 for the 12 fixed
   // outputs + index 12 for swing, OUT_SWING). The old Int32Array(12)
   // silently dropped every swing write (TypedArray out-of-bounds is a
@@ -205,8 +214,30 @@ export class TimelordeClockCore {
         ? this.lastMeasuredPeriod
         : internalPeriodSamples;
 
-    const swingLagSamples = Math.max(0, (swingAmount / 360) * periodForPrediction);
     const swingTargetOut = SWING_SOURCES[swingSourceIdx]!;
+    if (swingTargetOut !== this.lastSwingTarget) {
+      this.lastSwingTarget = swingTargetOut;
+      this.swingPulseIndex = 0;
+    }
+
+    // The lag is a fraction of the SWUNG TRAIN's OWN pulse interval, not of the
+    // master period. Swing is defined relative to the subdivision being swung —
+    // "60° of shuffle on the 16ths" has to mean 60° of a 16th — and reading it
+    // off the master instead makes SWING mean something different for every SRC.
+    // It is also what keeps the train ordered: swingAmount caps at 90° = 25% of
+    // the interval, so a held-back off-beat can never overtake the on-beat that
+    // follows it. (Off the master period an 8x source at 90° lagged 6000 samples
+    // into a 3000-sample sub-period — two pulses past where it belonged.)
+    // For SRC = 1x, the default, the source interval IS the master period, so
+    // this is a no-op there and existing 1x-swing patches keep their lag.
+    let swingSourceInterval = periodForPrediction;
+    for (const d of DIVISOR_DEFS) {
+      if (d.out === swingTargetOut) swingSourceInterval = periodForPrediction * d.ratio;
+    }
+    for (const m of MULTIPLIER_DEFS) {
+      if (m.out === swingTargetOut) swingSourceInterval = periodForPrediction / m.factor;
+    }
+    const swingLagSamples = Math.max(0, (swingAmount / 360) * swingSourceInterval);
 
     // External clock buffer — read input 0 sample-by-sample and detect edges.
     const clockIn = inputs[0]?.[0];
@@ -311,11 +342,18 @@ export class TimelordeClockCore {
     // 1x pulse fires now.
     this.scheduleNow(OUT_1X, atSample, pulseWidthSamples);
 
-    // Divisors: every Nth master pulse (counter starts at 1 — first pulse
-    // fires every divisor too, which is the conventional "pulse at every
-    // N-multiple" pattern users expect from a clock divider).
+    // Divisors: the FIRST master pulse fires every divisor, then every Nth
+    // after it. `masterCount` is 1-based, so the test is on (n - 1).
+    //
+    // This used to read `masterCount % ratio === 0` — which fires on the LAST
+    // master of each group, not the first, so every divider was phase-shifted
+    // late by (ratio - 1) beats. Measured @120 BPM: 1x first fired at sample
+    // 23999, /2 at 47999, /4 at 95999, /8 at 191999 — a "/4 bar clock" landing
+    // on beat 4 instead of beat 1, and a /64 output that needs 32 seconds
+    // before its first pulse. The comment that used to sit here asserted the
+    // conventional first-of-group behaviour, which is what the code did not do.
     for (const d of DIVISOR_DEFS) {
-      if (this.masterCount % d.ratio === 0) {
+      if ((this.masterCount - 1) % d.ratio === 0) {
         this.scheduleNow(d.out, atSample, pulseWidthSamples);
       }
     }
@@ -339,58 +377,61 @@ export class TimelordeClockCore {
       }
     }
 
-    // Swing: the source pulse fires at atSample (or whenever its own
-    // logic dictates), and a *copy* on OUT_SWING fires at atSample +
-    // swingLag. When swingLag = 0 this is a duplicate of the source —
-    // perfect normaling. When source = 1x and lag > 0, swing trails 1x.
+    // Swing: OUT_SWING shadows whichever train SRC selects, holding the
+    // OFF-BEATS back by swingLagSamples. Every pulse of the source train is
+    // enumerated in time order through scheduleSwing(), which applies the lag
+    // to the odd-indexed ones only.
     //
-    // For divisors and multipliers as swing sources we'd need to shadow
-    // their schedule logic; v1 implements: the swing pulse fires whenever
-    // the source's most-recent pulse fired, plus the lag. We approximate
-    // by scheduling a swing pulse aligned with this 1x master if the
-    // source IS 1x; for divisors, only when masterCount % ratio === 0;
-    // for multipliers, alongside each scheduled sub-pulse.
-    const swingStart = atSample + swingLagSamples;
+    // This used to add swingLagSamples to EVERY pulse — sub-pulse 0 included —
+    // which is not swing, it is a phase offset: the whole train shifted late
+    // and stayed perfectly even. Measured @120 BPM with SRC = 2x, intervals
+    // were [12000, 12000, 12000, 12000] at swing 0, 30, 60 AND 90; only the
+    // train's absolute position moved (+2000 / +4000 / +6000 samples). Same at
+    // SRC = 1x and SRC = /2. `docs.controls.swingAmount` has always said "how
+    // far the SWING output's OFF-BEATS are pushed late"; nothing did that.
     if (swingTargetOut === OUT_1X) {
-      this.pending.push({
-        outIdx: OUT_SWING,
-        startSample: Math.round(swingStart),
-        endSample: Math.round(swingStart) + pulseWidthSamples,
-      });
+      this.scheduleSwing(atSample, swingLagSamples, pulseWidthSamples);
     } else {
-      // Match divisor: only fire swing when the divisor itself fires.
+      // Match divisor: only fire swing when the divisor itself fires — same
+      // first-of-group phase as the divisor branch above.
       for (const d of DIVISOR_DEFS) {
-        if (d.out === swingTargetOut && this.masterCount % d.ratio === 0) {
-          this.pending.push({
-            outIdx: OUT_SWING,
-            startSample: Math.round(swingStart),
-            endSample: Math.round(swingStart) + pulseWidthSamples,
-          });
+        if (d.out === swingTargetOut && (this.masterCount - 1) % d.ratio === 0) {
+          this.scheduleSwing(atSample, swingLagSamples, pulseWidthSamples);
         }
       }
-      // Match multiplier: schedule sub-pulses with the same swing offset.
+      // Match multiplier: shadow every sub-pulse, k = 0 (the master-coincident
+      // one) included, so the on/off-beat alternation is unbroken across
+      // master boundaries.
       for (const m of MULTIPLIER_DEFS) {
         if (m.out !== swingTargetOut || periodSamples <= 0) continue;
         const subPeriod = periodSamples / m.factor;
-        // Sub-pulse 0 = master.
-        this.pending.push({
-          outIdx: OUT_SWING,
-          startSample: Math.round(swingStart),
-          endSample: Math.round(swingStart) + pulseWidthSamples,
-        });
-        for (let k = 1; k < m.factor; k++) {
-          const s = Math.round(atSample + k * subPeriod + swingLagSamples);
-          this.pending.push({
-            outIdx: OUT_SWING,
-            startSample: s,
-            endSample: s + pulseWidthSamples,
-          });
+        for (let k = 0; k < m.factor; k++) {
+          this.scheduleSwing(atSample + k * subPeriod, swingLagSamples, pulseWidthSamples);
         }
       }
     }
 
     // Re-sort pending by startSample.
     this.pending.sort((a, b) => a.startSample - b.startSample);
+  }
+
+  /** Schedule the next pulse of the swung train. Even indices are on-beats and
+   *  fire dead on `baseSample`; odd indices are the off-beats and are held back
+   *  by `swingLagSamples`. That alternation IS the shuffle — a lag applied to
+   *  every pulse alike just moves the whole train. */
+  private scheduleSwing(
+    baseSample: number,
+    swingLagSamples: number,
+    pulseWidthSamples: number,
+  ): void {
+    const offBeat = (this.swingPulseIndex & 1) === 1;
+    this.swingPulseIndex++;
+    const start = Math.round(baseSample + (offBeat ? swingLagSamples : 0));
+    this.pending.push({
+      outIdx: OUT_SWING,
+      startSample: start,
+      endSample: start + pulseWidthSamples,
+    });
   }
 
   /** Raise a pulse on outIdx starting at atSample, ending at atSample+width. */

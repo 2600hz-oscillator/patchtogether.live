@@ -15,12 +15,100 @@
 // We do NOT cover the worklet's DSP-side BPM / phase / multiplier math —
 // that's the ART scenario's job (art/scenarios/timelorde/).
 
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { timelordeDef, transportEventsToRunState } from './timelorde';
 import { patch as livePatch } from '$lib/graph/store';
 import type { ModuleNode } from '$lib/graph/types';
 
 // ---------------- module-def shape ----------------
+
+// ── swingSource: FIVE declarations of ONE range ───────────────────────────
+//
+// The 2026-08-03 audit found `swingSource` capped at 10 while `SWING_SOURCES`
+// has 12 entries — 1/64 was unreachable from the UI, from a saved patch and
+// from CV, while the card's own SRC_LABELS listed all twelve. The audit named
+// three sites (def, worklet descriptor, card). There are FIVE: the Electra
+// hardware preset hardcoded `max: 10` twice more, in the control and in the
+// allocation, plus an eleven-item overlay — and it was found only because its
+// committed snapshot happened to print the number.
+//
+// CLAUDE.md's rule is "a control's range must come from ONE place", and the
+// three of these that can't share an import (a worklet that must not import
+// web code, a .svelte template, a hardware preset table) are joined HERE
+// instead: ground truth is the SWING_SOURCES ARTIFACT, and every other site
+// must agree with it. Fixing four of five leaves this red.
+const HERE = dirname(fileURLToPath(import.meta.url));
+const REPO = resolve(HERE, '../../../../../..');
+const readRepo = (rel: string): string => readFileSync(resolve(REPO, rel), 'utf8');
+
+/** Ground truth: the number of OUT_* entries in the core's SWING_SOURCES. */
+function swingSourceCount(): number {
+  const core = readRepo('packages/dsp/src/lib/timelorde-clock-core.ts');
+  const m = /export const SWING_SOURCES = \[([\s\S]*?)\];/.exec(core);
+  if (!m) throw new Error('swingSource gate: SWING_SOURCES literal not found in the clock core');
+  return (m[1]!.match(/\bOUT_[A-Z0-9_]+\b/g) ?? []).length;
+}
+
+describe('TIMELORDE swingSource range is declared in FIVE places and must agree', () => {
+  it('every declaration matches SWING_SOURCES.length - 1', () => {
+    const n = swingSourceCount();
+    expect(n, 'SWING_SOURCES entries (one per gate output, 1x .. 1/64)').toBe(12);
+    const want = n - 1;
+
+    // 1. the module def (live, not text)
+    const p = timelordeDef.params.find((x) => x.id === 'swingSource')!;
+    expect(p.max, 'timelordeDef swingSource max').toBe(want);
+    expect(p.min, 'timelordeDef swingSource min').toBe(0);
+
+    // 2. the worklet's frozen parameterDescriptors
+    const dsp = readRepo('packages/dsp/src/timelorde.ts');
+    const dspMax = /name: 'swingSource',[^}]*maxValue:\s*(\d+)/.exec(dsp);
+    expect(dspMax, 'swingSource descriptor not found in packages/dsp/src/timelorde.ts').not.toBeNull();
+    expect(Number(dspMax![1]), 'worklet parameterDescriptors swingSource maxValue').toBe(want);
+
+    // 3. the card's Knob — a card can silently disagree with its def and no
+    //    runtime gate sees it (CLAUDE.md, backdraft XyPad).
+    const card = readRepo('packages/web/src/lib/ui/modules/TimelordeCard.svelte');
+    const knob = /<Knob[^>]*paramId="swingSource"[^>]*\/>/.exec(card)
+      ?? /max=\{(\d+)\}[^>]*label="Src"/.exec(card);
+    expect(knob, 'the SRC Knob was not found in TimelordeCard.svelte').not.toBeNull();
+    const cardMaxLine = card.split('\n').find((l) => l.includes('label="Src"'))!;
+    const cardMax = /max=\{(\d+)\}/.exec(cardMaxLine);
+    expect(cardMax, 'no max={…} on the SRC Knob').not.toBeNull();
+    expect(Number(cardMax![1]), 'TimelordeCard SRC Knob max').toBe(want);
+
+    // 4. the card's SRC_LABELS list (what the footer prints)
+    const labels = /const SRC_LABELS = \[([^\]]*)\]/.exec(card);
+    expect(labels, 'SRC_LABELS not found in TimelordeCard.svelte').not.toBeNull();
+    expect((labels![1]!.match(/'/g) ?? []).length / 2, 'TimelordeCard SRC_LABELS entries').toBe(n);
+
+    // 5. the Electra hardware preset — control range, allocation range, overlay
+    const electra = readRepo('packages/web/src/lib/electra/preset.ts');
+    const swLabels = /const SWING_SRC_LABELS = \[([^\]]*)\]/.exec(electra);
+    expect(swLabels, 'SWING_SRC_LABELS not found in the Electra preset').not.toBeNull();
+    expect((swLabels![1]!.match(/'/g) ?? []).length / 2, 'Electra SWING_SRC_LABELS entries').toBe(n);
+    expect(
+      electra.includes("max: 10 }, overlayId: ovId"),
+      'the Electra SwSrc control re-hardcodes a literal ceiling instead of deriving it',
+    ).toBe(false);
+  });
+
+  // NEGATIVE CONTROL, every run: the parser must actually COUNT, or "12" above
+  // is a constant this test could satisfy while reading nothing.
+  it('NEGATIVE CONTROL: the SWING_SOURCES parser counts entries, it does not assume', () => {
+    const core = readRepo('packages/dsp/src/lib/timelorde-clock-core.ts');
+    const shortened = core.replace(
+      /export const SWING_SOURCES = \[([\s\S]*?)\];/,
+      'export const SWING_SOURCES = [\n  OUT_1X, OUT_8X,\n];',
+    );
+    expect(shortened, 'the SWING_SOURCES literal must still be present to tamper with').not.toBe(core);
+    const m = /export const SWING_SOURCES = \[([\s\S]*?)\];/.exec(shortened)!;
+    expect((m[1]!.match(/\bOUT_[A-Z0-9_]+\b/g) ?? []).length).toBe(2);
+  });
+});
 
 // ---------------- transportEventsToRunState (pure) ----------------
 
