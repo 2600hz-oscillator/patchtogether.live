@@ -10,6 +10,13 @@ import {
   buildVoctCurve,
   tuneFineToHz,
 } from './swolevco';
+import { sampleCvCurve } from '$lib/audio/cv-scale';
+
+/** V/oct volts → the WaveShaperNode's [-1,+1] input domain. The module scales
+ *  the incoming CV by 1/VOCT_RANGE before the shaper (see swolevco.ts), so a
+ *  test that wants "what does +1 V render as" must apply the same scaling. */
+const VOCT_RANGE = 5;
+const voltsToShaperInput = (v: number): number => v / VOCT_RANGE;
 
 describe('SWOLEVCO helpers: symmetryGains', () => {
   it('symmetry=0 → saw only', () => {
@@ -80,40 +87,49 @@ describe('SWOLEVCO helpers: tuneFineToHz', () => {
 });
 
 describe('SWOLEVCO helpers: buildVoctCurve', () => {
-  it('curve is centered at 0V → 0 Hz delta', () => {
+  // These read the LUT through `sampleCvCurve` — the WaveShaperNode transfer
+  // function — rather than by index arithmetic. Indexing by hand is what let
+  // the 0 V case be asserted as "less than 0.5 Hz off" for so long: it never
+  // measured the value a shaper actually emits at 0 V, which (on the old
+  // even-length table) was the MEAN of the two samples straddling the centre.
+  it('0 V renders EXACTLY 0 Hz of pitch contribution (an idle V/oct cable)', () => {
     const baseHz = 261.626;
     const curve = buildVoctCurve(baseHz);
-    // Center index → V=0 (within rounding for even-length arrays, the
-    // exact midpoint maps to v ≈ 0).
-    const mid = Math.floor(curve.length / 2);
-    // v at mid = (mid/(N-1))*2*5 - 5; for N=4096, mid=2048 → v=0.00122
-    // → 261.626 * (2^0.00122 - 1) ≈ 261.626 * 0.000847 ≈ 0.222 Hz.
-    // We assert the curve crosses zero AROUND the midpoint.
-    expect(Math.abs(curve[mid]!)).toBeLessThan(0.5);
+    // The whole contract of this curve: baseHz is applied by the oscillator's
+    // own .frequency, so the shaper must contribute nothing at 0 V or a merely
+    // PATCHED (not moved) V/oct cable detunes the oscillator. On an even-length
+    // table this was ~8e-5 Hz at C4 — inaudible, but nonzero, and the docstring
+    // claimed it was zero.
+    expect(sampleCvCurve(curve, voltsToShaperInput(0))).toBe(0);
+    // Structural: an even-length table has no centre sample, so this can only
+    // be exact for an odd length. Stated so a "tidy this back to 4096" edit
+    // fails here with the reason attached.
+    expect(curve.length % 2, 'VOCT_LUT_LEN must be ODD — see its comment').toBe(1);
   });
 
-  it('curve at +1V LUT index ≈ +baseHz Hz delta (one octave up)', () => {
+  it('+1 V renders +baseHz Hz delta (one octave up)', () => {
     const baseHz = 261.626;
     const curve = buildVoctCurve(baseHz);
-    // Find index where v == 1V. v = (i/(N-1))*10 - 5 → i = (N-1) * 0.6.
-    const N = curve.length;
-    const i = Math.round((N - 1) * 0.6);
-    // Sanity: at v=+1V, output = baseHz × (2^1 - 1) = baseHz.
-    expect(curve[i]!).toBeCloseTo(baseHz, 0);
+    // At v=+1V, output = baseHz × (2^1 - 1) = baseHz.
+    expect(sampleCvCurve(curve, voltsToShaperInput(1))).toBeCloseTo(baseHz, 0);
   });
 
-  it('curve at -1V LUT index ≈ -baseHz/2 Hz delta (one octave down)', () => {
+  it('-1 V renders -baseHz/2 Hz delta (one octave down)', () => {
     const baseHz = 261.626;
     const curve = buildVoctCurve(baseHz);
-    const N = curve.length;
-    // v = -1 → i = (N-1) × ((−1+5)/10) = (N-1) × 0.4.
-    const i = Math.round((N - 1) * 0.4);
     // baseHz × (2^-1 - 1) = baseHz × -0.5.
-    expect(curve[i]!).toBeCloseTo(-baseHz / 2, 0);
+    expect(sampleCvCurve(curve, voltsToShaperInput(-1))).toBeCloseTo(-baseHz / 2, 0);
   });
 
-  it('curve length is the documented LUT size (4096)', () => {
-    const curve = buildVoctCurve(261.626);
-    expect(curve.length).toBe(4096);
+  it('the ±5 V ENDS still land on the terminal samples', () => {
+    // The off-by-one an odd length could plausibly introduce: moving the centre
+    // onto a sample must not move the ends off theirs.
+    const baseHz = 261.626;
+    const curve = buildVoctCurve(baseHz);
+    expect(sampleCvCurve(curve, voltsToShaperInput(-5))).toBe(curve[0]);
+    expect(sampleCvCurve(curve, voltsToShaperInput(+5))).toBe(curve[curve.length - 1]);
+    // ±5 octaves: 2^5 - 1 = 31× baseHz up, 2^-5 - 1 = -0.96875× down.
+    expect(curve[curve.length - 1]!).toBeCloseTo(baseHz * 31, 0);
+    expect(curve[0]!).toBeCloseTo(baseHz * (Math.pow(2, -5) - 1), 4);
   });
 });

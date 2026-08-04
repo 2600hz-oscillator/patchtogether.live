@@ -94,8 +94,17 @@ const C4_HZ = 261.626;
 const TIMBRE_MAX_HZ = 200;
 
 /** V/oct → Hz table size. Range: ±5 octaves around C4 covers MIDI 12..108
- *  which is more than the project's MIN_MIDI..MAX_MIDI range. */
-const VOCT_LUT_LEN = 4096;
+ *  which is more than the project's MIN_MIDI..MAX_MIDI range.
+ *
+ *  **ODD ON PURPOSE**, for the same reason as `CURVE_LEN` in
+ *  $lib/audio/cv-scale (see that comment for the full argument): a
+ *  WaveShaperNode interpolates between `curve[⌊v⌋]` and `curve[⌊v⌋+1]`, so an
+ *  EVEN table has no sample at the centre and 0 V — the value a patched-but-
+ *  idle V/oct cable holds — reads as the MEAN of its two neighbours. `2^v - 1`
+ *  is convex, so that mean is not 0 and the "at v=0V: curve = 0 (no
+ *  contribution)" contract documented below was false by ~8e-5 Hz at C4. An
+ *  odd length puts a sample exactly at 0 V, making it exactly 0 Hz. */
+const VOCT_LUT_LEN = 4097;
 const VOCT_RANGE = 5; // ±5 V
 
 /** Build a curve mapping V/oct (in [-VOCT_RANGE, +VOCT_RANGE]) to Hz

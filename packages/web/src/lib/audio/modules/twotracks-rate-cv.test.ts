@@ -44,7 +44,7 @@
 
 import { describe, it, expect, beforeAll } from 'vitest';
 import { twotracksDef, cardParamToWorkletParam } from './twotracks';
-import { buildCvCurve } from '$lib/audio/cv-scale';
+import { buildCvCurve, sampleCvCurve } from '$lib/audio/cv-scale';
 import type { CvScaleHint, ParamDef, PortDef } from '$lib/graph/types';
 
 const SR = 48000;
@@ -74,17 +74,27 @@ function paramOf(id: string): ParamDef {
 
 /**
  * The EFFECTIVE param value a CV sample produces, read out of the REAL
- * WaveShaper LUT the engine installs — `curve[i] + knob`, exactly as Web Audio
- * sums the shaper's output into the AudioParam's intrinsic value.
+ * WaveShaper LUT the engine installs, exactly as Web Audio sums the shaper's
+ * output into the AudioParam's intrinsic value.
  *
  * Going through the curve rather than `scaleCv` is the point: the curve is what
- * actually processes audio, and it is sampled at 4096 points, so this also
- * exercises the index→cv mapping that a pure-math assertion would skip.
+ * actually processes audio, so this also exercises the index→cv mapping that a
+ * pure-math assertion would skip.
+ *
+ * It reads the curve with `sampleCvCurve` — the WaveShaperNode transfer
+ * function — and NOT with the `curve[Math.round(…)]` it used to, because those
+ * are different functions wherever the requested cv falls between two samples.
+ * The nearest-index form is what made a `cv=0` read on the old even-length
+ * table report 7.326e-4 on this very port (±3 range) when a real shaper renders
+ * it as 0: it returned the first positive sample instead of interpolating. An
+ * instrument that reports a value the audio thread never emits manufactures
+ * findings. (Every cv this file asks for — 0, ±0.5, ±1 — now lands exactly on a
+ * sample of the odd-length table, so the two agree here regardless; the point
+ * is that the helper stays honest for any cv a future case picks.)
  */
 function effectiveViaCurve(cv: number, knob: number, p: ParamDef, hint: CvScaleHint): number {
   const curve = buildCvCurve(p.min, p.max, knob, hint);
-  const i = Math.round(((cv + 1) / 2) * (curve.length - 1));
-  return (curve[i] as number) + knob;
+  return sampleCvCurve(curve, cv) + knob;
 }
 
 // ───────────────────────── the real worklet ─────────────────────────
