@@ -368,7 +368,22 @@ function preflightSolo(): void {
   // load >5. So gate per-process at 25% and let the aggregate load check
   // (load > cores·0.5) catch broad contention. Override via WEBGL_ATTEST_BUSY_CPU.
   const COTENANT_CPU_MIN = Math.max(1, parseFloat(process.env.WEBGL_ATTEST_BUSY_CPU || '25') || 25);
-  const COTENANT_RE = /Google Chrome|Microsoft Edge|Safari|Chromium|firefox|Brave|Electron|Patchtogether\.app|Spotify/i;
+  // ⚠ MATCH THE RENDERER, NOT THE BRAND. This list was brand-only and MISSED a
+  // measured 42.9 % co-tenant: Discord's GPU-compositing renderer lives at
+  //   /Applications/Discord.app/Contents/Frameworks/Discord Helper (Renderer).app/…
+  // — no "Electron", no "Chromium", no "Chrome" anywhere in that path. (Its
+  // crashpad handler DOES say "Electron Framework", and sits at 0.0 %, so the
+  // one process the old regex could see was the one that never touches the GPU.)
+  // The guard therefore saw zero co-tenants and refused on the LOAD leg instead
+  // — right answer, wrong reason, and it would have passed a minute later at
+  // load 4.64 with that 42.9 % renderer still compositing.
+  //
+  // `Helper \(Renderer\)` is the generic Chromium multi-process renderer name
+  // EVERY Electron app ships, so it catches the next one without another brand
+  // being added here. Brands are kept for the non-Electron cases (Safari,
+  // firefox) and as belt-and-braces.
+  const COTENANT_RE =
+    /Google Chrome|Microsoft Edge|Safari|Chromium|firefox|Brave|Electron|Discord|Slack|Helper \(Renderer\)|Patchtogether\.app|Spotify/i;
   let cotenants: string[] = [];
   try {
     cotenants = execSync('ps -A -o %cpu=,comm=', { encoding: 'utf8' })
