@@ -190,3 +190,26 @@ export function renderVcoMirror(opts: VcoRenderOptions): VcoTaps {
 
   return out;
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// ⚠ DO NOT TRUST THIS FILE'S sqr POLARITY YET — the measurement is unresolved.
+//
+// Three framings of "does the mirror's square match the shipped DSP" gave
+// three different answers in one session:
+//   * an independent phase accumulator      → flipped matches 95%
+//   * phase derived from Faust's own saw    → flipped matches 93-98%
+//   * reading the first samples directly    → UNFLIPPED matches (sqr[0]=+1 at
+//                                             p=0.0055, i.e. p<pw yields +1)
+// and the agreement is N-DEPENDENT with identical first samples:
+//     N=400 → unflipped 43.3% | N=2400 → 20.0% | N=12000 → 4.1%
+//
+// A relationship that is exact by construction (sqr is a pure function of the
+// same p that produces saw, in the same expression) CANNOT legitimately decay
+// with buffer length. So the decay is an artefact of how these probes read the
+// harness, not a property of the DSP — and until that is understood, no claim
+// about which polarity is correct is worth anything.
+//
+// The blind-gate finding this branch exists for does NOT depend on any of that:
+// it was demonstrated with the repo's own commands (edit .dsp → task dsp:build
+// → art:update → git status) and no custom probe at all.
+// ─────────────────────────────────────────────────────────────────────────
