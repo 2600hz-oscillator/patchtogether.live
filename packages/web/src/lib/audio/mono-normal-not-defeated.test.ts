@@ -593,6 +593,57 @@ describe('mono normals are not defeated by their factory', () => {
       expect(scanSource('z.ts', 'const inL = inputs[0]?.[0];\nconst v = inL ? inL[i] : 0;').normals).toEqual([]);
     });
 
+    // -----------------------------------------------------------------------
+    // moduleTypeOf: the leg whose ABSENCE reddened main.
+    //
+    // The first version took the earliest `type:` in the whole file. #1353
+    // hoisted `postSampleBuffer` — which posts `{ type: 'loadSample', … }` —
+    // above samsloop's def, and this function's answer flipped from 'samsloop'
+    // to 'loadSample'. No `type:` was added, removed or renamed; two existing
+    // ones swapped order. The roster gate then claimed samsloop had lost its
+    // normal AND that an unknown module was unmeasured — both false, both red.
+    //
+    // So the property under test is INVARIANCE TO CODE MOTION, asserted in both
+    // directions on every run, not "does it return the right string once".
+    // -----------------------------------------------------------------------
+    it('reads the DEF type, not whatever `type:` comes first', () => {
+      const def = "export const fooDef: AudioModuleDef = {\n  type: 'foo',\n  domain: 'audio',\n};";
+      const post = "port.postMessage({ type: 'loadSample', samples: b });";
+
+      // The exact regression: a payload `type:` ABOVE the def.
+      expect(moduleTypeOf(`${post}\n${def}`)).toBe('foo');
+      // …and BELOW it, which is what shipped green before #1353.
+      expect(moduleTypeOf(`${def}\n${post}`)).toBe('foo');
+      // The whole point: the answer does not depend on the order.
+      expect(moduleTypeOf(`${post}\n${def}`)).toBe(moduleTypeOf(`${def}\n${post}`));
+
+      // Video + synced defs resolve the same way (recorderbox-capture's factory
+      // is a VIDEO module, so this arm is load-bearing, not decorative).
+      expect(moduleTypeOf("export const barDef: VideoModuleDef = {\n  type: 'bar',\n};")).toBe('bar');
+      expect(moduleTypeOf("export const lfoDef: SyncedModuleDef = {\n  type: 'lfo',\n};")).toBe('lfo');
+
+      // A helper file exports no def — null, never a stray `type:` from a
+      // message payload or a port descriptor.
+      expect(moduleTypeOf(post)).toBeNull();
+      expect(moduleTypeOf("const ports = [{ id: 'in', type: 'audio' }];")).toBeNull();
+
+      // NEGATIVE CONTROL on this very assertion: the old implementation must
+      // FAIL the invariance property, or the test above proves nothing.
+      const firstMatch = (s: string) =>
+        /(^|[^A-Za-z0-9_$])type:\s*'([A-Za-z0-9_$]+)'/m.exec(blankComments(s))?.[2] ?? null;
+      expect(firstMatch(`${post}\n${def}`)).toBe('loadSample');
+      expect(firstMatch(`${def}\n${post}`)).toBe('foo');
+      expect(firstMatch(`${post}\n${def}`)).not.toBe(firstMatch(`${def}\n${post}`));
+    });
+
+    it('ANCHORED: samsloop.ts really does resolve to `samsloop` in the live tree', () => {
+      // Not a synthetic — the actual file whose code motion broke main. If a
+      // future refactor moves the def again, this is the line that reddens.
+      const hits = factoriesFor('samsloop-tap.ts');
+      expect(hits.length, 'samsloop-tap.ts must resolve to a factory').toBeGreaterThan(0);
+      expect(hits.map((f) => moduleTypeOf(f.src))).toContain('samsloop');
+    });
+
     it('cannot be fooled by PROSE — comments and strings are not code', () => {
       // cofefve's real comment is "// R normals to L"; this file's own header
       // quotes the defective expression several times.
