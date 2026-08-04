@@ -1,18 +1,27 @@
 // art/scenarios/audio-out/dc-blocker-and-limiter.test.ts
 //
-// ART for audio-out's two new safety stages (added in feat/audio-fidelity-...):
+// ART for audio-out's two safety stages:
 //   1. 5Hz BiquadFilter highpass on each channel (DC blocker)
-//   2. Stereo DynamicsCompressorNode (master limiter)
+//   2. the stereo look-ahead brickwall master limiter worklet
 //
-// We don't drive the actual audioOutDef factory (it terminates in
-// ctx.destination, so the OfflineAudioContext rendered output IS what we
-// see). Instead we measure the destination output for known input
-// patterns: DC offset → blocked; transient peak above limiter threshold
-// → reduced.
+// It DOES drive the real `audioOutDef.factory` (the module terminates in
+// ctx.destination, so the OfflineAudioContext rendered output IS what a
+// speaker would receive) and measures that output for known input patterns:
+// DC offset → blocked; peak above the ceiling → bounded.
+//
+// ⚠ These bounds were re-tuned when stage 2 became a brickwall limiter
+// (DSP audit P0-A1). The previous DynamicsCompressorNode both applied ~1.35 dB
+// of automatic makeup to material nowhere near its threshold AND failed to
+// bound the output at all — so the old assertions were wide (`peak < 1.2` for
+// an input of 1.5, `0.27..0.40` for an input of 0.3) and would have passed
+// almost any topology. They are now exact: below the ceiling the stage is the
+// identity, above it the output cannot exceed the ceiling. The per-strike
+// pumping behaviour has its own scenario, master-limiter-sub-pump.test.ts.
 
 import { describe, expect, it } from 'vitest';
 import { OfflineAudioContext } from 'node-web-audio-api';
 import { audioOutDef } from '../../../packages/web/src/lib/audio/modules/audio-out';
+import { MASTER_CEILING } from '../../../packages/dsp/src/lib/master-limiter-dsp';
 
 const SAMPLE_RATE = 48000;
 
@@ -112,21 +121,24 @@ describe('audio-out ART: DC blocker', () => {
     const { left } = await renderAudioOutDestination({
       sineHz: 200,
       sineAmp: 0.3,
-      durationS: 0.2,
+      durationS: 0.5,
     });
-    // Measure peak of the steady-state portion.
-    const steady = left.slice(5000); // skip transient
+    // Measure peak of the steady-state portion. The 5 Hz high-pass has a ~45 ms
+    // time constant, so skip 0.3 s (≈ 6.7 τ, residual < 0.2 %) — the old 5000
+    // samples (2.3 τ) left ~0.5 % of ring-in in the number, which is invisible
+    // against a ±30 % bound but not against an exact one.
+    const steady = left.slice(Math.round(SAMPLE_RATE * 0.3));
     let peak = 0;
     for (const v of steady) {
       const a = Math.abs(v);
       if (a > peak) peak = a;
     }
-    // 5Hz HP attenuates 200Hz by < 0.1 dB. Limiter at -6dB is inactive
-    // for amp 0.3 (= -10.5 dBFS). DynamicsCompressorNode applies a small
-    // amount of automatic makeup even when not actively compressing —
-    // expect peak in 0.27..0.40 range.
-    expect(peak, `200Hz sine peak ${peak}`).toBeGreaterThan(0.27);
-    expect(peak).toBeLessThan(0.40);
+    // 5Hz HP attenuates 200Hz by < 0.1 dB, and 0.3 (= -10.5 dBFS) is far below
+    // the -1 dBFS ceiling, so the limiter is the identity. The output peak is
+    // the input peak — not "roughly", exactly, to within the high-pass's
+    // hundredth of a dB.
+    expect(peak, `200Hz sine peak ${peak}`).toBeGreaterThan(0.2995);
+    expect(peak, `200Hz sine peak ${peak}`).toBeLessThan(0.3005);
   });
 
   it('attenuates a 1Hz sine (well below the 5Hz cutoff)', async () => {
@@ -149,26 +161,26 @@ describe('audio-out ART: DC blocker', () => {
 });
 
 describe('audio-out ART: master limiter', () => {
-  it('caps a transient that exceeds the -6dB threshold', async () => {
-    // Feed a sine at amplitude 1.5 (well above the limiter's -6dB ≈ 0.5
-    // threshold). The output peak should be limited.
-    const { left } = await renderAudioOutDestination({
+  it('bounds a signal that exceeds the ceiling — over the WHOLE render, not just the tail', async () => {
+    // Amplitude 1.5 (+3.5 dBFS). The old assertion here allowed 1.2 through and
+    // skipped the first 50 ms; a brickwall bounds from the first sample, so
+    // measure everything.
+    const { left, right } = await renderAudioOutDestination({
       sineHz: 500,
       sineAmp: 1.5,
       durationS: 0.2,
     });
-    // Measure the steady-state peak (skip first 50ms for compressor settling).
-    const steady = left.slice(Math.round(SAMPLE_RATE * 0.05));
-    let peak = 0;
-    for (const v of steady) {
-      const a = Math.abs(v);
-      if (a > peak) peak = a;
+    for (const [name, ch] of [['L', left], ['R', right]] as const) {
+      let peak = 0;
+      for (const v of ch) {
+        const a = Math.abs(v);
+        if (a > peak) peak = a;
+      }
+      expect(peak, `${name} peak ${peak} for input amp 1.5 (ceiling ${MASTER_CEILING})`)
+        .toBeLessThanOrEqual(MASTER_CEILING);
+      // …and it is doing so by turning the level down, not by muting.
+      expect(peak, `${name} peak ${peak} is not silence`).toBeGreaterThan(0.5);
     }
-    // Without limiting, peak would be 1.5. With 4:1 ratio above -6dB +
-    // makeup gain, the output should still be meaningfully below 1.5 —
-    // we just need to confirm the limiter is making a difference. Allow
-    // peak up to 1.2 (= 20% reduction from 1.5).
-    expect(peak, `limited peak ${peak} for input amp 1.5`).toBeLessThan(1.2);
   });
 
   it('passes a quiet sine through transparently', async () => {
@@ -183,10 +195,9 @@ describe('audio-out ART: master limiter', () => {
       const a = Math.abs(v);
       if (a > peak) peak = a;
     }
-    // 0.2 (= -14 dBFS) is well below -6dB threshold; output should match
-    // within DynamicsCompressorNode's auto-makeup tolerance (~10-20%).
-    expect(peak).toBeGreaterThan(0.18);
-    expect(peak).toBeLessThan(0.30);
+    // 0.2 (= -14 dBFS) is far below the -1 dBFS ceiling → exact unity.
+    expect(peak, `quiet sine peak ${peak}`).toBeGreaterThan(0.1995);
+    expect(peak, `quiet sine peak ${peak}`).toBeLessThan(0.2005);
   });
 });
 

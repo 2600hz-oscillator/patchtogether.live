@@ -16,16 +16,33 @@
 //        eliminates the slow drift that, over hours, can clip the
 //        downstream limiter or speaker excursion.
 //
-//     2. Master limiter — DynamicsCompressorNode with permissive settings
-//        (threshold -6dB, ratio 4:1, attack 3ms, release 50ms, knee 6dB).
-//        Acts as a transparent ceiling; under normal mix levels it is
-//        inactive. Catches the case where multiple sound sources sum into
-//        a peak above 0 dBFS. Without it, the peak clips at the device.
+//     2. Master limiter — a look-ahead brickwall limiter worklet at a
+//        -1 dBFS ceiling (packages/dsp/src/lib/master-limiter-dsp.ts).
+//        Below the ceiling it is the IDENTITY, so a normally-leveled mix
+//        passes untouched; above it, it applies the minimum reduction that
+//        reaches the ceiling and the output is genuinely bounded.
 //
 //   Both stages are ALWAYS on for the terminal output. They are designed
 //   to be inaudible on properly-leveled mixes; the design intent is "no
 //   speaker damage from a runaway patch", not "make everything sound
 //   compressed."
+//
+// P0-A1 (DSP audit, .myrobots/plans/dsp-stack-bass-freq-audit-2026-07-01.md).
+// Stage 2 used to be a plain `DynamicsCompressorNode` at threshold -6 dB,
+// ratio 4, knee 6, attack 3 ms, release 50 ms. Measured on that node (see
+// art/scenarios/audio-out/master-limiter-sub-pump.test.ts for the harness):
+//
+//   input peak   sub-band gain ripple   output peak
+//     -5.4 dBFS         0.003 dB           0.619
+//     -2.9 dBFS         0.259 dB           0.805
+//     +0.6 dBFS         1.606 dB           1.065   ← clips
+//     +3.1 dBFS         3.044 dB           1.240   ← clips
+//     +9.1 dBFS         5.032 dB           1.602   ← clips
+//
+// i.e. exactly where the safety net was supposed to act, it BOTH pumped the
+// sub by several dB per strike AND still let the mix clip the device — a 4:1
+// compressor is not a limiter. It also added a constant +1.35 dB of automatic
+// makeup gain to every patch, which the brickwall does not.
 //
 // Inputs:
 //   L (audio): left-channel signal to the speakers.
@@ -38,6 +55,30 @@
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
+// The ceiling is imported from the limiter core, NOT re-typed here: the worklet
+// and this file's degraded fallback must agree by construction. (Relative,
+// because `@patchtogether.live/dsp`'s exports map has no type resolution for
+// bare `src/**` specifiers; the `?url` dist import below goes through the
+// package name as usual.)
+import {
+  MASTER_CEILING,
+  MASTER_CEILING_DB,
+} from '../../../../../dsp/src/lib/master-limiter-dsp';
+import workletUrl from '@patchtogether.live/dsp/dist/master-limiter.js?url';
+
+const LIMITER_PROCESSOR = 'master-limiter';
+const limiterLoaded = new WeakSet<BaseAudioContext>();
+
+/** A hard-clip curve at the ceiling, for the degraded path only (below). */
+function ceilingClipCurve() {
+  const n = 4097;
+  const c = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const x = (i / (n - 1)) * 2 - 1;
+    c[i] = Math.max(-MASTER_CEILING, Math.min(MASTER_CEILING, x));
+  }
+  return c;
+}
 
 export const audioOutDef: AudioModuleDef = {
   type: 'audioOut',
@@ -66,7 +107,7 @@ export const audioOutDef: AudioModuleDef = {
 
   docs: {
     explanation:
-      "The terminal stereo output — where the patch reaches your speakers. It takes two mono inputs (L and R), each routed to one side of the stereo bus, following the Eurorack convention that every cable is mono and you patch both sides for stereo. Mental model: the last module in the chain; whatever you wire into L and R is what you hear. Two always-on safety stages sit between your signal and the hardware: a 5 Hz DC-blocking high-pass (inaudible, but it stops slow DC drift from a feedback loop or a misrouted LFO from clipping the limiter or stressing your speakers) and a transparent master limiter (a permissive compressor that stays inactive on a properly leveled mix and only catches peaks above the ceiling). The card also lets you choose the output device on browsers that support it. There are no outputs — this is a sink.",
+      "The terminal stereo output — where the patch reaches your speakers. It takes two mono inputs (L and R), each routed to one side of the stereo bus, following the Eurorack convention that every cable is mono and you patch both sides for stereo. Mental model: the last module in the chain; whatever you wire into L and R is what you hear. Two always-on safety stages sit between your signal and the hardware: a 5 Hz DC-blocking high-pass (inaudible, but it stops slow DC drift from a feedback loop or a misrouted LFO from stressing your speakers) and a master brickwall limiter with a -1 dBFS ceiling. The limiter looks ahead 2 ms, so anything that stays under the ceiling passes through at exactly unity — it does not compress, colour or pump your low end — and anything above it is turned down by just enough to reach the ceiling, which is what stops a runaway patch clipping the device. The card also lets you choose the output device on browsers that support it. There are no outputs — this is a sink.",
     inputs: {
       L: "Left-channel audio to the speakers. Patch a mono source here for the left side; for a stereo source wire both L and R.",
       R: "Right-channel audio to the speakers. Leave it unpatched for a mono signal in L, or wire the right side of a stereo source here.",
@@ -74,7 +115,7 @@ export const audioOutDef: AudioModuleDef = {
     outputs: {},
     controls: {
       master:
-        "Master output level applied to both channels before the limiter, 0 (silence) to 1 (unity), default 0.7. It sets your overall loudness; the limiter downstream is a transparent ceiling, so use this for the actual mix level rather than relying on the limiter to hold things back.",
+        "Master output level applied to both channels before the limiter, 0 (silence) to 1 (unity), default 0.7. It sets your overall loudness; the limiter downstream is a brickwall ceiling that does nothing at all until you exceed -1 dBFS, so use this for the actual mix level rather than driving into the limiter for loudness.",
     },
   },
 
@@ -105,31 +146,51 @@ export const audioOutDef: AudioModuleDef = {
 
     // ---------------- Stage 2: master limiter (stereo) ----------------
     //
-    // DynamicsCompressorNode is stereo-by-design: feed it stereo, get
-    // stereo. We collapse the two DC-blocked channels into a single
-    // ChannelMergerNode → limiter → destination.
-    //
-    // Settings chosen for "transparent ceiling, not glue compressor":
-    //   * threshold -6 dB — lets normal mixes through untouched.
-    //   * ratio 4:1     — soft brake, not a brick wall.
-    //   * knee 6 dB     — smooth onset, no audible knee.
-    //   * attack 3 ms   — catches fast transients before they clip.
-    //   * release 50 ms — fast enough to avoid pumping.
+    // Collapse the two DC-blocked channels into one stereo bus, then hand it
+    // to the look-ahead brickwall limiter worklet. It is stereo-LINKED (one
+    // gain across L/R) so the image never wanders on a peak; the core carries
+    // the design notes and the no-overshoot proof.
     const merger = ctx.createChannelMerger(2);
     dcL.connect(merger, 0, 0);
     dcR.connect(merger, 0, 1);
 
-    const limiter = ctx.createDynamicsCompressor();
-    limiter.threshold.value = -6;
-    limiter.ratio.value = 4;
-    limiter.knee.value = 6;
-    limiter.attack.value = 0.003;
-    limiter.release.value = 0.05;
-    merger.connect(limiter);
-    limiter.connect(ctx.destination);
+    // `tail` is whatever node ends up feeding ctx.destination — the limiter
+    // normally, the degraded clipper if the worklet cannot load.
+    let tail: AudioNode;
+    try {
+      if (!limiterLoaded.has(ctx)) {
+        await ctx.audioWorklet.addModule(workletUrl);
+        limiterLoaded.add(ctx);
+      }
+      // 'discrete' + explicit 2: L and R are two INDEPENDENT mono jacks, not a
+      // stereo pair to be up/down-mixed. An unpatched R stays silent.
+      tail = new AudioWorkletNode(ctx, LIMITER_PROCESSOR, {
+        numberOfInputs: 1,
+        numberOfOutputs: 1,
+        outputChannelCount: [2],
+        channelCount: 2,
+        channelCountMode: 'explicit',
+        channelInterpretation: 'discrete',
+      });
+    } catch (err) {
+      // audioOut is the TERMINAL sink: a rejected factory here means the whole
+      // patch is silent, which is a worse failure than a degraded ceiling. So
+      // fall back to a synchronous, pure-graph hard clip at the same ceiling —
+      // memoryless, hence still incapable of ducking the sub — and say so.
+      console.warn(
+        `[audio-out] master limiter worklet unavailable; falling back to a ${MASTER_CEILING_DB} dBFS hard clip`,
+        err,
+      );
+      const clip = ctx.createWaveShaper();
+      clip.curve = ceilingClipCurve();
+      clip.oversample = '4x';
+      tail = clip;
+    }
+    merger.connect(tail);
+    tail.connect(ctx.destination);
 
-    // Terminal-output tap. An AnalyserNode hung off the SAME limiter node that
-    // feeds ctx.destination, so a read of its buffer proves signal actually
+    // Terminal-output tap. An AnalyserNode hung off the SAME node that feeds
+    // ctx.destination, so a read of its buffer proves signal actually
     // reached the audible terminal stage — not merely some upstream analyser
     // (e.g. a SCOPE's ch1 sink, which buffers samples whether or not anything
     // downstream reaches the speakers). E2E audibility assertions read this via
@@ -138,7 +199,7 @@ export const audioOutDef: AudioModuleDef = {
     const outTap = ctx.createAnalyser();
     outTap.fftSize = 2048;
     outTap.smoothingTimeConstant = 0;
-    limiter.connect(outTap);
+    tail.connect(outTap);
     const outBuf = new Float32Array(outTap.fftSize);
 
     // Keep both gain nodes in the active graph even if nothing is patched
@@ -190,7 +251,7 @@ export const audioOutDef: AudioModuleDef = {
         dcL.disconnect();
         dcR.disconnect();
         merger.disconnect();
-        limiter.disconnect();
+        try { tail.disconnect(); } catch { /* */ }
         try { outTap.disconnect(); } catch { /* */ }
       },
     };
