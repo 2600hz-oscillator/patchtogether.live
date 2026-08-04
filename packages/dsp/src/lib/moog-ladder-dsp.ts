@@ -68,6 +68,37 @@
 //
 // The C4 reference (0 V/oct = middle C) matches the rest of the codebase.
 
+// ── Denormal floor ──
+//
+// The four trapezoidal integrator states decay exponentially once the input
+// goes silent, and nothing stops them: they fall straight through the f64
+// denormal boundary (2.225e-308) and LATCH there rather than reaching zero.
+// Measured on this core at 48 kHz, 100 ms of full-scale noise then silence:
+//
+//   fc      after 250 ms   after 1 s    after 2 s     after 5 s
+//   400 Hz  1.1e-45        4.5e-176     3.458e-323    3.458e-323  ← latched
+//   2 kHz   4.1e-47        4.2e-179     1.482e-323    1.482e-323  ← latched
+//    80 Hz  1.6e-12        1.3e-37      1.6e-72       1.7e-176
+//
+// Identical values at 2 s and 5 s is the tell: the state is stuck in the
+// denormal range, so an IDLE filter keeps every ladder stage on the FPU's
+// denormal slow path indefinitely — the cost is paid forever, on every block,
+// for a filter that is doing nothing.
+//
+// 1e-20 is the repo's existing floor (karplus-dsp.ts:158, clap-dsp.ts:66) and
+// is deliberately far ABOVE the denormal boundary: it is −400 dBFS, and adding
+// it to any sample above ~1e-9 is already a no-op in float32, so flushing there
+// cannot alter audible output. `chowkick-dsp.ts` flushes; these two shared
+// filter cores were the ones that never did (the P2-A5 audit item).
+const FLUSH = 1e-20;
+
+/** Flush a decayed integrator state to zero. Deliberately NOT `Math.abs(x) <
+ *  FLUSH`: this form leaves NaN untouched, so a genuine NaN bug still
+ *  propagates and is visible instead of being silently zeroed. */
+function fz(x: number): number {
+  return x > -FLUSH && x < FLUSH ? 0 : x;
+}
+
 /** 0 V/oct reference pitch — middle C, shared across the codebase. */
 export const MOOG_LADDER_C4_HZ = 261.626;
 
@@ -150,6 +181,20 @@ export class MoogLadder {
     this.yPrev = 0;
   }
 
+  /** True when every integrator state is EXACTLY zero — the filter is fully
+   *  idle and contributes nothing.
+   *
+   *  Exposed because it is the only honest way to observe the denormal floor.
+   *  The obvious alternative — asserting the rendered OUTPUT tail is zero — is
+   *  BLIND: renderLadder writes into a Float32Array, and float32 underflows
+   *  everything below ~1.4e-45 to zero on conversion, so a state latched at
+   *  1e-323 reads as a clean 0.0 output whether or not the floor exists. The
+   *  f64 state is where the denormal cycles are actually burned, so the state
+   *  is what the test has to read. */
+  settled(): boolean {
+    return this.s1 === 0 && this.s2 === 0 && this.s3 === 0 && this.s4 === 0 && this.yPrev === 0;
+  }
+
   /**
    * Advance one sample.
    *   x       — input sample.
@@ -201,6 +246,7 @@ export class MoogLadder {
       this.s4 = y4 + v4;
 
       this.yPrev = y4;
+      this.flushStates();
       return { lp1: y1, lp2: y2, lp3: y3, lp4: y4 };
     }
 
@@ -245,7 +291,20 @@ export class MoogLadder {
     this.s4 = y4 + v4;
 
     this.yPrev = y4;
+    this.flushStates();
     return { lp1: y1, lp2: y2, lp3: y3, lp4: y4 };
+  }
+
+  /** Zero any integrator state that has decayed below the audible floor, so a
+   *  silent filter settles to exact zero instead of latching in the denormal
+   *  range. Applied to BOTH the linear and saturated paths (yPrev feeds the
+   *  tanh, so leaving it denormal would keep that path slow too). */
+  private flushStates(): void {
+    this.s1 = fz(this.s1);
+    this.s2 = fz(this.s2);
+    this.s3 = fz(this.s3);
+    this.s4 = fz(this.s4);
+    this.yPrev = fz(this.yPrev);
   }
 }
 

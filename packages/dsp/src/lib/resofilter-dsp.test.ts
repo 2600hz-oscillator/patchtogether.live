@@ -201,3 +201,60 @@ describe('ResofilterChannel dry/wet mix', () => {
     expect(ch.smoothedCutoff()).toBeCloseTo(1000, 6);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Denormal floor (P2-A5). Same defect and same fix as lib/moog-ladder-dsp.ts:
+// the two TPT integrator states used to fall through the f64 denormal boundary
+// on decay and LATCH there rather than reaching zero, keeping an idle filter on
+// the FPU's denormal slow path indefinitely. These two shared filter cores were
+// the pair with no floor while chowkick/karplus/clap all flushed.
+//
+// SvfState.ic1/ic2 are plain public f64 fields, so — unlike the ladder — no
+// accessor is needed. Reading the STATE (not the rendered output) is still the
+// point: a Float32Array output underflows below ~1.4e-45 and would read as a
+// clean 0.0 whether or not the floor exists.
+// ---------------------------------------------------------------------------
+
+describe('resofilter-dsp / denormal floor', () => {
+  const settled = (s: { ic1: number; ic2: number }): boolean => s.ic1 === 0 && s.ic2 === 0;
+
+  for (const [fc, res] of [
+    [200, 0.2],
+    [400, 0.5],
+    [2000, 0.9],
+  ] as const) {
+    it(`SVF state settles to EXACT zero within 0.5s of silence (fc=${fc}, res=${res})`, () => {
+      const st = makeSvfState();
+      const g = cutoffToG(fc, SR);
+      const k = resToK(res);
+      for (let i = 0; i < SR * 0.1; i++) svfStep(Math.sin((2 * Math.PI * 220 * i) / SR), g, k, st);
+      expect(settled(st), 'precondition: the burst must leave the filter NON-idle').toBe(false);
+
+      let settledAfter = -1;
+      for (let i = 0; i < SR * 0.5; i++) {
+        svfStep(0, g, k, st);
+        if (settled(st)) {
+          settledAfter = i;
+          break;
+        }
+      }
+      expect(
+        settledAfter,
+        'ic1/ic2 never reached exact zero — they are latched in the denormal range, ' +
+          'so an idle filter burns denormal-path cycles forever',
+      ).toBeGreaterThanOrEqual(0);
+    });
+  }
+
+  it('a sustained tone keeps every state far ABOVE the floor (the fix cannot reach audio)', () => {
+    const st = makeSvfState();
+    const g = cutoffToG(2000, SR);
+    const k = resToK(0.5);
+    let minAbs = Infinity;
+    for (let i = 0; i < SR * 0.2; i++) {
+      svfStep(Math.sin((2 * Math.PI * 220 * i) / SR), g, k, st);
+      if (i > SR * 0.05) minAbs = Math.min(minAbs, Math.max(Math.abs(st.ic1), Math.abs(st.ic2)));
+    }
+    expect(minAbs).toBeGreaterThan(1e-20);
+  });
+});

@@ -270,3 +270,91 @@ describe('moog-ladder-dsp / shared constants', () => {
     expect(MOOG_LADDER_SELF_OSC_K).toBe(4);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Denormal floor (P2-A5). An idle ladder used to latch its four integrator
+// states in the f64 denormal range FOREVER — measured 3.458e-323 at both 2 s
+// and 5 s of silence at fc=400 Hz, i.e. stuck, not still decaying. Every
+// stage then stays on the FPU's denormal slow path for as long as the module
+// exists, for a filter that is doing nothing.
+//
+// ⚠ THE OBVIOUS TEST IS BLIND. Asserting the rendered OUTPUT tail is zero
+// passes with OR without the fix: renderLadder writes a Float32Array, and
+// float32 underflows everything below ~1.4e-45 to 0 on conversion, so a state
+// latched at 1e-323 reads as a clean 0.0 output either way. The f64 STATE is
+// where the cycles are burned, so `settled()` is what these read. Verified by
+// reverting the flush: these two fail, an output-tail assertion does not.
+// ---------------------------------------------------------------------------
+
+describe('moog-ladder-dsp / denormal floor', () => {
+  const SETTLE_CASES = [
+    { fc: 80, k: 2.0, drive: 0, within: 1.0 },
+    { fc: 400, k: 2.0, drive: 0, within: 0.5 },
+    { fc: 2000, k: 3.5, drive: 0, within: 0.5 },
+    // The saturated path feeds yPrev through tanh, so it needs the floor too.
+    { fc: 400, k: 2.0, drive: 1.0, within: 0.5 },
+  ];
+
+  for (const { fc, k, drive, within } of SETTLE_CASES) {
+    it(`settles to EXACT zero within ${within}s of silence (fc=${fc}, k=${k}, drive=${drive})`, () => {
+      const ladder = new MoogLadder(SR);
+      // A real excitation, then true silence.
+      for (let i = 0; i < SR * 0.1; i++) ladder.step(Math.sin((2 * Math.PI * 220 * i) / SR), fc, k, drive);
+      expect(ladder.settled(), 'precondition: the burst must leave the filter NON-idle').toBe(false);
+
+      let settledAfter = -1;
+      for (let i = 0; i < Math.ceil(SR * within); i++) {
+        ladder.step(0, fc, k, drive);
+        if (ladder.settled()) {
+          settledAfter = i;
+          break;
+        }
+      }
+      expect(
+        settledAfter,
+        `states never reached exact zero within ${within}s — they are latched in the ` +
+          'denormal range, so an idle filter burns denormal-path cycles forever',
+      ).toBeGreaterThanOrEqual(0);
+    });
+  }
+
+  it('once settled it STAYS settled (no drift back into denormals)', () => {
+    const ladder = new MoogLadder(SR);
+    for (let i = 0; i < SR * 0.1; i++) ladder.step(Math.sin((2 * Math.PI * 220 * i) / SR), 400, 2, 0);
+    for (let i = 0; i < SR; i++) ladder.step(0, 400, 2, 0);
+    expect(ladder.settled()).toBe(true);
+    for (let i = 0; i < SR; i++) ladder.step(0, 400, 2, 0);
+    expect(ladder.settled()).toBe(true);
+  });
+
+  it('the floor is FAR below audibility — a real signal is untouched', () => {
+    // Negative control on the FIX rather than the bug: prove the flush cannot
+    // reach anything that matters. 1e-20 is −400 dBFS; float32's LSB near
+    // unity is ~6e-8, so the floor is ~220 dB below the quietest representable
+    // change to a full-scale signal.
+    const N = SR >> 1;
+    const inp = new Float32Array(N);
+    for (let i = 0; i < N; i++) inp[i] = Math.sin((2 * Math.PI * 220 * i) / SR);
+    const out = renderLadder(inp, { cutoffHz: 800, k: 2.0, sr: SR });
+    // A sustained tone through a filter with cutoff above it keeps normal-range
+    // state on every sample, so no sample is ever a flush candidate.
+    let minNonZero = Infinity;
+    for (let i = N >> 2; i < N; i++) {
+      const v = Math.abs(out[i] ?? 0);
+      if (v > 0 && v < minNonZero) minNonZero = v;
+    }
+    expect(minNonZero).toBeGreaterThan(1e-20);
+    expect(rms(out, N >> 1)).toBeGreaterThan(0.1);
+  });
+
+  it('does NOT silence a self-oscillating filter (state stays far above the floor)', () => {
+    // The floor must not kill sustained self-oscillation, which is a FEATURE
+    // (k past 4 turns the ladder into a sine VCO).
+    const ladder = new MoogLadder(SR);
+    for (let i = 0; i < SR * 0.05; i++) ladder.step(1, 440, 4.1, 1.0); // kick it into oscillation
+    let peak = 0;
+    for (let i = 0; i < SR * 0.2; i++) peak = Math.max(peak, Math.abs(ladder.step(0, 440, 4.1, 1.0).lp4));
+    expect(peak, 'self-oscillation must survive the denormal floor').toBeGreaterThan(0.01);
+    expect(ladder.settled()).toBe(false);
+  });
+});
