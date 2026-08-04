@@ -104,7 +104,7 @@ jobs:
         run: flox activate -- task setup
 
       - name: Apply DB schema
-        run: flox activate -- psql "$DATABASE_URL" -f db/schema/001_init.sql -f db/schema/005_rackspace_mode.sql
+        run: flox activate -- scripts/apply-db-schema.sh "$DATABASE_URL"
 
       - name: Cache DOOM WASM artifact
         id: cache-doom-wasm
@@ -185,7 +185,7 @@ jobs:
         run: flox activate -- task setup
 
       - name: Apply DB schema
-        run: flox activate -- psql "$DATABASE_URL" -f db/schema/001_init.sql -f db/schema/005_rackspace_mode.sql
+        run: flox activate -- scripts/apply-db-schema.sh "$DATABASE_URL"
 
       - name: Cache DOOM WASM artifact
         id: cache-doom-wasm

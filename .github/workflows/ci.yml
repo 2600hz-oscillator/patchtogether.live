@@ -220,7 +220,7 @@ jobs:
       # rack_members). The test probe hard-fails if these tables are
       # missing rather than silently skip-passing.
       - name: Apply DB schema (for capacity-race test)
-        run: flox activate -- psql "$PG_TEST_URL" -f db/schema/001_init.sql -f db/schema/005_rackspace_mode.sql
+        run: flox activate -- scripts/apply-db-schema.sh "$PG_TEST_URL"
 
       - name: Run unit tests (server + web)
         run: flox activate -- task test
@@ -772,7 +772,7 @@ jobs:
           path: packages/web/.svelte-kit/output
 
       - name: Apply DB schema
-        run: flox activate -- psql "$DATABASE_URL" -f db/schema/001_init.sql -f db/schema/005_rackspace_mode.sql
+        run: flox activate -- scripts/apply-db-schema.sh "$DATABASE_URL"
 
       # Refresh the registry manifest the way `task e2e` does locally — this
       # is normally a `task test:emit-manifest` dep on `task e2e`, but here we
@@ -1054,7 +1054,7 @@ jobs:
           path: packages/dsp/dist
 
       - name: Apply DB schema
-        run: flox activate -- psql "$DATABASE_URL" -f db/schema/001_init.sql -f db/schema/005_rackspace_mode.sql
+        run: flox activate -- scripts/apply-db-schema.sh "$DATABASE_URL"
 
       - name: Cache DOOM WASM artifact
         id: cache-doom-wasm
@@ -1291,7 +1291,7 @@ jobs:
           path: packages/web/.svelte-kit/output
 
       - name: Apply DB schema
-        run: flox activate -- psql "$DATABASE_URL" -f db/schema/001_init.sql -f db/schema/005_rackspace_mode.sql
+        run: flox activate -- scripts/apply-db-schema.sh "$DATABASE_URL"
 
       - name: Emit registry manifest for E2E
         run: flox activate -- task test:emit-manifest
@@ -1572,7 +1572,7 @@ jobs:
       - name: Apply DB schema + emit manifest (for re-run)
         if: steps.agg.outputs.candidate_count != '0'
         run: |
-          flox activate -- psql "$DATABASE_URL" -f db/schema/001_init.sql -f db/schema/005_rackspace_mode.sql
+          flox activate -- scripts/apply-db-schema.sh "$DATABASE_URL"
           flox activate -- task test:emit-manifest
 
       - name: Re-run failing behavioral rows (once)
@@ -1812,7 +1812,7 @@ jobs:
           path: packages/web/.svelte-kit/output
 
       - name: Apply DB schema
-        run: flox activate -- psql "$DATABASE_URL" -f db/schema/001_init.sql -f db/schema/005_rackspace_mode.sql
+        run: flox activate -- scripts/apply-db-schema.sh "$DATABASE_URL"
 
       - name: Emit registry manifest for E2E
         run: flox activate -- task test:emit-manifest
@@ -2169,7 +2169,7 @@ jobs:
           name: web-preview-dist
           path: packages/web/.svelte-kit/output
       - name: Apply DB schema
-        run: flox activate -- psql "$DATABASE_URL" -f db/schema/001_init.sql -f db/schema/005_rackspace_mode.sql
+        run: flox activate -- scripts/apply-db-schema.sh "$DATABASE_URL"
       - name: Emit registry manifest for E2E
         run: flox activate -- task test:emit-manifest
       # The SUBSET grep. `<mod>: each declared` anchors to the per-module row
@@ -2479,7 +2479,7 @@ jobs:
           path: packages/dsp/dist
 
       - name: Apply DB schema
-        run: flox activate -- psql "$DATABASE_URL" -f db/schema/001_init.sql -f db/schema/005_rackspace_mode.sql
+        run: flox activate -- scripts/apply-db-schema.sh "$DATABASE_URL"
 
       # Share the same DOOM WASM cache the `ci` job uses; the VRT spec set
       # also exercises the DOOM card so the bundle has to be on disk before
