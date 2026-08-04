@@ -316,11 +316,27 @@ describe('WAVECEL worklet — no-stray-drone gating + BASE VOL floor', () => {
     expect(maxDiff, 'base=1 raw VCO must equal the legacy drone byte-for-byte').toBe(0);
   });
 
-  it('base=0 raw VCO (nothing connected) is SILENT', async () => {
+  // ⚠ THIS ASSERTION USED TO READ `base=0 raw VCO … is SILENT`, and it is the
+  // ONE property deliberately traded away. BASE used to scale the UNPATCHED
+  // drone as well as the gated voices, which is why its default had to be 1 —
+  // and a default of 1 makes `gain = 1 + 0·env`, i.e. the ENTIRE amp ADSR a
+  // no-op out of the box (measured: identical rise at ATTACK 1 ms and 2 s; a
+  // gated render byte-identical to the drone over the gate-high window). The
+  // two demands are in direct conflict, so BASE is now what its own docs always
+  // said it was — the floor for a GATED voice — and the unpatched drone runs at
+  // unity independently of it.
+  it('base=0 raw VCO (nothing connected) still DRONES — BASE is a gated-voice floor', async () => {
     const Proc = await loadProcessor();
     const p = new Proc(); loadTable(p);
     const out = runWith(p, makeParams({ base_vol: 0, spread: 1 }), 0.1, { pitchV: C2 });
-    expect(peak(out.L)).toBe(0);
+    expect(peak(out.L)).toBeGreaterThan(0.9);
+    // …and it is the SAME drone as at base=1: the raw path no longer routes
+    // through the knob at all, so the #675 byte-identity holds at every BASE.
+    const pRef = new Proc(); loadTable(pRef);
+    const ref = runWith(pRef, makeParams({ base_vol: 1, spread: 1 }), 0.1, { pitchV: C2 });
+    let maxDiff = 0;
+    for (let i = 0; i < ref.L.length; i++) maxDiff = Math.max(maxDiff, Math.abs(ref.L[i]! - out.L[i]!));
+    expect(maxDiff).toBe(0);
   });
 
   it('base=0.5 gated mono floors at ~0.5× the full-env output and rises with the env', async () => {

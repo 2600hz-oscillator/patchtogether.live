@@ -91,9 +91,27 @@ class WavecelProcessor extends AudioWorkletProcessor {
       { name: 'sustain', defaultValue: 1,     minValue: 0,     maxValue: 1, automationRate: 'k-rate' as const },
       { name: 'release', defaultValue: 0.005, minValue: 0.001, maxValue: 5, automationRate: 'k-rate' as const },
       // Per-voice VCA FLOOR the envelope rides on top of: gain = base+(1-base)*env
-      // per ACTIVE voice. base=1 (default) → gain=1, the env does nothing → the
-      // raw-VCO drone is byte-identical (back-compat). base=0 → pure ADSR. k-rate.
-      { name: 'base_vol', defaultValue: 1, minValue: 0, maxValue: 1, automationRate: 'k-rate' as const },
+      // per ACTIVE voice. base=0 (the DEFAULT) → pure ADSR; base=1 → gain=1 and
+      // the env does nothing. k-rate.
+      //
+      // ⚠ THE DEFAULT WAS 1, AND THAT MADE THE WHOLE AMP ADSR A NO-OP OUT OF THE
+      // BOX. gain = 1 + 0·env = 1 for every envelope value, so A/D/S/R moved
+      // nothing: MEASURED, rise-to-90 % was identical at ATTACK 0.001 s and at
+      // ATTACK 2 s, and a gated render was BYTE-IDENTICAL to the undriven drone
+      // over the gate-high window (maxAbsDiff 0.0000e+0; at base 0 the same
+      // comparison reads 3.7055e-1). It also produced a full-scale note-off
+      // click, because a floored voice holds gain 1 until its envelope crosses
+      // ENV_AUDIBLE_EPS and is then CUT: measured last sample −0.869457 → next
+      // 0.000000, a step 25× the largest step while the note was sounding
+      // (0.034243); at base 0 the same step is 0.029518, i.e. below the
+      // waveform's own slope.
+      //
+      // The property the default of 1 existed to protect (#675: "the raw-VCO
+      // drone is byte-identical") is NOT lost — see the raw-VCO branch in
+      // process(), which no longer routes the drone through this knob at all.
+      // The no-stray-drone half of #675 never depended on base_vol either: it
+      // is the ACTIVE gating (gated-or-releasing), which is untouched.
+      { name: 'base_vol', defaultValue: 0, minValue: 0, maxValue: 1, automationRate: 'k-rate' as const },
       // CONNECTEDNESS flags (k-rate, 0/1) pushed by the web factory from the live
       // patch edges — NOT bus presence, which the trigger keep-alive ConstantSource
       // masks. When poly OR trigger is connected the module is GATED (a voice sounds
@@ -234,7 +252,7 @@ class WavecelProcessor extends AudioWorkletProcessor {
       release: parameters.release ? (parameters.release[0] ?? 0.005) : 0.005,
     };
     // Per-voice VCA floor (gain = base + (1-base)*env per ACTIVE voice).
-    const baseVol = parameters.base_vol ? (parameters.base_vol[0] ?? 1) : 1;
+    const baseVol = parameters.base_vol ? (parameters.base_vol[0] ?? 0) : 0;
     // CONNECTEDNESS (from the factory via k-rate params, not bus presence).
     const polyConnParam = (parameters.poly_connected ? (parameters.poly_connected[0] ?? 0) : 0) >= 0.5;
     const trigConnParam = (parameters.trigger_connected ? (parameters.trigger_connected[0] ?? 0) : 0) >= 0.5;
@@ -296,8 +314,8 @@ class WavecelProcessor extends AudioWorkletProcessor {
     // GATED-MONO mode: trigger connected (poly not) → lane-0 env shapes the mono
     // oscillator; silent until the first hit, base-floored once active.
     const gatedMono = !polyActive && trigConn;
-    // Otherwise (NOTHING connected): the continuous raw VCO at baseVol (default 1
-    // → byte-identical legacy drone).
+    // Otherwise (NOTHING connected): the continuous raw VCO at unity — the
+    // legacy drone, and now independent of BASE (see the branch below).
     const laneL = this.laneScratchL;
     const laneR = this.laneScratchR;
 
@@ -372,14 +390,22 @@ class WavecelProcessor extends AudioWorkletProcessor {
         outL[i] = el;
         outR[i] = er;
       } else {
-        // Raw VCO (NOTHING connected to poly or trigger): the single mono voice is
-        // "always active". With no gate the env is idle (0), so its VCA gain is
-        // baseVol — baseVol=1 (default) reproduces the legacy continuous drone
-        // BYTE-IDENTICALLY (× 1.0 is exact in IEEE-754), baseVol=0 is silent.
+        // Raw VCO (NOTHING connected to poly or trigger). There is no gate, so
+        // there is no note to shape — the voice is permanently "fully open".
+        // Substituting env = 1 into the per-voice VCA law gives
+        //     gain = base + (1 − base)·1 = 1
+        // for EVERY value of base, so the legacy continuous drone is preserved
+        // BYTE-IDENTICALLY and, unlike before, it no longer depends on where
+        // BASE happens to sit. (It used to be `l * baseVol`, which is why the
+        // default had to be 1 — and that default is exactly what made the amp
+        // ADSR inert in the two GATED branches above. Decoupling the two is the
+        // whole fix: the drone keeps its property, the envelope gets its job.)
+        // We multiply by nothing rather than by a computed 1: `base + (1−base)`
+        // is NOT exactly 1 in IEEE-754 for most values of base.
         const voct = pitch + trim;
         const { l, r } = this.osc.step(voct, morph, spread, foldAmt);
-        outL[i] = l * baseVol;
-        outR[i] = r * baseVol;
+        outL[i] = l;
+        outR[i] = r;
       }
     }
 

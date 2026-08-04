@@ -3652,7 +3652,7 @@ wavecel out out_r audio
 wavecel out scope_out mono-video
 wavecel out wave3d_out video
 wavecel param attack 0.001..5 log default=0.001 unit=s
-wavecel param base_vol 0..1 linear default=1
+wavecel param base_vol 0..1 linear default=0
 wavecel param decay 0.001..5 log default=0.1 unit=s
 wavecel param fine -100..100 linear default=0 unit=¢
 wavecel param fold 0..1 linear default=0
