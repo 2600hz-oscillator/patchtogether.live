@@ -7,7 +7,15 @@
 // profile relies on — NOT bit-exact numbers.
 
 import { describe, it, expect } from 'vitest';
-import { AnalogDelayCore, type AnalogDelaySettings, SYNC_BEATS } from './analog-delay-core';
+import {
+  AnalogDelayCore,
+  type AnalogDelaySettings,
+  DelayChannel,
+  SVF_DAMPING,
+  SVF_F_MAX,
+  SYNC_BEATS,
+  TAPE_MAX,
+} from './analog-delay-core';
 
 const SR = 48000;
 
@@ -287,5 +295,246 @@ describe('AnalogDelayCore — bus-duplicate + determinism', () => {
     let maxDiff = 0;
     for (let i = 0; i < a.length; i++) maxDiff = Math.max(maxDiff, Math.abs(a[i]! - b[i]!));
     expect(maxDiff).toBe(0);
+  });
+});
+
+// ── 2026-08-03: TWO defects, one divergent filter and one that never healed ──
+//
+// COFEFVE's FILTER MODE "State-var" (mode 3) diverged, and once it had, the
+// module's WET path was dead for the LIFE of the node — a fresh spawn was the
+// only way back. They are SEPARATE bugs and each needs its own fix: patching
+// only the clamp leaves every already-diverged node dead, patching only the
+// recovery leaves it diverging.
+//
+// MEASURED BEFORE (220 Hz @ 0.5, feedback 0.5, DRIVE 0 so its tanh — the only
+// thing masking this at the shipping default — is out of the way):
+//
+//   lowCut 0.87 (f 1.0796)  peak 9.8700e-1     stable
+//   lowCut 0.90 (f 1.2932)  peak 6.6636e+12    divergent
+//   lowCut 0.95 (f 1.4000)  peak 8.7127e+37    divergent, |x|>10 by 0.401 s
+//   lowCut 1.00 (f 1.4000)  peak 8.7127e+37    divergent
+//
+//   after returning to a SAFE patch on that same node:
+//     wet-only RMS 0.0000e+0   (a FRESH node on the identical patch: 5.6507e-1)
+//     dry-only RMS 3.5355e-1   — dry kept passing, which is why it looked fine
+//
+// THE MECHANISM, end to end, because each link is its own guard now:
+//   the SVF's f exceeded 2 − damping → svfLow/svfBand grew without bound →
+//   the float64 value stayed finite at 8.7e37 and PASSED `write`'s isFinite
+//   scrub, then NARROWED TO FLOAT32 ON THE STORE and landed in the tape as
+//   ±Infinity (float32 max ≈ 3.4e38) → reading it back made the in-loop tone
+//   filter NaN → `fb` NaN → `write(input + NaN)` scrubbed the WHOLE SUM to 0,
+//   so the dry input never entered the tape again → wet read back exactly 0.0
+//   forever. A separate, SVF-independent route reaches the same end state: one
+//   non-finite INPUT sample pins `duckEnv` at NaN, and `0 * Infinity` is NaN
+//   so even DUCK AMOUNT 0 does not save it.
+//
+// WHY NOTHING CAUGHT IT: `AnalogDelayCore — feedback stability` above drives
+// feedback 0.95 for a full second and asserts finite+bounded — with
+// `filterMode: 0`, the default. It could not reach mode 3 at all. And every
+// test in this file, and both ART profiles, render a FRESH core: no assertion
+// anywhere observed a node ACROSS a patch change, which is the only place
+// "state that never recovers" is visible.
+
+describe('AnalogDelayCore — MODE 3 (State-var) stability', () => {
+  it('the clamp sits UNDER the Chamberlin stability bound (2 − damping)', () => {
+    // The relation, asserted directly, so the two constants cannot drift apart
+    // and a future damping change cannot silently re-open the divergence.
+    expect(
+      SVF_F_MAX,
+      `SVF_F_MAX ${SVF_F_MAX} must be < 2 − SVF_DAMPING (${2 - SVF_DAMPING})`,
+    ).toBeLessThan(2 - SVF_DAMPING);
+    expect(SVF_F_MAX, 'a useful cap, not a degenerate one').toBeGreaterThan(0.5);
+  });
+
+  it('stays bounded at EVERY LOW CUT position, DRIVE bypassed', () => {
+    // The whole travel, middle included — the previous 1.4 clamp was already
+    // above the bound by lowCut ≈ 0.867, well below where 1.4 ever bit, so an
+    // endpoints-only sweep would have found the divergence but attributed it
+    // to the wrong cause. driveGain 0 removes the tanh that masks this at the
+    // shipping default.
+    const tone = (n: number) => Math.sin((2 * Math.PI * 220 * n) / SR) * 0.5;
+    const peaks: number[] = [];
+    for (const lowCut of [0.1, 0.3, 0.5, 0.7, 0.8, 0.85, 0.87, 0.9, 0.95, 1.0]) {
+      const out = render(
+        new AnalogDelayCore(SR),
+        settings({ filterMode: 3, lowCut, driveGain: 0, feedback: 0.5, dryVolume: 1, wetVolume: 0.5 }),
+        1.0,
+        tone,
+      );
+      let peak = 0;
+      for (const v of out) peak = Math.max(peak, Math.abs(v));
+      peaks.push(peak);
+      expect(
+        peak,
+        `LOW CUT ${lowCut}: peak ${peak.toExponential(4)} (linear, full-scale ≈ 1) — ` +
+          `before 2026-08-03 this read 6.6636e+12 at 0.90 and 8.7127e+37 at 0.95/1.00`,
+      ).toBeLessThan(2);
+      expect(out.every(Number.isFinite), `LOW CUT ${lowCut}: non-finite sample`).toBe(true);
+    }
+    // Negative control ON THE METRIC: a peak scan that had stopped looking
+    // would report 0 everywhere and satisfy every clause above. The filter
+    // must still be PASSING signal at each position.
+    for (let i = 0; i < peaks.length; i++) {
+      expect(peaks[i]!, `peak ${peaks[i]!.toExponential(4)} — the render must not be silent`).toBeGreaterThan(0.1);
+    }
+  });
+});
+
+describe('AnalogDelayCore — a NaN excursion must not poison the node forever', () => {
+  const tone = (n: number) => Math.sin((2 * Math.PI * 220 * n) / SR) * 0.5;
+  const wetOnly = settings({ filterMode: 0, lowCut: 0.75, driveGain: 0.1, dryVolume: 0, wetVolume: 1 });
+  const rmsFrom = (b: Float32Array, from: number): number => {
+    let s = 0;
+    for (let i = from; i < b.length; i++) s += b[i]! * b[i]!;
+    return Math.sqrt(s / (b.length - from));
+  };
+
+  it('recovers the WET path after being driven through the old divergent patch', () => {
+    // The end-to-end statement of the user-visible bug: park the module on the
+    // patch that used to blow up, put every knob back somewhere sane, and it
+    // must play again. Before the fix this measured EXACTLY 0.000e+0.
+    const core = new AnalogDelayCore(SR);
+    render(core, settings({ filterMode: 3, lowCut: 1.0, driveGain: 0, feedback: 0.5 }), 1.0, tone);
+    const after = render(core, wetOnly, 2.0, tone);
+    const fresh = render(new AnalogDelayCore(SR), wetOnly, 2.0, tone);
+
+    const rAfter = rmsFrom(after, SR);
+    const rFresh = rmsFrom(fresh, SR);
+    // ABSOLUTE leg — the negative control on the metric. "poisoned ≈ fresh" on
+    // its own would be satisfied by a broken RMS that returned 0 for both.
+    expect(
+      rAfter,
+      `recovered wet RMS ${rAfter.toExponential(4)} (linear) — was EXACTLY 0.000e+0 before 2026-08-03, ` +
+        `while a fresh node on the identical patch read ${rFresh.toExponential(4)}`,
+    ).toBeGreaterThan(0.1);
+    // RELATIVE leg — recovered to within 10 % of never having been poisoned.
+    expect(rAfter / rFresh, `recovered/fresh = ${(rAfter / rFresh).toFixed(4)}`).toBeGreaterThan(0.9);
+  });
+
+  it('recovers the WET path after ONE non-finite INPUT sample (no SVF involved)', () => {
+    // The second, independent route into the same dead state — reachable from
+    // any upstream module that emits Inf/NaN, on the DEFAULT filter mode, with
+    // DUCK AMOUNT at 0. This one is what also bricked charlottes-echos, which
+    // pins filterMode 0 and can never reach the SVF at all.
+    const core = new AnalogDelayCore(SR);
+    render(core, settings(), 0.2, (n) => (n === 100 ? Number.POSITIVE_INFINITY : tone(n)));
+    const after = render(core, wetOnly, 2.0, tone);
+    const fresh = render(new AnalogDelayCore(SR), wetOnly, 2.0, tone);
+
+    const rAfter = rmsFrom(after, SR);
+    const rFresh = rmsFrom(fresh, SR);
+    expect(
+      rAfter,
+      `recovered wet RMS ${rAfter.toExponential(4)} after a single Infinity input ` +
+        `(was EXACTLY 0.000e+0; fresh node reads ${rFresh.toExponential(4)})`,
+    ).toBeGreaterThan(0.1);
+    expect(rAfter / rFresh, `recovered/fresh = ${(rAfter / rFresh).toFixed(4)}`).toBeGreaterThan(0.9);
+  });
+
+  it('a NaN sample latches for AT MOST a few samples, not for the node lifetime', () => {
+    // Bound the outage as well as prove it ends: the whole point is that the
+    // recovery is immediate, not "eventually, after the tape rolls over".
+    const core = new AnalogDelayCore(SR);
+    render(core, settings(), 0.05, (n) => (n === 50 ? Number.NaN : tone(n)));
+    const after = render(core, settings({ dryVolume: 0, wetVolume: 1 }), 0.02, tone);
+    expect(after.every(Number.isFinite), 'output must be finite immediately after').toBe(true);
+  });
+});
+
+describe('AnalogDelayCore — the recursive states re-seed instead of latching', () => {
+  // Direct unit coverage of each guard, on the one class that exposes them.
+  // These are what make the recovery a PROPERTY rather than a happy accident
+  // of the two end-to-end renders above.
+  const s = settings({ filterMode: 3, lowCut: 0.8, driveGain: 2 });
+
+  it('ToneFilter returns to finite output after a non-finite sample', () => {
+    const ch = new DelayChannel(4096);
+    for (let i = 0; i < 100; i++) ch.tone.step(0.5, s, SR);
+    const poisoned = ch.tone.step(Number.POSITIVE_INFINITY, s, SR);
+    expect(Number.isFinite(poisoned), 'the poisoned sample itself is scrubbed').toBe(true);
+    let last = 0;
+    for (let i = 0; i < 200; i++) last = ch.tone.step(0.5, s, SR);
+    expect(Number.isFinite(last), `ToneFilter still non-finite: ${last}`).toBe(true);
+    expect(Math.abs(last), `ToneFilter output ${last} must be passing signal again`).toBeGreaterThan(1e-6);
+  });
+
+  it('DriveStage returns to finite output after a non-finite sample', () => {
+    const ch = new DelayChannel(4096);
+    for (let i = 0; i < 100; i++) ch.drive.step(0.5, s, SR);
+    ch.drive.step(Number.NaN, s, SR);
+    let last = 0;
+    for (let i = 0; i < 200; i++) last = ch.drive.step(0.5, s, SR);
+    expect(Number.isFinite(last), `DriveStage still non-finite: ${last}`).toBe(true);
+    expect(Math.abs(last), `DriveStage output ${last} must be passing signal again`).toBeGreaterThan(1e-6);
+  });
+
+  it('the tape cannot hold ±Infinity even from a FINITE float64 write', () => {
+    // The blind spot in the old scrub: `Number.isFinite(5e38)` is true, and the
+    // float32 store then makes it Infinity. Nothing was wrong with the check —
+    // it was reading the value BEFORE the narrowing that broke it.
+    expect(Number.isFinite(5e38), 'the value passes an isFinite check…').toBe(true);
+    expect(Number.isFinite(new Float32Array([5e38])[0]!), '…and is Infinity once stored as float32').toBe(false);
+    const ch = new DelayChannel(4096);
+    ch.write(5e38);
+    const ZEROS = 10;
+    for (let i = 0; i < ZEROS; i++) ch.write(0);
+    // Read back EXACTLY the poisoned cell. This tap distance is load-bearing:
+    // an earlier draft read at 8 and landed on a zero three cells away, so the
+    // assertion passed while never once touching the value under test — and it
+    // only showed up because the negative-control run stayed green. Control
+    // leg below pins the aim so that cannot recur silently.
+    const back = ch.readTap(ZEROS + 1, 1);
+    expect(Number.isFinite(back), `read back ${back} — the tape must never hand out Infinity`).toBe(true);
+    expect(Math.abs(back), `read back ${back} must be bounded by TAPE_MAX`).toBeLessThanOrEqual(TAPE_MAX);
+    // CONTROL ON THE AIM: the same tap distance on a line holding a KNOWN
+    // ordinary value must read that value back. If this stops finding 0.25 the
+    // probe is pointed somewhere else and the clause above proves nothing.
+    const aim = new DelayChannel(4096);
+    aim.write(0.25);
+    for (let i = 0; i < ZEROS; i++) aim.write(0);
+    expect(aim.readTap(ZEROS + 1, 1), 'the probe must be reading the cell it thinks it is').toBeCloseTo(0.25, 6);
+  });
+
+  it('a non-finite read TARGET does not permanently mistune the line', () => {
+    // `smoothedDelay` is the fourth recursive state. Poisoning it used to floor
+    // every later read at the 1-sample clamp — a silently wrong delay time with
+    // no non-finite sample anywhere to give it away.
+    const ch = new DelayChannel(48000);
+    for (let i = 0; i < 5000; i++) ch.write(i === 0 ? 1 : 0);
+    // Control on the PROBE first: reading 5000 samples back must find the
+    // impulse, so a later miss means the line moved and not that the probe
+    // was pointed at the wrong place. easeCoeff 1 = no smoothing, so the read
+    // position is exactly the target.
+    const good = ch.readTap(5000, 1);
+    expect(good, `control read ${good} — the probe must find the impulse`).toBeGreaterThan(0.5);
+    ch.readTap(Number.NaN, 1);
+    const back = ch.readTap(5000, 1);
+    expect(
+      back,
+      `tap after a NaN target read back ${back} — expected the impulse (≈1). ` +
+        `Without the guard smoothedDelay latches NaN, the caller's clamp floors ` +
+        `every later read at 1 sample, and this reads 0 forever.`,
+    ).toBeGreaterThan(0.5);
+  });
+
+  it('NEGATIVE CONTROL: every guard is a no-op on the finite path', () => {
+    // The guards must not be able to change ordinary audio — this is the whole
+    // argument that the ART `.f32` goldens do not move. Two renders that never
+    // see a non-finite value must be BIT-identical to each other, and the
+    // core must still be doing real work (the second clause is the control on
+    // the control: comparing silence to silence proves nothing).
+    const cfg = settings({ filterMode: 3, lowCut: 0.9, driveGain: 3, feedback: 0.7, driftAmount: 0.02, lfoAmount: 0.2 });
+    const t = (n: number) => (n < SR * 0.06 ? Math.sin((2 * Math.PI * 300 * n) / SR) * 0.5 : 0);
+    const a = render(new AnalogDelayCore(SR), cfg, 0.5, t);
+    const b = render(new AnalogDelayCore(SR), cfg, 0.5, t);
+    let maxDiff = 0;
+    let peak = 0;
+    for (let i = 0; i < a.length; i++) {
+      maxDiff = Math.max(maxDiff, Math.abs(a[i]! - b[i]!));
+      peak = Math.max(peak, Math.abs(a[i]!));
+    }
+    expect(maxDiff, 'two identical finite renders must be bit-identical').toBe(0);
+    expect(peak, `render peak ${peak.toExponential(4)} — must not be comparing silence to silence`).toBeGreaterThan(0.1);
   });
 });

@@ -258,6 +258,91 @@ describe('cofefve DSP behavior', () => {
   });
 });
 
+// ── 2026-08-03 ────────────────────────────────────────────────────────────
+// FILTER MODE "State-var" diverged and then BRICKED the node. Asserted here at
+// the WORKLET layer as well as in packages/dsp/src/lib/analog-delay-core.test.ts
+// because these are different claims: the core test proves the DSP is sound,
+// this one proves the module's own `filterMode` / `lowCut` / `driveGain`
+// AudioParams actually reach it. A core fix that the worklet never wired
+// through would leave the core test green and the module still broken.
+describe('cofefve FILTER MODE 3 (State-var) — bounded, and recoverable', () => {
+  const tone = (n: number) => Math.sin((2 * Math.PI * 220 * n) / SR) * 0.5;
+
+  it('does not diverge with LOW CUT wide open and DRIVE bypassed', async () => {
+    // DRIVE 0 is an ordinary patch ("0 bypasses drive entirely — clean loop")
+    // and it is what removes the tanh that masked this at the shipping default.
+    const Proc = await loadProcessor();
+    const { L } = runProcessor(
+      new Proc(),
+      makeParams({ filterMode: 3, lowCut: 1.0, driveGain: 0, feedback: 0.5 }),
+      1.0,
+      tone,
+    );
+    let peak = 0;
+    for (const v of L) peak = Math.max(peak, Math.abs(v));
+    expect(
+      peak,
+      `peak ${peak.toExponential(4)} (linear) — measured 8.7127e+37 before 2026-08-03, ` +
+        `first |x| > 10 at 0.401 s`,
+    ).toBeLessThan(2);
+    expect(L.every(Number.isFinite), 'every sample must be finite').toBe(true);
+    // Negative control on the metric: a peak scan that stopped looking would
+    // report 0 and satisfy the clause above.
+    expect(peak, `peak ${peak.toExponential(4)} — the render must not be silent`).toBeGreaterThan(0.1);
+  });
+
+  it('the WET path survives a trip through the old divergent patch', async () => {
+    // The user-visible bug in one test: park it on the bad patch, put every
+    // knob back somewhere sane, and it must play again. Before the fix the wet
+    // measured EXACTLY 0.000e+0 for the life of the node while DRY kept
+    // passing at 2.9972e-1 — which is why it read as "fine" from the outside.
+    const Proc = await loadProcessor();
+    const proc = new Proc();
+    runProcessor(proc, makeParams({ filterMode: 3, lowCut: 1.0, driveGain: 0, feedback: 0.5 }), 1.0, tone);
+
+    const safe = makeParams({ filterMode: 0, lowCut: 0.75, dryVolume: 0, wetVolume: 1 });
+    const after = runProcessor(proc, safe, 2.0, tone);
+    const fresh = runProcessor(new Proc(), safe, 2.0, tone);
+
+    const rms = (b: Float32Array, from: number): number => {
+      let s = 0;
+      for (let i = from; i < b.length; i++) s += b[i]! * b[i]!;
+      return Math.sqrt(s / (b.length - from));
+    };
+    const rAfter = rms(after.L, SR);
+    const rFresh = rms(fresh.L, SR);
+    expect(
+      rAfter,
+      `recovered wet RMS ${rAfter.toExponential(4)} — EXACTLY 0.000e+0 before 2026-08-03; ` +
+        `a fresh node on the identical patch reads ${rFresh.toExponential(4)}`,
+    ).toBeGreaterThan(0.1);
+    expect(rAfter / rFresh, `recovered/fresh = ${(rAfter / rFresh).toFixed(4)}`).toBeGreaterThan(0.9);
+  });
+
+  it('the WET path survives ONE non-finite input sample', async () => {
+    // The SVF-independent route to the same dead state — reachable on the
+    // DEFAULT filter mode from any upstream module that emits Inf/NaN.
+    const Proc = await loadProcessor();
+    const proc = new Proc();
+    runProcessor(proc, makeParams(), 0.2, (n) => (n === 100 ? Number.POSITIVE_INFINITY : tone(n)));
+    const safe = makeParams({ dryVolume: 0, wetVolume: 1 });
+    const after = runProcessor(proc, safe, 2.0, tone);
+    const fresh = runProcessor(new Proc(), safe, 2.0, tone);
+    const rms = (b: Float32Array, from: number): number => {
+      let s = 0;
+      for (let i = from; i < b.length; i++) s += b[i]! * b[i]!;
+      return Math.sqrt(s / (b.length - from));
+    };
+    const rAfter = rms(after.L, SR);
+    const rFresh = rms(fresh.L, SR);
+    expect(
+      rAfter,
+      `recovered wet RMS ${rAfter.toExponential(4)} after one Infinity input ` +
+        `(EXACTLY 0.000e+0 before; fresh reads ${rFresh.toExponential(4)})`,
+    ).toBeGreaterThan(0.1);
+  });
+});
+
 describe('clockSource → seconds-per-beat resolution (WEB layer bridge)', () => {
   type Nodes = Record<string, { type?: string; params?: Record<string, unknown> } | undefined>;
 
