@@ -80,6 +80,20 @@ const SUTS: readonly Sut[] = [
   // resofilter's stereo is two CHANNELS of ONE input, so it has no in_r to
   // patch at all — the normal is the ONLY way its OUT R can ever speak.
   { type: 'resofilter',      inL: 'audio', outL: 'out_l', outR: 'out_r', mechanism: "channelInterpretation: 'discrete' zero-filling channel 1" },
+  // stereovca was NEVER BROKEN, and that is precisely why it was missing. This
+  // roster is hand-written, like the VRT FACES set, so a module absent from it
+  // is unmeasured in every lane — and the SOURCE gate could not have prompted
+  // anyone to add it either, because stereovca spells its normal through
+  // intermediate consts (`const inR = inRRaw ?? inLBuf;`) and the gate's regex
+  // only matched the literal `inputs[1]?.[0] ?? inputs[0]?.[0]` form. Two
+  // independent blind spots lined up on one module.
+  //
+  // Measured before adding: OUT R peak 0.500000 for a mono source into in_l
+  // (real Chrome, real dist), so this row asserts a live property rather than
+  // pending a fix. Roster drift is now itself gated —
+  // packages/web/src/lib/audio/mono-normal-not-defeated.test.ts requires every
+  // normal-bearing module to appear here or carry a named exemption.
+  { type: 'stereovca',       inL: 'in_l',  outL: 'out_l', outR: 'out_r', mechanism: 'never defeated — the normal is spelled through intermediate consts, so the source gate could not see it' },
 ];
 
 interface Probe { outL: AnalyserNode; outR: AnalyserNode; sameEdge: boolean }
