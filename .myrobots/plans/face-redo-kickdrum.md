@@ -1,5 +1,20 @@
 # face re-do — kickdrum · **DELTA ONLY**
 
+> ⚠ **STATUS CORRECTED 2026-08-04 — read `face-redo-INDEX.md` §0 before building.**
+> PR #1301 **HAS MERGED** (`c6ff9253`) — kickdrum's PF-20 face is on `main`, so read the
+> def directly rather than `git show origin/feat/faceplate-platform-v2:…`.
+> **THIS DELTA IS NOT APPLIED.** `settles to` is still declared
+> (`packages/web/src/lib/audio/modules/kickdrum.ts:387`) and no `kickdrum-sweep-start`
+> readout exists. §1 is live backlog.
+> ⚠ **§3 IS FALSE.** "`face.title` / `face.hint` — the PAGE header still paints by default"
+> — it does not: `facePageHeader()` returns `null` before reading anything unless annotate
+> mode is on (`packages/web/src/lib/ui/workflow/dock-faceplate-model.ts:90`), and the owner
+> ruled on 2026-08-03 that `face.title` stays annotation-only. §2's verdict ("the face
+> survives correction 2 because the sidebar carries the same facts") is UNAFFECTED — the
+> sidebar and the PF-9 cluster labels do still paint — but the title/hint line does not.
+> PF-21 dock ROW PACKING (`9bf12df7`) landed after this was written and moved kickdrum's
+> bands from 5 rows to 4.
+
 **Verdict:** IN FLIGHT — do not re-spec. kickdrum's faceplate is being built on
 `feat/faceplate-platform-v2` (PR #1301) as the platform's **reference consumer**, and this file
 records only what the **two platform corrections** change about that in-flight design.

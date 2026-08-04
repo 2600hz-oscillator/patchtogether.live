@@ -1,6 +1,14 @@
 # FACE SPEC — `drummergirl` (batch 3)
 
-**Status:** SPEC + MOCKUP ONLY. PF-20 platform (PR #1301, unmerged). Citations file:line.
+> ⚠ **STATUS CORRECTED 2026-08-04 — THE FACE SHIPPED.** drummergirl was PROMOTED in **#1332**
+> (`2d111616`) and is in `STRICT_FACES`; the SHAPE-unbundling hero, the five derived readouts
+> and the 16-row preset roster all landed. PF-20 (**PR #1301**) has MERGED (`c6ff9253`).
+> **The face half of this spec is spent — read the shipped def, not this.** What is still
+> worth keeping is **§7 ALREADY-WRONG ("this module has the worst docs in the batch")**,
+> which was **NOT re-verified** on 2026-08-04 — treat every row in it as unconfirmed rather
+> than as either fixed or live.
+
+**Status:** ~~SPEC + MOCKUP ONLY~~ **BUILT.** PF-20 platform (PR #1301 — MERGED, `c6ff9253`). Citations file:line.
 
 **Verdict: PROMOTE — and the face's whole job is to unbundle ONE knob.** · archetype:
 **monophonic one-shot percussion voice with a 16-preset morph.**

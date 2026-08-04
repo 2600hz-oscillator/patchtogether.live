@@ -1,6 +1,14 @@
 # FACE SPEC — `meowbox` (batch 3)
 
-**Status:** SPEC + MOCKUP ONLY. PF-20 platform (PR #1301, unmerged). Citations file:line.
+> ⚠ **STATUS CORRECTED 2026-08-04.** PF-20 (**PR #1301**) **HAS MERGED** (`c6ff9253`) — read
+> the def on `main`, not `origin/feat/faceplate-platform-v2`. **meowbox is UNBUILT: this is
+> LIVE BACKLOG, not stale.** `packages/web/src/lib/audio/modules/meowbox.ts` has not been
+> touched since 2026-08-01, so the measurements below still stand. Two platform facts landed
+> after this was written: **PF-21 dock ROW PACKING** (`9bf12df7`), and **`face.title` /
+> `face.hint` are ANNOTATION-ONLY** — `facePageHeader()` returns `null` unless annotate mode
+> is on (`dock-faceplate-model.ts:90`; owner decision 2026-08-03).
+
+**Status:** SPEC + MOCKUP ONLY — **UNBUILT, live backlog.** PF-20 platform (PR #1301 — MERGED, `c6ff9253`). Citations file:line.
 
 **Verdict: PROMOTE — four params, and one of them secretly drives thirteen tables.** ·
 archetype: **formant-resonator VOICE with a five-anchor preset morph.**

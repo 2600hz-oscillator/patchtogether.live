@@ -1,7 +1,19 @@
 # FACE SPEC — `analogVco` (batch 3)
 
 **Status:** SPEC + MOCKUP ONLY. Nothing here is implemented. Designed against the
-**PF-20 faceplate platform** on `feat/faceplate-platform-v2` (PR #1301, NOT yet merged) —
+> ⚠ **STATUS CORRECTED 2026-08-04.** PF-20 (**PR #1301**) **HAS MERGED** (`c6ff9253`) — read
+> the def on `main`. **This face was AUTHORED, VERIFIED and then DROPPED** inside #1332
+> (`2d111616`): every unit gate passed, but the `face-analogVco-compact` VRT scene is **not
+> pixel-deterministic** — analogVco is a FREE-RUNNING oscillator, so its live `scope` glyph
+> draws a moving saw where every other faced module draws a flat centreline (**254 / 154 /
+> 315 px across three consecutive captures of the same tile**). The DOCK scene is stable,
+> which confirms the diagnosis — a `hero.cell` suppresses the glyph there. **The fix belongs
+> in `VRT_LIVE_SURFACES` (a mask plus a measured companion), and `e2e/vrt/vrt-exemptions.ts`
+> already claims analogVco has one when it does not.** See `strict-faces.ts:54-62`.
+> This spec is **live backlog blocked on that VRT work**, not stale. The one boy-scout half
+> that did land is the false `pw` doc fix.
+
+**PF-20 faceplate platform** on `feat/faceplate-platform-v2` (PR #1301 — MERGED, `c6ff9253`) —
 `face.title` / `face.hint`, per-band `hint`, `ModuleFaceHero`, `FaceSidebarBlock[]`,
 `FaceReadout.valueId`. Every claim about current behaviour carries a file:line. Anything
 INFERRED rather than read is labelled.

@@ -1,5 +1,21 @@
 # face re-do — shimmershine
 
+> ⚠ **STATUS CORRECTED 2026-08-04 — read `face-redo-INDEX.md` §0 before building.**
+> PF-20 (**PR #1301**) **HAS MERGED** (`c6ff9253`); every "unmerged branch" citation below
+> now resolves on `main`. **`face.title` and `face.hint` do NOT paint by default** —
+> `facePageHeader()` returns `null` before reading anything unless annotate mode is on
+> (`packages/web/src/lib/ui/workflow/dock-faceplate-model.ts:90`), and the owner ruled on
+> 2026-08-03 that `face.title` stays annotation-only. **§5's read-through ("with zero
+> annotation the dock paints … `face.hint` (which still paints)") is FALSE.** PF-21 dock
+> ROW PACKING (`9bf12df7`) also landed after this was written. **This re-do is NOT built**
+> — the shipped `face` still declares no `hero` and no `sidebar`. Live backlog.
+> ⚠ **§9 IS OUT OF DATE AND ITS NUMBERS HAVE MOVED.** The P0 it reports — the "crystalline
+> drone" being a pure DC rail past `shimmer ≈ 0.388` — **was FIXED in #1313** (`290dcdb5`):
+> a 20 Hz one-pole DC blocker on the tank output and in the loop. DC is now ≤ 0.7 % of RMS
+> and the self-sustain threshold MOVED (default tank ~0.75, was ~0.39). **Do not re-derive
+> this face's argument from §9's measurements** — re-measure. shimmershine was also one of
+> the five modules in the stereo-silence class fixed in #1343.
+
 **Verdict: REAL REWORK** — collapse three declaration-order bands to ONE honest `tank` band, promote
 the two taps off `wet` (SHIMMER, MIX) into the PF-20 hero rail, and print the strip this module
 actually has: two fixed DSP constants no knob reveals plus one exactly-derived two-knob coefficient.

@@ -1,5 +1,16 @@
 # face re-do — delay
 
+> ⚠ **STATUS CORRECTED 2026-08-04 — read `face-redo-INDEX.md` §0 before building.**
+> PF-20 (**PR #1301**) **HAS MERGED** (`c6ff9253`); every "unmerged branch" citation below
+> now resolves on `main`. **`face.title` and `face.hint` do NOT paint by default** —
+> `facePageHeader()` returns `null` before reading anything unless annotate mode is on
+> (`packages/web/src/lib/ui/workflow/dock-faceplate-model.ts:90`), and the owner ruled on
+> 2026-08-03 that `face.title` stays annotation-only. **Any argument below that parks a
+> load-bearing fact in `face.hint` because it "still paints" is VOID** — including §3's
+> "module header, which still paints under correction 2". PF-21 dock ROW PACKING
+> (`9bf12df7`) also landed after this was written. **This re-do is NOT built** — the
+> module's shipped `face` still declares no `hero` and no `sidebar`. Live backlog.
+
 **Verdict: MECHANICAL ONLY** — the shipped control surface (`order`, `pages`, `rear`, `glyph`,
 `params`, the card, the DSP) is right and **nothing in it moves**; the delta is the four PF-20
 declarations (`title`/`hint`/`hero`/`sidebar`), one band relabel forced by correction 2, and two

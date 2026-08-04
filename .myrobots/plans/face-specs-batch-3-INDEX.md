@@ -1,12 +1,55 @@
 # FACE SPECS — BATCH 3 · the index
 
+## 0. STATUS — CORRECTED 2026-08-04 (verified against `main`, not against this doc)
+
+**Four of the twelve were BUILT; one was built and then DROPPED; seven are still unbuilt
+backlog.** Ground truth is `STRICT_FACES`
+(`packages/web/src/lib/ui/workflow/strict-faces.ts`) plus the `face.hero`/`face.sidebar`
+declarations in the defs — not the status lines in these files.
+
+| module | this doc's verdict | what happened |
+|---|---|---|
+| **clap** | PROMOTE | **SHIPPED** — **#1332** (`2d111616`), in `STRICT_FACES`. |
+| **drummergirl** | PROMOTE | **SHIPPED** — **#1332**. |
+| **pentemelodica** | PROMOTE | **SHIPPED** — **#1332**. |
+| **sixstrum** | RE-DO | **SHIPPED** — **#1332**; the re-do fixed the "cannot play the instrument" defect. |
+| **analogVco** | PROMOTE | **AUTHORED, VERIFIED, THEN DROPPED** in the same PR. Its `face-analogVco-compact` VRT scene is not pixel-deterministic — a free-running oscillator draws a moving saw where every other faced module draws a flat centreline (254 / 154 / 315 px across three captures). The dock scene is stable, which confirms the cause. **The fix belongs in `VRT_LIVE_SURFACES`, and `e2e/vrt/vrt-exemptions.ts` already claims analogVco has one when it does not.** This spec is live backlog blocked on that. See `strict-faces.ts:54-62`. |
+| **bluebox · macrooscillator · meowbox · noise · cube · samsloop · twotracks** | 4 promote / 3 decline | **UNBUILT.** Live backlog — but read the per-file 2026-08-04 banners first: several of the defects these specs are built around **have since been fixed**, which changes the argument. |
+
+Other status lines that have gone stale everywhere in this batch:
+
+- PF-20 is **PR #1301 — MERGED** (`c6ff9253`). Every "unmerged branch" citation resolves on
+  `main`; read the def, not `origin/feat/faceplate-platform-v2`.
+- These twelve specs are **PR #1304 — MERGED** (`6b4a8968`).
+- **PF-21 dock ROW PACKING** landed after they were written (`9bf12df7`): consecutive
+  packable bands share a row, ≤ 10 cells, and a tabbed face never packs. Layout arguments
+  about vertical sprawl are already answered by the platform.
+- The **dock VRT scene captures only the top ~425 px** (`71909ed0`) — a green dock baseline
+  is not evidence a band-level change was a no-op on a tall face.
+
+### ⚠ ONE CLAIM IN §1.1 IS FALSE
+
+§1.1 ends "**The `face.title` still always paints**". It does not.
+`facePageHeader(def, annotations = false)` returns `null` before it reads anything — title
+included (`packages/web/src/lib/ui/workflow/dock-faceplate-model.ts:90`). The owner ruled on
+**2026-08-03** that `face.title` **stays annotation-only** ("two names on one panel was the
+actual complaint" — the dock title bar already paints the module NAME), so this is a settled
+decision, not a bug to file. Anything below that relies on the title carrying a fact at rest
+needs re-deriving.
+
+---
+
 **SPEC AND MOCKUP ONLY. Nothing here is implemented, no module def is touched.** The owner
 reviews these and the gallery before any building starts.
 
 - **Mockup gallery (one file, self-contained):** `.myrobots/mockups/face-batch-3-gallery.html`
+  — **KEPT** (this index is its only referrer). Seven of its twelve tiles are still unbuilt,
+  so it stays the live visual reference for them; the clap / drummergirl / pentemelodica /
+  sixstrum tiles are now history — compare against the shipped dock, not against these.
+  ⚠ It predates PF-21 row packing and it draws the page header as if it painted at rest.
 - **Per-module specs:** `.myrobots/plans/face-specs-batch-3-<module>.md` (twelve files)
 - **Designed against:** the PF-20 faceplate platform on `feat/faceplate-platform-v2`
-  (**PR #1301, NOT yet merged**) — `face.title` / `face.hint`, per-band `hint`,
+  (**PR #1301 — MERGED 2026-08-02 as `c6ff9253`; read `main`**) — `face.title` / `face.hint`, per-band `hint`,
   `ModuleFaceHero` (`cell` / `control` / `action` / `readouts`),
   `FaceSidebarBlock[]` (`signal-flow` | `presets` | `readouts` | `custom`), and
   `FaceReadout.valueId` resolved through `face-readout-values.ts`.
@@ -55,7 +98,9 @@ platform: the specs say what a face *declares*, the platform says how a faceplat
    still authored on the def — it is living-docs content and the specs' `hint:` strings stand
    exactly as written — but the CARD only paints it when the viewer turns annotations on
    from the dock title bar (per-viewer, not `node.data`, not the Y.Doc). The `face.title`
-   still always paints: it is the panel's name, not a note about it.
+   ~~still always paints: it is the panel's name, not a note about it.~~
+   ⚠ **FALSE — corrected 2026-08-04, see §0.** `face.title` is ANNOTATION-ONLY too
+   (`dock-faceplate-model.ts:90`; owner decision 2026-08-03).
 
    ⚠ **This raises the bar on a band LABEL, and lowers it on a band HINT.** At rest the label
    is the *only* thing naming the band, so `1 · burst — the hands` has to carry the idea on

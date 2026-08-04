@@ -1,6 +1,19 @@
 # FACE SPEC — `cube` (batch 3) — **MY ADDITION TO REACH 12 · RECOMMENDATION: SWAP IT OUT**
 
-**Status:** SPEC + MOCKUP ONLY. PF-20 platform (PR #1301, unmerged). Citations file:line.
+> ⚠ **STATUS CORRECTED 2026-08-04.** PF-20 (**PR #1301**) **HAS MERGED** (`c6ff9253`) — read
+> the def on `main`. cube is **UNBUILT and this spec's own verdict is SWAP OUT (do not
+> face)**, so it stays as an AUDIT, not as backlog. **But its headline measurement is now
+> out of date:**
+> - ✅ **MORPH is no longer a bit-exact no-op at spawn** — **FIXED in #1314** (`e8585fd9`),
+>   "MORPH was a BIT-EXACT no-op on every freshly spawned module". §2's "the reason is one
+>   line of default data" and the `field` band hint at §4 ("MORPH is inert while both tables
+>   are the same") **no longer describe shipping code.**
+> - ✅ **The amp ADSR did nothing at the shipped default** — fixed in **#1360**
+>   (`91e14cc0`; ⚠ owner audio preview + GPU re-attest).
+> - ⚠ The rest of "7 of 24 knobs do not survive measurement" (including `view_rot_z`) was
+>   **not re-verified** on 2026-08-04. **Re-measure before citing any number in here.**
+
+**Status:** SPEC + MOCKUP ONLY — **UNBUILT, verdict SWAP OUT.** PF-20 platform (PR #1301 — MERGED, `c6ff9253`). Citations file:line.
 
 ⚠ **The owner named ten modules. `cube` and `twotracks` are MY additions to reach twelve, and
 both are flagged as swappable.** After the investigation I am recommending **both be swapped

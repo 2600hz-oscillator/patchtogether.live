@@ -1,5 +1,17 @@
 # face re-do — snaredrum
 
+> ⚠ **STATUS CORRECTED 2026-08-04 — read `face-redo-INDEX.md` §0 before building.**
+> PF-20 (**PR #1301**) **HAS MERGED** (`c6ff9253`); every "unmerged branch" citation below
+> now resolves on `main`. **`face.title` and `face.hint` do NOT paint by default** —
+> `facePageHeader()` returns `null` before reading anything unless annotate mode is on
+> (`packages/web/src/lib/ui/workflow/dock-faceplate-model.ts:90`), and the owner ruled on
+> 2026-08-03 that `face.title` stays annotation-only. **Any argument below that parks a
+> load-bearing fact in `face.hint` because it "still paints" is VOID.** PF-21 dock ROW
+> PACKING (`9bf12df7`) also landed after this was written. **This re-do is NOT built** —
+> the module's shipped `face` still declares no `hero` and no `sidebar`. Live backlog.
+> ✅ The re-do ledger's snaredrum defect #25 (the wire bed panning to the WRONG side during
+> a roll) **is FIXED** — one shared pan helper, **#1328** (`1446f1c5`).
+
 **Verdict: REAL REWORK** — but a *structural* one, not a re-ranking: the six-cell lane and the five
 bands that merged two days ago (`f5cb7550`) are right and I keep them unchanged; what the platform
 adds is a hero rail whose ACTION slot holds only ONE key while this module has TWO auditions, and

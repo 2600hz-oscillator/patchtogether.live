@@ -1,5 +1,25 @@
 # Face specs — round 2 (the 10 unmocked plan modules)
 
+> ⚠ **STATUS CORRECTED 2026-08-04. KEEP THIS FILE — but read it as a DEFECT LIST, never as a
+> design.** Two repository skills cite it by path:
+> `.claude/skills/module-faceplates.md:434` ("a 71-defect adversarial review of ten drafts —
+> **the defect lists are the valuable half**") and
+> `.claude/skills/module-adversarial-audit.md:175`. Deleting it breaks both.
+>
+> - **All ten of these modules now have SHIPPED faces** (batch B, 2026-08-02 — qbrt, delay,
+>   reverb, shimmershine, mixer, filter, tomtom, karplus, snaredrum, sixstrum are all in
+>   `STRICT_FACES`). **The ten SPEC DRAFTS below are therefore spent**, and the file's own
+>   header already says not one of them came back sound.
+> - **They were superseded by `face-redo-*.md`** (PR #1307, `9187fd84`), which re-specced
+>   the same ten against the merged platform and records that *"round-2's DSP citations are
+>   off by 1–2 lines; its BLOCKER is false"*. **Prefer the re-do specs for any design
+>   question; prefer this file only for its defect enumeration.**
+> - The consolidated shipped-code ledger lives at `face-redo-INDEX.md` §4 — and **that** is
+>   the numbering the source tree cites (`shell-cells.ts:410`, `audition-ledger.ts:25`,
+>   `mutate.guard.test.ts:26`, `undeclared-edge-ledger.ts:57`,
+>   `card-def-agreement.test.ts:167`). Several of its rows have since closed; see §4's
+>   correction table there rather than re-deriving from here.
+
 Generated 2026-08-01 by a 20-agent fan-out: one agent AUTHORED each spec from the design
 program's §4 prose + the real def/card, then a second agent ADVERSARIALLY FACT-CHECKED it
 against the code.

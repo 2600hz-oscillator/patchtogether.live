@@ -1,6 +1,20 @@
 # FACE SPEC — `clap` (batch 3)
 
-**Status:** SPEC + MOCKUP ONLY. PF-20 platform (`feat/faceplate-platform-v2`, PR #1301, unmerged).
+> ⚠ **STATUS CORRECTED 2026-08-04 — THE FACE SHIPPED.** clap was PROMOTED in **#1332**
+> (`2d111616`) and is in `STRICT_FACES`. PF-20 (**PR #1301**) has MERGED (`c6ff9253`).
+> **The face half of this spec is spent — read the shipped def, not this.** What is still
+> worth keeping is §8:
+> - ✅ **§6 / §8-B/C · WIDTH's loudness compensation had the wrong sign (18.06 dB)** —
+>   **FIXED in #1313** (`290dcdb5`), normalised at the default width; the blind
+>   amplitude-window gate was replaced with an RMS sweep at LEVEL −24 plus a COLOR
+>   negative control. WIDTH 0.5 is bit-identical; WIDTH 0 is 13.8 dB quieter, WIDTH 1 is
+>   5.1 dB louder.
+> - ✅ **§8-A · the strike pad masks external triggers** and **§8-E · the k-rate latency** —
+>   both now documented correctly on the def (`clap.ts:358`).
+> - ⚠ **§8-D (COLOR is +4.5 dB and non-monotonic) and §7 (the card re-types every range as a
+>   literal; clap is not in `RANGE_BOUND_CARDS`) were still OPEN** when this was checked.
+
+**Status:** ~~SPEC + MOCKUP ONLY~~ **BUILT.** PF-20 platform (`feat/faceplate-platform-v2`, PR #1301 — MERGED, `c6ff9253`).
 Citations are file:line; inferences labelled.
 
 **Verdict: PROMOTE — the strongest candidate in the batch.** · archetype: **struck percussion

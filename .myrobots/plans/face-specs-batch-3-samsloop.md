@@ -1,6 +1,23 @@
 # FACE SPEC — `samsloop` (batch 3)
 
-**Status:** SPEC + MOCKUP ONLY. PF-20 platform (PR #1301, unmerged). Citations file:line.
+> ⚠ **STATUS CORRECTED 2026-08-04.** PF-20 (**PR #1301**) **HAS MERGED** (`c6ff9253`) — read
+> the def on `main`. samsloop is **UNBUILT**, and two things have changed since:
+> - ✅ **§6 / §7-A · "a recorded sample never plays" (P0-class)** — **FIXED in #1316**
+>   (`bbba5b5d`): `stopRecording` wrote `node.data.sample.bytesB64` and the factory read
+>   `fileBytesB64` / `samples`. The fix is reader-side, so already-saved racks recover.
+>   A follow-on, **#1353** (`1b05b590`), fixed START/END being dead (the factory cached the
+>   length of a TRANSFERRED, detached buffer, so every recording persisted
+>   `sampleLength: 0`). **The blocker this spec is gated on is gone.**
+> - ⚠ **BUT THE OWNER MADE A DECISION THAT SUPERSEDES THE VERDICT.** 2026-08-03:
+>   *"samsloop-class modules: build the platform shell cell FIRST. A file-loader / recorder
+>   shell cell that reaches the dock is a platform PR. Until it exists, an agent's only
+>   correct answer for samsloop is **do not promote** — promoting it removes the only ways
+>   to get audio in."* (`.myrobots/2026-08-03-SESSION-STATE.md` §4.4, and
+>   `.claude/skills/module-faceplates.md` names samsloop-class modules as out of scope.)
+>   **So the §1 "PROMOTE (blocked)" verdict now reads DO NOT PROMOTE until that platform PR
+>   lands.** The rest of the spec is still the design for the day it does.
+
+**Status:** SPEC + MOCKUP ONLY — **UNBUILT; DO NOT PROMOTE (owner, 2026-08-03).** PF-20 platform (PR #1301 — MERGED, `c6ff9253`). Citations file:line.
 
 **Verdict: PROMOTE, BUT NOT AS SPECIFIED — the face needs THREE ParamDefs promoted out of
 `node.data` first, and the module has a P0-class live bug that must land before it.** ·
