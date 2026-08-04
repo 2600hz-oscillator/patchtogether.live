@@ -292,7 +292,7 @@ export const cloudsDef: AudioModuleDef = {
       "A granular texture processor after Mutable Instruments' Clouds. It continuously records the incoming stereo audio into a short ring buffer, then sprays overlapping grains — tiny windowed snippets — out of that buffer to recombine the sound into a shimmering cloud, a smeared pad, a pitch-shifted drone, or a frozen ambient texture. POSITION picks where in the buffer the grains read from, SIZE sets each grain's length, DENSITY sets how many grains overlap, TEXTURE morphs the grain window from soft to hard, PITCH transposes the grains, and FREEZE latches the buffer so the texture keeps playing with no fresh input. BLEND crossfades the grain cloud against the dry signal. Mental model: it turns any source into a controllable swarm of micro-loops.",
     inputs: {
       in_l: 'Left channel of the stereo source continuously written into the granular ring buffer (unless FREEZE is engaged, which stops new writes).',
-      in_r: 'Right channel of the stereo source written into the buffer alongside in_l.',
+      in_r: 'Right channel of the stereo source written into the buffer alongside in_l. If unpatched it is normalled from in_l, so a mono source into in_l alone fills both halves of the buffer and the grain cloud comes back centred rather than hard-left.',
       pitch: 'V/oct pitch input that sums with the PITCH knob, transposing every grain — patch a sequencer or keyboard here to play the granular cloud melodically.',
       freeze_gate: 'A gate that toggles FREEZE on each rising edge: high-going flips the buffer between live-recording and frozen (looping the captured snapshot). Use it to capture a moment and hold the texture hands-free.',
       position_cv: 'CV that displaces the POSITION knob, sweeping the grain read-head through the buffer — modulate it for scanning/scrubbing textures.',
@@ -329,14 +329,14 @@ export const cloudsDef: AudioModuleDef = {
       outputChannelCount: [1, 1],
     });
 
+    // Liveness pin on input 0 ONLY. A ConstantSource on input 1 makes Chrome
+    // hand the processor a (silent) channel for input 1 forever, which defeats
+    // the DSP's `inputs[1]?.[0] ?? inputs[0]?.[0]` mono normal and renders an
+    // unpatched R as digital silence. Enforced by mono-normal-not-defeated.test.ts.
     const silenceL = ctx.createConstantSource();
-    const silenceR = ctx.createConstantSource();
     silenceL.offset.value = 0;
-    silenceR.offset.value = 0;
     silenceL.start();
-    silenceR.start();
     silenceL.connect(workletNode, 0, 0);
-    silenceR.connect(workletNode, 0, 1);
 
     const params = workletNode.parameters as unknown as Map<string, AudioParam>;
     for (const def of cloudsDef.params) {
@@ -385,9 +385,7 @@ export const cloudsDef: AudioModuleDef = {
       },
       dispose() {
         try { silenceL.stop(); } catch { /* */ }
-        try { silenceR.stop(); } catch { /* */ }
         try { silenceL.disconnect(); } catch { /* */ }
-        try { silenceR.disconnect(); } catch { /* */ }
         try { workletNode.disconnect(); } catch { /* */ }
       },
     };

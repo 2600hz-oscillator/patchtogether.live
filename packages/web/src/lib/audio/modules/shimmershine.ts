@@ -9,11 +9,13 @@
 //
 // Inputs:
 //   in_l / in_r (audio): stereo input (separate, identically-tuned tanks;
-//     the channels never cross-feed). NOTE: the worklet's `inputs[1]?.[0] ??
-//     inputs[0]?.[0]` mono fallback is DEAD in practice — the factory wires a
-//     0-valued ConstantSource into BOTH worklet inputs, so Chrome always hands
-//     input 1 a (silent) channel and in_r never normals from in_l. Verified in
-//     Chrome; an unpatched in_r = a silent right tank.
+//     the channels never cross-feed). An unpatched in_r NORMALS from in_l via
+//     the worklet's `inputs[1]?.[0] ?? inputs[0]?.[0]` fallback, so a mono
+//     source into IN L alone drives both tanks and comes back centred. That
+//     fallback only fires because the factory pins its liveness ConstantSource
+//     to input 0 ONLY — pinning input 1 as well makes Chrome hand the processor
+//     a permanently-silent channel 1, which defeats the normal and returns a
+//     silent right tank (measured OUT R peak 0.0000e+0 before the fix).
 //   decay_cv (cv, linear, paramTarget=decay): displaces the decay macro.
 //   shimmer_cv (cv, linear, paramTarget=shimmer): displaces the octave-up feedback amount.
 //   size_cv (cv, linear, paramTarget=size): displaces the comb-feedback macro.
@@ -309,7 +311,7 @@ export const shimmershineDef: AudioModuleDef = {
       "A stereo shimmer reverb: a plain Schroeder tank wired into an octave-up regeneration loop. Each channel gets its own tank — four parallel comb filters, each with a one-pole lowpass in its feedback path, then two series allpasses for diffusion (the first four of Freeverb's comb tunings and its first two allpasses — 1116/1188/1277/1356 and 556/441 samples at 44.1 kHz, rescaled to the running sample rate). What makes it SHIMMER is what happens to the tank's output: it is fed through a +12-semitone granular pitch shifter (two read heads chasing the write head at 2× speed, cosine-crossfaded over a 25 ms window to hide each wrap) and summed back into the tank input, so every trip round the loop transposes the tail up another octave and a held note grows a rising ladder of octaves above itself. Only the tank output is blended to the outs, so the shimmer never touches the direct sound — it emerges in the tail, tens of milliseconds behind the note. A 20 Hz DC blocker sits on the tank output, in the loop, so the regeneration can only recirculate audio: without it every stage in the loop passed 0 Hz at unity or better and the tail charged a DC offset instead of shimmering. The loop gain is hard-capped at 0.55 with a tanh saturator, which bounds the LEVEL but not the SUSTAIN: with SHIMMER off this is a modest room — a measured RT60 of about 0.45–1.3 s over the DECAY / SIZE plane at the default DAMP, stretching to ~1.55 s with DAMP at 0 and collapsing to ~0.15 s with DAMP full up — and once SHIMMER is high enough the loop stops decaying and settles into a continuous, level-bounded crystalline drone of stacked octaves. Where that tipping point sits depends on the tank: with the tank at its defaults it is around SHIMMER 0.75, it drops to about 0.15 with SIZE and DECAY up and DAMP at 0, and with SIZE at 0 it takes about 0.85 (DAMP at 1 kills the loop outright, so it never sustains). Below the tipping point the tail decays, all the way down: SHIMMER's own 0.4 default is a shimmering room, not a drone. Left and right run independent, identically-tuned tanks with no cross-feed, so it faithfully passes on the stereo image it is given rather than synthesising width. Patch it as a stereo insert and ride MIX, or feed it from an aux send with MIX at 1.",
     inputs: {
       in_l: 'Left channel of the stereo input. It is summed with the loop’s pitch-shifted feedback and drives the LEFT reverb tank; left and right are separate, identically-tuned tanks that never cross-feed.',
-      in_r: 'Right channel of the stereo input, driving the right-hand tank on the same signal path. It is NOT normalled from IN L: leaving this jack empty means the right tank sees silence, so a mono source patched to IN L alone comes back hard-left — split it to both inputs if you want the halo centred.',
+      in_r: 'Right channel of the stereo input, driving the right-hand tank on the same signal path. If unpatched it is normalled from IN L, so a mono source patched to IN L alone drives both tanks and the halo comes back centred; patch both jacks to feed the tanks a true stereo image.',
       decay_cv:
         'CV that displaces the DECAY knob. Linear on a 0–1 param: ±1 moves it by up to ±0.5 and pins at the ends. The worklet’s params are k-rate, so this is sampled once per 128-sample render quantum (~2.7 ms at 48 kHz) — automate swelling and collapsing tails with it, not audio-rate modulation.',
       shimmer_cv:
@@ -351,14 +353,15 @@ export const shimmershineDef: AudioModuleDef = {
       outputChannelCount: [1, 1],
     });
 
+    // Liveness pin on input 0 ONLY. A ConstantSource on input 1 makes Chrome
+    // hand the processor a (silent) channel for input 1 forever, which defeats
+    // the DSP's `inputs[1]?.[0] ?? inputs[0]?.[0]` mono normal and renders an
+    // unpatched IN R as a silent right tank. Enforced by
+    // mono-normal-not-defeated.test.ts.
     const silenceL = ctx.createConstantSource();
-    const silenceR = ctx.createConstantSource();
     silenceL.offset.value = 0;
-    silenceR.offset.value = 0;
     silenceL.start();
-    silenceR.start();
     silenceL.connect(workletNode, 0, 0);
-    silenceR.connect(workletNode, 0, 1);
 
     const params = workletNode.parameters as unknown as Map<string, AudioParam>;
     for (const def of shimmershineDef.params) {
@@ -392,9 +395,7 @@ export const shimmershineDef: AudioModuleDef = {
       },
       dispose() {
         try { silenceL.stop(); } catch { /* */ }
-        try { silenceR.stop(); } catch { /* */ }
         silenceL.disconnect();
-        silenceR.disconnect();
         workletNode.disconnect();
       },
     };
