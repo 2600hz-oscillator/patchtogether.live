@@ -171,7 +171,11 @@
       <ul class="rackspace-list">
         {#each rackspaces as r (r.id)}
           <li class="rack-row">
-            <a class="rack-link" href={`/r/${r.id}`}>
+            <!-- ISOLATION BOUNDARY: /dashboard is NOT cross-origin isolated,
+                 /r/… is (hooks.server.ts SAB_ROUTES). Full-page nav so the
+                 rackspace document gets its COOP/COEP headers — a soft nav
+                 arrives with SharedArrayBuffer unavailable (dead Faust/ES-9). -->
+            <a class="rack-link" href={`/r/${r.id}`} data-sveltekit-reload>
               <span class="name">{r.name || 'Untitled rackspace'}</span>
               <span class="meta">
                 {r.id} · {r.memberUserIds.length}/{4} members

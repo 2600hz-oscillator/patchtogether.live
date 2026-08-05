@@ -32,6 +32,36 @@ test.describe('landing routing', () => {
     expect(isolated, '/rack must be cross-origin isolated').toBe(true);
   });
 
+  test('clicking a rack tile from the landing arrives cross-origin ISOLATED (full-page nav, not a soft nav)', async ({
+    page,
+  }) => {
+    // The hole the direct-load test above could not see (a gate that reads only
+    // one side): `/` is deliberately NOT isolated, so a CLIENT-SIDE navigation
+    // into `/rack` keeps the landing's document and arrives with
+    // `crossOriginIsolated === false` — SharedArrayBuffer undefined, Faust WASM
+    // threads degraded, and the ES-9 bridge card stuck in 'unsupported' with no
+    // connect button (owner report 2026-08-05). The rack-bound landing tiles
+    // carry `data-sveltekit-reload` so entry is a full-page load that picks up
+    // the COOP/COEP headers. This drives the REAL click-through path.
+    await page.goto('/');
+    await expect(page.getByTestId('landing-tiles')).toBeVisible();
+    // Negative control for the instrument: the landing itself must NOT be
+    // isolated in dev — if it ever is, this test can no longer distinguish a
+    // soft nav from a hard one and must be rethought, so fail loudly here.
+    expect(
+      await page.evaluate(() => crossOriginIsolated),
+      'landing must be non-isolated for this test to prove anything',
+    ).toBe(false);
+
+    await page.getByTestId('tile-new-workflow-rack').click();
+    await page.waitForURL('**/rack?mode=workflow');
+    await expect(page.locator('[data-testid="canvas-root"]')).toBeVisible();
+    expect(
+      await page.evaluate(() => crossOriginIsolated),
+      'rack entered via the landing tile must be cross-origin isolated',
+    ).toBe(true);
+  });
+
   test('/ renders the landing front door with no canvas', async ({ page }) => {
     const resp = await page.goto('/');
     expect(resp!.status()).toBe(200);

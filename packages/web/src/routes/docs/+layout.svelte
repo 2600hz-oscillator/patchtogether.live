@@ -40,7 +40,9 @@
             || (n.href !== '/docs' && path.startsWith(n.href))}
           <a href={n.href} class:active>{n.label}</a>
         {/each}
-        <a class="back" href="/rack">launch app -&gt;</a>
+        <!-- ISOLATION BOUNDARY: /docs → /rack needs a full-page nav so the
+             canvas document gets its COOP/COEP headers (see landing +page). -->
+        <a class="back" href="/rack" data-sveltekit-reload>launch app -&gt;</a>
       </nav>
     </header>
 
