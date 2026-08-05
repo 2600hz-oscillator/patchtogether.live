@@ -5,6 +5,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { RingIO, createRingSpec } from './es9-ring';
+import { closeStateAfter } from './bridge-state';
 import {
   ES9_HEADER_SIZE,
   channelsToMask,
@@ -91,5 +92,30 @@ describe('es9-protocol binary codec', () => {
   it('channelsToMask sets the right bits', () => {
     expect(channelsToMask([])).toBe(0);
     expect(channelsToMask([0, 15])).toBe(0b1000_0000_0000_0001);
+  });
+});
+
+describe('closeStateAfter — the busy-close handshake (worker onclose state)', () => {
+  // Measured against the real es9-bridge app (2026-08-05): a second client
+  // gets `status busy ("another client is connected")` then an IMMEDIATE
+  // close (1000, holder kept). The worker's onclose used to post
+  // 'disconnected' over the truthful 'busy', which Es9Card renders as
+  // "bridge not found" — indistinguishable from the app not running at all.
+
+  it('a close AFTER a bridge-side busy keeps saying busy', () => {
+    expect(closeStateAfter('busy', true)).toBe('busy');
+  });
+
+  it("a close with no prior control status is a real disconnect (app gone / refused) — the pre-fix behavior, unchanged", () => {
+    expect(closeStateAfter(null, true)).toBe('disconnected');
+  });
+
+  it('a close after a NON-busy control status (e.g. device_lost) still reads disconnected', () => {
+    expect(closeStateAfter('device_lost', true)).toBe('disconnected');
+  });
+
+  it('a client-initiated stop reads stopped regardless of the last control state', () => {
+    expect(closeStateAfter('busy', false)).toBe('stopped');
+    expect(closeStateAfter(null, false)).toBe('stopped');
   });
 });
