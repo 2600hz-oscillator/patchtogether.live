@@ -61,6 +61,19 @@ export type LaneRenderKind = 'legacy' | 'shell' | 'placeholder' | 'stub';
  *           owner must be able to pick + switch cameras in the new view.
  *     The carve-out fixes both with the mechanism already proven for videoOut,
  *     instead of inventing an interactive-static face seam.
+ *   - es9 — the HARDWARE-BRIDGE snowflake: cameraInput's problem in the audio
+ *     domain. Es9Card OWNS the native-bridge CONNECTION lifecycle (the bridge
+ *     Worker + SAB rings via Es9BridgeClient, handed to the engine through the
+ *     __es9Attach seam) and `onDestroy` disconnects it. Swapped for a tile the
+ *     card only mounts while the dock full-view is open, so collapsing the pane
+ *     KILLED the live hardware stream (owner report 2026-08-05: "ES-9 stops
+ *     sending data until the card is expanded again") — and a fresh `?shell=1`
+ *     load never connected at all. The HeadlessSourceHost route is NOT usable
+ *     here: the native app accepts a SINGLE client, so the expand-time double
+ *     mount (headless + dock full-view) that is benign for getUserMedia would
+ *     wedge the bridge on 'busy'. Same fix class as AudioIoSurface keeping the
+ *     pinned AudioinCard permanently mounted: the connection owner stays in the
+ *     lane, verbatim.
  * Everything else with a resolvable card swaps.
  */
 export const NON_SHELL_LANE_TYPES: ReadonlySet<string> = new Set<string>([
@@ -73,6 +86,7 @@ export const NON_SHELL_LANE_TYPES: ReadonlySet<string> = new Set<string>([
   'launchpadControl',
   'videoOut',
   'cameraInput',
+  'es9',
 ]);
 
 /** Inputs to the pure lane-render decision. */
