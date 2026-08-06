@@ -49,6 +49,7 @@
   import { createFullscreen } from './use-fullscreen.svelte';
   import { createFullFrame } from './use-full-frame.svelte';
   import { createPresent } from './use-present.svelte';
+  import { attachRenderLease } from './use-render-lease.svelte';
   import { fullscreenCanvasDims } from './fullscreen-canvas-dims';
   import { liveEngineAspect } from './video-card-aspect';
   import VideoCanvasContextMenu from './VideoCanvasContextMenu.svelte';
@@ -167,20 +168,14 @@
   // so the engine's sink-driven pull evaluation must keep the chain rendering
   // even if the card element itself is scrolled offscreen / demoted by the
   // Canvas visibility observer. The lease is refcounted and released the
-  // moment every presenting mode ends ($effect cleanup).
-  $effect(() => {
-    const presenting = fs.isFullscreen || present.isPresenting || fullFrame;
-    if (!presenting) return;
-    const e = engineCtx.get();
-    if (!e) return;
-    let ve: VideoEngine | undefined;
-    try {
-      ve = e.getDomain<VideoEngine>('video');
-    } catch {
-      return;
-    }
-    if (!ve) return;
-    return ve.acquireRenderLease(id);
+  // moment every presenting mode ends ($effect cleanup). Shared seam since
+  // 2026-08-06 (use-render-lease) — the four other presenting cards carried
+  // the same three modes with NO lease and froze their presented surface on
+  // scroll; ONE implementation means a sixth surface can't drift.
+  attachRenderLease({
+    engine: () => engineCtx.get(),
+    nodeId: () => id,
+    presenting: () => fs.isFullscreen || present.isPresenting || fullFrame,
   });
 
   // Canvas drawing-buffer dims. In the rack: the card's inner dims (card

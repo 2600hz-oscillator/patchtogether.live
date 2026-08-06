@@ -21,6 +21,7 @@
   import { createFullscreen } from './use-fullscreen.svelte';
   import { createPresent } from './use-present.svelte';
   import { createFullFrame } from './use-full-frame.svelte';
+  import { attachRenderLease } from './use-render-lease.svelte';
   import VideoCanvasContextMenu from './VideoCanvasContextMenu.svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
@@ -122,6 +123,14 @@
   });
   let cardEl: HTMLDivElement | null = $state(null);
   $effect(() => ff.attach(cardEl, () => fullFrame));
+
+  // Presenting-mode hard render lease — without it, scrolling the card
+  // off-screen freezes the presented surface (see use-render-lease).
+  attachRenderLease({
+    engine: () => engineCtx.get(),
+    nodeId: () => id,
+    presenting: () => fs.isFullscreen || present.isPresenting || fullFrame,
+  });
 
   // Canvas drawing-buffer dims. Rack: card inner dims. TRUE fullscreen: the
   // live ENGINE dims so fitRect fills the buffer edge-to-edge + object-fit:
