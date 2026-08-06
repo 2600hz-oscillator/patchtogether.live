@@ -58,7 +58,7 @@ async function installFakeMidiOut(page: Page): Promise<void> {
   await page.addInitScript({ content: fakeMidiOutScript });
 }
 
-test('midi-out-buddy: drops + card mounts with the 3 input handles, no console errors', async ({ page, errorWatch }) => {
+test('midi-out-buddy: drops + card mounts with EVERY declared input handle, no console errors', async ({ page, errorWatch }) => {
   await installFakeMidiOut(page);
   await page.goto('/rack');
   await page.waitForLoadState('networkidle');
@@ -66,9 +66,25 @@ test('midi-out-buddy: drops + card mounts with the 3 input handles, no console e
 
   const card = page.locator(`.svelte-flow__node-${TYPE}`);
   await expect(card).toBeVisible();
-  // Every declared input port renders a handle.
-  for (const portId of ['gate', 'pitch', 'velocity']) {
-    await expect(card.locator(`[data-handleid="${portId}"]`)).toHaveCount(1);
+  // Every declared input port renders a handle — the list is READ FROM THE
+  // LIVE DEF, not re-typed here. It used to be the literal trio
+  // ['gate','pitch','velocity'] under this same "every declared input"
+  // comment, so when the def gained its `poly` bus the assertion kept passing
+  // while checking 3 of 4 ports — a gate whose stated scope exceeded what it
+  // verified, and the card shipped without a poly jack anyway (caught only by
+  // modules.spec's handle COUNT). Deriving keeps the claim and the check the
+  // same thing.
+  const declaredInputs: string[] = await page.evaluate(() => {
+    const w = globalThis as unknown as {
+      __moduleSpecs?: { type: string; inputs?: { id: string }[] }[];
+    };
+    const spec = (w.__moduleSpecs ?? []).find((s) => s.type === 'midiOutBuddy');
+    return (spec?.inputs ?? []).map((p) => p.id);
+  });
+  expect(declaredInputs.length, 'def inputs resolved from __moduleSpecs').toBeGreaterThan(0);
+  expect(declaredInputs, 'the poly bus is a declared input').toContain('poly');
+  for (const portId of declaredInputs) {
+    await expect(card.locator(`[data-handleid="${portId}"]`), `${portId} handle`).toHaveCount(1);
   }
 });
 

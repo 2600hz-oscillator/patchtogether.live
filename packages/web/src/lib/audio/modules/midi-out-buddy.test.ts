@@ -41,6 +41,86 @@ describe('midiOutBuddyDef: module shape', () => {
     expect('channel' in DEFAULT_DATA).toBe(false);
     expect(DEFAULT_MIDI_OUT_CHANNEL).toBe(1);
   });
+
+  // OWNER REPORT 2026-08-06: a POLY clip lane with a 4-note column sent exactly
+  // ONE MIDI note. The lane tap wired `pitch{n}` (a 16-lane polyPitchGate
+  // chord) into the module's MONO `pitch` port, and `polyPitchGate → cv` pulls
+  // channel 0 — so three of the four voices were dropped at the cable, before
+  // any MIDI code ran. The module now exposes a real poly bus and the lane tap
+  // targets it.
+  it('exposes a polyPitchGate note bus (a chord cannot fit through a mono cv port)', () => {
+    const poly = midiOutBuddyDef.inputs.find((p) => p.id === 'poly');
+    expect(poly, 'midiOutBuddy must have a poly input').toBeTruthy();
+    expect(poly!.type).toBe('polyPitchGate');
+  });
+
+  it('the LANE TAP targets the poly bus — the wiring that actually carries the chord', () => {
+    const tap = midiOutBuddyDef.chainWiring?.laneTap;
+    expect(tap?.pitchIn, 'clip pitch{n} must land on the poly bus, not mono pitch').toBe('poly');
+    // The mono gate/velocity taps are unchanged: velocity has no poly channel,
+    // and the module's poly-precedence rule keeps the gate from double-firing.
+    expect(tap?.gateIn).toBe('gate');
+    expect(tap?.velIn).toBe('velocity');
+  });
+
+  it('keeps the mono trio so a one-voice source (envelope/LFO gate) still works', () => {
+    for (const id of ['gate', 'pitch', 'velocity']) {
+      expect(midiOutBuddyDef.inputs.some((p) => p.id === id), `${id} input`).toBe(true);
+    }
+  });
+});
+
+// Per-VOICE note tracking: the chord's voices start/stop independently, so each
+// lane owns its own tracker. This is the pure half of the poly tick — one
+// tracker per lane, driven by that lane's own gate.
+describe('poly voices: one INDEPENDENT tracker per lane', () => {
+  it('four lanes gate on together → four distinct Note Ons, one per voice', () => {
+    const lanes = [0, 1, 2, 3].map(() => createMidiNoteTracker());
+    const notes = [36, 38, 42, 46]; // a kick/snare/hat drum column
+    const sent = lanes.flatMap((t, i) => t.onGateRise(10, notes[i]!, 100));
+    // Four NoteOns on channel 10 (status 0x99), one per voice — not one note.
+    expect(sent.length).toBe(4);
+    expect(sent.map((m) => m[0])).toEqual([0x99, 0x99, 0x99, 0x99]);
+    expect(sent.map((m) => m[1])).toEqual(notes);
+    expect(lanes.map((t) => t.soundingNote)).toEqual(notes);
+  });
+
+  it('releasing ONE voice sends only that voice\'s Note Off — the chord keeps sounding', () => {
+    const lanes = [0, 1, 2, 3].map(() => createMidiNoteTracker());
+    const notes = [36, 38, 42, 46];
+    lanes.forEach((t, i) => t.onGateRise(10, notes[i]!, 100));
+    const off = lanes[1]!.onGateFall(10);
+    expect(off.length).toBe(1);
+    expect(off[0]![1], 'the released voice, not the root').toBe(38);
+    expect(lanes[1]!.soundingNote).toBeNull();
+    // The other three are untouched — the bug this independence prevents is a
+    // single shared tracker cutting the whole chord on one voice's release.
+    expect([lanes[0]!.soundingNote, lanes[2]!.soundingNote, lanes[3]!.soundingNote]).toEqual([36, 42, 46]);
+  });
+
+  // A DRUM TRIGGER is shorter than the ~25 ms scheduler tick, so it rises AND
+  // falls inside ONE poll: the lane ends the window LOW with no fall left to
+  // observe next tick. The tick must therefore close the note in the same pass
+  // (it now does — `if (!high) onGateFall` right after the rise). Pinned here as
+  // the byte sequence that pass must produce; before the fix a sub-tick pulse
+  // emitted NOTHING at all (the rise needed `high` to send).
+  it('a pulse that rises AND falls in one poll still emits BOTH Note On and Note Off', () => {
+    const t = createMidiNoteTracker();
+    const msgs = [...t.onGateRise(10, 36, 100), ...t.onGateFall(10)];
+    expect(msgs.length).toBe(2);
+    expect(msgs[0]![0], 'NoteOn on ch10').toBe(0x99);
+    expect(msgs[0]![1]).toBe(36);
+    expect(msgs[1]![0], 'NoteOff on ch10').toBe(0x89);
+    expect(msgs[1]![1], 'the same note the rise opened').toBe(36);
+    expect(t.soundingNote, 'nothing left hanging on the device').toBeNull();
+  });
+
+  it('a mono source still uses exactly one voice (lane 0) — no phantom notes', () => {
+    const lanes = Array.from({ length: 4 }, () => createMidiNoteTracker());
+    lanes[0]!.onGateRise(1, 60, 100);
+    expect(lanes.slice(1).every((t) => t.soundingNote === null)).toBe(true);
+    expect(lanes[0]!.soundingNote).toBe(60);
+  });
 });
 
 describe('pitchCvToMidiNote: V/oct → MIDI note (C4 = 0V = MIDI 60)', () => {
@@ -295,7 +375,7 @@ describe('(b) changing the MIDI channel leaves LANE MEMBERSHIP + CLIP ASSIGNMENT
     expect(effectiveMidiOutChannel(data)).toBe(LANE);
     expect(edgesBefore).toEqual(
       [
-        wcolEdgeId('clip', `pitch${LANE}`, MO, 'pitch'),
+        wcolEdgeId('clip', `pitch${LANE}`, MO, 'poly'),
         wcolEdgeId('clip', `gate${LANE}`, MO, 'gate'),
         wcolEdgeId('clip', `vel${LANE}`, MO, 'velocity'),
       ].sort(),

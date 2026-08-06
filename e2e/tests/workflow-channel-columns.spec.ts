@@ -733,8 +733,13 @@ test.describe('workflow channel columns', () => {
     // BEFORE — lane 3 membership, automation lane 2 (0-based), the reconciler's
     // channel-3 note taps, and a MIDI channel DEFAULTED to the lane's channel.
     expect(await laneOf(page, mo)).toBe(2);
+    // The clip's pitch lands on the POLY bus, not the mono `pitch` port: a POLY
+    // lane emits a whole chord on `pitch{n}`, and a mono target collapses it to
+    // lane 0 — which is how a 4-note drum column sent exactly ONE MIDI note
+    // (owner report 2026-08-06). gate/velocity stay mono; the module's
+    // poly-precedence rule keeps the mono gate from double-triggering.
     const taps = [
-      `${PINNED_CLIP}.pitch3->${mo}.pitch`,
+      `${PINNED_CLIP}.pitch3->${mo}.poly`,
       `${PINNED_CLIP}.gate3->${mo}.gate`,
       `${PINNED_CLIP}.vel3->${mo}.velocity`,
     ];

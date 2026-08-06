@@ -50,6 +50,7 @@ import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import { vOctToMidi, MIN_MIDI, MAX_MIDI } from '$lib/audio/note-entry';
 import { getSchedulerClock } from '$lib/audio/scheduler-clock';
+import { createPolyReceiver, POLY_CHANNEL_PAIRS } from '$lib/audio/poly';
 import { createRisingEdgeDetector } from './transport-helpers';
 
 // ---------------- Web MIDI minimal types (output side) ----------------
@@ -303,6 +304,14 @@ export const midiOutBuddyDef: AudioModuleDef = {
   // CV/gate inputs (audio-rate, tapped by analysers). No outputs — this is a
   // terminal MIDI sink (emits MIDI to external gear, not audio into the graph).
   inputs: [
+    // POLY note bus — the preferred input, and the ONLY one that can carry a
+    // chord. Each of the 16 lanes has its own pitch + gate, so a 4-note column
+    // out of a POLY clip lane becomes 4 simultaneous MIDI notes. Before this
+    // port existed the module had only the mono trio below, and a poly source
+    // patched into `pitch` collapsed to lane 0 (`polyPitchGate → cv` pulls
+    // channel 0) — so a 4-note drum column sent exactly ONE note (owner report,
+    // 2026-08-06).
+    { id: 'poly', type: 'polyPitchGate' },
     { id: 'gate', type: 'gate' },
     { id: 'pitch', type: 'cv' },
     { id: 'velocity', type: 'cv' },
@@ -314,14 +323,21 @@ export const midiOutBuddyDef: AudioModuleDef = {
   // Declarative lane-tap marker (INERT in Part A — consumed by the Part-B tap
   // planner). MIDI-OUT-BUDDY is a lane note-sink like CV Buddy: a dropped clip
   // lane can tap its pitch/gate/velocity into these inputs. See ChainWiring.
-  chainWiring: { role: 'noteSink', laneTap: { pitchIn: 'pitch', gateIn: 'gate', velIn: 'velocity' } },
+  // The lane tap targets the POLY bus, not the mono `pitch` port: a clip lane
+  // set to POLY emits a whole chord on `pitch{n}`, and a mono target collapses
+  // it to lane 0 (one note out of four — the owner's drum-trigger report).
+  // `gate`/`velocity` stay mono; the module's poly-precedence rule keeps the
+  // mono gate from double-triggering (see the tick).
+  chainWiring: { role: 'noteSink', laneTap: { pitchIn: 'poly', gateIn: 'gate', velIn: 'velocity' } },
 
   docs: {
     explanation:
       "The OUTPUT complement of MIDI-CV-BUDDY: it reads gate / pitch / velocity CV from inside the rack and SENDS MIDI notes out to a hardware synth on a chosen device + channel. Mental model: anything in the rack that produces a gate and a pitch — a SEQUENCER, an envelope, an LFO-driven gate — can now play an external instrument. On each rising edge of GATE it sends a MIDI Note On using the pitch + velocity sampled at that instant; on the falling edge it sends Note Off for whatever note it actually started, so a glide under a held gate never strands the wrong note. The output device and MIDI channel are discrete card settings saved in the patch (no audio-side knobs), and Web MIDI permission is requested only when you click Connect. Dropped into a workflow channel lane, CH DEFAULTS to that lane's channel — but it is an INDEPENDENT setting: changing it re-routes the MIDI only, leaving the module in its lane with its clip assignment intact, and the card turns violet with a CH ≠ LANE badge while the two differ (set CH back to the lane's number to follow it again). It defends against stuck notes: on dispose and on a device change it sends an all-notes-off plus an explicit Note Off for any tracked note.",
     inputs: {
+      poly:
+        "The POLYPHONIC note input and the preferred way to drive this module: the 16-lane polyPitchGate cable (a pitch AND a gate per lane) from a POLY clip lane, POLYSEQZ, MIDI LANE or another poly source. Every gated lane becomes its OWN MIDI note, so a 4-note chord column sends four simultaneous Note Ons — each tracked independently, so releasing one voice sends only that voice's Note Off. Velocity for every poly voice comes from the VELOCITY input (the poly cable carries no velocity). While ANY poly lane is gated the mono GATE input below is ignored, so a clip lane that patches both (the standard auto-wiring) never double-triggers.",
       gate:
-        "The note trigger: a rising edge sends a MIDI Note On (sampling PITCH and VELOCITY at that instant), and the following falling edge sends the matching Note Off. Patch a SEQUENCER's gate or an envelope's gate here to drive notes out to the external synth.",
+        "The MONO note trigger, for a one-voice source: a rising edge sends a MIDI Note On (sampling PITCH and VELOCITY at that instant), and the following falling edge sends the matching Note Off. Patch a SEQUENCER's gate or an envelope's gate here to drive notes out to the external synth. Ignored while the POLY input has any gated lane (poly takes precedence).",
       pitch:
         "The note pitch as 1V/octave CV (0V = C4 = MIDI 60), quantized to the nearest semitone to pick the MIDI note number. It is sampled at the moment of the gate's rising edge, so the note that gets sent is whatever pitch was present when the gate opened (later drift under a held gate doesn't re-trigger).",
       velocity:
@@ -353,6 +369,30 @@ export const midiOutBuddyDef: AudioModuleDef = {
     const pitchTap = makeTap();
     const velTap = makeTap();
     const gateEdge = createRisingEdgeDetector(GATE_THRESHOLD);
+
+    // ---------------- POLY note bus (polyPitchGate) ----------------
+    //
+    // One INDEPENDENT note tracker per voice lane: a chord's voices start and
+    // stop on their own gates, so releasing one voice must send only that
+    // voice's Note Off. Each lane taps the splitter through the SAME
+    // gain→analyser+silent-source rig the mono inputs use, so the poll is the
+    // identical code path (and reads real zeros while unpatched).
+    const polyRx = createPolyReceiver(ctx);
+    const polyLanes = Array.from({ length: POLY_CHANNEL_PAIRS }, (_, lane) => {
+      const gate = makeTap();
+      const pitch = makeTap();
+      const g = polyRx.laneOutput(lane, 'gate');
+      const p = polyRx.laneOutput(lane, 'pitch');
+      g.node.connect(gate.gain, g.output);
+      p.node.connect(pitch.gain, p.output);
+      return {
+        gate,
+        pitch,
+        tracker: createMidiNoteTracker(),
+        edge: createRisingEdgeDetector(GATE_THRESHOLD),
+        lastLevel: 0,
+      };
+    });
 
     // ---------------- Saved data ----------------
     // The MIDI-out channel is DERIVED, never a second copy of the lane scalar:
@@ -405,6 +445,9 @@ export const midiOutBuddyDef: AudioModuleDef = {
      *  device change / channel change so external gear never strands a note). */
     function panic(): void {
       safeSendAll(tracker.flush(channel));
+      // Every poly voice too — a chord must never strand notes on a device
+      // change / channel change / dispose.
+      for (const ln of polyLanes) safeSendAll(ln.tracker.flush(channel));
     }
 
     function snapshotState(): MidiOutBuddyCardState {
@@ -441,6 +484,56 @@ export const midiOutBuddyDef: AudioModuleDef = {
           Math.max(1, Math.ceil(elapsed * ctx.sampleRate)),
         );
         const start = gateTap.buf.length - newSamples;
+
+        // ---- POLY lanes first: each is its own voice, and any gated lane
+        // SUPPRESSES the mono path below (the documented poly/mono precedence
+        // that lets a clip lane wire both without double-triggering — see
+        // resolveClipWiring). Velocity is shared: the poly cable has none.
+        let polyActive = false;
+        for (const ln of polyLanes) {
+          ln.gate.analyser.getFloatTimeDomainData(ln.gate.buf as Float32Array<ArrayBuffer>);
+          const rises = ln.edge.scan(ln.gate.buf, start, ln.gate.buf.length);
+          let fell = false;
+          let prev = ln.lastLevel;
+          for (let i = start; i < ln.gate.buf.length; i++) {
+            const cur = ln.gate.buf[i] ?? 0;
+            if (prev >= GATE_THRESHOLD && cur < GATE_THRESHOLD) fell = true;
+            prev = cur;
+          }
+          ln.lastLevel = prev;
+          const high = ln.lastLevel >= GATE_THRESHOLD;
+          // ANY activity on the cable this tick — a level, a rise, or a fall —
+          // means the poly bus owns the output, so the mono path below is
+          // skipped. Keyed on the pulse, not just the end level: a trigger that
+          // rose AND fell inside one poll would otherwise leave polyActive
+          // false and let the mono gate fire the same hit a second time.
+          if (high || rises > 0 || fell) polyActive = true;
+          if (rises > 0) {
+            const note = pitchCvToMidiNote(latestSample(ln.pitch));
+            const vel = velocityCvToMidi(latestSample(velTap));
+            safeSendAll(ln.tracker.onGateRise(channel, note, vel));
+            // A pulse SHORTER than the ~25 ms scheduler tick rises and falls
+            // inside this one window, so it ends low with no fall left to
+            // observe next tick. Close it here or the Note On hangs on the
+            // external device until the next rise — and a DRUM TRIGGER (this
+            // module's headline use case) is exactly that short pulse.
+            if (!high) safeSendAll(ln.tracker.onGateFall(channel));
+          } else if (fell && ln.tracker.soundingNote !== null) {
+            safeSendAll(ln.tracker.onGateFall(channel));
+          }
+        }
+        if (polyActive) {
+          // A poly chord owns the output this tick. Release any note the MONO
+          // path is still holding so it can't hang under the chord, and skip
+          // the mono edge logic entirely.
+          if (tracker.soundingNote !== null) safeSendAll(tracker.onGateFall(channel));
+          // Keep the mono level tracker in step so the first tick after the
+          // chord ends doesn't read a stale edge.
+          gateTap.analyser.getFloatTimeDomainData(gateTap.buf as Float32Array<ArrayBuffer>);
+          lastGateLevel = gateTap.buf[gateTap.buf.length - 1] ?? 0;
+          notify();
+          return;
+        }
 
         // Rising edges → NoteOn. Use the detector for accurate cross-tick rise
         // counting; for each rise, snapshot pitch + velocity at that instant.
@@ -509,7 +602,11 @@ export const midiOutBuddyDef: AudioModuleDef = {
           // NoteOff goes nowhere if the device is gone — that's fine; it stops
           // us tracking a phantom note across a re-plug).
           if (selectedDeviceId && !access?.outputs.has(selectedDeviceId)) {
-            safeSendAll(tracker.onGateFall(channel));
+            // panic() clears the mono tracker AND every poly voice. The sends
+            // go nowhere (the device is gone) — the point is that no tracker is
+            // left believing it holds a note, which would suppress the next
+            // Note On for that voice when the device comes back.
+            panic();
           } else if (!selectedDeviceId) {
             selectedDeviceId = pickDefaultDevice();
           }
@@ -560,6 +657,7 @@ export const midiOutBuddyDef: AudioModuleDef = {
     return {
       domain: 'audio',
       inputs: new Map<string, { node: AudioNode; input: number; param?: AudioParam }>([
+        ['poly', { node: polyRx.input, input: 0 }],
         ['gate', { node: gateTap.gain, input: 0 }],
         ['pitch', { node: pitchTap.gain, input: 0 }],
         ['velocity', { node: velTap.gain, input: 0 }],
@@ -586,12 +684,14 @@ export const midiOutBuddyDef: AudioModuleDef = {
           access = null;
         }
         subscriber = null;
-        for (const tap of [gateTap, pitchTap, velTap]) {
+        const polyTaps = polyLanes.flatMap((ln) => [ln.gate, ln.pitch]);
+        for (const tap of [gateTap, pitchTap, velTap, ...polyTaps]) {
           try { tap.silence.stop(); } catch { /* already stopped */ }
           tap.silence.disconnect();
           tap.gain.disconnect();
           tap.analyser.disconnect();
         }
+        polyRx.dispose();
       },
     };
   },
