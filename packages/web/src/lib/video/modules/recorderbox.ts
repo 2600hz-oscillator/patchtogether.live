@@ -400,11 +400,15 @@ export const recorderboxDef: VideoModuleDef = {
         g.viewport(0, 0, ctx.res.width, ctx.res.height);
         g.useProgram(program);
         g.uniform1f(uHasInput, inputTex ? 1.0 : 0.0);
-        if (inputTex) {
-          g.activeTexture(g.TEXTURE0);
-          g.bindTexture(g.TEXTURE_2D, inputTex);
-          g.uniform1i(uTex, 0);
-        }
+        // Clear unit 0 when unpatched — see the identical note in video-out.ts.
+        // `uHasInput` gates the shader's USE of the sample, not GL's validation
+        // of the binding, so a stale texture left on unit 0 (possibly this
+        // node's own FBO attachment) is a feedback loop and every draw is
+        // rejected. Measured ~256 GL_INVALID_OPERATION in 3.5 s from an
+        // unpatched RECORDERBOX on a default workflow rack.
+        g.activeTexture(g.TEXTURE0);
+        g.bindTexture(g.TEXTURE_2D, inputTex ?? null);
+        g.uniform1i(uTex, 0);
         ctx.drawFullscreenQuad();
       },
       dispose() {
