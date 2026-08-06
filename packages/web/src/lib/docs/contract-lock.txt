@@ -1736,6 +1736,7 @@ midiLane out velocity_cv cv
 midiOutBuddy meta domain=audio
 midiOutBuddy in gate gate
 midiOutBuddy in pitch cv
+midiOutBuddy in poly polyPitchGate
 midiOutBuddy in velocity cv
 milkdrop meta domain=video
 milkdrop in audio audio
