@@ -125,11 +125,20 @@ export const videoOutDef: VideoModuleDef = {
         g.viewport(0, 0, ctx.res.width, ctx.res.height);
         g.useProgram(program);
         g.uniform1f(uHasInput, inputTex ? 1.0 : 0.0);
-        if (inputTex) {
-          g.activeTexture(g.TEXTURE0);
-          g.bindTexture(g.TEXTURE_2D, inputTex);
-          g.uniform1i(uTex, 0);
-        }
+        // THE UNPATCHED CASE MUST CLEAR UNIT 0, not just skip the bind.
+        // `uHasInput` only gates whether the shader USES the sample; the
+        // sampler is still statically present, so GL validates the binding on
+        // every draw regardless of the branch taken. Leaving unit 0 holding
+        // whatever the previous node bound — which can be THIS node's own FBO
+        // colour attachment (blitOutputToDrawingBuffer binds it) — is a
+        // framebuffer/texture FEEDBACK LOOP, and GL rejects the draw with
+        // GL_INVALID_OPERATION. Measured on a fresh workflow rack: ~250 errors
+        // in 3.5 s from an OUTPUT with nothing patched in (the console flood the
+        // owner reported 2026-08-06). Binding null makes the sample read black
+        // and the loop impossible.
+        g.activeTexture(g.TEXTURE0);
+        g.bindTexture(g.TEXTURE_2D, inputTex ?? null);
+        g.uniform1i(uTex, 0);
         ctx.drawFullscreenQuad();
       },
       dispose() {
