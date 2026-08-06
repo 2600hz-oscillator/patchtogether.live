@@ -502,12 +502,23 @@ export const midiOutBuddyDef: AudioModuleDef = {
           }
           ln.lastLevel = prev;
           const high = ln.lastLevel >= GATE_THRESHOLD;
-          if (high) polyActive = true;
-          if (rises > 0 && high) {
+          // ANY activity on the cable this tick — a level, a rise, or a fall —
+          // means the poly bus owns the output, so the mono path below is
+          // skipped. Keyed on the pulse, not just the end level: a trigger that
+          // rose AND fell inside one poll would otherwise leave polyActive
+          // false and let the mono gate fire the same hit a second time.
+          if (high || rises > 0 || fell) polyActive = true;
+          if (rises > 0) {
             const note = pitchCvToMidiNote(latestSample(ln.pitch));
             const vel = velocityCvToMidi(latestSample(velTap));
             safeSendAll(ln.tracker.onGateRise(channel, note, vel));
-          } else if ((fell || rises > 0) && !high && ln.tracker.soundingNote !== null) {
+            // A pulse SHORTER than the ~25 ms scheduler tick rises and falls
+            // inside this one window, so it ends low with no fall left to
+            // observe next tick. Close it here or the Note On hangs on the
+            // external device until the next rise — and a DRUM TRIGGER (this
+            // module's headline use case) is exactly that short pulse.
+            if (!high) safeSendAll(ln.tracker.onGateFall(channel));
+          } else if (fell && ln.tracker.soundingNote !== null) {
             safeSendAll(ln.tracker.onGateFall(channel));
           }
         }
@@ -591,7 +602,11 @@ export const midiOutBuddyDef: AudioModuleDef = {
           // NoteOff goes nowhere if the device is gone — that's fine; it stops
           // us tracking a phantom note across a re-plug).
           if (selectedDeviceId && !access?.outputs.has(selectedDeviceId)) {
-            safeSendAll(tracker.onGateFall(channel));
+            // panic() clears the mono tracker AND every poly voice. The sends
+            // go nowhere (the device is gone) — the point is that no tracker is
+            // left believing it holds a note, which would suppress the next
+            // Note On for that voice when the device comes back.
+            panic();
           } else if (!selectedDeviceId) {
             selectedDeviceId = pickDefaultDevice();
           }

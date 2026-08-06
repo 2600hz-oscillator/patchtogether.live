@@ -98,6 +98,23 @@ describe('poly voices: one INDEPENDENT tracker per lane', () => {
     expect([lanes[0]!.soundingNote, lanes[2]!.soundingNote, lanes[3]!.soundingNote]).toEqual([36, 42, 46]);
   });
 
+  // A DRUM TRIGGER is shorter than the ~25 ms scheduler tick, so it rises AND
+  // falls inside ONE poll: the lane ends the window LOW with no fall left to
+  // observe next tick. The tick must therefore close the note in the same pass
+  // (it now does — `if (!high) onGateFall` right after the rise). Pinned here as
+  // the byte sequence that pass must produce; before the fix a sub-tick pulse
+  // emitted NOTHING at all (the rise needed `high` to send).
+  it('a pulse that rises AND falls in one poll still emits BOTH Note On and Note Off', () => {
+    const t = createMidiNoteTracker();
+    const msgs = [...t.onGateRise(10, 36, 100), ...t.onGateFall(10)];
+    expect(msgs.length).toBe(2);
+    expect(msgs[0]![0], 'NoteOn on ch10').toBe(0x99);
+    expect(msgs[0]![1]).toBe(36);
+    expect(msgs[1]![0], 'NoteOff on ch10').toBe(0x89);
+    expect(msgs[1]![1], 'the same note the rise opened').toBe(36);
+    expect(t.soundingNote, 'nothing left hanging on the device').toBeNull();
+  });
+
   it('a mono source still uses exactly one voice (lane 0) — no phantom notes', () => {
     const lanes = Array.from({ length: 4 }, () => createMidiNoteTracker());
     lanes[0]!.onGateRise(1, 60, 100);
