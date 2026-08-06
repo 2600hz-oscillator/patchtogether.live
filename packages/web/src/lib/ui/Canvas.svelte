@@ -120,6 +120,7 @@
     mergeMidiBindings,
     resolveMidiDeviceId,
     MIDI_DEVICE_NODE_TYPES,
+    MIDI_OUTPUT_DEVICE_NODE_TYPES,
     type ConnectedMidiInput,
   } from '$lib/graph/performance-bundle';
   import {
@@ -3000,18 +3001,30 @@
   /** Resolve a MIDIInput.id → {name, manufacturer} from the live MIDIAccess,
    *  if one has been granted. Best-effort: returns null when Web MIDI isn't
    *  available / not yet granted (device metadata is then simply omitted). */
-  async function resolveMidiDevices(): Promise<(id: string) => { name: string; manufacturer?: string } | null> {
+  async function resolveMidiDevices(): Promise<{
+    input: (id: string) => { name: string; manufacturer?: string } | null;
+    output: (id: string) => { name: string; manufacturer?: string } | null;
+  }> {
+    const none = { input: () => null, output: () => null };
     try {
-      const nav = navigator as unknown as { requestMIDIAccess?: (o?: unknown) => Promise<{ inputs: Map<string, { name?: string | null; manufacturer?: string | null }> }> };
-      if (typeof nav.requestMIDIAccess !== 'function') return () => null;
-      const access = await nav.requestMIDIAccess({ sysex: false });
-      return (id: string) => {
-        const inp = access.inputs.get(id);
-        if (!inp || !inp.name) return null;
-        return { name: inp.name, manufacturer: inp.manufacturer ?? undefined };
+      type Dev = { name?: string | null; manufacturer?: string | null };
+      const nav = navigator as unknown as {
+        requestMIDIAccess?: (o?: unknown) => Promise<{ inputs: Map<string, Dev>; outputs: Map<string, Dev> }>;
       };
+      if (typeof nav.requestMIDIAccess !== 'function') return none;
+      const access = await nav.requestMIDIAccess({ sysex: false });
+      const from = (m: Map<string, Dev>) => (id: string) => {
+        const d = m.get(id);
+        if (!d || !d.name) return null;
+        return { name: d.name, manufacturer: d.manufacturer ?? undefined };
+      };
+      // BOTH halves of the access: input types (midiCvBuddy/midiLane/midiclock)
+      // resolve against .inputs; midiOutBuddy against .outputs. Resolving an
+      // output id against .inputs is why an all-output rig used to export
+      // midiDevices: [] and load with no auto-bind (owner staircase, 2026-08-06).
+      return { input: from(access.inputs), output: from(access.outputs) };
     } catch {
-      return () => null;
+      return none;
     }
   }
 
@@ -3150,7 +3163,8 @@
       envelope,
       nodes,
       midiBindings: exportMidiBindings(),
-      resolveMidiDevice: resolveMidi,
+      resolveMidiDevice: resolveMidi.input,
+      resolveMidiOutputDevice: resolveMidi.output,
       resolveGamepad,
     });
     // Map each resolved video SLOT to the handleId now stamped on its node, so
@@ -3296,17 +3310,21 @@
     midiDevices: { nodeId: string; deviceName: string; deviceId?: string }[],
   ): Promise<void> {
     if (!midiDevices || midiDevices.length === 0) return; // no mappings → no prompt
-    // The list of currently-connected inputs (id + name) for resolution. This
-    // ALSO performs the one-time requestMIDIAccess (gated behind the load
-    // gesture). On denial / unsupported it returns [] and we bail.
-    let connected: ConnectedMidiInput[];
+    // The lists of currently-connected inputs AND outputs (id + name) for
+    // resolution — input-type nodes resolve against inputs, midiOutBuddy
+    // against outputs. This ALSO performs the one-time requestMIDIAccess
+    // (gated behind the load gesture). On denial / unsupported we bail.
+    let connectedIns: ConnectedMidiInput[];
+    let connectedOuts: ConnectedMidiInput[];
     try {
+      type Dev = { name?: string | null };
       const nav = navigator as unknown as {
-        requestMIDIAccess?: (o?: unknown) => Promise<{ inputs: Map<string, { name?: string | null }> }>;
+        requestMIDIAccess?: (o?: unknown) => Promise<{ inputs: Map<string, Dev>; outputs: Map<string, Dev> }>;
       };
       if (typeof nav.requestMIDIAccess !== 'function') return; // Web MIDI unsupported
       const access = await nav.requestMIDIAccess({ sysex: false });
-      connected = [...access.inputs].map(([id, inp]) => ({ id, name: inp.name ?? id }));
+      connectedIns = [...access.inputs].map(([id, inp]) => ({ id, name: inp.name ?? id }));
+      connectedOuts = [...access.outputs].map(([id, out]) => ({ id, name: out.name ?? id }));
     } catch {
       // Permission denied / hardware error — don't hang; the cards keep their
       // saved selection and the user can still click "Connect MIDI…" per card.
@@ -3317,7 +3335,10 @@
     if (!e) return;
     for (const dev of midiDevices) {
       const node = patch.nodes[dev.nodeId];
-      if (!node || !(MIDI_DEVICE_NODE_TYPES as readonly string[]).includes(node.type)) continue;
+      if (!node) continue;
+      const isOutputType = (MIDI_OUTPUT_DEVICE_NODE_TYPES as readonly string[]).includes(node.type);
+      if (!isOutputType && !(MIDI_DEVICE_NODE_TYPES as readonly string[]).includes(node.type)) continue;
+      const connected = isOutputType ? connectedOuts : connectedIns;
       const api = e.read(node, 'card-api') as
         | { connect: () => Promise<boolean>; selectDevice: (id: string | null) => void }
         | undefined;

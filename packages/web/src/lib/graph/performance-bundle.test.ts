@@ -131,6 +131,50 @@ describe('collectMidiDevices', () => {
     const nodes = { m1: { id: 'm1', type: 'midi-cv-buddy', data: { lastDeviceId: 'x' } } };
     expect(collectMidiDevices(nodes, () => ({ name: 'X' }))).toEqual([]);
   });
+
+  // FIX (owner staircase, 2026-08-06): midiOutBuddy stores its OUTPUT device on
+  // the same node.data.lastDeviceId convention but was in NEITHER roster, and
+  // the export resolver only read access.inputs — so an all-output rig (rack →
+  // hardware synth) exported `midiDevices: []` and the loader never requested
+  // MIDI access at all. It resolves through the OUTPUT resolver, not the input.
+  it('collects midiOutBuddy through the OUTPUT resolver', () => {
+    const nodes = {
+      out1: { id: 'out1', type: 'midiOutBuddy', data: { lastDeviceId: 'out-id-7' } },
+    };
+    const out = collectMidiDevices(
+      nodes,
+      () => {
+        throw new Error('output-type node must NOT resolve against inputs');
+      },
+      (id) => (id === 'out-id-7' ? { name: 'Deluge OUT' } : null),
+    );
+    expect(out).toEqual([
+      { nodeId: 'out1', deviceName: 'Deluge OUT', manufacturer: undefined, deviceId: 'out-id-7' },
+    ]);
+  });
+
+  it('input types never resolve through the output resolver (and vice versa)', () => {
+    const nodes = {
+      lane: { id: 'lane', type: 'midiLane', data: { lastDeviceId: 'in-1' } },
+      out1: { id: 'out1', type: 'midiOutBuddy', data: { lastDeviceId: 'out-1' } },
+    };
+    const out = collectMidiDevices(
+      nodes,
+      (id) => (id === 'in-1' ? { name: 'Keystep' } : null),
+      (id) => (id === 'out-1' ? { name: 'Deluge OUT' } : null),
+    );
+    expect(out).toEqual([
+      { nodeId: 'lane', deviceName: 'Keystep', manufacturer: undefined, deviceId: 'in-1' },
+      { nodeId: 'out1', deviceName: 'Deluge OUT', manufacturer: undefined, deviceId: 'out-1' },
+    ]);
+  });
+
+  // Back-compat: a caller that never passes the output resolver (older code)
+  // keeps the exact pre-fix behavior — output devices are skipped, not thrown.
+  it('omitted output resolver skips midiOutBuddy without throwing', () => {
+    const nodes = { out1: { id: 'out1', type: 'midiOutBuddy', data: { lastDeviceId: 'x' } } };
+    expect(collectMidiDevices(nodes, () => ({ name: 'X' }))).toEqual([]);
+  });
 });
 
 describe('resolveMidiDeviceId (load-side re-bind)', () => {

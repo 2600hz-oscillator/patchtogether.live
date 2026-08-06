@@ -168,24 +168,40 @@ export function collectAssetRefs(nodes: NodeMap): PerformanceAssetRef[] {
  *  device selections silently vanished.) */
 export const MIDI_DEVICE_NODE_TYPES = ['midiCvBuddy', 'midiLane', 'midiclock'] as const;
 
+/** Module types that store a MIDI OUTPUT selection on `node.data.lastDeviceId`
+ *  (MIDIOutput.id) with the same `card-api` connect()/selectDevice() shape.
+ *  Kept as a SEPARATE roster because the id resolves against the OTHER half of
+ *  MIDIAccess (`access.outputs`, not `.inputs`) — on both the export and the
+ *  auto-bind side. midiOutBuddy was in NEITHER roster before 2026-08-06, so an
+ *  all-output rig (rack → hardware synth) exported `midiDevices: []` and the
+ *  perf-zip loader never even requested MIDI access: the owner's staircase
+ *  ("2nd load can't connect, 3rd load already connected") was the site
+ *  permission being granted manually in between, not the auto-bind working. */
+export const MIDI_OUTPUT_DEVICE_NODE_TYPES = ['midiOutBuddy'] as const;
+
 /**
- * Collect MIDI device selections (MIDI-CV-BUDDY / MIDI LANE / MIDICLOCK) keyed
- * by device NAME. The node's `data.lastDeviceId` is the unstable MIDIInput.id;
- * the caller resolves it to a name via the supplied resolver (the live
- * MIDIAccess input map). The unstable id rides along as `deviceId` for the
+ * Collect MIDI device selections keyed by device NAME. The node's
+ * `data.lastDeviceId` is the unstable MIDIInput/MIDIOutput.id; the caller
+ * resolves it to a name via the supplied resolvers (the live MIDIAccess input
+ * and output maps — INPUT types resolve through `resolve`, OUTPUT types
+ * through `resolveOutput`). The unstable id rides along as `deviceId` for the
  * same-machine fast path. Nodes whose saved id doesn't resolve to a name are
  * skipped (device not connected at save time — nothing stable to key by).
  */
 export function collectMidiDevices(
   nodes: NodeMap,
   resolve: (deviceId: string) => { name: string; manufacturer?: string } | null,
+  resolveOutput: (deviceId: string) => { name: string; manufacturer?: string } | null = () => null,
 ): MidiDeviceBinding[] {
   const out: MidiDeviceBinding[] = [];
   for (const node of Object.values(nodes)) {
-    if (!node || !(MIDI_DEVICE_NODE_TYPES as readonly string[]).includes(node.type)) continue;
+    if (!node) continue;
+    const isInput = (MIDI_DEVICE_NODE_TYPES as readonly string[]).includes(node.type);
+    const isOutput = (MIDI_OUTPUT_DEVICE_NODE_TYPES as readonly string[]).includes(node.type);
+    if (!isInput && !isOutput) continue;
     const lastId = (node.data as { lastDeviceId?: unknown } | undefined)?.lastDeviceId;
     if (typeof lastId !== 'string' || lastId.length === 0) continue;
-    const dev = resolve(lastId);
+    const dev = isInput ? resolve(lastId) : resolveOutput(lastId);
     if (!dev || !dev.name) continue;
     out.push({ nodeId: node.id, deviceName: dev.name, manufacturer: dev.manufacturer, deviceId: lastId });
   }
@@ -221,6 +237,10 @@ export interface MakeBundleInput {
   midiBindings: MidiBindingExport[];
   /** MIDIInput.id → name resolver (from the live MIDIAccess). */
   resolveMidiDevice: (deviceId: string) => { name: string; manufacturer?: string } | null;
+  /** MIDIOutput.id → name resolver (for MIDI_OUTPUT_DEVICE_NODE_TYPES —
+   *  midiOutBuddy). Optional for back-compat: an older caller that omits it
+   *  simply keeps the pre-2026-08-06 behavior of skipping output devices. */
+  resolveMidiOutputDevice?: (deviceId: string) => { name: string; manufacturer?: string } | null;
   /** padIndex (slot) → connected gamepad.id resolver. */
   resolveGamepad: (padIndex: number) => string | null;
 }
@@ -237,7 +257,11 @@ export function makePerformanceBundle(input: MakeBundleInput): PerformanceBundle
     patch: input.envelope,
     assets: collectAssetRefs(input.nodes),
     midiBindings: input.midiBindings,
-    midiDevices: collectMidiDevices(input.nodes, input.resolveMidiDevice),
+    midiDevices: collectMidiDevices(
+      input.nodes,
+      input.resolveMidiDevice,
+      input.resolveMidiOutputDevice ?? (() => null),
+    ),
     gamepadBindings: collectGamepadBindings(input.nodes, input.resolveGamepad),
   };
 }
