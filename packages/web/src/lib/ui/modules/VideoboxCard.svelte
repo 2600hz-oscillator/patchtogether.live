@@ -31,6 +31,7 @@
   import { startCornerResize } from './card-resize';
   import { createFullscreen } from './use-fullscreen.svelte';
   import { createFullFrame } from './use-full-frame.svelte';
+  import { attachRenderLease } from './use-render-lease.svelte';
   import VideoCanvasContextMenu from './VideoCanvasContextMenu.svelte';
   import type { VideoEngine } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
@@ -652,6 +653,16 @@
   });
   let cardEl: HTMLDivElement | null = $state(null);
   $effect(() => ff.attach(cardEl, () => fullFrame));
+
+  // Presenting-mode hard render lease — VIDEOBOX has no present popup, but
+  // fullscreen / full-frame are still surfaces that outlive the card's
+  // viewport rect: scrolling a full-frame wall-of-TVs card off-screen froze
+  // its engine node the same way (see use-render-lease).
+  attachRenderLease({
+    engine: () => engineCtx.get(),
+    nodeId: () => id,
+    presenting: () => fs.isFullscreen || fullFrame,
+  });
 
   // Right-click-on-preview context menu (Fullscreen / Full Frame).
   let ctxOpen = $state(false);

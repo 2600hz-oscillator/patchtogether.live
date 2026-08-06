@@ -174,6 +174,82 @@ test.describe('video pull evaluation — unwatched chains cost zero', () => {
     expect(nonBlack, 'watched OUTPUT stays live (non-black)').toBeGreaterThan(0.02);
   });
 
+  test('a PRESENTING card scrolled off-screen keeps its whole chain drawing (hard lease — owner projector freeze, 2026-08-05)', async ({ page, errorWatch }) => {
+    test.setTimeout(60_000);
+    // The owner scenario: backdraft presenting on a projector (full-frame is
+    // the same `presenting` seam as the present popup, and deterministic to
+    // drive headlessly via its Y.Doc-synced data.fullFrame). Before the
+    // use-render-lease fix only VideoOutCard held the lease: measured on
+    // main, a presenting backdraft drew 1:1 on-screen (+80/+80) and exactly
+    // ZERO frames once scrolled off — the projector froze on the last frame.
+    await page.goto('/rack');
+    await page.waitForLoadState('networkidle');
+
+    await spawnPatch(page, [
+      { id: 'bd1', type: 'backdraft', position: { x: 120, y: 120 }, domain: 'video' as const },
+    ]);
+    // Enter the presenting mode (full-frame) the way the card itself does.
+    await page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
+        __ydoc: { transact: (fn: () => void) => void };
+      };
+      w.__ydoc.transact(() => {
+        const n = w.__patch.nodes['bd1'];
+        if (n) { if (!n.data) n.data = {}; n.data.fullFrame = true; }
+      });
+    });
+
+    // The lease appears (the card's attachRenderLease effect).
+    await expect
+      .poll(async () => {
+        const p2 = await probe(page, ['bd1']);
+        void p2;
+        return page.evaluate(() => {
+          const w = globalThis as unknown as {
+            __engine: () => { getDomain: (d: string) => { pullStats: () => { leased: string[] } } };
+          };
+          return w.__engine().getDomain('video').pullStats().leased;
+        });
+      }, { message: 'presenting backdraft holds a render lease', timeout: 10_000 })
+      .toContain('bd1');
+
+    // Scroll it far off-screen (the freeze trigger) and give the observer +
+    // watch TTL time to decay — the lease must keep it a root regardless.
+    await moveNodesFar(page, ['bd1']);
+    const s1 = await probe(page, ['bd1']);
+    await expect
+      .poll(async () => (await probe(page, ['bd1'])).frames - s1.frames, {
+        message: 'engine advanced ≥60 frames after the move (decay window included)',
+        timeout: 20_000,
+      })
+      .toBeGreaterThanOrEqual(60);
+    const s2 = await probe(page, ['bd1']);
+    const engineDelta = s2.frames - s1.frames;
+    const bdDelta = s2.drawn.bd1! - s1.drawn.bd1!;
+    // Full cadence, not merely non-zero: the presented surface must stay LIVE.
+    expect(bdDelta, `presenting backdraft drew ${bdDelta}/${engineDelta} frames while off-screen`).toBe(engineDelta);
+
+    // Negative control (the instrument still measures what it claims): drop
+    // the presenting mode and the SAME node must decay back to skipped.
+    await page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
+        __ydoc: { transact: (fn: () => void) => void };
+      };
+      w.__ydoc.transact(() => {
+        const n = w.__patch.nodes['bd1'];
+        if (n?.data) n.data.fullFrame = false;
+      });
+    });
+    await expect
+      .poll(async () => (await probe(page, ['bd1'])).skipped.includes('bd1'), {
+        message: 'lease released on mode exit → off-screen node decays to skipped',
+        timeout: 20_000,
+      })
+      .toBe(true);
+  });
+
   test('kill switch (__videoPullEval=false) restores push evaluation for the same patch', async ({ page, errorWatch }) => {
     test.setTimeout(60_000);
 

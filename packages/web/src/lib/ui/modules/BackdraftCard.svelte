@@ -76,6 +76,7 @@
   import { setNodeParam, mutateNode } from '$lib/graph/mutate';
   import { createFullscreen } from './use-fullscreen.svelte';
   import { createFullFrame } from './use-full-frame.svelte';
+  import { attachRenderLease } from './use-render-lease.svelte';
   import { createPresent } from './use-present.svelte';
   import { fullscreenCanvasDims } from './fullscreen-canvas-dims';
   import { liveEngineAspect } from './video-card-aspect';
@@ -349,6 +350,13 @@
 
   /** The card is showing video (and therefore blitting) in exactly these modes. */
   let expanded = $derived(fs.isFullscreen || present.isPresenting || fullFrame);
+
+  // Presenting = a surface that outlives the card's viewport rect (projector
+  // popup / fullscreen / full-frame). Without the hard lease, scrolling this
+  // card off-screen let pull-eval freeze the node — and the projector with it
+  // (owner report 2026-08-05: backdraft → present froze on scroll). Shared
+  // seam; see use-render-lease.
+  attachRenderLease({ engine: () => engineCtx.get(), nodeId: () => id, presenting: () => expanded });
 
   // Drawing-buffer dims. Expanded: the live ENGINE dims, so fitRect fills the
   // buffer edge-to-edge and object-fit:contain height-fills the screen (side
