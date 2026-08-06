@@ -376,6 +376,47 @@ describe('Unit R — note editor placement (8 pitch × 8 step, bottom-origin)', 
   });
 });
 
+describe('Unit R — CUSTOM SCALE (the Launchpad RESPECTS the lane filter, never edits it)', () => {
+  // The owner's 4 drum rows. `rows` is the CARD's high→low list; the Launchpad's
+  // pitch y is BOTTOM-origin, so y=0 is the LOWEST member.
+  const DRUM_ROWS = [46, 42, 38, 36];
+
+  it('the 8 pitch pads become the 4 scale rows bottom-up; the top 4 are DEAD', () => {
+    const clip: NoteClipRecord = { ...defaultNoteClip(), lengthSteps: 16 };
+    expect(editPadToNote(clip, 0, 0, { rows: DRUM_ROWS })).toEqual({ step: 0, midi: 36 });
+    expect(editPadToNote(clip, 3, 1, { rows: DRUM_ROWS })).toEqual({ step: 3, midi: 38 });
+    expect(editPadToNote(clip, 0, 3, { rows: DRUM_ROWS })).toEqual({ step: 0, midi: 46 });
+    for (const y of [4, 5, 6, 7]) {
+      expect(editPadToNote(clip, 0, y, { rows: DRUM_ROWS }), `y=${y} past the scale`).toBeNull();
+    }
+    // NEGATIVE CONTROL — without `rows` those pads are live on the clip's key.
+    for (const y of [4, 5, 6, 7]) expect(editPadToNote(clip, 0, y)).not.toBeNull();
+    expect(editPadToNote(clip, 0, 0)!.midi).toBe(clip.root); // unchanged full-key path
+  });
+
+  it('the LED frame paints the scale rows and leaves the pads past the end dark', () => {
+    let clip: NoteClipRecord = { ...defaultNoteClip(), lengthSteps: 16 };
+    clip = toggleNoteAt(clip, 2, 38); // a note on the 2nd drum row (y=1)
+    const f = computeREditFrame(clip, { rows: DRUM_ROWS, playheadStep: -1 });
+    expect(eqRgb(at(f, padNote(2, 1)), RGB_WHITE), '100% note on the filtered row').toBe(true);
+    for (const y of [4, 5, 6, 7]) {
+      expect(eqRgb(at(f, padNote(0, y)), RGB_OFF), `y=${y} dark past the scale`).toBe(true);
+    }
+    // The note is INVISIBLE on the unfiltered frame at that y — proof the frame
+    // really re-mapped its pitch axis rather than coincidentally matching.
+    const unfiltered = computeREditFrame(clip, { playheadStep: -1 });
+    expect(eqRgb(at(unfiltered, padNote(2, 1)), RGB_WHITE)).toBe(false);
+  });
+
+  it('a 10-row scale pages with rowOffset over the FILTERED list', () => {
+    const clip: NoteClipRecord = { ...defaultNoteClip(), lengthSteps: 16 };
+    const ten = [72, 70, 68, 67, 65, 63, 62, 60, 58, 56]; // high → low
+    expect(editPadToNote(clip, 0, 0, { rows: ten })!.midi).toBe(56); // lowest first
+    expect(editPadToNote(clip, 0, 7, { rows: ten })!.midi).toBe(68); // 8 shown
+    expect(editPadToNote(clip, 0, 7, { rowOffset: 2, rows: ten })!.midi).toBe(72); // scrolled
+  });
+});
+
 describe('Unit R — editor LED frame (note colours = PROBABILITY + playhead)', () => {
   it('a placed note paints by PROBABILITY (white at 100%); the playhead boosts it', () => {
     let clip: NoteClipRecord = defaultNoteClip();

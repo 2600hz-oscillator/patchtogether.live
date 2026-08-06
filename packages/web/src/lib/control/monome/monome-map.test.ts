@@ -197,6 +197,23 @@ describe('edit-mode note grid (7 rows × 16 steps) + function row', () => {
     expect(editPadToNote(c, 0, NOTE_ROWS)).toBeNull(); // function row, not a note
     expect(editPadToNote(c, 10, 0)).toBeNull(); // beyond an 8-step clip
   });
+  it('CUSTOM SCALE — the monome grid shows ONLY the lane\'s rows, bottom-up, rest DEAD', () => {
+    // The owner's 4 drum rows. `rows` is the CARD's high→low list; the monome's
+    // display row NOTE_ROWS-1 is the BOTTOM = the LOWEST member.
+    const rows = [46, 42, 38, 36];
+    const c = clip({ lengthSteps: 8 });
+    expect(editRowToMidi(c, NOTE_ROWS - 1, 0, rows)).toBe(36); // bottom row  = lowest
+    expect(editRowToMidi(c, NOTE_ROWS - 4, 0, rows)).toBe(46); // 4th up      = highest
+    expect(editPadToNote(c, 5, NOTE_ROWS - 1, 0, 0, rows)).toEqual({ step: 5, midi: 36 });
+    // The monome has 7 note rows; a 4-row scale leaves the top 3 inert.
+    for (const y of [0, 1, 2]) expect(editPadToNote(c, 0, y, 0, 0, rows)).toBeNull();
+    // …and those rows paint DARK rather than repeating the top note.
+    const f = computeEditLeds(c, -1, { rows });
+    for (const y of [0, 1, 2]) expect(f[fi(0, y)]).toBe(LED_EMPTY);
+    // NEGATIVE CONTROL: without `rows` the same pads are live on the full key.
+    expect(editPadToNote(c, 0, 0)).not.toBeNull();
+    expect(editPadToNote(c, 5, NOTE_ROWS - 1)?.midi).not.toBe(36);
+  });
   it('function-row pad classifiers (with ROW± + spacer layout)', () => {
     expect(isEditExitPad(EDIT_EXIT_PAD.x, EDIT_EXIT_PAD.y)).toBe(true);
     expect(isVelPad(VEL_PAD.x, VEL_PAD.y)).toBe(true);

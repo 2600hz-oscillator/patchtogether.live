@@ -126,7 +126,9 @@ import {
   computeSingleControlFrame,
   computeSingleArrangerFrame,
   SHIFT_JUMP,
+  EDIT_ROWS,
 } from './launchpad-map';
+import { customScaleRowsFor, clampRowOffsetFor } from '$lib/control/clip-surface-map';
 import { keyboardCellToMidi } from '$lib/audio/modules/keyboard-map';
 import { recordNoteAt, extendRecordedNote } from '$lib/audio/modules/clip-record';
 import { pushAudition } from '$lib/audio/modules/clip-audition';
@@ -376,6 +378,22 @@ let velHeld = false; // VEL pad held in editor
 let editAnchor: { step: number; midi: number; velocity?: number } | null = null;
 let editSpanned = false;
 let editRowOffset = 0; // pitch-window scroll (scale degrees)
+/**
+ * CUSTOM SCALE — the lane's filtered pitch-row list plus the window offset
+ * CLAMPED to it, resolved together so the paint path and the press path can
+ * never disagree about which rows exist. `rows` is undefined when the lane's
+ * filter is OFF, and every consumer then takes the unchanged full-key path.
+ * The surface only RESPECTS the scale (owner: no editing it from hardware) —
+ * nothing here writes `customScale`.
+ */
+function editScaleRows(
+  clip: NoteClipRecord,
+  data: ClipPlayerData | undefined,
+  clipIdx: number,
+): { rows?: readonly number[]; rowOffset: number } {
+  const rows = customScaleRowsFor(clip, data, laneOf(clipIdx));
+  return { rows, rowOffset: clampRowOffsetFor(editRowOffset, rows, EDIT_ROWS) };
+}
 let editWindowStart = 0; // absolute step of the leftmost shown column (frozen value)
 // SINGLE-mode Grid SCENE-window scroll — a LOCAL per-surface view offset (like
 // editRowOffset / editWindowStart, NEVER synced to node.data): 0 = scenes 0..7
@@ -2508,7 +2526,7 @@ function handleSingleClip(nodeId: string, e: LaunchpadKeyEvent): void {
       if (shift && tickCount - probEditTick <= DOUBLE_TAP_TICKS) {
         const clip0 = clipAtIndex(liveData(nodeId), selectedClipIndex);
         const n0 = clip0
-          ? editPadToNote(clip0, ev.x, ev.y, { rowOffset: editRowOffset, colOffset: shownWindowStart(clip0), page: 0 })
+          ? editPadToNote(clip0, ev.x, ev.y, { ...editScaleRows(clip0, liveData(nodeId), selectedClipIndex), colOffset: shownWindowStart(clip0), page: 0 })
           : null;
         const cov0 = n0 && clip0 ? noteCovering(clip0, n0.step, n0.midi) : null;
         if (cov0 && cov0.step === probEditHeld.step && cov0.midi === probEditHeld.midi) {
@@ -2533,7 +2551,7 @@ function handleSingleClip(nodeId: string, e: LaunchpadKeyEvent): void {
   // a clip already exists (don't create one from a stray release).
   const clip = ev.s === 1 ? ensureSelClip(nodeId) : clipAtIndex(data, selectedClipIndex);
   if (!clip) return;
-  const note = editPadToNote(clip, ev.x, ev.y, { rowOffset: editRowOffset, colOffset: shownWindowStart(clip), page: 0 });
+  const note = editPadToNote(clip, ev.x, ev.y, { ...editScaleRows(clip, liveData(nodeId), selectedClipIndex), colOffset: shownWindowStart(clip), page: 0 });
   if (!note) return;
   const mono = laneMono(liveData(nodeId), laneOf(selectedClipIndex));
   // SHIFT + press a step → open the PER-NOTE PROBABILITY page for the COVERING
@@ -3082,7 +3100,7 @@ function handleREdit(nodeId: string, e: LaunchpadKeyEvent): void {
   // Note grid pads. The 8-step window starts at the (frozen or followed) absolute
   // step; colOffset carries it (page stays 0 → realStep = windowStart + x).
   if (ev.type !== 'pad') return;
-  const note = editPadToNote(clip, ev.x, ev.y, { rowOffset: editRowOffset, colOffset: shownWindowStart(clip), page: 0 });
+  const note = editPadToNote(clip, ev.x, ev.y, { ...editScaleRows(clip, liveData(nodeId), editClipIndex), colOffset: shownWindowStart(clip), page: 0 });
   if (!note) return;
   const mono = laneMono(liveData(nodeId), laneOf(editClipIndex));
   if (ev.s === 1) {
@@ -3220,7 +3238,7 @@ function paintRRole(
       // starts at the (frozen/followed) absolute step via colOffset (page 0).
       const absPlayhead = editPlayhead(nodeId, data);
       setFrame(target, computeREditFrame(clip, {
-        rowOffset: editRowOffset,
+        ...editScaleRows(clip, data, editClipIndex),
         colOffset: shownWindowStart(clip),
         page: 0,
         playheadStep: absPlayhead,
@@ -3488,7 +3506,7 @@ function renderLeds(): void {
           'L',
           computeSingleClipFrame(clip, {
             top,
-            rowOffset: editRowOffset,
+            ...editScaleRows(clip, data, selectedClipIndex),
             colOffset: shownWindowStart(clip),
             page: 0,
             playheadStep: selPlayhead(nodeId, data),

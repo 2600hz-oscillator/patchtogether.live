@@ -592,18 +592,22 @@ export function editYToLogicalRow(y: number): number {
 /** An edit-mode pad (x=step-col, y=pitch) → the {step, midi} it edits, or null
  *  for an out-of-grid / past-length cell. `colOffset` scrolls the 8-step window
  *  within the clip (realStep = page*16 + colOffset + x via the core), `page`
- *  selects the 16-step block, `rowOffset` scrolls the pitch window. */
+ *  selects the 16-step block, `rowOffset` scrolls the pitch window. `rows` (the
+ *  lane's CUSTOM-SCALE row list) restricts the pitch axis to those notes — a pad
+ *  past the end of the list returns null (dark, inert). */
 export function editPadToNote(
   clip: NoteClipRecord,
   x: number,
   y: number,
-  opts: { rowOffset?: number; colOffset?: number; page?: number } = {},
+  opts: { rowOffset?: number; colOffset?: number; page?: number; rows?: readonly number[] } = {},
 ): { step: number; midi: number } | null {
   if (x < 0 || x >= EDIT_COLS || y < 0 || y >= EDIT_ROWS) return null;
   const colOffset = opts.colOffset ?? 0;
   // The core's noteForCell takes a window COLUMN; we widen the window by
   // colOffset (the 8-step half-block scroll) before handing it the column.
-  return noteForCell(clip, colOffset + x, editYToLogicalRow(y), opts.rowOffset ?? 0, opts.page ?? 0);
+  return noteForCell(
+    clip, colOffset + x, editYToLogicalRow(y), opts.rowOffset ?? 0, opts.page ?? 0, opts.rows,
+  );
 }
 
 // Editor top-row CC roles.
@@ -1000,6 +1004,11 @@ export interface REditOpts {
   rowOffset?: number;
   colOffset?: number;
   page?: number;
+  /** The lane's CUSTOM-SCALE row list (`customScaleRowsFor`), or undefined when
+   *  the filter is OFF — then the pitch axis is the clip's full key, unchanged.
+   *  A pad past the end of a short list paints as an empty cell (dark/wash),
+   *  because `editPadToNote` returns null for it. */
+  rows?: readonly number[];
   /** Live playhead step (-1 when the edited clip isn't playing). */
   playheadStep?: number;
   velArmed?: boolean;
@@ -1039,7 +1048,7 @@ export function computeREditFrame(clip: NoteClipRecord, opts: REditOpts = {}): L
   } else {
     for (let y = 0; y < EDIT_ROWS; y++) {
       for (let x = 0; x < EDIT_COLS; x++) {
-        const note = editPadToNote(clip, x, y, { rowOffset, colOffset, page });
+        const note = editPadToNote(clip, x, y, { rowOffset, colOffset, page, rows: opts.rows });
         const index = padNote(x, y);
         if (!note) {
           put(frame, index, RGB_OFF);
@@ -2152,6 +2161,8 @@ export interface SingleClipOpts {
   rowOffset?: number;
   colOffset?: number;
   page?: number;
+  /** The lane's CUSTOM-SCALE row list — see `REditOpts.rows`. */
+  rows?: readonly number[];
   /** Live playhead step (-1 when the edited clip isn't playing). */
   playheadStep?: number;
   followOn?: boolean;
@@ -2215,7 +2226,7 @@ export function computeSingleClipFrame(clip: NoteClipRecord, opts: SingleClipOpt
   } else {
     for (let y = 0; y < EDIT_ROWS; y++) {
       for (let x = 0; x < EDIT_COLS; x++) {
-        const note = editPadToNote(clip, x, y, { rowOffset, colOffset, page });
+        const note = editPadToNote(clip, x, y, { rowOffset, colOffset, page, rows: opts.rows });
         const index = padNote(x, y);
         if (!note) {
           put(frame, index, bg);
