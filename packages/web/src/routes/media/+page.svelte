@@ -89,7 +89,9 @@
   <header class="topbar">
     <h1>media loader</h1>
     <span class="topbar-note">scaffold — drop files or folders anywhere below</span>
-    <a class="topbar-link" href="/rack">← rack</a>
+    <!-- ISOLATION BOUNDARY: /media → /rack needs a full-page nav so the
+         canvas document gets its COOP/COEP headers (see landing +page). -->
+    <a class="topbar-link" href="/rack" data-sveltekit-reload>← rack</a>
   </header>
 
   <section

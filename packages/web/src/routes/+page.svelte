@@ -47,6 +47,22 @@
     external?: boolean;
   }
 
+  /**
+   * ISOLATION BOUNDARY — a link from here into the canvas routes MUST be a
+   * FULL-PAGE navigation (`data-sveltekit-reload`), never a client-side one.
+   * `/` is deliberately NOT cross-origin isolated (no COOP/COEP — see
+   * hooks.server.ts ISOLATED_EXACT), while `/rack` + `/r/…` are. A soft nav
+   * keeps THIS document — so the rack arrives with `crossOriginIsolated ===
+   * false`, SharedArrayBuffer undefined, and every SAB consumer (Faust WASM
+   * threads, the ES-9 bridge rings) silently degraded: the ES-9 card sat in
+   * its 'unsupported' state with no connect button (owner report 2026-08-05).
+   * Derived from the href, not hand-flagged per tile, so a NEW rack-bound tile
+   * cannot ship without it. Regression-locked by landing-routing.spec.ts
+   * (click-through → crossOriginIsolated must be true).
+   */
+  const crossesIsolationBoundary = (href: string): boolean =>
+    href.startsWith('/rack') || href.startsWith('/r/');
+
   const tiles: Tile[] = [
     {
       id: 'new-rack',
@@ -148,6 +164,7 @@
         <a
           class="mod-card tile return-last"
           href={lastRack.href}
+          data-sveltekit-reload
           data-testid="return-to-last-rack"
           data-rack-mode={lastRack.mode}
         >
@@ -168,6 +185,7 @@
         <a
           class="mod-card tile"
           href={t.href}
+          data-sveltekit-reload={crossesIsolationBoundary(t.href) ? '' : undefined}
           data-testid="tile-{t.id}"
           rel={t.external ? 'noopener' : undefined}
           target={t.external ? '_blank' : undefined}
