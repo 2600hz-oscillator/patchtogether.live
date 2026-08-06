@@ -23,8 +23,10 @@ import { installMidiMock } from '../_helpers/midi';
 import { spawnPatch } from './_helpers';
 
 const MOCK_ID = 'mock-midi-in-0';
+const MOCK_OUT_ID = 'mock-midi-out-0';
 const LANE_ID = 'lane';
 const CLK_ID = 'clk';
+const OUT_ID = 'mob';
 
 async function setup(page: Page): Promise<string[]> {
   const errors: string[] = [];
@@ -140,6 +142,57 @@ test.describe('MIDI auto-bind on perf-zip load', () => {
     const clkAfter = await readMidiBinding(page, CLK_ID);
     expect(laneAfter!.selectedDeviceId, 'MIDI LANE must auto-bind to the saved device').toBe(MOCK_ID);
     expect(clkAfter!.selectedDeviceId, 'MIDICLOCK must auto-bind to the saved device').toBe(MOCK_ID);
+
+    expect(errors, errors.join('; ')).toEqual([]);
+  });
+
+  test('midiOutBuddy re-attaches to its saved OUTPUT device on load (owner staircase, 2026-08-06)', async ({ page }) => {
+    // Before this fix midiOutBuddy was in NEITHER device roster and the export
+    // resolver only read access.inputs — an all-OUTPUT rig (rack → hardware
+    // synth) exported `midiDevices: []`, so the loader never requested MIDI
+    // access and the module sat unbound until the user manually connected
+    // (whose permission grant then made the THIRD load look magically bound).
+    const errors = await setup(page);
+
+    await spawnPatch(page, [{ id: OUT_ID, type: 'midiOutBuddy', position: { x: 120, y: 160 } }]);
+
+    const card = page.locator(`.svelte-flow__node[data-id="${OUT_ID}"]`);
+    await card.getByRole('button', { name: /Connect MIDI/ }).click();
+    await card.locator('select').first().selectOption(MOCK_OUT_ID);
+    await expect
+      .poll(() => readMidiBinding(page, OUT_ID).then((b) => b?.lastDeviceId), { timeout: 5000 })
+      .toBe(MOCK_OUT_ID);
+
+    // The deliberate ch remap (e.g. lane 1 → MIDI ch 10) lives on
+    // data.midiOutChannel and must ride the envelope untouched.
+    await page.evaluate((id) => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
+        __ydoc: { transact: (fn: () => void) => void };
+      };
+      w.__ydoc.transact(() => {
+        const n = w.__patch.nodes[id];
+        if (n) { if (!n.data) n.data = {}; n.data.midiOutChannel = 10; }
+      });
+    }, OUT_ID);
+
+    const zipB64 = await exportZip(page);
+    await clearRack(page);
+    await loadZip(page, zipB64);
+
+    await expect(page.locator(`.svelte-flow__node[data-id="${OUT_ID}"]`)).toBeVisible({ timeout: 8000 });
+    // Auto-bound to the OUTPUT device with no manual click after load.
+    await expect
+      .poll(() => readMidiBinding(page, OUT_ID).then((b) => b?.connected), { timeout: 8000 })
+      .toBe(true);
+    const after = await readMidiBinding(page, OUT_ID);
+    expect(after!.selectedDeviceId, 'midiOutBuddy must auto-bind to the saved OUTPUT device').toBe(MOCK_OUT_ID);
+    // The channel override survived the round trip.
+    const ch = await page.evaluate((id) => {
+      const w = globalThis as unknown as { __patch: { nodes: Record<string, { data?: { midiOutChannel?: number } }> } };
+      return w.__patch.nodes[id]?.data?.midiOutChannel ?? null;
+    }, OUT_ID);
+    expect(ch, 'deliberate midiOutChannel remap rides the envelope').toBe(10);
 
     expect(errors, errors.join('; ')).toEqual([]);
   });
