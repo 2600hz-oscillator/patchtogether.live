@@ -40,10 +40,12 @@
     effectiveMidiOutChannel,
     isMidiOutChannelOverridden,
     laneChannelOf,
+    midiOutBuddyDef,
     type MidiOutBuddyApi,
     type MidiOutBuddyCardState,
     type MidiOutBuddyData,
   } from '$lib/audio/modules/midi-out-buddy';
+  import { portsFromDef } from './card-kit';
   import { noteNameForMidi } from '$lib/audio/note-entry';
   import ModuleTitle from './ModuleTitle.svelte';
 
@@ -162,13 +164,22 @@
     getApi()?.setChannel(ch);
   });
 
-  // Three CV/gate inputs, no outputs (terminal MIDI sink).
-  const inputs: PortDescriptor[] = [
-    { id: 'gate', label: 'GATE', cable: 'gate' },
-    { id: 'pitch', label: 'PITCH', cable: 'cv' },
-    { id: 'velocity', label: 'VEL', cable: 'cv' },
-  ];
-  const outputs: PortDescriptor[] = [];
+  // Jacks DERIVED FROM THE DEF, never re-typed here. This list used to be three
+  // hand-written descriptors, and when the def gained its `poly` input the card
+  // silently kept rendering three jacks — the poly bus was unpatchable from the
+  // card while the docs said it existed (modules.spec's handle-count gate caught
+  // it: expected 4, got 3). That is the "a CARD can silently disagree with its
+  // DEF" class in CLAUDE.md; deriving removes it by construction, so the next
+  // port added to the def gets a jack for free.
+  // Short faceplate labels only — the ids, cable types and the SET of ports all
+  // come from the def.
+  const inputs: PortDescriptor[] = portsFromDef(midiOutBuddyDef.inputs, {
+    poly: 'POLY',
+    gate: 'GATE',
+    pitch: 'PITCH',
+    velocity: 'VEL',
+  });
+  const outputs: PortDescriptor[] = portsFromDef(midiOutBuddyDef.outputs); // none — terminal MIDI sink
 
   let activeNoteLabel = $derived(
     cardState.activeNote === null ? '—' : noteNameForMidi(cardState.activeNote).toUpperCase(),
