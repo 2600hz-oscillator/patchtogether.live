@@ -113,4 +113,19 @@ describe('isShellSwappable — eligibility', () => {
       laneRenderKind({ ...base, type: 'cameraInput', hasCard: isShellSwappable('cameraInput', true) }),
     ).toBe('legacy');
   });
+
+  it('es9 is a HARDWARE-BRIDGE snowflake: its legacy card (the bridge-connection owner) stays in the lane', () => {
+    // Owner report 2026-08-05: under ?mode=workflow&shell=1 the ES-9 stopped
+    // sending data to the hardware whenever its card was not expanded. Es9Card
+    // owns the native-bridge connection (worker + SAB rings) and disconnects it
+    // in onDestroy, so a placeholder tile meant the connection only lived while
+    // the dock full-view pane was open. The card must render in-lane, verbatim
+    // — the headless-host seam can't be used because the native app accepts a
+    // single client (an expand-time double mount wedges the bridge on 'busy').
+    expect(NON_SHELL_LANE_TYPES.has('es9')).toBe(true);
+    expect(isShellSwappable('es9', true)).toBe(false);
+    expect(laneRenderKind({ ...base, type: 'es9', hasCard: isShellSwappable('es9', true) })).toBe(
+      'legacy',
+    );
+  });
 });

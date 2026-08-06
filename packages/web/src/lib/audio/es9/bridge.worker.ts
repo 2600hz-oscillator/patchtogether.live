@@ -17,6 +17,7 @@
 //   new Worker(new URL('./bridge.worker.ts', import.meta.url), { type: 'module' })
 
 import { RingIO, type RingSpec } from './es9-ring';
+import { closeStateAfter } from './bridge-state';
 import {
   decodeBlock,
   encodeBlock,
@@ -68,6 +69,11 @@ let reconnectMs = RECONNECT_MIN_MS;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let drainTimer: ReturnType<typeof setInterval> | null = null;
 let pingTimer: ReturnType<typeof setInterval> | null = null;
+/** The bridge's most recent status-message state on the CURRENT socket
+ *  (null once a `deviceInfo` proves genuine acceptance). Read at close time
+ *  by closeStateAfter — see ./bridge-state for the busy-close handshake. */
+let lastControlState: string | null = null;
+let lastControlDetail: string | undefined;
 
 function post(msg: unknown): void {
   (self as unknown as { postMessage(m: unknown): void }).postMessage(msg);
@@ -123,7 +129,15 @@ function connect(): void {
     if (ws === socket) {
       ws = null;
       configured = false;
-      post({ type: 'status', state: enabled ? 'disconnected' : 'stopped' });
+      // A close that follows a bridge-side 'busy' is the app's reject-new
+      // handshake (it sends busy then closes, holder kept) — keep saying
+      // 'busy', don't overwrite the truth with 'disconnected' ("bridge not
+      // found" on the card). See ./bridge-state.
+      post({
+        type: 'status',
+        state: closeStateAfter(lastControlState, enabled),
+        detail: lastControlDetail,
+      });
       scheduleReconnect();
     }
   };
@@ -141,6 +155,10 @@ function handleControl(text: string): void {
   }
   switch (msg.type) {
     case 'deviceInfo':
+      // Genuine acceptance — a later close is a real disconnect, not the
+      // busy-close handshake.
+      lastControlState = null;
+      lastControlDetail = undefined;
       post({ type: 'deviceInfo', info: msg });
       sendConfig();
       break;
@@ -149,7 +167,9 @@ function handleControl(text: string): void {
       break;
     case 'status':
       // Bridge-side lifecycle (busy / device_lost / …) — surface to the card.
-      post({ type: 'status', state: String(msg.state ?? 'unknown'), detail: msg.detail });
+      lastControlState = String(msg.state ?? 'unknown');
+      lastControlDetail = msg.detail as string | undefined;
+      post({ type: 'status', state: lastControlState, detail: lastControlDetail });
       if (msg.state === 'busy') {
         // Another client owns the bridge; back off to slow retries.
         reconnectMs = RECONNECT_MAX_MS;
@@ -215,6 +235,8 @@ self.onmessage = (e: MessageEvent) => {
       outputModes = m.outputModes;
       seq = 0;
       sampleTime = 0;
+      lastControlState = null;
+      lastControlDetail = undefined;
       if (drainTimer === null) drainTimer = setInterval(drain, DRAIN_INTERVAL_MS);
       if (pingTimer === null) {
         pingTimer = setInterval(() => sendJSON({ type: 'ping', t: performance.now() }), PING_INTERVAL_MS);
@@ -230,6 +252,8 @@ self.onmessage = (e: MessageEvent) => {
     case 'stop':
       enabled = false;
       configured = false;
+      lastControlState = null;
+      lastControlDetail = undefined;
       if (reconnectTimer !== null) { clearTimeout(reconnectTimer); reconnectTimer = null; }
       if (drainTimer !== null) { clearInterval(drainTimer); drainTimer = null; }
       if (pingTimer !== null) { clearInterval(pingTimer); pingTimer = null; }
