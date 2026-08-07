@@ -61,7 +61,7 @@ import {
   type SourceHeadState,
   type WcolEdge,
 } from './patch-convenience';
-import { allocateCvBuddySlots } from '$lib/audio/cv-buddy/slot-alloc';
+import { allocateCvBuddySlots , type CvBuddyInstance } from '$lib/audio/cv-buddy/slot-alloc';
 
 /** Deterministic ids of the workflow pinned singletons the columns anchor to. */
 export const PINNED_MIXER_ID = 'pinned-mixmstrs';
@@ -193,18 +193,22 @@ function resolveMembers(order: readonly string[], resolveDef: ColumnDefResolver)
 function buildCvBuddyReturns(): Map<string, CvBuddyReturn> {
   const out = new Map<string, CvBuddyReturn>();
   let es9Id: string | null = null;
-  const cvBuddyIds: string[] = [];
+  // Both kinds share the ES-9 jack pool, so both must be handed to the
+  // allocator in ONE list or their return-audio pairs would collide too.
+  const cvBuddyInstances: CvBuddyInstance[] = [];
   for (const [id, n] of Object.entries(patch.nodes)) {
     if (!n) continue;
     const type = (n as ModuleNode).type;
     if (type === 'es9') {
       if (es9Id === null || id < es9Id) es9Id = id;
     } else if (type === 'cvBuddy') {
-      cvBuddyIds.push(id);
+      cvBuddyInstances.push({ id, kind: 'full' });
+    } else if (type === 'cvBuddyMini') {
+      cvBuddyInstances.push({ id, kind: 'mini' });
     }
   }
   if (es9Id === null) return out; // no ES-9 → no return audio (inert)
-  for (const [cbId, alloc] of allocateCvBuddySlots(cvBuddyIds)) {
+  for (const [cbId, alloc] of allocateCvBuddySlots(cvBuddyInstances)) {
     out.set(cbId, {
       es9NodeId: es9Id,
       inPortL: `in${alloc.inPair[0]}`,

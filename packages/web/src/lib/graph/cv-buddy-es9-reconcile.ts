@@ -42,6 +42,9 @@ import type { Edge, ModuleNode } from '$lib/graph/types';
 import {
   allocateCvBuddySlots,
   slotToEs9,
+  es9PortForSlot,
+  type CvBuddyInstance,
+  type CvBuddySlotRole,
   slotsToReset,
   CV_BUDDY_MANAGED_SLOTS,
   ES9_AUDIO,
@@ -110,7 +113,7 @@ function desiredEdge(cbId: string, outPort: string, es9Id: string, slot: number)
   return {
     id: cvBuddyEdgeId(cbId, outPort),
     source: { nodeId: cbId, portId: outPort },
-    target: { nodeId: es9Id, portId: slotToEs9(slot).port },
+    target: { nodeId: es9Id, portId: es9PortForSlot(slot) },
     sourceType: SOURCE_TYPE[outPort] ?? 'cv',
     targetType: 'audio', // ES-9 out jacks are audio-typed (accepts cv/pitch/gate)
   };
@@ -139,14 +142,20 @@ export function planCvBuddyEs9(
 ): CvBuddyEs9Plan {
   // Resolve the single ES-9 node (lazy — none ⇒ inert). id-min if duplicated.
   let es9Id: string | null = null;
-  const cvBuddyIds: string[] = [];
+  // BOTH kinds, in ONE list — the allocator draws them from a single jack pool,
+  // which is what makes a full and a mini on the same rack impossible to
+  // collide. Collecting them separately and allocating twice would give each
+  // its own jack 1.
+  const cvBuddyInstances: CvBuddyInstance[] = [];
   for (const [id, n] of Object.entries(nodes)) {
     if (!n || !n.type) continue;
     const nid = n.id ?? id;
     if (n.type === 'es9') {
       if (es9Id === null || nid < es9Id) es9Id = nid;
     } else if (n.type === 'cvBuddy') {
-      cvBuddyIds.push(nid);
+      cvBuddyInstances.push({ id: nid, kind: 'full' });
+    } else if (n.type === 'cvBuddyMini') {
+      cvBuddyInstances.push({ id: nid, kind: 'mini' });
     }
   }
 
@@ -165,25 +174,36 @@ export function planCvBuddyEs9(
   }
 
   const es9 = nodes[es9Id]!;
-  const next = allocateCvBuddySlots(cvBuddyIds);
+  const next = allocateCvBuddySlots(cvBuddyInstances);
 
   // Desired edges + per-jack classes for every claimed slot.
   const desired = new Map<string, Edge>();
   const desiredClass = new Map<number, number>(); // slot → class
   const claimed = new Set<number>();
-  const claimJack = (cbId: string, outPort: string, slot: number | null) => {
+  // ⚠ The ROLE is passed explicitly. With CV Buddy MINI in the mix a given jack
+  // number no longer implies its signal class — jack 3 is a velocity under a
+  // FULL but a mini's PITCH in a three-mini rack — so deriving the class from
+  // the number would put the wrong voltage range on a real hardware output.
+  const claimJack = (
+    cbId: string,
+    outPort: string,
+    slot: number | null,
+    role: CvBuddySlotRole,
+  ) => {
     if (slot == null) return;
     desired.set(cvBuddyEdgeId(cbId, outPort), desiredEdge(cbId, outPort, es9Id!, slot));
-    desiredClass.set(slot, slotToEs9(slot).class);
+    desiredClass.set(slot, slotToEs9(slot, role).class);
     claimed.add(slot);
   };
   for (const [cbId, a] of next) {
-    claimJack(cbId, OUTPUT_FOR.pitch, a.pitchSlot);
-    claimJack(cbId, OUTPUT_FOR.gate, a.gateSlot);
-    claimJack(cbId, OUTPUT_FOR.vel, a.velSlot);
+    claimJack(cbId, OUTPUT_FOR.pitch, a.pitchSlot, 'pitch');
+    claimJack(cbId, OUTPUT_FOR.gate, a.gateSlot, 'gate');
+    // velSlot is NULL for a mini — claimJack no-ops, so no velocity edge and no
+    // jack claimed, which is exactly what makes a mini cost two outputs.
+    claimJack(cbId, OUTPUT_FOR.vel, a.velSlot, 'vel');
     if (a.ownsClock) {
-      claimJack(cbId, OUTPUT_FOR.run, a.runSlot);
-      claimJack(cbId, OUTPUT_FOR.clock, a.clockSlot);
+      claimJack(cbId, OUTPUT_FOR.run, a.runSlot, 'run');
+      claimJack(cbId, OUTPUT_FOR.clock, a.clockSlot, 'clock');
     }
   }
 
@@ -216,7 +236,7 @@ export function planCvBuddyEs9(
   // catch-all sweep of managed jacks that are unclaimed yet still carry a
   // non-audio class while a CV Buddy is active (covers a removed instance whose
   // edges have already cascaded away this transaction).
-  const active = cvBuddyIds.length > 0 || existingCvEdges.length > 0;
+  const active = cvBuddyInstances.length > 0 || existingCvEdges.length > 0;
   const resetSlots = new Set<number>(slotsToReset(prev, next));
   if (active) {
     for (const slot of CV_BUDDY_MANAGED_SLOTS) {

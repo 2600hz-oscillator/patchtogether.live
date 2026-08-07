@@ -849,8 +849,11 @@ export interface ChainWiring {
     pitchIn: string;
     /** Input port id the lane's gate wires into. */
     gateIn: string;
-    /** Input port id the lane's velocity CV wires into. */
-    velIn: string;
+    /** Input port id the lane's velocity CV wires into, or ABSENT when the
+     *  module has no velocity input at all (cvBuddyMini). Optional rather than
+     *  a sentinel so a module that genuinely lacks the port cannot be wired to
+     *  a non-existent one — the lane planner simply skips the velocity leg. */
+    velIn?: string;
   };
   /** Note-sink with a hardware audio return (CV Buddy ↔ ES-9). Makes it a lane
    *  head-source candidate; the reconciler wires its ES-9 return pair at the
