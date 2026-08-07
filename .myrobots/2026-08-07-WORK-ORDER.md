@@ -4,10 +4,31 @@ Four phases, **in this order**. Set by the owner on 2026-08-07 after a review of
 everything `.myrobots` had on the table. Do not jump ahead: phase 4 is blocked
 behind phase 1 for a substantive reason, not just preference.
 
+> ## ⚠ PHASE 1 IS ALREADY DONE — VERIFIED 2026-08-07, AFTER THIS FILE WAS WRITTEN
+>
+> I put phase 1 first on a MISREAD. The inventory table I quoted sits under the
+> heading **"THE STEREO-SILENCE CLASS — five modules, FIXED in #1343"**; I read
+> the measured `0.0000e+0` values and the module list without the heading above
+> them. Re-verified against the tree, item by item:
+>
+> | item | actual state |
+> |---|---|
+> | 5 silent-OUT-R modules | **FIXED in #1343.** `mono-normal-not-defeated.test.ts` passes 41/41 and is a strong gate — def-anchored, ratcheted BOTH ways, negative-controlled per spelling, with an explicit "states what it CANNOT see" section |
+> | `cube` envelope bypass | **FIXED.** `base_vol` now defaults to **0** (`cube.ts:279`), and the doc string documents the 0-default behaviour |
+> | `cloudseed` third stereo-silence mechanism | **FIXED.** `packages/dsp/src/cloudseed.ts:1540-43` now has the explicit normal (`silentL`/`silentR` → cross-fill), the exact thing the ledger said was missing |
+> | samsloop fader cross-clamp | **playback is safe** — `clampWindow` forces `end ≥ start + 1` (`samsloop.ts:795`). What remains is UX only: the faders permit an inverted drag with no on-screen explanation. Was always flagged as "a behaviour call for the owner", not a defect |
+>
+> **Nothing in phase 1 needs code.** The queue moves to phase 2.
+>
+> The lesson worth keeping: a table of measured failure values reads as a bug
+> list even when its heading says FIXED. State the status in the ROW, not only
+> in the section heading — a row that says `0.0000e+0 → 0.858524 fixed` is
+> ambiguous about which number is current.
+
 | # | phase | state |
 |---|---|---|
-| 1 | Silent right channels + `cube` / `cloudseed` | **IN PROGRESS** |
-| 2 | Stereo audio normalization (7 PRs) | ready, 0 landed |
+| 1 | Silent right channels + `cube` / `cloudseed` | **DONE — already fixed before this file was written** |
+| 2 | Stereo audio normalization (7 PRs) | **NEXT** — ready, 0 landed |
 | 3 | Light Mode for `?shell=1` | not started, no plan yet |
 | 4 | Faceplate programme | blocked behind (1) |
 
