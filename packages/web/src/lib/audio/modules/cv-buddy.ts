@@ -48,7 +48,12 @@ import {
   CLOCK_PULSE_HIGH_S,
   type ClockPhase,
 } from '$lib/audio/cv-buddy/clock-math';
-import { allocateCvBuddySlots } from '$lib/audio/cv-buddy/slot-alloc';
+import {
+  allocateCvBuddySlots,
+  type CvBuddyKind,
+  type CvBuddyInstance,
+} from '$lib/audio/cv-buddy/slot-alloc';
+import type { ModuleNode } from '$lib/graph/types';
 
 /** The discrete PPQN menu the card offers (pulses per quarter note). 24 =
  *  DIN-sync default. */
@@ -86,88 +91,34 @@ function transportBpm(): number {
 /** True when THIS node id is the id-smallest CV Buddy — the owner that drives
  *  the RUN + CLOCK jacks. */
 function ownsTransport(thisId: string): boolean {
-  const ids: string[] = [];
+  // BOTH kinds compete for the clock: the id-smallest CV Buddy of either kind
+  // owns RUN + CLOCK. Counting only 'cvBuddy' here would let a rack of minis
+  // believe nobody owned the transport, and jacks 7/8 would go dead.
+  const insts: CvBuddyInstance[] = [];
   for (const n of Object.values(livePatch.nodes)) {
-    if (n && (n as { type?: string }).type === 'cvBuddy') ids.push((n as { id: string }).id);
+    const t = (n as { type?: string } | undefined)?.type;
+    if (t === 'cvBuddy') insts.push({ id: (n as { id: string }).id, kind: 'full' });
+    else if (t === 'cvBuddyMini') insts.push({ id: (n as { id: string }).id, kind: 'mini' });
   }
-  return allocateCvBuddySlots(ids).get(thisId)?.ownsClock === true;
+  return allocateCvBuddySlots(insts).get(thisId)?.ownsClock === true;
 }
 
-export const cvBuddyDef: AudioModuleDef = {
-  type: 'cvBuddy',
-  palette: { top: 'Audio modules', sub: 'I/O' },
-  domain: 'audio',
-  label: 'cv buddy',
-  category: 'output',
-  // Taller tier for the slot readout + owner clock section + ES-9 mirror; 2 tiles
-  // wide (~the midi-buddy footprint). Owner-tunable in the look preview.
-  size: '3u',
-  hp: 2,
-
-  // INPUTS mirror midiOutBuddy: cv-typed pitch/velocity so a poly-splitter's
-  // voice-0 (from a clip lane's `pitch{n}` polyPitchGate) feeds them; a gate.
-  inputs: [
-    { id: 'gate', type: 'gate', edge: 'gate' },
-    { id: 'pitch', type: 'cv' },
-    { id: 'velocity', type: 'cv' },
-  ],
-  // OUTPUTS: cv/gate ONLY — never 'pitch'-typed, never poly (keeps
-  // isNoteSource false). The ES-9 out{N}_class does the volt scaling.
-  outputs: [
-    { id: 'pitchCv', type: 'cv' },
-    { id: 'gate', type: 'gate', edge: 'gate' },
-    { id: 'velCv', type: 'cv' },
-    { id: 'run', type: 'gate', edge: 'gate' },
-    { id: 'clock', type: 'gate', edge: 'trigger' },
-  ],
-  params: [
-    // Discrete PPQN menu; the card renders a select over CV_BUDDY_PPQN_CHOICES.
-    { id: 'ppqn', label: 'PPQN', defaultValue: CV_BUDDY_DEFAULT_PPQN, min: 1, max: 48, curve: 'discrete' },
-    // Manual clock latency trim, ±20 ms.
-    { id: 'clockOffsetMs', label: 'Clock offset', defaultValue: 0, min: -20, max: 20, curve: 'linear', units: 'ms' },
-  ],
-
-  // Lane note-sink (Part-B tap planner) + a hardware AUDIO RETURN via the ES-9
-  // input pair — `returnsAudio` makes CV Buddy a lane HEAD-source candidate so
-  // its return audio wires at the column's chain root. See ChainWiring.
-  chainWiring: {
-    role: 'noteSink',
-    laneTap: { pitchIn: 'pitch', gateIn: 'gate', velIn: 'velocity' },
-    returnsAudio: true,
-  },
-
-  docs: {
-    explanation:
-      "CV BUDDY sends a clip lane out to a real Eurorack system through an ES-9. Hand-patch a lane's PITCH, GATE and VELOCITY into its three inputs and CV Buddy passes them straight through to CV/gate outputs; the CV-Buddy↔ES-9 reconciler then AUTO-ROUTES those outputs to the ES-9's physical output jacks by slot (id-smallest instance → jacks 1-3, second instance → jacks 4-6) and writes each jack's voltage class (pitch → 1 V/oct, gate → +5 V, velocity → ±5 V CV). The pitch is carried on a plain CV cable, NOT a pitch/poly cable, so CV Buddy stays a note SINK a lane can drive — the 1 V/octave scaling happens on the ES-9 jack, not here. The id-smallest ('owner') instance additionally GENERATES two transport signals on jacks 7 and 8: RUN, a gate held high while the rack transport (TIMELORDE) is playing and low when stopped, and CLOCK, a DIN-sync pulse train at a selectable PPQN, phase-locked to the transport — patch RUN + CLOCK into a Pam's New Workout to slave it to the rack. A second CV Buddy takes the next free note set (jacks 4-6); a third and beyond sit inert (no free ES-9 jacks). With no ES-9 in the rack CV Buddy is harmless and idle — add an ES-9 module and run the es9-bridge helper to hear it at the jacks. Note there is no audio output, so CV Buddy never appears as a mixer send.",
-    inputs: {
-      gate:
-        "The note gate from a clip lane: while this level is high the lane is holding a note, and CV Buddy passes the gate through to its GATE output (and on to the ES-9 gate jack as +5 V). Hand-patch the lane's gate here.",
-      pitch:
-        "The note pitch as CV (0 V = C4), passed straight through to the PITCH CV output. It rides a plain CV cable; the ES-9 jack's pitch class turns it into 1 V/octave downstream. Patch the lane's pitch (a poly cable's voice-0 is taken automatically).",
-      velocity:
-        "The note velocity as 0..1 CV, passed through to the VEL CV output and out the ES-9's ±5 V CV jack. Patch the lane's velocity; leave it unpatched for a steady 0.",
-    },
-    outputs: {
-      pitchCv:
-        "The pitch input passed through unchanged on a CV cable — the reconciler wires it to the ES-9 pitch jack (class pitch → 1 V/octave, 0 V = C4).",
-      gate:
-        "The gate input passed through — a gate that stays high while a note is held; the reconciler wires it to the ES-9 gate jack (+5 V while high).",
-      velCv:
-        "The velocity input passed through on a CV cable — routed to the ES-9 velocity jack (±5 V CV).",
-      run:
-        "A RUN gate driven only by the owner (id-smallest) instance: held HIGH the whole time the rack transport is playing and LOW while it is stopped (it follows play state; it does not pulse). Wired to ES-9 jack 7. Patch it to a Pam's RUN/STOP input.",
-      clock:
-        "A generated CLOCK — short gate pulses that fire at the selected PPQN times the transport tempo, phase-locked to TIMELORDE, driven only by the owner instance while the transport runs. Wired to ES-9 jack 8. Patch it to a Pam's clock input for DIN-sync.",
-    },
-    controls: {
-      ppqn:
-        "Clock resolution in pulses per quarter note (1, 2, 4, 8, 12, 24, 48; default 24 = DIN-sync). Sets how many CLOCK pulses fire per beat. Only the clock-owner instance uses it; on other instances it is inert.",
-      clockOffsetMs:
-        "A manual timing trim for the CLOCK, ±20 ms, to nudge the pulse train earlier or later against downstream gear. Only the clock-owner instance uses it.",
-    },
-  },
-
-  async factory(ctx, node): Promise<AudioDomainNodeHandle> {
+/**
+ * The SHARED CV Buddy engine handle, used by BOTH `cvBuddy` and
+ * `cvBuddyMini`.
+ *
+ * ⚠ ONE implementation on purpose. The bulk of this is the RUN + CLOCK
+ * generator that the id-smallest instance drives onto ES-9 jacks 7/8 — the
+ * thing Pam's locks to. Two copies of that would be two clocks free to drift
+ * apart in behaviour, and a timing bug fixed in one would silently survive in
+ * the other. `kind` changes exactly one thing: a MINI has no velocity.
+ */
+export async function createCvBuddyHandle(
+  ctx: AudioContext,
+  node: ModuleNode,
+  kind: CvBuddyKind = 'full',
+): Promise<AudioDomainNodeHandle> {
+  const hasVelocity = kind === 'full';
     const thisId = node.id;
 
     // ---- unity-gain passthrough for pitch/gate/velocity ----
@@ -276,12 +227,14 @@ export const cvBuddyDef: AudioModuleDef = {
       inputs: new Map<string, { node: AudioNode; input: number; param?: AudioParam }>([
         ['gate', { node: gatePass, input: 0 }],
         ['pitch', { node: pitchPass, input: 0 }],
-        ['velocity', { node: velPass, input: 0 }],
+        // MINI has no velocity port — omitting the entry is what makes its
+        // port set differ, and what keeps its ES-9 cost at two jacks.
+        ...(hasVelocity ? [['velocity', { node: velPass, input: 0 }] as const] : []),
       ]),
       outputs: new Map<string, { node: AudioNode; output: number }>([
         ['pitchCv', { node: pitchPass, output: 0 }],
         ['gate', { node: gatePass, output: 0 }],
-        ['velCv', { node: velPass, output: 0 }],
+        ...(hasVelocity ? [['velCv', { node: velPass, output: 0 }] as const] : []),
         ['run', { node: runSrc, output: 0 }],
         ['clock', { node: clockSrc, output: 0 }],
       ]),
@@ -311,5 +264,84 @@ export const cvBuddyDef: AudioModuleDef = {
         clockSrc.disconnect();
       },
     };
+}
+
+
+export const cvBuddyDef: AudioModuleDef = {
+  type: 'cvBuddy',
+  palette: { top: 'Audio modules', sub: 'I/O' },
+  domain: 'audio',
+  label: 'cv buddy',
+  category: 'output',
+  // Taller tier for the slot readout + owner clock section + ES-9 mirror; 2 tiles
+  // wide (~the midi-buddy footprint). Owner-tunable in the look preview.
+  size: '3u',
+  hp: 2,
+
+  // INPUTS mirror midiOutBuddy: cv-typed pitch/velocity so a poly-splitter's
+  // voice-0 (from a clip lane's `pitch{n}` polyPitchGate) feeds them; a gate.
+  inputs: [
+    { id: 'gate', type: 'gate', edge: 'gate' },
+    { id: 'pitch', type: 'cv' },
+    { id: 'velocity', type: 'cv' },
+  ],
+  // OUTPUTS: cv/gate ONLY — never 'pitch'-typed, never poly (keeps
+  // isNoteSource false). The ES-9 out{N}_class does the volt scaling.
+  outputs: [
+    { id: 'pitchCv', type: 'cv' },
+    { id: 'gate', type: 'gate', edge: 'gate' },
+    { id: 'velCv', type: 'cv' },
+    { id: 'run', type: 'gate', edge: 'gate' },
+    { id: 'clock', type: 'gate', edge: 'trigger' },
+  ],
+  params: [
+    // Discrete PPQN menu; the card renders a select over CV_BUDDY_PPQN_CHOICES.
+    { id: 'ppqn', label: 'PPQN', defaultValue: CV_BUDDY_DEFAULT_PPQN, min: 1, max: 48, curve: 'discrete' },
+    // Manual clock latency trim, ±20 ms.
+    { id: 'clockOffsetMs', label: 'Clock offset', defaultValue: 0, min: -20, max: 20, curve: 'linear', units: 'ms' },
+  ],
+
+  // Lane note-sink (Part-B tap planner) + a hardware AUDIO RETURN via the ES-9
+  // input pair — `returnsAudio` makes CV Buddy a lane HEAD-source candidate so
+  // its return audio wires at the column's chain root. See ChainWiring.
+  chainWiring: {
+    role: 'noteSink',
+    laneTap: { pitchIn: 'pitch', gateIn: 'gate', velIn: 'velocity' },
+    returnsAudio: true,
+  },
+
+  docs: {
+    explanation:
+      "CV BUDDY sends a clip lane out to a real Eurorack system through an ES-9. Hand-patch a lane's PITCH, GATE and VELOCITY into its three inputs and CV Buddy passes them straight through to CV/gate outputs; the CV-Buddy↔ES-9 reconciler then AUTO-ROUTES those outputs to the ES-9's physical output jacks by slot (id-smallest instance → jacks 1-3, second instance → jacks 4-6) and writes each jack's voltage class (pitch → 1 V/oct, gate → +5 V, velocity → ±5 V CV). The pitch is carried on a plain CV cable, NOT a pitch/poly cable, so CV Buddy stays a note SINK a lane can drive — the 1 V/octave scaling happens on the ES-9 jack, not here. The id-smallest ('owner') instance additionally GENERATES two transport signals on jacks 7 and 8: RUN, a gate held high while the rack transport (TIMELORDE) is playing and low when stopped, and CLOCK, a DIN-sync pulse train at a selectable PPQN, phase-locked to the transport — patch RUN + CLOCK into a Pam's New Workout to slave it to the rack. A second CV Buddy takes the next free note set (jacks 4-6); a third and beyond sit inert (no free ES-9 jacks). With no ES-9 in the rack CV Buddy is harmless and idle — add an ES-9 module and run the es9-bridge helper to hear it at the jacks. Note there is no audio output, so CV Buddy never appears as a mixer send.",
+    inputs: {
+      gate:
+        "The note gate from a clip lane: while this level is high the lane is holding a note, and CV Buddy passes the gate through to its GATE output (and on to the ES-9 gate jack as +5 V). Hand-patch the lane's gate here.",
+      pitch:
+        "The note pitch as CV (0 V = C4), passed straight through to the PITCH CV output. It rides a plain CV cable; the ES-9 jack's pitch class turns it into 1 V/octave downstream. Patch the lane's pitch (a poly cable's voice-0 is taken automatically).",
+      velocity:
+        "The note velocity as 0..1 CV, passed through to the VEL CV output and out the ES-9's ±5 V CV jack. Patch the lane's velocity; leave it unpatched for a steady 0.",
+    },
+    outputs: {
+      pitchCv:
+        "The pitch input passed through unchanged on a CV cable — the reconciler wires it to the ES-9 pitch jack (class pitch → 1 V/octave, 0 V = C4).",
+      gate:
+        "The gate input passed through — a gate that stays high while a note is held; the reconciler wires it to the ES-9 gate jack (+5 V while high).",
+      velCv:
+        "The velocity input passed through on a CV cable — routed to the ES-9 velocity jack (±5 V CV).",
+      run:
+        "A RUN gate driven only by the owner (id-smallest) instance: held HIGH the whole time the rack transport is playing and LOW while it is stopped (it follows play state; it does not pulse). Wired to ES-9 jack 7. Patch it to a Pam's RUN/STOP input.",
+      clock:
+        "A generated CLOCK — short gate pulses that fire at the selected PPQN times the transport tempo, phase-locked to TIMELORDE, driven only by the owner instance while the transport runs. Wired to ES-9 jack 8. Patch it to a Pam's clock input for DIN-sync.",
+    },
+    controls: {
+      ppqn:
+        "Clock resolution in pulses per quarter note (1, 2, 4, 8, 12, 24, 48; default 24 = DIN-sync). Sets how many CLOCK pulses fire per beat. Only the clock-owner instance uses it; on other instances it is inert.",
+      clockOffsetMs:
+        "A manual timing trim for the CLOCK, ±20 ms, to nudge the pulse train earlier or later against downstream gear. Only the clock-owner instance uses it.",
+    },
+  },
+
+  async factory(ctx, node): Promise<AudioDomainNodeHandle> {
+    return createCvBuddyHandle(ctx, node, 'full');
   },
 };

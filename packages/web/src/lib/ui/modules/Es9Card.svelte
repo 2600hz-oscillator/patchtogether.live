@@ -36,7 +36,7 @@
   import type { Es9DeviceInfo, Es9Meters } from '$lib/audio/es9/es9-protocol';
   import { patch } from '$lib/graph/store';
   import { nodesStructuralVersion } from '$lib/graph/node-versions.svelte';
-  import { allocateCvBuddySlots } from '$lib/audio/cv-buddy/slot-alloc';
+  import { allocateCvBuddySlots , type CvBuddyInstance } from '$lib/audio/cv-buddy/slot-alloc';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -129,13 +129,16 @@
   let cvbStructuralV = $derived(nodesStructuralVersion());
   let cvBuddyJacks = $derived.by<string>(() => {
     void cvbStructuralV;
-    const ids: string[] = [];
+    const insts: CvBuddyInstance[] = [];
     for (const n of Object.values(patch.nodes)) {
-      if (n && (n as { type?: string }).type === 'cvBuddy') ids.push((n as { id: string }).id);
+      const t = (n as { type?: string } | undefined)?.type;
+      if (t === 'cvBuddy') insts.push({ id: (n as { id: string }).id, kind: 'full' });
+      else if (t === 'cvBuddyMini') insts.push({ id: (n as { id: string }).id, kind: 'mini' });
     }
     const slots = new Set<number>();
-    for (const a of allocateCvBuddySlots(ids).values()) {
-      slots.add(a.pitchSlot); slots.add(a.gateSlot); slots.add(a.velSlot);
+    for (const a of allocateCvBuddySlots(insts).values()) {
+      slots.add(a.pitchSlot); slots.add(a.gateSlot);
+      if (a.velSlot != null) slots.add(a.velSlot); // MINI has none
       if (a.runSlot != null) slots.add(a.runSlot);
       if (a.clockSlot != null) slots.add(a.clockSlot);
     }

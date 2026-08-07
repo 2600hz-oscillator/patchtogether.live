@@ -768,6 +768,15 @@ cvBuddy out run gate edge=gate
 cvBuddy out velCv cv
 cvBuddy param clockOffsetMs -20..20 linear default=0 unit=ms
 cvBuddy param ppqn 1..48 discrete default=24
+cvBuddyMini meta domain=audio
+cvBuddyMini in gate gate edge=gate
+cvBuddyMini in pitch cv
+cvBuddyMini out clock gate edge=trigger
+cvBuddyMini out gate gate edge=gate
+cvBuddyMini out pitchCv cv
+cvBuddyMini out run gate edge=gate
+cvBuddyMini param clockOffsetMs -20..20 linear default=0 unit=ms
+cvBuddyMini param ppqn 1..48 discrete default=24
 delay meta domain=audio
 delay in audio audio
 delay in time cv param=time cvScale=linear

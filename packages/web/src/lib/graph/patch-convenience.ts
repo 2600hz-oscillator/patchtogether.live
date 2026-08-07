@@ -824,11 +824,15 @@ export function planColumnWiring(ctx: ColumnWiringCtx): WcolEdge[] {
         toNodeId: m.nodeId, toPortId: tap.gateIn,
         sourceType: 'gate', targetType: tapInType(tap.gateIn),
       }));
-      push(toWcol({
-        fromNodeId: clipPlayerId, fromPortId: velOut,
-        toNodeId: m.nodeId, toPortId: tap.velIn,
-        sourceType: 'cv', targetType: tapInType(tap.velIn),
-      }));
+      // velIn is OPTIONAL — cvBuddyMini has no velocity input. Wiring the
+      // lane's velocity to a port that does not exist would be a dead edge.
+      if (tap.velIn) {
+        push(toWcol({
+          fromNodeId: clipPlayerId, fromPortId: velOut,
+          toNodeId: m.nodeId, toPortId: tap.velIn,
+          sourceType: 'cv', targetType: tapInType(tap.velIn),
+        }));
+      }
     }
   }
 

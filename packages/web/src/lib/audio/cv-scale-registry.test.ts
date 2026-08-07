@@ -152,6 +152,8 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   // volts by the ES-9 jack's class (pitch → 1 V/oct), not by a cvScale knob.
   // Same shape as midiOutBuddy above.
   cvBuddy: ['pitch', 'velocity'],
+  // MINI has no velocity input — same passthrough rationale, one fewer port.
+  cvBuddyMini: ['pitch'],
   // ANALOGLOGICMATHS a / b: raw bipolar signal inputs consumed directly by
   // the worklet's per-sample MIN/MAX/DIFF/SUM/PRODUCT. The module IS the
   // shaper — the user attenuverts via the attA / attB knobs (which DO carry
