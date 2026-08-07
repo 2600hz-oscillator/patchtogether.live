@@ -1,6 +1,15 @@
 # Stereo audio normalization — implementation plan
 
-**Status: FINAL — all 7 owner questions answered 2026-08-03. Ready to implement, starting at PR-0.**
+> # ⚠ AMENDED 2026-08-07 — Q1 IS REVERSED. READ §0b BEFORE ANYTHING ELSE.
+>
+> The owner rejected the sum-to-mono policy: **"if we pass a stereo signal
+> through a module which is, at present, mono, we do not want to lose the
+> stereo data."** That invalidates decision **Q1** and the parts of **PR-3**
+> and **PR-4** built on it. The architecture (projection / leg groups) SURVIVES
+> — cables, ports, Y.Doc schema and migration story are untouched. What changes
+> is what happens INSIDE a mono module. See §0b.
+
+**Status: AMENDED — architecture stands, Q1 replaced by DUAL-MONO (§0b). 2026-08-07.**
 *(Re-verified 2026-08-04: none of the 7 PRs has landed. `stereovca` is still the module id in `packages/dsp/src/`, `art/scenarios/`, `art/baselines/` and both VRT baselines; `reconciler.ts:143`'s `await engine.addNode(node)` is still unguarded, exactly as PR-0 describes. The whole sequence is live backlog.)*
 Source: 12-agent ultracode analysis (8 subsystem surveys → 2 competing designs → adversarial + completeness critics), all findings verified against the actual code with file:line cites. Draft questions + owner answers recorded in §1.
 
@@ -22,11 +31,95 @@ Why this wins (each alternative measured by the surveys):
 
 ---
 
+## 0b. DUAL-MONO — the 2026-08-07 amendment
+
+### What was wrong
+
+Q1 locked *unity-sum via double-connection*: a stereo leg group into a mono
+input sums L+R. That is faithful to Eurorack and it is cheap, and it also means
+**a stereo signal is destroyed the moment it meets a mono module** — everything
+downstream carries the sum on both legs. "All cables carry L&R" would have been
+cosmetic past the first filter.
+
+**Measured blast radius** (from `contract-lock.txt`, the generated contract —
+not a grep): of 86 modules with an audio path, **21 have exactly one audio
+input**, and they are the pass-through spine of most patches:
+
+```
+delay  destroy  filter  reverb  vca  resofilter  rings  scaler  swolevco
+wavecel  warrensspectrum  foxy  rasterize
+moog902  moog904a  moog904b  moog904c  moog905  moog907a  moog914  moog923
+```
+
+(29 modules already take ≥2 audio inputs; 30 are sources with none.)
+
+### The decision (owner, 2026-08-07)
+
+**DUAL-MONO, unconditionally.** A mono module fed a stereo leg group runs its
+DSP **twice** — one instance per channel, independent state — exactly as a DAW
+instantiates a mono plugin on a stereo track.
+
+**ALWAYS two instances. No "is the input really stereo?" detection.** The owner
+was explicit: *"i want our purely mono sources to eventually go away so i don't
+want to harden for them."* This removes the one genuinely dangerous piece —
+a runtime heuristic deciding whether two legs "are the same signal" is exactly
+the class of instrument that fails silently. There is no such heuristic.
+
+**2× CPU on mono modules is accepted**, deliberately, by the owner.
+
+### Shape of the implementation
+
+A **generic wrapper in the engine**, not 21 module edits. When materializing a
+mono-in module the engine builds the factory TWICE and presents one synthetic
+handle:
+
+- `ChannelSplitter(2)` at the audio input: ch0 → instance A, ch1 → instance B.
+- `ChannelMerger(2)` at the audio output: A → ch0, B → ch1.
+- Every **CV / non-audio input** port is a passthrough `GainNode` fanning to
+  BOTH instances (one source may connect to two destinations), so a single LFO
+  drives both channels identically.
+- `setParam` fans to both. `dispose` tears down both.
+
+No module factory changes, no DSP rewrites, and the 21 modules above need no
+per-module work.
+
+### Known sharp edges — settle these during implementation, do not discover them
+
+1. **`read()` is single-instance.** Card meters/scopes reading through the
+   handle would see instance A (left) only. Decide per read key: some want L,
+   some want a sum, some want both. A silent L-only meter is exactly the
+   instrument-blindness class this repo keeps getting bitten by.
+2. **Side-effecting factories.** Any module whose factory writes `node.data`,
+   claims a hardware port, or registers a singleton must NOT be duplicated —
+   needs a named opt-out list, deny-by-default, ratcheted.
+3. **Nondeterministic DSP decorrelates.** Two instances of a noise/random module
+   produce different L and R. Often desirable (width), occasionally surprising.
+   Name it per module rather than assuming.
+4. **ART is mostly blind to this** (most scenarios drive DSP cores directly, not
+   the factory path) — which means ART will NOT catch a dual-mono regression.
+   The 6 real-def scenarios plus new e2e own this gate.
+
+### Sequencing
+
+Dual-mono becomes **its own PR between PR-3 and PR-4** (call it PR-3b): the
+planner must know that a mono target still receives BOTH legs, so it lands with
+the planner and before the visible flip.
+
+### Follow-up: option C, deferred by owner decision
+
+Once B is shipped **and all UIs, VRTs and ARTs are updated**, revisit making
+selected modules *genuinely* stereo rather than two independent copies —
+`reverb` and `delay` are the obvious candidates, where real stereo DSP buys
+cross-feedback and ping-pong that dual-mono cannot express. Per-module, on its
+own merits, with owner ears. NOT part of this sequence.
+
+---
+
 ## 1. Owner decisions (LOCKED, 2026-08-03)
 
 | # | Question | Decision |
 |---|---|---|
-| 1 | Mono-input consumption policy | **Unity-sum via double-connection** (both legs into the mono input; Web Audio sums). The planner special-cases a mono-source leg group into a mono input by writing ONE leg, so a correlated mono round-trip does not gain +6 dB. ART stays byte-identical. |
+| 1 | ~~Mono-input consumption policy~~ **REVERSED 2026-08-07 — see §0b (DUAL-MONO)** | ~~**Unity-sum via double-connection** (both legs into the mono input; Web Audio sums). The planner special-cases a mono-source leg group into a mono input by writing ONE leg, so a correlated mono round-trip does not gain +6 dB. ART stays byte-identical.~~ |
 | 2 | mixmstrs panning | **ADD per-channel pan: 8 params + a row of pan control knobs** on the card. New Faust DSP, contract + ART re-pin, explicit PUSH_CARD_CONTROLS entry, owner audio preview before merge. PR-6 is in scope. |
 | 3 | stereovca | **KEEP, renamed to `ringmod`.** It is the project's only transparent (unsmoothed) audio-rate ring modulator; the rename makes that its identity. Docs re-authored accordingly. Port ids unchanged → a type alias preserves every existing cable. |
 | 4 | Mixed-source stereo | **Leg-level occupancy**: a full-stereo patch replaces both legs of the target; an only-X patch replaces only the X leg — so A-only-L + B-only-R into one input coexist. |
