@@ -17,6 +17,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const started: string[] = [];
 const stopped: number[] = [];
 let instances = 0;
+/** The most recently constructed fake client, so a test can drive its state
+ *  callbacks the way the transport worker would. */
+let lastClient: { emitState: (s: string, d?: string) => void } | null = null;
 
 vi.mock('./bridge-client', () => {
   class FakeClient {
@@ -29,6 +32,7 @@ vi.mock('./bridge-client', () => {
       this.#events = events;
       instances += 1;
       this.#id = instances;
+      lastClient = this as unknown as { emitState: (s: string, d?: string) => void };
     }
     start(rate: number) { started.push(`c${this.#id}@${rate}`); }
     stop() { stopped.push(this.#id); }
@@ -43,7 +47,7 @@ vi.mock('./bridge-client', () => {
 
 const {
   acquireEs9Bridge, releaseEs9Bridge, subscribeEs9, es9Snapshot,
-  hasEs9Bridge, __resetEs9Owners, es9BridgeAvailable,
+  hasEs9Bridge, __resetEs9Owners, es9BridgeAvailable, restartEs9Bridge,
 } = await import('./bridge-owner');
 
 const CFG = { inputChannels: [0], outputChannels: [0], outputModes: { '0': 'audio' } } as never;
@@ -62,6 +66,7 @@ beforeEach(() => {
   started.length = 0;
   stopped.length = 0;
   instances = 0;
+  lastClient = null;
 });
 
 describe('es9 bridge OWNERSHIP — the connection outlives every view', () => {
@@ -79,6 +84,58 @@ describe('es9 bridge OWNERSHIP — the connection outlives every view', () => {
     expect(stopped, 'unsubscribing must never stop the client').toEqual([]);
     expect(started.length, 'and must never re-start it').toBe(1);
     expect(hasEs9Bridge('es9a')).toBe(true);
+  });
+
+  it('THE REGRESSION: a view that subscribes BEFORE the connection exists still gets updates', () => {
+    // ⚠ THIS IS THE REAL ORDERING AND THE ORIGINAL TESTS NEVER USED IT. The CARD
+    // mounts when the node spawns; the ENGINE FACTORY creates the entry later,
+    // via the reconciler. So the view always subscribes FIRST. `subscribeEs9`
+    // used to `entries.get(nodeId)` and return a NO-OP when there was none — so
+    // it never subscribed at all, and the card sat frozen on its initial idle
+    // snapshot while the bridge behind it connected fine. Owner-reported as a
+    // showstopper: "clicking connect does nothing, no console errors, no
+    // connection". Every earlier test acquired first, so all of them passed.
+    const seen: string[] = [];
+    const un = subscribeEs9('es9late', (s) => seen.push(s.state));
+
+    // Subscribing to a node with NO connection must still deliver a snapshot…
+    expect(seen, 'an early subscriber gets the idle snapshot immediately').toEqual(['idle']);
+
+    // …and must receive everything once the engine reconciles the node.
+    acquireEs9Bridge('es9late', 48000, CFG);
+    expect(seen.length, 'the early subscriber heard the connection appear').toBeGreaterThan(1);
+
+    un();
+  });
+
+  it('a view subscribed before acquire hears LIVE state changes, not just the first one', () => {
+    const states: string[] = [];
+    subscribeEs9('es9live', (s) => states.push(s.state));
+    acquireEs9Bridge('es9live', 48000, CFG);
+    // Drive the client's state callback the way the worker would.
+    const client = lastClient!;
+    client.emitState('connecting');
+    client.emitState('connected');
+    expect(states, 'every transition reaches the early subscriber')
+      .toEqual(expect.arrayContaining(['connecting', 'connected']));
+  });
+
+  it('CONNECT works when no entry exists yet — it acquires rather than no-opping', () => {
+    // The other half of the dead button: restartEs9Bridge silently returned when
+    // there was no entry, so pressing CONNECT before the engine reconciled (or
+    // after a release) did literally nothing.
+    expect(hasEs9Bridge('es9btn')).toBe(false);
+    restartEs9Bridge('es9btn', 48000, CFG);
+    expect(hasEs9Bridge('es9btn'), 'CONNECT must connect').toBe(true);
+  });
+
+  it('releasing tells subscribers the bridge is GONE rather than leaving stale state', () => {
+    acquireEs9Bridge('es9rel', 48000, CFG);
+    const seen: string[] = [];
+    subscribeEs9('es9rel', (s) => seen.push(s.state));
+    lastClient!.emitState('connected');
+    releaseEs9Bridge('es9rel');
+    expect(seen.at(-1), 'a dead bridge must not keep reading connected').toBe('idle');
   });
 
   it('only the ENGINE dispose tears it down', () => {
@@ -138,6 +195,23 @@ describe('es9 bridge OWNERSHIP — the connection outlives every view', () => {
       expect(hasEs9Bridge('es9z')).toBe(false);
     } finally {
       if (realWorker !== undefined) w.Worker = realWorker;
+    }
+  });
+
+  it('a PARTIAL window (no addEventListener) must not throw — capability, not environment', () => {
+    // ⚠ Regression: the unload teardown guarded on `typeof window === 'undefined'`,
+    // but this lane supplies a partial `window` WITHOUT addEventListener. The
+    // guard passed and the call threw, taking out ten tests. Probe the thing you
+    // are about to use, not the environment you assume you are in.
+    const w = globalThis as Record<string, unknown>;
+    const realWindow = w.window;
+    try {
+      w.window = {}; // present, but no addEventListener
+      expect(() => acquireEs9Bridge('es9partial', 48000, CFG)).not.toThrow();
+      expect(hasEs9Bridge('es9partial'), 'and the bridge is still acquired').toBe(true);
+    } finally {
+      if (realWindow === undefined) delete w.window;
+      else w.window = realWindow;
     }
   });
 
