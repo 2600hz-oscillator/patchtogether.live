@@ -17,6 +17,9 @@ import {
   lengthRulers,
   shownEditPageFor,
   copyIndicatorLevel,
+  customScaleRowsFor,
+  clampRowOffsetFor,
+  logicalRowInRange,
   LED_EMPTY,
   LED_ROOT_GUIDE,
   LED_PLAYHEAD,
@@ -33,7 +36,10 @@ import {
   VEL_DEFAULT,
   STEPS_PER_PAGE,
   MAX_EDIT_PAGES,
+  CLIP_LANES,
+  visibleNoteRows,
   type NoteClipRecord,
+  type ClipPlayerData,
 } from '$lib/audio/modules/clip-types';
 
 const clip = (over: Partial<NoteClipRecord> = {}): NoteClipRecord => ({
@@ -89,6 +95,100 @@ describe('edit-mode pitch/step math (placement-free)', () => {
     expect(noteForCell(c, 7, 0, 0, 0)).not.toBeNull(); // step 7 < 8 → valid
     expect(noteForCell(c, 8, 0, 0, 0)).toBeNull(); // step 8 ≥ 8
     expect(noteForCell(c, -1, 0)).toBeNull();
+  });
+});
+
+describe('CUSTOM SCALE on a hardware surface (the shared brain honours the filter)', () => {
+  // The owner's rig: 4 drum notes on lane 2, MIDI ch 10 → drum triggers.
+  const DRUMS = [36, 38, 42, 46];
+  const dataOn = (lane: number, notes = DRUMS): ClipPlayerData => {
+    const customScale: (number[] | null)[] = new Array(CLIP_LANES).fill(null);
+    const customScaleOn: boolean[] = new Array(CLIP_LANES).fill(false);
+    customScale[lane] = notes;
+    customScaleOn[lane] = true;
+    return { customScale, customScaleOn };
+  };
+  const c = clip({ lengthSteps: 32, root: 60 });
+
+  it('customScaleRowsFor is UNDEFINED when the lane filter is off — the unchanged path', () => {
+    expect(customScaleRowsFor(c, undefined, 2)).toBeUndefined();
+    expect(customScaleRowsFor(c, {}, 2)).toBeUndefined();
+    // Membership without the applied flag is still OFF.
+    expect(customScaleRowsFor(c, { customScale: [DRUMS] }, 0)).toBeUndefined();
+    // …and a DIFFERENT lane's filter does not leak onto this one.
+    expect(customScaleRowsFor(c, dataOn(2), 3)).toBeUndefined();
+  });
+
+  it('customScaleRowsFor returns the SAME list the card renders (one source of truth)', () => {
+    const rows = customScaleRowsFor(c, dataOn(2), 2);
+    expect(rows).toEqual(visibleNoteRows(c, dataOn(2), 2));
+    expect(rows).toEqual([46, 42, 38, 36]); // high → low
+  });
+
+  it('ROW ORDER — logical row 0 is the BOTTOM = the LOWEST member (the inversion, by example)', () => {
+    // `rows` is the CARD's high→low list [46,42,38,36]; a surface's logical row
+    // is bottom-up. Named example so the inversion can't silently flip:
+    const rows = [46, 42, 38, 36];
+    expect(editLogicalRowToMidi(c, 0, rows)).toBe(36); // bottom pad  = lowest
+    expect(editLogicalRowToMidi(c, 1, rows)).toBe(38);
+    expect(editLogicalRowToMidi(c, 2, rows)).toBe(42);
+    expect(editLogicalRowToMidi(c, 3, rows)).toBe(46); // top of the 4 = highest
+  });
+
+  it('BACK-COMPAT — omitting `rows` (or passing an empty list) is byte-identical to before', () => {
+    for (const r of [0, 1, 6, 7, -3]) {
+      expect(editLogicalRowToMidi(c, r)).toBe(rowToMidi(r, c.root, c.scale));
+      expect(editLogicalRowToMidi(c, r, [])).toBe(rowToMidi(r, c.root, c.scale));
+      expect(logicalRowInRange(r)).toBe(true); // the full key has no end
+    }
+    expect(noteForCell(c, 3, 0, 0, 0)).toEqual(noteForCell(c, 3, 0, 0, 0, undefined));
+  });
+
+  it('a pad PAST the end of a 4-row scale is DEAD (null), not a duplicate of the top row', () => {
+    const rows = [46, 42, 38, 36];
+    // An 8-pad grid over a 4-row scale: rows 0..3 edit, rows 4..7 are inert.
+    expect(noteForCell(c, 0, 0, 0, 0, rows)).toEqual({ step: 0, midi: 36 });
+    expect(noteForCell(c, 0, 3, 0, 0, rows)).toEqual({ step: 0, midi: 46 });
+    for (const y of [4, 5, 6, 7]) expect(noteForCell(c, 0, y, 0, 0, rows)).toBeNull();
+    expect(noteForCell(c, 0, -1, 0, 0, rows)).toBeNull();
+    expect(logicalRowInRange(4, rows)).toBe(false);
+  });
+
+  it('a 10-row scale PAGES: rowOffset indexes the FILTERED list, first 8 then rows 9–10', () => {
+    // rows high→low; logical row 0 = the lowest (last element).
+    const ten = [72, 70, 68, 67, 65, 63, 62, 60, 58, 56]; // 10 members
+    expect(clampRowOffsetFor(0, ten, 8)).toBe(0);
+    // Offset 0 shows the LOWEST 8 members (56 … 68 bottom-up); 70 and 72 are
+    // off the top of the window until it scrolls.
+    expect(noteForCell(c, 0, 0, 0, 0, ten)?.midi).toBe(56);
+    expect(noteForCell(c, 0, 7, 0, 0, ten)?.midi).toBe(68);
+    // Scroll up by 2 → the window reaches the top two (68 … 72).
+    expect(noteForCell(c, 0, 6, 2, 0, ten)?.midi).toBe(70);
+    expect(noteForCell(c, 0, 7, 2, 0, ten)?.midi).toBe(72);
+    // …and it CANNOT scroll past the end: max offset = 10 - 8 = 2.
+    expect(clampRowOffsetFor(5, ten, 8)).toBe(2);
+    expect(clampRowOffsetFor(-3, ten, 8)).toBe(0);
+    // A 4-row scale on an 8-pad grid never scrolls at all (owner: "shows them all together").
+    expect(clampRowOffsetFor(4, [46, 42, 38, 36], 8)).toBe(0);
+    // With the filter OFF the offset is untouched (the full key is unbounded).
+    expect(clampRowOffsetFor(-3, undefined, 8)).toBe(-3);
+    expect(clampRowOffsetFor(99, undefined, 8)).toBe(99);
+  });
+
+  it('NEGATIVE CONTROL — the surface pitch axis actually MOVES when the filter engages', () => {
+    // If `rows` were ignored, every assertion above could pass off the full key.
+    const rows = [46, 42, 38, 36];
+    expect(noteForCell(c, 0, 0, 0, 0, rows)?.midi).not.toBe(noteForCell(c, 0, 0, 0, 0)?.midi);
+    expect(noteForCell(c, 0, 0, 0, 0)?.midi).toBe(rowToMidi(0, 60, c.scale)); // 60, the root
+  });
+
+  it('SCOPE — this covers the surfaces that HAVE a clip note grid (Launchpad + monome)', () => {
+    // Stated in the gate per the repo rule: the Push 2 has no clip note-editor
+    // (its 8×8 is clip-launch + KEYS and it never calls noteForCell), so it has
+    // no pitch-row axis to filter. If one is added it must route through here.
+    // The two adapters that DO have one are pinned in their own specs:
+    // launchpad-map.test.ts and monome-map.test.ts.
+    expect(typeof customScaleRowsFor).toBe('function');
   });
 });
 

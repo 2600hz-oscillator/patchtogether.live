@@ -43,6 +43,12 @@ import {
   midiToRow,
   editableRowRange,
   restrictedRowWindow,
+  coerceCustomScale,
+  laneCustomScale,
+  laneCustomScaleOn,
+  toggleCustomScaleNote,
+  visibleNoteRows,
+  maxRowOffsetFor,
   toggleNoteAt,
   cycleVelocity,
   noteAt,
@@ -998,6 +1004,157 @@ describe('restrictedRowWindow (clip-view 4-octave display window)', () => {
     expect(def.count).toBe(3 * 7);
     // chromatic: 12 rows/octave → 3*12.
     expect(restrictedRowWindow(48, undefined, 3).count).toBe(3 * 12);
+  });
+});
+
+describe('CUSTOM SCALE — the per-lane note-row filter (pure model)', () => {
+  const chromClip = (): NoteClipRecord => ({
+    kind: 'note', steps: [], lengthSteps: 8, root: 48, loop: true,
+  });
+  const keyClip = (): NoteClipRecord => ({
+    kind: 'note', steps: [], lengthSteps: 8, root: 48, scale: 'major', loop: true,
+  });
+  // The owner's rig: four drum notes on one lane (chromatic, NOT a musical scale).
+  const DRUMS = [36, 38, 42, 46];
+  const on = (lane: number, notes: number[]): ClipPlayerData => {
+    const customScale: (number[] | null)[] = new Array(CLIP_LANES).fill(null);
+    const customScaleOn: boolean[] = new Array(CLIP_LANES).fill(false);
+    customScale[lane] = notes;
+    customScaleOn[lane] = true;
+    return { customScale, customScaleOn };
+  };
+
+  it('coerceCustomScale normalizes: sorted, de-duplicated, in-range, junk dropped', () => {
+    expect(coerceCustomScale([46, 36, 38, 36, 42])).toEqual([36, 38, 42, 46]);
+    expect(coerceCustomScale([MIN_MIDI - 1, MAX_MIDI + 1, 60])).toEqual([60]);
+    expect(coerceCustomScale(['x', null, undefined, NaN, {}, 60])).toEqual([60]);
+    expect(coerceCustomScale(60)).toEqual([]); // not an array
+    expect(coerceCustomScale(undefined)).toEqual([]);
+  });
+
+  it('laneCustomScale / laneCustomScaleOn are per-LANE and back-compat on load', () => {
+    const d = on(2, DRUMS);
+    expect(laneCustomScale(d, 2)).toEqual(DRUMS);
+    expect(laneCustomScaleOn(d, 2)).toBe(true);
+    // Every OTHER lane is untouched — the filter is per-lane, not per-card.
+    for (const other of [0, 1, 3, 7]) {
+      expect(laneCustomScale(d, other)).toEqual([]);
+      expect(laneCustomScaleOn(d, other)).toBe(false);
+    }
+    // An OLD save has neither key at all: reads as OFF, never throws.
+    expect(laneCustomScale({}, 0)).toEqual([]);
+    expect(laneCustomScaleOn({}, 0)).toBe(false);
+    expect(laneCustomScaleOn(undefined, 0)).toBe(false);
+  });
+
+  it('an EMPTY membership set reads as OFF even with the flag ON (no zero-row grid)', () => {
+    const d: ClipPlayerData = { customScale: [[]], customScaleOn: [true] };
+    expect(laneCustomScaleOn(d, 0)).toBe(false);
+    expect(visibleNoteRows(chromClip(), d, 0)).toEqual(
+      visibleNoteRows(chromClip(), undefined, 0),
+    );
+  });
+
+  it('toggleCustomScaleNote adds, removes, and re-normalizes', () => {
+    expect(toggleCustomScaleNote([], 38)).toEqual([38]);
+    expect(toggleCustomScaleNote([38, 36], 42)).toEqual([36, 38, 42]); // added + sorted
+    expect(toggleCustomScaleNote([36, 38, 42], 38)).toEqual([36, 42]); // removed
+    expect(toggleCustomScaleNote([36], 36)).toEqual([]); // back to empty = OFF
+  });
+
+  it('OFF ⇒ IDENTICAL to the pre-feature full row list (the no-op proof)', () => {
+    for (const clip of [chromClip(), keyClip()]) {
+      const r = editableRowRange(clip.root, clip.scale);
+      const expected: number[] = [];
+      for (let row = r.hi; row >= r.lo; row--) expected.push(rowToMidi(row, clip.root, clip.scale));
+      // No data at all, and data whose flag is off but whose set is populated.
+      expect(visibleNoteRows(clip, undefined, 0)).toEqual(expected);
+      expect(visibleNoteRows(clip, { customScale: [DRUMS] }, 0)).toEqual(expected);
+      expect(visibleNoteRows(clip, undefined, 0).length).toBe(r.count);
+    }
+  });
+
+  it('ON with 4 notes ⇒ EXACTLY those 4 rows, ordered HIGH → LOW', () => {
+    expect(visibleNoteRows(chromClip(), on(0, DRUMS), 0)).toEqual([46, 42, 38, 36]);
+    // Order in ⇒ irrelevant; order out is always descending (index 0 = top row).
+    expect(visibleNoteRows(chromClip(), on(0, [42, 36, 46, 38]), 0)).toEqual([46, 42, 38, 36]);
+  });
+
+  it('a member OFF the clip’s scale still gets a row — drum rows are CHROMATIC', () => {
+    // C major from C3: C#/D#/F# are NOT scale degrees, so rowToMidi can never
+    // produce them. The filter returns MIDI directly, so the drum rows survive.
+    const clip = keyClip();
+    const offKey = [37, 39, 42]; // C#1, D#1, F#1
+    for (const m of offKey) expect(midiToRow(m, clip.root, clip.scale)).toBeNull();
+    expect(visibleNoteRows(clip, on(0, offKey), 0)).toEqual([42, 39, 37]);
+  });
+
+  it('a member OUTSIDE the shown range is DROPPED — no phantom row', () => {
+    const clip = chromClip();
+    const win = restrictedRowWindow(clip.root, clip.scale, 3, 1); // 1 octave from C3: 48..59
+    expect(rowToMidi(win.lo, clip.root, clip.scale)).toBe(48);
+    expect(rowToMidi(win.hi, clip.root, clip.scale)).toBe(59);
+    // 36 and 46 sit below/inside: only the in-window members survive.
+    const rows = visibleNoteRows(clip, on(0, [36, 50, 55, 90]), 0, win);
+    expect(rows).toEqual([55, 50]);
+    expect(rows).not.toContain(36); // below the window
+    expect(rows).not.toContain(90); // above the window
+  });
+
+  it('INTERSECTS with restrictedRowWindow rather than overriding it', () => {
+    const clip = chromClip();
+    const win = restrictedRowWindow(clip.root, clip.scale, 3, 1); // 48..59
+    const full = visibleNoteRows(clip, on(0, DRUMS), 0); // unrestricted: all 4 drums
+    expect(full).toEqual([46, 42, 38, 36]);
+    // Same membership, restricted range → only what the window can show. Every
+    // returned row is inside the window's pitch span (the intersection property).
+    const inWin = visibleNoteRows(clip, on(0, [...DRUMS, 50]), 0, win);
+    expect(inWin).toEqual([50]);
+    for (const m of inWin) expect(m).toBeGreaterThanOrEqual(48);
+    for (const m of inWin) expect(m).toBeLessThanOrEqual(59);
+  });
+
+  it('NEVER returns zero rows — an all-out-of-range set falls back to the full list', () => {
+    const clip = chromClip();
+    const win = restrictedRowWindow(clip.root, clip.scale, 3, 1); // 48..59
+    const rows = visibleNoteRows(clip, on(0, DRUMS), 0, win); // every drum is < 48
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows).toEqual(visibleNoteRows(clip, undefined, 0, win)); // = the unfiltered window
+  });
+
+  it('NEGATIVE CONTROL — the row list actually MOVES when the filter engages', () => {
+    // Guards the instrument: if visibleNoteRows were blind to `data`, every
+    // assertion above could still pass by returning the full list each time.
+    const clip = chromClip();
+    const off = visibleNoteRows(clip, undefined, 0);
+    const applied = visibleNoteRows(clip, on(0, DRUMS), 0);
+    expect(applied).not.toEqual(off);
+    expect(applied.length).toBeLessThan(off.length);
+    // …and turning it back OFF restores the original list exactly.
+    const removed = visibleNoteRows(clip, { customScale: [DRUMS], customScaleOn: [false] }, 0);
+    expect(removed).toEqual(off);
+  });
+
+  it('D1 — the filter is a VIEW: it never touches what the clip PLAYS', () => {
+    // A note on a row the filter HIDES stays in the clip and still fires. The
+    // scheduler reads `clip.steps` / notesFiringAt, which know nothing about
+    // customScale — hiding a row must never be data loss by UI state.
+    const clip: NoteClipRecord = {
+      kind: 'note', steps: [{ step: 0, midi: 60, velocity: VEL_DEFAULT, lengthSteps: 1 }],
+      lengthSteps: 8, root: 48, loop: true,
+    };
+    const d = on(0, DRUMS); // 60 is NOT a member → its row is hidden
+    expect(visibleNoteRows(clip, d, 0)).not.toContain(60);
+    expect(notesStartingAt(clip, 0)).toEqual(notesStartingAt(clip, 0));
+    expect(notesStartingAt(clip, 0).map((n) => n.midi)).toEqual([60]); // still fires
+    expect(clip.steps).toHaveLength(1); // and the note was not removed
+  });
+
+  it('maxRowOffsetFor — 4 rows fit an 8-row grid (no scroll); 10 rows scroll by 2', () => {
+    expect(maxRowOffsetFor(4, 8)).toBe(0);
+    expect(maxRowOffsetFor(8, 8)).toBe(0);
+    expect(maxRowOffsetFor(10, 8)).toBe(2);
+    expect(maxRowOffsetFor(0, 8)).toBe(0); // never negative
   });
 });
 

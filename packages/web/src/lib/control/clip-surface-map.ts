@@ -39,7 +39,11 @@ import {
   MAX_EDIT_PAGES,
   lengthEndBlock,
   lengthEndStep,
+  laneCustomScaleOn,
+  visibleNoteRows,
+  maxRowOffsetFor,
   type NoteClipRecord,
+  type ClipPlayerData,
 } from '$lib/audio/modules/clip-types';
 
 // ---------------------------------------------------------------------------
@@ -104,9 +108,67 @@ export function slotLaneForClipIndex(index: number): { slot: number; lane: numbe
  * clip, with a `rowOffset` that scrolls the pitch window by whole scale-degree
  * rows. Surface-independent: a placement adapter converts its own physical row
  * to this logical row before calling.
+ *
+ * CUSTOM SCALE: pass `rows` — the lane's `visibleNoteRows(...)` list — and the
+ * logical row indexes into THAT list instead of the clip's key. Omit it and the
+ * behaviour is byte-identical to before the feature (that back-compat is its own
+ * test). ⚠ ORDER: `rows` is the CARD's convention, HIGH → LOW (index 0 = the
+ * highest pitch), while a logical row is BOTTOM-up — so the inversion
+ * `rows.length - 1 - logicalRow` happens HERE, once, for every surface. Out of
+ * range clamps to the nearest edge (`noteForCell` is the one that returns null,
+ * so a pad past the end is dark rather than editing the wrong note).
  */
-export function editLogicalRowToMidi(clip: NoteClipRecord, logicalRow: number): number {
-  return rowToMidi(logicalRow, clip.root, clip.scale);
+export function editLogicalRowToMidi(
+  clip: NoteClipRecord,
+  logicalRow: number,
+  rows?: readonly number[],
+): number {
+  if (!rows || rows.length === 0) return rowToMidi(logicalRow, clip.root, clip.scale);
+  const i = rows.length - 1 - logicalRow; // bottom-up logical → high→low list index
+  return rows[Math.max(0, Math.min(rows.length - 1, i))];
+}
+
+/** Whether a logical row exists in a custom-scale row list (i.e. the surface
+ *  should light/accept that pad at all). Always true with no list — the
+ *  unfiltered key is infinite in both directions. */
+export function logicalRowInRange(logicalRow: number, rows?: readonly number[]): boolean {
+  if (!rows || rows.length === 0) return true;
+  return logicalRow >= 0 && logicalRow < rows.length;
+}
+
+/**
+ * THE ONE ENTRY POINT a hardware surface uses to honour the CUSTOM SCALE: the
+ * lane's filtered row list, or `undefined` when the filter is OFF — in which
+ * case every downstream call takes the unchanged full-key path, so "filter off"
+ * is byte-identical to before the feature by CONSTRUCTION rather than by
+ * matching behaviour. Never re-derive the filter in a controller (D6): the card
+ * and both surfaces read the same `visibleNoteRows`.
+ *
+ * ⚠ SCOPE: this covers the surfaces with a clip NOTE-EDITOR grid — the
+ * Launchpad and the monome. The Push 2 has no clip note-editor (its grid is
+ * clip-launch + KEYS; `push2-control` never calls `noteForCell`), so there is no
+ * pitch-row axis there to filter. If a Push note editor is ever added it MUST
+ * route through here too.
+ */
+export function customScaleRowsFor(
+  clip: NoteClipRecord,
+  data: ClipPlayerData | undefined,
+  lane: number,
+): readonly number[] | undefined {
+  if (!laneCustomScaleOn(data, lane)) return undefined;
+  return visibleNoteRows(clip, data, lane);
+}
+
+/** Clamp a surface's pitch-window `rowOffset` so a `windowRows`-tall grid never
+ *  scrolls past the end of a custom-scale row list (4 rows on an 8-pad grid ⇒
+ *  always 0). A no-op when the filter is off — the full key has no end. */
+export function clampRowOffsetFor(
+  rowOffset: number,
+  rows: readonly number[] | undefined,
+  windowRows: number,
+): number {
+  if (!rows) return rowOffset;
+  return Math.max(0, Math.min(maxRowOffsetFor(rows.length, windowRows), Math.trunc(rowOffset)));
 }
 
 /** Number of 16-step pages a clip spans (1..MAX_EDIT_PAGES). */
@@ -120,6 +182,12 @@ export function editPageCount(clip: NoteClipRecord): number {
  * `page` → the {step, midi} it edits, or null when the step is beyond the clip's
  * length. `realStep = page*STEPS_PER_PAGE + col`. Placement-free: the adapter
  * has already excluded function/out-of-grid cells + converted to (col, row).
+ *
+ * CUSTOM SCALE: with `rows` supplied (the lane's `visibleNoteRows`), the pitch
+ * axis is that filtered list — `rowOffset + logicalRow` indexes into it, and a
+ * pad PAST the end returns null (a dark, inert pad) rather than clamping onto
+ * the last row, so an 8-pad grid showing a 4-row scale has four dead pads
+ * instead of four duplicates of the top note. Omit `rows` ⇒ unchanged.
  */
 export function noteForCell(
   clip: NoteClipRecord,
@@ -127,11 +195,14 @@ export function noteForCell(
   logicalRow: number,
   rowOffset = 0,
   page = 0,
+  rows?: readonly number[],
 ): { step: number; midi: number } | null {
   if (col < 0) return null;
   const realStep = page * STEPS_PER_PAGE + col;
   if (realStep >= clip.lengthSteps) return null; // beyond the clip
-  return { step: realStep, midi: editLogicalRowToMidi(clip, rowOffset + logicalRow) };
+  const absRow = rowOffset + logicalRow;
+  if (!logicalRowInRange(absRow, rows)) return null; // past the end of a custom scale
+  return { step: realStep, midi: editLogicalRowToMidi(clip, absRow, rows) };
 }
 
 /** The LED level a note cell should show: empty, the root guide, the moving

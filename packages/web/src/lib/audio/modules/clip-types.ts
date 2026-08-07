@@ -377,6 +377,21 @@ export interface ClipPlayerData {
    *  Launchpad LED path). Back-compat on load like `rate`/`mono`/`swing`: a
    *  missing/short array reads as all-unpicked. */
   laneColor?: (string | null)[];
+  /** Per-lane CUSTOM SCALE membership (length CLIP_LANES) — an explicit set of
+   *  MIDI NOTE NUMBERS the note editor shows when the filter is applied. MIDI
+   *  numbers, NOT row indices: a row index silently re-points at a different
+   *  pitch when the clip's root/scale changes, a MIDI number is stable. Absent /
+   *  short / empty ⇒ no membership (the filter can never engage). A VIEW filter
+   *  only — the scheduler never reads it, so a hidden row's notes keep sounding
+   *  (see `visibleNoteRows`). Back-compat on load like `rate`/`mono`/`swing`. */
+  customScale?: (number[] | null)[];
+  /** Per-lane CUSTOM-SCALE APPLIED flag (length CLIP_LANES). Whether the lane's
+   *  `customScale` membership is currently FILTERING the editor rows. Separate
+   *  from the membership itself so REMOVE keeps the set and re-APPLY is one
+   *  click. SYNCED — the owner wants it to survive a save AND to drive the
+   *  hardware surfaces. Absent/false = the full row range (byte-identical to
+   *  the pre-feature editor). */
+  customScaleOn?: boolean[];
   /** RESET intent nonce. The card's RST button (and its MIDI binding)
    *  INCREMENTS this; every peer's engine observes the change and snaps all
    *  ACTIVE lanes back to step 1 at a common re-anchor instant (queued
@@ -1597,6 +1612,105 @@ export function restrictedRowWindow(
   const hi = Math.min(full.hi, floorRow + span - 1);
   const clampedHi = hi < lo ? lo : hi; // never invert (degenerate floor beyond the top)
   return { lo, hi: clampedHi, count: clampedHi - lo + 1 };
+}
+
+// ---------------------------------------------------------------------------
+// CUSTOM SCALE — a PER-LANE note-ROW FILTER for the editor. PURE.
+//
+// The use case that defines it: a hardware device listens on MIDI ch 10 for
+// FOUR notes and turns them into drum triggers, so the sequencer should show
+// only those four rows. It is therefore a VIEW filter for AUTHORING —
+//   - NOT a musical scale (a member need not be on the clip's key/scale; drum
+//     rows are chromatic, and `visibleNoteRows` returns MIDI directly rather
+//     than going through `rowToMidi`, so an off-key member still gets a row);
+//   - NOT a transform (nothing is transposed);
+//   - NOT a playback change (D1). The scheduler NEVER reads these keys, so a
+//     note on a hidden row keeps sounding — hiding a row must not be data loss
+//     by UI state. `clip-player.ts` is deliberately untouched by this feature.
+//
+// `visibleNoteRows` is the ONE row list the card AND every hardware surface
+// render from (D6) — neither re-derives the filter, so a card cannot silently
+// disagree with a controller about which rows exist.
+// ---------------------------------------------------------------------------
+
+/** Normalize a raw custom-scale entry to sorted-ASCENDING, de-duplicated MIDI
+ *  note numbers inside the playable `[MIN_MIDI, MAX_MIDI]`. Anything else in the
+ *  array (non-finite, out of range, a string, a nested object) is DROPPED rather
+ *  than throwing — same forgiving load discipline as `coerceLaneColor`. */
+export function coerceCustomScale(raw: unknown): number[] {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set<number>();
+  for (const v of raw) {
+    const n = Math.round(Number(v));
+    if (!Number.isFinite(n) || n < MIN_MIDI || n > MAX_MIDI) continue;
+    seen.add(n);
+  }
+  return [...seen].sort((a, b) => a - b);
+}
+
+/** Lane L's custom-scale MEMBERSHIP (MIDI notes, ascending). Empty = no set.
+ *  Absent / short / corrupt ⇒ `[]` — mirrors `laneMono` / `laneSwing`. */
+export function laneCustomScale(data: ClipPlayerData | undefined, lane: number): number[] {
+  return coerceCustomScale(data?.customScale?.[lane]);
+}
+
+/** Whether lane L's custom scale is currently APPLIED. An EMPTY membership set
+ *  reads as OFF no matter what the flag says, so the filter can never produce a
+ *  zero-row grid from an empty set (the guard lives here, in the model, not in
+ *  the UI). */
+export function laneCustomScaleOn(data: ClipPlayerData | undefined, lane: number): boolean {
+  if (data?.customScaleOn?.[lane] !== true) return false;
+  return laneCustomScale(data, lane).length > 0;
+}
+
+/** Add/remove one MIDI note in a membership list, returning a NEW normalized
+ *  list (the card's per-row checkbox). PURE — the caller writes the result. */
+export function toggleCustomScaleNote(list: readonly number[], midi: number): number[] {
+  const m = Math.round(midi);
+  return coerceCustomScale(list.includes(m) ? list.filter((x) => x !== m) : [...list, m]);
+}
+
+/**
+ * THE ONE ROW LIST the clip editor renders — MIDI note numbers ordered HIGH →
+ * LOW (index 0 = the TOP row, matching the card's `displayRow` convention; a
+ * hardware surface whose logical row 0 is the BOTTOM inverts via
+ * `rows.length - 1 - logicalRow`, which `clip-surface-map` does for it).
+ *
+ *   - filter OFF ⇒ every row in `range` (default `editableRowRange`), i.e.
+ *     `rowToMidi(hi) … rowToMidi(lo)` — byte-identical to the pre-feature list;
+ *   - filter ON  ⇒ only the lane's member notes, still high→low, INTERSECTED
+ *     with `range`'s pitch span so a member outside the shown range does not
+ *     conjure a phantom row.
+ *
+ * NEVER returns an empty array: if the filter is on but every member falls
+ * outside `range` (e.g. the user also restricted the range away from the drum
+ * rows), it falls back to the unfiltered list rather than rendering a grid with
+ * no rows — you can always see, and fix, what you are looking at.
+ */
+export function visibleNoteRows(
+  clip: NoteClipRecord,
+  data: ClipPlayerData | undefined,
+  lane: number,
+  range?: { lo: number; hi: number },
+): number[] {
+  const r = range ?? editableRowRange(clip.root, clip.scale);
+  const full: number[] = [];
+  for (let row = r.hi; row >= r.lo; row--) full.push(rowToMidi(row, clip.root, clip.scale));
+  if (!laneCustomScaleOn(data, lane)) return full;
+  const loMidi = rowToMidi(r.lo, clip.root, clip.scale);
+  const hiMidi = rowToMidi(r.hi, clip.root, clip.scale);
+  const kept = laneCustomScale(data, lane)
+    .filter((m) => m >= loMidi && m <= hiMidi)
+    .sort((a, b) => b - a);
+  return kept.length > 0 ? kept : full;
+}
+
+/** The furthest a surface's pitch-window `rowOffset` may scroll so the last
+ *  window still shows `windowRows` rows: `max(0, count - windowRows)`. With a
+ *  4-row custom scale on an 8-row grid this is 0 (all four visible, no scroll);
+ *  with 10 rows it is 2 (rows 9–10 reachable). */
+export function maxRowOffsetFor(count: number, windowRows: number): number {
+  return Math.max(0, Math.trunc(count) - Math.trunc(windowRows));
 }
 
 /** Options for note entry. `mono` = one note per column (replace on add).

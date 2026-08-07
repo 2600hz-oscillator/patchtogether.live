@@ -176,10 +176,16 @@ export function isTransportPad(x: number, y: number): boolean {
 // ---------------------------------------------------------------------------
 
 /** Display row y (0 = top, NOTE_ROWS-1 = bottom note row) → MIDI for a clip.
- *  Converts the monome's top-down physical row to the core's logical row. */
-export function editRowToMidi(clip: NoteClipRecord, y: number, rowOffset = 0): number {
+ *  Converts the monome's top-down physical row to the core's logical row.
+ *  `rows` (optional) = the lane's CUSTOM-SCALE row list; omit for the full key. */
+export function editRowToMidi(
+  clip: NoteClipRecord,
+  y: number,
+  rowOffset = 0,
+  rows?: readonly number[],
+): number {
   const logicalRow = rowOffset + (NOTE_ROWS - 1 - y);
-  return editLogicalRowToMidi(clip, logicalRow);
+  return editLogicalRowToMidi(clip, logicalRow, rows);
 }
 
 /**
@@ -193,10 +199,11 @@ export function editPadToNote(
   y: number,
   rowOffset = 0,
   page = 0,
+  rows?: readonly number[],
 ): { step: number; midi: number } | null {
   if (x < 0 || x >= GRID_WIDTH || y < 0 || y >= NOTE_ROWS) return null; // func row / oob
   const logicalRow = NOTE_ROWS - 1 - y; // monome top-down → core bottom-up
-  return noteForCell(clip, x, logicalRow, rowOffset, page);
+  return noteForCell(clip, x, logicalRow, rowOffset, page, rows);
 }
 
 // EDIT-mode function-row pad classifiers.
@@ -328,6 +335,11 @@ export interface EditLedOpts {
   velArmed?: boolean;
   followOn?: boolean;
   editPage?: number;
+  /** The lane's CUSTOM-SCALE row list (`customScaleRowsFor`), or undefined when
+   *  the filter is OFF — then the pitch axis is the clip's full key, unchanged.
+   *  A pad past the end of a short list paints LED_EMPTY (`editPadToNote` returns
+   *  null for it), so a 4-row scale leaves the top 4 note rows dark. */
+  rows?: readonly number[];
 }
 
 export function computeEditLeds(
@@ -356,7 +368,7 @@ export function computeEditLeds(
   for (let y = 0; y < NOTE_ROWS; y++) {
     for (let x = 0; x < GRID_WIDTH; x++) {
       const fi = frameIndex(x, y);
-      const note = editPadToNote(clip, x, y, rowOffset, shownPage);
+      const note = editPadToNote(clip, x, y, rowOffset, shownPage, opts.rows);
       if (!note) {
         frame[fi] = LED_EMPTY;
         continue;

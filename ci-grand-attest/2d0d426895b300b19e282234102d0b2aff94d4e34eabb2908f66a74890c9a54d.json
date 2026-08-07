@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
-  "grandContentHash": "12b6073ab373bc75a9e54d95feb39196f82f2d2a1e0a3da5bbee9cd0a88f1698",
-  "attestedAt": "2026-08-04T14:08:25.121Z",
+  "grandContentHash": "2d0d426895b300b19e282234102d0b2aff94d4e34eabb2908f66a74890c9a54d",
+  "attestedAt": "2026-08-07T08:18:11.633Z",
   "attestedBy": "tmayshark@gmail.com",
-  "gitHeadAtAttest": "0f8c3e9692b4c5f325edd029b33c1004c3b51db8",
+  "gitHeadAtAttest": "255fc528e46afb87116424064fced2ed84ac6601",
   "playwrightVersion": "1.50.0",
   "os": "darwin 25.4.0 (arm64)",
   "host": "2600hzs-MBP.home.local",
   "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5, Unspecified Version)",
-  "combinedMasterSha": "3ad186be1317dd54",
+  "combinedMasterSha": "7373b97d19a1a27a",
   "repeatEach": 1,
   "retries": 0,
   "run": {
@@ -18,5 +18,5 @@
     "flaky": 0,
     "skipped": 0
   },
-  "durationSec": 24
+  "durationSec": 29
 }

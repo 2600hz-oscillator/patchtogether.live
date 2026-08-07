@@ -55,7 +55,9 @@ import {
   computeSessionLeds,
   computeEditLeds,
   computeLengthEditLeds,
+  NOTE_ROWS,
 } from './monome-map';
+import { customScaleRowsFor, clampRowOffsetFor } from '$lib/control/clip-surface-map';
 import {
   CLIP_LANES,
   clipIndex,
@@ -105,6 +107,18 @@ let editArmed = false; // EDIT pad held in session mode
 let editAnchor: { step: number; midi: number } | null = null;
 let editSpanned = false;
 let editRowOffset = 0; // pitch-window offset (OCT−/+ on the function row)
+/** CUSTOM SCALE — the edited lane's filtered pitch-row list plus the window
+ *  offset CLAMPED to it, resolved together so the LED paint and the pad press
+ *  can never disagree about which rows exist. `rows` is undefined when the
+ *  lane's filter is OFF (⇒ the unchanged full-key path). The monome only
+ *  RESPECTS the scale — nothing here writes `customScale`. */
+function editScaleRows(
+  clip: NoteClipRecord,
+  data: ClipPlayerData | undefined,
+): { rows?: readonly number[]; rowOffset: number } {
+  const rows = customScaleRowsFor(clip, data, laneOf(editClipIndex));
+  return { rows, rowOffset: clampRowOffsetFor(editRowOffset, rows, NOTE_ROWS) };
+}
 let velHeld = false; // the VELOCITY function pad is held
 // Multi-page editing: which 16-step page is shown when FROZEN, and whether the
 // shown page auto-scrolls with the playhead (FOLLOW, default on).
@@ -396,7 +410,8 @@ function handleKey(e: GridKeyEvent): void {
     }
 
     const page = shownEditPage(clip);
-    const note = editPadToNote(clip, e.x, e.y, editRowOffset, page);
+    const scaled = editScaleRows(clip, liveData(nodeId));
+    const note = editPadToNote(clip, e.x, e.y, scaled.rowOffset, page, scaled.rows);
     if (!note) return; // a non-control function-row / out-of-range pad
     // Mono lanes replace-on-add; poly lanes cap at POLY_CHANNEL_PAIRS per column.
     const mono = laneMono(liveData(nodeId), laneOf(editClipIndex));
@@ -538,7 +553,7 @@ function renderLeds(): void {
     if (clip) {
       // Show the playhead only when the edited clip's lane is actually playing it.
       const ph = editPlayhead(nodeId, data);
-      setFrame(computeEditLeds(clip, ph, { rowOffset: editRowOffset, velArmed: velHeld, followOn, editPage }));
+      setFrame(computeEditLeds(clip, ph, { ...editScaleRows(clip, data), velArmed: velHeld, followOn, editPage }));
       return;
     }
     mode = 'session'; // clip vanished — fall back

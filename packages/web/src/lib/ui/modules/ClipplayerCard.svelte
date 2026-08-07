@@ -40,6 +40,11 @@
     rowToMidi,
     editableRowRange,
     restrictedRowWindow,
+    visibleNoteRows,
+    laneCustomScale,
+    laneCustomScaleOn,
+    coerceCustomScale,
+    toggleCustomScaleNote,
     DEFAULT_CLIP_STEPS,
     MAX_CLIP_STEPS,
     toggleNoteAt,
@@ -1049,11 +1054,34 @@
     if (!restrictRange) return editableRowRange(editClip.root, editClip.scale);
     return restrictedRowWindow(editClip.root, editClip.scale, rangeFloor, RESTRICT_OCTAVES);
   });
-  let editRows = $derived(editRange?.count ?? 8); // rows shown (full range, or the window)
   // EVERY step 0..lengthSteps-1 (capped at the 128-step max) — no step paging.
   let editCols = $derived(Math.min(MAX_CLIP_STEPS, editClip?.lengthSteps ?? DEFAULT_CLIP_STEPS));
   let editLane = $derived(laneOf(selectedClip));
   let editSlot = $derived(slotOf(selectedClip));
+  // ── CUSTOM SCALE (per-lane note-row filter) ──────────────────────────────
+  // `pickingScale` is VIEW-LOCAL (never synced): revealing the checkbox column
+  // is a personal authoring lens, like holding shift — a rack-mate toggling it
+  // must not change your view. The MEMBERSHIP and the APPLIED flag both live on
+  // node.data (synced, undoable) because the owner wants them to survive a save
+  // AND to drive the hardware surfaces.
+  let pickingScale = $state(false);
+  let customScaleNotes = $derived((void cardVersion, laneCustomScale(dataObj(), editLane)));
+  let customScaleOn = $derived((void cardVersion, laneCustomScaleOn(dataObj(), editLane)));
+  // THE ONE ROW LIST the piano-roll renders — the same `visibleNoteRows` the
+  // Launchpad and monome read, so a card can never disagree with a surface
+  // about which rows exist. While PICKING it is deliberately UNFILTERED (pass
+  // no data): a filtered picker could only ever REMOVE rows, never add one.
+  let editRowMidis = $derived.by<number[]>(() => {
+    void cardVersion;
+    if (!editClip) return [];
+    return visibleNoteRows(
+      editClip,
+      pickingScale ? undefined : dataObj(),
+      editLane,
+      editRange ?? undefined,
+    );
+  });
+  let editRows = $derived(editRowMidis.length || editRange?.count || 8); // rows shown
   // Pitch-row highlighting is a fixed C/F octave guide computed per rendered row
   // from its MIDI note (midi % 12 === 0 → C row, === 5 → F row) — see the cell
   // markup + the .cell.crow/.frow CSS + the on-card legend. This replaces the
@@ -1063,18 +1091,64 @@
   // always fits the full row stack. Applied as an inline style ONLY in clip-view
   // (inline beats the rack-tier clamp in _module-card.css on specificity), so
   // outside clip-view the fixed 3u/hp-2 tier applies unchanged.
+  // The custom-scale picker column adds a fixed width per row while it is open,
+  // so the card GROWS by exactly that instead of overflowing its own body (see
+  // the card-control-overflow discipline: a mode that reveals controls must be
+  // measured in that mode, not only in the default one).
+  const SCALE_PICK_W = 44; // .scale-pick width (px) — checkbox + note label
   let editCardWidthPx = $derived.by(() => {
     const cols = editCols;
     const gridW = cols * CELL_W + Math.max(0, cols - 1) * CELL_GAP;
-    return Math.max(CLIP_NORMAL_CARD_W, gridW + CLIP_BODY_PAD_X * 2 + CLIP_CARD_BORDER * 2);
+    const pickW = pickingScale ? SCALE_PICK_W + CELL_GAP : 0;
+    return Math.max(
+      CLIP_NORMAL_CARD_W,
+      gridW + pickW + CLIP_BODY_PAD_X * 2 + CLIP_CARD_BORDER * 2,
+    );
   });
 
   // Display row 0 = TOP = the highest editable pitch (editRange.hi); rows descend
   // to the lowest at the bottom. The FULL editable range is shown at once, so
   // there is no pitch-window scroll — every row a note could occupy is on-card.
+  // THE FUNNEL: every note gesture (toggle, velocity cycle, probability menu)
+  // resolves its pitch through here, so re-pointing it at `editRowMidis` is the
+  // whole of the custom-scale render change.
   function midiForDisplayRow(clip: NoteClipRecord, displayRow: number): number {
+    const list = editRowMidis;
+    if (list.length > 0) return list[Math.max(0, Math.min(list.length - 1, displayRow))];
     const r = editRange ?? editableRowRange(clip.root, clip.scale);
     return rowToMidi(r.hi - displayRow, clip.root, clip.scale);
+  }
+  /** Check/uncheck one row in the edited lane's custom-scale membership.
+   *  Undoable + synced; writes the whole lane array in place (same discipline as
+   *  `toggleLaneMono` / the swing + colour writers). */
+  function toggleScaleRow(midi: number) {
+    const lane = editLane;
+    writeDataUndoable((d) => {
+      const base: (number[] | null)[] = new Array(CLIP_LANES).fill(null);
+      if (Array.isArray(d.customScale)) {
+        for (let i = 0; i < CLIP_LANES && i < d.customScale.length; i++) {
+          base[i] = coerceCustomScale(d.customScale[i]);
+        }
+      }
+      base[lane] = toggleCustomScaleNote(coerceCustomScale(base[lane]), midi);
+      d.customScale = base;
+    });
+  }
+  /** APPLY (hide every unchecked row) ⇄ REMOVE (unhide them). REMOVE KEEPS the
+   *  membership set, so re-applying is one click. Applying also closes the
+   *  picker — the point of APPLY is to see the filtered grid. */
+  function toggleCustomScaleApplied() {
+    const lane = editLane;
+    const next = !customScaleOn;
+    writeDataUndoable((d) => {
+      const base = new Array<boolean>(CLIP_LANES).fill(false);
+      if (Array.isArray(d.customScaleOn)) {
+        for (let i = 0; i < CLIP_LANES && i < d.customScaleOn.length; i++) base[i] = !!d.customScaleOn[i];
+      }
+      base[lane] = next;
+      d.customScaleOn = base;
+    });
+    if (next) pickingScale = false;
   }
   /** The note cell's FILL colour, driven by EFFECTIVE PROBABILITY + its SOURCE
    *  (owner-spec'd, replacing the old velocity-blue): '' for an empty cell (the
@@ -1325,7 +1399,7 @@
   tabindex="0"
   onclick={onCardClick}
   style={cardView === 'clip'
-    ? `width:${editCardWidthPx}px;height:auto;min-height:0;max-height:none`
+    ? `width:${editCardWidthPx}px;height:auto;min-height:0;max-height:none;--scale-pick-w:${SCALE_PICK_W}px`
     : undefined}
 >
   <div class="stripe"></div>
@@ -1949,6 +2023,23 @@
               <button onclick={() => nudgeSwing(1)} aria-label="swing up" data-testid={`clipplayer-swing-up-${id}`}>+</button>
             </span>
             <span class="op-vel" class:on={shiftHeld} title="Hold Shift (or key 8 / ⇧) then click a cell to cycle its velocity" data-testid={`clipplayer-velmode-${id}`}>VEL</span>
+            <!-- CUSTOM SCALE apply/remove — sits right of VEL (owner's spec).
+                 Hides every row not checked in the picker; REMOVE unhides them
+                 and KEEPS the set. A view filter: hidden rows keep their notes
+                 and keep sounding. -->
+            <button
+              class="op op-scale"
+              class:on={customScaleOn}
+              onclick={toggleCustomScaleApplied}
+              disabled={!customScaleOn && customScaleNotes.length === 0}
+              aria-pressed={customScaleOn}
+              title={customScaleOn
+                ? `Remove custom scale — unhide every row (the ${customScaleNotes.length}-note set is kept, so re-applying is one click)`
+                : customScaleNotes.length === 0
+                  ? 'Apply custom scale — check one or more rows in the CUSTOM SCALE picker first'
+                  : `Apply custom scale — show ONLY the ${customScaleNotes.length} checked row(s) on this lane (card + Push/Launchpad). Hidden rows keep their notes and keep playing.`}
+              data-testid={`clipplayer-customscale-apply-${id}`}
+            >{customScaleOn ? 'REMOVE SCALE' : 'APPLY SCALE'}</button>
           </div>
           <!-- CLIP-VIEW range controls + the note-row colour KEY (feature: a
                display-only 4-octave window + a C/F octave guide). All three are
@@ -1964,6 +2055,19 @@
                 : `RngLim OFF — the editor shows the full pitch range (click to restrict to ${RESTRICT_OCTAVES} octaves)`}
               data-testid={`clipplayer-restrict-${id}`}
             >{RESTRICT_OCTAVES}OCT</button>
+            <!-- CUSTOM SCALE picker toggle. Reveals a checkbox beside every row;
+                 while it is open the grid shows the FULL row list (unfiltered)
+                 so rows can be ADDED, not just removed. View-local — not synced. -->
+            <button
+              class="range-toggle scale-toggle"
+              class:on={pickingScale}
+              onclick={() => (pickingScale = !pickingScale)}
+              aria-pressed={pickingScale}
+              title={pickingScale
+                ? 'Close the custom-scale picker'
+                : 'Custom scale — check the note rows to keep, then APPLY SCALE (all rows are shown while picking)'}
+              data-testid={`clipplayer-customscale-${id}`}
+            >CUSTOM SCALE</button>
             <span class="floor-step" class:dim={!restrictRange} title="Lowest octave shown when the range is restricted">
               <button
                 onclick={() => nudgeRangeFloor(-1)}
@@ -1994,6 +2098,22 @@
           <div class="piano-roll" class:vel-mode={shiftHeld} data-testid="clipplayer-pianoroll">
             {#each Array(editRows) as _r, row (row)}
               <div class="pr-row">
+                {#if pickingScale && editClip}
+                  {@const rowMidi = midiForDisplayRow(editClip, row)}
+                  <label
+                    class="scale-pick"
+                    title={`Include ${noteNameForMidi(rowMidi)} in this lane's custom scale`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={customScaleNotes.includes(rowMidi)}
+                      onchange={() => toggleScaleRow(rowMidi)}
+                      aria-label={`custom scale row ${noteNameForMidi(rowMidi)}`}
+                      data-testid={`clipplayer-scalerow-${id}-${rowMidi}`}
+                    />
+                    <span class="sp-lbl">{noteNameForMidi(rowMidi)}</span>
+                  </label>
+                {/if}
                 {#each Array(editCols) as _c, step (step)}
                   {@const midi = midiForDisplayRow(editClip, row)}
                   {@const fill = cellProbFill(editClip, step, midi)}
@@ -2597,7 +2717,29 @@
     border-color: #e8b35b;
     animation: rec-blink 1s steps(2, jump-none) infinite;
   }
-  .pr-row { display: flex; gap: 2px; }
+  .pr-row { display: flex; gap: 2px; align-items: center; }
+  /* CUSTOM-SCALE picker column — one checkbox + note name per row, shown only
+     while the picker is open. Fixed width so every row's grid starts at the
+     same x (a ragged left edge would misread as a step offset), and it is what
+     editCardWidthPx budgets for. */
+  .scale-pick {
+    width: var(--scale-pick-w);
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .scale-pick input { width: 11px; height: 11px; margin: 0; accent-color: #6cf; cursor: pointer; }
+  .sp-lbl {
+    font-size: 8px;
+    line-height: 1;
+    color: var(--text-dim, #aaa);
+    font-variant-numeric: tabular-nums;
+  }
+  .op-scale.on { color: #041018; background: #6cf; border-color: #6cf; }
+  .op-scale:disabled { opacity: 0.4; cursor: not-allowed; }
   .cell {
     width: 15px;
     height: 13px;
