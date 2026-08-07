@@ -29,7 +29,7 @@
 
   let cardState = $state<MidiclockCardState>({
     connected: false,
-    permissionDenied: false,
+    permissionDenied: false, accessMessage: '',
     devices: [],
     selectedDeviceId: null,
     running: false,
@@ -110,8 +110,13 @@
         <button class="connect-btn" type="button" onclick={onClickConnect}>
           Connect MIDI…
         </button>
-        {#if cardState.permissionDenied}
-          <div class="hint err">Permission denied or browser unsupported.</div>
+        {#if cardState.accessMessage}
+          <!-- LOUD, and actionable. The old copy was a one-line hint swap that
+               a user reading a dead button did not register — and the
+               suppressed-prompt case produced NO message at all. -->
+          <div class="hint err" data-testid="midiclock-access-error-{id}">
+            {cardState.accessMessage}
+          </div>
         {:else}
           <div class="hint">Click to grant MIDI access (one-time per origin).</div>
         {/if}

@@ -44,6 +44,7 @@ import {
 // note-jitter under load). See packages/web/src/lib/audio/midi-timing.ts.
 import { createMidiScheduler } from '$lib/audio/midi-timing';
 import { createMidiInputClaim } from '$lib/midi/input-attach';
+import { requestMidiAccess, midiOutcomeMessage } from '$lib/audio/midi-access';
 // Re-exported for callers/tests that historically imported these from midiclock.
 export {
   MIDI_PPQN,
@@ -108,6 +109,8 @@ export function divisorLabel(d: ClockDivisor): string {
 export interface MidiclockCardState {
   connected: boolean;
   permissionDenied: boolean;
+  /** Human-readable reason the last connect failed ('' when fine). */
+  accessMessage: string;
   devices: Array<{ id: string; name: string; state: string }>;
   selectedDeviceId: string | null;
   running: boolean;
@@ -188,6 +191,10 @@ export const midiclockDef: AudioModuleDef = {
     /** Identity-scoped handler-slot claim — see $lib/midi/input-attach. */
     const claim = createMidiInputClaim('midiclock');
     let permissionDenied = false;
+    /** Why the last connect attempt failed, in the user's words. Empty when
+     *  never attempted or successful. See $lib/audio/midi-access — a SUPPRESSED
+     *  prompt used to be indistinguishable from a broken button. */
+    let accessMessage = '';
     let subscriber: ((s: MidiclockCardState) => void) | null = null;
 
     let tickCounter = 0;
@@ -204,6 +211,7 @@ export const midiclockDef: AudioModuleDef = {
       return {
         connected: access !== null,
         permissionDenied,
+        accessMessage,
         devices,
         selectedDeviceId,
         running,
@@ -298,15 +306,30 @@ export const midiclockDef: AudioModuleDef = {
 
     async function connect(): Promise<boolean> {
       if (access) return true;
-      if (!webMidiAvailable()) {
-        permissionDenied = true;
+      // Shared seam: ALWAYS yields a nameable outcome, including the case
+      // where the browser silently declined to show a prompt at all.
+      const outcome = await requestMidiAccess({
+        // A late answer to a real prompt must still land — otherwise a slow
+        // grant is thrown away and the user has to click twice.
+        onLateResolve: (a) => { adoptAccess(a as unknown as MidiAccessLike); },
+      });
+      if (outcome.kind !== 'granted') {
+        permissionDenied = outcome.kind === 'denied' || outcome.kind === 'unsupported';
+        accessMessage = midiOutcomeMessage(outcome);
         notify();
         return false;
       }
+      accessMessage = '';
+      adoptAccess(outcome.access as unknown as MidiAccessLike);
+      return true;
+    }
+
+    /** Wire a freshly-granted MIDIAccess. Split out of connect() so a LATE
+     *  grant (answered after the no-prompt timeout) takes the identical path
+     *  rather than a second, subtly-different one. */
+    function adoptAccess(a: MidiAccessLike): void {
       try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const a = await (navigator as any).requestMIDIAccess({ sysex: false });
-        access = a as MidiAccessLike;
+        access = a;
         access.onstatechange = () => {
           if (selectedDeviceId && !access?.inputs.has(selectedDeviceId)) {
             // Device disappeared. Keep selection so it reattaches on hot-plug.
@@ -319,12 +342,13 @@ export const midiclockDef: AudioModuleDef = {
         selectedDeviceId = pickDefaultDevice();
         attachToDevice(selectedDeviceId);
         ticksReceived = 0;
+        permissionDenied = false;
+        accessMessage = '';
         notify();
-        return true;
-      } catch {
+      } catch (err) {
         permissionDenied = true;
+        accessMessage = `MIDI device setup failed: ${(err as Error).message}`;
         notify();
-        return false;
       }
     }
 

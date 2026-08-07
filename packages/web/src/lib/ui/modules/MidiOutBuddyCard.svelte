@@ -55,7 +55,7 @@
 
   let cardState = $state<MidiOutBuddyCardState>({
     connected: false,
-    permissionDenied: false,
+    permissionDenied: false, accessMessage: '',
     devices: [],
     selectedDeviceId: null,
     channel: 1,
@@ -198,8 +198,12 @@
         <button class="connect-btn" type="button" onclick={onClickConnect}>
           Connect MIDI…
         </button>
-        {#if cardState.permissionDenied}
-          <div class="hint err">Permission denied or browser unsupported.</div>
+        {#if cardState.accessMessage}
+          <!-- Actionable, and covers the SUPPRESSED-prompt case that used to
+               produce no message at all (see $lib/audio/midi-access). -->
+          <div class="hint err" data-testid="midioutbuddy-access-error-{id}">
+            {cardState.accessMessage}
+          </div>
         {:else}
           <div class="hint">Click to grant MIDI access (one-time per origin).</div>
         {/if}
