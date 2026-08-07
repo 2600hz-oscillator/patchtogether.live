@@ -9,6 +9,7 @@
 import 'fake-indexeddb/auto';
 import { describe, expect, it, vi } from 'vitest';
 import * as Y from 'yjs';
+import { IndexeddbPersistence } from 'y-indexeddb';
 
 import {
   REPLICA_DB_PREFIX,
@@ -165,6 +166,82 @@ describe('attachLocalReplica — seed across sessions', () => {
     });
     await replica.destroy();
     ydoc.destroy();
+  });
+});
+
+describe('attachLocalReplica — a HUNG y-indexeddb seed must still release the gate', () => {
+  // ⚠ THE BUG THIS PINS. `await persistence.whenSynced` was UNGUARDED, while the
+  // pre-flight validate right above it had a timeout — for the reason this
+  // module's own header gives: y-indexeddb's load chain can just hang. A stall
+  // there meant `whenSeeded` never resolved, so the scratch page's `seeded` flag
+  // stayed false, so the workflow ENSURES never ran, so the rack had no pinned
+  // TIMELORDE / AUDIO OUT and made NO SOUND. Owner report: "audio sometimes not
+  // wanting to start, needing to make a new rack and refresh".
+  //
+  // The instrument here is the promise itself: we make `whenSynced` a promise
+  // that never settles, which is exactly the failure mode, and assert the seed
+  // decision still arrives.
+
+  it('resolves seed-timeout instead of hanging forever', async () => {
+    const rackId = freshRackId();
+    const doc = new Y.Doc();
+    // Force the stall: replace whenSynced with a promise that never settles.
+    const proto = IndexeddbPersistence.prototype as unknown as { whenSynced: Promise<unknown> };
+    const original = Object.getOwnPropertyDescriptor(proto, 'whenSynced');
+    // ⚠ A getter-ONLY override makes the y-indexeddb CONSTRUCTOR throw (it
+    // assigns `this.whenSynced`, which is illegal against an accessor with no
+    // setter) — that surfaces as 'disabled', i.e. the instrument would have
+    // simulated the WRONG failure and quietly "passed" a different code path.
+    // The no-op setter keeps construction working so we simulate a HANG.
+    Object.defineProperty(proto, 'whenSynced', {
+      configurable: true,
+      get: () => new Promise(() => {}), // never settles — the hang
+      set: () => {}, // swallow the constructor's own assignment
+    });
+    try {
+      const replica = attachLocalReplica(rackId, doc, { seedTimeoutMs: 50, log: () => {} });
+      // The whole point: this await must COMPLETE.
+      const verdict = await replica.whenSeeded;
+      expect(verdict, 'a hung seed must surface as seed-timeout, not hang').toBe('seed-timeout');
+      await replica.destroy();
+    } finally {
+      if (original) Object.defineProperty(proto, 'whenSynced', original);
+      else delete (proto as Record<string, unknown>).whenSynced;
+    }
+  });
+
+  it('NEGATIVE CONTROL — an un-stalled seed does NOT report a timeout', async () => {
+    // Without this, the test above would pass even if attachLocalReplica had
+    // been changed to return 'seed-timeout' unconditionally.
+    const rackId = freshRackId();
+    const doc = new Y.Doc();
+    const replica = attachLocalReplica(rackId, doc, { seedTimeoutMs: 50, log: () => {} });
+    const verdict = await replica.whenSeeded;
+    expect(verdict).not.toBe('seed-timeout');
+    expect(['fresh', 'seeded']).toContain(verdict);
+    await replica.destroy();
+    await settle();
+  });
+
+  it('a timed-out seed KEEPS persisting — the doc is not abandoned', async () => {
+    // On timeout we deliberately leave persistence attached, so a merely-SLOW
+    // IndexedDB still ends up storing the rack. Pinned singletons use stable
+    // node ids, so a late seed converges rather than duplicating.
+    const rackId = freshRackId();
+    const doc = new Y.Doc();
+    const replica = attachLocalReplica(rackId, doc, { seedTimeoutMs: 50, log: () => {} });
+    await replica.whenSeeded;
+    edit(doc, 'after-timeout', 'kept');
+    await settle();
+    await replica.destroy();
+
+    // Re-open: the edit made after the seed decision must have been stored.
+    const doc2 = new Y.Doc();
+    const replica2 = attachLocalReplica(rackId, doc2, { log: () => {} });
+    await replica2.whenSeeded;
+    await settle();
+    expect(nodesOf(doc2)['after-timeout']).toBe('kept');
+    await replica2.destroy();
   });
 });
 

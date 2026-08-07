@@ -14,7 +14,12 @@
   // black/blue/white.
   import '$lib/styles/house.css';
   import { onMount } from 'svelte';
-  import { resolveLastScratchRack, type LastScratchRack } from '$lib/storage/local-scratch';
+  import {
+    resolveLastScratchRack,
+    resetLocalScratchId,
+    type LastScratchRack,
+  } from '$lib/storage/local-scratch';
+  import type { RackMode } from '$lib/graph/rack-mode';
 
   // "Return to last rack" — CLIENT-ONLY (the page stays prerendered/static; this
   // reads localStorage + IndexedDB, never auth). Hidden until hydration resolves
@@ -45,6 +50,20 @@
     href: string;
     blurb: string;
     external?: boolean;
+    /**
+     * This tile promises a BRAND-NEW scratch rack of this mode, so it must MINT
+     * A FRESH SCRATCH ID before navigating.
+     *
+     * ⚠ WHY THIS EXISTS. `/rack?mode=…` calls `getOrCreateLocalScratchId`,
+     * which returns the EXISTING id — so the plain link reopened the previous
+     * rack from its IndexedDB replica. That was correct before scratch docs
+     * persisted and became a LIE the moment "refresh doesn't lose the rack"
+     * shipped, without either tile being edited: "new workflow rack" and
+     * "Return to last rack" quietly became the same button (owner report
+     * 2026-08-07, "i don't get a fresh rack, i still get what's in local
+     * cache"). Minting here is the same primitive File → New rack already uses.
+     */
+    freshScratch?: RackMode;
   }
 
   /**
@@ -63,18 +82,38 @@
   const crossesIsolationBoundary = (href: string): boolean =>
     href.startsWith('/rack') || href.startsWith('/r/');
 
+  /**
+   * Make a "new … rack" tile actually NEW: mint a fresh scratch id for that
+   * mode, so the full-page navigation that follows binds an EMPTY doc under a
+   * new replica DB name instead of rehydrating the previous rack.
+   *
+   * We do NOT preventDefault — the <a href> still performs the navigation (and
+   * still does so as a full page load via data-sveltekit-reload, which the
+   * isolation boundary requires). This only re-points which doc it lands on.
+   *
+   * ⚠ Like File → New rack, this ORPHANS the previous scratch rack's replica:
+   * "Return to last rack" will then offer the new empty one. That is the same
+   * semantics the existing New-rack primitive has always had, deliberately kept
+   * identical rather than inventing a second, subtly-different meaning of new.
+   */
+  function startFreshScratch(mode: RackMode): void {
+    resetLocalScratchId(mode);
+  }
+
   const tiles: Tile[] = [
     {
       id: 'new-rack',
       label: 'new dawless rack',
       href: '/rack',
       blurb: 'open a fresh scratch canvas — patch modules, make sound.',
+      freshScratch: 'dawless',
     },
     {
       id: 'new-workflow-rack',
       label: 'new workflow rack',
       href: '/rack?mode=workflow',
       blurb: 'the toolbar-driven shell — media loader, dock rails, always-on mixer/electra/clips.',
+      freshScratch: 'workflow',
     },
     {
       id: 'rackspaces',
@@ -185,6 +224,7 @@
         <a
           class="mod-card tile"
           href={t.href}
+          onclick={t.freshScratch ? () => startFreshScratch(t.freshScratch!) : undefined}
           data-sveltekit-reload={crossesIsolationBoundary(t.href) ? '' : undefined}
           data-testid="tile-{t.id}"
           rel={t.external ? 'noopener' : undefined}

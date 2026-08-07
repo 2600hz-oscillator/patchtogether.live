@@ -81,6 +81,11 @@ export type ReplicaSeedResult =
   /** Stored rows failed decode validation; DB wiped; persisting fresh.
    *  The relay refetch (provider sync) is the recovery path. */
   | 'cleared-corrupt'
+  /** y-indexeddb accepted the attach but never finished syncing within the
+   *  budget. The doc may still seed LATER (persistence stays attached); we stop
+   *  WAITING so the caller's seed gate releases. See the SEED_TIMEOUT_MS note
+   *  in attachLocalReplica for why never releasing is the worse failure. */
+  | 'seed-timeout'
   /** No IndexedDB / it never answered — running replica-less. */
   | 'disabled';
 
@@ -97,10 +102,32 @@ export interface LocalReplicaHandle {
  *  IndexedDB for this mount ('disabled'). Generous: a local read of even
  *  a ceiling-sized rack is far under this. */
 const VALIDATE_TIMEOUT_MS = 5_000;
+/**
+ * Budget for y-indexeddb's OWN load after we have already validated the rows.
+ *
+ * ⚠ THIS AWAIT USED TO BE UNGUARDED, and it is the one place in the file that
+ * could hang forever — which this module's header already warns about ("its
+ * load chain just hangs"). The pre-flight validate was given a timeout for
+ * exactly that reason; `whenSynced` was not, so a stall there never surfaced.
+ *
+ * WHY IT MATTERS FAR BEYOND THE CACHE: `whenSeeded` gates the scratch page's
+ * `seeded` flag, which gates the workflow ENSURES (pinned TIMELORDE / MIXMSTRS
+ * / AUDIO OUT). A hung `whenSynced` therefore means the rack never spawns its
+ * audio spine — the owner-reported "audio sometimes doesn't want to start,
+ * needing a new rack + refresh". A second TAB holding the same IndexedDB is the
+ * everyday way to trigger it.
+ *
+ * Longer than the validate budget because this one does real work (decoding and
+ * applying every stored update), and we would rather seed slowly than release
+ * the gate on a rack that was about to load fine.
+ */
+const SEED_TIMEOUT_MS = 15_000;
 
 interface AttachOptions {
   /** Test seam: shrink the pre-flight timeout. */
   validateTimeoutMs?: number;
+  /** Test seam: shrink the y-indexeddb seed timeout (SEED_TIMEOUT_MS). */
+  seedTimeoutMs?: number;
   log?: (msg: string) => void;
 }
 
@@ -167,7 +194,19 @@ export function attachLocalReplica(
 
     // 2. Attach y-indexeddb for the seed + ongoing persistence.
     persistence = new IndexeddbPersistence(dbName, ydoc);
-    await persistence.whenSynced;
+    try {
+      await withTimeout(persistence.whenSynced, options.seedTimeoutMs ?? SEED_TIMEOUT_MS);
+    } catch {
+      // Persistence stays ATTACHED on purpose: if it is merely slow the doc
+      // still seeds (and keeps persisting) once it catches up. What we refuse
+      // to do is keep the caller's gate closed while that happens, because a
+      // closed gate means no pinned modules and therefore no audio at all.
+      // Re-seeding late is safe: the pinned singletons use STABLE node ids
+      // (`pinned-mixmstrs` …), so a late seed converges onto the same map keys
+      // rather than duplicating them.
+      log(`[replica] seed timed out after ${options.seedTimeoutMs ?? SEED_TIMEOUT_MS}ms — releasing the gate: rack=${rackspaceId}`);
+      return 'seed-timeout';
+    }
     if (verdict === 'corrupt') return 'cleared-corrupt';
     return verdict === 'valid' ? 'seeded' : 'fresh';
   })().catch(() => 'disabled' as const);
