@@ -1,5 +1,25 @@
 # 2026-08-03 — SESSION STATE AND HANDOFF
 
+> ## ⚠ TRIAGE 2026-08-07 — §2 and §3 ARE FULLY DISCHARGED. Read §5–§7 only.
+>
+> | this file said | 2026-08-07 |
+> |---|---|
+> | §2 "OPEN PRs — both need HARDWARE": **#1340**, **#1342** | **both MERGED** |
+> | §3 "IN FLIGHT AT SESSION END" — 7 agents on rings/timelorde, treeohvox/wavecel, cofefve/charlottes-echos, samsloop, the mono-normal gate, twotracks | **all seven produced merged PRs** |
+>
+> What is STILL LIVE and worth reading:
+> - **§5** things I got wrong — the corrections, not the mistakes
+> - **§6 / §6b** the mono-normal gate blindness, and the carried-forward defect
+>   ledger (`cube` envelope bypass, `cloudseed`'s third stereo-silence mechanism,
+>   samsloop fader cross-clamp)
+> - **§6b** the two operational warnings that cost hours: leaked CPU burners
+>   measured against, and "an attest's precondition is NO OTHER BROWSER
+>   RENDERING, not low load" — the second one bit again on 2026-08-07 (the WebGL
+>   re-attest refused with Edge as a GPU co-tenant, exactly as written here)
+> - **§7** standing operational facts
+>
+> Do NOT read §1–§3 as status. They are history.
+
 **Read this first if you are picking up work.** It records what landed, what is in
 flight, what is blocked and why, and the decisions the owner made — so the next
 session does not re-derive them or repeat corrected mistakes.
