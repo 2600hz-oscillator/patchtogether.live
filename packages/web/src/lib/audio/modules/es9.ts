@@ -48,6 +48,7 @@ import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import type { ParamDef, PortDef } from '$lib/graph/types';
 import type { RingSpec } from '$lib/audio/es9/es9-ring';
+import { acquireEs9Bridge, releaseEs9Bridge } from '$lib/audio/es9/bridge-owner';
 import workletUrl from '@patchtogether.live/dsp/dist/es9-bridge.js?url';
 
 const PROCESSOR_NAME = 'es9-bridge';
@@ -336,6 +337,27 @@ export const es9Def: AudioModuleDef = {
     outputsMap.set('spdif_l', { node: worklet, output: 14 });
     outputsMap.set('spdif_r', { node: worklet, output: 15 });
 
+    // ── OWN THE BRIDGE HERE, not on the card ────────────────────────────────
+    // The connection's lifetime is now the NODE's lifetime, not a Svelte
+    // component's. `Es9BridgeClient` is Worker + SharedArrayBuffer with no DOM
+    // at all, so nothing about it ever required a card — it only lived there
+    // because it was modelled on AudioinCard, which genuinely needs the DOM for
+    // getUserMedia. Moving it restores the invariant `dom-source-modules` states
+    // for video: the ENGINE-VISIBLE state of a rack must not depend on which UI
+    // renders a module. Collapsing the dock pane, switching to ?shell=1, or
+    // never opening the card at all can no longer stop the hardware stream.
+    // No-ops without Worker/SAB (node, vitest, the ART harness).
+    const rings = acquireEs9Bridge(node.id, ctx.sampleRate, {
+      // v1 subscribes/drives all channels — loopback bandwidth is trivial and it
+      // keeps masks decoupled from patch-edge churn.
+      inputChannels: Array.from({ length: HW_CHANNELS }, (_, c) => c),
+      outputChannels: Array.from({ length: HW_CHANNELS }, (_, c) => c),
+      outputModes: es9OutputModes(node.params),
+    });
+    if (rings) {
+      worklet.port.postMessage({ type: 'rings', in: rings.inRing, out: rings.outRing });
+    }
+
     return {
       domain: 'audio',
       inputs: inputsMap,
@@ -354,6 +376,9 @@ export const es9Def: AudioModuleDef = {
         return undefined;
       },
       dispose() {
+        // The node is leaving the graph — THIS is the only place the hardware
+        // connection is torn down. A card unmount must never reach here.
+        releaseEs9Bridge(node.id);
         worklet.port.postMessage({ type: 'detach' });
         try { worklet.disconnect(); } catch { /* */ }
         try { pin.disconnect(); } catch { /* */ }

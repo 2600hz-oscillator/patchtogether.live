@@ -114,18 +114,34 @@ describe('isShellSwappable — eligibility', () => {
     ).toBe('legacy');
   });
 
-  it('es9 is a HARDWARE-BRIDGE snowflake: its legacy card (the bridge-connection owner) stays in the lane', () => {
-    // Owner report 2026-08-05: under ?mode=workflow&shell=1 the ES-9 stopped
-    // sending data to the hardware whenever its card was not expanded. Es9Card
-    // owns the native-bridge connection (worker + SAB rings) and disconnects it
-    // in onDestroy, so a placeholder tile meant the connection only lived while
-    // the dock full-view pane was open. The card must render in-lane, verbatim
-    // — the headless-host seam can't be used because the native app accepts a
-    // single client (an expand-time double mount wedges the bridge on 'busy').
-    expect(NON_SHELL_LANE_TYPES.has('es9')).toBe(true);
-    expect(isShellSwappable('es9', true)).toBe(false);
+  it('es9 SWAPS like any other module — its connection no longer lives on the card', () => {
+    // HISTORY, because the reversal is the point. Owner report 2026-08-05: under
+    // ?mode=workflow&shell=1 the ES-9 stopped sending data whenever its card was
+    // not expanded. Es9Card owned the native-bridge connection and disconnected
+    // it in onDestroy, so the stream only lived while the card was mounted. The
+    // first fix carved es9 OUT of the shell swap to keep the card permanently in
+    // the lane — which bought "always mounted" by surrendering BOTH the compact
+    // tile and the dock EXPAND affordance (owner, 2026-08-07: "i would like the
+    // card to just work normally: show as compact on screen but still work,
+    // expand to full view in dock").
+    //
+    // The carve-out is gone because its PREMISE is gone: ownership moved to the
+    // ENGINE NODE ($lib/audio/es9/bridge-owner), so the connection's lifetime is
+    // the node's, not a component's. Mount, unmount, dock, collapse and the
+    // shell swap are all invisible to the hardware stream now. The single-client
+    // 'busy' hazard that also ruled out the headless-host seam is likewise gone:
+    // there is exactly ONE client per node and views merely subscribe.
+    expect(NON_SHELL_LANE_TYPES.has('es9')).toBe(false);
+    expect(isShellSwappable('es9', true)).toBe(true);
+    // Un-migrated (no curated face yet) ⇒ the uniform placeholder tile, whose
+    // EXPAND opens the dock full view. That is the owner's requested shape.
     expect(laneRenderKind({ ...base, type: 'es9', hasCard: isShellSwappable('es9', true) })).toBe(
-      'legacy',
+      'placeholder',
     );
+    // Preview OFF must still be byte-identical to before — the carve-out removal
+    // must not change the dawless / non-preview render at all.
+    expect(
+      laneRenderKind({ ...base, shellPreview: false, type: 'es9', hasCard: true }),
+    ).toBe('legacy');
   });
 });
