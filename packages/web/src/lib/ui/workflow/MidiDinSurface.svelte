@@ -42,7 +42,7 @@
 
   let bridgeState = $state<MidiclockCardState>({
     connected: false,
-    permissionDenied: false,
+    permissionDenied: false, accessMessage: '',
     devices: [],
     selectedDeviceId: null,
     running: false,

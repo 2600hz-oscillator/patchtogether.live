@@ -52,6 +52,7 @@ import { vOctToMidi, MIN_MIDI, MAX_MIDI } from '$lib/audio/note-entry';
 import { getSchedulerClock } from '$lib/audio/scheduler-clock';
 import { createPolyReceiver, POLY_CHANNEL_PAIRS } from '$lib/audio/poly';
 import { createRisingEdgeDetector } from './transport-helpers';
+import { requestMidiAccess, midiOutcomeMessage } from '$lib/audio/midi-access';
 
 // ---------------- Web MIDI minimal types (output side) ----------------
 //
@@ -182,6 +183,10 @@ export function createMidiNoteTracker(): MidiNoteTracker {
 export interface MidiOutBuddyCardState {
   connected: boolean;
   permissionDenied: boolean;
+  /** Human-readable reason the last connect failed ('' when fine). See
+   *  $lib/audio/midi-access — a SUPPRESSED prompt used to look identical to a
+   *  broken button. */
+  accessMessage: string;
   /** OUTPUT devices known to the MIDIAccess (the picker list). */
   devices: Array<{ id: string; name: string; state: string }>;
   /** Currently selected OUTPUT device id, or null when none. */
@@ -406,6 +411,7 @@ export const midiOutBuddyDef: AudioModuleDef = {
     // ---------------- Mutable runtime state ----------------
     let access: MidiOutAccessLike | null = null;
     let permissionDenied = false;
+    let accessMessage = '';
     let subscriber: ((s: MidiOutBuddyCardState) => void) | null = null;
     /** Pure tracker holding the currently-sounding note + the byte sequences
      *  to emit on gate transitions (shared with the unit tests). */
@@ -460,6 +466,7 @@ export const midiOutBuddyDef: AudioModuleDef = {
       return {
         connected: access !== null,
         permissionDenied,
+        accessMessage,
         devices,
         selectedDeviceId,
         channel,
@@ -587,15 +594,25 @@ export const midiOutBuddyDef: AudioModuleDef = {
 
     async function connect(): Promise<boolean> {
       if (access) return true;
-      if (!webMidiAvailable()) {
-        permissionDenied = true;
+      const outcome = await requestMidiAccess({
+        onLateResolve: (a) => { adoptAccess(a as unknown as MidiOutAccessLike); },
+      });
+      if (outcome.kind !== 'granted') {
+        permissionDenied = outcome.kind === 'denied' || outcome.kind === 'unsupported';
+        accessMessage = midiOutcomeMessage(outcome);
         notify();
         return false;
       }
+      accessMessage = '';
+      adoptAccess(outcome.access as unknown as MidiOutAccessLike);
+      return true;
+    }
+
+    /** Wire a freshly-granted access. Shared by connect() and the LATE-grant
+     *  path so a slow answer takes the identical route. */
+    function adoptAccess(a: MidiOutAccessLike): void {
       try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const a = await (navigator as any).requestMIDIAccess({ sysex: false });
-        access = a as MidiOutAccessLike;
+        access = a;
         access.onstatechange = () => {
           // Re-resolve the saved device; if it vanished, keep the id so it
           // re-attaches when plugged back in, but flush any held note (the
@@ -613,12 +630,13 @@ export const midiOutBuddyDef: AudioModuleDef = {
           notify();
         };
         if (!selectedDeviceId) selectedDeviceId = pickDefaultDevice();
+        permissionDenied = false;
+        accessMessage = '';
         notify();
-        return true;
-      } catch {
+      } catch (err) {
         permissionDenied = true;
+        accessMessage = `MIDI device setup failed: ${(err as Error).message}`;
         notify();
-        return false;
       }
     }
 
