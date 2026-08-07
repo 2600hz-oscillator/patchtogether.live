@@ -22,6 +22,7 @@ import '$lib/video/modules';
 import '$lib/meta/modules';
 
 import { listModuleDefs } from '$lib/audio/module-registry';
+import { readCardSourceWithDelegates } from '$lib/ui/card-source';
 import { listVideoModuleDefs } from '$lib/video/module-registry';
 import { listMetaModuleDefs } from '$lib/meta/module-registry';
 
@@ -37,7 +38,7 @@ const EXPECTED_NODE_TYPES = [
   'attenumix', 'audioIn', 'audioOut', 'backdraft', 'bentbox',
   'blood', 'bluebox', 'buggles', 'cameraInput', 'cartesian',
   'charlottesEchos', 'chroma', 'chromakey', 'clap', 'clipplayer', 'clockedRunner', 'clouds',
-  'cloudseed', 'cofefve', 'colorizer', 'colourofmagic', 'cube', 'cvBuddy', 'delay', 'depolarizer', 'destroy', 'destructor',
+  'cloudseed', 'cofefve', 'colorizer', 'colourofmagic', 'cube', 'cvBuddy', 'cvBuddyMini', 'delay', 'depolarizer', 'destroy', 'destructor',
   'dockscope',
   'doom', 'drummergirl', 'drumseqz', 'dx7', 'es9', 'fader', 'feedback', 'filter',
   'featurecv',
@@ -164,7 +165,19 @@ describe('card patch-surface invariants', () => {
       // this invariant only judges cards that actually exist on disk.
       if (!existsSync(cardPath)) continue;
 
-      const src = readFileSync(cardPath, 'utf8');
+      // A card may DELEGATE its whole body to a sibling component (CvBuddyCard
+      // and CvBuddyMiniCard both render CvBuddyBody, which is what stops the
+      // two from drifting). Judge the card PLUS anything it delegates to, one
+      // level deep — otherwise a legitimate shared body reads as "no PatchPanel"
+      // while a raw <Handle> hidden in that body would go UNSEEN. Following the
+      // import closes both directions at once; exempting the wrapper would only
+      // have silenced the first.
+      const src = readCardSourceWithDelegates(
+        cardPath,
+        CARDS_DIR,
+        { readFileSync, existsSync },
+        join,
+      );
       // Strip <script> blocks + HTML comments so documentation prose (which
       // spells out the `<Handle>` ban) can't false-positive — judge the
       // rendered template only.

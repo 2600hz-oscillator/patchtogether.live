@@ -25,6 +25,7 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   // (gate/pitch/velocity in; pitchCv/gate/velCv/run/clock out) + both clock
   // params documented from day one.
   'cvBuddy',
+  'cvBuddyMini',
   // Pilot wave (2026-06-24): a spread across a synth utility, a modulator, a
   // dynamic-control sequencer, a video mixer, and a stereo effect.
   'adsr',

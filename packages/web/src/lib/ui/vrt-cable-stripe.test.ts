@@ -65,6 +65,7 @@ import {
   repaintStripeRow,
   stripeSourceToken,
 } from '$lib/ui/vrt-cable-stripe';
+import { readCardSourceWithDelegates } from '$lib/ui/card-source';
 // vitest's resolve.alias doesn't reach across the /e2e/ workspace, so this is a
 // relative path — same as vrt-meta.test.ts.
 import { EXEMPT_BASELINE_PAIRS } from '../../../../../e2e/vrt/vrt-exemptions';
@@ -72,6 +73,14 @@ import { EXEMPT_BASELINE_PAIRS } from '../../../../../e2e/vrt/vrt-exemptions';
 // This file lives at packages/web/src/lib/ui/. Five `..` hops = repo root.
 const REPO_ROOT = resolve(import.meta.dirname, '../../../../..');
 const CARD_DIR = resolve(REPO_ROOT, 'packages/web/src/lib/ui/modules');
+
+/** A card's source INCLUDING any sibling body it delegates to. CvBuddyCard and
+ *  CvBuddyMiniCard are four-line wrappers around CvBuddyBody, so reading the
+ *  wrapper alone reported a token-pinned stripe as unpinned. See card-source.ts. */
+const readCard = (cardPath: string): string =>
+  readCardSourceWithDelegates(cardPath, CARD_DIR, { readFileSync, existsSync }, (...p) =>
+    resolve(...p),
+  );
 const SCREENSHOT_ROOT = resolve(REPO_ROOT, 'e2e/vrt/__screenshots__');
 const SPEC_DIR = resolve(REPO_ROOT, 'e2e/vrt');
 const DEF_DIRS = [
@@ -299,7 +308,7 @@ function measure(readBytes: (path: string) => Buffer = readFileSync): Measured {
             skipped.push(`${key}: no card component (${card}.svelte)`);
             continue;
           }
-          const source = stripeSourceToken(readFileSync(cardPath, 'utf8'));
+          const source = stripeSourceToken(readCard(cardPath));
           if (source.kind !== 'token') {
             skipped.push(`${key}: ${source.reason}`);
             continue;
@@ -549,7 +558,7 @@ describe('VRT baselines paint the CURRENT --cable-* stripe', () => {
         wrong.push(`${spec}: no card component (${card}.svelte)`);
         continue;
       }
-      if (!e.evidence.test(readFileSync(cardPath, 'utf8'))) {
+      if (!e.evidence.test(readCard(cardPath))) {
         wrong.push(
           `${spec}: ${card}.svelte no longer matches ${e.evidence} — the frame that made these ` +
           `captures carry ${e.token} has changed, so the table's claim is stale`,

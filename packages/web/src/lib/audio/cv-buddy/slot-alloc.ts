@@ -8,10 +8,22 @@
 // (an id-sort every peer computes identically from the converged Yjs snapshot,
 // like singleton-cleanup's lex tie-break) and assign fixed slot triples:
 //
-//   index 0  → pitch=1 gate=2 vel=3  + OWNS the transport signals: RUN on jack 7
-//                                       + the CLOCK on jack 8
-//   index 1  → pitch=4 gate=5 vel=6
-//   index ≥2 → INERT (no slots — the card shows "no free ES-9 slots")
+//   FULL  (cvBuddy)      takes THREE jacks: pitch + gate + vel
+//   MINI  (cvBuddyMini)  takes TWO:         pitch + gate  (no velocity)
+//
+// Jacks 1-6 are the note pool, handed out greedily in ascending-id order; jacks
+// 7 (RUN) and 8 (CLOCK) belong to the id-smallest instance of EITHER kind. An
+// instance that does not fit in what remains of 1-6 is INERT (no entry — the
+// card shows "no free ES-9 slots").
+//
+//   2 × FULL            → {1,2,3} {4,5,6}        + 7,8   (unchanged from before mini)
+//   3 × MINI            → {1,2} {3,4} {5,6}      + 7,8
+//   1 × MINI            → {1,2}                  + 7,8 → jacks 3,4,5,6 FREE for audio
+//   1 FULL + 1 MINI     → {1,2,3} {4,5}          + 7,8 → jack 6 free
+//
+// ⚠ ONE allocator for BOTH kinds, deliberately. Two independent allocators would
+// each think they owned jack 1, and two modules driving one physical DC-coupled
+// jack is silently wrong VOLTAGE at the hardware — no error, just a wrong note.
 //
 // All EIGHT jacks are used: 1-3 + 4-6 are the two note sets, jack 7 = RUN (a
 // gate that is HIGH while the transport is playing) and jack 8 = CLOCK (PPQN
@@ -21,9 +33,11 @@
 // translate the rack's run/stop + clock to Pam's.
 //
 // Per-slot ES-9 CLASS (the out{N}_class param the es9 module reads — see es9.ts):
-//   pitch slots {1,4} → PITCH (1 V/oct)
-//   gate slots {2,5} + run slot {7} + clock slot {8} → GATE (0/+5 V)
-//   vel slots {3,6}  → CV (±5 V)
+// Per-slot ES-9 CLASS is derived from the ROLE the slot was allocated for, not
+// from its number — with mixed full/mini layouts jack 4 can be a pitch, a gate
+// or a velocity depending on what came before it. `slotToEs9` therefore takes
+// the role explicitly; deriving it from the number (as it used to) would set
+// the wrong voltage class on a mixed rack.
 //
 // PURITY: no Svelte / Yjs / worklet imports. The reconciler
 // (graph/cv-buddy-es9-reconcile.ts) consumes these plans and writes the live
@@ -42,14 +56,33 @@ export const ES9_GATE = 3;
  *  RUN, jack 8 = CLOCK). */
 export const CV_BUDDY_MANAGED_SLOTS: readonly number[] = [1, 2, 3, 4, 5, 6, 7, 8];
 
+/** The note-CV pool. 7 and 8 are reserved for RUN + CLOCK and never handed out
+ *  as note jacks, which is what keeps "3 minis and still have a clock" true. */
+export const CV_BUDDY_NOTE_SLOTS: readonly number[] = [1, 2, 3, 4, 5, 6];
+
+/** How many note jacks each kind consumes. */
+export const CV_BUDDY_SLOT_COST = { full: 3, mini: 2 } as const;
+
+/** Which CV Buddy variant an instance is. */
+export type CvBuddyKind = keyof typeof CV_BUDDY_SLOT_COST;
+
+/** One instance, as the allocator sees it. */
+export interface CvBuddyInstance {
+  id: string;
+  kind: CvBuddyKind;
+}
+
 /** One CV Buddy instance's slot allocation. */
 export interface CvBuddyAlloc {
   /** ES-9 jack (1..8) the instance's pitch CV drives (PITCH class). */
   pitchSlot: number;
   /** ES-9 jack the instance's gate drives (GATE class). */
   gateSlot: number;
-  /** ES-9 jack the instance's velocity CV drives (CV class). */
-  velSlot: number;
+  /** ES-9 jack the instance's velocity CV drives (CV class), or NULL for a
+   *  MINI, which has no velocity output at all. */
+  velSlot: number | null;
+  /** Which variant this allocation was computed for. */
+  kind: CvBuddyKind;
   /** True only for the id-smallest instance — it drives RUN + the clock. */
   ownsClock: boolean;
   /** ES-9 jack the RUN gate rides (7) for the owner, else null. */
@@ -75,29 +108,48 @@ export interface CvBuddyAlloc {
  * Index ≥2 gets NO entry (inert — the card reports "no free ES-9 slots"). The
  * returned Map therefore has at most two entries.
  */
-export function allocateCvBuddySlots(nodeIds: readonly string[]): Map<string, CvBuddyAlloc> {
+export function allocateCvBuddySlots(
+  instances: readonly (string | CvBuddyInstance)[],
+): Map<string, CvBuddyAlloc> {
+  // Back-compat: a bare id list means "all FULL", which is exactly what every
+  // caller meant before mini existed.
+  const norm: CvBuddyInstance[] = instances.map((x) =>
+    typeof x === 'string' ? { id: x, kind: 'full' } : x,
+  );
   const out = new Map<string, CvBuddyAlloc>();
-  const sorted = [...nodeIds].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
-  if (sorted[0] !== undefined) {
-    out.set(sorted[0], {
-      pitchSlot: 1,
-      gateSlot: 2,
-      velSlot: 3,
-      ownsClock: true,
-      runSlot: 7,
-      clockSlot: 8,
-      inPair: [1, 2],
-    });
-  }
-  if (sorted[1] !== undefined) {
-    out.set(sorted[1], {
-      pitchSlot: 4,
-      gateSlot: 5,
-      velSlot: 6,
-      ownsClock: false,
-      runSlot: null,
-      clockSlot: null,
-      inPair: [3, 4],
+  const sorted = [...norm].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+
+  let cursor = 0; // index into CV_BUDDY_NOTE_SLOTS
+  let ownerAssigned = false;
+  for (const inst of sorted) {
+    const need = CV_BUDDY_SLOT_COST[inst.kind];
+    // Not enough of the note pool left → INERT. Skipping (rather than stopping)
+    // is deliberate: a MINI can still fit in a 2-jack gap that a FULL could not,
+    // so a later smaller instance is not punished for an earlier larger one.
+    if (cursor + need > CV_BUDDY_NOTE_SLOTS.length) continue;
+
+    const pitchSlot = CV_BUDDY_NOTE_SLOTS[cursor]!;
+    const gateSlot = CV_BUDDY_NOTE_SLOTS[cursor + 1]!;
+    const velSlot = inst.kind === 'full' ? CV_BUDDY_NOTE_SLOTS[cursor + 2]! : null;
+    cursor += need;
+
+    // RUN + CLOCK go to the FIRST instance that actually got note jacks — of
+    // either kind. Tying them to "index 0" instead would silently lose the
+    // clock if the id-smallest instance happened to be inert.
+    const ownsClock = !ownerAssigned;
+    if (ownsClock) ownerAssigned = true;
+
+    // Hardware AUDIO RETURN input pair, one per allocated instance in order.
+    const inIdx = out.size;
+    out.set(inst.id, {
+      pitchSlot,
+      gateSlot,
+      velSlot,
+      kind: inst.kind,
+      ownsClock,
+      runSlot: ownsClock ? 7 : null,
+      clockSlot: ownsClock ? 8 : null,
+      inPair: [inIdx * 2 + 1, inIdx * 2 + 2] as const,
     });
   }
   return out;
@@ -105,14 +157,26 @@ export function allocateCvBuddySlots(nodeIds: readonly string[]): Map<string, Cv
 
 /** The ES-9 target port + signal class for a given slot. `class` is the
  *  out{N}_class value the reconciler writes onto the es9 node's params. */
-export function slotToEs9(slot: number): { port: string; class: number } {
+export type CvBuddySlotRole = 'pitch' | 'gate' | 'vel' | 'run' | 'clock';
+
+/** The ES-9 port name for a jack. Role-INDEPENDENT — a jack is `out{N}`
+ *  whatever it carries — so callers that only need the port do not have to
+ *  invent a role they do not have. */
+export function es9PortForSlot(slot: number): string {
+  return `out${slot}`;
+}
+
+export function slotToEs9(slot: number, role: CvBuddySlotRole): { port: string; class: number } {
+  // ⚠ ROLE-DRIVEN, not number-driven. This used to read the class off the jack
+  // NUMBER ({1,4}=pitch, {2,5,7,8}=gate, else CV), which only held because the
+  // layout was always two FULL triples. With mini in the mix jack 4 can be a
+  // pitch, a gate or a velocity, and a number-derived class would put the wrong
+  // voltage range on a real output.
   const cls =
-    slot === 1 || slot === 4
-      ? ES9_PITCH
-      : slot === 2 || slot === 5 || slot === 7 || slot === 8
-        ? ES9_GATE // gates: note-gates {2,5}, RUN {7}, CLOCK {8}
-        : ES9_CV; // {3, 6}
-  return { port: `out${slot}`, class: cls };
+    role === 'pitch' ? ES9_PITCH
+    : role === 'gate' || role === 'run' || role === 'clock' ? ES9_GATE
+    : ES9_CV;
+  return { port: es9PortForSlot(slot), class: cls };
 }
 
 /** Union of every slot claimed across an allocation map (pitch/gate/vel + the

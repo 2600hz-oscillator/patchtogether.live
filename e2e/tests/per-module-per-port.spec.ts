@@ -150,6 +150,9 @@ const EXEMPT_OUTPUT_EMIT_MODULES: Record<string, string> = {
   // Signal logic is covered by the pure slot-alloc / clock-math / reconcile unit
   // tests; on-hardware flow is owner-verified at the ES-9 jacks (Part A preview).
   cvBuddy: 'passthrough note outputs (silent until inputs driven) + owner-only run/clock that need a running TIMELORDE transport; no output emits from a bare spawn. Covered by cv-buddy slot-alloc/clock-math/es9-reconcile unit tests; on-hardware flow owner-verified at the jacks',
+  // Same module minus velocity — same four reasons, same coverage. It shares
+  // `createCvBuddyHandle`, so there is no second clock to test separately.
+  cvBuddyMini: 'passthrough note outputs (silent until inputs driven) + owner-only run/clock that need a running TIMELORDE transport; no output emits from a bare spawn. Shares createCvBuddyHandle with cvBuddy; covered by the same slot-alloc/clock-math/es9-reconcile unit tests plus the mini slot-layout cases',
   // ── Clock / divider / sequencer-like modules that need an upstream clock ──
   timelorde: 'clock divider; needs upstream clock; covered by timelorde-related specs',
   marbles:   'requires UI-enabled internal clock; covered by marbles-related specs',
@@ -503,7 +506,8 @@ const EXEMPT_OUTPUT_EMIT: Record<string, string> = {
 // The EXACT key set of EXEMPT_OUTPUT_EMIT_MODULES, sorted. Deliberate
 // duplication: this array is the review surface and the merge-conflict surface.
 const PINNED_MODULE_EXEMPT_KEYS: readonly string[] = Object.freeze([
-  'archivist', 'audioIn', 'blood', 'bluebox', 'cvBuddy', 'drumseqz', 'es9',
+  'archivist', 'audioIn', 'blood', 'bluebox', 'cvBuddy', 'cvBuddyMini',
+  'drumseqz', 'es9',
   'fader', 'featurecv', 'flipper', 'gamepad', 'illogic', 'joystick', 'macseq',
   'marbles', 'midiCvBuddy', 'midiOutBuddy', 'midiclock', 'milkdrop', 'modtris',
   'moog911a', 'moog956', 'moog962', 'moog992', 'moog993', 'numpadPlus',
