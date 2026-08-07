@@ -66,6 +66,10 @@ const PARAM_PREFIX = '/MIXMSTRS';
 // Channel count — single source of truth for the 8-channel layout. The Faust
 // process() declares channels in this order, then the two stereo returns.
 export const MIXMSTRS_CHANNELS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
+/** The two stereo AUX RETURNS, each now a real strip (volume + 3-band EQ)
+ *  rather than a bare unity-gain summing input. Derived list so the params,
+ *  the docs and the card can never drift apart. */
+export const MIXMSTRS_RETURNS = [1, 2] as const;
 const NUM_CHANNELS = MIXMSTRS_CHANNELS.length;
 
 // ---------------- Comp macro mapping ----------------
@@ -129,6 +133,27 @@ function buildParams(): readonly ParamDef[] {
     params.push({ id: `ch${ch}_send2`,       label: `${ch}S2`,  defaultValue: 0,   min: 0,    max: 1,   curve: 'linear' });
   }
   params.push({ id: 'master_volume', label: 'Master', defaultValue: 0.8, min: 0, max: 1, curve: 'linear' });
+  // PRE/POST-FADER select per SEND BUS. 0 = POST (the default — every existing
+  // patch keeps its current behaviour exactly), 1 = PRE. ONE flag per bus, so
+  // send 1 and send 2 can sit in DIFFERENT modes at the same time. The ids match
+  // the Faust hslider labels (`send1Pre`/`send2Pre`) — that name equality IS the
+  // wiring (`params.get(`${PARAM_PREFIX}/${def.id}`)`), so renaming one without
+  // the other silently disconnects the switch.
+  params.push({ id: 'send1Pre', label: 'S1Pre', defaultValue: 0, min: 0, max: 1, curve: 'discrete' });
+  params.push({ id: 'send2Pre', label: 'S2Pre', defaultValue: 0, min: 0, max: 1, curve: 'discrete' });
+  // RETURN strips. The returns used to sum into the master at fixed unity with
+  // no control at all, which made pre-fader sends only half a feature — you
+  // could feed a muted channel to an effect but had no way to set how loud the
+  // wet came back. VOLUME DEFAULTS TO 1.0, NOT the channels' 0.8: unity is what
+  // the returns did before, and 0.8 would silently drop the return level in
+  // every patch that already exists. No send controls on a return (return →
+  // its own send is a feedback loop).
+  for (const r of MIXMSTRS_RETURNS) {
+    params.push({ id: `ret${r}_volume`, label: `R${r}V`,  defaultValue: 1, min: 0,   max: 1,  curve: 'linear' });
+    params.push({ id: `ret${r}_low`,    label: `R${r}Lo`, defaultValue: 0, min: -12, max: 12, curve: 'linear', units: 'dB' });
+    params.push({ id: `ret${r}_mid`,    label: `R${r}Md`, defaultValue: 0, min: -12, max: 12, curve: 'linear', units: 'dB' });
+    params.push({ id: `ret${r}_high`,   label: `R${r}Hi`, defaultValue: 0, min: -12, max: 12, curve: 'linear', units: 'dB' });
+  }
   return params;
 }
 
@@ -225,6 +250,22 @@ export const mixmstrsDef: AudioModuleDef = {
     inputs.ret2R = 'Aux RETURN 2 right input, partnering ret2L.';
     // Master CV.
     inputs.master_volume = 'CV that offsets the MASTER volume — modulate the overall output level of the whole mix.';
+    // Per-BUS pre/post-fader select.
+    controls.send1Pre = "SEND 1 PRE/POST-fader switch. POST (the default) taps each channel AFTER its volume fader, so pulling a fader down takes its send with it. PRE taps after EQ + compressor but BEFORE the fader, so the send level is the channel's signal × its SEND 1 amount no matter where the fader sits — which is how a RETURN keeps carrying sound while the channel it sits on is muted (a monitor feed, or a reverb that should ring on through a mute). Affects the whole send-1 bus, and is independent of SEND 2's switch.";
+    controls.send2Pre = "SEND 2 PRE/POST-fader switch — the same choice as send1Pre, for the send-2 bus, and set independently of it: send 1 can be PRE while send 2 stays POST.";
+    inputs.send1Pre = 'CV (discrete) that switches the SEND 1 bus between POST-fader (low) and PRE-fader (high).';
+    inputs.send2Pre = 'CV (discrete) that switches the SEND 2 bus between POST-fader (low) and PRE-fader (high).';
+    // Return strips.
+    for (const r of MIXMSTRS_RETURNS) {
+      controls[`ret${r}_volume`] = `RETURN ${r} level (0..1, default 1 = unity) — how loud the wet signal coming back from the effect on send ${r} sits in the master. This is the knob that makes a PRE-fader send usable: with send ${r} switched to PRE, the return keeps sounding while the source channel is muted, and this sets how loud. CV via the ret${r}_volume input.`;
+      controls[`ret${r}_low`] = `RETURN ${r} LOW EQ band (±12 dB) — shape the returning wet signal (e.g. roll the lows out of a reverb). Bypassed entirely while all three return-${r} bands sit at 0 dB. CV via the ret${r}_low input.`;
+      controls[`ret${r}_mid`] = `RETURN ${r} MID EQ band (±12 dB). CV via the ret${r}_mid input.`;
+      controls[`ret${r}_high`] = `RETURN ${r} HIGH EQ band (±12 dB). CV via the ret${r}_high input.`;
+      inputs[`ret${r}_volume`] = `CV that offsets RETURN ${r}'s level.`;
+      inputs[`ret${r}_low`] = `CV that offsets RETURN ${r}'s LOW EQ band.`;
+      inputs[`ret${r}_mid`] = `CV that offsets RETURN ${r}'s MID EQ band.`;
+      inputs[`ret${r}_high`] = `CV that offsets RETURN ${r}'s HIGH EQ band.`;
+    }
     return {
       explanation:
         "An 8-channel stereo mixer with a channel strip on every input — the master bus of a patch. Each of the eight channels takes a stereo pair, runs it through a 3-band EQ (low/mid/high, ±12 dB), an optional compressor, and a volume fader, then sums into the stereo MASTER output. Two stereo AUX SENDS tap each channel (per-channel SEND 1 / SEND 2 amounts) out to send1L/R and send2L/R — patch an external reverb/delay off a send and bring its wet signal back into the matching stereo RETURN, which sums into the master. The compressor is exposed two ways: manual THRESH / RATIO / ENABLE per channel, OR a single COMP macro knob that collapses all three into one 'amount' (0 = bypass, up to a moderate −20 dB / 4:1 at full). EVERY parameter also has a CV input (so an LFO can ride a fader, EQ band, or send), and the card shows a post-fader VU meter per channel. Multiple MIXMSTRS instances are allowed for submixes / parallel buses — each sums additively into its destination.",
@@ -232,7 +273,7 @@ export const mixmstrsDef: AudioModuleDef = {
       outputs: {
         masterL: 'MASTER bus left output — all eight channels (post EQ/comp/fader) plus the two aux returns, summed. The main stereo mix out.',
         masterR: 'MASTER bus right output, the partner of masterL.',
-        send1L: 'AUX SEND 1 left output — the sum of every channel scaled by its SEND 1 amount. Patch it into an external effect, then return the wet to ret1L/R.',
+        send1L: "AUX SEND 1 left output — the sum of every channel scaled by its SEND 1 amount. Patch it into an external effect, then return the wet to ret1L/R. The tap point follows the send1Pre switch: POST-fader by default, or PRE-fader (before the volume fader) so the bus keeps carrying a muted channel.",
         send1R: 'AUX SEND 1 right output, the partner of send1L.',
         send2L: 'AUX SEND 2 left output — the sum of every channel scaled by its SEND 2 amount. Return its wet to ret2L/R.',
         send2R: 'AUX SEND 2 right output, the partner of send2L.',

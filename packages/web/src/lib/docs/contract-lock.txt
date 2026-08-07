@@ -1892,10 +1892,20 @@ mixmstrs in comp6 cv param=comp6 cvScale=linear
 mixmstrs in comp7 cv param=comp7 cvScale=linear
 mixmstrs in comp8 cv param=comp8 cvScale=linear
 mixmstrs in master_volume cv param=master_volume cvScale=linear
+mixmstrs in ret1_high cv param=ret1_high cvScale=linear
+mixmstrs in ret1_low cv param=ret1_low cvScale=linear
+mixmstrs in ret1_mid cv param=ret1_mid cvScale=linear
+mixmstrs in ret1_volume cv param=ret1_volume cvScale=linear
 mixmstrs in ret1L audio
 mixmstrs in ret1R audio
+mixmstrs in ret2_high cv param=ret2_high cvScale=linear
+mixmstrs in ret2_low cv param=ret2_low cvScale=linear
+mixmstrs in ret2_mid cv param=ret2_mid cvScale=linear
+mixmstrs in ret2_volume cv param=ret2_volume cvScale=linear
 mixmstrs in ret2L audio
 mixmstrs in ret2R audio
+mixmstrs in send1Pre cv param=send1Pre cvScale=discrete
+mixmstrs in send2Pre cv param=send2Pre cvScale=discrete
 mixmstrs out masterL audio
 mixmstrs out masterR audio
 mixmstrs out send1L audio
@@ -1983,6 +1993,16 @@ mixmstrs param comp6 0..1 linear default=0
 mixmstrs param comp7 0..1 linear default=0
 mixmstrs param comp8 0..1 linear default=0
 mixmstrs param master_volume 0..1 linear default=0.8
+mixmstrs param ret1_high -12..12 linear default=0 unit=dB
+mixmstrs param ret1_low -12..12 linear default=0 unit=dB
+mixmstrs param ret1_mid -12..12 linear default=0 unit=dB
+mixmstrs param ret1_volume 0..1 linear default=1
+mixmstrs param ret2_high -12..12 linear default=0 unit=dB
+mixmstrs param ret2_low -12..12 linear default=0 unit=dB
+mixmstrs param ret2_mid -12..12 linear default=0 unit=dB
+mixmstrs param ret2_volume 0..1 linear default=1
+mixmstrs param send1Pre 0..1 discrete default=0
+mixmstrs param send2Pre 0..1 discrete default=0
 mixmstrs stereo ch1L+ch1R
 mixmstrs stereo ch2L+ch2R
 mixmstrs stereo ch3L+ch3R

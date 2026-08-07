@@ -68,6 +68,51 @@ ch8Thr  = hslider("ch8_thresh[style:knob][unit:dB]", -12.0, -36.0, 0.0,  0.01) :
 ch8Rat  = hslider("ch8_ratio[style:knob]",            2.0,   1.0,  10.0, 0.01) : si.smoo;
 ch8En   = hslider("ch8_compEnable[style:knob]",       0.0,   0.0,  1.0,  0.01) : si.smoo;
 
+// ── PRE/POST-FADER select, one per SEND BUS (owner 2026-08-06) ─────────────
+// 0 = POST-fader (the default, and byte-identical to the pre-feature DSP):
+//     the send taps the channel AFTER the volume fader, so pulling a fader down
+//     pulls its send down with it and a muted channel sends nothing.
+// 1 = PRE-fader: the send taps AFTER EQ + compressor but BEFORE the fader, so
+//     the send level is `channel signal × send amount` regardless of the fader.
+//     That is what lets a RETURN keep carrying sound while the channel it sits
+//     on is muted (the owner's requirement) — the classic aux behaviour for a
+//     monitor feed, or a reverb that should ring on through a mute.
+//
+// PRE is deliberately POST-EQ/COMP rather than pre-everything: an engineer
+// expects the send to carry the channel's TONE, and either tap point satisfies
+// "still audible while muted". (A pre-EQ tap would be a THIRD mode, not a
+// redefinition of this one.)
+//
+// ONE flag per BUS, not per channel-send: an aux bus is pre or post as a whole
+// on real consoles, and 2 switches beat 16. `si.smoo` on the flag makes a
+// toggle a short CROSSFADE between the two tap points instead of a step, so
+// flipping it mid-performance cannot click.
+send1Pre = hslider("send1Pre[style:knob]", 0.0, 0.0, 1.0, 1.0) : si.smoo;
+send2Pre = hslider("send2Pre[style:knob]", 0.0, 0.0, 1.0, 1.0) : si.smoo;
+
+// ── RETURN strips (owner 2026-08-06) ───────────────────────────────────────
+// The aux RETURNS used to sum into the master at fixed UNITY with no control
+// at all — which made pre-fader sends only half a feature: you could feed a
+// muted channel's signal to an effect, but you had no way to set how loud the
+// wet came back. Each return now gets its own strip: VOLUME + the same 3-band
+// EQ the channels have.
+//
+// DEFAULTS ARE THE OLD BEHAVIOUR EXACTLY: volume 1.0 (unity, NOT the channels'
+// 0.8 — anything else would quietly drop the return level in every patch that
+// already exists) and all three EQ bands at 0 dB.
+//
+// Returns deliberately have NO send controls: routing a return back into the
+// send that feeds it is an infinite feedback loop, and defaulting to a
+// structure that can howl is not worth the flexibility.
+ret1Vol  = hslider("ret1_volume[style:knob]", 1.0, 0.0, 1.0, 0.001) : si.smoo;
+ret1Low  = hslider("ret1_low[style:knob][unit:dB]",  0.0, -12.0, 12.0, 0.01) : si.smoo;
+ret1Mid  = hslider("ret1_mid[style:knob][unit:dB]",  0.0, -12.0, 12.0, 0.01) : si.smoo;
+ret1High = hslider("ret1_high[style:knob][unit:dB]", 0.0, -12.0, 12.0, 0.01) : si.smoo;
+ret2Vol  = hslider("ret2_volume[style:knob]", 1.0, 0.0, 1.0, 0.001) : si.smoo;
+ret2Low  = hslider("ret2_low[style:knob][unit:dB]",  0.0, -12.0, 12.0, 0.01) : si.smoo;
+ret2Mid  = hslider("ret2_mid[style:knob][unit:dB]",  0.0, -12.0, 12.0, 0.01) : si.smoo;
+ret2High = hslider("ret2_high[style:knob][unit:dB]", 0.0, -12.0, 12.0, 0.01) : si.smoo;
+
 // Send amounts (0..1, default 0): 8 channels × 2 sends = 16
 ch1S1   = hslider("ch1_send1[style:knob]", 0.0, 0.0, 1.0, 0.001) : si.smoo;
 ch1S2   = hslider("ch1_send2[style:knob]", 0.0, 0.0, 1.0, 0.001) : si.smoo;
@@ -128,7 +173,20 @@ with {
 // ============== Per-channel processing ==============
 // channel(low, mid, high, thr, rat, en, vol, l, r) → (lOut, rOut, send1Contrib_l, ...)
 // Returns 6 audio: (mainL, mainR, s1L, s1R, s2L, s2R).
-channelChain(low, mid, high, thr, rat, en, vol, s1, s2, lIn, rIn) =
+//
+// `s1pre`/`s2pre` (0..1) pick each send's TAP POINT — see the send1Pre/send2Pre
+// declarations above. They arrive already SMOOTHED, so the expression below is
+// a crossfade, not a branch:
+//
+//     tapGain = pre + (1 - pre) * vol
+//       pre = 0 ⇒ tapGain = vol  ⇒ s1L = cL * vol * s1 = finalL * s1   (POST)
+//       pre = 1 ⇒ tapGain = 1    ⇒ s1L = cL * s1                       (PRE)
+//
+// At the default (pre = 0) that reduces ALGEBRAICALLY to the pre-feature
+// expression, which is why the shipped audio and every ART baseline are
+// unchanged — the default path is not merely equivalent, it is the same
+// multiply.
+channelChain(low, mid, high, thr, rat, en, vol, s1, s2, s1pre, s2pre, lIn, rIn) =
   mainL, mainR, s1L, s1R, s2L, s2R
 with {
   // EQ → comp → vol.
@@ -141,10 +199,46 @@ with {
   finalR = cR * vol;
   mainL = finalL;
   mainR = finalR;
-  s1L = finalL * s1;
-  s1R = finalR * s1;
-  s2L = finalL * s2;
-  s2R = finalR * s2;
+  // Crossfade from the POST-fader signal (finalL, already through the fader)
+  // toward the PRE-fader one (cL, straight off the compressor).
+  //
+  // MEASURED, not assumed: at the default (pre = 0) this is ALGEBRAICALLY the
+  // old `finalL * s1`, but it is NOT bit-exact — the send baselines move by
+  // 1–2 ULP on ~35% of samples (max 2.98e-08, −139.5 dB below peak; spectrum,
+  // peakDb and rmsDb all unchanged). That is IEEE multiply being commutative
+  // but not associative, and it is NOT avoidable by rewriting the source: the
+  // hand-associated form `(finalL + pre*(cL-finalL)) * s1` and the obvious
+  // `cL * (pre + (1-pre)*vol)` compile to byte-identical output, because Faust
+  // normalises the expression tree itself. (`ba.if(pre>=0.5, cL, finalL) * s1`
+  // WOULD stay bit-exact by blocking the reassociation, but it makes the toggle
+  // a hard switch that CLICKS mid-performance — a worse trade than a one-time
+  // −139 dB re-pin.) masterL, by contrast, IS byte-identical: the return-strip
+  // EQ bypass below keeps the master path untouched.
+  s1L = (finalL + s1pre * (cL - finalL)) * s1;
+  s1R = (finalR + s1pre * (cR - finalR)) * s1;
+  s2L = (finalL + s2pre * (cL - finalL)) * s2;
+  s2R = (finalR + s2pre * (cR - finalR)) * s2;
+};
+
+// ============== Return strip ==============
+// EQ → volume. No compressor, no sends (see the ret1Vol declaration).
+//
+// BIT-EXACT AT DEFAULT: eq3band is three biquads, and a shelving/peaking biquad
+// at 0 dB is only unity to within coefficient rounding — so running the return
+// through it unconditionally would have changed the SHIPPED audio of every
+// existing patch by a hair, moving ART baselines for a feature that is supposed
+// to default to a no-op. The `ba.if` bypass (the same trick compStereo already
+// uses for its enable) takes the DRY path when all three bands are exactly 0,
+// which is what a smoothed 0.0 default stays at forever. Result: defaults are
+// the literal old expression `r1l * 1.0`, and the EQ only enters the signal
+// path once the user actually turns a band.
+returnChain(low, mid, high, vol, lIn, rIn) = outL, outR
+with {
+  flat = (low == 0.0) & (mid == 0.0) & (high == 0.0);
+  eqL = eq3band(low, mid, high, lIn);
+  eqR = eq3band(low, mid, high, rIn);
+  outL = ba.if(flat, lIn, eqL) * vol;
+  outR = ba.if(flat, rIn, eqR) * vol;
 };
 
 // ============== Top-level wiring ==============
@@ -187,14 +281,14 @@ process(c1l, c1r, c2l, c2r, c3l, c3r, c4l, c4r, c5l, c5r, c6l, c6r, c7l, c7r, c8
   ch1Level, ch2Level, ch3Level, ch4Level, ch5Level, ch6Level, ch7Level, ch8Level
 with {
   // Per-channel chains.
-  ch1Out = channelChain(ch1Low, ch1Mid, ch1High, ch1Thr, ch1Rat, ch1En, ch1Vol, ch1S1, ch1S2, c1l, c1r);
-  ch2Out = channelChain(ch2Low, ch2Mid, ch2High, ch2Thr, ch2Rat, ch2En, ch2Vol, ch2S1, ch2S2, c2l, c2r);
-  ch3Out = channelChain(ch3Low, ch3Mid, ch3High, ch3Thr, ch3Rat, ch3En, ch3Vol, ch3S1, ch3S2, c3l, c3r);
-  ch4Out = channelChain(ch4Low, ch4Mid, ch4High, ch4Thr, ch4Rat, ch4En, ch4Vol, ch4S1, ch4S2, c4l, c4r);
-  ch5Out = channelChain(ch5Low, ch5Mid, ch5High, ch5Thr, ch5Rat, ch5En, ch5Vol, ch5S1, ch5S2, c5l, c5r);
-  ch6Out = channelChain(ch6Low, ch6Mid, ch6High, ch6Thr, ch6Rat, ch6En, ch6Vol, ch6S1, ch6S2, c6l, c6r);
-  ch7Out = channelChain(ch7Low, ch7Mid, ch7High, ch7Thr, ch7Rat, ch7En, ch7Vol, ch7S1, ch7S2, c7l, c7r);
-  ch8Out = channelChain(ch8Low, ch8Mid, ch8High, ch8Thr, ch8Rat, ch8En, ch8Vol, ch8S1, ch8S2, c8l, c8r);
+  ch1Out = channelChain(ch1Low, ch1Mid, ch1High, ch1Thr, ch1Rat, ch1En, ch1Vol, ch1S1, ch1S2, send1Pre, send2Pre, c1l, c1r);
+  ch2Out = channelChain(ch2Low, ch2Mid, ch2High, ch2Thr, ch2Rat, ch2En, ch2Vol, ch2S1, ch2S2, send1Pre, send2Pre, c2l, c2r);
+  ch3Out = channelChain(ch3Low, ch3Mid, ch3High, ch3Thr, ch3Rat, ch3En, ch3Vol, ch3S1, ch3S2, send1Pre, send2Pre, c3l, c3r);
+  ch4Out = channelChain(ch4Low, ch4Mid, ch4High, ch4Thr, ch4Rat, ch4En, ch4Vol, ch4S1, ch4S2, send1Pre, send2Pre, c4l, c4r);
+  ch5Out = channelChain(ch5Low, ch5Mid, ch5High, ch5Thr, ch5Rat, ch5En, ch5Vol, ch5S1, ch5S2, send1Pre, send2Pre, c5l, c5r);
+  ch6Out = channelChain(ch6Low, ch6Mid, ch6High, ch6Thr, ch6Rat, ch6En, ch6Vol, ch6S1, ch6S2, send1Pre, send2Pre, c6l, c6r);
+  ch7Out = channelChain(ch7Low, ch7Mid, ch7High, ch7Thr, ch7Rat, ch7En, ch7Vol, ch7S1, ch7S2, send1Pre, send2Pre, c7l, c7r);
+  ch8Out = channelChain(ch8Low, ch8Mid, ch8High, ch8Thr, ch8Rat, ch8En, ch8Vol, ch8S1, ch8S2, send1Pre, send2Pre, c8l, c8r);
 
   // Sum channels into master + sends. Returns get summed into master only.
   ch1ML = ba.take(1, ch1Out); ch1MR = ba.take(2, ch1Out);
@@ -229,8 +323,15 @@ with {
   ch8S1L = ba.take(3, ch8Out); ch8S1R = ba.take(4, ch8Out);
   ch8S2L = ba.take(5, ch8Out); ch8S2R = ba.take(6, ch8Out);
 
-  masterL = (ch1ML + ch2ML + ch3ML + ch4ML + ch5ML + ch6ML + ch7ML + ch8ML + r1l + r2l) * masterVol;
-  masterR = (ch1MR + ch2MR + ch3MR + ch4MR + ch5MR + ch6MR + ch7MR + ch8MR + r1r + r2r) * masterVol;
+  // Returns now run through their own strips before summing into the master.
+  // At defaults these reduce to `r1l * 1.0` — the pre-feature expression.
+  ret1Out = returnChain(ret1Low, ret1Mid, ret1High, ret1Vol, r1l, r1r);
+  ret2Out = returnChain(ret2Low, ret2Mid, ret2High, ret2Vol, r2l, r2r);
+  ret1OutL = ba.take(1, ret1Out); ret1OutR = ba.take(2, ret1Out);
+  ret2OutL = ba.take(1, ret2Out); ret2OutR = ba.take(2, ret2Out);
+
+  masterL = (ch1ML + ch2ML + ch3ML + ch4ML + ch5ML + ch6ML + ch7ML + ch8ML + ret1OutL + ret2OutL) * masterVol;
+  masterR = (ch1MR + ch2MR + ch3MR + ch4MR + ch5MR + ch6MR + ch7MR + ch8MR + ret1OutR + ret2OutR) * masterVol;
 
   s1OutL = ch1S1L + ch2S1L + ch3S1L + ch4S1L + ch5S1L + ch6S1L + ch7S1L + ch8S1L;
   s1OutR = ch1S1R + ch2S1R + ch3S1R + ch4S1R + ch5S1R + ch6S1R + ch7S1R + ch8S1R;

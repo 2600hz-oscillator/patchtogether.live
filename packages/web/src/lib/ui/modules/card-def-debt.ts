@@ -84,7 +84,20 @@ export const VOCABULARY_DEBT: Readonly<Record<string, readonly string[]>> = {
   'MarblesCard.svelte': ['t_jitter.label', 'x_length.label'],
   'MeowboxCard.svelte': ['decay.label', 'level.label', 'pitch.label', 'pitch.units'],
   'MilkdropCard.svelte': ['morph.label', 'presetSelect.label', 'reactivity.label', 'speed.label'],
-  'MixmstrsCard.svelte': ['master_volume.label'],
+  // The RETURN strips (pre-fader-sends PR). The def label is the SELF-
+  // IDENTIFYING short name a hardware surface needs with no column context
+  // ('R1V' on an Electra/Push display); the card sits the knob under a 'RET 1'
+  // header and so just says 'Vol'. Same abbreviation convention the eight
+  // CHANNEL strips already use ('1V' → 'Vol') — the difference is that these
+  // eight are LEDGERED, because they were written with literal paramIds so the
+  // gate can actually compare them. The channel equivalents are invisible to it
+  // (templated `ch${n}_volume` reads as no paramId at all), which is the more
+  // interesting debt and is not made worse here.
+  'MixmstrsCard.svelte': [
+    'master_volume.label',
+    'ret1_volume.label', 'ret1_low.label', 'ret1_mid.label', 'ret1_high.label',
+    'ret2_volume.label', 'ret2_low.label', 'ret2_mid.label', 'ret2_high.label',
+  ],
   'Moog923Card.svelte': ['hpCutoff.label', 'level.label', 'lpCutoff.label'],
   'Moog960Card.svelte': ['rate.label'],
   'Moog961Card.svelte': ['sensitivity.label', 'switchOnTime.label'],
@@ -122,7 +135,7 @@ export const VOCABULARY_DEBT: Readonly<Record<string, readonly string[]>> = {
  *  OPERATIONAL was 10 before `AnalogVcoCard`'s `fmAmount.min`/`pmAmount.min`
  *  and `MarblesCard`'s `length.curve`/`x_length.curve` were bound to the def. */
 export const OPERATIONAL_DEBT_CEILING = 6;
-export const VOCABULARY_DEBT_CEILING = 242;
+export const VOCABULARY_DEBT_CEILING = 250; // 242 + the 8 ledgered MIXMSTRS return-strip labels above
 
 /** Flatten a ledger to `card:param.field` triples (the countable form). */
 export function debtTriples(ledger: Readonly<Record<string, readonly string[]>>): string[] {
