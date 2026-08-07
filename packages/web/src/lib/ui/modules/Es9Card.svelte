@@ -1,12 +1,19 @@
 <script lang="ts">
-  // ES-9 card — owns the native-bridge CONNECTION lifecycle (worker + SAB
-  // rings via Es9BridgeClient), mirroring how AudioinCard owns its
-  // MediaStream: the engine factory stays DOM-free and gets the ring specs
-  // through the __es9Attach handle hook. Class selectors are ordinary
-  // discrete params (Yjs-synced); the factory forwards them to the worklet
-  // and this card forwards the derived hold/fade modes to the bridge.
+  // ES-9 card — a VIEW over the bridge, which it no longer owns.
+  //
+  // It used to construct the Es9BridgeClient on mount and `disconnect()` on
+  // destroy, which made the live hardware stream's lifetime the lifetime of a
+  // Svelte component: collapsing the dock pane, or a lane that renders a
+  // compact tile instead of the card, KILLED the stream (owner report
+  // 2026-08-05). Ownership now lives on the ENGINE NODE — see
+  // $lib/audio/es9/bridge-owner — so the connection lasts as long as the node
+  // is in the graph. This card only SUBSCRIBES; unsubscribing on unmount
+  // touches nothing but the listener set.
+  //
+  // Class selectors are ordinary discrete params (Yjs-synced); the factory
+  // forwards them to the worklet and this card pushes the derived hold/fade
+  // modes to the live connection via updateEs9Config.
   import type { NodeProps } from '@xyflow/svelte';
-  import { onDestroy } from 'svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import type { ModuleNode, PortDef } from '$lib/graph/types';
@@ -14,11 +21,18 @@
   import { cardParams } from './card-kit';
   import {
     es9Def,
-    es9Attach,
     es9OutputModes,
     ES9_CLASS_NAMES,
   } from '$lib/audio/modules/es9';
-  import { Es9BridgeClient, type Es9ConnectionState } from '$lib/audio/es9/bridge-client';
+  import type { Es9ConnectionState } from '$lib/audio/es9/bridge-client';
+  import {
+    es9Snapshot,
+    subscribeEs9,
+    updateEs9Config,
+    stopEs9Bridge,
+    restartEs9Bridge,
+    type Es9OwnerSnapshot,
+  } from '$lib/audio/es9/bridge-owner';
   import type { Es9DeviceInfo, Es9Meters } from '$lib/audio/es9/es9-protocol';
   import { patch } from '$lib/graph/store';
   import { nodesStructuralVersion } from '$lib/graph/node-versions.svelte';
@@ -28,14 +42,13 @@
   let node = $derived(data?.node as ModuleNode);
   const { set, engineCtx } = cardParams(es9Def, () => id, () => node);
 
-  // ---- per-tab transient state (never in Yjs) ----
-  let connState = $state<Es9ConnectionState>('idle');
-  let stateDetail = $state<string | undefined>(undefined);
-  let device = $state<Es9DeviceInfo | null>(null);
-  let meters = $state<Es9Meters | null>(null);
-  let rtt = $state<number | null>(null);
-  let client: Es9BridgeClient | null = null;
-  let attachTimer: ReturnType<typeof setInterval> | null = null;
+  // ---- per-tab transient state (never in Yjs) — MIRRORED from the owner ----
+  let snap = $state<Es9OwnerSnapshot>(es9Snapshot(id));
+  let connState = $derived<Es9ConnectionState>(snap.state);
+  let stateDetail = $derived<string | undefined>(snap.detail);
+  let device = $derived<Es9DeviceInfo | null>(snap.device);
+  let meters = $derived<Es9Meters | null>(snap.meters);
+  let rtt = $derived<number | null>(snap.rtt);
 
   const IN_JACKS = Array.from({ length: 14 }, (_, i) => i + 1);
   const OUT_JACKS = Array.from({ length: 8 }, (_, i) => i + 1);
@@ -56,62 +69,34 @@
     };
   }
 
-  function connect(): void {
-    if (client) return;
-    client = new Es9BridgeClient({
-      onState: (s, detail) => {
-        connState = s;
-        stateDetail = detail;
-        if (s !== 'connected') { device = null; rtt = null; }
-      },
-      onDeviceInfo: (info) => { device = info; },
-      onMeters: (m) => { meters = m; },
-      onRtt: (ms) => { rtt = ms; },
-    });
-    if (!client.supported) return;
-    const engine = engineCtx.get();
-    const audioEngine = engine?.getDomain?.('audio') as { ctx?: AudioContext } | undefined;
-    const rate = audioEngine?.ctx?.sampleRate ?? 48000;
-    client.start(rate, currentConfig());
-    // Hand the rings to the engine node; retry across the Yjs→engine
-    // reconcile race (audioin's card does the same dance for its stream).
-    const payload = { inRing: client.inRing, outRing: client.outRing };
-    if (!es9Attach(engine, id, payload)) {
-      attachTimer = setInterval(() => {
-        if (es9Attach(engineCtx.get(), id, payload)) {
-          clearInterval(attachTimer!);
-          attachTimer = null;
-        }
-      }, 250);
-    }
-  }
-
-  function disconnect(): void {
-    if (attachTimer !== null) { clearInterval(attachTimer); attachTimer = null; }
-    es9Attach(engineCtx.get(), id, null);
-    client?.stop();
-    client = null;
-    connState = 'idle';
-    device = null;
-    meters = null;
-    rtt = null;
+  /** The engine's AudioContext rate — the bridge must be restarted at the SAME
+   *  rate the worklet runs at, or the ring would be resampled by accident. */
+  function sampleRate(): number {
+    const e = engineCtx.get();
+    const audio = e?.getDomain?.('audio') as { ctx?: AudioContext } | undefined;
+    return audio?.ctx?.sampleRate ?? 48000;
   }
 
   function setClass(paramId: string) {
     return (e: Event) => {
       const v = Number((e.currentTarget as HTMLSelectElement).value);
       set(paramId)(v);
-      // Bridge-side hold/fade policy follows the out-jack classes.
-      client?.updateConfig(currentConfig());
+      // Bridge-side hold/fade policy follows the out-jack classes. Pushed to
+      // the node's LIVE connection — a no-op when there isn't one yet.
+      updateEs9Config(id, currentConfig());
     };
   }
 
-  // Probe once when the card first mounts (module spawn / patch load with
-  // the module present) — never on plain page load without the module.
+  // SUBSCRIBE ONLY. No connect on mount, no disconnect on destroy — the engine
+  // node owns the connection, so this card can mount and unmount freely (dock
+  // collapse, shell tile swap, expand) without touching the hardware stream.
+  // Re-subscribes if the node id changes; the returned cleanup removes just the
+  // listener.
   $effect(() => {
-    if (!client && connState === 'idle') connect();
+    const nodeId = id;
+    snap = es9Snapshot(nodeId);
+    return subscribeEs9(nodeId, (s) => { snap = s; });
   });
-  onDestroy(disconnect);
 
   // ---- patch panel sections ----
   function toDescriptor(p: PortDef): PortDescriptor {
@@ -186,9 +171,9 @@
         <span class="led" class:on={connState === 'connected'} class:err={connState === 'busy' || connState === 'device_lost'}></span>
         <span class="state">{stateLabel}</span>
         {#if connState === 'connected'}
-          <button class="linkish" onclick={disconnect}>disconnect</button>
+          <button class="linkish" onclick={() => stopEs9Bridge(id)}>disconnect</button>
         {:else if connState !== 'connecting' && connState !== 'unsupported'}
-          <button class="linkish" onclick={() => { disconnect(); connect(); }}>connect</button>
+          <button class="linkish" onclick={() => restartEs9Bridge(id, sampleRate(), currentConfig())}>connect</button>
         {/if}
       </div>
       {#if connState === 'connected' && device}

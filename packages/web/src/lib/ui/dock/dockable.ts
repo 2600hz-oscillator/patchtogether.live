@@ -41,6 +41,13 @@ export const DOCKABLE_TYPES: ReadonlySet<string> = new Set([
   // Envelopes / modulation workhorses.
   'adsr',
   'lfo',
+  // ES-9 hardware bridge. Dockable since its CONNECTION moved off the card and
+  // onto the engine node ($lib/audio/es9/bridge-owner): mounting the real card
+  // in a dock rail — or collapsing that pane — can no longer start or stop the
+  // hardware stream, which is what previously made docking it unsafe. Meets
+  // both plain-mount constraints: no direct xyflow context (ports go through
+  // PatchPanel) and no drag-scaled controls (its controls are <select>s).
+  'es9',
   // Scope (owner Q3 explicitly includes it; see the P2.5a scope-in-rail
   // assessment in the PR — a slim `dockscope` variant is a P2.5b candidate).
   'scope',

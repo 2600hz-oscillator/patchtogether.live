@@ -411,6 +411,7 @@
   import DockPanTail, { type DockTailSpec } from '$lib/ui/dock/DockPanTail.svelte';
   import { dockStore } from '$lib/ui/dock/dock-store.svelte';
   import { isDockableType } from '$lib/ui/dock/dockable';
+  import { hasEs9Bridge } from '$lib/audio/es9/bridge-owner';
   import type { DockZone } from '$lib/ui/dock/dock';
   import {
     WORKFLOW_PINNED_MODULES,
@@ -664,6 +665,12 @@
       (globalThis as any).__ydoc = ydoc;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__engine = () => engine;
+      // ES-9 bridge OWNERSHIP probe. The whole point of moving the connection
+      // off the card is that it survives a card unmount, and that is invisible
+      // from the DOM — an e2e can see the card disappear but not whether the
+      // stream died with it. This exposes the one bit that matters.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__es9HasBridge = (nodeId: string) => hasEs9Bridge(nodeId);
       // Tests bootstrap the engine without going through Load example (which
       // creates an auto-playing Sequencer that races bind:nodes during the
       // immediate clear-then-add transact spawnPatch does).
