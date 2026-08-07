@@ -67,9 +67,22 @@ public final class BridgeService: @unchecked Sendable {
         /// Jitter-buffer target depth (hardware frames) for client->hw audio.
         public var outputTargetFrames: Int
         public var harnessHTML: Data
+        /// How long the incumbent may be SILENT before a new client may take
+        /// its slot without asking. Default 4× the web client's 2 s ping
+        /// interval — long enough that a healthy client is never displaced by a
+        /// hiccup, short enough that a dead one self-heals before a user gives
+        /// up. Injectable so tests can shrink it instead of sleeping 8 s.
+        /// ⚠ Tied to the client's ping cadence; they are ONE contract.
+        public var staleAfter: TimeInterval
+        /// How long a client told `busy` may linger able to send `takeover`.
+        public var takeoverWindow: TimeInterval
         public init(port: UInt16, deviceName: String, deviceUID: String,
                     inputLabels: [String], outputLabels: [String],
-                    outputTargetFrames: Int, harnessHTML: Data) {
+                    outputTargetFrames: Int, harnessHTML: Data,
+                    staleAfter: TimeInterval = 8.0,
+                    takeoverWindow: TimeInterval = 10.0) {
+            self.staleAfter = staleAfter
+            self.takeoverWindow = takeoverWindow
             self.port = port
             self.deviceName = deviceName
             self.deviceUID = deviceUID
@@ -89,6 +102,33 @@ public final class BridgeService: @unchecked Sendable {
     // lock; only pointers/flags/masks live under it.)
     private let lock = NSLock()
     private var active: WebSocketSession?
+
+    // ── LIVENESS + TAKEOVER (2026-08-07) ────────────────────────────────────
+    // A single-client server must not be permanently disabled by a client that
+    // went away rudely. Measured incident: nine sockets in TCP CLOSED, all
+    // still held, and the app answered `busy` to everything until restarted —
+    // so a browser tab that crashed (or a laptop that slept) bricked the bridge
+    // and the only cure was a human noticing and restarting it.
+    //
+    // Liveness is "when did we last hear ANYTHING from the active session".
+    // The web client already pings every 2 s (bridge.worker.ts PING_INTERVAL_MS)
+    // and every inbound frame — ping, config, audio — is equally good evidence
+    // of life, so nothing new is required on the wire.
+    private var lastHeardAt: DispatchTime = .now()
+
+    /// Record that the ACTIVE session is alive. Any inbound frame counts —
+    /// ping, config, or audio — because all three prove the peer is there, and
+    /// a streaming client can go long stretches sending only binary.
+    private func noteHeard(_ session: WebSocketSession) {
+        lock.lock()
+        if active === session { lastHeardAt = .now() }
+        lock.unlock()
+    }
+
+    /// Seconds since the active session was last heard from. Caller holds `lock`.
+    private func idleSecondsLocked() -> TimeInterval {
+        Double(DispatchTime.now().uptimeNanoseconds &- lastHeardAt.uptimeNanoseconds) / 1_000_000_000
+    }
     private var clientRate: Double = 0
     private var inputMask: UInt32 = 0
     private var outputMask: UInt32 = 0
@@ -170,10 +210,22 @@ public final class BridgeService: @unchecked Sendable {
     // MARK: - Session wiring
 
     private func attach(_ session: WebSocketSession) {
+        var evicted: WebSocketSession?
+        var incumbentIdle: TimeInterval = 0
         let accepted: Bool = {
             lock.lock(); defer { lock.unlock() }
-            if active != nil { return false }
+            if let incumbent = active {
+                incumbentIdle = idleSecondsLocked()
+                // GRACE TAKEOVER: the slot is held by a session we have not
+                // heard from in longer than `staleAfter`. It is not coming
+                // back — hand the slot to the newcomer rather than making a
+                // human restart the app. The incumbent is dropped OUTSIDE the
+                // lock (below) so its close path cannot deadlock against us.
+                guard incumbentIdle > config.staleAfter else { return false }
+                evicted = incumbent
+            }
             active = session
+            lastHeardAt = .now()
             configured = false
             outputPrimed = false
             clientRate = 0
@@ -183,15 +235,72 @@ public final class BridgeService: @unchecked Sendable {
             sentSampleTime = 0
             return true
         }()
+        if let evicted {
+            evicted.sendText(Self.encodeJSON(StatusMessage(
+                state: "stopped",
+                detail: "another client took over after \(Int(incumbentIdle))s without contact")))
+            evicted.close()
+        }
+
         guard accepted else {
+            // BUSY, but not a dead end. The session is kept for a bounded
+            // window so the client may answer with `takeover` — the whole
+            // point being that a user faced with "another client is connected"
+            // gets an ACTION instead of a button that appears to do nothing.
+            // The detail carries the incumbent's idle time so the UI can say
+            // WHY, which is what was missing when this bricked in the field.
             session.sendText(Self.encodeJSON(StatusMessage(
-                state: "busy", detail: "another client is connected")))
-            session.close()
+                state: "busy",
+                detail: "another client is connected (last heard \(Int(incumbentIdle))s ago) — send {\"type\":\"takeover\"} to claim it")))
+            session.onText = { [weak self] s, text in self?.handleWaitingText(s, text) }
+            session.onClose = { _ in }
+            // Never let a rejected session linger indefinitely against maxSessions.
+            DispatchQueue.global().asyncAfter(deadline: .now() + config.takeoverWindow) { [weak self, weak session] in
+                guard let session else { return }
+                var stillWaiting = false
+                if let self { self.lock.lock(); stillWaiting = self.active !== session; self.lock.unlock() }
+                if stillWaiting { session.close() }
+            }
             return
         }
 
         session.onText = { [weak self] s, text in self?.handleText(s, text) }
         session.onBinary = { [weak self] s, data in self?.handleBinary(s, data) }
+        session.onClose = { [weak self] s in self?.detach(s) }
+    }
+
+    /// Message handler for a session that was told `busy`. It may do exactly
+    /// one thing: claim the slot. Anything else is ignored — a waiting session
+    /// must not be able to configure or stream.
+    private func handleWaitingText(_ session: WebSocketSession, _ text: String) {
+        guard let data = text.data(using: .utf8),
+              let envelope = try? JSONDecoder().decode(ControlEnvelope.self, from: data),
+              envelope.type == "takeover"
+        else { return }
+
+        var evicted: WebSocketSession?
+        lock.lock()
+        if let incumbent = active, incumbent !== session {
+            evicted = incumbent
+        }
+        active = session
+        lastHeardAt = .now()
+        configured = false
+        outputPrimed = false
+        clientRate = 0
+        inputMask = 0
+        outputMask = 0
+        sendSeq = 0
+        sentSampleTime = 0
+        lock.unlock()
+
+        if let evicted {
+            evicted.sendText(Self.encodeJSON(StatusMessage(
+                state: "stopped", detail: "another client took over")))
+            evicted.close()
+        }
+        session.onText = { [weak self] s, t in self?.handleText(s, t) }
+        session.onBinary = { [weak self] s, d in self?.handleBinary(s, d) }
         session.onClose = { [weak self] s in self?.detach(s) }
     }
 
@@ -212,6 +321,7 @@ public final class BridgeService: @unchecked Sendable {
     }
 
     private func handleText(_ session: WebSocketSession, _ text: String) {
+        noteHeard(session)
         guard let data = text.data(using: .utf8),
               let envelope = try? JSONDecoder().decode(ControlEnvelope.self, from: data)
         else { return }
@@ -286,6 +396,7 @@ public final class BridgeService: @unchecked Sendable {
     // MARK: - Client -> hardware (runs on the connection's queue)
 
     private func handleBinary(_ session: WebSocketSession, _ data: Data) {
+        noteHeard(session)
         guard let block = try? BridgeWire.decode(data) else { return }
         lock.lock()
         guard active === session, configured, let resampler = outResampler else {
