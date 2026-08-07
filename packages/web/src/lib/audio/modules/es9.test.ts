@@ -91,7 +91,7 @@ describe('class mapping helpers', () => {
     for (let c = 0; c < 8; c++) expect(outClasses[c]).toBe(ES9_CLASS_AUDIO);
   });
 
-  it('derives bridge hold/fade modes on the JACK channels: audio fades, CV-ish holds', () => {
+  it('derives bridge hold/fade modes on the JACK channels: only LEVELS hold', () => {
     const modes = es9OutputModes({
       out1_class: ES9_CLASS_CV,
       out2_class: ES9_CLASS_PITCH,
@@ -100,7 +100,11 @@ describe('class mapping helpers', () => {
     });
     expect(modes['8']).toBe('cv');      // jack 1 → USB channel index 8
     expect(modes['9']).toBe('cv');
-    expect(modes['10']).toBe('cv');
+    // ⚠ GATE FAILS LOW, it does not hold. A ~5 ms clock pulse frozen at +5 V by
+    // a stream hiccup reads downstream as one long gate with no rising edges —
+    // a stuck note or a stalled clock, which is worse than a dropped pulse.
+    // This is the Pam's/Mandala missed-trigger mechanism (2026-08-07).
+    expect(modes['10'], 'gate jacks fail low, never hold').toBe('audio');
     expect(modes['11']).toBe('audio');
     expect(modes['0']).toBe('audio');   // USB bus feeds are always audio
   });

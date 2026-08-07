@@ -109,13 +109,40 @@ export function es9ClassesFromParams(params: Record<string, number> | undefined)
   return { inClasses, outClasses };
 }
 
-/** The bridge-side underrun modes for the config message: any CV-ish class
- *  holds its last voltage on a hiccup; audio fades to silence. */
+/**
+ * The bridge-side underrun modes for the config message.
+ *
+ * The wire protocol has exactly two policies, and the mapping is a SAFETY
+ * choice per class, not a cosmetic one:
+ *
+ *   'cv'    HOLD the last voltage. Right for a LEVEL — a pitch that collapsed
+ *           to 0 V (= C4) on a dropout would be a wrong note, and holding the
+ *           last value is inaudible for a slow modulation.
+ *   'audio' FADE to silence. Right for anything where a frozen value is itself
+ *           a wrong output.
+ *
+ * ⚠ GATE JACKS FAIL LOW, and this is deliberate (owner-reported 2026-08-07:
+ * Pam's New Workout not locking cleanly to CV Buddy's clock, with a Mandala
+ * MK2 downstream of Pam's dropping triggers).
+ *
+ * Gate was previously lumped in with the CV-ish classes and therefore HELD. A
+ * clock pulse is only ~5 ms high, so a stream hiccup that lands inside one
+ * freezes the jack at +5 V until samples resume — the downstream gear sees one
+ * long gate instead of a pulse train, gets no rising edges for the duration,
+ * and a Pam's driving further dividers loses every derived trigger. A held
+ * gate does not merely lose information; it EMITS A WRONG SUSTAINED SIGNAL —
+ * a stuck note, a stuck envelope, a clock that stopped.
+ *
+ * Failing low loses at most the pulses inside the hiccup, which is the
+ * graceful failure, so gate takes the fade policy. Pitch and CV still hold.
+ */
 export function es9OutputModes(params: Record<string, number> | undefined): Record<string, 'audio' | 'cv'> {
   const { outClasses } = es9ClassesFromParams(params);
   const modes: Record<string, 'audio' | 'cv'> = {};
   for (let c = 0; c < HW_CHANNELS; c++) {
-    modes[String(c)] = outClasses[c] === ES9_CLASS_AUDIO ? 'audio' : 'cv';
+    const cls = outClasses[c];
+    // HOLD only for the level-carrying classes; gate and audio both fail low.
+    modes[String(c)] = cls === ES9_CLASS_CV || cls === ES9_CLASS_PITCH ? 'cv' : 'audio';
   }
   return modes;
 }
@@ -126,7 +153,7 @@ function inputDocs(): Record<string, string> {
   const docs: Record<string, string> = {};
   for (let n = 1; n <= DC_OUTPUT_JACKS; n++) {
     docs[`out${n}`] =
-      `To ES-9 physical output jack ${n} (DC-coupled, ±10 V; USB channel ${8 + n} under the ES-9's default routing). Takes audio or any CV-family signal; the Out ${n} class selector sets the voltage scaling (audio = raw full scale, cv = ±1 → ±5 V, pitch = 1.0/oct → 1 V/oct, gate = 0|1 → 0/+5 V) and whether the jack holds (cv-ish) or fades (audio) if the browser stream hiccups.`;
+      `To ES-9 physical output jack ${n} (DC-coupled, ±10 V; USB channel ${8 + n} under the ES-9's default routing). Takes audio or any CV-family signal; the Out ${n} class selector sets the voltage scaling (audio = raw full scale, cv = ±1 → ±5 V, pitch = 1.0/oct → 1 V/oct, gate = 0|1 → 0/+5 V) and how the jack fails if the browser stream hiccups (cv and pitch HOLD their last voltage, since a collapsed pitch is a wrong note; gate and audio fall to zero, since a frozen gate is a stuck note or a stopped clock).`;
   }
   const usbDefault: Record<number, string> = {
     1: 'the main outputs (via internal mix 1) and phones',
@@ -168,7 +195,7 @@ function controlDocs(): Record<string, string> {
   }
   for (let n = 1; n <= DC_OUTPUT_JACKS; n++) {
     docs[`out${n}_class`] =
-      `Signal class for hardware output jack ${n} (audio/cv/pitch/gate; default audio). Sets the inverse voltage mapping for signals patched into out${n} (cv = ±1 → ±5 V, pitch = 1.0/oct → 1 V/oct, gate = 0|1 → 0/+5 V, audio = raw full scale) AND the bridge's failure policy for the jack: cv-ish classes HOLD the last voltage on a stream hiccup, audio fades to silence.`;
+      `Signal class for hardware output jack ${n} (audio/cv/pitch/gate; default audio). Sets the inverse voltage mapping for signals patched into out${n} (cv = ±1 → ±5 V, pitch = 1.0/oct → 1 V/oct, gate = 0|1 → 0/+5 V, audio = raw full scale) AND the bridge's failure policy for the jack on a stream hiccup: cv and pitch HOLD their last voltage (a pitch collapsing to 0 V would be a wrong note), while gate and audio FALL TO ZERO (a frozen gate is a stuck note or a stalled clock, which is worse than a dropped pulse).`;
   }
   return docs;
 }

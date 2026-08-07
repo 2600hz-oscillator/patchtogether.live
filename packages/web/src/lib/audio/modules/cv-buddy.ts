@@ -42,7 +42,12 @@ import type { AudioModuleDef } from '$lib/audio/module-registry';
 import { patch as livePatch } from '$lib/graph/store';
 import { getSchedulerClock } from '$lib/audio/scheduler-clock';
 import { openGate, closeGate, GATE_HI } from '$lib/audio/gate-trigger';
-import { pulseTimes, CLOCK_PULSE_HIGH_S } from '$lib/audio/cv-buddy/clock-math';
+import {
+  advanceClock,
+  idleClockPhase,
+  CLOCK_PULSE_HIGH_S,
+  type ClockPhase,
+} from '$lib/audio/cv-buddy/clock-math';
 import { allocateCvBuddySlots } from '$lib/audio/cv-buddy/slot-alloc';
 
 /** The discrete PPQN menu the card offers (pulses per quarter note). 24 =
@@ -189,14 +194,24 @@ export const cvBuddyDef: AudioModuleDef = {
     let clockOffsetMs = savedParams.clockOffsetMs ?? 0;
 
     // ---- clock/run runtime state ----
-    let clockThrough = ctx.currentTime; // scheduled the clock grid up to here
+    // The clock is a PHASE ACCUMULATOR, not a t=0 grid — see the header of
+    // clock-math.ts for why (a tempo nudge used to teleport the phase by up to
+    // a whole pulse period, which is the reported Pam's/Mandala instability).
+    let clockPhase: ClockPhase = idleClockPhase();
+    let clockThrough = ctx.currentTime; // scheduled the clock out to here
     let lastRunLevel = 0; // last value written to runSrc.offset
     let wasClocking = false; // were we scheduling last tick? (owner && running)
+    // Pulses that came due before a late tick could place them. Previously this
+    // path was silent, so a scheduling stall and an ES-9 underrun both just
+    // looked like "the clock is unstable" at the jack. Surfaced via read().
+    let clockSkips = 0;
 
     function stopClock(at: number): void {
       clockSrc.offset.cancelScheduledValues(at);
       clockSrc.offset.setValueAtTime(0, at);
       clockThrough = at;
+      // Re-anchor on the next start so the train begins WITH the transport.
+      clockPhase = idleClockPhase();
     }
     function setRun(level: number, at: number): void {
       if (level === lastRunLevel) return;
@@ -218,13 +233,28 @@ export const cvBuddyDef: AudioModuleDef = {
           const winStart = Math.max(clockThrough, now);
           const winEnd = now + CLOCK_LOOKAHEAD_S;
           if (winEnd > winStart) {
-            const bpm = transportBpm();
-            const edges = pulseTimes(bpm, ppqn, clockOffsetMs, winStart, winEnd);
-            for (const t of edges) {
+            const adv = advanceClock(
+              clockPhase,
+              transportBpm(),
+              ppqn,
+              clockOffsetMs,
+              winStart,
+              winEnd,
+            );
+            for (const t of adv.pulses) {
               openGate(clockSrc, t);
               closeGate(clockSrc, t + CLOCK_PULSE_HIGH_S);
             }
+            clockPhase = adv.phase;
             clockThrough = winEnd;
+            if (adv.skipped > 0) {
+              clockSkips += adv.skipped;
+              console.warn(
+                `[cv-buddy] clock tick arrived late — ${adv.skipped} pulse(s) could not be ` +
+                  `scheduled (${clockSkips} total). If the ES-9 card also shows rising xruns, ` +
+                  'the jack is starving too; if not, this is main-thread scheduling.',
+              );
+            }
           }
           wasClocking = true;
         } else if (wasClocking) {
@@ -262,6 +292,8 @@ export const cvBuddyDef: AudioModuleDef = {
       readParam(paramId) {
         if (paramId === 'ppqn') return ppqn;
         if (paramId === 'clockOffsetMs') return clockOffsetMs;
+        // Diagnostic, not a param: how many clock pulses a late tick lost.
+        if (paramId === 'clockSkips') return clockSkips;
         return undefined;
       },
       read(key) {
