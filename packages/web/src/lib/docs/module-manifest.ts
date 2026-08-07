@@ -1000,6 +1000,20 @@ function synthesizeFromBuildHelper(
       params.push({ id: `ch${ch}_send2`, label: `${ch}S2`, defaultValue: 0, min: 0, max: 1, curve: 'linear' });
     }
     params.push({ id: 'master_volume', label: 'Master', defaultValue: 0.8, min: 0, max: 1, curve: 'linear' });
+    // Pre/post-fader select per SEND BUS, then the two RETURN strips. Mirrors
+    // buildParams() in $lib/audio/modules/mixmstrs — this helper exists because
+    // the doc-page manifest is built by a `?raw` regex parser that cannot run
+    // the def's loops, so the two lists are kept in step by
+    // module-manifest.test.ts ("manifest input/output ids match def"), which is
+    // what failed when only the def side was edited.
+    params.push({ id: 'send1Pre', label: 'S1Pre', defaultValue: 0, min: 0, max: 1, curve: 'discrete' });
+    params.push({ id: 'send2Pre', label: 'S2Pre', defaultValue: 0, min: 0, max: 1, curve: 'discrete' });
+    for (const r of [1, 2]) {
+      params.push({ id: `ret${r}_volume`, label: `R${r}V`, defaultValue: 1, min: 0, max: 1, curve: 'linear' });
+      params.push({ id: `ret${r}_low`, label: `R${r}Lo`, defaultValue: 0, min: -12, max: 12, curve: 'linear', units: 'dB' });
+      params.push({ id: `ret${r}_mid`, label: `R${r}Md`, defaultValue: 0, min: -12, max: 12, curve: 'linear', units: 'dB' });
+      params.push({ id: `ret${r}_high`, label: `R${r}Hi`, defaultValue: 0, min: -12, max: 12, curve: 'linear', units: 'dB' });
+    }
     const inputs: ManifestPort[] = [
       { id: 'ch1L', type: 'audio' }, { id: 'ch1R', type: 'audio' },
       { id: 'ch2L', type: 'audio' }, { id: 'ch2R', type: 'audio' },
