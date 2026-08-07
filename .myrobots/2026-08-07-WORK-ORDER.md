@@ -1,0 +1,106 @@
+# 2026-08-07 — WORK ORDER (owner-set)
+
+Four phases, **in this order**. Set by the owner on 2026-08-07 after a review of
+everything `.myrobots` had on the table. Do not jump ahead: phase 4 is blocked
+behind phase 1 for a substantive reason, not just preference.
+
+| # | phase | state |
+|---|---|---|
+| 1 | Silent right channels + `cube` / `cloudseed` | **IN PROGRESS** |
+| 2 | Stereo audio normalization (7 PRs) | ready, 0 landed |
+| 3 | Light Mode for `?shell=1` | not started, no plan yet |
+| 4 | Faceplate programme | blocked behind (1) |
+
+**Why this order.** The faceplate programme has audited 18 of the 99 face-less
+audio modules and promoted **zero**, because the audits kept finding modules
+that *do not work* rather than modules that look wrong. Putting a face on a
+module whose right channel is silent is decoration over a broken module. So the
+audited defects are cleared first, and that unblocks (4).
+
+---
+
+## Phase 1 — the audited audio defects
+
+Evidence: `2026-08-03-MODULE-AUDIT-INVENTORY.md` (measured numbers, not
+inspection) and `2026-08-03-SESSION-STATE.md` §6b (the carried-forward ledger).
+
+### 1a. Silent OUT R — four modules, ONE mechanism
+
+`charlottes-echos`, `cofefve`, `clouds`, `shimmershine`. The module factory pins
+a silent `ConstantSource` onto input channel 1, which **overwrites** the DSP's
+own `inputs[1] ?? inputs[0]` mono normal — so the normal can never fire and the
+right channel renders exactly `0.0000e+0`. Measured fixed values are in the
+inventory (e.g. charlottes-echos → `0.858524`, clouds → `6.8858e-1`,
+shimmershine → `4.4212e-1`).
+
+⚠ `shimmershine`'s own source header **already documented this** as "DEAD in
+practice… Verified in Chrome" — it was written down and never fixed, which is
+the same failure mode as the GL feedback loop (a known defect with nothing red).
+
+### 1b. Silent OUT R — `resofilter`, a DIFFERENT mechanism
+
+`channelInterpretation: 'discrete'` zero-fills channel 1, so the DSP's fallback
+can never fire even though the fallback is present and correct. Same symptom,
+different cause — do **not** apply the 1a fix blindly here.
+
+### 1c. `cube` — wavecel's exact envelope bypass
+
+`cube.ts:405` `base_vol` defaults to 1; `:753` multiplies `readFrame(…) *
+baseVol * level`. Deliberately left untouched when wavecel was fixed, because
+the shared helper `poly-osc-sum.ts` also feeds `dx7` and `pentemelodica` and the
+blast radius had to be enumerated first. **Enumerate it before touching the
+helper**; a per-module fix may be the correct smaller move.
+
+### 1d. `cloudseed` — a THIRD stereo-silence mechanism
+
+`cloudseed.ts:1510-11` reads `inputs[0]`/`inputs[1]` with **no `??` at all**, so
+a mono patch leaves `inR` undefined. This is a *missing* normal, not a defeated
+one. It changes audio behaviour → needs an owner ear **and** an ART re-pin, so
+it is the one item here that cannot be silently shipped.
+
+### Standing traps for this phase
+
+- **Poly/chord or cable-width changes → run the FULL `task art` suite**; ART
+  pins exact voicing.
+- **Any fix that changes audio → the `.f32` moves**, and the fingerprint
+  manifest must be re-pinned in the same commit (`task art:update` chains it).
+  Review the manifest diff entry by entry; a labels-only move is a LEVEL change,
+  a spectrum move is TIMBRAL.
+- **Adding CV ports → run the FULL web unit suite** (cv-scale-registry +
+  frozen-contract only fail in that lane).
+- These modules are `packages/dsp` Faust sources in some cases and TS factories
+  in others — check which before assuming a `.dsp` edit is needed.
+
+---
+
+## Phase 2 — stereo normalization
+
+`.myrobots/stereo-audio-plan/plan.md`. FINAL, all 7 owner questions answered,
+re-verified 2026-08-04 as still accurate: **0 of 7 PRs have landed**,
+`stereovca` is still the module id everywhere, and `reconciler.ts:143`'s
+`await engine.addNode(node)` is still unguarded exactly as PR-0 describes.
+
+Phase 1 is deliberately upstream of this: several of the silent-R defects are
+the *same* mono/stereo normalization confusion this plan generalises, so fixing
+them first informs the plan rather than colliding with it.
+
+---
+
+## Phase 3 — Light Mode for `?shell=1`
+
+Not started; no plan doc exists yet. The **current theme is DARK mode** — Light
+Mode is additive, not a re-theme.
+
+Known constraint from this repo: published/rendered surfaces already handle
+`prefers-color-scheme`, but the rack UI does not. Expect the real work to be
+token extraction rather than CSS authoring, and expect **VRT churn across every
+card baseline** — plan the baseline strategy before writing styles.
+
+---
+
+## Phase 4 — faceplates
+
+Resume the programme. 99 of 120 audio modules have no face. Method and the two
+STOP gates: `.claude/skills/module-adversarial-audit.md` and
+`.claude/skills/module-faceplates.md`. `face-specs-round-2-2026-08-01.md` is
+kept as a **defect list, never as a design**.
