@@ -1400,11 +1400,13 @@ function keysKeyboardRoot(clip: NoteClipRecord): number {
 function keysPadId(col: number, row: number): number {
   return row * 16 + col;
 }
-/** The distinct MIDI notes currently held (LED paint + the arp pool). */
-function heldMidis(): number[] {
+/** The distinct MIDI notes currently held — the LED paint's `pressed` set and
+ *  the arp's held-note pool, derived from the pad records so the two can never
+ *  disagree with what is actually sounding. */
+function heldMidis(): Set<number> {
   const seen = new Set<number>();
   for (const h of keysHeld.values()) seen.add(h.midi);
-  return [...seen];
+  return seen;
 }
 /** Is (lane, midi) still held by some pad OTHER than `exceptPadId`? The voice
  *  allocator keys by PITCH, so two pads sounding the same pitch (trivial in the
@@ -1792,7 +1794,7 @@ function handleKeysNote(nodeId: string, col: number, row: number, s: 0 | 1, velo
     // SINGLE + arp ON: the pad only ever fed the arp's held-set, so the release
     // just re-seeds the pool (the arp owns its own note-offs).
     if (deployment === 'single' && arpOn) {
-      arp = arpSetHeld(arp, heldMidis());
+      arp = arpSetHeld(arp, [...heldMidis()]);
       return;
     }
     // Another pad is still holding this exact pitch on this lane → the voice is
@@ -1834,7 +1836,7 @@ function handleKeysNote(nodeId: string, col: number, row: number, s: 0 | 1, velo
   // record). The arp SOUNDS its own sequence from the render loop (serviceArp).
   // Pair never sets arpOn, so this branch is single-only.
   if (deployment === 'single' && arpOn) {
-    arp = arpSetHeld(arp, heldMidis());
+    arp = arpSetHeld(arp, [...heldMidis()]);
     if (arpNextTime === 0) arpNextTime = nowMs(); // (re)start the arp clock
     return;
   }
@@ -2912,7 +2914,7 @@ function arpToggle(nodeId: string): void {
   // recorded lane+pitch, never a recomputation.
   if (arpOn) {
     for (const h of keysHeld.values()) auditionOff(nodeId, h.lane, h.midi);
-    arp = arpSetHeld(arp, heldMidis());
+    arp = arpSetHeld(arp, [...heldMidis()]);
     arpNextTime = 0; // fire on the next service tick
   } else {
     if (arp.playing !== null) {
@@ -3470,7 +3472,7 @@ function paintKeysRole(
       scale: clip.scale,
       playheadStep: ph,
       lengthSteps: clip.lengthSteps,
-      pressed: new Set(heldMidis()),
+      pressed: heldMidis(),
       recArmed: rec?.armed,
       recording: rec?.recording,
       overdub: rec?.overdub,
@@ -3557,7 +3559,7 @@ function paintSingleKeys(
       scale: clip.scale,
       playheadStep: ph,
       lengthSteps: clip.lengthSteps,
-      pressed: new Set(heldMidis()),
+      pressed: heldMidis(),
       recArmed: rec?.armed,
       recording: rec?.recording,
       overdub: rec?.overdub,
