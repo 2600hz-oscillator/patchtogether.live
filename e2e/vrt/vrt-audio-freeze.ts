@@ -60,6 +60,57 @@
 
 import type { Page } from '@playwright/test';
 
+/** What the audio graph reports about itself. `currentTime` is null when there
+ *  is no engine or no context to read. Seconds. */
+export interface AudioClock {
+  state: string;
+  currentTime: number | null;
+}
+
+/**
+ * Read the audio graph's state + clock through the SAME dual-spelling resolver
+ * the freeze uses, so a caller checking whether the freeze is still in effect
+ * cannot be looking at a different context than the one that was suspended.
+ *
+ * `currentTime` is the EFFECT-level observable: a suspended context holds it
+ * exactly constant, and it is precisely what the AnalyserNode window feeding
+ * every live glyph advances with. `state` alone is a claim about the flag.
+ */
+export async function readAudioClock(page: Page): Promise<AudioClock> {
+  return page.evaluate(() => {
+    const w = globalThis as unknown as { __engine?: () => Record<string, unknown> | null };
+    const eng = w.__engine?.();
+    if (!eng) return { state: 'no-engine', currentTime: null };
+    const ctx =
+      (eng as { ctx?: AudioContext }).ctx ??
+      (eng as { getDomain?: (d: string) => { ctx?: AudioContext } }).getDomain?.('audio')?.ctx;
+    if (!ctx) return { state: 'no-ctx', currentTime: null };
+    return { state: ctx.state as string, currentTime: ctx.currentTime };
+  });
+}
+
+/** Undo a freeze — the negative control's other direction. Returns the state
+ *  observed after resuming, so a caller can assert the control is genuinely
+ *  driving a RUNNING graph rather than asserting against a second frozen one
+ *  (a control that cannot reach the condition it names proves nothing). */
+export async function resumeAudioContext(page: Page): Promise<AudioClock> {
+  await page.evaluate(async () => {
+    const w = globalThis as unknown as { __engine?: () => Record<string, unknown> | null };
+    const eng = w.__engine?.();
+    if (!eng) return;
+    const ctx =
+      (eng as { ctx?: AudioContext }).ctx ??
+      (eng as { getDomain?: (d: string) => { ctx?: AudioContext } }).getDomain?.('audio')?.ctx;
+    if (!ctx) return;
+    try {
+      await ctx.resume();
+    } catch {
+      /* the state read below is the verdict */
+    }
+  });
+  return readAudioClock(page);
+}
+
 export type FreezeVerdict =
   | { ok: true; state: 'suspended' }
   | { ok: false; reason: 'no-engine' | 'no-ctx' | 'not-suspended'; state: string | null };

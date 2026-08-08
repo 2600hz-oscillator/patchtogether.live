@@ -16,6 +16,7 @@
 
 import { expect, type Locator, type Page } from '@playwright/test';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
+import { freezeAudioContext, readAudioClock } from './vrt-audio-freeze';
 
 /** The P1 migrated set (= STRICT_FACES). `pages` = the declared face.pages
  *  count the dock scene must render as labeled section bands — a per-scene
@@ -195,44 +196,189 @@ export async function waitForHooks(page: Page): Promise<void> {
   );
 }
 
+// ── THE AUDIO GRAPH ─────────────────────────────────────────────────────────
+//
+// `bootWithFace` DID NOT SUSPEND THE AUDIOCONTEXT, and every face scene
+// captured off a running graph.
+//
+// It looked safe because the whole roster is struck or silent: a face's live
+// `scope` glyph reads a `createShellGlyphTap` AnalyserNode on the module's
+// primary audio output (shell-glyph-live.ts), and a buffer of zeros draws
+// exactly the flat centreline an unattached tap draws. The spec header's "no
+// audio flows in these scenes" was a property of the ROSTER, not of the scene.
+//
+// A FREE-RUNNING voice falsifies it. It sounds at spawn with no gate to wait
+// for, so the analyser window advances every frame and the glyph draws a
+// genuinely moving trace. `toHaveScreenshot` needs TWO CONSECUTIVE IDENTICAL
+// captures before it will even compare to a baseline, so such a tile cannot
+// baseline at all — measured on analogVco at 254 / 154 / 315 px across three
+// captures of the same tile on one commit, which is why its face was authored,
+// verified and then dropped (see strict-faces.ts).
+//
+// This is the SHARED boot path, so the freeze lands once for every present and
+// future face rather than per module.
+//
+// ⚠ ORDER IS LOAD-BEARING: the suspend must happen AFTER the palette spawn.
+// `ensureEngine()` (Canvas.svelte) resumes a suspended context on every call
+// precisely so a restored video rack isn't left silent, and the spawn path
+// calls it — so a pre-spawn freeze would be undone by the very next line, with
+// no error anywhere.
+//
+// ⚠ AND IT IS RE-ASSERTED AT CAPTURE TIME, not just here. Between this call and
+// the dock capture the scene CLICKS (the jack-rail expand affordance), and any
+// future click-driven `ensureEngine()` would silently resume the graph. A
+// freeze that stopped applying looks identical to a freeze that worked, which
+// is the whole reason `freezeAudioContext` throws rather than returning a
+// verdict nobody reads.
+
+/** Options for `bootWithFace`. */
+export interface BootFaceOptions {
+  /**
+   * DEFAULT TRUE. Set false ONLY in a negative control that exists to show what
+   * a running graph does — never to make a scene pass.
+   *
+   * Deny-by-default is enforced OUTSIDE this file: `vrt-meta.test.ts`
+   * ("bootWithFace freezeAudio:false is deny-by-default") scans every VRT
+   * source for `freezeAudio: false` and fails on any call site that is not in
+   * its named exemption list, so a new scene cannot opt out quietly and an
+   * exemption naming a call site that no longer exists is also red.
+   */
+  freezeAudio?: boolean;
+  /**
+   * Spawn this module into lane 1 BEFORE the face, so the face sits downstream
+   * of it in the channel chain (a column IS the chain — channel-columns.ts).
+   *
+   * The negative control uses it to MANUFACTURE the free-running condition the
+   * roster does not contain. No faced module sounds at spawn, so a control that
+   * booted a face on its own would be asserting "a silent tile is stable" and
+   * would pass for the wrong reason forever.
+   */
+  upstream?: string;
+}
+
+/**
+ * Suspend the audio graph for a face scene and PROVE it, in both the declared
+ * and the observable sense:
+ *
+ *   1. `freezeAudioContext` throws unless `ctx.state === 'suspended'` (it
+ *      resolves the context through the audio DOMAIN — the root engine has no
+ *      `.ctx`, which is how the previous repo-wide freeze was a silent no-op
+ *      for months; see vrt-audio-freeze.ts).
+ *   2. `assertFaceAudioFrozen` then checks the EFFECT: the audio clock does not
+ *      advance across real animation frames. A state flag is a claim; a pinned
+ *      `currentTime` is the thing the analyser's window actually depends on.
+ */
+export async function freezeFaceAudio(page: Page, label: string): Promise<void> {
+  await freezeAudioContext(page, label);
+  // One rAF so the last pre-suspend analyser read paints before we assert.
+  await settle(page);
+  await assertFaceAudioFrozen(page, label);
+}
+
+/** rAFs the clock check waits across. Frame-counted, not wall-clocked — a
+ *  renderer-independent window by construction (CLAUDE.md's frames-not-ms
+ *  rule). 5 frames is ~83 ms at 60 fps and ~630 ms under SwiftShader; either
+ *  way a RUNNING 48 kHz context advances by orders of magnitude more than the
+ *  exact-equality this asserts. */
+const FREEZE_CLOCK_FRAMES = 5;
+
+/**
+ * ASSERT the audio graph is still frozen — call it immediately before a
+ * capture, not once at boot.
+ *
+ * Two-sided by construction: a suspended context reports `state='suspended'`
+ * AND holds `currentTime` exactly constant, while a running one fails both.
+ * The negative control in workflow-shell-faces.spec.ts drives this function
+ * against a deliberately RUNNING graph on every VRT run and requires it to
+ * reject, so "it passed" cannot mean "it cannot fail".
+ */
+export async function assertFaceAudioFrozen(page: Page, label: string): Promise<void> {
+  const before = await readAudioClock(page);
+  for (let i = 0; i < FREEZE_CLOCK_FRAMES; i++) await settle(page);
+  const after = await readAudioClock(page);
+  const advance = (after.currentTime ?? 0) - (before.currentTime ?? 0);
+  expect(
+    after.state,
+    `${label}: the AudioContext is '${after.state}', not 'suspended', at CAPTURE time. ` +
+      `bootWithFace suspended it — something resumed it since (ensureEngine() resumes on ` +
+      `every call, and the dock scene clicks between boot and capture). Any baseline taken ` +
+      `now came off a RUNNING graph, so a free-running voice's glyph is a moving target.`,
+  ).toBe('suspended');
+  expect(
+    advance,
+    `${label}: the audio clock advanced ${advance.toFixed(6)}s across ${FREEZE_CLOCK_FRAMES} ` +
+      `animation frames while reporting state='${after.state}'. The suspend is declared but not ` +
+      `in EFFECT — the analyser window feeding every live glyph is still moving. ` +
+      `(currentTime ${before.currentTime} → ${after.currentTime})`,
+  ).toBe(0);
+}
+
 /** Boot `?shell=1`, spawn `type` into lane 1 via the REAL palette-drop path,
- *  and return the member's node id. Also kills animation jitter + hides the
- *  floating flow chrome (the zoom-scene stability recipe). */
-export async function bootWithFace(page: Page, type: string): Promise<string> {
+ *  and return the member's node id. Also kills animation jitter, hides the
+ *  floating flow chrome (the zoom-scene stability recipe) and FREEZES THE
+ *  AUDIO GRAPH (see THE AUDIO GRAPH above). */
+export async function bootWithFace(
+  page: Page,
+  type: string,
+  opts: BootFaceOptions = {},
+): Promise<string> {
   await pinVrtFonts(page);
   await page.goto('/rack?mode=workflow&shell=1');
   await page.waitForLoadState('networkidle');
   await awaitVrtFonts(page);
   await waitForHooks(page);
 
-  await page.evaluate((t) => {
-    const w = globalThis as unknown as {
-      __setSpawnFlowPos: (p: { x: number; y: number }) => void;
-      __spawnFromPalette: (t: string) => void;
-    };
-    // x=30 lands inside narrowed column 1's [0, SHELL_COLUMN_W) band.
-    w.__setSpawnFlowPos({ x: 30, y: 40 });
-    w.__spawnFromPalette(t);
-  }, type);
-  await page.waitForFunction(() => {
-    const w = globalThis as unknown as {
-      __patch?: { nodes: Record<string, { data?: { columns?: Record<string, string[]> } } | undefined> };
-    };
-    return (w.__patch?.nodes['pinned-mixmstrs']?.data?.columns?.['1'] ?? []).length === 1;
-  });
-  const memberId = await page.evaluate(() => {
+  // A channel column IS the chain (source → processor → … → mixer channel;
+  // channel-columns.ts), and the order array is the chain order, so spawning
+  // `upstream` first puts its output into `type`'s input through the REAL
+  // membership + reconcile path — no hand-built edge, no second boot path.
+  const chain = opts.upstream ? [opts.upstream, type] : [type];
+  for (const t of chain) {
+    await page.evaluate((tt) => {
+      const w = globalThis as unknown as {
+        __setSpawnFlowPos: (p: { x: number; y: number }) => void;
+        __spawnFromPalette: (t: string) => void;
+      };
+      // x=30 lands inside narrowed column 1's [0, SHELL_COLUMN_W) band.
+      w.__setSpawnFlowPos({ x: 30, y: 40 });
+      w.__spawnFromPalette(tt);
+    }, t);
+    await page.waitForFunction(
+      (n) => {
+        const w = globalThis as unknown as {
+          __patch?: {
+            nodes: Record<string, { data?: { columns?: Record<string, string[]> } } | undefined>;
+          };
+        };
+        return (w.__patch?.nodes['pinned-mixmstrs']?.data?.columns?.['1'] ?? []).length === n;
+      },
+      chain.indexOf(t) + 1,
+    );
+  }
+  // The face under test is the LAST member — the bottom of the chain.
+  const memberId = await page.evaluate((n) => {
     const w = globalThis as unknown as {
       __patch: { nodes: Record<string, { data?: { columns?: Record<string, string[]> } } | undefined> };
     };
-    return (w.__patch.nodes['pinned-mixmstrs']?.data?.columns?.['1'] ?? [])[0] ?? '';
-  });
+    return (w.__patch.nodes['pinned-mixmstrs']?.data?.columns?.['1'] ?? [])[n - 1] ?? '';
+  }, chain.length);
   expect(memberId, `${type}: the lane-1 member spawned`).not.toBe('');
+  if (opts.upstream) {
+    // ANCHORED TO THE ARTIFACT: a chain that silently did not form would leave
+    // the face silent and make every "it moves" leg below vacuous.
+    const t = await page.evaluate((id) => {
+      const w = globalThis as unknown as { __patch: { nodes: Record<string, { type?: string } | undefined> } };
+      return w.__patch.nodes[id]?.type ?? '';
+    }, memberId);
+    expect(t, `${type}: the LAST lane-1 member is the face under test, not its upstream`).toBe(type);
+  }
 
   await page.addStyleTag({
     content:
       '.svelte-flow__minimap,.svelte-flow__controls,.svelte-flow__attribution,.minimap-toggle{display:none !important;}' +
       '*,*::before,*::after{animation:none !important;transition:none !important;}',
   });
+  if (opts.freezeAudio !== false) await freezeFaceAudio(page, `face-${type}`);
   return memberId;
 }
 
