@@ -76,9 +76,10 @@ export const test = base.extend<{ errorWatch: ErrorWatch; rack: void }>({
 
 export { expect };
 
-/** The node ids the voice demo writes. Exported so a spec can assert on them
- *  (or wait for one) without re-typing the strings. */
-export const VOICE_DEMO_NODE_IDS = ['vd-seq', 'vd-vco', 'vd-adsr', 'vd-vca', 'vd-out'] as const;
+/** The node ids the voice demo writes. Deliberately NOT exported — no spec
+ *  needs them today, and this repo prunes unreferenced exports (see the
+ *  `gotoCanvas` note above). Export it when something actually reads it. */
+const VOICE_DEMO_NODE_IDS = ['vd-seq', 'vd-vco', 'vd-adsr', 'vd-vca', 'vd-out'] as const;
 
 /**
  * Put the canonical VOICE DEMO on the canvas: Sequencer → VCO + ADSR → VCA →
