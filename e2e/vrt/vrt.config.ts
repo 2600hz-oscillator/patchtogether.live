@@ -84,10 +84,18 @@ const FULL_MATCH = [
 //   * vrt-geom-probe.spec.ts — where does the CAPTURE BOX come from? Prints the
 //     element's layout box, its scroll container's box and the viewport, so a
 //     baseline whose PNG DIMENSIONS move can be explained instead of re-pinned.
+//   * vrt-fold-probe.spec.ts — what does the capture box CUT OFF, and is a
+//     PASSING baseline actually identical? Prints, per curated face, the dock
+//     pane's content height against the height the `max-height: min(60vh,
+//     680px)` clamp lets it show plus the per-band offsets; then the exact diff
+//     of every committed dock baseline at threshold 1/255 AND at the 26/255 the
+//     gate applies. The instrument that measured the below-fold blindness, and
+//     the one that tells a stale-but-passing baseline from an identical one.
 const PROBE_MATCH = [
   'vrt-surface-probe.spec.ts',
   'vrt-frame-stability.spec.ts',
   'vrt-geom-probe.spec.ts',
+  'vrt-fold-probe.spec.ts',
   'vrt-sr-probe.spec.ts',
   'vrt-legacy-mask-audit.spec.ts',
 ];
