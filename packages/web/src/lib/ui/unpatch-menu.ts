@@ -21,6 +21,7 @@
 // a remote module the SAME way every other patch surface does.
 
 import type { Edge, ModuleNode } from '$lib/graph/types';
+import { legChannelOfEdge, siblingLegIds, type StereoDef } from '$lib/graph/stereo-autowire';
 import { moduleDisplayName, type AnyDef } from './port-patch-helpers';
 
 /** The patch point the user right-clicked. */
@@ -32,13 +33,29 @@ export interface UnpatchTarget {
 
 /** One removable cable seated on the target port. */
 export interface UnpatchItem {
-  /** The graph edge id — what the removal seam deletes. */
+  /** The SEED edge id — the leg actually seated on the clicked patch point.
+   *  Identity for the menu row; use `edgeIds` to remove the cable. */
   edgeId: string;
+  /**
+   * EVERY edge the row removes — the whole LEG GROUP. A stereo cable is two
+   * ordinary edges, and removing one of them would strand the other as a leg
+   * the user can no longer see once PR-4 renders the pair as one cable. One
+   * entry for an ordinary mono cable, two for a stereo one.
+   */
+  edgeIds: string[];
   /** The OTHER end, "<Module Display Name> <PORTID>". */
   remote: string;
   /** The full menu line ("Unpatch — X Y" for an input, "Unpatch → X Y" for an
-   *  output — the arrow mirrors the ←/→ direction glyphs the jack fields use). */
+   *  output — the arrow mirrors the ←/→ direction glyphs the jack fields use),
+   *  suffixed " (L only)" / " (R only)" for a lone leg (owner decision Q5). */
   label: string;
+  /**
+   * `left`/`right` when this cable is a SINGLE leg of a stereo pair whose other
+   * leg is NOT patched — the only-L/only-R case PR-4 also renders dashed. null
+   * for a complete stereo group and for an ordinary mono cable; the two are
+   * deliberately not distinguished here, because neither is missing anything.
+   */
+  soloChannel: 'left' | 'right' | null;
 }
 
 export interface UnpatchPlan {
@@ -72,7 +89,18 @@ export function buildUnpatchPlan(
   defLookup: (type: string) => AnyDef | undefined,
   target: UnpatchTarget,
 ): UnpatchPlan {
+  const defForNode = (nodeId: string): StereoDef | undefined => {
+    const n = (nodes as Record<string, ModuleNode | undefined>)[nodeId];
+    return n ? (defLookup(n.type) as StereoDef | undefined) : undefined;
+  };
+
   const items: UnpatchItem[] = [];
+  // A LEG GROUP must produce ONE row, not one per leg. Both legs of a
+  // stereo→mono cable land on the same input port, and both legs of a
+  // mono→stereo cable leave the same output port, so the naive per-edge loop
+  // would list the same cable twice on exactly those two patch points.
+  const seenGroups = new Set<string>();
+
   for (const [edgeId, e] of Object.entries(edges)) {
     if (!e) continue;
     const src = e.source;
@@ -84,12 +112,26 @@ export function buildUnpatchPlan(
     }
     const near = target.direction === 'input' ? dst : src;
     if (near.nodeId !== target.nodeId || near.portId !== target.portId) continue;
+
+    const id = e.id ?? edgeId;
+    const group = [id, ...siblingLegIds(e, edges, defForNode)];
+    const groupKey = [...group].sort().join('|');
+    if (seenGroups.has(groupKey)) continue;
+    seenGroups.add(groupKey);
+
     const far = target.direction === 'input' ? src : dst;
     const remote = `${moduleDisplayName(far.nodeId, nodes, defLookup)} ${String(far.portId).toUpperCase()}`;
+    // A lone leg is one that HAS a side but no sibling leg patched. A complete
+    // group has a side too — so the suffix keys off the group SIZE, not merely
+    // off "is this port paired".
+    const soloChannel = group.length === 1 ? legChannelOfEdge(e, defForNode) : null;
+    const base = target.direction === 'input' ? `Unpatch — ${remote}` : `Unpatch → ${remote}`;
     items.push({
-      edgeId: e.id ?? edgeId,
+      edgeId: id,
+      edgeIds: group,
       remote,
-      label: target.direction === 'input' ? `Unpatch — ${remote}` : `Unpatch → ${remote}`,
+      label: soloChannel ? `${base} (${soloChannel === 'left' ? 'L' : 'R'} only)` : base,
+      soloChannel,
     });
   }
   items.sort((a, b) => (a.edgeId < b.edgeId ? -1 : a.edgeId > b.edgeId ? 1 : 0));

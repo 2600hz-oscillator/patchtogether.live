@@ -145,7 +145,10 @@
     // direct (green/colored dot) → REMOVE that exact cable (unpatch). A single
     // LOCAL_ORIGIN delete → it lands on the undo stack (Cmd-Z restores it).
     if (cls.kind === 'direct') {
-      if (cls.edgeId) removeMatrixEdge(cls.edgeId);
+      // `defLookup` is what lets the removal take the whole LEG GROUP — a
+      // stereo cable is two cells, and removing one of them would leave the
+      // other lit with nothing but a second click to explain it.
+      if (cls.edgeId) removeMatrixEdge(cls.edgeId, defLookup);
       return;
     }
     // legalEmpty (create), inputTaken (RED ✕ — re-patch REPLACES the foreign

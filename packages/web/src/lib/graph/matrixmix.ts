@@ -26,7 +26,20 @@
 import { patch, ydoc, LOCAL_ORIGIN } from '$lib/graph/store';
 import type { CableType, Edge, ModuleNode } from '$lib/graph/types';
 import { validateEdge, type ResolveDef } from '$lib/graph/validate-edge';
+import {
+  expandLegGroups,
+  planAudioCommit,
+  type StereoDef,
+} from '$lib/graph/stereo-autowire';
 import { matrixEdgeId } from '$lib/ui/matrixmix-grid';
+
+/** A node's def as the leg-group planner reads it, via the caller's registry
+ *  chain. `ValidatorDef` already carries the two port rails, and `type` /
+ *  `stereoPairs` ride along on the real def objects the chain returns. */
+function stereoDefFor(nodeId: string, resolveDef: ResolveDef): StereoDef | undefined {
+  const n = patch.nodes[nodeId];
+  return n ? (resolveDef(n.type) as StereoDef | undefined) : undefined;
+}
 
 export const MATRIXMIX_TYPE = 'matrixMix';
 
@@ -105,15 +118,36 @@ export function createMatrixEdge(
     resolveDef,
   );
   if (!verdict.ok) return null; // illegal — silent no-op, matches the drag path
+
+  // LEG GROUP: a matrix cell is a patch gesture like any other, so it goes
+  // through the SAME universal planner Canvas's three commit paths use. A
+  // stereo pair therefore lights BOTH cells from one click, and the occupancy
+  // eviction is LEG-LEVEL rather than "everything on this input".
+  const plan = planAudioCommit({
+    fromNodeId: source.nodeId,
+    fromPortId: source.portId,
+    fromDef: stereoDefFor(source.nodeId, resolveDef),
+    toNodeId: target.nodeId,
+    toPortId: target.portId,
+    toDef: stereoDefFor(target.nodeId, resolveDef),
+    edges: patch.edges,
+    sourceType,
+    targetType,
+  });
   ydoc.transact(() => {
-    // An input takes ONE cable: drop whatever currently feeds the target input
-    // (same replace semantics as Canvas commitCarriedEdge / patch-to).
-    for (const [edgeId, edge] of Object.entries(patch.edges)) {
-      if (edge && edge.target.nodeId === target.nodeId && edge.target.portId === target.portId) {
-        delete patch.edges[edgeId];
-      }
+    for (const stale of plan.replaceEdgeIds) {
+      if (patch.edges[stale]) delete patch.edges[stale];
     }
-    patch.edges[id] = { id, source, target, sourceType, targetType };
+    for (const leg of plan.legs) {
+      if (patch.edges[leg.id]) continue;
+      patch.edges[leg.id] = {
+        id: leg.id,
+        source: { nodeId: source.nodeId, portId: leg.fromPortId },
+        target: { nodeId: target.nodeId, portId: leg.toPortId },
+        sourceType: leg.sourceType,
+        targetType: leg.targetType,
+      };
+    }
   }, LOCAL_ORIGIN);
   return id;
 }
@@ -136,10 +170,17 @@ export function createMatrixEdge(
  *
  * @returns true if an edge was deleted, false if there was nothing to delete.
  */
-export function removeMatrixEdge(edgeId: string): boolean {
+export function removeMatrixEdge(edgeId: string, resolveDef?: ResolveDef): boolean {
   if (!patch.edges[edgeId]) return false; // already gone — idempotent no-op
+  // Symmetry with the create path: toggling a cell OFF removes the whole leg
+  // group, or a stereo cable the matrix wrote as two cells would only ever be
+  // half-removable. `resolveDef` is optional so the pre-existing single-edge
+  // behaviour survives for any caller that has no registry chain to hand.
+  const ids = resolveDef
+    ? expandLegGroups([edgeId], patch.edges, (nodeId) => stereoDefFor(nodeId, resolveDef))
+    : [edgeId];
   ydoc.transact(() => {
-    delete patch.edges[edgeId];
+    for (const id of ids) delete patch.edges[id];
   }, LOCAL_ORIGIN);
   return true;
 }

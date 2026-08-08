@@ -34,6 +34,7 @@ import {
   type ConvenienceDef,
   type ColumnMember,
 } from './patch-convenience';
+import { planAudioCommit, type StereoDef } from './stereo-autowire';
 import { listModuleDefs } from '$lib/audio/module-registry';
 import { getVideoModuleDef } from '$lib/video/module-registry';
 
@@ -311,17 +312,63 @@ describe('planPairLink (adjacent pair, explicit L+R)', () => {
     ]);
   });
 
-  it('stereo → mono: L and R BOTH into the mono in (two edges → engine sums)', () => {
+  it('stereo → mono: L and R BOTH into the mono in — DUAL-MONO, not a downmix', () => {
+    // Owner reversal, 2026-08-07: a mono module fed a stereo leg group runs its
+    // DSP twice, one instance per channel (PR-3b). The EDGES were already right;
+    // what changed is that nothing may ever collapse them back to one. Asserted
+    // as an exact array so a re-grown "these two legs are the same signal"
+    // special case cannot pass.
     expect(planPairLink('a', stereoSrc, 'b', monoDst)).toEqual([
       { fromNodeId: 'a', fromPortId: 'outL', toNodeId: 'b', toPortId: 'in', sourceType: 'audio', targetType: 'audio' },
       { fromNodeId: 'a', fromPortId: 'outR', toNodeId: 'b', toPortId: 'in', sourceType: 'audio', targetType: 'audio' },
     ]);
   });
 
+  it('stereo → mono does NOT collapse even when both legs came from one mono source', () => {
+    // The round-trip shape the deleted special case existed for: a mono VCO
+    // double-patched into a stereo FX, whose stereo out then re-enters a mono
+    // module. Two legs, always. planPairLink is a pure function of the DEFS, so
+    // it has no channel to learn correlation through — this test's job is to
+    // keep it that way.
+    expect(planPairLink('a', stereoSrc, 'b', monoDst)).toHaveLength(2);
+  });
+
   it('mono → mono: ONE de-duped edge', () => {
     expect(planPairLink('a', monoSrc, 'b', monoDst)).toEqual([
       { fromNodeId: 'a', fromPortId: 'out', toNodeId: 'b', toPortId: 'in', sourceType: 'audio', targetType: 'audio' },
     ]);
+  });
+
+  it('agrees with planAudioCommit on all four rows — ONE matrix, two planners', () => {
+    // planPairLink resolves a module's MAIN pair for the reconciler;
+    // planAudioCommit resolves the pair of the port a USER picked. They answer
+    // different questions and must never disagree about the POLICY. Without
+    // this, the reconciler could keep dual-mono while a hand patch quietly
+    // reverted to summing (or vice versa) with both files' own tests green.
+    const rows: [string, ConvenienceDef, string, ConvenienceDef][] = [
+      ['stereo→stereo', stereoSrc, 'inL', stereoDst],
+      ['mono→stereo', monoSrc, 'inL', stereoDst],
+      ['stereo→mono', stereoSrc, 'in', monoDst],
+      ['mono→mono', monoSrc, 'in', monoDst],
+    ];
+    for (const [name, up, downPort, down] of rows) {
+      const viaPairLink = planPairLink('a', up, 'b', down).map(
+        (e) => `${e.fromPortId}->${e.toPortId}`,
+      );
+      const mainOut = resolveMainAudioOut(up)!;
+      const viaCommit = planAudioCommit({
+        fromNodeId: 'a',
+        fromPortId: mainOut.kind === 'stereo' ? mainOut.left : mainOut.out,
+        fromDef: up as StereoDef,
+        toNodeId: 'b',
+        toPortId: downPort,
+        toDef: down as StereoDef,
+        edges: {},
+        sourceType: 'audio',
+        targetType: 'audio',
+      }).legs.map((l) => `${l.fromPortId}->${l.toPortId}`);
+      expect(viaCommit, name).toEqual(viaPairLink);
+    }
   });
 
   it('no link when the upstream has no main out or downstream has no main in', () => {

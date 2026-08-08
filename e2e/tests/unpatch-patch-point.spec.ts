@@ -370,9 +370,29 @@ test('rear card: a fanned-out OUTPUT lists every cable + "Unpatch all (N)", stay
   const strum = await dropSixStrumInLane1(page);
   await openRearCard(page, strum);
 
-  // The lane fans SIX STRUM's mono out into BOTH mixer channel inputs.
+  // The lane double-patches SIX STRUM's mono out into BOTH mixer channel
+  // inputs — which, since PR-3, is ONE LEG GROUP (a mono source filling a
+  // stereo pair), not two cables. So a genuine fan-out needs a SECOND
+  // destination; seed a hand-drawn only-L cable into channel 2. That leaves the
+  // output point holding two DIFFERENT cables: the ch1 stereo group and a lone
+  // ch2L leg — which also exercises the "(L only)" label on the same menu.
   const out = rearHole(page, 'out', 'output');
   await expect(out).toHaveAttribute('data-patched', 'true');
+  await page.evaluate((strumId) => {
+    const w = globalThis as unknown as {
+      __patch: { edges: Record<string, unknown> };
+      __ydoc: { transact: (fn: () => void) => void };
+    };
+    w.__ydoc.transact(() => {
+      w.__patch.edges['e-handdrawn-ch2L'] = {
+        id: 'e-handdrawn-ch2L',
+        source: { nodeId: strumId, portId: 'out' },
+        target: { nodeId: 'pinned-mixmstrs', portId: 'ch2L' },
+        sourceType: 'audio',
+        targetType: 'audio',
+      };
+    });
+  }, strum);
 
   // Right-click at the hole's far BOTTOM-RIGHT corner: the outputs rail is the
   // rightmost column of a drawer pinned to the bottom of the window, so this is
@@ -382,9 +402,15 @@ test('rear card: a fanned-out OUTPUT lists every cable + "Unpatch all (N)", stay
   await expect(unpatchMenu(page)).toBeVisible();
 
   const items = unpatchMenu(page).getByTestId('unpatch-item');
+  // TWO cables, not three legs: the ch1 stereo group collapses to ONE row that
+  // carries both of its edge ids, and the hand-drawn ch2L cable is a lone leg.
   await expect(items).toHaveCount(2);
-  await expect(items.nth(0)).toHaveText(/Unpatch → mixmstrs CH1L/i);
-  await expect(items.nth(1)).toHaveText(/Unpatch → mixmstrs CH1R/i);
+  // Order is by edge id (deterministic across peers + runs), so the hand-drawn
+  // `e-handdrawn-ch2L` sorts ahead of the reconciler's `wcol-e-…ch1L`.
+  await expect(items.nth(0)).toHaveText(/Unpatch → mixmstrs CH2L \(L only\)$/i);
+  await expect(items.nth(0)).toHaveAttribute('data-edge-ids', 'e-handdrawn-ch2L');
+  await expect(items.nth(1)).toHaveText(/Unpatch → mixmstrs CH1L$/i);
+  await expect(items.nth(1)).toHaveAttribute('data-edge-ids', /ch1L.*ch1R|ch1R.*ch1L/);
   await expect(unpatchMenu(page).getByTestId('unpatch-all')).toHaveText(/Unpatch all \(2\)/);
 
   // VIEWPORT CLAMP: the WHOLE menu is inside the client viewport.
