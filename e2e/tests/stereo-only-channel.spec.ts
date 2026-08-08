@@ -145,18 +145,29 @@ async function readTaps(
       };
       await new Promise<void>((resolve) => {
         const done = () => {
-          clearInterval(timer);
+          clearTimeout(timer);
           sample();
           peak.elapsedMs = Math.round(performance.now() - t0);
           resolve();
         };
-        const timer = setInterval(() => {
+        // ⚠ IRREGULAR interval, not a fixed grid. Each read is an RMS over the
+        // analyser's whole 2048-sample buffer (~42 ms), which is already
+        // phase-independent for a steady tone — but a fixed period against a
+        // PERIODIC subject is the aliasing shape CLAUDE.md calls out (an even
+        // lag against a period-2 signal reads as a constant), and a co-prime
+        // jitter costs nothing. Chosen so successive reads walk the waveform
+        // rather than landing on the same phase.
+        const JITTER_MS = [7, 11, 13, 9];
+        let tick = 0;
+        const step = () => {
           sample();
           const now = performance.now();
           if (hitAt < 0 && minRms > 0 && Math.max(peak.l, peak.r) >= minRms) hitAt = now;
           if (hitAt >= 0 && now - hitAt >= settleMs) return done();
           if (now - t0 >= timeoutMs) return done();
-        }, 10);
+          timer = setTimeout(step, JITTER_MS[tick++ % JITTER_MS.length]!);
+        };
+        let timer = setTimeout(step, JITTER_MS[0]!);
       });
       return peak;
     },

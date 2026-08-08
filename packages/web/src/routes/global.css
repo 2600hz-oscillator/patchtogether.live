@@ -128,8 +128,11 @@ body {
  * Hue is untouched — colour still means CABLE TYPE and nothing else, which is
  * the rule the whole palette rests on.
  *
- * `!important` matches the hover / rear-view / related rules below, which all
- * override the inline per-edge `style` xyflow writes. */
+ * No `!important` needed, unlike the hover / rear-view / related rules below:
+ * those override `stroke-width`, which xyflow writes into each edge's INLINE
+ * style. It writes only `stroke` and `stroke-width` there — never a dash — and
+ * nothing later in this file sets `stroke-dasharray` on an edge path, so the
+ * plain declaration wins on its own. */
 .svelte-flow__edge.cable-left-only .svelte-flow__edge-path,
 .svelte-flow__edge.cable-right-only .svelte-flow__edge-path {
   stroke-dasharray: 4 4;

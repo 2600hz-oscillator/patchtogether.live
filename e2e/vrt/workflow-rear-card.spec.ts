@@ -146,20 +146,33 @@ test.describe('VRT: rear card — the dock full-view TAB flip side', () => {
       await page.keyboard.press('Tab');
       await expect(faceplate).toHaveAttribute('data-flipped', 'true');
 
-      // Structural gate before the pixel pin: the field is up, one hole per
-      // declared port, the control face is gone.
+      // Structural gate before the pixel pin: the field is up, every declared
+      // port is addressed by exactly one hole, the control face is gone.
       const rear = faceplate.getByTestId('rear-card');
       await expect(rear).toBeVisible();
-      await expect(rear.locator('[data-testid="back-jack"]')).toHaveCount(holes);
-      // …and the shortfall is EXACTLY the collapsed stereo pairs, named by the
-      // `data-stereo-sibling` attribute the collapsed hole carries. Without
-      // this the count would be satisfied by a genuinely dropped jack.
+      // Count the collapsed pairs ON THE PAGE first, then require the rendered
+      // hole count to be `ports - (what we just measured)`.
+      //
+      // ⚠ This used to end with `expect(holes + stereoHoles).toBe(ports)`, and
+      // that line was VACUOUS: all three were fields of the same SCENES
+      // literal, so it could only fail if the table contradicted ITSELF and it
+      // observed nothing about the rendered card — while its comment claimed to
+      // stop a dropped jack satisfying the count. The DOM has to be one side of
+      // the comparison or the assertion is decoration.
       await expect(
         rear.locator('[data-testid="back-jack"][data-stereo-sibling]'),
+        `${type}: collapsed stereo pairs on the rendered rear card`,
       ).toHaveCount(stereoHoles);
-      expect(holes + stereoHoles, `${type}: holes + collapsed pairs must equal declared ports`).toBe(
-        ports,
-      );
+      const collapsed = await rear
+        .locator('[data-testid="back-jack"][data-stereo-sibling]')
+        .count();
+      await expect(
+        rear.locator('[data-testid="back-jack"]'),
+        `${type}: ${ports} declared ports minus ${collapsed} collapsed pair(s)`,
+      ).toHaveCount(ports - collapsed);
+      // The table's own `holes` must agree with what the page actually shows —
+      // this is the row that fails if SCENES drifts from reality.
+      expect(ports - collapsed, `${type}: SCENES.holes disagrees with the DOM`).toBe(holes);
       await expect(faceplate.getByTestId('faceplate-editor')).toBeHidden();
       // The lane auto-wire seats the member's plugs — deterministic chips.
       await expect(rear.locator('[data-testid="back-jack"][data-patched="true"]').first()).toBeVisible();

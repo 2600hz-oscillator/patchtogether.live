@@ -392,7 +392,17 @@ test('50/50 split: TAB flips BOTH panes to their rear cards together (one global
     tvRear.locator('[data-testid="back-jack"][data-stereo-sibling]'),
     'tidyVco has exactly one collapsed pair (out_l+out_r)',
   ).toHaveCount(1);
-  await expect(tvRear.locator('[data-testid="back-jack"]')).toHaveCount(29 - 1);
+  // Derived from the DEF and the collapsed pairs measured on the page — not a
+  // literal `29 - 1`, which would silently stop tracking the def if a port
+  // were ever added or removed.
+  const tvPorts = await portsOf(page, 'tidyVco');
+  const tvCollapsed = await tvRear
+    .locator('[data-testid="back-jack"][data-stereo-sibling]')
+    .count();
+  await expect(
+    tvRear.locator('[data-testid="back-jack"]'),
+    `tidyVco: ${tvPorts.inputs.length + tvPorts.outputs.length} declared ports minus ${tvCollapsed} collapsed pair(s)`,
+  ).toHaveCount(tvPorts.inputs.length + tvPorts.outputs.length - tvCollapsed);
 
   // TAB again → both fronts restored.
   await pressTab(page);
