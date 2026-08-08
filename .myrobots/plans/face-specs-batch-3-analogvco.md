@@ -1,22 +1,55 @@
 # FACE SPEC — `analogVco` (batch 3)
 
-**Status:** SPEC + MOCKUP ONLY. Nothing here is implemented. Designed against the
-> ⚠ **STATUS CORRECTED 2026-08-04.** PF-20 (**PR #1301**) **HAS MERGED** (`c6ff9253`) — read
-> the def on `main`. **This face was AUTHORED, VERIFIED and then DROPPED** inside #1332
-> (`2d111616`): every unit gate passed, but the `face-analogVco-compact` VRT scene is **not
-> pixel-deterministic** — analogVco is a FREE-RUNNING oscillator, so its live `scope` glyph
-> draws a moving saw where every other faced module draws a flat centreline (**254 / 154 /
-> 315 px across three consecutive captures of the same tile**). The DOCK scene is stable,
-> which confirms the diagnosis — a `hero.cell` suppresses the glyph there. **The fix belongs
-> in `VRT_LIVE_SURFACES` (a mask plus a measured companion), and `e2e/vrt/vrt-exemptions.ts`
-> already claims analogVco has one when it does not.** See `strict-faces.ts:54-62`.
-> This spec is **live backlog blocked on that VRT work**, not stale. The one boy-scout half
-> that did land is the false `pw` doc fix.
+> ## ✅ STATUS 2026-08-08 — **SHIPPED** on `face/analogvco`. This spec is now a RECORD.
+>
+> The face was recovered from `b5843cf4` (where it was authored and verified) rather than
+> re-authored, the VRT blocker that got it dropped in `897b6515` is FIXED, and everything
+> below is implemented **except** where this header says otherwise. Read the code, not the
+> prose below it, when the two disagree.
+>
+> **The blocker and its fix.** `face-analogVco-compact` was not pixel-deterministic because
+> analogVco is a FREE-RUNNING oscillator, so its live `scope` glyph draws a moving saw where
+> all 21 sibling faces draw a flat centreline. RE-DERIVED under the corrected instrument
+> (10 SEPARATE Playwright processes via `scripts/vrt-derive-trials.sh`, **not**
+> `--repeat-each`): **1/10 PASS unmasked**, diffs 227–322 px against an effective 72 px
+> budget — a 90 % failure rate, far stronger than the 254/154/315 three-capture reading the
+> drop note quoted. **THE CONTROL, same machine and session, WITH the mask: 10/10 PASS.**
+> The fix is a `VRT_LIVE_SURFACES['face-analogVco-compact']` entry: a mask on
+> `[data-testid="shell-glyph"]` (**8.7 % of the tile — the cheapest entry in the registry**,
+> vs mandelbulb 22.6 % and the wavesculpt pair 84.8 %) plus a MEASURED companion
+> (ink ≥ 0.22 / stdDev ≥ 18 / buckets ≥ 5 / chroma ≥ 22 against live 0.66/56/12/68 and a
+> force-killed 0.0000/0.83/1/9.48), negative-controlled on every run by the capture seam.
+>
+> **`workflow-shell-faces.spec.ts`'s compact scene now routes through
+> `expectVrtSceneScreenshot`** — verified a NO-OP for the other 21 faces (all 45 scenes pass,
+> no baseline moved). `VrtScreenshotOptions` gained `maxDiffPixels`, which is tightening-only
+> by construction (Playwright takes the MIN with the config ratio).
+>
+> ### Corrections to the body of this spec — every one verified against `main`
+>
+> | § | claim | verdict 2026-08-08 |
+> |---|---|---|
+> | 6 / 7-A | the card passes `min={0}` for `fmAmount`/`pmAmount` | **FIXED, not by this PR.** `de2c956b` (#1311) bound ALL SIX faders through `paramSpec()`; `dead-control-fixes.test.ts` is the source-level gate. The task brief still listed this as work to do — it was already done. |
+> | 7-B | `docs.controls.pw` tells users to animate PW with an LFO | **FIXED** in `897b6515` (kept as the drop's boy-scout half). |
+> | 3 | THREE bands (`pitch` / `morph tap` / `mod`) | **SUPERSEDED.** The shipped face has **TWO** bands (`pitch` / `wave`) + three CLUSTERS. Clusters paint at rest; band hints do not (annotations are per-viewer and OFF by default), so the per-knob reach is carried by clusters. `pages: 2` in the VRT roster. |
+> | 3 | `hint`/`title` carry load-bearing text | **SUPERSEDED by owner decision (2026-08-02).** `facePageHeader` returns `null` when annotations are off — **title included**. Authored for the hint-off state. |
+> | 4 | four derived readouts, three in the hero | Shipped as specced: 3 in the hero + `alias-harmonic` in the sidebar. |
+> | 7-C | `docs.controls.fmAmount` states the wrong mechanism | **STILL TRUE → FIXED HERE.** And worse than specced: `analog-vco-modulation.test.ts:156-165` tests **pmAmount**, not fmAmount, and asserts only `pos ≠ neg` — there is **no negative-`fmAmount` test anywhere**. |
+> | 7-E | "classic analog-modeled" / "like a hardware Moog VCO" | **STILL TRUE → FIXED HERE** (rewritten to "analog in TOPOLOGY only"). |
+> | 7-H(a) | header says "the four waveform tap-offs" | **STILL TRUE → FIXED HERE** (splitter is 6-channel). |
+> | 7-H(b) | `module-manifest.ts` DESCRIPTIONS omits morph/PM/sync | **STILL TRUE → FIXED HERE.** |
+> | 7-H(c) | `vrt-exemptions.ts` falsely claims a live-surface entry | **STILL TRUE → FIXED HERE.** The mask was **DELETED** (10/10 unmasked), not migrated. The `STRICT_VRT_MODULES` comment contradicted it in the same file and is corrected too. |
+> | 7-D | `shape` CV throws half its travel away | **STILL TRUE — NOT FIXED, deliberately.** `halfSpan=(max−min)/2` + knob baked at plug-in time (`engine.ts:470-475`) means a ±1 LFO at the shipped `shape=0` reaches only 0…0.5: **the morph never gets past sine.** A fix (`center: 'default'` or a port `depth`) is a CONTRACT change → contract-lock + owner review. **Its own PR.** |
+> | 7-F | sync in/out declare no `edge:` | **STILL TRUE but the PREMISE IS WRONG.** `graph/types.ts:307-308` says `edge` is "Only meaningful on `gate`-typed ports", and analogVco's sync ports are `audio`-typed — so declaring `edge` would be off-spec. This is a **port-TYPING** gap (a trigger carried on an audio cable), not a missing declaration. Do not "fix" it as specced. |
+> | 7-G | analogVco excluded from `vco-pitch-tracking` | **STILL TRUE — NOT FIXED.** Out of scope for a face PR; §4-C ships labelled `knob pitch` precisely because of it. |
+> | 9 | cost estimate | **ACCURATE.** contract-lock moved by exactly **+1 line** (the `analogvco-cycle` family); zero param/port/range/curve movement; no ART. |
+>
+> **PF-20 platform status:** MERGED `c6ff9253` (PR #1301). Everything the spec calls
+> "not yet merged" is live.
 
-**PF-20 faceplate platform** on `feat/faceplate-platform-v2` (PR #1301 — MERGED, `c6ff9253`) —
-`face.title` / `face.hint`, per-band `hint`, `ModuleFaceHero`, `FaceSidebarBlock[]`,
-`FaceReadout.valueId`. Every claim about current behaviour carries a file:line. Anything
-INFERRED rather than read is labelled.
+**PF-20 faceplate platform** — `face.title` / `face.hint`, per-band `hint`, `ModuleFaceHero`,
+`FaceSidebarBlock[]`, `FaceReadout.valueId`. Every claim about current behaviour carries a
+file:line. Anything INFERRED rather than read is labelled.
 
 **Verdict: PROMOTE.** · archetype: **SOURCE — one phase accumulator, six taps.**
 Not in `STRICT_FACES` today (`packages/web/src/lib/ui/workflow/strict-faces.ts:42-65`), no

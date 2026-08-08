@@ -16,14 +16,37 @@
 //     `face.pages` page, ALL controls rendered — and, since
 //     `fix/vrt-dock-fold-blindness`, ALL OF THEM IN THE IMAGE (see THE FOLD).
 //
-// The glyphs are LIVE-BOUND (shell-glyph-live.ts) but render DETERMINISTIC
-// pixels here: no audio flows in these scenes, and ScopeScreen's live
-// waveform mode draws the SAME flat centerline whether the tap is unattached
-// or reading silence (VuMeter unlit at level 0; the adsr envelope / lfo
-// wave-morph curves derive from the ParamDef defaults). Every knob sits at
-// its default, so the scenes are pixel-deterministic without masks
-// (animations killed via the style tag + `animations: 'disabled'`). Tight
-// per-scene budgets, the workflow-shell-zoom precedent.
+// The glyphs are LIVE-BOUND (shell-glyph-live.ts) and render DETERMINISTIC
+// pixels for EVERY FACE BUT ONE: no audio flows in these scenes, and
+// ScopeScreen's live waveform mode draws the SAME flat centerline whether the
+// tap is unattached or reading silence (VuMeter unlit at level 0; the adsr
+// envelope / lfo wave-morph curves derive from the ParamDef defaults). Every
+// knob sits at its default, so the scenes are pixel-deterministic without
+// masks (animations killed via the style tag + `animations: 'disabled'`).
+// Tight per-scene budgets, the workflow-shell-zoom precedent.
+//
+// ⚠ THE EXCEPTION, AND WHY THE COMPACT TEST GOES THROUGH THE CAPTURE SEAM.
+// "No audio flows in these scenes" is an assumption about the ROSTER, not a
+// property of the scene, and `analogVco` is the roster entry that breaks it: a
+// FREE-RUNNING oscillator makes sound the moment it spawns, so its live `scope`
+// glyph draws a real moving saw where every other face draws that flat line. It
+// is the reason this face was authored, verified and then DROPPED from batch 3.
+//
+// So `face-<type>-compact` captures through `expectVrtSceneScreenshot`, which
+// applies the `VRT_LIVE_SURFACES` registry: for the 21 deterministic faces that
+// resolves to an EMPTY mask and is pixel-identical to the direct call it
+// replaced, and for analogVco it masks the glyph, runs the measured companion
+// that replaces the deleted coverage, and runs the per-run negative control
+// that proves the companion can fail. The dock test still calls
+// `toHaveScreenshot` directly — a `hero.cell` suppresses the glyph at the dock,
+// so no dock scene has a live surface (and analogVco's dock baseline was stable
+// on the dropped branch, which is what confirmed the diagnosis).
+//
+// `maxDiffPixels` is carried through the seam DELIBERATELY: Playwright takes
+// the MIN of it and the config ratio, so it can only tighten — and routing
+// through the seam WITHOUT it would have silently relaxed all 22 compact scenes
+// from COMPACT_MAX_DIFF (150 px) to the ~241 px the 0.01 ratio allows on a
+// ~24k px tile. A refactor that loosens 22 gates while adding one is not a fix.
 //
 // darwin-first: darwin baselines are captured locally (3× stable); the linux
 // pairs are EXEMPT_BASELINE_PAIRS-deferred until a vrt-update.yml dispatch
@@ -108,6 +131,7 @@
 
 import { test, expect } from '@playwright/test';
 import { EXEMPT_BASELINE_PAIRS } from './vrt-exemptions';
+import { expectVrtSceneScreenshot } from './vrt-capture';
 import { diffRegion } from './vrt-surface-stats';
 import { DOCK_TAB_MIN_BANDS } from '../../packages/web/src/lib/ui/workflow/dock-tabs-model';
 import {
@@ -159,8 +183,11 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
       await frameMember(page, memberId, 0.45, 'compact');
 
       const tile = page.locator(`.svelte-flow__node[data-id="${memberId}"] [data-testid="module-shell"]`);
-      await expect(tile).toHaveScreenshot(`face-${type}-compact.png`, {
-        maxDiffPixels: COMPACT_MAX_DIFF,
+      await expectVrtSceneScreenshot({
+        page,
+        sceneId: `face-${type}-compact`,
+        target: tile,
+        options: { maxDiffPixels: COMPACT_MAX_DIFF },
       });
 
       expect(

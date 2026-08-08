@@ -418,7 +418,17 @@ describe('vrt-meta — EXEMPT_FROM_VRT is DENY-BY-DEFAULT (frozen allowlist)', (
 // ARTIFACT-anchored and only falls when the PNGs actually land.
 // (sixstrum's face RE-DO needed no new pair: its two linux entries have been
 // listed since batch 2 and stay listed.)
-const SHARED_LINUX_PAIR_CEILING = 91;
+//
+// FACE BATCH 3 · analogVco (2026-08-08): 91 → 93, and this one goes UP, which
+// is the direction this ratchet is designed to make LOUD. It is not a drain
+// being forgotten — it is two NEW darwin-first pairs
+// (`linux/face-analogVco-{compact,dock}`) for the face batch 3 authored,
+// verified and then dropped over a non-deterministic VRT scene. The scene is
+// fixed here (a VRT_LIVE_SURFACES mask + measured companion), both darwin
+// baselines are committed, and the linux capture is the one remaining step
+// before merge: `vrt-update.yml -f platform=linux`, after which these two
+// lines are drained and this number returns to 91.
+const SHARED_LINUX_PAIR_CEILING = 93;
 
 describe('vrt-meta — EXEMPT_BASELINE_PAIRS size RATCHET (only shrinks)', () => {
   // ⚠ 2026-08-01 — READ THIS BEFORE TRUSTING THE NUMBER BELOW.
@@ -660,7 +670,16 @@ describe('vrt-meta — EXEMPT_BASELINE_PAIRS size RATCHET (only shrinks)', () =>
 // red with 6 UNDECLARED gaps named clap/drummergirl/pentemelodica, the dispatch
 // has not landed yet — that is the expected reading, not a reason to raise the
 // number back.
-const LINUX_DEFICIT_CEILING = 148;
+//
+// FACE BATCH 3 · analogVco (2026-08-08): 148 → 150. Two NEW darwin PNGs
+// (`face-analogVco-{compact,dock}`) land in this commit with no linux sibling,
+// which is exactly the artifact-anchored condition this number counts, and both
+// are DECLARED in EXEMPT_BASELINE_PAIRS so neither is an undeclared gap. It
+// returns to 148 when the linux dispatch commits the two PNGs and the pairs are
+// drained. ⚠ If this gate is red naming an UNDECLARED gap, that is a real
+// finding — the declaration and the artifact have diverged; do not raise the
+// number to make it green.
+const LINUX_DEFICIT_CEILING = 150;
 
 describe('vrt-meta — LINUX-baseline DEFICIT RATCHET (all four mechanisms)', () => {
   // THE HONESTY GATE. CI renders on LINUX. A scene captured on darwin but

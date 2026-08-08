@@ -221,15 +221,27 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // (recolorization / mono-override clobber / palette remap) lives in
   // vrt-colourofmagic.spec.ts.
   colourofmagic: [{ selector: 'canvas' }],
-  // ANALOG VCO — MIGRATED to the live-surface registry
-  // (e2e/vrt/vrt-live-surfaces.ts). It used to live here as a bare
-  // `analogVco: [{ selector: 'canvas' }]`, which masked the single-cycle
-  // waveform scope out of the diff and asserted NOTHING about it: the card
-  // could have stopped drawing the trace entirely and the baseline would not
-  // have moved a pixel. It now carries a measured companion (ink / luminance
-  // spread / tonal structure) plus a per-run negative control. The morph DSP
-  // is still covered by analog-vco-morph.test.ts and the scope-window logic by
-  // analog-vco-scope.test.ts.
+  // ANALOG VCO — the mask was DELETED, not migrated, and this comment said the
+  // opposite for months. CORRECTED 2026-08-08.
+  //
+  // It used to live here as a bare `analogVco: [{ selector: 'canvas' }]`, which
+  // masked the legacy CARD's single-cycle waveform scope out of the diff and
+  // asserted NOTHING about it. The 2026-08-01 round-4 derivation then measured
+  // that card UNMASKED at 10/10 separate gate processes PASS (see the table in
+  // vrt-live-surfaces.ts), so the entry was removed and 27.6 % of the card came
+  // BACK into the pixel diff. That is the outcome — no mask, full strictness.
+  //
+  // The wording it replaced ("MIGRATED to the live-surface registry… now
+  // carries a measured companion") described a `VRT_LIVE_SURFACES` entry that
+  // never existed, and it read as reassurance while nothing was watching. If
+  // you are looking for the analogVco entry it promised: the module DOES have
+  // one now, but for a DIFFERENT scene and a DIFFERENT surface —
+  // `face-analogVco-compact`, the PF-20 lane tile, whose live `scope` GLYPH is
+  // non-deterministic because the oscillator free-runs. The legacy card scene
+  // remains unmasked. Two surfaces, one module; do not conflate them.
+  //
+  // The morph DSP is still covered by analog-vco-morph.test.ts and the
+  // scope-window logic by analog-vco-scope.test.ts.
   // BACKDRAFT deliberately has NO mask entry, for TWO independent reasons —
   // and the wording here has flip-flopped with the card, so state both.
   //   (1) There is nothing on the faceplate to mask. The in-card display was
@@ -922,10 +934,12 @@ export const ALLOWED_PERMANENT_EXEMPT: ReadonlySet<string> = new Set([
 export const STRICT_VRT_MODULES = new Set<string>([
   // Audio domain — pure knob/fader cards, no canvas
   'adsr',                 // 4-knob envelope card
-  // analogVco: removed from strict lane — the card now carries a live
-  // single-cycle waveform scope (animated canvas off the morph output), which
-  // disqualifies it from the no-animated-chrome strict subset. It stays in
-  // the full VRT lane with the scope canvas masked (see VRT_MODULE_MASKS).
+  // analogVco: removed from strict lane — the card carries a live single-cycle
+  // waveform scope (animated canvas off the morph output), which disqualifies
+  // it from the no-animated-chrome strict subset. It stays in the full VRT
+  // lane, and — CORRECTED 2026-08-08 — the scope canvas is NOT masked there:
+  // the round-4 derivation measured the unmasked card at 10/10 gate processes
+  // PASS and deleted the VRT_MODULE_MASKS entry, so the trace is in the diff.
   // audioOut: removed from strict lane. This PR added the OUT device
   // dropdown row (setSinkId picker), growing the card from 320x313 to
   // 360x401. The darwin baseline was re-captured (f1cd0e5f); the linux
@@ -1121,6 +1135,29 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   'linux/face-qbrt-dock',
   'linux/rear-dx7',
   'linux/rear-sixstrum',
+  //
+  // FACE BATCH 3 · analogVco (2026-08-08) — PARKED darwin-first, awaiting ONE
+  // `vrt-update.yml -f platform=linux` dispatch before this PR merges. Both
+  // darwin baselines are captured and committed here; these two lines are the
+  // DECLARATION of the resulting platform gap, and BOTH vrt-meta ratchets move
+  // by exactly 2 in this same commit (SHARED_LINUX_PAIR_CEILING 91 → 93,
+  // list-anchored, immediate; LINUX_DEFICIT_CEILING 148 → 150,
+  // ARTIFACT-anchored — it counts the two new darwin PNGs that have no linux
+  // sibling yet). `flox activate -- task test:ledger:accept` re-pinned in the
+  // same commit, because the generated ledger counts this list.
+  //
+  // ⚠ THE COMPACT SCENE IS MASKED, so its linux capture is not a plain
+  // re-render: `face-analogVco-compact` carries the registry's only face entry
+  // (a free-running oscillator's live glyph — see vrt-live-surfaces.ts), and
+  // the magenta rect is baked into the baseline. The mask was DERIVED ON
+  // DARWIN (1/10 unmasked vs 10/10 masked, 10 separate processes). Per that
+  // file's own closing warning, a green linux dispatch is ONE capture and
+  // therefore one draw of the lottery — if the linux baseline lands and then
+  // flakes in the gate, RE-DERIVE on linux with scripts/vrt-derive-trials.sh
+  // before touching the floors. Do not read a single green linux run as a
+  // derivation.
+  'linux/face-analogVco-compact',
+  'linux/face-analogVco-dock',
   //
   // FACE BATCH 3 (2026-08-03) — DRAINED IN THIS PR, not parked. The 6 CURATED
   // FACE scenes for the three newly-promoted modules (clap, drummergirl,

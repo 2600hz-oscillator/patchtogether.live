@@ -51,15 +51,31 @@
 // lane and had no strike key at all, so under `?shell=1` the dock offered
 // twenty controls over an instrument that could not be sounded.
 //
-// ⚠ analogVco was authored, verified and then DROPPED from this batch. Its
-// `face-analogVco-compact` VRT scene is NOT pixel-deterministic: unlike every
-// other faced module, analogVco is a FREE-RUNNING oscillator, so its live
-// `scope` glyph is drawing a genuinely moving saw rather than the flat
-// centreline the spec header assumes (measured 254 / 154 / 315 px across three
-// consecutive captures of the same tile). Its DOCK scene is stable, which
-// confirms the diagnosis — a `hero.cell` suppresses the glyph there. The fix
-// belongs in `VRT_LIVE_SURFACES` (a mask plus a measured companion), which
-// e2e/vrt/vrt-exemptions.ts already claims analogVco has and it does not.
+// FACE BATCH 3 · analogVco (2026-08-08) — the RECOVERY of the face that batch 3
+// authored, verified and then dropped. Every unit gate passed at the time; the
+// blocker was purely the pixel lane, and it is now fixed rather than deferred.
+//
+// THE BLOCKER, AND WHAT CLOSED IT. Unlike every other faced module, analogVco
+// is a FREE-RUNNING oscillator, so the live `scope` glyph on its COMPACT lane
+// tile draws a genuinely moving saw where every other face draws a flat
+// centreline (measured 254 / 154 / 315 px across three consecutive captures of
+// one tile — the scene simply is not pixel-deterministic). Its DOCK scene was
+// always stable, which confirmed the diagnosis rather than contradicting it: a
+// `hero.cell` suppresses the glyph there, so the dock never sampled the
+// oscillator at all.
+//
+// `face-analogVco-compact` now carries the repo's ONE sanctioned treatment for
+// a live surface — a `VRT_LIVE_SURFACES` entry (mask + MEASURED companion +
+// per-run negative control), which is what `e2e/vrt/vrt-exemptions.ts` had
+// already claimed existed for months while the registry had no such key. The
+// mask deletes the glyph from the pixel diff; the companion asserts the glyph
+// still renders a real moving trace, and the seam's negative control proves on
+// every run that the companion can fail. The rest of the tile — the two curated
+// knobs, the RACKLINE frame, every label — stays strict.
+//
+// The face itself is unchanged from the verified batch-3 authoring, and its two
+// live defects were fixed independently before it landed: the card/def bipolar
+// range disagreement (#1311) and the impossible `pw`-with-an-LFO doc (897b6515).
 
 export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // P1 batch 1 — first 6 module faces
@@ -88,6 +104,8 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   'clap',
   'drummergirl',
   'pentemelodica',
+  // FACE BATCH 3 · the recovered free-running oscillator (2026-08-08).
+  'analogVco',
 ]);
 
 /**

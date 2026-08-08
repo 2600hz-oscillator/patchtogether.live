@@ -51,6 +51,12 @@ export const FACES = [
   // unless a promotion empties a band (heroFacePlan drops an emptied band).
   { type: 'clap', pages: 4 },
   { type: 'drummergirl', pages: 2 },
+  // ⚠ THE ONLY FACE IN THIS ROSTER WITH A MASKED REGION. analogVco is a
+  // FREE-RUNNING oscillator, so the compact tile's live `scope` glyph is the
+  // one glyph here that does NOT draw the flat centreline the header above
+  // assumes — see VRT_LIVE_SURFACES['face-analogVco-compact'] for the measured
+  // derivation and the companion that replaces the deleted coverage.
+  { type: 'analogVco', pages: 2 },
   // ⚠ 8 bands trips DOCK_TAB_MIN_BANDS: this face renders as a TAB RAIL, by
   // design (five identical voice strips have no other shape). Do not merge it
   // back under seven.
@@ -58,10 +64,16 @@ export const FACES = [
 ] as const;
 
 /** TIGHT per-scene diff budgets (absolute pixels; Playwright takes the MIN of
- *  this and the config ratio budget). The compact tile is a small element
- *  capture (~86×81 px at zoom 0.45 — the whole image is ~7k px, so the global
- *  0.05 ratio budget would allow only ~350 px anyway); 150 px flips on any
- *  real knob/label/glyph change while sitting above rounding noise. The dock
+ *  this and the config ratio budget).
+ *
+ *  ⚠ COMPACT_MAX_DIFF IS CURRENTLY INERT, and saying so is the point — a budget
+ *  nobody has re-measured reads as protection it may not provide. MEASURED
+ *  2026-08-08: a compact tile is 88×82 = 7216 px, and vrt.config's
+ *  `maxDiffPixelRatio` was TIGHTENED from 0.05 to 0.01 on 2026-07-31, so the
+ *  ratio now allows 72 px and is the binding term. 150 was chosen against the
+ *  old 0.05 (~350 px) and has been the looser of the two ever since. It is kept
+ *  because it is the DECLARED intent and it binds again on any tile over
+ *  15 000 px, not because it is doing work today. The dock
  *  faceplate is a full-width element (1220 × 322…1003 now that it is captured
  *  unfolded): 1500 px matches the workflow-shell-zoom scene budget, and it stays
  *  the binding term because Playwright takes the MIN — the config's 0.01 ratio

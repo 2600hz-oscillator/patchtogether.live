@@ -129,7 +129,8 @@ const VIDEO_SRC_BASE =
   'https://github.com/2600hz-oscillator/patchtogether.live/blob/main/packages/web/src/lib/video/modules';
 
 const DESCRIPTIONS: Record<string, string> = {
-  analogVco: 'Analog-style oscillator with saw / square / triangle / sine outputs and FM input.',
+  analogVco:
+    'One phase accumulator, six taps: saw / square / triangle / sine, a saw→sine→square morph, and a sync pulse. Exponential FM and phase modulation, plus hard sync in.',
   es9: 'Full 16×16 audio+CV I/O with a real Eurorack system via the Expert Sleepers ES-9 and the es9-bridge native companion app — every DC-coupled jack individually patchable, with per-jack audio/cv/pitch/gate voltage scaling.',
   cvBuddy: 'Sends a clip lane out to a real Eurorack voice through an ES-9. Hand-patch a lane\'s pitch / gate / velocity into its inputs and CV Buddy passes them through to CV/gate outputs, which the CV-Buddy↔ES-9 reconciler auto-routes to the ES-9\'s physical output jacks by slot (first instance → jacks 1-3, second → 4-6) and sets each jack\'s voltage class (pitch → 1 V/oct, gate → +5 V, velocity → ±5 V). The v/oct rides a plain CV cable (not a pitch/poly cable) so CV Buddy stays a note SINK a lane can drive — the 1 V/octave scaling happens on the ES-9 jack. The id-smallest (owner) instance also generates two transport signals: RUN on jack 7 (a gate held high while the rack transport plays) and CLOCK on jack 8 (a DIN-sync pulse train at a selectable PPQN, phase-locked to TIMELORDE) — patch RUN + CLOCK into a Pam\'s New Workout to slave it to the rack. A third+ CV Buddy sits inert (no free ES-9 jacks). No audio output, so it never appears as a mixer send; with no ES-9 in the rack it is idle and harmless.',
   cvBuddyMini:
