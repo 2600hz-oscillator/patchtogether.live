@@ -10,11 +10,51 @@
 // and there is a property test over the whole fixture set that says "exactly
 // one renderer per group, always".
 
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
 import { describe, expect, it } from 'vitest';
 
 import type { Edge } from '$lib/graph/types';
 import type { StereoDef } from '$lib/graph/stereo-autowire';
-import { computeLegGroups } from './cable-leg-groups';
+import { computeLegGroups, LEG_KEY_SEP } from './cable-leg-groups';
+
+describe('the composite-key separator is an ESCAPE, not a raw byte', () => {
+  // A literal NUL in the source makes git classify the whole FILE as binary:
+  // `git diff` shows `Bin 0 -> 8980 bytes` instead of a line diff, so nobody
+  // can review it — including the owner — a merge conflict in it is
+  // unresolvable, and `git blame` / grep / code search skip it. This shipped
+  // once; the value is correct, only its spelling was wrong.
+  const SOURCE = readFileSync(
+    fileURLToPath(new URL('./cable-leg-groups.ts', import.meta.url)),
+    'utf8',
+  );
+
+  it('the separator VALUE is NUL (unforgeable — no id can contain one)', () => {
+    expect(LEG_KEY_SEP).toBe('\u0000');
+    expect(LEG_KEY_SEP).toHaveLength(1);
+  });
+
+  it('the SOURCE FILE contains no raw NUL byte', () => {
+    // Anchored to the artifact: reads the file off disk, so it fails on the
+    // spelling regardless of what the module exports.
+    const at = SOURCE.indexOf('\u0000');
+    expect(
+      at,
+      at < 0
+        ? ''
+        : `raw NUL at offset ${at} — write '\\u0000' instead: ` +
+          `${JSON.stringify(SOURCE.slice(Math.max(0, at - 40), at + 20))}`,
+    ).toBe(-1);
+  });
+
+  it('the vacuity control: the test really is reading THIS file', () => {
+    // Without this, a bad path would make the check above pass on an empty
+    // string forever.
+    expect(SOURCE).toContain('export function computeLegGroups');
+    expect(SOURCE).toContain("export const LEG_KEY_SEP = '\\u0000';");
+  });
+});
 
 const STEREO_SRC: StereoDef = {
   type: 'src',
