@@ -184,7 +184,21 @@ describe('card ↔ def AGREEMENT (deny-by-default across every registered card)'
     // DATA (`wsBands`), not `params` — so there is no def param to compare it
     // against, and its min/max already come from ONE place (`bandSpec`), which
     // is what the divergence class this gate guards actually asks for.
-    const UNCHECKABLE_CEILING = 88;
+    // 89 from the CHROMACONSOLE device card — the SAME class as the wavesculpt
+    // entry above, for the same reason. Its slot control is rendered inside an
+    // `{#each DEVICE_SLOT_IDS}`, so its `paramId={slotId}` is a loop variable
+    // and `controlTags` (which reads only a double-quoted literal) cannot see
+    // it. Unrolling the loop into eight literal blocks would duplicate the
+    // knob-vs-segmented conditional eight times to satisfy a source grep.
+    //
+    // It is UNCHECKABLE, not unguarded: every range prop on it comes from
+    // `paramSpec(chromaconsoleDef, slotId)` — the def itself — so the card
+    // cannot contradict the def by construction, which is precisely what this
+    // gate's divergence class asks for. The coverage the grep cannot give is
+    // replaced by a direct source assertion in
+    // `src/lib/devices/device-card-source.test.ts`, which fails if that card
+    // ever hardcodes a numeric range instead of reading the def.
+    const UNCHECKABLE_CEILING = 89;
     expect(
       blind.length,
       `UNCHECKABLE controls grew — a control with range props but no paramId cannot be ` +

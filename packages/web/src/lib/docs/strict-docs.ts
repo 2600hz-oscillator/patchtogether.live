@@ -239,6 +239,7 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   'clipplayer',
   'qbrt',
   'rasterize',
+  'chromaconsole',
   'clockedRunner',
   'livecode',
   // Batch 13 — heavy synth voices, effects & utilities (near the end of the

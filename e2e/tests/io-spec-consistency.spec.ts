@@ -96,7 +96,9 @@ test.describe('I/O spec consistency: def <-> rendered card UI handles', () => {
     // ports — they're pure-UI cards with no signal-routing surface.
     // LIVECODE + clockedRunner are side-tools that mutate the rack
     // via the JS runtime; they intentionally have no patch I/O.
-    const ZERO_PORT_OK = new Set(['livecode', 'clockedRunner']);
+        // CHROMACONSOLE is a control surface for an EXTERNAL device: its output
+    // is MIDI on a wire, not a patch cable, so it has no ports by design.
+    const ZERO_PORT_OK = new Set(['livecode', 'clockedRunner', 'chromaconsole']);
     for (const s of REGISTRY) {
       if (s.domain === 'meta') continue;
       if (ZERO_PORT_OK.has(s.type)) continue;

@@ -24,6 +24,7 @@
 
 import { test, expect, type Page } from '@playwright/test';
 import { installRenderSmokeHooks } from './_render-smoke';
+import { installMidiOutCapture } from '../_helpers/midi';
 
 /** channel-columns.ts geometry (kept in sync with the pure module). */
 const COLUMN_W = 765; // 34 * HP_UNIT(22.5) — wide enough for a 720px tidyvco/sixstrum
@@ -131,27 +132,12 @@ async function moData(
   }, moduleId);
 }
 
-/** A fake Web MIDI with ONE output, so MIDI-OUT-BUDDY's card renders its OUT +
- *  CH selectors headlessly (no hardware in CI). Mirrors the fake in
- *  midi-out-buddy.spec.ts; this spec only needs the card UI, not the bytes. */
-const FAKE_MIDI_OUT = `
-(() => {
-  if (window.__fakeMidiOutInstalled) return;
-  window.__fakeMidiOutInstalled = true;
-  window.__midiOutSent = [];
-  const output = {
-    id: 'fake-midi-out-0',
-    name: 'Fake MIDI Out (Playwright)',
-    state: 'connected',
-    connection: 'open',
-    type: 'output',
-    send(data) { window.__midiOutSent.push(Array.from(data)); },
-    clear() {},
-  };
-  const access = { sysexEnabled: false, inputs: new Map(), outputs: new Map([[output.id, output]]), onstatechange: null };
-  navigator.requestMIDIAccess = async () => access;
-})();
-`;
+// A fake Web MIDI with ONE output, so MIDI-OUT-BUDDY's card renders its OUT +
+// CH selectors headlessly (no hardware in CI). This spec only needs the card
+// UI, not the bytes — but the script itself used to be a verbatim copy of the
+// one in midi-out-buddy.spec.ts (its own comment said "Mirrors the fake in
+// midi-out-buddy.spec.ts"). Both now come from the shared helper, which keeps
+// the same port id + name.
 
 /** The clip player's automation-lane assignment for a module (or null). */
 async function laneOf(page: Page, moduleId: string): Promise<number | null> {
@@ -722,7 +708,7 @@ test.describe('workflow channel columns', () => {
     // on `data.midiOutChannel` and only DEFAULTS from the lane. This drives the
     // REAL palette-drop + the REAL card <select>, and asserts the lane +
     // clip-tap edge set is BYTE-IDENTICAL across the change.
-    await page.addInitScript({ content: FAKE_MIDI_OUT });
+    await installMidiOutCapture(page);
     await page.goto('/rack?mode=workflow');
     await waitForPinnedTrio(page);
 

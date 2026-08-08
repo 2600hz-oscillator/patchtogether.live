@@ -198,6 +198,168 @@ export async function sendCc(page: Page, channel: number, cc: number, value: num
 // campaign row 16. The __mockMidi init-script still exposes noteOn/noteOff;
 // re-add thin wrappers if a spec needs them.)
 
+// ---------------------------------------------------------------------------
+// OUTBOUND capture — the bytes-on-the-wire instrument
+// ---------------------------------------------------------------------------
+//
+// WHY THIS EXISTS SEPARATELY FROM `installMidiMock` ABOVE. That mock's output
+// port has a deliberately NO-OP `send()` ("outbound MIDI not asserted by
+// current specs"), because its job is to feed the app INbound messages. An
+// outbound assertion needs the opposite: a port that records every byte.
+//
+// This helper is the EXTRACTED form of a script that had already been
+// copy-pasted twice verbatim (`midi-out-buddy.spec.ts`, and
+// `workflow-channel-columns.spec.ts` whose own comment says "Mirrors the fake
+// in midi-out-buddy.spec.ts"). A third copy was about to be written for the
+// device-control work, so it is a helper now.
+//
+// ⚠ THIS IS THE ONLY INSTRUMENT THAT CAN SEE THE SUBJECT. Every def-reading
+// gate in the repo — contract-lock, module-docs-lint, the range assertions,
+// the per-port sweeps — is structurally blind to what actually leaves a MIDI
+// port. A module can declare a perfect CC contract, render a perfect card, and
+// emit nothing at all, and the entire rest of the gate set stays green. So the
+// bytes captured here are load-bearing in a way a visibility assertion is not,
+// and the instrument itself is negative-controlled before it is trusted (see
+// `midi-out-capture-instrument` in midi-out-buddy.spec.ts).
+//
+// Two views of the same recording:
+//   * `window.__midiOutSent`         — flat `number[][]`, every port merged.
+//     The shape the two pre-existing specs already assert against; unchanged.
+//   * `window.__midiOutSentDetailed` — `{ portId, bytes, at }[]`, so a spec
+//     with more than one output port can tell them apart, and so a spec can
+//     assert ORDER and TIMING rather than just membership.
+
+/** One captured outbound MIDI message. */
+export interface CapturedMidiMessage {
+  /** The `MIDIOutput.id` the message was written to. */
+  portId: string;
+  /** The raw bytes, as a plain array (structured-clone safe across the CDP seam). */
+  bytes: number[];
+  /** `performance.now()` at capture — NOT the `send()` timestamp argument. */
+  at: number;
+  /** The `timestamp` argument passed to `send(bytes, timestamp)`, when the
+   *  caller scheduled the message rather than sending it immediately.
+   *  `undefined` for an immediate send. This is what proves a module is using
+   *  Web MIDI's own scheduling instead of a main-thread setTimeout. */
+  scheduledAt: number | undefined;
+}
+
+/** A fake output port to expose on the mocked MIDIAccess. */
+export interface FakeMidiOutPort {
+  id: string;
+  name: string;
+}
+
+/** The default single port — the exact id + name the two pre-existing specs
+ *  hardcoded, so migrating them to this helper is a no-op on the wire. */
+export const DEFAULT_FAKE_MIDI_OUT: FakeMidiOutPort = {
+  id: 'fake-midi-out-0',
+  name: 'Fake MIDI Out (Playwright)',
+};
+
+/** Build the page-context init script for a capturing Web MIDI mock. */
+export function midiOutCaptureScript(ports: readonly FakeMidiOutPort[]): string {
+  return `
+(() => {
+  if (window.__fakeMidiOutInstalled) return;
+  window.__fakeMidiOutInstalled = true;
+  window.__midiOutSent = [];          // number[][] — flat, all ports merged
+  window.__midiOutSentDetailed = [];  // { portId, bytes, at, scheduledAt }[]
+
+  const specs = ${JSON.stringify(ports)};
+  const outputs = new Map();
+  for (const spec of specs) {
+    const output = {
+      id: spec.id,
+      name: spec.name,
+      manufacturer: 'PatchTogether',
+      state: 'connected',
+      connection: 'open',
+      type: 'output',
+      version: '1.0',
+      send(data, timestamp) {
+        const bytes = Array.from(data);
+        window.__midiOutSent.push(bytes);
+        window.__midiOutSentDetailed.push({
+          portId: spec.id,
+          bytes,
+          at: performance.now(),
+          scheduledAt: typeof timestamp === 'number' ? timestamp : undefined,
+        });
+      },
+      clear() {},
+    };
+    outputs.set(spec.id, output);
+  }
+
+  const access = {
+    sysexEnabled: false,
+    inputs: new Map(),
+    outputs,
+    onstatechange: null,
+  };
+  navigator.requestMIDIAccess = async () => access;
+})();
+`;
+}
+
+/**
+ * Install the capturing MIDI-out mock. MUST be called BEFORE `page.goto(...)`
+ * so the app's first `navigator.requestMIDIAccess()` resolves against it.
+ *
+ * Pass `ports` to expose more than one output, or to give a port a name a
+ * device auto-detect heuristic will match.
+ */
+export async function installMidiOutCapture(
+  page: Page,
+  ports: readonly FakeMidiOutPort[] = [DEFAULT_FAKE_MIDI_OUT],
+): Promise<void> {
+  await page.addInitScript({ content: midiOutCaptureScript(ports) });
+}
+
+/** Read every captured message, newest last. `portId` filters to one port. */
+export async function readMidiOutCaptured(
+  page: Page,
+  portId?: string,
+): Promise<CapturedMidiMessage[]> {
+  return page.evaluate((wanted) => {
+    const w = window as unknown as { __midiOutSentDetailed?: CapturedMidiMessage[] };
+    const all = w.__midiOutSentDetailed ?? [];
+    return wanted ? all.filter((m) => m.portId === wanted) : all;
+  }, portId);
+}
+
+/** Drop everything captured so far. Use between phases of a test so a later
+ *  assertion counts only the messages its own action produced. */
+export async function clearMidiOutCaptured(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const w = window as unknown as {
+      __midiOutSent?: number[][];
+      __midiOutSentDetailed?: unknown[];
+    };
+    if (w.__midiOutSent) w.__midiOutSent.length = 0;
+    if (w.__midiOutSentDetailed) w.__midiOutSentDetailed.length = 0;
+  });
+}
+
+/** Every captured CONTROL CHANGE, decoded. `0xB0..0xBF` status. */
+export async function readCapturedCcs(
+  page: Page,
+  portId?: string,
+): Promise<{ channel: number; cc: number; value: number }[]> {
+  const msgs = await readMidiOutCaptured(page, portId);
+  return msgs
+    .filter((m) => (m.bytes[0] ?? 0) >= 0xb0 && (m.bytes[0] ?? 0) <= 0xbf)
+    .map((m) => ({
+      // Report the 1-based on-wire channel, the convention the rest of this
+      // helper module uses (see sendCc above). Stating it here rather than
+      // leaving a bare nibble is what stops the classic off-by-one read.
+      channel: ((m.bytes[0] ?? 0) & 0x0f) + 1,
+      cc: m.bytes[1] ?? 0,
+      value: m.bytes[2] ?? 0,
+    }));
+}
+
 /** Burst N clock pulses spaced `intervalMs` apart.
  *
  *  Math: midi-clock-source.ts smoothes the per-pulse interval, then computes

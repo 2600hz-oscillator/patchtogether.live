@@ -5,8 +5,47 @@ import {
   MAX_TIMESTAMP_LAG_MS,
   measureCtxOffset,
   eventTimeStampToAudioTime,
+  audioTimeToPerformanceNow,
   createMidiScheduler,
 } from './midi-timing';
+
+describe('audioTimeToPerformanceNow — the OUTBOUND projection', () => {
+  it('round-trips against measureCtxOffset for any audio time', () => {
+    // The two directions must be exact inverses, otherwise scheduled outbound
+    // MIDI drifts against the audio it is supposed to accompany.
+    const ctxOffsetS = measureCtxOffset(/* currentTimeS */ 12.5, /* perfNowMs */ 40_000);
+    for (const atTimeS of [0, 1, 12.5, 999.25]) {
+      const perfMs = audioTimeToPerformanceNow(atTimeS, ctxOffsetS);
+      expect(perfMs / 1000 + ctxOffsetS).toBeCloseTo(atTimeS, 9);
+    }
+  });
+
+  it('maps "now" on the audio clock to "now" on the performance clock', () => {
+    const currentTimeS = 12.5;
+    const perfNowMs = 40_000;
+    const ctxOffsetS = measureCtxOffset(currentTimeS, perfNowMs);
+    expect(audioTimeToPerformanceNow(currentTimeS, ctxOffsetS)).toBeCloseTo(perfNowMs, 6);
+  });
+
+  it('preserves INTERVALS — a 250 ms audio gap is a 250 ms wall gap', () => {
+    const ctxOffsetS = measureCtxOffset(5, 20_000);
+    const a = audioTimeToPerformanceNow(5.0, ctxOffsetS);
+    const b = audioTimeToPerformanceNow(5.25, ctxOffsetS);
+    expect(b - a).toBeCloseTo(250, 6);
+  });
+
+  it('the two clocks are NOT interchangeable — using the wrong one lands in the past', () => {
+    // The failure mode this function exists to prevent: handing an audio-clock
+    // number straight to MIDIOutput.send(). Both are monotonic ms-ish numbers,
+    // so it does not throw — it just schedules everything long past, which Web
+    // MIDI treats as "immediately", silently discarding all the timing.
+    const ctxOffsetS = measureCtxOffset(12.5, 40_000);
+    const correct = audioTimeToPerformanceNow(12.5, ctxOffsetS);
+    const naive = 12.5 * 1000; // the bug
+    expect(naive).toBeLessThan(correct);
+    expect(correct - naive).toBeGreaterThan(20_000);
+  });
+});
 
 describe('measureCtxOffset', () => {
   it('is currentTimeS minus performanceNowMs/1000', () => {
