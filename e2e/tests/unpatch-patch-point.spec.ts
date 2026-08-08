@@ -407,9 +407,13 @@ test('rear card: a fanned-out OUTPUT lists every cable + "Unpatch all (N)", stay
   await expect(items).toHaveCount(2);
   // Order is by edge id (deterministic across peers + runs), so the hand-drawn
   // `e-handdrawn-ch2L` sorts ahead of the reconciler's `wcol-e-…ch1L`.
-  await expect(items.nth(0)).toHaveText(/Unpatch → mixmstrs CH2L \(L only\)$/i);
+  // `CH2`, not `CH2L`: a menu line names the JACK the cable is seated on, and
+  // `ch2L`+`ch2R` render as ONE `CH2` jack. The channel lives in the suffix, so
+  // saying it twice — and disagreeing with the jack on the first half — was the
+  // label bug the owner reported on #1409.
+  await expect(items.nth(0)).toHaveText(/Unpatch → mixmstrs CH2 \(L only\)$/i);
   await expect(items.nth(0)).toHaveAttribute('data-edge-ids', 'e-handdrawn-ch2L');
-  await expect(items.nth(1)).toHaveText(/Unpatch → mixmstrs CH1L$/i);
+  await expect(items.nth(1)).toHaveText(/Unpatch → mixmstrs CH1$/i);
   await expect(items.nth(1)).toHaveAttribute('data-edge-ids', /ch1L.*ch1R|ch1R.*ch1L/);
   await expect(unpatchMenu(page).getByTestId('unpatch-all')).toHaveText(/Unpatch all \(2\)/);
 
