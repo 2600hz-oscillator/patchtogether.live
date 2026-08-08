@@ -270,18 +270,27 @@ describe('snaredrum face — the two auditions are TWO cells with DIFFERENT pres
 });
 
 describe('snaredrum face — the REAR field', () => {
-  it('is TOTAL: every declared port is exactly one hole, in six bands', () => {
+  it('is TOTAL: every declared port is addressed by exactly one hole, in six bands', () => {
     const plan = rearFieldPlan(snaredrumDef);
+    // PR-4: a derived stereo pair is ONE hole addressing TWO ports, so the
+    // totality claim is over the ADDRESSED ports. snaredrum's `audio_l` /
+    // `audio_r` outputs are that pair — one hole, two ports.
     const holes = [
       ...plan.bands.flatMap((b) => [...b.holes, ...b.clusters.flatMap((c) => c.holes)]),
       ...plan.outputs,
-    ].map((h) => h.portId);
+    ];
+    const addressed = holes.flatMap((h) =>
+      h.stereoSiblingPortId ? [h.portId, h.stereoSiblingPortId] : [h.portId],
+    );
     const declared = [
       ...snaredrumDef.inputs.map((p) => p.id),
       ...snaredrumDef.outputs.map((p) => p.id),
     ];
-    expect([...holes].sort(), 'no orphan, no duplicate').toEqual([...declared].sort());
-    expect(plan.holeCount).toBe(declared.length);
+    expect([...addressed].sort(), 'no orphan, no duplicate').toEqual([...declared].sort());
+    expect(plan.portCount).toBe(declared.length);
+    expect(plan.holeCount).toBe(declared.length - 1); // the one collapsed pair
+    expect(plan.outputs.map((h) => h.portId)).toEqual(['audio_l']);
+    expect(plan.outputs[0]!.stereoSiblingPortId).toBe('audio_r');
     expect(plan.bands.map((b) => b.id)).toEqual(['voice', 'drum', 'snap', 'roll', 'whole', 'bus']);
   });
 

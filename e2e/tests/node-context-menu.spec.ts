@@ -49,7 +49,10 @@ test('node context menu: right-click opens, Escape closes', async ({ page, rack 
 test('node context menu: Delete removes the node + all edges touching it', async ({ page, rack }) => {
   await page.getByTestId('load-example-select').selectOption('sequenced-vco');
   await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
-  await expect(page.locator('.svelte-flow__edge')).toHaveCount(6);
+  // A stereo LEG GROUP renders as ONE bezier (PR-4): the demo's
+  // `vd-vca.audio → vd-out.L` + `→ R` pair is 2 edges and 1 cable, so 6
+  // graph edges draw 5. Pinned in stereo-only-channel.spec.ts.
+  await expect(page.locator('.svelte-flow__edge')).toHaveCount(5);
 
   // Right-click on the VCA card. VCA touches 3 edges:
   //   vco.sine → vca.audio
@@ -70,7 +73,10 @@ test('node context menu: Delete removes the node + all edges touching it', async
 test('node context menu: Unpatch all keeps the node, removes only edges touching it', async ({ page, rack }) => {
   await page.getByTestId('load-example-select').selectOption('sequenced-vco');
   await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
-  await expect(page.locator('.svelte-flow__edge')).toHaveCount(6);
+  // A stereo LEG GROUP renders as ONE bezier (PR-4): the demo's
+  // `vd-vca.audio → vd-out.L` + `→ R` pair is 2 edges and 1 cable, so 6
+  // graph edges draw 5. Pinned in stereo-only-channel.spec.ts.
+  await expect(page.locator('.svelte-flow__edge')).toHaveCount(5);
 
   const vca = page.locator('.svelte-flow__node-vca').first();
   await vca.click({ button: 'right' });

@@ -53,6 +53,8 @@
     type GroupedPorts,
     type PortDescriptor,
   } from '$lib/ui/patch-panel-labels';
+  import { collapseStereoPorts, type CollapsedPort } from '$lib/ui/stereo-jack-collapse';
+  import { stereoPairForPort, type StereoPairDefLike } from '$lib/graph/stereo-pairs';
   import { connectDragState } from '$lib/ui/connect-drag-state.svelte';
   import {
     CLOSED,
@@ -87,8 +89,11 @@
 
   interface SectionedGroup {
     label: string;
-    inputs?: PortDescriptor[];
-    outputs?: PortDescriptor[];
+    /** Cards pass plain per-leg `PortDescriptor`s; `collapsedSections` widens
+     *  them to `CollapsedPort` (the extra fields are optional, so every
+     *  existing card still type-checks unchanged). */
+    inputs?: CollapsedPort[];
+    outputs?: CollapsedPort[];
     /** Optional nested sub-sections (recursive). No card uses this today;
      *  kept so future 2-level layouts opt in without re-discovering it. */
     subsections?: SectionedGroup[];
@@ -157,32 +162,71 @@
   let view = $derived<PatchMenuView>(menu.view);
 
   // ---------------- Port lists ----------------
-  let inputGroups = $derived<GroupedPorts[]>(
-    groupingStrategy === 'auto' ? groupPortsByCableType(inputs, 'input') : [],
-  );
-  let outputGroups = $derived<GroupedPorts[]>(
-    groupingStrategy === 'auto' ? groupPortsByCableType(outputs, 'output') : [],
-  );
-
-  // Flat input/output lists across sections (for the all-inputs / all-outputs
-  // drill views on sectioned cards, and for the per-handle render stack).
-  let allInputs = $derived<PortDescriptor[]>(
+  //
+  // TWO LISTS, and the split is load-bearing:
+  //
+  //   handleInputs / handleOutputs — RAW, every declared port. This is the
+  //     hidden <Handle> stack: BOTH legs of a stereo pair keep their own xyflow
+  //     handle at the corner so either leg still anchors a cable (a legacy
+  //     only-R edge must still have somewhere to land), and the
+  //     per-module-per-port handle-presence sweep still counts every port.
+  //
+  //   allInputs / allOutputs — COLLAPSED, one row per derived stereo pair.
+  //     Every HUMAN-facing surface reads these: the drill-down rows, the rear
+  //     back-panel jacks, the lane-rail preview dots, the nav counts.
+  //
+  // Collapse lives HERE rather than in the 208 cards for two reasons: the
+  // WebGL-basis cards (Cube/Hypercube/Wavesculpt/Foxy + the video cards) must
+  // stay byte-identical or they force a GPU re-attest, and a card that
+  // hand-lists L/R descriptors can no longer disagree with its own def about
+  // what is one stereo signal. See $lib/ui/stereo-jack-collapse.
+  let handleInputs = $derived<PortDescriptor[]>(
     groupingStrategy === 'sectioned'
       ? sections.flatMap((s) => s.inputs ?? [])
       : inputs,
   );
-  let allOutputs = $derived<PortDescriptor[]>(
+  let handleOutputs = $derived<PortDescriptor[]>(
     groupingStrategy === 'sectioned'
       ? sections.flatMap((s) => s.outputs ?? [])
       : outputs,
+  );
+
+  /** The live def behind this node — the ONLY source of stereo pairing. Null
+   *  while the node is mid-teardown, which collapses nothing (two jacks always
+   *  work; a collapsed jack for a pair that is not one does not). */
+  let stereoDef = $derived.by<StereoPairDefLike | undefined>(() => {
+    void nodesStructuralVersion();
+    void nodeVersion(nodeId);
+    const node = patch.nodes[nodeId] as ModuleNode | undefined;
+    return node ? (defLookup(node.type) as StereoPairDefLike | undefined) : undefined;
+  });
+
+  let inputGroups = $derived<GroupedPorts[]>(
+    groupingStrategy === 'auto'
+      ? groupPortsByCableType(collapseStereoPorts(inputs, stereoDef, 'input'), 'input')
+      : [],
+  );
+  let outputGroups = $derived<GroupedPorts[]>(
+    groupingStrategy === 'auto'
+      ? groupPortsByCableType(collapseStereoPorts(outputs, stereoDef, 'output'), 'output')
+      : [],
+  );
+
+  // Flat COLLAPSED input/output lists across sections (the all-inputs /
+  // all-outputs drill views on sectioned cards, the back panel, the rail dots).
+  let allInputs = $derived<CollapsedPort[]>(
+    collapseStereoPorts(handleInputs, stereoDef, 'input'),
+  );
+  let allOutputs = $derived<CollapsedPort[]>(
+    collapseStereoPorts(handleOutputs, stereoDef, 'output'),
   );
 
   let hasInputs = $derived(allInputs.length > 0);
   let hasOutputs = $derived(allOutputs.length > 0);
 
   // lane-rail preview dots (capped; the drill-down menu lists every port).
-  let railInputs = $derived<PortDescriptor[]>(allInputs.slice(0, RAIL_DOT_CAP));
-  let railOutputs = $derived<PortDescriptor[]>(allOutputs.slice(0, RAIL_DOT_CAP));
+  let railInputs = $derived<CollapsedPort[]>(allInputs.slice(0, RAIL_DOT_CAP));
+  let railOutputs = $derived<CollapsedPort[]>(allOutputs.slice(0, RAIL_DOT_CAP));
 
   // ---- lane-rail FIT (P0.3b overflow fix) ---------------------------------
   // Port-heavy tiles overflowed the fixed 192px tile: 8 preview dots pushed
@@ -237,21 +281,36 @@
 
   // The first N preview dots that fit — inputs first, then outputs (the same
   // order the rail renders them in).
-  let shownRailInputs = $derived<PortDescriptor[]>(railInputs.slice(0, railFit.dots));
-  let shownRailOutputs = $derived<PortDescriptor[]>(
+  let shownRailInputs = $derived<CollapsedPort[]>(railInputs.slice(0, railFit.dots));
+  let shownRailOutputs = $derived<CollapsedPort[]>(
     railOutputs.slice(0, Math.max(0, railFit.dots - railInputs.length)),
+  );
+
+  /** The card's sections with each rail's stereo pairs collapsed — the ONE
+   *  place the sectioned drill views and their nav counts read, so a section's
+   *  "(12)" pill and the rows it opens can never disagree. Cards keep passing
+   *  their existing per-leg descriptor lists; MixmstrsCard's `ch1L`/`ch1R`
+   *  become one CH1 row here, not in the card. */
+  let collapsedSections = $derived<SectionedGroup[]>(
+    groupingStrategy === 'sectioned'
+      ? sections.map((s) => ({
+          ...s,
+          inputs: s.inputs ? collapseStereoPorts(s.inputs, stereoDef, 'input') : undefined,
+          outputs: s.outputs ? collapseStereoPorts(s.outputs, stereoDef, 'output') : undefined,
+        }))
+      : sections,
   );
 
   // Sections that actually carry input ports — the nav rows shown at root
   // for sectioned cards.
   let inputSections = $derived<SectionedGroup[]>(
     groupingStrategy === 'sectioned'
-      ? sections.filter((s) => (s.inputs?.length ?? 0) > 0)
+      ? collapsedSections.filter((s) => (s.inputs?.length ?? 0) > 0)
       : [],
   );
 
   function sectionByLabel(label: string): SectionedGroup | undefined {
-    return sections.find((s) => s.label === label);
+    return collapsedSections.find((s) => s.label === label);
   }
 
   function cableColorVar(cable: string | undefined): string {
@@ -334,20 +393,41 @@
     return buildDocIndexFromDef(defLookup(node.type) as Parameters<typeof buildDocIndexFromDef>[0]);
   });
 
-  /** Remote endpoint strings for one port (empty when unpatched). */
-  function remotesFor(portId: string, direction: 'input' | 'output'): string[] {
+  /** Remote endpoint strings for a rendered jack (empty when unpatched).
+   *
+   *  A COLLAPSED stereo jack answers for BOTH legs. That is not cosmetic: a
+   *  legacy rack carries single-leg cables, so a collapsed OUT jack whose only
+   *  cable is on the R leg must still read as patched — otherwise the jack says
+   *  "empty" and its right-click falls through to the wrong menu. */
+  function remotesFor(
+    portId: string,
+    direction: 'input' | 'output',
+    siblingId?: string,
+  ): string[] {
     const map = direction === 'input' ? connections.inputs : connections.outputs;
-    return map.get(portId) ?? [];
+    const mine = map.get(portId) ?? [];
+    if (!siblingId) return mine;
+    const theirs = map.get(siblingId) ?? [];
+    if (theirs.length === 0) return mine;
+    return [...new Set([...mine, ...theirs])];
   }
 
-  function isPatched(portId: string, direction: 'input' | 'output'): boolean {
-    return remotesFor(portId, direction).length > 0;
+  function isPatched(
+    portId: string,
+    direction: 'input' | 'output',
+    siblingId?: string,
+  ): boolean {
+    return remotesFor(portId, direction, siblingId).length > 0;
   }
 
   /** Hover/aria text for a patched jack: INPUT takes one cable (← FROM …);
    *  OUTPUT fans out (→ TO a, b, …). Empty for an unpatched port. */
-  function patchTitle(portId: string, direction: 'input' | 'output'): string | undefined {
-    const remotes = remotesFor(portId, direction);
+  function patchTitle(
+    portId: string,
+    direction: 'input' | 'output',
+    siblingId?: string,
+  ): string | undefined {
+    const remotes = remotesFor(portId, direction, siblingId);
     if (remotes.length === 0) return undefined;
     return direction === 'input'
       ? `← FROM ${remotes[0]}`
@@ -373,30 +453,77 @@
     e: MouseEvent,
     portId: string,
     direction: 'input' | 'output',
+    siblingId?: string,
   ): boolean {
-    if (!isPatched(portId, direction)) return false;
+    if (!isPatched(portId, direction, siblingId)) return false;
     const host = hostEl;
     if (!host) return false;
+    // A COLLAPSED jack targets whichever leg actually holds a cable, preferring
+    // the left. The menu builds its plan from the port it is handed and Canvas
+    // expands the removal to the whole leg group, so naming either leg removes
+    // the whole cable — but naming an EMPTY leg would build an empty plan.
+    const target =
+      siblingId && !isPatched(portId, direction) ? siblingId : portId;
     e.preventDefault();
     e.stopPropagation();
     host.dispatchEvent(
       new CustomEvent('patchpanel:jackcontextmenu', {
         bubbles: true,
-        detail: { nodeId, portId, direction, x: e.clientX, y: e.clientY },
+        detail: { nodeId, portId: target, direction, x: e.clientX, y: e.clientY },
       }),
     );
     return true;
   }
 
-  /** Drill-down port ROW right-click. Patched → unpatch menu; otherwise fall
-   *  through to the gate-input MIDI assign menu (unchanged). */
+  /** True when right-clicking this OUTPUT row should offer the per-channel
+   *  patch menu — i.e. the port is one half of a DERIVED stereo pair, the same
+   *  pairing that collapsed it into one jack. Reads the COLLAPSE list on
+   *  purpose: "patch only L / only R" is a statement about a jack the UI
+   *  presents as one stereo signal. `rings`' odd/even taps are COLLAPSE_EXEMPT
+   *  (two timbres, two jacks) and are correctly excluded — "only L" would be a
+   *  lie about them. */
+  function hasStereoImage(port: CollapsedPort, direction: 'input' | 'output'): boolean {
+    if (port.siblingId) return true;
+    if (!stereoDef) return false;
+    return stereoPairForPort(stereoDef, port.id, direction) !== null;
+  }
+
+  /** Drill-down port ROW right-click. Precedence, highest first:
+   *    1. PATCHED point → the shared unpatch menu (unchanged);
+   *    2. UNPATCHED stereo OUTPUT → the per-channel patch picker (new). This
+   *       row's contextmenu was dead before — it fell straight through to the
+   *       browser menu — so nothing is being displaced;
+   *    3. gate INPUT → the MIDI-assign menu (unchanged).
+   *  Anything else is left ENTIRELY alone (no preventDefault), exactly as
+   *  before, so no pre-existing right-click behaviour changes. */
   function onPortRowContextMenu(
     e: MouseEvent,
-    port: PortDescriptor,
+    port: CollapsedPort,
     direction: 'input' | 'output',
   ): void {
-    if (dispatchUnpatchMenu(e, port.id, direction)) return;
+    if (dispatchUnpatchMenu(e, port.id, direction, port.siblingId)) return;
+    if (direction === 'output' && hasStereoImage(port, direction)) {
+      dispatchPortChannelMenu(e, port.id);
+      return;
+    }
     if (direction === 'input' && port.cable === 'gate') openGateMidiMenu(e, port);
+  }
+
+  /** Open Canvas's patch-to picker for THIS output, with the "patch only L /
+   *  only R" rows enabled. Canvas owns the picker + the commit (it resolves
+   *  cable types and runs planAudioCommit with the chosen channelMode), exactly
+   *  as it owns the unpatch menu — one menu, one commit seam. */
+  function dispatchPortChannelMenu(e: MouseEvent, portId: string): void {
+    const host = hostEl;
+    if (!host) return;
+    e.preventDefault();
+    e.stopPropagation();
+    host.dispatchEvent(
+      new CustomEvent('patchpanel:portmenu', {
+        bubbles: true,
+        detail: { nodeId, portId, direction: 'output', x: e.clientX, y: e.clientY },
+      }),
+    );
   }
 
   // ---------------- Gate-input MIDI assign (WORKSTREAM B) ----------------
@@ -831,14 +958,15 @@
   which never clips inside the scrollable portaled menu. The <li> wrappers (and
   the input-only gate-assignable / contextmenu plumbing) stay per-site.
 -->
-{#snippet portButton(port: PortDescriptor, direction: 'input' | 'output')}
-  {@const patched = isPatched(port.id, direction)}
-  {@const title = patchTitle(port.id, direction)}
+{#snippet portButton(port: CollapsedPort, direction: 'input' | 'output')}
+  {@const patched = isPatched(port.id, direction, port.siblingId)}
+  {@const title = patchTitle(port.id, direction, port.siblingId)}
   <button
     type="button"
     class="port-row port-row-{direction}"
     data-testid="patch-panel-port-row"
     data-port-id={port.id}
+    data-stereo-sibling={port.siblingId}
     data-direction={direction}
     onclick={() => onPortRowClick(port.id, direction)}
   >
@@ -945,13 +1073,21 @@
     times, stacked + hidden at the top-left corner. This is the cable anchor
     AND the per-module-per-port handle-presence target. It NEVER moves out of
     the card and is independent of the portaled chrome.
+
+    ⚠ RAW, NOT COLLAPSED (handleInputs / handleOutputs). Jack collapse is a
+    RENDERING decision about rows a human clicks; the handle set is the graph's
+    anchor surface. BOTH legs of a stereo pair keep their own handle, stacked at
+    the same corner, so either leg still anchors a cable — a legacy only-R edge,
+    or the R leg of any leg group, must have somewhere to land or the cable
+    detaches. The per-module-per-port handle-presence sweep also counts every
+    declared port here and would go red on a collapsed stack.
   -->
   <!-- DOCK GATE: <Handle> needs the SvelteFlow provider; in a dock rail
        (flowStore === null) the stack is skipped — the canvas DockStubCard
        carries the node's ONLY handle set (same ids). -->
   {#if flowStore}
     <div class="handle-stack" aria-hidden="true">
-      {#each allInputs as port (port.id)}
+      {#each handleInputs as port (port.id)}
         <Handle
           type="target"
           position={Position.Left}
@@ -959,7 +1095,7 @@
           style={`--handle-color: ${cableColorVar(port.cable)};`}
         />
       {/each}
-      {#each allOutputs as port (port.id)}
+      {#each handleOutputs as port (port.id)}
         <Handle
           type="source"
           position={Position.Right}
@@ -992,19 +1128,20 @@
         <div class="back-col-head">in</div>
         {#if hasInputs}
           {#each allInputs as port (port.id)}
-            {@const patched = isPatched(port.id, 'input')}
+            {@const patched = isPatched(port.id, 'input', port.siblingId)}
             <button
               type="button"
               class="back-jack"
               data-testid="back-jack"
               data-port-id={port.id}
+              data-stereo-sibling={port.siblingId}
               data-direction="input"
               data-patched={patched ? 'true' : 'false'}
-              title={patchTitle(port.id, 'input') ?? resolveVerboseLabel(port)}
+              title={patchTitle(port.id, 'input', port.siblingId) ?? resolveVerboseLabel(port)}
               aria-label={`patch ${resolveVerboseLabel(port)} input`}
               style:--jack-color={cableColorVar(port.cable)}
               onclick={() => onBackJackClick(port.id, 'input')}
-              oncontextmenu={(e) => dispatchUnpatchMenu(e, port.id, 'input')}
+              oncontextmenu={(e) => dispatchUnpatchMenu(e, port.id, 'input', port.siblingId)}
             >
               <span class="jack-hole" data-patched={patched ? 'true' : 'false'} aria-hidden="true"></span>
               <span class="jack-label">{resolveVerboseLabel(port)}</span>
@@ -1018,19 +1155,20 @@
         <div class="back-col-head">out</div>
         {#if hasOutputs}
           {#each allOutputs as port (port.id)}
-            {@const patched = isPatched(port.id, 'output')}
+            {@const patched = isPatched(port.id, 'output', port.siblingId)}
             <button
               type="button"
               class="back-jack"
               data-testid="back-jack"
               data-port-id={port.id}
+              data-stereo-sibling={port.siblingId}
               data-direction="output"
               data-patched={patched ? 'true' : 'false'}
-              title={patchTitle(port.id, 'output') ?? resolveVerboseLabel(port)}
+              title={patchTitle(port.id, 'output', port.siblingId) ?? resolveVerboseLabel(port)}
               aria-label={`patch ${resolveVerboseLabel(port)} output`}
               style:--jack-color={cableColorVar(port.cable)}
               onclick={() => onBackJackClick(port.id, 'output')}
-              oncontextmenu={(e) => dispatchUnpatchMenu(e, port.id, 'output')}
+              oncontextmenu={(e) => onPortRowContextMenu(e, port, 'output')}
             >
               <span class="jack-hole" data-patched={patched ? 'true' : 'false'} aria-hidden="true"></span>
               <span class="jack-label">{resolveVerboseLabel(port)}</span>
