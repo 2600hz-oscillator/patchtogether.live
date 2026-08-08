@@ -13,6 +13,7 @@ import { getModuleDef, type AudioModuleDef } from './module-registry';
 import { POLY_CHANNELS, resolveConnection } from './poly';
 import { attachCvScale } from './cv-scale';
 import { restedParams, type MomentaryDefLike } from './momentary-params';
+import { materializeAudioHandle } from './dual-mono';
 import { holdParamAtSeam, HOLD_NOW_EPS_S } from './hold-param';
 import { createEdgeCounter } from './edge-detect';
 import { GATE_HI } from './gate-trigger';
@@ -301,7 +302,15 @@ export class AudioEngine implements DomainEngine {
     // untouched.
     const restParams = restedParams(def as MomentaryDefLike, node.params);
     const spawnNode = restParams === node.params ? node : { ...node, params: restParams };
-    const handle = await (def.factory as AudioModuleFactory)(this.ctx, spawnNode as ModuleNode);
+    // NOT `def.factory(...)` directly: DUAL-MONO. A module with exactly one
+    // audio input is classified in $lib/audio/dual-mono and may be built TWICE
+    // (one instance per channel, presented as one handle) so a stereo signal
+    // survives a module that is internally mono. Everything else is passed
+    // straight through to the factory. See dual-mono.ts for the ledger, the
+    // up-mix hazard, and what this seam is structurally unable to see.
+    const handle = await materializeAudioHandle(
+      this.ctx, def as AudioModuleDef, spawnNode as ModuleNode,
+    );
     // Re-check after the await: another reconcile may have raced and added it.
     if (this.nodes.has(node.id)) {
       handle.dispose();

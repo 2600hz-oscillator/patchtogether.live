@@ -198,6 +198,73 @@ incoherent.
 > change; **(iii)** per-module hand-treatment. Groups A–C can ship without
 > this answer.
 
+### ⚠ PR-3b AS BUILT — group A was 13 on paper and **7** in the DSP
+
+Measured 2026-08-07 while implementing (`packages/web/src/lib/audio/dual-mono.ts`).
+The spec above is right about the *shape* of the problem and wrong about group A's
+*membership*, because it classified on the DECLARED PORTS and never looked at what
+each module's audio path is actually made of. Two corrections and one omission:
+
+| spec said | as built | why |
+|---|---|---|
+| group A = **13** | **7** wrapped | 4 of the 13 are already channel-transparent |
+| 26 mono-in modules | **27** | `milkdrop` (domain=video) was filtered out |
+| `rasterize`, `warrensspectrum` ∈ A | **deferred** | neither is a mono→mono pipe |
+
+1. **4 of the 13 need NOTHING — they are already dual-mono, natively, at 1× cost.**
+   `delay` (Gain→Delay→feedback Gain), `scaler` (one GainNode), `moog907a` and
+   `moog914` (`buildFilterBank`: Gain → BiquadFilters → Gain). Native Web Audio
+   nodes keep independent state per channel, so 2 channels in gives 2 channels
+   out already. Wrapping them would have doubled the CPU of the most common
+   time-effect in the app for **zero** behavioural change. They are classed
+   `native-stereo` and the claim is a MEASUREMENT — all four are rendered with a
+   genuinely different L and R in `art/scenarios/stereo-dual-mono/` and must come
+   out still different, so the classification reddens if anyone drops a mono
+   worklet into one of those paths.
+2. **`warrensspectrum` is a group-E WIDENER, not a pipe.** Its worklet declares
+   `outputChannelCount: [2]`, reads only `inputs[0][0]`, and equal-power PANS each
+   band across L/R. It is resofilter's shape. Two instances would emit four
+   channels for one declared port.
+3. **`rasterize` is a HYBRID** — `in`(audio) → `thru`(audio) **and** `out`
+   (mono-video). Duplicating gives two `RasterPainter`s competing for one video
+   port; down-mixing collapses `thru`, which is a bare GainNode and therefore
+   already channel-transparent. Both treatments are regressions, so it joins the
+   D/E owner question.
+4. **The population is 27, not 26.** The correction table above filtered on
+   `domain=audio` and silently dropped `milkdrop`. It is classed `video-domain`
+   (the VIDEO engine materializes it; the audio wrapper never sees it) and the
+   gate asserts the population is NOT domain-filtered, because that filter is
+   exactly the "a filter applied before the check redefines the check's subject"
+   defect.
+
+So the wrapped set is **`destroy filter reverb moog904a moog904b moog904c
+moog905`** — the Faust mono worklets and the `outputChannelCount: [1]` ones.
+No group-A module turned out to be side-effecting (sharp edge 2): none of the
+seven writes `node.data`, claims hardware, or registers a singleton, and none
+declares `read`/`write`/`videoSources` — which is now **enforced**, not observed
+(the wrapper throws, and a source grep in the gate is the independent instrument).
+
+**Two mechanism notes for PR-3/PR-4:**
+
+- **An AudioParam CV input needs a fan, not a hand-off.** `destroy`
+  (decimate/bits/wet) and `moog904c` (cutoff_cv) resolve to real AudioParams, and
+  `addEdge` connects the CV source straight to `din.param`. Handing it instance
+  A's param would leave the RIGHT channel unmodulated. A `ConstantSourceNode`
+  with `offset = 0` re-emits whatever is connected to its offset as a signal,
+  which fans into both real params — and keeps the engine's CV scaling and param
+  tap on the normal path.
+- **⚠ THE OPEN SEAM.** PR-3 (#1407) writes stereo→mono as TWO separate cables
+  into the same mono port, and its header says "until PR-3b lands the engine's
+  dual-mono wrapper, two legs into one mono input still SUM". **PR-3b as built
+  does not close that.** Web Audio sums two connections to one input, and a
+  handle's `inputs` map has ONE entry per port id, so telling the legs apart is a
+  per-EDGE decision in `AudioEngine.addEdge` — not something a handle can express.
+  What PR-3b delivers is the other half: a mono module no longer collapses a
+  **2-channel stream on one cable**, which is what a dual-mono module emits and
+  therefore what CHAINS. Whoever lands #1407 must add leg-aware input placement
+  (source port's stereo side → merger input 0/1) or the two legs will sum at the
+  wrapper's up-mix. This is stated in `SCOPE.notHandled` and asserted in the gate.
+
 ### Follow-up: option C, deferred by owner decision
 
 Once B is shipped **and all UIs, VRTs and ARTs are updated**, revisit making
