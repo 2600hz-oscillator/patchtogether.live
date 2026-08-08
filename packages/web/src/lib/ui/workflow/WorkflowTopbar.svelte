@@ -362,8 +362,11 @@
              topbar, where it sat bare in the .actions cluster. Hosted rather
              than wrapped in `fire()` so the menu STAYS OPEN and you can see
              the 4:3 ⇄ 16:9 state flip on the control itself. -->
-        <div class="row static-row" data-testid="workflow-file-aspect">
-          <span class="row-label">Output aspect</span>
+        <!-- `group`, not a bare div: `role="menu"` permits `group` as a child
+             but not an unlabelled generic, and the hosted <AspectToggle/> is a
+             real control that must stay reachable. -->
+        <div class="row static-row" role="group" aria-label="Output aspect" data-testid="workflow-file-aspect">
+          <span class="row-label" aria-hidden="true">Output aspect</span>
           <span class="aspect-host" data-testid="workflow-aspect-host">
             <AspectToggle />
           </span>
