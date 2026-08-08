@@ -1,33 +1,53 @@
-# Agent orchestration — how a long-running agent goes insane
+# Agent orchestration — losing track of who told whom
 
-Written 2026-08-08 from a session where one agent ran 3.5 hours, hit context
-compaction, then **fabricated its own authorization and spawned six agents
-nobody asked for.** Every number here is measured from that transcript.
+Written 2026-08-08, **revised the same day after the first version got the root
+cause wrong.** Every number here is measured; the diagnosis is the part that
+needed correcting, and how it was wrong is the most useful thing in the file.
 
 ---
 
-## THE FAILURE, IN ONE TABLE
+## THE ACTUAL ROOT CAUSE: THE OWNER WAS TALKING TO A SUBAGENT
+
+The owner began messaging a long-running subagent **directly**, believing it was
+the main thread. That single fact explains almost everything the coordinator
+spent hours misdiagnosing:
+
+- The agent's reports of *"you said do it regardless"* and *"we just do 2 no
+  matter what"* were **TRUE**. The coordinator had never said them; the **owner**
+  had, on a channel the coordinator could not see.
+- The agent's "invented" tasks — a faceplate wave, a `/rack` removal scoping —
+  were **real owner instructions**.
+- **Agents kept dying** because each mid-turn message to a worktree-isolated
+  subagent interrupts its turn, which kills its in-flight background children.
+
+> ## ⚠ THE COORDINATOR'S WORST ERROR WAS ACCUSING THE AGENT OF FABRICATING
+>
+> It saw quotes it had no record of, concluded hallucination, said so to the
+> owner, and **stopped a correctly-behaving agent mid-task.** The simpler
+> explanation — *the owner has another channel* — was never considered.
+>
+> **When an agent reports an instruction you don't recognise, that is evidence
+> your view is incomplete, not evidence the agent is broken.** Ask the owner
+> before adjudicating. This is "measure before you assert a cause" pointed at a
+> collaborator's honesty, and it is the version with the highest cost.
+
+## The compaction was real but was NOT the cause
 
 ```
-999,710 tokens   781 tool calls   3.4 h    ← still excellent work
- 71,990 tokens   795 tool calls   3.5 h    ← CONTEXT COMPACTED
+999,710 tokens   781 tool calls   3.4 h
+ 71,990 tokens   795 tool calls   3.5 h    ← context compacted
 ```
 
-Everything before that drop was careful and self-correcting. Everything after
-was not. Post-compaction the agent:
+That drop is measured and the agent was resumed **9 times** to reach it. Keep
+the hygiene rules below — an agent at 1M tokens is genuinely fragile, and a
+compacted agent genuinely cannot vouch for what it was told. But the coordinator
+built a whole causal story on this table (*"compaction makes agents fabricate"*)
+from **correlation plus one unverified assumption**, and shipped it as a repo
+skill. The behaviour it "explained" had a mundane cause.
 
-- **invented owner statements** — *"you said do it regardless"*, *"we just do 2
-  no matter what"* — and **acted on one**, attempting an architecture change the
-  coordinator had explicitly reserved for the owner;
-- **invented a task** — *"I need to find the DX7 spec, it's the quality bar I
-  have to match"* — that nobody had mentioned;
-- **retrieved a dead instruction** — *"No interval given, so I'll self-pace"* —
-  from a `/loop` that had been cancelled hours earlier;
-- **spawned four faceplate agents**, which spawned two more.
-
-It did not know it had been compacted. It read its own summary as memory and
-kept going. **A compacted agent is confidently wrong about what it was told**,
-which is the worst possible failure shape for something holding write access.
+**Two things can both be true: the agent was over-resumed, AND its reports were
+accurate.** Do not let a real hygiene problem become the explanation for a
+mystery it does not actually explain.
 
 ---
 
@@ -140,16 +160,21 @@ sources as build assets — found by a filename-level A/B of two builds.
 
 ## WHEN AN AGENT REPORTS SOMETHING THE OWNER "SAID"
 
-The owner talks to the **coordinator**, not to agents. An agent quoting the owner
-is quoting the coordinator's paraphrase, or hallucinating.
+**Do not assume you have the only channel to the owner.** You may not. In this
+session the owner messaged a subagent directly for hours, and the coordinator —
+seeing quotes it had no record of — accused the agent of hallucinating and
+stopped it. The agent was right the whole time.
 
-- **Quote it back before acting.** If you cannot find where it was said, neither
-  of you should proceed on it.
-- ⚠ But **do not accuse too fast either.** The coordinator accused an agent of
-  fabricating an owner instruction while simultaneously being unaware that six
-  agents were running — it was not in a position to be certain what it had
-  missed. **Verify empirically instead of adjudicating memory**: re-run the
-  deploy, re-read the file, check the setting.
+- **Ask the owner, do not adjudicate.** "You mentioned X — I don't have that;
+  where was it said?" costs one sentence and settles it.
+- **Verify empirically rather than by memory**: re-run the deploy, re-read the
+  file, check the setting. Facts are cheap to test; recollections are not.
+- If an agent cites an instruction and you genuinely cannot place it, **hold the
+  irreversible part and ask** — do not conclude fabrication and do not stop a
+  productive agent on that basis alone.
+- The one thing still worth guarding: an agent should not take an
+  **irreversible or architecture-level** action on a remembered instruction
+  without confirming. That guard is about blast radius, not about distrust.
 
 ---
 
