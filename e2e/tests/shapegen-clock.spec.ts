@@ -264,45 +264,106 @@ test.describe('SHAPEGEN — CLOCK gate sample-and-hold', () => {
     // observed had actually fired hundreds of ms earlier, so the 80 ms
     // hold window started deep into the 500 ms period and straddled the
     // NEXT edge (the shard-reshuffle failure: a=4, b=5, 3/3 retries).
-    // Anchoring inside the page's own event loop is tick-accurate BY
-    // CONSTRUCTION: the regen counter advances via main-thread edge
-    // detection on this same loop, so if the page stalls the detector
-    // stalls with it and the anchor→hold relative phase is preserved.
-    // Anchor budget stays 10 s = 20× the 500 ms period (only a real
-    // "regen stopped" regression can exhaust it).
-    const hold = await page.evaluate(async (nodeId) => {
-      const w = globalThis as unknown as {
-        __engine?: () => {
-          getDomain?: (d: string) => { read?: (n: string, k: string) => unknown } | null;
-        } | null;
-      };
-      const read = (): number => {
-        const v = w.__engine?.()?.getDomain?.('video')?.read?.(nodeId, 'regenCount');
-        return typeof v === 'number' ? v : -1;
-      };
-      const t0 = performance.now();
-      const start = read();
-      let anchoredAt = -1;
-      let a = start;
-      while (performance.now() - t0 < 10_000) {
-        await new Promise((r) => setTimeout(r, 5));
-        const n = read();
-        if (n > start) { a = n; anchoredAt = performance.now(); break; }
-      }
-      if (anchoredAt < 0) return { ok: false as const, start, a, b: -1, holdMs: -1 };
-      // Hold 80 ms on THIS clock (16 % of the 500 ms period).
-      while (performance.now() - anchoredAt < 80) {
-        await new Promise((r) => setTimeout(r, 5));
-      }
-      return { ok: true as const, start, a, b: read(), holdMs: performance.now() - anchoredAt };
-    }, 'sg');
+    //
+    // ⚠ ANCHORING IN-PAGE IS NECESSARY BUT NOT SUFFICIENT, and the previous
+    // comment here claimed otherwise. It argued the anchor→hold phase is
+    // preserved "BY CONSTRUCTION" because a page stall stalls the edge
+    // detector with it. The detector, yes — but NOT the clock: that runs on
+    // the audio thread and keeps emitting edges through a main-thread stall.
+    // So a stall shifts the anchor's phase RELATIVE TO THE CLOCK, and the
+    // hold window can start deep into the period after all.
+    //
+    // Measured on main @ 6f83b138, e2e shard 9: a window billed as 80 ms
+    // actually ran `holdMs=258` — 3.2× — and caught the next edge (a=21,
+    // b=22). Same failure the in-page rewrite was meant to end, one level
+    // down.
+    //
+    // THE FIX: an over-run window is an INVALID SAMPLE, not a result. A
+    // `setTimeout(5)` that takes 200 ms means the environment never gave us
+    // the short window the assertion is about — so re-anchor and take
+    // another, rather than reporting a measurement whose premise did not
+    // hold. Three outcomes stay distinct, which is the whole point:
+    //   * held cleanly, no regen      → PASS
+    //   * held cleanly, regen         → FAIL (the real regression)
+    //   * never held cleanly          → FAIL, saying exactly that
+    // A genuine "hold is broken" regression still fails on the first clean
+    // window, so the retry buys tolerance to load without buying tolerance
+    // to the bug.
+    const HOLD_MS = 80; //  16 % of the 500 ms period
+    const MAX_HOLD_MS = 160; // 32 % — over this the sample is discarded
+    const hold = await page.evaluate(
+      async ({ nodeId, holdMs, maxHoldMs }) => {
+        const w = globalThis as unknown as {
+          __engine?: () => {
+            getDomain?: (d: string) => { read?: (n: string, k: string) => unknown } | null;
+          } | null;
+        };
+        const read = (): number => {
+          const v = w.__engine?.()?.getDomain?.('video')?.read?.(nodeId, 'regenCount');
+          return typeof v === 'number' ? v : -1;
+        };
+        const t0 = performance.now();
+        const start = read();
+        let attempts = 0;
+        let discarded = 0;
+        let worstHoldMs = 0;
+        // 20 s total = 40× the 500 ms period. Only a real "regen stopped"
+        // regression, or an environment that never yields a clean window,
+        // can exhaust it.
+        while (performance.now() - t0 < 20_000) {
+          // (1) anchor on a fresh edge
+          const before = read();
+          let anchoredAt = -1;
+          let a = before;
+          while (performance.now() - t0 < 20_000) {
+            await new Promise((r) => setTimeout(r, 5));
+            const n = read();
+            if (n > before) {
+              a = n;
+              anchoredAt = performance.now();
+              break;
+            }
+          }
+          if (anchoredAt < 0) break; // no edge at all — report below
+          // (2) hold
+          while (performance.now() - anchoredAt < holdMs) {
+            await new Promise((r) => setTimeout(r, 5));
+          }
+          const heldFor = performance.now() - anchoredAt;
+          const b = read();
+          attempts += 1;
+          worstHoldMs = Math.max(worstHoldMs, heldFor);
+          // (3) only a window that actually stayed short is a valid sample
+          if (heldFor <= maxHoldMs) {
+            return { ok: true as const, start, a, b, holdMs: heldFor, attempts, discarded };
+          }
+          discarded += 1;
+        }
+        return {
+          ok: false as const,
+          start,
+          a: -1,
+          b: -1,
+          holdMs: worstHoldMs,
+          attempts,
+          discarded,
+        };
+      },
+      { nodeId: 'sg', holdMs: HOLD_MS, maxHoldMs: MAX_HOLD_MS },
+    );
     expect(
       hold.ok,
-      `observed a fresh regen edge to anchor the hold window (start=${hold.start}, budget=10s, period=500ms)`,
+      `never got a CLEAN ${HOLD_MS} ms hold window inside the 500 ms period ` +
+        `(attempts=${hold.attempts}, discarded=${hold.discarded}, ` +
+        `worst holdMs=${Math.round(hold.holdMs)}, budget=20s). Either the clock ` +
+        `stopped emitting edges, or this machine never yielded a window under ` +
+        `${MAX_HOLD_MS} ms — both are reportable, neither is a silent pass.`,
     ).toBe(true);
     expect(
       hold.b,
-      `80 ms in-page anchored hold window has no regen (a=${hold.a}, b=${hold.b}, holdMs=${Math.round(hold.holdMs)}, period=500ms)`,
+      `${HOLD_MS} ms in-page anchored hold window has no regen (a=${hold.a}, b=${hold.b}, ` +
+        `holdMs=${Math.round(hold.holdMs)}, attempts=${hold.attempts}, ` +
+        `discarded=${hold.discarded}, period=500ms)`,
     ).toBe(hold.a);
 
     // ---- 3. STOP the sequencer → no more rising edges. After draining
