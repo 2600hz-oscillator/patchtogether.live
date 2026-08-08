@@ -69,9 +69,10 @@ const FULL_MATCH = [
   'landing.spec.ts',
 ];
 
-// `VRT_PROBE=1` swaps the whole suite for the two MEASUREMENT tools. Neither
-// asserts anything and neither is in FULL_MATCH, so no lane picks them up by
-// accident and they cost CI nothing.
+// `VRT_PROBE=1` swaps the whole suite for the MEASUREMENT tools below. None of
+// them asserts anything and none is in FULL_MATCH, so no lane picks them up by
+// accident and they cost CI nothing. (This said "the two" while listing five;
+// corrected in passing while adding the sixth.)
 //
 //   * vrt-frame-stability.spec.ts — does this card SETTLE? Prints the pixels
 //     that change between consecutive frames, and the bounding box of the
