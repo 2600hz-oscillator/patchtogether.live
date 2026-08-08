@@ -24,7 +24,15 @@ export const SAVED_GROUP_MAX_PER_USER = 100;
  *  Workers 100 MB request-body limit, while accommodating ~10 modules
  *  per group that carry large decoded buffers (SAMSLOOP samples,
  *  CLOUDSEED impulse responses). Bumped from 256 KB after users hit the
- *  cap with a single SAMSLOOP carrying a few seconds of audio. */
+ *  cap with a single SAMSLOOP carrying a few seconds of audio.
+ *
+ *  ⚠ SAMSLOOP moved again (2026-08-08): its RECORD budget went 250 kB → 3 MB
+ *  raw, i.e. up to ~4 MB of base64 in one node's `data.sample`. So this 8 MB
+ *  cap now fits TWO maxed-out recordings per group rather than twenty-four.
+ *  Left as-is deliberately — the cap fails loudly with a size error rather
+ *  than truncating, and a group holding two 31-second takes is not the case
+ *  this budget was sized for. Raise it here (not the record budget) if that
+ *  turns out to be wrong. */
 export const SAVED_GROUP_MAX_PAYLOAD_BYTES = 8 * 1024 * 1024;
 
 /**
