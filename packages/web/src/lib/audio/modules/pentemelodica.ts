@@ -257,9 +257,10 @@ export const pentemelodicaDef: AudioModuleDef = {
         id: 'filter',
         label: 'shared filter',
         hint:
-          'ONE filter on the summed five-voice mix. The MODE dial ends on x − bp, not on the ' +
-          'true notch lp + hp, so RESONANCE silently sets how deep that end goes: −8.5 dB at ' +
-          'the shipped 0.2, a true null at 0.5, and a 49× boost at 0.99.',
+          'ONE filter on the summed five-voice mix. The MODE dial ends on a true notch ' +
+          '(lp + hp = x − k·bp), so that end nulls at the cutoff at every RESONANCE. ' +
+          'Everywhere below it the level at cutoff is 1/k — from −6.0 dB at resonance 0 ' +
+          'to +34.0 dB at 0.99, which nothing on the MODE knob shows you.',
         controls: ['cutoff', 'resonance', 'mode', 'wetdry'],
       },
       {
@@ -366,9 +367,10 @@ export const pentemelodicaDef: AudioModuleDef = {
       // ⚠ ALL THREE READOUTS ARE DERIVED, and each is derived for the reason
       // the FaceReadout doc gives rather than as a habit:
       //   * `at cutoff` is a function of MODE **and** RESONANCE. A readout of
-      //     MODE alone is INVARIANT to resonance and would print "notch" at
-      //     res 0.99 while the filter is a 49× resonant boost on the master
-      //     bus. That is the blind-metric trap, on the control that hides it.
+      //     MODE alone is INVARIANT to resonance and would print "low-pass"
+      //     identically at −6.0 dB (res 0) and +34.0 dB (res 0.99) — a 50×
+      //     swing on the master bus. That is the blind-metric trap, on the
+      //     control that hides it.
       //   * `5-note peak` is a function of every LEVEL **and** every PAN. A
       //     level readback is invariant to pan; spreading the pans genuinely
       //     lowers the per-channel peak (1.697 → 1.534 at ±0.8).
@@ -584,7 +586,7 @@ export const pentemelodicaDef: AudioModuleDef = {
       // Embedded multimode filter (on the summed mix).
       cutoff: "Embedded filter cutoff frequency (20 Hz–20 kHz, log) applied to the summed five-voice mix.",
       resonance: "Embedded filter resonance (0–0.99): emphasis at the cutoff, up to near self-oscillation.",
-      mode: "Embedded filter MODE dial (0..1): continuously morphs the SVF response low-pass → band-pass → high-pass → notch.",
+      mode: "Embedded filter MODE dial (0..1): continuously morphs the SVF response low-pass → band-pass → high-pass → notch. The notch end is the true SVF identity (lp + hp = x − k·bp), so it nulls at the cutoff whatever the resonance; below it the level at cutoff rises with RESONANCE as 1/k.",
       wetdry: "Embedded filter wet/dry mix (0 = dry/bypassed … 1 = fully filtered).",
       "pentemelodica-voices-{n}":
         "The five-voice picture in the faceplate's hero slot: one lane per voice, each drawing a single cycle of that voice's own morphed waveform from the same band-limited oscillator the audio uses, with its coarse and fine offset, its mixer level and its pan position beside it. It is a picture of the PATCH, not a trace of the output \u2014 this module makes no sound until a poly source gates it, so a live scope would be a flat line most of the time you are looking at it. Click a lane to read that voice's exact resolved tuning underneath; the selection is yours alone (it is not saved with the rack and no collaborator sees it), and it changes no sound. It is the one place all five voices are visible at once, which matters because the eight-band faceplate shows only one voice strip at a time.",

@@ -119,15 +119,17 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
 
   // ── PENTEMELODICA ────────────────────────────────────────────────────────
   // `at cutoff` is a function of MODE **and** RESONANCE — a MODE readout would
-  // print "notch" at res 0.99 while the filter is a 49x resonant BOOST on the
-  // master bus. `5-note peak` is a function of every LEVEL **and** every PAN; a
-  // level readback is pan-invariant. `tail` is release x ln(sustain / 1e-5),
-  // and the RELEASE knob is SUSTAIN-invariant. `decay to S` reads 0 ms at the
-  // shipped SUSTAIN of 1, because the Decay branch exits on its FIRST tick.
+  // print "low-pass" identically at -6.0 dB (res 0) and +34.0 dB (res 0.99), a
+  // 50x swing on the master bus. `5-note peak` is a function of every LEVEL
+  // **and** every PAN; a level readback is pan-invariant. `tail` is release x
+  // ln(sustain / 1e-5), and the RELEASE knob is SUSTAIN-invariant. `decay to S`
+  // reads 0 ms at the shipped SUSTAIN of 1, because the Decay branch exits on
+  // its FIRST tick.
   'pentemelodica-mode-gain': (read) => {
     const p = pentemelodicaFaceParams(read);
-    // Floor: the fourth tap is a TRUE null at resonance 0.5 (k = 1), so the
-    // honest dB there is -inf and a bare log10 would print `-Infinity dB`.
+    // Floor: at MODE 1 the fourth tap is a TRUE null at EVERY resonance (it is
+    // the real SVF notch, x - k*bp), so the honest dB is -inf there and a bare
+    // log10 would print `-Infinity dB`.
     const g = Math.max(1e-6, penteModeGainAtCutoff(p.mode, p.resonance));
     return fmtDb(20 * Math.log10(g));
   },
