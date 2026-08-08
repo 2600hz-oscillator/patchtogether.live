@@ -1585,6 +1585,13 @@ describe('module-face lint — STRICT_FACES RATCHET (only grows)', () => {
     // final |STRICT_FACES|.
     // 18 (2026-08-02): ringback — the stereo crush, promoted from having no
     // face at all.
+    // ⚠ LEFT AT 18 THROUGH FACE BATCH 3 ON PURPOSE, by this file's own
+    // convention above: clap / drummergirl / pentemelodica landed together and
+    // meowbox / analogVco / bluebox / macrooscillator are four CONCURRENT
+    // branches, so each leaving the literal alone avoids a seven-way conflict on
+    // one number. |STRICT_FACES| is 22 with meowbox in. THE BATCH INTEGRATOR
+    // BUMPS THIS ONCE, to the true final size, when the wave lands — the slack
+    // is a known cost of the convention and is not a ratchet failure.
     expect(
       STRICT_FACES.size,
       'STRICT_FACES shrank below its frozen floor — see the RATCHET rule above',

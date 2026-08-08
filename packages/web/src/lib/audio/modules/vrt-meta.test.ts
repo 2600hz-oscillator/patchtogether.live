@@ -418,6 +418,15 @@ describe('vrt-meta — EXEMPT_FROM_VRT is DENY-BY-DEFAULT (frozen allowlist)', (
 // ARTIFACT-anchored and only falls when the PNGs actually land.
 // (sixstrum's face RE-DO needed no new pair: its two linux entries have been
 // listed since batch 2 and stay listed.)
+//
+// MEOWBOX (2026-08-08): UNCHANGED at 91, and that is the correct arithmetic
+// rather than an omission. This ceiling is LIST-anchored, and meowbox's two new
+// face scenes were never LISTED — they go straight to the drained state, because
+// listing a pair and then dispatching is a DEADLOCK (a listed pair is
+// `test.skip()`-ed unconditionally and `--update-snapshots` writes nothing for a
+// skipped test, so the capture the listing waits on can never run). The gap they
+// create is real and is counted by the ARTIFACT-anchored ceiling below, which is
+// where it belongs.
 const SHARED_LINUX_PAIR_CEILING = 91;
 
 describe('vrt-meta — EXEMPT_BASELINE_PAIRS size RATCHET (only shrinks)', () => {
@@ -660,6 +669,26 @@ describe('vrt-meta — EXEMPT_BASELINE_PAIRS size RATCHET (only shrinks)', () =>
 // red with 6 UNDECLARED gaps named clap/drummergirl/pentemelodica, the dispatch
 // has not landed yet — that is the expected reading, not a reason to raise the
 // number back.
+//
+// MEOWBOX (2026-08-08): UNCHANGED at 148, same shape as batch 3 above, and the
+// same known-red window. The face adds two darwin-first scenes
+// (`face-meowbox-compact` / `face-meowbox-dock`), so `report.total` reads 150
+// with 2 UNDECLARED until the `vrt-update.yml -f platform=linux` dispatch on
+// this branch commits their linux PNGs; then it falls back to exactly 148.
+//
+// ⚠ AND A THIRD PNG IS EXPECTED FROM THAT DISPATCH — `linux/meowbox.png`, the
+// legacy CARD, which was `git rm`-ed in the same commit. This is the
+// sub-tolerance case CLAUDE.md documents and it is worth the measurement:
+// adding the MEOW pad moved the card by 856 px out of a 2599 px budget
+// (720×361, maxDiffPixelRatio 0.01) and did NOT change its dimensions, because
+// the card had spare vertical room. So the scene PASSES with a stale baseline
+// and `--update-snapshots` rewrites NOTHING for it — Playwright only rewrites on
+// a FAILING comparison. Deleting it is the only way to get it re-captured, since
+// a MISSING snapshot is always written. (Measured the same way A2/#1213 was, and
+// it is nearly the same number: 865 px there, 856 px here.)
+//
+// COUNT WHAT THE BOT COMMITS: THREE linux PNGs, not two. A dispatch that comes
+// back green having committed fewer is the red flag, not "nothing to do".
 const LINUX_DEFICIT_CEILING = 148;
 
 describe('vrt-meta — LINUX-baseline DEFICIT RATCHET (all four mechanisms)', () => {

@@ -51,6 +51,20 @@
 // lane and had no strike key at all, so under `?shell=1` the dock offered
 // twenty controls over an instrument that could not be sounded.
 //
+// meowbox (2026-08-08) joins that batch as a second promotion-from-nothing, and
+// it is the entry that answers a wall drummergirl hit and worked around by
+// DEFERRING: `module-face-lint` refuses a PANEL cell SELECTED at a lane tier and
+// the 'full' lane cap is SIX, so a hero picture's first legal rank is 7 — which a
+// module with four params and one audition can never reach. drummergirl dropped
+// its picture and its audition together over this. meowbox ships both, because a
+// `sidebar` `custom` block carries no `face.order` key and therefore no rank at
+// all: the picture is `formant-bank` in the sidebar and the audition is a
+// `mode:'gate'` action at rank 5. Its `gate` port is additionally the first on
+// this module to DECLARE `edge` — the def's prose called it a trigger while the
+// DSP's `en.adsr` sustains at 0.4, and module-docs-lint's vocabulary check does
+// `if (!p.edge) continue`, so the one gate that owns that vocabulary was
+// structurally unable to see it.
+//
 // ⚠ analogVco was authored, verified and then DROPPED from this batch. Its
 // `face-analogVco-compact` VRT scene is NOT pixel-deterministic: unlike every
 // other faced module, analogVco is a FREE-RUNNING oscillator, so its live
@@ -88,6 +102,8 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   'clap',
   'drummergirl',
   'pentemelodica',
+  // FACE BATCH 3, cont. (2026-08-08) — see the header note above.
+  'meowbox',
 ]);
 
 /**
