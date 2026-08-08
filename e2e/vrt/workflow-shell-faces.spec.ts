@@ -304,6 +304,12 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
   test('face audio freeze negative control: a sounding face is unstable RUNNING, identical FROZEN', async ({
     page,
   }) => {
+    // THREE boots (running, then two independent frozen ones) against a config
+    // default of 30 s. 6.7 s locally, but the boots are renderer-paced and CI
+    // renders on SwiftShader — a budget that fits locally with 4× headroom is
+    // the classic way to buy a CI-only timeout. This bounds the failure; it is
+    // not a gate on anything.
+    test.setTimeout(120_000);
     // A faced PROCESSOR (live-audio glyph on its own output) fed by a
     // free-running VOICE. macrooscillator is one of the two faces this defect
     // blocks; using it as the SOURCE keeps the control honest without giving it
