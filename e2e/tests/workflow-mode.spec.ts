@@ -391,6 +391,80 @@ test.describe('workflow shell', () => {
         { timeout: 15_000 },
       )
       .toBeGreaterThan(0.01);
+
+    // ---- the PER-CHANNEL taps are live IN CHROME, on this same real chain ----
+    //
+    // `outputSnapshotL`/`outputSnapshotR` (audio-out.ts) hang two AnalyserNodes
+    // off a ChannelSplitter(2) at the same post-limiter node as the mono tap.
+    // Their per-channel BEHAVIOUR is negative-controlled in both directions in
+    // the ART lane (art/scenarios/audio-out/per-channel-taps.test.ts, which runs
+    // under node-web-audio-api). What ART structurally CANNOT see is Chrome:
+    // an analyser one hop further from the graph than `outTap` could fail to be
+    // pulled and quietly return all-zeros, and every only-L/R e2e built on it
+    // would then be vacuous rather than red.
+    //
+    // So the assertions here are deliberately PATCH-AGNOSTIC — they hold for
+    // any signal, so this stays a liveness probe and not a second copy of the
+    // ART matrix (which is where "which side is loud" belongs).
+    //
+    // Measured in Chrome on this exact chain: mono 0.15507, L 0.31015, R 0
+    // (linear RMS). Two things worth knowing. (1) mono is EXACTLY L/2 — the
+    // downmix blindness, in a real browser, on a real patch. (2) this default
+    // chain is LEFT-ONLY: a mono VCO into mixmstrs ch1L reaches AUDIO OUT's L
+    // and nothing else, and the mono tap has never been able to say so.
+    const taps = await page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __engine?: () => {
+          read: (n: { id: string; type: string; domain: string }, k: string) => unknown;
+        } | null;
+        __patch: { nodes: Record<string, { id: string; type: string; domain: string } | undefined> };
+      };
+      const eng = w.__engine?.();
+      const node = w.__patch.nodes['pinned-audioOut'];
+      if (!eng || !node) return null;
+      const read = (k: string) =>
+        eng.read(node, k) as { samples: Float32Array; sampleRate: number } | undefined;
+      const rms = (s?: Float32Array) => {
+        if (!s?.length) return -1;
+        let q = 0;
+        for (let i = 0; i < s.length; i++) q += s[i]! * s[i]!;
+        return Math.sqrt(q / s.length);
+      };
+      const mono = read('outputSnapshot');
+      const l = read('outputSnapshotL');
+      const r = read('outputSnapshotR');
+      return {
+        defined: { mono: !!mono, l: !!l, r: !!r },
+        len: { mono: mono?.samples.length ?? -1, l: l?.samples.length ?? -1, r: r?.samples.length ?? -1 },
+        sr: { mono: mono?.sampleRate ?? -1, l: l?.sampleRate ?? -1, r: r?.sampleRate ?? -1 },
+        rms: { mono: rms(mono?.samples), l: rms(l?.samples), r: rms(r?.samples) },
+      };
+    });
+    expect(taps, 'engine/pinned-audioOut unavailable for the per-channel tap read').not.toBeNull();
+    const t = taps!;
+    // Same shape as the mono key, so every existing helper works unchanged.
+    expect(t.defined, `per-channel read keys resolved: ${JSON.stringify(t.defined)}`)
+      .toEqual({ mono: true, l: true, r: true });
+    expect(t.len.l, `outputSnapshotL length ${t.len.l} vs mono ${t.len.mono}`).toBe(t.len.mono);
+    expect(t.len.r, `outputSnapshotR length ${t.len.r} vs mono ${t.len.mono}`).toBe(t.len.mono);
+    expect(t.sr.l, `outputSnapshotL sampleRate ${t.sr.l} vs mono ${t.sr.mono}`).toBe(t.sr.mono);
+    expect(t.sr.r, `outputSnapshotR sampleRate ${t.sr.r} vs mono ${t.sr.mono}`).toBe(t.sr.mono);
+    // THE liveness assertion: the mono tap is audible (the poll above just
+    // proved it), so at least one channel tap must be too. All-zeros here is
+    // exactly the Chrome-only failure ART cannot report.
+    const loudest = Math.max(t.rms.l, t.rms.r);
+    expect(
+      loudest,
+      `channel taps read all-zero while the mono tap is audible — ` +
+        `RMS (linear) mono=${t.rms.mono} L=${t.rms.l} R=${t.rms.r}`,
+    ).toBeGreaterThan(0.01);
+    // …and the mono key really is the DOWNMIX of these two: rms((L+R)/2) can
+    // never exceed max(rms L, rms R). A tap reading some unrelated, hotter node
+    // would break this even though it is not all-zero.
+    expect(
+      t.rms.mono,
+      `mono tap ${t.rms.mono} exceeds max(L=${t.rms.l}, R=${t.rms.r}) — not a downmix of these taps`,
+    ).toBeLessThanOrEqual(loudest * 1.02);
   });
 
   test('File.. menu: quicksave slot 1 round-trips through quickload', async ({ page }) => {

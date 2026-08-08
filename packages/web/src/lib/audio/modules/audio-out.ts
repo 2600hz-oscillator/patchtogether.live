@@ -52,6 +52,15 @@
 //
 // Params:
 //   master (linear 0..1, default 0.7): master output gain pre-limiter.
+//
+// Read keys (not ports — no contract surface):
+//   outputSnapshot            terminal samples, MONO DOWNMIX. Cannot tell
+//                             only-L from only-R (both read half level), and
+//                             reads ~0 for an anti-phase pair.
+//   outputSnapshotL / …R      the same terminal point, PER CHANNEL. Use these
+//                             for any assertion about WHICH side is audible.
+//                             Negative-controlled both directions on every run
+//                             by art/scenarios/audio-out/per-channel-taps.test.ts.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
@@ -202,6 +211,41 @@ export const audioOutDef: AudioModuleDef = {
     tail.connect(outTap);
     const outBuf = new Float32Array(outTap.fftSize);
 
+    // ---------------- Per-channel terminal taps (L / R) ----------------
+    //
+    // `outTap` above is STRUCTURALLY BLIND TO STEREO. An AnalyserNode
+    // analyses a MONO DOWNMIX per spec (Web Audio §AnalyserNode: the input is
+    // down-mixed to mono using its channelCount/channelInterpretation, which
+    // default to max/speakers), so on the stereo terminal bus:
+    //
+    //   - only-L and only-R are INDISTINGUISHABLE — both read exactly half
+    //     level. Measured under node-web-audio-api with a 0.5-amplitude sine
+    //     into L only: mono tap RMS 0.1745, left tap RMS 0.3491, right 0.
+    //   - an ANTI-PHASE stereo pair reads ~0 — "perfectly silent" and
+    //     "perfectly cancelling" are the same number.
+    //
+    // So a `read('outputSnapshot')` assertion can never say WHICH side is
+    // audible. These two taps can. A ChannelSplitter(2) hung off the SAME
+    // `tail` node that feeds ctx.destination gives one mono stream per
+    // channel — same terminal point as `outTap`, so both see limiter action
+    // and the master gain, i.e. exactly what the speakers get.
+    //
+    // Purely additive: `outputSnapshot` above is untouched, and these are
+    // passive sinks (never connected onward) so the audible signal path is
+    // byte-identical.
+    const chanSplit = ctx.createChannelSplitter(2);
+    tail.connect(chanSplit);
+    const outTapL = ctx.createAnalyser();
+    outTapL.fftSize = 2048;
+    outTapL.smoothingTimeConstant = 0;
+    const outTapR = ctx.createAnalyser();
+    outTapR.fftSize = 2048;
+    outTapR.smoothingTimeConstant = 0;
+    chanSplit.connect(outTapL, 0);
+    chanSplit.connect(outTapR, 1);
+    const outBufL = new Float32Array(outTapL.fftSize);
+    const outBufR = new Float32Array(outTapR.fftSize);
+
     // Keep both gain nodes in the active graph even if nothing is patched
     // to either input. (Same trick as the Faust modules' channel mergers —
     // a silent ConstantSource per side ensures the node processes.)
@@ -239,6 +283,18 @@ export const audioOutDef: AudioModuleDef = {
           outTap.getFloatTimeDomainData(outBuf);
           return { samples: outBuf, sampleRate: ctx.sampleRate };
         }
+        // Per-CHANNEL terminal samples, same shape as `outputSnapshot`, so
+        // every existing helper works on them unchanged. Use these — never
+        // the mono key — whenever an assertion is about WHICH side is
+        // audible; the mono key cannot tell only-L from only-R.
+        if (key === 'outputSnapshotL') {
+          outTapL.getFloatTimeDomainData(outBufL);
+          return { samples: outBufL, sampleRate: ctx.sampleRate };
+        }
+        if (key === 'outputSnapshotR') {
+          outTapR.getFloatTimeDomainData(outBufR);
+          return { samples: outBufR, sampleRate: ctx.sampleRate };
+        }
         return undefined;
       },
       dispose() {
@@ -253,6 +309,9 @@ export const audioOutDef: AudioModuleDef = {
         merger.disconnect();
         try { tail.disconnect(); } catch { /* */ }
         try { outTap.disconnect(); } catch { /* */ }
+        try { chanSplit.disconnect(); } catch { /* */ }
+        try { outTapL.disconnect(); } catch { /* */ }
+        try { outTapR.disconnect(); } catch { /* */ }
       },
     };
   },
