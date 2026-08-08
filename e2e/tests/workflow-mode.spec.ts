@@ -237,8 +237,9 @@ test.describe('workflow shell', () => {
     expect(survived).toBe(7);
 
     // Spawn a normal node, then Clear via the graph-level sweep the Clear
-    // button runs (workflow topbar has no Clear button in P1; the pinned
-    // survival contract is on the clearPatch path used by quickload too).
+    // button runs. (The workflow topbar's own File.. → Clear rack row is
+    // covered separately below; the pinned survival contract is on the
+    // clearPatch path used by quickload too.)
     await page.evaluate(() => {
       const w = globalThis as unknown as {
         __patch: { nodes: Record<string, Record<string, unknown>> };
@@ -526,5 +527,94 @@ test.describe('workflow shell', () => {
       timeout: 15_000,
     });
     await waitForPinnedTrio(page);
+  });
+
+  // ── TOPBAR PARITY: the two controls ported from the dawless topbar. ───────
+  // The dawless topbar is scheduled for deletion; these prove the workflow
+  // topbar carries its `Clear` and `AspectToggle` first, so that deletion is
+  // not a feature regression.
+
+  test('File.. menu: Clear rack deletes canvas modules + cables and KEEPS the pinned trio', async ({ page }) => {
+    await page.goto('/rack?mode=workflow');
+    await waitForPinnedTrio(page);
+
+    // Two wired canvas modules to clear.
+    await page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, Record<string, unknown>>; edges: Record<string, unknown> };
+        __ydoc: { transact: (fn: () => void) => void };
+      };
+      w.__ydoc.transact(() => {
+        for (const [id, type] of [['wf-clear-vco', 'analogVco'], ['wf-clear-vca', 'vca']]) {
+          w.__patch.nodes[id!] = {
+            id, type, domain: 'audio', position: { x: 240, y: 240 }, params: {}, data: {},
+          };
+        }
+        w.__patch.edges['wf-clear-edge'] = {
+          id: 'wf-clear-edge',
+          source: { nodeId: 'wf-clear-vco', portId: 'sine' },
+          target: { nodeId: 'wf-clear-vca', portId: 'audio' },
+          sourceType: 'audio',
+          targetType: 'audio',
+        };
+      });
+    });
+    await expect(page.locator('.svelte-flow__node[data-id="wf-clear-vco"]')).toBeVisible();
+
+    // File.. → Clear rack. It is the LAST row, below the danger divider.
+    await page.getByTestId('workflow-file-trigger').click();
+    await expect(page.getByTestId('workflow-file-menu')).toBeVisible();
+    const clearRow = page.getByTestId('workflow-file-clear');
+    await expect(clearRow).toBeEnabled();
+    await clearRow.click();
+    // Action rows close the menu (the `fire()` contract).
+    await expect(page.getByTestId('workflow-file-menu')).toHaveCount(0);
+
+    // Canvas modules + their cable are gone…
+    await expect(page.locator('.svelte-flow__node[data-id="wf-clear-vco"]')).toHaveCount(0, {
+      timeout: 10_000,
+    });
+    await expect(page.locator('.svelte-flow__node[data-id="wf-clear-vca"]')).toHaveCount(0);
+    await expect
+      .poll(async () =>
+        page.evaluate(() => {
+          const w = globalThis as unknown as { __patch: { edges: Record<string, unknown> } };
+          return Object.keys(w.__patch.edges).length;
+        }),
+      )
+      .toBe(0);
+    // …and the pinned trio survived, which is the whole reason Clear is a
+    // clearPatch call and not a wholesale wipe.
+    await waitForPinnedTrio(page);
+  });
+
+  test('File.. menu: the output-aspect toggle flips 4:3 ⇄ 16:9 and leaves the menu open', async ({ page }) => {
+    await page.goto('/rack?mode=workflow');
+    await waitForPinnedTrio(page);
+
+    await page.getByTestId('workflow-file-trigger').click();
+    await expect(page.getByTestId('workflow-file-menu')).toBeVisible();
+
+    const toggle = page.getByTestId('workflow-aspect-host').getByTestId('aspect-toggle');
+    await expect(toggle).toBeVisible();
+    const before = await toggle.getAttribute('data-video-aspect');
+    expect(before, 'aspect pill must report its current aspect').toMatch(/^(4:3|16:9)$/);
+
+    await toggle.click();
+
+    // The aspect actually changed…
+    await expect
+      .poll(async () => toggle.getAttribute('data-video-aspect'), { timeout: 5_000 })
+      .not.toBe(before);
+    // …and the menu is STILL OPEN, so the state flip is visible on the pill
+    // (this row is deliberately NOT wrapped in the menu-closing `fire()`).
+    await expect(page.getByTestId('workflow-file-menu')).toBeVisible();
+
+    // Flipping back restores the original aspect — proves the control is a
+    // real toggle, not a one-way write.
+    await toggle.click();
+    await expect
+      .poll(async () => toggle.getAttribute('data-video-aspect'), { timeout: 5_000 })
+      .toBe(before);
   });
 });
