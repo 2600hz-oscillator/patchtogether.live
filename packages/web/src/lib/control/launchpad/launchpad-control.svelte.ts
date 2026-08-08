@@ -416,8 +416,34 @@ let lengthReturnView: SingleView = 'grid';
 let keysClipIndex = 0; // the clip being played/recorded in KEYS
 let keysRecHeld = false; // SESSION deck note-REC hold (overdub-OFF entry)
 let keysOverdubHeld = false; // SESSION deck note-OVERDUB hold (overdub-ON entry)
-const keysPressed = new Set<number>(); // MIDI notes currently sounding (for LED)
+// PHYSICALLY-HELD KEYS PADS → exactly what each pad's PRESS emitted.
+//
+// ⚠ Keyed by the PAD, never by pitch, and the release REPLAYS this record rather
+// than recomputing note identity from live state. That recompute was the
+// stuck-gate bug (#keys-stuck-gate): `keyboardCellToMidi(col, row, clip.root +
+// keysOctaveShift)` on the RELEASE path reads state that can change while the
+// pad is down (an octave shift, a KEYS retarget onto another lane, a clip that
+// momentarily isn't there), so the note-off named a note the allocator never
+// had — a NO-OP — and the pressed note was held forever, pinning the lane gate
+// HIGH with no further write to ever lower it.
+interface HeldKeyPad {
+  /** The clipplayer LANE the press auditioned on (never re-derived at release). */
+  lane: number;
+  /** The MIDI note the press auditioned (never re-derived at release). */
+  midi: number;
+}
+const keysHeld = new Map<number, HeldKeyPad>(); // keysPadId(col,row) → what its press emitted
 const keysOnsets = new Map<number, number>(); // midi → the step its onset recorded on
+// THE FAILSAFE LEDGER — every audition note-on this binding has emitted and not
+// yet matched with an off, keyed `${lane}:${midi}`. Every audition write goes
+// through auditionOn/auditionOff so it cannot drift; keysReconcileSounding()
+// releases anything nothing explains. See keysOrphanFlushes.
+const keysSounding = new Map<string, HeldKeyPad>();
+/** How many voices the failsafe had to release because NOTHING explained them.
+ *  Non-zero is always a bug — it is surfaced through `__test_mode()` and gated
+ *  at 0 by keys-stuck-gate.test.ts, so the failsafe repairs the audio WITHOUT
+ *  being able to hide the next strand behind a green run. */
+let keysOrphanFlushes = 0;
 let keysPrevStep = -1; // last serviced playhead step (edge-detect wrap/crossing)
 let keysStopAtWrap = false; // overdub toggled OFF mid-record → finish this loop, then stop
 let keysOctaveShift = 0; // KEYS octave ± (semitones, multiples of 12) added to the keyboard root
@@ -449,7 +475,7 @@ const SWING_STEP = 0.02; // Grid-shift Swing± nudge (coarser than 1% → one-ha
 let swingMeterActive = false;
 let swingMeterDir: 'up' | 'down' | 'center' = 'center';
 
-// ── SINGLE-mode ARP (KEYS view). The physically-held keys (keysPressed) feed the
+// ── SINGLE-mode ARP (KEYS view). The physically-held keys (keysHeld) feed the
 // arp generator; the arp SOUNDS its sequence through the SAME pushAudition seam as
 // KEYS. Advanced tick-granularly from the render loop, clocked by TIMELORDE bpm
 // (independent of transport running), while KEYS is open OR the arp is latched.
@@ -738,7 +764,11 @@ function resetKeysState(): void {
   keysClipIndex = 0;
   keysRecHeld = false;
   keysOverdubHeld = false;
-  keysPressed.clear();
+  // NOTE: a bare clear, NOT a flush — every caller (keysExit / forceExitKeys /
+  // the test reset) has already run flushHeldKeys, and clearing without a flush
+  // is exactly the strand this module now guards against. If you add a caller,
+  // flush first; the render-loop failsafe will otherwise catch you (loudly).
+  keysHeld.clear();
   keysOnsets.clear();
   keysPrevStep = -1;
   keysStopAtWrap = false;
@@ -1349,6 +1379,92 @@ function nudgeTempo(delta: number): void {
 function keysKeyboardRoot(clip: NoteClipRecord): number {
   return clip.root + keysOctaveShift;
 }
+
+// ── HELD-PAD BOOKKEEPING + the audition ledger (the stuck-gate seam) ─────────
+
+/** A stable id for a KEYS keyboard cell. `col` is 0..15 (continuous across the
+ *  L|R seam), `row` is 0..5 — so this is the PHYSICAL pad, invariant to every
+ *  piece of state the pitch is derived from. */
+function keysPadId(col: number, row: number): number {
+  return row * 16 + col;
+}
+/** The distinct MIDI notes currently held (LED paint + the arp pool). */
+function heldMidis(): number[] {
+  const seen = new Set<number>();
+  for (const h of keysHeld.values()) seen.add(h.midi);
+  return [...seen];
+}
+/** Is (lane, midi) still held by some pad OTHER than `exceptPadId`? The voice
+ *  allocator keys by PITCH, so two pads sounding the same pitch (trivial in the
+ *  fourths layout: col+5 row+0 == col+0 row+1) collapse onto ONE voice — the
+ *  note-off must wait for the LAST pad holding it, or releasing either one cuts
+ *  a note the player is still pressing. */
+function otherPadHolds(exceptPadId: number, lane: number, midi: number): boolean {
+  for (const [id, h] of keysHeld) {
+    if (id !== exceptPadId && h.lane === lane && h.midi === midi) return true;
+  }
+  return false;
+}
+/** Audition note-ON + ledger. EVERY audition write in this module goes through
+ *  here or auditionOff — a direct pushAudition would silently desync the
+ *  failsafe's ledger and turn it into exactly the blind gate it exists to be
+ *  the opposite of. */
+function auditionOn(nodeId: string, lane: number, midi: number, velocity: number): void {
+  keysSounding.set(`${lane}:${midi}`, { lane, midi });
+  pushAudition(nodeId, { lane, midi, velocity, on: true });
+}
+/** Audition note-OFF + ledger (see auditionOn). */
+function auditionOff(nodeId: string, lane: number, midi: number): void {
+  keysSounding.delete(`${lane}:${midi}`);
+  pushAudition(nodeId, { lane, midi, velocity: 0, on: false });
+}
+/** Release every held pad's note — on the LANE and at the PITCH that pad's press
+ *  actually emitted — and drop the held-pad records.
+ *
+ *  THE ONE SEAM every KEYS teardown / retarget path calls. Before this existed,
+ *  three paths flushed by hand and `enterKeys` cleared the held set with NO
+ *  flush at all, so re-opening KEYS while a pad was down stranded its voice on
+ *  the previous lane. Returns how many pads were flushed. */
+function flushHeldKeys(nodeId: string): number {
+  const n = keysHeld.size;
+  for (const h of keysHeld.values()) auditionOff(nodeId, h.lane, h.midi);
+  keysHeld.clear();
+  return n;
+}
+/**
+ * THE FAILSAFE. Release any note we are still sounding that NOTHING explains —
+ * no physically-held pad, not the arp's current note. Run from the render loop,
+ * so a stranded voice is silenced within one scheduler tick instead of hanging
+ * until a page reload (the owner's only workaround).
+ *
+ * ⚠ IT MUST NOT BE ABLE TO MASK THE NEXT LEAK. A failsafe that quietly repairs
+ * the symptom removes the only signal that anything is wrong, and the bug lives
+ * on forever behind a green suite. So every orphan is COUNTED into
+ * `keysOrphanFlushes` (exported via `__test_mode()`) and warned once per event;
+ * keys-stuck-gate.test.ts asserts that counter is **0** across every gesture it
+ * drives. A future regression therefore stays inaudible for the user AND turns
+ * the unit lane red — the failsafe fixes the audio and reports the bug, rather
+ * than choosing between the two.
+ */
+function keysReconcileSounding(nodeId: string): void {
+  if (keysSounding.size === 0) return;
+  const explained = new Set<string>();
+  for (const h of keysHeld.values()) explained.add(`${h.lane}:${h.midi}`);
+  // The arp sounds its own sequence through the same seam; its current note is
+  // legitimate exactly while the arp is running (incl. LATCHED outside KEYS).
+  if (deployment === 'single' && arpOn && arp.playing !== null) {
+    explained.add(`${laneOf(keysClipIndex)}:${arp.playing}`);
+  }
+  for (const [key, v] of [...keysSounding]) {
+    if (explained.has(key)) continue;
+    keysOrphanFlushes++;
+    console.warn(
+      `[launchpad KEYS] failsafe released an UNEXPLAINED sounding note (lane ${v.lane}, midi ${v.midi}) — ` +
+        `a note-off was lost upstream. This is a bug: keysOrphanFlushes=${keysOrphanFlushes}.`,
+    );
+    auditionOff(nodeId, v.lane, v.midi);
+  }
+}
 /** KEYS octave ± (P7): shift the keyboard up/down by `delta` semitones (±12),
  *  clamped so the shifted root stays in a sane band. Repaints immediately. */
 function keysShiftOctave(delta: number): void {
@@ -1360,25 +1476,28 @@ function keysShiftOctave(delta: number): void {
  *  has no arp). */
 function silenceArp(nodeId: string, lane: number): void {
   if (deployment === 'single' && arp.playing !== null) {
-    pushAudition(nodeId, { lane, midi: arp.playing, velocity: 0, on: false });
+    auditionOff(nodeId, lane, arp.playing);
   }
 }
 /** KEYS PANIC (P7): kill every sounding auditioned note (release-all) without
  *  leaving KEYS or touching the recorded clip — an emergency "all notes off". */
 function keysPanic(nodeId: string): void {
   const lane = laneOf(keysClipIndex);
-  for (const midi of keysPressed) pushAudition(nodeId, { lane, midi, velocity: 0, on: false });
-  keysPressed.clear();
+  flushHeldKeys(nodeId);
   keysOnsets.clear();
   // The emergency all-notes-off must also kill the ARP: off its sounding note
   // and drop its (possibly latched) held-note pool so it stops generating —
-  // else it keeps cycling octave-expanded pitches that aren't in keysPressed.
+  // else it keeps cycling octave-expanded pitches nothing is holding.
   // arpOn is left as-is, so re-pressing a key resumes arping.
   if (deployment === 'single') {
     silenceArp(nodeId, lane);
     arp = createArpState(arp.params);
     arpNextTime = 0;
   }
+  // PANIC means ALL notes off, so sweep the ledger too — through the COUNTED
+  // reconcile, never a quiet drain: if PANIC is releasing something no pad and
+  // no arp explains, that is a leak and it must still show up in the counter.
+  keysReconcileSounding(nodeId);
   renderLeds();
 }
 /** Capture a KEYS note-on velocity. On a VELOCITY-SENSITIVE surface (Push 2) the
@@ -1459,6 +1578,12 @@ function enterKeys(
   // preserves it) — off its sounding note before we retarget + reset the arp
   // state below, else it strands a voice on the old lane.
   silenceArp(nodeId, laneOf(keysClipIndex));
+  // …and the SAME argument for the live keyboard, which this path used to miss
+  // entirely: it cleared the held set below with NO note-off, so a pad still
+  // down when KEYS re-opened kept its voice on the OLD lane forever. Flush
+  // BEFORE keysClipIndex is retargeted so each note-off lands where its
+  // note-on did.
+  flushHeldKeys(nodeId);
   if (!data?.clips?.[String(clipIdx)]) {
     editData(
       nodeId,
@@ -1473,7 +1598,7 @@ function enterKeys(
   mode = 'keys';
   keysRecHeld = false;
   keysOverdubHeld = false;
-  keysPressed.clear();
+  keysHeld.clear();
   keysOnsets.clear();
   keysPrevStep = -1;
   keysStopAtWrap = false;
@@ -1507,12 +1632,12 @@ function keysExit(nodeId: string, data: ClipPlayerData | undefined): void {
     return;
   }
   // Idle → session. Silence EVERYTHING KEYS is sounding before we blank state,
-  // else clearing keysPressed / the arp below strands open voices (this must
+  // else clearing the held pads / the arp below strands open voices (this must
   // mirror forceExitKeys, which flushes both). The live held keyboard notes are
   // only actually sounding when the arp is OFF (arp-on suppresses direct
   // auditions), but a note-off for a silent note is a harmless no-op.
   const lane = laneOf(keysClipIndex);
-  for (const midi of keysPressed) pushAudition(nodeId, { lane, midi, velocity: 0, on: false });
+  flushHeldKeys(nodeId);
   // SINGLE: silence + reset the arp (its sequence should not outlive an explicit
   // KEYS EXIT). Pair never runs the arp, so this is single-guarded.
   if (deployment === 'single' && arpOn) {
@@ -1631,66 +1756,101 @@ function handleKeysUnit(nodeId: string, unit: LaunchpadUnit, e: LaunchpadKeyEven
   // p.kind === 'playhead' → display only, no-op.
 }
 
-/** A keyboard note press/release in KEYS: audition live (always) + capture into
- *  the clip while recording. */
+/**
+ * A keyboard note press/release in KEYS: audition live (always) + capture into
+ * the clip while recording.
+ *
+ * ⚠ THE LOAD-BEARING ASYMMETRY between the two halves. The PRESS derives the
+ * note identity `(lane, midi)` from live state and RECORDS it against the
+ * physical pad. The RELEASE derives NOTHING — it looks the record up and
+ * replays it verbatim. That is the whole fix for the stuck-gate class: an
+ * octave shift, a KEYS retarget onto another lane, or a clip that is
+ * momentarily absent can all change what the press-time computation would
+ * return, and a note-off naming a note the allocator never had is a silent
+ * no-op that pins the lane gate HIGH until the page is reloaded.
+ */
 function handleKeysNote(nodeId: string, col: number, row: number, s: 0 | 1, velocity: number): void {
+  const padId = keysPadId(col, row);
+
+  // ── RELEASE ── replay exactly what this pad's press emitted.
+  if (s !== 1) {
+    const held = keysHeld.get(padId);
+    if (!held) return; // never pressed here, or already flushed by a teardown
+    keysHeld.delete(padId);
+    // SINGLE + arp ON: the pad only ever fed the arp's held-set, so the release
+    // just re-seeds the pool (the arp owns its own note-offs).
+    if (deployment === 'single' && arpOn) {
+      arp = arpSetHeld(arp, heldMidis());
+      return;
+    }
+    // Another pad is still holding this exact pitch on this lane → the voice is
+    // still wanted (the allocator keys by pitch, so offing it now would cut a
+    // note the player is physically still pressing).
+    if (otherPadHolds(padId, held.lane, held.midi)) return;
+    auditionOff(nodeId, held.lane, held.midi);
+    // Close the recorded span. Reading the clip here is best-effort: if it has
+    // gone, the NOTE-OFF above has already happened — the audible release must
+    // never be hostage to the clip still existing.
+    const data = liveData(nodeId);
+    const rec = readNoteRec(data);
+    if (rec?.recording && keysOnsets.has(held.midi)) {
+      const clip = clipAtIndex(data, keysClipIndex);
+      const onStep = keysOnsets.get(held.midi)!;
+      const offStep = keysCaptureStep(nodeId, held.lane);
+      if (clip && offStep >= 0) {
+        const next = extendRecordedNote(clip, onStep, held.midi, offStep);
+        if (next !== clip) writeClip(nodeId, next, keysClipIndex);
+      }
+      keysOnsets.delete(held.midi);
+    }
+    return;
+  }
+
+  // ── PRESS ── the ONLY place note identity is computed.
+  if (keysHeld.has(padId)) return; // this pad is already down (dedupe by PAD)
   const data = liveData(nodeId);
   const clip = clipAtIndex(data, keysClipIndex);
-  if (!clip) return;
+  if (!clip) return; // no clip → no keyboard root → nothing to sound
   const lane = laneOf(keysClipIndex);
   const midi = keyboardCellToMidi(col, row, keysKeyboardRoot(clip));
   const rec = readNoteRec(data);
+  // Record the pad↔note binding FIRST, so however this call exits, the release
+  // has something to replay.
+  const duplicate = otherPadHolds(padId, lane, midi);
+  keysHeld.set(padId, { lane, midi });
   // SINGLE + arp ON: the note feeds the arp HELD-SET (not a direct audition/
   // record). The arp SOUNDS its own sequence from the render loop (serviceArp).
   // Pair never sets arpOn, so this branch is single-only.
   if (deployment === 'single' && arpOn) {
-    if (s === 1) {
-      if (keysPressed.has(midi)) return;
-      keysPressed.add(midi);
-    } else {
-      keysPressed.delete(midi);
-    }
-    arp = arpSetHeld(arp, [...keysPressed]);
+    arp = arpSetHeld(arp, heldMidis());
     if (arpNextTime === 0) arpNextTime = nowMs(); // (re)start the arp clock
     return;
   }
-  if (s === 1) {
-    if (keysPressed.has(midi)) return; // already down (dedupe)
-    keysPressed.add(midi);
-    const vel = keysCaptureVel(velocity);
-    pushAudition(nodeId, { lane, midi, velocity: vel, on: true });
-    // PUNCH-IN ON THE NOTE (redesign §2.1): an ARMED clip starts recording on the
-    // first played note (capture decoupled from arming), so a skipped-wrap poll
-    // can't leave arming stuck. Only when the transport is running (there's a
-    // valid position); otherwise the wrap punch-in (which also needs the clock)
-    // takes it. Re-read state after the punch write.
-    if (rec?.armed && !rec.recording && transportRunning()) {
-      keysPunchIn(nodeId, rec, lane);
-    }
-    const capturing = readNoteRec(liveData(nodeId))?.recording === true;
-    if (capturing) {
-      const step = keysCaptureStep(nodeId, lane);
-      if (step >= 0) {
-        const mono = laneMono(data, lane);
-        // ADDITIVE (owner-locked): recording only ADDS — no per-step replace.
-        const next = recordNoteAt(clip, step, midi, { mono, velocity: vel });
-        if (next !== clip) {
-          writeClip(nodeId, next, keysClipIndex);
-          keysOnsets.set(midi, step); // track for note-off span capture
-        }
+  // A second pad at the SAME pitch adds nothing to sound or record — the voice
+  // is already open. It still holds a pad record above, so the note survives
+  // until the LAST of them is released.
+  if (duplicate) return;
+  const vel = keysCaptureVel(velocity);
+  auditionOn(nodeId, lane, midi, vel);
+  // PUNCH-IN ON THE NOTE (redesign §2.1): an ARMED clip starts recording on the
+  // first played note (capture decoupled from arming), so a skipped-wrap poll
+  // can't leave arming stuck. Only when the transport is running (there's a
+  // valid position); otherwise the wrap punch-in (which also needs the clock)
+  // takes it. Re-read state after the punch write.
+  if (rec?.armed && !rec.recording && transportRunning()) {
+    keysPunchIn(nodeId, rec, lane);
+  }
+  const capturing = readNoteRec(liveData(nodeId))?.recording === true;
+  if (capturing) {
+    const step = keysCaptureStep(nodeId, lane);
+    if (step >= 0) {
+      const mono = laneMono(data, lane);
+      // ADDITIVE (owner-locked): recording only ADDS — no per-step replace.
+      const next = recordNoteAt(clip, step, midi, { mono, velocity: vel });
+      if (next !== clip) {
+        writeClip(nodeId, next, keysClipIndex);
+        keysOnsets.set(midi, step); // track for note-off span capture
       }
-    }
-  } else {
-    keysPressed.delete(midi);
-    pushAudition(nodeId, { lane, midi, velocity: 0, on: false });
-    if (rec?.recording && keysOnsets.has(midi)) {
-      const onStep = keysOnsets.get(midi)!;
-      const offStep = keysCaptureStep(nodeId, lane);
-      if (offStep >= 0) {
-        const next = extendRecordedNote(clip, onStep, midi, offStep);
-        if (next !== clip) writeClip(nodeId, next, keysClipIndex);
-      }
-      keysOnsets.delete(midi);
     }
   }
 }
@@ -1924,10 +2084,10 @@ function forceExitKeys(nodeId: string): void {
   if (rec?.recording) finishHeldOnsets(nodeId, data, rec.lane);
   const lane = laneOf(keysClipIndex);
   const savedClip = keysClipIndex;
-  for (const midi of keysPressed) pushAudition(nodeId, { lane, midi, velocity: 0, on: false });
+  flushHeldKeys(nodeId);
   const keepArp = arpOn && arp.params.latch;
   if (arpOn && !arp.params.latch && arp.playing !== null) {
-    pushAudition(nodeId, { lane, midi: arp.playing, velocity: 0, on: false });
+    auditionOff(nodeId, lane, arp.playing);
   }
   mode = 'session';
   clearNoteRecField(nodeId);
@@ -2735,16 +2895,19 @@ function handleKeysArp(nodeId: string, sceneIndex: number): void {
 function arpToggle(nodeId: string): void {
   arpOn = !arpOn;
   const lane = laneOf(keysClipIndex);
+  // Held pads keep their records across the toggle (they are still physically
+  // down) — only what is SOUNDING flips. Each note-off/on uses the pad's OWN
+  // recorded lane+pitch, never a recomputation.
   if (arpOn) {
-    for (const midi of keysPressed) pushAudition(nodeId, { lane, midi, velocity: 0, on: false });
-    arp = arpSetHeld(arp, [...keysPressed]);
+    for (const h of keysHeld.values()) auditionOff(nodeId, h.lane, h.midi);
+    arp = arpSetHeld(arp, heldMidis());
     arpNextTime = 0; // fire on the next service tick
   } else {
     if (arp.playing !== null) {
-      pushAudition(nodeId, { lane, midi: arp.playing, velocity: 0, on: false });
+      auditionOff(nodeId, lane, arp.playing);
       arp = { ...arp, playing: null };
     }
-    for (const midi of keysPressed) pushAudition(nodeId, { lane, midi, velocity: VEL_DEFAULT, on: true });
+    for (const h of keysHeld.values()) auditionOn(nodeId, h.lane, h.midi, VEL_DEFAULT);
     arpNextTime = 0;
   }
   renderLeds();
@@ -2787,9 +2950,12 @@ function serviceArp(nodeId: string): void {
   }
 }
 function applyArpStep(nodeId: string, lane: number, step: ReturnType<typeof arpAdvance>): void {
-  if (step.noteOff !== undefined) pushAudition(nodeId, { lane, midi: step.noteOff, velocity: 0, on: false });
-  if (step.noteOn !== undefined) pushAudition(nodeId, { lane, midi: step.noteOn, velocity: VEL_DEFAULT, on: true });
+  // `arp` is advanced FIRST so `arp.playing` already names the new note by the
+  // time the render loop's failsafe reconciles the ledger — otherwise the arp's
+  // own note would read as unexplained for one tick and be counted as a leak.
   arp = step.state;
+  if (step.noteOff !== undefined) auditionOff(nodeId, lane, step.noteOff);
+  if (step.noteOn !== undefined) auditionOn(nodeId, lane, step.noteOn, VEL_DEFAULT);
 }
 
 // ── CONTROL view (performance deck: RESET/MONO/MUTE/RATE + per-lane STOP; the
@@ -3292,7 +3458,7 @@ function paintKeysRole(
       scale: clip.scale,
       playheadStep: ph,
       lengthSteps: clip.lengthSteps,
-      pressed: keysPressed,
+      pressed: new Set(heldMidis()),
       recArmed: rec?.armed,
       recording: rec?.recording,
       overdub: rec?.overdub,
@@ -3379,7 +3545,7 @@ function paintSingleKeys(
       scale: clip.scale,
       playheadStep: ph,
       lengthSteps: clip.lengthSteps,
-      pressed: keysPressed,
+      pressed: new Set(heldMidis()),
       recArmed: rec?.armed,
       recording: rec?.recording,
       overdub: rec?.overdub,
@@ -3425,6 +3591,12 @@ function renderLeds(): void {
   const blinkOn = Math.floor(tickCount / BLINK_TICKS) % 2 === 0;
   const data = node.data as ClipPlayerData | undefined;
 
+  // FAILSAFE (stuck-gate): release any auditioned voice that no held pad and no
+  // running arp explains, every tick. Runs BEFORE the KEYS paint so a fall-out
+  // of KEYS below (the clip vanished) is reconciled on the SAME tick. It counts
+  // + warns on every orphan, so it can never quietly mask a new leak.
+  keysReconcileSounding(nodeId);
+
   // Auto-disarm a stale Grid tap-to-arm after ~4s (single mode only; pair never
   // arms). Guards against an "armed then walked away" modal trap. Done inline (no
   // recursive renderLeds) — commit any pending Clip-Div preview as it clears.
@@ -3444,7 +3616,10 @@ function renderLeds(): void {
     if (mode === 'keys') {
       serviceKeysRecord(nodeId, data);
       if (paintSingleKeys(nodeId, data, blinkOn, top)) return;
-      mode = 'session'; // the KEYS clip vanished — fall through to the views
+      // The KEYS clip vanished — fall through to the views, but never while
+      // still holding its voices open (this used to strand every held pad).
+      flushHeldKeys(nodeId);
+      mode = 'session';
     }
     // Length-edit is a full-device takeover (the ruler owns the surface; EXIT via
     // the scene column returns to the opener's view).
@@ -3555,7 +3730,10 @@ function renderLeds(): void {
   if (mode === 'keys') {
     serviceKeysRecord(nodeId, data);
     if (paintKeysRole('L', nodeId, data, blinkOn) && paintKeysRole('R', nodeId, data, blinkOn)) return;
-    mode = 'session'; // the KEYS clip vanished — fall through to the matrix/deck
+    // The KEYS clip vanished — fall through to the matrix/deck, flushing the
+    // held keyboard first so no voice is left open on the way out.
+    flushHeldKeys(nodeId);
+    mode = 'session';
   }
   // LENGTH page opened FROM keys: L keeps the live keyboard, R is the ruler.
   if (mode === 'lengthEdit' && lengthReturnMode === 'keys') {
@@ -3605,6 +3783,8 @@ export function __test_resetBinding(): void {
   lastTapWasPlaying = false;
   copyBuffer = null;
   bufferSourceIndex = null;
+  keysSounding.clear();
+  keysOrphanFlushes = 0;
   resetKeysState();
 }
 export function __test_mode(): {
@@ -3644,6 +3824,11 @@ export function __test_mode(): {
   keysOverdubHeld: boolean;
   keysOctaveShift: number;
   keysPressedCount: number;
+  /** Voices the render-loop FAILSAFE had to release because nothing explained
+   *  them. Always 0 in a correct run — see keysReconcileSounding. */
+  keysOrphanFlushes: number;
+  /** Notes this binding believes it is currently sounding (held pads + arp). */
+  keysSoundingCount: number;
   arpOn: boolean;
   arpDir: ArpState['params']['direction'];
   arpDivIndex: number;
@@ -3689,7 +3874,9 @@ export function __test_mode(): {
     keysRecHeld,
     keysOverdubHeld,
     keysOctaveShift,
-    keysPressedCount: keysPressed.size,
+    keysPressedCount: keysHeld.size,
+    keysOrphanFlushes,
+    keysSoundingCount: keysSounding.size,
     arpOn,
     arpDir: arp.params.direction,
     arpDivIndex: arp.params.divisionIndex,
@@ -3699,6 +3886,23 @@ export function __test_mode(): {
     canUndo: lpCanUndo(),
     canRedo: lpCanRedo(),
   };
+}
+
+/**
+ * Test seam — MANUFACTURE A STRANDED VOICE: emit an audition note-on onto the
+ * failsafe's ledger that no held pad and no arp will ever explain, exactly as a
+ * lost note-off leaves things.
+ *
+ * This is the NEGATIVE CONTROL for `keysReconcileSounding`, and it is the only
+ * thing that makes the `keysOrphanFlushes === 0` assertions elsewhere mean
+ * anything: a counter that cannot increment reads 0 whether the failsafe works
+ * or is dead code. keys-stuck-gate.test.ts drives it in BOTH directions on
+ * every run — forced strand → the counter moves and the gate falls; normal
+ * play → the counter stays put.
+ */
+export function __test_strandAuditionNote(lane: number, midi: number): void {
+  if (!boundNodeId) return;
+  auditionOn(boundNodeId, lane, midi, 100);
 }
 
 /** Test seam: force the deployment + view (so a unit test can drive single mode
