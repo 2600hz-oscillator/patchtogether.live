@@ -229,8 +229,56 @@ Gates: full local `task test` + `task art` from clean dsp dist; REPEAT=3 on rena
 Gates: unit lane; REPEAT=3 new tests; assert `task docs:check` is a no-op (no def edits). 1 CI cycle.
 
 ### PR-3 — wiring semantics: universal leg-group planner
-Generalize `planStereoAutowire` → the universal audio commit planner over derivedStereoPairs: stereo↔stereo = L→L,R→R; mono→stereo = double-patch; stereo→mono = **unity-sum both legs** (Q1), with the mono-source-round-trip special case writing one leg; `channelMode: 'both'|'left'|'right'` selects legs. Route ALL audio edge writers through it: Canvas handleConnect (:3773), pickPortMenuTarget (:6324-6398), commitCarriedEdge (:6243), `writeStereoSiblingEdge` generalizes (:3641) — **plus mike/driver.ts:79-105**. **Leg-level occupancy** (Q4): full patch replaces both legs; only-X replaces only the X leg. Leg-group deletion: handleDelete (:4069) + wcol-detach (:4077) + unpatch-menu.ts/UnpatchMenu.svelte expand to the group; "(L only)" label.
-Tests: stereo-autowire.test.ts rewritten (mandatory legs, only-L/R, leg occupancy, unity-sum policy — the policy gets its FIRST explicit assert anywhere); patch-convenience{,-columns}.test.ts updated; schema-cleanup-roundtrip golden untouched (no Edge field change).
+
+> ⚠ **THIS SECTION PRE-DATES THE Q1 REVERSAL. `stereo→mono` IS NO LONGER
+> UNITY-SUM.** §0b replaced summing with **DUAL-MONO**, and the paragraph below
+> was written against the old policy. Read §0b as authoritative wherever the
+> two disagree. Restating the corrected matrix, because "unity-sum" appearing
+> in an implementation section is exactly how a reversed decision gets built
+> anyway:
+>
+> | source → target | what the planner writes |
+> |---|---|
+> | stereo → stereo | L→L, R→R (unchanged) |
+> | mono → stereo | double-patch both legs (unchanged) |
+> | **stereo → mono** | **BOTH legs, to a target the engine has wrapped DUAL-MONO** — two DSP instances, one per channel. NOT a sum. Nothing is mixed down. |
+> | mono → mono | one leg (unchanged) |
+>
+> The old "mono-source-round-trip special case writing one leg" existed **only**
+> to stop a correlated signal gaining +6 dB when summed. **Dual-mono never
+> sums, so that special case has no reason to exist** — and keeping it would be
+> worse than useless, since it is a runtime heuristic guessing whether two legs
+> "are the same signal", which §0b explicitly rules out ("ALWAYS two instances.
+> No 'is the input really stereo?' detection"). **Delete it; do not port it.**
+>
+> Consequence for sequencing: the planner must know a mono target still
+> RECEIVES both legs, so **PR-3b (dual-mono) is what makes this true** — see
+> §0b "Sequencing". PR-3 writes both legs; PR-3b makes the engine honour them.
+> Between the two, a stereo→mono patch sums in the Web Audio graph as before.
+> That window is why they land adjacently.
+
+Generalize `planStereoAutowire` → the universal audio commit planner over derivedStereoPairs, per the corrected matrix above; `channelMode: 'both'|'left'|'right'` selects legs. Route ALL audio edge writers through it. **Leg-level occupancy** (Q4): full patch replaces both legs; only-X replaces only the X leg. Leg-group deletion expands to the group; "(L only)" label.
+
+**Verified call sites (re-checked 2026-08-07 — GREP THE SYMBOL, the line numbers drift):**
+
+| symbol | file | line (2026-08-07) | plan's original |
+|---|---|---|---|
+| `writeStereoSiblingEdge` | `packages/web/src/lib/ui/Canvas.svelte` | 3669 | :3641 |
+| `handleConnect` | ″ | 3801 | :3773 |
+| `handleDelete` | ″ | 4097 | :4069 |
+| `commitCarriedEdge` | ″ | 6271 | :6243 |
+| `pickPortMenuTarget` | ″ | 6352 | :6324 |
+| wcol-detach branch | ″ | ~4125 | :4077 |
+| `ydoc.transact` (AI patching) | `packages/web/src/lib/mike/driver.ts` | 79 | :79-105 ✓ |
+| unpatch menu | `unpatch-menu.ts` / `UnpatchMenu.svelte` | — | — |
+
+⚠ Two traps in that table. **The plan gave the wrong DIRECTORY** — it is
+`lib/ui/Canvas.svelte`, not `lib/ui/canvas/Canvas.svelte`; the latter does not
+exist, so a `grep` scoped to the wrong path returns nothing and reads as "the
+symbol is gone". And every Canvas line had drifted **+28** (the file is 8849
+lines and grew above 3641). All five symbols are intact — nothing was renamed
+or removed. **Search by symbol name, never by line.**
+Tests: stereo-autowire.test.ts rewritten (mandatory legs, only-L/R, leg occupancy, and the stereo→mono **dual-mono** policy — which gets its FIRST explicit assert anywhere; assert BOTH legs are written and that NO round-trip special case collapses them to one); patch-convenience{,-columns}.test.ts updated; schema-cleanup-roundtrip golden untouched (no Edge field change).
 Gates: REPEAT=3 every changed unit file; e2e stereo-autowire.spec.ts rewritten (keeps the only full jack-click→carry→picker→commit e2e). NOT in any attest basis. Lands back-to-back with PR-4 (merge PR-3 only when PR-4 is ready for review, so main never sits long in the two-jacks-render-but-patch-writes-both state). 1–2 CI cycles.
 
 ### PR-4 — THE FLIP: jack collapse + only-L/R menu + cable rendering + VRT regen (riskiest)
@@ -271,7 +319,12 @@ Near-none, by construction. All five persisted surfaces load unchanged; legacy s
 2. **Sub-tolerance VRT invisibility** (#1213 class) — a removed jack dot « DOCK_MAX_DIFF commits nothing on a green dispatch. Mitigation: measure every affected scene locally; `git rm` pairs; count bot PNGs.
 3. **MixmstrsCard silent id-filtering** — mitigations: row-count assert + the PatchPanel-central collapse minimizes card edits.
 4. **Instrument blindness** — only-L/R e2e MUST use the PR-2 per-channel taps; never the mono downmix tap. Residual: non-terminal taps (scope, behavioral metric) stay mono-downmix — a dead-R inside a chain reads −6 dB, not failure, anywhere but the master out. Accepted + documented; revisit if it bites.
-5. **Unity-sum audibility edges** — the planner's mono-round-trip special case contains the +6 dB case, but a user manually patching both legs of a correlated source into a mono input still sums hot (faithful to Eurorack). ART cannot see policy; the new stereo-autowire unit asserts + e2e own it.
+5. ~~**Unity-sum audibility edges**~~ **— RETIRED by the Q1 reversal (§0b).** Dual-mono never sums, so the +6 dB correlated-round-trip hazard and the special case that contained it are both gone. **Its replacement risks are different and worse to diagnose, so do not simply cross this off:**
+   - **2× CPU on every mono-in module** (21 of them, the pass-through spine). Owner-accepted deliberately, but it is now a real perf surface: a patch with a long mono chain doubles its DSP cost. Watch for output underrun (`clock-perf-glitch-output-underrun` memory) rather than assuming a glitch is the clock.
+   - **Nondeterministic DSP decorrelates** — two instances of a noise/random module give genuinely different L and R. Often desirable width, occasionally a surprise. Name it per module (§0b sharp edge 3).
+   - **`read()` is single-instance** (§0b sharp edge 1): card meters/scopes read instance A (left) only. A silent-R inside a chain would be invisible on the card — the same instrument-blindness class the per-channel taps fixed at the terminal, now reappearing per-module. Decide per read key.
+   - **Side-effecting factories must NOT be duplicated** (§0b sharp edge 2) — anything claiming a hardware port, writing `node.data`, or registering a singleton needs a named, deny-by-default opt-out list, ratcheted.
+   - **ART is structurally blind to all of it** (§0b sharp edge 4): most scenarios drive DSP cores directly, not the factory path, so ART will NOT catch a dual-mono regression. The 6 real-def scenarios plus new e2e own this gate.
 6. **mixmstrs pan** (PR-6) — new DSP on the most-connected module; pan@center must be bit-transparent or every mixmstrs ART entry moves. Gate: fingerprint diff attribution before re-pin + owner ears.
 
 ## 7. Verified-clean surfaces (do not re-sweep)
