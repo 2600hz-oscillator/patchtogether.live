@@ -625,6 +625,71 @@ export class SamsloopCaptureBuffer {
   }
 }
 
+/** Sentinel for `foldCapturePeaks`'s cursor before the first chunk. */
+export const SAMSLOOP_PEAK_SLOT_NONE = -1;
+
+/**
+ * Fold one capture chunk into the live-record bar's peak-per-column buffer,
+ * in O(chunk) — the SECOND quadratic term in the old capture path.
+ *
+ * ⚠ FOUND BY BENCHMARK, NOT BY READING. The old card recomputed each touched
+ * column by rescanning the WHOLE column out of the accumulator on every tap
+ * chunk. A column is `maxSeconds/barWidth` wide, so widening the budget
+ * widens the column, and the total work over a take grows as its square:
+ * measured at 200 px / 48 kHz, 1.42 s = 157 k sample-reads but 30 s =
+ * 41.8 M and 60 s = 164 M. Raising the byte budget 22× would have dragged
+ * this along with it. Samples only ever arrive in order and only ever
+ * append, so a RUNNING max per column is exact and reads each sample once:
+ * 1.5 M reads for a 31 s take instead of ~45 M.
+ *
+ * Mutates `peaks` in place and returns the new column cursor, which the
+ * caller threads back in on the next chunk (`SAMSLOOP_PEAK_SLOT_NONE` to
+ * start). Resetting a column on first touch is what keeps it a max over the
+ * column rather than over the whole take.
+ *
+ * `startFrame` is the accumulator index the chunk's first sample lands at.
+ * Pinned against a literal re-implementation of the old rescan in
+ * `samsloop-record.test.ts`, so "same picture, less work" is asserted.
+ */
+export function foldCapturePeaks(
+  peaks: Float32Array,
+  samplesPerSlot: number,
+  startFrame: number,
+  chunk: Float32Array,
+  count: number,
+  currentSlot: number,
+): number {
+  const slots = peaks.length;
+  if (slots === 0 || count <= 0 || samplesPerSlot <= 0) return currentSlot;
+  // The bar's x-axis is exactly `slots × samplesPerSlot` frames wide.
+  // Anything past that falls OFF the right edge and is dropped — it is not
+  // squeezed into the last column, which would make that one pixel a max
+  // over an unbounded window. (This is what the old rescan did too, via
+  // `hi = min(filled, lo + samplesPerSlot)`; matching it is what lets the
+  // two be asserted byte-identical.)
+  const limit = slots * samplesPerSlot;
+  let slot = currentSlot;
+  let k = 0;
+  let frame = startFrame;
+  while (k < count && frame < limit) {
+    const s = Math.floor(frame / samplesPerSlot);
+    if (s !== slot) {
+      slot = s;
+      peaks[s] = 0;
+    }
+    // Consume up to this column's boundary in one inner loop — one divide
+    // per column-run rather than per sample.
+    const boundary = Math.min(limit, (s + 1) * samplesPerSlot);
+    let peak = peaks[s] ?? 0;
+    for (; k < count && frame < boundary; k++, frame++) {
+      const v = Math.abs(chunk[k] ?? 0);
+      if (v > peak) peak = v;
+    }
+    peaks[s] = peak;
+  }
+  return slot;
+}
+
 /**
  * The `node.data` keys an UPLOAD owns. The RECORD commit deletes every one of
  * them, and the upload commit deletes `sample` — that pair of deletes IS the

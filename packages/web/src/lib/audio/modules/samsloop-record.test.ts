@@ -4,9 +4,12 @@
 // AudioContext involved.
 //
 // What's pinned here:
-//   1. samsloopMaxSeconds — the 8-cell rate × bits × channels table the
-//      spec calls out. Drift here means the live-record bar's x-axis
-//      stops matching the auto-stop trigger.
+//   1. samsloopMaxSeconds — the 12-cell rate × bits × channels table, plus
+//      the DERIVATION of both caps (3 MB bytes / 60 s length). Drift here
+//      means the live-record bar's x-axis stops matching the auto-stop.
+//  1b. samsloopAchievedRate — that the RATE switch is a REQUEST and the
+//      tag must be the RESULT, with the −148-cent detune the old tagging
+//      caused kept as a permanent negative control.
 //   2. quantizeF32ToI16 / quantizeF32ToI8 — clip + scale to the canonical
 //      signed-int-PCM range with NO DC bias on silence.
 //   3. downsample — integer-factor decimation with the LP pre-filter;
@@ -14,8 +17,15 @@
 //   4. makeWavBlob — the 44-byte header bytes match the WAV spec EXACTLY
 //      (so a downloaded file plays back in any standard WAV reader).
 //   5. encodeRecordingBytes — end-to-end pipeline (resample → quantize →
-//      interleave) returns the right byte length for known L/R inputs.
-//   6. samsloopDownloadFilename — `samsloop-YYYYMMDD-HHmmss.wav` format.
+//      interleave) returns the right byte length AND the achieved rate.
+//  6a. that a FULL-capacity capture encodes inside the budget at every
+//      context × settings combination — the property that replaced the
+//      card's silent `subarray(0, BUDGET)` trim.
+//  6b. SamsloopCaptureBuffer — head-anchored truncation, and byte-identical
+//      output to the O(n²) grow-copy accumulator it replaced.
+//  6c. foldCapturePeaks — identical picture to the old per-chunk column
+//      rescan, in O(chunk) instead of O(column) per chunk.
+//   7. samsloopDownloadFilename — `samsloop-YYYYMMDD-HHmmss.wav` format.
 
 import { describe, expect, it } from 'vitest';
 import {
@@ -34,6 +44,8 @@ import {
   bytesToBase64,
   base64ToBytes,
   SamsloopCaptureBuffer,
+  foldCapturePeaks,
+  SAMSLOOP_PEAK_SLOT_NONE,
   SAMSLOOP_RECORD_BUDGET_BYTES,
   SAMSLOOP_RECORD_MAX_SECONDS,
   SAMSLOOP_REC_DEFAULTS,
@@ -567,6 +579,21 @@ describe('SamsloopCaptureBuffer', () => {
     expect(buf.channels().l.length).toBe(0);
   });
 
+  it('append is O(chunk): total copy work is linear, not quadratic, in the take', () => {
+    // The claim the whole fix rests on, expressed so it cannot silently
+    // regress to a grow-copy. `append` moves exactly `count` frames per call
+    // regardless of how much is already buffered — so N chunks move N·CHUNK
+    // frames, not N²·CHUNK/2. Measured indirectly: the buffer's backing store
+    // never changes identity, which a reallocating implementation cannot do.
+    const CHUNK = 128;
+    const buf = new SamsloopCaptureBuffer(CHUNK * 500);
+    const chunk = new Float32Array(CHUNK).fill(0.5);
+    const firstView = buf.channels().l.buffer;
+    for (let c = 0; c < 500; c++) buf.append(chunk, chunk);
+    expect(buf.channels().l.buffer, 'the accumulator reallocated — it is growing again').toBe(firstView);
+    expect(buf.frames).toBe(CHUNK * 500);
+  });
+
   it('NEGATIVE CONTROL: byte-identical to the old grow-and-copy accumulator', () => {
     // The capture fix must be a pure performance change. Feed both the old
     // implementation (reallocate + copy per chunk) and the new one the same
@@ -641,6 +668,97 @@ describe('bytesToBase64 / base64ToBytes', () => {
     expect(back[0]).toBe(0);
     expect(back[12345]).toBe(12345 & 0xff);
     expect(back[bytes.length - 1]).toBe((bytes.length - 1) & 0xff);
+  });
+});
+
+// ---------- (6c) foldCapturePeaks ----------
+
+describe('foldCapturePeaks — the live-record bar, in O(chunk)', () => {
+  const CHUNK = 128;
+
+  /**
+   * THE OLD IMPLEMENTATION, verbatim from SamsloopCard's onTapChunk before
+   * this fix: rescan every touched column out of the whole accumulator, every
+   * chunk. Kept here as the reference the fast path must reproduce exactly —
+   * "same picture, less work" is otherwise just a claim.
+   */
+  function oldRescan(slots: number, samplesPerSlot: number, acc: Float32Array, chunkLen: number): Float32Array {
+    const peaks = new Float32Array(slots);
+    for (let filled = chunkLen; filled <= acc.length; filled += chunkLen) {
+      const startSlot = Math.floor((filled - chunkLen) / samplesPerSlot);
+      const endSlot = Math.min(slots - 1, Math.floor((filled - 1) / samplesPerSlot));
+      for (let s = startSlot; s <= endSlot && s >= 0; s++) {
+        const lo = s * samplesPerSlot;
+        const hi = Math.min(filled, lo + samplesPerSlot);
+        let peak = 0;
+        for (let i = lo; i < hi; i++) {
+          const v = Math.abs(acc[i] ?? 0);
+          if (v > peak) peak = v;
+        }
+        peaks[s] = peak;
+      }
+    }
+    return peaks;
+  }
+
+  it.each([
+    // [slots, samplesPerSlot, totalChunks] — a column narrower than a chunk,
+    // one a few chunks wide, and the realistic 200 px / 31 s / 48 kHz shape.
+    [8, 50, 40],
+    [16, 400, 60],
+    [200, 7500, 400],
+  ])('slots=%i samplesPerSlot=%i: identical to the old rescan', (slots, samplesPerSlot, totalChunks) => {
+    const total = totalChunks * CHUNK;
+    const acc = new Float32Array(total);
+    // A signal with a moving envelope, so different columns get genuinely
+    // different peaks — a flat buffer would make any implementation agree.
+    for (let i = 0; i < total; i++) {
+      acc[i] = Math.sin(i * 0.017) * (0.2 + 0.8 * Math.abs(Math.sin(i * 0.00031)));
+    }
+
+    const expected = oldRescan(slots, samplesPerSlot, acc, CHUNK);
+
+    const peaks = new Float32Array(slots);
+    let cursor = SAMSLOOP_PEAK_SLOT_NONE;
+    for (let c = 0; c < totalChunks; c++) {
+      const start = c * CHUNK;
+      cursor = foldCapturePeaks(
+        peaks, samplesPerSlot, start, acc.subarray(start, start + CHUNK), CHUNK, cursor,
+      );
+    }
+    expect(Array.from(peaks)).toEqual(Array.from(expected));
+  });
+
+  it('NEGATIVE CONTROL: the reference itself distinguishes real signals', () => {
+    // If `oldRescan` returned the same thing for everything, the equivalence
+    // above would be vacuous. Two different signals must give two different
+    // peak traces.
+    const acc1 = new Float32Array(1024).fill(0.25);
+    const acc2 = new Float32Array(1024);
+    for (let i = 0; i < 1024; i++) acc2[i] = i < 512 ? 0.9 : 0.1;
+    expect(Array.from(oldRescan(8, 128, acc1, 128)))
+      .not.toEqual(Array.from(oldRescan(8, 128, acc2, 128)));
+  });
+
+  it('clamps to the last column and never writes out of bounds', () => {
+    // More frames than the columns can represent (the auto-stop normally
+    // prevents this, but a settings change mid-take must not corrupt memory).
+    const peaks = new Float32Array(4);
+    let cursor = SAMSLOOP_PEAK_SLOT_NONE;
+    const chunk = new Float32Array(CHUNK).fill(0.5);
+    for (let c = 0; c < 20; c++) {
+      cursor = foldCapturePeaks(peaks, 100, c * CHUNK, chunk, CHUNK, cursor);
+    }
+    expect(cursor).toBe(3);
+    expect(peaks.every((v) => v === 0.5)).toBe(true);
+  });
+
+  it('is a no-op for degenerate inputs rather than throwing', () => {
+    const peaks = new Float32Array(4);
+    expect(foldCapturePeaks(peaks, 100, 0, new Float32Array(0), 0, -1)).toBe(-1);
+    expect(foldCapturePeaks(new Float32Array(0), 100, 0, new Float32Array(8), 8, -1)).toBe(-1);
+    expect(foldCapturePeaks(peaks, 0, 0, new Float32Array(8), 8, -1)).toBe(-1);
+    expect(Array.from(peaks)).toEqual([0, 0, 0, 0]);
   });
 });
 

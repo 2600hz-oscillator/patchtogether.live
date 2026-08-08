@@ -66,6 +66,8 @@
     bytesToBase64,
     base64ToBytes,
     SamsloopCaptureBuffer,
+    foldCapturePeaks,
+    SAMSLOOP_PEAK_SLOT_NONE,
     SAMSLOOP_REC_DEFAULTS,
     SAMSLOOP_RATE_OPTIONS,
     type SamsloopRecRate,
@@ -170,6 +172,9 @@
   // belong to. State is local — never written to Yjs.
   let recBarWidth = $state<number>(200);
   let recRunningPeaks = $state<Float32Array>(new Float32Array(0));
+  // Column cursor threaded through foldCapturePeaks — which column the
+  // running max is currently accumulating into.
+  let recPeakSlot = SAMSLOOP_PEAK_SLOT_NONE;
 
   // Tap port subscription bookkeeping. We attach the listener for the
   // lifetime of an active recording and detach on stop/teardown so
@@ -314,6 +319,7 @@
     const w = canvasEl?.width ?? 200;
     recBarWidth = w;
     recRunningPeaks = new Float32Array(w);
+    recPeakSlot = SAMSLOOP_PEAK_SLOT_NONE;
 
     // ONE allocation for the whole take, sized so the encoded result is
     // provably inside the byte budget (and the 60 s length cap). Sized from
@@ -353,33 +359,20 @@
     // may be short of `l.length` on the last chunk before the cap.
     const before = capture.frames;
     const written = capture.append(l, r);
-    const after = capture.frames;
 
-    // Update the visual peak buffer. We compute the |max| sample of the
-    // new chunk and fold it into the slot(s) it maps to on the bar.
+    // Fold the new samples into the visual peak buffer (L only for display —
+    // keeps the bar shape stable regardless of CHAN). O(chunk): a running max
+    // per column, NOT a rescan of the whole column per chunk, which was
+    // quadratic in the budget. See foldCapturePeaks.
     const sr = attachedTap?.sampleRate ?? captureRate;
     // The bar's x-axis is `maxSeconds` long. Each slot's time width is
     // `maxSecondsExact / barWidth` seconds.
     const slotSec = maxSecondsExact / recBarWidth;
     const samplesPerSlot = Math.max(1, Math.floor(sr * slotSec));
     if (written > 0) {
-      // Only the slots the NEW samples land in need refreshing — linear in
-      // chunk length, not in buffer length.
-      const { l: capturedL } = capture.channels();
-      const startSlot = Math.floor(before / samplesPerSlot);
-      const endSlot   = Math.min(recBarWidth - 1, Math.floor((after - 1) / samplesPerSlot));
-      for (let s = startSlot; s <= endSlot && s >= 0; s++) {
-        const lo = s * samplesPerSlot;
-        const hi = Math.min(after, lo + samplesPerSlot);
-        let peak = 0;
-        for (let i = lo; i < hi; i++) {
-          const v = Math.abs(capturedL[i] ?? 0);
-          if (v > peak) peak = v;
-        }
-        // Mirror into the visual buffer (mono mix of L for display — keeps
-        // the bar shape stable regardless of CHAN setting).
-        recRunningPeaks[s] = peak;
-      }
+      recPeakSlot = foldCapturePeaks(
+        recRunningPeaks, samplesPerSlot, before, l, written, recPeakSlot,
+      );
     }
 
     // Force the waveform $effect to re-run by reassigning the reactive
