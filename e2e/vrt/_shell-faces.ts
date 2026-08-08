@@ -299,8 +299,10 @@ export interface BootFaceOptions {
  *  mysterious. */
 const FREEZE_ATTEMPTS = 6;
 /** rAFs to wait after each suspend for a pending best-effort `resume()` to
- *  land. Frames, not ms — renderer-independent by construction. */
-const FREEZE_RACE_FRAMES = 4;
+ *  land. Frames, not ms — renderer-independent by construction, and kept small
+ *  because this runs 43× per VRT run on a renderer whose frame rate is unknown:
+ *  correctness comes from the RETRY, not from the length of this window. */
+const FREEZE_RACE_FRAMES = 3;
 
 /**
  * Suspend the audio graph for a face scene and PROVE it, in both the declared
@@ -324,7 +326,7 @@ export async function freezeFaceAudio(page: Page, label: string): Promise<void> 
     await freezeAudioContext(page, label);
     // Give any in-flight best-effort `resume()` the frames it needs to land, so
     // a freeze that is about to be undone is caught HERE rather than at capture.
-    for (let f = 0; f < FREEZE_RACE_FRAMES; f++) await settle(page);
+    await waitFrames(page, FREEZE_RACE_FRAMES);
     const clock = await readAudioClock(page);
     seen.push(`${attempt}:${clock.state}`);
     if (clock.state === 'suspended') {
@@ -342,11 +344,17 @@ export async function freezeFaceAudio(page: Page, label: string): Promise<void> 
 }
 
 /** rAFs the clock check waits across. Frame-counted, not wall-clocked — a
- *  renderer-independent window by construction (CLAUDE.md's frames-not-ms
- *  rule). 5 frames is ~83 ms at 60 fps and ~630 ms under SwiftShader; either
- *  way a RUNNING 48 kHz context advances by orders of magnitude more than the
- *  exact-equality this asserts. */
-const FREEZE_CLOCK_FRAMES = 5;
+ *  renderer-independent window by construction (CLAUDE.md's frames-not-ms rule).
+ *
+ *  TWO is enough and is chosen to be cheap, because this runs once per boot AND
+ *  again before every capture, 43× per VRT run on a renderer whose frame rate
+ *  is unknown. The assertion is EXACT EQUALITY against a clock that advances in
+ *  128-sample render quanta (2.67 ms at 48 kHz), so any frame at all separates
+ *  a running context from a suspended one — there is no margin to buy by
+ *  waiting longer, only frames to spend. The negative control proves the two
+ *  frames are sufficient on every run by requiring this to REJECT while the
+ *  graph is live. */
+const FREEZE_CLOCK_FRAMES = 2;
 
 /**
  * ASSERT the audio graph is still frozen — call it immediately before a
@@ -360,7 +368,7 @@ const FREEZE_CLOCK_FRAMES = 5;
  */
 export async function assertFaceAudioFrozen(page: Page, label: string): Promise<void> {
   const before = await readAudioClock(page);
-  for (let i = 0; i < FREEZE_CLOCK_FRAMES; i++) await settle(page);
+  await waitFrames(page, FREEZE_CLOCK_FRAMES);
   const after = await readAudioClock(page);
   const advance = (after.currentTime ?? 0) - (before.currentTime ?? 0);
   expect(
@@ -621,6 +629,33 @@ export async function openDock(page: Page, memberId: string, pages: number): Pro
 export async function settle(page: Page): Promise<void> {
   await page.evaluate(
     () => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r()))),
+  );
+}
+
+/**
+ * Wait `n` ANIMATION FRAMES, counted inside the page.
+ *
+ * Frames rather than milliseconds because a wall-clock budget is a different
+ * number of frames on every renderer (CLAUDE.md). ONE `page.evaluate` for the
+ * whole run rather than one per frame: a per-frame round-trip is protocol
+ * traffic on the same main thread it is waiting for, and on a loaded runner it
+ * costs several times what it measures.
+ */
+export async function waitFrames(page: Page, n: number): Promise<void> {
+  await page.evaluate(
+    (count) =>
+      new Promise<void>((resolve) => {
+        let left = count;
+        const tick = (): void => {
+          if (--left <= 0) {
+            resolve();
+            return;
+          }
+          requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      }),
+    n,
   );
 }
 
