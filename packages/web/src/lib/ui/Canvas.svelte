@@ -339,6 +339,8 @@
   import AspectToggle from '$lib/ui/AspectToggle.svelte';
   import { videoAspectStore } from '$lib/ui/video-aspect-store.svelte';
   import { audioLatencyStore, type AudioLatencyMode } from '$lib/ui/audio-latency-store.svelte';
+  import { createAudioHealthMonitor } from '$lib/audio/audio-health.svelte';
+  import { formatAudioHealth } from '$lib/audio/playback-stats';
   import FlowBridge, { type FlowBridgeApi, type InternalFlowNode } from '$lib/ui/FlowBridge.svelte';
   import CadillacOverlay from '$lib/ui/CadillacOverlay.svelte';
   import ChannelColumnsOverlay from '$lib/ui/ChannelColumnsOverlay.svelte';
@@ -7599,6 +7601,28 @@
     audioGate.bind(audioCtx);
   });
 
+  // ---------------- Audio health readout (footer) ----------------
+  //
+  // The app had NO audio-health instrumentation before this: no underrun
+  // detector, no jank detector, no worklet-death detector. So "it bogs down and
+  // then stops" was indistinguishable from a throttled laptop, a suspended
+  // context, or a latched processor. This binds the three new sensors to the
+  // footer so the owner can read them without devtools:
+  //
+  //   underruns / dropout   AudioContext.playbackStats  (Chromium only)
+  //   tick p99              scheduler-clock arrival lateness
+  //   dead                  latched AudioWorkletProcessors
+  //
+  // Zero effect on the audio path — one getter read per second.
+  const audioHealth = createAudioHealthMonitor();
+  $effect(() => {
+    audioHealth.bind(audioCtx);
+  });
+  onMount(() => {
+    audioHealth.start();
+    return () => audioHealth.stop();
+  });
+
   // ---------------- Undo / redo (Cmd-Z / Cmd-Shift-Z) ----------------
   // Y.UndoManager scoped to this client's edits only (LOCAL_ORIGIN). Remote
   // collaborators' ops arrive with a different origin and are intentionally
@@ -8344,6 +8368,46 @@
       <span title="AudioContext latency. base = render/processing latency (fixed by the buffer); out = full output-pipeline latency to the speakers (Chromium; 0 elsewhere). The buffer size is set by the Buffer selector below (latencyHint) — a bigger buffer trades latency for slack against clicks under UI load.">
         lat <b>{audioCtx ? `${(audioCtx.baseLatency * 1000).toFixed(1)}ms` : '—'}</b>{#if audioCtx && audioCtx.outputLatency > 0}<b> / {(audioCtx.outputLatency * 1000).toFixed(1)}ms out</b>{/if}
       </span>
+      <!-- AUDIO HEALTH (underruns / main-thread jank / dead worklets).
+           Semantics are CUMULATIVE SINCE THE AUDIOCONTEXT WAS CREATED, never a
+           rate — the tooltip says so, because a rising number must not be
+           misread as "underrunning right now". `playbackStats` is Chromium-only
+           and degrades to "—" on Firefox/Safari with no warning and no nag. -->
+      <span
+        class="audio-health"
+        data-testid="audio-health"
+        class:bad={audioHealth.health.underrunEvents > 0 || audioHealth.workletErrors > 0}
+        title={
+          audioHealth.health.supported
+            ? `Audio health, CUMULATIVE SINCE THIS AUDIOCONTEXT WAS CREATED (not a rate).\n`
+              + `underruns = times the audio device was starved and played silence/a repeat `
+              + `(${audioHealth.health.underrunEvents} in ${audioHealth.health.totalSec.toFixed(0)}s of output).\n`
+              + `drop = total starved time.\n`
+              + `avg = mean output-pipeline latency.\n`
+              + `tick = main-thread scheduler lateness p99 — HIGH TICK WITH ZERO UNDERRUNS means the `
+              + `MAIN THREAD is busy (UI/video), not the audio thread. They are different problems.\n`
+              + `dead = AudioWorkletProcessors that threw. A processor that throws outputs silence for `
+              + `the rest of its life (Web Audio spec) — that module is gone until you reload.\n`
+              + `Underruns rising? Set Buffer to Stable below and reload.`
+            : 'Audio health: this browser does not implement AudioContext.playbackStats '
+              + '(Chromium only today), so underruns cannot be counted here. The tick and dead '
+              + 'counters still work.'
+        }
+      >
+        underruns <b>{formatAudioHealth(audioHealth.health).underruns}</b>
+        <span class="audio-health-sub">drop {formatAudioHealth(audioHealth.health).dropout}</span>
+        <span class="audio-health-sub">avg {formatAudioHealth(audioHealth.health).avgLatency}</span>
+        <span class="audio-health-sub">tick {audioHealth.tick && audioHealth.tick.samples > 0
+          ? `${audioHealth.tick.p99Ms.toFixed(0)}ms`
+          : '—'}</span>
+        {#if audioHealth.workletErrors > 0}
+          <b class="audio-health-dead" data-testid="audio-health-dead"
+            >dead {audioHealth.workletErrors}{audioHealth.lastWorkletError
+              ? ` (${audioHealth.lastWorkletError.moduleType ?? audioHealth.lastWorkletError.processor})`
+              : ''}</b
+          >
+        {/if}
+      </span>
       <span class="audio-buffer-ctl" title={`Audio buffer / latency. A BIGGER buffer gives the audio render thread slack under main-thread CPU load (canvas pan, knob drag, video) so it doesn't underrun → fewer clicks/pops. A SMALLER buffer = lower latency for tight live jamming. ${audioLatencyStore.currentOption.hint} latencyHint is fixed at context creation, so a change applies on the next page reload.`}>
         buffer
         <select
@@ -9011,6 +9075,24 @@
   .status b {
     color: var(--text);
     font-weight: 500;
+  }
+  /* Audio health readout — underruns / dropout / avg latency / tick p99, plus
+   * a `dead N` badge when a worklet processor has latched. Muted until
+   * something is actually wrong, so a healthy footer stays quiet. */
+  .audio-health {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    cursor: help;
+  }
+  .audio-health-sub {
+    opacity: 0.72;
+  }
+  .audio-health.bad b {
+    color: #f0a04b;
+  }
+  .audio-health-dead {
+    color: #f45c51 !important;
   }
   /* R-1 audio buffer / latency selector — sits in the footer status row,
    * styled to match the load-example dropdown chrome. */
