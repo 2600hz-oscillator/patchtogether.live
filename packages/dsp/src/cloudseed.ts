@@ -1165,10 +1165,33 @@ export class ReverbChannel {
       }
       case Param.EarlyDiffuseCount:     this.diffuser.stages = scaled | 0; break;
       case Param.EarlyDiffuseDelay:     this.diffuser.setDelay(this.ms2Samples(scaled) | 0); break;
-      case Param.EarlyDiffuseModAmount:
-        this.diffuser.setModulationEnabled(scaled > 0.5);
-        this.diffuser.setModAmount(this.ms2Samples(scaled));
+      // ⚠ THE GATE AND THE PAYLOAD MUST READ THE SAME UNIT. This enable flag
+      // used to be `scaled > 0.5` while the depth handed to the diffuser was
+      // `ms2Samples(scaled)` — a MILLISECOND threshold guarding a SAMPLES
+      // value. `scaled` here spans 0..2.5 ms, so the whole bottom 20 % of the
+      // knob (val ≤ 0.20) sat under the threshold with modulation switched OFF
+      // while the depth it had just stored was already tens of samples:
+      // measured, the def default val=0.14 → 0.35 ms → 16.80 samples with
+      // `modulationEnabled === false`, and the output was BIT-IDENTICAL to
+      // val=0 for every value up to 0.20 before jumping to a full-strength
+      // 1.35e-1 RMS delta at 0.21. A dead bottom fifth of the control, ending
+      // in a cliff, at the shipped default.
+      //
+      // `modulationEnabled` only picks `processWithMod` vs `processNoMod`, and
+      // at zero depth those are numerically identical (totalDelay collapses to
+      // sampleDelay, gainA=1/gainB=0, and EarlyDiffuseDelay is integral), so
+      // the flag is a "don't pay for modulation that isn't there" guard, not a
+      // musical control. The correct predicate is therefore "is the depth
+      // non-zero", asked of the DEPTH — which is what the late-line sibling
+      // `DelayLine.setDiffuserModAmount` has always done (`a > 0` on a samples
+      // value). Deriving the samples value ONCE and gating on that makes the
+      // unit impossible to mismatch again.
+      case Param.EarlyDiffuseModAmount: {
+        const modSamples = this.ms2Samples(scaled);
+        this.diffuser.setModulationEnabled(modSamples > 0);
+        this.diffuser.setModAmount(modSamples);
         break;
+      }
       case Param.EarlyDiffuseFeedback:  this.diffuser.setFeedback(scaled); break;
       case Param.EarlyDiffuseModRate:   this.diffuser.setModRate(scaled); break;
 

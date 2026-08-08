@@ -4,7 +4,9 @@
 // Pins the building blocks the worklet + render mirror share:
 //   • voiceFreqHz   — V/oct + coarse + fine + exp-FM → Hz, C4 anchor, clamps.
 //   • waveMorph     — tri→saw→square endpoints match the band-limited taps.
-//   • modeMorph     — LP→BP→HP→Notch corners pick the right tap.
+//   • modeMorph     — LP→BP→HP→Notch corners pick the right tap, the fourth tap
+//     agrees with resofilter's own `lp + hp`, and it NULLS at the cutoff for
+//     every resonance (the missing-`k` notch bug — see that describe block).
 //   • Envelope      — ADSR attack reaches 1, sustain holds, release → 0.
 //   • renderPentemelodica — poly→5 voices (5 gated lanes → 5 nonzero taps),
 //     a chord differs from a single note, a mono fallback (lane 0 only) is
@@ -13,7 +15,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { moogWaves, MOOG_C4_HZ } from './moog-vco-dsp';
-import { makeSvfState, svfStep, cutoffToG, resToK } from './resofilter-dsp';
+import { makeSvfState, svfStep, cutoffToG, resToK, pickModeOutput } from './resofilter-dsp';
 import {
   PENTE_VOICES,
   Envelope,
@@ -105,19 +107,117 @@ describe('pentemelodica-dsp / modeMorph', () => {
   const k = resToK(0.2);
   const x = 0.7;
   const taps = svfStep(x, g, k, st);
-  const notch = x - taps.bp;
+  // ⚠ WAS `x - taps.bp`, which PINNED THE NOTCH BUG (the `k` was missing from
+  // both the code and this expectation, so the assertion agreed with the defect
+  // and could never have gone red). The SVF identity is notch = lp + hp =
+  // x - k*bp; see the modeMorph header for the measured consequence.
+  const notch = x - k * taps.bp;
 
   it('mode=0 → LP tap', () => {
-    expect(modeMorph(taps, x, 0)).toBeCloseTo(taps.lp, 6);
+    expect(modeMorph(taps, x, 0, k)).toBeCloseTo(taps.lp, 6);
   });
   it('mode=1/3 → BP tap', () => {
-    expect(modeMorph(taps, x, 1 / 3)).toBeCloseTo(taps.bp, 6);
+    expect(modeMorph(taps, x, 1 / 3, k)).toBeCloseTo(taps.bp, 6);
   });
   it('mode=2/3 → HP tap', () => {
-    expect(modeMorph(taps, x, 2 / 3)).toBeCloseTo(taps.hp, 6);
+    expect(modeMorph(taps, x, 2 / 3, k)).toBeCloseTo(taps.hp, 6);
   });
-  it('mode=1.0 → Notch (x - bp)', () => {
-    expect(modeMorph(taps, x, 1)).toBeCloseTo(notch, 6);
+  it('mode=1.0 → Notch (x - k*bp)', () => {
+    expect(modeMorph(taps, x, 1, k)).toBeCloseTo(notch, 6);
+  });
+
+  // THE INDEPENDENT ROUTE. `x - k*bp` is one way to write the fourth tap;
+  // `lp + hp` is the other, and resofilter-dsp's own notch (pickModeOutput
+  // case 3) has always used that one. Asserting the two agree is a negative
+  // control on the identity itself rather than on our arithmetic: a k that is
+  // wrong, dropped, or double-applied breaks this even if both sides of the
+  // test above were edited together.
+  it('the notch tap equals resofilter’s `lp + hp` at every resonance', () => {
+    for (const res of [0, 0.2, 0.5, 0.8, 0.9, 0.99]) {
+      const kk = resToK(res);
+      const s = makeSvfState();
+      const tp = svfStep(x, g, kk, s);
+      expect(
+        modeMorph(tp, x, 1, kk),
+        `res ${res} (k=${kk}): modeMorph mode=1 must equal lp + hp`,
+      ).toBeCloseTo(pickModeOutput(tp, 3, kk), 12);
+      expect(modeMorph(tp, x, 1, kk)).toBeCloseTo(tp.lp + tp.hp, 12);
+    }
+  });
+});
+
+// ----------------------------------------------------------------------------
+// THE NOTCH IS A NOTCH — the regression test for the missing-`k` bug.
+//
+// `modeMorph` computed `notch = x - bp` (no `k`). That is not a notch: it is a
+// PHASE-INVERTED BAND-PASS whose gain at the cutoff is |1 - 1/k|, so RESONANCE
+// silently set how loud the top of the MODE dial was. Measured at fc before the
+// fix: -6.02 dB at res 0, -8.52 dB at the shipped 0.2, a true null ONLY at res
+// 0.5 (k == 1, the one point where the bug is invisible), +3.52 dB at 0.8,
+// +12.04 dB at 0.9 and +33.80 dB — a 49x BOOST — at the max 0.99. On the summed
+// five-voice bus that is a master-bus gain hazard, not a tone control.
+//
+// The gate is a STEADY-STATE GAIN AT THE CUTOFF, not a sample comparison,
+// because "the tap nulls at fc" is the property that makes it a notch, and it
+// is the property the k-less form violates in a resonance-dependent way. Both
+// legs are permanent: the null must hold at EVERY resonance (which the bug
+// could only manage at 0.5), and the same measurement on the BP tap must be
+// large (else "0 everywhere" would also be what a dead filter reports).
+// ----------------------------------------------------------------------------
+describe('pentemelodica-dsp / the mode-1 tap is a TRUE notch (notch fix)', () => {
+  /** Steady-state RMS gain of a mode tap at frequency `f`. */
+  function modeGainAt(f: number, fcHz: number, res: number, mode: number): number {
+    const g = cutoffToG(fcHz, SR);
+    const k = resToK(res);
+    const st = makeSvfState();
+    const n = Math.round(SR * 0.5);
+    const settle = Math.round(SR * 0.35); // past the ring-up even at k=0.02
+    let sIn = 0;
+    let sOut = 0;
+    for (let i = 0; i < n; i++) {
+      const x = Math.sin((2 * Math.PI * f * i) / SR);
+      const y = modeMorph(svfStep(x, g, k, st), x, mode, k);
+      if (i >= settle) {
+        sIn += x * x;
+        sOut += y * y;
+      }
+    }
+    return Math.sqrt(sOut / sIn);
+  }
+
+  const FC = 1000;
+
+  it('nulls at the cutoff for EVERY resonance — not just at k = 1', () => {
+    for (const res of [0, 0.2, 0.5, 0.8, 0.9, 0.99]) {
+      const gain = modeGainAt(FC, FC, res, 1);
+      expect(
+        gain,
+        `res ${res} (k=${resToK(res)}): the notch must null at fc; ` +
+          `the k-less bug read 0.375 at 0.2 and 49 at 0.99`,
+      ).toBeLessThan(1e-3);
+    }
+  });
+
+  it('and specifically is NOT a resonant boost at max resonance', () => {
+    // The single most dangerous point of the old behaviour: mode=1 + res=0.99
+    // measured 49x (+33.8 dB) into the master bus.
+    expect(modeGainAt(FC, FC, 0.99, 1)).toBeLessThan(1e-3);
+  });
+
+  it('NEGATIVE CONTROL: the same measurement on the BP tap is large', () => {
+    // Proves the instrument can report a non-zero gain at all — without this,
+    // a modeMorph that returned 0 unconditionally would pass the null legs.
+    expect(modeGainAt(FC, FC, 0.99, 1 / 3)).toBeGreaterThan(10);
+    expect(modeGainAt(FC, FC, 0.2, 1 / 3)).toBeGreaterThan(0.5);
+  });
+
+  it('the notch is a NOTCH, not a broadband cut: it passes away from fc', () => {
+    // A null at fc with unity either side is what distinguishes a notch from
+    // the inverted band-pass the bug produced (which peaked at fc instead).
+    for (const ratio of [0.25, 4]) {
+      const gain = modeGainAt(FC * ratio, FC, 0.99, 1);
+      expect(gain, `f/fc = ${ratio} must pass`).toBeGreaterThan(0.9);
+    }
   });
 });
 

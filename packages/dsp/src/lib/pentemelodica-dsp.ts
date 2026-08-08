@@ -17,7 +17,7 @@
 //     the band-limited taps so the morph is anti-aliased for free.
 //   * Filter core       — svfStep()/cutoffToG()/resToK()/makeSvfState() from
 //     ./resofilter-dsp (a Cytomic/Zavalishin TPT state-variable filter). The
-//     MODE morph blends its {lp,bp,hp} taps (+ notch = x - bp) into a
+//     MODE morph blends its {lp,bp,hp} taps (+ notch = x - k*bp) into a
 //     continuous LP→BP→HP→Notch dial. No QBRT-style ping / edge gate.
 //   * Envelope          — a verbatim copy of the Helm synth's Envelope (linear attack,
 //     single-pole-exp decay/release, seconds-based, gate-edge triggered).
@@ -173,24 +173,38 @@ export function waveMorph(waves: MoogWaveSet, wave: number): number {
 
 // ----------------------------------------------------------------------------
 // MODE morph — continuous LP → BP → HP → Notch dial over the SVF taps.
-//   notch = x - bp  (the SVF identity)
+//   notch = lp + hp = x - k*bp   (THE SVF identity — k is the damping term)
 //   mode = 0.000 → LP
 //   mode = 1/3    → BP
 //   mode = 2/3    → HP
 //   mode = 1.000  → Notch
-// `x` is the filter INPUT sample (needed for the notch tap).
+// `x` is the filter INPUT sample and `k` the damping coefficient (resToK) —
+// both are needed for the notch tap.
+//
+// ⚠ THE `k` IS NOT OPTIONAL, and omitting it does not merely detune the notch —
+// it turns the tap into a PHASE-INVERTED BAND-PASS whose gain at cutoff is
+// |1 - 1/k|. Measured at fc, mode=1 (see the pentemelodica notch fix): the
+// k-less form read -6.02 dB at res 0, -8.52 dB at the shipped 0.2, a true null
+// ONLY at res 0.5 (where k == 1 and the bug is invisible), then +3.52 dB at
+// 0.8, +12.04 dB at 0.9 and +33.80 dB (49x) at the max 0.99 — a resonant BOOST
+// on the master bus where the dial says "notch". With the k the tap nulls
+// exactly at fc for EVERY resonance, which is what a notch is. `resofilter-dsp`
+// (pickModeOutput case 3, `lp + hp`) has always had this right; this is the
+// same identity written the same way, and it is cross-checked against that
+// sibling in the unit test.
 // ----------------------------------------------------------------------------
 
 export function modeMorph(
   taps: { lp: number; bp: number; hp: number },
   x: number,
   mode: number,
+  k: number,
 ): number {
   const m = mode < 0 ? 0 : mode > 1 ? 1 : mode;
   const m3 = m * 3;
   const seg = Math.min(2, Math.floor(m3));
   const t = m3 - seg;
-  const notch = x - taps.bp;
+  const notch = x - k * taps.bp;
   if (seg === 0) return taps.lp * (1 - t) + taps.bp * t;
   if (seg === 1) return taps.bp * (1 - t) + taps.hp * t;
   return taps.hp * (1 - t) + notch * t;
@@ -378,11 +392,11 @@ export function renderPentemelodica(
 
     // Embedded filter + wet/dry per channel (state advances even at wetdry=0).
     const tapsL = svfStep(sumL, g, k, state.svfL);
-    const wetL = modeMorph(tapsL, sumL, f.mode);
+    const wetL = modeMorph(tapsL, sumL, f.mode, k);
     out.outL[i] = (1 - wetdry) * sumL + wetdry * wetL;
 
     const tapsR = svfStep(sumR, g, k, state.svfR);
-    const wetR = modeMorph(tapsR, sumR, f.mode);
+    const wetR = modeMorph(tapsR, sumR, f.mode, k);
     out.outR[i] = (1 - wetdry) * sumR + wetdry * wetR;
   }
 }
