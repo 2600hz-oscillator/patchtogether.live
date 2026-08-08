@@ -660,21 +660,7 @@ describe('vrt-meta — EXEMPT_BASELINE_PAIRS size RATCHET (only shrinks)', () =>
 // red with 6 UNDECLARED gaps named clap/drummergirl/pentemelodica, the dispatch
 // has not landed yet — that is the expected reading, not a reason to raise the
 // number back.
-// ⚠ TEMPORARILY 147 (was 148) — RESTORE TO 148 WHEN THE vrt-update DISPATCH LANDS.
-//
-// `darwin/workflow-audio-io.png` was `git rm`-ed on this branch (b619cfb5) so the
-// dispatch can rewrite it: it changed by 1803 px, which is UNDER its 9216 px
-// budget, and `--update-snapshots` refuses to rewrite a passing baseline (the
-// #1213 trap). `linux/workflow-audio-io` is EXEMPT, so that scene's darwin PNG
-// was the only half of a declared darwin-with-no-linux gap — deleting it made the
-// gap VANISH, dropping the real count 148 → 147 and leaving this ceiling 1 slack.
-// The both-directions ratchet caught it, which is exactly what it is for.
-//
-// When the bot re-captures that PNG the gap RETURNS and 148 becomes correct
-// again, so this number MUST go back up in the same commit as the capture. The
-// paired temporary edit is the `workflow-audio-io-composite.spec.ts` entry in
-// `$lib/ui/vrt-cable-stripe.ts` — both reverse together.
-const LINUX_DEFICIT_CEILING = 147;
+const LINUX_DEFICIT_CEILING = 148;
 
 describe('vrt-meta — LINUX-baseline DEFICIT RATCHET (all four mechanisms)', () => {
   // THE HONESTY GATE. CI renders on LINUX. A scene captured on darwin but
