@@ -257,7 +257,27 @@ Gates: unit lane; REPEAT=3 new tests; assert `task docs:check` is a no-op (no de
 > Between the two, a stereo→mono patch sums in the Web Audio graph as before.
 > That window is why they land adjacently.
 
-Generalize `planStereoAutowire` → the universal audio commit planner over derivedStereoPairs, per the corrected matrix above; `channelMode: 'both'|'left'|'right'` selects legs. Route ALL audio edge writers through it: Canvas handleConnect (:3773), pickPortMenuTarget (:6324-6398), commitCarriedEdge (:6243), `writeStereoSiblingEdge` generalizes (:3641) — **plus mike/driver.ts:79-105**. **Leg-level occupancy** (Q4): full patch replaces both legs; only-X replaces only the X leg. Leg-group deletion: handleDelete (:4069) + wcol-detach (:4077) + unpatch-menu.ts/UnpatchMenu.svelte expand to the group; "(L only)" label.
+Generalize `planStereoAutowire` → the universal audio commit planner over derivedStereoPairs, per the corrected matrix above; `channelMode: 'both'|'left'|'right'` selects legs. Route ALL audio edge writers through it. **Leg-level occupancy** (Q4): full patch replaces both legs; only-X replaces only the X leg. Leg-group deletion expands to the group; "(L only)" label.
+
+**Verified call sites (re-checked 2026-08-07 — GREP THE SYMBOL, the line numbers drift):**
+
+| symbol | file | line (2026-08-07) | plan's original |
+|---|---|---|---|
+| `writeStereoSiblingEdge` | `packages/web/src/lib/ui/Canvas.svelte` | 3669 | :3641 |
+| `handleConnect` | ″ | 3801 | :3773 |
+| `handleDelete` | ″ | 4097 | :4069 |
+| `commitCarriedEdge` | ″ | 6271 | :6243 |
+| `pickPortMenuTarget` | ″ | 6352 | :6324 |
+| wcol-detach branch | ″ | ~4125 | :4077 |
+| `ydoc.transact` (AI patching) | `packages/web/src/lib/mike/driver.ts` | 79 | :79-105 ✓ |
+| unpatch menu | `unpatch-menu.ts` / `UnpatchMenu.svelte` | — | — |
+
+⚠ Two traps in that table. **The plan gave the wrong DIRECTORY** — it is
+`lib/ui/Canvas.svelte`, not `lib/ui/canvas/Canvas.svelte`; the latter does not
+exist, so a `grep` scoped to the wrong path returns nothing and reads as "the
+symbol is gone". And every Canvas line had drifted **+28** (the file is 8849
+lines and grew above 3641). All five symbols are intact — nothing was renamed
+or removed. **Search by symbol name, never by line.**
 Tests: stereo-autowire.test.ts rewritten (mandatory legs, only-L/R, leg occupancy, and the stereo→mono **dual-mono** policy — which gets its FIRST explicit assert anywhere; assert BOTH legs are written and that NO round-trip special case collapses them to one); patch-convenience{,-columns}.test.ts updated; schema-cleanup-roundtrip golden untouched (no Edge field change).
 Gates: REPEAT=3 every changed unit file; e2e stereo-autowire.spec.ts rewritten (keeps the only full jack-click→carry→picker→commit e2e). NOT in any attest basis. Lands back-to-back with PR-4 (merge PR-3 only when PR-4 is ready for review, so main never sits long in the two-jacks-render-but-patch-writes-both state). 1–2 CI cycles.
 
