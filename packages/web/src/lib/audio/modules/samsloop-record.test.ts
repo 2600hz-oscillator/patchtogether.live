@@ -21,43 +21,87 @@ import { describe, expect, it } from 'vitest';
 import {
   samsloopMaxSeconds,
   samsloopMaxSecondsExact,
+  samsloopMaxCaptureFrames,
+  samsloopAchievedRate,
+  samsloopDecimationFactor,
   quantizeF32ToI16,
   quantizeF32ToI8,
   downsample,
   makeWavBlob,
   encodeRecordingBytes,
+  decodeRecordedPcm,
   samsloopDownloadFilename,
   bytesToBase64,
   base64ToBytes,
+  SamsloopCaptureBuffer,
   SAMSLOOP_RECORD_BUDGET_BYTES,
+  SAMSLOOP_RECORD_MAX_SECONDS,
   SAMSLOOP_REC_DEFAULTS,
   SAMSLOOP_RATE_OPTIONS,
   SAMSLOOP_BITS_OPTIONS,
   SAMSLOOP_CHANNELS_OPTIONS,
+  type SamsloopRecBits,
+  type SamsloopRecChannels,
 } from './samsloop-record';
 
-// ---------- (1) samsloopMaxSeconds — the 8-cell pinned table ----------
+// ---------- (1) samsloopMaxSeconds — the 12-cell pinned table ----------
 
 describe('samsloopMaxSeconds — rate × bits × channels table', () => {
-  it('250 kB byte budget is the cap', () => {
-    expect(SAMSLOOP_RECORD_BUDGET_BYTES).toBe(250_000);
+  it('the byte budget is 3 MB, and its derivation is the reason it is that', () => {
+    // The OLD value (250 000) is what this PR fixed: it was cloned from the
+    // uploaded-file cap and then orphaned when that cap was raised 8× to 2 MB,
+    // leaving a module that LOADED 62.5 s and RECORDED 1.42 s. The new number
+    // is derived (see the constant's comment) rather than inherited:
+    //   3 MB raw → ×4/3 base64 → 4 MB in node.data → ≤25 % of the relay's
+    //   16 MB per-rack warn threshold for ONE recording.
+    expect(SAMSLOOP_RECORD_BUDGET_BYTES).toBe(3_000_000);
+    // base64 of a full-budget take stays inside a quarter of the warn budget.
+    const b64Bytes = Math.ceil(SAMSLOOP_RECORD_BUDGET_BYTES / 3) * 4;
+    const relayWarnBytes = 16 * 1024 * 1024;
+    expect(b64Bytes / relayWarnBytes).toBeLessThanOrEqual(0.25);
   });
 
-  // The spec's table (rounded to 2 decimals):
-  //   mono   8-bit  22k = 11.34 s   stereo 8-bit  22k = 5.67 s
-  //   mono  16-bit  22k =  5.67 s   stereo 16-bit 22k = 2.83 s
-  //   mono   8-bit  44k =  5.67 s   stereo 8-bit  44k = 2.83 s   (spec said 5.66 — typo in the brief, mathematically equal to mono 16-bit 22k = 5.67)
-  //   mono  16-bit  44k =  2.83 s   stereo 16-bit 44k = 1.42 s
+  it('the LENGTH cap is 60 s — the node.data/TWOTRACKS architecture boundary', () => {
+    // Past ~60 s a recording should stop riding node.data (which syncs it to
+    // every peer) and become a worklet-owned, out-of-band buffer like
+    // TWOTRACKS. Raising this is an owner decision, so it is pinned here.
+    expect(SAMSLOOP_RECORD_MAX_SECONDS).toBe(60);
+    // …and NO settings combination can exceed it, which is the property that
+    // makes the boundary real rather than advisory.
+    for (const r of SAMSLOOP_RATE_OPTIONS) {
+      for (const b of SAMSLOOP_BITS_OPTIONS) {
+        for (const c of SAMSLOOP_CHANNELS_OPTIONS) {
+          expect(
+            samsloopMaxSecondsExact(r, b, c),
+            `${r}/${b}/${c} exceeds the ${SAMSLOOP_RECORD_MAX_SECONDS}s cap`,
+          ).toBeLessThanOrEqual(SAMSLOOP_RECORD_MAX_SECONDS);
+        }
+      }
+    }
+  });
+
+  // The table (rounded to 2 decimals). † marks the cells where the 60 s LENGTH
+  // cap binds rather than the byte budget.
+  //   mono  8-bit 22k = 60.00 s†  stereo  8-bit 22k = 60.00 s†
+  //   mono 16-bit 22k = 60.00 s†  stereo 16-bit 22k = 34.01 s
+  //   mono  8-bit 44k = 60.00 s†  stereo  8-bit 44k = 34.01 s
+  //   mono 16-bit 44k = 34.01 s   stereo 16-bit 44k = 17.01 s
+  //   mono  8-bit 48k = 60.00 s†  stereo  8-bit 48k = 31.25 s
+  //   mono 16-bit 48k = 31.25 s   stereo 16-bit 48k = 15.63 s
   it.each([
     // [rate, bits, channels, expected seconds]
-    [22_050, 8,  1, 11.34],
-    [22_050, 16, 1, 5.67],
-    [44_100, 8,  1, 5.67],
-    [44_100, 16, 1, 2.83],
-    [22_050, 8,  2, 5.67],
-    [22_050, 16, 2, 2.83],
-    [44_100, 8,  2, 2.83],
-    [44_100, 16, 2, 1.42],
+    [22_050, 8,  1, 60.00],
+    [22_050, 16, 1, 60.00],
+    [44_100, 8,  1, 60.00],
+    [44_100, 16, 1, 34.01],
+    [48_000, 8,  1, 60.00],
+    [48_000, 16, 1, 31.25],
+    [22_050, 8,  2, 60.00],
+    [22_050, 16, 2, 34.01],
+    [44_100, 8,  2, 34.01],
+    [44_100, 16, 2, 17.01],
+    [48_000, 8,  2, 31.25],
+    [48_000, 16, 2, 15.63],
   ])('rate=%i bits=%i channels=%i → %f s', (rate, bits, channels, expected) => {
     expect(samsloopMaxSeconds(rate, bits, channels)).toBeCloseTo(expected, 2);
   });
@@ -69,27 +113,119 @@ describe('samsloopMaxSeconds — rate × bits × channels table', () => {
     expect(samsloopMaxSeconds(-1, 16, 1)).toBe(0);
   });
 
-  it('exact + rounded helpers agree to 2 decimals', () => {
+  it('the rounded helper is exactly the exact one, to 2 decimals', () => {
+    // Equality, not `toBeCloseTo(…, 2)`: 15.625 rounds to 15.63, which is a
+    // difference of EXACTLY 0.005 and therefore fails a 2-decimal closeness
+    // check while being precisely correct. Assert the contract (round to 2 dp)
+    // rather than a tolerance that happens to sit on the boundary.
     for (const r of SAMSLOOP_RATE_OPTIONS) {
       for (const b of SAMSLOOP_BITS_OPTIONS) {
         for (const c of SAMSLOOP_CHANNELS_OPTIONS) {
-          expect(samsloopMaxSeconds(r, b, c)).toBeCloseTo(
-            samsloopMaxSecondsExact(r, b, c),
-            2,
+          expect(samsloopMaxSeconds(r, b, c), `${r}/${b}/${c}`).toBe(
+            Math.round(samsloopMaxSecondsExact(r, b, c) * 100) / 100,
           );
         }
       }
     }
   });
 
-  it('defaults: 44.1 kHz / 16-bit / 2 ch = 1.42 s budget', () => {
+  it('defaults: 48 kHz / 16-bit / MONO = 31.25 s budget (was 1.42 s)', () => {
+    expect(SAMSLOOP_REC_DEFAULTS).toEqual({ rate: 48_000, bits: 16, channels: 1 });
     expect(
       samsloopMaxSeconds(
         SAMSLOOP_REC_DEFAULTS.rate,
         SAMSLOOP_REC_DEFAULTS.bits,
         SAMSLOOP_REC_DEFAULTS.channels,
       ),
-    ).toBeCloseTo(1.42, 2);
+    ).toBeCloseTo(31.25, 2);
+    // The old defaults (stereo / 16 / 44.1k) against the old 250 kB budget
+    // bought 1.4172 s. Same formula, both numbers, so the 22× claim in the
+    // constant's comment is checked rather than asserted in prose.
+    const oldSeconds = 250_000 / (44_100 * 2 * 2);
+    expect(oldSeconds).toBeCloseTo(1.4172, 3);
+    expect(31.25 / oldSeconds).toBeCloseTo(22.05, 1);
+  });
+
+  it('every RATE option is offered by the switch AND typed', () => {
+    // The card renders its RATE buttons from SAMSLOOP_RATE_OPTIONS, so this
+    // list is the single source of truth for the switch, the type and the
+    // budget table — the card cannot offer a rate the table has not costed.
+    expect([...SAMSLOOP_RATE_OPTIONS]).toEqual([22_050, 44_100, 48_000]);
+  });
+});
+
+// ---------- (1b) the ACHIEVED rate — the tagging bug ----------
+
+describe('samsloopAchievedRate — what the bytes ACTUALLY are', () => {
+  it('integer decimation cannot honour 44.1k from a 48k context', () => {
+    // THE BUG, stated as arithmetic. round(48000/44100) = 1 ⇒ no decimation.
+    expect(samsloopDecimationFactor(48_000, 44_100)).toBe(1);
+    expect(samsloopAchievedRate(48_000, 44_100)).toBe(48_000);
+    // …and 22.05k from 48k lands on 24k, not 22.05k. BOTH switch positions
+    // were mis-tagged from a 48 kHz context; only a 44.1 kHz one was correct.
+    expect(samsloopDecimationFactor(48_000, 22_050)).toBe(2);
+    expect(samsloopAchievedRate(48_000, 22_050)).toBe(24_000);
+  });
+
+  it('is exact wherever the context divides evenly', () => {
+    expect(samsloopAchievedRate(44_100, 44_100)).toBe(44_100);
+    expect(samsloopAchievedRate(44_100, 22_050)).toBe(22_050);
+    expect(samsloopAchievedRate(48_000, 48_000)).toBe(48_000);
+    expect(samsloopAchievedRate(96_000, 48_000)).toBe(48_000);
+    // No upsampling: a slower context than the target stays where it is.
+    expect(samsloopAchievedRate(44_100, 48_000)).toBe(44_100);
+  });
+
+  it('agrees with what downsample actually emits, at every context × switch', () => {
+    // ⚠ THE NEGATIVE CONTROL ON THE INSTRUMENT. `samsloopAchievedRate` is a
+    // PREDICTION about `downsample`; if the two ever drift, the prediction
+    // would keep returning a confident, wrong number. Tie them to the same
+    // observable — output length — rather than trusting both to use the same
+    // rounding rule.
+    const SECONDS = 1;
+    for (const srcRate of [44_100, 48_000, 96_000]) {
+      const src = new Float32Array(srcRate * SECONDS);
+      for (const dst of SAMSLOOP_RATE_OPTIONS) {
+        const out = downsample(src, srcRate, dst);
+        const predicted = samsloopAchievedRate(srcRate, dst);
+        expect(
+          out.length,
+          `src=${srcRate} dst=${dst}: downsample emitted ${out.length} frames, ` +
+          `samsloopAchievedRate predicts ${predicted} Hz × ${SECONDS}s`,
+        ).toBe(Math.floor(predicted * SECONDS));
+      }
+    }
+  });
+
+  it('MEASURED: the old tag detunes a 1000 Hz reference by −148 cents', () => {
+    // The whole reason `rate` moved off the RATE switch. Encode one second of
+    // a 1000 Hz tone captured at 48 kHz with the switch at 44.1k, then ask
+    // what the playback path HEARS — the worklet reads the buffer at
+    // bufferRate/contextRate, so the tag is the tempo/pitch.
+    const SRC = 48_000;
+    const HZ = 1000;
+    const src = new Float32Array(SRC);
+    for (let i = 0; i < SRC; i++) src[i] = Math.sin((2 * Math.PI * HZ * i) / SRC);
+    const { bytes, rate } = encodeRecordingBytes(src, src, SRC, 44_100, 16, 1);
+    const back = decodeRecordedPcm({ bytesB64: bytesToBase64(bytes), bits: 16, channels: 1 });
+
+    let crossings = 0;
+    for (let i = 1; i < back.length; i++) if (back[i - 1]! < 0 && back[i]! >= 0) crossings++;
+
+    // With the CORRECT (new) tag: 1000 Hz, and the take reports its true 1 s.
+    const heardNow = crossings / (back.length / rate);
+    expect(rate).toBe(48_000);
+    expect(heardNow, `heard ${heardNow.toFixed(1)} Hz`).toBeCloseTo(HZ, -1);
+    expect(back.length / rate, 'duration must be the 1 s that was recorded').toBeCloseTo(1, 3);
+
+    // NEGATIVE CONTROL: the tag the card used to write. If this leg ever stops
+    // being wrong, the assertion above has stopped proving anything.
+    const heardBefore = crossings / (back.length / 44_100);
+    const cents = 1200 * Math.log2(heardBefore / HZ);
+    expect(heardBefore, `old tag heard ${heardBefore.toFixed(1)} Hz`).toBeCloseTo(918.3, 0);
+    expect(cents, `old tag ${cents.toFixed(0)} cents`).toBeCloseTo(-148, 0);
+    expect(back.length / 44_100, 'old tag claimed 8.8 % more time than was recorded')
+      .toBeCloseTo(1.088, 2);
   });
 });
 
@@ -299,14 +435,15 @@ describe('encodeRecordingBytes', () => {
   it('mono 8-bit at native rate (no downsample) → 1 byte per sample', () => {
     const l = new Float32Array([0, 0.5, -0.5, 1.0]);
     const r = new Float32Array(4); // ignored for mono
-    const bytes = encodeRecordingBytes(l, r, 22050, 22050, 8, 1);
+    const { bytes, rate } = encodeRecordingBytes(l, r, 22050, 22050, 8, 1);
     expect(bytes.byteLength).toBe(4); // mono 8-bit at the same rate
+    expect(rate).toBe(22050);
   });
 
   it('stereo 16-bit at native rate → 4 bytes per frame (interleaved L,R)', () => {
     const l = new Float32Array([0.5, 0.5, 0.5, 0.5]);
     const r = new Float32Array([-0.5, -0.5, -0.5, -0.5]);
-    const bytes = encodeRecordingBytes(l, r, 22050, 22050, 16, 2);
+    const { bytes } = encodeRecordingBytes(l, r, 22050, 22050, 16, 2);
     expect(bytes.byteLength).toBe(4 * 2 * 2); // 4 frames × 2 ch × 2 bytes
     // Reinterpret as Int16 (little-endian native) and check interleaving.
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -319,18 +456,152 @@ describe('encodeRecordingBytes', () => {
   it('mono 16-bit @ 22050 from 44100 source → halves the length post-downsample', () => {
     const l = new Float32Array(200).fill(0.25);
     const r = new Float32Array(200);
-    const bytes = encodeRecordingBytes(l, r, 44100, 22050, 16, 1);
+    const { bytes, rate } = encodeRecordingBytes(l, r, 44100, 22050, 16, 1);
     // 200 samples → 100 post-downsample → 100 * 2 bytes = 200 bytes.
     expect(bytes.byteLength).toBe(200);
+    expect(rate).toBe(22050);
   });
 
-  it('stays under the 250 kB budget at the slowest settings (sanity)', () => {
-    // 2.83 s of stereo 16-bit @ 44.1k = 2.83 * 44100 * 4 bytes ≈ 250 kB.
-    // We capture a 1-second buffer here, well under cap.
-    const l = new Float32Array(48000).fill(0);
-    const r = new Float32Array(48000).fill(0);
-    const bytes = encodeRecordingBytes(l, r, 48000, 44100, 16, 2);
-    expect(bytes.byteLength).toBeLessThan(SAMSLOOP_RECORD_BUDGET_BYTES);
+  it('reports the ACHIEVED rate, which is not always the one it was given', () => {
+    const l = new Float32Array(480);
+    const r = new Float32Array(480);
+    expect(encodeRecordingBytes(l, r, 48000, 44100, 16, 1).rate).toBe(48000);
+    expect(encodeRecordingBytes(l, r, 48000, 22050, 16, 1).rate).toBe(24000);
+    expect(encodeRecordingBytes(l, r, 48000, 48000, 16, 1).rate).toBe(48000);
+  });
+});
+
+// ---------- (6a) THE BUDGET IS ENFORCED BY CONSTRUCTION ----------
+//
+// ⚠ THE SILENT-TRUNCATION FIX, AS A PROPERTY. The card used to encode
+// whatever it had accumulated and then `subarray(0, BUDGET)` it — a "safety
+// net" whose comment said it should never fire and which, because the
+// accumulator ran on the SWITCH rate while the encoder produced bytes at the
+// ACHIEVED rate, fired on EVERY take (272 640 bytes against a 250 000 budget:
+// ~0.118 s cut off the end, every time). The net is gone. What replaces it is
+// this: the accumulator's capacity comes from the same budget the encoder is
+// measured against, so a full-capacity capture CANNOT overshoot.
+
+describe('a full-capacity capture always encodes inside the budget', () => {
+  const CONTEXT_RATES = [44_100, 48_000, 96_000];
+
+  for (const captureRate of CONTEXT_RATES) {
+    for (const dstRate of SAMSLOOP_RATE_OPTIONS) {
+      for (const bits of SAMSLOOP_BITS_OPTIONS) {
+        for (const channels of SAMSLOOP_CHANNELS_OPTIONS) {
+          it(`ctx ${captureRate} → ${dstRate}/${bits}-bit/${channels}ch fills to the cap and fits`, () => {
+            const cap = samsloopMaxCaptureFrames(
+              captureRate, dstRate, bits as SamsloopRecBits, channels as SamsloopRecChannels,
+            );
+            expect(cap).toBeGreaterThan(0);
+            // A full accumulator, encoded exactly as the card encodes it.
+            const l = new Float32Array(cap);
+            const { bytes, rate } = encodeRecordingBytes(
+              l, l, captureRate, dstRate,
+              bits as SamsloopRecBits, channels as SamsloopRecChannels,
+            );
+            expect(
+              bytes.byteLength,
+              `${bytes.byteLength} B at ctx ${captureRate} → ${dstRate}/${bits}/${channels}`,
+            ).toBeLessThanOrEqual(SAMSLOOP_RECORD_BUDGET_BYTES);
+            // …and inside the length cap, measured with the ACHIEVED rate.
+            const frames = bytes.byteLength / (Math.ceil(bits / 8) * channels);
+            expect(frames / rate).toBeLessThanOrEqual(SAMSLOOP_RECORD_MAX_SECONDS + 1e-9);
+            // NEGATIVE CONTROL on the capacity itself: it is not merely
+            // "small enough" — it is the LARGEST capture that still fits, so
+            // the budget is spent rather than left on the table. One more
+            // stored frame would breach one of the two caps.
+            const factor = samsloopDecimationFactor(captureRate, dstRate);
+            const oneMore = encodeRecordingBytes(
+              new Float32Array(cap + factor), new Float32Array(cap + factor),
+              captureRate, dstRate,
+              bits as SamsloopRecBits, channels as SamsloopRecChannels,
+            );
+            const overBytes = oneMore.bytes.byteLength > SAMSLOOP_RECORD_BUDGET_BYTES;
+            const overSecs =
+              (oneMore.bytes.byteLength / (Math.ceil(bits / 8) * channels)) / oneMore.rate
+                > SAMSLOOP_RECORD_MAX_SECONDS;
+            expect(
+              overBytes || overSecs,
+              'capacity leaves budget unused — one more stored frame still fits',
+            ).toBe(true);
+          });
+        }
+      }
+    }
+  }
+});
+
+// ---------- (6b) SamsloopCaptureBuffer ----------
+
+describe('SamsloopCaptureBuffer', () => {
+  it('accumulates chunks in order and hands back exactly what was written', () => {
+    const buf = new SamsloopCaptureBuffer(10);
+    expect(buf.frames).toBe(0);
+    expect(buf.full).toBe(false);
+    expect(buf.append(new Float32Array([1, 2, 3]), new Float32Array([-1, -2, -3]))).toBe(3);
+    expect(buf.append(new Float32Array([4, 5]), new Float32Array([-4, -5]))).toBe(2);
+    const { l, r } = buf.channels();
+    expect(Array.from(l)).toEqual([1, 2, 3, 4, 5]);
+    expect(Array.from(r)).toEqual([-1, -2, -3, -4, -5]);
+    expect(buf.frames).toBe(5);
+  });
+
+  it('TRUNCATES at capacity — it keeps the HEAD of the take, never the tail', () => {
+    // The distinction from AudioRingBuffer, asserted rather than described: a
+    // rolling ring would answer [3,4,5], which would silently change WHICH
+    // seconds of a long hold the user keeps.
+    const buf = new SamsloopCaptureBuffer(3);
+    expect(buf.append(new Float32Array([1, 2, 3, 4, 5]), new Float32Array([1, 2, 3, 4, 5]))).toBe(3);
+    expect(buf.full).toBe(true);
+    expect(Array.from(buf.channels().l)).toEqual([1, 2, 3]);
+    // Further chunks are dropped, not wrapped.
+    expect(buf.append(new Float32Array([9]), new Float32Array([9]))).toBe(0);
+    expect(Array.from(buf.channels().l)).toEqual([1, 2, 3]);
+  });
+
+  it('a zero-capacity buffer accepts nothing and reports itself full', () => {
+    const buf = new SamsloopCaptureBuffer(0);
+    expect(buf.full).toBe(true);
+    expect(buf.append(new Float32Array([1]), new Float32Array([1]))).toBe(0);
+    expect(buf.channels().l.length).toBe(0);
+  });
+
+  it('NEGATIVE CONTROL: byte-identical to the old grow-and-copy accumulator', () => {
+    // The capture fix must be a pure performance change. Feed both the old
+    // implementation (reallocate + copy per chunk) and the new one the same
+    // chunk stream and require the encoded bytes to match EXACTLY — a
+    // performance fix that changed a sample would be the worst outcome.
+    const CHUNK = 128;
+    const CHUNKS = 200;
+    let oldL = new Float32Array(0);
+    let oldR = new Float32Array(0);
+    const buf = new SamsloopCaptureBuffer(CHUNK * CHUNKS);
+    for (let c = 0; c < CHUNKS; c++) {
+      const l = new Float32Array(CHUNK);
+      const r = new Float32Array(CHUNK);
+      for (let i = 0; i < CHUNK; i++) {
+        l[i] = Math.sin((c * CHUNK + i) * 0.01) * 0.9;
+        r[i] = Math.cos((c * CHUNK + i) * 0.013) * 0.7;
+      }
+      // OLD: allocate the whole take again, copy it, append the chunk.
+      const nl = new Float32Array(oldL.length + l.length);
+      nl.set(oldL, 0); nl.set(l, oldL.length); oldL = nl;
+      const nr = new Float32Array(oldR.length + r.length);
+      nr.set(oldR, 0); nr.set(r, oldR.length); oldR = nr;
+      // NEW.
+      buf.append(l, r);
+    }
+    const now = buf.channels();
+    expect(now.l.length).toBe(oldL.length);
+    expect(Array.from(now.l)).toEqual(Array.from(oldL));
+    expect(Array.from(now.r)).toEqual(Array.from(oldR));
+    // …and the same all the way through the encoder, which is what actually
+    // reaches node.data.
+    const before = encodeRecordingBytes(oldL, oldR, 48_000, 48_000, 16, 2);
+    const after = encodeRecordingBytes(now.l, now.r, 48_000, 48_000, 16, 2);
+    expect(after.rate).toBe(before.rate);
+    expect(Array.from(after.bytes)).toEqual(Array.from(before.bytes));
   });
 });
 

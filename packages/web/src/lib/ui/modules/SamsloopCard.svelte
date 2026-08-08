@@ -55,6 +55,8 @@
   import {
     samsloopMaxSeconds,
     samsloopMaxSecondsExact,
+    samsloopAchievedRate,
+    samsloopMaxCaptureFrames,
     encodeRecordingBytes,
     decodeRecordedPcm,
     buildRecordedSample,
@@ -63,8 +65,9 @@
     samsloopDownloadFilename,
     bytesToBase64,
     base64ToBytes,
+    SamsloopCaptureBuffer,
     SAMSLOOP_REC_DEFAULTS,
-    SAMSLOOP_RECORD_BUDGET_BYTES,
+    SAMSLOOP_RATE_OPTIONS,
     type SamsloopRecRate,
     type SamsloopRecBits,
     type SamsloopRecChannels,
@@ -178,11 +181,23 @@
   // redraw requests to one per animation frame.
   let pendingPeakRaf: number | null = null;
 
-  // L/R accumulators for the current recording. We keep raw Float32 so
+  // L/R accumulator for the current recording. We keep raw Float32 so
   // the quantize + downsample step on STOP works on the full-precision
   // capture (not on the visual peak slots, which are lossy by design).
-  let accL: Float32Array = new Float32Array(0);
-  let accR: Float32Array = new Float32Array(0);
+  //
+  // ⚠ FIXED CAPACITY, ALLOCATED ONCE AT REC START. This used to be a pair
+  // of plain Float32Arrays reallocated-and-copied on every tap chunk —
+  // O(n²) in the length of the take, at 375 chunks/second, on the audio
+  // thread's own thread. See SamsloopCaptureBuffer for the measurements.
+  let capture: SamsloopCaptureBuffer = new SamsloopCaptureBuffer(0);
+
+  // The AudioContext rate the tap captures at. Everything downstream —
+  // the achieved rate, the byte budget, the accumulator capacity — is a
+  // function of this, so it is read from the live engine rather than
+  // assumed. Seeded at 48 kHz (what almost every device reports) purely so
+  // the max-seconds label reads sensibly before audio has started; the
+  // value that reaches a recording is always the tap's own.
+  let captureRate = $state<number>(48_000);
 
   let isRecording = $derived(recMachine.state === 'recording');
   let isCapStopped = $derived(
@@ -192,10 +207,21 @@
   let recButtonDisabled = $derived(uploadInFlight);
   let fileInputDisabled = $derived(isRecording);
 
+  // The rate the bytes will ACTUALLY be stored at. `recRate` is only the
+  // RATE switch — `downsample` decimates by an integer factor, so asking
+  // for 44.1 kHz from a 48 kHz context yields 48 kHz. Everything that
+  // counts bytes or seconds must use THIS, not the switch; using the
+  // switch is what made the encoder overshoot the budget on every take
+  // (and then get silently trimmed) as well as detuning playback.
+  let achievedRate = $derived(samsloopAchievedRate(captureRate, recRate));
+
   // maxSeconds at the current settings — drives the bar's x-axis AND
   // the auto-stop trigger.
-  let maxSeconds = $derived(samsloopMaxSeconds(recRate, recBits, recChannels));
-  let maxSecondsExact = $derived(samsloopMaxSecondsExact(recRate, recBits, recChannels));
+  let maxSeconds = $derived(samsloopMaxSeconds(achievedRate, recBits, recChannels));
+  let maxSecondsExact = $derived(samsloopMaxSecondsExact(achievedRate, recBits, recChannels));
+  // Shown next to the RATE switch when the switch cannot be honoured, so
+  // the control never silently claims a rate it does not produce.
+  let rateIsExact = $derived(achievedRate === recRate);
 
   function pushRecSetting<K extends 'recChannels' | 'recBits' | 'recRate'>(
     key: K,
@@ -232,11 +258,43 @@
     try {
       const r = eng.read(node, 'recTap');
       if (!r) return null;
-      return r as { port: MessagePort; setEnabled: (e: boolean) => void; sampleRate: number };
+      const tap = r as { port: MessagePort; setEnabled: (e: boolean) => void; sampleRate: number };
+      if (tap.sampleRate > 0) captureRate = tap.sampleRate;
+      return tap;
     } catch {
       return null;
     }
   }
+
+  /** Read the live AudioContext rate. Returns false until the audio engine
+   *  exists — the max-seconds label depends on it, and the label is on
+   *  screen long before anyone presses REC. */
+  function refreshCaptureRate(): boolean {
+    const eng = engineCtx.get();
+    if (!eng) return false;
+    try {
+      if (!eng.hasDomain('audio')) return false;
+      const sr = eng.getDomain<AudioEngine>('audio').ctx.sampleRate;
+      if (!(sr > 0)) return false;
+      captureRate = sr;
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  // `engineCtx.get()` is not reactive, so poll until the engine boots and
+  // then stop. Bounded: 250 ms × 120 = 30 s, after which the seeded 48 kHz
+  // stands for the label only — `startRecording` reads the tap's own rate,
+  // so a recording is never encoded against a guess.
+  $effect(() => {
+    if (refreshCaptureRate()) return;
+    let tries = 0;
+    const t = setInterval(() => {
+      if (refreshCaptureRate() || ++tries >= 120) clearInterval(t);
+    }, 250);
+    return () => clearInterval(t);
+  });
 
   function startRecording() {
     const tap = getTap();
@@ -256,8 +314,14 @@
     const w = canvasEl?.width ?? 200;
     recBarWidth = w;
     recRunningPeaks = new Float32Array(w);
-    accL = new Float32Array(0);
-    accR = new Float32Array(0);
+
+    // ONE allocation for the whole take, sized so the encoded result is
+    // provably inside the byte budget (and the 60 s length cap). Sized from
+    // the tap's OWN rate — the settings are frozen for the duration because
+    // `pushRecSetting` stops the recording on any change.
+    capture = new SamsloopCaptureBuffer(
+      samsloopMaxCaptureFrames(tap.sampleRate, recRate, recBits, recChannels),
+    );
 
     recMachine = samsloopRecStart(recMachine, tap.sampleRate);
 
@@ -284,41 +348,38 @@
   function onTapChunk(l: Float32Array, r: Float32Array) {
     if (recMachine.state !== 'recording') return;
 
-    // Append to the float accumulators (the real recording — full
-    // AudioContext-rate Float32 source for the quantize/downsample step).
-    const lNext = new Float32Array(accL.length + l.length);
-    lNext.set(accL, 0);
-    lNext.set(l, accL.length);
-    accL = lNext;
-    const rNext = new Float32Array(accR.length + r.length);
-    rNext.set(accR, 0);
-    rNext.set(r, accR.length);
-    accR = rNext;
+    // Append into the pre-allocated accumulator — one bounded memcpy of the
+    // chunk, no allocation and no re-copy of what came before. `written`
+    // may be short of `l.length` on the last chunk before the cap.
+    const before = capture.frames;
+    const written = capture.append(l, r);
+    const after = capture.frames;
 
     // Update the visual peak buffer. We compute the |max| sample of the
     // new chunk and fold it into the slot(s) it maps to on the bar.
-    const sr = attachedTap?.sampleRate ?? 48000;
+    const sr = attachedTap?.sampleRate ?? captureRate;
     // The bar's x-axis is `maxSeconds` long. Each slot's time width is
     // `maxSecondsExact / barWidth` seconds.
     const slotSec = maxSecondsExact / recBarWidth;
     const samplesPerSlot = Math.max(1, Math.floor(sr * slotSec));
-    // Walk the entire accumulator and refresh slots — cheap (linear in
-    // chunk length, not buffer length) since we only need to update
-    // slots covered by the new samples. Compute the slot range the new
-    // samples belong to.
-    const startSlot = Math.floor((accL.length - l.length) / samplesPerSlot);
-    const endSlot   = Math.min(recBarWidth - 1, Math.floor((accL.length - 1) / samplesPerSlot));
-    for (let s = startSlot; s <= endSlot && s >= 0; s++) {
-      const lo = s * samplesPerSlot;
-      const hi = Math.min(accL.length, lo + samplesPerSlot);
-      let peak = 0;
-      for (let i = lo; i < hi; i++) {
-        const v = Math.abs(accL[i] ?? 0);
-        if (v > peak) peak = v;
+    if (written > 0) {
+      // Only the slots the NEW samples land in need refreshing — linear in
+      // chunk length, not in buffer length.
+      const { l: capturedL } = capture.channels();
+      const startSlot = Math.floor(before / samplesPerSlot);
+      const endSlot   = Math.min(recBarWidth - 1, Math.floor((after - 1) / samplesPerSlot));
+      for (let s = startSlot; s <= endSlot && s >= 0; s++) {
+        const lo = s * samplesPerSlot;
+        const hi = Math.min(after, lo + samplesPerSlot);
+        let peak = 0;
+        for (let i = lo; i < hi; i++) {
+          const v = Math.abs(capturedL[i] ?? 0);
+          if (v > peak) peak = v;
+        }
+        // Mirror into the visual buffer (mono mix of L for display — keeps
+        // the bar shape stable regardless of CHAN setting).
+        recRunningPeaks[s] = peak;
       }
-      // Mirror into the visual buffer (mono mix of L for display — keeps
-      // the bar shape stable regardless of CHAN setting).
-      recRunningPeaks[s] = peak;
     }
 
     // Force the waveform $effect to re-run by reassigning the reactive
@@ -331,13 +392,11 @@
       });
     }
 
-    // Auto-stop on cap. The trigger is the exact-byte budget, not the
-    // rounded display value. We compute it from the current settings'
-    // bytes-per-second × elapsed seconds.
-    const elapsedSec = accL.length / sr;
-    if (elapsedSec >= maxSecondsExact) {
-      stopRecording('cap');
-    }
+    // Auto-stop on cap. The accumulator's capacity IS the budget (it was
+    // sized by samsloopMaxCaptureFrames from the tap's real rate), so
+    // "full" is the trigger — no separate elapsed-seconds arithmetic that
+    // could disagree with it.
+    if (capture.full) stopRecording('cap');
   }
 
   function stopRecording(reason: 'user' | 'cap') {
@@ -367,21 +426,28 @@
     // The byte payload is a base64 string (opaque to Yjs); broadcast is
     // one update. (A 144 kB number[] would recurse syncedstore's YArray
     // wrapper and blow the stack at insert.)
-    if (accL.length === 0) return;
-    const bytes = encodeRecordingBytes(
-      accL,
-      accR,
+    const captured = capture.channels();
+    if (captured.l.length === 0) return;
+    // ⚠ `rate` is the encoder's answer, NOT `recRate`. The RATE switch is a
+    // request; integer decimation may not be able to honour it, and tagging
+    // the bytes with the request is what detuned every take made from a
+    // 48 kHz context (−148 cents). There is no truncation step here any
+    // more either: the accumulator's capacity was derived from the same
+    // budget the encoder is bounded by, so the old
+    // `bytes.subarray(0, BUDGET)` "safety net" — whose comment said it
+    // should never fire, and which in fact fired on EVERY take, cutting
+    // ~0.118 s off the end — has nothing left to do. If that ever stops
+    // being true it must be a loud test failure, not a silent trim:
+    // `samsloop-record.test.ts` encodes a full-capacity capture at every
+    // settings combination and asserts the result fits.
+    const { bytes, rate: storedRate } = encodeRecordingBytes(
+      captured.l,
+      captured.r,
       recMachine.sampleRate,
       recRate,
       recBits,
       recChannels,
     );
-    // Hard-cap defense — the encoder shouldn't exceed the budget at this
-    // point (the auto-stop fires when elapsed seconds reach the exact
-    // budget) but slice as a safety net so we never overshoot.
-    const trimmed = bytes.byteLength > SAMSLOOP_RECORD_BUDGET_BYTES
-      ? bytes.subarray(0, SAMSLOOP_RECORD_BUDGET_BYTES)
-      : bytes;
     const t = patch.nodes[id];
     if (!t) return;
     if (!t.data) t.data = {};
@@ -395,7 +461,7 @@
     // the factory read only the upload keys the recording was SILENT. Clear
     // the upload first, then commit; the upload path mirrors this on `sample`.
     clearSamsloopUploadKeys(d as Record<string, unknown>);
-    const { sample, frames } = buildRecordedSample(trimmed, recRate, recBits, recChannels);
+    const { sample, frames } = buildRecordedSample(bytes, storedRate, recBits, recChannels);
     d.sample = sample;
     // The window faders bound against these. Written straight from the encode
     // rather than waiting on the factory's poll, so they are correct the
@@ -403,7 +469,7 @@
     // path is what repairs a rack RECORDED BEFORE this fix, which has the
     // bytes but no metadata.
     d.sampleLength = frames;
-    d.sampleRate = recRate;
+    d.sampleRate = storedRate;
     // …and open the loop window over the whole take, exactly as the upload
     // path does. Left at the declared default (end = 1e6) the worklet clamps
     // to the buffer and plays it all, but the FADERS would read a window 700×
@@ -830,24 +896,31 @@
         </div>
         <div class="rec-setting">
           <span class="rec-setting-label">RATE</span>
-          <button
-            type="button"
-            class="rec-setting-opt"
-            class:active={recRate === 22050}
-            disabled={isRecording}
-            onclick={() => pickRecRate(22050)}
-            data-testid="samsloop-rate-22k"
-          >22k</button>
-          <button
-            type="button"
-            class="rec-setting-opt"
-            class:active={recRate === 44100}
-            disabled={isRecording}
-            onclick={() => pickRecRate(44100)}
-            data-testid="samsloop-rate-44k"
-          >44k</button>
+          <!-- Options come from SAMSLOOP_RATE_OPTIONS so the switch cannot
+               drift from the type + the budget table (card-vs-def divergence
+               is a known blind spot — see CLAUDE.md). testids stay the
+               stable `samsloop-rate-<n>k` shape the e2e specs use. -->
+          {#each SAMSLOOP_RATE_OPTIONS as opt (opt)}
+            <button
+              type="button"
+              class="rec-setting-opt"
+              class:active={recRate === opt}
+              disabled={isRecording}
+              onclick={() => pickRecRate(opt)}
+              data-testid={`samsloop-rate-${Math.round(opt / 1000)}k`}
+            >{Math.round(opt / 1000)}k</button>
+          {/each}
         </div>
       </div>
+      {#if !rateIsExact}
+        <!-- The RATE switch is a REQUEST. `downsample` decimates by an
+             integer factor, so it cannot always be honoured — say so rather
+             than letting the control claim a rate it does not produce. -->
+        <div class="rec-rate-note" data-testid="samsloop-rate-note">
+          records at {(achievedRate / 1000).toFixed(1)}k — {(captureRate / 1000).toFixed(1)}k
+          input doesn't divide to {Math.round(recRate / 1000)}k
+        </div>
+      {/if}
 
       <div class="rec-bar-row">
         <button
@@ -1094,6 +1167,12 @@
   .samsloop-card .rec-setting-opt:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+  .samsloop-card .rec-rate-note {
+    font-size: 0.5rem;
+    color: var(--text-dim, #8b94a5);
+    font-family: ui-monospace, monospace;
+    letter-spacing: 0.02em;
   }
 
   .samsloop-card .rec-bar-row {

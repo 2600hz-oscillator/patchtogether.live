@@ -273,13 +273,21 @@ export function samsloopMaxCaptureFrames(
   bits: SamsloopRecBits,
   channels: SamsloopRecChannels,
 ): number {
-  if (captureRate <= 0) return 0;
+  if (captureRate <= 0 || bits <= 0 || channels <= 0) return 0;
   const achieved = samsloopAchievedRate(captureRate, dstRate);
-  const maxSec = samsloopMaxSecondsExact(achieved, bits, channels);
-  if (maxSec <= 0) return 0;
-  const factor = samsloopDecimationFactor(captureRate, dstRate);
-  const storedFrames = Math.floor(maxSec * achieved);
-  return storedFrames * factor;
+  if (achieved <= 0) return 0;
+  // ⚠ INTEGER ARITHMETIC ON BOTH CAPS, not `floor(maxSeconds × rate)`.
+  // `maxSecondsExact` is a float division; multiplying it back by the rate
+  // reintroduces the rounding it just did and lands one frame short (measured:
+  // 3e6/88200×22050 evaluates to 749999.9999999999, not 750000). One frame of
+  // slack is harmless on its own — but it means the accumulator can no longer
+  // be said to spend the budget exactly, which is the property the
+  // full-capacity test asserts.
+  const bytesPerFrame = Math.ceil(bits / 8) * channels;
+  const framesByBytes = Math.floor(SAMSLOOP_RECORD_BUDGET_BYTES / bytesPerFrame);
+  const framesBySeconds = Math.floor(SAMSLOOP_RECORD_MAX_SECONDS * achieved);
+  const storedFrames = Math.min(framesByBytes, framesBySeconds);
+  return storedFrames * samsloopDecimationFactor(captureRate, dstRate);
 }
 
 /**
