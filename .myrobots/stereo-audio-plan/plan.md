@@ -15,8 +15,14 @@
 |---|---|
 | PR-0 reconciler guard | ✅ **LANDED #1397** (2026-08-07) |
 | ~~PR-1 rename~~ | ⛔ **STRUCK** — deferred to the faceplate work (§1a) |
-| PR-2 instruments + pairing | **NEXT** |
-| PR-3 → PR-3b → PR-4 → {PR-5, PR-6} | backlog, unchanged |
+| PR-2a per-channel taps | ✅ **LANDED #1402** (2026-08-07) |
+| PR-2b pairing infrastructure | 🔄 **#1404**, green-pending |
+| PR-3 leg-group planner | 🔄 in flight, stacked on #1404 |
+| PR-3b → PR-4 → {PR-5, PR-6} | backlog, unchanged |
+
+**PR-2 was SPLIT into 2a (instrument) and 2b (pairing).** They share no files
+and are independently reviewable; the plan's single PR-2 was two unrelated
+concerns wearing one number.
 
 *(The pre-2026-08-07 status line claimed "none of the 7 PRs has landed" and that
 `reconciler.ts:143` was still unguarded. Both are now false — PR-0 fixed the
@@ -221,12 +227,29 @@ The module survives with identical ports (`in_l/in_r/out_l/out_r` audio, `streng
 - **Attest**: persistence.ts is in the collab basis → run `task collab:attest` after the final source commit, as the last unmerged basis-toucher.
 Gates: full local `task test` + `task art` from clean dsp dist; REPEAT=3 on renamed/edited specs. 1–2 CI cycles. Then `task pr:conflict-sweep`.
 
-### PR-2 — instruments + pairing infrastructure (behavior-invisible)
-(a) **Per-channel terminal taps**: ChannelSplitter(2) post-limiter in audio-out feeding two analysers; new read keys `outputSnapshotL`/`outputSnapshotR` beside the mono one (read keys are not ports → zero contract churn). Negative-control BOTH directions in a unit/e2e helper: only-L in → L reads, R ~0; then inverted.
-(b) **parseStereoPairs backtick fix** (module-manifest.ts:1084) + computed-tuple test case — closes the live mixmstrs doc-parity gap.
-(c) **`graph/stereo-pairs.ts`**: `derivedStereoPairs(def)` = declared `stereoPairs` ∪ the id-token fallback (lift idWords/LEFT_WORDS/RIGHT_WORDS from patch-convenience.ts:82-86; patch-convenience re-imports), **audio-typed ports only**, minus the named per-(module,pair) exemption sets. TWO lists, separately consulted: `COLLAPSE_EXEMPT` (rings odd/even, scope ch1/ch2, synesthesia bands, es9 hw jacks) and autowire behavior (rings keeps its shipped declared-pair autowire). Golden unit test pins the FULL derived pair map across all 194 registry modules, ratcheted both directions (count + content).
-(d) **Unify rear-card-model.ts:178-189** pairing onto derivedStereoPairs (kills the fifth heuristic); patch-panel-labels.test.ts:128 (`'out_l'→'OUT L'`) updated with collapsed-label policy.
-Gates: unit lane; REPEAT=3 new tests; assert `task docs:check` is a no-op (no def edits). 1 CI cycle.
+### PR-2 — instruments + pairing infrastructure (behavior-invisible) — ✅ DONE, as 2a + 2b
+
+**(a) → PR-2a, LANDED #1402.** Per-channel terminal taps: `ChannelSplitter(2)` off the SAME post-limiter `tail` node feeding two analysers; read keys `outputSnapshotL`/`outputSnapshotR` beside the mono one. Measured blindness, in Chrome on the real default chain: **mono 0.15507, L 0.31015, R 0 — mono is exactly L/2**, so only-L and only-R were the same number. Red-first verified against four mis-wirings (both taps ch0, both ch1, swapped, pre-limiter).
+
+> ⚠ **The plan said "Gates: unit lane" for (a). That was WRONG and structurally so.** `packages/web/vitest.config.ts` runs in `node` and does not pull in the audio module factories (they import WASM/worklet `?url` assets only Vite resolves). The test lives in **ART**, the only lane with `node-web-audio-api` + the `?url`→filesystem worklet seam. ART is a required check, so nothing is lost. A Chrome liveness leg rides `e2e/tests/workflow-mode.spec.ts` (no new page load) because ART cannot see a Chrome analyser that silently fails to be pulled and returns all-zeros — which would make every future only-L/R e2e **vacuous rather than red**.
+>
+> §2's tap cite `audio-out.ts:138-142` had rotted to ~199–203 / 238–242.
+>
+> **Side finding, load-bearing for PR-4:** the workflow **default chain is LEFT-ONLY** — a mono VCO into mixmstrs `ch1L` reaches AUDIO OUT's L and nothing else. The mono tap could never say so. Any PR-4 e2e that spawns the default chain and expects both channels is asserting something that is not true today.
+
+**(b)(c)(d) → PR-2b, #1404.** `parseStereoPairs` computed-tuple fix (module-manifest.ts **:1100**, not :1084) + a deny-by-default manifest↔def parity gate; new `graph/stereo-pairs.ts` with `idWords`/`LEFT_WORDS`/`RIGHT_WORDS` lifted out of patch-convenience (which now imports them); `markStereoPairs` in **`lib/ui/workflow/rear-card-model.ts:179`** (the plan's `lib/ui/rear-card-model.ts` does not exist) rewired onto `derivedStereoPairs`. **59 derived pairs across 35 modules of 195 defs**, ratcheted both directions.
+
+> ⚠ **`COLLAPSE_EXEMPT` needs ONE entry, not the four the plan listed.** Only `rings` odd/even is real. `scope` ch1/ch2, synesthesia band outs and es9's hardware ins **derive no pair at all** under audio-only + L/R-token, so listing them would have created stale exemptions — caught on day one by the artifact anchor. (`es9 spdif_l/r` does collapse, correctly; and es9 has **14** class-tagged ins, not 16.)
+>
+> ⚠ **`docs:check` does NOT move for (b).** `contract-lock.txt` reads the LIVE def and already carried all 10 mixmstrs pairs; the drift was confined to the doc-page manifest. No `docs:accept` needed.
+>
+> ⚠ **A LIVE BUG the plan did not know about:** `gamepad`'s **gate-typed** d-pad `dl`/`dr` (⬅/⮕) have been rendering a stereo pair tie on the rear card — two arrow buttons drawn as a stereo pair. The unification removes it. Rear-card blast radius is 3 modules (gamepad −1 tie, sidecar +1, audioIn +1), **none covered by a VRT baseline**.
+>
+> `stereovca`'s `strength_l`/`strength_r` cv exclusion was **verified, not assumed** — the audio-only rule handles it with no exemption. The rings autowire e2e is at **:92**, not :90.
+>
+> **Deliberate deviation:** `resolveVerboseLabel('out_l')` still returns `'OUT L'`. Changing it would be visible behaviour in a PR that promises none, and the collapsed jack does not exist until PR-4. The policy is recorded as data instead — `stereoPairStemId()` (`out_l`+`out_r` → `out` → `OUT`) — pinned for PR-4 to consume.
+
+Gates as run: typecheck; FULL web unit suite (13 099 → 13 255 passed); `docs:check` no-op; REPEAT=3 on every changed file; no attest basis touched. **Measured CI delta ≈ +1 s** (8 ART tests, 259 ms; zero new e2e page loads).
 
 ### PR-3 — wiring semantics: universal leg-group planner
 
