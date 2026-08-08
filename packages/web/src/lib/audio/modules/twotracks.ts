@@ -28,6 +28,7 @@ import type { AudioModuleDef } from '$lib/audio/module-registry';
 import { patch as livePatch } from '$lib/graph/store';
 import workletUrl from '@patchtogether.live/dsp/dist/twotracks.js?url';
 
+import { createWorkletNode } from '$lib/audio/worklet-guard';
 // Loop start/end clamp helpers live in the worklet's pure engine (the code the
 // worklet actually runs) and are re-exported here so the card + its unit tests
 // share ONE import surface for the scrubber math. clampLoopStart/End enforce the
@@ -345,7 +346,7 @@ export const twotracksDef: AudioModuleDef = {
 
     // 4 audio inputs: [0]=A-L, [1]=A-R, [2]=B-L, [3]=B-R
     // Gate inputs route as AudioParams (rec_start, rec_arm, overdub_toggle per reel).
-    const workletNode = new AudioWorkletNode(ctx, 'twotracks', {
+    const workletNode = createWorkletNode(node, ctx, 'twotracks', {
       numberOfInputs: 4, // [0]=A-L, [1]=A-R, [2]=B-L, [3]=B-R
       numberOfOutputs: 1,
       outputChannelCount: [2], // stereo

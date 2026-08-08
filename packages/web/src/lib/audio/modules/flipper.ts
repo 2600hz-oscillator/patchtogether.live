@@ -8,6 +8,7 @@ import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import workletUrl from '@patchtogether.live/dsp/dist/flipper.js?url';
 
+import { createWorkletNode } from '$lib/audio/worklet-guard';
 const PROCESSOR_NAME = 'flipper';
 const loadedContexts = new WeakSet<BaseAudioContext>();
 
@@ -51,7 +52,7 @@ export const flipperDef: AudioModuleDef = {
     }
 
     // 2 gate inputs (in1, in2) → 2 gate outputs (flip, flop), 1 channel each.
-    const workletNode = new AudioWorkletNode(ctx, PROCESSOR_NAME, {
+    const workletNode = createWorkletNode(node, ctx, PROCESSOR_NAME, {
       numberOfInputs: 2,
       numberOfOutputs: 2,
       outputChannelCount: [1, 1],

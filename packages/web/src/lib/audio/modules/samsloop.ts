@@ -121,6 +121,7 @@ import { patch as livePatch } from '$lib/graph/store';
 import workletUrl from '@patchtogether.live/dsp/dist/samsloop.js?url';
 import tapWorkletUrl from '@patchtogether.live/dsp/dist/samsloop-tap.js?url';
 
+import { createWorkletNode } from '$lib/audio/worklet-guard';
 const loadedContexts = new WeakSet<BaseAudioContext>();
 
 /** Hard size cap on the uploaded audio file. 2 MB — see card UI.
@@ -1070,7 +1071,7 @@ export const samsloopDef: AudioModuleDef = {
 
     // 1 input slot for the trig gate; rate CV rides into the AudioParam
     // through the engine's cvScale routing (same pattern as macrooscillator).
-    const workletNode = new AudioWorkletNode(ctx, 'samsloop', {
+    const workletNode = createWorkletNode(node, ctx, 'samsloop', {
       numberOfInputs: 1,
       numberOfOutputs: 1,
       outputChannelCount: [1],
@@ -1081,7 +1082,7 @@ export const samsloopDef: AudioModuleDef = {
     // the tap doesn't drive anything downstream — record-only). Owned by
     // the factory so it can be cleanly disposed; enable/disable is via
     // port message from the card.
-    const tapNode = new AudioWorkletNode(ctx, 'samsloop-tap', {
+    const tapNode = createWorkletNode(node, ctx, 'samsloop-tap', {
       numberOfInputs: 2,
       numberOfOutputs: 1,
       outputChannelCount: [1],

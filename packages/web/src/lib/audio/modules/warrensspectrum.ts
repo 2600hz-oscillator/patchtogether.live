@@ -174,6 +174,7 @@ export { WS_ENGINE_MASSPASS, WS_ENGINE_SPECTRAL, WS_MASSPASS_BAND_COUNTS };
 export type { WsBandSettings };
 import workletUrl from '@patchtogether.live/dsp/dist/warrensspectrum.js?url';
 
+import { createWorkletNode } from '$lib/audio/worklet-guard';
 const loadedContexts = new WeakSet<BaseAudioContext>();
 
 /**
@@ -429,7 +430,7 @@ export const warrensspectrumDef: AudioModuleDef = {
     // Three audio-rate inputs: audio (0), pitch (1), gate (2). The CV →
     // AudioParam routings ride into input 0; the engine attaches them to the
     // AudioParam directly via the `param:` field below.
-    const workletNode = new AudioWorkletNode(ctx, 'warrensspectrum', {
+    const workletNode = createWorkletNode(node, ctx, 'warrensspectrum', {
       numberOfInputs: 3,
       numberOfOutputs: 1,
       // STEREO from phase 2 — the filterbank's per-band pan needs somewhere

@@ -43,6 +43,7 @@ import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import workletUrl from '@patchtogether.live/dsp/dist/shimmershine.js?url';
 
+import { createWorkletNode } from '$lib/audio/worklet-guard';
 const loadedContexts = new WeakSet<BaseAudioContext>();
 
 // ----------------------------------------------------------------------------
@@ -347,7 +348,7 @@ export const shimmershineDef: AudioModuleDef = {
       loadedContexts.add(ctx);
     }
 
-    const workletNode = new AudioWorkletNode(ctx, 'shimmershine', {
+    const workletNode = createWorkletNode(node, ctx, 'shimmershine', {
       numberOfInputs: 2,
       numberOfOutputs: 2,
       outputChannelCount: [1, 1],

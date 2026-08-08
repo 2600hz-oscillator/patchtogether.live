@@ -120,7 +120,7 @@ export const meowboxDef: AudioModuleDef = {
   },
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
-    const f = await instantiateFaustModule(ctx, { name: 'meowbox', wasmUrl, metaUrl, workletUrl });
+    const f = await instantiateFaustModule(ctx, { name: 'meowbox', wasmUrl, metaUrl, workletUrl }, node);
     // Two audio-rate inputs: channel 0 = gate, channel 1 = pitch (V/oct).
     // Mirrors analog-vco's pattern. The merger feeds Faust's multi-channel
     // input so a sequencer's pitch CV writes to the pitch channel only,

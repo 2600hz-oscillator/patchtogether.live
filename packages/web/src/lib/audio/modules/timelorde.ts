@@ -59,6 +59,7 @@ import { getSchedulerClock } from '$lib/audio/scheduler-clock';
 import { createRisingEdgeDetector } from './transport-helpers';
 import { gateLevelToWizardOn } from './timelorde-wizard';
 
+import { createWorkletNode } from '$lib/audio/worklet-guard';
 const loadedContexts = new WeakSet<BaseAudioContext>();
 
 // ---------------- Pure transport-event helper ----------------
@@ -256,7 +257,7 @@ export const timelordeDef: AudioModuleDef = {
       loadedContexts.add(ctx);
     }
 
-    const workletNode = new AudioWorkletNode(ctx, 'timelorde', {
+    const workletNode = createWorkletNode(node, ctx, 'timelorde', {
       numberOfInputs: 1,
       numberOfOutputs: 13,
       outputChannelCount: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],

@@ -45,6 +45,7 @@ import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import workletUrl from '@patchtogether.live/dsp/dist/marbles.js?url';
 
+import { createWorkletNode } from '$lib/audio/worklet-guard';
 import {
   RandomStream,
   TGenerator,
@@ -251,7 +252,7 @@ export const marblesDef: AudioModuleDef = {
       await ctx.audioWorklet.addModule(workletUrl);
       loadedContexts.add(ctx);
     }
-    const workletNode = new AudioWorkletNode(ctx, 'marbles', {
+    const workletNode = createWorkletNode(node, ctx, 'marbles', {
       numberOfInputs: 0,
       numberOfOutputs: 6,
       outputChannelCount: [1, 1, 1, 1, 1, 1],

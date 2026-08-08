@@ -28,6 +28,7 @@ import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import workletUrl from '@patchtogether.live/dsp/dist/slewswitch.js?url';
 
+import { createWorkletNode } from '$lib/audio/worklet-guard';
 const loadedContexts = new WeakSet<BaseAudioContext>();
 
 export const slewSwitchDef: AudioModuleDef = {
@@ -119,7 +120,7 @@ export const slewSwitchDef: AudioModuleDef = {
     }
     seed = (seed >>> 0) || 1;
 
-    const workletNode = new AudioWorkletNode(ctx, 'slewswitch', {
+    const workletNode = createWorkletNode(node, ctx, 'slewswitch', {
       numberOfInputs: 6,
       numberOfOutputs: 7,
       outputChannelCount: [1, 1, 1, 1, 1, 1, 1],

@@ -33,6 +33,7 @@ import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import workletUrl from '@patchtogether.live/dsp/dist/wavetable-vco.js?url';
 
+import { createWorkletNode } from '$lib/audio/worklet-guard';
 const FRAME_SIZE = 2048;
 const FRAME_COUNT = 16;
 
@@ -146,7 +147,7 @@ export const wavetableVcoDef: AudioModuleDef = {
       loadedContexts.add(ctx);
     }
 
-    const workletNode = new AudioWorkletNode(ctx, 'wavetable-vco', {
+    const workletNode = createWorkletNode(node, ctx, 'wavetable-vco', {
       numberOfInputs: 4,
       numberOfOutputs: 1,
       outputChannelCount: [1],

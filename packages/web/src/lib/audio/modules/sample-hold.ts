@@ -51,6 +51,7 @@ import {
 } from '../../../../../dsp/src/lib/sample-hold-dsp';
 import workletUrl from '@patchtogether.live/dsp/dist/sample-hold.js?url';
 
+import { createWorkletNode } from '$lib/audio/worklet-guard';
 const PROCESSOR_NAME = 'sample-hold';
 const loadedContexts = new WeakSet<BaseAudioContext>();
 
@@ -115,7 +116,7 @@ export const sampleHoldDef: AudioModuleDef = {
 
     const nodeId = node.id;
 
-    const workletNode = new AudioWorkletNode(ctx, PROCESSOR_NAME, {
+    const workletNode = createWorkletNode(node, ctx, PROCESSOR_NAME, {
       numberOfInputs: 2,
       numberOfOutputs: 2,
       outputChannelCount: [1, 1],

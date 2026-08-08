@@ -31,6 +31,7 @@ import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import workletUrl from '@patchtogether.live/dsp/dist/moog904b.js?url';
 
+import { createWorkletNode } from '$lib/audio/worklet-guard';
 // Per-context cache so addModule isn't called twice on the same context.
 const loadedContexts = new WeakSet<BaseAudioContext>();
 
@@ -78,7 +79,7 @@ export const moog904bDef: AudioModuleDef = {
       loadedContexts.add(ctx);
     }
 
-    const workletNode = new AudioWorkletNode(ctx, 'moog904b', {
+    const workletNode = createWorkletNode(node, ctx, 'moog904b', {
       numberOfInputs: 2,
       numberOfOutputs: 1,
       outputChannelCount: [1],

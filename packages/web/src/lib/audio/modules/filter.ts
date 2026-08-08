@@ -211,7 +211,7 @@ export const filterDef: AudioModuleDef = {
   },
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
-    const f = await instantiateFaustModule(ctx, { name: 'filter', wasmUrl, metaUrl, workletUrl });
+    const f = await instantiateFaustModule(ctx, { name: 'filter', wasmUrl, metaUrl, workletUrl }, node);
     const merger = ctx.createChannelMerger(3);
     merger.connect(f);
     const silence = ctx.createConstantSource();

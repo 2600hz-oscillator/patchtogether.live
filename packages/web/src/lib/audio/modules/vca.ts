@@ -218,7 +218,7 @@ export const vcaDef: AudioModuleDef = {
   },
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
-    const f = await instantiateFaustModule(ctx, { name: 'vca', wasmUrl, metaUrl, workletUrl });
+    const f = await instantiateFaustModule(ctx, { name: 'vca', wasmUrl, metaUrl, workletUrl }, node);
     const merger = ctx.createChannelMerger(2);
     merger.connect(f);
     // Keep the merger in the active graph (see analog-vco for why).

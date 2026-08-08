@@ -57,6 +57,7 @@ import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import workletUrl from '@patchtogether.live/dsp/dist/macrooscillator.js?url';
 
+import { createWorkletNode } from '$lib/audio/worklet-guard';
 const loadedContexts = new WeakSet<BaseAudioContext>();
 
 // ----------------------------------------------------------------------------
@@ -952,7 +953,7 @@ export const macrooscillatorDef: AudioModuleDef = {
     // each mono. The CV → AudioParam routings ride into input 0 (the
     // pitch input slot); engine attaches them via `param:` on the handle
     // map below.
-    const workletNode = new AudioWorkletNode(ctx, 'macrooscillator', {
+    const workletNode = createWorkletNode(node, ctx, 'macrooscillator', {
       numberOfInputs: 2,
       numberOfOutputs: 2,
       outputChannelCount: [1, 1],

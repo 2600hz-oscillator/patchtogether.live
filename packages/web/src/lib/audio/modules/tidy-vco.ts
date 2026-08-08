@@ -33,6 +33,7 @@
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import workletUrl from '@patchtogether.live/dsp/dist/tidy-vco.js?url';
+import { createWorkletNode } from '$lib/audio/worklet-guard';
 import {
   TIDY_VOICES,
   TIDY_VCO_DEFAULTS,
@@ -487,7 +488,7 @@ export const tidyVcoDef: AudioModuleDef = {
     // sym_cv (8), then a per-knob CV for the remaining controls (9..26):
     // shape1, shape2, detune, oct2, mix, sub, env, track, fatk, fdec, fsus,
     // frel, atk, dec, sus, rel, width, level. TWO mono outputs (out_l, out_r).
-    const worklet = new AudioWorkletNode(ctx, PROCESSOR_NAME, {
+    const worklet = createWorkletNode(node, ctx, PROCESSOR_NAME, {
       numberOfInputs: 27,
       numberOfOutputs: 2,
       outputChannelCount: [1, 1],

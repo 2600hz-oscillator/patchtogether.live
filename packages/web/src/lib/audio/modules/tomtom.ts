@@ -30,6 +30,7 @@ import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import workletUrl from '@patchtogether.live/dsp/dist/tomtom.js?url';
 
+import { createWorkletNode } from '$lib/audio/worklet-guard';
 const PROCESSOR_NAME = 'tomtom';
 const loadedContexts = new WeakSet<BaseAudioContext>();
 
@@ -216,7 +217,7 @@ export const tomtomDef: AudioModuleDef = {
     // bend (3), decay (4), tone (5), noise (6), tune (7), bend_time (8),
     // drive (9), level (10) — a per-knob CV for EVERY continuous control.
     // ONE mono output.
-    const worklet = new AudioWorkletNode(ctx, PROCESSOR_NAME, {
+    const worklet = createWorkletNode(node, ctx, PROCESSOR_NAME, {
       numberOfInputs: 11,
       numberOfOutputs: 1,
       outputChannelCount: [1],

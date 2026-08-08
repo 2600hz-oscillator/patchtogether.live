@@ -31,6 +31,7 @@ import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import workletUrl from '@patchtogether.live/dsp/dist/moog961.js?url';
 
+import { createWorkletNode } from '$lib/audio/worklet-guard';
 const PROCESSOR_NAME = 'moog961';
 // Per-context cache so addModule isn't called twice on the same context.
 const loadedContexts = new WeakSet<BaseAudioContext>();
@@ -98,7 +99,7 @@ export const moog961Def: AudioModuleDef = {
     }
 
     // 4 inputs (audio_in, s_in, v_in_a, v_in_b) → 4 gate outputs, 1 ch each.
-    const workletNode = new AudioWorkletNode(ctx, PROCESSOR_NAME, {
+    const workletNode = createWorkletNode(node, ctx, PROCESSOR_NAME, {
       numberOfInputs: 4,
       numberOfOutputs: 4,
       outputChannelCount: [1, 1, 1, 1],

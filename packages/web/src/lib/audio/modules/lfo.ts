@@ -34,6 +34,7 @@ import {
   type SharedClockHandle,
 } from '$lib/audio/shared-clock.svelte';
 import { computeLfoState } from './lfo-state';
+import { createWorkletNode } from '$lib/audio/worklet-guard';
 import {
   LFO_DEPTH_GAIN,
   LFO_DEPTH_UNITY,
@@ -259,7 +260,7 @@ const baseDef: AudioModuleDef = {
       loadedContexts.add(ctx);
     }
 
-    const workletNode = new AudioWorkletNode(ctx, 'lfo', {
+    const workletNode = createWorkletNode(node, ctx, 'lfo', {
       numberOfInputs: 1,
       numberOfOutputs: 4,
       outputChannelCount: [1, 1, 1, 1],

@@ -66,6 +66,7 @@ import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import workletUrl from '@patchtogether.live/dsp/dist/sidecar.js?url';
 
+import { createWorkletNode } from '$lib/audio/worklet-guard';
 const PROCESSOR_NAME = 'sidecar';
 const loadedContexts = new WeakSet<BaseAudioContext>();
 
@@ -151,7 +152,7 @@ export const sidecarDef: AudioModuleDef = {
       loadedContexts.add(ctx);
     }
 
-    const worklet = new AudioWorkletNode(ctx, PROCESSOR_NAME, {
+    const worklet = createWorkletNode(node, ctx, PROCESSOR_NAME, {
       // 4 audio inputs (audio L/R + SC L/R). CV inputs are routed via
       // AudioParams not separate node inputs — Web Audio sums CV directly
       // into the AudioParam, which is exactly what we want for

@@ -47,6 +47,7 @@ import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import { patch as livePatch } from '$lib/graph/store';
 import workletUrl from '@patchtogether.live/dsp/dist/cube.js?url';
+import { createWorkletNode } from '$lib/audio/worklet-guard';
 import {
   framesToPlain,
   framesFromPlain,
@@ -393,7 +394,7 @@ export const cubeDef: AudioModuleDef = {
     // input 0's AudioParams via the engine), input 1 = the 10-channel poly bus.
     // channelCountMode defaults to 'max', so the 10-channel poly source passes
     // through to the worklet intact.
-    const workletNode = new AudioWorkletNode(ctx, PROCESSOR_NAME, {
+    const workletNode = createWorkletNode(node, ctx, PROCESSOR_NAME, {
       // 3 inputs: pitch (input 0, also CV→AudioParam sum target), poly (input 1,
       // 10-channel bus), trigger (input 2, mono gate for the per-voice ADSR).
       numberOfInputs: 3,

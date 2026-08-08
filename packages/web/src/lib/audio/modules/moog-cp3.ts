@@ -43,6 +43,7 @@ import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import workletUrl from '@patchtogether.live/dsp/dist/moog-cp3.js?url';
 
+import { createWorkletNode } from '$lib/audio/worklet-guard';
 // Per-context cache so addModule isn't called twice on the same context.
 const loadedContexts = new WeakSet<BaseAudioContext>();
 
@@ -117,7 +118,7 @@ export const moogCp3Def: AudioModuleDef = {
       loadedContexts.add(ctx);
     }
 
-    const workletNode = new AudioWorkletNode(ctx, 'moog-cp3', {
+    const workletNode = createWorkletNode(node, ctx, 'moog-cp3', {
       numberOfInputs: 5,
       numberOfOutputs: 7,
       outputChannelCount: [1, 1, 1, 1, 1, 1, 1],

@@ -74,9 +74,19 @@ import {
   MASTER_CEILING_DB,
 } from '../../../../../dsp/src/lib/master-limiter-dsp';
 import workletUrl from '@patchtogether.live/dsp/dist/master-limiter.js?url';
+import { createWorkletNode, onWorkletNodeError } from '$lib/audio/worklet-guard';
 
 const LIMITER_PROCESSOR = 'master-limiter';
 const limiterLoaded = new WeakSet<BaseAudioContext>();
+
+/** A WaveShaper hard-clipping at the ceiling — the degraded tail, reachable
+ *  from BOTH the load-time catch and the runtime latch (see `failoverToClip`). */
+function buildCeilingClipper(ctx: BaseAudioContext): WaveShaperNode {
+  const clip = ctx.createWaveShaper();
+  clip.curve = ceilingClipCurve();
+  clip.oversample = '4x';
+  return clip;
+}
 
 /** A hard-clip curve at the ceiling, for the degraded path only (below). */
 function ceilingClipCurve() {
@@ -87,6 +97,50 @@ function ceilingClipCurve() {
     c[i] = Math.max(-MASTER_CEILING, Math.min(MASTER_CEILING, x));
   }
   return c;
+}
+
+/**
+ * RUNTIME FAILOVER — swap a LATCHED limiter out of the terminal path.
+ *
+ * ── The hole this closes ────────────────────────────────────────────────────
+ * The `try/catch` in the factory below covers `addModule` + node CONSTRUCTION.
+ * That is LOAD TIME ONLY. A throw inside the limiter's `process()` happens on
+ * the render thread after construction succeeded, so the catch cannot see it —
+ * and per the Web Audio spec the node then "output[s] silence throughout its
+ * lifetime". The limiter is the TERMINAL sink, so that silences the ENTIRE
+ * RACK, permanently, while `ctx.state` stays `'running'` — which means the
+ * click-to-resume overlay never appears and the user just sees a dead app whose
+ * only recourse is a page reload.
+ *
+ * The hard-clip fallback the load path already builds was, until now,
+ * UNREACHABLE from that failure. This makes it reachable.
+ *
+ * Rewires `merger → clip → (destination + every tap)` and drops the dead node.
+ * Returns the new tail. Exported so `audio-out-failover.test.ts` can drive it
+ * against a fake graph and assert the rewiring, in both directions.
+ *
+ * ⚠ This is the ONLY place in this PR that changes audio behaviour, and it
+ * changes it only in a state that is currently permanent silence.
+ */
+export function failoverTerminalTailToClip(
+  ctx: BaseAudioContext,
+  dead: AudioNode,
+  merger: AudioNode,
+  sinks: readonly AudioNode[],
+): WaveShaperNode {
+  const clip = buildCeilingClipper(ctx);
+  // Drop the dead node FIRST so it cannot double-sum into the destination in
+  // the (impossible-per-spec, but cheap to defend) case that it revives.
+  try { merger.disconnect(dead); } catch { /* already gone */ }
+  try { dead.disconnect(); } catch { /* already gone */ }
+  merger.connect(clip);
+  for (const s of sinks) clip.connect(s);
+  console.warn(
+    `[audio-out] master limiter LATCHED at runtime — the whole rack would be ` +
+      `permanently silent. Failed over to the ${MASTER_CEILING_DB} dBFS hard clip. ` +
+      'Reload to restore look-ahead limiting.',
+  );
+  return clip;
 }
 
 export const audioOutDef: AudioModuleDef = {
@@ -166,6 +220,9 @@ export const audioOutDef: AudioModuleDef = {
     // `tail` is whatever node ends up feeding ctx.destination — the limiter
     // normally, the degraded clipper if the worklet cannot load.
     let tail: AudioNode;
+    // Non-null iff the worklet actually built — the node whose runtime latch we
+    // have to survive. See `failoverTerminalTailToClip` above.
+    let limiter: AudioWorkletNode | null = null;
     try {
       if (!limiterLoaded.has(ctx)) {
         await ctx.audioWorklet.addModule(workletUrl);
@@ -173,7 +230,7 @@ export const audioOutDef: AudioModuleDef = {
       }
       // 'discrete' + explicit 2: L and R are two INDEPENDENT mono jacks, not a
       // stereo pair to be up/down-mixed. An unpatched R stays silent.
-      tail = new AudioWorkletNode(ctx, LIMITER_PROCESSOR, {
+      limiter = createWorkletNode(node, ctx, LIMITER_PROCESSOR, {
         numberOfInputs: 1,
         numberOfOutputs: 1,
         outputChannelCount: [2],
@@ -181,19 +238,21 @@ export const audioOutDef: AudioModuleDef = {
         channelCountMode: 'explicit',
         channelInterpretation: 'discrete',
       });
+      tail = limiter;
     } catch (err) {
       // audioOut is the TERMINAL sink: a rejected factory here means the whole
       // patch is silent, which is a worse failure than a degraded ceiling. So
       // fall back to a synchronous, pure-graph hard clip at the same ceiling —
       // memoryless, hence still incapable of ducking the sub — and say so.
+      //
+      // ⚠ THIS CATCH IS LOAD-TIME ONLY. A throw inside the limiter's process()
+      // happens on the render thread AFTER construction and cannot reach here.
+      // That path is handled by the processorerror wiring further down.
       console.warn(
         `[audio-out] master limiter worklet unavailable; falling back to a ${MASTER_CEILING_DB} dBFS hard clip`,
         err,
       );
-      const clip = ctx.createWaveShaper();
-      clip.curve = ceilingClipCurve();
-      clip.oversample = '4x';
-      tail = clip;
+      tail = buildCeilingClipper(ctx);
     }
     merger.connect(tail);
     tail.connect(ctx.destination);
@@ -245,6 +304,30 @@ export const audioOutDef: AudioModuleDef = {
     chanSplit.connect(outTapR, 1);
     const outBufL = new Float32Array(outTapL.fftSize);
     const outBufR = new Float32Array(outTapR.fftSize);
+
+    // ---------------- Runtime latch → hard-clip failover ----------------
+    //
+    // Registered here rather than at construction because the failover has to
+    // rewire the TAPS too, and they do not exist until now. There is no `await`
+    // between the limiter's construction and this line, so no event can be
+    // missed in the gap: `processorerror` is delivered as a task on the main
+    // thread, and this whole factory body runs to completion first.
+    //
+    // The shared guard (worklet-guard.ts) has ALREADY logged and ledgered the
+    // latch by the time this runs — this listener is the RECOVERY, not the
+    // report.
+    if (limiter) {
+      let failedOver = false;
+      onWorkletNodeError(limiter, () => {
+        if (failedOver) return; // a latched processor may fire more than once
+        failedOver = true;
+        tail = failoverTerminalTailToClip(ctx, tail, merger, [
+          ctx.destination,
+          outTap,
+          chanSplit,
+        ]);
+      });
+    }
 
     // Keep both gain nodes in the active graph even if nothing is patched
     // to either input. (Same trick as the Faust modules' channel mergers —

@@ -29,6 +29,7 @@ import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import workletUrl from '@patchtogether.live/dsp/dist/moog911a.js?url';
 
+import { createWorkletNode } from '$lib/audio/worklet-guard';
 // Human-readable MODE names, indexed by the `mode` param value 0..2. The card
 // renders MODE_NAMES[mode] next to the MODE knob.
 export const MOOG911A_MODE_NAMES = ['OFF', 'PARALLEL', 'SERIES'] as const;
@@ -93,7 +94,7 @@ export const moog911aDef: AudioModuleDef = {
       loadedContexts.add(ctx);
     }
 
-    const workletNode = new AudioWorkletNode(ctx, 'moog911a', {
+    const workletNode = createWorkletNode(node, ctx, 'moog911a', {
       numberOfInputs: 2,
       numberOfOutputs: 2,
       outputChannelCount: [1, 1],

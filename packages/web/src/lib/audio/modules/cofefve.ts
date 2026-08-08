@@ -35,6 +35,7 @@ import { patch as livePatch } from '$lib/graph/store';
 import { getMidiClockSource } from '$lib/midi/midi-clock-source';
 import workletUrl from '@patchtogether.live/dsp/dist/cofefve.js?url';
 
+import { createWorkletNode } from '$lib/audio/worklet-guard';
 /** clockSource dropdown indices (must match COFEFVE_CLOCK_SOURCE_OPTIONS). */
 const CLOCK_SOURCE_SYSTEM = 0;
 const CLOCK_SOURCE_MIDI = 1;
@@ -202,7 +203,7 @@ export const cofefveDelayDef: AudioModuleDef = {
       loadedContexts.add(ctx);
     }
 
-    const workletNode = new AudioWorkletNode(ctx, 'cofefve', {
+    const workletNode = createWorkletNode(node, ctx, 'cofefve', {
       numberOfInputs: 3, // L, R, clock
       numberOfOutputs: 2,
       outputChannelCount: [1, 1],

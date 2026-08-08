@@ -93,6 +93,7 @@ import {
 } from '$lib/audio/wavetable-factory-tables';
 import { detectPitch } from '$lib/audio/pitch-detect';
 
+import { createWorkletNode } from '$lib/audio/worklet-guard';
 // ---------- card → module frame-drawer registry ----------
 
 type FrameDrawer = (canvas: OffscreenCanvas | HTMLCanvasElement) => void;
@@ -1021,7 +1022,7 @@ export const wavesculptDef: AudioModuleDef = {
     // dist, NO pan). The JS factory applies env+dist+pan+FX-slot
     // downstream of the worklet, which is what lets each osc have its
     // own FX slot insertion point.
-    const engineNode = new AudioWorkletNode(ctx, 'wavesculpt-engine', {
+    const engineNode = createWorkletNode(node, ctx, 'wavesculpt-engine', {
       numberOfInputs: 4,
       numberOfOutputs: 4,
       outputChannelCount: [2, 2, 2, 2],
