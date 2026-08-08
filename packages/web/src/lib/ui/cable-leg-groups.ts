@@ -55,6 +55,18 @@ export interface LegGroupView {
    *  dashed only-L / only-R treatment. Null for a complete pair and for any
    *  cable with no stereo image at all (mono audio, cv, gate, poly, video). */
   soloChannel: 'left' | 'right' | null;
+  /**
+   * Which leg of the pair THIS edge is, whether or not its sibling exists.
+   *
+   * ⚠ THIS MUST EQUAL `legChannelOfEdge(edge)` FOR EVERY EDGE. Since #1408 the
+   * ENGINE places a cable on a dual-mono wrapper's left/right input using
+   * exactly that function, so this field and the audio routing are two readings
+   * of one derivation. If they ever diverged, a cable would RENDER as one
+   * bezier while its two legs landed on different inputs — a picture that lies
+   * about the signal. Pinned edge-for-edge in cable-leg-groups.test.ts against
+   * `legChannelOfEdge` itself, so the two cannot drift apart.
+   */
+  channel: 'left' | 'right' | null;
   /** Every edge id in the group, the rendering one first. */
   groupIds: string[];
 }
@@ -183,7 +195,7 @@ export function computeLegGroups(
   const out = new Map<string, LegGroupView>();
   for (const { edge: e, channel, siblingKey, isStereoImage } of classified) {
     if (!channel || !siblingKey) {
-      out.set(e.id, { render: true, soloChannel: null, groupIds: [e.id] });
+      out.set(e.id, { render: true, soloChannel: null, channel: null, groupIds: [e.id] });
       continue;
     }
     const partner = byEndpoint.get(siblingKey);
@@ -193,6 +205,7 @@ export function computeLegGroups(
       out.set(e.id, {
         render: true,
         soloChannel: isStereoImage ? channel : null,
+        channel,
         groupIds: [e.id],
       });
       continue;
@@ -210,6 +223,7 @@ export function computeLegGroups(
     out.set(e.id, {
       render: isRenderer,
       soloChannel: null,
+      channel,
       groupIds: isRenderer ? [e.id, partner.id] : [partner.id, e.id],
     });
   }

@@ -17,6 +17,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { Edge } from '$lib/graph/types';
 import type { StereoDef } from '$lib/graph/stereo-autowire';
+import { legChannelOfEdge } from '$lib/graph/stereo-autowire';
 import { computeLegGroups, LEG_KEY_SEP } from './cable-leg-groups';
 
 describe('the composite-key separator is an ESCAPE, not a raw byte', () => {
@@ -257,6 +258,45 @@ describe('computeLegGroups — leg-level occupancy stays TWO cables (owner Q4)',
     expect(rendered(edges)).toHaveLength(2);
     expect(soloOf(edges, 'e-a-out_l-b-in_l')).toBe('left');
     expect(soloOf(edges, 'e-a2-out_r-b-in_r')).toBe('right');
+  });
+});
+
+describe('the rendered channel IS the channel the ENGINE places the leg on', () => {
+  // Since #1408 (dual-mono) `engine.addEdge` routes a cable to a wrapper's
+  // left/right input with `legChannelOfEdge(edge, defForNode)`. This module
+  // decides which cable is DRAWN and which channel it is tagged with. Those are
+  // two readings of one derivation, and if they diverged the canvas would show
+  // one bezier while the two legs landed on different inputs — a picture that
+  // lies about the signal, and the kind of disagreement neither side's own
+  // tests would notice.
+  //
+  // So: assert them equal EDGE FOR EDGE, against the engine's actual function
+  // rather than against a restatement of it.
+  const CASES: Edge[][] = [
+    [edge('a', 'out_l', 'b', 'in_l'), edge('a', 'out_r', 'b', 'in_r')],
+    [edge('a', 'out_l', 'n', 'audio'), edge('a', 'out_r', 'n', 'audio')],
+    [edge('m', 'audio', 'b', 'in_l'), edge('m', 'audio', 'b', 'in_r')],
+    [edge('a', 'out_l', 'b', 'in_r'), edge('a', 'out_r', 'b', 'in_l')],
+    [edge('a', 'out_r', 'b', 'in_r')],
+    [edge('m', 'audio', 'n', 'audio')],
+    [edge('cv', 'env_l', 'cvd', 'cv_l')],
+    [edge('ghost', 'out_l', 'b', 'in_l')],
+  ];
+
+  it('computeLegGroups().channel === legChannelOfEdge(), for every edge', () => {
+    let paired = 0;
+    for (const edges of CASES) {
+      const groups = computeLegGroups(edges, defForNode);
+      for (const e of edges) {
+        const mine = groups.get(e.id)!.channel;
+        const engine = legChannelOfEdge(e, defForNode);
+        expect(mine, `${e.id}: rendering says ${mine}, engine places on ${engine}`).toBe(engine);
+        if (engine) paired += 1;
+      }
+    }
+    // Vacuity control: if none of the cases were paired, the equality above
+    // would be null === null everywhere and would prove nothing.
+    expect(paired, 'the cases must actually exercise paired edges').toBeGreaterThan(6);
   });
 });
 
