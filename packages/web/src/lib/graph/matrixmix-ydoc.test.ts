@@ -246,3 +246,101 @@ describe('matrixmix — removeMatrixEdge (unpatch) against the live patch', () =
     expect(Object.keys(patch.edges)).toHaveLength(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// LEG GROUPS (PR-3). A matrix cell is a patch gesture, so it writes whole
+// stereo cables like every other commit path. Uses REAL registry defs, since
+// what is under test is that the planner resolves live pairs here.
+// ---------------------------------------------------------------------------
+
+const CLOUDS = 'clouds-1';
+const COCO = 'cofefve-1';
+
+function cables(): string[] {
+  return Object.values(patch.edges)
+    .filter((e): e is NonNullable<typeof e> => !!e)
+    .map((e) => `${e.source.nodeId}.${e.source.portId} -> ${e.target.nodeId}.${e.target.portId}`)
+    .sort();
+}
+
+describe('matrixmix — leg groups', () => {
+  function setupStereo(): void {
+    patch.nodes[MID] = node(MID, MATRIXMIX_TYPE, 'meta');
+    patch.nodes[CLOUDS] = node(CLOUDS, 'clouds');
+    patch.nodes[COCO] = node(COCO, 'cofefve');
+    patch.nodes[VCA] = node(VCA, 'vca');
+  }
+
+  it('ONE cell click writes BOTH legs of a stereo pair', () => {
+    setupStereo();
+    createMatrixEdge(
+      { nodeId: CLOUDS, portId: 'out_l' },
+      { nodeId: COCO, portId: 'inL' },
+      'audio',
+      'audio',
+      defLookup,
+    );
+    expect(cables()).toEqual([
+      `${CLOUDS}.out_l -> ${COCO}.inL`,
+      `${CLOUDS}.out_r -> ${COCO}.inR`,
+    ]);
+  });
+
+  it('a stereo source into VCA’s MONO audio in writes BOTH legs (dual-mono)', () => {
+    setupStereo();
+    createMatrixEdge(
+      { nodeId: CLOUDS, portId: 'out_l' },
+      { nodeId: VCA, portId: 'audio' },
+      'audio',
+      'audio',
+      defLookup,
+    );
+    expect(cables()).toEqual([
+      `${CLOUDS}.out_l -> ${VCA}.audio`,
+      `${CLOUDS}.out_r -> ${VCA}.audio`,
+    ]);
+  });
+
+  it('toggling a cell OFF removes the whole leg group (with the def chain)', () => {
+    setupStereo();
+    const id = createMatrixEdge(
+      { nodeId: CLOUDS, portId: 'out_l' },
+      { nodeId: COCO, portId: 'inL' },
+      'audio',
+      'audio',
+      defLookup,
+    );
+    expect(Object.keys(patch.edges)).toHaveLength(2);
+    expect(removeMatrixEdge(id!, defLookup)).toBe(true);
+    expect(Object.keys(patch.edges)).toHaveLength(0);
+  });
+
+  it('NEGATIVE CONTROL — WITHOUT the def chain the removal strands the sibling', () => {
+    // `resolveDef` is optional on removeMatrixEdge, which means a caller that
+    // forgets it silently reverts to single-leg removal. This pins that the
+    // parameter is load-bearing rather than decorative, so dropping it at the
+    // MatrixMixCard call site goes red here.
+    setupStereo();
+    const id = createMatrixEdge(
+      { nodeId: CLOUDS, portId: 'out_l' },
+      { nodeId: COCO, portId: 'inL' },
+      'audio',
+      'audio',
+      defLookup,
+    );
+    removeMatrixEdge(id!);
+    expect(cables()).toEqual([`${CLOUDS}.out_r -> ${COCO}.inR`]);
+  });
+
+  it('a CV cell is unaffected — pairing is audio-typed ports only', () => {
+    setup();
+    createMatrixEdge(
+      { nodeId: ADSR, portId: 'env' },
+      { nodeId: VCA, portId: 'cv' },
+      'cv',
+      'cv',
+      defLookup,
+    );
+    expect(Object.keys(patch.edges)).toHaveLength(1);
+  });
+});

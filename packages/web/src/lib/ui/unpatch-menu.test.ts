@@ -173,6 +173,166 @@ describe('buildUnpatchPlan — the patch-point menu model', () => {
     });
     expect(plan.items[0].label).toBe('Unpatch — notregistered OUT');
   });
+
+  it('a mono cable removes exactly itself (edgeIds is the whole cable, always)', () => {
+    const edges = { e1: edge('e1', ['vca-1', 'out'], ['strum-1', 'poly']) };
+    const plan = buildUnpatchPlan(edges, NODES, defLookup, {
+      nodeId: 'strum-1',
+      portId: 'poly',
+      direction: 'input',
+    });
+    expect(plan.items[0].edgeIds).toEqual(['e1']);
+    expect(plan.items[0].soloChannel).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// LEG-GROUP awareness (PR-3). A stereo cable is TWO edges; the menu must offer
+// ONE row that removes both, and must say "(L only)" when a lone leg is seated.
+//
+// The fixtures above deliberately carry only a `label`, so nothing there pairs
+// — which is exactly why these need their own def set WITH real ports.
+// ---------------------------------------------------------------------------
+
+const PORTED_DEFS: Record<string, unknown> = {
+  clouds: {
+    label: 'CLOUDS',
+    inputs: [
+      { id: 'in_l', type: 'audio' },
+      { id: 'in_r', type: 'audio' },
+    ],
+    outputs: [
+      { id: 'out_l', type: 'audio' },
+      { id: 'out_r', type: 'audio' },
+    ],
+    stereoPairs: [
+      ['in_l', 'in_r'],
+      ['out_l', 'out_r'],
+    ],
+  },
+  cofefve: {
+    label: 'COFEFVE',
+    inputs: [
+      { id: 'inL', type: 'audio' },
+      { id: 'inR', type: 'audio' },
+    ],
+    outputs: [
+      { id: 'outL', type: 'audio' },
+      { id: 'outR', type: 'audio' },
+    ],
+    stereoPairs: [
+      ['inL', 'inR'],
+      ['outL', 'outR'],
+    ],
+  },
+  filter: {
+    label: 'FILTER',
+    inputs: [{ id: 'audio', type: 'audio' }],
+    outputs: [{ id: 'audio', type: 'audio' }],
+  },
+};
+const portedLookup = (type: string) => PORTED_DEFS[type] as AnyDef | undefined;
+const PORTED_NODES: Record<string, ModuleNode> = {
+  cl: node('cl', 'clouds'),
+  co: node('co', 'cofefve'),
+  fi: node('fi', 'filter'),
+};
+
+describe('buildUnpatchPlan — leg groups', () => {
+  const stereoCable = {
+    'e-L': edge('e-L', ['cl', 'out_l'], ['co', 'inL']),
+    'e-R': edge('e-R', ['cl', 'out_r'], ['co', 'inR']),
+  };
+
+  it('a stereo cable is ONE row that removes BOTH legs', () => {
+    const plan = buildUnpatchPlan(stereoCable, PORTED_NODES, portedLookup, {
+      nodeId: 'co',
+      portId: 'inL',
+      direction: 'input',
+    });
+    expect(plan.items).toHaveLength(1);
+    expect(plan.items[0].edgeIds.slice().sort()).toEqual(['e-L', 'e-R']);
+    // A COMPLETE stereo cable gets NO channel suffix — nothing is missing.
+    expect(plan.items[0].soloChannel).toBeNull();
+    expect(plan.items[0].label).toBe('Unpatch — CLOUDS OUT_L');
+  });
+
+  it('a LONE leg is labelled "(L only)" / "(R only)"', () => {
+    const onlyL = { 'e-L': stereoCable['e-L'] };
+    expect(
+      buildUnpatchPlan(onlyL, PORTED_NODES, portedLookup, {
+        nodeId: 'co',
+        portId: 'inL',
+        direction: 'input',
+      }).items[0],
+    ).toMatchObject({ soloChannel: 'left', label: 'Unpatch — CLOUDS OUT_L (L only)' });
+
+    const onlyR = { 'e-R': stereoCable['e-R'] };
+    expect(
+      buildUnpatchPlan(onlyR, PORTED_NODES, portedLookup, {
+        nodeId: 'co',
+        portId: 'inR',
+        direction: 'input',
+      }).items[0],
+    ).toMatchObject({ soloChannel: 'right', label: 'Unpatch — CLOUDS OUT_R (R only)' });
+  });
+
+  it('a stereo→MONO group lists ONCE, not once per leg', () => {
+    // Both legs terminate on the SAME mono input, so the per-edge loop would
+    // otherwise emit two identical rows for one cable — and an "Unpatch all (2)"
+    // for a patch point holding one cable.
+    const dualMono = {
+      'e-L': edge('e-L', ['cl', 'out_l'], ['fi', 'audio']),
+      'e-R': edge('e-R', ['cl', 'out_r'], ['fi', 'audio']),
+    };
+    const plan = buildUnpatchPlan(dualMono, PORTED_NODES, portedLookup, {
+      nodeId: 'fi',
+      portId: 'audio',
+      direction: 'input',
+    });
+    expect(plan.items).toHaveLength(1);
+    expect(plan.items[0].edgeIds.slice().sort()).toEqual(['e-L', 'e-R']);
+    expect(plan.allLabel).toBeNull();
+  });
+
+  it('a mono→STEREO group lists ONCE on the shared OUTPUT point', () => {
+    const doublePatched = {
+      'e-L': edge('e-L', ['fi', 'audio'], ['co', 'inL']),
+      'e-R': edge('e-R', ['fi', 'audio'], ['co', 'inR']),
+    };
+    const plan = buildUnpatchPlan(doublePatched, PORTED_NODES, portedLookup, {
+      nodeId: 'fi',
+      portId: 'audio',
+      direction: 'output',
+    });
+    expect(plan.items).toHaveLength(1);
+    expect(plan.items[0].edgeIds.slice().sort()).toEqual(['e-L', 'e-R']);
+  });
+
+  it('TWO independent cables filling one stereo input stay TWO rows', () => {
+    // The leg-occupancy case: A-only-L + B-only-R. They are not one cable, and
+    // removing one must not remove the other.
+    const nodes = { ...PORTED_NODES, cl2: node('cl2', 'clouds') };
+    const mixed = {
+      'e-a': edge('e-a', ['cl', 'out_l'], ['co', 'inL']),
+      'e-b': edge('e-b', ['cl2', 'out_r'], ['co', 'inR']),
+    };
+    const plan = buildUnpatchPlan(mixed, nodes, portedLookup, {
+      nodeId: 'co',
+      portId: 'inL',
+      direction: 'input',
+    });
+    expect(plan.items).toHaveLength(1);
+    expect(plan.items[0].edgeIds).toEqual(['e-a']);
+    expect(plan.items[0].soloChannel).toBe('left');
+  });
+
+  it('NEGATIVE CONTROL — a non-expanding builder returns one leg, and that fails', () => {
+    // What the pre-PR-3 model produced. Kept so "removes both legs" is an
+    // assertion that can go red rather than a description of today.
+    const preExpansion = ['e-L'];
+    expect(() => expect(preExpansion.slice().sort()).toEqual(['e-L', 'e-R'])).toThrow();
+  });
 });
 
 // ---------------------------------------------------------------------------

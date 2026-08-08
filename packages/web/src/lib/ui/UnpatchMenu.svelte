@@ -96,8 +96,10 @@
               role="menuitem"
               data-testid="unpatch-item"
               data-edge-id={item.edgeId}
+              data-edge-ids={item.edgeIds.join(' ')}
+              data-solo-channel={item.soloChannel ?? ''}
               title={item.label}
-              onclick={() => pick([item.edgeId])}
+              onclick={() => pick(item.edgeIds)}
             >
               <span class="cut" aria-hidden="true">✂</span>
               <span class="txt">{item.label}</span>
@@ -111,7 +113,7 @@
               class="ctx-item all"
               role="menuitem"
               data-testid="unpatch-all"
-              onclick={() => pick(items.map((i) => i.edgeId))}
+              onclick={() => pick(items.flatMap((i) => i.edgeIds))}
             >
               <span class="cut" aria-hidden="true">✂</span>
               <span class="txt">{allLabel}</span>

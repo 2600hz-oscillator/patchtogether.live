@@ -560,10 +560,23 @@ export interface ChainEdgePlan {
  * EXPLICITLY (never relying on the engine's stereo normaling):
  *   - stereo → stereo: L→L, R→R.
  *   - mono   → stereo: mono fills BOTH L and R (two edges).
- *   - stereo → mono:   L and R BOTH into the mono in (two edges → the engine
- *                      SUMS them = a stereo→mono downmix).
+ *   - stereo → mono:   L and R BOTH into the mono in — DUAL-MONO. Two edges,
+ *                      one per channel; the module runs its DSP twice, one
+ *                      instance per channel (PR-3b's engine wrapper).
  *   - mono   → mono:   one edge (the duplicate is de-duped).
  * Returns [] when either side has no identifiable main (skip this link).
+ *
+ * ⚠ This is the SAME matrix `$lib/graph/stereo-autowire`'s `planAudioCommit`
+ * implements for hand-made cables, over a different question: this resolves a
+ * module's MAIN pair for the reconciler, that one resolves the pair of a port
+ * the USER picked. The two are cross-checked against each other in
+ * patch-convenience-columns.test.ts so the matrix cannot drift between them.
+ *
+ * (This doc used to say the stereo→mono case was "the engine SUMS them = a
+ * stereo→mono downmix". That was the pre-2026-08-07 policy; the owner reversed
+ * it because summing destroys the stereo image at the first mono module. The
+ * EDGES this function emits are unchanged — only what the engine does with
+ * them, in PR-3b.)
  */
 export function planPairLink(
   upNodeId: string,
@@ -899,7 +912,8 @@ export function planColumnWiring(ctx: ColumnWiringCtx): WcolEdge[] {
   const ret = returnHead ? returns!.get(returnHead.nodeId) ?? null : null;
 
   // Wire an ES-9 return pair (audio) into a stereo/mono audio INPUT (fx root or a
-  // mixer channel). L→L, R→R; a mono input takes BOTH (engine downmix).
+  // mixer channel). L→L, R→R; a mono input takes BOTH legs (DUAL-MONO — one DSP
+  // instance per channel once PR-3b lands; not a downmix).
   const wireReturnInto = (r: CvBuddyReturn, toNodeId: string, inL: string, inR: string) => {
     push(toWcol({ fromNodeId: r.es9NodeId, fromPortId: r.inPortL, toNodeId, toPortId: inL, sourceType: 'audio', targetType: 'audio' }));
     if (inR !== inL || r.inPortR !== r.inPortL) {
