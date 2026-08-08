@@ -411,6 +411,15 @@ test('rear card: a fanned-out OUTPUT lists every cable + "Unpatch all (N)", stay
   // `ch2L`+`ch2R` render as ONE `CH2` jack. The channel lives in the suffix, so
   // saying it twice — and disagreeing with the jack on the first half — was the
   // label bug the owner reported on #1409.
+  //
+  // ⚠ IF YOU RENAME A PORT LABEL, SWEEP ON ASSERTION SHAPE, NOT ON ID SPELLING.
+  // This exact line survived two sweeps of that change and broke CI twice. The
+  // first swept hardcoded COUNTS; the second grepped `OUT_L`/`IN_L`, which
+  // structurally cannot match `CH2L` — a filter applied before the check, quietly
+  // redefining the check's subject (CLAUDE.md, "a guard that is opt-in is itself
+  // an instance of it"). What works: grep the ASSERTION — every `unpatch-item` /
+  // `unpatch-menu-title` text expectation — and read each one against the
+  // 59-pair golden in `$lib/graph/stereo-pairs`.
   await expect(items.nth(0)).toHaveText(/Unpatch → mixmstrs CH2 \(L only\)$/i);
   await expect(items.nth(0)).toHaveAttribute('data-edge-ids', 'e-handdrawn-ch2L');
   await expect(items.nth(1)).toHaveText(/Unpatch → mixmstrs CH1$/i);
