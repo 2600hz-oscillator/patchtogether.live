@@ -69,10 +69,77 @@ function ensureModuleDocs(): Plugin {
   };
 }
 
+// ---------------------------------------------------------------------------
+// SERVER-BUILD DIET: drop the eager card-component glob from the SSR graph.
+//
+// Measured with `node scripts/measure-worker-bundle.mjs` (wrangler's own
+// `--dry-run` reports the same figures): the Cloudflare Pages Worker was
+// 3062.07 KiB gzipped against a 3072 KiB (3 MiB) free-plan ceiling — 9.93 KiB
+// of headroom. 6.4 MB of the 12.3 MB raw bundle was ONE chunk, `Canvas.js`,
+// reached by exactly one edge: `/r/[id]/+page.svelte` statically imports
+// `$lib/ui/Canvas.svelte`, which imports the ~210-entry card map. Everything
+// else heavy in the Worker (hls.js, butterchurn + presets, @grame/faustwasm,
+// the video glitch renderers, module-docs.generated) hangs off that same edge.
+//
+// The server never renders a card. The patch graph is a Yjs doc backed by
+// IndexedDB + the relay, so an SSR pass over `/r/[id]` has zero nodes and hands
+// SvelteFlow a `nodeTypes` map it never indexes; `/rack` is `ssr = false` and
+// its component is never invoked at all (SvelteKit still lists the node in the
+// server manifest, which is why `ssr = false` alone does not shrink anything).
+//
+// So in the SSR build ONLY, `modules-card-components.ts` is replaced by an
+// empty map. The client build is untouched — same glob, same chunks, same
+// hydration — and the prerendered pages plus the SSR HTML of a Canvas-bearing
+// route come out byte-identical (proven in the PR by prerendering `/rack` with
+// SSR forced on, both with and without this plugin).
+//
+// Scope, stated inside the gate:
+//   • SSR **build** only. `vite dev` and vitest keep the real glob, so the unit
+//     lane exercises the real map and dev SSR matches production HTML.
+//   • This file only. Any other importer of `./modules/*Card.svelte` would come
+//     straight back into the Worker — `modules-card-components.ssr-stub.test.ts`
+//     asserts the glob has exactly one home, and
+//     `scripts/measure-worker-bundle.mjs --check` ratchets the Worker's gzipped
+//     size so a new server-reachable card import fails loudly instead of
+//     silently eating the margin.
+//
+// `PT_SSR_KEEP_CARDS=1` disables the plugin. That is the NEGATIVE CONTROL for
+// the byte-identical claim, not a fallback: build a Canvas-bearing route with
+// SSR forced on, once each way, and diff the emitted HTML. If the diff is ever
+// non-empty the server HAS started rendering cards and this plugin is no longer
+// safe. See `packages/web/scripts/prove-ssr-identical.sh`.
+const CARD_COMPONENTS_MODULE = 'src/lib/ui/modules-card-components.ts';
+
+/** The whole SSR replacement. Kept as a string so a test can assert on it. */
+export const SSR_CARD_COMPONENTS_STUB =
+  '// SSR build stub — see vite.config.ts ssrDropCardComponents().\n' +
+  'export const componentByName = {};\n';
+
+function ssrDropCardComponents(): Plugin {
+  const WEB_DIR = fileURLToPath(new URL('.', import.meta.url));
+  const TARGET = path.resolve(WEB_DIR, CARD_COMPONENTS_MODULE);
+  let isBuild = false;
+  return {
+    name: 'patchtogether:ssr-drop-card-components',
+    enforce: 'pre',
+    configResolved(config) {
+      isBuild = config.command === 'build';
+    },
+    load(id, options) {
+      if (!isBuild || process.env.PT_SSR_KEEP_CARDS === '1') return null;
+      // Vite 6+ exposes the environment; `options.ssr` is the older signal.
+      const ssr = this.environment?.name === 'ssr' || options?.ssr === true;
+      if (!ssr) return null;
+      if (path.resolve(id.split('?')[0]) !== TARGET) return null;
+      return SSR_CARD_COMPONENTS_STUB;
+    },
+  };
+}
+
 // COOP/COEP headers required for SharedArrayBuffer (Faust may want it).
 // Phase 1 dev sets these; Phase 2 sets them in production via _headers.
 export default defineConfig({
-  plugins: [ensureModuleDocs(), sveltekit()],
+  plugins: [ensureModuleDocs(), ssrDropCardComponents(), sveltekit()],
   // Inline the product version as a compile-time constant (see APP_VERSION
   // above). Applies in both `dev` (serve) and `build`, so the topbar heading
   // renders the real X.Y.Z locally, in e2e, and in the deployed bundle.
