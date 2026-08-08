@@ -9,8 +9,24 @@
 > — cables, ports, Y.Doc schema and migration story are untouched. What changes
 > is what happens INSIDE a mono module. See §0b.
 
-**Status: AMENDED — architecture stands, Q1 replaced by DUAL-MONO (§0b). 2026-08-07.**
-*(Re-verified 2026-08-04: none of the 7 PRs has landed. `stereovca` is still the module id in `packages/dsp/src/`, `art/scenarios/`, `art/baselines/` and both VRT baselines; `reconciler.ts:143`'s `await engine.addNode(node)` is still unguarded, exactly as PR-0 describes. The whole sequence is live backlog.)*
+**Status: IN FLIGHT — architecture stands; Q1 → DUAL-MONO (§0b); Q3 rename DEFERRED, PR-1 struck (§1a). 2026-08-07.**
+
+| PR | state |
+|---|---|
+| PR-0 reconciler guard | ✅ **LANDED #1397** (2026-08-07) |
+| ~~PR-1 rename~~ | ⛔ **STRUCK** — deferred to the faceplate work (§1a) |
+| PR-2a per-channel taps | ✅ **LANDED #1402** (2026-08-07) |
+| PR-2b pairing infrastructure | 🔄 **#1404**, green-pending |
+| PR-3 leg-group planner | 🔄 in flight, stacked on #1404 |
+| PR-3b → PR-4 → {PR-5, PR-6} | backlog, unchanged |
+
+**PR-2 was SPLIT into 2a (instrument) and 2b (pairing).** They share no files
+and are independently reviewable; the plan's single PR-2 was two unrelated
+concerns wearing one number.
+
+*(The pre-2026-08-07 status line claimed "none of the 7 PRs has landed" and that
+`reconciler.ts:143` was still unguarded. Both are now false — PR-0 fixed the
+reconciler. Keep this table current; a stale status line here reads as fact.)*
 Source: 12-agent ultracode analysis (8 subsystem surveys → 2 competing designs → adversarial + completeness critics), all findings verified against the actual code with file:line cites. Draft questions + owner answers recorded in §1.
 
 ## 0. Executive summary
@@ -121,11 +137,43 @@ own merits, with owner ears. NOT part of this sequence.
 |---|---|---|
 | 1 | ~~Mono-input consumption policy~~ **REVERSED 2026-08-07 — see §0b (DUAL-MONO)** | ~~**Unity-sum via double-connection** (both legs into the mono input; Web Audio sums). The planner special-cases a mono-source leg group into a mono input by writing ONE leg, so a correlated mono round-trip does not gain +6 dB. ART stays byte-identical.~~ |
 | 2 | mixmstrs panning | **ADD per-channel pan: 8 params + a row of pan control knobs** on the card. New Faust DSP, contract + ART re-pin, explicit PUSH_CARD_CONTROLS entry, owner audio preview before merge. PR-6 is in scope. |
-| 3 | stereovca | **KEEP, renamed to `ringmod`.** It is the project's only transparent (unsmoothed) audio-rate ring modulator; the rename makes that its identity. Docs re-authored accordingly. Port ids unchanged → a type alias preserves every existing cable. |
+| 3 | stereovca | **KEEP. Rename to `ringmod` DEFERRED — owner, 2026-08-07: _"just leave it called stereovca for now, i don't want to touch that many files. we'll do it when we do the faceplate for it."_** Measured footprint: **44 files**. The rename is now a rider on that module's FACEPLATE work (phase 4), not a step in this sequence. PR-1 is struck (§3). Nothing downstream depends on it — see §1a. |
 | 4 | Mixed-source stereo | **Leg-level occupancy**: a full-stereo patch replaces both legs of the target; an only-X patch replaces only the X leg — so A-only-L + B-only-R into one input coexist. |
 | 5 | Look-and-feel | **Recommendations accepted**: dashed stroke + channel tag for only-L/R cables; unpatch-menu "(L only)" labels; one lane-rail dot per stereo port; rear card gets a single stereo hole (pair-tie retired). Pre-approved; PR-4 still posts a preview deploy as confirmation before the VRT dispatch bakes baselines. |
 | 6 | Attest machine | **Available whenever needed.** PR-5 unblocked. Note the machine-access grant does not fix the 2 failing cameraInput tests (webgl-attest-video-orientation-camera-fail memory) — verifying/fixing those is the first task of PR-5. |
 | 7 | CI cost | **Approved.** |
+
+### 1a. PR-1 IS STRUCK — resequenced 2026-08-07
+
+The rename was never load-bearing for stereo. Verified against the plan's own
+dependency claims before dropping it:
+
+- **PR-2/3/4 do not consume it.** They turn on *pairing* and *leg-group wiring*,
+  which key off port ids and cable types. `stereovca`'s ports are unchanged by
+  the rename by design (that is what made the type alias safe), so every list
+  that mentions it — collapse exemptions, `STRICT_VRT_MODULES`, the per-port
+  specs — simply keeps the current spelling.
+- **The `strength_l`/`strength_r` decision survives verbatim.** They stay
+  cv-typed and therefore stay two independent jacks (§1 defaults). That was
+  always about the port TYPE, never the module name.
+- **PR-0 was the prerequisite of the RENAME, not of the sequence** — and it has
+  landed anyway (#1397), on its own merit: an unguarded `addNode` wedging every
+  peer is a live hazard whether or not a type is ever renamed.
+
+**Two consequences, both simplifications:**
+
+1. **The sequence now carries NO collab re-attest.** PR-1 was the only
+   basis-toucher (the `persistence.ts` alias). PR-2/3/4 touch no attest basis;
+   PR-5 still carries the one WebGL re-attest.
+2. **No `RETIRED_TYPE_ALIASES` entry, no live-relay alias seam, no ART key
+   move, no VRT baseline rename.** The riskiest non-visual choreography in the
+   whole plan is deferred with the rename.
+
+New order: **PR-0 ✅ → PR-2 → PR-3 → PR-3b (dual-mono) → PR-4 → {PR-5, PR-6}.**
+
+⚠ When the rename does happen with the faceplate, §3's PR-1 body is still the
+correct recipe — including the trap that `ci.yml`'s behavioral-smoke grep and
+`behavioral-smoke-subset.test.ts` must move in the SAME commit.
 
 ### Decidable defaults (locked with the above)
 
@@ -163,7 +211,12 @@ own merits, with owner ears. NOT part of this sequence.
 Wrap the unguarded `engine.addNode` at reconciler.ts:143 in the same per-item try/catch as addEdge (:165-172): warn once per node id, record in a failed set, continue so later nodes/edges/params materialize. Unit test: snapshot with an unknown-type node + valid later nodes asserts the later ones apply and the failure logs once. reconciler.ts is in NO attest basis.
 Gates: web unit lane; `REPEAT=3 task test:one -- reconciler`; typecheck. 1 CI cycle.
 
-### PR-1 — rename stereovca → ringmod (+ persistence alias + collab attest)
+### ~~PR-1~~ — STRUCK 2026-08-07, deferred to the FACEPLATE work (see §1a)
+*Kept verbatim below as the recipe for when it does happen — the registry-key
+list and the ci.yml/behavioral-smoke same-commit trap are the expensive parts
+to re-derive. It is NOT part of this sequence.*
+
+### ~~PR-1 — rename stereovca → ringmod (+ persistence alias + collab attest)~~
 The module survives with identical ports (`in_l/in_r/out_l/out_r` audio, `strength_l/strength_r` cv, level/offset params) and identical DSP; its identity becomes the ring modulator.
 - **Files rename**: stereovca.ts → ringmod.ts (def `id`/`label` → lowercase `ringmod`; registration is glob-driven per #551 so the rename auto-registers), stereovca.test.ts → ringmod.test.ts, StereovcaCard.svelte → RingmodCard.svelte, packages/dsp/src/stereovca.ts → ringmod.ts. Re-author co-located `docs` as THE ring modulator (audio-rate unsmoothed multiply; strength_l/r stay independent cv jacks) — module stays in STRICT_DOCS (key renamed).
 - **Alias**: `RETIRED_TYPE_ALIASES { stereovca: 'ringmod' }` in persistence.ts (identical port ids → alias keeps ALL cables); fixture test copying retired-type-migration.test.ts asserting edge survival. Live-doc story per §1 defaults.
@@ -174,16 +227,81 @@ The module survives with identical ports (`in_l/in_r/out_l/out_r` audio, `streng
 - **Attest**: persistence.ts is in the collab basis → run `task collab:attest` after the final source commit, as the last unmerged basis-toucher.
 Gates: full local `task test` + `task art` from clean dsp dist; REPEAT=3 on renamed/edited specs. 1–2 CI cycles. Then `task pr:conflict-sweep`.
 
-### PR-2 — instruments + pairing infrastructure (behavior-invisible)
-(a) **Per-channel terminal taps**: ChannelSplitter(2) post-limiter in audio-out feeding two analysers; new read keys `outputSnapshotL`/`outputSnapshotR` beside the mono one (read keys are not ports → zero contract churn). Negative-control BOTH directions in a unit/e2e helper: only-L in → L reads, R ~0; then inverted.
-(b) **parseStereoPairs backtick fix** (module-manifest.ts:1084) + computed-tuple test case — closes the live mixmstrs doc-parity gap.
-(c) **`graph/stereo-pairs.ts`**: `derivedStereoPairs(def)` = declared `stereoPairs` ∪ the id-token fallback (lift idWords/LEFT_WORDS/RIGHT_WORDS from patch-convenience.ts:82-86; patch-convenience re-imports), **audio-typed ports only**, minus the named per-(module,pair) exemption sets. TWO lists, separately consulted: `COLLAPSE_EXEMPT` (rings odd/even, scope ch1/ch2, synesthesia bands, es9 hw jacks) and autowire behavior (rings keeps its shipped declared-pair autowire). Golden unit test pins the FULL derived pair map across all 194 registry modules, ratcheted both directions (count + content).
-(d) **Unify rear-card-model.ts:178-189** pairing onto derivedStereoPairs (kills the fifth heuristic); patch-panel-labels.test.ts:128 (`'out_l'→'OUT L'`) updated with collapsed-label policy.
-Gates: unit lane; REPEAT=3 new tests; assert `task docs:check` is a no-op (no def edits). 1 CI cycle.
+### PR-2 — instruments + pairing infrastructure (behavior-invisible) — ✅ DONE, as 2a + 2b
+
+**(a) → PR-2a, LANDED #1402.** Per-channel terminal taps: `ChannelSplitter(2)` off the SAME post-limiter `tail` node feeding two analysers; read keys `outputSnapshotL`/`outputSnapshotR` beside the mono one. Measured blindness, in Chrome on the real default chain: **mono 0.15507, L 0.31015, R 0 — mono is exactly L/2**, so only-L and only-R were the same number. Red-first verified against four mis-wirings (both taps ch0, both ch1, swapped, pre-limiter).
+
+> ⚠ **The plan said "Gates: unit lane" for (a). That was WRONG and structurally so.** `packages/web/vitest.config.ts` runs in `node` and does not pull in the audio module factories (they import WASM/worklet `?url` assets only Vite resolves). The test lives in **ART**, the only lane with `node-web-audio-api` + the `?url`→filesystem worklet seam. ART is a required check, so nothing is lost. A Chrome liveness leg rides `e2e/tests/workflow-mode.spec.ts` (no new page load) because ART cannot see a Chrome analyser that silently fails to be pulled and returns all-zeros — which would make every future only-L/R e2e **vacuous rather than red**.
+>
+> §2's tap cite `audio-out.ts:138-142` had rotted to ~199–203 / 238–242.
+>
+> **Side finding, load-bearing for PR-4:** the workflow **default chain is LEFT-ONLY** — a mono VCO into mixmstrs `ch1L` reaches AUDIO OUT's L and nothing else. The mono tap could never say so. Any PR-4 e2e that spawns the default chain and expects both channels is asserting something that is not true today.
+
+**(b)(c)(d) → PR-2b, #1404.** `parseStereoPairs` computed-tuple fix (module-manifest.ts **:1100**, not :1084) + a deny-by-default manifest↔def parity gate; new `graph/stereo-pairs.ts` with `idWords`/`LEFT_WORDS`/`RIGHT_WORDS` lifted out of patch-convenience (which now imports them); `markStereoPairs` in **`lib/ui/workflow/rear-card-model.ts:179`** (the plan's `lib/ui/rear-card-model.ts` does not exist) rewired onto `derivedStereoPairs`. **59 derived pairs across 35 modules of 195 defs**, ratcheted both directions.
+
+> ⚠ **`COLLAPSE_EXEMPT` needs ONE entry, not the four the plan listed.** Only `rings` odd/even is real. `scope` ch1/ch2, synesthesia band outs and es9's hardware ins **derive no pair at all** under audio-only + L/R-token, so listing them would have created stale exemptions — caught on day one by the artifact anchor. (`es9 spdif_l/r` does collapse, correctly; and es9 has **14** class-tagged ins, not 16.)
+>
+> ⚠ **`docs:check` does NOT move for (b).** `contract-lock.txt` reads the LIVE def and already carried all 10 mixmstrs pairs; the drift was confined to the doc-page manifest. No `docs:accept` needed.
+>
+> ⚠ **A LIVE BUG the plan did not know about:** `gamepad`'s **gate-typed** d-pad `dl`/`dr` (⬅/⮕) have been rendering a stereo pair tie on the rear card — two arrow buttons drawn as a stereo pair. The unification removes it. Rear-card blast radius is 3 modules (gamepad −1 tie, sidecar +1, audioIn +1), **none covered by a VRT baseline**.
+>
+> `stereovca`'s `strength_l`/`strength_r` cv exclusion was **verified, not assumed** — the audio-only rule handles it with no exemption. The rings autowire e2e is at **:92**, not :90.
+>
+> **Deliberate deviation:** `resolveVerboseLabel('out_l')` still returns `'OUT L'`. Changing it would be visible behaviour in a PR that promises none, and the collapsed jack does not exist until PR-4. The policy is recorded as data instead — `stereoPairStemId()` (`out_l`+`out_r` → `out` → `OUT`) — pinned for PR-4 to consume.
+
+Gates as run: typecheck; FULL web unit suite (13 099 → 13 255 passed); `docs:check` no-op; REPEAT=3 on every changed file; no attest basis touched. **Measured CI delta ≈ +1 s** (8 ART tests, 259 ms; zero new e2e page loads).
 
 ### PR-3 — wiring semantics: universal leg-group planner
-Generalize `planStereoAutowire` → the universal audio commit planner over derivedStereoPairs: stereo↔stereo = L→L,R→R; mono→stereo = double-patch; stereo→mono = **unity-sum both legs** (Q1), with the mono-source-round-trip special case writing one leg; `channelMode: 'both'|'left'|'right'` selects legs. Route ALL audio edge writers through it: Canvas handleConnect (:3773), pickPortMenuTarget (:6324-6398), commitCarriedEdge (:6243), `writeStereoSiblingEdge` generalizes (:3641) — **plus mike/driver.ts:79-105**. **Leg-level occupancy** (Q4): full patch replaces both legs; only-X replaces only the X leg. Leg-group deletion: handleDelete (:4069) + wcol-detach (:4077) + unpatch-menu.ts/UnpatchMenu.svelte expand to the group; "(L only)" label.
-Tests: stereo-autowire.test.ts rewritten (mandatory legs, only-L/R, leg occupancy, unity-sum policy — the policy gets its FIRST explicit assert anywhere); patch-convenience{,-columns}.test.ts updated; schema-cleanup-roundtrip golden untouched (no Edge field change).
+
+> ⚠ **THIS SECTION PRE-DATES THE Q1 REVERSAL. `stereo→mono` IS NO LONGER
+> UNITY-SUM.** §0b replaced summing with **DUAL-MONO**, and the paragraph below
+> was written against the old policy. Read §0b as authoritative wherever the
+> two disagree. Restating the corrected matrix, because "unity-sum" appearing
+> in an implementation section is exactly how a reversed decision gets built
+> anyway:
+>
+> | source → target | what the planner writes |
+> |---|---|
+> | stereo → stereo | L→L, R→R (unchanged) |
+> | mono → stereo | double-patch both legs (unchanged) |
+> | **stereo → mono** | **BOTH legs, to a target the engine has wrapped DUAL-MONO** — two DSP instances, one per channel. NOT a sum. Nothing is mixed down. |
+> | mono → mono | one leg (unchanged) |
+>
+> The old "mono-source-round-trip special case writing one leg" existed **only**
+> to stop a correlated signal gaining +6 dB when summed. **Dual-mono never
+> sums, so that special case has no reason to exist** — and keeping it would be
+> worse than useless, since it is a runtime heuristic guessing whether two legs
+> "are the same signal", which §0b explicitly rules out ("ALWAYS two instances.
+> No 'is the input really stereo?' detection"). **Delete it; do not port it.**
+>
+> Consequence for sequencing: the planner must know a mono target still
+> RECEIVES both legs, so **PR-3b (dual-mono) is what makes this true** — see
+> §0b "Sequencing". PR-3 writes both legs; PR-3b makes the engine honour them.
+> Between the two, a stereo→mono patch sums in the Web Audio graph as before.
+> That window is why they land adjacently.
+
+Generalize `planStereoAutowire` → the universal audio commit planner over derivedStereoPairs, per the corrected matrix above; `channelMode: 'both'|'left'|'right'` selects legs. Route ALL audio edge writers through it. **Leg-level occupancy** (Q4): full patch replaces both legs; only-X replaces only the X leg. Leg-group deletion expands to the group; "(L only)" label.
+
+**Verified call sites (re-checked 2026-08-07 — GREP THE SYMBOL, the line numbers drift):**
+
+| symbol | file | line (2026-08-07) | plan's original |
+|---|---|---|---|
+| `writeStereoSiblingEdge` | `packages/web/src/lib/ui/Canvas.svelte` | 3669 | :3641 |
+| `handleConnect` | ″ | 3801 | :3773 |
+| `handleDelete` | ″ | 4097 | :4069 |
+| `commitCarriedEdge` | ″ | 6271 | :6243 |
+| `pickPortMenuTarget` | ″ | 6352 | :6324 |
+| wcol-detach branch | ″ | ~4125 | :4077 |
+| `ydoc.transact` (AI patching) | `packages/web/src/lib/mike/driver.ts` | 79 | :79-105 ✓ |
+| unpatch menu | `unpatch-menu.ts` / `UnpatchMenu.svelte` | — | — |
+
+⚠ Two traps in that table. **The plan gave the wrong DIRECTORY** — it is
+`lib/ui/Canvas.svelte`, not `lib/ui/canvas/Canvas.svelte`; the latter does not
+exist, so a `grep` scoped to the wrong path returns nothing and reads as "the
+symbol is gone". And every Canvas line had drifted **+28** (the file is 8849
+lines and grew above 3641). All five symbols are intact — nothing was renamed
+or removed. **Search by symbol name, never by line.**
+Tests: stereo-autowire.test.ts rewritten (mandatory legs, only-L/R, leg occupancy, and the stereo→mono **dual-mono** policy — which gets its FIRST explicit assert anywhere; assert BOTH legs are written and that NO round-trip special case collapses them to one); patch-convenience{,-columns}.test.ts updated; schema-cleanup-roundtrip golden untouched (no Edge field change).
 Gates: REPEAT=3 every changed unit file; e2e stereo-autowire.spec.ts rewritten (keeps the only full jack-click→carry→picker→commit e2e). NOT in any attest basis. Lands back-to-back with PR-4 (merge PR-3 only when PR-4 is ready for review, so main never sits long in the two-jacks-render-but-patch-writes-both state). 1–2 CI cycles.
 
 ### PR-4 — THE FLIP: jack collapse + only-L/R menu + cable rendering + VRT regen (riskiest)
@@ -224,7 +342,12 @@ Near-none, by construction. All five persisted surfaces load unchanged; legacy s
 2. **Sub-tolerance VRT invisibility** (#1213 class) — a removed jack dot « DOCK_MAX_DIFF commits nothing on a green dispatch. Mitigation: measure every affected scene locally; `git rm` pairs; count bot PNGs.
 3. **MixmstrsCard silent id-filtering** — mitigations: row-count assert + the PatchPanel-central collapse minimizes card edits.
 4. **Instrument blindness** — only-L/R e2e MUST use the PR-2 per-channel taps; never the mono downmix tap. Residual: non-terminal taps (scope, behavioral metric) stay mono-downmix — a dead-R inside a chain reads −6 dB, not failure, anywhere but the master out. Accepted + documented; revisit if it bites.
-5. **Unity-sum audibility edges** — the planner's mono-round-trip special case contains the +6 dB case, but a user manually patching both legs of a correlated source into a mono input still sums hot (faithful to Eurorack). ART cannot see policy; the new stereo-autowire unit asserts + e2e own it.
+5. ~~**Unity-sum audibility edges**~~ **— RETIRED by the Q1 reversal (§0b).** Dual-mono never sums, so the +6 dB correlated-round-trip hazard and the special case that contained it are both gone. **Its replacement risks are different and worse to diagnose, so do not simply cross this off:**
+   - **2× CPU on every mono-in module** (21 of them, the pass-through spine). Owner-accepted deliberately, but it is now a real perf surface: a patch with a long mono chain doubles its DSP cost. Watch for output underrun (`clock-perf-glitch-output-underrun` memory) rather than assuming a glitch is the clock.
+   - **Nondeterministic DSP decorrelates** — two instances of a noise/random module give genuinely different L and R. Often desirable width, occasionally a surprise. Name it per module (§0b sharp edge 3).
+   - **`read()` is single-instance** (§0b sharp edge 1): card meters/scopes read instance A (left) only. A silent-R inside a chain would be invisible on the card — the same instrument-blindness class the per-channel taps fixed at the terminal, now reappearing per-module. Decide per read key.
+   - **Side-effecting factories must NOT be duplicated** (§0b sharp edge 2) — anything claiming a hardware port, writing `node.data`, or registering a singleton needs a named, deny-by-default opt-out list, ratcheted.
+   - **ART is structurally blind to all of it** (§0b sharp edge 4): most scenarios drive DSP cores directly, not the factory path, so ART will NOT catch a dual-mono regression. The 6 real-def scenarios plus new e2e own this gate.
 6. **mixmstrs pan** (PR-6) — new DSP on the most-connected module; pan@center must be bit-transparent or every mixmstrs ART entry moves. Gate: fingerprint diff attribution before re-pin + owner ears.
 
 ## 7. Verified-clean surfaces (do not re-sweep)
