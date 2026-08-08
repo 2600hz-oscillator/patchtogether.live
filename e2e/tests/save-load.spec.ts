@@ -191,5 +191,8 @@ test('save-load: __persistence.load() restores the patch from a saved envelope',
 
   // Engine reconciles → 5 nodes + 6 edges back on the canvas.
   await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 5_000 });
-  await expect(page.locator('.svelte-flow__edge')).toHaveCount(6);
+  // A stereo LEG GROUP renders as ONE bezier (PR-4): the demo's
+  // `vd-vca.audio → vd-out.L` + `→ R` pair is 2 edges and 1 cable, so 6
+  // graph edges draw 5. Pinned in stereo-only-channel.spec.ts.
+  await expect(page.locator('.svelte-flow__edge')).toHaveCount(5);
 });

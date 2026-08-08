@@ -2,9 +2,9 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
-  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
+  import { mixmstrsSectionPlan } from './mixmstrs-sections';
   import { mixmstrsDef, MIXMSTRS_CHANNELS, MIXMSTRS_RETURNS } from '$lib/audio/modules/mixmstrs';
-  import type { ModuleNode, PortDef } from '$lib/graph/types';
+  import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
   import { cardParams } from './card-kit';
 
@@ -25,7 +25,6 @@
   // now grows this card automatically.
   const CH = MIXMSTRS_CHANNELS;
   const RET = MIXMSTRS_RETURNS;
-  type Channel = (typeof CH)[number];
 
   // Sectioned grouping: Ch1..Ch8 + Master, so the patch panel's
   // click-to-expand UX kicks in (each section's row list collapses by
@@ -37,82 +36,15 @@
   // the user can scan one channel's full I/O surface in a single
   // expand. Returns + master live under the Master section alongside
   // the master-bus volume + the 6 master/send outputs.
-  function defPortToDescriptor(p: PortDef): PortDescriptor {
-    return { id: p.id, cable: p.type };
-  }
-  // Lookup map keyed on port id so the section builder can pluck
-  // exactly the def-declared port (and its cable type) without
-  // re-deriving the id mapping in two places.
-  const inputById = new Map<string, PortDescriptor>(
-    mixmstrsDef.inputs.map((p) => [p.id, defPortToDescriptor(p)] as const),
-  );
-  const outputById = new Map<string, PortDescriptor>(
-    mixmstrsDef.outputs.map((p) => [p.id, defPortToDescriptor(p)] as const),
-  );
-
-  function pickInputs(ids: string[]): PortDescriptor[] {
-    return ids
-      .map((id) => inputById.get(id))
-      .filter((p): p is PortDescriptor => p !== undefined);
-  }
-  function pickOutputs(ids: string[]): PortDescriptor[] {
-    return ids
-      .map((id) => outputById.get(id))
-      .filter((p): p is PortDescriptor => p !== undefined);
-  }
-
-  function chSection(ch: Channel) {
-    return {
-      label: `Ch${ch}`,
-      inputs: pickInputs([
-        `ch${ch}L`,
-        `ch${ch}R`,
-        `ch${ch}_volume`,
-        `ch${ch}_low`,
-        `ch${ch}_mid`,
-        `ch${ch}_high`,
-        `ch${ch}_thresh`,
-        `ch${ch}_ratio`,
-        `ch${ch}_compEnable`,
-        `comp${ch}`,
-        `ch${ch}_send1`,
-        `ch${ch}_send2`,
-      ]),
-    };
-  }
-
-  /** Each aux RETURN is now a strip of its own (volume + 3-band EQ), so it gets
-   *  its own patch-panel section instead of four bare jacks under Master. */
-  function retSection(r: number) {
-    return {
-      label: `Ret${r}`,
-      inputs: pickInputs([
-        `ret${r}L`,
-        `ret${r}R`,
-        `ret${r}_volume`,
-        `ret${r}_low`,
-        `ret${r}_mid`,
-        `ret${r}_high`,
-      ]),
-    };
-  }
-
-  const sections = [
-    ...CH.map((ch) => chSection(ch)),
-    ...RET.map((r) => retSection(r)),
-    {
-      label: 'Master',
-      inputs: pickInputs([
-        'master_volume',
-        'send1Pre', 'send2Pre',
-      ]),
-      outputs: pickOutputs([
-        'masterL', 'masterR',
-        'send1L', 'send1R',
-        'send2L', 'send2R',
-      ]),
-    },
-  ];
+  // Sections come from the extracted PURE builder (mixmstrs-sections.ts).
+  // It used to live here as an inline `pickInputs` that SILENTLY DROPPED any id
+  // the def does not declare — invisible to every gate, because a list inside a
+  // `.svelte` file is unreachable from the unit lane. It is now an artifact
+  // `mixmstrs-sections.test.ts` counts rows against.
+  //
+  // The rows are RAW per-leg descriptors; PatchPanel collapses `ch1L`/`ch1R`
+  // into one CH1 jack centrally, so this card knows nothing about stereo.
+  const sections = mixmstrsSectionPlan(mixmstrsDef, CH, RET).sections;
 </script>
 
 <div class="mod-card mixmstrs-card" class:compact>

@@ -15,6 +15,8 @@ import {
 } from './doom-patchpanel-ports';
 import { doomDef } from '$lib/video/modules/doom';
 import { CV_GATE_PORT_IDS, cvGatePortIdForSlot } from './doomkeys';
+import { collapseStereoPorts } from '$lib/ui/stereo-jack-collapse';
+import type { StereoPairDefLike } from '$lib/graph/stereo-pairs';
 
 describe('buildDoomPatchPanelSections — shape contract', () => {
   it('emits 4 per-player sections (P1..P4) + a final Cheats section regardless of mySlot', () => {
@@ -71,6 +73,30 @@ describe('buildDoomPatchPanelSections — shape contract', () => {
     // Output ids match doomDef.outputs declaration order exactly so any
     // future def edit shows up here AND fails this test.
     expect(sections[0]!.outputs!.map((o) => o.id)).toEqual(doomDef.outputs.map((o) => o.id));
+  });
+
+  it('what PatchPanel actually RENDERS: audio_l+audio_r collapse to ONE row', () => {
+    // ⚠ Everything above pins the RAW model. PatchPanel applies
+    // `collapseStereoPorts` DOWNSTREAM of it (PatchPanel.svelte), and doom
+    // declares `audio_l`/`audio_r` — a derived stereo pair — so the panel shows
+    // one fewer output row than this builder emits.
+    //
+    // Asserting both side by side, the mixmstrs treatment: a test that pins
+    // only the pre-collapse set while being NAMED like a rendering claim is
+    // how a real dropped jack hides behind an expected shortfall.
+    const raw = buildDoomPatchPanelSections(0)[0]!.outputs!;
+    const rendered = collapseStereoPorts(raw, doomDef as unknown as StereoPairDefLike, 'output');
+    expect(rendered).toHaveLength(raw.length - 1);
+    const stereo = rendered.find((r) => r.siblingId);
+    expect(stereo?.id).toBe('audio_l');
+    expect(stereo?.siblingId).toBe('audio_r');
+    expect(stereo?.label).toBe('AUDIO');
+    expect(rendered.map((r) => r.id)).not.toContain('audio_r');
+    // …and nothing was LOST: rows ∪ siblings is exactly the raw set.
+    const addressed = rendered
+      .flatMap((r) => (r.siblingId ? [r.id, r.siblingId] : [r.id]))
+      .sort();
+    expect(addressed).toEqual(raw.map((o) => o.id).sort());
   });
 
   it('total handle count = 36 per-slot CV + 2 cheat inputs + N outputs (one per doomDef output)', () => {

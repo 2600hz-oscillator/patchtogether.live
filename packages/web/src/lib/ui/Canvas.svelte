@@ -351,9 +351,12 @@
     audioEdgeId,
     expandLegGroups,
     planAudioCommit,
+    siblingLegIds,
     type ChannelMode,
     type StereoDef,
   } from '$lib/graph/stereo-autowire';
+  import { computeLegGroups } from '$lib/ui/cable-leg-groups';
+  import { stereoPairForPort } from '$lib/graph/stereo-pairs';
   import { computeEdgeAlignedRect } from '$lib/ui/patch-menu-position';
   import { getNodePosition, setNodePosition } from '$lib/multiplayer/layouts';
   import {
@@ -2235,9 +2238,25 @@
     autoColor: string | null;
     obj: FlowNode;
   }
+  /** The only-L / only-R channel tag's look. INLINE because xyflow portals the
+   *  edge label out of the edge element (see the `labelStyle` note at the
+   *  assignment site) — a stylesheet rule has nothing edge-specific to hang on.
+   *  Deliberately quiet: the DASHES say "partial", the letter says WHICH half,
+   *  and neither competes with the cable's own hue, which still means CABLE
+   *  TYPE and nothing else. */
+  const CABLE_SOLO_LABEL_STYLE =
+    'font: 700 9px ui-monospace, monospace; color: var(--text-dim, #9aa2ad);' +
+    'background: var(--bg, #0a0c0f); opacity: 0.85; padding: 0 2px; border-radius: 2px;';
+
   interface PrevFlowEdgeEntry {
     snapEdge: Edge;
     related: boolean;
+    /** The leg-group verdict this FlowEdge was built from. In the reuse guard
+     *  because it is NOT a function of `snapEdge` alone: a cable becomes /
+     *  stops being an only-L when its SIBLING leg appears or disappears, and
+     *  that edit never touches this edge's own record. Without it the dashes
+     *  would go stale until something else rebuilt the array. */
+    solo: 'left' | 'right' | null;
     obj: FlowEdge;
   }
   // Plain (non-reactive) maps — swept every pass, so deleted ids GC.
@@ -2539,6 +2558,15 @@
     const curEdges = untrack(() => flowApi?.getEdges() ?? []);
     const curById = new Map<string, FlowEdge>();
     for (const ce of curEdges) curById.set(ce.id, ce);
+    // ONE BEZIER PER LEG GROUP. A stereo cable is two Edge records between the
+    // same two cards, anchored at the same hidden corner handle stack — drawing
+    // both is one visually-fat cable that deletes half at a time. The left leg
+    // draws it; the right is skipped here and re-joined by `expandLegGroups` on
+    // delete/unpatch, so the picture and the removal agree. A group that is a
+    // LONE leg (an only-L/R patch, or a legacy single-leg edge from a rack
+    // saved before leg groups existed) keeps its bezier and gets the dashed
+    // `cable-left-only` / `cable-right-only` treatment + an L / R tag.
+    const legGroups = computeLegGroups(snap.edges, stereoDefForNode);
     for (const e of snap.edges) {
       // Skip edges whose endpoint references a hidden child (i.e. a
       // member of a collapsed group). Internal edges between two children
@@ -2553,9 +2581,15 @@
       // cable can't render there either (defensive — same rationale as
       // the hidden-group-child drop above).
       if (canvasHiddenNodeIds.has(e.source.nodeId) || canvasHiddenNodeIds.has(e.target.nodeId)) continue;
+      // The sibling leg of a rendered stereo cable: its partner draws the whole
+      // group. An edge MISSING from the map is drawn plainly rather than
+      // dropped — a cable nobody draws is a cable nobody can delete.
+      const leg = legGroups.get(e.id);
+      if (leg && !leg.render) continue;
+      const solo = leg?.soloChannel ?? null;
       const related = !!hovered && (e.source.nodeId === hovered || e.target.nodeId === hovered);
       const prev = prevFlowEdges.get(e.id);
-      if (prev && prev.snapEdge === e && prev.related === related) {
+      if (prev && prev.snapEdge === e && prev.related === related && prev.solo === solo) {
         // Hover now flips identity for only the hovered node's cables
         // instead of rebuilding ALL edges on every hover change.
         const cur = curById.get(e.id);
@@ -2568,7 +2602,7 @@
             ? cur
             : prev.obj;
         next.push(reusable);
-        nextPrev.set(e.id, { snapEdge: e, related, obj: reusable });
+        nextPrev.set(e.id, { snapEdge: e, related, solo, obj: reusable });
         continue;
       }
       rebuiltAny = true;
@@ -2580,12 +2614,27 @@
         targetHandle: e.target.portId,
         style: `stroke: var(--cable-${e.sourceType}); stroke-width: 3;`,
       };
-      if (related) edge.class = 'cable-related';
+      const classes: string[] = [];
+      if (related) classes.push('cable-related');
+      if (solo) {
+        // Half a stereo image. Dashed at the SAME 4/4 rhythm as the PickupCable
+        // ghost, so "in flight" and "only one channel" read as one visual
+        // vocabulary, plus a one-letter channel tag on the cable itself.
+        classes.push(solo === 'left' ? 'cable-left-only' : 'cable-right-only');
+        edge.label = solo === 'left' ? 'L' : 'R';
+        // ⚠ The label is an HTML div PORTALED OUT of the <g.svelte-flow__edge>
+        // into xyflow's `edge-labels` container (EdgeLabel.svelte), so it can
+        // be reached by NEITHER a descendant CSS selector on the edge NOR a
+        // per-edge locator. Styling therefore has to ride inline via
+        // `labelStyle`, and the tag carries its own `data-*` hook for tests.
+        edge.labelStyle = CABLE_SOLO_LABEL_STYLE;
+      }
+      if (classes.length > 0) edge.class = classes.join(' ');
       // Carry xyflow-owned selection forward on a rebuild (mirror nodes).
       const cur = curById.get(e.id);
       if (cur && cur.selected !== undefined) edge.selected = cur.selected;
       next.push(edge);
-      nextPrev.set(e.id, { snapEdge: e, related, obj: edge });
+      nextPrev.set(e.id, { snapEdge: e, related, solo, obj: edge });
     }
     prevFlowEdges = nextPrev;
     const current = untrack(() => flowEdges);
@@ -5779,6 +5828,31 @@
   // straight on its compatible-port list (the drill-down menu). null = the
   // normal full-module-list entry point (carry "patch to", contextmenu, etc.).
   let portMenuPreselectNodeId = $state<string | null>(null);
+  // ---- "patch only L" / "patch only R" (owner Q5) ----
+  //
+  // Which legs the NEXT commit out of this picker writes. It feeds
+  // `planAudioCommit`'s `channelMode`, which has existed on the planner since
+  // PR-3 with tests but no UI — this is the wire, not a new mechanism. Reset to
+  // 'both' every time the picker opens, so a one-off only-L can never leak into
+  // the next patch the user makes.
+  let portMenuChannelMode = $state<ChannelMode>('both');
+  /** The source port's DERIVED stereo pair, or null when there is no stereo
+   *  image to take a side of — the rows are hidden then.
+   *
+   *  ⚠ COLLAPSE list, not the wiring one. "Only L / only R" is a claim about a
+   *  jack the UI presents as ONE stereo signal; `rings`' odd/even taps are
+   *  COLLAPSE_EXEMPT (two timbres, two jacks) and are correctly excluded — the
+   *  rows would be mislabelled for them. Outputs only: the picker's INPUT
+   *  direction is the one-motion rewire, where the user is choosing a source
+   *  and the image is the source's to split. */
+  let portMenuStereoPair = $derived.by(() => {
+    void snapshot;
+    if (!portMenuOpen || !portMenuSourceNodeId || !portMenuSourcePortId) return null;
+    if (portMenuSourceDirection !== 'output') return null;
+    const def = stereoDefForNode(portMenuSourceNodeId);
+    if (!def) return null;
+    return stereoPairForPort(def, portMenuSourcePortId, 'output');
+  });
   // Last observed pointer position (screen px). A native SvelteFlow connect-
   // drag's `onconnect` carries no cursor coords, so we snapshot the pointer to
   // edge-align the drill-down picker to the dropped-on card side.
@@ -5902,6 +5976,7 @@
     portMenuSourceDirection = info.direction;
     portMenuSourceType = info.type;
     portMenuPreselectNodeId = null; // contextmenu/dblclick → full module list
+    portMenuChannelMode = 'both'; // a fresh picker always starts full-stereo
     portMenuOpen = true;
     // Lock the source-port's PatchPanel open while the cascade is up.
     connectDragState.beginCascade(info.nodeId);
@@ -6067,6 +6142,7 @@
     // every other caller (carry "patch to", contextmenu/dblclick) wants the
     // module list, so clear any stale preselect here.
     portMenuPreselectNodeId = null;
+    portMenuChannelMode = 'both'; // a fresh picker always starts full-stereo
     portMenuOpen = true;
     // POST-MOUNT viewport clamp: edgeAlignedMenuPos can only estimate the
     // picker's size before it renders (width 200, height unknown), so a
@@ -6150,6 +6226,83 @@
       }
     }, LOCAL_ORIGIN);
     if (removed > 0) trace(`unpatched ${removed} cable(s) via patch-point menu`);
+  }
+
+  /**
+   * Change a LIVE cable's stereo mode from the unpatch menu (owner: right-click
+   * an output and the option is there, patched or not).
+   *
+   * SEMANTICS: narrowing to L/R-only DROPS the other leg rather than muting it.
+   * The leg-group model treats legs as real edges, and a muted-but-present edge
+   * is invisible state — the class this repo keeps getting bitten by. Widening
+   * back to `both` re-derives the missing leg, so the round trip is lossless.
+   *
+   * It goes through `planAudioCommit`'s existing `channelMode` so there is ONE
+   * commit seam, and it plans from the SEED leg's own endpoints rather than
+   * canonicalising to `pair.left` — that preserves a deliberate CROSS patch
+   * (out_l→in_r), which canonicalising would silently straighten.
+   *
+   * ⚠ The plan's own `replaceEdgeIds` cannot do this job: it only evicts edges
+   * seated on the input ports the plan WRITES, and the leg being dropped sits on
+   * the OTHER input port. So the group's unwanted legs are deleted explicitly.
+   */
+  function setLegGroupChannelMode(seedEdgeId: string, mode: ChannelMode): void {
+    const seed = patch.edges[seedEdgeId];
+    if (!seed?.source || !seed?.target) return;
+    const from = { nodeId: seed.source.nodeId, portId: seed.source.portId };
+    const to = { nodeId: seed.target.nodeId, portId: seed.target.portId };
+    const srcNode = patch.nodes[from.nodeId];
+    const dstNode = patch.nodes[to.nodeId];
+    if (!srcNode || !dstNode) return;
+    const srcDef = defLookup(srcNode.type);
+    const dstDef = defLookup(dstNode.type);
+    const sourceType: CableType =
+      (srcDef?.outputs.find((p) => p.id === from.portId)?.type as CableType) ?? 'audio';
+    const targetType: CableType =
+      (dstDef?.inputs.find((p) => p.id === to.portId)?.type as CableType) ?? sourceType;
+
+    const groupIds = [seedEdgeId, ...siblingLegIds(seed, patch.edges, stereoDefForNode)];
+    const plan = planAudioCommit({
+      fromNodeId: from.nodeId,
+      fromPortId: from.portId,
+      fromDef: stereoDefForNode(from.nodeId),
+      toNodeId: to.nodeId,
+      toPortId: to.portId,
+      toDef: stereoDefForNode(to.nodeId),
+      edges: patch.edges,
+      sourceType,
+      targetType,
+      channelMode: mode,
+    });
+    if (plan.legs.length === 0) return; // nothing committable — change nothing
+    const wanted = new Set(plan.legs.map((l) => l.id));
+    ydoc.transact(() => {
+      for (const id of groupIds) {
+        if (wanted.has(id)) continue;
+        const live = patch.edges[id];
+        if (!live) continue;
+        // A user-driven narrowing of a MANAGED (wcol-) cable must durably
+        // suppress the dropped leg, or the next column reconcile re-adds it and
+        // the mode silently reverts — the same detach-suppression the unpatch
+        // and Backspace paths run.
+        if (workflowMode && id.startsWith('wcol-e-')) {
+          const colKey = wcolEdgeColumnKey(live);
+          if (colKey) wcolMarkDetached(id, colKey);
+        }
+        delete patch.edges[id];
+      }
+      for (const leg of plan.legs) {
+        if (patch.edges[leg.id]) continue;
+        patch.edges[leg.id] = {
+          id: leg.id,
+          source: { nodeId: from.nodeId, portId: leg.fromPortId },
+          target: { nodeId: to.nodeId, portId: leg.toPortId },
+          sourceType: leg.sourceType,
+          targetType: leg.targetType,
+        };
+      }
+    }, LOCAL_ORIGIN);
+    trace(`channel mode ${mode} on ${from.nodeId}.${from.portId} → ${to.nodeId}.${to.portId}`);
   }
 
   // ---------------- Jack-click → carry → patch-to picker ----------------
@@ -6295,15 +6448,53 @@
       unpatchPos = { x: detail.x, y: detail.y };
       unpatchOpen = true;
     };
+    // RIGHT-CLICK AN UNPATCHED STEREO OUTPUT → the patch-to picker with the
+    // "patch only L / only R" rows. PatchPanel's port rows and back-panel jacks
+    // dispatch this; the PATCHED case never reaches here (it claims the event
+    // for the unpatch menu first), so the two right-click behaviours cannot
+    // fight. Raw-handle cards (video/game) already reach the same picker
+    // through the document-level handle contextmenu, so the rows appear there
+    // too with no extra wiring — pairing is derived, not declared per card.
+    const onPortMenu = (e: Event) => {
+      const detail = (e as CustomEvent).detail as
+        | { nodeId: string; portId: string; direction: 'input' | 'output'; x: number; y: number }
+        | null;
+      if (!detail) return;
+      if (connectDragState.mode === 'pickup') {
+        connectDragState.discard();
+        connectDragState.endCascade();
+      }
+      const node = patch.nodes[detail.nodeId];
+      const def = node ? defLookup(node.type) : undefined;
+      const port =
+        detail.direction === 'output'
+          ? def?.outputs.find((p) => p.id === detail.portId)
+          : def?.inputs.find((p) => p.id === detail.portId);
+      openPortMenuAt(
+        { x: detail.x, y: detail.y },
+        {
+          nodeId: detail.nodeId,
+          portId: detail.portId,
+          direction: detail.direction,
+          type: (port?.type as string | undefined) ?? 'audio',
+        },
+      );
+      // Keep the invoking PatchPanel open underneath the picker (its
+      // outside-click dismissal treats an engaged cascade as "inside").
+      connectDragState.beginCascade(detail.nodeId);
+      trace(`port menu opened for ${detail.nodeId}.${detail.portId}`);
+    };
     document.addEventListener('patchpanel:jackclick', onJackClick);
     document.addEventListener('patchpanel:patchto', onPatchTo);
     document.addEventListener('patchpanel:carrycommit', onCarryCommit);
     document.addEventListener('patchpanel:jackcontextmenu', onJackContextMenu);
+    document.addEventListener('patchpanel:portmenu', onPortMenu);
     return () => {
       document.removeEventListener('patchpanel:jackclick', onJackClick);
       document.removeEventListener('patchpanel:patchto', onPatchTo);
       document.removeEventListener('patchpanel:carrycommit', onCarryCommit);
       document.removeEventListener('patchpanel:jackcontextmenu', onJackContextMenu);
+      document.removeEventListener('patchpanel:portmenu', onPortMenu);
     };
   });
 
@@ -6423,8 +6614,19 @@
     const sourceType: CableType = srcExposed?.cableType ?? srcPort?.type ?? 'audio';
     const targetType: CableType = dstExposed?.cableType ?? dstPort?.type ?? sourceType;
 
+    // The channel the user picked, snapshotted BEFORE the menu closes.
+    // Only meaningful when the source really has a stereo image; a stale
+    // 'left' on an unpaired port would filter nothing (planAudioCommit never
+    // filters a `mono` leg) but reading it here keeps the trace honest.
+    const channelMode: ChannelMode = portMenuStereoPair ? portMenuChannelMode : 'both';
+
     const id = audioEdgeId(from.nodeId, from.portId, to.nodeId, to.portId);
-    if (patch.edges[id]) {
+    // The already-exists short-circuit is about the CLICKED leg, so it only
+    // speaks for a full-stereo commit. An only-R patch writes a DIFFERENT edge
+    // id, and bailing on the L leg's presence would silently refuse it —
+    // exactly the "nothing happened" bug. writeAudioLegGroup already skips any
+    // leg that exists, so the single-channel paths need no guard here.
+    if (channelMode === 'both' && patch.edges[id]) {
       trace(`patch-to: edge already exists ${id}`);
       return;
     }
@@ -6441,9 +6643,12 @@
       return;
     }
     ydoc.transact(() => {
-      writeAudioLegGroup(from, to, sourceType, targetType);
+      writeAudioLegGroup(from, to, sourceType, targetType, channelMode);
     }, LOCAL_ORIGIN);
-    trace(`patch-to ${from.nodeId}.${from.portId} → ${to.nodeId}.${to.portId}`);
+    trace(
+      `patch-to ${from.nodeId}.${from.portId} → ${to.nodeId}.${to.portId}` +
+        (channelMode === 'both' ? '' : ` (only ${channelMode === 'left' ? 'L' : 'R'})`),
+    );
   }
 
   function deleteNode(nodeId: string) {
@@ -8293,6 +8498,9 @@
   x={portMenuPos.x}
   y={portMenuPos.y}
   sourceLabel={portMenuSourceLabel}
+  stereoPair={portMenuStereoPair}
+  channelMode={portMenuChannelMode}
+  onchannelmode={(m) => (portMenuChannelMode = m)}
   moduleEntries={portMenuModuleEntries}
   candidatesFor={portMenuCandidatesFor}
   preselectModuleId={portMenuPreselectNodeId}
@@ -8320,6 +8528,7 @@
   items={unpatchPlan.items}
   allLabel={unpatchPlan.allLabel}
   onunpatch={unpatchEdges}
+  onchannelmode={setLegGroupChannelMode}
   onclose={closeUnpatchMenu}
 />
 

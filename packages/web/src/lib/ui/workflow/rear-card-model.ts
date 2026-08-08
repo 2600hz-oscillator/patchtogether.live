@@ -34,6 +34,7 @@
 import { resolveVerboseLabel } from '$lib/ui/patch-panel-labels';
 import { domainClassForCable, type SignalDomain } from './module-shell-model';
 import { derivedStereoPairs, type StereoPairDefLike } from '$lib/graph/stereo-pairs';
+import { collapsedPairLabel } from '$lib/ui/stereo-jack-collapse';
 import type { ModuleFace } from '$lib/graph/types';
 
 /** The minimal port shape the rear-card model reads (any-domain PortDef). */
@@ -82,9 +83,17 @@ export interface RearHole {
   audioRate: boolean;
   /** Authored doc sentence for title/aria enrichment (docs.inputs/outputs). */
   doc?: string;
-  /** Outputs rail: true when this hole is the R side of a stereo L/R pair —
-   *  the rail renders the pair-tie mark between the two. */
-  pairWithPrev?: boolean;
+  /** ONE STEREO HOLE (owner Q5). Set to the OTHER leg's port id when this hole
+   *  is a collapsed L/R pair; `portId` is then the LEFT leg, which is what a
+   *  click patches (every commit runs through `planAudioCommit`, which reads
+   *  the pair off the def and writes both legs).
+   *
+   *  This REPLACES the old `pairWithPrev` tie mark. The tie drew a "stereo
+   *  pair" caption between two adjacent output holes and therefore depended on
+   *  rail ADJACENCY to be truthful — a derived pair whose holes were not
+   *  consecutive would have tied the wrong two jacks. One hole has no such
+   *  precondition, and it matches what every other jack field now shows. */
+  stereoSiblingPortId?: string;
 }
 
 /** A cluster sub-header inside a band (envelopes → filter eg / amp eg). */
@@ -109,9 +118,15 @@ export interface RearFieldPlan {
   bands: RearBand[];
   /** The OUTPUTS rail, declared order. */
   outputs: RearHole[];
-  /** Total hole count (inputs + outputs) — always equals the declared port
-   *  count (the no-orphan-holes guarantee, linted). */
+  /** Total RENDERED holes (inputs + outputs). A collapsed stereo pair is ONE
+   *  hole, so this is ≤ the declared port count — see `portCount`. */
   holeCount: number;
+  /** Declared ports ADDRESSED by those holes (a stereo hole addresses two).
+   *  This is the no-orphan-holes guarantee and it always equals
+   *  `inputs.length + outputs.length`; `holeCount` no longer can, now that a
+   *  pair renders as one hole. Keeping both means the totality invariant is
+   *  still assertable instead of quietly becoming untestable. */
+  portCount: number;
   /** Pathology fallback (>REAR_COLLAPSE_THRESHOLD holes): bands render
    *  collapsed to their headers (jack-count pill, click to expand) — a
    *  visibility fallback, NEVER a cascading menu. No prototype needs it. */
@@ -182,9 +197,9 @@ function makeHole(
 }
 
 /**
- * Mark stereo L/R pairs on the outputs rail.
+ * Collapse stereo L/R pairs into ONE hole (owner Q5).
  *
- * This USED TO BE the fifth independent pairing heuristic in the app: a stem
+ * The pairing USED TO BE the fifth independent heuristic in the app: a stem
  * regex (`/^(.*?)_?([lr])$/`) over ADJACENT outputs, blind both to a def's
  * `stereoPairs` declaration and to the port's CABLE TYPE. It was wrong in both
  * directions and shipped that way:
@@ -196,29 +211,60 @@ function makeHole(
  *     `audioIn`'s `audio_l_out` / `audio_r_out` are DECLARED stereo pairs, but
  *     the ids do not END in l/r, so the regex never saw them.
  *
- * It now asks the one derivation (`derivedStereoPairs`), which reads
- * declarations ∪ the id-token fallback over AUDIO-typed ports only, minus the
- * named COLLAPSE_EXEMPT set (`rings`' odd/even timbre taps).
+ * PR-2b rewired it onto the one derivation (`derivedStereoPairs`: declarations
+ * ∪ the id-token fallback, AUDIO-typed ports only, minus the named
+ * COLLAPSE_EXEMPT set — `rings`' odd/even timbre taps). PR-4 goes the last
+ * step: the pair no longer draws a "stereo pair" TIE between two holes, it
+ * IS one hole, matching every other jack field.
  *
- * ADJACENCY IS STILL REQUIRED — `pairWithPrev` means "tie me to the hole
- * BEFORE me on the rail", so a derived pair whose two holes are not
- * consecutive would draw a tie between the wrong two jacks. The derivation
- * decides WHICH ports are a pair; the rail's own order still decides whether
- * the tie can be drawn. (No registry module hits that case today — asserted in
- * stereo-pairs.test.ts so the day one does, it is a red test and not a
- * mis-drawn faceplate.)
+ * That also removes the tie's ADJACENCY precondition. `pairWithPrev` meant
+ * "tie me to the hole BEFORE me", so a derived pair whose holes were not
+ * consecutive would have tied the wrong two jacks; a single hole cannot be
+ * wrong about its own two ports, wherever they sit in declared order.
+ *
+ * Works on EITHER rail. The tie only ever existed on outputs, which meant a
+ * stereo INPUT pair rendered as two holes on a card whose front now shows one
+ * jack — two surfaces disagreeing about the same def.
  */
-function markStereoPairs(outs: RearHole[], def: RearDefLike): void {
-  const partnerOfRight = new Map(
-    derivedStereoPairs(def as StereoPairDefLike)
-      .filter((p) => p.direction === 'output')
-      .map((p) => [p.right, p.left]),
+function collapseStereoHoles(
+  holes: RearHole[],
+  def: RearDefLike,
+  direction: 'input' | 'output',
+): RearHole[] {
+  const pairs = derivedStereoPairs(def as StereoPairDefLike).filter(
+    (p) => p.direction === direction,
   );
-  for (let i = 1; i < outs.length; i++) {
-    if (partnerOfRight.get(outs[i].portId) === outs[i - 1].portId) {
-      outs[i].pairWithPrev = true;
-    }
+  if (pairs.length === 0) return holes;
+  const present = new Set(holes.map((h) => h.portId));
+  const pairOf = new Map<string, (typeof pairs)[number]>();
+  for (const p of pairs) {
+    // BOTH legs must be on this rail. A rail missing one leg keeps two (or one)
+    // plain holes rather than claiming a jack that patches a port not shown.
+    if (!present.has(p.left) || !present.has(p.right)) continue;
+    pairOf.set(p.left, p);
+    pairOf.set(p.right, p);
   }
+  if (pairOf.size === 0) return holes;
+
+  const done = new Set<string>();
+  const out: RearHole[] = [];
+  for (const hole of holes) {
+    const pair = pairOf.get(hole.portId);
+    if (!pair) {
+      out.push(hole);
+      continue;
+    }
+    const key = `${pair.left}+${pair.right}`;
+    if (done.has(key)) continue;
+    done.add(key);
+    const left = holes.find((h) => h.portId === pair.left)!;
+    out.push({
+      ...left,
+      label: collapsedPairLabel(pair),
+      stereoSiblingPortId: pair.right,
+    });
+  }
+  return out;
 }
 
 /**
@@ -352,17 +398,40 @@ export function rearFieldPlan(def: RearDefLike): RearFieldPlan {
     band.clusters.push({ label: c.label, holes: pulled });
   }
 
-  const outs = outputs.map((p) => hole(p, 'output'));
-  markStereoPairs(outs, def);
+  // ---- ONE STEREO HOLE per derived pair, on BOTH rails ----
+  for (const band of bands) {
+    band.holes = collapseStereoHoles(band.holes, def, 'input');
+    for (const cluster of band.clusters) {
+      cluster.holes = collapseStereoHoles(cluster.holes, def, 'input');
+    }
+  }
+  const outs = collapseStereoHoles(
+    outputs.map((p) => hole(p, 'output')),
+    def,
+    'output',
+  );
 
-  const holeCount =
-    bands.reduce((n, b) => n + b.holes.length + b.clusters.reduce((m, c) => m + c.holes.length, 0), 0) +
-    outs.length;
+  const bandHoles = bands.reduce(
+    (n, b) => n + b.holes.length + b.clusters.reduce((m, c) => m + c.holes.length, 0),
+    0,
+  );
+  const holeCount = bandHoles + outs.length;
+  // Every declared port is addressed by exactly one hole; a stereo hole
+  // addresses two. Summed from the holes, NOT from the def, so it is a real
+  // check on the derivation rather than a restatement of the input.
+  const countPorts = (list: readonly RearHole[]) =>
+    list.reduce((n, h) => n + (h.stereoSiblingPortId ? 2 : 1), 0);
+  const portCount =
+    bands.reduce(
+      (n, b) => n + countPorts(b.holes) + b.clusters.reduce((m, c) => m + countPorts(c.holes), 0),
+      0,
+    ) + countPorts(outs);
 
   return {
     bands,
     outputs: outs,
     holeCount,
+    portCount,
     collapse: holeCount > REAR_COLLAPSE_THRESHOLD,
     denseRail: outs.length > REAR_DENSE_RAIL_OUTPUTS,
   };

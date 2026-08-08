@@ -32,6 +32,7 @@
     type RearHole,
   } from './rear-card-model';
   import { connectDragState } from '$lib/ui/connect-drag-state.svelte';
+  import { stereoPairForPort, type StereoPairDefLike } from '$lib/graph/stereo-pairs';
   import { canConnectToPort, type CableType } from '$lib/graph/types';
   import { portConnections } from '$lib/ui/port-patch-helpers';
   import { patch } from '$lib/graph/store';
@@ -71,9 +72,17 @@
     );
   });
 
+  /** A COLLAPSED stereo hole answers for BOTH its legs — a legacy rack whose
+   *  only cable sits on the R leg must still show the hole as plugged, or the
+   *  jack reads empty and its right-click falls through to the wrong menu. */
   function remotesFor(hole: RearHole): string[] {
     const map = hole.direction === 'input' ? connections.inputs : connections.outputs;
-    return map.get(hole.portId) ?? [];
+    const mine = map.get(hole.portId) ?? [];
+    const sib = hole.stereoSiblingPortId;
+    if (!sib) return mine;
+    const theirs = map.get(sib) ?? [];
+    if (theirs.length === 0) return mine;
+    return [...new Set([...mine, ...theirs])];
   }
 
   /** "DisplayName.PORT" → the display name (the chip shows WHO, not which
@@ -176,9 +185,30 @@
    *  hole is left completely alone (no preventDefault) so its right-click
    *  behaviour is byte-identical to before. */
   function onHoleContextMenu(e: MouseEvent, hole: RearHole): void {
-    if (remotesFor(hole).length === 0) return;
     const host = hostEl;
     if (!host) return;
+    if (remotesFor(hole).length === 0) {
+      // UNPATCHED stereo OUTPUT → the "patch only L / only R" picker, the same
+      // Canvas-owned menu the front panel's output rows open. Parity matters:
+      // the rear card is the ONLY patch surface a dock full-view card has.
+      // Anything else is left completely alone (no preventDefault), so every
+      // other rear-hole right-click behaves exactly as before.
+      if (hole.direction !== 'output' || !hasStereoImage(hole)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      host.dispatchEvent(
+        new CustomEvent('patchpanel:portmenu', {
+          bubbles: true,
+          detail: { nodeId, portId: hole.portId, direction: 'output', x: e.clientX, y: e.clientY },
+        }),
+      );
+      return;
+    }
+    // A collapsed hole names whichever leg actually holds a cable (preferring
+    // the left); Canvas expands the removal to the whole leg group.
+    const sib = hole.stereoSiblingPortId;
+    const map = hole.direction === 'input' ? connections.inputs : connections.outputs;
+    const portId = sib && (map.get(hole.portId)?.length ?? 0) === 0 ? sib : hole.portId;
     e.preventDefault();
     e.stopPropagation();
     host.dispatchEvent(
@@ -186,13 +216,21 @@
         bubbles: true,
         detail: {
           nodeId,
-          portId: hole.portId,
+          portId,
           direction: hole.direction,
           x: e.clientX,
           y: e.clientY,
         },
       }),
     );
+  }
+
+  /** Does this hole carry a stereo image the picker can split? A collapsed hole
+   *  says so directly; an uncollapsed one is asked of the def (a rail that
+   *  shows only one leg of a pair still has the image). */
+  function hasStereoImage(hole: RearHole): boolean {
+    if (hole.stereoSiblingPortId) return true;
+    return stereoPairForPort(def as StereoPairDefLike, hole.portId, hole.direction) !== null;
   }
 
   // ---- band collapse (pathology fallback only — spec §1.5) ----
@@ -226,6 +264,7 @@
     class:dim={compat === 'dim'}
     data-testid="back-jack"
     data-port-id={hole.portId}
+    data-stereo-sibling={hole.stereoSiblingPortId}
     data-direction={hole.direction}
     data-patched={patched ? 'true' : 'false'}
     data-domain={hole.domain}
@@ -318,9 +357,6 @@
       </header>
       <div class="rail-cells">
         {#each plan.outputs as hole (hole.portId)}
-          {#if hole.pairWithPrev}
-            <div class="pair-tie" aria-hidden="true">stereo pair</div>
-          {/if}
           {@render jack(hole)}
         {/each}
       </div>
@@ -672,28 +708,6 @@
     padding: 0 5px;
     margin-left: 4px;
   }
-  .pair-tie {
-    align-self: stretch;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    margin: -4px 2px;
-    font-family: var(--rc-mono);
-    font-size: 8.5px;
-    color: var(--rc-faint);
-    letter-spacing: 0.1em;
-  }
-  .pair-tie::before,
-  .pair-tie::after {
-    content: '';
-    flex: 1;
-    height: 1px;
-    background: var(--rc-line);
-  }
-  .dense-rail .pair-tie {
-    display: none; /* 2-col rail: the tie row would break the grid */
-  }
-
   /* ---- footer: domain legend + interaction hint ---- */
   .rear-foot {
     grid-column: 1 / -1;

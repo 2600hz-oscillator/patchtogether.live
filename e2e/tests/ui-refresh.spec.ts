@@ -61,7 +61,10 @@ test.describe('Cable hover affordances', () => {
     // affordance still works in real browsers; only the synthetic pointer
     // path is unreachable.
     await page.getByTestId('load-example-select').selectOption('sequenced-vco');
-    await expect(page.locator('.svelte-flow__edge')).toHaveCount(6, { timeout: 10_000 });
+    // A stereo LEG GROUP renders as ONE bezier (PR-4): the demo's
+    // `vd-vca.audio → vd-out.L` + `→ R` pair is 2 edges and 1 cable, so 6
+    // graph edges draw 5. Pinned in stereo-only-channel.spec.ts.
+    await expect(page.locator('.svelte-flow__edge')).toHaveCount(5, { timeout: 10_000 });
 
     const firstEdge = page.locator('.svelte-flow__edge').first();
     const edgePath = firstEdge.locator('.svelte-flow__edge-path');
@@ -84,7 +87,10 @@ test.describe('Cable hover affordances', () => {
     // 2 of the 6 edges (seq.pitch→vco and seq.gate→adsr), so the remaining
     // 4 should dim when we hover the Sequencer card.
     await page.getByTestId('load-example-select').selectOption('sequenced-vco');
-    await expect(page.locator('.svelte-flow__edge')).toHaveCount(6, { timeout: 10_000 });
+    // A stereo LEG GROUP renders as ONE bezier (PR-4): the demo's
+    // `vd-vca.audio → vd-out.L` + `→ R` pair is 2 edges and 1 cable, so 6
+    // graph edges draw 5. Pinned in stereo-only-channel.spec.ts.
+    await expect(page.locator('.svelte-flow__edge')).toHaveCount(5, { timeout: 10_000 });
 
     const seqNode = page.locator('.svelte-flow__node-sequencer').first();
     await seqNode.hover();
@@ -102,7 +108,15 @@ test.describe('Cable hover affordances', () => {
     const unrelatedCount = await page
       .locator('.svelte-flow__edge:not(.cable-related)')
       .count();
-    expect(unrelatedCount).toBe(4);
+    // THREE, not four: the demo draws 5 cables, not 6 (`vd-vca.audio` into
+    // `vd-out.L`+`R` is ONE stereo leg group rendered as one bezier, PR-4), and
+    // 2 of them touch the hovered SEQUENCER. Derived from the two numbers this
+    // test already pins, and asserted as the partition so the two counts cannot
+    // drift apart silently.
+    const totalCount = await page.locator('.svelte-flow__edge').count();
+    expect(totalCount, 'the demo draws 5 cables for its 6 graph edges').toBe(5);
+    expect(unrelatedCount).toBe(totalCount - relatedCount);
+    expect(unrelatedCount).toBe(3);
 
     const relatedOpacity = await page
       .locator('.svelte-flow__edge.cable-related')
@@ -144,7 +158,10 @@ test.describe('Undo / redo', () => {
   test('Cmd-Z reverts a node deletion (right-click → Delete)', async ({ page, rack }) => {
     await page.getByTestId('load-example-select').selectOption('sequenced-vco');
     await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
-    await expect(page.locator('.svelte-flow__edge')).toHaveCount(6);
+    // A stereo LEG GROUP renders as ONE bezier (PR-4): the demo's
+    // `vd-vca.audio → vd-out.L` + `→ R` pair is 2 edges and 1 cable, so 6
+    // graph edges draw 5. Pinned in stereo-only-channel.spec.ts.
+    await expect(page.locator('.svelte-flow__edge')).toHaveCount(5);
 
     // Right-click the VCO and delete it (4 edges touch the VCA — exercising
     // the multi-op-in-one-transact path that should still be one undo).
@@ -158,7 +175,10 @@ test.describe('Undo / redo', () => {
     await page.locator('body').click({ position: { x: 5, y: 5 } });
     await page.keyboard.press('Meta+z');
     await expect(page.locator('.svelte-flow__node-vca')).toHaveCount(1, { timeout: 5000 });
-    await expect(page.locator('.svelte-flow__edge')).toHaveCount(6, { timeout: 5000 });
+    // A stereo LEG GROUP renders as ONE bezier (PR-4): the demo's
+    // `vd-vca.audio → vd-out.L` + `→ R` pair is 2 edges and 1 cable, so 6
+    // graph edges draw 5. Pinned in stereo-only-channel.spec.ts.
+    await expect(page.locator('.svelte-flow__edge')).toHaveCount(5, { timeout: 5000 });
   });
 
   test('Cmd-Z is ignored while focus is in a text input (no hijack of native undo)', async ({ page, rack }) => {

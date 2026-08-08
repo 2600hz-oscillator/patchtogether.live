@@ -101,10 +101,22 @@ async function generateFixtureIfMissing(page: Page): Promise<void> {
         sourceType: 'audio',
         targetType: 'audio',
       };
+      // BOTH legs of AUDIO OUT. `L`/`R` are a derived stereo pair, so a
+      // single-leg cable now renders DASHED (an only-L patch) — accurate, but
+      // wrong for a shipped fixture, and it would leave the right channel
+      // silent for no reason. This is what the commit planner writes for a
+      // mono source into a stereo input: the one output double-patched.
       w.__patch.edges['e2'] = {
         id: 'e2',
         source: { nodeId: 'scp', portId: 'ch1_out' },
         target: { nodeId: 'out', portId: 'L' },
+        sourceType: 'audio',
+        targetType: 'audio',
+      };
+      w.__patch.edges['e3'] = {
+        id: 'e3',
+        source: { nodeId: 'scp', portId: 'ch1_out' },
+        target: { nodeId: 'out', portId: 'R' },
         sourceType: 'audio',
         targetType: 'audio',
       };

@@ -107,7 +107,22 @@ test.describe('@aut PatchPanel acceptance flow', () => {
     const ch1Labels = (
       await chrome(page, 'mm').locator('[data-testid="port-row-label"]').allTextContents()
     ).map((s) => s.trim());
-    expect(ch1Labels).toContain('CH1 L');
+    // ONE stereo row, not two (PR-4 jack collapse): `ch1L` + `ch1R` are a
+    // derived pair, so the strip shows a single `CH1` jack named from the
+    // pair's shared stem. The per-leg names are GONE — asserted, because a
+    // collapse that merely renamed one row and dropped the other would look
+    // identical from a `toContain` alone.
+    expect(ch1Labels).toContain('CH1');
+    expect(ch1Labels).not.toContain('CH1 L');
+    expect(ch1Labels).not.toContain('CH1 R');
+    // …and the collapsed row addresses BOTH legs, so a click patches the
+    // whole image rather than half of it.
+    await expect(
+      chrome(page, 'mm').locator('[data-testid="patch-panel-port-row"][data-port-id="ch1L"]'),
+    ).toHaveAttribute('data-stereo-sibling', 'ch1R');
+    await expect(
+      chrome(page, 'mm').locator('[data-testid="patch-panel-port-row"][data-port-id="ch1R"]'),
+    ).toHaveCount(0);
 
     // Back → drill into OUTPUT → the master/send output rows appear.
     await chrome(page, 'mm').locator('[data-testid="patch-panel-back"]').click();
@@ -121,9 +136,20 @@ test.describe('@aut PatchPanel acceptance flow', () => {
 
     // io-spec parity: every declared port keeps a handle in the card DOM
     // regardless of menu state (49 inputs + outputs).
+    //
+    // ⚠ THE HANDLE STACK IS NOT COLLAPSED, and this is the assertion that
+    // pins it. Jack collapse is a decision about ROWS A HUMAN CLICKS; the
+    // handle set is the graph's anchor surface, so BOTH legs of every pair
+    // keep their own hidden handle — a legacy only-R edge must still have
+    // somewhere to land, and the per-module-per-port sweep counts them all.
     const handleCount = await page
       .locator('.svelte-flow__node[data-id="mm"] .svelte-flow__handle[data-handleid]')
       .count();
     expect(handleCount).toBeGreaterThanOrEqual(50);
+    // Named, not just counted: the RIGHT leg of a collapsed pair still has a
+    // handle even though it no longer has a row.
+    await expect(
+      page.locator('.svelte-flow__node[data-id="mm"] .svelte-flow__handle[data-handleid="ch1R"]'),
+    ).toHaveCount(1);
   });
 });
