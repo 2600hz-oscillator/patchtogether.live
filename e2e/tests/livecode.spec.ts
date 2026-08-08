@@ -7,9 +7,9 @@
 //      + leaves no spawned modules.
 //   3. clocked(): invoking clocked() spawns a clockedRunner module with
 //      the body + division stored on node.data.
-//   4. Load-example recreation (graph-isomorphism): a JS script that
-//      recreates the topbar's "Load example" patch produces the same
-//      set of nodes + edges as clicking the button.
+//   4. Voice-demo recreation (graph-isomorphism): a JS script that rebuilds
+//      the canonical voice demo produces the same set of nodes + edges as
+//      the shared `loadVoiceDemo` fixture writes.
 
 import { test, expect, loadVoiceDemo } from './_fixtures';
 import { type Page } from '@playwright/test';
@@ -255,7 +255,7 @@ test('livecode: editable name label — rename + reject duplicate', async ({ pag
   await expect(page.locator('[data-testid="name-label-button"]', { hasText: 'BASS' })).toHaveCount(1);
 });
 
-test('livecode: JS recreates "Load example" patch → graph-isomorphic', async ({ page }) => {
+test('livecode: JS recreates the voice-demo patch → graph-isomorphic', async ({ page }) => {
   await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'lc', type: 'livecode', position: { x: 50, y: 400 } }]);
