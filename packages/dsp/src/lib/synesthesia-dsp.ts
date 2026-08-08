@@ -65,7 +65,7 @@ export const ENV_SLOW_MS = ENV_SLOW_REL_MS;
  * env, so the gate hysteresis (0.05/0.02) + the scale-invariant onset flux are
  * unchanged. (gibribbon reads the SLOW env CV directly, which IS boosted — its
  * demo's per-band gains were re-balanced for the new scaling; see the
- * gibribbon-demo-calibration guard.)
+ * gibribbon-synesthesia-calibration guard.)
  */
 export const CV_MAKEUP: readonly [number, number, number, number] = [1.6, 1.6, 1.6, 1.5];
 
