@@ -52,6 +52,7 @@ import {
 } from './launchpad-device.svelte';
 import {
   bindLaunchpadToClip,
+  unbindLaunchpad,
   __test_resetBinding,
   __test_mode,
   __test_strandAuditionNote,
@@ -450,6 +451,20 @@ describe('KEYS stuck-gate FAILSAFE — repairs the audio AND reports the bug', (
     expect(gate.value, 'everything released').toBe(0);
     expect(__test_mode().keysOrphanFlushes, 'the FIX did the work, not the failsafe').toBe(0);
     expect(__test_mode().keysSoundingCount, 'nothing left sounding').toBe(0);
+  });
+
+  it('UNBINDING with a pad held releases it — the failsafe cannot cover this one', async () => {
+    // Unbinding stops the render loop, which is WHERE the failsafe runs. So
+    // anything still sounding at unbind would hang with nothing left to notice
+    // it — the flush has to happen on the way out, not be delegated.
+    const gate = await openKeys();
+    sim.press('L', KB_X, KB_Y);
+    tick();
+    expect(gate.value, 'sounding').toBe(1);
+    unbindLaunchpad();
+    tickEngine(); // the render loop is gone; only the engine still ticks
+    expect(gate.value, 'unbind released the held note').toBe(0);
+    expect(__test_mode().keysOrphanFlushes, 'a clean flush, not a repair').toBe(0);
   });
 
   it('NEGATIVE: a HELD pad is never stolen by the failsafe', async () => {

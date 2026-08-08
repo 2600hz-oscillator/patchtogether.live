@@ -811,6 +811,18 @@ export function unbindLaunchpad(): void {
     /* noop */
   }
   stopLoops(); // commits any pending div preview while boundNodeId is still set
+  // Release every KEYS voice BEFORE dropping the binding. Unbinding also stops
+  // the render loop, and the render loop is where the stuck-gate failsafe runs
+  // — so anything still sounding here would hang with nothing left to notice
+  // it. Done while boundNodeId is still set, for the same reason stopLoops is.
+  if (boundNodeId) {
+    flushHeldKeys(boundNodeId);
+    if (deployment === 'single' && arp.playing !== null) {
+      auditionOff(boundNodeId, laneOf(keysClipIndex), arp.playing);
+      arp = { ...arp, playing: null };
+    }
+    keysReconcileSounding(boundNodeId); // counted: an orphan here is still a bug
+  }
   boundNodeId = null;
   if (isPairBound()) {
     clearUnit('L');
