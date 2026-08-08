@@ -288,7 +288,10 @@ test.describe('AI smoke check', () => {
   test('clear: Clear button removes all nodes + edges from patch + DOM', async ({ page, rack }) => {
     await page.getByTestId('load-example-select').selectOption('sequenced-vco');
     await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
-    await expect(page.locator('.svelte-flow__edge')).toHaveCount(6);
+    // A stereo LEG GROUP renders as ONE bezier (PR-4): the demo's
+    // `vd-vca.audio → vd-out.L` + `→ R` pair is 2 edges and 1 cable, so 6
+    // graph edges draw 5. Pinned in stereo-only-channel.spec.ts.
+    await expect(page.locator('.svelte-flow__edge')).toHaveCount(5);
 
     await page.getByRole('button', { name: 'Clear' }).click();
     await page.waitForTimeout(150);
@@ -338,7 +341,19 @@ test.describe('AI smoke check', () => {
     const statusText = (await page.locator('.bottombar').textContent()) ?? '';
     expect(statusText, `bottombar text: "${statusText}"`).toMatch(/ctx\s*running/);
     expect(statusText).toMatch(/nodes\s*5/);
-    expect(statusText).toMatch(/edges\s*6/);
+    // FIVE, not six — and the number is DERIVED, not read off a failing run.
+    // The bottombar counts `flowEdges.length`, i.e. CABLES DRAWN ON THE CANVAS
+    // (its `nodes` counterpart is `flowNodes.length` for the same reason). The
+    // demo holds SIX graph edges, of which `vd-vca.audio → vd-out.L` and
+    // `→ vd-out.R` are one stereo LEG GROUP rendered as ONE bezier (PR-4). No
+    // other cable in this patch is paired, so 6 − 1 = 5.
+    expect(statusText).toMatch(/edges\s*5/);
+    // The GRAPH still holds all six — the dedupe is a rendering decision, and
+    // asserting both is what stops this becoming "whatever the app printed".
+    const graphEdges = await page.evaluate(
+      () => Object.keys((window as unknown as { __patch: { edges: object } }).__patch.edges).length,
+    );
+    expect(graphEdges, 'the six graph edges are all still there').toBe(6);
 
     if (cc.pageErrors.length || cc.errors.length) {
       console.log(formatConsole(cc));

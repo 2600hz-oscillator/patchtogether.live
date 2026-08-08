@@ -32,6 +32,10 @@
   import type { ModuleNode } from '$lib/graph/types';
   import DockCardHost from '$lib/ui/dock/DockCardHost.svelte';
   import { stepScale } from '$lib/ui/dock/dock-entries';
+  import { getModuleDef } from '$lib/audio/module-registry';
+  import { collapseStereoPorts, type CollapsedPort } from '$lib/ui/stereo-jack-collapse';
+  import type { StereoPairDefLike } from '$lib/graph/stereo-pairs';
+  import { resolveVerboseLabel } from '$lib/ui/patch-panel-labels';
 
   interface Props {
     /** The pinned AUDIO IN / AUDIO OUT (snapshot-derived; null pre-ensure). */
@@ -53,10 +57,43 @@
   let inScale = $state(1);
   let outScale = $state(1);
 
-  const PATCH_OUTS: ReadonlyArray<{ id: string; label: string }> = [
-    { id: 'audio_l_out', label: 'AUDIO IN L' },
-    { id: 'audio_r_out', label: 'AUDIO IN R' },
-  ];
+  // ---- the patch rows are DERIVED, not restated ----
+  //
+  // These two lists used to be hardcoded literals — `audio_l_out`/`audio_r_out`
+  // and `L`/`R` — a second source of truth for AUDIO IN's and AUDIO OUT's port
+  // ids sitting outside the defs that declare them. That is the exact class
+  // CLAUDE.md's "a CARD can silently disagree with its DEF" rule is about: a
+  // port rename would have left dead rows here and nothing would have gone red.
+  // They now come off the live def through the SAME collapse the PatchPanel
+  // uses, so AUDIO IN's stereo out is ONE row (owner Q5) and it cannot drift.
+  function rowsFor(
+    node: ModuleNode | null,
+    direction: 'input' | 'output',
+    prefix: string,
+  ): CollapsedPort[] {
+    if (!node) return [];
+    const def = getModuleDef(node.type);
+    if (!def) return [];
+    const ports = (direction === 'output' ? def.outputs : def.inputs).filter(
+      (p) => p.type === 'audio',
+    );
+    const rows = collapseStereoPorts(
+      ports.map((p) => ({ id: p.id, cable: p.type as string })),
+      def as StereoPairDefLike,
+      direction,
+    );
+    // The rows are named for the MODULE ("AUDIO IN"), since that is what the
+    // user is patching from this panel. A port name is appended only when the
+    // rail has more than one row and the name is therefore load-bearing —
+    // otherwise a single collapsed pair would read "AUDIO IN AUDIO".
+    return rows.map((p) => ({
+      ...p,
+      label: rows.length === 1 ? prefix : `${prefix} ${resolveVerboseLabel(p)}`.trim(),
+    }));
+  }
+
+  /** AUDIO IN's audio outputs → the shared drill-down picker. */
+  let patchOuts = $derived<CollapsedPort[]>(rowsFor(audioIn, 'output', 'AUDIO IN'));
 
   function patchOut(portId: string, ev: MouseEvent): void {
     if (!audioIn) return;
@@ -73,6 +110,26 @@
     onRequestClose();
   }
 
+  /** Right-click an AUDIO IN row → "patch only L / only R" (owner Q5), the
+   *  same Canvas-owned picker every other jack surface opens. */
+  function patchOutMenu(portId: string, ev: MouseEvent): void {
+    if (!audioIn) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    document.dispatchEvent(
+      new CustomEvent('patchpanel:portmenu', {
+        detail: {
+          nodeId: audioIn.id,
+          portId,
+          direction: 'output',
+          x: ev.clientX,
+          y: ev.clientY,
+        },
+      }),
+    );
+    onRequestClose();
+  }
+
   // AUDIO OUT is canvas-HIDDEN, so — unlike a card ADDED on the grid, whose input
   // jacks let the user pick a source to patch FROM — the pinned instance had NO
   // discoverable "select a source" affordance in this panel (owner report: the
@@ -81,10 +138,7 @@
   // (one-motion rewire) and opens the SAME "patch from" picker that lists every
   // compatible source on the canvas — i.e. the pinned audio-out now behaves like
   // an added one. Sinks patch INTO them, so this is a "receive from" list.
-  const PATCH_INS: ReadonlyArray<{ id: string; label: string }> = [
-    { id: 'L', label: 'AUDIO OUT L' },
-    { id: 'R', label: 'AUDIO OUT R' },
-  ];
+  let patchIns = $derived<CollapsedPort[]>(rowsFor(audioOut, 'input', 'AUDIO OUT'));
 
   function patchIn(portId: string, ev: MouseEvent): void {
     if (!audioOut) return;
@@ -126,12 +180,15 @@
           </div>
         {/key}
         <div class="patchout" data-testid="workflow-io-patchout">
-          {#each PATCH_OUTS as p (p.id)}
+          {#each patchOuts as p (p.id)}
             <button
               class="patchout-row"
               data-testid={`workflow-io-patchout-${p.id}`}
+              data-stereo-sibling={p.siblingId}
               onclick={(e) => patchOut(p.id, e)}
-              title={`Patch ${p.label} to a compatible input on the canvas`}
+              oncontextmenu={(e) => patchOutMenu(p.id, e)}
+              title={`Patch ${p.label} to a compatible input on the canvas` +
+                (p.siblingId ? ' — right-click to patch only L or only R' : '')}
             >
               <span class="jack"></span>
               {p.label}
@@ -159,10 +216,11 @@
           </div>
         {/key}
         <div class="patchout" data-testid="workflow-io-patchin">
-          {#each PATCH_INS as p (p.id)}
+          {#each patchIns as p (p.id)}
             <button
               class="patchout-row"
               data-testid={`workflow-io-patchin-${p.id}`}
+              data-stereo-sibling={p.siblingId}
               onclick={(e) => patchIn(p.id, e)}
               title={`Receive ${p.label} from a source on the canvas`}
             >

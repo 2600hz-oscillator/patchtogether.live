@@ -322,7 +322,10 @@ test.describe('leg-group removal', () => {
     // because nothing about this cable is missing.
     const items = menu.getByTestId('unpatch-item');
     await expect(items).toHaveCount(1);
-    await expect(items).toHaveText(/Unpatch — clouds OUT_L$/i);
+    // Named for the JACK (`OUT`), not for a leg. This pinned `OUT_L` — the
+    // label bug the owner reported on #1409: a COMPLETE stereo group described
+    // by one of its legs while the jack a click away said `OUT`.
+    await expect(items).toHaveText(/Unpatch — clouds OUT$/i);
     await expect(items).toHaveAttribute('data-solo-channel', '');
 
     await items.click();
