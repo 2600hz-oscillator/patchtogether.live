@@ -1,4 +1,4 @@
-// packages/web/src/lib/audio/modules/audio-out-failover.test.ts
+// packages/web/src/lib/audio/audio-out-failover.test.ts
 //
 // THE TERMINAL SINK'S RUNTIME LATCH RECOVERY — the single highest-value line in
 // the audio-health PR, and the one that must not be taken on trust.
@@ -33,7 +33,7 @@ import { failoverTerminalTailToClip } from './audio-out-failover';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
-import { MASTER_CEILING } from '../../../../../dsp/src/lib/master-limiter-dsp';
+import { MASTER_CEILING } from '../../../../dsp/src/lib/master-limiter-dsp';
 
 interface Conn {
   to: FakeNode;
@@ -202,7 +202,7 @@ describe('audio-out — runtime latch failover', () => {
     // binding, which is non-null only on the success path — so the load-time
     // clip fallback never double-registers a recovery on itself.
     const here = dirname(fileURLToPath(import.meta.url));
-    const src = readFileSync(resolve(here, 'audio-out.ts'), 'utf8');
+    const src = readFileSync(resolve(here, 'modules/audio-out.ts'), 'utf8');
     expect(src).toMatch(/if \(limiter\) \{/);
     expect(src, 'a latched processor can fire more than once').toContain('if (failedOver) return;');
     expect(src).toContain('onWorkletNodeError(limiter,');

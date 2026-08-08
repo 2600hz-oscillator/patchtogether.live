@@ -1,4 +1,4 @@
-// packages/web/src/lib/audio/modules/audio-out-failover.ts
+// packages/web/src/lib/audio/audio-out-failover.ts
 //
 // THE TERMINAL SINK'S DEGRADED TAIL — and the runtime path to it.
 //
@@ -9,6 +9,11 @@
 // PR is covered by a PURE UNIT TEST that runs on every unit lane, with no DSP
 // build, no AudioContext, and no capability probe. A gate that can only run in
 // a heavyweight lane is a gate that quietly stops running.
+//
+// It lives in `lib/audio/` rather than `lib/audio/modules/` deliberately: the
+// doc-page manifest parser globs `modules/*.ts` and warns on any file with no
+// module def in it, and its exclusion filter is a hand-maintained denylist that
+// concurrent PRs collide on. A helper that is not a def does not belong there.
 //
 // ── The hole this closes ────────────────────────────────────────────────────
 // `audioOutDef.factory`'s `try/catch` covers `audioWorklet.addModule` and node
@@ -23,7 +28,7 @@
 // The hard-clip fallback the load path already built was, until this PR,
 // UNREACHABLE from that failure.
 
-import { MASTER_CEILING, MASTER_CEILING_DB } from '../../../../../dsp/src/lib/master-limiter-dsp';
+import { MASTER_CEILING, MASTER_CEILING_DB } from '../../../../dsp/src/lib/master-limiter-dsp';
 
 /** A hard-clip curve at the ceiling, for the degraded path only. */
 export function ceilingClipCurve(): Float32Array<ArrayBuffer> {

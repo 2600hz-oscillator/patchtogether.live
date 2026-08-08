@@ -76,7 +76,7 @@ import { MASTER_CEILING_DB } from '../../../../../dsp/src/lib/master-limiter-dsp
 import {
   buildCeilingClipper,
   failoverTerminalTailToClip,
-} from './audio-out-failover';
+} from '$lib/audio/audio-out-failover';
 import workletUrl from '@patchtogether.live/dsp/dist/master-limiter.js?url';
 import { createWorkletNode, onWorkletNodeError } from '$lib/audio/worklet-guard';
 
