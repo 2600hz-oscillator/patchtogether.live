@@ -5,16 +5,20 @@
 //      Assert the button label flips REC → STOP → REC across the click
 //      sequence.
 //   2. node.data.sample.bytes is non-empty (recorded SOMETHING) AND ≤
-//      the 250 kB byte budget.
+//      the 3 MB byte budget.
 //   3. The waveform canvas has non-trivial luma variance during/after
 //      the recording (we drew something, not a blank canvas).
-//   4. Settings switches: pick stereo / 16-bit / 44 kHz and assert the
-//      "max seconds" readout in the UI displays ≈ 1.42 s.
+//   4. Settings switches: the max-seconds readout tracks CHAN/BITS/RATE.
 //   5. CHAN / BITS / RATE buttons are disabled while a recording is in
 //      flight (settings change mid-recording should stop the recording
 //      cleanly — separately exercised in the unit-level state-machine).
 //   6. ⚠ THE ONE THAT MATTERS, AND THE ONE THAT WAS MISSING:
 //      **the recording PLAYS.** Record → trigger → audible RMS at `out`.
+//   7. The take's DURATION is the wall-clock time REC was held, and its
+//      stored rate is the rate this machine's AudioContext can actually
+//      produce. That pair is what the old tagging bug broke: a 48 kHz
+//      capture stamped 44 100 played 148 cents flat and 8.8 % long, and
+//      nothing here noticed because every assertion was about bytes.
 //
 // ⚠ WHY 6 EXISTS. Read 1-5 again: every assertion above is about BYTES
 // (`node.data.sample` populated, inside the budget, right rate/bits/channels),
@@ -35,6 +39,12 @@
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 import { readScopePeakOverWindow } from './_module-coverage-helpers';
+import { expectedAchievedRate, readContextSampleRate, readSample } from './_samsloop-helpers';
+
+/** The record byte budget (SAMSLOOP_RECORD_BUDGET_BYTES). Restated rather
+ *  than imported because the e2e workspace does not resolve `$lib`; the
+ *  authority is samsloop-record.ts and its unit test pins the value. */
+const RECORD_BUDGET_BYTES = 3_000_000;
 
 async function setupPage(page: Page) {
   const errors: string[] = [];
@@ -45,23 +55,6 @@ async function setupPage(page: Page) {
   await page.goto('/rack');
   await page.waitForLoadState('domcontentloaded');
   return errors;
-}
-
-async function readSample(page: Page, nodeId: string) {
-  return await page.evaluate((id) => {
-    const w = globalThis as unknown as {
-      __patch: { nodes: Record<string, { data?: { sample?: { bytesB64: string; byteLength: number; rate: number; bits: number; channels: number; durationSec: number } } }> };
-    };
-    const s = w.__patch.nodes[id]?.data?.sample;
-    if (!s) return null;
-    return {
-      bytesLen: s.byteLength,
-      rate: s.rate,
-      bits: s.bits,
-      channels: s.channels,
-      durationSec: s.durationSec,
-    };
-  }, nodeId);
 }
 
 test.describe('SAMSLOOP audio-input record', () => {
@@ -88,20 +81,25 @@ test.describe('SAMSLOOP audio-input record', () => {
     await expect(rec).toBeVisible();
     await expect(rec).toContainText('REC');
 
+    const ctxRate = await readContextSampleRate(page);
+    expect(ctxRate, 'audio engine must be up before REC').toBeGreaterThan(0);
+
     // Start recording.
     await rec.click();
     await expect(rec).toContainText('STOP', { timeout: 3000 });
     // Settings buttons get disabled while recording.
     await expect(page.locator('[data-testid="samsloop-chan-stereo"]')).toBeDisabled();
     await expect(page.locator('[data-testid="samsloop-bits-16"]')).toBeDisabled();
-    await expect(page.locator('[data-testid="samsloop-rate-44k"]')).toBeDisabled();
+    await expect(page.locator('[data-testid="samsloop-rate-48k"]')).toBeDisabled();
 
     // Capture ~700 ms of noise.
+    const heldFrom = Date.now();
     await page.waitForTimeout(700);
 
     // Stop recording.
     await rec.click();
     await expect(rec).toContainText('REC');
+    const heldMs = Date.now() - heldFrom;
 
     // Settings re-enable.
     await expect(page.locator('[data-testid="samsloop-chan-stereo"]')).toBeEnabled();
@@ -110,12 +108,40 @@ test.describe('SAMSLOOP audio-input record', () => {
     const sample = await readSample(page, 's');
     expect(sample, 'expected node.data.sample populated after stop').not.toBeNull();
     expect(sample!.bytesLen).toBeGreaterThan(0);
-    expect(sample!.bytesLen).toBeLessThanOrEqual(250_000);
-    // Defaults: 44.1 kHz / 16-bit / 2 ch.
-    expect(sample!.rate).toBe(44100);
+    expect(sample!.bytesLen).toBeLessThanOrEqual(RECORD_BUDGET_BYTES);
+    // Defaults: 48 kHz target / 16-bit / MONO.
     expect(sample!.bits).toBe(16);
-    expect(sample!.channels).toBe(2);
+    expect(sample!.channels).toBe(1);
     expect(sample!.durationSec).toBeGreaterThan(0);
+
+    // ⚠ THE RATE TAG. Derived from THIS machine's context rate, not
+    // hard-coded: on a 48 kHz runner the 48 kHz target is a genuine no-op
+    // (48 000), on a 44.1 kHz one it stays 44 100 because we never upsample.
+    // Either way the tag must be what the samples ARE.
+    expect(
+      sample!.rate,
+      `ctx ${ctxRate} Hz with the 48k switch must store ${expectedAchievedRate(ctxRate, 48_000)} Hz`,
+    ).toBe(expectedAchievedRate(ctxRate, 48_000));
+
+    // …and the persisted duration is derived from THAT rate, not from the
+    // switch. Exact, because both sides are stored: a half-applied fix that
+    // tagged the achieved rate but kept computing seconds from the request
+    // would pass the assertion above and fail this one.
+    const frames = sample!.bytesLen / ((sample!.bits / 8) * sample!.channels);
+    expect(
+      sample!.durationSec,
+      `durationSec ${sample!.durationSec} must be ${frames} frames / ${sample!.rate} Hz`,
+    ).toBeCloseTo(frames / sample!.rate, 6);
+
+    // Sanity band only — REC was held for ~heldMs (an upper bound, since the
+    // two clicks bracket the capture). This catches "recorded nothing" and
+    // "never stopped"; the RATE assertion above is what catches the tagging
+    // bug, and it is exact.
+    expect(
+      sample!.durationSec * 1000,
+      `stored ${(sample!.durationSec * 1000).toFixed(0)} ms vs ~${heldMs} ms of REC`,
+    ).toBeGreaterThan(heldMs * 0.3);
+    expect(sample!.durationSec * 1000).toBeLessThan(heldMs * 1.2);
 
     // Waveform canvas has non-trivial luma variance — we drew SOMETHING
     // (the live-record peak trace, or the static decoded preview after
@@ -209,25 +235,72 @@ test.describe('SAMSLOOP audio-input record', () => {
     expect(errors, errors.join('; ')).toEqual([]);
   });
 
-  test('max-seconds readout reflects settings: stereo / 16-bit / 44 kHz ≈ 1.42s', async ({ page }) => {
+  test('max-seconds readout reflects settings, at the rate the machine can produce', async ({ page }) => {
     const errors = await setupPage(page);
     await spawnPatch(page, [{ id: 's', type: 'samsloop', position: { x: 200, y: 200 } }]);
 
-    // Defaults already are stereo / 16-bit / 44 kHz — assert as-is.
     const budget = page.locator('[data-testid="samsloop-max-seconds"]');
-    await expect(budget).toContainText(/1\.42s/);
+    const ctxRate = await readContextSampleRate(page);
+    expect(ctxRate, 'audio engine must be up to derive the readout').toBeGreaterThan(0);
 
-    // Flip to mono / 8-bit / 22 kHz → 11.34 s.
+    // The readout is derived, not looked up: min(3 MB / bytes-per-second,
+    // 60 s), at the ACHIEVED rate. Computing the expectation the same way the
+    // card does is the only version of this test that is not an assertion
+    // about which sample rate the runner happens to use.
+    const expectSeconds = (switchRate: number, bits: number, channels: number) => {
+      const rate = expectedAchievedRate(ctxRate, switchRate);
+      const exact = Math.min(3_000_000 / (rate * (bits / 8) * channels), 60);
+      return (Math.round(exact * 100) / 100).toFixed(2);
+    };
+
+    // Defaults: MONO / 16-bit / 48 kHz.
+    await expect(budget).toContainText(`${expectSeconds(48_000, 16, 1)}s`);
+
+    // Mono / 8-bit / 22 kHz — the 60 s LENGTH cap binds here, not the bytes.
     await page.locator('[data-testid="samsloop-chan-mono"]').click();
     await page.locator('[data-testid="samsloop-bits-8"]').click();
     await page.locator('[data-testid="samsloop-rate-22k"]').click();
-    await expect(budget).toContainText(/11\.34s/);
+    await expect(budget).toContainText(`${expectSeconds(22_050, 8, 1)}s`);
+    await expect(budget).toContainText('60.00s');
 
-    // Flip to stereo / 16-bit / 44 kHz → back to 1.42s.
+    // Stereo / 16-bit / 48 kHz — the tightest combination on offer.
     await page.locator('[data-testid="samsloop-chan-stereo"]').click();
     await page.locator('[data-testid="samsloop-bits-16"]').click();
-    await page.locator('[data-testid="samsloop-rate-44k"]').click();
-    await expect(budget).toContainText(/1\.42s/);
+    await page.locator('[data-testid="samsloop-rate-48k"]').click();
+    await expect(budget).toContainText(`${expectSeconds(48_000, 16, 2)}s`);
+
+    // NEGATIVE CONTROL on the readout: the three switches must actually move
+    // it. If `expectSeconds` and the card were both wrong in the same way,
+    // every assertion above would still pass — this one fails unless the
+    // control does something.
+    await page.locator('[data-testid="samsloop-chan-mono"]').click();
+    await expect(budget).not.toContainText(`${expectSeconds(48_000, 16, 2)}s`);
+
+    expect(errors, errors.join('; ')).toEqual([]);
+  });
+
+  test('the RATE switch never claims a rate it cannot produce', async ({ page }) => {
+    // Integer decimation cannot hit 44.1 kHz from a 48 kHz context (or 48 from
+    // 44.1). The old card silently stored the request anyway; now the card
+    // says so and stores the truth. Which switch position is honest depends on
+    // the machine, so DERIVE which one to check rather than assuming.
+    const errors = await setupPage(page);
+    await spawnPatch(page, [{ id: 's', type: 'samsloop', position: { x: 200, y: 200 } }]);
+    const ctxRate = await readContextSampleRate(page);
+    expect(ctxRate).toBeGreaterThan(0);
+
+    const note = page.locator('[data-testid="samsloop-rate-note"]');
+    for (const switchRate of [22_050, 44_100, 48_000]) {
+      await page.locator(`[data-testid="samsloop-rate-${Math.round(switchRate / 1000)}k"]`).click();
+      const achieved = expectedAchievedRate(ctxRate, switchRate);
+      if (achieved === switchRate) {
+        await expect(note, `${switchRate} IS achievable at ctx ${ctxRate} — no note expected`)
+          .toHaveCount(0);
+      } else {
+        await expect(note, `${switchRate} is NOT achievable at ctx ${ctxRate} — the card must say so`)
+          .toContainText(`${(achieved / 1000).toFixed(1)}k`);
+      }
+    }
 
     expect(errors, errors.join('; ')).toEqual([]);
   });
