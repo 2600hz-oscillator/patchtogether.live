@@ -350,7 +350,15 @@ async function patchChannel(
   ).toHaveAttribute('data-selected', 'true');
 
   await menu.locator(`[data-testid="patch-to-module"][data-node-id="${dst.nodeId}"]`).click();
-  const portRow = menu.locator(`[data-testid="patch-to-port"][data-port-id="${dst.portId}"]`);
+  // ⚠ `data-leg=""` PICKS THE PAIR ROW. A collapsed stereo target now offers
+  // THREE rows — the pair, its L and its R (the per-leg drill-down added for
+  // the ES-9 return case, where a MONO source has to name one side of a
+  // collapsed input). Without the leg filter this locator matches all three and
+  // Playwright fails on strict mode. The channel for these tests comes from the
+  // SOURCE-side rows above, so the pair row is the right one here.
+  const portRow = menu.locator(
+    `[data-testid="patch-to-port"][data-port-id="${dst.portId}"][data-leg=""]`,
+  );
   await expect(portRow).toBeVisible();
   await portRow.click();
   await expect(menu).toHaveCount(0);
@@ -785,6 +793,17 @@ test.describe('patch only L / only R', () => {
     // Scope guard: without it, "the rows are there" would be untested for the
     // case where they must NOT be, and an always-on menu would pass every test
     // above.
+    //
+    // ⚠ WHAT CHANGED, and why this is a STRICTLY STRONGER test than before.
+    // Right-clicking a mono output used to do NOTHING — the event fell through
+    // to the browser menu — so this asserted `port-context-menu` count 0. That
+    // conflated two different facts: "no channel rows" and "no menu". It also
+    // made the owner's ES-9 return unbuildable, because the source he patches
+    // FROM (`es9.in14`) is a mono hardware point and the gesture he reached for
+    // was dead on exactly the port that needed it. Every output now opens the
+    // picker; the CHANNEL ROWS still appear only where there is a side to take,
+    // which is the scope this test actually exists to pin — and it now pins it
+    // against a menu that is really there rather than against its absence.
     await spawnPatch(page, [
       { id: 'vca', type: 'vca', position: { x: 80, y: 100 }, domain: 'audio' },
       { id: 'aout', type: 'audioOut', position: { x: 760, y: 100 }, domain: 'audio' },
@@ -798,8 +817,11 @@ test.describe('patch only L / only R', () => {
     await chrome(page, 'vca')
       .locator('[data-testid="patch-panel-port-row"][data-port-id="audio"]')
       .click({ button: 'right' });
-    // VCA's `audio` output is not half of anything, so the right-click is left
-    // entirely alone — no picker at all.
-    await expect(page.locator('[data-testid="port-context-menu"]')).toHaveCount(0);
+    const menu = page.locator('[data-testid="port-context-menu"]');
+    await expect(menu, 'every output is right-clickable to "patch to…"').toBeVisible();
+    await expect(
+      menu.locator('[data-testid="patch-channel-mode"]'),
+      "VCA's `audio` output is not half of anything — there is no side to take",
+    ).toHaveCount(0);
   });
 });

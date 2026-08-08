@@ -6197,6 +6197,43 @@
     if (unpatchOpen && unpatchPlan.items.length === 0) closeUnpatchMenu();
   });
 
+  /**
+   * "Patch to…" on the UNPATCH menu — hand a PATCHED output straight to the
+   * patch picker so a second cable can leave the same jack.
+   *
+   * Right-clicking a patched point opens the unpatch menu and returns (see
+   * `PatchPanel.onPortRowContextMenu`), so before this an output with one cable
+   * had no right-click route to another one — even though outputs fan out
+   * freely (the owner's `masterL` drives three targets, and his two aux sends
+   * leave ONE collapsed `SEND1` jack for two different ES-9 outputs).
+   *
+   * It reuses `openPortMenuAt`, the SAME entry point the unpatched right-click
+   * uses, so the picker that appears is identical either way — including the
+   * channel rows and the per-leg target drill-down.
+   */
+  function patchToFromUnpatch(): void {
+    const t = unpatchTarget;
+    const pos = unpatchPos;
+    if (!t) return;
+    const node = patch.nodes[t.nodeId];
+    const def = node ? defLookup(node.type) : undefined;
+    const port =
+      t.direction === 'output'
+        ? def?.outputs.find((p) => p.id === t.portId)
+        : def?.inputs.find((p) => p.id === t.portId);
+    closeUnpatchMenu();
+    openPortMenuAt(
+      { x: pos.x, y: pos.y },
+      {
+        nodeId: t.nodeId,
+        portId: t.portId,
+        direction: t.direction,
+        type: (port?.type as string | undefined) ?? 'audio',
+      },
+    );
+    connectDragState.beginCascade(t.nodeId);
+  }
+
   function closeUnpatchMenu(): void {
     unpatchOpen = false;
     unpatchTarget = null;
@@ -8548,6 +8585,7 @@
   allLabel={unpatchPlan.allLabel}
   onunpatch={unpatchEdges}
   onchannelmode={setLegGroupChannelMode}
+  onpatchto={unpatchTarget?.direction === 'output' ? patchToFromUnpatch : undefined}
   onclose={closeUnpatchMenu}
 />
 
