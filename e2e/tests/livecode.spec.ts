@@ -11,7 +11,7 @@
 //      recreates the topbar's "Load example" patch produces the same
 //      set of nodes + edges as clicking the button.
 
-import { test, expect } from './_fixtures';
+import { test, expect, loadVoiceDemo } from './_fixtures';
 import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
@@ -298,7 +298,7 @@ set('out', 'master',   0.4);`;
 
   await page.goto('/rack');
   await page.waitForLoadState('networkidle');
-  await page.getByTestId('load-example-select').selectOption('sequenced-vco');
+  await loadVoiceDemo(page);
   await page.waitForFunction(() => {
     const w = globalThis as unknown as { __patch: { nodes: Record<string, unknown> } };
     return Object.keys(w.__patch.nodes).length >= 5;

@@ -6,14 +6,14 @@
 // Each test is independent and runs against a fresh page; no fixtures share
 // state across tests.
 
-import { test, expect } from './_fixtures';
+import { test, expect, loadVoiceDemo } from './_fixtures';
 import { openModulePalette } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
 test.describe('MiniMap', () => {
   test('renders and reflects the canvas viewport', async ({ page, rack }) => {
-    await page.getByTestId('load-example-select').selectOption('sequenced-vco');
+    await loadVoiceDemo(page);
     await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
 
     const minimap = page.locator('.svelte-flow__minimap');
@@ -60,7 +60,7 @@ test.describe('Cable hover affordances', () => {
     // `.cable-hover` class to an edge thickens its stroke. The visual
     // affordance still works in real browsers; only the synthetic pointer
     // path is unreachable.
-    await page.getByTestId('load-example-select').selectOption('sequenced-vco');
+    await loadVoiceDemo(page);
     // A stereo LEG GROUP renders as ONE bezier (PR-4): the demo's
     // `vd-vca.audio → vd-out.L` + `→ R` pair is 2 edges and 1 cable, so 6
     // graph edges draw 5. Pinned in stereo-only-channel.spec.ts.
@@ -83,10 +83,10 @@ test.describe('Cable hover affordances', () => {
   });
 
   test('hovering a card dims unrelated cables', async ({ page, rack }) => {
-    // Load example: 5 nodes, 6 edges. The Sequencer (vd-seq) only touches
+    // The voice demo: 5 nodes, 6 edges. The Sequencer (vd-seq) only touches
     // 2 of the 6 edges (seq.pitch→vco and seq.gate→adsr), so the remaining
     // 4 should dim when we hover the Sequencer card.
-    await page.getByTestId('load-example-select').selectOption('sequenced-vco');
+    await loadVoiceDemo(page);
     // A stereo LEG GROUP renders as ONE bezier (PR-4): the demo's
     // `vd-vca.audio → vd-out.L` + `→ R` pair is 2 edges and 1 cable, so 6
     // graph edges draw 5. Pinned in stereo-only-channel.spec.ts.
@@ -156,7 +156,7 @@ test.describe('Undo / redo', () => {
   });
 
   test('Cmd-Z reverts a node deletion (right-click → Delete)', async ({ page, rack }) => {
-    await page.getByTestId('load-example-select').selectOption('sequenced-vco');
+    await loadVoiceDemo(page);
     await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
     // A stereo LEG GROUP renders as ONE bezier (PR-4): the demo's
     // `vd-vca.audio → vd-out.L` + `→ R` pair is 2 edges and 1 cable, so 6
@@ -182,7 +182,7 @@ test.describe('Undo / redo', () => {
   });
 
   test('Cmd-Z is ignored while focus is in a text input (no hijack of native undo)', async ({ page, rack }) => {
-    await page.getByTestId('load-example-select').selectOption('sequenced-vco');
+    await loadVoiceDemo(page);
     await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
 
     // Focus a sequencer note input — pressing Cmd-Z there should not pull

@@ -60,9 +60,12 @@ async function clearMidiBindings(page: Page): Promise<void> {
 // devices" prompt on boot / on loading a non-MIDI patch. Web MIDI must be
 // requested STRICTLY ON DEMAND. This asserts the call count is 0:
 //   (a) immediately after page load (before any interaction), and
-//   (b) after loading the GLITCHES demo patch (which contains NO MIDI module)
-//       + the auto-spawned TIMELORDE — the realistic "patch loaded on boot"
-//       path the old eager trigger fired on.
+//   (b) after loading a patch that contains NO MIDI module + the auto-spawned
+//       TIMELORDE — the realistic "patch loaded on boot" path the old eager
+//       trigger fired on. (This used to load the bundled GLITCHES demo via the
+//       "Load example…" dropdown; that dropdown and its envelopes were deleted,
+//       so the patch is now the shared voice demo + a COFEFVE DELAY, which
+//       keeps a factory that runs a timer in the mix.)
 
 test('@midi REGRESSION: page load never requests Web-MIDI access', async ({ page, errorWatch }) => {
 
@@ -78,11 +81,15 @@ test('@midi REGRESSION: page load never requests Web-MIDI access', async ({ page
   });
   expect(callsAfterLoad, 'navigator.requestMIDIAccess was called on bare page load (eager-prompt regression)').toBe(0);
 
-  // (b) Load the demo patch (non-MIDI) + reconcile + auto-spawn TIMELORDE.
-  //     This is the boot+patch path the eager trigger used to fire on.
-  await page.getByTestId('load-example-select').selectOption('glitches');
+  // (b) Load a non-MIDI patch + reconcile + auto-spawn TIMELORDE. This is the
+  //     boot+patch path the eager trigger used to fire on. COFEFVE goes in
+  //     FIRST (spawnPatch clears the graph; loadVoiceDemo only adds), so the
+  //     patch carries a factory with a running timer as well as the plain
+  //     voice chain.
+  await spawnPatch(page, [{ id: 'nomidi-delay', type: 'cofefve', position: { x: 1500, y: 60 } }]);
+  await loadVoiceDemo(page);
   await expect(page.locator('.svelte-flow__node').first()).toBeVisible({ timeout: 20_000 });
-  // Let factory timers (e.g. COFEFVE DELAY's 16ms syncPeriod poll, if any) run.
+  // Let factory timers (COFEFVE DELAY's 16ms syncPeriod poll) run.
   await page.waitForTimeout(300);
 
   const callsAfterPatch = await page.evaluate(() => {

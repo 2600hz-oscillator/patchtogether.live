@@ -66,7 +66,11 @@ test.describe('dawless is unchanged', () => {
     await expect(page.locator('header.topbar')).toBeVisible();
     await expect(page.getByTestId('preset-slot-bar')).toBeVisible();
     await expect(page.getByTestId('raw-json-select')).toBeVisible();
-    await expect(page.getByTestId('load-example-select')).toBeVisible();
+    await expect(page.getByTestId('new-rack-btn')).toBeVisible();
+    // The "Load example…" dropdown is GONE from the product (owner ruling);
+    // asserting its absence keeps this "dawless is unchanged" test honest
+    // about what changed rather than silently dropping the row.
+    await expect(page.getByTestId('load-example-select')).toHaveCount(0);
     // No workflow shell pieces anywhere.
     await expect(page.getByTestId('workflow-topbar')).toHaveCount(0);
     await expect(page.getByTestId('workflow-leftbar')).toHaveCount(0);

@@ -19,17 +19,20 @@ import { test, expect, type Page } from '@playwright/test';
 test.describe.configure({ mode: 'parallel' });
 
 async function boot(page: Page): Promise<void> {
-  // The overflow-prone topbar (the .actions cluster with load-example + auth)
-  // is the CANVAS topbar in Canvas.svelte, which lives on /rack since the
-  // landing-page move (#995) — `/` is now the static landing with no
-  // load-example dropdown.
+  // The overflow-prone topbar (the .actions cluster ending in the auth
+  // control) is the CANVAS topbar in Canvas.svelte, which lives on /rack
+  // since the landing-page move (#995) — `/` is the static landing and has
+  // no rack topbar at all.
   await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await page.locator('header.topbar').waitFor({ state: 'visible', timeout: 10_000 });
-  // Boot settles the "Load example…" select from the transient "Loading…"
-  // placeholder to its final (widest-known) label — wait so the control
-  // widths we measure are the settled ones.
-  await expect(page.getByTestId('load-example-select')).toBeEnabled({ timeout: 15_000 });
+  // Wait for the widest actions-cluster controls to be mounted before we
+  // measure, so the widths are the settled ones. (This used to wait on the
+  // "Load example…" select leaving its transient "Loading…" placeholder; that
+  // control is gone, and with it the only topbar label that changed width
+  // after boot — every remaining label is a static string.)
+  await expect(page.getByTestId('raw-json-select')).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId('export-perf-zip-btn')).toBeVisible({ timeout: 15_000 });
 }
 
 /** Assert every topbar control — specifically the auth control and the
