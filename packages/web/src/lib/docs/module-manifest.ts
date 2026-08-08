@@ -32,7 +32,14 @@ import { explainInputPort, explainOutputPort, type ExplainPort } from './io-expl
 import { MODULE_DOCS } from './module-docs.generated';
 import type { ModuleDocs } from '$lib/graph/types';
 
-const MODULE_SOURCES = import.meta.glob('../audio/modules/*.ts', {
+// ⚠ THE `!*.test.ts` EXCLUSION IS LOAD-BEARING, not tidiness. `?raw` inlines
+// each matched file's SOURCE TEXT into the bundle, and 179 audio + 68 video
+// module tests sit COLOCATED beside the defs they cover — so a bare
+// `modules/*.ts` glob inlined 3.19 MB of test source into `module-manifest.js`
+// (8.95 MB raw / 2.60 MiB gzipped) for a parser that only ever reads module
+// DEFS. Nothing downstream looks at a `.test.ts` entry; buildModuleManifest
+// regex-parses defs, and a test file has no def to find.
+const MODULE_SOURCES = import.meta.glob(['../audio/modules/*.ts', '!../audio/modules/*.test.ts'], {
   query: '?raw',
   import: 'default',
   eager: true,
@@ -43,7 +50,7 @@ const MODULE_SOURCES = import.meta.glob('../audio/modules/*.ts', {
 // (additively, alongside the audio sources) is what lights up the video
 // /docs/modules/[id] pages; the whole downstream (io-explain, buildDocIndex,
 // the route + render) is already domain-agnostic.
-const VIDEO_SOURCES = import.meta.glob('../video/modules/*.ts', {
+const VIDEO_SOURCES = import.meta.glob(['../video/modules/*.ts', '!../video/modules/*.test.ts'], {
   query: '?raw',
   import: 'default',
   eager: true,
