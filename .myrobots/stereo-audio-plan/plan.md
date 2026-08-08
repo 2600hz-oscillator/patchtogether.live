@@ -198,6 +198,99 @@ incoherent.
 > change; **(iii)** per-module hand-treatment. Groups A–C can ship without
 > this answer.
 
+### ⚠ PR-3b AS BUILT — group A was 13 on paper and **7** in the DSP
+
+Measured 2026-08-07 while implementing (`packages/web/src/lib/audio/dual-mono.ts`).
+The spec above is right about the *shape* of the problem and wrong about group A's
+*membership*, because it classified on the DECLARED PORTS and never looked at what
+each module's audio path is actually made of. Two corrections and one omission:
+
+| spec said | as built | why |
+|---|---|---|
+| group A = **13** | **7** wrapped | 4 of the 13 are already channel-transparent |
+| 26 mono-in modules | **27** | `milkdrop` (domain=video) was filtered out |
+| `rasterize`, `warrensspectrum` ∈ A | **deferred** | neither is a mono→mono pipe |
+
+1. **4 of the 13 need NOTHING — they are already dual-mono, natively, at 1× cost.**
+   `delay` (Gain→Delay→feedback Gain), `scaler` (one GainNode), `moog907a` and
+   `moog914` (`buildFilterBank`: Gain → BiquadFilters → Gain). Native Web Audio
+   nodes keep independent state per channel, so 2 channels in gives 2 channels
+   out already. Wrapping them would have doubled the CPU of the most common
+   time-effect in the app for **zero** behavioural change. They are classed
+   `native-stereo` and the claim is a MEASUREMENT — all four are rendered with a
+   genuinely different L and R in `art/scenarios/stereo-dual-mono/` and must come
+   out still different, so the classification reddens if anyone drops a mono
+   worklet into one of those paths.
+2. **`warrensspectrum` is a group-E WIDENER, not a pipe.** Its worklet declares
+   `outputChannelCount: [2]`, reads only `inputs[0][0]`, and equal-power PANS each
+   band across L/R. It is resofilter's shape. Two instances would emit four
+   channels for one declared port.
+3. **`rasterize` is a HYBRID** — `in`(audio) → `thru`(audio) **and** `out`
+   (mono-video). Duplicating gives two `RasterPainter`s competing for one video
+   port; down-mixing collapses `thru`, which is a bare GainNode and therefore
+   already channel-transparent. Both treatments are regressions, so it joins the
+   D/E owner question.
+4. **The population is 27, not 26.** The correction table above filtered on
+   `domain=audio` and silently dropped `milkdrop`. It is classed `video-domain`
+   (the VIDEO engine materializes it; the audio wrapper never sees it) and the
+   gate asserts the population is NOT domain-filtered, because that filter is
+   exactly the "a filter applied before the check redefines the check's subject"
+   defect.
+
+So the wrapped set is **`destroy filter reverb moog904a moog904b moog904c
+moog905`** — the Faust mono worklets and the `outputChannelCount: [1]` ones.
+No group-A module turned out to be side-effecting (sharp edge 2): none of the
+seven writes `node.data`, claims hardware, or registers a singleton, and none
+declares `read`/`write`/`videoSources` — which is now **enforced**, not observed
+(the wrapper throws, and a source grep in the gate is the independent instrument).
+
+**Two mechanism notes for PR-3/PR-4:**
+
+- **An AudioParam CV input needs a fan, not a hand-off.** `destroy`
+  (decimate/bits/wet) and `moog904c` (cutoff_cv) resolve to real AudioParams, and
+  `addEdge` connects the CV source straight to `din.param`. Handing it instance
+  A's param would leave the RIGHT channel unmodulated. A `ConstantSourceNode`
+  with `offset = 0` re-emits whatever is connected to its offset as a signal,
+  which fans into both real params — and keeps the engine's CV scaling and param
+  tap on the normal path.
+- **THE SEAM IS CLOSED — but it needed a SECOND mechanism, not a bigger one.**
+  #1407 writes stereo→mono as TWO separate cables into the same mono port, and
+  Web Audio sums two connections to one input. A handle's `inputs` map has ONE
+  entry per port id, so a handle cannot express the difference; the decision is
+  per-EDGE, in `AudioEngine.addEdge`.
+
+  The wrapper's audio input is therefore **two** paths summed at a 2-channel
+  bus, because each covers a case the other destroys:
+
+  | arrives as | path | why the other path breaks it |
+  |---|---|---|
+  | 2-channel stream on ONE cable (what a dual-mono module emits → what CHAINS) | `mono` bus → `upmix` | a ChannelMerger INPUT is 1-channel by spec, so it would down-mix the pair away |
+  | two cables from `out_l`/`out_r` (what `planAudioCommit` writes) | `legL`/`legR` → `ChannelMerger(2)` | a shared bus SUMS them, which is the failure dual-mono exists to prevent |
+
+  `addEdge` picks with `legChannelOfEdge` — the SHARED derivation the commit
+  planner itself uses, deliberately not a sixth private heuristic (#1404).
+  `null` (neither endpoint paired) → the mono bus, so every existing cable is
+  byte-identical.
+
+  ⚠ **A ChannelMerger has the discrete zero-fill hazard in a different costume:
+  an unconnected merger input renders as SILENCE.** A lone `out_l` would have
+  gone left-only — the same bug as the up-mix one, on a different node, and the
+  first fix would have re-introduced it. Two engine-controlled **mono normal**
+  gains (`legL`→merger.1 and `legR`→merger.0) close it: OPEN by default, closed
+  only once the opposite leg genuinely lands, and re-opened on unpatch. The
+  failure direction is duplication, never silence. This is the Web Audio
+  spelling of the `inputs[1]?.[0] ?? inputs[0]?.[0]` normal the DSP layer
+  already uses (mono-normal-scan.ts).
+
+  All five cases are pinned with REAL Web Audio in
+  `art/scenarios/stereo-dual-mono/`, each with a live negative control:
+  distinct-legs-stay-distinct (vs. placement-off, which must show the sum),
+  lone-leg-reaches-both (both sides), mono-still-equal-and-non-zero, and
+  chaining. `SCOPE.legPlacement` names the seam; `SCOPE.notHandled` now names
+  only the true residual — a stereo source whose outputs are **not a derived
+  pair** is invisible to the shared derivation and still sums, exactly as it
+  does everywhere else in the app.
+
 ### Follow-up: option C, deferred by owner decision
 
 Once B is shipped **and all UIs, VRTs and ARTs are updated**, revisit making
