@@ -66,9 +66,13 @@
     base64ToBytes,
     SamsloopCaptureBuffer,
     foldCapturePeaks,
+    samsloopRackLedger,
+    samsloopRackFullMessage,
+    samsloopBindingCap,
     SAMSLOOP_PEAK_SLOT_NONE,
     SAMSLOOP_REC_DEFAULTS,
     SAMSLOOP_RATE_OPTIONS,
+    SAMSLOOP_MIN_RECORD_SECONDS,
     type SamsloopRecRate,
     type SamsloopRecBits,
     type SamsloopRecChannels,
@@ -208,7 +212,9 @@
     recMachine.state === 'stopped' && recMachine.stopReason === 'cap',
   );
   let uploadInFlight = $derived(uploadStatus !== null);
-  let recButtonDisabled = $derived(uploadInFlight);
+  // NOTE: `recButtonDisabled` is declared AFTER `rackFull` below — it depends
+  // on the rack ledger, and a `$derived` that reads a later `let` is a TDZ
+  // hazard rather than merely untidy.
   let fileInputDisabled = $derived(isRecording);
 
   // The rate the bytes will ACTUALLY be stored at. `recRate` is only the
@@ -219,10 +225,40 @@
   // (and then get silently trimmed) as well as detuning playback.
   let achievedRate = $derived(samsloopAchievedRate(captureRate, recRate));
 
+  // THE RACK BUDGET. What every OTHER samsloop in this rack is already
+  // costing, in the base64 bytes the relay actually accounts. This node is
+  // excluded because a REC replaces its own payload (recording AND upload —
+  // `clearSamsloopUploadKeys` runs first), so charging it for bytes it is
+  // about to release would make re-recording progressively harder.
+  //
+  // Derived for DISPLAY only. `startRecording` re-reads it fresh, so the gate
+  // never depends on reactivity having kept up.
+  let rackLedger = $derived(samsloopRackLedger(patch.nodes, id));
+
   // maxSeconds at the current settings — drives the bar's x-axis AND
-  // the auto-stop trigger.
-  let maxSeconds = $derived(samsloopMaxSeconds(achievedRate, recBits, recChannels));
-  let maxSecondsExact = $derived(samsloopMaxSecondsExact(achievedRate, recBits, recChannels));
+  // the auto-stop trigger. Bounded by the rack budget as well as the per-take
+  // one, so the number on screen is what THIS rack can record, not what the
+  // settings could in principle.
+  let maxSeconds = $derived(
+    samsloopMaxSeconds(achievedRate, recBits, recChannels, rackLedger.freeBytes),
+  );
+  let maxSecondsExact = $derived(
+    samsloopMaxSecondsExact(achievedRate, recBits, recChannels, rackLedger.freeBytes),
+  );
+  // Which of the three caps is binding — the card says WHICH, because "your
+  // settings are expensive", "60 s is the ceiling" and "this rack is full"
+  // need three different actions.
+  let bindingCap = $derived(
+    samsloopBindingCap(achievedRate, recBits, recChannels, rackLedger.freeBytes),
+  );
+  // Not enough headroom to offer a usable take. REC refuses to arm — see
+  // startRecording; this drives the disabled state so the refusal is visible
+  // BEFORE the click, not only after it.
+  let rackFull = $derived(maxSecondsExact < SAMSLOOP_MIN_RECORD_SECONDS);
+
+  // Disabled while an upload is in flight, and while the rack has no room —
+  // but NEVER while recording, or STOP would be unreachable.
+  let recButtonDisabled = $derived(uploadInFlight || (rackFull && !isRecording));
   // Shown next to the RATE switch when the switch cannot be honoured, so
   // the control never silently claims a rate it does not produce.
   let rateIsExact = $derived(achievedRate === recRate);
@@ -311,6 +347,31 @@
       );
       return;
     }
+
+    // ⚠ THE RACK GATE, READ FRESH. Not the `$derived` — a peer's sample can
+    // land between the last render and this click, and a budget check that
+    // trusts a stale snapshot is a budget check that can be raced past.
+    //
+    // REFUSE TO ARM rather than shorten silently. This module just deleted a
+    // truncation that cut 8 % off every take without saying so; the ceiling
+    // one layer up must not repeat it. The refusal names the numbers and
+    // lands in the same `samsloop-rec-error` line the engine-not-ready
+    // message uses. Nothing is deleted and nothing already recorded stops
+    // playing — a rack that is ALREADY over budget (they exist; the ledger is
+    // new, the racks are not) is grandfathered in exactly this sense: it keeps
+    // everything it has and simply cannot record more until something goes.
+    const liveLedger = samsloopRackLedger(patch.nodes, id);
+    const liveMaxSeconds = samsloopMaxSecondsExact(
+      samsloopAchievedRate(tap.sampleRate, recRate),
+      recBits,
+      recChannels,
+      liveLedger.freeBytes,
+    );
+    if (liveMaxSeconds < SAMSLOOP_MIN_RECORD_SECONDS) {
+      recMachine = samsloopRecFail(recMachine, samsloopRackFullMessage(liveLedger));
+      return;
+    }
+
     uploadStatus = null;
     uploadError = null;
 
@@ -327,7 +388,9 @@
     // the tap's OWN rate — the settings are frozen for the duration because
     // `pushRecSetting` stops the recording on any change.
     capture = new SamsloopCaptureBuffer(
-      samsloopMaxCaptureFrames(tap.sampleRate, recRate, recBits, recChannels),
+      samsloopMaxCaptureFrames(
+        tap.sampleRate, recRate, recBits, recChannels, liveLedger.freeBytes,
+      ),
     );
 
     recMachine = samsloopRecStart(recMachine, tap.sampleRate);
@@ -950,6 +1013,20 @@
       {/if}
       {#if uploadError}
         <div class="upload-error" data-testid="samsloop-upload-error">{uploadError}</div>
+      {/if}
+      {#if bindingCap === 'rack'}
+        <!-- ⚠ THE RACK BUDGET, MADE VISIBLE BEFORE THE CLICK. The whole point
+             of the ledger is that hitting it is never a surprise: while it is
+             the binding cap the "N.NNs max" readout above is ALREADY the
+             shortened number, and this line says why and by how much. When
+             there is no usable room left the REC button is disabled too, and
+             clicking it (or arming via any other path) lands
+             `samsloopRackFullMessage` in the error line below. -->
+        <div class="upload-status" data-testid="samsloop-rack-budget-note">
+          rack sample budget: {(rackLedger.usedBytes / 1_000_000).toFixed(1)} /
+          {(rackLedger.budgetBytes / 1_000_000).toFixed(0)} MB used
+          {#if rackFull}— no room to record{:else}— capped to {maxSeconds.toFixed(2)}s{/if}
+        </div>
       {/if}
       {#if isCapStopped}
         <div class="upload-status" data-testid="samsloop-rec-cap-msg">max length reached</div>

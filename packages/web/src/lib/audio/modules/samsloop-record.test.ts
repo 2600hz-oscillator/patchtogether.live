@@ -34,6 +34,10 @@ import {
   samsloopMaxCaptureFrames,
   samsloopAchievedRate,
   samsloopDecimationFactor,
+  samsloopRackLedger,
+  samsloopRackFullMessage,
+  samsloopBindingCap,
+  samsloopBase64ToRawBytes,
   quantizeF32ToI16,
   quantizeF32ToI8,
   downsample,
@@ -48,6 +52,8 @@ import {
   SAMSLOOP_PEAK_SLOT_NONE,
   SAMSLOOP_RECORD_BUDGET_BYTES,
   SAMSLOOP_RECORD_MAX_SECONDS,
+  SAMSLOOP_RACK_RECORD_BUDGET_BYTES,
+  SAMSLOOP_MIN_RECORD_SECONDS,
   SAMSLOOP_REC_DEFAULTS,
   SAMSLOOP_RATE_OPTIONS,
   SAMSLOOP_BITS_OPTIONS,
@@ -163,6 +169,187 @@ describe('samsloopMaxSeconds — rate × bits × channels table', () => {
     // list is the single source of truth for the switch, the type and the
     // budget table — the card cannot offer a rate the table has not costed.
     expect([...SAMSLOOP_RATE_OPTIONS]).toEqual([22_050, 44_100, 48_000]);
+  });
+});
+
+// ---------- (1c) THE RACK LEDGER — the ceiling that actually governs ----------
+//
+// ⚠ THE PROPERTY UNDER TEST IS "THE CEILING IS VISIBLE", not "the ceiling
+// exists". A budget that silently shortens takes is the same defect class this
+// PR removed (the encoder's `subarray(0, BUDGET)`), one layer up. So every case
+// below is paired: a rack UNDER budget must be unaffected, and a rack AT budget
+// must produce a number the card can show and a refusal it can print. A test
+// that only proved the happy path would prove nothing here.
+
+describe('samsloopRackLedger — per-rack byte accounting', () => {
+  const b64 = (bytes: number) => 'A'.repeat(bytes);
+  const recNode = (bytes: number) => ({
+    type: 'samsloop',
+    data: { sample: { bytesB64: b64(bytes) } },
+  });
+  const upNode = (bytes: number) => ({ type: 'samsloop', data: { fileBytesB64: b64(bytes) } });
+
+  it('sums RECORDINGS and UPLOADS across every samsloop, ignoring other modules', () => {
+    const ledger = samsloopRackLedger({
+      a: recNode(1_000_000),
+      b: upNode(2_000_000),
+      c: { type: 'lfo', data: { sample: { bytesB64: b64(9_000_000) } } }, // not a samsloop
+      d: { type: 'samsloop' }, // empty samsloop costs nothing
+    });
+    expect(ledger.usedBytes).toBe(3_000_000);
+    expect(ledger.nodeCount).toBe(3);
+    expect(ledger.budgetBytes).toBe(SAMSLOOP_RACK_RECORD_BUDGET_BYTES);
+    expect(ledger.freeBytes).toBe(SAMSLOOP_RACK_RECORD_BUDGET_BYTES - 3_000_000);
+    expect(ledger.overBudget).toBe(false);
+  });
+
+  it('EXCLUDES the recording node entirely — it is about to replace its own payload', () => {
+    // Both keys, because the RECORD commit writes `sample` AND runs
+    // clearSamsloopUploadKeys. Charging a node for bytes it is about to
+    // release would make re-recording the same module progressively harder.
+    const nodes = {
+      me: { type: 'samsloop', data: { sample: { bytesB64: b64(4_000_000) }, fileBytesB64: b64(1_000_000) } },
+      other: recNode(1_000_000),
+    };
+    expect(samsloopRackLedger(nodes).usedBytes).toBe(6_000_000);
+    expect(samsloopRackLedger(nodes, 'me').usedBytes).toBe(1_000_000);
+  });
+
+  it('reports an ALREADY-over-budget rack rather than going negative', () => {
+    // These racks exist: the ledger is new, the racks are not. Nothing is
+    // deleted — `freeBytes` floors at 0 so callers get "no room", and the
+    // card turns that into a refusal to ARM, never a truncation.
+    const ledger = samsloopRackLedger({ a: recNode(SAMSLOOP_RACK_RECORD_BUDGET_BYTES + 5_000_000) });
+    expect(ledger.overBudget).toBe(true);
+    expect(ledger.freeBytes).toBe(0);
+    expect(samsloopMaxSecondsExact(48_000, 16, 1, ledger.freeBytes)).toBe(0);
+  });
+
+  it('NEGATIVE CONTROL: the ledger MOVES when the thing it measures moves', () => {
+    // A ledger that returned a constant would satisfy every assertion above
+    // that names a specific number. Perturb the subject and require the
+    // reading to follow, in both directions.
+    const empty = samsloopRackLedger({ a: { type: 'samsloop' } });
+    const loaded = samsloopRackLedger({ a: recNode(2_000_000) });
+    expect(loaded.usedBytes).toBeGreaterThan(empty.usedBytes);
+    expect(loaded.freeBytes).toBeLessThan(empty.freeBytes);
+    const heavier = samsloopRackLedger({ a: recNode(2_000_000), b: recNode(2_000_000) });
+    expect(heavier.usedBytes).toBeGreaterThan(loaded.usedBytes);
+  });
+
+  it('tolerates malformed data without throwing (a bad peer cannot break the gate)', () => {
+    const ledger = samsloopRackLedger({
+      a: { type: 'samsloop', data: undefined },
+      b: { type: 'samsloop', data: { sample: { bytesB64: 12345 } } }, // not a string
+      c: { type: 'samsloop', data: { fileBytesB64: null } },
+      d: undefined,
+    });
+    expect(ledger.usedBytes).toBe(0);
+    expect(ledger.nodeCount).toBe(3);
+  });
+
+  it('the budget is derived from the relay thresholds — 75 % of warn, 50 % of crit', () => {
+    // rack-accounting.ts: RELAY_RACK_WARN_MB 16, RELAY_RACK_CRIT_MB 24.
+    // Recordings may approach WARN (a log line + an alert_state rollup) but
+    // CANNOT on their own reach CRIT even if the rest of the rack matched
+    // them byte for byte. That asymmetry is the whole design.
+    const warnBytes = 16 * 1024 * 1024;
+    const critBytes = 24 * 1024 * 1024;
+    expect(SAMSLOOP_RACK_RECORD_BUDGET_BYTES).toBe(12_000_000);
+    expect(SAMSLOOP_RACK_RECORD_BUDGET_BYTES).toBeLessThan(warnBytes);
+    expect(SAMSLOOP_RACK_RECORD_BUDGET_BYTES * 2).toBeLessThanOrEqual(critBytes);
+    // …and the OLD arithmetic — 20 instances × the per-take cap — was over
+    // crit, which is the finding that motivated the ledger.
+    const perTakeBase64 = Math.ceil(SAMSLOOP_RECORD_BUDGET_BYTES / 3) * 4;
+    expect(20 * perTakeBase64).toBeGreaterThan(critBytes);
+  });
+
+  it('base64 → raw conversion never yields MORE than the allowance it came from', () => {
+    // The allowance is denominated in the units the relay measures (encoded
+    // characters); the encoder works in raw PCM. A conversion that rounded UP
+    // would let the ledger be exceeded by up to 3 bytes per take — small, but
+    // it would make "the budget is never exceeded" false rather than true.
+    for (const b of [0, 1, 3, 4, 5, 999, 1_000_000, 12_000_000]) {
+      const raw = samsloopBase64ToRawBytes(b);
+      expect(Math.ceil(raw / 3) * 4).toBeLessThanOrEqual(Math.max(b, 0));
+    }
+    expect(samsloopBase64ToRawBytes(Infinity)).toBe(Infinity);
+    expect(samsloopBase64ToRawBytes(-5)).toBe(0);
+  });
+});
+
+describe('the rack budget SHRINKS the take, visibly, and never silently', () => {
+  it('a rack with room leaves maxSeconds exactly as it was', () => {
+    const free = SAMSLOOP_RACK_RECORD_BUDGET_BYTES;
+    expect(samsloopMaxSeconds(48_000, 16, 1, free)).toBe(samsloopMaxSeconds(48_000, 16, 1));
+    expect(samsloopBindingCap(48_000, 16, 1, free)).toBe('per-take');
+  });
+
+  it('a rack with 1 MB left caps the take to what fits, and SAYS the rack is why', () => {
+    // 1 MB of base64 → 750 000 raw bytes → at 96 000 B/s (mono/16/48k) = 7.81 s.
+    const free = 1_000_000;
+    expect(samsloopMaxSeconds(48_000, 16, 1, free)).toBeCloseTo(7.81, 2);
+    expect(samsloopBindingCap(48_000, 16, 1, free)).toBe('rack');
+    // The reduced number is what the card renders, so the constraint is on
+    // screen BEFORE the click rather than discovered after it.
+    expect(samsloopMaxSeconds(48_000, 16, 1, free)).toBeLessThan(
+      samsloopMaxSeconds(48_000, 16, 1),
+    );
+  });
+
+  it('the capture buffer is sized to the RACK allowance too, so nothing is trimmed after', () => {
+    const free = 1_000_000;
+    const cap = samsloopMaxCaptureFrames(48_000, 48_000, 16, 1, free);
+    const l = new Float32Array(cap);
+    const { bytes } = encodeRecordingBytes(l, l, 48_000, 48_000, 16, 1);
+    // Inside the per-take budget AND inside what the rack had left, measured
+    // in the base64 units the ledger counts.
+    expect(bytes.byteLength).toBeLessThanOrEqual(SAMSLOOP_RECORD_BUDGET_BYTES);
+    expect(Math.ceil(bytes.byteLength / 3) * 4).toBeLessThanOrEqual(free);
+    // NEGATIVE CONTROL: without the rack argument the SAME settings produce a
+    // take 4× longer (1 500 000 frames vs 375 000 — 1 MB of base64 is 750 000
+    // raw bytes is 375 000 mono 16-bit frames), so the allowance is doing real
+    // work here rather than coinciding with the per-take cap.
+    const uncapped = samsloopMaxCaptureFrames(48_000, 48_000, 16, 1);
+    expect(cap).toBe(375_000);
+    expect(uncapped).toBe(1_500_000);
+    expect(uncapped).toBeGreaterThan(cap * 3);
+  });
+
+  it('a FULL rack yields zero seconds — which is the refuse-to-arm trigger', () => {
+    expect(samsloopMaxSecondsExact(48_000, 16, 1, 0)).toBe(0);
+    expect(samsloopMaxSecondsExact(48_000, 16, 1, 0)).toBeLessThan(SAMSLOOP_MIN_RECORD_SECONDS);
+    expect(samsloopMaxCaptureFrames(48_000, 48_000, 16, 1, 0)).toBe(0);
+  });
+
+  it('the refusal MESSAGE names the numbers a user needs to act on', () => {
+    // "No room" with no figures is a dead end. The message must say how much
+    // is used, what the budget is, and how many instances are involved.
+    const ledger = samsloopRackLedger({
+      a: { type: 'samsloop', data: { sample: { bytesB64: 'A'.repeat(12_000_000) } } },
+      b: { type: 'samsloop' },
+    });
+    const msg = samsloopRackFullMessage(ledger);
+    expect(msg).toContain('12.0 MB of the 12.0 MB sample budget'); // used / budget
+    expect(msg).toContain('2 instances');
+    expect(msg).toMatch(/delete|shorten/i); // an action, not just a complaint
+
+    // NEGATIVE CONTROL on the message: the figures must TRACK the ledger, not
+    // be a fixed sentence. A half-full rack reads differently.
+    const half = samsloopRackFullMessage(
+      samsloopRackLedger({ a: { type: 'samsloop', data: { sample: { bytesB64: 'A'.repeat(6_000_000) } } } }),
+    );
+    expect(half).toContain('6.0 MB of the 12.0 MB');
+    expect(half).toContain('1 instance');
+    expect(half).not.toContain('1 instances'); // singular/plural, not "1 instances"
+  });
+
+  it('the binding cap distinguishes all three ceilings', () => {
+    // Three different problems need three different sentences: expensive
+    // settings, the 60 s architecture ceiling, and a full rack.
+    expect(samsloopBindingCap(48_000, 16, 2)).toBe('per-take');   // 15.63 s, bytes bind
+    expect(samsloopBindingCap(22_050, 8, 1)).toBe('length');      // 136 s of bytes, 60 s cap binds
+    expect(samsloopBindingCap(48_000, 16, 1, 500_000)).toBe('rack');
   });
 });
 

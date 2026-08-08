@@ -53,25 +53,12 @@
  * bounds the wall-clock length independently, and it is the binding one at
  * the low-fidelity settings.
  *
- * ⚠ TWO DOWNSTREAM BUDGETS THIS INTERACTS WITH, neither of which it breaks —
- * recorded here rather than in their own files, because both of those live
- * inside attest bases where a comment would force a re-attest, and because
- * THIS is the number you would change:
- *
- *   * PER-RACK RELAY BYTES. `samsloop-limits.ts` caps SAMSLOOP at 20 per rack,
- *     derived against a ~100 MB browser-TAB budget and never against the
- *     relay's per-rack thresholds. 20 × 2.7 MB of uploads was already 54 MB —
- *     over the 24 MB crit — BEFORE this budget moved; 20 × 4 MB is 80 MB. The
- *     raise widens an existing mismatch (2.3× → 3.3× crit), it does not create
- *     one, and ONE recording stays ≤25 % of warn by construction. A recording
- *     REPLACES any upload on the same node (the one-sample invariant), so
- *     per-instance cost is max(4 MB, 2.7 MB), not their sum. If this ever
- *     bites, the fix is a per-rack BYTE cap — nothing enforces one today.
- *   * SAVED GROUPS. `SAVED_GROUP_MAX_PAYLOAD_BYTES` is 8 MB and its own comment
- *     records that it was already bumped from 256 kB *because a single SAMSLOOP
- *     hit it*. At ~4 MB per maxed-out take that now fits TWO recordings per
- *     group rather than twenty-four. It fails loudly with a size error rather
- *     than truncating, so it is left alone deliberately.
+ * ⚠ THIS IS THE PER-TAKE CAP, NOT THE BUDGET. A per-instance limit multiplied
+ * by an instance cap is an upper bound nobody checks: 20 SAMSLOOPs × 4 MB is
+ * 80 MB against a relay that crits at 24 MB per rack. The governing constraint
+ * is the RACK TOTAL, and it is enforced by `SAMSLOOP_RACK_RECORD_BUDGET_BYTES`
+ * below. Read the two together — this one bounds one take so a single
+ * recording can never dominate a rack; that one bounds the sum.
  */
 export const SAMSLOOP_RECORD_BUDGET_BYTES = 3_000_000;
 
@@ -91,6 +78,51 @@ export const SAMSLOOP_RECORD_BUDGET_BYTES = 3_000_000;
  * here to 60 s. At the defaults the BYTE budget binds first (31.25 s).
  */
 export const SAMSLOOP_RECORD_MAX_SECONDS = 60;
+
+/**
+ * THE RACK BUDGET — the ceiling that actually governs, in BASE64 BYTES.
+ *
+ * ⚠ COUNTED IN BASE64, NOT RAW PCM, DELIBERATELY. The relay accounts Yjs
+ * update bytes (`packages/server/src/rack-accounting.ts`), and what rides a Yjs
+ * update is the base64 STRING in `node.data`, ~4/3 the size of the PCM. A
+ * ledger denominated in raw bytes would under-count the thing being limited by
+ * 33 % — measuring the wrong quantity is the failure this repo names
+ * "validate the instrument". So: encoded characters, the same units the relay
+ * sees.
+ *
+ * DERIVATION — from the relay's own thresholds, not re-derived:
+ *   warn 16 MB / crit 24 MB per rack (`readRackMemThresholds`)
+ *   12 MB = 75 % of WARN, 50 % of CRIT
+ * Recordings may therefore push a rack toward WARN — which is a log line and
+ * an `alert_state` rollup, not an outage — but **cannot on their own reach
+ * CRIT** even if everything else in the rack matched them byte for byte. That
+ * is the property worth having: the noisy threshold is reachable, the paging
+ * one is structurally out of reach for this module.
+ *
+ * What it buys: three full-length 31 s takes, or ~18 of the 5-second loops
+ * this module actually gets used for. Most takes are nowhere near the per-take
+ * cap, so a static per-instance limit sized to `crit / 20` would have been
+ * punitively small for the common case AND still guaranteed nothing about the
+ * total. A ledger charges only what is actually stored.
+ *
+ * ⚠ ITS ENFORCEMENT MUST BE VISIBLE. This module just deleted a silent 8 %
+ * truncation; re-introducing the same class one layer up would be worse, not
+ * better. The rack budget therefore only ever (a) SHRINKS the card's
+ * "N.NNs max" readout, which is on screen before anyone presses REC, or
+ * (b) REFUSES TO ARM with the numbers in the error line. It never shortens a
+ * take in progress beyond the ordinary cap-stop (which announces itself), and
+ * it never drops bytes after the fact.
+ */
+export const SAMSLOOP_RACK_RECORD_BUDGET_BYTES = 12_000_000;
+
+/**
+ * Below this much headroom, REC refuses to arm instead of offering a stub.
+ *
+ * Refusing up front is honest; handing someone a 0.2-second recorder and
+ * letting them find out afterwards is not. One second is the shortest take
+ * that is arguably still a loop.
+ */
+export const SAMSLOOP_MIN_RECORD_SECONDS = 1;
 
 /** Discrete option sets — the card's three toggle switches. Exposed as
  *  consts so the card, the helpers, and the tests share one source of
@@ -221,13 +253,116 @@ export function samsloopAchievedRate(srcRate: number, dstRate: number): number {
 }
 
 /**
- * Maximum recording length in seconds for the given settings — the LOWER of
- * the byte budget and the hard length cap. Used as the live-record bar's
- * horizontal axis (waveform fills the bar over `maxSeconds` of capture) AND
- * as the auto-stop trigger.
+ * How many RAW PCM bytes a base64 allowance is worth.
+ *
+ * base64 encodes 3 bytes as 4 characters, so the inverse is `×3/4` — floored
+ * to a whole 3-byte group so the round trip can never come out OVER the
+ * allowance it was derived from.
+ */
+export function samsloopBase64ToRawBytes(base64Bytes: number): number {
+  if (!(base64Bytes > 0)) return 0;
+  if (!Number.isFinite(base64Bytes)) return Infinity;
+  return Math.floor(base64Bytes / 4) * 3;
+}
+
+/** What a SAMSLOOP node contributes to the rack ledger, and what it costs. */
+export interface SamsloopRackLedger {
+  /** Base64 characters already stored across every SAMSLOOP in the rack. */
+  usedBytes: number;
+  /** `SAMSLOOP_RACK_RECORD_BUDGET_BYTES`, carried so a message can name it. */
+  budgetBytes: number;
+  /** Headroom, floored at 0 — never negative, so callers can use it as an
+   *  allowance without a second clamp. */
+  freeBytes: number;
+  /** True when the rack is ALREADY past the budget. Reachable on racks built
+   *  before the ledger existed; see the grandfathering note below. */
+  overBudget: boolean;
+  /** How many SAMSLOOP nodes were counted — printed in the refusal so a user
+   *  can tell "one huge sample" from "twenty small ones". */
+  nodeCount: number;
+}
+
+/** Minimal shape the ledger reads. Accepts the live syncedStore proxy AND
+ *  plain test fixtures; every field is read defensively. */
+type LedgerNode = {
+  type?: string;
+  data?: { sample?: { bytesB64?: unknown }; fileBytesB64?: unknown } | unknown;
+};
+
+/**
+ * THE RACK LEDGER — what every SAMSLOOP in this rack is currently costing.
+ *
+ * ⚠ COUNTS UPLOADS AS WELL AS RECORDINGS, and gates only recordings. The
+ * budget is about the RACK's bytes, so a rack already full of uploaded samples
+ * genuinely has less room to record into; pretending otherwise would make the
+ * ledger a number that does not describe the thing it limits. Uploads have
+ * their own per-file gate (`SAMSLOOP_MAX_FILE_BYTES`) and are not refused here.
+ *
+ * `excludeNodeId` drops that node's WHOLE payload — both the recording and any
+ * upload — because the RECORD commit replaces the first and
+ * `clearSamsloopUploadKeys` deletes the second. Charging a node for bytes it is
+ * about to release would make re-recording the same module progressively
+ * harder for no reason.
+ *
+ * Pure. `nodes` is `patch.nodes`-shaped.
+ */
+export function samsloopRackLedger(
+  nodes: Record<string, LedgerNode | undefined>,
+  excludeNodeId?: string,
+): SamsloopRackLedger {
+  let usedBytes = 0;
+  let nodeCount = 0;
+  for (const [id, node] of Object.entries(nodes)) {
+    if (!node || node.type !== 'samsloop') continue;
+    nodeCount++;
+    if (id === excludeNodeId) continue;
+    const d = node.data as
+      | { sample?: { bytesB64?: unknown }; fileBytesB64?: unknown }
+      | undefined;
+    const rec = d?.sample?.bytesB64;
+    if (typeof rec === 'string') usedBytes += rec.length;
+    const up = d?.fileBytesB64;
+    if (typeof up === 'string') usedBytes += up.length;
+  }
+  const budgetBytes = SAMSLOOP_RACK_RECORD_BUDGET_BYTES;
+  return {
+    usedBytes,
+    budgetBytes,
+    freeBytes: Math.max(0, budgetBytes - usedBytes),
+    overBudget: usedBytes > budgetBytes,
+    nodeCount,
+  };
+}
+
+/**
+ * The user-facing sentence for a rack that has no room left. Exported so the
+ * card and its tests share ONE string — a refusal nobody can read is the same
+ * failure as a silent one.
+ */
+export function samsloopRackFullMessage(ledger: SamsloopRackLedger): string {
+  const mb = (n: number) => (n / 1_000_000).toFixed(1);
+  return (
+    `No room to record: this rack's SAMSLOOPs already hold ` +
+    `${mb(ledger.usedBytes)} MB of the ${mb(ledger.budgetBytes)} MB sample budget ` +
+    `(${ledger.nodeCount} instance${ledger.nodeCount === 1 ? '' : 's'}). ` +
+    `Delete or shorten a sample, or record at a lower CHAN / BITS / RATE.`
+  );
+}
+
+/**
+ * Maximum recording length in seconds for the given settings — the LOWEST of
+ * the per-take byte budget, the hard length cap, and whatever the RACK has
+ * left. Used as the live-record bar's horizontal axis (waveform fills the bar
+ * over `maxSeconds` of capture) AND as the auto-stop trigger.
  *
  * `min(SAMSLOOP_RECORD_BUDGET_BYTES / (rate · bytesPerSample · channels),
- *      SAMSLOOP_RECORD_MAX_SECONDS)`
+ *      SAMSLOOP_RECORD_MAX_SECONDS,
+ *      rawBytesFor(freeRackBase64Bytes) / (rate · bytesPerSample · channels))`
+ *
+ * `freeRackBase64Bytes` defaults to `Infinity` — i.e. "no rack context", which
+ * is what every pure-encoding caller and the 12-cell table below mean. The
+ * CARD always passes the live ledger's headroom, so the number on screen is
+ * what this rack can actually record, not what the settings could in principle.
  *
  * ⚠ `rate` is the ACHIEVED rate (`samsloopAchievedRate`), not the RATE
  * switch. Passing the switch value is how the encoder came to emit 272 640
@@ -247,12 +382,17 @@ export function samsloopMaxSeconds(
   rate: number,
   bits: number,
   channels: number,
+  freeRackBase64Bytes: number = Infinity,
 ): number {
   // Round to 2 decimal places (banker's rounding via Math.round is fine
   // for display + auto-stop trigger). The actual byte-count check uses
   // the unrounded value internally — `samsloopMaxSeconds` is for the UI
   // label + the bar's x-axis scale.
-  return Math.round(samsloopMaxSecondsExact(rate, bits, channels) * 100) / 100;
+  return (
+    Math.round(
+      samsloopMaxSecondsExact(rate, bits, channels, freeRackBase64Bytes) * 100,
+    ) / 100
+  );
 }
 
 /**
@@ -264,6 +404,7 @@ export function samsloopMaxSecondsExact(
   rate: number,
   bits: number,
   channels: number,
+  freeRackBase64Bytes: number = Infinity,
 ): number {
   if (rate <= 0 || bits <= 0 || channels <= 0) return 0;
   const bytesPerSecond = rate * Math.ceil(bits / 8) * channels;
@@ -271,7 +412,29 @@ export function samsloopMaxSecondsExact(
   return Math.min(
     SAMSLOOP_RECORD_BUDGET_BYTES / bytesPerSecond,
     SAMSLOOP_RECORD_MAX_SECONDS,
+    samsloopBase64ToRawBytes(freeRackBase64Bytes) / bytesPerSecond,
   );
+}
+
+/**
+ * Which of the three caps is binding right now. The card shows a different
+ * line for each, because "your settings are expensive", "60 s is the hard
+ * ceiling" and "this RACK is full" need three different actions from the user.
+ */
+export function samsloopBindingCap(
+  rate: number,
+  bits: number,
+  channels: number,
+  freeRackBase64Bytes: number = Infinity,
+): 'per-take' | 'length' | 'rack' {
+  const bytesPerSecond = rate * Math.ceil(bits / 8) * channels;
+  const perTake = SAMSLOOP_RECORD_BUDGET_BYTES / bytesPerSecond;
+  const rack = samsloopBase64ToRawBytes(freeRackBase64Bytes) / bytesPerSecond;
+  // Ties resolve to the LEAST alarming explanation: if the rack happens to
+  // allow exactly as much as the per-take budget, this is not a rack problem.
+  if (rack < perTake && rack < SAMSLOOP_RECORD_MAX_SECONDS) return 'rack';
+  if (SAMSLOOP_RECORD_MAX_SECONDS <= perTake) return 'length';
+  return 'per-take';
 }
 
 /**
@@ -292,11 +455,12 @@ export function samsloopMaxCaptureFrames(
   dstRate: number,
   bits: SamsloopRecBits,
   channels: SamsloopRecChannels,
+  freeRackBase64Bytes: number = Infinity,
 ): number {
   if (captureRate <= 0 || bits <= 0 || channels <= 0) return 0;
   const achieved = samsloopAchievedRate(captureRate, dstRate);
   if (achieved <= 0) return 0;
-  // ⚠ INTEGER ARITHMETIC ON BOTH CAPS, not `floor(maxSeconds × rate)`.
+  // ⚠ INTEGER ARITHMETIC ON ALL THREE CAPS, not `floor(maxSeconds × rate)`.
   // `maxSecondsExact` is a float division; multiplying it back by the rate
   // reintroduces the rounding it just did and lands one frame short (measured:
   // 3e6/88200×22050 evaluates to 749999.9999999999, not 750000). One frame of
@@ -306,7 +470,11 @@ export function samsloopMaxCaptureFrames(
   const bytesPerFrame = Math.ceil(bits / 8) * channels;
   const framesByBytes = Math.floor(SAMSLOOP_RECORD_BUDGET_BYTES / bytesPerFrame);
   const framesBySeconds = Math.floor(SAMSLOOP_RECORD_MAX_SECONDS * achieved);
-  const storedFrames = Math.min(framesByBytes, framesBySeconds);
+  const rackRawBytes = samsloopBase64ToRawBytes(freeRackBase64Bytes);
+  const framesByRack = Number.isFinite(rackRawBytes)
+    ? Math.floor(rackRawBytes / bytesPerFrame)
+    : Infinity;
+  const storedFrames = Math.min(framesByBytes, framesBySeconds, framesByRack);
   return storedFrames * samsloopDecimationFactor(captureRate, dstRate);
 }
 
