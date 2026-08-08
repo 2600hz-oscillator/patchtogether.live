@@ -36,6 +36,8 @@
 //   defect this probe exists for).
 
 import { test } from '@playwright/test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { FACES, LEGACY_FOLD_VIEWPORT, bootWithFace, frameMember } from './_shell-faces';
 import { diffRegion } from './vrt-surface-stats';
 import { tryFreezeAudioContext } from './vrt-audio-freeze';
@@ -185,6 +187,75 @@ async function captureStability(
   const bc = await diffRegion(page, b64(b), b64(c), CHANNEL_DELTA);
   return { d12: ab.diffPixels, d23: bc.diffPixels, w: ab.width, h: ab.height };
 }
+
+// ── THE EXACT-DIFF AUDIT (compact tiles) ────────────────────────────────────
+//
+// The dock half of this already exists in vrt-fold-probe ("exact diff of every
+// committed dock baseline"); this is its COMPACT sibling, and together they
+// cover all 42 committed face baselines.
+//
+// It answers the one question a green `toHaveScreenshot` cannot: is the
+// baseline IDENTICAL, or merely inside COMPACT_MAX_DIFF (150 px of a ~7 200 px
+// tile — 2 % of the image)? Playwright only rewrites a snapshot whose
+// comparison FAILS, so a sub-tolerance change is invisible to the gate AND
+// unfixable by `--update-snapshots` (the A2/#1213 hole). "43 scenes passed" is
+// therefore NOT the evidence that adding the audio freeze moved nothing; this
+// is.
+const BASELINE_DIR = join(
+  import.meta.dirname,
+  '__screenshots__/workflow-shell-faces.spec.ts',
+  process.platform === 'darwin' ? 'darwin' : 'linux',
+);
+
+test('exact diff of every committed compact baseline', async ({ page }) => {
+  test.setTimeout(FACES.length * 25_000);
+  // `AUDIT_NO_FREEZE=1` runs the SAME instrument with the audio freeze off —
+  // the audit's own control. Without it a non-zero row cannot be attributed:
+  // "the freeze moved this pixel" and "this baseline was already stale" print
+  // identically. Within-subject (same machine, same session, same decode path).
+  const noFreeze = process.env.AUDIT_NO_FREEZE === '1';
+  const rows: string[] = [];
+  for (const { type } of FACES) {
+    await page.setViewportSize(LEGACY_FOLD_VIEWPORT);
+    const memberId = await bootWithFace(page, type, { freezeAudio: !noFreeze });
+    await frameMember(page, memberId, 0.45, 'compact');
+    const shot = await page
+      .locator(`.svelte-flow__node[data-id="${memberId}"] [data-testid="module-shell"]`)
+      .screenshot({ animations: 'disabled' });
+
+    let baseline: Buffer;
+    try {
+      baseline = readFileSync(join(BASELINE_DIR, `face-${type}-compact.png`));
+    } catch {
+      rows.push(`${type.padEnd(14)} NO BASELINE on ${process.platform}`);
+      // eslint-disable-next-line no-console
+      console.log('[compact-audit] ' + rows[rows.length - 1]);
+      continue;
+    }
+    const b64 = baseline.toString('base64');
+    const s64 = shot.toString('base64');
+    // SELF-DIFF: the instrument's own negative control. The same PNG through
+    // the same in-page decode must come back 0, or every number below is noise.
+    const self = await diffRegion(page, b64, b64, 1);
+    const d1 = await diffRegion(page, b64, s64, 1);
+    const d26 = await diffRegion(page, b64, s64, 26);
+    rows.push(
+      `${type.padEnd(14)} baseline ${baseline.readUInt32BE(16)}x${baseline.readUInt32BE(20)} ` +
+        `self=${self.diffPixels} ` +
+        (d1.diffPixels < 0
+          ? 'DIMENSION MISMATCH → hard fail → --update-snapshots rewrites it'
+          : `diff@1=${d1.diffPixels}px diff@26=${d26.diffPixels}px box@26=${JSON.stringify(d26.box)}`),
+    );
+    // eslint-disable-next-line no-console
+    console.log('[compact-audit] ' + rows[rows.length - 1]);
+  }
+  // eslint-disable-next-line no-console
+  console.log(
+    `[compact-audit] ========= COMPACT TILES vs COMMITTED BASELINES ` +
+      `(${noFreeze ? 'AUDIO RUNNING — the control' : 'AUDIO FROZEN'}) =========\n` +
+      rows.join('\n'),
+  );
+});
 
 test.describe('VRT PROBE: face-audio-reboot — is the FROZEN tile the same across two INDEPENDENT boots?', () => {
   test.describe.configure({ mode: 'default', timeout: 180_000 });

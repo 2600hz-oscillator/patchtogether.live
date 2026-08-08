@@ -218,11 +218,31 @@ export async function waitForHooks(page: Page): Promise<void> {
 // This is the SHARED boot path, so the freeze lands once for every present and
 // future face rather than per module.
 //
-// ⚠ ORDER IS LOAD-BEARING: the suspend must happen AFTER the palette spawn.
-// `ensureEngine()` (Canvas.svelte) resumes a suspended context on every call
-// precisely so a restored video rack isn't left silent, and the spawn path
-// calls it — so a pre-spawn freeze would be undone by the very next line, with
-// no error anywhere.
+// ⚠ ORDER IS LOAD-BEARING IN BOTH DIRECTIONS, and both were MEASURED.
+//
+//   AFTER the palette spawn. `ensureEngine()` (Canvas.svelte) resumes a
+//   suspended context on every call — deliberately, so a restored video rack
+//   isn't left silent — and the spawn path calls it. A pre-spawn freeze would
+//   be undone by the very next line with no error anywhere.
+//
+//   BEFORE `frameMember`. The shell's glyph tap is LAZY: `createShellGlyphTap`
+//   builds its AnalyserNode on the first READ, and the reads come from the
+//   visibility-gated meter ticker, i.e. once the tile is framed at a tier that
+//   shows the glyph. Freeze first and that analyser is created on an already-
+//   suspended context and never renders a single sample, so it reads ZEROS —
+//   the same flat centreline every boot. Freeze afterwards and it holds
+//   whatever phase it had reached: stable WITHIN a run and different every run,
+//   which passes a settle check and still cannot match a baseline.
+//
+//   MEASURED (filter face downstream of a free-running macrooscillator, darwin,
+//   88×82 tile, 26/255 channel delta):
+//       running, no freeze            3 captures: 166 px, 155 px apart
+//       freeze here (pre-frame)       3 captures: 0 px — and TWO INDEPENDENT
+//                                     BOOTS agree to 0 px
+//       freeze after frameMember      3 captures: 0 px, but two independent
+//                                     boots differ by 106 px, all of it inside
+//                                     the glyph box (x 50-82, y 39-46)
+//   The last row is why within-run stability is not the property to assert.
 //
 // ⚠ AND IT IS RE-ASSERTED AT CAPTURE TIME, not just here. Between this call and
 // the dock capture the scene CLICKS (the jack-rail expand affordance), and any
@@ -230,6 +250,21 @@ export async function waitForHooks(page: Page): Promise<void> {
 // freeze that stopped applying looks identical to a freeze that worked, which
 // is the whole reason `freezeAudioContext` throws rather than returning a
 // verdict nobody reads.
+//
+// ⚠ THE SUSPEND HAS TO BE RE-APPLIED UNTIL IT STICKS, and that is not defensive
+// coding — it is a MEASURED race with the workflow rack's own pinned modules.
+// `?shell=1` pins a videoOut → recorderbox chain, and recorderbox's factory
+// does `if (ac.state === 'suspended') void ac.resume()` (recorderbox.ts:269 —
+// a MediaStreamAudioDestinationNode does not terminate the graph, so a
+// suspended context would never pull its keep-alive). That factory runs from
+// the reconcile the palette spawn triggers, i.e. AFTER the point this code
+// freezes. Captured live with an `AudioContext.prototype.resume` trace:
+//
+//     resume ← recorderbox.ts:92 factory ← VideoEngine.addNode
+//            ← PatchEngine.addNode ← doReconcile
+//
+// One-shot per page load, but it lands on a frame we do not control: a single
+// suspend produced 16 passes and 27 failures across the 43 face scenes.
 
 /** Options for `bootWithFace`. */
 export interface BootFaceOptions {
@@ -256,6 +291,17 @@ export interface BootFaceOptions {
   upstream?: string;
 }
 
+/** How many times the suspend may be re-applied before the scene gives up. The
+ *  known racer (recorderbox's factory resume) is ONE-SHOT per page load, so a
+ *  correct run needs at most two; the headroom exists so a second one-shot
+ *  racer shows up as a slow scene rather than a flake, and the failure message
+ *  prints the attempt count so a NEW repeating racer is legible instead of
+ *  mysterious. */
+const FREEZE_ATTEMPTS = 6;
+/** rAFs to wait after each suspend for a pending best-effort `resume()` to
+ *  land. Frames, not ms — renderer-independent by construction. */
+const FREEZE_RACE_FRAMES = 4;
+
 /**
  * Suspend the audio graph for a face scene and PROVE it, in both the declared
  * and the observable sense:
@@ -264,15 +310,35 @@ export interface BootFaceOptions {
  *      resolves the context through the audio DOMAIN — the root engine has no
  *      `.ctx`, which is how the previous repo-wide freeze was a silent no-op
  *      for months; see vrt-audio-freeze.ts).
- *   2. `assertFaceAudioFrozen` then checks the EFFECT: the audio clock does not
+ *   2. The suspend is then RE-APPLIED until it survives `FREEZE_RACE_FRAMES`
+ *      real animation frames, because the workflow rack's pinned recorderbox
+ *      resumes the context from the spawn's own reconcile (see THE AUDIO GRAPH
+ *      above — measured, with the stack).
+ *   3. `assertFaceAudioFrozen` then checks the EFFECT: the audio clock does not
  *      advance across real animation frames. A state flag is a claim; a pinned
  *      `currentTime` is the thing the analyser's window actually depends on.
  */
 export async function freezeFaceAudio(page: Page, label: string): Promise<void> {
-  await freezeAudioContext(page, label);
-  // One rAF so the last pre-suspend analyser read paints before we assert.
-  await settle(page);
-  await assertFaceAudioFrozen(page, label);
+  const seen: string[] = [];
+  for (let attempt = 1; attempt <= FREEZE_ATTEMPTS; attempt++) {
+    await freezeAudioContext(page, label);
+    // Give any in-flight best-effort `resume()` the frames it needs to land, so
+    // a freeze that is about to be undone is caught HERE rather than at capture.
+    for (let f = 0; f < FREEZE_RACE_FRAMES; f++) await settle(page);
+    const clock = await readAudioClock(page);
+    seen.push(`${attempt}:${clock.state}`);
+    if (clock.state === 'suspended') {
+      await assertFaceAudioFrozen(page, label);
+      return;
+    }
+  }
+  throw new Error(
+    `${label}: the AudioContext would not STAY suspended — ${FREEZE_ATTEMPTS} attempts, ` +
+      `states after each (${seen.join(', ')}). Something is resuming it repeatedly. The known ` +
+      `one-shot racer is the pinned recorderbox factory (recorderbox.ts, ` +
+      `\`if (ac.state === 'suspended') void ac.resume()\`), which the palette spawn's reconcile ` +
+      `triggers; a REPEATING resume is a new one and needs finding, not more attempts.`,
+  );
 }
 
 /** rAFs the clock check waits across. Frame-counted, not wall-clocked — a
