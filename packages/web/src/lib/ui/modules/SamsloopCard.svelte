@@ -33,6 +33,7 @@
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { patch } from '$lib/graph/store';
+  import { docVersion } from '$lib/graph/node-versions.svelte';
   import {
     samsloopDef,
     loadSamsloopWav,
@@ -233,7 +234,29 @@
   //
   // Derived for DISPLAY only. `startRecording` re-reads it fresh, so the gate
   // never depends on reactivity having kept up.
-  let rackLedger = $derived(samsloopRackLedger(patch.nodes, id));
+  //
+  // ⚠ `docVersion()` IS THE SUBSCRIPTION, and it is not optional. Reading
+  // `patch.nodes` alone tracks nothing across nodes: a peer (or another card)
+  // committing a sample on a DIFFERENT samsloop left this derived stale, so
+  // the readout kept offering 31.25 s on a rack with no room. Caught by the
+  // e2e, which is the only place it was observable — the arm-time gate reads
+  // fresh and would still have refused correctly, i.e. the BUDGET was right
+  // and only its VISIBILITY was broken, which is precisely the half the owner
+  // called out as the thing that must not fail quietly.
+  //
+  // `docVersion()` is the coarse whole-doc counter (one bump per
+  // transaction) rather than the per-node signals, because the ledger's
+  // subject is "every samsloop in the rack" and enumerating them reactively
+  // costs a second walk. MEASURED cost of the walk it re-triggers: 0.017 ms
+  // at 40 nodes / 4 samsloops, 0.175 ms at 100 nodes / 20 samsloops (20 is
+  // the hard per-rack instance cap) — ~1 % of a 60 fps frame at the realistic
+  // shape. If that ever shows up in a profile, the lever is to subscribe to
+  // `nodesStructuralVersion()` plus `nodeVersion(id)` for the samsloop ids
+  // only, so an unrelated knob drag stops invalidating it.
+  let rackLedger = $derived.by(() => {
+    docVersion();
+    return samsloopRackLedger(patch.nodes, id);
+  });
 
   // maxSeconds at the current settings — drives the bar's x-axis AND
   // the auto-stop trigger. Bounded by the rack budget as well as the per-take
