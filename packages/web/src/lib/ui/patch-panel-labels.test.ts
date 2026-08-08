@@ -12,6 +12,7 @@ import {
   groupPortsByCableType,
   type PortDescriptor,
 } from './patch-panel-labels';
+import { stereoPairStemId } from '$lib/graph/stereo-pairs';
 import { qbrtDef } from '$lib/audio/modules/qbrt';
 
 describe('resolveVerboseLabel', () => {
@@ -128,6 +129,38 @@ describe('resolveVerboseLabel', () => {
     expect(resolveVerboseLabel({ id: 'out_l' })).toBe('OUT L');
     expect(resolveVerboseLabel({ id: 'body_shape' })).toBe('BODY SHAPE');
     expect(resolveVerboseLabel({ id: 'roll_speed' })).toBe('ROLL SPEED');
+  });
+
+  // ── THE COLLAPSED-PAIR LABEL POLICY (stereo normalization, PR-2b) ────────
+  //
+  // Two labels, two questions, and the reason `out_l` above still reads
+  // "OUT L" rather than "OUT":
+  //
+  //   * A SINGLE PORT keeps its own label. An uncollapsed rail shows both
+  //     jacks and must distinguish them, so `out_l` is "OUT L" — unchanged,
+  //     on every surface, by this PR and by PR-4.
+  //   * A COLLAPSED PAIR (PR-4 renders one jack for a derived stereo pair)
+  //     labels from the pair's shared STEM, which is derived ONCE in
+  //     $lib/graph/stereo-pairs and rendered through this same resolver.
+  //
+  // Pinned here so the two cannot be conflated later and so the collapsed
+  // form is a DECISION in the record before the surface that draws it exists.
+  it('a COLLAPSED stereo pair labels from its shared stem, not from either side', () => {
+    const stem = (left: string): string =>
+      resolveVerboseLabel({ id: stereoPairStemId({ left }) ?? left });
+    expect(stem('out_l')).toBe('OUT'); // vs 'OUT L' for the lone port
+    expect(stem('masterL')).toBe('MASTER');
+    expect(stem('in_l')).toBe('IN');
+    // sidecar's `audio_l_in` collapses to the stem `audio_in`, which this
+    // resolver then renders 'AUDIO' — the SAME direction-collision rule the
+    // test above states (the rail + glyph disambiguate, not the text). The
+    // collapsed label inherits that policy rather than re-deciding it.
+    expect(stem('audio_l_in')).toBe('AUDIO');
+    // A STEMLESS pair (charlottes-echos declares bare `L`/`R`) has no stem to
+    // label from — stereoPairStemId returns null rather than inventing one, so
+    // the caller has to source the label elsewhere. Asserted so the null is a
+    // documented outcome, not an accident.
+    expect(stereoPairStemId({ left: 'L' })).toBeNull();
   });
 
   it('the DIRECTION collision is disambiguated by rail, not by text (stated policy)', () => {

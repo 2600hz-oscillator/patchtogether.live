@@ -33,6 +33,7 @@
 
 import { resolveVerboseLabel } from '$lib/ui/patch-panel-labels';
 import { domainClassForCable, type SignalDomain } from './module-shell-model';
+import { derivedStereoPairs, type StereoPairDefLike } from '$lib/graph/stereo-pairs';
 import type { ModuleFace } from '$lib/graph/types';
 
 /** The minimal port shape the rear-card model reads (any-domain PortDef). */
@@ -47,8 +48,14 @@ export interface RearPortLike {
 
 /** The minimal def shape the rear-card model reads. */
 export interface RearDefLike {
+  /** Module type id — read ONLY to resolve COLLAPSE_EXEMPT entries in the
+   *  shared stereo-pair derivation (a def with no type matches none of them). */
+  type?: string;
   inputs?: readonly RearPortLike[];
   outputs?: readonly RearPortLike[];
+  /** Declared stereo tuples — consumed via $lib/graph/stereo-pairs, never
+   *  re-interpreted here. */
+  stereoPairs?: readonly (readonly [string, string])[];
   params?: readonly { id: string; label?: string }[];
   face?: ModuleFace;
   docs?: {
@@ -174,18 +181,41 @@ function makeHole(
   };
 }
 
-/** Mark stereo L/R pairs on the outputs rail: consecutive ids whose stems
- *  match after stripping a trailing l/r (out_l/out_r, in_l/in_r, outL/outR). */
-function markStereoPairs(outs: RearHole[]): void {
-  const stem = (id: string): { stem: string; side: 'l' | 'r' } | null => {
-    const m = id.toLowerCase().match(/^(.*?)_?([lr])$/);
-    if (!m) return null;
-    return { stem: m[1], side: m[2] as 'l' | 'r' };
-  };
+/**
+ * Mark stereo L/R pairs on the outputs rail.
+ *
+ * This USED TO BE the fifth independent pairing heuristic in the app: a stem
+ * regex (`/^(.*?)_?([lr])$/`) over ADJACENT outputs, blind both to a def's
+ * `stereoPairs` declaration and to the port's CABLE TYPE. It was wrong in both
+ * directions and shipped that way:
+ *
+ *   • FALSE POSITIVE — `gamepad`'s d-pad buttons `dl` / `dr` are GATE-typed
+ *     (⬅ / ⮕). The regex read them as one stereo pair and the rail drew a
+ *     pair tie between two directions on a joypad.
+ *   • FALSE NEGATIVE — `sidecar`'s `audio_l_out` / `audio_r_out` and
+ *     `audioIn`'s `audio_l_out` / `audio_r_out` are DECLARED stereo pairs, but
+ *     the ids do not END in l/r, so the regex never saw them.
+ *
+ * It now asks the one derivation (`derivedStereoPairs`), which reads
+ * declarations ∪ the id-token fallback over AUDIO-typed ports only, minus the
+ * named COLLAPSE_EXEMPT set (`rings`' odd/even timbre taps).
+ *
+ * ADJACENCY IS STILL REQUIRED — `pairWithPrev` means "tie me to the hole
+ * BEFORE me on the rail", so a derived pair whose two holes are not
+ * consecutive would draw a tie between the wrong two jacks. The derivation
+ * decides WHICH ports are a pair; the rail's own order still decides whether
+ * the tie can be drawn. (No registry module hits that case today — asserted in
+ * stereo-pairs.test.ts so the day one does, it is a red test and not a
+ * mis-drawn faceplate.)
+ */
+function markStereoPairs(outs: RearHole[], def: RearDefLike): void {
+  const partnerOfRight = new Map(
+    derivedStereoPairs(def as StereoPairDefLike)
+      .filter((p) => p.direction === 'output')
+      .map((p) => [p.right, p.left]),
+  );
   for (let i = 1; i < outs.length; i++) {
-    const a = stem(outs[i - 1].portId);
-    const b = stem(outs[i].portId);
-    if (a && b && a.stem === b.stem && a.side === 'l' && b.side === 'r') {
+    if (partnerOfRight.get(outs[i].portId) === outs[i - 1].portId) {
       outs[i].pairWithPrev = true;
     }
   }
@@ -323,7 +353,7 @@ export function rearFieldPlan(def: RearDefLike): RearFieldPlan {
   }
 
   const outs = outputs.map((p) => hole(p, 'output'));
-  markStereoPairs(outs);
+  markStereoPairs(outs, def);
 
   const holeCount =
     bands.reduce((n, b) => n + b.holes.length + b.clusters.reduce((m, c) => m + c.holes.length, 0), 0) +

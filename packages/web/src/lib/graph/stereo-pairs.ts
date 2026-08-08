@@ -1,0 +1,353 @@
+// packages/web/src/lib/graph/stereo-pairs.ts
+//
+// THE SINGLE SOURCE OF TRUTH for "are these two ports one stereo L/R pair?".
+//
+// WHY THIS EXISTS
+// ---------------
+// The app answered that question in FIVE independent places, with five
+// different rules and five different answers:
+//
+//   1. stereo-autowire.ts `findStereoSibling`    — DECLARED stereoPairs only.
+//   2. patch-convenience.ts `resolveMainAudioOut` — declared, ELSE the first
+//      left-ish + first right-ish audio out (a MAIN-pair resolver, so it stops
+//      at one pair and never stem-matches).
+//   3. patch-convenience.ts `resolveMainAudioIn`  — the same, input side.
+//   4. rear-card-model.ts `markStereoPairs`       — a stem regex over ADJACENT
+//      outputs, blind to declarations AND to the port's cable type.
+//   5. docs/doc-index.ts `stereoPairOf`           — declared only, off the
+//      REGEX-PARSED manifest rather than the live def (so a computed
+//      declaration — mixmstrs — was simply missing).
+//
+// Any wiring or UI change that depends on pairing has to be able to name ONE
+// answer. This module is it. It is deliberately behavior-invisible on landing:
+// it derives the map and pins it; the consumers move over one at a time.
+//
+// THE DERIVATION
+// --------------
+//   allStereoPairs(def) = DECLARED `stereoPairs` ∪ the id-token fallback,
+//                         AUDIO-typed ports ONLY, resolved PER DIRECTION.
+//   derivedStereoPairs(def) = allStereoPairs(def) − COLLAPSE_EXEMPT
+//
+// AUDIO-ONLY is load-bearing, not a convenience: `stereovca` declares
+// `strength_l` / `strength_r` as **cv** inputs — independent per-channel ring
+// depth. They read as a perfect L/R token pair and they are NOT one signal;
+// the audio-only rule is what keeps them two jacks without needing an
+// exemption. (Verified by test, not assumed — see stereo-pairs.test.ts.)
+//
+// PER DIRECTION is also load-bearing: a def carries ONE `stereoPairs` set
+// shared by inputs and outputs (charlottes-echos declares `['L','R']` and has
+// `L`/`R` on BOTH rails), so a pair is only meaningful once a direction is
+// fixed. Consumers ask about a rail, never about the def as a whole.
+//
+// TWO LISTS, SEPARATELY CONSULTED — do not merge them:
+//   * COLLAPSE_EXEMPT (here) — semantic non-pairs that must keep TWO jacks.
+//   * AUTOWIRE — unchanged, and it still reads DECLARED pairs via
+//     stereo-autowire's findStereoSibling. `rings` is exactly why: its
+//     `['odd','even']` outputs are two different timbre taps that must not
+//     collapse into one jack, yet its declared-pair autowire is shipped
+//     behavior, pinned by the e2e "stereo source L → stereo target L
+//     auto-wires R too (rings odd/even → cofefve inL/inR)" in
+//     e2e/tests/stereo-autowire.spec.ts. Collapsing and autowiring are
+//     different questions about the same tuple.
+//
+// PURITY — no Svelte / SvelteFlow / Yjs / registry imports. Reads only the
+// passed def, exactly like stereo-autowire.ts and rear-card-model.ts.
+
+/** The minimal port shape this module reads (any-domain PortDef assignable). */
+export interface StereoPortLike {
+  id: string;
+  type: string;
+}
+
+/** The minimal def shape this module reads (any AudioModuleDef / VideoModuleDef
+ *  assignable). `type` is optional so synthetic fixtures work — but a def with
+ *  NO type can never match a COLLAPSE_EXEMPT entry, by construction. */
+export interface StereoPairDefLike {
+  type?: string;
+  inputs?: readonly StereoPortLike[];
+  outputs?: readonly StereoPortLike[];
+  stereoPairs?: readonly (readonly [string, string])[];
+}
+
+export type PortDirection = 'input' | 'output';
+
+/** How a pair was established. `declared` wins when both routes agree. */
+export type StereoPairSource = 'declared' | 'token';
+
+export interface StereoPair {
+  /** The LEFT port id. */
+  left: string;
+  /** The RIGHT port id. */
+  right: string;
+  /** Which rail the pair lives on — inputs and outputs resolve separately. */
+  direction: PortDirection;
+  /** `declared` = a `stereoPairs` tuple; `token` = the L/R id-token fallback. */
+  source: StereoPairSource;
+}
+
+// ---------------- id tokenization (THE canonical copy) ----------------
+//
+// LIFTED from patch-convenience.ts, which now imports from here. Two copies of
+// this vocabulary is the exact bug class this module exists to kill, so there
+// is one definition and every consumer imports it.
+
+/** L side words for id-token stereo detection when a def declares no
+ *  stereoPairs (audioIn, stereovca, twotracks, …). */
+export const LEFT_WORDS: ReadonlySet<string> = new Set<string>(['l', 'left']);
+/** R side words — the mirror of LEFT_WORDS. */
+export const RIGHT_WORDS: ReadonlySet<string> = new Set<string>(['r', 'right']);
+
+/** Split a port id into lowercase word tokens, splitting BOTH on separators
+ *  and on camelCase humps: `out_l` → ['out','l'], `inL` → ['in','l'],
+ *  `audio_l_in` → ['audio','l','in'], `ch1L` → ['ch1','l']. */
+export function idWords(id: string): string[] {
+  return id
+    .split(/[^a-zA-Z0-9]+/)
+    .flatMap((seg) =>
+      // split camelCase too: inL → ['in','L']
+      seg.replace(/([a-z0-9])([A-Z])/g, '$1 $2').split(/\s+/),
+    )
+    .filter(Boolean)
+    .map((w) => w.toLowerCase());
+}
+
+/**
+ * The L/R side a port id denotes, or null. TOKEN-based, never substring:
+ * `signal` ends in "l" but tokenizes to ['signal'], so it is not a left. A
+ * port carrying BOTH an l and an r token is ambiguous → null.
+ */
+export function stereoSideOfId(id: string): 'l' | 'r' | null {
+  const words = idWords(id);
+  const l = words.some((w) => LEFT_WORDS.has(w));
+  const r = words.some((w) => RIGHT_WORDS.has(w));
+  if (l === r) return null; // neither, or contradictory
+  return l ? 'l' : 'r';
+}
+
+/** The id's tokens with its side token removed, or null when it has no
+ *  unambiguous side. The shared basis of the pair KEY and the pair LABEL. */
+function stemTokens(id: string): string[] | null {
+  const side = stereoSideOfId(id);
+  if (!side) return null;
+  const words = idWords(id);
+  const set = side === 'l' ? LEFT_WORDS : RIGHT_WORDS;
+  const at = words.findIndex((w) => set.has(w));
+  return [...words.slice(0, at), ...words.slice(at + 1)];
+}
+
+/**
+ * The pair STEM KEY of a sided port id — the id with its side token removed,
+ * so the two halves of a pair share a key: `out_l`/`out_r` → 'out',
+ * `masterL`/`masterR` → 'master', `audio_l_in`/`audio_r_in` → 'audioin',
+ * `L`/`R` → '' (charlottes-echos; an empty stem is a legitimate key).
+ * Returns null when the id has no unambiguous side.
+ *
+ * This is a matching KEY, not a label — separators are dropped so
+ * `audio_l_in` and `audioLIn` collide as they should. For the human-facing
+ * collapsed label see `stereoPairStemId`.
+ */
+export function stereoStemOfId(id: string): string | null {
+  return stemTokens(id)?.join('') ?? null;
+}
+
+// ---------------- COLLAPSE exemptions (DENY BY DEFAULT, named per pair) ----------------
+
+/**
+ * Semantic NON-pairs: two audio ports the derivation reads as one stereo pair
+ * that are in truth two independent signals and must keep TWO jacks.
+ *
+ * Keyed by the EXACT `<type>:<direction>:<left>+<right>` triple — never a bare
+ * module name — so a NEW pair appearing on an already-listed module still
+ * reddens the golden. Every entry carries the reason it is here.
+ *
+ * ANCHORED TO THE ARTIFACT: `stereo-pairs.test.ts` fails if an entry names a
+ * pair the live registry no longer derives. A stale exemption is an exemption
+ * nobody is watching, and it silently re-exempts the next regression.
+ *
+ * ⚠ This list does NOT govern autowire. `rings` keeps its declared-pair
+ * autowire (shipped, e2e-pinned at stereo-autowire.spec.ts:90) — autowire
+ * reads DECLARED pairs through stereo-autowire's findStereoSibling and never
+ * consults this set.
+ */
+export const COLLAPSE_EXEMPT: ReadonlyMap<string, string> = new Map([
+  [
+    'rings:output:odd+even',
+    "RINGS' two resonator taps are different TIMBRES (odd vs even partials), " +
+      'not the two sides of one image. They must stay two jacks. The declared ' +
+      'tuple still drives autowire, which is shipped behavior.',
+  ],
+]);
+
+/** The COLLAPSE_EXEMPT key for a pair — the exact (module, direction, pair)
+ *  triple. A def with no `type` can never produce a matching key. */
+export function collapseExemptKey(
+  moduleType: string | undefined,
+  pair: Pick<StereoPair, 'left' | 'right' | 'direction'>,
+): string {
+  return `${moduleType ?? '?'}:${pair.direction}:${pair.left}+${pair.right}`;
+}
+
+// ---------------- the derivation ----------------
+
+function railOf(def: StereoPairDefLike, direction: PortDirection): readonly StereoPortLike[] {
+  return (direction === 'input' ? def.inputs : def.outputs) ?? [];
+}
+
+/**
+ * Every stereo pair the app can derive for `def`, BEFORE exemptions — the
+ * ARTIFACT the exemption list has to explain. Declared tuples first (in
+ * declaration order), then token-derived pairs the declarations did not
+ * already cover, per direction, inputs before outputs.
+ *
+ * AUDIO-typed ports only. A declared tuple whose ports are not both audio on
+ * the rail under test yields nothing there (that is the rule that keeps
+ * cv-typed L/R jacks — stereovca's strength_l/strength_r — independent).
+ *
+ * ⚠ SCOPE — what this CANNOT see, stated so a green run is not read as more
+ * than it is:
+ *   • a pair whose two ids share NO l/r token and carry NO declaration
+ *     (scope's `ch1`/`ch2`, synesthesia's band taps, es9's `in1..in14`) — such
+ *     a pair is invisible here and therefore stays two jacks by default, which
+ *     is the safe direction;
+ *   • a stem with MORE than one left or more than one right (ambiguous) — it
+ *     is skipped, and `ambiguousStereoStems()` reports it so the count is
+ *     ratcheted rather than silently zero;
+ *   • anything a CARD hardcodes. This reads the DEF; a card that hand-lists
+ *     L/R descriptors can still disagree with it (the backdraft class). The
+ *     PatchPanel-central collapse in PR-4 is what removes that second source.
+ */
+export function allStereoPairs(def: StereoPairDefLike): StereoPair[] {
+  const out: StereoPair[] = [];
+
+  for (const direction of ['input', 'output'] as const) {
+    const ports = railOf(def, direction).filter((p) => p.type === 'audio');
+    const ids = new Set(ports.map((p) => p.id));
+    /** Ports already claimed by a pair on THIS rail — a port is in at most one
+     *  pair by construction, not by luck (asserted in the test too). */
+    const claimed = new Set<string>();
+
+    // 1) DECLARED tuples — authoritative, naming-agnostic, declaration order.
+    //    Counted only on a rail where BOTH ports exist AND are audio-typed.
+    for (const [a, b] of def.stereoPairs ?? []) {
+      if (!ids.has(a) || !ids.has(b)) continue;
+      if (claimed.has(a) || claimed.has(b)) continue;
+      claimed.add(a);
+      claimed.add(b);
+      out.push({ left: a, right: b, direction, source: 'declared' });
+    }
+
+    // 2) TOKEN fallback — stem-matched, exactly one left + one right per stem,
+    //    over the ports no declaration already claimed.
+    const byStem = new Map<string, { l: string[]; r: string[] }>();
+    for (const p of ports) {
+      const side = stereoSideOfId(p.id);
+      if (!side) continue;
+      const stem = stereoStemOfId(p.id)!;
+      let slot = byStem.get(stem);
+      if (!slot) byStem.set(stem, (slot = { l: [], r: [] }));
+      slot[side].push(p.id);
+    }
+    for (const { l, r } of byStem.values()) {
+      if (l.length !== 1 || r.length !== 1) continue; // ambiguous → skip
+      const [left] = l;
+      const [right] = r;
+      // A declaration is the STRONGER claim: if either side is already spoken
+      // for, the fallback stays out of it rather than inventing a second pair.
+      if (claimed.has(left) || claimed.has(right)) continue;
+      claimed.add(left);
+      claimed.add(right);
+      out.push({ left, right, direction, source: 'token' });
+    }
+  }
+
+  return out;
+}
+
+/**
+ * Stems on `def` that the token fallback REFUSED because the rail carries more
+ * than one left or more than one right for that stem. Reported so the blind
+ * spot is a ratcheted number instead of an unstated zero.
+ */
+export function ambiguousStereoStems(def: StereoPairDefLike): string[] {
+  const found: string[] = [];
+  for (const direction of ['input', 'output'] as const) {
+    const byStem = new Map<string, { l: number; r: number }>();
+    for (const p of railOf(def, direction)) {
+      if (p.type !== 'audio') continue;
+      const side = stereoSideOfId(p.id);
+      if (!side) continue;
+      const stem = stereoStemOfId(p.id)!;
+      let slot = byStem.get(stem);
+      if (!slot) byStem.set(stem, (slot = { l: 0, r: 0 }));
+      slot[side] += 1;
+    }
+    for (const [stem, { l, r }] of byStem) {
+      if (l > 1 || r > 1) found.push(`${direction}:${stem}`);
+    }
+  }
+  return found.sort();
+}
+
+/**
+ * THE ANSWER every consumer asks for: the stereo pairs of `def` that should be
+ * treated as ONE stereo signal — `allStereoPairs` minus COLLAPSE_EXEMPT.
+ */
+export function derivedStereoPairs(def: StereoPairDefLike): StereoPair[] {
+  return allStereoPairs(def).filter((p) => !COLLAPSE_EXEMPT.has(collapseExemptKey(def.type, p)));
+}
+
+/** The derived pair containing `portId` on `direction`'s rail, or null. */
+export function stereoPairForPort(
+  def: StereoPairDefLike,
+  portId: string,
+  direction: PortDirection,
+): StereoPair | null {
+  for (const p of derivedStereoPairs(def)) {
+    if (p.direction !== direction) continue;
+    if (p.left === portId || p.right === portId) return p;
+  }
+  return null;
+}
+
+/** Which side of its derived pair `portId` is, or null when it is unpaired. */
+export function stereoSideForPort(
+  def: StereoPairDefLike,
+  portId: string,
+  direction: PortDirection,
+): 'left' | 'right' | null {
+  const pair = stereoPairForPort(def, portId, direction);
+  if (!pair) return null;
+  return pair.left === portId ? 'left' : 'right';
+}
+
+/** Deterministic `<direction>:<left>+<right>[:token]` line for a pair — the
+ *  golden's unit. Declared pairs carry no suffix so a declaration ADDED for an
+ *  already-token-derived pair shows up as a line change, not silence. */
+export function serializeStereoPair(p: StereoPair): string {
+  return `${p.direction}:${p.left}+${p.right}${p.source === 'token' ? ':token' : ''}`;
+}
+
+/**
+ * THE COLLAPSED-LABEL POLICY, as data rather than as prose.
+ *
+ * When PR-4 renders a derived pair as ONE jack, that jack is labelled from the
+ * pair's shared STEM, not from either member: `out_l`+`out_r` → `out` → "OUT",
+ * `masterL`+`masterR` → `master` → "MASTER", `audio_l_in`+`audio_r_in` →
+ * `audio_in` → "AUDIO IN". The individual member labels are UNCHANGED — an
+ * uncollapsed rail still reads "OUT L" / "OUT R", which is why
+ * `resolveVerboseLabel('out_l') === 'OUT L'` stays true.
+ *
+ * Returns null when the pair has NO stem of its own (charlottes-echos declares
+ * bare `L`/`R`). That is deliberately not papered over with a default: a
+ * stemless pair has to take its collapsed label from somewhere else (the
+ * port's explicit `label`, or the rail), and returning null forces the caller
+ * to say so instead of silently rendering an empty jack.
+ *
+ * The id is returned UNDERSCORED and lowercase — the shape the shared
+ * `resolveVerboseLabel` already knows how to render — so this module stays
+ * free of any UI import.
+ */
+export function stereoPairStemId(pair: Pick<StereoPair, 'left'>): string | null {
+  const rest = stemTokens(pair.left);
+  return rest && rest.length > 0 ? rest.join('_') : null;
+}

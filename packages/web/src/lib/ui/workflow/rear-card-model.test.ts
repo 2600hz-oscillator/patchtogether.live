@@ -21,6 +21,12 @@ import { vcaDef } from '$lib/audio/modules/vca';
 import { lfoDef } from '$lib/audio/modules/lfo';
 import { cloudseedDef } from '$lib/audio/modules/cloudseed';
 import { delayDef } from '$lib/audio/modules/delay';
+// The three modules whose outputs-rail tie MOVES under the pairing
+// unification, plus rings (derived-but-exempt) — see the last describe block.
+import { gamepadDef } from '$lib/audio/modules/gamepad';
+import { sidecarDef } from '$lib/audio/modules/sidecar';
+import { audioInDef } from '$lib/audio/modules/audioin';
+import { ringsDef } from '$lib/audio/modules/rings';
 
 const canConnect = (s: string, d: { type: string; accepts?: readonly string[] }) =>
   canConnectToPort(s as CableType, d as { type: CableType; accepts?: readonly CableType[] });
@@ -438,5 +444,58 @@ describe('compatibility dim predicate (spec §2.2) — mirrors the commit gate',
     expect(
       rearHoleAcceptsCarry({ direction: 'input', cable: 'audio' }, ['cv'], carried, canConnect),
     ).toBe(true);
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// THE OUTPUTS-RAIL PAIR TIE, after the fifth-heuristic unification (PR-2b).
+//
+// `markStereoPairs` used to be its own stem regex (`/^(.*?)_?([lr])$/`) over
+// ADJACENT outputs — blind to `stereoPairs` declarations AND to the port's
+// cable type. It now asks $lib/graph/stereo-pairs, the one derivation. That
+// changes the tie on EXACTLY three registry modules, all of them corrections;
+// every other module (incl. tidyVco / vca / adsr / kickdrum / cloudseed,
+// pinned above) is byte-identical. Pinned so the corrections cannot regress
+// and so the blast radius stays a measured number rather than a claim.
+// ────────────────────────────────────────────────────────────────────────────
+describe('outputs-rail stereo tie: unified onto derivedStereoPairs', () => {
+  const rightTies = (def: RearDefLike): string[] =>
+    rearFieldPlan(def).outputs.filter((h) => h.pairWithPrev).map((h) => h.portId);
+
+  it('FALSE POSITIVE fixed: gamepad d-pad left/right are GATE buttons, not a stereo pair', () => {
+    // `dl` / `dr` end in l / r, so the old regex tied them on the outputs rail
+    // of a joypad. Token-based side detection does not read `dl` as a left,
+    // and the audio-only rule would exclude them anyway — two reasons, and
+    // the old heuristic had neither.
+    const outs = gamepadDef.outputs as unknown as { id: string; type: string }[];
+    expect(outs.filter((p) => p.id === 'dl' || p.id === 'dr').map((p) => p.type)).toEqual([
+      'gate',
+      'gate',
+    ]);
+    expect(rightTies(gamepadDef as unknown as RearDefLike)).toEqual([]);
+  });
+
+  it('FALSE NEGATIVE fixed: sidecar audio_l_out/audio_r_out is a DECLARED pair', () => {
+    // The ids do not END in l/r, so the old regex could never see the pair —
+    // not even though the def declares it outright.
+    expect(sidecarDef.stereoPairs).toContainEqual(['audio_l_out', 'audio_r_out']);
+    expect(rightTies(sidecarDef as unknown as RearDefLike)).toEqual(['audio_r_out']);
+  });
+
+  it('FALSE NEGATIVE fixed: audioIn audio_l_out/audio_r_out ties from its id tokens', () => {
+    expect(rightTies(audioInDef as unknown as RearDefLike)).toEqual(['audio_r_out']);
+  });
+
+  it('rings odd/even is COLLAPSE_EXEMPT: two timbre taps, no tie', () => {
+    // Derived (declared tuple, both audio, adjacent) but deliberately exempt.
+    // The DECLARATION is untouched, so its shipped autowire is unaffected —
+    // collapse and autowire read different lists, on purpose.
+    expect(ringsDef.stereoPairs).toEqual([['odd', 'even']]);
+    expect(rightTies(ringsDef as unknown as RearDefLike)).toEqual([]);
+  });
+
+  it('UNCHANGED: a declared L/R pair still ties (tidyVco); a non-pair still does not (vca)', () => {
+    expect(rightTies(tidyVcoDef as unknown as RearDefLike)).toEqual(['out_r']);
+    expect(rightTies(vcaDef as unknown as RearDefLike)).toEqual([]);
   });
 });
