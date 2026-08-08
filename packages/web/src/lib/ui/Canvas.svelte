@@ -347,7 +347,13 @@
   import type { CableType, Edge, PortDef, ModuleNode } from '$lib/graph/types';
   import { canConnect } from '$lib/graph/types';
   import { validateEdge } from '$lib/graph/validate-edge';
-  import { planStereoAutowire } from '$lib/graph/stereo-autowire';
+  import {
+    audioEdgeId,
+    expandLegGroups,
+    planAudioCommit,
+    type ChannelMode,
+    type StereoDef,
+  } from '$lib/graph/stereo-autowire';
   import { computeEdgeAlignedRect } from '$lib/ui/patch-menu-position';
   import { getNodePosition, setNodePosition } from '$lib/multiplayer/layouts';
   import {
@@ -3655,46 +3661,95 @@
     return validateEdge(candidate, Object.values(patch.nodes) as ModuleNode[], defLookup).ok;
   }
 
-  /** Module-wide stereo L/R auto-wire (WORKSTREAM A item 6). After a primary
-   *  edge `from.OUTPUT → to.INPUT` is written, if BOTH the source and target
-   *  declare a matching stereoPairs sibling AND the sibling target input is
-   *  unpatched, write the SECOND (sibling) edge too — so out_l→in_l implies
-   *  out_r→in_r. Naming-agnostic (resolves via stereoPairs tuples, never name
-   *  patterns); a mono source leaves the sibling unpatched (engine normals R←L).
+  /** The def a leg-group plan reads for a node, through the SAME three-registry
+   *  lookup the commit paths validate with. Audio defs are where nearly all
+   *  stereo pairs live, but not all: `videobox` / `videovarispeed` carry
+   *  audio-typed `audio_l`/`audio_r` OUTPUTS on VIDEO defs, and those are real
+   *  stereo cables. Pairing is audio-typed-ports-only inside stereo-pairs, so a
+   *  video-typed L/R pair still resolves to nothing here. */
+  function stereoDefForNode(nodeId: string): StereoDef | undefined {
+    const n = patch.nodes[nodeId];
+    return n ? (defLookup(n.type) as StereoDef | undefined) : undefined;
+  }
+
+  /** Detach whatever cable is seated on an INPUT patch point — WHOLE LEG GROUPS
+   *  included. The one-motion rewire (grab a patched input, drag it elsewhere)
+   *  fires this; without the expansion the user picks up T.inL, leaves T.inR
+   *  still fed by the old source, and re-patches half a stereo cable onto a new
+   *  one. Runs its own LOCAL_ORIGIN transact; returns the number of edges gone. */
+  function detachInputLegGroup(nodeId: string, portId: string): number {
+    const seeds: string[] = [];
+    for (const [edgeId, edge] of Object.entries(patch.edges)) {
+      if (edge && edge.target.nodeId === nodeId && edge.target.portId === portId) {
+        seeds.push(edge.id ?? edgeId);
+      }
+    }
+    if (seeds.length === 0) return 0;
+    const ids = expandLegGroups(seeds, patch.edges, stereoDefForNode);
+    let removed = 0;
+    ydoc.transact(() => {
+      for (const id of ids) {
+        if (!patch.edges[id]) continue;
+        delete patch.edges[id];
+        removed++;
+      }
+    }, LOCAL_ORIGIN);
+    return removed;
+  }
+
+  /** THE ONE audio commit writer. Every hand-made cable — drag, carry, picker —
+   *  lands here, and it writes the whole LEG GROUP the planner returns rather
+   *  than a single edge plus an optional sibling.
    *
-   *  MUST be called INSIDE the same ydoc.transact as the primary edge write so
-   *  both edges land atomically. Only AUDIO module defs carry stereoPairs, so we
-   *  resolve via getModuleDef (the audio registry) — group/exposed/video
-   *  endpoints have no stereoPairs and fall through to a no-op. */
-  function writeStereoSiblingEdge(
+   *  The policy is `$lib/graph/stereo-autowire`'s and is stated there in full;
+   *  the part worth repeating at the call site is that a STEREO source into a
+   *  MONO input writes BOTH legs (dual-mono, owner 2026-08-07) — it is not a
+   *  sum and not a single leg, and there is no runtime check anywhere asking
+   *  whether the two legs "are really the same signal".
+   *
+   *  Occupancy is LEG-LEVEL (Q4): the plan evicts exactly the edges seated on
+   *  the input ports it writes to, so a full-stereo patch replaces both legs of
+   *  the target while an only-L patch replaces only the L leg.
+   *
+   *  MUST be called INSIDE a ydoc.transact so the whole group lands atomically —
+   *  one CRDT update, one undo entry, no frame where half a cable exists. */
+  function writeAudioLegGroup(
     from: { nodeId: string; portId: string },
     to: { nodeId: string; portId: string },
+    sourceType: CableType,
+    targetType: CableType,
+    channelMode: ChannelMode = 'both',
   ): void {
-    const srcNode = patch.nodes[from.nodeId];
-    const dstNode = patch.nodes[to.nodeId];
-    if (!srcNode || !dstNode) return;
-    const fromDef = getModuleDef(srcNode.type);
-    const toDef = getModuleDef(dstNode.type);
-    if (!fromDef || !toDef) return; // only audio defs declare stereoPairs
-    const plan = planStereoAutowire({
+    const plan = planAudioCommit({
+      fromNodeId: from.nodeId,
       fromPortId: from.portId,
-      fromDef,
+      fromDef: stereoDefForNode(from.nodeId),
       toNodeId: to.nodeId,
       toPortId: to.portId,
-      toDef,
+      toDef: stereoDefForNode(to.nodeId),
       edges: patch.edges,
+      sourceType,
+      targetType,
+      channelMode,
     });
-    if (!plan) return;
-    const sibId = `e-${from.nodeId}-${plan.siblingFromPortId}-${to.nodeId}-${plan.siblingToPortId}`;
-    if (patch.edges[sibId]) return;
-    patch.edges[sibId] = {
-      id: sibId,
-      source: { nodeId: from.nodeId, portId: plan.siblingFromPortId },
-      target: { nodeId: to.nodeId, portId: plan.siblingToPortId },
-      sourceType: plan.sourceType,
-      targetType: plan.targetType,
-    };
-    trace(`stereo-autowire ${from.nodeId}.${plan.siblingFromPortId} → ${to.nodeId}.${plan.siblingToPortId}`);
+    for (const id of plan.replaceEdgeIds) {
+      if (patch.edges[id]) delete patch.edges[id];
+    }
+    const wrote: string[] = [];
+    for (const leg of plan.legs) {
+      if (patch.edges[leg.id]) continue;
+      patch.edges[leg.id] = {
+        id: leg.id,
+        source: { nodeId: from.nodeId, portId: leg.fromPortId },
+        target: { nodeId: to.nodeId, portId: leg.toPortId },
+        sourceType: leg.sourceType,
+        targetType: leg.targetType,
+      };
+      wrote.push(`${leg.channel[0]}:${leg.fromPortId}→${leg.toPortId}`);
+    }
+    if (wrote.length > 1) {
+      trace(`leg-group ${from.nodeId}→${to.nodeId} [${wrote.join(', ')}]`);
+    }
   }
 
   /** True when a node's card renders the redesigned PatchPanel (its handles
@@ -3869,7 +3924,12 @@
     const sourceType: CableType = srcExposed?.cableType ?? srcPort?.type ?? 'audio';
     const targetType: CableType = dstExposed?.cableType ?? dstPort?.type ?? sourceType;
 
-    const id = `e-${connection.source}-${connection.sourceHandle}-${connection.target}-${connection.targetHandle}`;
+    const id = audioEdgeId(
+      connection.source,
+      connection.sourceHandle,
+      connection.target,
+      connection.targetHandle,
+    );
     if (patch.edges[id]) return;
 
     // FW3 final structural gate (Phase 4a). The endpoints/types/exposed
@@ -3897,27 +3957,15 @@
     }
 
     ydoc.transact(() => {
-      // Replace any existing edge targeting the same input.
-      for (const [edgeId, edge] of Object.entries(patch.edges)) {
-        if (
-          edge &&
-          edge.target.nodeId === connection.target &&
-          edge.target.portId === connection.targetHandle
-        ) {
-          delete patch.edges[edgeId];
-        }
-      }
-      patch.edges[id] = {
-        id,
-        source: { nodeId: connection.source!, portId: connection.sourceHandle! },
-        target: { nodeId: connection.target!, portId: connection.targetHandle! },
-        sourceType,
-        targetType,
-      };
-      // Stereo L/R auto-wire — write the sibling edge in the SAME transact.
-      writeStereoSiblingEdge(
+      // ONE writer: leg-group plan + LEG-LEVEL occupancy eviction + every leg,
+      // atomically. (The eviction that used to live inline here — "delete every
+      // edge targeting the same input" — is now the planner's replaceEdgeIds,
+      // which is scoped to the input ports THIS plan writes to.)
+      writeAudioLegGroup(
         { nodeId: connection.source!, portId: connection.sourceHandle! },
         { nodeId: connection.target!, portId: connection.targetHandle! },
+        sourceType,
+        targetType,
       );
     }, LOCAL_ORIGIN);
     trace(`connect ${connection.source}.${connection.sourceHandle} → ${connection.target}.${connection.targetHandle}`);
@@ -3939,19 +3987,7 @@
         : null;
     if (params.handleType !== 'target') return;
     if (!params.nodeId || !params.handleId) return;
-    let removed = 0;
-    ydoc.transact(() => {
-      for (const [edgeId, edge] of Object.entries(patch.edges)) {
-        if (
-          edge &&
-          edge.target.nodeId === params.nodeId &&
-          edge.target.portId === params.handleId
-        ) {
-          delete patch.edges[edgeId];
-          removed++;
-        }
-      }
-    }, LOCAL_ORIGIN);
+    const removed = detachInputLegGroup(params.nodeId, params.handleId);
     if (removed > 0) trace(`detached cable from ${params.nodeId}.${params.handleId} (rewiring)`);
   }
 
@@ -4068,19 +4104,7 @@
     // If this is a target-side pickup, immediately detach any cable already
     // on this input — same one-motion-rewire behaviour as drag-start.
     if (params.handleType === 'target') {
-      let removed = 0;
-      ydoc.transact(() => {
-        for (const [edgeId, edge] of Object.entries(patch.edges)) {
-          if (
-            edge &&
-            edge.target.nodeId === params.nodeId &&
-            edge.target.portId === params.handleId
-          ) {
-            delete patch.edges[edgeId];
-            removed++;
-          }
-        }
-      }, LOCAL_ORIGIN);
+      const removed = detachInputLegGroup(params.nodeId, params.handleId);
       if (removed > 0) trace(`detached cable from ${params.nodeId}.${params.handleId} (pickup-rewire)`);
     }
     trace(`pickup-start ${params.nodeId}.${params.handleId}`);
@@ -4093,20 +4117,33 @@
     connectDragState.cancelPickup();
   }
 
-  /** Svelte Flow deleted nodes/edges (Backspace on selection). Mirror to patch. */
+  /** Svelte Flow deleted nodes/edges (Backspace on selection). Mirror to patch.
+   *
+   *  ⚠ The payload names the edges xyflow rendered. A STEREO cable is a LEG
+   *  GROUP of two ordinary edges, and PR-4 dedupes those into ONE rendered
+   *  cable — so deleting the payload verbatim would leave the other leg behind
+   *  as a dangling half-cable with no affordance to remove it. `expandLegGroups`
+   *  widens the id set to the whole group; the wcol detach-suppression then runs
+   *  over the EXPANDED set, or the reconciler would re-add the sibling leg on
+   *  its next pass. */
   function handleDelete(payload: { nodes: FlowNode[]; edges: FlowEdge[] }) {
     if (payload.nodes.length === 0 && payload.edges.length === 0) return;
+    const edgeIds = expandLegGroups(
+      payload.edges.map((e) => e.id),
+      patch.edges,
+      stereoDefForNode,
+    );
     ydoc.transact(() => {
-      for (const e of payload.edges) {
-        const live = patch.edges[e.id];
+      for (const id of edgeIds) {
+        const live = patch.edges[id];
         // MAJOR 1: an EXPLICIT user deletion of a managed (wcol-) cable durably
         // suppresses it (+ its stereo/control-pair siblings via the reconcile's
         // all-or-nothing yield) until the next deliberate column edit.
-        if (live && workflowMode && e.id.startsWith('wcol-e-')) {
+        if (live && workflowMode && id.startsWith('wcol-e-')) {
           const colKey = wcolEdgeColumnKey(live);
-          if (colKey) wcolMarkDetached(e.id, colKey);
+          if (colKey) wcolMarkDetached(id, colKey);
         }
-        if (live) delete patch.edges[e.id];
+        if (live) delete patch.edges[id];
       }
       for (const n of payload.nodes) {
         // Pinned drawer singletons never render as flow nodes, so they
@@ -4516,6 +4553,15 @@
    *  already present on a target port is replaced (occupancy). Unlike
    *  commitCarriedEdge this does NOT auto-fire writeStereoSiblingEdge — the plan
    *  is already explicit (mono→mixer emits both L and R itself). */
+  /** ⚠ LEG GROUPS: this writer does NOT call `writeAudioLegGroup`, and that is
+   *  deliberate. Its input is already a COMPLETE plan from `planSendToMixer` /
+   *  `planClipControl`, which enumerate both legs themselves (a mono source
+   *  fills ch{n}L AND ch{n}R; a stereo source maps L→L, R→R) over the module's
+   *  MAIN pair rather than a clicked port. Running each planned edge back
+   *  through the per-port planner would re-derive siblings that are already in
+   *  the list. The two planners implement ONE matrix and are cross-checked
+   *  against each other in patch-convenience-columns.test.ts ("agrees with
+   *  planAudioCommit on all four rows"), which is what stops them drifting. */
   function commitConvenienceEdges(
     edges: Array<{ sourceNodeId: string; fromPortId: string; targetNodeId: string; toPortId: string }>,
   ): void {
@@ -6083,9 +6129,13 @@
   /** Delete edges through the SHARED removal seam. Identical to handleDelete's
    *  edge branch: one LOCAL_ORIGIN transact (undoable + synced), with the
    *  managed-cable detach suppression so a user-removed wcol- lane link is not
-   *  re-added by the next column reconcile. */
-  function unpatchEdges(edgeIds: string[]): void {
-    if (edgeIds.length === 0) return;
+   *  re-added by the next column reconcile — and the SAME leg-group expansion,
+   *  so the seam removes whole cables no matter which id reached it. (The menu
+   *  already hands over full groups; expanding again is idempotent and keeps
+   *  the guarantee a property of the SEAM rather than of one caller.) */
+  function unpatchEdges(seedEdgeIds: string[]): void {
+    if (seedEdgeIds.length === 0) return;
+    const edgeIds = expandLegGroups(seedEdgeIds, patch.edges, stereoDefForNode);
     let removed = 0;
     ydoc.transact(() => {
       for (const id of edgeIds) {
@@ -6136,13 +6186,7 @@
       // Detach an occupied input when grabbing it (one-motion rewire) —
       // mirrors handleClickConnectStart.
       if (detail.direction === 'input') {
-        ydoc.transact(() => {
-          for (const [edgeId, edge] of Object.entries(patch.edges)) {
-            if (edge && edge.target.nodeId === detail.nodeId && edge.target.portId === detail.portId) {
-              delete patch.edges[edgeId];
-            }
-          }
-        }, LOCAL_ORIGIN);
+        detachInputLegGroup(detail.nodeId, detail.portId);
       }
       connectDragState.beginPickupWithMenu({
         nodeId: detail.nodeId,
@@ -6284,7 +6328,7 @@
     const dstPort = dstDef.inputs.find((p) => p.id === to.portId);
     const sourceType: CableType = srcExposed?.cableType ?? srcPort?.type ?? 'audio';
     const targetType: CableType = dstExposed?.cableType ?? dstPort?.type ?? sourceType;
-    const id = `e-${from.nodeId}-${from.portId}-${to.nodeId}-${to.portId}`;
+    const id = audioEdgeId(from.nodeId, from.portId, to.nodeId, to.portId);
     if (patch.edges[id]) {
       trace(`carry-commit: edge already exists ${id}`);
       return;
@@ -6297,13 +6341,7 @@
       return;
     }
     ydoc.transact(() => {
-      for (const [edgeId, edge] of Object.entries(patch.edges)) {
-        if (edge && edge.target.nodeId === to.nodeId && edge.target.portId === to.portId) {
-          delete patch.edges[edgeId];
-        }
-      }
-      patch.edges[id] = { id, source: from, target: to, sourceType, targetType };
-      writeStereoSiblingEdge(from, to);
+      writeAudioLegGroup(from, to, sourceType, targetType);
     }, LOCAL_ORIGIN);
     trace(`carry-commit ${from.nodeId}.${from.portId} → ${to.nodeId}.${to.portId}`);
   }
@@ -6385,7 +6423,7 @@
     const sourceType: CableType = srcExposed?.cableType ?? srcPort?.type ?? 'audio';
     const targetType: CableType = dstExposed?.cableType ?? dstPort?.type ?? sourceType;
 
-    const id = `e-${from.nodeId}-${from.portId}-${to.nodeId}-${to.portId}`;
+    const id = audioEdgeId(from.nodeId, from.portId, to.nodeId, to.portId);
     if (patch.edges[id]) {
       trace(`patch-to: edge already exists ${id}`);
       return;
@@ -6403,24 +6441,7 @@
       return;
     }
     ydoc.transact(() => {
-      for (const [edgeId, edge] of Object.entries(patch.edges)) {
-        if (
-          edge &&
-          edge.target.nodeId === to.nodeId &&
-          edge.target.portId === to.portId
-        ) {
-          delete patch.edges[edgeId];
-        }
-      }
-      patch.edges[id] = {
-        id,
-        source: from,
-        target: to,
-        sourceType,
-        targetType,
-      };
-      // Stereo L/R auto-wire — write the sibling edge in the SAME transact.
-      writeStereoSiblingEdge(from, to);
+      writeAudioLegGroup(from, to, sourceType, targetType);
     }, LOCAL_ORIGIN);
     trace(`patch-to ${from.nodeId}.${from.portId} → ${to.nodeId}.${to.portId}`);
   }
@@ -6805,6 +6826,15 @@
         setWcolOrder('sends', wcolDrop.sendSlot, insertBottom(wcolOrder('sends', wcolDrop.sendSlot), id));
         wcolClearDetached('s' + wcolDrop.sendSlot);
       }
+      // ⚠ INSERT-ON-CABLE + LEG GROUPS — a KNOWN GAP, named rather than
+      // half-closed. Dropping a module onto a cable splices the ONE leg that
+      // was dropped on; the sibling leg keeps running past the new module. That
+      // is coherent TODAY, because both legs render as separate cables and the
+      // user aimed at one of them. It stops being coherent in PR-4, where the
+      // pair renders as a single cable and "insert on this cable" must splice
+      // the whole group — which also has to decide WHICH port pair of the
+      // inserted module each leg lands on. That belongs with the rendering
+      // dedupe, not here. (insert-on-cable.spec.ts pins today's behaviour.)
       if (splice) {
         delete patch.edges[splice.edge.id];
         const e1id = `e-${splice.edge.source.nodeId}-${splice.edge.source.portId}-${id}-${splice.inPort.id}`;

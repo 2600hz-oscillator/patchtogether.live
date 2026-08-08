@@ -10,6 +10,13 @@
 // We import Carl's driver functions rather than duplicating them because
 // the underlying patch shape and the Yjs transact semantics are identical.
 // Mike adds layout management on top.
+//
+// ⚠ THE EDGE WRITE IS NOT HERE. `.myrobots/stereo-audio-plan/plan.md` cites
+// "mike/driver.ts:79-105" as the AI path that writes audio edges; that range is
+// `organizeAll`'s LAYOUT transact and has never touched `patch.edges`. The only
+// AI edge write is `carl/driver.ts`'s `applyIntent` → `case 'addEdge'`, which
+// `applyIntent` below delegates to — and which now routes through the shared
+// leg-group planner. Read the delegation, not the line number.
 
 import type * as Y from 'yjs';
 import { LOCAL_ORIGIN } from '$lib/graph/store';

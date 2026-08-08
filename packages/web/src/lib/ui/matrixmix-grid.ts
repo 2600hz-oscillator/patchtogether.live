@@ -18,6 +18,7 @@
 
 import type { CableType, Edge, PortDef } from '$lib/graph/types';
 import { canConnectToPort } from '$lib/graph/types';
+import { audioEdgeId } from '$lib/graph/stereo-autowire';
 
 /** One jack on a matrixed module — an input OR an output port. */
 export interface Jack {
@@ -289,13 +290,16 @@ export function confirmMessageFor(
   return null;
 }
 
-/** Stable, deterministic id for the edge a legal cell creates — mirrors the
- *  Canvas/patch-to edge-id convention `e-<src>-<srcPort>-<dst>-<dstPort>` so the
- *  matrix and the drag/patch-to paths address the SAME edge (idempotent
- *  re-patch, and a direct-cell read recognises an edge made by EITHER path). */
+/** Stable, deterministic id for the edge a legal cell creates. The matrix and
+ *  the drag/patch-to paths must address the SAME edge (idempotent re-patch, and
+ *  a direct-cell read recognises an edge made by EITHER path) — so this now
+ *  DELEGATES to the shared `audioEdgeId` rather than restating the template.
+ *  It was a byte-identical second copy, which is precisely the shape that lets
+ *  two id conventions drift apart and then silently stop recognising each
+ *  other's cables. */
 export function matrixEdgeId(
   source: { nodeId: string; portId: string },
   target: { nodeId: string; portId: string },
 ): string {
-  return `e-${source.nodeId}-${source.portId}-${target.nodeId}-${target.portId}`;
+  return audioEdgeId(source.nodeId, source.portId, target.nodeId, target.portId);
 }

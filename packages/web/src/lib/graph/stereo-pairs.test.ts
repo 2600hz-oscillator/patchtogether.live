@@ -53,6 +53,7 @@ import {
   stereoSideOfId,
   stereoPairStemId,
   stereoStemOfId,
+  wiringPairForPort,
   type StereoPairDefLike,
 } from './stereo-pairs';
 
@@ -241,6 +242,34 @@ describe('stereo-pairs: COLLAPSE_EXEMPT is anchored to the live registry', () =>
     // shipped, and e2e-pinned by "stereo source L → stereo target L auto-wires
     // R too (rings odd/even → cofefve inL/inR)" in stereo-autowire.spec.ts.
     expect(rings.stereoPairs).toEqual([['odd', 'even']]);
+  });
+
+  it('the two ENTRY POINTS diverge on rings — collapse says no, wiring says yes', () => {
+    // PR-3's commit planner asks `wiringPairForPort`. If it asked
+    // `stereoPairForPort` instead, rings' shipped autowire would vanish and
+    // the plan would look perfectly reasonable — one leg is a valid plan. This
+    // is the per-port assert that makes reading the wrong list go RED here,
+    // in the unit lane, rather than only in one e2e.
+    const rings = defs.find((d) => d.type === 'rings')!;
+    expect(stereoPairForPort(rings, 'odd', 'output')).toBeNull();
+    expect(wiringPairForPort(rings, 'odd', 'output')).toEqual({
+      left: 'odd', right: 'even', direction: 'output', source: 'declared',
+    });
+    // …and for every NON-exempt pair the two entry points must AGREE, or the
+    // divergence would be a general split rather than the one named exemption.
+    const clouds = defs.find((d) => d.type === 'clouds')!;
+    expect(wiringPairForPort(clouds, 'out_l', 'output')).toEqual(
+      stereoPairForPort(clouds, 'out_l', 'output'),
+    );
+    for (const d of defs) {
+      for (const p of allStereoPairs(d)) {
+        if (COLLAPSE_EXEMPT.has(collapseExemptKey(d.type, p))) continue;
+        expect(
+          wiringPairForPort(d, p.left, p.direction),
+          `${d.type} ${p.direction}:${p.left} must resolve the same on both entry points`,
+        ).toEqual(stereoPairForPort(d, p.left, p.direction));
+      }
+    }
   });
 });
 

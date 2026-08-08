@@ -39,10 +39,16 @@
 // `L`/`R` on BOTH rails), so a pair is only meaningful once a direction is
 // fixed. Consumers ask about a rail, never about the def as a whole.
 //
-// TWO LISTS, SEPARATELY CONSULTED — do not merge them:
+// TWO LISTS, SEPARATELY CONSULTED — do not merge them. They are reached
+// through two DELIBERATELY DIFFERENT entry points, so a call site has to say
+// which question it is asking:
+//   * COLLAPSE  — `derivedStereoPairs` / `stereoPairForPort`. "Render as one
+//     jack?" Exemptions APPLIED.
+//   * WIRING    — `allStereoPairs` / `wiringPairForPort`. "Does patching this
+//     port imply a second cable?" Exemptions NOT applied. This is what the
+//     universal commit planner in `stereo-autowire.ts` reads.
 //   * COLLAPSE_EXEMPT (here) — semantic non-pairs that must keep TWO jacks.
-//   * AUTOWIRE — unchanged, and it still reads DECLARED pairs via
-//     stereo-autowire's findStereoSibling. `rings` is exactly why: its
+//     `rings` is exactly why the two entry points exist: its
 //     `['odd','even']` outputs are two different timbre taps that must not
 //     collapse into one jack, yet its declared-pair autowire is shipped
 //     behavior, pinned by the e2e "stereo source L → stereo target L
@@ -296,17 +302,51 @@ export function derivedStereoPairs(def: StereoPairDefLike): StereoPair[] {
   return allStereoPairs(def).filter((p) => !COLLAPSE_EXEMPT.has(collapseExemptKey(def.type, p)));
 }
 
-/** The derived pair containing `portId` on `direction`'s rail, or null. */
+function pairForPortIn(
+  pairs: readonly StereoPair[],
+  portId: string,
+  direction: PortDirection,
+): StereoPair | null {
+  for (const p of pairs) {
+    if (p.direction !== direction) continue;
+    if (p.left === portId || p.right === portId) return p;
+  }
+  return null;
+}
+
+/**
+ * The COLLAPSE pair containing `portId` on `direction`'s rail, or null — the
+ * question "should these two jacks render as one?".
+ *
+ * ⚠ NOT the question the WIRING layer asks. Use `wiringPairForPort` there. The
+ * two differ by exactly `COLLAPSE_EXEMPT`, and `rings` is why the distinction
+ * has to be made at the call site rather than defaulted: its `odd`/`even` taps
+ * must stay TWO jacks and must STILL auto-wire as a pair. A planner reading
+ * this list would silently drop rings' shipped, e2e-pinned autowire.
+ */
 export function stereoPairForPort(
   def: StereoPairDefLike,
   portId: string,
   direction: PortDirection,
 ): StereoPair | null {
-  for (const p of derivedStereoPairs(def)) {
-    if (p.direction !== direction) continue;
-    if (p.left === portId || p.right === portId) return p;
-  }
-  return null;
+  return pairForPortIn(derivedStereoPairs(def), portId, direction);
+}
+
+/**
+ * The WIRING pair containing `portId` on `direction`'s rail, or null — the
+ * question "does patching this port imply a second cable?".
+ *
+ * Reads `allStereoPairs`: declarations ∪ the id-token fallback, WITHOUT the
+ * collapse exemptions. A pair the UI refuses to merge into one jack is still a
+ * pair the cable planner honours; see the TWO LISTS note at the top of this
+ * file. This is the list `$lib/graph/stereo-autowire`'s commit planner uses.
+ */
+export function wiringPairForPort(
+  def: StereoPairDefLike,
+  portId: string,
+  direction: PortDirection,
+): StereoPair | null {
+  return pairForPortIn(allStereoPairs(def), portId, direction);
 }
 
 /** Which side of its derived pair `portId` is, or null when it is unpaired. */
