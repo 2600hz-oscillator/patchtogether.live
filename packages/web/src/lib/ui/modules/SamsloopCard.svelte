@@ -288,15 +288,17 @@
   }
 
   // `engineCtx.get()` is not reactive, so poll until the engine boots and
-  // then stop. Bounded: 250 ms × 120 = 30 s, after which the seeded 48 kHz
-  // stands for the label only — `startRecording` reads the tap's own rate,
-  // so a recording is never encoded against a guess.
+  // then stop. Bounded twice over — it clears the instant the engine appears,
+  // and gives up after 500 ms × 60 = 30 s so a rack that never starts audio
+  // does not keep 20 cards' worth of timers alive. After that the seeded
+  // 48 kHz stands for the LABEL only: `startRecording` reads the tap's own
+  // rate, so a recording is never encoded against a guess.
   $effect(() => {
     if (refreshCaptureRate()) return;
     let tries = 0;
     const t = setInterval(() => {
-      if (refreshCaptureRate() || ++tries >= 120) clearInterval(t);
-    }, 250);
+      if (refreshCaptureRate() || ++tries >= 60) clearInterval(t);
+    }, 500);
     return () => clearInterval(t);
   });
 
