@@ -141,6 +141,105 @@ describe('buildModuleManifest', () => {
     expect(inL?.explain, 'in_l explanation').toMatch(/auto-duplicates to R/);
   });
 
+  // ── COMPUTED stereoPairs (the mixmstrs doc-parity bug) ──────────────────
+  //
+  // The parser read only the plain `['a','b']` tuple form. mixmstrs declares
+  // its eight CHANNEL pairs as a spread map over a module-level const:
+  //
+  //   stereoPairs: [
+  //     ...MIXMSTRS_CHANNELS.map((ch) => [`ch${ch}L`, `ch${ch}R`] as [string, string]),
+  //     ['ret1L', 'ret1R'], ['ret2L', 'ret2R'],
+  //   ]
+  //
+  // …so the doc page showed mixmstrs with TWO stereo pairs (the returns) out
+  // of ten, and none of its 16 channel jacks carried a "stereo pair with …"
+  // sentence. The live def was always right — only the regex parser that
+  // feeds the doc page was wrong, which is why contract-lock.txt (built from
+  // the LIVE def) already listed all ten and nothing went red.
+  //
+  // NEGATIVE CONTROL for the parser change: `oldParseStereoPairs` below is the
+  // pre-fix implementation verbatim. Each assertion states what IT returns, so
+  // these tests are proven to fail against the old parser rather than merely
+  // asserted to.
+  describe('computed (backtick) stereoPairs tuples', () => {
+    /** The pre-fix parser body, verbatim, over the same extracted array text. */
+    const oldParseStereoPairs = (body: string): [string, string][] => {
+      const pairs: [string, string][] = [];
+      for (const t of body.matchAll(/\[\s*['"]([^'"]+)['"]\s*,\s*['"]([^'"]+)['"]\s*\]/g)) {
+        pairs.push([t[1], t[2]]);
+      }
+      return pairs;
+    };
+
+    const SYNTH_SRC = `
+      import type { AudioModuleDef } from '$lib/audio/module-registry';
+      const LANES = [1, 2, 3] as const;
+      export const synthpairsDef: AudioModuleDef = {
+        type: 'synthpairs',
+        domain: 'audio',
+        label: 'synthpairs',
+        category: 'utilities',
+        stereoPairs: [
+          ...LANES.map((n) => [\`lane\${n}L\`, \`lane\${n}R\`] as [string, string]),
+          ['aux_l', 'aux_r'],
+        ],
+        inputs: [
+          { id: 'lane1L', type: 'audio' }, { id: 'lane1R', type: 'audio' },
+          { id: 'lane2L', type: 'audio' }, { id: 'lane2R', type: 'audio' },
+          { id: 'lane3L', type: 'audio' }, { id: 'lane3R', type: 'audio' },
+          { id: 'aux_l', type: 'audio' }, { id: 'aux_r', type: 'audio' },
+        ],
+        outputs: [{ id: 'out', type: 'audio' }],
+        params: [],
+      };
+    `;
+
+    it('expands a spread-map tuple, in DECLARATION order', () => {
+      const synth = buildModuleManifest({ 'modules/synthpairs.ts': SYNTH_SRC }, {});
+      const mod = synth.modules.find((x) => x.type === 'synthpairs');
+      expect(mod, 'synthetic module parsed').toBeDefined();
+      // Declaration order: the three computed lane pairs, THEN the literal aux.
+      expect(mod?.stereoPairs).toEqual([
+        ['lane1L', 'lane1R'],
+        ['lane2L', 'lane2R'],
+        ['lane3L', 'lane3R'],
+        ['aux_l', 'aux_r'],
+      ]);
+      // …and the OLD parser saw only the one literal tuple. This is the
+      // negative control: without it, "4 pairs" proves nothing about the fix.
+      const oldBody = `
+          ...LANES.map((n) => [\`lane\${n}L\`, \`lane\${n}R\`] as [string, string]),
+          ['aux_l', 'aux_r'],
+      `;
+      expect(oldParseStereoPairs(oldBody)).toEqual([['aux_l', 'aux_r']]);
+    });
+
+    it('DECLINES a form it cannot resolve rather than emitting a wrong id', () => {
+      // The loop list is imported from another file — unresolvable from this
+      // source. The parser must drop the computed tuples (the parity gate
+      // below then fails loudly) and must NOT emit `lane${n}L` as a literal.
+      const src = SYNTH_SRC.replace('const LANES = [1, 2, 3] as const;', '');
+      const synth = buildModuleManifest({ 'modules/synthpairs.ts': src }, {});
+      const mod = synth.modules.find((x) => x.type === 'synthpairs');
+      expect(mod?.stereoPairs).toEqual([['aux_l', 'aux_r']]);
+      const ids = (mod?.stereoPairs ?? []).flat();
+      expect(ids.some((i) => i.includes('$'))).toBe(false);
+    });
+
+    it('mixmstrs: all TEN pairs reach the doc page (was 2 of 10)', () => {
+      const mix = m.modules.find((x) => x.type === 'mixmstrs');
+      expect(mix, 'mixmstrs present').toBeDefined();
+      expect(mix?.stereoPairs).toEqual([
+        ['ch1L', 'ch1R'], ['ch2L', 'ch2R'], ['ch3L', 'ch3R'], ['ch4L', 'ch4R'],
+        ['ch5L', 'ch5R'], ['ch6L', 'ch6R'], ['ch7L', 'ch7R'], ['ch8L', 'ch8R'],
+        ['ret1L', 'ret1R'], ['ret2L', 'ret2R'],
+      ]);
+      // The user-visible half of the bug: the channel jack now says so.
+      const ch1l = mix?.io.inputs.find((p) => p.id === 'ch1L');
+      expect(ch1l?.explain, 'ch1L explanation').toMatch(/stereo pair with ch1R/);
+    });
+  });
+
   it('analogVco exposes saw / square / triangle / sine outputs', () => {
     const vco = m.modules.find((x) => x.type === 'analogVco');
     expect(vco).toBeDefined();
@@ -227,6 +326,29 @@ describe('manifest stays in sync with module defs', () => {
         mod.outputs.map((p) => p.id).sort(),
         `${spec.type} output ids`,
       ).toEqual(spec.outputs.map((p) => p.id).sort());
+    });
+
+    // The stereoPairs half of the same contract, and the gate that would have
+    // caught the mixmstrs bug the day it landed. ANCHORED TO THE ARTIFACT: the
+    // LIVE def is ground truth, the `?raw` regex parser must reproduce it.
+    //
+    // This is deliberately not "the parser handles form X" — a regex over
+    // source can always be out-run by a new declaration form (a `.filter()`,
+    // an imported list, a computed side suffix). Comparing against the def
+    // means an unreadable form fails LOUDLY instead of dropping pairs in
+    // silence, which is exactly how mixmstrs' 8 missing pairs stayed invisible.
+    test(`${spec.type}: manifest stereoPairs match def`, () => {
+      const mod = m.modules.find((x) => x.type === spec.type);
+      expect(mod, `manifest entry for ${spec.type}`).toBeDefined();
+      if (!mod) return;
+      const canon = (pairs: readonly (readonly [string, string])[] | undefined): string[] =>
+        [...(pairs ?? [])].map(([l, r]) => `${l}+${r}`).sort();
+      expect(
+        canon(mod.stereoPairs),
+        `${spec.type}: stereoPairs parsed from source vs declared on the live def. ` +
+          'A mismatch means parseStereoPairs (module-manifest.ts) cannot read ' +
+          "this def's declaration form — teach it the form; do NOT relax this gate.",
+      ).toEqual(canon(spec.stereoPairs));
     });
   }
 });

@@ -36,6 +36,8 @@
 
 import type { PortDef, CableType, ChainWiring } from './types';
 import { findStereoSibling, type StereoDef } from './stereo-autowire';
+// The L/R id-token vocabulary lives in ONE place — see stereo-pairs.ts.
+import { idWords, LEFT_WORDS, RIGHT_WORDS } from './stereo-pairs';
 
 export type { ChainWiring };
 
@@ -78,17 +80,11 @@ const MAIN_OUT_IDS = new Set<string>(['audio', 'out', 'output', 'main', 'mix', '
  *  mono-audio input ids in this codebase. */
 const MAIN_IN_IDS = new Set<string>(['audio', 'in', 'input', 'main', 'audio_in', 'audioin']);
 
-/** L / R side words for id-token stereo detection when a def declares no
- *  stereoPairs (audioIn, stereovca, twotracks, …). */
-const LEFT_WORDS = new Set<string>(['l', 'left']);
-const RIGHT_WORDS = new Set<string>(['r', 'right']);
-
-function idWords(id: string): string[] {
-  return id.split(/[^a-zA-Z0-9]+/).flatMap((seg) =>
-    // split camelCase too: inL → ['in','L']
-    seg.replace(/([a-z0-9])([A-Z])/g, '$1 $2').split(/\s+/),
-  ).filter(Boolean).map((w) => w.toLowerCase());
-}
+// `LEFT_WORDS` / `RIGHT_WORDS` / `idWords` used to be DEFINED here. They now
+// live in $lib/graph/stereo-pairs — the single source of truth for L/R pairing
+// — and are imported above. Re-declaring them here is what let five different
+// answers to "is this a stereo pair?" drift apart in the first place; keep
+// exactly one definition.
 
 function hasControlGateWord(id: string): boolean {
   return idWords(id).some((w) => CONTROL_GATE_WORDS.has(w));

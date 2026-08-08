@@ -1093,17 +1093,107 @@ interface RawModule {
   stereoPairs?: [string, string][];
 }
 
-/** Parse a `stereoPairs: [['a','b'], ['c','d']]` literal off the def source.
+/** Balance-match a MODULE-LEVEL `const NAME = [ … ]` array literal and return
+ *  its body. The sibling of extractArray() for a top-level const rather than
+ *  an object key — `const MIXMSTRS_CHANNELS = [1,2,…] as const;`. */
+function extractConstArray(src: string, ident: string): string | null {
+  const re = new RegExp(`\\bconst\\s+${ident}\\s*(?::[^=;]+)?=\\s*\\[`);
+  const m = re.exec(src);
+  if (!m) return null;
+  let depth = 0;
+  let i = m.index + m[0].length - 1;
+  const start = i + 1;
+  for (; i < src.length; i++) {
+    const c = src[i];
+    if (c === '[') depth++;
+    else if (c === ']') {
+      depth--;
+      if (depth === 0) return src.slice(start, i);
+    }
+  }
+  return null;
+}
+
+/** The literal scalar elements of an array-literal body, in order. */
+function literalArrayElements(body: string): string[] {
+  const out: string[] = [];
+  for (const m of body.matchAll(/'([^']*)'|"([^"]*)"|(-?\d+(?:\.\d+)?)/g)) {
+    out.push(m[1] ?? m[2] ?? m[3]);
+  }
+  return out;
+}
+
+/** Substitute `${v}` (the single loop variable) into a template-literal body.
+ *  Returns null when ANY other interpolation remains — a form this parser
+ *  cannot honestly resolve, so it declines instead of emitting a wrong id. */
+function fillTemplate(tpl: string, varName: string, value: string): string | null {
+  const filled = tpl.replace(
+    new RegExp(`\\$\\{\\s*${varName}\\s*\\}`, 'g'),
+    value.replace(/\$/g, '$$$$'),
+  );
+  return filled.includes('${') ? null : filled;
+}
+
+/** Parse `stereoPairs` off the def source.
+ *
  *  Reuses extractArray() to balance-match the OUTER `[...]` (a plain regex
  *  can't — the array is nested, so a non-greedy match stops at the first inner
- *  `]`), then extracts every `['x','y']` tuple from the balanced body. */
-function parseStereoPairs(src: string): [string, string][] | undefined {
+ *  `]`), then reads TWO tuple forms out of the balanced body:
+ *
+ *    (a) plain quoted tuples          `['out_l', 'out_r']`
+ *    (b) COMPUTED spread-map tuples   ``...CHANNELS.map((ch) => [`ch${ch}L`, `ch${ch}R`])``
+ *
+ *  (b) is not a hypothetical: MIXMSTRS declares its eight channel pairs that
+ *  way, and this parser read ONLY form (a) — so the doc page silently showed
+ *  mixmstrs with 2 stereo pairs (the two returns) instead of 10, and the 16
+ *  channel jacks carried no "stereo pair with …" sentence at all. That was a
+ *  LIVE doc-parity bug, not a latent one.
+ *
+ *  `fileSrc` is the WHOLE module file (the def body alone cannot resolve a
+ *  module-level `const CHANNELS = […]`); it defaults to the def body so the
+ *  function stays callable with one argument.
+ *
+ *  ⚠ SCOPE — this is a REGEX parser over `?raw` source, so it can always be
+ *  out-run by a new declaration form (a `.filter()`, a cross-file import, a
+ *  computed side suffix). It therefore does NOT stand alone: the parity gate
+ *  in module-manifest.test.ts ("manifest stereoPairs match def") compares this
+ *  output against the LIVE registry def for every audio module, so an
+ *  unreadable form fails loudly instead of dropping pairs in silence. */
+function parseStereoPairs(src: string, fileSrc: string = src): [string, string][] | undefined {
   const body = extractArray(src, 'stereoPairs');
   if (!body.trim()) return undefined;
+  // ONE pass with both forms alternated, so the emitted pairs keep the def's
+  // DECLARATION ORDER (mixmstrs declares the 8 channel pairs before the two
+  // returns; two sequential passes would have inverted that).
+  //   group 1/2      → (a) a plain quoted tuple  ['out_l', 'out_r']
+  //   group 3/4/5/6  → (b) a computed spread-map ...CHANNELS.map((ch) => [`…`, `…`])
+  const tupleRe =
+    /\[\s*['"]([^'"]+)['"]\s*,\s*['"]([^'"]+)['"]\s*\]|\.\.\.\s*([A-Za-z_$][\w$]*)\s*\.\s*(?:map|flatMap)\s*\(\s*\(?\s*([A-Za-z_$][\w$]*)\s*\)?\s*=>\s*\[\s*`([^`]*)`\s*,\s*`([^`]*)`\s*\]/g;
+
   const pairs: [string, string][] = [];
-  for (const tupleMatch of body.matchAll(/\[\s*['"]([^'"]+)['"]\s*,\s*['"]([^'"]+)['"]\s*\]/g)) {
-    pairs.push([tupleMatch[1], tupleMatch[2]]);
+  const seen = new Set<string>();
+  const push = (l: string, r: string): void => {
+    const key = `${l}+${r}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    pairs.push([l, r]);
+  };
+
+  for (const m of body.matchAll(tupleRe)) {
+    if (m[1] !== undefined) {
+      push(m[1], m[2]);
+      continue;
+    }
+    const [listIdent, varName, leftTpl, rightTpl] = [m[3], m[4], m[5], m[6]];
+    const listBody = extractConstArray(fileSrc, listIdent);
+    if (listBody === null) continue; // unresolvable → the parity gate reports it
+    for (const value of literalArrayElements(listBody)) {
+      const l = fillTemplate(leftTpl, varName, value);
+      const r = fillTemplate(rightTpl, varName, value);
+      if (l !== null && r !== null) push(l, r);
+    }
   }
+
   return pairs.length > 0 ? pairs : undefined;
 }
 
@@ -1157,7 +1247,9 @@ function readModule(file: string, rawSrc: string): RawModule | null {
     inputs: parsePortList(extractArray(src, 'inputs')),
     outputs: parsePortList(extractArray(src, 'outputs')),
     params: parseParamList(extractArray(src, 'params')),
-    stereoPairs: parseStereoPairs(src),
+    // `fullSrc`, not `src`: a COMPUTED declaration spreads a module-level
+    // `const CHANNELS = […]` that lives OUTSIDE the def's braces.
+    stereoPairs: parseStereoPairs(src, fullSrc),
   };
 
   // Inputs are computed (e.g. `inputs: INPUTS` or `inputs: buildInputs()`)
