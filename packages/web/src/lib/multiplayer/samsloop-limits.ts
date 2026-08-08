@@ -61,26 +61,6 @@
 // AND racks routinely run near 20 instances, revisit the per-rackspace
 // cap against the relay's per-doc memory then.)
 //
-// RECORD-BUDGET RAISE (2026-08-08): SAMSLOOP_RECORD_BUDGET_BYTES went
-// 250 kB → 3 MB (samsloop-record.ts carries the derivation), so a RECORDING
-// now persists as up to ~4 MB of base64 rather than ~333 kB. These COUNT caps
-// still hold on the heap argument above — the decoded PCM lives in worklet
-// memory and a recording REPLACES any upload on the same node (the one-sample
-// invariant), so per-instance node.data is max(4 MB recording, 2.7 MB upload)
-// = 4 MB, not their sum.
-//
-// ⚠ WHAT IS WORTH WATCHING IS THE RELAY, NOT THE TAB. These caps were derived
-// against a ~100 MB browser-tab budget and nothing else. The relay's per-rack
-// thresholds (packages/server/src/rack-accounting.ts: warn 16 MB, crit 24 MB)
-// are a SEPARATE limit that the 20-instance cap has never respected: 20 × 2.7 MB
-// of uploads was already 54 MB, i.e. over crit, before this change; 20 × 4 MB is
-// 80 MB. So the raise does not create the mismatch, it widens an existing one
-// from 2.3× crit to 3.3×. ONE full-length recording is ≤25 % of the warn
-// threshold by construction, which is the property the byte budget was actually
-// derived from. If racks start routinely holding many near-full SAMSLOOPs, the
-// right fix is a per-rack BYTE cap (which nothing enforces today) rather than a
-// smaller per-recording budget — flagged here rather than silently absorbed.
-//
 // Creator attribution lives at `node.data.creatorId` (set by Canvas's
 // spawnFromPalette — same pattern as PICTUREBOX). Pre-existing SAMSLOOP
 // nodes from before this PR have no creatorId — they count toward the

@@ -52,6 +52,26 @@
  * The byte budget is not the only cap: `SAMSLOOP_RECORD_MAX_SECONDS` below
  * bounds the wall-clock length independently, and it is the binding one at
  * the low-fidelity settings.
+ *
+ * ⚠ TWO DOWNSTREAM BUDGETS THIS INTERACTS WITH, neither of which it breaks —
+ * recorded here rather than in their own files, because both of those live
+ * inside attest bases where a comment would force a re-attest, and because
+ * THIS is the number you would change:
+ *
+ *   * PER-RACK RELAY BYTES. `samsloop-limits.ts` caps SAMSLOOP at 20 per rack,
+ *     derived against a ~100 MB browser-TAB budget and never against the
+ *     relay's per-rack thresholds. 20 × 2.7 MB of uploads was already 54 MB —
+ *     over the 24 MB crit — BEFORE this budget moved; 20 × 4 MB is 80 MB. The
+ *     raise widens an existing mismatch (2.3× → 3.3× crit), it does not create
+ *     one, and ONE recording stays ≤25 % of warn by construction. A recording
+ *     REPLACES any upload on the same node (the one-sample invariant), so
+ *     per-instance cost is max(4 MB, 2.7 MB), not their sum. If this ever
+ *     bites, the fix is a per-rack BYTE cap — nothing enforces one today.
+ *   * SAVED GROUPS. `SAVED_GROUP_MAX_PAYLOAD_BYTES` is 8 MB and its own comment
+ *     records that it was already bumped from 256 kB *because a single SAMSLOOP
+ *     hit it*. At ~4 MB per maxed-out take that now fits TWO recordings per
+ *     group rather than twenty-four. It fails loudly with a size error rather
+ *     than truncating, so it is left alone deliberately.
  */
 export const SAMSLOOP_RECORD_BUDGET_BYTES = 3_000_000;
 

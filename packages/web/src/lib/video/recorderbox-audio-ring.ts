@@ -14,6 +14,7 @@
 // PURE — no Web Audio, no mediabunny, no DOM — so retention/wraparound/snapshot
 // are unit-tested headlessly (CI-safe). The recorder's drain pushes every emitted
 // chunk through `pushChunk`; `snapshotPlanar()` materializes the retained tail.
+// docs-hash-ignore:start
 //
 // ⚠ NOT the buffer a fixed-length RECORDING wants. This one ROLLS — once full it
 // discards the OLDEST frames, which is right for "the trailing 5 s" and wrong for
@@ -22,6 +23,12 @@
 // truncates at the head-anchored cap and takes separate L/R chunks rather than a
 // planar block. Two primitives, same shape, deliberately different retention —
 // the reasoning is written out on that class.
+//
+// (Wrapped in docs-hash-ignore markers because this whole directory is in the
+// WebGL attest basis — `resolveWebglBasis` walks packages/web/src/lib/video
+// wholesale. A pure comment must not force a real-GPU re-attest; owner
+// directive "docs must not change attest hashes".)
+// docs-hash-ignore:end
 
 /** One stereo block (PLANAR f32: `[L0..L(frames-1), R0..R(frames-1)]`, length
  *  `2 * frames`) — the same `CaptureChunk` shape the drain emits. */
