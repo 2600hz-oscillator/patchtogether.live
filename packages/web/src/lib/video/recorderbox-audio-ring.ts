@@ -14,6 +14,14 @@
 // PURE — no Web Audio, no mediabunny, no DOM — so retention/wraparound/snapshot
 // are unit-tested headlessly (CI-safe). The recorder's drain pushes every emitted
 // chunk through `pushChunk`; `snapshotPlanar()` materializes the retained tail.
+//
+// ⚠ NOT the buffer a fixed-length RECORDING wants. This one ROLLS — once full it
+// discards the OLDEST frames, which is right for "the trailing 5 s" and wrong for
+// "the take, from the moment you pressed REC". SAMSLOOP's recorder therefore has
+// its own `SamsloopCaptureBuffer` ($lib/audio/modules/samsloop-record), which
+// truncates at the head-anchored cap and takes separate L/R chunks rather than a
+// planar block. Two primitives, same shape, deliberately different retention —
+// the reasoning is written out on that class.
 
 /** One stereo block (PLANAR f32: `[L0..L(frames-1), R0..R(frames-1)]`, length
  *  `2 * frames`) — the same `CaptureChunk` shape the drain emits. */

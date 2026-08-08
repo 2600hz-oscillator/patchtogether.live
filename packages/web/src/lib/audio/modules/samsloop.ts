@@ -116,7 +116,13 @@
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
-import { decodeRecordedPcm, type SamsloopRecordedSample } from '$lib/audio/modules/samsloop-record';
+import {
+  decodeRecordedPcm,
+  type SamsloopRecordedSample,
+  type SamsloopRecRate,
+  type SamsloopRecBits,
+  type SamsloopRecChannels,
+} from '$lib/audio/modules/samsloop-record';
 import { patch as livePatch } from '$lib/graph/store';
 import workletUrl from '@patchtogether.live/dsp/dist/samsloop.js?url';
 import tapWorkletUrl from '@patchtogether.live/dsp/dist/samsloop-tap.js?url';
@@ -211,9 +217,9 @@ export interface SamsloopData {
    *  BITS / RATE). Defaults from SAMSLOOP_REC_DEFAULTS. Persisted with
    *  the rest of node.data so a loaded patch remembers the user's
    *  encoding preferences. */
-  recRate?: 22050 | 44100;
-  recBits?: 8 | 16;
-  recChannels?: 1 | 2;
+  recRate?: SamsloopRecRate;
+  recBits?: SamsloopRecBits;
+  recChannels?: SamsloopRecChannels;
 
   /** Most-recently-recorded sample (the RECORD path; the file-upload path
    *  writes `fileBytesB64` above). Same persistence trick PICTUREBOX uses for
