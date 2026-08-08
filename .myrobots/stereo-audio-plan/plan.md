@@ -9,8 +9,18 @@
 > — cables, ports, Y.Doc schema and migration story are untouched. What changes
 > is what happens INSIDE a mono module. See §0b.
 
-**Status: AMENDED — architecture stands, Q1 replaced by DUAL-MONO (§0b). 2026-08-07.**
-*(Re-verified 2026-08-04: none of the 7 PRs has landed. `stereovca` is still the module id in `packages/dsp/src/`, `art/scenarios/`, `art/baselines/` and both VRT baselines; `reconciler.ts:143`'s `await engine.addNode(node)` is still unguarded, exactly as PR-0 describes. The whole sequence is live backlog.)*
+**Status: IN FLIGHT — architecture stands; Q1 → DUAL-MONO (§0b); Q3 rename DEFERRED, PR-1 struck (§1a). 2026-08-07.**
+
+| PR | state |
+|---|---|
+| PR-0 reconciler guard | ✅ **LANDED #1397** (2026-08-07) |
+| ~~PR-1 rename~~ | ⛔ **STRUCK** — deferred to the faceplate work (§1a) |
+| PR-2 instruments + pairing | **NEXT** |
+| PR-3 → PR-3b → PR-4 → {PR-5, PR-6} | backlog, unchanged |
+
+*(The pre-2026-08-07 status line claimed "none of the 7 PRs has landed" and that
+`reconciler.ts:143` was still unguarded. Both are now false — PR-0 fixed the
+reconciler. Keep this table current; a stale status line here reads as fact.)*
 Source: 12-agent ultracode analysis (8 subsystem surveys → 2 competing designs → adversarial + completeness critics), all findings verified against the actual code with file:line cites. Draft questions + owner answers recorded in §1.
 
 ## 0. Executive summary
@@ -121,11 +131,43 @@ own merits, with owner ears. NOT part of this sequence.
 |---|---|---|
 | 1 | ~~Mono-input consumption policy~~ **REVERSED 2026-08-07 — see §0b (DUAL-MONO)** | ~~**Unity-sum via double-connection** (both legs into the mono input; Web Audio sums). The planner special-cases a mono-source leg group into a mono input by writing ONE leg, so a correlated mono round-trip does not gain +6 dB. ART stays byte-identical.~~ |
 | 2 | mixmstrs panning | **ADD per-channel pan: 8 params + a row of pan control knobs** on the card. New Faust DSP, contract + ART re-pin, explicit PUSH_CARD_CONTROLS entry, owner audio preview before merge. PR-6 is in scope. |
-| 3 | stereovca | **KEEP, renamed to `ringmod`.** It is the project's only transparent (unsmoothed) audio-rate ring modulator; the rename makes that its identity. Docs re-authored accordingly. Port ids unchanged → a type alias preserves every existing cable. |
+| 3 | stereovca | **KEEP. Rename to `ringmod` DEFERRED — owner, 2026-08-07: _"just leave it called stereovca for now, i don't want to touch that many files. we'll do it when we do the faceplate for it."_** Measured footprint: **44 files**. The rename is now a rider on that module's FACEPLATE work (phase 4), not a step in this sequence. PR-1 is struck (§3). Nothing downstream depends on it — see §1a. |
 | 4 | Mixed-source stereo | **Leg-level occupancy**: a full-stereo patch replaces both legs of the target; an only-X patch replaces only the X leg — so A-only-L + B-only-R into one input coexist. |
 | 5 | Look-and-feel | **Recommendations accepted**: dashed stroke + channel tag for only-L/R cables; unpatch-menu "(L only)" labels; one lane-rail dot per stereo port; rear card gets a single stereo hole (pair-tie retired). Pre-approved; PR-4 still posts a preview deploy as confirmation before the VRT dispatch bakes baselines. |
 | 6 | Attest machine | **Available whenever needed.** PR-5 unblocked. Note the machine-access grant does not fix the 2 failing cameraInput tests (webgl-attest-video-orientation-camera-fail memory) — verifying/fixing those is the first task of PR-5. |
 | 7 | CI cost | **Approved.** |
+
+### 1a. PR-1 IS STRUCK — resequenced 2026-08-07
+
+The rename was never load-bearing for stereo. Verified against the plan's own
+dependency claims before dropping it:
+
+- **PR-2/3/4 do not consume it.** They turn on *pairing* and *leg-group wiring*,
+  which key off port ids and cable types. `stereovca`'s ports are unchanged by
+  the rename by design (that is what made the type alias safe), so every list
+  that mentions it — collapse exemptions, `STRICT_VRT_MODULES`, the per-port
+  specs — simply keeps the current spelling.
+- **The `strength_l`/`strength_r` decision survives verbatim.** They stay
+  cv-typed and therefore stay two independent jacks (§1 defaults). That was
+  always about the port TYPE, never the module name.
+- **PR-0 was the prerequisite of the RENAME, not of the sequence** — and it has
+  landed anyway (#1397), on its own merit: an unguarded `addNode` wedging every
+  peer is a live hazard whether or not a type is ever renamed.
+
+**Two consequences, both simplifications:**
+
+1. **The sequence now carries NO collab re-attest.** PR-1 was the only
+   basis-toucher (the `persistence.ts` alias). PR-2/3/4 touch no attest basis;
+   PR-5 still carries the one WebGL re-attest.
+2. **No `RETIRED_TYPE_ALIASES` entry, no live-relay alias seam, no ART key
+   move, no VRT baseline rename.** The riskiest non-visual choreography in the
+   whole plan is deferred with the rename.
+
+New order: **PR-0 ✅ → PR-2 → PR-3 → PR-3b (dual-mono) → PR-4 → {PR-5, PR-6}.**
+
+⚠ When the rename does happen with the faceplate, §3's PR-1 body is still the
+correct recipe — including the trap that `ci.yml`'s behavioral-smoke grep and
+`behavioral-smoke-subset.test.ts` must move in the SAME commit.
 
 ### Decidable defaults (locked with the above)
 
@@ -163,7 +205,12 @@ own merits, with owner ears. NOT part of this sequence.
 Wrap the unguarded `engine.addNode` at reconciler.ts:143 in the same per-item try/catch as addEdge (:165-172): warn once per node id, record in a failed set, continue so later nodes/edges/params materialize. Unit test: snapshot with an unknown-type node + valid later nodes asserts the later ones apply and the failure logs once. reconciler.ts is in NO attest basis.
 Gates: web unit lane; `REPEAT=3 task test:one -- reconciler`; typecheck. 1 CI cycle.
 
-### PR-1 — rename stereovca → ringmod (+ persistence alias + collab attest)
+### ~~PR-1~~ — STRUCK 2026-08-07, deferred to the FACEPLATE work (see §1a)
+*Kept verbatim below as the recipe for when it does happen — the registry-key
+list and the ci.yml/behavioral-smoke same-commit trap are the expensive parts
+to re-derive. It is NOT part of this sequence.*
+
+### ~~PR-1 — rename stereovca → ringmod (+ persistence alias + collab attest)~~
 The module survives with identical ports (`in_l/in_r/out_l/out_r` audio, `strength_l/strength_r` cv, level/offset params) and identical DSP; its identity becomes the ring modulator.
 - **Files rename**: stereovca.ts → ringmod.ts (def `id`/`label` → lowercase `ringmod`; registration is glob-driven per #551 so the rename auto-registers), stereovca.test.ts → ringmod.test.ts, StereovcaCard.svelte → RingmodCard.svelte, packages/dsp/src/stereovca.ts → ringmod.ts. Re-author co-located `docs` as THE ring modulator (audio-rate unsmoothed multiply; strength_l/r stay independent cv jacks) — module stays in STRICT_DOCS (key renamed).
 - **Alias**: `RETIRED_TYPE_ALIASES { stereovca: 'ringmod' }` in persistence.ts (identical port ids → alias keeps ALL cables); fixture test copying retired-type-migration.test.ts asserting edge survival. Live-doc story per §1 defaults.
