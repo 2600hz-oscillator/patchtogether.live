@@ -118,17 +118,21 @@ import {
   LEGACY_FOLD_CLAMP_PX,
   LEGACY_FOLD_PX,
   LEGACY_FOLD_VIEWPORT,
+  assertFaceAudioFrozen,
   bootWithFace,
   frameMember,
+  freezeFaceAudio,
   lowestBand,
   openDock,
   perturbBand,
   perturbBandFolded,
+  readFaceAudio,
   readFoldGeometry,
   refoldDockPane,
   settle,
   unfoldDockPane,
 } from './_shell-faces';
+import { readAudioClock, resumeAudioContext } from './vrt-audio-freeze';
 
 const VRT_PLATFORM = process.platform === 'darwin' ? 'darwin' : 'linux';
 test.describe.configure({ mode: 'default' });
@@ -158,6 +162,12 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
       // zoom 0.45 = the LOD 'compact' band [0.30, 0.52) — the design-point tile.
       await frameMember(page, memberId, 0.45, 'compact');
 
+      // ── THE AUDIO GRAPH IS STILL FROZEN AT CAPTURE TIME ─────────────────
+      // Asserted here, not merely at boot. The glyph is an AnalyserNode view of
+      // this module's own output (shell-glyph-live.ts), so a graph that resumed
+      // between boot and capture makes the tile a moving target — which is
+      // exactly how a free-running voice was found to be unbaselinable.
+      await assertFaceAudioFrozen(page, `face-${type}-compact`);
       const tile = page.locator(`.svelte-flow__node[data-id="${memberId}"] [data-testid="module-shell"]`);
       await expect(tile).toHaveScreenshot(`face-${type}-compact.png`, {
         maxDiffPixels: COMPACT_MAX_DIFF,
@@ -232,6 +242,10 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
             `An unrailed face must render every band, or the capture is silently partial.`,
       ).toBe(railed ? 1 : g.bands.length);
 
+      // Re-assert AFTER the dock click — this scene is the one that interacts
+      // between boot and capture, and `ensureEngine()` resumes a suspended
+      // context on every call.
+      await assertFaceAudioFrozen(page, `face-${type}-dock`);
       await settle(page);
       await expect(faceplate).toHaveScreenshot(`face-${type}-dock.png`, {
         maxDiffPixels: DOCK_MAX_DIFF,
@@ -243,6 +257,160 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
       ).toEqual([]);
     });
   }
+
+  // ── THE PERMANENT NEGATIVE CONTROL FOR THE AUDIO FREEZE ───────────────────
+  //
+  // `bootWithFace` suspends the AudioContext so the analyser-fed face glyphs
+  // stop advancing. Every scene above then passes — and would pass identically
+  // if the freeze were a no-op, because NO MODULE IN THE ROSTER SOUNDS AT
+  // SPAWN. That is precisely the shape of the bug this fix is for: the scene
+  // asserted a property of the ROSTER and called it a property of itself.
+  //
+  // So the control MANUFACTURES the missing condition. It spawns a genuinely
+  // free-running voice into lane 1 ahead of a faced processor — a channel
+  // column IS the chain, so the face's live-audio glyph is then tracing a real
+  // moving waveform — and drives the instrument in both directions:
+  //
+  //   0  NON-VACUITY   the face's own output must actually be SOUNDING and
+  //                    MOVING unfrozen, or every leg below is about silence
+  //   1  THE ASSERTION CAN GO RED   assertFaceAudioFrozen must REJECT on a
+  //                    running graph (and the clock must be seen advancing)
+  //   2  THE PIXELS MOVE   three consecutive captures of the tile differ
+  //   3  FROZEN ⇒ STABLE   three consecutive captures are pixel-IDENTICAL
+  //   4  FROZEN ⇒ REPRODUCIBLE ACROSS BOOTS   a second, INDEPENDENT boot
+  //                    produces a byte-identical tile
+  //
+  // ⚠ LEG 4 IS NOT A DUPLICATE OF LEG 3, and it is the one that earns its
+  // runtime. A suspend pins the analyser wherever its window happened to be, so
+  // freezing AFTER the glyph tap has attached is perfectly stable within a run
+  // and different every run — which passes leg 3 and can still never match a
+  // baseline. MEASURED on this exact pair: freeze inside bootWithFace → 0 px
+  // across two boots; freeze after frameMember → 106 px, all of it inside the
+  // glyph box. Only leg 4 tells those apart.
+  //
+  // The source is asserted to still be free-running rather than assumed, so a
+  // module change cannot leave the control quietly measuring silence.
+  test('face audio freeze negative control: a sounding face is unstable RUNNING, identical FROZEN', async ({
+    page,
+  }) => {
+    // A faced PROCESSOR (live-audio glyph on its own output) fed by a
+    // free-running VOICE. macrooscillator is one of the two faces this defect
+    // blocks; using it as the SOURCE keeps the control honest without giving it
+    // a face.
+    const NC_AUDIO_FACE = 'filter';
+    const NC_SOURCE = 'macrooscillator';
+    expect(
+      FACES.some((f) => f.type === NC_AUDIO_FACE),
+      `${NC_AUDIO_FACE} is still in the FACES roster`,
+    ).toBe(true);
+    const sel = (id: string): string =>
+      `.svelte-flow__node[data-id="${id}"] [data-testid="module-shell"]`;
+    const b64 = (b: Buffer): string => b.toString('base64');
+
+    // ── BOOT 1: the graph left RUNNING ────────────────────────────────────
+    await page.setViewportSize(LEGACY_FOLD_VIEWPORT);
+    const runId = await bootWithFace(page, NC_AUDIO_FACE, {
+      freezeAudio: false,
+      upstream: NC_SOURCE,
+    });
+    await frameMember(page, runId, 0.45, 'compact');
+
+    // LEG 0 — ANCHORED TO THE ARTIFACT.
+    const live = await readFaceAudio(page, runId);
+    expect(
+      live.tapped,
+      `${NC_AUDIO_FACE}: no analyser could attach to its '${live.portId}' output — the control ` +
+        `cannot see the signal it is about to reason about.`,
+    ).toBe(true);
+    expect(
+      live.peak,
+      `${NC_AUDIO_FACE} downstream of ${NC_SOURCE}: peak amplitude is ${live.peak} — the chain is ` +
+        `SILENT, so "the capture is unstable" below would be measuring nothing. Either the column ` +
+        `chain stopped wiring source→processor, or ${NC_SOURCE} stopped free-running. Pick a ` +
+        `source that does, or retire this control — do not let it pass on silence.`,
+    ).toBeGreaterThan(0.01);
+    expect(
+      live.moving,
+      `${NC_AUDIO_FACE}: the analyser window is not ADVANCING (moving=${live.moving}) even though ` +
+        `peak=${live.peak}. A held DC level has no time-domain motion, so the glyph would be ` +
+        `stable for a reason that has nothing to do with the freeze.`,
+    ).toBeGreaterThan(0.01);
+
+    // LEG 1 — the freeze assertion is capable of failing.
+    const running = await readAudioClock(page);
+    expect(running.state, 'the control really is driving a RUNNING graph').toBe('running');
+    await expect(
+      assertFaceAudioFrozen(page, `${NC_AUDIO_FACE} (negative control)`),
+      'assertFaceAudioFrozen must REJECT on a running graph — otherwise every green ' +
+        'freeze assertion in this file means nothing.',
+    ).rejects.toThrow(/not 'suspended'|advanced/);
+
+    // LEG 2 — the pixels genuinely move.
+    const r1 = await page.locator(sel(runId)).screenshot({ animations: 'disabled' });
+    const r2 = await page.locator(sel(runId)).screenshot({ animations: 'disabled' });
+    const r3 = await page.locator(sel(runId)).screenshot({ animations: 'disabled' });
+    const rd12 = await diffRegion(page, b64(r1), b64(r2), NC_CHANNEL_DELTA);
+    const rd23 = await diffRegion(page, b64(r2), b64(r3), NC_CHANNEL_DELTA);
+
+    // LEG 3 — freeze the SAME page and the tile settles.
+    await freezeFaceAudio(page, `${NC_AUDIO_FACE} (negative control)`);
+    const f1 = await page.locator(sel(runId)).screenshot({ animations: 'disabled' });
+    const f2 = await page.locator(sel(runId)).screenshot({ animations: 'disabled' });
+    const f3 = await page.locator(sel(runId)).screenshot({ animations: 'disabled' });
+    const fd12 = await diffRegion(page, b64(f1), b64(f2), NC_CHANNEL_DELTA);
+    const fd23 = await diffRegion(page, b64(f2), b64(f3), NC_CHANNEL_DELTA);
+
+    // ── BOOT 2 + 3: two INDEPENDENT boots, each frozen by bootWithFace ─────
+    const bootFrozen = async (): Promise<Buffer> => {
+      await page.setViewportSize(LEGACY_FOLD_VIEWPORT);
+      const id = await bootWithFace(page, NC_AUDIO_FACE, { upstream: NC_SOURCE });
+      await frameMember(page, id, 0.45, 'compact');
+      await assertFaceAudioFrozen(page, `${NC_AUDIO_FACE} (negative control, reboot)`);
+      return page.locator(sel(id)).screenshot({ animations: 'disabled' });
+    };
+    const bootA = await bootFrozen();
+    const bootB = await bootFrozen();
+    const across = await diffRegion(page, b64(bootA), b64(bootB), NC_CHANNEL_DELTA);
+
+    // eslint-disable-next-line no-console
+    console.log(
+      `[audio-nc] ${NC_AUDIO_FACE} ← ${NC_SOURCE}  tile=${rd12.width}x${rd12.height} ` +
+        `channelDelta=${NC_CHANNEL_DELTA}/255 budget=${COMPACT_MAX_DIFF}px\n` +
+        `[audio-nc]   source: port=${live.portId} peak=${live.peak.toFixed(6)} ` +
+        `moving=${live.moving.toFixed(6)}\n` +
+        `[audio-nc]   RUNNING  d12=${rd12.diffPixels}px d23=${rd23.diffPixels}px ` +
+        `box=${JSON.stringify(rd12.box)}\n` +
+        `[audio-nc]   FROZEN   d12=${fd12.diffPixels}px d23=${fd23.diffPixels}px\n` +
+        `[audio-nc]   FROZEN, TWO INDEPENDENT BOOTS  ${across.diffPixels}px ` +
+        `box=${JSON.stringify(across.box)}`,
+    );
+
+    expect(
+      Math.min(rd12.diffPixels, rd23.diffPixels),
+      `${NC_AUDIO_FACE} ← ${NC_SOURCE}: with the graph RUNNING, three consecutive captures of the ` +
+        `tile came back identical (${rd12.diffPixels}px / ${rd23.diffPixels}px). This control ` +
+        `exists to show the scene CAN be destabilised by live audio; if it cannot, the freeze ` +
+        `below is proving nothing.`,
+    ).toBeGreaterThan(0);
+    expect(
+      fd12.diffPixels,
+      `${NC_AUDIO_FACE}: FROZEN, captures 1→2 differ by ${fd12.diffPixels}px. toHaveScreenshot ` +
+        `needs two consecutive IDENTICAL captures before it will even compare to a baseline.`,
+    ).toBe(0);
+    expect(fd23.diffPixels, `${NC_AUDIO_FACE}: FROZEN, captures 2→3`).toBe(0);
+    expect(
+      across.diffPixels,
+      `${NC_AUDIO_FACE}: two INDEPENDENT frozen boots differ by ${across.diffPixels}px ` +
+        `(box ${JSON.stringify(across.box)}). Within-run stability is not enough — a baseline is ` +
+        `a comparison ACROSS boots. This is what a freeze applied AFTER the glyph tap attached ` +
+        `looks like: the analyser is pinned at a different phase each boot. Measured at 106px ` +
+        `for that ordering, 0px when bootWithFace freezes before frameMember.`,
+    ).toBe(0);
+
+    // Leave the page as we found it, so a later fixture reuse can't inherit a
+    // suspended graph and pass leg 1 for the wrong reason.
+    await resumeAudioContext(page);
+  });
 
   // ── THE PERMANENT NEGATIVE CONTROL ────────────────────────────────────────
   //

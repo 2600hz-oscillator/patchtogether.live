@@ -379,6 +379,116 @@ export async function assertFaceAudioFrozen(page: Page, label: string): Promise<
   ).toBe(0);
 }
 
+/** What a private AnalyserNode on a module's own audio output reports. */
+export interface FaceAudioReading {
+  state: string;
+  /** True when an analyser was attachable (engine up, node materialized). */
+  tapped: boolean;
+  /** The audio output port the tap read, or null when the module has none. */
+  portId: string | null;
+  /** max |sample| over the window. 0 = the module is SILENT. */
+  peak: number;
+  /** max |f[n][i] − f[n−1][i]| between consecutive frames. 0 = the analyser
+   *  window is not advancing, so nothing a live glyph draws can change. */
+  moving: number;
+  frames: number;
+}
+
+/** rAF frames of analyser data `readFaceAudio` compares. Frames, not ms. */
+const FACE_AUDIO_FRAMES = 6;
+
+/**
+ * Attach a private AnalyserNode to `nodeId`'s primary audio output and sample
+ * it across `FACE_AUDIO_FRAMES` consecutive animation frames, ACCUMULATING IN
+ * THE PAGE (never a Playwright-side poll loop — that samples the very main
+ * thread it is measuring; CLAUDE.md).
+ *
+ * ONE implementation, read by the gate's negative control AND by
+ * vrt-face-audio-probe, so the two cannot disagree about whether a module is
+ * sounding — the same reason `readFoldGeometry` is shared.
+ *
+ * Deliberately a SECOND tap rather than a read of the shell's own: the shell's
+ * `createShellGlyphTap` is lazy and self-releasing, so reading it would perturb
+ * the thing being measured. An analyser is a pure sink and adds no load.
+ */
+export async function readFaceAudio(page: Page, nodeId: string): Promise<FaceAudioReading> {
+  return page.evaluate(
+    async ({ nodeId, frames }) => {
+      const w = globalThis as unknown as {
+        __engine?: () => Record<string, unknown> | null;
+        __patch?: { nodes: Record<string, { type?: string } | undefined> };
+        __listModuleDefs?: () => readonly {
+          type: string;
+          outputs?: readonly { id: string; type: string }[];
+        }[];
+      };
+      const empty = {
+        state: 'n/a',
+        tapped: false,
+        portId: null as string | null,
+        peak: 0,
+        moving: 0,
+        frames: 0,
+      };
+      const eng = w.__engine?.();
+      if (!eng) return empty;
+      const audio = (eng as { getDomain?: (d: string) => unknown }).getDomain?.('audio') as
+        | {
+            ctx: AudioContext;
+            getOutputNode: (n: string, p: string) => { node: AudioNode; output: number } | null;
+          }
+        | undefined;
+      if (!audio?.ctx) return empty;
+      const ctx = audio.ctx;
+      const type = w.__patch?.nodes[nodeId]?.type ?? '';
+      const def = w.__listModuleDefs?.().find((d) => d.type === type);
+      const portId = def?.outputs?.find((o) => o.type === 'audio')?.id ?? null;
+      if (!portId) return { ...empty, state: ctx.state as string };
+      const out = audio.getOutputNode(nodeId, portId);
+      if (!out) return { ...empty, state: ctx.state as string, portId };
+
+      const an = ctx.createAnalyser();
+      an.fftSize = 2048;
+      an.smoothingTimeConstant = 0;
+      out.node.connect(an, out.output);
+
+      const buf = new Float32Array(an.fftSize);
+      let prev: Float32Array | null = null;
+      let peak = 0;
+      let moving = 0;
+      let n = 0;
+      await new Promise<void>((resolve) => {
+        const tick = (): void => {
+          an.getFloatTimeDomainData(buf);
+          for (let i = 0; i < buf.length; i++) {
+            const a = Math.abs(buf[i]);
+            if (a > peak) peak = a;
+            if (prev) {
+              const d = Math.abs(buf[i] - prev[i]);
+              if (d > moving) moving = d;
+            }
+          }
+          prev = buf.slice();
+          n++;
+          if (n >= frames) {
+            resolve();
+            return;
+          }
+          requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      });
+      try {
+        out.node.disconnect(an);
+      } catch {
+        /* source already gone */
+      }
+      return { state: ctx.state as string, tapped: true, portId, peak, moving, frames: n };
+    },
+    { nodeId, frames: FACE_AUDIO_FRAMES },
+  );
+}
+
 /** Boot `?shell=1`, spawn `type` into lane 1 via the REAL palette-drop path,
  *  and return the member's node id. Also kills animation jitter, hides the
  *  floating flow chrome (the zoom-scene stability recipe) and FREEZES THE

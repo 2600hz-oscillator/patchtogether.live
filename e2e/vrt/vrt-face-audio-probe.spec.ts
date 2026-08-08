@@ -38,7 +38,13 @@
 import { test } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { FACES, LEGACY_FOLD_VIEWPORT, bootWithFace, frameMember } from './_shell-faces';
+import {
+  FACES,
+  LEGACY_FOLD_VIEWPORT,
+  bootWithFace,
+  frameMember,
+  readFaceAudio,
+} from './_shell-faces';
 import { diffRegion } from './vrt-surface-stats';
 import { tryFreezeAudioContext } from './vrt-audio-freeze';
 import type { Page } from '@playwright/test';
@@ -46,8 +52,6 @@ import type { Page } from '@playwright/test';
 /** The gate's own per-channel delta (vrt.config `threshold: 0.1` ≈ 26/255), so
  *  the printed pixel counts are directly comparable to COMPACT_MAX_DIFF. */
 const CHANNEL_DELTA = 26;
-/** Consecutive rAF frames of analyser data to compare. */
-const AUDIO_FRAMES = 6;
 
 const EXTRA = (process.env.PROBE_FACES ?? '')
   .split(',')
@@ -58,119 +62,6 @@ const TYPES = EXTRA.length > 0 ? EXTRA : FACES.map((f) => f.type);
  *  of a free-running source (a column is the chain). `PROBE_UPSTREAM=analogVco`
  *  is how the free-running condition is reproduced without a faced VCO. */
 const UPSTREAM = process.env.PROBE_UPSTREAM?.trim() || undefined;
-
-interface AudioReading {
-  /** ctx.state at the end of the sampling window. */
-  state: string;
-  /** Did the audio clock advance across the window? seconds. */
-  clockAdvance: number;
-  /** Was an analyser attachable at all (engine + materialized output node)? */
-  tapped: boolean;
-  /** The port the tap read. */
-  portId: string | null;
-  /** max |sample| over every frame — 0 means the module is SILENT. */
-  peak: number;
-  /** max |f[n][i] - f[n-1][i]| over consecutive frames — 0 means the analyser
-   *  window is not advancing, i.e. nothing a live glyph draws can change. */
-  moving: number;
-  frames: number;
-}
-
-/**
- * Attach a private AnalyserNode to `nodeId`'s primary audio output and sample
- * it for `AUDIO_FRAMES` consecutive animation frames, accumulating IN THE PAGE.
- *
- * This is deliberately a SECOND tap rather than a read of the shell's own —
- * the shell's tap is lazy and self-releasing, so reading it would perturb the
- * thing being measured. A passive analyser is a pure sink.
- */
-async function readAudio(page: Page, nodeId: string): Promise<AudioReading> {
-  return page.evaluate(
-    async ({ nodeId, frames }) => {
-      const w = globalThis as unknown as {
-        __engine?: () => Record<string, unknown> | null;
-        __patch?: { nodes: Record<string, { type?: string } | undefined> };
-        __listModuleDefs?: () => readonly { type: string; outputs?: readonly { id: string; type: string }[] }[];
-      };
-      const empty = {
-        state: 'n/a',
-        clockAdvance: 0,
-        tapped: false,
-        portId: null as string | null,
-        peak: 0,
-        moving: 0,
-        frames: 0,
-      };
-      const eng = w.__engine?.();
-      if (!eng) return empty;
-      const audio = (eng as { getDomain?: (d: string) => unknown }).getDomain?.('audio') as
-        | {
-            ctx: AudioContext;
-            getOutputNode: (n: string, p: string) => { node: AudioNode; output: number } | null;
-          }
-        | undefined;
-      if (!audio?.ctx) return empty;
-      const ctx = audio.ctx;
-      const t0 = ctx.currentTime;
-
-      const type = w.__patch?.nodes[nodeId]?.type ?? '';
-      const def = w.__listModuleDefs?.().find((d) => d.type === type);
-      const portId = def?.outputs?.find((o) => o.type === 'audio')?.id ?? null;
-      if (!portId) {
-        return { ...empty, state: ctx.state as string, portId: null };
-      }
-      const out = audio.getOutputNode(nodeId, portId);
-      if (!out) return { ...empty, state: ctx.state as string, portId };
-
-      const an = ctx.createAnalyser();
-      an.fftSize = 2048;
-      an.smoothingTimeConstant = 0;
-      out.node.connect(an, out.output);
-
-      const buf = new Float32Array(an.fftSize);
-      let prev: Float32Array | null = null;
-      let peak = 0;
-      let moving = 0;
-      let n = 0;
-      await new Promise<void>((resolve) => {
-        const tick = (): void => {
-          an.getFloatTimeDomainData(buf);
-          for (let i = 0; i < buf.length; i++) {
-            const a = Math.abs(buf[i]);
-            if (a > peak) peak = a;
-            if (prev) {
-              const d = Math.abs(buf[i] - prev[i]);
-              if (d > moving) moving = d;
-            }
-          }
-          prev = buf.slice();
-          n++;
-          if (n >= frames) {
-            resolve();
-            return;
-          }
-          requestAnimationFrame(tick);
-        };
-        requestAnimationFrame(tick);
-      });
-      try {
-        out.node.disconnect(an);
-      } catch {
-        /* source already gone */
-      }
-      return {
-        state: ctx.state as string,
-        clockAdvance: ctx.currentTime - t0,
-        tapped: true,
-        portId,
-        peak,
-        moving,
-        frames: n,
-      };
-    },
-    { nodeId, frames: AUDIO_FRAMES },
-  );
-}
 
 /** Three consecutive captures of the same locator → the two consecutive diffs
  *  Playwright itself needs to be zero before it will compare to a baseline. */
@@ -285,7 +176,7 @@ test.describe('VRT PROBE: face-audio-reboot — is the FROZEN tile the same acro
           await tryFreezeAudioContext(page);
           await frameMember(page, id, 0.45, 'compact');
         }
-        const a = await readAudio(page, id);
+        const a = await readFaceAudio(page, id);
         const png = await page
           .locator(`.svelte-flow__node[data-id="${id}"] [data-testid="module-shell"]`)
           .screenshot({ animations: 'disabled' });
@@ -344,7 +235,7 @@ test.describe('VRT PROBE: face-audio — does the compact tile settle, and is au
       // eslint-disable-next-line no-console
       console.log(`[face-audio]   edges ${edges.join(' , ')}`);
       for (const m of chainIds) {
-        const r = await readAudio(page, m.id);
+        const r = await readFaceAudio(page, m.id);
         // eslint-disable-next-line no-console
         console.log(
           `[face-audio]   chain ${m.type.padEnd(16)} port=${r.portId ?? '-'} tapped=${r.tapped} ` +
@@ -375,11 +266,11 @@ test.describe('VRT PROBE: face-audio — does the compact tile settle, and is au
       }
       const sel = `.svelte-flow__node[data-id="${memberId}"] [data-testid="module-shell"]`;
 
-      const liveAudio = await readAudio(page, memberId);
+      const liveAudio = await readFaceAudio(page, memberId);
       const livePix = await captureStability(page, sel);
 
       const verdict = await tryFreezeAudioContext(page);
-      const frozenAudio = await readAudio(page, memberId);
+      const frozenAudio = await readFaceAudio(page, memberId);
       const frozenPix = await captureStability(page, sel);
 
       // eslint-disable-next-line no-console
