@@ -28,14 +28,25 @@
 //   * RUN — a ConstantSource held HIGH while the transport is playing, LOW when
 //     stopped. It FOLLOWS play state; it does NOT pulse.
 //   * CLOCK — a ConstantSource onto which the scheduler tick places short GATE
-//     pulses at PPQN·bpm, phase-locked to the AudioContext grid, only while the
+//     pulses at a PHASE ACCUMULATOR running at PPQN·bpm, only while the
 //     transport runs. Non-owner instances leave run + clock at 0.
 //
-// KNOWN QUIRK (deferred, owner): the ES-9 gate class uses the HOLD-on-underrun
-// policy (es9.ts), so a browser stream hiccup FREEZES the clock edge at its last
-// level rather than continuing the pulse train. Solving that (a bridge-side
-// free-running clock) is deferred; documented here so it isn't mistaken for a
-// bug.
+// ⚠ THE FORMER "KNOWN QUIRK" IS FIXED — do not re-derive it. This header used
+// to record, as deferred, that the ES-9 gate class held its last voltage on an
+// underrun and so froze a clock edge HIGH. #1399 gave the gate class the FADE
+// policy (es9.ts `es9OutputModes` — cv/pitch still HOLD, because 0 V = C4 would
+// be a wrong note; gate and audio both fail LOW), so a stream hiccup now drops
+// the clock line rather than welding it high. The same PR replaced the absolute
+// t=0 pulse grid with the accumulator above, because a tempo write teleported
+// the phase by up to a whole period.
+//
+// Those were the two SILENT mechanisms behind "Pam's locks to it but not
+// flawlessly". Since both were invisible, the counter that tells the remaining
+// candidates apart is now part of the contract: `read('state').skips` counts
+// pulses a LATE scheduler tick could not place, and the ES-9 card's `xruns`
+// counts bridge starvation. Rising skips = main-thread scheduling; rising xruns
+// = the jack is starving; neither = look elsewhere. Both are on-screen so the
+// next report is a measurement instead of an impression.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
@@ -54,6 +65,31 @@ import {
   type CvBuddyInstance,
 } from '$lib/audio/cv-buddy/slot-alloc';
 import type { ModuleNode } from '$lib/graph/types';
+
+/**
+ * Card-readable shape exposed via `handle.read('state')`, so the Svelte card
+ * can paint live clock status without reaching into the engine internals.
+ *
+ * ⚠ `skips` deliberately rides HERE and not on `readParam`. `readParam` is
+ * fronted by the engine's `knobValues` cache, which is seeded for every
+ * DECLARED param — a diagnostic counter reads through only because it is not
+ * declared, i.e. by accident of a rule that is not about it. Declare `skips`
+ * as a param one day and the card would freeze at the seeded value with
+ * nothing red. `read()` has no cache in front of it.
+ */
+export interface CvBuddyClockState {
+  /** Is THIS instance the id-smallest one that drives ES-9 jacks 7/8? */
+  ownsClock: boolean;
+  running: boolean;
+  bpm: number;
+  /**
+   * Cumulative clock pulses a LATE scheduler tick could not place, since the
+   * node was materialized. Monotonic; never reset while the node lives, so the
+   * card can show a total rather than a per-tick blip that is gone before
+   * anyone looks at it.
+   */
+  skips: number;
+}
 
 /** The discrete PPQN menu the card offers (pulses per quarter note). 24 =
  *  DIN-sync default. */
@@ -245,13 +281,21 @@ export async function createCvBuddyHandle(
       readParam(paramId) {
         if (paramId === 'ppqn') return ppqn;
         if (paramId === 'clockOffsetMs') return clockOffsetMs;
-        // Diagnostic, not a param: how many clock pulses a late tick lost.
+        // Legacy alias, kept so an existing console poke keeps working. The
+        // CARD reads `read('state').skips` — see CvBuddyClockState for why the
+        // cached readParam path is the wrong home for a diagnostic.
         if (paramId === 'clockSkips') return clockSkips;
         return undefined;
       },
       read(key) {
         if (key === 'state') {
-          return { ownsClock: ownsTransport(thisId), running: transportRunning(), bpm: transportBpm() };
+          const state: CvBuddyClockState = {
+            ownsClock: ownsTransport(thisId),
+            running: transportRunning(),
+            bpm: transportBpm(),
+            skips: clockSkips,
+          };
+          return state;
         }
         return undefined;
       },

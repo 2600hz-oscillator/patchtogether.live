@@ -33,7 +33,13 @@
     type CvBuddyInstance,
     type CvBuddyKind,
   } from '$lib/audio/cv-buddy/slot-alloc';
-  import { CV_BUDDY_PPQN_CHOICES, CV_BUDDY_DEFAULT_PPQN } from '$lib/audio/modules/cv-buddy';
+  import {
+    CV_BUDDY_PPQN_CHOICES,
+    CV_BUDDY_DEFAULT_PPQN,
+    cvBuddyDef,
+    type CvBuddyClockState,
+  } from '$lib/audio/modules/cv-buddy';
+  import { cardParams } from './card-kit';
   import ModuleTitle from './ModuleTitle.svelte';
 
   // Only the two fields this body actually uses. Demanding the whole NodeProps
@@ -46,6 +52,10 @@
   } = $props();
   const isMini = $derived(kind === 'mini');
   let node = $derived(data?.node as ModuleNode);
+
+  // cardParams MUST be called during component init (it reads the Svelte engine
+  // context). We only want `engineCtx`; this body sets its params directly.
+  const { engineCtx } = cardParams(cvBuddyDef, () => id, () => node);
 
   // Reactive graph reads.
   let structuralV = $derived(nodesStructuralVersion());
@@ -93,6 +103,32 @@
     const v = Number.parseFloat((ev.currentTarget as HTMLInputElement).value);
     if (Number.isFinite(v)) setNodeParam(id, 'clockOffsetMs', v);
   }
+
+  // ---- late-tick counter, the other half of the clock-stability instrument ----
+  //
+  // The ES-9 card already shows `xruns` (bridge starvation). This shows the
+  // pulses a LATE scheduler tick could not place (main-thread stall). The two
+  // together are what make "the clock is unstable" diagnosable: they have
+  // opposite fixes, and until now only one of them was on screen.
+  //
+  // A ZERO IS INFORMATION and is always rendered. Hiding it until non-zero
+  // would make "healthy" and "not instrumented" look identical — the exact
+  // ambiguity that cost this bug its first round of guessing.
+  let clockSkips = $state(0);
+  $effect(() => {
+    if (!ownsClock) return; // only the owner instance has a clock at all
+    const poll = () => {
+      const e = engineCtx.get();
+      if (!e || !node) return;
+      const st = e.read(node, 'state') as CvBuddyClockState | undefined;
+      if (st && typeof st.skips === 'number') clockSkips = st.skips;
+    };
+    poll();
+    // 1 Hz: a cumulative counter, not a meter. Fast polling would buy nothing
+    // and this runs per CV Buddy card on screen.
+    const timer = setInterval(poll, 1000);
+    return () => clearInterval(timer);
+  });
 
   // Port lists follow the KIND — a mini has no velocity jack at all, which is
   // the whole reason it costs two ES-9 outputs instead of three.
@@ -144,6 +180,15 @@
             <span class="val mono">{offsetMs.toFixed(1)} ms</span>
           </label>
           <div class="hint">run → jack 7 · clock → jack 8</div>
+          <div
+            class="readout skips"
+            class:warn={clockSkips > 0}
+            data-testid="cv-buddy-skips-{id}"
+            title="Clock pulses a late scheduler tick could not place. Rising here = main-thread stall. Rising xruns on the ES-9 card instead = the jack is starving. Neither = look elsewhere."
+          >
+            <span class="lbl">LATE</span>
+            <span class="val mono">{clockSkips} skipped</span>
+          </div>
         </div>
       {:else}
         <div class="hint muted">
@@ -223,6 +268,15 @@
     line-height: 1.3;
   }
   .cv-buddy-card .hint.muted { color: var(--muted, #888); }
+  /* Sized to match the SLOTS readout, not shrunk into the hint text below it.
+     This is the card's FAULT indicator — the thing the owner scans mid-take
+     while a hardware clock misbehaves — so it gets the same legibility as the
+     other readout on the card. Muted while healthy: present, not shouting. */
+  .cv-buddy-card .readout.skips { color: var(--muted, #888); }
+  .cv-buddy-card .readout.skips.warn {
+    color: var(--warn, #e6b800);
+    border-color: var(--warn, #e6b800);
+  }
   .cv-buddy-card .es9-mirror {
     display: flex;
     align-items: flex-start;
