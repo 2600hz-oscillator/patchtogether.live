@@ -17,13 +17,24 @@
 //     `fix/vrt-dock-fold-blindness`, ALL OF THEM IN THE IMAGE (see THE FOLD).
 //
 // The glyphs are LIVE-BOUND (shell-glyph-live.ts) but render DETERMINISTIC
-// pixels here: no audio flows in these scenes, and ScopeScreen's live
-// waveform mode draws the SAME flat centerline whether the tap is unattached
-// or reading silence (VuMeter unlit at level 0; the adsr envelope / lfo
-// wave-morph curves derive from the ParamDef defaults). Every knob sits at
-// its default, so the scenes are pixel-deterministic without masks
-// (animations killed via the style tag + `animations: 'disabled'`). Tight
-// per-scene budgets, the workflow-shell-zoom precedent.
+// pixels here, and since `fix/vrt-face-audio-freeze` that is a property of the
+// SCENE rather than of the roster: `bootWithFace` SUSPENDS THE AUDIOCONTEXT
+// before the tile is framed, so each face's glyph tap is an analyser on a
+// stopped graph and ScopeScreen's live waveform mode draws the flat centreline
+// (VuMeter unlit at level 0; the adsr envelope / lfo wave-morph curves derive
+// from the ParamDef defaults). Every knob sits at its default, so the scenes
+// are pixel-deterministic without masks (animations killed via the style tag +
+// `animations: 'disabled'`). Tight per-scene budgets, the workflow-shell-zoom
+// precedent.
+//
+// ⚠ THIS HEADER USED TO SAY "no audio flows in these scenes", and that sentence
+// was the defect. Nothing suspended anything; every face captured off a LIVE
+// graph and every one of them passed, because the whole roster is struck or
+// silent so its analyser held zeros either way. The first FREE-RUNNING voice
+// falsified it — analogVco's tile measured 254 / 154 / 315 px across three
+// consecutive captures on one commit and its face was dropped for it
+// (strict-faces.ts). The freeze is asserted, at boot AND again at capture time,
+// and negative-controlled on every run by the audio-freeze control below.
 //
 // darwin-first: darwin baselines are captured locally (3× stable); the linux
 // pairs are EXEMPT_BASELINE_PAIRS-deferred until a vrt-update.yml dispatch
