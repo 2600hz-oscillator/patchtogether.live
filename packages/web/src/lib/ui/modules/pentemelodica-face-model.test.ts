@@ -6,6 +6,12 @@
 // direction it must NOT follow. Plus a SOURCE-ANCHORED check that
 // `penteModeGainAtCutoff` still mirrors `modeMorph`'s segment arithmetic, so
 // the closed form cannot rot silently against the DSP it claims to model.
+//
+// ⚠ TWO THINGS IN THIS FILE MOVED WITH THE NOTCH FIX (`modeMorph` was missing
+// the `k` from `notch = x - k*bp`): negative control (a), which used to probe
+// mode = 1 precisely because the broken tap was resonance-dependent there, and
+// the source pin, which spelled out the k-less line and so held the defect in
+// place. Both are annotated at their sites.
 
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -73,20 +79,50 @@ describe('pentemelodica face model — the shipped defaults', () => {
 });
 
 describe('pentemelodica face model — NEGATIVE CONTROLS', () => {
-  // (a) THE MODE-1 TAP IS NOT A NOTCH, and RESONANCE is what says how deep it
-  //     goes. A MODE-only readout is invariant to exactly this.
-  it('at MODE 1 the response is set by RESONANCE, not by MODE', () => {
-    const g = (r: number): number => penteModeGainAtCutoff(1, r);
-    expect(g(0)).toBeCloseTo(0.5, 6);
-    expect(g(0.2)).toBeCloseTo(0.375, 6);
-    expect(g(0.5)).toBeCloseTo(0, 9); // the TRUE null — k = 1
-    expect(g(0.8)).toBeCloseTo(1.5, 6);
-    expect(g(0.99)).toBeCloseTo(49, 6); // +33.8 dB of resonant BOOST on the bus
+  // (a) RESONANCE is what sets the LEVEL at the cutoff, over a MODE dial that
+  //     never budges. A MODE-only readout is invariant to exactly this.
+  //
+  //     ⚠ THIS LEG MOVED WITH THE NOTCH FIX. It used to probe mode = 1, where
+  //     the pre-fix `notch = x - bp` tap read |1 - 1/k| and so ran 0.5 → 49 (a
+  //     +33.8 dB resonant BOOST) across the resonance range. The fourth tap is
+  //     now the true notch `x - k*bp`, which NULLS at fc for every k — so
+  //     mode = 1 is precisely the ONE mode that is resonance-invariant, and
+  //     probing there would have asserted nothing. The blindness being
+  //     controlled for is unchanged; it is demonstrated at mode 0 instead,
+  //     where the LP tap still scales as a pure 1/k.
+  it('the level at cutoff is set by RESONANCE, not by MODE', () => {
+    const g = (r: number): number => penteModeGainAtCutoff(0, r);
+    expect(g(0)).toBeCloseTo(0.5, 6); // k = 2   → -6.0 dB
+    expect(g(0.2)).toBeCloseTo(0.625, 6); // k = 1.6 → -4.1 dB (shipped)
+    expect(g(0.5)).toBeCloseTo(1, 6); // k = 1   →  0.0 dB
+    expect(g(0.8)).toBeCloseTo(2.5, 6); // k = 0.4 → +8.0 dB
+    expect(g(0.99)).toBeCloseTo(50, 6); // k = 0.02 → +34.0 dB on the bus
     // …and the printed readout moves with it, over a MODE that never budges.
     const seen = new Set([0, 0.2, 0.8, 0.99].map((resonance) =>
-      readout('pentemelodica-mode-gain', { mode: 1, resonance }),
+      readout('pentemelodica-mode-gain', { mode: 0, resonance }),
     ));
     expect(seen.size, 'a MODE readout would print one string for all four').toBe(4);
+  });
+
+  // (a2) THE NOTCH FIX ITSELF — and the reason leg (a) had to move.
+  //      `modeMorph` dropped the `k` from the SVF identity, making the fourth
+  //      tap a phase-inverted band-pass instead of a notch. A true notch nulls
+  //      at fc for EVERY resonance; the broken one only managed it at k = 1.
+  it('at MODE 1 the tap is a TRUE NOTCH — an exact null at every resonance', () => {
+    for (const resonance of [0, 0.2, 0.5, 0.8, 0.9, 0.99]) {
+      expect(
+        penteModeGainAtCutoff(1, resonance),
+        `res ${resonance}: the notch must null at fc (pre-fix this read ` +
+          '0.375 at 0.2 and 49 at 0.99)',
+      ).toBeCloseTo(0, 12);
+    }
+    // NEGATIVE CONTROL on that null: one notch away from the dial's end the
+    // gain is non-zero again and STILL resonance-dependent, so "0 everywhere"
+    // is not simply what this closed form returns.
+    expect(penteModeGainAtCutoff(0.9, 0.2)).toBeGreaterThan(0.1);
+    expect(penteModeGainAtCutoff(0.9, 0.9)).toBeGreaterThan(
+      penteModeGainAtCutoff(0.9, 0.2),
+    );
   });
 
   it('the three MODE landmarks below the fourth tap are pure 1/k', () => {
@@ -134,16 +170,23 @@ describe('pentemelodica face model — NEGATIVE CONTROLS', () => {
 
 describe('pentemelodica face model — the DSP-source pin', () => {
   // The closed form above is derived FROM `modeMorph`'s segment arithmetic and
-  // from `notch = x - taps.bp` (which is NOT the true SVF notch — see the model
-  // header). If either changes, the derivation is silently wrong about the
-  // module rather than loudly wrong here.
-  it('the mode morph still segments 3-ways and still taps `x - bp`', () => {
+  // from its fourth tap. If either changes, the derivation is silently wrong
+  // about the module rather than loudly wrong here.
+  //
+  // ⚠ THIS PIN HELD THE BUG IN PLACE. It asserted the source read
+  // `const notch = x - taps.bp;` — the k-less form — so the missing `k` was
+  // pinned by a passing test, in the file whose job is to catch exactly this
+  // drift. The pin itself was sound; what it pinned was wrong. It now names the
+  // true SVF identity, and the DSP-side unit test cross-checks that identity
+  // against `resofilter`'s independent `lp + hp` form so a source-text match
+  // alone can no longer certify it.
+  it('the mode morph still segments 3-ways and still taps `x - k*bp`', () => {
     const src = readFileSync(
       fileURLToPath(new URL('../../../../../dsp/src/lib/pentemelodica-dsp.ts', import.meta.url)),
       'utf8',
     );
     expect(src).toContain('const seg = Math.min(2, Math.floor(m3));');
-    expect(src).toContain('const notch = x - taps.bp;');
+    expect(src).toContain('const notch = x - k * taps.bp;');
     expect(src).toContain('return taps.hp * (1 - t) + notch * t;');
   });
 

@@ -6,8 +6,9 @@
 // to something that genuinely changes the answer:
 //
 //   mode gain   — a function of MODE **and** RESONANCE. A MODE readout is
-//                 invariant to resonance and would print "notch" at res 0.99
-//                 while the filter is a 49× resonant BOOST on the master bus.
+//                 invariant to resonance and would print "low-pass" alike at
+//                 −6.0 dB (res 0) and +34.0 dB (res 0.99), a 50× swing on the
+//                 master bus that the MODE knob never twitches for.
 //   peak        — a function of every LEVEL **and** every PAN. A level readback
 //                 is pan-invariant; spreading the pans genuinely lowers the
 //                 per-channel peak (1.697 → 1.342 at ±0.8).
@@ -17,12 +18,19 @@
 //   decay to S  — 0 ms at the shipped SUSTAIN of 1, because the Decay branch
 //                 exits on its FIRST tick when the gap is already zero.
 //
-// ⚠ THE MODE-1 TAP IS NOT A NOTCH, and this model MIRRORS the defect rather
-// than the textbook. `modeMorph` computes `notch = x - taps.bp`, while the true
-// SVF identity is `lp + hp = x - k·bp` (which `resofilter-dsp` implements
-// correctly). So RESONANCE silently sets how deep that end of the MODE sweep
-// goes: −8.5 dB at the shipped 0.2, a true null at 0.5, +33.8 dB at 0.99. The
-// face DOCUMENTS that; fixing the DSP is an owner-audition PR of its own.
+// THE MODE-1 TAP IS A TRUE NOTCH as of the notch fix, and this model tracks it.
+// `modeMorph` used to compute `notch = x - taps.bp` — the `k` was missing, so
+// the fourth tap was a PHASE-INVERTED BAND-PASS whose gain at fc was |1 − 1/k|:
+// −8.5 dB at the shipped resonance 0.2, a true null ONLY at 0.5 (k == 1), and
+// +33.8 dB — a 49× BOOST on the master bus — at the max 0.99. It now computes
+// `x − k·bp` = `lp + hp`, the same identity `resofilter-dsp` has always used,
+// so the tap NULLS at fc for every resonance.
+//
+// ⚠ That makes `penteModeGainAtCutoff` resonance-INVARIANT at exactly mode = 1
+// (a null is a null at any Q) — but only there. Every mode BELOW the fourth tap
+// still scales as 1/k, which is a 0.5 → 50 swing across the resonance range, so
+// the readout is still reporting something the MODE knob cannot show. The
+// negative control moved with it: see `pentemelodica-face-model.test.ts`.
 //
 // PURE — no DOM, no Svelte, no engine. Node-testable.
 
@@ -87,9 +95,14 @@ export function pentemelodicaFaceParams(
  * RESONANCE.
  *
  * MIRRORS `modeMorph` exactly. At ω = ωc the analog SVF taps are lp = −j/k,
- * bp = 1/k, hp = +j/k, and this module's fourth tap is `x − bp` = 1 − 1/k, NOT
- * the true notch. Blending time-domain taps IS blending transfer functions (all
- * four are linear in the same input), so the closed form is exact at fc.
+ * bp = 1/k, hp = +j/k, and the fourth tap is the true notch `x − k·bp` =
+ * 1 − k·(1/k) = 0 — an exact null, independently of k. Blending time-domain taps
+ * IS blending transfer functions (all four are linear in the same input), so the
+ * closed form is exact at fc.
+ *
+ * Hence the fourth segment (HP → Notch) carries only the HP contribution,
+ * decaying to zero as the dial reaches 1 — where the pre-fix code instead
+ * carried a real term `t·(1 − 1/k)` that grew without bound as k fell.
  */
 export function penteModeGainAtCutoff(mode: number, resonance: number): number {
   const k = resToK(resonance);
@@ -106,7 +119,9 @@ export function penteModeGainAtCutoff(mode: number, resonance: number): number {
     re = (1 - t) / k;
     im = t / k;
   } else {
-    re = t * (1 - 1 / k);
+    // The notch tap contributes NOTHING at fc (it nulls there), so only the
+    // fading HP term survives: at t = 1 the gain is exactly 0.
+    re = 0;
     im = (1 - t) / k;
   }
   return Math.hypot(re, im);
