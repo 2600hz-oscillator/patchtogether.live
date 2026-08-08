@@ -21,7 +21,7 @@
 // Runtime-conscious: pure DOM + injected MIDI events. No real hardware, no
 // permission prompts, no extra audio graph beyond the cards each test spawns.
 
-import { test, expect } from './_fixtures';
+import { test, expect, loadVoiceDemo } from './_fixtures';
 import type { Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 import {
