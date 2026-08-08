@@ -121,6 +121,83 @@ Dual-mono becomes **its own PR between PR-3 and PR-4** (call it PR-3b): the
 planner must know that a mono target still receives BOTH legs, so it lands with
 the planner and before the visible flip.
 
+### ⚠ PR-3b SPEC — "a generic wrapper, not 21 module edits" DOES NOT SURVIVE THE REGISTRY
+
+Measured 2026-08-07 against the **live** `contract-lock.txt`, not the month-old
+figures above. **Every count in §0b is wrong**, and more importantly the
+*shape* is wrong: the mono-in set is not one homogeneous group that one wrapper
+can serve.
+
+| §0b claimed | actual |
+|---|---|
+| 86 modules with an audio path | **73** |
+| **21** with exactly one audio input | **26** |
+| 29 with ≥2 audio inputs | 27 |
+| 30 sources with none | 20 |
+
+§0b's list also omits five modules entirely: `dockscope`, `featurecv`,
+`moog912`, `moog961`, `spectrograph` — and those five are exactly the ones that
+break the generic story.
+
+**The 26 split FIVE ways, and only the first can use the wrapper as designed:**
+
+**A. 13 clean mono→mono pipes — the wrapper works verbatim.**
+`delay destroy filter moog904a moog904b moog904c moog905 moog907a moog914
+rasterize reverb scaler warrensspectrum`
+One audio in, one audio out. `ChannelSplitter(2)` → two instances →
+`ChannelMerger(2)`, exactly as §0b describes.
+
+**B. 5 SINKS / ANALYZERS — must NOT be duplicated.**
+`dockscope` (no outputs at all), `spectrograph` (→ 2× mono-video),
+`featurecv` (→ cv,cv,gate,cv), `moog912` (→ cv,gate), `moog961` (→ 4× gate).
+They consume audio and emit **CV / gate / video**. There is no audio merger to
+recombine them, and **no defined answer to "which instance's CV wins"** — the
+plan simply never considered a non-audio output. Duplicating also doubles an
+FFT for zero benefit, and §0b sharp-edge 1 (`read()` is single-instance) means
+the card would silently show **L only**.
+→ **Single instance, fed the SUM.** For a meter/analyzer, summing L+R is the
+*correct* reading, not a compromise.
+
+**C. 3 FM / MODULATION inputs — duplicating is meaningless.**
+`foxy.fm`, `wavecel.fm`, `swolevco.fm`. The audio-typed input is a modulation
+input, not a signal path. Nobody wants two oscillators because a stereo LFO got
+patched into FM.
+→ **Single instance, fed the sum** (or L — decide, but do not duplicate).
+
+**D. 5 MULTI-TAP outputs — the outputs are variants, NOT L/R.**
+`vca` (audio + audio_inv), `moog902` (audio + audio_inv), `rings` (even/odd —
+already `COLLAPSE_EXEMPT`), `moog923` (hp/lp/pink/white), `swolevco`
+(mod_out/out/sum_out). Two instances × N taps = 2N streams for N declared
+ports. **The merger story is undefined.** ⚠ NOTE `vca` — the single most
+common module in any patch — is in this group, so this is not an edge case.
+
+**E. 1 genuine mono→stereo generator.** `resofilter` (in `audio` → `out_l`/`out_r`).
+It already widens; feeding it two legs and merging two widened pairs is
+incoherent.
+
+**What this changes about PR-3b:**
+
+1. **Dual-mono needs a DENY-BY-DEFAULT LEDGER**, per CLAUDE.md's gate
+   discipline — an explicit per-module classification (`dual-mono` / `sum` /
+   `first-leg`), ratcheted both directions, anchored to the artifact so a module
+   that changes port shape reddens. It is NOT "wrap everything with one audio
+   input". §0b's own sharp-edge 2 already demanded an opt-out list for
+   side-effecting factories; groups B–E make that list the *primary* mechanism
+   rather than an exception.
+2. **Groups B and C are decidable now** and I would decide them as above.
+3. **Groups D and E need an OWNER CALL** — they change what `vca` and
+   `resofilter` do to audio, which is not mine to choose. See the question
+   below.
+
+**OPEN QUESTION FOR THE OWNER (blocks group D, not the PR):**
+> A stereo signal reaches `vca`, which has one audio input and two outputs
+> (`audio` + `audio_inv`, an inverted copy — not L/R). Options: **(i)** treat
+> D as group B — one instance fed the sum, so stereo collapses at a VCA;
+> **(ii)** duplicate and pair the taps by index, so `audio` becomes L/R and
+> `audio_inv` becomes L/R — doubling the declared port count, a contract
+> change; **(iii)** per-module hand-treatment. Groups A–C can ship without
+> this answer.
+
 ### Follow-up: option C, deferred by owner decision
 
 Once B is shipped **and all UIs, VRTs and ARTs are updated**, revisit making
