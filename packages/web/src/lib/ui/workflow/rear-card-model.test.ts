@@ -41,8 +41,14 @@ function bandPorts(def: RearDefLike, bandId: string): string[] {
   return [...band.holes.map((h) => h.portId), ...band.clusters.flatMap((c) => c.holes.map((h) => h.portId))];
 }
 
-/** TOTALITY: every declared port lands in exactly one band/rail slot — the
- *  no-orphan-holes guarantee behind "exposes ALL patch points". */
+/** TOTALITY: every declared port is ADDRESSED by exactly one hole — the
+ *  no-orphan-holes guarantee behind "exposes ALL patch points".
+ *
+ *  ⚠ PR-4: a hole is no longer 1:1 with a port. A derived stereo pair renders
+ *  as ONE hole addressing TWO ports (`stereoSiblingPortId`), so the invariant
+ *  is stated over the addressed-port set, and `holeCount` (rendered holes) is
+ *  cross-checked against `portCount` (ports covered). Comparing holes to ports
+ *  directly would have silently become an assertion about nothing. */
 function expectTotal(def: RearDefLike): void {
   const plan = rearFieldPlan(def);
   const holes = [
@@ -53,16 +59,26 @@ function expectTotal(def: RearDefLike): void {
     ...(def.inputs ?? []).map((p) => `input:${p.id}`),
     ...(def.outputs ?? []).map((p) => `output:${p.id}`),
   ];
-  const rendered = holes.map((h) => `${h.direction}:${h.portId}`);
+  const rendered = holes.flatMap((h) =>
+    h.stereoSiblingPortId
+      ? [`${h.direction}:${h.portId}`, `${h.direction}:${h.stereoSiblingPortId}`]
+      : [`${h.direction}:${h.portId}`],
+  );
   expect(rendered.sort()).toEqual(declared.sort());
-  expect(plan.holeCount).toBe(declared.length);
+  expect(plan.portCount).toBe(declared.length);
+  expect(plan.holeCount).toBe(holes.length);
+  // A collapsed pair costs exactly one hole; nothing else may.
+  const collapsed = holes.filter((h) => h.stereoSiblingPortId).length;
+  expect(plan.holeCount).toBe(plan.portCount - collapsed);
 }
 
 describe('rear-card derivation — the six P1 prototypes (spec §4)', () => {
   it('tidyVco: play + 5 face-page bands, oscillator curated (pwm_cv), EG clusters, audio-rate ticks', () => {
     const plan = rearFieldPlan(tidyVcoDef as unknown as RearDefLike);
     expectTotal(tidyVcoDef as unknown as RearDefLike);
-    expect(plan.holeCount).toBe(29); // 27 in + 2 out
+    // 28 HOLES for 29 declared ports: `out_l`+`out_r` collapse into one.
+    expect(plan.holeCount).toBe(28);
+    expect(plan.portCount).toBe(29); // 27 in + 2 out
     expect(bandIds(tidyVcoDef as unknown as RearDefLike)).toEqual([
       'voice',
       'oscillator',
@@ -126,9 +142,12 @@ describe('rear-card derivation — the six P1 prototypes (spec §4)', () => {
     expect(filter.holes.find((h) => h.portId === 'track_cv')!.audioRate).toBe(false);
     expect(plan.bands[2].holes.every((h) => h.audioRate)).toBe(true); // wavefolder: fold + sym
 
-    // OUTPUTS rail: stereo pair tie on out_r; audio domain; no pathology.
-    expect(plan.outputs.map((h) => h.portId)).toEqual(['out_l', 'out_r']);
-    expect(plan.outputs[1].pairWithPrev).toBe(true);
+    // OUTPUTS rail: ONE stereo hole (PR-4, owner Q5 — the pair-tie retired).
+    // `out_l`+`out_r` render as a single OUT jack addressed to the LEFT leg,
+    // and the hole names its sibling so a click patches the whole image.
+    expect(plan.outputs.map((h) => h.portId)).toEqual(['out_l']);
+    expect(plan.outputs[0].stereoSiblingPortId).toBe('out_r');
+    expect(plan.outputs[0].label).toBe('OUT');
     expect(plan.outputs.every((h) => h.domain === 'audio')).toBe(true);
     expect(plan.collapse).toBe(false);
     expect(plan.denseRail).toBe(false);
@@ -218,7 +237,8 @@ describe('rear-card derivation — the six P1 prototypes (spec §4)', () => {
       ['env', 'cv'],
       ['env_inv', 'cv'],
     ]);
-    expect(plan.outputs[1].pairWithPrev).toBeUndefined();
+    // cv-typed, so not a derived pair at all — two holes, no collapse.
+    expect(plan.outputs[1].stereoSiblingPortId).toBeUndefined();
   });
 
   it('vca: curated signal → gain cv split (neither input is a per-param CV)', () => {
@@ -234,7 +254,7 @@ describe('rear-card derivation — the six P1 prototypes (spec §4)', () => {
     // PF-4: the def authors these, so the rear stops printing `AUDIO` on BOTH
     // rails (the input hole is `AUDIO`) and the pair shares a stem.
     expect(plan.outputs.map((h) => h.label)).toEqual(['OUT', 'OUT INV']);
-    expect(plan.outputs[1].pairWithPrev).toBeUndefined(); // not an L/R pair
+    expect(plan.outputs[1].stereoSiblingPortId).toBeUndefined(); // not an L/R pair
   });
 
   it('vca: the page id `gain` COLLIDING with the rear group id `gain` is intentional', () => {
@@ -293,7 +313,9 @@ describe('rear-card derivation — the six P1 prototypes (spec §4)', () => {
     // curated stereo-insert band leads with the two audio ins.
     expect(bandIds(def)).toEqual(['signal', 'space', 'input', 'seeds']);
     expect(rearFieldPlan(def).bands[0].label).toBe('stereo in');
-    expect(bandPorts(def, 'signal')).toEqual(['in_l', 'in_r']);
+    // ONE stereo hole (PR-4): the curated 'stereo in' band leads with the
+    // collapsed pair, addressed to the LEFT leg.
+    expect(bandPorts(def, 'signal')).toEqual(['in_l']);
     // Band membership derives in PAGE-CONTROL order, so the re-ranked face
     // shows LATE first — the fader that means "how much reverb" now leads the
     // rear the same way it leads the lane.
@@ -372,7 +394,11 @@ describe('rear-card derivation — edge rules (synthetic)', () => {
     };
     const plan = rearFieldPlan(def);
     expect(plan.bands.map((b) => b.id)).toEqual(['signal']); // no gate/poly → signal
-    expect(plan.holeCount).toBe(3);
+    // 2 holes for 3 ports: the token-derived `in_l`/`in_r` pair collapses even
+    // with no `stereoPairs` declaration and no `face` at all.
+    expect(plan.holeCount).toBe(2);
+    expect(plan.portCount).toBe(3);
+    expect(plan.bands[0].holes[0].stereoSiblingPortId).toBe('in_r');
   });
 
   it('pitch-cable holes read cv-green + the 1v/oct tag (spec §1.4 Q2)', () => {
@@ -448,19 +474,25 @@ describe('compatibility dim predicate (spec §2.2) — mirrors the commit gate',
 });
 
 // ────────────────────────────────────────────────────────────────────────────
-// THE OUTPUTS-RAIL PAIR TIE, after the fifth-heuristic unification (PR-2b).
+// THE OUTPUTS-RAIL STEREO HOLE, after the fifth-heuristic unification (PR-2b)
+// and the pair-tie retirement (PR-4, owner Q5).
 //
 // `markStereoPairs` used to be its own stem regex (`/^(.*?)_?([lr])$/`) over
 // ADJACENT outputs — blind to `stereoPairs` declarations AND to the port's
-// cable type. It now asks $lib/graph/stereo-pairs, the one derivation. That
-// changes the tie on EXACTLY three registry modules, all of them corrections;
-// every other module (incl. tidyVco / vca / adsr / kickdrum / cloudseed,
-// pinned above) is byte-identical. Pinned so the corrections cannot regress
-// and so the blast radius stays a measured number rather than a claim.
+// cable type. PR-2b pointed it at $lib/graph/stereo-pairs, the one derivation,
+// which changed the verdict on EXACTLY three registry modules, all of them
+// corrections. PR-4 then turned the verdict from a TIE MARK between two holes
+// into ONE hole, which also removes the tie's adjacency precondition.
+//
+// The three corrections are re-pinned here in their new form so they cannot
+// regress, and so the blast radius stays a measured number rather than a claim.
 // ────────────────────────────────────────────────────────────────────────────
-describe('outputs-rail stereo tie: unified onto derivedStereoPairs', () => {
-  const rightTies = (def: RearDefLike): string[] =>
-    rearFieldPlan(def).outputs.filter((h) => h.pairWithPrev).map((h) => h.portId);
+describe('outputs-rail stereo pairs: one hole, derived from stereo-pairs', () => {
+  /** `left→right` for every COLLAPSED output hole. Empty ⇒ no pair on the rail. */
+  const stereoOuts = (def: RearDefLike): string[] =>
+    rearFieldPlan(def)
+      .outputs.filter((h) => h.stereoSiblingPortId)
+      .map((h) => `${h.portId}+${h.stereoSiblingPortId}`);
 
   it('FALSE POSITIVE fixed: gamepad d-pad left/right are GATE buttons, not a stereo pair', () => {
     // `dl` / `dr` end in l / r, so the old regex tied them on the outputs rail
@@ -472,30 +504,59 @@ describe('outputs-rail stereo tie: unified onto derivedStereoPairs', () => {
       'gate',
       'gate',
     ]);
-    expect(rightTies(gamepadDef as unknown as RearDefLike)).toEqual([]);
+    expect(stereoOuts(gamepadDef as unknown as RearDefLike)).toEqual([]);
+    // …and the two buttons still render as their own holes.
+    const ids = rearFieldPlan(gamepadDef as unknown as RearDefLike).outputs.map((h) => h.portId);
+    expect(ids).toContain('dl');
+    expect(ids).toContain('dr');
   });
 
   it('FALSE NEGATIVE fixed: sidecar audio_l_out/audio_r_out is a DECLARED pair', () => {
     // The ids do not END in l/r, so the old regex could never see the pair —
     // not even though the def declares it outright.
     expect(sidecarDef.stereoPairs).toContainEqual(['audio_l_out', 'audio_r_out']);
-    expect(rightTies(sidecarDef as unknown as RearDefLike)).toEqual(['audio_r_out']);
+    expect(stereoOuts(sidecarDef as unknown as RearDefLike)).toEqual([
+      'audio_l_out+audio_r_out',
+    ]);
   });
 
-  it('FALSE NEGATIVE fixed: audioIn audio_l_out/audio_r_out ties from its id tokens', () => {
-    expect(rightTies(audioInDef as unknown as RearDefLike)).toEqual(['audio_r_out']);
+  it('FALSE NEGATIVE fixed: audioIn audio_l_out/audio_r_out collapses from its id tokens', () => {
+    const plan = rearFieldPlan(audioInDef as unknown as RearDefLike);
+    expect(stereoOuts(audioInDef as unknown as RearDefLike)).toEqual([
+      'audio_l_out+audio_r_out',
+    ]);
+    // The stem-derived collapsed label: `audio_l_out` → stem `audio_out` →
+    // the redundant direction suffix drops → AUDIO.
+    expect(plan.outputs.find((h) => h.portId === 'audio_l_out')!.label).toBe('AUDIO');
   });
 
-  it('rings odd/even is COLLAPSE_EXEMPT: two timbre taps, no tie', () => {
+  it('rings odd/even is COLLAPSE_EXEMPT: two timbre taps, TWO holes', () => {
     // Derived (declared tuple, both audio, adjacent) but deliberately exempt.
     // The DECLARATION is untouched, so its shipped autowire is unaffected —
-    // collapse and autowire read different lists, on purpose.
+    // collapse and autowire read different lists, on purpose. This is THE
+    // regression guard for reading the wrong list in the rear card.
     expect(ringsDef.stereoPairs).toEqual([['odd', 'even']]);
-    expect(rightTies(ringsDef as unknown as RearDefLike)).toEqual([]);
+    expect(stereoOuts(ringsDef as unknown as RearDefLike)).toEqual([]);
+    const ids = rearFieldPlan(ringsDef as unknown as RearDefLike).outputs.map((h) => h.portId);
+    expect(ids).toContain('odd');
+    expect(ids).toContain('even');
   });
 
-  it('UNCHANGED: a declared L/R pair still ties (tidyVco); a non-pair still does not (vca)', () => {
-    expect(rightTies(tidyVcoDef as unknown as RearDefLike)).toEqual(['out_r']);
-    expect(rightTies(vcaDef as unknown as RearDefLike)).toEqual([]);
+  it('UNCHANGED shape: a declared L/R pair collapses (tidyVco); a non-pair does not (vca)', () => {
+    expect(stereoOuts(tidyVcoDef as unknown as RearDefLike)).toEqual(['out_l+out_r']);
+    expect(stereoOuts(vcaDef as unknown as RearDefLike)).toEqual([]);
+  });
+
+  it('INPUT rails collapse too — the tie only ever existed on outputs', () => {
+    // cloudseed declares `in_l`/`in_r`. Under the tie that pair rendered as two
+    // input holes on a card whose FRONT panel now shows one jack: two surfaces
+    // disagreeing about the same def.
+    const plan = rearFieldPlan(cloudseedDef as unknown as RearDefLike);
+    const inputs = plan.bands.flatMap((b) => [...b.holes, ...b.clusters.flatMap((c) => c.holes)]);
+    const stereoIns = inputs
+      .filter((h) => h.stereoSiblingPortId)
+      .map((h) => `${h.portId}+${h.stereoSiblingPortId}`);
+    expect(stereoIns).toEqual(['in_l+in_r']);
+    expect(inputs.some((h) => h.portId === 'in_r')).toBe(false);
   });
 });

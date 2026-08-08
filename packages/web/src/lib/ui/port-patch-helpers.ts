@@ -12,6 +12,8 @@
 
 import type { Edge, ModuleNode, PortDef } from '$lib/graph/types';
 import { canConnect, canConnectToPort } from '$lib/graph/types';
+import { collapseStereoPorts } from '$lib/ui/stereo-jack-collapse';
+import type { StereoPairDefLike } from '$lib/graph/stereo-pairs';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { MetaModuleDef } from '$lib/meta/module-registry';
@@ -118,15 +120,30 @@ export function compatibleTargetPorts(
 ): CandidatePort[] {
   const out: CandidatePort[] = [];
   if (srcDirection === 'output') {
-    for (const p of targetDef.inputs) {
+    const compatible = targetDef.inputs.filter((p) =>
       // Honour a per-port `accepts` widening (e.g. a SCOPE probe taking the CV
       // family on an audio input) so the cascade matches the drag validator.
-      if (!canConnectToPort(srcType, p)) continue;
-      const occ = findOccupant(targetNodeId, p.id, edges);
+      canConnectToPort(srcType, p),
+    );
+    // ONE ENTRY PER STEREO PAIR — the same collapse the card's jack rows use,
+    // so the picker offers the same jacks the panel shows. Offering `L` and `R`
+    // separately here would let a user "choose" a leg the planner immediately
+    // overrides (a stereo commit writes both regardless), and the CHANNEL is
+    // chosen by the picker's own only-L / only-R rows instead.
+    for (const p of collapseStereoPorts(
+      compatible.map((p) => ({ id: p.id, label: portLabel(p), cable: p.type as string })),
+      targetDef as unknown as StereoPairDefLike,
+      'input',
+    )) {
+      // A collapsed jack is OCCUPIED if EITHER leg is — replacing it replaces
+      // the whole cable, and the warning has to say so.
+      const occ =
+        findOccupant(targetNodeId, p.id, edges) ??
+        (p.siblingId ? findOccupant(targetNodeId, p.siblingId, edges) : undefined);
       out.push({
         portId: p.id,
-        label: portLabel(p),
-        cable: p.type as string,
+        label: p.label ?? p.id,
+        cable: p.cable ?? 'audio',
         occupiedBy: occ
           ? {
               sourceNodeId: occ.source.nodeId,
@@ -140,12 +157,16 @@ export function compatibleTargetPorts(
     // The source is an INPUT — we're patching FROM the chosen target's
     // OUTPUT into our input. Compatibility is canConnect(targetOutputType,
     // srcType) — the cable runs from target → source.
-    for (const p of targetDef.outputs) {
-      if (!canConnect(p.type as string, srcType)) continue;
+    const compatible = targetDef.outputs.filter((p) => canConnect(p.type as string, srcType));
+    for (const p of collapseStereoPorts(
+      compatible.map((p) => ({ id: p.id, label: portLabel(p), cable: p.type as string })),
+      targetDef as unknown as StereoPairDefLike,
+      'output',
+    )) {
       out.push({
         portId: p.id,
-        label: portLabel(p),
-        cable: p.type as string,
+        label: p.label ?? p.id,
+        cable: p.cable ?? 'audio',
       });
     }
   }

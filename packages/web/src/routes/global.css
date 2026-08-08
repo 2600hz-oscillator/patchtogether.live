@@ -108,6 +108,36 @@ body {
   filter: drop-shadow(0 0 4px var(--accent-glow));
 }
 
+/* ONLY-L / ONLY-R cables (owner Q5). An audio cable is normally a LEG GROUP of
+ * two edges rendered as ONE bezier. When only one leg exists — because the user
+ * chose "patch only L/R", or because the rack was saved before leg groups and
+ * carries a legacy single-leg edge — half the stereo image is silent, and the
+ * cable says so:
+ *
+ *   * DASHED at the same 4/4 rhythm as the in-flight PickupCable ghost
+ *     (PickupCable.svelte: stroke-dasharray="4 4"), so "not the whole thing"
+ *     reads as one visual vocabulary rather than two unrelated treatments;
+ *   * a one-letter L / R tag, because dashes alone say "partial" and not WHICH
+ *     half. ⚠ The tag is NOT styled here: xyflow renders an edge `label` as an
+ *     HTML div PORTALED into its own `edge-labels` container, outside the
+ *     <g.svelte-flow__edge>, so no descendant selector can reach it. It is
+ *     styled inline through `labelStyle` in Canvas.svelte
+ *     (CABLE_SOLO_LABEL_STYLE) — stated here so the next person does not add a
+ *     rule that silently matches nothing.
+ *
+ * Hue is untouched — colour still means CABLE TYPE and nothing else, which is
+ * the rule the whole palette rests on.
+ *
+ * No `!important` needed, unlike the hover / rear-view / related rules below:
+ * those override `stroke-width`, which xyflow writes into each edge's INLINE
+ * style. It writes only `stroke` and `stroke-width` there — never a dash — and
+ * nothing later in this file sets `stroke-dasharray` on an edge path, so the
+ * plain declaration wins on its own. */
+.svelte-flow__edge.cable-left-only .svelte-flow__edge-path,
+.svelte-flow__edge.cable-right-only .svelte-flow__edge-path {
+  stroke-dasharray: 4 4;
+}
+
 /* Rear view ("flip rack", rack Phase 3): tracing wiring is the whole point of
  * the rear view, so EMPHASIZE every cable — brighter + thicker — while the rack
  * is flipped. The `.rear-view` class is set on the .flow container by Canvas, so

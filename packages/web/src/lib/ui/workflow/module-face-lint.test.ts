@@ -771,19 +771,31 @@ describe('module-face lint — rear-card curation (face.rear) + derivation total
     expect(problems.join('\n'), 'face.rear drifted from the declared ports — fix the keys').toBe('');
   });
 
-  it('STRICT_FACES: the rear derivation is TOTAL — every declared port = exactly one hole', async () => {
+  it('STRICT_FACES: the rear derivation is TOTAL — every declared port is addressed by exactly one hole', async () => {
+    // ⚠ PR-4: a hole is no longer 1:1 with a port. A derived stereo pair
+    // renders as ONE hole addressing TWO ports (owner Q5 — the pair-tie
+    // retired in favour of a single stereo hole), so totality is stated over
+    // the ADDRESSED-PORT set. Comparing hole COUNT to port count directly, as
+    // this used to, would now be an assertion about a number that is supposed
+    // to differ — and it would go red on every stereo module while proving
+    // nothing about whether a port went missing.
     const { rearFieldPlan } = await import('./rear-card-model');
     const missing: string[] = [];
     for (const def of allDefs()) {
       if (!STRICT_FACES.has(def.type)) continue;
       const plan = rearFieldPlan(def as unknown as import('./rear-card-model').RearDefLike);
-      const rendered = [
+      const holes = [
         ...plan.bands.flatMap((b) => [
-          ...b.holes.map((h) => `input:${h.portId}`),
-          ...b.clusters.flatMap((c) => c.holes.map((h) => `input:${h.portId}`)),
+          ...b.holes.map((h) => ({ dir: 'input', h })),
+          ...b.clusters.flatMap((c) => c.holes.map((h) => ({ dir: 'input', h }))),
         ]),
-        ...plan.outputs.map((h) => `output:${h.portId}`),
+        ...plan.outputs.map((h) => ({ dir: 'output', h })),
       ];
+      const rendered = holes.flatMap(({ dir, h }) =>
+        h.stereoSiblingPortId
+          ? [`${dir}:${h.portId}`, `${dir}:${h.stereoSiblingPortId}`]
+          : [`${dir}:${h.portId}`],
+      );
       const declared = [
         ...(def.inputs ?? []).map((p) => `input:${p.id}`),
         ...(def.outputs ?? []).map((p) => `output:${p.id}`),
@@ -796,7 +808,17 @@ describe('module-face lint — rear-card curation (face.rear) + derivation total
         if (!renderedSet.has(d)) missing.push(`${def.type}: rear derivation dropped ${d}`);
       }
       if (rendered.length !== declared.length) {
-        missing.push(`${def.type}: hole count ${rendered.length} ≠ declared port count ${declared.length}`);
+        missing.push(
+          `${def.type}: addressed port count ${rendered.length} ≠ declared ${declared.length}`,
+        );
+      }
+      // …and the model's own bookkeeping must agree with what we just counted,
+      // so a bug that drops a hole AND mis-reports the totals cannot cancel out.
+      if (plan.portCount !== declared.length) {
+        missing.push(`${def.type}: plan.portCount ${plan.portCount} ≠ declared ${declared.length}`);
+      }
+      if (plan.holeCount !== holes.length) {
+        missing.push(`${def.type}: plan.holeCount ${plan.holeCount} ≠ rendered holes ${holes.length}`);
       }
     }
     expect(missing.join('\n'), 'rear derivation not total — a hole went missing').toBe('');
