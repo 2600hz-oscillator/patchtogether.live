@@ -112,8 +112,8 @@
   let displaySamplesSig = $state<string | null>(null);
 
   // Recording settings live on node.data so they ride the Yjs envelope.
-  // Defaults come from SAMSLOOP_REC_DEFAULTS — match the brief's spec
-  // (CHAN=Stereo, BITS=16, RATE=44 kHz).
+  // Defaults come from SAMSLOOP_REC_DEFAULTS (CHAN=Mono, BITS=16,
+  // RATE=48 kHz) — see that constant for why each one is what it is.
   let recChannels: SamsloopRecChannels = $derived(
     ((node?.data as SamsloopData | undefined)?.recChannels ?? SAMSLOOP_REC_DEFAULTS.channels) as SamsloopRecChannels,
   );
