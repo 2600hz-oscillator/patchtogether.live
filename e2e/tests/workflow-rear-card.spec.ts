@@ -202,7 +202,7 @@ test('TAB flips the open dock full-view to the rear card and back (controls GONE
 
 // ── (2) one hole per declared port + domain color = the live cable palette ──
 
-test('every declared port renders exactly one domain-mapped hole (tidyVco, 27 in + 2 out)', async ({
+test('every declared port is addressed by exactly one domain-mapped hole (tidyVco, 27 in + 2 out)', async ({
   page,
 }) => {
   await gotoWorkflow(page);
@@ -215,9 +215,16 @@ test('every declared port renders exactly one domain-mapped hole (tidyVco, 27 in
   expect(inputs.length, 'the def declares 27 inputs').toBe(27);
   expect(outputs.length, 'the def declares 2 outputs').toBe(2);
 
-  // COUNT: exactly one hole per declared port, nothing extra.
+  // COUNT. ⚠ A hole is no longer 1:1 with a port (PR-4, owner Q5): a derived
+  // stereo pair renders as ONE hole addressing TWO ports, so tidyVco's
+  // `out_l`+`out_r` cost one hole between them. 29 declared ports → 28 holes.
+  // The number is DERIVED from the collapsed pairs actually on screen, not
+  // hardcoded, so a genuinely DROPPED jack cannot hide inside the shortfall.
+  const stereoHoles = rearCard(page).locator('[data-testid="back-jack"][data-stereo-sibling]');
+  await expect(stereoHoles, 'tidyVco has exactly one collapsed pair (out_l+out_r)').toHaveCount(1);
+  const collapsed = await stereoHoles.count();
   await expect(rearCard(page).locator('[data-testid="back-jack"]')).toHaveCount(
-    inputs.length + outputs.length,
+    inputs.length + outputs.length - collapsed,
   );
 
   // ID + DIRECTION + DOMAIN: each declared port has its one hole, classed by
@@ -227,7 +234,18 @@ test('every declared port renders exactly one domain-mapped hole (tidyVco, 27 in
     ['output', outputs],
   ] as const) {
     for (const p of ports) {
+      // A collapsed pair's RIGHT leg has no hole of its own — it is addressed
+      // by its partner's `data-stereo-sibling`. Assert that explicitly rather
+      // than skipping it, so "collapsed into its sibling" stays distinguishable
+      // from "silently missing".
       const jack = rearJack(page, p.id, dir);
+      const asSibling = rearCard(page).locator(
+        `[data-testid="back-jack"][data-stereo-sibling="${p.id}"][data-direction="${dir}"]`,
+      );
+      if ((await jack.count()) === 0) {
+        await expect(asSibling, `${dir} ${p.id}: addressed by its collapsed partner`).toHaveCount(1);
+        continue;
+      }
       await expect(jack, `${dir} ${p.id}: exactly one hole`).toHaveCount(1);
       await expect(jack, `${dir} ${p.id}: domain class`).toHaveAttribute('data-domain', domainOf(p.type));
     }
@@ -361,12 +379,20 @@ test('50/50 split: TAB flips BOTH panes to their rear cards together (one global
     await expect(paneOf(page, nodeId).getByTestId('faceplate-editor')).toBeHidden();
   }
   // Half-width panes stay FLAT (bands wrap via the auto-fill raster — no
-  // menus, no elision): the busiest field still shows one hole per port.
+  // menus, no elision): the busiest field still shows every patch point.
   // (Scoped INSIDE the rear card — the hidden front face keeps its legacy
   // back-panel buttons in the DOM.)
+  //
+  // 28 holes for tidyVco's 29 declared ports: `out_l`+`out_r` are a derived
+  // stereo pair and render as ONE hole (PR-4, owner Q5). Derived from the
+  // collapsed pairs actually present, so a genuinely dropped jack cannot hide
+  // inside the shortfall.
+  const tvRear = paneOf(page, 'tv').getByTestId('rear-card');
   await expect(
-    paneOf(page, 'tv').getByTestId('rear-card').locator('[data-testid="back-jack"]'),
-  ).toHaveCount(29);
+    tvRear.locator('[data-testid="back-jack"][data-stereo-sibling]'),
+    'tidyVco has exactly one collapsed pair (out_l+out_r)',
+  ).toHaveCount(1);
+  await expect(tvRear.locator('[data-testid="back-jack"]')).toHaveCount(29 - 1);
 
   // TAB again → both fronts restored.
   await pressTab(page);

@@ -108,7 +108,15 @@ test.describe('Cable hover affordances', () => {
     const unrelatedCount = await page
       .locator('.svelte-flow__edge:not(.cable-related)')
       .count();
-    expect(unrelatedCount).toBe(4);
+    // THREE, not four: the demo draws 5 cables, not 6 (`vd-vca.audio` into
+    // `vd-out.L`+`R` is ONE stereo leg group rendered as one bezier, PR-4), and
+    // 2 of them touch the hovered SEQUENCER. Derived from the two numbers this
+    // test already pins, and asserted as the partition so the two counts cannot
+    // drift apart silently.
+    const totalCount = await page.locator('.svelte-flow__edge').count();
+    expect(totalCount, 'the demo draws 5 cables for its 6 graph edges').toBe(5);
+    expect(unrelatedCount).toBe(totalCount - relatedCount);
+    expect(unrelatedCount).toBe(3);
 
     const relatedOpacity = await page
       .locator('.svelte-flow__edge.cable-related')
