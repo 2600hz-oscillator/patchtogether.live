@@ -1136,15 +1136,31 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   'linux/rear-dx7',
   'linux/rear-sixstrum',
   //
-  // FACE BATCH 3 · analogVco (2026-08-08) — PARKED darwin-first, awaiting ONE
-  // `vrt-update.yml -f platform=linux` dispatch before this PR merges. Both
-  // darwin baselines are captured and committed here; these two lines are the
-  // DECLARATION of the resulting platform gap, and BOTH vrt-meta ratchets move
-  // by exactly 2 in this same commit (SHARED_LINUX_PAIR_CEILING 91 → 93,
-  // list-anchored, immediate; LINUX_DEFICIT_CEILING 148 → 150,
-  // ARTIFACT-anchored — it counts the two new darwin PNGs that have no linux
-  // sibling yet). `flox activate -- task test:ledger:accept` re-pinned in the
-  // same commit, because the generated ledger counts this list.
+  // FACE BATCH 3 · analogVco (2026-08-08) — DRAINED IN THIS PR, not parked, and
+  // it was parked for one push before this note replaced it. Recording that,
+  // because the mistake is the single most repeatable one in this file.
+  //
+  // `linux/face-analogVco-{compact,dock}` were briefly listed here with the note
+  // "awaiting ONE vrt-update.yml dispatch before merge" — written directly ON
+  // TOP of the batch-3 block below, which exists to say that dispatch captures
+  // NOTHING. A listed pair is `test.skip()`-ed UNCONDITIONALLY
+  // (workflow-shell-faces.spec.ts consults the pair before the PNG) and
+  // `--update-snapshots` writes nothing for a skipped test, so the dispatch
+  // returns green having captured exactly zero. analogVco has been in this
+  // precise deadlock ONCE BEFORE — see the STRICT_VRT_MODULES drain note around
+  // line 1036, where it is one of the three named modules whose "re-add once the
+  // linux baseline is re-captured" comment could never come true while its pair
+  // was listed. Drain first, dispatch second; the entry is gone rather than
+  // rewritten.
+  //
+  // BOTH vrt-meta ratchets therefore return to their PRE-PR values in the same
+  // commit — SHARED_LINUX_PAIR_CEILING back to 91 (list-anchored: immediate, the
+  // moment those two lines go) and LINUX_DEFICIT_CEILING back to 148
+  // (ARTIFACT-anchored: it only reaches 148 once the bot's two linux PNGs land).
+  // The interval between this push and that capture is the known-red window
+  // CLAUDE.md names — 2 genuinely UNDECLARED gaps, red BY DESIGN — and it closes
+  // inside this same PR. Do NOT "fix" that red by re-adding the pairs; that is
+  // the deadlock, not the exit. Ledger re-pinned in the same commit.
   //
   // ⚠ THE COMPACT SCENE IS MASKED, so its linux capture is not a plain
   // re-render: `face-analogVco-compact` carries the registry's only face entry
@@ -1156,8 +1172,6 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // flakes in the gate, RE-DERIVE on linux with scripts/vrt-derive-trials.sh
   // before touching the floors. Do not read a single green linux run as a
   // derivation.
-  'linux/face-analogVco-compact',
-  'linux/face-analogVco-dock',
   //
   // FACE BATCH 3 (2026-08-03) — DRAINED IN THIS PR, not parked. The 6 CURATED
   // FACE scenes for the three newly-promoted modules (clap, drummergirl,

@@ -419,16 +419,15 @@ describe('vrt-meta — EXEMPT_FROM_VRT is DENY-BY-DEFAULT (frozen allowlist)', (
 // (sixstrum's face RE-DO needed no new pair: its two linux entries have been
 // listed since batch 2 and stay listed.)
 //
-// FACE BATCH 3 · analogVco (2026-08-08): 91 → 93, and this one goes UP, which
-// is the direction this ratchet is designed to make LOUD. It is not a drain
-// being forgotten — it is two NEW darwin-first pairs
-// (`linux/face-analogVco-{compact,dock}`) for the face batch 3 authored,
-// verified and then dropped over a non-deterministic VRT scene. The scene is
-// fixed here (a VRT_LIVE_SURFACES mask + measured companion), both darwin
-// baselines are committed, and the linux capture is the one remaining step
-// before merge: `vrt-update.yml -f platform=linux`, after which these two
-// lines are drained and this number returns to 91.
-const SHARED_LINUX_PAIR_CEILING = 93;
+// FACE BATCH 3 · analogVco (2026-08-08): UNCHANGED at 91, and that is the
+// finding rather than a no-op. The face adds two new darwin-first face scenes,
+// which briefly pushed this to 93 — but a listed pair is skipped
+// UNCONDITIONALLY, so parking them would have made the `vrt-update.yml
+// -f platform=linux` dispatch capture ZERO (analogVco has been in exactly that
+// deadlock before; see the drain note in vrt-exemptions.ts). They were DRAINED
+// in the same PR and the linux PNGs captured by dispatch, so no pair is added
+// and this number never needed to move.
+const SHARED_LINUX_PAIR_CEILING = 91;
 
 describe('vrt-meta — EXEMPT_BASELINE_PAIRS size RATCHET (only shrinks)', () => {
   // ⚠ 2026-08-01 — READ THIS BEFORE TRUSTING THE NUMBER BELOW.
@@ -671,15 +670,19 @@ describe('vrt-meta — EXEMPT_BASELINE_PAIRS size RATCHET (only shrinks)', () =>
 // has not landed yet — that is the expected reading, not a reason to raise the
 // number back.
 //
-// FACE BATCH 3 · analogVco (2026-08-08): 148 → 150. Two NEW darwin PNGs
-// (`face-analogVco-{compact,dock}`) land in this commit with no linux sibling,
-// which is exactly the artifact-anchored condition this number counts, and both
-// are DECLARED in EXEMPT_BASELINE_PAIRS so neither is an undeclared gap. It
-// returns to 148 when the linux dispatch commits the two PNGs and the pairs are
-// drained. ⚠ If this gate is red naming an UNDECLARED gap, that is a real
-// finding — the declaration and the artifact have diverged; do not raise the
-// number to make it green.
-const LINUX_DEFICIT_CEILING = 150;
+// FACE BATCH 3 · analogVco (2026-08-08): UNCHANGED at 148, because this ratchet
+// is ARTIFACT-anchored and the artifacts balance. The face commits two new
+// DARWIN PNGs (`face-analogVco-{compact,dock}`) and the `vrt-update.yml
+// -f platform=linux` dispatch commits their two LINUX siblings in the same PR,
+// so the deficit ends where it started. It transiently reads 150 in the window
+// between the drain push and the bot's capture — 2 genuinely UNDECLARED gaps,
+// red BY DESIGN, which is the interval CLAUDE.md calls "a drain without its
+// re-capture". ⚠ If this gate is red naming UNDECLARED gaps
+// `face-analogVco-*`, the dispatch has not landed yet — that is the expected
+// reading. Do NOT raise this number and do NOT re-add the pairs to make it
+// green: a listed pair is skipped unconditionally, so re-adding them is the
+// deadlock that makes the capture impossible.
+const LINUX_DEFICIT_CEILING = 148;
 
 describe('vrt-meta — LINUX-baseline DEFICIT RATCHET (all four mechanisms)', () => {
   // THE HONESTY GATE. CI renders on LINUX. A scene captured on darwin but
