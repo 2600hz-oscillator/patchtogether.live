@@ -43,6 +43,17 @@ export function attachReconciler(
 
   const appliedNodes = new Map<string, ModuleNode>();
   const appliedEdges = new Map<string, Edge>();
+  /**
+   * Nodes whose `engine.addNode` THREW. Kept OUT of `appliedNodes` on purpose:
+   * a failed node has no engine binding, so recording it as applied would make
+   * step 5 push params at a node that does not exist and the removal path later
+   * call `engine.removeNode` on it.
+   *
+   * Its two jobs: warn ONCE per node id rather than on every pass, and stop us
+   * re-attempting a factory that will throw identically every time (the module
+   * registry is static for the life of the build, so a retry cannot succeed).
+   */
+  const failedNodes = new Set<string>();
   // The LIVE data reference each applied node was last cloned from. The
   // snapshot leaks the live SyncedStore proxy as `node.data` (snapshot.ts
   // `data: n.data`), whose identity is STABLE for a given node — so an
@@ -133,6 +144,13 @@ export function attachReconciler(
       appliedNodes.delete(id);
       appliedDataRefs.delete(id);
     }
+    // Drop the failed mark for any node no longer in the snapshot, so the set
+    // cannot grow without bound across a long session and so a node that is
+    // deleted and re-added gets a genuine second attempt.
+    if (failedNodes.size > 0) {
+      const live = new Set(snap.nodes.map((n) => n.id));
+      for (const id of [...failedNodes]) if (!live.has(id)) failedNodes.delete(id);
+    }
 
     // 3. Added nodes (await — async factories). Snapshot is sorted; we
     // iterate it directly, skipping ids we already have AND any meta-
@@ -140,7 +158,23 @@ export function attachReconciler(
     for (const node of snap.nodes) {
       if (isMeta(node)) continue;
       if (appliedNodes.has(node.id)) continue;
-      await engine.addNode(node);
+      if (failedNodes.has(node.id)) continue; // already known bad — do not retry or re-warn
+      // engine.addNode THROWS on an unknown/removed module type or a factory
+      // that blows up. Unguarded, ONE bad node aborted the rest of THIS pass —
+      // every later node, every edge, and every param below it — and on a live
+      // relay that aborted pass REPLAYS IDENTICALLY ON EVERY PEER, so a single
+      // stale node type wedges the whole rackspace for everyone, permanently.
+      // Same per-item containment the edge loop below already has: log it once,
+      // remember it, and let all the VALID work in the pass still land.
+      try {
+        await engine.addNode(node);
+      } catch (err) {
+        failedNodes.add(node.id);
+        console.warn(
+          `[reconciler] skipping node ${node.id} (type ${node.type}): ${(err as Error).message}`,
+        );
+        continue;
+      }
       appliedNodes.set(node.id, snapshotNode(node));
       appliedDataRefs.set(node.id, node.data);
     }

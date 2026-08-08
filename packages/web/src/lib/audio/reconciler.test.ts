@@ -314,6 +314,146 @@ describe('reconciler — determinism (B3)', () => {
 // re-serialization, (b) diff semantics survive — repeated writes to the same
 // param still emit one setParam each, and (c) a wholesale data replacement
 // re-clones so a later structural read of prev stays coherent.
+describe('reconciler — a node whose factory THROWS must not abort the pass', () => {
+  // ⚠ WHY THIS MATTERS BEYOND ONE MODULE. `engine.addNode` throws on an
+  // unknown/removed module type. Unguarded, that one throw aborted the WHOLE
+  // pass — every later node, every edge, every param — and on a live relay the
+  // aborted pass replays identically on every peer, so a single stale node type
+  // wedges the rackspace for everyone, permanently, with no way out. The edge
+  // loop had per-item containment for exactly this reason; addNode did not.
+  //
+  // Snapshot node order is SORTED, so 'a' … 'z' below guarantees the failing
+  // node is processed before the ones that must still land.
+
+  /**
+   * A stronger drain than `flushMicrotasks`. Each `addNode` is AWAITED, so a
+   * pass over N nodes needs N+ turns — three `Promise.resolve()`s only ever
+   * completed the first node. The NEGATIVE CONTROL below is what exposed that:
+   * with nothing throwing, only `addNode a` had landed, which means every other
+   * assertion here would have been measuring the flush rather than the fix.
+   */
+  async function drain(): Promise<void> {
+    for (let i = 0; i < 6; i++) await new Promise((r) => setTimeout(r, 0));
+  }
+
+  class ThrowingEngine extends RecordingEngine {
+    failIds = new Set<string>();
+    override async addNode(nd: ModuleNode): Promise<void> {
+      if (this.failIds.has(nd.id)) throw new Error(`unknown module type ${nd.type}`);
+      await super.addNode(nd);
+    }
+  }
+
+  function makeThrowing(): { pe: PatchEngine; rec: ThrowingEngine } {
+    const pe = new PatchEngine();
+    const rec = new ThrowingEngine();
+    pe.registerDomain(rec);
+    return { pe, rec };
+  }
+
+  it('later nodes, edges and params STILL apply after a failed node', async () => {
+    const P = freshPatch();
+    const bus = createSnapshotBus({ patch: P.patch as never, ydoc: P.ydoc });
+    const { pe, rec } = makeThrowing();
+    rec.failIds.add('a-bad');
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const handle = attachReconciler(pe, { bus });
+
+    P.ydoc.transact(() => {
+      P.patch.nodes['a-bad'] = n('a-bad', 'nonexistentModuleType');
+      P.patch.nodes['z-good'] = n('z-good');
+      P.patch.nodes['y-good'] = n('y-good');
+    });
+    await drain();
+
+    expect(rec.ops, 'the failing node did not materialize').not.toContain('addNode a-bad');
+    // THE POINT: everything after it still did.
+    expect(rec.ops, 'a later node still applied').toContain('addNode y-good');
+    expect(rec.ops, 'and the one after that').toContain('addNode z-good');
+
+    // …and a param on a healthy node still lands in the SAME pass.
+    P.ydoc.transact(() => { P.patch.nodes['z-good']!.params.freq = 440; });
+    await drain();
+    expect(rec.ops).toContain('setParam z-good.freq=440');
+
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+    handle.dispose();
+  });
+
+  it('warns ONCE per node id, not once per pass', async () => {
+    // Without a failed-set the warning repeats on every reconcile, which buries
+    // the real cause in a scrolling console — and re-runs a factory that cannot
+    // succeed (the registry is static for the life of the build).
+    const P = freshPatch();
+    const bus = createSnapshotBus({ patch: P.patch as never, ydoc: P.ydoc });
+    const { pe, rec } = makeThrowing();
+    rec.failIds.add('bad');
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const handle = attachReconciler(pe, { bus });
+
+    P.ydoc.transact(() => { P.patch.nodes['bad'] = n('bad', 'nope'); });
+    await drain();
+    // Several more passes.
+    for (let i = 0; i < 3; i++) {
+      P.ydoc.transact(() => { P.patch.nodes[`ok${i}`] = n(`ok${i}`); });
+      await drain();
+    }
+
+    const badWarns = warn.mock.calls.filter((c) => String(c[0]).includes('bad'));
+    expect(badWarns.length, 'exactly one warning for the bad node').toBe(1);
+    warn.mockRestore();
+    handle.dispose();
+  });
+
+  it('a node DELETED and re-added gets a genuine second attempt', async () => {
+    // The failed-set must not be a permanent blacklist: removing the node
+    // clears its mark, so a re-add (or a fixed build) can succeed.
+    const P = freshPatch();
+    const bus = createSnapshotBus({ patch: P.patch as never, ydoc: P.ydoc });
+    const { pe, rec } = makeThrowing();
+    rec.failIds.add('flaky');
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const handle = attachReconciler(pe, { bus });
+
+    P.ydoc.transact(() => { P.patch.nodes['flaky'] = n('flaky', 'nope'); });
+    await drain();
+    expect(rec.ops).not.toContain('addNode flaky');
+
+    P.ydoc.transact(() => { delete P.patch.nodes['flaky']; });
+    await drain();
+
+    rec.failIds.delete('flaky'); // the type now resolves
+    P.ydoc.transact(() => { P.patch.nodes['flaky'] = n('flaky'); });
+    await drain();
+    expect(rec.ops, 'the retry succeeded').toContain('addNode flaky');
+
+    warn.mockRestore();
+    handle.dispose();
+  });
+
+  it('NEGATIVE CONTROL — with nothing throwing, every node applies and nothing warns', async () => {
+    // Guards the instrument: the assertions above would all pass against a
+    // reconciler that silently dropped EVERY node.
+    const P = freshPatch();
+    const bus = createSnapshotBus({ patch: P.patch as never, ydoc: P.ydoc });
+    const { pe, rec } = makeThrowing(); // failIds empty
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const handle = attachReconciler(pe, { bus });
+
+    P.ydoc.transact(() => {
+      P.patch.nodes['a'] = n('a');
+      P.patch.nodes['b'] = n('b');
+    });
+    await drain();
+    expect(rec.ops).toContain('addNode a');
+    expect(rec.ops).toContain('addNode b');
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
+    handle.dispose();
+  });
+});
+
 describe('reconciler — no per-pass data deep-clone (CC-storm hardening)', () => {
   let A: ReturnType<typeof freshPatch>;
   let busA: ReturnType<typeof createSnapshotBus>;
