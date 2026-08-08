@@ -517,7 +517,17 @@ export const NON_CARD_CAPTURE_DIRS: Record<string, string> = {
   'vrt-synesthesia-composite.spec.ts': 'full-page composite (multiple cards)',
   'vrt-wavesculpt-blink.spec.ts': 'wavesculpt .stripe is a 3-hex gradient, not a cable token',
   'vrt-wavesculpt-walls.spec.ts': 'wavesculpt .stripe is a 3-hex gradient, not a cable token',
-  'workflow-audio-io-composite.spec.ts': 'workflow shell, not a module card',
+  // ⚠ TEMPORARILY REMOVED — RESTORE THIS LINE WHEN THE vrt-update DISPATCH LANDS.
+  //   'workflow-audio-io-composite.spec.ts': 'workflow shell, not a module card',
+  // Its baseline directory was `git rm`-ed on this branch (b619cfb5) because the
+  // scene changed SUB-TOLERANCE (1803 px under a 9216 px budget) and
+  // `--update-snapshots` will not rewrite a passing baseline. This gate reddens
+  // on a table entry naming a directory that no longer exists — deliberately, so
+  // a stale entry cannot quietly shrink its scope — so the entry comes out while
+  // the directory is gone and goes BACK when the bot re-captures it (otherwise
+  // the restored directory reads as "a new dir this gate was never told about"
+  // and reddens the other way). Paired with LINUX_DEFICIT_CEILING in
+  // `$lib/audio/modules/vrt-meta.test.ts` — both reverse together.
   'workflow-dock-composite.spec.ts': 'workflow shell, not a module card',
   'workflow-rear-card.spec.ts': 'rear/patch face, no front stripe',
   'workflow-shell-faces.spec.ts': 'workflow shell faces, not a module card',

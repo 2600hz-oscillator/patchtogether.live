@@ -230,12 +230,28 @@ const PORTED_DEFS: Record<string, unknown> = {
     inputs: [{ id: 'audio', type: 'audio' }],
     outputs: [{ id: 'audio', type: 'audio' }],
   },
+  // A DECLARED pair that is COLLAPSE_EXEMPT — two timbre taps, not an image.
+  rings: {
+    // `type` is load-bearing: COLLAPSE_EXEMPT is keyed on the exact
+    // `<type>:<direction>:<left>+<right>` triple, so a fixture without it can
+    // never match the exemption — the first draft of this test failed for
+    // exactly that reason.
+    type: 'rings',
+    label: 'RINGS',
+    inputs: [{ id: 'in', type: 'audio' }],
+    outputs: [
+      { id: 'odd', type: 'audio' },
+      { id: 'even', type: 'audio' },
+    ],
+    stereoPairs: [['odd', 'even']],
+  },
 };
 const portedLookup = (type: string) => PORTED_DEFS[type] as AnyDef | undefined;
 const PORTED_NODES: Record<string, ModuleNode> = {
   cl: node('cl', 'clouds'),
   co: node('co', 'cofefve'),
   fi: node('fi', 'filter'),
+  ri: node('ri', 'rings'),
 };
 
 describe('buildUnpatchPlan — leg groups', () => {
@@ -254,7 +270,14 @@ describe('buildUnpatchPlan — leg groups', () => {
     expect(plan.items[0].edgeIds.slice().sort()).toEqual(['e-L', 'e-R']);
     // A COMPLETE stereo cable gets NO channel suffix — nothing is missing.
     expect(plan.items[0].soloChannel).toBeNull();
-    expect(plan.items[0].label).toBe('Unpatch — CLOUDS OUT_L');
+    // …and it is named for the JACK, not for a leg. This expectation used to
+    // read `CLOUDS OUT_L` — it encoded the bug the owner reported: a complete
+    // stereo group described as if it were half of one, while the jack a click
+    // away said `OUT`.
+    expect(plan.items[0].label).toBe('Unpatch — CLOUDS OUT');
+    // A live cable's mode is `both`, which is what puts the channel chips on
+    // this row (they were previously unreachable on a PATCHED output).
+    expect(plan.items[0].channelMode).toBe('both');
   });
 
   it('a LONE leg is labelled "(L only)" / "(R only)"', () => {
@@ -265,7 +288,14 @@ describe('buildUnpatchPlan — leg groups', () => {
         portId: 'inL',
         direction: 'input',
       }).items[0],
-    ).toMatchObject({ soloChannel: 'left', label: 'Unpatch — CLOUDS OUT_L (L only)' });
+      // ONE rule: the label names the JACK (`OUT`), the suffix names the
+      // channel. Not `OUT_L (L only)`, which said it twice and disagreed with
+      // the jack on the first half.
+    ).toMatchObject({
+      soloChannel: 'left',
+      label: 'Unpatch — CLOUDS OUT (L only)',
+      channelMode: 'left',
+    });
 
     const onlyR = { 'e-R': stereoCable['e-R'] };
     expect(
@@ -274,7 +304,41 @@ describe('buildUnpatchPlan — leg groups', () => {
         portId: 'inR',
         direction: 'input',
       }).items[0],
-    ).toMatchObject({ soloChannel: 'right', label: 'Unpatch — CLOUDS OUT_R (R only)' });
+    ).toMatchObject({
+      soloChannel: 'right',
+      label: 'Unpatch — CLOUDS OUT (R only)',
+      channelMode: 'right',
+    });
+  });
+
+  it('a lone rings.ODD cable is NOT labelled "(L only)" — it is a whole cable', () => {
+    // rings odd/even is a declared pair for WIRING (its autowire is shipped)
+    // but COLLAPSE_EXEMPT for display: two different timbre taps, rendered as
+    // two jacks named ODD and EVEN. `legChannelOfEdge` reads the WIRING list
+    // and answers 'left' here, so the naive suffix would say "(L only)" about a
+    // jack the UI calls ODD. The suffix asks `imageChannelOfEdge` instead — the
+    // same helper the dashed only-L/R cable uses, so the two cannot disagree.
+    const lone = { 'e-odd': edge('e-odd', ['ri', 'odd'], ['fi', 'audio']) };
+    const plan = buildUnpatchPlan(lone, PORTED_NODES, portedLookup, {
+      nodeId: 'fi',
+      portId: 'audio',
+      direction: 'input',
+    });
+    expect(plan.items).toHaveLength(1);
+    expect(plan.items[0].soloChannel).toBeNull();
+    expect(plan.items[0].channelMode).toBeNull(); // and NO channel chips
+    expect(plan.items[0].label).toBe('Unpatch — RINGS ODD');
+
+    // CONTROL, so the assertion above is not passing because the suffix is
+    // simply broken: the same shape on a REAL stereo pair still gets it.
+    const realLone = { 'e-L': edge('e-L', ['cl', 'out_l'], ['fi', 'audio']) };
+    const realPlan = buildUnpatchPlan(realLone, PORTED_NODES, portedLookup, {
+      nodeId: 'fi',
+      portId: 'audio',
+      direction: 'input',
+    });
+    expect(realPlan.items[0].soloChannel).toBe('left');
+    expect(realPlan.items[0].label).toBe('Unpatch — CLOUDS OUT (L only)');
   });
 
   it('a stereo→MONO group lists ONCE, not once per leg', () => {
@@ -445,5 +509,94 @@ describe('unpatch removal seam — real syncedStore peers + UndoManager', () => 
     expect(b.patch.edges['e-hand']).toBeUndefined();
     expect(b.patch.edges[WCOL_ID]).toBeDefined(); // untouched
     expect(detached(b)).toBeUndefined();
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// THE MENU LABEL vs THE JACK LABEL — the drift gate.
+//
+// THE BUG this exists for (owner, on #1409): right-clicking a patched stereo
+// output showed title `TIDY VCO OUT_L` and item `Unpatch → cloudseed IN_L` for
+// a COMPLETE stereo group, while the jack one click away read `OUT`. Two
+// surfaces describing one jack, disagreeing, with no gate comparing them —
+// the same shape as the BackdraftCard ±1-vs-±0.2 finding.
+//
+// So the gate is not "the string is right", it is "the two surfaces AGREE",
+// over the LIVE registry rather than a fixture. A future change to either
+// naming rule fails here instead of shipping a contradiction.
+// ────────────────────────────────────────────────────────────────────────────
+
+import '$lib/audio/modules';
+import '$lib/video/modules';
+import '$lib/meta/modules';
+import { listModuleDefs } from '$lib/audio/module-registry';
+import { listVideoModuleDefs } from '$lib/video/module-registry';
+import { derivedStereoPairs, type StereoPairDefLike } from '$lib/graph/stereo-pairs';
+import { collapseStereoPorts } from './stereo-jack-collapse';
+import { unpatchPortLabel } from './unpatch-menu';
+import type { StereoDef } from '$lib/graph/stereo-autowire';
+
+describe('the unpatch menu names a jack the SAME way the jack does', () => {
+  const defs = [
+    ...(listModuleDefs() as unknown as StereoPairDefLike[]),
+    ...(listVideoModuleDefs() as unknown as StereoPairDefLike[]),
+  ];
+
+  it('the registry loaded (the sweep below is not vacuously empty)', () => {
+    expect(defs.length).toBeGreaterThan(100);
+    const paired = defs.filter((d) => derivedStereoPairs(d).length > 0);
+    expect(paired.length, 'modules with a derived pair').toBeGreaterThan(30);
+  });
+
+  it('EVERY collapsed pair: the menu label === the jack label', () => {
+    const drift: string[] = [];
+    let compared = 0;
+    for (const def of defs) {
+      for (const direction of ['input', 'output'] as const) {
+        const ports = ((direction === 'input' ? def.inputs : def.outputs) ?? []).map((p) => ({
+          id: p.id,
+          cable: p.type,
+        }));
+        const rows = collapseStereoPorts(ports, def, direction);
+        for (const row of rows) {
+          if (!row.siblingId) continue; // only collapsed pairs are in scope
+          compared += 1;
+          // The JACK's name, and the MENU's name, for the same jack.
+          const jack = row.label!;
+          const menu = unpatchPortLabel(def as unknown as StereoDef, row.id, direction);
+          if (jack !== menu) {
+            drift.push(`${def.type} ${direction} ${row.id}: jack "${jack}" vs menu "${menu}"`);
+          }
+          // …and the menu must NOT be naming a single leg. This is the exact
+          // regression: `OUT_L` where the jack says `OUT`.
+          if (menu.toUpperCase() === row.id.toUpperCase()) {
+            drift.push(`${def.type} ${direction} ${row.id}: menu still prints the raw LEG id`);
+          }
+        }
+      }
+    }
+    expect(compared, 'collapsed pairs actually compared').toBeGreaterThan(50);
+    expect(drift).toEqual([]);
+  });
+
+  it('the owner-reported case, by name', () => {
+    const tidyVco = defs.find((d) => d.type === 'tidyVco')!;
+    const cloudseed = defs.find((d) => d.type === 'cloudseed')!;
+    expect(unpatchPortLabel(tidyVco as unknown as StereoDef, 'out_l', 'output')).toBe('OUT');
+    expect(unpatchPortLabel(cloudseed as unknown as StereoDef, 'in_l', 'input')).toBe('IN');
+  });
+
+  it('an UNPAIRED port is untouched — the fix does not rename everything', () => {
+    // Scope control. `vca.audio` is not half of anything and must still print
+    // its raw id, or this "fix" would be a silent mass relabelling.
+    const vca = defs.find((d) => d.type === 'vca')!;
+    expect(unpatchPortLabel(vca as unknown as StereoDef, 'audio', 'output')).toBe('AUDIO');
+    expect(unpatchPortLabel(undefined, 'whatever', 'output')).toBe('WHATEVER');
+  });
+
+  it('rings odd/even is NOT renamed — COLLAPSE_EXEMPT, two timbre taps', () => {
+    const rings = defs.find((d) => d.type === 'rings')!;
+    expect(unpatchPortLabel(rings as unknown as StereoDef, 'odd', 'output')).toBe('ODD');
+    expect(unpatchPortLabel(rings as unknown as StereoDef, 'even', 'output')).toBe('EVEN');
   });
 });

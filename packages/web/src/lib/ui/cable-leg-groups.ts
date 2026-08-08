@@ -113,6 +113,35 @@ function pairFor(
 }
 
 /**
+ * The side of the stereo IMAGE this edge carries, or null.
+ *
+ * Differs from `legChannelOfEdge` in exactly one way and it matters: that reads
+ * the WIRING pair list, so it answers 'left' for a lone `rings.odd` cable —
+ * odd/even is a declared pair, but COLLAPSE_EXEMPT, two different timbre taps.
+ * This requires the pair to survive the COLLAPSE list, i.e. to be a jack the UI
+ * presents as ONE stereo signal. Anything keyed to the words "L" / "R" in front
+ * of a user must ask THIS, not that.
+ *
+ * Precedence matches `legChannelOfEdge` and `planAudioCommit`: the SOURCE side
+ * names the channel when the source is paired (that is the image being
+ * carried), otherwise the TARGET side does.
+ *
+ * SHARED so the dashed only-L/R cable and the unpatch menu's "(L only)" suffix
+ * cannot drift apart — they are the same claim on two surfaces.
+ */
+export function imageChannelOfEdge(
+  edge: Edge,
+  defForNode: (nodeId: string) => StereoDef | undefined,
+): 'left' | 'right' | null {
+  if (!edge?.source || !edge?.target) return null;
+  const srcPair = pairFor(defForNode(edge.source.nodeId), edge.source.portId, 'output', 'collapse');
+  if (srcPair) return srcPair.left === edge.source.portId ? 'left' : 'right';
+  const dstPair = pairFor(defForNode(edge.target.nodeId), edge.target.portId, 'input', 'collapse');
+  if (dstPair) return dstPair.left === edge.target.portId ? 'left' : 'right';
+  return null;
+}
+
+/**
  * Classify every edge for rendering.
  *
  * Returns a map keyed by edge id. An edge missing from the map (impossible for
@@ -179,9 +208,7 @@ export function computeLegGroups(
       : e.target.portId;
     // The side that NAMED the channel is the side that has to be a real stereo
     // image for the dashes to be honest.
-    const isStereoImage = srcPair
-      ? pairFor(srcDef, e.source.portId, 'output', 'collapse') !== null
-      : pairFor(dstDef, e.target.portId, 'input', 'collapse') !== null;
+    const isStereoImage = imageChannelOfEdge(e, defForNode) !== null;
     return {
       edge: e,
       channel,

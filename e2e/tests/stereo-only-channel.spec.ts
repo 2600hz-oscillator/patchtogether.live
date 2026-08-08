@@ -175,6 +175,102 @@ async function readTaps(
   );
 }
 
+/**
+ * Wait until ONE channel has gone quiet while the OTHER is still speaking, then
+ * report both — for asserting silence AFTER a change.
+ *
+ * ⚠ WHY `readTaps` CANNOT DO THIS. It PEAK-HOLDS across its whole window, which
+ * is exactly right for "is this channel alive" (a scheduling stall cannot read
+ * as silence) and exactly WRONG across a transition: called straight after
+ * dropping the R leg it reports the pre-teardown tail and says R=0.40485 when R
+ * is on its way to zero. Measured, on the first run of the round-trip test.
+ *
+ * So this keeps a SLIDING window and asks whether the RECENT peak is quiet —
+ * a settling condition, bounded, never a sleep.
+ *
+ * The `&& other side still audible` clause is a NEGATIVE CONTROL baked into the
+ * instrument: without it, the engine dying, the context suspending, or the whole
+ * patch being torn down would all satisfy "R is quiet" and pass.
+ */
+async function readTapsSettled(
+  page: Page,
+  nodeId: string,
+  opts: { silent: 'l' | 'r'; minRms: number; silentRms: number; timeoutMs?: number },
+): Promise<Taps & { settled: boolean }> {
+  const timeoutMs = opts.timeoutMs ?? AUDIO_SETTLE_MS;
+  return await page.evaluate(
+    async ({ nodeId, silent, minRms, silentRms, timeoutMs }) => {
+      const w = globalThis as unknown as {
+        __engine?: () => {
+          read: (n: { id: string; type: string; domain: string }, k: string) => unknown;
+        } | null;
+        __patch: {
+          nodes: Record<string, { id: string; type: string; domain: string } | undefined>;
+        };
+      };
+      const rms = (s?: Float32Array) => {
+        if (!s?.length) return 0;
+        let q = 0;
+        for (let i = 0; i < s.length; i++) q += s[i]! * s[i]!;
+        return Math.sqrt(q / s.length);
+      };
+      const WINDOW_MS = 250; // the sliding "recent" span
+      const t0 = performance.now();
+      const recent: { t: number; l: number; r: number; mono: number }[] = [];
+      let samples = 0;
+      let reads = 0;
+      let settled = false;
+      const JITTER = [7, 11, 13, 9];
+      let tick = 0;
+
+      await new Promise<void>((resolve) => {
+        const step = () => {
+          samples += 1;
+          const eng = w.__engine?.();
+          const node = w.__patch.nodes[nodeId];
+          if (eng && node) {
+            reads += 1;
+            const rd = (k: string) => eng.read(node, k) as { samples: Float32Array } | undefined;
+            recent.push({
+              t: performance.now(),
+              l: rms(rd('outputSnapshotL')?.samples),
+              r: rms(rd('outputSnapshotR')?.samples),
+              mono: rms(rd('outputSnapshot')?.samples),
+            });
+          }
+          const now = performance.now();
+          while (recent.length > 0 && now - recent[0]!.t > WINDOW_MS) recent.shift();
+          if (recent.length > 3) {
+            const peak = (k: 'l' | 'r') => Math.max(...recent.map((e) => e[k]));
+            const quiet = peak(silent);
+            const loud = peak(silent === 'l' ? 'r' : 'l');
+            if (quiet < silentRms && loud >= minRms) {
+              settled = true;
+              return resolve();
+            }
+          }
+          if (now - t0 >= timeoutMs) return resolve();
+          setTimeout(step, JITTER[tick++ % JITTER.length]!);
+        };
+        setTimeout(step, JITTER[0]!);
+      });
+
+      const peak = (k: 'l' | 'r' | 'mono') =>
+        recent.length === 0 ? 0 : Math.max(...recent.map((e) => e[k]));
+      return {
+        l: peak('l'),
+        r: peak('r'),
+        mono: peak('mono'),
+        samples,
+        reads,
+        elapsedMs: Math.round(performance.now() - t0),
+        settled,
+      };
+    },
+    { nodeId, silent: opts.silent, minRms: opts.minRms, silentRms: opts.silentRms, timeoutMs },
+  );
+}
+
 /** Assert the sampler actually looked. A zero from an instrument that never
  *  resolved the engine is not evidence of silence — it is evidence of nothing,
  *  and it would make every assertion in this file pass for the wrong reason. */
@@ -545,6 +641,141 @@ test.describe('patch only L / only R', () => {
     const labels = page.locator('.svelte-flow__edge-label');
     await expect(labels).toHaveCount(1);
     await expect(labels).toHaveText('L');
+  });
+
+  test('a LIVE stereo cable round-trips stereo → L only → stereo from the UNPATCH menu', async ({
+    page,
+    rack,
+  }) => {
+    // THE OWNER-REPORTED GAP: right-clicking a PATCHED output opened only the
+    // unpatch menu — `onPortRowContextMenu` returns as soon as that menu claims
+    // the event — so "patch only L/R" existed exclusively on an UNPATCHED
+    // output. A live cable could not be narrowed without unpatching and
+    // re-patching it. The channel chips now ride on the unpatch menu.
+    //
+    // SEMANTICS (flagged in the PR for the owner to overrule): narrowing DROPS
+    // the other leg rather than muting it — a muted-but-present edge is
+    // invisible state. So the round trip is asserted on the GRAPH as well as
+    // the audio.
+    await spawnStereoRig(page);
+    await patchChannel(page, { nodeId: 'osc', portId: 'out_l' }, { nodeId: 'aout', portId: 'L' }, 'both');
+    await expect.poll(() => readEdgeIds(page), { timeout: 4000 }).toEqual([
+      'osc-vco.sine->osc.audio',
+      'osc.out_l->aout.L',
+      'osc.out_r->aout.R',
+    ]);
+
+    // Right-click the now-PATCHED output row → the unpatch menu, carrying the
+    // channel chips with `both` selected.
+    const openMenu = async () => {
+      // ⚠ RESET TO A KNOWN STATE FIRST. Two things persist between passes and
+      // each one hung this helper in turn: the trigger TOGGLES (so a second
+      // click closes the chrome), and the panel keeps its DRILL VIEW (so the
+      // chrome can be open on the outputs list, where the root nav row does not
+      // exist). Escape closes it outright, so every pass starts from shut and
+      // walks the same path — deterministic instead of state-sniffing.
+      await page.keyboard.press('Escape');
+      await expect(chrome(page, 'osc')).toHaveCount(0);
+      await page
+        .locator('.svelte-flow__node[data-id="osc"] [data-testid="patch-trigger"]')
+        .click();
+      await expect(chrome(page, 'osc')).toHaveAttribute('aria-hidden', 'false');
+      await chrome(page, 'osc')
+        .locator('[data-testid="patch-panel-nav"][data-nav="outputs"]')
+        .click();
+      await chrome(page, 'osc')
+        .locator('[data-testid="patch-panel-port-row"][data-port-id="out_l"]')
+        .click({ button: 'right' });
+      const menu = page.locator('[data-testid="unpatch-menu"]');
+      await expect(menu).toBeVisible();
+      return menu;
+    };
+
+    let menu = await openMenu();
+    // The header names the JACK, not a leg — the label-drift bug the owner
+    // also reported. `OUT`, never `OUT_L`.
+    await expect(menu.getByTestId('unpatch-menu-title')).toHaveText(/\bOUT\b/);
+    await expect(menu.getByTestId('unpatch-menu-title')).not.toHaveText(/OUT_L/);
+    await expect(menu.getByTestId('unpatch-channel-mode')).toHaveCount(3);
+    await expect(
+      menu.locator('[data-testid="unpatch-channel-mode"][data-mode="both"]'),
+    ).toHaveAttribute('data-selected', 'true');
+
+    // → L only. The R leg is DROPPED, not muted.
+    await menu.locator('[data-testid="unpatch-channel-mode"][data-mode="left"]').click();
+    await expect.poll(() => readEdgeIds(page), { timeout: 4000 }).toEqual([
+      'osc-vco.sine->osc.audio',
+      'osc.out_l->aout.L',
+    ]);
+    // SETTLED, not peak-held: dropping the R leg leaves a decaying tail, and a
+    // peak-hold across the transition reports it (measured: R=0.40485 on the
+    // way to zero). The instrument's own negative control requires L to STILL
+    // be audible, so "the whole engine died" cannot pass as "R went quiet".
+    let t = await readTapsSettled(page, 'aout', {
+      silent: 'r',
+      minRms: AUDIBLE_RMS,
+      silentRms: SILENT_RMS,
+    });
+    expectInstrumentLive(t, 'after → L only');
+    const seenNarrow =
+      `RMS L=${t.l.toFixed(5)} R=${t.r.toFixed(5)} ` +
+      `(settled=${t.settled} reads=${t.reads}/${t.samples} in ${t.elapsedMs}ms)`;
+    expect(t.settled, `R never went quiet after dropping its leg — ${seenNarrow}`).toBe(true);
+    expect(t.l, `L must still be audible after narrowing — ${seenNarrow}`).toBeGreaterThan(
+      AUDIBLE_RMS,
+    );
+    expect(t.r, `R must be silent after narrowing — ${seenNarrow}`).toBeLessThan(SILENT_RMS);
+
+    // → back to stereo. The dropped leg is re-derived, so the trip is lossless.
+    menu = await openMenu();
+    await expect(
+      menu.locator('[data-testid="unpatch-channel-mode"][data-mode="left"]'),
+      'the menu now reports the cable as L-only',
+    ).toHaveAttribute('data-selected', 'true');
+    await menu.locator('[data-testid="unpatch-channel-mode"][data-mode="both"]').click();
+    await expect.poll(() => readEdgeIds(page), { timeout: 4000 }).toEqual([
+      'osc-vco.sine->osc.audio',
+      'osc.out_l->aout.L',
+      'osc.out_r->aout.R',
+    ]);
+    t = await readTaps(page, 'aout', { minRms: AUDIBLE_RMS });
+    expectInstrumentLive(t, 'after → stereo');
+    expect(t.r, `R speaks again after widening — L=${t.l.toFixed(5)} R=${t.r.toFixed(5)}`).toBeGreaterThan(
+      AUDIBLE_RMS,
+    );
+  });
+
+  test('the unpatch menu shows NO channel chips on a mono cable', async ({ page, rack }) => {
+    // Scope control for the chips: without it, "the chips are there" would be
+    // untested for the case where they must NOT be, and an always-on chip row
+    // would satisfy the round-trip test above.
+    await spawnPatch(
+      page,
+      [
+        { id: 'vco', type: 'analogVco', position: { x: 80, y: 100 }, domain: 'audio' },
+        { id: 'vca', type: 'vca', position: { x: 520, y: 100 }, domain: 'audio' },
+      ],
+      [
+        {
+          id: 'mono',
+          from: { nodeId: 'vco', portId: 'sine' },
+          to: { nodeId: 'vca', portId: 'audio' },
+          sourceType: 'audio',
+          targetType: 'audio',
+        },
+      ],
+    );
+    await page.locator('.svelte-flow__node[data-id="vca"] [data-testid="patch-trigger"]').click();
+    await chrome(page, 'vca')
+      .locator('[data-testid="patch-panel-nav"][data-nav="inputs"]')
+      .click();
+    await chrome(page, 'vca')
+      .locator('[data-testid="patch-panel-port-row"][data-port-id="audio"]')
+      .click({ button: 'right' });
+    const menu = page.locator('[data-testid="unpatch-menu"]');
+    await expect(menu).toBeVisible();
+    await expect(menu.getByTestId('unpatch-item')).toHaveCount(1);
+    await expect(menu.getByTestId('unpatch-channel-mode')).toHaveCount(0);
   });
 
   test('the channel rows are ABSENT on a MONO output (nothing to take a side of)', async ({

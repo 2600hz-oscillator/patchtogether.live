@@ -351,6 +351,7 @@
     audioEdgeId,
     expandLegGroups,
     planAudioCommit,
+    siblingLegIds,
     type ChannelMode,
     type StereoDef,
   } from '$lib/graph/stereo-autowire';
@@ -6227,6 +6228,83 @@
     if (removed > 0) trace(`unpatched ${removed} cable(s) via patch-point menu`);
   }
 
+  /**
+   * Change a LIVE cable's stereo mode from the unpatch menu (owner: right-click
+   * an output and the option is there, patched or not).
+   *
+   * SEMANTICS: narrowing to L/R-only DROPS the other leg rather than muting it.
+   * The leg-group model treats legs as real edges, and a muted-but-present edge
+   * is invisible state — the class this repo keeps getting bitten by. Widening
+   * back to `both` re-derives the missing leg, so the round trip is lossless.
+   *
+   * It goes through `planAudioCommit`'s existing `channelMode` so there is ONE
+   * commit seam, and it plans from the SEED leg's own endpoints rather than
+   * canonicalising to `pair.left` — that preserves a deliberate CROSS patch
+   * (out_l→in_r), which canonicalising would silently straighten.
+   *
+   * ⚠ The plan's own `replaceEdgeIds` cannot do this job: it only evicts edges
+   * seated on the input ports the plan WRITES, and the leg being dropped sits on
+   * the OTHER input port. So the group's unwanted legs are deleted explicitly.
+   */
+  function setLegGroupChannelMode(seedEdgeId: string, mode: ChannelMode): void {
+    const seed = patch.edges[seedEdgeId];
+    if (!seed?.source || !seed?.target) return;
+    const from = { nodeId: seed.source.nodeId, portId: seed.source.portId };
+    const to = { nodeId: seed.target.nodeId, portId: seed.target.portId };
+    const srcNode = patch.nodes[from.nodeId];
+    const dstNode = patch.nodes[to.nodeId];
+    if (!srcNode || !dstNode) return;
+    const srcDef = defLookup(srcNode.type);
+    const dstDef = defLookup(dstNode.type);
+    const sourceType: CableType =
+      (srcDef?.outputs.find((p) => p.id === from.portId)?.type as CableType) ?? 'audio';
+    const targetType: CableType =
+      (dstDef?.inputs.find((p) => p.id === to.portId)?.type as CableType) ?? sourceType;
+
+    const groupIds = [seedEdgeId, ...siblingLegIds(seed, patch.edges, stereoDefForNode)];
+    const plan = planAudioCommit({
+      fromNodeId: from.nodeId,
+      fromPortId: from.portId,
+      fromDef: stereoDefForNode(from.nodeId),
+      toNodeId: to.nodeId,
+      toPortId: to.portId,
+      toDef: stereoDefForNode(to.nodeId),
+      edges: patch.edges,
+      sourceType,
+      targetType,
+      channelMode: mode,
+    });
+    if (plan.legs.length === 0) return; // nothing committable — change nothing
+    const wanted = new Set(plan.legs.map((l) => l.id));
+    ydoc.transact(() => {
+      for (const id of groupIds) {
+        if (wanted.has(id)) continue;
+        const live = patch.edges[id];
+        if (!live) continue;
+        // A user-driven narrowing of a MANAGED (wcol-) cable must durably
+        // suppress the dropped leg, or the next column reconcile re-adds it and
+        // the mode silently reverts — the same detach-suppression the unpatch
+        // and Backspace paths run.
+        if (workflowMode && id.startsWith('wcol-e-')) {
+          const colKey = wcolEdgeColumnKey(live);
+          if (colKey) wcolMarkDetached(id, colKey);
+        }
+        delete patch.edges[id];
+      }
+      for (const leg of plan.legs) {
+        if (patch.edges[leg.id]) continue;
+        patch.edges[leg.id] = {
+          id: leg.id,
+          source: { nodeId: from.nodeId, portId: leg.fromPortId },
+          target: { nodeId: to.nodeId, portId: leg.toPortId },
+          sourceType: leg.sourceType,
+          targetType: leg.targetType,
+        };
+      }
+    }, LOCAL_ORIGIN);
+    trace(`channel mode ${mode} on ${from.nodeId}.${from.portId} → ${to.nodeId}.${to.portId}`);
+  }
+
   // ---------------- Jack-click → carry → patch-to picker ----------------
   //
   // PatchPanel dispatches two CustomEvents up the DOM:
@@ -8450,6 +8528,7 @@
   items={unpatchPlan.items}
   allLabel={unpatchPlan.allLabel}
   onunpatch={unpatchEdges}
+  onchannelmode={setLegGroupChannelMode}
   onclose={closeUnpatchMenu}
 />
 

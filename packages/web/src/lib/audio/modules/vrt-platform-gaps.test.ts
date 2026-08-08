@@ -309,7 +309,22 @@ describe('vrt platform-gap enumerator — DECLARATION HYGIENE', () => {
     // C and harmless" — the real toybox stems are `truchet`, `obj-tex-sphere`,
     // …, with no `toybox-` prefix, and vrt-toybox.spec.ts never imports the
     // shared Set, so nothing read them at all). The remaining 5 are frozen.
-    const PHANTOM_CEILING = 5;
+    // ⚠ TEMPORARILY 6 (was 5) — RESTORE TO 5 WHEN THE vrt-update DISPATCH LANDS.
+    //
+    // `darwin/workflow-audio-io.png` was `git rm`-ed on this branch (b619cfb5)
+    // so the dispatch can rewrite a SUB-TOLERANCE change (1803 px under a 9216
+    // px budget, which `--update-snapshots` refuses to rewrite). `linux/
+    // workflow-audio-io` is already EXEMPT, so with the darwin PNG gone the
+    // scene has NO baseline on EITHER platform and its exemption entry became a
+    // PHANTOM — an entry explaining nothing. Hence 5 → 6, and back to 5 the
+    // moment the capture lands.
+    //
+    // THIS IS THE THIRD of three ratchets the one `git rm` moved, all of which
+    // must reverse together: LINUX_DEFICIT_CEILING (148→147) in
+    // vrt-meta.test.ts, the `workflow-audio-io-composite.spec.ts` entry in
+    // $lib/ui/vrt-cable-stripe.ts, and this. Capturing that darwin baseline
+    // locally instead would have cost none of them — see the PR discussion.
+    const PHANTOM_CEILING = 6;
     expect(
       report.deadShared.phantom.length,
       'shared EXEMPT_BASELINE_PAIRS entries naming a scene with no baseline on EITHER ' +
