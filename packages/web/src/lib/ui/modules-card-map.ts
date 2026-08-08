@@ -19,21 +19,12 @@
 
 import type { Component } from 'svelte';
 
-// Eagerly import every card component so SvelteFlow can render synchronously.
-// Vite resolves the glob at build time; only `*Card.svelte` so sibling
-// non-card components (ModuleTitle, OssAttribution, SequencerPageNav,
-// VideoCanvasContextMenu) are excluded.
-const CARD_MODULES = import.meta.glob<{ default: Component }>('./modules/*Card.svelte', {
-  eager: true,
-});
-
-/** Map of card component BASENAME (e.g. 'AnalogVcoCard') → component. */
-const componentByName: Record<string, Component> = {};
-for (const [path, mod] of Object.entries(CARD_MODULES)) {
-  // path looks like './modules/AnalogVcoCard.svelte'
-  const base = path.slice(path.lastIndexOf('/') + 1).replace(/\.svelte$/, '');
-  componentByName[base] = mod.default;
-}
+// The eager `./modules/*Card.svelte` glob lives in its OWN module so the SSR
+// build can replace it with `{}` — see modules-card-components.ts for why (it
+// is ~1.9 MiB gzipped of components the server provably never renders, against
+// a 3 MiB Cloudflare Worker ceiling). Everything below is behaviour and is
+// bundled identically on both sides.
+import { componentByName } from './modules-card-components';
 
 /** Convention: module type id → expected card component basename. */
 export function conventionalCardName(type: string): string {
