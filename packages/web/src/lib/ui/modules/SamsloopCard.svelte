@@ -41,7 +41,6 @@
     SAMSLOOP_RATE_RANGE,
     createSamsloopRecMachine,
     samsloopRecStart,
-    samsloopRecAppend,
     samsloopRecStop,
     samsloopRecFail,
     type SamsloopData,
