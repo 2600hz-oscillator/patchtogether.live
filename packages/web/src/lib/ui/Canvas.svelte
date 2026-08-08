@@ -6578,7 +6578,15 @@
     };
   });
 
-  function pickPortMenuTarget({ nodeId, portId }: { nodeId: string; portId: string }) {
+  function pickPortMenuTarget({
+    nodeId,
+    portId,
+    leg,
+  }: {
+    nodeId: string;
+    portId: string;
+    leg?: 'left' | 'right';
+  }) {
     if (!portMenuSourceNodeId || !portMenuSourcePortId) return;
     // Cascade is committing — release the source PatchPanel's lock + end any
     // carry/pickup that fed this picker (the cable is consumed by the patch).
@@ -6615,10 +6623,21 @@
     const targetType: CableType = dstExposed?.cableType ?? dstPort?.type ?? sourceType;
 
     // The channel the user picked, snapshotted BEFORE the menu closes.
-    // Only meaningful when the source really has a stereo image; a stale
-    // 'left' on an unpaired port would filter nothing (planAudioCommit never
-    // filters a `mono` leg) but reading it here keeps the trace honest.
-    const channelMode: ChannelMode = portMenuStereoPair ? portMenuChannelMode : 'both';
+    //
+    // TWO surfaces set it, and they are ONE control — "which side of the stereo
+    // image does this patch carry?" — reachable from whichever end has the
+    // image:
+    //   * `leg` — the user picked a PER-LEG row of a collapsed stereo TARGET
+    //     ("RET1 L"). This is the only per-side gesture available when the
+    //     SOURCE is mono, which is the ES-9 return case (`es9.in14` → `ret1L`
+    //     alone), and it WINS: it is a choice made about this specific target,
+    //     after and more specifically than the source-side rows.
+    //   * `portMenuChannelMode` — the picker's source-side "patch only L / only
+    //     R" rows, meaningful only when the SOURCE really has a stereo image.
+    //     A stale 'left' on an unpaired port would filter nothing
+    //     (planAudioCommit never filters a `mono` leg) but reading the pair
+    //     here keeps the trace honest.
+    const channelMode: ChannelMode = leg ?? (portMenuStereoPair ? portMenuChannelMode : 'both');
 
     const id = audioEdgeId(from.nodeId, from.portId, to.nodeId, to.portId);
     // The already-exists short-circuit is about the CLICKED leg, so it only
