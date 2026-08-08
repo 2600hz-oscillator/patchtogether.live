@@ -221,19 +221,34 @@ test.describe('VRT PROBE: face-audio — does the compact tile settle, and is au
         const ids = w.__patch.nodes['pinned-mixmstrs']?.data?.columns?.['1'] ?? [];
         return ids.map((id) => ({ id, type: w.__patch.nodes[id]?.type ?? '?' }));
       });
-      const edges = await page.evaluate(() => {
+      // Only the edges BETWEEN chain members — the column's own wiring. A face
+      // reading silence and a chain that never wired look identical from a peak
+      // of 0, and the difference decides whether the reading means anything.
+      // (`__patch` edge endpoints are `{nodeId, portId}` objects, not strings.)
+      const edges = await page.evaluate((ids: string[]) => {
         const w = globalThis as unknown as {
           __patch: {
-            edges: Record<string, { source: string; sourcePort?: string; target: string; targetPort?: string } | undefined>;
+            edges: Record<
+              string,
+              | {
+                  source: { nodeId: string; portId: string };
+                  target: { nodeId: string; portId: string };
+                }
+              | undefined
+            >;
             nodes: Record<string, { type?: string } | undefined>;
           };
         };
+        const set = new Set(ids);
         return Object.values(w.__patch.edges)
-          .filter((e): e is NonNullable<typeof e> => !!e)
-          .map((e) => JSON.stringify(e));
-      });
+          .filter((e) => !!e && (set.has(e.source.nodeId) || set.has(e.target.nodeId)))
+          .map((e) => {
+            const t = (id: string): string => w.__patch.nodes[id]?.type ?? id;
+            return `${t(e!.source.nodeId)}:${e!.source.portId}→${t(e!.target.nodeId)}:${e!.target.portId}`;
+          });
+      }, chainIds.map((m) => m.id));
       // eslint-disable-next-line no-console
-      console.log(`[face-audio]   edges ${edges.join(' , ')}`);
+      console.log(`[face-audio]   chain edges: ${edges.join('  ') || '(NONE)'}`);
       for (const m of chainIds) {
         const r = await readFaceAudio(page, m.id);
         // eslint-disable-next-line no-console
@@ -261,8 +276,12 @@ test.describe('VRT PROBE: face-audio — does the compact tile settle, and is au
           };
         }, memberId);
         // eslint-disable-next-line no-console
-        console.log(`[face-audio] ${type}: NO 'compact' tier — ${JSON.stringify(seen)}`);
-        throw e;
+        console.log(
+          `[face-audio] ${type}: NO 'compact' face tier, so there are no tile pixels to ` +
+            `measure — the module has no \`face\` and renders ModuleShellPlaceholder. The ` +
+            `chain audio above is still the finding. ${JSON.stringify(seen)} (${String(e).slice(0, 80)})`,
+        );
+        return;
       }
       const sel = `.svelte-flow__node[data-id="${memberId}"] [data-testid="module-shell"]`;
 
@@ -277,12 +296,12 @@ test.describe('VRT PROBE: face-audio — does the compact tile settle, and is au
       console.log(
         `[face-audio] ${type.padEnd(16)} tile=${livePix.w}x${livePix.h} port=${liveAudio.portId ?? '-'}` +
           `${UPSTREAM ? ` upstream=${UPSTREAM}` : ''}\n` +
-          `[face-audio]   RUNNING  state=${liveAudio.state} clock=+${liveAudio.clockAdvance.toFixed(4)}s ` +
-          `tapped=${liveAudio.tapped} peak=${liveAudio.peak.toFixed(6)} moving=${liveAudio.moving.toFixed(6)} ` +
+          `[face-audio]   RUNNING  state=${liveAudio.state} tapped=${liveAudio.tapped} ` +
+          `peak=${liveAudio.peak.toFixed(6)} moving=${liveAudio.moving.toFixed(6)} ` +
           `| capture d12=${livePix.d12}px d23=${livePix.d23}px\n` +
           `[face-audio]   FROZEN   freeze=${verdict.ok ? 'ok' : verdict.reason} state=${frozenAudio.state} ` +
-          `clock=+${frozenAudio.clockAdvance.toFixed(4)}s peak=${frozenAudio.peak.toFixed(6)} ` +
-          `moving=${frozenAudio.moving.toFixed(6)} | capture d12=${frozenPix.d12}px d23=${frozenPix.d23}px`,
+          `peak=${frozenAudio.peak.toFixed(6)} moving=${frozenAudio.moving.toFixed(6)} ` +
+          `| capture d12=${frozenPix.d12}px d23=${frozenPix.d23}px`,
       );
     });
   }
