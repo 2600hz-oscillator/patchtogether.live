@@ -11,7 +11,7 @@ source tree, so they cannot go stale. Prose + roadmap: `docs/testing/README.md`.
 | Bucket | What | Count |
 | --- | --- | ---: |
 | 1 | HARD SKIPS / QUARANTINES (backlog → drive to 0) | 6 |
-| 2 | COVERAGE EXEMPTIONS (deliberate auto-enrollment opt-outs) | 478 |
+| 2 | COVERAGE EXEMPTIONS (deliberate auto-enrollment opt-outs) | 479 |
 | 3 | INFORMATIONAL-ONLY CI LANES (run, never block merge) | 5 |
 
 ## CI gating truth (from `.github/workflows/ci.yml`)
@@ -46,7 +46,7 @@ _none_
 ### spawn-smoke QUARANTINE map (e2e/tests/modules.spec.ts) — 1
 - `toybox` — task #102: SwiftShader software-renderer timeout (heavy WebGL)
 
-## Bucket 2 — coverage exemptions (478)
+## Bucket 2 — coverage exemptions (479)
 
 Declarative auto-enrollment opt-out lists. A module opted out of a UNIVERSAL
 sweep still carries dedicated coverage (a bespoke spec / unit core / ART). These
@@ -137,7 +137,7 @@ tracked-to-zero backlog (reconcile = fix or delete); see the roadmap.
 - `warrensspectrum` — VRT baseline pending: the curated dock FACE lands on the faceplate platform (#1301) in a follow-up and will replace t…
 - `writeseq` — VRT baseline pending
 
-### `BEHAVIORAL_MODULE_EXEMPT` (77) — whole-module skips of the behavioral CONTROL→PATCHED delta sweep
+### `BEHAVIORAL_MODULE_EXEMPT` (78) — whole-module skips of the behavioral CONTROL→PATCHED delta sweep
 <sub>e2e/tests/per-module-per-port-behavioral.spec.ts</sub>
 - `4plexvid` — multiplex selector with per-input → per-output isolation
 - `archivist` — idle until an archive.org item loads (external network)
@@ -154,6 +154,7 @@ tracked-to-zero backlog (reconcile = fix or delete); see the roadmap.
 - `clipplayer` — TIMELORDE-locked launch output (8 lanes)
 - `colourofmagic` — parallel multi-block colorspace processor — the sweep observes only the first video output `pass` (untouched source p…
 - `cvBuddy` — separate-output-per-input passthrough (pitch→pitchCv, gate→gate, velocity→velCv) — the sweep observes only the first…
+- `cvBuddyMini` — IDENTICAL structure to cvBuddy above, minus the velocity jack — the same separate-output-per-input passthrough (pitch…
 - `doom` — gameplay-conditional outputs
 - `drumseqz` — pattern grid needs cells toggled
 - `edges`
@@ -557,7 +558,7 @@ tracked-to-zero backlog (reconcile = fix or delete); see the roadmap.
 
 ### Opt-IN completeness ratchets (the more members the better)
 
-- `STRICT_DOCS`: **184** — modules held to the FULL living-docs completeness bar (deny-missing-docs) <sub>(packages/web/src/lib/docs/strict-docs.ts)</sub>
+- `STRICT_DOCS`: **185** — modules held to the FULL living-docs completeness bar (deny-missing-docs) <sub>(packages/web/src/lib/docs/strict-docs.ts)</sub>
 - `STRICT_VRT_MODULES`: **48** — modules whose card MUST ship a VRT baseline (deny-missing-baseline) <sub>(e2e/vrt/vrt-exemptions.ts)</sub>
 
 ## Bucket 3 — informational-only CI lanes (5)

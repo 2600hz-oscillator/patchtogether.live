@@ -19,85 +19,21 @@
 
 import type { ElectraAllocation } from './types';
 import { valueToCc7, ampToMeterCc } from './curve';
+import { CcSuppressor, ECHO_WINDOW_MS } from '$lib/midi/cc-dedupe';
 
 // ──────────────────────────── pure delta/echo core ────────────────────────────
+//
+// MOVED. The delta-dedupe + echo-window state machine now lives in
+// `$lib/midi/cc-dedupe` as `CcSuppressor` — unchanged logic, just no longer
+// namespaced to Electra, because every outbound-CC consumer needs it (the
+// device-control work is the second). `FeedbackState` remains the name Electra
+// uses; it is an alias, so this module's callers and tests are unaffected.
 
-/** Per-control feedback bookkeeping. */
-interface ControlFb {
-  /** Last CC we SENT to the device for this control (delta dedupe). */
-  lastSent?: number;
-  /** Last CC the DEVICE sent US (echo-suppression token). */
-  inboundCc?: number;
-  /** performance.now() of that inbound, for the suppression window. */
-  inboundAt?: number;
-}
-
-export const ECHO_WINDOW_MS = 120;
-
-/**
- * Pure feedback state machine. Tracks per-key sent/inbound CCs and decides
- * whether a given param→CC update should actually be transmitted. No timers,
- * no MIDI — `now` is injected.
- */
-export class FeedbackState {
-  private byKey = new Map<string, ControlFb>();
-  private readonly echoWindowMs: number;
-
-  constructor(opts: { echoWindowMs?: number } = {}) {
-    this.echoWindowMs = opts.echoWindowMs ?? ECHO_WINDOW_MS;
-  }
-
-  /** Record that the DEVICE sent us this CC for `key` at `now` (so a same-value
-   *  echo back to the device within the window is suppressed). Call from the
-   *  inbound CC handler BEFORE the param write lands. */
-  noteInbound(key: string, cc: number, now: number): void {
-    const fb = this.get(key);
-    fb.inboundCc = cc;
-    fb.inboundAt = now;
-  }
-
-  /**
-   * Decide whether to send `cc` for `key` at `now`. Returns true (and records
-   * it as lastSent) when the update should go out; false to skip. Skips when:
-   *   - cc === lastSent (no change — delta dedupe), OR
-   *   - cc === the inbound CC still inside the echo window (would echo the
-   *     device's own move straight back).
-   */
-  shouldSend(key: string, cc: number, now: number): boolean {
-    const fb = this.get(key);
-    if (fb.lastSent === cc) return false;
-    if (
-      fb.inboundCc === cc &&
-      fb.inboundAt !== undefined &&
-      now - fb.inboundAt < this.echoWindowMs
-    ) {
-      // Still record as sent so we don't keep re-evaluating; the device already
-      // shows this value (it originated there).
-      fb.lastSent = cc;
-      return false;
-    }
-    fb.lastSent = cc;
-    return true;
-  }
-
-  /** Forget a control (e.g. on regenerate). */
-  forget(key: string): void {
-    this.byKey.delete(key);
-  }
-
-  clear(): void {
-    this.byKey.clear();
-  }
-
-  private get(key: string): ControlFb {
-    let fb = this.byKey.get(key);
-    if (!fb) {
-      fb = {};
-      this.byKey.set(key, fb);
-    }
-    return fb;
-  }
-}
+export { ECHO_WINDOW_MS };
+// A `const` alias (not `export { X as Y }`) so the name is also a LOCAL binding
+// this module can `new` — FeedbackPump below constructs one.
+export const FeedbackState = CcSuppressor;
+export type FeedbackState = CcSuppressor;
 
 // ──────────────────────────── pump wiring ────────────────────────────
 
