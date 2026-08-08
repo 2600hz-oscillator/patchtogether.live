@@ -336,11 +336,18 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
     // LEG 3 — the PRE-FIX capture box could not see it. This is the defect,
     // kept executable so nobody has to take the report on faith, and so a
     // regression that re-clamps the pane fails HERE with the reason.
+    // Two-sided on purpose: a clamp that came out SHORTER than the old fold
+    // would also report 0 px below, and would be a different (easier) claim
+    // than the one this leg is making.
     expect(
       blind.height,
-      `${NC_FACE}: the re-clamped capture is ${blind.height} px tall, not ~${LEGACY_FOLD_PX} — ` +
-        `the fold override did not take, so leg 3 is vacuous.`,
-    ).toBeLessThanOrEqual(LEGACY_FOLD_PX + 2);
+      `${NC_FACE}: the re-clamped capture is ${blind.height} px tall, not the ${LEGACY_FOLD_PX} px ` +
+        `the old ${LEGACY_FOLD_CLAMP_PX} px clamp produced — this is not a reproduction of the ` +
+        `pre-fix capture box, so leg 3 is vacuous.`,
+    ).toBeGreaterThanOrEqual(LEGACY_FOLD_PX - 2);
+    expect(blind.height, `${NC_FACE}: re-clamped capture height`).toBeLessThanOrEqual(
+      LEGACY_FOLD_PX + 2,
+    );
     expect(
       blind.diffPixels,
       `${NC_FACE}: under the old ${LEGACY_FOLD_CLAMP_PX} px clamp the SAME perturbation moved ` +
