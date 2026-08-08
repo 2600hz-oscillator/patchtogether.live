@@ -407,6 +407,15 @@ chroma param tintB 0..1 linear default=1
 chroma param tintG 0..1 linear default=1
 chroma param tintMix 0..1 linear default=0
 chroma param tintR 0..1 linear default=1
+chromaconsole meta domain=audio
+chromaconsole param slot1 0..127 linear default=64
+chromaconsole param slot2 0..127 linear default=64
+chromaconsole param slot3 0..127 linear default=64
+chromaconsole param slot4 0..127 linear default=64
+chromaconsole param slot5 0..127 linear default=64
+chromaconsole param slot6 0..127 linear default=64
+chromaconsole param slot7 0..127 linear default=64
+chromaconsole param slot8 0..127 linear default=64
 chromakey meta domain=video
 chromakey in bg video
 chromakey in fg video

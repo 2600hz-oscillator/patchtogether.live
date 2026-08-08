@@ -37,7 +37,7 @@ const EXPECTED_NODE_TYPES = [
   '4plexvid', 'acidwarp', 'adsr', 'analogLogicMaths', 'analogVco', 'archivist',
   'attenumix', 'audioIn', 'audioOut', 'backdraft', 'bentbox',
   'blood', 'bluebox', 'buggles', 'cameraInput', 'cartesian',
-  'charlottesEchos', 'chroma', 'chromakey', 'clap', 'clipplayer', 'clockedRunner', 'clouds',
+  'charlottesEchos', 'chroma', 'chromaconsole', 'chromakey', 'clap', 'clipplayer', 'clockedRunner', 'clouds',
   'cloudseed', 'cofefve', 'colorizer', 'colourofmagic', 'cube', 'cvBuddy', 'cvBuddyMini', 'delay', 'depolarizer', 'destroy', 'destructor',
   'dockscope',
   'doom', 'drummergirl', 'drumseqz', 'dx7', 'es9', 'fader', 'feedback', 'filter',

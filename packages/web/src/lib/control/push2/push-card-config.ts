@@ -55,6 +55,13 @@
  * eight ParamDef ids, encoder 1 → 8. Absent module = the face/generic default.
  */
 export const PUSH_CARD_CONTROLS: Readonly<Record<string, readonly string[]>> = {
+  // CHROMACONSOLE — the override is the COMPLETE slot list, so this cannot
+  // drift. The module declares exactly 8 params and the Push card shows
+  // exactly 8 controls, which means there is no ranking left to do and no
+  // future param addition that could walk one off the card. That is a
+  // stronger property than a pinned override: correct by construction
+  // rather than correct because somebody remembered to pin it.
+  chromaconsole: ['slot1', 'slot2', 'slot3', 'slot4', 'slot5', 'slot6', 'slot7', 'slot8'],
   // ── dx7 ──────────────────────────────────────────────────────────────────
   // The face ranks the PRESET SELECTOR first, but that is a control FAMILY
   // (node.data-backed picker), not a turnable param, so it can never be an

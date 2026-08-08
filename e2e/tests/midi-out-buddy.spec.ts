@@ -19,43 +19,23 @@
 import { test, expect } from './_fixtures';
 import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+import {
+  DEFAULT_FAKE_MIDI_OUT,
+  installMidiOutCapture,
+  readMidiOutCaptured,
+} from '../_helpers/midi';
 
 test.describe.configure({ mode: 'parallel' });
 
 const TYPE = 'midiOutBuddy';
 
-// Init script: replace navigator.requestMIDIAccess with a fake that exposes a
-// single capturing OUTPUT. Must run BEFORE the app boots so the first
-// requestMIDIAccess sees the fake.
-const fakeMidiOutScript = `
-(() => {
-  if (window.__fakeMidiOutInstalled) return;
-  window.__fakeMidiOutInstalled = true;
-  window.__midiOutSent = []; // array of number[] messages
-
-  const output = {
-    id: 'fake-midi-out-0',
-    name: 'Fake MIDI Out (Playwright)',
-    manufacturer: 'PatchTogether',
-    state: 'connected',
-    connection: 'open',
-    type: 'output',
-    version: '1.0',
-    send(data) { window.__midiOutSent.push(Array.from(data)); },
-    clear() {},
-  };
-  const access = {
-    sysexEnabled: false,
-    inputs: new Map(),
-    outputs: new Map([[output.id, output]]),
-    onstatechange: null,
-  };
-  navigator.requestMIDIAccess = async () => access;
-})();
-`;
-
+// The capturing Web MIDI mock now lives in `e2e/_helpers/midi.ts` — this
+// spec's private copy was one of two verbatim duplicates (the other is in
+// workflow-channel-columns.spec.ts) and a third was about to be written.
+// The extracted helper keeps this spec's exact port id + name, so the wire
+// behaviour is unchanged.
 async function installFakeMidiOut(page: Page): Promise<void> {
-  await page.addInitScript({ content: fakeMidiOutScript });
+  await installMidiOutCapture(page);
 }
 
 test('midi-out-buddy: drops + card mounts with EVERY declared input handle, no console errors', async ({ page, errorWatch }) => {
@@ -86,6 +66,68 @@ test('midi-out-buddy: drops + card mounts with EVERY declared input handle, no c
   for (const portId of declaredInputs) {
     await expect(card.locator(`[data-handleid="${portId}"]`), `${portId} handle`).toHaveCount(1);
   }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// THE INSTRUMENT'S OWN NEGATIVE CONTROL — runs on every pass, not once.
+//
+// `readMidiOutCaptured` returning `[]` has TWO causes that are indistinguishable
+// from the return value alone: (a) the mock is installed and the app genuinely
+// sent nothing, or (b) the init script never ran, so the hook does not exist and
+// every "no bytes were sent" assertion in this file — and in the device specs
+// that reuse this helper — passes vacuously forever.
+//
+// This is the `delivered: false` discipline from the audition ledger applied to
+// a capture buffer: "recorded nothing" must be distinguishable from "never
+// recorded". So the emptiness assertion is paired with a POSITIVE assertion
+// that the buffer EXISTS and is an array. The companion direction — that the
+// instrument really does see bytes when bytes are sent — is the captured-NoteOn
+// test below, which is what makes this pair a both-directions control rather
+// than half of one.
+// ─────────────────────────────────────────────────────────────────────────────
+test('midi-out-capture-instrument: the buffer EXISTS and is empty before anything sends', async ({ page }) => {
+  await installFakeMidiOut(page);
+  await page.goto('/rack');
+  await page.waitForLoadState('networkidle');
+
+  const probe = await page.evaluate(() => {
+    const w = window as unknown as {
+      __fakeMidiOutInstalled?: boolean;
+      __midiOutSent?: unknown;
+      __midiOutSentDetailed?: unknown;
+    };
+    return {
+      installed: w.__fakeMidiOutInstalled === true,
+      flatIsArray: Array.isArray(w.__midiOutSent),
+      detailedIsArray: Array.isArray(w.__midiOutSentDetailed),
+    };
+  });
+
+  // (a) The hook is really there. Without this, (b) proves nothing.
+  expect(probe.installed, 'the capturing MIDI-out mock init script ran').toBe(true);
+  expect(probe.flatIsArray, 'window.__midiOutSent is an array').toBe(true);
+  expect(probe.detailedIsArray, 'window.__midiOutSentDetailed is an array').toBe(true);
+
+  // (b) …and it is genuinely empty, because nothing has sent yet. A rack that
+  // boots emitting MIDI on its own would redden here, which is itself worth
+  // knowing.
+  const captured = await readMidiOutCaptured(page);
+  expect(
+    captured,
+    `expected an installed-but-empty capture buffer; got ${captured.length} message(s): ` +
+      JSON.stringify(captured.slice(0, 4)),
+  ).toEqual([]);
+
+  // The port the helper exposes is the one specs select by id. Pinning it here
+  // means a rename of DEFAULT_FAKE_MIDI_OUT fails in ONE obvious place rather
+  // than as a mystery "device never connected" in every consumer.
+  const portIds = await page.evaluate(async () => {
+    const access = await navigator.requestMIDIAccess();
+    return [...access.outputs.values()].map((o) => o.id);
+  });
+  expect(portIds, 'the fake exposes exactly the documented default port').toEqual([
+    DEFAULT_FAKE_MIDI_OUT.id,
+  ]);
 });
 
 test('midi-out-buddy: Connect MIDI… reveals the OUT device + channel selectors', async ({ page }) => {

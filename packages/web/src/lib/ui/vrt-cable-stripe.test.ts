@@ -189,9 +189,14 @@ const PENDING_PALETTE_REGEN: readonly string[] = [
  *
  * `audioOut`/`mixer` paint `var(--text-dim)`; `wavesculpt` a 3-hex gradient;
  * the `moog*` family + `electraControl` + `sticky` render no `.stripe` at all.
+ *
+ * `chromaconsole` is the same "no `.stripe` at all" case, for a structural
+ * reason rather than a styling one: it is a control surface for an EXTERNAL
+ * device, so it declares zero ports and there is no cable for a stripe to
+ * colour. A card with nothing to patch cannot pin a cable token.
  */
 const NOT_TOKEN_PINNED_SCENES: readonly string[] = [
-  'audioOut', 'electraControl', 'mixer',
+  'audioOut', 'chromaconsole', 'electraControl', 'mixer',
   'moog903a', 'moog904b', 'moog904c', 'moog905', 'moog907a', 'moog911a', 'moog912',
   'moog914', 'moog921a', 'moog921b', 'moog923', 'moog956', 'moog960', 'moog961',
   'moog962', 'moog984', 'moog992', 'moog993', 'moog994', 'moog995',

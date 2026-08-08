@@ -40,6 +40,7 @@ export const ART_EXCLUDED: Readonly<Record<string, string>> = {
   qbrt: 'free-running game audio driven by RNG + gameplay state',
   audioOut: 'terminal sink — no audio-family OUTPUT port to capture',
   clockedRunner: 'utility with no audio-family OUTPUT port to capture',
+  chromaconsole: 'control surface for an EXTERNAL MIDI device (Hologram Chroma Console) — its only output is CC on a MIDI wire, and it has no audio-family OUTPUT port to capture; the pedal\'s audio never enters the graph (patched through the ES-9 by hand). Transmission is pinned by the midi/cc-out + cc-ramp unit suites and the bytes-on-the-wire e2e',
   spectrograph: 'video-only outputs (analysis sink) — video belongs to VRT/WebGL-attest',
   dockscope: 'terminal visualiser (analysis sink) — no OUTPUT ports at all; nothing to capture',
 };

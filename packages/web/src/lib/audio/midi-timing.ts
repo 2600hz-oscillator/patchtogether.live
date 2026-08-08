@@ -111,6 +111,35 @@ export function eventTimeStampToAudioTime(
   return target > floor ? target : floor;
 }
 
+/**
+ * The INVERSE projection: an AudioContext time (s) → the `performance.now()`
+ * millisecond value that names the same instant.
+ *
+ * WHY THE OTHER DIRECTION EXISTS NOW. Everything above maps INBOUND MIDI onto
+ * the audio clock, because until now MIDI only ever arrived. Sending is the
+ * mirror problem and it has the mirror requirement: `MIDIOutput.send(bytes,
+ * timestamp)` takes a `performance.now()`-domain timestamp — the DOMHighResTimeStamp
+ * clock, NOT `AudioContext.currentTime` — so anything scheduled against audio
+ * time (a clip-automation ramp, a step boundary) has to be converted before it
+ * can be handed to Web MIDI.
+ *
+ * Passing an audio-clock number straight to `send()` is the bug this function
+ * exists to prevent, and it is a QUIET one: both clocks are monotonic
+ * millisecond-ish numbers that start near zero, so the wrong one does not throw
+ * and does not look obviously wrong in a log — it just schedules everything at
+ * a time that has already passed, which Web MIDI treats as "send immediately".
+ * The result is a module that appears to work while having silently thrown away
+ * all of its timing.
+ *
+ * `ctxOffsetS` is the same calibrated offset `measureCtxOffset` produces, so a
+ * caller that already maintains one for the inbound direction reuses it.
+ *
+ * Pure.
+ */
+export function audioTimeToPerformanceNow(atTimeS: number, ctxOffsetS: number): number {
+  return (atTimeS - ctxOffsetS) * 1000;
+}
+
 /** How often to re-measure the ctx↔perf offset (ms). */
 const CTX_OFFSET_REFRESH_MS = 2000;
 
