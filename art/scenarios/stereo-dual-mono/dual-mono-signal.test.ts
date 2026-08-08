@@ -32,7 +32,10 @@
 
 import { describe, it, expect } from 'vitest';
 import { OfflineAudioContext } from 'node-web-audio-api';
-import { materializeAudioHandle } from '$lib/audio/dual-mono';
+import {
+  materializeAudioHandle, legInputsFor, resolveDualMonoInput,
+} from '$lib/audio/dual-mono';
+import { legChannelOfEdge, type StereoDef } from '$lib/graph/stereo-autowire';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import type { ModuleNode } from '$lib/graph/types';
 
@@ -227,6 +230,108 @@ describe('dual-mono — a STEREO signal survives a mono module', () => {
   });
 });
 
+describe('LEG PLACEMENT — a TWO-PORT stereo source survives a mono module', () => {
+  // The case the PR-3 commit planner actually writes: `out_l` and `out_r` are
+  // two SEPARATE cables into the module's single audio input. Web Audio sums
+  // two connections to one input, so without leg placement the stereo image
+  // dies at the first mono module — the exact failure dual-mono exists to
+  // prevent, and the one the chaining case (a 2-channel stream on one cable)
+  // does not cover, because real patches START here.
+  //
+  // Wired through `legInputsFor` + `resolveDualMonoInput` + `legChannelOfEdge`
+  // — the SAME three functions AudioEngine.addEdge calls, not a re-derivation.
+  // (That addEdge calls them at all is pinned in dual-mono-engine.test.ts.)
+  const stereoSrcDef = {
+    type: 'clouds', domain: 'audio', inputs: [],
+    outputs: [{ id: 'out_l', type: 'audio' }, { id: 'out_r', type: 'audio' }],
+  } as unknown as StereoDef;
+
+  const sideOf = (portId: string, placement: 'on' | 'off') => {
+    if (placement === 'off') return null; // the negative control
+    return legChannelOfEdge(
+      { id: 'e', source: { nodeId: 's', portId }, target: { nodeId: 'd', portId: 'audio' } } as never,
+      (nodeId) => (nodeId === 's' ? stereoSrcDef : undefined),
+    );
+  };
+
+  /** Patch `legs` (portId → constant value) into a wrapped module. */
+  async function renderLegs(
+    legValues: Record<string, number>,
+    placement: 'on' | 'off' = 'on',
+  ) {
+    const ctx = new OfflineAudioContext(2, N, SR);
+    const handle = await materializeAudioHandle(
+      ctx as unknown as AudioContext, monoModuleDef(0.5), NODE,
+    );
+    const legs = legInputsFor(handle, 'audio');
+    expect(legs, 'the wrapped handle exposes no leg inputs').toBeTruthy();
+    for (const [portId, value] of Object.entries(legValues)) {
+      const side = sideOf(portId, placement);
+      const target = resolveDualMonoInput(legs!, side);
+      const src = constSource(ctx, [value]);
+      (src as unknown as AudioNode).connect(target.node, 0, target.input);
+      src.start(0);
+      if (side) legs!.noteLeg(side, +1);
+    }
+    const dout = handle.outputs.get('audio')!;
+    dout.node.connect(ctx.destination as unknown as AudioNode, dout.output, 0);
+    const out = await ctx.startRendering();
+    return { L: out.getChannelData(0)[PROBE]!, R: out.getChannelData(1)[PROBE]! };
+  }
+
+  it('out_l and out_r come out DISTINCT at the far end', async () => {
+    const { L, R } = await renderLegs({ out_l: 0.8, out_r: -0.4 });
+    expect(L).toBeCloseTo(0.4, 6);
+    expect(R).toBeCloseTo(-0.2, 6);
+    expect(Math.sign(L), 'the two legs were summed — stereo destroyed at the first '
+      + 'mono module, which is the whole thing dual-mono exists to prevent')
+      .not.toBe(Math.sign(R));
+  });
+
+  it('NEGATIVE CONTROL: with placement OFF the same patch SUMS', async () => {
+    // Both cables land on the mono bus, exactly as they did before this fix.
+    // If this ever stops showing the sum, the test above proves nothing.
+    const { L, R } = await renderLegs({ out_l: 0.8, out_r: -0.4 }, 'off');
+    expect(L).toBeCloseTo(R, 6);
+    // (0.8 + −0.4) × 0.5, duplicated to both channels by the up-mix.
+    expect(L).toBeCloseTo(0.2, 6);
+  });
+
+  it('a LONE leg still reaches BOTH channels (the merger zero-fill trap)', async () => {
+    // A ChannelMerger renders an unconnected input as silence — the same
+    // left-only failure as a discrete up-mix, wearing a different node. The
+    // mono normal is open until the opposite leg genuinely arrives.
+    const lone = await renderLegs({ out_l: 0.8 });
+    expect(Math.abs(lone.R), 'RIGHT IS SILENT for a lone left leg — the merger '
+      + 'zero-fill trap').toBeGreaterThan(0.01);
+    expect(lone.R).toBeCloseTo(lone.L, 6);
+
+    // …and symmetrically for a lone RIGHT leg.
+    const loneR = await renderLegs({ out_r: 0.8 });
+    expect(Math.abs(loneR.L), 'LEFT IS SILENT for a lone right leg').toBeGreaterThan(0.01);
+    expect(loneR.L).toBeCloseTo(loneR.R, 6);
+  });
+
+  it('⚠ the MONO patch is unaffected — still equal and NON-ZERO', async () => {
+    // Non-negotiable. The leg machinery must not have reintroduced the
+    // zero-fill on a different node; a mono cable is unpaired, so it takes the
+    // mono bus and the up-mix, untouched.
+    const { L, R } = await renderThroughSeam(monoModuleDef(0.5), [0.8]);
+    expect(Math.abs(L)).toBeGreaterThan(0.01);
+    expect(Math.abs(R)).toBeGreaterThan(0.01);
+    expect(R).toBeCloseTo(L, 6);
+  });
+
+  it('CHAINING still works — a 2-channel stream on ONE cable stays distinct', async () => {
+    // A dual-mono module's output port is unpaired, so the next module sees a
+    // single unsided cable carrying 2 channels. That must take the mono bus and
+    // pass through the up-mix WITHOUT being down-mixed by a merger input.
+    const { L, R } = await renderThroughSeam(monoModuleDef(0.5), [0.8, -0.4]);
+    expect(L).toBeCloseTo(0.4, 6);
+    expect(R).toBeCloseTo(-0.2, 6);
+  });
+});
+
 describe("'sum' class — a stereo signal is DOWN-MIXED, not read as left-only", () => {
   const analyzerDef = (): AudioModuleDef => ({
     ...monoModuleDef(1, 'featurecv'),
@@ -296,17 +401,21 @@ describe("'native-stereo' — the claim is MEASURED, not read off the source", (
 });
 
 describe('dual-mono — the COST, measured', () => {
-  it('adds exactly 3 shared nodes + 1 merger + 1 fan per extra input', async () => {
-    // Deterministic, unlike a timing. in-gain + up-mix + splitter (3), one
-    // merger per audio output, one fan per non-audio input (plus a
-    // ConstantSource for an AudioParam one).
+  it('adds exactly 7 shared gains + 1 fan per extra input', async () => {
+    // Deterministic, unlike a timing — and the number is the whole point of
+    // pinning it: leg placement took the shared scaffolding from 2 gains to 7,
+    // and a silent creep here is how "2× CPU, accepted" becomes 3×.
+    //   mono bus, up-mix, legL, legR, normalLR, normalRL, stereoSum  = 7
+    //   + 1 fan per non-audio input (`res`)                          = 1
+    //   + 2 instances × 1 gain each (the synthetic DSP)              = 2
+    // Non-gain nodes are unchanged: 1 splitter + 1 leg merger + 1 output
+    // merger per audio output.
     const ctx = new OfflineAudioContext(2, N, SR);
     let made = 0;
     const real = ctx.createGain.bind(ctx);
     (ctx as unknown as { createGain: () => GainNode }).createGain = () => { made++; return real(); };
     await materializeAudioHandle(ctx as unknown as AudioContext, monoModuleDef(1), NODE);
-    // 2 instances × 1 gain each, + in-gain + up-mix + 1 fan for `res`.
-    expect(made).toBe(5);
+    expect(made).toBe(10);
   });
 
   it('reports the render-time cost of running a DSP twice', async () => {

@@ -256,8 +256,21 @@ describe('dual-mono ledger — the gate STATES what it cannot see', () => {
     expect(SCOPE.bypassedBy.length).toBeGreaterThanOrEqual(3);
   });
 
-  it('names the case it does NOT handle (two mono cables into one input)', () => {
-    expect(SCOPE.notHandled).toMatch(/two separate mono cables/);
+  it('names the leg-placement seam, and reuses the SHARED pair derivation', () => {
+    // Two cables into one mono port no longer sum — addEdge places them on
+    // separate legs. The side comes from legChannelOfEdge, the same derivation
+    // the commit planner uses; a sixth private heuristic here would re-open
+    // exactly what #1404 collapsed.
+    expect(SCOPE.legPlacement).toMatch(/legInputsFor/);
+    expect(SCOPE.legPlacement).toMatch(/legChannelOfEdge/);
+    expect(SCOPE.legPlacement).toMatch(/not a second heuristic/);
+  });
+
+  it('names the residual case it still cannot handle', () => {
+    // An unstated scope reads as full coverage. A stereo source whose outputs
+    // are not a DERIVED pair is invisible to the shared derivation, so its two
+    // cables still sum — the same answer the rest of the app gives it.
+    expect(SCOPE.notHandled).toMatch(/not a DERIVED pair/);
   });
 });
 

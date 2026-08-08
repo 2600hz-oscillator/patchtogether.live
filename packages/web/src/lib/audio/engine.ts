@@ -13,7 +13,8 @@ import { getModuleDef, type AudioModuleDef } from './module-registry';
 import { POLY_CHANNELS, resolveConnection } from './poly';
 import { attachCvScale } from './cv-scale';
 import { restedParams, type MomentaryDefLike } from './momentary-params';
-import { materializeAudioHandle } from './dual-mono';
+import { materializeAudioHandle, legInputsFor, resolveDualMonoInput } from './dual-mono';
+import { legChannelOfEdge, type StereoDef } from '$lib/graph/stereo-autowire';
 import { holdParamAtSeam, HOLD_NOW_EPS_S } from './hold-param';
 import { createEdgeCounter } from './edge-detect';
 import { GATE_HI } from './gate-trigger';
@@ -506,9 +507,42 @@ export class AudioEngine implements DomainEngine {
         if (scaleTeardown) scaleTeardown();
       });
     } else {
+      // DUAL-MONO LEG PLACEMENT. A stereo→mono patch is TWO edges (out_l and
+      // out_r both target the module's single audio input — see
+      // `planAudioCommit`), and Web Audio SUMS two connections to one input.
+      // Summing there would destroy the stereo image at the first mono module,
+      // which is precisely what dual-mono exists to prevent. So for a wrapped
+      // target we place each edge on its own leg.
+      //
+      // The side comes from `legChannelOfEdge` — the SHARED stereo-pair
+      // derivation the commit planner itself uses (#1404 collapsed five
+      // heuristics into one; adding a sixth here would re-open that). `null`
+      // means neither endpoint is paired, which is every ordinary cable, and
+      // routes to the mono bus for byte-identical behaviour.
+      const legs = legInputsFor(dst, edge.target.portId);
+      if (legs) {
+        const side = legChannelOfEdge(edge, (nodeId) => this.stereoDefFor(nodeId));
+        const leg = resolveDualMonoInput(legs, side);
+        sout.node.connect(leg.node, sout.output, leg.input);
+        if (side) legs.noteLeg(side, +1);
+        this.edges.set(edge.id, () => {
+          try { sout.node.disconnect(leg.node, sout.output, leg.input); } catch { /* */ }
+          if (side) legs.noteLeg(side, -1);
+        });
+        return;
+      }
       sout.node.connect(din.node, sout.output, din.input);
       this.edges.set(edge.id, () => sout.node.disconnect(din.node, sout.output, din.input));
     }
+  }
+
+  /** The def a node was spawned from, in the shape the stereo-pair derivation
+   *  wants. Used only by leg placement; returns undefined for an unknown node,
+   *  which `legChannelOfEdge` reads as "unpaired". */
+  private stereoDefFor(nodeId: string): StereoDef | undefined {
+    const type = this.nodeTypes.get(nodeId);
+    if (!type) return undefined;
+    return (getModuleDef(type) ?? getVideoModuleDef(type)) as StereoDef | undefined;
   }
 
   /** Apply a poly-cable connection plan: insert a splitter or merger between

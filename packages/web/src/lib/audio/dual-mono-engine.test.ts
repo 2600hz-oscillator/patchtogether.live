@@ -22,7 +22,9 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { AudioModuleDef } from './module-registry';
 import type { ModuleNode } from '$lib/graph/types';
-import { materializeAudioHandle } from './dual-mono';
+import { materializeAudioHandle, legInputsFor } from './dual-mono';
+import { AudioEngine } from './engine';
+import { registerModule } from './module-registry';
 
 // ---------------------------------------------------------------------------
 // A recording fake AudioContext (the engine-cv-scale.test.ts `connectionLog`
@@ -94,6 +96,16 @@ function makeCtx(): AudioContext {
   } as unknown as AudioContext;
 }
 
+/** The live `.gain` value of a recorded GainNode — the normals are asserted
+ *  through this, so a tag that names a non-gain node throws instead of
+ *  silently reading `undefined` (which would compare unequal to 1 AND to 0 and
+ *  make the assertion unfalsifiable in both directions). */
+function recordedGain(tag: string): number {
+  const n = recordedNode(tag) as FakeNode & { gain?: { value: number } };
+  if (!n.gain) throw new Error(`recorded node '${tag}' is not a GainNode`);
+  return n.gain.value;
+}
+
 /** Recover the LIVE fake node behind a recorded tag. */
 function recordedNode(tag: string): FakeNode {
   const hit = nodeRegistry.get(tag);
@@ -144,6 +156,22 @@ function fakeDef(
 const NODE = { id: 'n1', type: 'x', domain: 'audio', position: { x: 0, y: 0 }, params: {} } as ModuleNode;
 
 const conns = (from: string) => log.filter((c) => c.from === from && c.to !== '<disconnected>');
+
+/** BFS the recorded graph from `start` to `goal`; returns the visited tags. */
+function reaches(start: string, goal: string): string[] | null {
+  const seen = new Set([start]);
+  const queue = [start];
+  while (queue.length) {
+    const cur = queue.shift()!;
+    for (const c of conns(cur)) {
+      if (c.to === goal) return [...seen];
+      if (seen.has(c.to)) continue;
+      seen.add(c.to);
+      queue.push(c.to);
+    }
+  }
+  return null;
+}
 
 beforeEach(() => {
   log = []; created = []; factoryCalls = 0; disposals = []; gainSeq = 0;
@@ -209,13 +237,15 @@ describe('dual-mono wrapper — TWO instances behind an up-mix + split', () => {
     ]);
   });
 
-  it('the audio input the ENGINE sees is upstream of the up-mix', async () => {
+  it('the audio input the ENGINE sees reaches the splitter through the up-mix', async () => {
     const handle = await materializeAudioHandle(makeCtx(), def, NODE);
     const entry = handle.inputs.get('audio')!;
-    const tag = (entry.node as unknown as FakeNode).__tag;
-    // in → upmix → splitter, so the exposed node reaches the splitter in 2 hops.
-    const hop1 = conns(tag)[0]!;
-    expect(conns(hop1.to).map((c) => c.to)).toContain('splitter2');
+    const start = (entry.node as unknown as FakeNode).__tag;
+    // Walk the graph rather than counting hops: a hop count is a restatement of
+    // the implementation and breaks on any refactor, which tells you nothing.
+    const path = reaches(start, 'splitter2');
+    expect(path, `${start} does not reach the splitter`).not.toBeNull();
+    expect(path, 'the default (mono) input must pass through the up-mix').toContain('gain1');
     expect(entry.param, 'the audio input must not be an AudioParam').toBeUndefined();
   });
 
@@ -317,6 +347,97 @@ describe("'sum' class — one instance, audio input DOWN-MIXED", () => {
       [{ id: 's_out_a', type: 'gate' }]);
     const handle = await materializeAudioHandle(makeCtx(), d2, NODE);
     expect((handle.inputs.get('s_in')!.node as unknown as FakeNode).__tag).toBe('moog961#0');
+  });
+});
+
+describe('LEG PLACEMENT — two cables into one mono port must NOT sum', () => {
+  // Driven through the REAL AudioEngine.addEdge, not by calling the placement
+  // helper directly: the thing that can regress is the engine FORGETTING to
+  // consult it, and a test that calls the helper itself is structurally unable
+  // to see that. (The SIGNAL is proved in art/scenarios/stereo-dual-mono.)
+  const wrapped = fakeDef('filter', [{ id: 'audio', type: 'audio' }],
+    [{ id: 'audio', type: 'audio' }]);
+  /** A stereo source: two audio outputs whose ids form a derived L/R pair. */
+  const stereoSrc = fakeDef('clouds', [], [{ id: 'out_l', type: 'audio' }, { id: 'out_r', type: 'audio' }]);
+  /** A mono source: one unpaired audio output. */
+  const monoSrc = fakeDef('vco', [], [{ id: 'audio', type: 'audio' }]);
+
+  const edge = (id: string, fromPort: string) => ({
+    id, source: { nodeId: 'src', portId: fromPort }, target: { nodeId: 'dst', portId: 'audio' },
+    sourceType: 'audio', targetType: 'audio',
+  }) as unknown as Parameters<AudioEngine['addEdge']>[0];
+
+  async function rig(srcDef: AudioModuleDef) {
+    registerModule(srcDef as never);
+    registerModule(wrapped as never);
+    const eng = new AudioEngine(makeCtx());
+    await eng.addNode({ ...NODE, id: 'src', type: srcDef.type } as never);
+    await eng.addNode({ ...NODE, id: 'dst', type: 'filter' } as never);
+    return eng;
+  }
+
+  it('out_l and out_r land on DIFFERENT nodes (the whole point)', async () => {
+    const eng = await rig(stereoSrc);
+    eng.addEdge(edge('e1', 'out_l'));
+    eng.addEdge(edge('e2', 'out_r'));
+    const targets = conns('clouds#0').map((c) => c.to);
+    expect(targets).toHaveLength(2);
+    expect(targets[0], 'both legs landed on the same node — Web Audio would SUM them '
+      + 'and the stereo image dies at the first mono module').not.toBe(targets[1]);
+  });
+
+  it('a MONO source lands on the mono bus — byte-identical to before', async () => {
+    const eng = await rig(monoSrc);
+    eng.addEdge(edge('e1', 'audio'));
+    const to = conns('vco#0')[0]!.to;
+    const handle = eng.nodes.get('dst')!;
+    expect(to).toBe((handle.inputs.get('audio')!.node as unknown as FakeNode).__tag);
+  });
+
+  it('the mono NORMAL closes only once the opposite leg exists', async () => {
+    // A merger has the same zero-fill hazard as a discrete up-mix: an
+    // unconnected input renders as silence. The normal is OPEN by default so a
+    // LONE leg still reaches both channels; it closes when the sibling lands.
+    const eng = await rig(stereoSrc);
+    const legs = legInputsFor(eng.nodes.get('dst'), 'audio')!;
+    expect(legs, 'the wrapped handle exposes no leg inputs').toBeTruthy();
+    expect(legs.counts()).toEqual({ left: 0, right: 0 });
+
+    eng.addEdge(edge('e1', 'out_l'));
+    expect(legs.counts()).toEqual({ left: 1, right: 0 });
+    expect(recordedGain('gain4'), 'L→R normal must stay OPEN for a lone left leg')
+      .toBe(1);
+
+    eng.addEdge(edge('e2', 'out_r'));
+    expect(legs.counts()).toEqual({ left: 1, right: 1 });
+    expect(recordedGain('gain4'), 'L→R normal must CLOSE once R exists').toBe(0);
+    expect(recordedGain('gain5'), 'R→L normal must CLOSE once L exists').toBe(0);
+  });
+
+  it('removing a leg RE-OPENS the normal (no one-way latch)', async () => {
+    const eng = await rig(stereoSrc);
+    const legs = legInputsFor(eng.nodes.get('dst'), 'audio')!;
+    eng.addEdge(edge('e1', 'out_l'));
+    eng.addEdge(edge('e2', 'out_r'));
+    eng.removeEdge('e2');
+    expect(legs.counts()).toEqual({ left: 1, right: 0 });
+    expect(recordedGain('gain4'),
+      'unpatching R left the module playing silence on the right').toBe(1);
+  });
+
+  it('an UNWRAPPED target is untouched by any of this', async () => {
+    registerModule(monoSrc as never);
+    const plain = fakeDef('vca', [{ id: 'audio', type: 'audio' }], [{ id: 'audio', type: 'audio' }]);
+    registerModule(plain as never);
+    const eng = new AudioEngine(makeCtx());
+    await eng.addNode({ ...NODE, id: 'src', type: 'vco' } as never);
+    await eng.addNode({ ...NODE, id: 'dst', type: 'vca' } as never);
+    expect(legInputsFor(eng.nodes.get('dst'), 'audio')).toBeNull();
+    eng.addEdge(edge('e1', 'audio'));
+    // Straight onto the factory's own node — no interposed scaffolding at all.
+    const inner = (eng.nodes.get('dst')!.inputs.get('audio')!.node as unknown as FakeNode).__tag;
+    expect(inner).toMatch(/^vca#/);
+    expect(conns('vco#0')[0]!.to).toBe(inner);
   });
 });
 

@@ -441,15 +441,26 @@ export const SCOPE = {
     'packages/web/src/lib/video/worker/worker-proxy-handle.ts (video domain)',
   ] as const,
   /**
-   * NOT decided here: what happens when the PR-3 planner writes TWO separate
-   * mono cables (out_l and out_r) into one mono input port. Web Audio sums two
-   * connections to the same input, and a handle's `inputs` map has ONE entry
-   * per port id, so telling the legs apart needs a per-EDGE decision in
-   * `AudioEngine.addEdge` — the planner/engine seam that PR-3 (#1407) and PR-4
-   * own. This file handles the other representation: a 2-CHANNEL STREAM on one
-   * cable, which is what a dual-mono module emits and therefore what chains.
+   * BOTH stereo representations are handled, and it took two mechanisms:
+   *   - a 2-CHANNEL STREAM on one cable → the `mono` bus → `upmix`. This is
+   *     what a dual-mono module emits, so it is what CHAINS.
+   *   - TWO SEPARATE CABLES from a stereo source's out_l/out_r, which is what
+   *     `planAudioCommit` writes → `AudioEngine.addEdge` places them on the
+   *     `left`/`right` leg inputs via `legInputsFor` + `resolveDualMonoInput`,
+   *     because Web Audio would otherwise SUM them.
+   *
+   * What is still NOT handled, stated so it cannot read as coverage: leg
+   * placement is decided from the SOURCE port's stereo pair. A stereo source
+   * whose two outputs are NOT a derived pair (no declaration, no L/R id token)
+   * is invisible to `legChannelOfEdge` and both cables land on the mono bus and
+   * sum — the same answer the whole app gives such a module everywhere else,
+   * since the commit planner reads the same derivation.
    */
-  notHandled: 'two separate mono cables into one mono input port (they still sum)',
+  notHandled: 'a stereo source whose outputs are not a DERIVED pair — both legs '
+    + 'land on the mono bus and sum, as they do everywhere else in the app',
+  /** The leg-placement seam, named so a regression has something to assert on. */
+  legPlacement: 'AudioEngine.addEdge → legInputsFor + resolveDualMonoInput, sided by '
+    + 'legChannelOfEdge (the SHARED stereo-pair derivation, not a second heuristic)',
   /**
    * `read()` is single-instance and there is no defined answer for two. So a
    * 'dual-mono' handle is FORBIDDEN from declaring `read` / `write` /
@@ -466,6 +477,73 @@ export const SCOPE = {
 // ---------------------------------------------------------------------------
 // THE RUNTIME SEAM.
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// LEG PLACEMENT — the seam that stops two cables summing.
+// ---------------------------------------------------------------------------
+
+/** One end of a cable, as the engine's `inputs` map spells it. */
+export interface AudioInputRef { node: AudioNode; input: number }
+
+/**
+ * The three places an edge into a dual-mono module's audio input can land.
+ *
+ * `mono` is the default and the safe one: it feeds the up-mix, so one cable
+ * carrying either 1 or 2 channels behaves exactly as it did before leg
+ * placement existed. `left` / `right` are used ONLY when the SOURCE port is a
+ * declared/derived member of a stereo output pair, which is what
+ * `planAudioCommit` writes for a stereo→mono patch.
+ */
+export interface DualMonoLegInputs {
+  mono: AudioInputRef;
+  left: AudioInputRef;
+  right: AudioInputRef;
+  /** Tell the wrapper a left/right leg attached (+1) or detached (−1), so it
+   *  can close the mono normal on that side. MUST be paired with the teardown. */
+  noteLeg(side: 'left' | 'right', delta: number): void;
+  /** Live leg counts — exported so a gate can assert the normals, not just the
+   *  wiring. (A normal stuck open is inaudible on a stereo patch: it would sum
+   *  L into R, which still LOOKS like two channels.) */
+  counts(): { left: number; right: number };
+}
+
+/**
+ * Side-channel, deliberately NOT a field on `AudioDomainNodeHandle`.
+ *
+ * Leg placement concerns exactly one wrapper; putting it on the shared handle
+ * type would invite every other factory to grow a half-implemented version of
+ * it. A WeakMap also means a disposed handle takes its entry with it — there is
+ * no registry to leak or to forget to clean up.
+ */
+const LEG_INPUTS = new WeakMap<object, Map<string, DualMonoLegInputs>>();
+
+/** The leg inputs for `portId` on `handle`, or null when it is not wrapped. */
+export function legInputsFor(
+  handle: object | undefined,
+  portId: string,
+): DualMonoLegInputs | null {
+  if (!handle) return null;
+  return LEG_INPUTS.get(handle)?.get(portId) ?? null;
+}
+
+/**
+ * WHERE an edge lands, given its leg side. ONE function, called by
+ * `AudioEngine.addEdge` **and** by the ART signal scenario — so the thing the
+ * gate proves is the thing the engine runs, rather than a re-derivation that
+ * can drift from it (the "a gate that reads only one side" failure).
+ *
+ * `null` (neither endpoint is paired) → the MONO bus. That is the case for
+ * every ordinary cable in every existing patch, and for the 2-channel stream a
+ * dual-mono module emits, whose output port `audio` is unpaired.
+ */
+export function resolveDualMonoInput(
+  legs: DualMonoLegInputs,
+  side: 'left' | 'right' | null,
+): AudioInputRef {
+  if (side === 'left') return legs.left;
+  if (side === 'right') return legs.right;
+  return legs.mono;
+}
 
 /** Everything the wrapper built, so `dispose` can tear it all down. */
 interface Scaffold {
@@ -551,7 +629,25 @@ async function buildDualMono(
     );
   }
 
-  const inGain = ctx.createGain();
+  // TWO ways a stereo signal can arrive, and they need different plumbing:
+  //
+  //   (1) as a 2-CHANNEL STREAM on one cable — what a dual-mono module emits,
+  //       so this is what CHAINS. Goes to `monoBus`, and `upmix` makes it 2ch
+  //       (duplicating a 1-channel mono patch, passing 2 channels through).
+  //   (2) as TWO SEPARATE CABLES from a stereo source's out_l/out_r — what the
+  //       PR-3 commit planner writes. Web Audio SUMS two connections to one
+  //       input, so these must land on DIFFERENT nodes or the stereo is
+  //       destroyed at the first mono module, which is the whole point of
+  //       dual-mono. `AudioEngine.addEdge` places them via `legInputsFor`.
+  //
+  // Both paths sum into `stereoSum`, which is 2-channel by then either way.
+  //
+  //       legL ──────────────────► legMerger.0 ──┐
+  //         └──normalLR(gain)────► legMerger.1   │
+  //       legR ──────────────────► legMerger.1   ├─► stereoSum ─► splitter
+  //         └──normalRL(gain)────► legMerger.0   │        ch0 → A ─► merger.0
+  //       monoBus ─► upmix ──────────────────────┘        ch1 → B ─► merger.1
+  const monoBus = ctx.createGain();
   const upmix = ctx.createGain();
   // ⚠⚠ THE MONO-PATCH GUARD. 'speakers' DUPLICATES a 1-channel stream to both
   // channels; 'discrete' (the ChannelSplitter default, and what we would get by
@@ -560,13 +656,65 @@ async function buildDualMono(
   upmix.channelCount = 2;
   upmix.channelCountMode = 'explicit';
   upmix.channelInterpretation = 'speakers';
+
+  // ⚠ A ChannelMerger has the SAME zero-fill hazard in a different costume: an
+  // unconnected merger input renders as silence, so a lone leg would give
+  // signal-on-L / silence-on-R exactly like a discrete up-mix. These two gains
+  // are the MONO NORMAL that closes it — the Web Audio spelling of the
+  // `inputs[1]?.[0] ?? inputs[0]?.[0]` fallback the DSP layer already uses
+  // (see mono-normal-scan.ts). Each is OPEN (1) by default and closed by the
+  // engine only once the opposite leg genuinely exists, so the failure
+  // direction is duplication, never silence.
+  const legL = ctx.createGain();
+  const legR = ctx.createGain();
+  const legMerger = ctx.createChannelMerger(2);
+  const normalLR = ctx.createGain();
+  const normalRL = ctx.createGain();
+  normalLR.gain.value = 1;
+  normalRL.gain.value = 1;
+  legL.connect(legMerger, 0, 0);
+  legR.connect(legMerger, 0, 1);
+  legL.connect(normalLR);
+  normalLR.connect(legMerger, 0, 1);
+  legR.connect(normalRL);
+  normalRL.connect(legMerger, 0, 0);
+
+  const stereoSum = ctx.createGain();
+  stereoSum.channelCount = 2;
+  stereoSum.channelCountMode = 'explicit';
+  stereoSum.channelInterpretation = 'speakers';
+
   const splitter = ctx.createChannelSplitter(2);
-  inGain.connect(upmix);
-  upmix.connect(splitter);
+  monoBus.connect(upmix);
+  upmix.connect(stereoSum);
+  legMerger.connect(stereoSum);
+  stereoSum.connect(splitter);
   splitter.connect(aAudio.node, 0, aAudio.input);
   splitter.connect(bAudio.node, 1, bAudio.input);
-  scaffold.nodes.push(inGain, upmix, splitter);
-  inputs.set(audioInId, { node: inGain, input: 0 });
+  scaffold.nodes.push(
+    monoBus, upmix, legL, legR, legMerger, normalLR, normalRL, stereoSum, splitter,
+  );
+
+  // The DEFAULT entry is the MONO bus. Every caller that does not know about
+  // legs — the cross-domain bridges, `getInputNode`, any future consumer — gets
+  // byte-identical behaviour to before leg placement existed.
+  inputs.set(audioInId, { node: monoBus, input: 0 });
+
+  let leftLegs = 0;
+  let rightLegs = 0;
+  const legs: DualMonoLegInputs = {
+    mono: { node: monoBus, input: 0 },
+    left: { node: legL, input: 0 },
+    right: { node: legR, input: 0 },
+    noteLeg(side, delta) {
+      if (side === 'left') leftLegs = Math.max(0, leftLegs + delta);
+      else rightLegs = Math.max(0, rightLegs + delta);
+      // Open the normal only while the opposite side is genuinely absent.
+      normalLR.gain.value = rightLegs === 0 ? 1 : 0;
+      normalRL.gain.value = leftLegs === 0 ? 1 : 0;
+    },
+    counts: () => ({ left: leftLegs, right: rightLegs }),
+  };
 
   // ---- every other input: fan to both --------------------------------------
   for (const port of def.inputs) {
@@ -615,7 +763,7 @@ async function buildDualMono(
     outputs.set(port.id, { node: merger, output: 0 });
   }
 
-  return {
+  const handle: AudioDomainNodeHandle = {
     domain: 'audio',
     inputs,
     outputs,
@@ -635,6 +783,8 @@ async function buildDualMono(
       b.dispose();
     },
   };
+  LEG_INPUTS.set(handle, new Map([[audioInId, legs]]));
+  return handle;
 }
 
 /**

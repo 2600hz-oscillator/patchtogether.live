@@ -253,17 +253,43 @@ declares `read`/`write`/`videoSources` — which is now **enforced**, not observ
   with `offset = 0` re-emits whatever is connected to its offset as a signal,
   which fans into both real params — and keeps the engine's CV scaling and param
   tap on the normal path.
-- **⚠ THE OPEN SEAM.** PR-3 (#1407) writes stereo→mono as TWO separate cables
-  into the same mono port, and its header says "until PR-3b lands the engine's
-  dual-mono wrapper, two legs into one mono input still SUM". **PR-3b as built
-  does not close that.** Web Audio sums two connections to one input, and a
-  handle's `inputs` map has ONE entry per port id, so telling the legs apart is a
-  per-EDGE decision in `AudioEngine.addEdge` — not something a handle can express.
-  What PR-3b delivers is the other half: a mono module no longer collapses a
-  **2-channel stream on one cable**, which is what a dual-mono module emits and
-  therefore what CHAINS. Whoever lands #1407 must add leg-aware input placement
-  (source port's stereo side → merger input 0/1) or the two legs will sum at the
-  wrapper's up-mix. This is stated in `SCOPE.notHandled` and asserted in the gate.
+- **THE SEAM IS CLOSED — but it needed a SECOND mechanism, not a bigger one.**
+  #1407 writes stereo→mono as TWO separate cables into the same mono port, and
+  Web Audio sums two connections to one input. A handle's `inputs` map has ONE
+  entry per port id, so a handle cannot express the difference; the decision is
+  per-EDGE, in `AudioEngine.addEdge`.
+
+  The wrapper's audio input is therefore **two** paths summed at a 2-channel
+  bus, because each covers a case the other destroys:
+
+  | arrives as | path | why the other path breaks it |
+  |---|---|---|
+  | 2-channel stream on ONE cable (what a dual-mono module emits → what CHAINS) | `mono` bus → `upmix` | a ChannelMerger INPUT is 1-channel by spec, so it would down-mix the pair away |
+  | two cables from `out_l`/`out_r` (what `planAudioCommit` writes) | `legL`/`legR` → `ChannelMerger(2)` | a shared bus SUMS them, which is the failure dual-mono exists to prevent |
+
+  `addEdge` picks with `legChannelOfEdge` — the SHARED derivation the commit
+  planner itself uses, deliberately not a sixth private heuristic (#1404).
+  `null` (neither endpoint paired) → the mono bus, so every existing cable is
+  byte-identical.
+
+  ⚠ **A ChannelMerger has the discrete zero-fill hazard in a different costume:
+  an unconnected merger input renders as SILENCE.** A lone `out_l` would have
+  gone left-only — the same bug as the up-mix one, on a different node, and the
+  first fix would have re-introduced it. Two engine-controlled **mono normal**
+  gains (`legL`→merger.1 and `legR`→merger.0) close it: OPEN by default, closed
+  only once the opposite leg genuinely lands, and re-opened on unpatch. The
+  failure direction is duplication, never silence. This is the Web Audio
+  spelling of the `inputs[1]?.[0] ?? inputs[0]?.[0]` normal the DSP layer
+  already uses (mono-normal-scan.ts).
+
+  All five cases are pinned with REAL Web Audio in
+  `art/scenarios/stereo-dual-mono/`, each with a live negative control:
+  distinct-legs-stay-distinct (vs. placement-off, which must show the sum),
+  lone-leg-reaches-both (both sides), mono-still-equal-and-non-zero, and
+  chaining. `SCOPE.legPlacement` names the seam; `SCOPE.notHandled` now names
+  only the true residual — a stereo source whose outputs are **not a derived
+  pair** is invisible to the shared derivation and still sums, exactly as it
+  does everywhere else in the app.
 
 ### Follow-up: option C, deferred by owner decision
 
