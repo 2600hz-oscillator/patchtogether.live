@@ -58,7 +58,13 @@
 
 /** `moduleType` → port ids on a `gate` cable that do not declare `edge`. */
 export const UNDECLARED_EDGE_DEBT: Readonly<Record<string, readonly string[]>> = {
-  bluebox: ['gate_0', 'gate_1', 'gate_2', 'gate_3', 'gate_4', 'gate_5', 'gate_6', 'gate_7', 'gate_8', 'gate_9', 'gate_bluebox', 'gate_redbox'],
+  // DRAINED 2026-08-09 (the bluebox faceplate PR): all TWELVE `gate_*` ports now
+  // declare `edge: 'gate'`, which was always what they were — the worklet reads
+  // the level every sample and detects no edge anywhere, and the authored prose
+  // has said "Level-sensitive, not edge-triggered" since the module shipped, in
+  // a sentence that until now was asserted by nothing (the vocabulary clause
+  // short-circuits on `if (!p.edge) continue`).
+  // UNDECLARED_EDGE_CEILING lowered by the same 12 in the same commit, 289 → 277.
   buggles: ['burst', 'clock', 'external_clock'],
   cartesian: ['clock', 'gate', 'lfo_clock'],
   clipplayer: ['gate1', 'gate2', 'gate3', 'gate4', 'gate5', 'gate6', 'gate7', 'gate8'],
@@ -118,11 +124,16 @@ export const UNDECLARED_EDGE_DEBT: Readonly<Record<string, readonly string[]>> =
 
 /** The number of `(module, port)` pairs still owed an `edge` declaration.
  *  ⚠ ONLY SHRINKS — asserted from BOTH sides in module-docs-lint.test.ts.
- *  289 → 288 (2026-08-08): meowbox's `gate` declared `edge: 'gate'`. It is the
- *  case this ledger's header is about — the def's own prose said "responds to
- *  the edge, not how long the level stays up" over an `en.adsr` sustaining at
- *  0.4, and the skipped vocabulary check could not see the contradiction. */
-export const UNDECLARED_EDGE_CEILING = 288;
+ *
+ *  ⚠ THIS NUMBER CANNOT BE MERGED, IT HAS TO BE RE-COUNTED. Two face PRs drained
+ *  from the same 289 base — meowbox's `gate` (−1, #1417) and bluebox's twelve
+ *  `gate_*` ports (−12) — and each wrote its own literal, 288 and 277. Git has
+ *  no way to know the truth is the UNION; taking either side ships a ceiling
+ *  with slack, and slack in a `<=` ratchet is absorbed silently by the next
+ *  regression. DERIVED by counting `undeclaredEdgePairs()` on the merged map:
+ *  289 − 1 − 12 = 276, and the both-sides assertion in module-docs-lint is what
+ *  proves the count rather than the arithmetic. Re-count on every merge. */
+export const UNDECLARED_EDGE_CEILING = 276;
 
 /** Flattened `module.port` pairs (the countable form). */
 export function undeclaredEdgePairs(): string[] {

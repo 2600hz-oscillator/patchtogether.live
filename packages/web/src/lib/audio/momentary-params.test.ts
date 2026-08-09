@@ -139,12 +139,20 @@ describe('the REAL defs that declare a press-pad', () => {
     expect(spawn.cutoff).toBe(3000);
   });
 
-  it('EVERY def declaring face.momentary is covered — a third one enrolls itself', () => {
+  it('EVERY def declaring face.momentary is covered — a fourth one enrolls itself', () => {
     // Registry-driven so this cannot go stale: a new press-pad module gets the
     // rest-at-spawn guarantee asserted the day it lands, without an edit here.
+    // The ROSTER line is the accept-loop half — a new member is confirmed once,
+    // here, rather than joining silently.
+    //
+    // bluebox (2026-08-09) is the first member that is ENTIRELY press-pads:
+    // twelve keys, no values. Its legacy card writes the held 1 through
+    // `setNodeParam`, so a rack closed mid-hold saves a stuck key — the tomtom
+    // failure mode exactly, ×12 — and the loop below now asserts the repair on
+    // all twelve.
     const declaring = (listModuleDefs() as unknown as (MomentaryDefLike & { type: string })[])
       .filter((d) => (d.face?.momentary ?? []).length > 0);
-    expect(declaring.map((d) => d.type).sort()).toEqual(['clap', 'tidyVco', 'tomtom']);
+    expect(declaring.map((d) => d.type).sort()).toEqual(['bluebox', 'clap', 'tidyVco', 'tomtom']);
     for (const def of declaring) {
       for (const pid of momentaryIds(def as MomentaryDefLike)) {
         const rest = momentaryRest(def as MomentaryDefLike, pid);

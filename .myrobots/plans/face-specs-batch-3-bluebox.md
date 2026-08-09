@@ -1,6 +1,115 @@
 # FACE SPEC — `bluebox` (batch 3)
 
-**Status:** SPEC + MOCKUP ONLY. Designed against the PF-20 platform on
+> # BUILT 2026-08-09 — branch `face/bluebox`, PR #1431.
+>
+> **This document is now a RECORD, not a plan.** Where the code and this spec disagree,
+> **the code is right.** Everything below is preserved as written; the corrections are here,
+> because several of the errors are instructive.
+>
+> ## What was STALE, item by item
+>
+> 1. **§7-A — `OUTPUT_NORM = 1.0` HAD ALREADY BEEN FIXED.** It is `0.25` on `main` and has
+>    been since **2026-08-03 (#1316)**. Every headline number in §4-B and §7-A is the
+>    **pre-fix** figure and is now wrong by −12.04 dB. RE-MEASURED against the real processor
+>    class on 2026-08-09: one digit peaks **0.1250 (−18.06 dBFS)**, four digits **0.4865**,
+>    all twelve **1.3304 (+2.48 dBFS)** — and **full scale arrives at EIGHT digits**, not two.
+>    ⚠ The 2026-08-04 staleness banner below said "the def has not been touched since
+>    2026-08-01", which was true of the DEF and false of the WORKLET — and the worklet is the
+>    file #1316 changed. *A staleness check that reads one of a module's two files reports
+>    confidently about the wrong one.*
+> 2. **§4-B's negative control is ARITHMETICALLY WRONG, and that is the interesting part.**
+>    It claims holding `2` then also `5` takes the peak "0.5 → **0.75**, not → 1.0" because
+>    they share column 1336. It goes to **1.0**. The coherent peak is `P · (tone activations)`,
+>    and a collapse moves amplitude *between* slots without changing the total — **sharing
+>    cannot move the peak at all**. So `headroom` is not a second witness for the `+=`; it is
+>    precisely the readout that is BLIND to it, which is what makes it `level`'s negative
+>    control and `level` its. The shipped face uses it that way and pins the correction.
+> 3. **§4-B conflates two different counts.** `{1,4}` and `{1,5}` make four tone
+>    *activations* each; they light **3 vs 4** distinct oscillators. That difference IS the
+>    collapse, so the face publishes it as one readout — `tones lit: 3 of 4`.
+> 4. **§4-A's headroom is a BOUND, not a prediction, and the spec did not say so.** Ten
+>    incommensurate sines do not all phase-align inside any window a player waits through:
+>    measured 1.3304 against a 1.4375 bound at twelve keys, exact at one. Correct as "will
+>    not exceed"; wrong as "is".
+> 5. **§3's `glyph: 'meter'` flag can be closed: it works as hoped.** VuMeter on `out`, unlit
+>    at spawn because every key defaults to 0, so the compact tile is pixel-deterministic
+>    (flake-checked 3× `--repeat-each` plus 3 independent processes).
+> 6. **§5's `dtmf-grid` custom sidebar panel was NOT built, deliberately.** Its information —
+>    which keys light which oscillator — is the *inverse* of the hero bank, so it ships as a
+>    label mode ON the bank (`Hz` ↔ `keys`) instead of a second component and a second
+>    registry entry. That toggle doubles as the panel's required operability probe.
+> 7. **§6-CHANGE-1 and §6-CHANGE-2 both SHIPPED** (`curve: 'discrete'` ×12, `edge: 'gate'`
+>    ×12). CHANGE-2 carried a cost the spec did not mention: all twelve ports were in
+>    `undeclared-edge-ledger.ts`, so declaring `edge` meant draining them **and** lowering
+>    `UNDECLARED_EDGE_CEILING` 289 → 277 in the same commit. CHANGE-1 carried one the spec
+>    also missed — see §NEW-B.
+> 8. **§8's VRT row is wrong about the drain.** `bluebox`'s `EXEMPT_FROM_VRT` entry covers the
+>    LEGACY CARD and did **not** need draining; the face scenes are separate
+>    (`face-bluebox-{compact,dock}` in `workflow-shell-faces.spec.ts`) and enrol by one line
+>    in `e2e/vrt/_shell-faces.ts`. Also: the dock scene is captured **UNFOLDED** now (the
+>    whole faceplate), not clamped to the top ~425 px.
+> 9. **§7-B, §7-C and §7-E are REAL and were all fixed here.** §7-B measured: **707 samples =
+>    14.73 ms** to hard zero, identical for a one-tone and a two-tone key. §7-D and §7-F stand
+>    as filed (§7-F in a different form — see §NEW-B).
+>
+> ## NEW-A · The thing the spec could not have known, and it inverts the face's data path
+>
+> **A durable-param reader on this module is CONSTANT ZERO FOREVER.** Not "blind to a press" —
+> zero, always. Every param is `face.momentary`, so a press writes the ENGINE ONLY
+> (`$lib/audio/momentary-params`), *and* a durable write from any other route — the
+> group/instrument bar, a MIDI-learned CC, an automation lane, a preset recall, the legacy
+> card — is **scrubbed back to rest within a frame** by `ModuleShell`'s own
+> `clearStuckMomentaryParams` `$effect`, which reads `node.params` and therefore re-fires on
+> every write. MEASURED through the real dock: `btn_1 = 1` via `__ydoc.transact` reads back 0.
+>
+> `ModuleShell.readoutValue` is durable-only by deliberate platform design, so a
+> `face.hero.readouts` entry here would print `silent` on every render of its life. The ENGINE
+> handle does see it (measured: `readParam(node,'btn_1')` is 0 / **1 while held** / 0), so the
+> hero PANEL polls the engine on rAF (memoized on a 12-bit held mask) and **owns the five
+> numbers**. One source, one component — rather than a live picture beside three dead labels.
+> **Platform follow-up: a live-engine reader for `FaceReadout`.**
+>
+> A GATE CABLE remains invisible and always will be from the host side: those twelve inputs
+> are worklet NODE inputs, not AudioParam connections.
+>
+> ## NEW-B · `curve: 'discrete'` blanked the Push 2 card, and the gate mis-explained it
+>
+> Discrete ⇒ `looksLikeSwitch` ⇒ `face.momentary` ⇒ skipped at every push-card tier (an
+> encoder cannot press a key), making bluebox the first module with params but nothing to
+> turn. Two `push-card-schema.test.ts` assertions went red while describing the wrong thing —
+> one compared the blank-card set against `params.length === 0`, an equality that only held
+> while no module's entire param list was press-pads. Both now derive the real predicate.
+> **Not a regression:** the old generic tier put eight of twelve keys on encoders as
+> continuous 0..1 dials, dropped 9/0/BLUEBOX/REDBOX (this is §7-F, in its live form), and
+> wrote a *durable* held-key value into the Y.Doc — the exact data-integrity bug
+> `momentary-params` exists to prevent. A keypad wants the Push's 64 PADS; different surface,
+> real follow-up.
+>
+> ## NEW-C · The `face.order` answer, since the spec deliberately left it open
+>
+> The spec's position was "ranks exist only because the lint demands them". The shipped face
+> goes one step further: it **ranks by LAYOUT**, and the property that buys is that **every
+> prefix of the ranking is still a recognisable keypad fragment**. The order is DERIVED from
+> `BLUEBOX_BUTTON_NAMES` rather than typed, and asserted. The one genuinely principled
+> alternative — the **minimal bank cover** `{1,5,9,0,BLUEBOX,REDBOX}`, which really is the
+> smallest set of keys lighting all ten oscillators — was checked and rejected: in a lane tile
+> it reads as a broken phone, and it is no more true.
+>
+> ## As-built, where it differs from §3
+>
+> `hero.cell` is `'bluebox-tonebank-{n}'` (not `bluebox-bank`); there is no `hero.control`, no
+> `hero.action` and **no `hero.readouts`** (NEW-A). Bands are `1 · the bell grid` and
+> `2 · in-band — the two no receiver decodes`. The sidebar's `readouts` block is three FIXED
+> facts. Model + permanent negative controls + the processor pin:
+> `packages/web/src/lib/ui/modules/bluebox-face-model{,.test}.ts`.
+> **No DSP change, no ART re-pin** — the one worklet constant the model needs
+> (`BUTTON_VOICE_AMP × OUTPUT_NORM`) is mirrored and anchored by MEASURING the shipping
+> processor, because moving it into the shared lib would re-pin `bluebox/out.sha` inside a
+> faceplate PR.
+
+---
+
+**Status (as originally written):** SPEC + MOCKUP ONLY. Designed against the PF-20 platform on
 > ⚠ **STATUS CORRECTED 2026-08-04.** PF-20 (**PR #1301**) **HAS MERGED** (`c6ff9253`) — read
 > the def on `main`, not `origin/feat/faceplate-platform-v2`. **bluebox is UNBUILT: this is
 > LIVE BACKLOG, not stale.** `packages/web/src/lib/audio/modules/bluebox.ts` has not been

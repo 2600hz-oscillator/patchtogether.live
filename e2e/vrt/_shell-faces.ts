@@ -85,6 +85,24 @@ export const FACES = [
   // design (five identical voice strips have no other shape). Do not merge it
   // back under seven.
   { type: 'pentemelodica', pages: 8 },
+  // FACE BATCH 3 (2026-08-09) — the DTMF dialer. Two bands: the keypad (which
+  // the hero promotes the tone-bank PANEL out of, leaving its ten keys, so the
+  // band survives) and the two in-band tones.
+  //
+  // ⚠ DETERMINISTIC FOR THE MIXER/REVERB REASON, NOT THE analogVco ONE. Its
+  // glyph is a `meter` on `out` and all twelve keys default to 0, so the rack is
+  // SILENT at spawn and the VuMeter is unlit — it would baseline cleanly even
+  // without #1420's freeze.
+  //
+  // ⚠ ITS HERO PANEL POLLS THE LIVE ENGINE ON rAF, which is a first for this
+  // roster and worth naming here rather than leaving to be discovered from a
+  // flaky tile. It is deterministic anyway, for a reason that does not depend on
+  // the freeze: the poll reads the twelve `btn_*` AudioParams, every one of them
+  // sits at its default 0, and the panel only assigns state when the resulting
+  // 12-bit mask CHANGES — so an idle scene repaints nothing at all. (It reads
+  // the engine because it must: all twelve params are momentary, so a durable
+  // read is constant zero forever. See the def.) Flake-checked 3×.
+  { type: 'bluebox', pages: 2 },
   // meowbox declares TWO bands and renders two: the hero promotes `morph` and
   // the MEOW pad out of band 1, which still holds `pitch` — so nothing is
   // emptied and nothing is dropped. (A promotion that emptied band 1 would make
