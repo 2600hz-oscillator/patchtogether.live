@@ -267,12 +267,14 @@ function gitHead(): string {
     return 'unknown';
   }
 }
-function gitEmail(): string {
-  try {
-    return execSync('git config user.email', { cwd: REPO_ROOT, encoding: 'utf8' }).trim();
-  } catch {
-    return 'unknown';
-  }
+// PSEUDONYMOUS BY DESIGN. These attestations are COMMITTED to a public repo,
+// so they must not publish a personal email or a machine hostname. The verifier
+// only ECHOES these two fields in a log line — the sanity gate is `gpu`
+// (SwiftShader is rejected) — so a stable pseudonym costs nothing and the
+// scripts' own comment already says every field is hand-writable, not security.
+function attestActor(): string {
+  // Stable, non-identifying. Was `git config user.email`.
+  return 'patchtogether-maintainer';
 }
 
 // ---------------------------------------------------------------------------
@@ -317,11 +319,11 @@ function main() {
     schemaVersion: 1,
     grandContentHash: hash,
     attestedAt: new Date().toISOString(),
-    attestedBy: gitEmail(),
+    attestedBy: attestActor(),
     gitHeadAtAttest: gitHead(), // INFORMATIONAL only — NOT the match key
     playwrightVersion: playwrightVersion(),
     os: `${process.platform} ${release()} (${arch()})`,
-    host: hostname(),
+    machineClass: 'local-trusted-gpu-workstation', // was hostname()
     gpu: renderer,
     /** The offline combined-master baseline `.sha` this run validated (the CI
      *  verify cross-checks it against the committed baseline). */

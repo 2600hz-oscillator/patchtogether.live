@@ -2,11 +2,10 @@
   "schemaVersion": 1,
   "webglContentHash": "620fa1b39f88d89cea7a9a33c2892f568c4218ce00d8f8120d728f66901328fc",
   "attestedAt": "2026-08-07T12:29:05.794Z",
-  "attestedBy": "tmayshark@gmail.com",
+  "attestedBy": "patchtogether-maintainer",
   "gitHeadAtAttest": "7e84b8841c4bd6d54d888b9b71ab4b457fb084b4",
   "playwrightVersion": "1.50.0",
   "os": "darwin 25.4.0 (arm64)",
-  "host": "2600hzs-MBP.home.local",
   "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5, Unspecified Version)",
   "repeatEach": 1,
   "suites": {
@@ -49,5 +48,6 @@
       "flakyDetails": []
     }
   },
-  "durationSec": 241
+  "durationSec": 241,
+  "machineClass": "local-trusted-gpu-workstation"
 }
