@@ -67,13 +67,13 @@ export const kriaDef: AudioModuleDef = {
   ],
   outputs: [
     { id: 'pitch1', type: 'pitch' },
-    { id: 'gate1', type: 'gate' },
+    { id: 'gate1', type: 'gate', edge: 'gate' },
     { id: 'pitch2', type: 'pitch' },
-    { id: 'gate2', type: 'gate' },
+    { id: 'gate2', type: 'gate', edge: 'gate' },
     { id: 'pitch3', type: 'pitch' },
-    { id: 'gate3', type: 'gate' },
+    { id: 'gate3', type: 'gate', edge: 'gate' },
     { id: 'pitch4', type: 'pitch' },
-    { id: 'gate4', type: 'gate' },
+    { id: 'gate4', type: 'gate', edge: 'gate' },
   ],
   params: [
     // Internal fallback tempo: used only when there's no TIMELORDE node AND no

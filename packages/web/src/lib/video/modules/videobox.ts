@@ -124,7 +124,7 @@ export const videoboxDef: VideoModuleDef = {
     // through the standard CV bridge as a synthetic param so the
     // engine setParam path catches edges (mirrors DOOM's cv-gate
     // plumbing).
-    { id: 'play_trigger', type: 'gate', paramTarget: 'cv_play_trigger' },
+    { id: 'play_trigger', type: 'gate', edge: 'trigger', paramTarget: 'cv_play_trigger' },
   ],
   outputs: [
     { id: 'video',   type: 'video' },

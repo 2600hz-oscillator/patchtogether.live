@@ -48,15 +48,15 @@ export const moog961Def: AudioModuleDef = {
     { id: 'audio_in', type: 'audio' },
     // Gate inputs — the signals being format-converted, not knob modulators
     // (PASSTHROUGH_BY_DESIGN: no cvScale / paramTarget, like FLIPPER's gates).
-    { id: 's_in',     type: 'gate' },
-    { id: 'v_in_a',   type: 'gate' },
-    { id: 'v_in_b',   type: 'gate' },
+    { id: 's_in',     type: 'gate', edge: 'gate' },
+    { id: 'v_in_a',   type: 'gate', edge: 'gate' },
+    { id: 'v_in_b',   type: 'gate', edge: 'trigger' },
   ],
   outputs: [
-    { id: 'v_out1',   type: 'gate' },
-    { id: 'v_out2',   type: 'gate' },
-    { id: 's_out_a',  type: 'gate' },
-    { id: 's_out_b',  type: 'gate' },
+    { id: 'v_out1',   type: 'gate', edge: 'gate' },
+    { id: 'v_out2',   type: 'gate', edge: 'gate' },
+    { id: 's_out_a',  type: 'gate', edge: 'gate' },
+    { id: 's_out_b',  type: 'gate', edge: 'gate' },
   ],
   params: [
     // sensitivity — audio→trigger threshold (linear 0..1).

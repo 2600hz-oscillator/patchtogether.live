@@ -1006,7 +1006,7 @@ export const samsloopDef: AudioModuleDef = {
   chainWiring: { role: 'source' },
 
   inputs: [
-    { id: 'trig',       type: 'gate' },
+    { id: 'trig',       type: 'gate', edge: 'trigger' },
     { id: 'rate_cv',    type: 'cv', paramTarget: 'rate', cvScale: { mode: 'linear' } },
     // Stereo record inputs — patched audio is captured + quantized +
     // downsampled into node.data.sample on STOP. `audio_r_in` normalizes

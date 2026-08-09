@@ -154,13 +154,13 @@ export const bugglesDef: AudioModuleDef = {
     // node→node into the analyser tap.
     { id: 'clock_cv',       type: 'cv' },
     { id: 'chaos_cv',       type: 'cv' },
-    { id: 'external_clock', type: 'gate' },
+    { id: 'external_clock', type: 'gate', edge: 'trigger' },
   ],
   outputs: [
     { id: 'smooth', type: 'cv' },
     { id: 'stepped', type: 'cv' },
-    { id: 'clock',  type: 'gate' },
-    { id: 'burst',  type: 'gate' },
+    { id: 'clock',  type: 'gate', edge: 'trigger' },
+    { id: 'burst',  type: 'gate', edge: 'trigger' },
     { id: 'ring',   type: 'audio' },
   ],
   params: [

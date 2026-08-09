@@ -72,7 +72,7 @@ export const qbrtDef: AudioModuleDef = {
   inputs: [
     { id: 'L',         type: 'audio' },
     { id: 'R',         type: 'audio' },
-    { id: 'ping',      type: 'gate' },
+    { id: 'ping',      type: 'gate', edge: 'trigger' },
     // CV scaling per .myrobots/plans/cv-range-standard.md — LFO ±1 sweeps
     // the param's full musical range centered on the knob.
     //

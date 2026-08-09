@@ -208,16 +208,16 @@ export const twotracksDef: AudioModuleDef = {
     // Reel A
     { id: 'audio_l_in_a', type: 'audio' },
     { id: 'audio_r_in_a', type: 'audio' },
-    { id: 'rec_start_a',  type: 'gate' },
-    { id: 'rec_arm_a',    type: 'gate' },
-    { id: 'overdub_a',    type: 'gate' },
+    { id: 'rec_start_a',  type: 'gate', edge: 'trigger' },
+    { id: 'rec_arm_a',    type: 'gate', edge: 'trigger' },
+    { id: 'overdub_a',    type: 'gate', edge: 'trigger' },
     { id: 'rate_cv_a',    type: 'cv', paramTarget: 'rate_a', cvScale: { mode: 'linear' } },
     // Reel B
     { id: 'audio_l_in_b', type: 'audio' },
     { id: 'audio_r_in_b', type: 'audio' },
-    { id: 'rec_start_b',  type: 'gate' },
-    { id: 'rec_arm_b',    type: 'gate' },
-    { id: 'overdub_b',    type: 'gate' },
+    { id: 'rec_start_b',  type: 'gate', edge: 'trigger' },
+    { id: 'rec_arm_b',    type: 'gate', edge: 'trigger' },
+    { id: 'overdub_b',    type: 'gate', edge: 'trigger' },
     { id: 'rate_cv_b',    type: 'cv', paramTarget: 'rate_b', cvScale: { mode: 'linear' } },
   ],
 

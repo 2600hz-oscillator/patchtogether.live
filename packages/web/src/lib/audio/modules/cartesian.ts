@@ -107,15 +107,15 @@ export const cartesianDef: AudioModuleDef = {
   //     Backward-compat resolved by engine.addEdge → resolveConnection().
 
   inputs: [
-    { id: 'clock', type: 'gate' },
+    { id: 'clock', type: 'gate', edge: 'trigger' },
     { id: 'x_cv', type: 'cv' },
     { id: 'y_cv', type: 'cv' },
-    { id: 'lfo_clock', type: 'gate' },
+    { id: 'lfo_clock', type: 'gate', edge: 'trigger' },
   ],
   outputs: [
     { id: 'pitch', type: 'polyPitchGate' },
-    { id: 'gate',  type: 'gate' },
-    { id: 'clock', type: 'gate' },
+    { id: 'gate',  type: 'gate', edge: 'gate' },
+    { id: 'clock', type: 'gate', edge: 'trigger' },
     { id: 'lfo_x', type: 'cv' },
     { id: 'lfo_y', type: 'cv' },
   ],

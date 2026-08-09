@@ -21,12 +21,12 @@ export const flipperDef: AudioModuleDef = {
   card: 'FlipperCard',
 
   inputs: [
-    { id: 'in1', type: 'gate' },
-    { id: 'in2', type: 'gate' },
+    { id: 'in1', type: 'gate', edge: 'gate' },
+    { id: 'in2', type: 'gate', edge: 'gate' },
   ],
   outputs: [
-    { id: 'flip', type: 'gate' },
-    { id: 'flop', type: 'gate' },
+    { id: 'flip', type: 'gate', edge: 'gate' },
+    { id: 'flop', type: 'gate', edge: 'gate' },
   ],
   params: [],
 

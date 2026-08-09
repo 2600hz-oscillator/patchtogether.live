@@ -144,7 +144,7 @@ export const wavecelDef: AudioModuleDef = {
     // so note-off→release is expressible. The FIRST rising edge turns WAVECEL
     // into a gated voice (lane-0 envelope); before any note (and when unpatched)
     // it free-runs as a drone.
-    { id: 'trigger',   type: 'gate' },
+    { id: 'trigger',   type: 'gate', edge: 'gate' },
   ],
   outputs: [
     { id: 'out_l', type: 'audio' },

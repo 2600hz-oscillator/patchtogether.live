@@ -50,13 +50,13 @@ export const moog911aDef: AudioModuleDef = {
   inputs: [
     // Gate triggers — rising-edge detected in the worklet (PASSTHROUGH, not a
     // knob modulator → no cvScale / paramTarget).
-    { id: 'trig1', type: 'gate' },
-    { id: 'trig2', type: 'gate' },
+    { id: 'trig1', type: 'gate', edge: 'trigger' },
+    { id: 'trig2', type: 'gate', edge: 'trigger' },
   ],
   outputs: [
     // Delayed gate pulses — NOT audio.
-    { id: 'out1', type: 'gate' },
-    { id: 'out2', type: 'gate' },
+    { id: 'out1', type: 'gate', edge: 'trigger' },
+    { id: 'out2', type: 'gate', edge: 'trigger' },
   ],
   params: [
     // Delay times — log fader, 2 ms .. 10 s, default 100 ms.

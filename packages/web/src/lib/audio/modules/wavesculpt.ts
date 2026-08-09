@@ -695,13 +695,13 @@ export const wavesculptDef: AudioModuleDef = {
   rendersWebGL: true,
 
   inputs: [
-    { id: 'gate1',     type: 'gate' },
+    { id: 'gate1',     type: 'gate', edge: 'gate' },
     { id: 'pitch_cv1', type: 'cv' },
-    { id: 'gate2',     type: 'gate' },
+    { id: 'gate2',     type: 'gate', edge: 'gate' },
     { id: 'pitch_cv2', type: 'cv' },
-    { id: 'gate3',     type: 'gate' },
+    { id: 'gate3',     type: 'gate', edge: 'gate' },
     { id: 'pitch_cv3', type: 'cv' },
-    { id: 'gate4',     type: 'gate' },
+    { id: 'gate4',     type: 'gate', edge: 'gate' },
     { id: 'pitch_cv4', type: 'cv' },
     // Per-osc morph CV. Routed straight to the worklet's morph{N}
     // a-rate AudioParam, so any CV source (LFO, ENV, SCORE.env, etc.)

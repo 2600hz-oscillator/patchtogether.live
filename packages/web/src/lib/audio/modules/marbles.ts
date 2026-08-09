@@ -180,12 +180,12 @@ export const marblesDef: AudioModuleDef = {
     { id: 'scale_cv', type: 'cv', paramTarget: 'scale', cvScale: { mode: 'discrete' } },
   ],
   outputs: [
-    { id: 't1', type: 'gate' },
-    { id: 't2', type: 'gate' },
+    { id: 't1', type: 'gate', edge: 'gate' },
+    { id: 't2', type: 'gate', edge: 'gate' },
     { id: 'x1', type: 'cv' },
     { id: 'x2', type: 'cv' },
     { id: 'x3', type: 'cv' },
-    { id: 'clk', type: 'gate' },
+    { id: 'clk', type: 'gate', edge: 'trigger' },
   ],
   params: [
     { id: 'rate', label: 'Rate', defaultValue: 0, min: -60, max: 60, curve: 'linear', units: 'st' },

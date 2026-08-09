@@ -103,7 +103,7 @@ export const timelordeDef: AudioModuleDef = {
     // External clock — when patched, snaps 1x to incoming rising edges and
     // measures period for multiplier prediction. Disconnect → falls back
     // to internal BPM after ~2 master periods.
-    { id: 'clock', type: 'gate' },
+    { id: 'clock', type: 'gate', edge: 'trigger' },
     // start_in / stop_in: transport gates that mirror the card's
     // ON / MUTE button. Designed for MIDICLOCK.midistart →
     // TIMELORDE.start_in + MIDICLOCK.midistop → TIMELORDE.stop_in so a
@@ -111,8 +111,8 @@ export const timelordeDef: AudioModuleDef = {
     // detection runs on a scheduler-clock poll (same TICK_MS the rest
     // of the sequencer transport uses); idempotent — a start while
     // already running is a no-op, same for stop while already muted.
-    { id: 'start_in', type: 'gate' },
-    { id: 'stop_in',  type: 'gate' },
+    { id: 'start_in', type: 'gate', edge: 'trigger' },
+    { id: 'stop_in',  type: 'gate', edge: 'trigger' },
     // gate (LEVEL-SENSITIVE, edge: 'gate'): external show/hide for the
     // dot-matrix neon WIZARD card graphic. gate HIGH (level ≥ GATE_HI) =
     // wizard ON; gate LOW = wizard OFF. NOT edge-triggered — holding the
@@ -137,19 +137,19 @@ export const timelordeDef: AudioModuleDef = {
   ],
   outputs: [
     // Order MUST match dsp/timelorde.ts OUT_* indices.
-    { id: '1x',    type: 'gate' },
-    { id: '8x',    type: 'gate' },
-    { id: '4x',    type: 'gate' },
-    { id: '2x',    type: 'gate' },
-    { id: '1/2',   type: 'gate' },
-    { id: '1/3',   type: 'gate' },
-    { id: '1/4',   type: 'gate' },
-    { id: '1/8',   type: 'gate' },
-    { id: '1/12',  type: 'gate' },
-    { id: '1/16',  type: 'gate' },
-    { id: '1/32',  type: 'gate' },
-    { id: '1/64',  type: 'gate' },
-    { id: 'swing', type: 'gate' },
+    { id: '1x',    type: 'gate', edge: 'trigger' },
+    { id: '8x',    type: 'gate', edge: 'trigger' },
+    { id: '4x',    type: 'gate', edge: 'trigger' },
+    { id: '2x',    type: 'gate', edge: 'trigger' },
+    { id: '1/2',   type: 'gate', edge: 'trigger' },
+    { id: '1/3',   type: 'gate', edge: 'trigger' },
+    { id: '1/4',   type: 'gate', edge: 'trigger' },
+    { id: '1/8',   type: 'gate', edge: 'trigger' },
+    { id: '1/12',  type: 'gate', edge: 'trigger' },
+    { id: '1/16',  type: 'gate', edge: 'trigger' },
+    { id: '1/32',  type: 'gate', edge: 'trigger' },
+    { id: '1/64',  type: 'gate', edge: 'trigger' },
+    { id: 'swing', type: 'gate', edge: 'trigger' },
     // video_out (cross-domain VIDEO output): the picture TIMELORDE's big
     // display shows — the LIVE video feed when something is patched into
     // video_in, else the beat-pulsing wizard. Published via the handle's
