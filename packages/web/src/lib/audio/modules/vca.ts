@@ -303,10 +303,20 @@ export const vcaDef: AudioModuleDef = {
           { label: 'AUDIO IN', role: 'bus' },
           { label: 'BASE', parallel: true, note: 'de-zipped knob' },
           { label: 'CV × AMT', parallel: true, note: 'cv is full-bandwidth' },
-          { label: 'SUM', parallel: true, note: 'unclamped: may exceed 1 or go below 0' },
+          // ⚠ THE NOTE IS LENGTH-BUDGETED. `.fs-note` is `white-space: nowrap`
+          // with no ellipsis and no wrap, so a note too long for the ~288 px
+          // sidebar column does not truncate — it OVERLAPS the stage label. The
+          // first draft here ("unclamped: may exceed 1 or go below 0", 37 ch)
+          // collided with `SUM` in the rendered dock. Budget asserted in
+          // vca-gain-model.test.ts; see the note there for the measurement.
+          { label: 'SUM', parallel: true, note: 'unclamped: >1 boosts, <0 flips' },
           { label: '× GAIN', role: 'bus', note: 'the multiply' },
           { label: 'OUT', role: 'bus' },
-          { label: 'OUT INV', role: 'bus', parallel: true, note: '× −1 tap of OUT, always live' },
+          // Also budgeted: the first draft ("× −1 tap of OUT, always live")
+          // came to 35 ch and ended flush against the column edge on darwin.
+          // CI renders on LINUX with different font metrics, so a row with no
+          // headroom is a row that may overlap there and nowhere else.
+          { label: 'OUT INV', role: 'bus', parallel: true, note: 'always-live × −1 tap' },
         ],
       },
     ],

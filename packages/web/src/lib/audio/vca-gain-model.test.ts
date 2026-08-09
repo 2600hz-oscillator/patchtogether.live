@@ -622,7 +622,7 @@ describe('PF-20 faceplate structure — the declarations, and the ones refused',
   it('OUT INV is drawn as a TAP, never as a stereo partner (dual-mono GROUP D)', () => {
     const inv = flowBlock().stages.find((s) => s.label === 'OUT INV')!;
     expect(inv.parallel, 'a tap branches off the spine; it is not a link in the chain').toBe(true);
-    expect(inv.note ?? '').toMatch(/tap of OUT/);
+    expect(inv.note ?? '', 'the note calls it a TAP, in those words').toMatch(/× −1 tap/);
     // `audio` and `audio_inv` are VARIANTS of one mono signal, so nothing on
     // the face may imply an L/R relationship the module does not have.
     expect(JSON.stringify(vcaDef.face), 'no stereo-pair language on the face').not.toMatch(
@@ -645,6 +645,34 @@ describe('PF-20 faceplate structure — the declarations, and the ones refused',
     expect(hero?.action, 'no audition — a VCA makes no sound of its own').toBeUndefined();
     expect(vcaDef.face?.glyph, 'so the live meter is still the dock hero').toBe('meter');
     expect(vcaDef.face?.pages?.[0]?.controls).toEqual(['base', 'cvAmount']);
+  });
+
+  it('every flow row fits the sidebar column — an over-long note OVERLAPS its label', () => {
+    // ⚠ FOUND IN THE RENDER, not by any gate. `.fs-note` is `white-space:
+    // nowrap` with no ellipsis and no wrap, and `card-control-overflow` cannot
+    // see this at all — the sidebar is mounted OUTSIDE the ModuleShell subtree
+    // by DockFullView, which is exactly what keeps it out of the parity gates.
+    // So a note that does not fit silently collides with the stage label
+    // instead of clipping: the first draft's SUM note (37 ch) printed
+    // `SUM|NCLAMPED: MAY EXCEED 1 …` in the dock baseline.
+    //
+    // UNITS: CHARACTERS, as a proxy for CSS px. Measured off the 1220 px dock
+    // capture — the flow column gives ~260 px of content; the label runs at
+    // 11 px and the note at 9 px mono + 0.06em, ≈5.94 px/glyph, and the dot,
+    // the two 8 px gaps and the `∥` branch mark cost ~34 px before either
+    // string. That lands the joint budget near 36 characters; 34 is the
+    // headroom-bearing figure this asserts. A proxy is worth having anyway:
+    // the failure it catches is monotone in length.
+    const BUDGET_CH = 34;
+    const overlong = flowBlock()
+      .stages.map((s) => ({ s, n: s.label.length + (s.note?.length ?? 0) }))
+      .filter(({ n }) => n > BUDGET_CH)
+      .map(({ s, n }) => `${s.label} (+ note) = ${n} ch`);
+    expect(
+      overlong,
+      `a signal-flow row over ~${BUDGET_CH} chars (label + note) overruns the sidebar column ` +
+        `and the note prints ON TOP of the label — .fs-note neither wraps nor ellipsizes`,
+    ).toEqual([]);
   });
 
   it('exactly ONE sidebar block — presets / readouts / custom are all refused', () => {
