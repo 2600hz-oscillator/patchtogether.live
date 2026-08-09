@@ -62,6 +62,12 @@ import {
   drummergirlSweepSemitones,
 } from '$lib/ui/modules/drummergirl-face-model';
 import {
+  filterCutoffReachText,
+  filterFaceParams,
+  filterPeakDbText,
+  filterResReachText,
+} from '$lib/ui/modules/filter-face-model';
+import {
   kickdrumEnvelopeParams,
   kickdrumTailMs,
 } from '$lib/ui/modules/kickdrum-face-model';
@@ -144,6 +150,25 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
   'drummergirl-sustain-db': (read) => drummergirlSustainText(drummergirlParams(read)),
   'drummergirl-release-ms': (read) => fmtMs(drummergirlReleaseMs(drummergirlParams(read))),
   'drummergirl-sweep-ms': (read) => fmtMs(drummergirlSweepMs(drummergirlParams(read))),
+
+  // ── FILTER ───────────────────────────────────────────────────────────────
+  // NONE of the three is a knob on the panel, and each one is blind in a
+  // different direction from its nearest dial:
+  //   `peak`      is a function of MODE **and** RESONANCE — at resonance 0 the
+  //               three modes are 5.2 dB apart (0.0 / +2.1 / −3.1) while a
+  //               `resonance` readback prints 0.00 for all three; they CONVERGE
+  //               above ≈ Q 5, which is the fact it teaches.
+  //   `cv reach`  models the DSP's 20 kHz CLAMP, so moving CUTOFF collapses the
+  //               reachable span from 9.32 to 6.32 octaves where an unclamped
+  //               `cutoff × 2^±5` is invariant at ten octaves.
+  //   `res reach` collapses to `… · muted` the moment its depth knob hits 0 —
+  //               the ONE fact this faceplate most needs to say, since both
+  //               depth knobs are engine gains ON THE JACK and do literally
+  //               nothing until a cable lands.
+  // All three negative-controlled, permanently, in filter-face-model.test.ts.
+  'filter-peak-db': (read) => filterPeakDbText(filterFaceParams(read)),
+  'filter-cutoff-reach': (read) => filterCutoffReachText(filterFaceParams(read)),
+  'filter-res-reach': (read) => filterResReachText(filterFaceParams(read)),
 
   // ── PENTEMELODICA ────────────────────────────────────────────────────────
   // `at cutoff` is a function of MODE **and** RESONANCE — a MODE readout would

@@ -29,6 +29,7 @@
 
 import type { Component } from 'svelte';
 import type { ParamDef } from '$lib/graph/types';
+import FilterResponsePanel from './panels/FilterResponsePanel.svelte';
 import StereoCrossoverPanel from './panels/StereoCrossoverPanel.svelte';
 
 /** The props every sidebar panel takes: the node it describes, plus whatever
@@ -51,6 +52,13 @@ export interface SidebarPanelProps {
 
 /** id → component. Keys are the strings a face's `custom` block declares. */
 const SIDEBAR_PANELS: Readonly<Record<string, Component<SidebarPanelProps>>> = {
+  // The MAGNITUDE RESPONSE of a resonant filter: the selected mode's curve at
+  // the live cutoff/resonance, with the CV REACH window shaded behind it.
+  // Generic across any def that declares the four param ids through the
+  // block's `props` (see the component). It exists because the module's
+  // `scope` glyph is a live trace of an INSERT's output — a flat line on a
+  // silent rack — so the face had no picture that was alive at rest.
+  'filter-response': FilterResponsePanel as unknown as Component<SidebarPanelProps>,
   // The STEREO CROSSOVER picture: below the split the signal is summed to
   // mono, above it the sides open by WIDTH. Generic across any def that
   // declares a crossover frequency + a width param through the panel's own
