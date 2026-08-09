@@ -31,7 +31,9 @@
 //     stops the result sounding like generic random pitch.
 //   · scaleWeight     1 for an in-scale candidate; a GRADUALLY rising fraction
 //     for an out-of-scale one. Scale membership is a weighting, never a binary
-//     switch — chromatic notes fade in, they don't flip on.
+//     switch — chromatic notes fade in, they don't flip on. The AUTHORED PITCH
+//     CLASS is always exempt: the clip's scale governs where a note may wander
+//     TO, never whether the note you wrote is allowed to exist.
 //   · originalWeight  extra mass on offset 0 that DECAYS as x rises. This is
 //     what "lowers the special weighting of the original pitch" as x grows.
 //
@@ -135,10 +137,14 @@ export const PITCH_PROB_LEVELS = 40;
 export const PITCH_PROB_STEP = 1 / PITCH_PROB_LEVELS;
 
 /** UI level (0..PITCH_PROB_LEVELS) → its 0..1 instability value. Level 0 → 0
- *  exactly (the authored pitch); level 40 → 1 exactly. PURE. */
+ *  exactly (the authored pitch); level 40 → 1 exactly.
+ *  ⚠ DIVIDES by the level count rather than multiplying by `PITCH_PROB_STEP`
+ *  (which is what `probLevelToValue` does): `24 * 0.025` is
+ *  0.6000000000000001 in binary floating point, `24 / 40` is exactly 0.6. Same
+ *  grid, same round trip, cleaner stored value. PURE. */
 export function pitchProbLevelToValue(level: number): number {
   const n = Math.max(0, Math.min(PITCH_PROB_LEVELS, Math.round(Number(level) || 0)));
-  return n === PITCH_PROB_LEVELS ? 1 : n * PITCH_PROB_STEP;
+  return n / PITCH_PROB_LEVELS;
 }
 
 /** A 0..1 instability → its UI level (0..PITCH_PROB_LEVELS), nearest 2.5% step.
@@ -363,14 +369,16 @@ export interface PitchCandidate {
   degreeOffset: number;
   /** Signed SEMITONE offset from the authored pitch (what the ear hears). */
   semitoneOffset: number;
-  /** Whether the candidate is on the clip's scale. */
+  /** Whether the candidate is on the clip's scale. Reports the TRUTH — it is not
+   *  the same thing as `scaleWeight`, which also exempts the authored pitch
+   *  class (see `pitchCandidates`). */
   inScale: boolean;
   /** `exp(-|degreeOffset| / spread)` — exactly 1 at offset 0, exactly 0 for any
    *  other offset when spread is 0. */
   distanceWeight: number;
   /** ±12 / ±7 secondary-peak multiplier (1 elsewhere). */
   privilegeBonus: number;
-  /** 1 in scale; `pitchChromaWeight(x)` out of scale. */
+  /** 1 in scale OR in the AUTHORED pitch class; `pitchChromaWeight(x)` otherwise. */
   scaleWeight: number;
   /** `pitchOriginalWeight(x)` on offset 0; 1 on every other candidate. */
   originalWeight: number;
@@ -428,7 +436,19 @@ export function pitchCandidates(opts: PitchCandidateOpts): PitchCandidate[] {
     // exp(-Infinity) = exactly 0. That is what makes x=0 an exact identity.
     const distanceWeight = d === 0 ? 1 : spread > 0 ? Math.exp(-d / spread) : 0;
     const privilegeBonus = privilegedIntervalBonus(semitoneOffset, curve);
-    const scaleWeight = inScale ? 1 : chroma;
+    // THE AUTHORED PITCH CLASS IS ALWAYS "IN SCALE" for weighting purposes —
+    // the note you wrote, and octaves of it. Without this, a chromatic note in a
+    // scaled clip (an E in a C-minor clip, a blue note, a passing tone) has its
+    // OWN weight cut by the chroma factor, so the same control setting makes an
+    // off-scale note far more unstable than a diatonic one and drags it onto the
+    // scale — the control would mean something different depending on which note
+    // you put it on. It also broke the ±12 peak outright: a diatonic E♭ a
+    // semitone below outweighed the authored note's own octave. Rule, stated
+    // once: the clip's scale governs where a note may WANDER TO, never whether
+    // the note you authored is allowed to exist. A no-op for an in-scale note
+    // (offset 0 and ±12 are already in scale there).
+    const samePitchClass = (((semitoneOffset % 12) + 12) % 12) === 0;
+    const scaleWeight = inScale || samePitchClass ? 1 : chroma;
     const originalWeight = semitoneOffset === 0 ? original : 1;
     out.push({
       midi: m,
