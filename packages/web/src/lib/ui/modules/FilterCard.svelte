@@ -12,15 +12,19 @@
   const { set, live } = cardParams(filterDef, () => id, () => node);
 
   // ⚠ EVERY NUMBER, CURVE, UNIT, LABEL AND VOCABULARY BELOW COMES FROM THE DEF.
-  // Until 2026-08-09 this card re-typed nine of them — `min={20} max={20000}
-  // defaultValue={1000} units="Hz" curve="log"` on cutoff, the same shape on
-  // resonance, and a private `const MODES = ['LP','HP','BP']` beside a def that
-  // declares the identical roster in `params.mode.options`. All of them AGREED,
-  // which is exactly how this class hides: no def-reading gate (contract-lock,
-  // module-docs-lint, every range assertion) can see a card, so the divergence
+  // Until 2026-08-09 this card re-typed nine of them: cutoff's bounds, default,
+  // unit string and log taper were hand-written beside the fader, resonance's
+  // four the same way, and a private mode array restated the three state names
+  // the def already declares in its `options` roster. All of them AGREED, which
+  // is exactly how this class hides — no def-reading gate (contract-lock,
+  // module-docs-lint, every range assertion) can see a card, so a divergence
   // only becomes visible the first time somebody edits one side. Positional
-  // indexing (`filterDef.params[0]!`) was the same hazard one step worse —
-  // reordering `params` would have silently rebound both defaults.
+  // indexing into `params` was the same hazard one step worse: a reorder would
+  // have silently rebound both defaults.
+  //
+  // (This comment names no literal prop syntax on purpose — `card-range-source`
+  // greps the whole file, so quoting the old code here would red the gate that
+  // certifies the fix.)
   const pCutoff = paramSpec(filterDef, 'cutoff');
   const pRes = paramSpec(filterDef, 'resonance');
   const pMode = paramSpec(filterDef, 'mode');

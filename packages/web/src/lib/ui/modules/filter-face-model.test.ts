@@ -110,12 +110,18 @@ describe('filter-peak-db — the corner gain, and it is NOT a resonance readback
     expect(at(FILTER_MODE_LP)).toBe('+26.2 dB');
     expect(at(FILTER_MODE_HP)).toBe('+26.2 dB');
     expect(at(FILTER_MODE_BP)).toBe('+26.2 dB');
-    // Q 5 is the stated boundary: below it the modes are still distinguishable.
+    // THE COLLAPSE, MEASURED rather than asserted qualitatively — this is the
+    // curve that decides where the negative control above is allowed to stand.
     const spreadAt = (resonance: number) =>
       Math.max(...[0, 1, 2].map((m) => filterPeakDb(m, resonance))) -
       Math.min(...[0, 1, 2].map((m) => filterPeakDb(m, resonance)));
-    expect(spreadAt(0), 'Q 0.70 — 5.2 dB apart').toBeCloseTo(5.158, 2);
-    expect(spreadAt(0.215), 'Q ≈ 5 — under a printed digit apart').toBeLessThan(0.1);
+    expect(spreadAt(0), 'Q 0.70 — 5.16 dB apart, the widest the modes ever are').toBeCloseTo(5.158, 2);
+    expect(spreadAt(0.215), 'Q 5.00 — already a 24× collapse').toBeCloseTo(0.211, 2);
+    expect(spreadAt(0.4), 'Q 8.70 — inside ONE printed digit (0.1 dB)').toBeLessThan(0.1);
+    expect(spreadAt(0.99), 'Q 20.50 — indistinguishable').toBeLessThan(0.02);
+    // Monotone, so "above ≈ Q 5" is a real threshold and not one lucky sample.
+    const ladder = [0, 0.1, 0.215, 0.4, 0.7, 0.99].map(spreadAt);
+    for (let i = 1; i < ladder.length; i++) expect(ladder[i]!).toBeLessThan(ladder[i - 1]!);
   });
 
   // ── STILL: frequency-scale invariance ─────────────────────────────────────
@@ -245,14 +251,21 @@ describe('the PHYSICS the shipped tooltips got wrong (defect #19)', () => {
     // by default and the one the tooltip denied.
     const q0 = filterQ(0);
     expect(1 / q0, 'the break, in units of fc').toBeCloseTo(1.4286, 3);
-    for (const u of [0.01, 0.05, 0.2]) {
+    for (const u of [0.002, 0.01, 0.05]) {
       expect(slope(FILTER_MODE_HP, q0, u), `u=${u}`).toBeCloseTo(6.02, 1);
     }
+    // Even right under the corner — where the pole pair starts to bend the
+    // taper — it is nowhere near the 12 the tooltip claimed.
+    expect(slope(FILTER_MODE_HP, q0, 0.2), 'u=0.2, one corner away').toBeLessThan(6.3);
     // At high Q the break drops well below the corner and BOTH regimes exist.
     const q99 = filterQ(0.99);
     expect(1 / q99).toBeCloseTo(0.0488, 3);
     expect(slope(FILTER_MODE_HP, q99, 0.002), 'below the break: 6 dB/oct').toBeCloseTo(6.02, 1);
-    expect(slope(FILTER_MODE_HP, q99, 0.2), 'above the break: 12 dB/oct').toBeCloseTo(12.04, 1);
+    // Between the break and the corner the taper genuinely IS ~12 dB/oct; the
+    // band is narrow (0.05 < u < ~0.3 at this Q) and the pole pair pulls it
+    // above 12 as u nears 1, so this asserts the REGIME, not a decimal.
+    expect(slope(FILTER_MODE_HP, q99, 0.1), 'above the break').toBeGreaterThan(11);
+    expect(slope(FILTER_MODE_HP, q99, 0.1)).toBeLessThan(13.5);
   });
 
   it('the LOWPASS really is 12 dB/oct (the one tooltip that was right)', () => {
@@ -277,12 +290,17 @@ describe('the SIDEBAR curve and the HERO peak are ONE law', () => {
       for (const resonance of [0, 0.1, 0.6, 0.99]) {
         const p = withParams({ mode, resonance, cutoff: 1000 });
         const peak = filterPeakDb(mode, resonance);
-        const curveMax = Math.max(...filterResponseCurve(p, 512).map((q) => q.db));
+        // ⚠ SAMPLED, so the curve can only APPROACH the maximiser's answer —
+        // at Q 20.5 the peak is 4.9 % wide and a 512-point log sweep over ten
+        // octaves steps 1.35 %, which is enough to miss the apex by ~0.05 dB.
+        // 4096 points step 0.17 % and land inside 0.05 dB. That gap is the
+        // sampling resolution, not a disagreement between the two surfaces.
+        const curveMax = Math.max(...filterResponseCurve(p, 4096).map((q) => q.db));
         expect(curveMax, `${mode}/${resonance}: the drawing cannot beat the number`).toBeLessThanOrEqual(
           peak + 1e-9,
         );
         if (resonance >= 0.6) {
-          expect(curveMax, `${mode}/${resonance}: …and it gets there`).toBeGreaterThan(peak - 0.2);
+          expect(curveMax, `${mode}/${resonance}: …and it gets there`).toBeGreaterThan(peak - 0.05);
         }
       }
     }
