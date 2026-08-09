@@ -20,6 +20,23 @@
 >
 > Do NOT read §1–§3 as status. They are history.
 
+> ## ⚠ TRIAGE 2026-08-09 — the §6/§6b defect ledger is now discharged too
+>
+> Verified against `main` and the merge log:
+>
+> | this file said | 2026-08-09 |
+> |---|---|
+> | §6 "the mono-normal gate is blind — a fix agent was dispatched. Verify it landed." | **LANDED — #1351** (2026-08-04). §6b's corrected figures (46 %, 13 normals, 6 missed) are the final word. |
+> | §6b ledger: `cube` envelope bypass "needs its own PR" | **FIXED — #1360** (2026-08-04): `base_vol` now defaults to 0. |
+> | §6b ledger: `cloudseed` third stereo-silence mechanism "carried forward" | **DISCHARGED** — the explicit cross-fill normal is on `main` (`cloudseed.ts:1563-66`, `silentL`/`silentR`); re-verified item-by-item in `2026-08-07-WORK-ORDER.md`, which found nothing in "phase 1" needed code. |
+> | §6b ledger: samsloop fader cross-clamp | **STILL OPEN — deliberately.** Playback is safe (`clampWindow` forces `end ≥ start + 1`); the inverted-drag UX remains an owner behaviour call. The one surviving ledger row. |
+> | §6b Push 2 special-row lighting — "fix in flight at the time of writing" | **MERGED — #1372** (2026-08-04): "the LED encoder extinguished every DIM colour — three dark button zones, one root cause". |
+> | §7 "worktrees are OVER the hard cap (11 of 10)" | A snapshot, not current state — re-run `task worktree:list` before believing it. |
+>
+> What remains genuinely live in this file: **§4** (owner decisions), **§5** (the
+> corrected hypotheses), and §6b's two operational warnings (leaked burners;
+> "an attest's precondition is NO OTHER BROWSER RENDERING").
+
 **Read this first if you are picking up work.** It records what landed, what is in
 flight, what is blocked and why, and the decisions the owner made — so the next
 session does not re-derive them or repeat corrected mistakes.

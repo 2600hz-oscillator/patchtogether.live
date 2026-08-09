@@ -14,6 +14,32 @@ its primary output is silent would be decoration over a broken module.
 (dist worklet, shipped wasm, the real factory, or the real pure core). Anything
 read-from-source only is marked READ. Do not blur the two.
 
+> ## STATUS (2026-08-09) — the 2026-08-04 fix wave landed against this ledger
+>
+> This file is the measurement record; it has no per-row status. State the fixes
+> in one place so a reader does not work a row that is already closed:
+>
+> | ledger rows | fixed by |
+> |---|---|
+> | rings ODD silent at default + ODD/EVEN bit-identical | **#1345** |
+> | timelorde SWING / divider-on-last-beat / external-clock dropout | **#1347** |
+> | treeohvox gate length never read / WAVE hard null / filter reset per edge | **#1349** |
+> | wavecel amp-ADSR bypass / note-off click / SPREAD cliff | **#1350** |
+> | charlottes-echos DELAY off by exactly 4× | **#1344** |
+> | cofefve State-var divergence + permanently dead wet path | **#1348** (analog-delay-core) |
+> | cube — wavecel's envelope bypass (the item batch 2 scoped out) | **#1360** (`base_vol` default → 0) |
+> | twotracks rate/speed CV (the owner HIGH-PRIORITY feat) | **#1352** |
+> | samsloop START/END dead (the owner-reported regression) | **#1353** (root cause in SESSION-STATE §6b) |
+> | wavesculpt MASTER GAIN dead knob | **#1368** |
+> | the mono-normal gate's own blindness (the ⚠ under the stereo-silence class) | **#1351** (46 %, not 30 % — SESSION-STATE §6b) |
+>
+> **Everything else in this file has NO fix PR in the merge log through #1433 —
+> treat it as open backlog and the measured numbers as current.** That includes
+> all of marbles, clouds, foxy, synesthesia DPT, swolevco's dead CV inputs,
+> destroy, featurecv, wavetable-vco's wavePos, spectrograph, and wavesculpt's
+> BLUE/rotation rows (plus both tests §"docs" flags as built around defects).
+> Not re-verified row-by-row — verify before building on any single row.
+
 ---
 
 ## THE STEREO-SILENCE CLASS — five modules, FIXED in #1343

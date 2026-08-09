@@ -11,6 +11,20 @@ that is not the one anybody cares about.
 CLAUDE.md's "VALIDATE THE INSTRUMENT" section and `.claude/skills/blind-gates` carry
 the standing treatment. This file is the day's evidence.
 
+> ## STATUS (2026-08-09) — the §1 "STILL OPEN" rows, re-verified against `main`
+>
+> | §1 row | 2026-08-09 |
+> |---|---|
+> | mono-normal gate 30 % blind ("STILL OPEN — see SESSION-STATE §6") | **FIXED — #1351** (2026-08-04). The real blindness was **46 %** (13 normals, 6 missed) — SESSION-STATE §6b carries the corrected figures and the residual audit (0 unclassified). |
+> | `stereo-mono-normal.spec.ts` SUTS omits stereovca ("STILL OPEN") | **CLOSED** — stereovca is now a SUT row (`e2e/tests/stereo-mono-normal.spec.ts:126`, with the `offset: 1` ring-mod caveat documented inline). |
+> | dock VRT capture cuts faces at the fold ("STILL OPEN" on 5 modules) | **FIXED — #1413** (2026-08-08): "the dock baseline was 425 px of a 930 px faceplate — nine of them were". |
+> | VRT `FACES` roster hand-maintained ("STILL OPEN") | **Still hand-maintained** (`e2e/vrt/_shell-faces.ts` — its own comment says so), but verified in sync today: 24 roster entries = 24 `STRICT_FACES` modules. The structural hole (no parity assertion between the two lists) remains open. |
+> | §2 `timelorde-clock-core.test.ts` pins the wrong divider phase | **FIXED — #1347** (2026-08-04, the swing + divider-phase PR). |
+>
+> The other §2/§3 rows (wavesculpt's two tests, spectrograph's darwin baseline,
+> `clouds.test.ts` density) were **not re-verified** in this pass — do not read
+> silence here as "fixed".
+
 ---
 
 ## 1. GATES THAT COULD NOT SEE THEIR OWN SUBJECT

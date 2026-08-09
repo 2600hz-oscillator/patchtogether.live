@@ -1,5 +1,13 @@
 # face re-do — vca
 
+> ## ✅ STATUS (2026-08-09) — **SHIPPED as #1429.** This spec is now a RECORD, not a plan.
+>
+> Merged 2026-08-09: "PF-20 face re-do — the derived strip, the flow column, and
+> the four statements #1313 falsified". Where the shipped def
+> (`packages/web/src/lib/audio/modules/vca.ts`) disagrees with the prose below,
+> the code wins; as-built deviations are recorded in the PR, not back-ported
+> into this file.
+
 > ⚠ **STATUS CORRECTED 2026-08-04 — read `face-redo-INDEX.md` §0 before building.**
 > PF-20 (**PR #1301**) **HAS MERGED** (`c6ff9253`); every "unmerged branch" citation below
 > now resolves on `main`. **`face.title` and `face.hint` do NOT paint by default** —

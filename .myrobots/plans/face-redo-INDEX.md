@@ -2,6 +2,26 @@
 
 ## 0. STATUS — CORRECTED 2026-08-04 (verified against `main`, not against this doc)
 
+### UPDATE (2026-08-09) — two more re-dos SHIPPED; the count is now FOURTEEN + kickdrum's delta
+
+Verified against `STRICT_FACES` (24 entries today) and the def declarations on
+`main`, not against these files:
+
+- **filter** — ✅ **SHIPPED as #1430** (2026-08-09): "three derived readouts none
+  of which is a knob, the magnitude curve a VCF actually is, and the two
+  tooltips that said 12 dB/oct". Spec kept as RECORD (batch-3 convention), with
+  its own banner.
+- **vca** — ✅ **SHIPPED as #1429** (2026-08-09): "the derived strip, the flow
+  column, and the four statements #1313 falsified". Spec kept as RECORD, with
+  its own banner.
+- **kickdrum's delta is STILL open** — `settles to` is still declared at
+  `kickdrum.ts:388`.
+- Live backlog is therefore **14 full re-dos** (adsr, cloudseed, delay, dx7,
+  karplus, lfo, mixer, qbrt, reverb, ringback, shimmershine, snaredrum,
+  tidyVco, tomtom — none declares a `face.hero`/`face.sidebar` on `main`)
+  **plus kickdrum's delta**. The "sixteen of the eighteen" line below is the
+  2026-08-04 snapshot.
+
 **These specs are STILL LIVE BACKLOG. Sixteen of the eighteen re-dos are UNBUILT.** Ground
 truth, not a status line: only `clap`, `drummergirl`, `kickdrum`, `pentemelodica` and
 `sixstrum` declare a `face.sidebar`/`face.hero` in

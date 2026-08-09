@@ -2,6 +2,20 @@
 
 ## 0. STATUS — CORRECTED 2026-08-04 (verified against `main`, not against this doc)
 
+### UPDATE (2026-08-09): EIGHT of the twelve are BUILT; macrooscillator is IN FLIGHT; FOUR remain
+
+Shipped since the table below was last touched: **meowbox — #1417** (2026-08-09,
+"a HELD audition, because the 'trigger' is an ADSR sustaining at 0.4" — its spec
+file carries the as-shipped corrections, six of them structural).
+**macrooscillator is IN FLIGHT as PR #1432** (open 2026-08-09), rebuilt from
+`macrooscillator-face-measurements-2026-08-08.md` after the original worktree
+was destroyed. Built total: clap, drummergirl, pentemelodica, sixstrum (#1332),
+analogVco (#1416), bluebox (#1431), meowbox (#1417) — seven shipped from this
+batch — plus the sixstrum re-do, which the headline below counts as the eighth
+verdict resolved. Remaining unbuilt backlog: **noise, cube, samsloop, twotracks**
+(the two declines + two swap-outs — read their per-file banners before reopening
+either verdict).
+
 **Four of the twelve were BUILT; one was built and then DROPPED; seven are still unbuilt
 backlog.** Ground truth is `STRICT_FACES`
 (`packages/web/src/lib/ui/workflow/strict-faces.ts`) plus the `face.hero`/`face.sidebar`
@@ -17,7 +31,9 @@ declarations in the defs — not the status lines in these files.
 | **macrooscillator** | PROMOTE — PARTIAL REWRITE | ✅ **SHIPPED as a FACE ONLY** (`face/macrooscillator`, 2026-08-09). §2's three new params + patched-sensing strike gate were **NOT built**: §2.3 is unbuildable as written (an audition keep-alive makes `inputs[1]` permanently non-empty, the `sixstrum` failure in-tree) *and* it is a DSP change, so INDEX rule 5 applies twice over. Four measured defects are **documented on the face rather than fixed** — WAVETABLE's morph is dead over its bottom half, GRANULAR's morph is a 3-position switch, MODAL's timbre runs backwards, and OUT spans **76.6 dB** across engines. Two spec numbers corrected: HARMONICS quantises in **FOUR** engines, not five (WAVETABLE is a genuine blend), and the spread is 76.6 dB not 75. Second free-running face, so the second real test of #1420's freeze. |
 | **bluebox · noise · cube · samsloop · twotracks** | 1 promote / 3 decline | **UNBUILT.** Live backlog — but read the per-file 2026-08-04 banners first: several of the defects these specs are built around **have since been fixed**, which changes the argument. |
 | **bluebox** | PROMOTE (with a caveat) | ✅ **SHIPPED** (`face/bluebox`, PR #1431, 2026-08-09). The caveat is ANSWERED: `face.order` ranks by **LAYOUT**, derived from `BLUEBOX_BUTTON_NAMES`, because every PREFIX of that ranking is still a recognisable keypad fragment — and the minimal bank cover `{1,5,9,0,BLUEBOX,REDBOX}` (the genuinely principled subset) reads as a broken phone in a lane tile. Two findings the spec could not have had: a durable-param reader on this module is **constant zero forever** (ModuleShell's `clearStuckMomentaryParams` `$effect` scrubs every durable write), so the hero panel polls the LIVE ENGINE and owns the numbers with **no `hero.readouts`**; and `curve: 'discrete'` blanked the Push 2 card, exposing two push-card assertions that were describing the wrong predicate. No DSP change, no ART re-pin. |
-| **macrooscillator · meowbox · noise · cube · samsloop · twotracks** | 3 promote / 3 decline | **UNBUILT.** Live backlog — but read the per-file 2026-08-04 banners first: several of the defects these specs are built around **have since been fixed**, which changes the argument. |
+| **meowbox** | PROMOTE | ✅ **SHIPPED** (PR #1417, 2026-08-09). A press-and-HOLD audition, not a one-shot — the def's own `gate` doc was wrong about its edge semantics (`edge: 'gate'` now declared; contract re-pinned). The spec file is the as-shipped record. |
+| **macrooscillator** | PROMOTE — PARTIAL REWRITE | 🔄 **IN FLIGHT — PR #1432 open** (2026-08-09), rebuilt from `macrooscillator-face-measurements-2026-08-08.md`. |
+| **noise · cube · samsloop · twotracks** | 1 no-face-on-merit / 3 not-yet | **UNBUILT.** Live backlog — but read the per-file banners first: several of the defects these specs are built around **have since been fixed** (samsloop most of all), which changes the argument. |
 
 Other status lines that have gone stale everywhere in this batch:
 
