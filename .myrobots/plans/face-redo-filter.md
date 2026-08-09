@@ -1,5 +1,13 @@
 # face re-do — filter
 
+> ## ✅ STATUS (2026-08-09) — **SHIPPED as #1430.** This spec is now a RECORD, not a plan.
+>
+> Merged 2026-08-09: "filter re-do — three derived readouts none of which is a
+> knob, the magnitude curve a VCF actually is, and the two tooltips that said
+> 12 dB/oct". Where the shipped def (`packages/web/src/lib/audio/modules/filter.ts`)
+> disagrees with the prose below, the code wins; as-built deviations are recorded
+> in the PR, not back-ported into this file.
+
 > ⚠ **STATUS CORRECTED 2026-08-04 — read `face-redo-INDEX.md` §0 before building.**
 > PF-20 (**PR #1301**) **HAS MERGED** (`c6ff9253`); every "unmerged branch" citation below
 > now resolves on `main`. **`face.title` and `face.hint` do NOT paint by default** —

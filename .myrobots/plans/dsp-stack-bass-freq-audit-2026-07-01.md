@@ -1,5 +1,22 @@
 # DSP-stack bass / freq-response improvement plan (2026-07-01)
 
+> ## STATUS (2026-08-09) — two rows in the 2026-08-04 table below are now CLOSED
+>
+> - **P0-A1 — SHIPPED as #1369** (merged 2026-08-04, owner-gated): `audio-out.ts`
+>   stage 2 is now a **look-ahead brickwall limiter worklet at a −1 dBFS ceiling**
+>   (`packages/dsp/src/lib/master-limiter-dsp.ts`); the plain
+>   `DynamicsCompressorNode` the row cites is gone, and `audio-out.ts`'s own
+>   header records the sub-pump measurements that justified it. The table's
+>   "FIX IN FLIGHT" is stale — it landed.
+> - **P2-A5 — SHIPPED as #1374** (merged 2026-08-04): "the two shared filter
+>   cores latched their state in the denormal range FOREVER".
+>   `moog-ladder-dsp.ts` now carries 1e-20 denormal floors (6 flush sites) —
+>   the row's "zero `1e-` flush sites" evidence no longer holds.
+>
+> Still open from that table: **P1-A3** (BLEP the Faust VCO — and read the #1379
+> correction block first: A3's stated premise is half wrong as measured on the
+> shipped wasm) and **A6/LIC**.
+
 > **TRIAGE 2026-08-04 — HALF-EXECUTED. The P0 headline item is STILL OPEN.**
 > Verified item by item against the tree:
 >

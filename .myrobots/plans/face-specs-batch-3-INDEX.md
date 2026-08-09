@@ -2,6 +2,20 @@
 
 ## 0. STATUS — CORRECTED 2026-08-04 (verified against `main`, not against this doc)
 
+### UPDATE (2026-08-09): EIGHT of the twelve are BUILT; macrooscillator is IN FLIGHT; FOUR remain
+
+Shipped since the table below was last touched: **meowbox — #1417** (2026-08-09,
+"a HELD audition, because the 'trigger' is an ADSR sustaining at 0.4" — its spec
+file carries the as-shipped corrections, six of them structural).
+**macrooscillator is IN FLIGHT as PR #1432** (open 2026-08-09), rebuilt from
+`macrooscillator-face-measurements-2026-08-08.md` after the original worktree
+was destroyed. Built total: clap, drummergirl, pentemelodica, sixstrum (#1332),
+analogVco (#1416), bluebox (#1431), meowbox (#1417) — seven shipped from this
+batch — plus the sixstrum re-do, which the headline below counts as the eighth
+verdict resolved. Remaining unbuilt backlog: **noise, cube, samsloop, twotracks**
+(the two declines + two swap-outs — read their per-file banners before reopening
+either verdict).
+
 **Four of the twelve were BUILT; one was built and then DROPPED; seven are still unbuilt
 backlog.** Ground truth is `STRICT_FACES`
 (`packages/web/src/lib/ui/workflow/strict-faces.ts`) plus the `face.hero`/`face.sidebar`
@@ -15,7 +29,9 @@ declarations in the defs — not the status lines in these files.
 | **sixstrum** | RE-DO | **SHIPPED** — **#1332**; the re-do fixed the "cannot play the instrument" defect. |
 | **analogVco** | ✅ **SHIPPED** (`face/analogvco`, 2026-08-08) | RECOVERED from `b5843cf4` rather than re-authored — the drop in `897b6515` was purely the VRT scene, and that is now fixed. RE-DERIVED under the corrected instrument (10 SEPARATE processes, not `--repeat-each`): **1/10 PASS unmasked** (227–322 px vs a 72 px budget), **10/10 PASS with the mask** as the control. Ships the registry's first face entry — `VRT_LIVE_SURFACES['face-analogVco-compact']`, masking **8.7 % of the tile** (the cheapest entry in the file) with a measured companion + per-run negative control. The false "already carries a measured companion" claim in `vrt-exemptions.ts` is corrected (the mask was **deleted**, not migrated). Two live defects the spec flagged were already fixed on main before it landed: the card/def bipolar range (#1311) and the impossible `pw` doc. **Still open, deliberately: §7-D** (the `shape` CV jack reaches only 0…0.5, so the morph never gets past sine — a contract change, its own PR). |
 | **bluebox** | PROMOTE (with a caveat) | ✅ **SHIPPED** (`face/bluebox`, PR #1431, 2026-08-09). The caveat is ANSWERED: `face.order` ranks by **LAYOUT**, derived from `BLUEBOX_BUTTON_NAMES`, because every PREFIX of that ranking is still a recognisable keypad fragment — and the minimal bank cover `{1,5,9,0,BLUEBOX,REDBOX}` (the genuinely principled subset) reads as a broken phone in a lane tile. Two findings the spec could not have had: a durable-param reader on this module is **constant zero forever** (ModuleShell's `clearStuckMomentaryParams` `$effect` scrubs every durable write), so the hero panel polls the LIVE ENGINE and owns the numbers with **no `hero.readouts`**; and `curve: 'discrete'` blanked the Push 2 card, exposing two push-card assertions that were describing the wrong predicate. No DSP change, no ART re-pin. |
-| **macrooscillator · meowbox · noise · cube · samsloop · twotracks** | 3 promote / 3 decline | **UNBUILT.** Live backlog — but read the per-file 2026-08-04 banners first: several of the defects these specs are built around **have since been fixed**, which changes the argument. |
+| **meowbox** | PROMOTE | ✅ **SHIPPED** (PR #1417, 2026-08-09). A press-and-HOLD audition, not a one-shot — the def's own `gate` doc was wrong about its edge semantics (`edge: 'gate'` now declared; contract re-pinned). The spec file is the as-shipped record. |
+| **macrooscillator** | PROMOTE — PARTIAL REWRITE | 🔄 **IN FLIGHT — PR #1432 open** (2026-08-09), rebuilt from `macrooscillator-face-measurements-2026-08-08.md`. |
+| **noise · cube · samsloop · twotracks** | 1 no-face-on-merit / 3 not-yet | **UNBUILT.** Live backlog — but read the per-file banners first: several of the defects these specs are built around **have since been fixed** (samsloop most of all), which changes the argument. |
 
 Other status lines that have gone stale everywhere in this batch:
 
