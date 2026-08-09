@@ -20,8 +20,11 @@
 // expected strings passes just as happily when the table and the code are
 // wrong in the same direction.
 
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { curatedFace } from '$lib/ui/workflow/curated-face';
+import { faceReadoutValueFor } from '$lib/ui/workflow/face-readout-values';
 import {
   LANE_KCOL_MAX_PX,
   READOUT_MAX_CHARS,
@@ -37,6 +40,7 @@ import {
   VCA_DISPLAY_EPS,
   formatVcaBase,
   formatVcaCvAmount,
+  formatVcaGainAtFullCv,
   linearToDb,
   vcaCvSense,
   vcaGain,
@@ -364,5 +368,289 @@ describe('the curated face — what each tier actually surfaces', () => {
     // different jobs; do not collapse one into the other.
     expect(pages[0].controls.map((c) => c.key)).toEqual(['base', 'cvAmount']);
     expect(vcaDef.face?.order).toEqual(['base', 'cvAmount']);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PF-20 — THE DERIVED HERO READOUT, and the negative controls that are the only
+// thing separating it from a knob relabelled.
+//
+// `at cv 1` prints `vcaGain(base, cvAmount, 1)` = `base + cvAmount`. The reason
+// it is a `valueId` and not a `paramId` is that BOTH dials are individually
+// correct about their own knob and blind to the other, while the number that
+// decides whether this VCA clips is their SUM. Legs 1 and 2 below perturb each
+// input in turn and assert (a) the knob readback a lazy author would have
+// reached for does NOT move, and (b) the derived string DOES. Leg 3 re-derives
+// the printed dB from `vcaGain` over a grid, so the string is pinned to the
+// DSP's law rather than to its own table.
+//
+// These are PERMANENT legs, exactly like kickdrum's SUB LEVEL perturbation —
+// the instrument is negative-controlled on every run, not once at authoring
+// time (CLAUDE.md, "VALIDATE THE INSTRUMENT").
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('the derived hero readout — `at cv 1`', () => {
+  /** The declared id, read OFF THE FACE rather than named, so a rename has to
+   *  keep the whole chain consistent instead of leaving this file green. */
+  const declaredId = () => {
+    const ro = vcaDef.face?.hero?.readouts ?? [];
+    expect(ro, 'the hero declares exactly one readout').toHaveLength(1);
+    const id = ro[0]?.valueId;
+    expect(id, 'the one hero readout resolves through valueId, not paramId/text').toBeTruthy();
+    return id!;
+  };
+
+  /** The readout as the FACEPLATE resolves it: through the registry, with a
+   *  reader shaped like the shell's. Going through the registry rather than
+   *  calling the formatter directly is what stops an unregistered id from
+   *  passing here while printing `—` in the dock. */
+  const painted = (base: number, cvAmount: number) => {
+    const id = declaredId();
+    const fn = faceReadoutValueFor(id);
+    expect(fn, `'${id}' is registered in face-readout-values.ts`).not.toBeNull();
+    return fn!((pid) => ({ base, cvAmount })[pid as 'base' | 'cvAmount']);
+  };
+
+  it('LEG 1 — blind to cvAmount: the base dial does NOT move, the strip DOES', () => {
+    // Hold `base` at 0.5 and halve the attenuverter. The gain at the top of the
+    // sweep falls from 1.5 to 1.0 — the difference between clipping 3.5 dB past
+    // unity on every envelope peak and landing exactly on unity — and nothing
+    // else on the panel says so.
+    expect(formatVcaBase(0.5), 'the base dial, before AND after — INVARIANT').toBe('-6.0 dB');
+
+    const before = painted(0.5, 1);
+    const after = painted(0.5, 0.5);
+    expect(before).toBe('+3.5 dB');
+    expect(after).toBe('UNITY');
+    expect(
+      after,
+      'the derived readout must MOVE when cvAmount moves — if it does not, it is `base` ' +
+        'wearing a formula and the whole valueId is unearned',
+    ).not.toBe(before);
+  });
+
+  it('LEG 2 — blind to base: the cvAmount dial does NOT move, the strip DOES', () => {
+    // The mirror. `cvAmount` prints its SENSE, which is `OPEN` at +1 whatever
+    // `base` is doing, so the attenuverter's own readout cannot see this either.
+    expect(formatVcaCvAmount(1), 'the cvAmount dial, before AND after — INVARIANT').toBe('OPEN');
+
+    const before = painted(0, 1);
+    const after = painted(0.5, 1);
+    expect(before).toBe('UNITY');
+    expect(after).toBe('+3.5 dB');
+    expect(after, 'the derived readout must MOVE when base moves').not.toBe(before);
+  });
+
+  it('LEG 3 — THE ORACLE: the printed dB is re-derived from vcaGain, not from a table', () => {
+    // Sweep a grid and read the NUMBER BACK OUT of the rendered string. A
+    // formatter checked only against a list of expected strings passes just as
+    // happily when the list and the code are wrong in the same direction; this
+    // leg fails unless the glyphs on the faceplate agree with the law in
+    // `vcaGain`, which is itself the mirror of vca.dsp.
+    let dbForms = 0;
+    for (let b = 0; b <= 1.0001; b += 0.1) {
+      for (let a = -1; a <= 1.0001; a += 0.1) {
+        const base = Number(b.toFixed(4));
+        const cvAmount = Number(a.toFixed(4));
+        const g = vcaGain(base, cvAmount, 1);
+        const text = painted(base, cvAmount);
+        const where = `base=${base} cvAmount=${cvAmount} g=${g.toFixed(4)}`;
+
+        if (Math.abs(g) < VCA_DISPLAY_EPS) {
+          expect(text, `${where}: a sweep peak that displays as zero reads CLOSED`).toBe('CLOSED');
+          continue;
+        }
+        if (Math.abs(g - 1) < VCA_DISPLAY_EPS) {
+          expect(text, `${where}: a sweep peak at 1.0 reads UNITY`).toBe('UNITY');
+          continue;
+        }
+
+        // THE INVERSION IS THE ASSERTION: parse the printed dB back out and
+        // compare it to the law. Units are dB; tolerance is one rounding step.
+        dbForms++;
+        const m = /^([+-]?\d+\.\d) dB( INV)?$/.exec(text);
+        expect(m, `${where}: unparseable readout '${text}'`).not.toBeNull();
+        expect(Number(m![1]), `${where}: printed dB vs 20·log10|base + cvAmount| (dB)`).toBeCloseTo(
+          linearToDb(g),
+          1,
+        );
+        // The ` INV` suffix is the face's ONLY statement that the output has
+        // flipped phase, so it must track the sign of the sum exactly — which
+        // is also why the strip needs no separate PHASE entry.
+        expect(!!m![2], `${where}: ' INV' must appear iff the summed gain is negative`).toBe(g < 0);
+      }
+    }
+    expect(dbForms, 'the grid must actually exercise the dB branch').toBeGreaterThan(100);
+  });
+
+  it('the strip does NOT repeat a dial: `at cv 0` would be `base`, and it is refused', () => {
+    // `base` IS the gain at cv 0, so a second entry printing it would be the
+    // same string twice in one full-width row (correction 1 makes that read as
+    // an independent second measurement that happens to agree). The guard is
+    // structural: no hero readout on this module may resolve through `paramId`.
+    const ro = vcaDef.face?.hero?.readouts ?? [];
+    expect(
+      ro.filter((r) => r.paramId).map((r) => r.label),
+      'a paramId readout on a 2-param module is a dial printed twice',
+    ).toEqual([]);
+    // And the refusal is arithmetic rather than taste: the gain at cv 0 is
+    // exactly `base`, at every setting.
+    for (const base of [0, 0.25, 0.5, 1]) {
+      expect(vcaGain(base, VCA_CV_AMOUNT.default, 0)).toBe(base);
+    }
+  });
+
+  it('the formatter is NOT squeezed by the lane knob-column budget', () => {
+    // `formatVcaBase` drops its decimal at 10 dB because LANE_KCOL_MAX_PX gives
+    // it 7 glyphs. The hero strip is dock-only and full-width, so the derived
+    // readout keeps its decimal — and a future "tidy-up" that copies the lane
+    // branch down here would silently coarsen a number measured against a
+    // different box.
+    expect(formatVcaGainAtFullCv(1, 1)).toBe('+6.0 dB');
+    expect(formatVcaGainAtFullCv(0, -1)).toBe('0.0 dB INV');
+    expect(formatVcaGainAtFullCv(0.5, -1)).toBe('-6.0 dB INV');
+    expect(formatVcaGainAtFullCv(0, 0)).toBe('CLOSED');
+  });
+});
+
+describe('the face states what the DSP does — anchored to vca.dsp, not to a comment', () => {
+  const dspSource = readFileSync(
+    fileURLToPath(new URL('../../../../dsp/src/vca.dsp', import.meta.url)),
+    'utf8',
+  );
+
+  it('the rear `~` tick on `cv` tracks WHERE si.smoo sits in the .dsp', () => {
+    // ⚠ THE PREMISE THIS PINS ALREADY REVERSED ONCE, SILENTLY. The rear card
+    // shipped with NO tick on `cv` and an audit comment justifying it: the gain
+    // SUM ran through si.smoo, so the CV was a 7 Hz one-pole away from the
+    // multiply and a `~` would have been a lie. #1313 moved the de-zip onto the
+    // two sliders — the CV path became full-bandwidth — and nothing noticed,
+    // because the tick is declared in a def and its reason lived in a .dsp.
+    //
+    // So this asserts the LINK rather than either end: find the gain expression
+    // in the real source, decide FROM IT whether cv is filtered, and require
+    // `face.rear.audioRate` to agree. Move the smoothing back onto the sum and
+    // this goes red until the tick comes off.
+    const gainLine = dspSource.split('\n').find((l) => /^\s*gain\s*=/.test(l));
+    expect(gainLine, 'vca.dsp declares a `gain = …` line').toBeTruthy();
+
+    // The CV is filtered IFF the smoothing applies to an expression that still
+    // contains `cv` — a trailing `: si.smoo` over the whole sum, or a
+    // parenthesised group holding `cv`. Per-slider smoothing
+    // (`(base : si.smoo) + (cvAmount : si.smoo) * cv`) leaves `cv` outside
+    // every smoothed group.
+    const smoothedGroups = [...gainLine!.matchAll(/\(([^()]*):\s*si\.smoo\s*\)/g)].map((m) => m[1]);
+    const bareTail = /:\s*si\.smoo\s*;?\s*$/.test(gainLine!);
+    const cvIsFiltered = bareTail || smoothedGroups.some((g) => /\bcv\b/.test(g));
+
+    expect(
+      cvIsFiltered,
+      `vca.dsp gain line: ${gainLine!.trim()} — expected the de-zip on the two SLIDERS, ` +
+        `leaving cv unfiltered. If this flipped, the DSP changed and the face must follow.`,
+    ).toBe(false);
+
+    expect(
+      [...(vcaDef.face?.rear?.audioRate ?? [])],
+      'cv is read at full bandwidth, so the rear card must tick it `~` (audio-rate). ' +
+        'filter.ts states the same doctrine in its mirror form: a tick on an si.smoo-filtered ' +
+        'CV would be "a lie about the one thing the tick exists to say".',
+    ).toEqual(['cv']);
+
+    // The AUDIO hole stays untouched — the tick marks the SURPRISING case, and
+    // "audio-rate" on an audio input is noise (the mixer.ts precedent).
+    expect(vcaDef.face?.rear?.audioRate).not.toContain('audio');
+  });
+
+  it('no surface still claims the CV path is band-limited', () => {
+    // The statements #1313 falsified and left behind. This is a TEXT gate on
+    // purpose: every one of them was prose, none was reachable by any type or
+    // contract check, and all of them read as authoritative for months.
+    const surfaces: [string, string][] = [
+      ['docs.explanation', vcaDef.docs?.explanation ?? ''],
+      ['docs.inputs.cv', vcaDef.docs?.inputs?.cv ?? ''],
+      ['docs.outputs.audio', vcaDef.docs?.outputs?.audio ?? ''],
+      ['face.pages[gain].hint', vcaDef.face?.pages?.[0]?.hint ?? ''],
+      ['face.hint', vcaDef.face?.hint ?? ''],
+    ];
+    const falsified = [
+      /cv path (?:responds|tracks) at envelope/i,
+      /not audio.rate/i,
+      /largely filtered out rather than ring.modulated/i,
+      /summed gain is smoothed/i,
+      /-?3\s*dB at 7\s*Hz/i,
+    ];
+    for (const [where, text] of surfaces) {
+      for (const re of falsified) {
+        expect(
+          re.test(text),
+          `${where} still asserts a band-limited CV path (/${re.source}/). The de-zip is on ` +
+            `the two sliders as of #1313; cv reaches the multiply at full bandwidth.`,
+        ).toBe(false);
+      }
+    }
+  });
+});
+
+describe('PF-20 faceplate structure — the declarations, and the ones refused', () => {
+  const flowBlock = () => {
+    const b = (vcaDef.face?.sidebar ?? []).find((x) => x.kind === 'signal-flow');
+    expect(b, 'the sidebar carries a signal-flow block').toBeTruthy();
+    return b as { stages: readonly { label: string; note?: string; parallel?: boolean }[] };
+  };
+
+  it('declares title + hint + a band hint, and NONE of them carries a load-bearing fact', () => {
+    // `facePageHeader` returns null before it reads either field unless the
+    // annotate toggle is on, so a fact stated ONLY here is invisible at rest.
+    expect(vcaDef.face?.title).toBe('Amplifier');
+    expect(vcaDef.face?.hint ?? '').not.toBe('');
+    expect(vcaDef.face?.pages?.[0]?.hint ?? '').not.toBe('');
+
+    // The three facts this module has to teach, each pinned to the
+    // ALWAYS-PAINTING surface that carries it.
+    const stageText = flowBlock()
+      .stages.map((s) => `${s.label} ${s.note ?? ''}`)
+      .join(' | ');
+    // 1. the clip risk → the readout strip (a live number; asserted above).
+    expect(vcaDef.face?.hero?.readouts?.[0]?.valueId).toBe('vca-gain-at-full-cv');
+    // 2. the full-bandwidth cv → a flow stage note.
+    expect(stageText, 'the sidebar states the cv bandwidth').toMatch(/full-bandwidth/i);
+    // 3. OUT INV exists → a flow stage. That jack is on the REAR card only, so
+    //    the flow column is the one FRONT surface that can mention it.
+    expect(stageText, 'the sidebar surfaces the rear-only OUT INV tap').toMatch(/OUT INV/);
+  });
+
+  it('OUT INV is drawn as a TAP, never as a stereo partner (dual-mono GROUP D)', () => {
+    const inv = flowBlock().stages.find((s) => s.label === 'OUT INV')!;
+    expect(inv.parallel, 'a tap branches off the spine; it is not a link in the chain').toBe(true);
+    expect(inv.note ?? '').toMatch(/tap of OUT/);
+    // `audio` and `audio_inv` are VARIANTS of one mono signal, so nothing on
+    // the face may imply an L/R relationship the module does not have.
+    expect(JSON.stringify(vcaDef.face), 'no stereo-pair language on the face').not.toMatch(
+      /stereo|\bwiden/i,
+    );
+  });
+
+  it('the hero promotes NOTHING, so the meter survives and the band keeps both knobs', () => {
+    // A hero `cell` suppresses the dock glyph (`heroGlyph = hasGlyph &&
+    // !(view === 'dock-full' && hero?.cell)`), and on the module whose entire
+    // job is "how loud right now" that trades a live RMS trace for a static
+    // picture of two knob values. A hero `control` MOVES the key out of its
+    // band, which on a 2-param face leaves a one-knob band.
+    const hero = vcaDef.face?.hero;
+    expect(
+      hero?.cell,
+      'no hero picture — every candidate graph here is a straight line',
+    ).toBeUndefined();
+    expect(hero?.control, 'no promoted control — it would empty half the band').toBeUndefined();
+    expect(hero?.action, 'no audition — a VCA makes no sound of its own').toBeUndefined();
+    expect(vcaDef.face?.glyph, 'so the live meter is still the dock hero').toBe('meter');
+    expect(vcaDef.face?.pages?.[0]?.controls).toEqual(['base', 'cvAmount']);
+  });
+
+  it('exactly ONE sidebar block — presets / readouts / custom are all refused', () => {
+    // `presets` on a 2-param module is a list of coordinate pairs; a `readouts`
+    // block duplicates the strip; a `custom` panel means a registry entry for
+    // the straight line already refused above.
+    expect((vcaDef.face?.sidebar ?? []).map((b) => b.kind)).toEqual(['signal-flow']);
   });
 });
