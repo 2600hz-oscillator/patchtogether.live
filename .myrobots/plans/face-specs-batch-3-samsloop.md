@@ -190,7 +190,8 @@ sets only `onmessage`). Ship the readout labelled as the *knob* pitch until that
 ```
 BPM        = 60·N·|rate|·sampleRate / (end − start)            # N beats per window
 fill_decode = sampleLength / 1_500_000                          # samsloop.ts:163, 1026-1028
-fill_record = sample.byteLength / 250_000                       # samsloop-record.ts:30; card:397
+fill_record = sample.byteLength / SAMSLOOP_RECORD_BUDGET_BYTES  # IMPORT it, do not inline
+                                                                # (was 250_000; 3_000_000 since #1422)
 fill_upload = fileSize / 2_097_152                              # samsloop.ts:120; card:516
 ```
 **NEGATIVE CONTROL (BPM):** drag ONLY the End fader inward by half. Every rate readback is

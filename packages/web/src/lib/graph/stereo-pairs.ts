@@ -184,6 +184,55 @@ export const COLLAPSE_EXEMPT: ReadonlyMap<string, string> = new Map([
   ],
 ]);
 
+// ---------------- MONO AUDIO POINTS (hardware jacks) ----------------
+
+/**
+ * Modules whose audio ports are INDEPENDENT PHYSICAL JACKS, so the DUAL-MONO
+ * rule ("stereo → mono writes BOTH legs into the mono input") must not apply to
+ * them: two legs landing on one of these ports is two signals summing into one
+ * hardware output, which is a wiring mistake, not a stereo cable.
+ *
+ * Keyed by module `type`, each with the reason it is here — the same
+ * named-entry-with-a-reason discipline as `COLLAPSE_EXEMPT`, and for the same
+ * reason: a predicate ("does the module talk to hardware?") would quietly
+ * recruit modules nobody audited.
+ *
+ * ⚠ DELIBERATELY A LIST OF ONE, and it should stay that way. The owner named
+ * this case and its boundary in the same breath (2026-08-07): "ES-9 is a
+ * special case because it's explicitly mono channels when used for audio and
+ * it's in hardware. **we're not going to have anything else like that.**"
+ * `moog984`, `matrixmix` and friends are NOT instances — do not generalise.
+ *
+ * ⚠ SCOPE — this governs the DUAL-MONO doubling ONLY, i.e. the second leg that
+ * would land on the SAME target port as the first. It says nothing about a pair
+ * the module genuinely declares (`spdif_l`/`spdif_r` is a real stereo pair and
+ * still wires as one), and nothing about the module as a SOURCE: one ES-9 jack
+ * fanning out to both legs of a stereo input occupies one physical point and
+ * sums nothing, so it keeps the ordinary mono→stereo behaviour.
+ *
+ * ANCHORED TO THE ARTIFACT: `stereo-pairs.test.ts` fails if an entry names a
+ * module type the live registry does not have. A stale entry is one nobody is
+ * watching.
+ */
+export const MONO_AUDIO_POINT_MODULES: ReadonlyMap<string, string> = new Map([
+  [
+    'es9',
+    'The Expert Sleepers ES-9 is a HARDWARE interface: `out1..out8` are eight ' +
+      'independent physical output jacks and `in1..in14` eight/fourteen ' +
+      'independent physical input jacks. Summing two legs of a stereo bus into ' +
+      'one of them is a patching error with no musical reading — the owner ' +
+      'sends `send1L`→out3 and `send1R`→out4 as two separate mono cables, ' +
+      'which is how the hardware works.',
+  ],
+]);
+
+/** Whether `moduleType` is a declared MONO-AUDIO-POINT module — see
+ *  `MONO_AUDIO_POINT_MODULES`. Undefined type ⇒ false (the safe direction:
+ *  the ordinary dual-mono rule applies). */
+export function isMonoAudioPointModule(moduleType: string | undefined): boolean {
+  return moduleType !== undefined && MONO_AUDIO_POINT_MODULES.has(moduleType);
+}
+
 /** The COLLAPSE_EXEMPT key for a pair — the exact (module, direction, pair)
  *  triple. A def with no `type` can never produce a matching key. */
 export function collapseExemptKey(

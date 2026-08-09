@@ -20,12 +20,28 @@ export const SAVED_GROUP_LABEL_MAX = 64;
 /** Per-user cap on saved groups. */
 export const SAVED_GROUP_MAX_PER_USER = 100;
 /** Hard cap on payload JSON size (bytes after JSON.stringify).
- *  8 MB sits well under both Neon JSONB (TOAST up to ~1 GB) and the CF
- *  Workers 100 MB request-body limit, while accommodating ~10 modules
- *  per group that carry large decoded buffers (SAMSLOOP samples,
- *  CLOUDSEED impulse responses). Bumped from 256 KB after users hit the
- *  cap with a single SAMSLOOP carrying a few seconds of audio. */
-export const SAVED_GROUP_MAX_PAYLOAD_BYTES = 8 * 1024 * 1024;
+ *
+ *  DERIVED FROM THE RACK BUDGET, not picked. A group is a SUBSET of one rack,
+ *  and `SAMSLOOP_RACK_RECORD_BUDGET_BYTES` (samsloop-record.ts) caps every
+ *  SAMSLOOP payload in a rack at 12 MB of base64. So 16 MB covers a group
+ *  containing the ENTIRE per-rack sample budget plus the graph JSON around it,
+ *  which makes the RACK ledger the binding limit and stops this cap from being
+ *  the thing that surprises you. It stays far under both Neon JSONB (TOAST to
+ *  ~1 GB) and the CF Workers 100 MB request-body limit.
+ *
+ *  History, because the trend is the point: 256 KB → 8 MB after users hit it
+ *  with a single SAMSLOOP carrying a few seconds of audio; 8 MB → 16 MB when
+ *  the SAMSLOOP record budget went 250 kB → 3 MB raw (#1422), which would
+ *  otherwise have taken this cap from ~24 maxed-out recordings down to two.
+ *
+ *  ⚠ IT REFUSES, IT DOES NOT TRUNCATE. Over-cap saves throw 413 with the size
+ *  and the cap in the message (routes/api/saved-groups/+server.ts), and the
+ *  client renders that message in the error banner. That is deliberate and
+ *  load-bearing: silently dropping part of a group is the failure mode worth
+ *  more than the limit itself. UPLOAD-heavy groups can still exceed this (a
+ *  2 MB upload is ~2.7 MB of base64 and the per-rack instance cap is 20), and
+ *  they get the same loud refusal rather than a partial save. */
+export const SAVED_GROUP_MAX_PAYLOAD_BYTES = 16 * 1024 * 1024;
 
 /**
  * Serializable snapshot of a group + everything you need to re-stamp it

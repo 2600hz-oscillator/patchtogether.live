@@ -116,7 +116,13 @@
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
-import { decodeRecordedPcm, type SamsloopRecordedSample } from '$lib/audio/modules/samsloop-record';
+import {
+  decodeRecordedPcm,
+  type SamsloopRecordedSample,
+  type SamsloopRecRate,
+  type SamsloopRecBits,
+  type SamsloopRecChannels,
+} from '$lib/audio/modules/samsloop-record';
 import { patch as livePatch } from '$lib/graph/store';
 import workletUrl from '@patchtogether.live/dsp/dist/samsloop.js?url';
 import tapWorkletUrl from '@patchtogether.live/dsp/dist/samsloop-tap.js?url';
@@ -211,9 +217,9 @@ export interface SamsloopData {
    *  BITS / RATE). Defaults from SAMSLOOP_REC_DEFAULTS. Persisted with
    *  the rest of node.data so a loaded patch remembers the user's
    *  encoding preferences. */
-  recRate?: 22050 | 44100;
-  recBits?: 8 | 16;
-  recChannels?: 1 | 2;
+  recRate?: SamsloopRecRate;
+  recBits?: SamsloopRecBits;
+  recChannels?: SamsloopRecChannels;
 
   /** Most-recently-recorded sample (the RECORD path; the file-upload path
    *  writes `fileBytesB64` above). Same persistence trick PICTUREBOX uses for
@@ -1032,7 +1038,7 @@ export const samsloopDef: AudioModuleDef = {
 
   docs: {
     explanation:
-      "A single-sample loop player. Load one audio file (drag/drop or the upload button — wav, mp3, m4a/aac, ogg, flac, opus, up to 2 MB) OR record straight from the microphone or a patched audio input; either way the source is decoded into one buffer that the on-card waveform shows. SAMSLOOP holds exactly ONE sample at a time — a new upload or recording REPLACES it (no playlist, no slots). After loading it sits SILENT and waits: it does NOT auto-play. A TRIGGER (a rising edge on the TRIG input, or the on-card TRIGGER button) starts playback, and what 'start' means depends on MODE — in one-shot mode the sample plays through the window once and returns to idle; in loop mode the trigger starts a continuous loop and a re-trigger restarts it from the window edge. Playback uses a fractional read-cursor with linear interpolation, so the RATE control is a full varispeed: positive = forward, negative = REVERSE, |value| = speed (2 = double speed / one octave up, 0.5 = half). The START and END markers crop which slice of the sample plays/loops (draggable on the waveform). The output is mono.",
+      "A single-sample loop player. Load one audio file (drag/drop or the upload button — wav, mp3, m4a/aac, ogg, flac, opus, up to 2 MB) OR record straight from the microphone or a patched audio input; either way the source is decoded into one buffer that the on-card waveform shows. A recording runs up to 31 seconds at the default settings (MONO / 16-bit / 48 kHz); the CHAN, BITS and RATE switches trade fidelity for length up to a hard 60-second ceiling, and the card's \"N.NNs max\" readout always shows what the current settings buy. REC stops itself when it gets there. SAMSLOOP holds exactly ONE sample at a time — a new upload or recording REPLACES it (no playlist, no slots). After loading it sits SILENT and waits: it does NOT auto-play. A TRIGGER (a rising edge on the TRIG input, or the on-card TRIGGER button) starts playback, and what 'start' means depends on MODE — in one-shot mode the sample plays through the window once and returns to idle; in loop mode the trigger starts a continuous loop and a re-trigger restarts it from the window edge. Playback uses a fractional read-cursor with linear interpolation, so the RATE control is a full varispeed: positive = forward, negative = REVERSE, |value| = speed (2 = double speed / one octave up, 0.5 = half). The START and END markers crop which slice of the sample plays/loops (draggable on the waveform). The output is mono.",
     inputs: {
       trig:
         "Rising-edge trigger that STARTS playback per the current MODE: in one-shot mode it plays the cropped window through once; in loop mode it starts the loop (and a re-trigger restarts it from the window edge — START for forward, END for reverse). Works alongside the on-card TRIGGER button. While idle (no trigger yet) the module is silent.",

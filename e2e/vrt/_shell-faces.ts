@@ -16,6 +16,7 @@
 
 import { expect, type Locator, type Page } from '@playwright/test';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
+import { freezeAudioContext, readAudioClock } from './vrt-audio-freeze';
 
 /** The P1 migrated set (= STRICT_FACES). `pages` = the declared face.pages
  *  count the dock scene must render as labeled section bands — a per-scene
@@ -51,6 +52,35 @@ export const FACES = [
   // unless a promotion empties a band (heroFacePlan drops an emptied band).
   { type: 'clap', pages: 4 },
   { type: 'drummergirl', pages: 2 },
+  // ⚠ THE ONLY FREE-RUNNING VOICE IN THIS ROSTER, and therefore the only entry
+  // that EXERCISES the audio freeze above rather than being indifferent to it.
+  // It carries NO mask: it is captured strict, like every sibling.
+  //
+  // Every other face is struck or silent, so its glyph tap reads zeros whether
+  // the graph runs or not — which is precisely why the missing freeze survived
+  // undetected for months and why `fix/vrt-face-audio-freeze` (#1420) could
+  // only be covered by a SYNTHETIC control that manufactures the condition.
+  // analogVco makes the condition real: it sounds the instant it spawns, with
+  // no gate and no note to wait for (`factory` feeds silence to all four
+  // merger inputs purely to keep the Faust node processing).
+  //
+  // MEASURED 2026-08-08, darwin, port 5439, this tile, within-subject via
+  // vrt-face-audio-probe (26/255 channel delta, glyph box x50-82 y35-49):
+  //
+  //   SOURCE      port=saw tapped=true peak=0.999890 moving=1.953397
+  //               (`moving > 0` IS the free-running condition, read at the
+  //                AnalyserNode rather than inferred from pixels)
+  //   frozen pre-frame (SHIPPING)          0 px  — and 0 px across two
+  //                                        INDEPENDENT boots
+  //   AUDIT_NO_FREEZE=1 (freeze off)     394 px  — all of it in the glyph box
+  //   PROBE_FREEZE_LATE=1 (wrong ORDER)  337 px  across independent boots
+  //
+  // The last two rows are 0 px for all 21 other faces, so this entry is the
+  // ONLY thing in the roster that can distinguish "frozen" from "running" OR
+  // correct freeze ORDERING from late. Gate derivation, 10 SEPARATE playwright
+  // processes against a fresh unmasked baseline (scripts/vrt-derive-trials.sh,
+  // NOT --repeat-each): 10/10 PASS.
+  { type: 'analogVco', pages: 2 },
   // ⚠ 8 bands trips DOCK_TAB_MIN_BANDS: this face renders as a TAB RAIL, by
   // design (five identical voice strips have no other shape). Do not merge it
   // back under seven.
@@ -58,10 +88,16 @@ export const FACES = [
 ] as const;
 
 /** TIGHT per-scene diff budgets (absolute pixels; Playwright takes the MIN of
- *  this and the config ratio budget). The compact tile is a small element
- *  capture (~86×81 px at zoom 0.45 — the whole image is ~7k px, so the global
- *  0.05 ratio budget would allow only ~350 px anyway); 150 px flips on any
- *  real knob/label/glyph change while sitting above rounding noise. The dock
+ *  this and the config ratio budget).
+ *
+ *  ⚠ COMPACT_MAX_DIFF IS CURRENTLY INERT, and saying so is the point — a budget
+ *  nobody has re-measured reads as protection it may not provide. MEASURED
+ *  2026-08-08: a compact tile is 88×82 = 7216 px, and vrt.config's
+ *  `maxDiffPixelRatio` was TIGHTENED from 0.05 to 0.01 on 2026-07-31, so the
+ *  ratio now allows 72 px and is the binding term. 150 was chosen against the
+ *  old 0.05 (~350 px) and has been the looser of the two ever since. It is kept
+ *  because it is the DECLARED intent and it binds again on any tile over
+ *  15 000 px, not because it is doing work today. The dock
  *  faceplate is a full-width element (1220 × 322…1003 now that it is captured
  *  unfolded): 1500 px matches the workflow-shell-zoom scene budget, and it stays
  *  the binding term because Playwright takes the MIN — the config's 0.01 ratio
@@ -195,44 +231,373 @@ export async function waitForHooks(page: Page): Promise<void> {
   );
 }
 
+// ── THE AUDIO GRAPH ─────────────────────────────────────────────────────────
+//
+// `bootWithFace` DID NOT SUSPEND THE AUDIOCONTEXT, and every face scene
+// captured off a running graph.
+//
+// It looked safe because the whole roster is struck or silent: a face's live
+// `scope` glyph reads a `createShellGlyphTap` AnalyserNode on the module's
+// primary audio output (shell-glyph-live.ts), and a buffer of zeros draws
+// exactly the flat centreline an unattached tap draws. The spec header's "no
+// audio flows in these scenes" was a property of the ROSTER, not of the scene.
+//
+// A FREE-RUNNING voice falsifies it. It sounds at spawn with no gate to wait
+// for, so the analyser window advances every frame and the glyph draws a
+// genuinely moving trace. `toHaveScreenshot` needs TWO CONSECUTIVE IDENTICAL
+// captures before it will even compare to a baseline, so such a tile cannot
+// baseline at all — measured on analogVco at 254 / 154 / 315 px across three
+// captures of the same tile on one commit, which is why its face was authored,
+// verified and then dropped (see strict-faces.ts).
+//
+// This is the SHARED boot path, so the freeze lands once for every present and
+// future face rather than per module.
+//
+// ⚠ ORDER IS LOAD-BEARING IN BOTH DIRECTIONS, and both were MEASURED.
+//
+//   AFTER the palette spawn. `ensureEngine()` (Canvas.svelte) resumes a
+//   suspended context on every call — deliberately, so a restored video rack
+//   isn't left silent — and the spawn path calls it. A pre-spawn freeze would
+//   be undone by the very next line with no error anywhere.
+//
+//   BEFORE `frameMember`. The shell's glyph tap is LAZY: `createShellGlyphTap`
+//   builds its AnalyserNode on the first READ, and the reads come from the
+//   visibility-gated meter ticker, i.e. once the tile is framed at a tier that
+//   shows the glyph. Freeze first and that analyser is created on an already-
+//   suspended context and never renders a single sample, so it reads ZEROS —
+//   the same flat centreline every boot. Freeze afterwards and it holds
+//   whatever phase it had reached: stable WITHIN a run and different every run,
+//   which passes a settle check and still cannot match a baseline.
+//
+//   MEASURED (filter face downstream of a free-running macrooscillator, darwin,
+//   88×82 tile, 26/255 channel delta):
+//       running, no freeze            3 captures: 166 px, 155 px apart
+//       freeze here (pre-frame)       3 captures: 0 px — and TWO INDEPENDENT
+//                                     BOOTS agree to 0 px
+//       freeze after frameMember      3 captures: 0 px, but two independent
+//                                     boots differ by 106 px, all of it inside
+//                                     the glyph box (x 50-82, y 39-46)
+//   The last row is why within-run stability is not the property to assert.
+//
+// ⚠ AND IT IS RE-ASSERTED AT CAPTURE TIME, not just here. Between this call and
+// the dock capture the scene CLICKS (the jack-rail expand affordance), and any
+// future click-driven `ensureEngine()` would silently resume the graph. A
+// freeze that stopped applying looks identical to a freeze that worked, which
+// is the whole reason `freezeAudioContext` throws rather than returning a
+// verdict nobody reads.
+//
+// ⚠ THE SUSPEND HAS TO BE RE-APPLIED UNTIL IT STICKS, and that is not defensive
+// coding — it is a MEASURED race with the workflow rack's own pinned modules.
+// `?shell=1` pins a videoOut → recorderbox chain, and recorderbox's factory
+// does `if (ac.state === 'suspended') void ac.resume()` (recorderbox.ts:269 —
+// a MediaStreamAudioDestinationNode does not terminate the graph, so a
+// suspended context would never pull its keep-alive). That factory runs from
+// the reconcile the palette spawn triggers, i.e. AFTER the point this code
+// freezes. Captured live with an `AudioContext.prototype.resume` trace:
+//
+//     resume ← recorderbox.ts:92 factory ← VideoEngine.addNode
+//            ← PatchEngine.addNode ← doReconcile
+//
+// One-shot per page load, but it lands on a frame we do not control: a single
+// suspend produced 16 passes and 27 failures across the 43 face scenes.
+
+/** Options for `bootWithFace`. */
+export interface BootFaceOptions {
+  /**
+   * DEFAULT TRUE. Set false ONLY in a negative control that exists to show what
+   * a running graph does — never to make a scene pass.
+   *
+   * Deny-by-default is enforced OUTSIDE this file: `vrt-meta.test.ts`
+   * ("bootWithFace freezeAudio:false is deny-by-default") scans every VRT
+   * source for `freezeAudio: false` and fails on any call site that is not in
+   * its named exemption list, so a new scene cannot opt out quietly and an
+   * exemption naming a call site that no longer exists is also red.
+   */
+  freezeAudio?: boolean;
+  /**
+   * Spawn this module into lane 1 BEFORE the face, so the face sits downstream
+   * of it in the channel chain (a column IS the chain — channel-columns.ts).
+   *
+   * The negative control uses it to MANUFACTURE the free-running condition the
+   * roster does not contain. No faced module sounds at spawn, so a control that
+   * booted a face on its own would be asserting "a silent tile is stable" and
+   * would pass for the wrong reason forever.
+   */
+  upstream?: string;
+}
+
+/** How many times the suspend may be re-applied before the scene gives up. The
+ *  known racer (recorderbox's factory resume) is ONE-SHOT per page load, so a
+ *  correct run needs at most two; the headroom exists so a second one-shot
+ *  racer shows up as a slow scene rather than a flake, and the failure message
+ *  prints the attempt count so a NEW repeating racer is legible instead of
+ *  mysterious. */
+const FREEZE_ATTEMPTS = 6;
+/** rAFs to wait after each suspend for a pending best-effort `resume()` to
+ *  land. Frames, not ms — renderer-independent by construction, and kept small
+ *  because this runs 43× per VRT run on a renderer whose frame rate is unknown:
+ *  correctness comes from the RETRY, not from the length of this window. */
+const FREEZE_RACE_FRAMES = 3;
+
+/**
+ * Suspend the audio graph for a face scene and PROVE it, in both the declared
+ * and the observable sense:
+ *
+ *   1. `freezeAudioContext` throws unless `ctx.state === 'suspended'` (it
+ *      resolves the context through the audio DOMAIN — the root engine has no
+ *      `.ctx`, which is how the previous repo-wide freeze was a silent no-op
+ *      for months; see vrt-audio-freeze.ts).
+ *   2. The suspend is then RE-APPLIED until it survives `FREEZE_RACE_FRAMES`
+ *      real animation frames, because the workflow rack's pinned recorderbox
+ *      resumes the context from the spawn's own reconcile (see THE AUDIO GRAPH
+ *      above — measured, with the stack).
+ *   3. `assertFaceAudioFrozen` then checks the EFFECT: the audio clock does not
+ *      advance across real animation frames. A state flag is a claim; a pinned
+ *      `currentTime` is the thing the analyser's window actually depends on.
+ */
+export async function freezeFaceAudio(page: Page, label: string): Promise<void> {
+  const seen: string[] = [];
+  for (let attempt = 1; attempt <= FREEZE_ATTEMPTS; attempt++) {
+    await freezeAudioContext(page, label);
+    // Give any in-flight best-effort `resume()` the frames it needs to land, so
+    // a freeze that is about to be undone is caught HERE rather than at capture.
+    await waitFrames(page, FREEZE_RACE_FRAMES);
+    const clock = await readAudioClock(page);
+    seen.push(`${attempt}:${clock.state}`);
+    if (clock.state === 'suspended') {
+      await assertFaceAudioFrozen(page, label);
+      return;
+    }
+  }
+  throw new Error(
+    `${label}: the AudioContext would not STAY suspended — ${FREEZE_ATTEMPTS} attempts, ` +
+      `states after each (${seen.join(', ')}). Something is resuming it repeatedly. The known ` +
+      `one-shot racer is the pinned recorderbox factory (recorderbox.ts, ` +
+      `\`if (ac.state === 'suspended') void ac.resume()\`), which the palette spawn's reconcile ` +
+      `triggers; a REPEATING resume is a new one and needs finding, not more attempts.`,
+  );
+}
+
+/** rAFs the clock check waits across. Frame-counted, not wall-clocked — a
+ *  renderer-independent window by construction (CLAUDE.md's frames-not-ms rule).
+ *
+ *  TWO is enough and is chosen to be cheap, because this runs once per boot AND
+ *  again before every capture, 43× per VRT run on a renderer whose frame rate
+ *  is unknown. The assertion is EXACT EQUALITY against a clock that advances in
+ *  128-sample render quanta (2.67 ms at 48 kHz), so any frame at all separates
+ *  a running context from a suspended one — there is no margin to buy by
+ *  waiting longer, only frames to spend. The negative control proves the two
+ *  frames are sufficient on every run by requiring this to REJECT while the
+ *  graph is live. */
+const FREEZE_CLOCK_FRAMES = 2;
+
+/**
+ * ASSERT the audio graph is still frozen — call it immediately before a
+ * capture, not once at boot.
+ *
+ * Two-sided by construction: a suspended context reports `state='suspended'`
+ * AND holds `currentTime` exactly constant, while a running one fails both.
+ * The negative control in workflow-shell-faces.spec.ts drives this function
+ * against a deliberately RUNNING graph on every VRT run and requires it to
+ * reject, so "it passed" cannot mean "it cannot fail".
+ */
+export async function assertFaceAudioFrozen(page: Page, label: string): Promise<void> {
+  const before = await readAudioClock(page);
+  await waitFrames(page, FREEZE_CLOCK_FRAMES);
+  const after = await readAudioClock(page);
+  const advance = (after.currentTime ?? 0) - (before.currentTime ?? 0);
+  expect(
+    after.state,
+    `${label}: the AudioContext is '${after.state}', not 'suspended', at CAPTURE time. ` +
+      `bootWithFace suspended it — something resumed it since (ensureEngine() resumes on ` +
+      `every call, and the dock scene clicks between boot and capture). Any baseline taken ` +
+      `now came off a RUNNING graph, so a free-running voice's glyph is a moving target.`,
+  ).toBe('suspended');
+  expect(
+    advance,
+    `${label}: the audio clock advanced ${advance.toFixed(6)}s across ${FREEZE_CLOCK_FRAMES} ` +
+      `animation frames while reporting state='${after.state}'. The suspend is declared but not ` +
+      `in EFFECT — the analyser window feeding every live glyph is still moving. ` +
+      `(currentTime ${before.currentTime} → ${after.currentTime})`,
+  ).toBe(0);
+}
+
+/** What a private AnalyserNode on a module's own audio output reports. */
+export interface FaceAudioReading {
+  state: string;
+  /** True when an analyser was attachable (engine up, node materialized). */
+  tapped: boolean;
+  /** The audio output port the tap read, or null when the module has none. */
+  portId: string | null;
+  /** max |sample| over the window. 0 = the module is SILENT. */
+  peak: number;
+  /** max |f[n][i] − f[n−1][i]| between consecutive frames. 0 = the analyser
+   *  window is not advancing, so nothing a live glyph draws can change. */
+  moving: number;
+  frames: number;
+}
+
+/** rAF frames of analyser data `readFaceAudio` compares. Frames, not ms. */
+const FACE_AUDIO_FRAMES = 6;
+
+/**
+ * Attach a private AnalyserNode to `nodeId`'s primary audio output and sample
+ * it across `FACE_AUDIO_FRAMES` consecutive animation frames, ACCUMULATING IN
+ * THE PAGE (never a Playwright-side poll loop — that samples the very main
+ * thread it is measuring; CLAUDE.md).
+ *
+ * ONE implementation, read by the gate's negative control AND by
+ * vrt-face-audio-probe, so the two cannot disagree about whether a module is
+ * sounding — the same reason `readFoldGeometry` is shared.
+ *
+ * Deliberately a SECOND tap rather than a read of the shell's own: the shell's
+ * `createShellGlyphTap` is lazy and self-releasing, so reading it would perturb
+ * the thing being measured. An analyser is a pure sink and adds no load.
+ */
+export async function readFaceAudio(page: Page, nodeId: string): Promise<FaceAudioReading> {
+  return page.evaluate(
+    async ({ nodeId, frames }) => {
+      const w = globalThis as unknown as {
+        __engine?: () => Record<string, unknown> | null;
+        __patch?: { nodes: Record<string, { type?: string } | undefined> };
+        __listModuleDefs?: () => readonly {
+          type: string;
+          outputs?: readonly { id: string; type: string }[];
+        }[];
+      };
+      const empty = {
+        state: 'n/a',
+        tapped: false,
+        portId: null as string | null,
+        peak: 0,
+        moving: 0,
+        frames: 0,
+      };
+      const eng = w.__engine?.();
+      if (!eng) return empty;
+      const audio = (eng as { getDomain?: (d: string) => unknown }).getDomain?.('audio') as
+        | {
+            ctx: AudioContext;
+            getOutputNode: (n: string, p: string) => { node: AudioNode; output: number } | null;
+          }
+        | undefined;
+      if (!audio?.ctx) return empty;
+      const ctx = audio.ctx;
+      const type = w.__patch?.nodes[nodeId]?.type ?? '';
+      const def = w.__listModuleDefs?.().find((d) => d.type === type);
+      const portId = def?.outputs?.find((o) => o.type === 'audio')?.id ?? null;
+      if (!portId) return { ...empty, state: ctx.state as string };
+      const out = audio.getOutputNode(nodeId, portId);
+      if (!out) return { ...empty, state: ctx.state as string, portId };
+
+      const an = ctx.createAnalyser();
+      an.fftSize = 2048;
+      an.smoothingTimeConstant = 0;
+      out.node.connect(an, out.output);
+
+      const buf = new Float32Array(an.fftSize);
+      let prev: Float32Array | null = null;
+      let peak = 0;
+      let moving = 0;
+      let n = 0;
+      await new Promise<void>((resolve) => {
+        const tick = (): void => {
+          an.getFloatTimeDomainData(buf);
+          for (let i = 0; i < buf.length; i++) {
+            const a = Math.abs(buf[i]);
+            if (a > peak) peak = a;
+            if (prev) {
+              const d = Math.abs(buf[i] - prev[i]);
+              if (d > moving) moving = d;
+            }
+          }
+          prev = buf.slice();
+          n++;
+          if (n >= frames) {
+            resolve();
+            return;
+          }
+          requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      });
+      try {
+        out.node.disconnect(an);
+      } catch {
+        /* source already gone */
+      }
+      return { state: ctx.state as string, tapped: true, portId, peak, moving, frames: n };
+    },
+    { nodeId, frames: FACE_AUDIO_FRAMES },
+  );
+}
+
 /** Boot `?shell=1`, spawn `type` into lane 1 via the REAL palette-drop path,
- *  and return the member's node id. Also kills animation jitter + hides the
- *  floating flow chrome (the zoom-scene stability recipe). */
-export async function bootWithFace(page: Page, type: string): Promise<string> {
+ *  and return the member's node id. Also kills animation jitter, hides the
+ *  floating flow chrome (the zoom-scene stability recipe) and FREEZES THE
+ *  AUDIO GRAPH (see THE AUDIO GRAPH above). */
+export async function bootWithFace(
+  page: Page,
+  type: string,
+  opts: BootFaceOptions = {},
+): Promise<string> {
   await pinVrtFonts(page);
   await page.goto('/rack?mode=workflow&shell=1');
   await page.waitForLoadState('networkidle');
   await awaitVrtFonts(page);
   await waitForHooks(page);
 
-  await page.evaluate((t) => {
-    const w = globalThis as unknown as {
-      __setSpawnFlowPos: (p: { x: number; y: number }) => void;
-      __spawnFromPalette: (t: string) => void;
-    };
-    // x=30 lands inside narrowed column 1's [0, SHELL_COLUMN_W) band.
-    w.__setSpawnFlowPos({ x: 30, y: 40 });
-    w.__spawnFromPalette(t);
-  }, type);
-  await page.waitForFunction(() => {
-    const w = globalThis as unknown as {
-      __patch?: { nodes: Record<string, { data?: { columns?: Record<string, string[]> } } | undefined> };
-    };
-    return (w.__patch?.nodes['pinned-mixmstrs']?.data?.columns?.['1'] ?? []).length === 1;
-  });
-  const memberId = await page.evaluate(() => {
+  // A channel column IS the chain (source → processor → … → mixer channel;
+  // channel-columns.ts), and the order array is the chain order, so spawning
+  // `upstream` first puts its output into `type`'s input through the REAL
+  // membership + reconcile path — no hand-built edge, no second boot path.
+  const chain = opts.upstream ? [opts.upstream, type] : [type];
+  for (const t of chain) {
+    await page.evaluate((tt) => {
+      const w = globalThis as unknown as {
+        __setSpawnFlowPos: (p: { x: number; y: number }) => void;
+        __spawnFromPalette: (t: string) => void;
+      };
+      // x=30 lands inside narrowed column 1's [0, SHELL_COLUMN_W) band.
+      w.__setSpawnFlowPos({ x: 30, y: 40 });
+      w.__spawnFromPalette(tt);
+    }, t);
+    await page.waitForFunction(
+      (n) => {
+        const w = globalThis as unknown as {
+          __patch?: {
+            nodes: Record<string, { data?: { columns?: Record<string, string[]> } } | undefined>;
+          };
+        };
+        return (w.__patch?.nodes['pinned-mixmstrs']?.data?.columns?.['1'] ?? []).length === n;
+      },
+      chain.indexOf(t) + 1,
+    );
+  }
+  // The face under test is the LAST member — the bottom of the chain.
+  const memberId = await page.evaluate((n) => {
     const w = globalThis as unknown as {
       __patch: { nodes: Record<string, { data?: { columns?: Record<string, string[]> } } | undefined> };
     };
-    return (w.__patch.nodes['pinned-mixmstrs']?.data?.columns?.['1'] ?? [])[0] ?? '';
-  });
+    return (w.__patch.nodes['pinned-mixmstrs']?.data?.columns?.['1'] ?? [])[n - 1] ?? '';
+  }, chain.length);
   expect(memberId, `${type}: the lane-1 member spawned`).not.toBe('');
+  if (opts.upstream) {
+    // ANCHORED TO THE ARTIFACT: a chain that silently did not form would leave
+    // the face silent and make every "it moves" leg below vacuous.
+    const t = await page.evaluate((id) => {
+      const w = globalThis as unknown as { __patch: { nodes: Record<string, { type?: string } | undefined> } };
+      return w.__patch.nodes[id]?.type ?? '';
+    }, memberId);
+    expect(t, `${type}: the LAST lane-1 member is the face under test, not its upstream`).toBe(type);
+  }
 
   await page.addStyleTag({
     content:
       '.svelte-flow__minimap,.svelte-flow__controls,.svelte-flow__attribution,.minimap-toggle{display:none !important;}' +
       '*,*::before,*::after{animation:none !important;transition:none !important;}',
   });
+  if (opts.freezeAudio !== false) await freezeFaceAudio(page, `face-${type}`);
   return memberId;
 }
 
@@ -299,6 +664,33 @@ export async function openDock(page: Page, memberId: string, pages: number): Pro
 export async function settle(page: Page): Promise<void> {
   await page.evaluate(
     () => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r()))),
+  );
+}
+
+/**
+ * Wait `n` ANIMATION FRAMES, counted inside the page.
+ *
+ * Frames rather than milliseconds because a wall-clock budget is a different
+ * number of frames on every renderer (CLAUDE.md). ONE `page.evaluate` for the
+ * whole run rather than one per frame: a per-frame round-trip is protocol
+ * traffic on the same main thread it is waiting for, and on a loaded runner it
+ * costs several times what it measures.
+ */
+export async function waitFrames(page: Page, n: number): Promise<void> {
+  await page.evaluate(
+    (count) =>
+      new Promise<void>((resolve) => {
+        let left = count;
+        const tick = (): void => {
+          if (--left <= 0) {
+            resolve();
+            return;
+          }
+          requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      }),
+    n,
   );
 }
 
