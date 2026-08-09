@@ -92,9 +92,16 @@ export const FACES = [
   // ⚠ DETERMINISTIC FOR THE MIXER/REVERB REASON, NOT THE analogVco ONE. Its
   // glyph is a `meter` on `out` and all twelve keys default to 0, so the rack is
   // SILENT at spawn and the VuMeter is unlit — it would baseline cleanly even
-  // without #1420's freeze. (The hero tone-bank panel is likewise all-zero at
-  // spawn: a momentary press writes the engine only, and the scene presses
-  // nothing.) Flake-checked 3×.
+  // without #1420's freeze.
+  //
+  // ⚠ ITS HERO PANEL POLLS THE LIVE ENGINE ON rAF, which is a first for this
+  // roster and worth naming here rather than leaving to be discovered from a
+  // flaky tile. It is deterministic anyway, for a reason that does not depend on
+  // the freeze: the poll reads the twelve `btn_*` AudioParams, every one of them
+  // sits at its default 0, and the panel only assigns state when the resulting
+  // 12-bit mask CHANGES — so an idle scene repaints nothing at all. (It reads
+  // the engine because it must: all twelve params are momentary, so a durable
+  // read is constant zero forever. See the def.) Flake-checked 3×.
   { type: 'bluebox', pages: 2 },
 ] as const;
 

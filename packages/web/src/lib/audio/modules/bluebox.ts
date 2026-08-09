@@ -271,28 +271,25 @@ export const blueboxDef: AudioModuleDef = {
     // an audition, so picking one for the hero would be the same arbitrary
     // choice in a bigger font.
     //
-    // ⚠ ALL THREE READOUTS ARE `valueId`, and not one is a knob read back —
-    // there is no knob on this module to read. They are chosen so each is BLIND
-    // to something another one sees (the argument, with the measurements, is in
-    // bluebox-face-model.ts):
-    //   `level`     RMS through the bank's own √(½·Σ n_f²). The ONLY number that
-    //               moves between {1,4} and {1,5}.
-    //   `headroom`  the coherent peak bound below full scale. Proportional to
-    //               tone ACTIVATIONS, so it is IDENTICAL for {1,4} and {1,5} —
-    //               that is the point: it is `level`'s negative control, and
-    //               `level` is its ({1} vs {BLUEBOX} moves headroom by 6.02 dB
-    //               while `keys held` reads 1 for both).
-    //   `decodes`   what a Bell receiver makes of the lit bank. The only one
-    //               that is not a function of counts at all: {1,4} and {1,2}
-    //               agree on every number above and are "2 rows · 1 col" versus
-    //               "1 row · 2 cols".
+    // ⚠ AND NO `readouts`, WHICH IS THE ONE DECLARATION THIS FACE HAD TO GIVE
+    // UP — deliberately, on a measurement. The five numbers about this module
+    // (level, headroom, decodes, keys held, tones lit) are all functions of the
+    // KEY STATE, and `ModuleShell.readoutValue` reads `params.paramVal`, the
+    // DURABLE value, by deliberate platform design. On this module that reader
+    // is not merely incomplete, it is CONSTANT ZERO FOREVER: every param is
+    // momentary, a press writes the engine only, AND any durable write from the
+    // group bar / MIDI / automation / preset / legacy card is scrubbed back to
+    // rest within a frame by ModuleShell's own `clearStuckMomentaryParams`
+    // `$effect` (it reads `node.params`, so it re-fires on every write —
+    // MEASURED: `btn_1 = 1` through `__ydoc.transact` reads back 0). Declaring
+    // them here would ship five captions that print `silent` on every render
+    // forever. The numbers therefore live INSIDE the hero panel, which reads
+    // the LIVE ENGINE (measured: `readParam` reads 1 while a key is held) —
+    // one source, one component, rather than a moving picture beside three
+    // dead labels. The platform follow-up is a live-engine reader for
+    // `FaceReadout`; until then this is where the truth is.
     hero: {
       cell: 'bluebox-tonebank-{n}',
-      readouts: [
-        { label: 'level', valueId: 'bluebox-level' },
-        { label: 'headroom', valueId: 'bluebox-headroom' },
-        { label: 'decodes', valueId: 'bluebox-decode' },
-      ],
     },
 
     sidebar: [
@@ -317,19 +314,19 @@ export const blueboxDef: AudioModuleDef = {
       },
       {
         kind: 'readouts',
-        // ⚠ THE TWO FOILS, and the block label says what they are for. Both are
-        // counts; both are what a naive readback of this module would print on
-        // its own; and both are published HERE, next to the hero, precisely so
-        // the player can watch which number moved. `keys held` reads 2 for
-        // {1,4} and for {1,5}; `tones lit` reads `3 of 4` and `4 of 4`, and that
-        // difference IS the 1.76 dB.
+        // THREE FIXED FACTS — every one a CONSTANT of the design, which is
+        // exactly what a `text` readout is for and what a context column should
+        // carry. The five LIVE numbers are in the hero panel instead, for the
+        // reason spelled out on `hero` above; publishing a live one here would
+        // print `silent` forever.
+        //
+        // All three measured against the shipping processor at 48 kHz:
+        // 10 slots / 12 keys / 23 tone activations; the coherent peak bound
+        // reaches 1.0 at 16 activations = eight digits; release is 707 samples.
         label: 'the bank',
         entries: [
-          { label: 'keys held', valueId: 'bluebox-keys' },
-          { label: 'tones lit', valueId: 'bluebox-tones' },
-          // A CONSTANT, so it ships as text rather than through the derived
-          // registry — no param moves it (τ is hardcoded in the worklet).
-          // Measured: 707 samples at 48 kHz.
+          { label: 'oscillators', text: '10 for 12 keys' },
+          { label: 'full scale at', text: '8 digits' },
           { label: 'release', text: '≈ 15 ms' },
         ],
       },

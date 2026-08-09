@@ -127,18 +127,32 @@ export const BLUEBOX_ACTIVATION_PEAK = 0.0625;
  * continuous control on this module — which is what `curve: 'discrete'` now
  * says on the def, and what no linear readback of a `btn_*` value could.
  *
- * ⚠ IT READS THE DURABLE PARAM, because that is the only thing the faceplate
- * has. `ModuleShell.readoutValue` reads `params.paramVal` by deliberate
- * platform design (an engine reader polled from markup is not reactive), a
- * `face.momentary` press writes the ENGINE ONLY ($lib/audio/momentary-params:
- * a rack must not be saveable with a pad held down), and a gate cable is a
- * worklet NODE INPUT that no host-side reader can see at all. So every number
- * in this file is live for the DURABLE routes into the keys — the auto-exposed
- * group/instrument bar, a MIDI-learned CC, an automation lane, a preset recall,
- * the legacy card — and dark for the two transient ones. Stated on the def and
- * filed as a platform follow-up (a live-engine reader for `FaceReadout`); the
- * alternative, pointing the PANEL at the live engine while the readouts beside
- * it stayed at zero, trades one honest source for two that disagree.
+ * ⚠ THE CALLER MUST PASS A **LIVE-ENGINE** READER, NOT A DURABLE-PARAM ONE, and
+ * that is a measured conclusion rather than a preference. On this module the
+ * durable value is CONSTANT ZERO FOREVER:
+ *
+ *   * every param is `face.momentary`, so a faceplate press writes the ENGINE
+ *     ONLY and never the Y.Doc ($lib/audio/momentary-params — a rack must not
+ *     be saveable with a pad held down); AND
+ *   * a durable write from ANY other route (the group/instrument bar, a
+ *     MIDI-learned CC, an automation lane, a preset recall, the legacy card) is
+ *     SCRUBBED BACK TO REST within a frame, because `ModuleShell` runs
+ *     `clearStuckMomentaryParams` inside an `$effect` that reads `node.params`
+ *     and therefore re-fires on every write. MEASURED through the real dock:
+ *     writing `btn_1 = 1` in a `__ydoc.transact` reads back 0.
+ *
+ * The ENGINE handle does see it — MEASURED: `readParam(node, 'btn_1')` is 0
+ * before, **1 while the key is held**, 0 after release — so
+ * `BlueboxToneBankPanel` polls the engine and this function is fed from there.
+ * `ModuleShell.readoutValue` is durable-only by deliberate platform design, so
+ * this face declares NO `hero.readouts`; five captions reading `silent` on every
+ * render would be worse than none. Platform follow-up: a live-engine reader for
+ * `FaceReadout`.
+ *
+ * ⚠ A GATE CABLE IS STILL INVISIBLE, and always will be from here: the twelve
+ * gate inputs are worklet NODE inputs, not AudioParam connections, so no
+ * host-side reader reaches them. The bank stays dark while a patched gate sounds
+ * the tone. Irreducible without a worklet-side report.
  */
 export function blueboxHeld(
   read: (paramId: string) => number | undefined,
