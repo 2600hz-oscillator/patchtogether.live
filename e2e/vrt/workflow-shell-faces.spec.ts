@@ -119,7 +119,6 @@
 
 import { test, expect } from '@playwright/test';
 import { EXEMPT_BASELINE_PAIRS } from './vrt-exemptions';
-import { expectVrtSceneScreenshot } from './vrt-capture';
 import { diffRegion } from './vrt-surface-stats';
 import { DOCK_TAB_MIN_BANDS } from '../../packages/web/src/lib/ui/workflow/dock-tabs-model';
 import {
@@ -181,11 +180,8 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
       // exactly how a free-running voice was found to be unbaselinable.
       await assertFaceAudioFrozen(page, `face-${type}-compact`);
       const tile = page.locator(`.svelte-flow__node[data-id="${memberId}"] [data-testid="module-shell"]`);
-      await expectVrtSceneScreenshot({
-        page,
-        sceneId: `face-${type}-compact`,
-        target: tile,
-        options: { maxDiffPixels: COMPACT_MAX_DIFF },
+      await expect(tile).toHaveScreenshot(`face-${type}-compact.png`, {
+        maxDiffPixels: COMPACT_MAX_DIFF,
       });
 
       expect(

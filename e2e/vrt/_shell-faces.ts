@@ -52,11 +52,34 @@ export const FACES = [
   // unless a promotion empties a band (heroFacePlan drops an emptied band).
   { type: 'clap', pages: 4 },
   { type: 'drummergirl', pages: 2 },
-  // ⚠ THE ONLY FACE IN THIS ROSTER WITH A MASKED REGION. analogVco is a
-  // FREE-RUNNING oscillator, so the compact tile's live `scope` glyph is the
-  // one glyph here that does NOT draw the flat centreline the header above
-  // assumes — see VRT_LIVE_SURFACES['face-analogVco-compact'] for the measured
-  // derivation and the companion that replaces the deleted coverage.
+  // ⚠ THE ONLY FREE-RUNNING VOICE IN THIS ROSTER, and therefore the only entry
+  // that EXERCISES the audio freeze above rather than being indifferent to it.
+  // It carries NO mask: it is captured strict, like every sibling.
+  //
+  // Every other face is struck or silent, so its glyph tap reads zeros whether
+  // the graph runs or not — which is precisely why the missing freeze survived
+  // undetected for months and why `fix/vrt-face-audio-freeze` (#1420) could
+  // only be covered by a SYNTHETIC control that manufactures the condition.
+  // analogVco makes the condition real: it sounds the instant it spawns, with
+  // no gate and no note to wait for (`factory` feeds silence to all four
+  // merger inputs purely to keep the Faust node processing).
+  //
+  // MEASURED 2026-08-08, darwin, port 5439, this tile, within-subject via
+  // vrt-face-audio-probe (26/255 channel delta, glyph box x50-82 y35-49):
+  //
+  //   SOURCE      port=saw tapped=true peak=0.999890 moving=1.953397
+  //               (`moving > 0` IS the free-running condition, read at the
+  //                AnalyserNode rather than inferred from pixels)
+  //   frozen pre-frame (SHIPPING)          0 px  — and 0 px across two
+  //                                        INDEPENDENT boots
+  //   AUDIT_NO_FREEZE=1 (freeze off)     394 px  — all of it in the glyph box
+  //   PROBE_FREEZE_LATE=1 (wrong ORDER)  337 px  across independent boots
+  //
+  // The last two rows are 0 px for all 21 other faces, so this entry is the
+  // ONLY thing in the roster that can distinguish "frozen" from "running" OR
+  // correct freeze ORDERING from late. Gate derivation, 10 SEPARATE playwright
+  // processes against a fresh unmasked baseline (scripts/vrt-derive-trials.sh,
+  // NOT --repeat-each): 10/10 PASS.
   { type: 'analogVco', pages: 2 },
   // ⚠ 8 bands trips DOCK_TAB_MIN_BANDS: this face renders as a TAB RAIL, by
   // design (five identical voice strips have no other shape). Do not merge it

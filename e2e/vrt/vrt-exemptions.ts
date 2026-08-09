@@ -233,12 +233,17 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   //
   // The wording it replaced ("MIGRATED to the live-surface registry… now
   // carries a measured companion") described a `VRT_LIVE_SURFACES` entry that
-  // never existed, and it read as reassurance while nothing was watching. If
-  // you are looking for the analogVco entry it promised: the module DOES have
-  // one now, but for a DIFFERENT scene and a DIFFERENT surface —
-  // `face-analogVco-compact`, the PF-20 lane tile, whose live `scope` GLYPH is
-  // non-deterministic because the oscillator free-runs. The legacy card scene
-  // remains unmasked. Two surfaces, one module; do not conflate them.
+  // never existed, and it read as reassurance while nothing was watching.
+  //
+  // ⚠ AND DO NOT RE-ADD ONE FOR THE FACE EITHER. analogVco has a SECOND live
+  // surface — `face-analogVco-compact`, the PF-20 lane tile, whose `scope`
+  // GLYPH moves because the oscillator free-runs — and an earlier cut of that
+  // face shipped a registry entry to mask it. That entry was DELETED before
+  // merge: #1420 suspends the AudioContext in `bootWithFace` before the tile is
+  // framed, so the glyph tap reads zeros and the tile is strict-stable
+  // (measured 0 px frozen vs 394 px unfrozen, 10/10 separate gate processes
+  // unmasked). Both of this module's surfaces are unmasked, for two different
+  // reasons; neither needs a companion.
   //
   // The morph DSP is still covered by analog-vco-morph.test.ts and the
   // scope-window logic by analog-vco-scope.test.ts.

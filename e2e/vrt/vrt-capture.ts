@@ -40,40 +40,13 @@ import { liveSurfacesFor, type LiveSurface } from './vrt-live-surfaces';
  *
  *  `mask` and `maskColor` are deliberately ABSENT: masks come from the
  *  registry or not at all, and the anti-vacuity guard greps the specs to keep
- *  it that way. `threshold` and `maxDiffPixelRatio` are absent for the same
- *  reason — a per-scene LOOSENING is a mask with extra steps, and it belongs
- *  in one reviewed place, not scattered across capture sites. */
+ *  it that way. The tolerance knobs (`threshold` / `maxDiffPixelRatio` /
+ *  `maxDiffPixels`) are absent for the same reason — a per-scene budget is a
+ *  mask with extra steps, and it belongs in one reviewed place, not scattered
+ *  across capture sites. */
 export interface VrtScreenshotOptions {
   fullPage?: boolean;
   timeout?: number;
-  /**
-   * An ABSOLUTE pixel budget, and — unlike the two knobs above — it is
-   * TIGHTENING-ONLY BY CONSTRUCTION, which is why it is allowed here.
-   *
-   * vrt.config.ts sets `maxDiffPixelRatio: 0.01` globally. When BOTH are
-   * present Playwright takes the **minimum** of `maxDiffPixels` and
-   * `maxDiffPixelRatio × totalPixels`, so a value passed here can only ever
-   * make the comparison STRICTER than the shipping default or leave it
-   * unchanged. It cannot widen the gate, so it is not "a mask with extra
-   * steps" — that argument is about loosening, and this knob cannot loosen.
-   *
-   * The one caller is `workflow-shell-faces.spec.ts`, which needs the seam
-   * because `face-analogVco-compact` carries a registered live surface. Its two
-   * budgets (`COMPACT_MAX_DIFF` 150 / `DOCK_MAX_DIFF` 1500) are declared
-   * together in `_shell-faces.ts` — i.e. still one reviewed place.
-   *
-   * ⚠ MEASURED, because the intuition was wrong: a compact face tile is
-   * 88x82 = 7216 px, so the config ratio allows 72 px and IT is the binding
-   * term — `COMPACT_MAX_DIFF` (150) is currently INERT at this tile size. The
-   * pass-through is kept anyway, for two reasons that are not "it does
-   * something today": it preserves the spec's DECLARED budget so the two
-   * numbers cannot silently diverge, and it binds the moment a tile exceeds
-   * 15 000 px. Carrying an inert-but-declared budget is the safe direction;
-   * dropping it would make the spec's stated 150 px a comment about nothing.
-   * (`_shell-faces.ts`'s own note that "the global 0.05 ratio budget would
-   * allow only ~350 px" predates the 2026-07-31 tightening to 0.01.)
-   */
-  maxDiffPixels?: number;
 }
 
 /**
