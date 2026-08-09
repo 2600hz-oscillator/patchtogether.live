@@ -428,6 +428,14 @@ describe('vrt-meta — EXEMPT_FROM_VRT is DENY-BY-DEFAULT (frozen allowlist)', (
 // (sixstrum's face RE-DO needed no new pair: its two linux entries have been
 // listed since batch 2 and stay listed.)
 //
+// MEOWBOX (2026-08-08): UNCHANGED at 91, and that is the correct arithmetic
+// rather than an omission. This ceiling is LIST-anchored, and meowbox's two new
+// face scenes were never LISTED — they go straight to the drained state, because
+// listing a pair and then dispatching is a DEADLOCK (a listed pair is
+// `test.skip()`-ed unconditionally and `--update-snapshots` writes nothing for a
+// skipped test, so the capture the listing waits on can never run). The gap they
+// create is real and is counted by the ARTIFACT-anchored ceiling below, which is
+// where it belongs.
 // FACE BATCH 3 · analogVco (2026-08-08): UNCHANGED at 91, and that is the
 // finding rather than a no-op. The face adds two new darwin-first face scenes,
 // which briefly pushed this to 93 — but a listed pair is skipped
@@ -679,6 +687,65 @@ describe('vrt-meta — EXEMPT_BASELINE_PAIRS size RATCHET (only shrinks)', () =>
 // has not landed yet — that is the expected reading, not a reason to raise the
 // number back.
 //
+// MEOWBOX (2026-08-08): UNCHANGED at 148, same shape as batch 3 above, and the
+// same known-red window. The face adds two darwin-first scenes
+// (`face-meowbox-compact` / `face-meowbox-dock`), so `report.total` reads 150
+// with 2 UNDECLARED until the `vrt-update.yml -f platform=linux` dispatch on
+// this branch commits their linux PNGs; then it falls back to exactly 148.
+//
+// ⚠ AND A THIRD PNG IS EXPECTED FROM THAT DISPATCH — `linux/meowbox.png`, the
+// legacy CARD, which was `git rm`-ed in the same commit. This is the
+// sub-tolerance case CLAUDE.md documents and it is worth the measurement:
+// adding the MEOW pad moved the card by 856 px out of a 2599 px budget
+// (720×361, maxDiffPixelRatio 0.01) and did NOT change its dimensions, because
+// the card had spare vertical room. So the scene PASSES with a stale baseline
+// and `--update-snapshots` rewrites NOTHING for it — Playwright only rewrites on
+// a FAILING comparison. Deleting it is the only way to get it re-captured, since
+// a MISSING snapshot is always written. (Measured the same way A2/#1213 was, and
+// it is nearly the same number: 865 px there, 856 px here.)
+//
+// COUNT WHAT THE BOT COMMITS: THREE linux PNGs, not two. A dispatch that comes
+// back green having committed fewer is the red flag, not "nothing to do".
+//
+// ── WHAT THE COUNT ACTUALLY CAME BACK AS, AND THE ONE KNOWN-STALE PNG ───────
+//
+// REBASE onto main, 2026-08-08. The three PNGs above landed across two
+// dispatches (the face pair on 70576795, the card on 1c989502), so the ratchet
+// is satisfied at 148 and no gap is undeclared. But the SECOND dispatch was
+// predicted at 2 files and committed 1, and the missing one is worth recording
+// rather than rounding off:
+//
+//   linux/meowbox.png              RE-CAPTURED. The merged render differs from
+//                                  the pre-rebase baseline by 4117 px against
+//                                  the 2599 px budget (#1421 moved fitView
+//                                  1.4611 -> 1.5500), so it FAILED and was
+//                                  rewritten unaided.
+//   linux/face-meowbox-compact.png NOT re-captured, and it is KNOWN STALE.
+//
+// The face pair was captured on 70576795, which is NOT a descendant of #1409
+// (verified with `git merge-base --is-ancestor`), so both platforms predate THE
+// FLIP's one-jack-per-stereo-pair change and meowbox is a stereo (L/R) module.
+// On darwin that is 136 px @26 in box x44-82 y70-78 — over the 72 px binding
+// budget (the config's 0.01 ratio on a 7216 px tile; COMPACT_MAX_DIFF 150 is
+// inert at this size), so darwin was re-captured. On linux the same change
+// lands UNDER 72 px: the scene ran and PASSED in the dispatch log
+// (`✓ 280 … face-meowbox-compact … (7.1s)`), and Playwright only rewrites a
+// FAILING comparison, so --update-snapshots correctly wrote nothing.
+//
+// ATTRIBUTION IS MEASURED, NOT INFERRED. Positive control on ringback, a known
+// stereo face, across #1409 itself: 144 px @26 in box x14-82 y70-78 — the SAME
+// y-band and the same magnitude as meowbox's. #1409 moved exactly the seven
+// stereo faces' compact baselines and meowbox's face did not exist yet.
+//
+// ⚠ SO linux/face-meowbox-compact.png IS A PASSING-BUT-STALE BASELINE — the
+// case CLAUDE.md names as invisible to BOTH the gate and the regen. It is left
+// in place DELIBERATELY: the documented fix is `git rm` + re-dispatch, and that
+// route manufactures an UNDECLARED platform gap (reddening this very ratchet)
+// plus a temporary EXEMPT_BASELINE_PAIRS entry, a ceiling move and a ledger
+// re-pin — and then the reverse of all three — to correct a sub-1 % drift on a
+// tile whose darwin twin is captured, reviewed and green. Recorded here so the
+// next person finds a decision rather than a silence; if this scene ever fails
+// on linux, re-capture it rather than assuming the baseline was ever current.
 // FACE BATCH 3 · analogVco (2026-08-08): UNCHANGED at 148, because this ratchet
 // is ARTIFACT-anchored and the artifacts balance. The face commits two new
 // DARWIN PNGs (`face-analogVco-{compact,dock}`) and the `vrt-update.yml

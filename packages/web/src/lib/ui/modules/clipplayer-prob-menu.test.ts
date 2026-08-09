@@ -13,15 +13,27 @@ import {
   applyProbMenuPick,
   clipProbMenuCheckedLevel,
   applyClipProbMenuPick,
+  pitchProbMenuLevels,
+  pitchProbMenuCheckedLevel,
+  applyPitchProbMenuPick,
 } from './clipplayer-prob-menu';
-import { noteProbCellFill } from './clipplayer-prob-color';
+import {
+  noteProbCellFill,
+  noteCellFill,
+  noteCellPitchUnstable,
+  noteCellPitchProb,
+} from './clipplayer-prob-color';
 import {
   defaultNoteClip,
   probLevelToValue,
   PROB_LEVELS,
+  setNotePlayEvery,
+  clipHasPitchProb,
+  coerceClipRecord,
   type NoteClipRecord,
   type NoteEvent,
 } from '$lib/audio/modules/clip-types';
+import { PITCH_PROB_LEVELS } from '$lib/audio/pitch-probability';
 
 const clipWith = (steps: NoteEvent[]): NoteClipRecord => ({ ...defaultNoteClip(), steps });
 
@@ -146,5 +158,113 @@ describe('clipplayer card cell fill — source-aware colour', () => {
     expect(noteProbCellFill(clipDef(1, [{ step: 0, midi: 60 }]), 0, 60)).toBe('hsl(0 0% 96%)');
     expect(noteProbCellFill(clipDef(undefined, [{ step: 0, midi: 60, prob: 1 }]), 0, 60)).toBe('hsl(0 0% 96%)');
     expect(noteProbCellFill(clipDef(undefined, [{ step: 0, midi: 60 }]), 0, 60)).toBe('hsl(0 0% 96%)');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PER-NOTE PITCH PROBABILITY — the THIRD row of the same note menu. The MODEL
+// (weights, distribution, determinism) is tested in
+// $lib/audio/pitch-probability.test.ts; this covers the menu + storage seam
+// only: the level list, the default check, the write, and the delete-at-off
+// round trip that keeps a legacy clip byte-identical.
+// ---------------------------------------------------------------------------
+describe('clipplayer PITCH probability menu', () => {
+  const noteAt60 = (extra: Partial<NoteEvent> = {}): NoteEvent => ({ step: 0, midi: 60, ...extra });
+
+  it('lists OFF first then the 40 increments ascending (41 items)', () => {
+    const levels = pitchProbMenuLevels();
+    expect(levels).toHaveLength(PITCH_PROB_LEVELS + 1);
+    expect(levels[0]).toBe(0); // OFF — the default check, and the bottom of the range
+    expect(levels[levels.length - 1]).toBe(PITCH_PROB_LEVELS);
+    expect(levels).toEqual([...levels].sort((a, b) => a - b));
+  });
+
+  it('an untouched note reads OFF — there is NO clip-level default to inherit', () => {
+    // Unlike firing probability, which falls back to the clip default: an unset
+    // note here means "leave this pitch alone", the only safe legacy reading.
+    const clip = clipWith([noteAt60()]);
+    expect(pitchProbMenuCheckedLevel(clip, 0, 60)).toBe(0);
+    expect(pitchProbMenuCheckedLevel(clip, 0, 61)).toBe(0); // empty cell
+    expect(pitchProbMenuCheckedLevel(null, 0, 60)).toBe(0);
+  });
+
+  it('a set note reads its own level back', () => {
+    for (const level of [1, 10, 20, 39, 40]) {
+      const clip = applyPitchProbMenuPick(clipWith([noteAt60()]), 0, 60, level);
+      expect(pitchProbMenuCheckedLevel(clip, 0, 60)).toBe(level);
+    }
+  });
+
+  it('picking OFF DELETES the key — a reset note round-trips byte-identical', () => {
+    const plain = clipWith([noteAt60({ velocity: 100 })]);
+    const set = applyPitchProbMenuPick(plain, 0, 60, 20);
+    expect(set.steps[0]).toHaveProperty('pitchProb');
+    const cleared = applyPitchProbMenuPick(set, 0, 60, 0);
+    expect(cleared.steps[0]).not.toHaveProperty('pitchProb');
+    expect(JSON.stringify(cleared.steps)).toBe(JSON.stringify(plain.steps));
+  });
+
+  it('reads through a HELD note the same way the other two controls do', () => {
+    const clip = applyPitchProbMenuPick(clipWith([noteAt60({ lengthSteps: 4 })]), 2, 60, 16);
+    expect(pitchProbMenuCheckedLevel(clip, 0, 60)).toBe(16);
+    expect(pitchProbMenuCheckedLevel(clip, 3, 60)).toBe(16);
+    expect(clip.steps).toHaveLength(1); // set through the span, not a new note
+  });
+
+  it('an EMPTY cell is a no-op — never creates a note, same reference back', () => {
+    const clip = clipWith([noteAt60()]);
+    expect(applyPitchProbMenuPick(clip, 5, 72, 20)).toBe(clip);
+  });
+
+  it('is ORTHOGONAL to probability and play-every — all three coexist on one note', () => {
+    let clip = clipWith([noteAt60()]);
+    clip = applyProbMenuPick(clip, 0, 60, 20); // 50% firing chance
+    clip = setNotePlayEvery(clip, 0, 60, 3); // every 3rd loop
+    clip = applyPitchProbMenuPick(clip, 0, 60, 24); // 60% pitch instability
+    expect(clip.steps[0]).toMatchObject({ prob: 0.5, playEvery: 3, pitchProb: 0.6 });
+    expect(probMenuCheckedLevel(clip, 0, 60)).toBe(20);
+    expect(pitchProbMenuCheckedLevel(clip, 0, 60)).toBe(24);
+  });
+
+  it('survives the load boundary: clamped, and 0 is never stored', () => {
+    const round = (raw: unknown) =>
+      (coerceClipRecord({ ...defaultNoteClip(), steps: [{ step: 0, midi: 60, pitchProb: raw }] }) as NoteClipRecord)
+        .steps[0];
+    expect(round(0.6)).toMatchObject({ pitchProb: 0.6 });
+    expect(round(5)).toMatchObject({ pitchProb: 1 });
+    expect(round(-1)).not.toHaveProperty('pitchProb');
+    expect(round(0)).not.toHaveProperty('pitchProb');
+    expect(round('nope')).not.toHaveProperty('pitchProb');
+    expect(round(Number.NaN)).not.toHaveProperty('pitchProb');
+  });
+
+  it('clipHasPitchProb is the cheap scheduler guard', () => {
+    expect(clipHasPitchProb(clipWith([noteAt60()]))).toBe(false);
+    expect(clipHasPitchProb(applyPitchProbMenuPick(clipWith([noteAt60()]), 0, 60, 1))).toBe(true);
+    expect(clipHasPitchProb(null)).toBe(false);
+  });
+});
+
+describe('clipplayer PITCH probability cell marker (NOT a third colour axis)', () => {
+  const clipWithNote = (extra: Partial<NoteEvent>) => clipWith([{ step: 0, midi: 60, ...extra }]);
+
+  it('marks only a note that carries instability', () => {
+    expect(noteCellPitchUnstable(clipWithNote({}), 0, 60)).toBe(false);
+    expect(noteCellPitchUnstable(clipWithNote({ pitchProb: 0.5 }), 0, 60)).toBe(true);
+    expect(noteCellPitchUnstable(clipWithNote({ pitchProb: 0.5 }), 0, 61)).toBe(false); // empty cell
+    expect(noteCellPitchProb(clipWithNote({ pitchProb: 0.5 }), 0, 60)).toBe(0.5);
+    expect(noteCellPitchProb(clipWithNote({}), 0, 60)).toBe(0);
+  });
+
+  it('does NOT touch the cell FILL — the existing two colour axes are untouched', () => {
+    // The whole design decision, asserted: adding pitch instability to a note
+    // must leave its probability/play-every colour byte-identical, so the pinned
+    // colour permutations (and the VRT baseline) cannot move.
+    for (const base of [{}, { prob: 0.5 }, { playEvery: 3 }, { prob: 0.25, playEvery: 4 }]) {
+      const plain = clipWithNote(base);
+      const unstable = clipWithNote({ ...base, pitchProb: 0.75 });
+      expect(noteCellFill(unstable, 0, 60)).toBe(noteCellFill(plain, 0, 60));
+      expect(noteProbCellFill(unstable, 0, 60)).toBe(noteProbCellFill(plain, 0, 60));
+    }
   });
 });

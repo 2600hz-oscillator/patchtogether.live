@@ -103,6 +103,11 @@ export const FACES = [
   // the engine because it must: all twelve params are momentary, so a durable
   // read is constant zero forever. See the def.) Flake-checked 3×.
   { type: 'bluebox', pages: 2 },
+  // meowbox declares TWO bands and renders two: the hero promotes `morph` and
+  // the MEOW pad out of band 1, which still holds `pitch` — so nothing is
+  // emptied and nothing is dropped. (A promotion that emptied band 1 would make
+  // this 1, and would also take that band's hint out of the annotation sweep.)
+  { type: 'meowbox', pages: 2 },
 ] as const;
 
 /** TIGHT per-scene diff budgets (absolute pixels; Playwright takes the MIN of

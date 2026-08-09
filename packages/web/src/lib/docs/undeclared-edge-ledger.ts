@@ -83,7 +83,6 @@ export const UNDECLARED_EDGE_DEBT: Readonly<Record<string, readonly string[]>> =
   macrooscillator: ['trig'],
   macseq: ['clock', 'gate', 'next_cv', 'play_cv', 'prev_cv', 'queue1_cv', 'queue2_cv', 'queue3_cv', 'queue4_cv', 'queue5_cv', 'queue6_cv', 'queue7_cv', 'queue8_cv', 'random_cv', 'reset_cv'],
   marbles: ['clk', 't1', 't2'],
-  meowbox: ['gate'],
   midiCvBuddy: ['gate'],
   midiLane: ['gate', 'note_gate'],
   midiOutBuddy: ['gate'],
@@ -124,8 +123,17 @@ export const UNDECLARED_EDGE_DEBT: Readonly<Record<string, readonly string[]>> =
 };
 
 /** The number of `(module, port)` pairs still owed an `edge` declaration.
- *  ⚠ ONLY SHRINKS — asserted from BOTH sides in module-docs-lint.test.ts. */
-export const UNDECLARED_EDGE_CEILING = 277;
+ *  ⚠ ONLY SHRINKS — asserted from BOTH sides in module-docs-lint.test.ts.
+ *
+ *  ⚠ THIS NUMBER CANNOT BE MERGED, IT HAS TO BE RE-COUNTED. Two face PRs drained
+ *  from the same 289 base — meowbox's `gate` (−1, #1417) and bluebox's twelve
+ *  `gate_*` ports (−12) — and each wrote its own literal, 288 and 277. Git has
+ *  no way to know the truth is the UNION; taking either side ships a ceiling
+ *  with slack, and slack in a `<=` ratchet is absorbed silently by the next
+ *  regression. DERIVED by counting `undeclaredEdgePairs()` on the merged map:
+ *  289 − 1 − 12 = 276, and the both-sides assertion in module-docs-lint is what
+ *  proves the count rather than the arithmetic. Re-count on every merge. */
+export const UNDECLARED_EDGE_CEILING = 276;
 
 /** Flattened `module.port` pairs (the countable form). */
 export function undeclaredEdgePairs(): string[] {

@@ -29,6 +29,7 @@
 
 import type { Component } from 'svelte';
 import type { ParamDef } from '$lib/graph/types';
+import MeowboxFormantBankPanel from './panels/MeowboxFormantBankPanel.svelte';
 import StereoCrossoverPanel from './panels/StereoCrossoverPanel.svelte';
 
 /** The props every sidebar panel takes: the node it describes, plus whatever
@@ -56,6 +57,26 @@ const SIDEBAR_PANELS: Readonly<Record<string, Component<SidebarPanelProps>>> = {
   // declares a crossover frequency + a width param through the panel's own
   // param-id resolution (see the component).
   'stereo-crossover': StereoCrossoverPanel as unknown as Component<SidebarPanelProps>,
+
+  // THE FORMANT BANK: three resonance peaks over the four source partials on a
+  // log axis, each peak drawn at its EFFECTIVE `a·Q` height.
+  //
+  // ⚠ IT IS A SIDEBAR BLOCK RATHER THAN A `hero.cell` FOR A STRUCTURAL REASON,
+  // and it is worth stating here because it is the general answer to a wall two
+  // faces have now hit. `module-face-lint` refuses a PANEL cell SELECTED at a
+  // lane tier and the 'full' lane cap is SIX, so a panel's first legal rank is 7
+  // — which a module with fewer than six other rankable keys can never reach.
+  // meowbox has four params plus one audition. drummergirl (five params, no
+  // audition) deferred its picture entirely over this. A `custom` sidebar block
+  // carries NO `face.order` key and therefore no rank, so the constraint does
+  // not apply to it at all.
+  //
+  // Not generic YET, and it says so rather than pretending: the component reads
+  // meowbox's own thirteen-table crossfade. The day a second three-formant voice
+  // wants this picture, the tables move behind a declared prop the way
+  // `stereo-crossover` takes `splitHz`/`widthParam` — do that then, not now, on
+  // one module's guess about the next one.
+  'formant-bank': MeowboxFormantBankPanel as unknown as Component<SidebarPanelProps>,
 };
 
 /** The component for a declared `custom` panel id, or `null`. */

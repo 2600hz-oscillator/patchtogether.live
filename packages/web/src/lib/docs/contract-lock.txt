@@ -1726,7 +1726,7 @@ marbles param x_length 1..16 discrete default=8
 matrixMix meta domain=meta
 meowbox meta domain=audio
 meowbox in decay cv param=decay cvScale=log
-meowbox in gate gate
+meowbox in gate gate edge=gate
 meowbox in level cv param=level cvScale=linear
 meowbox in morph cv param=morph cvScale=linear
 meowbox in pitch pitch
@@ -1736,6 +1736,7 @@ meowbox param decay 0.05..2 log default=0.4 unit=s
 meowbox param level 0..2 linear default=1
 meowbox param morph 0..1 linear default=0.25
 meowbox param pitch -36..36 linear default=0 unit=semi
+meowbox family meowbox-meow kind=other prefix=meowbox-meow
 midiclock meta domain=audio
 midiclock out clock gate
 midiclock out midistart gate
