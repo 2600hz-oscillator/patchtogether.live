@@ -523,6 +523,39 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
       probe: { effect: { kind: 'audition', seam: 'manual-gate' } },
     },
   },
+  meowbox: {
+    // THE AUDITION. meowbox is BIT-SILENT with nothing patched — `g = 0` ⇒
+    // `ampEnv = 0` ⇒ both channels are exactly zero — so without this the dock
+    // offers four knobs over a voice that cannot be heard at all, and its `scope`
+    // glyph is a flat line on every screenshot.
+    //
+    // ⚠ `mode: 'gate'`, NOT a one-shot, and this is the module's own most
+    // mis-documented fact turned into an affordance. `ampEnv` is
+    // `en.adsr(0.005, 0.05, 0.4, …)` (meowbox.dsp:109) — it SUSTAINS at 0.4 while
+    // the gate is high and releases on the fall. The shared TRIGGER_PULSE_S is
+    // 5 ms, so `fireManualStrike` here would release the envelope 5 ms into a
+    // 400 ms tail and audition a blip rather than a meow. The def's `docs.inputs
+    // .gate` claimed the opposite ("responds to the edge, not how long the level
+    // stays up") until this PR; the port now declares `edge: 'gate'` and the pad
+    // is the shape the port says it is.
+    //
+    // The factory answers `manualGate` and DELIBERATELY NOT `manualTrigger`
+    // (see its `read`), so a caller reaching for the one-shot gets `undefined`
+    // and the ledger records `delivered: false` rather than silently doing the
+    // wrong thing.
+    'meowbox-meow-{n}': {
+      kind: 'action',
+      mode: 'gate',
+      label: 'meow',
+      title: 'Audition: HOLD to gate the voice (identical to holding the gate input high)',
+      onGate: (nodeId, high) => { setManualGate(nodeId, high); },
+      // A gate audition is asserted on BOTH edges by the sweep — the open must
+      // deliver AND the close must deliver. A gate that opens and never closes is
+      // the worst failure this seam has, and a one-edge probe would be blind to
+      // exactly it.
+      probe: { effect: { kind: 'audition', seam: 'manual-gate' } },
+    },
+  },
   pentemelodica: {
     // THE FIVE-VOICE PICTURE, promoted into the hero slot. It exists because
     // this faceplate is TABBED (eight bands trip DOCK_TAB_MIN_BANDS), so four

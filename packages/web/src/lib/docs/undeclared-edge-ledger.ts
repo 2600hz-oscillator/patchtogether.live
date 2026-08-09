@@ -77,7 +77,6 @@ export const UNDECLARED_EDGE_DEBT: Readonly<Record<string, readonly string[]>> =
   macrooscillator: ['trig'],
   macseq: ['clock', 'gate', 'next_cv', 'play_cv', 'prev_cv', 'queue1_cv', 'queue2_cv', 'queue3_cv', 'queue4_cv', 'queue5_cv', 'queue6_cv', 'queue7_cv', 'queue8_cv', 'random_cv', 'reset_cv'],
   marbles: ['clk', 't1', 't2'],
-  meowbox: ['gate'],
   midiCvBuddy: ['gate'],
   midiLane: ['gate', 'note_gate'],
   midiOutBuddy: ['gate'],
@@ -118,8 +117,12 @@ export const UNDECLARED_EDGE_DEBT: Readonly<Record<string, readonly string[]>> =
 };
 
 /** The number of `(module, port)` pairs still owed an `edge` declaration.
- *  ⚠ ONLY SHRINKS — asserted from BOTH sides in module-docs-lint.test.ts. */
-export const UNDECLARED_EDGE_CEILING = 289;
+ *  ⚠ ONLY SHRINKS — asserted from BOTH sides in module-docs-lint.test.ts.
+ *  289 → 288 (2026-08-08): meowbox's `gate` declared `edge: 'gate'`. It is the
+ *  case this ledger's header is about — the def's own prose said "responds to
+ *  the edge, not how long the level stays up" over an `en.adsr` sustaining at
+ *  0.4, and the skipped vocabulary check could not see the contradiction. */
+export const UNDECLARED_EDGE_CEILING = 288;
 
 /** Flattened `module.port` pairs (the countable form). */
 export function undeclaredEdgePairs(): string[] {
