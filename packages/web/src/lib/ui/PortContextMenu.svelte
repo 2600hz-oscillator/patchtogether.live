@@ -58,7 +58,10 @@
      *  drill-down INPUT/OUTPUT menu the redesign asks for. null = normal entry
      *  (carry "patch to", contextmenu/dblclick fallbacks). */
     preselectModuleId?: string | null;
-    onpick: (target: { nodeId: string; portId: string }) => void;
+    /** `leg` is set when the user picked one SIDE of a collapsed stereo target
+     *  (the "RET1 L" / "RET1 R" rows). The caller turns it into the commit's
+     *  `channelMode`, so exactly one edge is written. */
+    onpick: (target: { nodeId: string; portId: string; leg?: 'left' | 'right' }) => void;
     onclose: () => void;
   }
 
@@ -145,7 +148,7 @@
 
   function pickPort(p: CandidatePort) {
     if (!activeModuleId) return;
-    onpick({ nodeId: activeModuleId, portId: p.portId });
+    onpick({ nodeId: activeModuleId, portId: p.portId, leg: p.leg });
     onclose();
   }
 </script>
@@ -257,22 +260,27 @@
               </button>
             </li>
           {:else}
-            {#each candidates as p (p.portId)}
+            {#each candidates as p (p.key)}
               <li>
                 <button
                   type="button"
                   class="ctx-item"
                   class:warn={p.occupiedBy !== undefined}
+                  class:ctx-leg={p.leg !== undefined}
                   role="menuitem"
                   data-testid="patch-to-port"
                   data-port-id={p.portId}
+                  data-leg={p.leg ?? ''}
                   data-occupied={p.occupiedBy !== undefined ? 'true' : 'false'}
                   title={p.occupiedBy
                     ? `Will replace existing connection from ${p.occupiedBy.sourceDisplayName}`
-                    : ''}
+                    : p.leg
+                      ? `Patch ONE leg only — the ${p.leg === 'left' ? 'L' : 'R'} side`
+                      : ''}
                   onclick={() => pickPort(p)}
                 >
                   {#if p.occupiedBy}<span class="warn-glyph" aria-hidden="true">!</span>{/if}
+                  {#if p.leg}<span class="leg-glyph" aria-hidden="true">└</span>{/if}
                   <span>{p.label}</span>
                 </button>
               </li>
@@ -395,6 +403,18 @@
   }
   .ctx-channel.selected .tick {
     color: var(--accent, #60a5fa);
+  }
+  /* A per-leg row of a collapsed stereo target — indented under its pair so the
+     three rows read as one jack and its two sides, not as three jacks. */
+  .ctx-item.ctx-leg {
+    padding-left: 20px;
+    font-size: 0.8rem;
+  }
+  .leg-glyph {
+    color: var(--text-dim);
+    width: 0.7em;
+    display: inline-block;
+    text-align: center;
   }
   .ctx-item.warn {
     color: #fbbf24;

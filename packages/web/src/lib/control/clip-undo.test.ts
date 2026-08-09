@@ -96,6 +96,51 @@ describe('clip-undo — per-card undo scope', () => {
     expect(marker(A)).toBe(7);
   });
 
+  // THE ARGUMENT FOR NO CONFIRM DIALOG on the card's right-click "Delete clip".
+  // Deleting a clip is destructive, and the card ships undo (control-strip 6 /
+  // computer key 6) — but "undo exists" is only a real answer if undo actually
+  // restores a DELETED map key with its contents, not just a scalar edit. It
+  // does, and this pins it: delete the clip AND its sibling automation record
+  // in one undoable transaction, undo, and get both back with their notes.
+  it('a clip DELETE is undoable — the record and its automation come back intact', () => {
+    addNode(A);
+    const clip = { kind: 'note', lengthSteps: 16, root: 60, steps: [{ step: 3, midi: 64, vel: 100 }] };
+    // Seed (untracked — this is the pre-existing state, not the edit under test).
+    ydoc.transact(() => {
+      const t = patch.nodes[A]!;
+      if (!t.data) t.data = {};
+      const d = t.data as { clips?: Record<string, unknown>; auto?: Record<string, unknown> };
+      d.clips = { '5': clip };
+      d.auto = { '5': { tracks: [{ key: 'vca.gain', points: [{ step: 0, value: 0.5 }] }] } };
+    });
+
+    const data = () =>
+      patch.nodes[A]?.data as { clips?: Record<string, unknown>; auto?: Record<string, unknown> } | undefined;
+    expect(data()?.clips?.['5']).toBeTruthy();
+
+    // The card's deleteClipAt write, verbatim in shape.
+    clipUndoTransact(A, () => {
+      const d = data()!;
+      if (d.clips) delete d.clips['5'];
+      if (d.auto && d.auto['5'] !== undefined && d.auto['5'] !== null) delete d.auto['5'];
+    });
+    expect(data()?.clips?.['5'], 'delete removed the clip').toBeUndefined();
+    expect(data()?.auto?.['5'], 'delete removed the clip-owned automation').toBeUndefined();
+    expect(clipCanUndo(A), 'the delete landed on THIS card\'s undo stack').toBe(true);
+
+    clipUndo(A);
+    const restored = data()?.clips?.['5'] as typeof clip | undefined;
+    expect(restored, 'undo restores the deleted clip record').toBeTruthy();
+    expect(restored?.steps, 'undo restores the clip CONTENTS, not an empty shell').toEqual([
+      { step: 3, midi: 64, vel: 100 },
+    ]);
+    expect(data()?.auto?.['5'], 'undo restores the clip-owned automation too').toBeTruthy();
+
+    // …and redo re-deletes, so the pair is symmetric.
+    clipRedo(A);
+    expect(data()?.clips?.['5']).toBeUndefined();
+  });
+
   it('undo/redo/canUndo are no-op-safe for an unknown / never-edited node', () => {
     expect(clipCanUndo('nope')).toBe(false);
     expect(clipCanRedo('nope')).toBe(false);

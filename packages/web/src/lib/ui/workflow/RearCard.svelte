@@ -35,6 +35,7 @@
   import { stereoPairForPort, type StereoPairDefLike } from '$lib/graph/stereo-pairs';
   import { canConnectToPort, type CableType } from '$lib/graph/types';
   import { portConnections } from '$lib/ui/port-patch-helpers';
+  import { remoteEndpointsTitle } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
   import { nodeVersion, edgesVersion, nodesStructuralVersion } from '$lib/graph/node-versions.svelte';
   import { getModuleDef } from '$lib/audio/module-registry';
@@ -96,9 +97,11 @@
     const parts: string[] = [hole.label];
     if (hole.pitch) parts[0] += ' (1v/oct)';
     if (hole.doc) parts.push(hole.doc);
-    if (remotes.length > 0) {
-      parts.push(hole.direction === 'input' ? `← FROM ${remotes[0]}` : `→ TO ${remotes.join(', ')}`);
-    }
+    // Both directions name EVERY remote — a collapsed stereo hole is one hole
+    // over two ports and can be fed by two different sources. This used to
+    // print only `remotes[0]` on an input; see `remoteEndpointsTitle`.
+    const endpoints = remoteEndpointsTitle(hole.direction, remotes);
+    if (endpoints) parts.push(endpoints);
     return parts.join(' — ');
   }
 

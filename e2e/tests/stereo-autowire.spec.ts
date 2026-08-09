@@ -111,7 +111,15 @@ async function cascadePatch(
   await expect(menu).toBeVisible();
 
   await menu.locator(`[data-testid="patch-to-module"][data-node-id="${dst.nodeId}"]`).click();
-  const portRow = menu.locator(`[data-testid="patch-to-port"][data-port-id="${dst.portId}"]`);
+  // ⚠ `data-leg=""` PICKS THE WHOLE-PAIR ROW. A collapsed stereo target offers
+  // three rows — the pair, its L and its R — since the per-leg drill-down
+  // landed for the ES-9 return case (a MONO source naming one side of a
+  // collapsed input). This file is about the POLICY MATRIX, i.e. what the
+  // ordinary whole-jack patch writes, so it always takes the pair row; without
+  // the filter the locator matches three and Playwright fails strict mode.
+  const portRow = menu.locator(
+    `[data-testid="patch-to-port"][data-port-id="${dst.portId}"][data-leg=""]`,
+  );
   await expect(portRow).toBeVisible();
   await portRow.click();
   await expect(menu).toHaveCount(0);

@@ -5985,6 +5985,43 @@
     if (unpatchOpen && unpatchPlan.items.length === 0) closeUnpatchMenu();
   });
 
+  /**
+   * "Patch to…" on the UNPATCH menu — hand a PATCHED output straight to the
+   * patch picker so a second cable can leave the same jack.
+   *
+   * Right-clicking a patched point opens the unpatch menu and returns (see
+   * `PatchPanel.onPortRowContextMenu`), so before this an output with one cable
+   * had no right-click route to another one — even though outputs fan out
+   * freely (the owner's `masterL` drives three targets, and his two aux sends
+   * leave ONE collapsed `SEND1` jack for two different ES-9 outputs).
+   *
+   * It reuses `openPortMenuAt`, the SAME entry point the unpatched right-click
+   * uses, so the picker that appears is identical either way — including the
+   * channel rows and the per-leg target drill-down.
+   */
+  function patchToFromUnpatch(): void {
+    const t = unpatchTarget;
+    const pos = unpatchPos;
+    if (!t) return;
+    const node = patch.nodes[t.nodeId];
+    const def = node ? defLookup(node.type) : undefined;
+    const port =
+      t.direction === 'output'
+        ? def?.outputs.find((p) => p.id === t.portId)
+        : def?.inputs.find((p) => p.id === t.portId);
+    closeUnpatchMenu();
+    openPortMenuAt(
+      { x: pos.x, y: pos.y },
+      {
+        nodeId: t.nodeId,
+        portId: t.portId,
+        direction: t.direction,
+        type: (port?.type as string | undefined) ?? 'audio',
+      },
+    );
+    connectDragState.beginCascade(t.nodeId);
+  }
+
   function closeUnpatchMenu(): void {
     unpatchOpen = false;
     unpatchTarget = null;
@@ -6366,7 +6403,15 @@
     };
   });
 
-  function pickPortMenuTarget({ nodeId, portId }: { nodeId: string; portId: string }) {
+  function pickPortMenuTarget({
+    nodeId,
+    portId,
+    leg,
+  }: {
+    nodeId: string;
+    portId: string;
+    leg?: 'left' | 'right';
+  }) {
     if (!portMenuSourceNodeId || !portMenuSourcePortId) return;
     // Cascade is committing — release the source PatchPanel's lock + end any
     // carry/pickup that fed this picker (the cable is consumed by the patch).
@@ -6403,10 +6448,21 @@
     const targetType: CableType = dstExposed?.cableType ?? dstPort?.type ?? sourceType;
 
     // The channel the user picked, snapshotted BEFORE the menu closes.
-    // Only meaningful when the source really has a stereo image; a stale
-    // 'left' on an unpaired port would filter nothing (planAudioCommit never
-    // filters a `mono` leg) but reading it here keeps the trace honest.
-    const channelMode: ChannelMode = portMenuStereoPair ? portMenuChannelMode : 'both';
+    //
+    // TWO surfaces set it, and they are ONE control — "which side of the stereo
+    // image does this patch carry?" — reachable from whichever end has the
+    // image:
+    //   * `leg` — the user picked a PER-LEG row of a collapsed stereo TARGET
+    //     ("RET1 L"). This is the only per-side gesture available when the
+    //     SOURCE is mono, which is the ES-9 return case (`es9.in14` → `ret1L`
+    //     alone), and it WINS: it is a choice made about this specific target,
+    //     after and more specifically than the source-side rows.
+    //   * `portMenuChannelMode` — the picker's source-side "patch only L / only
+    //     R" rows, meaningful only when the SOURCE really has a stereo image.
+    //     A stale 'left' on an unpaired port would filter nothing
+    //     (planAudioCommit never filters a `mono` leg) but reading the pair
+    //     here keeps the trace honest.
+    const channelMode: ChannelMode = leg ?? (portMenuStereoPair ? portMenuChannelMode : 'both');
 
     const id = audioEdgeId(from.nodeId, from.portId, to.nodeId, to.portId);
     // The already-exists short-circuit is about the CLICKED leg, so it only
@@ -8363,6 +8419,7 @@
   allLabel={unpatchPlan.allLabel}
   onunpatch={unpatchEdges}
   onchannelmode={setLegGroupChannelMode}
+  onpatchto={unpatchTarget?.direction === 'output' ? patchToFromUnpatch : undefined}
   onclose={closeUnpatchMenu}
 />
 

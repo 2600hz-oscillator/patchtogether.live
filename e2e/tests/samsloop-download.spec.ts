@@ -14,6 +14,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { spawnPatch } from './_helpers';
+import { expectedAchievedRate, readContextSampleRate, readSample } from './_samsloop-helpers';
 
 async function setupPage(page: Page) {
   const errors: string[] = [];
@@ -46,7 +47,10 @@ test.describe('SAMSLOOP DOWNLOAD button', () => {
       ],
     );
 
-    // Record briefly with defaults (44.1k / 16-bit / 2 ch).
+    const ctxRate = await readContextSampleRate(page);
+    expect(ctxRate, 'audio engine must be up before REC').toBeGreaterThan(0);
+
+    // Record briefly with defaults (48k target / 16-bit / MONO).
     const rec = page.locator('[data-testid="samsloop-rec-button"]');
     await rec.click();
     await expect(rec).toContainText('STOP', { timeout: 3000 });
@@ -87,16 +91,30 @@ test.describe('SAMSLOOP DOWNLOAD button', () => {
     const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
     // Audio format = 1 (PCM).
     expect(view.getUint16(20, true)).toBe(1);
-    // Channels (defaults = stereo = 2).
-    expect(view.getUint16(22, true)).toBe(2);
-    // Sample rate (default = 44.1k).
-    expect(view.getUint32(24, true)).toBe(44100);
+    // Channels (default = MONO). The playback worklet buffer is mono and the
+    // decoder mono-mixes before it gets there, so a stereo default bought a
+    // 2× byte cost to serve only this WAV export. The switch is still there.
+    expect(view.getUint16(22, true)).toBe(1);
     // Bits per sample (default = 16).
     expect(view.getUint16(34, true)).toBe(16);
+    // ⚠ Sample rate: the rate the samples ACTUALLY are on this machine, not
+    // the RATE switch. Hard-coding 44 100 here (what this test used to do)
+    // asserted a property of the runner and agreed with a wrong tag.
+    const expectedRate = expectedAchievedRate(ctxRate, 48_000);
+    expect(view.getUint32(24, true), `ctx ${ctxRate} Hz → ${expectedRate} Hz`).toBe(expectedRate);
     // byteRate = rate * channels * bytesPerSample.
-    expect(view.getUint32(28, true)).toBe(44100 * 2 * 2);
+    expect(view.getUint32(28, true)).toBe(expectedRate * 1 * 2);
     // blockAlign = channels * bytesPerSample.
-    expect(view.getUint16(32, true)).toBe(2 * 2);
+    expect(view.getUint16(32, true)).toBe(1 * 2);
+
+    // The exported header must agree with what was persisted — the WAV and
+    // node.data are two views of one take, and a divergence would mean the
+    // downloaded file and the module play at different speeds.
+    const stored = await readSample(page, 's');
+    expect(stored, 'nothing persisted — the header check above is about the wrong thing').not.toBeNull();
+    expect(view.getUint32(24, true)).toBe(stored!.rate);
+    expect(view.getUint16(22, true)).toBe(stored!.channels);
+    expect(view.getUint16(34, true)).toBe(stored!.bits);
 
     // dataChunkSize matches the body byte length.
     const dataChunkSize = view.getUint32(40, true);
