@@ -323,9 +323,21 @@ prefer failing loudly over silently falling back to a shared default.
 
 Two more from the same session, both cheap:
 
-- `npm run vrt:update` used bare `--update-snapshots`, which is `=all` in
-  Playwright 1.59. It is now `=changed`. Bare had already rewritten 22
-  unrelated baselines once.
+- Bare `--update-snapshots` is `=all` in Playwright 1.59, and had already
+  rewritten 22 unrelated baselines once. `task vrt:update` now passes
+  `=changed`. ⚠ **The flag lives in the Taskfile, NOT in `e2e/package.json`** —
+  see the next bullet for why that distinction cost a red gate.
+- **A toolchain PIN file hashed WHOLESALE makes every unrelated edit a
+  re-attest.** `e2e/package.json` is in `TOOLCHAIN_PIN_FILES`
+  (`scripts/webgl-attest-lib.ts`) because it pins `@playwright/test` — the
+  renderer version. But the basis hashes the whole file, so changing one
+  unrelated npm-script string moved the WebGL hash `620fa1b3…` → `ad300c3e…`
+  and turned `webgl-attest` red, demanding a trusted-machine GPU re-attest for
+  a one-word CLI flag. Reverting that single file restored `620fa1b3…` exactly.
+  **Before editing `e2e/package.json`, `packages/web/package.json` or
+  `.flox/env/manifest.toml`, run `bash scripts/webgl-attest-hash.sh` before and
+  after** — and if the edit is not actually a version pin, put it somewhere
+  else. The hash cannot tell a pin bump from a comment; only you can.
 - **Screenshot the thing and look at it.** `display: inline-flex` on a label +
   value pair drops the whitespace-only anonymous flex item, so the footer read
   `lat13.3/40.0ms drop0/0.0ms tick9ms`. Every text assertion still passed —

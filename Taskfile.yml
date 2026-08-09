@@ -504,8 +504,23 @@ tasks:
       # Same E2E_PORT hazard as `task vrt` (see `vrt:run`) — and strictly worse
       # here, because this one WRITES: an isolated worktree that regenerated
       # against 5173 would commit baselines captured from another branch.
+      #
+      # ⚠ `--update-snapshots=changed` lives HERE, not in e2e/package.json's
+      # `vrt:update` script, and that is not a style choice: `e2e/package.json`
+      # is a TOOLCHAIN_PIN_FILE in the WebGL attest basis
+      # (scripts/webgl-attest-lib.ts — it pins @playwright/test, the renderer
+      # version) and the basis hashes the file WHOLE. Editing one unrelated
+      # script string moved the hash 620fa1b3… → ad300c3e… and turned
+      # `webgl-attest` red, needing a trusted-machine GPU re-attest for a
+      # one-word CLI flag. Keep behaviour changes to the npm scripts out of that
+      # file. Bare `--update-snapshots` means `=all` in Playwright 1.59 and has
+      # already rewritten 22 unrelated baselines once; `=changed` is what we
+      # actually want, so it is passed BEFORE {{.CLI_ARGS}} and a caller can
+      # still override it explicitly.
       - task: vrt:run
-        vars: { SCRIPT: 'vrt:update', ARGS: '{{.CLI_ARGS}}' }
+        vars:
+          SCRIPT: vrt
+          ARGS: '--update-snapshots=changed {{.CLI_ARGS}}'
 
   vrt:commit:
     desc: |
