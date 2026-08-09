@@ -2,12 +2,11 @@
   "schemaVersion": 1,
   "collabContentHash": "46c49cf93000a2cce19e2cec4cdec863d1898b851b67a03fc24713f41b11885a",
   "attestedAt": "2026-08-02T06:11:05.148Z",
-  "attestedBy": "tmayshark@gmail.com",
+  "attestedBy": "patchtogether-maintainer",
   "gitHeadAtAttest": "13448c7c64f19abb2a559c49172673deb5a1c286",
   "playwrightVersion": "1.50.0",
   "hocuspocusVersion": "2.13.5",
   "os": "darwin 25.4.0 (arm64)",
-  "host": "2600hzs-MBP.home.local",
   "databaseConfirmed": true,
   "relayConfirmed": true,
   "relayPort": 1235,
@@ -23,5 +22,6 @@
     "relayVacuitySkips": 0,
     "assetSkips": 11
   },
-  "durationSec": 65
+  "durationSec": 65,
+  "machineClass": "local-trusted-gpu-workstation"
 }
