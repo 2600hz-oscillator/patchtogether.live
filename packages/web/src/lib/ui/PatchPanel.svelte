@@ -50,6 +50,7 @@
   import {
     resolveVerboseLabel,
     groupPortsByCableType,
+    remoteEndpointsTitle,
     type GroupedPorts,
     type PortDescriptor,
   } from '$lib/ui/patch-panel-labels';
@@ -420,18 +421,17 @@
     return remotesFor(portId, direction, siblingId).length > 0;
   }
 
-  /** Hover/aria text for a patched jack: INPUT takes one cable (← FROM …);
-   *  OUTPUT fans out (→ TO a, b, …). Empty for an unpatched port. */
+  /** Hover/aria text for a patched jack — `← FROM a, b` / `→ TO a, b`, or
+   *  undefined when unpatched. Both directions name EVERY remote: a collapsed
+   *  stereo jack is one jack over two ports and can be fed by two different
+   *  sources (the owner's `RET1` takes `es9.in14` on L and `es9.in13` on R).
+   *  See `remoteEndpointsTitle` for the truncation this used to have. */
   function patchTitle(
     portId: string,
     direction: 'input' | 'output',
     siblingId?: string,
   ): string | undefined {
-    const remotes = remotesFor(portId, direction, siblingId);
-    if (remotes.length === 0) return undefined;
-    return direction === 'input'
-      ? `← FROM ${remotes[0]}`
-      : `→ TO ${remotes.join(', ')}`;
+    return remoteEndpointsTitle(direction, remotesFor(portId, direction, siblingId));
   }
 
   // ---------------- Right-click → UNPATCH (every patch point) --------------

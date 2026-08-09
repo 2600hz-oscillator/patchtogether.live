@@ -307,6 +307,47 @@ test.describe('ES-9 per-leg patching — the owner\'s send/return rack', () => {
       .toEqual(['mix.send1L->vca1.audio', 'mix.send1R->vca1.audio']);
   });
 
+  test('a collapsed jack fed by TWO sources names BOTH in its title and aria-label', async ({
+    page,
+    rack,
+  }) => {
+    // The owner's screenshots: `SEND 1` read `→ TO es-9.OUT3, es-9.OUT4` while
+    // `RET1` read `← FROM es-9.IN14` — the second source simply missing. The
+    // builder truncated the INPUT side to `remotes[0]`, on the premise that "an
+    // INPUT takes one cable". True of a mono input; FALSE of a collapsed stereo
+    // jack, which is one jack over two ports each taking its own cable.
+    //
+    // The unit test (`patch-panel-labels.test.ts`) pins the string builder. THIS
+    // pins the WIRING — that the panel actually hands it both legs' remotes.
+    await spawnRig(page);
+    for (const [src, pairPort, leg] of [
+      ['in14', 'ret1L', 'left'],
+      ['in13', 'ret1L', 'right'],
+    ] as const) {
+      const menu = await rightClickOutput(page, ES9, src);
+      await pickTarget(page, menu, MIX, pairPort, leg);
+    }
+
+    await page.keyboard.press('Escape');
+    await expect(chrome(page, MIX)).toHaveCount(0);
+    await page.locator(`.svelte-flow__node[data-id="${MIX}"] [data-testid="patch-trigger"]`).click();
+    await chrome(page, MIX)
+      .locator('[data-testid="patch-panel-section-nav"][data-section-label="Ret1"]')
+      .click();
+    const jack = chrome(page, MIX).locator(
+      '[data-testid="patch-panel-port-row"][data-port-id="ret1L"] [data-testid="port-row-jack"]',
+    );
+    await expect(jack).toHaveAttribute('data-patched', 'true');
+    const title = await jack.getAttribute('title');
+    expect(title, 'a patched jack must carry a remote title').toBeTruthy();
+    // BOTH sources, or the second cable is invisible on hover.
+    expect(title!.toUpperCase(), `RET1 title named only one source: ${title}`).toContain('IN14');
+    expect(title!.toUpperCase(), `RET1 title named only one source: ${title}`).toContain('IN13');
+    // aria mirrors title, so a screen reader hears both too — the docstring
+    // says this text is hover AND aria, and it was one string for both.
+    await expect(jack).toHaveAttribute('aria-label', title!);
+  });
+
   test('UNPATCH takes only the cable you picked — the two returns are independent', async ({
     page,
     rack,
