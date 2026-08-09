@@ -9079,14 +9079,31 @@
   /* Audio health readout — underruns / dropout / avg latency / tick p99, plus
    * a `dead N` badge when a worklet processor has latched. Muted until
    * something is actually wrong, so a healthy footer stays quiet. */
+  /* ⚠ FIXED WIDTH, and it is load-bearing, not cosmetic. The readout's text
+   * changes after mount (em-dashes → "0" / "0.0ms" / "36.5ms" as the context
+   * boots and the 1 Hz poll lands). A row that RESIZES a second after first
+   * paint is a layout event with no fixed time, and VRT's two-consecutive-
+   * stable-captures rule can straddle it — which is how a footer addition
+   * turned into a bistable 346x520 ↔ 352x527 card render on the linux runner.
+   * Tabular figures + a reserved min-width per field mean the row is the same
+   * width before and after every value it will ever show. It also stops the
+   * footer twitching while the numbers tick, which is the reason to want it
+   * anyway. */
   .audio-health {
     display: inline-flex;
     align-items: center;
     gap: 0.35rem;
     cursor: help;
+    font-variant-numeric: tabular-nums;
+  }
+  .audio-health > b {
+    display: inline-block;
+    min-width: 2.5ch;
   }
   .audio-health-sub {
     opacity: 0.72;
+    display: inline-block;
+    min-width: 10ch;
   }
   .audio-health.bad b {
     color: #f0a04b;
