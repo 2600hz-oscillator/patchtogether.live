@@ -501,7 +501,11 @@ tasks:
     desc: Refresh VRT baselines (e2e/vrt/__screenshots__/**) LOCALLY (this platform only). Inspect the diff and commit. For cross-platform (linux + darwin) baselines, use `task vrt:commit` (CI job) instead.
     deps: [dsp:build, test:emit-manifest]
     cmds:
-      - npm run vrt:update -w {{.E2E}} -- {{.CLI_ARGS}}
+      # Same E2E_PORT hazard as `task vrt` (see `vrt:run`) — and strictly worse
+      # here, because this one WRITES: an isolated worktree that regenerated
+      # against 5173 would commit baselines captured from another branch.
+      - task: vrt:run
+        vars: { SCRIPT: 'vrt:update', ARGS: '{{.CLI_ARGS}}' }
 
   vrt:commit:
     desc: |

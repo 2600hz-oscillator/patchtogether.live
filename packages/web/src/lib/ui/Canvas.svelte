@@ -8943,9 +8943,13 @@
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
   }
+  /* ⚠ `inline-block`, NOT `inline-flex`. A flex container drops whitespace-only
+   * anonymous items, so `lat <b>13.3</b>` rendered as "lat13.3" — the label and
+   * its value ran together in all three fields and the row was materially
+   * harder to read for zero width saved. Caught by screenshotting the footer,
+   * which no assertion in this repo would have. */
   .audio-health .ah-field {
-    display: inline-flex;
-    align-items: baseline;
+    display: inline-block;
   }
   .audio-health b {
     display: inline-block;
