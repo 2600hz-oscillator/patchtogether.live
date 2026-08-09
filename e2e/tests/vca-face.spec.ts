@@ -387,6 +387,78 @@ test.describe('vca face — the knob readouts follow the graph', () => {
 // forwarded value reaches a REAL rendered control. (`units` is proved at the
 // unit tier only — VCA declares none, and inventing one to make a browser
 // assertion possible would be a contract change written for a test.)
+// ─────────────────────────────────────────────────────────────────────────────
+// PF-20 — THE DERIVED HERO READOUT, ON THE SHIPPED SURFACE.
+//
+// `vca-gain-model.test.ts` carries the permanent negative controls for the
+// FUNCTION. This is the leg the unit lane structurally cannot supply: that the
+// registered `valueId` actually resolves through the dock, paints, and moves
+// when the graph moves. A derived readout has two ways to be dead that a pure
+// test cannot see — an id nothing renders, and a rail wired to a stale local
+// that never re-projects — and both print a plausible string forever.
+//
+// The perturbation is the SAME blindness leg as unit LEG 1: hold `base` and
+// move `cvAmount`. The dials must not move (they are each blind to the other),
+// the strip must. Values are written straight into the graph so the expected
+// strings stay literals — the "readout follows the GRAPH" claim is proved by
+// the drag tests above; this one is about REACHABILITY and re-projection.
+// ─────────────────────────────────────────────────────────────────────────────
+test.describe('vca face — the DERIVED hero readout reaches the dock and moves there', () => {
+  test('`at cv 1` paints the summed gain, and follows cvAmount while both dials sit still', async ({
+    page,
+  }) => {
+    await gotoShell(page);
+    await spawnPatch(page, [
+      { id: 'v', type: 'vca', position: { x: 460, y: 240 }, params: { base: 0.5, cvAmount: 1 } },
+    ]);
+
+    const dockShell = await openDock(page, 'v');
+    const strip = dockShell.getByTestId('face-hero-readouts');
+    await expect(strip, 'the readouts-only hero paints its strip').toBeVisible();
+
+    const entry = strip.locator('[data-hero-readout="vca-gain-at-full-cv"]');
+    await expect(
+      entry,
+      'the DECLARED valueId must be the one the dock renders — a stale/unregistered id ' +
+        'prints an em dash and every other assertion here would still pass',
+    ).toBeVisible();
+
+    // base 0.5 + cvAmount 1 = 1.5 → +3.5 dB PAST UNITY on an unclamped gain.
+    // This is the number the def's own docs.controls.base advice walks a user
+    // into, and no other surface states it.
+    await expect(entry).toContainText('+3.5 dB');
+
+    // The two dials, BEFORE.
+    const baseRo = dockShell.getByTestId('readout-base');
+    const amtRo = dockShell.getByTestId('readout-cvAmount');
+    await expect(baseRo).toHaveText('-6.0 dB');
+    await expect(amtRo).toHaveText('OPEN');
+
+    // PERTURB the input the dials are blind to.
+    await setParam(page, 'v', 'cvAmount', 0.5);
+
+    // The strip MOVED: 0.5 + 0.5 = 1.0 exactly.
+    await expect(
+      entry,
+      'the derived readout must re-project when cvAmount moves — if it does not, the rail ' +
+        'is reading a stale local and the whole valueId is decoration',
+    ).toContainText('UNITY');
+
+    // …and the two dials did NOT, which is the entire reason this readout is
+    // derived rather than a `paramId`.
+    await expect(baseRo, 'base is blind to cvAmount').toHaveText('-6.0 dB');
+    await expect(amtRo, 'cvAmount prints its SENSE, which is OPEN at +0.5 too').toHaveText('OPEN');
+
+    // The other direction, and the module's most surprising state: a sum below
+    // zero passes PHASE-INVERTED, and the ` INV` suffix is the face's only
+    // statement of it.
+    await setParam(page, 'v', 'base', 0);
+    await setParam(page, 'v', 'cvAmount', -1);
+    await expect(entry, 'a negative summed gain is flagged INV').toContainText('INV');
+    await expect(amtRo, 'and the dial now names the sense').toHaveText('DUCK');
+  });
+});
+
 test.describe('VCA legacy card — the def-owned readout reaches the card too', () => {
   test('the base fader prints the DEF formatter, not the raw number', async ({ page }) => {
     test.setTimeout(SLOW_RENDER ? 60_000 : 30_000);

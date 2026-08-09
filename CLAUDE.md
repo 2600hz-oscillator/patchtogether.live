@@ -217,6 +217,33 @@ Three dispatch gotchas, all confirmed on real runs:
   `git rm` for the genuinely sub-tolerance case that motivated the rule. Either
   way, **COUNT the files the bot commits against what you expected** — that is
   the check that catches the miss, not the choice of route.
+- ⚠ **A `git rm`-ed baseline is SILENTLY RECREATED by the next plain VRT run —
+  no `--update-snapshots` required.** Playwright's `updateSnapshots` defaults to
+  **`'missing'`** (its own default; neither `vrt.config.ts` nor
+  `playwright.config.ts` overrides it), and `'missing'` *creates* an absent
+  snapshot. The test still fails — *"A snapshot doesn't exist …, writing
+  actual"* — so it is loud in the RUN OUTPUT and completely silent in the
+  **tree**: what lands is an untracked PNG that no gate reads and that a
+  `git add -A` will happily commit.
+  **This bites the `git rm` route directly, and the two removal shapes fail
+  differently:**
+  - Removed the **pair** (both platforms, the no-gap route): any later local
+    darwin run — *including a plain verification run you did not think of as a
+    capture* — restores `darwin/<scene>.png` alone and **re-manufactures the
+    exact darwin-without-linux gap the pair removal existed to avoid**.
+    Measured on vca (#1429): a read-only "did it still move?" sweep recreated
+    `darwin/rear-vca.png` between the `git rm` and the bot's capture.
+  - Removed **linux only**: a local darwin run canNOT repair it and canNOT
+    corrupt it either — `snapshotPathTemplate` is
+    `'…/{testFilePath}/{platform}/{arg}{ext}'` and `{platform}` resolves on the
+    RUNNING machine, so a darwin run only ever writes under `darwin/`. The
+    linux path stays empty until the bot captures it. (Worth stating because
+    the intuitive fear — "my darwin render lands at the linux path" — is the
+    one thing that cannot happen.)
+  **The check is `git status` for untracked PNGs after EVERY VRT run in a
+  window where you have deleted a baseline** — not just after the ones you
+  intended as captures. Delete anything the run recreated before committing,
+  and let the dispatch own the recapture.
 
 ### A platform gap is declared FOUR ways — `EXEMPT_BASELINE_PAIRS` is only one
 

@@ -58,8 +58,18 @@ export const VCA_CV_AMOUNT: VcaRange = { min: -1, max: 1, default: 1 };
 export const VCA_DISPLAY_EPS = 0.005;
 
 /**
- * The gain law the Faust DSP implements (`vca.dsp:11`,
- * `gain = base + cvAmount * cv : si.smoo`), before smoothing.
+ * The gain law the Faust DSP implements, before the knob de-zip.
+ *
+ * ⚠ THE DSP LINE THIS MIRRORS CHANGED IN #1313 (`290dcdb5`) and the difference
+ * matters to everything below. It used to be `gain = base + cvAmount * cv :
+ * si.smoo` — the one-pole applied to the SUM, which put a 7 Hz lowpass in front
+ * of the CV and made the module deaf to the envelopes it exists to follow (a
+ * 1 ms and a 5 ms attack both produced a 49.79 ms rise). It is now
+ * `gain = (base : si.smoo) + (cvAmount : si.smoo) * cv` — the two KNOBS are
+ * de-zipped, because they step at block rate and would click, and the `cv`
+ * INPUT is left alone, because it is already a continuous signal. So the CV
+ * path is FULL-BANDWIDTH: this function is the gain at every sample for a given
+ * cv, not a target the engine slews towards.
  *
  * Deliberately UNCLAMPED, exactly like the DSP: a sum above 1 boosts past
  * unity and a sum below 0 passes the signal phase-inverted. Clamping here would
@@ -154,6 +164,66 @@ export function formatVcaBase(base: number): string {
   // `toFixed` preserves the sign of a value that rounds to zero, so the thin
   // band just under the UNITY threshold would otherwise read `-0.0 dB`.
   return `${text === '-0.0' ? '0.0' : text} dB`;
+}
+
+/**
+ * THE DERIVED FACEPLATE READOUT — the gain the VCA reaches at the top of a
+ * full-scale CV sweep, i.e. `vcaGain(base, cvAmount, 1)`, printed relative to
+ * unity.
+ *
+ * WHY IT IS DERIVED AND NOT A KNOB READBACK, which is the whole bar for
+ * `FaceReadout.valueId`. Each dial's persistent readout is individually correct
+ * and structurally BLIND to the other one, and the module's clip risk is their
+ * SUM. The def's own `docs.controls.base` tells a player to "raise it to leave
+ * some dry signal under modulation": do that to 0.5 at the shipped
+ * `cvAmount = 1` and every envelope peak now reaches +3.5 dB PAST UNITY, on a
+ * gain the DSP does not clamp. `base` prints `-6.0 dB`. `cvAmount` prints
+ * `OPEN`. Nothing on any surface says 1.5. The two negative controls that
+ * distinguish this from `{ paramId: 'base' }` are PERMANENT legs of
+ * `vca-gain-model.test.ts`, not a one-off check at authoring time.
+ *
+ * THE VOCABULARY, in the same three tiers the dials use, so the strip and the
+ * knobs cannot describe the same state in two languages:
+ *   `CLOSED`        — the sweep peak still displays as zero;
+ *   `UNITY`         — it lands on 1.0;
+ *   `±d.d dB`       — otherwise, with an explicit `+` for a boost past unity;
+ *   `… INV`         — suffixed when the sum went NEGATIVE, i.e. the sweep
+ *                     crosses zero and the output emerges phase-inverted.
+ * The suffix is why the face needs no separate `PHASE` entry: `base` is never
+ * negative, so the sweep inverts IFF this number does.
+ *
+ * ⚠ `LANE_KCOL_MAX_PX` DOES NOT APPLY HERE, and this is the mistake this module
+ * is most likely to invite. The 7-glyph budget that shapes `formatVcaBase` above
+ * is a LANE KNOB COLUMN constraint; the hero strip is dock-only and full-width,
+ * so `+3.5 dB` keeps its decimal at every magnitude instead of dropping it at
+ * 10 dB. Do not copy that branch down here to make the two "consistent" — they
+ * are measured against different boxes.
+ */
+export function formatVcaGainAtFullCv(base: number, cvAmount: number): string {
+  const g = vcaGain(base, cvAmount, 1);
+  if (Math.abs(g) < VCA_DISPLAY_EPS) return 'CLOSED';
+  if (Math.abs(g - 1) < VCA_DISPLAY_EPS) return 'UNITY';
+  const db = linearToDb(g);
+  // `toFixed` keeps the sign of a magnitude that rounds to zero, so the thin
+  // band just under |g| = 1 would otherwise read `-0.0 dB`.
+  const text = db.toFixed(1) === '-0.0' ? '0.0' : db.toFixed(1);
+  return `${Number(text) > 0 ? '+' : ''}${text} dB${g < 0 ? ' INV' : ''}`;
+}
+
+/**
+ * The two live params the derived readout needs, resolved through the caller's
+ * reader (which already falls back to the def default for an untouched param).
+ * Kept here beside the law so the registry entry in `face-readout-values.ts`
+ * carries no arithmetic of its own.
+ */
+export function vcaFaceParams(read: (paramId: string) => number | undefined): {
+  base: number;
+  cvAmount: number;
+} {
+  return {
+    base: read('base') ?? VCA_BASE.default,
+    cvAmount: read('cvAmount') ?? VCA_CV_AMOUNT.default,
+  };
 }
 
 /**
