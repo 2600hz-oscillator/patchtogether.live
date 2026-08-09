@@ -58,7 +58,13 @@
 
 /** `moduleType` → port ids on a `gate` cable that do not declare `edge`. */
 export const UNDECLARED_EDGE_DEBT: Readonly<Record<string, readonly string[]>> = {
-  bluebox: ['gate_0', 'gate_1', 'gate_2', 'gate_3', 'gate_4', 'gate_5', 'gate_6', 'gate_7', 'gate_8', 'gate_9', 'gate_bluebox', 'gate_redbox'],
+  // DRAINED 2026-08-09 (the bluebox faceplate PR): all TWELVE `gate_*` ports now
+  // declare `edge: 'gate'`, which was always what they were — the worklet reads
+  // the level every sample and detects no edge anywhere, and the authored prose
+  // has said "Level-sensitive, not edge-triggered" since the module shipped, in
+  // a sentence that until now was asserted by nothing (the vocabulary clause
+  // short-circuits on `if (!p.edge) continue`).
+  // UNDECLARED_EDGE_CEILING lowered by the same 12 in the same commit, 289 → 277.
   buggles: ['burst', 'clock', 'external_clock'],
   cartesian: ['clock', 'gate', 'lfo_clock'],
   clipplayer: ['gate1', 'gate2', 'gate3', 'gate4', 'gate5', 'gate6', 'gate7', 'gate8'],
@@ -126,13 +132,23 @@ export const UNDECLARED_EDGE_DEBT: Readonly<Record<string, readonly string[]>> =
  *  used full trigger vocabulary, but with no `edge:` the gate skipped the whole
  *  module.
  *
- *  ⚠ THE NUMBER BELOW IS DERIVED FROM THE LIST, NOT INHERITED FROM A MERGE.
- *  Two branches drained one entry each and BOTH wrote the literal `288`, from
- *  289, on different lines. Git merged the list cleanly (2 entries gone) and
- *  would have merged the literal cleanly too had the comments not collided —
- *  leaving one full entry of slack for the next regression to hide in. Whenever
- *  this file merges, COUNT `undeclaredEdgePairs()`; never trust the literal. */
-export const UNDECLARED_EDGE_CEILING = 287;
+ *  287 → 275 (2026-08-09): bluebox's twelve `gate_*` ports declared.
+ *
+ *  ⚠ THIS NUMBER CANNOT BE MERGED — IT HAS TO BE RE-COUNTED, and this file is
+ *  the worked example of why. THREE face PRs drained from the same 289 base:
+ *  meowbox's `gate` (−1, #1417), bluebox's twelve `gate_*` (−12, #1431) and
+ *  macrooscillator's `trig` (−1, #1432). Each wrote its own literal — 288, 277,
+ *  287 — and git has no way to know the truth is the UNION of the drains.
+ *  Taking any one side ships a ceiling with SLACK, and slack in a `<=` ratchet
+ *  is absorbed silently by the next regression, which is the whole failure mode
+ *  the ratchet exists to prevent.
+ *
+ *  On this merge two of those comment blocks collided, which is the only reason
+ *  git surfaced it at all — the third merge (287) came through CLEAN and wrong.
+ *  DERIVED by counting `undeclaredEdgePairs()` on the merged map:
+ *  289 − 1 − 12 − 1 = 275. The both-sides assertion in module-docs-lint proves
+ *  the count rather than the arithmetic. COUNT on every merge; never inherit. */
+export const UNDECLARED_EDGE_CEILING = 275;
 
 /** Flattened `module.port` pairs (the countable form). */
 export function undeclaredEdgePairs(): string[] {

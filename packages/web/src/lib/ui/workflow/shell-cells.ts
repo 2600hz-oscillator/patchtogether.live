@@ -35,6 +35,7 @@ import { testHooksEnabled } from '$lib/dev/test-hooks';
 import Dx7OperatorMap from '$lib/ui/modules/dx7/Dx7OperatorMap.svelte';
 import Dx7OpDetail from '$lib/ui/modules/dx7/Dx7OpDetail.svelte';
 import AnalogVcoHeroPanel from '$lib/ui/modules/AnalogVcoHeroPanel.svelte';
+import BlueboxToneBankPanel from '$lib/ui/modules/BlueboxToneBankPanel.svelte';
 import ClapHeroPanel from '$lib/ui/modules/ClapHeroPanel.svelte';
 import KickdrumHeroPanel from '$lib/ui/modules/KickdrumHeroPanel.svelte';
 import MacrooscillatorHeroPanel from '$lib/ui/modules/MacrooscillatorHeroPanel.svelte';
@@ -276,6 +277,39 @@ export type ShellCell =
  * gates at once instead of silently un-rendering one of them.
  */
 const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
+  bluebox: {
+    // THE TONE BANK — ten bars, one per oscillator, promoted into the hero slot
+    // (`face.hero.cell`). A panel rather than a glyph because it is not a trace
+    // of the output: it is a picture of the BANK, and this module's entire
+    // design is that the bank has TEN slots for TWELVE keys, so two keys sharing
+    // a tone drive ONE slot twice as hard instead of running two voices. The
+    // `meter` glyph in the lane says how hot the sum is (the module's hazard,
+    // and why the lane keeps it); only this says WHY {1,4} beats {1,5}.
+    //
+    // ⚠ THERE ARE NO `bluebox-key-*` CELLS. The twelve keys are the ParamDefs
+    // the def already declares, rendered as momentary <Button>s via
+    // `face.momentary` — the clap `strike` precedent — which keeps them inside
+    // faces-parity's param multiset and makes `setMomentaryParam` the leak-proof
+    // write path. Family cells would be a second implementation of controls the
+    // def already owns.
+    'bluebox-tonebank-{n}': {
+      kind: 'panel',
+      label: 'tone bank',
+      component: BlueboxToneBankPanel,
+      minWidth: 380,
+      // A `text` probe on a DIFFERENT element, the clap/kickdrum reason: the bar
+      // LABELLING is a private view setting in component state, so there is no
+      // node.data key to watch. The button drives the caption row, which a dead
+      // button cannot change — a stronger claim than a revision counter. That
+      // the two modes can never render the SAME caption (which is what makes
+      // this probe non-vacuous) is asserted in bluebox-face-model.test.ts.
+      probe: {
+        testid: 'bluebox-bank-label',
+        action: 'click',
+        effect: { kind: 'text', testid: 'bluebox-bank-axis', expect: 'changed' },
+      },
+    },
+  },
   dx7: {
     // The voice selector — the single control that defines the sound. Drives
     // the SAME `node.data.preset` write the legacy Dx7Card's <select> does

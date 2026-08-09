@@ -133,6 +133,34 @@
 // so a copy in this comment could go stale while the gate stayed green, which
 // is the drift this repo keeps re-learning. Freeze numbers likewise live once,
 // in the FACES roster (`e2e/vrt/_shell-faces.ts`).
+// FACE BATCH 3 · bluebox (2026-08-09) — the DTMF dialer, PROMOTED from having
+// no face at all, and the entry that answers a question the batch had not had to
+// answer: WHAT DOES `face.order` MEAN ON A MODULE WHOSE TWELVE CONTROLS ARE
+// INTERCHANGEABLE?
+//
+// `order` is a PRIORITY ranking for the tiers that show a subset, and a
+// telephone keypad has no priority. This face does not invent one. It ranks by
+// LAYOUT — the twelve keys in the order a telephone prints them, DERIVED from
+// `BLUEBOX_BUTTON_NAMES` rather than typed — and the property that buys is that
+// every PREFIX of the ranking is still a recognisable keypad fragment: the
+// 6-cell lane plate is the top two rows of a phone. The alternatives were
+// considered and are all worse, including the one that is genuinely principled
+// (the minimal bank cover {1,5,9,0,BLUEBOX,REDBOX}, the smallest set of keys
+// that lights all ten oscillators), because it reads in a lane tile as a broken
+// phone and is no more true. Then, because no prefix can carry the module's
+// INFORMATION, the information moves off the key subset entirely: a `meter`
+// glyph in the lane (the real hazard — eight simultaneous digits is full scale)
+// and a ten-bar TONE BANK in the dock, the only surface anywhere that makes the
+// shared-oscillator `+=` visible.
+//
+// ⚠ ITS READOUTS ARE BLIND TO A PRESS, and that is the platform, not the face:
+// a `face.momentary` press writes the engine only and a gate cable is a node
+// input, so neither reaches `node.params` (the source `ModuleShell.readoutValue`
+// reads). Declared on the def, filed as a platform follow-up. Everything the
+// numbers assert is negative-controlled in bluebox-face-model.test.ts, in both
+// directions, against the REAL processor class on twelve key sets — including
+// the one worklet constant the model has to mirror, which is anchored by
+// measuring the shipping DSP rather than by a comment.
 
 export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // P1 batch 1 — first 6 module faces
@@ -167,6 +195,8 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   'analogVco',
   // FACE BATCH 3 · the fourteen-engine macro voice (2026-08-09).
   'macrooscillator',
+  // FACE BATCH 3 · the DTMF dialer (2026-08-09) — see the header note above.
+  'bluebox',
 ]);
 
 /**

@@ -266,3 +266,74 @@ test('bluebox: setting btn_5 param directly drives the tone (no UI click)', asyn
   await setBlueboxParam(page, 'bb', 'btn_5', 0);
   expect(ampRow).toBeGreaterThan(0.05);
 });
+
+// ─── THE FACEPLATE: the tone bank's captions, measured in RENDERED PIXELS ────
+//
+// ⚠ WHY THIS IS A PIXEL ASSERTION AND NOT A TEXT ONE. The hero panel's caption
+// row names which oscillator each bar is, and its LABEL MODE (`Hz` <-> `keys`)
+// is also the panel's declared faces-parity probe — which asserts that row's
+// text CHANGED, via `toHaveText`, i.e. `textContent`. **A CSS ellipsis leaves no
+// trace in `textContent`**, so a caption clipped to `2 5…` would pass
+// faces-parity, pass module-face-lint, and pass VRT (whose dock baseline only
+// ever captures the DEFAULT `Hz` mode) while the picture's labels quietly
+// stopped naming their oscillators. The panel therefore carries no
+// `text-overflow` rule at all, and this is the leg proving the layout does not
+// need one.
+//
+// MEASURED (darwin, dock faceplate): the longest caption is `2 5 8 0` at
+// 30.92 CSS px; the cell FLOORS at 51 px, because the panel hits its 380 px
+// `minWidth` and the dock scrolls rather than shrinking further — so that is
+// 20.1 px of margin at the narrowest width reachable at all.
+// `Range.getBoundingClientRect` measures the TEXT; `scrollWidth` is the wrong
+// instrument here, because it reports the CLAMPED box the moment an overflow
+// rule engages, which is exactly the state this exists to detect.
+test('bluebox faceplate: no tone-bank caption is clipped, in EITHER label mode', async ({ page }) => {
+  await page.goto('/rack?mode=workflow&shell=1');
+  await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: 30_000 });
+  await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
+  await spawnPatch(page, [{ id: 'bb', type: 'bluebox', position: { x: 120, y: 120 } }]);
+
+  const shell = page.locator('.svelte-flow__node[data-id="bb"] [data-testid="module-shell"]');
+  await expect(shell).toBeVisible();
+  await shell.getByTestId('shell-open-dock').click();
+  const faceplate = page.getByTestId('dock-full-view');
+  await expect(faceplate).toBeVisible();
+  await expect(faceplate.getByTestId('bluebox-tonebank')).toBeVisible();
+
+  /** Every caption whose TEXT is wider than its own cell, in CSS px. */
+  const overflows = async (): Promise<string[]> =>
+    page.evaluate(() => {
+      const row = document.querySelector('[data-testid="bluebox-bank-axis"]');
+      const bad: string[] = [];
+      for (const el of [...(row?.children ?? [])]) {
+        const e = el as HTMLElement;
+        const range = document.createRange();
+        range.selectNodeContents(e);
+        const textW = range.getBoundingClientRect().width;
+        if (textW > e.clientWidth) {
+          bad.push(`"${e.textContent}" ${textW.toFixed(1)} CSS px in a ${e.clientWidth} px cell`);
+        }
+      }
+      return bad;
+    });
+
+  const modeButton = faceplate.getByTestId('bluebox-bank-label');
+  // The NARROWEST width the dock actually gives the panel: past its 380 px
+  // minWidth the pane scrolls instead of shrinking, so this IS the worst case.
+  await page.setViewportSize({ width: 760, height: 900 });
+  await expect(faceplate.getByTestId('bluebox-bank-axis')).toBeVisible();
+
+  for (const mode of ['Hz', 'keys'] as const) {
+    // ⚠ ASSERT THE MODE IS ACTUALLY ENTERED before measuring it — the
+    // card-control-overflow lesson: a sweep that re-measures the default layout
+    // twice is green about half of what it claims to cover.
+    await expect(modeButton, `the caption row is in ${mode} mode`).toHaveText(mode);
+    expect(
+      (await overflows()).join('; '),
+      `${mode} mode: a caption is wider than its cell. With no text-overflow rule it now ` +
+        `COLLIDES with its neighbour; with one it would have truncated invisibly and every ` +
+        `text-reading gate in the repo would still be green`,
+    ).toBe('');
+    if (mode === 'Hz') await modeButton.click();
+  }
+});

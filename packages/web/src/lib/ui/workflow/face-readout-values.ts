@@ -62,6 +62,12 @@ import {
   drummergirlSweepSemitones,
 } from '$lib/ui/modules/drummergirl-face-model';
 import {
+  filterCutoffReachText,
+  filterFaceParams,
+  filterPeakDbText,
+  filterResReachText,
+} from '$lib/ui/modules/filter-face-model';
+import {
   kickdrumEnvelopeParams,
   kickdrumTailMs,
 } from '$lib/ui/modules/kickdrum-face-model';
@@ -108,6 +114,7 @@ import {
   sixstrumRollMs,
   sixstrumStringHz,
 } from '$lib/ui/modules/sixstrum-face-model';
+import { formatVcaGainAtFullCv, vcaFaceParams } from '$lib/audio/vca-gain-model';
 
 /** A derived readout: live params in (through the caller's reader, which
  *  already resolves def defaults for untouched params), formatted string out.
@@ -197,6 +204,24 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
   'drummergirl-release-ms': (read) => fmtMs(drummergirlReleaseMs(drummergirlParams(read))),
   'drummergirl-sweep-ms': (read) => fmtMs(drummergirlSweepMs(drummergirlParams(read))),
 
+  // ── FILTER ───────────────────────────────────────────────────────────────
+  // NONE of the three is a knob on the panel, and each one is blind in a
+  // different direction from its nearest dial:
+  //   `peak`      is a function of MODE **and** RESONANCE — at resonance 0 the
+  //               three modes are 5.2 dB apart (0.0 / +2.1 / −3.1) while a
+  //               `resonance` readback prints 0.00 for all three; they CONVERGE
+  //               above ≈ Q 5, which is the fact it teaches.
+  //   `cv reach`  models the DSP's 20 kHz CLAMP, so moving CUTOFF collapses the
+  //               reachable span from 9.32 to 6.32 octaves where an unclamped
+  //               `cutoff × 2^±5` is invariant at ten octaves.
+  //   `res reach` collapses to `… · muted` the moment its depth knob hits 0 —
+  //               the ONE fact this faceplate most needs to say, since both
+  //               depth knobs are engine gains ON THE JACK and do literally
+  //               nothing until a cable lands.
+  // All three negative-controlled, permanently, in filter-face-model.test.ts.
+  'filter-peak-db': (read) => filterPeakDbText(filterFaceParams(read)),
+  'filter-cutoff-reach': (read) => filterCutoffReachText(filterFaceParams(read)),
+  'filter-res-reach': (read) => filterResReachText(filterFaceParams(read)),
   // ── MEOWBOX ──────────────────────────────────────────────────────────────
   // Six numbers, and MORPH is the input all but one of them turn on — because
   // MORPH indexes thirteen tables and its own readback is `0.25`, which is blind
@@ -289,6 +314,19 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
   'sixstrum-pick-notch': (read) =>
     fmtPartial(sixstrumPickNotchPartial(sixstrumFaceParams(read))),
   'sixstrum-burst-ms': (read) => `${sixstrumBurstMs(sixstrumFaceParams(read)).toFixed(1)} ms`,
+
+  // ── VCA ──────────────────────────────────────────────────────────────────
+  // The gain at the TOP of a full-scale CV sweep, `base + cvAmount`. Each dial
+  // is individually right and blind to the other, and the module's clip risk is
+  // their SUM: at base 0.5 / cvAmount 1 the VCA reaches +3.5 dB past unity on an
+  // UNCLAMPED gain while `base` prints `-6.0 dB` and `cvAmount` prints `OPEN`.
+  // Both blindness legs are permanent in vca-gain-model.test.ts, together with
+  // an ORACLE leg that re-derives the printed dB from `vcaGain` so the string is
+  // pinned to the DSP's law rather than to its own table.
+  'vca-gain-at-full-cv': (read) => {
+    const { base, cvAmount } = vcaFaceParams(read);
+    return formatVcaGainAtFullCv(base, cvAmount);
+  },
 };
 
 /** The derived value for a declared id, or `null` (⇒ the readout prints `—`

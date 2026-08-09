@@ -377,20 +377,74 @@ describe('every shipped module resolves to a push card', () => {
     }
   });
 
-  it('only a module with NO turnable params ends up with a blank card', () => {
+  /**
+   * The GROUND TRUTH for a blank card: the module has no param an ENCODER can
+   * turn. Two disqualifiers, and both matter —
+   *   * a degenerate range (`isTurnable`), which no shipped module has; and
+   *   * a MOMENTARY press-pad, which `resolvePushCardControls` skips at every
+   *     tier, override included, because an encoder cannot press a key.
+   *
+   * ⚠ THIS USED TO BE `params.length === 0`, AND THAT WAS A DIFFERENT CLAIM
+   * WEARING THIS ONE'S NAME. It equated "no turnable params" with "no params at
+   * all", which held only while no module's ENTIRE param list was press-pads.
+   * bluebox is that module (twelve keys, all `face.momentary`), and the
+   * assertion went red the moment it existed — correctly, but with a message
+   * about the wrong thing. Derived from the defs, so it stays anchored to the
+   * artifact instead of to a hand-list that would rot.
+   */
+  function noTurnableTypes(): string[] {
+    return allDefs()
+      .filter((d) => {
+        const momentary = momentaryParamIds(d);
+        return !(d.params ?? []).some((p) => !momentary.has(p.id) && isTurnable(p));
+      })
+      .map((d) => d.type);
+  }
+
+  it('only a module with NO ENCODER-TURNABLE param ends up with a blank card', () => {
     const blank: string[] = [];
     for (const def of allDefs()) {
       if (pushCardParams(resolvePushCardControls(def)).length === 0) blank.push(def.type);
     }
-    // The 21 port-only / DOM-only modules (clocked-runner, midi-lane, painter,
-    // videoOut, the meta widgets, …) genuinely have no ParamDefs at all.
-    const noParams = allDefs().filter((d) => (d.params ?? []).length === 0).map((d) => d.type);
-    expect(blank.sort()).toEqual(noParams.sort());
+    expect(blank.sort()).toEqual(noTurnableTypes().sort());
   });
 
-  it('every faced module resolves through the override or face tier', () => {
+  it('the blank-card set is the port-only modules PLUS the all-press-pad ones', () => {
+    // The clause above is an equality between two derivations; this one names
+    // what is actually in the set, so a module silently JOINING it is visible.
+    // The 21+ port-only / DOM-only modules (clocked-runner, midi-lane, painter,
+    // videoOut, the meta widgets, …) genuinely declare no ParamDefs.
+    const noParams = new Set(allDefs().filter((d) => (d.params ?? []).length === 0).map((d) => d.type));
+    const allPressPads = noTurnableTypes().filter((t) => !noParams.has(t));
+    // ⚠ ONE ENTRY, AND IT IS A DELIBERATE HARDWARE STATE, NOT A REGRESSION.
+    // bluebox is twelve momentary keys and nothing else, so its Push card is
+    // the screen's own `no-controls` state ("this module has no turnable
+    // controls") rather than eight encoders. Before `curve: 'discrete'` landed
+    // the generic tier put EIGHT of the twelve keys on encoders as continuous
+    // 0..1 dials — which dropped keys 9/0/BLUEBOX/REDBOX outright, ramped
+    // uselessly from 0.00 to 0.49, and (worse) wrote a DURABLE held-key value
+    // into the Y.Doc, the exact data-integrity bug $lib/audio/momentary-params
+    // exists to prevent. Saying "nothing to turn" is the honest card.
+    // A keypad wants the Push's 64 PADS, not its 8 encoders; that is a real
+    // follow-up and a different surface from this schema.
+    expect(allPressPads).toEqual(['bluebox']);
+  });
+
+  it('every faced module with something to turn resolves through override or face', () => {
+    // DENY BY DEFAULT: a faced module falling through to `generic` normally
+    // means its curated ranking was ignored. The ONE legitimate reason is that
+    // the face ranks nothing an encoder can turn, and that reason is checked
+    // rather than asserted — the module must actually have zero turnable params.
+    const noTurnable = new Set(noTurnableTypes());
     for (const def of allDefs()) {
       if (!def.face) continue;
+      if (noTurnable.has(def.type)) {
+        expect(
+          resolvePushCardControls(def).source,
+          `${def.type}: has no turnable param, so the card must be the generic blank`,
+        ).toBe('generic');
+        continue;
+      }
       expect(resolvePushCardControls(def).source, def.type).not.toBe('generic');
     }
   });
