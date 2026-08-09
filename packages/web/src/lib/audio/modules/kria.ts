@@ -99,11 +99,11 @@ export const kriaDef: AudioModuleDef = {
       gate1:
         "Track 1's gate: goes high on steps whose trigger lane is set and whose probability roll passes; the duration lane sets how wide it stays high and the ratchet lane subdivides it into 1–4 evenly-spaced re-hits within the step.",
       pitch2: "Track 2's pitch CV (V/oct), quantized through the shared scale/root with its own glide slew.",
-      gate2: "Track 2's gate, shaped by track 2's duration, probability and ratchet lanes.",
+      gate2: "Track 2's gate: goes high on its own trigger-lane steps, with track 2's duration lane setting how wide it stays high and its probability and ratchet lanes shaping the rest.",
       pitch3: "Track 3's pitch CV (V/oct), quantized through the shared scale/root with its own glide slew.",
-      gate3: "Track 3's gate, shaped by track 3's duration, probability and ratchet lanes.",
+      gate3: "Track 3's gate: goes high on its own trigger-lane steps, with track 3's duration lane setting how wide it stays high and its probability and ratchet lanes shaping the rest.",
       pitch4: "Track 4's pitch CV (V/oct), quantized through the shared scale/root with its own glide slew.",
-      gate4: "Track 4's gate, shaped by track 4's duration, probability and ratchet lanes.",
+      gate4: "Track 4's gate: goes high on its own trigger-lane steps, with track 4's duration lane setting how wide it stays high and its probability and ratchet lanes shaping the rest.",
     },
     controls: {
       bpm:

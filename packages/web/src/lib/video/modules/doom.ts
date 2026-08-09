@@ -346,8 +346,10 @@ export const doomDef: VideoModuleDef = {
     // The legacy `evt_kill` any-monster gate stays untouched — a counted
     // monster death fires BOTH that and its matching typed gate. See
     // packages/web/src/lib/doom/doom-death-ports.ts for the stable order.
-    ...MONSTER_KILL_PORTS.map((p) => ({ id: p.portId, type: 'gate' as const })),
-    ...PLAYER_DEATH_PORTS.map((p) => ({ id: p.portId, type: 'gate' as const })),
+    // All TRIGGERS, like every other evt_* jack: one fixed EVT_PULSE_S = 0.01
+    // pulse per event through `pulseGate` (:724-730) — never a held level.
+    ...MONSTER_KILL_PORTS.map((p) => ({ id: p.portId, type: 'gate' as const, edge: 'trigger' as const })),
+    ...PLAYER_DEATH_PORTS.map((p) => ({ id: p.portId, type: 'gate' as const, edge: 'trigger' as const })),
   ],
   params: [
     { id: 'audioGain', label: 'Gain', defaultValue: 1, min: 0, max: 2, curve: 'linear' },

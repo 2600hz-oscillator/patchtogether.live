@@ -177,11 +177,11 @@ export const outlinesDef: VideoModuleDef = {
   inputs: [
     // A gate event spawns a new shape. The CV-bridge routes the gate sample
     // into setParam(cv_gate, value); a rising-edge detector spawns one shape.
-    { id: OUTLINES_GATE_PORT_ID, type: 'gate', paramTarget: OUTLINES_GATE_PARAM_ID },
+    { id: OUTLINES_GATE_PORT_ID, type: 'gate', edge: 'trigger', paramTarget: OUTLINES_GATE_PARAM_ID },
     // LIVE inter-shape COLLIDE mode. The CV-bridge routes this gate's LEVEL
     // into setParam(cv_collide, value); the sim reads it each frame (HIGH →
     // shapes bounce off each other elastically, LOW → pass through).
-    { id: OUTLINES_COLLIDE_PORT_ID, type: 'gate', paramTarget: OUTLINES_COLLIDE_PARAM_ID },
+    { id: OUTLINES_COLLIDE_PORT_ID, type: 'gate', edge: 'gate', paramTarget: OUTLINES_COLLIDE_PARAM_ID },
     // Per-param CV — port id MUST equal the param id (the cross-domain CV
     // bridge routes onto setParam(portId)). `rate` is knob-only (no port).
     // These are CONTINUOUS knob modulators, so each MUST carry a `cvScale`

@@ -220,8 +220,8 @@ export const marblesDef: AudioModuleDef = {
       scale_cv: "Discrete CV that modulates the X-section quantizer Scale select (C major, C minor, pentatonic, Pelog, Raag Bhairav, Raag Shri).",
     },
     outputs: {
-      t1: "First random gate from the T section, firing per the selected model's logic, bias and jitter. Patch into a drum/envelope trigger.",
-      t2: "Second random gate from the T section — complementary or independent of t1 depending on the model. The two together build call-and-response rhythms.",
+      t1: "First random gate from the T section, opening per the selected model's logic, bias and jitter. It stays high for a VARIABLE span the model picks from the step (roughly 5–95% of it), not a fixed pulse, so gate length is part of the rhythm. Patch into a drum or envelope input.",
+      t2: "Second random gate from the T section — complementary or independent of t1 depending on the model, and likewise held high for a model-chosen fraction of each step rather than a fixed width. The two together build call-and-response rhythms.",
       x1: "First quantized random control voltage from the X section, shaped by Spread/Bias/Steps and snapped to the chosen Scale. Patch into a pitch input.",
       x2: "Second random control voltage, decorrelated from x1 — a different but related stream for a second voice or parameter.",
       x3: "Third random control voltage, decorrelated from x1 and x2 — a third independent stream.",
