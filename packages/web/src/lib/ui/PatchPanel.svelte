@@ -50,11 +50,12 @@
   import {
     resolveVerboseLabel,
     groupPortsByCableType,
+    remoteEndpointsTitle,
     type GroupedPorts,
     type PortDescriptor,
   } from '$lib/ui/patch-panel-labels';
   import { collapseStereoPorts, type CollapsedPort } from '$lib/ui/stereo-jack-collapse';
-  import { stereoPairForPort, type StereoPairDefLike } from '$lib/graph/stereo-pairs';
+  import type { StereoPairDefLike } from '$lib/graph/stereo-pairs';
   import { connectDragState } from '$lib/ui/connect-drag-state.svelte';
   import {
     CLOSED,
@@ -420,18 +421,17 @@
     return remotesFor(portId, direction, siblingId).length > 0;
   }
 
-  /** Hover/aria text for a patched jack: INPUT takes one cable (← FROM …);
-   *  OUTPUT fans out (→ TO a, b, …). Empty for an unpatched port. */
+  /** Hover/aria text for a patched jack — `← FROM a, b` / `→ TO a, b`, or
+   *  undefined when unpatched. Both directions name EVERY remote: a collapsed
+   *  stereo jack is one jack over two ports and can be fed by two different
+   *  sources (the owner's `RET1` takes `es9.in14` on L and `es9.in13` on R).
+   *  See `remoteEndpointsTitle` for the truncation this used to have. */
   function patchTitle(
     portId: string,
     direction: 'input' | 'output',
     siblingId?: string,
   ): string | undefined {
-    const remotes = remotesFor(portId, direction, siblingId);
-    if (remotes.length === 0) return undefined;
-    return direction === 'input'
-      ? `← FROM ${remotes[0]}`
-      : `→ TO ${remotes.join(', ')}`;
+    return remoteEndpointsTitle(direction, remotesFor(portId, direction, siblingId));
   }
 
   // ---------------- Right-click → UNPATCH (every patch point) --------------
@@ -475,34 +475,29 @@
     return true;
   }
 
-  /** True when right-clicking this OUTPUT row should offer the per-channel
-   *  patch menu — i.e. the port is one half of a DERIVED stereo pair, the same
-   *  pairing that collapsed it into one jack. Reads the COLLAPSE list on
-   *  purpose: "patch only L / only R" is a statement about a jack the UI
-   *  presents as one stereo signal. `rings`' odd/even taps are COLLAPSE_EXEMPT
-   *  (two timbres, two jacks) and are correctly excluded — "only L" would be a
-   *  lie about them. */
-  function hasStereoImage(port: CollapsedPort, direction: 'input' | 'output'): boolean {
-    if (port.siblingId) return true;
-    if (!stereoDef) return false;
-    return stereoPairForPort(stereoDef, port.id, direction) !== null;
-  }
-
   /** Drill-down port ROW right-click. Precedence, highest first:
    *    1. PATCHED point → the shared unpatch menu (unchanged);
-   *    2. UNPATCHED stereo OUTPUT → the per-channel patch picker (new). This
-   *       row's contextmenu was dead before — it fell straight through to the
-   *       browser menu — so nothing is being displaced;
+   *    2. UNPATCHED OUTPUT → the patch picker;
    *    3. gate INPUT → the MIDI-assign menu (unchanged).
    *  Anything else is left ENTIRELY alone (no preventDefault), exactly as
-   *  before, so no pre-existing right-click behaviour changes. */
+   *  before, so no pre-existing right-click behaviour changes.
+   *
+   *  ⚠ RULE 2 USED TO REQUIRE A STEREO IMAGE (`hasStereoImage`), so right-
+   *  clicking a MONO output did nothing at all — the event fell straight
+   *  through to the browser menu. That made the owner's ES-9 return
+   *  unbuildable: the source he needs to patch FROM is `es9.in14`, a mono
+   *  hardware point, so the gesture he reached for ("when i right click the
+   *  output i expect the option") was dead on exactly the port that needed it.
+   *  Every output now opens the picker; the per-side rows inside it still
+   *  appear only where there is a side to take, so the SCOPE of the channel
+   *  control is unchanged — only its reachability. */
   function onPortRowContextMenu(
     e: MouseEvent,
     port: CollapsedPort,
     direction: 'input' | 'output',
   ): void {
     if (dispatchUnpatchMenu(e, port.id, direction, port.siblingId)) return;
-    if (direction === 'output' && hasStereoImage(port, direction)) {
+    if (direction === 'output') {
       dispatchPortChannelMenu(e, port.id);
       return;
     }

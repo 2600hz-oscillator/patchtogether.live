@@ -10,6 +10,7 @@ import { describe, expect, it } from 'vitest';
 import {
   resolveVerboseLabel,
   groupPortsByCableType,
+  remoteEndpointsTitle,
   type PortDescriptor,
 } from './patch-panel-labels';
 import { stereoPairStemId } from '$lib/graph/stereo-pairs';
@@ -215,5 +216,51 @@ describe('groupPortsByCableType', () => {
     const groups = groupPortsByCableType(ports, 'input');
     expect(groups).toHaveLength(1);
     expect(groups[0]!.ports.map((p) => p.id)).toEqual(['attack', 'decay', 'sustain', 'release']);
+  });
+});
+
+describe('remoteEndpointsTitle', () => {
+  // ⚠ THE ONE THAT MATTERS. The input side used to print `remotes[0]` and drop
+  // the rest, on the premise "an INPUT takes one cable" — true of a mono input,
+  // FALSE of a collapsed stereo jack, which is one jack over two ports each
+  // taking its own cable. The owner's `RET1` is fed by `es9.in14` on its L leg
+  // and `es9.in13` on its R, so the jack named only IN14 while the matching
+  // SEND 1 output correctly named both its targets.
+  //
+  // A SINGLE-remote input renders identically either way, so a one-cable test
+  // CANNOT fail on the old code. This is the case that can.
+  it('an INPUT fed by TWO sources names BOTH', () => {
+    expect(remoteEndpointsTitle('input', ['es-9.IN14', 'es-9.IN13'])).toBe(
+      '← FROM es-9.IN14, es-9.IN13',
+    );
+  });
+
+  it('an OUTPUT feeding TWO targets names BOTH', () => {
+    expect(remoteEndpointsTitle('output', ['es-9.OUT3', 'es-9.OUT4'])).toBe(
+      '→ TO es-9.OUT3, es-9.OUT4',
+    );
+  });
+
+  it('the ARROW is the only thing that differs between the two directions', () => {
+    // The asymmetry WAS the bug, so it is asserted away rather than left for
+    // the next reader of the old docstring to reintroduce as an invariant.
+    const remotes = ['a.X', 'b.Y', 'c.Z'];
+    const input = remoteEndpointsTitle('input', remotes)!;
+    const output = remoteEndpointsTitle('output', remotes)!;
+    expect(input.replace('← FROM', '')).toBe(output.replace('→ TO', ''));
+  });
+
+  it('reads naturally with ONE remote — a half-patched collapsed jack', () => {
+    // Normal state on this branch: per-leg patching means a stereo jack often
+    // has one leg patched and one empty. No trailing comma, no "1 of 2".
+    expect(remoteEndpointsTitle('input', ['es-9.IN14'])).toBe('← FROM es-9.IN14');
+    expect(remoteEndpointsTitle('output', ['es-9.OUT3'])).toBe('→ TO es-9.OUT3');
+  });
+
+  it('an UNPATCHED jack has NO title (undefined, not an empty arrow)', () => {
+    // Callers render undefined as "no title attribute at all"; an empty string
+    // would put a bare "← FROM" tooltip on every hollow jack.
+    expect(remoteEndpointsTitle('input', [])).toBeUndefined();
+    expect(remoteEndpointsTitle('output', [])).toBeUndefined();
   });
 });

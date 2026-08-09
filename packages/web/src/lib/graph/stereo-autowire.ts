@@ -19,6 +19,12 @@
 //   | stereo → mono     | BOTH legs into the mono input — NOT a sum, NOT one |
 //   | mono   → mono     | one leg                                           |
 //
+// ⚠ ONE NAMED EXCEPTION: a MONO AUDIO POINT target (`MONO_AUDIO_POINT_MODULES`
+// in stereo-pairs.ts — the ES-9, and per the owner nothing else ever). Its
+// audio ports are independent PHYSICAL JACKS, so the `stereo → mono` row would
+// sum two legs into one hardware output. At most one leg lands on such a port;
+// see the MONO AUDIO POINT trim below.
+//
 // ⚠ THE DELETED SPECIAL CASE. The pre-reversal design wrote ONE leg when a
 // mono source round-tripped back into a mono input, so a correlated signal
 // would not gain +6 dB from the sum. **It is deliberately NOT ported.**
@@ -54,7 +60,11 @@
 
 import type { Edge, PortDef, CableType } from './types';
 import { canConnectToPort } from './types';
-import { wiringPairForPort, type StereoPairDefLike } from './stereo-pairs';
+import {
+  isMonoAudioPointModule,
+  wiringPairForPort,
+  type StereoPairDefLike,
+} from './stereo-pairs';
 
 /**
  * The minimal def shape the planner needs: the directional port lists (so a
@@ -261,6 +271,38 @@ export function planAudioCommit(args: PlanAudioCommitArgs): AudioCommitPlan {
       targetType: legTargetType,
       clicked: c.clicked,
     });
+  }
+
+  // ---- MONO AUDIO POINT trim (ES-9) ----
+  //
+  // The DUAL-MONO rule sends BOTH legs to the SAME `toPortId` when the target
+  // is unpaired. Into an ES-9 physical output jack that is two signals summing
+  // into one hardware output — a patching error with no musical reading, not a
+  // stereo cable (`MONO_AUDIO_POINT_MODULES`). So at most ONE leg may land on
+  // any one such port, and the one kept is the CLICKED leg: what the user
+  // actually named is what gets patched.
+  //
+  // ⚠ IT MUST RUN AFTER the channelMode filter, not instead of the sibling
+  // candidate. For a mono target the R side IS the sibling leg (both legs share
+  // the port), so refusing to PLAN the sibling would make "patch only R" into
+  // an ES-9 jack write nothing at all — silently, since an empty plan is a
+  // perfectly valid-looking plan. Here every mode still yields exactly one leg.
+  //
+  // ⚠ AND it is keyed on the PORT, not the module: `spdif_l`/`spdif_r` is a
+  // genuine declared pair on the same ES-9, resolves two DIFFERENT ports, and
+  // still wires as one stereo cable.
+  if (legs.length > 1 && isMonoAudioPointModule(toDef?.type)) {
+    const claimed = new Set<string>();
+    // Clicked first, so it is the leg that survives a collision; the array is
+    // re-sorted into L-before-R order immediately below.
+    const byPreference = [...legs].sort((a, b) => Number(b.clicked) - Number(a.clicked));
+    const kept = new Set<string>();
+    for (const leg of byPreference) {
+      if (claimed.has(leg.toPortId)) continue;
+      claimed.add(leg.toPortId);
+      kept.add(leg.id);
+    }
+    for (let i = legs.length - 1; i >= 0; i--) if (!kept.has(legs[i]!.id)) legs.splice(i, 1);
   }
 
   // LEFT before RIGHT, deterministically, whichever side was clicked.

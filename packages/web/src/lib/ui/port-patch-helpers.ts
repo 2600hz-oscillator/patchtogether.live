@@ -33,11 +33,44 @@ export interface ModuleEntry {
 }
 
 export interface CandidatePort {
+  /**
+   * Stable row identity. NOT `portId` — a collapsed stereo target now offers
+   * THREE rows (the pair, then its L and its R) and two of them address the
+   * same `portId`, so keying a list on `portId` would collide.
+   */
+  key: string;
+  /**
+   * The port id the commit addresses. For a collapsed pair — stereo row AND
+   * per-leg rows alike — this is the pair's LEFT port, because `planAudioCommit`
+   * derives the sibling leg and applies `channelMode` symmetrically from
+   * whichever endpoint carries the image. Naming the R port here instead would
+   * be right for a mono source and WRONG for a paired one (it re-anchors the
+   * clicked leg on the source side and the single surviving leg then lands on
+   * the other target port — verified, and the reason this field is documented).
+   */
   portId: string;
   /** Verbose label (already uppercased). */
   label: string;
   /** Type from the def — used to colour the row stripe. */
   cable: string;
+  /**
+   * Set ONLY on a per-leg row: which side of the collapsed stereo pair this row
+   * patches. The caller turns it into `planAudioCommit`'s `channelMode`, so the
+   * commit writes EXACTLY ONE edge.
+   *
+   * WHY THE ROWS EXIST (owner, 2026-08-07). His ES-9 rack returns two stereo
+   * buses from hardware on jacks he chose by hand — `in14`→RET1 **L** with
+   * `in13`→RET1 **R** (reversed), and `in11`/`in12` non-adjacent to them. The
+   * source is a MONO ES-9 point, so the picker's source-side "patch only L/R"
+   * rows are correctly hidden (a mono signal has no side to take), and the
+   * target RET1 renders as ONE collapsed jack — leaving no gesture anywhere in
+   * the app that says "just the L leg". Auto-spreading L to the next adjacent
+   * jack was explicitly rejected: it would silently swap his channels.
+   */
+  leg?: 'left' | 'right';
+  /** True on the parent STEREO row of a collapsed pair — the one that patches
+   *  both legs. Lets the menu group the pair with its two per-leg children. */
+  stereo?: boolean;
   /** When set, this is an INPUT port already receiving from another cable.
    *  Selecting it will replace the existing connection. */
   occupiedBy?: {
@@ -126,31 +159,78 @@ export function compatibleTargetPorts(
       canConnectToPort(srcType, p),
     );
     // ONE ENTRY PER STEREO PAIR — the same collapse the card's jack rows use,
-    // so the picker offers the same jacks the panel shows. Offering `L` and `R`
-    // separately here would let a user "choose" a leg the planner immediately
-    // overrides (a stereo commit writes both regardless), and the CHANNEL is
-    // chosen by the picker's own only-L / only-R rows instead.
+    // so the picker offers the same jacks the panel shows — PLUS, for a pair,
+    // its two legs as their own rows.
+    //
+    // The per-leg rows are the "patch to…" half of the per-side gesture. The
+    // picker's source-side only-L/only-R rows can only appear when the SOURCE
+    // carries a stereo image; a MONO source into a collapsed stereo target had
+    // no per-side affordance at all, which is exactly the ES-9 return case
+    // (`es9.in14` → mixmstrs `ret1L` alone). Drilling the pair open here covers
+    // the other direction with the same one control: picking a leg row simply
+    // means `channelMode = that side`.
     for (const p of collapseStereoPorts(
       compatible.map((p) => ({ id: p.id, label: portLabel(p), cable: p.type as string })),
       targetDef as unknown as StereoPairDefLike,
       'input',
     )) {
-      // A collapsed jack is OCCUPIED if EITHER leg is — replacing it replaces
-      // the whole cable, and the warning has to say so.
-      const occ =
-        findOccupant(targetNodeId, p.id, edges) ??
-        (p.siblingId ? findOccupant(targetNodeId, p.siblingId, edges) : undefined);
-      out.push({
-        portId: p.id,
-        label: p.label ?? p.id,
-        cable: p.cable ?? 'audio',
-        occupiedBy: occ
+      const occupantOf = (portId: string) => {
+        const occ = findOccupant(targetNodeId, portId, edges);
+        return occ
           ? {
               sourceNodeId: occ.source.nodeId,
               sourcePortId: occ.source.portId,
               sourceDisplayName: `${moduleDisplayName(occ.source.nodeId, nodes, defLookup)}.${occ.source.portId}`,
             }
-          : undefined,
+          : undefined;
+      };
+      const cable = p.cable ?? 'audio';
+      if (!p.siblingId) {
+        out.push({
+          key: p.id,
+          portId: p.id,
+          label: p.label ?? p.id,
+          cable,
+          occupiedBy: occupantOf(p.id),
+        });
+        continue;
+      }
+      // A COLLAPSED PAIR. `collapseStereoPorts` emits the row at whichever
+      // member came first in the def, so the side has to be read off `p.side`
+      // rather than assumed — a rail that declares R before L still resolves
+      // the same LEFT port here.
+      const leftId = p.side === 'left' ? p.id : p.siblingId;
+      const rightId = p.side === 'left' ? p.siblingId : p.id;
+      const base = p.label ?? p.id;
+      // The parent row is OCCUPIED if EITHER leg is — it replaces the whole
+      // cable, and the warning has to say so. Each leg row speaks only for its
+      // own leg, so an only-L cable does not flag the R row as destructive.
+      out.push({
+        key: `${leftId}|stereo`,
+        portId: leftId,
+        label: base,
+        cable,
+        stereo: true,
+        occupiedBy: occupantOf(leftId) ?? occupantOf(rightId),
+      });
+      out.push({
+        key: `${leftId}|left`,
+        portId: leftId,
+        label: `${base} L`,
+        cable,
+        leg: 'left',
+        occupiedBy: occupantOf(leftId),
+      });
+      out.push({
+        // ⚠ `portId` is the pair's LEFT port even on the RIGHT row — see the
+        // CandidatePort.portId note. The R-ness travels in `leg`, and the
+        // planner resolves the actual port from the pair.
+        key: `${leftId}|right`,
+        portId: leftId,
+        label: `${base} R`,
+        cable,
+        leg: 'right',
+        occupiedBy: occupantOf(rightId),
       });
     }
   } else {
@@ -158,12 +238,17 @@ export function compatibleTargetPorts(
     // OUTPUT into our input. Compatibility is canConnect(targetOutputType,
     // srcType) — the cable runs from target → source.
     const compatible = targetDef.outputs.filter((p) => canConnect(p.type as string, srcType));
+    // The source is an INPUT, so the user is choosing a SOURCE here and the
+    // image is the source's to split — that is what the picker's own channel
+    // rows do. No per-leg rows on this rail; see the `portMenuStereoPair`
+    // note in Canvas.
     for (const p of collapseStereoPorts(
       compatible.map((p) => ({ id: p.id, label: portLabel(p), cable: p.type as string })),
       targetDef as unknown as StereoPairDefLike,
       'output',
     )) {
       out.push({
+        key: p.id,
         portId: p.id,
         label: p.label ?? p.id,
         cable: p.cable ?? 'audio',

@@ -39,6 +39,20 @@
      *  leg — the caller routes it through planAudioCommit's channelMode, so
      *  there is one commit seam and no muted-but-present edge. */
     onchannelmode?: (edgeId: string, mode: 'both' | 'left' | 'right') => void;
+    /**
+     * Start ANOTHER cable from this patch point — opens the patch picker.
+     *
+     * WHY IT IS HERE. An OUTPUT fans out: the owner's own rack drives
+     * `masterL` into three different targets. But right-clicking a patched
+     * point opened THIS menu and nothing else, so once a jack had one cable
+     * there was no right-click route to a second one — and his two aux sends
+     * leave the SAME collapsed `SEND1` jack for two different ES-9 outputs
+     * (`send1L`→out3, `send1R`→out4). The first was patchable and the second
+     * was not, from the identical gesture.
+     *
+     * Omitted for an INPUT, which holds one cable and has nothing to fan out.
+     */
+    onpatchto?: () => void;
     onclose: () => void;
   }
 
@@ -51,6 +65,7 @@
     allLabel,
     onunpatch,
     onchannelmode,
+    onpatchto,
     onclose,
   }: Props = $props();
 
@@ -174,6 +189,24 @@
             </button>
           </li>
         {/if}
+        {#if onpatchto}
+          <li>
+            <button
+              type="button"
+              class="ctx-item patch-to"
+              role="menuitem"
+              data-testid="unpatch-patch-to"
+              title="Run another cable from this output"
+              onclick={() => {
+                onpatchto();
+                onclose();
+              }}
+            >
+              <span class="cut" aria-hidden="true">+</span>
+              <span class="txt">Patch to…</span>
+            </button>
+          </li>
+        {/if}
       </ul>
     </div>
   </div>
@@ -271,5 +304,20 @@
     margin-top: 2px;
     padding-top: 7px;
     color: #f87171;
+  }
+  /* ADDITIVE, not destructive — so it reads as the opposite of the ✂ rows
+     above it rather than as another way to cut something. */
+  .ctx-item.patch-to {
+    border-top: 1px solid #333a45;
+    margin-top: 2px;
+    padding-top: 7px;
+  }
+  .ctx-item.patch-to .cut {
+    color: var(--accent, #60a5fa);
+    font-weight: 700;
+  }
+  .ctx-item.patch-to:hover,
+  .ctx-item.patch-to:focus-visible {
+    background: rgba(96, 165, 250, 0.12);
   }
 </style>

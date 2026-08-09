@@ -198,6 +198,38 @@ export function resolveVerboseLabel(port: PortDescriptor): string {
 }
 
 /**
+ * THE hover/aria text naming what a patched jack is connected to.
+ *
+ * `← FROM a, b` for an input, `→ TO a, b` for an output. Returns undefined for
+ * an unpatched jack (no remotes), which every caller renders as "no title".
+ *
+ * ⚠ BOTH DIRECTIONS JOIN THE FULL LIST. The input side used to print
+ * `remotes[0]` and silently drop the rest, on the premise — stated in its own
+ * docstring — that "an INPUT takes one cable". That is true of a MONO input and
+ * FALSE of a COLLAPSED STEREO JACK, which is one jack over two ports, each
+ * taking its own cable. The owner's ES-9 rack is exactly that case: `RET1` is
+ * fed by `es9.in14` on its L leg and `es9.in13` on its R, so the jack read
+ * `← FROM es-9.IN14` and the second source was invisible — while the matching
+ * `SEND 1` output correctly read `→ TO es-9.OUT3, es-9.OUT4`. The asymmetry was
+ * the bug; the arrow is now the ONLY thing that differs between the two.
+ *
+ * ONE implementation, called by every surface. `PatchPanel.patchTitle` and
+ * `RearCard.holeTitle` each had their own copy of the truncating line, so the
+ * single premise above produced the same defect in two places — which is the
+ * reason this lives here rather than being fixed twice.
+ *
+ * The caller supplies `remotes` already unioned across a collapsed pair's legs
+ * (L leg first, then R), so the order is deterministic and reads L-to-R.
+ */
+export function remoteEndpointsTitle(
+  direction: 'input' | 'output',
+  remotes: readonly string[],
+): string | undefined {
+  if (remotes.length === 0) return undefined;
+  return `${direction === 'input' ? '← FROM' : '→ TO'} ${remotes.join(', ')}`;
+}
+
+/**
  * Group a port list by its cable type, ordered Gates → Pitches → CV →
  * Audio → Poly. Each group emits its own header in the panel. Ports
  * within a group keep their original (declared) order.

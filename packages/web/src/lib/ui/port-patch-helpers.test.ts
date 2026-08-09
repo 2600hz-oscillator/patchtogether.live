@@ -201,6 +201,88 @@ describe('compatibleTargetPorts (output → ?)', () => {
   });
 });
 
+describe('compatibleTargetPorts — a collapsed stereo target DRILLS INTO ITS LEGS', () => {
+  // THE MISSING GESTURE (owner, 2026-08-07). A collapsed stereo input renders
+  // as ONE jack, so a MONO source — an ES-9 hardware point — had no way to say
+  // "just the L leg": the picker's source-side only-L/only-R rows require the
+  // SOURCE to carry a stereo image, and a mono point does not. Three rows per
+  // pair is the other half of that control.
+  const nodes = { ao1: makeNode('ao1', 'audioOut') };
+
+  it('offers the pair, then its L, then its R', () => {
+    const out = compatibleTargetPorts(
+      'audio', 'output', audioOutDef, 'ao1', {}, nodes, defs({ audioOut: audioOutDef }),
+    );
+    // audioOut declares a bare `L`/`R` pair, which has no stem of its own, so
+    // the collapsed jack takes THE RAIL as its name — 'IN' on an input rail.
+    // (`collapsedPairLabel`; the leg rows suffix that same label.)
+    expect(out.map((p) => ({ label: p.label, portId: p.portId, leg: p.leg }))).toEqual([
+      { label: 'IN', portId: 'L', leg: undefined },
+      { label: 'IN L', portId: 'L', leg: 'left' },
+      { label: 'IN R', portId: 'L', leg: 'right' },
+    ]);
+  });
+
+  it('EVERY row addresses the pair\'s LEFT port — the side travels in `leg`', () => {
+    // Not an implementation detail: `planAudioCommit` anchors the clicked leg on
+    // the SOURCE side when the source is paired, so addressing `R` directly here
+    // would land the surviving leg on `L` for a stereo source — the opposite of
+    // what the row says. See per-leg-patching.test.ts for that cross-check.
+    const out = compatibleTargetPorts(
+      'audio', 'output', audioOutDef, 'ao1', {}, nodes, defs({ audioOut: audioOutDef }),
+    );
+    expect(new Set(out.map((p) => p.portId)), 'no row may address R directly').toEqual(
+      new Set(['L']),
+    );
+  });
+
+  it('gives every row a UNIQUE key (three rows share one portId)', () => {
+    // The list is keyed on this. Without it the two leg rows and the pair row
+    // collide and the menu renders whichever one Svelte kept.
+    const out = compatibleTargetPorts(
+      'audio', 'output', audioOutDef, 'ao1', {}, nodes, defs({ audioOut: audioOutDef }),
+    );
+    expect(new Set(out.map((p) => p.key)).size).toBe(out.length);
+  });
+
+  it('an UNPAIRED input is a single row with no leg', () => {
+    // Scope control: without it, "the legs are there" would be untested for the
+    // case where they must NOT be, and a blanket 3× expansion would pass above.
+    const out = compatibleTargetPorts(
+      'audio', 'output', filterDef, 'filter1', {}, { filter1: makeNode('filter1', 'filter') },
+      defs({ filter: filterDef }),
+    );
+    const audio = out.filter((p) => p.portId === 'audio');
+    expect(audio).toHaveLength(1);
+    expect(audio[0]?.leg).toBeUndefined();
+    expect(audio[0]?.key).toBe('audio');
+  });
+
+  it('OCCUPANCY is per-leg on the leg rows and either-leg on the pair row', () => {
+    // An only-L cable must not flag the R row as a destructive overwrite —
+    // patching R alongside it is exactly the coexistence the leg-level
+    // occupancy rule allows.
+    const edges: Record<string, Edge> = {
+      e1: {
+        id: 'e1',
+        source: { nodeId: 'filter1', portId: 'audio' },
+        target: { nodeId: 'ao1', portId: 'L' },
+        sourceType: 'audio',
+        targetType: 'audio',
+      },
+    };
+    const out = compatibleTargetPorts(
+      'audio', 'output', audioOutDef, 'ao1', edges,
+      { ...nodes, filter1: makeNode('filter1', 'filter') },
+      defs({ audioOut: audioOutDef, filter: filterDef }),
+    );
+    const byKey = Object.fromEntries(out.map((p) => [p.key, p]));
+    expect(byKey['L|stereo']?.occupiedBy?.sourcePortId, 'the pair row sees the L cable').toBe('audio');
+    expect(byKey['L|left']?.occupiedBy?.sourcePortId, 'the L row sees it').toBe('audio');
+    expect(byKey['L|right']?.occupiedBy, 'the R row is FREE — nothing is on R').toBeUndefined();
+  });
+});
+
 describe('compatibleTargetPorts (input → ?)', () => {
   it('returns OUTPUTs of the target whose type can drive the source input', () => {
     // Source: FILTER.cutoff (an INPUT, type cv). Target candidate: LFO.
