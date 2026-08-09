@@ -369,7 +369,7 @@ export const analogVcoDef: AudioModuleDef = {
   },
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
-    const faustNode = await instantiateFaustModule(ctx, { name: 'analog-vco', wasmUrl, metaUrl, workletUrl });
+    const faustNode = await instantiateFaustModule(ctx, { name: 'analog-vco', wasmUrl, metaUrl, workletUrl }, node);
 
     // ChannelMerger routes per-port mono signals to distinct channels of
     // Faust's single multi-channel input. This is what makes sequencer.pitch

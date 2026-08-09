@@ -37,6 +37,7 @@ import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import workletUrl from '@patchtogether.live/dsp/dist/clouds.js?url';
 
+import { createWorkletNode } from '$lib/audio/worklet-guard';
 const loadedContexts = new WeakSet<BaseAudioContext>();
 
 // ----------------------------------------------------------------------------
@@ -323,7 +324,7 @@ export const cloudsDef: AudioModuleDef = {
       loadedContexts.add(ctx);
     }
 
-    const workletNode = new AudioWorkletNode(ctx, 'clouds', {
+    const workletNode = createWorkletNode(node, ctx, 'clouds', {
       numberOfInputs: 4,
       numberOfOutputs: 2,
       outputChannelCount: [1, 1],

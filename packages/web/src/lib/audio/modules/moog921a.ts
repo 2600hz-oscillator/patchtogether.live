@@ -38,6 +38,7 @@ import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import workletUrl from '@patchtogether.live/dsp/dist/moog921a.js?url';
 
+import { createWorkletNode } from '$lib/audio/worklet-guard';
 // Per-context cache so addModule isn't called twice on the same context.
 const loadedContexts = new WeakSet<BaseAudioContext>();
 
@@ -97,7 +98,7 @@ export const moog921aDef: AudioModuleDef = {
       loadedContexts.add(ctx);
     }
 
-    const workletNode = new AudioWorkletNode(ctx, 'moog921a', {
+    const workletNode = createWorkletNode(node, ctx, 'moog921a', {
       numberOfInputs: 2,
       numberOfOutputs: 2,
       outputChannelCount: [1, 1],

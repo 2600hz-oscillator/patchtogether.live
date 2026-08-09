@@ -28,6 +28,7 @@ import type { AudioModuleDef } from '$lib/audio/module-registry';
 import { fireTrigger } from '$lib/audio/gate-trigger';
 import workletUrl from '@patchtogether.live/dsp/dist/sixstrum.js?url';
 
+import { createWorkletNode } from '$lib/audio/worklet-guard';
 const PROCESSOR_NAME = 'sixstrum';
 const STRINGS = 6;
 const loadedContexts = new WeakSet<BaseAudioContext>();
@@ -475,7 +476,7 @@ export const sixstrumDef: AudioModuleDef = {
     // unpatched input by its zero-length channel array (that's how strum
     // normalling and poly/chord presence work). channelCountMode defaults to
     // 'max' so the poly input accepts the 32-channel cable.
-    const worklet = new AudioWorkletNode(ctx, PROCESSOR_NAME, {
+    const worklet = createWorkletNode(node, ctx, PROCESSOR_NAME, {
       numberOfInputs: 15,
       numberOfOutputs: 1,
       outputChannelCount: [1],

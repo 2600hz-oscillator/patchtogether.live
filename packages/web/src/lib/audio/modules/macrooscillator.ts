@@ -64,6 +64,7 @@ import type { AudioModuleDef } from '$lib/audio/module-registry';
 import { fireTrigger } from '$lib/audio/gate-trigger';
 import { MACRO_ENGINES, MACRO_MAX_MODEL } from './macro-engine-roster';
 import workletUrl from '@patchtogether.live/dsp/dist/macrooscillator.js?url';
+import { createWorkletNode } from '$lib/audio/worklet-guard';
 
 // The engine roster is the ONE source of truth for how many engines exist and
 // what they are called; `MACRO_MAX_MODEL` is re-exported here because that is
@@ -1191,7 +1192,7 @@ export const macrooscillatorDef: AudioModuleDef = {
     // each mono. The CV → AudioParam routings ride into input 0 (the
     // pitch input slot); engine attaches them via `param:` on the handle
     // map below.
-    const workletNode = new AudioWorkletNode(ctx, 'macrooscillator', {
+    const workletNode = createWorkletNode(node, ctx, 'macrooscillator', {
       numberOfInputs: 2,
       numberOfOutputs: 2,
       outputChannelCount: [1, 1],

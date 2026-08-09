@@ -286,7 +286,7 @@ export const mixmstrsDef: AudioModuleDef = {
   })(),
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
-    const f = await instantiateFaustModule(ctx, { name: 'mixmstrs', wasmUrl, metaUrl, workletUrl });
+    const f = await instantiateFaustModule(ctx, { name: 'mixmstrs', wasmUrl, metaUrl, workletUrl }, node);
 
     // 20 mono audio inputs into the Faust worklet (channel-merger of 20).
     // The Faust process() takes 20 args in the same order our inputs declare.

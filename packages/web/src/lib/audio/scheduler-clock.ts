@@ -39,6 +39,8 @@
 //   - Not multi-context aware — there's one global tick rate (every 25ms).
 //     Per-module sub-tick scheduling stays in each module's tick() body.
 
+import { createTickLatencyRecorder, type TickLatencyStats } from './tick-latency';
+
 const TICK_MS = 25;
 
 /** A subscriber that wants to be called at TICK_MS cadence. */
@@ -48,6 +50,17 @@ interface SchedulerClock {
   subscribe(fn: SchedulerTickFn): () => void;
   /** True iff the tick source is the Web Worker (vs. setTimeout fallback). */
   readonly usingWorker: boolean;
+  /**
+   * Tick-arrival lateness + dispatch cost, MILLISECONDS. The discriminator
+   * between "the MAIN THREAD is starved" (mode D) and "the AUDIO THREAD is
+   * starved" (mode A, `playbackStats.underrunEvents`) — two conditions that
+   * look identical from a user report and need opposite fixes. See
+   * `tick-latency.ts` for why ARRIVAL CADENCE, and not a worker-side
+   * timestamp, is the measurable quantity: a dedicated worker has its own
+   * `performance.timeOrigin`, so a cross-thread subtraction would return a
+   * confident, stable, wrong number.
+   */
+  tickStats(): TickLatencyStats;
   /** Tear down the singleton. Tests use this between cases. */
   dispose(): void;
 }
@@ -76,7 +89,20 @@ function buildClock(): SchedulerClock {
   let worker: Worker | null = null;
   let fallbackTimer: ReturnType<typeof setInterval> | null = null;
 
+  const latency = createTickLatencyRecorder(TICK_MS);
+  // `performance` is absent in a few sandboxed contexts; Date.now's 1 ms
+  // resolution is ample against a 25 ms cadence, and the fallback keeps the
+  // instrument from being the thing that breaks the tick.
+  const nowMs = (): number =>
+    typeof performance !== 'undefined' && typeof performance.now === 'function'
+      ? performance.now()
+      : Date.now();
+
   function dispatch(): void {
+    // INSTRUMENTATION FIRST, and outside the try: a handful of arithmetic ops
+    // with no allocation, so it cannot perturb the thing it measures.
+    const arrivedAt = nowMs();
+    latency.arrive(arrivedAt);
     // Snapshot subscribers to allow re-entrant subscribe/unsubscribe inside
     // a callback without affecting iteration. Errors in one subscriber
     // must not prevent the others from running.
@@ -88,6 +114,7 @@ function buildClock(): SchedulerClock {
         console.error('[scheduler-clock] subscriber error', err);
       }
     }
+    latency.dispatched(nowMs() - arrivedAt);
   }
 
   let usingWorker = false;
@@ -135,8 +162,12 @@ function buildClock(): SchedulerClock {
     get usingWorker() {
       return usingWorker;
     },
+    tickStats() {
+      return latency.stats();
+    },
     dispose() {
       subscribers.clear();
+      latency.reset();
       if (worker) {
         try { worker.postMessage({ type: 'stop' }); } catch { /* noop */ }
         try { worker.terminate(); } catch { /* noop */ }
@@ -159,6 +190,17 @@ function buildClock(): SchedulerClock {
  */
 export function getSchedulerClock(): SchedulerClock {
   if (!SINGLETON) SINGLETON = buildClock();
+  return SINGLETON;
+}
+
+/**
+ * The clock IF IT ALREADY EXISTS — never constructs one.
+ *
+ * The health readout must not be the thing that spawns the tick worker: a rack
+ * with no sequencer has no scheduler clock, and an observer that creates its
+ * own subject is not an observer. Returns null until some module subscribes.
+ */
+export function peekSchedulerClock(): SchedulerClock | null {
   return SINGLETON;
 }
 

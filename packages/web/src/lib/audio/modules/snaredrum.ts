@@ -29,6 +29,7 @@ import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import workletUrl from '@patchtogether.live/dsp/dist/snaredrum.js?url';
 
+import { createWorkletNode } from '$lib/audio/worklet-guard';
 const PROCESSOR_NAME = 'snaredrum';
 const loadedContexts = new WeakSet<BaseAudioContext>();
 
@@ -409,7 +410,7 @@ export const snaredrumDef: AudioModuleDef = {
 
     // 6 audio-rate node inputs (trigger, gate, roll-cv, accent, pitch, choke);
     // ONE stereo output, fanned into separate L / R ports below.
-    const worklet = new AudioWorkletNode(ctx, PROCESSOR_NAME, {
+    const worklet = createWorkletNode(node, ctx, PROCESSOR_NAME, {
       numberOfInputs: 6,
       numberOfOutputs: 1,
       outputChannelCount: [2],

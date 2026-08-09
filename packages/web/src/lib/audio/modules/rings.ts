@@ -39,6 +39,7 @@ import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import workletUrl from '@patchtogether.live/dsp/dist/rings.js?url';
 
+import { createWorkletNode } from '$lib/audio/worklet-guard';
 const loadedContexts = new WeakSet<BaseAudioContext>();
 
 const _MODAL_MAX_PARTIALS = 24;
@@ -459,7 +460,7 @@ export const ringsDef: AudioModuleDef = {
       loadedContexts.add(ctx);
     }
 
-    const workletNode = new AudioWorkletNode(ctx, 'rings', {
+    const workletNode = createWorkletNode(node, ctx, 'rings', {
       numberOfInputs: 3,
       numberOfOutputs: 2,
       outputChannelCount: [1, 1],

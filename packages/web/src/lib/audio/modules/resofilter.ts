@@ -45,6 +45,7 @@ import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import workletUrl from '@patchtogether.live/dsp/dist/resofilter.js?url';
 
+import { createWorkletNode } from '$lib/audio/worklet-guard';
 const PROCESSOR_NAME = 'resofilter';
 const loadedContexts = new WeakSet<BaseAudioContext>();
 
@@ -131,7 +132,7 @@ export const resofilterDef: AudioModuleDef = {
       loadedContexts.add(ctx);
     }
 
-    const workletNode = new AudioWorkletNode(ctx, PROCESSOR_NAME, {
+    const workletNode = createWorkletNode(node, ctx, PROCESSOR_NAME, {
       numberOfInputs: 1,
       numberOfOutputs: 2,
       // 2-channel input so a stereo source feeds L/R filter channels.

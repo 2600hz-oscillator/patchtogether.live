@@ -339,6 +339,8 @@
   import AspectToggle from '$lib/ui/AspectToggle.svelte';
   import { videoAspectStore } from '$lib/ui/video-aspect-store.svelte';
   import { audioLatencyStore, type AudioLatencyMode } from '$lib/ui/audio-latency-store.svelte';
+  import { createAudioHealthMonitor } from '$lib/audio/audio-health.svelte';
+  import { formatAudioHealth } from '$lib/audio/playback-stats';
   import FlowBridge, { type FlowBridgeApi, type InternalFlowNode } from '$lib/ui/FlowBridge.svelte';
   import CadillacOverlay from '$lib/ui/CadillacOverlay.svelte';
   import ChannelColumnsOverlay from '$lib/ui/ChannelColumnsOverlay.svelte';
@@ -7441,6 +7443,45 @@
     audioGate.bind(audioCtx);
   });
 
+  // ---------------- Audio health readout (footer) ----------------
+  //
+  // The app had NO audio-health instrumentation before this: no underrun
+  // detector, no jank detector, no worklet-death detector. So "it bogs down and
+  // then stops" was indistinguishable from a throttled laptop, a suspended
+  // context, or a latched processor. This binds the three new sensors to the
+  // footer so the owner can read them without devtools:
+  //
+  //   underruns / dropout   AudioContext.playbackStats  (Chromium only)
+  //   tick p99              scheduler-clock arrival lateness
+  //   dead                  latched AudioWorkletProcessors
+  //
+  // Zero effect on the audio path — one getter read per second.
+  const audioHealth = createAudioHealthMonitor();
+  $effect(() => {
+    audioHealth.bind(audioCtx);
+  });
+  onMount(() => {
+    audioHealth.start();
+    return () => audioHealth.stop();
+  });
+
+  // The SECOND half of the footer's `lat base/avg ms` readout: mean output-
+  // pipeline latency to the speakers.
+  //
+  // ⚠ `playbackStats.averageLatency` and `AudioContext.outputLatency` are the
+  // SAME quantity measured two ways, which is exactly why the two readouts were
+  // folded into one field instead of printed side by side. Prefer the
+  // playbackStats mean (it is an average over the session rather than an
+  // instantaneous read); fall back to `outputLatency` so a Firefox/Safari user
+  // keeps the number main already showed them; `—` when neither is available
+  // (no context yet, or a null sink — headless Chromium reports outputLatency 0).
+  const latAvgLabel = $derived.by(() => {
+    const health = audioHealth.health;
+    if (health.supported && health.avgLatencyMs > 0) return `${health.avgLatencyMs.toFixed(1)}ms`;
+    if (audioCtx && audioCtx.outputLatency > 0) return `${(audioCtx.outputLatency * 1000).toFixed(1)}ms`;
+    return '—';
+  });
+
   // ---------------- Undo / redo (Cmd-Z / Cmd-Shift-Z) ----------------
   // Y.UndoManager scoped to this client's edits only (LOCAL_ORIGIN). Remote
   // collaborators' ops arrive with a different origin and are intentionally
@@ -8167,8 +8208,76 @@
       <span title="Number of distinct module types in the registry (catalog size, not live instance count)">catalog <b>{availableModules}</b></span>
       <span>ctx <b>{audioCtx?.state ?? '—'}</b></span>
       <span>sr <b>{audioCtx?.sampleRate ?? '—'}</b></span>
-      <span title="AudioContext latency. base = render/processing latency (fixed by the buffer); out = full output-pipeline latency to the speakers (Chromium; 0 elsewhere). The buffer size is set by the Buffer selector below (latencyHint) — a bigger buffer trades latency for slack against clicks under UI load.">
-        lat <b>{audioCtx ? `${(audioCtx.baseLatency * 1000).toFixed(1)}ms` : '—'}</b>{#if audioCtx && audioCtx.outputLatency > 0}<b> / {(audioCtx.outputLatency * 1000).toFixed(1)}ms out</b>{/if}
+      <!-- LAT + AUDIO HEALTH, ONE SPAN (underruns / main-thread jank / dead
+           worklets), FOLDED INTO the pre-existing `lat` readout rather than
+           added beside it.
+           ⚠ WHY IT IS FOLDED, measured — do not split it back out. As a
+           SEPARATE span the readout cost 281 px + a 14 px row gap, and the
+           booted footer at 1280 px has only 147 px of free space between
+           `.status` and `.cable-legend`. Overrunning it compressed the legend
+           until its `li` text wrapped, which took the bottombar from 32.375 px
+           to 41 px tall and the canvas from 612.484 px to 603.859 px — that
+           8.6 px is what moved 133 VRT baselines and tipped the linux runner's
+           card-size bistability. Folding is also honest rather than merely
+           cheap: `playbackStats.averageLatency` and `AudioContext.outputLatency`
+           are the SAME quantity (output-pipeline latency to the speakers), so
+           `lat base/avg ms` states once what used to be stated twice.
+           ⚠ The footer-height invariant is GATED, not hoped for:
+           audio-health-readout.spec.ts hides this element and asserts the
+           bottombar height is unchanged (and that the width DOES change, so the
+           control cannot pass vacuously).
+           Semantics are CUMULATIVE SINCE THE AUDIOCONTEXT WAS CREATED, never a
+           rate — the tooltip says so, because a rising number must not be
+           misread as "underrunning right now". `playbackStats` is Chromium-only
+           and degrades to "—" on Firefox/Safari with no warning and no nag. -->
+      <span
+        class="audio-health"
+        data-testid="audio-health"
+        class:bad={audioHealth.health.underrunEvents > 0 || audioHealth.workletErrors > 0}
+        title={
+          `lat = output latency, BASE/AVERAGE in ms. base = render/processing latency, fixed by `
+          + `the Buffer selector to the right (a bigger buffer trades latency for slack against `
+          + `clicks under UI load). average = mean full output-pipeline latency to the speakers.\n\n`
+          + (audioHealth.health.supported
+            ? `Audio health, CUMULATIVE SINCE THIS AUDIOCONTEXT WAS CREATED (not a rate).\n`
+              + `drop = underruns: COUNT / total starved time — times the audio device was starved `
+              + `and played silence or a repeat `
+              + `(${audioHealth.health.underrunEvents} in ${audioHealth.health.totalSec.toFixed(0)}s of output).\n`
+              + `tick = main-thread scheduler lateness p99 — HIGH TICK WITH ZERO DROPS means the `
+              + `MAIN THREAD is busy (UI/video), not the audio thread. They are different problems.\n`
+              + `dead = AudioWorkletProcessors that threw. A processor that throws outputs silence for `
+              + `the rest of its life (Web Audio spec) — that module is gone until you reload. The `
+              + `badge is only rendered when the count is non-zero.\n`
+              + `Drops rising? Set Buffer to Stable to the right and reload.`
+            : 'drop = underruns: this browser does not implement AudioContext.playbackStats '
+              + '(Chromium only today), so they cannot be counted here. The tick and dead '
+              + 'counters still work.')
+        }
+      >
+        <span class="ah-field"
+          >lat <b class="ah-base">{audioCtx
+            ? (audioCtx.baseLatency * 1000).toFixed(1)
+            : '—'}</b>/<b class="ah-avg">{latAvgLabel}</b></span
+        >
+        <span class="ah-field"
+          >drop <b class="ah-drop"
+            >{formatAudioHealth(audioHealth.health).underruns}/{formatAudioHealth(
+              audioHealth.health,
+            ).dropout}</b
+          ></span
+        >
+        <span class="ah-field"
+          >tick <b class="ah-tick">{audioHealth.tick && audioHealth.tick.samples > 0
+            ? `${audioHealth.tick.p99Ms.toFixed(0)}ms`
+            : '—'}</b></span
+        >
+        {#if audioHealth.workletErrors > 0}
+          <b class="audio-health-dead" data-testid="audio-health-dead"
+            >dead {audioHealth.workletErrors}{audioHealth.lastWorkletError
+              ? ` (${audioHealth.lastWorkletError.moduleType ?? audioHealth.lastWorkletError.processor})`
+              : ''}</b
+          >
+        {/if}
       </span>
       <span class="audio-buffer-ctl" title={`Audio buffer / latency. A BIGGER buffer gives the audio render thread slack under main-thread CPU load (canvas pan, knob drag, video) so it doesn't underrun → fewer clicks/pops. A SMALLER buffer = lower latency for tight live jamming. ${audioLatencyStore.currentOption.hint} latencyHint is fixed at context creation, so a change applies on the next page reload.`}>
         buffer
@@ -8791,11 +8900,78 @@
   }
   .status {
     display: flex;
-    gap: 1rem;
+    /* 0.5rem, not 1rem: the footer row has a hard width budget at 1280 px (see
+     * `.audio-health`), and 6 gaps × 7 px is 42 px bought back for the health
+     * readout WITHOUT making the footer wider. Row height is unaffected. */
+    gap: 0.5rem;
   }
   .status b {
     color: var(--text);
     font-weight: 500;
+  }
+  /* Audio health readout — `lat base/avg ms · drop N/Dms · tick Pms`, plus a
+   * `dead N (module)` badge when a worklet processor has latched. Muted until
+   * something is actually wrong, so a healthy footer stays quiet.
+   *
+   * ⚠ THE WIDTH BUDGET IS REAL AND IT IS SMALL. Measured at the VRT viewport
+   * (1280 CSS px, AudioContext booted): `.status` 545.063 px + `.cable-legend`
+   * 547.625 px + 35 px of bottombar padding leaves 147.3 px of free space.
+   * Spend more than that and the legend compresses until its `li` text wraps,
+   * which grows the bottombar 32.375 px → 41 px and shrinks the canvas by the
+   * same 8.6 px. That is a whole-app layout change driven by a footer label.
+   * This block therefore buys the room back rather than borrowing it: `.status`
+   * gap 1rem → 0.5rem and `.cable-legend` gap 0.8rem → 0.5rem (see those
+   * rules), which is why the row still fits with ~54 px to spare.
+   *
+   * ⚠ RESERVED PER-FIELD WIDTHS, load-bearing rather than cosmetic. The text
+   * changes after mount (em-dashes → "13.3" / "36.6ms" / "0/0.0ms" as the
+   * context boots and the 1 Hz poll lands). A row that RESIZES a second after
+   * first paint is a layout event with no fixed time, and VRT's two-
+   * consecutive-stable-captures rule can straddle it. Tabular figures + a
+   * min-width per value mean the row is the same width before and after every
+   * value it will normally show, and it stops the footer twitching while the
+   * numbers tick. The min-widths are sized to the TYPICAL value, not the
+   * pathological one: a rack that is genuinely dropping out prints wider
+   * numbers and eats into the ~54 px margin, which is the correct trade — at
+   * that point the user has a real problem and a slightly wider footer is not
+   * it. */
+  .audio-health {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    cursor: help;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  /* ⚠ `inline-block`, NOT `inline-flex`. A flex container drops whitespace-only
+   * anonymous items, so `lat <b>13.3</b>` rendered as "lat13.3" — the label and
+   * its value ran together in all three fields and the row was materially
+   * harder to read for zero width saved. Caught by screenshotting the footer,
+   * which no assertion in this repo would have. */
+  .audio-health .ah-field {
+    display: inline-block;
+  }
+  .audio-health b {
+    display: inline-block;
+    text-align: left;
+  }
+  .audio-health .ah-base {
+    min-width: 4ch;
+  }
+  .audio-health .ah-avg {
+    min-width: 6ch;
+  }
+  .audio-health .ah-drop {
+    min-width: 7ch;
+  }
+  .audio-health .ah-tick {
+    min-width: 3ch;
+  }
+  .audio-health.bad b {
+    color: #f0a04b;
+  }
+  .audio-health-dead {
+    color: #f45c51 !important;
   }
   /* R-1 audio buffer / latency selector — sits in the footer status row,
    * styled to match the topbar dropdown chrome. */
@@ -8827,7 +9003,12 @@
     margin: 0;
     padding: 0;
     display: flex;
-    gap: 0.8rem;
+    /* 0.5rem, not 0.8rem: 8 gaps × 4.2 px is another 33.6 px bought back for
+     * the footer's width budget (see `.audio-health`). This list is the half of
+     * the row that WRAPPED when the budget was blown — its `li` text going to
+     * two lines is what grew the bottombar by 8.6 px and moved 133 VRT
+     * baselines. Narrower gaps, same single line. */
+    gap: 0.5rem;
   }
   .cable-legend li {
     display: flex;

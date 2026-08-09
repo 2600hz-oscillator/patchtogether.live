@@ -306,7 +306,7 @@ export const drummergirlDef: AudioModuleDef = {
   },
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
-    const f = await instantiateFaustModule(ctx, { name: 'drummergirl', wasmUrl, metaUrl, workletUrl });
+    const f = await instantiateFaustModule(ctx, { name: 'drummergirl', wasmUrl, metaUrl, workletUrl }, node);
     // Single audio-rate input (gate). Use a 1-channel merger with silence so
     // the worklet stays active even with nothing patched in.
     const merger = ctx.createChannelMerger(1);

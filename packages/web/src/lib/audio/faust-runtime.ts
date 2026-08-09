@@ -5,6 +5,7 @@
 // as an AudioWorkletNode.
 
 import { FaustMonoAudioWorkletNode, FaustWasmInstantiator } from '@grame/faustwasm';
+import { guardWorkletNode, type WorkletOwner } from '$lib/audio/worklet-guard';
 
 export interface FaustModuleArtifact {
   /** DSP module name — matches the build output stem and the Faust processor name. */
@@ -39,6 +40,7 @@ const loaded = new WeakMap<BaseAudioContext, Set<string>>();
 export async function instantiateFaustModule(
   audioContext: AudioContext,
   artifact: FaustModuleArtifact,
+  owner?: WorkletOwner,
 ): Promise<AudioWorkletNode> {
   let registered = loaded.get(audioContext);
   if (!registered) {
@@ -64,5 +66,11 @@ export async function instantiateFaustModule(
       sampleSize: 4,
     },
   });
+  // THE ONE SEAM every Faust module passes through. `createWorkletNode` cannot
+  // be used here — the node is constructed inside @grame/faustwasm — so the
+  // latch handler is attached after the fact instead. Same ledger, same loud
+  // console line; see worklet-guard.ts for why silence is the failure mode
+  // being defended against.
+  guardWorkletNode(node as unknown as AudioWorkletNode, artifact.name, owner);
   return node as unknown as AudioWorkletNode;
 }

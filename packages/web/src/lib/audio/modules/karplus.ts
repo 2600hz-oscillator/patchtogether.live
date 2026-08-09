@@ -39,6 +39,7 @@ import type { AudioModuleDef } from '$lib/audio/module-registry';
 import { fireTrigger } from '$lib/audio/gate-trigger';
 import workletUrl from '@patchtogether.live/dsp/dist/karplus.js?url';
 
+import { createWorkletNode } from '$lib/audio/worklet-guard';
 const PROCESSOR_NAME = 'karplus';
 const loadedContexts = new WeakSet<BaseAudioContext>();
 
@@ -300,7 +301,7 @@ export const karplusDef: AudioModuleDef = {
 
     // 4 audio-rate node inputs: trigger (0), pitch (1), accent (2), damp (3).
     // One mono output.
-    const worklet = new AudioWorkletNode(ctx, PROCESSOR_NAME, {
+    const worklet = createWorkletNode(node, ctx, PROCESSOR_NAME, {
       numberOfInputs: 4,
       numberOfOutputs: 1,
       outputChannelCount: [1],

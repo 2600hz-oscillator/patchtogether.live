@@ -33,6 +33,7 @@ import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import workletUrl from '@patchtogether.live/dsp/dist/moog905.js?url';
 
+import { createWorkletNode } from '$lib/audio/worklet-guard';
 const PROCESSOR_NAME = 'moog905';
 const loadedContexts = new WeakSet<BaseAudioContext>();
 
@@ -74,7 +75,7 @@ export const moog905Def: AudioModuleDef = {
       loadedContexts.add(ctx);
     }
 
-    const workletNode = new AudioWorkletNode(ctx, PROCESSOR_NAME, {
+    const workletNode = createWorkletNode(node, ctx, PROCESSOR_NAME, {
       numberOfInputs: 1,
       numberOfOutputs: 1,
       outputChannelCount: [1],

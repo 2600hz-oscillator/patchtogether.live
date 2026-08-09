@@ -35,6 +35,7 @@ import { patch as livePatch } from '$lib/graph/store';
 import { fourplexerClampSelector } from '$lib/audio/fourplexer-select';
 import workletUrl from '@patchtogether.live/dsp/dist/fourplexer.js?url';
 
+import { createWorkletNode } from '$lib/audio/worklet-guard';
 const loadedContexts = new WeakSet<BaseAudioContext>();
 
 interface SelMessage {
@@ -110,7 +111,7 @@ export const fourplexerDef: AudioModuleDef = {
       loadedContexts.add(ctx);
     }
 
-    const workletNode = new AudioWorkletNode(ctx, 'fourplexer', {
+    const workletNode = createWorkletNode(node, ctx, 'fourplexer', {
       numberOfInputs: 8,
       numberOfOutputs: 4,
       outputChannelCount: [1, 1, 1, 1],

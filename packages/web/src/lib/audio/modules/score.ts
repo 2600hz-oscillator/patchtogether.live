@@ -194,7 +194,7 @@ export const scoreDef: AudioModuleDef = {
 
     // Internal ADSR worklet. Its gate input is driven by gateSrc; its output
     // is multiplied by dynGain to produce the final env CV.
-    const adsr = await instantiateFaustModule(ctx, { name: 'adsr', wasmUrl, metaUrl, workletUrl });
+    const adsr = await instantiateFaustModule(ctx, { name: 'adsr', wasmUrl, metaUrl, workletUrl }, node);
     const adsrParams = adsr.parameters as unknown as Map<string, AudioParam>;
     function setAdsrParam(id: string, v: number) {
       adsrParams.get(`${ADSR_PREFIX}/${id}`)?.setValueAtTime(v, ctx.currentTime);

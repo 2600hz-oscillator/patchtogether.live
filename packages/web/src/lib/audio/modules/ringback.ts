@@ -38,6 +38,7 @@ import {
 } from '$lib/audio/ringback-crush-model';
 import workletUrl from '@patchtogether.live/dsp/dist/ringback.js?url';
 
+import { createWorkletNode } from '$lib/audio/worklet-guard';
 // Pure crush math re-exported from the worklet's shared core so the card + unit
 // tests share ONE import surface (relative path, not the package alias —
 // svelte-check only resolves the TS source out of node_modules via the dist
@@ -285,7 +286,7 @@ export const ringbackDef: AudioModuleDef = {
       loadedContexts.add(ctx);
     }
 
-    const worklet = new AudioWorkletNode(ctx, PROCESSOR_NAME, {
+    const worklet = createWorkletNode(node, ctx, PROCESSOR_NAME, {
       numberOfInputs: 2, // [0]=L, [1]=R
       numberOfOutputs: 1,
       outputChannelCount: [2], // stereo

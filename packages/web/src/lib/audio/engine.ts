@@ -19,6 +19,7 @@ import { holdParamAtSeam, HOLD_NOW_EPS_S } from './hold-param';
 import { createEdgeCounter } from './edge-detect';
 import { GATE_HI } from './gate-trigger';
 import { getSchedulerClock } from './scheduler-clock';
+import { createWorkletNode } from './worklet-guard';
 import {
   ensureGateEdgeWorklet,
   GATE_EDGE_PROCESSOR,
@@ -1605,13 +1606,22 @@ export class PatchEngine {
     void ensureGateEdgeWorklet(ae.ctx).then((ok) => {
       if (!ok || disposed) return;
       try {
-        const wn = new AudioWorkletNode(ae.ctx, GATE_EDGE_PROCESSOR, {
-          numberOfInputs: 1,
-          numberOfOutputs: 1,
-          outputChannelCount: [1],
-          channelCount: 1,
-          channelCountMode: 'explicit',
-        });
+        // Owner is the EDGE's target node, not a module the user placed: this
+        // worklet is the engine's own cross-domain gate bridge. If it latches,
+        // the gate stops reaching that video node and nothing else breaks — so
+        // the ledger has to say WHICH edge, or the report is unactionable.
+        const wn = createWorkletNode(
+          { id: edge.target.nodeId, type: 'engine:gate-edge-bridge' },
+          ae.ctx,
+          GATE_EDGE_PROCESSOR,
+          {
+            numberOfInputs: 1,
+            numberOfOutputs: 1,
+            outputChannelCount: [1],
+            channelCount: 1,
+            channelCountMode: 'explicit',
+          },
+        );
         wn.port.onmessage = (ev: MessageEvent) => {
           const m = ev.data as GateEdgeMessage | undefined;
           if (!m || typeof m.count !== 'number') return;

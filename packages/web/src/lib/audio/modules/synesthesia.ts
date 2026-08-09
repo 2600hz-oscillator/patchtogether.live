@@ -33,6 +33,7 @@ import type { AudioModuleDef } from '$lib/audio/module-registry';
 import workletUrl from '@patchtogether.live/dsp/dist/synesthesia.js?url';
 import { drawBandRaster } from './synesthesia-draw';
 
+import { createWorkletNode } from '$lib/audio/worklet-guard';
 // ---- DETERMINISTIC render-smoke (DRS) seam — zero production impact ----
 // The per-band `*_raster` video output paints the band's LIVE analyser
 // time-domain window (drawBandRaster) each frame. That window carries whatever
@@ -260,7 +261,7 @@ export const synesthesiaDef: AudioModuleDef = {
       loadedContexts.add(ctx);
     }
 
-    const workletNode = new AudioWorkletNode(ctx, 'synesthesia', {
+    const workletNode = createWorkletNode(node, ctx, 'synesthesia', {
       numberOfInputs: 2,
       numberOfOutputs: 10, // +2: per-band beat-trigger streams (trig A / trig B)
       outputChannelCount: [4, 4, 4, 4, 4, 4, 4, 4, 4, 4],

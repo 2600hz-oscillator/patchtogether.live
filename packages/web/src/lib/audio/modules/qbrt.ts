@@ -188,7 +188,7 @@ export const qbrtDef: AudioModuleDef = {
   },
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
-    const f = await instantiateFaustModule(ctx, { name: 'qbrt', wasmUrl, metaUrl, workletUrl });
+    const f = await instantiateFaustModule(ctx, { name: 'qbrt', wasmUrl, metaUrl, workletUrl }, node);
     const merger = ctx.createChannelMerger(3);
     merger.connect(f);
     const silence = ctx.createConstantSource();

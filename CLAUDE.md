@@ -276,6 +276,73 @@ was true about the one list it read.
   committed baseline still matches the render, or `git rm` it and dispatch, in
   the SAME PR.
 
+### A FOOTER can move every dock baseline — the mechanism is HEIGHT, not pixels
+
+Added 2026-08-09 (#1425). A new footer readout re-pinned **133** baselines
+across two platforms and made `vrt-strict` red on a *different card each cycle*
+(15 → 2 → 2 → 1). It looked like a card-render bistability. It was arithmetic.
+
+Measured at the VRT viewport (1280 CSS px, AudioContext booted — the state the
+scenes actually capture): `.status` 545.063 px + `.cable-legend` 547.625 px +
+35 px padding leaves **147.313 px** of free space. The readout wanted 295 px.
+`.cable-legend` compressed until its `li` text wrapped, the bottombar went
+**32.375 px → 41 px**, and the canvas lost the same 8.6 px. Every dock and
+faceplate scene is laid out *inside* that canvas.
+
+- **Chrome that is not in frame can still move a baseline** — through the
+  layout, not the pixels. Before adding anything to the topbar or footer,
+  measure the row's free space and the bar's height with and without it.
+- **Re-pinning is the wrong response.** It re-pins whichever scenes happened to
+  land on the wrong side of the tip *this run*, so the failure appears to move.
+  Restore the baselines and fix the layout: with bar height back to main's,
+  `vrt-strict` went green with **zero** re-pins, and the only baselines that
+  legitimately moved were the **7** page-level captures with the footer in
+  frame (`workflow-shell-zoom` ×3 per platform, `workflow-dock-composite` ×1).
+- **Gate it in a browser.** A unit test cannot see a flex row wrap, and *where*
+  it wraps depends on platform font metrics. `audio-health-readout.spec.ts`
+  hides the element and asserts the bottombar height does not move, with a
+  second leg asserting the row DOES get narrower so the first cannot pass
+  against an out-of-flow element.
+
+### ⚠ `task vrt` / `vrt:update` used to ignore `E2E_PORT` — a green sweep of the WRONG BRANCH
+
+Same day, same PR, and the more transferable half. `vrt.config.ts` reads only
+`E2E_BASE_URL`, defaults to `http://localhost:5173`, and sets
+`reuseExistingServer: true`. The full-sweep tasks never derived that from
+`E2E_PORT` (only `e2e:one` and `vrt:one` had been hardened), so a
+`E2E_PORT=5251 task vrt` in an isolated worktree returned **"276 passed, 1
+failed" in 11.5 minutes having never loaded the branch under test** — it
+rendered the primary checkout's `main` server while comparing against this
+worktree's baselines. Three scenes that `vrt:one` had just failed at ~3200 px
+each came back green.
+
+Fixed in the Taskfile (all three route through `vrt:run`), but the rule
+generalises: **an isolation mechanism that only half the entry points honour is
+not isolation.** When you add an `E2E_PORT`-style knob, grep every caller — and
+prefer failing loudly over silently falling back to a shared default.
+
+Two more from the same session, both cheap:
+
+- Bare `--update-snapshots` is `=all` in Playwright 1.59, and had already
+  rewritten 22 unrelated baselines once. `task vrt:update` now passes
+  `=changed`. ⚠ **The flag lives in the Taskfile, NOT in `e2e/package.json`** —
+  see the next bullet for why that distinction cost a red gate.
+- **A toolchain PIN file hashed WHOLESALE makes every unrelated edit a
+  re-attest.** `e2e/package.json` is in `TOOLCHAIN_PIN_FILES`
+  (`scripts/webgl-attest-lib.ts`) because it pins `@playwright/test` — the
+  renderer version. But the basis hashes the whole file, so changing one
+  unrelated npm-script string moved the WebGL hash `620fa1b3…` → `ad300c3e…`
+  and turned `webgl-attest` red, demanding a trusted-machine GPU re-attest for
+  a one-word CLI flag. Reverting that single file restored `620fa1b3…` exactly.
+  **Before editing `e2e/package.json`, `packages/web/package.json` or
+  `.flox/env/manifest.toml`, run `bash scripts/webgl-attest-hash.sh` before and
+  after** — and if the edit is not actually a version pin, put it somewhere
+  else. The hash cannot tell a pin bump from a comment; only you can.
+- **Screenshot the thing and look at it.** `display: inline-flex` on a label +
+  value pair drops the whitespace-only anonymous flex item, so the footer read
+  `lat13.3/40.0ms drop0/0.0ms tick9ms`. Every text assertion still passed —
+  `toContainText(/drop \d+\/\d/)` matches `drop0/0.0ms` perfectly well.
+
 ## Worktrees: hard cap of 10
 
 This repo accumulates abandoned `isolation: worktree` agent checkouts fast — each

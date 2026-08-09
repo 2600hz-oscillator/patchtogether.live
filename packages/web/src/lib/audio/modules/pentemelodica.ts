@@ -66,6 +66,7 @@
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import workletUrl from '@patchtogether.live/dsp/dist/pentemelodica.js?url';
+import { createWorkletNode } from '$lib/audio/worklet-guard';
 import {
   PENTE_VOICES,
   makePenteState,
@@ -599,7 +600,7 @@ export const pentemelodicaDef: AudioModuleDef = {
       loadedContexts.add(ctx);
     }
 
-    const workletNode = new AudioWorkletNode(ctx, 'pentemelodica', {
+    const workletNode = createWorkletNode(node, ctx, 'pentemelodica', {
       // 6 inputs: poly (10-ch) + fm1..fm5 (mono). 7 outputs: out_l, out_r +
       // voice1..voice5, all mono. channelCountMode defaults to 'max' so the
       // 10-channel poly source passes through input 0 cleanly (same as DX7 /
