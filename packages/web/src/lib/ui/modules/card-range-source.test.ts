@@ -29,6 +29,7 @@ import { fileURLToPath } from 'node:url';
 import { adsrDef } from '$lib/audio/modules/adsr';
 import { backdraftDef } from '$lib/video/modules/backdraft';
 import { delayDef } from '$lib/audio/modules/delay';
+import { filterDef } from '$lib/audio/modules/filter';
 import { meowboxDef } from '$lib/audio/modules/meowbox';
 import { ringbackDef } from '$lib/audio/modules/ringback';
 import { snaredrumDef } from '$lib/audio/modules/snaredrum';
@@ -52,6 +53,15 @@ import type { ParamDef } from '$lib/graph/types';
  *    def declares `Feedback`, so one control carried two names depending on
  *    which surface you read. The nine range literals beside it all still
  *    agreed — which is exactly how this class hides.
+ *  - FilterCard: converted with the filter face re-do (binds via paramSpec).
+ *    It carried a FOURTH divergence shape none of the clauses below can see on
+ *    its own: a private `const MODES = ['LP','HP','BP']` beside a def that
+ *    declares the identical roster in `params.mode.options`. That is a second
+ *    source of truth for a VOCABULARY rather than for a range — the dock's
+ *    Segmented reads the def, the card read its own array, and the day the two
+ *    disagree the same control names three states two ways. The card now maps
+ *    the def's `options`. Its positional `filterDef.params[0]!` indexing went
+ *    with it: a `params` reorder would have silently rebound two defaults.
  *  - RingbackCard: converted with the ringback face promotion. It is the first
  *    KNOB-based card in this set, which is why `Knob.svelte` had to grow the
  *    `formatValue` prop `Fader.svelte` already had — the format clause below
@@ -90,6 +100,7 @@ const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }
   'AdsrCard.svelte': adsrDef,
   'BackdraftCard.svelte': backdraftDef,
   'DelayCard.svelte': delayDef,
+  'FilterCard.svelte': filterDef,
   'MeowboxCard.svelte': meowboxDef,
   'RingbackCard.svelte': ringbackDef,
   'SnaredrumCard.svelte': snaredrumDef,
@@ -105,6 +116,7 @@ const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }
 const MAPPING_BOUND_CARDS: readonly string[] = [
   'AdsrCard.svelte',
   'DelayCard.svelte',
+  'FilterCard.svelte',
   'RingbackCard.svelte',
   'SnaredrumCard.svelte',
   'VcaCard.svelte',
@@ -121,8 +133,8 @@ const MAPPING_BOUND_CARDS: readonly string[] = [
 // card of slack in each, and the next card to fall back out of the set is
 // absorbed in silence rather than reddening this test. Whenever this file
 // merges, RE-DERIVE the floors from the lists; never inherit the literal.
-const RANGE_BOUND_FLOOR = 8;
-const MAPPING_BOUND_FLOOR = 6;
+const RANGE_BOUND_FLOOR = 9;
+const MAPPING_BOUND_FLOOR = 7;
 
 /**
  * A range-ish prop bound to a NUMERIC LITERAL. Covers `min/max/defaultValue`

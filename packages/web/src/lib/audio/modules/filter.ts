@@ -89,7 +89,13 @@ export const filterDef: AudioModuleDef = {
     { id: 'cutoff', type: 'cv', paramTarget: 'cutoff' },
     { id: 'res',    type: 'cv' },
   ],
-  outputs: [{ id: 'audio', type: 'audio' }],
+  // `label: 'out'` — the rear card printed AUDIO on BOTH holes. `ModuleShell`
+  // calls `portsFromDef(def.outputs)` with no override map (the legacy card
+  // passes `{ audio: 'OUT' }`), so with no `PortDef.label` the stem falls to
+  // `ABBREV_TO_VERBOSE.audio = 'AUDIO'` and the rear named the input and the
+  // output identically, disambiguated only by rail side. CONTRACT-TRANSPARENT:
+  // `portLine` (contract-signature.ts) has no label branch.
+  outputs: [{ id: 'audio', type: 'audio', label: 'out' }],
   params: [
     { id: 'cutoff',        label: 'Cutoff',    defaultValue: 1000, min: 20,   max: 20000, curve: 'log',      units: 'Hz' },
     { id: 'resonance',     label: 'Res',       defaultValue: 0.1,  min: 0,    max: 0.99,  curve: 'linear' },
@@ -110,10 +116,23 @@ export const filterDef: AudioModuleDef = {
     // over a range whose in-between values are real blends: those are
     // `landmarks`. The vocabulary gate enforces the split off `curve`.)
     { id: 'mode',          label: 'Mode',      defaultValue: 0,    min: 0,    max: 2,     curve: 'discrete',
+      // ⚠ HP AND BP ARE **NOT** 12 dB/oct, and these two strings used to say
+      // they were — contradicting `docs.controls.mode` thirty lines below,
+      // which had it right. All three sections are genuinely TWO-POLE; what
+      // does not follow is a 12 dB/oct stopband. `fi.resonhp` is defined as
+      // `gain*x - resonlp(x)`, which puts a SECOND numerator zero at f = fc/Q,
+      // so the highpass's deep stopband tapers at 6 dB/oct — and at
+      // resonance 0 (Q 0.70) that break sits at 1.43×fc, ABOVE the corner, so a
+      // zero-resonance highpass is 6 dB/oct across its whole audible stopband.
+      // `fi.resonbp` has a single `s` numerator ⇒ 6 dB/oct skirts both sides.
+      // A player expecting −12 removes half the bass they asked for and
+      // reaches for a second filter. The arithmetic is pinned in
+      // `filter-face-model.test.ts` ("the PHYSICS the shipped tooltips got
+      // wrong"), because a tooltip is asserted nowhere and can drift back.
       options: [
-        { value: 0, label: 'LP', title: 'Lowpass — keeps the lows, rolls off above cutoff (12 dB/oct)' },
-        { value: 1, label: 'HP', title: 'Highpass — keeps the highs, rolls off below cutoff (12 dB/oct)' },
-        { value: 2, label: 'BP', title: 'Bandpass — keeps only a slice around cutoff (12 dB/oct)' },
+        { value: 0, label: 'LP', title: 'Lowpass — keeps the lows, rolls off above cutoff at 12 dB/oct' },
+        { value: 1, label: 'HP', title: 'Highpass — keeps the highs; built as input-minus-lowpass, so the deep stopband tapers at 6 dB/oct' },
+        { value: 2, label: 'BP', title: 'Bandpass — keeps only a slice around cutoff, 6 dB/oct skirts both sides' },
       ] },
     { id: 'cutoff_cv_amt', label: 'Cutoff CV', defaultValue: 1,    min: -1,   max: 1,     curve: 'linear' },
     { id: 'res_cv_amt',    label: 'Res CV',    defaultValue: 1,    min: -1,   max: 1,     curve: 'linear' },
@@ -145,17 +164,40 @@ export const filterDef: AudioModuleDef = {
   // ranked, paged, and rendered in the dock (faces-parity pins that).
   face: {
     order: ['cutoff', 'resonance', 'mode', 'cutoff_cv_amt', 'res_cv_amt'],
-    // TWO dock bands, not three. `mode` earns its own conceptual slot but not
-    // its own row: a five-control module that makes you SCROLL the dock to
-    // reach its modulation stage is a worse faceplate than one you take in at
-    // a glance (the owner's rear-card "see all of it at once" applied to the
-    // front). Splitting `mode` out cost exactly one band row and pushed 'cv
-    // depth' below the fold at the 720p dock height — verified against the
-    // captured baseline, not guessed. So the switch rides with the two knobs
-    // it re-frames, and the band header names it.
+    // TWO dock bands, not three, on GROUPING SEMANTICS: `response · type` is
+    // what the filter does to a signal and `cv depth` is how hard a patched
+    // modulator pushes it — two ideas, two bands, and `mode` belongs with the
+    // two knobs it re-frames rather than alone. (This comment used to defend
+    // the split partly on a 720p fold measurement. The measurement was honest
+    // but it is not a design argument, and it is now moot twice over: PF-21
+    // packs consecutive bands onto one row, and the dock VRT scene unfolds the
+    // pane before it captures. Grouping is the whole reason.)
     pages: [
-      { id: 'response',   label: 'response · type', controls: ['cutoff', 'resonance', 'mode'] },
-      { id: 'modulation', label: 'cv depth',        controls: ['cutoff_cv_amt', 'res_cv_amt'] },
+      {
+        id: 'response',
+        label: 'response · type',
+        // ⚠ PAGE IDS MUST NEVER BECOME 'signal' OR 'voice'. `rearFieldPlan`
+        // gives a curated rear group with either id the LEADING band slot
+        // unconditionally, so a page id colliding with it renders that band
+        // TWICE (the dx7 scar). `rear.groups[0].id` here is 'signal'. The
+        // 'modulation' collision with the NON-leading rear group is the
+        // INTENDED claim path and is safe. Nothing enforces this.
+        hint:
+          'three two-pole sections run in parallel on the input and MODE picks one — the switch is ' +
+          'instantaneous and un-crossfaded, so it can click under a loud signal. RES maps to ' +
+          'Q = res × 20 + 0.7 and is NOT gain-compensated: the peak adds up to +26 dB on top of an ' +
+          'unchanged passband. It rings; it never self-oscillates.',
+        controls: ['cutoff', 'resonance', 'mode'],
+      },
+      {
+        id: 'modulation',
+        label: 'cv depth',
+        hint:
+          'attenuverters on the two CV jacks — and they are ENGINE gains on the jacks themselves, so ' +
+          'with nothing patched both knobs do nothing at all. Full scale on CUTOFF CV is ±5 octaves; ' +
+          'negative inverts. Both paths are smoothed at 7 Hz, so these are modulation inputs, not FM.',
+        controls: ['cutoff_cv_amt', 'res_cv_amt'],
+      },
     ],
     // 'scope' → glyphBinding 'live-audio' (a primary `audio` output exists):
     // the analyser trace on the filter's own output. For a filter this is the
@@ -181,6 +223,117 @@ export const filterDef: AudioModuleDef = {
         { id: 'modulation', label: 'cv depth', ports: ['cutoff', 'res'] },
       ],
     },
+
+    // ── PF-20 — THE FACEPLATE STRUCTURE ─────────────────────────────────────
+    // DECLARATION ONLY. No param, no port, no ControlFamily: `face` is never
+    // projected by contract-signature.ts, and the response picture is a
+    // SIDEBAR panel precisely so it costs no family line. The contract golden
+    // does not move by a single line for any of this.
+
+    // ⚠ BOTH OF THESE ARE ANNOTATION-ONLY and neither paints at rest —
+    // `facePageHeader` returns null before it reads anything unless the dock's
+    // annotate switch is on (dock-faceplate-model.ts, owner 2026-08-02: two
+    // names on one panel was the complaint). So NOTHING LOAD-BEARING IS PARKED
+    // HERE. The one fact a player genuinely needs — that both CV depth knobs
+    // are dead until a cable lands — lives in the readout strip below, where
+    // `cv reach` collapses to `1.0 kHz · muted` the moment depth hits 0.
+    title: 'Filter',
+    hint:
+      'A two-pole resonant filter in three characters. CUTOFF is the corner (LP/HP) or the centre ' +
+      '(BP); RES lifts a peak of up to +26 dB on top of an unchanged passband and never ' +
+      'self-oscillates. It is an INSERT — it makes no sound of its own.',
+
+    // THE HERO. CUTOFF is PROMOTED out of band 1, not copied (heroFacePlan
+    // removes it, so the param multiset faces-parity asserts is unchanged),
+    // because it is the one knob a hand rides and the only value a player
+    // wants readable across a room.
+    //
+    // NO `hero.cell`, and the reason is structural rather than aesthetic: a
+    // hero picture is a PF-14 PANEL cell, `module-face-lint` refuses a panel
+    // SELECTED at a lane tier, and with five params a sixth ranked key lands
+    // at rank 6 — inside `faceTierCap('full') = 6`. So a hero picture on this
+    // module fails the lint outright, and inventing a seventh control to make
+    // room for it would be adding a control for a rank constraint. The picture
+    // is a `custom` SIDEBAR panel instead (below): same drawing, zero contract
+    // lines, no operability probe — and it does not suppress the `scope` glyph
+    // the way a `hero.cell` would.
+    //
+    // NO `hero.action`: DECLARED ABSENT, not forgotten. A filter is an insert;
+    // there is nothing to audition without an input, and synthesising a test
+    // signal would be a DSP change in a face wave.
+    //
+    // ⚠ THE STRIP IS THREE GENUINELY DERIVED VALUES — none of them is a knob on
+    // this panel. `cutoff` prints its own value on the hero dial, `resonance`
+    // and `mode` are cells in band 1, and each entry below is negative-
+    // controlled on an input its nearest dial is BLIND to
+    // (filter-face-model.test.ts):
+    //   `peak`      MODE moves it 5.2 dB at resonance 0 (0.0 / +2.1 / −3.1)
+    //               while a `resonance` readback prints 0.00 for all three.
+    //   `cv reach`  models the 20 kHz CLAMP: same depth of 1.00, and moving
+    //               CUTOFF collapses the reachable span 9.32 → 6.32 octaves.
+    //   `res reach` prints `· muted` at depth 0, which is the honest thing to
+    //               say about a knob whose jack is doing nothing.
+    //
+    // A `Q` READOUT IS DELIBERATELY REFUSED. Q = 20·res + 0.7 is invariant to
+    // everything except `resonance`, so no perturbation moves it while a
+    // `resonance` readback stays put — it is a unit conversion, not a
+    // derivation, and it does not meet this registry's bar. The Q law is on
+    // the band-1 annotation and on the sidebar plot's legend instead.
+    hero: {
+      control: 'cutoff',
+      readouts: [
+        { label: 'peak', valueId: 'filter-peak-db' },
+        { label: 'cv reach', valueId: 'filter-cutoff-reach' },
+        { label: 'res reach', valueId: 'filter-res-reach' },
+      ],
+    },
+
+    // THE SIDEBAR. `custom` carries the one picture a VCF IS, and unlike the
+    // `scope` glyph — which binds to this insert's own output and is therefore
+    // a flat line on a silent rack, in both committed baselines — it is
+    // param-derived and alive with nothing patched.
+    //
+    // NOT `signal-flow`: this chain is ONE stage. The three sections are
+    // SELECTED AMONG (`ba.selectn`), not chained, and `FaceFlowStage.parallel`
+    // means "taps the bus earlier and rejoins it downstream", which is not what
+    // that is. A diagram teaching the wrong topology is worse than none.
+    // NOT `readouts`: it would restate the hero strip.
+    sidebar: [
+      {
+        kind: 'custom',
+        label: 'response',
+        panelId: 'filter-response',
+        props: {
+          cutoffParam: 'cutoff',
+          resParam: 'resonance',
+          modeParam: 'mode',
+          depthParam: 'cutoff_cv_amt',
+        },
+      },
+      {
+        // FOUR COMPLETE RECALLS. Five params means "complete param set" is
+        // trivially reachable here, so there is no excuse for a partial recall
+        // that leaves a knob from the last preset lying under the new one.
+        //
+        // `eg sweep` is the entry that earns the block: `cutoff_cv_amt: 0.2` is
+        // EXACTLY the ±1-octave trim (2^(5·0.2) = 2) that the module's headline
+        // hazard needs, and one click teaches it where three paragraphs of docs
+        // have not. `rumble cut` deliberately zeroes both depths, so selecting
+        // it demonstrates the strip collapsing to `120 Hz · muted`.
+        kind: 'presets',
+        label: 'starting points',
+        entries: [
+          { id: 'gentle', label: 'gentle lp', note: '12 db/oct',
+            values: { cutoff: 1200, resonance: 0.05, mode: 0, cutoff_cv_amt: 1, res_cv_amt: 1 } },
+          { id: 'squelch', label: 'squelch', note: '+24 db peak',
+            values: { cutoff: 400, resonance: 0.85, mode: 0, cutoff_cv_amt: 0.4, res_cv_amt: 0.3 } },
+          { id: 'rumble', label: 'rumble cut', note: 'hp @ 120',
+            values: { cutoff: 120, resonance: 0.3, mode: 1, cutoff_cv_amt: 0, res_cv_amt: 0 } },
+          { id: 'eg-ready', label: 'eg sweep', note: '±1 oct',
+            values: { cutoff: 500, resonance: 0.45, mode: 0, cutoff_cv_amt: 0.2, res_cv_amt: 0 } },
+        ],
+      },
+    ],
   },
 
   docs: {

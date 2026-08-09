@@ -5,18 +5,38 @@
   import { filterDef } from '$lib/audio/modules/filter';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
-  import { cardParams, portsFromDef } from './card-kit';
+  import { cardParams, paramSpec, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
   const { set, live } = cardParams(filterDef, () => id, () => node);
 
-  let cutoff    = $derived(node?.params.cutoff    ?? filterDef.params[0]!.defaultValue);
-  let resonance = $derived(node?.params.resonance ?? filterDef.params[1]!.defaultValue);
-  let mode      = $derived(node?.params.mode      ?? 0);
+  // ⚠ EVERY NUMBER, CURVE, UNIT, LABEL AND VOCABULARY BELOW COMES FROM THE DEF.
+  // Until 2026-08-09 this card re-typed nine of them: cutoff's bounds, default,
+  // unit string and log taper were hand-written beside the fader, resonance's
+  // four the same way, and a private mode array restated the three state names
+  // the def already declares in its `options` roster. All of them AGREED, which
+  // is exactly how this class hides — no def-reading gate (contract-lock,
+  // module-docs-lint, every range assertion) can see a card, so a divergence
+  // only becomes visible the first time somebody edits one side. Positional
+  // indexing into `params` was the same hazard one step worse: a reorder would
+  // have silently rebound both defaults.
+  //
+  // (This comment names no literal prop syntax on purpose — `card-range-source`
+  // greps the whole file, so quoting the old code here would red the gate that
+  // certifies the fix.)
+  const pCutoff = paramSpec(filterDef, 'cutoff');
+  const pRes = paramSpec(filterDef, 'resonance');
+  const pMode = paramSpec(filterDef, 'mode');
 
+  let cutoff    = $derived(node?.params.cutoff    ?? pCutoff.defaultValue);
+  let resonance = $derived(node?.params.resonance ?? pRes.defaultValue);
+  let mode      = $derived(node?.params.mode      ?? pMode.defaultValue);
 
-  const MODES = ['LP', 'HP', 'BP'] as const;
+  /** The mode vocabulary, from the def's `options` roster — the SAME strings
+   *  the dock's Segmented paints, so the two surfaces cannot name three states
+   *  differently. */
+  const MODES = (pMode.options ?? []).map((o) => o.label);
   // ⚠ Routed through the SAME `setNodeParam` seam as cutoff/resonance. Until
   // 2026-08-02 this was a bare `t.params.mode = m`, so MODE — the control that
   // decides whether CUTOFF sounds dark, thin or narrow — was the one param on
@@ -34,8 +54,8 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="fader-row">
-      <Fader value={cutoff}    min={20}  max={20000} defaultValue={1000} label="Cutoff" units="Hz" curve="log"    onchange={set('cutoff')} moduleId={id} paramId="cutoff"    readLive={live('cutoff')} />
-      <Fader value={resonance} min={0}   max={0.99}  defaultValue={0.1}  label="Res"               curve="linear" onchange={set('resonance')} moduleId={id} paramId="resonance" readLive={live('resonance')} />
+      <Fader value={cutoff}    min={pCutoff.min} max={pCutoff.max} defaultValue={pCutoff.defaultValue} label={pCutoff.label} units={pCutoff.units} curve={pCutoff.curve} formatValue={pCutoff.format} onchange={set('cutoff')}    moduleId={id} paramId="cutoff"    readLive={live('cutoff')} />
+      <Fader value={resonance} min={pRes.min}    max={pRes.max}    defaultValue={pRes.defaultValue}    label={pRes.label}    units={pRes.units}    curve={pRes.curve}    formatValue={pRes.format}    onchange={set('resonance')} moduleId={id} paramId="resonance" readLive={live('resonance')} />
     </div>
 
     <div class="mode-row">
