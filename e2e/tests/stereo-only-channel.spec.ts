@@ -33,7 +33,7 @@
 // thread over the CDP boundary, a healthy run costs what the graph costs, and
 // a slow machine cannot turn "not yet" into "never". See `readTaps`.
 
-import { test, expect } from './_fixtures';
+import { test, expect, loadVoiceDemo } from './_fixtures';
 import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
@@ -576,7 +576,7 @@ test.describe('patch only L / only R', () => {
     // Drawing both would put two beziers between the same two cards, anchored
     // at the same hidden corner handle stack: a visually fat cable that deletes
     // half at a time.
-    await page.getByTestId('load-example-select').selectOption('sequenced-vco');
+    await loadVoiceDemo(page);
     await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
 
     // SIX in the graph…

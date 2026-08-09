@@ -2,8 +2,8 @@
 //
 // AI-friendly diagnostic. Designed for the AI agent to run via `task ai:debug`
 // when something is broken and structured info is needed. Boots the page,
-// clicks Load example, dumps a structured snapshot to stdout that the agent can
-// grep for what went wrong.
+// loads the voice demo, dumps a structured snapshot to stdout that the agent
+// can grep for what went wrong.
 //
 // Output sections (printed to stdout):
 //   [SHELL]   — page rendered without errors? title? COOP/COEP?
@@ -14,6 +14,7 @@
 //   [VERDICT] — one-line summary.
 
 import { test } from '@playwright/test';
+import { loadVoiceDemo } from './_fixtures';
 import { captureConsole, formatConsole } from './helpers';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -25,7 +26,7 @@ function section(title: string, body: string) {
   console.log(body);
 }
 
-test('AI debug snapshot — Load example flow', async ({ page }) => {
+test('AI debug snapshot — voice-demo flow', async ({ page }) => {
   await mkdir(ART_DIR, { recursive: true });
   const cc = captureConsole(page);
 
@@ -55,7 +56,7 @@ test('AI debug snapshot — Load example flow', async ({ page }) => {
   // ---------- DOM (pre-click) ----------
   const preDom = await page.evaluate(() => ({
     h1: document.querySelector('h1')?.textContent ?? null,
-    spawnBtn: !!document.querySelector('[data-testid="load-example-select"]'),
+    presetBar: !!document.querySelector('[data-testid="preset-slot-bar"]'),
     allButtons: Array.from(document.querySelectorAll('button')).map((b) =>
       (b.textContent ?? '').trim().slice(0, 40)
     ),
@@ -66,10 +67,10 @@ test('AI debug snapshot — Load example flow', async ({ page }) => {
   }));
   section('DOM (pre-click)', JSON.stringify(preDom, null, 2));
 
-  // ---------- Click Load example ----------
+  // ---------- Load the voice demo ----------
   let clickError: string | null = null;
   try {
-    await page.getByTestId('load-example-select').selectOption('sequenced-vco', { timeout: 5000 });
+    await loadVoiceDemo(page);
   } catch (err) {
     clickError = String(err);
   }
@@ -122,7 +123,7 @@ test('AI debug snapshot — Load example flow', async ({ page }) => {
   const ok =
     !clickError &&
     cc.pageErrors.length === 0 &&
-    postDom.flowNodeCount === 2 &&
+    postDom.flowNodeCount === 5 &&
     state.audioContextStateFromDom === 'running';
-  section('VERDICT', ok ? 'pass — 2 nodes rendered, audio running' : 'fail — see sections above');
+  section('VERDICT', ok ? 'pass — 5 nodes rendered, audio running' : 'fail — see sections above');
 });

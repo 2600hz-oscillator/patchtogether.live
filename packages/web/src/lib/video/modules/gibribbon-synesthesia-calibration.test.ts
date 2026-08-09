@@ -1,35 +1,48 @@
-// packages/web/src/lib/ui/example-patches/gibribbon-demo-calibration.test.ts
+// packages/web/src/lib/video/modules/gibribbon-synesthesia-calibration.test.ts
 //
-// REAL-CHAIN calibration guard for the bundled GIBRIBBON demo
-// (gibribbon-demo.imp.json). This is the regression test the SYNESTHESIA #698
-// retune (PR #701) rests on.
+// REAL-CHAIN calibration guard for GIBRIBBON's four CV channels. This is the
+// regression test the SYNESTHESIA #698 retune (PR #701) rests on.
 //
-// The demo's signal chain is:
-//   TIMELORDE → MACSEQ → MACROOSCILLATOR → SYNESTHESIA(copy A) → GIBRIBBON
+// The chain under test is:
+//   sequenced MACROOSCILLATOR voice → SYNESTHESIA(copy A) → GIBRIBBON
 // The four SLOW SYNESTHESIA env-followers (a_band{1..4}_env_slow) become
 // GIBRIBBON cv1..cv4 → loop/jump/imp/zombie events (via GIB_TUNING.cvEventMap).
 //
-// WHY a separate test from the existing "Phase-2 demo CV calibration" in
+// WHY a separate test from the "Phase-2 demo CV calibration" in
 // gibribbon-events.test.ts: that one is PURELY SYNTHETIC — it hand-models four
 // idealized raised-cosine envelopes and never touches renderSynesthesia or the
-// demo's actual gains, so it stayed green THROUGH the #698 refactor that killed
+// real per-band gains, so it stayed green THROUGH the #698 refactor that killed
 // jump+imp AND through the fix that revived them. It cannot guard the gains.
 //
-// THIS test drives the demo's EXACT sequenced MACROOSCILLATOR voice (the
-// 128-step kick/snare/melodic pattern + the macro/synesthesia params decoded
-// straight from the committed Y.Doc blob — the blob is the source of truth)
-// through the REAL renderSynesthesia DSP at the demo's REAL gains, samples the
-// slow-env CV per GIBRIBBON tick, and pushes it through the real
-// clockTick→chooseSpawn pipeline. It asserts ALL FOUR event kinds spawn (none
-// dead), none floods, and the total rate sits in a playable band. So the NEXT
-// synesthesia band/attack/gain change that silently re-kills a channel fails CI.
+// THIS test drives an EXACT sequenced MACROOSCILLATOR voice (a 128-step
+// kick/snare/melodic pattern) through the REAL renderSynesthesia DSP at the
+// tuned gains, samples the slow-env CV per GIBRIBBON tick, and pushes it
+// through the real clockTick→chooseSpawn pipeline. It asserts ALL FOUR event
+// kinds spawn (none dead), none floods, and the total rate sits in a playable
+// band. So the NEXT synesthesia band/attack/gain change that silently re-kills
+// a channel fails CI.
+//
+// ── PROVENANCE (read this before touching the fixture) ──────────────────────
+// Until the dawless-removal sequence this test lived at
+// `lib/ui/example-patches/gibribbon-demo-calibration.test.ts` and DECODED its
+// voice out of the shipped `gibribbon-demo.imp.json` envelope (the "GIBRIBBON
+// (game demo)" entry in the retired "Load example…" dropdown). That envelope
+// and its generator (`scripts/build-gibribbon-demo-envelope.mjs`) were deleted
+// with the dropdown, so the fixture is now declared HERE, inline.
+//
+// It is the SAME voice, not an approximation: `buildSteps()` below is the
+// generator's step programmer verbatim (xorshift32, seed 0x61bb09), and it was
+// cross-checked to reproduce the committed blob's `macseq.data.steps` array
+// byte-for-byte before the blob was removed. MACRO_PARAMS / DEMO_MASTER /
+// DEMO_GAINS are the blob's `macrooscillator.params` and `synesthesia`
+// a_master/a_gain{1..4} values. Inlining also removes the old indirection where
+// a DSP guard's subject was buried in a shipped product asset.
 //
 // macrooscillatorMath.render is the pure-math mirror of the worklet (same path
 // the macrooscillator unit tests + ART use); renderSynesthesia is the same DSP
 // the synesthesia unit tests import. No AudioWorklet / WebGL needed.
 
 import { describe, it, expect, beforeAll } from 'vitest';
-import * as Y from 'yjs';
 import { macrooscillatorMath, type MacroParams } from '$lib/audio/modules/macrooscillator';
 import { renderSynesthesia } from '../../../../../dsp/src/lib/synesthesia-dsp';
 import { midiToVOct } from '$lib/audio/note-entry';
@@ -41,10 +54,8 @@ import {
   GIB_TUNING,
   type GibEventKind,
 } from '$lib/video/modules/gibribbon-events';
-import { parseEnvelope } from '$lib/graph/persistence';
-import { GIBRIBBON_DEMO_ENVELOPE_RAW } from './gibribbon-demo';
 
-// ── Demo transport math (TIMELORDE bpm=120; see build-gibribbon-demo-envelope.mjs).
+// ── Transport math (TIMELORDE bpm=120, MACSEQ clocked from its 2× output).
 //   2× (8th)     = 0.25 s clocks MACSEQ → 1 MACSEQ step = 0.25 s.
 //   1× (quarter) = 0.50 s is GIBRIBBON's scroll clock → 1 GIB tick = 2 steps.
 const SR = 48000;
@@ -53,27 +64,51 @@ const GIB_TICK_SECS = 0.5;
 const STEP_SAMPLES = Math.round(STEP_SECS * SR);
 const GIB_TICK_SAMPLES = Math.round(GIB_TICK_SECS * SR);
 
-// The demo's SYNESTHESIA copy-A gains. Kept here as the test's source of truth
-// for the assertions; the separate "blob ↔ script gains" guard in
-// gibribbon-demo.test.ts proves the committed blob actually carries these.
+// The tuned SYNESTHESIA copy-A calibration this test exists to protect.
 const DEMO_MASTER = 1.2;
 const DEMO_GAINS: [number, number, number, number] = [1.4, 2.35, 3.9, 1.9];
 // A KNOWN-BAD calibration that leaves jump+imp dead — used by the negative-guard
 // test below to prove this calibration test really would catch a regression.
 //
-// NOTE (kick-bass CV re-tune, this PR): the env CV now carries a per-band MAKEUP
-// gain (CV_MAKEUP in synesthesia-dsp), so every band's slow env reaches full
-// scale on energetic steps — which is exactly what revived all four channels at
-// the demo gains. That makeup also lifted the PRE-#698 gains [1.5,1.6,1.7,1.8]
-// enough that they no longer kill a channel, so they're no longer a valid
-// negative case. The flat UNITY calibration (master 1, all band gains 1 — i.e.
-// NO per-band balancing at all) is the new known-bad: the demo voice's mid
-// bands (band2=jump, band3=imp) carry too little energy to cross cvSpawnThreshold
-// without per-band makeup gain, so both stay dead while the energetic bass
-// (loop) + treble (zombie) still fire. If a future edit reverts to a flat /
-// unbalanced calibration, the "ALL FOUR" assertion fails the same way.
+// The env CV carries a per-band MAKEUP gain (CV_MAKEUP in synesthesia-dsp), so
+// every band's slow env reaches full scale on energetic steps — which is what
+// revived all four channels at the tuned gains. That makeup also lifted the
+// PRE-#698 gains [1.5,1.6,1.7,1.8] enough that they no longer kill a channel,
+// so they are no longer a valid negative case. The flat UNITY calibration
+// (master 1, all band gains 1 — i.e. NO per-band balancing at all) is the
+// known-bad: the voice's mid bands (band2=jump, band3=imp) carry too little
+// energy to cross cvSpawnThreshold without per-band makeup gain, so both stay
+// dead while the energetic bass (loop) + treble (zombie) still fire. If a
+// future edit reverts to a flat / unbalanced calibration, the "ALL FOUR"
+// assertion fails the same way.
 const OLD_MASTER = 1.0;
 const OLD_GAINS: [number, number, number, number] = [1, 1, 1, 1];
+
+// The MACROOSCILLATOR voice MACSEQ plays. `model` is driven live per step (see
+// renderDemoVoice); the value here is the idle default the patch carried.
+const MACRO_PARAMS: MacroParams = {
+  model: 2, // FM_2OP
+  note: 0,
+  harmonics: 0.4,
+  timbre: 0.45,
+  morph: 0.5,
+  level: 0.85,
+} as MacroParams;
+
+// ── The 128-step pattern (generator-verbatim; see PROVENANCE above). ─────────
+//   - KICK (model 8) on every 8th step (0, 8, 16, …) — pitch forced to c2.
+//   - SNARE (model 9) on the ALTERNATING 8s (the back-beat: 4, 12, 20, …) —
+//     pitch forced to c3.
+//   - ~40% of the REMAINING steps left EMPTY (off).
+//   - the rest cycle 2OP / STRING / WAVESHAPE voices with notes drawn from the
+//     melodic pool.
+// A fixed-seed xorshift32 drives the empty/voice/note choices, so the pattern
+// is deterministic (no Math.random) and identical on every run and platform.
+const MODEL = { WAVESHAPE: 1, FM_2OP: 2, STRING: 6, KICK: 8, SNARE: 9 } as const;
+const N = { c2: 36, e2: 40, c3: 48, f3: 53, a3: 57, d2: 38, d3: 50, e3: 52 } as const;
+const NOTE_POOL = [N.c2, N.e2, N.c3, N.f3, N.a3, N.d2, N.d3, N.e3];
+const VOICE_CYCLE = [MODEL.FM_2OP, MODEL.STRING, MODEL.WAVESHAPE];
+const STEP_COUNT = 128;
 
 interface DemoStep {
   on: boolean;
@@ -81,39 +116,48 @@ interface DemoStep {
   model: number | null;
 }
 
-// ── Decode the demo straight from the committed Y.Doc blob (source of truth). ─
-function decodeDemoDoc(): Y.Doc {
-  const env = parseEnvelope(JSON.stringify(GIBRIBBON_DEMO_ENVELOPE_RAW));
-  const doc = new Y.Doc();
-  Y.applyUpdate(
-    doc,
-    Uint8Array.from(atob(env.update), (c) => c.charCodeAt(0)),
-  );
-  return doc;
+function makeRng(seed: number): () => number {
+  let s = seed >>> 0;
+  return () => {
+    // xorshift32 — deterministic 0..1.
+    s ^= s << 13;
+    s >>>= 0;
+    s ^= s >>> 17;
+    s ^= s << 5;
+    s >>>= 0;
+    return (s >>> 0) / 0xffffffff;
+  };
 }
 
-function nodeOfType(doc: Y.Doc, type: string): Record<string, unknown> {
-  const nodes = doc.getMap('nodes').toJSON();
-  const n = Object.values(nodes).find(
-    (m): m is Record<string, unknown> => (m as { type?: string })?.type === type,
-  );
-  if (!n) throw new Error(`no ${type} node in demo blob`);
-  return n;
-}
-
-function demoSteps(doc: Y.Doc): DemoStep[] {
-  const ms = nodeOfType(doc, 'macseq');
-  const steps = (ms.data as { steps?: DemoStep[] })?.steps;
-  if (!Array.isArray(steps)) throw new Error('macseq node has no steps[]');
+function buildSteps(): DemoStep[] {
+  const rng = makeRng(0x61bb09); // fixed "GIBB" seed → stable pattern
+  const steps: DemoStep[] = [];
+  let voiceCursor = 0;
+  let noteCursor = 0;
+  for (let i = 0; i < STEP_COUNT; i++) {
+    if (i % 8 === 0) {
+      steps.push({ on: true, midi: N.c2, model: MODEL.KICK });
+      continue;
+    }
+    if (i % 8 === 4) {
+      steps.push({ on: true, midi: N.c3, model: MODEL.SNARE });
+      continue;
+    }
+    if (rng() < 0.4) {
+      steps.push({ on: false, midi: N.c3, model: null });
+      continue;
+    }
+    const model = VOICE_CYCLE[voiceCursor % VOICE_CYCLE.length]!;
+    voiceCursor++;
+    const midi = NOTE_POOL[noteCursor % NOTE_POOL.length]!;
+    noteCursor++;
+    steps.push({ on: true, midi, model });
+  }
   return steps;
 }
 
-function demoMacroParams(doc: Y.Doc): MacroParams {
-  return nodeOfType(doc, 'macrooscillator').params as MacroParams;
-}
-
-// ── Render the sequenced MACROOSCILLATOR voice the demo plays. ────────────────
-// Each MACSEQ step drives the macro voice for STEP_SAMPLES with the step's model
+// ── Render the sequenced MACROOSCILLATOR voice. ──────────────────────────────
+// Each step drives the macro voice for STEP_SAMPLES with the step's model
 // (MACSEQ.modelcv → MACROOSCILLATOR.model_cv, a discrete CV that round-trips to
 // the same integer) at the step's pitch (MACSEQ.pitch → V/oct). A gated-OFF step
 // is silence (the macro voice is un-triggered). macrooscillatorMath.render
@@ -198,24 +242,50 @@ function runDemoPipeline(
   return { spawned, counts, nTicks };
 }
 
-describe('GIBRIBBON demo — real-chain SYNESTHESIA calibration (#698 retune guard)', () => {
-  const doc = decodeDemoDoc();
-  const steps = demoSteps(doc);
-  const macro = demoMacroParams(doc);
+describe('GIBRIBBON — real-chain SYNESTHESIA calibration (#698 retune guard)', () => {
+  const steps = buildSteps();
+  const macro = MACRO_PARAMS;
 
   // The real-chain renders (renderDemoVoice over 128 steps → renderSynesthesia
   // over 32 s of audio) cost ~2 s EACH and are IDENTICAL across the tests below
-  // (same demo doc, same params). Compute them ONCE here — re-rendering per
+  // (same fixture, same params). Compute them ONCE here — re-rendering per
   // `it()` blew vitest's 5 s per-test timeout under flake-check/CI load. The
   // assertions are now near-instant reads over the precomputed results.
   let voice: Float32Array;
-  let demoRun: PipelineResult; // demo (new) gains
-  let oldRun: PipelineResult; // OLD pre-#698 gains (negative guard)
+  let demoRun: PipelineResult; // tuned gains
+  let oldRun: PipelineResult; // flat unity gains (negative guard)
   beforeAll(() => {
     voice = renderDemoVoice(steps, macro);
     demoRun = runDemoPipeline(steps, macro, DEMO_MASTER, DEMO_GAINS);
     oldRun = runDemoPipeline(steps, macro, OLD_MASTER, OLD_GAINS);
   }, 60_000);
+
+  it('the inlined fixture is the 128-step pattern it claims to be', () => {
+    // Anchors the fixture itself: a silent edit to buildSteps() (a changed
+    // seed, a dropped kick row) would otherwise re-tune the whole guard
+    // underneath the assertions below and still look green.
+    expect(steps).toHaveLength(STEP_COUNT);
+    // KICK on every down-beat 8, SNARE on every back-beat 8 — the spine of the
+    // pattern the band gains were balanced against.
+    for (let i = 0; i < STEP_COUNT; i += 8) {
+      expect(steps[i], `step ${i} is the KICK`).toEqual({
+        on: true,
+        midi: N.c2,
+        model: MODEL.KICK,
+      });
+      expect(steps[i + 4], `step ${i + 4} is the SNARE`).toEqual({
+        on: true,
+        midi: N.c3,
+        model: MODEL.SNARE,
+      });
+    }
+    // ~40% of the non-drum steps are rests — a fully-dense or fully-empty
+    // pattern would change the spectral balance the gains target.
+    const nonDrum = steps.filter((_, i) => i % 8 !== 0 && i % 8 !== 4);
+    const rests = nonDrum.filter((s) => !s.on).length;
+    expect(rests / nonDrum.length).toBeGreaterThan(0.25);
+    expect(rests / nonDrum.length).toBeLessThan(0.55);
+  });
 
   it('renders a non-silent sequenced voice and a non-trivial number of ticks', () => {
     expect(voice.length).toBe(steps.length * STEP_SAMPLES);
@@ -231,7 +301,7 @@ describe('GIBRIBBON demo — real-chain SYNESTHESIA calibration (#698 retune gua
     expect(Math.floor(voice.length / GIB_TICK_SAMPLES)).toBe(64);
   });
 
-  it('ALL FOUR event kinds spawn at the demo gains — none dead', () => {
+  it('ALL FOUR event kinds spawn at the tuned gains — none dead', () => {
     const { counts } = demoRun;
     expect(counts.loop, 'loop (cv1) must spawn').toBeGreaterThanOrEqual(1);
     expect(counts.jump, 'jump (cv2) must spawn').toBeGreaterThanOrEqual(1);

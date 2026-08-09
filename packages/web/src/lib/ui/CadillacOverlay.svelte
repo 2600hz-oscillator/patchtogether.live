@@ -57,9 +57,9 @@
   // Tick counter forces a re-eval of derived position values from rAF.
   let frameTick = $state(0);
   // Latched fallback spawn time per cadillac id, for cars whose node.data
-  // has NO `spawnedAtMs`. The MEDIA BURN demo envelope deliberately omits
-  // it (its "load-time === spawn-time" determinism design, see
-  // media-burn.ts). Without latching, the `?? now` fallback below would be
+  // has NO `spawnedAtMs` — any imported envelope that omits the stamp, which
+  // is how a saved rack gets "load-time === spawn-time" determinism.
+  // Without latching, the `?? now` fallback below would be
   // re-read on EVERY rAF frame, so `now - spawnedAtMs` stayed ~0 and the
   // car sat frozen at its start x — never reaching the tiles. We stamp the
   // time once, the first frame we see such a car, so elapsed time advances
