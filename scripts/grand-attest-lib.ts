@@ -36,6 +36,8 @@ import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 
+import { normalizeForHash } from './attest-code-basis';
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 export const REPO_ROOT = resolve(__dirname, '..');
 
@@ -138,8 +140,17 @@ export function resolveGrandBasis(): string[] {
 // ---------------------------------------------------------------------------
 
 /** Deterministic content-hash over the basis: for each file in sorted order,
- *  feed `<repo-relative-path>\0<bytes>` into one sha256. package.json pins are
- *  hashed NARROWLY (grandDepDigest); every other file is hashed by raw bytes. */
+ *  feed `<repo-relative-path>\0<CODE>` into one sha256.
+ *
+ *  CODE, not bytes: every source file goes through the SHARED normalizer
+ *  (`scripts/attest-code-basis.ts`) — a TypeScript AST re-emit that drops
+ *  comments, the living-docs `docs`/`controlFamilies`/`face` def properties and
+ *  type-only imports. A comment on a DSP core cannot change a rendered sample,
+ *  so it must not cost a heavy re-attest; the same normalizer backs webgl and
+ *  collab so the three cannot drift apart.
+ *
+ *  package.json pins keep their NARROWER treatment (grandDepDigest);
+ *  `.flox/env/manifest.toml` is hashed by raw bytes. */
 export function computeGrandHash(): string {
   const h = createHash('sha256');
   for (const rel of resolveGrandBasis()) {
@@ -148,7 +159,7 @@ export function computeGrandHash(): string {
     if (isPackageJsonPin(rel)) {
       h.update(grandDepDigest(rel));
     } else {
-      h.update(readFileSync(join(REPO_ROOT, rel)));
+      h.update(normalizeForHash(rel, readFileSync(join(REPO_ROOT, rel), 'utf8')));
     }
   }
   return h.digest('hex');

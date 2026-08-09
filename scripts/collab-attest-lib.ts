@@ -34,6 +34,8 @@ import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve, sep } from 'node:path';
 
+import { normalizeForHash } from './attest-code-basis';
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 export const REPO_ROOT = resolve(__dirname, '..');
 
@@ -240,20 +242,32 @@ export function resolveCollabBasis(): string[] {
 // -------------------------------------------------------------------------
 
 /** Deterministic content-hash over the basis: for each file in sorted order,
- *  feed `<repo-relative-path>\0<file-bytes>` into one sha256. */
+ *  feed `<repo-relative-path>\0<CODE>` into one sha256.
+ *
+ *  CODE, not bytes. Every source/spec file goes through the SHARED normalizer
+ *  (`scripts/attest-code-basis.ts`): a TypeScript AST re-emit that drops
+ *  comments, the living-docs `docs`/`controlFamilies`/`face` def properties and
+ *  type-only imports. **This closes the asymmetry that WAS the bug**: the docs
+ *  escape hatch used to live in webgl-attest-lib and nowhere else, while
+ *  COLLAB_DIR_ROOTS hashes ALL of packages/server/src + lib/multiplayer
+ *  wholesale — so two pure COMMENT lines flipped the collab hash and demanded a
+ *  full relay re-attest (#1422). A comment cannot change how the relay
+ *  converges, so the hash is now blind to it by construction.
+ *
+ *  package.json toolchain pins keep their NARROWER treatment — only the
+ *  collab-relevant deps (collabDepDigest) — so a collab-irrelevant dep bump
+ *  (e.g. a video lib like butterchurn, #939) can't drift the hash. `.sql`
+ *  schema and `.flox/env/manifest.toml` are hashed by raw bytes (outside the
+ *  normalizer's scope — over-invalidation is the safe direction). */
 export function computeCollabHash(): string {
   const h = createHash('sha256');
   for (const rel of resolveCollabBasis()) {
     h.update(rel);
     h.update('\0');
-    // package.json toolchain pins are hashed NARROWLY — only the collab-relevant
-    // deps (collabDepDigest) — so a collab-irrelevant dep bump (e.g. a video lib
-    // like butterchurn, #939) can't drift the collab hash. Every other basis
-    // file (sources, specs, schema, manifest.toml) is hashed by raw bytes.
     if (isPackageJsonPin(rel)) {
       h.update(collabDepDigest(rel));
     } else {
-      h.update(readFileSync(join(REPO_ROOT, rel)));
+      h.update(normalizeForHash(rel, readFileSync(join(REPO_ROOT, rel), 'utf8')));
     }
   }
   return h.digest('hex');

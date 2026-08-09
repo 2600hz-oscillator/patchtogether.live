@@ -26,6 +26,7 @@ import { dirname, join, resolve, sep } from 'node:path';
 import { minimatch } from 'minimatch';
 
 import { WEBGL_HEAVY_GLOBS, WEBGL_HEAVY_EXCLUDE } from '../e2e/webgl-heavy-globs';
+import { normalizeForHash } from './attest-code-basis';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 export const REPO_ROOT = resolve(__dirname, '..');
@@ -122,8 +123,14 @@ export const WEBGL_SERIAL_SPECS = ['scope-video-out.spec.ts', 'wavecel-video-out
 
 /** Toolchain pins that can change bundled/rendered WebGL output (a bundler or
  *  Playwright/renderer bump can move shader-string emission — the Clerk #464
- *  bundler class). Hashed wholesale; they rarely churn, so over-coverage is the
- *  safe direction. */
+ *  bundler class).
+ *
+ *  ⚠ package.json pins are hashed by their DEPENDENCY/CONFIG surface only (the
+ *  shared `packageJsonCodeDigest`), not wholesale: an npm-SCRIPT string cannot
+ *  move a rendered pixel, and hashing it wholesale demanded a trusted-machine
+ *  GPU re-attest for a one-word CLI flag (#1425, `620fa1b3…` → `ad300c3e…`).
+ *  `.flox/env/manifest.toml` IS still hashed wholesale — it rarely churns and
+ *  TOML comments are outside the normalizer's scope. */
 export const TOOLCHAIN_PIN_FILES = [
   'e2e/package.json', // pins @playwright/test — the renderer/engine version
   'packages/web/package.json', // pins Vite / Svelte / esbuild
@@ -261,7 +268,7 @@ export function resolveWebglBasis(): string[] {
   //       - the renderer/engine version → the toolchain pins + playwright.config.
   //     The §12 coverage guard still RUNS every heavy spec and asserts every
   //     WebGL module HAS one — that lives in the test runner, not the hash.
-  //     This mirrors the docs-hash-ignore rule: documentation AND test edits are
+  //     This mirrors the docs rule: documentation AND test edits are
   //     hash-transparent. (Guarded by webgl-attest-coverage.test.ts: the basis
   //     contains NO file under e2e/tests/.)
 
@@ -277,29 +284,26 @@ export function resolveWebglBasis(): string[] {
 // The hash
 // -------------------------------------------------------------------------
 
-/** Living-docs is hash-TRANSPARENT: co-located `docs`/`controlFamilies` and
- *  their type imports are pure DOCUMENTATION (they don't affect GPU rendering),
- *  so authoring them on a video module must NOT churn the WebGL attest hash and
- *  force a re-attest. Each such addition is wrapped in
- *  `// docs-hash-ignore:start … // docs-hash-ignore:end` markers, and the hash
- *  is computed over content with those regions removed. A file with no markers
- *  is unaffected. (Owner directive 2026-06-24: "docs must not change attest
- *  hashes"; see .myrobots/plans/living-docs-drift-2026-06-24.md.) */
-const DOCS_IGNORE_RE = /^[ \t]*\/\/ docs-hash-ignore:start[\s\S]*?^[ \t]*\/\/ docs-hash-ignore:end[ \t]*\r?\n/gm;
-export function stripDocsForHash(src: string): string {
-  return src.replace(DOCS_IGNORE_RE, '');
-}
-
 /** Deterministic content-hash over the basis: for each file in sorted order,
- *  feed `<repo-relative-path>\0<docs-stripped-bytes>` into one sha256. Mirrors
- *  scripts/dsp-src-hash.sh exactly (path + content, LC_ALL=C sort order), except
- *  living-docs regions are stripped first so doc authoring is hash-neutral. */
+ *  feed `<repo-relative-path>\0<CODE>` into one sha256, where CODE is the file
+ *  reduced to what can actually change GPU rendering by the SHARED normalizer
+ *  (`scripts/attest-code-basis.ts`): comments, living-docs `docs`/
+ *  `controlFamilies`/`face` def properties and type-only imports are removed by
+ *  a TypeScript AST re-emit; a package.json keeps only its dependency/config
+ *  surface. Mirrors scripts/dsp-src-hash.sh (path + content, LC_ALL=C sort
+ *  order) otherwise.
+ *
+ *  The hash is DOCS-BLIND BY CONSTRUCTION — there is no marker to remember and
+ *  no lint to catch a forgotten one (owner directive 2026-08-09: "docs should
+ *  not need explicit ignore, they should be ignored by design; only code that
+ *  is, you know, code, should be considered"). The same normalizer backs the
+ *  collab and grand attests, so the three cannot drift apart. */
 export function computeWebglHash(): string {
   const h = createHash('sha256');
   for (const rel of resolveWebglBasis()) {
     h.update(rel);
     h.update('\0');
-    h.update(stripDocsForHash(readFileSync(join(REPO_ROOT, rel), 'utf8')));
+    h.update(normalizeForHash(rel, readFileSync(join(REPO_ROOT, rel), 'utf8')));
   }
   return h.digest('hex');
 }

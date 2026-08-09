@@ -89,32 +89,40 @@ export async function repoSourceSha(...relPaths: string[]): Promise<string> {
 }
 
 /**
- * Strip `// docs-hash-ignore:start … // docs-hash-ignore:end` regions — the
- * SAME marker convention (and regex) the WebGL attest uses to keep co-located
- * `docs:` prose out of its basis hash (`scripts/webgl-attest-lib.ts`
- * `stripDocsForHash`; guarded there by webgl-attest-coverage.test.ts).
+ * Reduce a source file to its CODE — comments, the living-docs `docs`/
+ * `controlFamilies` def properties and the UI-curation `face` block removed —
+ * via the SHARED attest normalizer (`scripts/attest-code-basis.ts`), the same
+ * one the webgl / collab / grand content hashes use.
+ *
+ * There is no marker to remember: the normalizer is a TypeScript AST re-emit,
+ * so it is blind to documentation BY CONSTRUCTION. (It replaced 85
+ * `// docs-hash-ignore:start … :end` marker pairs across 79 files on
+ * 2026-08-09; owner directive "docs should not need explicit ignore".)
+ *
+ * Imported lazily so the TypeScript compiler is only loaded by the handful of
+ * ART scenarios that actually pin a def file.
  */
-const DOCS_IGNORE_RE =
-  /^[ \t]*\/\/ docs-hash-ignore:start[\s\S]*?^[ \t]*\/\/ docs-hash-ignore:end[ \t]*\r?\n/gm;
-export function stripDocsForPin(src: string): string {
-  return src.replace(DOCS_IGNORE_RE, '');
+export async function stripDocsForPin(src: string, relPath = 'pinned-def.ts'): Promise<string> {
+  const { normalizeForHash } = await import('../../scripts/attest-code-basis');
+  return normalizeForHash(relPath, src);
 }
 
 /**
- * `repoSourceSha` with docs-hash-ignore regions stripped first — the pin for
- * modules whose ENTIRE render path is the factory in a DOCS-BEARING def file
- * (the pure-Web-Audio pattern-3 set: no worklet, no separate factory/lib
- * file to pin instead). The moog907a/960 precedent holds that docs edits
- * must NEVER invalidate audio pins, so those defs wrap their co-located
- * `docs: {…}` block in the markers and the profile pins everything else
- * (ports, params, the factory's node graph). A def with no markers hashes
- * unchanged (the strip is a no-op).
+ * `repoSourceSha` over CODE ONLY — the pin for modules whose ENTIRE render path
+ * is the factory in a DOCS-BEARING def file (the pure-Web-Audio pattern-3 set:
+ * no worklet, no separate factory/lib file to pin instead).
+ *
+ * The moog907a/960 precedent holds that docs edits must NEVER invalidate audio
+ * pins, and PF-11 extended that to `face:` — UI curation reaches no audio code,
+ * so a pure re-ranking must not move `art/baselines/<x>/audio.sha`. Everything
+ * that DOES shape the sound (ports, params, the factory's node graph) stays in
+ * the pin. Enforced against the LIVE mechanism by pattern3-face-pin.test.ts.
  */
 export async function docsStrippedRepoSourceSha(...relPaths: string[]): Promise<string> {
   if (relPaths.length === 0) throw new Error('docsStrippedRepoSourceSha: no source files given');
   const h = createHash('sha256');
   for (const rel of relPaths) {
-    h.update(stripDocsForPin(await readFile(join(REPO_ROOT, rel), 'utf8')));
+    h.update(await stripDocsForPin(await readFile(join(REPO_ROOT, rel), 'utf8'), rel));
   }
   return h.digest('hex').slice(0, 16);
 }
