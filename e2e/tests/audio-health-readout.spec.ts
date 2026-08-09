@@ -178,7 +178,8 @@ test('audio health readout is live, and playbackStats exists in this browser', a
       `it, ${geom.shown.barH} with it. The row has run out of horizontal room at 1280 px, so ` +
       `.cable-legend compressed until its li text wrapped. That shrinks the canvas by the same ` +
       `amount and moves every dock/faceplate VRT baseline. Free space in the row: ` +
-      `${geom.shown.freeSpace} CSS px (was ${geom.hidden.freeSpace} without the readout). ` +
+      `${geom.shown.freeSpace} CSS px (was ${geom.hidden.freeSpace} without the readout); ` +
+      `.status wants ${geom.shown.statusNaturalW}, .cable-legend wants ${geom.shown.legendNaturalW}. ` +
       `Shorten the readout or buy width back from the row gaps — see .audio-health in ` +
       `Canvas.svelte.`,
   ).toBe(geom.hidden.barH);
