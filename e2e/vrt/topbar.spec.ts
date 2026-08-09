@@ -2,10 +2,10 @@
 //
 // Visual-regression baseline for the app TOPBAR — the brand heading
 // ("patchtogether v<version>") plus the full button layout: the preset-slot bar
-// (5 numbered slots + Save Set / Load Set) and the actions cluster (Load
-// example…, Clear, Export/Load Perf (.zip), Raw JSON, aspect / skin / Electra,
-// Sign in). The module palette opens via canvas right-click, not a topbar
-// button (removed by the 1024px topbar-overflow fix).
+// (5 numbered slots + Save Set / Load Set) and the actions cluster (New rack,
+// Clear, Export/Load Perf (.zip), Raw JSON, aspect / skin, Sign in). The module
+// palette opens via canvas right-click, not a topbar button (removed by the
+// 1024px topbar-overflow fix).
 //
 // The VERSION TEXT is MASKED — its `[data-testid="app-version"]` box is filled
 // with magenta in BOTH baseline and actual before the diff — so a version bump
@@ -59,7 +59,7 @@ test.describe('VRT: topbar heading + button layout', () => {
     // e2e/vrt/_fonts.ts for the full root-cause writeup.
     await pinVrtFonts(page);
     // The overflow-fixed topbar is the CANVAS topbar (Canvas.svelte), on /rack
-    // since the landing move (#995); `/` is the static landing (no load-example).
+    // since the landing move (#995); `/` is the static landing (no rack topbar).
     await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await awaitVrtFonts(page);
@@ -67,9 +67,12 @@ test.describe('VRT: topbar heading + button layout', () => {
     const topbar = page.locator('header.topbar').first();
     await topbar.waitFor({ state: 'visible', timeout: 10_000 });
 
-    // Wait until boot finishes so the "Load example…" select shows its final
-    // (enabled) label rather than the transient "Loading…" placeholder.
-    await expect(page.getByTestId('load-example-select')).toBeEnabled({
+    // Wait until the actions cluster is mounted. (This used to wait on the
+    // "Load example…" select leaving its transient "Loading…" placeholder — the
+    // one topbar label whose WIDTH changed after boot. That control is gone;
+    // every remaining label is a static string, and the height-settle loop
+    // below is now the whole settle gate.)
+    await expect(page.getByTestId('raw-json-select')).toBeVisible({
       timeout: 15_000,
     });
 

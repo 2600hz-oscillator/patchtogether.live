@@ -6,7 +6,7 @@
 //   - Lock / Unlock (virtual-rack Phase 2): "screw down" a module to its rack
 //     slot — snap to the 180px grid, persist data.locked, pin non-draggable.
 
-import { test, expect } from './_fixtures';
+import { test, expect, loadVoiceDemo } from './_fixtures';
 import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
@@ -31,7 +31,7 @@ async function readNodeState(
 }
 
 test('node context menu: right-click opens, Escape closes', async ({ page, rack }) => {
-  await page.getByTestId('load-example-select').selectOption('sequenced-vco');
+  await loadVoiceDemo(page);
   await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
 
   // Right-click on the VCO card BACKGROUND (its title bar). Right-clicking a
@@ -47,7 +47,7 @@ test('node context menu: right-click opens, Escape closes', async ({ page, rack 
 });
 
 test('node context menu: Delete removes the node + all edges touching it', async ({ page, rack }) => {
-  await page.getByTestId('load-example-select').selectOption('sequenced-vco');
+  await loadVoiceDemo(page);
   await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
   // A stereo LEG GROUP renders as ONE bezier (PR-4): the demo's
   // `vd-vca.audio → vd-out.L` + `→ R` pair is 2 edges and 1 cable, so 6
@@ -71,7 +71,7 @@ test('node context menu: Delete removes the node + all edges touching it', async
 });
 
 test('node context menu: Unpatch all keeps the node, removes only edges touching it', async ({ page, rack }) => {
-  await page.getByTestId('load-example-select').selectOption('sequenced-vco');
+  await loadVoiceDemo(page);
   await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
   // A stereo LEG GROUP renders as ONE bezier (PR-4): the demo's
   // `vd-vca.audio → vd-out.L` + `→ R` pair is 2 edges and 1 cable, so 6

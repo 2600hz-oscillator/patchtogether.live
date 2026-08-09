@@ -6,7 +6,7 @@
 //   3. The per-module right-click "Docs" entry on the canvas opens the
 //      matching /docs/modules/<id> page in a new tab.
 
-import { test, expect } from './_fixtures';
+import { test, expect, loadVoiceDemo } from './_fixtures';
 
 test.describe.configure({ mode: 'parallel' });
 
@@ -108,7 +108,7 @@ test('docs page is not behind the Clerk auth wall', async ({ page }) => {
 });
 
 test('right-click on a module opens the Docs entry, which opens the per-module docs page in a new tab', async ({ page, context, rack }) => {
-  await page.getByTestId('load-example-select').selectOption('sequenced-vco');
+  await loadVoiceDemo(page);
   await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
 
   // Right-click on the analog VCO card — its module type is 'analogVco', so
