@@ -698,6 +698,46 @@ describe('vrt-meta — EXEMPT_BASELINE_PAIRS size RATCHET (only shrinks)', () =>
 //
 // COUNT WHAT THE BOT COMMITS: THREE linux PNGs, not two. A dispatch that comes
 // back green having committed fewer is the red flag, not "nothing to do".
+//
+// ── WHAT THE COUNT ACTUALLY CAME BACK AS, AND THE ONE KNOWN-STALE PNG ───────
+//
+// REBASE onto main, 2026-08-08. The three PNGs above landed across two
+// dispatches (the face pair on 70576795, the card on 1c989502), so the ratchet
+// is satisfied at 148 and no gap is undeclared. But the SECOND dispatch was
+// predicted at 2 files and committed 1, and the missing one is worth recording
+// rather than rounding off:
+//
+//   linux/meowbox.png              RE-CAPTURED. The merged render differs from
+//                                  the pre-rebase baseline by 4117 px against
+//                                  the 2599 px budget (#1421 moved fitView
+//                                  1.4611 -> 1.5500), so it FAILED and was
+//                                  rewritten unaided.
+//   linux/face-meowbox-compact.png NOT re-captured, and it is KNOWN STALE.
+//
+// The face pair was captured on 70576795, which is NOT a descendant of #1409
+// (verified with `git merge-base --is-ancestor`), so both platforms predate THE
+// FLIP's one-jack-per-stereo-pair change and meowbox is a stereo (L/R) module.
+// On darwin that is 136 px @26 in box x44-82 y70-78 — over the 72 px binding
+// budget (the config's 0.01 ratio on a 7216 px tile; COMPACT_MAX_DIFF 150 is
+// inert at this size), so darwin was re-captured. On linux the same change
+// lands UNDER 72 px: the scene ran and PASSED in the dispatch log
+// (`✓ 280 … face-meowbox-compact … (7.1s)`), and Playwright only rewrites a
+// FAILING comparison, so --update-snapshots correctly wrote nothing.
+//
+// ATTRIBUTION IS MEASURED, NOT INFERRED. Positive control on ringback, a known
+// stereo face, across #1409 itself: 144 px @26 in box x14-82 y70-78 — the SAME
+// y-band and the same magnitude as meowbox's. #1409 moved exactly the seven
+// stereo faces' compact baselines and meowbox's face did not exist yet.
+//
+// ⚠ SO linux/face-meowbox-compact.png IS A PASSING-BUT-STALE BASELINE — the
+// case CLAUDE.md names as invisible to BOTH the gate and the regen. It is left
+// in place DELIBERATELY: the documented fix is `git rm` + re-dispatch, and that
+// route manufactures an UNDECLARED platform gap (reddening this very ratchet)
+// plus a temporary EXEMPT_BASELINE_PAIRS entry, a ceiling move and a ledger
+// re-pin — and then the reverse of all three — to correct a sub-1 % drift on a
+// tile whose darwin twin is captured, reviewed and green. Recorded here so the
+// next person finds a decision rather than a silence; if this scene ever fails
+// on linux, re-capture it rather than assuming the baseline was ever current.
 const LINUX_DEFICIT_CEILING = 148;
 
 describe('vrt-meta — LINUX-baseline DEFICIT RATCHET (all four mechanisms)', () => {
