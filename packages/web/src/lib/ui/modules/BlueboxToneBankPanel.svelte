@@ -322,10 +322,20 @@
     color: rgb(255 255 255 / 0.42);
     font-variant-numeric: tabular-nums;
   }
+  /* ⚠ NO `text-overflow: ellipsis`, DELIBERATELY, and the first draft had one.
+     A CSS ellipsis leaves NO TRACE IN `textContent`, and this row is precisely
+     what faces-parity's probe reads with `toHaveText` — so a caption clipped to
+     `2 5…` would pass every gate in the repo while the picture's labels stopped
+     naming their oscillators. `overflow: visible` cannot truncate silently: an
+     over-long caption collides with its neighbour, which is ugly and therefore
+     reportable. MEASURED (dock, keys mode): the longest caption `2 5 8 0`
+     renders at 30.92 px, and the cell FLOORS at 51 px — the panel hits its
+     380 px `minWidth` and the dock scrolls rather than shrinking further — so
+     there is 20.1 px (65 %) of margin at the narrowest width reachable at all.
+     Guarded on rendered pixels, in both modes, by bluebox.spec.ts. */
   .axis-ticks > span {
     text-align: center;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    overflow: visible;
     white-space: nowrap;
   }
 
