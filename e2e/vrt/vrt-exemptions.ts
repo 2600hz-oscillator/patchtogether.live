@@ -1167,16 +1167,26 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // inside this same PR. Do NOT "fix" that red by re-adding the pairs; that is
   // the deadlock, not the exit. Ledger re-pinned in the same commit.
   //
-  // ⚠ THE COMPACT SCENE IS MASKED, so its linux capture is not a plain
-  // re-render: `face-analogVco-compact` carries the registry's only face entry
-  // (a free-running oscillator's live glyph — see vrt-live-surfaces.ts), and
-  // the magenta rect is baked into the baseline. The mask was DERIVED ON
-  // DARWIN (1/10 unmasked vs 10/10 masked, 10 separate processes). Per that
-  // file's own closing warning, a green linux dispatch is ONE capture and
-  // therefore one draw of the lottery — if the linux baseline lands and then
-  // flakes in the gate, RE-DERIVE on linux with scripts/vrt-derive-trials.sh
-  // before touching the floors. Do not read a single green linux run as a
-  // derivation.
+  // ⚠ THE COMPACT SCENE IS **NOT** MASKED — and an earlier cut of this PR said
+  // the opposite here, which is why the correction is written down rather than
+  // quietly deleted. That cut gave `face-analogVco-compact` the registry's only
+  // face entry (a magenta rect over the free-running oscillator's live glyph)
+  // and derived it honestly at 1/10 unmasked vs 10/10 masked.
+  //
+  // The mask was DELETED before merge. #1420 suspends the AudioContext in
+  // `bootWithFace` BEFORE the tile is framed, so the glyph tap is an analyser on
+  // a stopped graph and reads zeros — the same flat centreline every other face
+  // draws. Re-measured on darwin against a FRESH UNMASKED baseline: 0 px frozen
+  // vs 394 px unfrozen, 0 px across two independent boots, and 10/10 separate
+  // gate processes (scripts/vrt-derive-trials.sh). So the linux capture IS a
+  // plain re-render, and nothing magenta is baked into either platform's PNG.
+  //
+  // What the dispatch on this branch had to fix is the leftover: the linux
+  // compact baseline was captured by the bot WHILE the mask still existed, so it
+  // carried 594 magenta px (8.23 % of an 88x82 tile) against a 72 px budget.
+  // That over-budget diff is what makes `--update-snapshots` rewrite it unaided,
+  // which is why no `git rm` was needed and no undeclared platform gap was
+  // manufactured.
   //
   // FACE BATCH 3 (2026-08-03) — DRAINED IN THIS PR, not parked. The 6 CURATED
   // FACE scenes for the three newly-promoted modules (clap, drummergirl,
