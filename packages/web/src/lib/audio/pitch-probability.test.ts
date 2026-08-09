@@ -642,6 +642,82 @@ describe('MULTIPLAYER DETERMINISM', () => {
     expect(moveApart).toBeGreaterThan(20); // not a lock-step transposition
   });
 
+  it('the SAMPLER matches the WEIGHTS end to end — 4000 seeded draws per level', () => {
+    // The end-to-end negative control on the whole pipeline: seed → mulberry32 →
+    // inverse CDF → pitch. Every property above is about the weights; this is the
+    // one check that the thing actually DRAWING from them agrees. Fully seeded,
+    // so it is deterministic — the counts are pinned exactly, not toleranced,
+    // and it cannot flake. (The uniformity of mulberry32's first output off an
+    // FNV-1a seed was measured separately at 200k draws/pattern: mean 0.4996–
+    // 0.5004, χ²(19) = 13–20, well inside p = 0.001. Only the first output is
+    // used per note, so that was worth checking.)
+    const N = 4000;
+    const seenAt = (x: number) => {
+      let stay = 0;
+      let offScale = 0;
+      for (let i = 0; i < N; i++) {
+        const m = resolvePitch({
+          midi: C4, instability: x, root: ROOT, scale: 'major',
+          seed: { nodeId: 'q', lane: i % 8, slot: (i >> 3) % 8, step: i % 16, midi: C4, loopCount: i },
+        });
+        if (m === C4) stay++;
+        if (!isOnScale(m, ROOT, 'major')) offScale++;
+      }
+      return { stay, offScale };
+    };
+    const measured = [10, 20, 32, 40].map((level) => ({ level, ...seenAt(pitchProbLevelToValue(level)) }));
+    expect(measured).toEqual([
+      { level: 10, stay: 3760, offScale: 0 }, // 94.00% centre / 0.00% off-scale
+      { level: 20, stay: 2042, offScale: 91 }, // 51.05% / 2.28%
+      { level: 32, stay: 465, offScale: 649 }, // 11.63% / 16.23%
+      { level: 40, stay: 239, offScale: 1278 }, // 5.98% / 31.95%
+    ]);
+    // …and the realised rate tracks the theoretical mass, which is the point.
+    // Tolerance is the BINOMIAL 4σ band at this N, not a round number — the
+    // draws are fixed, so this cannot flake, and stating the band makes what
+    // counts as agreement explicit rather than tuned.
+    const band = (p: number) => 4 * Math.sqrt((p * (1 - p)) / N);
+    for (const m of measured) {
+      const c = at(pitchProbLevelToValue(m.level));
+      const cm = centreMass(c);
+      const om = outOfScaleMass(c);
+      expect(Math.abs(m.stay / N - cm), `level ${m.level} centre (4σ = ${band(cm).toFixed(4)})`)
+        .toBeLessThan(band(cm));
+      expect(Math.abs(m.offScale / N - om), `level ${m.level} out-of-scale (4σ = ${band(om).toFixed(4)})`)
+        .toBeLessThan(band(om) + 1e-9);
+    }
+  });
+
+  it('the knob is a MONOTONE MORPH, not a re-roll — raising it never pulls a note back', () => {
+    // A consequence of leaving instability OUT of the seed, and a good one:
+    // within one pass, turning the control up moves each note progressively
+    // FURTHER from the pitch you wrote rather than teleporting it somewhere
+    // else, so the control feels continuous under the hand. Measured across 300
+    // seeds × 40 level steps: 12000 transitions, ZERO backwards.
+    // (Corollary, and not a bug: a note whose draw lands at the centre of the
+    // CDF is the fixed point of that morph and stays put at every level. The
+    // home pitch is the median of a symmetric distribution at every width. The
+    // loop counter reshuffles which notes those are on the next pass.)
+    let backwards = 0;
+    let pinned = 0;
+    for (let step = 0; step < 300; step++) {
+      const seed = { nodeId: 'm', lane: 0, slot: 0, step, midi: C4, loopCount: 0 };
+      let prev = 0;
+      for (let l = 0; l <= PITCH_PROB_LEVELS; l++) {
+        const d = Math.abs(
+          resolvePitch({ midi: C4, instability: pitchProbLevelToValue(l), root: ROOT, scale: 'major', seed }) - C4,
+        );
+        if (d < prev) backwards++;
+        prev = d;
+      }
+      if (prev === 0) pinned++;
+    }
+    expect(backwards).toBe(0);
+    // …and the morph is not vacuous: most notes DO travel. Negative control on
+    // the assertion above, which a "nothing ever moves" bug would also satisfy.
+    expect(pinned).toBeLessThan(30); // measured 17 of 300
+  });
+
   it('resolvePitch stays inside the candidate window for every seed it is given', () => {
     for (let step = 0; step < 200; step++) {
       const m = resolvePitch({
