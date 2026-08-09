@@ -1281,6 +1281,35 @@
     }
     clipProbMenu = null;
   }
+  /** DELETE the right-clicked clip (card-only — deliberately NO Launchpad/Push
+   *  binding). Three deliberate choices:
+   *
+   *  1. NO CONFIRM. The write goes through `writeDataUndoable`, so the card's
+   *     own ↶ (control-strip 6 / computer key 6) restores the clip AND its
+   *     automation in one step — pinned by clip-undo.test.ts's delete case. An
+   *     undoable destructive action is better served by undo than by a modal.
+   *  2. A PLAYING clip is STOPPED FIRST. Leaving `playing[lane]` (or a pending
+   *     `queued[lane]`) pointing at a slot whose clip no longer exists strands
+   *     the lane on a dangling index — the pad reads lit while nothing sounds.
+   *     The immediate stop is the same seam the ■ STOP-ALL uses, so the engine
+   *     clears the lane through its single owner (setLaneActive) rather than
+   *     the card writing `playing` behind its back.
+   *  3. An EMPTY cell never offers Delete at all — `openClipProbMenu` refuses
+   *     to open on a pad with no clip, so the item cannot be a dead no-op. */
+  function deleteClipAt(idx: number) {
+    const lane = laneOf(idx);
+    const slot = slotOf(idx);
+    if (lanePlaying(dataObj(), lane) === slot || laneQueued(dataObj(), lane) === slot) {
+      queueLane(lane, 'stop', true); // NOW — don't wait for a loop boundary
+    }
+    writeDataUndoable((d) => {
+      const key = String(idx);
+      if (d.clips) delete d.clips[key];
+      // The envelope belongs to the clip (same rule as ensureClip / clearClip).
+      if (d.auto && d.auto[key] !== undefined && d.auto[key] !== null) delete d.auto[key];
+    });
+    clipProbMenu = null;
+  }
   // --- per-lane MONO toggle (left of each launch-grid row) ---
   function laneIsMono(lane: number): boolean {
     void cardVersion;
@@ -1833,6 +1862,10 @@
                 {@const laneCd = autoCdByLane[lane]}
                 {@const cd = laneCd && laneCd.slot === slot ? laneCd : null}
                 {@const hasAuto = autoCarriers.has(String(idx))}
+                <!-- The tooltip's right-click clause uses the SAME predicate
+                     openClipProbMenu gates on (a pad that HOLDS a clip), so it
+                     can never promise a menu that won't open. -->
+                {@const hasClip = clipAt(idx) !== null}
                 <button
                   class="pad {st}"
                   class:cd-yellow={cd?.color === 'yellow'}
@@ -1841,7 +1874,9 @@
                   role="gridcell"
                   style={`--lane-color:${laneColorEff(lane)}`}
                   aria-label={`lane ${lane + 1} slot ${slot + 1} ${st}${hasAuto ? ' (has automation)' : ''}`}
-                  title="Click: launch/stop · Double-click: edit · Right-click: clip probability (default firing chance for all notes)"
+                  title={hasClip
+                    ? 'Click: launch/stop · Double-click: edit · Right-click: clip probability (default firing chance for all notes) + delete clip'
+                    : 'Click: launch/stop · Double-click: edit'}
                   data-clip={idx}
                   data-lane={lane}
                   data-slot={slot}
@@ -1948,7 +1983,7 @@
               <div
                 class="prob-menu"
                 role="menu"
-                aria-label="Clip probability"
+                aria-label="Clip actions"
                 use:clampMenu={{ x: clipProbMenu.x, y: clipProbMenu.y }}
                 data-testid={`clipplayer-clip-prob-menu-${id}`}
               >
@@ -1965,6 +2000,20 @@
                     >{probPctLabel(probLevelToValue(level))}</button>
                   {/each}
                 </div>
+                <!-- DELETE (owner ask) — destructive, so it is separated from
+                     the probability list and tinted red. No confirm: the write
+                     is undoable through the card's own ↶ (see deleteClipAt).
+                     Never reachable on an EMPTY pad — the menu doesn't open
+                     there at all. -->
+                <div class="prob-menu-sep" role="separator"></div>
+                <button
+                  class="prob-menu-item danger"
+                  role="menuitem"
+                  title="Delete this clip (and its recorded automation). Undo with ↶."
+                  data-clip={clipProbMenu.idx}
+                  data-testid={`clipplayer-clip-delete-${id}`}
+                  onclick={() => deleteClipAt(clipProbMenu!.idx)}
+                >Delete clip</button>
               </div>
             </div>
           {/if}
@@ -2836,6 +2885,15 @@
      menu. */
   .prob-menu-item.clip:hover { background: hsl(30 60% 32%); }
   .prob-menu-item.clip.checked { background: hsl(30 75% 42%); color: #fff; }
+  /* DELETE — the one destructive row in the clip menu: ruled off from the
+     probability list and tinted red so it can't be mistaken for a level. */
+  .prob-menu-sep {
+    height: 1px;
+    margin: 3px 4px;
+    background: var(--border, #333);
+  }
+  .prob-menu-item.danger { color: #e88; }
+  .prob-menu-item.danger:hover { background: hsl(0 55% 32%); color: #fff; }
   /* One stacked header cell per channel COLUMN: the COLOR swatch (top) over the
      MONO/POLY toggle (bottom). 28px wide to align with the pads below; the
      --lane-color set here is inherited by both children. */
