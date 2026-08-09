@@ -42,7 +42,39 @@ Consumers — the complete list; confirmed by grep on main @ `2ec5eb1d`:
 
 **Read by NOTHING in the audio path.** `grep -rn "port\.edge" packages/web/src/lib/audio packages/dsp/src` returns zero non-test hits. Declaring `edge` changes **no audio behavior**: no ART baseline can move, no per-port e2e drive signal changes, no engine branch exists. The scout MUST re-run these greps and halt if that has changed.
 
-**Not in the collab basis** (module defs are outside `COLLAB_DIR_ROOTS`). **Two defs ARE in the WebGL attest basis**: `cube` (1 port) and `wavesculpt` (4 ports) via `AUDIO_WEBGL_MODULE_DEFS` — a real contract-field edit there legitimately moves the WebGL hash → §5.4.
+**Not in the collab basis** (module defs are outside `COLLAB_DIR_ROOTS`).
+
+⚠ **CORRECTED IN PHASE 1 — the WebGL basis claim below was WRONG, and wrong in
+the direction that under-reports.** This section (and the table's §1.5) said
+"two defs are in the WebGL attest basis: `cube` and `wavesculpt`, via
+`AUDIO_WEBGL_MODULE_DEFS`". Both read that ONE list. But `resolveWebglBasis()`
+rule (1) walks **all of `packages/web/src/lib/video`** (excluding `*.test.ts`)
+into the basis wholesale, so **every video module def this sweep touches is in
+it too**. Measured on the branch by intersecting `webgl-attest-hash.sh --list`
+with the PR's changed files: **11 basis files, not 2** —
+
+```
+audio/modules/cube.ts        video/modules/doom.ts        video/modules/picturebox.ts
+audio/modules/wavesculpt.ts  video/modules/gibribbon.ts   video/modules/shapegen.ts
+                             video/modules/nibbles.ts     video/modules/vfpga-runner.ts
+                             video/modules/outlines.ts    video/modules/videobox.ts
+                                                          video/modules/videovarispeed.ts
+```
+
+Measured hashes: `origin/main` = `620fa1b3…` (exactly the committed
+attestation), the branch = `dad522d9…`, and restoring just those 11 files to
+main's content returns `620fa1b3…` exactly — so the drift is those 11 and
+nothing else. **This does not change the cost — it is still ONE re-attest** —
+but it invalidates the acceptance line "hash verified stable otherwise" as
+written, and the Phase-3 operator should expect an 11-file basis delta.
+
+`edge` is a REAL contract field, so this is the legitimate one-time re-attest
+CLAUDE.md describes. **Do NOT wrap it in `docs-hash-ignore`** — that marker is
+for DOCS, and using it to hide a contract change from the attest is the actual
+error. → §5.4.
+
+*(This is the "a checker that resolves ONE list cannot speak for the basis"
+pattern, occurring inside the scouting for a PR about exactly that class.)*
 
 ## 2 · The debt (main @ `2ec5eb1d`; 275 after #1432 merges)
 
