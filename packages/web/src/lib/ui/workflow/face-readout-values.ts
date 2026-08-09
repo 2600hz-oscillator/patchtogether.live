@@ -84,6 +84,7 @@ import {
   sixstrumRollMs,
   sixstrumStringHz,
 } from '$lib/ui/modules/sixstrum-face-model';
+import { formatVcaGainAtFullCv, vcaFaceParams } from '$lib/audio/vca-gain-model';
 
 /** A derived readout: live params in (through the caller's reader, which
  *  already resolves def defaults for untouched params), formatted string out.
@@ -200,6 +201,19 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
   'sixstrum-pick-notch': (read) =>
     fmtPartial(sixstrumPickNotchPartial(sixstrumFaceParams(read))),
   'sixstrum-burst-ms': (read) => `${sixstrumBurstMs(sixstrumFaceParams(read)).toFixed(1)} ms`,
+
+  // ── VCA ──────────────────────────────────────────────────────────────────
+  // The gain at the TOP of a full-scale CV sweep, `base + cvAmount`. Each dial
+  // is individually right and blind to the other, and the module's clip risk is
+  // their SUM: at base 0.5 / cvAmount 1 the VCA reaches +3.5 dB past unity on an
+  // UNCLAMPED gain while `base` prints `-6.0 dB` and `cvAmount` prints `OPEN`.
+  // Both blindness legs are permanent in vca-gain-model.test.ts, together with
+  // an ORACLE leg that re-derives the printed dB from `vcaGain` so the string is
+  // pinned to the DSP's law rather than to its own table.
+  'vca-gain-at-full-cv': (read) => {
+    const { base, cvAmount } = vcaFaceParams(read);
+    return formatVcaGainAtFullCv(base, cvAmount);
+  },
 };
 
 /** The derived value for a declared id, or `null` (⇒ the readout prints `—`

@@ -5,14 +5,28 @@
 // The standard Eurorack utility module: a single audio input multiplied by
 // `base + cvAmount * cv`. With nothing patched into CV and base=0 the VCA
 // is silent; with CV held at +1 and cvAmount=1 it passes the audio through
-// at unity. Faust-compiled DSP (packages/dsp/src/vca.dsp): the summed gain
-// runs through `si.smoo` (one-pole smoothing) before the multiply, so knob
-// moves and stepped CV are de-clicked — the CV path responds at envelope/
-// LFO rate, not audio rate. The gain total is NOT clamped: sums above 1
-// boost past unity; sums below 0 pass the signal phase-inverted. A parallel
-// phase-inverted output (`audio_inv`) is a GainNode(-1) tap of the same
-// signal — useful for stereo widening, sidechain ducking, or mid/side
-// processing without needing an extra inverter module.
+// at unity. Faust-compiled DSP (packages/dsp/src/vca.dsp):
+//
+//   gain = (base : si.smoo) + (cvAmount : si.smoo) * cv
+//
+// ⚠ THE DE-ZIP IS ON THE TWO KNOBS, NOT ON THE SUM — changed in #1313
+// (`290dcdb5`), and this header said the opposite until this PR. The old
+// line smoothed the whole sum, which put a 7 Hz one-pole in front of the
+// CONTROL VOLTAGE and made the module deaf to the envelopes it exists to
+// follow: a 1 ms and a 5 ms ADSR attack both produced a 49.79 ms rise, so no
+// percussive envelope survived the VCA. Smoothed per-slider the knobs still
+// step click-free while the `cv` input reaches the multiply at FULL
+// BANDWIDTH (1 ms → 1.02 ms, 5 ms → 4.02 ms). Two consequences the surfaces
+// now have to state rather than deny: an ADSR's attack is passed intact, and
+// an AUDIO-RATE signal patched into `cv` genuinely RING-MODULATES.
+//
+// The gain total is NOT clamped: sums above 1 boost past unity; sums below 0
+// pass the signal phase-inverted. A parallel phase-inverted output
+// (`audio_inv`) is a GainNode(-1) tap of the same signal — useful for
+// sidechain ducking, cancellation tricks, or mid/side processing without
+// needing an extra inverter module. It is a VARIANT of the main output, not
+// the other half of a stereo pair (the dual-mono ledger's GROUP D), and
+// `markStereoPairs` will not pair the two.
 //
 // Inputs:
 //   audio (audio): signal to be amplified / gated.
@@ -71,8 +85,13 @@ export const vcaDef: AudioModuleDef = {
     // subset is a text-metric risk on a scene whose baseline this PR re-pins.
     { id: 'audio',     type: 'audio', label: 'out' },
     // Sign-inverted (phase-flipped) audio. Standard "phase invert" semantic
-    // for stereo widening, side-chain feedback prevention, mid/side
+    // for side-chain feedback prevention, cancellation, and mid/side
     // processing. Implemented as a parallel GainNode(-1) tap.
+    // ⚠ NOT the right-hand half of a stereo pair — dual-mono ledger GROUP D:
+    // `audio` and `audio_inv` are VARIANTS of one mono signal, so patching
+    // both into a stereo destination gives a phase-opposed dual-mono image
+    // rather than width. `markStereoPairs` agrees (the stems do not match
+    // `_l`/`_r`) and rear-card-model.test.ts pins that it finds no pair here.
     { id: 'audio_inv', type: 'audio', label: 'out inv' },
   ],
   // RANGES COME FROM ONE PLACE ($lib/audio/vca-gain-model). The card imports
@@ -174,18 +193,145 @@ export const vcaDef: AudioModuleDef = {
     // voice-slot claim runs BEFORE the page loop and both push a band
     // (rear-card-model.ts:262-284). Verified by the totality gate: 4 holes for
     // 4 declared ports.
-    pages: [{ id: 'gain', label: 'gain = base + cv × amount', controls: ['base', 'cvAmount'] }],
+    pages: [
+      {
+        id: 'gain',
+        label: 'gain = base + cv × amount',
+        // ANNOTATION (hidden unless the dock's annotate toggle is on), so it
+        // may only ELABORATE — every fact the face needs at rest lives on a
+        // surface that always paints. The two it elaborates are carried by the
+        // readout strip (the unclamped sum, as a live number) and by the
+        // sidebar flow (the full-bandwidth cv), which is why this reads as
+        // context rather than as the only place either one is stated.
+        hint:
+          'the sum is NOT clamped: above 1 it boosts past unity, below 0 it passes ' +
+          'phase-inverted — and only the two KNOBS are de-zipped, so cv itself reaches the ' +
+          'multiply at full bandwidth',
+        controls: ['base', 'cvAmount'],
+      },
+    ],
     glyph: 'meter',
+
+    // ── PF-20 — THE FACEPLATE STRUCTURE ───────────────────────────────────
+    //
+    // DECLARATION ONLY. No field below adds a param, a port or a control
+    // family, so the I/O contract and contract-lock.txt are byte-unchanged.
+    //
+    // ⚠ `title` AND `hint` ARE ANNOTATION-ONLY. `facePageHeader` returns null
+    // before it reads either one unless the dock's annotate toggle is on
+    // (dock-faceplate-model.ts, owner ruling 2026-08-03), so NOTHING
+    // load-bearing may live here. The three facts this module actually has to
+    // teach are placed on surfaces that always paint: the clip risk on the
+    // readout strip, the full-bandwidth cv and the OUT INV tap in the sidebar.
+    title: 'Amplifier',
+    hint:
+      'Multiplies the audio input by base + cv × amount — it spawns CLOSED, silent until CV ' +
+      'arrives or BASE is raised, and a phase-inverted copy of the output is always live on ' +
+      'OUT INV.',
+
+    // THE HERO — READOUTS ONLY. No `cell`, no `control`, no `action`, and each
+    // refusal is an argument rather than an omission:
+    //
+    //   * NO PICTURE. Every candidate graph on this module is a STRAIGHT LINE.
+    //     The input→output transfer of a pure multiplier is a line through the
+    //     origin of slope `gain`, for every setting, because the module is
+    //     linear in its input by construction; the cv→gain curve is also a line
+    //     (slope `cvAmount`, intercept `base`). A picture whose only two degrees
+    //     of freedom are the two dials directly beneath it is the derived-
+    //     readout trap wearing a graphic. It would also COST the live meter —
+    //     `heroGlyph = hasGlyph && !(view === 'dock-full' && hero?.cell)`, so a
+    //     hero cell suppresses the dock glyph, and trading a live RMS trace of
+    //     the actual output on a module whose entire job is "how loud right
+    //     now" for a static line-graph of two knob values is a downgrade. A
+    //     readouts-only hero keeps the meter. (The graph earns its place the day
+    //     a lin/exp RESPONSE param exists — that is a DSP change and belongs to
+    //     its own owner-audition PR, never to a face wave.)
+    //   * NO `control`. `heroFacePlan` MOVES a promoted key, it never copies, so
+    //     promoting `base` would leave a one-knob band and break the reason the
+    //     page keeps FUNCTION order: the band reads left-to-right in the same
+    //     order as the law printed above it.
+    //   * NO `action`. A VCA makes no sound of its own; auditioning it would
+    //     mean synthesising a test tone inside the module whose whole job is
+    //     transparency.
+    hero: {
+      // ONE entry, and the padding was REFUSED twice rather than not considered:
+      //
+      //   * a `CV 0` entry is `base` printed a second time — `base` IS the gain
+      //     at cv 0, and correction 1 put the strip in its own full-width row
+      //     where a duplicate reads as an independent second measurement that
+      //     happens to agree;
+      //   * a `PHASE: NORMAL / INVERTS` entry is fully redundant. `base` is
+      //     never negative, so the sweep crosses zero IFF `base + cvAmount < 0`
+      //     — i.e. exactly when the entry below prints ` INV`.
+      //
+      // A third candidate died with the DSP fix and is named so it is not
+      // re-derived: `{ text: '-3 dB at 7 Hz' }` for the CV's tracking bandwidth.
+      // That was true only while `si.smoo` sat on the SUM. #1313 moved it onto
+      // the two sliders, so the cv path is full-bandwidth and the number is now
+      // FALSE — and a fixed `text` never moves under the hand anyway, which is
+      // the strip's whole job. It belongs in the sidebar as reference, and that
+      // is where the corrected version of the fact now lives.
+      readouts: [{ label: 'at cv 1', valueId: 'vca-gain-at-full-cv' }],
+    },
+
+    // THE SIDEBAR — one block, and the editor pays nothing for it: this face
+    // holds two 40 px knobs in a ~1170 px band, so the column converts dead
+    // space into content rather than taking width from a control.
+    sidebar: [
+      {
+        kind: 'signal-flow',
+        label: 'signal flow',
+        // WHAT MAKES THIS MORE THAN FURNITURE. Drawn as `in → × → out` it would
+        // be; what it actually states are three things no other surface can:
+        //
+        //   1. the gain stages are a CONTROL BRANCH (`parallel`), not links in
+        //      the audio chain — drawing them inline would teach that the CV
+        //      passes THROUGH the audio path;
+        //   2. the de-zip is on the two KNOBS and the cv is untouched, which is
+        //      the #1313 correction and the answer to both "why is my pluck
+        //      soft" (it no longer is) and "can I ring-modulate with this"
+        //      (yes, now);
+        //   3. OUT INV exists at all. It is this module's most undiscoverable
+        //      feature — that jack lives only on the REAR card.
+        //
+        // ⚠ OUT INV is a `parallel` TAP of OUT, and the note says so in those
+        // words on purpose. It is a VARIANT of the same mono signal, not the
+        // right-hand half of a stereo pair (the dual-mono ledger's GROUP D);
+        // the diagram must not imply an L/R relationship the module does not
+        // have.
+        stages: [
+          { label: 'AUDIO IN', role: 'bus' },
+          { label: 'BASE', parallel: true, note: 'de-zipped knob' },
+          { label: 'CV × AMT', parallel: true, note: 'cv is full-bandwidth' },
+          { label: 'SUM', parallel: true, note: 'unclamped: may exceed 1 or go below 0' },
+          { label: '× GAIN', role: 'bus', note: 'the multiply' },
+          { label: 'OUT', role: 'bus' },
+          { label: 'OUT INV', role: 'bus', parallel: true, note: '× −1 tap of OUT, always live' },
+        ],
+      },
+    ],
     // REAR CARD curation: neither input is a per-param CV (the worklet owns
     // the gain law), so derivation would fold both into one 'signal' band —
     // the spec's vca table reads better as signal → gain stage.
     //
-    // AUDIT (P1 batch-2 rear sweep): re-checked against the DSP and left as
-    // authored. No `~` tick is correct here — the Faust gain sum runs through
-    // si.smoo BEFORE the multiply, so CV tracks at envelope/LFO rate, not
-    // audio rate (patching audio in is filtered, not ring-modulated); and the
-    // `audio` hole is the signal itself, where a rate tick would be noise.
+    // ⚠ AUDIT REVERSED. The P1 batch-2 rear sweep left `cv` UN-ticked and
+    // wrote down why: "the Faust gain sum runs through si.smoo BEFORE the
+    // multiply, so CV tracks at envelope/LFO rate, not audio rate (patching
+    // audio in is filtered, not ring-modulated)". #1313 moved the de-zip onto
+    // the two sliders, so that premise is dead and the conclusion inverted
+    // with it — `cv` is now read at FULL BANDWIDTH and an audio-rate signal
+    // patched there ring-modulates. `filter.ts` states the doctrine in its
+    // mirror form ("both CV values run through si.smoo … a `~` tick would be a
+    // lie about the one thing the tick exists to say"); by that same rule vca
+    // is now the case that must BE ticked. Pinned in vca-gain-model.test.ts
+    // against the .dsp source, so the tick cannot outlive the DSP line again.
+    //
+    // `audio` stays UN-ticked: the tick marks the SURPRISING case — a CV hole
+    // the DSP reads per sample — and saying "audio-rate" about an AUDIO input
+    // is noise on every hole (the precedent mixer.ts cites in the other
+    // direction).
     rear: {
+      audioRate: ['cv'],
       groups: [
         { id: 'signal', label: 'signal', ports: ['audio'] },
         // `gain stage` → `gain cv`: the band holds the CV hole, and its job is
@@ -198,17 +344,17 @@ export const vcaDef: AudioModuleDef = {
 
   docs: {
     explanation:
-      "A voltage-controlled amplifier — the elementary 'how loud right now' utility. It multiplies the audio input by a gain of base + cv × cvAmount: patch an envelope or LFO into cv and shape the response with the two knobs. The summed gain is smoothed by a one-pole filter (Faust si.smoo) before the multiply, so knob moves and stepped CV open the VCA click-free — which also means the cv path tracks at envelope/LFO rate, not audio rate (a clean utility VCA, not a ring modulator). The gain total is not clamped: sums above 1 boost past unity, and sums below 0 pass the signal phase-inverted. A sign-flipped copy of the output is always available on the audio_inv port for stereo widening, sidechain tricks, or mid/side processing without a separate inverter module.",
+      "A voltage-controlled amplifier — the elementary 'how loud right now' utility. It multiplies the audio input by a gain of base + cv × cvAmount: patch an envelope or LFO into cv and shape the response with the two knobs. The two KNOBS are smoothed by a one-pole filter (Faust si.smoo) so turning them is click-free, but the cv input itself is left alone and reaches the multiply at full bandwidth — an ADSR's attack is passed intact however short it is, and an audio-rate signal patched into cv ring-modulates rather than being filtered away. The gain total is not clamped: sums above 1 boost past unity, and sums below 0 pass the signal phase-inverted. A sign-flipped copy of the output is always available on the audio_inv port for sidechain tricks, cancellation, or mid/side processing without a separate inverter module — it is a phase variant of the same mono output, not the other half of a stereo pair.",
     inputs: {
       audio:
-        "The signal to be amplified or gated — an oscillator voice, sampler, or any audio source. It is multiplied sample-by-sample by the smoothed gain (base + cv × cvAmount).",
-      cv: "Control voltage for the gain: scaled by cvAmount, added to base, then smoothed. Typical sources are an ADSR for note shaping, an LFO for tremolo, or a sequencer CV lane for per-step level. The smoothing de-zips abrupt gate-shaped CV so it opens the VCA click-free; audio-rate signals patched here are largely filtered out rather than ring-modulated.",
+        "The signal to be amplified or gated — an oscillator voice, sampler, or any audio source. It is multiplied sample-by-sample by the resolved gain (base + cv × cvAmount).",
+      cv: "Control voltage for the gain: scaled by cvAmount and added to base. Typical sources are an ADSR for note shaping, an LFO for tremolo, or a sequencer CV lane for per-step level. This input is read at FULL BANDWIDTH — only the two knobs are de-zipped — so a short attack arrives with its shape intact (a 1 ms ADSR attack opens the VCA in 1 ms), and an audio-rate signal patched here ring-modulates the input rather than being filtered away. A hard gate edge is passed as a hard edge, so a square gate straight into cv can click.",
     },
     outputs: {
       audio:
-        "The amplified signal: audio × (base + cv × cvAmount), with the summed gain smoothed. Silent when base is 0 and nothing drives cv; unity passthrough at base 1 with no CV. The gain is unclamped — sums above 1 amplify beyond unity, and sums below 0 emerge phase-inverted.",
+        "The amplified signal: audio × (base + cv × cvAmount), with the two knob values de-zipped and the cv term passed at full bandwidth. Silent when base is 0 and nothing drives cv; unity passthrough at base 1 with no CV. The gain is unclamped — sums above 1 amplify beyond unity, and sums below 0 emerge phase-inverted.",
       audio_inv:
-        "A sample-accurate phase-inverted (×−1) copy of the audio output, implemented as a parallel inverting gain tap. Always live — patch it for stereo width, mid/side processing, or cancellation/sidechain tricks without adding an inverter module.",
+        "A sample-accurate phase-inverted (×−1) copy of the audio output, implemented as a parallel inverting gain tap. Always live — patch it for mid/side processing, or cancellation/sidechain tricks, without adding an inverter module. It is a VARIANT of the audio output rather than its stereo partner: both jacks carry the same mono signal, one sign-flipped, so patching the pair into a stereo destination gives a phase-opposed dual-mono image, not a widened one.",
     },
     controls: {
       base: "The static gain floor (linear 0 to 1, default 0), added to the scaled CV. At 0 the VCA is fully closed — silent until CV opens it; at 1 it passes unity with no CV. Raise it to leave some dry signal under modulation, or use it alone as a plain volume knob. The knob reads CLOSED at 0 and UNITY at 1, and prints the floor's gain in dB in between (that dB is the gain with NO CV present; once CV arrives the resolved gain is base + cv × amount).",
