@@ -687,7 +687,7 @@ basis file goes red rather than passing as covered.
 module may carry `face:` on a geometry object, and stripping that would be a
 *missed* re-attest, the unsafe direction. Negative-controlled in both directions.
 
-**This replaced 85 `docs-hash-ignore` marker pairs across 79 files** plus
+**This replaced 79 `docs-hash-ignore` marker pairs across 77 source files** plus
 `video-docs-marker.test.ts`, whose entire job was catching a forgotten marker
 before it cost a ~10-min GPU re-attest. It also closed the asymmetry that WAS
 the bug: the escape hatch used to live in `webgl-attest-lib.ts` and nowhere
