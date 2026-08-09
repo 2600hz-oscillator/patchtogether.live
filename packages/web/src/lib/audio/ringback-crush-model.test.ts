@@ -444,11 +444,18 @@ describe('ringback face — the ranking and the glyph are claims about the DSP',
 
   it('the rear card is total and its bands read stereo in / crush ring / output blend', () => {
     const plan = rearFieldPlan(ringbackDef);
-    expect(plan.holeCount).toBe(ringbackDef.inputs.length + ringbackDef.outputs.length);
+    // PR-4: each derived stereo pair renders as ONE hole addressing TWO ports,
+    // so totality is stated over `portCount`; `holeCount` is two lower here
+    // (in_l+in_r and out_l+out_r each collapse).
+    expect(plan.portCount).toBe(ringbackDef.inputs.length + ringbackDef.outputs.length);
+    expect(plan.holeCount).toBe(plan.portCount - 2);
     expect(plan.bands.map((b) => b.label)).toEqual(['stereo in', 'crush ring', 'output blend']);
-    // The audio pair claims the LEADING slot, and the per-param CV holes fall
-    // into the band of the page whose control they target.
-    expect(plan.bands[0]!.holes.map((h) => h.portId)).toEqual(['in_l', 'in_r']);
+    // The audio pair claims the LEADING slot as ONE stereo hole, and the
+    // per-param CV holes fall into the band of the page whose control they
+    // target.
+    expect(plan.bands[0]!.holes.map((h) => h.portId)).toEqual(['in_l']);
+    expect(plan.bands[0]!.holes[0]!.stereoSiblingPortId).toBe('in_r');
+    expect(plan.bands[0]!.holes[0]!.label).toBe('IN');
     expect(plan.bands[1]!.holes.map((h) => h.portId)).toEqual(['rate', 'size', 'feedback']);
     expect(plan.bands[2]!.holes.map((h) => h.portId)).toEqual(['mix']);
     // The `~` tick lands on the four CV holes and NOWHERE else: the audio pair
@@ -461,9 +468,12 @@ describe('ringback face — the ranking and the glyph are claims about the DSP',
       .map((h) => h.portId);
     expect(ticked).toEqual(['rate', 'size', 'feedback', 'mix']);
     expect(plan.outputs.some((h) => h.audioRate)).toBe(false);
-    // The outputs rail knows L and R are one pair.
-    expect(plan.outputs.map((h) => h.label)).toEqual(['L', 'R']);
-    expect(plan.outputs[1]!.pairWithPrev).toBe(true);
+    // The outputs rail knows L and R are one pair — and now DRAWS it as one
+    // stereo hole (owner Q5), named from the pair's shared stem rather than
+    // from either leg's own 'L' / 'R' label.
+    expect(plan.outputs.map((h) => h.label)).toEqual(['OUT']);
+    expect(plan.outputs[0]!.portId).toBe('out_l');
+    expect(plan.outputs[0]!.stereoSiblingPortId).toBe('out_r');
   });
 
   // ── THE GLYPH CHOICE, MEASURED ─────────────────────────────────────────

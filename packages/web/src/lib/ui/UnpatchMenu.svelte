@@ -34,11 +34,38 @@
     allLabel: string | null;
     /** Remove these edge ids (one, or all of them for "Unpatch all"). */
     onunpatch: (edgeIds: string[]) => void;
+    /** Change a LIVE cable's stereo mode (owner: right-click an output and the
+     *  option is there, patched or not). Switching to L/R-only DROPS the other
+     *  leg — the caller routes it through planAudioCommit's channelMode, so
+     *  there is one commit seam and no muted-but-present edge. */
+    onchannelmode?: (edgeId: string, mode: 'both' | 'left' | 'right') => void;
     onclose: () => void;
   }
 
-  let { open = $bindable(false), x, y, title, items, allLabel, onunpatch, onclose }: Props =
-    $props();
+  let {
+    open = $bindable(false),
+    x,
+    y,
+    title,
+    items,
+    allLabel,
+    onunpatch,
+    onchannelmode,
+    onclose,
+  }: Props = $props();
+
+  /** The three channel chips, in render order. Compact labels — this is a chip
+   *  row under a cable, not the picker's full-width rows. */
+  const CHANNEL_CHIPS = [
+    { mode: 'both', label: 'stereo L+R' },
+    { mode: 'left', label: 'only L' },
+    { mode: 'right', label: 'only R' },
+  ] as const;
+
+  function setMode(edgeId: string, mode: 'both' | 'left' | 'right') {
+    onchannelmode?.(edgeId, mode);
+    onclose();
+  }
 
   let menuEl: HTMLDivElement | null = $state(null);
 
@@ -104,6 +131,33 @@
               <span class="cut" aria-hidden="true">✂</span>
               <span class="txt">{item.label}</span>
             </button>
+            {#if item.channelMode}
+              <!-- CHANNEL MODE on a LIVE cable. Before this the rows existed
+                   only for an UNPATCHED output, because the unpatch menu claimed
+                   the right-click first — so a patched stereo cable could not be
+                   narrowed without unpatching and re-patching it. -->
+              <div
+                class="chan"
+                role="group"
+                aria-label="Stereo channels for this cable"
+                data-testid="unpatch-channel-modes"
+                data-edge-id={item.edgeId}
+              >
+                {#each CHANNEL_CHIPS as chip (chip.mode)}
+                  <button
+                    type="button"
+                    class="chan-btn"
+                    class:selected={item.channelMode === chip.mode}
+                    role="menuitemradio"
+                    aria-checked={item.channelMode === chip.mode}
+                    data-testid="unpatch-channel-mode"
+                    data-mode={chip.mode}
+                    data-selected={item.channelMode === chip.mode ? 'true' : 'false'}
+                    onclick={() => setMode(item.edgeId, chip.mode)}
+                  >{chip.label}</button>
+                {/each}
+              </div>
+            {/if}
           </li>
         {/each}
         {#if allLabel}
@@ -184,6 +238,33 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  /* Channel chips under a cable row — quieter than the ✂ rows so the
+     destructive action stays the visually dominant one. */
+  .chan {
+    display: flex;
+    gap: 4px;
+    padding: 2px 12px 6px 30px;
+  }
+  .chan-btn {
+    background: transparent;
+    border: 1px solid #333a45;
+    border-radius: 3px;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.68rem;
+    padding: 2px 6px;
+  }
+  .chan-btn:hover,
+  .chan-btn:focus-visible {
+    border-color: var(--accent, #60a5fa);
+    color: var(--text);
+    outline: none;
+  }
+  .chan-btn.selected {
+    border-color: var(--accent, #60a5fa);
+    color: var(--accent, #60a5fa);
   }
   .ctx-item.all {
     border-top: 1px solid #333a45;

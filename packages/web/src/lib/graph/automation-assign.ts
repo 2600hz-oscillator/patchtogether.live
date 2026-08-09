@@ -73,11 +73,60 @@ export function automationAssignmentFor(
   return null;
 }
 
+/**
+ * Module types that are STRICTLY MONOPHONIC sinks: they read one pitch and one
+ * gate, so a lane feeding them must not stack notes in a column. Assigning one
+ * to a lane forces that lane MONO (owner: "we should force a lane to
+ * monophonic when we put cv buddy on it since polyphonic data is going to mess
+ * that up").
+ *
+ * Both CV Buddy variants qualify — `cvBuddy` and `cvBuddyMini` share one engine
+ * and one `pitch`/`gate` input pair; the mini only drops the velocity tap.
+ */
+export const MONO_SINK_MODULE_TYPES: readonly string[] = ['cvBuddy', 'cvBuddyMini'];
+
+/** Does assigning `moduleType` to a lane force that lane MONO? PURE. */
+export function forcesLaneMono(moduleType: string | undefined): boolean {
+  return typeof moduleType === 'string' && MONO_SINK_MODULE_TYPES.includes(moduleType);
+}
+
+/**
+ * Set lane `L` MONO in place on an already-open clip-player data object.
+ * Rebuilds the fixed-length array the same way every other `mono` writer does
+ * (toggleMono / the card), so a short or absent array normalizes rather than
+ * throwing. Caller owns the transaction.
+ */
+function forceLaneMonoInPlace(d: ClipPlayerData, L: number): void {
+  const m = new Array<boolean>(CLIP_LANES).fill(false);
+  if (Array.isArray(d.mono)) {
+    for (let i = 0; i < d.mono.length && i < CLIP_LANES; i++) m[i] = !!d.mono[i];
+  }
+  if (m[L]) return; // already mono — no write, no undo entry
+  m[L] = true;
+  d.mono = m;
+}
+
 /** ASSIGN module `moduleId` to `lane` on clip-player `playerId` — the module
  *  card's right-click "Assign to automation lane ▸ N". ONE lane per module: the
  *  key is removed from every other player (and its old lane here) in the SAME
  *  transaction, so the move is atomic + a single undo step. Clamped lane;
- *  no-op on a bad player / a non-existent module / self-assignment. */
+ *  no-op on a bad player / a non-existent module / self-assignment.
+ *
+ *  ⚠ A MONO-SINK module (CV Buddy, see MONO_SINK_MODULE_TYPES) additionally
+ *  forces the target lane MONO, in the SAME transaction so it is one undo step
+ *  with the assignment.
+ *
+ *  TWO JUDGEMENT CALLS, both deliberate:
+ *   1. It fires ON ASSIGNMENT ONLY — it is not re-enforced while the module
+ *      sits there. A lane flag that silently snaps back would make the card's
+ *      mono/poly toggle lie about its own state, which is exactly the
+ *      card-disagrees-with-its-contract class this repo has been burned by.
+ *   2. The user CAN toggle back to poly afterwards, and it stays. Forcing mono
+ *      is a sane default for the common patch, not a lock: a CV Buddy can
+ *      legitimately share a lane whose poly outputs feed something else, and
+ *      the mono flag governs NOTE ENTRY (one note per column) — it does not
+ *      retro-flatten chords already written into the lane's clips.
+ */
 export function assignAutomationLane(
   playerId: string,
   moduleId: string,
@@ -98,6 +147,9 @@ export function assignAutomationLane(
         const d = live.data as ClipPlayerData;
         if (!d.autoAssign) d.autoAssign = {};
         d.autoAssign[moduleId] = L; // single-key in-place write (move = overwrite)
+        // A mono-sink module (CV Buddy) forces its new lane MONO — same
+        // transaction, so assign+force is ONE undo step.
+        if (forcesLaneMono(patch.nodes[moduleId]?.type)) forceLaneMonoInPlace(d, L);
       } else {
         const d = live.data as ClipPlayerData | undefined;
         if (d?.autoAssign && moduleId in d.autoAssign) delete d.autoAssign[moduleId];

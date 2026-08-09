@@ -32,6 +32,8 @@ import {
   hasRecordedAutomation,
   clearRecordedAutomation,
   clearClipAutomation,
+  forcesLaneMono,
+  MONO_SINK_MODULE_TYPES,
 } from '$lib/graph/automation-assign';
 import {
   coerceAutoAssign,
@@ -42,6 +44,7 @@ import {
   toggleLaneAutomationArm,
   automationTargetKey,
   clipIndex,
+  laneMono,
   type AutoClipRecord,
   type ClipPlayerData,
   type AutomationTarget,
@@ -342,5 +345,90 @@ describe('per-lane arm shell pre-creation via the shared toggle (container-LWW h
     // Arming a DIFFERENT lane (nothing assigned/playing) creates no shell.
     toggleLaneArm(3, ydoc.clientID);
     expect(Object.keys(cpData().auto ?? {})).toEqual([String(clipIndex(0, 1))]);
+  });
+});
+
+// ===========================================================================
+// CV BUDDY FORCES ITS LANE MONO (owner: "we should force a lane to monophonic
+// when we put cv buddy on it since polyphonic data is going to mess that up").
+// `assignAutomationLane` is the ONE seam every "put this module on channel N"
+// path funnels through — the context-menu channel assign, "Assign automation
+// only ▸ N", a workflow-column drop, a cross-column drag and a
+// spawn-into-column all call it — so covering it here covers all five.
+// ===========================================================================
+describe('CV Buddy assignment forces its lane MONO', () => {
+  const BUDDY = 'cvb-1';
+  const MINI = 'cvbm-1';
+
+  it('forcesLaneMono names BOTH variants and nothing else', () => {
+    expect(MONO_SINK_MODULE_TYPES).toEqual(['cvBuddy', 'cvBuddyMini']);
+    expect(forcesLaneMono('cvBuddy')).toBe(true);
+    expect(forcesLaneMono('cvBuddyMini')).toBe(true);
+    expect(forcesLaneMono('vco')).toBe(false);
+    expect(forcesLaneMono(undefined)).toBe(false);
+  });
+
+  it('assigning a cvBuddy to lane 3 sets mono[3] (and leaves every other lane poly)', () => {
+    seedNode(BUDDY, 'cvBuddy');
+    expect(laneMono(cpData(), 3), 'poly by default').toBe(false);
+    assignAutomationLane(CP, BUDDY, 3);
+    expect(assignedLaneOfModule(cpData(), BUDDY), 'assigned').toBe(3);
+    expect(laneMono(cpData(), 3), 'the CV Buddy lane was forced MONO').toBe(true);
+    for (const other of [0, 1, 2, 4, 5, 6, 7]) {
+      expect(laneMono(cpData(), other), `lane ${other} untouched`).toBe(false);
+    }
+  });
+
+  it('cvBuddyMini forces mono the same way', () => {
+    seedNode(MINI, 'cvBuddyMini');
+    assignAutomationLane(CP, MINI, 0);
+    expect(laneMono(cpData(), 0)).toBe(true);
+  });
+
+  // NEGATIVE CONTROL for the whole feature. If the force fired for every module
+  // type, every assertion above would pass for entirely the wrong reason.
+  it('a NON-buddy module never forces mono', () => {
+    assignAutomationLane(CP, MOD_A, 3); // MOD_A is a 'vco'
+    expect(assignedLaneOfModule(cpData(), MOD_A)).toBe(3);
+    expect(laneMono(cpData(), 3), 'a vco leaves the lane POLY').toBe(false);
+  });
+
+  it('MOVING a cvBuddy forces the NEW lane', () => {
+    seedNode(BUDDY, 'cvBuddy');
+    assignAutomationLane(CP, BUDDY, 1);
+    expect(laneMono(cpData(), 1)).toBe(true);
+    assignAutomationLane(CP, BUDDY, 6);
+    expect(laneMono(cpData(), 6), 'the new lane is mono').toBe(true);
+    // JUDGEMENT CALL (documented on assignAutomationLane): a one-time default,
+    // not a lock — vacating a lane does not un-force it either way.
+    expect(laneMono(cpData(), 1), 'the old lane keeps whatever it had').toBe(true);
+  });
+
+  it('JUDGEMENT CALL: the user can toggle back to POLY and it STAYS', () => {
+    // A flag that snapped back would make the card's mono/poly toggle lie about
+    // its own state — the card-disagrees-with-its-contract class. The force
+    // fires on assignment only, so an explicit user choice survives.
+    seedNode(BUDDY, 'cvBuddy');
+    assignAutomationLane(CP, BUDDY, 2);
+    expect(laneMono(cpData(), 2)).toBe(true);
+    ydoc.transact(() => {
+      const d = cpData();
+      const m = new Array<boolean>(8).fill(false);
+      if (Array.isArray(d.mono)) for (let i = 0; i < d.mono.length && i < 8; i++) m[i] = !!d.mono[i];
+      m[2] = false;
+      d.mono = m;
+    }, LOCAL_ORIGIN);
+    expect(laneMono(cpData(), 2), 'poly again — and nothing re-forces it').toBe(false);
+    // …but an explicit RE-assignment is a fresh statement of intent.
+    assignAutomationLane(CP, BUDDY, 2);
+    expect(laneMono(cpData(), 2)).toBe(true);
+  });
+
+  it('an already-mono lane is not re-written (no redundant Y write)', () => {
+    seedNode(BUDDY, 'cvBuddy');
+    assignAutomationLane(CP, BUDDY, 4);
+    const before = cpData().mono;
+    assignAutomationLane(CP, BUDDY, 4);
+    expect(cpData().mono, 'same array identity — no second write').toBe(before);
   });
 });
