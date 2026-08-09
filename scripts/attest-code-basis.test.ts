@@ -28,11 +28,27 @@
 //                       type shows up as a red test instead of silent coverage.
 //   * §ceremony       — the `docs-hash-ignore` markers are GONE from source and
 //                       cannot come back.
+//
+// NEGATIVE-CONTROLLED AT AUTHORING (2026-08-09) — the gate was broken four ways
+// and confirmed to go RED each time, because a green gate that cannot fail is
+// decoration:
+//
+//   perturbation applied to attest-code-basis.ts        | tests that reddened
+//   ----------------------------------------------------|--------------------
+//   printer `removeComments: true` → `false`             | 8
+//   `HASH_TRANSPARENT_PROPS` → `[]`                      | 6
+//   type-only-import removal disabled                    | 2
+//   `isModuleScopeDefObject` → always true (over-broad)   | 2
+//
+// The last one is the one to keep: it is the UNSAFE direction (stripping a
+// nested `face:` that is real geometry code = a MISSED re-attest), and only the
+// §negative block sees it.
 
 import { describe, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import tsc from 'typescript';
 
 import {
   HASH_TRANSPARENT_PROPS,
@@ -435,6 +451,24 @@ describe.each(ATTESTS)('$name attest: docs-blind, code-sensitive (both direction
  * but it must be stated, not assumed, or an unstated scope reads as full
  * coverage (CLAUDE.md: "state a gate's directory scope in the gate").
  */
+/** Top-level `export`ed variable / function / class names in a source file. */
+function exportedNames(fileName: string, text: string): string[] {
+  const sf = tsc.createSourceFile(fileName, text, tsc.ScriptTarget.Latest, false, tsc.ScriptKind.TS);
+  const names: string[] = [];
+  for (const st of sf.statements) {
+    const mods = tsc.canHaveModifiers(st) ? tsc.getModifiers(st) : undefined;
+    if (!mods?.some((m) => m.kind === tsc.SyntaxKind.ExportKeyword)) continue;
+    if (tsc.isVariableStatement(st)) {
+      for (const d of st.declarationList.declarations) {
+        if (tsc.isIdentifier(d.name)) names.push(d.name.text);
+      }
+    } else if ((tsc.isFunctionDeclaration(st) || tsc.isClassDeclaration(st)) && st.name) {
+      names.push(st.name.text);
+    }
+  }
+  return names;
+}
+
 const EXPECTED_RAW_BASIS_FILES = [
   '.flox/env/manifest.toml',
   'db/schema/001_init.sql',
@@ -468,6 +502,33 @@ describe('attest-code-basis §scope: the normalizer states what it cannot see', 
     for (const rel of EXPECTED_RAW_BASIS_FILES) {
       expect(allBasis, `${rel} is declared raw but is no longer in any basis`).toContain(rel);
     }
+  });
+
+  // The re-emit must be LOSSLESS for code. A printer that silently dropped a
+  // statement would UNDER-hash — the unsafe direction, and invisible from a
+  // green run. Two independent probes over every TypeScript basis file:
+  const tsBasis = allBasis.filter((rel) => normalizeModeFor(rel) === 'typescript');
+
+  it('normalisation is IDEMPOTENT on every basis file', () => {
+    const unstable = tsBasis.filter((rel) => {
+      const once = normalizeForHash(rel, readBasisFile(rel));
+      return normalizeForHash(rel, once) !== once;
+    });
+    expect(unstable, 'normalize(normalize(x)) !== normalize(x) — the re-emit is not a fixed point')
+      .toEqual([]);
+  });
+
+  it('no top-level EXPORTED name is lost from any basis file', () => {
+    const lost: string[] = [];
+    for (const rel of tsBasis) {
+      const src = readBasisFile(rel);
+      const before = exportedNames(rel, src);
+      if (before.length === 0) continue;
+      const after = new Set(exportedNames(rel, normalizeForHash(rel, src)));
+      const missing = before.filter((n) => !after.has(n));
+      if (missing.length) lost.push(`${rel}: ${missing.join(', ')}`);
+    }
+    expect(lost, 'the AST re-emit dropped exported declarations — it is LOSSY').toEqual([]);
   });
 
   it('NO basis file falls back to raw bytes for a PARSE ERROR', () => {
