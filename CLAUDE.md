@@ -560,6 +560,33 @@ The three inversions, applied to all four (details + measured numbers in the
 Plus: **state the gate's scope inside the gate**, asserting what it still cannot
 see at zero or under its own ratchet.
 
+#### …and the LEDGER you invert it with is the NEXT blind spot
+
+Row 3 above was fixed right and then parked wrong. The 299 skipped ports went
+into a ledger with a hand-typed count instead of being declared — even though
+**295 of them already carried authored prose naming the answer**. Paying it in
+full took one session and moved 283 `contract-lock.txt` lines, every one of them
+the old line plus one `edge=` token. Three rules, now repo standard:
+
+1. **Pay mechanically-payable debt; never inventory it.** A ledger of *known
+   answers* is deferred typing, not engineering, and every agent that touches
+   the area afterwards pays a re-count tax. Before writing an exemption list,
+   ask whether the answer already exists somewhere in the tree.
+2. **A ratchet is legitimate only for debt that genuinely cannot be paid now**
+   (needs hardware, an owner decision, a re-attest window) — and then the count
+   is **DERIVED from the artifact**, never a typed literal in a shared file.
+   Measured: the literal auto-merged WRONG in **3 of 3** parallel branches
+   (288 / 277 / 287 where the truth was the union, 275); two collided so git
+   surfaced them, the third merged **cleanly and wrongly**.
+3. **Any migration counter ships with its DELETION CRITERIA stated in the
+   file**, or the scaffolding outlives the building.
+
+When the debt is paid, **delete the mechanism** — list, count, both-directions
+ratchet, stale-entry anchor — and leave **no replacement counter**: at zero it
+measures nothing and can only go stale. Keep the unconditional check plus a
+permanent negative control that calls the **same predicate** the check calls
+(a re-typed copy in the self-test is how the previous one went blind).
+
 ⚠ **Before "fixing" a declaration to satisfy a gate, check the consumer reads
 it.** Four cards pass `curve="linear"` where the def says `discrete`; writing
 `curve="discrete"` would green the gate and change nothing, because all four are

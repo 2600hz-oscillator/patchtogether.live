@@ -125,6 +125,52 @@ what it still cannot see (`Object.assign(node.params, …)`; a control with no
 `paramId`; a whole-bag `params = {…}`), either at zero or ratcheted. An unstated
 scope reads as full coverage — that is the whole pattern, one level up.
 
+### Pattern 5b — the LEDGER that inverts the gate becomes the next blind spot
+
+**Case (2026-08-02 → 2026-08-09, the edge ledger).** Row 3 of the table above
+was fixed correctly: `if (!p.edge) continue` became deny-by-default. But the 299
+ports it had been skipping were then **parked in a ledger with a hand-typed
+count** instead of being declared. Every consequence below followed from that
+one decision, and none of them was visible from a green run.
+
+- **295 of the 299 already had authored prose naming the answer.** This was not
+  299 unknowns; it was ~295 known answers that had never been typed into the
+  contract, plus a handful needing a DSP read. When the whole sweep was finally
+  done it took one session and moved **283 lines of `contract-lock.txt`, every
+  one of them the old line plus one `edge=` token** — no ambiguity anywhere,
+  6 prose contradictions found, 0 behaviour changes.
+- **The hand-typed ceiling auto-merged WRONG in 3 of 3 parallel branches.**
+  Three face PRs drained from the same base and each wrote its own literal
+  (288, 277, 287) when the truth was the UNION of the drains (275). Two of the
+  three collided in the comment block, which is the *only* reason git surfaced
+  it — the third merged **cleanly and wrongly**, shipping a ceiling with slack,
+  and slack in a `<=` ratchet is absorbed silently by the next regression.
+- **The number needed a paragraph of warning comments to explain.** A number
+  that needs a warning label is the wrong mechanism.
+
+**The three rules, in order:**
+
+1. **Pay mechanically-payable debt; never inventory it.** A ledger of *known
+   answers* is deferred typing, not engineering — and it is worse than the
+   typing, because every agent that touches the area now pays a re-count tax.
+   Before writing an exemption list, ask: *does the answer already exist
+   somewhere in the tree?* If it does, the list is the wrong artifact.
+2. **A ratchet is legitimate ONLY for debt that genuinely cannot be paid now** —
+   it needs hardware, an owner decision, a re-attest window. Even then the count
+   is **DERIVED from the artifact**, never a typed literal in a shared file: a
+   literal is a merge hazard *by construction*, independent of anyone's care.
+3. **Any migration counter ships with its DELETION CRITERIA stated in the
+   file** — the condition under which the mechanism is removed. Otherwise the
+   scaffolding outlives the building, and the thing everyone reads as "we are
+   tracking this" means "nobody has looked since it was written."
+
+And when the debt is finally paid, **delete the mechanism** — the list, the
+count, the both-directions ratchet, the stale-entry anchor. Do not leave a
+replacement counter behind; at zero it measures nothing and can only go stale.
+The check that remains is the unconditional one, plus a permanent negative
+control (see below) that calls the *same predicate* the demand clause calls —
+a re-typed copy in the self-test is how the previous one went blind.
+
 ### The corollary: fixing a card prop can be a GREEN GATE OVER A LIVE BUG
 
 Four cards pass `curve="linear"` on a param the def declares `discrete`. Writing
