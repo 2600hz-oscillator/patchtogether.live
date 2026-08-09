@@ -51,14 +51,13 @@
 // Pure-unit, file-reading, zero flake, ~0 CI wall-time.
 
 import { describe, it, expect } from 'vitest';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 function repoRoot(): string {
   return resolve(import.meta.dirname, '../../../../..');
 }
 
-const CONFIG_PATH = resolve(repoRoot(), 'e2e/vrt/vrt.config.ts');
 const PW_TYPES = resolve(repoRoot(), 'node_modules/playwright/types/test.d.ts');
 
 /** Extract the literal body of `expect: { … }` from the VRT config source.
@@ -144,11 +143,53 @@ function playwrightScreenshotConfigKeys(): string[] {
   return [...new Set([...body.matchAll(/^\s{6}(\w+)\??:/gm)].map((m) => m[1]!))];
 }
 
-describe('VRT config: every knob is one Playwright turns', () => {
-  const src = existsSync(CONFIG_PATH) ? readFileSync(CONFIG_PATH, 'utf8') : '';
+/**
+ * EVERY Playwright config, DISCOVERED — not a hand-listed pair.
+ *
+ * ⚠ This test used to hard-code `e2e/vrt/vrt.config.ts`. That is exactly how
+ * the bug it exists to catch survived in a sibling: `vrt-annotated.config.ts`
+ * carried the identical `timeout` nested inside `toHaveScreenshot` (silently
+ * ignored by Playwright, so the annotated GENERATION run was bounded by the
+ * 5000 ms default rather than the 15 s the comment promised) for as long as
+ * the guard was pointed one file away from it. A gate that names ONE file
+ * cannot speak for the directory — so this walks `e2e/**` and every config it
+ * finds is checked, which means a NEW config is covered the day it lands.
+ */
+function playwrightConfigs(): string[] {
+  const root = resolve(repoRoot(), 'e2e');
+  const out: string[] = [];
+  const walk = (dir: string) => {
+    for (const ent of readdirSync(dir, { withFileTypes: true })) {
+      if (ent.name === 'node_modules' || ent.name.startsWith('.')) continue;
+      const p = resolve(dir, ent.name);
+      if (ent.isDirectory()) walk(p);
+      else if (/\.config\.ts$/.test(ent.name)) out.push(p);
+    }
+  };
+  walk(root);
+  return out.sort();
+}
 
-  it('the config file exists', () => {
-    expect(existsSync(CONFIG_PATH), CONFIG_PATH).toBe(true);
+const CONFIGS = playwrightConfigs();
+/** Configs that actually declare screenshot budgets — the subset the knob
+ *  assertions apply to. A config with no `expect` block is not a defect. */
+const SCREENSHOT_CONFIGS = CONFIGS.filter((p) =>
+  /toHaveScreenshot/.test(readFileSync(p, 'utf8')),
+);
+
+describe('VRT config: every knob is one Playwright turns', () => {
+  it('discovery found the Playwright configs (instrument check)', () => {
+    // Negative control on the DISCOVERY: a walk that silently returns nothing
+    // would make every parameterized case below vacuous.
+    expect(CONFIGS.length, 'found no *.config.ts under e2e/').toBeGreaterThan(2);
+    expect(
+      CONFIGS.some((p) => p.endsWith('vrt/vrt.config.ts')),
+      'the main VRT config must be among the discovered set',
+    ).toBe(true);
+    expect(
+      SCREENSHOT_CONFIGS.length,
+      'no config declares toHaveScreenshot — the knob checks would all be vacuous',
+    ).toBeGreaterThan(1);
   });
 
   it('the installed Playwright types expose a toHaveScreenshot key list', () => {
@@ -159,45 +200,52 @@ describe('VRT config: every knob is one Playwright turns', () => {
     expect(keys).toContain('threshold');
   });
 
-  it('expect.toHaveScreenshot contains NO key Playwright ignores', () => {
-    const allowed = new Set(playwrightScreenshotConfigKeys());
-    const declared = topLevelKeys(nestedBlock(expectBlock(src), 'toHaveScreenshot'));
-    const unknown = declared.filter((k) => !allowed.has(k));
-    expect(
-      unknown,
-      'These keys are declared inside `expect.toHaveScreenshot` in e2e/vrt/vrt.config.ts ' +
-        'but Playwright does not read them — they are SILENTLY DROPPED, so whatever the ' +
-        'comment above them promises is not happening. `timeout` was one of these for as ' +
-        'long as it existed: the config said 15_000 and the gate ran at the 5000 ms ' +
-        'default, which is why --update-snapshots kept wedging on mandelbulb/toybox. ' +
-        `Playwright ${''}accepts: ${[...allowed].join(', ')}. ` +
-        'A settle budget belongs on `expect.timeout`.',
-    ).toEqual([]);
-  });
+  describe.each(SCREENSHOT_CONFIGS.map((p) => [p.slice(repoRoot().length + 1), p] as const))(
+    '%s',
+    (rel, path) => {
+      const src = readFileSync(path, 'utf8');
 
-  it('the screenshot settle budget lives on expect.timeout, where it is read', () => {
-    const keys = topLevelKeys(expectBlock(src));
-    expect(
-      keys,
-      '`expect.timeout` is the only key that bounds the toHaveScreenshot ' +
-        'screenshot-until-two-consecutive-captures-agree retry loop. Without it the ' +
-        'heavy WebGL cards get Playwright’s 5000 ms default and a slow settle reads as ' +
-        '"this card can never be deterministic" — which is how a card ends up masked ' +
-        'for a config bug.',
-    ).toContain('timeout');
-    const m = /^\s*timeout:\s*([\d_]+)/m.exec(stripComments(expectBlock(src)));
-    expect(m, 'expect.timeout must be a numeric literal').not.toBeNull();
-    expect(
-      Number(m![1]!.replace(/_/g, '')),
-      'expect.timeout must exceed Playwright’s 5000 ms default — otherwise setting it ' +
-        'changes nothing and the heavy cards are back where they started.',
-    ).toBeGreaterThan(5_000);
-  });
+      it('expect.toHaveScreenshot contains NO key Playwright ignores', () => {
+        const allowed = new Set(playwrightScreenshotConfigKeys());
+        const declared = topLevelKeys(nestedBlock(expectBlock(src), 'toHaveScreenshot'));
+        const unknown = declared.filter((k) => !allowed.has(k));
+        expect(
+          unknown,
+          `These keys are declared inside \`expect.toHaveScreenshot\` in ${rel} ` +
+            'but Playwright does not read them — they are SILENTLY DROPPED, so whatever the ' +
+            'comment above them promises is not happening. `timeout` was one of these for as ' +
+            'long as it existed: the config said 15_000 and the run used the 5000 ms ' +
+            'default, which is why --update-snapshots kept wedging on mandelbulb/toybox. ' +
+            `Playwright accepts: ${[...allowed].join(', ')}. ` +
+            'A settle budget belongs on `expect.timeout`.',
+        ).toEqual([]);
+      });
 
-  it('the tolerance knobs the gate rests on are still declared', () => {
-    const declared = topLevelKeys(nestedBlock(expectBlock(src), 'toHaveScreenshot'));
-    expect(declared).toContain('threshold');
-    expect(declared).toContain('maxDiffPixelRatio');
-    expect(declared).toContain('animations');
-  });
+      it('the screenshot settle budget lives on expect.timeout, where it is read', () => {
+        const keys = topLevelKeys(expectBlock(src));
+        expect(
+          keys,
+          `\`expect.timeout\` is the only key that bounds ${rel}'s toHaveScreenshot ` +
+            'screenshot-until-two-consecutive-captures-agree retry loop. Without it the ' +
+            'heavy WebGL cards get Playwright’s 5000 ms default and a slow settle reads as ' +
+            '"this card can never be deterministic" — which is how a card ends up masked ' +
+            'for a config bug.',
+        ).toContain('timeout');
+        const m = /^\s*timeout:\s*([\d_]+)/m.exec(stripComments(expectBlock(src)));
+        expect(m, `${rel}: expect.timeout must be a numeric literal`).not.toBeNull();
+        expect(
+          Number(m![1]!.replace(/_/g, '')),
+          `${rel}: expect.timeout must exceed Playwright’s 5000 ms default — otherwise ` +
+            'setting it changes nothing and the heavy cards are back where they started.',
+        ).toBeGreaterThan(5_000);
+      });
+
+      it('the tolerance knobs the gate rests on are still declared', () => {
+        const declared = topLevelKeys(nestedBlock(expectBlock(src), 'toHaveScreenshot'));
+        expect(declared).toContain('threshold');
+        expect(declared).toContain('maxDiffPixelRatio');
+        expect(declared).toContain('animations');
+      });
+    },
+  );
 });
