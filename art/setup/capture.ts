@@ -95,9 +95,9 @@ export async function repoSourceSha(...relPaths: string[]): Promise<string> {
  * one the webgl / collab / grand content hashes use.
  *
  * There is no marker to remember: the normalizer is a TypeScript AST re-emit,
- * so it is blind to documentation BY CONSTRUCTION. (It replaced 85
- * `// docs-hash-ignore:start … :end` marker pairs across 79 files on
- * 2026-08-09; owner directive "docs should not need explicit ignore".)
+ * so it is blind to documentation BY CONSTRUCTION. (It replaced the opt-in
+ * marker ceremony on 2026-08-09; owner directive "docs should not need
+ * explicit ignore, they should be ignored by design".)
  *
  * Imported lazily so the TypeScript compiler is only loaded by the handful of
  * ART scenarios that actually pin a def file.

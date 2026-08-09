@@ -243,7 +243,6 @@ export const shapedrampsDef: VideoModuleDef = {
     { id: 'mix2',    label: 'Mix 2',   defaultValue: DEFAULTS.mix2,    min: 0,   max: 1, curve: 'linear' },
   ],
 
-  // docs-hash-ignore:start
   docs: {
     explanation: "SHAPEDRAMPS is a sync-locked parametric ramp generator for video coordinate synthesis — it draws gradients across the raster rather than processing an incoming picture. It emits four mono-video ramps: h_lin/v_lin are stable identity ramps (red channel = screen u or v, untouched by any knob or CV) for clean raster passthrough into geometry modules like RUTTETRA; h_out/v_out are shaped ramps that morph through four canonical shapes via H Shape / V Shape (0..1): linear (t), triangle (abs(2t-1)), soft-fold (0.5 - 0.5*cos(2pi*t)), and radial (H = distance from center scaled so corners read 1, V = angle around center), blending linearly between adjacent shapes. H/V Phase shift the ramp before shaping; H/V Freq scale the axis variable and fract-wrap it, so freq=2 repeats the shape twice across the canvas (a triangle becomes a two-peak zigzag). It also packs two general-purpose 2-channel video crossfade mixers (out = (1-amount)*A + amount*B) so you can blend ramp shapes without an external V-MIXER, though they accept any mono-video signal. Typical use: feed h_lin/v_lin into a coordinate consumer for an identity raster, then crossfade toward h_out/v_out to warp the geometry; all four ramps and both mixers render every frame so downstream consumers always read fresh textures.",
     inputs: {
@@ -279,7 +278,6 @@ export const shapedrampsDef: VideoModuleDef = {
       mix2: "Mix 2 (fader M2, 0..1, default 0.5) — crossfade amount for onboard mixer 2 (0 = all mix2_a, 1 = all mix2_b).",
     },
   },
-  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const linProgram = ctx.compileFragment(LIN_FRAG_SRC);

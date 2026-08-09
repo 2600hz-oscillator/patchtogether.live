@@ -97,7 +97,7 @@ export const delayDef: AudioModuleDef = {
   // `format` (PF-3) is UI VOCABULARY and contract-transparent — contract-
   // signature reads only id/min/max/curve/defaultValue/units, and a function is
   // unserializable by construction, so these three lines are a 0-line move in
-  // contract-lock.txt. They are deliberately NOT wrapped in `docs-hash-ignore`:
+  // contract-lock.txt. They are deliberately NOT hash-transparent:
   // `params:` bytes belong in the ART pin BY POLICY
   // (art/scenarios/pattern3-face-pin.test.ts: "params/inputs/outputs/factory
   // are deliberately NOT here"), so this PR takes the one-line `.sha` re-pin
@@ -125,7 +125,6 @@ export const delayDef: AudioModuleDef = {
       format: formatDelayMix },
   ],
 
-  // docs-hash-ignore:start  -- UI metadata is hash-transparent to the ART audio-profile source pin
   // PF-11. `face` is CURATION — ranking, band labels, the glyph choice, rear
   // grouping — and it reaches no audio code: this module's sound is the
   // `factory` below plus its params, and both stay inside the pin. Without
@@ -300,9 +299,7 @@ export const delayDef: AudioModuleDef = {
       audioRate: ['time'],
     },
   },
-  // docs-hash-ignore:end
 
-  // docs-hash-ignore:start  -- docs prose is hash-transparent to the ART audio-profile source pin
   docs: {
     explanation:
       "The PRIMITIVE echo — one audio jack in, one out, three knobs, no colour of its own. Input → delay line → feedback loop → output, summed against the dry signal: audio comes back out TIME seconds later, FEEDBACK decides how many times it repeats before fading, MIX decides how much of it you hear. This is the topology every other delay is a decoration of, and it is the cheapest to run (a native Web Audio DelayNode and two gains — no worklet, no DSP thread). Reach for it when you want repeats and nothing else: slapback at 30–120 ms, rhythmic echoes at a quarter of a bar, ambient washes with FEEDBACK up. The one behaviour worth internalising is that the delay line reads at a FRACTIONAL position, so CHANGING TIME VARISPEEDS THE BUFFER — the echoes Doppler-shift in pitch while the time is moving, exactly like dragging a tape machine's capstan, and settle back to normal pitch once it stops. That is a feature: patch a slow LFO into the TIME CV jack at a few milliseconds of depth and you have a flanger/chorus; patch an envelope and the tail dives in pitch. It is also why a big TIME jump audibly swoops instead of cutting. This module deliberately has NO tempo sync, no clock input, no filtering or saturation in the loop, and no stereo — if you want a delay locked to the rack clock, or tape wow/flutter, drive, ping-pong and ducking, patch COFEFVE instead; for repeats that degrade and climb in pitch as they decay, CHARLOTTE'S ECHOS. FEEDBACK is hard-ceilinged at 0.95 and has no CV jack, so this module can never be driven into self-oscillation.",
@@ -325,7 +322,6 @@ export const delayDef: AudioModuleDef = {
         'Dry / wet balance, applied as an equal-power crossfade (dry gets √(1−MIX), wet gets √MIX) so the halfway point sounds full instead of scooped. It is the only control here that is OUTSIDE the recirculating loop — the line keeps filling and feeding back at MIX 0, so the tail is already running when you turn it up. 0 is the untouched input, 1 is echoes only, and the dial names both ends (DRY / WET) and prints the wet share between them (35% WET at the default). Around 0.35 it sits as an insert; put it at 1 when feeding the module from an aux send. Knob-only — there is no MIX CV jack.',
     },
   },
-  // docs-hash-ignore:end
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     const inputGain = ctx.createGain();

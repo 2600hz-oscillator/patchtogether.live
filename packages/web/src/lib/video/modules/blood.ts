@@ -155,7 +155,6 @@ export const bloodDef: VideoModuleDef = {
       curve: 'linear' as const,
     })),
   ],
-  // docs-hash-ignore:start  -- co-located living-docs; stripped from the WebGL attest hash
   docs: {
     explanation:
       'BLOOD runs the NBlood (Build-engine) port of Blood as an interactive video source. ' +
@@ -190,7 +189,6 @@ export const bloodDef: VideoModuleDef = {
       fillMode: 'Letterbox (preserve aspect, default) vs fill (cover-crop) the canvas.',
     },
   },
-  // docs-hash-ignore:end
 
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;

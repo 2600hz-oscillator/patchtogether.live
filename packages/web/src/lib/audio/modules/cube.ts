@@ -295,7 +295,6 @@ export const cubeDef: AudioModuleDef = {
     // it). Persisted on node.params so the toggle survives reload. (v4 perf.)
     { id: 'screen_on',  label: 'Screen', defaultValue: 1, min: 0, max: 1, curve: 'discrete' },
   ],
-  // docs-hash-ignore:start
   // CUBE's card renders WebGL, so its def is in the WebGL attest basis
   // (AUDIO_WEBGL_MODULE_DEFS). Living-docs is hash-transparent: these markers
   // make computeWebglHash strip the co-located docs so authoring them does NOT
@@ -374,7 +373,6 @@ export const cubeDef: AudioModuleDef = {
       screen_on: "Turns the on-card 3D viz screen on/off. When OFF and the VIDEO output is unpatched, the card skips all visual computation (the render loop and the field/slice/wave draws) to save GPU — audio keeps running untouched. A patched VIDEO output still receives live frames even with the screen off.",
     },
   },
-  // docs-hash-ignore:end
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     const initialParams = (node.params ?? {}) as Record<string, number>;

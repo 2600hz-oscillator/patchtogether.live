@@ -881,7 +881,6 @@ export const wavesculptDef: AudioModuleDef = {
     ps.push({ id: 'wall6_distort', label: 'W6 Dst', defaultValue: 0,   min: 0, max: 1,   curve: 'linear' });
     return ps;
   })(),
-  // docs-hash-ignore:start
   // WAVESCULPT's card renders WebGL2, so its def is in the WebGL attest basis
   // (AUDIO_WEBGL_MODULE_DEFS). Living-docs is hash-transparent: these markers
   // make computeWebglHash strip the co-located docs + controlFamilies so
@@ -985,7 +984,6 @@ export const wavesculptDef: AudioModuleDef = {
     // node.data), not a ParamDef — declared so the docs layer sees it.
     { id: 'wavesculpt-osc', label: 'Per-oscillator wavetable source', kind: 'cell', testidPrefix: 'wavesculpt-osc' },
   ],
-  // docs-hash-ignore:end
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     const initialParams = (node.params ?? {}) as Record<string, number>;

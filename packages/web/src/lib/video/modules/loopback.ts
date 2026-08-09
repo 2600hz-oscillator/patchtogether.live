@@ -149,7 +149,6 @@ export const loopbackDef: VideoModuleDef = {
   // the same tab multiply the recursive-preview cost for no benefit.
   maxInstances: 2,
 
-  // docs-hash-ignore:start
   docs: {
     explanation: "LOOPBACK turns the BROWSER VIEWPORT into a video source: its single output carries what you currently SEE in this tab — the visible canvas pane — so you can feed it into RECORDERBOX to record your viewport, or into any video effect for live self-referential feedback. The card acquires the current tab with the Screen Capture API (getDisplayMedia with preferCurrentTab + self-capture allowed — the Start capture button is the required user gesture), runs the captured tab in a hidden <video>, and the engine samples each frame into a GPU texture (exactly like CAMERA). A crop step then windows that tab frame down to the app viewport element's on-screen rectangle so the output is just the active viewport, not the surrounding browser/app chrome; the cropped region is letterbox-fit into the engine frame (black bars rather than cropping edges away) so the WHOLE viewport is preserved. Because the preview shows the tab it is captured from, a live on-card preview is intentionally recursive (a video-feedback tunnel) — that is expected, not a bug. Usage: drop LOOPBACK in, click Start capture and confirm the tab in the picker, then patch OUT into RECORDERBOX (record the viewport) or a mixer/effect. Capture needs a gesture and can be stopped from the browser's share bar (the card returns to idle with a re-capture button); where the Screen Capture API is unavailable the card shows a disabled unsupported state.",
     inputs: {},
@@ -161,7 +160,6 @@ export const loopbackDef: VideoModuleDef = {
       crop: "Crop (discrete 0/1, default 1 = on). ON crops the captured tab down to the visible canvas pane's on-screen rectangle (measured per frame from the viewport element), so OUT is just the active viewport; OFF passes the WHOLE captured tab. The crop is per-viewer local render state (each collaborator's viewport differs) and never distorts the source aspect — it letterbox-fits, preserving the full region.",
     },
   },
-  // docs-hash-ignore:end
   factory(ctx, _node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);

@@ -34,7 +34,7 @@ import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve, sep } from 'node:path';
 
-import { normalizeForHash } from './attest-code-basis';
+import { normalizeForHash, type BasisReader } from './attest-code-basis';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 export const REPO_ROOT = resolve(__dirname, '..');
@@ -146,8 +146,8 @@ function isPackageJsonPin(rel: string): boolean {
  *  a package.json's dependencies + devDependencies — sorted `name@range` lines.
  *  Used in place of the whole file in the content hash so a collab-irrelevant
  *  dep change can't drift it. Exported for the basis guard test. */
-export function collabDepDigest(pkgRel: string): string {
-  const raw = JSON.parse(readFileSync(join(REPO_ROOT, pkgRel), 'utf8')) as {
+export function collabDepDigest(pkgRel: string, read: BasisReader = readBasisFile): string {
+  const raw = JSON.parse(read(pkgRel)) as {
     dependencies?: Record<string, string>;
     devDependencies?: Record<string, string>;
   };
@@ -259,18 +259,23 @@ export function resolveCollabBasis(): string[] {
  *  (e.g. a video lib like butterchurn, #939) can't drift the hash. `.sql`
  *  schema and `.flox/env/manifest.toml` are hashed by raw bytes (outside the
  *  normalizer's scope — over-invalidation is the safe direction). */
-export function computeCollabHash(): string {
+export function computeCollabHash(read: BasisReader = readBasisFile): string {
   const h = createHash('sha256');
   for (const rel of resolveCollabBasis()) {
     h.update(rel);
     h.update('\0');
     if (isPackageJsonPin(rel)) {
-      h.update(collabDepDigest(rel));
+      h.update(collabDepDigest(rel, read));
     } else {
-      h.update(normalizeForHash(rel, readFileSync(join(REPO_ROOT, rel), 'utf8')));
+      h.update(normalizeForHash(rel, read(rel)));
     }
   }
   return h.digest('hex');
+}
+
+/** The default basis reader: repo-relative path → file text. */
+export function readBasisFile(rel: string): string {
+  return readFileSync(join(REPO_ROOT, rel), 'utf8');
 }
 
 // -------------------------------------------------------------------------

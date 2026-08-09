@@ -173,7 +173,6 @@ export const shapegenDef: VideoModuleDef = {
     { id: SHAPEGEN_CLOCK_PARAM_ID, label: 'CLK', defaultValue: 0, min: 0, max: 1, curve: 'linear' },
   ],
 
-  // docs-hash-ignore:start
   docs: {
     explanation:
       "shapegen is a generative 3D-shape video synthesizer (extracted from FOXY's shape path). It has no straight video pass-through input: instead it reads three incoming rasters as control surfaces and synthesizes a scene of up to 8 lit primitives (sphere, cube, cone, cylinder, ring/torus, tetrahedron) floating inside a vaporwave wireframe bounding box with a faint perspective floor grid. Each raster is downsampled to an 80x60 RGBA buffer and fed to generateShapes: A's 16x16 mean-luma feature grid yields the top-8 peaks (non-max-suppressed) that place shapes in XY (if A is flat below the variance floor, NO shapes are drawn), B's luma at each peak sets Z depth, and C's luma picks the primitive type bucket (floor(c*6)), the baseline radius (0.05+c*0.25) and the hue (=c). The product of A and B luma at each peak gives a per-shape size factor of 0.5x-2x. The whole scene is painted to an OffscreenCanvas, uploaded as a texture, and blitted out a fullscreen quad. Usage: patch any three video sources into A/B/C, twist ROT to orbit the camera, raise SIZE to fatten the primitives, and flip SOLIDS for shaded vs neon-wireframe looks; patch a gate into CLK to freeze the shape set and only re-roll it on each rising edge (a visual sample-and-hold) while the camera keeps rotating.",
@@ -193,7 +192,6 @@ export const shapegenDef: VideoModuleDef = {
       cv_clock: "Hidden synthetic gate param backing the CLK jack (not a knob). The engine CV-bridge writes the clock_in gate sample here; a rising edge (hysteresis rise>0.6 / fall<0.4) triggers the next-frame shape regeneration for the sample-and-hold behavior.",
     },
   },
-  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);

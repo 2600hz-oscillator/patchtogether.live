@@ -102,7 +102,6 @@ export const lumakeyDef: VideoModuleDef = {
     { id: 'invert',    label: 'Inv',  defaultValue: DEFAULTS.invert,    min: 0, max: 1,   curve: 'discrete' },
   ],
 
-  // docs-hash-ignore:start
   docs: {
     explanation: "lumakey is a two-input luminance-key compositor: it lays a foreground frame over a background frame and decides, pixel by pixel, which one shows through based on how bright the foreground is. It computes Rec. 601 luma of the foreground, then builds an alpha mask with smoothstep(threshold - softness, threshold + softness, luma) so bright foreground pixels become opaque (alpha 1, foreground shows) and dark ones drop out (alpha 0, background bleeds through), finally mixing background toward foreground by that alpha. Use it to matte out a black or white plate behind a source, drop text/letterbox overlays onto a scene, or composite a bright source over another video; flip invert to key on the dark areas instead. With no foreground patched it passes the background straight through so a half-wired chain is never a black hole.",
     inputs: {
@@ -121,7 +120,6 @@ export const lumakeyDef: VideoModuleDef = {
       invert: "INV button flips the key direction: off (0) keeps bright foreground opaque and mattes the dark out; on (1) keeps dark foreground opaque and mattes the bright out (discrete 0/1, default 0/off).",
     },
   },
-  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);

@@ -9,18 +9,23 @@
 // code, and an audio `.sha` that moves for a typo fix stops meaning "the audio
 // changed" — which is the only thing it is for.
 //
-// `face:` is EXACTLY THE SAME KIND OF FIELD and was not covered. It is UI
-// curation — control ranking, band labels, the glyph choice, rear grouping —
-// and it reaches no audio code either, but it sat INSIDE the hash. So a pure
-// re-ranking moved `art/baselines/delay/audio.sha`, and the face program was
-// about to drag an audio re-pin behind every cosmetic edit on this set.
+// `face:` is EXACTLY THE SAME KIND OF FIELD. It is UI curation — control
+// ranking, band labels, the glyph choice, rear grouping — and it reaches no
+// audio code either, but it used to sit INSIDE the hash. So a pure re-ranking
+// moved `art/baselines/delay/audio.sha`, and the face program was about to drag
+// an audio re-pin behind every cosmetic edit on this set.
 //
-// THIS GATE IS THE DURABLE HALF OF THE FIX. Wrapping delay's `face:` in the
-// markers is a one-time edit; without a gate, the NEXT def in this set to grow
-// a face repeats the bug silently — the `.sha` just moves, CI goes red, and a
-// tired human re-pins it as "expected churn". Instead: any def pinned by
-// `docsStrippedRepoSourceSha` that carries an UNWRAPPED hash-transparent field
-// fails here, in the `art` lane, naming the field.
+// THE MECHANISM CHANGED ON 2026-08-09 and this gate got STRONGER for it. The
+// old fix was an opt-in comment marker each def had to remember to wrap its
+// `face:` in, and this test checked for the marker. Now the shared attest
+// normalizer (`scripts/attest-code-basis.ts`) strips comments and the
+// `docs`/`controlFamilies`/`face` properties of any module-scope def BY
+// CONSTRUCTION — the same normalizer the webgl / collab / grand attests use.
+//
+// So the check is no longer "is the ceremony present" (a proxy) but "does the
+// LIVE hash basis actually still contain this field" (the artifact). That
+// closes a real hole: a def could have carried the markers in the wrong place
+// and passed the old gate.
 //
 // WHY A SOURCE SCAN AND NOT A RENDER: the claim is about which BYTES feed the
 // hash, so the bytes are the right thing to read. It needs no audio graph, no
@@ -30,18 +35,18 @@ import { describe, expect, it } from 'vitest';
 import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { stripDocsForPin } from '../setup/capture';
+import { stripDocsForPin, docsStrippedRepoSourceSha } from '../setup/capture';
 
 const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const SCENARIOS = join(REPO_ROOT, 'art/scenarios');
 
 /**
  * The fields that are HASH-TRANSPARENT BY POLICY — cosmetic/UI metadata that
- * reaches no audio code. Each must live inside a `docs-hash-ignore` region on
- * a def whose source file is an ART pin basis.
+ * reaches no audio code.
  *
  * `params`/`inputs`/`outputs`/`factory` are deliberately NOT here: those DO
- * shape the audio, and their bytes belong in the pin.
+ * shape the audio, and their bytes belong in the pin. The `§negative` block
+ * below asserts that, so this list cannot quietly grow into the audio.
  */
 const TRANSPARENT_FIELDS = ['docs', 'face', 'controlFamilies'] as const;
 
@@ -73,21 +78,22 @@ describe('PF-11: UI metadata is hash-transparent to the ART source pins', () => 
       .toBeGreaterThanOrEqual(5);
   });
 
-  it('every hash-transparent field on a PINNED def sits inside a docs-hash-ignore region', async () => {
+  it('no hash-transparent field on a PINNED def survives into the hashed content', async () => {
     const violations: string[] = [];
     for (const { scenario, rel } of await pinnedDefSources()) {
       const src = await readFile(join(REPO_ROOT, rel), 'utf8');
-      // What actually feeds the hash: the source with the marked regions gone.
-      const hashed = stripDocsForPin(src);
+      // What actually feeds the pin: the def reduced to its CODE.
+      const hashed = await stripDocsForPin(src, rel);
       for (const field of TRANSPARENT_FIELDS) {
         // Top-level def field: two-space indent inside the object literal.
         const declared = new RegExp(`^  ${field}:`, 'm');
         if (!declared.test(src)) continue;
-        if (declared.test(hashed)) {
+        if (new RegExp(`^ {2,4}${field}:`, 'm').test(hashed)) {
           violations.push(
             `${rel} (pinned by art/scenarios/${scenario}): \`${field}:\` is INSIDE the audio hash — ` +
-              `wrap it in \`// docs-hash-ignore:start … :end\` and re-pin the .sha ONCE, ` +
-              `or every cosmetic edit to it will move ${scenario}'s audio baseline.`,
+              `the attest normalizer did not reach it (is it nested rather than a ` +
+              `module-scope def property?). Every cosmetic edit to it will move ` +
+              `${scenario}'s audio baseline.`,
           );
         }
       }
@@ -95,39 +101,48 @@ describe('PF-11: UI metadata is hash-transparent to the ART source pins', () => 
     expect(violations).toEqual([]);
   });
 
-  it('the strip is a NO-OP on a def with no markers (it cannot silently eat audio code)', async () => {
-    // Guards the other direction: an over-broad regex that swallowed the
-    // factory would make the pin meaningless while looking green.
+  it('at least one pinned def really does carry a transparent field (non-vacuity)', async () => {
+    // Without this, the gate above passes trivially if every def stops
+    // declaring docs/face — which is exactly when it would stop protecting
+    // anything.
+    let found = 0;
+    for (const { rel } of await pinnedDefSources()) {
+      const src = await readFile(join(REPO_ROOT, rel), 'utf8');
+      if (TRANSPARENT_FIELDS.some((f) => new RegExp(`^  ${f}:`, 'm').test(src))) found++;
+    }
+    expect(found, 'no pinned def declares docs/face/controlFamilies at all').toBeGreaterThanOrEqual(
+      5,
+    );
+  });
+});
+
+describe('PF-11 §negative: the strip must not reach the AUDIO', () => {
+  it('a comment-only edit to a pinned def does NOT move its .sha', async () => {
+    const [first] = await pinnedDefSources();
+    const rel = first!.rel;
+    const src = await readFile(join(REPO_ROOT, rel), 'utf8');
+    const commented = '// a fresh comment on the def\n' + src;
+    expect(await stripDocsForPin(commented, rel)).toBe(await stripDocsForPin(src, rel));
+  });
+
+  it('a PARAM RANGE edit DOES move it (params/inputs/outputs/factory stay in the pin)', async () => {
+    const bare = `export const d = {\n  docs: { a: 'x' },\n  params: [{ id: 'g', min: 0, max: 1 }],\n};\n`;
+    const wider = `export const d = {\n  docs: { a: 'x' },\n  params: [{ id: 'g', min: 0, max: 2 }],\n};\n`;
+    expect(await stripDocsForPin(bare, 'def.ts')).not.toBe(await stripDocsForPin(wider, 'def.ts'));
+  });
+
+  it('the strip cannot silently eat a def with nothing transparent in it', async () => {
     const plain = 'export const def = {\n  type: "x",\n  params: [],\n};\n';
-    expect(stripDocsForPin(plain)).toBe(plain);
+    const out = await stripDocsForPin(plain, 'def.ts');
+    expect(out).toContain('type: "x"');
+    expect(out).toContain('params: []');
   });
 
-  it('stripping removes the marked region AND its markers, but nothing after it', async () => {
-    const src = [
-      'const a = 1;',
-      '  // docs-hash-ignore:start',
-      '  face: { order: [] },',
-      '  // docs-hash-ignore:end',
-      'const b = 2;',
-      '',
-    ].join('\n');
-    expect(stripDocsForPin(src)).toBe('const a = 1;\nconst b = 2;\n');
-  });
-
-  it('two SEPARATE regions strip independently (delay carries face + docs)', async () => {
-    const src = [
-      'a',
-      '// docs-hash-ignore:start',
-      'FACE',
-      '// docs-hash-ignore:end',
-      'KEEP',
-      '// docs-hash-ignore:start',
-      'DOCS',
-      '// docs-hash-ignore:end',
-      'b',
-      '',
-    ].join('\n');
-    // A greedy match would eat KEEP along with both regions.
-    expect(stripDocsForPin(src)).toBe('a\nKEEP\nb\n');
+  it('the pin helper is deterministic and 16 hex chars', async () => {
+    const [first] = await pinnedDefSources();
+    const a = await docsStrippedRepoSourceSha(first!.rel);
+    const b = await docsStrippedRepoSourceSha(first!.rel);
+    expect(a).toBe(b);
+    expect(a).toMatch(/^[0-9a-f]{16}$/);
   });
 });

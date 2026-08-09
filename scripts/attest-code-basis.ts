@@ -16,10 +16,10 @@
 //
 // Comments and documentation prose CANNOT. So the hash must be blind to them BY
 // CONSTRUCTION, not by an opt-in marker a human has to remember. The previous
-// mechanism (`// docs-hash-ignore:start … :end`, stripped by a regex in
-// webgl-attest-lib) reached 85 marker pairs across 79 files plus a dedicated
-// lint whose only job was catching a FORGOTTEN marker before it cost a ~10-min
-// GPU re-attest. Every one of those is deleted by this module.
+// mechanism — an opt-in `docs-hash-ignore` comment marker, stripped by a regex
+// in webgl-attest-lib — reached 85 marker pairs across 79 files plus a
+// dedicated lint whose only job was catching a FORGOTTEN marker before it cost
+// a ~10-min GPU re-attest. Every one of those is deleted by this module.
 //
 // ─────────────────────────────────────────────────────────────────────────────
 // THE MECHANISM — AST re-emit, not a regex
@@ -358,6 +358,14 @@ export function packageJsonCodeDigest(text: string, report?: NormalizeReport): s
 export function normalizeForHash(relPath: string, text: string): string {
   return normalizeForHashWithReport(relPath, text).text;
 }
+
+/**
+ * How an attest hash reads a basis file. Defaults to the real filesystem; the
+ * blindness gates inject a reader that perturbs ONE file so they can prove both
+ * directions (comment/docs edit → identical hash; code edit → different hash)
+ * against the REAL `compute*Hash` functions instead of a re-implementation.
+ */
+export type BasisReader = (relPath: string) => string;
 
 /** `normalizeForHash` plus what it did — for the scope + measurement gates. */
 export function normalizeForHashWithReport(

@@ -7,7 +7,6 @@
 // `require` (a bare require() throws "require is not defined in ES module scope"
 // when Playwright loads the config as ESM).
 //
-// docs-hash-ignore:start
 // ⚠⚠ ADDING A SPEC TO THIS LIST DELETES ITS PR COVERAGE. IT DOES NOT MOVE IT. ⚠⚠
 //
 // The `e2e-video` lane that used to RUN the excluded specs WAS DELETED on
@@ -17,10 +16,11 @@
 // are `webgl-smoke` (a renderer-tolerant `--grep @webgl-smoke` SUBSET, not this
 // list) and `webgl-attest` (real-GPU attestation).
 //
-// ⚠ The text BELOW still describes that lane in the present tense (kept
-// verbatim so this file stays hash-transparent to the WebGL attest — see the
-// docs-hash-ignore markers around this block). Read it as history, not as
-// current CI. The stale wording nearly cost ~690 s of real backdraft coverage:
+// ⚠ The text BELOW still describes that lane in the present tense. Read it as
+// history, not as current CI. (Comments are hash-transparent to the WebGL
+// attest by construction, so correcting it costs nothing — it is kept only
+// because the reasoning is still worth reading.) The stale wording nearly cost
+// ~690 s of real backdraft coverage:
 // it was cited as evidence that enrolling `backdraft*` here would "relocate the
 // cost to the serialized lane". It would have deleted it.
 //
@@ -28,7 +28,6 @@
 // — fix the spec (see backdraft.spec.ts / backdraft-pure-tv.spec.ts for the
 // frame-driven pattern), or resurrect a lane that actually runs what you
 // exclude.
-// docs-hash-ignore:end
 // This list was inlined in playwright.config.ts (a non-exported `const`). It is
 // now an exported module so BOTH consumers read the SAME literal:
 //   1. e2e/playwright.config.ts  — partitions the sharded `e2e` matrix

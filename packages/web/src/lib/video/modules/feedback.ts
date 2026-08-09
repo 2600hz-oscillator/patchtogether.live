@@ -121,7 +121,6 @@ export const feedbackDef: VideoModuleDef = {
     { id: 'offsetY', label: 'OffsY',  defaultValue: DEFAULTS.offsetY, min: -1,   max: 1,      curve: 'linear' },
   ],
 
-  // docs-hash-ignore:start
   docs: {
     explanation:
       "Analog-video-style feedback loop, the on-screen equivalent of pointing a camera at its own monitor. Each frame it re-samples its OWN previous output from a ping-pong framebuffer through a small affine warp — rotate and scale the UV about the canvas center, plus a tiny XY offset — multiplies that warped tap by Decay, then adds the fresh input (weighted by 1 minus the clamped decay) to form a recursive accumulator. That accumulator is cross-faded against the dry input by Wet and clamped to [0,1] so destructive Decay over 1.0 saturates white instead of NaN-ing. With Zoom slightly above 1 and a touch of Rotate you get the classic infinite spiraling \"tunnel\"; the prior frame is sampled black outside the canvas (no edge smear) so trails decay into darkness rather than melting along the borders. Patch a camera or any video source into IN, feed OUT back to a monitor, and modulate the warp via the CV inputs for evolving, self-oscillating imagery.",
@@ -146,7 +145,6 @@ export const feedbackDef: VideoModuleDef = {
       offsetY: "OffsY — vertical translation of the feedback tap per frame, -1 to 1 (scaled to a small ±0.05 UV shift), drifting the recirculating image up or down. Default 0.",
     },
   },
-  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);

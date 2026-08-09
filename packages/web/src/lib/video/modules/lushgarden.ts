@@ -344,7 +344,6 @@ export const lushgardenDef: VideoModuleDef = {
     { id: 'freeze', label: 'Freeze', defaultValue: 0, min: 0, max: 1, curve: 'linear' },
   ],
 
-  // docs-hash-ignore:start
   docs: {
     explanation:
       "lush garden is a generative video source that grows a dense, layered 2D English-garden bed out of a bank of ~75 real plant cutouts (flowers, bushes, small trees), each background-keyed to a clean silhouette. Plants spawn continuously at the RATE knob's spawns-per-second onto a virtual ground plane that runs from the bottom edge up to an INVISIBLE horizon: each plant lands at a random (x, depth), where depth places its ground anchor between the bottom edge (near) and the horizon (far) and scales it down with distance on top of the natural kind scale (FOV sets how steep that shrink is; trees > bushes > flowers; the spawn mix is roughly 70% flowers / 20% bushes / 10% trees). New plants grow in from their ground anchor with a quick ~350 ms ease-out. The scene composites back-to-front (painter's algorithm), and VIEW pans a viewport across a world ~2.5 frames wide with depth-proportional parallax — near plants sweep past while the far rank barely moves, a deliberately flat, theatre-flat parallax. At the 350-plant cap each new spawn replaces the OLDEST plant, so a full bed keeps slowly turning over instead of freezing. Patch a gate into GROW to take manual control: continuous spawning stops entirely and exactly one plant grows per rising edge (the card shows [GATED]); pulse RESET to clear the bed. The same scene renders through four simultaneous outputs — clean (the plain composite, also the card preview), mono (white silhouette outlines), watercolor (colours bled inside each plant's boundary), and psychedelic (animated hue-cycled colours, phase-offset per plant) — and an optional background video passes through unprocessed behind the plants on all four. Usage: run it bare as an evolving backdrop; clock GROW from a sequencer so the garden grows on the beat; sweep VIEW with a slow LFO for a drifting parallax pan; or feed a camera into background and outlines into a mixer for a garden-stencil overlay.",
@@ -372,7 +371,6 @@ export const lushgardenDef: VideoModuleDef = {
       freeze: "Freeze (0 to 1, hidden): a determinism toggle for deterministic capture — at >=0.5 the renderer holds the last frame and stops drawing; no card control.",
     },
   },
-  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
 

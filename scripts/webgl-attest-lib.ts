@@ -26,7 +26,7 @@ import { dirname, join, resolve, sep } from 'node:path';
 import { minimatch } from 'minimatch';
 
 import { WEBGL_HEAVY_GLOBS, WEBGL_HEAVY_EXCLUDE } from '../e2e/webgl-heavy-globs';
-import { normalizeForHash } from './attest-code-basis';
+import { normalizeForHash, type BasisReader } from './attest-code-basis';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 export const REPO_ROOT = resolve(__dirname, '..');
@@ -298,14 +298,19 @@ export function resolveWebglBasis(): string[] {
  *  not need explicit ignore, they should be ignored by design; only code that
  *  is, you know, code, should be considered"). The same normalizer backs the
  *  collab and grand attests, so the three cannot drift apart. */
-export function computeWebglHash(): string {
+export function computeWebglHash(read: BasisReader = readBasisFile): string {
   const h = createHash('sha256');
   for (const rel of resolveWebglBasis()) {
     h.update(rel);
     h.update('\0');
-    h.update(normalizeForHash(rel, readFileSync(join(REPO_ROOT, rel), 'utf8')));
+    h.update(normalizeForHash(rel, read(rel)));
   }
   return h.digest('hex');
+}
+
+/** The default basis reader: repo-relative path → file text. */
+export function readBasisFile(rel: string): string {
+  return readFileSync(join(REPO_ROOT, rel), 'utf8');
 }
 
 // -------------------------------------------------------------------------

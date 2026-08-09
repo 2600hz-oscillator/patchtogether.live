@@ -137,7 +137,6 @@ export const shapesDef: VideoModuleDef = {
     { id: 'zoom',   label: 'Zoom',   defaultValue: DEFAULTS.zoom,   min: 0.05, max: 10,        curve: 'log' },
   ],
 
-  // docs-hash-ignore:start
   docs: {
     explanation:
       "SHAPES is a procedural geometry source: it has no video input and synthesizes a mono-video stream entirely in its fragment shader. Each frame the shader evaluates a signed-distance field for one of three primitives — a circle, a square, or an equilateral triangle pointing up — and renders it white-on-black, antialiased with a soft edge band. The shape is picked discretely (the Shape value is rounded to the nearest integer; there is no morph or blend between primitives). The frame's UV coordinates are rotated and divided by the zoom factor before the SDF is evaluated, so larger zoom grows the shape's footprint while rotation spins it about its cell center; the antialiasing band is scaled by 1/zoom so the outline stays crisp even when the shape fills the frame. With Tile off the whole frame is a single cell holding one centered shape; with Tile on the frame is repeated (via fract of the UVs) into a Grid×Grid array of identical cells, each carrying its own centered copy. Use it as a clean mask/matte or pattern generator feeding compositors, displacement, or feedback stages; patch CV into shape/tile/rotate/zoom to animate the geometry from the audio side.",
@@ -158,7 +157,6 @@ export const shapesDef: VideoModuleDef = {
       zoom: "Scale factor, 0.05..10 log-curve: 1.0 fits the shape in its cell with margin (reference radius ~0.4 of the cell), smaller shrinks it toward a dot, larger overflows the cell/frame; default 1.0.",
     },
   },
-  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);
