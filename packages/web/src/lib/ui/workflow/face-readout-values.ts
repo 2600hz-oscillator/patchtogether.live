@@ -66,6 +66,7 @@ import {
   kickdrumTailMs,
 } from '$lib/ui/modules/kickdrum-face-model';
 import {
+  MACRO_LOUDEST_NAME,
   fmtMacroDb,
   fmtMacroDbfs,
   macroAliasText,
@@ -162,7 +163,7 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
   'macro-out-level': (read) => fmtMacroDbfs(macroOutLevelDb(macroFaceParams(read))),
   'macro-level-gap': (read) => {
     const d = macroLevelVsLoudestDb(macroFaceParams(read));
-    return d >= -0.05 ? 'the loudest engine' : `${fmtMacroDb(d)} vs FM 2OP`;
+    return d >= -0.05 ? 'the loudest engine' : `${fmtMacroDb(d)} vs ${MACRO_LOUDEST_NAME}`;
   },
   'macro-aux-offset': (read) => fmtMacroDb(macroAuxOffsetDb(macroFaceParams(read))),
   'macro-strike-need': (read) => macroStrikeText(macroFaceParams(read)),

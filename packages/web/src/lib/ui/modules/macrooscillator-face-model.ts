@@ -159,8 +159,17 @@ export function macroOutLevelDb(p: MacroFaceParams): number {
   return macroEngine(p).outRmsDb + 20 * Math.log10(lvl / MACRO_MEASURED_LEVEL);
 }
 
-/** The loudest engine's measured OUT RMS — the reference the spread is against. */
-export const MACRO_LOUDEST_DB = Math.max(...MACRO_ENGINES.map((e) => e.outRmsDb));
+/** The loudest engine — the reference the spread is measured against. */
+const MACRO_LOUDEST = MACRO_ENGINES.reduce((a, b) => (b.outRmsDb > a.outRmsDb ? b : a));
+/** Its measured OUT RMS. */
+export const MACRO_LOUDEST_DB = MACRO_LOUDEST.outRmsDb;
+/** ⚠ ITS NAME, DERIVED — never typed into the readout string. The `vs loudest`
+ *  readout prints "… vs FM 2OP", and hardcoding that name would survive a DSP
+ *  level change that made a different engine the loudest: the dB would move
+ *  (it is derived) while the name stayed, so the readout would confidently
+ *  compare against the wrong engine. Exactly the half-derived-half-typed
+ *  defect this whole face exists to avoid. */
+export const MACRO_LOUDEST_NAME = MACRO_LOUDEST.name;
 /** The full spread, in dB. 76.6 as measured. */
 export const MACRO_LEVEL_SPREAD_DB = MACRO_LOUDEST_DB - Math.min(...MACRO_ENGINES.map((e) => e.outRmsDb));
 

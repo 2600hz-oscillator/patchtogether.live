@@ -36,6 +36,7 @@ import {
 import {
   MACRO_LEVEL_SPREAD_DB,
   MACRO_LOUDEST_DB,
+  MACRO_LOUDEST_NAME,
   MACRO_MEASURED_LEVEL,
   MACRO_STRUCK_COUNT,
   fmtMacroDb,
@@ -292,6 +293,18 @@ describe('macrooscillator face model — the LEVEL figures are re-measured, not 
     expect(MACRO_LOUDEST_DB).toBeCloseTo(-5.0, 1);
     const quietest = [...MACRO_ENGINES].sort((a, b) => a.outRmsDb - b.outRmsDb)[0]!;
     expect(quietest.name).toBe('MODAL');
+  });
+
+  it('the loudest engine\'s NAME is derived alongside its dB, not typed beside it', () => {
+    // ⚠ THE `vs loudest` READOUT PRINTS THAT NAME. A hardcoded "FM 2OP" would
+    // survive a DSP level change that promoted a different engine: the dB moves
+    // (derived) while the name does not, so the readout would confidently
+    // compare against the wrong engine — half-derived, half-typed, which is the
+    // exact defect class this face exists to avoid. Both come off the same row.
+    const loudest = MACRO_ENGINES.reduce((a, b) => (b.outRmsDb > a.outRmsDb ? b : a));
+    expect(MACRO_LOUDEST_NAME).toBe(loudest.name);
+    expect(MACRO_LOUDEST_DB).toBe(loudest.outRmsDb);
+    expect(MACRO_LOUDEST_NAME).toBe('FM 2OP');
   });
 
   it('five of the fourteen engines are silent unpatched, and the audition exists for them', () => {
