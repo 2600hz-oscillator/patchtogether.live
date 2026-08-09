@@ -16,8 +16,15 @@ import {
   setNoteProb,
   clipDefaultProbEff,
   setClipDefaultProb,
+  notePitchProbEff,
+  setNotePitchProb,
   type NoteClipRecord,
 } from '$lib/audio/modules/clip-types';
+import {
+  PITCH_PROB_LEVELS,
+  pitchProbLevelToValue,
+  valueToPitchProbLevel,
+} from '$lib/audio/pitch-probability';
 
 /** The 40 probability menu levels, HIGH→LOW: [40, 39, … 1] so 100% is FIRST
  *  (the default-checked item) and 2.5% is last. PURE. */
@@ -57,6 +64,49 @@ export function applyProbMenuPick(
   level: number,
 ): NoteClipRecord {
   return setNoteProb(clip, step, midi, probLevelToValue(level));
+}
+
+// ── PER-NOTE PITCH PROBABILITY menu (the THIRD row of the same note right-click
+// menu, beside Probability and Play Every). 41 items: OFF first (the DEFAULT
+// check — the authored pitch, exactly) then the 40 increments 2.5% … 100%,
+// ASCENDING, because unlike firing probability the default here sits at the
+// BOTTOM of the range, so "default first" and "ascending" agree.
+//
+// The 40 increments are the owner's constraint, for parity with the other %
+// controls when this reaches the Push/Launchpad: 40 = 5 rows of 8 pads, so the
+// level reads directly as "N of 40 lit". This PR is card-only — no hardware
+// binding — but the domain is already the one those surfaces will want. ──
+
+/** The pitch-instability menu levels, [0, 1, … 40] — OFF first (the default
+ *  check), then ascending. PURE. */
+export function pitchProbMenuLevels(): number[] {
+  return Array.from({ length: PITCH_PROB_LEVELS + 1 }, (_v, i) => i);
+}
+
+/** The menu level (0..PITCH_PROB_LEVELS) that reads CHECKED for the note
+ *  covering (step, midi): its own `pitchProb` level, else 0 (OFF). Unlike firing
+ *  probability there is NO clip-level default to inherit — an unset note means
+ *  "leave this pitch alone", the only safe reading of a legacy clip. PURE. */
+export function pitchProbMenuCheckedLevel(
+  clip: NoteClipRecord | null | undefined,
+  step: number,
+  midi: number,
+): number {
+  const ev = clip ? noteCovering(clip, step, midi) : undefined;
+  return valueToPitchProbLevel(notePitchProbEff(ev));
+}
+
+/** Apply a pitch-instability menu pick → the NEW clip with the note's
+ *  `pitchProb` set to `pitchProbLevelToValue(level)` (level 0 DELETES the key —
+ *  back to the authored pitch, byte-identical to a pre-feature note). An empty
+ *  cell is a no-op → the SAME clip reference. PURE. */
+export function applyPitchProbMenuPick(
+  clip: NoteClipRecord,
+  step: number,
+  midi: number,
+  level: number,
+): NoteClipRecord {
+  return setNotePitchProb(clip, step, midi, pitchProbLevelToValue(level));
 }
 
 // ── CLIP-DEFAULT probability menu (right-click a GRID clip pad). The same 40-

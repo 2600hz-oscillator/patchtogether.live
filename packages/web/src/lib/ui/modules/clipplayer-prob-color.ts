@@ -13,6 +13,7 @@ import {
   noteEffProb,
   probColorBucket,
   playEveryEff,
+  notePitchProbEff,
   type NoteClipRecord,
 } from '$lib/audio/modules/clip-types';
 
@@ -73,4 +74,45 @@ export function noteCellFill(clip: NoteClipRecord, step: number, midi: number): 
   const base = probColorBucket(clip, ev) === 'orange' ? PROB_ORANGE : PROB_PURPLE;
   const probRgb = scale(base, 0.45 + 0.55 * Math.max(0, Math.min(1, p))); // brighter = likelier
   return rgbCss(avg(probRgb, red)); // both indicators → average
+}
+
+// ── PITCH PROBABILITY marker. DELIBERATELY NOT A THIRD COLOUR AXIS.
+//
+// The cell fill already carries TWO blended colour axes: probability (hue picks
+// the SOURCE — purple for the note's own, orange for the clip default — and
+// lightness carries the magnitude) and play-every (red, dimmed by 1/N), averaged
+// together when a note has both. On a 15×13 px cell that is already at the edge
+// of legibility; a third hue mixed into the same average would produce colours
+// that alias with existing states, and "is this note 60% likely or is it a
+// play-every-3?" is exactly the confusion to avoid.
+//
+// It is also the wrong CHANNEL. The other two both answer "will this note
+// sound?" — a presence question, which brightness encodes naturally. Pitch
+// instability answers "at what pitch?" — a POSITION question, on a grid whose
+// whole vertical axis already means pitch. Encoding it as fill would be a
+// category error on top of an unreadable one.
+//
+// So it gets a pure SHAPE channel instead: a DASHED cell border. That survives
+// every fill colour (the border is its own dark stroke), is instantly readable
+// as "this note's pitch is not fixed", costs nothing when absent, and is
+// deliberately BINARY — the magnitude lives in the cell tooltip and the menu's
+// checked row, because no useful magnitude can be read from 13 px anyway.
+// (Precedent: the automation teal dot is likewise a non-fill marker.) ──
+
+/** Whether a note cell should render the PITCH-INSTABILITY marker (the dashed
+ *  border) — true iff a note covers (step, midi) AND carries `pitchProb` > 0.
+ *  PURE. */
+export function noteCellPitchUnstable(
+  clip: NoteClipRecord,
+  step: number,
+  midi: number,
+): boolean {
+  const ev = noteCovering(clip, step, midi);
+  return !!ev && notePitchProbEff(ev) > 0;
+}
+
+/** The note cell's PITCH-INSTABILITY as a 0..1 value (0 = none / empty cell) —
+ *  what the cell's tooltip prints. PURE. */
+export function noteCellPitchProb(clip: NoteClipRecord, step: number, midi: number): number {
+  return notePitchProbEff(noteCovering(clip, step, midi));
 }

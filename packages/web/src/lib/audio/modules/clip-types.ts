@@ -181,6 +181,9 @@ export interface NoteEvent {
   prob?: number; // 0..1 own firing probability; UNSET ⇒ follow the clip default (else 1)
   playEvery?: number; // 1..8 count-divider; UNSET/1 ⇒ every loop. STACKS with prob:
   // the note fires iff it's this loop's turn AND it wins its probability roll.
+  pitchProb?: number; // 0..1 PITCH INSTABILITY; UNSET/0 ⇒ the authored pitch, exactly.
+  // Orthogonal to `prob`/`playEvery`: those decide WHETHER the note fires, this
+  // decides WHAT PITCH it fires at. See $lib/audio/pitch-probability.
 }
 
 export interface ClipBase {
@@ -969,6 +972,14 @@ export function coerceNoteEvent(raw: unknown): NoteEvent | null {
   if (typeof r.playEvery === 'number' && Number.isFinite(r.playEvery)) {
     const n = coercePlayEvery(r.playEvery);
     if (n > PLAY_EVERY_DEFAULT) ev.playEvery = n;
+  }
+  // PITCH PROBABILITY (pitch instability, 0..1). 0 (or unset/invalid) is the
+  // default — the authored pitch, exactly — and is NOT stored, so a legacy clip
+  // and a note reset to off round-trip byte-identical (mirrors playEvery's and
+  // defaultProb's delete-at-default).
+  if (typeof r.pitchProb === 'number' && Number.isFinite(r.pitchProb)) {
+    const p = coercePitchProb(r.pitchProb);
+    if (p > 0) ev.pitchProb = p;
   }
   return ev;
 }
@@ -2067,6 +2078,72 @@ export function setNotePlayEvery(
       return rest as NoteEvent;
     }
     return { ...e, playEvery: n };
+  });
+  return { ...clip, steps };
+}
+
+// ---------------------------------------------------------------------------
+// PER-NOTE PITCH PROBABILITY (owner-spec'd — the THIRD per-note control, next to
+// PROBABILITY and PLAY EVERY). Each note carries an optional `pitchProb` 0..1:
+// its PITCH INSTABILITY. It is ORTHOGONAL to the other two, which decide WHETHER
+// a note fires; this decides WHAT PITCH it fires at once it has:
+//   0        the authored pitch, EXACTLY, always (the default — key not stored);
+//   rising   ornamentation → melodic variation → reharmonisation → atonality.
+// The model (a weighted candidate distribution over scale degrees, with a
+// Laplacian distance term, privileged octave/fifth peaks and a gradually-rising
+// out-of-scale weight) lives in $lib/audio/pitch-probability — a PURE module
+// with no engine/UI imports. This file owns only the STORAGE + write seam, which
+// is exactly the shape of the two controls beside it.
+//
+// The UI quantizes to 40 increments (PITCH_PROB_LEVELS there, the same 2.5% grid
+// as PROB_STEP here); storage keeps the raw 0..1 float, clamped in
+// coerceNoteEvent. node.data only → NO PortDef/ParamDef, schema-version,
+// contract-lock or attest churn.
+// ---------------------------------------------------------------------------
+/** Clamp a raw pitch-instability to 0..1; non-finite ⇒ 0 (off). PURE. */
+export function coercePitchProb(v: unknown): number {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.min(1, n));
+}
+/** A note's EFFECTIVE pitch instability: its own `pitchProb` clamped to 0..1,
+ *  else 0 (the authored pitch). There is deliberately NO clip-level default —
+ *  unlike firing probability, an unset note here means "don't touch this pitch",
+ *  which is the only safe reading of a legacy clip. PURE. */
+export function notePitchProbEff(ev: { pitchProb?: number } | undefined): number {
+  return coercePitchProb(ev?.pitchProb);
+}
+/** True when ANY note in the clip carries pitch instability — the cheap guard
+ *  the scheduler uses to skip the whole mechanism for an untouched clip. PURE. */
+export function clipHasPitchProb(clip: NoteClipRecord | null | undefined): boolean {
+  if (!clip || clip.kind !== 'note') return false;
+  for (const e of clip.steps) if (notePitchProbEff(e) > 0) return true;
+  return false;
+}
+/**
+ * Set the PITCH PROBABILITY of the note COVERING (step, midi) — the ONE write
+ * seam (card menu today; a hardware surface later — the owner: "we'll add this
+ * to the physical controls later"). Mirrors `setNotePlayEvery`: pure, returns a
+ * NEW clip, NEVER creates a note (a press on an empty cell is a no-op → the SAME
+ * reference so the caller can skip the write), and a value of 0 (the default)
+ * DELETES the key so a note reset to off round-trips byte-identical.
+ */
+export function setNotePitchProb(
+  clip: NoteClipRecord,
+  step: number,
+  midi: number,
+  pitchProb: number,
+): NoteClipRecord {
+  const cov = noteCovering(clip, step, midi);
+  if (!cov) return clip; // no note here → no-op (never create)
+  const p = coercePitchProb(pitchProb);
+  const steps = clip.steps.map((e) => {
+    if (e.step !== cov.step || e.midi !== cov.midi) return e;
+    if (p <= 0) {
+      const { pitchProb: _drop, ...rest } = e;
+      return rest as NoteEvent;
+    }
+    return { ...e, pitchProb: p };
   });
   return { ...clip, steps };
 }
