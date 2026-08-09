@@ -92,8 +92,16 @@ const FULL_MATCH = [
 //     of every committed dock baseline at threshold 1/255 AND at the 26/255 the
 //     gate applies. The instrument that measured the below-fold blindness, and
 //     the one that tells a stale-but-passing baseline from an identical one.
+//   * vrt-face-audio-probe.spec.ts — is the AUDIO GRAPH running under a curated
+//     face scene, and does the compact tile settle? Prints, per module, an
+//     AnalyserNode's peak + frame-to-frame motion on the module's own audio
+//     output alongside three consecutive tile captures, RUNNING and then
+//     FROZEN. `moving > 0` is the free-running condition measured at its cause;
+//     the paired capture diffs are the pixel consequence. `PROBE_FACES=<types>`
+//     points it at modules outside the FACES roster.
 const PROBE_MATCH = [
   'vrt-surface-probe.spec.ts',
+  'vrt-face-audio-probe.spec.ts',
   'vrt-frame-stability.spec.ts',
   'vrt-geom-probe.spec.ts',
   'vrt-fold-probe.spec.ts',

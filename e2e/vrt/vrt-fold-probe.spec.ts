@@ -116,10 +116,15 @@ const BASELINE_DIR = join(
 test('exact diff of every committed dock baseline', async ({ page }) => {
   test.setTimeout(FACES.length * 25_000);
   const legacy = process.env.AUDIT_LEGACY === '1';
+  // `AUDIT_NO_FREEZE=1` runs the SAME instrument with `bootWithFace`'s audio
+  // freeze off — the audit's second control, matching the compact sibling in
+  // vrt-face-audio-probe. It separates "the freeze moved this pixel" from "the
+  // baseline had already drifted", which print identically otherwise.
+  const noFreeze = process.env.AUDIT_NO_FREEZE === '1';
   const rows: string[] = [];
   for (const { type, pages } of FACES) {
     await page.setViewportSize(legacy ? LEGACY_FOLD_VIEWPORT : FOLD_VIEWPORT);
-    const memberId = await bootWithFace(page, type);
+    const memberId = await bootWithFace(page, type, { freezeAudio: !noFreeze });
     await frameMember(page, memberId, 0.7, 'full');
     const faceplate = await openDock(page, memberId, pages);
     if (!legacy) await unfoldDockPane(page);
@@ -154,7 +159,8 @@ test('exact diff of every committed dock baseline', async ({ page }) => {
   }
   // eslint-disable-next-line no-console
   console.log(
-    `[audit] ========= ${legacy ? 'LEGACY (pre-unfold)' : 'CURRENT'} SCENE vs COMMITTED BASELINES =========\n` +
+    `[audit] ========= ${legacy ? 'LEGACY (pre-unfold)' : 'CURRENT'} SCENE ` +
+      `(${noFreeze ? 'AUDIO RUNNING — the control' : 'AUDIO FROZEN'}) vs COMMITTED BASELINES =========\n` +
       rows.join('\n'),
   );
 });
