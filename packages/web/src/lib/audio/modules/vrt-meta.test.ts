@@ -78,6 +78,15 @@ describe('VRT coverage self-test', () => {
   // Force-import the registration barrels so the registries are
   // populated. The web app's UI does this on first page load; in the
   // vitest pass we have to import them explicitly.
+  // EXPLICIT TIMEOUT, measured. This is the first test to pull the three module
+  // barrels, so it alone pays the whole registry-population cost: 1.48 s in
+  // isolation, against vitest's 5 s DEFAULT. That is only ~3.4x headroom, and
+  // the unit lane runs ~2.5x slower under parallel load (CLAUDE.md), which puts
+  // the worst case within noise of the budget — it went red exactly once in a
+  // full-suite run here and passed alone and in two re-runs, the signature of a
+  // budget race rather than a hang. 30 s still BOUNDS a genuine hang (20x the
+  // measured cost) while removing the false failure. The later tests in this
+  // file re-import the same barrels from cache and cost nothing.
   it('imports module barrels so registries are populated', async () => {
     await import('$lib/audio/modules');
     await import('$lib/video/modules');
@@ -85,7 +94,7 @@ describe('VRT coverage self-test', () => {
     const total =
       listModuleDefs().length + listVideoModuleDefs().length + listMetaModuleDefs().length;
     expect(total, 'at least one module is registered').toBeGreaterThan(0);
-  });
+  }, 30_000);
 
   it('every registered module is covered by VRT or exempt with a reason', async () => {
     await import('$lib/audio/modules');

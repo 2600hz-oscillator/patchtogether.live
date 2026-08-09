@@ -112,6 +112,24 @@ way while triaging in a hurry.
   destroyed agents, only the one that had run `git stash` was recoverable — via
   a dangling commit, anchored with `git branch <name> <sha>` before gc.
 
+> ### ⚠ …BUT NEVER `git stash` AS WORKFLOW — THE STACK IS SHARED REPO-WIDE
+>
+> `git stash` is ONE stack in the common git dir. Worktrees isolate the index
+> and working tree; they do **not** isolate the stash. With N concurrent agents
+> there is a single stack between them and `stash@{0}` means *"most recent by
+> anyone"*.
+>
+> Measured 2026-08-08: an agent's `git stash pop` grabbed **another agent's**
+> entry — one already labelled *"accidentally popped into another worktree"*, so
+> it was the **second** occurrence. That run got lucky: the pop conflicted, so
+> it reset cleanly. A clean apply would have silently transplanted one agent's
+> work onto another's branch.
+>
+> **Put "never `git stash` — commit a WIP instead" in every brief.** A WIP
+> commit is per-branch, therefore actually isolated, and RULE 5 already requires
+> it. If a stash is unavoidable, pin the entry by message, never by index.
+> Stash's role here is *recovery* (above), never workflow.
+
 ## RULE 5 — Make agents commit early inside their worktree
 
 Three of four destroyed agents were sitting on **hours** of uncommitted work.

@@ -17,8 +17,8 @@ test.describe.configure({ mode: 'parallel' });
 test('topbar: removed Save/Load/Save Perf/Load Perf buttons are gone', async ({ page, rack }) => {
   const header = page.locator('header');
 
-  // REMOVED — manual patch Save/Load (exact, so "Load Perf (.zip)" /
-  // "Load example…" don't false-match).
+  // REMOVED — manual patch Save/Load (exact, so "Load Perf (.zip)" does not
+  // false-match).
   await expect(header.getByRole('button', { name: 'Save', exact: true })).toHaveCount(0);
   await expect(header.getByRole('button', { name: 'Load', exact: true })).toHaveCount(0);
   // REMOVED — browser-slot performance.

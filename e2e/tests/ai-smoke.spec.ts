@@ -5,7 +5,7 @@
 // it clearly. Failures dump captured console + screenshot path so the agent
 // can read the diagnostic without separate steps.
 
-import { test, expect } from './_fixtures';
+import { test, expect, loadVoiceDemo } from './_fixtures';
 import { captureConsole, formatConsole } from './helpers';
 import { spawnPatch } from './_helpers';
 
@@ -41,14 +41,18 @@ test.describe('AI smoke check', () => {
     expect(isolated, 'crossOriginIsolated must be true').toBe(true);
   });
 
-  test('canvas: topbar + Load example dropdown render', async ({ page, rack }) => {
+  test('canvas: topbar renders its controls', async ({ page, rack }) => {
     const cc = captureConsole(page);
 
     const h1 = page.locator('h1', { hasText: 'patchtogether' });
     await expect(h1, 'topbar h1 missing').toBeVisible();
 
-    const spawnBtn = page.getByTestId('load-example-select');
-    await expect(spawnBtn, 'Load example dropdown missing').toBeVisible();
+    // The shell's own controls. (This used to assert the "Load example…"
+    // dropdown; that control was deleted with the example patches, so the
+    // shell check moved to two controls that are actually part of the rack
+    // UI — the preset-slot bar and the Raw JSON action menu.)
+    await expect(page.getByTestId('preset-slot-bar'), 'preset slot bar missing').toBeVisible();
+    await expect(page.getByTestId('raw-json-select'), 'Raw JSON menu missing').toBeVisible();
 
     const errors = cc.pageErrors.length + cc.errors.length;
     if (errors > 0) {
@@ -73,16 +77,16 @@ test.describe('AI smoke check', () => {
     expect(href, `sign-in link href: ${href}`).toMatch(/^\/(dashboard|sign-in)/);
   });
 
-  test('canvas: Load example creates 5 Svelte Flow nodes @smoke', async ({ page, rack }) => {
-    await page.getByTestId('load-example-select').selectOption('sequenced-vco');
+  test('canvas: the voice demo creates 5 Svelte Flow nodes @smoke', async ({ page, rack }) => {
+    await loadVoiceDemo(page);
     const nodes = page.locator('.svelte-flow__node');
-    await expect(nodes, 'expected 5 module-card nodes after Load example').toHaveCount(5, {
+    await expect(nodes, 'expected 5 module-card nodes after the voice demo').toHaveCount(5, {
       timeout: 10_000,
     });
   });
 
   test('canvas: spawned nodes are VISUALLY rendered (non-zero bounding rect)', async ({ page, rack }) => {
-    await page.getByTestId('load-example-select').selectOption('sequenced-vco');
+    await loadVoiceDemo(page);
     await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
 
     // Bounding rects: cards must be visible on screen (width × height > 0
@@ -111,7 +115,7 @@ test.describe('AI smoke check', () => {
   });
 
   test('fader: dragging visibly moves the thumb (motorized state reflection)', async ({ page, rack }) => {
-    await page.getByTestId('load-example-select').selectOption('sequenced-vco');
+    await loadVoiceDemo(page);
     await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
 
     // First fader on the Analog VCO card = TUNE.
@@ -286,7 +290,7 @@ test.describe('AI smoke check', () => {
   });
 
   test('clear: Clear button removes all nodes + edges from patch + DOM', async ({ page, rack }) => {
-    await page.getByTestId('load-example-select').selectOption('sequenced-vco');
+    await loadVoiceDemo(page);
     await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
     // A stereo LEG GROUP renders as ONE bezier (PR-4): the demo's
     // `vd-vca.audio → vd-out.L` + `→ R` pair is 2 edges and 1 cable, so 6
@@ -304,7 +308,7 @@ test.describe('AI smoke check', () => {
   });
 
   test('node-drag: dragging a card persists position back to the patch graph', async ({ page, rack }) => {
-    await page.getByTestId('load-example-select').selectOption('sequenced-vco');
+    await loadVoiceDemo(page);
     await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
 
     const vco = page.locator('.svelte-flow__node-analogVco');
@@ -334,7 +338,7 @@ test.describe('AI smoke check', () => {
 
   test('canvas: spawned patch produces audio (peak meter > 0) @smoke', async ({ page, rack }) => {
     const cc = captureConsole(page);
-    await page.getByTestId('load-example-select').selectOption('sequenced-vco');
+    await loadVoiceDemo(page);
 
     await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
 
