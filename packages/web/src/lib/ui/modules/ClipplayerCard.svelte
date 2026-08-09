@@ -617,10 +617,21 @@
   let keyboardActive = $derived(focusWithin);
   /** Click anywhere on the card (that isn't an editable control) grabs focus so
    *  1..8 activate — but clicking a rename box / colour swatch / rate <select>
-   *  keeps ITS focus so typing/picking still works. */
+   *  keeps ITS focus so typing/picking still works.
+   *
+   *  `preventScroll` is LOAD-BEARING, not a micro-optimisation. A bare
+   *  `focus()` asks the browser to scroll the focused element into view, and in
+   *  the DOCK FULL-VIEW pane the card (540px) is taller than its scrollport
+   *  (`.faceplate-scroll`, ~352px), so the browser scrolls the pane by the
+   *  card's offset inside it — MEASURED 62px, which is EXACTLY two grid rows
+   *  (28px pad + 3px gap). The grid slid up two rows BETWEEN the two clicks of
+   *  a double-click, so click 2 landed two rows below click 1: "double-click
+   *  the pattern in row 1, end up in a new clip in row 3" (owner report). The
+   *  element is under the pointer by construction — a click can never need to
+   *  scroll it into view. Guarded by clipplayer-grid-stability.spec.ts. */
   function onCardClick(e: MouseEvent) {
     if (isEditableTarget(e.target) || isEditableTarget(document.activeElement)) return;
-    cardEl?.focus();
+    cardEl?.focus({ preventScroll: true });
   }
 
   function releaseShiftForce() {
