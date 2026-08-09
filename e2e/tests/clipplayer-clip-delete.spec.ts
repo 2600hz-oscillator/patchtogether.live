@@ -77,9 +77,13 @@ test('right-click a loaded pad → Delete clip removes it; ↶ brings it back wi
   const del = page.getByTestId('clipplayer-clip-delete-cp');
   await expect(del).toBeVisible();
   await expect(del, 'Delete targets the RIGHT-CLICKED pad, not the selected editor clip').toHaveAttribute(
-    'data-clip',
+    'data-clip-idx',
     '0',
   );
+  // The menu row must NOT also answer to `[data-clip="0"]` — that is the grid
+  // PAD selector, and a second match would make every existing pad locator
+  // ambiguous while the menu is open.
+  await expect(page.locator('[data-clip="0"]'), 'exactly one [data-clip="0"] with the menu open').toHaveCount(1);
 
   await del.click();
   await expect(menu, 'picking Delete closes the menu').toHaveCount(0);

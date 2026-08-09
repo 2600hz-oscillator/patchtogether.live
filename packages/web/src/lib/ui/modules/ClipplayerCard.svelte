@@ -2004,13 +2004,16 @@
                      the probability list and tinted red. No confirm: the write
                      is undoable through the card's own ↶ (see deleteClipAt).
                      Never reachable on an EMPTY pad — the menu doesn't open
-                     there at all. -->
+                     there at all. The index is exposed as `data-clip-idx`, NOT
+                     `data-clip`: the latter is the grid PAD selector, and a
+                     second match for it while the menu is open would make every
+                     existing `[data-clip="n"]` locator ambiguous. -->
                 <div class="prob-menu-sep" role="separator"></div>
                 <button
                   class="prob-menu-item danger"
                   role="menuitem"
                   title="Delete this clip (and its recorded automation). Undo with ↶."
-                  data-clip={clipProbMenu.idx}
+                  data-clip-idx={clipProbMenu.idx}
                   data-testid={`clipplayer-clip-delete-${id}`}
                   onclick={() => deleteClipAt(clipProbMenu!.idx)}
                 >Delete clip</button>
