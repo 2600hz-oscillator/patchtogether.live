@@ -72,6 +72,21 @@ import {
   kickdrumTailMs,
 } from '$lib/ui/modules/kickdrum-face-model';
 import {
+  MACRO_LOUDEST_NAME,
+  fmtMacroDb,
+  fmtMacroDbfs,
+  macroAliasText,
+  macroAuxOffsetDb,
+  macroAuxText,
+  macroFaceParams,
+  macroHarmonicsText,
+  macroLevelVsLoudestDb,
+  macroMorphText,
+  macroOutLevelDb,
+  macroStrikeText,
+  macroTimbreText,
+} from '$lib/ui/modules/macrooscillator-face-model';
+import {
   meowboxCombNullText,
   meowboxFormantsText,
   meowboxParams,
@@ -132,6 +147,34 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
   },
   'analogvco-pw-authority': (read) => `${Math.round(vcoPwAuthority(vcoFaceParams(read)) * 100)} %`,
   'analogvco-alias-harmonic': (read) => `h${vcoFirstAliasedHarmonic(vcoFaceParams(read))}`,
+
+  // ── MACROOSCILLATOR ──────────────────────────────────────────────────────
+  // NINE derived values, and the reason is one sentence: three of this
+  // module's six dials mean something DIFFERENT in each of fourteen engines,
+  // so a `paramId` readout prints a number that is correct in all fourteen
+  // states and informative in none. Six of the nine are a function of `model`
+  // AND the dial; three are a function of `model` alone and MUST NOT move when
+  // the dial they sit beside moves — which is the assertion, not an accident.
+  //
+  // ⚠ FOUR OF THEM REPORT A DEFECT (WAVETABLE's dead morph half, GRANULAR's
+  // 3-position morph, MODAL's inverted timbre, the 76.6 dB level spread). Those
+  // are worklet arithmetic and their fixes are separate owner-audition PRs; the
+  // face's job is to refuse to paint a dead control as a working one. Every
+  // claim is re-derived from `macrooscillatorMath` in the model test, so a DSP
+  // FIX turns the stale claim RED rather than letting the faceplate keep
+  // insisting a control is broken after it has been repaired.
+  'macro-harmonics-here': (read) => macroHarmonicsText(macroFaceParams(read)),
+  'macro-timbre-here': (read) => macroTimbreText(macroFaceParams(read)),
+  'macro-morph-here': (read) => macroMorphText(macroFaceParams(read)),
+  'macro-aux-tap': (read) => macroAuxText(macroFaceParams(read)),
+  'macro-out-level': (read) => fmtMacroDbfs(macroOutLevelDb(macroFaceParams(read))),
+  'macro-level-gap': (read) => {
+    const d = macroLevelVsLoudestDb(macroFaceParams(read));
+    return d >= -0.05 ? 'the loudest engine' : `${fmtMacroDb(d)} vs ${MACRO_LOUDEST_NAME}`;
+  },
+  'macro-aux-offset': (read) => fmtMacroDb(macroAuxOffsetDb(macroFaceParams(read))),
+  'macro-strike-need': (read) => macroStrikeText(macroFaceParams(read)),
+  'macro-alias': (read) => macroAliasText(macroFaceParams(read)),
 
   // ── CLAP ─────────────────────────────────────────────────────────────────
   // Three envelope figures + the band-pass pair. NONE is a knob read back:

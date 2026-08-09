@@ -29,6 +29,7 @@ import { fileURLToPath } from 'node:url';
 import { adsrDef } from '$lib/audio/modules/adsr';
 import { backdraftDef } from '$lib/video/modules/backdraft';
 import { delayDef } from '$lib/audio/modules/delay';
+import { macrooscillatorDef } from '$lib/audio/modules/macrooscillator';
 import { filterDef } from '$lib/audio/modules/filter';
 import { meowboxDef } from '$lib/audio/modules/meowbox';
 import { ringbackDef } from '$lib/audio/modules/ringback';
@@ -86,6 +87,16 @@ import type { ParamDef } from '$lib/graph/types';
  *    Its `engineFreeze` is the format case again: the def declares a
  *    LIVE/FREEZE formatter, and an unbound card would print `0.00`/`1.00`
  *    on a control whose whole job is to say which state you are in.
+ *  - MacrooscillatorCard: converted with the macrooscillator face promotion
+ *    (binds via paramSpec). Six params × five props, all of which AGREED with
+ *    the def — the card even imported the def and carried its own
+ *    `defaultFor()` helper while re-typing all thirty numbers beside it. The
+ *    interesting half is the `model` fader: it re-typed `max` from a LOCAL
+ *    `MODEL_NAMES.length - 1`, so "how many engines are there" had a second
+ *    answer living in the card, and adding a fifteenth engine to the def would
+ *    have left this fader unable to select it. The array is gone (see
+ *    macro-engine-roster) and `max` now comes from the def like everything
+ *    else.
  *  - MeowboxCard: converted with the meowbox face (2026-08-08). Range- but NOT
  *    mapping-bound, and the split is deliberate rather than half-done. Its 12
  *    range numbers and 4 curves are bound; its `units` are NOT, because the def
@@ -100,6 +111,7 @@ const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }
   'AdsrCard.svelte': adsrDef,
   'BackdraftCard.svelte': backdraftDef,
   'DelayCard.svelte': delayDef,
+  'MacrooscillatorCard.svelte': macrooscillatorDef,
   'FilterCard.svelte': filterDef,
   'MeowboxCard.svelte': meowboxDef,
   'RingbackCard.svelte': ringbackDef,
@@ -116,6 +128,7 @@ const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }
 const MAPPING_BOUND_CARDS: readonly string[] = [
   'AdsrCard.svelte',
   'DelayCard.svelte',
+  'MacrooscillatorCard.svelte',
   'FilterCard.svelte',
   'RingbackCard.svelte',
   'SnaredrumCard.svelte',
@@ -133,6 +146,22 @@ const MAPPING_BOUND_CARDS: readonly string[] = [
 // card of slack in each, and the next card to fall back out of the set is
 // absorbed in silence rather than reddening this test. Whenever this file
 // merges, RE-DERIVE the floors from the lists; never inherit the literal.
+//
+// ⚠ IT HAS NOW FIRED FOR REAL, TWICE IN ONE WAVE, exactly as written above.
+// The 2026-08-09 face wave ran four sibling branches off a shared base of 7/6.
+// On BOTH the filter merge and the macrooscillator merge, main and the branch
+// had each written `8` from `7` on the SAME line, so git auto-merged the
+// literal with no conflict while the merged LISTS held 9 entries. One full card
+// of slack, delivered silently, from a clean merge.
+//
+// Two things make that worth more than a warning. First, `MAPPING_BOUND_FLOOR`
+// conflicted only by luck of line ordering — do not treat a conflict on one as
+// evidence about the other. Second, and this is the general shape: the hazard
+// is that the floor is a COPY of a fact the file already contains. Counting
+// `Object.keys(RANGE_BOUND_CARDS).length` would make it unforgeable, but it
+// would also make the ratchet vacuous (it can never fail, because it is derived
+// from the thing it checks). So the literal stays, and the discipline is: after
+// ANY merge of this file, count the entries and write that number.
 const RANGE_BOUND_FLOOR = 9;
 const MAPPING_BOUND_FLOOR = 7;
 

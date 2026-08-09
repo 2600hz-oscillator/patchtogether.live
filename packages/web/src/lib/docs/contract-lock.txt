@@ -1603,7 +1603,7 @@ macrooscillator in morph_cv cv param=morph cvScale=linear
 macrooscillator in note_cv cv param=note cvScale=linear
 macrooscillator in pitch pitch
 macrooscillator in timb_cv cv param=timbre cvScale=linear
-macrooscillator in trig gate
+macrooscillator in trig gate edge=trigger
 macrooscillator out aux audio
 macrooscillator out out audio
 macrooscillator param harmonics 0..1 linear default=0.3
@@ -1612,7 +1612,8 @@ macrooscillator param model 0..13 discrete default=0
 macrooscillator param morph 0..1 linear default=0.5
 macrooscillator param note -60..60 linear default=0 unit=st
 macrooscillator param timbre 0..1 linear default=0.3
-macrooscillator family macro-model-name kind=other prefix=macro-model-name
+macrooscillator family macro-hero kind=cell prefix=macro-hero
+macrooscillator family macro-strike kind=other prefix=macro-strike
 macseq meta domain=audio exposesSequence
 macseq in clock gate
 macseq in next_cv gate

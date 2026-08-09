@@ -38,6 +38,7 @@ import AnalogVcoHeroPanel from '$lib/ui/modules/AnalogVcoHeroPanel.svelte';
 import BlueboxToneBankPanel from '$lib/ui/modules/BlueboxToneBankPanel.svelte';
 import ClapHeroPanel from '$lib/ui/modules/ClapHeroPanel.svelte';
 import KickdrumHeroPanel from '$lib/ui/modules/KickdrumHeroPanel.svelte';
+import MacrooscillatorHeroPanel from '$lib/ui/modules/MacrooscillatorHeroPanel.svelte';
 import PentemelodicaVoicesPanel from '$lib/ui/modules/PentemelodicaVoicesPanel.svelte';
 import type { FaceControl } from './curated-face';
 import {
@@ -472,6 +473,59 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
       // string that was never plucked, and the sweep asserted only that the
       // button was enabled. `delivered` is precisely the boolean being thrown
       // away (face-redo ledger defect #22).
+      probe: { effect: { kind: 'audition', seam: 'manual-strike' } },
+    },
+  },
+  macrooscillator: {
+    // THE HERO PICTURE — a short window of the CURRENT engine at the CURRENT
+    // macros, OUT solid and AUX a ghost at ONE shared gain, computed from the
+    // live knobs through the module's own pure-math mirror.
+    //
+    // ⚠ A PANEL RATHER THAN THE GLYPH, for a reason specific to this module.
+    // The `scope` glyph is an analyser on `out`, and `out` is SILENT on five of
+    // the fourteen engines with nothing patched into TRIG — plus it can never
+    // show AUX, which is where half this module's confusion lives. The glyph
+    // stays exactly right at mini/compact (a live trace of a running voice);
+    // `face.hero.cell` suppresses it at the dock, where the derived picture
+    // says strictly more.
+    'macro-hero-{n}': {
+      kind: 'panel',
+      label: 'engine · out + aux',
+      component: MacrooscillatorHeroPanel,
+      minWidth: 380,
+      // A `text` probe on a DIFFERENT element: the vertical scale is a PRIVATE
+      // view setting in component state, so there is no node.data key to watch.
+      // The button drives the caption (which prints the display gain), and a
+      // dead button cannot change it.
+      probe: {
+        testid: 'macro-hero-scale',
+        action: 'click',
+        effect: { kind: 'text', testid: 'macro-hero-caption', expect: 'changed' },
+      },
+    },
+    // THE AUDITION. Five of the fourteen engines initialise their excitation or
+    // envelopes to ZERO (STRING/KICK/SNARE/HIHAT) or decay unconditionally and
+    // never restart (FM 6OP), so with nothing patched into TRIG they are not
+    // quiet, they are SILENT — and the dock offered six controls over a module
+    // more than a third of which could not be sounded.
+    //
+    // Fires the SAME host-side trigger source the legacy card's button fires
+    // (manual-strike-actions → the factory's `manualTrigger` read key), so
+    // there is one implementation, not two. It takes the nodeId and not the
+    // `env` handle: `fireManualStrike` resolves the live engine itself through
+    // `getActiveEngine()`, which is what lets a Svelte card with no
+    // ShellCellEnv share it.
+    'macro-strike-{n}': {
+      kind: 'action',
+      label: 'strike',
+      title:
+        'Audition: strike the engine once (identical to a TRIG rising edge). Five of the fourteen engines are silent until something strikes them.',
+      onFire: (nodeId) => { fireManualStrike(nodeId); },
+      // REQUIRED. An audition writes nothing to the graph, so `readParam` /
+      // `readData` are structurally blind to it — the observable is the
+      // audition ledger, which records per press whether the seam resolved a
+      // callable off the live engine handle AND called it. `toBeEnabled()` +
+      // `click()` pass on a dead button; this does not.
       probe: { effect: { kind: 'audition', seam: 'manual-strike' } },
     },
   },

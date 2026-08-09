@@ -1,3 +1,48 @@
+# FACE SPEC — `macrooscillator` (batch 3) — **BUILT 2026-08-09, SCOPED DOWN**
+
+> ✅ **SHIPPED as a FACE ONLY (`face/macrooscillator`). The §2 PARTIAL REWRITE was
+> NOT built, and will not be built this way.** Read this banner before anything below.
+>
+> **What shipped:** the face (3 bands, hero picture, STRIKE audition, signal-flow +
+> presets + readouts sidebar, 9 derived readouts, `scope` glyph), `ParamDef.options`
+> on `model`, `edge: 'trigger'` on `trig`, the `macro-engine-roster` de-duplication,
+> and the card bound through `paramSpec`.
+>
+> **What did NOT ship, and why:**
+> - **§2's three new params + the strike gate.** §2.3 is UNBUILDABLE as specified —
+>   presence detection over `inputs[1].length` cannot work once anything connects a
+>   keep-alive to that input, and the audition this face needs does exactly that
+>   (the `sixstrum` failure in-tree). It is also a DSP change, so INDEX rule 5
+>   applies regardless. The audition is the saved-rack-neutral answer to "five
+>   engines are silent unpatched"; a presence-sensing design needs a different
+>   mechanism than an input channel count.
+> - **§6's `engine-roster` custom sidebar** — the generic `presets` block does it
+>   better, and `ParamDef.options` already names all fourteen in the MODEL selector.
+> - **§8.1's widened `FaceReadoutValue`** — still params-only; nothing on this face
+>   needed it, because every readout here is a function of `model` + a param.
+>
+> **Corrections to the measurements below, all re-derived on `main`:**
+> - **§3/§5-A's "HARMONICS is a quantiser in FIVE engines" is WRONG — it is FOUR.**
+>   WAVETABLE is a genuine BLEND (41/41 distinct renders over a sweep), not an
+>   8-bucket quantiser. FM 2OP 8, CHORD 8, MODAL 4, SPEECH 6.
+> - **§7-G's 75 dB spread measures 76.6 dB** (FM 2OP −5.0 dBFS … MODAL −81.6).
+> - **§7-A's MODAL numbers**: −69.6 dBFS at Q 5 → −86.6 at Q 200, first non-zero
+>   sample #11999 = 250.0 ms exactly.
+> - **GRANULAR's MORPH is a 3-POSITION SWITCH** (bounds 0.33 / 0.66). Not in this
+>   spec at all, and nothing in the repo said so before the build.
+> - `face.hint` / `face.title` are ANNOTATION-ONLY and do not paint at rest, so
+>   nothing load-bearing lives in §4's `hint`.
+>
+> The four defects (WAVETABLE dead morph half, GRANULAR 3-step morph, MODAL
+> inverted timbre, the 76.6 dB spread) are **documented on the face, not fixed** —
+> each is worklet arithmetic and its own owner-audition PR. The face's claims are
+> re-derived from `macrooscillatorMath` in `macrooscillator-face-model.test.ts`, so
+> when one of them IS fixed the stale claim goes red.
+
+---
+
+# (original spec follows)
+
 # FACE SPEC — `macrooscillator` (batch 3) — **PARTIAL REWRITE**
 
 > ⚠ **STATUS CORRECTED 2026-08-04.** PF-20 (**PR #1301**) **HAS MERGED** (`c6ff9253`) — read

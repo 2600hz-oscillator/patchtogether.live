@@ -81,6 +81,42 @@ export const FACES = [
   // processes against a fresh unmasked baseline (scripts/vrt-derive-trials.sh,
   // NOT --repeat-each): 10/10 PASS.
   { type: 'analogVco', pages: 2 },
+  // THE SECOND FREE-RUNNING VOICE, and therefore the second entry that
+  // exercises the freeze rather than being indifferent to it. Same shape as
+  // analogVco above — it sounds the instant it spawns, no gate and no note to
+  // wait for — and it carries NO mask either.
+  //
+  // ⚠ NOT REDUNDANT WITH analogVco, and the measurements say so in BOTH
+  // directions. MEASURED 2026-08-09, darwin, this tile, via
+  // vrt-face-audio-probe at the same 26/255 channel delta the gate applies,
+  // against the same effective 72 px budget (7216 px tile × 0.01):
+  //
+  //   SOURCE   port=out tapped=true peak=0.639986 moving=1.087596
+  //            (`moving > 0` IS the free-running condition, read at the
+  //             AnalyserNode rather than inferred from pixels)
+  //   frozen pre-frame (SHIPPING)    0 px within-run (d12=0, d23=0) AND
+  //                                  0 px across two INDEPENDENT boots
+  //   AUDIT_NO_FREEZE=1              78 / 230 / 103 / 146 px over FOUR
+  //                                  independent runs — every one of them
+  //                                  entirely inside the glyph box
+  //                                  (x53-82, y38-46), 3 of 4 over budget
+  //   PROBE_FREEZE_LATE=1            0 / 0 / 192 / 173 px over four boot pairs
+  //
+  // ⚠ READ THE LAST ROW CAREFULLY, BECAUSE IT IS THE INTERESTING ONE. A
+  // late-ordered freeze on THIS module is INTERMITTENT — it lands on the same
+  // saw phase about half the time — where analogVco caught the same
+  // mis-ordering at a hard, repeatable 337 px. So macrooscillator alone would
+  // turn an ordering regression into a FLAKE, and analogVco alone cannot
+  // notice that the failure mode is module-dependent at all. Keep both: they
+  // are complementary witnesses, not a duplicate pair.
+  //
+  // ⚠ AND WHAT WOULD SILENTLY RETIRE THIS ENTRY: nine of the fourteen engines
+  // free-run and five are SILENT until struck, so whether this scene exercises
+  // the freeze at all depends on `model`, which is 0 (VA) at the def default.
+  // Move that default onto a struck engine and this tile starts reading zeros
+  // like the other twenty-one, with every gate still green. Re-run the probe
+  // to re-establish it; never infer it from a passing scene.
+  { type: 'macrooscillator', pages: 3 },
   // ⚠ 8 bands trips DOCK_TAB_MIN_BANDS: this face renders as a TAB RAIL, by
   // design (five identical voice strips have no other shape). Do not merge it
   // back under seven.

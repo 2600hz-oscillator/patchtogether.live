@@ -1430,6 +1430,11 @@ export function buildModuleManifest(
       // KRIA step/pattern data model + step-advance / scale / cue math — not a
       // ModuleDef (the def lives in kria.ts).
       if (file === 'kria-types.ts') return false;
+      // MACROOSCILLATOR's fourteen-engine roster (names + per-engine axis
+      // shapes + measured levels) — not a ModuleDef. It sits here rather than
+      // beside the def because the def, the card, MACSEQ and the faceplate all
+      // read it and the def↔face pair would otherwise be a cycle.
+      if (file === 'macro-engine-roster.ts') return false;
       return true;
     })
     .sort((a, b) => a.file.localeCompare(b.file));

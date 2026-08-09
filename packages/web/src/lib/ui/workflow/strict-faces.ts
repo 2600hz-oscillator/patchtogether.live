@@ -115,6 +115,24 @@
 // live defects were fixed independently before it landed: the card/def bipolar
 // range disagreement (#1311) and the impossible `pw`-with-an-LFO doc (897b6515).
 //
+// FACE BATCH 3 · macrooscillator (2026-08-09) — the SECOND free-running face,
+// and the entry whose argument is that a faceplate must not paint a dead
+// control as a working one. Six dials over FOURTEEN engines, three of which
+// mean something different in each, so every readout is DERIVED from `model`
+// plus the dial rather than read back off a knob.
+//
+// FOUR of them report a DEFECT rather than a feature (WAVETABLE's morph is
+// dead over its bottom half, GRANULAR's is a 3-position switch, MODAL's timbre
+// runs backwards, OUT spans 76.6 dB across engines). All four are worklet
+// arithmetic, so they are documented rather than fixed — CLAUDE.md, and
+// batch-3 INDEX rule 5.
+//
+// ⚠ THE MEASUREMENTS ARE DELIBERATELY NOT REPEATED HERE. Every number lives in
+// `$lib/audio/modules/macro-engine-roster` and is RE-DERIVED from
+// `macrooscillatorMath` on every run by `macrooscillator-face-model.test.ts` —
+// so a copy in this comment could go stale while the gate stayed green, which
+// is the drift this repo keeps re-learning. Freeze numbers likewise live once,
+// in the FACES roster (`e2e/vrt/_shell-faces.ts`).
 // FACE BATCH 3 · bluebox (2026-08-09) — the DTMF dialer, PROMOTED from having
 // no face at all, and the entry that answers a question the batch had not had to
 // answer: WHAT DOES `face.order` MEAN ON A MODULE WHOSE TWELVE CONTROLS ARE
@@ -175,6 +193,8 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   'meowbox',
   // FACE BATCH 3 · the recovered free-running oscillator (2026-08-08).
   'analogVco',
+  // FACE BATCH 3 · the fourteen-engine macro voice (2026-08-09).
+  'macrooscillator',
   // FACE BATCH 3 · the DTMF dialer (2026-08-09) — see the header note above.
   'bluebox',
 ]);
