@@ -13,6 +13,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   getSchedulerClock,
+  peekSchedulerClock,
   __resetSchedulerClockForTests,
   SCHEDULER_TICK_MS,
 } from './scheduler-clock';
@@ -125,5 +126,67 @@ describe('scheduler-clock', () => {
     // throws when called. Either way usingWorker should be false.
     const clock = getSchedulerClock();
     expect(clock.usingWorker).toBe(false);
+  });
+
+  // -------------------------------------------------------------------------
+  // Tick-latency instrumentation (Idea 3). The recorder's own arithmetic is
+  // negative-controlled in both directions by `tick-latency.test.ts`; what THIS
+  // block proves is the WIRING — that `dispatch()` actually feeds it, and that
+  // a slow subscriber lands in `dispatch*Ms` rather than in lateness.
+  // -------------------------------------------------------------------------
+
+  it('tickStats() accumulates one sample per dispatch — the recorder is wired in', () => {
+    const clock = getSchedulerClock();
+    clock.subscribe(() => {});
+    expect(clock.tickStats().samples, 'no ticks yet').toBe(0);
+    vi.advanceTimersByTime(SCHEDULER_TICK_MS * 10);
+    expect(
+      clock.tickStats().samples,
+      'arrivals after the first (MILLISECONDS cadence, 10 ticks)',
+    ).toBe(9);
+    expect(clock.tickStats().tickMs).toBe(SCHEDULER_TICK_MS);
+  });
+
+  it('a SLOW subscriber shows up as dispatch cost, not as tick lateness', () => {
+    // The two conclusions ("someone else is hogging the main thread" vs "OUR
+    // tick work is expensive") need opposite fixes, which is the reason the
+    // histogram separates them.
+    //
+    // ⚠ Do NOT simulate the slow subscriber by advancing fake timers inside it:
+    // that re-enters the interval and recurses forever (found the hard way).
+    // The clock the recorder reads is `performance.now`, so drive that instead
+    // — arrival at 0 ms, post-dispatch read at 40 ms.
+    let n = 0;
+    const reads = [0, 40];
+    const nowSpy = vi
+      .spyOn(performance, 'now')
+      .mockImplementation(() => reads[Math.min(n++, reads.length - 1)]!);
+    try {
+      const clock = getSchedulerClock();
+      clock.subscribe(() => {});
+      vi.advanceTimersByTime(SCHEDULER_TICK_MS);
+      const s = clock.tickStats();
+      expect(s.dispatchMaxMs, 'subscriber cost (MILLISECONDS)').toBe(40);
+      expect(s.maxMs, 'tick lateness (MILLISECONDS) — the cadence was fine').toBe(0);
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
+  it('dispose() clears the histogram along with the subscribers', () => {
+    const clock = getSchedulerClock();
+    clock.subscribe(() => {});
+    vi.advanceTimersByTime(SCHEDULER_TICK_MS * 5);
+    expect(clock.tickStats().samples).toBeGreaterThan(0);
+    clock.dispose();
+    expect(clock.tickStats().samples).toBe(0);
+  });
+
+  it('peekSchedulerClock() never CONSTRUCTS the clock', () => {
+    // The health readout must not spawn the tick worker it is measuring.
+    __resetSchedulerClockForTests();
+    expect(peekSchedulerClock(), 'nothing has subscribed yet').toBeNull();
+    const clock = getSchedulerClock();
+    expect(peekSchedulerClock()).toBe(clock);
   });
 });

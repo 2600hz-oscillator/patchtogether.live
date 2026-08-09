@@ -34,6 +34,7 @@ import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import workletUrl from '@patchtogether.live/dsp/dist/clap.js?url';
 
+import { createWorkletNode } from '$lib/audio/worklet-guard';
 const PROCESSOR_NAME = 'clap';
 const loadedContexts = new WeakSet<BaseAudioContext>();
 
@@ -368,7 +369,7 @@ export const clapDef: AudioModuleDef = {
 
     // 5 audio-rate node inputs: trigger (0), accent (1), tone (2),
     // tail (3), spread (4). ONE mono output.
-    const worklet = new AudioWorkletNode(ctx, PROCESSOR_NAME, {
+    const worklet = createWorkletNode(node, ctx, PROCESSOR_NAME, {
       numberOfInputs: 5,
       numberOfOutputs: 1,
       outputChannelCount: [1],

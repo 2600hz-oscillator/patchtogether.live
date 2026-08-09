@@ -29,6 +29,7 @@ import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import workletUrl from '@patchtogether.live/dsp/dist/ninelives.js?url';
 
+import { createWorkletNode } from '$lib/audio/worklet-guard';
 const PROCESSOR_NAME = 'ninelives';
 const OUT_COUNT = 9;
 const loadedContexts = new WeakSet<BaseAudioContext>();
@@ -94,7 +95,7 @@ export const ninelivesDef: AudioModuleDef = {
       loadedContexts.add(ctx);
     }
 
-    const workletNode = new AudioWorkletNode(ctx, PROCESSOR_NAME, {
+    const workletNode = createWorkletNode(node, ctx, PROCESSOR_NAME, {
       numberOfInputs: 1,
       numberOfOutputs: OUT_COUNT,
       outputChannelCount: Array.from({ length: OUT_COUNT }, () => 1),

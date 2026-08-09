@@ -462,7 +462,8 @@ tasks:
     # discovery with an actionable error pointing back at this target.
     deps: [dsp:build, test:emit-manifest]
     cmds:
-      - npm run vrt -w {{.E2E}} -- {{.CLI_ARGS}}
+      - task: vrt:run
+        vars: { SCRIPT: vrt, ARGS: '{{.CLI_ARGS}}' }
 
   vrt:strict:
     desc: Run the deterministic VRT subset (STRICT_VRT_MODULES) — pure knob/fader cards on both platforms, no canvas masks. BLOCKING lane in `task ci`. A flake here is a real flake to fix, not tolerate (per memory `feedback_no_flake_tolerance`).
@@ -474,13 +475,52 @@ tasks:
     env:
       VRT_STRICT: '1'
     cmds:
-      - npm run vrt:strict -w {{.E2E}} -- {{.CLI_ARGS}}
+      - task: vrt:run
+        vars: { SCRIPT: 'vrt:strict', ARGS: '{{.CLI_ARGS}}' }
+
+  vrt:run:
+    internal: true
+    desc: 'Internal: run an e2e-workspace vrt script with E2E_PORT honoured.'
+    cmds:
+      - |
+        # ⚠ HONOUR E2E_PORT. `vrt.config.ts` reads ONLY `E2E_BASE_URL` and
+        # defaults to `http://localhost:5173` with `reuseExistingServer: true`,
+        # so an E2E_PORT-isolated worktree that did not set E2E_BASE_URL ran the
+        # WHOLE SWEEP against whatever was already serving 5173 — in practice the
+        # primary checkout's dev server, i.e. a DIFFERENT BRANCH. Measured
+        # 2026-08-09: a full `E2E_PORT=5251 task vrt` came back 276 passed / 1
+        # failed having never once loaded the branch under test. That is worse
+        # than useless — it is a green sweep that certifies someone else's code,
+        # and the result is indistinguishable from a real one. `e2e:one` and
+        # `vrt:one` were both fixed for exactly this; the full sweeps were not.
+        PORT="${E2E_PORT:-5173}"
+        E2E_BASE_URL="${E2E_BASE_URL:-http://localhost:$PORT}" \
+          npm run {{.SCRIPT}} -w {{.E2E}} -- {{.ARGS}}
 
   vrt:update:
     desc: Refresh VRT baselines (e2e/vrt/__screenshots__/**) LOCALLY (this platform only). Inspect the diff and commit. For cross-platform (linux + darwin) baselines, use `task vrt:commit` (CI job) instead.
     deps: [dsp:build, test:emit-manifest]
     cmds:
-      - npm run vrt:update -w {{.E2E}} -- {{.CLI_ARGS}}
+      # Same E2E_PORT hazard as `task vrt` (see `vrt:run`) — and strictly worse
+      # here, because this one WRITES: an isolated worktree that regenerated
+      # against 5173 would commit baselines captured from another branch.
+      #
+      # ⚠ `--update-snapshots=changed` lives HERE, not in e2e/package.json's
+      # `vrt:update` script, and that is not a style choice: `e2e/package.json`
+      # is a TOOLCHAIN_PIN_FILE in the WebGL attest basis
+      # (scripts/webgl-attest-lib.ts — it pins @playwright/test, the renderer
+      # version) and the basis hashes the file WHOLE. Editing one unrelated
+      # script string moved the hash 620fa1b3… → ad300c3e… and turned
+      # `webgl-attest` red, needing a trusted-machine GPU re-attest for a
+      # one-word CLI flag. Keep behaviour changes to the npm scripts out of that
+      # file. Bare `--update-snapshots` means `=all` in Playwright 1.59 and has
+      # already rewritten 22 unrelated baselines once; `=changed` is what we
+      # actually want, so it is passed BEFORE {{.CLI_ARGS}} and a caller can
+      # still override it explicitly.
+      - task: vrt:run
+        vars:
+          SCRIPT: vrt
+          ARGS: '--update-snapshots=changed {{.CLI_ARGS}}'
 
   vrt:commit:
     desc: |

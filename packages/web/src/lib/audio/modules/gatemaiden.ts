@@ -16,6 +16,7 @@ import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import workletUrl from '@patchtogether.live/dsp/dist/gatemaiden.js?url';
 
+import { createWorkletNode } from '$lib/audio/worklet-guard';
 const loadedContexts = new WeakSet<BaseAudioContext>();
 
 export const gatemaidenDef: AudioModuleDef = {
@@ -62,7 +63,7 @@ export const gatemaidenDef: AudioModuleDef = {
       loadedContexts.add(ctx);
     }
 
-    const workletNode = new AudioWorkletNode(ctx, 'gatemaiden', {
+    const workletNode = createWorkletNode(node, ctx, 'gatemaiden', {
       numberOfInputs: 1,
       numberOfOutputs: 2,
       outputChannelCount: [1, 1],

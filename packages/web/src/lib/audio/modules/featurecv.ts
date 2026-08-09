@@ -29,6 +29,7 @@ import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import workletUrl from '@patchtogether.live/dsp/dist/featurecv.js?url';
 
+import { createWorkletNode } from '$lib/audio/worklet-guard';
 // Worklet output order = output-port order. Each is a mono channel.
 const FEATURE_OUTS = ['loud', 'bright', 'punch', 'onset'] as const;
 // k-rate worklet params (gain is the input GainNode, NOT a worklet param).
@@ -131,7 +132,7 @@ export const featurecvDef: AudioModuleDef = {
     const inGain = ctx.createGain();
     inGain.gain.value = valueOf('gain');
 
-    const workletNode = new AudioWorkletNode(ctx, 'featurecv', {
+    const workletNode = createWorkletNode(node, ctx, 'featurecv', {
       numberOfInputs: 1,
       numberOfOutputs: 4,
       outputChannelCount: [1, 1, 1, 1],

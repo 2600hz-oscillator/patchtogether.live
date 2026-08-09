@@ -51,6 +51,7 @@ import type { RingSpec } from '$lib/audio/es9/es9-ring';
 import { acquireEs9Bridge, releaseEs9Bridge } from '$lib/audio/es9/bridge-owner';
 import workletUrl from '@patchtogether.live/dsp/dist/es9-bridge.js?url';
 
+import { createWorkletNode } from '$lib/audio/worklet-guard';
 const PROCESSOR_NAME = 'es9-bridge';
 const loadedContexts = new WeakSet<BaseAudioContext>();
 
@@ -318,7 +319,7 @@ export const es9Def: AudioModuleDef = {
     // One mono worklet index per jack (attenumix pattern): 16 inputs
     // (out1-8 + mix9-16), 32 outputs (in1-14 raw + spdif L/R + in1-14 cv
     // twins at index 16+n; 30/31 reserved-silent).
-    const worklet = new AudioWorkletNode(ctx, PROCESSOR_NAME, {
+    const worklet = createWorkletNode(node, ctx, PROCESSOR_NAME, {
       numberOfInputs: HW_CHANNELS,
       numberOfOutputs: 32,
       outputChannelCount: new Array<number>(32).fill(1),

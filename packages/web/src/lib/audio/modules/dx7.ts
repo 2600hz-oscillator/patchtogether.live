@@ -99,6 +99,7 @@ import { patch as livePatch } from '$lib/graph/store';
 import { mutateNode } from '$lib/graph/mutate';
 import workletUrl from '@patchtogether.live/dsp/dist/dx7.js?url';
 
+import { createWorkletNode } from '$lib/audio/worklet-guard';
 const POLL_MS = 100;
 
 // Track of which AudioContexts already have the worklet module loaded.
@@ -329,7 +330,7 @@ export const dx7Def: AudioModuleDef = {
       loadedContexts.add(ctx);
     }
 
-    const workletNode = new AudioWorkletNode(ctx, 'dx7', {
+    const workletNode = createWorkletNode(node, ctx, 'dx7', {
       // 3 inputs: poly (the 32-channel polyPitchGate cable) + pitch_cv (mono)
       // + gate (mono). Mono inputs are 1 channel each; the poly cable is
       // POLY_CHANNEL_PAIRS(16) × (pitch, gate) = 32 channels, of which this

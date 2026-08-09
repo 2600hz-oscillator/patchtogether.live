@@ -168,7 +168,7 @@ export const mixerDef: AudioModuleDef = {
   },
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
-    const f = await instantiateFaustModule(ctx, { name: 'mixer', wasmUrl, metaUrl, workletUrl });
+    const f = await instantiateFaustModule(ctx, { name: 'mixer', wasmUrl, metaUrl, workletUrl }, node);
     const merger = ctx.createChannelMerger(4);
     merger.connect(f);
     const params = f.parameters as unknown as Map<string, AudioParam>;

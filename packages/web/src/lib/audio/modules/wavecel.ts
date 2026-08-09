@@ -55,6 +55,7 @@ import {
 } from '$lib/audio/wavetable-factory-tables';
 import { drawWave3D, drawWaveScope } from './wavecel-draw';
 
+import { createWorkletNode } from '$lib/audio/worklet-guard';
 const POLL_MS = 200;
 
 const loadedContexts = new WeakSet<BaseAudioContext>();
@@ -269,7 +270,7 @@ export const wavecelDef: AudioModuleDef = {
       loadedContexts.add(ctx);
     }
 
-    const workletNode = new AudioWorkletNode(ctx, 'wavecel', {
+    const workletNode = createWorkletNode(node, ctx, 'wavecel', {
       // 7 inputs: pitch, fm, morph_cv, spread_cv, fold_cv, poly (10-channel
       // polyPitchGate at index 5), trigger (mono gate at index 6). poly STAYS at
       // 5 — the new trigger is APPENDED so #664 routing is unchanged.

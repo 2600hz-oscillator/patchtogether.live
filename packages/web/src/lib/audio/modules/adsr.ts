@@ -201,7 +201,7 @@ export const adsrDef: AudioModuleDef = {
     },
   },
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
-    const f = await instantiateFaustModule(ctx, { name: 'adsr', wasmUrl, metaUrl, workletUrl });
+    const f = await instantiateFaustModule(ctx, { name: 'adsr', wasmUrl, metaUrl, workletUrl }, node);
     const silence = ctx.createConstantSource();
     silence.offset.value = 0;
     silence.start();

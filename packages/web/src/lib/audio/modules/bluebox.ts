@@ -43,6 +43,7 @@ import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import workletUrl from '@patchtogether.live/dsp/dist/bluebox.js?url';
 
+import { createWorkletNode } from '$lib/audio/worklet-guard';
 import {
   BLUEBOX_BUTTON_NAMES,
   BLUEBOX_TONES,
@@ -164,7 +165,7 @@ export const blueboxDef: AudioModuleDef = {
     }
 
     // 12 audio-rate inputs (one per button gate). Single mono output.
-    const workletNode = new AudioWorkletNode(ctx, 'bluebox', {
+    const workletNode = createWorkletNode(node, ctx, 'bluebox', {
       numberOfInputs: BLUEBOX_BUTTON_NAMES.length,
       numberOfOutputs: 1,
       outputChannelCount: [1],

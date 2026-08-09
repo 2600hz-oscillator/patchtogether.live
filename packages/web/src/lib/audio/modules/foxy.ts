@@ -112,6 +112,7 @@ import { RasterPainter, type RasterizeDrawParams } from './rasterize-draw';
 import { drawWave3D, drawWaveScope } from './wavecel-draw';
 import { drawFoxyXyz } from './foxy-draw';
 import { drawFoxyShapes } from './foxy-shapes-draw';
+import { createWorkletNode } from '$lib/audio/worklet-guard';
 import {
   FOXY_FIELD_SIZE,
   FOXY_WT_FRAMES,
@@ -639,7 +640,7 @@ export const foxyDef: AudioModuleDef = {
     let freezeTable   = num('freezeTable',   0) >= 0.5;
 
     // ───────────────────────── internal WAVECEL worklet ──────────────
-    const wave = new AudioWorkletNode(ctx, 'wavecel', {
+    const wave = createWorkletNode(node, ctx, 'wavecel', {
       numberOfInputs: 5,
       numberOfOutputs: 2,
       outputChannelCount: [1, 1],

@@ -38,6 +38,7 @@ import { fireTrigger } from '$lib/audio/gate-trigger';
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import workletUrl from '@patchtogether.live/dsp/dist/kickdrum.js?url';
+import { createWorkletNode } from '$lib/audio/worklet-guard';
 // PF-3 readouts. EVERY continuous control on this voice prints its value under
 // the dial, in ITS OWN unit — the single loudest difference between the shipped
 // face and the design mock, which never shows a bare label. The functions are
@@ -721,7 +722,7 @@ export const kickdrumDef: AudioModuleDef = {
 
     // 4 audio-rate node inputs: trigger (0), accent (1), pitch (2), choke (3).
     // ONE stereo output, fanned into separate L/R ports below.
-    const worklet = new AudioWorkletNode(ctx, PROCESSOR_NAME, {
+    const worklet = createWorkletNode(node, ctx, PROCESSOR_NAME, {
       numberOfInputs: 4,
       numberOfOutputs: 1,
       outputChannelCount: [2],
