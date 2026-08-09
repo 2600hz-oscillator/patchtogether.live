@@ -113,12 +113,13 @@ describe('decodeRecordedPcm is the inverse of encodeRecordingBytes', () => {
   const MATRIX: [SamsloopRecRate, SamsloopRecBits, SamsloopRecChannels][] = [
     [22_050, 8, 1], [22_050, 8, 2], [22_050, 16, 1], [22_050, 16, 2],
     [44_100, 8, 1], [44_100, 8, 2], [44_100, 16, 1], [44_100, 16, 2],
+    [48_000, 8, 1], [48_000, 8, 2], [48_000, 16, 1], [48_000, 16, 2],
   ];
 
   for (const [rate, bits, channels] of MATRIX) {
     it(`${rate} Hz · ${bits}-bit · ${channels}ch survives the round trip`, () => {
       const src = tone(SRC_RATE, SRC_RATE);
-      const bytes = encodeRecordingBytes(src, src, SRC_RATE, rate, bits, channels);
+      const { bytes } = encodeRecordingBytes(src, src, SRC_RATE, rate, bits, channels);
       const back = decodeRecordedPcm({ bytesB64: bytesToBase64(bytes), bits, channels }, 'mix');
 
       // Frame count: bytes / (bytesPerSample × channels), exactly.
@@ -152,7 +153,7 @@ describe('decodeRecordedPcm is the inverse of encodeRecordingBytes', () => {
     const SRC_RATE = 48_000;
     const l = tone(SRC_RATE, SRC_RATE);
     const r = new Float32Array(SRC_RATE); // silent right channel
-    const bytes = encodeRecordingBytes(l, r, SRC_RATE, 44_100, 16, 2);
+    const { bytes } = encodeRecordingBytes(l, r, SRC_RATE, 44_100, 16, 2);
     const b64 = bytesToBase64(bytes);
 
     const correct = decodeRecordedPcm({ bytesB64: b64, bits: 16, channels: 2 }, 'mix');
@@ -171,7 +172,7 @@ describe('decodeRecordedPcm is the inverse of encodeRecordingBytes', () => {
     const l = tone(SRC_RATE, SRC_RATE);
     const r = new Float32Array(SRC_RATE);
 
-    const stereo = encodeRecordingBytes(l, r, SRC_RATE, 44_100, 16, 2);
+    const stereo = encodeRecordingBytes(l, r, SRC_RATE, 44_100, 16, 2).bytes;
     const sB64 = bytesToBase64(stereo);
     const sMix = decodeRecordedPcm({ bytesB64: sB64, bits: 16, channels: 2 }, 'mix');
     const sLeft = decodeRecordedPcm({ bytesB64: sB64, bits: 16, channels: 2 }, 'left');
@@ -179,7 +180,7 @@ describe('decodeRecordedPcm is the inverse of encodeRecordingBytes', () => {
     expect(rms(sMix) / rms(sLeft)).toBeGreaterThan(0.45);
     expect(rms(sMix) / rms(sLeft)).toBeLessThan(0.55);
 
-    const mono = encodeRecordingBytes(l, r, SRC_RATE, 44_100, 16, 1);
+    const mono = encodeRecordingBytes(l, r, SRC_RATE, 44_100, 16, 1).bytes;
     const mB64 = bytesToBase64(mono);
     expect(decodeRecordedPcm({ bytesB64: mB64, bits: 16, channels: 1 }, 'mix')).toEqual(
       decodeRecordedPcm({ bytesB64: mB64, bits: 16, channels: 1 }, 'left'),
@@ -204,8 +205,10 @@ describe('a RECORDED sample reaches the player (the P0)', () => {
     now = 1_700_000_000_000,
   ) {
     const src = tone(SRC_RATE, SRC_RATE);
-    const bytes = encodeRecordingBytes(src, src, SRC_RATE, rate, bits, channels);
-    return buildRecordedSample(bytes, rate, bits, channels, now);
+    // ⚠ `storedRate`, not `rate` — this mirrors the card's commit exactly. The
+    // switch is a request; the encoder returns what the bytes ACTUALLY are.
+    const { bytes, rate: storedRate } = encodeRecordingBytes(src, src, SRC_RATE, rate, bits, channels);
+    return buildRecordedSample(bytes, storedRate, bits, channels, now);
   }
 
   it('resolves to a playable source, and the decoded audio is AUDIBLE', () => {
@@ -267,9 +270,11 @@ describe('a RECORDED sample reaches the player (the P0)', () => {
 // ── 3 · PRECEDENCE + RECOVERY ───────────────────────────────────────────────
 
 describe('resolveSamsloopSource precedence — what happens to already-saved racks', () => {
+  const ENCODED = encodeRecordingBytes(
+    tone(48_000, 48_000), tone(48_000, 48_000), 48_000, 44_100, 16, 2,
+  );
   const REC = buildRecordedSample(
-    encodeRecordingBytes(tone(48_000, 48_000), tone(48_000, 48_000), 48_000, 44_100, 16, 2),
-    44_100, 16, 2, 1_700_000_000_000,
+    ENCODED.bytes, ENCODED.rate, 16, 2, 1_700_000_000_000,
   ).sample;
 
   it('an UPLOAD-only rack resolves to the upload, byte for byte as before', () => {
@@ -354,16 +359,25 @@ describe('resolveSamsloopSource precedence — what happens to already-saved rac
 });
 
 describe('SamsloopRecordedSample is the shape the card actually writes', () => {
-  it('buildRecordedSample fills every declared field', () => {
-    const bytes = encodeRecordingBytes(tone(48_000, 48_000), tone(48_000, 48_000), 48_000, 22_050, 8, 1);
-    const { sample, frames } = buildRecordedSample(bytes, 22_050, 8, 1, 42);
+  it('buildRecordedSample fills every declared field, tagged with the ACHIEVED rate', () => {
+    // 48 kHz capture, RATE switch at 22 050 ⇒ integer factor 2 ⇒ the bytes are
+    // 24 000 Hz, NOT 22 050. Tagging them 22 050 (what the card used to do) is
+    // an 8.8 % tempo error and −148 cents of detune on playback.
+    const { bytes, rate } = encodeRecordingBytes(
+      tone(48_000, 48_000), tone(48_000, 48_000), 48_000, 22_050, 8, 1,
+    );
+    expect(rate, 'the encoder must report 24 000, not the 22 050 that was asked for').toBe(24_000);
+    const { sample, frames } = buildRecordedSample(bytes, rate, 8, 1, 42);
     expect(sample.byteLength).toBe(bytes.byteLength);
-    expect(sample.rate).toBe(22_050);
+    expect(sample.rate).toBe(24_000);
     expect(sample.bits).toBe(8);
     expect(sample.channels).toBe(1);
     expect(sample.recordedAt).toBe(42);
     expect(frames).toBe(bytes.byteLength); // 8-bit mono ⇒ 1 byte per frame
-    expect(sample.durationSec).toBeCloseTo(frames / 22_050, 6);
+    expect(sample.durationSec).toBeCloseTo(frames / 24_000, 6);
+    // The take was ONE SECOND of capture; the honest tag is what makes the
+    // persisted duration say so. Under the old tag this read 1.088 s.
+    expect(sample.durationSec, `durationSec=${sample.durationSec}`).toBeCloseTo(1, 3);
     // …and the declared durationSec agrees with the DECODED length, which is
     // what the card prints and what the START/END faders bound against.
     expect(decodeRecordedPcm(sample).length).toBe(frames);
