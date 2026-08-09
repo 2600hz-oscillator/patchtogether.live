@@ -93,6 +93,45 @@
 // The face itself is unchanged from the verified batch-3 authoring, and its two
 // live defects were fixed independently before it landed: the card/def bipolar
 // range disagreement (#1311) and the impossible `pw`-with-an-LFO doc (897b6515).
+//
+// FACE BATCH 3 · macrooscillator (2026-08-09) — the SECOND free-running face,
+// and the entry whose whole argument is that a faceplate must not paint a dead
+// control as a working one.
+//
+// This module is six dials over FOURTEEN engines, and three of the six mean
+// something different in each one. A `paramId: 'harmonics'` readout prints the
+// same 0.30 in all fourteen states — correct everywhere, useful nowhere, and
+// actively misleading in the four engines where that fader is a stepped
+// SELECTOR rather than a fader at all. So every readout on this face is
+// DERIVED from `model` plus the dial, and each carries its negative control in
+// macrooscillator-face-model.ts.
+//
+// ⚠ FOUR OF THEM REPORT A DEFECT RATHER THAN A FEATURE, all four re-measured
+// on main rather than inherited from the notes that survived this face's first,
+// destroyed build:
+//
+//   WAVETABLE MORPH   bit-exactly DEAD 0.000 → 0.500 INCLUSIVE (maxAbsDiff
+//                     0.000e+0), first moving at 0.5001. Half a fader.
+//   GRANULAR MORPH    a 3-POSITION SWITCH — 3 distinct renders over a 41-step
+//                     sweep, boundaries at 0.33 and 0.66. Nothing in the repo
+//                     said so before this PR.
+//   MODAL TIMBRE      runs BACKWARDS: Q 5 → −69.6 dBFS, Q 200 → −86.6 dBFS,
+//                     because an RBJ constant-skirt band-pass's impulse
+//                     response scales with sin(w0)/2Q. The worklet's own
+//                     comment claims the opposite.
+//   level spread      76.6 dB of OUT RMS BETWEEN engines at identical macros
+//                     (FM 2OP −5.0 dBFS, MODAL −81.6). LEVEL cannot fix it —
+//                     it moves all fourteen equally.
+//
+// Every one of those is worklet arithmetic, so fixing it is a DSP change to
+// saved-rack audio and belongs in its own owner-audition PR (CLAUDE.md; batch-3
+// INDEX rule 5). They are DOCUMENTED here instead — and the claims are
+// re-derived from `macrooscillatorMath` in the model test, so the day a fix
+// lands the faceplate's now-stale claim goes RED rather than quietly insisting
+// a repaired control is still broken.
+//
+// It is also the second face to exercise #1420's audio freeze — see FACES in
+// e2e/vrt/_shell-faces.ts for the measured numbers.
 
 export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // P1 batch 1 — first 6 module faces
@@ -123,6 +162,8 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   'pentemelodica',
   // FACE BATCH 3 · the recovered free-running oscillator (2026-08-08).
   'analogVco',
+  // FACE BATCH 3 · the fourteen-engine macro voice (2026-08-09).
+  'macrooscillator',
 ]);
 
 /**

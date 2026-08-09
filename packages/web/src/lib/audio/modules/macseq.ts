@@ -68,7 +68,7 @@ import { C3_MIDI, midiToVOct } from '$lib/audio/note-entry';
 import { getSchedulerClock, SCHEDULER_TICK_MS } from '$lib/audio/scheduler-clock';
 import { createPlayheadTracker } from './playhead-tracker';
 import { createEdgeCounter } from '$lib/audio/edge-detect';
-import { MACRO_MAX_MODEL } from './macrooscillator';
+import { MACRO_MAX_MODEL } from './macro-engine-roster';
 import {
   createTransportCv,
   pickQueuedSlotFromEvents,
@@ -86,47 +86,16 @@ import {
   type NavDirection,
 } from './transport-helpers';
 
-/** Human-readable engine names, indexed by `modelIndex`. Must stay in
- *  lockstep with the engine table in `macrooscillatorMath.render` and the
- *  worklet at `packages/dsp/src/macrooscillator.ts`. Length matches
- *  `MACRO_MAX_MODEL + 1` — we assert that at startup-init time and via the
- *  unit-test suite so any drift is caught immediately.
+/** Human-readable engine names, indexed by `modelIndex`.
  *
- *  This list is duplicated from MacrooscillatorCard.svelte's local copy
- *  rather than imported from there (the card hadn't promoted it to a
- *  shared export at the time MACSEQ landed). The card + this constant are
- *  the two consumers; both load-bearing tests live in macseq.test.ts. */
-export const MODEL_NAMES = [
-  'VA',          // 0
-  'WAVESHAPE',   // 1
-  'FM 2OP',      // 2
-  'FM 6OP',      // 3
-  'CHORD',       // 4
-  'ADDITIVE',    // 5
-  'STRING',      // 6
-  'MODAL',       // 7
-  'KICK',        // 8
-  'SNARE',       // 9
-  'HIHAT',       // 10
-  'WAVETABLE',   // 11
-  'GRANULAR',    // 12
-  'SPEECH',      // 13
-] as const;
-
-export type MacroModelName = (typeof MODEL_NAMES)[number];
-
-// Compile-time guard so we can't accidentally let MODEL_NAMES + MACRO_MAX_MODEL
-// drift apart. If macrooscillator grows a new engine, MACRO_MAX_MODEL bumps,
-// and this expression fails to type-check (and the runtime assert fires).
-if (MODEL_NAMES.length !== MACRO_MAX_MODEL + 1) {
-  // eslint-disable-next-line no-console
-  console.warn(
-    `[macseq] MODEL_NAMES length (${MODEL_NAMES.length}) !== MACRO_MAX_MODEL+1 (${MACRO_MAX_MODEL + 1}) — engine list has drifted; update MODEL_NAMES.`,
-  );
-}
-
-// Re-export for the card + tests.
-export { MACRO_MAX_MODEL };
+ *  ⚠ THIS USED TO BE A LITERAL ARRAY — a byte-identical copy of a private one
+ *  in MacrooscillatorCard.svelte, with a comment admitting the copy and a
+ *  runtime `console.warn` guarding the two against drifting apart. Both copies
+ *  are gone: the roster in `./macro-engine-roster` is now the single source,
+ *  the def hands the SAME array to the platform as `ParamDef.options`, and
+ *  `MACRO_MAX_MODEL` is derived from its length rather than asserted against
+ *  it. A drift guard is only needed while there are two things to drift. */
+export { MODEL_NAMES, MACRO_MAX_MODEL } from './macro-engine-roster';
 
 // Pre-pages PR this was 16 (a single 16-step page). The card renders 16 cells
 // per page and offers up to 8 pages via the shared SequencerPageNav. Data

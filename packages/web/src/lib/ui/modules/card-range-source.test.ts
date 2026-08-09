@@ -29,6 +29,7 @@ import { fileURLToPath } from 'node:url';
 import { adsrDef } from '$lib/audio/modules/adsr';
 import { backdraftDef } from '$lib/video/modules/backdraft';
 import { delayDef } from '$lib/audio/modules/delay';
+import { macrooscillatorDef } from '$lib/audio/modules/macrooscillator';
 import { ringbackDef } from '$lib/audio/modules/ringback';
 import { snaredrumDef } from '$lib/audio/modules/snaredrum';
 import { vcaDef } from '$lib/audio/modules/vca';
@@ -75,11 +76,22 @@ import type { ParamDef } from '$lib/graph/types';
  *    Its `engineFreeze` is the format case again: the def declares a
  *    LIVE/FREEZE formatter, and an unbound card would print `0.00`/`1.00`
  *    on a control whose whole job is to say which state you are in.
+ *  - MacrooscillatorCard: converted with the macrooscillator face promotion
+ *    (binds via paramSpec). Six params × five props, all of which AGREED with
+ *    the def — the card even imported the def and carried its own
+ *    `defaultFor()` helper while re-typing all thirty numbers beside it. The
+ *    interesting half is the `model` fader: it re-typed `max` from a LOCAL
+ *    `MODEL_NAMES.length - 1`, so "how many engines are there" had a second
+ *    answer living in the card, and adding a fifteenth engine to the def would
+ *    have left this fader unable to select it. The array is gone (see
+ *    macro-engine-roster) and `max` now comes from the def like everything
+ *    else.
  */
 const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }>> = {
   'AdsrCard.svelte': adsrDef,
   'BackdraftCard.svelte': backdraftDef,
   'DelayCard.svelte': delayDef,
+  'MacrooscillatorCard.svelte': macrooscillatorDef,
   'RingbackCard.svelte': ringbackDef,
   'SnaredrumCard.svelte': snaredrumDef,
   'VcaCard.svelte': vcaDef,
@@ -94,6 +106,7 @@ const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }
 const MAPPING_BOUND_CARDS: readonly string[] = [
   'AdsrCard.svelte',
   'DelayCard.svelte',
+  'MacrooscillatorCard.svelte',
   'RingbackCard.svelte',
   'SnaredrumCard.svelte',
   'VcaCard.svelte',
@@ -110,8 +123,8 @@ const MAPPING_BOUND_CARDS: readonly string[] = [
 // card of slack in each, and the next card to fall back out of the set is
 // absorbed in silence rather than reddening this test. Whenever this file
 // merges, RE-DERIVE the floors from the lists; never inherit the literal.
-const RANGE_BOUND_FLOOR = 7;
-const MAPPING_BOUND_FLOOR = 6;
+const RANGE_BOUND_FLOOR = 8;
+const MAPPING_BOUND_FLOOR = 7;
 
 /**
  * A range-ish prop bound to a NUMERIC LITERAL. Covers `min/max/defaultValue`

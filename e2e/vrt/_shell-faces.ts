@@ -81,6 +81,23 @@ export const FACES = [
   // processes against a fresh unmasked baseline (scripts/vrt-derive-trials.sh,
   // NOT --repeat-each): 10/10 PASS.
   { type: 'analogVco', pages: 2 },
+  // THE SECOND FREE-RUNNING VOICE, and therefore the second entry that
+  // exercises the freeze rather than being indifferent to it. Same shape as
+  // analogVco above — it sounds the instant it spawns, no gate and no note to
+  // wait for — and it carries NO mask either.
+  //
+  // ⚠ NOT REDUNDANT WITH analogVco, for a reason worth stating: nine of its
+  // fourteen engines free-run and five are SILENT until struck, so which of
+  // the two personalities this scene captures depends on `model`, which is 0
+  // (VA) at the def default. If a future change moves that default onto a
+  // struck engine, this entry silently stops exercising the freeze and starts
+  // reading zeros like the other twenty-one. The probe below is how you
+  // re-establish that it still does; do not assume it from a green scene.
+  //
+  // MEASURED 2026-08-09, darwin, this tile, within-subject via
+  // vrt-face-audio-probe (26/255 channel delta) — see the PR body for the
+  // full table.
+  { type: 'macrooscillator', pages: 3 },
   // ⚠ 8 bands trips DOCK_TAB_MIN_BANDS: this face renders as a TAB RAIL, by
   // design (five identical voice strips have no other shape). Do not merge it
   // back under seven.

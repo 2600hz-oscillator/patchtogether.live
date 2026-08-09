@@ -287,7 +287,9 @@ export const MACRO_ENGINES: readonly MacroEngine[] = [
     // NOT the note: `sin(2π · spawnTimer/spawnEvery)`, a full-scale sine at the
     // grain-SPAWN rate — 0 Hz at harmonics 0, ~199 Hz at 1. On a port declared
     // `type: 'audio'` the bottom of that range is sub-audio.
-    aux: 'spawn-rate sine (not the note)',
+    // 24 chars — the sidebar budget is 26, and the honest short form keeps the
+    // surprising half ("not the note") rather than the descriptive half.
+    aux: 'spawn rate, not the note',
     bandLimited: false,
     needsStrike: false,
     outRmsDb: -14.9,

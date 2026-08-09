@@ -74,7 +74,6 @@ export const UNDECLARED_EDGE_DEBT: Readonly<Record<string, readonly string[]>> =
   gibribbon: ['a', 'b', 'clock', 'evt_fire', 'evt_gameover', 'evt_hit', 'evt_kill', 'evt_miss', 'gate', 'x_btn', 'y_btn'],
   illogic: ['and', 'nand', 'not', 'or'],
   kria: ['gate1', 'gate2', 'gate3', 'gate4'],
-  macrooscillator: ['trig'],
   macseq: ['clock', 'gate', 'next_cv', 'play_cv', 'prev_cv', 'queue1_cv', 'queue2_cv', 'queue3_cv', 'queue4_cv', 'queue5_cv', 'queue6_cv', 'queue7_cv', 'queue8_cv', 'random_cv', 'reset_cv'],
   marbles: ['clk', 't1', 't2'],
   meowbox: ['gate'],
@@ -119,7 +118,7 @@ export const UNDECLARED_EDGE_DEBT: Readonly<Record<string, readonly string[]>> =
 
 /** The number of `(module, port)` pairs still owed an `edge` declaration.
  *  ⚠ ONLY SHRINKS — asserted from BOTH sides in module-docs-lint.test.ts. */
-export const UNDECLARED_EDGE_CEILING = 289;
+export const UNDECLARED_EDGE_CEILING = 288;
 
 /** Flattened `module.port` pairs (the countable form). */
 export function undeclaredEdgePairs(): string[] {

@@ -354,7 +354,9 @@ export function fmtMacroDbfs(v: number): string {
  *  of a multiplier is as legible as its presence. */
 export function fmtMacroGain(gain: number): string {
   if (!Number.isFinite(gain) || gain <= 0) return '×1';
-  if (gain >= 100) return `×${Math.round(gain)}`;
-  if (gain >= 10) return `×${gain.toFixed(0)}`;
-  return `×${gain.toFixed(1)}`;
+  if (gain >= 10) return `×${Math.round(gain)}`;
+  // ⚠ TRAILING `.0` IS STRIPPED. `×1.0` reads as a measured multiplier that
+  // happens to be one; `×1` reads as "no magnification", which is the fact.
+  const s = gain.toFixed(1);
+  return `×${s.endsWith('.0') ? s.slice(0, -2) : s}`;
 }
