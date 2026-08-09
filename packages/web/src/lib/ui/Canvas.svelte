@@ -1,8 +1,9 @@
 <script lang="ts">
   // Day 7 — Svelte Flow canvas + module cards + auto-reactive engine.
   //
-  // Click "Load example" → patch graph populates → Svelte Flow renders cards →
-  // reconciler instantiates engine nodes → audio plays. Twiddle a knob →
+  // Spawn a module from the palette → patch graph populates → Svelte Flow
+  // renders cards → reconciler instantiates engine nodes → audio plays.
+  // Twiddle a knob →
   // patch graph mutates → reconciler calls engine.setParam → audible change.
   import { onDestroy, onMount, untrack } from 'svelte';
   import {
@@ -276,7 +277,6 @@
   // in an off-screen host when the shell swaps its lane card away.
   import { DOM_SOURCE_LANE_TYPES, needsHeadlessSourceMount } from '$lib/ui/workflow/dom-source-modules';
   import { RACK_SIZE_DEFAULTS } from '$lib/ui/rack-sizes';
-  import { computeCabinetLayout } from '$lib/ui/canvas/cabinet-layout';
   // ModuleNameLabel moved INTO every module card's title chrome (see
   // ModuleTitle.svelte) when the floating-overhead NodeToolbar was dropped.
   // Canvas no longer renders the label directly.
@@ -638,7 +638,6 @@
   let audioCtx: AudioContext | null = $state(null);
   let engine: PatchEngine | null = $state(null);
   let reconciler: { reconcile: () => Promise<void>; dispose: () => void } | null = $state(null);
-  let booting = $state(false);
   let error = $state<string | null>(null);
   /** Non-blocking summary of the last load's diagnostics (null = clean). */
   let loadNotice = $state<string | null>(null);
@@ -680,9 +679,9 @@
       // stream died with it. This exposes the one bit that matters.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__es9HasBridge = (nodeId: string) => hasEs9Bridge(nodeId);
-      // Tests bootstrap the engine without going through Load example (which
-      // creates an auto-playing Sequencer that races bind:nodes during the
-      // immediate clear-then-add transact spawnPatch does).
+      // Tests bootstrap the engine directly rather than through a UI action
+      // that also writes nodes — an auto-playing Sequencer would race
+      // bind:nodes during the immediate clear-then-add transact spawnPatch does.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__ensureEngine = ensureEngine;
       // Module registry, exposed for the chaos runner. Stripped in prod.
@@ -945,7 +944,7 @@
   // SCOPE: only fires on RACKSPACE mounts (i.e. when a Hocuspocus
   // provider is bound — `/r/[id]` routes + the `/rack`+`__attachProvider`
   // collab-test pattern). The scratch `/rack` demo canvas (no provider) stays
-  // empty until the user clicks Load example — auto-spawning there would
+  // empty until the user spawns something — auto-spawning there would
   // surprise the "demo a fresh engine" workflow and break a lot of e2e
   // tests that depend on a literally-empty canvas at `goto('/rack')`.
   // Real patching happens on `/r/[id]`, which is where the user
@@ -1071,7 +1070,7 @@
     }
     void (async () => {
       await ensureEngine();
-      // Explicit reconcile (mirrors loadExample()/handleDelete's shape) so the
+      // Explicit reconcile (mirrors handleDelete's shape) so the
       // restored graph is materialized deterministically on this load — the
       // reconciler also auto-runs on attach via the snapshot bus, so this is a
       // belt-and-suspenders no-op if the bus already fired.
@@ -2669,218 +2668,6 @@
 
   // (ensureEngine moved below the palette section so its types are colocated)
 
-  /** "Load example": Sequencer → VCO + ADSR → VCA → Audio Out. Pre-populated
-   *  with an 8-note motif. Sequencer auto-starts (isPlaying = 1). This is
-   *  the only demo button — a quick way for a new user to hear the engine
-   *  doing something musical without learning the patching UI first. */
-  async function loadExample() {
-    error = null;
-    booting = true;
-    try {
-      await ensureEngine();
-      ydoc.transact(() => {
-        const nodes: Record<string, { type: string; position: { x: number; y: number }; params: Record<string, number>; data?: Record<string, unknown> }> = {
-          'vd-seq':  { type: 'sequencer', position: { x: 40, y: 60 },   params: { bpm: 180, length: 8, isPlaying: 1, gateLength: 0.4 },
-            data: { steps: [
-              // C-major motif starting at C4 (MIDI 60).
-              { on: true, midi: 60 },
-              { on: true, midi: 67 },
-              { on: true, midi: 72 },
-              { on: true, midi: 67 },
-              { on: true, midi: 64 },
-              { on: true, midi: 60 },
-              { on: true, midi: 65 },
-              { on: true, midi: 67 },
-              ...Array.from({ length: 24 }, () => ({ on: false, midi: null })),
-            ] } },
-          'vd-vco':  { type: 'analogVco', position: { x: 620, y: 30 },  params: {} },
-          'vd-adsr': { type: 'adsr',      position: { x: 620, y: 320 }, params: { attack: 0.005, decay: 0.08, sustain: 0.3, release: 0.15 } },
-          'vd-vca':  { type: 'vca',       position: { x: 920, y: 130 }, params: { base: 0, cvAmount: 1 } },
-          'vd-out':  { type: 'audioOut',  position: { x: 1200, y: 130 }, params: { master: 0.4 } },
-        };
-        for (const [id, n] of Object.entries(nodes)) {
-          if (!patch.nodes[id]) {
-            const autoName = nextDefaultName(patch.nodes, n.type);
-            const data = { ...(n.data ?? {}), name: autoName };
-            patch.nodes[id] = { id, type: n.type, domain: 'audio', position: n.position, params: n.params, data };
-          }
-        }
-        const wires: Array<[string, string, string, string, 'pitch' | 'gate' | 'audio' | 'cv']> = [
-          ['vd-seq',  'pitch', 'vd-vco',  'pitch', 'pitch'],
-          ['vd-seq',  'gate',  'vd-adsr', 'gate',  'gate'],
-          ['vd-vco',  'sine',  'vd-vca',  'audio', 'audio'],
-          ['vd-adsr', 'env',   'vd-vca',  'cv',    'cv'],
-          ['vd-vca',  'audio', 'vd-out',  'L',     'audio'],
-          ['vd-vca',  'audio', 'vd-out',  'R',     'audio'],
-        ];
-        for (const [src, srcPort, dst, dstPort, type] of wires) {
-          const id = `e-${src}-${srcPort}-${dst}-${dstPort}`;
-          if (!patch.edges[id]) {
-            patch.edges[id] = {
-              id,
-              source: { nodeId: src, portId: srcPort },
-              target: { nodeId: dst, portId: dstPort },
-              sourceType: type,
-              targetType: type,
-            };
-          }
-        }
-      });
-      trace('voice demo in store; reconciler instantiating');
-      await reconciler?.reconcile();
-      trace('voice demo live — sequencer playing 8-note motif');
-    } catch (err) {
-      console.error(err);
-      error = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
-    } finally {
-      booting = false;
-    }
-  }
-
-  /** "moogafakkin System 35/55" — spawn a full Moog cabinet, positioned to
-   *  mirror the real service-manual cabinet layout (two rows, left-to-right,
-   *  non-overlapping). The geometry comes from the pure
-   *  computeCabinetLayout() helper; we filter each placement through the
-   *  live module registry (skipping any unregistered type) and write ALL
-   *  the nodes in ONE Yjs transaction so the cabinet is a single undo step
-   *  and a single multiplayer broadcast. nextDefaultName is recomputed per
-   *  node AFTER the prior insert (it scans patch.nodes, which we've already
-   *  mutated) so numbering stays unique across the batch. */
-  async function spawnCabinet(system: '35' | '55') {
-    error = null;
-    booting = true;
-    try {
-      await ensureEngine();
-      const placements = computeCabinetLayout(system);
-      ydoc.transact(() => {
-        for (const { type, x, y } of placements) {
-          // Skip gracefully if a type isn't registered — don't crash the
-          // whole cabinet over one missing module.
-          if (!getModuleDef(type as Parameters<typeof getModuleDef>[0])) continue;
-          const id = `${type}-${crypto.randomUUID().slice(0, 8)}`;
-          const autoName = nextDefaultName(patch.nodes, type as Parameters<typeof nextDefaultName>[1]);
-          patch.nodes[id] = {
-            id,
-            type,
-            domain: 'audio',
-            position: { x, y },
-            params: {},
-            data: { name: autoName },
-          };
-        }
-      }, LOCAL_ORIGIN);
-      trace(`spawned moogafakkin System ${system} cabinet (${placements.length} modules)`);
-      await reconciler?.reconcile();
-    } catch (err) {
-      console.error(err);
-      error = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
-    } finally {
-      booting = false;
-    }
-  }
-
-  /** GLITCHES GET RICHES — load the bundled video+audio demo envelope
-   *  from packages/web/src/lib/ui/example-patches/glitches.imp.json.
-   *  Mirrors loadExample()'s ensureEngine → load → reconcile shape;
-   *  the envelope's PICTUREBOX node carries glitch.jpg as `data.imageBytes`
-   *  so it renders on mount with no extra wiring.
-   *
-   *  Unlike the retired Visit-Atlantis loader (which built nodes + edges
-   *  inline) this loader replays a real Yjs envelope through the
-   *  canonical persistence path — same code as the Load button. */
-  async function loadGlitches() {
-    error = null;
-    booting = true;
-    try {
-      await ensureEngine();
-      const { loadGlitches: doLoad } = await import('$lib/ui/example-patches/glitches');
-      const result = doLoad(ydoc, patch);
-      trace(`GLITCHES patch in store (${result.nodesLoaded} nodes, ${result.edgesLoaded} edges); reconciler instantiating`);
-      await reconciler?.reconcile();
-      trace('GLITCHES live — picturebox showing glitch.jpg');
-    } catch (err) {
-      console.error(err);
-      error = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
-    } finally {
-      booting = false;
-    }
-  }
-
-  /** MEDIA BURN — homage to Ant Farm's 1975 piece. Loads 15 PICTUREBOX
-   *  tiles reassembling the iconic Cadillac-into-TVs photo, plus a
-   *  CADILLAC positioned to demolish the rightmost column ~1s after
-   *  load. Same shape as loadGlitches: envelope → loadEnvelopeIntoStore.
-   *
-   *  Determinism: the envelope's CADILLAC node has NO spawnedAtMs, so
-   *  the overlay's `?? Date.now()` fallback makes load-time === spawn-
-   *  time. The 1-second-to-first-hit math (see media-burn-math.ts) holds
-   *  every load, in single-user AND multiplayer modes. */
-  async function loadMediaBurn() {
-    error = null;
-    booting = true;
-    try {
-      await ensureEngine();
-      const { loadMediaBurn: doLoad } = await import('$lib/ui/example-patches/media-burn');
-      const result = doLoad(ydoc, patch);
-      trace(`MEDIA BURN patch in store (${result.nodesLoaded} nodes, ${result.edgesLoaded} edges); reconciler instantiating`);
-      await reconciler?.reconcile();
-      trace('MEDIA BURN live — 15 PICTUREBOX tiles + CADILLAC armed');
-    } catch (err) {
-      console.error(err);
-      error = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
-    } finally {
-      booting = false;
-    }
-  }
-
-  /** GIBRIBBON game demo — load the bundled audio→video patch that drives
-   *  the GibRibbon game (PR #620) from a sequenced MACROOSCILLATOR voice
-   *  analysed by SYNESTHESIA. Same shape as loadMediaBurn: envelope →
-   *  loadEnvelopeIntoStore. TIMELORDE + MACSEQ free-run on load, so the
-   *  SYNESTHESIA slow envelopes start generating GibRibbon events
-   *  immediately (cv1..cv4 → loop/jump/imp/zombie; 1× → scroll clock;
-   *  MACSEQ gate → beat). See gibribbon-demo.ts + gibribbon-events.ts. */
-  async function loadGibribbonDemo() {
-    error = null;
-    booting = true;
-    try {
-      await ensureEngine();
-      const { loadGibribbonDemo: doLoad } = await import('$lib/ui/example-patches/gibribbon-demo');
-      const result = doLoad(ydoc, patch);
-      trace(`GIBRIBBON demo in store (${result.nodesLoaded} nodes, ${result.edgesLoaded} edges); reconciler instantiating`);
-      await reconciler?.reconcile();
-      trace('GIBRIBBON demo live — sequenced voice → SYNESTHESIA → game events');
-    } catch (err) {
-      console.error(err);
-      error = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
-    } finally {
-      booting = false;
-    }
-  }
-
-  /** Identifiers for the "Load example…" topbar dropdown. Each maps to one
-   *  of the existing example loaders/spawners (kept byte-for-byte identical
-   *  to the buttons they replaced). */
-  type ExampleKey = 'sequenced-vco' | 'system-55' | 'system-35' | 'media-burn' | 'glitches' | 'gibribbon-demo';
-
-  /** Action-menu dispatcher for the "Load example…" `<select>`. It's an
-   *  action menu (not a persistent value), so we reset the bound value back
-   *  to the placeholder after dispatching, letting the user re-select the
-   *  same example to load it again. */
-  let exampleChoice = $state('');
-  async function onExampleChosen(key: ExampleKey) {
-    switch (key) {
-      case 'sequenced-vco': await loadExample(); break;
-      case 'system-55':     await spawnCabinet('55'); break;
-      case 'system-35':     await spawnCabinet('35'); break;
-      case 'media-burn':    await loadMediaBurn(); break;
-      case 'glitches':      await loadGlitches(); break;
-      case 'gibribbon-demo': await loadGibribbonDemo(); break;
-    }
-    // Reset back to the placeholder so this stays an action menu.
-    exampleChoice = '';
-  }
-
   function clearPatch() {
     ydoc.transact(() => {
       for (const id of Object.keys(patch.edges)) delete patch.edges[id];
@@ -2989,8 +2776,7 @@
   /** "Import JSON" — file-pick a `.json` envelope and load it into the live
    *  rack. Bootstraps the engine + reconciler from inside this click handler
    *  (the user gesture) so the AudioContext resumes and a reconciler exists to
-   *  materialize the loaded nodes — mirrors loadExample()'s shape, identical to
-   *  the old "Load" button. */
+   *  materialize the loaded nodes — identical to the old "Load" button. */
   async function importPatchJson() {
     error = null;
     try {
@@ -3039,9 +2825,9 @@
   }
 
   /** Action-menu dispatcher for the "Raw JSON" `<select>` (top-RIGHT of the
-   *  topbar). Like the "Load example…" menu it's an ACTION menu, so the bound
-   *  value resets to the placeholder after each dispatch — letting the user
-   *  re-pick the same action. */
+   *  topbar). It is an ACTION menu, so the bound value resets to the
+   *  placeholder after each dispatch — letting the user re-pick the same
+   *  action. */
   type RawJsonKey = 'export-json' | 'import-json';
   let rawJsonChoice = $state('');
   async function onRawJsonChosen(key: RawJsonKey) {
@@ -7891,6 +7677,7 @@
       onLoadPerformance={loadPerformanceZip}
       onExportJson={exportPatchJson}
       onImportJson={importPatchJson}
+      onClear={clearPatch}
       signedIn={headerSignedIn}
       {headerAuth}
       timelordeNode={workflowTimelordeNode}
@@ -7948,27 +7735,10 @@
          which also anchors the spawn at the click point. The button was
          removed so the topbar fits narrow (1024px) viewports. -->
     <div class="actions">
-      <!-- "Load example…" is an ACTION menu, not a persistent value: each
-           option spawns/loads its example exactly as the old standalone
-           buttons did, then onExampleChosen() resets the value back to the
-           placeholder so the same example can be re-loaded. Replaces the
-           old System 55/35, Load example, GLITCHES, and Media Burn buttons. -->
-      <select
-        class="primary load-example"
-        data-testid="load-example-select"
-        bind:value={exampleChoice}
-        disabled={booting}
-        onchange={(e) => onExampleChosen(e.currentTarget.value as ExampleKey)}
-        title="Load a curated example patch or spawn a full Moog cabinet."
-      >
-        <option value="" disabled selected>{booting ? 'Loading…' : 'Load example…'}</option>
-        <option value="sequenced-vco">Sequenced VCO</option>
-        <option value="system-55">System 55</option>
-        <option value="system-35">System 35</option>
-        <option value="media-burn">Media Burn</option>
-        <option value="glitches">Glitches Get Riches</option>
-        <option value="gibribbon-demo">GIBRIBBON (game demo)</option>
-      </select>
+      <!-- The "Load example…" ACTION menu was REMOVED (owner ruling, PR 1 of
+           the dawless-removal sequence): the six curated demos and their
+           bundled envelopes are gone from the product entirely. A new user
+           starts from an empty rack + the right-click module palette. -->
       <button
         data-testid="new-rack-btn"
         onclick={newRack}
@@ -7989,8 +7759,8 @@
         title="Load a portable performance .zip into a fresh rack — restores the patch + ALL embedded media + mappings on any machine (no re-pick needed)."
       >Load Perf (.zip)</button>
       <!-- "Raw JSON" — lightweight envelope-only export/import (no media/zip).
-           ACTION menu (like "Load example…"): each option fires its handler,
-           then onRawJsonChosen() resets the value to the placeholder so the
+           ACTION menu: each option fires its handler, then
+           onRawJsonChosen() resets the value to the placeholder so the
            same action can be re-picked. Restores the raw-JSON convenience the
            old Save/Load buttons gave (removed in #771). Sits in the top-RIGHT
            actions cluster, clear of the top-LEFT preset slots. -->
@@ -8661,12 +8431,11 @@
   .topbar .actions > * {
     flex-shrink: 0;
   }
-  /* The two wide selects may give up a handful of px before the cluster
-     wraps — a native select clips its label without changing height, so a
-     slight squeeze is invisible while it saves a whole extra row on
-     in-between viewport widths. Floored so they never collapse into an
-     unusable sliver. (Higher specificity than the .actions > * pin above.) */
-  .topbar select.load-example,
+  /* The wide select may give up a handful of px before the cluster wraps —
+     a native select clips its label without changing height, so a slight
+     squeeze is invisible while it saves a whole extra row on in-between
+     viewport widths. Floored so it never collapses into an unusable
+     sliver. (Higher specificity than the .actions > * pin above.) */
   .topbar select.raw-json {
     flex-shrink: 1;
     min-width: 6.5rem;
@@ -8680,51 +8449,10 @@
     border-radius: 4px;
     cursor: pointer;
   }
-  .topbar button.primary {
-    background: var(--cable-audio);
-    color: #1a1d23;
-    border-color: var(--cable-audio);
-  }
-  /* Glitches = big curated demo — distinct deep-aquatic styling so users
-     read it as "this is the big one" vs the simpler Load-example.
-     Inherited from the retired "Visit Atlantis" button (same slot, same
-     visual weight); only the type-id changed. */
-  .topbar button.primary.glitches {
-    background: linear-gradient(135deg, #2c5b8f 0%, #1b3252 100%);
-    color: #c5e3ff;
-    border-color: #4a7daa;
-    text-shadow: 0 1px 0 rgba(0, 0, 0, 0.4);
-  }
-  .topbar button.primary.glitches:hover:not(:disabled) {
-    background: linear-gradient(135deg, #3a6ea8 0%, #25416a 100%);
-    border-color: #6ba0d4;
-  }
-  /* "Load example…" dropdown — styled to read as the primary curated-demo
-     control, mirroring the visual weight of the buttons it replaced. */
-  .topbar select.load-example {
-    background: var(--cable-audio);
-    color: #1a1d23;
-    border: 1px solid var(--cable-audio);
-    padding: 0.35rem 0.8rem;
-    font-size: 0.8rem;
-    font-family: inherit;
-    font-weight: 600;
-    border-radius: 4px;
-    cursor: pointer;
-  }
-  .topbar select.load-example:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-  }
-  /* The dropdown's expanded options render in the OS-native menu, which
-     ignores the dark control colors above; force readable contrast. */
-  .topbar select.load-example option {
-    background: #2a2f3a;
-    color: var(--text);
-  }
-  /* "Raw JSON" dropdown — neutral utility control (matches .topbar button,
-     not the accent .load-example): it's a convenience export/import, not a
-     curated-demo loader. */
+  /* "Raw JSON" dropdown — neutral utility control (matches .topbar button):
+     it's a convenience export/import. (The accent `.primary` /
+     `.load-example` / `.glitches` rules went with the "Load example…"
+     dropdown and the curated-demo buttons it had already replaced.) */
   .topbar select.raw-json {
     background: #2a2f3a;
     color: var(--text);
@@ -9013,7 +8741,7 @@
     font-weight: 500;
   }
   /* R-1 audio buffer / latency selector — sits in the footer status row,
-   * styled to match the load-example dropdown chrome. */
+   * styled to match the topbar dropdown chrome. */
   .audio-buffer-ctl {
     display: inline-flex;
     align-items: center;

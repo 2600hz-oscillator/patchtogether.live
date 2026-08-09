@@ -4,8 +4,15 @@
   // PURE RECOMPOSITION: every action here is an existing Canvas handler
   // passed in as a prop — the 5-slot preset-bar store (quicksave/quickload),
   // the portable performance .ptperf(.zip) export/import, the raw-JSON
-  // envelope export/import, the SkinSwitcher theme picker, and the existing
-  // sign-in/account link. NO new behavior lives in this component.
+  // envelope export/import, the SkinSwitcher theme picker, the AspectToggle
+  // output-aspect pill, Canvas.clearPatch, and the existing sign-in/account
+  // link. NO new behavior lives in this component.
+  //
+  // TOPBAR PARITY (PR 1 of the dawless-removal sequence): `Clear` and
+  // `AspectToggle` were ported here from the dawless topbar's `.actions`
+  // cluster so that deleting that topbar in a later PR is not a feature
+  // regression. Clear is the ONLY destructive action in the menu and sits
+  // LAST, below its own danger divider — never adjacent to Quicksave.
   //
   // In workflow mode the dawless top-left slot bar is NOT rendered — the
   // File.. menu REPLACES it (File → Quicksave/Quickload 1–5 drive the same
@@ -39,6 +46,7 @@
 
   import { onMount } from 'svelte';
   import SkinSwitcher from '$lib/ui/SkinSwitcher.svelte';
+  import AspectToggle from '$lib/ui/AspectToggle.svelte';
   import { SLOT_COUNT } from '$lib/graph/preset-set';
   import ClockSurface from './ClockSurface.svelte';
   import MidiDinSurface from './MidiDinSurface.svelte';
@@ -68,6 +76,9 @@
     onLoadPerformance: () => void | Promise<void>;
     onExportJson: () => void;
     onImportJson: () => void | Promise<void>;
+    /** File → Clear rack: unpatch everything (Canvas.clearPatch). PINNED
+     *  workflow singletons survive by design; their edges do not. */
+    onClear: () => void;
     /** Header account state (same seam as the dawless topbar). */
     signedIn: boolean;
     headerAuth?: { isSignedIn: boolean; imageUrl: string | null; initials: string | null } | null;
@@ -114,6 +125,7 @@
     onLoadPerformance,
     onExportJson,
     onImportJson,
+    onClear,
     signedIn,
     headerAuth = null,
     timelordeNode = null,
@@ -345,6 +357,21 @@
           </div>
         {/if}
 
+        <!-- Output aspect — the EXISTING AspectToggle, hosted inline next to
+             Theme (both are display settings). Ported from the dawless
+             topbar, where it sat bare in the .actions cluster. Hosted rather
+             than wrapped in `fire()` so the menu STAYS OPEN and you can see
+             the 4:3 ⇄ 16:9 state flip on the control itself. -->
+        <!-- `group`, not a bare div: `role="menu"` permits `group` as a child
+             but not an unlabelled generic, and the hosted <AspectToggle/> is a
+             real control that must stay reachable. -->
+        <div class="row static-row" role="group" aria-label="Output aspect" data-testid="workflow-file-aspect">
+          <span class="row-label" aria-hidden="true">Output aspect</span>
+          <span class="aspect-host" data-testid="workflow-aspect-host">
+            <AspectToggle />
+          </span>
+        </div>
+
         <div class="divider"></div>
 
         <!-- Sign in / account — the existing link/flow. -->
@@ -360,6 +387,22 @@
         {:else}
           <a class="row link" role="menuitem" href="/dashboard" data-testid="workflow-file-signin">Sign in</a>
         {/if}
+
+        <!-- DANGER ZONE, last and visually separated. Clear is the one
+             DESTRUCTIVE action in this menu, so it deliberately does NOT sit
+             next to Quicksave/Quickload where a slip costs you the rack.
+             Behaviour is byte-for-byte the dawless `Clear` button
+             (Canvas.clearPatch): same handler, same `nodeCount === 0`
+             disable. PLACEMENT is the reviewable question — see the PR body. -->
+        <div class="divider danger-divider"></div>
+        <button
+          class="row danger"
+          role="menuitem"
+          data-testid="workflow-file-clear"
+          disabled={!hasNodes}
+          onclick={() => fire(onClear)}
+          title="Clear the rack — deletes every module and cable. Pinned workflow singletons (clock / audio I/O) survive; their cables do not."
+        >Clear rack</button>
       </div>
     {/if}
   </div>
@@ -609,8 +652,38 @@
     background: #2a2f3a;
     margin: 4px 6px;
   }
+  /* Thicker + warmer: the visual break before the one destructive row. */
+  .danger-divider {
+    height: 2px;
+    background: #4a2226;
+    margin: 8px 6px 4px;
+  }
   .theme-host {
     padding: 2px 10px 8px 22px;
+  }
+  /* A .row that is a LAYOUT container (label + hosted control), not a
+     clickable menuitem — `cursor` and hover must not read as actionable. */
+  .row.static-row {
+    cursor: default;
+    justify-content: space-between;
+  }
+  .row.static-row:hover {
+    background: transparent;
+  }
+  .row-label {
+    color: var(--text-dim);
+  }
+  .aspect-host {
+    display: inline-flex;
+  }
+  /* DESTRUCTIVE row — red text + red hover wash, so Clear can never be
+     mistaken for the neutral file operations above it. */
+  .row.danger {
+    color: #f0a0a0;
+  }
+  .row.danger:hover:not(:disabled) {
+    background: #3a1c20;
+    color: #ffc4c4;
   }
   .account-avatar {
     width: 20px;

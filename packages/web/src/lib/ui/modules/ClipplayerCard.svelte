@@ -27,6 +27,10 @@
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import { clipplayerDef } from '$lib/audio/modules/clipplayer';
+  // The POLY cable's real voice width. Imported, never re-typed: the badge and
+  // its tooltip used to claim "5" from a long-dead cable width, and a number
+  // restated in a card is exactly the divergence the card-vs-def rule covers.
+  import { POLY_CHANNEL_PAIRS } from '$lib/audio/poly';
   import {
     CLIP_LANES,
     CLIP_SLOTS,
@@ -1801,12 +1805,12 @@
                   onclick={() => toggleLaneMono(lane)}
                   title={laneIsMono(lane)
                     ? `Ch ${lane + 1}: MONO — one note per column (click for POLY)`
-                    : `Ch ${lane + 1}: POLY — up to 5 notes per column (click for MONO)`}
+                    : `Ch ${lane + 1}: POLY — a chord per column, up to ${POLY_CHANNEL_PAIRS} notes (click for MONO)`}
                   aria-label={`channel ${lane + 1} ${laneIsMono(lane) ? 'mono' : 'poly'}`}
                   aria-pressed={laneIsMono(lane)}
                   data-lane={lane}
                   data-testid={`clipplayer-mono-${lane}`}
-                >{laneIsMono(lane) ? '1' : '5'}</button>
+                >{laneIsMono(lane) ? '1' : '∑'}</button>
               </div>
             {/each}
           </div>

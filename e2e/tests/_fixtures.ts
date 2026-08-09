@@ -34,10 +34,15 @@
 //     the page object itself (pre-navigation errors are still caught: the
 //     listeners attach before the test body regardless).
 //
+//   * `loadVoiceDemo(page)` — see the block comment on the function. It
+//     REPLACES the retired "Load example… → Sequenced VCO" dropdown option
+//     that ~11 specs used purely as "get a known patch onto the canvas".
+//
 // The third extracted family, `setNodeParams` (Yjs param mutation), already
 // lives in `_module-coverage-helpers.ts` — import it from there.
 
-import { test as base, expect } from '@playwright/test';
+import { test as base, expect, type Page } from '@playwright/test';
+import { waitForMounted } from './_helpers';
 
 export interface ErrorWatch {
   /** Live list of collected page/console errors (push-ordered). */
@@ -70,3 +75,119 @@ export const test = base.extend<{ errorWatch: ErrorWatch; rack: void }>({
 });
 
 export { expect };
+
+/** The node ids the voice demo writes. Deliberately NOT exported — no spec
+ *  needs them today, and this repo prunes unreferenced exports (see the
+ *  `gotoCanvas` note above). Export it when something actually reads it. */
+const VOICE_DEMO_NODE_IDS = ['vd-seq', 'vd-vco', 'vd-adsr', 'vd-vca', 'vd-out'] as const;
+
+/**
+ * Put the canonical VOICE DEMO on the canvas: Sequencer → VCO + ADSR → VCA →
+ * Audio Out, pre-loaded with an 8-note C-major motif, sequencer auto-playing.
+ *
+ * WHY THIS EXISTS. This is byte-for-byte the graph the retired
+ * `Canvas.loadExample()` wrote — the "Sequenced VCO" entry in the "Load
+ * example…" topbar dropdown. That dropdown was DELETED (owner ruling: "load
+ * example goes away completely"), but ~11 specs were only ever using it as a
+ * FIXTURE: "give me a small, wired, audible patch so I can test Clear /
+ * save-load / the context menu / docs / …". Deleting those specs would have
+ * thrown away real coverage of features that have nothing to do with example
+ * patches, so the fixture moved HERE and the specs now call this.
+ *
+ * It is deliberately the SAME 5 nodes / 6 edges at the SAME positions with the
+ * SAME params, so every downstream assertion (node counts, cable counts, the
+ * `vd-*` ids, audible RMS) keeps its original meaning.
+ *
+ * NOT `spawnPatch()`: that helper cannot write `node.data`, and the motif lives
+ * on `vd-seq.data.steps`. A sequencer with no steps is silent, which would have
+ * quietly gutted the specs that assert the demo makes noise.
+ *
+ * Lives in `_fixtures.ts` (NOT `_helpers.ts`) on purpose — `_helpers.ts` is in
+ * the collab-attest basis and this is fixture-only churn.
+ */
+export async function loadVoiceDemo(page: Page): Promise<void> {
+  await page.waitForFunction(() => {
+    const w = globalThis as unknown as { __ensureEngine?: () => Promise<unknown>; __patch?: unknown };
+    return typeof w.__ensureEngine === 'function' && !!w.__patch;
+  });
+  await page.evaluate(async () => {
+    const w = globalThis as unknown as {
+      __ensureEngine: () => Promise<unknown>;
+      __patch: { nodes: Record<string, unknown>; edges: Record<string, unknown> };
+      __ydoc: { transact: (fn: () => void) => void };
+    };
+    await w.__ensureEngine();
+
+    const steps = [
+      // C-major motif starting at C4 (MIDI 60) — the 8 notes the dropdown's
+      // "Sequenced VCO" example shipped with.
+      { on: true, midi: 60 },
+      { on: true, midi: 67 },
+      { on: true, midi: 72 },
+      { on: true, midi: 67 },
+      { on: true, midi: 64 },
+      { on: true, midi: 60 },
+      { on: true, midi: 65 },
+      { on: true, midi: 67 },
+      ...Array.from({ length: 24 }, () => ({ on: false, midi: null })),
+    ];
+    const nodes: Record<
+      string,
+      { type: string; position: { x: number; y: number }; params: Record<string, number>; data?: Record<string, unknown> }
+    > = {
+      'vd-seq': {
+        type: 'sequencer',
+        position: { x: 40, y: 60 },
+        params: { bpm: 180, length: 8, isPlaying: 1, gateLength: 0.4 },
+        data: { steps },
+      },
+      'vd-vco': { type: 'analogVco', position: { x: 620, y: 30 }, params: {} },
+      'vd-adsr': {
+        type: 'adsr',
+        position: { x: 620, y: 320 },
+        params: { attack: 0.005, decay: 0.08, sustain: 0.3, release: 0.15 },
+      },
+      'vd-vca': { type: 'vca', position: { x: 920, y: 130 }, params: { base: 0, cvAmount: 1 } },
+      'vd-out': { type: 'audioOut', position: { x: 1200, y: 130 }, params: { master: 0.4 } },
+    };
+    const wires: Array<[string, string, string, string, string]> = [
+      ['vd-seq', 'pitch', 'vd-vco', 'pitch', 'pitch'],
+      ['vd-seq', 'gate', 'vd-adsr', 'gate', 'gate'],
+      ['vd-vco', 'sine', 'vd-vca', 'audio', 'audio'],
+      ['vd-adsr', 'env', 'vd-vca', 'cv', 'cv'],
+      ['vd-vca', 'audio', 'vd-out', 'L', 'audio'],
+      ['vd-vca', 'audio', 'vd-out', 'R', 'audio'],
+    ];
+
+    // ONE transaction: the demo is a single undo step and a single multiplayer
+    // broadcast, exactly as loadExample() wrote it.
+    w.__ydoc.transact(() => {
+      for (const [id, n] of Object.entries(nodes)) {
+        if (w.__patch.nodes[id]) continue;
+        w.__patch.nodes[id] = {
+          id,
+          type: n.type,
+          domain: 'audio',
+          position: n.position,
+          params: n.params,
+          // No `name`: `spawnPatch` omits it too, so cards fall back to the
+          // module label. (loadExample() stamped a `nextDefaultName`, which is
+          // not reachable from the page and which no spec asserted on.)
+          data: { ...(n.data ?? {}) },
+        };
+      }
+      for (const [src, srcPort, dst, dstPort, type] of wires) {
+        const id = `e-${src}-${srcPort}-${dst}-${dstPort}`;
+        if (w.__patch.edges[id]) continue;
+        w.__patch.edges[id] = {
+          id,
+          source: { nodeId: src, portId: srcPort },
+          target: { nodeId: dst, portId: dstPort },
+          sourceType: type,
+          targetType: type,
+        };
+      }
+    });
+  });
+  await waitForMounted(page, [...VOICE_DEMO_NODE_IDS]);
+}
