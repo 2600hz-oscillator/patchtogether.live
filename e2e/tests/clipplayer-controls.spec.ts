@@ -23,15 +23,19 @@ test('clip player: per-lane MONO toggle flips data + replaces-on-add in the edit
   const card = page.locator('.svelte-flow__node-clipplayer');
   await expect(card).toHaveCount(1);
 
-  // Lane 0 starts POLY (button reads "5").
+  // Lane 0 starts POLY (button reads "∑" — the glyph replaced a stale "5" that
+  // named a poly width the cable has not had for a long time; the ARIA label
+  // stays as words, since "∑" tells a screen reader nothing).
   const mono0 = page.getByTestId('clipplayer-mono-0');
-  await expect(mono0).toHaveText('5');
+  await expect(mono0).toHaveText('∑');
   await expect(mono0).toHaveAttribute('aria-pressed', 'false');
+  await expect(mono0).toHaveAttribute('aria-label', 'channel 1 poly');
 
   // Toggle → MONO (button reads "1", flag synced).
   await mono0.click();
   await expect(mono0).toHaveText('1');
   await expect(mono0).toHaveAttribute('aria-pressed', 'true');
+  await expect(mono0).toHaveAttribute('aria-label', 'channel 1 mono');
   const monoFlag = await page.evaluate(
     () => ((globalThis as unknown as W).__patch.nodes['cp'].data?.mono as boolean[] | undefined)?.[0],
   );

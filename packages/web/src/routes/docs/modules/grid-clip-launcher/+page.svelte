@@ -153,7 +153,7 @@
 
 <h2>The card</h2>
 <ul>
-  <li><strong>Session view</strong> (default) — the 8×8 launch grid (rows lane-tinted). Single-click = launch / queue / stop; double-click = open the editor. A small <strong>1/5 button</strong> to the left of each row toggles that instrument lane between <strong>MONO</strong> (one note per column — placing a note replaces what's there) and <strong>POLY</strong> (up to 5 notes per column).</li>
+  <li><strong>Session view</strong> (default) — the 8×8 launch grid (rows lane-tinted). Single-click = launch / queue / stop; double-click = open the editor. A small <strong>1 / ∑</strong> button to the left of each row toggles that instrument lane between <strong>MONO</strong> (<strong>1</strong> — one note per column, placing a note replaces what's there) and <strong>POLY</strong> (<strong>∑</strong> — a chord per column, up to the poly cable's 16-voice width).</li>
   <li><strong>Edit view</strong> — a piano-roll note editor for one clip: X = step, Y = pitch (scale-degree rows in-key, root at the bottom). Click to place a note (click again to remove); <strong>right-click to cycle its velocity</strong> through 6 levels. Cycle <em>scale</em>, set <em>root</em>, change <em>length</em> (16/32/64/128/8; up to 128 steps), scroll the pitch window by a <strong>row</strong> (<code>↑/↓</code>) or an <strong>octave</strong> (<code>⤒/⤓</code>), or <code>⌫</code> clear the clip. A playhead column tracks the beat while the lane plays. <strong>Audition the clip without leaving the editor</strong> with the <strong>NOW</strong> / <strong>QUEUE</strong> buttons at the bottom-right (see <a href="#audition">below ↓</a>).</li>
   <li><strong>Params</strong> — <code>STEP</code> (1/4 · 1/8 · 1/16 · 1/32 = steps per beat), <code>OCT</code> (transpose all lanes), <code>GATE</code> (note duty cycle), <code>QNT</code> (quantize launch to the loop boundary).</li>
   <li><strong>Transport</strong> — <code>▶/■</code> drives TIMELORDE (hidden when externally clocked); <code>■</code> in the title bar stops all lanes; <code>GRID</code> connects a monome grid.</li>
@@ -315,10 +315,11 @@
   caption={lengthEditGrid.caption}
 />
 <p class="aside">
-  <strong>Per-lane MONO/POLY</strong> is set on the card (the 1/5 button left of
-  each launch row), not on the grid. In a mono lane, placing a note in a column
-  that already holds one replaces it; a poly lane caps at <strong>5 notes per
-  column</strong> (the poly voice width) and re-uses the oldest when you add a 6th.
+  <strong>Per-lane MONO/POLY</strong> is set on the card (the <strong>1</strong> /
+  <strong>∑</strong> button left of each launch row), not on the grid. In a mono
+  lane, placing a note in a column that already holds one replaces it; a poly
+  lane stacks a chord in one column, up to the poly cable's <strong>16-voice</strong>
+  width, and re-uses the oldest voice beyond that.
 </p>
 
 <h2 id="audition">Auditioning the clip you're editing</h2>
