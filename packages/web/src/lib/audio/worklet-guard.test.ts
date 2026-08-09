@@ -227,22 +227,34 @@ const CONSTRUCTION = /new\s+AudioWorkletNode\s*\(/g;
  * NAMED EXEMPTIONS — the exact `(file, processor)` pair, never a bare filename,
  * so a NEW unguarded node in an already-listed file still reddens.
  *
- * ⚠ ALL FIVE ARE THE SAME REASON, and it is a real one:
- * `packages/web/src/lib/video/**` (whole dir, non-test) is in the WEBGL ATTEST
- * CONTENT HASH (`scripts/webgl-attest-lib.ts` → `resolveWebglBasis()` step 1).
- * Editing any of these files churns that hash and forces a trusted-machine GPU
- * re-attest — which is currently blocked on unrelated camera-input failures. So
- * routing them through the seam is deferred to the re-attest PR, not skipped
- * because it was forgotten. Each is an AUDIO worklet living inside a video
- * module, and each is unguarded TODAY exactly as it was before this PR: the
- * exemption preserves the status quo, it does not create a new hole.
+ * ⚠ ALL EIGHT ARE THE SAME REASON, and it is a real one: every one of these
+ * files is in the WEBGL ATTEST CONTENT HASH (`scripts/webgl-attest-lib.ts` →
+ * `resolveWebglBasis()`: step 1 sweeps `packages/web/src/lib/video/**` whole,
+ * step 3 adds the three `rendersWebGL`-flagged AUDIO defs). Editing any of them
+ * churns that hash and forces a trusted-machine GPU re-attest — currently
+ * blocked on unrelated camera-input failures.
+ *
+ * MEASURED: routing the three audio ones through the seam moved the content
+ * hash `620fa1b3…` → `717b3325…` and reddened the `webgl-attest` job. Reverting
+ * exactly those three restored `620fa1b3…`. So the exemption is not a
+ * preference — it is the cost of not shipping a red attest gate.
+ *
+ * Each of these is unguarded TODAY exactly as it was before this PR: the
+ * exemption preserves the status quo, it does not create a new hole. Routing
+ * them through the seam belongs in whichever PR next does a legitimate
+ * re-attest.
  */
 const UNGUARDED_EXEMPTIONS: ReadonlyArray<{ file: string; processor: string; why: string }> = [
+  // (1) whole-dir video sweep
   { file: 'lib/video/modules/blood.ts', processor: 'blood-pcm', why: 'webgl attest basis' },
   { file: 'lib/video/modules/doom.ts', processor: 'doom-pcm', why: 'webgl attest basis' },
   { file: 'lib/video/modules/mandelbulb.ts', processor: 'mandelbulb-osc', why: 'webgl attest basis' },
   { file: 'lib/video/modules/recorderbox.ts', processor: 'recorderbox-capture', why: 'webgl attest basis' },
   { file: 'lib/video/modules/videocube.ts', processor: 'mandelbulb-osc', why: 'webgl attest basis' },
+  // (3) AUDIO_WEBGL_MODULE_DEFS — audio defs flagged rendersWebGL
+  { file: 'lib/audio/modules/cube.ts', processor: 'cube', why: 'webgl attest basis' },
+  { file: 'lib/audio/modules/hypercube.ts', processor: 'hypercube', why: 'webgl attest basis' },
+  { file: 'lib/audio/modules/wavesculpt.ts', processor: 'wavesculpt-engine', why: 'webgl attest basis' },
 ];
 
 /** The one file allowed to say `new AudioWorkletNode` — the seam itself. */
@@ -262,17 +274,28 @@ function findConstructionSites(): Site[] {
     CONSTRUCTION.lastIndex = 0;
     let m: RegExpExecArray | null;
     while ((m = CONSTRUCTION.exec(code)) !== null) {
-      // The processor name is the SECOND argument. It is a string literal at
-      // all five exempted sites; a site naming it through a CONSTANT resolves
-      // to '?', which matches no exemption and is therefore DENIED — the safe
-      // direction. Never drop an unnameable site: that would be an opt-out.
+      // The processor name is the SECOND argument: either a string literal or
+      // a module-level `const NAME = '…'`, both of which are resolved. Anything
+      // else resolves to '?', which matches NO exemption and is therefore
+      // DENIED — the safe direction. Never drop an unnameable site: that would
+      // be an opt-out.
       // (Negative-controlled by hand, 2026-08-08: reverting kickdrum.ts to a
       // bare `new AudioWorkletNode(ctx, PROCESSOR_NAME, …)` reddens this
-      // assertion as `lib/audio/modules/kickdrum.ts → ?` and the ratchet with
-      // it.)
+      // assertion and the ratchet with it.)
       const after = code.slice(m.index, m.index + 260);
-      const name = /new\s+AudioWorkletNode\s*\(\s*[^,]+,\s*['"]([^'"]+)['"]/.exec(after);
-      sites.push({ file: rel, processor: name?.[1] ?? '?' });
+      const lit = /new\s+AudioWorkletNode\s*\(\s*[^,]+,\s*['"]([^'"]+)['"]/.exec(after);
+      let processor = lit?.[1];
+      if (!processor) {
+        const ident = /new\s+AudioWorkletNode\s*\(\s*[^,]+,\s*([A-Za-z_$][\w$]*)/.exec(after);
+        if (ident) {
+          const decl = new RegExp(
+            `^\\s*(?:const|let|var)\\s+${ident[1]}\\s*(?::[^=]+)?=\\s*['"]([^'"]+)['"]`,
+            'm',
+          ).exec(code);
+          processor = decl?.[1];
+        }
+      }
+      sites.push({ file: rel, processor: processor ?? '?' });
     }
   }
   return sites;
@@ -304,8 +327,8 @@ describe('worklet-guard — the source gate (DENY BY DEFAULT)', () => {
     ).toEqual([]);
   });
 
-  it('RATCHETS BOTH WAYS: exactly 5 unguarded sites remain, all webgl-attest-basis', () => {
-    const CEILING = 5;
+  it('RATCHETS BOTH WAYS: exactly 8 unguarded sites remain, all webgl-attest-basis', () => {
+    const CEILING = 8;
     expect(sites.length, 'unguarded worklet constructions').toBeLessThanOrEqual(CEILING);
     expect(
       CEILING - sites.length,
@@ -325,10 +348,10 @@ describe('worklet-guard — the source gate (DENY BY DEFAULT)', () => {
       const code = readFileSync(abs, 'utf8');
       guarded += (code.match(/createWorkletNode\s*\(/g) ?? []).length;
     }
-    // 60 audio-module sites + audio-out + the engine's gate-edge bridge, minus
-    // the seam's own definition/JSDoc mentions which live outside lib/audio's
-    // module tree. A floor, not a pin: new modules push it up.
-    expect(guarded, 'createWorkletNode call sites under lib/audio').toBeGreaterThanOrEqual(60);
+    // 57 audio-module sites + audio-out + the engine gate-edge bridge (the
+    // three webgl-attest-basis audio defs are exempt, above). A FLOOR, not a
+    // pin: new modules push it up, and a mass revert of the seam drops below it.
+    expect(guarded, 'createWorkletNode call sites under lib/audio').toBeGreaterThanOrEqual(57);
   });
 
   it('the Faust path — the one node the seam cannot construct — is guarded', () => {
