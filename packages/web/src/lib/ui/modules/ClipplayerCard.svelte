@@ -163,10 +163,15 @@
     applyProbMenuPick,
     clipProbMenuCheckedLevel,
     applyClipProbMenuPick,
+    pitchProbMenuLevels,
+    pitchProbMenuCheckedLevel,
+    applyPitchProbMenuPick,
   } from './clipplayer-prob-menu';
   // Pure SOURCE-AWARE cell-fill colour (white/purple/orange) — extracted so it
-  // stays unit-tested + mirrors the launchpad's noteProbRgb buckets.
-  import { noteCellFill } from './clipplayer-prob-color';
+  // stays unit-tested + mirrors the launchpad's noteProbRgb buckets. The pitch-
+  // instability marker is deliberately NOT a colour (see that module's note).
+  import { noteCellFill, noteCellPitchUnstable, noteCellPitchProb } from './clipplayer-prob-color';
+  import { pitchProbLevelToValue, pitchProbLabel } from '$lib/audio/pitch-probability';
   // Prob menus portal to <body> (escapes the SvelteFlow pan/zoom transform,
   // which silently turns position:fixed into pane-local coords) and position
   // through the shared viewport clamp so the WHOLE menu stays in view even
@@ -1236,6 +1241,31 @@
     if (clip) writeClipData(setNotePlayEvery(clip, probMenu.step, probMenu.midi, n));
     probMenu = null;
   }
+  // ── PER-NOTE PITCH PROBABILITY (the third row of the same right-click menu).
+  // OFF (the default) … 100% in the same 40 increments as Probability, so the
+  // domain already matches what the Push/Launchpad will want — but this PR is
+  // CARD-ONLY (owner: "we'll add this to the physical controls later"). Writes
+  // setNotePitchProb through the undoable clip write. ORTHOGONAL to the two
+  // above: they decide whether the note fires, this decides at what pitch. ──
+  function pitchProbMenuCurrent(): number {
+    if (!probMenu) return 0;
+    return pitchProbMenuCheckedLevel(clipAt(selectedClip), probMenu.step, probMenu.midi);
+  }
+  function pickPitchProb(level: number) {
+    if (!probMenu) return;
+    const clip = clipAt(selectedClip);
+    if (clip) writeClipData(applyPitchProbMenuPick(clip, probMenu.step, probMenu.midi, level));
+    probMenu = null;
+  }
+  /** The note cell's tooltip — the base gesture help plus the note's PITCH
+   *  INSTABILITY when it carries any (the magnitude the dashed border cannot
+   *  show; see clipplayer-prob-color.ts on why it is not a third colour). */
+  function cellTitle(clip: NoteClipRecord, step: number, midi: number): string {
+    const base =
+      'Click: note on/off (Shift-click: cycle velocity) · Right-click: probability (colour = purple ∝ probability, white = 100%), play every, pitch probability';
+    const pp = noteCellPitchProb(clip, step, midi);
+    return pp > 0 ? `${base} — PITCH PROBABILITY ${pitchProbLabel(pp)} (dashed border)` : base;
+  }
 
   // ── CLIP-DEFAULT PROBABILITY menu (right-click a GRID clip pad — the card
   // mirror of the Launchpad SHIFT+clip PROB page). A "Clip probability" submenu:
@@ -2124,6 +2154,7 @@
                   <button
                     class="cell"
                     class:note={fill !== ''}
+                    class:unstable={noteCellPitchUnstable(editClip, step, midi)}
                     class:playhead={step === playheadCol}
                     class:beat={step % 4 === 0}
                     class:crow={midi % 12 === 0}
@@ -2132,7 +2163,7 @@
                     data-step={step}
                     data-row={row}
                     aria-label={`step ${step} row ${row}`}
-                    title="Click: note on/off (Shift-click: cycle velocity) · Right-click: probability (colour = purple ∝ probability, white = 100%)"
+                    title={cellTitle(editClip, step, midi)}
                     data-testid={`clipplayer-cell-${row}-${step}`}
                     onclick={() => (shiftHeld ? cycleCellVelocity(step, row) : toggleNote(step, row))}
                     oncontextmenu={(e) => openProbMenu(e, step, row)}
@@ -2144,6 +2175,7 @@
           {#if probMenu}
             {@const current = probMenuCurrentLevel()}
             {@const curEvery = playEveryMenuCurrent()}
+            {@const curPitch = pitchProbMenuCurrent()}
             <!-- PER-NOTE PROBABILITY menu (right-click a note): the Probability
                  submenu, 100% (default) … 2.5%, the note's level checked. Each
                  item writes setNoteProb through the undoable clip write.
@@ -2190,6 +2222,25 @@
                       title={n === 1 ? 'Every loop (default)' : `Every ${n}th loop`}
                       onclick={() => pickPlayEvery(n)}
                     >{n === 1 ? '1 (every)' : n}</button>
+                  {/each}
+                </div>
+                <!-- PITCH PROBABILITY: how far the note's PITCH may wander when
+                     it fires (off = the authored pitch, exactly). 40 increments,
+                     the same grid as Probability above. Card-only for now. -->
+                <div class="prob-menu-head">Pitch Probability ▸</div>
+                <div class="prob-menu-list">
+                  {#each pitchProbMenuLevels() as level (level)}
+                    <button
+                      class="prob-menu-item pitch"
+                      class:checked={curPitch === level}
+                      role="menuitemcheckbox"
+                      aria-checked={curPitch === level}
+                      data-testid={`clipplayer-pitch-prob-item-${level}`}
+                      title={level === 0
+                        ? 'Fixed pitch — play exactly the note you drew (default)'
+                        : `Pitch instability ${pitchProbLabel(pitchProbLevelToValue(level))} — the note may land on a nearby scale degree instead`}
+                      onclick={() => pickPitchProb(level)}
+                    >{level === 0 ? 'off (fixed)' : pitchProbLabel(pitchProbLevelToValue(level))}</button>
                   {/each}
                 </div>
               </div>
@@ -2772,6 +2823,13 @@
      cellProbFill): WHITE at 100%, deepening to PURPLE as the firing chance
      drops. The inline style wins over .beat; the playhead border still reads. */
   .cell.note { border-color: #0d0d0d; }
+  /* PITCH PROBABILITY marker — a DASHED border, deliberately NOT a third colour
+     axis (the fill already blends probability + play-every; see
+     clipplayer-prob-color.ts for the full argument). A shape channel reads on
+     every fill colour and stays legible at 15×13 px; the magnitude lives in the
+     cell tooltip and the menu's checked row. Only ever set on a cell that HOLDS
+     a note, so an untouched clip renders byte-identically. */
+  .cell.unstable { border-style: dashed; }
   /* the playhead lights the whole column so you see the tempo pulse cross the
      clip; a note keeps its prob colour (inline) but gains the accent border. */
   .cell.playhead { background: rgba(108, 170, 255, 0.22); border-color: var(--accent, #6cf); }
@@ -2825,6 +2883,11 @@
      menu. */
   .prob-menu-item.clip:hover { background: hsl(30 60% 32%); }
   .prob-menu-item.clip.checked { background: hsl(30 75% 42%); color: #fff; }
+  /* The PITCH-PROBABILITY row tints TEAL — a third menu hue, which is safe here
+     (a menu row is 84 px wide with a text label beside it) even though a third
+     hue on a 15×13 px note cell is not. */
+  .prob-menu-item.pitch:hover { background: hsl(180 45% 28%); }
+  .prob-menu-item.pitch.checked { background: hsl(180 55% 34%); color: #fff; }
   /* One stacked header cell per channel COLUMN: the COLOR swatch (top) over the
      MONO/POLY toggle (bottom). 28px wide to align with the pads below; the
      --lane-color set here is inherited by both children. */

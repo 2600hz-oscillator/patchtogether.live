@@ -49,6 +49,7 @@ import {
   type AutomationLaneRender,
 } from './clip-automation-render';
 import { drainAudition, clearAudition } from './clip-audition';
+import { applyPitchProbability } from '$lib/audio/pitch-probability';
 import {
   readClip,
   notesFiringAt,
@@ -1357,7 +1358,29 @@ export const clipplayerDef: AudioModuleDef = {
       // whose turn it isn't this loop is skipped before the dice — and, being
       // absent from the firing set, is neither sounded NOR printed (printed ==
       // sounded).
-      const firing = notesFiringAt(clip, idx, Math.random, ln.loopCount);
+      const rolled = notesFiringAt(clip, idx, Math.random, ln.loopCount);
+      // PITCH PROBABILITY — the survivors then draw their PITCH from a weighted
+      // candidate distribution ($lib/audio/pitch-probability). Orthogonal to the
+      // roll above: that decided WHETHER each note fires, this decides WHAT
+      // PITCH it fires at. A no-op (same array reference, zero allocation) for
+      // every note without instability, so an untouched clip is bit-identical.
+      //
+      // ⚠ DETERMINISTIC, unlike the firing roll one line up. The draw is seeded
+      // from (nodeId, lane, slot, step, authored midi, loopCount) — all values
+      // every peer already agrees on — so collaborators hear the SAME melody.
+      // An unseeded Math.random() here would give each peer different NOTES, and
+      // single-user testing cannot see that. It rides the SAME `ln.loopCount`
+      // PLAY EVERY does, so it inherits exactly that control's convergence
+      // guarantee (peers agree from the next launch onward) and no less.
+      const firing = applyPitchProbability(rolled, {
+        root: clip.root,
+        scale: clip.scale,
+        nodeId,
+        lane: L,
+        slot: ln.active,
+        step: idx,
+        loopCount: ln.loopCount,
+      }) as NoteEvent[];
       const r = lanesFromFiring(firing);
       const octave = readParam('octave', 0);
       const gateFrac = readParam('gateLength', 0.9);

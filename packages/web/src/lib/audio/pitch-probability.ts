@@ -605,3 +605,65 @@ export function resolvePitch(
   if (clampInstability(opts.instability) <= 0) return Math.round(opts.midi);
   return samplePitch(opts, pitchRollRng(opts.seed));
 }
+
+/** Everything the engine knows at one lane-step that the pitch draw needs. */
+export interface PitchMutationContext {
+  /** The clip's root MIDI (the degree grid's origin). */
+  root: number;
+  /** The clip's scale; undefined = chromatic. */
+  scale?: ScaleName;
+  /** Seed inputs — see `pitchRollSeed`. `midi` is filled in per note. */
+  nodeId: string;
+  lane: number;
+  slot: number;
+  step: number;
+  loopCount: number;
+  /** Curve overrides (the future second-parameter seam). */
+  curve?: Partial<PitchProbCurve>;
+}
+
+/**
+ * Map an ALREADY-ROLLED firing set through pitch probability — the single seam
+ * the clip-player's tick calls.
+ *
+ * Returns the SAME ARRAY REFERENCE when no note carries instability, so a clip
+ * that never touches the control costs one predicate per note and allocates
+ * nothing (playback is then bit-identical to pre-feature). Otherwise returns a
+ * new array of shallow-copied events with `midi` replaced, which is what makes
+ * the SOUNDED and PRINTED note the same object graph downstream.
+ *
+ * Generic over the event shape so it needs no import from the clip model. PURE.
+ */
+export function applyPitchProbability<T extends { midi: number; pitchProb?: number }>(
+  firing: readonly T[],
+  ctx: PitchMutationContext,
+): readonly T[] {
+  let any = false;
+  for (const ev of firing) {
+    if (clampInstability(ev.pitchProb) > 0) {
+      any = true;
+      break;
+    }
+  }
+  if (!any) return firing; // untouched clip → no allocation, no behaviour change
+  return firing.map((ev) => {
+    const instability = clampInstability(ev.pitchProb);
+    if (instability <= 0) return ev;
+    const midi = resolvePitch({
+      midi: ev.midi,
+      instability,
+      root: ctx.root,
+      scale: ctx.scale,
+      curve: ctx.curve,
+      seed: {
+        nodeId: ctx.nodeId,
+        lane: ctx.lane,
+        slot: ctx.slot,
+        step: ctx.step,
+        midi: ev.midi,
+        loopCount: ctx.loopCount,
+      },
+    });
+    return midi === ev.midi ? ev : { ...ev, midi };
+  });
+}
