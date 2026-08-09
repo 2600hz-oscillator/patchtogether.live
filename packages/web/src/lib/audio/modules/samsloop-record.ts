@@ -6,50 +6,159 @@
 //
 // The recording surface for the card:
 //   - `samsloopMaxSeconds(rate, bits, channels)` — how long a recording
-//     can run before we auto-stop at the 250 kB byte budget. The card uses
+//     can run before we auto-stop at the byte budget. The card uses
 //     this both to draw the live-record bar (waveform x-axis = maxSeconds
 //     at current settings) and to know when to stop the capture.
 //   - `quantizeF32ToI16` / `quantizeF32ToI8` — convert AudioContext-rate
 //     Float32 samples (the raw capture output) to the on-disk bit depth.
 //   - `downsample` — drop AudioContext rate (typically 48 kHz) down to the
-//     user-chosen RATE switch (22 / 44 kHz). Integer-factor decimation
-//     with a 1-pole IIR pre-filter to suppress aliasing.
+//     user-chosen RATE switch (22 / 44 / 48 kHz). Integer-factor decimation
+//     with a 1-pole IIR pre-filter to suppress aliasing. ⚠ The rate it
+//     ACHIEVES is not always the rate you asked for — see
+//     `samsloopAchievedRate`, which every caller must tag its bytes with.
+//   - `SamsloopCaptureBuffer` — the fixed-capacity L/R accumulator the card
+//     writes each tap chunk into (see the class comment for why this is not
+//     `AudioRingBuffer`).
 //   - `makeWavBlob` — synthesize a standard 44-byte RIFF/WAVE header on
 //     the fly for the DOWNLOAD button. Stored bytes are header-less PCM;
 //     the header is built only on export.
 //
-// None of this is on the hot path — recording-time work runs in a
-// MessagePort handler at ≈3 ms / block (48 kHz / 128), and quantize +
-// downsample fire ONCE on STOP. Optimize for clarity, not throughput.
+// Quantize + downsample fire ONCE on STOP, so they optimize for clarity.
+// `SamsloopCaptureBuffer.append` is the ONE hot path here: it runs in the
+// tap's MessagePort handler at 375 messages/second (48 kHz / 128 samples),
+// on the same main thread as the audio scheduler.
 
-/** Hard ceiling on stored PCM bytes per SAMSLOOP recording. 250 000 bytes.
- *  Deliberately FAR TIGHTER than the uploaded-file budget
- *  (`SAMSLOOP_MAX_FILE_BYTES` = 2 MB): the persistence-layer cost is one Yjs
- *  update per recording carrying the bytes inside node.data, so a recording
- *  stays bounded at ≤250 kB regardless of which RATE × BITS × CHANNELS the
- *  user picks. (This comment used to call the upload cap "250 KB" too — it was
- *  raised to 2 MB and this sentence was not; the two numbers are 8× apart.) */
-export const SAMSLOOP_RECORD_BUDGET_BYTES = 250_000;
+/**
+ * Hard ceiling on stored PCM bytes per SAMSLOOP recording.
+ *
+ * DERIVATION — the previous value (250 000) had none, which is the whole
+ * reason this constant needed fixing. It was cloned from the uploaded-file
+ * cap when that cap was also 250 kB, then orphaned when the upload cap was
+ * raised 8× to 2 MB (`SAMSLOOP_MAX_FILE_BYTES`); the old comment here even
+ * admitted the two numbers were 8× apart without drawing the conclusion. The
+ * result was a module that LOADED 62.5 s and RECORDED 1.42 s.
+ *
+ *   3 MB raw PCM
+ *     → ×4/3 for the base64 storage form  = 4 MB in `node.data.sample`
+ *     → that is ONE opaque Yjs value, broadcast once per finished take
+ *     → the relay warns at 16 MB per rack and crits at 24 MB
+ *       (`packages/server/src/rack-accounting.ts` — `RELAY_RACK_WARN_MB`)
+ *     → so ONE full-length recording is ≤25 % of the per-rack warn budget.
+ *
+ * At the shipped defaults (mono / 16-bit / 48 kHz = 96 000 B/s) that is
+ * 31.25 s, up from 1.42 s at the old 250 kB + stereo/16/44.1k defaults —
+ * 22× longer AND correctly rate-tagged (see `samsloopAchievedRate`).
+ *
+ * The byte budget is not the only cap: `SAMSLOOP_RECORD_MAX_SECONDS` below
+ * bounds the wall-clock length independently, and it is the binding one at
+ * the low-fidelity settings.
+ *
+ * ⚠ THIS IS THE PER-TAKE CAP, NOT THE BUDGET. A per-instance limit multiplied
+ * by an instance cap is an upper bound nobody checks: 20 SAMSLOOPs × 4 MB is
+ * 80 MB against a relay that crits at 24 MB per rack. The governing constraint
+ * is the RACK TOTAL, and it is enforced by `SAMSLOOP_RACK_RECORD_BUDGET_BYTES`
+ * below. Read the two together — this one bounds one take so a single
+ * recording can never dominate a rack; that one bounds the sum.
+ */
+export const SAMSLOOP_RECORD_BUDGET_BYTES = 3_000_000;
+
+/**
+ * Hard ceiling on recording LENGTH, independent of the byte budget.
+ *
+ * ⚠ THIS IS AN ARCHITECTURE BOUNDARY, NOT A COMFORT LIMIT. A recording lives
+ * in `node.data` and therefore syncs to every peer inside the rackspace
+ * envelope. Past roughly a minute that model stops being the right one and
+ * the TWOTRACKS model takes over — a worklet-owned buffer carried
+ * out-of-band in the `.ptperf.zip`, which does NOT sync the audio to peers.
+ * Raising this past ~60 s is an owner decision about that trade, not a
+ * tuning knob.
+ *
+ * It binds wherever the settings are cheap enough that 3 MB would buy more
+ * than a minute — e.g. mono / 8-bit / 22.05 kHz is 136 s of budget, capped
+ * here to 60 s. At the defaults the BYTE budget binds first (31.25 s).
+ */
+export const SAMSLOOP_RECORD_MAX_SECONDS = 60;
+
+/**
+ * THE RACK BUDGET — the ceiling that actually governs, in BASE64 BYTES.
+ *
+ * ⚠ COUNTED IN BASE64, NOT RAW PCM, DELIBERATELY. The relay accounts Yjs
+ * update bytes (`packages/server/src/rack-accounting.ts`), and what rides a Yjs
+ * update is the base64 STRING in `node.data`, ~4/3 the size of the PCM. A
+ * ledger denominated in raw bytes would under-count the thing being limited by
+ * 33 % — measuring the wrong quantity is the failure this repo names
+ * "validate the instrument". So: encoded characters, the same units the relay
+ * sees.
+ *
+ * DERIVATION — from the relay's own thresholds, not re-derived:
+ *   warn 16 MB / crit 24 MB per rack (`readRackMemThresholds`)
+ *   12 MB = 75 % of WARN, 50 % of CRIT
+ * Recordings may therefore push a rack toward WARN — which is a log line and
+ * an `alert_state` rollup, not an outage — but **cannot on their own reach
+ * CRIT** even if everything else in the rack matched them byte for byte. That
+ * is the property worth having: the noisy threshold is reachable, the paging
+ * one is structurally out of reach for this module.
+ *
+ * What it buys: three full-length 31 s takes, or ~18 of the 5-second loops
+ * this module actually gets used for. Most takes are nowhere near the per-take
+ * cap, so a static per-instance limit sized to `crit / 20` would have been
+ * punitively small for the common case AND still guaranteed nothing about the
+ * total. A ledger charges only what is actually stored.
+ *
+ * ⚠ ITS ENFORCEMENT MUST BE VISIBLE. This module just deleted a silent 8 %
+ * truncation; re-introducing the same class one layer up would be worse, not
+ * better. The rack budget therefore only ever (a) SHRINKS the card's
+ * "N.NNs max" readout, which is on screen before anyone presses REC, or
+ * (b) REFUSES TO ARM with the numbers in the error line. It never shortens a
+ * take in progress beyond the ordinary cap-stop (which announces itself), and
+ * it never drops bytes after the fact.
+ */
+export const SAMSLOOP_RACK_RECORD_BUDGET_BYTES = 12_000_000;
+
+/**
+ * Below this much headroom, REC refuses to arm instead of offering a stub.
+ *
+ * Refusing up front is honest; handing someone a 0.2-second recorder and
+ * letting them find out afterwards is not. One second is the shortest take
+ * that is arguably still a loop.
+ */
+export const SAMSLOOP_MIN_RECORD_SECONDS = 1;
 
 /** Discrete option sets — the card's three toggle switches. Exposed as
  *  consts so the card, the helpers, and the tests share one source of
  *  truth (drift here ⇒ a mid-recording settings change makes the budget
- *  math disagree with the auto-stop trigger). */
-export const SAMSLOOP_RATE_OPTIONS = [22_050, 44_100] as const;
+ *  math disagree with the auto-stop trigger).
+ *
+ *  48 kHz is here because it is the rate almost every AudioContext actually
+ *  runs at, which makes the resampler a genuine no-op rather than the
+ *  mis-tagged one it used to be at 44.1 (see `samsloopAchievedRate`). */
+export const SAMSLOOP_RATE_OPTIONS = [22_050, 44_100, 48_000] as const;
 export const SAMSLOOP_BITS_OPTIONS = [8, 16] as const;
 export const SAMSLOOP_CHANNELS_OPTIONS = [1, 2] as const;
 export type SamsloopRecRate = (typeof SAMSLOOP_RATE_OPTIONS)[number];
 export type SamsloopRecBits = (typeof SAMSLOOP_BITS_OPTIONS)[number];
 export type SamsloopRecChannels = (typeof SAMSLOOP_CHANNELS_OPTIONS)[number];
 
-/** Default settings on a fresh module. Picked so a new SAMSLOOP records
- *  at near-CD-quality (44.1 / 16 / 2) inside the 250 kB budget = 1.42 s,
- *  which matches the existing upload-cap heuristic ("short enough to feel
- *  like a loop, long enough to capture a phrase"). */
+/**
+ * Default settings on a fresh module: MONO / 16-bit / 48 kHz = 31.25 s.
+ *
+ * Why each one moved off the old stereo / 16 / 44.1k (which bought 1.42 s):
+ *
+ *   - CHANNELS 2 → 1. The second channel was never heard. The playback
+ *     worklet buffer is MONO and `decodeRecordedPcm(..., 'mix')` averages
+ *     L+R before it gets there, so storing stereo doubled the byte cost to
+ *     serve exactly one feature: DOWNLOAD writing a 2-channel WAV. The
+ *     switch stays — this is a default, not a removal.
+ *   - RATE 44 100 → 48 000. Not a fidelity flex: `downsample` decimates by
+ *     an INTEGER factor, so from the usual 48 kHz context a 44.1 kHz target
+ *     decimates by round(1.088) = 1 — no decimation at all, and the bytes
+ *     used to be TAGGED 44 100 anyway. 48 kHz makes the no-op honest.
+ *   - BITS unchanged at 16.
+ */
 export const SAMSLOOP_REC_DEFAULTS = {
-  rate:     44_100 as SamsloopRecRate,
+  rate:     48_000 as SamsloopRecRate,
   bits:     16     as SamsloopRecBits,
-  channels: 2      as SamsloopRecChannels,
+  channels: 1      as SamsloopRecChannels,
 } as const;
 
 /** The persisted shape of a finished SAMSLOOP recording — `node.data.sample`.
@@ -71,9 +180,16 @@ export interface SamsloopRecordedSample {
   /** Base64-encoded raw PCM bytes. One flat Yjs value; length bounded by
    *  SAMSLOOP_RECORD_BUDGET_BYTES pre-encode (the string is ~4/3 of that). */
   bytesB64: string;
-  /** Sample rate the recording was downsampled to. One of the entries
-   *  in SAMSLOOP_RATE_OPTIONS. */
-  rate: SamsloopRecRate;
+  /** The rate the stored samples ACTUALLY are — `samsloopAchievedRate` of
+   *  the capture rate and the RATE switch, NOT the switch value itself.
+   *  Deliberately a plain `number` and not `SamsloopRecRate`: integer
+   *  decimation from a 48 kHz context reaches 48 000 / 24 000 / 16 000 …,
+   *  which is not the menu. This is what the playback worklet scales its
+   *  read cursor by, so tagging it with the request instead of the result
+   *  detunes the take (measured: −148 cents, 8.8 % long). Recordings made
+   *  before that fix keep their old tag and play exactly as they always
+   *  have — nothing migrates them. */
+  rate: number;
   /** Bit depth the recording was quantized to. One of SAMSLOOP_BITS_OPTIONS. */
   bits: SamsloopRecBits;
   /** Channel count. One of SAMSLOOP_CHANNELS_OPTIONS. */
@@ -95,37 +211,188 @@ export interface SamsloopRecordedSample {
 }
 
 /**
- * Maximum recording length in seconds for the given settings, capped to
- * the 250 kB byte budget. Used as the live-record bar's horizontal axis
- * (waveform fills the bar over `maxSeconds` of capture) AND as the
- * auto-stop trigger (capture ends when the byte count would exceed
- * SAMSLOOP_RECORD_BUDGET_BYTES).
+ * The integer decimation factor `downsample` will actually use.
  *
- * Formula: `floor(BUDGET / (rate * bytesPerSample * channels))`.
+ * ⚠ EXPORTED SO NOTHING RE-DERIVES IT. `downsample` calls this, the
+ * achieved-rate helper calls this, and the card's capture-capacity math
+ * calls this. Three copies of `Math.round(src/dst)` is precisely how the
+ * tagging bug below stayed alive.
+ */
+export function samsloopDecimationFactor(srcRate: number, dstRate: number): number {
+  if (srcRate <= 0 || dstRate <= 0) return 1;
+  if (srcRate <= dstRate) return 1;
+  return Math.max(1, Math.round(srcRate / dstRate));
+}
+
+/**
+ * THE RATE THE BYTES ACTUALLY ARE — which is NOT the rate the user picked.
  *
- * Pinned in `samsloop-record.test.ts`'s 8-cell table:
- *   mono 8-bit  22k = 11.34 s   stereo 8-bit  22k = 5.67 s
- *   mono 16-bit 22k =  5.67 s   stereo 16-bit 22k = 2.83 s
- *   mono 8-bit  44k =  5.66 s   stereo 8-bit  44k = 2.83 s
- *   mono 16-bit 44k =  2.83 s   stereo 16-bit 44k = 1.42 s
+ * ⚠ THIS FUNCTION EXISTS BECAUSE ITS ABSENCE WAS AN AUDIBLE BUG. `downsample`
+ * decimates by an INTEGER factor, so from a 48 kHz AudioContext:
  *
- * (The 11.34 / 5.67 / 2.83 / 1.42 cadence comes from the doubling-and-
- * halving of rate × bits × channels — each doubling halves the seconds.)
+ *   RATE switch 44 100 → factor round(1.088) = 1 → samples stay 48 000 Hz
+ *   RATE switch 22 050 → factor round(2.177) = 2 → samples become 24 000 Hz
+ *
+ * Neither equals the switch. The old code tagged the take with the SWITCH
+ * value anyway, and the playback worklet scales its read cursor by
+ * bufferRate/contextRate — so `rateScale` came out 44100/48000 = 0.919 and
+ * everything played back FLAT AND LONG. Measured against a 1000 Hz
+ * reference: 918.3 Hz, −148 cents, 8.8 % long, at BOTH switch positions.
+ * Only a 44.1 kHz AudioContext was ever correct.
+ *
+ * The fix is not a better resampler — it is telling the truth about the one
+ * we have. `encodeRecordingBytes` returns this value alongside the bytes so
+ * a caller cannot tag a buffer with a rate it merely requested.
+ *
+ * (Existing recordings keep whatever tag they were written with. They sound
+ * exactly as they always have; nothing migrates them. Owner ruling.)
+ */
+export function samsloopAchievedRate(srcRate: number, dstRate: number): number {
+  if (srcRate <= 0 || dstRate <= 0) return 0;
+  return srcRate / samsloopDecimationFactor(srcRate, dstRate);
+}
+
+/**
+ * How many RAW PCM bytes a base64 allowance is worth.
+ *
+ * base64 encodes 3 bytes as 4 characters, so the inverse is `×3/4` — floored
+ * to a whole 3-byte group so the round trip can never come out OVER the
+ * allowance it was derived from.
+ */
+export function samsloopBase64ToRawBytes(base64Bytes: number): number {
+  if (!(base64Bytes > 0)) return 0;
+  if (!Number.isFinite(base64Bytes)) return Infinity;
+  return Math.floor(base64Bytes / 4) * 3;
+}
+
+/** What a SAMSLOOP node contributes to the rack ledger, and what it costs. */
+export interface SamsloopRackLedger {
+  /** Base64 characters already stored across every SAMSLOOP in the rack. */
+  usedBytes: number;
+  /** `SAMSLOOP_RACK_RECORD_BUDGET_BYTES`, carried so a message can name it. */
+  budgetBytes: number;
+  /** Headroom, floored at 0 — never negative, so callers can use it as an
+   *  allowance without a second clamp. */
+  freeBytes: number;
+  /** True when the rack is ALREADY past the budget. Reachable on racks built
+   *  before the ledger existed; see the grandfathering note below. */
+  overBudget: boolean;
+  /** How many SAMSLOOP nodes were counted — printed in the refusal so a user
+   *  can tell "one huge sample" from "twenty small ones". */
+  nodeCount: number;
+}
+
+/** Minimal shape the ledger reads. Accepts the live syncedStore proxy AND
+ *  plain test fixtures; every field is read defensively. */
+type LedgerNode = {
+  type?: string;
+  data?: { sample?: { bytesB64?: unknown }; fileBytesB64?: unknown } | unknown;
+};
+
+/**
+ * THE RACK LEDGER — what every SAMSLOOP in this rack is currently costing.
+ *
+ * ⚠ COUNTS UPLOADS AS WELL AS RECORDINGS, and gates only recordings. The
+ * budget is about the RACK's bytes, so a rack already full of uploaded samples
+ * genuinely has less room to record into; pretending otherwise would make the
+ * ledger a number that does not describe the thing it limits. Uploads have
+ * their own per-file gate (`SAMSLOOP_MAX_FILE_BYTES`) and are not refused here.
+ *
+ * `excludeNodeId` drops that node's WHOLE payload — both the recording and any
+ * upload — because the RECORD commit replaces the first and
+ * `clearSamsloopUploadKeys` deletes the second. Charging a node for bytes it is
+ * about to release would make re-recording the same module progressively
+ * harder for no reason.
+ *
+ * Pure. `nodes` is `patch.nodes`-shaped.
+ */
+export function samsloopRackLedger(
+  nodes: Record<string, LedgerNode | undefined>,
+  excludeNodeId?: string,
+): SamsloopRackLedger {
+  let usedBytes = 0;
+  let nodeCount = 0;
+  for (const [id, node] of Object.entries(nodes)) {
+    if (!node || node.type !== 'samsloop') continue;
+    nodeCount++;
+    if (id === excludeNodeId) continue;
+    const d = node.data as
+      | { sample?: { bytesB64?: unknown }; fileBytesB64?: unknown }
+      | undefined;
+    const rec = d?.sample?.bytesB64;
+    if (typeof rec === 'string') usedBytes += rec.length;
+    const up = d?.fileBytesB64;
+    if (typeof up === 'string') usedBytes += up.length;
+  }
+  const budgetBytes = SAMSLOOP_RACK_RECORD_BUDGET_BYTES;
+  return {
+    usedBytes,
+    budgetBytes,
+    freeBytes: Math.max(0, budgetBytes - usedBytes),
+    overBudget: usedBytes > budgetBytes,
+    nodeCount,
+  };
+}
+
+/**
+ * The user-facing sentence for a rack that has no room left. Exported so the
+ * card and its tests share ONE string — a refusal nobody can read is the same
+ * failure as a silent one.
+ */
+export function samsloopRackFullMessage(ledger: SamsloopRackLedger): string {
+  const mb = (n: number) => (n / 1_000_000).toFixed(1);
+  return (
+    `No room to record: this rack's SAMSLOOPs already hold ` +
+    `${mb(ledger.usedBytes)} MB of the ${mb(ledger.budgetBytes)} MB sample budget ` +
+    `(${ledger.nodeCount} instance${ledger.nodeCount === 1 ? '' : 's'}). ` +
+    `Delete or shorten a sample, or record at a lower CHAN / BITS / RATE.`
+  );
+}
+
+/**
+ * Maximum recording length in seconds for the given settings — the LOWEST of
+ * the per-take byte budget, the hard length cap, and whatever the RACK has
+ * left. Used as the live-record bar's horizontal axis (waveform fills the bar
+ * over `maxSeconds` of capture) AND as the auto-stop trigger.
+ *
+ * `min(SAMSLOOP_RECORD_BUDGET_BYTES / (rate · bytesPerSample · channels),
+ *      SAMSLOOP_RECORD_MAX_SECONDS,
+ *      rawBytesFor(freeRackBase64Bytes) / (rate · bytesPerSample · channels))`
+ *
+ * `freeRackBase64Bytes` defaults to `Infinity` — i.e. "no rack context", which
+ * is what every pure-encoding caller and the 12-cell table below mean. The
+ * CARD always passes the live ledger's headroom, so the number on screen is
+ * what this rack can actually record, not what the settings could in principle.
+ *
+ * ⚠ `rate` is the ACHIEVED rate (`samsloopAchievedRate`), not the RATE
+ * switch. Passing the switch value is how the encoder came to emit 272 640
+ * bytes against a 250 000 budget and get silently trimmed on every take.
+ *
+ * Pinned in `samsloop-record.test.ts`'s 12-cell table:
+ *   mono  8-bit 22k = 60.00 s†  stereo  8-bit 22k = 60.00 s†
+ *   mono 16-bit 22k = 60.00 s†  stereo 16-bit 22k = 34.01 s
+ *   mono  8-bit 44k = 60.00 s†  stereo  8-bit 44k = 34.01 s
+ *   mono 16-bit 44k = 34.01 s   stereo 16-bit 44k = 17.01 s
+ *   mono  8-bit 48k = 60.00 s†  stereo  8-bit 48k = 31.25 s
+ *   mono 16-bit 48k = 31.25 s   stereo 16-bit 48k = 15.63 s
+ *                     ^ DEFAULT
+ *   († = the 60 s length cap binds, not the byte budget.)
  */
 export function samsloopMaxSeconds(
   rate: number,
   bits: number,
   channels: number,
+  freeRackBase64Bytes: number = Infinity,
 ): number {
-  if (rate <= 0 || bits <= 0 || channels <= 0) return 0;
-  const bytesPerSample = Math.ceil(bits / 8);
-  const bytesPerSecond = rate * bytesPerSample * channels;
-  if (bytesPerSecond <= 0) return 0;
   // Round to 2 decimal places (banker's rounding via Math.round is fine
   // for display + auto-stop trigger). The actual byte-count check uses
   // the unrounded value internally — `samsloopMaxSeconds` is for the UI
   // label + the bar's x-axis scale.
-  return Math.round(SAMSLOOP_RECORD_BUDGET_BYTES / bytesPerSecond * 100) / 100;
+  return (
+    Math.round(
+      samsloopMaxSecondsExact(rate, bits, channels, freeRackBase64Bytes) * 100,
+    ) / 100
+  );
 }
 
 /**
@@ -137,12 +404,78 @@ export function samsloopMaxSecondsExact(
   rate: number,
   bits: number,
   channels: number,
+  freeRackBase64Bytes: number = Infinity,
 ): number {
   if (rate <= 0 || bits <= 0 || channels <= 0) return 0;
-  const bytesPerSample = Math.ceil(bits / 8);
-  const bytesPerSecond = rate * bytesPerSample * channels;
+  const bytesPerSecond = rate * Math.ceil(bits / 8) * channels;
   if (bytesPerSecond <= 0) return 0;
-  return SAMSLOOP_RECORD_BUDGET_BYTES / bytesPerSecond;
+  return Math.min(
+    SAMSLOOP_RECORD_BUDGET_BYTES / bytesPerSecond,
+    SAMSLOOP_RECORD_MAX_SECONDS,
+    samsloopBase64ToRawBytes(freeRackBase64Bytes) / bytesPerSecond,
+  );
+}
+
+/**
+ * Which of the three caps is binding right now. The card shows a different
+ * line for each, because "your settings are expensive", "60 s is the hard
+ * ceiling" and "this RACK is full" need three different actions from the user.
+ */
+export function samsloopBindingCap(
+  rate: number,
+  bits: number,
+  channels: number,
+  freeRackBase64Bytes: number = Infinity,
+): 'per-take' | 'length' | 'rack' {
+  const bytesPerSecond = rate * Math.ceil(bits / 8) * channels;
+  const perTake = SAMSLOOP_RECORD_BUDGET_BYTES / bytesPerSecond;
+  const rack = samsloopBase64ToRawBytes(freeRackBase64Bytes) / bytesPerSecond;
+  // Ties resolve to the LEAST alarming explanation: if the rack happens to
+  // allow exactly as much as the per-take budget, this is not a rack problem.
+  if (rack < perTake && rack < SAMSLOOP_RECORD_MAX_SECONDS) return 'rack';
+  if (SAMSLOOP_RECORD_MAX_SECONDS <= perTake) return 'length';
+  return 'per-take';
+}
+
+/**
+ * How many CAPTURE-rate frames the card may accumulate before the encoded
+ * result would breach either cap — i.e. the exact size to pre-allocate.
+ *
+ * Derived rather than guessed: `downsample` emits
+ * `floor(captureFrames / factor)` stored frames, so the largest capture
+ * that still encodes to ≤ budget is `storedFramesBudget × factor`. Sizing
+ * the accumulator to this is what makes the encoder's output provably ≤
+ * `SAMSLOOP_RECORD_BUDGET_BYTES` — so the card's "safety net" trim (which
+ * used to fire on EVERY take, silently cutting ~0.118 s) becomes genuinely
+ * unreachable rather than merely unlikely. Pinned by a unit test that
+ * encodes a full-capacity capture at every settings combination.
+ */
+export function samsloopMaxCaptureFrames(
+  captureRate: number,
+  dstRate: number,
+  bits: SamsloopRecBits,
+  channels: SamsloopRecChannels,
+  freeRackBase64Bytes: number = Infinity,
+): number {
+  if (captureRate <= 0 || bits <= 0 || channels <= 0) return 0;
+  const achieved = samsloopAchievedRate(captureRate, dstRate);
+  if (achieved <= 0) return 0;
+  // ⚠ INTEGER ARITHMETIC ON ALL THREE CAPS, not `floor(maxSeconds × rate)`.
+  // `maxSecondsExact` is a float division; multiplying it back by the rate
+  // reintroduces the rounding it just did and lands one frame short (measured:
+  // 3e6/88200×22050 evaluates to 749999.9999999999, not 750000). One frame of
+  // slack is harmless on its own — but it means the accumulator can no longer
+  // be said to spend the budget exactly, which is the property the
+  // full-capacity test asserts.
+  const bytesPerFrame = Math.ceil(bits / 8) * channels;
+  const framesByBytes = Math.floor(SAMSLOOP_RECORD_BUDGET_BYTES / bytesPerFrame);
+  const framesBySeconds = Math.floor(SAMSLOOP_RECORD_MAX_SECONDS * achieved);
+  const rackRawBytes = samsloopBase64ToRawBytes(freeRackBase64Bytes);
+  const framesByRack = Number.isFinite(rackRawBytes)
+    ? Math.floor(rackRawBytes / bytesPerFrame)
+    : Infinity;
+  const storedFrames = Math.min(framesByBytes, framesBySeconds, framesByRack);
+  return storedFrames * samsloopDecimationFactor(captureRate, dstRate);
 }
 
 /**
@@ -193,14 +526,19 @@ export function quantizeF32ToI8(input: Float32Array): Int8Array {
 
 /**
  * Integer-factor downsample with a 1-pole IIR low-pass pre-filter to
- * suppress aliasing. Picks `factor = round(srcRate / dstRate)` and
- * averages every `factor` samples; the running 1-pole smoother attenuates
- * frequencies near the new Nyquist before decimation.
+ * suppress aliasing. Picks `factor = samsloopDecimationFactor(src, dst)`
+ * and averages every `factor` samples; the running 1-pole smoother
+ * attenuates frequencies near the new Nyquist before decimation.
  *
  * Used to bring AudioContext-rate Float32 samples (typically 48 kHz)
- * down to the user-chosen RATE switch (22 050 / 44 100 Hz). Returns the
- * input unchanged when `srcRate <= dstRate` (no upsampling — we never
- * need to add bandwidth, only remove it).
+ * down to the user-chosen RATE switch (22 050 / 44 100 / 48 000 Hz).
+ * Returns the input unchanged when `srcRate <= dstRate` (no upsampling —
+ * we never need to add bandwidth, only remove it).
+ *
+ * ⚠ THE OUTPUT IS NOT AT `dstRate` IN GENERAL. Integer decimation can only
+ * hit `srcRate / n`; ask for 44 100 from 48 000 and you get 48 000 back
+ * unchanged. `samsloopAchievedRate(srcRate, dstRate)` is what the result
+ * must be tagged with, and `encodeRecordingBytes` returns it for you.
  *
  * The implementation is a sample-rate-converter sweet spot: not a
  * polyphase resampler (overkill for a sample looper), not a naïve drop-
@@ -214,7 +552,7 @@ export function downsample(
 ): Float32Array {
   if (srcRate <= 0 || dstRate <= 0) return new Float32Array(0);
   if (srcRate <= dstRate) return samples;
-  const factor = Math.max(1, Math.round(srcRate / dstRate));
+  const factor = samsloopDecimationFactor(srcRate, dstRate);
   const outLen = Math.floor(samples.length / factor);
   const out = new Float32Array(outLen);
 
@@ -329,10 +667,17 @@ export function makeWavBlob(
 
 /**
  * Combine L + R Float32 channel buffers into the on-disk byte form
- * (downsampled + quantized + interleaved if stereo). Returns the raw
- * bytes ready to stash in `node.data.sample.bytes` AS a `number[]` (we
- * stop short of the array conversion here — the caller does it once at
- * commit time).
+ * (downsampled + quantized + interleaved if stereo).
+ *
+ * ⚠ RETURNS `{ bytes, rate }`, AND THE `rate` IS THE POINT — read it, never
+ * re-use `dstRate` afterwards. `dstRate` is what the user ASKED for;
+ * `rate` is what the samples ACTUALLY are after integer decimation
+ * (`samsloopAchievedRate`). The card used to persist the request, so a
+ * 48 kHz capture at the 44.1 kHz switch position played back 148 cents
+ * flat and 8.8 % long. Returning both from the one function that knows the
+ * answer is what makes writing the wrong one hard, the same way
+ * `postSampleBuffer` returns its frame count to make a post-transfer
+ * `f32.length` read hard (samsloop.ts).
  *
  * `l` and `r` MUST be the same length. `srcRate` is the AudioContext
  * rate the L+R buffers were captured at. `dstRate` / `bits` / `channels`
@@ -350,7 +695,7 @@ export function encodeRecordingBytes(
   dstRate: SamsloopRecRate,
   bits: SamsloopRecBits,
   channels: SamsloopRecChannels,
-): Uint8Array {
+): { bytes: Uint8Array; rate: number } {
   // Resample each channel independently, then quantize, then interleave.
   const lDs = downsample(l, srcRate, dstRate);
   const rDs = channels === 2 ? downsample(r, srcRate, dstRate) : null;
@@ -375,13 +720,162 @@ export function encodeRecordingBytes(
     }
   }
 
+  const rate = samsloopAchievedRate(srcRate, dstRate);
   if (bits === 16) {
     const q = quantizeF32ToI16(pre);
-    return new Uint8Array(q.buffer, q.byteOffset, q.byteLength);
+    return { bytes: new Uint8Array(q.buffer, q.byteOffset, q.byteLength), rate };
   } else {
     const q = quantizeF32ToI8(pre);
-    return new Uint8Array(q.buffer, q.byteOffset, q.byteLength);
+    return { bytes: new Uint8Array(q.buffer, q.byteOffset, q.byteLength), rate };
   }
+}
+
+/**
+ * FIXED-CAPACITY L/R capture accumulator — what the card writes every tap
+ * chunk into while REC is held.
+ *
+ * ⚠ THIS REPLACES AN O(n²) GROW-COPY, AND THAT WAS THE REAL LIMIT ON
+ * RECORDING LENGTH. The card used to allocate a new `Float32Array` the size
+ * of the whole take so far and copy into it, PER CHANNEL, on every chunk —
+ * and the tap posts 375 chunks/second (48 kHz / 128 samples). Total bytes
+ * memcpy'd grows as the square of the take: 145 MB for the 1.42 s the old
+ * budget allowed, 259 GB for 60 s, which measured at ~14 % of a core spent
+ * on the MAIN THREAD — the same thread as the audio scheduler, which this
+ * repo already knows underruns under pressure (`clock-perf-glitch-output-
+ * underrun`). Raising the byte budget without fixing this would have
+ * shipped a module that degrades the longer you hold REC.
+ * Measured for a 60 s take: 8543 ms of copying → 1.7 ms.
+ *
+ * WHY NOT `AudioRingBuffer` (`$lib/video/recorderbox-audio-ring`), the
+ * repo's other capture buffer — three structural reasons, not preference:
+ *   1. It is a ROLLING window: once full it discards the OLDEST frames. A
+ *      REC must keep the take from its START and stop at the cap (that is
+ *      what `stopReason: 'cap'` and the left-to-right fill bar mean).
+ *      Reusing it would silently change WHICH 31 s of a long hold you keep.
+ *   2. `pushChunk` takes one PLANAR `[L…,R…]` block; the samsloop tap posts
+ *      two separate `Float32Array`s per chunk. Adapting means an extra
+ *      per-chunk copy into a staging buffer — re-introducing the per-chunk
+ *      allocation this class exists to remove.
+ *   3. `snapshotPlanar()` allocates and copies `2n` floats; this hands the
+ *      encoder zero-copy `subarray` views.
+ * They are two different primitives with the same shape. Kept separate, and
+ * cross-referenced from both sides so the next reader sees the choice.
+ */
+export class SamsloopCaptureBuffer {
+  /** Frames this buffer can hold. Sized by `samsloopMaxCaptureFrames`. */
+  readonly capacityFrames: number;
+  private readonly bufL: Float32Array;
+  private readonly bufR: Float32Array;
+  private written = 0;
+
+  constructor(capacityFrames: number) {
+    this.capacityFrames = Math.max(0, Math.floor(capacityFrames));
+    this.bufL = new Float32Array(this.capacityFrames);
+    this.bufR = new Float32Array(this.capacityFrames);
+  }
+
+  /** Frames captured so far (0..capacity). */
+  get frames(): number {
+    return this.written;
+  }
+
+  /** True once the capacity is reached — the card's auto-stop trigger. */
+  get full(): boolean {
+    return this.written >= this.capacityFrames;
+  }
+
+  /**
+   * Append one tap chunk. Writes `min(chunk length, remaining capacity)`
+   * frames and returns how many it took, so a caller can tell a clean stop
+   * from a dropped tail. Over-long chunks are TRUNCATED, never wrapped —
+   * the head of the take is what we keep.
+   */
+  append(l: Float32Array, r: Float32Array): number {
+    const room = this.capacityFrames - this.written;
+    if (room <= 0) return 0;
+    const n = Math.min(room, l.length, r.length);
+    if (n <= 0) return 0;
+    // `set` on a subarray view is a single memcpy of exactly n frames — no
+    // allocation, no growth, O(chunk) not O(take).
+    this.bufL.set(n === l.length ? l : l.subarray(0, n), this.written);
+    this.bufR.set(n === r.length ? r : r.subarray(0, n), this.written);
+    this.written += n;
+    return n;
+  }
+
+  /** Zero-copy views of exactly the captured frames. Valid until the next
+   *  `append`; the encoder consumes them immediately on STOP. */
+  channels(): { l: Float32Array; r: Float32Array } {
+    return {
+      l: this.bufL.subarray(0, this.written),
+      r: this.bufR.subarray(0, this.written),
+    };
+  }
+}
+
+/** Sentinel for `foldCapturePeaks`'s cursor before the first chunk. */
+export const SAMSLOOP_PEAK_SLOT_NONE = -1;
+
+/**
+ * Fold one capture chunk into the live-record bar's peak-per-column buffer,
+ * in O(chunk) — the SECOND quadratic term in the old capture path.
+ *
+ * ⚠ FOUND BY BENCHMARK, NOT BY READING. The old card recomputed each touched
+ * column by rescanning the WHOLE column out of the accumulator on every tap
+ * chunk. A column is `maxSeconds/barWidth` wide, so widening the budget
+ * widens the column, and the total work over a take grows as its square:
+ * measured at 200 px / 48 kHz, 1.42 s = 157 k sample-reads but 30 s =
+ * 41.8 M and 60 s = 164 M. Raising the byte budget 22× would have dragged
+ * this along with it. Samples only ever arrive in order and only ever
+ * append, so a RUNNING max per column is exact and reads each sample once:
+ * 1.5 M reads for a 31 s take instead of ~45 M.
+ *
+ * Mutates `peaks` in place and returns the new column cursor, which the
+ * caller threads back in on the next chunk (`SAMSLOOP_PEAK_SLOT_NONE` to
+ * start). Resetting a column on first touch is what keeps it a max over the
+ * column rather than over the whole take.
+ *
+ * `startFrame` is the accumulator index the chunk's first sample lands at.
+ * Pinned against a literal re-implementation of the old rescan in
+ * `samsloop-record.test.ts`, so "same picture, less work" is asserted.
+ */
+export function foldCapturePeaks(
+  peaks: Float32Array,
+  samplesPerSlot: number,
+  startFrame: number,
+  chunk: Float32Array,
+  count: number,
+  currentSlot: number,
+): number {
+  const slots = peaks.length;
+  if (slots === 0 || count <= 0 || samplesPerSlot <= 0) return currentSlot;
+  // The bar's x-axis is exactly `slots × samplesPerSlot` frames wide.
+  // Anything past that falls OFF the right edge and is dropped — it is not
+  // squeezed into the last column, which would make that one pixel a max
+  // over an unbounded window. (This is what the old rescan did too, via
+  // `hi = min(filled, lo + samplesPerSlot)`; matching it is what lets the
+  // two be asserted byte-identical.)
+  const limit = slots * samplesPerSlot;
+  let slot = currentSlot;
+  let k = 0;
+  let frame = startFrame;
+  while (k < count && frame < limit) {
+    const s = Math.floor(frame / samplesPerSlot);
+    if (s !== slot) {
+      slot = s;
+      peaks[s] = 0;
+    }
+    // Consume up to this column's boundary in one inner loop — one divide
+    // per column-run rather than per sample.
+    const boundary = Math.min(limit, (s + 1) * samplesPerSlot);
+    let peak = peaks[s] ?? 0;
+    for (; k < count && frame < boundary; k++, frame++) {
+      const v = Math.abs(chunk[k] ?? 0);
+      if (v > peak) peak = v;
+    }
+    peaks[s] = peak;
+  }
+  return slot;
 }
 
 /**
@@ -440,7 +934,9 @@ export function clearSamsloopUploadKeys(d: Record<string, unknown>): void {
  */
 export function buildRecordedSample(
   bytes: Uint8Array,
-  rate: SamsloopRecRate,
+  /** The ACHIEVED rate — `encodeRecordingBytes(...).rate`, never the RATE
+   *  switch value. See `SamsloopRecordedSample.rate`. */
+  rate: number,
   bits: SamsloopRecBits,
   channels: SamsloopRecChannels,
   now: number = Date.now(),

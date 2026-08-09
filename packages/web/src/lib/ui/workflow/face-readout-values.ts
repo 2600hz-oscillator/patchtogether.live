@@ -34,6 +34,15 @@
 
 import { fmtDb, fmtHz, fmtMs, fmtSemitones } from '$lib/audio/modules/kickdrum-format';
 import {
+  fmtVcoHz,
+  vcoFaceParams,
+  vcoFirstAliasedHarmonic,
+  vcoFmSpanCents,
+  vcoFmSpanHz,
+  vcoKnobHz,
+  vcoPwAuthority,
+} from '$lib/ui/modules/analog-vco-face-model';
+import {
   clapBandwidthHz,
   clapBurstMs,
   clapQ,
@@ -97,6 +106,25 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
   // (`decayCoeff`) over the three layer envelopes at their live mix levels —
   // see kickdrum-face-model. NOT `sub_decay`.
   'kickdrum-tail': (read) => fmtMs(kickdrumTailMs(kickdrumEnvelopeParams(read))),
+
+  // ── ANALOG VCO ───────────────────────────────────────────────────────────
+  // All four are derived because the nearest knob is BLIND to something that
+  // genuinely changes the answer. `knob pitch` is TWO params (move FINE alone
+  // and a `tune` readback does not budge while the pitch does). `fm span` is
+  // invariant to the FM DIAL in one direction (its SIGN is a modulator
+  // inversion, not a direction) and to TUNE in the other (the Hz deviation
+  // scales with the fundamental). `pw on morph` prints the crossfade weight a
+  // `paramId: 'pw'` readout cannot see — 0 % at the shipped defaults, which is
+  // the single most useful sentence this faceplate says.
+  'analogvco-knob-hz': (read) => fmtVcoHz(vcoKnobHz(vcoFaceParams(read))),
+  'analogvco-fm-span': (read) => {
+    const p = vcoFaceParams(read);
+    if (Math.abs(p.fmAmount) < 1e-6) return 'off';
+    const { up, down } = vcoFmSpanHz(p);
+    return `±${Math.round(vcoFmSpanCents(p))} ¢ · +${fmtVcoHz(up)} / −${fmtVcoHz(down)}`;
+  },
+  'analogvco-pw-authority': (read) => `${Math.round(vcoPwAuthority(vcoFaceParams(read)) * 100)} %`,
+  'analogvco-alias-harmonic': (read) => `h${vcoFirstAliasedHarmonic(vcoFaceParams(read))}`,
 
   // ── CLAP ─────────────────────────────────────────────────────────────────
   // Three envelope figures + the band-pass pair. NONE is a knob read back:

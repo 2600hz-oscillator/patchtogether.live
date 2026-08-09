@@ -436,6 +436,14 @@ describe('vrt-meta — EXEMPT_FROM_VRT is DENY-BY-DEFAULT (frozen allowlist)', (
 // skipped test, so the capture the listing waits on can never run). The gap they
 // create is real and is counted by the ARTIFACT-anchored ceiling below, which is
 // where it belongs.
+// FACE BATCH 3 · analogVco (2026-08-08): UNCHANGED at 91, and that is the
+// finding rather than a no-op. The face adds two new darwin-first face scenes,
+// which briefly pushed this to 93 — but a listed pair is skipped
+// UNCONDITIONALLY, so parking them would have made the `vrt-update.yml
+// -f platform=linux` dispatch capture ZERO (analogVco has been in exactly that
+// deadlock before; see the drain note in vrt-exemptions.ts). They were DRAINED
+// in the same PR and the linux PNGs captured by dispatch, so no pair is added
+// and this number never needed to move.
 const SHARED_LINUX_PAIR_CEILING = 91;
 
 describe('vrt-meta — EXEMPT_BASELINE_PAIRS size RATCHET (only shrinks)', () => {
@@ -738,6 +746,18 @@ describe('vrt-meta — EXEMPT_BASELINE_PAIRS size RATCHET (only shrinks)', () =>
 // tile whose darwin twin is captured, reviewed and green. Recorded here so the
 // next person finds a decision rather than a silence; if this scene ever fails
 // on linux, re-capture it rather than assuming the baseline was ever current.
+// FACE BATCH 3 · analogVco (2026-08-08): UNCHANGED at 148, because this ratchet
+// is ARTIFACT-anchored and the artifacts balance. The face commits two new
+// DARWIN PNGs (`face-analogVco-{compact,dock}`) and the `vrt-update.yml
+// -f platform=linux` dispatch commits their two LINUX siblings in the same PR,
+// so the deficit ends where it started. It transiently reads 150 in the window
+// between the drain push and the bot's capture — 2 genuinely UNDECLARED gaps,
+// red BY DESIGN, which is the interval CLAUDE.md calls "a drain without its
+// re-capture". ⚠ If this gate is red naming UNDECLARED gaps
+// `face-analogVco-*`, the dispatch has not landed yet — that is the expected
+// reading. Do NOT raise this number and do NOT re-add the pairs to make it
+// green: a listed pair is skipped unconditionally, so re-adding them is the
+// deadlock that makes the capture impossible.
 const LINUX_DEFICIT_CEILING = 148;
 
 describe('vrt-meta — LINUX-baseline DEFICIT RATCHET (all four mechanisms)', () => {

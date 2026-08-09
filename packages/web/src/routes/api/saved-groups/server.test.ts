@@ -5,13 +5,22 @@
 // without touching Postgres.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { readFileSync } from 'node:fs';
 
 const saveGroupMock = vi.fn();
 const listSavedGroupsForUserMock = vi.fn();
 
+/** The cap this suite asserts against. ⚠ It is a MOCK VALUE — see the
+ *  'the mocked cap matches the real constant' test below, which reads the
+ *  number out of the source and fails if the two ever drift. Without that
+ *  guard every 413 assertion here is about a number the app does not use:
+ *  the real constant could be raised or lowered and this file would stay
+ *  green, which is exactly the blind-gate shape CLAUDE.md names. */
+const MOCK_MAX_PAYLOAD_BYTES = 16 * 1024 * 1024;
+
 vi.mock('$lib/server/saved-groups', () => ({
   SAVED_GROUP_LABEL_MAX: 64,
-  SAVED_GROUP_MAX_PAYLOAD_BYTES: 8 * 1024 * 1024,
+  SAVED_GROUP_MAX_PAYLOAD_BYTES: MOCK_MAX_PAYLOAD_BYTES,
   SAVED_GROUP_MAX_PER_USER: 100,
   saveGroup: saveGroupMock,
   listSavedGroupsForUser: listSavedGroupsForUserMock,
@@ -144,9 +153,9 @@ describe('POST /api/saved-groups validation', () => {
     expect(r.message).toMatch(/child/i);
   });
 
-  it('413 when payload exceeds 8 MB cap, with size + cap in the message', async () => {
-    // ~9 MB blob — comfortably over the 8 MB cap.
-    const heavyChildren = Array.from({ length: 9 }, (_, i) => ({
+  it('413 when payload exceeds the cap, with size + cap in the message', async () => {
+    // ~17 MB blob — comfortably over the 16 MB cap.
+    const heavyChildren = Array.from({ length: 17 }, (_, i) => ({
       id: `n-${i}`,
       type: 'samsloop',
       domain: 'audio',
@@ -163,7 +172,7 @@ describe('POST /api/saved-groups validation', () => {
     // Message must include the actual size (KB) and the cap (MB) so the
     // user can see how far over they are.
     expect(r.message).toMatch(/\d+\s*KB/);
-    expect(r.message).toMatch(/8\s*MB/);
+    expect(r.message).toMatch(/16\s*MB/);
     expect(r.message).toMatch(/SAMSLOOP|CLOUDSEED/);
   });
 
@@ -171,12 +180,12 @@ describe('POST /api/saved-groups validation', () => {
     // Regression for the String.length (UTF-16 code units) vs UTF-8-bytes
     // cap bug: a blob of multi-byte chars can be comfortably UNDER the cap
     // by `.length` yet OVER it in real wire bytes. '中' is 1 UTF-16 unit
-    // but 3 UTF-8 bytes, so ~3.2M of them is ~3.2M `.length` (well under
-    // the 8 MB == 8388608 number) but ~9.6M bytes (over). A `.length`-based
+    // but 3 UTF-8 bytes, so ~6.4M of them is ~6.4M `.length` (well under
+    // the 16 MB == 16777216 number) but ~19.2M bytes (over). A `.length`-based
     // check would 200 this; the byte-accurate check must 413 it.
-    const cjkBlob = '中'.repeat(3_200_000);
-    expect(cjkBlob.length).toBeLessThan(8 * 1024 * 1024); // UTF-16 units: under
-    expect(new TextEncoder().encode(cjkBlob).byteLength).toBeGreaterThan(8 * 1024 * 1024); // bytes: over
+    const cjkBlob = '中'.repeat(6_400_000);
+    expect(cjkBlob.length).toBeLessThan(MOCK_MAX_PAYLOAD_BYTES); // UTF-16 units: under
+    expect(new TextEncoder().encode(cjkBlob).byteLength).toBeGreaterThan(MOCK_MAX_PAYLOAD_BYTES); // bytes: over
     const r = await runPost(
       makePostEvent({
         body: {
@@ -194,7 +203,34 @@ describe('POST /api/saved-groups validation', () => {
     expect(saveGroupMock).not.toHaveBeenCalled();
     // The over-cap message reports REAL bytes (KB), not UTF-16 length.
     expect(r.message).toMatch(/\d+\s*KB/);
-    expect(r.message).toMatch(/8\s*MB/);
+    expect(r.message).toMatch(/16\s*MB/);
+  });
+
+  it('the MOCKED cap matches the REAL constant in saved-groups.ts', () => {
+    // ⚠ THE GUARD THAT MAKES EVERY 413 ASSERTION ABOVE MEAN SOMETHING. This
+    // suite mocks `$lib/server/saved-groups` wholesale (the real module
+    // imports ./db.js and would need Postgres), so the cap it asserts against
+    // is a literal in THIS file. Nothing connected it to the shipped value:
+    // the real constant went 256 KB → 8 MB → 16 MB and these tests would have
+    // stayed green at any of them, asserting a number the app does not use.
+    //
+    // Read it out of the SOURCE instead — no import, no DB, and it fails the
+    // moment the two disagree in either direction.
+    const src = readFileSync(
+      new URL('../../../lib/server/saved-groups.ts', import.meta.url),
+      'utf8',
+    );
+    const m = src.match(
+      /export const SAVED_GROUP_MAX_PAYLOAD_BYTES\s*=\s*(\d+)\s*\*\s*1024\s*\*\s*1024\s*;/,
+    );
+    expect(m, 'could not find SAVED_GROUP_MAX_PAYLOAD_BYTES in saved-groups.ts').not.toBeNull();
+    const realBytes = Number(m![1]) * 1024 * 1024;
+    expect(
+      realBytes,
+      `the shipped cap is ${realBytes / (1024 * 1024)} MB but this suite asserts against ` +
+        `${MOCK_MAX_PAYLOAD_BYTES / (1024 * 1024)} MB — update MOCK_MAX_PAYLOAD_BYTES ` +
+        'and the size literals in the 413 tests together',
+    ).toBe(MOCK_MAX_PAYLOAD_BYTES);
   });
 
   it('409 when the per-user cap is reached', async () => {
