@@ -30,6 +30,7 @@ import { adsrDef } from '$lib/audio/modules/adsr';
 import { backdraftDef } from '$lib/video/modules/backdraft';
 import { delayDef } from '$lib/audio/modules/delay';
 import { filterDef } from '$lib/audio/modules/filter';
+import { meowboxDef } from '$lib/audio/modules/meowbox';
 import { ringbackDef } from '$lib/audio/modules/ringback';
 import { snaredrumDef } from '$lib/audio/modules/snaredrum';
 import { vcaDef } from '$lib/audio/modules/vca';
@@ -85,12 +86,22 @@ import type { ParamDef } from '$lib/graph/types';
  *    Its `engineFreeze` is the format case again: the def declares a
  *    LIVE/FREEZE formatter, and an unbound card would print `0.00`/`1.00`
  *    on a control whose whole job is to say which state you are in.
+ *  - MeowboxCard: converted with the meowbox face (2026-08-08). Range- but NOT
+ *    mapping-bound, and the split is deliberate rather than half-done. Its 12
+ *    range numbers and 4 curves are bound; its `units` are NOT, because the def
+ *    says `semi` where the card paints `st` and the def says `Ptch`/`Dcy`/`Lvl`
+ *    where the card paints `Pitch`/`Decay`/`Level` — four real divergences,
+ *    already named in `card-def-debt.ts`. Binding them REPAINTS a card in
+ *    `STRICT_VRT_MODULES`, i.e. the required `vrt-strict` gate on both
+ *    platforms, so that vocabulary fix gets its own PR instead of riding a face.
+ *    The clause below keeps the unbound half honest in the meantime.
  */
 const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }>> = {
   'AdsrCard.svelte': adsrDef,
   'BackdraftCard.svelte': backdraftDef,
   'DelayCard.svelte': delayDef,
   'FilterCard.svelte': filterDef,
+  'MeowboxCard.svelte': meowboxDef,
   'RingbackCard.svelte': ringbackDef,
   'SnaredrumCard.svelte': snaredrumDef,
   'VcaCard.svelte': vcaDef,
@@ -122,7 +133,7 @@ const MAPPING_BOUND_CARDS: readonly string[] = [
 // card of slack in each, and the next card to fall back out of the set is
 // absorbed in silence rather than reddening this test. Whenever this file
 // merges, RE-DERIVE the floors from the lists; never inherit the literal.
-const RANGE_BOUND_FLOOR = 8;
+const RANGE_BOUND_FLOOR = 9;
 const MAPPING_BOUND_FLOOR = 7;
 
 /**

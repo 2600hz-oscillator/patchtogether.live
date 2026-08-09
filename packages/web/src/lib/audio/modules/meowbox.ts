@@ -13,9 +13,9 @@
 // the previous "C4 with no input" behavior.
 //
 // Inputs:
-//   gate (gate): rising edge fires one meow event.
+//   gate (gate, edge:'gate'): the voice sounds WHILE this is high. See below.
 //   pitch (pitch): V/oct pitch input, 0V = C4. Summed with the pitch knob (transposition).
-//   morph (cv, linear, paramTarget=morph): displaces the vowel-formant morph (0..1).
+//   morph (cv, linear, paramTarget=morph): displaces the anchor morph (0..1).
 //   decay (cv, log, paramTarget=decay): scales the tail decay symmetrically.
 //   level (cv, linear, paramTarget=level): displaces the output level.
 //
@@ -25,11 +25,30 @@
 //
 // Params:
 //   pitch (linear -36..36 semi, default 0): transposition added on top of pitch CV.
-//   morph (linear 0..1, default 0.25): vowel-formant macro (towards a/i/u/e/o regions).
-//   decay (log 0.05..2 s, default 0.4): tail decay time.
+//   morph (linear 0..1, default 0.25): the five-anchor macro (kitten/adult/purr/yowl/hiss).
+//   decay (log 0.05..2 s, default 0.4): tail decay time, MULTIPLIED by the anchor's own scale.
 //   level (linear 0..2, default 1): output level.
+//
+// ⚠ `gate` IS A GATE, NOT A TRIGGER, and the def said the opposite until
+// 2026-08-08. `ampEnv = en.adsr(0.005, 0.05, 0.4, …)` (meowbox.dsp:109) SUSTAINS
+// AT 0.4 while the gate is non-zero, so the meow's length is gate-high time PLUS
+// the release — it is level-sensitive on both edges. Nothing caught it because
+// the port declared no `edge:` at all and module-docs-lint's vocabulary check
+// does `if (!p.edge) continue` — the one gate that owns this vocabulary was
+// structurally unable to see the module whose prose was wrong about it. Declared
+// now, which is a contract-lock move. (Faust's `adsr` additionally runs its
+// attack at `atime = +(gate) ~ *(gate' >= gate)`, so a gate held at 0.5 runs the
+// attack and decay at HALF SPEED and releases only at exactly 0 — the repo's
+// GATE_HI = 0.5 threshold is never applied inside the DSP.)
+//
+// ⚠ THE AUDITION IS A HELD PAD, for that same reason. `meowbox-meow-{n}` is a
+// `mode: 'gate'` action on BOTH surfaces (the card pad and the shell cell),
+// driving the factory's `manualGate` read key — never `manualTrigger`. The shared
+// TRIGGER_PULSE_S is 5 ms, which would release the envelope 5 ms into a 400 ms
+// tail and audition a blip rather than a meow.
 
 import { instantiateFaustModule } from '$lib/audio/faust-runtime';
+import { closeGate, openGate } from '$lib/audio/gate-trigger';
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import wasmUrl from '@patchtogether.live/dsp/dist/meowbox.wasm?url';
@@ -64,7 +83,10 @@ export const meowboxDef: AudioModuleDef = {
   // 'pitch' (V/oct audio-rate); no persisted-data shape change, so no migration
   // callback (or version bump) is needed.
   inputs: [
-    { id: 'gate',  type: 'gate' },
+    // edge:'gate' — LEVEL-sensitive, both edges. See the header: the amp
+    // envelope sustains at 0.4 while this is high, so this is not a trigger and
+    // the module's own docs claimed it was.
+    { id: 'gate',  type: 'gate', edge: 'gate' },
     // `pitch` is a true 1V/octave audio-rate input (PR fix/meowbox-voct):
     // the DSP consumes the volts directly from a merger channel — NOT
     // routed via the CV→AudioParam fast path. cvScale therefore does
@@ -97,25 +119,257 @@ export const meowboxDef: AudioModuleDef = {
     { id: 'level', label: 'Lvl',   defaultValue: 1,    min: 0,     max: 2,   curve: 'linear' },
   ],
 
+  // THE ONE NON-PARAM CONTROL — the audition. A `mode:'gate'` pad, not a
+  // one-shot (see the header). It is a control FAMILY rather than a fifth
+  // ParamDef because it writes NOTHING to the graph: it drives a host-side
+  // ConstantSource summed into the same merger channel a cable feeds, so a real
+  // gate keeps working alongside it and nothing is persisted, synced or undoable.
+  // A `strike` param would additionally need a row in the Faust DSP's parameter
+  // list, which is a re-pin of three ART scenarios for a control that is not
+  // part of the patch.
+  controlFamilies: [
+    { id: 'meowbox-meow', label: 'Meow — hold to audition the voice', kind: 'other', testidPrefix: 'meowbox-meow' },
+  ],
+
+  // ── FACE — RACKLINE UI curation (PF-20). UI metadata, NOT the I/O contract
+  // (see ModuleFace in $lib/graph/types).
+  //
+  // WHAT THIS MODULE IS. Four table-lookup sines at F·2F·3F·4F crossfaded
+  // against white noise, through three parallel resonant band-passes, under one
+  // ADSR. FOUR knobs — and one of them indexes THIRTEEN five-entry tables
+  // (meowbox.dsp:29-63), so MORPH alone moves all three formant frequencies, all
+  // three Qs, all three weights, the voiced/noise balance, the pitch contour's
+  // rise AND fall, and the decay scale. The legacy card presents that fader and
+  // an output trim as peers in one knob row.
+  //
+  // THREE OF THOSE THIRTEEN CHANGE NUMBERS THE OTHER KNOBS ARE LABELLED WITH,
+  // which is what the hero strip is for and why not one of its three readouts is
+  // a knob read back:
+  //   * the note SETTLES 1.80 semitones SHARP of what PITCH asks for at the
+  //     shipped default, and stays there while the gate is held, because
+  //     `en.are` sustains at 1.0. PITCH reads 0 throughout.
+  //   * the DECAY dial is MULTIPLIED by `decayScaleOf(morph)` (0.6× at hiss,
+  //     2.0× at yowl) before it reaches the envelope, so its seconds are the
+  //     truth at exactly ONE morph position out of a continuum.
+  //   * a formant's effective peak is `aN·qN`, not `aN` — and `A1` is 1.0 across
+  //     the whole of morph 0..0.75, so the amplitude table sits FLAT across a
+  //     move that changes band 1 by +7.36 dB.
+  // Each is negative-controlled, permanently, in meowbox-face-model.test.ts.
+  //
+  // ⚠ NO `hero.cell`, AND THE REASON IS ARITHMETIC RATHER THAN TASTE.
+  // `module-face-lint` refuses a PANEL cell SELECTED at a lane tier, and the
+  // 'full' lane cap is SIX (LANE_PLATE_MAX_CELLS). meowbox has FOUR params; with
+  // the audition at rank 5 a picture can only reach rank 6, which is inside the
+  // plate. A panel's first legal rank is 7 and there is no sixth rankable key.
+  // drummergirl hit this exact wall and deferred its picture AND its audition
+  // together. The way past it: a `sidebar` `custom` block carries no
+  // `face.order` key and therefore no rank at all — so the picture ships as
+  // `formant-bank` in the sidebar, and the audition ships here.
+  //
+  // glyph 'scope' STAYS, and the audition is what makes it honest. This voice is
+  // SILENT with nothing patched — `g = 0` ⇒ `ampEnv = 0` ⇒ both channels are
+  // bit-zero — so before the pad every screenshot of it was a flat line.
+  face: {
+    order: [
+      // ── the lane budget: ranks 1–4 are the four knobs, in the order a player
+      //    reaches for them on a VOICE. ──
+      'morph',   // 1 — the only timbre control, and it drives thirteen tables.
+      'pitch',   // 2 — the register. ±36 st, summed with the V/oct volts.
+      'decay',   // 3 — the tail. Scaled by MORPH; see above.
+      'level',   // 4 — the trim. L only; R inherits it through the delay.
+      // rank 5: THE AUDITION, and it is deliberately LAST. Rank only decides the
+      // mini (1 cell) and compact (2 beside the glyph) tiles, and a momentary pad
+      // in a 46 px knob column is a bare glyph — the clap/sixstrum argument. At 5
+      // it never reaches either, while still always painting on the 6-cell plate,
+      // where this module has two slots spare.
+      'meowbox-meow-{n}',
+    ],
+
+    // TWO BANDS. ⚠ BOTH PROMOTED KEYS ARE DECLARED IN BAND 1 AND THEY MUST BE:
+    // `face.hero` MOVES a key, it does not copy one, and heroFacePlan can only
+    // move a key some band already claims. Band 1 renders ['pitch'] after the
+    // split — NOT empty, which matters: a band the promotion empties is DROPPED,
+    // taking its hint with it, and then fails the annotation-reachability clause
+    // (the drummergirl scar).
+    //
+    // ⚠ AND THAT IS WHY BAND 1 IS NAMED FOR WHAT THE VOICE IS MADE OF rather
+    // than for MORPH. Every label here is audited with its hint HIDDEN, because
+    // that is the resting state — and a band labelled "the five anchors" whose
+    // only surviving control is PITCH would read as a mistake. Named this way,
+    // the survivor is exactly what the label describes: PITCH is the F that the
+    // four partials are built on.
+    pages: [
+      {
+        id: 'source',
+        label: '1 · four sines and a noise bed',
+        hint:
+          'the excitation is F · 2F · 3F · 4F at 1 / 0.5 / 0.25 / 0.125, crossfaded against white ' +
+          'noise by the anchor’s VOICED value — 85 percent voiced at kitten and adult, 15 percent at ' +
+          'hiss. MORPH decides both that blend and the three formants that filter it; PITCH is the F ' +
+          'the partials are built on, but the contour settles SHARP of it by an amount MORPH sets.',
+        controls: ['meowbox-meow-{n}', 'morph', 'pitch'],
+      },
+      {
+        id: 'tail',
+        label: '2 · the tail, and what scales it',
+        hint:
+          'DECAY is MULTIPLIED by the anchor’s own decay scale before it reaches the envelope — 0.6× ' +
+          'at hiss, 2.0× at yowl — so the dial’s seconds are the truth at exactly one MORPH position. ' +
+          'LEVEL scales the LEFT channel only; the right inherits it through the delay.',
+        controls: ['decay', 'level'],
+      },
+    ],
+    glyph: 'scope',
+
+    // ⚠ `title` AND `hint` ARE BOTH ANNOTATION AND BOTH GATED — `facePageHeader`
+    // returns null with the switch off, title included (owner decision
+    // 2026-08-03). At rest this faceplate paints its NAME, its two band labels
+    // and its numbers, and nothing else.
+    title: 'Voice',
+    hint:
+      'Four harmonic sines and a noise bed through three resonant band-passes, under one ADSR that ' +
+      'SUSTAINS while the gate is held. MORPH is not a tone knob — it crossfades five cat anchors ' +
+      '(kitten, adult, purr, yowl, hiss), moving all three formant frequencies, all three Qs, their ' +
+      'weights, the voiced/noise balance, the pitch contour AND the decay scale together.',
+
+    // THE HERO. MORPH is PROMOTED out of band 1, not copied, and it leads
+    // because it IS the module. The pad rides beside it because this voice makes
+    // no sound at all until something gates it.
+    //
+    // ⚠ ALL THREE READOUTS ARE `valueId`, NOT `paramId`, and that is the whole
+    // point. `settles` would read `0 st` off the PITCH knob while the voice holds
+    // 290.29 Hz against a notated 261.63; `tail` would read `0.40 s` off the
+    // DECAY knob at every morph position, while the real tail runs 240 ms at hiss
+    // and 800 ms at yowl; and `formants` has no knob to read at all — MORPH's own
+    // readback is `0.25`, which cannot express that 0.375 puts you at
+    // 315 · 825 · 1750 Hz, a triple in no anchor row.
+    hero: {
+      control: 'morph',
+      action: 'meowbox-meow-{n}',
+      readouts: [
+        { label: 'formants', valueId: 'meowbox-formants' },
+        { label: 'settles',  valueId: 'meowbox-settled-hz' },
+        { label: 'tail',     valueId: 'meowbox-tail-s' },
+      ],
+    },
+
+    sidebar: [
+      {
+        kind: 'signal-flow',
+        label: 'signal flow',
+        // The chain as the .dsp actually builds it.
+        //
+        // ⚠ THE PITCH CONTOUR IS `parallel` AND THAT IS THE DIAGRAM'S ONE REAL
+        // CLAIM. It is not in the audio path: it multiplies the four sines'
+        // frequency (`freqHz`, :82) and never touches the noise or the amplitude.
+        // Drawn inline it would teach that the contour shapes the meow's
+        // loudness, which is precisely the confusion the `settles` readout exists
+        // to dispel.
+        //
+        // ⚠ R IS ALSO `parallel`: it is L put through a delay line, not a second
+        // voice. The note says the span the .dsp's own comment gets wrong (:111
+        // says "up to 1 ms"; the ·0.6 at :114 caps it at 0.6).
+        //
+        // ⚠ GATE IS MARKED `generator` ON PURPOSE. In this voice the gate is the
+        // excitation: with nothing patched the module is not quiet, it is
+        // bit-silent. Its note states the level-sensitivity the def's own prose
+        // denied until this PR.
+        stages: [
+          { label: 'GATE',        role: 'generator', note: 'level — sustains at 0.4' },
+          { label: 'PITCH CONTOUR', role: 'generator', parallel: true, note: 'settles SHARP · from MORPH' },
+          { label: '4 SINES',     role: 'generator', note: 'F · 2F · 3F · 4F' },
+          { label: 'NOISE',       role: 'generator', note: 'white' },
+          { label: 'VOICED MIX',  role: 'bus', note: 'from MORPH' },
+          { label: '15 Hz TREMOLO', role: 'bus', note: 'voiced path only' },
+          { label: 'F1 · F2 · F3', role: 'bus', note: '3 × resonbp · peak = a·Q' },
+          { label: 'AMP ADSR',    role: 'bus', note: 'sustain 0.4' },
+          { label: 'LEVEL',       role: 'bus', note: 'left channel only' },
+          { label: 'R = DELAYED L', role: 'bus', parallel: true, note: '0–0.6 ms, inverse to the envelope' },
+        ],
+      },
+      {
+        // THE FIVE ANCHORS, AS A REAL SELECTION. `morph` is a continuous fader
+        // over a five-entry table and every hand-set value is a crossfade between
+        // two of them, so these rows are the only way to land exactly ON one.
+        // Each writes `morph = k/4` through the ORDINARY param path (undoable,
+        // synced, immediately editable).
+        //
+        // ⚠ ONE PARAM PER ROW IS A COMPLETE RECALL HERE. `morph` is the ONLY
+        // input to all thirteen tables, so writing it recalls the whole anchor
+        // axis by construction; pitch/decay/level are orthogonal and are
+        // deliberately left where the player put them.
+        //
+        // ⚠ EVERY `note` IS DERIVED DATA, NOT PROSE — `F1_AT[i]`, `VOICED_AT[i]`
+        // and `DECAY_SCALE_AT[i]` through `meowboxAnchorNote`. Pinned by
+        // meowbox-face-model.test.ts, which parses the tables out of
+        // packages/dsp/src/meowbox.dsp and fails if any of the three drifts.
+        // Read the `tail ×` column down: the SAME decay dial is worth 0.7× at
+        // kitten and 2.0× at yowl, which is the fact the DECAY knob cannot state.
+        kind: 'presets',
+        label: 'the five anchors',
+        entries: [
+          { id: 'kitten', label: 'kitten', note: '700 Hz · 85 % voiced · tail ×0.7', values: { morph: 0 } },
+          { id: 'adult',  label: 'adult meow', note: '450 Hz · 85 % voiced · tail ×1.0', values: { morph: 0.25 } },
+          { id: 'purr',   label: 'purr',   note: '180 Hz · 60 % voiced · tail ×1.5', values: { morph: 0.5 } },
+          { id: 'yowl',   label: 'yowl',   note: '380 Hz · 80 % voiced · tail ×2.0', values: { morph: 0.75 } },
+          { id: 'hiss',   label: 'hiss',   note: '100 Hz · 15 % voiced · tail ×0.6', values: { morph: 1 } },
+        ],
+      },
+      {
+        // THE PICTURE. Three resonance peaks on a LOG frequency axis with the
+        // four source partials marked underneath, so "which harmonic is inside
+        // which formant" is visible — and each peak is drawn at its EFFECTIVE
+        // `a·Q` height, which is what turns the readout below into a shape.
+        // See the ⚠ on `face` above for why it is here and not `hero.cell`.
+        kind: 'custom',
+        label: 'formant bank',
+        panelId: 'formant-bank',
+      },
+      {
+        // REFERENCE, not performance — the hero strip is what you read while
+        // playing. Two of these three are pinned DEFECTS in the .dsp's comments
+        // rather than approved behaviour, and the model test fails the day either
+        // is made true.
+        kind: 'readouts',
+        label: 'derived',
+        entries: [
+          { label: 'peak gain F1·F2·F3', valueId: 'meowbox-formant-gain' },
+          { label: 'tremolo depth',      valueId: 'meowbox-tremolo' },
+          { label: 'mono-sum null',      valueId: 'meowbox-comb-null' },
+        ],
+      },
+    ],
+
+    // REAR CARD curation. The three per-knob CVs need none — each one's
+    // paramTarget files it under its own face page. GATE and PITCH have no
+    // paramTarget (they are raw merger channels), so they are named here, and
+    // both carry the `~` tick because both genuinely are audio-rate.
+    rear: {
+      groups: [{ id: 'voice', label: 'play', ports: ['gate', 'pitch'] }],
+      audioRate: ['gate', 'pitch'],
+    },
+  },
+
   docs: {
     explanation:
-      "A gate-triggered cat-vocal synth voice: fire a gate and it sings one 'meow' at the patched pitch. Under the hood it's a formant synth — a harmonic + noise excitation pushed through a bank of vowel formants, with a stereo-decorrelated tail so the result spreads across the L/R outputs. The Morph control sweeps the vowel (the a/e/i/o/u regions) so a single meow can sound like different vocal shapes, and Decay sets how long the tail rings. Pitch tracks a true 1V/oct input so you can play it from a keyboard or sequencer like any other oscillator, with the Pitch knob acting as a transposition on top.",
+      "A gate-held cat-vocal synth voice: hold a gate and it sings one 'meow' at the patched pitch. Under the hood it's a formant synth — four harmonic sines (F, 2F, 3F, 4F) crossfaded against white noise, pushed through three parallel resonant band-passes, with the right channel a short delayed copy of the left so the result spreads across the L/R outputs. MORPH crossfades FIVE CAT ANCHORS — kitten, adult meow, purr, yowl, hiss — and it is far more than a tone control: one fader moves all three formant frequencies, all three resonances, their three weights, the voiced/noise balance, the pitch contour and the decay scale together, interpolating linearly between whichever two anchors you are between. Decay sets the release, but the anchor multiplies it (0.6x at hiss, 2.0x at yowl), so the same dial is a different number of seconds at every morph position. Pitch tracks a true 1V/oct input so you can play it from a keyboard or sequencer like any other oscillator, with the Pitch knob acting as a transposition on top — though the voice's own contour settles slightly SHARP of the note you ask for, by an amount MORPH decides.",
     inputs: {
-      gate: "The trigger: a rising edge fires one meow event and re-excites the voice. It responds to the edge, not how long the level stays up — the meow's length comes from the Decay control.",
+      gate: "The GATE, and it is level-sensitive on BOTH edges: the amplitude envelope attacks, decays to a sustain of 0.4 and HOLDS there for as long as you keep the level up, then releases when it falls. So the meow's length is how long you hold it PLUS the Decay tail — not Decay alone. (A short trigger pulse works too and gives a clipped chirp; it is the same envelope, released early.) Patch a sequencer gate, a keyboard gate or a clock here — or hold the card's MEOW pad, which drives the same input.",
       pitch: "A true 1V/oct pitch input (0 V = middle C). The DSP reads the volts directly and the Pitch knob is added on top as a transposition, so patch a sequencer or keyboard pitch CV here to play melodies; with nothing patched it sits at C4.",
-      morph: "CV that adds to the Morph control, sweeping the vowel formant in real time (e.g. an envelope opening the 'mouth' across the meow).",
-      decay: "CV that scales the tail Decay time (logarithmic), for shorter chirps or longer wails.",
+      morph: "CV that adds to the Morph control, walking the voice between the five cat anchors in real time — so an envelope here can start a note as a yowl and land it as a purr. Remember what it moves: the formants, their resonances, the noise balance, the pitch contour AND the decay scale, all at once.",
+      decay: "CV that scales the tail Decay time (logarithmic), for shorter chirps or longer wails. It scales the knob, which the current anchor then multiplies again.",
       level: "CV that adds to the output Level for per-hit dynamics.",
     },
     outputs: {
-      L: "Left channel of the stereo-decorrelated meow — the two channels carry the same voice with a decorrelated tail, so summing to mono is fine but keeping them split gives a wider sound.",
-      R: "Right channel of the stereo-decorrelated meow (the decorrelated partner of L).",
+      L: "Left channel. LEVEL is applied here, and the right channel is taken FROM this one — so L is the whole voice and R is its delayed copy.",
+      R: "Right channel: L put through a short delay line, 0 to 0.6 ms, moving INVERSELY to the amplitude envelope so the pair spreads apart as the note dies. It is not a second voice. That matters if you sum to mono — the two channels comb, with the first null at 833 Hz when the envelope is at rest and 1.4 kHz while it sustains, which is straight through the formant region. Keep them split unless you want that.",
     },
     controls: {
-      pitch: "Transposes the voice in semitones (-36 to +36), summed on top of the 1V/oct pitch input — use it to set the cat's register or to offset an incoming melody.",
-      morph: "The vowel-formant macro (0..1): morphs the timbre across the a/i/u/e/o formant regions, changing the 'shape' of the meow from one vowel-like color to another.",
-      decay: "Tail decay time (0.05–2 s, log-tapered): short for a clipped chirp, long for a drawn-out wail.",
-      level: "Output level from silence to 2x; the Level CV input adds to this.",
+      pitch: "Transposes the voice in semitones (-36 to +36), summed on top of the 1V/oct pitch input — use it to set the cat's register or to offset an incoming melody. Note that the voice's own contour starts flat and settles SHARP of what you set: at the shipped morph it holds 1.8 semitones above the note.",
+      morph: "The five-anchor macro (0..1): kitten at 0, adult meow at 0.25, purr at 0.5, yowl at 0.75, hiss at 1, linearly interpolated in Hz between neighbours. It is the only timbre control on the module and it moves thirteen things at once — the three formant frequencies, the three resonances, the three weights, the voiced/noise balance, the pitch contour's rise and fall, and the multiplier on Decay. Anywhere except exactly on an anchor you are hearing a crossfade of two of them.",
+      decay: "Tail decay time (0.05-2 s, log-tapered) — but the current anchor MULTIPLIES it before it reaches the envelope, 0.6x at hiss up to 2.0x at yowl. At the shipped morph the multiplier is exactly 1, which is the only position where the dial's seconds are the real tail. Short for a clipped chirp, long for a drawn-out wail; the full reachable span is 30 ms to 4 s.",
+      level: "Output level from silence to 2x, applied to the LEFT channel; the right inherits it through the delay. The Level CV input adds to this.",
+      'meowbox-meow-{n}': "MEOW — the audition. HOLD it to gate the voice exactly as a patched cable would, release to let it go. It is a held pad and not a one-shot on purpose: the amplitude envelope sustains while the gate is high, so a click would release it milliseconds in and you would hear a blip instead of a meow. It writes nothing to the patch — nothing is saved, synced or undoable — and a real gate cable keeps working alongside it.",
     },
   },
 
@@ -134,6 +388,24 @@ export const meowboxDef: AudioModuleDef = {
     silence.start();
     silence.connect(merger, 0, 0);
     silence.connect(merger, 0, 1);
+
+    // THE AUDITION (the MEOW pad on both faces). A DEDICATED ConstantSource
+    // summed into merger channel 0 — the same channel the `gate` jack feeds — so
+    // Web Audio adds them and the DSP cannot tell the pad from a cable. It
+    // writes NOTHING to the graph: no param, nothing persisted, nothing synced,
+    // nothing on the undo stack.
+    //
+    // ⚠ A SEPARATE SOURCE FROM `silence`, deliberately. `silence` is the
+    // keep-alive that holds BOTH channels in the processing graph; driving its
+    // offset would also drive the PITCH channel, transposing the voice by one
+    // volt every time you auditioned it.
+    //
+    // The HIGH level comes from the shared $lib/audio/gate-trigger seam, never
+    // re-derived here, so the pad's level is the repo's and not this module's.
+    const meowCs = ctx.createConstantSource();
+    meowCs.offset.value = 0;
+    meowCs.start();
+    meowCs.connect(merger, 0, 0);
 
     const splitter = ctx.createChannelSplitter(2);
     f.connect(splitter);
@@ -166,9 +438,37 @@ export const meowboxDef: AudioModuleDef = {
       readParam(paramId) {
         return params.get(`${PARAM_PREFIX}/${paramId}`)?.value;
       },
+      // The AUDITION seam — the karplus/snaredrum `read(key)` idiom.
+      //
+      // ⚠ `manualGate` ONLY, and the OMISSION of `manualTrigger` is load-bearing.
+      // `resolveManualStrike` and `resolveManualGate` are two separate read keys
+      // precisely so a handle that implements one does not silently answer the
+      // other (manual-strike-actions.ts). meowbox's envelope sustains at 0.4
+      // while the gate is high, so the one-shot shape is WRONG for it: the
+      // shared 5 ms trigger pulse would release the envelope 5 ms into a 400 ms
+      // tail. A caller asking for `manualTrigger` here gets `undefined` and the
+      // ledger records `delivered: false`, which is the honest answer.
+      read(key: string): unknown {
+        if (key === 'manualGate') {
+          return (high: boolean) => {
+            try {
+              if (high) openGate(meowCs, ctx.currentTime);
+              else closeGate(meowCs, ctx.currentTime);
+            } catch { /* the context went away with the node */ }
+          };
+        }
+        return undefined;
+      },
       dispose() {
+        // ⚠ CLOSE THE GATE BEFORE STOPPING ITS SOURCE. A node deleted mid-hold
+        // is one of the release edges the pad itself can never see (its <Button>
+        // unmounts with the pane), and a gate left open is a cat that never stops
+        // — see ui/modules/manual-gate-latch.ts.
+        try { closeGate(meowCs, ctx.currentTime); } catch { /* */ }
         try { silence.stop(); } catch { /* */ }
+        try { meowCs.stop(); } catch { /* */ }
         silence.disconnect();
+        meowCs.disconnect();
         merger.disconnect();
         splitter.disconnect();
         f.disconnect();

@@ -588,9 +588,13 @@ const PORT_NOTES: Record<string, string> = {
   'drummergirl.tone': 'CV -> tone.',
   'drummergirl.shape': 'CV -> shape.',
   'drummergirl.audio': 'Mono drum out.',
-  'meowbox.gate': 'Trigger.',
-  'meowbox.pitch': 'CV -> pitch.',
-  'meowbox.morph': 'CV -> vowel morph.',
+  // ⚠ 'Trigger.' was wrong and 'CV -> pitch.' was stale. The amp envelope
+  // sustains at 0.4 while the level is high, so `gate` is a GATE (declared
+  // edge:'gate' 2026-08-08); `pitch` became a true V/oct audio-rate input in the
+  // schema-v2 change and is no longer a semitone-scaled AudioParam.
+  'meowbox.gate': 'Gate — sounds while high.',
+  'meowbox.pitch': '1V/oct pitch in (0V = C4).',
+  'meowbox.morph': 'CV -> anchor morph.',
   'meowbox.decay': 'CV -> decay.',
   'meowbox.level': 'CV -> output level.',
   'meowbox.L': 'Stereo L out.',

@@ -72,6 +72,15 @@ import {
   kickdrumTailMs,
 } from '$lib/ui/modules/kickdrum-face-model';
 import {
+  meowboxCombNullText,
+  meowboxFormantsText,
+  meowboxParams,
+  meowboxPeakGainText,
+  meowboxSettledHz,
+  meowboxTailText,
+  meowboxTremoloText,
+} from '$lib/ui/modules/meowbox-face-model';
+import {
   penteDecayToSustainMs,
   penteModeGainAtCutoff,
   pentePeakLinear,
@@ -169,6 +178,42 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
   'filter-peak-db': (read) => filterPeakDbText(filterFaceParams(read)),
   'filter-cutoff-reach': (read) => filterCutoffReachText(filterFaceParams(read)),
   'filter-res-reach': (read) => filterResReachText(filterFaceParams(read)),
+  // ── MEOWBOX ──────────────────────────────────────────────────────────────
+  // Six numbers, and MORPH is the input all but one of them turn on — because
+  // MORPH indexes thirteen tables and its own readback is `0.25`, which is blind
+  // to every one of them. Three of the six exist because a plausible WRONG
+  // implementation reads exactly right at the shipped defaults:
+  //
+  //   `settled`  a `paramId: 'pitch'` readout prints `0 st` while the voice holds
+  //              290.29 Hz against a notated 261.63 — the contour SUSTAINS sharp
+  //              (`en.are` holds at 1.0), and moving MORPH 0.25 → 0.50 drops the
+  //              sounding pitch 1.8 semitones with PITCH untouched.
+  //   `tail`     a `paramId: 'decay'` readout prints `400 ms` at EVERY morph —
+  //              and is right at the default, because decayScaleOf(0.25) is
+  //              exactly 1. At yowl the real tail is 800 ms, at hiss 240 ms.
+  //   `peak gain` a readout of the AMPLITUDE table is FLAT across morph
+  //              0.5 → 0.75 (A1 is 1.0 at both ends and everywhere between)
+  //              while band 1's real peak moves +7.36 dB, because the peak is
+  //              a·Q and only Q is moving.
+  //
+  // `tremolo` is pinned as a DEFECT rather than approved: it must be MAXIMAL at
+  // hiss and MINIMAL at kitten, the opposite of what meowbox.dsp:92-95 claims.
+  // And `mono-sum null` is the one readout on this module that NO knob moves —
+  // it tracks the envelope, so its negative control runs the other way (perturb
+  // the envelope, watch it move; sweep every param, watch it not). All six are
+  // negative-controlled in BOTH directions, permanently, in
+  // meowbox-face-model.test.ts.
+  'meowbox-formants': (read) => meowboxFormantsText(meowboxParams(read)),
+  'meowbox-settled-hz': (read) => fmtHz(meowboxSettledHz(meowboxParams(read))),
+  'meowbox-tail-s': (read) => meowboxTailText(meowboxParams(read)),
+  'meowbox-formant-gain': (read) => meowboxPeakGainText(meowboxParams(read)),
+  'meowbox-tremolo': (read) => meowboxTremoloText(meowboxParams(read)),
+  // ⚠ TAKES NO `read`, AND THAT IS THE DECLARATION. The comb null is a function
+  // of the amplitude envelope — `1 / (2·(1−ampEnv)·0.6 ms)` — and of nothing on
+  // the panel, so a version that consulted a param would be measuring something
+  // else. The model reads `MEOWBOX_SUSTAIN` for the "held" figure rather than
+  // typing 0.4, so the printed number cannot drift from the envelope constant.
+  'meowbox-comb-null': () => meowboxCombNullText(),
 
   // ── PENTEMELODICA ────────────────────────────────────────────────────────
   // `at cutoff` is a function of MODE **and** RESONANCE — a MODE readout would
