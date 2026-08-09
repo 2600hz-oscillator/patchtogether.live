@@ -52,6 +52,35 @@ export const FACES = [
   // unless a promotion empties a band (heroFacePlan drops an emptied band).
   { type: 'clap', pages: 4 },
   { type: 'drummergirl', pages: 2 },
+  // ⚠ THE ONLY FREE-RUNNING VOICE IN THIS ROSTER, and therefore the only entry
+  // that EXERCISES the audio freeze above rather than being indifferent to it.
+  // It carries NO mask: it is captured strict, like every sibling.
+  //
+  // Every other face is struck or silent, so its glyph tap reads zeros whether
+  // the graph runs or not — which is precisely why the missing freeze survived
+  // undetected for months and why `fix/vrt-face-audio-freeze` (#1420) could
+  // only be covered by a SYNTHETIC control that manufactures the condition.
+  // analogVco makes the condition real: it sounds the instant it spawns, with
+  // no gate and no note to wait for (`factory` feeds silence to all four
+  // merger inputs purely to keep the Faust node processing).
+  //
+  // MEASURED 2026-08-08, darwin, port 5439, this tile, within-subject via
+  // vrt-face-audio-probe (26/255 channel delta, glyph box x50-82 y35-49):
+  //
+  //   SOURCE      port=saw tapped=true peak=0.999890 moving=1.953397
+  //               (`moving > 0` IS the free-running condition, read at the
+  //                AnalyserNode rather than inferred from pixels)
+  //   frozen pre-frame (SHIPPING)          0 px  — and 0 px across two
+  //                                        INDEPENDENT boots
+  //   AUDIT_NO_FREEZE=1 (freeze off)     394 px  — all of it in the glyph box
+  //   PROBE_FREEZE_LATE=1 (wrong ORDER)  337 px  across independent boots
+  //
+  // The last two rows are 0 px for all 21 other faces, so this entry is the
+  // ONLY thing in the roster that can distinguish "frozen" from "running" OR
+  // correct freeze ORDERING from late. Gate derivation, 10 SEPARATE playwright
+  // processes against a fresh unmasked baseline (scripts/vrt-derive-trials.sh,
+  // NOT --repeat-each): 10/10 PASS.
+  { type: 'analogVco', pages: 2 },
   // ⚠ 8 bands trips DOCK_TAB_MIN_BANDS: this face renders as a TAB RAIL, by
   // design (five identical voice strips have no other shape). Do not merge it
   // back under seven.
@@ -59,10 +88,16 @@ export const FACES = [
 ] as const;
 
 /** TIGHT per-scene diff budgets (absolute pixels; Playwright takes the MIN of
- *  this and the config ratio budget). The compact tile is a small element
- *  capture (~86×81 px at zoom 0.45 — the whole image is ~7k px, so the global
- *  0.05 ratio budget would allow only ~350 px anyway); 150 px flips on any
- *  real knob/label/glyph change while sitting above rounding noise. The dock
+ *  this and the config ratio budget).
+ *
+ *  ⚠ COMPACT_MAX_DIFF IS CURRENTLY INERT, and saying so is the point — a budget
+ *  nobody has re-measured reads as protection it may not provide. MEASURED
+ *  2026-08-08: a compact tile is 88×82 = 7216 px, and vrt.config's
+ *  `maxDiffPixelRatio` was TIGHTENED from 0.05 to 0.01 on 2026-07-31, so the
+ *  ratio now allows 72 px and is the binding term. 150 was chosen against the
+ *  old 0.05 (~350 px) and has been the looser of the two ever since. It is kept
+ *  because it is the DECLARED intent and it binds again on any tile over
+ *  15 000 px, not because it is doing work today. The dock
  *  faceplate is a full-width element (1220 × 322…1003 now that it is captured
  *  unfolded): 1500 px matches the workflow-shell-zoom scene budget, and it stays
  *  the binding term because Playwright takes the MIN — the config's 0.01 ratio

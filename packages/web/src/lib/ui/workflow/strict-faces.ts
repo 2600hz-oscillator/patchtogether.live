@@ -51,26 +51,48 @@
 // lane and had no strike key at all, so under `?shell=1` the dock offered
 // twenty controls over an instrument that could not be sounded.
 //
-// ⚠ analogVco was authored, verified and then DROPPED from this batch. Its
-// `face-analogVco-compact` VRT scene was NOT pixel-deterministic: unlike every
-// other faced module, analogVco is a FREE-RUNNING oscillator, so its live
-// `scope` glyph was drawing a genuinely moving saw rather than the flat
-// centreline the spec header assumed (measured 254 / 154 / 315 px across three
-// consecutive captures of the same tile). Its DOCK scene was stable, which
-// confirmed the diagnosis — a `hero.cell` suppresses the glyph there.
+// FACE BATCH 3 · analogVco (2026-08-08) — the RECOVERY of the face batch 3
+// authored, verified and then dropped. Every unit gate passed at the time; the
+// blocker was purely the pixel lane, and it is now fixed at the ROOT.
 //
-// THE BLOCKER IS FIXED, AND NOT WHERE THIS NOTE PREDICTED. It said the fix
-// belonged in `VRT_LIVE_SURFACES` (a mask plus a measured companion). It did
-// not: the cause was that `bootWithFace` (e2e/vrt/_shell-faces.ts) never
-// suspended the AudioContext, so EVERY face scene captured off a live graph and
-// only a sounding module could reveal it. `fix/vrt-face-audio-freeze` freezes
-// the graph in that ONE shared boot path, before the tile is framed, so a
-// free-running voice's glyph tap reads zeros like every other face's. Measured
-// on the equivalent chain (a faced processor downstream of a free-running
-// voice): 233/128 px unfrozen → 0 px frozen, and 0 px across two INDEPENDENT
-// boots. No mask, no companion, no blinded region — and it covers every future
-// free-running face rather than one module. Promoting analogVco is now an
-// ordinary face PR.
+// THE BLOCKER WAS NOT WHERE THIS FACE'S OWN BRANCH THOUGHT IT WAS, and the
+// correction is the interesting part. analogVco is a FREE-RUNNING oscillator —
+// it sounds the instant it spawns — so the live `scope` glyph on its COMPACT
+// lane tile drew a genuinely moving saw where every other face drew a flat
+// centreline, and the tile could not baseline at all. The recovered branch
+// concluded the fix was a `VRT_LIVE_SURFACES` mask plus a measured companion,
+// and derived one honestly (1/10 unmasked vs 10/10 masked, 10 processes).
+//
+// It was treating a SYMPTOM. The cause was that `bootWithFace` never suspended
+// the AudioContext, so EVERY face scene captured off a live graph; the roster
+// got away with it because all 21 other faces are struck or silent and their
+// analysers held zeros either way. #1420 freezes the graph in that ONE shared
+// boot path, before the tile is framed, so a free-running voice's glyph tap is
+// an analyser on a stopped graph and reads zeros like everyone else's. The mask
+// this branch carried was therefore DELETED, not merged: the tile ships fully
+// strict, glyph included.
+//
+// ⚠ AND THIS FACE IS THE FIRST REAL TEST OF THAT FIX. #1420 shipped covered
+// only by a SYNTHETIC negative control, because — as its own author flagged —
+// no module holding a face was free-running, so nothing in the roster could
+// exercise the freeze. analogVco changes that. MEASURED 2026-08-08 (darwin,
+// within-subject, vrt-face-audio-probe, 26/255 delta):
+//
+//   source: port=saw peak=0.999890 moving=1.953397   → genuinely free-running,
+//                                                      read at the AnalyserNode
+//   frozen pre-frame (shipping)          0 px, and 0 px across two INDEPENDENT
+//                                        boots
+//   freeze OFF                         394 px, entirely inside the glyph box
+//   freeze LATE (wrong ordering)       337 px across independent boots
+//
+// All 21 other faces read 0 px in both perturbed configurations. So promoting
+// this face converts #1420's synthetic-only coverage into REAL roster coverage,
+// and it is the only entry that can catch a regression of either the freeze or
+// its ORDERING. Gate derivation: 10/10 separate processes, unmasked.
+//
+// The face itself is unchanged from the verified batch-3 authoring, and its two
+// live defects were fixed independently before it landed: the card/def bipolar
+// range disagreement (#1311) and the impossible `pw`-with-an-LFO doc (897b6515).
 
 export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // P1 batch 1 — first 6 module faces
@@ -99,6 +121,8 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   'clap',
   'drummergirl',
   'pentemelodica',
+  // FACE BATCH 3 · the recovered free-running oscillator (2026-08-08).
+  'analogVco',
 ]);
 
 /**

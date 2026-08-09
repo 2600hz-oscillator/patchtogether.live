@@ -34,6 +34,7 @@ import type { SelectorOption } from '$lib/ui/controls';
 import { testHooksEnabled } from '$lib/dev/test-hooks';
 import Dx7OperatorMap from '$lib/ui/modules/dx7/Dx7OperatorMap.svelte';
 import Dx7OpDetail from '$lib/ui/modules/dx7/Dx7OpDetail.svelte';
+import AnalogVcoHeroPanel from '$lib/ui/modules/AnalogVcoHeroPanel.svelte';
 import ClapHeroPanel from '$lib/ui/modules/ClapHeroPanel.svelte';
 import KickdrumHeroPanel from '$lib/ui/modules/KickdrumHeroPanel.svelte';
 import PentemelodicaVoicesPanel from '$lib/ui/modules/PentemelodicaVoicesPanel.svelte';
@@ -325,6 +326,35 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
         testid: 'dx7-eg-point-2',
         action: 'drag',
         effect: { kind: 'data-rev', key: 'voiceRev' },
+      },
+    },
+  },
+  analogVco: {
+    // THE HERO PICTURE — one cycle of all five wave taps, drawn from the LIVE
+    // knobs through the DSP's own tap laws, four as thin ghosts and MORPH in
+    // the domain hue.
+    //
+    // ⚠ A PANEL RATHER THAN THE GLYPH, and the reason is a real defect in what
+    // the glyph can say here. `glyphBinding` resolves any glyph + a primary
+    // audio output to `live-audio`, and `primaryAudioOutPortId` takes the FIRST
+    // declared audio output = `saw` — the one tap no control on this face
+    // changes. That is fine at mini/compact (a live trace of the module
+    // running) and wrong at the dock, which is exactly why `face.hero.cell`
+    // suppresses `heroGlyph` there: a knob-INVARIANT trace beside a
+    // knob-DERIVED picture teaches that they are the same thing.
+    'analogvco-cycle-{n}': {
+      kind: 'panel',
+      label: 'single cycle · five taps',
+      component: AnalogVcoHeroPanel,
+      minWidth: 380,
+      // A `text` probe on a DIFFERENT element: the plotted window is a PRIVATE
+      // view setting in component state, so there is no node.data key to watch.
+      // The button drives the axis caption, which prints the period the knobs
+      // currently imply — a dead button cannot change it.
+      probe: {
+        testid: 'analogvco-cycle-window',
+        action: 'click',
+        effect: { kind: 'text', testid: 'analogvco-cycle-axis', expect: 'changed' },
       },
     },
   },

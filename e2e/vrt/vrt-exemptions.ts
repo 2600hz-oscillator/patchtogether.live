@@ -221,15 +221,32 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // (recolorization / mono-override clobber / palette remap) lives in
   // vrt-colourofmagic.spec.ts.
   colourofmagic: [{ selector: 'canvas' }],
-  // ANALOG VCO — MIGRATED to the live-surface registry
-  // (e2e/vrt/vrt-live-surfaces.ts). It used to live here as a bare
-  // `analogVco: [{ selector: 'canvas' }]`, which masked the single-cycle
-  // waveform scope out of the diff and asserted NOTHING about it: the card
-  // could have stopped drawing the trace entirely and the baseline would not
-  // have moved a pixel. It now carries a measured companion (ink / luminance
-  // spread / tonal structure) plus a per-run negative control. The morph DSP
-  // is still covered by analog-vco-morph.test.ts and the scope-window logic by
-  // analog-vco-scope.test.ts.
+  // ANALOG VCO — the mask was DELETED, not migrated, and this comment said the
+  // opposite for months. CORRECTED 2026-08-08.
+  //
+  // It used to live here as a bare `analogVco: [{ selector: 'canvas' }]`, which
+  // masked the legacy CARD's single-cycle waveform scope out of the diff and
+  // asserted NOTHING about it. The 2026-08-01 round-4 derivation then measured
+  // that card UNMASKED at 10/10 separate gate processes PASS (see the table in
+  // vrt-live-surfaces.ts), so the entry was removed and 27.6 % of the card came
+  // BACK into the pixel diff. That is the outcome — no mask, full strictness.
+  //
+  // The wording it replaced ("MIGRATED to the live-surface registry… now
+  // carries a measured companion") described a `VRT_LIVE_SURFACES` entry that
+  // never existed, and it read as reassurance while nothing was watching.
+  //
+  // ⚠ AND DO NOT RE-ADD ONE FOR THE FACE EITHER. analogVco has a SECOND live
+  // surface — `face-analogVco-compact`, the PF-20 lane tile, whose `scope`
+  // GLYPH moves because the oscillator free-runs — and an earlier cut of that
+  // face shipped a registry entry to mask it. That entry was DELETED before
+  // merge: #1420 suspends the AudioContext in `bootWithFace` before the tile is
+  // framed, so the glyph tap reads zeros and the tile is strict-stable
+  // (measured 0 px frozen vs 394 px unfrozen, 10/10 separate gate processes
+  // unmasked). Both of this module's surfaces are unmasked, for two different
+  // reasons; neither needs a companion.
+  //
+  // The morph DSP is still covered by analog-vco-morph.test.ts and the
+  // scope-window logic by analog-vco-scope.test.ts.
   // BACKDRAFT deliberately has NO mask entry, for TWO independent reasons —
   // and the wording here has flip-flopped with the card, so state both.
   //   (1) There is nothing on the faceplate to mask. The in-card display was
@@ -922,10 +939,12 @@ export const ALLOWED_PERMANENT_EXEMPT: ReadonlySet<string> = new Set([
 export const STRICT_VRT_MODULES = new Set<string>([
   // Audio domain — pure knob/fader cards, no canvas
   'adsr',                 // 4-knob envelope card
-  // analogVco: removed from strict lane — the card now carries a live
-  // single-cycle waveform scope (animated canvas off the morph output), which
-  // disqualifies it from the no-animated-chrome strict subset. It stays in
-  // the full VRT lane with the scope canvas masked (see VRT_MODULE_MASKS).
+  // analogVco: removed from strict lane — the card carries a live single-cycle
+  // waveform scope (animated canvas off the morph output), which disqualifies
+  // it from the no-animated-chrome strict subset. It stays in the full VRT
+  // lane, and — CORRECTED 2026-08-08 — the scope canvas is NOT masked there:
+  // the round-4 derivation measured the unmasked card at 10/10 gate processes
+  // PASS and deleted the VRT_MODULE_MASKS entry, so the trace is in the diff.
   // audioOut: removed from strict lane. This PR added the OUT device
   // dropdown row (setSinkId picker), growing the card from 320x313 to
   // 360x401. The darwin baseline was re-captured (f1cd0e5f); the linux
@@ -1121,6 +1140,53 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   'linux/face-qbrt-dock',
   'linux/rear-dx7',
   'linux/rear-sixstrum',
+  //
+  // FACE BATCH 3 · analogVco (2026-08-08) — DRAINED IN THIS PR, not parked, and
+  // it was parked for one push before this note replaced it. Recording that,
+  // because the mistake is the single most repeatable one in this file.
+  //
+  // `linux/face-analogVco-{compact,dock}` were briefly listed here with the note
+  // "awaiting ONE vrt-update.yml dispatch before merge" — written directly ON
+  // TOP of the batch-3 block below, which exists to say that dispatch captures
+  // NOTHING. A listed pair is `test.skip()`-ed UNCONDITIONALLY
+  // (workflow-shell-faces.spec.ts consults the pair before the PNG) and
+  // `--update-snapshots` writes nothing for a skipped test, so the dispatch
+  // returns green having captured exactly zero. analogVco has been in this
+  // precise deadlock ONCE BEFORE — see the STRICT_VRT_MODULES drain note around
+  // line 1036, where it is one of the three named modules whose "re-add once the
+  // linux baseline is re-captured" comment could never come true while its pair
+  // was listed. Drain first, dispatch second; the entry is gone rather than
+  // rewritten.
+  //
+  // BOTH vrt-meta ratchets therefore return to their PRE-PR values in the same
+  // commit — SHARED_LINUX_PAIR_CEILING back to 91 (list-anchored: immediate, the
+  // moment those two lines go) and LINUX_DEFICIT_CEILING back to 148
+  // (ARTIFACT-anchored: it only reaches 148 once the bot's two linux PNGs land).
+  // The interval between this push and that capture is the known-red window
+  // CLAUDE.md names — 2 genuinely UNDECLARED gaps, red BY DESIGN — and it closes
+  // inside this same PR. Do NOT "fix" that red by re-adding the pairs; that is
+  // the deadlock, not the exit. Ledger re-pinned in the same commit.
+  //
+  // ⚠ THE COMPACT SCENE IS **NOT** MASKED — and an earlier cut of this PR said
+  // the opposite here, which is why the correction is written down rather than
+  // quietly deleted. That cut gave `face-analogVco-compact` the registry's only
+  // face entry (a magenta rect over the free-running oscillator's live glyph)
+  // and derived it honestly at 1/10 unmasked vs 10/10 masked.
+  //
+  // The mask was DELETED before merge. #1420 suspends the AudioContext in
+  // `bootWithFace` BEFORE the tile is framed, so the glyph tap is an analyser on
+  // a stopped graph and reads zeros — the same flat centreline every other face
+  // draws. Re-measured on darwin against a FRESH UNMASKED baseline: 0 px frozen
+  // vs 394 px unfrozen, 0 px across two independent boots, and 10/10 separate
+  // gate processes (scripts/vrt-derive-trials.sh). So the linux capture IS a
+  // plain re-render, and nothing magenta is baked into either platform's PNG.
+  //
+  // What the dispatch on this branch had to fix is the leftover: the linux
+  // compact baseline was captured by the bot WHILE the mask still existed, so it
+  // carried 594 magenta px (8.23 % of an 88x82 tile) against a 72 px budget.
+  // That over-budget diff is what makes `--update-snapshots` rewrite it unaided,
+  // which is why no `git rm` was needed and no undeclared platform gap was
+  // manufactured.
   //
   // FACE BATCH 3 (2026-08-03) — DRAINED IN THIS PR, not parked. The 6 CURATED
   // FACE scenes for the three newly-promoted modules (clap, drummergirl,
