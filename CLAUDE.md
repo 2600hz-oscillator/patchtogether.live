@@ -562,6 +562,22 @@ authoring is a no-op for the attest (guarded by webgl-attest-coverage.test.ts).
 Audio defs are NOT in the WebGL basis and don't need markers. (If the attest
 LOGIC or a real contract field changes, that's a legitimate one-time re-attest.)
 
+⚠ **THE MARKER IS WEBGL-ONLY — the COLLAB attest hashes its basis WHOLESALE.**
+`stripDocsForHash` is defined in, and consulted by, `scripts/webgl-attest-lib.ts`
+**and nowhere else**. `scripts/collab-attest-lib.ts` has no equivalent, and
+`COLLAB_DIR_ROOTS` covers ALL of `packages/server/src` and
+`packages/web/src/lib/multiplayer` — so **a comment-only edit anywhere under
+those roots flips the collab hash and forces a full relay re-attest**, and
+wrapping it in `docs-hash-ignore` markers does nothing, because they are inert
+text to that hasher. Measured 2026-08-08 (#1422): two pure comment lines went
+red; the fix was to move the prose onto a constant outside the basis.
+
+So the heading above is true of **WebGL only**. Under a collab root, either keep
+the prose out of the basis or accept the re-attest. Teaching
+`collab-attest-lib.ts` the same `stripDocsForHash` would close the asymmetry —
+that is a change to the attest LOGIC, hence a legitimate one-time re-attest by
+the rule above, and it is unclaimed work.
+
 ## ART baselines and the fingerprint manifest are ONE truth — re-pin BOTH
 
 `art/baselines/**/*.f32` (+ `.sha`) and
