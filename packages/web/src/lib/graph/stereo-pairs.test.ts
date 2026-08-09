@@ -401,22 +401,25 @@ describe('stereo-pairs: the audio-only rule, verified on the real defs', () => {
     }
   });
 
-  it('every derived OUTPUT pair is ADJACENT on its rail (the rear-card tie needs it)', () => {
-    // rear-card-model draws `pairWithPrev` between CONSECUTIVE holes. If a
-    // module ever declares a non-adjacent output pair, the tie silently stops
-    // being drawn — so make that a red test here instead of a mis-drawn card.
-    const nonAdjacent: string[] = [];
-    for (const def of defs) {
-      const ids = (def.outputs ?? []).map((p) => p.id);
-      for (const pair of derivedStereoPairs(def)) {
-        if (pair.direction !== 'output') continue;
-        if (ids.indexOf(pair.right) - ids.indexOf(pair.left) !== 1) {
-          nonAdjacent.push(`${def.type} ${pair.left}+${pair.right}`);
-        }
-      }
-    }
-    expect(nonAdjacent).toEqual([]);
-  });
+  // ── REMOVED: 'every derived OUTPUT pair is ADJACENT on its rail' ──────────
+  //
+  // It existed for exactly one consumer: `rear-card-model`'s `pairWithPrev`,
+  // which drew a "stereo pair" TIE between two CONSECUTIVE holes and would
+  // therefore have tied the wrong two jacks if a pair were ever non-adjacent.
+  //
+  // PR-4 retired the tie for a single stereo HOLE (owner Q5), which removes the
+  // precondition entirely: a collapsed hole is emitted at the position of
+  // whichever member comes first and names its partner by id, so it cannot be
+  // wrong about its own two ports wherever they sit in declared order.
+  //
+  // DELETED rather than left green, deliberately. A gate whose stated
+  // justification no longer exists still LOOKS like protection — it would have
+  // gone on passing forever while guarding nothing, which is the same failure
+  // mode as a stale exemption. The invariants that DO still matter are pinned
+  // where their consumers are: 'collapse never LOSES a port' and 'every
+  // collapsed row addresses two REAL ports on its rail' in
+  // `$lib/ui/stereo-jack-collapse.test.ts`, and the rear card's totality in
+  // `rear-card-model.test.ts` / `module-face-lint.test.ts`.
 });
 
 // ────────────────────────────────────────────────────────────────────────────

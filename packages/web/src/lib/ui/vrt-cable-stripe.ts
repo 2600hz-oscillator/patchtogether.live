@@ -56,6 +56,12 @@ export interface StripeBand {
   saturation: number;
   /** Fraction of the row's pixels that ARE the modal colour. */
   uniformity: number;
+  /** `#rrggbb` of the modal colour of the row immediately BELOW the band —
+   *  the card body the stripe is composited over. Needed because a stripe
+   *  that lands off the device-pixel grid paints a PARTIAL-COVERAGE blend of
+   *  its token over this colour rather than the token itself; see
+   *  `stripeMatchesToken`. `null` when the band is the last scanned row. */
+  bgHex: string | null;
 }
 
 /** Minimal PNG reader: 8-bit, non-interlaced, colour type 0/2/4/6. */
@@ -165,9 +171,10 @@ export const STRIPE_MIN_UNIFORMITY = 0.5;
  */
 export function findStripeBand(pngBytes: Uint8Array): StripeBand | null {
   const { width, rows } = decodePngTopRows(pngBytes, STRIPE_SCAN_ROWS);
-  let best: StripeBand | null = null;
-  for (let y = 0; y < rows.length; y++) {
+  /** Modal colour of one row, or null when the row is below the scan window. */
+  const modalOf = (y: number): { hex: string; saturation: number; uniformity: number } | null => {
     const row = rows[y];
+    if (!row) return null;
     const counts = new Map<number, number>();
     for (let x = 0; x < width; x++) {
       const key = (row[x * 3] << 16) | (row[x * 3 + 1] << 8) | row[x * 3 + 2];
@@ -176,17 +183,119 @@ export function findStripeBand(pngBytes: Uint8Array): StripeBand | null {
     let modal = 0;
     let n = 0;
     for (const [k, c] of counts) if (c > n) { n = c; modal = k; }
-    const uniformity = n / width;
-    if (uniformity < STRIPE_MIN_UNIFORMITY) continue;
     const r = (modal >> 16) & 0xff;
     const g = (modal >> 8) & 0xff;
     const b = modal & 0xff;
-    const saturation = Math.max(r, g, b) - Math.min(r, g, b);
-    if (!best || saturation > best.saturation) {
-      best = { y, saturation, uniformity, hex: rgbToHex(r, g, b) };
+    return {
+      hex: rgbToHex(r, g, b),
+      saturation: Math.max(r, g, b) - Math.min(r, g, b),
+      uniformity: n / width,
+    };
+  };
+
+  let best: StripeBand | null = null;
+  for (let y = 0; y < rows.length; y++) {
+    const m = modalOf(y);
+    if (!m || m.uniformity < STRIPE_MIN_UNIFORMITY) continue;
+    if (!best || m.saturation > best.saturation) {
+      best = {
+        y,
+        saturation: m.saturation,
+        uniformity: m.uniformity,
+        hex: m.hex,
+        bgHex: modalOf(y + 1)?.hex ?? null,
+      };
     }
   }
   return best;
+}
+
+/** Largest per-channel disagreement in recovered coverage that still counts as
+ *  ONE alpha. Both bounds are MEASURED across the full matrix, not chosen:
+ *    - ACCEPT side: all 8 real blends spread **0.0097** (they solve to
+ *      0.745 / 0.739 / 0.749 — 8-bit quantisation of one alpha, not 3 colours);
+ *    - REJECT side: the TIGHTEST retired-vs-current pair in the whole matrix is
+ *      `#f472b6` (pre-#1159 video) read as `--cable-polyPitchGate` (`#ff7bc2`),
+ *      spreading **0.0494**. Two palette generations can be nearly collinear
+ *      from the card body, so this margin is much smaller than it looks.
+ *  0.02 sits 2.1× above the noise and 2.5× below the nearest thing it must
+ *  reject. */
+export const STRIPE_ALPHA_SPREAD = 0.02;
+/** A row covered less than this by the stripe is not "the stripe row".
+ *  `findStripeBand` picks the most-SATURATED row and coverage is monotone in
+ *  saturation, so the picked row is the most-covered one; this floor rejects
+ *  the faint shoulder above/below it (measured 0.52 on the quadralogical
+ *  scenes, vs 0.744 for the row actually chosen). */
+export const STRIPE_MIN_COVERAGE = 0.6;
+/**
+ * A SECOND, INDEPENDENT axis, because collinearity alone is a thin defence.
+ *
+ * A near-collinear retired hue does not read as a *dimmed* token — it reads as
+ * an ALMOST-COMPLETE cover: `#f472b6` posing as `--cable-polyPitchGate`
+ * recovers α = 0.952/0.902/0.924. Genuine partial coverage sits well clear of
+ * 1 (measured 0.739–0.749 on every affected scene). So the band 0.95 < α ≤ 1 is
+ * the zone where "slightly wrong hue" and "very nearly fully covered" are not
+ * distinguishable, and we refuse it.
+ *
+ * The cost is deliberate and safe-side: a stripe that really is 96–99 % covered
+ * fails instead of passing. That is a loud, investigable failure, which is the
+ * right direction for a drift gate. The tightest retired pair is now rejected
+ * TWICE over — spread 0.0494 > 0.02 AND α 0.952 > 0.95 — so neither axis is
+ * load-bearing alone.
+ */
+export const STRIPE_MAX_COVERAGE = 0.95;
+
+/**
+ * Does a stripe row PAINT `token`, allowing for partial pixel coverage?
+ *
+ * WHY THIS IS NOT A RELAXATION. The gate's original test was `got === token`,
+ * which silently assumes the stripe rasterises to at least one FULLY covered
+ * row. That is a property of the layout, not of the palette: a ~1px stripe
+ * lands on the device-pixel grid at one zoom and straddles two rows at another,
+ * and then NO row is the pure token. Measured on this repo when the topbar lost
+ * a row and xyflow's fitView zoom went 1.4611 → 1.5500: eight
+ * `vrt-quadralogical` baselines went from `#b57bff` at y=2 to `#8e63c8` at y=2,
+ * with `#6b4f95` above it — the SAME hue at ~74% and ~30% coverage. Those
+ * baselines are correct (a from-scratch recapture reproduces them byte for
+ * byte, so regeneration cannot "fix" them); the exact-match premise is what
+ * was wrong.
+ *
+ * The relaxation is DIRECTIONAL, not a tolerance ball, so it cannot admit the
+ * drift this gate exists to catch. A partially-covered stripe lies on the
+ * straight line from the card body to the token: `got = α·token + (1−α)·bg`.
+ * We recover α per channel and require all three to agree. A DIFFERENT hue is
+ * not on that line — the retired `--cable-video` (`#f472b6`) over the card body
+ * `#1c1f24` recovers α = 1.41/0.90/0.67, a spread of 0.74, ~15× the tolerance.
+ * A stale palette generation still fails, which is the whole point.
+ */
+export function stripeMatchesToken(
+  gotHex: string,
+  bgHex: string | null,
+  tokenHex: string,
+): boolean {
+  if (gotHex === tokenHex) return true;
+  if (!bgHex) return false;
+  const got = hexToRgb(gotHex);
+  const bg = hexToRgb(bgHex);
+  const token = hexToRgb(tokenHex);
+
+  const alphas: number[] = [];
+  for (let i = 0; i < 3; i++) {
+    const span = token[i] - bg[i];
+    // A channel where the token and the body agree carries no information
+    // about coverage (any α reproduces it) — skip rather than divide by ~0.
+    if (Math.abs(span) < 8) continue;
+    alphas.push((got[i] - bg[i]) / span);
+  }
+  // Need at least two informative channels: one is a line through a point and
+  // would accept any colour that happens to match on that single channel.
+  if (alphas.length < 2) return false;
+  const lo = Math.min(...alphas);
+  const hi = Math.max(...alphas);
+  // Axis 1 — is it ONE alpha? (collinear with the body→token ray)
+  if (hi - lo > STRIPE_ALPHA_SPREAD) return false;
+  // Axis 2 — is it unambiguously PARTIAL? (see STRIPE_MAX_COVERAGE)
+  return lo >= STRIPE_MIN_COVERAGE && hi <= STRIPE_MAX_COVERAGE;
 }
 
 export function rgbToHex(r: number, g: number, b: number): string {

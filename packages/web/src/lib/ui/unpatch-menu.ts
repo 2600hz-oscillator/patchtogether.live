@@ -21,8 +21,43 @@
 // a remote module the SAME way every other patch surface does.
 
 import type { Edge, ModuleNode } from '$lib/graph/types';
-import { legChannelOfEdge, siblingLegIds, type StereoDef } from '$lib/graph/stereo-autowire';
+import { siblingLegIds, type StereoDef } from '$lib/graph/stereo-autowire';
+import { stereoPairForPort, type PortDirection, type StereoPairDefLike } from '$lib/graph/stereo-pairs';
+import { collapsedPairLabel } from './stereo-jack-collapse';
+import { imageChannelOfEdge } from './cable-leg-groups';
 import { moduleDisplayName, type AnyDef } from './port-patch-helpers';
+
+/**
+ * THE PORT LABEL THIS MENU PRINTS — the same name the JACK shows.
+ *
+ * A collapsed stereo jack is named from its pair's shared STEM
+ * (`out_l`+`out_r` → OUT), and this menu describes cables seated on that jack,
+ * so it has to agree. It used to print the raw leg id and read
+ * `TIDY VCO OUT_L` / `Unpatch → cloudseed IN_L` for a COMPLETE stereo group —
+ * one surface saying OUT while the jack a click away said OUT, differing only in
+ * the menu. That is the card-vs-def divergence class: two surfaces, one truth,
+ * no gate comparing them. `unpatch-menu.test.ts` now asserts the two agree.
+ *
+ * It calls `collapsedPairLabel` — the SAME function the jack uses — rather than
+ * re-deriving a stem, so there is one implementation and not two that happen to
+ * match today.
+ *
+ * ⚠ SCOPE, stated so a green run is not read as more than it is: for a port that
+ * is NOT in a derived pair this returns the raw uppercased id, exactly as
+ * before. That still differs from the jack for ids the verbose-label table
+ * expands (a `cv_in` port renders `CV` on the jack and `CV_IN` here). Left
+ * alone deliberately — it predates this menu, is not what the owner reported,
+ * and changing every mono label is a wider behaviour change than this fix. The
+ * test ratchets that remaining divergence rather than ignoring it.
+ */
+export function unpatchPortLabel(
+  def: StereoDef | undefined,
+  portId: string,
+  direction: PortDirection,
+): string {
+  const pair = def ? stereoPairForPort(def as StereoPairDefLike, portId, direction) : null;
+  return pair ? collapsedPairLabel(pair) : String(portId).toUpperCase();
+}
 
 /** The patch point the user right-clicked. */
 export interface UnpatchTarget {
@@ -56,6 +91,23 @@ export interface UnpatchItem {
    * deliberately not distinguished here, because neither is missing anything.
    */
   soloChannel: 'left' | 'right' | null;
+  /**
+   * The cable's CURRENT stereo mode, or null when it carries no stereo image
+   * (an ordinary mono / cv / gate cable, or `rings`' timbre taps) and the
+   * channel rows must not appear.
+   *
+   * WHY IT LIVES ON THE UNPATCH MENU. Right-clicking a PATCHED output opened
+   * only this menu — `PatchPanel.onPortRowContextMenu` returns as soon as the
+   * unpatch menu claims the event — so "patch only L / only R" was reachable
+   * ONLY on an unpatched output. The owner's expectation (right-click an output,
+   * get the option) is the correct one, so the rows come HERE for a live cable
+   * rather than the patched case being special-cased away.
+   *
+   * `both` for a complete leg group, `left`/`right` for a lone leg — the same
+   * fact as `soloChannel`, expressed as the control's current value so the menu
+   * can render a radio group without re-deriving it.
+   */
+  channelMode: 'both' | 'left' | 'right' | null;
 }
 
 export interface UnpatchPlan {
@@ -120,11 +172,28 @@ export function buildUnpatchPlan(
     seenGroups.add(groupKey);
 
     const far = target.direction === 'input' ? src : dst;
-    const remote = `${moduleDisplayName(far.nodeId, nodes, defLookup)} ${String(far.portId).toUpperCase()}`;
+    const farDirection: PortDirection = target.direction === 'input' ? 'output' : 'input';
+    const remote = `${moduleDisplayName(far.nodeId, nodes, defLookup)} ${unpatchPortLabel(
+      defForNode(far.nodeId),
+      far.portId,
+      farDirection,
+    )}`;
     // A lone leg is one that HAS a side but no sibling leg patched. A complete
     // group has a side too — so the suffix keys off the group SIZE, not merely
     // off "is this port paired".
-    const soloChannel = group.length === 1 ? legChannelOfEdge(e, defForNode) : null;
+    //
+    // ⚠ AND the side must be a real stereo IMAGE — `imageChannelOfEdge`, NOT
+    // `legChannelOfEdge`. The latter reads the WIRING pair list, so a lone
+    // `rings.odd` cable (odd/even is a declared pair but COLLAPSE_EXEMPT — two
+    // different timbre taps) comes back 'left' and would be labelled "(L only)"
+    // about a jack the UI calls ODD. The shared helper is the SAME one the
+    // dashed only-L/R cable uses, so the two surfaces cannot drift.
+    const imageChannel = imageChannelOfEdge(e, defForNode);
+    const soloChannel = group.length === 1 ? imageChannel : null;
+    // The control's current value: a complete group is `both`, a lone leg is
+    // the side it carries, and a cable with no stereo image gets no rows.
+    const channelMode: UnpatchItem['channelMode'] =
+      imageChannel === null ? null : group.length > 1 ? 'both' : imageChannel;
     const base = target.direction === 'input' ? `Unpatch — ${remote}` : `Unpatch → ${remote}`;
     items.push({
       edgeId: id,
@@ -132,11 +201,18 @@ export function buildUnpatchPlan(
       remote,
       label: soloChannel ? `${base} (${soloChannel === 'left' ? 'L' : 'R'} only)` : base,
       soloChannel,
+      channelMode,
     });
   }
   items.sort((a, b) => (a.edgeId < b.edgeId ? -1 : a.edgeId > b.edgeId ? 1 : 0));
   return {
-    title: `${moduleDisplayName(target.nodeId, nodes, defLookup)} ${target.portId.toUpperCase()}`,
+    // The header names the JACK, so it uses the same collapsed label the jack
+    // itself shows — it read `TIDY VCO OUT_L` for a port whose jack says `OUT`.
+    title: `${moduleDisplayName(target.nodeId, nodes, defLookup)} ${unpatchPortLabel(
+      defForNode(target.nodeId),
+      target.portId,
+      target.direction,
+    )}`,
     items,
     allLabel: items.length > 1 ? `Unpatch all (${items.length})` : null,
   };

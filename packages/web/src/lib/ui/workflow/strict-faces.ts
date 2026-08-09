@@ -66,14 +66,25 @@
 // structurally unable to see it.
 //
 // ⚠ analogVco was authored, verified and then DROPPED from this batch. Its
-// `face-analogVco-compact` VRT scene is NOT pixel-deterministic: unlike every
+// `face-analogVco-compact` VRT scene was NOT pixel-deterministic: unlike every
 // other faced module, analogVco is a FREE-RUNNING oscillator, so its live
-// `scope` glyph is drawing a genuinely moving saw rather than the flat
-// centreline the spec header assumes (measured 254 / 154 / 315 px across three
-// consecutive captures of the same tile). Its DOCK scene is stable, which
-// confirms the diagnosis — a `hero.cell` suppresses the glyph there. The fix
-// belongs in `VRT_LIVE_SURFACES` (a mask plus a measured companion), which
-// e2e/vrt/vrt-exemptions.ts already claims analogVco has and it does not.
+// `scope` glyph was drawing a genuinely moving saw rather than the flat
+// centreline the spec header assumed (measured 254 / 154 / 315 px across three
+// consecutive captures of the same tile). Its DOCK scene was stable, which
+// confirmed the diagnosis — a `hero.cell` suppresses the glyph there.
+//
+// THE BLOCKER IS FIXED, AND NOT WHERE THIS NOTE PREDICTED. It said the fix
+// belonged in `VRT_LIVE_SURFACES` (a mask plus a measured companion). It did
+// not: the cause was that `bootWithFace` (e2e/vrt/_shell-faces.ts) never
+// suspended the AudioContext, so EVERY face scene captured off a live graph and
+// only a sounding module could reveal it. `fix/vrt-face-audio-freeze` freezes
+// the graph in that ONE shared boot path, before the tile is framed, so a
+// free-running voice's glyph tap reads zeros like every other face's. Measured
+// on the equivalent chain (a faced processor downstream of a free-running
+// voice): 233/128 px unfrozen → 0 px frozen, and 0 px across two INDEPENDENT
+// boots. No mask, no companion, no blinded region — and it covers every future
+// free-running face rather than one module. Promoting analogVco is now an
+// ordinary face PR.
 
 export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // P1 batch 1 — first 6 module faces

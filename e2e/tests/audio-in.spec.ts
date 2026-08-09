@@ -516,8 +516,17 @@ test.describe('WORKFLOW audio I/O surface (🎧 always-on pinned AUDIO IN/OUT)',
     // (parity with the audio-in patch-out rows it sits opposite).
     const receiveRows = panel.getByTestId('workflow-io-patchin');
     await expect(receiveRows).toBeVisible();
+    // ONE row, not two (PR-4 jack collapse): AUDIO OUT's `L`/`R` are a derived
+    // stereo pair, so the panel shows a single stereo receive row addressed to
+    // the LEFT leg — and the commit writes BOTH legs through planAudioCommit.
+    // The R row is gone by design; assert its ABSENCE so a regression that
+    // re-splits the pair is a red test rather than a silent visual change.
     await expect(panel.getByTestId('workflow-io-patchin-L')).toBeVisible();
-    await expect(panel.getByTestId('workflow-io-patchin-R')).toBeVisible();
+    await expect(panel.getByTestId('workflow-io-patchin-R')).toHaveCount(0);
+    await expect(panel.getByTestId('workflow-io-patchin-L')).toHaveAttribute(
+      'data-stereo-sibling',
+      'R',
+    );
 
     // Clicking a receive row opens the "patch from" source picker (the same one
     // an added audio-out's input jack opens) — proving it selects a source.

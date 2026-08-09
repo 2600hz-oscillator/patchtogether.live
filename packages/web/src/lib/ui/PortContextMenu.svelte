@@ -19,7 +19,19 @@
   // traverse between, but negative-space-only dismissal also matches the
   // carry flow (the user may move the cursor around with a cable in hand).
 
+  //
+  // CHANNEL MODE (owner Q5, "patch only L" / "patch only R"). When the source
+  // port is one half of a DERIVED stereo pair, three radio rows sit above the
+  // module list: STEREO (L+R) — the default and what every patch did before —
+  // ONLY L, ONLY R. The choice is a property of the PATCH ABOUT TO BE MADE, not
+  // of the port, so it lives with the picker and the caller resets it to
+  // 'both' on every open. Picking a target port then writes exactly the legs
+  // `planAudioCommit` plans for that mode.
+  //
+  // It is a MODE, not an action: clicking a channel row does NOT close the
+  // menu, because the user still has to say where the cable goes.
   import type { ModuleEntry, CandidatePort } from '$lib/ui/port-patch-helpers';
+  import type { ChannelMode } from '$lib/graph/stereo-autowire';
 
   interface Props {
     open: boolean;
@@ -28,6 +40,12 @@
     y: number;
     /** Source port info, displayed in the header. */
     sourceLabel: string;
+    /** The source port's derived stereo pair (`{left,right}` port ids), or null
+     *  when it carries no stereo image — the channel rows are hidden then. */
+    stereoPair?: { left: string; right: string } | null;
+    /** Which legs the next commit writes. Owned by the caller. */
+    channelMode?: ChannelMode;
+    onchannelmode?: (mode: ChannelMode) => void;
     /** All other modules in the patch, already excluding the source's module. */
     moduleEntries: ModuleEntry[];
     /** Lazily computed when the user clicks a module. Caller maps
@@ -49,12 +67,28 @@
     x,
     y,
     sourceLabel,
+    stereoPair = null,
+    channelMode = 'both',
+    onchannelmode,
     moduleEntries,
     candidatesFor,
     preselectModuleId = null,
     onpick,
     onclose,
   }: Props = $props();
+
+  /** The three channel rows, in the order they render. `port` is the leg each
+   *  mode actually writes — surfaced in the title so the row is checkable
+   *  against the def rather than taken on faith. */
+  let channelRows = $derived(
+    stereoPair
+      ? ([
+          { mode: 'both', label: 'patch stereo (L+R)', port: `${stereoPair.left} + ${stereoPair.right}` },
+          { mode: 'left', label: 'patch only L', port: stereoPair.left },
+          { mode: 'right', label: 'patch only R', port: stereoPair.right },
+        ] as const)
+      : ([] as const),
+  );
 
   // Overlay-replace view. null = the modules list (level 1); a nodeId = that
   // module's ports list (level 2, replacing the modules list). On open it
@@ -140,6 +174,37 @@
         {/if}
         <span class="ctx-header-label">{sourceLabel}</span>
       </div>
+
+      {#if channelRows.length > 0}
+        <!-- CHANNEL MODE — a mode, not an action: picking a row leaves the menu
+             open so the user can still choose a destination. -->
+        <ul
+          class="ctx-list ctx-list-channels"
+          role="group"
+          aria-label="Stereo channels to patch"
+          data-testid="patch-channel-modes"
+        >
+          {#each channelRows as row (row.mode)}
+            <li>
+              <button
+                type="button"
+                class="ctx-item ctx-channel"
+                class:selected={channelMode === row.mode}
+                role="menuitemradio"
+                aria-checked={channelMode === row.mode}
+                data-testid="patch-channel-mode"
+                data-mode={row.mode}
+                data-selected={channelMode === row.mode ? 'true' : 'false'}
+                title={`writes ${row.port}`}
+                onclick={() => onchannelmode?.(row.mode)}
+              >
+                <span class="tick" aria-hidden="true">{channelMode === row.mode ? '●' : '○'}</span>
+                <span>{row.label}</span>
+              </button>
+            </li>
+          {/each}
+        </ul>
+      {/if}
 
       {#if moduleEntries.length === 0}
         <button
@@ -310,6 +375,26 @@
   .chev {
     color: var(--text-dim);
     margin-left: auto;
+  }
+  .ctx-list-channels {
+    border-bottom: 1px solid #2c3037;
+    padding-bottom: 4px;
+    margin-bottom: 2px;
+  }
+  .ctx-channel {
+    font-size: 0.8rem;
+  }
+  .ctx-channel .tick {
+    color: var(--text-dim);
+    width: 0.9em;
+    display: inline-block;
+    text-align: center;
+  }
+  .ctx-channel.selected {
+    color: var(--accent, #60a5fa);
+  }
+  .ctx-channel.selected .tick {
+    color: var(--accent, #60a5fa);
   }
   .ctx-item.warn {
     color: #fbbf24;

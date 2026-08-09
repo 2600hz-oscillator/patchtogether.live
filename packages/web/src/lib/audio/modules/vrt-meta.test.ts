@@ -27,7 +27,7 @@
 // deficit by 41 % and nothing failed.
 
 import { describe, expect, it } from 'vitest';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { listModuleDefs } from '$lib/audio/module-registry';
 import { listVideoModuleDefs } from '$lib/video/module-registry';
@@ -78,6 +78,15 @@ describe('VRT coverage self-test', () => {
   // Force-import the registration barrels so the registries are
   // populated. The web app's UI does this on first page load; in the
   // vitest pass we have to import them explicitly.
+  // EXPLICIT TIMEOUT, measured. This is the first test to pull the three module
+  // barrels, so it alone pays the whole registry-population cost: 1.48 s in
+  // isolation, against vitest's 5 s DEFAULT. That is only ~3.4x headroom, and
+  // the unit lane runs ~2.5x slower under parallel load (CLAUDE.md), which puts
+  // the worst case within noise of the budget — it went red exactly once in a
+  // full-suite run here and passed alone and in two re-runs, the signature of a
+  // budget race rather than a hang. 30 s still BOUNDS a genuine hang (20x the
+  // measured cost) while removing the false failure. The later tests in this
+  // file re-import the same barrels from cache and cost nothing.
   it('imports module barrels so registries are populated', async () => {
     await import('$lib/audio/modules');
     await import('$lib/video/modules');
@@ -85,7 +94,7 @@ describe('VRT coverage self-test', () => {
     const total =
       listModuleDefs().length + listVideoModuleDefs().length + listMetaModuleDefs().length;
     expect(total, 'at least one module is registered').toBeGreaterThan(0);
-  });
+  }, 30_000);
 
   it('every registered module is covered by VRT or exempt with a reason', async () => {
     await import('$lib/audio/modules');
@@ -879,6 +888,202 @@ describe('vrt-meta — STALE EXEMPT_BASELINE_PAIRS RATCHET (only shrinks)', () =
         `${STALE_PAIR_CEILING}. A quarantine was released and the number was not lowered, so ` +
         `the ratchet now silently tolerates ${STALE_PAIR_CEILING - stale.length} new "captured ` +
         `the baseline, forgot to drop the pair". Set it to ${stale.length}.`,
+    ).toBe(0);
+  });
+});
+
+// ── THE AUDIO FREEZE IS DENY-BY-DEFAULT ──────────────────────────────────────
+//
+// `bootWithFace` (e2e/vrt/_shell-faces.ts) suspends the AudioContext before it
+// hands the scene back, because a face glyph is an AnalyserNode view of the
+// module's own output and a running graph makes it a moving target. Modules in
+// the roster today are all struck or silent, so a scene that skipped the freeze
+// would look EXACTLY as green as one that took it — right up until the first
+// free-running voice, which then cannot baseline at all.
+//
+// That is a gate whose green run means nothing unless opting out is loud. So
+// the opt-out is DENIED BY DEFAULT and enumerated here, per file, with the
+// exact occurrence count — the blind-gates inversion. A filename allowlist
+// would exempt a whole file forever; a count means a NEW opt-out in an
+// ALREADY-LISTED file still reddens.
+//
+// TWO MECHANISMS can capture a VRT scene off a running graph, and both are
+// counted here rather than one being left to prose:
+//
+//   A. `bootWithFace(…, { freezeAudio: <not true> })` — source-scanned, below.
+//   B. `VRT_SCENES[type].freezeAudio === false` — counted STRUCTURALLY off the
+//      imported table (anchored to the artifact, not to source text).
+//
+// ⚠ STATED SCOPE. The mechanism-A scan reads only files that CALL
+// `bootWithFace`, with comments stripped, and matches the property form. It
+// cannot see an options object assembled dynamically (`o.freezeAudio = false`,
+// `o['freezeAudio']`), so those forms are separately asserted at ZERO rather
+// than assumed absent.
+/** VRT_SCENES entries that capture with the AudioContext RUNNING. Ratcheted in
+ *  BOTH directions below: it may only shrink, and it may carry no slack. */
+const SCENE_FREEZE_OFF_CEILING = 7;
+
+describe('vrt-meta — the face-scene AUDIO FREEZE is deny-by-default', () => {
+  const VRT_DIR = resolve(repoRoot(), 'e2e/vrt');
+
+  /** Every `(file → count of freeze-opt-out call sites)` that is ALLOWED, with
+   *  the reason. Anything else — a new file, or a new occurrence in a listed
+   *  file — is RED. */
+  const FREEZE_OPT_OUTS: Record<string, { count: number; why: string }> = {
+    'workflow-shell-faces.spec.ts': {
+      count: 1,
+      why:
+        'the PERMANENT negative control ("a sounding face is unstable RUNNING, identical ' +
+        'FROZEN") boots once with the graph deliberately live, so it can show the freeze ' +
+        'assertion is capable of failing and that the tile really does move without it.',
+    },
+    'vrt-fold-probe.spec.ts': {
+      count: 1,
+      why:
+        'the dock exact-diff audit takes AUDIT_NO_FREEZE=1 as its within-subject control, so a ' +
+        'non-zero baseline row can be attributed to the freeze or to pre-existing drift. ' +
+        'VRT_PROBE lane only — not in FULL_MATCH, so no gate captures through it.',
+    },
+    'vrt-face-audio-probe.spec.ts': {
+      count: 3,
+      why:
+        'the measurement probe: the per-face RUNNING-then-FROZEN comparison, the compact ' +
+        'exact-diff audit control (AUDIT_NO_FREEZE), and the reboot probe PROBE_FREEZE_LATE ' +
+        'ordering check. VRT_PROBE lane only — not in FULL_MATCH.',
+    },
+  };
+
+  /** Strip comments so a property written in PROSE cannot inflate (or, by being
+   *  reworded, deflate) a count that is supposed to track real call sites. */
+  function stripComments(src: string): string {
+    return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+  }
+
+  const OPT_OUT_RE = /freezeAudio\s*:/g;
+
+  function vrtSources(): { file: string; src: string }[] {
+    return readdirSync(VRT_DIR)
+      .filter((f) => f.endsWith('.ts'))
+      .map((file) => ({ file, src: readFileSync(resolve(VRT_DIR, file), 'utf8') }));
+  }
+
+  /** Files that CALL bootWithFace — the scan's subject. `_shell-faces.ts`
+   *  DEFINES the option and is excluded by construction (it is the callee). */
+  function bootWithFaceCallers(): { file: string; code: string }[] {
+    return vrtSources()
+      .filter((f) => f.file !== '_shell-faces.ts')
+      .map((f) => ({ file: f.file, code: stripComments(f.src) }))
+      .filter((f) => f.code.includes('bootWithFace('));
+  }
+
+  it('the scan can SEE a bootWithFace caller at all (instrument control)', () => {
+    const callers = bootWithFaceCallers();
+    expect(
+      callers.length,
+      `the freeze guard found NO file calling bootWithFace under ${VRT_DIR}. Either the scene ` +
+        `machinery was renamed or this scan is reading the wrong directory — in both cases ` +
+        `every assertion below is vacuous.`,
+    ).toBeGreaterThan(0);
+    // ...and that _shell-faces.ts still declares the option it is guarding.
+    const shell = readFileSync(resolve(VRT_DIR, '_shell-faces.ts'), 'utf8');
+    expect(
+      /freezeAudio\?: boolean/.test(shell),
+      '_shell-faces.ts no longer declares the `freezeAudio?: boolean` opt-out. If it was ' +
+        'renamed or removed, retire this guard deliberately — do not leave it scanning for a ' +
+        'token that cannot occur, which is a permanently green check.',
+    ).toBe(true);
+  });
+
+  it('every bootWithFace freeze opt-out is NAMED, and no named one is stale', () => {
+    const found = new Map<string, number>();
+    for (const { file, code } of bootWithFaceCallers()) {
+      const n = (code.match(OPT_OUT_RE) ?? []).length;
+      if (n > 0) found.set(file, n);
+    }
+    const listed = Object.keys(FREEZE_OPT_OUTS).sort();
+    const actual = [...found.keys()].sort();
+    expect(
+      actual,
+      `UNDECLARED audio-freeze opt-out. A VRT face scene may only skip the AudioContext ` +
+        `suspend with a named reason in FREEZE_OPT_OUTS (vrt-meta.test.ts) — a scene that ` +
+        `captures off a running graph is green today only because no faced module sounds at ` +
+        `spawn. Conversely a LISTED file with no occurrence is STALE: the entry exempts ` +
+        `something that no longer exists, so it silently re-exempts the next one. ` +
+        `listed=[${listed.join(', ')}] found=[${actual.join(', ')}]`,
+    ).toEqual(listed);
+    for (const [file, n] of found) {
+      expect(
+        n,
+        `${file} has ${n} freeze-opt-out call site(s); FREEZE_OPT_OUTS declares ` +
+          `${FREEZE_OPT_OUTS[file]?.count}. A NEW opt-out in an already-listed file must be ` +
+          `declared too — that is the difference between this and a filename allowlist. ` +
+          `Reason on record: ${FREEZE_OPT_OUTS[file]?.why}`,
+      ).toBe(FREEZE_OPT_OUTS[file]?.count);
+    }
+    for (const [file, entry] of Object.entries(FREEZE_OPT_OUTS)) {
+      expect(entry.why.length, `${file}: every opt-out carries a reason`).toBeGreaterThan(40);
+    }
+  });
+
+  it('...and that check can actually SEE an unlisted opt-out (negative control)', () => {
+    // Feed the SAME matcher a synthetic caller. Without this the guard could be
+    // matching nothing at all and would read identically green — the exact
+    // failure the RAW_PARAM_WRITE self-test had (it only ever fed itself the
+    // one form it already matched).
+    const synthetic = [
+      '// freezeAudio: false   <- a comment must NOT count',
+      "const id = await bootWithFace(page, 'tidyVco', { freezeAudio: false });",
+      "const other = await bootWithFace(page, 'vca', { freezeAudio : someFlag });",
+    ].join('\n');
+    const code = stripComments(synthetic);
+    expect(code.includes('bootWithFace('), 'the synthetic caller is recognised as a caller').toBe(
+      true,
+    );
+    expect(
+      (code.match(OPT_OUT_RE) ?? []).length,
+      'the matcher must count BOTH the literal-false and the computed form, and must NOT count ' +
+        'the commented one — a scan that only saw the literal false would miss every ' +
+        'variable-driven opt-out, which is how a filtered guard goes blind.',
+    ).toBe(2);
+  });
+
+  it('no VRT source builds the freeze opt-out DYNAMICALLY (the scan cannot see those)', () => {
+    const offenders: string[] = [];
+    for (const { file, src } of vrtSources()) {
+      const code = stripComments(src);
+      if (/\.freezeAudio\s*=/.test(code) || /\[['"]freezeAudio['"]\]/.test(code)) {
+        offenders.push(file);
+      }
+    }
+    expect(
+      offenders,
+      `these files set the freeze opt-out through a form the property scan above cannot see ` +
+        `(assignment or computed key). Either write it as an inline property so the guard ` +
+        `counts it, or teach the guard this shape — a scope left unstated reads as full ` +
+        `coverage: ${offenders.join(', ')}`,
+    ).toEqual([]);
+  });
+
+  // MECHANISM B, counted off the artifact rather than the source text.
+  it('the VRT_SCENES freeze-off count only shrinks, with no slack', () => {
+    const off = Object.entries(VRT_SCENES)
+      .filter(([, s]) => s.freezeAudio === false)
+      .map(([type]) => type)
+      .sort();
+    expect(
+      off.length,
+      `VRT_SCENES entries capturing with the AudioContext RUNNING: ${off.join(', ')}. Each has ` +
+        `an inline reason at its declaration (a canvas whose determinism comes from a frame ` +
+        `pin rather than a suspend). Adding one raises this number — justify it there and ` +
+        `here. This is the sibling mechanism to the bootWithFace opt-out above; both are ` +
+        `counted so neither can be the one nobody is watching.`,
+    ).toBeLessThanOrEqual(SCENE_FREEZE_OFF_CEILING);
+    expect(
+      SCENE_FREEZE_OFF_CEILING - off.length,
+      `THE VRT_SCENES FREEZE-OFF CEILING HAS GONE SLACK: ${off.length} under a ceiling of ` +
+        `${SCENE_FREEZE_OFF_CEILING}. A scene was given a real freeze and the number was not ` +
+        `lowered, so the ratchet now tolerates ${SCENE_FREEZE_OFF_CEILING - off.length} new ` +
+        `silent opt-out(s). Set it to ${off.length}.`,
     ).toBe(0);
   });
 });

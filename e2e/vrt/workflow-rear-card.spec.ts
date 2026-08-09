@@ -42,14 +42,23 @@ import { pinVrtFonts, awaitVrtFonts } from './_fonts';
 const VRT_PLATFORM = process.platform === 'darwin' ? 'darwin' : 'linux';
 test.describe.configure({ mode: 'default' });
 
-/** The two bracket scenes. `holes` = declared inputs + outputs (the rear
- *  renders exactly one hole per port — asserted before the pixel pin). */
+/** The two bracket scenes.
+ *
+ *  `ports` = declared inputs + outputs. `holes` = the jacks the rear RENDERS,
+ *  which since PR-4 (owner Q5) is one FEWER per derived stereo pair — the
+ *  pair-tie retired in favour of a single stereo hole. Both are asserted
+ *  before the pixel pin, because a count alone cannot tell a collapsed pair
+ *  from a lost jack.
+ *
+ *  Only `tidyVco` has a pair here (`out_l`+`out_r`), so it is the one scene
+ *  whose hole count moves; the other three are unchanged, which is what makes
+ *  them the control. */
 const SCENES = [
-  { type: 'tidyVco', holes: 29 },
-  { type: 'vca', holes: 4 },
+  { type: 'tidyVco', ports: 29, holes: 28, stereoHoles: 1 },
+  { type: 'vca', ports: 4, holes: 4, stereoHoles: 0 },
   // P1 batch 2
-  { type: 'dx7', holes: 4 },
-  { type: 'sixstrum', holes: 23 },
+  { type: 'dx7', ports: 4, holes: 4, stereoHoles: 0 },
+  { type: 'sixstrum', ports: 23, holes: 23, stereoHoles: 0 },
 ] as const;
 
 /** Full-width faceplate element capture (workflow-shell-faces budget). */
@@ -115,7 +124,7 @@ async function bootWithMember(page: Page, type: string): Promise<string> {
 }
 
 test.describe('VRT: rear card — the dock full-view TAB flip side', () => {
-  for (const { type, holes } of SCENES) {
+  for (const { type, ports, holes, stereoHoles } of SCENES) {
     test(`rear-${type}: the flip-side jack field matches baseline`, async ({ page }) => {
       test.skip(
         EXEMPT_BASELINE_PAIRS.has(`${VRT_PLATFORM}/rear-${type}`),
@@ -137,11 +146,33 @@ test.describe('VRT: rear card — the dock full-view TAB flip side', () => {
       await page.keyboard.press('Tab');
       await expect(faceplate).toHaveAttribute('data-flipped', 'true');
 
-      // Structural gate before the pixel pin: the field is up, one hole per
-      // declared port, the control face is gone.
+      // Structural gate before the pixel pin: the field is up, every declared
+      // port is addressed by exactly one hole, the control face is gone.
       const rear = faceplate.getByTestId('rear-card');
       await expect(rear).toBeVisible();
-      await expect(rear.locator('[data-testid="back-jack"]')).toHaveCount(holes);
+      // Count the collapsed pairs ON THE PAGE first, then require the rendered
+      // hole count to be `ports - (what we just measured)`.
+      //
+      // ⚠ This used to end with `expect(holes + stereoHoles).toBe(ports)`, and
+      // that line was VACUOUS: all three were fields of the same SCENES
+      // literal, so it could only fail if the table contradicted ITSELF and it
+      // observed nothing about the rendered card — while its comment claimed to
+      // stop a dropped jack satisfying the count. The DOM has to be one side of
+      // the comparison or the assertion is decoration.
+      await expect(
+        rear.locator('[data-testid="back-jack"][data-stereo-sibling]'),
+        `${type}: collapsed stereo pairs on the rendered rear card`,
+      ).toHaveCount(stereoHoles);
+      const collapsed = await rear
+        .locator('[data-testid="back-jack"][data-stereo-sibling]')
+        .count();
+      await expect(
+        rear.locator('[data-testid="back-jack"]'),
+        `${type}: ${ports} declared ports minus ${collapsed} collapsed pair(s)`,
+      ).toHaveCount(ports - collapsed);
+      // The table's own `holes` must agree with what the page actually shows —
+      // this is the row that fails if SCENES drifts from reality.
+      expect(ports - collapsed, `${type}: SCENES.holes disagrees with the DOM`).toBe(holes);
       await expect(faceplate.getByTestId('faceplate-editor')).toBeHidden();
       // The lane auto-wire seats the member's plugs — deterministic chips.
       await expect(rear.locator('[data-testid="back-jack"][data-patched="true"]').first()).toBeVisible();

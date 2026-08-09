@@ -16,7 +16,7 @@
 // writes through createMatrixEdge → validateEdge → patch.edges, the same path
 // the drag-connect + patch-to flows use.
 
-import { test, expect } from './_fixtures';
+import { test, expect, loadVoiceDemo } from './_fixtures';
 import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
@@ -286,7 +286,7 @@ test('Sequenced VCO: matrix unpatch + re-patch, then Cmd-Z all the way back to t
 
   // Load the REAL "Sequenced VCO" example (5 modules, 6 edges) — the example
   // load is a single NON-undoable transaction, so it is the undo FLOOR.
-  await page.locator('[data-testid="load-example-select"]').selectOption('sequenced-vco');
+  await loadVoiceDemo(page);
   await expect
     .poll(async () => Object.keys(await readEdges(page)).length, { timeout: 20_000 })
     .toBe(6);
