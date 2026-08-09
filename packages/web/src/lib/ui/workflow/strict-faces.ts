@@ -116,43 +116,23 @@
 // range disagreement (#1311) and the impossible `pw`-with-an-LFO doc (897b6515).
 //
 // FACE BATCH 3 · macrooscillator (2026-08-09) — the SECOND free-running face,
-// and the entry whose whole argument is that a faceplate must not paint a dead
-// control as a working one.
+// and the entry whose argument is that a faceplate must not paint a dead
+// control as a working one. Six dials over FOURTEEN engines, three of which
+// mean something different in each, so every readout is DERIVED from `model`
+// plus the dial rather than read back off a knob.
 //
-// This module is six dials over FOURTEEN engines, and three of the six mean
-// something different in each one. A `paramId: 'harmonics'` readout prints the
-// same 0.30 in all fourteen states — correct everywhere, useful nowhere, and
-// actively misleading in the four engines where that fader is a stepped
-// SELECTOR rather than a fader at all. So every readout on this face is
-// DERIVED from `model` plus the dial, and each carries its negative control in
-// macrooscillator-face-model.ts.
+// FOUR of them report a DEFECT rather than a feature (WAVETABLE's morph is
+// dead over its bottom half, GRANULAR's is a 3-position switch, MODAL's timbre
+// runs backwards, OUT spans 76.6 dB across engines). All four are worklet
+// arithmetic, so they are documented rather than fixed — CLAUDE.md, and
+// batch-3 INDEX rule 5.
 //
-// ⚠ FOUR OF THEM REPORT A DEFECT RATHER THAN A FEATURE, all four re-measured
-// on main rather than inherited from the notes that survived this face's first,
-// destroyed build:
-//
-//   WAVETABLE MORPH   bit-exactly DEAD 0.000 → 0.500 INCLUSIVE (maxAbsDiff
-//                     0.000e+0), first moving at 0.5001. Half a fader.
-//   GRANULAR MORPH    a 3-POSITION SWITCH — 3 distinct renders over a 41-step
-//                     sweep, boundaries at 0.33 and 0.66. Nothing in the repo
-//                     said so before this PR.
-//   MODAL TIMBRE      runs BACKWARDS: Q 5 → −69.6 dBFS, Q 200 → −86.6 dBFS,
-//                     because an RBJ constant-skirt band-pass's impulse
-//                     response scales with sin(w0)/2Q. The worklet's own
-//                     comment claims the opposite.
-//   level spread      76.6 dB of OUT RMS BETWEEN engines at identical macros
-//                     (FM 2OP −5.0 dBFS, MODAL −81.6). LEVEL cannot fix it —
-//                     it moves all fourteen equally.
-//
-// Every one of those is worklet arithmetic, so fixing it is a DSP change to
-// saved-rack audio and belongs in its own owner-audition PR (CLAUDE.md; batch-3
-// INDEX rule 5). They are DOCUMENTED here instead — and the claims are
-// re-derived from `macrooscillatorMath` in the model test, so the day a fix
-// lands the faceplate's now-stale claim goes RED rather than quietly insisting
-// a repaired control is still broken.
-//
-// It is also the second face to exercise #1420's audio freeze — see FACES in
-// e2e/vrt/_shell-faces.ts for the measured numbers.
+// ⚠ THE MEASUREMENTS ARE DELIBERATELY NOT REPEATED HERE. Every number lives in
+// `$lib/audio/modules/macro-engine-roster` and is RE-DERIVED from
+// `macrooscillatorMath` on every run by `macrooscillator-face-model.test.ts` —
+// so a copy in this comment could go stale while the gate stayed green, which
+// is the drift this repo keeps re-learning. Freeze numbers likewise live once,
+// in the FACES roster (`e2e/vrt/_shell-faces.ts`).
 
 export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // P1 batch 1 — first 6 module faces
