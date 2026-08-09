@@ -70,6 +70,11 @@ const EXPECTED_AUDITIONS: Record<string, string[]> = {
   // this seam; the shell registry did not, so `?shell=1` offered twenty
   // controls over an instrument that could not be sounded.
   'sixstrum:sixstrum-strum-{n}': [MANUAL_STRIKE_KEY],
+  // face batch 3 — the fourteen-engine macro voice. FIVE of its engines
+  // (FM 6OP, STRING, KICK, SNARE, HIHAT) initialise their excitation or
+  // envelopes to zero and are SILENT with nothing patched into TRIG, so this
+  // is the only way to hear more than a third of the module on a bare rack.
+  'macrooscillator:macro-strike-{n}': [MANUAL_STRIKE_KEY],
 };
 
 interface Drive {
