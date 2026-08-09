@@ -58,7 +58,13 @@
 
 /** `moduleType` → port ids on a `gate` cable that do not declare `edge`. */
 export const UNDECLARED_EDGE_DEBT: Readonly<Record<string, readonly string[]>> = {
-  bluebox: ['gate_0', 'gate_1', 'gate_2', 'gate_3', 'gate_4', 'gate_5', 'gate_6', 'gate_7', 'gate_8', 'gate_9', 'gate_bluebox', 'gate_redbox'],
+  // DRAINED 2026-08-09 (the bluebox faceplate PR): all TWELVE `gate_*` ports now
+  // declare `edge: 'gate'`, which was always what they were — the worklet reads
+  // the level every sample and detects no edge anywhere, and the authored prose
+  // has said "Level-sensitive, not edge-triggered" since the module shipped, in
+  // a sentence that until now was asserted by nothing (the vocabulary clause
+  // short-circuits on `if (!p.edge) continue`).
+  // UNDECLARED_EDGE_CEILING lowered by the same 12 in the same commit, 289 → 277.
   buggles: ['burst', 'clock', 'external_clock'],
   cartesian: ['clock', 'gate', 'lfo_clock'],
   clipplayer: ['gate1', 'gate2', 'gate3', 'gate4', 'gate5', 'gate6', 'gate7', 'gate8'],
@@ -119,7 +125,7 @@ export const UNDECLARED_EDGE_DEBT: Readonly<Record<string, readonly string[]>> =
 
 /** The number of `(module, port)` pairs still owed an `edge` declaration.
  *  ⚠ ONLY SHRINKS — asserted from BOTH sides in module-docs-lint.test.ts. */
-export const UNDECLARED_EDGE_CEILING = 289;
+export const UNDECLARED_EDGE_CEILING = 277;
 
 /** Flattened `module.port` pairs (the countable form). */
 export function undeclaredEdgePairs(): string[] {

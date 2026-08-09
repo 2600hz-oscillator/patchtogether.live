@@ -43,6 +43,14 @@ import {
   vcoPwAuthority,
 } from '$lib/ui/modules/analog-vco-face-model';
 import {
+  blueboxDecodeText,
+  blueboxHeadroomDb,
+  blueboxHeld,
+  blueboxKeyCount,
+  blueboxLevelDb,
+  blueboxSlotCounts,
+} from '$lib/ui/modules/bluebox-face-model';
+import {
   clapBandwidthHz,
   clapBurstMs,
   clapQ,
@@ -116,6 +124,49 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
   },
   'analogvco-pw-authority': (read) => `${Math.round(vcoPwAuthority(vcoFaceParams(read)) * 100)} %`,
   'analogvco-alias-harmonic': (read) => `h${vcoFirstAliasedHarmonic(vcoFaceParams(read))}`,
+
+  // ── BLUEBOX ──────────────────────────────────────────────────────────────
+  // FIVE numbers about ONE bank of ten oscillators, chosen so each is BLIND to
+  // something another one sees. This module has no value knobs at all — twelve
+  // identical binary keys — so the only way a readout can say anything is by
+  // modelling the shared-oscillator `+=`.
+  //
+  //   `level`     the ONLY surface anywhere that makes that architecture
+  //               observable: {1,4} and {1,5} agree on keys held, on tone
+  //               activations and on peak, and differ by 1.76 dB.
+  //   `headroom`  deliberately the COUNT-based one — proportional to tone
+  //               activations, so it is IDENTICAL for {1,4} and {1,5} while
+  //               level is not, and 6.02 dB apart for {1} and {BLUEBOX} while
+  //               `keys` is not. The two are each other's negative control.
+  //   `decodes`   the only one that is not a function of counts at all: {1,4}
+  //               and {1,2} are identical in every number above.
+  //   `keys` / `tones` are THE FOILS, published so the player can watch which
+  //               number moved. `tones` prints `lit of activations` — `3 of 4`
+  //               IS the collapse, in two digits.
+  //
+  // All five step at the worklet's own `>= 0.5` (a key at 0.49 contributes
+  // nothing, at 0.50 it contributes fully), which no `curve` can express and a
+  // linear readback would smear. Negative-controlled PERMANENTLY, in both
+  // directions, in bluebox-face-model.test.ts — which also pins the model
+  // against the real processor class on twelve key sets.
+  'bluebox-level': (read) => {
+    const db = blueboxLevelDb(blueboxHeld(read));
+    return Number.isFinite(db) ? fmtDb(db) : 'silent';
+  },
+  'bluebox-headroom': (read) => {
+    const db = blueboxHeadroomDb(blueboxHeld(read));
+    if (!Number.isFinite(db)) return 'silent';
+    // Negative headroom is not a smaller number, it is a DIFFERENT STATE — the
+    // module is over full scale (all twelve keys reach +2.5 dBFS), and a
+    // `-2.5 dB` that reads like quiet is the wrong thing to print.
+    return db < 0 ? `CLIPS ${fmtDb(-db)}` : fmtDb(db);
+  },
+  'bluebox-decode': (read) => blueboxDecodeText(blueboxHeld(read)),
+  'bluebox-keys': (read) => `${blueboxKeyCount(blueboxHeld(read))}`,
+  'bluebox-tones': (read) => {
+    const { lit, activations } = blueboxSlotCounts(blueboxHeld(read));
+    return `${lit} of ${activations}`;
+  },
 
   // ── CLAP ─────────────────────────────────────────────────────────────────
   // Three envelope figures + the band-pass pair. NONE is a knob read back:

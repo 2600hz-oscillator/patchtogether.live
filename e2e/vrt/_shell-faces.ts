@@ -85,6 +85,17 @@ export const FACES = [
   // design (five identical voice strips have no other shape). Do not merge it
   // back under seven.
   { type: 'pentemelodica', pages: 8 },
+  // FACE BATCH 3 (2026-08-09) — the DTMF dialer. Two bands: the keypad (which
+  // the hero promotes the tone-bank PANEL out of, leaving its ten keys, so the
+  // band survives) and the two in-band tones.
+  //
+  // ⚠ DETERMINISTIC FOR THE MIXER/REVERB REASON, NOT THE analogVco ONE. Its
+  // glyph is a `meter` on `out` and all twelve keys default to 0, so the rack is
+  // SILENT at spawn and the VuMeter is unlit — it would baseline cleanly even
+  // without #1420's freeze. (The hero tone-bank panel is likewise all-zero at
+  // spawn: a momentary press writes the engine only, and the scene presses
+  // nothing.) Flake-checked 3×.
+  { type: 'bluebox', pages: 2 },
 ] as const;
 
 /** TIGHT per-scene diff budgets (absolute pixels; Playwright takes the MIN of

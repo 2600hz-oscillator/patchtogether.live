@@ -97,11 +97,14 @@
     return (node?.params?.[buttonParamId(name)] ?? 0) >= 0.5;
   }
 
-  // Inputs: 12 gate ports, in BLUEBOX_BUTTON_NAMES order.
-  const inputs: PortDescriptor[] = BLUEBOX_BUTTON_NAMES.map((name) => ({
-    id: buttonGateId(name),
-    cable: 'gate' as const,
-  }));
+  // Inputs + outputs BOTH from the def. ⚠ The inputs used to be re-derived here
+  // (`{ id: buttonGateId(name), cable: 'gate' as const }`) one line above a
+  // correct `portsFromDef(blueboxDef.outputs)` — a SECOND SOURCE OF TRUTH for
+  // the cable TYPE, which is the backdraft "a card can silently disagree with
+  // its def" class that `portsFromDef` exists to prevent (card-kit.ts cites the
+  // incident). It happened to agree; nothing anywhere would have noticed if it
+  // stopped.
+  const inputs: PortDescriptor[] = portsFromDef(blueboxDef.inputs);
   const outputs = portsFromDef(blueboxDef.outputs);
 
   // The 4-row × 3-col digit grid is laid out as the standard phone
