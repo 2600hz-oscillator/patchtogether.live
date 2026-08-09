@@ -1,5 +1,16 @@
 # 2026-08-07 — WORK ORDER (owner-set)
 
+> ## STATUS (2026-08-09) — verified against the merge log, not against this doc
+>
+> | # | phase | 2026-08-09 |
+> |---|---|---|
+> | 1 | silent-R + cube/cloudseed | **DONE** (was already done when this file was written — see the banner below) |
+> | 2 | stereo normalization | **CORE COMPLETE.** PR-0→PR-4 all merged: #1397, #1402, #1404, #1407 (leg-group planner), #1408 (DUAL-MONO), #1409 (THE FLIP), plus follow-on #1426 (per-leg patching). Remaining backlog: PR-5 (declared-pairs parity + attest batch) and PR-6 (mixmstrs per-channel pan) — see `stereo-audio-plan/plan.md`. |
+> | 3 | Light Mode for `?shell=1` | **STILL NOT STARTED** — no plan doc, no PR. Now the only phase with zero motion. |
+> | 4 | faceplates | **RESUMED and moving.** Merged: analogVco #1416, meowbox #1417, vca re-do #1429, filter re-do #1430, bluebox #1431; batch-4 specs #1433. In flight: macrooscillator #1432 (open). Phase 4 started ahead of phase 3 in practice; the ordering below is the 2026-08-07 statement. |
+>
+> Nothing below this block is edited; it is the 2026-08-07 record.
+
 Four phases, **in this order**. Set by the owner on 2026-08-07 after a review of
 everything `.myrobots` had on the table. Do not jump ahead: phase 4 is blocked
 behind phase 1 for a substantive reason, not just preference.

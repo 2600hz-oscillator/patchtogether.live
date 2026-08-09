@@ -9,16 +9,20 @@
 > — cables, ports, Y.Doc schema and migration story are untouched. What changes
 > is what happens INSIDE a mono module. See §0b.
 
-**Status: IN FLIGHT — architecture stands; Q1 → DUAL-MONO (§0b); Q3 rename DEFERRED, PR-1 struck (§1a). 2026-08-07.**
+**Status: CORE COMPLETE 2026-08-09 — PR-0 through PR-4 are ALL on `main`. What remains is {PR-5, PR-6}.**
+*(Table updated 2026-08-09 per this doc's own "keep this table current" rule; verified against the merge log, not against this doc.)*
 
 | PR | state |
 |---|---|
 | PR-0 reconciler guard | ✅ **LANDED #1397** (2026-08-07) |
 | ~~PR-1 rename~~ | ⛔ **STRUCK** — deferred to the faceplate work (§1a) |
 | PR-2a per-channel taps | ✅ **LANDED #1402** (2026-08-07) |
-| PR-2b pairing infrastructure | 🔄 **#1404**, green-pending |
-| PR-3 leg-group planner | 🔄 in flight, stacked on #1404 |
-| PR-3b → PR-4 → {PR-5, PR-6} | backlog, unchanged |
+| PR-2b pairing infrastructure | ✅ **LANDED #1404** (2026-08-08) |
+| PR-3 leg-group planner | ✅ **LANDED #1407** (2026-08-08 — "ONE audio commit planner — every cable is a LEG GROUP, and stereo→mono keeps both channels") |
+| PR-3b dual-mono engine wrapper | ✅ **LANDED #1408** (2026-08-08) |
+| PR-4 THE FLIP (jack collapse + only-L/R menu + one bezier per leg group) | ✅ **LANDED #1409** (2026-08-08); follow-on **#1426** (2026-08-09) added per-leg patching — right-click any output, drill a stereo target into L/R, ES-9 jacks treated as mono points |
+| PR-5 declared-pairs parity + attest batch | ⏳ backlog — not started, no open PR as of 2026-08-09 |
+| PR-6 mixmstrs per-channel pan | ⏳ backlog — not started, no open PR as of 2026-08-09 |
 
 **PR-2 was SPLIT into 2a (instrument) and 2b (pairing).** They share no files
 and are independently reviewable; the plan's single PR-2 was two unrelated
