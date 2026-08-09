@@ -267,8 +267,9 @@ export function pitchSpread(x: number, curve: PitchProbCurve = DEFAULT_PITCH_CUR
 }
 
 /** OUT-OF-SCALE weight (relative to an in-scale 1) at instability `x`:
- *  `chromaMax · x^chromaExp`. Rises LATER than `pitchSpread` by construction
- *  (x⁴ < x² on (0,1)), which is the design's arrival ordering. PURE. */
+ *  `chromaMax · x^chromaExp`. Rises LATER than `pitchSpread` by construction —
+ *  `x^chromaExp < x^spreadExp` on (0,1) whenever `chromaExp > spreadExp`, which
+ *  is the design's arrival ordering (4 vs 1.5 here, asserted in the tests). PURE. */
 export function pitchChromaWeight(x: number, curve: PitchProbCurve = DEFAULT_PITCH_CURVE): number {
   return curve.chromaMax * Math.pow(clampInstability(x), curve.chromaExp);
 }
