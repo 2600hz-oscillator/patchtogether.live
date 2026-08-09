@@ -36,7 +36,22 @@ export const INTERACTIVE_DOC_MODULES: ReadonlySet<string> = new Set<string>([
   // docs-virtual-module.spec.ts).
   // Batch 2 (2026-06-25): macrooscillator's card is a pure PatchPanel + six
   // Faders + a derived label — no onMount/effect, no canvas/rAF, no Web MIDI or
-  // file input — so it mounts cleanly in the doc sandbox. The other batch-2
+  // file input — so it mounts cleanly in the doc sandbox.
+  //
+  // ⚠ UPDATED 2026-08-09 (the face promotion): it now also carries the STRIKE
+  // AUDITION button, which makes it the FIRST card on this allowlist to reach
+  // for the live engine. That is safe here, and the reason is worth stating
+  // rather than assuming: `fireManualStrike` resolves the engine through
+  // `getActiveEngine()`, which returns null in the engine-less sandbox, so the
+  // call returns false and the handler EARLY-RETURNS before its pulse timer —
+  // no throw, no timer left running, no pane error. The pulse follows the
+  // strike's return value rather than the click precisely so a press with no
+  // engine cannot pretend to have struck anything, and that property is what
+  // makes it sandbox-safe. Verified live: docs-virtual-module.spec.ts, 49/49.
+  //
+  // The hero PICTURE deliberately stayed in the shell panel and out of the
+  // card, because a card gaining onMount/rAF/canvas WOULD break this list's
+  // stated invariant. The other batch-2
   // voices stay STATIC: their cards run rAF/WebGL render loops (cube, wavecel)
   // or a file-upload picker (dx7, wavecel),
   // any of which can misbehave in the engine-less doc sandbox — face fallback is

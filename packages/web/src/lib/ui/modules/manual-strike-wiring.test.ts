@@ -75,6 +75,14 @@ const EXPECTED_AUDITIONS: Record<string, string[]> = {
   // envelopes to zero and are SILENT with nothing patched into TRIG, so this
   // is the only way to hear more than a third of the module on a bare rack.
   'macrooscillator:macro-strike-{n}': [MANUAL_STRIKE_KEY],
+  // face batch 3 — meowbox. A HELD pad, so two resolutions like snaredrum's
+  // ROLL. ⚠ THE SHAPE IS THE DEF'S, NOT A PREFERENCE: `gate` is declared
+  // edge:'gate' and the DSP's amp envelope sustains at 0.4, so a one-shot would
+  // fire the 5 ms trigger pulse and release the envelope 5 ms into a 400 ms
+  // tail. The factory answers `manualGate` and deliberately NOT `manualTrigger`,
+  // so a caller reaching for the wrong shape gets a recorded non-delivery
+  // instead of a blip.
+  'meowbox:meowbox-meow-{n}': [MANUAL_GATE_KEY, MANUAL_GATE_KEY],
 };
 
 interface Drive {

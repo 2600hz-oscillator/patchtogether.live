@@ -293,6 +293,58 @@ describe('clipplayer: per-lane launch', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// PER-NOTE PITCH PROBABILITY through the REAL engine. The model is pinned by
+// $lib/audio/pitch-probability.test.ts and the card write by
+// clipplayer-prob-menu.test.ts + the e2e; what only THIS harness can prove is
+// that the engine's emit path actually consults it — i.e. that the stored
+// `pitchProb` reaches the lane's pitch CV, and that a clip WITHOUT it is
+// untouched (the negative control, and the back-compat guarantee).
+// ---------------------------------------------------------------------------
+describe('clipplayer: per-note PITCH PROBABILITY reaches the emitted pitch', () => {
+  /** A note clip whose single note carries `pitchProb`. */
+  function pitchProbClip(midi: number, pitchProb?: number): NoteClipRecord {
+    const clip = noteClip(midi);
+    return pitchProb === undefined
+      ? clip
+      : { ...clip, steps: [{ ...clip.steps[0]!, pitchProb }] };
+  }
+  async function emittedMidiFor(pitchProb?: number): Promise<number> {
+    seed(
+      { stepDiv: 2, quantize: 0, octave: 0, gateLength: 0.9 },
+      { clips: { [clipIndex(0, 0)]: pitchProbClip(60, pitchProb) }, queued: lane8(0, 0, null) },
+    );
+    const ctx = new FakeAudioContext();
+    const handle = await build(ctx);
+    run(ctx, 0, 0.1);
+    // pitchVOct → MIDI (midiToVOct is (midi - C3)/12-style; invert by search so
+    // the test never re-derives the convention).
+    const v = handle.read!('pitchVOct:0') as number;
+    for (let m = 12; m <= 120; m++) if (Math.abs(midiToVOct(m) - v) < 1e-6) return m;
+    throw new Error(`pitchVOct ${v} is not any MIDI note`);
+  }
+
+  it('NO pitchProb → the AUTHORED pitch, exactly (back-compat: an untouched clip is unchanged)', async () => {
+    expect(await emittedMidiFor(undefined)).toBe(60);
+  });
+
+  it('pitchProb 0 → still the authored pitch (a stored zero is off, not "a tiny bit")', async () => {
+    expect(await emittedMidiFor(0)).toBe(60);
+  });
+
+  it('pitchProb 1 → a DIFFERENT pitch, and the SAME one every run (deterministic)', async () => {
+    // The engine seeds the draw from (nodeId, lane, slot, step, midi, loopCount)
+    // — all synced — so this is reproducible here for the same reason peers
+    // agree. If it were `Math.random()` this test would flake, which is exactly
+    // the property worth having a test for.
+    const first = await emittedMidiFor(1);
+    expect(first).not.toBe(60); // it actually moved — the wiring is live
+    expect(Math.abs(first - 60)).toBeLessThanOrEqual(19); // inside the window
+    expect(await emittedMidiFor(1)).toBe(first);
+    expect(await emittedMidiFor(1)).toBe(first);
+  });
+});
+
 describe('clipplayer: per-lane MUTE (advance-but-silent)', () => {
   /** A DENSE clip — a note EVERY step — so gates fire continuously (mute is
    *  observable as gate events STOPPING while the playhead keeps advancing). */

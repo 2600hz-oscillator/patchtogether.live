@@ -76,7 +76,6 @@ export const UNDECLARED_EDGE_DEBT: Readonly<Record<string, readonly string[]>> =
   kria: ['gate1', 'gate2', 'gate3', 'gate4'],
   macseq: ['clock', 'gate', 'next_cv', 'play_cv', 'prev_cv', 'queue1_cv', 'queue2_cv', 'queue3_cv', 'queue4_cv', 'queue5_cv', 'queue6_cv', 'queue7_cv', 'queue8_cv', 'random_cv', 'reset_cv'],
   marbles: ['clk', 't1', 't2'],
-  meowbox: ['gate'],
   midiCvBuddy: ['gate'],
   midiLane: ['gate', 'note_gate'],
   midiOutBuddy: ['gate'],
@@ -117,8 +116,23 @@ export const UNDECLARED_EDGE_DEBT: Readonly<Record<string, readonly string[]>> =
 };
 
 /** The number of `(module, port)` pairs still owed an `edge` declaration.
- *  ⚠ ONLY SHRINKS — asserted from BOTH sides in module-docs-lint.test.ts. */
-export const UNDECLARED_EDGE_CEILING = 288;
+ *  ⚠ ONLY SHRINKS — asserted from BOTH sides in module-docs-lint.test.ts.
+ *  289 → 288 (2026-08-08): meowbox's `gate` declared `edge: 'gate'`. It is the
+ *  case this ledger's header is about — the def's own prose said "responds to
+ *  the edge, not how long the level stays up" over an `en.adsr` sustaining at
+ *  0.4, and the skipped vocabulary check could not see the contradiction.
+ *  288 → 287 (2026-08-09): macrooscillator's `trig` declared `edge: 'trigger'`.
+ *  Same shape one module over — the worklet strictly edge-detects and the prose
+ *  used full trigger vocabulary, but with no `edge:` the gate skipped the whole
+ *  module.
+ *
+ *  ⚠ THE NUMBER BELOW IS DERIVED FROM THE LIST, NOT INHERITED FROM A MERGE.
+ *  Two branches drained one entry each and BOTH wrote the literal `288`, from
+ *  289, on different lines. Git merged the list cleanly (2 entries gone) and
+ *  would have merged the literal cleanly too had the comments not collided —
+ *  leaving one full entry of slack for the next regression to hide in. Whenever
+ *  this file merges, COUNT `undeclaredEdgePairs()`; never trust the literal. */
+export const UNDECLARED_EDGE_CEILING = 287;
 
 /** Flattened `module.port` pairs (the countable form). */
 export function undeclaredEdgePairs(): string[] {

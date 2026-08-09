@@ -30,6 +30,7 @@ import { adsrDef } from '$lib/audio/modules/adsr';
 import { backdraftDef } from '$lib/video/modules/backdraft';
 import { delayDef } from '$lib/audio/modules/delay';
 import { macrooscillatorDef } from '$lib/audio/modules/macrooscillator';
+import { meowboxDef } from '$lib/audio/modules/meowbox';
 import { ringbackDef } from '$lib/audio/modules/ringback';
 import { snaredrumDef } from '$lib/audio/modules/snaredrum';
 import { vcaDef } from '$lib/audio/modules/vca';
@@ -86,12 +87,22 @@ import type { ParamDef } from '$lib/graph/types';
  *    have left this fader unable to select it. The array is gone (see
  *    macro-engine-roster) and `max` now comes from the def like everything
  *    else.
+ *  - MeowboxCard: converted with the meowbox face (2026-08-08). Range- but NOT
+ *    mapping-bound, and the split is deliberate rather than half-done. Its 12
+ *    range numbers and 4 curves are bound; its `units` are NOT, because the def
+ *    says `semi` where the card paints `st` and the def says `Ptch`/`Dcy`/`Lvl`
+ *    where the card paints `Pitch`/`Decay`/`Level` — four real divergences,
+ *    already named in `card-def-debt.ts`. Binding them REPAINTS a card in
+ *    `STRICT_VRT_MODULES`, i.e. the required `vrt-strict` gate on both
+ *    platforms, so that vocabulary fix gets its own PR instead of riding a face.
+ *    The clause below keeps the unbound half honest in the meantime.
  */
 const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }>> = {
   'AdsrCard.svelte': adsrDef,
   'BackdraftCard.svelte': backdraftDef,
   'DelayCard.svelte': delayDef,
   'MacrooscillatorCard.svelte': macrooscillatorDef,
+  'MeowboxCard.svelte': meowboxDef,
   'RingbackCard.svelte': ringbackDef,
   'SnaredrumCard.svelte': snaredrumDef,
   'VcaCard.svelte': vcaDef,
@@ -123,7 +134,23 @@ const MAPPING_BOUND_CARDS: readonly string[] = [
 // card of slack in each, and the next card to fall back out of the set is
 // absorbed in silence rather than reddening this test. Whenever this file
 // merges, RE-DERIVE the floors from the lists; never inherit the literal.
-const RANGE_BOUND_FLOOR = 8;
+//
+// ⚠ IT HAS NOW FIRED FOR REAL, TWICE IN ONE WAVE, exactly as written above.
+// The 2026-08-09 face wave ran four sibling branches off a shared base of 7/6.
+// On BOTH the filter merge and the macrooscillator merge, main and the branch
+// had each written `8` from `7` on the SAME line, so git auto-merged the
+// literal with no conflict while the merged LISTS held 9 entries. One full card
+// of slack, delivered silently, from a clean merge.
+//
+// Two things make that worth more than a warning. First, `MAPPING_BOUND_FLOOR`
+// conflicted only by luck of line ordering — do not treat a conflict on one as
+// evidence about the other. Second, and this is the general shape: the hazard
+// is that the floor is a COPY of a fact the file already contains. Counting
+// `Object.keys(RANGE_BOUND_CARDS).length` would make it unforgeable, but it
+// would also make the ratchet vacuous (it can never fail, because it is derived
+// from the thing it checks). So the literal stays, and the discipline is: after
+// ANY merge of this file, count the entries and write that number.
+const RANGE_BOUND_FLOOR = 9;
 const MAPPING_BOUND_FLOOR = 7;
 
 /**
