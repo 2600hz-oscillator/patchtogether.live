@@ -2,10 +2,13 @@
 //
 // MACROOSCILLATOR — Plaits-style macro oscillator (audio domain).
 //
-// Pure-TypeScript AudioWorklet (no Faust, no emscripten vendoring). Two
-// models shipped in this first slice: VA (virtual analog) and WAVESHAPE.
-// See packages/dsp/src/macrooscillator.ts for the worklet DSP; the pure-math
-// mirror in this file is what unit tests + the ART scenario exercise.
+// Pure-TypeScript AudioWorklet (no Faust, no emscripten vendoring).
+// FOURTEEN engines ship today (VA, WAVESHAPE, FM 2-OP, FM 6-OP, CHORD,
+// ADDITIVE, STRING, MODAL, KICK, SNARE, HIHAT, WAVETABLE, GRANULAR, SPEECH) —
+// the roster lives in `./macro-engine-roster`, which is also where the MODEL
+// selector's names come from. See packages/dsp/src/macrooscillator.ts for the
+// worklet DSP; the pure-math mirror in this file is what unit tests, the ART
+// scenario and the faceplate's hero picture exercise.
 //
 // I/O surface (matches Plaits' panel naming):
 //   inputs:
@@ -22,6 +25,9 @@
 //     aux       Auxiliary output — per-model "raw" tap (sub-octave in VA,
 //               clean pre-distortion body in WAVESHAPE). Not LEVEL-scaled
 //               so the player can use AUX as a sidechain / scope reference.
+//               ⚠ Because it is not level-scaled, AUX is at FULL SCALE on
+//               eight of fourteen engines while LEVEL is at 0 — the faceplate
+//               prints that offset rather than leaving it to be discovered.
 //
 // Why not a full Plaits port? See the PR description. Short version:
 // pichenettes' Plaits is ~30 .cc files of finely-tuned C++ with proprietary-
@@ -55,7 +61,14 @@
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
+import { fireTrigger } from '$lib/audio/gate-trigger';
+import { MACRO_ENGINES, MACRO_MAX_MODEL } from './macro-engine-roster';
 import workletUrl from '@patchtogether.live/dsp/dist/macrooscillator.js?url';
+
+// The engine roster is the ONE source of truth for how many engines exist and
+// what they are called; `MACRO_MAX_MODEL` is re-exported here because that is
+// where every existing consumer (macseq, the tests) already imports it from.
+export { MACRO_MAX_MODEL };
 
 const loadedContexts = new WeakSet<BaseAudioContext>();
 
@@ -770,11 +783,6 @@ export interface MacroParams {
   level: number;
 }
 
-/** Maximum legal model index. Grows as engines land; keep equal to
- *  (number-of-engines − 1) and in sync with MODEL_NAMES on the card +
- *  the model AudioParam's maxValue. */
-export const MACRO_MAX_MODEL = 13;
-
 /** Pure-math helpers — called from unit tests + ART. The actual audio runs
  *  in the worklet at packages/dsp/src/macrooscillator.ts. */
 export const macrooscillatorMath = {
@@ -863,7 +871,14 @@ export const macrooscillatorDef: AudioModuleDef = {
 
   inputs: [
     { id: 'pitch',    type: 'pitch' },
-    { id: 'trig',     type: 'gate' },
+    // ⚠ `edge: 'trigger'` IS A CORRECTION, not decoration. The worklet
+    // strictly edge-detects (`trig >= 0.5 && lastGate < 0.5`,
+    // packages/dsp/src/macrooscillator.ts:1494) and this port's own prose has
+    // always used full trigger vocabulary — but with no `edge:` declared,
+    // `module-docs-lint`'s vocabulary gate did `if (!p.edge) continue` and
+    // skipped this module ENTIRELY. A gate that reads only declared ports
+    // proves nothing about undeclared ones.
+    { id: 'trig',     type: 'gate', edge: 'trigger' },
     // CV → AudioParam fast paths. Linear scale matches the project's
     // `cv ±1 → param full range` convention (see
     // .myrobots/plans/cv-range-standard.md and the shimmershine/wavetable-vco
@@ -880,13 +895,220 @@ export const macrooscillatorDef: AudioModuleDef = {
     { id: 'aux', type: 'audio' },
   ],
   params: [
-    { id: 'model',     label: 'Model',     defaultValue: 0,   min: 0,   max: MACRO_MAX_MODEL,  curve: 'discrete' },
+    {
+      id: 'model', label: 'Model', defaultValue: 0, min: 0, max: MACRO_MAX_MODEL, curve: 'discrete',
+      // PF-1 VOCABULARY, sourced from the roster so the two duplicate name
+      // tables die (one was private to MacrooscillatorCard.svelte, the other a
+      // byte-identical copy in macseq.ts whose own comment admitted the copy).
+      // CONTRACT-TRANSPARENT: contract-signature reads only
+      // id/min/max/curve/defaultValue/units, so naming the detents cannot move
+      // contract-lock.txt. 14 > SEGMENTED_MAX_OPTIONS, so the dock gets a
+      // <Selector> and every LANE tier gets a dial with a persistent NAME
+      // readout (shell-control-kind.ts) — which is the whole point: a discrete
+      // fader that reads `7.00` tells you nothing, and `MODAL` tells you
+      // everything.
+      options: MACRO_ENGINES.map((e) => ({ value: e.index, label: e.name })),
+    },
     { id: 'note',      label: 'Note',      defaultValue: 0,   min: -60, max: 60, curve: 'linear', units: 'st' },
     { id: 'harmonics', label: 'Harmonics', defaultValue: 0.3, min: 0,   max: 1,  curve: 'linear' },
     { id: 'timbre',    label: 'Timbre',    defaultValue: 0.3, min: 0,   max: 1,  curve: 'linear' },
     { id: 'morph',     label: 'Morph',     defaultValue: 0.5, min: 0,   max: 1,  curve: 'linear' },
     { id: 'level',     label: 'Level',     defaultValue: 0.8, min: 0,   max: 1,  curve: 'linear' },
   ],
+
+  // ── THE FACEPLATE ─────────────────────────────────────────────────────────
+  //
+  // ⚠ WHAT THIS FACE IS FOR. Six dials over fourteen engines, where three of
+  // the six mean something DIFFERENT in each engine and nothing has ever said
+  // which. A dial reading `0.75` is correct in all fourteen states and useful
+  // in none of them; in the four engines where HARMONICS is secretly a
+  // quantiser it is worse than useless, because it implies travel the DSP does
+  // not have. Every derived readout on this face exists to answer "what does
+  // this knob do HERE", and each one's negative control is stated in
+  // macrooscillator-face-model.ts and pinned permanently in its model test.
+  //
+  // ⚠ FOUR OF THEM REPORT A DEFECT RATHER THAN A FEATURE, and that is
+  // deliberate. WAVETABLE's MORPH is bit-exactly dead over its bottom half
+  // (maxAbsDiff 0.000e+0 at 0 / 0.1 / 0.25 / 0.49 / 0.50, first moving at
+  // 0.5001); GRANULAR's MORPH is a 3-position switch with hard boundaries at
+  // 0.33 and 0.66 (3 distinct renders over a 41-step sweep); MODAL's TIMBRE
+  // runs BACKWARDS (Q 5 → −69.6 dBFS, Q 200 → −86.6); and OUT RMS spans
+  // 76.6 dB across engines at identical macros. Every one is worklet
+  // arithmetic, so fixing it is a DSP change to saved-rack audio and is its own
+  // owner-audition PR — CLAUDE.md, and batch-3 INDEX rule 5. What this face
+  // will not do is paint a dead control as a working one.
+  //
+  // RANKING. The lane budget is six and the module has exactly six params, so
+  // ranks 1-6 cut nothing — they decide the mini/compact tile and the plate
+  // layout:
+  //   1 MODEL      the module IS the engine, and it is the only control whose
+  //                value changes what the other three MEAN.
+  //   2 HARMONICS  the structural axis in every engine (ratio, chord, vowel,
+  //                frame, preset) — and the one that is a switch four times.
+  //   3 TIMBRE     brightness/density.
+  //   4 MORPH      shape/decay.
+  //   5 NOTE       ±60 st. Below the three axes on purpose: `pitch` is V/oct
+  //                and this module lives under a sequencer, so a
+  //                120-semitone fader is a trim, not a performance control.
+  //   6 LEVEL      last, because the module's real level problem is the 76.6 dB
+  //                of spread BETWEEN engines and LEVEL cannot touch it.
+  //   7 the STRIKE audition — dock-only. Five of fourteen engines are silent
+  //     with nothing patched into TRIG, so on a bare rack this button is the
+  //     only way to hear more than a third of the module.
+  //   8 the hero picture. A `panel` cell's first LEGAL rank is 7 (face-lint
+  //     refuses a panel selected at a lane tier), and 8 is its place here.
+  face: {
+    order: [
+      'model', 'harmonics', 'timbre', 'morph', 'note', 'level',
+      'macro-strike-{n}',
+      'macro-hero-{n}',
+    ],
+    pages: [
+      {
+        id: 'engine',
+        // ⚠ THE LABEL CARRIES THE IDEA AT REST. Every `hint` on this face is
+        // annotation and OFF by default (per-viewer, from the dock title bar),
+        // so a band whose label leans on its hint says nothing to the person
+        // who never turns them on.
+        label: '1 · engine — one of fourteen',
+        hint:
+          'Fourteen self-contained synthesis engines on one selector. ALL FOURTEEN tick every ' +
+          'sample whichever is selected, so a MODEL change is phase-continuous — but five of them ' +
+          '(FM 6OP, STRING, KICK, SNARE, HIHAT) are silent or fully decayed with nothing patched ' +
+          'into TRIG, which is what the STRIKE button is for.',
+        controls: ['macro-hero-{n}', 'macro-strike-{n}', 'model'],
+      },
+      {
+        id: 'axes',
+        label: '2 · macros — re-read by each engine',
+        hint:
+          'Structure, brightness and shape — reinterpreted per engine, which is why each dial ' +
+          'carries a readout saying what it means HERE rather than what it reads. HARMONICS is a ' +
+          'stepped SELECTOR in four of the fourteen (FM 2OP 8 ratios, CHORD 8 shapes, MODAL 4 ' +
+          'presets, SPEECH 6 vowels) and a continuous fader in the other ten. Three axes are ' +
+          'defective and say so: WAVETABLE MORPH is dead below 50 %, GRANULAR MORPH is three ' +
+          'windows and nothing between, MODAL TIMBRE gets quieter as it rises.',
+        controls: ['harmonics', 'timbre', 'morph'],
+      },
+      {
+        id: 'out',
+        label: '3 · pitch · out · aux',
+        hint:
+          'PITCH (V/oct, 0 V = C4) sums with NOTE before the engine. LEVEL scales OUT and ONLY ' +
+          'OUT — AUX leaves the engine unscaled, so at LEVEL 0 the main output is silent while ' +
+          'AUX is still at full scale on eight of the fourteen engines. AUX is a sibling ' +
+          'rendering of the same note, never the right half of a stereo pair.',
+        controls: ['note', 'level'],
+      },
+    ],
+    glyph: 'scope',
+
+    // ⚠ ANNOTATION ONLY — `facePageHeader(def, annotations = false)` returns
+    // null before it reads anything, so NOTHING load-bearing lives here. The
+    // facts a player needs at rest are on the band labels, the readout strip,
+    // the preset notes and the hero caption, all of which paint unconditionally.
+    title: 'Macro voice',
+    hint:
+      'Fourteen engines behind one four-knob scheme. MODEL picks the engine; HARMONICS, TIMBRE ' +
+      'and MORPH mean something different in each one, and the readout strip says what they mean ' +
+      'here. OUT and AUX are two renderings of the same note, not a stereo pair.',
+
+    // THE HERO. The picture and the audition are PROMOTED out of band 1 (not
+    // copied — `heroFacePlan` removes them, so the param multiset faces-parity
+    // asserts is unchanged); MODEL stays in the band, because at the dock it is
+    // a 14-row <Selector> and a roster is not a hero dial.
+    hero: {
+      cell: 'macro-hero-{n}',
+      action: 'macro-strike-{n}',
+      // ⚠ ALL THREE ARE DERIVED, and each because the nearest knob is BLIND to
+      // something that genuinely changes the answer:
+      //
+      //   harmonics — a `paramId: 'harmonics'` readout prints the SAME 0.30 in
+      //     all fourteen states. This flips from `1:2 · 2/8` on FM 2OP to
+      //     `detune` on VA to `bar · 1/4` on MODAL with the fader untouched —
+      //     and, on a stepped engine, does NOT move when the fader crosses
+      //     inside a bucket. That difference IS the module's worst usability
+      //     problem, made visible.
+      //   out — a `paramId: 'level'` readout prints 0.80 while the actual
+      //     output moves 76.6 dB across the MODEL fader (FM 2OP −5.0 dBFS,
+      //     MODAL −81.6). LEVEL cannot fix that; the number at least names it.
+      //   aux vs out — AUX is NOT level-scaled (:1557-1560). At LEVEL 0 a
+      //     `level` readout prints 0.00 and says nothing about an output still
+      //     running at full scale; this prints that OUT is silent.
+      readouts: [
+        { label: 'harmonics', valueId: 'macro-harmonics-here' },
+        { label: 'out', valueId: 'macro-out-level' },
+        { label: 'aux vs out', valueId: 'macro-aux-offset' },
+      ],
+    },
+
+    sidebar: [
+      {
+        kind: 'signal-flow',
+        label: 'signal flow',
+        // ⚠ AUX IS `parallel` AND THAT IS A CORRECTNESS FIELD. It is not
+        // downstream of LEVEL — it leaves the engine and bypasses it entirely
+        // (:1557-1560). Drawn inline it would teach that turning LEVEL down
+        // quietens both outputs. It does not. TRIG is parallel for the other
+        // reason: it is a control edge, not an audio stage.
+        stages: [
+          { label: 'TRIG', role: 'generator', parallel: true, note: 'resets all 14' },
+          { label: 'PITCH', role: 'generator', note: 'v/oct + note' },
+          { label: 'ENGINE ×14', role: 'generator', note: 'all tick, one heard' },
+          { label: 'LEVEL', role: 'bus', note: 'OUT only' },
+          { label: 'OUT', role: 'bus', note: 'the voice' },
+          { label: 'AUX', role: 'bus', parallel: true, note: 'pre-LEVEL sibling' },
+        ],
+      },
+      {
+        // The GENERIC presets block, not a bespoke roster panel: the MODEL
+        // selector already lists all fourteen by name (`ParamDef.options`), so
+        // what a second list would add is not names — it is the per-engine
+        // CAVEAT. `FacePreset.note` paints unconditionally, which makes it the
+        // right surface for a fact that must not be lost (unlike `face.hint`).
+        kind: 'presets',
+        label: 'engines worth knowing',
+        entries: [
+          { id: 'va', label: 'VA', note: 'the only band-limited one', values: { model: 0, harmonics: 0.3, timbre: 0.3, morph: 0.5 } },
+          { id: 'fm2', label: 'FM 2-OP', note: 'loudest · 8 ratio steps', values: { model: 2, harmonics: 0.3, timbre: 0.5, morph: 0.2 } },
+          { id: 'chord', label: 'CHORD', note: '8 chord shapes', values: { model: 4, harmonics: 0.45, timbre: 0.4, morph: 0.6 } },
+          { id: 'speech', label: 'SPEECH', note: '6 vowels', values: { model: 13, harmonics: 0.1, timbre: 0.5, morph: 0.2 } },
+          { id: 'wavetable', label: 'WAVETABLE', note: '⚠ morph dead ≤ 50 %', values: { model: 11, harmonics: 0.4, timbre: 0.7, morph: 0.75 } },
+          { id: 'granular', label: 'GRANULAR', note: '⚠ morph = 3 windows', values: { model: 12, harmonics: 0.5, timbre: 0.3, morph: 0.5 } },
+          { id: 'modal', label: 'MODAL', note: '⚠ −82 dBFS · 250 ms lead', values: { model: 7, harmonics: 0.1, timbre: 0, morph: 0.5 } },
+          { id: 'kick', label: 'KICK', note: 'needs a strike', values: { model: 8, harmonics: 0.5, timbre: 0.4, morph: 0.35 } },
+        ],
+      },
+      {
+        kind: 'readouts',
+        label: 'this engine',
+        // ⚠ EVERY VALUE HERE STAYS UNDER ~26 CHARACTERS. The sidebar content
+        // column is 258 px and a longer value pushed the dock 78 CSS px past
+        // its right edge (measured). That is a layout constraint on the MODEL,
+        // which is why the formatter enforces it and the model test asserts it
+        // across all fourteen engines rather than at the defaults.
+        entries: [
+          { label: 'timbre', valueId: 'macro-timbre-here' },
+          { label: 'morph', valueId: 'macro-morph-here' },
+          { label: 'aux tap', valueId: 'macro-aux-tap' },
+          { label: 'vs loudest', valueId: 'macro-level-gap' },
+          { label: 'unpatched', valueId: 'macro-strike-need' },
+          { label: 'band-limiting', valueId: 'macro-alias' },
+        ],
+      },
+    ],
+
+    // REAR CARD. Derivation covers the eight holes already (six CV jacks into
+    // their page bands, `pitch` + `trig` into the leading band), so only two
+    // things are curated: the leading band's derived label is `voice`, which
+    // says nothing a patcher can act on, and these are precisely the two ports
+    // the worklet reads PER SAMPLE (`numberOfInputs: 2`) as opposed to the six
+    // CV jacks, which displace an AudioParam. That distinction IS the band.
+    rear: {
+      groups: [{ id: 'voice', label: 'core inputs', ports: ['pitch', 'trig'] }],
+      audioRate: ['pitch', 'trig'],
+    },
+  },
 
   docs: {
     explanation:
@@ -927,19 +1149,36 @@ export const macrooscillatorDef: AudioModuleDef = {
       morph:
         "The third universal macro (0..1), model-specific: saw→square→triangle morph (VA), folder↔tanh crossfade (WAVESHAPE), feedback (FM 2-OP) / envelope decay (FM 6-OP), chord spread (CHORD), even/odd balance (ADDITIVE), damping (STRING), mode-amp morph (MODAL), body decay (KICK/SNARE), decay length (HIHAT), phase-distortion (WAVETABLE), grain-envelope shape (GRANULAR), pitched→whispered source (SPEECH).",
       level:
-        "Output level (0..1) applied to the main OUT only; the AUX tap is left at full scale regardless of this control.",
-      // Read-only on-card readout (no backing param) — declared as a one-member
-      // control family below and keyed as `<familyId>-{n}`.
-      "macro-model-name-{n}":
-        "Read-only model readout under the title — shows the name of the currently selected MODEL (e.g. VA, FM 6OP, SPEECH) so you can confirm which engine the discrete MODEL fader has landed on.",
+        "Output level (0..1) applied to the main OUT only; the AUX tap is left at full scale regardless of this control. ⚠ It cannot fix the module's real level problem: OUT RMS spans 76.6 dB BETWEEN engines at identical macro settings (FM 2-OP −5.0 dBFS against MODAL −81.6 dBFS), and LEVEL moves all fourteen by the same amount. The faceplate's `out` and `vs loudest` readouts print where the current engine sits in that spread. Note also that at LEVEL 0 the main output is genuinely silent while AUX is unchanged — on eight of the fourteen engines that means AUX is still at full scale.",
+      // Read-only cell + audition button, neither with a backing ParamDef —
+      // declared as one-member control families above and keyed as
+      // `<familyId>-{n}`.
+      "macro-hero-{n}":
+        "The engine picture in the faceplate's hero slot: a short window of the CURRENT engine at the CURRENT macro settings, computed from the live knobs through the module's own pure-math mirror rather than tapped off the audio, so it shows what the voice will do before anything has struck it. OUT is drawn solid and AUX as a ghost, both at the SAME scale — which is how the level relationship between the two outputs becomes visible instead of being something you discover with a meter. Two captions carry facts the picture would otherwise hide: the display gain (MODAL peaks at 0.0028, so an un-scaled trace would be a flat line indistinguishable from silence) and the lead-in that had to be skipped (MODAL's exciter is a fixed 4 Hz impulse train, so its first non-zero sample is a quarter of a second in).",
+      "macro-strike-{n}":
+        "Audition: strike the engine once, exactly as a rising edge into TRIG would. It exists because five of the fourteen engines (FM 6-OP, STRING, KICK, SNARE, HIHAT) initialise their excitation or envelopes to zero and are therefore SILENT — not quiet, silent — with nothing patched into TRIG, so on a bare rack more than a third of the module cannot be heard at all. Pressing it writes nothing: no param moves, nothing is persisted, nothing is shared with the rackspace and nothing lands in the undo stack. A real cable into TRIG keeps working alongside it.",
     },
   },
 
+  // ⚠ `macro-model-name` IS GONE, REPLACED BY `ParamDef.options` ON `model`.
+  // It existed for one reason — a discrete fader reading `7.00` needed a name
+  // beside it — and that is exactly what PF-1 vocabulary was built for. The
+  // roster now names the detents in ONE place and the platform paints them
+  // everywhere (a <Selector> at the dock, a persistent name readout on the dial
+  // at every lane tier), so keeping the family would have printed the engine
+  // name twice on the same faceplate. The card keeps its readout strip; it
+  // reads the same roster.
   controlFamilies: [
-    // The model-name readout has no backing param; declared as a one-member
-    // family so the docs gate can key prose to it (testidPrefix grep-verified
-    // against the card).
-    { id: 'macro-model-name', label: 'Model readout', kind: 'other', testidPrefix: 'macro-model-name' },
+    // THE HERO PICTURE — a real control with no backing ParamDef, declared as a
+    // one-member family for the same reason kickdrum's is: so the face can RANK
+    // it, the docs can key prose to it, and shell-cells can name the component.
+    // Writes no param, emits no `control-<paramId>` testid.
+    { id: 'macro-hero', label: 'Engine picture', kind: 'cell', testidPrefix: 'macro-hero' },
+    // THE AUDITION. Not a ParamDef: it writes nothing to the graph, persists
+    // nothing and lands in no undo stack — it fires the shared host-side
+    // trigger source through the factory's `manualTrigger` read key, which is
+    // the same effect as a TRIG rising edge.
+    { id: 'macro-strike', label: 'Strike', kind: 'other', testidPrefix: 'macro-strike' },
   ],
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
@@ -957,6 +1196,27 @@ export const macrooscillatorDef: AudioModuleDef = {
       numberOfOutputs: 2,
       outputChannelCount: [1, 1],
     });
+
+    // THE AUDITION SOURCE — a dedicated 0-offset ConstantSource summed into the
+    // TRIG input (input 1), fired through the SHARED $lib/audio/gate-trigger
+    // waveform so the pulse shape is never re-derived. Web Audio sums the
+    // connections, so a real cable into `trig` keeps working alongside it and
+    // the worklet edge-detects whichever arrives.
+    //
+    // ⚠ IT ALSO CLOSES OFF A DESIGN, AND THAT IS WORTH RECORDING. The batch-3
+    // spec proposed a PATCHED-SENSING strike gate: `inputs[1].length === 0`
+    // means nothing is patched, so insert an internal envelope. This connection
+    // makes `inputs[1]` permanently non-empty, so that detection can never
+    // work — the gate would insert itself on every saved rack. `sixstrum` has
+    // exactly this bug in-tree (a keep-alive ConstantSource makes its own
+    // documented normalling rule unreachable). The audition is the smaller,
+    // saved-rack-neutral answer to "five engines are silent unpatched", and a
+    // presence-sensing design would need a different mechanism than an input
+    // channel count.
+    const strikeCs = ctx.createConstantSource();
+    strikeCs.offset.value = 0;
+    strikeCs.start();
+    strikeCs.connect(workletNode, 0, 1);
 
     const params = workletNode.parameters as unknown as Map<string, AudioParam>;
     for (const def of macrooscillatorDef.params) {
@@ -990,7 +1250,21 @@ export const macrooscillatorDef: AudioModuleDef = {
       readParam(paramId) {
         return params.get(paramId)?.value;
       },
+      // Manual STRIKE (the audition, on the faceplate AND the legacy card):
+      // the shared `manualTrigger` read key every externally-struck voice in
+      // the rack answers — one implementation, resolved through
+      // manual-strike-actions.ts, never a per-module copy.
+      read(key: string): unknown {
+        if (key === 'manualTrigger') {
+          return () => {
+            try { fireTrigger(strikeCs, ctx.currentTime); } catch { /* */ }
+          };
+        }
+        return undefined;
+      },
       dispose() {
+        try { strikeCs.stop(); } catch { /* */ }
+        try { strikeCs.disconnect(); } catch { /* */ }
         try { workletNode.disconnect(); } catch { /* */ }
       },
     };
