@@ -55,6 +55,38 @@ const LOBBY_CLIP = fileURLToPath(new URL('../fixtures/lobby-clip.webm', import.m
  *  this map fall back to the default vrt.spec.ts behaviour (spawn
  *  alone, no extra setup). */
 export const VRT_SCENES: Record<string, VrtScene> = {
+  // MOOG960: the 960 "auto-runs on placement" (its own docs), and the card
+  // polls a LIVE active-column indicator every rAF. So a bare spawn captures a
+  // MOVING playhead and the baseline records whichever column the screenshot
+  // happened to catch — measured on a plain spawn: column 0 at t=0, 2 at 600ms,
+  // 3 at 1200ms. It rode along for months because the timing was repeatable;
+  // when the topbar lost a row the pane grew 34px, the fitView zoom moved and
+  // linux started landing on a different column than the capture had — CI's
+  // moog960-diff.png is exactly the column-2 and column-3 headers plus their
+  // knob rings, 6537px, while 135 sibling scenes passed.
+  //
+  // Fixed at the SOURCE of the non-determinism rather than by masking the grid
+  // (which is the scene's whole subject) or by dropping the card from
+  // STRICT_VRT_MODULES (whose ratchet correctly refuses to shrink): column 2's
+  // MODE is set to STOP (2 = halt holding this column, see moog960.ts), so the
+  // pointer advances off column 0, lands on column 1 and HALTS. Measured:
+  // isRunning=false, currentColumn=1, identical at 600ms and 1200ms — and
+  // because the card blanks the indicator when the transport is stopped, NO
+  // column is highlighted at all. There is no timing left to race.
+  moog960: {
+    nodes: [
+      {
+        id: 'vrt-1',
+        type: 'moog960',
+        position: { x: 60, y: 60 },
+        domain: 'audio',
+        params: { mode2: 2 },
+      },
+    ],
+    edges: [],
+    settleMs: 400,
+  },
+
   // SYNESTHESIA: drive copy A's input with a 261 Hz sine (analogVco default
   // 'sine' out, pitch 0 V/oct ≈ C4) so band 2 (low-mid 200–1k Hz) lights its VU
   // meter deterministically; copy B is left dark. After settle we freeze the

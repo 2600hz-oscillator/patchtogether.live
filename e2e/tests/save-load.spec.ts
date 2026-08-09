@@ -13,7 +13,7 @@
 // base64 Y.encodeStateAsUpdate — the per-module moduleSchemas map was dropped
 // with the migration substrate (parseEnvelope still tolerantly READS v1).
 
-import { test, expect } from './_fixtures';
+import { test, expect, loadVoiceDemo } from './_fixtures';
 import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
@@ -149,7 +149,7 @@ test('save-load: round-trip preserves nodes, edges, params, and sequencer step d
 });
 
 test('save-load: __persistence.save() emits a valid PatchEnvelope JSON', async ({ page, rack }) => {
-  await page.getByTestId('load-example-select').selectOption('sequenced-vco');
+  await loadVoiceDemo(page);
   await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
 
   // The retired Save button used makeEnvelope(ydoc); __persistence.save() is the
@@ -171,7 +171,7 @@ test('save-load: __persistence.save() emits a valid PatchEnvelope JSON', async (
 
 test('save-load: __persistence.load() restores the patch from a saved envelope', async ({ page, rack }) => {
   // Start with a known patch and capture its envelope.
-  await page.getByTestId('load-example-select').selectOption('sequenced-vco');
+  await loadVoiceDemo(page);
   await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
 
   const env = await page.evaluate(() => {

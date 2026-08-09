@@ -61,8 +61,11 @@ import {
   NON_CARD_CAPTURE_DIRS,
   conventionalCardBasename,
   findStripeBand,
+  hexToRgb,
   parseCssCableTokens,
   repaintStripeRow,
+  STRIPE_ALPHA_SPREAD,
+  stripeMatchesToken,
   stripeSourceToken,
 } from '$lib/ui/vrt-cable-stripe';
 import { readCardSourceWithDelegates } from '$lib/ui/card-source';
@@ -231,6 +234,9 @@ interface Pinned {
   token: string;
   /** `#rrggbb` actually painted, or undefined if no stripe band was found. */
   got?: string;
+  /** `#rrggbb` of the row below the band — what a partially-covered stripe is
+   *  composited over. See `stripeMatchesToken`. */
+  bg?: string | null;
   y?: number;
   saturation?: number;
 }
@@ -328,7 +334,7 @@ function measure(readBytes: (path: string) => Buffer = readFileSync): Measured {
         const band = findStripeBand(new Uint8Array(bytes));
         pinned.push({
           key, spec, platform, scene, type, card, token,
-          got: band?.hex, y: band?.y, saturation: band?.saturation,
+          got: band?.hex, bg: band?.bgHex, y: band?.y, saturation: band?.saturation,
         });
       }
     }
@@ -337,9 +343,15 @@ function measure(readBytes: (path: string) => Buffer = readFileSync): Measured {
 }
 
 /** Which of the measured baselines disagree with a given palette? */
+/** The ONE comparison both assertions use. Coverage-aware: see
+ *  `stripeMatchesToken` for why exact equality was the wrong test. */
+function paintsToken(p: Pinned, tokens: Record<string, string>): boolean {
+  return p.got !== undefined && stripeMatchesToken(p.got, p.bg ?? null, tokens[p.token]);
+}
+
 function offPalette(pinned: Pinned[], tokens: Record<string, string>): string[] {
   return pinned
-    .filter((p) => p.got !== tokens[p.token])
+    .filter((p) => !paintsToken(p, tokens))
     .map(
       (p) =>
         `${p.key}.png (${p.card}, ${p.token}): expected ${tokens[p.token]}, ` +
@@ -350,7 +362,7 @@ function offPalette(pinned: Pinned[], tokens: Record<string, string>): string[] 
 
 /** Just the keys, for set comparison against PENDING_PALETTE_REGEN. */
 function offPaletteKeys(pinned: Pinned[], tokens: Record<string, string>): string[] {
-  return pinned.filter((p) => p.got !== tokens[p.token]).map((p) => p.key).sort();
+  return pinned.filter((p) => !paintsToken(p, tokens)).map((p) => p.key).sort();
 }
 
 const MIS_EXCLUDED_MSG =
@@ -668,6 +680,98 @@ describe('VRT baselines paint the CURRENT --cable-* stripe', () => {
       `stopped checking that card — hardcoding a hex where a token used to be is exactly the ` +
       `divergence this gate exists to catch, so it must be a deliberate, reviewed edit here.`,
     ).toEqual(NOT_TOKEN_PINNED_SCENES);
+  });
+
+  // ── THE TOLERANCE'S OWN GUARD ─────────────────────────────────────────────
+  //
+  // `stripeMatchesToken` accepts a partially-covered stripe, which is a real
+  // relaxation of the old `got === token`. It is safe only while no RETIRED
+  // palette generation can pose as a partial cover of a CURRENT token — that
+  // is the exact drift this whole gate exists to catch, so it is asserted here
+  // rather than argued in a comment. Runs on colours, needs no PNG, and so
+  // cannot be skipped by the lfs:false lane.
+  it('no retired generation hue can pose as a partially-covered current token', () => {
+    // The card body every stripe in this repo sits on; the blend background.
+    const BODY = '#1c1f24';
+    const worst: string[] = [];
+    const spreads: number[] = [];
+    for (const [retired, label] of Object.entries(CABLE_HUES_ALL_GENERATIONS)) {
+      for (const [name, current] of Object.entries(tokens)) {
+        if (retired === current) continue; // a hue that came back is not drift
+        expect(
+          stripeMatchesToken(retired, BODY, current),
+          `${retired} (${label}) is accepted as a partial cover of ${name} (${current}) over ` +
+          `${BODY}. The coverage tolerance (STRIPE_ALPHA_SPREAD=${STRIPE_ALPHA_SPREAD}) is now ` +
+          `wide enough to swallow real palette drift — tighten it.`,
+        ).toBe(false);
+        // Track the SPREAD margin so erosion is visible as a number, not just
+        // as an eventual red. (The second axis, STRIPE_MAX_COVERAGE, is what
+        // catches the tightest pair independently — see the constant.)
+        const g = hexToRgb(retired);
+        const bg = hexToRgb(BODY);
+        const t = hexToRgb(current);
+        const al: number[] = [];
+        for (let i = 0; i < 3; i++) {
+          const span = t[i] - bg[i];
+          if (Math.abs(span) >= 8) al.push((g[i] - bg[i]) / span);
+        }
+        if (al.length >= 2) spreads.push(Math.max(...al) - Math.min(...al));
+        worst.push(`${retired}->${name}`);
+      }
+    }
+    expect(worst.length, 'the retired-hue matrix emptied out — this guard went vacuous').toBeGreaterThan(20);
+    // Pin the MARGIN, not just the verdict. Measured tightest pair: #f472b6 as
+    // --cable-polyPitchGate, spread 0.0494 against a 0.02 tolerance = 2.47x. A
+    // future palette whose hues crowd an old generation shrinks this silently
+    // until one day a real drift slips through; fail while there is still room.
+    const tightest = Math.min(...spreads);
+    expect(
+      tightest / STRIPE_ALPHA_SPREAD,
+      `the closest retired hue now sits ${tightest.toFixed(4)} from a current token against a ` +
+      `${STRIPE_ALPHA_SPREAD} tolerance. Under 2x, the collinearity axis is no longer a real ` +
+      'discriminator — tighten STRIPE_ALPHA_SPREAD or re-space the palette.',
+    ).toBeGreaterThan(2);
+  });
+
+  // The colour-level guard above proves the PREDICATE rejects retired hues.
+  // This proves the whole PIXEL PATH still does — decoder, band locator and
+  // comparison — because a relaxation that is sound in isolation is still
+  // worthless if the bytes never reach it. Repaints a real baseline's stripe
+  // with a real RETIRED hue (not the trivially-wrong #ff0000 the batch control
+  // uses) and requires exactly that baseline to go red.
+  it('NEGATIVE CONTROL: a stripe repainted with a RETIRED hue still reddens', () => {
+    if (unreadable && !REQUIRED) return;
+    const RETIRED = '#f472b6'; // pre-#1159 video — the drift class this gate was built for
+    const pendingSet = new Set(PENDING_PALETTE_REGEN);
+    const target = pinned.find(
+      (p) => p.token === '--cable-video' && !pendingSet.has(p.key) && p.y !== undefined,
+    );
+    expect(target, 'no --cable-video baseline available to control with').toBeTruthy();
+    const path = resolve(
+      SCREENSHOT_ROOT, target!.spec, target!.platform, `${target!.scene}.png`,
+    );
+    // A fully-covered stripe can span TWO rows, and the band is chosen by
+    // saturation — repainting just one leaves the other pure and winning
+    // (measured: the gate still read #b57bff). #ff0000 hides this because its
+    // saturation of 255 outranks everything; a REAL hue does not. So repaint
+    // until the located band IS the retired hue. Bounded, and asserted below.
+    let raw: Uint8Array<ArrayBufferLike> = new Uint8Array(readFileSync(path));
+    for (let i = 0; i < 4; i++) {
+      const band = findStripeBand(raw);
+      if (!band || band.hex === RETIRED) break;
+      raw = repaintStripeRow(raw, band.y, RETIRED);
+    }
+    const bytes = Buffer.from(raw);
+    const remeasured = measure((q) => (q === path ? bytes : readFileSync(q)));
+    expect(
+      remeasured.pinned.find((p) => p.key === target!.key)?.got,
+      'the gate did not read the repainted bytes',
+    ).toBe(RETIRED);
+    expect(
+      offPaletteKeys(remeasured.pinned, tokens).filter((k) => !pendingSet.has(k)),
+      `repainting ${target!.key} with the RETIRED ${RETIRED} must redden exactly it. If this is ` +
+      'empty, the coverage tolerance has blinded the gate to genuine palette drift.',
+    ).toEqual([target!.key]);
   });
 
   it('every token-pinned baseline paints its token', () => {
