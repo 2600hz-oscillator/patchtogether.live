@@ -301,31 +301,32 @@ blood param cv_weapnext 0..1 linear default=0
 blood param cv_weapprev 0..1 linear default=0
 blood param fillMode 0..1 discrete default=0
 bluebox meta domain=audio
-bluebox in gate_0 gate
-bluebox in gate_1 gate
-bluebox in gate_2 gate
-bluebox in gate_3 gate
-bluebox in gate_4 gate
-bluebox in gate_5 gate
-bluebox in gate_6 gate
-bluebox in gate_7 gate
-bluebox in gate_8 gate
-bluebox in gate_9 gate
-bluebox in gate_bluebox gate
-bluebox in gate_redbox gate
+bluebox in gate_0 gate edge=gate
+bluebox in gate_1 gate edge=gate
+bluebox in gate_2 gate edge=gate
+bluebox in gate_3 gate edge=gate
+bluebox in gate_4 gate edge=gate
+bluebox in gate_5 gate edge=gate
+bluebox in gate_6 gate edge=gate
+bluebox in gate_7 gate edge=gate
+bluebox in gate_8 gate edge=gate
+bluebox in gate_9 gate edge=gate
+bluebox in gate_bluebox gate edge=gate
+bluebox in gate_redbox gate edge=gate
 bluebox out out audio
-bluebox param btn_0 0..1 linear default=0
-bluebox param btn_1 0..1 linear default=0
-bluebox param btn_2 0..1 linear default=0
-bluebox param btn_3 0..1 linear default=0
-bluebox param btn_4 0..1 linear default=0
-bluebox param btn_5 0..1 linear default=0
-bluebox param btn_6 0..1 linear default=0
-bluebox param btn_7 0..1 linear default=0
-bluebox param btn_8 0..1 linear default=0
-bluebox param btn_9 0..1 linear default=0
-bluebox param btn_bluebox 0..1 linear default=0
-bluebox param btn_redbox 0..1 linear default=0
+bluebox param btn_0 0..1 discrete default=0
+bluebox param btn_1 0..1 discrete default=0
+bluebox param btn_2 0..1 discrete default=0
+bluebox param btn_3 0..1 discrete default=0
+bluebox param btn_4 0..1 discrete default=0
+bluebox param btn_5 0..1 discrete default=0
+bluebox param btn_6 0..1 discrete default=0
+bluebox param btn_7 0..1 discrete default=0
+bluebox param btn_8 0..1 discrete default=0
+bluebox param btn_9 0..1 discrete default=0
+bluebox param btn_bluebox 0..1 discrete default=0
+bluebox param btn_redbox 0..1 discrete default=0
+bluebox family bluebox-tonebank kind=cell prefix=bluebox-tonebank
 buggles meta domain=audio
 buggles in chaos_cv cv
 buggles in clock_cv cv
