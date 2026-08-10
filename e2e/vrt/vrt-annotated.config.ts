@@ -37,6 +37,14 @@ export default defineConfig({
   snapshotPathTemplate: '__annotated__/{platform}/{arg}{ext}',
 
   expect: {
+    // ⚠ `timeout` is NOT a `toHaveScreenshot` key — it belongs HERE, on
+    // `expect`. It sat nested inside the matcher options until 2026-08-09,
+    // where Playwright silently ignored it: the annotated GENERATION run was
+    // bounded by the 5 s default, not the 15 s intended. `vrt.config.ts` had
+    // the identical bug, was fixed, and grew a regression test — but that test
+    // hard-coded `vrt.config.ts`, so this sibling kept the defect. The test is
+    // now parameterized over EVERY Playwright config (`vrt-config-budget.test.ts`).
+    timeout: 15_000,
     toHaveScreenshot: {
       // The annotated face is a doc asset the build copies into
       // static/docs/module-faces/, so this tolerance decides whether the
@@ -50,7 +58,6 @@ export default defineConfig({
       // documentation lie even if no gate is meant to catch it.
       threshold: 0.15,
       maxDiffPixelRatio: 0.02,
-      timeout: 15_000,
       animations: 'disabled',
     },
   },
