@@ -73,20 +73,33 @@ const PROCESSOR_NAME = 'cube';
 const POLL_MS = 200;
 const loadedContexts = new WeakSet<BaseAudioContext>();
 
-// ---------- card → module frame-drawer registry (video_out) ----------
+// ---------- surface → module frame-drawer registry (video_out) ----------
 //
-// The 3D CUBE WebGL render lives in CubeCard.svelte (the card owns the GL
-// context + offscreen canvas). The cross-domain video_out bridge needs a
-// drawFrame(canvas) callback; the card installs one here keyed by node id (the
-// SAME pattern WAVESCULPT uses for its video_out). When nothing is installed
-// (card not mounted / GL unavailable) the module's drawFrame paints black so
-// the bridge always has a valid frame.
+// The 3D CUBE WebGL render lives in CubeVizSurface.svelte (the surface owns the
+// GL context + offscreen canvas), which the legacy card and the faceplate hero
+// both mount. The cross-domain video_out bridge needs a drawFrame(canvas)
+// callback; the surface installs one here keyed by node id (the SAME pattern
+// WAVESCULPT uses for its video_out). When nothing is installed (nothing
+// mounted / GL unavailable) the module's drawFrame paints black so the bridge
+// always has a valid frame.
 type FrameDrawer = (canvas: OffscreenCanvas | HTMLCanvasElement) => void;
 const FRAME_DRAWERS: Map<string, FrameDrawer> = new Map();
 export function installCubeFrameDrawer(nodeId: string, fn: FrameDrawer): void {
   FRAME_DRAWERS.set(nodeId, fn);
 }
-export function uninstallCubeFrameDrawer(nodeId: string): void {
+/**
+ * Remove a node's frame drawer.
+ *
+ * ⚠ `fn` IS A COMPARE-AND-DELETE, not decoration. Two surfaces can hold the
+ * same node briefly while one is being swapped for the other (the canvas card
+ * unmounting as the shell faceplate mounts), and the loser's `onDestroy` runs
+ * AFTER the winner's install. A bare delete would then unregister the LIVE
+ * drawer and drop `video_out` to black with nothing to re-install it. Passing
+ * the function makes the removal a no-op unless the caller still owns the slot.
+ * Omitted = force-remove (the pre-existing call shape).
+ */
+export function uninstallCubeFrameDrawer(nodeId: string, fn?: FrameDrawer): void {
+  if (fn && FRAME_DRAWERS.get(nodeId) !== fn) return;
   FRAME_DRAWERS.delete(nodeId);
 }
 
