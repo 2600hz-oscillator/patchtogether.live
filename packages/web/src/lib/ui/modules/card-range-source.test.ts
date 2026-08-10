@@ -28,6 +28,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { adsrDef } from '$lib/audio/modules/adsr';
 import { backdraftDef } from '$lib/video/modules/backdraft';
+import { cloudsDef } from '$lib/audio/modules/clouds';
 import { delayDef } from '$lib/audio/modules/delay';
 import { macrooscillatorDef } from '$lib/audio/modules/macrooscillator';
 import { filterDef } from '$lib/audio/modules/filter';
@@ -106,10 +107,20 @@ import type { ParamDef } from '$lib/graph/types';
  *    `STRICT_VRT_MODULES`, i.e. the required `vrt-strict` gate on both
  *    platforms, so that vocabulary fix gets its own PR instead of riding a face.
  *    The clause below keeps the unbound half honest in the meantime.
+ *  - CloudsCard: converted with the clouds face promotion (2026-08-10; binds
+ *    via paramSpec). Range AND mapping bound — the card's six faders re-typed
+ *    30 numbers plus six `curve`s and one `units`, all of which AGREED, and it
+ *    is the `units` that makes the conversion worth more than tidiness: the def
+ *    declares `units: 'st'` on `pitch` ALONE, so five of the six faders were
+ *    hand-typing "no units" by omission. An omitted prop and a bound `undefined`
+ *    read identically today and diverge the day any of those five gains a unit
+ *    on the def — the omission is invisible to both greps, which only ever see
+ *    what a card DOES write.
  */
 const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }>> = {
   'AdsrCard.svelte': adsrDef,
   'BackdraftCard.svelte': backdraftDef,
+  'CloudsCard.svelte': cloudsDef,
   'DelayCard.svelte': delayDef,
   'MacrooscillatorCard.svelte': macrooscillatorDef,
   'FilterCard.svelte': filterDef,
@@ -127,6 +138,7 @@ const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }
  */
 const MAPPING_BOUND_CARDS: readonly string[] = [
   'AdsrCard.svelte',
+  'CloudsCard.svelte',
   'DelayCard.svelte',
   'MacrooscillatorCard.svelte',
   'FilterCard.svelte',
@@ -162,8 +174,14 @@ const MAPPING_BOUND_CARDS: readonly string[] = [
 // would also make the ratchet vacuous (it can never fail, because it is derived
 // from the thing it checks). So the literal stays, and the discipline is: after
 // ANY merge of this file, count the entries and write that number.
-const RANGE_BOUND_FLOOR = 9;
-const MAPPING_BOUND_FLOOR = 7;
+// ⚠ RE-DERIVED BY COUNTING THE MERGED LISTS on 2026-08-10 (the clouds face),
+// exactly as the paragraph above instructs — not by adding one to what was
+// there. The inherited pair was 9/7 against lists of 10/8, i.e. one full card
+// of slack in each, which is the silent auto-merge this file has now been
+// burned by three times. Counted: RANGE_BOUND_CARDS = 11, MAPPING_BOUND_CARDS
+// = 9. Count again after the next merge; never inherit these literals.
+const RANGE_BOUND_FLOOR = 11;
+const MAPPING_BOUND_FLOOR = 9;
 
 /**
  * A range-ish prop bound to a NUMERIC LITERAL. Covers `min/max/defaultValue`

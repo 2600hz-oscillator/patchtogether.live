@@ -368,7 +368,7 @@ describe('clouds face model — ORACLE: POSITION is total, and invisible to a le
  *  relabelled cannot satisfy. */
 function bothDirections(
   label: string,
-  value: (p: CloudsFaceParams) => string | number,
+  value: (p: CloudsFaceParams) => string | number | boolean,
   movers: readonly (keyof CloudsFaceParams)[],
   base: CloudsFaceParams = DEFAULTS,
 ): void {
