@@ -371,6 +371,15 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
     'cloudseed:eq_lowpass_enabled',     // in-loop lowpass
     // REMOVED 2026-07-27 — 'tidyVco:hold'. The acknowledgement was WRONG (it
     // claimed "sample-and-hold ENGAGE"): the card drives it pointerdown/
+    // CUBE, 2026-08-10. Three states you switch and leave: WRAP is a rule
+    // about what happens where the slicing plane leaves the solid (silent vs
+    // mirror-fold), MATERIAL picks the field's density model (smooth vs binary
+    // solid) and SCREEN is the viz power switch. None is read on an edge —
+    // `sampleSlice` reads all three as levels once per render, and `screen_on`
+    // gates a rAF loop — and the module has no press-pad of any kind.
+    'cube:wrap',
+    'cube:material',
+    'cube:screen_on',
     // pointerup, the worklet ORs it into the mono gate like tomtom's `strike`,
     // and the def's own doc says "released = note-off (no latch)". It is now
     // declared on `face.momentary`. The cross-check below is what stops that

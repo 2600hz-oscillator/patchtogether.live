@@ -28,6 +28,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { adsrDef } from '$lib/audio/modules/adsr';
 import { backdraftDef } from '$lib/video/modules/backdraft';
+import { cubeDef } from '$lib/audio/modules/cube';
 import { delayDef } from '$lib/audio/modules/delay';
 import { macrooscillatorDef } from '$lib/audio/modules/macrooscillator';
 import { filterDef } from '$lib/audio/modules/filter';
@@ -106,10 +107,23 @@ import type { ParamDef } from '$lib/graph/types';
  *    `STRICT_VRT_MODULES`, i.e. the required `vrt-strict` gate on both
  *    platforms, so that vocabulary fix gets its own PR instead of riding a face.
  *    The clause below keeps the unbound half honest in the meantime.
+ *  - CubeCard: converted with the cube face (2026-08-10), range AND mapping in
+ *    one step. It was HALF bound already, and the half it was missing is the
+ *    instructive one: it resolved `min`/`max`/`defaultValue` through local
+ *    `minFor()`/`maxFor()`/`defaultFor()` helpers that read the def — genuinely
+ *    correct — and then re-typed `label`, `units` and `curve` beside them in
+ *    three private arrays (`KNOBS`, `VIEW_KNOBS`, `ADSR_KNOBS`), including a
+ *    `curve={k.pid === 'view_zoom' ? 'log' : 'linear'}` TERNARY reproducing the
+ *    def's own curve assignment as a card-side rule. All 23 controls agreed, so
+ *    nothing was broken — but "the ranges come from the def, the mapping comes
+ *    from a ternary" is a card one def edit away from disagreeing with itself,
+ *    with no gate able to see it. The three arrays are now id lists resolved
+ *    through `paramSpec`.
  */
 const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }>> = {
   'AdsrCard.svelte': adsrDef,
   'BackdraftCard.svelte': backdraftDef,
+  'CubeCard.svelte': cubeDef,
   'DelayCard.svelte': delayDef,
   'MacrooscillatorCard.svelte': macrooscillatorDef,
   'FilterCard.svelte': filterDef,
@@ -127,6 +141,7 @@ const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }
  */
 const MAPPING_BOUND_CARDS: readonly string[] = [
   'AdsrCard.svelte',
+  'CubeCard.svelte',
   'DelayCard.svelte',
   'MacrooscillatorCard.svelte',
   'FilterCard.svelte',
@@ -162,8 +177,8 @@ const MAPPING_BOUND_CARDS: readonly string[] = [
 // would also make the ratchet vacuous (it can never fail, because it is derived
 // from the thing it checks). So the literal stays, and the discipline is: after
 // ANY merge of this file, count the entries and write that number.
-const RANGE_BOUND_FLOOR = 9;
-const MAPPING_BOUND_FLOOR = 7;
+const RANGE_BOUND_FLOOR = 10;
+const MAPPING_BOUND_FLOOR = 8;
 
 /**
  * A range-ish prop bound to a NUMERIC LITERAL. Covers `min/max/defaultValue`

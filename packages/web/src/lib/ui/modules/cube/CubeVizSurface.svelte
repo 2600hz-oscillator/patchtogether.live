@@ -80,6 +80,13 @@
      * a second surface a pure viewer.
      */
     ownsVideoOut?: boolean;
+    /**
+     * Drag-to-ORBIT. When given, a pointer drag across the 3-D view reports its
+     * delta in CSS px and the caller writes the camera params. The surface
+     * itself writes NOTHING — a renderer that owned a param write would be a
+     * second, invisible source of truth beside the `view` band's knobs.
+     */
+    onOrbit?: (dxPx: number, dyPx: number) => void;
   }
   let {
     nodeId,
@@ -90,6 +97,7 @@
     waveW = 162,
     waveH = 120,
     ownsVideoOut = true,
+    onOrbit,
   }: Props = $props();
 
   const engineCtx = useEngine();
@@ -911,6 +919,32 @@
     };
     g.__cubeStepCount = () => cubeStepCount;
   });
+  // ---- drag-to-orbit (opt-in via `onOrbit`) ----
+  // Pointer capture so a drag that leaves the canvas keeps orbiting, and the
+  // delta is reported per MOVE (not accumulated here) so the caller decides
+  // the sensitivity and the clamp against the def's declared range.
+  let orbiting = $state(false);
+  let lastX = 0;
+  let lastY = 0;
+  function orbitDown(ev: PointerEvent): void {
+    if (!onOrbit) return;
+    orbiting = true;
+    lastX = ev.clientX; lastY = ev.clientY;
+    (ev.currentTarget as HTMLElement).setPointerCapture?.(ev.pointerId);
+    ev.preventDefault();
+  }
+  function orbitMove(ev: PointerEvent): void {
+    if (!orbiting || !onOrbit) return;
+    const dx = ev.clientX - lastX, dy = ev.clientY - lastY;
+    lastX = ev.clientX; lastY = ev.clientY;
+    if (dx !== 0 || dy !== 0) onOrbit(dx, dy);
+  }
+  function orbitUp(ev: PointerEvent): void {
+    if (!orbiting) return;
+    orbiting = false;
+    (ev.currentTarget as HTMLElement).releasePointerCapture?.(ev.pointerId);
+  }
+
   onDestroy(() => {
     if (raf !== null) cancelAnimationFrame(raf);
     if (ownsVideoOut && nodeId) uninstallCubeFrameDrawer(nodeId, videoFrame);
@@ -923,10 +957,15 @@
   <canvas
     bind:this={glCanvas}
     class="viz cube-viz"
+    class:orbitable={!!onOrbit}
     width={vizW}
     height={vizH}
     style="width:{vizW}px;height:{vizH}px"
     data-testid="cube-3d-viz"
+    onpointerdown={orbitDown}
+    onpointermove={orbitMove}
+    onpointerup={orbitUp}
+    onpointercancel={orbitUp}
   ></canvas>
   <div class="viz-row">
     <canvas
@@ -953,5 +992,7 @@
   .viz-row { display: flex; gap: 6px; justify-content: center; }
   .viz { border-radius: 4px; background: #0a0c12; border: 1px solid rgba(255,255,255,0.08); }
   .cube-viz { image-rendering: auto; }
+  .cube-viz.orbitable { cursor: grab; touch-action: none; }
+  .cube-viz.orbitable:active { cursor: grabbing; }
   .slice-viz { image-rendering: auto; }
 </style>

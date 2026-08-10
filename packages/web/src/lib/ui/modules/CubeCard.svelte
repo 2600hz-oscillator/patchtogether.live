@@ -27,11 +27,19 @@
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
   import { setNodeParam } from '$lib/graph/mutate';
-  import { cubeDef, CUBE_SLOTS, CUBE_DEFAULT_TABLES, type CubeSlot, type CubeData, type CubeSlotData } from '$lib/audio/modules/cube';
+  import { cubeDef, CUBE_SLOTS, type CubeSlot } from '$lib/audio/modules/cube';
   import CubeVizSurface from './cube/CubeVizSurface.svelte';
-  import { getFactoryTables, framesToPlain } from '$lib/audio/wavetable-factory-tables';
-  import { WAVETABLE_PRESETS, loadWavetablePreset } from '$lib/audio/wavetable-presets';
-  import { parseE352Wav } from '$lib/audio/wavetable-parser';
+  import { paramSpec } from './card-kit';
+  import {
+    cubeSlotData,
+    cubeSlotLabel,
+    cubeSlotSource,
+    loadCubeWavFile,
+    selectCubeFactoryTable,
+    selectCubePreset,
+  } from './cube/cube-table-actions';
+  import { getFactoryTables } from '$lib/audio/wavetable-factory-tables';
+  import { WAVETABLE_PRESETS } from '$lib/audio/wavetable-presets';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   let { id, data }: NodeProps = $props();
@@ -40,8 +48,6 @@
 
   const defaultFor = (pid: string): number =>
     cubeDef.params.find((p) => p.id === pid)!.defaultValue;
-  const minFor = (pid: string): number => cubeDef.params.find((p) => p.id === pid)!.min;
-  const maxFor = (pid: string): number => cubeDef.params.find((p) => p.id === pid)!.max;
 
   function paramVal(k: string): number {
     const v = node?.params?.[k];
@@ -66,12 +72,14 @@
   function toggleScreen(): void { set('screen_on')(screenOn ? 0 : 1); }
 
   // ───────────────── per-slot wavetable selection (node.data) ─────────────────
+  //
+  // The WRITES live in `cube/cube-table-actions` — SHARED with the faceplate's
+  // `cube-table-stack` panel, so the "picking a factory table must delete the
+  // stale user frames" rule has ONE implementation rather than two. The DX7 is
+  // the precedent for what a second one costs: a card that owned its action
+  // shipped the shell face unable to change the voice at all.
   const SLOT_LABEL: Record<CubeSlot, string> = { floor: 'FLOOR', wall: 'WALL', ceiling: 'CEILING' };
 
-  function slotData(slot: CubeSlot): CubeSlotData {
-    const d = (node?.data ?? {}) as CubeData;
-    return (d[slot] as CubeSlotData | undefined) ?? {};
-  }
   // The <select> value MUST equal an existing <option> value or the dropdown
   // renders blank. A loaded preset/file stores source:'user' (+ a label), which
   // matches no factory:/preset: option — so (issue #3) we select the synthetic
@@ -79,22 +87,10 @@
   // WAVESCULPT's oscSource/oscLabel + `<option value="user">USER · …` pattern,
   // and because it reads straight from node.data it survives a patch reload.
   function slotSelectValue(slot: CubeSlot): string {
-    const sd = slotData(slot);
-    if (sd.source === 'user') return 'user';
-    return sd.source ?? `factory:${CUBE_DEFAULT_TABLES[slot]}`;
+    return cubeSlotData(node, slot).source === 'user' ? 'user' : cubeSlotSource(node, slot);
   }
-  /** Human label of the currently-loaded table for a slot (the loaded filename
-   *  for a user table, else the factory table's label). */
-  function slotLabel(slot: CubeSlot): string {
-    const sd = slotData(slot);
-    if (sd.source === 'user') return sd.label ?? 'USER';
-    const src = sd.source ?? `factory:${CUBE_DEFAULT_TABLES[slot]}`;
-    if (src.startsWith('factory:')) {
-      const fid = src.slice('factory:'.length);
-      return factoryTables.find((t) => t.id === fid)?.label ?? fid;
-    }
-    return src;
-  }
+  const slotLabel = (slot: CubeSlot): string => cubeSlotLabel(node, slot);
+
   let slotStatus = $state<Record<CubeSlot, string | null>>({ floor: null, wall: null, ceiling: null });
   // RELOAD FIX (item #1): the preset <select> gets its OWN selection state that
   // is reset to '' after every load — so re-picking the SAME preset (or a
@@ -105,38 +101,12 @@
   // file-input value reset.
   let presetSelection = $state<Record<CubeSlot, string>>({ floor: '', wall: '', ceiling: '' });
 
-  function ensureSlot(slot: CubeSlot): CubeSlotData | null {
-    const t = patch.nodes[id];
-    if (!t) return null;
-    if (!t.data) t.data = {};
-    const d = t.data as CubeData;
-    if (!d[slot]) (d as Record<string, unknown>)[slot] = {};
-    return d[slot] as CubeSlotData;
-  }
-  function selectFactory(slot: CubeSlot, factoryId: string): void {
-    const sd = ensureSlot(slot); if (!sd) return;
-    sd.source = `factory:${factoryId}`;
-    delete sd.frames;
-    delete sd.label;
-    slotStatus[slot] = null;
-  }
   async function selectPreset(slot: CubeSlot, presetId: string): Promise<void> {
-    const preset = WAVETABLE_PRESETS.find((p) => p.id === presetId);
-    if (!preset) return;
-    slotStatus[slot] = `loading ${preset.label}…`;
-    try {
-      const parsed = await loadWavetablePreset(preset.url);
-      const sd = ensureSlot(slot); if (!sd) return;
-      sd.source = 'user';
-      sd.frames = parsed.frames;
-      sd.label = preset.label;
-      slotStatus[slot] = `loaded ${parsed.frames.length} frames`;
-    } catch (err) {
-      slotStatus[slot] = err instanceof Error ? err.message : String(err);
-    } finally {
-      // Reset so the SAME preset can be picked again (re-fires `change`).
-      presetSelection[slot] = '';
-    }
+    slotStatus[slot] = 'loading…';
+    const r = await selectCubePreset(id, slot, presetId);
+    slotStatus[slot] = r.error ?? r.status;
+    // Reset so the SAME preset can be picked again (re-fires `change`).
+    presetSelection[slot] = '';
   }
   function onPresetChange(slot: CubeSlot, ev: Event): void {
     const v = (ev.target as HTMLSelectElement).value;
@@ -150,26 +120,17 @@
     const file = input.files?.[0];
     if (!file) return;
     slotStatus[slot] = 'parsing…';
-    try {
-      const buf = await file.arrayBuffer();
-      const parsed = parseE352Wav(buf);
-      const sd = ensureSlot(slot); if (!sd) return;
-      sd.source = 'user';
-      sd.frames = framesToPlain(parsed.frames);
-      sd.label = file.name.replace(/\.wav$/i, '').toUpperCase().slice(0, 24);
-      slotStatus[slot] = `loaded ${parsed.frames.length} frames`;
-    } catch (err) {
-      slotStatus[slot] = err instanceof Error ? err.message : String(err);
-    } finally {
-      try { input.value = ''; } catch { /* */ }
-    }
+    const r = await loadCubeWavFile(id, slot, file);
+    slotStatus[slot] = r.error ?? r.status;
+    try { input.value = ''; } catch { /* */ }
   }
   function onSlotChange(slot: CubeSlot, ev: Event): void {
-    const sel = ev.target as HTMLSelectElement;
-    const v = sel.value;
+    const v = (ev.target as HTMLSelectElement).value;
     if (v === 'user') return; // synthetic option — ignore (keeps the loaded table)
-    if (v.startsWith('factory:')) selectFactory(slot, v.slice('factory:'.length));
-    else if (v.startsWith('preset:')) void selectPreset(slot, v.slice('preset:'.length));
+    if (v.startsWith('factory:')) {
+      selectCubeFactoryTable(id, slot, v.slice('factory:'.length));
+      slotStatus[slot] = null;
+    } else if (v.startsWith('preset:')) void selectPreset(slot, v.slice('preset:'.length));
   }
 
   // ───────────────── patch panel ports ─────────────────
@@ -206,48 +167,28 @@
 
   const factoryTables = getFactoryTables();
 
-  // Knob descriptor list (driven from the def so ranges/curves stay in sync).
-  const KNOBS: Array<{ pid: string; label: string; units?: string }> = [
-    { pid: 'tune', label: 'Tune', units: 'st' },
-    { pid: 'fine', label: 'Fine', units: '¢' },
-    { pid: 'morph_fc', label: 'Morph' },
-    { pid: 'connect', label: 'Connect' },
-    { pid: 'connect_strength', label: 'Cnct Str' },
-    { pid: 'crush', label: 'Crush' },
-    { pid: 'space_crush', label: 'Space Crush' },
-    { pid: 'space_diffuse', label: 'Space Diffuse' },
-    { pid: 'fold', label: 'Fold' },
-    { pid: 'spread', label: 'Spread' },
-    { pid: 'slice_y', label: 'Y' },
-    { pid: 'slice_rx', label: 'Rot X' },
-    { pid: 'slice_ry', label: 'Rot Y' },
-    { pid: 'slice_rz', label: 'Rot Z' },
-    { pid: 'level', label: 'Level' },
-  ];
-  // ⚠ No 'view_rot_z' knob — the param is gone from the def because `renderGl`
-  // never read it (the eye vector uses vrx/vry only and `sceneSig` omitted it,
-  // so the knob could not even schedule a repaint). VIDEOCUBE's roll is real
-  // and unaffected.
-  const VIEW_KNOBS: Array<{ pid: string; label: string }> = [
-    { pid: 'view_zoom', label: 'Zoom' },
-    { pid: 'view_rot_x', label: 'View X' },
-    { pid: 'view_rot_y', label: 'View Y' },
-  ];
-  // Per-voice amplitude ADSR (per-voice-ADSR feature). A/D/R use a log curve
-  // (units s); S is linear 0..1. Driven by the poly lane gates (one envelope per
-  // voice) or by the mono TRIG input (lane-0 envelope).
-  const ADSR_KNOBS: Array<{ pid: string; label: string; units?: string; curve: 'log' | 'linear' }> = [
-    { pid: 'attack',  label: 'A', units: 's', curve: 'log' },
-    { pid: 'decay',   label: 'D', units: 's', curve: 'log' },
-    { pid: 'sustain', label: 'S', curve: 'linear' },
-    { pid: 'release', label: 'R', units: 's', curve: 'log' },
-    // BASE VOL — per-voice VCA floor the ADSR rides on top of (gain =
-    // base + (1-base)*env). Default 0 = pure ADSR (the envelope owns the note);
-    // 1 = full, the env does nothing. Sits right next to the ADSR knobs.
-    // The range/default come from the def via minFor/maxFor/defaultFor — never
-    // re-type them here (the card-vs-def divergence class in CLAUDE.md).
-    { pid: 'base_vol', label: 'Base', curve: 'linear' },
-  ];
+  // ⚠ EVERY RANGE, CURVE, UNIT AND LABEL COMES FROM THE DEF (`paramSpec`),
+  // never re-typed here. This card already resolved min/max/default that way
+  // and then re-typed `label`, `units` and `curve` beside them in three local
+  // arrays — which is the same divergence class one field over: a card that
+  // disagrees with its own def is invisible to contract-lock, module-docs-lint
+  // and every range assertion, because all of them read the DEF. Enrolled in
+  // card-range-source.test.ts (range AND mapping bound), so the re-typing
+  // cannot come back.
+  const KNOB_IDS = [
+    'tune', 'fine', 'morph_fc', 'connect', 'connect_strength', 'crush',
+    'space_crush', 'space_diffuse', 'fold', 'spread', 'slice_y',
+    'slice_rx', 'slice_ry', 'slice_rz', 'level',
+  ] as const;
+  const VIEW_IDS = ['view_zoom', 'view_rot_x', 'view_rot_y'] as const;
+  // Per-voice amplitude ADSR (per-voice-ADSR feature) + the BASE VOL floor the
+  // envelope rides on. Driven by the poly lane gates (one envelope per voice)
+  // or by the mono TRIG input (lane-0 envelope).
+  const ADSR_IDS = ['attack', 'decay', 'sustain', 'release', 'base_vol'] as const;
+
+  const KNOBS = KNOB_IDS.map((pid) => paramSpec(cubeDef, pid));
+  const VIEW_KNOBS = VIEW_IDS.map((pid) => paramSpec(cubeDef, pid));
+  const ADSR_KNOBS = ADSR_IDS.map((pid) => paramSpec(cubeDef, pid));
 </script>
 
 <div class="mod-card cube-card">
@@ -345,19 +286,19 @@
 
       <!-- Audio knobs -->
       <div class="knobs">
-        {#each KNOBS as k (k.pid)}
+        {#each KNOBS as k (k.id)}
           <Knob
-            value={paramVal(k.pid)}
-            min={minFor(k.pid)}
-            max={maxFor(k.pid)}
-            defaultValue={defaultFor(k.pid)}
+            value={paramVal(k.id)}
+            min={k.min}
+            max={k.max}
+            defaultValue={k.defaultValue}
             label={k.label}
             units={k.units}
-            curve="linear"
-            onchange={set(k.pid)}
+            curve={k.curve}
+            onchange={set(k.id)}
             moduleId={id}
-            paramId={k.pid}
-            readLive={live(k.pid)}
+            paramId={k.id}
+            readLive={live(k.id)}
           />
         {/each}
       </div>
@@ -366,19 +307,19 @@
       <div class="adsr-section">
         <div class="adsr-head">AMP ADSR</div>
         <div class="knobs adsr-knobs">
-          {#each ADSR_KNOBS as k (k.pid)}
+          {#each ADSR_KNOBS as k (k.id)}
             <Knob
-              value={paramVal(k.pid)}
-              min={minFor(k.pid)}
-              max={maxFor(k.pid)}
-              defaultValue={defaultFor(k.pid)}
+              value={paramVal(k.id)}
+              min={k.min}
+              max={k.max}
+              defaultValue={k.defaultValue}
               label={k.label}
               units={k.units}
               curve={k.curve}
-              onchange={set(k.pid)}
+              onchange={set(k.id)}
               moduleId={id}
-              paramId={k.pid}
-              readLive={live(k.pid)}
+              paramId={k.id}
+              readLive={live(k.id)}
             />
           {/each}
         </div>
@@ -388,18 +329,19 @@
       <div class="view-section">
         <div class="view-head">VIEW (visualization only)</div>
         <div class="knobs view-knobs">
-          {#each VIEW_KNOBS as k (k.pid)}
+          {#each VIEW_KNOBS as k (k.id)}
             <Knob
-              value={paramVal(k.pid)}
-              min={minFor(k.pid)}
-              max={maxFor(k.pid)}
-              defaultValue={defaultFor(k.pid)}
+              value={paramVal(k.id)}
+              min={k.min}
+              max={k.max}
+              defaultValue={k.defaultValue}
               label={k.label}
-              curve={k.pid === 'view_zoom' ? 'log' : 'linear'}
-              onchange={set(k.pid)}
+              units={k.units}
+              curve={k.curve}
+              onchange={set(k.id)}
               moduleId={id}
-              paramId={k.pid}
-              readLive={live(k.pid)}
+              paramId={k.id}
+              readLive={live(k.id)}
             />
           {/each}
         </div>

@@ -162,6 +162,45 @@
 // the one worklet constant the model has to mirror, which is anchored by
 // measuring the shipping DSP rather than by a comment.
 
+// FACE BATCH 3 · cube (2026-08-10) — the biggest face in the repo (26 params
+// + 2 panels = 28 cells) and the first one whose HERO IS THE MODULE'S EXISTING
+// RENDERER rather than a picture drawn for the faceplate.
+//
+// cube is "a solid and a cut": three wavetables stacked into a 3-D density
+// field, read by one movable plane whose 256 samples ARE the waveform. The
+// spec that preceded this face priced a cheaper 2-D hero; the owner required
+// full visualisation parity, and the parity is not cosmetic — the volume
+// render is the only surface anywhere that shows the cut INSIDE the solid. So
+// the renderer moved out of CubeCard.svelte into `cube/CubeVizSurface.svelte`
+// and BOTH mounts use it. That moved the WebGL attest basis SET (the card out,
+// the surface in) and needs a real-GPU re-attest.
+//
+// ⚠ ITS RANKING IS THE INVERSE OF ITS OWN DEF, and that is the argument. The
+// def and the legacy card both lead with TUNE / FINE / MORPH / CONNECT and put
+// the three rotations 12th-14th of 15 — an implementation order, since the
+// field is computed before it is cut. Measured, the cut owns the timbre by 5×
+// (`slice_ry` 0.885 rmsΔ over its travel against `morph_fc`'s 0.178), so the
+// SLICE band is first and the SOLID second.
+//
+// ⚠ AND THE FACE'S BEST WORK IS ONE READOUT. `slice_y` is a real control that
+// is inert in EXACTLY ONE STATE: the state the module spawns in. The ray march
+// integrates over a window centred on the ray origin, so sliding the plane
+// along its own normal moves the window and its contents together, and at
+// spawn the normal IS the axis Y translates along (0.115 flat, 0.759 at ROT X
+// 0.8). No surface has ever said so, and a knob readback structurally cannot —
+// it prints 0.50 in both. `cube-y-live` prints `asleep — plane is flat` or
+// `live`, and the `tilted` preset is one click that changes it.
+//
+// ⚠ THE PRE-#1448 DEFECT LIST IS PARTLY STALE AND THIS FACE DOES NOT REPEAT
+// IT. Re-measured on the shipped default tables: CRUSH at its maximum is
+// `acRms` 0.5528 (it used to be exactly 0.000000, a full-scale DC step), SPACE
+// DIFFUSE at 1.0 is 0.2450 (likewise), and the two-table pigeonhole that left
+// CONNECT bit-exactly dead at one end of MORPH is gone with the third factory
+// table. A face that documented a repaired control as broken would be worse
+// than one that said nothing, so every number this face prints was re-derived
+// against the current DSP and is re-derived again on every run by
+// cube-face-model.test.ts.
+
 export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // P1 batch 1 — first 6 module faces
   'adsr',
@@ -197,6 +236,8 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   'macrooscillator',
   // FACE BATCH 3 · the DTMF dialer (2026-08-09) — see the header note above.
   'bluebox',
+  // FACE BATCH 3 · the 3-D wavetable navigator (2026-08-10) — see below.
+  'cube',
 ]);
 
 /**
