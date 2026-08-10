@@ -12,12 +12,14 @@
 
 import { describe, it, expect } from 'vitest';
 import type { ParamDef } from '$lib/graph/types';
+import { PACKED_RGB_MAX } from '$lib/ui/controls/color-field-model';
 import {
-  gridParamIds,
+  declaredParamCells,
   looksLikeSwitch,
   momentaryParamIds,
   momentaryValue,
   paramCellKind,
+  type DeclaredParamCell,
 } from './shell-control-kind';
 
 const param = (over: Partial<ParamDef> & { id: string }): ParamDef => ({
@@ -30,6 +32,9 @@ const param = (over: Partial<ParamDef> & { id: string }): ParamDef => ({
 });
 
 const NONE: ReadonlySet<string> = new Set<string>();
+/** A `face.paramCells` map, built the way `declaredParamCells` returns one. */
+const declare = (m: Record<string, DeclaredParamCell>): ReadonlyMap<string, DeclaredParamCell> =>
+  new Map(Object.entries(m));
 
 describe('paramCellKind — which primitive a param cell paints', () => {
   it('a DECLARED press-pad is momentary, whatever its shape looks like', () => {
@@ -69,7 +74,7 @@ describe('paramCellKind — which primitive a param cell paints', () => {
 
 describe('paramCellKind — the DECLARED grid cell (PF-15)', () => {
   const alg = param({ id: 'algorithm', min: 1, max: 32 });
-  const GRID: ReadonlySet<string> = new Set(['algorithm']);
+  const GRID = declare({ algorithm: 'grid' });
 
   it('a declared paramCells entry paints a grid where the shape alone says knob', () => {
     expect(paramCellKind(alg, NONE), 'undeclared → a stepped knob').toBe('knob');
@@ -113,15 +118,79 @@ describe('paramCellKind — the DECLARED grid cell (PF-15)', () => {
   });
 });
 
-describe('gridParamIds — the declared set', () => {
-  it('reads face.paramCells, empty for an un-faced or un-declaring def', () => {
-    expect([...gridParamIds({ face: { paramCells: { algorithm: 'grid' } } })]).toEqual(['algorithm']);
-    expect(gridParamIds({ face: {} }).size).toBe(0);
-    expect(gridParamIds(undefined).size).toBe(0);
+describe('paramCellKind — the DECLARED colour cell', () => {
+  // The packed-RGB shape: wavesculpt's red_color / grn_color / blu_color.
+  const col = param({ id: 'red_color', min: 0, max: PACKED_RGB_MAX, defaultValue: 0xff3333 });
+  const COLOR = declare({ red_color: 'color' });
+
+  it('⚠ UNDECLARED IT IS A KNOB OVER 16.7 MILLION STATES — the defect this kind exists for', () => {
+    // Not a theoretical worry: this is what the shell painted before the kind
+    // existed, and faces-parity PASSES it (dragging the dial does move the
+    // param), so no gate could report it. The assertion is here so the
+    // undeclared behaviour is a PINNED fact rather than a footnote.
+    expect(paramCellKind(col, NONE, 'dock')).toBe('knob');
+    expect(col.max - col.min + 1).toBe(16_777_216);
   });
 
-  it('the default argument means an undeclared def never reaches the grid branch', () => {
+  it('a declared paramCells entry paints the swatch', () => {
+    expect(paramCellKind(col, NONE, 'dock', COLOR)).toBe('color');
+  });
+
+  it('is TIER-INDEPENDENT — a 40px swatch fits a lane column, and a knob there is just as wrong', () => {
+    for (const tier of ['lane', 'dock'] as const) {
+      expect(paramCellKind(col, NONE, tier, COLOR), tier).toBe('color');
+    }
+  });
+
+  it('colour BEATS the sniffed toggle shape and a declared roster', () => {
+    // Both are unreachable for a real packed-RGB param (it is neither 0..1 nor
+    // rostered), so these pin the PRECEDENCE rather than a live case: a
+    // declaration must not be silently overridden by a shape.
+    const two = param({ id: 'red_color' });
+    expect(paramCellKind(two, NONE, 'dock'), 'shape alone → toggle').toBe('toggle');
+    expect(paramCellKind(two, NONE, 'dock', COLOR)).toBe('color');
+    const rostered = param({
+      id: 'red_color',
+      min: 0,
+      max: 2,
+      options: [
+        { value: 0, label: 'a' },
+        { value: 1, label: 'b' },
+        { value: 2, label: 'c' },
+      ],
+    });
+    expect(paramCellKind(rostered, NONE, 'dock'), 'options alone → segmented').toBe('segmented');
+    expect(paramCellKind(rostered, NONE, 'dock', COLOR)).toBe('color');
+  });
+
+  it('momentary still outranks colour — an invalid face fails toward the SAFE render', () => {
+    expect(paramCellKind(col, new Set(['red_color']), 'dock', COLOR)).toBe('momentary');
+  });
+});
+
+describe('declaredParamCells — the declaration map', () => {
+  it('reads face.paramCells, empty for an un-faced or un-declaring def', () => {
+    const m = declaredParamCells({ face: { paramCells: { algorithm: 'grid', red_color: 'color' } } });
+    expect([...m.entries()].sort()).toEqual([
+      ['algorithm', 'grid'],
+      ['red_color', 'color'],
+    ]);
+    expect(declaredParamCells({ face: {} }).size).toBe(0);
+    expect(declaredParamCells(undefined).size).toBe(0);
+  });
+
+  it('⚠ ONE MAP, so a param cannot be declared TWO primitives', () => {
+    // The structural reason this is a map rather than one Set per kind: a
+    // record cannot hold two values for one key, so "grid AND color" is
+    // unrepresentable instead of being a lint rule someone has to remember.
+    const m = declaredParamCells({ face: { paramCells: { x: 'grid' } } });
+    expect(m.get('x')).toBe('grid');
+    expect(m.size).toBe(1);
+  });
+
+  it('the default argument means an undeclared def never reaches a declared branch', () => {
     expect(paramCellKind(param({ id: 'algorithm', min: 1, max: 32 }), NONE, 'dock')).toBe('knob');
+    expect(paramCellKind(param({ id: 'red_color', max: PACKED_RGB_MAX }), NONE, 'dock')).toBe('knob');
   });
 });
 

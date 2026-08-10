@@ -18,6 +18,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   sampleSlice,
+  isDegenerateWave,
   CUBE_SLICE_SIZE,
   WAVETABLE_FRAME_SIZE,
   type SliceParams,
@@ -87,12 +88,20 @@ const CONFIGS: Array<{ id: string; sp: SliceParams; depthOffset?: number }> = [
   { id: 'morph-ceiling', sp: baseSlice({ morphFC: 1 }) },
   { id: 'connect-vee',   sp: baseSlice({ connect: 1, morphFC: 0.5 }) },
   { id: 'hard-material',  sp: baseSlice({ material: 'hard', morphFC: 0.5 }) },
-  // 'crushed' (crush:1) removed: it renders a CONSTANT −1.0 (the DC floor) —
-  // byte-identical to the equally-degenerate 'space-diffuse-max' config below,
-  // so the two were duplicate (non-distinct) baselines that the
-  // baseline-uniqueness guard flags. CRUSH coverage stays via the
-  // "CRUSH at k=1 produces far fewer distinct levels" assertion further down,
-  // which drives sampleSlice(crush:1) directly (no baseline). (honesty quick-win)
+  // ── RESTORED. 'crushed' and 'space-diffuse-max' (below) were removed as
+  // "byte-identical duplicates" flagged by the baseline-uniqueness guard, with
+  // a note that both extremes collapsing to the DC floor "may be worth a DSP
+  // review". They were duplicates because they were BOTH the constant −1.0 —
+  // the uniqueness guard was reporting a real DSP fault as a baseline-hygiene
+  // problem, and deleting the baselines removed the only artifact that would
+  // have caught it coming back.
+  //
+  // The endpoints are now capped (CUBE_CRUSH_MIN_LEVELS / CUBE_DIFFUSE_MAX_PULL)
+  // so both render real waveforms and are distinct from each other again. These
+  // two baselines are the regression pin for the DC faults: if either endpoint
+  // ever collapses again, they go red as a waveform diff rather than
+  // disappearing into a duplicate-baseline exemption.
+  { id: 'crushed',       sp: baseSlice({ crush: 1 }) },
   { id: 'wrap-outside',  sp: baseSlice({ sliceY: 1.4, wrap: true }) },
   { id: 'spread-right',  sp: baseSlice({ rx: 0.7 }), depthOffset: 0.05 },
   // ── SPACE CRUSH — voxelize the field LOOKUP coords (independent of CRUSH). ──
@@ -101,11 +110,8 @@ const CONFIGS: Array<{ id: string; sp: SliceParams; depthOffset?: number }> = [
   { id: 'space-crush-and-crush', sp: baseSlice({ spaceCrush: 0.6, crush: 0.6 }) },
   // ── SPACE DIFFUSE — gravity toward the emptiest wall (latched target). ──
   { id: 'space-diffuse-mid',     sp: baseSlice({ spaceDiffuse: 0.5, morphFC: 0.5 }) },
-  // 'space-diffuse-max' (spaceDiffuse:1) removed: like 'crushed' above it
-  // renders a CONSTANT −1.0 (the DC floor) and was byte-identical to it — a
-  // duplicate baseline (flagged by the baseline-uniqueness guard). space-diffuse
-  // coverage stays via the -mid / -rotated / -wrap configs (all unique). FOLLOW-UP:
-  // both extremes collapsing to the silent floor may be worth a DSP review.
+  // Restored alongside 'crushed' — see the note there.
+  { id: 'space-diffuse-max',     sp: baseSlice({ spaceDiffuse: 1 }) },
   { id: 'space-diffuse-rotated', sp: baseSlice({ spaceDiffuse: 0.7, rx: 0.7, ry: 0.4 }) },
   { id: 'space-diffuse-wrap',    sp: baseSlice({ spaceDiffuse: 0.7, wrap: true, morphFC: 0.5 }) },
   // ── CONNECT STRENGTH — overshoot the connector's interior control point. ──
@@ -149,6 +155,28 @@ describe('cube / surface-height slice readout — deterministic baselines', () =
     const crushed = sampleSlice(FLOOR, WALL, CEIL, baseSlice({ crush: 1 }));
     const lv = (w: Float32Array) => new Set(Array.from(w).map((v) => Math.round(v * 1e4))).size;
     expect(lv(crushed)).toBeLessThan(lv(clean));
+    // …but FEWER is not ONE. "Maximally crushed" must still be a waveform, not
+    // a DC step — the fault that made this config's baseline get deleted.
+    expect(lv(crushed), 'crush at maximum must still be a signal').toBeGreaterThan(1);
+  });
+
+  it('neither ENDPOINT collapses to the DC floor (the fault the baselines pin)', () => {
+    // Stated as a property beside the baselines, because a .f32 comparison can
+    // only catch a CHANGE — it cannot tell you the pinned wave was garbage. The
+    // deleted baselines were "stable" for exactly as long as they were wrong.
+    for (const [id, sp] of [
+      ['crushed', baseSlice({ crush: 1 })],
+      ['space-diffuse-max', baseSlice({ spaceDiffuse: 1 })],
+    ] as const) {
+      const w = sampleSlice(FLOOR, WALL, CEIL, sp);
+      expect(isDegenerateWave(w), `${id} renders a constant — the DC fault is back`).toBe(false);
+    }
+    // …and the two are not each other, which is why they were culled before.
+    const a = sampleSlice(FLOOR, WALL, CEIL, baseSlice({ crush: 1 }));
+    const b = sampleSlice(FLOOR, WALL, CEIL, baseSlice({ spaceDiffuse: 1 }));
+    let differs = false;
+    for (let i = 0; i < a.length; i++) if (Math.abs(a[i]! - b[i]!) > 1e-6) { differs = true; break; }
+    expect(differs, 'the two endpoint baselines must be distinct waveforms').toBe(true);
   });
 
   it('HARD material differs from SMOOTH for the same patch', () => {

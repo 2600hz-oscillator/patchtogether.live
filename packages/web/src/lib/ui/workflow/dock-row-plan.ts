@@ -63,7 +63,12 @@
 import type { ParamDef } from '$lib/graph/types';
 import type { DockFaceBand, FaceControl } from './curated-face';
 import { dockTabPlan } from './dock-tabs-model';
-import { gridParamIds, momentaryParamIds, paramCellKind } from './shell-control-kind';
+import {
+  declaredParamCells,
+  momentaryParamIds,
+  paramCellKind,
+  type DeclaredParamCell,
+} from './shell-control-kind';
 import { shellCellFor } from './shell-cells';
 
 /**
@@ -94,7 +99,7 @@ export interface RowPlanDefLike {
   params?: readonly ParamDef[];
   face?: {
     momentary?: readonly string[];
-    paramCells?: Readonly<Record<string, 'grid'>>;
+    paramCells?: Readonly<Record<string, DeclaredParamCell>>;
   };
 }
 
@@ -116,9 +121,14 @@ export function cellWidthClass(ctl: FaceControl, def: RowPlanDefLike | undefined
   if (ctl.kind === 'param') {
     const pd = (def?.params ?? []).find((p) => p.id === (ctl.paramId ?? ctl.key));
     if (!pd) return 'wide';
-    const kind = paramCellKind(pd, momentaryParamIds(def), 'dock', gridParamIds(def));
-    // knob / toggle / momentary all paint inside one .kcol column.
-    return kind === 'knob' || kind === 'toggle' || kind === 'momentary' ? 'column' : 'wide';
+    const kind = paramCellKind(pd, momentaryParamIds(def), 'dock', declaredParamCells(def));
+    // knob / toggle / momentary all paint inside one .kcol column, and so does
+    // a COLOUR swatch (56 px at hero, narrower than a knob's 64 px column) —
+    // unlike its sibling declared cell, whose grid CHIP is a 120–168 px roster
+    // chip and holds a row.
+    return kind === 'knob' || kind === 'toggle' || kind === 'momentary' || kind === 'color'
+      ? 'column'
+      : 'wide';
   }
   const cell = shellCellFor(def?.type ?? '', ctl);
   if (!cell) return 'wide';

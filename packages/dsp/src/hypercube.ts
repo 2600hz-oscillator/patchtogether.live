@@ -43,7 +43,7 @@ import {
   applyFold,
   CUBE_SLICE_SIZE,
   spreadDepthOffset,
-  isSilentWave,
+  isDegenerateWave,
   type SliceParams,
   type Material,
 } from './lib/cube-dsp';
@@ -281,7 +281,7 @@ class HypercubeProcessor extends AudioWorkletProcessor {
   private adoptWave(next: Float32Array | undefined, ch: 'center' | 'L' | 'R'): void {
     if (!next || next.length === 0) return;
     const w = next as Float32Array<ArrayBufferLike>;
-    if (this.haveWave && isSilentWave(next)) return; // keep last non-silent
+    if (this.haveWave && isDegenerateWave(next)) return; // keep last non-degenerate (silent OR DC-pinned)
     if (ch === 'center') this.waveCenter = w;
     else if (ch === 'L') this.waveL = w;
     else this.waveR = w;

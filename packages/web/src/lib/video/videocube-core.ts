@@ -308,12 +308,24 @@ export function luma(r: number, g: number, b: number): number {
 /**
  * Posterize an RGB to `crushLevels(k)` discrete levels per channel — the video
  * meaning of CUBE's amplitude CRUSH (the SAME `crushLevels` curve, so the picture
- * quantizes exactly as the derived audio does). k=0 = identity.
+ * quantizes as the derived audio does). k=0 = identity.
+ *
+ * ⚠ ONE DELIBERATE DIVERGENCE, AT THE ENDPOINT ONLY. The audio path floors at
+ * `CUBE_CRUSH_MIN_LEVELS` because a 2-level wavetable is a constant, and a
+ * constant replayed by a phase accumulator is a full-scale DC step rather than
+ * a sound. A PICTURE has no such failure mode: 2 levels per channel is hard
+ * black/white posterization — a valid and deliberate visual extreme, and the
+ * look this module has always produced at CRUSH = 1. So this passes `2`
+ * explicitly and keeps the shipped 256 → 2 law, rather than inheriting an
+ * audio-motivated floor that protects nothing here and would silently soften a
+ * video module's output for an audio bug.
  */
+const POSTERIZE_MIN_LEVELS = 2;
+
 export function posterize(c: RGB, crushK: number): RGB {
   const k = clamp01(crushK);
   if (k <= 0) return c;
-  const levels = crushLevels(k);
+  const levels = crushLevels(k, POSTERIZE_MIN_LEVELS);
   if (levels >= 256) return c;
   const q = (v: number) => Math.round(clamp01(v) * (levels - 1)) / (levels - 1);
   return { r: q(c.r), g: q(c.g), b: q(c.b) };

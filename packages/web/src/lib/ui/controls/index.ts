@@ -23,6 +23,7 @@ export { default as KnobConic } from './KnobConic.svelte';
 export { default as Selector } from './Selector.svelte';
 export { default as Segmented } from './Segmented.svelte';
 export { default as ParamGrid } from './ParamGrid.svelte';
+export { default as ColorField } from './ColorField.svelte';
 export { default as Toggle } from './Toggle.svelte';
 export { default as Button } from './Button.svelte';
 export { default as Readout } from './Readout.svelte';
@@ -50,6 +51,18 @@ export {
   paramGridCells,
   type GridCell,
 } from './param-grid-model';
+export {
+  PACKED_RGB_MAX,
+  PACKED_RGB_MIN,
+  PACKED_RGB_STATES,
+  PROBE_CHANNEL_STEP,
+  clampPacked,
+  hexToPacked,
+  isPackedRgbParam,
+  nextProbeColor,
+  packedChannels,
+  packedToHex,
+} from './color-field-model';
 export { looksLikeToggle, isToggleOn, toggledValue } from './toggle-model';
 export { buttonPointerFire, buttonGateFire, type ButtonFire } from './button-model';
 export { formatReadout, type ReadoutFormatOptions } from './readout-model';

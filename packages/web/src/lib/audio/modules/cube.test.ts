@@ -123,9 +123,9 @@ describe('resolveSlotFrames — per-slot wavetable defaults', () => {
   // the slice and proves it). This golden pinned the bug in place: it is the
   // exact shape of a test that asserts what the code does rather than what it
   // has to do, so it went red on the fix and was green on the defect.
-  it('default tables are FLOOR=basic-shapes, WALL=harmonic-sweep, CEILING=harmonic-sweep', () => {
+  it('default tables are FLOOR=basic-shapes, WALL=pwm-sweep, CEILING=harmonic-sweep', () => {
     expect(CUBE_DEFAULT_TABLES).toEqual({
-      floor: 'basic-shapes', wall: 'harmonic-sweep', ceiling: 'harmonic-sweep',
+      floor: 'basic-shapes', wall: 'pwm-sweep', ceiling: 'harmonic-sweep',
     });
     // The property that actually matters, stated as a property.
     expect(

@@ -1023,11 +1023,14 @@
     { pid: 'slice_rz', label: 'Rot Z' },
     { pid: 'level', label: 'Level' },
   ];
+  // ⚠ No 'view_rot_z' knob — the param is gone from the def because `renderGl`
+  // never read it (the eye vector uses vrx/vry only and `sceneSig` omitted it,
+  // so the knob could not even schedule a repaint). VIDEOCUBE's roll is real
+  // and unaffected.
   const VIEW_KNOBS: Array<{ pid: string; label: string }> = [
     { pid: 'view_zoom', label: 'Zoom' },
     { pid: 'view_rot_x', label: 'View X' },
     { pid: 'view_rot_y', label: 'View Y' },
-    { pid: 'view_rot_z', label: 'View Z' },
   ];
   // Per-voice amplitude ADSR (per-voice-ADSR feature). A/D/R use a log curve
   // (units s); S is linear 0..1. Driven by the poly lane gates (one envelope per
