@@ -588,20 +588,34 @@ export interface ModuleFace {
   /**
    * DECLARED render primitive for a param cell, keyed by param id.
    *
-   * Only `'grid'` — the chip + portaled diagram-grid popover (PF-15). It is
-   * the one primitive that CANNOT be inferred: `'toggle'` is derived from the
+   * The primitives that CANNOT be inferred. `'toggle'` is derived from the
    * param's 0/1 switch shape (`looksLikeToggle`) and `'segmented'`/`'selector'`
-   * from a declared `ParamDef.options` roster, so neither needs declaring, but
-   * "this param's states are PICTURES, lay them out as a chart" is knowledge
-   * only the module has.
+   * from a declared `ParamDef.options` roster, so neither needs declaring —
+   * these two do:
+   *
+   *   `'grid'`  — the chip + portaled diagram-grid popover (PF-15). "This
+   *               param's states are PICTURES, lay them out as a chart."
+   *   `'color'` — a native colour swatch over a PACKED `0xRRGGBB` integer
+   *               (`<ColorField>`). "This integer is a COLOUR, not a position
+   *               on a scale."
+   *
+   * ⚠ THE SECOND ONE IS DECLARED WITH LESS MARGIN THAN THE FIRST, AND THAT IS
+   * WHY IT IS HERE RATHER THAN SNIFFED. A packed RGB is `0..16777215 discrete`
+   * — structurally identical to any other discrete param, differing only in
+   * MAGNITUDE, and nothing in the repo reads magnitude. Undeclared it resolves
+   * to a KNOB sweeping 16.7 million values, and `faces-parity` PASSES that
+   * (it drags the knob and the param moves), so the absence of a declaration
+   * is invisible to every gate. A heuristic on the span would be a rule about
+   * how large an integer may be before it stops being a scale.
    *
    * UI metadata like the rest of `face`: OUT of contract-signature /
    * contract-lock (choosing a primitive is not an I/O change), linted by
    * module-face-lint.test.ts — every key must be a declared DISCRETE param that
-   * is also ranked in `order`, and must not also be on `momentary` (a press-pad
-   * is not a state).
+   * is also ranked in `order`, must not also be on `momentary` (a press-pad is
+   * not a state), and must carry the RANGE its primitive needs (a step count a
+   * grid can chart; the exact packed-RGB space for a colour).
    */
-  paramCells?: Readonly<Record<string, 'grid'>>;
+  paramCells?: Readonly<Record<string, 'grid' | 'color'>>;
   /**
    * Param ids that are MOMENTARY PADS, not values — the "press-param" pattern
    * (tomtom/clap `strike`): the worklet ORs the param with its trigger input

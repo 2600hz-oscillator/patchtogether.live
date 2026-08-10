@@ -30,7 +30,32 @@ import { looksLikeToggle } from '$lib/graph/group-controls';
 import type { ParamDef } from '$lib/graph/types';
 
 /** The primitive a PARAM cell renders as. */
-export type ParamCellKind = 'knob' | 'momentary' | 'toggle' | 'segmented' | 'selector' | 'grid';
+export type ParamCellKind =
+  | 'knob'
+  | 'momentary'
+  | 'toggle'
+  | 'segmented'
+  | 'selector'
+  | 'grid'
+  | 'color';
+
+/**
+ * The primitives a module must DECLARE (`face.paramCells`) because no property
+ * of the ParamDef can imply them. Both are discrete integer params; what
+ * distinguishes them is what the integers MEAN, which is knowledge only the
+ * module has:
+ *
+ *   'grid'  — the states are PICTURES (dx7's 32 algorithm topologies).
+ *   'color' — the integer is a PACKED 0xRRGGBB, not a position on a scale
+ *             (wavesculpt's `red_color`/`grn_color`/`blu_color`).
+ *
+ * ⚠ THE TWO ARE INDISTINGUISHABLE TO EVERY RESOLVER IN THE REPO, and that is
+ * the argument for declaring rather than sniffing. `1..32 discrete` and
+ * `0..16777215 discrete` differ only in MAGNITUDE, and no gate reads
+ * magnitude — a heuristic here would be a rule about how big a number is
+ * allowed to get before it stops being a scale.
+ */
+export type DeclaredParamCell = 'grid' | 'color';
 
 /**
  * How many named states still fit as an inline button row before the dock
@@ -61,20 +86,33 @@ export function momentaryParamIds(def: { face?: { momentary?: readonly string[] 
   return new Set(def?.face?.momentary ?? []);
 }
 
-/** Shared empty set so the common (undeclared) case allocates nothing. */
-const EMPTY_IDS: ReadonlySet<string> = new Set<string>();
+/** Shared empty map so the common (undeclared) case allocates nothing. */
+const EMPTY_CELLS: ReadonlyMap<string, DeclaredParamCell> = new Map();
+
+/** The `face.paramCells` shape, for a def-like that only needs that field. */
+export interface DeclaringDefLike {
+  face?: { paramCells?: Readonly<Record<string, DeclaredParamCell>> };
+}
 
 /**
- * The param ids a def DECLARES as `'grid'` cells (`face.paramCells`) — empty
- * when none. The only declared render primitive: every other kind is derived
- * from the param's own shape or vocabulary (see paramCellKind). Pure.
+ * The param ids a def DECLARES a primitive for (`face.paramCells`), as
+ * `id → kind` — empty when none.
+ *
+ * ⚠ A MAP, NOT A SET PER KIND. It was `gridParamIds(): Set<string>` while
+ * `'grid'` was the only declarable primitive, and adding `'color'` beside it
+ * would have meant a second parallel getter plus a second positional argument
+ * on `paramCellKind` — which is how a resolver ends up with one boolean per
+ * primitive and a precedence order nobody can read. One map keeps the
+ * declaration surface single-valued BY CONSTRUCTION: a param cannot be
+ * declared two primitives at once, because the record cannot hold two values
+ * for one key. Pure.
  */
-export function gridParamIds(
-  def: { face?: { paramCells?: Readonly<Record<string, 'grid'>> } } | undefined,
-): ReadonlySet<string> {
+export function declaredParamCells(
+  def: DeclaringDefLike | undefined,
+): ReadonlyMap<string, DeclaredParamCell> {
   const decl = def?.face?.paramCells;
-  if (!decl) return EMPTY_IDS;
-  return new Set(Object.keys(decl).filter((k) => decl[k] === 'grid'));
+  if (!decl) return EMPTY_CELLS;
+  return new Map(Object.entries(decl));
 }
 
 /**
@@ -93,6 +131,13 @@ export function gridParamIds(
  *               as reachable from a 46 px lane knob column as from the dock.
  *               Declared rather than inferred because "these states are
  *               PICTURES" is knowledge only the module has.
+ *   color     — a DECLARED `face.paramCells` entry → <ColorField>: a native
+ *               colour swatch over a PACKED 0xRRGGBB integer. Also
+ *               TIER-INDEPENDENT (a 40 px swatch fits a lane column; a knob
+ *               there would be a dial over 16.7 M states, which is the defect
+ *               this kind exists for). Declared for the same reason as `grid`
+ *               and with less margin: `0..16777215 discrete` is the same SHAPE
+ *               as any other discrete param and differs only in magnitude.
  *   segmented — a DECLARED `options` roster (PF-1) at the DOCK, ≤ 6 states →
  *               <Segmented>, the inline `.seg` button row. Every state is
  *               visible and one click away, which is what a named mode wants.
@@ -112,10 +157,11 @@ export function gridParamIds(
  * param that DECLARED names for its states wants those names painted on two
  * captioned buttons, not an anonymous switch; declaration beating sniffed
  * shape is the same rule `momentary` already establishes above. `momentary`
- * still outranks everything: a press-pad is not a state. `grid` sits directly
- * under it — the two are mutually exclusive by face-lint rule, so the ordering
- * is unobservable in a valid face and is fixed here only so an invalid one
- * fails toward the SAFE render (a press-pad that never latches).
+ * still outranks everything: a press-pad is not a state. The DECLARED cells
+ * (`grid`/`color`) sit directly under it — mutually exclusive with `momentary`
+ * by face-lint rule, so the ordering is unobservable in a valid face and is
+ * fixed here only so an invalid one fails toward the SAFE render (a press-pad
+ * that never latches).
  *
  * NOTE the render kind is INDEPENDENT of the momentary/latching CLASSIFICATION
  * gate in module-face-lint: a switch that renders as a Toggle here still has to
@@ -126,10 +172,11 @@ export function paramCellKind(
   p: ParamDef,
   momentary: ReadonlySet<string>,
   tier: ParamCellTier = 'lane',
-  grid: ReadonlySet<string> = EMPTY_IDS,
+  declared: ReadonlyMap<string, DeclaredParamCell> = EMPTY_CELLS,
 ): ParamCellKind {
   if (momentary.has(p.id)) return 'momentary';
-  if (grid.has(p.id)) return 'grid';
+  const decl = declared.get(p.id);
+  if (decl) return decl;
   if (p.options?.length) {
     if (tier !== 'dock') return 'knob';
     return p.options.length <= SEGMENTED_MAX_OPTIONS ? 'segmented' : 'selector';
