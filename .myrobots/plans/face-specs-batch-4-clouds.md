@@ -1,5 +1,44 @@
 # FACE SPEC — `clouds` (batch 4)
 
+## 0-BIS. RE-MEASURED AT BUILD TIME — three numbers below are WRONG (2026-08-10)
+
+**Appended by the implementation (PR #1451), not by the spec's author.** The
+build re-measured every claim against `cloudsMath` before writing a readout
+around it, and the spec's own §3 headline did not survive. Recorded here because
+these figures are quotable and two of them are quoted twice below.
+
+| §  | the spec says | measured |
+|----|---------------|----------|
+| §3, §4-A, §5, §6-A | "bit-zero for the first **0.25 s**" | bit-zero for exactly **one GRAIN LENGTH**: 60.0 / 134.1 / **300.0** / 670.8 / 800.0 ms at size 0 / .25 / .5 / .75 / .9. POSITION-invariant to the sample. |
+| §3, §5 | "the step is at exactly **t = 2.000 s**, to the sample" | 2.0 s is when the RING fills. At 2.00 s the output is still ~12 dB down; the climb runs **2.02 → 2.30 s**, i.e. `BUFFER_SECONDS + one grain`. |
+| §4-B, §6-C | "about **10.5 dB**, implying N ≈ 11 grains" | **10.60 dB** measured. N is not ~11: the pool SATURATES at **24** from density 0.489 at the shipped SIZE. The first-principles ratio `10·log10(N·E[env]²/E[env²])` gives 12.55 dB and is 4.7 dB out at TEXTURE 0, because it does not model the output `tanh` — so no derived dB is printed anywhere. |
+
+**Why the spec got the first two wrong, and it is a method note rather than a
+correction:** it measured on a **0.25 s RMS bucket grid**. A bucket cannot
+resolve a 60 ms window, and it reports the *level* of a transition rather than
+its *edge*. The build's oracle reads the **first non-zero SAMPLE** — a time, not
+a level. The spec's own §0 warning ("my first two passes disagreed by 18 dB
+because they averaged different windows of a signal I had assumed was
+stationary") is the same instrument problem, caught once and not the second
+time.
+
+**NOT IN THE SPEC AT ALL — a real dead zone.** `safeLen = min(lengthSamples,
+floor(bufLen·0.4))` caps the grain at 800 ms, so **SIZE 0.805 / 0.85 / 0.9 / 1.0
+render BIT-IDENTICAL output — 19.5 % of the dial**. §8's "no dead controls" is
+false. Worklet arithmetic, so it is deferred to a DSP PR; the face prints
+`CLAMPED` and a bit-identity oracle turns that claim red when it is fixed.
+
+**Resolved from the spec's open questions:** §6-A's `clouds-buffer-fill` is NOT
+shipped and no widened `FaceReadoutValue` was built — there is no honest
+observable (`fillLevel` is not an AudioParam and the worklet posts nothing) and
+a `currentTime`-derived one would make the VRT baseline a race. The hero panel
+is a pure function of the six macros instead, and the two facts a live head
+would have shown are printed as numbers (`silent for` / `full level at`) that
+move with SIZE. §5-A's ruling (freeze is LATCHING, not `momentary`) was
+confirmed, though not by the stated mechanism: the worklet does not read the
+param as a level, it toggles on the rising edge. The conclusion survives — a
+momentary render pulses on press *and* release, so the latch is un-holdable.
+
 ## 0. STATUS
 
 **Authored 2026-08-09. Every claim below was measured or read against `main`**

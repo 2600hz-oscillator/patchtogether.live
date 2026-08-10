@@ -9,21 +9,34 @@
   import { cloudsDef } from '$lib/audio/modules/clouds';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
-  import { cardParams, portsFromDef } from './card-kit';
+  import { cardParams, paramSpec, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
   const { set, live, engineCtx } = cardParams(cloudsDef, () => id, () => node);
 
+  // ── RANGES COME FROM THE DEF, NEVER RE-TYPED ────────────────────────────
+  // The backdraft class (CLAUDE.md): every gate we own reads the DEF, so a card
+  // restating its def's numbers can disagree with it and NOTHING can see that.
+  // This card is enrolled in RANGE_BOUND_CARDS + MAPPING_BOUND_CARDS
+  // (card-range-source.test.ts), which is an opt-in list — an unlisted card is
+  // one the guard is blind to, so the enrolment is half the fix.
+  const pPosition = paramSpec(cloudsDef, 'position');
+  const pSize = paramSpec(cloudsDef, 'size');
+  const pPitch = paramSpec(cloudsDef, 'pitch');
+  const pDensity = paramSpec(cloudsDef, 'density');
+  const pTexture = paramSpec(cloudsDef, 'texture');
+  const pBlend = paramSpec(cloudsDef, 'blend');
+
   const defaultFor = (key: string): number =>
     cloudsDef.params.find((p) => p.id === key)!.defaultValue;
 
-  let position = $derived(node?.params.position ?? defaultFor('position'));
-  let size     = $derived(node?.params.size     ?? defaultFor('size'));
-  let pitch    = $derived(node?.params.pitch    ?? defaultFor('pitch'));
-  let density  = $derived(node?.params.density  ?? defaultFor('density'));
-  let texture  = $derived(node?.params.texture  ?? defaultFor('texture'));
-  let blend    = $derived(node?.params.blend    ?? defaultFor('blend'));
+  let position = $derived(node?.params.position ?? pPosition.defaultValue);
+  let size     = $derived(node?.params.size     ?? pSize.defaultValue);
+  let pitch    = $derived(node?.params.pitch    ?? pPitch.defaultValue);
+  let density  = $derived(node?.params.density  ?? pDensity.defaultValue);
+  let texture  = $derived(node?.params.texture  ?? pTexture.defaultValue);
+  let blend    = $derived(node?.params.blend    ?? pBlend.defaultValue);
   let freeze   = $derived(node?.params.freeze   ?? defaultFor('freeze'));
 
 
@@ -52,12 +65,12 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="fader-row">
-      <Fader value={position} min={0}   max={1}  defaultValue={0.5} label="Position" curve="linear" onchange={set('position')} moduleId={id} paramId="position" readLive={live('position')} />
-      <Fader value={size}     min={0}   max={1}  defaultValue={0.5} label="Size"     curve="linear" onchange={set('size')} moduleId={id} paramId="size"     readLive={live('size')} />
-      <Fader value={pitch}    min={-24} max={24} defaultValue={0}   label="Pitch" units="st" curve="linear" onchange={set('pitch')} moduleId={id} paramId="pitch"    readLive={live('pitch')} />
-      <Fader value={density}  min={0}   max={1}  defaultValue={0.5} label="Density"  curve="linear" onchange={set('density')} moduleId={id} paramId="density"  readLive={live('density')} />
-      <Fader value={texture}  min={0}   max={1}  defaultValue={0.5} label="Texture"  curve="linear" onchange={set('texture')} moduleId={id} paramId="texture"  readLive={live('texture')} />
-      <Fader value={blend}    min={0}   max={1}  defaultValue={0.5} label="Blend"    curve="linear" onchange={set('blend')} moduleId={id} paramId="blend"    readLive={live('blend')} />
+      <Fader value={position} min={pPosition.min} max={pPosition.max} defaultValue={pPosition.defaultValue} label="Position" curve={pPosition.curve} units={pPosition.units} onchange={set('position')} moduleId={id} paramId="position" readLive={live('position')} />
+      <Fader value={size}     min={pSize.min}     max={pSize.max}     defaultValue={pSize.defaultValue}     label="Size"     curve={pSize.curve}     units={pSize.units}     onchange={set('size')} moduleId={id} paramId="size"     readLive={live('size')} />
+      <Fader value={pitch}    min={pPitch.min}    max={pPitch.max}    defaultValue={pPitch.defaultValue}    label="Pitch"    curve={pPitch.curve}    units={pPitch.units}    onchange={set('pitch')} moduleId={id} paramId="pitch"    readLive={live('pitch')} />
+      <Fader value={density}  min={pDensity.min}  max={pDensity.max}  defaultValue={pDensity.defaultValue}  label="Density"  curve={pDensity.curve}  units={pDensity.units}  onchange={set('density')} moduleId={id} paramId="density"  readLive={live('density')} />
+      <Fader value={texture}  min={pTexture.min}  max={pTexture.max}  defaultValue={pTexture.defaultValue}  label="Texture"  curve={pTexture.curve}  units={pTexture.units}  onchange={set('texture')} moduleId={id} paramId="texture"  readLive={live('texture')} />
+      <Fader value={blend}    min={pBlend.min}    max={pBlend.max}    defaultValue={pBlend.defaultValue}    label="Blend"    curve={pBlend.curve}    units={pBlend.units}    onchange={set('blend')} moduleId={id} paramId="blend"    readLive={live('blend')} />
     </div>
     <div class="freeze-row">
       <button

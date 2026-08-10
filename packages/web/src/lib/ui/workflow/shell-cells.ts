@@ -37,6 +37,7 @@ import Dx7OpDetail from '$lib/ui/modules/dx7/Dx7OpDetail.svelte';
 import AnalogVcoHeroPanel from '$lib/ui/modules/AnalogVcoHeroPanel.svelte';
 import BlueboxToneBankPanel from '$lib/ui/modules/BlueboxToneBankPanel.svelte';
 import ClapHeroPanel from '$lib/ui/modules/ClapHeroPanel.svelte';
+import CloudsRingPanel from '$lib/ui/modules/CloudsRingPanel.svelte';
 import KickdrumHeroPanel from '$lib/ui/modules/KickdrumHeroPanel.svelte';
 import MacrooscillatorHeroPanel from '$lib/ui/modules/MacrooscillatorHeroPanel.svelte';
 import PentemelodicaVoicesPanel from '$lib/ui/modules/PentemelodicaVoicesPanel.svelte';
@@ -422,6 +423,48 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
         testid: 'clap-graph-window',
         action: 'click',
         effect: { kind: 'text', testid: 'clap-graph-axis', expect: 'changed' },
+      },
+    },
+  },
+  clouds: {
+    // THE RING BUFFER — two seconds of tape, the window POSITION reads from,
+    // and one bar per concurrent grain. Promoted into the hero slot
+    // (`face.hero.cell`).
+    //
+    // ⚠ A PANEL BECAUSE THE CONTROL IT EXPLAINS CANNOT BE A NUMBER. POSITION
+    // moves the output waveform ENTIRELY (max|Δ| 0.99 against a marked source)
+    // while moving its level by 0.17 dB, so every RMS-based instrument in the
+    // repo — and three of the spec's own passes — reports it dead. What it
+    // does is pick a PLACE on the tape, and a place wants a picture. The
+    // `meter` glyph stays exactly right at the lane tiers (an insert's hazard
+    // is how hot the wet cloud runs); `face.hero.cell` suppresses it at the
+    // dock, where this says strictly more.
+    //
+    // ⚠ AND IT HAS NO CLOCK, DELIBERATELY. The one quantity a live write head
+    // would need — the worklet's `fillLevel` — is not an AudioParam and is
+    // never posted, so there is nothing honest to poll; anything derived from
+    // `AudioContext.currentTime` would make the VRT baseline a race against
+    // boot latency. Every pixel is a pure function of the six macros. The two
+    // facts a moving head would have shown are printed as NUMBERS instead
+    // (`silent for` / `full level at`, sidebar), where they are true without a
+    // clock and MOVE with SIZE.
+    'clouds-buffer-{n}': {
+      kind: 'panel',
+      label: 'the ring · 2 s of tape',
+      component: CloudsRingPanel,
+      minWidth: 380,
+      // A `text` probe on a DIFFERENT element, the kickdrum/bluebox reason: the
+      // axis MODE is private view state (component state, never node.data —
+      // relabelling your own picture must not relabel a collaborator's screen
+      // or dirty the patch), so there is no key to watch. The button drives the
+      // axis row, whose captions carry a UNIT SUFFIX that differs
+      // unconditionally between the two modes — asserted across the whole SIZE
+      // travel in clouds-face-model.test.ts, so the probe cannot go vacuous at
+      // some setting where the two labellings happen to coincide.
+      probe: {
+        testid: 'clouds-ring-scale',
+        action: 'click',
+        effect: { kind: 'text', testid: 'clouds-ring-axis', expect: 'changed' },
       },
     },
   },
