@@ -185,7 +185,13 @@ describe('voxelSample — the per-voxel FIELD sample (density + occupancy colour
 
   it('CRUSH posterizes the colour AND amplitude-crushes the density (cube-dsp levels)', () => {
     const s = voxelSample({ r: 0.4, g: 0.6, b: 0.2 }, GRAY, { r: 0.3, g: 0.1, b: 0.9 }, 0.4, { ...smoothP, morphFC: 0.5, crush: 1 });
-    const levels = crushLevels(1); // 2 at k=1
+    // ⚠ The COLOUR path is `posterize`, which keeps the 256 → 2 law on purpose
+    // (a 2-level picture is a valid extreme; the audio floor of
+    // CUBE_CRUSH_MIN_LEVELS exists because a 2-level WAVE is a DC step). Ask
+    // for the video endpoint explicitly — `crushLevels(1)` alone is the AUDIO
+    // one, and a 4-level grid happens to contain {0, 1}, so this assertion
+    // would still pass while checking something looser than it claims.
+    const levels = crushLevels(1, 2); // 2 at k=1, the posterize endpoint
     for (const v of [s.color.r, s.color.g, s.color.b]) {
       const q = Math.round(v * (levels - 1)) / (levels - 1);
       expect(v).toBeCloseTo(q, 6);

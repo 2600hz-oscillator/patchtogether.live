@@ -27,6 +27,7 @@ import {
   crushCoord,
   crushGridSteps,
   crushLevels,
+  CUBE_CRUSH_MIN_LEVELS,
   spaceCrushCoord,
   spaceCrushGridSteps,
   diffusePull,
@@ -210,11 +211,20 @@ describe('crush — amplitude bitcrush', () => {
     }
   });
 
-  it('k=1 collapses to ≤ 2 amplitude levels', () => {
+  // ⚠ THIS TEST USED TO ASSERT ≤ 2 LEVELS, AND THAT IS THE BUG IT PINNED.
+  // Two levels means a single threshold at 0.5, and the marched depth signal
+  // does not straddle it in most states — so every sample rounded to level 0
+  // and the oscillator emitted a constant −1: a full-scale DC step and no
+  // audio at all. The test was green the whole time because "collapses to 2
+  // levels" was written as the DESIRED behaviour. See CUBE_CRUSH_MIN_LEVELS
+  // and cube-degenerate-wave.test.ts.
+  it(`k=1 collapses to exactly CUBE_CRUSH_MIN_LEVELS amplitude levels`, () => {
     const out = new Set<number>();
     for (let i = 0; i <= 100; i++) out.add(crush(i / 100, 1));
-    expect(out.size).toBeLessThanOrEqual(2); // {0, 1}
-    expect(crushLevels(1)).toBe(2);
+    expect(out.size).toBe(CUBE_CRUSH_MIN_LEVELS);
+    expect(crushLevels(1)).toBe(CUBE_CRUSH_MIN_LEVELS);
+    // …and the floor is a floor: still MUCH coarser than transparent.
+    expect(crushLevels(1)).toBeLessThan(16);
   });
 
   it('is monotonic non-decreasing in the input value', () => {
@@ -226,11 +236,17 @@ describe('crush — amplitude bitcrush', () => {
     }
   });
 
-  it('amplitude levels interpolate 256 → 2 as k goes 0 → 1', () => {
+  it('amplitude levels interpolate 256 → the floor as k goes 0 → 1', () => {
     expect(crushLevels(0)).toBe(256);
-    expect(crushLevels(1)).toBe(2);
+    expect(crushLevels(1)).toBe(CUBE_CRUSH_MIN_LEVELS);
     expect(crushLevels(0.5)).toBeLessThan(256);
-    expect(crushLevels(0.5)).toBeGreaterThan(2);
+    expect(crushLevels(0.5)).toBeGreaterThan(CUBE_CRUSH_MIN_LEVELS);
+    // The cap is an ENDPOINT cap: the linear law is bit-identical wherever it
+    // already produced at least the floor, which is what keeps the ART
+    // baselines still.
+    for (const k of [0, 0.25, 0.5, 0.75, 0.9, 0.99]) {
+      expect(crushLevels(k)).toBe(Math.max(2, Math.round(256 + (2 - 256) * k)));
+    }
   });
 });
 

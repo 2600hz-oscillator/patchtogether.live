@@ -6,13 +6,21 @@
 // also accept E352-format WAV files (Synthesis Technology Cloud
 // Terrarium / MakeNoise QPAS / etc.) at runtime via wavetable-parser.
 //
-// Two tables:
+// Three tables:
 //   1. BASIC SHAPES — saw → square → triangle → sine sweep. The classic
 //      "starter" wavetable; lets users hear the morph param before
 //      loading anything fancier.
 //   2. HARMONIC SWEEP — additive harmonic stack: frame f gets harmonics
 //      1..f+1 with falling amplitudes. Goes from a pure sine at frame 0
 //      to a bright stack at frame 63.
+//   3. PWM SWEEP — a pulse whose DUTY narrows 50 % → 5 % across the frame
+//      axis. Added because TWO tables could not fill CUBE's THREE slots
+//      without a collision (see `CUBE_DEFAULT_TABLES`): a third distinct
+//      shape is what makes MORPH, CONNECT and CONNECT STRENGTH all live at
+//      once. Distinct from BASIC SHAPES on the axis that matters to a
+//      heightfield reader — BASIC SHAPES varies the wave's SHAPE at a fixed
+//      duty, this varies the WIDTH of a plateau, so as a 3-D solid the morph
+//      axis literally narrows the material.
 
 /** Single-frame sample count. Matches the E352 canonical size and the
  *  worklet-side wavetable engine in packages/dsp/src/lib/wavetable-osc.ts. */
@@ -91,6 +99,27 @@ function makeHarmonicSweepTable(): Float32Array[] {
   return frames;
 }
 
+/** PWM SWEEP — a pulse whose duty cycle narrows from 50 % (a perfect square) at
+ *  frame 0 to `PWM_MIN_DUTY` at frame 63. Read as a heightfield this is a
+ *  plateau whose WIDTH the morph axis controls, which is the axis neither other
+ *  factory table varies. Values are exactly ±1, so no normalization pass. */
+const PWM_MAX_DUTY = 0.5;
+const PWM_MIN_DUTY = 0.05;
+
+function makePwmSweepTable(): Float32Array[] {
+  const frames: Float32Array[] = [];
+  for (let f = 0; f < FRAME_COUNT; f++) {
+    const t = f / (FRAME_COUNT - 1);
+    const duty = PWM_MAX_DUTY + (PWM_MIN_DUTY - PWM_MAX_DUTY) * t;
+    const arr = new Float32Array(FRAME_SIZE);
+    for (let s = 0; s < FRAME_SIZE; s++) {
+      arr[s] = s / FRAME_SIZE < duty ? 1 : -1;
+    }
+    frames.push(arr);
+  }
+  return frames;
+}
+
 let _cache: FactoryTable[] | null = null;
 
 export function getFactoryTables(): FactoryTable[] {
@@ -107,6 +136,14 @@ export function getFactoryTables(): FactoryTable[] {
       label: 'HARMONIC SWEEP',
       frames: makeHarmonicSweepTable(),
       source: 'synthesized: additive sine harmonics 1..N',
+    },
+    // ⚠ APPEND-ONLY. `wavecel.ts` falls back to `getFactoryTables()[0]`, so the
+    // order of the first two entries is load-bearing; new tables go on the end.
+    {
+      id: 'pwm-sweep',
+      label: 'PWM SWEEP',
+      frames: makePwmSweepTable(),
+      source: 'synthesized: pulse, duty 50% → 5%',
     },
   ];
   return _cache;

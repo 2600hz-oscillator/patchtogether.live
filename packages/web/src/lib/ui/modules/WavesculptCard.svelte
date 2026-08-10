@@ -59,6 +59,15 @@
     setWavesculptLuma,
     clampMasterGain,
     MASTER_GAIN_DEFAULT,
+    // The three mode ROSTERS. The card used to carry its own copies — a
+    // `const BLINK_MODE_NAMES` array plus three inline ternaries — which is a
+    // second source of truth for a VOCABULARY, the divergence
+    // card-range-source records against FilterCard's private `const MODES`.
+    // One roster now feeds the def's `options` (hence the dock's Segmented
+    // rows and the doc page) and these captions alike.
+    BLINK_MODE_OPTIONS,
+    FX_TYPE_OPTIONS,
+    VIDEO_MODE_OPTIONS,
     type WavesculptData,
     type WavesculptOscData,
   } from '$lib/audio/modules/wavesculpt';
@@ -261,12 +270,14 @@
     return pget(`fxAmount${i + 1}`);
   }
   function cycleFxType(i: number): void {
-    const next = (fxTypeFor(i) + 1) % 3;
+    const next = (fxTypeFor(i) + 1) % FX_TYPE_OPTIONS.length;
     set(`fxType${i + 1}`)(next);
   }
+  /** The state's name, off the def's roster — never re-typed here. */
   function fxLabel(t: number): string {
-    return t === 0 ? 'OFF' : t === 1 ? 'REVERB' : 'DELAY';
+    return FX_TYPE_OPTIONS.find((o) => o.value === t)?.label ?? FX_TYPE_OPTIONS[0].label;
   }
+  const FX_CYCLE_TITLE = `FX slot — click to cycle ${FX_TYPE_OPTIONS.map((o) => o.label).join(' / ')}`;
 
   // Per-osc wavetable source (rides node.data).
   function oscData(i: number): WavesculptOscData {
@@ -2427,8 +2438,29 @@ void main() {
   // Persisted + multiplayer-synced via the discrete blink_mode param; the
   // on-card BLINK button cycles 0→1→2→0.
   let blink_mode = $derived(Math.round(pget('blink_mode')));
-  const BLINK_MODE_NAMES = ['', 'SCOPES TRIAL', 'REALITY BASED COMMUNITY'];
-  let blinkModeName = $derived(BLINK_MODE_NAMES[blink_mode] ?? '');
+  // The readout under the BLINK button. It stays BLANK at state 0 — the
+  // ribbon render is the default and captioning it would put a label on the
+  // absence of a mode — so the roster is consulted only for 1..2. The NAMES
+  // come from the def, so the card, the dock's Segmented row and the doc page
+  // cannot disagree about what state 2 is called.
+  let blinkModeName = $derived(
+    blink_mode === 0 ? '' : (BLINK_MODE_OPTIONS.find((o) => o.value === blink_mode)?.label ?? ''),
+  );
+
+  // Cycle-button hover text, built from the rosters so a renamed state cannot
+  // leave a stale tooltip behind.
+  //
+  // ⚠ THE VIEW BUTTON'S CAPTION STAYS ABBREVIATED (`3D` / `BIRDSEYE` /
+  // `SPECTRO`) AND THAT IS A DELIBERATE DEFERRAL, NOT AN OVERSIGHT.
+  // `.right-controls` is an `align-items: center` flex column whose width is
+  // set by its widest non-wrapping child — today `BIRDSEYE`, 8 characters.
+  // Painting `SPECTROGRAPH` there widens the rail by ~4 characters and SQUEEZES
+  // THE CANVAS beside it, which moves the wavesculpt VRT baseline for a purely
+  // cosmetic rename (the footer lesson: chrome that is not in frame still moves
+  // a baseline, through the layout). The full names are one hover away and are
+  // what the dock's Segmented row paints.
+  const VIEW_CYCLE_TITLE = `View mode: ${VIDEO_MODE_OPTIONS.map((o) => o.label).join(' / ')}`;
+  const BLINK_CYCLE_TITLE = `BLINK render mode: ${BLINK_MODE_OPTIONS.map((o) => o.label).join(' / ')}`;
 
   // ---- SPECTROGRAPH state ----
   // Circular column buffer of dB magnitude values. SPEC_W columns of
@@ -3057,7 +3089,7 @@ void main() {
                 class="fx-btn fx-btn-{fxTypeFor(i)}"
                 onclick={() => cycleFxType(i)}
                 data-testid={`wavesculpt-fx-btn-${i + 1}`}
-                title="FX slot — click to cycle OFF / REVERB / DELAY"
+                title={FX_CYCLE_TITLE}
               >{fxLabel(fxTypeFor(i))}</button>
               <Knob value={fxAmountFor(i)} min={0} max={1} defaultValue={0.4}
                 label="FX" curve="linear"
@@ -3134,8 +3166,8 @@ void main() {
             class="unison-toggle view-toggle"
             class:on={Math.round(video_mode) !== 0}
             data-testid="wavesculpt-view-toggle"
-            title="View mode: PROXIMITY (3D ribbons) / BIRDSEYE (top-down floorplan) / SPECTROGRAPH (scrolling STFT)"
-            onclick={() => set('video_mode')((Math.round(video_mode) + 1) % 3)}
+            title={VIEW_CYCLE_TITLE}
+            onclick={() => set('video_mode')((Math.round(video_mode) + 1) % VIDEO_MODE_OPTIONS.length)}
           >{Math.round(video_mode) === 0 ? '3D' : Math.round(video_mode) === 1 ? 'BIRDSEYE' : 'SPECTRO'}</button>
           <!-- BLINK cycles three render modes inside the 3D view:
                0 = (current) wavetable ribbons,
@@ -3149,8 +3181,8 @@ void main() {
             class="unison-toggle blink-toggle"
             class:on={blink_mode !== 0}
             data-testid="wavesculpt-blink-toggle"
-            title="BLINK render mode: current ribbons / SCOPES TRIAL / REALITY BASED COMMUNITY"
-            onclick={() => set('blink_mode')((blink_mode + 1) % 3)}
+            title={BLINK_CYCLE_TITLE}
+            onclick={() => set('blink_mode')((blink_mode + 1) % BLINK_MODE_OPTIONS.length)}
           >BLINK</button>
           {#if blink_mode !== 0}
             <div class="blink-mode-name" data-testid="wavesculpt-blink-mode-name">{blinkModeName}</div>

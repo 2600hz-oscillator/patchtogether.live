@@ -56,6 +56,14 @@
 import { test, expect, type Locator, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 import { STRICT_FACES } from '../../packages/web/src/lib/ui/workflow/strict-faces';
+// The COLOUR probe's "pick a different one" + its formatter, imported from the
+// same pure model the component renders through — so the expected value and
+// the painted value cannot drift, and the no-fixed-point property the probe
+// depends on is the one the unit lane negative-controls on every run.
+import {
+  nextProbeColor,
+  packedToHex,
+} from '../../packages/web/src/lib/ui/controls/color-field-model';
 
 // CI (and a local E2E_SWIFTSHADER=1 flake-check) rasterizes on the SwiftShader
 // SOFTWARE renderer with 4 workers on a 4-vCPU runner. Mirrors the SLOW_RENDER
@@ -126,6 +134,7 @@ type CellControl =
   | 'segmented'
   | 'selector'
   | 'grid'
+  | 'color'
   | 'action'
   | 'file'
   | 'panel'
@@ -624,6 +633,85 @@ async function driveCell(
       })
       .not.toBe(before);
     await expect(grid, `${where}: committing closes the picker`).toHaveCount(0);
+    return;
+  }
+
+  if (cell.control === 'color') {
+    // A PACKED-RGB SWATCH (`face.paramCells['x'] = 'color'`). The cell kind
+    // exists because the alternative — a KnobConic over 16.7 million states —
+    // would have PASSED the knob branch above: dragging it does commit a param
+    // change. So the probe here has to prove more than "a control moved".
+    //
+    // ⚠ THE FAILURE MODE A COLOUR CONTROL HAS AND A KNOB DOES NOT IS
+    // DECORATION. A coloured rectangle that writes nothing looks correct in a
+    // screenshot, in a VRT baseline, and to any assertion that checks a
+    // control mounted. Three legs, and each one fails a different lie:
+    //
+    //   1. the `control-<paramId>` element is a REAL, VISIBLE, ENABLED
+    //      `<input type="color">` with a painted box — so a decorative <span>
+    //      beside a `display:none` input (the legacy card's shape) is caught
+    //      before anything is driven;
+    //   2. the graph takes EXACTLY `nextProbeColor(before)` — not merely "a
+    //      different value", so a control that clamps, drops a channel or
+    //      writes a constant fails on the value rather than passing on the
+    //      change;
+    //   3. the WITNESS — a separate element whose text is derived from the
+    //      LIVE param, never from the input's own state — reaches the same
+    //      hex. This is the leg that distinguishes "changed the colour" from
+    //      "rendered a swatch": the native input keeps showing whatever was
+    //      picked (the browser owns that), so if the write path is severed the
+    //      picker looks right and only the witness stays behind.
+    //
+    // `nextProbeColor` cannot return the value already showing — no fixed
+    // point, asserted over the whole space in the unit lane on every run
+    // (color-field-model.test.ts). Without that this probe would be vacuous in
+    // exactly the way it cannot detect from inside.
+    const pid = cell.key;
+    const input = host.locator(`[data-testid="control-${pid}"]`);
+    await expect(input, `${where}: a real colour input`).toBeVisible();
+    await expect(input, `${where}: is an <input type="color">`).toHaveAttribute('type', 'color');
+    await expect(input, `${where}: operable`).toBeEnabled();
+    const box = await input.boundingBox();
+    expect(
+      Math.min(box?.width ?? 0, box?.height ?? 0),
+      `${where}: the swatch has a real hit target (a hidden input behind a decorative ` +
+        `swatch is operable by a script and unreachable by a player)`,
+    ).toBeGreaterThan(4);
+
+    const witness = host.locator(`[data-testid="colorhex-${pid}"]`);
+    await expect(
+      witness,
+      `${where}: publishes a hex WITNESS derived from the live param. Without it a swatch ` +
+        `that never commits is indistinguishable from one that does.`,
+    ).toBeVisible();
+
+    const before = (await readParam(page, nodeId, pid)) ?? 0;
+    const want = nextProbeColor(before);
+    const wantHex = packedToHex(want);
+    expect(want, `${where}: the probe must ask for a DIFFERENT colour`).not.toBe(before);
+
+    // A native colour picker opens an OS dialog on click, so the value is set
+    // directly and `input` dispatched — the same event the browser fires while
+    // a player drags inside the picker.
+    await input.scrollIntoViewIfNeeded();
+    await input.evaluate((el, hex) => {
+      (el as HTMLInputElement).value = hex;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    }, wantHex);
+
+    await expect
+      .poll(() => readParam(page, nodeId, pid), {
+        message:
+          `${where}: picking ${wantHex} must commit that EXACT packed value into the graph ` +
+          `(was ${before}); a near-miss here is a dropped channel or a clamp, not a rounding`,
+      })
+      .toBe(want);
+    await expect(
+      witness,
+      `${where}: the hex witness must follow the LIVE param to ${wantHex}. The native picker ` +
+        `shows the chosen colour whether or not anything was written — only this element ` +
+        `reads the graph back, so a swatch that is decoration fails HERE and nowhere else.`,
+    ).toHaveText(wantHex);
     return;
   }
 

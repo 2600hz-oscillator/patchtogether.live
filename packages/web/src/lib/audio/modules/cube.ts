@@ -64,7 +64,7 @@ import {
   sampleSlice,
   applyFold,
   spreadDepthOffset,
-  isSilentWave,
+  isDegenerateWave,
   type SliceParams,
   type Material,
 } from '../../../../../dsp/src/lib/cube-dsp';
@@ -95,20 +95,37 @@ export const CUBE_SLOTS: readonly CubeSlot[] = ['floor', 'wall', 'ceiling'];
 
 /** Per-slot wavetable defaults (PLAN §4).
  *
- *  ⚠ CEILING MUST NOT EQUAL FLOOR. The field is
+ *  ⚠ ALL THREE SLOTS MUST DIFFER, AND UNTIL `pwm-sweep` EXISTED THAT WAS
+ *  IMPOSSIBLE. The field is
  *  `f3 = (1−morph)·occ(z, floorH, wallH) + morph·occ(z, ceilH, wallH)` and
- *  `columnHeights` reads both at the SAME (x, y) — so identical tables make
- *  `dF ≡ dC` and MORPH algebraically inert: `(1−m)·dF + m·dF = dF` at every
- *  position. CEILING shipped as `basic-shapes`, the same as FLOOR, which made
- *  the module's headline knob and its CV jack a BIT-EXACT no-op on every
- *  freshly spawned CUBE (measured: RMS difference EXACTLY 0.000e+0 between
- *  morph 0 and morph 1). `cube-morph-default.test.ts` renders the slice and
- *  holds the line. `harmonic-sweep` is the only other factory table, and is
- *  also what WALL uses — floor↔ceiling is the axis MORPH travels, so it is the
- *  two ENDS that have to differ. */
+ *  `columnHeights` reads every slot at the SAME (x, y), so each pair that
+ *  coincides kills a different control:
+ *
+ *    floor ≡ ceiling → `dF ≡ dC`, so MORPH is inert: (1−m)·dF + m·dF = dF.
+ *    floor ≡ wall    → the floor connector hits `occ`'s degenerate branch
+ *                      (`span ≤ 1e-9` → a hard step), so CONNECT and CONNECT
+ *                      STRENGTH are bit-exactly dead at morph = 0.
+ *    ceiling ≡ wall  → the same, dead at morph = 1.
+ *
+ *  THREE slots, and for a long time only TWO factory tables — so by pigeonhole
+ *  SOME pair always collided and SOME control was always dead. #1314 fixed the
+ *  first case by moving CEILING off `basic-shapes`, which silently created the
+ *  third: on the shipped defaults CONNECT and CONNECT STRENGTH were dead at
+ *  morph = 1 with `maxAbsDiff` EXACTLY 0.000e+0. All six two-table assignments
+ *  were measured and every one of them has exactly one dead control. That is
+ *  not a defaults bug to be re-arranged; it is a counting problem, and the fix
+ *  is the third table.
+ *
+ *  Measured on this assignment (`maxAbsDiff` vs the control at 0):
+ *    MORPH 0→1 rmsΔ 0.17786 · CONNECT 0.31624 @m=0 / 0.22450 @m=1
+ *                            · CNCT STR 0.21741 @m=0 / 0.15306 @m=1
+ *  — nothing dead, and CONNECT's weakest leg is 2.4× the old best (0.09221).
+ *  WALL takes the new table because BOTH connectors read it, so the most
+ *  distinct shape there lifts both at once. `cube-morph-default.test.ts` holds
+ *  all three pairs. */
 export const CUBE_DEFAULT_TABLES: Record<CubeSlot, string> = {
   floor: 'basic-shapes',
-  wall: 'harmonic-sweep',
+  wall: 'pwm-sweep',
   ceiling: 'harmonic-sweep',
 };
 
@@ -283,10 +300,15 @@ export const cubeDef: AudioModuleDef = {
     { id: 'material', label: 'Material', defaultValue: 0, min: 0, max: 1, curve: 'discrete' },
     // View-only (NOT audio): WebGL camera transform. CV-not-routed (no
     // paramTarget input) and ignored by the worklet — the card reads them.
+    // ⚠ There is no `view_rot_z`. It shipped as a def param, a card knob and a
+    // documented sentence ("orbits the 3D view") and was read by NOTHING:
+    // `renderGl` takes only zoom/rot_x/rot_y, the eye vector is built from
+    // vrx/vry alone, and `sceneSig` omitted it — so turning it could not even
+    // schedule a repaint. Removed rather than implemented; VIDEOCUBE, which has
+    // a real camera roll, keeps its own `view_rot_z` and is unaffected.
     { id: 'view_zoom',  label: 'Zoom',  defaultValue: 1, min: 0.3, max: 3, curve: 'log' },
     { id: 'view_rot_x', label: 'View X', defaultValue: 0.6, min: -3.1416, max: 3.1416, curve: 'linear' },
     { id: 'view_rot_y', label: 'View Y', defaultValue: 0.7, min: -3.1416, max: 3.1416, curve: 'linear' },
-    { id: 'view_rot_z', label: 'View Z', defaultValue: 0,   min: -3.1416, max: 3.1416, curve: 'linear' },
     // SCREEN on/off (view-only, NOT audio): 1 = the 3D viz screen renders,
     // 0 = the screen is OFF. When OFF *and* video_out is unpatched the card
     // skips ALL visual computation (the rAF render loop + the display-only
@@ -369,7 +391,6 @@ export const cubeDef: AudioModuleDef = {
       view_zoom: "Visualization-only camera zoom for the 3D cube view (does not affect the sound or the selected slice).",
       view_rot_x: "Visualization-only camera rotation about X — orbits the 3D view (no effect on audio).",
       view_rot_y: "Visualization-only camera rotation about Y — orbits the 3D view (no effect on audio).",
-      view_rot_z: "Visualization-only camera rotation about Z — orbits the 3D view (no effect on audio).",
       screen_on: "Turns the on-card 3D viz screen on/off. When OFF and the VIDEO output is unpatched, the card skips all visual computation (the render loop and the field/slice/wave draws) to save GPU — audio keeps running untouched. A patched VIDEO output still receives live frames even with the screen off.",
     },
   },
@@ -536,7 +557,7 @@ export const cubeDef: AudioModuleDef = {
       if (waveR !== center && waveR !== waveL) applyFold(waveR, fold);
       // Cache a non-silent center for the viz (the worklet handles the audio
       // keep-last-non-silent rule itself).
-      if (!isSilentWave(center)) lastCenterNonSilent = center;
+      if (!isDegenerateWave(center)) lastCenterNonSilent = center;
       lastSnapshot = lastCenterNonSilent ?? center;
       try {
         workletNode.port.postMessage({ type: 'setWave', waveCenter: center, waveL, waveR });

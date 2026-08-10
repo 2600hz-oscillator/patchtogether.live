@@ -626,6 +626,69 @@ export function clampMasterGain(v: number): number {
   return Math.max(MASTER_GAIN_MIN, Math.min(MASTER_GAIN_MAX, v));
 }
 
+// ---------- NAMED DETENTS for the three discrete mode params (PF-1) --------
+//
+// `fxType{1..4}`, `video_mode` and `blink_mode` are 3-state discrete params
+// that shipped with NO `options` roster. Nothing was broken — the values work
+// and the legacy card cycles them with bespoke buttons — but the shell had no
+// way to see the names, so under `?shell=1` all six rendered as ANONYMOUS
+// KNOBS printing `0.00`, `1.00`, `2.00`. That is the filter LP/HP/BP defect
+// (PF-1's founding case) six times over on one module.
+//
+// ⚠ THESE ARE EXPORTED SO THE CARD READS THEM TOO. The legacy card carried its
+// own `const BLINK_MODE_NAMES = ['', 'SCOPES TRIAL', 'REALITY BASED
+// COMMUNITY']` plus three inline ternaries for the other two — a SECOND SOURCE
+// OF TRUTH for a vocabulary, which is the exact divergence `card-range-source`
+// records against FilterCard's private `const MODES = ['LP','HP','BP']`. One
+// roster, read by the def, the dock and the card.
+//
+// ⚠ THE NAMES ARE THE MODULE'S OWN, TRANSCRIBED FROM `docs.controls`. Every
+// one of the nine states is a documented, gated string (wavesculpt is in
+// STRICT_DOCS), so renaming one here would put the doc page and the faceplate
+// in disagreement. `wavesculpt-mode-options.test.ts` pins the rosters against
+// that prose so a drive-by rename cannot happen silently.
+//
+// ⚠ VOCABULARY, NOT CONTRACT. `contract-signature.ts` projects only
+// `id/min/max/curve/default/units`, so none of this reaches contract-lock —
+// naming a state is the same class of edit as naming a param (see ParamOption).
+
+/** Per-osc FX slot. Sits PRE-spatial-mix, so it shapes the raw oscillator. */
+export const FX_TYPE_OPTIONS = [
+  { value: 0, label: 'OFF', title: 'No FX — the oscillator passes straight through' },
+  { value: 1, label: 'REVERB', title: 'Reverb, wet scaled by the camera distance gain' },
+  { value: 2, label: 'DELAY', title: 'Delay, wet set by the FX amount knob' },
+] as const;
+
+/** VIEW — what the render and `video_out` show. */
+export const VIDEO_MODE_OPTIONS = [
+  { value: 0, label: 'PROXIMITY', title: 'The 3D ribbon scene (default)' },
+  { value: 1, label: 'BIRDSEYE', title: 'Top-down 2D floorplan of the spatial system' },
+  { value: 2, label: 'SPECTROGRAPH', title: 'Scrolling STFT of the combined audio' },
+] as const;
+
+/**
+ * BLINK — how the four oscillators are drawn inside the 3D view.
+ *
+ * ⚠ `SCALE` IS DEAD AT STATE 0 and the label is the only place a player can
+ * learn that: `uScale[]` is read solely by the SCOPE program, which runs only
+ * when `blink_mode > 0`. Naming the states is what makes "SCALE applies in
+ * SCOPES TRIAL + REALITY BASED COMMUNITY" (the doc's own words) legible from
+ * the control instead of from the docs page.
+ */
+export const BLINK_MODE_OPTIONS = [
+  { value: 0, label: 'RIBBONS', title: 'Wavetable ribbons (default)' },
+  {
+    value: 1,
+    label: 'SCOPES TRIAL',
+    title: "Each osc's live oscilloscope trace from the floor corners",
+  },
+  {
+    value: 2,
+    label: 'REALITY BASED COMMUNITY',
+    title: 'The scopes rendered as 3D neon tubes',
+  },
+] as const;
+
 // ---------- per-osc wavetable data (rides node.data) ----------
 
 export interface WavesculptOscData {
@@ -779,7 +842,7 @@ export const wavesculptDef: AudioModuleDef = {
       // The slot sits PRE-SPATIAL-MIX so the FX shapes the raw osc before
       // env+dist+pan are applied — closing the loop on the user spec:
       // "the effect ONLY affects the oscillator … pre-mix".
-      ps.push({ id: `fxType${i}`,   label: `FX${i}`,    defaultValue: 0,   min: 0,    max: 2,   curve: 'discrete' });
+      ps.push({ id: `fxType${i}`,   label: `FX${i}`,    defaultValue: 0,   min: 0,    max: 2,   curve: 'discrete', options: FX_TYPE_OPTIONS });
       ps.push({ id: `fxAmount${i}`, label: `FXAmt${i}`, defaultValue: 0.4, min: 0,    max: 1,   curve: 'linear'  });
     }
     ps.push({ id: 'pos_x', label: 'X',     defaultValue: 0, min: -1, max: 1, curve: 'linear' });
@@ -801,7 +864,7 @@ export const wavesculptDef: AudioModuleDef = {
     // 1 = BIRDSEYE (top-down 2D floorplan showing the spatial system),
     // 2 = SPECTROGRAPH (scrolling-column STFT of the combined audio output:
     //                   log-Hz vertical axis, time scrolling left).
-    ps.push({ id: 'video_mode',    label: 'View',     defaultValue: 0, min: 0, max: 2, curve: 'discrete' });
+    ps.push({ id: 'video_mode',    label: 'View',     defaultValue: 0, min: 0, max: 2, curve: 'discrete', options: VIDEO_MODE_OPTIONS });
     // BLINK render mode (within the 3D PROXIMITY view): cycles the way the
     // four oscillators are visualised. Persisted + multiplayer-synced like
     // every other param.
@@ -811,7 +874,7 @@ export const wavesculptDef: AudioModuleDef = {
     //       scope line (max ≈ fills the box).
     //   2 = REALITY BASED COMMUNITY — same scope layout but the traces are
     //       3D neon TUBES; WIDTH sets the tube radius (max ≈ fills the box).
-    ps.push({ id: 'blink_mode',    label: 'Blink',    defaultValue: 0, min: 0, max: 2, curve: 'discrete' });
+    ps.push({ id: 'blink_mode',    label: 'Blink',    defaultValue: 0, min: 0, max: 2, curve: 'discrete', options: BLINK_MODE_OPTIONS });
     // SCALE — amplitude/zoom of the BLINK scope waveform. Reuses SCOPE's
     // scale semantics (multiplicative, log curve, 0.1..10, unity at 1) so
     // the scope trace SHAPE matches the SCOPE module at equal scale.

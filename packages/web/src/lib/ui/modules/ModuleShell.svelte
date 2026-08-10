@@ -54,7 +54,7 @@
   // module would generalise BOTH at once — until then a registry indirection
   // here would be one indirection serving one caller.
   import Dx7AlgorithmGlyph from './dx7/Dx7AlgorithmGlyph.svelte';
-  import { Button, KnobConic, ParamGrid, ScopeScreen, Segmented, Selector, Toggle, VuMeter } from '$lib/ui/controls';
+  import { Button, ColorField, KnobConic, ParamGrid, ScopeScreen, Segmented, Selector, Toggle, VuMeter } from '$lib/ui/controls';
   import {
     curatedFace,
     dockFacePlan,
@@ -74,7 +74,13 @@
   import { shellParamWrite } from '$lib/ui/workflow/shell-param-writes';
   import { dockBandVisible, dockTabPlan } from '$lib/ui/workflow/dock-tabs-model';
   import { dockRowPlan, type RowPlanDefLike } from '$lib/ui/workflow/dock-row-plan';
-  import { gridParamIds, momentaryParamIds, momentaryValue, paramCellKind } from '$lib/ui/workflow/shell-control-kind';
+  import {
+    declaredParamCells,
+    momentaryParamIds,
+    momentaryValue,
+    paramCellKind,
+    type DeclaringDefLike,
+  } from '$lib/ui/workflow/shell-control-kind';
   import type { MomentaryDefLike } from '$lib/audio/momentary-params';
   import { clearStuckMomentaryParams, setMomentaryParam } from './manual-strike-actions';
   import OssAttribution from '$lib/ui/modules/OssAttribution.svelte';
@@ -461,10 +467,8 @@
   /** Declared momentary (press-pad) params — see ModuleFace.momentary. */
   let momentary = $derived(momentaryParamIds(def as { face?: { momentary?: readonly string[] } } | undefined));
 
-  /** Declared `'grid'` param cells — see ModuleFace.paramCells (PF-15). */
-  let gridCells = $derived(
-    gridParamIds(def as { face?: { paramCells?: Readonly<Record<string, 'grid'>> } } | undefined),
-  );
+  /** Declared param cells (`'grid'` / `'color'`) — see ModuleFace.paramCells. */
+  let declaredCells = $derived(declaredParamCells(def as DeclaringDefLike | undefined));
 
   /**
    * The LIVE node (the Y.Doc entry, not the flow-node snapshot) + its version
@@ -587,7 +591,7 @@
     {#if ctl.kind === 'param'}
       {@const pd = paramDef(ctl.paramId ?? ctl.key)}
       {#if pd}
-        {@const cellKind = paramCellKind(pd, momentary, view === 'dock-full' ? 'dock' : 'lane', gridCells)}
+        {@const cellKind = paramCellKind(pd, momentary, view === 'dock-full' ? 'dock' : 'lane', declaredCells)}
         {#if cellKind === 'momentary'}
           <!-- MOMENTARY press-pad (declared on face.momentary): fires on the
                press edge and RETURNS TO REST on release. It must never be a
@@ -668,6 +672,33 @@
               cell={binding.kind === 'algorithm' && pd.id === binding.paramId
                 ? algorithmCell
                 : undefined}
+            />
+          </div>
+        {:else if cellKind === 'color'}
+          <!-- DECLARED PACKED-RGB (`face.paramCells['x'] = 'color'`): a native
+               colour swatch. Without this branch a `0..16777215 discrete`
+               param resolves to a KnobConic — a dial over 16.7 MILLION states
+               printing `4292546867`, whose every drag step lands on an
+               unpredictable hue — and faces-parity PASSES it, because dragging
+               that knob does move the param. A green gate over an unusable
+               control.
+
+               The RANGE comes from the DEF (`pd.min`/`pd.max`), never re-typed
+               in the primitive: ColorField clamps to what it is handed, and
+               module-face-lint separately asserts the def's span IS the packed
+               space, so the two cannot drift. TIER-INDEPENDENT like `grid` —
+               a 40 px swatch fits a lane knob column, and the knob it replaces
+               is exactly as wrong there as at the dock. -->
+          <div class="kcol ms-cell-color" data-cell-kind="param" data-cell-control="color" data-cell-key={ctl.key}>
+            <ColorField
+              value={params.paramVal(pd.id)}
+              min={pd.min}
+              max={pd.max}
+              label={pd.label}
+              onchange={paramWrite(pd.id)}
+              paramId={pd.id}
+              hero={view === 'dock-full'}
+              compact={view !== 'dock-full'}
             />
           </div>
         {:else if cellKind === 'selector'}

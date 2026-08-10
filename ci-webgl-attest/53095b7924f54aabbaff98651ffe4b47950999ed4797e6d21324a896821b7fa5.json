@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "webglContentHash": "2a2179664d2b486c278b78a799f0f3c6975bd3958e97fcb1362c4aa4a9a9399d",
-  "attestedAt": "2026-08-10T17:11:44.029Z",
+  "webglContentHash": "53095b7924f54aabbaff98651ffe4b47950999ed4797e6d21324a896821b7fa5",
+  "attestedAt": "2026-08-10T18:48:45.790Z",
   "attestedBy": "patchtogether-maintainer",
-  "gitHeadAtAttest": "941424a249100d1f2058095a783b5b0dadbbe0be",
+  "gitHeadAtAttest": "708de96b8227aa4a20df62c646ed6ebf327fbafb",
   "playwrightVersion": "1.50.0",
   "os": "darwin 25.4.0 (arm64)",
   "machineClass": "local-trusted-gpu-workstation",
@@ -43,5 +43,5 @@
       "flakyDetails": []
     }
   },
-  "durationSec": 196
+  "durationSec": 194
 }
