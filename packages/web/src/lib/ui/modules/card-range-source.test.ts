@@ -31,6 +31,7 @@ import { backdraftDef } from '$lib/video/modules/backdraft';
 import { cloudsDef } from '$lib/audio/modules/clouds';
 import { delayDef } from '$lib/audio/modules/delay';
 import { macrooscillatorDef } from '$lib/audio/modules/macrooscillator';
+import { noiseDef } from '$lib/audio/modules/noise';
 import { filterDef } from '$lib/audio/modules/filter';
 import { meowboxDef } from '$lib/audio/modules/meowbox';
 import { ringbackDef } from '$lib/audio/modules/ringback';
@@ -116,6 +117,12 @@ import type { ParamDef } from '$lib/graph/types';
  *    read identically today and diverge the day any of those five gains a unit
  *    on the def — the omission is invisible to both greps, which only ever see
  *    what a card DOES write.
+ *  - NoiseCard: converted with the noise face promotion (2026-08-10; binds via
+ *    paramSpec). Range AND mapping bound, and it is the SMALLEST instance of
+ *    the class — ONE fader re-typing four numbers (`min` `max` `defaultValue`
+ *    `curve`) that its own def already declares, on the same screen as a line
+ *    that correctly read `noiseDef.params[0]!.defaultValue`. Half the card was
+ *    already bound; the divergence hazard lived entirely in the other half.
  */
 const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }>> = {
   'AdsrCard.svelte': adsrDef,
@@ -125,6 +132,7 @@ const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }
   'MacrooscillatorCard.svelte': macrooscillatorDef,
   'FilterCard.svelte': filterDef,
   'MeowboxCard.svelte': meowboxDef,
+  'NoiseCard.svelte': noiseDef,
   'RingbackCard.svelte': ringbackDef,
   'SnaredrumCard.svelte': snaredrumDef,
   'VcaCard.svelte': vcaDef,
@@ -142,6 +150,7 @@ const MAPPING_BOUND_CARDS: readonly string[] = [
   'DelayCard.svelte',
   'MacrooscillatorCard.svelte',
   'FilterCard.svelte',
+  'NoiseCard.svelte',
   'RingbackCard.svelte',
   'SnaredrumCard.svelte',
   'VcaCard.svelte',

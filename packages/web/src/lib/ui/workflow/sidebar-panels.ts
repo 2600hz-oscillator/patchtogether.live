@@ -31,6 +31,7 @@ import type { Component } from 'svelte';
 import type { ParamDef } from '$lib/graph/types';
 import FilterResponsePanel from './panels/FilterResponsePanel.svelte';
 import MeowboxFormantBankPanel from './panels/MeowboxFormantBankPanel.svelte';
+import NoiseTapsPanel from './panels/NoiseTapsPanel.svelte';
 import StereoCrossoverPanel from './panels/StereoCrossoverPanel.svelte';
 
 /** The props every sidebar panel takes: the node it describes, plus whatever
@@ -85,6 +86,28 @@ const SIDEBAR_PANELS: Readonly<Record<string, Component<SidebarPanelProps>>> = {
   // `stereo-crossover` takes `splitHz`/`widthParam` — do that then, not now, on
   // one module's guess about the next one.
   'formant-bank': MeowboxFormantBankPanel as unknown as Component<SidebarPanelProps>,
+
+  // THE THREE TAPS: white / pink / brown drawn as spectra RELATIVE to the white
+  // tap on a log ruler, over a level ladder at the live LEVEL.
+  //
+  // ⚠ A SIDEBAR BLOCK FOR THE STRUCTURAL REASON ABOVE, IN ITS MOST EXTREME
+  // FORM. A panel's first legal rank is 7 and NOISE HAS EXACTLY ONE RANKABLE
+  // CONTROL, so no amount of re-ranking could ever put this picture in
+  // `face.hero.cell`. meowbox reached the wall with five keys; noise cannot
+  // approach it. The `custom` block carries no `face.order` key at all, which
+  // is what makes a picture possible on the smallest module in the registry.
+  //
+  // ⚠ AND IT IS DRAWN, NEVER TRACED. NOISE is FREE-RUNNING — all three tables
+  // start at factory time — so a live analyser would repaint every frame and
+  // make the dock baseline a race against boot latency. Every point is a pure
+  // function of the generators' own coefficients (`noise-face-model`), pinned
+  // against a Welch PSD of the shipping generators in the unit lane.
+  //
+  // Not generic yet, and it says so: the component reads NOISE's own three-tap
+  // model. moog903a and moog923 build their tables from the SAME
+  // `noiseGenerators`, so they are the plausible second and third adopters —
+  // widen it behind declared props then, not now, on one module's guess.
+  'noise-taps': NoiseTapsPanel as unknown as Component<SidebarPanelProps>,
 };
 
 /** The component for a declared `custom` panel id, or `null`. */

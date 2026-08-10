@@ -165,6 +165,32 @@ export const FACES = [
   // cleanly even without the audio freeze, so — unlike analogVco and
   // macrooscillator — it is not a witness for it.
   { type: 'clouds', pages: 3 },
+  // FACE BATCH 4 (2026-08-10) — the three-tap noise source, and the FIRST
+  // ZERO-BAND entry in this roster. Not a mistake and not a truncation: the
+  // module has ONE param, `face.hero.control` promotes it, and `heroFacePlan`
+  // DROPS a band its hero emptied ("a labelled void where they were"), so the
+  // dock renders a hero rail and a sidebar and no section bands at all. The
+  // `toHaveCount(pages)` assert in `openDock` is therefore a real structural
+  // gate here too — it fails if a band ever comes back.
+  //
+  // ⚠ FREE-RUNNING, AND THE FIRST BROADBAND WITNESS FOR #1420's FREEZE. All
+  // three noise tables `.start()` unconditionally at factory time, so the
+  // `meter` glyph on the compact tile is live from spawn — this tile can only
+  // baseline because the shared boot path suspends the graph before framing.
+  // analogVco and macrooscillator are the existing witnesses and both are
+  // PERIODIC (a saw at some phase), which is why a mis-ordered freeze reads as
+  // an intermittent 0/0/192/173 px on macrooscillator. Broadband noise has no
+  // phase to land on, so the prediction is that this tile catches the same
+  // regression deterministically.
+  //
+  // ⚠ THAT IS A PREDICTION, NOT A MEASUREMENT — say so rather than let a later
+  // reader take it for a derived number like the two entries above. This
+  // face's baselines are DEFERRED to the VRT platform sweep (owner, 2026-08-10:
+  // no new platform pairs while the sweep is in flight), so
+  // `face-noise-compact` and `face-noise-dock` have no committed PNG yet and
+  // the probe that would settle this has not been run. Capture both, then run
+  // `vrt-face-audio-probe` against this tile before quoting a number here.
+  { type: 'noise', pages: 0 },
 ] as const;
 
 /** TIGHT per-scene diff budgets (absolute pixels; Playwright takes the MIN of
