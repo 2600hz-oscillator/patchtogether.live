@@ -1,18 +1,19 @@
 <script lang="ts">
   // WavesculptRoomPanel — the faceplate's HERO: the room, seen from above.
   //
-  // ⚠ THIS IS NOT A DIAGRAM BESIDE THE KNOBS. It IS the joystick. A PF-14
+  // ⚠ THIS IS NOT A DIAGRAM BESIDE THE KNOBS. It IS a joystick. A PF-14
   // `panel` cell is "a picture you EDIT" (shell-cells.ts), and dragging the
   // camera marker writes `pos_x` + `pos_z` through the sanctioned mutation seam
   // — the exact inverse of `eyeFromCamera`, asserted in the model test, so the
   // marker lands where you drop it rather than chasing it.
   //
-  // ⚠ AND IT DRAGS THE PAIR THE LEGACY CARD NEVER PUT TOGETHER. The card gives
-  // its two big joystick axes to `pos_x` and `rot` — measured at 4.6 dB and
-  // 3.2 dB of total-gain swing, the two LEAST consequential camera controls —
-  // while `pos_z`, the second most consequential at 27.6 dB, is a small
-  // "Height" knob wedged between them. A top-down plan is X × Z by
-  // construction, so the plan hands the drag to the 27.6 dB axis for free.
+  // ⚠ IT IS NOT A REPLACEMENT FOR THE CARD'S TWO PADS, and shipping it as one
+  // was the rejected mistake. The card offers pad(pos_x, pos_y), a HEIGHT knob
+  // (pos_z), and pad(zoom, rot) — three affordances over five axes. This plan
+  // is a FOURTH thing: a top-down X × Z fly, which happens to hand the drag to
+  // the 27.6 dB axis the card gives a small knob. Restoring the two real pads
+  // is tracked on the PR; the plan stands on its own picture, not as a
+  // substitute for them.
   //
   // ── WHAT IT SAYS THAT NOTHING ELSE ON THIS MODULE EVER HAS ────────────────
   //

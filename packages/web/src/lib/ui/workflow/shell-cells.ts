@@ -757,15 +757,22 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
     // simultaneously the viewpoint and the mix desk: `distanceGain` scales a
     // voice's ribbon AND its audio gain off the same number.
     //
-    // ⚠ A PANEL BECAUSE THE PLATFORM HAS NO XY PAD, and this recovers more than
-    // it replaces. The legacy card's defining affordance is two joysticks; the
-    // face renders params as knobs, so the five camera axes would otherwise
-    // become five dials — a real regression in feel. A panel cell is "a picture
-    // you EDIT" with a `drag` affordance, so the plan IS the joystick. And it
-    // hands the drag to a BETTER pair than the card did: the card's two big
-    // joystick axes are `pos_x` (measured 4.6 dB of total-gain swing) and `rot`
-    // (3.2 dB) while `pos_z` (27.6 dB) is a small knob wedged between them. A
-    // top-down plan is X × Z by construction.
+    // ⚠ CORRECTION, 2026-08-10. This comment used to read "a panel BECAUSE THE
+    // PLATFORM HAS NO XY PAD". That is FALSE and it was load-bearing false: a
+    // shared `$lib/ui/controls/XyPad.svelte` exists, with per-axis `paramId`
+    // MIDI-assign and arrow-key nudge. What the platform lacks is a param-CELL
+    // KIND for it (`face.paramCells` is `'grid' | 'color'`) — a much smaller
+    // statement, and one that points at a fix instead of excusing a loss.
+    //
+    // The distinction mattered: on the strength of the wrong sentence this face
+    // shipped with BOTH of the card's joysticks replaced by knobs, which the
+    // owner rejected. The card's real affordances are pad(pos_x, pos_y), the
+    // HEIGHT knob (pos_z) between them, and pad(zoom, rot) —
+    // `WavesculptCard.svelte` `:367`, `:408`, `:3073`, `:3091`.
+    //
+    // A panel is still right for the ROOM PLAN itself, which is a picture the
+    // card never had: it shows which emitters currently reach you, and at the
+    // shipped default camera that is 3 of 4.
     //
     // ⚠ AND IT IS THE ONLY SURFACE THAT SHOWS A DEAD VOICE. The directional
     // term clamps at zero, so at the SHIPPED DEFAULT camera (eye [0, 0, 2.5],
