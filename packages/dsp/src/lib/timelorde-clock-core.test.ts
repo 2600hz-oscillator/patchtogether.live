@@ -329,3 +329,339 @@ describe('TIMELORDE swingSource reaches every declared source (defect 6)', () =>
     }
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// THE MULTIPLIER "DEFICIT" — WHAT IT ACTUALLY IS
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// A face spec measured 8 / 15 / 29 / 57 rising edges on 1x / 2x / 4x / 8x over
+// a 4 s render at 120 bpm — short of 8x / 16 / 32 / 64 by exactly 1 / 3 / 7,
+// IDENTICALLY at 60, 120 and 240 bpm — and read it as a one-master-period
+// startup deficit ("start a patch on 8x and the first beat is missing seven
+// pulses"). The worklet header agreed, in prose: "multiplier outputs lag by
+// exactly one master period due to a predictor-style scheduler".
+//
+// Both were wrong, and every number in the table is reproducible. The window
+// ENDS EXACTLY ON A MASTER PULSE — sample 191999 is both the 8th master and
+// the last sample of a 192000-sample render — so that master's remaining
+// (factor-1) sub-pulses are scheduled after the buffer ends and never get
+// written. 57 = 7 complete masters x 8 + 1. The head is fine; the TAIL is
+// clipped, and clipping the tail of a faster train costs more pulses, which is
+// exactly why the shortfall scales as (factor - 1) and looks like arithmetic.
+//
+// These tests pin the START, which is what the claim was about, and keep the
+// artifact itself on record as a permanent instrument leg.
+
+describe('TIMELORDE multipliers are exact FROM THE FIRST MASTER (no startup deficit)', () => {
+  const MULTS: [string, number, number][] = [['2x', OUT_2X, 2], ['4x', OUT_4X, 4], ['8x', OUT_8X, 8]];
+
+  it('every multiplier fires its first pulse ON the 1x downbeat, to the sample', () => {
+    const outs = render(MASTER * 4, params());
+    const first1x = riseSamples(outs[OUT_1X]!)[0];
+    expect(first1x, 'first 1x pulse (samples)').toBe(FIRST_MASTER);
+    for (const [name, idx] of MULTS) {
+      expect(
+        riseSamples(outs[idx]!)[0],
+        `${name} first pulse (samples) — a one-master-period predictor lag would put it at ${FIRST_MASTER + MASTER}`,
+      ).toBe(first1x);
+    }
+  });
+
+  it('the FIRST master period already carries all `factor` sub-pulses', () => {
+    // The claim under test is specifically about the START, so measure the
+    // first beat alone rather than a settled average: [first master, +1 period).
+    const outs = render(MASTER * 4, params());
+    for (const [name, idx, factor] of MULTS) {
+      const inFirstBeat = riseSamples(outs[idx]!).filter(
+        (s) => s >= FIRST_MASTER && s < FIRST_MASTER + MASTER,
+      );
+      expect(
+        inFirstBeat.length,
+        `${name} pulses inside the FIRST master period — the reported defect said 1 (short by ${factor - 1})`,
+      ).toBe(factor);
+    }
+  });
+
+  it('the sub-pulse spacing is exact from pulse 0 — no settling interval', () => {
+    const outs = render(MASTER * 4, params());
+    for (const [name, idx, factor] of MULTS) {
+      const gaps = intervalsOf(riseSamples(outs[idx]!));
+      expect(gaps.length, `${name}: not enough pulses to measure`).toBeGreaterThan(2);
+      for (const [i, g] of gaps.entries()) {
+        expect(g, `${name} gap ${i} (samples) — a settling multiplier would differ at i=0`).toBe(MASTER / factor);
+      }
+    }
+  });
+
+  it('NOTHING fires before the first master — the startup silence is UNIFORM, not per-output', () => {
+    // The other half of the misreading: the clock's first pulse is one master
+    // period after t=0 on EVERY output, 1x included. That is a property of the
+    // phase accumulator (it has to reach a full period before it wraps), not
+    // something the multipliers do. Left as-is deliberately: emitting an extra
+    // downbeat at t=0 would add a pulse to every clocked patch in the rack.
+    const outs = render(MASTER * 4, params());
+    for (let o = 0; o < N_OUT; o++) {
+      const early = riseSamples(outs[o]!).filter((s) => s < FIRST_MASTER);
+      expect(early.length, `output ${o} fired ${early.length} times before the first master`).toBe(0);
+    }
+  });
+
+  // PERMANENT INSTRUMENT LEG. This is the measurement that produced the false
+  // finding, kept green on purpose: the same correct clock reads as a deficit
+  // through a window that ends on a master, and as exact through one that does
+  // not. A future agent who counts edges over a round number of seconds and
+  // sees 57 has this test to read.
+  it('INSTRUMENT: a window ending ON a master under-counts by (factor - 1); one ending between masters does not', () => {
+    const FOUR_SECONDS = 4 * SR;            // 192000 — ends exactly on master 8
+    expect(FOUR_SECONDS % MASTER, '4 s at 120 bpm is a whole number of master periods').toBe(0);
+
+    const clipped = render(FOUR_SECONDS, params());
+    const masters = pulseCount(clipped[OUT_1X]!);
+    expect(masters, 'masters inside the 4 s window').toBe(8);
+    for (const [name, idx, factor] of MULTS) {
+      expect(
+        pulseCount(clipped[idx]!),
+        `${name} over a master-aligned window — (${masters - 1} whole masters x ${factor}) + 1 clipped`,
+      ).toBe((masters - 1) * factor + 1);
+    }
+
+    // Same clock, window pulled back so it ends BETWEEN masters — after master
+    // 7's last 8x sub-pulse (167999 + 7 x 3000 = 188999) and before master 8
+    // (191999). Now every scheduled sub-pulse is inside the window and the
+    // ratio is exact on all three multipliers at once.
+    const whole = render(FOUR_SECONDS - 1000, params());
+    const wholeMasters = pulseCount(whole[OUT_1X]!);
+    for (const [name, idx, factor] of MULTS) {
+      expect(
+        pulseCount(whole[idx]!),
+        `${name} over a window ending BETWEEN masters must be exactly ${factor}x 1x`,
+      ).toBe(wholeMasters * factor);
+    }
+  });
+});
+
+// ── EXTERNAL CLOCK: the ONE beat that genuinely cannot be predicted ────────
+//
+// A period needs two edges. On the FIRST external beat there is nothing to
+// measure, so the sub-pulses are laid out at the DECLARED bpm — a rate error
+// during lock-in, never a missing pulse, and unavoidable at any price.
+//
+// The SECOND beat is not unavoidable and used to be wrong too: the subdivision
+// period was resolved once per BLOCK from state captured before the block ran,
+// and the second external edge writes `lastMeasuredPeriod` mid-block, so the
+// measurement was invisible for the rest of that beat. Resolving it at FIRE
+// time recovers the beat.
+//
+// MEASURED, 150 bpm external against a 120 bpm knob, 2x gaps in samples:
+//   before  12000, 7200, 12000, 7200, 9600, 9600 …
+//   after   12000, 7200, 9600, 9600, 9600 …
+describe('TIMELORDE external clock locks its multipliers after ONE beat, not two', () => {
+  const EXT_PERIOD = 19200; // 150 bpm at 48 kHz
+  const KNOB_PERIOD = MASTER; // 120 bpm — deliberately WRONG, so the two are separable
+
+  /** Render with rising edges on input 0 every EXT_PERIOD samples. */
+  function renderExternal(masters: number): Float32Array[] {
+    const total = (masters + 1) * EXT_PERIOD;
+    const core = new TimelordeClockCore();
+    const bufs = Array.from({ length: N_OUT }, () => new Float32Array(total));
+    const p = params({ bpm: 120, hasExternalClock: 1 });
+    const clock = new Float32Array(total);
+    for (let e = 1; e <= masters; e++) {
+      const at = e * EXT_PERIOD;
+      for (let s = at; s < Math.min(at + 480, total); s++) clock[s] = 1;
+    }
+    for (let off = 0; off < total; off += 128) {
+      const len = Math.min(128, total - off);
+      core.process(
+        [[clock.subarray(off, off + len)]],
+        bufs.map((b) => [b.subarray(off, off + len)]),
+        p, SR, () => {},
+      );
+    }
+    return bufs;
+  }
+
+  it('1x follows the external edges exactly (the follower itself is sound)', () => {
+    const rises = riseSamples(renderExternal(7)[OUT_1X]!);
+    expect(rises.length).toBeGreaterThanOrEqual(6);
+    for (const g of intervalsOf(rises)) expect(g, 'external 1x interval (samples)').toBe(EXT_PERIOD);
+  });
+
+  it('beat 1 is laid out at the DECLARED tempo — unavoidable, a period needs two edges', () => {
+    const gaps = intervalsOf(riseSamples(renderExternal(7)[OUT_2X]!));
+    expect(gaps[0], '2x gap 0 (samples) = the declared 120 bpm half-period').toBe(KNOB_PERIOD / 2);
+    expect(gaps[1], '2x gap 1 (samples) = the remainder of the first EXTERNAL period').toBe(
+      EXT_PERIOD - KNOB_PERIOD / 2,
+    );
+  });
+
+  it('beat 2 ONWARD uses the measured external period (this is the beat the fix recovers)', () => {
+    const gaps = intervalsOf(riseSamples(renderExternal(7)[OUT_2X]!));
+    // Before the fix these read 12000, 7200 again — the block-level snapshot
+    // could not see a measurement written mid-block.
+    for (let i = 2; i < gaps.length; i++) {
+      expect(
+        gaps[i],
+        `2x gap ${i} (samples) — before the fire-time fix gaps 2 and 3 were ${KNOB_PERIOD / 2} / ${EXT_PERIOD - KNOB_PERIOD / 2}`,
+      ).toBe(EXT_PERIOD / 2);
+    }
+  });
+
+  it('4x and 8x are locked and perfectly even once beat 1 has drained', () => {
+    // ⚠ Beat 1 is laid out at the DECLARED period, which here is LONGER than
+    // the real one (24000 vs 19200), so its tail SPILLS past the second master:
+    // 8x schedules 19200 + k x 3000 up to 40200, and the second external edge
+    // lands at 38400. One stale sub-pulse from beat 1 therefore falls inside
+    // beat 2 and the gaps around the seam are irregular (measured 1800 / 600).
+    // That is inherent to laying a whole beat out in advance at the best period
+    // known when it started — the tail cannot be un-scheduled by a measurement
+    // that does not exist yet. The train is clean from the THIRD edge on.
+    const outs = renderExternal(7);
+    const SETTLED = 3 * EXT_PERIOD;
+    for (const [name, idx, factor] of [['4x', OUT_4X, 4], ['8x', OUT_8X, 8]] as const) {
+      const locked = intervalsOf(riseSamples(outs[idx]!).filter((s) => s >= SETTLED));
+      expect(locked.length, `${name}: not enough pulses after sample ${SETTLED}`).toBeGreaterThan(2);
+      for (const g of locked) expect(g, `${name} locked interval (samples)`).toBe(EXT_PERIOD / factor);
+    }
+  });
+
+  // NEGATIVE CONTROL ON THE INSTRUMENT, every run: the harness must be able to
+  // report the WRONG period. With the knob set to the external tempo the two
+  // candidate answers coincide and every assertion above would pass vacuously.
+  it('NEGATIVE CONTROL: the declared-tempo layout is VISIBLY different from the measured one', () => {
+    expect(KNOB_PERIOD / 2, 'declared half-period').not.toBe(EXT_PERIOD / 2);
+    const gaps = intervalsOf(riseSamples(renderExternal(7)[OUT_2X]!));
+    expect(new Set(gaps).size, 'if the harness only ever produced one gap value it would prove nothing')
+      .toBeGreaterThan(1);
+  });
+});
+
+// ── STOP vs MUTE: the DSP genuinely cannot tell them apart, and that is PINNED
+//
+// MEASURED, 4 s at 120 bpm, all 13 gate outputs: `running = 0`,
+// `muteOutputs = 1` and both together are BYTE-IDENTICAL — zero edges, zero
+// peak, zero DC — while `running` alone differs. They are different things
+// (one halts the phase, the other gates the writes) and from a patch cable
+// there is no difference at all.
+//
+// The fix for that is a NAMED TRANSPORT STATE the player can read
+// (timelordeTransportState in packages/web/src/lib/audio/modules), NOT a
+// change to what a jack emits: keeping one output alive under MUTE would start
+// sending pulses into patches that are relying on MUTE to silence everything.
+// This test pins the decision — if a future change makes a jack distinguish the
+// two, it goes red and that has to be a deliberate, reviewed choice.
+describe('TIMELORDE STOP and MUTE are indistinguishable AT THE JACKS (pinned decision)', () => {
+  const WINDOW = 4 * SR;
+  const signature = (outs: Float32Array[]): string =>
+    outs.map((b) => {
+      let peak = 0, sum = 0;
+      for (const v of b) { peak = Math.max(peak, Math.abs(v)); sum += v; }
+      return `${pulseCount(b)}/${peak}/${sum}`;
+    }).join(',');
+
+  const SILENT: [string, Record<string, number>][] = [
+    ['STOPPED', { running: 0 }],
+    ['MUTED', { muteOutputs: 1 }],
+    ['STOPPED + MUTED', { running: 0, muteOutputs: 1 }],
+  ];
+
+  it('all three silent states are byte-identical on every one of the 13 gate outputs', () => {
+    const sigs = SILENT.map(([, over]) => signature(render(WINDOW, params(over))));
+    for (let i = 1; i < sigs.length; i++) {
+      expect(
+        sigs[i],
+        `${SILENT[i]![0]} differs from ${SILENT[0]![0]} at the jacks — a jack now distinguishes them, which changes what existing patches receive`,
+      ).toBe(sigs[0]);
+    }
+  });
+
+  // The positive control the identity assertion needs: a signature that could
+  // not tell any two states apart would satisfy the test above trivially.
+  it('POSITIVE CONTROL: the same signature DOES separate the running state', () => {
+    expect(signature(render(WINDOW, params()))).not.toBe(signature(render(WINDOW, params({ running: 0 }))));
+  });
+
+  // bpm is the face spec's named negative control for the transport state, and
+  // it holds at the DSP too: tempo changes how many pulses a running clock
+  // emits and changes nothing about a silent one.
+  it('NEGATIVE CONTROL: bpm does not move any silent state', () => {
+    for (const [name, over] of SILENT) {
+      const at60 = signature(render(WINDOW, params({ ...over, bpm: 60 })));
+      const at240 = signature(render(WINDOW, params({ ...over, bpm: 240 })));
+      expect(at240, `${name} moved with bpm`).toBe(at60);
+    }
+    expect(
+      signature(render(WINDOW, params({ bpm: 60 }))),
+      'bpm must move a RUNNING clock, or the control above is vacuous',
+    ).not.toBe(signature(render(WINDOW, params({ bpm: 240 }))));
+  });
+});
+
+// ── SWING IS MEASURED IN INTERVALS. NEVER IN COUNTS. ──────────────────────
+//
+// The face spec's first pass counted swing edges, read 7 at swingAmount = 45
+// and 7 at swingAmount = 90, and concluded the control did nothing. It does:
+// swing moves WHEN an edge lands, never HOW MANY, so a metric that integrates
+// over the window is blind to it BY CONSTRUCTION. The counter even had a
+// passing negative control (8 -> 7 when swing engaged at all) and was still
+// the wrong instrument.
+//
+// This block is the permanent guard against repeating that: it asserts the
+// COUNT is invariant — so nobody can read a count change as a swing regression
+// — and pins the intervals in MILLISECONDS against the measured table.
+describe('SWING: a pulse COUNT is blind to it; the observable is the INTERVAL', () => {
+  const WINDOW = MASTER * 8;
+  const swingRises = (amount: number): number[] =>
+    riseSamples(render(WINDOW, params({ swingAmount: amount }))[OUT_SWING]!);
+  const msOf = (samples: number) => (samples / SR) * 1000;
+
+  it('the COUNT cannot see the AMOUNT — 15, 45, 70 and 90 deg all read the same', () => {
+    // This is verbatim the reading that produced "the amount does nothing":
+    // 7 edges at 45 and 7 at 90. It is correct, and it is uninformative.
+    const AMOUNTS = [15, 45, 70, 90];
+    const counts = AMOUNTS.map((a) => swingRises(a).length);
+    for (const [i, c] of counts.entries()) {
+      expect(
+        c,
+        `swing ${AMOUNTS[i]} deg pulse count — a COUNT is invariant to swing by construction; if this ever moves, the cause is the window edge, not the shuffle`,
+      ).toBe(counts[0]);
+    }
+  });
+
+  it('the one step a COUNT does show (0 -> engaged) is the WINDOW EDGE, not a rate change', () => {
+    // Amount 0 reads 8 and every non-zero amount reads 7, and that single step
+    // is the same master-aligned-window artifact as the multiplier "deficit":
+    // the last on-beat sits exactly on the final sample, and holding the
+    // off-beats back pushes the trailing pulse out of the buffer. It is NOT
+    // evidence that swing drops pulses — the straight and swung trains have the
+    // same number of ON-BEATS inside the window.
+    expect(swingRises(0).length, 'straight swing train (amount 0)').toBe(8);
+    expect(swingRises(90).length, 'swung train, master-aligned window').toBe(7);
+    const onBeats = (a: number) => swingRises(a).filter((_, i) => i % 2 === 0).length;
+    expect(onBeats(90), 'on-beats are untouched by the lag').toBe(onBeats(0));
+  });
+
+  it('the INTERVALS move exactly as 125 ms x (swing / 90) at 120 bpm (SRC = 1x)', () => {
+    // Measured table (face spec §3), in ms: 0 -> 500/500, 15 -> 520.8/479.2,
+    // 45 -> 562.5/437.5, 70 -> 597.2/402.8, 90 -> 625/375.
+    for (const amount of [0, 15, 45, 70, 90]) {
+      const offsetMs = 125 * (amount / 90);
+      const gaps = intervalsOf(swingRises(amount)).slice(0, 4);
+      expect(gaps.length, `swing ${amount}: not enough pulses`).toBeGreaterThanOrEqual(3);
+      for (const [i, g] of gaps.entries()) {
+        const want = i % 2 === 0 ? 500 + offsetMs : 500 - offsetMs;
+        expect(
+          msOf(g),
+          `swing ${amount} deg, interval ${i} — UNITS ARE ms (swingAmount is in DEGREES)`,
+        ).toBeCloseTo(want, 1);
+      }
+    }
+  });
+
+  it('90 deg is the 625 / 375 ms pair — a 5 : 3 long-short ratio', () => {
+    const [a, b] = intervalsOf(swingRises(90));
+    expect(msOf(a!), 'long interval (ms)').toBeCloseTo(625, 3);
+    expect(msOf(b!), 'short interval (ms)').toBeCloseTo(375, 3);
+    expect(a! / b!, 'long : short').toBeCloseTo(5 / 3, 6);
+  });
+});

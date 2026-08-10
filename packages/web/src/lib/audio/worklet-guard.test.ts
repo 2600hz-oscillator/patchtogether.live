@@ -253,7 +253,6 @@ const UNGUARDED_EXEMPTIONS: ReadonlyArray<{ file: string; processor: string; why
   { file: 'lib/video/modules/videocube.ts', processor: 'mandelbulb-osc', why: 'webgl attest basis' },
   // (3) AUDIO_WEBGL_MODULE_DEFS — audio defs flagged rendersWebGL
   { file: 'lib/audio/modules/cube.ts', processor: 'cube', why: 'webgl attest basis' },
-  { file: 'lib/audio/modules/hypercube.ts', processor: 'hypercube', why: 'webgl attest basis' },
   { file: 'lib/audio/modules/wavesculpt.ts', processor: 'wavesculpt-engine', why: 'webgl attest basis' },
 ];
 
@@ -327,8 +326,10 @@ describe('worklet-guard — the source gate (DENY BY DEFAULT)', () => {
     ).toEqual([]);
   });
 
-  it('RATCHETS BOTH WAYS: exactly 8 unguarded sites remain, all webgl-attest-basis', () => {
-    const CEILING = 8;
+  it('RATCHETS BOTH WAYS: exactly 7 unguarded sites remain, all webgl-attest-basis', () => {
+    // 8→7 (2026-08-10): hypercube.ts was DELETED with the module, so its
+    // construction site is GONE. Counted off the merged list, not decremented.
+    const CEILING = 7;
     expect(sites.length, 'unguarded worklet constructions').toBeLessThanOrEqual(CEILING);
     expect(
       CEILING - sites.length,

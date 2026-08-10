@@ -17,6 +17,11 @@
     wizardDisplayMode,
     type WizardDisplayMode,
   } from '$lib/audio/modules/timelorde-wizard';
+  // The four-state transport derivation — the single source of truth for the
+  // STOP-vs-MUTE distinction that the jacks cannot make. Shared with the engine
+  // handle's read('transportState') so the card and the engine agree by
+  // construction rather than by two copies of the same if-chain.
+  import { timelordeTransportState } from '$lib/audio/modules/timelorde-transport-state';
   // TAP TEMPO core — the SAME pure, unit-tested helper the Electra hardware
   // tap path uses (src/lib/electra/tap-tempo.ts). Median-based, 2-tap lock,
   // ~2s timeout reset, BPM clamp. We feed it performance.now() per tap and
@@ -80,6 +85,32 @@
   // locked to TIMELORDE — incl. the clip player — freezes when running = 0, so
   // this is the rack-wide stop/start.
   let running = $derived((void cardVersion, (node?.params.running ?? 1) >= 0.5));
+
+  // ── THE TRANSPORT READOUT ────────────────────────────────────────────────
+  //
+  // `running = 0` and `muteOutputs = 1` are OBSERVATIONALLY IDENTICAL AT EVERY
+  // JACK. Measured on the real clock core, 4 s at 120 bpm, all thirteen gate
+  // outputs: STOPPED, MUTED and STOPPED + MUTED are byte-identical (zero edges,
+  // zero peak, zero DC) while a running clock differs from all three. Since
+  // TIMELORDE is the singleton every patch rides, "why is my whole rack
+  // stopped" is the question this card most needs to answer, and until now
+  // nothing on it did: the two buttons show their OWN state, not the combined
+  // one, and the ON/MUTE button reads "ON" while a stopped rack sits silent.
+  //
+  // Worse, the RUN button HIDES itself whenever start_in/stop_in are patched
+  // (transportSlaved) so as not to fight the external transport — which is
+  // exactly the MIDICLOCK case where a hardware stop is the likely cause and
+  // the card said nothing at all. This strip is ALWAYS rendered.
+  //
+  // The wording lives in the pure derivation (timelorde-transport-state.ts),
+  // not here, so the card, the engine handle's read('transportState') and the
+  // docs cannot drift apart.
+  let transport = $derived(
+    (void cardVersion, timelordeTransportState({
+      running: node?.params.running,
+      muteOutputs: node?.params.muteOutputs,
+    })),
+  );
 
   // wizardOn: the dot-matrix neon WIZARD graphic show/hide flag. Driven by
   // BOTH the on-card toggle button (toggleWizard, below) AND the `gate` input
@@ -533,6 +564,21 @@
     >TAP</button>
   </header>
 
+  <!-- TRANSPORT STATE — the one thing on this card the JACKS cannot say.
+       Always rendered, including while the transport is slaved to start_in /
+       stop_in (which hides the RUN button above) — that is precisely the case
+       where a hardware MIDICLOCK stop leaves the whole rack silent and nothing
+       else on the card mentions it. `data-transport-state` carries the machine
+       id so tests assert the state rather than the prose. -->
+  <div
+    class="transport"
+    class:halted={transport.id === 'stopped' || transport.id === 'stopped-muted'}
+    class:muted={transport.id === 'muted'}
+    data-testid={`timelorde-transport-${id}`}
+    data-transport-state={transport.id}
+    title={transport.detail}
+  >{transport.short}</div>
+
   <!-- BIG SQUARE DISPLAY — ~4× the old sprite. Normally the owner's beat-pulsing
        OWL PAINTING: the owl is drawn into the canvas and its YELLOW EYES + BLUE
        BORDER brighten with the beat (the brown body stays steady — see
@@ -636,6 +682,37 @@
     background: var(--accent, #6cf);
     border-color: var(--accent, #6cf);
     color: #1a1d23;
+  }
+  /* TRANSPORT STATE strip. One line, fixed height, `white-space: nowrap` —
+     every state string is <= 30 chars (asserted in
+     timelorde-transport-state.test.ts) so the strip can never reflow and change
+     the card's height when the transport changes. */
+  .transport {
+    margin: 6px 0 0;
+    text-align: center;
+    font-size: 0.6rem;
+    font-family: ui-monospace, monospace;
+    letter-spacing: 0.04em;
+    line-height: 1.4;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    /* Every colour here is a real palette token, so the skin engine recolours
+       the strip with the rest of the app. RUNNING is the calm default — the
+       normal state should not shout. */
+    color: var(--text-dim);
+  }
+  /* MUTED: amber, the gate-cable hue — something is deliberately silencing the
+     jacks, and this card's whole output language is gate-coloured. */
+  .transport.muted {
+    color: var(--cable-gate);
+  }
+  /* HALTED: full-brightness ink + weight. This is the state that stops the
+     WHOLE rack (every sequencer, the clip player, LIVECODE's ticks), and it is
+     the one a player is hunting for when nothing is making a sound. */
+  .transport.halted {
+    color: var(--text);
+    font-weight: 600;
   }
   .knob-row {
     margin: 16px 0 0;

@@ -4,7 +4,7 @@
 // control-first (knob/fader-heavy modules a performer parks in a rail),
 // PLUS scope, WORKFLOW racks only. Rollout is allowlist-FIRST as the plan,
 // not the fallback (recommendation §2.4): the long tail — WebGL-context
-// cards (wavesculpt/cube/hypercube/foxy: any edit churns the WebGL attest
+// cards (wavesculpt/cube/foxy: any edit churns the WebGL attest
 // basis), Handle-in-body cards (bentbox/b3ntb0x), cards with in-card
 // position:fixed overlays — earns its way in per audit, later.
 //

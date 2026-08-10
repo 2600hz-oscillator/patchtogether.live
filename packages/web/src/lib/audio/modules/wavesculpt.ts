@@ -945,7 +945,7 @@ export const wavesculptDef: AudioModuleDef = {
   // WAVESCULPT's card renders WebGL2, so its def is in the WebGL attest basis
   // (AUDIO_WEBGL_MODULE_DEFS). Living-docs is hash-transparent: these markers
   // make computeWebglHash strip the co-located docs + controlFamilies so
-  // authoring them does NOT churn the GPU attest hash (the cube/hypercube
+  // authoring them does NOT churn the GPU attest hash (the cube
   // precedent; owner directive "docs must not change attest hashes" — see
   // scripts/webgl-attest-lib.ts stripDocsForHash).
   docs: (() => {

@@ -66,7 +66,6 @@
 //   warrenspectrum (after fix ↓)   10/10 processes PASS             NO MASK ✂
 //   toybox         (after fix ↓)   10/10 processes PASS             NO MASK ✂
 //   dockscope                      10/10 processes PASS             no mask
-//   hypercube                      10/10 processes PASS             no mask
 //   reshaper                       10/10 processes PASS             no mask
 //   scope                          10/10 processes PASS             no mask
 //   cube / snh-seq-scope-on/-off / vco-scope-audio-trace
@@ -79,7 +78,11 @@
 //
 // The seven `10/10 processes` rows are one command:
 //   E2E_PORT=5591 scripts/vrt-derive-trials.sh \
-//     '(analogVco|warrenspectrum|toybox|mandelbulb|dockscope|reshaper|hypercube|scope) card matches' 10
+//     '(analogVco|warrenspectrum|toybox|mandelbulb|dockscope|reshaper|scope) card matches' 10
+//   (the run also covered `hypercube`, a scene DELETED with its module on
+//   2026-08-10 — it passed 10/10 unmasked too, so dropping it changes nothing
+//   about the conclusion; the `seven … rows` count below is the run's, not
+//   this table's.)
 //
 // THREE MASKS DELETED (registry 7 → 4). Two of them by FIXING THE CARD rather
 // than hiding it, which is always the better trade and is what `scope` did
@@ -507,8 +510,10 @@ export const VRT_LIVE_SURFACES: Record<string, LiveSurfaceScene> = {
   // WHY IT IS NOT SHIPPED HERE — the blocker, verified rather than assumed:
   //   1. `WavesculptCard.svelte` creates a WebGL context, so
   //      `resolveWebglBasis()` includes it. CONFIRMED by running the resolver:
-  //      `npx tsx scripts/webgl-attest-hash.ts --list` lists exactly three
-  //      cards — CubeCard, HypercubeCard, WavesculptCard.
+  //      `npx tsx scripts/webgl-attest-hash.ts --list` listed exactly three
+  //      cards at the time — CubeCard, WavesculptCard, and a third that was
+  //      deleted with its module on 2026-08-10, so the resolver lists two
+  //      today; the hashes quoted below are from that measurement.
   //   2. With the fix applied the content hash moves from
   //      ac6d86f107da73ec54397fecf9c2b9b69c372c7975e58ac093981fa1da0a985b to
   //      4aaf024247a05b7d058246b61f905364f9d429762765d963a72be19a80c6867d, and

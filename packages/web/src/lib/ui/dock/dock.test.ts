@@ -78,7 +78,7 @@ describe('dockable allowlist (control-first + scope, workflow-only gating in Can
   });
 
   it('excludes the audited hazards: WebGL-basis cards, Handle-in-body cards, roaming/free-form cards', () => {
-    for (const t of ['wavesculpt', 'cube', 'hypercube', 'foxy', 'bentbox', 'b3ntb0x', 'cadillac', 'sticky', 'group', 'toybox']) {
+    for (const t of ['wavesculpt', 'cube', 'foxy', 'bentbox', 'b3ntb0x', 'cadillac', 'sticky', 'group', 'toybox']) {
       expect(isDockableType(t), t).toBe(false);
     }
     expect(isDockableType(null)).toBe(false);

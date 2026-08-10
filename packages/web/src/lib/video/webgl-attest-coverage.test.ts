@@ -14,8 +14,7 @@
 // So this guard FAILS the build (it runs in the REQUIRED `unit` job) when ANY
 // of these is not covered by the basis:
 //   (1) every domain:'video' module def (mechanically, from the registry),
-//   (2) every audio module def flagged `rendersWebGL: true` (CUBE/HYPERCUBE/
-//       WAVESCULPT),
+//   (2) every audio module def flagged `rendersWebGL: true` (CUBE/WAVESCULPT),
 //   (3) every CARD whose source creates a WebGL context (getContext('webgl…')).
 // It ALSO asserts:
 //   (4) the heavy WebGL spec glob still resolves the expected COUNT (so a spec is
@@ -195,8 +194,8 @@ describe('WebGL attestation — fail-closed coverage guard (§12)', () => {
 
   it('(2) every rendersWebGL-flagged audio module def is covered by the basis', () => {
     const flagged = listModuleDefs().filter((d) => (d as { rendersWebGL?: boolean }).rendersWebGL);
-    // We expect exactly CUBE / HYPERCUBE / WAVESCULPT today.
-    expect(flagged.map((d) => d.type).sort()).toEqual(['cube', 'hypercube', 'wavesculpt']);
+    // We expect exactly CUBE / WAVESCULPT today (HYPERCUBE was deleted 2026-08-10).
+    expect(flagged.map((d) => d.type).sort()).toEqual(['cube', 'wavesculpt']);
     // Each flagged def's source file MUST be in the basis.
     for (const f of AUDIO_WEBGL_MODULE_DEFS) {
       expect(basisSet.has(f), `rendersWebGL audio def not in basis: ${f}`).toBe(true);
@@ -362,7 +361,7 @@ describe('webgl-attest: docs on REAL basis files are hash-transparent', () => {
     expect(docBearing.length).toBeGreaterThanOrEqual(50);
   });
 
-  it('the three rendersWebGL AUDIO defs are among them (cube / hypercube / wavesculpt)', () => {
+  it('the rendersWebGL AUDIO defs are among them (cube / wavesculpt)', () => {
     for (const def of AUDIO_WEBGL_MODULE_DEFS) {
       expect(docBearing, `${def} carries co-located docs that must be stripped`).toContain(def);
     }

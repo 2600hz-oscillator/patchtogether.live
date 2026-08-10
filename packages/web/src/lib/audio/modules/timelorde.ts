@@ -58,6 +58,7 @@ import workletUrl from '@patchtogether.live/dsp/dist/timelorde.js?url';
 import { getSchedulerClock } from '$lib/audio/scheduler-clock';
 import { createRisingEdgeDetector } from './transport-helpers';
 import { gateLevelToWizardOn } from './timelorde-wizard';
+import { timelordeTransportState } from './timelorde-transport-state';
 
 import { createWorkletNode } from '$lib/audio/worklet-guard';
 const loadedContexts = new WeakSet<BaseAudioContext>();
@@ -210,7 +211,7 @@ export const timelordeDef: AudioModuleDef = {
       "The rack's master clock — one canonical tempo source per patch (it's a singleton and can't be deleted; a rack that opens without one gets one dropped in automatically). Set a BPM and TIMELORDE fans out a whole family of clock outputs at standard musical divisions of that tempo, from a quarter-note pulse up through sixteenths and down to multi-bar pulses, plus a swung tap — so any sequencer, LFO, or trigger consumer can patch the exact division it needs without a separate clock divider. Patch an external clock into CLOCK IN and it locks its tempo to the incoming pulses (and follows that measured BPM everywhere, including LIVECODE's clock). Its transport is drivable hands-free via START/STOP gate inputs (wire a MIDICLOCK's start/stop to slave the rack to hardware), and the big card display shows a beat-pulsing neon WIZARD — or, if you patch a video feed into VIDEO IN, it becomes a live monitor that also passes the feed through VIDEO OUT, so TIMELORDE can sit inline in a video chain.",
     inputs: {
       clock:
-        "External clock input: while patched, TIMELORDE locks its master tempo to the measured period between incoming rising edges, so every division output tracks the external pulse train. Unpatch and it falls back to the internal BPM after a couple of beats.",
+        "External clock input: while patched, TIMELORDE locks its master tempo to the measured period between incoming rising edges, so every division output tracks the external pulse train. Unpatch and it falls back to the internal BPM after a couple of beats. One beat of lock-in is unavoidable: a period needs two edges to measure, so the FIRST incoming beat has its 2x / 4x / 8x subdivisions laid out at whatever tempo the BPM knob says instead. They are all still there — the spacing is off for one beat, nothing is dropped — and from the second beat on the multipliers ride the measured tempo. Set the knob near the incoming tempo and even that beat lands where you expect.",
       start_in:
         "Transport START: a rising edge resumes the clock from wherever it was last stopped (musical position is preserved, like a DAW play button). Wire MIDICLOCK's start here to slave the rack's transport to a hardware MIDI device.",
       stop_in:
@@ -222,9 +223,9 @@ export const timelordeDef: AudioModuleDef = {
     },
     outputs: {
       "1x": "Quarter-note clock — one pulse per beat at the master BPM. The reference division everything else is built from.",
-      "8x": "32nd-note clock — eight pulses per beat (the fastest subdivision tap).",
-      "4x": "Sixteenth-note clock — four pulses per beat.",
-      "2x": "Eighth-note clock — two pulses per beat.",
+      "8x": "32nd-note clock — eight pulses per beat (the fastest subdivision tap). Like the other multipliers it is exact from the very first beat: the subdivision is computed from the tempo you set, not measured from a beat that has already gone by, so its first pulse lands on the downbeat together with 1x. (With an EXTERNAL clock patched there is one exception that cannot be avoided — see CLOCK IN.)",
+      "4x": "Sixteenth-note clock — four pulses per beat. Exact from the first beat, same as 8x.",
+      "2x": "Eighth-note clock — two pulses per beat. Exact from the first beat, same as 8x.",
       "1/2": "Half-note clock — one pulse every two beats.",
       "1/3": "One pulse every three beats (dotted/triplet-feel longer division).",
       "1/4": "One pulse every four beats — once per bar in 4/4. Like every divider it fires on the FIRST beat of its group, coincident with 1x, so it lands on the downbeat.",
@@ -243,9 +244,9 @@ export const timelordeDef: AudioModuleDef = {
       swingAmount: "SWING — how far the SWING output's off-beats are pushed late, as an angle of the SOURCE division's own pulse interval (0–90°, so at most a quarter of the way to the next pulse); 0 is dead-straight, higher values deepen the shuffle. Because it is measured against the SRC train rather than the master beat, the same setting means the same feel whichever division you swing.",
       swingSource: "SRC — which clock division feeds the SWING tap (0–11, one per gate output in the order 1x, 8x, 4x, 2x, 1/2, 1/3, 1/4, 1/8, 1/12, 1/16, 1/32, 1/64), so you can shuffle a faster or slower subdivision than the default 1x quarter-note.",
       muteOutputs:
-        "MUTE — silences every gate output while the internal clock keeps running underneath (so LIVECODE's clocked() callbacks and other tick subscribers stay alive). Bound to the card's MUTE button. Different from a transport STOP, which actually halts the clock.",
+        "MUTE — silences every gate output while the internal clock keeps running underneath (so LIVECODE's clocked() callbacks and other tick subscribers stay alive). Bound to the card's MUTE button. Different from a transport STOP, which actually halts the clock — but NOT different at the jacks: a muted clock and a stopped one both send nothing at all down every one of the thirteen outputs, so a cable cannot tell you which one is silencing your rack. The card's TRANSPORT readout names the state (RUNNING / STOPPED / MUTED / STOPPED + MUTED); read it before you go hunting for a broken patch cable.",
       running:
-        "RUN — the transport state (1 = clock advancing, 0 = halted with phase frozen). It is driven by the START/STOP gate inputs rather than a card knob, and is saved so a stopped rack reloads stopped.",
+        "RUN — the transport state (1 = clock advancing, 0 = halted with phase frozen). It is driven by the START/STOP gate inputs as well as the card's transport button, and is saved so a stopped rack reloads stopped. Halting is a real stop: the phase accumulator, the sample counter and the pending pulses all freeze, so nothing downstream advances (unlike MUTE, which only silences the gates). Because both states look identical from a patch cable, the card's TRANSPORT readout is the thing that tells them apart — and note that STOPPED + MUTED is its own state: un-muting a rack that is also stopped will not start it.",
       wizardOn:
         "WIZARD — whether the neon WIZARD card graphic is shown (1) or hidden (0); it pulses with the beat while running. Driven by both the on-card wizard toggle and the level on the gate input. Card-visual only — not used by the clock.",
     },
@@ -614,6 +615,19 @@ export const timelordeDef: AudioModuleDef = {
           // halt the clock).
           const v = runningParam?.value ?? 1;
           return v >= 0.5 ? 1 : 0;
+        }
+        if (key === 'transportState') {
+          // The named state — the ONLY place the four transport states are
+          // separable. MEASURED on the clock core: `running = 0`,
+          // `muteOutputs = 1` and both together are byte-identical on all 13
+          // gate outputs, so nothing downstream of a cable can tell them
+          // apart. Derived from the LIVE param values through the same pure
+          // function the card renders, so the readout and the engine can never
+          // disagree about which state the rack is in.
+          return timelordeTransportState({
+            running: runningParam?.value,
+            muteOutputs: muteOutputsParam?.value,
+          }).id;
         }
         return undefined;
       },
