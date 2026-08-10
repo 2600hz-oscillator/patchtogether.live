@@ -198,7 +198,9 @@ describe('card ↔ def AGREEMENT (deny-by-default across every registered card)'
     // replaced by a direct source assertion in
     // `src/lib/devices/device-card-source.test.ts`, which fails if that card
     // ever hardcodes a numeric range instead of reading the def.
-    const UNCHECKABLE_CEILING = 89;
+    // 89→87 (2026-08-10): HypercubeCard.svelte was DELETED with the module,
+    // taking its 2 uncheckable controls. Read off the ratchet's own report.
+    const UNCHECKABLE_CEILING = 87;
     expect(
       blind.length,
       `UNCHECKABLE controls grew — a control with range props but no paramId cannot be ` +
