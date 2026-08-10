@@ -29,10 +29,10 @@
   import { nodeVersion } from '$lib/graph/node-versions.svelte';
   import { getFactoryTables } from '$lib/audio/wavetable-factory-tables';
   import { WAVETABLE_PRESETS } from '$lib/audio/wavetable-presets';
-  import { CUBE_SLOTS, resolveSlotFrames, type CubeSlot } from '$lib/audio/modules/cube';
+  import { type CubeSlot } from '$lib/audio/modules/cube';
   import {
     CUBE_WAV_ACCEPT,
-    cubeSlotData,
+    cubeSlotFrames,
     cubeSlotLabel,
     cubeSlotSource,
     loadCubeWavFile,
@@ -90,8 +90,9 @@
   const STRIP_COLS = 54;
   function stripPoints(slot: CubeSlot): string {
     void live.v;
-    const frames = resolveSlotFrames(slot, cubeSlotData(live.n, slot)).frames;
-    const f = frames[0];
+    // ⚠ THROUGH THE MEMO — `resolveSlotFrames` copies every frame, and this
+    // runs per slot on every re-render, i.e. on every tick of any knob.
+    const f = cubeSlotFrames(live.n, slot)[0];
     if (!f || f.length === 0) return '';
     const pts: string[] = [];
     for (let i = 0; i < STRIP_COLS; i++) {

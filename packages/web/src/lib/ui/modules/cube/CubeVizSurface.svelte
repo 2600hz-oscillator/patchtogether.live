@@ -42,14 +42,11 @@
   import { useEngine } from '$lib/audio/engine-context';
   import {
     cubeDef,
-    CUBE_DEFAULT_TABLES,
     installCubeFrameDrawer,
     uninstallCubeFrameDrawer,
-    resolveSlotFrames,
     type CubeSlot,
-    type CubeData,
-    type CubeSlotData,
   } from '$lib/audio/modules/cube';
+  import { cubeSlotFrames, cubeSlotTableSig } from './cube-table-actions';
   import {
     columnHeights,
     fieldFromHeights,
@@ -162,21 +159,18 @@
   }
 
   // ───────────────── which wavetable each slot holds ─────────────────
-  function slotData(slot: CubeSlot): CubeSlotData {
-    const d = (node()?.data ?? {}) as CubeData;
-    return (d[slot] as CubeSlotData | undefined) ?? {};
-  }
+  //
   // A cheap signature of WHICH table each slot currently holds, so the viz
   // rebuilds (item #1: viz updates on reload + item #3: only when it must).
-  // Reads node.data (reactive via the snapshot bus) so it changes the instant a
-  // table is swapped. Doesn't include frame contents — the source/label change
-  // on every distinct table, which is enough to invalidate the cached field.
-  function slotTableSig(slot: CubeSlot): string {
-    const sd = slotData(slot);
-    return `${sd.source ?? `factory:${CUBE_DEFAULT_TABLES[slot]}`}:${sd.label ?? ''}:${sd.frames?.length ?? 0}`;
-  }
+  // It does NOT include frame contents — the source/label/count change on every
+  // distinct table, which is enough to invalidate the cached field — and it is
+  // the SAME function `cubeSlotFrames` memoises on, so the picture and its
+  // frames can never disagree about whether a table moved.
   let tableSig = $derived.by(() =>
-    (void live.v, `${slotTableSig('floor')}|${slotTableSig('wall')}|${slotTableSig('ceiling')}`));
+    (void live.v,
+      (['floor', 'wall', 'ceiling'] as CubeSlot[])
+        .map((slot) => cubeSlotTableSig(node(), slot))
+        .join('|')));
 
   /**
    * The three tables' frames.
@@ -187,27 +181,27 @@
    * live node exists; `resolveSlotFrames` recomputes the identical thing from
    * `node.data` alone (it is the function the factory itself calls), so a
    * hero panel on a graph with no engine — a VRT capture, a headless render —
-   * draws the real field instead of a black box. Memoised on `tableSig`
-   * because the fallback copies every frame.
+   * draws the real field instead of a black box. Memoised in
+   * `cube-table-actions` on WHICH table each slot holds, because the fallback
+   * would otherwise copy every frame on every call.
    */
-  let fallbackFrames: { floor: Float32Array[]; wall: Float32Array[]; ceiling: Float32Array[] } | null = null;
-  let fallbackSig = '';
-  function frames(): { floor: Float32Array[]; wall: Float32Array[]; ceiling: Float32Array[] } | undefined {
+  type CubeFrames = {
+    floor: readonly Float32Array[];
+    wall: readonly Float32Array[];
+    ceiling: readonly Float32Array[];
+  };
+  function frames(): CubeFrames | undefined {
     const e = engineCtx.get();
     const n = node();
-    const fr = (e && n ? e.read(n, 'frames') as
-      { floor: Float32Array[]; wall: Float32Array[]; ceiling: Float32Array[] } | undefined : undefined);
+    const fr = (e && n ? e.read(n, 'frames') as CubeFrames | undefined : undefined);
     if (fr && fr.floor.length && fr.wall.length && fr.ceiling.length) return fr;
-    const sig = tableSig;
-    if (!fallbackFrames || fallbackSig !== sig) {
-      fallbackFrames = {
-        floor: resolveSlotFrames('floor', slotData('floor')).frames,
-        wall: resolveSlotFrames('wall', slotData('wall')).frames,
-        ceiling: resolveSlotFrames('ceiling', slotData('ceiling')).frames,
-      };
-      fallbackSig = sig;
-    }
-    return fallbackFrames;
+    // `cubeSlotFrames` memoises on WHICH table the slot holds, so this costs a
+    // map lookup per frame rather than ~50 k float copies.
+    return {
+      floor: cubeSlotFrames(n, 'floor'),
+      wall: cubeSlotFrames(n, 'wall'),
+      ceiling: cubeSlotFrames(n, 'ceiling'),
+    };
   }
 
   // ═══════════════ 3D CUBE VISUALIZATION (WebGL2) — issue #2 ═══════════════

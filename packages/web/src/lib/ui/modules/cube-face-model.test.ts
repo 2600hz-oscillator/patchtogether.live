@@ -35,6 +35,8 @@ import {
   cubeFaceParams,
   cubeHeroCaption,
   cubeHeroWave,
+  cubeSliceParams,
+  cubeWaveSignature,
   cubeWaveStats,
 } from './cube-face-model';
 
@@ -364,6 +366,94 @@ describe('cube face — the claims the face PROSE makes about the DSP', () => {
     const at = (k: number) => cubeWaveStats(render({ spaceDiffuse: k })).acRms;
     expect(at(0.9)).toBeLessThan(at(0.5));
     expect(at(1.0)).toBeGreaterThan(at(0.9));
+  });
+});
+
+describe('cube face — the WAVE SIGNATURE that gates the 1.4 ms hero scan', () => {
+  // `cubeHeroWave` is the real 256-ray x 96-step scan: 1.421 ms measured. The
+  // hero's `$derived` chain re-runs on every node-version bump — ~60 a second
+  // during any drag — so it is gated on this signature. Both failure modes are
+  // invisible from the UI and opposite:
+  //
+  //   too COARSE (misses a param the wave reads) -> the caption FREEZES on that
+  //     param. It still prints three plausible numbers. Nothing looks wrong.
+  //   too FINE (includes a param the wave ignores) -> the gate does nothing and
+  //     85 ms/s of main thread goes to recomputing an identical answer, most
+  //     visibly while dragging THIS PANEL'S OWN orbit affordance.
+  //
+  // So both directions are asserted, over the whole declared param list rather
+  // than a hand-picked few.
+
+  /** Every param whose value `cubeHeroWave` genuinely reads. */
+  const WAVE_PARAMS = [
+    'slice_y', 'slice_rx', 'slice_ry', 'slice_rz',
+    'morph_fc', 'connect', 'connect_strength',
+    'crush', 'space_crush', 'space_diffuse',
+    'material', 'wrap', 'fold',
+  ];
+  const sig = (over: Record<string, number> = {}) => cubeWaveSignature(cubeFaceParams(read(over)));
+
+  it('MOVES on every param the scan reads — none silently dropped', () => {
+    const base = sig();
+    const frozen: string[] = [];
+    for (const id of WAVE_PARAMS) {
+      const p = cubeDef.params.find((q) => q.id === id)!;
+      // A value guaranteed different from the default, inside the range.
+      const v = p.defaultValue === p.max ? p.min : p.max;
+      if (sig({ [id]: v }) === base) frozen.push(`${id} (${p.defaultValue} -> ${v})`);
+    }
+    expect(
+      frozen.join(', '),
+      'a param the wave READS is missing from its signature — the caption would ' +
+        'freeze on it while printing three plausible numbers',
+    ).toBe('');
+  });
+
+  it('is INVARIANT to every param the scan does NOT read — including the camera', () => {
+    // The direction that makes the gate worth having. `view_rot_x/y` matter most:
+    // the hero's drag-to-orbit writes them at pointer rate.
+    const base = sig();
+    const leaked: string[] = [];
+    for (const p of cubeDef.params) {
+      if (WAVE_PARAMS.includes(p.id)) continue;
+      const v = p.defaultValue === p.max ? p.min : p.max;
+      if (sig({ [p.id]: v }) !== base) leaked.push(`${p.id} (${p.defaultValue} -> ${v})`);
+    }
+    expect(
+      leaked.join(', '),
+      'a param the wave IGNORES invalidates its signature — the gate is a no-op ' +
+        'and an orbit drag pays 1.4 ms x 60/s for an identical answer',
+    ).toBe('');
+  });
+
+  it('the two sets TOGETHER cover every declared param (no third bucket)', () => {
+    // Otherwise a param added later could sit in neither list and be asserted
+    // by neither direction — the classification going stale in silence.
+    const covered = new Set(WAVE_PARAMS);
+    const all = cubeDef.params.map((p) => p.id);
+    expect(all.filter((id) => covered.has(id)).sort()).toEqual([...WAVE_PARAMS].sort());
+    expect(all.length).toBeGreaterThan(WAVE_PARAMS.length);
+  });
+
+  it('ANCHORED TO `cubeSliceParams` — a new SliceParams field is covered for free', () => {
+    // The signature enumerates the object's own keys rather than a hand-typed
+    // list, so it cannot go stale against the thing it describes. Assert the
+    // anchor itself: every key of the real SliceParams appears in the string.
+    const p = cubeFaceParams(read());
+    const s = cubeWaveSignature(p);
+    for (const key of Object.keys(cubeSliceParams(p))) {
+      expect(s, `SliceParams key '${key}' must appear in the signature`).toContain(`${key}=`);
+    }
+    expect(s, '`fold` is post-scan and not in SliceParams — appended explicitly').toContain('fold=');
+  });
+
+  it('the gated recompute AGREES with an ungated one (the gate changes nothing but cost)', () => {
+    // A gate that also changed the answer would be a correctness bug wearing a
+    // performance costume. Same params -> same signature -> same stats.
+    const a = cubeWaveStats(cubeHeroWave(cubeFaceParams(read({ slice_rx: 0.8 })), FLOOR, WALL, CEIL));
+    const b = cubeWaveStats(cubeHeroWave(cubeFaceParams(read({ slice_rx: 0.8, view_rot_y: 2.1 })), FLOOR, WALL, CEIL));
+    expect(sig({ slice_rx: 0.8 })).toBe(sig({ slice_rx: 0.8, view_rot_y: 2.1 }));
+    expect(b).toEqual(a);
   });
 });
 

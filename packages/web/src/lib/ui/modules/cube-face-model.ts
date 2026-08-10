@@ -328,6 +328,37 @@ export function cubeHeroWave(
   return wave;
 }
 
+/**
+ * A signature over EXACTLY the params the hero wave is a function of.
+ *
+ * ⚠ THIS IS A PERFORMANCE CORRECTNESS FIELD, and the measurement is the reason
+ * it exists. `cubeHeroWave` costs 1.421 ms (256 rays × 96 steps, measured), and
+ * the panel's `$derived` chain re-runs on every node-version bump — ~60 a
+ * second during any drag. Keyed on the node, that is 85 ms/s of main thread,
+ * and it is spent on drags that CANNOT change the answer: LEVEL, the ADSR, the
+ * pitch knobs, and above all the CAMERA, because this face's own hero affordance
+ * is drag-to-orbit writing `view_rot_x/y` at pointer rate. Orbiting the picture
+ * would have recomputed the audio wave sixty times a second for nothing.
+ *
+ * ⚠ IT IS DERIVED FROM `cubeSliceParams`, NOT HAND-LISTED. A hand-listed
+ * signature is a second copy of "what the wave reads" that goes stale silently:
+ * add a field to `SliceParams`, forget it here, and the caption FREEZES on that
+ * field with every gate green. Enumerating the object's own keys means a new
+ * field is covered the moment it exists. `fold` is appended because
+ * `applyFold` runs after the scan and is not part of `SliceParams`.
+ *
+ * Both directions are permanent legs in cube-face-model.test.ts: invariant to
+ * every param the wave does not read, and moving on every param it does.
+ */
+export function cubeWaveSignature(p: CubeFaceParams): string {
+  const s = cubeSliceParams(p) as unknown as Record<string, unknown>;
+  const parts = Object.keys(s)
+    .sort()
+    .map((k) => `${k}=${String(s[k])}`);
+  parts.push(`fold=${p.fold}`);
+  return parts.join('|');
+}
+
 /** The L/R depth offsets SPREAD commands, for the panel's own annotation. */
 export function cubeSpreadOffsets(p: CubeFaceParams): [number, number] {
   return [spreadDepthOffset(p.spread, -1), spreadDepthOffset(p.spread, 1)];
