@@ -180,8 +180,7 @@ export const INTERACTIVE_DOC_MODULES: ReadonlySet<string> = new Set<string>([
   // pills + preset footer) qualifies; verified live by docs-virtual-module.spec.ts
   // (cloudseed late_cv→late_out exercises the CV→param dual context). The
   // STATIC siblings stay off this list: foxy/twotracks/synesthesia
-  // run a 2D-canvas render in the card, hypercube renders WebGL + has a file
-  // picker, and bluebox has no
+  // run a 2D-canvas render in the card, and bluebox has no
   // control-<paramId> Knob/Fader to hover (its keys are press-and-hold buttons)
   // — see strict-docs.ts.
   'cloudseed',

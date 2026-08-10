@@ -5,13 +5,14 @@
 // `spawnPatch`'s "is the node in the DOM yet" wait was a flat 5000 ms. That is
 // the failure CLAUDE.md names first — "NEVER express a renderer-dependent wait
 // in MILLISECONDS — count FRAMES … it is not one assertion, it is a different
-// assertion per machine" — and it cost a real CI red: `hypercube: every
+// assertion per machine" — and it cost a real CI red: `<webgl2-card>: every
 // declared output emits a measurable signal` timed out inside spawnPatch on
 // shard 7/10 (run 30727526282), first attempt AND retry, while passing locally
 // under the SAME software renderer. Measured on one machine, real GPU vs
-// `E2E_SWIFTSHADER=1`: hypercube's spawn is 190 ms → 1437 ms, a 7.6× renderer
+// `E2E_SWIFTSHADER=1`: that card's spawn is 190 ms → 1437 ms, a 7.6× renderer
 // tax — before CI's slower CPU and ten parallel shards. The budget did not
-// change; the number of FRAMES it bought did.
+// change; the number of FRAMES it bought did. (The module itself was deleted
+// on 2026-08-10; the measurement is about the renderer, not about it.)
 //
 // So the fix is a FRAME budget, and this file tests THE FIX rather than the
 // module that tripped it. The instrument is what was wrong, so the instrument
@@ -142,8 +143,8 @@ test.describe('spawnPatch mount budget — FRAMES, not milliseconds', () => {
   test('the frame budget keeps its measured headroom over a real mount', () => {
     // Cheap, but it guards the number a future edit is most likely to shave.
     // MEASURED worst case (see _helpers.ts): a mount is 3–5 frames on either
-    // renderer — hypercube, the heaviest, is 5 on a GPU and 4 under
-    // SwiftShader. The budget is headroom over THAT, not over a clock.
+    // renderer — the heaviest measured (a live-WebGL2 card) is 5 on a GPU and
+    // 4 under SwiftShader. The budget is headroom over THAT, not over a clock.
     const MEASURED_WORST_CASE_FRAMES = 5;
     expect(
       MOUNT_FRAME_BUDGET / MEASURED_WORST_CASE_FRAMES,

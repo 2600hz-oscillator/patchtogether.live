@@ -65,7 +65,6 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   gatemaiden: { size: '1u', hp: 1 }, // 199×200px
   grainsOfVision: { size: '3u', hp: 4 }, // 720×540px — 2-col: OUT preview left, GRAIN/FEEDBACK/REVERB/COMP single-row fader sections right (widened 2hp→4hp so ~19 controls fit; was 2hp/3u where the 967px fader stack overflowed the 540px tier)
   graphicEq: { size: '2u', hp: 2 }, // 360×360px — Winamp-style VU-meter video output
-  hypercube: { size: '3u', hp: 4 }, // 540×720px — 2-col (viewport left, controls right)
   illogic: { size: '1u', hp: 2 }, // 154×240px
   joystick: { size: '2u', hp: 2 }, // 234×220px
   karplus: { size: '2u', hp: 2 }, // ~310×450px — STRING/EXCITER fader bands + PLUCK button
@@ -213,6 +212,6 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   vdelay: { size: '3u', hp: 2 }, // 431×220px
   vfpgaRunner: { size: '3u', hp: 3 }, // 467×420px
   videoMixer: { size: '1u', hp: 2 }, // 180×280px — 4 channel faders in one row  [LOCKED]
-  videocube: { size: '3u', hp: 4 }, // 540×~560px — 2-col: video_out preview + 3 slot pickers left, toggles/reader/15-knob bank right (matches cube/hypercube; NOT the 2u mandelbulb tier — too small for CUBE's control bank)
+  videocube: { size: '3u', hp: 4 }, // 540×~560px — 2-col: video_out preview + 3 slot pickers left, toggles/reader/15-knob bank right (matches cube; NOT the 2u mandelbulb tier — too small for CUBE's control bank)
   videovarispeed: { size: '3u', hp: 2 }, // 452×320px
 };

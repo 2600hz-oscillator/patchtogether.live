@@ -177,7 +177,7 @@
   //     back-panel jacks, the lane-rail preview dots, the nav counts.
   //
   // Collapse lives HERE rather than in the 208 cards for two reasons: the
-  // WebGL-basis cards (Cube/Hypercube/Wavesculpt/Foxy + the video cards) must
+  // WebGL-basis cards (Cube/Wavesculpt/Foxy + the video cards) must
   // stay byte-identical or they force a GPU re-attest, and a card that
   // hand-lists L/R descriptors can no longer disagree with its own def about
   // what is one stereo signal. See $lib/ui/stereo-jack-collapse.

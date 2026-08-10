@@ -105,7 +105,6 @@ doom output:audio_l+audio_r:token
 es9 output:spdif_l+spdif_r:token
 foxy output:out_l+out_r
 graphicEq input:audio_l+audio_r:token
-hypercube output:L+R:token
 kickdrum output:audio_l+audio_r
 meowbox output:L+R:token
 mixmstrs input:ch1L+ch1R input:ch2L+ch2R input:ch3L+ch3R input:ch4L+ch4R input:ch5L+ch5R input:ch6L+ch6R input:ch7L+ch7R input:ch8L+ch8R input:ret1L+ret1R input:ret2L+ret2R output:masterL+masterR:token output:send1L+send1R:token output:send2L+send2R:token

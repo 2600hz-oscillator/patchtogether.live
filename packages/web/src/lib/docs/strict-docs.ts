@@ -246,22 +246,22 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   // audio catalog, 2026-06-26): the previously-deferred large-param modules and
   // the remaining substantive voices/processors — CLOUDSEED (Ghost-Note algo
   // reverb, 7 macro + 38 message-port params), FOXY (hybrid realtime-wavetable
-  // oscillator), TWOTRACKS (two-reel tape looper), HYPERCUBE
-  // (4D-tesseract wavetable oscillator), SYNESTHESIA (dual 4-band audio→CV/video
-  // analyser, 48 outputs), MIXMSTRS
+  // oscillator), TWOTRACKS (two-reel tape looper), SYNESTHESIA (dual 4-band
+  // audio→CV/video analyser, 48 outputs), MIXMSTRS
   // (6-ch stereo mixer, 61 params), and BLUEBOX (DTMF/phreaker dialer). Only the
   // CONVENTION-card pure-Knob/Fader+PatchPanel member goes INTERACTIVE: cloudseed
   // (verified live by docs-virtual-module.spec.ts). The rest stay
   // STATIC: foxy/twotracks/synesthesia run a 2D-canvas render in
-  // the card, hypercube renders WebGL (rendersWebGL — authoring its docs is
-  // attest-neutral by construction, like sibling cube)
-  // and its card adds a file-upload picker,
+  // the card,
   // and bluebox has no `control-<paramId>` Knob/Fader to probe (its keys are
   // press-and-hold buttons) — so the static face is the right fallback for each.
+  // HYPERCUBE was a member of this batch; it was DELETED wholesale on
+  // 2026-08-10 (owner ruling — failed experiment), a real un-promotion by
+  // deletion, and the set shrinks by 1. The frozen floor is 172, so the
+  // ratchet in module-docs-lint.test.ts needs no edit.
   'cloudseed',
   'foxy',
   'twotracks',
-  'hypercube',
   'synesthesia',
   'mixmstrs',
   'bluebox',
@@ -283,7 +283,7 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   // STATIC: the four games + spectrograph run a 2D-canvas rAF render loop,
   // samsloop adds a waveform canvas + file-upload + mic record, and wavesculpt
   // renders WebGL2 (rendersWebGL — authoring its docs + controlFamilies is
-  // attest-neutral by construction, like cube/hypercube)
+  // attest-neutral by construction, like cube)
   // plus a per-osc .wav file picker. WAVESCULPT declares the per-osc
   // wavetable-source strip family (wavesculpt-osc). (matrixMix stays
   // undocumented on purpose — it is the e2e "undocumented module" fixture.)

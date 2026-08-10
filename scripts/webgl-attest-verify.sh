@@ -33,7 +33,7 @@ if [[ ! -f "$ATTEST_FILE" ]]; then
   cat >&2 <<EOF
 ::error::No real-GPU WebGL attestation for the current WebGL content (hash ${HASH}).
 You changed a WebGL/video path (a video module/engine/GL lib, a WebGL card —
-CUBE/HYPERCUBE/WAVESCULPT —, a heavy WebGL spec, or a toolchain pin). Run, on a
+CUBE/WAVESCULPT —, a heavy WebGL spec, or a toolchain pin). Run, on a
 machine with a REAL GPU:
 
     flox activate -- task webgl:attest

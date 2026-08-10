@@ -139,9 +139,12 @@ async function revealWorkflowNodes(page: Page, ids: string[]): Promise<void> {
 // it is a different assertion per machine."
 //
 // This wait was 5000 ms flat, and the CI red it cost was
-// `hypercube: every declared output emits a measurable signal` timing out
+// `<webgl2-card>: every declared output emits a measurable signal` timing out
 // INSIDE spawnPatch on shard 7/10 (run 30727526282) — first attempt AND
 // retry — while the same test passed locally under the SAME software renderer.
+// (The module measured below was a live-WebGL2-card audio module, DELETED
+// 2026-08-10; the numbers are kept because the ARGUMENT is about the renderer,
+// not about that module — every other row reproduces it.)
 //
 // MEASURED, one machine, real GPU vs `E2E_SWIFTSHADER=1`. The left pair is
 // what the old budget was denominated in; the right pair is what a mount
@@ -149,7 +152,7 @@ async function revealWorkflowNodes(page: Page, ids: string[]): Promise<void> {
 //
 //     module      spawnPatch WALL CLOCK      FRAMES to mount
 //                   GPU / SwiftShader          GPU / SwiftShader
-//     hypercube    190 ms /  1437 ms  7.6×      5  /  4      ← WebGL2 tesseract
+//     webgl2-card  190 ms /  1437 ms  7.6×      5  /  4      ← live WebGL2 card
 //     b3ntb0x       62 ms /   371 ms  6.0×      4  /  4
 //     cube         161 ms /   423 ms  2.6×      4  /  4
 //     vca           66 ms /   247 ms  3.7×      4  /  3      ← plain DOM, control
@@ -161,7 +164,7 @@ async function revealWorkflowNodes(page: Page, ids: string[]): Promise<void> {
 // main-thread work; what the renderer changes is how long each of those frames
 // takes. Milliseconds were measuring the renderer. Frames measure the mount.
 //
-// So the old 5000 ms bought hypercube ~26× headroom on a developer GPU and
+// So the old 5000 ms bought that card ~26× headroom on a developer GPU and
 // ~3.5× under SwiftShader — before CI's slower CPU and TEN parallel e2e
 // shards, which is where it ran out. (The 7.6× is the same SwiftShader tax
 // CLAUDE.md records for backdraft PURE TV. Not this module being special.)
@@ -185,17 +188,17 @@ async function revealWorkflowNodes(page: Page, ids: string[]): Promise<void> {
 // chose.
 //
 // ⚠ NOT taken here, deliberately: `modules.spec.ts` still carries a private
-// hand-typed `HEAVY_RENDER` set naming six modules. hypercube — the slowest to
-// mount of everything measured above — was never on it, while `b3ntb0x` (4×
-// faster) was; and no other registry-driven sweep can even read the list,
-// which is why `per-module-per-port.spec.ts` auto-enrolled hypercube on the
-// bare default. That set is no longer load-bearing now the default is
-// frame-gated, but it is still a fact about modules living in one spec's
-// literal. Consolidating it is its own change.
+// hand-typed `HEAVY_RENDER` set naming six modules. The slowest-to-mount
+// module measured above was never on it, while `b3ntb0x` (4× faster) was; and
+// no other registry-driven sweep can even read the list, which is why
+// `per-module-per-port.spec.ts` auto-enrolled it on the bare default. That set
+// is no longer load-bearing now the default is frame-gated, but it is still a
+// fact about modules living in one spec's literal. Consolidating it is its own
+// change.
 
 /** Frames of main-thread progress a node gets to appear in. ~5 s at 60 fps —
  *  identical to the old wall-clock gate on a healthy renderer — and 75× the
- *  measured 4-frame worst case (hypercube under SwiftShader). */
+ *  measured 4-frame worst case (a live-WebGL2 card under SwiftShader). */
 export const MOUNT_FRAME_BUDGET = 300;
 
 /** Wall-clock cap. BOUNDS THE FAILURE so a wedged page cannot eat a whole

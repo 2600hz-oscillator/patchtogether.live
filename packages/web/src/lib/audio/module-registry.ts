@@ -108,8 +108,7 @@ export interface AudioModuleDef {
   vizPassthrough?: boolean;
   /**
    * WebGL-attestation marker (semaphore scheme). When true, this AUDIO-domain
-   * module's card renders via a real WebGL/WebGL2 context (CUBE / HYPERCUBE /
-   * WAVESCULPT) — i.e. it is a GPU render path even though it lives in the
+   * module's card renders via a real WebGL/WebGL2 context (CUBE / WAVESCULPT) — i.e. it is a GPU render path even though it lives in the
    * audio registry. The §12 coverage guard reads this flag to mechanically
    * include the module's source in the WebGL content-hash basis (instead of a
    * hand-maintained list), and CROSS-CHECKS it against a grep of the card

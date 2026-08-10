@@ -49,8 +49,8 @@ unaffected by docs/audio-only commits. The basis (`WEBGL_PATHS`):
 
 - `packages/web/src/lib/video/**` **except `**/*.test.ts`** (engine, GL libs,
   the render worker, every video module def).
-- Every **card** whose source creates a real WebGL context (CUBE / HYPERCUBE /
-  WAVESCULPT) — derived mechanically, not hand-listed.
+- Every **card** whose source creates a real WebGL context (CUBE / WAVESCULPT)
+  — derived mechanically, not hand-listed.
 - Those cards' **audio-domain module defs** (flagged `rendersWebGL: true`).
 - The heavy WebGL **specs** (resolved from the exported `e2e/webgl-heavy-globs.ts`)
   + the Pass-B leaker specs + the Pass-C camera spec + the shared e2e helpers.
