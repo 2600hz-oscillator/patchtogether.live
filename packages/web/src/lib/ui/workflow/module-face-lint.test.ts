@@ -369,6 +369,19 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
     'cloudseed:early_diffuse_enabled',  // the early all-pass network
     'cloudseed:eq_low_shelf_enabled',   // in-loop low shelf
     'cloudseed:eq_lowpass_enabled',     // in-loop lowpass
+    // CLOUDS, 2026-08-10. FREEZE is a LATCH, and this is the one-word error
+    // that would break the module's headline feature — its shape
+    // (`0..1 discrete default 0`) is byte-identical to a press-pad's, which is
+    // exactly why `face.momentary` exists.
+    //
+    // ⚠ THE MECHANISM IS NOT "THE WORKLET READS A LEVEL" — it is stranger than
+    // that, and the conclusion survives the correction. `CloudsProcessor` ORs
+    // the a-rate `freeze` param with the FRZ gate input and TOGGLES an internal
+    // flag on each RISING EDGE, so the host sends one PULSE per intended state
+    // change and the state lives in the worklet. A momentary render would pulse
+    // on the press AND on the release — toggle on, toggle off — so the latch
+    // would be un-holdable and the buffer could never actually freeze.
+    'clouds:freeze',
     // REMOVED 2026-07-27 — 'tidyVco:hold'. The acknowledgement was WRONG (it
     // claimed "sample-and-hold ENGAGE"): the card drives it pointerdown/
     // CUBE, 2026-08-10. Three states you switch and leave: WRAP is a rule
