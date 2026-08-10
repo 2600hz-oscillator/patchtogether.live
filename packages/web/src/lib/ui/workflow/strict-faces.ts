@@ -162,6 +162,51 @@
 // the one worklet constant the model has to mirror, which is anchored by
 // measuring the shipping DSP rather than by a comment.
 
+// FACE BATCH 4 · clouds (2026-08-10) — the granular TEXTURE processor, and the
+// entry whose argument is that a face can be worth building for a module with
+// NOTHING WRONG WITH IT.
+//
+// Every other promotion in this programme found a defect: a dead morph half, a
+// dial that wrote values its def forbade, an instrument that could not be
+// sounded. clouds has none. It has no dead controls in the ordinary sense, and
+// it is the best-behaved module in its batch on level — 0 of 54 measured
+// corners exceed full scale, worst −0.10 dBFS, against sidecar's +17.98 and
+// resofilter's +44.4. What it has is INVISIBILITY, and each instance is
+// invisible to precisely the instrument the repo would reach for:
+//
+//   * IT IS SILENT WHEN YOU PATCH IT — bit-zero for exactly one GRAIN LENGTH
+//     (measured 60.0 / 134.1 / 300.0 / 670.8 / 800.0 ms at size 0 / .25 / .5 /
+//     .75 / .9, POSITION-invariant to the sample), then ~12 dB down until the
+//     2.0 s ring has filled, full level one grain after that. Nothing anywhere
+//     said so. ⚠ The spec authored against `main` said "the first quarter
+//     second is bit-zero" and "the step lands at t = 2.000 s to the sample";
+//     both were artifacts of a 0.25 s measurement grid. The real silence is a
+//     grain length and it MOVES with SIZE; the real level knee is a ~0.3 s ramp
+//     starting at ≈2.02 s. Re-measured before anything was written around them.
+//   * POSITION IS THE STRONGEST CONTROL AND NO LEVEL METRIC CAN SEE IT —
+//     0.17 dB across the whole travel on broadband, against max|Δ| 0.99 on a
+//     marked source. It would read as a dead dial in a lane tile, which is why
+//     it is ranked 5 and promoted to the DOCK hero beside the one picture that
+//     can show it.
+//   * PITCH IS A ~10.6 dB FADER AT ZERO — a THRESHOLD, not a slope: −5.47 dB at
+//     0 against −17.60 at ±0.5 st.
+//
+// ⚠ AND ONE THING THE FACE REFUSES TO PAINT AS WORKING, found in re-measurement
+// and NOT in the spec: SIZE's top 19.5 % is BIT-IDENTICAL to its own maximum
+// (`safeLen = min(lengthSamples, 0.4·bufLen)` caps the grain at 800 ms, so
+// 0.805 / 0.85 / 0.9 / 1.0 render the same samples). Worklet arithmetic, so it
+// is a separate DSP change — never folded into a face wave — and until then the
+// grain readout says CLAMPED.
+//
+// ⚠ ITS HERO PANEL HAS NO CLOCK, and that is the design rather than a
+// limitation. A live write head would need the worklet's `fillLevel`, which is
+// not an AudioParam and is never posted; anything derived from
+// `AudioContext.currentTime` would make the VRT baseline a race against boot
+// latency. Every pixel is a pure function of the six macros, so the tile is
+// deterministic on a frozen graph, a live graph and a silent rack alike — a
+// stronger guarantee than #1420's freeze, which this face therefore does not
+// depend on. (Its `meter` glyph is unlit at the lane tiers for the
+// mixer/reverb reason: an insert with nothing patched outputs exactly zero.)
 export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // P1 batch 1 — first 6 module faces
   'adsr',
@@ -197,6 +242,8 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   'macrooscillator',
   // FACE BATCH 3 · the DTMF dialer (2026-08-09) — see the header note above.
   'bluebox',
+  // FACE BATCH 4 · the granular texture processor (2026-08-10) — see above.
+  'clouds',
 ]);
 
 /**
