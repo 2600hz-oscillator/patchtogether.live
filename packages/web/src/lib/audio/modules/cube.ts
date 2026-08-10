@@ -191,7 +191,7 @@ export const cubeDef: AudioModuleDef = {
     // into a gated voice (lane-0 envelope shapes the mono oscillator); before any
     // note (and when unpatched) CUBE free-runs as a drone. Routes to worklet
     // input 2 (a node connection, not a CV→AudioParam target).
-    { id: 'trigger', type: 'gate' },
+    { id: 'trigger', type: 'gate', edge: 'gate' },
     // CV → AudioParam (summed into the worklet param by the engine).
     { id: 'slice_y',  type: 'cv', paramTarget: 'slice_y',  cvScale: { mode: 'linear' } },
     { id: 'slice_rx', type: 'cv', paramTarget: 'slice_rx', cvScale: { mode: 'linear' } },

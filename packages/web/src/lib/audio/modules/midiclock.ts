@@ -150,10 +150,10 @@ export const midiclockDef: AudioModuleDef = {
 
   inputs: [],
   outputs: [
-    { id: 'clock',     type: 'gate' },
+    { id: 'clock',     type: 'gate', edge: 'trigger' },
     { id: 'run',       type: 'cv'   },
-    { id: 'midistart', type: 'gate' },
-    { id: 'midistop',  type: 'gate' },
+    { id: 'midistart', type: 'gate', edge: 'trigger' },
+    { id: 'midistop',  type: 'gate', edge: 'trigger' },
   ],
   params: [],
 

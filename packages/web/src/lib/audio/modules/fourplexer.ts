@@ -58,10 +58,10 @@ export const fourplexerDef: AudioModuleDef = {
     { id: 'in3',   type: 'cv' },
     { id: 'in4',   type: 'cv' },
     // One gate per output selector. Rising edge advances that selector.
-    { id: 'gate1', type: 'gate' },
-    { id: 'gate2', type: 'gate' },
-    { id: 'gate3', type: 'gate' },
-    { id: 'gate4', type: 'gate' },
+    { id: 'gate1', type: 'gate', edge: 'trigger' },
+    { id: 'gate2', type: 'gate', edge: 'trigger' },
+    { id: 'gate3', type: 'gate', edge: 'trigger' },
+    { id: 'gate4', type: 'gate', edge: 'trigger' },
   ],
   outputs: [
     { id: 'out1', type: 'cv' },

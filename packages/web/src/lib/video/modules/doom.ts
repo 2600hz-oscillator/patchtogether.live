@@ -333,12 +333,12 @@ export const doomDef: VideoModuleDef = {
     // fires inside the C engine (P_KillMobj / EV_DoDoor / EV_VerticalDoor /
     // P_FireWeapon). Routed through audioSources as ConstantSourceNodes so
     // the audio domain treats them as standard gate signals (1 = HIGH).
-    { id: 'evt_kill',   type: 'gate' },
-    { id: 'evt_door',   type: 'gate' },
-    { id: 'evt_gun_p1', type: 'gate' },
-    { id: 'evt_gun_p2', type: 'gate' },
-    { id: 'evt_gun_p3', type: 'gate' },
-    { id: 'evt_gun_p4', type: 'gate' },
+    { id: 'evt_kill',   type: 'gate', edge: 'trigger' },
+    { id: 'evt_door',   type: 'gate', edge: 'trigger' },
+    { id: 'evt_gun_p1', type: 'gate', edge: 'trigger' },
+    { id: 'evt_gun_p2', type: 'gate', edge: 'trigger' },
+    { id: 'evt_gun_p3', type: 'gate', edge: 'trigger' },
+    { id: 'evt_gun_p4', type: 'gate', edge: 'trigger' },
     // feat/doom-per-type-death-gates: per-monster-type kill gates
     // (evt_kill_imp / evt_kill_demon / …) + per-player death gates
     // (evt_p1_dies..p4_dies). One CSN per port, pulsed on the matching
@@ -346,8 +346,10 @@ export const doomDef: VideoModuleDef = {
     // The legacy `evt_kill` any-monster gate stays untouched — a counted
     // monster death fires BOTH that and its matching typed gate. See
     // packages/web/src/lib/doom/doom-death-ports.ts for the stable order.
-    ...MONSTER_KILL_PORTS.map((p) => ({ id: p.portId, type: 'gate' as const })),
-    ...PLAYER_DEATH_PORTS.map((p) => ({ id: p.portId, type: 'gate' as const })),
+    // All TRIGGERS, like every other evt_* jack: one fixed EVT_PULSE_S = 0.01
+    // pulse per event through `pulseGate` (:724-730) — never a held level.
+    ...MONSTER_KILL_PORTS.map((p) => ({ id: p.portId, type: 'gate' as const, edge: 'trigger' as const })),
+    ...PLAYER_DEATH_PORTS.map((p) => ({ id: p.portId, type: 'gate' as const, edge: 'trigger' as const })),
   ],
   params: [
     { id: 'audioGain', label: 'Gain', defaultValue: 1, min: 0, max: 2, curve: 'linear' },

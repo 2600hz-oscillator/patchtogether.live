@@ -44,7 +44,7 @@ export const drummergirlDef: AudioModuleDef = {
   // `volume` (0-2.0) and `decay` (0.001-0.5s, log) params are backfilled from
   // factory defaults on load, so no migration callback (or version bump) is needed.
   inputs: [
-    { id: 'gate',   type: 'gate' },
+    { id: 'gate',   type: 'gate', edge: 'gate' },
     // CV scaling per .myrobots/plans/cv-range-standard.md.
     // pitch: linear (-36..+36 semi; cv=±1 sweeps ±36 semi from knob center).
     // tone/shape: linear (already 0..1 native).
@@ -286,7 +286,7 @@ export const drummergirlDef: AudioModuleDef = {
     explanation:
       "A one-shot synth drum voice: fire a gate and it plays a single percussion hit. Mental model — a pitched body oscillator crossfaded against a noise/transient layer, gain-shaped by an internal attack/decay envelope, so one module covers everything from a tuned tom or kick to a noisy snare or hat. There is no separate trigger and tone path to wire: pitch, tone, shape, level, and decay are all on the faceplate (and CV-modulatable), and the gate edge is the only thing you have to patch.",
     inputs: {
-      gate: "The trigger: a rising edge fires exactly one drum hit and restarts the internal amplitude envelope. Patch a sequencer gate, a clock, or any pulse here — its level isn't sustained, only the rising edge matters, so hit length is set by the Decay control rather than how long the gate stays high.",
+      gate: "A rising edge fires one drum hit and restarts the internal amplitude envelope — patch a sequencer gate, a clock, or any pulse here. It is a GATE, not a pure one-shot: the envelope is a real ADSR that holds at the shape's sustain level while the level stays high and only releases on the falling edge. Nine of the sixteen shapes sustain at zero, so for those the hit length really is Decay's alone and the gate's width does not matter; the other seven (sustain 0.02–0.5) will hold the body under a held gate, so on those shapes gate LENGTH is audible as well. Drive it from short pulses for consistent one-shots.",
       pitch: "CV that adds to the Pitch fader (bipolar, ±1 sweeps the full ±36-semitone range from the knob's center), so an LFO or sequencer can re-tune the body per hit; sampled at the gate edge that fires the note.",
       tone: "CV that adds to the Tone fader, brightening or darkening the body timbre as it moves.",
       shape: "CV that adds to the Shape fader, sliding the hit between its pitched-body and noise/transient extremes for accents or fills.",

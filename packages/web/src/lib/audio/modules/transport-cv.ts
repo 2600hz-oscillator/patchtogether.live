@@ -191,13 +191,15 @@ export function pickNavFromEvents(ev: TransportCvEvents): 'next' | 'prev' | 'ran
 /** The 6 input-port descriptors module defs need to declare (shared by all
  *  sequencer-style modules). LITERAL ARRAY — the module-manifest static
  *  extractor inlines this spread; keep it a flat array of object literals. */
+//  Every one is a TRIGGER: `createRisingEdgeDetector(0.5)` (:107) scanned per
+//  block (:121) — the high duration is never read, so a held gate acts once.
 export const TRANSPORT_CV_PORT_DEFS = [
-  { id: 'play_cv',   type: 'gate' as const },
-  { id: 'reset_cv',  type: 'gate' as const },
-  { id: 'queue1_cv', type: 'gate' as const },
-  { id: 'queue2_cv', type: 'gate' as const },
-  { id: 'queue3_cv', type: 'gate' as const },
-  { id: 'queue4_cv', type: 'gate' as const },
+  { id: 'play_cv',   type: 'gate' as const, edge: 'trigger' as const },
+  { id: 'reset_cv',  type: 'gate' as const, edge: 'trigger' as const },
+  { id: 'queue1_cv', type: 'gate' as const, edge: 'trigger' as const },
+  { id: 'queue2_cv', type: 'gate' as const, edge: 'trigger' as const },
+  { id: 'queue3_cv', type: 'gate' as const, edge: 'trigger' as const },
+  { id: 'queue4_cv', type: 'gate' as const, edge: 'trigger' as const },
 ];
 
 /** The EXTENDED transport CV ports — queue5..8 + NEXT/PREV/RANDOM nav gates.
@@ -206,11 +208,11 @@ export const TRANSPORT_CV_PORT_DEFS = [
  *  the manifest extractor — see note on TRANSPORT_CV_PORT_DEFS. The
  *  manifest parser inlines both spreads (module-manifest.ts parsePortList). */
 export const EXTENDED_TRANSPORT_CV_PORT_DEFS = [
-  { id: 'queue5_cv', type: 'gate' as const },
-  { id: 'queue6_cv', type: 'gate' as const },
-  { id: 'queue7_cv', type: 'gate' as const },
-  { id: 'queue8_cv', type: 'gate' as const },
-  { id: 'next_cv',   type: 'gate' as const },
-  { id: 'prev_cv',   type: 'gate' as const },
-  { id: 'random_cv', type: 'gate' as const },
+  { id: 'queue5_cv', type: 'gate' as const, edge: 'trigger' as const },
+  { id: 'queue6_cv', type: 'gate' as const, edge: 'trigger' as const },
+  { id: 'queue7_cv', type: 'gate' as const, edge: 'trigger' as const },
+  { id: 'queue8_cv', type: 'gate' as const, edge: 'trigger' as const },
+  { id: 'next_cv',   type: 'gate' as const, edge: 'trigger' as const },
+  { id: 'prev_cv',   type: 'gate' as const, edge: 'trigger' as const },
+  { id: 'random_cv', type: 'gate' as const, edge: 'trigger' as const },
 ];

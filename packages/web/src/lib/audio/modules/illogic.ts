@@ -131,10 +131,10 @@ export const illogicDef: AudioModuleDef = {
     { id: 'sum',  type: 'cv' },
     { id: 'diff', type: 'cv' },
     // Logic outs (the "logic" half — in1 + in2 thresholded as gates).
-    { id: 'and',  type: 'gate' },
-    { id: 'nand', type: 'gate' },
-    { id: 'or',   type: 'gate' },
-    { id: 'not',  type: 'gate' },
+    { id: 'and',  type: 'gate', edge: 'gate' },
+    { id: 'nand', type: 'gate', edge: 'gate' },
+    { id: 'or',   type: 'gate', edge: 'gate' },
+    { id: 'not',  type: 'gate', edge: 'gate' },
   ],
   params: [
     { id: 'att1_amount', label: 'Att1', defaultValue: 1, min: -1, max: 1, curve: 'linear' },

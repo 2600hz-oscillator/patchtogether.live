@@ -156,9 +156,9 @@ export const nibblesDef: VideoModuleDef = {
   inputs: [],
   outputs: [
     { id: 'out',        type: 'video' },
-    { id: 'pellet',     type: 'gate'  },
-    { id: 'death',      type: 'gate'  },
-    { id: 'dir_change', type: 'gate'  },
+    { id: 'pellet',     type: 'gate', edge: 'trigger'  },
+    { id: 'death',      type: 'gate', edge: 'trigger'  },
+    { id: 'dir_change', type: 'gate', edge: 'trigger'  },
     { id: 'length_cv',  type: 'cv'    },
     { id: 'snake',      type: 'audio' },
     { id: 'gated',      type: 'audio' },

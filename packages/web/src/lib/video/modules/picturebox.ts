@@ -193,7 +193,7 @@ export const pictureboxDef: VideoModuleDef = {
     { id: 'asset_pitch', type: 'pitch', paramTarget: 'asset_pitch' },
     // asset_gate: rising-edge trigger. Raw gate level passes through; the
     // card edge-detects (mirrors VIDEOVARISPEED's cv_* gate convention).
-    { id: 'asset_gate', type: 'gate', paramTarget: 'asset_gate' },
+    { id: 'asset_gate', type: 'gate', edge: 'trigger', paramTarget: 'asset_gate' },
   ],
   outputs: [
     { id: 'out', type: 'image' },

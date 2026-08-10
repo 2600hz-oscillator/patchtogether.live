@@ -230,20 +230,20 @@ export const videoVarispeedDef: VideoModuleDef = {
     //     bridge into a synthetic cv_<x> param; the card polls + edge-detects
     //     (mirrors DOOM / VIDEOBOX). port id == paramTarget per PR #264. ---
     // start: (re)start playback from the START point.
-    { id: 'cv_start',       type: 'gate', paramTarget: 'cv_start' },
+    { id: 'cv_start',       type: 'gate', edge: 'trigger', paramTarget: 'cv_start' },
     // pause: toggle pause / unpause.
-    { id: 'cv_pause',       type: 'gate', paramTarget: 'cv_pause' },
+    { id: 'cv_pause',       type: 'gate', edge: 'trigger', paramTarget: 'cv_pause' },
     // reset: seek to the START point.
-    { id: 'cv_reset',       type: 'gate', paramTarget: 'cv_reset' },
+    { id: 'cv_reset',       type: 'gate', edge: 'trigger', paramTarget: 'cv_reset' },
     // loop_toggle: flip LOOP <-> ONE-SHOT on rising edge.
-    { id: 'cv_loop_toggle', type: 'gate', paramTarget: 'cv_loop_toggle' },
+    { id: 'cv_loop_toggle', type: 'gate', edge: 'trigger', paramTarget: 'cv_loop_toggle' },
     // --- 7-slot asset selector ---
     // asset_pitch: V/oct slot-select pitch. NO cvScale ⇒ raw passthrough so
     // the card reads the raw V/oct on each gate edge. `pitch`-typed so a clip
     // player's pitch (polyPitchGate → lane 0) can patch in.
     { id: 'asset_pitch', type: 'pitch', paramTarget: 'asset_pitch' },
     // asset_gate: rising-edge slot-select trigger (raw passthrough; card edge-detects).
-    { id: 'asset_gate',  type: 'gate', paramTarget: 'asset_gate' },
+    { id: 'asset_gate',  type: 'gate', edge: 'trigger', paramTarget: 'asset_gate' },
     // --- CV inputs (bipolar -1..+1), separate paramTargets from the
     //     knob/slider params; the card sums them. ---
     { id: 'speedCv', type: 'cv', paramTarget: 'speedCv', cvScale: { mode: 'linear' } },

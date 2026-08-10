@@ -187,24 +187,24 @@ export const gibribbonDef: VideoModuleDef = {
     // Transport. `clock` is a gate-typed 1× clock train (repo convention —
     // every clock input in the codebase is declared `type:'gate'`; a clock IS
     // a gate train, and the gate-family driver in the per-port sweep wires it).
-    { id: 'clock', type: 'gate' as const, paramTarget: 'clock' },
-    { id: 'gate', type: 'gate' as const, paramTarget: 'gate' },
+    { id: 'clock', type: 'gate' as const, edge: 'trigger' as const, paramTarget: 'clock' },
+    { id: 'gate', type: 'gate' as const, edge: 'gate' as const, paramTarget: 'gate' },
     // Joystick axes (player aim / marine vertical position).
     { id: 'x', type: 'modsignal' as const, paramTarget: 'axis_x', cvScale: { mode: 'linear' as const } },
     { id: 'y', type: 'modsignal' as const, paramTarget: 'axis_y', cvScale: { mode: 'linear' as const } },
     // The four ABXY player buttons (distinct ids from the x/y axes).
-    { id: 'a',     type: 'gate' as const, paramTarget: 'btn_a' },
-    { id: 'b',     type: 'gate' as const, paramTarget: 'btn_b' },
-    { id: 'x_btn', type: 'gate' as const, paramTarget: 'btn_x' },
-    { id: 'y_btn', type: 'gate' as const, paramTarget: 'btn_y' },
+    { id: 'a',     type: 'gate' as const, edge: 'trigger' as const, paramTarget: 'btn_a' },
+    { id: 'b',     type: 'gate' as const, edge: 'trigger' as const, paramTarget: 'btn_b' },
+    { id: 'x_btn', type: 'gate' as const, edge: 'trigger' as const, paramTarget: 'btn_x' },
+    { id: 'y_btn', type: 'gate' as const, edge: 'trigger' as const, paramTarget: 'btn_y' },
   ],
   outputs: [
     { id: 'out',          type: 'video' },
-    { id: 'evt_hit',      type: 'gate' },
-    { id: 'evt_miss',     type: 'gate' },
-    { id: 'evt_fire',     type: 'gate' },
-    { id: 'evt_kill',     type: 'gate' },
-    { id: 'evt_gameover', type: 'gate' },
+    { id: 'evt_hit',      type: 'gate', edge: 'trigger' },
+    { id: 'evt_miss',     type: 'gate', edge: 'trigger' },
+    { id: 'evt_fire',     type: 'gate', edge: 'trigger' },
+    { id: 'evt_kill',     type: 'gate', edge: 'trigger' },
+    { id: 'evt_gameover', type: 'gate', edge: 'trigger' },
     { id: 'health_cv',    type: 'cv' },
   ],
   params: [

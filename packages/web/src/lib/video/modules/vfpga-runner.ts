@@ -152,9 +152,16 @@ export const vfpgaRunnerDef: VideoModuleDef = {
       cvScale: { mode: 'linear' as const },
     })),
     // GATE inputs → synthetic gN_evt params (raw passthrough; factory edge-detect).
+    // Declared GATE: the host itself ALWAYS maintains and publishes the held
+    // level (:420 heldUniform, :556 the card's activity LEDs) and additionally
+    // an edge count (:421) — which of the two a given loaded spec reads is the
+    // spec's choice, so `gate` is the superset that never lies. (`PortDef.edge`
+    // cannot express "depends on the loaded program"; see the Phase-0 table
+    // §4.2 finding 2.)
     ...VFPGA_GATE_PORTS.map((id, i) => ({
       id,
       type: 'gate' as const,
+      edge: 'gate' as const,
       paramTarget: gateEvtParam(i + 1),
     })),
   ],

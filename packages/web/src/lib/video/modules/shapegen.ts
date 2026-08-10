@@ -157,7 +157,7 @@ export const shapegenDef: VideoModuleDef = {
     // unpatched the legacy every-frame regeneration runs. The engine's
     // CV-bridge routes the gate sample into setParam(cv_clock, value),
     // where a rising-edge detector triggers a re-extract + redraw.
-    { id: SHAPEGEN_CLOCK_PORT_ID, type: 'gate', paramTarget: SHAPEGEN_CLOCK_PARAM_ID },
+    { id: SHAPEGEN_CLOCK_PORT_ID, type: 'gate', edge: 'trigger', paramTarget: SHAPEGEN_CLOCK_PARAM_ID },
   ],
   outputs: [
     { id: 'out', type: 'video' },

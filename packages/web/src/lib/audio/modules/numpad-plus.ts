@@ -280,18 +280,18 @@ export const numpadPlusDef: AudioModuleDef = {
   category: 'sources',
 
   inputs: [
-    { id: 'clock', type: 'gate' },
+    { id: 'clock', type: 'gate', edge: 'trigger' },
     { id: 'layer', type: 'cv' },
   ],
   outputs: [
     { id: 'l1_pitch', type: 'pitch' },
-    { id: 'l1_gate',  type: 'gate'  },
+    { id: 'l1_gate',  type: 'gate', edge: 'gate'  },
     { id: 'l2_pitch', type: 'pitch' },
-    { id: 'l2_gate',  type: 'gate'  },
+    { id: 'l2_gate',  type: 'gate', edge: 'gate'  },
     { id: 'l3_pitch', type: 'pitch' },
-    { id: 'l3_gate',  type: 'gate'  },
+    { id: 'l3_gate',  type: 'gate', edge: 'gate'  },
     { id: 'l4_pitch', type: 'pitch' },
-    { id: 'l4_gate',  type: 'gate'  },
+    { id: 'l4_gate',  type: 'gate', edge: 'gate'  },
     // Poly output: the ACTIVE layer's up-to-5 voices (held keys live, else the
     // current step's recorded notes) as a single polyPitchGate bus.
     { id: 'poly',     type: 'polyPitchGate' },

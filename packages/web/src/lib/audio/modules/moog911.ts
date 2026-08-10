@@ -52,7 +52,7 @@ export const moog911Def: AudioModuleDef = {
   category: 'modulation',
 
   inputs: [
-    { id: 'gate', type: 'gate' },
+    { id: 'gate', type: 'gate', edge: 'gate' },
     // CV inputs route to the corresponding AudioParam with engine-level
     // scaling (cvScale), so a -1..+1 LFO sweeps each param's full natural
     // range centered on the user's knob position (see .myrobots/plans/

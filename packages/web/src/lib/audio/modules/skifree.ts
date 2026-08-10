@@ -151,7 +151,7 @@ export const skifreeDef: AudioModuleDef = {
   ],
   outputs: [
     // Rising-edge gate on every crash / eaten event.
-    { id: 'gate', type: 'gate' },
+    { id: 'gate', type: 'gate', edge: 'trigger' },
     // The game canvas as a cross-domain video source (drawFrame blit).
     { id: 'out', type: 'video' },
   ],

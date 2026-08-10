@@ -83,18 +83,18 @@ export const froggerDef: AudioModuleDef = {
   ossAttribution: { author: 'Adrian Eyre (frogger, MIT)' },
 
   inputs: [
-    { id: 'up_gate',    type: 'gate' },
-    { id: 'down_gate',  type: 'gate' },
-    { id: 'left_gate',  type: 'gate' },
-    { id: 'right_gate', type: 'gate' },
+    { id: 'up_gate',    type: 'gate', edge: 'trigger' },
+    { id: 'down_gate',  type: 'gate', edge: 'trigger' },
+    { id: 'left_gate',  type: 'gate', edge: 'trigger' },
+    { id: 'right_gate', type: 'gate', edge: 'trigger' },
     // start_gate auto-fires once on first tick after module-spawn (BOOT NOTE
     // below). A rising edge re-starts the game at any time.
-    { id: 'start_gate', type: 'gate' },
+    { id: 'start_gate', type: 'gate', edge: 'trigger' },
   ],
   outputs: [
-    { id: 'home_gate',  type: 'gate' },
-    { id: 'dead_gate',  type: 'gate' },
-    { id: 'level_gate', type: 'gate' },
+    { id: 'home_gate',  type: 'gate', edge: 'trigger' },
+    { id: 'dead_gate',  type: 'gate', edge: 'trigger' },
+    { id: 'level_gate', type: 'gate', edge: 'trigger' },
   ],
   params: [
     { id: 'initialTime', label: 'Time', defaultValue: DEFAULT_TIME, min: 10, max: 120, curve: 'linear' },
