@@ -42,7 +42,7 @@ import {
   sampleSlice,
   applyFold,
   spreadDepthOffset,
-  isSilentWave,
+  isDegenerateWave,
   type SliceParams,
   type Material,
 } from '../../../../../dsp/src/lib/cube-dsp';
@@ -327,7 +327,7 @@ export const hypercubeDef: AudioModuleDef = {
       applyFold(center, fold);
       if (waveL !== center) applyFold(waveL, fold);
       if (waveR !== center && waveR !== waveL) applyFold(waveR, fold);
-      if (!isSilentWave(center)) lastCenterNonSilent = center;
+      if (!isDegenerateWave(center)) lastCenterNonSilent = center;
       lastSnapshot = lastCenterNonSilent ?? center;
       try {
         workletNode.port.postMessage({ type: 'setWave', waveCenter: center, waveL, waveR });

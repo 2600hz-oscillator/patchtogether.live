@@ -74,13 +74,34 @@ export function spreadDepthOffset(spread: number, sign: number): number {
   return sign * CUBE_SPREAD_DEPTH * s;
 }
 
-/** True if a rendered slice waveform is effectively all-zero (the slice sits
- *  fully outside the cube with WRAP off → silent by design). The worklet + the
- *  factory use this to KEEP the last non-silent wave instead of dropping the
- *  audio out while a param is being swept (issue #4). */
-export function isSilentWave(wave: Float32Array, eps = 1e-6): boolean {
-  for (let i = 0; i < wave.length; i++) {
-    if (Math.abs(wave[i] ?? 0) > eps) return false;
+/**
+ * True if a rendered slice waveform carries no AUDIO — the adopt guard's
+ * predicate. The worklet + the factory use it to KEEP the last good wave rather
+ * than dropping the output while a param is swept (issue #4).
+ *
+ * ⚠ THE TEST IS ON THE AC CONTENT, NOT ON THE ABSOLUTE LEVEL, and that is the
+ * whole point. This shipped as `isSilentWave`, testing `all |v| ≤ eps` — which
+ * is structurally blind to the failure that actually occurs. A wavetable is
+ * replayed by a phase accumulator, so what reaches the speaker is its VARIATION;
+ * a buffer pinned at a constant −1 is a full-scale DC step and exactly as
+ * inaudible as silence, yet it sails through an all-zero test at |v| = 1. Both
+ * shipped CUBE DC faults (`crush ≥ 0.999`, `space_diffuse = 1.0`) produced
+ * constants, and the guard that existed to catch dropouts adopted every one of
+ * them. Measuring the wrong quantity reads exactly like a clean bill of health.
+ *
+ * Subtracting the mean covers BOTH cases with one predicate: true silence has
+ * zero AC and still trips it; a DC-pinned buffer has zero AC and now trips it
+ * too. Negative-controlled in both directions on every run — see
+ * `cube-degenerate-wave.test.ts`.
+ */
+export function isDegenerateWave(wave: Float32Array, eps = 1e-6): boolean {
+  const n = wave.length;
+  if (n === 0) return true;
+  let sum = 0;
+  for (let i = 0; i < n; i++) sum += wave[i] ?? 0;
+  const mean = sum / n;
+  for (let i = 0; i < n; i++) {
+    if (Math.abs((wave[i] ?? 0) - mean) > eps) return false;
   }
   return true;
 }
@@ -344,12 +365,42 @@ export function crushGridSteps(k: number): number {
 }
 
 /**
+ * The COARSEST amplitude quantization CRUSH is allowed to reach.
+ *
+ * ⚠ THIS IS A CAP ON THE ENDPOINT, NOT A RESHAPE OF THE LAW. The linear
+ * 256 → 2 ramp below is unchanged wherever it already yields ≥ 4 levels; the
+ * floor bites only for k > 0.99213 (0.79 % of travel), which was ALREADY a flat
+ * detent — the shipped law spent k > 0.99606 pinned at 2 levels. So the feel of
+ * the knob does not change; the value the flat top holds does.
+ *
+ * WHY 4 AND NOT 2. A 2-level quantizer has a single threshold at 0.5, and the
+ * marched depth signal does not straddle it in most states — every sample rounds
+ * to level 0 and `out[n] = clamp(0·2 − 1) = −1`, i.e. the oscillator emits a
+ * full-scale DC step and NO audio. Measured over 12 canonical slice states:
+ * 9 of 12 collapse to `acRms` EXACTLY 0.000000 at 2 levels.
+ *
+ * WHY NOT 3. Measured, and this is the trap: a floor of 3 fixes the 9 broken
+ * states but BREAKS the one that works — `wrap: true` at k = 1 goes from a hard
+ * square (`acRms` 1.0000) to a constant (`acRms` 0.000000), because the 3-level
+ * thresholds at 0.25/0.75 bracket the whole wrapped depth range. 4 levels is the
+ * coarsest floor that keeps all 12 states a signal.
+ *
+ * ⚠ No fixed quantizer can be degenerate-proof — any signal narrower than one
+ * step collapses, and combining CRUSH with SPACE CRUSH / SPACE DIFFUSE can still
+ * get there. That residual is caught by `isDegenerateWave` (the adopt guard),
+ * not by this constant. Cap the controls; net the rest.
+ */
+export const CUBE_CRUSH_MIN_LEVELS = 4;
+
+/**
  * Amplitude quantization levels for CRUSH amount k ∈ [0,1].
- *   k = 0 → 256 (transparent), k = 1 → 2 (eliminates substantial data). Linear.
+ *   k = 0 → 256 (transparent), k = 1 → `CUBE_CRUSH_MIN_LEVELS` (blocky, but
+ *   still a signal — see that constant for why the shipped floor of 2 was a
+ *   full-scale DC fault). Linear between.
  */
 export function crushLevels(k: number): number {
   const kk = clamp01(k);
-  return Math.max(2, Math.round(256 + (2 - 256) * kk));
+  return Math.max(CUBE_CRUSH_MIN_LEVELS, Math.round(256 + (2 - 256) * kk));
 }
 
 /**
@@ -493,16 +544,46 @@ export function lowestInfoFace(
 }
 
 /**
+ * The STRONGEST pull SPACE DIFFUSE is allowed to apply.
+ *
+ * ⚠ A CAP ON THE ENDPOINT, NOT A RESHAPE. The kk² ease is untouched wherever it
+ * already yields ≤ 0.99, so only k > 0.99499 (0.5 % of travel) moves.
+ *
+ * WHY. `pull = 1` returns the face coordinate EXACTLY, for every sample of every
+ * ray — so all 256 rays read the identical column of the heightfield and the
+ * rendered wave is a constant (measured at spawn: `acRms` 0.000000, DC −0.2125).
+ * The pull is what makes the coordinate spread survive; at 1 there is no spread
+ * left to read.
+ *
+ * WHY 0.99. The residual spread is (1 − pull) × the original, so 0.99 leaves
+ * 1 % of the scan axis — ~2.6 of the 256 heightfield columns, which the bilinear
+ * read resolves cleanly. Measured at spawn it gives `acRms` 0.1649, the
+ * STRONGEST point of the whole SPACE DIFFUSE sweep (k=0.99 → 0.1394,
+ * k=0.95 → 0.0716), so the top of the knob becomes its most active setting
+ * rather than its dead one. All 12 canonical states stay a signal.
+ *
+ * ⚠ EXCEPT one, and it is honest to name it: with SPACE CRUSH also at 1 the
+ * 6-step voxel grid snaps that 1 % residual back onto a single cell, so
+ * `space_crush = 1` + `space_diffuse = 1` is still a constant. Surviving that
+ * would need pull ≤ ~0.83 — a reshape of the whole law to buy the corner where
+ * two already-destructive controls are both at maximum. That corner is netted by
+ * `isDegenerateWave` instead.
+ */
+export const CUBE_DIFFUSE_MAX_PULL = 0.99;
+
+/**
  * Pull a coordinate c ∈ [0,1] toward a face (dir) by amount k ∈ [0,1]. k = 0 →
  * identity (returns the literal argument). kk² ease: gentle at low knob, strong
- * near 1. Moving the sample positions deforms what the slice intersects → the
- * cloud spreads toward the emptiest wall and the sound changes.
+ * near 1, capped at `CUBE_DIFFUSE_MAX_PULL` so the top of the range cannot
+ * collapse every sample onto one coordinate. Moving the sample positions
+ * deforms what the slice intersects → the cloud spreads toward the emptiest wall
+ * and the sound changes.
  */
 export function diffusePull(c: number, k: number, dir: -1 | 1): number {
   const kk = clamp01(k);
   if (kk <= 0) return c; // OFF = exact identity, no arithmetic
   const target = dir > 0 ? 1 : 0;
-  return c + (target - c) * (kk * kk);
+  return c + (target - c) * Math.min(kk * kk, CUBE_DIFFUSE_MAX_PULL);
 }
 
 // ───────────────────────────────────────────────────────────────────────────

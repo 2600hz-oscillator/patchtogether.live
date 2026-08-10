@@ -102,7 +102,7 @@ import {
 import {
   sampleSlice,
   applyFold,
-  isSilentWave,
+  isDegenerateWave,
   rotate,
   type SliceParams,
   type Material,
@@ -1505,8 +1505,8 @@ export const videocubeDef: VideoModuleDef = {
       prevRgbScratch.c.set(rgbScratch.c);
       hasPrevStrips = true;
       applyFold(wave, clamp(params.fold, 0, 1));
-      if (!isSilentWave(wave)) lastWave = wave;
-      const post = isSilentWave(wave) && lastWave ? lastWave : wave;
+      if (!isDegenerateWave(wave)) lastWave = wave;
+      const post = isDegenerateWave(wave) && lastWave ? lastWave : wave;
       try {
         oscNode.port.postMessage({ type: 'setWave', wave: post });
       } catch { /* structured-clone shims may reject a transfer — ignore */ }

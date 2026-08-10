@@ -64,7 +64,7 @@ import {
   sampleSlice,
   applyFold,
   spreadDepthOffset,
-  isSilentWave,
+  isDegenerateWave,
   type SliceParams,
   type Material,
 } from '../../../../../dsp/src/lib/cube-dsp';
@@ -538,7 +538,7 @@ export const cubeDef: AudioModuleDef = {
       if (waveR !== center && waveR !== waveL) applyFold(waveR, fold);
       // Cache a non-silent center for the viz (the worklet handles the audio
       // keep-last-non-silent rule itself).
-      if (!isSilentWave(center)) lastCenterNonSilent = center;
+      if (!isDegenerateWave(center)) lastCenterNonSilent = center;
       lastSnapshot = lastCenterNonSilent ?? center;
       try {
         workletNode.port.postMessage({ type: 'setWave', waveCenter: center, waveL, waveR });
