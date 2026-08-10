@@ -69,13 +69,72 @@ export function resolveSyncPeriodS(
 
 const loadedContexts = new WeakSet<BaseAudioContext>();
 
-/** A `ParamDef.options` roster built from a label array — index → detent. The
- *  four dropdowns below are ALREADY enumerated as label arrays (the legacy card
- *  renders `<option>`s from them), so the face's named detents are DERIVED from
- *  the same arrays rather than re-typed beside them. `options` is UI VOCABULARY,
- *  not contract (see ParamOption): naming a value cannot move contract-lock. */
-function detents(labels: readonly string[]): readonly { value: number; label: string }[] {
-  return labels.map((label, value) => ({ value, label }));
+/**
+ * ⚠ THE DOCK CLIPS THREE OF THESE ROSTERS, AND NO CAPTION CHOICE CAN FIX IT.
+ * Recorded here, at the declaration, because the obvious repair is to shorten
+ * the names and the obvious repair makes it WORSE.
+ *
+ * MEASURED on the real dock faceplate (`.seg` clientWidth vs scrollWidth, VRT
+ * viewport, fonts pinned): `.segmented` sizes to max-content — the sum over
+ * captions of (text width + 18 px padding/border) plus 4 px gaps — but `.seg`
+ * is `flex: 1`, i.e. flex-BASIS 0, so the buttons then split that width
+ * EQUALLY. Every caption gets exactly the MEAN of its roster's caption widths,
+ * so ANY caption wider than the mean ellipsizes and the margin is zero BY
+ * CONSTRUCTION. Shipped today:
+ *
+ *   clk src     System 41 px, MIDI 26 → 24 each  → `SYS…`
+ *   pan mode    Static 41, Ping-Pong 60, Circular 55 → clips
+ *   filt mode   1/2/4-pole 41/42/43, State-var 60  → clips
+ *
+ * Two repairs were tried and MEASURED, and both failed for the same reason.
+ * Shortening `System` to `SYS` (22 px) NARROWED THE WHOLE GROUP and clipped
+ * `MIDI` harder than before. Equalising every roster by CHARACTER COUNT
+ * (`SYST`/`MIDI`, `STAT`/`PING`/`CIRC`, `1-P`/`2-P`/`4-P`/`SVF`) still clipped
+ * the widest of each set by 1–3 px, because equal characters are not equal
+ * pixels — `STAT` renders 29 px against `PING`'s 28. Hunting a caption set that
+ * measures identically is calibrating against one renderer, which is the thing
+ * CLAUDE.md's frame-count rule exists to forbid: it would pass on darwin and
+ * clip somewhere else on linux.
+ *
+ * So the full names stay. The defect is in `Segmented.svelte`, it is ALREADY
+ * LIVE on three other shipped faces — cloudseed `pre`/`post`, warrensspectrum
+ * `LIVE`/`FREEZE`, tidyVco `-1`/`0`/`+1`, every roster whose captions differ in
+ * width — and the fix is one line: `flex: 1 1 auto`, so a button keeps its
+ * content width and shares only the surplus. It is provably a NO-OP for an
+ * equal-width roster (filter's `LP`/`HP`/`BP`) and it does not move the GROUP's
+ * width at all, only the boundaries inside it, so nothing reflows. It is not
+ * taken here because it repaints those three modules' dock baselines: a
+ * shared-primitive look change wants its own PR and an owner preview, not a
+ * ride on a face. Filed with these numbers.
+ *
+ * ⚠ AND NONE OF IT IS VISIBLE TO `faces-parity`, which reads `textContent`:
+ * the DOM says `Ping-Pong` while the panel paints `PING-P…`. Every gate was
+ * green. Only capturing the dock and looking at it found this — which is the
+ * transferable half.
+ */
+
+/**
+ * A `ParamDef.options` roster built from a label array — index → detent.
+ *
+ * The four dropdowns below are ALREADY enumerated as label arrays (the legacy
+ * card renders `<option>`s from them), so the face's named detents are DERIVED
+ * from the same arrays rather than re-typed beside them. ONE roster, three
+ * surfaces: the card's `<option>` text, the dock button's caption, and its
+ * hover `title`. A state therefore cannot be named two ways by two surfaces —
+ * the divergence `card-range-source`'s filter-MODES clause exists for, one
+ * field over.
+ *
+ * `title` is set even though it equals `label`, so the full name survives the
+ * ellipsis the dock currently applies to the widest caption in each roster
+ * (see the note above): a hover always reads the whole word.
+ *
+ * `options` is UI VOCABULARY, not contract (see ParamOption): naming a value
+ * cannot move contract-lock.
+ */
+function detents(
+  labels: readonly string[],
+): readonly { value: number; label: string; title: string }[] {
+  return labels.map((title, value) => ({ value, label: title, title }));
 }
 
 /** Tempo-sync dropdown options (index → label). Index 0 = Off (free ms);
@@ -286,12 +345,26 @@ export const cofefveDelayDef: AudioModuleDef = {
   // 192 px lane tile to preserve adjacency would be the exact defect this face
   // exists to prevent, so adjacency yields to the lane.
   //
-  // ⚠ 4 · SIX BANDS, deliberately one under DOCK_TAB_MIN_BANDS. A seventh flips
-  // the dock to a tab rail, which kills PF-21 row packing AND every band hint —
-  // and the hints are where the dependency is stated at the point of use.
-  // `face.title` / `face.hint` do NOT paint at rest, so nothing load-bearing
-  // lives in either: the enabler facts are in the band hints, the sidebar
-  // readouts and the hero, all three of which paint unconditionally.
+  // ⚠ 4 · WHERE THE FACTS LIVE, and the correction that decided it. `face.hint`
+  // and `face.title` do not paint at rest — that much was known going in. BAND
+  // HINTS DO NOT EITHER: `bandHeaderPlan` blanks every one of them unless
+  // ANNOTATION MODE is on, by the same owner directive that gated the page
+  // header ("no text on the module… the type/description text needs to go
+  // away"). Verified by capturing the dock and looking at it, which is the only
+  // way this is visible — the declaration is present, the lint's reachability
+  // clause is green, and the rendered panel shows six bare band labels.
+  //
+  // So NOTHING load-bearing is in a hint. The three surfaces that paint
+  // unconditionally carry the whole argument, and each states it at a different
+  // grain: the HERO counts what is asleep, the HERO PICTURE greys the WOW
+  // ripple and captions the count beside it, and the SIDEBAR names all five
+  // pairs with their live enabler values. The band hints are a fourth tier for
+  // a player who turns annotations on — the mechanism ("the wet gain is
+  // 1/(1 + DUCK × envelope)") rather than the state.
+  //
+  // ⚠ 5 · SIX BANDS, deliberately one under DOCK_TAB_MIN_BANDS. A seventh flips
+  // the dock to a tab rail, which kills PF-21 row packing and takes the band
+  // hints with it even in annotation mode.
   face: {
     // Ranks 1-6 are the lane plate (faceTierCap('full')); 7-23 the dock tail;
     // 24 the hero picture, whose first legal rank is 7 (module-face-lint

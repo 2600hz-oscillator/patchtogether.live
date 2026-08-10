@@ -179,9 +179,24 @@
 // names each pair's live state, four presets open all five enablers in one
 // click each, and the hero counts what is currently asleep.
 //
-// ⚠ `face.hint` and `face.title` DO NOT PAINT AT REST, so nothing load-bearing
-// is in either. Every enabler fact lives in a band hint, a sidebar readout or
-// the hero — the three surfaces that paint unconditionally.
+// ⚠ AND BAND HINTS DO NOT PAINT AT REST EITHER — which is worth recording,
+// because the face was designed on the assumption that they do. `face.hint` and
+// `face.title` being annotation-gated was known; `bandHeaderPlan` blanks EVERY
+// band hint under the same flag, by the same owner directive. The declaration
+// is present, module-face-lint's reachability clause is green, and the rendered
+// dock shows six bare band labels. Only capturing the panel and looking at it
+// showed that. So this face's argument rests entirely on the three surfaces
+// that DO paint unconditionally — the hero count, the hero picture's captions
+// and greyed WOW ripple, and the five-line sidebar block — and the band hints
+// carry the MECHANISM as a fourth tier for annotation mode.
+//
+// ⚠ THE SAME LOOK-AT-IT PASS CAUGHT A SECOND ONE: three of the newly declared
+// `options` rosters ellipsized in their `.seg` buttons (`SYS…`, `PING-P…`,
+// `CIRCUL…`, `STATE…`). `faces-parity` reads `textContent`, so the DOM still
+// said `Ping-Pong` and every gate was green. The budget is PIXELS and differs
+// per column — `System` (6 chars) clipped in a two-button column while `Static`
+// (6) fitted in a three-button one — so the short captions are keyed on the
+// observed clip and the full names survive as the buttons' hover `title`.
 //
 // ⚠ THE SPEC IT WAS BUILT FROM WAS WRONG ABOUT PAN, and the error was in the
 // INSTRUMENT rather than the analysis — which is why it is recorded here.

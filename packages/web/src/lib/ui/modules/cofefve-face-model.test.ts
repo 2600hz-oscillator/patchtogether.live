@@ -7,8 +7,7 @@
 // other face in the repo derives a NUMBER a knob readback would get wrong.
 // This one derives whether a control DOES ANYTHING AT ALL — seven of
 // twenty-three do nothing at the factory default, five of them bit-exactly —
-// and "inaudible" is a claim
-// about AUDIO, not about arithmetic. A model that merely agreed with itself
+// and "inaudible" is a claim about AUDIO, not about arithmetic. A model that merely agreed with itself
 // would be a list of opinions. So:
 //
 //  §1 THE ENABLER GRAPH IS PINNED TO THE REAL WORKLET. Every edge in
@@ -60,7 +59,13 @@ import {
   windowTicks,
   wowDepth,
 } from './cofefve-face-model';
-import { cofefveDelayDef } from '$lib/audio/modules/cofefve';
+import {
+  COFEFVE_CLOCK_SOURCE_OPTIONS,
+  COFEFVE_FILTER_MODE_OPTIONS,
+  COFEFVE_PAN_MODE_OPTIONS,
+  COFEFVE_TEMPO_SYNC_OPTIONS,
+  cofefveDelayDef,
+} from '$lib/audio/modules/cofefve';
 
 const SR = 48000;
 const BLOCK = 128;
@@ -663,6 +668,37 @@ describe('cofefve face model — §5 no number is re-typed', () => {
     // faceTierCap('full') is 6, so a panel's first legal rank is the 7th.
     expect(order.indexOf('cofefve-echo-{n}')).toBeGreaterThanOrEqual(6);
     expect(cofefveDelayDef.face?.hero?.cell).toBe('cofefve-echo-{n}');
+  });
+
+  it('every named detent is ONE roster projected onto three surfaces', () => {
+    // The dock renders `label`, the card renders the source string, and the
+    // hover renders `title` — all three off the same array, so a state cannot
+    // be named two ways by two surfaces. That is the divergence
+    // `card-range-source`'s filter-MODES clause exists for, one field over.
+    //
+    // ⚠ AND `title` MUST BE PRESENT EVEN THOUGH IT EQUALS `label`. The dock
+    // ellipsizes the widest caption of every roster — a `Segmented.svelte`
+    // defect measured and documented on the def, live on three other shipped
+    // faces, and deliberately NOT fixed in a face PR — so the hover is the
+    // only place the whole word is guaranteed to be readable.
+    const rosters: readonly (readonly [string, readonly string[]])[] = [
+      ['tempoSync', COFEFVE_TEMPO_SYNC_OPTIONS],
+      ['clockSource', COFEFVE_CLOCK_SOURCE_OPTIONS],
+      ['panMode', COFEFVE_PAN_MODE_OPTIONS],
+      ['filterMode', COFEFVE_FILTER_MODE_OPTIONS],
+    ];
+    for (const [id, labels] of rosters) {
+      const opts = cofefveDelayDef.params.find((p) => p.id === id)?.options ?? [];
+      expect(opts.map((o) => o.title), `${id}'s detents must BE the card's roster`).toEqual([
+        ...labels,
+      ]);
+      expect(opts.map((o) => o.value)).toEqual(labels.map((_, i) => i));
+    }
+    // ⚠ tempoSync's 20 states exceed SEGMENTED_MAX_OPTIONS, so it renders as a
+    // portaled Selector where a long name is fine — stated so the absence of a
+    // short caption for `1/16D` is a decision rather than an oversight.
+    const sync = cofefveDelayDef.params.find((p) => p.id === 'tempoSync')!;
+    expect(sync.options!.length).toBeGreaterThan(6);
   });
 
   it('SIX bands — one under the tab threshold, which would kill every band hint', () => {
