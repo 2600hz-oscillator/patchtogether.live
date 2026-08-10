@@ -28,6 +28,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { adsrDef } from '$lib/audio/modules/adsr';
 import { backdraftDef } from '$lib/video/modules/backdraft';
+import { cofefveDelayDef } from '$lib/audio/modules/cofefve';
 import { delayDef } from '$lib/audio/modules/delay';
 import { macrooscillatorDef } from '$lib/audio/modules/macrooscillator';
 import { filterDef } from '$lib/audio/modules/filter';
@@ -106,10 +107,20 @@ import type { ParamDef } from '$lib/graph/types';
  *    `STRICT_VRT_MODULES`, i.e. the required `vrt-strict` gate on both
  *    platforms, so that vocabulary fix gets its own PR instead of riding a face.
  *    The clause below keeps the unbound half honest in the meantime.
+ *  - CofefveCard: converted with the cofefve face promotion (2026-08-10), and
+ *    the largest re-typing this set has absorbed — 34 literal range props over
+ *    19 controls, including a `curve="log"` on a `0.001..2 s` TIME knob where a
+ *    mistyped `linear` would have moved the dial's midpoint by three orders of
+ *    magnitude. All 34 AGREED with the def; the point is that nothing could
+ *    have told you if they had not. Its `driveIterations` slider is a NATIVE
+ *    `<input type=range>`, whose `min="1" max="16"` STRING attributes the
+ *    `min={…}` grep is structurally unable to see — bound anyway, because a
+ *    gate's blind spot is not a licence to leave a second copy of a number.
  */
 const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }>> = {
   'AdsrCard.svelte': adsrDef,
   'BackdraftCard.svelte': backdraftDef,
+  'CofefveCard.svelte': cofefveDelayDef,
   'DelayCard.svelte': delayDef,
   'MacrooscillatorCard.svelte': macrooscillatorDef,
   'FilterCard.svelte': filterDef,
@@ -127,6 +138,7 @@ const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }
  */
 const MAPPING_BOUND_CARDS: readonly string[] = [
   'AdsrCard.svelte',
+  'CofefveCard.svelte',
   'DelayCard.svelte',
   'MacrooscillatorCard.svelte',
   'FilterCard.svelte',
@@ -162,8 +174,14 @@ const MAPPING_BOUND_CARDS: readonly string[] = [
 // would also make the ratchet vacuous (it can never fail, because it is derived
 // from the thing it checks). So the literal stays, and the discipline is: after
 // ANY merge of this file, count the entries and write that number.
-const RANGE_BOUND_FLOOR = 9;
-const MAPPING_BOUND_FLOOR = 7;
+//
+// 2026-08-10, cofefve: RE-DERIVED BY COUNTING THE MERGED LISTS, per the
+// discipline above — 11 range-bound entries and 9 mapping-bound entries, not
+// "the old value plus one". The inherited literals were 9/7 while the lists
+// already held 10/8, so a bare increment would have written 10/8 and shipped a
+// full card of slack in each, exactly as the two paragraphs above describe.
+const RANGE_BOUND_FLOOR = 11;
+const MAPPING_BOUND_FLOOR = 9;
 
 /**
  * A range-ish prop bound to a NUMERIC LITERAL. Covers `min/max/defaultValue`

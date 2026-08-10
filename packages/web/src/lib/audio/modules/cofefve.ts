@@ -240,9 +240,9 @@ export const cofefveDelayDef: AudioModuleDef = {
   },
   // ── THE FACEPLATE ─────────────────────────────────────────────────────────
   //
-  // THE PROBLEM THIS FACE EXISTS FOR, in one sentence: SIX of this module's
-  // twenty-three controls are BIT-EXACTLY INAUDIBLE at the factory default and
-  // two more are within a percent of it, because each is the dependent half of
+  // THE PROBLEM THIS FACE EXISTS FOR, in one sentence: SEVEN of this
+  // module's twenty-three controls do nothing at the factory default — FIVE of
+  // them bit-exactly and two within a percent of it — because each is the dependent half of
   // an ENABLER PAIR whose enabler ships closed — and the panel has no way to
   // say so. A new user turns a knob, hears nothing, and concludes the module is
   // broken. The measurements (max|Δ| against the shipped render, the REAL
@@ -452,8 +452,8 @@ export const cofefveDelayDef: AudioModuleDef = {
 
     title: 'Analog delay',
     hint:
-      'A tape/BBD echo whose enablers all ship closed. Six controls are bit-exactly inaudible ' +
-      'until you open the one above them.',
+      'A tape/BBD echo whose enablers all ship closed. Seven controls do nothing until you open ' +
+      'the one ranked above them.',
   },
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {

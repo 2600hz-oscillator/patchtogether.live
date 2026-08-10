@@ -144,6 +144,18 @@ export const FACES = [
   // emptied and nothing is dropped. (A promotion that emptied band 1 would make
   // this 1, and would also take that band's hint out of the annotation sweep.)
   { type: 'meowbox', pages: 2 },
+  // FACE BATCH 5 — the analog delay. SIX declared bands, six rendered: the hero
+  // promotes `delayTime` and the echo-train panel out of band 1, which still
+  // holds SYNC, CLK SRC and FEEDBACK, so nothing empties.
+  //
+  // ⚠ ITS HERO PANEL IS AN INSERT'S PICTURE, NOT A TRACE, which is what makes
+  // this tile deterministic on a rack with no source patched into it. Every
+  // stem is computed from the durable params through the DSP's own loop
+  // arithmetic — no analyser, no rAF poll, no engine read — so the picture is
+  // identical whether the graph is running or frozen. (The `scope` glyph on the
+  // COMPACT tile is a live trace, and it is flat for the ordinary reason: an
+  // unpatched insert outputs silence. #1420's freeze covers it regardless.)
+  { type: 'cofefve', pages: 6 },
 ] as const;
 
 /** TIGHT per-scene diff budgets (absolute pixels; Playwright takes the MIN of
