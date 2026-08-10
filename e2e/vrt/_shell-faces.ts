@@ -144,6 +144,25 @@ export const FACES = [
   // emptied and nothing is dropped. (A promotion that emptied band 1 would make
   // this 1, and would also take that band's hint out of the annotation sweep.)
   { type: 'meowbox', pages: 2 },
+  // FACE BATCH 3 (2026-08-10) — the 3-D wavetable navigator. SIX bands, all six
+  // surviving the hero split: the hero promotes `cube-view` and `slice_ry` out
+  // of band 1, which still holds ROT Z / ROT X / Y / WRAP.
+  //
+  // ⚠ THE ONLY FACE IN THIS ROSTER WHOSE HERO IS A LIVE WebGL2 CONTEXT, and the
+  // determinism argument is NOT the audio freeze — it is that cube's picture has
+  // no clock at all. The volume, the plane and the camera are all params
+  // (`view_rot_*` are knobs, not a spin), the renderer SKIPS the draw entirely
+  // when its scene signature is unchanged, and the wave overlay is the posted
+  // slice, which on a suspended graph never arrives — so an idle tile repaints
+  // nothing. The hero CAPTION is the same story from the other side: it is
+  // computed through the pure `sampleSlice` rather than tapped off the engine,
+  // precisely so it prints a real number in a frozen capture instead of `—`.
+  //
+  // ⚠ WHAT WOULD SILENTLY RETIRE THAT: giving cube any time-varying view (an
+  // auto-orbit, a spinning plane) makes this the first face tile that genuinely
+  // animates, and it would flake rather than fail. Re-derive with
+  // vrt-face-audio-probe before assuming a passing scene proves stillness.
+  { type: 'cube', pages: 6 },
 ] as const;
 
 /** TIGHT per-scene diff budgets (absolute pixels; Playwright takes the MIN of

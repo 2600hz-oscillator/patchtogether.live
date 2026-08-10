@@ -106,12 +106,22 @@
   // pattern) — a bare SyncedStore proxy is `===` to itself, so a derived that
   // read `patch.nodes[id]` alone would freeze at the values it first saw.
   let live = $derived.by(() => ({ v: nodeVersion(nodeId), n: patch.nodes[nodeId] }));
-  let node = $derived(live.n);
+  /** The live node, for the IMPERATIVE readers (the rAF loop, the GL rebuild).
+   *
+   *  ⚠ IT IS NOT A REACTIVITY SOURCE, and forgetting that cost a real bug.
+   *  `$derived(live.n)` returns the SAME proxy every time, so Svelte's
+   *  equality check stops the update there and every downstream `$derived`
+   *  built on it FREEZES AT ITS FIRST VALUE — measured: with the gate written
+   *  that way, toggling SCREEN off left the volume painted (12874 lit pixels
+   *  against a 2575 budget) because `screenOn` never recomputed. A reactive
+   *  consumer must read `live` itself, whose identity changes with the
+   *  version; see `screenOn` / `tableSig` below. */
+  const node = () => live.n;
 
   const defaultFor = (pid: string): number =>
     cubeDef.params.find((p) => p.id === pid)?.defaultValue ?? 0;
   function paramVal(k: string): number {
-    const v = node?.params?.[k];
+    const v = node()?.params?.[k];
     return typeof v === 'number' ? v : defaultFor(k);
   }
 
@@ -125,7 +135,7 @@
   // render loop AND the display-only field/slice/wave draws). Audio is
   // untouched. When the screen is ON, *or* video_out has a downstream consumer,
   // the viz renders as normal (a patched video_out must keep emitting frames).
-  let screenOn = $derived(paramVal('screen_on') >= 0.5);
+  let screenOn = $derived.by(() => (void live.v, paramVal('screen_on') >= 0.5));
 
   // patch.edges is a Yjs-backed proxy; reading it in a $derived isn't reactive
   // on its own. Mirror DoomCard's pattern: an edges-map observer bumps a real
@@ -153,7 +163,7 @@
 
   // ───────────────── which wavetable each slot holds ─────────────────
   function slotData(slot: CubeSlot): CubeSlotData {
-    const d = (node?.data ?? {}) as CubeData;
+    const d = (node()?.data ?? {}) as CubeData;
     return (d[slot] as CubeSlotData | undefined) ?? {};
   }
   // A cheap signature of WHICH table each slot currently holds, so the viz
@@ -165,7 +175,8 @@
     const sd = slotData(slot);
     return `${sd.source ?? `factory:${CUBE_DEFAULT_TABLES[slot]}`}:${sd.label ?? ''}:${sd.frames?.length ?? 0}`;
   }
-  let tableSig = $derived(`${slotTableSig('floor')}|${slotTableSig('wall')}|${slotTableSig('ceiling')}`);
+  let tableSig = $derived.by(() =>
+    (void live.v, `${slotTableSig('floor')}|${slotTableSig('wall')}|${slotTableSig('ceiling')}`));
 
   /**
    * The three tables' frames.
@@ -183,7 +194,8 @@
   let fallbackSig = '';
   function frames(): { floor: Float32Array[]; wall: Float32Array[]; ceiling: Float32Array[] } | undefined {
     const e = engineCtx.get();
-    const fr = (e && node ? e.read(node, 'frames') as
+    const n = node();
+    const fr = (e && n ? e.read(n, 'frames') as
       { floor: Float32Array[]; wall: Float32Array[]; ceiling: Float32Array[] } | undefined : undefined);
     if (fr && fr.floor.length && fr.wall.length && fr.ceiling.length) return fr;
     const sig = tableSig;
@@ -503,7 +515,8 @@
   // ---- live param reads (knob + CV via the engine) ----
   function liveParam(pid: string, fallback: number): number {
     const e = engineCtx.get();
-    if (e && node) { const v = e.readParam(node, pid); if (typeof v === 'number') return v; }
+    const n = node();
+    if (e && n) { const v = e.readParam(n, pid); if (typeof v === 'number') return v; }
     return paramVal(pid) ?? fallback;
   }
 
@@ -872,11 +885,12 @@
       lastFrameTs = ts;
       if (glReady) renderGl();
       const e = engineCtx.get();
-      if (e && node) {
+      const n = node();
+      if (e && n) {
         // Only the visible display draws gate on screenOn; a video_out-only
         // consumer is served by the bridge's own videoFrame() pulls.
         if (screenOn) {
-          const snap = e.read(node, 'snapshot') as Float32Array | undefined;
+          const snap = e.read(n, 'snapshot') as Float32Array | undefined;
           if (snap && snap !== lastSnapRef && waveCanvas) {
             drawWave(waveCanvas, snap);
             lastSnapRef = snap;
