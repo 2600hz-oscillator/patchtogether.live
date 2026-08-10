@@ -494,7 +494,6 @@ export const bentboxDef: VideoModuleDef = {
     { id: 'mirrorYGate',        label: 'Mir Y Gate', defaultValue: DEFAULTS.mirrorYGate,       min: 0, max: 1, curve: 'linear' },
   ],
 
-  // docs-hash-ignore:start
   docs: {
     explanation: "A virtual CRT driven by a hand-bent analog composite line. The patched RGB image is resampled to a 240-line raster, converted to NTSC YIQ, given a modeled chroma-subcarrier phase, run through a triangle wavefolder + soft-clip on the composite \"voltage\", decoded back to RGB, blended with the previous frame (ping-pong feedback, max-blend trails), then painted through a CRT phosphor pipeline: scanline-gap mask (with odd/even field parity), RGB-triad subpixel mask, luma bloom, and RF grain. The result is timing-domain glitch (sync tearing, hue shimmer, ghosting, solarization) rather than pixel mosh. With nothing patched into IN it shows a dim blue idle field so you can see it is alive. Card layout: a resizable 4:3-letterboxed CRT screen over a 4x3 knob grid (timing / chroma+gain / feedback+destruction rows) plus two MIRROR toggle buttons. The image is always letterboxed at the live engine aspect (4:3 by default) and never stretched; the screen has DOM-only chrome (right-click for fullscreen, full-frame in-app expand, and present-on-second-display); OUT is a chainable video pass-through so you can stack BENTBOX into another video processor.",
     inputs: {
@@ -536,7 +535,6 @@ export const bentboxDef: VideoModuleDef = {
       mirrorYGate: "Hidden synthetic gate param written by the mirror_y_gate CV bridge (raw 0..1). No knob; the module edge-detects its rising edge to flip Mirror Y.",
     },
   },
-  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);

@@ -244,7 +244,6 @@ export const mandleblotDef: VideoModuleDef = {
     { id: 'center_y',    label: 'Y',     defaultValue: DEFAULTS.center_y,    min: -2,   max: 2,    curve: 'linear' },
   ],
 
-  // docs-hash-ignore:start
   docs: {
     explanation: "MANDLEBLOT is a 2D Mandelbrot fractal generator rendered on the GPU. A WebGL2 fragment shader runs the escape-time loop (z = z² + c, bailout radius 16) per pixel, then smooth-colours it with the standard fractional-iteration trick (mu = i + 1 - log(log|z|)/log2) so colour bands don't stairstep. The same program renders twice per frame: a greyscale escape-time field to mono_out and an RGB-cycling palette to color_out, where hue is driven by iteration band (mu), time, and log(zoom) so each zoom depth feels like its own palette. It is a pure generator with no video input — it synthesizes the fractal from scratch. Frame it with X/Y, drive Zoom by hand or via zoom_cv (LFO/envelope) for an automatic dive into the seahorse valleys, raise Iter for filament detail in deep zooms, and use Color/Rot to animate the look. Single-precision highp-float caps usable zoom near 1e6×, past which the image goes block-y.",
     inputs: {
@@ -263,7 +262,6 @@ export const mandleblotDef: VideoModuleDef = {
       center_y: "Y (Y knob, linear, -2..2, default 0) — imaginary part of the view centre; pans the framing vertically.",
     },
   },
-  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);

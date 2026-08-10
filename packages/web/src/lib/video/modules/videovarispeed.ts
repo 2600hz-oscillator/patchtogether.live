@@ -281,7 +281,6 @@ export const videoVarispeedDef: VideoModuleDef = {
     { id: 'asset_gate',  label: 'Asset gate',  defaultValue: 0, min: 0,   max: 1,  curve: 'linear' },
   ],
 
-  // docs-hash-ignore:start
   docs: {
     explanation: "A local-file video player with a performant varispeed transport. Drop or pick a video and it decodes into the VIDEO output (rVFC-driven, so the texture streams at ANY speed without freezing). The SPEED knob is an asymmetric analog-clock face: full-left = -4x (reverse), 12 o'clock = +1x normal, full-right = +4x — forward speeds drive native <video>.playbackRate (audio pitch/tempo-shifts like tape varispeed) while reverse scrubs currentTime at a throttled ~10 Hz (audio muted in reverse). START/END sliders carve a play window into the clip; at the END edge LOOP jumps back to START while ONE-SHOT stops. The source aspect is letterboxed/pillarboxed into the 4:3 FBO so clips never stretch. DOM-only buttons (not patch params) handle file loading and transport: \"Choose video…\" / drag-drop / Chromium re-link, Play/Pause, a seek scrubber, and a LOOP↔1-SHOT toggle. Right-click the card to open the \"Load multiple…\" panel — up to 7 preloaded slots mapped to the C-major scale rows C..B; a clip player or any pitch+gate source can then switch which clip plays via the ASSET ports, each slot running its own virtual playhead so a switch jumps to that clip's live, de-synced position. CROP: press \"add crop\" to overlay a resizable, aspect-locked rectangle (thin red border) on the card's video screen — drag inside to move it, drag a corner to resize; the box always keeps the current output aspect (16:9 or 4:3), and the CROP output re-samples just that boxed region scaled up to the full output resolution, i.e. a live zoom into part of the frame as its own first-class video output (\"remove crop\" returns CROP to a full-frame passthrough). Use it to scratch, reverse, freeze, and loop-window a clip live, punch a zoomed detail out to a second screen, or as a 7-clip melodic video switcher feeding BENTBOX / a CRT chain.",
     inputs: {
@@ -316,7 +315,6 @@ export const videoVarispeedDef: VideoModuleDef = {
       asset_gate: "Synthetic Asset-gate cache (0..1, default 0). Holds the asset_gate level the card edge-detects to trigger a slot switch; not shown on the card UI.",
     },
   },
-  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);

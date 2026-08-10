@@ -90,7 +90,6 @@ export const colorizerDef: VideoModuleDef = {
     { id: 'tintB', label: 'B', defaultValue: DEFAULTS.tintB, min: 0, max: 1, curve: 'linear' },
   ],
 
-  // docs-hash-ignore:start
   docs: {
     explanation: "colorizer tints a mono (single-channel) video signal into a solid color. Each incoming pixel is reduced to a single brightness value by averaging its R, G and B channels, and that brightness then scales a tint color you set with the R/G/B faders: the output pixel is (mono x R, mono x G, mono x B). The result reads as a one-color image whose intensity follows the input's luma, so dark areas stay black and bright areas hit the full tint. Feed it a luma key, an oscilloscope-style mono shape or any video, then dial the three faders to recolor it; with no input connected the output is solid black.",
     inputs: {
@@ -108,7 +107,6 @@ export const colorizerDef: VideoModuleDef = {
       tintB: "Blue component of the tint color (fader labeled B). 0 = no blue; 1 = full blue at peak input brightness. Defaults to 0.7, which together with the R=1 / G=0.4 defaults gives a pinkish-rose default tint.",
     },
   },
-  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);

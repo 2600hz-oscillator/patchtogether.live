@@ -305,7 +305,6 @@ export const posterboxDef: VideoModuleDef = {
     { id: 'mix',    label: 'Mix',    defaultValue: POSTERBOX_DEFAULTS.mix,    min: 0, max: 1, curve: 'linear' },
   ],
 
-  // docs-hash-ignore:start
   docs: {
     explanation: "posterbox is a retro palette crusher: it truncates every pixel of the incoming video to an authentic per-channel bit allocation, reproducing the look of real palette-era hardware. The Depth ladder steps through five allocations — 1-1-1 (8 colours, ZX-Spectrum-style brutal posterize), 2-2-2 (64 colours, the EGA master palette), 3-3-2 (256 colours, the VGA-era 8-bit truecolor split), 4-4-4 (4096 colours, Amiga OCS), and 5-6-5 (65536 colours, RGB565 hi-colour). The 3-3-2 and 5-6-5 steps are the exact per-channel floor quantizers CELLSHADE's original 8-bit/16-bit retro modes used, ported unchanged, so old cellshade retro patches recreate byte-for-byte here. Because the asymmetric allocations give each channel a different level grid, neutral grays come out slightly tinted (gray 0.2 at 3-3-2 becomes a dark olive) — that channel-clipped cast is the period-correct look and is intentional. Dither adds the classic companion: a Bayer 4×4 ordered dither that perturbs the quantizer threshold per screen pixel, so smooth gradients render as retro cross-hatch instead of hard bands (the same offset-before-truncate scheme the PlayStation used for its 15-bit output). Mix is a straight dry/wet. The effect is stateless per frame — one texture sample and one Bayer lookup per pixel, no feedback and no neighbourhood taps.",
     inputs: {
@@ -323,7 +322,6 @@ export const posterboxDef: VideoModuleDef = {
       mix: "Mix — dry/wet (0..1, default 1). 1 is the full crush, 0 passes the source through untouched; in between blends the crushed and clean frames linearly.",
     },
   },
-  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);

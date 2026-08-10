@@ -360,9 +360,12 @@ test:ledger:accept`. Then drain + dispatch — see CLAUDE.md's ordering rules.
 | `task test:ledger:accept` | `docs/testing/test-ledger.generated.md`. Needed on ANY edit to an exemption list. GENERATED — never hand-edit. |
 | `task art:update` | ART `.f32` + `.sha` **and** `fingerprints.generated.json` (chained). Only if the audit fixed DSP. **Attribute every manifest entry**: a labels-only `peakDb`/`rmsDb` move is a LEVEL change; a spectrum move is TIMBRAL. An entry you cannot attribute is a regression — stop, do not re-pin. |
 
-Attest: **NIL** for a face on an AUDIO def. Audio defs are outside the WebGL
-basis and no collab/grand basis file is touched. A VIDEO def's `face` would need
-`// docs-hash-ignore:start/end` markers — no video def carries one.
+Attest: **NIL**, for an audio OR a video def. Audio defs are outside the WebGL
+basis and no collab/grand basis file is touched; and a video def's `face` is
+stripped before hashing anyway — `face` is one of the hash-transparent def
+properties in `scripts/attest-code-basis.ts`, alongside `docs` and
+`controlFamilies`. (⚠ Only a def's own TOP-LEVEL `face`. A `face:` nested inside
+geometry is real code and stays in the hash, deliberately.)
 
 ---
 
@@ -415,7 +418,9 @@ basis and no collab/grand basis file is touched. A VIDEO def's `face` would need
 ## What this skill does NOT cover
 
 - **VIDEO modules.** No video def carries a `face`; their doc `[id]` page does
-  not exist either. The `docs-hash-ignore` requirement is stated but untested.
+  not exist either. (The attest side is no longer a concern — `face` is
+  hash-transparent by construction and covered by
+  `scripts/attest-code-basis.test.ts`.)
 - **The lane-tile snowflakes** in `NON_SHELL_LANE_TYPES` (clipplayer, the MIDI
   surfaces, videoOut, cameraInput, group, sticky, cadillac) — they get bespoke
   faces in a later spike, and the dock-side story for them is unsolved.

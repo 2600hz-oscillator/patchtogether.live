@@ -374,7 +374,6 @@ export const doomDef: VideoModuleDef = {
     { id: 'cv_idkfa_in', label: 'IDKFA', defaultValue: 0, min: 0, max: 1, curve: 'linear' as const },
   ],
 
-  // docs-hash-ignore:start
   docs: {
     explanation: "DOOM runs the 1993 shareware game compiled to WebAssembly (doomgeneric) and renders each peer's OWN first-person view to the video 'out' jack, with the WASM SFX mixer bridged to stereo audio outputs. It is a host-only, single-node module (maxInstances 1, ownerOnly): the rack owner adds one DOOM card, clicks the surface to download/cache the ~4 MB shareware WAD and boot the WASM, then either plays solo or hosts a true-lockstep co-op netgame that up to 3 rack-mates one-click hot-join (4 marines total — the owner is player 1) — every peer runs its own runtime and the deterministic tic stream keeps all marines byte-identical. Play with the keyboard once the card is focused (arrows move/turn, Ctrl/F fire, Space uses doors), or drive it from CV: the per-slot gate inputs p1..p4 act as held keypresses (movement/fire/strafe/menu) so an LFO, sequencer, or GAMEPAD can play the marine — each peer applies only its own seated slot's group (own-slot rule), and in single-player only the p1 group is live. Two extra cheat gates inject IDDQD (god mode) and IDKFA (full arsenal) on a rising edge. Game events feed the audio domain as 10 ms gate pulses — per-player weapon fire, door opens, the any-monster kill plus per-monster-type kills, and per-player deaths — so DOOM's action can trigger synths, drums, or a SCOREBOARD. The card's load button, the Single Player / Host Multiplayer start choice, the guest Join button, the click-to-capture-keyboard hint, and the arbiter's New Game dialog (mode/skill/episode/map custom dropdowns + a Launch / Next Map button) are UI controls, not patchable params. There is no host framebuffer mirror — an unjoined spectator simply shows the dark attract screen until it JOINS.",
     inputs: {
@@ -494,7 +493,6 @@ export const doomDef: VideoModuleDef = {
       "cv_idkfa_in": "Hidden synthetic param (label 'IDKFA') behind the idkfa_in cheat gate; a rising-edge setParam injects the 'idkfa' (all keys/weapons/ammo) keypress sequence. One-shot, hidden from the card.",
     },
   },
-  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);

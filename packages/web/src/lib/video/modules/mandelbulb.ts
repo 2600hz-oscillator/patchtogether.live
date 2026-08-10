@@ -390,7 +390,6 @@ export const mandelbulbDef: VideoModuleDef = {
     { id: 'slice_rz',  label: 'S Rot Z',defaultValue: DEFAULTS.slice_rz, min: -Math.PI,       max: Math.PI,       curve: 'linear' },
   ],
 
-  // docs-hash-ignore:start
   docs: {
     explanation: "A WebGL2 ray-marched 3D Mandelbulb fractal source that doubles as an audio oscillator. A single full-screen-quad fragment shader marches the power-8 Mandelbulb distance estimate, shades the hit surface with finite-difference normals, diffuse + Phong specular and a soft shadow, tints it with the Hue palette, and emits the render on video_out (4:3, ray-marched internally at half engine resolution — 512x384 at the 1024x768 default — and LINEAR-upscaled). An orbit camera (Zoom dolly + Rot X pitch / Rot Y yaw) frames the bulb; Power morphs the fractal shape and Detail sets the iteration budget (higher = crisper, costlier). Turn SLICE on to bridge into audio: a fixed-size plane (camera-independent) is marched through the bulb's distance field to read its cross-section as a 256-sample wavetable, played as an oscillator on audio_out and shown as a second on-card readout with a draggable yellow select box. Usage: patch a slow LFO into rotate_y_cv (or just leave SPIN on) for a tumbling fractal, modulate power_cv for shape-morphing, and enable SLICE to play the bulb's geometry as an evolving waveform.",
     inputs: {
@@ -425,7 +424,6 @@ export const mandelbulbDef: VideoModuleDef = {
       slice_rz: "S Rot Z (slice knob): slice plane roll in radians, -pi..pi, linear, default 0. Spins the scanned cross-section within its own plane, reshaping the audio waveform. Slice-only.",
     },
   },
-  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
 

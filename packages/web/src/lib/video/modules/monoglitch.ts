@@ -169,7 +169,6 @@ export const monoglitchDef: VideoModuleDef = {
     { id: 'tintB',     label: 'Tint B',    defaultValue: DEFAULTS.tintB,     min: 0,  max: 1, curve: 'linear' },
   ],
 
-  // docs-hash-ignore:start
   docs: {
     explanation: "MONOGLITCH is a luma-driven scanline-displacement glitch effect that doubles as a chainable video OUTPUT. It quantizes the incoming video into a stack of horizontal scanlines (Lines count) and, per line, samples the source luminance at the row center and lifts that line's vertical position upward by luma x Z, so bright pixels bow the lines up while dark areas leave them flat. Each line is rendered as a thin tinted band whose thickness is set by Gap and whose color comes from the R/G/B tint (default a green-phosphor look); the source luminance also gives bright bands a subtle brightness bonus (band color scales by 0.4 + luma x 0.8). H Ramp and V Ramp pan the sampled image horizontally/vertically and wrap at the edges, so feeding them saw LFOs scrolls the whole field. Despite the historical RUTTETRA name it is NOT a true Rutt/Etra raster remap (see reshaper/ruttetra for that) - it is a stylized oscilloscope/CRT-glitch aesthetic. Patch a video source into IN, dial Lines and Z for the scan density and warp, tint to taste, then take OUT into another video module or to screen. With nothing patched it shows a dark-navy idle sweep. The card has an on-card video preview screen showing this module's own glitched output; in hide-controls mode the preview is resizable by dragging the corner handle.",
     inputs: {
@@ -192,7 +191,6 @@ export const monoglitchDef: VideoModuleDef = {
       tintB: "Tint B (labeled B, 0..1): blue component of the band color. Default 0.5 (part of the green-phosphor default tint).",
     },
   },
-  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);

@@ -131,9 +131,13 @@ runner refuses (correctly: a run with 0 specs proves nothing). Two observed caus
 - **`@collab`/`@capacity` in ANY e2e spec — even in a COMMENT — pulls it into the
   basis** (`resolveCollabSpecs` greps content). Write a bare `collab` without the
   `@` in prose to avoid dragging a spec in. (See memory `collab-basis-tag-grep-footgun`.)
-- Docs authoring must NOT churn the collab (or webgl) hash — audio defs aren't in
-  the basis; wrap any docs-only edit to a basis file in `// docs-hash-ignore:start
-  … :end` (see [module-docs](module-docs.md)).
+- Docs authoring can NOT churn the collab (or webgl) hash — the basis hashes
+  CODE, not bytes (`scripts/attest-code-basis.ts` re-emits each file through the
+  TypeScript parser with comments and `docs`/`controlFamilies`/`face` def
+  properties removed). Comment freely under `packages/server/src` and
+  `lib/multiplayer`; it is a no-op. Before 2026-08-09 it was not — two comment
+  lines forced a full relay re-attest (#1422). Still raw-hashed: `db/schema/*.sql`
+  and `.flox/env/manifest.toml`.
 - If the dry-run prints a hash but you expected a match to main, a stray edit to a
   basis file (or a sync-layer revert) moved it — `git status` the basis paths.
 - Related memories: `collab-attest-persistence-basis-gates-cleanup` (persistence.ts

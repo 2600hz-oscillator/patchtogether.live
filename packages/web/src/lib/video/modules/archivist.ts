@@ -181,7 +181,6 @@ export const archivistDef: VideoModuleDef = {
     { id: 'cv_play_trigger', label: 'Play trigger', defaultValue: 0, min: 0, max: 1, curve: 'linear' },
   ],
 
-  // docs-hash-ignore:start
   docs: {
     explanation: "ARCHIVIST is a universal Internet Archive (archive.org) media source for the VIDEO domain. You pick a media type (image / audio / video / any) and a search term (plus an optional year-from/year-to range), and the card runs an archive.org advancedsearch query, picks a RANDOM matching public item, and loads it into a resizable preview. Restricted/lending items are always excluded from the query, and the file picker only chooses HTML5-playable derivatives (jpg/png/gif/webp for images; mp3/ogg/m4a/flac/wav for audio; h.264/theora/webm-class video, rejecting bare MPEG-4-Part-2 / HEVC), auto-advancing to another random match if a chosen derivative will not decode — so it lands on something that plays instead of hanging on \"Loading\". CORS BEHAVIOR IS PER-TYPE: only IMAGE and AUDIO items are CORS-clean and deliver real downstream signal — an image becomes a clean WebGL texture on the `image` output (and free-upcasts to `video` so it can drive video inputs), and an audio item routes clean stereo to `audio_l`/`audio_r` via the cross-domain audio bridge. VIDEO items are PLAY-ONLY: archive.org video lacks CORS on the served file, so the texture is tainted and the `video` output stays the idle pattern (the card shows a \"play-only (no clean output)\" warning), and a video item's audio track is likewise CORS-tainted so its audio jacks are effectively dead. So archivist is video-output-only for VIDEO items, but its audio jacks ARE live and clean for genuine AUDIO items. Search and metadata are CORS-open and fetched directly with no proxy. Usage: choose \"image\" to feed clean stills into the video graph, or \"audio\" to pull found-sound stereo into the audio graph; use \"video\" only for in-card preview/scrubbing. Multiplayer-aware: the loaded item, search inputs, and play state mirror on the node so peers see and drive the same item. The card is corner-drag resizable (handle bottom-right, min 360x360, default 360x540), with a 16:9 preview screen inside showing the loaded image, the playing video, or a cover-art placeholder for audio items.",
     inputs: {
@@ -202,7 +201,6 @@ export const archivistDef: VideoModuleDef = {
       cv_play_trigger: "Synthetic edge-detector param (linear 0..1, default 0) mirroring the play_trigger gate input; the card polls it and edge-detects a rising crossing of mid-scale (0.5) to toggle play/pause. Normally driven through the play_trigger jack rather than directly.",
     },
   },
-  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);

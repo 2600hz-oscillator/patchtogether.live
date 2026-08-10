@@ -286,7 +286,6 @@ export const ruttetraDef: VideoModuleDef = {
     { id: 'yPhase',    label: 'Y Phase',   defaultValue: DEFAULTS.yPhase,    min: 0,    max: 1, curve: 'linear' },
   ],
 
-  // docs-hash-ignore:start
   docs: {
     explanation: `An authentic forward-scatter Rutt/Etra scan-processor. A 320x180 grid of sample points walks the Z source; for each point it reads the source luma, places it along an internally-generated H/V ramp, then displaces that position by (luma - 0.5) so bright pixels push their scanline outward and dark pixels recede - building a 3D heightmap relief out of the picture. Adjacent grid points within each row are joined into horizontal LINE segments, and the whole raster is drawn with additive (phosphor) blending over a black field, exactly like a CRT scope. With everything at default the ramp is a linear 1:1 mapping and Y Disp = -0.3, so the source is read upright and bright areas raise the terrain - the classic Rutt/Etra "raised landscape" look. Patch any video, image, or keyer into Z; sweep Y Disp (and X Disp) for relief depth, raise Intensity for a brighter glow, morph the X/Y Shape ramps toward triangle/soft/radial for warped scan geometry, and modulate the params with CV for animated topography. Z left unpatched binds a mid-grey sentinel (luma 0.5 = zero displacement), so the card shows flat scanlines rather than a black void. The card has a live preview screen; hiding the controls turns it into a resizable monitor (drag the bottom-right corner, double-click to restore) — a viewport only, it does not change the output resolution.`,
     inputs: {
@@ -317,7 +316,6 @@ export const ruttetraDef: VideoModuleDef = {
       yPhase: "Y Phase (0..1, default 0) - phase offset added to the vertical ramp after the frequency multiply and before shaping, sliding the Y scan pattern up/down. Panel knob only (no CV input); under the ADVANCED disclosure.",
     },
   },
-  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
 

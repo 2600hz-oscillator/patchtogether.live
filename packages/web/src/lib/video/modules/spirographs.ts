@@ -261,7 +261,6 @@ export const spirographsDef: VideoModuleDef = {
   ],
   params: PARAMS,
 
-  // docs-hash-ignore:start
   docs: {
     explanation: "A pure video source (no input) that renders 1-3 independent classic spirographs and uploads them to the GPU each frame. Each spiro is a trochoid traced by a pen at offset p inside a rolling circle of radius r that rolls without slipping on a fixed circle of radius R: inside=hypotrochoid (rolling circle inside the fixed one), outside=epitrochoid (rolling circle outside it). The R:r ratio sets how many petals/loops the figure makes and how many revolutions it takes to close (a rational ratio closes; a near-irrational one densely fills the annulus, capped at a sane max). Each spiro has its own full parameter bank (R, r, pen, in/out, rotation, scale, X/Y, thickness, hue) and its own center that drifts independently across the frame, with the fixed-radius circle bouncing elastically off the four edges (only the fixed circle is kept fully in-frame; the drawn curve may overflow and clip, which is intended). The COLOR out composites each curve in its hue additively (lighter blend) on black so crossings glow toward white; switch its output port to get a white-on-black matte or a density-mapped rainbow \"candy\" overlap instead. Usage: pick a count, then use the per-spiro tabs to dial each figure (try a 5:2 inside spiro for a 5-petal star), and feed an LFO into a rotation or scale CV for slow living motion.",
     inputs: {
@@ -336,7 +335,6 @@ export const spirographsDef: VideoModuleDef = {
       s3_chroma: "Spiro 3 Hue (0-1 colorwheel): the curve's color in the COLOR output (MONO and CANDY ignore it).",
     },
   },
-  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);

@@ -63,8 +63,8 @@
 //
 // NOTE (owner): this def lives in the WebGL attest basis (resolveWebglBasis
 // sweeps lib/video/). Its real shader/def flips computeWebglHash → a ONE-TIME
-// re-attest on a trusted GPU is REQUIRED; the co-located docs below are wrapped
-// in docs-hash-ignore markers so DOC edits stay hash-transparent. Maximally
+// re-attest on a trusted GPU is REQUIRED; the co-located docs below are
+// hash-transparent by construction, so DOC edits cost nothing. Maximally
 // look-affecting — do NOT auto-merge (held for owner visual preview).
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
@@ -589,7 +589,6 @@ export const grainsOfVisionDef: VideoModuleDef = {
     { id: 'freeze',      label: 'Freeze',  defaultValue: GRAINS_OF_VISION_DEFAULTS.freeze,      min: 0,   max: 1,    curve: 'linear' },
   ],
 
-  // docs-hash-ignore:start
   docs: {
     explanation: "grains of vision is a granular VIDEO synthesizer: it shatters the incoming picture into a swarm of tiny windowed patches (grains) and re-scatters them into a new frame, then runs that through a feedback block and a video-reverb block on ONE fixed linear chain (video -> granular engine -> feedback -> reverb -> out) — not a node graph. A grain is a small windowed patch of source A sampled at a jittered position AND a jittered moment in time (from a short history of recent frames), so grains have a real temporal axis — the novel part of GRANULAR video. Density sets how many grains pack the frame; Size sets each grain's radius (>=1 cell = overlapping, blended); Window morphs the grain edge from a hard chip to a soft gaussian bloom; Spray scatters where each grain sits and where in the source it grabs from (at 0 it reconstructs the picture faithfully, rising it clouds into abstraction); Rate sets how far back in the frame-history grains reach and T-Spray scatters them across time for a shimmering time-smear; Orient tumbles each patch. The FEEDBACK block mixes the previous OUTPUT back in, zoomed/rotated a touch each pass so it compounds into tunnels and trails (FB amount 0 = a transparent dry passthrough). The REVERB block is a true video reverb — a decaying, spatially-diffused accumulator (the image analogue of a reverb tail): each bright grain blooms outward (Rev Size = room size, Rev Diffuse = how it scatters) and lingers, fading over frames (Rev Decay = tail length), mixed dry/wet by Rev Mix (0 = a transparent dry passthrough). Patch a second source into B and pick a COMPOSITE mode to have B modulate A's grains region-by-region: density-map (B brightness thins/thickens grains), displace (B warps where grains grab from), size-map (B scales grain size), rate-map (B scrubs the per-region time). With only A patched it runs mono-source (composite off). Like every video processor an unpatched input renders black; the defaults are tuned so any patched source is immediately alive — a mid-density overlapping grain field with a little temporal smear, gentle feedback trails and a soft reverb bloom.",
     inputs: {
@@ -640,7 +639,6 @@ export const grainsOfVisionDef: VideoModuleDef = {
       freeze: "Freeze (0/1, default 0): hidden determinism toggle. At >=0.5 draw() is a no-op so the ring + output hold their last frame for deterministic VRT capture. No card control.",
     },
   },
-  // docs-hash-ignore:end
 
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;

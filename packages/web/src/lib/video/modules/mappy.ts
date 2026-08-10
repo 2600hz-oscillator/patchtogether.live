@@ -434,7 +434,6 @@ export const mappyDef: VideoModuleDef = {
     { id: 'surfaceCount', label: 'Surfaces', defaultValue: DEFAULTS.surfaceCount, min: MAPPY_MIN_SURFACES, max: MAPPY_SURFACE_COUNT, curve: 'linear' },
   ],
 
-  // docs-hash-ignore:start
   docs: {
     explanation: "MAPPY is a multi-surface MANUAL projection mapper (corner-pin homography). It hosts up to six SURFACES; each surface i is fed by video input in(i+1), warped onto its own draggable four-corner QUAD in normalized [0,1] output space (corner order TL, TR, BR, BL), then composited painter's-order OVER into ONE video output you send to a projector — in1 paints first (bottom), in6 last (top). Per surface a homography (unit-square → that quad) defines the projective warp; the shader runs per output texel, applies the INVERSE homography to find the matching source uv, and samples there only where it lands inside [0,1] (else transparent so under-layers show). Use one surface to DE-SKEW an awkwardly-angled projection, or up to six to map each face of a white cube/stage set. GRIDS-FIRST: a fresh MAPPY shows one surface, and any live surface with no input patched renders a NUMBERED calibration grid (per-surface-tinted checker + bright border + cross-hairs + a big seven-segment digit naming the input that will feed it) — so set the geometry on the physical faces FIRST (drag corners, add surfaces), THEN patch video and surface N swaps grid→warped feed in the quad you already mapped (surface↔input is fixed, no reassignment). DOM-only card affordances (NOT params): drag a corner HANDLE to pin it or drag a surface's INTERIOR to move the whole quad bodily; a MAP button opens a full-window editor (large canvas, big precise handles, drag-to-move, surface tabs, snap-to-grid); a per-surface FIT/CROP toggle in the legend (FIT zoom-fits the whole source into the quad, CROP windows it at native 1:1 scale — move to pan, resize to crop); a per-surface reset (corners→full-frame) and focus/select; and export map / import map buttons that save and reload the venue layout (count + corners + FIT) as JSON. This is the manual mapper — camera-assisted auto-align is a later phase, so there is no camera input and no CV by design.",
     inputs: {
@@ -453,7 +452,6 @@ export const mappyDef: VideoModuleDef = {
       "surfaceCount": "Number of LIVE surfaces, 1–6 (param surfaceCount; the +/− counter on the card). Each live surface renders its calibration grid until its input is patched, then the warped video. Newly added surfaces drop in as a staggered inset quad; connecting inN auto-activates surface N even beyond this count.",
     },
   },
-  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(WARP_FRAG_SRC);
