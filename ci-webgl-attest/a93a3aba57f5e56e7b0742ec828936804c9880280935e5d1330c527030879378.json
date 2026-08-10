@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "webglContentHash": "15663313e3cfd80a1bd137b98e762001af29575d1fa10a515a2bb87d7ee1a00d",
-  "attestedAt": "2026-08-10T19:47:53.045Z",
+  "webglContentHash": "a93a3aba57f5e56e7b0742ec828936804c9880280935e5d1330c527030879378",
+  "attestedAt": "2026-08-10T20:29:20.045Z",
   "attestedBy": "patchtogether-maintainer",
-  "gitHeadAtAttest": "3dc41c963b89b30e2699a160cafa10e3189da951",
+  "gitHeadAtAttest": "2a3d25b16414848ec9000e17fec8f3f158a9b092",
   "playwrightVersion": "1.50.0",
   "os": "darwin 25.4.0 (arm64)",
   "machineClass": "local-trusted-gpu-workstation",
@@ -15,12 +15,12 @@
       "passed": 193,
       "failed": 0,
       "flaky": 1,
-      "skipped": 2,
+      "skipped": 1,
       "flakyDetails": [
         {
-          "test": "4x VIDEOVARISPEED -> MIXER: every source advances + mixer shows moving video + audio is produced",
-          "file": "multi-video-playback.spec.ts",
-          "firstError": "Error: vv0 keep-alive live |  | expect(received).toBe(expected) // Object.is equality | "
+          "test": "flag ON: TOYBOX gen layer renders in the worker; downstream OUTPUT is non-black",
+          "file": "render-worker-toybox.spec.ts",
+          "firstError": "Error: TOYBOX OUTPUT is not all-black (nonZeroFrac=0.000) |  | expect(received).toBeGreaterThan(expected) | "
         }
       ]
     },
@@ -49,5 +49,5 @@
       "flakyDetails": []
     }
   },
-  "durationSec": 404
+  "durationSec": 196
 }
