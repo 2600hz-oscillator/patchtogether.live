@@ -115,10 +115,21 @@ believes when they read it.
    The exemptions must then *explain* each one. An entry naming something that no
    longer exists is RED — a stale exemption is an exemption nobody is watching,
    and it silently re-exempts the next regression on that key.
-3. **Ratchet in BOTH directions.** `actual <= CEILING` **and**
-   `CEILING - actual === 0`. A ceiling can only trip by growing; without the
-   second clause a drain that forgets to lower the number passes in total
-   silence and leaves slack that absorbs the next regression.
+3. ~~**Ratchet in BOTH directions.**~~ **SUPERSEDED 2026-08-10 — do not add a
+   count at all.** The advice was right about ceilings (`actual <= CEILING`
+   alone can only trip by growing, so a drain that forgets to lower the number
+   passes in silence and leaves slack that absorbs the next regression) and
+   wrong about the premise. A hand-typed population count is a merge hazard **by
+   construction**: sibling branches each compute it correctly for their own tree
+   and write the identical literal, so it auto-merges cleanly and wrongly — no
+   conflict, no red test. Measured 3-of-3 on the edge ledger, and 3-of-3 again
+   on `card-range-source.test.ts` (base `9 / 7`; three concurrent faces wrote
+   `10 / 8`, `11 / 9`, `11 / 9`; merged truth `12 / 10`).
+   **Instead:** an unconditional `toEqual([])`; or a named deny-by-default list
+   whose `why` lives in the TYPE so `tsc` refuses the undeclared form; or a
+   property DERIVED from the artifact; or a GENERATED golden on the
+   `task *:accept` loop. Full rule, and the narrow exception for genuinely
+   unpayable debt, in CLAUDE.md → "NEVER hand-type a population count".
 
 **And state the gate's SCOPE inside the gate.** Every one of these now asserts
 what it still cannot see (`Object.assign(node.params, …)`; a control with no

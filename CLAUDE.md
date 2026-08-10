@@ -289,12 +289,14 @@ was true about the one list it read.
   cable-stripe palette gate, which read `vrt.spec.ts` only and missed 39
   token-pinned baselines in six sibling dirs — **state a gate's directory scope
   in the gate**, because an unstated scope reads as full coverage.
-- **A CEILING can only trip by GROWING — assert the other direction too.** A
-  drain that closes gaps and forgets to lower the number passes in total
-  silence, and the slack it leaves absorbs the next regression. Every VRT
-  ratchet now pairs `actual <= CEILING` with `CEILING - actual === 0`, so
-  "lower the ceiling by the same count" is enforced rather than advisory. It
-  fired on its first run (the shared-pair ceiling was 10 slack after a cleanup).
+- **A CEILING that survives is asserted in BOTH directions** — `actual <=
+  CEILING` *and* `CEILING - actual === 0` — because a ceiling can only trip by
+  growing, and a drain that forgets to lower the number passes in total silence
+  leaving slack that absorbs the next regression. ⚠ **But do not add one.** The
+  three VRT platform ceilings are the last hand-typed counts in the repo and
+  they exist only until the platform dimension collapses; everything else was
+  deleted 2026-08-10. See **"NEVER hand-type a population count"** below — the
+  both-directions rule is damage control for a data structure we no longer use.
 - **A drain without its re-capture ships a red lane.** Removing pairs is step 1
   of 2. The 2026-08-01 15-pair drain deferred the dispatch to "a follow-up" and
   every one of the 15 came back as a **dimension mismatch** (212×564 vs
@@ -555,11 +557,75 @@ The three inversions, applied to all four (details + measured numbers in the
    filename, so a new defect in an already-listed file still reddens.
 2. **Anchor to the ARTIFACT, not the list** — a ledger entry naming something
    that no longer exists is RED. A stale exemption is one nobody is watching.
-3. **Ratchet in BOTH directions** — `actual <= CEILING` *and*
-   `CEILING - actual === 0`.
+3. ~~**Ratchet in BOTH directions**~~ — **superseded 2026-08-10.** Inversions 1
+   and 2 stand; the count does not. Where the old advice was "cap the
+   population and assert the cap has no slack", the rule is now **do not have a
+   count**: name each instance, anchor the names to the artifact, and let the
+   diff be the review. See "NEVER hand-type a population count" below.
 
 Plus: **state the gate's scope inside the gate**, asserting what it still cannot
-see at zero or under its own ratchet.
+see — at zero, or in prose with the measured number if it genuinely cannot be
+asserted.
+
+## NEVER hand-type a population count
+
+**No hand-typed population count anywhere in this repo.** Not a ceiling, not a
+floor, not a "frozen at N" — no literal whose value is *how many of something
+there are*. This is a P0 owner directive (2026-08-10): *"i want to eliminate the
+need for any of this. i don't want to have to track this data"* … *"eliminate
+ratchets entirely even if we lose test coverage as a result"*. Nine such counters
+were deleted in one PR and coverage loss was pre-authorised. **Silent coverage
+loss was not** — every protection dropped is named in that PR's body.
+
+**Why, measured.** Three faces were authored concurrently from a base of
+`9 / 7` (`card-range-source.test.ts`). cube wrote `10 / 8`; clouds and cofefve
+each independently wrote `11 / 9`. The merged truth was `12 / 10`. **Every agent
+counted correctly for the tree it was standing in** — the value was stale the
+moment a sibling merged. Git surfaced it only because two explanatory comments
+happened to differ; had either agent left its comment alone, `11 / 9` would have
+**auto-merged cleanly and wrongly** — no conflict, no red test, no marker, and a
+full card of slack in a `<=` ratchet for the next regression to hide in. It had
+already happened three times on that one file, and three times on the edge
+ledger (288 / 277 / 287 where the truth was 275). A value that is correct when
+written and wrong when merged, through nobody's error, is the wrong data
+structure. **This is a property of the construct, not of anyone's care.**
+
+**What to write instead**, in preference order:
+
+1. **An unconditional assertion.** A ceiling of 0 measures nothing and can only
+   go stale — write `expect(offenders).toEqual([])`.
+2. **A NAMED deny-by-default list**, each entry carrying the specific
+   `(module, scene, reason)` triple and a `why`, anchored so a name that no
+   longer resolves is RED. A name is checkable against the tree; a number is
+   not. **Better still, put the `why` in the TYPE** — `MaskRect.why` and
+   `VrtScene.freezeAudioWhy` are required fields, so `tsc` refuses the
+   undeclared form before a test runs (verified: removing one turns
+   `task typecheck` red).
+3. **A DERIVED assertion** — read the population off the artifact and assert a
+   property of it, never its size. `stereo-pairs.test.ts` asserts "no audio port
+   carrying an L/R token sits outside a pair" where it used to assert
+   "unpaired === 203".
+4. **A GENERATED artifact on the accept loop**, when review visibility of a
+   whole population is genuinely needed: `contract-lock.txt`,
+   `test-ledger.generated.md`, `fingerprints.generated.json`. Regenerated by
+   `task *:accept`, reviewed as a diff, conflict-resolved by "take main + re-run
+   accept". Never hand-merged, never arithmetic.
+
+**The one legitimate exception**, and it is narrow: debt that genuinely cannot be
+paid now (needs hardware, an owner decision, a re-attest window, a platform
+migration) — and then the count is **DERIVED from the artifact**, never a typed
+literal in a shared file, and it ships with its **deletion criteria stated in the
+file**. The three surviving VRT platform ceilings (`LINUX_DEFICIT_CEILING`,
+`SHARED_LINUX_PAIR_CEILING`, `STALE_PAIR_CEILING`) are exactly this: they vanish
+with the `{platform}` dimension and have no successor.
+
+**And do not inventory payable debt.** A ledger of *known answers* is deferred
+typing, and every agent who touches the area afterwards pays a re-count tax.
+Before writing an exemption list, ask whether the answer already exists in the
+tree. When the debt is paid, **delete the mechanism entirely** — list, count,
+both-directions assertion, stale-entry anchor — and leave no replacement
+counter. What remains is the unconditional check plus a permanent negative
+control calling the **same predicate** the check calls.
 
 #### …and the LEDGER you invert it with is the NEXT blind spot
 
