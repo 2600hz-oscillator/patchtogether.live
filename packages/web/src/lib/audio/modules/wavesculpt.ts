@@ -904,17 +904,15 @@ export const wavesculptDef: AudioModuleDef = {
     ps.push({ id: 'red_color', label: 'R.Col', defaultValue: DEFAULT_OSC_COLOR_PACKED.red, min: 0, max: 0xffffff, curve: 'discrete' });
     ps.push({ id: 'grn_color', label: 'G.Col', defaultValue: DEFAULT_OSC_COLOR_PACKED.grn, min: 0, max: 0xffffff, curve: 'discrete' });
     ps.push({ id: 'blu_color', label: 'B.Col', defaultValue: DEFAULT_OSC_COLOR_PACKED.blu, min: 0, max: 0xffffff, curve: 'discrete' });
-    ps.push({ id: 'hsync_drift',        defaultValue: 0,    min: 0,  max: 1, curve: 'linear', label: 'HS Drift' });
-    ps.push({ id: 'hsync_loss',         defaultValue: 0,    min: 0,  max: 1, curve: 'linear', label: 'HS Loss' });
-    ps.push({ id: 'vsync_drift',        defaultValue: 0,    min: 0,  max: 1, curve: 'linear', label: 'VS Drift' });
-    ps.push({ id: 'scan_wobble',        defaultValue: 0,    min: 0,  max: 1, curve: 'linear', label: 'Wobble' });
-    ps.push({ id: 'chroma_phase',       defaultValue: 0,    min: -1, max: 1, curve: 'linear', label: 'Hue' });
-    ps.push({ id: 'chroma_instability', defaultValue: 0,    min: 0,  max: 1, curve: 'linear', label: 'Shimmer' });
-    ps.push({ id: 'feedback_gain',      defaultValue: 0,    min: 0,  max: 1, curve: 'linear', label: 'Feedback' });
-    ps.push({ id: 'feedback_delay',     defaultValue: 0,    min: 0,  max: 1, curve: 'linear', label: 'Delay' });
-    ps.push({ id: 'wavefold',           defaultValue: 0,    min: 0,  max: 1, curve: 'linear', label: 'Wavefold' });
-    ps.push({ id: 'bloom',              defaultValue: 0.4,  min: 0,  max: 1, curve: 'linear', label: 'Bloom' });
-    ps.push({ id: 'noise',              defaultValue: 0.05, min: 0,  max: 1, curve: 'linear', label: 'Noise' });
+    // NOTE: the eleven PARAMETERISED CRT controls that used to sit here
+    // (hsync_drift, hsync_loss, vsync_drift, scan_wobble, chroma_phase,
+    // chroma_instability, feedback_gain, feedback_delay, wavefold, bloom,
+    // noise) were removed — they were identical in id, range, curve and
+    // default to controls BENTBOX already ships, and `video_out → bentbox`
+    // reaches the real thing (with CV inputs wavesculpt never had). The
+    // UNCONDITIONAL half of the pass — scanline darkening + the phosphor
+    // mask, plus bloom at 0.4 and noise at 0.05 now hardcoded in BENT_FS —
+    // stays, so the module keeps its own light CRT character.
     // MASTER GAIN drives BOTH the summed audio bus (busL/busR, see the factory)
     // and the render's uMasterGain shader uniform. Range from the shared
     // constants so the def, the bus and the card cannot disagree.
@@ -1006,25 +1004,13 @@ export const wavesculptDef: AudioModuleDef = {
     controls.red_color = 'RED oscillator base COLOUR (a colour-wheel picker) — tints the RED osc\'s ribbon, scope line, and neon tube. Packed 0xRRGGBB; chosen via a native colour picker (not a CV knob).';
     controls.grn_color = 'GREEN oscillator base COLOUR (colour picker) — tints the GREEN osc in every blink mode. Packed 0xRRGGBB.';
     controls.blu_color = 'BLUE oscillator base COLOUR (colour picker) — tints the BLUE osc in every blink mode. Packed 0xRRGGBB.';
-    // BENTBOX-style CRT post-process + master.
-    controls.hsync_drift = 'HSYNC DRIFT (0..1) — horizontal-sync drift of the CRT post-process (the picture skews/tears horizontally).';
-    controls.hsync_loss  = 'HSYNC LOSS (0..1) — horizontal-sync loss; the image rolls/breaks up horizontally as it rises.';
-    controls.vsync_drift = 'VSYNC DRIFT (0..1) — vertical-sync drift; the picture rolls vertically.';
-    controls.scan_wobble = 'SCAN WOBBLE (0..1) — wobbles the scanlines for an unstable-CRT shimmer.';
-    controls.chroma_phase = 'HUE / chroma phase (−1..+1) — rotates the colour hue of the rendered image.';
-    controls.chroma_instability = 'SHIMMER / chroma instability (0..1) — adds unstable colour-fringing shimmer to the image.';
-    controls.feedback_gain  = 'FEEDBACK gain (0..1) — frame-feedback amount of the video post-process (video echoes/trails).';
-    controls.feedback_delay = 'Feedback DELAY (0..1) — the delay of the video frame-feedback (longer = more spaced trails).';
-    controls.wavefold = 'WAVEFOLD (0..1) — a video-domain wavefold of the rendered image (folds bright values back for a posterized look).';
-    controls.bloom = 'BLOOM (0..1, default 0.4) — glow/bloom on bright parts of the render.';
-    controls.noise = 'NOISE (0..1, default 0.05) — analog-style video noise/grain over the image.';
-    controls.master_gain = 'MASTER GAIN (0..2, default 1) — overall output level of the summed audio mix (L/R), AND the composite drive of the CRT post-process on the render. One knob, both domains: 1 = unity (audio unchanged, picture undistorted), above 1 the mix gets louder while the picture overdrives into wavefold/soft-clip white smear, 0 mutes L/R and blacks the composite. The per-oscillator taps (out_red/grn/blu/alp) are PRE master gain and are not affected.';
+    controls.master_gain = 'MASTER GAIN (0..2, default 1) — overall output level of the summed audio mix (L/R), AND the composite drive of the CRT post-process on the render. One knob, both domains: 1 = unity (audio unchanged, picture undistorted), above 1 the mix gets louder while the picture overdrives into soft-clip white smear, 0 mutes L/R and blacks the composite. The per-oscillator taps (out_red/grn/blu/alp) are PRE master gain and are not affected.';
     // Per-oscillator wavetable selector (DOM-only family).
     controls['wavesculpt-osc-{n}'] =
       "Oscillator {n}'s wavetable-source strip: a colour-wheel swatch (its base tint), a PRESET dropdown, a FACTORY-table dropdown, and a LOAD button to upload your own .wav as that oscillator's wavetable. The chosen table is the wave each oscillator plays + draws as its ribbon; selection persists on the patch.";
     return {
       explanation:
-        "A hybrid 4-oscillator 3D video synth — it makes sound AND a live 3D image from the same engine. A unit box holds four 'wall oscillators' (RED / GREEN / BLUE / ALPHA), each emitting a wave ribbon along a vector into the box. One user camera renders the scene; you fly it with an XY pad (X/Y), a HEIGHT slider (Z), ZOOM, and ROTATION. Closer = bigger ribbons AND louder — the same distance number drives both visual size and audio gain, so 'lean in' is consistently louder. Each oscillator is a full wavetable voice: pick its table (preset / factory / your own .wav), set TUNE/FINE/MORPH/SPREAD/FOLD, and shape it with a per-osc ADSR gated by its GATE input and pitched by its PITCH input, plus a pre-mix per-osc FX slot (reverb/delay). The audio output is the summed stereo mix (L/R), with four per-oscillator AUDIO taps (out_red/grn/blu/alp) for routing one voice out independently. The render goes out video_out (a mono-video with a BENTBOX-style CRT post-process baked in — sync drift, hue, bloom, noise, feedback) and can be viewed as 3D ribbons, a birds-eye floorplan, or a spectrograph (VIEW). Six VIDEO WALL inputs texture the faces of the room — self-patch video_out → a wall for recursive video feedback, and LUMINOSITY→BANDPASS lets a wall's brightness shape the audio. UNISON/DETUNE and CHORD MODE turn the four voices into a stacked or harmonized instrument; everything is CV-modulatable.",
+        "A hybrid 4-oscillator 3D video synth — it makes sound AND a live 3D image from the same engine. A unit box holds four 'wall oscillators' (RED / GREEN / BLUE / ALPHA), each emitting a wave ribbon along a vector into the box. One user camera renders the scene; you fly it with an XY pad (X/Y), a HEIGHT slider (Z), ZOOM, and ROTATION. Closer = bigger ribbons AND louder — the same distance number drives both visual size and audio gain, so 'lean in' is consistently louder. Each oscillator is a full wavetable voice: pick its table (preset / factory / your own .wav), set TUNE/FINE/MORPH/SPREAD/FOLD, and shape it with a per-osc ADSR gated by its GATE input and pitched by its PITCH input, plus a pre-mix per-osc FX slot (reverb/delay). The audio output is the summed stereo mix (L/R), with four per-oscillator AUDIO taps (out_red/grn/blu/alp) for routing one voice out independently. The render goes out video_out (a mono-video carrying a light, always-on CRT pass — scanlines, phosphor mask, a little bloom and grain — with no knobs of its own; patch it through BENTBOX for the adjustable, CV-able CRT controls, bearing in mind that stacks two CRT passes) and can be viewed as 3D ribbons, a birds-eye floorplan, or a spectrograph (VIEW). Six VIDEO WALL inputs texture the faces of the room — self-patch video_out → a wall for recursive video feedback, and LUMINOSITY→BANDPASS lets a wall's brightness shape the audio. UNISON/DETUNE and CHORD MODE turn the four voices into a stacked or harmonized instrument; everything is CV-modulatable.",
       inputs,
       outputs: {
         L: 'Left channel of the summed stereo audio mix — the four oscillators after per-osc env, distance gain, and pan, post MASTER GAIN.',
@@ -1033,7 +1019,7 @@ export const wavesculptDef: AudioModuleDef = {
         out_grn: "GREEN oscillator's individual AUDIO tap — that single voice post env/distance/pan, routable independently of the mix.",
         out_blu: "BLUE oscillator's individual AUDIO tap — that single voice post env/distance/pan, routable independently of the mix.",
         out_alp: "ALPHA oscillator's individual AUDIO tap — that single voice post env/distance/pan, routable independently of the mix.",
-        video_out: 'The 3D render as a mono-video output (with the CRT post-process baked in). Patch it into VIDEO OUT or any video module — or back into a WALL input for recursive feedback.',
+        video_out: 'The 3D render as a mono-video output. It already carries WAVESCULPT\'s own light CRT pass — scanline darkening, a phosphor mask, a little bloom and grain — which is always on and has no knobs. Patch it into VIDEO OUT or any video module — or back into a WALL input for recursive feedback. Note that feeding it to BENTBOX STACKS TWO CRTs: the scanlines and phosphor mask get applied a second time, which is a legitimate look but a heavier one than BENTBOX alone. BENTBOX is where the adjustable CRT controls live (sync drift, hue, shimmer, feedback, wavefold, bloom, noise — all CV-able), so that chain is the intended way to dial the picture.',
       },
       controls,
     };
