@@ -38,6 +38,7 @@ import AnalogVcoHeroPanel from '$lib/ui/modules/AnalogVcoHeroPanel.svelte';
 import BlueboxToneBankPanel from '$lib/ui/modules/BlueboxToneBankPanel.svelte';
 import ClapHeroPanel from '$lib/ui/modules/ClapHeroPanel.svelte';
 import CloudsRingPanel from '$lib/ui/modules/CloudsRingPanel.svelte';
+import CofefveEchoTrainPanel from '$lib/ui/modules/CofefveEchoTrainPanel.svelte';
 import KickdrumHeroPanel from '$lib/ui/modules/KickdrumHeroPanel.svelte';
 import MacrooscillatorHeroPanel from '$lib/ui/modules/MacrooscillatorHeroPanel.svelte';
 import PentemelodicaVoicesPanel from '$lib/ui/modules/PentemelodicaVoicesPanel.svelte';
@@ -308,6 +309,41 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
         testid: 'bluebox-bank-label',
         action: 'click',
         effect: { kind: 'text', testid: 'bluebox-bank-axis', expect: 'changed' },
+      },
+    },
+  },
+  cofefve: {
+    // THE ECHO TRAIN — the dry hit and the repeats this patch will actually
+    // produce, promoted into the faceplate's hero slot (`face.hero.cell`).
+    //
+    // ⚠ A PANEL RATHER THAN THE GLYPH, and the reason is what the glyph can
+    // honestly say here. `scope` on this module is a live trace of an INSERT's
+    // output: a flat line on a silent rack, which is precisely the state a
+    // player is in while setting a delay up. That is fine in a lane tile (it
+    // says "the module is running") and useless at the dock, which is why
+    // `face.hero.cell` suppresses `heroGlyph` there.
+    //
+    // ⚠ AND IT IS THE SURFACE THAT PAINTS A DEAD CONTROL AS DEAD. The WOW
+    // ripple is drawn only above WOW AMOUNT 0 — greyed and captioned `wow off`
+    // at the shipped default — so the picture states that the motion section is
+    // asleep rather than drawing a steady train that reads as a working one.
+    'cofefve-echo-{n}': {
+      kind: 'panel',
+      label: 'echo train',
+      component: CofefveEchoTrainPanel,
+      minWidth: 320,
+      // A `text` probe on a DIFFERENT element, the clap/kickdrum/bluebox
+      // reason: the plot's time WINDOW is a private view setting in component
+      // state (zooming your own plot must not zoom every collaborator's screen
+      // or dirty the patch), so there is no node.data key to watch. The button
+      // drives the AXIS TICK ROW, which a dead button cannot change — a
+      // stronger claim than a revision counter. That no two windows can render
+      // the same tick row, which is what makes this probe non-vacuous, is
+      // asserted over every pair in cofefve-face-model.test.ts.
+      probe: {
+        testid: 'cofefve-echo-window',
+        action: 'click',
+        effect: { kind: 'text', testid: 'cofefve-echo-axis', expect: 'changed' },
       },
     },
   },

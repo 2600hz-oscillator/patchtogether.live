@@ -52,6 +52,13 @@ import {
   cloudsSilenceText,
 } from '$lib/ui/modules/clouds-face-model';
 import {
+  asleepText,
+  cofefveFaceParams,
+  echoRepeatsText,
+  echoSpacingText,
+  enablerText,
+} from '$lib/ui/modules/cofefve-face-model';
+import {
   clapBandwidthHz,
   clapBurstMs,
   clapQ,
@@ -184,6 +191,43 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
   'macro-aux-offset': (read) => fmtMacroDb(macroAuxOffsetDb(macroFaceParams(read))),
   'macro-strike-need': (read) => macroStrikeText(macroFaceParams(read)),
   'macro-alias': (read) => macroAliasText(macroFaceParams(read)),
+
+  // ── COFEFVE ──────────────────────────────────────────────────────────────
+  // EIGHT values, and they exist for a different reason from every other block
+  // in this file. The others derive a NUMBER a knob readback would get wrong.
+  // These derive whether a control DOES ANYTHING AT ALL: seven of cofefve's
+  // twenty-three params do nothing at the factory default — five of them
+  // bit-exactly — because each is the dependent half of an enabler pair whose
+  // enabler ships closed, and no `paramId` readout can express "this dial is
+  // asleep": the
+  // dial's own value is perfectly valid and perfectly irrelevant.
+  //
+  //   `asleep`   counts them. A function of FIVE enablers at once, so no single
+  //              param can stand in for it — and it must NOT move when a
+  //              dependent moves, which is the leg that catches a counter that
+  //              is counting the wrong set.
+  //   `spacing`  is the EFFECTIVE echo period. A `delayTime` readback is not
+  //              merely imprecise while SYNC is on, it is describing a delay
+  //              the DSP has replaced.
+  //   `repeats`  is a COUNT from the loop gain, so ±0.5 feedback must print the
+  //              same answer (measured: the two tails are identical to the
+  //              sample) and TIME must not move it at all.
+  //   the five `wait-*` lines are the sidebar's per-pair state. `wait-pan` is
+  //              the one that carries a correction: PING-PONG needs a left/
+  //              right DIFFERENCE and is independent of PAN, so a line naming
+  //              PAN alone would teach a dependency the DSP does not have.
+  //
+  // All eight are negative-controlled in BOTH directions, permanently, in
+  // cofefve-face-model.test.ts — against the REAL worklet processor class for
+  // the claims that are about audio.
+  'cofefve-asleep': (read) => asleepText(cofefveFaceParams(read)),
+  'cofefve-echo-spacing': (read) => echoSpacingText(cofefveFaceParams(read)),
+  'cofefve-repeats': (read) => echoRepeatsText(cofefveFaceParams(read)),
+  'cofefve-wait-wow': (read) => enablerText('wow', cofefveFaceParams(read)),
+  'cofefve-wait-duck': (read) => enablerText('duck', cofefveFaceParams(read)),
+  'cofefve-wait-sync': (read) => enablerText('sync', cofefveFaceParams(read)),
+  'cofefve-wait-pan': (read) => enablerText('pan', cofefveFaceParams(read)),
+  'cofefve-wait-drive': (read) => enablerText('drive', cofefveFaceParams(read)),
 
   // ── CLAP ─────────────────────────────────────────────────────────────────
   // Three envelope figures + the band-pass pair. NONE is a knob read back:

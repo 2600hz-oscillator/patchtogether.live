@@ -17,15 +17,17 @@
 // module-docs-lint's `controlFamilies` → card-testid grep, which exists for
 // this same divergence class.
 //
-// NOT A SWEEP: 134 of the 214 card sources still re-type at least one range
+// NOT A SWEEP: 133 of the 215 card sources still re-type at least one range
 // number, so this set names the cards that have been converted. Bring a card in
 // when you touch it (boy-scout), by routing its range/curve/default props
 // through the def — `paramSpec(def, id)` in card-kit, or the card's own
 // `pmin/pmax/pdef` helpers.
 //
-// ⚠ STATED SCOPE, MEASURED 2026-08-10. This gate reads 12 of 214 card sources.
-// The other 202 are NOT checked for def-binding at all, and that population is
-// deliberately no longer counted anywhere — see the note on the floors below.
+// ⚠ STATED SCOPE, MEASURED 2026-08-10. This gate reads 13 of 215 card sources.
+// The other 202 are NOT checked for def-binding at all. This paragraph is PROSE,
+// not an assertion — the population is deliberately no longer counted anywhere
+// (see the note on the floors below), so treat the figures as of their date and
+// re-measure rather than trusting them.
 //
 // ⚠ THE TWO RATCHET FLOORS ARE GONE (2026-08-10). `RANGE_BOUND_FLOOR` and
 // `MAPPING_BOUND_FLOOR` were hand-typed copies of `RANGE_BOUND_CARDS.length` /
@@ -50,6 +52,7 @@ import { adsrDef } from '$lib/audio/modules/adsr';
 import { backdraftDef } from '$lib/video/modules/backdraft';
 import { chromaconsoleDef } from '$lib/audio/modules/chromaconsole';
 import { cloudsDef } from '$lib/audio/modules/clouds';
+import { cofefveDelayDef } from '$lib/audio/modules/cofefve';
 import { delayDef } from '$lib/audio/modules/delay';
 import { macrooscillatorDef } from '$lib/audio/modules/macrooscillator';
 import { filterDef } from '$lib/audio/modules/filter';
@@ -137,6 +140,15 @@ import type { ParamDef } from '$lib/graph/types';
  *    read identically today and diverge the day any of those five gains a unit
  *    on the def — the omission is invisible to both greps, which only ever see
  *    what a card DOES write.
+ *  - CofefveCard: converted with the cofefve face promotion (2026-08-10), and
+ *    the largest re-typing this set has absorbed — 34 literal range props over
+ *    19 controls, including a `curve="log"` on a `0.001..2 s` TIME knob where a
+ *    mistyped `linear` would have moved the dial's midpoint by three orders of
+ *    magnitude. All 34 AGREED with the def; the point is that nothing could
+ *    have told you if they had not. Its `driveIterations` slider is a NATIVE
+ *    `<input type=range>`, whose `min="1" max="16"` STRING attributes the
+ *    `min={…}` grep is structurally unable to see — bound anyway, because a
+ *    gate's blind spot is not a licence to leave a second copy of a number.
  *  - ChromaconsoleCard: NOT converted — found ALREADY BOUND and simply never
  *    enrolled (2026-08-10). It reads every slot bound off
  *    `paramSpec(chromaconsoleDef, slotId)` and re-types nothing, so it has been
@@ -150,6 +162,7 @@ const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }
   'BackdraftCard.svelte': backdraftDef,
   'ChromaconsoleCard.svelte': chromaconsoleDef,
   'CloudsCard.svelte': cloudsDef,
+  'CofefveCard.svelte': cofefveDelayDef,
   'DelayCard.svelte': delayDef,
   'MacrooscillatorCard.svelte': macrooscillatorDef,
   'FilterCard.svelte': filterDef,
@@ -169,6 +182,7 @@ const MAPPING_BOUND_CARDS: readonly string[] = [
   'AdsrCard.svelte',
   'ChromaconsoleCard.svelte',
   'CloudsCard.svelte',
+  'CofefveCard.svelte',
   'DelayCard.svelte',
   'MacrooscillatorCard.svelte',
   'FilterCard.svelte',

@@ -207,6 +207,88 @@
 // stronger guarantee than #1420's freeze, which this face therefore does not
 // depend on. (Its `meter` glyph is unlit at the lane tiers for the
 // mixer/reverb reason: an insert with nothing patched outputs exactly zero.)
+// FACE BATCH 5 · cofefve (2026-08-10) — the analog delay, PROMOTED from having
+// no face at all, and the entry whose argument is that A FACEPLATE MUST BE ABLE
+// TO SAY THAT A CONTROL IS WAITING ON ANOTHER CONTROL.
+//
+// FIVE of its twenty-three params are BIT-EXACTLY inaudible at the factory
+// default and two more are within a percent of it — SEVEN asleep in all,
+// because each is the dependent half of an ENABLER PAIR whose enabler ships
+// closed. Nothing on the legacy card says so, so a new user turns a third of
+// the panel and hears nothing. That is a legibility defect, not a DSP one: four
+// of the five pairs are the ordinary correct convention (a depth at zero
+// silences its rate, a feature off silences its shaping controls), and the
+// face's job is to make the dependency VISIBLE — the ranking puts every enabler
+// above its dependents, a five-line sidebar block names each pair's live state,
+// four presets open all five enablers in one click each, and the hero counts
+// what is currently asleep.
+//
+// ⚠ AND BAND HINTS DO NOT PAINT AT REST EITHER — which is worth recording,
+// because the face was designed on the assumption that they do. `face.hint` and
+// `face.title` being annotation-gated was known; `bandHeaderPlan` blanks EVERY
+// band hint under the same flag, by the same owner directive. The declaration
+// is present, module-face-lint's reachability clause is green, and the rendered
+// dock shows six bare band labels. Only capturing the panel and looking at it
+// showed that. So this face's argument rests entirely on the three surfaces
+// that DO paint unconditionally — the hero count, the hero picture's captions
+// and greyed WOW ripple, and the five-line sidebar block — and the band hints
+// carry the MECHANISM as a fourth tier for annotation mode.
+//
+// ⚠ THE SAME LOOK-AT-IT PASS CAUGHT A SHARED-PRIMITIVE DEFECT, which this face
+// deliberately does NOT fix. Three of the newly declared `options` rosters
+// ellipsized in their `.seg` buttons (`SYS…`, `PING-P…`, `CIRCUL…`, `STATE…`)
+// while `faces-parity` stayed green, because it reads `textContent` — the DOM
+// says `Ping-Pong` while the panel paints `PING-P…`. The cause is measured on
+// cofefve's def: `.seg` is `flex: 1`, i.e. flex-BASIS 0, so buttons split the
+// group's max-content width EQUALLY and every caption gets exactly the roster
+// MEAN — zero margin by construction, so the widest caption of any uneven
+// roster always clips. It is ALREADY LIVE on cloudseed `pre`/`post`,
+// warrensspectrum `LIVE`/`FREEZE` and tidyVco `-1`/`0`/`+1`. The one-line fix
+// (`flex: 1 1 auto`) repaints those three modules' dock baselines, so it wants
+// its own PR and an owner preview. Two caption workarounds were tried and
+// MEASURED, and both failed: shortening `System` to `SYS` NARROWED the group
+// and clipped `MIDI` harder, and equalising by character count still clipped by
+// 1–3 px because equal characters are not equal pixels. Hunting a caption set
+// that measures identically is calibrating against one renderer — the thing
+// CLAUDE.md's frame-count rule exists to forbid — so the full names stay.
+//
+// ⚠ THE SPEC IT WAS BUILT FROM WAS WRONG ABOUT PAN, and the error was in the
+// INSTRUMENT rather than the analysis — which is why it is recorded here.
+// Measured with the SAME signal in both inputs, PAN MODE moves nothing at any
+// setting of anything except PAN, from which "PAN is its enabler" follows and
+// is false. PING-PONG swaps the two channels' FEEDBACK, and a swap of two equal
+// things is the identity, so a probe feeding L and R the same waveform is
+// structurally blind to the one mode that does not need PAN at all. Feed them
+// different waveforms, or skew them with STEREO, and PING-PONG wakes at PAN 0
+// (measured 2.31e-1 / 2.84e-1 against a bit-exact 0.00e+0 at pan alone). PAN
+// MODE therefore has TWO enablers with different jurisdictions, both ranked
+// above it, and the `ping-pong` preset opens STEREO and leaves PAN at 0 so the
+// corrected fact is the one a click teaches.
+//
+// ⚠ TWO DEFECTS FIXED INLINE, both pure def/card. `syncPeriod` was declared as
+// a user PARAM while being host-written 62 times a second by the factory's own
+// `setInterval` — a control that cannot hold a value, and one that a COMPLETE
+// face would have been obliged to paint. It is off the control surface; the
+// worklet still declares it and the bridge still writes it, so no audio and no
+// wiring changed. And `CofefveCard.svelte` re-typed 34 literal ranges the def
+// already declares — the most of any card in its batch — so it is now bound
+// through `paramSpec` and enrolled in RANGE_BOUND_CARDS + MAPPING_BOUND_CARDS,
+// which is what makes the divergence visible to a gate at all.
+//
+// ⚠ ONE DEFECT DELIBERATELY NOT FIXED: DRIVE GAIN ships at 0.1 of 10, which is
+// neither the DSP's own exact bypass (`driveGain <= 0` is an early return) nor
+// an audible drive — a sliver of saturation at 1 % of the control's travel that
+// leaves DRIVE MIX and DRIVE ITERATIONS with almost no authority. Whether that
+// default is intended is an owner question, and changing it changes the
+// module's shipped sound and re-pins its ART baseline, so it is DOCUMENTED (on
+// the param, in the band hint, in the sidebar) rather than changed in a face PR.
+//
+// Every number this face prints is DERIVED and negative-controlled in BOTH
+// directions in cofefve-face-model.test.ts, and the claims that are about audio
+// are re-derived from the REAL worklet processor class on every run — so a DSP
+// fix turns a stale claim RED instead of leaving the faceplate insisting on a
+// repaired defect.
+
 export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // P1 batch 1 — first 6 module faces
   'adsr',
@@ -244,6 +326,8 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   'bluebox',
   // FACE BATCH 4 · the granular texture processor (2026-08-10) — see above.
   'clouds',
+  // FACE BATCH 5 · the analog delay (2026-08-10) — see the header note above.
+  'cofefve',
 ]);
 
 /**
