@@ -256,7 +256,6 @@ doom output:audio_l+audio_r=AUDIO
 es9 output:spdif_l+spdif_r=SPDIF
 foxy output:out_l+out_r=OUT
 graphicEq input:audio_l+audio_r=AUDIO
-hypercube output:L+R=OUT
 kickdrum output:audio_l+audio_r=AUDIO
 meowbox output:L+R=OUT
 mixmstrs input:ch1L+ch1R=CH1 input:ch2L+ch2R=CH2 input:ch3L+ch3R=CH3 input:ch4L+ch4R=CH4 input:ch5L+ch5R=CH5 input:ch6L+ch6R=CH6 input:ch7L+ch7R=CH7 input:ch8L+ch8R=CH8 input:ret1L+ret1R=RET1 input:ret2L+ret2R=RET2 output:masterL+masterR=MASTER output:send1L+send1R=SEND 1 output:send2L+send2R=SEND 2

@@ -11,7 +11,7 @@ source tree, so they cannot go stale. Prose + roadmap: `docs/testing/README.md`.
 | Bucket | What | Count |
 | --- | --- | ---: |
 | 1 | HARD SKIPS / QUARANTINES (backlog → drive to 0) | 6 |
-| 2 | COVERAGE EXEMPTIONS (deliberate auto-enrollment opt-outs) | 479 |
+| 2 | COVERAGE EXEMPTIONS (deliberate auto-enrollment opt-outs) | 472 |
 | 3 | INFORMATIONAL-ONLY CI LANES (run, never block merge) | 5 |
 
 ## CI gating truth (from `.github/workflows/ci.yml`)
@@ -46,7 +46,7 @@ _none_
 ### spawn-smoke QUARANTINE map (e2e/tests/modules.spec.ts) — 1
 - `toybox` — task #102: SwiftShader software-renderer timeout (heavy WebGL)
 
-## Bucket 2 — coverage exemptions (479)
+## Bucket 2 — coverage exemptions (472)
 
 Declarative auto-enrollment opt-out lists. A module opted out of a UNIVERSAL
 sweep still carries dedicated coverage (a bespoke spec / unit core / ART). These
@@ -137,7 +137,7 @@ tracked-to-zero backlog (reconcile = fix or delete); see the roadmap.
 - `warrensspectrum` — VRT baseline pending: the curated dock FACE lands on the faceplate platform (#1301) in a follow-up and will replace t…
 - `writeseq` — VRT baseline pending
 
-### `BEHAVIORAL_MODULE_EXEMPT` (78) — whole-module skips of the behavioral CONTROL→PATCHED delta sweep
+### `BEHAVIORAL_MODULE_EXEMPT` (77) — whole-module skips of the behavioral CONTROL→PATCHED delta sweep
 <sub>e2e/tests/per-module-per-port-behavioral.spec.ts</sub>
 - `4plexvid` — multiplex selector with per-input → per-output isolation
 - `archivist` — idle until an archive.org item loads (external network)
@@ -169,7 +169,6 @@ tracked-to-zero backlog (reconcile = fix or delete); see the roadmap.
 - `gamepad` — no gamepad attached
 - `gibribbon` — gameplay-conditional outputs (evt_hit/miss/fire/kill/gameover fire on in-game judgement
 - `grainsOfVision` — animated-video variance-floor class (cf.
-- `hypercube` — audio-observed 4D module whose card renders a live WebGL2 tesseract every frame — the same main-thread GL pressure as…
 - `joystick` — no joystick movement
 - `kickdrum` — working layered-kick voice whose secondary CV trims (body/sub/click EQ+level, tension, glue, drive, attack, accent, p…
 - `kria` — clock-derived 4-track output (seeded running pattern)
@@ -218,7 +217,7 @@ tracked-to-zero backlog (reconcile = fix or delete); see the roadmap.
 - `videovarispeed` — needs uploaded video file to emit
 - `wavesculpt` — multi-voice cluster
 
-### `BEHAVIORAL_SWEEP_EXEMPT` (113) — per-PORT skips of the behavioral delta sweep (module still enrolled)
+### `BEHAVIORAL_SWEEP_EXEMPT` (108) — per-PORT skips of the behavioral delta sweep (module still enrolled)
 <sub>e2e/tests/per-module-per-port-behavioral.spec.ts</sub>
 - `acidwarp.scene_cv` — infrequent scene transitions may not land inside the 1.5s window
 - `acidwarp.speed_cv` — palette-rotation RATE of an already-full-screen high-variance plasma
@@ -240,11 +239,6 @@ tracked-to-zero backlog (reconcile = fix or delete); see the roadmap.
 - `cube.space_diffuse` — space-diffuse reshape is subtle at the default slice/tables
 - `cube.trigger` — gating the mono TRIGGER opens lane-0\'s env to ≈1 over the SAME drone accumulator → ≈ the drone waveform → no delta v…
 - `dx7.poly` — poly note/gate retriggers the FM voice (zc/centroid wobble) but mean-RMS delta straddles the ~0.01 floor under the ov…
-- `hypercube.alpha` — alpha holo cross-fade is subtle at the default slice/tables
-- `hypercube.connect` — circle↔V connector reshape is subtle at the default slice/tables
-- `hypercube.crush` — CRUSH is near-transparent off 0
-- `hypercube.morph_fc` — morph floor↔ceiling fill is subtle at the default axis-aligned slice + default tables
-- `hypercube.slice_y` — slice-navigator Y translation is the constrained axis at the default axis-aligned slice
 - `lines.phase` — phase offset scrolls/translates the procedural line bands but preserves global frame-variance (Δμvar 2.36 vs ±63.7 no…
 - `lushgarden.horizon` — stochastic-garden variance floor (±300 std) swamps the depth-proportional horizon anchor shift (Δμvar 0.7–117) → near…
 - `lushgarden.rate` — stochastic-garden variance floor (±300 std) masks the spawn-cadence wiggle (Δμvar 2.8–132 across repeats) → near-thre…
@@ -454,7 +448,7 @@ tracked-to-zero backlog (reconcile = fix or delete); see the roadmap.
 - `toybox.inA` — video input only drives output when a layer selects it as its source
 - `toybox.inB` — video input only drives output when a layer selects it as its source
 
-### `EXEMPT_BASELINE_PAIRS` (99) — per-<platform>/<scene> VRT baseline pairs deferred (pending a vrt-update capture)
+### `EXEMPT_BASELINE_PAIRS` (98) — per-<platform>/<scene> VRT baseline pairs deferred (pending a vrt-update capture)
 <sub>e2e/vrt/vrt-exemptions.ts</sub>
 - `darwin/mirrorpool`
 - `darwin/mirrorpool-mirror`
@@ -505,7 +499,6 @@ tracked-to-zero backlog (reconcile = fix or delete); see the roadmap.
 - `linux/flipper`
 - `linux/foxy`
 - `linux/freezeframe`
-- `linux/hypercube`
 - `linux/kickdrum`
 - `linux/kria`
 - `linux/lushgarden`
@@ -558,7 +551,7 @@ tracked-to-zero backlog (reconcile = fix or delete); see the roadmap.
 
 ### Opt-IN completeness ratchets (the more members the better)
 
-- `STRICT_DOCS`: **185** — modules held to the FULL living-docs completeness bar (deny-missing-docs) <sub>(packages/web/src/lib/docs/strict-docs.ts)</sub>
+- `STRICT_DOCS`: **184** — modules held to the FULL living-docs completeness bar (deny-missing-docs) <sub>(packages/web/src/lib/docs/strict-docs.ts)</sub>
 - `STRICT_VRT_MODULES`: **48** — modules whose card MUST ship a VRT baseline (deny-missing-baseline) <sub>(e2e/vrt/vrt-exemptions.ts)</sub>
 
 ## Bucket 3 — informational-only CI lanes (5)

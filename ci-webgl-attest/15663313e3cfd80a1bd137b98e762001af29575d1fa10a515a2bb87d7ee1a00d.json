@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "webglContentHash": "53095b7924f54aabbaff98651ffe4b47950999ed4797e6d21324a896821b7fa5",
-  "attestedAt": "2026-08-10T18:48:45.790Z",
+  "webglContentHash": "15663313e3cfd80a1bd137b98e762001af29575d1fa10a515a2bb87d7ee1a00d",
+  "attestedAt": "2026-08-10T19:47:53.045Z",
   "attestedBy": "patchtogether-maintainer",
-  "gitHeadAtAttest": "708de96b8227aa4a20df62c646ed6ebf327fbafb",
+  "gitHeadAtAttest": "3dc41c963b89b30e2699a160cafa10e3189da951",
   "playwrightVersion": "1.50.0",
   "os": "darwin 25.4.0 (arm64)",
   "machineClass": "local-trusted-gpu-workstation",
@@ -12,11 +12,17 @@
   "suites": {
     "A-heavy": {
       "specFiles": 56,
-      "passed": 195,
+      "passed": 193,
       "failed": 0,
-      "flaky": 0,
-      "skipped": 1,
-      "flakyDetails": []
+      "flaky": 1,
+      "skipped": 2,
+      "flakyDetails": [
+        {
+          "test": "4x VIDEOVARISPEED -> MIXER: every source advances + mixer shows moving video + audio is produced",
+          "file": "multi-video-playback.spec.ts",
+          "firstError": "Error: vv0 keep-alive live |  | expect(received).toBe(expected) // Object.is equality | "
+        }
+      ]
     },
     "A-serial": {
       "specFiles": 2,
@@ -43,5 +49,5 @@
       "flakyDetails": []
     }
   },
-  "durationSec": 194
+  "durationSec": 404
 }

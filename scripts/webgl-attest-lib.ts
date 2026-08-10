@@ -66,7 +66,6 @@ export function sourceCreatesWebglContext(absOrSrc: string, isPath = false): boo
  *  WEBGL_CONTEXT_RE whose module is domain:'audio'. */
 export const AUDIO_WEBGL_MODULE_DEFS = [
   'packages/web/src/lib/audio/modules/cube.ts',
-  'packages/web/src/lib/audio/modules/hypercube.ts',
   'packages/web/src/lib/audio/modules/wavesculpt.ts',
 ];
 
@@ -78,7 +77,7 @@ export const AUDIO_WEBGL_MODULE_DEFS = [
  *  the runner measures the actual count and refuses to write on a shortfall.
  *
  *  Membership criterion: the spec spawns a module/path that creates a real
- *  WebGL context (CUBE/HYPERCUBE/FOXY cards, the render-worker OffscreenCanvas
+ *  WebGL context (CUBE/FOXY cards, the render-worker OffscreenCanvas
  *  proxy, or canvas-pixel asserts on a video card not in the heavy set). Edit
  *  here when such a spec is added; the runner's count-gate flags drift. */
 export const WEBGL_LEAKER_SPECS = [

@@ -444,7 +444,11 @@ describe('vrt-meta — EXEMPT_FROM_VRT is DENY-BY-DEFAULT (frozen allowlist)', (
 // deadlock before; see the drain note in vrt-exemptions.ts). They were DRAINED
 // in the same PR and the linux PNGs captured by dispatch, so no pair is added
 // and this number never needed to move.
-const SHARED_LINUX_PAIR_CEILING = 91;
+// 91→90 (2026-08-10): 'linux/hypercube' removed with the module (owner
+// ruling — failed experiment, deleted wholesale). Its darwin baseline went
+// with it, so this is a pair CLOSED BY DELETION, not by capture. Number read
+// off the ratchet's own report, not decremented by hand.
+const SHARED_LINUX_PAIR_CEILING = 90;
 
 describe('vrt-meta — EXEMPT_BASELINE_PAIRS size RATCHET (only shrinks)', () => {
   // ⚠ 2026-08-01 — READ THIS BEFORE TRUSTING THE NUMBER BELOW.
@@ -758,7 +762,11 @@ describe('vrt-meta — EXEMPT_BASELINE_PAIRS size RATCHET (only shrinks)', () =>
 // reading. Do NOT raise this number and do NOT re-add the pairs to make it
 // green: a listed pair is skipped unconditionally, so re-adding them is the
 // deadlock that makes the capture impossible.
-const LINUX_DEFICIT_CEILING = 148;
+// HYPERCUBE DELETED (2026-08-10): 148→147. `darwin/hypercube.png` was removed
+// together with the module and its `linux/hypercube` pair, so the ARTIFACT-side
+// ground truth (a darwin PNG with no linux sibling) loses exactly one gap. Read
+// off the ratchet's own report — it printed 147 — rather than decremented.
+const LINUX_DEFICIT_CEILING = 147;
 
 describe('vrt-meta — LINUX-baseline DEFICIT RATCHET (all four mechanisms)', () => {
   // THE HONESTY GATE. CI renders on LINUX. A scene captured on darwin but

@@ -978,7 +978,7 @@ export const videocubeDef: VideoModuleDef = {
   label: 'videocube',
   category: 'sources',
   // Rack tier is declared in rack-sizes.ts (videocube: 3u/hp4 — the CUBE /
-  // HYPERCUBE wide 2-col tier, not the 2u MANDELBULB tier).
+  // CUBE wide 2-col tier, not the 2u MANDELBULB tier).
   //
   // The 3 rings must keep FILLING even when unobserved: a scan back through a gap
   // would show a seam, and the audio drone reads the live rings. pullExempt (like

@@ -48,7 +48,7 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   //
   // MIGRATED to e2e/vrt/vrt-live-surfaces.ts (same mask, now with a measured
   // companion + a per-run negative control, so the region can no longer go
-  // blank unnoticed): cube, hypercube, mandelbulb, reshaper,
+  // blank unnoticed): cube, mandelbulb, reshaper,
   // toybox, analogVco.
   //
   // SAMSLOOP — loop-based WAV sample player. The waveform canvas is
@@ -1428,14 +1428,10 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // the per-port e2e. NOT in STRICT_VRT_MODULES (the missing linux baseline
   // runs only in the informational full-VRT lane, not the merge gate).
   'linux/cube',
-  // HYPERCUBE (the 4D tesseract sibling of CUBE): same canvas-AA story as cube
-  // — a live WebGL2 Schlegel-tesseract render + a snapshot-driven 2D viz, so the
-  // canvases are masked and the darwin baseline was captured in this PR. Linux
-  // baseline is pending a `task vrt:update` run on linux CI. Functional coverage
-  // = the shared cube-dsp HYPERCUBE unit tests (off=identity + alpha audibility)
-  // + the hypercube worklet capture test + the hypercube node-ART baselines +
-  // the per-port e2e. NOT in STRICT_VRT_MODULES.
-  'linux/hypercube',
+  // HYPERCUBE: pair REMOVED with the module (owner ruling — failed experiment,
+  // deleted wholesale). Its darwin baseline went with it, so this is a gap
+  // CLOSED by deletion, not by capture: the shared-pair ceiling and the
+  // linux-deficit ceiling both drop by 1.
   // AUDIO OUT (device picker dropdown added): the card grew an OUT device
   // dropdown row (setSinkId picker) so the darwin baseline was regen'd in
   // this PR. Linux baseline pending a `task vrt:update` run on linux CI.

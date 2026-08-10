@@ -39,7 +39,7 @@ describe('FOXY module def shape', () => {
       // cable + an external amp-envelope gate have no meaning here. The poly-in
       // feature + the per-voice ADSR are scoped to standalone WAVECEL + CUBE; the
       // shared worklet's env is gated off (everGated=false) → FOXY's internal
-      // WAVECEL stays byte-identical (same class as the HYPERCUBE/CUBE gating).
+      // WAVECEL stays byte-identical (same class as the CUBE gating).
       if (wIn.id === 'poly' || wIn.id === 'trigger') continue;
       expect(fIn.get(wIn.id), `input ${wIn.id}`).toBe(wIn.type);
     }

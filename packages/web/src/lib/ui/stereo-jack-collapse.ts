@@ -5,7 +5,7 @@
 // WHY THIS IS CENTRAL AND NOT PER-CARD
 // ------------------------------------
 // 208 cards exist; 188 mount PatchPanel and ~44 hand-build their descriptor
-// lists. Four of those hand-built lists (CubeCard, HypercubeCard,
+// lists. Three of those hand-built lists (CubeCard,
 // WavesculptCard, FoxyCard) plus every video card are inside the **WebGL attest
 // hash basis**, so editing them forces a GPU re-attest. Collapsing inside the
 // PANEL rather than in the cards means those faces collapse without a single
@@ -64,7 +64,7 @@ export interface CollapsedPort extends PortDescriptor {
  * → OUT, `masterL`+`masterR` → MASTER, `audio_l_in`+`audio_r_in` → AUDIO.
  *
  * A pair with NO stem of its own (`L`+`R`, declared bare by charlottes-echos /
- * qbrt / cube / hypercube / meowbox / wavesculpt / audioOut) takes THE RAIL as
+ * qbrt / cube / meowbox / wavesculpt / audioOut) takes THE RAIL as
  * its name — 'IN' or 'OUT'. `stereoPairStemId` deliberately returns null there
  * rather than inventing a default, so this is the one place that decision is
  * made and it is visible in the golden.

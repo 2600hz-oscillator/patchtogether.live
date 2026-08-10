@@ -480,7 +480,7 @@ const PROBES: Probe[] = [
   // interactive; this proves the live card mounts cleanly and a control hover
   // updates the pane. The CV→param dual-context check runs on each (cloudseed
   // late_cv→late_out). The STATIC siblings (foxy /
-  // twotracks / hypercube / synesthesia / mixmstrs /
+  // twotracks / synesthesia / mixmstrs /
   // bluebox) have no live-card probe — see interactive-doc-modules.ts. ---
   {
     id: 'cloudseed',
