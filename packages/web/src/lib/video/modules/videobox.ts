@@ -124,7 +124,7 @@ export const videoboxDef: VideoModuleDef = {
     // through the standard CV bridge as a synthetic param so the
     // engine setParam path catches edges (mirrors DOOM's cv-gate
     // plumbing).
-    { id: 'play_trigger', type: 'gate', paramTarget: 'cv_play_trigger' },
+    { id: 'play_trigger', type: 'gate', edge: 'trigger', paramTarget: 'cv_play_trigger' },
   ],
   outputs: [
     { id: 'video',   type: 'video' },
@@ -139,7 +139,6 @@ export const videoboxDef: VideoModuleDef = {
     { id: 'cv_play_trigger', label: 'Play trigger', defaultValue: 0, min: 0, max: 1, curve: 'linear' },
   ],
 
-  // docs-hash-ignore:start
   docs: {
     explanation: "videobox is a local-file VIDEO PLAYER: you drop (or pick) a video file from disk and it decodes the file each frame into the module's video output, while the file's stereo audio track is split out to the audio_l / audio_r jacks for patching back into the audio domain. The card owns the actual HTMLVideoElement and object-URL; the engine samples that element through a decode-rate frame uploader (only re-uploading when a genuinely new frame lands, downscaled to the engine resolution) so playback stays smooth even at 1080p. Behind the file picker the card uses File System Access handles (Chromium) to remember your pick and one-click-reload it next session; other browsers and other peers fall back to a \"Re-link: drop <name>\" prompt. The playhead is multiplayer-synced: play, pause and seek write a shared (isPlaying / lastSyncTime / lastSyncPosition) triple to the node so every peer's local copy follows, drift-correcting whenever it slips more than ~0.5s off the expected position. The card is drag-resizable from the bottom-right corner (whole-rack-unit tiles, default and minimum 360x360) so several videoboxes can be tiled into a wall of TVs; size persists on the node and syncs to peers, and the 16:9 video preview grows to fill the resized card. Right-click the preview for Fullscreen (a LOCAL per-peer state, NOT multiplayer-synced) or Full Frame (in-app, the video consumes the whole card, hiding the title/picker/transport/seekbar; double-click to exit), where ONLY Full Frame is synced to peers. Usage: drop a clip, hit Play, and patch video into a mixer/output and audio_l/audio_r into your audio chain; pulse the TRIG input from a clock or button to toggle play/pause hands-free. Idle (no file) shows a faint blue gradient so an empty card reads as alive-but-empty.",
     inputs: {
@@ -155,7 +154,6 @@ export const videoboxDef: VideoModuleDef = {
       cv_play_trigger: "Play trigger (linear, 0 to 1, default 0). Synthetic hidden param — not a visible control. It is the bridge target for the play_trigger gate input: the CV bridge writes the gate level here and the card polls it for a rising edge across 0.5 to toggle play/pause. Has no on-card UI.",
     },
   },
-  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);

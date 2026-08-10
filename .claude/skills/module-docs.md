@@ -125,7 +125,12 @@ adversarially checked; verify the gate stays green). Each batch is its own PR of
 
 ## docs are hash-transparent to attest
 
-Authoring docs must NOT churn the webgl/collab attest hashes. Audio defs aren't
-in those bases; video defs wrap their `docs` in `// docs-hash-ignore:start/end`
-markers (`stripDocsForHash`). If a docs edit ever flips an attest, that's a bug —
-see `docs-numbered-key-system`.
+Authoring docs CANNOT churn the webgl/collab/grand attest hashes, and there is
+nothing to remember: the bases hash CODE, not bytes. `scripts/attest-code-basis.ts`
+re-emits every basis file through the TypeScript parser with comments, the
+`docs`/`controlFamilies`/`face` properties of a module-scope def, and type-only
+imports removed. Write `docs` on any def, audio or video, and comment freely.
+
+If a docs edit ever flips an attest, that IS a bug — reproduce it in
+`scripts/attest-code-basis.test.ts` (the both-direction proof lives there) rather
+than working around it. See also `docs-numbered-key-system`.

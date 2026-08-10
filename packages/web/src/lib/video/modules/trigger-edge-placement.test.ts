@@ -733,8 +733,29 @@ const EDGE_IDIOMS = /(detectEdge|gateEdge|\.scan\(|risingEdge|RisingEdge|EdgeCou
  *  the SAME exposure as a draw-time read: the bridge's `0,1,0` lands inside one
  *  millisecond, so any sampler that is not on the setParam clock can miss it.
  *  Listed here to keep this gate honest about what it is NOT asserting, and
- *  tracked as follow-up alongside the KNOWN_REMAINING ratchet above. */
-const CARD_OWNED_EDGE_DETECTION: readonly string[] = ['tv-librarian', 'peertube'];
+ *  tracked as follow-up alongside the KNOWN_REMAINING ratchet above.
+ *
+ *  ⚠ GREW 2 → 5 on 2026-08-09, and the growth is a REVEAL, not a regression.
+ *  picturebox, videobox and videovarispeed have ALWAYS detected their edges in
+ *  the card and nowhere else — `PictureboxCard.svelte:294`
+ *  (`lastAssetGate < 0.5 && g >= 0.5`), `VideoboxCard.svelte:539-540`,
+ *  `VideovarispeedCard.svelte:831` — while their module `setParam` reads a plain
+ *  level. Rule 2 could not see any of it, because rule 2 fires on
+ *  `edge: 'trigger' … paramTarget:` and none of the three declared an `edge` at
+ *  all; they sat in the audio-side undeclared-edge ledger instead. The
+ *  edge-declaration sweep wrote the declarations the DSP already implied, and
+ *  rule 2 immediately reported the exposure that had been invisible since the
+ *  modules shipped. The declarations are RIGHT (all three cards edge-detect and
+ *  explicitly ignore the held level); the PLACEMENT is the open question, which
+ *  is exactly what this list exists to track. Moving the detection onto the
+ *  setParam clock is a BEHAVIOUR change and belongs in its own PR. */
+const CARD_OWNED_EDGE_DETECTION: readonly string[] = [
+  'tv-librarian',
+  'peertube',
+  'picturebox',
+  'videobox',
+  'videovarispeed',
+];
 
 /** `edge: 'trigger'` on a line that also routes to a param (outputs declare
  *  `edge` for the glyph but carry no paramTarget). */
@@ -787,7 +808,7 @@ describe("video modules: a port declaring edge:'trigger' must edge-detect in set
 
   it('the card-owned exemption list stays small and cannot silently grow', () => {
     // Each entry is an UNVERIFIED trigger path, not an approved design.
-    expect(CARD_OWNED_EDGE_DETECTION.length).toBeLessThanOrEqual(2);
+    expect(CARD_OWNED_EDGE_DETECTION.length).toBeLessThanOrEqual(5);
     for (const m of CARD_OWNED_EDGE_DETECTION) {
       expect(modulesDeclaringTriggerInputs(), `${m} no longer declares a trigger input — drop the exemption`)
         .toContain(m);
@@ -927,41 +948,59 @@ function modulesWithUndeclaredGateInputs(): Array<{ module: string; ports: strin
   return out;
 }
 
-/** THE RATCHET, shrink-only. Bridge-reachable inputs whose `edge` semantic is
- *  still unwritten. Not asserted to be BUGS — asserted to be UNDECLARED, which
- *  is the state pre-fix FREEZEFRAME was in. Bring one up to the bar whenever you
- *  touch its module (boy-scout rule) and lower both numbers in the same commit.
+/** THE RATCHET. Bridge-reachable inputs whose `edge` semantic is still
+ *  unwritten. Not asserted to be BUGS — asserted to be UNDECLARED, which is the
+ *  state pre-fix FREEZEFRAME was in. Bring one up to the bar whenever you touch
+ *  its module (boy-scout rule) and delete its entry in the same commit.
  *
  *  ⚠ RE-BASELINED 2026-08-02, and the numbers went UP: 7 modules / 17 ports
  *  became 15 / 40. Nothing regressed — the old predicate was BLIND to `cv`-typed
- *  ports, which is most of them. The eight modules the widened rule newly sees
- *  are marked (+). Six of them (backdraft ×6, b3ntb0x ×2, bentbox ×2) are the
- *  SAME sites rule 1's KNOWN_REMAINING already ratchets as real defects, now
- *  counted by the def-side rule too — the clearest possible evidence that the
- *  old `type: 'gate'` filter was looking in the wrong place. */
-const UNDECLARED_GATE_INPUT_MODULES: readonly string[] = [
-  '4plexvid',       // (+) gate1..gate4
-  'acidwarp',       // (+) scene_cv
-  'b3ntb0x',        // (+) mirror_x_gate, mirror_y_gate   — also in rule 1's ratchet
-  'backdraft',      // (+) delay_clock, mirror_{x,y}_gate, shape_gate, pure_geo_gate, tv_gate
-  'bentbox',        // (+) mirror_x_gate, mirror_y_gate   — also in rule 1's ratchet
-  'blood',          // (+) base
-  'doom',           // (+) <computed>, iddqd_in, idkfa_in
-  'gibribbon',      // clock, gate, a, b, x_btn, y_btn
-  'outlines',       // gate, collide
-  'picturebox',     // asset_pitch (+), asset_gate
-  'scoreboard',     // (+) score, reset
-  'shapegen',       // clock
-  'vfpga-runner',   // gate_evt_N (computed id)
-  'videobox',       // play_trigger
-  'videovarispeed', // cv_start, cv_pause, cv_reset, cv_loop_toggle, asset_pitch (+), asset_gate
-];
-const UNDECLARED_GATE_INPUT_PORTS = 40;
+ *  ports, which is most of them. Six of the sites it newly saw (backdraft ×6,
+ *  b3ntb0x ×2, bentbox ×2) are the SAME sites rule 1's KNOWN_REMAINING already
+ *  ratchets as real defects — the clearest possible evidence that the old
+ *  `type: 'gate'` filter was looking in the wrong place.
+ *
+ *  ⚠ SHAPE CHANGED 2026-08-09, with the edge-declaration sweep that drained
+ *  gibribbon / outlines / shapegen / vfpga-runner / videobox outright and the
+ *  `type: 'gate'` half of doom / picturebox / videovarispeed. It used to be a
+ *  MODULE list plus a hand-typed PORT COUNT (`= 40`), and that pair is the
+ *  merge hazard CLAUDE.md now names: a module list cannot see a NEW undeclared
+ *  port in an already-listed module, and a typed total merges cleanly-and-wrong
+ *  across parallel branches (measured 3 of 3 on the edge ledger it replaced).
+ *  It is now a NAMED `(module, port)` map with NO count at all — the assertion
+ *  is a deep-equal against the live scan, so it ratchets in both directions by
+ *  construction: a new undeclared port reddens, and draining one without
+ *  deleting its entry reddens too.
+ *
+ *  DELETION CRITERIA (stated, per the standard): when this map is empty, delete
+ *  it and make the rule-2 demand unconditional — exactly what the audio-side
+ *  edge ledger did on 2026-08-09. Everything left here needs a per-port DSP read
+ *  to choose trigger / gate / a real cvScale; none of it is mechanically
+ *  payable from prose, which is why it is still a ratchet and not a sweep. */
+const UNDECLARED_GATE_INPUTS: Readonly<Record<string, readonly string[]>> = {
+  '4plexvid': ['gate1', 'gate2', 'gate3', 'gate4'],
+  acidwarp: ['scene_cv'],
+  b3ntb0x: ['mirror_x_gate', 'mirror_y_gate'], // also in rule 1's ratchet
+  backdraft: ['delay_clock', 'mirror_x_gate', 'mirror_y_gate', 'shape_gate', 'pure_geo_gate', 'tv_gate'],
+  bentbox: ['mirror_x_gate', 'mirror_y_gate'], // also in rule 1's ratchet
+  blood: ['base'],
+  doom: ['portId', 'iddqd_in', 'idkfa_in'], // 'portId' = the computed-id cv-gate spread
+  picturebox: ['asset_pitch'],
+  scoreboard: ['score', 'reset'],
+  videovarispeed: ['asset_pitch'],
+};
 
 describe('video modules: a bridge-reachable INPUT with a paramTarget must DECLARE its edge semantic', () => {
   it('no NEW undeclared bridge-reachable input appears', () => {
     const found = modulesWithUndeclaredGateInputs();
-    const novel = found.filter((f) => !UNDECLARED_GATE_INPUT_MODULES.includes(f.module));
+    // NAMED PER INSTANCE, not per file: a module already in the map does NOT
+    // get a free pass for a new undeclared port of a different id.
+    const novel = found
+      .map((f) => ({
+        module: f.module,
+        ports: f.ports.filter((p) => !(UNDECLARED_GATE_INPUTS[f.module] ?? []).includes(p)),
+      }))
+      .filter((f) => f.ports.length > 0);
     expect(
       novel.map((f) => `${f.module} (${f.ports.join(', ')})`),
       novel.length === 0
@@ -996,14 +1035,26 @@ describe('video modules: a bridge-reachable INPUT with a paramTarget must DECLAR
     ).toEqual([]);
   });
 
-  it('the undeclared ratchet only shrinks', () => {
-    const found = modulesWithUndeclaredGateInputs();
-    const names = new Set(found.map((f) => f.module));
-    const stale = UNDECLARED_GATE_INPUT_MODULES.filter((m) => !names.has(m));
-    expect(stale, `these modules now declare their gate semantics — REMOVE them from the ratchet: ${stale.join(', ')}`)
-      .toEqual([]);
-    const ports = found.reduce((n, f) => n + f.ports.length, 0);
-    expect(ports, 'undeclared gate INPUT ports').toBeLessThanOrEqual(UNDECLARED_GATE_INPUT_PORTS);
+  it('the ratchet is ANCHORED to the defs and moves in BOTH directions', () => {
+    // One deep-equal does the whole job, and there is no count to keep in sync:
+    // ground truth is the live scan of the defs, and the map must reproduce it
+    // exactly. A NEW undeclared port reddens (the clause above, per instance);
+    // an entry for a port that now declares `edge` — or that no longer exists —
+    // reddens HERE, so a drain cannot forget to delete its entry and leave slack.
+    const live = Object.fromEntries(
+      modulesWithUndeclaredGateInputs().map((f) => [f.module, [...f.ports].sort()]),
+    );
+    const pinned = Object.fromEntries(
+      Object.entries(UNDECLARED_GATE_INPUTS).map(([m, ps]) => [m, [...ps].sort()]),
+    );
+    expect(
+      live,
+      'undeclared bridge-reachable video inputs drifted from the ratchet.\n' +
+        'A port that now declares `edge` (or is gone) must be DELETED from\n' +
+        'UNDECLARED_GATE_INPUTS in the same commit; a new one must be declared,\n' +
+        'not added. When the map reaches {} delete it and make the rule\n' +
+        'unconditional (its stated deletion criteria).',
+    ).toEqual(pinned);
   });
 
   it('NEGATIVE CONTROL: the verbatim pre-fix FREEZEFRAME def is flagged; the shipped one is not', () => {

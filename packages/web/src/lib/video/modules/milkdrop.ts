@@ -212,7 +212,6 @@ export const milkdropDef: VideoModuleDef = {
     { id: 'nextTrig', label: 'Next Trig', defaultValue: DEFAULTS.nextTrig, min: 0, max: 1, curve: 'linear' },
   ],
 
-  // docs-hash-ignore:start
   docs: {
     explanation: `MILKDROP is a Winamp-style Milkdrop music visualizer as a fully CV-instrumented video SOURCE. It wraps the open-source butterchurn engine (a WebGL2 reimplementation of Ryan Geiss's Milkdrop) and a curated set of ~20 classic Flexi/Geiss/Martin presets, then exposes the parts that actually drive the look as patchable CV. Patch any audio into the AUDIO input and the visuals react to it: a mono mix plus left/right channels are tapped (the audio is TAP-ONLY and inaudible — a silent gain-0 keep-alive runs the tap without routing to the speakers, so feed AUDIO OUT separately to hear it). The novel part is the per-band CV: butterchurn drives nearly all preset motion from three audio scalars — bass, mid, treb — and MILKDROP lets a cable REPLACE any of them. Patch a CV/LFO/envelope into BASS, MID, or TREB and that band is driven by the cable instead of the live audio (an unpatched band still follows the audio); the REACT control scales all three at once. SPEED is a time-warp (it scales how fast butterchurn's internal clock advances, clamped at zero — turn it down to slow the motion, up to speed it up). PRESET selects which of the curated presets is showing (a quantized index, knob or CV), MORPH sets the crossfade time when the preset changes, and a rising edge on NEXT advances to the next preset hands-free (clock it from a sequencer to switch presets in time). The output is a normal downstream video texture: route OUT into a mixer, keyer, effect, or OUTPUT. With nothing patched it still animates (the preset runs on its own clock) and shows the current preset; the card has a live preview screen and a preset name/index readout, and hiding the controls turns it into a resizable monitor (drag the bottom-right corner, double-click to restore). To LOAD/BROWSE presets directly, the card has a searchable preset PICKER (a dropdown listing every curated preset by name) — picking one loads it with a MORPH-second crossfade and is the same selection the PRESET knob, the PRESET CV jack, and the NEXT trigger drive (they stay in sync). A "Load .milk…" button imports a classic Winamp Milkdrop \`.milk\` preset file straight from disk: the file is converted to butterchurn's format in the browser (via milkdrop-preset-converter) and appended to the picker for the rest of the session (custom imports are in-session only and are not saved with the patch; the curated PRESET index IS saved).`,
     inputs: {
@@ -240,7 +239,6 @@ export const milkdropDef: VideoModuleDef = {
       nextTrig: 'Next Trig (0..1, default 0) - hidden synthetic edge-detector param. The CV bridge writes the NEXT gate level here and the module edge-detects a rising crossing of mid-scale to advance to the next preset. Not a user-facing knob (drive the NEXT jack instead).',
     },
   },
-  // docs-hash-ignore:end
 
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;

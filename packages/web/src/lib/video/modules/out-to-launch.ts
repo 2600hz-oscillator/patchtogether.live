@@ -109,7 +109,6 @@ export const outToLaunchDef: VideoModuleDef = {
   // while unobserved so the 9×9 readback the card pushes stays fresh.
   pullExempt: true,
 
-  // docs-hash-ignore:start
   docs: {
     explanation:
       "out to launch turns a Novation Launchpad Mini Mk3 into a live 9x9 RGB video monitor. Patch any video source into it, and it downsamples that frame to a 9x9 grid on the GPU (each cell is a box-average of its slice of the frame, so it doesn't alias or flicker on moving video) and mirrors those 81 pixels onto the Launchpad's LEDs in real time. The Mini Mk3's whole addressable surface is a 9x9 grid — the 8x8 pads plus the top control row, the right scene column, and the corner logo — so the picture maps straight onto the hardware, upright, with the bottom-left of the frame on the bottom-left pad. Bind a device from the card (Connect, then pick a Launchpad); once bound it becomes a screen and its LEDs are driven by the video, so it can't be used for control at the same time (out to launch takes it over). It has no video output — it's an endpoint, like plugging a monitor into the end of a chain, except the monitor is a grid of buttons. Two knobs shape the look: BRIGHT scales overall LED brightness and GAMMA deepens or lifts the mid-tones. The on-card 9x9 preview shows exactly what the LEDs show, so you can dial it in without hardware. Great for a tiny confidence monitor, a lo-fi VJ output, or lighting a Launchpad from a camera/generator feed.",
@@ -122,7 +121,6 @@ export const outToLaunchDef: VideoModuleDef = {
       gamma: "GAMMA (0.5..3, default 2.2) is the gamma exponent applied to each colour channel before scaling. 1 is a literal what-you-see map; above 1 deepens the mid-tones and blacks (usually flatters the bright LEDs on a moving source); below 1 lifts dim detail. Applied identically to the on-card preview.",
     },
   },
-  // docs-hash-ignore:end
 
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;

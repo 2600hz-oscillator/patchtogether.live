@@ -36,8 +36,8 @@
 //
 // NOTE (owner): this def lives in the WebGL attest basis (resolveWebglBasis sweeps
 // lib/video/). Its real shader/def flips computeWebglHash → a ONE-TIME re-attest on
-// a trusted GPU is REQUIRED; the co-located docs below are wrapped in
-// docs-hash-ignore markers so DOC edits stay hash-transparent. Look-affecting new
+// a trusted GPU is REQUIRED; the co-located docs below are hash-transparent by
+// construction, so DOC edits cost nothing. Look-affecting new
 // shader — do NOT auto-merge (held for owner visual preview).
 //
 // Design + research: .myrobots/plans/frametable-2026-07-19.md
@@ -461,7 +461,6 @@ export const frametableDef: VideoModuleDef = {
     { id: 'saveTrig',    label: 'save',      defaultValue: FRAMETABLE_DEFAULTS.saveTrig,   min: 0, max: 1,  curve: 'linear' },
   ],
 
-  // docs-hash-ignore:start
   docs: {
     explanation:
       'FRAMETABLE is a video WAVETABLE oscillator. It continuously records the last 60 rendered input frames into a GPU frame ring (a TEXTURE_2D_ARRAY, one layer per frame) and treats that 60-frame history like the single-cycle waves of a wavetable synth: MORPH scans a centre point through the table and SPREAD sets how wide a window around it each output draws from. A faceplate MODE selector picks one of THREE render engines. SMOOTH (the default) paints a smooth 2D field of temporal sample-centres from two morphable waveforms (one per screen axis) and outputs a CAPPED WEIGHTED TEMPORAL AVERAGE — a blend favouring the peak frame, not a single-frame pick — so the result is a flowing, liquid, recognizable-waveform distortion (sub-frame temporal positions are interpolated manually for a buttery result). MORPH is the smoothest possible cross-dissolve: a spatially-uniform, pop-free scan between temporal positions using a periodic raised-cosine (Hann) reconstruction kernel that is C¹ at its window edges AND N-periodic across the 59→0 wrap seam, so scanning MORPH loops seamlessly. CHAOS is the original per-pixel stochastic look — for every pixel the shader draws exactly ONE source frame (a whole-pixel dither/mosaic) chosen in O(1) by an analytic inverse-CDF from a static screen-space threshold, so a still input yields a stable image while moving content becomes a coherent morph-scannable time-smear. LAG MODEL: lag = (mode ≠ CHAOS) && !LIVE. CHAOS is always real-time (no lag). SMOOTH and MORPH auto-engage a ~2-second lag (they read a trailing window of the buffer) unless the LIVE control forces real-time. On the first real input frame the whole 60-layer ring is filled with that frame (buffer instantly full = a still image), then real frames wash in over ~2s — so there is no black warmup and a lagged read always hits a full buffer. LIVE (a faceplate switch OR its gate) forces real-time / no-lag in any mode; CHAOS (a momentary switch OR its gate) overrides the selector to the real-time CHAOS render while held. SPREAD is the temporal-average window (SMOOTH) / cross-dissolve width (MORPH) / bell window (CHAOS). SHIMMER is flow speed (SMOOTH field drift) / auto-scan drift (MORPH) / threshold dither (CHAOS). SHAPE morphs the CHAOS bell triangular↔gaussian (idle in SMOOTH/MORPH, which use a fixed gaussian/Hann). The X/Y waveform controls (freq, amt, shape per axis) sculpt SMOOTH\'s field. FREEZE (a toggle button, plus a freeze gate that holds the ring frozen while high) stops the ring from advancing so you can scrub a held 60-frame window; SAVE (a momentary button, also a rising edge on the save trigger) snapshots the ring into an in-GPU slot for later recall (and to feed a future video Cube). FRAMETABLE also SAVES + LOADS real FILES (the wavetable file workflow): a Save-file control writes the whole 60-frame ring to a lossless .frametable.png sprite-sheet atlas (a fixed 10x6 = 60-tile contact sheet, no video codec) on disk, and a Load control reads a .frametable.png back into the ring, freezing it so the loaded table can be morphed/scanned; the multi-megabyte frame bytes persist per-browser in IndexedDB (never the patch / Y.Doc — only a tiny file descriptor syncs), so a loaded or saved table survives a reload. Rendered at half engine resolution (SwiftShader/CI budget); an unpatched input renders black. The mode/lag dispatch, morphable-waveform field, weighted-average blend, Hann kernel, inverse-CDF and freeze/save/first-fill reducers are a 1:1 CPU mirror unit-tested in $lib/video/frametable-core. All ports live on the yellow drill-down PATCH PANEL (no raw side jacks).',
@@ -507,7 +506,6 @@ export const frametableDef: VideoModuleDef = {
     },
   },
   controlFamilies: [],
-  // docs-hash-ignore:end
 
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;

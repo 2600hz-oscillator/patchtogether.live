@@ -1,27 +1,22 @@
 {
   "schemaVersion": 1,
-  "webglContentHash": "620fa1b39f88d89cea7a9a33c2892f568c4218ce00d8f8120d728f66901328fc",
-  "attestedAt": "2026-08-07T12:29:05.794Z",
+  "webglContentHash": "2a2179664d2b486c278b78a799f0f3c6975bd3958e97fcb1362c4aa4a9a9399d",
+  "attestedAt": "2026-08-10T17:11:44.029Z",
   "attestedBy": "patchtogether-maintainer",
-  "gitHeadAtAttest": "7e84b8841c4bd6d54d888b9b71ab4b457fb084b4",
+  "gitHeadAtAttest": "941424a249100d1f2058095a783b5b0dadbbe0be",
   "playwrightVersion": "1.50.0",
   "os": "darwin 25.4.0 (arm64)",
+  "machineClass": "local-trusted-gpu-workstation",
   "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5, Unspecified Version)",
   "repeatEach": 1,
   "suites": {
     "A-heavy": {
       "specFiles": 56,
-      "passed": 194,
+      "passed": 195,
       "failed": 0,
-      "flaky": 1,
+      "flaky": 0,
       "skipped": 1,
-      "flakyDetails": [
-        {
-          "test": "the node-graph panel resizes + the height persists in node.data",
-          "file": "toybox-node-batch.spec.ts",
-          "firstError": "Error: expect(received).toBeGreaterThan(expected) |  | Expected: > 310 | Received:   176"
-        }
-      ]
+      "flakyDetails": []
     },
     "A-serial": {
       "specFiles": 2,
@@ -48,6 +43,5 @@
       "flakyDetails": []
     }
   },
-  "durationSec": 241,
-  "machineClass": "local-trusted-gpu-workstation"
+  "durationSec": 196
 }

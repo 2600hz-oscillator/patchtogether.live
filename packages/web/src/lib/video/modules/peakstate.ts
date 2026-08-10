@@ -143,7 +143,6 @@ export const peakstateDef: VideoModuleDef = {
     { id: 'oblong',      label: 'Oblong',     defaultValue: DEFAULTS.oblong,      min: 0,   max: 1,  curve: 'linear' },
   ],
 
-  // docs-hash-ignore:start
   docs: {
     explanation: `peakstate is a self-running mandala/kaleidoscope generator — a video SOURCE with no video input. An internal "pen" traces a deterministic drifting Lissajous path (penAtTime: x = 0.5·cos(0.7t), y = 0.5·sin(1.3t + 0.4·cos(0.3t))) through a centred unit disc, pushing one sample per frame into a 600-sample ring buffer (~10s of comet trail). Each frame the whole trail is redrawn once per kaleidoscope arm — rotated by 2π/complexity and mirrored about the arm axis — over a translucent black overlay that decays the previous frame, giving the classic mirror-arm bloom. MOVE + OBLONG add a slow spirograph orbit of the mandala's centre (period ~20s at Speed 1): MOVE sets orbit radius, OBLONG squashes the orbit's vertical extent from a circle toward a near-horizontal "rolling tube". The module emits three coherent views of the SAME pen trail with different palette/transform. Usage: drop it in for a generative kaleidoscope bloom, patch an LFO or envelope into the CV jacks to pulse the speed/arm-count/hue, and pick the mono, full-colour, or pseudo-3D output to suit the look.`,
     inputs: {
@@ -164,7 +163,6 @@ export const peakstateDef: VideoModuleDef = {
       oblong: "Oblong (0–1, default 0): orbit eccentricity — 0 is a perfect circular orbit; toward 1 the orbit's vertical extent collapses to ~5% of its width, turning the spirograph into a near-horizontal rolling tube. Only matters when Move > 0. No CV jack.",
     },
   },
-  // docs-hash-ignore:end
   factory(ctx: VideoEngineContext, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(COPY_FRAG_SRC);

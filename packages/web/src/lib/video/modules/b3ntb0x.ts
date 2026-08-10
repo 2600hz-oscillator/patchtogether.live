@@ -784,7 +784,6 @@ export const b3ntb0xDef: VideoModuleDef = {
     { id: 'mirrorYGate',  label: 'Mir Y Gate',  defaultValue: DEFAULTS.mirrorYGate,  min: 0,  max: 1, curve: 'linear' },
   ],
 
-  // docs-hash-ignore:start
   docs: {
     explanation: "A circuit-level NTSC/composite video destroyer. Where the original BENTBOX does one symbolic RGB/YIQ pass, B3NTB0X runs a real four-stage analog pipeline: it ENCODES the incoming picture into a per-column composite VOLTAGE on a 3.58 MHz subcarrier (with sync tip, blanking, colour burst, and active video), runs that voltage through an analog BEND CIRCUIT (AC/DC coupling, gain, bias, soft-clip + diode clamp, plus four circuit-bend taps), DECODES it back to RGB with a quadrature demodulator and recovered sync, then renders it on a curved CRT (beam blur, phosphor grille, scanlines/interlace, bloom, persistence, overscan, barrel). Sync crush, dot-crawl, rainbow swim and rolling all EMERGE from the signal path — they are not cosmetic filters. Patch a video source into IN and it is the chainable, CRT-rendered OUT. Crank Sync Crush + Bias to tear and roll the picture, starve the Burst to kill colour and bring on herringbone, push Drift for swimming rainbow, and use Bend A–D for wavefold/comb/crush/bleed mangling. The preview is a resizable CRT screen (drag the bottom-right handle; default 540x540, min 360x540) that letterboxes at the live engine aspect with the 4:3 active area, overscan and barrel applied inside the shader; right-click for fullscreen / full-frame / present-on-second-display, and a \"reduced precision\" badge appears if the GPU cannot allocate the float buffers the composite voltage needs.",
     inputs: {
@@ -836,7 +835,6 @@ export const b3ntb0xDef: VideoModuleDef = {
       mirrorYGate: "Mir Y Gate (0–1): the synthetic gate level fed by the mirror_y_gate input; a rising edge on it toggles Mirror Y. Read for edge detection, not as a continuous control.",
     },
   },
-  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const encodeProgram = ctx.compileFragment(ENCODE_FRAG);

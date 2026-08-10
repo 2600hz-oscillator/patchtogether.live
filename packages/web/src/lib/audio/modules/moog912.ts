@@ -125,7 +125,7 @@ export const moog912Def: AudioModuleDef = {
   outputs: [
     // The smoothed amplitude envelope (CV) + a gate while above threshold.
     { id: 'env', type: 'cv' },
-    { id: 'gate', type: 'gate' },
+    { id: 'gate', type: 'gate', edge: 'gate' },
   ],
   params: [
     { id: 'sensitivity', label: 'Sens',   defaultValue: 0.7, min: 0, max: 1, curve: 'linear' },

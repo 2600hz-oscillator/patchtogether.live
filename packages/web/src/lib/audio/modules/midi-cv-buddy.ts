@@ -318,7 +318,7 @@ export const midiCvBuddyDef: AudioModuleDef = {
   inputs: [],
   outputs: [
     { id: 'pitch_cv',    type: 'cv' },
-    { id: 'gate',        type: 'gate' },
+    { id: 'gate',        type: 'gate', edge: 'gate' },
     { id: 'velocity_cv', type: 'cv' },
   ],
   // No knob params — all settings are dropdown/toggle on the card and live

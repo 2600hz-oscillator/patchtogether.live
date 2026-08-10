@@ -94,13 +94,37 @@ pinned rear scenes, so all 8 baselines should be byte-identical.**
 - "Expected zero diff" is the *prediction*. Run the four scenes and **count the
   files**, per the "green dispatch that committed nothing is a RED FLAG" rule.
 
-### 1.5 WebGL attest basis — **cube + wavesculpt confirmed, and only those** ✅
+### 1.5 WebGL attest basis — ⚠ **THIS ROW WAS WRONG. 11 files, not 2.**
 
-`AUDIO_WEBGL_MODULE_DEFS` (`scripts/webgl-attest-lib.ts:66-70`) =
-`cube.ts`, `hypercube.ts`, `wavesculpt.ts`. Of those, `cube` (1 pair) and
-`wavesculpt` (4 pairs) are in the debt map; **`hypercube` is not**. So exactly
-**5 pairs across 2 files** move the WebGL hash → the single re-attest in Phase 3
-stands.
+> **Corrected during Phase 1 by measurement.** The original text is kept below
+> because *how* it was wrong is the point.
+
+~~`AUDIO_WEBGL_MODULE_DEFS` (`scripts/webgl-attest-lib.ts:66-70`) = `cube.ts`,
+`hypercube.ts`, `wavesculpt.ts`. Of those, `cube` (1 pair) and `wavesculpt`
+(4 pairs) are in the debt map; `hypercube` is not. So exactly **5 pairs across
+2 files** move the WebGL hash.~~
+
+That checked ONE list and reported it as the basis. `resolveWebglBasis()` rule
+(1) walks **all of `packages/web/src/lib/video`** (minus `*.test.ts`) into the
+hash wholesale, so every video module def in the debt map is in the basis as
+well — `AUDIO_WEBGL_MODULE_DEFS` is only rule (3).
+
+Measured on the Phase-1 branch, `bash scripts/webgl-attest-hash.sh --list`
+intersected with `git diff --name-only origin/main...HEAD`: **11 files** —
+`cube.ts`, `wavesculpt.ts`, and `doom / gibribbon / nibbles / outlines /
+picturebox / shapegen / vfpga-runner / videobox / videovarispeed`. Hashes:
+main `620fa1b3…` (= the committed attestation), branch `dad522d9…`, and
+reverting exactly those 11 to main's content restores `620fa1b3…`, so the
+delta is those files and nothing else.
+
+Still ONE re-attest in Phase 3 — but the expected basis delta is 11 files, and
+the acceptance line "hash verified stable otherwise" cannot be read as "only
+two defs moved it".
+
+**The lesson, and it is this table's own subject one level up:** a
+consumer/basis audit that resolves a single named list will confidently report
+that list's contents as the whole answer. Anchor to the ARTIFACT — here,
+`--list` — not to the constant that looks like it enumerates it.
 
 ---
 

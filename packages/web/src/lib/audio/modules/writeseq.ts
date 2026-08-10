@@ -235,19 +235,19 @@ export const writeseqDef: AudioModuleDef = {
     { id: 'cv',    type: 'pitch' },
     // Gate in (writes nearest step while recording; starts seq+record when
     // stopped+armed; passes through live).
-    { id: 'gate',  type: 'gate' },
+    { id: 'gate',  type: 'gate', edge: 'gate' },
     // External step clock (rising edges advance one step). Unpatched =
     // internal BPM.
-    { id: 'clock', type: 'gate' },
+    { id: 'clock', type: 'gate', edge: 'trigger' },
     // Record start/stop gate — rising edge TOGGLES recArm.
-    { id: 'rec',   type: 'gate' },
+    { id: 'rec',   type: 'gate', edge: 'trigger' },
     // Shared transport CV (play_cv / reset_cv / queue1..4_cv) — base spread.
     ...TRANSPORT_CV_PORT_DEFS,
   ],
   outputs: [
     { id: 'pitch', type: 'pitch' },
-    { id: 'gate',  type: 'gate' },
-    { id: 'clock', type: 'gate' },
+    { id: 'gate',  type: 'gate', edge: 'gate' },
+    { id: 'clock', type: 'gate', edge: 'trigger' },
   ],
   params: [
     { id: 'bpm',        label: 'BPM',  defaultValue: 120, min: 30,  max: 300,  curve: 'linear' },

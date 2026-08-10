@@ -10,9 +10,7 @@
 // then video — so users can spawn either kind from one search box.
 
 import type { ModuleType, PortDef, ParamDef, Domain } from '$lib/graph/types';
-// docs-hash-ignore:start  -- living-docs + UI-curation types; excluded from the attest hash so doc/face authoring is hash-neutral
 import type { ControlFamily, ModuleDocs, ModuleFace } from '$lib/graph/types';
-// docs-hash-ignore:end
 import type { VideoModuleFactory } from './engine';
 import type { PaletteCategory } from '$lib/audio/module-registry';
 
@@ -24,21 +22,20 @@ export interface VideoModuleDef {
   inputs: PortDef[];
   outputs: PortDef[];
   params: readonly ParamDef[];
-  // docs-hash-ignore:start
   /** Living-docs: co-located AUTHORED prose. See ModuleDocs (audio side). */
   docs?: ModuleDocs;
   /** Living-docs: dynamic DOM-only control families. See ControlFamily. */
   controlFamilies?: readonly ControlFamily[];
   /**
    * Workflow UI CURATION — the ModuleShell priority ranking + dock pages +
-   * glyph (see ModuleFace, audio side). WRAPPED in docs-hash-ignore markers
-   * BECAUSE video defs live in the WebGL attest basis: authoring a `face` on a
-   * video module (a P1 concern — none carry one yet) must stay hash-neutral for
-   * the GPU attest, exactly like `docs`/`controlFamilies`. Gated by
+   * glyph (see ModuleFace, audio side). Hash-transparent BY CONSTRUCTION even
+   * though video defs live in the WebGL attest basis: the shared normalizer
+   * (scripts/attest-code-basis.ts) strips it alongside
+   * `docs`/`controlFamilies`, so authoring a `face` on a video module (a P1
+   * concern — none carry one yet) costs no GPU re-attest. Gated by
    * module-face-lint, resolved by the pure `curatedFace` selector.
    */
   face?: ModuleFace;
-  // docs-hash-ignore:end
   factory: VideoModuleFactory;
   /** Optional hard cap on simultaneous instances (mirrors the audio side).
    *  Phase 0 modules don't enforce caps; Phase 1's INWARDS will (one

@@ -269,11 +269,11 @@ export const midiLaneDef: AudioModuleDef = {
   inputs: [],
   outputs: [
     { id: 'pitch_cv',    type: 'cv' },
-    { id: 'gate',        type: 'gate' },
+    { id: 'gate',        type: 'gate', edge: 'gate' },
     { id: 'velocity_cv', type: 'cv' },
     { id: 'cc_a',        type: 'cv' },
     { id: 'cc_b',        type: 'cv' },
-    { id: 'note_gate',   type: 'gate' },
+    { id: 'note_gate',   type: 'gate', edge: 'trigger' },
     // Polyphonic chord output. Always declared AND always live: it carries the
     // held chord in BOTH modes, so wiring it to a poly synth (DX7 /
     // CUBE / cartesian) plays straight away. `mode` only affects the MONO

@@ -725,7 +725,6 @@ export const quadralogicalDef: VideoModuleDef = {
     { id: 'freeze',         label: 'Freeze',  defaultValue: DEFAULTS.freeze,         min: 0, max: 1, curve: 'linear' },
   ],
 
-  // docs-hash-ignore:start
   docs: {
     explanation: `QUADRALOGICAL is a four-input video mixer driven by a single XY joystick. The pad's position (pos_x, pos_y) is mapped over the unit square to four CORNER weights — one per input: in1 top-left, in2 top-right, in3 bottom-left, in4 bottom-right. A bilinear base gives every corner (one input solo) and every edge (a 2-input blend) for free; outside the central yellow DIAMOND the weights are power-sharpened toward a crisp 2-input region, while inside the diamond all four inputs stay balanced (the all-4 composite zone). The model is "logical" because each of the FOUR edges of the joystick cycle (1-2, 2-3, 3-4, 4-1) carries its OWN independently-selectable blend effect (DISSOLVE / ADD / MULTIPLY / WIPE / CHROMA / LUMA / DIFF / IRIS) run on that edge's two adjacent inputs, and the four edge-blends are layered weighted by how active each pair is. Unpatched inputs normal down the chain Eurorack-style (in4 falls to in3 to in2 to in1), so a single source never blends against black. Usage: patch one to four video sources into in1-in4, drag the joystick to a corner for a clean cut to one input, to an edge to crossfade/wipe two of them with that edge's effect, or into the diamond for a four-way composite; set each edge's effect with its FX selector and CV-modulate the joystick or per-edge controls for animated transitions.`,
     inputs: {
@@ -777,7 +776,6 @@ export const quadralogicalDef: VideoModuleDef = {
       freeze: "Freeze (0 to 1, hidden): a determinism toggle for deterministic capture — at >=0.5 the renderer holds the last frame and stops drawing; no card control.",
     },
   },
-  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const mixProgram = ctx.compileFragment(MIX_FRAG_SRC);

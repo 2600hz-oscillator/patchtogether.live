@@ -220,7 +220,7 @@ export const macseqDef: AudioModuleDef = {
     // External clock input (optional). When patched, advances on rising
     // edges instead of the internal BPM. Matches the existing sequencer's
     // clock-in convention.
-    { id: 'clock', type: 'gate' },
+    { id: 'clock', type: 'gate', edge: 'trigger' },
     // Shared transport CV inputs (feat/seq save/load parity with Sequencer):
     //   play_cv      → rising edge toggles isPlaying
     //   reset_cv     → rising edge resets stepIndex to 0
@@ -236,14 +236,14 @@ export const macseqDef: AudioModuleDef = {
     // Pitch CV (V/oct, mono `pitch` cable) — emits the current step's note.
     { id: 'pitch',   type: 'pitch' },
     // Gate output — fires every ON step.
-    { id: 'gate',    type: 'gate' },
+    { id: 'gate',    type: 'gate', edge: 'gate' },
     // MACROOSCILLATOR modelIndex CV. Patch into a macrooscillator's
     // `model_cv` input. Emits the raw integer in [0..MACRO_MAX_MODEL]; the
     // macrooscillator clamps internally. On a step with model === null we
     // HOLD the last emitted value (see file header for rationale).
     { id: 'modelcv', type: 'cv' },
     // Per-step clock pulse (chain to other sequencers' clock in).
-    { id: 'clock',   type: 'gate' },
+    { id: 'clock',   type: 'gate', edge: 'trigger' },
   ],
   params: [
     { id: 'bpm',        label: 'BPM',  defaultValue: 120, min: 30,  max: 300,  curve: 'linear' },

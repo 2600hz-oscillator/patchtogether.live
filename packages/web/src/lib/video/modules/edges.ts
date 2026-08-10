@@ -260,7 +260,6 @@ export const edgesDef: VideoModuleDef = {
     { id: 'thickness', label: 'Thick',  defaultValue: EDGES_DEFAULTS.thickness, min: 1, max: EDGES_MAX_THICKNESS, curve: 'linear', units: 'px' },
   ],
 
-  // docs-hash-ignore:start
   docs: {
     explanation: "edges is a stateless Sobel edge-detector for video: it runs a 3x3 luminance gradient (Rec. 601 luma) over the incoming frame and emits a high-contrast mono-video frame that is white wherever a brightness edge was found and black everywhere else. The detection has no feedback or history, so the white outlines track and morph live with whatever moves in the source. After the threshold test it morphologically dilates the mask (max over a square neighbourhood) so 1px contours render as fatter strokes. Use it to pull line-art/outlines from a camera or any video source, feed a key/mask downstream, or stack it with a colorizer for a glowing-wireframe look; if you get too much speckle raise thresh, if outlines are too thin raise thick.",
     inputs: {
@@ -276,7 +275,6 @@ export const edgesDef: VideoModuleDef = {
       thickness: "Thick is the rendered edge width in pixels (1..8 px, default 2). 1 px is the raw single-texel edge with no dilation; higher values dilate the mask by taking the max over a square neighbourhood of radius round(thickness)-1, fattening the strokes up to the set width.",
     },
   },
-  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);

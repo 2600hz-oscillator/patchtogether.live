@@ -141,7 +141,6 @@ export const fourPlexVidDef: VideoModuleDef = {
     { id: 'gate4', label: 'G4', defaultValue: DEFAULTS.gate4, min: 0, max: 1, curve: 'linear' },
   ],
 
-  // docs-hash-ignore:start
   docs: {
     explanation: "4PLEXVID is a 4-in / 4-out video router — the video sibling of the audio 4Plexer. It is NOT a blend or mixer: each of the four outputs carries exactly ONE of the four video inputs, a discrete cross-point switch. Every output has its own selector (sel1..sel4 picking IN1..IN4) and its own gate CV input that advances that selector by one on each rising edge (IN1→IN2→IN3→IN4→IN1, wrapping). The fragment shader is a pure passthrough copy of the selected input texture (it writes the input's RGB straight through, or solid black when that input is unpatched), so there is no color processing — pixels pass straight through. All four outputs render their own FBO every frame regardless of patch state, so downstream modules always sample a fresh texture; OUT1 is also exposed as the canonical single-texture surface. Use it to fan one set of sources out to four destinations, to swap which feed reaches a screen, or to drive rhythmic cuts by clocking the gate inputs from an LFO or sequencer.",
     inputs: {
@@ -171,7 +170,6 @@ export const fourPlexVidDef: VideoModuleDef = {
       gate4: "Hidden synthetic param (linear 0..1) caching the gate4 CV level for output 4's rising-edge detector; driven by the gate4 jack via the CV bridge, not a knob on the card.",
     },
   },
-  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);

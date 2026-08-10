@@ -42,8 +42,8 @@
 // NOTE (owner): this def lives in the WebGL attest basis by construction
 // (resolveWebglBasis sweeps lib/video/). Its real shader/def flips
 // computeWebglHash → a ONE-TIME re-attest on a trusted GPU is required; the
-// co-located docs below are wrapped in docs-hash-ignore markers so DOC edits
-// stay hash-transparent. Do NOT auto-merge (maximally look-affecting).
+// co-located docs below are hash-transparent by construction, so DOC edits
+// cost nothing. Do NOT auto-merge (maximally look-affecting).
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
@@ -444,7 +444,6 @@ export const mirrorpoolDef: VideoModuleDef = {
     { id: 'zoom', label: 'Zoom', defaultValue: DEFAULTS.zoom, min: 0, max: 1, curve: 'linear' },
   ],
 
-  // docs-hash-ignore:start
   docs: {
     explanation: "mirrorpool renders a hemisphere pool of liquid sitting in a box, viewed by a repositionable ORBIT camera you fly around the pool. Two video inputs feed the optics: POOL is surface-mapped to the INSIDE of the hemisphere (the underwater view you see refracted through the water) and SCENE is the surroundings, reflected off the surface as an overhead backdrop. A single real height field drives everything: WIND raises a set of directional swell waves (bigger waves are genuinely taller and travel faster — dispersion, not a flat normal-map trick) and RAIN spawns raindrop impacts that punch one-shot dimples which expand into propagating rings, denser and deeper from drizzle up to a downpour. The surface normal reconstructed from that height field drives a physically-based Fresnel split: in the default REFRACT mode you see the reflected scene layered over the refracted, caustic-lit, colour-absorbed pool beneath; sweep MODE toward MIRROR and the surface becomes a near-full mirror of the sky/scene that the ripples shatter and distort. BRIGHT is a virtual sun that scales overall scene light (no sun disc is drawn yet). The camera is the card's TWO X-Y pads: pad 1 POSITIONS the eye on a sphere around the pool (Orbit = azimuth around it, Elev = elevation from straight overhead down BELOW the surface for an underwater Snell's-window view) with a Dist dial for how far out it sits; pad 2 is the free-LOOK (Look X = yaw, Look Y = pitch) that swings the view off the default aim-at-centre so you can look any direction, and Zoom sets the field of view. Every control has a matching CV input, so patch an LFO into orbit_az_cv for a slow orbit, a noise source into rain_cv to gust the storm, or an envelope into surface_mode_cv to melt between a clear refractive pool and a hard mirror. With nothing patched it still renders a live procedural sky + water, so it works as a standalone generative source.",
     inputs: {
@@ -479,7 +478,6 @@ export const mirrorpoolDef: VideoModuleDef = {
       zoom: "Zoom (0..1, default 0.5): maps to a 70..20 degree vertical field of view; higher zooms the camera in.",
     },
   },
-  // docs-hash-ignore:end
 
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
