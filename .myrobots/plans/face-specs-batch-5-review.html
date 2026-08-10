@@ -1,0 +1,984 @@
+<title>Face specs — batch 5</title>
+<style>
+  :root{
+    --ground:#eceae5; --surface:#f7f6f3; --line:#d3d0c8;
+    --ink:#1b1d21; --ink-2:#5a5f66; --ink-3:#8a8f97;
+    --panel:#16181c; --panel-2:#1e2127; --panel-line:#2c3037; --panel-well:#0a0c0e;
+    --silk:#e8e4dc; --silk-2:#9aa0a8;
+    --teal:#3fa89c; --teal-ink:#2c7d74;
+    --warn:#c2502f; --warn-bg:#f7e6e0;
+    --ok:#3d7d4f; --ok-bg:#e4efe6;
+    --hold:#8a6a1f; --hold-bg:#f6eed8;
+    --r:3px;
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --ground:#0e1013; --surface:#15181c; --line:#272b31;
+      --ink:#e6e8ea; --ink-2:#a2a8b0; --ink-3:#6e747c;
+      --panel:#111317; --panel-2:#1a1d22; --panel-line:#2a2e35; --panel-well:#07090b;
+      --teal:#5ecfc4; --teal-ink:#8fe0d8;
+      --warn:#e0644a; --warn-bg:#2a1a16;
+      --ok:#69b57f; --ok-bg:#16241a;
+      --hold:#d7b45a; --hold-bg:#241f10;
+    }
+  }
+  :root[data-theme="dark"]{
+    --ground:#0e1013; --surface:#15181c; --line:#272b31;
+    --ink:#e6e8ea; --ink-2:#a2a8b0; --ink-3:#6e747c;
+    --panel:#111317; --panel-2:#1a1d22; --panel-line:#2a2e35; --panel-well:#07090b;
+    --teal:#5ecfc4; --teal-ink:#8fe0d8;
+    --warn:#e0644a; --warn-bg:#2a1a16;
+    --ok:#69b57f; --ok-bg:#16241a;
+    --hold:#d7b45a; --hold-bg:#241f10;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--ground); color:var(--ink);
+    font:15px/1.6 ui-sans-serif,-apple-system,"Segoe UI",sans-serif;
+    -webkit-font-smoothing:antialiased; overflow-x:hidden;
+  }
+  .wrap{max-width:1180px;margin:0 auto;padding:44px 22px 96px}
+  .mono{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-variant-numeric:tabular-nums}
+  .eyebrow{font:600 11px/1 ui-monospace,Menlo,monospace;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-3)}
+  h1{font:600 34px/1.15 ui-sans-serif,-apple-system,sans-serif;letter-spacing:-.02em;margin:10px 0 6px;text-wrap:balance}
+  h2{font:600 20px/1.3 ui-sans-serif,sans-serif;letter-spacing:-.01em;margin:0 0 4px}
+  h3{font:600 15px/1.35 ui-sans-serif,sans-serif;margin:0 0 6px}
+  .sub{color:var(--ink-2);max-width:70ch}
+  section{margin-top:50px}
+  .head{border-bottom:1px solid var(--line);padding-bottom:12px;margin-bottom:22px}
+
+  .verdict{display:flex;flex-wrap:wrap;gap:0;border:1px solid var(--line);border-radius:var(--r);overflow:hidden;background:var(--surface);margin-top:26px}
+  .vcell{flex:1 1 140px;padding:14px 16px;border-right:1px solid var(--line)}
+  .vcell:last-child{border-right:0}
+  .vk{font:600 10px/1 ui-monospace,monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3)}
+  .vv{font:600 22px/1.2 ui-sans-serif,sans-serif;margin-top:7px;font-variant-numeric:tabular-nums}
+  .vv small{font:400 13px/1 ui-sans-serif,sans-serif;color:var(--ink-2);margin-left:5px}
+
+  .scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  table{width:100%;border-collapse:collapse;font-size:13.5px;min-width:820px}
+  th{text-align:left;font:600 10px/1 ui-monospace,monospace;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-3);padding:0 10px 9px;border-bottom:1px solid var(--line)}
+  td{padding:10px;border-bottom:1px solid var(--line);vertical-align:top}
+  tbody tr:hover{background:var(--surface)}
+  td.mod{font:600 13px/1.4 ui-monospace,monospace;white-space:nowrap}
+  .num{font-family:ui-monospace,monospace;font-variant-numeric:tabular-nums;white-space:nowrap}
+
+  .chip{display:inline-block;font:600 9.5px/1 ui-monospace,monospace;letter-spacing:.09em;text-transform:uppercase;padding:5px 7px;border-radius:2px;border:1px solid var(--line);color:var(--ink-2);white-space:nowrap}
+  .chip.go{border-color:color-mix(in srgb,var(--ok) 50%,transparent);color:var(--ok);background:var(--ok-bg)}
+  .chip.hold{border-color:color-mix(in srgb,var(--hold) 55%,transparent);color:var(--hold);background:var(--hold-bg)}
+  .chip.stop{border-color:color-mix(in srgb,var(--warn) 55%,transparent);color:var(--warn);background:var(--warn-bg)}
+  .chip.none{border-color:var(--line);color:var(--ink-3)}
+  .chip.fam{border-color:color-mix(in srgb,var(--teal) 50%,transparent);color:var(--teal-ink)}
+
+  /* module blocks */
+  .mblock{border:1px solid var(--line);border-radius:var(--r);background:var(--surface);padding:20px;margin-bottom:20px}
+  .mhead{display:flex;flex-wrap:wrap;align-items:baseline;gap:12px;margin-bottom:4px}
+  .mname{font:600 21px/1.2 ui-monospace,monospace;letter-spacing:-.01em}
+  .mgrid{display:grid;grid-template-columns:192px 1fr;gap:24px;margin-top:18px;align-items:start}
+  @media (max-width:760px){.mgrid{grid-template-columns:1fr}}
+
+  /* the 192x180 lane tile — true size */
+  .tile{width:192px;height:180px;background:var(--panel);border:1px solid var(--panel-line);border-radius:4px;color:var(--silk);padding:9px;display:flex;flex-direction:column;gap:7px;flex:none}
+  .tname{font:600 9px/1 ui-sans-serif,sans-serif;letter-spacing:.18em;text-transform:uppercase;flex:none;color:var(--silk)}
+  .glyph{flex:1;border:1px solid var(--panel-line);border-radius:2px;background:var(--panel-well);display:flex;align-items:center;justify-content:center;min-height:0;overflow:hidden}
+  .tilecap{font:11px/1.45 ui-sans-serif,sans-serif;color:var(--ink-2);margin-top:9px;width:192px}
+  .row{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-start}
+
+  /* controls */
+  .k{width:52px;text-align:center;flex:none}
+  .k svg{display:block;margin:0 auto}
+  .klab{font:600 8.5px/1.3 ui-monospace,monospace;letter-spacing:.06em;text-transform:uppercase;color:var(--silk);margin-top:4px}
+  .kval{font:9px/1.3 ui-monospace,monospace;color:var(--silk-2);font-variant-numeric:tabular-nums}
+  .k.dead .klab{color:var(--warn)}
+  .sw{flex:none;min-width:58px}
+  .swbox{border:1px solid var(--panel-line);border-radius:2px;background:var(--panel-well);padding:7px 8px;text-align:center;font:600 9px/1 ui-monospace,monospace;letter-spacing:.07em;text-transform:uppercase;color:var(--silk)}
+  .sw.dead .swbox{border-color:color-mix(in srgb,var(--warn) 60%,transparent);color:var(--warn)}
+  .swlab{font:600 8.5px/1.3 ui-monospace,monospace;letter-spacing:.06em;text-transform:uppercase;color:var(--silk-2);margin-top:4px;text-align:center}
+
+  /* dock band diagram */
+  .panel{background:var(--panel);border:1px solid var(--panel-line);border-radius:5px;color:var(--silk);overflow:hidden}
+  .pbar{display:flex;align-items:baseline;gap:12px;padding:10px 14px;border-bottom:1px solid var(--panel-line);background:var(--panel-2);flex-wrap:wrap}
+  .pname{font:600 12px/1 ui-sans-serif,sans-serif;letter-spacing:.2em;text-transform:uppercase}
+  .ptag{font:400 10.5px/1 ui-monospace,monospace;color:var(--silk-2);letter-spacing:.04em}
+  .band{border-bottom:1px solid var(--panel-line);padding:11px 14px 13px}
+  .band:last-child{border-bottom:0}
+  .bhead{display:flex;align-items:baseline;gap:9px;margin-bottom:3px;flex-wrap:wrap}
+  .bnum{font:600 9px/14px ui-monospace,monospace;color:var(--panel);background:var(--silk-2);width:15px;height:15px;text-align:center;border-radius:2px;flex:none}
+  .bname{font:600 10.5px/1 ui-sans-serif,sans-serif;letter-spacing:.14em;text-transform:uppercase}
+  .bhint{font:11.5px/1.45 ui-sans-serif,sans-serif;color:var(--silk-2);margin:0 0 10px;max-width:70ch}
+  .side{padding:12px 14px;background:var(--panel-2);border-top:1px solid var(--panel-line)}
+  .stitle{font:600 9px/1 ui-monospace,monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--silk-2);margin-bottom:8px}
+  .ro{display:flex;justify-content:space-between;gap:12px;font:10.5px/1.9 ui-monospace,monospace;font-variant-numeric:tabular-nums;color:var(--silk)}
+  .ro span:last-child{color:var(--silk-2);text-align:right}
+
+  /* defects */
+  .defect{border:1px solid var(--line);border-left:3px solid var(--warn);border-radius:var(--r);background:var(--ground);padding:14px 16px;margin-top:14px}
+  .defect p{margin:0 0 8px;color:var(--ink-2);max-width:76ch}
+  .defect p:last-child{margin-bottom:0}
+  .defect.note{border-left-color:var(--teal)}
+  .defect.good{border-left-color:var(--ok)}
+  .measure{display:inline-block;background:var(--warn-bg);color:var(--warn);font:600 12px/1 ui-monospace,monospace;padding:5px 8px;border-radius:2px;font-variant-numeric:tabular-nums;margin:2px 4px 2px 0}
+  .note .measure{background:color-mix(in srgb,var(--teal) 14%,transparent);color:var(--teal-ink)}
+  .good .measure{background:var(--ok-bg);color:var(--ok)}
+  .parity{font:11.5px/1.6 ui-monospace,monospace;color:var(--ink-3);margin-top:14px;padding-top:11px;border-top:1px dashed var(--line)}
+  .parity b{color:var(--ink-2);font-weight:600}
+  .legend{display:flex;flex-wrap:wrap;gap:16px;margin-top:14px;font:11.5px/1.4 ui-sans-serif,sans-serif;color:var(--ink-2)}
+  .swatch{display:inline-block;width:11px;height:11px;border-radius:2px;vertical-align:-1px;margin-right:5px;border:1px solid var(--line)}
+  .foot{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);color:var(--ink-3);font-size:13px}
+  ul.tight{margin:8px 0 0;padding-left:20px;color:var(--ink-2)}
+  ul.tight li{margin-bottom:5px;max-width:76ch}
+</style>
+
+<div class="wrap">
+
+  <div class="eyebrow">Faceplate specs · batch 5 · measured against main @ 153e5c36 · 2026-08-10</div>
+  <h1>Twelve more unfaced modules</h1>
+  <p class="sub">Spec only — no def edits, no card edits, no implementation. Every number below came out of the shipping DSP through <span class="mono">node-web-audio-api</span>'s OfflineAudioContext (or, for <span class="mono">destroy</span>, the committed Faust artifact), not from reading code.</p>
+
+  <div class="verdict">
+    <div class="vcell"><div class="vk">Promote</div><div class="vv" style="color:var(--ok)">10<small>of 12</small></div></div>
+    <div class="vcell"><div class="vk">Blocked</div><div class="vv" style="color:var(--warn)">1<small>hypercube</small></div></div>
+    <div class="vcell"><div class="vk">No face</div><div class="vv">1<small>on merit</small></div></div>
+    <div class="vcell"><div class="vk">Defects found</div><div class="vv">20<small>none fixed here</small></div></div>
+    <div class="vcell"><div class="vk">E2E delta</div><div class="vv">~17s<small>per shard</small></div></div>
+  </div>
+
+  <div class="legend">
+    <span><span class="swatch" style="background:var(--teal)"></span>live control</span>
+    <span><span class="swatch" style="background:var(--warn)"></span>measured inert / defective at the shipped default</span>
+    <span><span class="swatch" style="background:var(--hold)"></span>blocked on a question</span>
+  </div>
+
+  <!-- ================= VERDICT TABLE ================= -->
+  <section>
+    <div class="head">
+      <div class="eyebrow">Triage</div>
+      <h2>The batch in fifteen seconds</h2>
+    </div>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Module</th><th>Verdict</th><th>The proposal, in one line</th><th>Headline defect</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="mod">swolevco<br><span class="chip fam">voice</span></td>
+            <td><span class="chip go">Promote</span></td>
+            <td>The two knobs that rank <em>off</em> the lane are the two that measure bit-exactly inert at the shipped default. Rank <em>is</em> the argument.</td>
+            <td><span class="measure">DC +0.574</span> on an audio jack for <span class="mono">ratio&nbsp;=&nbsp;0.001</span> — the free-run branch is a strict <span class="mono">&gt;&nbsp;0</span>.</td>
+          </tr>
+          <tr>
+            <td class="mod">wavecel<br><span class="chip fam">voice</span></td>
+            <td><span class="chip go">Promote</span></td>
+            <td>Five of ten params do nothing until a cable lands, so they rank 7–11 and the dock says why.</td>
+            <td><span class="measure">L/R corr 0.999429</span> SPREAD at maximum leaves the two channels 99.94 % correlated.</td>
+          </tr>
+          <tr>
+            <td class="mod">hypercube<br><span class="chip fam">voice</span></td>
+            <td><span class="chip stop">Blocked</span></td>
+            <td>Do not face it. <span class="mono">alpha</span> and <span class="mono">morph_fc</span> are indistinguishable from no-ops and I cannot yet say whether that is the module or my harness.</td>
+            <td><span class="measure">DC −0.375</span> on both outputs at <em>every</em> setting — larger than the 0.348 AC signal.</td>
+          </tr>
+          <tr>
+            <td class="mod">warrensspectrum<br><span class="chip fam">effect</span></td>
+            <td><span class="chip go">Promote</span></td>
+            <td>Two engines behind one panel; seven of sixteen controls belong to only one of them, so <span class="mono">engineMode</span> is rank 1.</td>
+            <td><span class="measure">Δ = 0.00e+0</span> BANDS is bit-exactly inert in the default engine — and worth 10.35 dB in the other.</td>
+          </tr>
+          <tr>
+            <td class="mod">cofefve<br><span class="chip fam">effect</span></td>
+            <td><span class="chip go">Promote</span></td>
+            <td>Seven of twenty-four controls are asleep. The ranking puts every <em>enabler</em> directly above its dependents. Overturns a batch-4 rejection.</td>
+            <td><span class="measure">7 of 24 inert</span> at the factory default, each gated by an enabler that ships at zero.</td>
+          </tr>
+          <tr>
+            <td class="mod">destroy<br><span class="chip fam">effect</span></td>
+            <td><span class="chip go">Promote</span></td>
+            <td>Three cells, identical at <span class="mono">full</span> and <span class="mono">dock</span>. It ships for two numbers.</td>
+            <td><span class="measure">dec 1 ≡ dec 2</span> identical centroid (275 Hz) and identical 12 698 distinct values.</td>
+          </tr>
+          <tr>
+            <td class="mod">slewSwitch<br><span class="chip fam">utility</span></td>
+            <td><span class="chip go">Promote</span></td>
+            <td>Two utilities with no shared state — proven, not asserted — and one exact number.</td>
+            <td><span class="measure">×1.41421</span> at <span class="mono">LENGTH&nbsp;=&nbsp;1</span>, and <span class="mono">step_idx</span> + <span class="mono">eoc</span> go bit-silent.</td>
+          </tr>
+          <tr>
+            <td class="mod">featurecv<br><span class="chip fam">utility</span></td>
+            <td><span class="chip hold">Promote — answer first</span></td>
+            <td>Four jacks, and the panel currently says nothing true about any of them.</td>
+            <td><span class="measure">sine ≡ saw</span> BRIGHT reads −0.9544 for both at 261 Hz, to four decimals, in both polarity modes.</td>
+          </tr>
+          <tr>
+            <td class="mod">ninelives<br><span class="chip fam">utility</span></td>
+            <td><span class="chip go">Promote</span></td>
+            <td>Two knobs, nine jacks, and the entire face is a table of periods the panel cannot show.</td>
+            <td><span class="measure">1 h 49 min</span> <span class="mono">out9</span>'s period at the default rate; 65.6 s at the maximum.</td>
+          </tr>
+          <tr>
+            <td class="mod">illogic<br><span class="chip fam">utility</span></td>
+            <td><span class="chip go">Promote</span></td>
+            <td>Four of ten jacks are behind none of the knobs. The routing picture is the only place that can be said.</td>
+            <td><span class="measure">peak 2.594</span> <span class="mono">diff</span> on a ±1 CV bus, unscaled; the four logic jacks ignore all four knobs.</td>
+          </tr>
+          <tr>
+            <td class="mod">timelorde<br><span class="chip fam">clock</span></td>
+            <td><span class="chip go">Promote</span></td>
+            <td>The singleton the whole rack depends on, and its two most important facts are currently unstatable anywhere.</td>
+            <td><span class="measure">−1 / −3 / −7</span> pulses lost at start on <span class="mono">2x</span> / <span class="mono">4x</span> / <span class="mono">8x</span>, identical at 60, 120 and 240 bpm.</td>
+          </tr>
+          <tr>
+            <td class="mod">unityscale&shy;mathematik<br><span class="chip fam">utility</span></td>
+            <td><span class="chip none">No face on merit</span></td>
+            <td>Five live controls, three perfectly orthogonal channels, every tier identical. Nothing a picture adds.</td>
+            <td>None — and that is the verdict. The durable output is the signed-comparison instrument warning.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ================= SWOLEVCO ================= -->
+  <section>
+    <div class="head"><div class="eyebrow">01 · voice</div><h2>swolevco — the complex oscillator</h2>
+      <p class="sub" style="margin-top:6px">Buchla-259-style: a primary (saw⇄tri⇄sqr crossfade → wavefolder) plus a sine modulator, and three audio taps. 8 params · 7 in · 4 out.</p></div>
+
+    <div class="mblock">
+      <div class="mhead"><span class="mname">swolevco</span><span class="chip go">Promote</span><span class="chip">8 params</span><span class="chip">free-running</span></div>
+      <div class="mgrid">
+        <div>
+          <div class="tile">
+            <div class="tname">Swolevco</div>
+            <div class="glyph">
+              <svg viewBox="0 0 168 62" width="100%" height="62" role="img" aria-label="Live scope glyph: a folded triangle wave">
+                <rect width="168" height="62" fill="var(--panel-well)"/>
+                <path d="M0 31 H168" stroke="#1d2830" stroke-width="1"/>
+                <path d="M0 48 L14 14 L28 48 L42 14 L56 48 L70 14 L84 48 L98 14 L112 48 L126 14 L140 48 L154 14 L168 48"
+                      fill="none" stroke="var(--teal)" stroke-width="1.5"/>
+              </svg>
+            </div>
+            <div class="row" style="gap:10px">
+              <div class="k"><svg width="34" height="34" viewBox="0 0 34 34"><circle class="face" cx="17" cy="17" r="12.5" fill="none" stroke="var(--teal)" stroke-width="1.3"/><line x1="17" y1="17" x2="17" y2="6" stroke="var(--teal)" stroke-width="1.6" transform="rotate(215 17 17)"/></svg><div class="klab">Fold</div><div class="kval">0.00</div></div>
+              <div class="k"><svg width="34" height="34" viewBox="0 0 34 34"><circle class="face" cx="17" cy="17" r="12.5" fill="none" stroke="var(--teal)" stroke-width="1.3"/><line x1="17" y1="17" x2="17" y2="6" stroke="var(--teal)" stroke-width="1.6" transform="rotate(0 17 17)"/></svg><div class="klab">Sym</div><div class="kval">0.50</div></div>
+            </div>
+          </div>
+          <p class="tilecap"><b>compact</b> = 2 cells + glyph. FOLD leads on measurement: <span class="mono">5.1×</span> of centroid against TIMBRE's <span class="mono">1.23×</span>.</p>
+        </div>
+
+        <div>
+          <div class="panel">
+            <div class="pbar"><span class="pname">Complex oscillator</span><span class="ptag">2 bands · hero cell at rank 9 · glyph scope</span></div>
+            <div class="band">
+              <div class="bhead"><span class="bnum">1</span><span class="bname">Primary oscillator</span></div>
+              <p class="bhint">saw → tri → sqr crossfade, then the folder</p>
+              <div class="row">
+                <div class="k"><svg width="34" height="34" viewBox="0 0 34 34"><circle class="face" cx="17" cy="17" r="12.5" fill="none" stroke="var(--teal)" stroke-width="1.3"/><line x1="17" y1="17" x2="17" y2="6" stroke="var(--teal)" stroke-width="1.6"/></svg><div class="klab">Tune</div><div class="kval">0 st</div></div>
+                <div class="k"><svg width="34" height="34" viewBox="0 0 34 34"><circle class="face" cx="17" cy="17" r="12.5" fill="none" stroke="var(--teal)" stroke-width="1.3"/><line x1="17" y1="17" x2="17" y2="6" stroke="var(--teal)" stroke-width="1.6"/></svg><div class="klab">Fine</div><div class="kval">0 ¢</div></div>
+                <div class="k"><svg width="34" height="34" viewBox="0 0 34 34"><circle class="face" cx="17" cy="17" r="12.5" fill="none" stroke="var(--teal)" stroke-width="1.3"/><line x1="17" y1="17" x2="17" y2="6" stroke="var(--teal)" stroke-width="1.6"/></svg><div class="klab">Sym</div><div class="kval">0.50</div></div>
+                <div class="k"><svg width="34" height="34" viewBox="0 0 34 34"><circle class="face" cx="17" cy="17" r="12.5" fill="none" stroke="var(--teal)" stroke-width="1.3"/><line x1="17" y1="17" x2="17" y2="6" stroke="var(--teal)" stroke-width="1.6" transform="rotate(215 17 17)"/></svg><div class="klab">Fold</div><div class="kval">0.00</div></div>
+              </div>
+            </div>
+            <div class="band">
+              <div class="bhead"><span class="bnum">2</span><span class="bname">Modulator + cross-mod</span></div>
+              <p class="bhint">RATIO 0 = free-run; above 0 M.TUNE / M.FINE are ignored</p>
+              <div class="row">
+                <div class="k"><svg width="34" height="34" viewBox="0 0 34 34"><circle class="face" cx="17" cy="17" r="12.5" fill="none" stroke="var(--teal)" stroke-width="1.3"/><line x1="17" y1="17" x2="17" y2="6" stroke="var(--teal)" stroke-width="1.6" transform="rotate(-90 17 17)"/></svg><div class="klab">Ratio</div><div class="kval">1.00</div></div>
+                <div class="k"><svg width="34" height="34" viewBox="0 0 34 34"><circle class="face" cx="17" cy="17" r="12.5" fill="none" stroke="var(--teal)" stroke-width="1.3"/><line x1="17" y1="17" x2="17" y2="6" stroke="var(--teal)" stroke-width="1.6" transform="rotate(215 17 17)"/></svg><div class="klab">Tbr</div><div class="kval">0.00</div></div>
+                <div class="k dead"><svg width="34" height="34" viewBox="0 0 34 34"><circle class="face" cx="17" cy="17" r="12.5" fill="none" stroke="var(--warn)" stroke-width="1.3" stroke-dasharray="3 2.5"/><line x1="17" y1="17" x2="17" y2="6" stroke="var(--warn)" stroke-width="1.6"/></svg><div class="klab">M.Tn</div><div class="kval">inert</div></div>
+                <div class="k dead"><svg width="34" height="34" viewBox="0 0 34 34"><circle class="face" cx="17" cy="17" r="12.5" fill="none" stroke="var(--warn)" stroke-width="1.3" stroke-dasharray="3 2.5"/><line x1="17" y1="17" x2="17" y2="6" stroke="var(--warn)" stroke-width="1.6"/></svg><div class="klab">M.Fn</div><div class="kval">inert</div></div>
+              </div>
+            </div>
+            <div class="side">
+              <div class="stitle">Sidebar — what M.TUNE / M.FINE do here</div>
+              <div class="ro"><span>RATIO = 0</span><span>the modulator's own pitch</span></div>
+              <div class="ro"><span>RATIO &gt; 0</span><span>nothing — primary × RATIO wins</span></div>
+            </div>
+          </div>
+
+          <div class="defect">
+            <h3>The bottom of RATIO is a 10-octave cliff onto a DC rail</h3>
+            <p><span class="measure">ratio 0 → 262 Hz</span><span class="measure">ratio 1e-4 → 0.026 Hz</span><span class="measure">DC +0.5741 at ratio 1e-3</span></p>
+            <p>The free-run branch is a strict <span class="mono">&gt; 0</span>. One ten-thousandth of the dial above zero drops the modulator ten octaves onto an <span class="mono">audio</span>-typed jack, and a peak/RMS silence guard reads the result as a healthy −4.7 dB signal.</p>
+          </div>
+          <div class="defect">
+            <h3>SYMMETRY: 4.8 dB non-monotonic, and both ends clip</h3>
+            <p><span class="measure">peak 1.0286 (saw)</span><span class="measure">peak 1.0428 (square)</span><span class="measure">centroid 637 → 1986 Hz at ±0.1</span></p>
+            <p>There is no output stage. And the "triangle" is a single point: 0.1 off centre triples the brightness.</p>
+          </div>
+          <div class="defect note">
+            <h3>SUM OUT is 6 dB down at the factory default and nowhere else</h3>
+            <p><span class="measure">peak 0.5006 at ratio 1</span><span class="measure">~0.99 at every other ratio</span><span class="measure">15.2 dB across ±7 st of TUNE</span></p>
+            <p><span class="mono">sum_out</span> is exactly <span class="mono">0.5·(out + mod_out)</span> — bit-identical, <span class="mono">max|Δ| = 0.000e+0</span>. The unison default is the one setting where the triangle and the sine cancel. Stable over 4 s, so it is not a beat.</p>
+          </div>
+          <div class="parity"><b>Parity</b> 9 cells (8 params + 1 panel) · <b>contract-lock</b> +1 line for the panel family, or +0 as a sidebar block · <b>VRT</b> 4 informational baselines · ⚠ free-running: derive glyph determinism the analogVco way, 10 separate processes.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= WAVECEL ================= -->
+  <section>
+    <div class="head"><div class="eyebrow">02 · voice</div><h2>wavecel — the stereo wavetable</h2>
+      <p class="sub" style="margin-top:6px">10 params, 4 declared control families, 7 in, 4 out. A complete <span class="mono">face.order</span> needs 14 keys, not 10.</p></div>
+
+    <div class="mblock">
+      <div class="mhead"><span class="mname">wavecel</span><span class="chip go">Promote</span><span class="chip">14 keys</span><span class="chip">free-running</span></div>
+      <div class="mgrid">
+        <div>
+          <div class="tile">
+            <div class="tname">Wavecel</div>
+            <div class="glyph">
+              <svg viewBox="0 0 168 62" width="100%" height="62" role="img" aria-label="Live scope glyph: a wavetable frame">
+                <rect width="168" height="62" fill="var(--panel-well)"/>
+                <path d="M0 31 H168" stroke="#1d2830" stroke-width="1"/>
+                <path d="M0 31 Q10 6 21 31 T42 31 Q52 52 63 31 T84 31 Q94 8 105 31 T126 31 Q136 50 147 31 T168 31"
+                      fill="none" stroke="var(--teal)" stroke-width="1.5"/>
+              </svg>
+            </div>
+            <div class="row" style="gap:10px">
+              <div class="sw"><div class="swbox">Basic&nbsp;Shapes</div><div class="swlab">Table</div></div>
+              <div class="k"><svg width="34" height="34" viewBox="0 0 34 34"><circle class="face" cx="17" cy="17" r="12.5" fill="none" stroke="var(--teal)" stroke-width="1.3"/><line x1="17" y1="17" x2="17" y2="6" stroke="var(--teal)" stroke-width="1.6" transform="rotate(215 17 17)"/></svg><div class="klab">Morph</div><div class="kval">0.00</div></div>
+            </div>
+          </div>
+          <p class="tilecap"><b>compact</b> = the TABLE selector + MORPH. The loaded table swaps the whole sound — the dx7-preset precedent.</p>
+        </div>
+
+        <div>
+          <div class="panel">
+            <div class="pbar"><span class="pname">Wavetable voice</span><span class="ptag">5 bands · hero cell at rank 15 · glyph scope</span></div>
+            <div class="band">
+              <div class="bhead"><span class="bnum">1</span><span class="bname">Wavetable</span></div>
+              <p class="bhint">MORPH scans the frames; the picture shows which one</p>
+              <div class="row">
+                <div class="sw"><div class="swbox">Preset</div><div class="swlab">Select</div></div>
+                <div class="sw"><div class="swbox">Source</div><div class="swlab">Factory</div></div>
+                <div class="sw"><div class="swbox">Load .wav</div><div class="swlab">Import</div></div>
+                <div class="k"><svg width="34" height="34" viewBox="0 0 34 34"><circle class="face" cx="17" cy="17" r="12.5" fill="none" stroke="var(--teal)" stroke-width="1.3"/><line x1="17" y1="17" x2="17" y2="6" stroke="var(--teal)" stroke-width="1.6" transform="rotate(215 17 17)"/></svg><div class="klab">Morph</div><div class="kval">0.00</div></div>
+              </div>
+            </div>
+            <div class="band">
+              <div class="bhead"><span class="bnum">2</span><span class="bname">Fold + width</span></div>
+              <p class="bhint">SPREAD reads NEIGHBOURING frames, not a detune</p>
+              <div class="row">
+                <div class="k"><svg width="34" height="34" viewBox="0 0 34 34"><circle class="face" cx="17" cy="17" r="12.5" fill="none" stroke="var(--teal)" stroke-width="1.3"/><line x1="17" y1="17" x2="17" y2="6" stroke="var(--teal)" stroke-width="1.6" transform="rotate(215 17 17)"/></svg><div class="klab">Fold</div><div class="kval">0.00</div></div>
+                <div class="k"><svg width="34" height="34" viewBox="0 0 34 34"><circle class="face" cx="17" cy="17" r="12.5" fill="none" stroke="var(--warn)" stroke-width="1.3"/><line x1="17" y1="17" x2="17" y2="6" stroke="var(--warn)" stroke-width="1.6" transform="rotate(215 17 17)"/></svg><div class="klab" style="color:var(--warn)">Spread</div><div class="kval">−34 dB max</div></div>
+              </div>
+            </div>
+            <div class="band">
+              <div class="bhead"><span class="bnum">3</span><span class="bname">Pitch</span></div>
+              <div class="row">
+                <div class="k"><svg width="34" height="34" viewBox="0 0 34 34"><circle class="face" cx="17" cy="17" r="12.5" fill="none" stroke="var(--teal)" stroke-width="1.3"/><line x1="17" y1="17" x2="17" y2="6" stroke="var(--teal)" stroke-width="1.6"/></svg><div class="klab">Tune</div><div class="kval">0 st</div></div>
+                <div class="k"><svg width="34" height="34" viewBox="0 0 34 34"><circle class="face" cx="17" cy="17" r="12.5" fill="none" stroke="var(--teal)" stroke-width="1.3"/><line x1="17" y1="17" x2="17" y2="6" stroke="var(--teal)" stroke-width="1.6"/></svg><div class="klab">Fine</div><div class="kval">0 ¢</div></div>
+              </div>
+            </div>
+            <div class="band">
+              <div class="bhead"><span class="bnum">4</span><span class="bname">Amplitude — needs POLY or TRIG</span></div>
+              <p class="bhint">all five are bit-exactly inert while nothing is patched</p>
+              <div class="row">
+                <div class="k dead"><svg width="34" height="34" viewBox="0 0 34 34"><circle class="face" cx="17" cy="17" r="12.5" fill="none" stroke="var(--warn)" stroke-width="1.3" stroke-dasharray="3 2.5"/><line x1="17" y1="17" x2="17" y2="6" stroke="var(--warn)" stroke-width="1.6" transform="rotate(215 17 17)"/></svg><div class="klab">Base</div><div class="kval">inert</div></div>
+                <div class="k dead"><svg width="34" height="34" viewBox="0 0 34 34"><circle class="face" cx="17" cy="17" r="12.5" fill="none" stroke="var(--warn)" stroke-width="1.3" stroke-dasharray="3 2.5"/><line x1="17" y1="17" x2="17" y2="6" stroke="var(--warn)" stroke-width="1.6" transform="rotate(215 17 17)"/></svg><div class="klab">A</div><div class="kval">inert</div></div>
+                <div class="k dead"><svg width="34" height="34" viewBox="0 0 34 34"><circle class="face" cx="17" cy="17" r="12.5" fill="none" stroke="var(--warn)" stroke-width="1.3" stroke-dasharray="3 2.5"/><line x1="17" y1="17" x2="17" y2="6" stroke="var(--warn)" stroke-width="1.6" transform="rotate(215 17 17)"/></svg><div class="klab">D</div><div class="kval">inert</div></div>
+                <div class="k dead"><svg width="34" height="34" viewBox="0 0 34 34"><circle class="face" cx="17" cy="17" r="12.5" fill="none" stroke="var(--warn)" stroke-width="1.3" stroke-dasharray="3 2.5"/><line x1="17" y1="17" x2="17" y2="6" stroke="var(--warn)" stroke-width="1.6" transform="rotate(90 17 17)"/></svg><div class="klab">S</div><div class="kval">inert</div></div>
+                <div class="k dead"><svg width="34" height="34" viewBox="0 0 34 34"><circle class="face" cx="17" cy="17" r="12.5" fill="none" stroke="var(--warn)" stroke-width="1.3" stroke-dasharray="3 2.5"/><line x1="17" y1="17" x2="17" y2="6" stroke="var(--warn)" stroke-width="1.6" transform="rotate(215 17 17)"/></svg><div class="klab">R</div><div class="kval">inert</div></div>
+              </div>
+            </div>
+            <div class="band">
+              <div class="bhead"><span class="bnum">5</span><span class="bname">Screen</span></div>
+              <div class="row"><div class="sw"><div class="swbox">Scope ⇄ 3D</div><div class="swlab">View</div></div></div>
+            </div>
+            <div class="side">
+              <div class="stitle">Sidebar — why is nothing changing?</div>
+              <div class="ro"><span>A / D / S / R</span><span>needs POLY or TRIG patched</span></div>
+              <div class="ro"><span>BASE</span><span>needs POLY or TRIG patched</span></div>
+              <div class="ro"><span>unpatched</span><span>full-scale drone, mono</span></div>
+            </div>
+          </div>
+
+          <div class="defect">
+            <h3>SPREAD is a mono control — and RMS is the wrong instrument for saying so</h3>
+            <p><span class="measure">side/mid −34.06 dB at spread 5</span><span class="measure">L/R corr 0.999429</span><span class="measure">side = 0.00000 at spread 1</span></p>
+            <p>A per-channel RMS sweep read <span class="mono">−4.79 → −4.58 dB</span> and looked like a working, asymmetric stereo control. RMS is invariant to correlation. Fold the maximum-spread output to mono and you lose 0.02 % of the energy.</p>
+          </div>
+          <div class="defect">
+            <h3>2.667 ms of full-scale output every time a gate cable lands</h3>
+            <p><span class="measure">exactly 128 samples</span><span class="measure">peak 0.9971</span><span class="measure">then bit-zero</span></p>
+            <p><span class="mono">trigger_connected</span> is a k-rate param written at factory time; the first render quantum happens before it lands.</p>
+          </div>
+          <div class="defect note">
+            <h3>MORPH is 20× of centroid and 3.87 dB of non-monotonic level</h3>
+            <p><span class="measure">centroid 5382 → 263 Hz</span><span class="measure">rms −4.79 / −1.87 / −0.92 / −3.84 / −4.04 / −3.01 dB</span></p>
+            <p>Peak is pinned at 1.000 throughout — the oscillator runs at full scale — while the loudest point is in the <em>middle</em> of the sweep.</p>
+          </div>
+          <div class="parity"><b>Parity</b> 15 cells (10 params + 4 families + 1 panel) · <b>contract-lock</b> +1 line · <b>VRT</b> 4 informational baselines · ⚠ free-running.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= WARRENSSPECTRUM ================= -->
+  <section>
+    <div class="head"><div class="eyebrow">03 · effect</div><h2>warrensspectrum — the spectral resynthesizer</h2>
+      <p class="sub" style="margin-top:6px">The largest and most deserving in the batch. SMS partial tracking + a noise residual, a second MASSPASS engine, and an 8-band filterbank — all behind one control set. 16 params · 1 family · 9 in · 1 out.</p></div>
+
+    <div class="mblock">
+      <div class="mhead"><span class="mname">warrensspectrum</span><span class="chip go">Promote</span><span class="chip">17 keys</span><span class="chip fam">in PUSH_CARD_CONTROLS</span></div>
+      <div class="mgrid">
+        <div>
+          <div class="tile">
+            <div class="tname">Warren's Spectrum</div>
+            <div class="glyph">
+              <svg viewBox="0 0 168 62" width="100%" height="62" role="img" aria-label="Meter glyph with the output level and a clip mark">
+                <rect width="168" height="62" fill="var(--panel-well)"/>
+                <rect x="10" y="26" width="110" height="11" fill="none" stroke="#26313a" stroke-width="1"/>
+                <rect x="10" y="26" width="74" height="11" fill="var(--teal)" opacity=".8"/>
+                <rect x="120" y="22" width="2" height="19" fill="var(--warn)"/>
+                <text x="10" y="20" fill="#6e7d88" font-family="ui-monospace,monospace" font-size="8">OUT −11.6 dB</text>
+                <text x="126" y="35" fill="var(--warn)" font-family="ui-monospace,monospace" font-size="8">0</text>
+              </svg>
+            </div>
+            <div class="row" style="gap:10px">
+              <div class="sw"><div class="swbox">Spectral</div><div class="swlab">Engine</div></div>
+              <div class="k"><svg width="34" height="34" viewBox="0 0 34 34"><circle class="face" cx="17" cy="17" r="12.5" fill="none" stroke="var(--teal)" stroke-width="1.3"/><line x1="17" y1="17" x2="17" y2="6" stroke="var(--teal)" stroke-width="1.6" transform="rotate(20 17 17)"/></svg><div class="klab">Partials</div><div class="kval">64</div></div>
+            </div>
+          </div>
+          <p class="tilecap"><b>compact</b> = ENGINE + PARTIALS. Engine is rank 1 because it decides what seven other controls mean.</p>
+        </div>
+
+        <div>
+          <div class="panel">
+            <div class="pbar"><span class="pname">Spectral resynthesizer</span><span class="ptag">6 bands — one below the tabbing cliff at 7</span></div>
+            <div class="band"><div class="bhead"><span class="bnum">1</span><span class="bname">Engine</span></div>
+              <p class="bhint">SPECTRAL = SMS partials + residual · MASSPASS = a different DSP</p>
+              <div class="row"><div class="sw"><div class="swbox">Spectral</div><div class="swlab">Engine</div></div><div class="sw dead"><div class="swbox">Freeze</div><div class="swlab">silent at spawn</div></div></div></div>
+            <div class="band"><div class="bhead"><span class="bnum">2</span><span class="bname">Partials + residual</span></div>
+              <p class="bhint">SPECTRAL only</p>
+              <div class="row">
+                <div class="k"><svg width="34" height="34" viewBox="0 0 34 34"><circle class="face" cx="17" cy="17" r="12.5" fill="none" stroke="var(--teal)" stroke-width="1.3"/><line x1="17" y1="17" x2="17" y2="6" stroke="var(--teal)" stroke-width="1.6" transform="rotate(20 17 17)"/></svg><div class="klab">Partials</div><div class="kval">64</div></div>
+                <div class="k"><svg width="34" height="34" viewBox="0 0 34 34"><circle class="face" cx="17" cy="17" r="12.5" fill="none" stroke="var(--teal)" stroke-width="1.3"/><line x1="17" y1="17" x2="17" y2="6" stroke="var(--teal)" stroke-width="1.6" transform="rotate(-60 17 17)"/></svg><div class="klab">Residual</div><div class="kval">0.50</div></div>
+                <div class="k"><svg width="34" height="34" viewBox="0 0 34 34"><circle class="face" cx="17" cy="17" r="12.5" fill="none" stroke="var(--teal)" stroke-width="1.3"/><line x1="17" y1="17" x2="17" y2="6" stroke="var(--teal)" stroke-width="1.6" transform="rotate(90 17 17)"/></svg><div class="klab">Lock</div><div class="kval">0.75</div></div>
+                <div class="k dead"><svg width="34" height="34" viewBox="0 0 34 34"><circle class="face" cx="17" cy="17" r="12.5" fill="none" stroke="var(--warn)" stroke-width="1.3" stroke-dasharray="3 2.5"/><line x1="17" y1="17" x2="17" y2="6" stroke="var(--warn)" stroke-width="1.6" transform="rotate(-100 17 17)"/></svg><div class="klab">Stab</div><div class="kval">5.2e-3</div></div>
+              </div></div>
+            <div class="band"><div class="bhead"><span class="bnum">3</span><span class="bname">Analysis</span></div>
+              <p class="bhint">FLOOR does nothing below about −40 dB on a clean source</p>
+              <div class="row">
+                <div class="k"><svg width="34" height="34" viewBox="0 0 34 34"><circle class="face" cx="17" cy="17" r="12.5" fill="none" stroke="var(--teal)" stroke-width="1.3"/><line x1="17" y1="17" x2="17" y2="6" stroke="var(--teal)" stroke-width="1.6" transform="rotate(-120 17 17)"/></svg><div class="klab">Slice</div><div class="kval">10 ms</div></div>
+                <div class="k dead"><svg width="34" height="34" viewBox="0 0 34 34"><circle class="face" cx="17" cy="17" r="12.5" fill="none" stroke="var(--warn)" stroke-width="1.3" stroke-dasharray="3 2.5"/><line x1="17" y1="17" x2="17" y2="6" stroke="var(--warn)" stroke-width="1.6" transform="rotate(-20 17 17)"/></svg><div class="klab">Floor</div><div class="kval">bottom 60 % dead</div></div>
+                <div class="k"><svg width="34" height="34" viewBox="0 0 34 34"><circle class="face" cx="17" cy="17" r="12.5" fill="none" stroke="var(--teal)" stroke-width="1.3"/><line x1="17" y1="17" x2="17" y2="6" stroke="var(--teal)" stroke-width="1.6" transform="rotate(-90 17 17)"/></svg><div class="klab">Slew</div><div class="kval">0.60 s</div></div>
+                <div class="k"><svg width="34" height="34" viewBox="0 0 34 34"><circle class="face" cx="17" cy="17" r="12.5" fill="none" stroke="var(--teal)" stroke-width="1.3"/><line x1="17" y1="17" x2="17" y2="6" stroke="var(--teal)" stroke-width="1.6"/></svg><div class="klab">Centre</div><div class="kval">0 ¢</div></div>
+                <div class="k"><svg width="34" height="34" viewBox="0 0 34 34"><circle class="face" cx="17" cy="17" r="12.5" fill="none" stroke="var(--teal)" stroke-width="1.3"/><line x1="17" y1="17" x2="17" y2="6" stroke="var(--teal)" stroke-width="1.6" transform="rotate(215 17 17)"/></svg><div class="klab">Shape</div><div class="kval">11.4 dB swing</div></div>
+              </div></div>
+            <div class="band"><div class="bhead"><span class="bnum">4</span><span class="bname">MASSPASS only</span></div>
+              <p class="bhint">inert while ENGINE is SPECTRAL</p>
+              <div class="row"><div class="k dead"><svg width="34" height="34" viewBox="0 0 34 34"><circle class="face" cx="17" cy="17" r="12.5" fill="none" stroke="var(--warn)" stroke-width="1.3" stroke-dasharray="3 2.5"/><line x1="17" y1="17" x2="17" y2="6" stroke="var(--warn)" stroke-width="1.6" transform="rotate(-150 17 17)"/></svg><div class="klab">Bands</div><div class="kval">Δ = 0</div></div></div></div>
+            <div class="band"><div class="bhead"><span class="bnum">5</span><span class="bname">Filterbank</span></div>
+              <p class="bhint">BANK WET is the crossfade; it is +6.3 dB at the top</p>
+              <div class="row">
+                <div class="k"><svg width="34" height="34" viewBox="0 0 34 34"><circle class="face" cx="17" cy="17" r="12.5" fill="none" stroke="var(--teal)" stroke-width="1.3"/><line x1="17" y1="17" x2="17" y2="6" stroke="var(--teal)" stroke-width="1.6" transform="rotate(215 17 17)"/></svg><div class="klab">Bank wet</div><div class="kval">0.00</div></div>
+                <div class="sw"><div class="swbox">8 bands</div><div class="swlab">ws-filterbank</div></div>
+              </div></div>
+            <div class="band"><div class="bhead"><span class="bnum">6</span><span class="bname">Output</span></div>
+              <div class="row">
+                <div class="k"><svg width="34" height="34" viewBox="0 0 34 34"><circle class="face" cx="17" cy="17" r="12.5" fill="none" stroke="var(--teal)" stroke-width="1.3"/><line x1="17" y1="17" x2="17" y2="6" stroke="var(--teal)" stroke-width="1.6" transform="rotate(215 17 17)"/></svg><div class="klab">In mix</div><div class="kval">0.00</div></div>
+                <div class="k"><svg width="34" height="34" viewBox="0 0 34 34"><circle class="face" cx="17" cy="17" r="12.5" fill="none" stroke="var(--teal)" stroke-width="1.3"/><line x1="17" y1="17" x2="17" y2="6" stroke="var(--teal)" stroke-width="1.6" transform="rotate(30 17 17)"/></svg><div class="klab">Gain</div><div class="kval">0 dB</div></div>
+              </div></div>
+            <div class="side">
+              <div class="stitle">Sidebar — what belongs to which engine</div>
+              <div class="ro"><span>SPECTRAL</span><span>partials · residual · lock · stab · slice</span></div>
+              <div class="ro"><span>MASSPASS</span><span>bands</span></div>
+              <div class="ro"><span>both</span><span>centre · shape · slew · floor · freeze</span></div>
+              <div class="ro"><span>after both</span><span>bank wet · input mix · gain</span></div>
+            </div>
+          </div>
+
+          <div class="defect">
+            <h3>BANDS is bit-exactly inert in the default engine — and worth 10.35 dB in the other</h3>
+            <p><span class="measure">Δ = 0.00e+0 × 6 values</span><span class="measure">−19.88 → −30.23 dB in MASSPASS</span><span class="measure">also inert at bank wet 1</span></p>
+            <p>It is an index into <span class="mono">WS_MASSPASS_BAND_COUNTS</span>. The obvious hypothesis — "turn the bank up" — is <em>false</em>, and a face built on it would teach the wrong model.</p>
+          </div>
+          <div class="defect">
+            <h3>The doc says BANK WET "does not make the module louder". It makes it 6.26 dB louder.</h3>
+            <p><span class="measure">−11.62 → −5.36 dB</span><span class="measure">peak 0.667 → 1.315</span><span class="measure">+2.4 dBFS</span></p>
+            <p>And the param <em>id</em> is <span class="mono">resynthLevel</span> while the thing it drives is <span class="mono">setFilterbankWet</span>. Every readout keys off ids.</p>
+          </div>
+          <div class="defect">
+            <h3>FREEZE from spawn is bit-silence</h3>
+            <p><span class="measure">−240.00 dB</span> in both measured windows. A rack saved with FREEZE engaged boots dead. The <span class="mono">gate</span> FREEZE input measured inert too — marked <b>not determined</b>, verify in a browser.</p>
+          </div>
+          <div class="defect good">
+            <h3>The card is clean — the only one in the batch</h3>
+            <p><span class="mono">WarrensspectrumCard.svelte</span> imports <span class="mono">WARRENSSPECTRUM_RANGES</span> and re-types <span class="measure">0 literal ranges</span>. It is still not in <span class="mono">RANGE_BOUND_CARDS</span>, so nothing keeps it that way.</p>
+          </div>
+          <div class="parity"><b>Parity</b> 25 cells (16 params + an 8-cell family + 1 panel) — the largest new row · <b>contract-lock</b> +1 line · ⚠ already in <span class="mono">PUSH_CARD_CONTROLS</span>: check the 8 push entries against the face's top 8 in the same PR.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= COFEFVE ================= -->
+  <section>
+    <div class="head"><div class="eyebrow">04 · effect</div><h2>cofefve — the analog delay</h2>
+      <p class="sub" style="margin-top:6px">24 params, 11 in, 2 out — the largest contract in the batch. <strong>This overturns a batch-4 rejection:</strong> cofefve is not migrating to <span class="mono">analog-delay-core</span>, it <em>is</em> the own-code replacement for the retired Cocoa Delay.</p></div>
+
+    <div class="mblock">
+      <div class="mhead"><span class="mname">cofefve</span><span class="chip go">Promote</span><span class="chip">24 params</span><span class="chip fam">overturns a rejection</span></div>
+      <div class="mgrid">
+        <div>
+          <div class="tile">
+            <div class="tname">Cofefve</div>
+            <div class="glyph">
+              <svg viewBox="0 0 168 62" width="100%" height="62" role="img" aria-label="Echo train: a dry hit and decaying repeats">
+                <rect width="168" height="62" fill="var(--panel-well)"/>
+                <path d="M0 50 H168" stroke="#1d2830" stroke-width="1"/>
+                <rect x="12" y="12" width="3" height="38" fill="var(--teal)"/>
+                <rect x="46" y="24" width="3" height="26" fill="var(--teal)" opacity=".8"/>
+                <rect x="80" y="33" width="3" height="17" fill="var(--teal)" opacity=".6"/>
+                <rect x="114" y="39" width="3" height="11" fill="var(--teal)" opacity=".42"/>
+                <rect x="148" y="43" width="3" height="7" fill="var(--teal)" opacity=".28"/>
+                <text x="10" y="10" fill="#6e7d88" font-family="ui-monospace,monospace" font-size="7.5">200 ms · fb 0.50</text>
+              </svg>
+            </div>
+            <div class="row" style="gap:10px">
+              <div class="k"><svg width="34" height="34" viewBox="0 0 34 34"><circle class="face" cx="17" cy="17" r="12.5" fill="none" stroke="var(--teal)" stroke-width="1.3"/><line x1="17" y1="17" x2="17" y2="6" stroke="var(--teal)" stroke-width="1.6" transform="rotate(-30 17 17)"/></svg><div class="klab">Time</div><div class="kval">200 ms</div></div>
+              <div class="k"><svg width="34" height="34" viewBox="0 0 34 34"><circle class="face" cx="17" cy="17" r="12.5" fill="none" stroke="var(--teal)" stroke-width="1.3"/><line x1="17" y1="17" x2="17" y2="6" stroke="var(--teal)" stroke-width="1.6" transform="rotate(90 17 17)"/></svg><div class="klab">Fdbk</div><div class="kval">0.50</div></div>
+            </div>
+          </div>
+          <p class="tilecap"><b>compact</b> = TIME + FEEDBACK. The dock's job is the other twenty-two.</p>
+        </div>
+
+        <div>
+          <div class="panel">
+            <div class="pbar"><span class="pname">Analog delay</span><span class="ptag">6 bands · enabler always directly above its dependents</span></div>
+            <div class="band"><div class="bhead"><span class="bnum">2</span><span class="bname">Drive</span></div>
+              <p class="bhint">DRIVE ships at 0.1 of 10 — MIX and ITERATIONS do nothing until you raise it</p>
+              <div class="row">
+                <div class="k"><svg width="34" height="34" viewBox="0 0 34 34"><circle class="face" cx="17" cy="17" r="12.5" fill="none" stroke="var(--teal)" stroke-width="1.3"/><line x1="17" y1="17" x2="17" y2="6" stroke="var(--teal)" stroke-width="1.6" transform="rotate(-205 17 17)"/></svg><div class="klab">Drive</div><div class="kval">0.10 ← enabler</div></div>
+                <div class="k dead"><svg width="34" height="34" viewBox="0 0 34 34"><circle class="face" cx="17" cy="17" r="12.5" fill="none" stroke="var(--warn)" stroke-width="1.3" stroke-dasharray="3 2.5"/><line x1="17" y1="17" x2="17" y2="6" stroke="var(--warn)" stroke-width="1.6" transform="rotate(145 17 17)"/></svg><div class="klab">Mix</div><div class="kval">6.4e-3</div></div>
+                <div class="k dead"><svg width="34" height="34" viewBox="0 0 34 34"><circle class="face" cx="17" cy="17" r="12.5" fill="none" stroke="var(--warn)" stroke-width="1.3" stroke-dasharray="3 2.5"/><line x1="17" y1="17" x2="17" y2="6" stroke="var(--warn)" stroke-width="1.6" transform="rotate(215 17 17)"/></svg><div class="klab">Iter</div><div class="kval">~inert</div></div>
+                <div class="k"><svg width="34" height="34" viewBox="0 0 34 34"><circle class="face" cx="17" cy="17" r="12.5" fill="none" stroke="var(--teal)" stroke-width="1.3"/><line x1="17" y1="17" x2="17" y2="6" stroke="var(--teal)" stroke-width="1.6" transform="rotate(145 17 17)"/></svg><div class="klab">Cutoff</div><div class="kval">1.00</div></div>
+              </div></div>
+            <div class="band"><div class="bhead"><span class="bnum">4</span><span class="bname">Motion</span></div>
+              <p class="bhint">LFO FREQ needs LFO AMOUNT; PAN MODE needs PAN — not the LFO</p>
+              <div class="row">
+                <div class="k"><svg width="34" height="34" viewBox="0 0 34 34"><circle class="face" cx="17" cy="17" r="12.5" fill="none" stroke="var(--teal)" stroke-width="1.3"/><line x1="17" y1="17" x2="17" y2="6" stroke="var(--teal)" stroke-width="1.6" transform="rotate(215 17 17)"/></svg><div class="klab">LFO amt</div><div class="kval">0.00 ← enabler</div></div>
+                <div class="k dead"><svg width="34" height="34" viewBox="0 0 34 34"><circle class="face" cx="17" cy="17" r="12.5" fill="none" stroke="var(--warn)" stroke-width="1.3" stroke-dasharray="3 2.5"/><line x1="17" y1="17" x2="17" y2="6" stroke="var(--warn)" stroke-width="1.6" transform="rotate(20 17 17)"/></svg><div class="klab">LFO freq</div><div class="kval">Δ = 0</div></div>
+                <div class="k"><svg width="34" height="34" viewBox="0 0 34 34"><circle class="face" cx="17" cy="17" r="12.5" fill="none" stroke="var(--teal)" stroke-width="1.3"/><line x1="17" y1="17" x2="17" y2="6" stroke="var(--teal)" stroke-width="1.6" transform="rotate(-200 17 17)"/></svg><div class="klab">Drift</div><div class="kval">0.001</div></div>
+                <div class="k"><svg width="34" height="34" viewBox="0 0 34 34"><circle class="face" cx="17" cy="17" r="12.5" fill="none" stroke="var(--teal)" stroke-width="1.3"/><line x1="17" y1="17" x2="17" y2="6" stroke="var(--teal)" stroke-width="1.6"/></svg><div class="klab">Speed</div><div class="kval">1.0 Hz</div></div>
+              </div></div>
+            <div class="band"><div class="bhead"><span class="bnum">6</span><span class="bname">Duck + output</span></div>
+              <p class="bhint">ATTACK and RELEASE need DUCK above 0</p>
+              <div class="row">
+                <div class="k"><svg width="34" height="34" viewBox="0 0 34 34"><circle class="face" cx="17" cy="17" r="12.5" fill="none" stroke="var(--teal)" stroke-width="1.3"/><line x1="17" y1="17" x2="17" y2="6" stroke="var(--teal)" stroke-width="1.6" transform="rotate(215 17 17)"/></svg><div class="klab">Duck</div><div class="kval">0.00 ← enabler</div></div>
+                <div class="k dead"><svg width="34" height="34" viewBox="0 0 34 34"><circle class="face" cx="17" cy="17" r="12.5" fill="none" stroke="var(--warn)" stroke-width="1.3" stroke-dasharray="3 2.5"/><line x1="17" y1="17" x2="17" y2="6" stroke="var(--warn)" stroke-width="1.6"/></svg><div class="klab">Atk</div><div class="kval">Δ = 0</div></div>
+                <div class="k dead"><svg width="34" height="34" viewBox="0 0 34 34"><circle class="face" cx="17" cy="17" r="12.5" fill="none" stroke="var(--warn)" stroke-width="1.3" stroke-dasharray="3 2.5"/><line x1="17" y1="17" x2="17" y2="6" stroke="var(--warn)" stroke-width="1.6"/></svg><div class="klab">Rel</div><div class="kval">Δ = 0</div></div>
+                <div class="k"><svg width="34" height="34" viewBox="0 0 34 34"><circle class="face" cx="17" cy="17" r="12.5" fill="none" stroke="var(--teal)" stroke-width="1.3"/><line x1="17" y1="17" x2="17" y2="6" stroke="var(--teal)" stroke-width="1.6" transform="rotate(0 17 17)"/></svg><div class="klab">Dry</div><div class="kval">1.00</div></div>
+                <div class="k"><svg width="34" height="34" viewBox="0 0 34 34"><circle class="face" cx="17" cy="17" r="12.5" fill="none" stroke="var(--teal)" stroke-width="1.3"/><line x1="17" y1="17" x2="17" y2="6" stroke="var(--teal)" stroke-width="1.6" transform="rotate(-90 17 17)"/></svg><div class="klab">Wet</div><div class="kval">0.50</div></div>
+              </div></div>
+            <div class="side">
+              <div class="stitle">Sidebar — enabler → dependents</div>
+              <div class="ro"><span>LFO AMT = 0</span><span>LFO FREQ is inert</span></div>
+              <div class="ro"><span>DUCK = 0</span><span>ATTACK + RELEASE are inert</span></div>
+              <div class="ro"><span>SYNC = off</span><span>CLOCK SOURCE is inert</span></div>
+              <div class="ro"><span>PAN = 0</span><span>PAN MODE is inert</span></div>
+              <div class="ro"><span>DRIVE = 0.1</span><span>MIX + ITERATIONS are ~inert</span></div>
+            </div>
+          </div>
+
+          <div class="defect">
+            <h3>Seven of twenty-four controls are asleep at the factory default</h3>
+            <p><span class="measure">Δ = 0.00e+0 × 5</span><span class="measure">6.4e-3 and 6.8e-2 for the other two</span><span class="measure">Δ up to 7.76e-1 once the enabler opens</span></p>
+            <p>Five enablers, seven dependents, and every enabler ships closed. ⚠ PAN MODE is <em>not</em> woken by the LFO — measured <span class="mono">Δ = 0.00e+0</span> at <span class="mono">lfoAmount 0.3</span>. Only <span class="mono">pan ≠ 0</span> wakes it, so pairing PAN MODE with the LFO would teach a model the DSP does not have.</p>
+          </div>
+          <div class="defect note">
+            <h3>syncPeriod is a host-written value exposed as a user control</h3>
+            <p>Pushed by a <span class="mono">setInterval(pushSyncPeriod, 16)</span> from the clock singleton, and it appears on the card as a <span class="mono">0..30 s</span> fader. Measured <span class="measure">Δ = 0.00e+0</span> at both <span class="mono">tempoSync 0</span> and <span class="mono">tempoSync 5</span> — marked <b>not determined</b>, because the host timer does not advance in an offline render.</p>
+          </div>
+          <div class="defect">
+            <h3>Both volume controls exceed full scale</h3>
+            <p><span class="measure">wet 2.0 → peak 1.240</span><span class="measure">dry 2.0 → peak 1.089</span> Nothing after them limits. And the card re-types <span class="measure">34 literal ranges</span> — the most in the batch.</p>
+          </div>
+          <div class="parity"><b>Parity</b> 25 cells · <b>contract-lock</b> +1 line · the sidebar <span class="mono">presets</span> block opens three of five enablers in one click each, which on this module is the highest-value thing a sidebar can do.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= SMALL MODULES GRID ================= -->
+  <section>
+    <div class="head"><div class="eyebrow">05–09 · the small ones</div><h2>Five modules where the face is not about the knobs</h2>
+      <p class="sub" style="margin-top:6px">Every one of these has fewer than seven keys, so <span class="mono">faceTierCap('full') = 6</span> collapses <span class="mono">full</span> and <span class="mono">dock</span> into the same cells and a hero picture is <em>unreachable</em> — a panel's first legal rank is 7. Four of the five put their picture in the sidebar instead (the meowbox answer).</p></div>
+
+    <!-- destroy -->
+    <div class="mblock">
+      <div class="mhead"><span class="mname">destroy</span><span class="chip go">Promote — cheapest</span><span class="chip">3 params</span></div>
+      <div class="mgrid">
+        <div>
+          <div class="tile">
+            <div class="tname">Destroy</div>
+            <div class="glyph">
+              <svg viewBox="0 0 168 62" width="100%" height="62" role="img" aria-label="Quantisation grid: a sine crushed onto a coarse level grid">
+                <rect width="168" height="62" fill="var(--panel-well)"/>
+                <g stroke="#1d2830" stroke-width="1"><path d="M0 12 H168"/><path d="M0 22 H168"/><path d="M0 31 H168"/><path d="M0 41 H168"/><path d="M0 51 H168"/></g>
+                <path d="M0 41 H16 V22 H32 V12 H48 V22 H64 V41 H80 V51 H96 V41 H112 V22 H128 V12 H144 V22 H168"
+                      fill="none" stroke="var(--teal)" stroke-width="1.6"/>
+              </svg>
+            </div>
+            <div class="row" style="gap:10px">
+              <div class="k"><svg width="34" height="34" viewBox="0 0 34 34"><circle class="face" cx="17" cy="17" r="12.5" fill="none" stroke="var(--teal)" stroke-width="1.3"/><line x1="17" y1="17" x2="17" y2="6" stroke="var(--teal)" stroke-width="1.6" transform="rotate(145 17 17)"/></svg><div class="klab">Bits</div><div class="kval">16</div></div>
+              <div class="k"><svg width="34" height="34" viewBox="0 0 34 34"><circle class="face" cx="17" cy="17" r="12.5" fill="none" stroke="var(--warn)" stroke-width="1.3"/><line x1="17" y1="17" x2="17" y2="6" stroke="var(--warn)" stroke-width="1.6" transform="rotate(215 17 17)"/></svg><div class="klab" style="color:var(--warn)">Dec</div><div class="kval">dead to 2.5</div></div>
+            </div>
+          </div>
+          <p class="tilecap">All tiers show the same three cells. It ships for two numbers.</p>
+        </div>
+        <div>
+          <div class="defect">
+            <h3>DECIMATE 1, 1.5 and 2 are identical in every statistic</h3>
+            <p><span class="measure">centroid 275 Hz ×3</span><span class="measure">12 698 distinct values ×3</span><span class="measure">first moves at 2.5</span></p>
+            <p>A sample-and-hold of length 2 halves the effective rate and is plainly audible. The first 1.6 % of the fader does nothing. ⚠ The existing ART scenario runs at <span class="mono">decimate 8</span>, so it would not have caught this and will not catch the fix.</p>
+          </div>
+          <div class="defect">
+            <h3>BITS 1 is −28.3 dB with a doubled peak</h3>
+            <p><span class="measure">rms −37.32 dB</span><span class="measure">peak 1.0000 from a 0.5 input</span><span class="measure">bits 1 + dec 64 → −98.81 dB</span></p>
+            <p>Two extremes of the same knob: "twice as loud, instantaneously" and "gone". And <span class="mono">wet = 0</span> is <span class="mono">max|out − in| = 0.000e+0</span> — bit-exact dry — while the "transparent" default is <span class="mono">1.529e-5</span>.</p>
+          </div>
+          <div class="parity"><b>Parity</b> 3 cells — the smallest new row · <b>contract-lock</b> +0 · picture in the sidebar (rank 7 unreachable with 3 keys).</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- slewSwitch -->
+    <div class="mblock">
+      <div class="mhead"><span class="mname">slewSwitch</span><span class="chip go">Promote</span><span class="chip">7 params · 7 outs</span></div>
+      <div class="mgrid">
+        <div>
+          <div class="tile">
+            <div class="tname">Slew Switch</div>
+            <div class="glyph">
+              <svg viewBox="0 0 168 62" width="100%" height="62" role="img" aria-label="Switch ring collapsed to one slot at LENGTH 1, annotated x1.41">
+                <rect width="168" height="62" fill="var(--panel-well)"/>
+                <circle cx="84" cy="31" r="19" fill="none" stroke="#26313a" stroke-width="1"/>
+                <circle cx="84" cy="12" r="5.5" fill="var(--warn)" opacity=".85"/>
+                <circle cx="103" cy="31" r="4" fill="none" stroke="#26313a"/>
+                <circle cx="84" cy="50" r="4" fill="none" stroke="#26313a"/>
+                <circle cx="65" cy="31" r="4" fill="none" stroke="#26313a"/>
+                <text x="112" y="20" fill="var(--warn)" font-family="ui-monospace,monospace" font-size="10">×1.41</text>
+                <text x="112" y="34" fill="#6e7d88" font-family="ui-monospace,monospace" font-size="8">LENGTH 1</text>
+              </svg>
+            </div>
+            <div class="row" style="gap:10px">
+              <div class="sw"><div class="swbox">Forward</div><div class="swlab">Mode</div></div>
+              <div class="k"><svg width="34" height="34" viewBox="0 0 34 34"><circle class="face" cx="17" cy="17" r="12.5" fill="none" stroke="var(--teal)" stroke-width="1.3"/><line x1="17" y1="17" x2="17" y2="6" stroke="var(--teal)" stroke-width="1.6" transform="rotate(145 17 17)"/></svg><div class="klab">Length</div><div class="kval">4</div></div>
+            </div>
+          </div>
+          <p class="tilecap">MODE is rank 1: it is the only control that changes what another <em>output</em> means.</p>
+        </div>
+        <div>
+          <div class="defect">
+            <h3>LENGTH = 1 outputs the input × √2, and kills two of seven jacks</h3>
+            <p><span class="measure">+0.90 in → +1.2728 out</span><span class="measure">= ×1.41421 (+3.01 dB)</span><span class="measure">step_idx max 0.00, eoc 0 edges</span></p>
+            <p>An equal-power crossfade of a source with <em>itself</em>. Identical in all three modes. One detent on a <span class="mono">1..4 discrete</span> knob.</p>
+          </div>
+          <div class="defect note">
+            <h3>Two utilities with no shared state — proven, not asserted</h3>
+            <p>Sweeping any <span class="mono">slew<i>n</i></span> leaves the other three outputs at <span class="measure">Δ = 0.00e+0</span>; <span class="mono">mode</span> and <span class="mono">xfadeTime</span> leave all four slew outputs at <span class="measure">Δ = 0.00e+0</span>. Four independent channels, verified in both directions.</p>
+            <p>⚠ <span class="mono">eoc</span> fires 2× / 1× / <b>7×</b> at LENGTH 4 in modes 0 / 1 / 2 — the mode-2 semantics are marked <b>not determined</b>.</p>
+          </div>
+          <div class="parity"><b>Parity</b> 8 cells · <b>contract-lock</b> +1 line · hero cell reachable (rank 8, 7 params).</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- featurecv -->
+    <div class="mblock">
+      <div class="mhead"><span class="mname">featurecv</span><span class="chip hold">Promote — answer §7-A first</span><span class="chip">6 params · 4 jacks</span></div>
+      <div class="mgrid">
+        <div>
+          <div class="tile">
+            <div class="tname">Feature CV</div>
+            <div class="glyph">
+              <svg viewBox="0 0 168 62" width="100%" height="62" role="img" aria-label="Four output meters on a bipolar scale, with BRIGHT flagged">
+                <rect width="168" height="62" fill="var(--panel-well)"/>
+                <g font-family="ui-monospace,monospace" font-size="7" fill="#6e7d88">
+                  <text x="4" y="12">LOUD</text><text x="4" y="26">BRGT</text><text x="4" y="40">PNCH</text><text x="4" y="54">ONST</text>
+                </g>
+                <path d="M88 4 V58" stroke="#26313a" stroke-width="1"/>
+                <rect x="36" y="6" width="96" height="6" fill="none" stroke="#26313a"/><rect x="88" y="6" width="44" height="6" fill="var(--teal)" opacity=".8"/>
+                <rect x="36" y="20" width="96" height="6" fill="none" stroke="#26313a"/><rect x="38" y="20" width="4" height="6" fill="var(--warn)"/>
+                <rect x="36" y="34" width="96" height="6" fill="none" stroke="#26313a"/><rect x="44" y="34" width="6" height="6" fill="var(--teal)" opacity=".6"/>
+                <rect x="36" y="48" width="96" height="6" fill="none" stroke="#26313a"/><rect x="88" y="48" width="10" height="6" fill="var(--teal)" opacity=".8"/>
+              </svg>
+            </div>
+            <div class="row" style="gap:10px">
+              <div class="sw"><div class="swbox">Bipolar</div><div class="swlab">Range</div></div>
+              <div class="k"><svg width="34" height="34" viewBox="0 0 34 34"><circle class="face" cx="17" cy="17" r="12.5" fill="none" stroke="var(--teal)" stroke-width="1.3"/><line x1="17" y1="17" x2="17" y2="6" stroke="var(--teal)" stroke-width="1.6" transform="rotate(20 17 17)"/></svg><div class="klab">Rel</div><div class="kval">100 ms</div></div>
+            </div>
+          </div>
+          <p class="tilecap">BIPOLAR is rank 1: it changes what every one of the four numbers <em>means</em>, and idle is −1, not 0.</p>
+        </div>
+        <div>
+          <div class="defect">
+            <h3>BRIGHT cannot tell a sine from a saw</h3>
+            <p><span class="measure">sine 261 Hz → −0.9544</span><span class="measure">saw 261 Hz → −0.9544</span><span class="measure">6 kHz sine → 0.0008</span><span class="measure">white noise → 0.9954</span></p>
+            <p>Identical to four decimals in <em>both</em> polarity modes — while <span class="mono">loud</span> (0.9885 vs 0.6485) and <span class="mono">punch</span> separate the same two sources cleanly, so the probe is not blind. BRIGHT is behaving as a pitch tracker. <strong>A face cannot label this jack until someone says which reading is intended.</strong></p>
+          </div>
+          <div class="defect">
+            <h3>GAIN reaches only half the module</h3>
+            <p><span class="measure">Δ = 0.00e+0 on bright and punch</span> across the whole <span class="mono">0.25..4</span> range, while <span class="mono">loud</span> and <span class="mono">onset</span> both move. And <span class="mono">onset_debounce = 1000 ms</span> is <span class="measure">−240.00 dB</span> — the ONSET jack emits nothing above 1 Hz.</p>
+          </div>
+          <div class="parity"><b>Parity</b> 7 cells · ⚠ <b>no audio output at all</b>, so the shell glyph taps nothing — ship <span class="mono">'none'</span> unless the platform gains a declared glyph source.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ninelives -->
+    <div class="mblock">
+      <div class="mhead"><span class="mname">ninelives</span><span class="chip go">Promote</span><span class="chip">2 params · 9 outs</span></div>
+      <div class="mgrid">
+        <div>
+          <div class="tile">
+            <div class="tname">Nine Lives</div>
+            <div class="glyph">
+              <svg viewBox="0 0 168 62" width="100%" height="62" role="img" aria-label="Rate ladder: nine rungs, the last four flagged DC">
+                <rect width="168" height="62" fill="var(--panel-well)"/>
+                <g font-family="ui-monospace,monospace" font-size="6.5">
+                  <rect x="4" y="4" width="120" height="4" fill="var(--teal)"/><text x="128" y="9" fill="#6e7d88">1 s</text>
+                  <rect x="4" y="10" width="98" height="4" fill="var(--teal)" opacity=".9"/><text x="128" y="15" fill="#6e7d88">3 s</text>
+                  <rect x="4" y="16" width="80" height="4" fill="var(--teal)" opacity=".8"/><text x="128" y="21" fill="#6e7d88">9 s</text>
+                  <rect x="4" y="22" width="63" height="4" fill="var(--teal)" opacity=".7"/><text x="128" y="27" fill="#6e7d88">27 s</text>
+                  <rect x="4" y="28" width="47" height="4" fill="var(--teal)" opacity=".6"/><text x="128" y="33" fill="#6e7d88">81 s</text>
+                  <rect x="4" y="34" width="34" height="4" fill="var(--warn)"/><text x="128" y="39" fill="var(--warn)">4 min</text>
+                  <rect x="4" y="40" width="26" height="4" fill="var(--warn)"/><text x="128" y="45" fill="var(--warn)">12 min</text>
+                  <rect x="4" y="46" width="18" height="4" fill="var(--warn)"/><text x="128" y="51" fill="var(--warn)">36 min</text>
+                  <rect x="4" y="52" width="12" height="4" fill="var(--warn)"/><text x="128" y="57" fill="var(--warn)">1 h 49</text>
+                </g>
+              </svg>
+            </div>
+            <div class="row" style="gap:10px">
+              <div class="k"><svg width="34" height="34" viewBox="0 0 34 34"><circle class="face" cx="17" cy="17" r="12.5" fill="none" stroke="var(--teal)" stroke-width="1.3"/><line x1="17" y1="17" x2="17" y2="6" stroke="var(--teal)" stroke-width="1.6" transform="rotate(-20 17 17)"/></svg><div class="klab">Rate</div><div class="kval">1.0 Hz</div></div>
+              <div class="k"><svg width="34" height="34" viewBox="0 0 34 34"><circle class="face" cx="17" cy="17" r="12.5" fill="none" stroke="var(--warn)" stroke-width="1.3"/><line x1="17" y1="17" x2="17" y2="6" stroke="var(--warn)" stroke-width="1.6" transform="rotate(215 17 17)"/></svg><div class="klab" style="color:var(--warn)">Shape</div><div class="kval">3 pos / linear</div></div>
+            </div>
+          </div>
+          <p class="tilecap">Two knobs and a completely collapsed tier ladder — and it still earns a face, because the face is not about the controls.</p>
+        </div>
+        <div>
+          <div class="defect">
+            <h3>Four of nine outputs are DC over any listening window</h3>
+            <p><span class="measure">out9 = 1 h 49 min at default</span><span class="measure">65.6 s at the MAXIMUM rate</span><span class="measure">out7 DC = +0.669</span></p>
+            <p>The ⅓ ladder is exact to four decimals (measured 10.0000 / 3.3333 / 1.1111 / 0.3704 / 0.1235 Hz at <span class="mono">rate 10</span>). There is no setting at which <span class="mono">out9</span> completes a cycle inside a minute.</p>
+          </div>
+          <div class="defect">
+            <h3>SHAPE is a 3-position selector declared <span class="mono">curve: 'linear'</span></h3>
+            <p><span class="measure">peak 1.000 at 0 / 1 / 2</span><span class="measure">peak 0.500 in between</span><span class="measure">4.77 dB between the named shapes</span></p>
+            <p>⚠ Unlike the four <span class="mono">&lt;Knob&gt;</span> cases in CLAUDE.md, this card uses <span class="mono">&lt;Fader&gt;</span>, which <em>does</em> implement <span class="mono">discrete</span> — so changing the curve would actually take effect.</p>
+          </div>
+          <div class="parity"><b>Parity</b> 2 cells · <b>contract-lock</b> +0 · picture in the sidebar (rank 7 unreachable with 2 keys) · the <span class="mono">rate-ladder</span> panel is shared with timelorde.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- illogic -->
+    <div class="mblock">
+      <div class="mhead"><span class="mname">illogic</span><span class="chip go">Promote</span><span class="chip">4 params · 10 outs</span></div>
+      <div class="mgrid">
+        <div>
+          <div class="tile">
+            <div class="tname">Illogic</div>
+            <div class="glyph">
+              <svg viewBox="0 0 168 62" width="100%" height="62" role="img" aria-label="Routing: four attenuverters into SUM and DIFF, with the logic jacks tapped before them">
+                <rect width="168" height="62" fill="var(--panel-well)"/>
+                <g stroke="var(--teal)" stroke-width="1.2" fill="none">
+                  <path d="M6 12 H40"/><path d="M6 24 H40"/><path d="M6 36 H40"/><path d="M6 48 H40"/>
+                  <path d="M40 8 L54 12 L40 16 Z" fill="var(--teal)" stroke="none"/>
+                  <path d="M40 20 L54 24 L40 28 Z" fill="var(--teal)" stroke="none"/>
+                  <path d="M40 32 L54 36 L40 40 Z" fill="var(--teal)" stroke="none"/>
+                  <path d="M40 44 L54 48 L40 52 Z" fill="var(--teal)" stroke="none"/>
+                  <path d="M54 12 H96 M54 24 H96 M54 36 H96 M54 48 H96"/>
+                  <path d="M96 12 V48"/><path d="M96 30 H120"/>
+                </g>
+                <g stroke="var(--warn)" stroke-width="1" stroke-dasharray="3 2" fill="none">
+                  <path d="M20 12 V58 H132"/><path d="M20 24 V58"/>
+                </g>
+                <text x="122" y="27" fill="#6e7d88" font-family="ui-monospace,monospace" font-size="7">SUM/DIFF</text>
+                <text x="134" y="60" fill="var(--warn)" font-family="ui-monospace,monospace" font-size="7">LOGIC</text>
+              </svg>
+            </div>
+            <div class="row" style="gap:8px">
+              <div class="k"><svg width="30" height="30" viewBox="0 0 34 34"><circle class="face" cx="17" cy="17" r="12.5" fill="none" stroke="var(--teal)" stroke-width="1.3"/><line x1="17" y1="17" x2="17" y2="6" stroke="var(--teal)" stroke-width="1.6" transform="rotate(145 17 17)"/></svg><div class="klab">Att 1</div></div>
+              <div class="k"><svg width="30" height="30" viewBox="0 0 34 34"><circle class="face" cx="17" cy="17" r="12.5" fill="none" stroke="var(--teal)" stroke-width="1.3"/><line x1="17" y1="17" x2="17" y2="6" stroke="var(--teal)" stroke-width="1.6" transform="rotate(145 17 17)"/></svg><div class="klab">Att 2</div></div>
+            </div>
+          </div>
+          <p class="tilecap">A flat ranking on purpose: four interchangeable channels have no priority, so <span class="mono">order</span> ranks by channel number.</p>
+        </div>
+        <div>
+          <div class="defect">
+            <h3>Four of ten jacks are behind none of the knobs</h3>
+            <p><span class="measure">and / or / nand / not: Δ = 0.00e+0</span> under every one of the four attenuverters. They threshold the RAW inputs, before the attenuverters — correct, and unknowable from a card that shows four knobs above ten jacks.</p>
+          </div>
+          <div class="defect">
+            <h3>SUM and DIFF are unscaled on a ±1 bus</h3>
+            <p><span class="measure">sum peak 1.791</span><span class="measure">diff peak 2.594</span> from a stimulus of ≤0.9. No clamp anywhere. ⚠ Also: an attenuverter's sign flip is <em>invisible</em> to RMS, peak and centroid (identical at ±1, <span class="mono">Δ = 1.80e+0</span>) — any sweep over the attenuverter tail must use a signed comparison.</p>
+          </div>
+          <div class="parity"><b>Parity</b> 4 cells · <b>contract-lock</b> +0 · picture in the sidebar (rank 7 unreachable with 4 keys) · ⚠ no audio output, so the glyph taps nothing.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= TIMELORDE ================= -->
+  <section>
+    <div class="head"><div class="eyebrow">10 · clock</div><h2>timelorde — the master clock</h2>
+      <p class="sub" style="margin-top:6px">A singleton, <span class="mono">undeletable</span>, in every rack. 6 params · 5 in · 14 out.</p></div>
+
+    <div class="mblock">
+      <div class="mhead"><span class="mname">timelorde</span><span class="chip go">Promote</span><span class="chip">singleton</span></div>
+      <div class="mgrid">
+        <div>
+          <div class="tile">
+            <div class="tname">Timelorde</div>
+            <div class="glyph">
+              <svg viewBox="0 0 168 62" width="100%" height="62" role="img" aria-label="Divider ladder with the multiplier rows showing missing first pulses">
+                <rect width="168" height="62" fill="var(--panel-well)"/>
+                <g font-family="ui-monospace,monospace" font-size="6.5" fill="#6e7d88">
+                  <text x="4" y="12">8x</text><text x="4" y="26">4x</text><text x="4" y="40">2x</text><text x="4" y="54">1x</text>
+                </g>
+                <g fill="var(--warn)" opacity=".9">
+                  <rect x="24" y="6" width="30" height="5"/><text x="26" y="10.5" font-family="ui-monospace,monospace" font-size="5" fill="var(--panel-well)">−7</text>
+                  <rect x="24" y="20" width="16" height="5"/>
+                  <rect x="24" y="34" width="8" height="5"/>
+                </g>
+                <g fill="var(--teal)">
+                  <g>
+                    <rect x="56" y="6" width="3" height="5"/><rect x="70" y="6" width="3" height="5"/><rect x="84" y="6" width="3" height="5"/><rect x="98" y="6" width="3" height="5"/><rect x="112" y="6" width="3" height="5"/><rect x="126" y="6" width="3" height="5"/><rect x="140" y="6" width="3" height="5"/><rect x="154" y="6" width="3" height="5"/>
+                  </g>
+                  <g><rect x="42" y="20" width="3" height="5"/><rect x="70" y="20" width="3" height="5"/><rect x="98" y="20" width="3" height="5"/><rect x="126" y="20" width="3" height="5"/><rect x="154" y="20" width="3" height="5"/></g>
+                  <g><rect x="34" y="34" width="3" height="5"/><rect x="90" y="34" width="3" height="5"/><rect x="146" y="34" width="3" height="5"/></g>
+                  <g><rect x="24" y="48" width="3" height="5"/><rect x="80" y="48" width="3" height="5"/><rect x="136" y="48" width="3" height="5"/></g>
+                </g>
+              </svg>
+            </div>
+            <div class="row" style="gap:10px">
+              <div class="k"><svg width="34" height="34" viewBox="0 0 34 34"><circle class="face" cx="17" cy="17" r="12.5" fill="none" stroke="var(--teal)" stroke-width="1.3"/><line x1="17" y1="17" x2="17" y2="6" stroke="var(--teal)" stroke-width="1.6" transform="rotate(20 17 17)"/></svg><div class="klab">BPM</div><div class="kval">120</div></div>
+              <div class="sw"><div class="swbox">Run</div><div class="swlab">Transport</div></div>
+            </div>
+          </div>
+          <p class="tilecap">The warn blocks are the measured deficit: 1 / 3 / 7 pulses missing at the start of <span class="mono">2x</span> / <span class="mono">4x</span> / <span class="mono">8x</span>.</p>
+        </div>
+        <div>
+          <div class="defect">
+            <h3>Every multiplier loses exactly (multiplier − 1) pulses at start</h3>
+            <p><span class="measure">2x: −1</span><span class="measure">4x: −3</span><span class="measure">8x: −7</span> identical at 60, 120 and 240 bpm — a fixed one-master-period deficit, not a rate error. Documented in the worklet header and nowhere a user can see. Dividers are exact.</p>
+          </div>
+          <div class="defect">
+            <h3>STOP and MUTE are indistinguishable at every jack</h3>
+            <p><span class="mono">running = 0</span> and <span class="mono">muteOutputs = 1</span> both give <span class="measure">0 rising edges</span> on <span class="mono">1x</span>, <span class="mono">1/4</span> and <span class="mono">swing</span>. On a singleton the whole rack depends on, "why is my rack stopped" is the question this face answers.</p>
+          </div>
+          <div class="defect note">
+            <h3>Swing is honest — and a pulse count is blind to it by construction</h3>
+            <p><span class="measure">45° → 562.5 / 437.5 ms</span><span class="measure">90° → 625.0 / 375.0 ms</span> Perfectly linear: <span class="mono">offset = 125 ms × swing/90</span>. The counting instrument read 7 pulses at <em>both</em> 45° and 90° — and it had a passing negative control.</p>
+          </div>
+          <div class="parity"><b>Parity</b> 7 cells · ⚠ <span class="mono">maxInstances = 1</span> and <span class="mono">undeletable</span> — the parity row must use the rack's existing singleton · <b>glyph</b> <span class="mono">'none'</span>: thirteen gates and a video port, no audio output to tap · the TAP button is <em>not</em> declared as an <span class="mono">action</span>, because an action cell requires a probe and the def exposes no engine-reachable callable.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= BLOCKED + NO FACE ================= -->
+  <section>
+    <div class="head"><div class="eyebrow">11–12 · the two that are not promotions</div><h2>One blocked, one refused</h2></div>
+
+    <div class="mblock">
+      <div class="mhead"><span class="mname">hypercube</span><span class="chip stop">Blocked</span><span class="chip">20 params</span></div>
+      <p class="sub" style="max-width:78ch"><span class="mono">alpha</span> and <span class="mono">morph_fc</span> — the two controls that make HYPERCUBE a hypercube rather than a CUBE — are <strong>identical in every phase-invariant statistic</strong> at 0, 0.5 and 1.</p>
+      <div class="scroll" style="margin-top:14px">
+        <table style="min-width:640px">
+          <thead><tr><th>patch</th><th>rms (8 s.f.)</th><th>peak</th><th>centroid</th><th>5 log-band energies (dB)</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">default</td><td class="num">0.51118300</td><td class="num">0.845406</td><td class="num">3174.0 Hz</td><td class="num">−87.44 −5.03 −15.56 −16.89 −26.13</td></tr>
+            <tr><td class="mono">alpha = 0.5</td><td class="num">0.51118300</td><td class="num">0.845406</td><td class="num">3174.0 Hz</td><td class="num">−87.44 −5.03 −15.56 −16.89 −26.13</td></tr>
+            <tr><td class="mono">alpha = 1</td><td class="num">0.51118300</td><td class="num">0.845406</td><td class="num">3174.0 Hz</td><td class="num">−87.44 −5.03 −15.56 −16.89 −26.13</td></tr>
+            <tr><td class="mono">morph_fc = 1</td><td class="num">0.51118300</td><td class="num">0.845406</td><td class="num">3174.0 Hz</td><td class="num">−87.44 −5.03 −15.56 −16.89 −26.13</td></tr>
+            <tr><td class="mono">fold = 1 <span class="chip go">control</span></td><td class="num">0.69840082</td><td class="num">0.999998</td><td class="num">3245.1 Hz</td><td class="num">−68.72 −2.55 −14.85 −14.15 −22.97</td></tr>
+            <tr><td class="mono">crush = 0.5 <span class="chip go">control</span></td><td class="num">0.51005894</td><td class="num">0.854697</td><td class="num">3826.8 Hz</td><td class="num">−68.84 −5.05 −15.59 −17.11 −27.74</td></tr>
+            <tr><td class="mono">spread = 0.5 <span class="chip go">control</span></td><td class="num">0.50786492</td><td class="num">0.833468</td><td class="num">3186.6 Hz</td><td class="num">−72.86 −5.03 −15.58 −16.90 −26.12</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="defect" style="margin-top:16px">
+        <h3>Why this is BLOCKED and not "two dead controls"</h3>
+        <p>Both params are read by the worklet, and <span class="mono">alpha</span>'s job is to blend the fourth (HOLO) wavetable into the field. <strong>If the HOLO table never arrives, <span class="mono">alpha</span> is correctly a no-op</strong> — and the tables ride <span class="mono">port.postMessage</span>, whose delivery is not guaranteed inside an OfflineAudioContext rendering faster than real time. The macrooscillator route (esbuild the worklet against stub globals, hand the processor its tables synchronously) settles it in half a day, and it must happen <em>before</em> a faceplate paints ALPHA as a working control.</p>
+      </div>
+      <div class="defect">
+        <h3>Independently measurable now: a −0.375 DC offset at every setting</h3>
+        <p><span class="measure">DC −0.375433</span><span class="measure">acRms 0.348243</span><span class="measure">−0.751 at level 2</span></p>
+        <p>The offset is <em>larger than the signal</em>. Present at every setting of every control; only <span class="mono">wrap = 1</span> changes its sign. Same class as the cube-rebuild blocker, except cube's fault lives at two knob extremes and this one is the default state. ⚠ Not determined: whether a DC blocker sits downstream on the master bus.</p>
+      </div>
+      <div class="defect note">
+        <h3>And the module is not reproducible run-to-run</h3>
+        <p><span class="measure">max|run1 − run2| = 8.453e-1</span> on identical params, against <span class="measure">0.000e+0</span> for every other module in this batch. Usually a deliberate random start phase — but it means hypercube can never hold a byte-exact ART baseline, and the first pass's "alpha does something, Δ = 8.45e-1" was reading phase noise.</p>
+      </div>
+    </div>
+
+    <div class="mblock">
+      <div class="mhead"><span class="mname">unityscalemathematik</span><span class="chip none">No face on merit</span><span class="chip">5 params</span></div>
+      <p class="sub" style="max-width:78ch">All five controls live. Three channels <strong>bit-exactly orthogonal</strong> — every off-diagonal cell <span class="mono">Δ = 0.00e+0</span>. Every attenuverter bit-silent at 0 (<span class="mono">−240.00 dB</span>) and symmetric about it. Both curves monotonic and identical (<span class="mono">−5.84 dB</span> over their travel). <span class="mono">faceTierCap('full') = 6</span> against 5 params, so <span class="mono">compact</span>, <span class="mono">full</span> and <span class="mono">dock</span> render the identical five cells, and a hero picture is unreachable at rank 7.</p>
+      <div class="defect good" style="margin-top:14px">
+        <h3>Cost avoided, and the one thing worth keeping</h3>
+        <p>4 VRT baselines, a 5-cell parity row, and a <span class="mono">STRICT_FACES</span> entry to maintain forever. Instead: one sentence of doc (the UNITY section has no CURVE), and enrol the 68-line card in <span class="mono">RANGE_BOUND_CARDS</span> — the cheapest such enrolment available anywhere in this batch.</p>
+        <p>The durable output is the instrument warning: <strong>an attenuverter's sign flip is invisible to RMS, peak and centroid</strong> (identical at ±1, <span class="mono">Δ = 1.60e+0</span>). At least six more modules in the unfaced tail have this shape.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= PLATFORM ================= -->
+  <section>
+    <div class="head"><div class="eyebrow">What twelve modules found about the platform</div><h2>Four asks, in priority order</h2></div>
+
+    <div class="defect note">
+      <h3>1 · A faceplate needs a way to say "this control is asleep, and here is what wakes it"</h3>
+      <p><strong>Sixteen mode-gated controls across four modules</strong> — swolevco's two, wavecel's five, warrensspectrum's one, cofefve's seven. Every one is documented in <span class="mono">docs.controls</span>; none is visible on a panel. Three of the four specs spend their whole sidebar on this. A first-class <span class="mono">enabledBy</span> on <span class="mono">ParamDef</span>, or a <span class="mono">FaceReadout</span> that can read connectivity, would replace four bespoke sidebars with one platform behaviour.</p>
+    </div>
+    <div class="defect note">
+      <h3>2 · Five of twelve modules have NO audio output, and the glyph taps the first one</h3>
+      <p><span class="mono">timelorde</span>, <span class="mono">illogic</span>, <span class="mono">featurecv</span> and <span class="mono">ninelives</span> have none at all. Batch 4 found this twice and asked for a declared glyph source; this batch found it four more times in twelve modules, which makes it the most common face-blocking gap in the unfaced tail. Two specs work around it (a param-derived <span class="mono">'waveform'</span> glyph; <span class="mono">'none'</span>) and both workarounds are strictly worse.</p>
+    </div>
+    <div class="defect note">
+      <h3>3 · The rank-7 wall, quantified</h3>
+      <p>A panel's first legal rank is 7. <strong>Four of twelve cannot reach it</strong> — <span class="mono">destroy</span> (3 keys), <span class="mono">illogic</span> (4), <span class="mono">ninelives</span> (2), <span class="mono">unityscalemathematik</span> (5) — and three of those four are modules whose <em>entire</em> face value is a picture. The sidebar <span class="mono">custom</span> block covers it, and it is now the majority pattern for small modules rather than the exception.</p>
+    </div>
+    <div class="defect note">
+      <h3>4 · Two modules independently wanted the same panel</h3>
+      <p><span class="mono">ninelives</span> and <span class="mono">timelorde</span> both need a <strong>divider ladder</strong> — N rungs, each labelled with its period, at a fixed ratio. Different props (<span class="mono">divisor 3, taps 9</span> vs <span class="mono">divisor 2, taps 13</span>), same drawing. Registered once as <span class="mono">rate-ladder</span> it serves both, plus every <span class="mono">moog9xx</span> divider. First time two modules in one batch converged on one panel without being asked to.</p>
+    </div>
+  </section>
+
+  <!-- ================= INSTRUMENT ================= -->
+  <section>
+    <div class="head"><div class="eyebrow">Validate the instrument</div><h2>The measurement was wrong four times, and every wrong answer looked authoritative</h2>
+      <p class="sub" style="margin-top:6px">Each had <em>something</em> moving — a passing negative control — and was still measuring the wrong thing.</p></div>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Module</th><th>What the bad instrument said</th><th>Why it was wrong</th></tr></thead>
+        <tbody>
+          <tr><td class="mod">wavecel</td><td>"the whole ADSR and BASE are dead — <span class="mono">Δ = 0.00e+0</span> on three outputs"</td><td>The factory reads <span class="mono">livePatch.edges</span>, not bus presence. And with the corrected rig, a gate high from sample 0 landed in the same quantum as the k-rate <span class="mono">trigger_connected</span> write — so ATTACK and DECAY read dead <em>twice</em>. Delaying the gate to t = 1 s produced a textbook 1 s ramp. SUSTAIN and RELEASE moved throughout.</td></tr>
+          <tr><td class="mod">hypercube</td><td>"<span class="mono">alpha</span> does something — <span class="mono">Δ = 8.45e-1</span>"</td><td>The module is not reproducible run-to-run. <span class="mono">max|Δ|</span> was reading phase noise. The tell was incoherence: the same Δ at 0.25, 0.5, 0.75 <em>and</em> 1, with acRms identical to six decimals.</td></tr>
+          <tr><td class="mod">timelorde</td><td>"SWING does nothing — 7 pulses at 45° and 7 at 90°"</td><td>A pulse count is invariant to swing <em>by construction</em> — swing moves when an edge lands, never how many. Intervals: 562.5/437.5 vs 625.0/375.0 ms.</td></tr>
+          <tr><td class="mod">illogic · unityscale</td><td>"the attenuverter at −1 and +1 are the same — dead control"</td><td>RMS, peak and centroid are all invariant to a sign flip. Identical to every printed figure; <span class="mono">Δ = 1.80e+0</span> and <span class="mono">1.60e+0</span> — exactly twice the amplitude.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="sub" style="margin-top:16px"><strong>The meta-lesson:</strong> prefer a <em>positive</em> control against a known magnitude — a four-source brightness ladder, a 1 s attack that must take exactly 1 s, a 5 : 3 swing ratio — over a negative control that merely proves the needle can twitch.</p>
+  </section>
+
+  <!-- ================= COST ================= -->
+  <section>
+    <div class="head"><div class="eyebrow">CI</div><h2>Four PRs, not one</h2></div>
+    <ul class="tight">
+      <li><strong>PR A — no prerequisite, small rows:</strong> swolevco, slewSwitch, illogic, ninelives. 23 parity cells, one VRT dispatch. This is where the <span class="mono">+40 scenes</span> VRT estimate becomes a measurement.</li>
+      <li><strong>PR B — the two big ones:</strong> warrensspectrum, cofefve. 50 parity cells, two new sidebar panels. ⚠ warrensspectrum is already in <span class="mono">PUSH_CARD_CONTROLS</span>.</li>
+      <li><strong>PR C — need a small non-DSP seam first:</strong> wavecel (the 2.7 ms connect click), destroy (settle the <span class="mono">curve: 'log'</span> question first — the card uses <span class="mono">&lt;Fader&gt;</span>, so it would take effect).</li>
+      <li><strong>PR D — timelorde alone.</strong> A singleton in every rack; a red run there should have exactly one cause.</li>
+      <li><strong>Not in the plan:</strong> featurecv and hypercube. Both wait on an answer, and both answers are investigations.</li>
+    </ul>
+    <p class="sub" style="margin-top:14px"><strong>E2E:</strong> ~105 driven cells ≈ +165 s total ≈ <span class="mono">+17 s per shard</span> — under the two-minute bar. <strong>vrt-strict:</strong> +0 — none of the twelve is in <span class="mono">STRICT_VRT_MODULES</span>. <strong>Eleven audio/behaviour fixes surfaced; each is its own PR.</strong></p>
+  </section>
+
+  <div class="foot">
+    Batch 5 · twelve specs in <span class="mono">.myrobots/plans/face-specs-batch-5-*.md</span> · index at <span class="mono">face-specs-batch-5-INDEX.md</span> · measured against <span class="mono">main @ 153e5c36</span>, 2026-08-10. Nothing here is implemented.
+  </div>
+</div>
