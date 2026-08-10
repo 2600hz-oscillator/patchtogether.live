@@ -94,7 +94,7 @@ describe('the LIVE registry — which faces are tabbed today', () => {
   // The clause that turns the threshold into a decision instead of a constant:
   // if a face crosses it, its dock BASELINE moves, and that must be a thing
   // somebody chose. cloudseed (8 bands) is the only face over the line.
-  it('cloudseed + pentemelodica are tabbed; every other faced module is one column', () => {
+  it('cloudseed + pentemelodica + wavesculpt are tabbed; every other faced module is one column', () => {
     const tabbed: string[] = [];
     const counts: string[] = [];
     for (const def of listModuleDefs() as unknown as (FaceDefLike & { type: string })[]) {
@@ -124,6 +124,15 @@ describe('the LIVE registry — which faces are tabbed today', () => {
       // IDENTICAL strips of eight, which neither a flat `order` nor a flat
       // `pages` list can express as "this group, five times". Its dock baseline
       // is captured as a tabbed face from the start.
-    ).toEqual(['cloudseed', 'pentemelodica']);
+      //
+      // ⚠ wavesculpt (face batch 3, 2026-08-10) is the THIRD, and it is the
+      // one where the rail is not a choice at all but ARITHMETIC. 79 params
+      // packed PERFECTLY at the 10-cell row cap is 8 rows ≈ 720 px at the 90 px
+      // band pitch, into a dock content region that tops out near 550 px — so
+      // the module cannot be read as one scrolling column at any window size,
+      // and the packing a rail gives up costs it nothing it could have had. Its
+      // 8 bands are `room`, `ensemble`, the four voices, `view`, `walls`; its
+      // dock baseline is captured tabbed from the start.
+    ).toEqual(['cloudseed', 'pentemelodica', 'wavesculpt']);
   });
 });

@@ -40,6 +40,8 @@ import ClapHeroPanel from '$lib/ui/modules/ClapHeroPanel.svelte';
 import KickdrumHeroPanel from '$lib/ui/modules/KickdrumHeroPanel.svelte';
 import MacrooscillatorHeroPanel from '$lib/ui/modules/MacrooscillatorHeroPanel.svelte';
 import PentemelodicaVoicesPanel from '$lib/ui/modules/PentemelodicaVoicesPanel.svelte';
+import WavesculptRoomPanel from '$lib/ui/modules/WavesculptRoomPanel.svelte';
+import WavesculptWavetableBay from '$lib/ui/modules/WavesculptWavetableBay.svelte';
 import type { FaceControl } from './curated-face';
 import {
   DX7_SYX_ACCEPT,
@@ -703,6 +705,79 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
       title: 'Audition: strum all six strings once (identical to a strum1 rising edge)',
       onFire: (nodeId) => { fireManualStrike(nodeId); },
       probe: { effect: { kind: 'audition', seam: 'manual-strike' } },
+    },
+  },
+  wavesculpt: {
+    // THE ROOM, SEEN FROM ABOVE — the hero picture, and the module's whole
+    // argument in one frame. WAVESCULPT is a box with four voices bolted to
+    // four walls and aimed at its centre, and ONE camera position is
+    // simultaneously the viewpoint and the mix desk: `distanceGain` scales a
+    // voice's ribbon AND its audio gain off the same number.
+    //
+    // ⚠ A PANEL BECAUSE THE PLATFORM HAS NO XY PAD, and this recovers more than
+    // it replaces. The legacy card's defining affordance is two joysticks; the
+    // face renders params as knobs, so the five camera axes would otherwise
+    // become five dials — a real regression in feel. A panel cell is "a picture
+    // you EDIT" with a `drag` affordance, so the plan IS the joystick. And it
+    // hands the drag to a BETTER pair than the card did: the card's two big
+    // joystick axes are `pos_x` (measured 4.6 dB of total-gain swing) and `rot`
+    // (3.2 dB) while `pos_z` (27.6 dB) is a small knob wedged between them. A
+    // top-down plan is X × Z by construction.
+    //
+    // ⚠ AND IT IS THE ONLY SURFACE THAT SHOWS A DEAD VOICE. The directional
+    // term clamps at zero, so at the SHIPPED DEFAULT camera (eye [0, 0, 2.5],
+    // directly behind BLUE on the +Z wall) BLUE's gain is exactly 0 and
+    // `out_blu` emits digital zero. Nothing in the legacy card says so.
+    'wavesculpt-room-{n}': {
+      kind: 'panel',
+      label: 'the room · drag the camera',
+      component: WavesculptRoomPanel,
+      minWidth: 380,
+      // A `text` probe on a DIFFERENT element, and the DRIVEN element is the
+      // OUTPUT TAP rather than a view toggle: the five chips name the five real
+      // audio jacks (`L + R` post master gain; `out_red/grn/blu/alp` pre), and
+      // the caption reports the selected one's wall and live gain. RED is not
+      // the default (MIX is), so the click always crosses a boundary — and
+      // `wavesculpt-face-model.test.ts` asserts the five captions are PAIRWISE
+      // DISTINCT at every camera, which is what keeps the probe from being a
+      // coin flip. (The drag is the panel's other affordance; it writes params,
+      // and a param write is invisible to a `data`/`text` probe, so it is
+      // gated by the model test's exact-inverse assertion instead.)
+      probe: {
+        testid: 'wavesculpt-room-tap-red',
+        action: 'click',
+        effect: { kind: 'text', testid: 'wavesculpt-room-caption', expect: 'changed' },
+      },
+    },
+    // THE FOUR WAVETABLES — the declared `wavesculpt-osc` family, as ONE cell.
+    //
+    // ⚠ ONE CELL, NOT FOUR, AND THAT IS THE CONTRACT: `module-face-lint`'s dock
+    // render-plan parity demands each declared family render exactly once, and
+    // faces-parity counts `[data-cell-kind="family"]` against
+    // `controlFamilies.length`. The card's four per-voice strips become four
+    // rows of one bay.
+    //
+    // It carries the strip MINUS the colour swatch: `red_color`/`grn_color`/
+    // `blu_color` are real ParamDefs painted by `face.paramCells: 'color'` in
+    // their own voice bands, and a second picker here would be a second writer
+    // for a param that already has a cell.
+    'wavesculpt-osc-{n}': {
+      kind: 'panel',
+      label: 'wavetables',
+      component: WavesculptWavetableBay,
+      minWidth: 380,
+      // ⚠ A DURABLE `data` PROBE, not the usual private-caption `text` one.
+      // Every other hero panel probes a view toggle because it has nothing
+      // durable to watch; this one steps a voice's factory table, which writes
+      // `node.data.osc1.wavetableSource` and which the factory's poll loop
+      // turns into a real `loadWavetable`. So the probe proves the seam a
+      // player actually uses. Unset reads `null` and the first step writes
+      // `factory:harmonic-sweep`, so the snapshot always moves.
+      probe: {
+        testid: 'wavesculpt-bay-next-1',
+        action: 'click',
+        effect: { kind: 'data', key: 'osc1.wavetableSource', expect: 'changed' },
+      },
     },
   },
 };
