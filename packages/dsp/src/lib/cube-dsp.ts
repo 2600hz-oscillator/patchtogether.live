@@ -403,13 +403,22 @@ export const CUBE_CRUSH_MIN_LEVELS = 4;
 
 /**
  * Amplitude quantization levels for CRUSH amount k ∈ [0,1].
- *   k = 0 → 256 (transparent), k = 1 → `CUBE_CRUSH_MIN_LEVELS` (blocky, but
- *   still a signal — see that constant for why the shipped floor of 2 was a
- *   full-scale DC fault). Linear between.
+ *   k = 0 → 256 (transparent), k = 1 → `minLevels` (blocky, but for the audio
+ *   default still a signal — see `CUBE_CRUSH_MIN_LEVELS` for why the shipped
+ *   floor of 2 was a full-scale DC fault). Linear between.
+ *
+ * ⚠ `minLevels` IS AN EXPLICIT PARAMETER BECAUSE THE FLOOR IS AN AUDIO
+ * ARGUMENT, NOT A UNIVERSAL ONE. It is safe by DEFAULT, so a new caller gets
+ * the protected behaviour without knowing why — but the reasoning ("a wavetable
+ * replayed by a phase accumulator turns a constant into a DC step") is about
+ * SOUND. VIDEOCUBE's `posterize` shares this curve so the picture quantizes
+ * like the audio, and for a PICTURE a 2-level black/white posterize is a valid
+ * and deliberate extreme, not a fault. It passes `2` and says so at the call
+ * site rather than silently inheriting a floor that protects nothing there.
  */
-export function crushLevels(k: number): number {
+export function crushLevels(k: number, minLevels = CUBE_CRUSH_MIN_LEVELS): number {
   const kk = clamp01(k);
-  return Math.max(CUBE_CRUSH_MIN_LEVELS, Math.round(256 + (2 - 256) * kk));
+  return Math.max(minLevels, Math.round(256 + (2 - 256) * kk));
 }
 
 /**
