@@ -357,15 +357,38 @@ export interface CloudsRingPlan {
  * filling right now — is stated as a NUMBER instead (`silent for` / `full level
  * at`), where it is true without needing a clock.
  *
- * Grain stagger is `i/(n−1)` across the window rather than the worklet's LCG,
- * because the picture is of the SCHEDULE, not of one realisation of it.
+ * ⚠ THE GRAIN STAGGER IS THE WORKLET'S OWN DRIFT LAW, and getting it right is
+ * what makes this picture teach the module's headline surprise instead of
+ * decorating it. Everything here is drawn in ONE frame — SECONDS BEHIND THE
+ * WRITE HEAD — and in that frame a grain does not sit still: it was spawned at
+ * offset `O` when the head was `a` seconds earlier, and since then `readPos`
+ * has advanced by `a·ratio` while the head advanced by `a`, so it now sits at
+ *
+ *     O + a·(1 − ratio)
+ *
+ * At PITCH 0 that term is exactly ZERO for every grain — all N track the head
+ * at the same distance and are therefore reading THE SAME SAMPLE at the same
+ * moment, which is not a coincidence, it IS the coherence that makes pitch 0
+ * ~10.6 dB louder than anywhere else. Transpose and they fan out across a grain
+ * length and decorrelate. So the aligned stack and the fan are the two states
+ * the level jumps between, drawn.
+ *
+ * (A first draft staggered them by `i/n` of a window — a plausible "comb of
+ * overlap" that would have looked busy and taught the opposite of the truth at
+ * the default. Caught by screenshotting the thing and looking at it.)
+ *
+ * Ages are spread evenly over one grain length rather than sampled from the
+ * worklet's LCG, because the picture is of the SCHEDULE, not of one realisation
+ * of it.
  */
 export function cloudsRingPlan(p: CloudsFaceParams): CloudsRingPlan {
   const grainMs = cloudsGrainMs(p.size);
-  const grainFrac = grainMs / 1000 / CLOUDS_BUFFER_SECONDS;
+  const grainS = grainMs / 1000;
+  const grainFrac = grainS / CLOUDS_BUFFER_SECONDS;
   const start = cloudsPositionSecondsBack(p) / CLOUDS_BUFFER_SECONDS;
   // A grain reads FORWARD (toward the present) from its start offset, covering
   // `grain × 2^(pitch/12)` seconds of tape.
+  const ratio = Math.pow(2, p.pitch / 12);
   const span = Math.min(1, (cloudsSourceGrainMs(p) / 1000) / CLOUDS_BUFFER_SECONDS);
   const readTo = start;
   const readFrom = Math.max(0, start - span);
@@ -374,11 +397,12 @@ export function cloudsRingPlan(p: CloudsFaceParams): CloudsRingPlan {
   const drawn = Math.min(n, 12);
   const grains: CloudsRingGrain[] = [];
   for (let i = 0; i < drawn; i++) {
-    // Successive grains are spawned one spawn-interval apart, so each reads a
-    // window shifted by that much of tape — the visible "comb" of overlap.
-    const shift = drawn > 1 ? (i / drawn) * span : 0;
-    const to = Math.min(1, readTo + shift);
-    grains.push({ from: Math.max(0, to - span), to });
+    const age = drawn > 1 ? (i / drawn) * grainS : 0;
+    const shift = (age * (1 - ratio)) / CLOUDS_BUFFER_SECONDS;
+    grains.push({
+      from: Math.max(0, Math.min(1, readFrom + shift)),
+      to: Math.max(0, Math.min(1, readTo + shift)),
+    });
   }
 
   return {

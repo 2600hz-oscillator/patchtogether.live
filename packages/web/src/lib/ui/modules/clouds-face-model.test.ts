@@ -489,6 +489,32 @@ describe('clouds face model — the hero PANEL is a pure function, and its probe
     expect(cloudsAxisCaption(0.5, DEFAULTS, 'grains')).toBe('3.3 ×');
   });
 
+  it('at PITCH 0 every grain bar is IDENTICAL — the picture IS the coherence', () => {
+    // ⚠ THE CENTRAL CLAIM OF THE PICTURE, and the one a plausible-looking
+    // stagger gets exactly backwards. In the "seconds behind the write head"
+    // frame a grain drifts by `age·(1 − ratio)`, which is ZERO at pitch 0 — so
+    // all N are reading THE SAME SAMPLE at the same moment, which is the
+    // ~10.6 dB the level readout talks about. Aligned stack ⇒ coherent.
+    const bars = cloudsRingPlan(DEFAULTS).grains;
+    expect(bars.length).toBeGreaterThan(1);
+    for (const b of bars) expect(b).toEqual(bars[0]);
+
+    // …and transposed in EITHER direction they fan out over ~one grain. Both
+    // signs, because the drift term changes sign at ratio 1 and a one-sided
+    // check would pass on a model that only fanned upward.
+    for (const pitch of [12, -12]) {
+      const fanned = cloudsRingPlan(at({ pitch })).grains;
+      const spread = Math.max(...fanned.map((b) => b.to)) - Math.min(...fanned.map((b) => b.to));
+      expect(
+        spread,
+        `pitch ${pitch}: the grains must spread across a meaningful slice of the ring`,
+      ).toBeGreaterThan(0.05);
+      expect(new Set(fanned.map((b) => b.to)).size, `pitch ${pitch}: distinct read points`).toBe(
+        fanned.length,
+      );
+    }
+  });
+
   it('the plan draws at most 12 grain bars and never fewer than one', () => {
     // The floor matters: at the sparsest corner the scheduler averages 0.36
     // concurrent grains, and a picture with NO bars would read as "the module

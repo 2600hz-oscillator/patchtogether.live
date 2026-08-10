@@ -555,7 +555,7 @@ export const cloudsDef: AudioModuleDef = {
           // and is 4.7 dB out at TEXTURE 0, because it does not model the
           // output tanh — a confident wrong number is worse than a constant
           // that says which setting it was taken at.
-          { label: 'pitch 0 → detuned', text: '≈ −10.6 dB at the defaults' },
+          { label: 'pitch ≠ 0', text: '≈ −10.6 dB (defaults)' },
           { label: 'blend 0', text: 'bit-exact dry' },
         ],
       },
