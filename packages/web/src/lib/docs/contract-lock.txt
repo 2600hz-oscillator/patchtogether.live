@@ -1360,41 +1360,6 @@ graphicEq param hue 0..1 linear default=0
 graphicEq param peak 0.5..0.99 linear default=0.92
 graphicEq param style 0..1 discrete default=1
 group meta domain=meta
-hypercube meta domain=audio
-hypercube in alpha cv param=alpha cvScale=linear
-hypercube in connect cv param=connect cvScale=linear
-hypercube in crush cv param=crush cvScale=linear
-hypercube in fold_cv cv param=fold cvScale=linear
-hypercube in morph_fc cv param=morph_fc cvScale=linear
-hypercube in pitch cv
-hypercube in slice_rx cv param=slice_rx cvScale=linear
-hypercube in slice_ry cv param=slice_ry cvScale=linear
-hypercube in slice_rz cv param=slice_rz cvScale=linear
-hypercube in slice_y cv param=slice_y cvScale=linear
-hypercube in tune cv param=tune cvScale=linear
-hypercube out L audio
-hypercube out R audio
-hypercube out video_out mono-video
-hypercube param alpha 0..1 linear default=0
-hypercube param connect 0..1 linear default=0
-hypercube param crush 0..1 linear default=0
-hypercube param fine -100..100 linear default=0 unit=¢
-hypercube param fold 0..1 linear default=0
-hypercube param level 0..2 linear default=1
-hypercube param material 0..1 discrete default=0
-hypercube param morph_fc 0..1 linear default=0
-hypercube param screen_on 0..1 discrete default=1
-hypercube param slice_rx -3.1416..3.1416 linear default=0
-hypercube param slice_ry -3.1416..3.1416 linear default=0
-hypercube param slice_rz -3.1416..3.1416 linear default=0
-hypercube param slice_y 0..1 linear default=0.5
-hypercube param spread 0..1 linear default=0
-hypercube param tune -36..36 linear default=0 unit=st
-hypercube param view_rot_x -3.1416..3.1416 linear default=0.6
-hypercube param view_rot_y -3.1416..3.1416 linear default=0.7
-hypercube param view_rot_z -3.1416..3.1416 linear default=0
-hypercube param view_zoom 0.3..3 log default=1
-hypercube param wrap 0..1 discrete default=0
 illogic meta domain=audio
 illogic in in1 cv
 illogic in in2 cv
