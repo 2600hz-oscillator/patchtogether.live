@@ -59,6 +59,8 @@
     setWavesculptLuma,
     clampMasterGain,
     MASTER_GAIN_DEFAULT,
+    MASTER_GAIN_MIN,
+    MASTER_GAIN_MAX,
     // The three mode ROSTERS. The card used to carry its own copies — a
     // `const BLINK_MODE_NAMES` array plus three inline ternaries — which is a
     // second source of truth for a VOCABULARY, the divergence
@@ -125,17 +127,6 @@
   };
 
   // Bentscreen knobs (bound to <Knob> components below).
-  let hsync_drift        = $derived(pget('hsync_drift'));
-  let hsync_loss         = $derived(pget('hsync_loss'));
-  let vsync_drift        = $derived(pget('vsync_drift'));
-  let scan_wobble        = $derived(pget('scan_wobble'));
-  let chroma_phase       = $derived(pget('chroma_phase'));
-  let chroma_instability = $derived(pget('chroma_instability'));
-  let feedback_gain      = $derived(pget('feedback_gain'));
-  let feedback_delay     = $derived(pget('feedback_delay'));
-  let wavefold           = $derived(pget('wavefold'));
-  let bloom              = $derived(pget('bloom'));
-  let noise              = $derived(pget('noise'));
   let master_gain        = $derived(pget('master_gain'));
 
   // Drag state for the two joystick pads. Declared here (hoisted ahead
@@ -699,23 +690,17 @@ uniform float uAlphaBrightness;
 uniform float uTime;
 uniform float uFieldParity;
 
-uniform float uHsyncDrift;
-uniform float uHsyncLoss;
-uniform float uVsyncDrift;
-uniform float uScanWobble;
-uniform float uChromaPhase;
-uniform float uChromaInstability;
-uniform float uFeedbackGain;
-uniform float uFeedbackDelay;
-uniform float uWavefold;
-uniform float uBloom;
-uniform float uNoise;
 uniform float uMasterGain;
 
 const float LINES = 240.0;
-const float TWO_PI = 6.2831853;
 
-float hash11(float n) { return fract(sin(n * 78.233) * 43758.5453); }
+// WAVESCULPT's own light CRT character. These were user params identical to
+// BENTBOX's; they are now fixed at the values the module shipped with, so a
+// default render looks exactly as it did. For adjustable (and CV-able) CRT,
+// patch video_out -> BENTBOX.
+const float BLOOM = 0.4;
+const float NOISE = 0.05;
+
 float hash21(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
 vec3 rgb2yiq(vec3 c) {
   return vec3(
@@ -731,14 +716,6 @@ vec3 yiq2rgb(vec3 c) {
     c.x - 1.106*c.y + 1.703*c.z
   ), 0.0, 1.0);
 }
-float wavefold(float v, float amt) {
-  if (amt <= 0.0) return v;
-  float s = v * (1.0 + amt * 3.0);
-  float t = mod(s + 1.0, 4.0) - 1.0;
-  if (t > 1.0) return 2.0 - t;
-  if (t < -1.0) return -2.0 - t;
-  return t;
-}
 float softClip(float v) {
   float v2 = v * v;
   return v * (27.0 + v2) / (27.0 + 9.0 * v2);
@@ -747,35 +724,24 @@ float softClip(float v) {
 void main() {
   float lineIdx = floor(vUv.y * LINES);
   float lineY = (lineIdx + 0.5) / LINES;
-  float driftRand = (hash11(lineIdx + floor(uTime * 12.0)) - 0.5) * 2.0;
-  float hWobble = sin(lineIdx * 0.21 + uTime * 1.7) * uScanWobble * 0.06;
-  float hOffset = driftRand * uHsyncDrift * 0.12 + hWobble;
-  float lossRoll = hash11(lineIdx * 1.913 + floor(uTime * 3.7));
-  if (lossRoll < uHsyncLoss * 0.18) {
-    hOffset += (hash11(lineIdx * 7.91 + uTime) - 0.5) * 0.6;
-  }
-  float vOff = sin(uTime * 0.7) * uVsyncDrift * 0.4 + (uTime * uVsyncDrift * 0.05);
-  vec2 sampleUv = vec2(fract(vUv.x + hOffset), fract(lineY + vOff));
+  // No sync drift / loss / wobble: those were the BENTBOX-duplicate params and
+  // all defaulted to 0, so the sample was already an identity fetch.
+  vec2 sampleUv = vec2(fract(vUv.x), fract(lineY));
   vec3 src = texture(uIn, sampleUv).rgb;
   vec3 yiq = rgb2yiq(src);
-  float phaseNoise = (hash11(lineIdx * 2.31 + uTime * 0.9) - 0.5) * uChromaInstability;
-  float ang = (uChromaPhase + phaseNoise) * TWO_PI;
-  float ca = cos(ang); float sa = sin(ang);
-  vec2 iq = vec2(yiq.y * ca - yiq.z * sa, yiq.y * sa + yiq.z * ca);
-  yiq.y = iq.x; yiq.z = iq.y;
+  // Chroma phase/instability defaulted to 0 => rotation angle 0 => iq is the
+  // unrotated (I, Q) pair. MASTER GAIN's composite drive is kept: it is a live
+  // param and its ~1% contribution is part of today's picture.
+  vec2 iq = vec2(yiq.y, yiq.z);
   float comp = yiq.x + (iq.x + iq.y) * 0.5;
-  comp = wavefold(comp, uWavefold);
   comp = softClip(comp * uMasterGain);
-  yiq.x = mix(yiq.x, comp - (iq.x + iq.y) * 0.5, uWavefold * 0.7 + uMasterGain * 0.1);
+  yiq.x = mix(yiq.x, comp - (iq.x + iq.y) * 0.5, uMasterGain * 0.1);
   vec3 decoded = yiq2rgb(yiq);
-  vec2 prevUv = vec2(sampleUv.x, fract(sampleUv.y + uFeedbackDelay * 0.04 - 0.02));
-  vec3 prev = texture(uPrev, prevUv).rgb;
-  decoded = mix(decoded, max(decoded, prev), uFeedbackGain);
-  if (uBloom > 0.0) {
-    float luma = dot(decoded, vec3(0.299, 0.587, 0.114));
-    float bloomBoost = smoothstep(0.6, 1.0, luma) * uBloom * 0.5;
-    decoded += bloomBoost;
-  }
+  // Frame feedback removed with its two params (both defaulted to 0, so the
+  // mix was an identity). uPrev/prevTex plumbing is retained by the render
+  // loop: stage 3 also resets uHasAlphaIn for the final pass.
+  float luma = dot(decoded, vec3(0.299, 0.587, 0.114));
+  decoded += smoothstep(0.6, 1.0, luma) * BLOOM * 0.5;
   float lineFrac = fract(vUv.y * LINES + uFieldParity * 0.5);
   float scanDark = 0.4 + 0.6 * smoothstep(0.0, 0.4, lineFrac) * smoothstep(1.0, 0.6, lineFrac);
   decoded *= scanDark;
@@ -787,10 +753,8 @@ void main() {
     phase >= 1.5 ? 1.15 : 0.85
   );
   decoded *= mask;
-  if (uNoise > 0.0) {
-    float n = hash21(vUv * vec2(740.0, 421.0) + uTime) - 0.5;
-    decoded += vec3(n) * uNoise * 0.18;
-  }
+  float n = hash21(vUv * vec2(740.0, 421.0) + uTime) - 0.5;
+  decoded += vec3(n) * NOISE * 0.18;
 
   float alphaMaskStrength = texture(uAlphaMask, vUv).r;
   if (uHasAlphaIn > 0.5 && alphaMaskStrength > 0.001) {
@@ -2349,19 +2313,6 @@ void main() {
     const tSec = vrtFrozen() ? VRT_FIXED_TSEC : (clockNow() - renderStartMs) / 1000;
     g.uniform1f(g.getUniformLocation(bentboxProgram, 'uTime'), tSec);
     g.uniform1f(g.getUniformLocation(bentboxProgram, 'uFieldParity'), vrtFrozen() ? 0 : ((frameCount & 1) ? 1 : 0));
-    const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
-    const clampSym = (v: number) => Math.max(-1, Math.min(1, v));
-    g.uniform1f(g.getUniformLocation(bentboxProgram, 'uHsyncDrift'),        clamp01(node?.params?.hsync_drift as number ?? 0));
-    g.uniform1f(g.getUniformLocation(bentboxProgram, 'uHsyncLoss'),         clamp01(node?.params?.hsync_loss as number ?? 0));
-    g.uniform1f(g.getUniformLocation(bentboxProgram, 'uVsyncDrift'),        clamp01(node?.params?.vsync_drift as number ?? 0));
-    g.uniform1f(g.getUniformLocation(bentboxProgram, 'uScanWobble'),        clamp01(node?.params?.scan_wobble as number ?? 0));
-    g.uniform1f(g.getUniformLocation(bentboxProgram, 'uChromaPhase'),       clampSym(node?.params?.chroma_phase as number ?? 0));
-    g.uniform1f(g.getUniformLocation(bentboxProgram, 'uChromaInstability'), clamp01(node?.params?.chroma_instability as number ?? 0));
-    g.uniform1f(g.getUniformLocation(bentboxProgram, 'uFeedbackGain'),      clamp01(node?.params?.feedback_gain as number ?? 0));
-    g.uniform1f(g.getUniformLocation(bentboxProgram, 'uFeedbackDelay'),     clamp01(node?.params?.feedback_delay as number ?? 0));
-    g.uniform1f(g.getUniformLocation(bentboxProgram, 'uWavefold'),          clamp01(node?.params?.wavefold as number ?? 0));
-    g.uniform1f(g.getUniformLocation(bentboxProgram, 'uBloom'),             clamp01(node?.params?.bloom as number ?? 0.4));
-    g.uniform1f(g.getUniformLocation(bentboxProgram, 'uNoise'),             clamp01(node?.params?.noise as number ?? 0.05));
     // MASTER GAIN drives the audio bus (wavesculpt.ts setParam) AND this
     // uniform off the SAME param, clamped by the SAME helper — the def owns
     // the range, so the two consumers cannot drift apart.
@@ -3252,22 +3203,16 @@ void main() {
         </div>
       </div>
 
-      <!-- Bottom: bentscreen wiggles -->
+      <!-- Bottom: OUTPUT. The eleven BENTBOX-duplicate CRT knobs that used to
+           sit here are gone — patch video_out -> BENTBOX for those (it has CV
+           inputs for all of them, which this card never did). WAVESCULPT keeps
+           its own always-on light CRT character in the shader. Ranges come
+           from the shared MASTER_GAIN_* constants so the card cannot drift
+           from the def. -->
       <div class="bent-section">
-        <div class="bent-label">BENTSCREEN WIGGLES</div>
+        <div class="bent-label">OUTPUT</div>
         <div class="bent-grid">
-          <Knob value={hsync_drift}        min={0}  max={1} defaultValue={0}    label="HS Drift"  curve="linear" onchange={set('hsync_drift')} moduleId={id} paramId="hsync_drift"        readLive={live('hsync_drift')} />
-          <Knob value={hsync_loss}         min={0}  max={1} defaultValue={0}    label="HS Loss"   curve="linear" onchange={set('hsync_loss')} moduleId={id} paramId="hsync_loss"         readLive={live('hsync_loss')} />
-          <Knob value={vsync_drift}        min={0}  max={1} defaultValue={0}    label="VS Drift"  curve="linear" onchange={set('vsync_drift')} moduleId={id} paramId="vsync_drift"        readLive={live('vsync_drift')} />
-          <Knob value={scan_wobble}        min={0}  max={1} defaultValue={0}    label="Wobble"    curve="linear" onchange={set('scan_wobble')} moduleId={id} paramId="scan_wobble"        readLive={live('scan_wobble')} />
-          <Knob value={chroma_phase}       min={-1} max={1} defaultValue={0}    label="Hue"       curve="linear" onchange={set('chroma_phase')} moduleId={id} paramId="chroma_phase"       readLive={live('chroma_phase')} />
-          <Knob value={chroma_instability} min={0}  max={1} defaultValue={0}    label="Shimmer"   curve="linear" onchange={set('chroma_instability')} moduleId={id} paramId="chroma_instability" readLive={live('chroma_instability')} />
-          <Knob value={feedback_gain}      min={0}  max={1} defaultValue={0}    label="Feedback"  curve="linear" onchange={set('feedback_gain')} moduleId={id} paramId="feedback_gain"      readLive={live('feedback_gain')} />
-          <Knob value={feedback_delay}     min={0}  max={1} defaultValue={0}    label="Delay"     curve="linear" onchange={set('feedback_delay')} moduleId={id} paramId="feedback_delay"     readLive={live('feedback_delay')} />
-          <Knob value={wavefold}           min={0}  max={1} defaultValue={0}    label="Wavefold"  curve="linear" onchange={set('wavefold')} moduleId={id} paramId="wavefold"           readLive={live('wavefold')} />
-          <Knob value={bloom}              min={0}  max={1} defaultValue={0.4}  label="Bloom"     curve="linear" onchange={set('bloom')} moduleId={id} paramId="bloom"              readLive={live('bloom')} />
-          <Knob value={noise}              min={0}  max={1} defaultValue={0.05} label="Noise"     curve="linear" onchange={set('noise')} moduleId={id} paramId="noise"              readLive={live('noise')} />
-          <Knob value={master_gain}        min={0}  max={2} defaultValue={1}    label="Gain"      curve="linear" onchange={set('master_gain')} moduleId={id} paramId="master_gain"        readLive={live('master_gain')} />
+          <Knob value={master_gain} min={MASTER_GAIN_MIN} max={MASTER_GAIN_MAX} defaultValue={MASTER_GAIN_DEFAULT} label="Gain" curve="linear" onchange={set('master_gain')} moduleId={id} paramId="master_gain" readLive={live('master_gain')} />
         </div>
       </div>
 

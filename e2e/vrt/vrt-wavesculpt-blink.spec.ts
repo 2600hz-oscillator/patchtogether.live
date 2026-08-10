@@ -74,10 +74,13 @@ const CASES: BlinkCase[] = [
   { name: 'custom-colors', blinkMode: 1, wiggle: 0, params: CUSTOM_COLORS },
   // GATE ELECTRICITY: ribbon mode with the voices gated hard. EYEBALL:
   // bright travelling electric-blue arcs + crackle visibly electrify the
-  // ribbons (vs the near-invisible bolt before this work). bloom dialled
-  // down here so the discrete arcs read as arcs rather than being smeared
-  // into a bloom haze (the electricity is in the ribbon shader, not bloom).
-  { name: 'gate-electricity', blinkMode: 0, wiggle: 0, params: { bloom: 0.1 } },
+  // ribbons (vs the near-invisible bolt before this work). ⚠ This case used
+  // to dial `bloom` down to 0.1 so the discrete arcs read as arcs rather
+  // than smearing into a bloom haze. `bloom` is no longer a param (it is a
+  // baked 0.4 in BENT_FS), so the arcs now sit under the module's real bloom
+  // — hazier than the old baseline, which is the intended look, not a
+  // regression. The electricity is in the ribbon shader, not in bloom.
+  { name: 'gate-electricity', blinkMode: 0, wiggle: 0 },
   // SILENT-OSC regression (BUG 1): REALITY-BASED-COMMUNITY tubes with the
   // joystick gating gate2 ONLY. Gate-normalling walks DOWN to voices 2/3/4,
   // leaving voice 1 (RED) SILENT (unpatched, head of the walk → self-source →
@@ -193,7 +196,7 @@ test.describe('VRT: WAVESCULPT BLINK render modes', () => {
               scale: 2,
               rot: 0.3, pos_z: 0.35, zoom: 1.3,
               thickness1: 0.5, thickness2: 0.5, thickness3: 0.6, thickness4: 0.9,
-              alpha_brightness: 1.6, noise: 0, bloom: 0.45,
+              alpha_brightness: 1.6,
               ...wallParams,
               ...(c.params ?? {}),
             },

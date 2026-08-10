@@ -378,7 +378,11 @@ export const VRT_SCENES: Record<string, VrtScene> = {
         domain: 'audio',
         params: {
           rot: 0.3, pos_z: 0.35, zoom: 1.3,
-          thickness4: 0.9, alpha_brightness: 1.6, noise: 0, bloom: 0.45,
+          // noise/bloom are no longer params — WAVESCULPT's light CRT pass is
+          // unconditional (bloom 0.4, noise 0.05 baked into BENT_FS). The
+          // frozen uTime keeps the grain deterministic, so the capture is
+          // still bit-stable; it just carries the module's real look now.
+          thickness4: 0.9, alpha_brightness: 1.6,
         },
       },
     ],
