@@ -9,7 +9,6 @@
 //   - NEW v2: changing morph1 changes the rendered ribbon shape (the
 //     ribbon vertex shader now samples the live wavetable frame).
 //   - alpha_in patch accepted + thickness param routes through store.
-//   - Bentscreen knobs route through patch store (regression).
 //
 // DETERMINISM: this suite no longer sleeps on wall-clock (no fixed-ms waits).
 // Every "let it render N frames" beat drives the WavesculptCard DRS step seam
@@ -323,7 +322,7 @@ test.describe('WAVESCULPT v2 — wavetable-engine 3D-camera video synth', () => 
           params: {
             rot, zoom: 1.0,
             thickness1: 0.8, thickness2: 0.8, thickness3: 0.8, thickness4: 0.9,
-            alpha_brightness: 2, noise: 0,
+            alpha_brightness: 2,
           },
         },
       ], [
@@ -634,48 +633,11 @@ test.describe('WAVESCULPT v2 — wavetable-engine 3D-camera video synth', () => 
     await expect(btn).toHaveText('3D');
   });
 
-  test('bentscreen wiggle knobs route through the patch store', async ({ page, rack }) => {
-    await spawnPatch(page, [
-      { id: 'ws', type: 'wavesculpt', position: { x: 200, y: 100 }, domain: 'audio' },
-    ]);
-    await expect(page.locator('[data-testid="wavesculpt-card"]')).toHaveCount(1);
-    await awaitStepSeam(page);
-
-    await page.evaluate(() => {
-      const w = globalThis as unknown as {
-        __patch: { nodes: Record<string, { params: Record<string, number> }> };
-        __ydoc: { transact: (fn: () => void) => void };
-      };
-      w.__ydoc.transact(() => {
-        const n = w.__patch.nodes['ws'];
-        if (!n) return;
-        n.params.hsync_drift = 0.35;
-        n.params.wavefold = 0.5;
-        n.params.feedback_gain = 0.6;
-      });
-    });
-
-    const readParams = (): Promise<{
-      hsync_drift: number | undefined;
-      wavefold: number | undefined;
-      feedback_gain: number | undefined;
-    }> =>
-      page.evaluate(() => {
-        const w = globalThis as unknown as {
-          __patch: { nodes: Record<string, { params: Record<string, number> }> };
-        };
-        const n = w.__patch.nodes['ws'];
-        return {
-          hsync_drift: n?.params.hsync_drift,
-          wavefold: n?.params.wavefold,
-          feedback_gain: n?.params.feedback_gain,
-        };
-      });
-
-    await expect.poll(async () => (await readParams()).hsync_drift, { message: 'hsync_drift routed' }).toBe(0.35);
-    await expect.poll(async () => (await readParams()).wavefold, { message: 'wavefold routed' }).toBe(0.5);
-    await expect.poll(async () => (await readParams()).feedback_gain, { message: 'feedback_gain routed' }).toBe(0.6);
-  });
+  // NOTE: 'bentscreen wiggle knobs route through the patch store' was deleted
+  // with the eleven BENTBOX-duplicate CRT params it drove (hsync_drift /
+  // wavefold / feedback_gain). It wrote raw keys into __patch and read them
+  // back, so it would have kept passing against params that no longer exist —
+  // vacuously. BENTBOX owns those controls now, and has its own coverage.
 
   test('BLINK button cycles blink_mode 0 → 1 → 2 → 0 and shows the mode name', async ({ page, rack }) => {
     await spawnPatch(page, [
@@ -722,7 +684,7 @@ test.describe('WAVESCULPT v2 — wavetable-engine 3D-camera video synth', () => 
     const setup = async (mode: number): Promise<void> => {
       await spawnPatch(page, [
         { id: 'ws', type: 'wavesculpt', position: { x: 80, y: 80 }, domain: 'audio',
-          params: { blink_mode: mode, thickness1: 0.5, thickness2: 0.5, thickness3: 0.5, thickness4: 0.5, noise: 0 } },
+          params: { blink_mode: mode, thickness1: 0.5, thickness2: 0.5, thickness3: 0.5, thickness4: 0.5 } },
         { id: 'jo', type: 'joystick', position: { x: 80, y: 500 }, domain: 'audio' },
       ], [
         { id: 'g', from: { nodeId: 'jo', portId: 'x' }, to: { nodeId: 'ws', portId: 'gate1' }, sourceType: 'cv', targetType: 'gate' },
@@ -787,7 +749,7 @@ test.describe('WAVESCULPT v2 — wavetable-engine 3D-camera video synth', () => 
     await spawnPatch(page, [
       { id: 'pat', type: 'shapes', position: { x: 60, y: 60 }, domain: 'video', params: { shape: 1, tile: 1, tileN: 4 } },
       { id: 'ws', type: 'wavesculpt', position: { x: 400, y: 100 }, domain: 'audio',
-        params: { wall1_alpha: 100, wall1_distort: 0, rot: 0.3, pos_z: 0.2, zoom: 1.2, noise: 0 } },
+        params: { wall1_alpha: 100, wall1_distort: 0, rot: 0.3, pos_z: 0.2, zoom: 1.2 } },
     ], [
       { id: 'e_wall1', from: { nodeId: 'pat', portId: 'out' }, to: { nodeId: 'ws', portId: 'wall1' }, sourceType: 'video', targetType: 'video' },
     ]);
@@ -844,11 +806,14 @@ test.describe('WAVESCULPT v2 — wavetable-engine 3D-camera video synth', () => 
     await page.waitForLoadState('networkidle');
 
     // Drive a gate so the ribbons have energy that the feedback loop can
-    // smear/recurse; feedback_gain up so the self-loop visibly compounds.
+    // smear/recurse. NOTE: the recursion under test is the SELF-PATCH
+    // (video_out → its own wall1), which is untouched by the CRT-param
+    // removal. The old `feedback_gain: 0.6` was BENT_FS's separate in-shader
+    // frame feedback — a BENTBOX duplicate, now gone — not this loop.
     await spawnPatch(page, [
       { id: 'jo', type: 'joystick', position: { x: 40, y: 400 }, domain: 'audio' },
       { id: 'ws', type: 'wavesculpt', position: { x: 400, y: 100 }, domain: 'audio',
-        params: { wall1_alpha: 80, wall1_distort: 0.3, rot: 0.25, zoom: 1.2, feedback_gain: 0.6, noise: 0 } },
+        params: { wall1_alpha: 80, wall1_distort: 0.3, rot: 0.25, zoom: 1.2 } },
     ], [
       // SELF-LOOP: the card's own video output into its own wall input.
       { id: 'e_self', from: { nodeId: 'ws', portId: 'video_out' }, to: { nodeId: 'ws', portId: 'wall1' }, sourceType: 'mono-video', targetType: 'video' },
@@ -923,7 +888,7 @@ test.describe('WAVESCULPT v2 — wavetable-engine 3D-camera video synth', () => 
       { id: 'src', type: 'shapes', position: { x: 60, y: 60 }, domain: 'video', params: { shape: 1, tile: 1, tileN: 4 } },
       { id: 'ws', type: 'wavesculpt', position: { x: 400, y: 80 }, domain: 'audio',
         params: { blink_mode: 1, scale: 2, rot: 0.3, pos_z: 0.35, zoom: 1.3,
-          thickness1: 0.6, thickness2: 0.6, thickness3: 0.6, thickness4: 0.9, noise: 0, ...wallParams } },
+          thickness1: 0.6, thickness2: 0.6, thickness3: 0.6, thickness4: 0.9, ...wallParams } },
       { id: 'jo', type: 'joystick', position: { x: 60, y: 480 }, domain: 'audio' },
     ], edges as never);
     await page.evaluate(() => {
@@ -995,7 +960,7 @@ test.describe('WAVESCULPT v2 — wavetable-engine 3D-camera video synth', () => 
     await spawnPatch(page, [
       { id: 'src', type: 'shapes', position: { x: 60, y: 60 }, domain: 'video', params: { shape: 1, tile: 1, tileN: 4 } },
       { id: 'ws', type: 'wavesculpt', position: { x: 400, y: 80 }, domain: 'audio',
-        params: { blink_mode: 1, lum_depth: 0, wall1_alpha: 100, wall3_alpha: 100, noise: 0 } },
+        params: { blink_mode: 1, lum_depth: 0, wall1_alpha: 100, wall3_alpha: 100 } },
       { id: 'jo', type: 'joystick', position: { x: 60, y: 480 }, domain: 'audio' },
     ], [
       { id: 'g', from: { nodeId: 'jo', portId: 'x' }, to: { nodeId: 'ws', portId: 'gate1' }, sourceType: 'cv', targetType: 'gate' },

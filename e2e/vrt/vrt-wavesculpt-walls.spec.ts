@@ -74,7 +74,9 @@ test.describe('VRT: WAVESCULPT video walls', () => {
       // SHAPES (a static test pattern) → wall1 (FRONT face). Camera nudged
       // off-axis (rot + a little height) so the FRONT wall is clearly in
       // view and the dome bulge reads as 3D. wall1_alpha=100 (opaque),
-      // wall1_distort per case. noise off + bloom modest for a clean frame.
+      // wall1_distort per case. The frame carries WAVESCULPT's own light CRT
+      // pass (bloom/noise are baked constants, not params); the frozen uTime
+      // keeps its grain deterministic.
       await spawnPatch(
         page,
         [
@@ -88,7 +90,6 @@ test.describe('VRT: WAVESCULPT video walls', () => {
               wall1_alpha: 100,
               wall1_distort: c.distort,
               rot: 0.35, pos_z: 0.2, zoom: 1.2,
-              noise: 0, bloom: 0.35,
             },
           },
         ],

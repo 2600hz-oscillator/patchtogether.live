@@ -3713,19 +3713,14 @@ wavesculpt param A3 0.001..5 log default=0.01 unit=s
 wavesculpt param A4 0.001..5 log default=0.01 unit=s
 wavesculpt param alpha_brightness 0..2 linear default=1
 wavesculpt param blink_mode 0..2 discrete default=0
-wavesculpt param bloom 0..1 linear default=0.4
 wavesculpt param blu_color 0..16777215 discrete default=5079295
 wavesculpt param chord_mode 0..1 discrete default=0
 wavesculpt param chord_quality 0..1 discrete default=0
-wavesculpt param chroma_instability 0..1 linear default=0
-wavesculpt param chroma_phase -1..1 linear default=0
 wavesculpt param D1 0.001..5 log default=0.1 unit=s
 wavesculpt param D2 0.001..5 log default=0.1 unit=s
 wavesculpt param D3 0.001..5 log default=0.1 unit=s
 wavesculpt param D4 0.001..5 log default=0.1 unit=s
 wavesculpt param detune -1..1 linear default=0
-wavesculpt param feedback_delay 0..1 linear default=0
-wavesculpt param feedback_gain 0..1 linear default=0
 wavesculpt param fine1 -100..100 linear default=0 unit=¢
 wavesculpt param fine2 -100..100 linear default=0 unit=¢
 wavesculpt param fine3 -100..100 linear default=0 unit=¢
@@ -3743,15 +3738,12 @@ wavesculpt param fxType2 0..2 discrete default=0
 wavesculpt param fxType3 0..2 discrete default=0
 wavesculpt param fxType4 0..2 discrete default=0
 wavesculpt param grn_color 0..16777215 discrete default=3407693
-wavesculpt param hsync_drift 0..1 linear default=0
-wavesculpt param hsync_loss 0..1 linear default=0
 wavesculpt param lum_depth 0..1 linear default=0
 wavesculpt param master_gain 0..2 linear default=1
 wavesculpt param morph1 0..1 linear default=0
 wavesculpt param morph2 0..1 linear default=0
 wavesculpt param morph3 0..1 linear default=0
 wavesculpt param morph4 0..1 linear default=0
-wavesculpt param noise 0..1 linear default=0.05
 wavesculpt param pos_x -1..1 linear default=0
 wavesculpt param pos_y -1..1 linear default=0
 wavesculpt param pos_z -1..1 linear default=0
@@ -3766,7 +3758,6 @@ wavesculpt param S2 0..1 linear default=0.7
 wavesculpt param S3 0..1 linear default=0.7
 wavesculpt param S4 0..1 linear default=0.7
 wavesculpt param scale 0.1..10 log default=1
-wavesculpt param scan_wobble 0..1 linear default=0
 wavesculpt param spread1 1..5 linear default=1
 wavesculpt param spread2 1..5 linear default=1
 wavesculpt param spread3 1..5 linear default=1
@@ -3781,7 +3772,6 @@ wavesculpt param tune3 -36..36 linear default=0 unit=st
 wavesculpt param tune4 -36..36 linear default=0 unit=st
 wavesculpt param unison 0..1 discrete default=0
 wavesculpt param video_mode 0..2 discrete default=0
-wavesculpt param vsync_drift 0..1 linear default=0
 wavesculpt param wall1_alpha 0..100 linear default=100 unit=%
 wavesculpt param wall1_distort 0..1 linear default=0
 wavesculpt param wall2_alpha 0..100 linear default=100 unit=%
@@ -3794,7 +3784,6 @@ wavesculpt param wall5_alpha 0..100 linear default=100 unit=%
 wavesculpt param wall5_distort 0..1 linear default=0
 wavesculpt param wall6_alpha 0..100 linear default=100 unit=%
 wavesculpt param wall6_distort 0..1 linear default=0
-wavesculpt param wavefold 0..1 linear default=0
 wavesculpt param wiggle 0..1 linear default=0
 wavesculpt param zoom 0.3..3 log default=1
 wavesculpt family wavesculpt-osc kind=cell prefix=wavesculpt-osc
