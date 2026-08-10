@@ -18,9 +18,40 @@
 //
 // External clock is auto-detected: if a rising edge arrives on input 0 within
 // ~2 master periods, we follow it; otherwise the internal BPM generator drives
-// 1x. Multiplier outputs (8x, 4x, 2x) lag by exactly one master period due to a
-// predictor-style scheduler (the next pulse arrival is only knowable AFTER the
-// current pulse fires). Divider outputs are exact (counter-based, no prediction).
+// 1x. Divider outputs are exact (counter-based, no prediction).
+//
+// ── MULTIPLIERS DO NOT LAG. (Corrected 2026-08-10.) ───────────────────────
+// This header used to read "Multiplier outputs (8x, 4x, 2x) lag by exactly one
+// master period due to a predictor-style scheduler". That is FALSE on the
+// internal clock and it was quoted downstream as a layout fact. There is no
+// predictor to wait on: the subdivision period is COMPUTED from the declared
+// `bpm` parameter, so the very first master pulse already schedules its full
+// set of (factor-1) sub-pulses. MEASURED at 120 bpm (48 kHz, 128-frame blocks):
+// 1x/2x/4x/8x ALL place their first rising edge at sample 23999 — coincident,
+// to the sample — and 8x's inter-pulse gap is 3000 samples from pulse 0 with no
+// other value anywhere in a 4 s render.
+//
+// ⚠ The reading that produced the "deficit" was a WINDOW-TRUNCATION artifact,
+// and it is an easy one to repeat. Counting rising edges over a fixed 4 s
+// window at 120 bpm gives 8 / 15 / 29 / 57 on 1x / 2x / 4x / 8x — short of
+// 8x/16/32/64 by exactly 1 / 3 / 7, identically at 60, 120 and 240 bpm, which
+// reads as a fixed startup deficit. It is the TAIL: the window ends exactly on
+// a master pulse (sample 191999 = the last sample of the render), so that
+// master's remaining (factor-1) sub-pulses are scheduled AFTER the buffer ends.
+// 57 = 7 complete masters x 8 + 1. Count over a window that ends BETWEEN
+// masters, after the last sub-pulse, and the ratio is exactly 2 / 4 / 8 — which
+// is what the count battery in the sibling .test.ts has always done.
+//
+// What IS real, and only on the EXTERNAL clock: the first master period cannot
+// be measured (a period needs two edges), so its sub-pulses are laid out at the
+// DECLARED bpm instead. That is a rate error during lock-in, never a missing
+// pulse, and it is over after ONE beat — the subdivision period is re-resolved
+// at FIRE time (see subdivisionPeriod), so the second external beat already
+// uses the measured tempo. It used to be resolved once per BLOCK from state
+// captured before the block ran, which cost a second beat: measured with a
+// 150 bpm external clock against a 120 bpm knob, the 2x gaps read
+// 12000, 7200, 12000, 7200, 9600, 9600 … (samples) and now read
+// 12000, 7200, 9600, 9600 … — one beat of declared-tempo layout, then locked.
 
 const CLOCK_THRESHOLD = 0.5;
 // Gate pulse width (samples). 10 ms at 48 kHz = 480 samples.
@@ -209,35 +240,11 @@ export class TimelordeClockCore {
     }
     this.wasExternalActive = externalActive;
 
-    const periodForPrediction =
-      externalActive && this.lastMeasuredPeriod > 0
-        ? this.lastMeasuredPeriod
-        : internalPeriodSamples;
-
     const swingTargetOut = SWING_SOURCES[swingSourceIdx]!;
     if (swingTargetOut !== this.lastSwingTarget) {
       this.lastSwingTarget = swingTargetOut;
       this.swingPulseIndex = 0;
     }
-
-    // The lag is a fraction of the SWUNG TRAIN's OWN pulse interval, not of the
-    // master period. Swing is defined relative to the subdivision being swung —
-    // "60° of shuffle on the 16ths" has to mean 60° of a 16th — and reading it
-    // off the master instead makes SWING mean something different for every SRC.
-    // It is also what keeps the train ordered: swingAmount caps at 90° = 25% of
-    // the interval, so a held-back off-beat can never overtake the on-beat that
-    // follows it. (Off the master period an 8x source at 90° lagged 6000 samples
-    // into a 3000-sample sub-period — two pulses past where it belonged.)
-    // For SRC = 1x, the default, the source interval IS the master period, so
-    // this is a no-op there and existing 1x-swing patches keep their lag.
-    let swingSourceInterval = periodForPrediction;
-    for (const d of DIVISOR_DEFS) {
-      if (d.out === swingTargetOut) swingSourceInterval = periodForPrediction * d.ratio;
-    }
-    for (const m of MULTIPLIER_DEFS) {
-      if (m.out === swingTargetOut) swingSourceInterval = periodForPrediction / m.factor;
-    }
-    const swingLagSamples = Math.max(0, (swingAmount / 360) * swingSourceInterval);
 
     // External clock buffer — read input 0 sample-by-sample and detect edges.
     const clockIn = inputs[0]?.[0];
@@ -279,8 +286,23 @@ export class TimelordeClockCore {
             }
           }
           this.lastExternalEdgeAt = absSample;
-          // External edge IS the 1x pulse — fire immediately.
-          this.fireMaster(absSample, periodForPrediction, swingLagSamples, swingTargetOut, pulseWidthSamples);
+          // External edge IS the 1x pulse — fire immediately. The subdivision
+          // period is resolved HERE, not at the top of the block: on the second
+          // external edge `lastMeasuredPeriod` has just been written three lines
+          // above, and a block-level snapshot would still be carrying the stale
+          // 0 — costing a whole extra beat of declared-tempo layout.
+          {
+            const period = this.subdivisionPeriod(
+              internalPeriodSamples, hasExternalClock, absSample,
+            );
+            this.fireMaster(
+              absSample,
+              period,
+              this.swingLagFor(period, swingAmount, swingTargetOut),
+              swingTargetOut,
+              pulseWidthSamples,
+            );
+          }
           // Snap internal phase so it stays in sync if external drops.
           this.internalPhase = 0;
         }
@@ -292,7 +314,19 @@ export class TimelordeClockCore {
         this.internalPhase += 1;
         if (this.internalPhase >= internalPeriodSamples) {
           this.internalPhase -= internalPeriodSamples;
-          this.fireMaster(absSample, periodForPrediction, swingLagSamples, swingTargetOut, pulseWidthSamples);
+          // Internal fire: subdivisionPeriod() returns internalPeriodSamples
+          // here by construction (externalActive is false, so either no cable
+          // is patched or it has dropped out) — this path is unchanged.
+          const period = this.subdivisionPeriod(
+            internalPeriodSamples, hasExternalClock, absSample,
+          );
+          this.fireMaster(
+            absSample,
+            period,
+            this.swingLagFor(period, swingAmount, swingTargetOut),
+            swingTargetOut,
+            pulseWidthSamples,
+          );
         }
       }
 
@@ -327,9 +361,64 @@ export class TimelordeClockCore {
     return true;
   }
 
+  /** The period the beat firing RIGHT NOW is subdivided by — the measured
+   *  external period once one has been observed and is still fresh, else the
+   *  period implied by the DECLARED `bpm` parameter.
+   *
+   *  Resolved at FIRE time on purpose. There is no waiting-for-a-period lag on
+   *  the internal clock (the declared tempo is known at boot, so master pulse
+   *  #1 already lays out its full sub-pulse set); the only place a period has
+   *  to be observed is the external follower, and there exactly ONE beat is
+   *  unmeasurable. Reading `lastMeasuredPeriod` at block granularity made it
+   *  two, because the second external edge writes the measurement mid-block
+   *  and a block-top snapshot cannot see it. */
+  private subdivisionPeriod(
+    internalPeriodSamples: number,
+    hasExternalClock: boolean,
+    atSample: number,
+  ): number {
+    if (
+      hasExternalClock &&
+      this.lastExternalEdgeAt >= 0 &&
+      this.lastMeasuredPeriod > 0 &&
+      atSample - this.lastExternalEdgeAt < EXT_DROPOUT_MULT * this.lastMeasuredPeriod
+    ) {
+      return this.lastMeasuredPeriod;
+    }
+    return internalPeriodSamples;
+  }
+
+  /** Swing lag in samples for the currently-selected SRC train.
+   *
+   *  The lag is a fraction of the SWUNG TRAIN's OWN pulse interval, not of the
+   *  master period. Swing is defined relative to the subdivision being swung —
+   *  "60° of shuffle on the 16ths" has to mean 60° of a 16th — and reading it
+   *  off the master instead makes SWING mean something different for every SRC.
+   *  It is also what keeps the train ordered: swingAmount caps at 90° = 25% of
+   *  the interval, so a held-back off-beat can never overtake the on-beat that
+   *  follows it. (Off the master period an 8x source at 90° lagged 6000 samples
+   *  into a 3000-sample sub-period — two pulses past where it belonged.)
+   *  For SRC = 1x, the default, the source interval IS the master period, so
+   *  this is a no-op there and existing 1x-swing patches keep their lag. */
+  private swingLagFor(
+    periodSamples: number,
+    swingAmount: number,
+    swingTargetOut: number,
+  ): number {
+    let swingSourceInterval = periodSamples;
+    for (const d of DIVISOR_DEFS) {
+      if (d.out === swingTargetOut) swingSourceInterval = periodSamples * d.ratio;
+    }
+    for (const m of MULTIPLIER_DEFS) {
+      if (m.out === swingTargetOut) swingSourceInterval = periodSamples / m.factor;
+    }
+    return Math.max(0, (swingAmount / 360) * swingSourceInterval);
+  }
+
   /** Master pulse fired (from external edge or internal phase wrap).
-   *  Schedules: 1x now, master-counter-driven divisors, predicted multipliers,
-   *  and the swing copy of whatever swingSource targets.
+   *  Schedules: 1x now, master-counter-driven divisors, the multiplier
+   *  sub-pulses laid out across the coming period, and the swing copy of
+   *  whatever swingSource targets.
    */
   private fireMaster(
     atSample: number,
@@ -359,8 +448,11 @@ export class TimelordeClockCore {
     }
 
     // Multipliers: schedule (factor-1) future pulses across [atSample,
-    // atSample + period). Predictor lag is inherent — the period we're using
-    // is from the LAST master interval.
+    // atSample + period), plus a sub-pulse coincident with the master itself.
+    // `periodSamples` comes from subdivisionPeriod(): the DECLARED bpm on the
+    // internal clock (so the very first master is already correct) or the
+    // measured external period once one exists. Nothing waits for a beat to
+    // elapse — see the "MULTIPLIERS DO NOT LAG" note at the top of the file.
     for (const m of MULTIPLIER_DEFS) {
       if (periodSamples <= 0) continue;
       const subPeriod = periodSamples / m.factor;
