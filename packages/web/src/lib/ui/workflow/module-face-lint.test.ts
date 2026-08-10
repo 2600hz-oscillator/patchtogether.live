@@ -52,6 +52,11 @@ import { laneBodyPlan } from './module-shell-model';
 import { looksLikeSwitch } from './shell-control-kind';
 import { panelCellKeys, shellCellFor } from './shell-cells';
 import { GRID_MAX_CELLS } from '$lib/ui/controls/param-grid-model';
+import {
+  PACKED_RGB_MAX,
+  PACKED_RGB_MIN,
+  isPackedRgbParam,
+} from '$lib/ui/controls/color-field-model';
 
 interface FaceDef {
   type: string;
@@ -491,10 +496,25 @@ describe('module-face lint — DECLARED param cells (face.paramCells) + PANEL ti
    *       state, and the two declarations paint incompatible primitives (a
    *       Button that returns to rest vs. a picker that commits a value), so
    *       one of them is a bug and the author must say which;
-   *   (d) the param is DISCRETE with a sane step count — the grid derives one
-   *       cell per integer step, so `'grid'` on a 20..20000 Hz cutoff is a
-   *       twenty-thousand-cell popover. `paramGridCells` caps the damage at
-   *       GRID_MAX_CELLS; this is where the author finds out.
+   *   (d) the param carries the RANGE ITS OWN PRIMITIVE NEEDS. This clause is
+   *       PER KIND, and splitting it was the point of the audit that added
+   *       `'color'`:
+   *         'grid'  — DISCRETE with 2..GRID_MAX_CELLS steps. The grid derives
+   *                   one cell per integer, so `'grid'` on a 20..20000 Hz
+   *                   cutoff is a twenty-thousand-cell popover.
+   *         'color' — DISCRETE and EXACTLY the packed-RGB space (0..0xffffff).
+   *                   A colour picker on a `0..2` mode param can only ever
+   *                   write near-black values, and every def-reading gate
+   *                   stays green while it does.
+   *
+   *       ⚠ ONE SHARED CLAUSE WOULD HAVE BEEN WORSE THAN NONE. A `'color'`
+   *       param has 16 777 216 steps, so the grid clause would have REJECTED
+   *       every legitimate colour cell — and the obvious repair ("skip the
+   *       step check for kinds that are not grid") leaves `'color'` with NO
+   *       range check at all, which is the shape this whole file exists to
+   *       refuse. Deny by default, per kind: an unrecognised kind falls to the
+   *       `default` arm and FAILS, so adding a third primitive without
+   *       teaching this predicate cannot ship silently.
    * Pure.
    */
   function paramCellProblems(def: CellFaceDef): string[] {
@@ -527,13 +547,39 @@ describe('module-face lint — DECLARED param cells (face.paramCells) + PANEL ti
             `or a picker that commits a value.`,
         );
       }
-      const steps = Math.floor(p.max) - Math.ceil(p.min) + 1;
-      if (p.curve !== 'discrete' || steps < 2 || steps > GRID_MAX_CELLS) {
-        problems.push(
-          `${def.type}: face.paramCells['${key}'] = 'grid' but the param is ${p.min}..${p.max} ` +
-            `${p.curve} (${steps} step(s)) — a grid needs a DISCRETE param with 2..${GRID_MAX_CELLS} ` +
-            `steps, or it paints one cell per integer across the whole range`,
-        );
+      const shape = `${p.min}..${p.max} ${p.curve}`;
+      switch (kind) {
+        case 'grid': {
+          const steps = Math.floor(p.max) - Math.ceil(p.min) + 1;
+          if (p.curve !== 'discrete' || steps < 2 || steps > GRID_MAX_CELLS) {
+            problems.push(
+              `${def.type}: face.paramCells['${key}'] = 'grid' but the param is ${shape} ` +
+                `(${steps} step(s)) — a grid needs a DISCRETE param with 2..${GRID_MAX_CELLS} ` +
+                `steps, or it paints one cell per integer across the whole range`,
+            );
+          }
+          break;
+        }
+        case 'color': {
+          if (!isPackedRgbParam(p)) {
+            problems.push(
+              `${def.type}: face.paramCells['${key}'] = 'color' but the param is ${shape} — a ` +
+                `colour cell needs a DISCRETE param spanning EXACTLY the packed-RGB space ` +
+                `(${PACKED_RGB_MIN}..${PACKED_RGB_MAX}, i.e. 0xRRGGBB). A picker over any other ` +
+                `range writes values that are not colours, and no def-reading gate can see that.`,
+            );
+          }
+          break;
+        }
+        default:
+          // DENY BY DEFAULT. A primitive added to the union without a clause
+          // here would otherwise inherit "no range requirement" — which is
+          // exactly how a declaration stops being validated.
+          problems.push(
+            `${def.type}: face.paramCells['${key}'] = '${kind}' has NO range clause in ` +
+              `module-face-lint. Every declared primitive states what shape it can back; ` +
+              `add the clause with the primitive.`,
+          );
       }
     }
     return problems;
@@ -638,6 +684,82 @@ describe('module-face lint — DECLARED param cells (face.paramCells) + PANEL ti
     );
     expect(problems).toHaveLength(1);
     expect(problems[0]).toContain('a press-pad is not a state');
+  });
+
+  // ── clause (d), the COLOUR half ─────────────────────────────────────────
+  const COLOR_PARAM: ParamDef = {
+    id: 'red_color',
+    label: 'R.Col',
+    min: PACKED_RGB_MIN,
+    max: PACKED_RGB_MAX,
+    defaultValue: 0xff3333,
+    curve: 'discrete',
+  };
+  const colorDef = (over: Partial<ParamDef> = {}): CellFaceDef => ({
+    type: 'synthetic',
+    params: [{ ...COLOR_PARAM, ...over }],
+    face: { order: ['red_color'], paramCells: { red_color: 'color' } },
+  });
+
+  it('NEGATIVE CONTROL (d-color): a well-formed packed-RGB declaration passes', () => {
+    expect(paramCellProblems(colorDef())).toEqual([]);
+  });
+
+  it('NEGATIVE CONTROL (d-color): a colour cell on any OTHER range FAILS', () => {
+    // The live authoring slip: `'color'` on a 3-state mode param. Every value
+    // it can write is near-black, and contract-lock / module-docs-lint /
+    // every range assertion stay green because the DEF is fine — it is the
+    // declaration that is wrong, which is the whole reason this clause is here.
+    const mode = paramCellProblems(colorDef({ max: 2, defaultValue: 0 }));
+    expect(mode).toHaveLength(1);
+    expect(mode[0]).toContain('spanning EXACTLY the packed-RGB space');
+
+    // Continuous, and the two off-by-one bounds — each on its own, so a
+    // predicate that only checked `curve` or only checked `max` would show up.
+    expect(paramCellProblems(colorDef({ curve: 'linear' })), 'continuous').toHaveLength(1);
+    expect(paramCellProblems(colorDef({ min: 1 })), 'floor off by one').toHaveLength(1);
+    expect(paramCellProblems(colorDef({ max: PACKED_RGB_MAX - 1 })), 'ceiling off by one').toHaveLength(1);
+  });
+
+  it('NEGATIVE CONTROL (d-cross): the two clauses do NOT accept each other’s shape', () => {
+    // ⚠ THE CLAUSE-SPLIT REGRESSION, IN ONE ASSERTION. Before the split there
+    // was ONE range clause, written for the grid; a colour param has
+    // 16 777 216 steps, so a shared clause would have rejected every valid
+    // colour cell — and the lazy repair (skip the check unless kind==='grid')
+    // would have left `'color'` with no range check at all. Each kind must
+    // reject the other's shape.
+    const gridOnColorRange = paramCellProblems({
+      type: 'synthetic',
+      params: [{ ...COLOR_PARAM, id: 'algorithm' }],
+      face: { order: ['algorithm'], paramCells: { algorithm: 'grid' } },
+    });
+    expect(gridOnColorRange, 'a grid over 16.7M cells').toHaveLength(1);
+    expect(gridOnColorRange[0]).toContain(`2..${GRID_MAX_CELLS} steps`);
+
+    const colorOnGridRange = paramCellProblems({
+      type: 'synthetic',
+      params: [{ ...GRID_PARAM, id: 'red_color' }],
+      face: { order: ['red_color'], paramCells: { red_color: 'color' } },
+    });
+    expect(colorOnGridRange, 'a colour picker over 1..32').toHaveLength(1);
+    expect(colorOnGridRange[0]).toContain('packed-RGB space');
+  });
+
+  it('NEGATIVE CONTROL (d-deny): an UNKNOWN declared primitive FAILS by default', () => {
+    // The clause that makes "add a third primitive and forget the lint" loud.
+    // Cast because the union does not admit it — which is the point: the only
+    // way here is a future widening of the type, and that widening must bring
+    // its clause.
+    const problems = paramCellProblems({
+      type: 'synthetic',
+      params: [GRID_PARAM],
+      face: {
+        order: ['algorithm'],
+        paramCells: { algorithm: 'wheel' as unknown as 'grid' },
+      },
+    });
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('NO range clause in module-face-lint');
   });
 
   it('NEGATIVE CONTROL (d): a grid on a CONTINUOUS / unbounded param FAILS', () => {
