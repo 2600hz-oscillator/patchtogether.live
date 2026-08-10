@@ -375,14 +375,27 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
     // `live.chord_mode`) and hold their effect for as long as they are on —
     // chord mode even RESTORES `tune2/3/4` from `node.params` when it flips
     // off, which only makes sense for a state you leave engaged. `chord_quality`
-    // is a two-state PICK (MAJ/MIN, now a named `options` roster) that selects
-    // a chord table; it fires no edge at all. None of the three has a
+    // is a two-state PICK (0 = major, 1 = minor) that selects a chord table; it
+    // fires no edge at all. None of the three has a
     // pointerdown/pointerup path anywhere in the card, and the module has no
     // press-pad of any kind. The doc cross-check below is what keeps that
     // honest.
     'wavesculpt:unison',
     'wavesculpt:chord_mode',
     'wavesculpt:chord_quality',
+    // CLOUDS, 2026-08-10. FREEZE is a LATCH, and this is the one-word error
+    // that would break the module's headline feature — its shape
+    // (`0..1 discrete default 0`) is byte-identical to a press-pad's, which is
+    // exactly why `face.momentary` exists.
+    //
+    // ⚠ THE MECHANISM IS NOT "THE WORKLET READS A LEVEL" — it is stranger than
+    // that, and the conclusion survives the correction. `CloudsProcessor` ORs
+    // the a-rate `freeze` param with the FRZ gate input and TOGGLES an internal
+    // flag on each RISING EDGE, so the host sends one PULSE per intended state
+    // change and the state lives in the worklet. A momentary render would pulse
+    // on the press AND on the release — toggle on, toggle off — so the latch
+    // would be un-holdable and the buffer could never actually freeze.
+    'clouds:freeze',
     // REMOVED 2026-07-27 — 'tidyVco:hold'. The acknowledgement was WRONG (it
     // claimed "sample-and-hold ENGAGE"): the card drives it pointerdown/
     // pointerup, the worklet ORs it into the mono gate like tomtom's `strike`,

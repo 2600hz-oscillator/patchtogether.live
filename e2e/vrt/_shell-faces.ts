@@ -174,6 +174,27 @@ export const FACES = [
   // moving with every gate still green. Re-establish it by measurement, never
   // by reading a passing scene.
   { type: 'wavesculpt', pages: 8 },
+  // FACE BATCH 4 (2026-08-10) — the granular texture processor. Three bands:
+  // the ring (which the hero promotes BOTH the buffer panel and POSITION out
+  // of, leaving FREEZE — so the band survives and the count stays 3), the
+  // grains, and pitch + blend.
+  //
+  // ⚠ DETERMINISTIC BY CONSTRUCTION, NOT BY THE FREEZE, and the distinction is
+  // the whole reason this entry is worth a note. clouds is the first face whose
+  // hero picture is of something that MOVES IN TIME — a ring buffer filling —
+  // so the obvious hero is a live write head, and a live write head would make
+  // this baseline a race against boot latency no matter what #1420 does about
+  // the AudioContext. The panel therefore has NO CLOCK: every pixel is a pure
+  // function of the six macros (`cloudsRingPlan`), pinned as such in
+  // clouds-face-model.test.ts. VERIFIED rather than assumed — three consecutive
+  // dock captures byte-identical, and the same for the compact tile.
+  //
+  // Its `meter` glyph is unlit for the mixer/reverb reason, not the analogVco
+  // one: clouds is an INSERT, so with nothing patched both outputs are exactly
+  // 0.000e+0 and the VuMeter has nothing to draw. This tile would baseline
+  // cleanly even without the audio freeze, so — unlike analogVco and
+  // macrooscillator — it is not a witness for it.
+  { type: 'clouds', pages: 3 },
 ] as const;
 
 /** TIGHT per-scene diff budgets (absolute pixels; Playwright takes the MIN of

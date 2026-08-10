@@ -766,6 +766,24 @@ describe('vrt-meta — EXEMPT_BASELINE_PAIRS size RATCHET (only shrinks)', () =>
 // together with the module and its `linux/hypercube` pair, so the ARTIFACT-side
 // ground truth (a darwin PNG with no linux sibling) loses exactly one gap. Read
 // off the ratchet's own report — it printed 147 — rather than decremented.
+// FACE BATCH 4 · clouds (2026-08-10): UNCHANGED at 147, the artifact-anchored
+// shape again. The face commits two new DARWIN PNGs (`face-clouds-{compact,
+// dock}`) and the `vrt-update.yml -f platform=linux` dispatch on this branch
+// commits their two LINUX siblings, so the deficit ends where it started. It
+// reads 149 with 2 UNDECLARED in the window between the push and the bot's
+// capture — RED BY DESIGN, the interval CLAUDE.md calls "a drain without its
+// re-capture". ⚠ If this gate is red naming UNDECLARED gaps `face-clouds-*`,
+// the dispatch has not landed yet: that is the expected reading. Do NOT raise
+// this number, and do NOT add the pairs to EXEMPT_BASELINE_PAIRS to make it
+// green — a listed pair is skipped unconditionally, which is the deadlock that
+// makes the capture impossible.
+//
+// PREDICTED COMMIT COUNT: exactly TWO files. Nothing else should move. The card
+// itself is in EXEMPT_FROM_VRT (no `clouds.png` exists to go stale), the PR
+// touches no topbar/footer chrome — the height mechanism that re-pinned 133
+// baselines in #1425 — and CloudsCard's conversion binds range/curve/units
+// props to values byte-identical to the literals they replace. Count what the
+// bot commits against that two.
 const LINUX_DEFICIT_CEILING = 147;
 
 describe('vrt-meta — LINUX-baseline DEFICIT RATCHET (all four mechanisms)', () => {
