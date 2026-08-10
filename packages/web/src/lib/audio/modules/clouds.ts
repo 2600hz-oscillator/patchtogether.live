@@ -623,14 +623,15 @@ export const cloudsDef: AudioModuleDef = {
     // it is not new — `readParam('freeze')` previously answered `undefined`,
     // which is the same blindness with no value at all.
     let freezeLatched = ((node.params ?? {})['freeze'] ?? 0) >= 0.5;
-    const pulseFreeze = (): void => {
+    /** ONE rising edge. `holdS` is 50 ms at spawn (the worklet may not have
+     *  pulled a block yet, and an a-rate ramp shorter than one render quantum
+     *  can be stepped over) and 5 ms thereafter, which is the original code's
+     *  split preserved rather than an inconsistency. */
+    const pulseFreeze = (holdS: number): void => {
       params.get('freeze')?.setValueAtTime(1, ctx.currentTime);
-      params.get('freeze')?.setValueAtTime(0, ctx.currentTime + 0.005);
+      params.get('freeze')?.setValueAtTime(0, ctx.currentTime + holdS);
     };
-    if (freezeLatched) {
-      params.get('freeze')?.setValueAtTime(1, ctx.currentTime);
-      params.get('freeze')?.setValueAtTime(0, ctx.currentTime + 0.05);
-    }
+    if (freezeLatched) pulseFreeze(0.05);
 
     return {
       domain: 'audio',
@@ -658,7 +659,7 @@ export const cloudsDef: AudioModuleDef = {
           const want = value >= 0.5;
           if (want === freezeLatched) return;
           freezeLatched = want;
-          pulseFreeze();
+          pulseFreeze(0.005);
           return;
         }
         params.get(paramId)?.setValueAtTime(value, ctx.currentTime);
