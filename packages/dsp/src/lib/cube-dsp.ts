@@ -376,14 +376,23 @@ export function crushGridSteps(k: number): number {
  * WHY 4 AND NOT 2. A 2-level quantizer has a single threshold at 0.5, and the
  * marched depth signal does not straddle it in most states — every sample rounds
  * to level 0 and `out[n] = clamp(0·2 − 1) = −1`, i.e. the oscillator emits a
- * full-scale DC step and NO audio. Measured over 12 canonical slice states:
- * 9 of 12 collapse to `acRms` EXACTLY 0.000000 at 2 levels.
+ * full-scale DC step and NO audio. Measured over 12 canonical slice states on
+ * the table set cube shipped before `pwm-sweep`: 9 of 12 collapse to `acRms`
+ * EXACTLY 0.000000 at 2 levels.
  *
- * WHY NOT 3. Measured, and this is the trap: a floor of 3 fixes the 9 broken
- * states but BREAKS the one that works — `wrap: true` at k = 1 goes from a hard
- * square (`acRms` 1.0000) to a constant (`acRms` 0.000000), because the 3-level
- * thresholds at 0.25/0.75 bracket the whole wrapped depth range. 4 levels is the
- * coarsest floor that keeps all 12 states a signal.
+ * WHY NOT 3, AND WHY THE FLOOR IS CHOSEN ACROSS TABLE SETS RATHER THAN ONE.
+ * The slot tables are USER-REPLACEABLE, so a floor validated against today's
+ * defaults is validated against one arbitrary data set. Measured on both: a
+ * floor of 3 fixes those 9 states but BREAKS the one that worked — `wrap: true`
+ * at k = 1 goes from a hard square (`acRms` 1.0000) to a constant, because the
+ * 3-level thresholds at 0.25/0.75 bracket the whole wrapped depth range. It
+ * would have looked like a complete fix. 4 is the coarsest floor that keeps all
+ * 12 states a signal on BOTH table sets.
+ *
+ * ⚠ Worth knowing but NOT a substitute: adding `pwm-sweep` as the default WALL
+ * incidentally rescues most of this on its own (2-level collapses go 9/12 →
+ * 1/12), because that field straddles the threshold. One state still fails, and
+ * defaults are data — the quantizer is what has to be safe.
  *
  * ⚠ No fixed quantizer can be degenerate-proof — any signal narrower than one
  * step collapses, and combining CRUSH with SPACE CRUSH / SPACE DIFFUSE can still
