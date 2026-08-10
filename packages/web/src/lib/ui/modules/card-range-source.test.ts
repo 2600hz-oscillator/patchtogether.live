@@ -28,6 +28,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { adsrDef } from '$lib/audio/modules/adsr';
 import { backdraftDef } from '$lib/video/modules/backdraft';
+import { cloudsDef } from '$lib/audio/modules/clouds';
 import { cofefveDelayDef } from '$lib/audio/modules/cofefve';
 import { delayDef } from '$lib/audio/modules/delay';
 import { macrooscillatorDef } from '$lib/audio/modules/macrooscillator';
@@ -107,6 +108,15 @@ import type { ParamDef } from '$lib/graph/types';
  *    `STRICT_VRT_MODULES`, i.e. the required `vrt-strict` gate on both
  *    platforms, so that vocabulary fix gets its own PR instead of riding a face.
  *    The clause below keeps the unbound half honest in the meantime.
+ *  - CloudsCard: converted with the clouds face promotion (2026-08-10; binds
+ *    via paramSpec). Range AND mapping bound — the card's six faders re-typed
+ *    30 numbers plus six `curve`s and one `units`, all of which AGREED, and it
+ *    is the `units` that makes the conversion worth more than tidiness: the def
+ *    declares `units: 'st'` on `pitch` ALONE, so five of the six faders were
+ *    hand-typing "no units" by omission. An omitted prop and a bound `undefined`
+ *    read identically today and diverge the day any of those five gains a unit
+ *    on the def — the omission is invisible to both greps, which only ever see
+ *    what a card DOES write.
  *  - CofefveCard: converted with the cofefve face promotion (2026-08-10), and
  *    the largest re-typing this set has absorbed — 34 literal range props over
  *    19 controls, including a `curve="log"` on a `0.001..2 s` TIME knob where a
@@ -120,6 +130,7 @@ import type { ParamDef } from '$lib/graph/types';
 const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }>> = {
   'AdsrCard.svelte': adsrDef,
   'BackdraftCard.svelte': backdraftDef,
+  'CloudsCard.svelte': cloudsDef,
   'CofefveCard.svelte': cofefveDelayDef,
   'DelayCard.svelte': delayDef,
   'MacrooscillatorCard.svelte': macrooscillatorDef,
@@ -138,6 +149,7 @@ const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }
  */
 const MAPPING_BOUND_CARDS: readonly string[] = [
   'AdsrCard.svelte',
+  'CloudsCard.svelte',
   'CofefveCard.svelte',
   'DelayCard.svelte',
   'MacrooscillatorCard.svelte',
@@ -174,14 +186,26 @@ const MAPPING_BOUND_CARDS: readonly string[] = [
 // would also make the ratchet vacuous (it can never fail, because it is derived
 // from the thing it checks). So the literal stays, and the discipline is: after
 // ANY merge of this file, count the entries and write that number.
+// ⚠ RE-DERIVED BY COUNTING THE MERGED LISTS on 2026-08-10, exactly as the
+// paragraph above instructs — not by adding one to what was there.
 //
-// 2026-08-10, cofefve: RE-DERIVED BY COUNTING THE MERGED LISTS, per the
-// discipline above — 11 range-bound entries and 9 mapping-bound entries, not
-// "the old value plus one". The inherited literals were 9/7 while the lists
-// already held 10/8, so a bare increment would have written 10/8 and shipped a
-// full card of slack in each, exactly as the two paragraphs above describe.
-const RANGE_BOUND_FLOOR = 11;
-const MAPPING_BOUND_FLOOR = 9;
+// ⚠ AND THIS MERGE IS THE FOURTH TIME, CAUGHT IN THE ACT AND WORTH THE SPACE,
+// because it is the failure mode written above happening to two branches that
+// had each already obeyed the rule. clouds and cofefve were authored
+// concurrently off a shared base of 9/7 against lists that already held 10/8.
+// BOTH branches counted correctly for their OWN merged list and BOTH wrote
+// `11 / 9`. Git then hit a textual conflict only because the two comments
+// differed; had either branch left the comment alone, `11 / 9` would have
+// auto-merged CLEANLY AND WRONGLY against a union of twelve and ten — a full
+// card of slack in each, delivered silently, from two authors who both did the
+// right thing.
+//
+// The transferable rule is therefore sharper than "count, don't increment": a
+// count is only valid for the tree it was taken in, so it must be RE-TAKEN
+// after every merge, not carried across one. Counted here, post-merge:
+// RANGE_BOUND_CARDS = 12, MAPPING_BOUND_CARDS = 10.
+const RANGE_BOUND_FLOOR = 12;
+const MAPPING_BOUND_FLOOR = 10;
 
 /**
  * A range-ish prop bound to a NUMERIC LITERAL. Covers `min/max/defaultValue`

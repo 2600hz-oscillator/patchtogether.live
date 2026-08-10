@@ -43,6 +43,15 @@ import {
   vcoPwAuthority,
 } from '$lib/ui/modules/analog-vco-face-model';
 import {
+  cloudsCoherenceText,
+  cloudsFaceParams,
+  cloudsFullLevelText,
+  cloudsGrainCountText,
+  cloudsGrainText,
+  cloudsPositionText,
+  cloudsSilenceText,
+} from '$lib/ui/modules/clouds-face-model';
+import {
   asleepText,
   cofefveFaceParams,
   echoRepeatsText,
@@ -230,6 +239,52 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
   'clap-voice-ms': (read) => fmtMs(clapVoiceMs(clapVoiceParams(read))),
   'clap-bandwidth-hz': (read) => fmtHz(clapBandwidthHz(clapVoiceParams(read))),
   'clap-q': (read) => clapQ(clapVoiceParams(read)).toFixed(2),
+
+  // ── CLOUDS ───────────────────────────────────────────────────────────────
+  // SIX numbers, and the module they describe has no dead controls and no clip
+  // hazard — what it has is INVISIBILITY, which is a harder thing for a readout
+  // to fix than a defect. Each one is blind-in-a-different-direction from its
+  // nearest dial:
+  //
+  //   reads      a `paramId: 'position'` readout prints 0.50 at EVERY size,
+  //              while the reachable span shrinks 1.94 s → 1.20 s and the read
+  //              point moves 0.97 s → 1.40 s. POSITION is the strongest control
+  //              on the module (max|Δ| 0.99 against a marked source) and the
+  //              one no level metric can see (0.17 dB across its whole travel),
+  //              so a number in the BUFFER'S OWN UNITS is the only readout that
+  //              says anything true about it.
+  //   grain      SIZE reads 0.50 for a 300 ms grain and cannot say that the
+  //              grain CEILING is 800 ms — which makes size 0.805…1.0 render
+  //              BIT-IDENTICAL output, 19.5 % of the dial. It also names its
+  //              FRAME: `g.age` counts output samples while `g.readPos` moves
+  //              at `pitchRatio`, so a transposed grain sounds for one time and
+  //              reads another, and the two differ by 2^(pitch/12).
+  //   pitch      a semitone readback prints `0.50 st` — a musically negligible
+  //              detune — for a change that costs the FULL ~10.6 dB, because
+  //              grain coherence is a THRESHOLD at exactly zero and not a
+  //              slope (−5.47 dB at 0 vs −17.60 at ±0.5 st).
+  //   grain pool DENSITY's own value is blind to SIZE, and the two TOGETHER
+  //              decide whether the pool of 24 is full. It is full from DENSITY
+  //              0.49 at the shipped SIZE, which is why that dial's top half
+  //              moves the level 0.07 dB while changing the sound completely.
+  //   silent for / full level at
+  //              NOT a function of any one knob and not a constant either: the
+  //              silence at spawn is exactly ONE GRAIN LENGTH (measured 60.0 /
+  //              134.1 / 300.0 / 670.8 / 800.0 ms at size 0 / .25 / .5 / .75 /
+  //              .9) and full level lands one grain after the 2.0 s ring fills.
+  //              This is the module's single most confusing behaviour and no
+  //              surface anywhere stated it before this face.
+  //
+  // Every claim is re-derived from `cloudsMath` — the pure-math mirror of the
+  // worklet — by ORACLE legs in clouds-face-model.test.ts, so a DSP change
+  // turns a stale sentence red rather than letting the faceplate keep insisting
+  // on it. Negative controls in both directions, permanently, in the same file.
+  'clouds-position-reach': (read) => cloudsPositionText(cloudsFaceParams(read)),
+  'clouds-grain-ms': (read) => cloudsGrainText(cloudsFaceParams(read)),
+  'clouds-coherence': (read) => cloudsCoherenceText(cloudsFaceParams(read)),
+  'clouds-grain-count': (read) => cloudsGrainCountText(cloudsFaceParams(read)),
+  'clouds-silence': (read) => cloudsSilenceText(cloudsFaceParams(read)),
+  'clouds-full-level': (read) => cloudsFullLevelText(cloudsFaceParams(read)),
 
   // ── DRUMMERGIRL ──────────────────────────────────────────────────────────
   // The five quantities SHAPE moves, plus the three the hero prints. Every one

@@ -162,6 +162,51 @@
 // the one worklet constant the model has to mirror, which is anchored by
 // measuring the shipping DSP rather than by a comment.
 
+// FACE BATCH 4 · clouds (2026-08-10) — the granular TEXTURE processor, and the
+// entry whose argument is that a face can be worth building for a module with
+// NOTHING WRONG WITH IT.
+//
+// Every other promotion in this programme found a defect: a dead morph half, a
+// dial that wrote values its def forbade, an instrument that could not be
+// sounded. clouds has none. It has no dead controls in the ordinary sense, and
+// it is the best-behaved module in its batch on level — 0 of 54 measured
+// corners exceed full scale, worst −0.10 dBFS, against sidecar's +17.98 and
+// resofilter's +44.4. What it has is INVISIBILITY, and each instance is
+// invisible to precisely the instrument the repo would reach for:
+//
+//   * IT IS SILENT WHEN YOU PATCH IT — bit-zero for exactly one GRAIN LENGTH
+//     (measured 60.0 / 134.1 / 300.0 / 670.8 / 800.0 ms at size 0 / .25 / .5 /
+//     .75 / .9, POSITION-invariant to the sample), then ~12 dB down until the
+//     2.0 s ring has filled, full level one grain after that. Nothing anywhere
+//     said so. ⚠ The spec authored against `main` said "the first quarter
+//     second is bit-zero" and "the step lands at t = 2.000 s to the sample";
+//     both were artifacts of a 0.25 s measurement grid. The real silence is a
+//     grain length and it MOVES with SIZE; the real level knee is a ~0.3 s ramp
+//     starting at ≈2.02 s. Re-measured before anything was written around them.
+//   * POSITION IS THE STRONGEST CONTROL AND NO LEVEL METRIC CAN SEE IT —
+//     0.17 dB across the whole travel on broadband, against max|Δ| 0.99 on a
+//     marked source. It would read as a dead dial in a lane tile, which is why
+//     it is ranked 5 and promoted to the DOCK hero beside the one picture that
+//     can show it.
+//   * PITCH IS A ~10.6 dB FADER AT ZERO — a THRESHOLD, not a slope: −5.47 dB at
+//     0 against −17.60 at ±0.5 st.
+//
+// ⚠ AND ONE THING THE FACE REFUSES TO PAINT AS WORKING, found in re-measurement
+// and NOT in the spec: SIZE's top 19.5 % is BIT-IDENTICAL to its own maximum
+// (`safeLen = min(lengthSamples, 0.4·bufLen)` caps the grain at 800 ms, so
+// 0.805 / 0.85 / 0.9 / 1.0 render the same samples). Worklet arithmetic, so it
+// is a separate DSP change — never folded into a face wave — and until then the
+// grain readout says CLAMPED.
+//
+// ⚠ ITS HERO PANEL HAS NO CLOCK, and that is the design rather than a
+// limitation. A live write head would need the worklet's `fillLevel`, which is
+// not an AudioParam and is never posted; anything derived from
+// `AudioContext.currentTime` would make the VRT baseline a race against boot
+// latency. Every pixel is a pure function of the six macros, so the tile is
+// deterministic on a frozen graph, a live graph and a silent rack alike — a
+// stronger guarantee than #1420's freeze, which this face therefore does not
+// depend on. (Its `meter` glyph is unlit at the lane tiers for the
+// mixer/reverb reason: an insert with nothing patched outputs exactly zero.)
 // FACE BATCH 5 · cofefve (2026-08-10) — the analog delay, PROMOTED from having
 // no face at all, and the entry whose argument is that A FACEPLATE MUST BE ABLE
 // TO SAY THAT A CONTROL IS WAITING ON ANOTHER CONTROL.
@@ -169,15 +214,14 @@
 // FIVE of its twenty-three params are BIT-EXACTLY inaudible at the factory
 // default and two more are within a percent of it — SEVEN asleep in all,
 // because each is the dependent half of an ENABLER PAIR whose enabler ships
-// closed. Nothing on the
-// legacy card says so, so a new user turns a third of the panel and hears
-// nothing. That is a legibility defect, not a DSP one: four of the five pairs
-// are the ordinary correct convention (a depth at zero silences its rate, a
-// feature off silences its shaping controls), and the face's job is to make the
-// dependency VISIBLE — the ranking puts every enabler above its dependents, the
-// band hints state the mechanism at the point of use, a five-line sidebar block
-// names each pair's live state, four presets open all five enablers in one
-// click each, and the hero counts what is currently asleep.
+// closed. Nothing on the legacy card says so, so a new user turns a third of
+// the panel and hears nothing. That is a legibility defect, not a DSP one: four
+// of the five pairs are the ordinary correct convention (a depth at zero
+// silences its rate, a feature off silences its shaping controls), and the
+// face's job is to make the dependency VISIBLE — the ranking puts every enabler
+// above its dependents, a five-line sidebar block names each pair's live state,
+// four presets open all five enablers in one click each, and the hero counts
+// what is currently asleep.
 //
 // ⚠ AND BAND HINTS DO NOT PAINT AT REST EITHER — which is worth recording,
 // because the face was designed on the assumption that they do. `face.hint` and
@@ -190,13 +234,23 @@
 // and greyed WOW ripple, and the five-line sidebar block — and the band hints
 // carry the MECHANISM as a fourth tier for annotation mode.
 //
-// ⚠ THE SAME LOOK-AT-IT PASS CAUGHT A SECOND ONE: three of the newly declared
-// `options` rosters ellipsized in their `.seg` buttons (`SYS…`, `PING-P…`,
-// `CIRCUL…`, `STATE…`). `faces-parity` reads `textContent`, so the DOM still
-// said `Ping-Pong` and every gate was green. The budget is PIXELS and differs
-// per column — `System` (6 chars) clipped in a two-button column while `Static`
-// (6) fitted in a three-button one — so the short captions are keyed on the
-// observed clip and the full names survive as the buttons' hover `title`.
+// ⚠ THE SAME LOOK-AT-IT PASS CAUGHT A SHARED-PRIMITIVE DEFECT, which this face
+// deliberately does NOT fix. Three of the newly declared `options` rosters
+// ellipsized in their `.seg` buttons (`SYS…`, `PING-P…`, `CIRCUL…`, `STATE…`)
+// while `faces-parity` stayed green, because it reads `textContent` — the DOM
+// says `Ping-Pong` while the panel paints `PING-P…`. The cause is measured on
+// cofefve's def: `.seg` is `flex: 1`, i.e. flex-BASIS 0, so buttons split the
+// group's max-content width EQUALLY and every caption gets exactly the roster
+// MEAN — zero margin by construction, so the widest caption of any uneven
+// roster always clips. It is ALREADY LIVE on cloudseed `pre`/`post`,
+// warrensspectrum `LIVE`/`FREEZE` and tidyVco `-1`/`0`/`+1`. The one-line fix
+// (`flex: 1 1 auto`) repaints those three modules' dock baselines, so it wants
+// its own PR and an owner preview. Two caption workarounds were tried and
+// MEASURED, and both failed: shortening `System` to `SYS` NARROWED the group
+// and clipped `MIDI` harder, and equalising by character count still clipped by
+// 1–3 px because equal characters are not equal pixels. Hunting a caption set
+// that measures identically is calibrating against one renderer — the thing
+// CLAUDE.md's frame-count rule exists to forbid — so the full names stay.
 //
 // ⚠ THE SPEC IT WAS BUILT FROM WAS WRONG ABOUT PAN, and the error was in the
 // INSTRUMENT rather than the analysis — which is why it is recorded here.
@@ -270,6 +324,8 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   'macrooscillator',
   // FACE BATCH 3 · the DTMF dialer (2026-08-09) — see the header note above.
   'bluebox',
+  // FACE BATCH 4 · the granular texture processor (2026-08-10) — see above.
+  'clouds',
   // FACE BATCH 5 · the analog delay (2026-08-10) — see the header note above.
   'cofefve',
 ]);

@@ -519,6 +519,7 @@ clouds param size 0..1 linear default=0.5
 clouds param texture 0..1 linear default=0.5
 clouds stereo in_l+in_r
 clouds stereo out_l+out_r
+clouds family clouds-buffer kind=cell prefix=clouds-buffer
 cloudseed meta domain=audio
 cloudseed in cross_seed_cv cv param=cross_seed cvScale=linear
 cloudseed in dry_cv cv param=dry_out cvScale=linear
