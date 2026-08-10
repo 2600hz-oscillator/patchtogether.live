@@ -184,6 +184,43 @@ export const FACES = [
   // cleanly even without the audio freeze, so — unlike analogVco and
   // macrooscillator — it is not a witness for it.
   { type: 'clouds', pages: 3 },
+  // FACE BATCH 5 — the analog delay. SIX declared bands, six rendered: the hero
+  // promotes `delayTime` and the echo-train panel out of band 1, which still
+  // holds SYNC, CLK SRC and FEEDBACK, so nothing empties.
+  //
+  // ⚠ ITS HERO PANEL IS AN INSERT'S PICTURE, NOT A TRACE, which is what makes
+  // this tile deterministic on a rack with no source patched into it. Every
+  // stem is computed from the durable params through the DSP's own loop
+  // arithmetic — no analyser, no rAF poll, no engine read — so the picture is
+  // identical whether the graph is running or frozen. (The `scope` glyph on the
+  // COMPACT tile is a live trace, and it is flat for the ordinary reason: an
+  // unpatched insert outputs silence. #1420's freeze covers it regardless.)
+  //
+  // ⚠ LINUX ONLY — THIS SCENE HAS NO DARWIN BASELINE, ON PURPOSE, and the gap
+  // is stated here rather than left to be discovered. The `vrt-update` dispatch
+  // captured linux and then its darwin job FAILED on two UNRELATED scenes
+  // (`face-mixer-compact`, `face-ringback-dock`), both tripping #1420's guard —
+  // "the AudioContext is 'running', not 'suspended', at CAPTURE time". The
+  // darwin sweep is ONE job, so those two aborted the whole capture and none of
+  // its baselines were written.
+  //
+  // Shipping linux-only is the CORRECT state here, not a compromise, and the
+  // asymmetry runs the safe way: CI renders on LINUX, so the platform that
+  // gates this face is the one that has a baseline. The reverse — committing a
+  // local darwin capture and waiting for linux — is what manufactures the
+  // UNDECLARED gap the deficit ratchet exists to catch (ground truth is a
+  // darwin PNG with NO linux sibling; a linux PNG with no darwin sibling is not
+  // a gap and `vrt-meta` is green on it, verified). A darwin baseline lands
+  // whenever the mixer/ringback capture defect is fixed and the next dispatch
+  // succeeds — no exemption entry, no ratchet move, nothing to unwind.
+  //
+  // ⚠ AND A LOCAL DARWIN VRT RUN SILENTLY RECREATES IT. Playwright's
+  // `updateSnapshots` defaults to `'missing'`, so any darwin run — including a
+  // read-only "did it still render?" check — writes `darwin/face-cofefve-*.png`
+  // as UNTRACKED files that a `git add -A` would happily commit, turning this
+  // deliberate linux-only state into exactly the undeclared gap it avoids.
+  // `git status` for untracked PNGs after every VRT run until the pair exists.
+  { type: 'cofefve', pages: 6 },
 ] as const;
 
 /** TIGHT per-scene diff budgets (absolute pixels; Playwright takes the MIN of

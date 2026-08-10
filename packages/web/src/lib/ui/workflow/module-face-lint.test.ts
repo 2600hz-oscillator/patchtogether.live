@@ -382,6 +382,14 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
     // on the press AND on the release — toggle on, toggle off — so the latch
     // would be un-holdable and the buffer could never actually freeze.
     'clouds:freeze',
+    // COFEFVE, 2026-08-10. The tempo REFERENCE picker (System = the rack's
+    // TIMELORDE bpm, MIDI = incoming 0xF8). `0..1 discrete resting at 0` is the
+    // press-pad shape by coincidence of arity, not by intent: it is a two-state
+    // choice you make once and leave. It also DECLARES `options`, so the dock
+    // paints it as a captioned Segmented pair rather than an anonymous switch —
+    // but the render kind and this classification answer different questions
+    // (see paramCellKind's closing note), so it still needs acknowledging here.
+    'cofefve:clockSource',
     // REMOVED 2026-07-27 — 'tidyVco:hold'. The acknowledgement was WRONG (it
     // claimed "sample-and-hold ENGAGE"): the card drives it pointerdown/
     // CUBE, 2026-08-10. Three states you switch and leave: WRAP is a rule
