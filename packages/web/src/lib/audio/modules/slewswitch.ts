@@ -42,8 +42,8 @@ export const slewSwitchDef: AudioModuleDef = {
     { id: 'in2',        type: 'cv' },
     { id: 'in3',        type: 'cv' },
     { id: 'in4',        type: 'cv' },
-    { id: 'step_clock', type: 'gate' },
-    { id: 'reset',      type: 'gate' },
+    { id: 'step_clock', type: 'gate', edge: 'trigger' },
+    { id: 'reset',      type: 'gate', edge: 'trigger' },
     // CV → AudioParam routings (engine sums the cv into these AudioParams).
     // slew*: log because time constants span 3 decades (1ms..5s).
     { id: 'slew1_cv',   type: 'cv', paramTarget: 'slew1', cvScale: { mode: 'log' } },
@@ -58,7 +58,7 @@ export const slewSwitchDef: AudioModuleDef = {
     { id: 'out4',     type: 'cv' },
     { id: 'switched', type: 'cv' },
     { id: 'step_idx', type: 'cv' },
-    { id: 'eoc',      type: 'gate' },
+    { id: 'eoc',      type: 'gate', edge: 'trigger' },
   ],
   params: [
     { id: 'slew1',     label: 'S1',    defaultValue: 0.5,  min: 0.001, max: 5,   curve: 'log',      units: 's' },

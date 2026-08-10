@@ -152,7 +152,7 @@ export const polyseqzDef: AudioModuleDef = {
 
   inputs: [
     // External clock (optional). When patched, advances on rising edges.
-    { id: 'clock', type: 'gate' },
+    { id: 'clock', type: 'gate', edge: 'trigger' },
     // Shared transport CV inputs (PR feat/sequencer-transport-quicksave):
     //   play_cv      → toggles isPlaying on rising edge
     //   reset_cv     → resets stepIndex to 0 on rising edge
@@ -170,9 +170,9 @@ export const polyseqzDef: AudioModuleDef = {
     // Convenience mono gate (high while ANY voice's gate is high). Lets
     // POLYSEQZ trigger per-step ADSR / scope-trigger / etc. without
     // unwrapping the polyPitchGate cable.
-    { id: 'gate',  type: 'gate' },
+    { id: 'gate',  type: 'gate', edge: 'gate' },
     // Per-step clock pulse (10ms high) emitted on every advance.
-    { id: 'clock', type: 'gate' },
+    { id: 'clock', type: 'gate', edge: 'trigger' },
   ],
 
   params: [

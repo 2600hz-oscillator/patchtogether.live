@@ -156,9 +156,9 @@ export const nibblesDef: VideoModuleDef = {
   inputs: [],
   outputs: [
     { id: 'out',        type: 'video' },
-    { id: 'pellet',     type: 'gate'  },
-    { id: 'death',      type: 'gate'  },
-    { id: 'dir_change', type: 'gate'  },
+    { id: 'pellet',     type: 'gate', edge: 'trigger'  },
+    { id: 'death',      type: 'gate', edge: 'trigger'  },
+    { id: 'dir_change', type: 'gate', edge: 'trigger'  },
     { id: 'length_cv',  type: 'cv'    },
     { id: 'snake',      type: 'audio' },
     { id: 'gated',      type: 'audio' },
@@ -178,7 +178,6 @@ export const nibblesDef: VideoModuleDef = {
     },
   ],
 
-  // docs-hash-ignore:start
   docs: {
     explanation: "A playable QBasic-Nibbles snake game rendered as a patchable video source. The classic snake roams an 80x50 grid (CPU-rasterised to a 320x200 frame with a gentle CRT scanline darken) eating one pellet at a time, growing its body, and dying on a wall or self collision. Drive it two ways: click the card to focus it and steer with the arrow keys, or flip AUTO on to let the built-in greedy bot self-play (it walks toward the pellet, avoiding its own tail, with no foresight so it eventually traps and dies — then auto-restarts). The game advances at the rate set by Tick. Beyond the video frame, the snake's life becomes control voltage and sound: gate pulses fire on pellet/death/direction-change, a length CV tracks how long the snake has grown, and two square-wave audio outs are pitched by the snake's length (length 4 = A2/110 Hz, every +12 length = +1 octave). Patch the gates into envelopes/triggers and the length CV into pitch or filter cutoff to sonify the game. The card also has a RESET button, a 1x-4x zoom button, and a live LEN readout (a dagger appears when the snake is dead). The card's game screen is resizable: the on-card scale button cycles the 320x200 source through 1x / 2x / 3x / 4x zoom (image-rendering: pixelated, so it stays crisp); the knobs, buttons, and patch jacks stay fixed-size while only the screen grows.",
     inputs: {},
@@ -196,7 +195,6 @@ export const nibblesDef: VideoModuleDef = {
       tick_ms: "Tick — the game-tick period in milliseconds (40-200, default 80; ~12 Hz at default). Lower is a faster snake; clamped to the 40-200 ms window. Exposed as the TICK knob on the card.",
     },
   },
-  // docs-hash-ignore:end
   factory(ctx: VideoEngineContext, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);

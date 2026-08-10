@@ -261,9 +261,12 @@ export interface PortDef {
    * that is not a word, a jack whose function differs from its id), NOT to
    * restate what the derivation already produces.
    *
-   * ⚠ HASH-TRANSPARENCY: a VIDEO def's ports live in the WebGL attest basis, so
-   * adding labels there must sit inside `// docs-hash-ignore:start … :end`
-   * markers (the rule the co-located `docs`/`face` blocks already follow).
+   * ⚠ HASH-TRANSPARENCY: a VIDEO def's ports live in the WebGL attest basis,
+   * and a `label` is NOT one of the hash-transparent properties
+   * (`docs`/`controlFamilies`/`face` — see scripts/attest-code-basis.ts), so
+   * adding one DOES move the WebGL hash. That is intended: a label is part of
+   * the port contract. Batch label edits with a real contract change rather
+   * than spending a GPU re-attest on prose.
    */
   label?: string;
   // Whether the input is an audio-rate node connection or a CV → AudioParam routing.
@@ -539,10 +542,10 @@ export interface ModuleFacePage {
  * counts are the same number.
  *
  * HASH-TRANSPARENCY (video defs): VIDEO module defs live in the WebGL attest
- * basis, so a `face` block on a VideoModuleDef MUST be wrapped in
- * `// docs-hash-ignore:start … :end` markers (exactly like its co-located
- * `docs`) so authoring curation stays a no-op for the GPU attest hash. Audio
- * defs are NOT in the WebGL basis and need no markers. (P1 authoring note; no
+ * basis, but `face` is hash-transparent BY CONSTRUCTION — the shared attest
+ * normalizer (scripts/attest-code-basis.ts) strips `docs`/`controlFamilies`/
+ * `face` off a module-scope def object before hashing, so authoring curation is
+ * a no-op for the GPU attest with nothing to remember. (P1 authoring note; no
  * video def carries a `face` yet.)
  */
 export interface ModuleFace {

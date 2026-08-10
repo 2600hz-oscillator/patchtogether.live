@@ -147,7 +147,6 @@ export const chromakeyDef: VideoModuleDef = {
     { id: 'spillSuppress', label: 'Spill',defaultValue: DEFAULTS.spillSuppress, min: 0, max: 1,   curve: 'linear' },
   ],
 
-  // docs-hash-ignore:start
   docs: {
     explanation: "chromakey is a two-input green-screen compositor: it takes a foreground video (the layer shot against a key colour) and a background video, and replaces every foreground pixel that is chromatically close to the chosen key colour with the matching background pixel. Per pixel it measures the DISTANCE IN THE CHROMA PLANE (full-swing Rec. 601 Cb/Cr) between the pixel and the key colour, normalized by the key's own chroma strength — the industry-standard keying metric — and builds an alpha via smoothstep over the thr/soft window (alpha 0 = show background, alpha 1 = keep foreground). A neutral gray always sits at exactly distance 1.0 from a saturated key, so shadows, highlights and low-saturation subject pixels survive the key without any special gating. Spill suppression then limits the key colour's dominant channel on the KEPT foreground (for a green key: green is pulled down toward max(red, blue)), removing green contamination from the subject itself — not just from the matte edge. Pick the key colour with the swatch (defaults to pure green), then tune thr: the default 0.5 keys real-world screen variation (shading, off-tint) while keeping subjects; lower it toward 0.15 to key only near-pure key pixels, raise soft to feather the matte edge, and raise spill to remove key-colour fringing from the subject. If no foreground is patched it just passes the background through. Note: an achromatic (black/white/gray) key colour has no chroma to measure against, so ALL neutral pixels key out together regardless of brightness — for keying off a black or white backdrop use lumakey instead.",
     inputs: {
@@ -172,7 +171,6 @@ export const chromakeyDef: VideoModuleDef = {
       spillSuppress: "Spill fader — dominant-channel despill on the kept foreground (0..1, default 0.5): for a green key the green channel is pulled toward max(red, blue) by this amount, removing key-colour contamination from the subject itself. 0 = exactly off (bit-identical passthrough), 1 = full limit.",
     },
   },
-  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);

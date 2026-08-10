@@ -48,15 +48,15 @@ export const moog961Def: AudioModuleDef = {
     { id: 'audio_in', type: 'audio' },
     // Gate inputs — the signals being format-converted, not knob modulators
     // (PASSTHROUGH_BY_DESIGN: no cvScale / paramTarget, like FLIPPER's gates).
-    { id: 's_in',     type: 'gate' },
-    { id: 'v_in_a',   type: 'gate' },
-    { id: 'v_in_b',   type: 'gate' },
+    { id: 's_in',     type: 'gate', edge: 'gate' },
+    { id: 'v_in_a',   type: 'gate', edge: 'gate' },
+    { id: 'v_in_b',   type: 'gate', edge: 'trigger' },
   ],
   outputs: [
-    { id: 'v_out1',   type: 'gate' },
-    { id: 'v_out2',   type: 'gate' },
-    { id: 's_out_a',  type: 'gate' },
-    { id: 's_out_b',  type: 'gate' },
+    { id: 'v_out1',   type: 'gate', edge: 'gate' },
+    { id: 'v_out2',   type: 'gate', edge: 'gate' },
+    { id: 's_out_a',  type: 'gate', edge: 'gate' },
+    { id: 's_out_b',  type: 'gate', edge: 'gate' },
   ],
   params: [
     // sensitivity — audio→trigger threshold (linear 0..1).
@@ -72,17 +72,17 @@ export const moog961Def: AudioModuleDef = {
       audio_in:
         "An audio (or any) signal whose level is watched: when it rises past the SENSITIVITY threshold it fires a trigger pulse on BOTH v_out1 and v_out2 — turn an audio transient or an LFO peak into a trigger.",
       s_in:
-        "A trigger input (the 'S' format): it passes straight through to BOTH v_out1 and v_out2, so one incoming trigger drives both V outputs (a format pass-through / fan-out).",
+        "A gate input (the 'S' format): it passes straight through to BOTH v_out1 and v_out2, so one incoming signal drives both V outputs (a format pass-through / fan-out). It is level-sensitive, not edge-fired — while s_in is held high both V outputs stay high, and they drop with it, so the pass-through preserves the incoming width (duration-matched, like FLIPPER).",
       v_in_a:
         "A gate input (the 'V' format) routed to s_out_a: it passes through carrying its OWN width — while v_in_a is high, s_out_a is high (a width-preserving pass-through).",
       v_in_b:
         "A trigger input routed to s_out_b: each rising edge fires a FIXED-WIDTH one-shot of SWITCH-ON TIME seconds on s_out_b, regardless of how long v_in_b stays high — it re-times the pulse to a set length.",
     },
     outputs: {
-      v_out1: "A trigger output fired by either the audio level detector (audio_in over SENSITIVITY) or the s_in pass-through — one of the two parallel V outputs.",
-      v_out2: "The second V trigger output, fired by the same sources as v_out1 (audio detector OR s_in), so you get two simultaneous copies to drive two destinations.",
+      v_out1: "One of the two parallel V outputs, driven by either the audio level detector (audio_in over SENSITIVITY) or the s_in pass-through. It is a GATE: it stays high for as long as s_in is held and drops when s_in does, so a held S signal gives a held V output; the audio detector contributes only a single-sample tick on top of that.",
+      v_out2: "The second V output, level-driven by the same two sources as v_out1 (audio detector OR s_in), so you get two simultaneous copies to drive two destinations. Like v_out1 it holds high while s_in is high rather than emitting a fixed-width pulse.",
       s_out_a: "Mirrors v_in_a with its incoming width — high while v_in_a is high (a width-preserving gate pass-through).",
-      s_out_b: "A fixed-width one-shot: each rising edge on v_in_b emits a pulse of exactly SWITCH-ON TIME seconds here, so you can standardize ragged triggers to a known gate length.",
+      s_out_b: "A fixed-width one-shot: each rising edge on v_in_b emits a pulse here that stays high for exactly SWITCH-ON TIME seconds (0.04–4 s — a gate length, not a strike), so you can standardize ragged triggers to a known, re-timed width. A retrigger restarts the full pulse.",
     },
     controls: {
       sensitivity:

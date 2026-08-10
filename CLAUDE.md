@@ -357,14 +357,15 @@ Two more from the same session, both cheap:
 - **A toolchain PIN file hashed WHOLESALE makes every unrelated edit a
   re-attest.** `e2e/package.json` is in `TOOLCHAIN_PIN_FILES`
   (`scripts/webgl-attest-lib.ts`) because it pins `@playwright/test` — the
-  renderer version. But the basis hashes the whole file, so changing one
+  renderer version. The basis used to hash the whole file, so changing one
   unrelated npm-script string moved the WebGL hash `620fa1b3…` → `ad300c3e…`
   and turned `webgl-attest` red, demanding a trusted-machine GPU re-attest for
-  a one-word CLI flag. Reverting that single file restored `620fa1b3…` exactly.
-  **Before editing `e2e/package.json`, `packages/web/package.json` or
-  `.flox/env/manifest.toml`, run `bash scripts/webgl-attest-hash.sh` before and
-  after** — and if the edit is not actually a version pin, put it somewhere
-  else. The hash cannot tell a pin bump from a comment; only you can.
+  a one-word CLI flag. **FIXED 2026-08-09**: package.json pins are now hashed by
+  their dependency/config surface only (`NON_CODE_PACKAGE_JSON_FIELDS` in
+  `scripts/attest-code-basis.ts`), so scripts and prose are free while a dep
+  bump still counts. `.flox/env/manifest.toml` IS still hashed wholesale —
+  before editing it, run `bash scripts/webgl-attest-hash.sh` before and after.
+  The hash cannot tell a pin bump from a comment there; only you can.
 - **Screenshot the thing and look at it.** `display: inline-flex` on a label +
   value pair drops the whitespace-only anonymous flex item, so the footer read
   `lat13.3/40.0ms drop0/0.0ms tick9ms`. Every text assertion still passed —
@@ -560,6 +561,33 @@ The three inversions, applied to all four (details + measured numbers in the
 Plus: **state the gate's scope inside the gate**, asserting what it still cannot
 see at zero or under its own ratchet.
 
+#### …and the LEDGER you invert it with is the NEXT blind spot
+
+Row 3 above was fixed right and then parked wrong. The 299 skipped ports went
+into a ledger with a hand-typed count instead of being declared — even though
+**295 of them already carried authored prose naming the answer**. Paying it in
+full took one session and moved 283 `contract-lock.txt` lines, every one of them
+the old line plus one `edge=` token. Three rules, now repo standard:
+
+1. **Pay mechanically-payable debt; never inventory it.** A ledger of *known
+   answers* is deferred typing, not engineering, and every agent that touches
+   the area afterwards pays a re-count tax. Before writing an exemption list,
+   ask whether the answer already exists somewhere in the tree.
+2. **A ratchet is legitimate only for debt that genuinely cannot be paid now**
+   (needs hardware, an owner decision, a re-attest window) — and then the count
+   is **DERIVED from the artifact**, never a typed literal in a shared file.
+   Measured: the literal auto-merged WRONG in **3 of 3** parallel branches
+   (288 / 277 / 287 where the truth was the union, 275); two collided so git
+   surfaced them, the third merged **cleanly and wrongly**.
+3. **Any migration counter ships with its DELETION CRITERIA stated in the
+   file**, or the scaffolding outlives the building.
+
+When the debt is paid, **delete the mechanism** — list, count, both-directions
+ratchet, stale-entry anchor — and leave **no replacement counter**: at zero it
+measures nothing and can only go stale. Keep the unconditional check plus a
+permanent negative control that calls the **same predicate** the check calls
+(a re-typed copy in the self-test is how the previous one went blind).
+
 ⚠ **Before "fixing" a declaration to satisfy a gate, check the consumer reads
 it.** Four cards pass `curve="linear"` where the def says `discrete`; writing
 `curve="discrete"` would green the gate and change nothing, because all four are
@@ -646,31 +674,57 @@ Doc page rendering is currently AUDIO-only (the doc-page manifest is built by an
 audio-only `?raw` regex parser); VIDEO modules are gated + authored but have no
 `[id]` doc page yet — including them is a known follow-up.
 
-**Docs are hash-transparent to the attests** (owner directive: "docs must not
-change attest hashes"). VIDEO module defs live in the WebGL attest basis, so
-authoring their co-located `docs`/`controlFamilies` would otherwise churn the
-WebGL hash and force a GPU re-attest. Wrap every such co-located block (and any
-docs-only addition to a basis file) in `// docs-hash-ignore:start … :end`
-markers — `computeWebglHash` strips those regions before hashing, so doc
-authoring is a no-op for the attest (guarded by webgl-attest-coverage.test.ts).
-Audio defs are NOT in the WebGL basis and don't need markers. (If the attest
-LOGIC or a real contract field changes, that's a legitimate one-time re-attest.)
+### The attests hash CODE, not bytes — docs are ignored BY DESIGN
 
-⚠ **THE MARKER IS WEBGL-ONLY — the COLLAB attest hashes its basis WHOLESALE.**
-`stripDocsForHash` is defined in, and consulted by, `scripts/webgl-attest-lib.ts`
-**and nowhere else**. `scripts/collab-attest-lib.ts` has no equivalent, and
-`COLLAB_DIR_ROOTS` covers ALL of `packages/server/src` and
-`packages/web/src/lib/multiplayer` — so **a comment-only edit anywhere under
-those roots flips the collab hash and forces a full relay re-attest**, and
-wrapping it in `docs-hash-ignore` markers does nothing, because they are inert
-text to that hasher. Measured 2026-08-08 (#1422): two pure comment lines went
-red; the fix was to move the prose onto a constant outside the basis.
+**Write documentation anywhere. There is nothing to remember.** Owner directive
+2026-08-09: *"docs should not need explicit ignore, they should be ignored by
+design; only code that is, you know, code, should be considered."*
 
-So the heading above is true of **WebGL only**. Under a collab root, either keep
-the prose out of the basis or accept the re-attest. Teaching
-`collab-attest-lib.ts` the same `stripDocsForHash` would close the asymmetry —
-that is a change to the attest LOGIC, hence a legitimate one-time re-attest by
-the rule above, and it is unclaimed work.
+`scripts/attest-code-basis.ts` is THE one place that decides what counts as code
+for **every** attest hash — webgl, collab, grand — **and** the ART pattern-3
+source pins. It parses each basis file with the real TypeScript parser, drops
+the documentation nodes, and re-emits with `removeComments`. Removed from the
+hash:
+
+- **all comments** — line, block, JSDoc, and inside a `.svelte` `<script>`;
+- the **`docs` / `controlFamilies` / `face`** properties of a **module-scope**
+  def object literal (`export const fooDef = { … }`);
+- **type-only imports** (`import type { ModuleDocs } …`) — erased by the
+  compiler, so adding docs to a def that had none is free too;
+- a package.json pin's **npm-script and prose fields** (deps still count).
+
+**String safety is a property of the PARSER, not of a pattern.** A `//`-stripping
+regex eats `'https://x'`, `` `a // b` `` and `/[//]/` — and so does a bare
+`ts.createScanner()` loop on the last one, because `/` is only re-scanned as a
+regex literal when the *parser* asks. `scripts/attest-code-basis.test.ts` feeds
+all three hostile forms in as a permanent leg.
+
+Every "is ignored" claim there is paired with an "is **not** ignored" twin, per
+attest, against the REAL `compute*Hash` over the REAL basis (an injected
+`BasisReader` perturbs one file): a comment-only edit and a docs-only edit leave
+the hash byte-identical; a param range / port id / shader line / relay branch
+edit moves it. A normalizer that returned `''` for everything could not pass.
+
+⚠ **What it still cannot see** (raw-hashed, so a comment edit there DOES cost a
+re-attest): `.toml`, `.sql`, `.snap`, and Svelte **markup** comments. That set is
+named in `EXPECTED_RAW_BASIS_FILES` and asserted exactly — a new raw-hashed
+basis file goes red rather than passing as covered.
+
+⚠ **A nested `face:` is NOT stripped** — only a def's own top-level one. A WebGL
+module may carry `face:` on a geometry object, and stripping that would be a
+*missed* re-attest, the unsafe direction. Negative-controlled in both directions.
+
+**This replaced 79 `docs-hash-ignore` marker pairs across 77 source files** plus
+`video-docs-marker.test.ts`, whose entire job was catching a forgotten marker
+before it cost a ~10-min GPU re-attest. It also closed the asymmetry that WAS
+the bug: the escape hatch used to live in `webgl-attest-lib.ts` and nowhere
+else, so two pure comment lines under `packages/server/src` forced a full relay
+re-attest (#1422), and a one-word npm-script edit in `e2e/package.json` forced a
+GPU one (#1425). Both are now no-ops.
+
+(A change to the attest LOGIC or to a real contract field is still a legitimate
+one-time re-attest. The 2026-08-09 conversion was exactly that: one re-attest
+for all three, basis file LISTS verified byte-identical across the change.)
 
 ## ART baselines and the fingerprint manifest are ONE truth — re-pin BOTH
 

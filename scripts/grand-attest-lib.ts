@@ -36,6 +36,8 @@ import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 
+import { normalizeForHash, type BasisReader } from './attest-code-basis';
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 export const REPO_ROOT = resolve(__dirname, '..');
 
@@ -105,8 +107,8 @@ function isPackageJsonPin(rel: string): boolean {
 /** Deterministic digest of ONLY the grand-relevant deps (GRAND_DEP_ALLOW) in a
  *  package.json's dependencies + devDependencies — sorted `name@range` lines.
  *  Exported for the basis guard test. */
-export function grandDepDigest(pkgRel: string): string {
-  const raw = JSON.parse(readFileSync(join(REPO_ROOT, pkgRel), 'utf8')) as {
+export function grandDepDigest(pkgRel: string, read: BasisReader = readBasisFile): string {
+  const raw = JSON.parse(read(pkgRel)) as {
     dependencies?: Record<string, string>;
     devDependencies?: Record<string, string>;
   };
@@ -138,18 +140,32 @@ export function resolveGrandBasis(): string[] {
 // ---------------------------------------------------------------------------
 
 /** Deterministic content-hash over the basis: for each file in sorted order,
- *  feed `<repo-relative-path>\0<bytes>` into one sha256. package.json pins are
- *  hashed NARROWLY (grandDepDigest); every other file is hashed by raw bytes. */
-export function computeGrandHash(): string {
+ *  feed `<repo-relative-path>\0<CODE>` into one sha256.
+ *
+ *  CODE, not bytes: every source file goes through the SHARED normalizer
+ *  (`scripts/attest-code-basis.ts`) — a TypeScript AST re-emit that drops
+ *  comments, the living-docs `docs`/`controlFamilies`/`face` def properties and
+ *  type-only imports. A comment on a DSP core cannot change a rendered sample,
+ *  so it must not cost a heavy re-attest; the same normalizer backs webgl and
+ *  collab so the three cannot drift apart.
+ *
+ *  package.json pins keep their NARROWER treatment (grandDepDigest);
+ *  `.flox/env/manifest.toml` is hashed by raw bytes. */
+export function computeGrandHash(read: BasisReader = readBasisFile): string {
   const h = createHash('sha256');
   for (const rel of resolveGrandBasis()) {
     h.update(rel);
     h.update('\0');
     if (isPackageJsonPin(rel)) {
-      h.update(grandDepDigest(rel));
+      h.update(grandDepDigest(rel, read));
     } else {
-      h.update(readFileSync(join(REPO_ROOT, rel)));
+      h.update(normalizeForHash(rel, read(rel)));
     }
   }
   return h.digest('hex');
+}
+
+/** The default basis reader: repo-relative path → file text. */
+export function readBasisFile(rel: string): string {
+  return readFileSync(join(REPO_ROOT, rel), 'utf8');
 }

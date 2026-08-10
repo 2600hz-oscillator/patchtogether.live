@@ -152,9 +152,16 @@ export const vfpgaRunnerDef: VideoModuleDef = {
       cvScale: { mode: 'linear' as const },
     })),
     // GATE inputs → synthetic gN_evt params (raw passthrough; factory edge-detect).
+    // Declared GATE: the host itself ALWAYS maintains and publishes the held
+    // level (:420 heldUniform, :556 the card's activity LEDs) and additionally
+    // an edge count (:421) — which of the two a given loaded spec reads is the
+    // spec's choice, so `gate` is the superset that never lies. (`PortDef.edge`
+    // cannot express "depends on the loaded program"; see the Phase-0 table
+    // §4.2 finding 2.)
     ...VFPGA_GATE_PORTS.map((id, i) => ({
       id,
       type: 'gate' as const,
+      edge: 'gate' as const,
       paramTarget: gateEvtParam(i + 1),
     })),
   ],
@@ -192,7 +199,6 @@ export const vfpgaRunnerDef: VideoModuleDef = {
     })),
   ],
 
-  // docs-hash-ignore:start
   docs: {
     explanation: "vfpga-runner is a runtime that executes a loaded .vfpga declarative spec — a \"virtual FPGA bitstream\" — as a WebGL video effect. ONE registered host module declares the full I/O superset it can ever wire (4 video ins, 4 CV, 4 gates, 2 video outs, an 8-slot generic param bank); the loaded VfpgaSpec selects which subset is ACTIVE and what render-graph runs, the way a bitstream reconfigures an FPGA fabric. A fabric-described spec (a grid of typed tiles wired by a routing netlist) is place-and-routed into the GL pass pipeline; a spec may also carry a legacy hand-authored render graph as an escape hatch, and when a spec declares both, the fabric path wins at runtime (smpte-bars ships both — its fabric lowers byte-identically to its legacy effect — to dogfood place-and-route on the reference VFPGA). Changing the preset hot-swaps the effect: the old GL pipeline is disposed and a new one built, with the new spec's param-slot defaults seeded. Usage: pick a VFPGA from the card's \"load preset…\" menu (the bundled catalog ships smpte-bars as the default test-pattern generator plus glitch/datamosh-style effects: chroma-rot, databend-cvbs, framestore-howl, macroblock-mosh, scaler-glitch, sync-bender and tmds-sparkle). The card preview shows the REAL output of whatever VFPGA is loaded (a live blit of this node's own output FBO, not a frozen CPU snapshot); the \"fabric\" button toggles a read-only floorplan view (tile grid + lit routing nets). The card surfaces controls only for the loaded spec's active roles — a knob per mapped param slot, a SCALE attenuverter + OFFSET + always-on scope per active CV input, and an activity LED per active gate input — while the PatchPanel still renders the full superset of jacks (inactive ports dimmed). The def declares the off-main-thread worker render locus (every catalog VFPGA is pure-GL, so it is eligible to render off the main thread).",
     inputs: {
@@ -232,7 +238,6 @@ export const vfpgaRunnerDef: VideoModuleDef = {
       "g4_evt": "Synthetic gate param for the g4 jack (no knob). Edge-detected into the held-level / rising-edge-count uniforms the loaded spec's gate-role-4 reads.",
     },
   },
-  // docs-hash-ignore:end
   factory(ctx: VideoEngineContext, node): VideoNodeHandle {
     const gl = ctx.gl;
     const { fbo: outFbo, texture: outTexture } = ctx.createFbo();

@@ -32,7 +32,7 @@
 // missed file is a hard red, never a silent skip.
 
 import { describe, it, expect } from 'vitest';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 
@@ -51,10 +51,10 @@ import {
   isFullyCollabCapacityGated,
   findAllWebglSourceFiles,
   sourceCreatesWebglContext,
-  stripDocsForHash,
   AUDIO_WEBGL_MODULE_DEFS,
   REPO_ROOT,
 } from '../../../../../scripts/webgl-attest-lib';
+import { normalizeForHashWithReport } from '../../../../../scripts/attest-code-basis';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 // Repo root from this test file (…/packages/web/src/lib/video → up 5).
@@ -332,33 +332,55 @@ describe('WebGL attestation — fail-closed coverage guard (§12)', () => {
 
 // ---------------------------------------------------------------------------
 // Living-docs is HASH-TRANSPARENT (owner directive 2026-06-24: "docs must not
-// change attest hashes"). Co-located `docs`/`controlFamilies` on a video module
-// — or anything wrapped in `// docs-hash-ignore:start … :end` — is pure
-// documentation and must NOT churn the WebGL attest hash + force a re-attest.
-// stripDocsForHash() removes those regions before hashing; this guard asserts
-// it (a) removes a marked region and (b) is a true no-op (adding/removing a
-// marked block leaves the hashed content byte-identical).
+// change attest hashes"; 2026-08-09: "docs should not need explicit ignore,
+// they should be ignored by design").
+//
+// The mechanism is `scripts/attest-code-basis.ts` — a TypeScript AST re-emit
+// that drops comments, the `docs`/`controlFamilies`/`face` def properties and
+// type-only imports. There is no marker to remember and no lint to catch a
+// forgotten one. The mechanism's own both-direction proof (string safety, the
+// per-attest comment/docs/code legs, the raw-file scope ratchet) lives in
+// `scripts/attest-code-basis.test.ts`, in the same required `unit` lane.
+//
+// What belongs HERE is the claim specific to THIS basis: the video modules that
+// carry co-located docs really are docs-transparent, measured on the REAL files
+// rather than a fixture — so a def whose docs the normalizer somehow failed to
+// reach shows up here, named.
 // ---------------------------------------------------------------------------
-describe('webgl-attest: docs are hash-transparent (stripDocsForHash)', () => {
-  it('removes a // docs-hash-ignore marked region', () => {
-    const src = ['const a = 1;', '// docs-hash-ignore:start', '  docs: { x: "a { b } c" },', '// docs-hash-ignore:end', 'const b = 2;'].join('\n') + '\n';
-    expect(stripDocsForHash(src)).toBe('const a = 1;\nconst b = 2;\n');
+describe('webgl-attest: docs on REAL basis files are hash-transparent', () => {
+  const basis = resolveWebglBasis();
+
+  /** The basis files the normalizer actually strips a docs property from. */
+  const docBearing = basis.filter((rel) => {
+    if (!rel.endsWith('.ts')) return false;
+    const { report } = normalizeForHashWithReport(rel, readFileSync(join(REPO_ROOT, rel), 'utf8'));
+    return report.strippedProps.length > 0;
   });
 
-  it('is a true no-op: inserting a marked block does not change hashed content', () => {
-    const base = 'export const x = 1;\nexport const y = 2;\n';
-    const withDocs =
-      'export const x = 1;\n' +
-      '// docs-hash-ignore:start\n' +
-      'export const docs = { a: "has } and { braces", b: \'and apostrophes\' };\n' +
-      '// docs-hash-ignore:end\n' +
-      'export const y = 2;\n';
-    expect(stripDocsForHash(withDocs)).toBe(stripDocsForHash(base));
-    expect(stripDocsForHash(withDocs)).toBe(base);
+  it('the doc-bearing set is non-trivial (a zero-length set passes vacuously)', () => {
+    // 68 at the 2026-08-09 conversion; the FLOOR is what matters.
+    expect(docBearing.length).toBeGreaterThanOrEqual(50);
   });
 
-  it('leaves a file with no markers untouched', () => {
-    const src = 'export const x = 1;\n// a normal comment\nexport const y = 2;\n';
-    expect(stripDocsForHash(src)).toBe(src);
+  it('the three rendersWebGL AUDIO defs are among them (cube / hypercube / wavesculpt)', () => {
+    for (const def of AUDIO_WEBGL_MODULE_DEFS) {
+      expect(docBearing, `${def} carries co-located docs that must be stripped`).toContain(def);
+    }
   });
+
+  it.each(['docs', 'controlFamilies', 'face'])(
+    'no basis file leaks a def-level `%s` into the hashed content',
+    (prop) => {
+      const leaked: string[] = [];
+      for (const rel of docBearing) {
+        const src = readFileSync(join(REPO_ROOT, rel), 'utf8');
+        const { text, report } = normalizeForHashWithReport(rel, src);
+        if (!report.strippedProps.includes(prop)) continue;
+        // The def-level declaration is written at two-space indent; if it is
+        // still there after normalisation the strip did not reach it.
+        if (new RegExp(`^ {2,4}${prop}:`, 'm').test(text)) leaked.push(rel);
+      }
+      expect(leaked).toEqual([]);
+    },
+  );
 });

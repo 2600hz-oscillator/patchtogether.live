@@ -330,9 +330,9 @@ bluebox family bluebox-tonebank kind=cell prefix=bluebox-tonebank
 buggles meta domain=audio
 buggles in chaos_cv cv
 buggles in clock_cv cv
-buggles in external_clock gate
-buggles out burst gate
-buggles out clock gate
+buggles in external_clock gate edge=trigger
+buggles out burst gate edge=trigger
+buggles out clock gate edge=trigger
 buggles out ring audio
 buggles out smooth cv
 buggles out stepped cv
@@ -351,12 +351,12 @@ cameraInput param fillMode 0..1 discrete default=1
 cameraInput param gain 0..2 linear default=1
 cameraInput param mirror 0..1 discrete default=1
 cartesian meta domain=audio
-cartesian in clock gate
-cartesian in lfo_clock gate
+cartesian in clock gate edge=trigger
+cartesian in lfo_clock gate edge=trigger
 cartesian in x_cv cv
 cartesian in y_cv cv
-cartesian out clock gate
-cartesian out gate gate
+cartesian out clock gate edge=trigger
+cartesian out gate gate edge=gate
 cartesian out lfo_x cv
 cartesian out lfo_y cv
 cartesian out pitch polyPitchGate
@@ -455,14 +455,14 @@ clap family clap-hero kind=cell prefix=clap-hero
 clipplayer meta domain=audio exposesSequence
 clipplayer in reset gate edge=trigger
 clipplayer in stop_all gate edge=trigger
-clipplayer out gate1 gate
-clipplayer out gate2 gate
-clipplayer out gate3 gate
-clipplayer out gate4 gate
-clipplayer out gate5 gate
-clipplayer out gate6 gate
-clipplayer out gate7 gate
-clipplayer out gate8 gate
+clipplayer out gate1 gate edge=gate
+clipplayer out gate2 gate edge=gate
+clipplayer out gate3 gate edge=gate
+clipplayer out gate4 gate edge=gate
+clipplayer out gate5 gate edge=gate
+clipplayer out gate6 gate edge=gate
+clipplayer out gate7 gate edge=gate
+clipplayer out gate8 gate edge=gate
 clipplayer out pitch1 polyPitchGate
 clipplayer out pitch2 polyPitchGate
 clipplayer out pitch3 polyPitchGate
@@ -500,7 +500,7 @@ clockedRunner meta domain=audio
 clouds meta domain=audio
 clouds in blend_cv cv param=blend cvScale=linear
 clouds in density_cv cv param=density cvScale=linear
-clouds in freeze_gate gate
+clouds in freeze_gate gate edge=trigger
 clouds in in_l audio
 clouds in in_r audio
 clouds in pitch pitch
@@ -735,7 +735,7 @@ cube in slice_rz cv param=slice_rz cvScale=linear
 cube in slice_y cv param=slice_y cvScale=linear
 cube in space_crush cv param=space_crush cvScale=linear
 cube in space_diffuse cv param=space_diffuse cvScale=linear
-cube in trigger gate
+cube in trigger gate edge=gate
 cube in tune cv param=tune cvScale=linear
 cube out L audio
 cube out R audio
@@ -862,35 +862,35 @@ doom in p4_space cv param=cv_p4_space
 doom in p4_up cv param=cv_p4_up
 doom out audio_l audio
 doom out audio_r audio
-doom out evt_door gate
-doom out evt_gun_p1 gate
-doom out evt_gun_p2 gate
-doom out evt_gun_p3 gate
-doom out evt_gun_p4 gate
-doom out evt_kill gate
-doom out evt_kill_arachnotron gate
-doom out evt_kill_baron gate
-doom out evt_kill_caco gate
-doom out evt_kill_chainguy gate
-doom out evt_kill_cyber gate
-doom out evt_kill_demon gate
-doom out evt_kill_imp gate
-doom out evt_kill_keen gate
-doom out evt_kill_knight gate
-doom out evt_kill_lostsoul gate
-doom out evt_kill_mancubus gate
-doom out evt_kill_pain gate
-doom out evt_kill_revenant gate
-doom out evt_kill_shotguy gate
-doom out evt_kill_spectre gate
-doom out evt_kill_spidermind gate
-doom out evt_kill_vile gate
-doom out evt_kill_wolfss gate
-doom out evt_kill_zombieman gate
-doom out evt_p1_dies gate
-doom out evt_p2_dies gate
-doom out evt_p3_dies gate
-doom out evt_p4_dies gate
+doom out evt_door gate edge=trigger
+doom out evt_gun_p1 gate edge=trigger
+doom out evt_gun_p2 gate edge=trigger
+doom out evt_gun_p3 gate edge=trigger
+doom out evt_gun_p4 gate edge=trigger
+doom out evt_kill gate edge=trigger
+doom out evt_kill_arachnotron gate edge=trigger
+doom out evt_kill_baron gate edge=trigger
+doom out evt_kill_caco gate edge=trigger
+doom out evt_kill_chainguy gate edge=trigger
+doom out evt_kill_cyber gate edge=trigger
+doom out evt_kill_demon gate edge=trigger
+doom out evt_kill_imp gate edge=trigger
+doom out evt_kill_keen gate edge=trigger
+doom out evt_kill_knight gate edge=trigger
+doom out evt_kill_lostsoul gate edge=trigger
+doom out evt_kill_mancubus gate edge=trigger
+doom out evt_kill_pain gate edge=trigger
+doom out evt_kill_revenant gate edge=trigger
+doom out evt_kill_shotguy gate edge=trigger
+doom out evt_kill_spectre gate edge=trigger
+doom out evt_kill_spidermind gate edge=trigger
+doom out evt_kill_vile gate edge=trigger
+doom out evt_kill_wolfss gate edge=trigger
+doom out evt_kill_zombieman gate edge=trigger
+doom out evt_p1_dies gate edge=trigger
+doom out evt_p2_dies gate edge=trigger
+doom out evt_p3_dies gate edge=trigger
+doom out evt_p4_dies gate edge=trigger
 doom out out video
 doom param audioGain 0..2 linear default=1
 doom param cv_iddqd_in 0..1 linear default=0
@@ -934,7 +934,7 @@ doom param cv_p4_up 0..1 linear default=0
 doom param fillMode 0..1 discrete default=0
 drummergirl meta domain=audio
 drummergirl in decay cv param=decay cvScale=log
-drummergirl in gate gate
+drummergirl in gate gate edge=gate
 drummergirl in pitch cv param=pitch cvScale=linear
 drummergirl in shape cv param=shape cvScale=linear
 drummergirl in tone cv param=tone cvScale=linear
@@ -946,18 +946,18 @@ drummergirl param shape 0..1 linear default=0.3
 drummergirl param tone 0..1 linear default=0.3
 drummergirl param volume 0..2 linear default=1
 drumseqz meta domain=audio exposesSequence
-drumseqz in clock gate
-drumseqz in play_cv gate
-drumseqz in queue1_cv gate
-drumseqz in queue2_cv gate
-drumseqz in queue3_cv gate
-drumseqz in queue4_cv gate
-drumseqz in reset_cv gate
-drumseqz out clock gate
-drumseqz out gate1 gate
-drumseqz out gate2 gate
-drumseqz out gate3 gate
-drumseqz out gate4 gate
+drumseqz in clock gate edge=trigger
+drumseqz in play_cv gate edge=trigger
+drumseqz in queue1_cv gate edge=trigger
+drumseqz in queue2_cv gate edge=trigger
+drumseqz in queue3_cv gate edge=trigger
+drumseqz in queue4_cv gate edge=trigger
+drumseqz in reset_cv gate edge=trigger
+drumseqz out clock gate edge=trigger
+drumseqz out gate1 gate edge=gate
+drumseqz out gate2 gate edge=gate
+drumseqz out gate3 gate edge=gate
+drumseqz out gate4 gate edge=gate
 drumseqz out pitch1 pitch
 drumseqz out pitch2 pitch
 drumseqz out pitch3 pitch
@@ -1125,15 +1125,15 @@ filter param mode 0..2 discrete default=0
 filter param res_cv_amt -1..1 linear default=1
 filter param resonance 0..0.99 linear default=0.1
 flipper meta domain=audio
-flipper in in1 gate
-flipper in in2 gate
-flipper out flip gate
-flipper out flop gate
+flipper in in1 gate edge=gate
+flipper in in2 gate edge=gate
+flipper out flip gate edge=gate
+flipper out flop gate edge=gate
 fourplexer meta domain=audio
-fourplexer in gate1 gate
-fourplexer in gate2 gate
-fourplexer in gate3 gate
-fourplexer in gate4 gate
+fourplexer in gate1 gate edge=trigger
+fourplexer in gate2 gate edge=trigger
+fourplexer in gate3 gate edge=trigger
+fourplexer in gate4 gate edge=trigger
 fourplexer in in1 cv
 fourplexer in in2 cv
 fourplexer in in3 cv
@@ -1240,34 +1240,34 @@ freezeframe param quant_g 0..1 linear default=0
 freezeframe param quant_luma 0..1 linear default=0
 freezeframe param quant_r 0..1 linear default=0
 frogger meta domain=audio vizPassthrough
-frogger in down_gate gate
-frogger in left_gate gate
-frogger in right_gate gate
-frogger in start_gate gate
-frogger in up_gate gate
-frogger out dead_gate gate
-frogger out home_gate gate
-frogger out level_gate gate
+frogger in down_gate gate edge=trigger
+frogger in left_gate gate edge=trigger
+frogger in right_gate gate edge=trigger
+frogger in start_gate gate edge=trigger
+frogger in up_gate gate edge=trigger
+frogger out dead_gate gate edge=trigger
+frogger out home_gate gate edge=trigger
+frogger out level_gate gate edge=trigger
 frogger param initialTime 10..120 linear default=60
 gamepad meta domain=audio
-gamepad out a gate
-gamepad out b gate
-gamepad out back gate
-gamepad out dd gate
-gamepad out dl gate
-gamepad out dr gate
-gamepad out du gate
-gamepad out lb gate
+gamepad out a gate edge=gate
+gamepad out b gate edge=gate
+gamepad out back gate edge=gate
+gamepad out dd gate edge=gate
+gamepad out dl gate edge=gate
+gamepad out dr gate edge=gate
+gamepad out du gate edge=gate
+gamepad out lb gate edge=gate
 gamepad out lt cv
 gamepad out lx cv
 gamepad out ly cv
-gamepad out rb gate
+gamepad out rb gate edge=gate
 gamepad out rt cv
 gamepad out rx cv
 gamepad out ry cv
-gamepad out start gate
-gamepad out x gate
-gamepad out y gate
+gamepad out start gate edge=gate
+gamepad out x gate edge=gate
+gamepad out y gate edge=gate
 gamepad param padIndex 0..3 discrete default=0
 gatemaiden meta domain=audio
 gatemaiden in in gate accepts=cv,pitch edge=gate
@@ -1276,23 +1276,23 @@ gatemaiden out trig gate edge=trigger
 gatemaiden param gateLen 0.005..2 log default=0.05 unit=s
 gatemaiden param trigShape 0..1 discrete default=0
 gibribbon meta domain=video
-gibribbon in a gate param=btn_a
-gibribbon in b gate param=btn_b
-gibribbon in clock gate param=clock
+gibribbon in a gate param=btn_a edge=trigger
+gibribbon in b gate param=btn_b edge=trigger
+gibribbon in clock gate param=clock edge=trigger
 gibribbon in cv1 modsignal param=cv1 cvScale=linear
 gibribbon in cv2 modsignal param=cv2 cvScale=linear
 gibribbon in cv3 modsignal param=cv3 cvScale=linear
 gibribbon in cv4 modsignal param=cv4 cvScale=linear
-gibribbon in gate gate param=gate
+gibribbon in gate gate param=gate edge=gate
 gibribbon in x modsignal param=axis_x cvScale=linear
-gibribbon in x_btn gate param=btn_x
+gibribbon in x_btn gate param=btn_x edge=trigger
 gibribbon in y modsignal param=axis_y cvScale=linear
-gibribbon in y_btn gate param=btn_y
-gibribbon out evt_fire gate
-gibribbon out evt_gameover gate
-gibribbon out evt_hit gate
-gibribbon out evt_kill gate
-gibribbon out evt_miss gate
+gibribbon in y_btn gate param=btn_y edge=trigger
+gibribbon out evt_fire gate edge=trigger
+gibribbon out evt_gameover gate edge=trigger
+gibribbon out evt_hit gate edge=trigger
+gibribbon out evt_kill gate edge=trigger
+gibribbon out evt_miss gate edge=trigger
 gibribbon out health_cv cv
 gibribbon out out video
 gibribbon param autoplay 0..1 linear default=1
@@ -1400,15 +1400,15 @@ illogic in in1 cv
 illogic in in2 cv
 illogic in in3 cv
 illogic in in4 cv
-illogic out and gate
+illogic out and gate edge=gate
 illogic out att1 cv
 illogic out att2 cv
 illogic out att3 cv
 illogic out att4 cv
 illogic out diff cv
-illogic out nand gate
-illogic out not gate
-illogic out or gate
+illogic out nand gate edge=gate
+illogic out not gate edge=gate
+illogic out or gate edge=gate
 illogic out sum cv
 illogic param att1_amount -1..1 linear default=1
 illogic param att2_amount -1..1 linear default=1
@@ -1515,10 +1515,10 @@ kickdrum family kickdrum-strike kind=other prefix=kickdrum-strike
 kria meta domain=audio
 kria in clock gate edge=trigger
 kria in reset gate edge=trigger
-kria out gate1 gate
-kria out gate2 gate
-kria out gate3 gate
-kria out gate4 gate
+kria out gate1 gate edge=gate
+kria out gate2 gate edge=gate
+kria out gate3 gate edge=gate
+kria out gate4 gate edge=gate
 kria out pitch1 pitch
 kria out pitch2 pitch
 kria out pitch3 pitch
@@ -1615,22 +1615,22 @@ macrooscillator param timbre 0..1 linear default=0.3
 macrooscillator family macro-hero kind=cell prefix=macro-hero
 macrooscillator family macro-strike kind=other prefix=macro-strike
 macseq meta domain=audio exposesSequence
-macseq in clock gate
-macseq in next_cv gate
-macseq in play_cv gate
-macseq in prev_cv gate
-macseq in queue1_cv gate
-macseq in queue2_cv gate
-macseq in queue3_cv gate
-macseq in queue4_cv gate
-macseq in queue5_cv gate
-macseq in queue6_cv gate
-macseq in queue7_cv gate
-macseq in queue8_cv gate
-macseq in random_cv gate
-macseq in reset_cv gate
-macseq out clock gate
-macseq out gate gate
+macseq in clock gate edge=trigger
+macseq in next_cv gate edge=trigger
+macseq in play_cv gate edge=trigger
+macseq in prev_cv gate edge=trigger
+macseq in queue1_cv gate edge=trigger
+macseq in queue2_cv gate edge=trigger
+macseq in queue3_cv gate edge=trigger
+macseq in queue4_cv gate edge=trigger
+macseq in queue5_cv gate edge=trigger
+macseq in queue6_cv gate edge=trigger
+macseq in queue7_cv gate edge=trigger
+macseq in queue8_cv gate edge=trigger
+macseq in random_cv gate edge=trigger
+macseq in reset_cv gate edge=trigger
+macseq out clock gate edge=trigger
+macseq out gate gate edge=gate
 macseq out modelcv cv
 macseq out pitch pitch
 macseq param bpm 30..300 linear default=120
@@ -1705,9 +1705,9 @@ marbles in tjitter_cv cv param=t_jitter cvScale=linear
 marbles in tmodel_cv cv param=t_model cvScale=discrete
 marbles in xbias_cv cv param=x_bias cvScale=linear
 marbles in xdejavu_cv cv param=x_deja_vu cvScale=linear
-marbles out clk gate
-marbles out t1 gate
-marbles out t2 gate
+marbles out clk gate edge=trigger
+marbles out t1 gate edge=gate
+marbles out t2 gate edge=gate
 marbles out x1 cv
 marbles out x2 cv
 marbles out x3 cv
@@ -1739,24 +1739,24 @@ meowbox param morph 0..1 linear default=0.25
 meowbox param pitch -36..36 linear default=0 unit=semi
 meowbox family meowbox-meow kind=other prefix=meowbox-meow
 midiclock meta domain=audio
-midiclock out clock gate
-midiclock out midistart gate
-midiclock out midistop gate
+midiclock out clock gate edge=trigger
+midiclock out midistart gate edge=trigger
+midiclock out midistop gate edge=trigger
 midiclock out run cv
 midiCvBuddy meta domain=audio
-midiCvBuddy out gate gate
+midiCvBuddy out gate gate edge=gate
 midiCvBuddy out pitch_cv cv
 midiCvBuddy out velocity_cv cv
 midiLane meta domain=audio
 midiLane out cc_a cv
 midiLane out cc_b cv
-midiLane out gate gate
-midiLane out note_gate gate
+midiLane out gate gate edge=gate
+midiLane out note_gate gate edge=trigger
 midiLane out pitch_cv cv
 midiLane out poly polyPitchGate
 midiLane out velocity_cv cv
 midiOutBuddy meta domain=audio
-midiOutBuddy in gate gate
+midiOutBuddy in gate gate edge=gate
 midiOutBuddy in pitch cv
 midiOutBuddy in poly polyPitchGate
 midiOutBuddy in velocity cv
@@ -2036,13 +2036,13 @@ mixmstrs stereo ch8L+ch8R
 mixmstrs stereo ret1L+ret1R
 mixmstrs stereo ret2L+ret2R
 modtris meta domain=audio vizPassthrough
-modtris in drop_fast gate
-modtris in move_l gate
-modtris in move_r gate
-modtris in rotate_l gate
-modtris in rotate_r gate
-modtris out line_cleared gate
-modtris out overfill gate
+modtris in drop_fast gate edge=trigger
+modtris in move_l gate edge=trigger
+modtris in move_r gate edge=trigger
+modtris in rotate_l gate edge=trigger
+modtris in rotate_r gate edge=trigger
+modtris out line_cleared gate edge=trigger
+modtris out overfill gate edge=trigger
 modtris param gravityBpm 30..240 log default=60
 modtris param levelStep 1..20 linear default=10
 monoglitch meta domain=video
@@ -2114,7 +2114,7 @@ moog907a param hp 0..1 linear default=0.5
 moog907a param lp 0..1 linear default=0.5
 moog911 meta domain=audio
 moog911 in esus_cv cv param=esus cvScale=linear
-moog911 in gate gate
+moog911 in gate gate edge=gate
 moog911 in t1_cv cv param=t1 cvScale=log
 moog911 in t2_cv cv param=t2 cvScale=log
 moog911 in t3_cv cv param=t3 cvScale=log
@@ -2125,17 +2125,17 @@ moog911 param t1 0.0001..10 log default=0.01 unit=s
 moog911 param t2 0.0001..10 log default=0.2 unit=s
 moog911 param t3 0.0001..10 log default=0.4 unit=s
 moog911a meta domain=audio
-moog911a in trig1 gate
-moog911a in trig2 gate
-moog911a out out1 gate
-moog911a out out2 gate
+moog911a in trig1 gate edge=trigger
+moog911a in trig2 gate edge=trigger
+moog911a out out1 gate edge=trigger
+moog911a out out2 gate edge=trigger
 moog911a param delay1 0.002..10 log default=0.1 unit=s
 moog911a param delay2 0.002..10 log default=0.1 unit=s
 moog911a param mode 0..2 discrete default=0
 moog912 meta domain=audio
 moog912 in audio audio
 moog912 out env cv
-moog912 out gate gate
+moog912 out gate gate edge=gate
 moog912 param sensitivity 0..1 linear default=0.7
 moog912 param smoothing 0..1 linear default=0.5
 moog914 meta domain=audio
@@ -2207,17 +2207,17 @@ moog923 param hpCutoff 0..1 linear default=0.5
 moog923 param level 0..1 linear default=0.8
 moog923 param lpCutoff 0..1 linear default=0.5
 moog956 meta domain=audio
-moog956 out gate gate
+moog956 out gate gate edge=gate
 moog956 out pitch pitch
 moog956 param gate 0..1 linear default=0
 moog956 param offset -2..2 linear default=0
 moog956 param pos 0..1 linear default=0
 moog956 param scale 0..5 linear default=2
 moog960 meta domain=audio
-moog960 in clock gate
-moog960 in start gate
-moog960 in stop gate
-moog960 out clock_out gate
+moog960 in clock gate edge=trigger
+moog960 in start gate edge=trigger
+moog960 in stop gate edge=trigger
+moog960 out clock_out gate edge=trigger
 moog960 out row1 cv
 moog960 out row2 cv
 moog960 out row3 cv
@@ -2259,20 +2259,20 @@ moog960 param range3 0..2 discrete default=0
 moog960 param rate 0.1..20 log default=2 unit=Hz
 moog961 meta domain=audio
 moog961 in audio_in audio
-moog961 in s_in gate
-moog961 in v_in_a gate
-moog961 in v_in_b gate
-moog961 out s_out_a gate
-moog961 out s_out_b gate
-moog961 out v_out1 gate
-moog961 out v_out2 gate
+moog961 in s_in gate edge=gate
+moog961 in v_in_a gate edge=gate
+moog961 in v_in_b gate edge=trigger
+moog961 out s_out_a gate edge=gate
+moog961 out s_out_b gate edge=gate
+moog961 out v_out1 gate edge=gate
+moog961 out v_out2 gate edge=gate
 moog961 param sensitivity 0..1 linear default=0.5
 moog961 param switchOnTime 0.04..4 log default=0.2 unit=s
 moog962 meta domain=audio
 moog962 in in1 cv
 moog962 in in2 cv
 moog962 in in3 cv
-moog962 in shift gate
+moog962 in shift gate edge=trigger
 moog962 out out cv
 moog962 param stages 2..3 discrete default=3
 moog984 meta domain=audio
@@ -2313,13 +2313,13 @@ moog992 param atten4 0..1 linear default=1
 moog993 meta domain=audio
 moog993 in env_in1 cv
 moog993 in env_in2 cv
-moog993 in trig_from1 gate
-moog993 in trig_from2 gate
+moog993 in trig_from1 gate edge=trigger
+moog993 in trig_from2 gate edge=trigger
 moog993 out env_out1 cv
 moog993 out env_out2 cv
-moog993 out trig_out1 gate
-moog993 out trig_out2 gate
-moog993 out trig_out3 gate
+moog993 out trig_out1 gate edge=trigger
+moog993 out trig_out2 gate edge=trigger
+moog993 out trig_out3 gate edge=trigger
 moog993 param route1 0..2 linear default=1
 moog993 param route2 0..2 linear default=1
 moog993 param route3 0..2 linear default=1
@@ -2361,12 +2361,12 @@ moogCp3 param ch2 0..1 linear default=1
 moogCp3 param ch3 0..1 linear default=1
 moogCp3 param ch4 0..1 linear default=1
 nibbles meta domain=video
-nibbles out death gate
-nibbles out dir_change gate
+nibbles out death gate edge=trigger
+nibbles out dir_change gate edge=trigger
 nibbles out gated audio
 nibbles out length_cv cv
 nibbles out out video
-nibbles out pellet gate
+nibbles out pellet gate edge=trigger
 nibbles out snake audio
 nibbles param auto 0..1 discrete default=0
 nibbles param tick_ms 40..200 linear default=80
@@ -2389,15 +2389,15 @@ noise out pink audio
 noise out white audio
 noise param level 0..1 linear default=0.5
 numpadPlus meta domain=audio
-numpadPlus in clock gate
+numpadPlus in clock gate edge=trigger
 numpadPlus in layer cv
-numpadPlus out l1_gate gate
+numpadPlus out l1_gate gate edge=gate
 numpadPlus out l1_pitch pitch
-numpadPlus out l2_gate gate
+numpadPlus out l2_gate gate edge=gate
 numpadPlus out l2_pitch pitch
-numpadPlus out l3_gate gate
+numpadPlus out l3_gate gate edge=gate
 numpadPlus out l3_pitch pitch
-numpadPlus out l4_gate gate
+numpadPlus out l4_gate gate edge=gate
 numpadPlus out l4_pitch pitch
 numpadPlus out poly polyPitchGate
 numpadPlus param activeLayer 0..3 discrete default=0
@@ -2421,10 +2421,10 @@ onetonine out out8 video
 onetonine out out9 video
 onetonine param showGrid 0..1 linear default=1
 outlines meta domain=video
-outlines in collide gate param=cv_collide
+outlines in collide gate param=cv_collide edge=gate
 outlines in d cv param=d cvScale=linear
 outlines in decay cv param=decay cvScale=linear
-outlines in gate gate param=cv_gate
+outlines in gate gate param=cv_gate edge=trigger
 outlines in rotation cv param=rotation cvScale=linear
 outlines in shape cv param=shape cvScale=linear
 outlines in spd cv param=spd cvScale=linear
@@ -2539,7 +2539,7 @@ pentemelodica param wetdry 0..1 linear default=1
 pentemelodica stereo out_l+out_r
 pentemelodica family pentemelodica-voices kind=cell prefix=pentemelodica-voice
 picturebox meta domain=video maxInstances=8
-picturebox in asset_gate gate param=asset_gate
+picturebox in asset_gate gate param=asset_gate edge=trigger
 picturebox in asset_pitch pitch param=asset_pitch
 picturebox in gain cv param=gain cvScale=linear
 picturebox out out image
@@ -2551,16 +2551,16 @@ polarizer in in cv
 polarizer out out cv
 polarizer param depth 0..1 linear default=1
 polyseqz meta domain=audio exposesSequence
-polyseqz in clock gate
+polyseqz in clock gate edge=trigger
 polyseqz in humanize_cv cv param=humanize cvScale=linear
-polyseqz in play_cv gate
-polyseqz in queue1_cv gate
-polyseqz in queue2_cv gate
-polyseqz in queue3_cv gate
-polyseqz in queue4_cv gate
-polyseqz in reset_cv gate
-polyseqz out clock gate
-polyseqz out gate gate
+polyseqz in play_cv gate edge=trigger
+polyseqz in queue1_cv gate edge=trigger
+polyseqz in queue2_cv gate edge=trigger
+polyseqz in queue3_cv gate edge=trigger
+polyseqz in queue4_cv gate edge=trigger
+polyseqz in reset_cv gate edge=trigger
+polyseqz out clock gate edge=trigger
+polyseqz out gate gate edge=gate
 polyseqz out poly polyPitchGate
 polyseqz param bpm 30..300 linear default=90
 polyseqz param gateLength 0.1..0.95 linear default=0.6
@@ -2574,8 +2574,8 @@ polyseqz family polyseqz-root kind=cell prefix=polyseqz-root count=length
 pong meta domain=audio vizPassthrough
 pong in paddle_left cv
 pong in paddle_right cv
-pong out score_left gate
-pong out score_right gate
+pong out score_left gate edge=trigger
+pong out score_right gate edge=trigger
 pong param paddleH 0.05..0.5 linear default=0.2
 pong param serveAngle 0..1 linear default=0.3
 pong param speed 0.25..4 log default=1
@@ -2593,7 +2593,7 @@ qbrt meta domain=audio
 qbrt in cutoff cv param=cutoff cvScale=log
 qbrt in L audio
 qbrt in mode cv param=mode cvScale=discrete
-qbrt in ping gate
+qbrt in ping gate edge=trigger
 qbrt in pingDecay cv param=pingDecay cvScale=log
 qbrt in R audio
 qbrt in resonance cv param=resonance cvScale=linear
@@ -2717,7 +2717,7 @@ rings in note_cv cv param=note cvScale=linear
 rings in pitch pitch
 rings in pos_cv cv param=position cvScale=linear
 rings in str_cv cv param=structure cvScale=linear
-rings in strum gate
+rings in strum gate edge=trigger
 rings out even audio
 rings out odd audio
 rings param brightness 0..1 linear default=0.5
@@ -2752,7 +2752,7 @@ ruttetra param yPhase 0..1 linear default=0
 ruttetra param yShape 0..1 linear default=0
 sampleHold meta domain=audio
 sampleHold in cv_in cv
-sampleHold in gate_in gate
+sampleHold in gate_in gate edge=trigger
 sampleHold out cv_out cv
 sampleHold out cv_quant cv
 sampleHold param scale 0..9 discrete default=1
@@ -2760,7 +2760,7 @@ samsloop meta domain=audio
 samsloop in audio_l_in audio
 samsloop in audio_r_in audio
 samsloop in rate_cv cv param=rate cvScale=linear
-samsloop in trig gate
+samsloop in trig gate edge=trigger
 samsloop out out audio
 samsloop param end 0..1000000 linear default=1000000
 samsloop param mode 0..1 discrete default=1
@@ -2796,19 +2796,19 @@ scope param mode 0..1 discrete default=0
 scope param timeMs 1..200 log default=20 unit=ms
 score meta domain=audio exposesSequence
 score in attack cv param=attack cvScale=log
-score in clock gate
+score in clock gate edge=trigger
 score in decay cv param=decay cvScale=log
-score in play_cv gate
-score in queue1_cv gate
-score in queue2_cv gate
-score in queue3_cv gate
-score in queue4_cv gate
+score in play_cv gate edge=trigger
+score in queue1_cv gate edge=trigger
+score in queue2_cv gate edge=trigger
+score in queue3_cv gate edge=trigger
+score in queue4_cv gate edge=trigger
 score in release cv param=release cvScale=log
-score in reset_cv gate
+score in reset_cv gate edge=trigger
 score in sustain cv param=sustain cvScale=linear
-score out clock gate
+score out clock gate edge=trigger
 score out env cv
-score out gate gate
+score out gate gate edge=gate
 score out pitch pitch
 score param attack 0.001..10 log default=0.005 unit=s
 score param bpm 30..300 linear default=120
@@ -2828,22 +2828,22 @@ scoreboard param color 0..1 linear default=0.3333333333333333
 scoreboard param resetTrig 0..1 linear default=0
 scoreboard param scoreTrig 0..1 linear default=0
 sequencer meta domain=audio exposesSequence
-sequencer in clock gate
-sequencer in next_cv gate
-sequencer in play_cv gate
-sequencer in prev_cv gate
-sequencer in queue1_cv gate
-sequencer in queue2_cv gate
-sequencer in queue3_cv gate
-sequencer in queue4_cv gate
-sequencer in queue5_cv gate
-sequencer in queue6_cv gate
-sequencer in queue7_cv gate
-sequencer in queue8_cv gate
-sequencer in random_cv gate
-sequencer in reset_cv gate
-sequencer out clock gate
-sequencer out gate gate
+sequencer in clock gate edge=trigger
+sequencer in next_cv gate edge=trigger
+sequencer in play_cv gate edge=trigger
+sequencer in prev_cv gate edge=trigger
+sequencer in queue1_cv gate edge=trigger
+sequencer in queue2_cv gate edge=trigger
+sequencer in queue3_cv gate edge=trigger
+sequencer in queue4_cv gate edge=trigger
+sequencer in queue5_cv gate edge=trigger
+sequencer in queue6_cv gate edge=trigger
+sequencer in queue7_cv gate edge=trigger
+sequencer in queue8_cv gate edge=trigger
+sequencer in random_cv gate edge=trigger
+sequencer in reset_cv gate edge=trigger
+sequencer out clock gate edge=trigger
+sequencer out gate gate edge=gate
 sequencer out pitch polyPitchGate
 sequencer param bpm 30..300 linear default=120
 sequencer param gateLength 0.1..0.95 linear default=0.5
@@ -2885,7 +2885,7 @@ shapedramps param v_freq 0.5..8 linear default=1
 shapedramps param v_phase 0..1 linear default=0
 shapedramps param v_shape 0..1 linear default=0
 shapegen meta domain=video
-shapegen in clock_in gate param=cv_clock
+shapegen in clock_in gate param=cv_clock edge=trigger
 shapegen in raster_a video
 shapegen in raster_b video
 shapegen in raster_c video
@@ -2993,20 +2993,20 @@ sixstrum family sixstrum-strum kind=other prefix=sixstrum-strum
 skifree meta domain=audio maxInstances=1 vizPassthrough
 skifree in x cv
 skifree in y cv
-skifree out gate gate
+skifree out gate gate edge=trigger
 skifree out out video
 slewSwitch meta domain=audio
 slewSwitch in in1 cv
 slewSwitch in in2 cv
 slewSwitch in in3 cv
 slewSwitch in in4 cv
-slewSwitch in reset gate
+slewSwitch in reset gate edge=trigger
 slewSwitch in slew1_cv cv param=slew1 cvScale=log
 slewSwitch in slew2_cv cv param=slew2 cvScale=log
 slewSwitch in slew3_cv cv param=slew3 cvScale=log
 slewSwitch in slew4_cv cv param=slew4 cvScale=log
-slewSwitch in step_clock gate
-slewSwitch out eoc gate
+slewSwitch in step_clock gate edge=trigger
+slewSwitch out eoc gate edge=trigger
 slewSwitch out out1 cv
 slewSwitch out out2 cv
 slewSwitch out out3 cv
@@ -3196,51 +3196,51 @@ synesthesia in b_video_in video
 synesthesia out a_band1_audio audio
 synesthesia out a_band1_env_fast cv
 synesthesia out a_band1_env_slow cv
-synesthesia out a_band1_gate gate
+synesthesia out a_band1_gate gate edge=gate
 synesthesia out a_band1_raster mono-video
-synesthesia out a_band1_trig gate
+synesthesia out a_band1_trig gate edge=trigger
 synesthesia out a_band2_audio audio
 synesthesia out a_band2_env_fast cv
 synesthesia out a_band2_env_slow cv
-synesthesia out a_band2_gate gate
+synesthesia out a_band2_gate gate edge=gate
 synesthesia out a_band2_raster mono-video
-synesthesia out a_band2_trig gate
+synesthesia out a_band2_trig gate edge=trigger
 synesthesia out a_band3_audio audio
 synesthesia out a_band3_env_fast cv
 synesthesia out a_band3_env_slow cv
-synesthesia out a_band3_gate gate
+synesthesia out a_band3_gate gate edge=gate
 synesthesia out a_band3_raster mono-video
-synesthesia out a_band3_trig gate
+synesthesia out a_band3_trig gate edge=trigger
 synesthesia out a_band4_audio audio
 synesthesia out a_band4_env_fast cv
 synesthesia out a_band4_env_slow cv
-synesthesia out a_band4_gate gate
+synesthesia out a_band4_gate gate edge=gate
 synesthesia out a_band4_raster mono-video
-synesthesia out a_band4_trig gate
+synesthesia out a_band4_trig gate edge=trigger
 synesthesia out b_band1_audio audio
 synesthesia out b_band1_env_fast cv
 synesthesia out b_band1_env_slow cv
-synesthesia out b_band1_gate gate
+synesthesia out b_band1_gate gate edge=gate
 synesthesia out b_band1_raster mono-video
-synesthesia out b_band1_trig gate
+synesthesia out b_band1_trig gate edge=trigger
 synesthesia out b_band2_audio audio
 synesthesia out b_band2_env_fast cv
 synesthesia out b_band2_env_slow cv
-synesthesia out b_band2_gate gate
+synesthesia out b_band2_gate gate edge=gate
 synesthesia out b_band2_raster mono-video
-synesthesia out b_band2_trig gate
+synesthesia out b_band2_trig gate edge=trigger
 synesthesia out b_band3_audio audio
 synesthesia out b_band3_env_fast cv
 synesthesia out b_band3_env_slow cv
-synesthesia out b_band3_gate gate
+synesthesia out b_band3_gate gate edge=gate
 synesthesia out b_band3_raster mono-video
-synesthesia out b_band3_trig gate
+synesthesia out b_band3_trig gate edge=trigger
 synesthesia out b_band4_audio audio
 synesthesia out b_band4_env_fast cv
 synesthesia out b_band4_env_slow cv
-synesthesia out b_band4_gate gate
+synesthesia out b_band4_gate gate edge=gate
 synesthesia out b_band4_raster mono-video
-synesthesia out b_band4_trig gate
+synesthesia out b_band4_trig gate edge=trigger
 synesthesia param a_bipolar 0..1 discrete default=0
 synesthesia param a_envdepth1 0..2 linear default=1
 synesthesia param a_envdepth2 0..2 linear default=1
@@ -3340,24 +3340,24 @@ tiler in tile_cv cv param=tile cvScale=discrete
 tiler out out video
 tiler param tile 0..5 discrete default=0
 timelorde meta domain=audio maxInstances=1 undeletable
-timelorde in clock gate
+timelorde in clock gate edge=trigger
 timelorde in gate gate edge=gate
-timelorde in start_in gate
-timelorde in stop_in gate
+timelorde in start_in gate edge=trigger
+timelorde in stop_in gate edge=trigger
 timelorde in video_in video
-timelorde out 1/12 gate
-timelorde out 1/16 gate
-timelorde out 1/2 gate
-timelorde out 1/3 gate
-timelorde out 1/32 gate
-timelorde out 1/4 gate
-timelorde out 1/64 gate
-timelorde out 1/8 gate
-timelorde out 1x gate
-timelorde out 2x gate
-timelorde out 4x gate
-timelorde out 8x gate
-timelorde out swing gate
+timelorde out 1/12 gate edge=trigger
+timelorde out 1/16 gate edge=trigger
+timelorde out 1/2 gate edge=trigger
+timelorde out 1/3 gate edge=trigger
+timelorde out 1/32 gate edge=trigger
+timelorde out 1/4 gate edge=trigger
+timelorde out 1/64 gate edge=trigger
+timelorde out 1/8 gate edge=trigger
+timelorde out 1x gate edge=trigger
+timelorde out 2x gate edge=trigger
+timelorde out 4x gate edge=trigger
+timelorde out 8x gate edge=trigger
+timelorde out swing gate edge=trigger
 timelorde out video_out video
 timelorde param bpm 10..300 log default=120 unit=bpm
 timelorde param muteOutputs 0..1 discrete default=0
@@ -3435,14 +3435,14 @@ twotracks in audio_l_in_a audio
 twotracks in audio_l_in_b audio
 twotracks in audio_r_in_a audio
 twotracks in audio_r_in_b audio
-twotracks in overdub_a gate
-twotracks in overdub_b gate
+twotracks in overdub_a gate edge=trigger
+twotracks in overdub_b gate edge=trigger
 twotracks in rate_cv_a cv param=rate_a cvScale=linear
 twotracks in rate_cv_b cv param=rate_b cvScale=linear
-twotracks in rec_arm_a gate
-twotracks in rec_arm_b gate
-twotracks in rec_start_a gate
-twotracks in rec_start_b gate
+twotracks in rec_arm_a gate edge=trigger
+twotracks in rec_arm_b gate edge=trigger
+twotracks in rec_start_a gate edge=trigger
+twotracks in rec_start_b gate edge=trigger
 twotracks out out_l audio
 twotracks out out_r audio
 twotracks param a2b 0..1 linear default=0
@@ -3518,10 +3518,10 @@ vfpgaRunner in cv1 cv param=cv1_val cvScale=linear
 vfpgaRunner in cv2 cv param=cv2_val cvScale=linear
 vfpgaRunner in cv3 cv param=cv3_val cvScale=linear
 vfpgaRunner in cv4 cv param=cv4_val cvScale=linear
-vfpgaRunner in g1 gate param=g1_evt
-vfpgaRunner in g2 gate param=g2_evt
-vfpgaRunner in g3 gate param=g3_evt
-vfpgaRunner in g4 gate param=g4_evt
+vfpgaRunner in g1 gate param=g1_evt edge=gate
+vfpgaRunner in g2 gate param=g2_evt edge=gate
+vfpgaRunner in g3 gate param=g3_evt edge=gate
+vfpgaRunner in g4 gate param=g4_evt edge=gate
 vfpgaRunner in vin1 video
 vfpgaRunner in vin2 video
 vfpgaRunner in vin3 video
@@ -3545,7 +3545,7 @@ vfpgaRunner param p6 0..1 linear default=0
 vfpgaRunner param p7 0..1 linear default=0
 vfpgaRunner param p8 0..1 linear default=0
 videobox meta domain=video
-videobox in play_trigger gate param=cv_play_trigger
+videobox in play_trigger gate param=cv_play_trigger edge=trigger
 videobox out audio_l audio
 videobox out audio_r audio
 videobox out video video
@@ -3630,12 +3630,12 @@ videoOut meta domain=video
 videoOut in in video
 videoOut out out video
 videovarispeed meta domain=video
-videovarispeed in asset_gate gate param=asset_gate
+videovarispeed in asset_gate gate param=asset_gate edge=trigger
 videovarispeed in asset_pitch pitch param=asset_pitch
-videovarispeed in cv_loop_toggle gate param=cv_loop_toggle
-videovarispeed in cv_pause gate param=cv_pause
-videovarispeed in cv_reset gate param=cv_reset
-videovarispeed in cv_start gate param=cv_start
+videovarispeed in cv_loop_toggle gate param=cv_loop_toggle edge=trigger
+videovarispeed in cv_pause gate param=cv_pause edge=trigger
+videovarispeed in cv_reset gate param=cv_reset edge=trigger
+videovarispeed in cv_start gate param=cv_start edge=trigger
 videovarispeed in endCv cv param=endCv cvScale=linear
 videovarispeed in speedCv cv param=speedCv cvScale=linear
 videovarispeed in startCv cv param=startCv cvScale=linear
@@ -3689,7 +3689,7 @@ wavecel in morph_cv cv param=morph cvScale=linear
 wavecel in pitch pitch
 wavecel in poly polyPitchGate
 wavecel in spread_cv cv param=spread cvScale=linear
-wavecel in trigger gate
+wavecel in trigger gate edge=gate
 wavecel out out_l audio
 wavecel out out_r audio
 wavecel out scope_out mono-video
@@ -3711,10 +3711,10 @@ wavecel family wavecel-viz-toggle kind=other prefix=wavecel-viz-toggle
 wavecel family wavecel-wav-input kind=other prefix=wavecel-wav-input
 wavesculpt meta domain=audio
 wavesculpt in alpha_in video
-wavesculpt in gate1 gate
-wavesculpt in gate2 gate
-wavesculpt in gate3 gate
-wavesculpt in gate4 gate
+wavesculpt in gate1 gate edge=gate
+wavesculpt in gate2 gate edge=gate
+wavesculpt in gate3 gate edge=gate
+wavesculpt in gate4 gate edge=gate
 wavesculpt in morph1_cv cv param=morph1 cvScale=linear
 wavesculpt in morph2_cv cv param=morph2 cvScale=linear
 wavesculpt in morph3_cv cv param=morph3 cvScale=linear
@@ -3850,18 +3850,18 @@ wavetableVco param pmAmount -1..1 linear default=0
 wavetableVco param tune -36..36 linear default=0 unit=st
 wavetableVco param wavePos 0..1 linear default=0
 writeseq meta domain=audio exposesSequence
-writeseq in clock gate
+writeseq in clock gate edge=trigger
 writeseq in cv pitch
-writeseq in gate gate
-writeseq in play_cv gate
-writeseq in queue1_cv gate
-writeseq in queue2_cv gate
-writeseq in queue3_cv gate
-writeseq in queue4_cv gate
-writeseq in rec gate
-writeseq in reset_cv gate
-writeseq out clock gate
-writeseq out gate gate
+writeseq in gate gate edge=gate
+writeseq in play_cv gate edge=trigger
+writeseq in queue1_cv gate edge=trigger
+writeseq in queue2_cv gate edge=trigger
+writeseq in queue3_cv gate edge=trigger
+writeseq in queue4_cv gate edge=trigger
+writeseq in rec gate edge=trigger
+writeseq in reset_cv gate edge=trigger
+writeseq out clock gate edge=trigger
+writeseq out gate gate edge=gate
 writeseq out pitch pitch
 writeseq param bpm 30..300 linear default=120
 writeseq param gateLength 0.1..0.95 linear default=0.5

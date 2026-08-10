@@ -517,7 +517,6 @@ export const cellshadeDef: VideoModuleDef = {
     { id: 'ink',       label: 'Ink',    defaultValue: CELLSHADE_DEFAULTS.ink,       min: 0, max: 1,                  curve: 'linear' },
   ],
 
-  // docs-hash-ignore:start
   docs: {
     explanation: "cellshade is a real cel-shader: it remakes the incoming video as flat, hand-painted toon art using the canonical live-video cel pipeline (Winnemöller's Real-Time Video Abstraction). Three stages run per frame: an edge-preserving bilateral smoothing pass (the Smooth knob) flattens low-contrast texture and noise into the large flat regions that read as painted cels while keeping strong contours crisp; a soft luminance quantization pass collapses the image's Rec. 601 brightness into a small number of flat tonal bands (the Bands knob picks 2/3/4/6/8, Soft widens the band transitions) while hue and saturation ride through untouched — a yellow stays yellow, a skin tone stays warm, and each band is a flat tonal step of consistent colour; finally a Sobel ink pass (the same edge machinery as the EDGES module, measured on the smoothed image so noise never inks) draws the salient contours as dark outline strokes, scaled by the Ink knob. It is stateless per frame, so the look tracks the live source with no feedback. Dial Bands low and Ink up for bold comic cels, raise Smooth for painterly abstraction, and use Soft to trade crisp band edges against shimmer-free gradients on live video.",
     inputs: {
@@ -541,7 +540,6 @@ export const cellshadeDef: VideoModuleDef = {
       ink: "Ink — outline darkness (0..1, default 1). Scales the black contour composite: 0 draws no lines at all, 1 inks them solid black, in between dims them proportionally.",
     },
   },
-  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const bilateralProgram = ctx.compileFragment(BILATERAL_FRAG);

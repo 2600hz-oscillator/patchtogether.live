@@ -266,7 +266,7 @@ export const cloudsDef: AudioModuleDef = {
     { id: 'in_l',        type: 'audio' },
     { id: 'in_r',        type: 'audio' },
     { id: 'pitch',       type: 'pitch' },
-    { id: 'freeze_gate', type: 'gate' },
+    { id: 'freeze_gate', type: 'gate', edge: 'trigger' },
     { id: 'position_cv', type: 'cv', paramTarget: 'position', cvScale: { mode: 'linear' } },
     { id: 'size_cv',     type: 'cv', paramTarget: 'size',     cvScale: { mode: 'linear' } },
     { id: 'pitch_cv',    type: 'cv', paramTarget: 'pitch',    cvScale: { mode: 'linear' } },

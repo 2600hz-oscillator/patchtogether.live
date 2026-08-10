@@ -111,10 +111,10 @@ export const moog960Def: AudioModuleDef = {
   inputs: [
     // External clock: rising edge advances one column. Unpatched → internal
     // `rate` drives (sequencer.ts's clock-vs-internal fallback).
-    { id: 'clock', type: 'gate' },
+    { id: 'clock', type: 'gate', edge: 'trigger' },
     // Transport gates: rising edge starts / halts the run.
-    { id: 'start', type: 'gate' },
-    { id: 'stop', type: 'gate' },
+    { id: 'start', type: 'gate', edge: 'trigger' },
+    { id: 'stop', type: 'gate', edge: 'trigger' },
   ],
   outputs: [
     // The three row CV outputs (pot × range multiplier).
@@ -122,7 +122,7 @@ export const moog960Def: AudioModuleDef = {
     { id: 'row2', type: 'cv' },
     { id: 'row3', type: 'cv' },
     // Clock pulse per column advance (~10 ms high), for chaining.
-    { id: 'clock_out', type: 'gate' },
+    { id: 'clock_out', type: 'gate', edge: 'trigger' },
   ],
   params: [
     ...STEP_POT_PARAMS,

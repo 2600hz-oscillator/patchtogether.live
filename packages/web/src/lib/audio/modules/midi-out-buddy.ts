@@ -317,7 +317,7 @@ export const midiOutBuddyDef: AudioModuleDef = {
     // channel 0) — so a 4-note drum column sent exactly ONE note (owner report,
     // 2026-08-06).
     { id: 'poly', type: 'polyPitchGate' },
-    { id: 'gate', type: 'gate' },
+    { id: 'gate', type: 'gate', edge: 'gate' },
     { id: 'pitch', type: 'cv' },
     { id: 'velocity', type: 'cv' },
   ],

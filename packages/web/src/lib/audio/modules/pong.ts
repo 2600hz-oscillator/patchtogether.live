@@ -77,8 +77,8 @@ export const pongDef: AudioModuleDef = {
     { id: 'paddle_right', type: 'cv' },
   ],
   outputs: [
-    { id: 'score_left',  type: 'gate' },
-    { id: 'score_right', type: 'gate' },
+    { id: 'score_left',  type: 'gate', edge: 'trigger' },
+    { id: 'score_right', type: 'gate', edge: 'trigger' },
   ],
   params: [
     {

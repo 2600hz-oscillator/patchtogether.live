@@ -130,7 +130,6 @@ export const textmarqueeDef: VideoModuleDef = {
     { id: 'posY',    label: 'PosY',  defaultValue: TEXTMARQUEE_DEFAULTS.posY,    min: 0, max: 1, curve: 'linear' },
   ],
 
-  // docs-hash-ignore:start
   docs: {
     explanation: `A rich-text MARQUEE video SOURCE — it generates its own picture from text you type, with no video input. You author a styled paragraph in the card's tiny editor (system fonts, per-selection text colour, bold/italic/underline, paragraph align, font family + size, and one layer background fill); that model is rasterized to an offscreen canvas of real system glyphs, uploaded as a texture, and painted into the output frame as a single ribbon. The four knobs only move that ribbon: PosX/PosY place its top-left on screen, and ScrlX/ScrlY crawl it continuously, wrapping back in from the opposite edge once it has fully left — a 90s-screensaver text scroller. Background fills the block's bounding box; everything outside the block reads as layer black. A freshly-spawned node shows a built-in "textmarquee" placeholder until you type. Usage: type a short word at a big SIZE for a screen-filling banner, set a bipolar LFO into ScrlX for a classic side-scroll, or sweep PosX/PosY with an LFO to fly the whole banner fully off one edge, across, and back.`,
     inputs: {
@@ -149,7 +148,6 @@ export const textmarqueeDef: VideoModuleDef = {
       posY: "PosY — raw vertical position, 0..1. 0 places the ribbon fully off the top, 1 fully off the bottom, 0.5 centred. Combined additively with the ScrlY scroll offset.",
     },
   },
-  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);

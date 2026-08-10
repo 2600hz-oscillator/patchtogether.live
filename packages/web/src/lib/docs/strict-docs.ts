@@ -253,8 +253,8 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   // CONVENTION-card pure-Knob/Fader+PatchPanel member goes INTERACTIVE: cloudseed
   // (verified live by docs-virtual-module.spec.ts). The rest stay
   // STATIC: foxy/twotracks/synesthesia run a 2D-canvas render in
-  // the card, hypercube renders WebGL (rendersWebGL — its docs are wrapped in
-  // docs-hash-ignore markers like sibling cube so authoring stays attest-neutral)
+  // the card, hypercube renders WebGL (rendersWebGL — authoring its docs is
+  // attest-neutral by construction, like sibling cube)
   // and its card adds a file-upload picker,
   // and bluebox has no `control-<paramId>` Knob/Fader to probe (its keys are
   // press-and-hold buttons) — so the static face is the right fallback for each.
@@ -282,9 +282,9 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   // SPECTROGRAPH, and the hybrid 4-oscillator 3D video synth WAVESCULPT. All stay
   // STATIC: the four games + spectrograph run a 2D-canvas rAF render loop,
   // samsloop adds a waveform canvas + file-upload + mic record, and wavesculpt
-  // renders WebGL2 (rendersWebGL — its docs + controlFamilies are wrapped in
-  // docs-hash-ignore markers like cube/hypercube so authoring stays
-  // attest-neutral) plus a per-osc .wav file picker. WAVESCULPT declares the per-osc
+  // renders WebGL2 (rendersWebGL — authoring its docs + controlFamilies is
+  // attest-neutral by construction, like cube/hypercube)
+  // plus a per-osc .wav file picker. WAVESCULPT declares the per-osc
   // wavetable-source strip family (wavesculpt-osc). (matrixMix stays
   // undocumented on purpose — it is the e2e "undocumented module" fixture.)
   'frogger',

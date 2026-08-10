@@ -107,7 +107,7 @@ export const scoreDef: AudioModuleDef = {
   label: 'score',
   category: 'modulation',
   inputs: [
-    { id: 'clock', type: 'gate' },
+    { id: 'clock', type: 'gate', edge: 'trigger' },
     // CV scaling per .myrobots/plans/cv-range-standard.md (mirrors ADSR's
     // own param scaling — SCORE forwards these directly to its embedded
     // ADSR worklet).
@@ -123,9 +123,9 @@ export const scoreDef: AudioModuleDef = {
   ],
   outputs: [
     { id: 'pitch', type: 'pitch' },
-    { id: 'gate', type: 'gate' },
+    { id: 'gate', type: 'gate', edge: 'gate' },
     { id: 'env', type: 'cv' },
-    { id: 'clock', type: 'gate' },
+    { id: 'clock', type: 'gate', edge: 'trigger' },
   ],
   params: [
     { id: 'bpm', label: 'BPM', defaultValue: 120, min: 30, max: 300, curve: 'linear' },

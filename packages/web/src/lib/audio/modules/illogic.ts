@@ -131,10 +131,10 @@ export const illogicDef: AudioModuleDef = {
     { id: 'sum',  type: 'cv' },
     { id: 'diff', type: 'cv' },
     // Logic outs (the "logic" half — in1 + in2 thresholded as gates).
-    { id: 'and',  type: 'gate' },
-    { id: 'nand', type: 'gate' },
-    { id: 'or',   type: 'gate' },
-    { id: 'not',  type: 'gate' },
+    { id: 'and',  type: 'gate', edge: 'gate' },
+    { id: 'nand', type: 'gate', edge: 'gate' },
+    { id: 'or',   type: 'gate', edge: 'gate' },
+    { id: 'not',  type: 'gate', edge: 'gate' },
   ],
   params: [
     { id: 'att1_amount', label: 'Att1', defaultValue: 1, min: -1, max: 1, curve: 'linear' },
@@ -143,7 +143,6 @@ export const illogicDef: AudioModuleDef = {
     { id: 'att4_amount', label: 'Att4', defaultValue: 1, min: -1, max: 1, curve: 'linear' },
   ],
 
-  // docs-hash-ignore:start  -- docs prose is hash-transparent to the ART audio-profile source pin
   docs: {
     explanation:
       "A three-in-one CV utility: a four-channel attenuverter, a sum/difference mixer, and a digital logic block, all sharing the same four inputs. Each input runs through its own bipolar attenuverter knob (-1 to +1) and that attenuverted signal appears on its own ATT output AND feeds two mix buses: SUM (all four added) and DIFF (channels 1+2 minus channels 3+4). Separately, inputs 1 and 2 are treated as gates — thresholded at 0.5 — and combined into clean 0/1 AND, NAND, and OR outputs, while input 1 alone drives a NOT output. So you can attenuvert and mix CV on one half while deriving Boolean gate logic from the first two channels on the other — invert an LFO, blend modulation, and gate-AND two clocks, all from one module. (For continuous min/max/product math instead of digital 0/1 logic, see ANALOGLOGICMATHS.)",
@@ -172,7 +171,6 @@ export const illogicDef: AudioModuleDef = {
       att4_amount: "Channel-4 attenuverter (-1 to +1, default +1): scales input 4 into ATT4, adds it to SUM and subtracts it in DIFF; 0 mutes, negative inverts.",
     },
   },
-  // docs-hash-ignore:end
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     // ---------------- Attenuverters (per channel) ----------------

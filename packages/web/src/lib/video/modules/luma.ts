@@ -132,7 +132,6 @@ export const lumaDef: VideoModuleDef = {
     { id: 'bias',            label: 'Bias',   defaultValue: DEFAULTS.bias,            min: -0.5, max: 0.5,  curve: 'linear' },
   ],
 
-  // docs-hash-ignore:start
   docs: {
     explanation: "luma is a luminance-domain color processor for a single video stream. It reads the Rec. 601 brightness (0.299/0.587/0.114) of every pixel, runs that luma through a chain of gamma, contrast (scaled around the 0.5 midpoint), posterize (quantize to N steps; 16 = off), then an additive bias, and finally re-applies the new-luma/old-luma ratio to all three RGB channels so chroma (hue and saturation) is preserved while only tonality changes. Gamma uses the Levels-style INVERSE convention pow(luma, 1/gamma): values above 1 brighten midtones, below 1 darken them (this is the Photoshop-Levels convention, not display-gamma out = in^gamma). Patch a video source into in and use it to crush blacks, lift gamma, flatten the image into hard tonal bands, or shift overall brightness; with the defaults (gamma 1, cntr 1, post 16, bias 0) the transfer is a true identity — the picture passes through untouched. Note this is NOT a keyer — for foreground/background luma compositing use lumakey instead.",
     inputs: {
@@ -152,7 +151,6 @@ export const lumaDef: VideoModuleDef = {
       bias: "Bias fader — a final additive luma offset, range -0.5 to 0.5; negative depresses overall brightness, positive lifts it, 0 leaves it unchanged.",
     },
   },
-  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);

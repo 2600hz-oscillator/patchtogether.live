@@ -122,7 +122,7 @@ export const sequencerDef: AudioModuleDef = {
   inputs: [
     // External clock: when patched, the sequencer advances on incoming rising
     // edges instead of its internal BPM. Disconnect to fall back to BPM.
-    { id: 'clock', type: 'gate' },
+    { id: 'clock', type: 'gate', edge: 'trigger' },
     // Shared transport CV inputs (PR feat/sequencer-transport-quicksave):
     //   play_cv      → rising edge toggles isPlaying
     //   reset_cv     → rising edge resets stepIndex to 0
@@ -142,11 +142,11 @@ export const sequencerDef: AudioModuleDef = {
     // same root-note V/oct as before. 'maj'/'min' broadcast a triad on
     // lanes 0..3 with lane 4 reserved for future 7ths/9ths.
     { id: 'pitch', type: 'polyPitchGate' },
-    { id: 'gate', type: 'gate' },
+    { id: 'gate', type: 'gate', edge: 'gate' },
     // Clock pulse per step advance (10 ms high). Fires on every advance,
     // regardless of step on/off — it's the "I just stepped" signal. Patch
     // into another sequencer's clock_in to chain.
-    { id: 'clock', type: 'gate' },
+    { id: 'clock', type: 'gate', edge: 'trigger' },
   ],
   params: [
     { id: 'bpm',        label: 'BPM',  defaultValue: 120, min: 30,  max: 300,  curve: 'linear' },

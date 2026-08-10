@@ -123,7 +123,8 @@ export const blueboxDef: AudioModuleDef = {
     // "Level-sensitive, not edge-triggered" since the module shipped. Until this
     // declaration existed, `module-docs-lint`'s edge-vocabulary check skipped
     // all twelve ports (`if (!p.edge) continue`), so that sentence was asserted
-    // by nothing and the twelve sat in `undeclared-edge-ledger.ts`.
+    // by nothing. (The ledger that then parked them is gone — the check is now
+    // an unconditional deny.)
     edge: 'gate' as const,
   })),
   outputs: [{ id: 'out', type: 'audio' as const }],

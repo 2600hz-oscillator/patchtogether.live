@@ -150,7 +150,6 @@ export const acidwarpDef: VideoModuleDef = {
     { id: 'sceneTrig',   label: 'Trig',    defaultValue: DEFAULTS.sceneTrig,   min: 0, max: 1, curve: 'linear' },
   ],
 
-  // docs-hash-ignore:start
   docs: {
     explanation: "acidwarp is a pure-GPU plasma SOURCE — it has no video input, it synthesizes its picture from math. It is a faithful port of Noah Spurrier's 1992-93 ACIDWARP demo: a 320x240 (NTSC 4:3) buffer of 8-bit palette indices is generated once per scene by a per-pixel formula (distance + angle + scaled sin/cos modulators, plus a few XOR scenes and recursive \"rain\" noise scenes), then every frame a 256-entry color palette is rotated by one or more slots and sampled per pixel. The scrolling palette is what makes the pattern appear to flow and pulse, even though the underlying index field is static until the scene changes. There are 41 scenes (concentric rings, simple rays, peacock, five-arm star, interference fields, rain/noise, interlaced two-screen variants, etc.) and 8 palettes (RGBW rainbow, greyscale, half-grey, pastel — each with an optional sparkle/\"lightning\" variant that brightens every 4th slot). Use it as a generative video bed: patch OUT into a mixer/feedback/output card, ride SPEED for the cycling rate, and nudge SCENE by hand or with a clock into scene_cv for rhythmic pattern changes. Slot 0 is reserved black, so palette rotation cycles only the 255 non-black colors.",
     inputs: {
@@ -168,7 +167,6 @@ export const acidwarpDef: VideoModuleDef = {
       sceneTrig: "One-shot scene-advance trigger (linear 0..1, default 0). Driven by the scene_cv input; the draw loop edge-detects it (a low->high crossing above 0.5 fires once, advancing the scene). Not a hand-turned control — it is the CV-fed trigger that bumps the scene index.",
     },
   },
-  // docs-hash-ignore:end
   factory(ctx: VideoEngineContext, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);
