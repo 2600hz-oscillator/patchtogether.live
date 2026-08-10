@@ -127,7 +127,6 @@ export const linesDef: VideoModuleDef = {
     { id: 'fmDepth',   label: 'FM Depth',  defaultValue: DEFAULTS.fmDepth,   min: 0,    max: 1,  curve: 'linear' },
   ],
 
-  // docs-hash-ignore:start
   docs: {
     explanation: "LINES is a procedural mono-video source that renders soft-edged parallel stripes whose orientation, count, thickness, and scroll you dial in. The shader rotates the UV space by Orient (0 = horizontal lines, 1 = vertical, anything between = diagonal), then computes wave = abs(sin(2pi * Amp * (position + Phase))) along that axis and lights up bright bands wherever the wave falls under the Thickness threshold, with a smoothstep soft edge straddling it. The result is a grayscale grating written equally to all three RGB channels (alpha 1). The pattern auto-scrolls on its own (Phase advances steadily over time, time * 0.15 wrapped to 0..1) so it is visibly alive without touching a knob; your Phase value adds on top of that drift. Patch the OUT into an OUTPUT screen, a video mixer, or a colorizer; use it as a structural test pattern or as a moving modulation texture for downstream video modules.",
     inputs: {
@@ -148,7 +147,6 @@ export const linesDef: VideoModuleDef = {
       fmDepth: "Depth of the forward-compatible FM modulator, 0 to 1 (linear). The uniform is plumbed but multiplied by 0.0 in this Phase 0 shader, and there is no CV input or card fader for it, so it currently has no visible effect. Default 0.",
     },
   },
-  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);

@@ -177,11 +177,11 @@ export const outlinesDef: VideoModuleDef = {
   inputs: [
     // A gate event spawns a new shape. The CV-bridge routes the gate sample
     // into setParam(cv_gate, value); a rising-edge detector spawns one shape.
-    { id: OUTLINES_GATE_PORT_ID, type: 'gate', paramTarget: OUTLINES_GATE_PARAM_ID },
+    { id: OUTLINES_GATE_PORT_ID, type: 'gate', edge: 'trigger', paramTarget: OUTLINES_GATE_PARAM_ID },
     // LIVE inter-shape COLLIDE mode. The CV-bridge routes this gate's LEVEL
     // into setParam(cv_collide, value); the sim reads it each frame (HIGH →
     // shapes bounce off each other elastically, LOW → pass through).
-    { id: OUTLINES_COLLIDE_PORT_ID, type: 'gate', paramTarget: OUTLINES_COLLIDE_PARAM_ID },
+    { id: OUTLINES_COLLIDE_PORT_ID, type: 'gate', edge: 'gate', paramTarget: OUTLINES_COLLIDE_PARAM_ID },
     // Per-param CV — port id MUST equal the param id (the cross-domain CV
     // bridge routes onto setParam(portId)). `rate` is knob-only (no port).
     // These are CONTINUOUS knob modulators, so each MUST carry a `cvScale`
@@ -224,7 +224,6 @@ export const outlinesDef: VideoModuleDef = {
     { id: OUTLINES_COLLIDE_PARAM_ID, label: 'COLLIDE', defaultValue: 0, min: 0, max: 1, curve: 'linear' },
   ],
 
-  // docs-hash-ignore:start
   docs: {
     explanation: "A stateful particle video SOURCE in the LZX tradition. Each gate edge (or the internal rate clock) spawns a shape — a circle or a regular N-gon — at a seeded-random position; it drifts in a latched direction at a latched speed and BOUNCES when its center hits a wall, accumulating into a 1024px field. From the per-pixel overlap COUNT of all live shapes it derives four pictures: overlap (white where any shape covers a pixel), contour (just the shape outlines, so stacking shapes read as ripples in a pond), combine (the overlap region colorized by stack depth via a hue ramp with brightness and saturation rising as more shapes pile up), and mapped (the patched video input shown only where two or more shapes overlap). Usage: leave RATE up for a self-running generator, or set RATE to 0 and clock the GATE input to spawn one shape per pulse; patch COMBINE or CONTOUR into a screen and use the CV inputs to animate size, drift, and spin.",
     inputs: {
@@ -256,7 +255,6 @@ export const outlinesDef: VideoModuleDef = {
       cv_collide: "Hidden synthetic gate param backing the COLLIDE jack (not a knob). The engine CV-bridge writes the collide input's LEVEL here; read live every frame, HIGH (>=0.5) makes shapes bounce off each other elastically, LOW passes through.",
     },
   },
-  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const copyProgram = ctx.compileFragment(COPY_FRAG_SRC);

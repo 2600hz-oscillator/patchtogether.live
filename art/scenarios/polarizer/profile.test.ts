@@ -20,8 +20,9 @@
 //
 // SIGNATURE output (owner decision §6b.2): the single `out`.
 //
-// The .sha pins the def file with its co-located docs stripped
-// (docs-hash-ignore markers — docs edits must never invalidate audio pins).
+// The .sha pins the def file reduced to its CODE — comments plus the co-located
+// docs/face blocks are stripped by the shared attest normalizer, because
+// documentation must never invalidate an audio pin.
 
 import { describe, expect, it } from 'vitest';
 import { polarizerDef } from '$lib/audio/modules/polarizer';

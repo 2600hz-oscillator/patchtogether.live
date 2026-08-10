@@ -200,7 +200,7 @@ export const drumseqzDef: AudioModuleDef = {
   category: 'modulation',
 
   inputs: [
-    { id: 'clock', type: 'gate' },
+    { id: 'clock', type: 'gate', edge: 'trigger' },
     // Shared transport CV inputs (PR feat/sequencer-transport-quicksave):
     //   play_cv      → toggles isPlaying on rising edge
     //   reset_cv     → resets stepIndex to 0 on rising edge
@@ -208,15 +208,15 @@ export const drumseqzDef: AudioModuleDef = {
     ...TRANSPORT_CV_PORT_DEFS,
   ],
   outputs: [
-    { id: 'gate1',  type: 'gate' },
+    { id: 'gate1',  type: 'gate', edge: 'gate' },
     { id: 'pitch1', type: 'pitch' },
-    { id: 'gate2',  type: 'gate' },
+    { id: 'gate2',  type: 'gate', edge: 'gate' },
     { id: 'pitch2', type: 'pitch' },
-    { id: 'gate3',  type: 'gate' },
+    { id: 'gate3',  type: 'gate', edge: 'gate' },
     { id: 'pitch3', type: 'pitch' },
-    { id: 'gate4',  type: 'gate' },
+    { id: 'gate4',  type: 'gate', edge: 'gate' },
     { id: 'pitch4', type: 'pitch' },
-    { id: 'clock',  type: 'gate' },
+    { id: 'clock',  type: 'gate', edge: 'trigger' },
   ],
   params: [
     { id: 'bpm',         label: 'BPM',  defaultValue: 120,      min: 30,  max: 300,  curve: 'linear' },

@@ -49,7 +49,7 @@ export const moog962Def: AudioModuleDef = {
     { id: 'in2',   type: 'cv' },
     { id: 'in3',   type: 'cv' },
     // SHIFT advance gate — rising edge steps the selector.
-    { id: 'shift', type: 'gate' },
+    { id: 'shift', type: 'gate', edge: 'trigger' },
   ],
   outputs: [
     { id: 'out', type: 'cv' },

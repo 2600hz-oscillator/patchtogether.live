@@ -27,12 +27,10 @@
 // Inputs:
 //   L (audio): left-channel signal (the ping click sums in here too).
 //   R (audio): right-channel signal (likewise).
-//   ping (gate cable, consumed as a TRIGGER): rising edge across 0.5 fires
-//     the click + Q-boost excitation. Level while high is ignored.
-//     CONTRACT GAP: the PortDef below does NOT yet declare `edge: 'trigger'`
-//     even though qbrt.dsp:14 is a textbook rising-edge detector, so the jack
-//     renders without the trigger glyph. Fixing it re-pins contract-lock.txt,
-//     so it belongs in its own (contract) PR, not a docs-accuracy pass.
+//   ping (gate cable, edge: 'trigger'): rising edge across 0.5 fires
+//     the click + Q-boost excitation. Level while high is ignored, matching
+//     qbrt.dsp:14's textbook rising-edge detector. (The contract gap this
+//     comment used to describe was closed by the edge-declaration sweep.)
 //   cutoff (cv, log, paramTarget=cutoff): ±1 = ×/÷ ~31 (≈ ±5 octaves).
 //   resonance (cv, linear, paramTarget=resonance): ±1 = ±0.495 (half range).
 //   mode (cv, discrete, paramTarget=mode): BUCKETED to the two ends of the
@@ -72,7 +70,7 @@ export const qbrtDef: AudioModuleDef = {
   inputs: [
     { id: 'L',         type: 'audio' },
     { id: 'R',         type: 'audio' },
-    { id: 'ping',      type: 'gate' },
+    { id: 'ping',      type: 'gate', edge: 'trigger' },
     // CV scaling per .myrobots/plans/cv-range-standard.md — LFO ±1 sweeps
     // the param's full musical range centered on the knob.
     //

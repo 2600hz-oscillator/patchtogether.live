@@ -40,15 +40,15 @@ export const moog993Def: AudioModuleDef = {
   category: 'modulation',
 
   inputs: [
-    { id: 'trig_from1', type: 'gate' },
-    { id: 'trig_from2', type: 'gate' },
+    { id: 'trig_from1', type: 'gate', edge: 'trigger' },
+    { id: 'trig_from2', type: 'gate', edge: 'trigger' },
     { id: 'env_in1',    type: 'cv' },
     { id: 'env_in2',    type: 'cv' },
   ],
   outputs: [
-    { id: 'trig_out1', type: 'gate' },
-    { id: 'trig_out2', type: 'gate' },
-    { id: 'trig_out3', type: 'gate' },
+    { id: 'trig_out1', type: 'gate', edge: 'trigger' },
+    { id: 'trig_out2', type: 'gate', edge: 'trigger' },
+    { id: 'trig_out3', type: 'gate', edge: 'trigger' },
     { id: 'env_out1',  type: 'cv' },
     { id: 'env_out2',  type: 'cv' },
   ],

@@ -401,7 +401,7 @@ export const ringsDef: AudioModuleDef = {
   inputs: [
     { id: 'in',        type: 'audio' },
     { id: 'pitch',     type: 'pitch' },
-    { id: 'strum',     type: 'gate' },
+    { id: 'strum',     type: 'gate', edge: 'trigger' },
     { id: 'model_cv',  type: 'cv', paramTarget: 'model',      cvScale: { mode: 'discrete' } },
     { id: 'note_cv',   type: 'cv', paramTarget: 'note',       cvScale: { mode: 'linear' } },
     { id: 'str_cv',    type: 'cv', paramTarget: 'structure',  cvScale: { mode: 'linear' } },

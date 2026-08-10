@@ -161,7 +161,6 @@ export const recorderboxDef: VideoModuleDef = {
   ],
   params: [],
 
-  // docs-hash-ignore:start
   docs: {
     explanation: `RECORDERBOX is a video-domain SINK that records whatever you patch into it — picture plus a left/right soundtrack — to a high-quality, crash-recoverable H.264/HEVC MP4. Modelled on OUTPUT, it draws its \`in\` video into a per-instance framebuffer every frame so the card can show a live preview AND so \`out\` can pass the picture through unbroken; meanwhile each audio input feeds a gain into a stereo channel-merger that drives a MediaStreamAudioDestinationNode, and a sample-accurate audio-thread worklet taps that stereo signal so the recorder muxes it as the MP4's AAC track, A/V-synced to the captured frames. Arm recording with the on-card RECORD/STOP button: on Chromium the first press asks you to pick a destination FOLDER once (then every take and rolling chunk auto-writes into it with no further Save-As prompt — the only prompt is an overwrite confirm), while Firefox/Safari fall back to a per-chunk download. Typical use: chain it inline anywhere in a video patch (preview on the card, signal continues to \`out\`), patch your stereo mix into A·L/A·R, type a base FILE name, pick a SIZE tier (HIGH = original ~14 Mbps H.264; BALANCED/SMALL prefer hardware HEVC), and hit RECORD. The audio is TAP-ONLY and inaudible — it is captured (via a silent gain-0 keep-alive that never reaches your speakers) but NOT monitored, so route the same source to AUDIO OUT separately if you want to hear it. Long takes auto-roll to a new FILENAME-CHUNK#-DATETIME.mp4 every ~10 min (with a 5 s audio overlap), and a take left mid-flight by a crash can be recovered on reload.`,
     inputs: {
@@ -174,7 +173,6 @@ export const recorderboxDef: VideoModuleDef = {
     },
     controls: {},
   },
-  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(COPY_FRAG_SRC);

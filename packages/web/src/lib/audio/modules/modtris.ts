@@ -71,15 +71,15 @@ export const modtrisDef: AudioModuleDef = {
     // Gate inputs — bipolar/unipolar CV, but the stepper only cares about
     // rising-edge crossings of 0.5. No paramTarget; we read via analyser
     // taps each tick (same pattern as PONG's paddle CVs).
-    { id: 'rotate_l',  type: 'gate' },
-    { id: 'rotate_r',  type: 'gate' },
-    { id: 'drop_fast', type: 'gate' },
-    { id: 'move_l',    type: 'gate' },
-    { id: 'move_r',    type: 'gate' },
+    { id: 'rotate_l',  type: 'gate', edge: 'trigger' },
+    { id: 'rotate_r',  type: 'gate', edge: 'trigger' },
+    { id: 'drop_fast', type: 'gate', edge: 'trigger' },
+    { id: 'move_l',    type: 'gate', edge: 'trigger' },
+    { id: 'move_r',    type: 'gate', edge: 'trigger' },
   ],
   outputs: [
-    { id: 'line_cleared', type: 'gate' },
-    { id: 'overfill',     type: 'gate' },
+    { id: 'line_cleared', type: 'gate', edge: 'trigger' },
+    { id: 'overfill',     type: 'gate', edge: 'trigger' },
   ],
   params: [
     {

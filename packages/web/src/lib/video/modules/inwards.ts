@@ -100,7 +100,6 @@ export const inwardsDef: VideoModuleDef = {
     { id: 'thickness', label: 'Thickness', defaultValue: DEFAULTS.thickness, min: 0,    max: 1,   curve: 'linear' },
   ],
 
-  // docs-hash-ignore:start
   docs: {
     explanation:
       "A procedural source that synthesizes a field of concentric rings centered on the frame, with their phase scrolling inward over time so the bands appear to zoom toward the center (positive Speed) or outward (negative). The shader takes the radial distance from center, multiplies it by Density to set how many rings fit on screen, then subtracts time*Speed to animate the sweep; an abs(sin) wave is soft-banded by Thickness to render alternating bright and dark grayscale rings. There is no video input — it generates its image entirely from time and the three params, so it works without camera permissions. Use it as a hypnotic radial backdrop or a moving mask/wipe source: patch an LFO or envelope into Speed for pulsing zoom, or sweep Density for a tunnel-breathing effect.",
@@ -118,7 +117,6 @@ export const inwardsDef: VideoModuleDef = {
       thickness: "Thickness (0 to 1, default 0.35): the bright-ring duty cycle. Low values give thin bright rings on a wide dark field; higher values widen the lit bands and shrink the gaps between them.",
     },
   },
-  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);

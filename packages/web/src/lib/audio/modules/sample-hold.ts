@@ -74,7 +74,7 @@ export const sampleHoldDef: AudioModuleDef = {
   category: 'utility',
   inputs: [
     { id: 'cv_in',   type: 'cv' },
-    { id: 'gate_in', type: 'gate' },
+    { id: 'gate_in', type: 'gate', edge: 'trigger' },
   ],
   outputs: [
     { id: 'cv_out',   type: 'cv' },

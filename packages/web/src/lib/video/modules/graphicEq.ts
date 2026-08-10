@@ -135,7 +135,6 @@ export const graphicEqDef: VideoModuleDef = {
     { id: 'hue',     label: 'Hue',     defaultValue: DEFAULTS.hue,     min: 0,    max: 1,    curve: 'linear' },
   ],
 
-  // docs-hash-ignore:start
   docs: {
     explanation: `A full-screen Winamp-style graphic-EQ / VU-meter video output. Patch a STEREO signal into the L and R audio inputs and GRAPHIC EQ analyses each channel with an FFT, folds it into 8 log-spaced frequency bands (roughly 40 Hz up to 16 kHz, an octave-ish per band), and draws each band as a vertical level meter that rises and falls with the music. A green→yellow→red colour ramp climbs each meter (rotate the whole palette with Hue), and a peak-hold cap floats above each bar and falls back at a rate set by Peak. Two switches shape the look: STYLE toggles between SOLID BARS (one smooth filled bar per band) and STACKED BOXES (the classic LED-ladder of discrete segments); DISPLAY toggles between MONO (8 meters across the full width, the L/R average) and STEREO (the screen splits down the middle — the LEFT channel's 8 meters fill the left half, the RIGHT channel's fill the right half). Gain sets sensitivity. With nothing patched the meter frame still draws dim so the card is never black. The render feeds the chainable video out and the on-card preview; hide the controls to use the card as a resizable full-screen monitor.`,
     inputs: {
@@ -153,7 +152,6 @@ export const graphicEqDef: VideoModuleDef = {
       hue: "Hue (0..1, default 0): rotates the whole green→yellow→red colour ramp around the hue wheel (0 = classic VU colours, 0.5 = ~180° opposite), tinting both bars and peak caps.",
     },
   },
-  // docs-hash-ignore:end
 
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;

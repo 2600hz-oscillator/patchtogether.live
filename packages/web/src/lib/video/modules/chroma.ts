@@ -167,7 +167,6 @@ export const chromaDef: VideoModuleDef = {
     { id: 'tintMix',    label: 'Mix',  defaultValue: DEFAULTS.tintMix,    min: 0,    max: 1,   curve: 'linear' },
   ],
 
-  // docs-hash-ignore:start
   docs: {
     explanation: "CHROMA is a single-input hue-shifter / colorizer (not a keyer — use CHROMAKEY to composite a foreground over a background). For every pixel of the incoming video it converts RGB to HSV, rotates the hue by the Hue control (in degrees, wrapped with fract() so it cycles cleanly around the color wheel including negative shifts), multiplies the saturation by the Sat control (0 desaturates to grayscale, 1 leaves color untouched, above 1 intensifies toward fully-saturated color — the result is clamped at maximum saturation so it can't exceed it), converts back to RGB, then lerps the result toward the tint color (tintR/tintG/tintB) by the Mix amount. With Mix at 0 the tint is bypassed and you get a pure hue/saturation pass; at 1 every pixel becomes the flat tint color, with values in between producing a duotone-style wash that biases the image toward the chosen color. Use it to recolor a clip, sweep a video through the spectrum (patch an LFO into hue), drain it to black-and-white, or apply a colored grade. With no input connected the output is opaque black.",
     inputs: {
@@ -191,7 +190,6 @@ export const chromaDef: VideoModuleDef = {
       tintMix: "Mix: blend toward the tint color, 0 to 1 (default 0). 0 bypasses the tint entirely, intermediate values wash the image toward the tint, 1 replaces every pixel with the flat tint color.",
     },
   },
-  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);

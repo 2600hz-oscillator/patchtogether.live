@@ -65,7 +65,7 @@ export const moog956Def: AudioModuleDef = {
   inputs: [],
   outputs: [
     { id: 'pitch', type: 'pitch' },
-    { id: 'gate', type: 'gate' },
+    { id: 'gate', type: 'gate', edge: 'gate' },
   ],
   params: [
     // pos / gate are written by the card on pointer drag; persisted via the

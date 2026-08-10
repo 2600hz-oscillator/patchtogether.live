@@ -1,11 +1,12 @@
 {
   "schemaVersion": 1,
-  "grandContentHash": "c2b4b0546544db5360ef18d529dae9418b7fd320026f1db31f1222a8c2023572",
-  "attestedAt": "2026-08-09T06:39:35.835Z",
+  "grandContentHash": "ca06208f823a5feaa063594cb39126712860321e028b69fe7e3e4ced23e7e77b",
+  "attestedAt": "2026-08-10T17:24:48.839Z",
   "attestedBy": "patchtogether-maintainer",
-  "gitHeadAtAttest": "1473393ecb9680f5a071b6b2c78b3e87a5a2dad2",
+  "gitHeadAtAttest": "b068da1e5c62c6b6afdd23f9e0f04bb0586bb13e",
   "playwrightVersion": "1.50.0",
   "os": "darwin 25.4.0 (arm64)",
+  "machineClass": "local-trusted-gpu-workstation",
   "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5, Unspecified Version)",
   "combinedMasterSha": "b3e637c8f8e2660c",
   "repeatEach": 1,
@@ -17,6 +18,5 @@
     "flaky": 0,
     "skipped": 0
   },
-  "durationSec": 26,
-  "machineClass": "local-trusted-gpu-workstation"
+  "durationSec": 23
 }

@@ -166,7 +166,10 @@ export const clipplayerDef: AudioModuleDef = {
   ],
   outputs: Array.from({ length: CLIP_LANES }, (_, i) => [
     { id: `pitch${i + 1}`, type: 'polyPitchGate' as const },
-    { id: `gate${i + 1}`, type: 'gate' as const },
+    // GATE, not trigger: the emitter's low edge is the NOTE/TIE span
+    // (clipplayer.ts:1416-1417 `gateOff`), not a fixed pulse — a tied note
+    // stays high across it.
+    { id: `gate${i + 1}`, type: 'gate' as const, edge: 'gate' as const },
     { id: `vel${i + 1}`, type: 'cv' as const },
   ]).flat(),
   params: [

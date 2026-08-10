@@ -187,24 +187,24 @@ export const gibribbonDef: VideoModuleDef = {
     // Transport. `clock` is a gate-typed 1× clock train (repo convention —
     // every clock input in the codebase is declared `type:'gate'`; a clock IS
     // a gate train, and the gate-family driver in the per-port sweep wires it).
-    { id: 'clock', type: 'gate' as const, paramTarget: 'clock' },
-    { id: 'gate', type: 'gate' as const, paramTarget: 'gate' },
+    { id: 'clock', type: 'gate' as const, edge: 'trigger' as const, paramTarget: 'clock' },
+    { id: 'gate', type: 'gate' as const, edge: 'gate' as const, paramTarget: 'gate' },
     // Joystick axes (player aim / marine vertical position).
     { id: 'x', type: 'modsignal' as const, paramTarget: 'axis_x', cvScale: { mode: 'linear' as const } },
     { id: 'y', type: 'modsignal' as const, paramTarget: 'axis_y', cvScale: { mode: 'linear' as const } },
     // The four ABXY player buttons (distinct ids from the x/y axes).
-    { id: 'a',     type: 'gate' as const, paramTarget: 'btn_a' },
-    { id: 'b',     type: 'gate' as const, paramTarget: 'btn_b' },
-    { id: 'x_btn', type: 'gate' as const, paramTarget: 'btn_x' },
-    { id: 'y_btn', type: 'gate' as const, paramTarget: 'btn_y' },
+    { id: 'a',     type: 'gate' as const, edge: 'trigger' as const, paramTarget: 'btn_a' },
+    { id: 'b',     type: 'gate' as const, edge: 'trigger' as const, paramTarget: 'btn_b' },
+    { id: 'x_btn', type: 'gate' as const, edge: 'trigger' as const, paramTarget: 'btn_x' },
+    { id: 'y_btn', type: 'gate' as const, edge: 'trigger' as const, paramTarget: 'btn_y' },
   ],
   outputs: [
     { id: 'out',          type: 'video' },
-    { id: 'evt_hit',      type: 'gate' },
-    { id: 'evt_miss',     type: 'gate' },
-    { id: 'evt_fire',     type: 'gate' },
-    { id: 'evt_kill',     type: 'gate' },
-    { id: 'evt_gameover', type: 'gate' },
+    { id: 'evt_hit',      type: 'gate', edge: 'trigger' },
+    { id: 'evt_miss',     type: 'gate', edge: 'trigger' },
+    { id: 'evt_fire',     type: 'gate', edge: 'trigger' },
+    { id: 'evt_kill',     type: 'gate', edge: 'trigger' },
+    { id: 'evt_gameover', type: 'gate', edge: 'trigger' },
     { id: 'health_cv',    type: 'cv' },
   ],
   params: [
@@ -228,7 +228,6 @@ export const gibribbonDef: VideoModuleDef = {
     { id: 'btn_y', label: 'Y (btn)', defaultValue: 0, min: 0, max: 1, curve: 'linear' as const },
   ],
 
-  // docs-hash-ignore:start
   docs: {
     explanation: `A Vib-Ribbon-style rhythm side-scroller rendered as a patchable VIDEO source: a single white vector ribbon scrolls right-to-left on black, obstacles deform the line (loop=a pit-V dip, jump=a hump) while enemies (imps/zombies) ride it in as real DOOM shareware-WAD sprites (with a wireframe line-art fallback when DOOM1.WAD is absent — the card shows a "line-art (no WAD)" badge). A DOOM marine stands left-of-centre at the judgement point; you clear each event by pulsing its mapped ABXY button within a timing window as it arrives (loop=A, jump=B, imp=X, zombie=Y). A fixed top "lookahead lane" shows the next four buttons left-to-right (nearest first) so the queue is readable. Hits score (combo-multiplied, cap x8) and can heal or reach SUPER; misses degrade the marine down a DOOM health ladder (super/healthy/wounded/critical/dead) to GAME OVER. Drive it three ways: AUTOPLAY (default ON) runs an internal ~0.42 s-beat clock so a freshly-dropped card self-plays with synthesized rotating CV; patching an external CLOCK + GATE + CV1-4 takes over for musical mode (each clock edge advances a beat and spawns from whichever eligible CV channel is hottest above threshold) and suppresses autoplay for ~1.5 s; and keyboard play (click the card to focus, then F/D/J/K or arrow keys = A/B/X/Y, R = restart). Patch the X/Y axes to aim, and the event gate outputs feed the cross-domain video-to-audio bridge so hits/kills/game-over can trigger synths. (The on-card preview is a fixed-size screen, not resizable; RESET/RESTART are DOM buttons, not params.)`,
     inputs: {
@@ -270,7 +269,6 @@ export const gibribbonDef: VideoModuleDef = {
       btn_y: "The Y-button target value (0..1); a rising edge judges the nearest in-window zombie event. Normally driven by the y_btn input jack (or keyboard K / up-arrow).",
     },
   },
-  // docs-hash-ignore:end
   factory(ctx: VideoEngineContext, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);

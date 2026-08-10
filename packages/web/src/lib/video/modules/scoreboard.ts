@@ -132,7 +132,6 @@ export const scoreboardDef: VideoModuleDef = {
     { id: 'resetTrig', label: 'RESET', defaultValue: 0, min: 0, max: 1, curve: 'linear' },
   ],
 
-  // docs-hash-ignore:start
   docs: {
     explanation: "A 4-digit neon 7-segment counter widget, rendered as a digital-alarm-clock face: a zero-padded value (0000-9999) drawn as chamfered hexagonal segments in a hue-tinted glow on soft black (#0a0a0a), with off segments fully invisible (no LCD ghost). It is a pure CV-driven generator with NO video input — a 2D OffscreenCanvas rasterizes the digits via the drawScoreboard helper and uploads them as an RGBA texture; a trivial fragment shader letterboxes that 8:3 source into the 4:3 engine frame, width-locked and centered vertically with pure-black bands top and bottom (and a dark fallback fill before the first paint). Each rising edge on SCORE adds 1 to the counter; it wraps from 9999 back to 0 (a periodic counter, handy for sequencing). RESET zeros it. The COLOR knob sets the lit-segment and glow hue. Patch a clock or sequencer gate into SCORE to count beats/events on screen, and a reset gate to zero it on a bar/loop boundary; the counter always starts at 0 on spawn (it is not persisted).",
     inputs: {
@@ -148,7 +147,6 @@ export const scoreboardDef: VideoModuleDef = {
       resetTrig: "Synthetic gate param (hidden from the card, exposed as the RESET cv jack via paramTarget). The CV bridge writes incoming gate values here via setParam, and the factory's hysteresis edge detector turns each rising edge into a reset of the counter to 0.",
     },
   },
-  // docs-hash-ignore:end
   factory(ctx: VideoEngineContext, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);

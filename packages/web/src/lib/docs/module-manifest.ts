@@ -915,25 +915,25 @@ function parsePortList(body: string): ManifestPort[] {
   // shared transport CV inputs via `...TRANSPORT_CV_PORT_DEFS`.
   if (/\.\.\.TRANSPORT_CV_PORT_DEFS\b/.test(body)) {
     out.push(
-      { id: 'play_cv',   type: 'gate' },
-      { id: 'reset_cv',  type: 'gate' },
-      { id: 'queue1_cv', type: 'gate' },
-      { id: 'queue2_cv', type: 'gate' },
-      { id: 'queue3_cv', type: 'gate' },
-      { id: 'queue4_cv', type: 'gate' },
+      { id: 'play_cv',   type: 'gate', edge: 'trigger' },
+      { id: 'reset_cv',  type: 'gate', edge: 'trigger' },
+      { id: 'queue1_cv', type: 'gate', edge: 'trigger' },
+      { id: 'queue2_cv', type: 'gate', edge: 'trigger' },
+      { id: 'queue3_cv', type: 'gate', edge: 'trigger' },
+      { id: 'queue4_cv', type: 'gate', edge: 'trigger' },
     );
   }
   // feat/seq 8-slots — Sequencer + MACSEQ spread EXTENDED_TRANSPORT_CV_PORT_DEFS
   // after the base set: queue5..8_cv + next/prev/random_cv nav gates.
   if (/\.\.\.EXTENDED_TRANSPORT_CV_PORT_DEFS\b/.test(body)) {
     out.push(
-      { id: 'queue5_cv', type: 'gate' },
-      { id: 'queue6_cv', type: 'gate' },
-      { id: 'queue7_cv', type: 'gate' },
-      { id: 'queue8_cv', type: 'gate' },
-      { id: 'next_cv',   type: 'gate' },
-      { id: 'prev_cv',   type: 'gate' },
-      { id: 'random_cv', type: 'gate' },
+      { id: 'queue5_cv', type: 'gate', edge: 'trigger' },
+      { id: 'queue6_cv', type: 'gate', edge: 'trigger' },
+      { id: 'queue7_cv', type: 'gate', edge: 'trigger' },
+      { id: 'queue8_cv', type: 'gate', edge: 'trigger' },
+      { id: 'next_cv',   type: 'gate', edge: 'trigger' },
+      { id: 'prev_cv',   type: 'gate', edge: 'trigger' },
+      { id: 'random_cv', type: 'gate', edge: 'trigger' },
     );
   }
   const parts = splitTopLevelObjects(body);

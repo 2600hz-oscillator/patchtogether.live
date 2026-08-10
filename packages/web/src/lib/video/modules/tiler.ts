@@ -230,7 +230,6 @@ export const tilerDef: VideoModuleDef = {
     { id: 'tile', label: 'Tile', defaultValue: TILER_DEFAULTS.tile, min: 0, max: TILER_STEPS.length - 1, curve: 'discrete' },
   ],
 
-  // docs-hash-ignore:start
   docs: {
     explanation: "TILER is the classic video-mixer \"multiscreen / tile\" effect: it repeats the incoming frame across a landscape cols×rows grid, where every cell shows the FULL source scaled down to fit, so each tile is a lower-resolution thumbnail of the same picture. A 2×2 grid is 4 copies, an 8×8 grid is 64 tiny copies. It's a single-pass shader whose whole effect is one line — fract(uv * vec2(cols, rows)) stretches the UV across the cells and wraps each cell back to the full 0..1 input, so each tile samples the entire source; at the 1×1 step fract(uv)==uv, making it an exact 1:1 passthrough. TILER is stateless per frame (no feedback or history), so tiled copies move and transform live with whatever feeds it. Drop it inline on a video chain and dial the TILE knob up for a quick multiscreen wall, or sweep it (or modulate it via CV) to step between grid densities. With no input it outputs solid black.",
     inputs: {
@@ -244,7 +243,6 @@ export const tilerDef: VideoModuleDef = {
       tile: "Grid size — a 6-step discrete knob selecting the TOTAL tile count: 1, 4, 6, 12, 16, or 64. Each maps to a landscape grid (1×1, 2×2, 3×2, 4×3, 4×4, 8×8) so each cell keeps the source's wide aspect. Default is step 0 (total 1 = 1:1 passthrough, no tiling); higher steps pack more, smaller copies of the source.",
     },
   },
-  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);

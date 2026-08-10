@@ -28,8 +28,9 @@
 // ChannelMerger path — plan §1.3 path #3; the same technique the existing
 // illogic attenuverter-and-logic scenario uses).
 //
-// The .sha pins the def file with its co-located docs stripped
-// (docs-hash-ignore markers — docs edits must never invalidate audio pins).
+// The .sha pins the def file reduced to its CODE — comments plus the co-located
+// docs/face blocks are stripped by the shared attest normalizer, because
+// documentation must never invalidate an audio pin.
 
 import { describe, expect, it } from 'vitest';
 import { illogicDef } from '$lib/audio/modules/illogic';

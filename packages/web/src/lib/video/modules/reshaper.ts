@@ -154,7 +154,6 @@ export const reshaperDef: VideoModuleDef = {
     { id: 'tintB',     label: 'Tint B',    defaultValue: DEFAULTS.tintB,     min: 0,  max: 1, curve: 'linear' },
   ],
 
-  // docs-hash-ignore:start
   docs: {
     explanation: "RESHAPER is a coordinate-remap video processor that emulates a CRT raster scan whose horizontal and vertical sweeps are patchable instead of fixed. For every output pixel it reads a horizontal coordinate from the X field and a vertical coordinate from the Y field (the red channel of each mono-video texture), then samples the Z source video at that remapped position. With X and Y unpatched it falls back to identity ramps (screen-u, screen-v), so Z passes straight through like a normal display. Feed X/Y from shaped ramps (e.g. SHAPEDRAMPS folds, triangles, or radial fields) and the source video is rebuilt inside that deformed coordinate space — folded, mirrored, or circularised. On top of the field remap, the source's own brightness at each screen pixel pushes the lookup: luma above mid-grey lifts, below pushes back, scaled by X Disp / Y Disp — the classic Rutt/Etra \"raised terrain\" displacement. The final color is multiplied by Intensity and the R/G/B tint. Usage: patch a video into Z for a quick scanline display; drive X and/or Y from a ramp generator to warp it, or just dial X Disp / Y Disp for a luma-relief effect from Z alone. Output is a standard video texture, so chain it downstream (e.g. LINES into RESHAPER into MONOGLITCH). The card shows a live preview of the remapped output; in hide-controls mode the preview becomes a resizable screen (drag the bottom-right corner; double-click the frame to restore defaults).",
     inputs: {
@@ -177,7 +176,6 @@ export const reshaperDef: VideoModuleDef = {
       tintB: "Tint B (0..1, default 1) — multiplies the blue channel of the output; lower to remove blue from the tint.",
     },
   },
-  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);
