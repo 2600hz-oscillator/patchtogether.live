@@ -12,18 +12,16 @@
 // term), so the blitted preview is pixel-stable across runs. We settle the
 // card layout + a couple of rAF blits before snapshotting.
 //
-// Informational lane (`task vrt`) — darwin baseline captured locally; linux
-// pending a `vrt-update.yml` workflow_dispatch (see EXEMPT_BASELINE_PAIRS →
-// linux/aspect16x9-*).
+// Informational lane (`task vrt`).
+// Baselines are authored by LINUX CI — one set, no {platform} segment (see
+// vrt.config.ts). `task vrt:commit` dispatches the capture; a local macOS run
+// is a smoke test, not a capture.
 //
-// Output: e2e/vrt/__screenshots__/vrt-aspect-16x9.spec.ts/{platform}/<id>.png
+// Output: e2e/vrt/__screenshots__/vrt-aspect-16x9.spec.ts/<id>.png
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from '../tests/_helpers';
-import { EXEMPT_BASELINE_PAIRS } from './vrt-exemptions';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
-
-const VRT_PLATFORM = process.platform === 'darwin' ? 'darwin' : 'linux';
 
 // A fixed-param SHAPES (a centered triangle) — a static, time-independent
 // procedural fill, so the blit is pixel-stable.
@@ -39,7 +37,7 @@ async function setup16x9(
   sinkCardClass: string,
 ): Promise<ReturnType<Page['locator']>> {
   await pinVrtFonts(page);
-  await page.goto('/rack');
+  await page.goto('/rack?shell=legacy&seed=none');
   await page.waitForLoadState('networkidle');
   await awaitVrtFonts(page);
 
@@ -107,10 +105,6 @@ const CARDS: Array<{ id: string; sinkType: 'videoOut'; cardClass: string }> = [
 test.describe('VRT: OUTPUT aspect 16:9 — preview cards letterbox at the live aspect', () => {
   for (const c of CARDS) {
     test(`${c.id} card renders at 16:9`, async ({ page }) => {
-      test.skip(
-        EXEMPT_BASELINE_PAIRS.has(`${VRT_PLATFORM}/${c.id}`),
-        `${c.id} on ${VRT_PLATFORM}: baseline pending (see EXEMPT_BASELINE_PAIRS)`,
-      );
       const errors: string[] = [];
       page.on('pageerror', (e) => errors.push(e.message));
       page.on('console', (m) => {

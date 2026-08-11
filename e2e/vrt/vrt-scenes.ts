@@ -26,7 +26,7 @@ import { fileURLToPath } from 'node:url';
 import { spawnPatch, type SpawnNode, type SpawnEdge } from '../tests/_helpers';
 import { freezeAudioContext } from './vrt-audio-freeze';
 
-export interface VrtScene {
+interface VrtSceneBase {
   /** Extra nodes + the module under test. The module-under-test's id
    *  MUST be 'vrt-1' so the existing card-selector in vrt.spec.ts
    *  still finds it. */
@@ -37,15 +37,49 @@ export interface VrtScene {
    *  signal for the analyser to fill its buffer before we freeze the
    *  AudioContext. */
   settleMs?: number;
-  /** When true, freeze the AudioContext after settleMs so the trace
-   *  stays pixel-stable across runs. Defaults to true. */
-  freezeAudio?: boolean;
   /** Optional extra setup AFTER spawnPatch (e.g. load a file into a
    *  card, seek a <video> to a fixed frame + pause). Runs before the
    *  settle pause. Used by the videoOut/VIDEOBOX scene to drive a
    *  deterministic decoded frame into the output canvas. */
   afterSpawn?: (page: Page) => Promise<void>;
 }
+
+/**
+ * THE FREEZE IS DENY-BY-DEFAULT, ENFORCED BY THE TYPE.
+ *
+ * `freezeAudio: false` captures off a RUNNING graph. Every faced module in the
+ * roster today is struck or silent, so a scene that skips the suspend looks
+ * exactly as green as one that takes it — right up until the first free-running
+ * voice, which then cannot baseline at all. The opt-out therefore may not be a
+ * bare boolean: the union below makes `freezeAudioWhy` REQUIRED whenever
+ * `freezeAudio` is false, so the justification is co-located with the decision
+ * and `tsc` refuses the undeclared form.
+ *
+ * ⚠ This replaced `SCENE_FREEZE_OFF_CEILING = 7` (deleted 2026-08-10). The
+ * ceiling counted these entries and could say nothing about any of them; the
+ * `why` names each one. Contrary to the plan that scheduled the deletion, the
+ * ceiling was NOT redundant with `FREEZE_OPT_OUTS` in vrt-meta.test.ts — that
+ * record counts `bootWithFace(…, { freezeAudio })` CALL SITES in the face specs,
+ * a different mechanism over a different population. Both are still gated;
+ * neither is counted.
+ */
+export type VrtScene = VrtSceneBase &
+  (
+    | {
+        /** When true (the default), freeze the AudioContext after settleMs so
+         *  the trace stays pixel-stable across runs. */
+        freezeAudio?: true;
+        freezeAudioWhy?: never;
+      }
+    | {
+        /** Capture with the AudioContext RUNNING. */
+        freezeAudio: false;
+        /** REQUIRED with `freezeAudio: false`: what makes this scene
+         *  deterministic INSTEAD of the suspend. Asserted non-trivial in
+         *  vrt-meta.test.ts. */
+        freezeAudioWhy: string;
+      }
+  );
 
 /** Absolute path to the trimmed lobby clip used to drive a real decoded
  *  <video> frame through VIDEOBOX -> VIDEO-OUT for the videoOut baseline. */
@@ -262,9 +296,10 @@ export const VRT_SCENES: Record<string, VrtScene> = {
   // baseline proves the VIDEOBOX -> VIDEO-OUT path renders video content
   // (the regression this PR fixes — output used to be black). We load the
   // trimmed lobby clip into a VIDEOBOX, seek to a FIXED timestamp, and
-  // pause, so the decoded frame is the same one every run. Codec frame-
-  // timing isn't bit-identical across platforms, so the darwin baseline is
-  // captured here and linux is marked pending (EXEMPT_BASELINE_PAIRS); the
+  // pause, so the decoded frame is the same one every run. Codec frame-timing
+  // is not bit-identical ACROSS platforms, which is why this scene used to be
+  // captured on darwin and deferred on linux; with one baseline set, authored
+  // by the platform that gates, that comparison never crosses platforms. The
   // hard non-black + moving gate lives in tests/videobox-output.spec.ts.
   videoOut: {
     nodes: [
@@ -280,9 +315,10 @@ export const VRT_SCENES: Record<string, VrtScene> = {
         targetType: 'video',
       },
     ],
-    // Don't freeze the AudioContext — there's no analyser-driven trace
-    // here; the <video> itself is paused on a fixed frame for stability.
     freezeAudio: false,
+    freezeAudioWhy:
+      'no analyser-driven trace in this scene — determinism comes from the ' +
+      '<video> element itself, seeked to a fixed frame and paused in afterSpawn.',
     settleMs: 400,
     async afterSpawn(page) {
       await page.setInputFiles('[data-testid="videobox-file-input"]', LOBBY_CLIP);
@@ -330,6 +366,9 @@ export const VRT_SCENES: Record<string, VrtScene> = {
       },
     ],
     freezeAudio: false,
+    freezeAudioWhy:
+      'RUTTETRA is a pure function of a procedural, time-independent SHAPES ' +
+      'source, so the render is pixel-stable without suspending anything.',
     settleMs: 400,
   },
 
@@ -420,6 +459,9 @@ export const VRT_SCENES: Record<string, VrtScene> = {
     nodes: [{ id: 'vrt-1', type: 'spectrograph', position: { x: 120, y: 60 }, domain: 'audio' }],
     edges: [],
     freezeAudio: false,
+    freezeAudioWhy:
+      '__spectrographVrtFreeze overrides the FFT readout entirely and holds one ' +
+      'fixed synthetic spectrum, so no audio source and no suspend are involved.',
     settleMs: 400,
     afterSpawn: async (page) => {
       await page.evaluate(() => {
@@ -455,6 +497,9 @@ export const VRT_SCENES: Record<string, VrtScene> = {
     ],
     edges: [],
     freezeAudio: false,
+    freezeAudioWhy:
+      'no audio is involved: __peakstateVrtSeed paints once from a deterministic ' +
+      '120-sample ring + frozen rotation and HOLDS it — the seed flag is the freeze.',
     afterSpawn: async (page) => {
       await page.evaluate(() => {
         (globalThis as unknown as { __peakstateVrtSeed?: boolean }).__peakstateVrtSeed = true;
@@ -514,6 +559,9 @@ export const VRT_SCENES: Record<string, VrtScene> = {
       { id: 'e_d', from: { nodeId: 'mask_d', portId: 'out' }, to: { nodeId: 'vrt-1', portId: 'darken'  }, sourceType: 'mono-video', targetType: 'video' },
     ],
     freezeAudio: false,
+    freezeAudioWhy:
+      'a VIDEO feedback loop: the scene pins the frame by writing backdraft\'s own ' +
+      'freeze param AFTER the settle window, which an AudioContext suspend cannot do.',
     settleMs: 700,
     async afterSpawn(page) {
       // Let the feedback loop run + settle (settleMs covers this), then
@@ -575,6 +623,9 @@ export const VRT_SCENES: Record<string, VrtScene> = {
     // final composite.
     settleMs: 400,
     freezeAudio: false,
+    freezeAudioWhy:
+      '__lushgardenVrtSeed pins a fixed 24-plant set and suppresses further ' +
+      'spawning, so the previewed surface is time-invariant with no suspend.',
   },
 
   // NIBBLES (snake game module): the game state is RNG-seeded and
@@ -649,6 +700,9 @@ export const VRT_SCENES: Record<string, VrtScene> = {
     },
     settleMs: 300,
     freezeAudio: false,
+    freezeAudioWhy:
+      'the card exposes __toyboxFreeze, which pins BOTH the render time and the ' +
+      'RNG seed — a strictly stronger freeze than suspending the AudioContext.',
   },
 };
 

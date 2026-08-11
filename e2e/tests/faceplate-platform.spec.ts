@@ -66,9 +66,9 @@ async function setZoomTier(page: Page, nodeId: string, zoom: number, tier: strin
 
 /** Boot workflow mode with the migrated shell. Same 15 s boot bound the other
  *  workflow specs carry — the FIRST test of a run pays SvelteKit's on-demand
- *  /rack route compile before the chrome mounts. */
+ *  /rack?shell=legacy&seed=none route compile before the chrome mounts. */
 async function gotoShell(page: Page): Promise<void> {
-  await page.goto('/rack?mode=workflow&shell=1');
+  await page.goto('/rack');
   await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: 15_000 });
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
 }

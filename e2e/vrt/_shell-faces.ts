@@ -144,6 +144,25 @@ export const FACES = [
   // emptied and nothing is dropped. (A promotion that emptied band 1 would make
   // this 1, and would also take that band's hint out of the annotation sweep.)
   { type: 'meowbox', pages: 2 },
+  // FACE BATCH 3 (2026-08-10) — the 3-D wavetable navigator. SIX bands, all six
+  // surviving the hero split: the hero promotes `cube-view` and `slice_ry` out
+  // of band 1, which still holds ROT Z / ROT X / Y / WRAP.
+  //
+  // ⚠ THE ONLY FACE IN THIS ROSTER WHOSE HERO IS A LIVE WebGL2 CONTEXT, and the
+  // determinism argument is NOT the audio freeze — it is that cube's picture has
+  // no clock at all. The volume, the plane and the camera are all params
+  // (`view_rot_*` are knobs, not a spin), the renderer SKIPS the draw entirely
+  // when its scene signature is unchanged, and the wave overlay is the posted
+  // slice, which on a suspended graph never arrives — so an idle tile repaints
+  // nothing. The hero CAPTION is the same story from the other side: it is
+  // computed through the pure `sampleSlice` rather than tapped off the engine,
+  // precisely so it prints a real number in a frozen capture instead of `—`.
+  //
+  // ⚠ WHAT WOULD SILENTLY RETIRE THAT: giving cube any time-varying view (an
+  // auto-orbit, a spinning plane) makes this the first face tile that genuinely
+  // animates, and it would flake rather than fail. Re-derive with
+  // vrt-face-audio-probe before assuming a passing scene proves stillness.
+  { type: 'cube', pages: 6 },
   // FACE BATCH 4 (2026-08-10) — the granular texture processor. Three bands:
   // the ring (which the hero promotes BOTH the buffer panel and POSITION out
   // of, leaving FREEZE — so the band survives and the count stays 3), the
@@ -184,13 +203,46 @@ export const FACES = [
   // regression deterministically.
   //
   // ⚠ THAT IS A PREDICTION, NOT A MEASUREMENT — say so rather than let a later
-  // reader take it for a derived number like the two entries above. This
-  // face's baselines are DEFERRED to the VRT platform sweep (owner, 2026-08-10:
-  // no new platform pairs while the sweep is in flight), so
-  // `face-noise-compact` and `face-noise-dock` have no committed PNG yet and
-  // the probe that would settle this has not been run. Capture both, then run
-  // `vrt-face-audio-probe` against this tile before quoting a number here.
+  // reader take it for a derived number like the two entries above. The two
+  // PNGs (`face-noise-compact`, `face-noise-dock`) are authored by the linux
+  // capture job like every other baseline, and the probe that would settle
+  // this has not been run against them. Run `vrt-face-audio-probe` on this
+  // tile before quoting a number here; a passing scene is not the measurement.
   { type: 'noise', pages: 0 },
+  // FACE BATCH 5 — the analog delay. SIX declared bands, six rendered: the hero
+  // promotes `delayTime` and the echo-train panel out of band 1, which still
+  // holds SYNC, CLK SRC and FEEDBACK, so nothing empties.
+  //
+  // ⚠ ITS HERO PANEL IS AN INSERT'S PICTURE, NOT A TRACE, which is what makes
+  // this tile deterministic on a rack with no source patched into it. Every
+  // stem is computed from the durable params through the DSP's own loop
+  // arithmetic — no analyser, no rAF poll, no engine read — so the picture is
+  // identical whether the graph is running or frozen. (The `scope` glyph on the
+  // COMPACT tile is a live trace, and it is flat for the ordinary reason: an
+  // unpatched insert outputs silence. #1420's freeze covers it regardless.)
+  //
+  // ⚠ THIS SCENE WAS "LINUX ONLY" AND IS NOW SIMPLY NORMAL (2026-08-10). Its
+  // linux baseline was captured; the sibling darwin job of the same dispatch
+  // FAILED on two UNRELATED scenes (`face-mixer-compact`,
+  // `face-ringback-dock`), both tripping #1420's guard — "the AudioContext is
+  // 'running', not 'suspended', at CAPTURE time" — and the darwin sweep is ONE
+  // job, so those two aborted the whole capture. With the darwin baseline set
+  // deleted there is nothing left to be missing here.
+  //
+  // ⚠ THE CAPTURE DEFECT ITSELF IS NOT FIXED and does not disappear with the
+  // platform dimension: if those two scenes trip the guard on LINUX too, they
+  // abort the one remaining capture job and NOTHING gets written. The guard is
+  // correct — a face glyph baselined off a running graph is a moving target —
+  // so the fix belongs in whatever leaves the context running, not in the
+  // guard.
+  //
+  // ⚠ AND A LOCAL DARWIN VRT RUN SILENTLY RECREATES IT. Playwright's
+  // `updateSnapshots` defaults to `'missing'`, so any darwin run — including a
+  // read-only "did it still render?" check — writes `darwin/face-cofefve-*.png`
+  // as UNTRACKED files that a `git add -A` would happily commit, turning this
+  // deliberate linux-only state into exactly the undeclared gap it avoids.
+  // `git status` for untracked PNGs after every VRT run until the pair exists.
+  { type: 'cofefve', pages: 6 },
 ] as const;
 
 /** TIGHT per-scene diff budgets (absolute pixels; Playwright takes the MIN of
@@ -648,7 +700,7 @@ export async function bootWithFace(
   opts: BootFaceOptions = {},
 ): Promise<string> {
   await pinVrtFonts(page);
-  await page.goto('/rack?mode=workflow&shell=1');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await awaitVrtFonts(page);
   await waitForHooks(page);

@@ -1,0 +1,25 @@
+-- db/schema/006_drop_rackspace_mode.sql
+--
+-- KILL DAWLESS MODE. 005 added `racks.mode` to fork the rack UI between
+-- 'dawless' (the old full-canvas rack) and 'workflow' (the shell). There is
+-- now exactly ONE shell, so the column selects nothing: every rack renders the
+-- same UI and no code path reads it.
+--
+-- Idempotent (IF EXISTS) — scripts/apply-db-schema.sh re-applies every
+-- db/schema/*.sql in filename order, so this must be a no-op against an
+-- already-migrated database.
+--
+-- NON-DESTRUCTIVE TO ROWS ON PURPOSE. The owner authorised destroying saved
+-- rackspaces for a clean reset, and that wipe was performed as a ONE-OFF
+-- operational step against the dev + autotest tiers (named in the PR body) —
+-- deliberately NOT written here, because this file is re-applied on every
+-- schema apply and a `DELETE FROM racks` living in it would silently wipe the
+-- tier again on the next unrelated migration. Dropping the column is the part
+-- that is safe to repeat; the wipe is not.
+--
+-- Safe in EITHER deploy order: code that never selects `mode` does not care
+-- whether the column exists, and a database that still has the column is inert
+-- to code that ignores it. (That is why prod can defer this migration to the
+-- next version bump — see the PR body.)
+
+ALTER TABLE racks DROP COLUMN IF EXISTS mode;

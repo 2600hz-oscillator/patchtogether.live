@@ -19,19 +19,6 @@ import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from '../tests/_helpers';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
 
-const EXEMPT_BASELINE_PAIRS = new Set<string>([
-  'linux/group-bare',
-  'linux/group-with-exposed',
-]);
-const VRT_PLATFORM = process.platform === 'darwin' ? 'darwin' : 'linux';
-
-function skipIfNoBaseline(t: typeof test, name: string): void {
-  t.skip(
-    EXEMPT_BASELINE_PAIRS.has(`${VRT_PLATFORM}/${name}`),
-    `${name} on ${VRT_PLATFORM}: baseline pending (CI capture follow-up)`,
-  );
-}
-
 async function hideJitterers(page: Page): Promise<void> {
   await page.addStyleTag({
     content: `
@@ -53,7 +40,7 @@ async function bootCanvas(page: Page): Promise<void> {
   // this the captured text metrics differ run-to-run and platform-to-platform.
   // Full root cause: e2e/vrt/_fonts.ts.
   await pinVrtFonts(page);
-  await page.goto('/rack');
+  await page.goto('/rack?shell=legacy&seed=none');
   await page.waitForLoadState('networkidle');
   await awaitVrtFonts(page);
   await hideJitterers(page);
@@ -135,7 +122,6 @@ async function spawnGroup(
 test.describe.configure({ mode: 'default' });
 
 test('group-bare: GROUP! card with no exposed jacks', async ({ page }) => {
-  skipIfNoBaseline(test, 'group-bare');
   await bootCanvas(page);
   await spawnGroup(page, { exposed: 'none' });
   const card = page.locator('[data-testid="group-card"]').first();
@@ -147,7 +133,6 @@ test('group-bare: GROUP! card with no exposed jacks', async ({ page }) => {
 });
 
 test('group-with-exposed: GROUP! card with exposed osc+filter jacks', async ({ page }) => {
-  skipIfNoBaseline(test, 'group-with-exposed');
   await bootCanvas(page);
   await spawnGroup(page, { exposed: 'osc-filter' });
   const card = page.locator('[data-testid="group-card"]').first();

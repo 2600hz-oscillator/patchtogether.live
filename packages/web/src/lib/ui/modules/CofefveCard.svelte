@@ -12,6 +12,14 @@
   //                 │ Mode Locut Hicut   Gain Mix Filt Iters      │
   //                 └────────────────────────────────────────────┘
 
+  // ⚠ EVERY RANGE, CURVE AND UNIT IS BOUND TO THE DEF (`paramSpec`), NEVER
+  // RE-TYPED. This card used to restate 34 literal `min=`/`max=`/`defaultValue=`
+  // props — the most of any card in its batch — over a def that already
+  // declares all of them, and nothing could see the disagreement: contract-lock,
+  // module-docs-lint and every range assertion read the DEF. The backdraft bug
+  // (a pad writing ±1 against a def declaring ±0.2) is exactly this shape, and
+  // the guard that exists for it is opt-in, so this card is now enrolled in
+  // RANGE_BOUND_CARDS + MAPPING_BOUND_CARDS in card-range-source.test.ts.
   import type { NodeProps } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
@@ -26,11 +34,34 @@
     COFEFVE_FILTER_MODE_OPTIONS,
   } from '$lib/audio/modules/cofefve';
   import type { ModuleNode } from '$lib/graph/types';
-  import { cardParams, portsFromDef } from './card-kit';
+  import { cardParams, paramSpec, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
   const { paramVal, set, live } = cardParams(cofefveDelayDef, () => id, () => node);
+
+  /** THE ONE COPY of every number this card paints. */
+  const P = {
+    delayTime:       paramSpec(cofefveDelayDef, 'delayTime'),
+    lfoAmount:       paramSpec(cofefveDelayDef, 'lfoAmount'),
+    lfoFrequency:    paramSpec(cofefveDelayDef, 'lfoFrequency'),
+    driftAmount:     paramSpec(cofefveDelayDef, 'driftAmount'),
+    driftSpeed:      paramSpec(cofefveDelayDef, 'driftSpeed'),
+    feedback:        paramSpec(cofefveDelayDef, 'feedback'),
+    stereoOffset:    paramSpec(cofefveDelayDef, 'stereoOffset'),
+    pan:             paramSpec(cofefveDelayDef, 'pan'),
+    duckAmount:      paramSpec(cofefveDelayDef, 'duckAmount'),
+    duckAttack:      paramSpec(cofefveDelayDef, 'duckAttack'),
+    duckRelease:     paramSpec(cofefveDelayDef, 'duckRelease'),
+    lowCut:          paramSpec(cofefveDelayDef, 'lowCut'),
+    highCut:         paramSpec(cofefveDelayDef, 'highCut'),
+    driveGain:       paramSpec(cofefveDelayDef, 'driveGain'),
+    driveMix:        paramSpec(cofefveDelayDef, 'driveMix'),
+    driveCutoff:     paramSpec(cofefveDelayDef, 'driveCutoff'),
+    driveIterations: paramSpec(cofefveDelayDef, 'driveIterations'),
+    dryVolume:       paramSpec(cofefveDelayDef, 'dryVolume'),
+    wetVolume:       paramSpec(cofefveDelayDef, 'wetVolume'),
+  } as const;
 
   function setDiscrete(k: string, v: number): void {
     setNodeParam(id, k, v);
@@ -41,8 +72,6 @@
   let panMode     = $derived(Math.round(paramVal('panMode')));
   let filterMode  = $derived(Math.round(paramVal('filterMode')));
   let iterations  = $derived(Math.round(paramVal('driveIterations')));
-
-  const PI = Math.PI;
 
   const inputs = portsFromDef(cofefveDelayDef.inputs, {
     clock: 'CLK', time_cv: 'TIME', feedback_cv: 'FBK', mix_cv: 'MIX', drive_cv: 'DRV',
@@ -60,8 +89,8 @@
       <aside class="rail">
         <div class="rail-title"><ModuleTitle {id} {data} defaultLabel="COFEFVE DELAY" inline /></div>
         <div class="rail-faders">
-          <Fader value={paramVal('dryVolume')} min={0} max={2} defaultValue={1}   label="Dry" curve="linear" onchange={set('dryVolume')} moduleId={id} paramId="dryVolume" readLive={live('dryVolume')} />
-          <Fader value={paramVal('wetVolume')} min={0} max={2} defaultValue={0.5} label="Wet" curve="linear" onchange={set('wetVolume')} moduleId={id} paramId="wetVolume" readLive={live('wetVolume')} />
+          <Fader value={paramVal('dryVolume')} min={P.dryVolume.min} max={P.dryVolume.max} defaultValue={P.dryVolume.defaultValue} curve={P.dryVolume.curve} units={P.dryVolume.units}   label="Dry" onchange={set('dryVolume')} moduleId={id} paramId="dryVolume" readLive={live('dryVolume')} />
+          <Fader value={paramVal('wetVolume')} min={P.wetVolume.min} max={P.wetVolume.max} defaultValue={P.wetVolume.defaultValue} curve={P.wetVolume.curve} units={P.wetVolume.units} label="Wet" onchange={set('wetVolume')} moduleId={id} paramId="wetVolume" readLive={live('wetVolume')} />
         </div>
         <div class="rail-version">v1.0</div>
       </aside>
@@ -73,7 +102,7 @@
           <div class="group" data-testid="cofefve-group-delay">
             <header>DELAY</header>
             <div class="knobs">
-              <Knob value={paramVal('delayTime')} min={0.001} max={2} defaultValue={0.2} label="Time" units="s" curve="log" onchange={set('delayTime')} moduleId={id} paramId="delayTime" readLive={live('delayTime')} />
+              <Knob value={paramVal('delayTime')} min={P.delayTime.min} max={P.delayTime.max} defaultValue={P.delayTime.defaultValue} curve={P.delayTime.curve} units={P.delayTime.units} label="Time" onchange={set('delayTime')} moduleId={id} paramId="delayTime" readLive={live('delayTime')} />
               <label class="ddl">
                 <span>Tempo sync</span>
                 <select data-testid="cofefve-tempo-sync" value={tempoSync} onchange={(e) => setDiscrete('tempoSync', Number((e.currentTarget as HTMLSelectElement).value))}>
@@ -98,16 +127,16 @@
           <div class="group" data-testid="cofefve-group-lfo">
             <header>WOW</header>
             <div class="knobs">
-              <Knob value={paramVal('lfoAmount')}    min={0} max={0.5} defaultValue={0}  label="Amount"    curve="linear" onchange={set('lfoAmount')} moduleId={id} paramId="lfoAmount" readLive={live('lfoAmount')} />
-              <Knob value={paramVal('lfoFrequency')} min={0.1} max={10} defaultValue={2} label="Frequency" units="hz" curve="log" onchange={set('lfoFrequency')} moduleId={id} paramId="lfoFrequency" readLive={live('lfoFrequency')} />
+              <Knob value={paramVal('lfoAmount')} min={P.lfoAmount.min} max={P.lfoAmount.max} defaultValue={P.lfoAmount.defaultValue} curve={P.lfoAmount.curve} units={P.lfoAmount.units}     label="Amount"    onchange={set('lfoAmount')} moduleId={id} paramId="lfoAmount" readLive={live('lfoAmount')} />
+              <Knob value={paramVal('lfoFrequency')} min={P.lfoFrequency.min} max={P.lfoFrequency.max} defaultValue={P.lfoFrequency.defaultValue} curve={P.lfoFrequency.curve} units={P.lfoFrequency.units} label="Frequency" onchange={set('lfoFrequency')} moduleId={id} paramId="lfoFrequency" readLive={live('lfoFrequency')} />
             </div>
           </div>
 
           <div class="group" data-testid="cofefve-group-drift">
             <header>FLUTTER</header>
             <div class="knobs">
-              <Knob value={paramVal('driftAmount')} min={0} max={0.05} defaultValue={0.001} label="Amount" curve="linear" onchange={set('driftAmount')} moduleId={id} paramId="driftAmount" readLive={live('driftAmount')} />
-              <Knob value={paramVal('driftSpeed')}  min={0.1} max={10} defaultValue={1}     label="Speed"  curve="log" onchange={set('driftSpeed')} moduleId={id} paramId="driftSpeed" readLive={live('driftSpeed')} />
+              <Knob value={paramVal('driftAmount')} min={P.driftAmount.min} max={P.driftAmount.max} defaultValue={P.driftAmount.defaultValue} curve={P.driftAmount.curve} units={P.driftAmount.units} label="Amount" onchange={set('driftAmount')} moduleId={id} paramId="driftAmount" readLive={live('driftAmount')} />
+              <Knob value={paramVal('driftSpeed')} min={P.driftSpeed.min} max={P.driftSpeed.max} defaultValue={P.driftSpeed.defaultValue} curve={P.driftSpeed.curve} units={P.driftSpeed.units}      label="Speed"  onchange={set('driftSpeed')} moduleId={id} paramId="driftSpeed" readLive={live('driftSpeed')} />
             </div>
           </div>
         </section>
@@ -117,9 +146,9 @@
           <div class="group" data-testid="cofefve-group-feedback">
             <header>FEEDBACK</header>
             <div class="knobs">
-              <Knob value={paramVal('feedback')}     min={-1} max={1}   defaultValue={0.5} label="Amount" curve="linear" onchange={set('feedback')} moduleId={id} paramId="feedback" readLive={live('feedback')} />
-              <Knob value={paramVal('stereoOffset')} min={-0.5} max={0.5} defaultValue={0} label="Stereo" curve="linear" onchange={set('stereoOffset')} moduleId={id} paramId="stereoOffset" readLive={live('stereoOffset')} />
-              <Knob value={paramVal('pan')}          min={-PI * 0.5} max={PI * 0.5} defaultValue={0} label="Pan" curve="linear" onchange={set('pan')} moduleId={id} paramId="pan" readLive={live('pan')} />
+              <Knob value={paramVal('feedback')} min={P.feedback.min} max={P.feedback.max} defaultValue={P.feedback.defaultValue} curve={P.feedback.curve} units={P.feedback.units}       label="Amount" onchange={set('feedback')} moduleId={id} paramId="feedback" readLive={live('feedback')} />
+              <Knob value={paramVal('stereoOffset')} min={P.stereoOffset.min} max={P.stereoOffset.max} defaultValue={P.stereoOffset.defaultValue} curve={P.stereoOffset.curve} units={P.stereoOffset.units} label="Stereo" onchange={set('stereoOffset')} moduleId={id} paramId="stereoOffset" readLive={live('stereoOffset')} />
+              <Knob value={paramVal('pan')} min={P.pan.min} max={P.pan.max} defaultValue={P.pan.defaultValue} curve={P.pan.curve} units={P.pan.units}          label="Pan" onchange={set('pan')} moduleId={id} paramId="pan" readLive={live('pan')} />
               <label class="ddl">
                 <span>Pan mode</span>
                 <select data-testid="cofefve-pan-mode" value={panMode} onchange={(e) => setDiscrete('panMode', Number((e.currentTarget as HTMLSelectElement).value))}>
@@ -134,9 +163,9 @@
           <div class="group" data-testid="cofefve-group-ducking">
             <header>DUCKING</header>
             <div class="knobs">
-              <Knob value={paramVal('duckAmount')}  min={0} max={10}  defaultValue={0}    label="Amount"  curve="linear" onchange={set('duckAmount')} moduleId={id} paramId="duckAmount" readLive={live('duckAmount')} />
-              <Knob value={paramVal('duckAttack')}  min={0.1} max={100} defaultValue={10} label="Attack"  curve="log" onchange={set('duckAttack')} moduleId={id} paramId="duckAttack" readLive={live('duckAttack')} />
-              <Knob value={paramVal('duckRelease')} min={0.1} max={100} defaultValue={10} label="Release" curve="log" onchange={set('duckRelease')} moduleId={id} paramId="duckRelease" readLive={live('duckRelease')} />
+              <Knob value={paramVal('duckAmount')} min={P.duckAmount.min} max={P.duckAmount.max} defaultValue={P.duckAmount.defaultValue} curve={P.duckAmount.curve} units={P.duckAmount.units}      label="Amount"  onchange={set('duckAmount')} moduleId={id} paramId="duckAmount" readLive={live('duckAmount')} />
+              <Knob value={paramVal('duckAttack')} min={P.duckAttack.min} max={P.duckAttack.max} defaultValue={P.duckAttack.defaultValue} curve={P.duckAttack.curve} units={P.duckAttack.units}  label="Attack"  onchange={set('duckAttack')} moduleId={id} paramId="duckAttack" readLive={live('duckAttack')} />
+              <Knob value={paramVal('duckRelease')} min={P.duckRelease.min} max={P.duckRelease.max} defaultValue={P.duckRelease.defaultValue} curve={P.duckRelease.curve} units={P.duckRelease.units} label="Release" onchange={set('duckRelease')} moduleId={id} paramId="duckRelease" readLive={live('duckRelease')} />
             </div>
           </div>
         </section>
@@ -154,24 +183,29 @@
                   {/each}
                 </select>
               </label>
-              <Knob value={paramVal('lowCut')}  min={0.01} max={1}    defaultValue={0.75}  label="Low cut"  curve="linear" onchange={set('lowCut')} moduleId={id} paramId="lowCut" readLive={live('lowCut')} />
-              <Knob value={paramVal('highCut')} min={0.001} max={0.99} defaultValue={0.001} label="High cut" curve="linear" onchange={set('highCut')} moduleId={id} paramId="highCut" readLive={live('highCut')} />
+              <Knob value={paramVal('lowCut')} min={P.lowCut.min} max={P.lowCut.max} defaultValue={P.lowCut.defaultValue} curve={P.lowCut.curve} units={P.lowCut.units}      label="Low cut"  onchange={set('lowCut')} moduleId={id} paramId="lowCut" readLive={live('lowCut')} />
+              <Knob value={paramVal('highCut')} min={P.highCut.min} max={P.highCut.max} defaultValue={P.highCut.defaultValue} curve={P.highCut.curve} units={P.highCut.units} label="High cut" onchange={set('highCut')} moduleId={id} paramId="highCut" readLive={live('highCut')} />
             </div>
           </div>
 
           <div class="group" data-testid="cofefve-group-drive">
             <header>DRIVE</header>
             <div class="knobs">
-              <Knob value={paramVal('driveGain')}   min={0} max={10} defaultValue={0.1} label="Gain"   curve="linear" onchange={set('driveGain')} moduleId={id} paramId="driveGain" readLive={live('driveGain')} />
-              <Knob value={paramVal('driveMix')}    min={0} max={1}  defaultValue={1}   label="Mix"    curve="linear" onchange={set('driveMix')} moduleId={id} paramId="driveMix" readLive={live('driveMix')} />
-              <Knob value={paramVal('driveCutoff')} min={0.01} max={1} defaultValue={1} label="Filter" curve="linear" onchange={set('driveCutoff')} moduleId={id} paramId="driveCutoff" readLive={live('driveCutoff')} />
+              <Knob value={paramVal('driveGain')} min={P.driveGain.min} max={P.driveGain.max} defaultValue={P.driveGain.defaultValue} curve={P.driveGain.curve} units={P.driveGain.units}   label="Gain"   onchange={set('driveGain')} moduleId={id} paramId="driveGain" readLive={live('driveGain')} />
+              <Knob value={paramVal('driveMix')} min={P.driveMix.min} max={P.driveMix.max} defaultValue={P.driveMix.defaultValue} curve={P.driveMix.curve} units={P.driveMix.units}       label="Mix"    onchange={set('driveMix')} moduleId={id} paramId="driveMix" readLive={live('driveMix')} />
+              <Knob value={paramVal('driveCutoff')} min={P.driveCutoff.min} max={P.driveCutoff.max} defaultValue={P.driveCutoff.defaultValue} curve={P.driveCutoff.curve} units={P.driveCutoff.units} label="Filter" onchange={set('driveCutoff')} moduleId={id} paramId="driveCutoff" readLive={live('driveCutoff')} />
               <div class="iter-control">
                 <span class="iter-label">Iterations</span>
+                <!-- ⚠ A NATIVE `<input>` TAKES STRING ATTRIBUTES, so this used
+                     to read `min="1" max="16"` — re-typed numbers that
+                     card-range-source's `min={…}` grep is structurally unable
+                     to see. Bound anyway: a gate's blind spot is not a licence,
+                     and this is the module's one non-primitive control. -->
                 <input
                   type="range"
                   data-testid="cofefve-drive-iters"
-                  min="1"
-                  max="16"
+                  min={P.driveIterations.min}
+                  max={P.driveIterations.max}
                   step="1"
                   value={iterations}
                   oninput={(e) => setDiscrete('driveIterations', Number((e.currentTarget as HTMLInputElement).value))}

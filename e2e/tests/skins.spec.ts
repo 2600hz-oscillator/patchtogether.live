@@ -12,7 +12,7 @@
 // option flips documentElement's --bg CSS var to the expected hex, and a
 // reload re-applies the chosen palette.
 
-import { test, expect } from './_fixtures';
+import { test, expect, openFileMenu } from './_fixtures';
 
 test.describe.configure({ mode: 'parallel' });
 
@@ -23,14 +23,29 @@ async function readVar(page: import('@playwright/test').Page, name: string): Pro
   }, name);
 }
 
-/** Open the palette-switcher popover. */
+/** REVEAL the switcher: it now lives inside File.. → Theme rather than sitting
+ *  bare in the topbar, so nothing here is on screen until the menu is open. */
+async function revealSwitcher(page: import('@playwright/test').Page) {
+  const trigger = page.getByTestId('skin-switcher-trigger');
+  if (await trigger.isVisible().catch(() => false)) return;
+  await openFileMenu(page);
+  // IDEMPOTENT: `workflow-file-theme` TOGGLES its section, so clicking it when
+  // the section is already expanded collapses it again. The loop in "each
+  // shipped palette sets the expected --bg" calls this five times in a row and
+  // hit exactly that.
+  await page.getByTestId('workflow-file-theme').click();
+  await expect(trigger).toBeVisible();
+}
+
+/** Reveal it AND open its popover (the option list). */
 async function openSwitcher(page: import('@playwright/test').Page) {
+  await revealSwitcher(page);
   await page.getByTestId('skin-switcher-trigger').click();
   await expect(page.getByTestId('skin-switcher-popover')).toBeVisible();
 }
 
-test('palettes: switcher renders in topbar with rackline active', async ({ page, rack }) => {
-  await expect(page.getByTestId('skin-switcher-trigger')).toBeVisible();
+test('palettes: switcher renders in the File.. menu with rackline active', async ({ page, rack }) => {
+  await revealSwitcher(page);
   await expect(page.getByTestId('skin-current-id')).toHaveText('rackline');
   await expect(page.getByTestId('skin-current-label')).toHaveText('Rackline');
 });
@@ -70,6 +85,7 @@ test('palettes: choice survives a reload', async ({ page, rack }) => {
 
   await page.reload();
   await page.waitForLoadState('networkidle');
+  await revealSwitcher(page); // the menu does not survive a reload
   await expect(page.getByTestId('skin-current-id')).toHaveText('graphite');
   expect(await readVar(page, '--bg')).toBe('#101215');
   expect(await readVar(page, '--accent')).toBe('#38d3c8');
@@ -93,7 +109,11 @@ test('palettes: each shipped palette sets the expected --bg', async ({ page, rac
 
 test('palettes: clicking outside closes the popover without changing palette', async ({ page, rack }) => {
   await openSwitcher(page);
-  await page.locator('.topbar h1').click();
+  await page.locator('header.workflow-topbar h1').click();
   await expect(page.getByTestId('skin-switcher-popover')).not.toBeVisible();
+  // The outside click now closes the whole File.. menu, so `skin-current-id`
+  // leaves the DOM with it — re-open to read the palette back. The claim under
+  // test is unchanged: dismissing without picking must not change the palette.
+  await revealSwitcher(page);
   await expect(page.getByTestId('skin-current-id')).toHaveText('rackline');
 });

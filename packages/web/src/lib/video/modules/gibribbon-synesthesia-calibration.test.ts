@@ -23,7 +23,7 @@
 // a channel fails CI.
 //
 // ── PROVENANCE (read this before touching the fixture) ──────────────────────
-// Until the dawless-removal sequence this test lived at
+// Until the second-shell removal this test lived at
 // `lib/ui/example-patches/gibribbon-demo-calibration.test.ts` and DECODED its
 // voice out of the shipped `gibribbon-demo.imp.json` envelope (the "GIBRIBBON
 // (game demo)" entry in the retired "Load example…" dropdown). That envelope

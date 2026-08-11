@@ -10,9 +10,14 @@
 // has filled — is a function of TIME and of SIZE and is stated nowhere. Its
 // strongest control (POSITION) moves the output waveform ENTIRELY while moving
 // its level by 0.17 dB, so every RMS-based sweep in the repo, and three of the
-// spec's own passes, report "POSITION does nothing". And the top fifth of SIZE
-// is BIT-IDENTICAL to its own maximum. A `paramId` readout on any of those
-// prints a correct number that says none of it.
+// spec's own passes, report "POSITION does nothing". A `paramId` readout on
+// either prints a correct number that says none of it.
+//
+// (The third thing it had was a real DEAD ZONE — SIZE's top 19.50 % rendered
+// bit-identical output, which this model printed as `CLAMPED` rather than
+// painting a dead dial as a working one. Fixed in the DSP in #1456; the badge
+// is gone and the oracle that pinned it is now inverted, asserting the whole
+// travel is ALIVE against the shipping worklet.)
 //
 // Every law below is the worklet's, re-derived rather than approximated, and
 // each is anchored to `cloudsMath` (the pure-math mirror of the worklet) by an
@@ -67,30 +72,22 @@ export function cloudsRequestedGrainMs(size: number): number {
   return CLOUDS_GRAIN_MIN_MS * Math.pow(CLOUDS_GRAIN_MAX_MS / CLOUDS_GRAIN_MIN_MS, s);
 }
 
-/** The hard ceiling: `safeLen = min(lengthSamples, floor(bufLen * 0.4))`. */
+/**
+ * The hard ceiling: `safeLen = min(lengthSamples, floor(bufLen · fraction))`.
+ *
+ * ⚠ THIS USED TO BE 800 ms AGAINST A LAW THAT ASKED FOR 1500, AND THE
+ * DISAGREEMENT WAS A DEAD ZONE — the top 19.50 % of SIZE rendered bit-identical
+ * output. Fixed in the DSP (#1456): `CLOUDS_GRAIN_MAX_MS` is now derived from
+ * `CLOUDS_GRAIN_CAP_FRACTION`, so the two are the same number by construction
+ * and the clamp never binds. Kept mirrored here — including the `Math.min` in
+ * `cloudsGrainMs` below — because this model's contract is to compute what the
+ * worklet computes, not what it currently happens to reduce to. The
+ * never-binding property is asserted (both directions) in
+ * clouds-face-model.test.ts and against the SHIPPING WORKLET in
+ * art/scenarios/clouds/size-travel.test.ts.
+ */
 export const CLOUDS_GRAIN_CEILING_MS =
   CLOUDS_BUFFER_SECONDS * CLOUDS_GRAIN_CAP_FRACTION * 1000;
-
-/**
- * The SIZE value at which the request first meets the ceiling.
- *
- * ⚠ ABOVE THIS THE KNOB IS DEAD — not "less effective", DEAD. Measured against
- * `cloudsMath` on broadband noise: size 0.805, 0.85, 0.9 and 1.0 render
- * BIT-IDENTICAL output, so 19.5 % of SIZE's travel produces the same samples.
- * That is worklet arithmetic (`Math.min(lengthSamples, …)`), so it is a
- * separate DSP change, not a face change — the face's job here is to refuse to
- * paint a dead control as a working one. Pinned to `cloudsMath` by the
- * bit-identity oracle in clouds-face-model.test.ts, so a DSP fix reddens the
- * claim rather than leaving the faceplate insisting on it.
- */
-export const CLOUDS_GRAIN_CLAMP_SIZE =
-  Math.log(CLOUDS_GRAIN_CEILING_MS / CLOUDS_GRAIN_MIN_MS) /
-  Math.log(CLOUDS_GRAIN_MAX_MS / CLOUDS_GRAIN_MIN_MS);
-
-/** Is SIZE inside the dead top of its travel? */
-export function cloudsGrainClamped(size: number): boolean {
-  return cloudsRequestedGrainMs(size) >= CLOUDS_GRAIN_CEILING_MS;
-}
 
 /** The grain length actually used, in OUTPUT milliseconds. */
 export function cloudsGrainMs(size: number): number {
@@ -160,7 +157,7 @@ export function cloudsPoolFullAt(size: number): number | null {
  * can ever start is one grain length behind the write head, and the furthest is
  * the whole 2.0 s ring. Both ends move with SIZE, which is the blindness a
  * `paramId: 'position'` readout has: it prints `0.50` at every size while the
- * reachable span shrinks from 1.94 s to 1.20 s.
+ * reachable span shrinks from 1.94 s at SIZE 0 to 0.50 s at SIZE 1.
  */
 export function cloudsPositionReach(p: CloudsFaceParams): { near: number; far: number } {
   return { near: cloudsGrainMs(p.size) / 1000, far: CLOUDS_BUFFER_SECONDS };
@@ -181,17 +178,21 @@ export function cloudsPositionSecondsBack(p: CloudsFaceParams): number {
  * While the ring is filling, `availableHistory = fillLevel`, so
  * `readPos = (1 − position)·(fillLevel − safeLen)` — negative, i.e. pointing
  * into never-written buffer, until `fillLevel` reaches `safeLen`. MEASURED
- * against `cloudsMath`, first non-zero output sample:
+ * through the SHIPPING WORKLET (art/scenarios/clouds/size-travel.test.ts, and
+ * mirrored against `cloudsMath` here), first non-zero output sample:
  *
- *   size 0    → 60.0 ms   (grain 60 ms)
- *   size 0.25 → 134.1 ms  (grain 134 ms)
- *   size 0.5  → 300.0 ms  (grain 300 ms)   ← the shipped default
- *   size 0.75 → 670.8 ms  (grain 671 ms)
- *   size 0.9  → 800.0 ms  (grain 800 ms, clamped)
+ *   size 0    → 60.0 ms    (grain 60 ms)
+ *   size 0.25 → 134.1 ms   (grain 134 ms)
+ *   size 0.5  → 300.0 ms   (grain 300 ms)   ← the shipped default
+ *   size 0.75 → 670.8 ms   (grain 671 ms)
+ *   size 0.9  → 1087.2 ms  (grain 1087 ms)
+ *   size 1    → 1500.0 ms  (grain 1500 ms)
  *
  * POSITION-invariant to the sample. The face spec authored against `main` said
  * "the first quarter second is bit-zero"; that was a bucket artifact of its own
- * 0.25 s measurement grid. The real quantity is a grain length and it MOVES.
+ * 0.25 s measurement grid. The real quantity is a grain length and it MOVES —
+ * across a 25× range now that SIZE's top fifth is no longer clamped (it was a
+ * 13× range and flat above 0.8047 before #1456).
  */
 export function cloudsSilenceMs(p: CloudsFaceParams): number {
   return cloudsGrainMs(p.size);
@@ -247,10 +248,15 @@ function fmtS(s: number): string {
   return `${s.toFixed(2)} s`;
 }
 
-/** `300 ms out` · `800 ms out · CLAMPED` · `300 ms out ← 600 ms of buffer`. */
+/** `300 ms out` · `1500 ms out` · `300 ms out · 600 ms of buffer`.
+ *
+ *  ⚠ THERE USED TO BE A THIRD FORM, `800 ms out · CLAMPED`, and its removal is
+ *  the visible half of the DSP fix: SIZE's top fifth was bit-identical to its
+ *  maximum, so the readout refused to paint that dial as working. The dial
+ *  works now — 60 ms at SIZE 0 through 1500 ms at SIZE 1, every step distinct
+ *  through the shipping worklet — so the badge would be a lie the other way. */
 export function cloudsGrainText(p: CloudsFaceParams): string {
   const parts = [`${fmtMs(cloudsGrainMs(p.size))} out`];
-  if (cloudsGrainClamped(p.size)) parts.push('CLAMPED');
   if (p.pitch !== 0) parts.push(`${fmtMs(cloudsSourceGrainMs(p))} of buffer`);
   return parts.join(' · ');
 }
@@ -323,9 +329,8 @@ export interface CloudsRingGrain {
 }
 
 export interface CloudsRingPlan {
-  /** Grain length in output ms, and whether SIZE is in its dead top. */
+  /** Grain length in output ms. */
   grainMs: number;
-  grainClamped: boolean;
   /** Where the read window starts / ends, in 0..1 of the ring. */
   readFrom: number;
   readTo: number;
@@ -407,7 +412,6 @@ export function cloudsRingPlan(p: CloudsFaceParams): CloudsRingPlan {
 
   return {
     grainMs,
-    grainClamped: cloudsGrainClamped(p.size),
     readFrom,
     readTo,
     deadNoseTo: grainFrac,

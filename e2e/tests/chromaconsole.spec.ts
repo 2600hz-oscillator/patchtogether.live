@@ -62,7 +62,7 @@ const OTHER_PORT = { id: 'other-0', name: 'Prophet Rev2' };
 
 async function boot(page: Page, ports = [OTHER_PORT, CHROMA_PORT]): Promise<void> {
   await installMidiOutCapture(page, ports);
-  await page.goto('/rack');
+  await page.goto('/rack?shell=legacy&seed=none');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: NODE, type: TYPE, position: { x: 200, y: 200 } }]);
   await expect(page.locator(`.svelte-flow__node-${TYPE}`)).toBeVisible();

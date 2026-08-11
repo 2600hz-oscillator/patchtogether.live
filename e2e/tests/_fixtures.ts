@@ -22,7 +22,7 @@
 //     hand-rolled collectors, and converting a previously-unwatched spec is a
 //     behavior change that needs its own triage (see the LoC report, row 3).
 //
-//   * `rack` — the standard `goto('/rack')` + `networkidle` navigation that
+//   * `rack` — the standard `goto('/rack?shell=legacy&seed=none')` + `networkidle` nav that
 //     opened ~90% of specs. Destructure `rack` and the page is already on the
 //     rack when the body runs (fixtures resolve before the test body):
 //
@@ -67,8 +67,23 @@ export const test = base.extend<{ errorWatch: ErrorWatch; rack: void }>({
     watch.assertClean();
   },
 
+  // THE rack fixture — ~169 specs reach the canvas only through here.
+  //
+  // `?shell=legacy` is deliberate, not incidental. The bare default `/rack` renders
+  // each module as a FACEPLATE tile (ModuleShell / ModuleShellPlaceholder), so
+  // a module's own card testids do not exist in the lane; `?shell=legacy`
+  // renders the verbatim *Card.svelte inside the same shell, which is what
+  // every card-interaction spec here is written against. Specs that test the
+  // FACEPLATE render (or the shell chrome itself) navigate explicitly instead
+  // of using this fixture.
+  //
+  // ⚠ This is NOT "the old default". The old bare `/rack` was the deleted
+  // second shell: no WorkflowTopbar, no dock rails, no channel-columns
+  // overlay, no pinned singletons, an empty graph and xyflow's 0.5 zoom floor.
+  // `?shell=legacy` keeps the CARDS and nothing else — every spec here now runs
+  // against the real shell chrome and the seeded pinned + video-zone nodes.
   rack: async ({ page }, use) => {
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
     await use();
   },
@@ -190,4 +205,45 @@ export async function loadVoiceDemo(page: Page): Promise<void> {
     });
   });
   await waitForMounted(page, [...VOICE_DEMO_NODE_IDS]);
+}
+
+// ---------------------------------------------------------------------------
+// THE FILE.. MENU — the only route to the actions the deleted topbar carried.
+// ---------------------------------------------------------------------------
+//
+// The old full-width topbar put New rack / Clear / Export Perf / Load Perf /
+// Raw JSON / the 5-slot preset strip / Save Set / Load Set / the account link
+// on screen as bare buttons. Every one of them now lives behind
+// `workflow-file-trigger`, most inside a collapsible SECTION. These helpers are
+// the seam so ~a dozen specs don't each re-derive "click File, maybe click a
+// section header, then click the row".
+//
+// Lives here (NOT `_helpers.ts`) on purpose: `_helpers.ts` is in the
+// collab-attest basis, and test-harness churn must not move that hash.
+
+/** Open the File.. menu (idempotent — a no-op when it is already open). */
+export async function openFileMenu(page: Page): Promise<void> {
+  const menu = page.getByTestId('workflow-file-menu');
+  if (await menu.isVisible().catch(() => false)) return;
+  await page.getByTestId('workflow-file-trigger').click();
+  await expect(menu).toBeVisible();
+}
+
+/**
+ * Click a File.. row by testid, opening the menu first.
+ *
+ * `section` expands a collapsible group before the row is reachable — pass the
+ * section's OWN testid (e.g. 'workflow-file-quicksave'). Rows that sit directly
+ * in the menu (New rack, Save performance, Save set, Clear) need no section.
+ */
+export async function fileMenuClick(
+  page: Page,
+  rowTestId: string,
+  section?: string,
+): Promise<void> {
+  await openFileMenu(page);
+  if (section) {
+    await page.getByTestId(section).click();
+  }
+  await page.getByTestId(rowTestId).click();
 }

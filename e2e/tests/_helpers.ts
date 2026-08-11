@@ -52,21 +52,22 @@ function isTransientPageError(err: unknown): boolean {
 }
 
 /**
- * WORKFLOW viewport reveal — center the viewport on the given (just-injected)
- * nodes when they aren't already comfortably on-screen at a clickable zoom.
+ * Viewport reveal — center the viewport on the given (just-injected) nodes when
+ * they aren't already comfortably on-screen at a clickable zoom.
  *
  * Why: `spawnPatch` writes nodes DIRECTLY into `__patch` at their flow-space
- * position, bypassing the palette's `screenToFlowPosition` anchor. In a WORKFLOW
- * rack the default viewport frames the pinned lanes + purple video zone, which
- * sit far down in flow space (large Y); a free-canvas card injected at a small-Y
- * position is therefore scrolled OFF-SCREEN. SvelteFlow transforms the pane (no
- * native scroll), so Playwright's click auto-scroll can't reach it and every
+ * position, bypassing the palette's `screenToFlowPosition` anchor. The default
+ * viewport frames the pinned lanes + purple video zone, which sit far down in
+ * flow space (large Y); a free-canvas card injected at a small-Y position is
+ * therefore scrolled OFF-SCREEN. SvelteFlow transforms the pane (no native
+ * scroll), so Playwright's click auto-scroll can't reach it and every
  * right-click / patch-trigger on that card times out. Real users never hit this
  * (palette spawns land at the in-view click point); this mirrors that.
  *
  * No-op when every target node's center already projects inside the pane at a
- * clickable zoom (≥ 0.4) — so dawless racks and already-framed workflow spawns
- * keep their viewport untouched.
+ * clickable zoom (≥ 0.4) — an already-framed spawn keeps its viewport
+ * untouched. That internal early-return is why this is called UNCONDITIONALLY
+ * (see spawnPatch): the check decides, not the URL.
  */
 async function revealWorkflowNodes(page: Page, ids: string[]): Promise<void> {
   await page
@@ -363,17 +364,22 @@ export async function spawnPatch(
         capMs: mountCapMs,
       });
 
-      // WORKFLOW mode: the default viewport frames the far-down pinned lanes +
-      // video zone (large flow-Y), so a card injected DIRECTLY at a small-Y
-      // free-canvas position (real palette spawns anchor at the in-view click
-      // point; this harness bypasses that) renders OFF-SCREEN and is un-
-      // clickable — every right-click/patch-trigger on it times out. Mirror the
-      // palette's in-view spawn by centering the viewport on the just-injected
-      // nodes, but only when they aren't already comfortably on-screen (so
-      // dawless and already-framed workflow spawns are untouched).
-      if (page.url().includes('mode=workflow')) {
-        await revealWorkflowNodes(page, nodes.map((n) => n.id));
-      }
+      // The default viewport frames the far-down pinned lanes + video zone
+      // (large flow-Y), so a card injected DIRECTLY at a small-Y free-canvas
+      // position (real palette spawns anchor at the in-view click point; this
+      // harness bypasses that) renders OFF-SCREEN and is un-clickable — every
+      // right-click/patch-trigger on it times out. Mirror the palette's in-view
+      // spawn by centering the viewport on the just-injected nodes.
+      //
+      // ⚠ UNCONDITIONAL, and that is the fix. This used to be gated on
+      // `page.url().includes('mode=workflow')` — a URL SNIFF standing in for
+      // "is this the shell?". Every rack is the shell now, and `?shell=legacy`
+      // does not contain that substring, so the gate would have silently
+      // stopped firing for the entire suite the moment the default flipped:
+      // hundreds of specs timing out on an off-screen card with no signal
+      // pointing here. `revealWorkflowNodes` already no-ops when the nodes are
+      // framed and clickable, so the CHECK decides — not the URL.
+      await revealWorkflowNodes(page, nodes.map((n) => n.id));
       return;
     } catch (err) {
       lastErr = err;

@@ -47,7 +47,7 @@
 //      shell-flag-not-a-complete-gate finding), while `m`/`e` stay the shipped
 //      drawer toggles there.
 //
-// Runs on /rack?mode=workflow&shell=1 (no DB/relay) — same lane as
+// Runs on /rack (no DB/relay) — same lane as
 // workflow-shell.spec.ts / workflow-dock-ux.spec.ts.
 
 import { test, expect, type Page } from '@playwright/test';
@@ -74,9 +74,9 @@ async function waitForPinnedTrio(page: Page): Promise<void> {
 }
 
 async function gotoShellWorkflow(page: Page): Promise<void> {
-  await page.goto('/rack?mode=workflow&shell=1');
+  await page.goto('/rack');
   // 15s first-load budget (the workflow-shell.spec.ts pattern): on a COLD dev
-  // server the very first /rack compile can exceed the 5s expect default —
+  // server the very first /rack?shell=legacy&seed=none compile can exceed the 5s expect default —
   // reproduced locally with a cleared .vite cache; every later load is ~1s.
   await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: 15_000 });
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
@@ -557,7 +557,7 @@ test.describe('bottom-drawer occupancy: preview-off M/E drawer + the same C pane
   });
 
   test('`c` opens the SAME clip pane flag-off; `m`/`e` still toggle the shipped drawer', async ({ page }) => {
-    await page.goto('/rack?mode=workflow');
+    await page.goto('/rack?shell=legacy');
     // Same 15s first-load budget as gotoShellWorkflow (cold-compile latency).
     await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: 15_000 });
     await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });

@@ -179,7 +179,7 @@ describe('presence-by-TYPE surface pins DO consume the cap (workflow P2)', () =>
     expect(wouldExceedCap(nodes, singletonTimelorde)).toBe(true);
   });
 
-  it('a dawless canvas TIMELORDE alone also fills the cap (unchanged)', () => {
+  it('a plain canvas TIMELORDE alone also fills the cap (unchanged)', () => {
     const nodes = { 'timelorde-abc': { type: 'timelorde', data: {} } };
     expect(instanceCount(nodes, 'timelorde')).toBe(1);
     expect(wouldExceedCap(nodes, singletonTimelorde)).toBe(true);

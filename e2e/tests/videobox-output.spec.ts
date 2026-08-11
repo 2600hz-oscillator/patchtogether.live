@@ -98,7 +98,7 @@ async function setup(page: import('@playwright/test').Page): Promise<string[]> {
   await page.addInitScript(() => {
     (window as unknown as { __bentboxFreezeTime?: number }).__bentboxFreezeTime = 2.0;
   });
-  await page.goto('/rack');
+  await page.goto('/rack?shell=legacy&seed=none');
   await page.waitForLoadState('networkidle');
   return errors;
 }

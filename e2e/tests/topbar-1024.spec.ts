@@ -20,35 +20,43 @@ test.describe.configure({ mode: 'parallel' });
 
 async function boot(page: Page): Promise<void> {
   // The overflow-prone topbar (the .actions cluster ending in the auth
-  // control) is the CANVAS topbar in Canvas.svelte, which lives on /rack
+  // control) is the CANVAS topbar in Canvas.svelte, which lives on /rack?shell=legacy&seed=none
   // since the landing-page move (#995) — `/` is the static landing and has
   // no rack topbar at all.
-  await page.goto('/rack');
+  await page.goto('/rack?shell=legacy&seed=none');
   await page.waitForLoadState('networkidle');
-  await page.locator('header.topbar').waitFor({ state: 'visible', timeout: 10_000 });
+  await page.locator('header.workflow-topbar').waitFor({ state: 'visible', timeout: 10_000 });
   // Wait for the widest actions-cluster controls to be mounted before we
   // measure, so the widths are the settled ones. (This used to wait on the
   // "Load example…" select leaving its transient "Loading…" placeholder; that
   // control is gone, and with it the only topbar label that changed width
   // after boot — every remaining label is a static string.)
-  await expect(page.getByTestId('raw-json-select')).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByTestId('export-perf-zip-btn')).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId('workflow-file-trigger')).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId('workflow-topbar-placeholders')).toBeVisible({ timeout: 15_000 });
 }
 
-/** Assert every topbar control — specifically the auth control and the
- *  version stamp — is fully inside the viewport, and nothing in the header
- *  overflows horizontally. */
+/** Assert every topbar control is fully inside the viewport, and nothing in
+ *  the header overflows horizontally.
+ *
+ *  ⚠ THE SUBJECT CHANGED, so the RIGHTMOST CONTROL changed with it. This file
+ *  was written around the auth control: the old topbar ended in a `signin-link`
+ *  and the owner's screenshot showed it pushed clean off the header. Auth now
+ *  lives INSIDE the File.. menu (`workflow-file-signin`), so there is no
+ *  `signin-link` in the header at any width and asserting on it could only ever
+ *  fail. Re-pointed at the surface-slot cluster, which is what the one topbar
+ *  actually ends in — the overflow claim is unchanged, only what sits at the
+ *  right edge is. */
 async function assertTopbarContained(page: Page, width: number): Promise<void> {
-  const header = page.locator('header.topbar');
+  const header = page.locator('header.workflow-topbar');
 
-  // The auth control (anon e2e env → the Sign in link, the exact element the
-  // owner's screenshot showed pushed off) is visible and fully inside.
-  const signin = page.getByTestId('signin-link');
-  await expect(signin).toBeVisible();
-  const sb = await signin.boundingBox();
-  expect(sb, 'signin link must have a bounding box').not.toBeNull();
-  expect(sb!.x, 'signin link left edge inside viewport').toBeGreaterThanOrEqual(0);
-  expect(sb!.x + sb!.width, 'signin link right edge inside viewport').toBeLessThanOrEqual(width);
+  // The RIGHTMOST cluster: the topbar surface slots (clock / DIN / audio I/O /
+  // cameras / assets). This is the element that runs out of room first now.
+  const slots = page.getByTestId('workflow-topbar-placeholders');
+  await expect(slots).toBeVisible();
+  const sb = await slots.boundingBox();
+  expect(sb, 'topbar slot cluster must have a bounding box').not.toBeNull();
+  expect(sb!.x, 'slot cluster left edge inside viewport').toBeGreaterThanOrEqual(0);
+  expect(sb!.x + sb!.width, 'slot cluster right edge inside viewport').toBeLessThanOrEqual(width);
 
   // The version stamp too.
   const version = page.getByTestId('app-version');
@@ -86,21 +94,21 @@ async function assertTopbarContained(page: Page, width: number): Promise<void> {
   );
 }
 
-/** The topbar renders as a SINGLE flex row: the brand heading and the auth
- *  control vertically overlap (a wrapped .actions row would sit fully below
+/** The topbar renders as a SINGLE flex row: the brand heading and the
+ *  rightmost cluster vertically overlap (a wrapped row would sit fully below
  *  the h1). */
 async function assertSingleRow(page: Page): Promise<void> {
-  const h1 = await page.locator('header.topbar h1').boundingBox();
-  const signin = await page.getByTestId('signin-link').boundingBox();
+  const h1 = await page.locator('header.workflow-topbar h1').boundingBox();
+  const slots = await page.getByTestId('workflow-topbar-placeholders').boundingBox();
   expect(h1).not.toBeNull();
-  expect(signin).not.toBeNull();
+  expect(slots).not.toBeNull();
   expect(
-    signin!.y < h1!.y + h1!.height,
-    'auth control must share the first topbar row (no wrap at this width)',
+    slots!.y < h1!.y + h1!.height,
+    'the slot cluster must share the first topbar row (no wrap at this width)',
   ).toBe(true);
 }
 
-test('1024×768: every topbar control (incl. the Sign in control) stays inside the viewport', async ({
+test('1024×768: every topbar control stays inside the viewport', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1024, height: 768 });

@@ -50,7 +50,7 @@ const SYNESTHESIA = 'workflow-synesthesia';
 const VIDEO_ZONE_GAP = 24; // shell pitch 216 − tile 192 (videoZonePackedXs)
 
 async function gotoShell(page: Page): Promise<void> {
-  await page.goto('/rack?mode=workflow&shell=1');
+  await page.goto('/rack');
   // 15s: first paint pays SvelteKit's on-demand route compile on a cold dev
   // server (and SwiftShader contention on CI) — same budget the sibling
   // first-visibility asserts use.
@@ -453,7 +453,7 @@ test.describe('?shell=1 video visibility', () => {
   });
 
   test('preview OFF (default) stays a strict no-op: no tiles, no thumbs, videoOut legacy card as today', async ({ page }) => {
-    await page.goto('/rack?mode=workflow');
+    await page.goto('/rack?shell=legacy');
     await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: 15_000 });
     await expect(videoOutCard(page)).toBeVisible({ timeout: 15_000 });
     await expect(page.locator('[data-testid="module-shell-placeholder"]')).toHaveCount(0);
@@ -559,8 +559,8 @@ test.describe('?shell=1 video CHAIN parity', () => {
       return { nodes: await engineNodeIds(page) };
     }
 
-    const shell = await buildAndProbe('/rack?mode=workflow&shell=1');
-    const off = await buildAndProbe('/rack?mode=workflow');
+    const shell = await buildAndProbe('/rack');
+    const off = await buildAndProbe('/rack?shell=legacy');
 
     // THE PARITY INVARIANT: which UI renders a module must not change what the
     // engine has materialized for the same rack.

@@ -20,7 +20,7 @@
 // (we don't fake those — only the CV emit).
 //
 // Output:
-//   e2e/vrt/__screenshots__/vrt-composite.spec.ts/{platform}/<id>.png
+//   e2e/vrt/__screenshots__/vrt-composite.spec.ts/<id>.png
 //
 // Coverage: the screenshot bounds cover BOTH cards plus the cable between
 // them — Playwright's full-page mode at the pinned VRT viewport
@@ -28,29 +28,14 @@
 
 import { test, expect } from '@playwright/test';
 import { COMPOSITE_VRT_SCENES } from './vrt-composite-scenes';
-import { EXEMPT_BASELINE_PAIRS } from './vrt-exemptions';
 import { expectVrtSceneScreenshot } from './vrt-capture';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
-
-const VRT_PLATFORM = process.platform === 'darwin' ? 'darwin' : 'linux';
 
 test.describe.configure({ mode: 'default' });
 
 test.describe('VRT: composite-state scenes', () => {
   for (const scene of COMPOSITE_VRT_SCENES) {
     test(`${scene.id} matches baseline`, async ({ page }) => {
-      test.skip(
-        EXEMPT_BASELINE_PAIRS.has(`${VRT_PLATFORM}/${scene.id}`),
-        `${scene.id} on ${VRT_PLATFORM}: baseline pending (see EXEMPT_BASELINE_PAIRS)`,
-      );
-      // darwinOnly scenes can't reliably reproduce their deterministic baseline
-      // under CI's headless/SwiftShader environment (e.g. the ADSR scope
-      // analyser settle) — capture/compare on darwin, skip cleanly on linux.
-      test.skip(
-        scene.darwinOnly === true && VRT_PLATFORM === 'linux',
-        `${scene.id}: darwin-only scene (skipped on linux — see CompositeVrtScene.darwinOnly)`,
-      );
-
       // Capture page errors so a broken card fails the test BEFORE the
       // screenshot diff does — easier to debug than a thousand-pixel diff
       // from a black canvas.
@@ -67,7 +52,7 @@ test.describe('VRT: composite-state scenes', () => {
       // this the captured text metrics differ run-to-run and platform-to-platform.
       // Full root cause: e2e/vrt/_fonts.ts.
       await pinVrtFonts(page);
-      await page.goto('/rack');
+      await page.goto('/rack?shell=legacy&seed=none');
       await page.waitForLoadState('networkidle');
       await awaitVrtFonts(page);
 

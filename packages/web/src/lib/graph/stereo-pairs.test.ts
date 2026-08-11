@@ -1,16 +1,23 @@
 // packages/web/src/lib/graph/stereo-pairs.test.ts
 //
 // THE GOLDEN for stereo pairing: the FULL derived pair map across the whole
-// registry, pinned as text and ratcheted in BOTH directions.
+// registry, pinned as text.
 //
 // WHY A GOLDEN AND NOT A COUNT
 // ----------------------------
 // A count can only trip by growing, and it cannot tell you WHICH pair moved.
-// Five subsystems are about to be rewired onto this derivation; the thing that
-// has to be reviewable is the MAP, one line per module. So the pin is the
-// serialized map, plus a count ratchet asserted in both directions on top of
-// it (`actual <= CEILING` AND `CEILING - actual === 0`), plus the artifact
-// anchor that makes a stale exemption RED.
+// Five subsystems are wired onto this derivation; the thing that has to be
+// reviewable is the MAP, one line per module. So the pin is the serialized
+// map, plus the artifact anchor that makes a stale exemption RED.
+//
+// ⚠ THE COUNTS THAT USED TO SIT ON TOP OF THE MAP ARE GONE (2026-08-10).
+// `DERIVED_PAIR_CEILING` (58) and `MODULES_WITH_PAIRS_CEILING` (34) re-measured
+// this same golden as a number: every pair they counted is a token on a line of
+// `GOLDEN_PAIR_MAP`, so a pair appearing or disappearing already reddens the pin
+// with a readable line diff (both directions are negative-controlled below).
+// They added nothing but a hand-typed literal, and a hand-typed literal in a
+// file three concurrent branches edit is a merge hazard BY CONSTRUCTION — see
+// the repo standard "No hand-typed population count".
 //
 // WHAT THIS GATE CANNOT SEE — stated here so a green run is read for what it
 // is (CLAUDE.md "state the gate's scope inside the gate"):
@@ -22,9 +29,10 @@
 //   2. A pair whose two ids share NO l/r token and carry NO declaration —
 //      scope's `ch1`/`ch2`, synesthesia's per-band taps, es9's `in1..in14`.
 //      Invisible here, and therefore two jacks by default: the safe direction,
-//      but not a proof of absence. `UNPAIRED_AUDIO_PORT_CEILING` below
-//      ratchets how many audio ports sit outside every derived pair (203
-//      today), so that population cannot grow unnoticed.
+//      but not a proof of absence. The audio ports sitting outside every
+//      derived pair are no longer COUNTED here; they are pinned twice over
+//      elsewhere and the derivation's own failure mode is asserted directly —
+//      see 'an L/R-TOKENED audio port always lands in a pair' below.
 //   3. Anything about SEMANTICS. The derivation says two ports are one stereo
 //      signal by NAME or by DECLARATION. Whether that is musically true is a
 //      human call, which is what COLLAPSE_EXEMPT records.
@@ -128,22 +136,6 @@ wavecel output:out_l+out_r
 wavesculpt output:L+R:token
 `.trim();
 
-/** DERIVED pairs (post-exemption). Ratcheted in BOTH directions below. */
-// 59→58 (2026-08-10): hypercube (output L+R) was DELETED with the module.
-// Read off the ratchet's own report, not decremented.
-const DERIVED_PAIR_CEILING = 58;
-/** Modules contributing at least one derived pair. */
-// 35→34 (2026-08-10): hypercube DELETED with the module. Read off the
-// ratchet's own report, not decremented.
-const MODULES_WITH_PAIRS_CEILING = 34;
-/** Stems the token fallback REFUSED as ambiguous (>1 left or >1 right). Zero
- *  today — asserted at zero so the first one to appear is a red test and not a
- *  silently-dropped pair. */
-const AMBIGUOUS_STEM_CEILING = 0;
-/** Audio ports that belong to NO derived pair — blind spot #2 above, held to a
- *  ceiling so the "invisible to this gate" population cannot grow unnoticed. */
-const UNPAIRED_AUDIO_PORT_CEILING = 203;
-
 describe('stereo-pairs: THE derived pair map (registry golden)', () => {
   const defs = allDefs();
 
@@ -163,46 +155,61 @@ describe('stereo-pairs: THE derived pair map (registry golden)', () => {
     ).toBe(GOLDEN_PAIR_MAP);
   });
 
-  it('ratchets the pair count in BOTH directions', () => {
-    const pairs = defs.flatMap((d) => derivedStereoPairs(d));
-    const withPairs = defs.filter((d) => derivedStereoPairs(d).length > 0);
-    // Grow → red (a new pair nobody reviewed).
-    expect(pairs.length, 'derived pairs').toBeLessThanOrEqual(DERIVED_PAIR_CEILING);
-    // Shrink without lowering the ceiling → ALSO red. A ceiling that can only
-    // trip by growing leaves slack that absorbs the next regression.
-    expect(
-      DERIVED_PAIR_CEILING - pairs.length,
-      `derived pairs = ${pairs.length}; lower DERIVED_PAIR_CEILING to match`,
-    ).toBe(0);
-    expect(withPairs.length).toBeLessThanOrEqual(MODULES_WITH_PAIRS_CEILING);
-    expect(
-      MODULES_WITH_PAIRS_CEILING - withPairs.length,
-      `modules with pairs = ${withPairs.length}; lower MODULES_WITH_PAIRS_CEILING`,
-    ).toBe(0);
-  });
-
-  it('ratchets the ambiguous-stem blind spot at zero', () => {
+  it('the token fallback never REFUSES a stem as ambiguous', () => {
+    // A stem carrying >1 left or >1 right is silently dropped by the fallback,
+    // so a pair the author intended simply never appears. Unconditional: there
+    // is nothing to tolerate, and a "ceiling of 0" measures nothing while still
+    // reading like a budget somebody is managing.
     const amb = defs.flatMap((d) => ambiguousStereoStems(d).map((s) => `${d.type} ${s}`));
-    expect(amb.length, `ambiguous stems (skipped by the fallback): ${amb.join(', ')}`)
-      .toBeLessThanOrEqual(AMBIGUOUS_STEM_CEILING);
-    expect(AMBIGUOUS_STEM_CEILING - amb.length).toBe(0);
+    expect(
+      amb,
+      'AMBIGUOUS STEM: >1 left or >1 right port shares this stem, so the token ' +
+        'fallback refuses the whole stem and the pair vanishes with no diff on ' +
+        'the golden above (the map only shows what WAS derived). Rename the ' +
+        'ports so each stem has exactly one l and one r, or declare the tuple ' +
+        'explicitly in `stereoPairs`.',
+    ).toEqual([]);
   });
 
-  it('ratchets the UNPAIRED audio-port population in both directions', () => {
-    let unpaired = 0;
+  it('an L/R-TOKENED audio port always lands in a pair (the derivation missed nothing)', () => {
+    // WHAT THIS REPLACED, and why it is not the same assertion.
+    // `UNPAIRED_AUDIO_PORT_CEILING = 203` counted every audio port outside a
+    // derived pair. That number is not independent information: it is exactly
+    // `<audio ports> - 2 * <derived pairs>` (measured 319 - 116 = 203), and BOTH
+    // terms are already pinned goldens — every audio port is a line in
+    // `contract-lock.txt` (319 of them, counted), every derived pair is a token
+    // in GOLDEN_PAIR_MAP above. The population could not move without one of
+    // those two producing a reviewed diff first, so the count was a third copy
+    // of a fact pinned twice.
+    //
+    // What it could NOT tell you is the thing actually worth knowing: WHICH of
+    // those unpaired ports look like they should have paired. That is derived
+    // here instead, with no literal — an audio port whose id carries an l/r side
+    // token but which no pair claims is the derivation failing on a case it was
+    // built for (a lone `aux_l`, a typo'd partner, a stem split across rails).
+    const orphans: string[] = [];
     for (const def of defs) {
-      const paired = new Set(derivedStereoPairs(def).flatMap((p) => [`${p.direction}:${p.left}`, `${p.direction}:${p.right}`]));
+      // `allStereoPairs`, not `derivedStereoPairs`: COLLAPSE_EXEMPT is a
+      // decision about presentation, not a failure of the derivation.
+      const claimed = new Set(
+        allStereoPairs(def).flatMap((p) => [`${p.direction}:${p.left}`, `${p.direction}:${p.right}`]),
+      );
       for (const dir of ['input', 'output'] as const) {
         for (const p of (dir === 'input' ? def.inputs : def.outputs) ?? []) {
-          if (p.type === 'audio' && !paired.has(`${dir}:${p.id}`)) unpaired += 1;
+          if (p.type !== 'audio') continue;
+          if (claimed.has(`${dir}:${p.id}`)) continue;
+          if (stereoSideOfId(p.id) === null) continue; // a mono jack: correct
+          orphans.push(`${def.type} ${dir}:${p.id}`);
         }
       }
     }
-    expect(unpaired).toBeLessThanOrEqual(UNPAIRED_AUDIO_PORT_CEILING);
     expect(
-      UNPAIRED_AUDIO_PORT_CEILING - unpaired,
-      `unpaired audio ports = ${unpaired}; lower UNPAIRED_AUDIO_PORT_CEILING`,
-    ).toBe(0);
+      orphans,
+      'ORPHANED SIDE TOKEN: these audio ports name themselves left or right and ' +
+        'belong to no pair, so the app renders them as two unrelated mono jacks. ' +
+        'Either give the port its partner (same stem, opposite side) or rename it ' +
+        'so it stops claiming a side.',
+    ).toEqual([]);
   });
 });
 
@@ -321,6 +328,42 @@ describe('stereo-pairs: the gate is negative-controlled (it CAN fail)', () => {
       ),
     };
     expect(derivedStereoPairs(retyped).some((p) => p.direction === 'output')).toBe(false);
+  });
+
+  it('SEES an ambiguous stem (the same predicate the demand clause calls)', () => {
+    // The unconditional `toEqual([])` above would read identically green if
+    // `ambiguousStereoStems` had been reduced to `return []`. Feed it the shape
+    // it exists to refuse: two lefts on one stem.
+    const spiked: StereoPairDefLike = {
+      type: 'fixture',
+      outputs: [
+        { id: 'out_l', type: 'audio' },
+        { id: 'l_out', type: 'audio' },
+        { id: 'out_r', type: 'audio' },
+      ],
+    };
+    expect(ambiguousStereoStems(spiked)).toEqual(['output:out']);
+    // …and the clean form is not flagged, so it is not refusing everything.
+    expect(
+      ambiguousStereoStems({
+        type: 'fixture',
+        outputs: [{ id: 'out_l', type: 'audio' }, { id: 'out_r', type: 'audio' }],
+      }),
+    ).toEqual([]);
+  });
+
+  it('SEES an orphaned side token (a lone `aux_l` with no partner)', () => {
+    // The orphan scan's own predicate, on a def where the answer is known.
+    const lonely: StereoPairDefLike = {
+      type: 'fixture',
+      outputs: [{ id: 'aux_l', type: 'audio' }, { id: 'sum', type: 'audio' }],
+    };
+    const claimed = new Set(
+      allStereoPairs(lonely).flatMap((p) => [`${p.direction}:${p.left}`, `${p.direction}:${p.right}`]),
+    );
+    expect(claimed.size, 'a lone side token derives no pair at all').toBe(0);
+    expect(stereoSideOfId('aux_l')).toBe('l'); // …so the scan flags it,
+    expect(stereoSideOfId('sum')).toBeNull(); // …and leaves the mono jack alone.
   });
 
   it('the pin is not self-fulfilling: a DIFFERENT map produces a DIFFERENT string', () => {

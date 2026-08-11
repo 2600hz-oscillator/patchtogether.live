@@ -8,10 +8,11 @@
 // nothing at all and still pass forever, which is the precise vacuous-
 // assertion class the live-surface registry exists to close.
 //
-// The registry's ratchet (`packages/web/src/lib/ui/vrt-live-surfaces.test.ts`,
-// LEGACY_UNCOMPANIONED_MASK_CEILING) counts them but has never MEASURED them,
-// so nobody could tell which of the pile were 3 % of a card and which were
-// half of one. A count is not a size. This prints the size.
+// A count is not a size, which is why `LEGACY_UNCOMPANIONED_MASK_CEILING` was
+// deleted (2026-08-10): it knew there were twelve and could not tell anyone
+// whether they were 3 % slivers or half-cards. What replaced it is a REQUIRED
+// `MaskRect.why` naming the cause, gated in vrt-live-surfaces.test.ts. This
+// spec prints the SIZE — run it whenever a `why` claims a mask is small.
 //
 //   VRT_PROBE=1 npx playwright test --config=vrt/vrt.config.ts \
 //     vrt-legacy-mask-audit
@@ -49,7 +50,7 @@ test('legacy uncompanioned mask audit', async ({ page }) => {
       continue;
     }
     await pinVrtFonts(page);
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
     await awaitVrtFonts(page);
     await page.addStyleTag({

@@ -1,6 +1,6 @@
 // e2e/tests/workflow-media.spec.ts
 //
-// WORKFLOW MODE P3 — the media system on /rack?mode=workflow:
+// The media system on /rack?shell=legacy:
 //
 //   +  media loader — hidden-input pick (files / folder) + drop target
 //      feeding the centralized mediaLibrary; rejected files surface in a
@@ -17,7 +17,7 @@
 //      at the destination (library file → samsloop node.data → worklet →
 //      wire → scope), not just an edge.
 //
-// Driving /rack?mode=workflow keeps this in the NORMAL e2e lane (no
+// Driving /rack?shell=legacy keeps this in the NORMAL e2e lane (no
 // DB/relay) — same rationale as workflow-mode.spec.ts.
 
 import { test, expect, type Page } from '@playwright/test';
@@ -115,7 +115,7 @@ async function triggerSamsloop(page: Page, nodeId: string): Promise<void> {
 }
 
 async function gotoWorkflow(page: Page): Promise<void> {
-  await page.goto('/rack?mode=workflow');
+  await page.goto('/rack?shell=legacy');
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
 }
 

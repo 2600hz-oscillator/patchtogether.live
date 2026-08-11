@@ -29,18 +29,16 @@
 // is suspended so the card preview rAF holds the frozen frame (the
 // vrt-colourofmagic recipe).
 //
-// Informational lane (`task vrt`) — darwin baselines captured locally; linux
-// gated in EXEMPT_BASELINE_PAIRS until a vrt-update.yml workflow_dispatch runs
-// (the standard darwin-first pattern; deficit ratchet bumped in vrt-meta).
+// Informational lane (`task vrt`).
+// Baselines are authored by LINUX CI — one set, no {platform} segment (see
+// vrt.config.ts). `task vrt:commit` dispatches the capture; a local macOS run
+// is a smoke test, not a capture.
 //
-// Output: e2e/vrt/__screenshots__/cellshade-composite.spec.ts/{platform}/<id>.png
+// Output: e2e/vrt/__screenshots__/cellshade-composite.spec.ts/<id>.png
 
 import { test, expect } from '@playwright/test';
 import { spawnPatch } from '../tests/_helpers';
-import { EXEMPT_BASELINE_PAIRS } from './vrt-exemptions';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
-
-const VRT_PLATFORM = process.platform === 'darwin' ? 'darwin' : 'linux';
 
 test.describe.configure({ mode: 'default' });
 
@@ -102,10 +100,6 @@ const SCENES: Scene[] = [
 test.describe('VRT: CELLSHADE rebuild composite scenes', () => {
   for (const scene of SCENES) {
     test(`${scene.id} matches baseline`, async ({ page }) => {
-      test.skip(
-        EXEMPT_BASELINE_PAIRS.has(`${VRT_PLATFORM}/${scene.id}`),
-        `${scene.id} on ${VRT_PLATFORM}: baseline pending (see EXEMPT_BASELINE_PAIRS)`,
-      );
 
       test.setTimeout(90_000);
 
@@ -126,7 +120,7 @@ test.describe('VRT: CELLSHADE rebuild composite scenes', () => {
       // this the captured text metrics differ run-to-run and platform-to-platform.
       // Full root cause: e2e/vrt/_fonts.ts.
       await pinVrtFonts(page);
-      await page.goto('/rack');
+      await page.goto('/rack?shell=legacy&seed=none');
       await page.waitForLoadState('networkidle');
       await awaitVrtFonts(page);
 

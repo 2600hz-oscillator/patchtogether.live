@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
-# Commit + push regenerated VRT baselines for one platform back to a branch.
+# Commit + push regenerated VRT baselines back to a branch.
 # Called by .github/workflows/vrt-update.yml after `task vrt:update`.
 #
-#   vrt-commit-baselines.sh <branch> <platform-label>
+#   vrt-commit-baselines.sh <branch>
 #
-# The two platform jobs touch disjoint dirs (e2e/vrt/__screenshots__/**/linux/*
-# vs **/darwin/*), so a rebase onto the latest remote state is always clean.
+# There is ONE baseline set and ONE capture job (the {platform} dimension was
+# removed 2026-08-10), so this used to take a second `<platform-label>` argument
+# and there used to be a sibling job racing it. The rebase below is kept anyway:
+# a human can push to the branch while a ~30 min capture is running.
 set -euo pipefail
 
 REF="${1:?branch required}"
-PLATFORM="${2:?platform label required}"
 
 # Report whether this job actually PUSHED a baseline commit. The `revalidate`
 # job close+reopens the PR to re-fire a real `pull_request` run, which costs a
@@ -30,13 +31,13 @@ git config user.email "vrt-baseline-bot@users.noreply.github.com"
 
 git add e2e/vrt/__screenshots__
 if git diff --cached --quiet; then
-  echo "No ${PLATFORM} VRT baseline changes — nothing to commit."
-  echo "::warning::vrt-update captured ZERO ${PLATFORM} baselines. Playwright only rewrites a snapshot whose comparison FAILS, so a sub-tolerance diff or a still-exempt scene writes nothing — investigate rather than assuming there was nothing to do."
+  echo "No VRT baseline changes — nothing to commit."
+  echo "::warning::vrt-update captured ZERO baselines. Playwright only rewrites a snapshot whose comparison FAILS, so a sub-tolerance diff writes nothing — investigate rather than assuming there was nothing to do."
   emit_pushed false
   exit 0
 fi
 
-git commit -m "chore(vrt): regenerate ${PLATFORM} baselines [vrt-update workflow]"
+git commit -m "chore(vrt): regenerate baselines [vrt-update workflow]"
 
 # `task vrt:update` runs build prereqs (dsp:build, test:emit-manifest) and the
 # Playwright capture, which can leave OTHER tracked files modified in the working
@@ -52,8 +53,8 @@ if ! git diff --quiet; then
   git checkout -- .
 fi
 
-# The other platform job may have pushed in the meantime; replay our commit on
-# top of the latest remote branch state (disjoint files → clean rebase).
+# Somebody may have pushed to the branch during the capture; replay our commit
+# on top of the latest remote state.
 git fetch origin "${REF}"
 git rebase "origin/${REF}"
 
@@ -61,4 +62,4 @@ git push origin "HEAD:${REF}"
 # Set only AFTER a successful push (`set -e` aborts above on failure), so
 # `pushed == 'true'` means the branch really moved.
 emit_pushed true
-echo "Pushed ${PLATFORM} VRT baselines to ${REF}."
+echo "Pushed VRT baselines to ${REF}."

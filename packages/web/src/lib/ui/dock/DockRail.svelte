@@ -10,7 +10,7 @@
   // ever positioned against the xyflow viewport transform, and wheel/drag
   // inside a rail never reaches d3-zoom.
   //
-  // EMPTY rails render ZERO pixels (top/bottom) so dawless and empty
+  // EMPTY rails render ZERO pixels (top/bottom) so empty
   // workflow racks stay pixel-identical; the LEFT rail keeps the landed
   // P1 44px scaffold strip as its empty state (the workflow shell's
   // geometry — its contents are now the docked cards).

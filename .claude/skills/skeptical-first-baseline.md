@@ -73,10 +73,13 @@ pure-chrome knob/fader cards the risk is low — but the procedure still helps.)
    A future reader (or a recapture PR) must be able to re-validate without
    re-deriving from scratch. An undocumented baseline is an unverified baseline.
 
-6. **ONLY THEN commit.** Capture darwin, defer linux via `EXEMPT_BASELINE_PAIRS`
-   (`linux/<scene-id>`) until a `vrt-update.yml` linux capture lands, and note in
-   the commit body what the baseline PROVES and how you validated it (steps 1-5).
-   Never "commit to make CI green."
+6. **ONLY THEN capture.** You do not commit a baseline — `task vrt:commit`
+   dispatches `vrt-update.yml` and linux CI writes it. Note in the commit body
+   what the baseline PROVES and how you validated it (steps 1-5). Never
+   "capture to make CI green."
+   ⚠ Steps 1-5 matter MORE now, not less: the capture writes whatever is on
+   screen, and there is no second platform whose disagreement might have caught
+   you. A blessed bug is pinned on the first dispatch.
 
 ## Red flags that you're about to bless a bug
 

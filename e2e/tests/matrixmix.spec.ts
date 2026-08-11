@@ -56,7 +56,7 @@ function undoDepth(page: Page): Promise<number> {
 }
 
 async function setup(page: Page): Promise<void> {
-  await page.goto('/rack');
+  await page.goto('/rack?shell=legacy&seed=none');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
     { id: MM, type: 'matrixMix', position: { x: 520, y: 80 }, domain: 'meta' },

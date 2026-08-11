@@ -18,18 +18,16 @@
 // pulse is scheduled via the existing `extras.forcePulse()` test hook (also
 // used by the e2e spec) — exact same pulse-width path on every run.
 //
-// Per the cross-platform protocol used by sibling VRT specs, only darwin
-// baselines are captured here; linux baselines are skipped (deferred via
-// EXEMPT_BASELINE_PAIRS-style runtime skip) until a `task vrt:update` run
-// on linux CI ships them. NIBBLES rasterises on the CPU so its frames are
+// Baselines are authored by LINUX CI — one set, no {platform} segment (see
+// vrt.config.ts). `task vrt:commit` dispatches the capture; a local macOS run
+// is a smoke test, not a capture.
+// NIBBLES rasterises on the CPU so its frames are
 // platform-agnostic; DOOM is gated on the WASM asset (skip-clean when
 // missing).
 
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from '../tests/_helpers';
-
-const VRT_PLATFORM = process.platform === 'darwin' ? 'darwin' : 'linux';
 
 // Every composite pair lands on SCOPE.ch1 as the consumer — its analyser-
 // driven canvas renders the bridged signal as a visible trace excursion
@@ -179,19 +177,15 @@ test.describe.configure({ mode: 'default' });
 test.describe('VRT: video→audio CV/gate composite pairs (#414 regression coverage)', () => {
   for (const pair of COMPOSITE_PAIRS) {
     test(`composite ${pair.id} matches BEFORE/AFTER baselines`, async ({ page }) => {
-      // Linux baselines deferred — these scenes mix CPU-rasterised NIBBLES
-      // / DOOM cards with the consumer card's analyser-driven canvas, and
-      // the analyser slice's exact pixel values can drift sub-thresholdly
-      // across the AudioContext sine-table + Float32 path per platform.
-      // darwin captured here; linux pending a `task vrt:update` run on
-      // linux CI.
-      test.skip(
-        VRT_PLATFORM === 'linux',
-        `${pair.id} on linux: composite baseline pending (capture on linux CI)`,
-      );
+      // ⚠ These scenes mix CPU-rasterised NIBBLES / DOOM cards with the
+      // consumer card's analyser-driven canvas, and the analyser slice's exact
+      // pixel values drift sub-thresholdly with the AudioContext sine-table +
+      // Float32 path. That used to be the argument for keeping them dark on
+      // linux; with one baseline set the comparison is same-platform, so the
+      // drift that argument was about is no longer in it.
 
       await pinVrtFonts(page);
-      await page.goto('/rack');
+      await page.goto('/rack?shell=legacy&seed=none');
       await page.waitForLoadState('networkidle');
       await awaitVrtFonts(page);
 

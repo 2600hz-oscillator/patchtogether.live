@@ -37,7 +37,10 @@ import Dx7OpDetail from '$lib/ui/modules/dx7/Dx7OpDetail.svelte';
 import AnalogVcoHeroPanel from '$lib/ui/modules/AnalogVcoHeroPanel.svelte';
 import BlueboxToneBankPanel from '$lib/ui/modules/BlueboxToneBankPanel.svelte';
 import ClapHeroPanel from '$lib/ui/modules/ClapHeroPanel.svelte';
+import CubeHeroPanel from '$lib/ui/modules/cube/CubeHeroPanel.svelte';
+import CubeTableStackPanel from '$lib/ui/modules/cube/CubeTableStackPanel.svelte';
 import CloudsRingPanel from '$lib/ui/modules/CloudsRingPanel.svelte';
+import CofefveEchoTrainPanel from '$lib/ui/modules/CofefveEchoTrainPanel.svelte';
 import KickdrumHeroPanel from '$lib/ui/modules/KickdrumHeroPanel.svelte';
 import MacrooscillatorHeroPanel from '$lib/ui/modules/MacrooscillatorHeroPanel.svelte';
 import PentemelodicaVoicesPanel from '$lib/ui/modules/PentemelodicaVoicesPanel.svelte';
@@ -311,6 +314,41 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
       },
     },
   },
+  cofefve: {
+    // THE ECHO TRAIN — the dry hit and the repeats this patch will actually
+    // produce, promoted into the faceplate's hero slot (`face.hero.cell`).
+    //
+    // ⚠ A PANEL RATHER THAN THE GLYPH, and the reason is what the glyph can
+    // honestly say here. `scope` on this module is a live trace of an INSERT's
+    // output: a flat line on a silent rack, which is precisely the state a
+    // player is in while setting a delay up. That is fine in a lane tile (it
+    // says "the module is running") and useless at the dock, which is why
+    // `face.hero.cell` suppresses `heroGlyph` there.
+    //
+    // ⚠ AND IT IS THE SURFACE THAT PAINTS A DEAD CONTROL AS DEAD. The WOW
+    // ripple is drawn only above WOW AMOUNT 0 — greyed and captioned `wow off`
+    // at the shipped default — so the picture states that the motion section is
+    // asleep rather than drawing a steady train that reads as a working one.
+    'cofefve-echo-{n}': {
+      kind: 'panel',
+      label: 'echo train',
+      component: CofefveEchoTrainPanel,
+      minWidth: 320,
+      // A `text` probe on a DIFFERENT element, the clap/kickdrum/bluebox
+      // reason: the plot's time WINDOW is a private view setting in component
+      // state (zooming your own plot must not zoom every collaborator's screen
+      // or dirty the patch), so there is no node.data key to watch. The button
+      // drives the AXIS TICK ROW, which a dead button cannot change — a
+      // stronger claim than a revision counter. That no two windows can render
+      // the same tick row, which is what makes this probe non-vacuous, is
+      // asserted over every pair in cofefve-face-model.test.ts.
+      probe: {
+        testid: 'cofefve-echo-window',
+        action: 'click',
+        effect: { kind: 'text', testid: 'cofefve-echo-axis', expect: 'changed' },
+      },
+    },
+  },
   dx7: {
     // The voice selector — the single control that defines the sound. Drives
     // the SAME `node.data.preset` write the legacy Dx7Card's <select> does
@@ -423,6 +461,59 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
         testid: 'clap-graph-window',
         action: 'click',
         effect: { kind: 'text', testid: 'clap-graph-axis', expect: 'changed' },
+      },
+    },
+  },
+  cube: {
+    // THE HERO PICTURE — cube's whole visualisation, promoted into the
+    // faceplate's hero slot, and the SAME component the legacy card mounts
+    // rather than a reduction of it.
+    //
+    // ⚠ THAT IDENTITY IS THE POINT. cube is "a solid and a cut": three
+    // wavetables stacked into a 3-D density field, read by one movable plane
+    // whose 256 samples ARE the waveform. The only surface anywhere that shows
+    // the cut INSIDE the solid is the volume render, so a hero that reduced it
+    // to a 2-D silhouette would be a second, weaker renderer to keep in step
+    // with the DSP — the drift class this file's rule 1 exists for, one level
+    // up. `cube/CubeVizSurface.svelte` is the one renderer; the card and this
+    // hero are two mounts of it.
+    //
+    // THE PROBE IS THE ORBIT DRAG, and it is stronger than a data key would
+    // be. The gesture writes `view_rot_x/y` — real params, which a panel probe
+    // cannot observe (`readData` sees `node.data`, and `readParam` is not one
+    // of the panel effects) — so the witness is the caption that PRINTS those
+    // angles. A dead drag cannot move a printed angle, and the two testids
+    // differ, which shell-cells.test.ts requires precisely so a control that
+    // only relabels itself cannot pass.
+    'cube-view-{n}': {
+      kind: 'panel',
+      label: 'the solid + the cut',
+      component: CubeHeroPanel,
+      minWidth: 320,
+      probe: {
+        testid: 'cube-3d-viz',
+        action: 'drag',
+        effect: { kind: 'text', testid: 'cube-hero-cam', expect: 'changed' },
+      },
+    },
+    // THE THREE WAVETABLE SLOTS. Without this cell the shell face could not
+    // change cube's tables AT ALL — they ride `node.data`, not params, so no
+    // param cell can reach them. That is the DX7 defect verbatim (its PRESET
+    // selector was `face.order[0]` and unreachable under `?shell=1`), which is
+    // why this registry exists.
+    'cube-table-stack-{n}': {
+      kind: 'panel',
+      label: 'floor · wall · ceiling',
+      component: CubeTableStackPanel,
+      minWidth: 300,
+      // ⚠ A `data` PROBE, not a revision counter — it asserts the slot's SOURCE
+      // actually changed. `cube-stack-floor-1` is the roster's second entry,
+      // and cube-face-model.test.ts asserts that entry is NOT the floor's
+      // default table, so the probe cannot be satisfied by a no-op write.
+      probe: {
+        testid: 'cube-stack-floor-1',
+        action: 'click',
+        effect: { kind: 'data', key: 'floor.source', expect: 'changed' },
       },
     },
   },

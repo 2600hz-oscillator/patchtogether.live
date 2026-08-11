@@ -62,7 +62,6 @@ function repoRoot(): string {
 }
 
 const VRT_DIR = resolve(repoRoot(), 'e2e/vrt');
-const PLATFORMS = ['linux', 'darwin'] as const;
 
 // ───────────────────────────────────────────────────────────────────────────
 // RATCHET 1 — spec files still allowed to hand-roll a `mask:` array instead of
@@ -93,13 +92,25 @@ const LEGACY_INLINE_MASK_SPECS = new Set<string>([
 // whose module is EXEMPT_FROM_VRT or has a VRT_SCENES entry are inert (the
 // spec never applies them), so the ratchet counts only the LIVE ones.
 //
-// Pinned at the measured value on the branch that introduced this guard.
-// It may only go DOWN — migrate an entry into VRT_LIVE_SURFACES (with a
-// companion) and lower this number in the same commit.
+// ⚠ THE COUNT IS GONE (2026-08-10). `LEGACY_UNCOMPANIONED_MASK_CEILING = 12`
+// was a hand-typed population count, and it is the clearest case in the repo of
+// why that is the wrong data structure: A COUNT IS NOT A SIZE. Twelve entries
+// could have been twelve 3 % slivers or twelve half-cards and the number would
+// read the same, so the thing anyone actually needed to know had to be written
+// out longhand in the comment below — which the number could neither carry nor
+// keep true. Replaced by a REQUIRED `why` on every `MaskRect`
+// (e2e/vrt/vrt-exemptions.ts), enforced from a controlled cause vocabulary by
+// 'every legacy mask names WHY the region cannot be diffed' below, so each mask
+// is a named, checkable decision instead of one unit of an anonymous budget.
 //
-// ⚠ A COUNT IS NOT A SIZE, and this ratchet only ever knew the count. Twelve
-// entries could have been twelve 3 % slivers or twelve half-cards and the
-// number would read the same. MEASURED 2026-08-01 by spawning each card the
+// WHAT WAS LOST: nothing stops the live pile from GROWING now except the review
+// of a new named entry. A card that adds a masked canvas with a plausible `why`
+// no longer trips a number. That is the pre-authorised trade — a name a reader
+// can check against the card, instead of a literal that three concurrent
+// branches each compute correctly and merge wrongly.
+//
+// The measurement below stands as the record of the debt. MEASURED 2026-08-01
+// by spawning each card the
 // way vrt.spec.ts spawns it and computing masked-element area ÷ card area
 // (e2e/vrt/vrt-legacy-mask-audit.spec.ts, `VRT_PROBE=1`; re-derive with one
 // command). Sorted by cost:
@@ -132,8 +143,7 @@ const LEGACY_INLINE_MASK_SPECS = new Set<string>([
 // building a driven scene for it (several render BLACK when solo-spawned and
 // unpatched, so no ink/variance companion can separate "working" from "dead" —
 // the posterbox note in RATCHET 1 above is the worked example). The point of
-// this table is that the size of the debt is now visible instead of implied.
-const LEGACY_UNCOMPANIONED_MASK_CEILING = 12;
+// this table is that the size of the debt is visible instead of implied.
 
 /** The subset of VRT_MODULE_MASKS that vrt.spec.ts actually applies. */
 function liveLegacyMaskTypes(): string[] {
@@ -166,6 +176,22 @@ const DRIVER_VOCABULARY = [
   'build metadata',
 ];
 
+/** The cause vocabulary for a LEGACY `MaskRect.why`. A superset of the driver
+ *  words above, because two legacy masks are unstable for reasons that are not
+ *  a driver at all and saying so is the honest answer:
+ *    - an EMPTY / PLACEHOLDER state (samsloop's "NO SAMPLE LOADED" text before
+ *      a WAV is uploaded — nothing is animating, there is simply no content);
+ *    - a FALLBACK entry that vrt.spec.ts never applies because the module has a
+ *      VRT_SCENES entry that overrides it (ruttetra, scoreboard).
+ *  Forcing those two to name a driver would only teach the next author to
+ *  fabricate one, which is how a vocabulary check becomes a spelling test. */
+const MASK_CAUSE_VOCABULARY = [
+  ...DRIVER_VOCABULARY,
+  'placeholder',
+  'empty on',
+  'FALLBACK',
+];
+
 function allSurfaces(): Array<{ sceneId: string; surface: LiveSurface }> {
   return Object.entries(VRT_LIVE_SURFACES).flatMap(([sceneId, scene]) =>
     scene.surfaces.map((surface) => ({ sceneId, surface })),
@@ -196,21 +222,35 @@ describe('VRT live-surface registry: structure', () => {
     }
   });
 
-  it('every scene id has a committed baseline on at least one platform', () => {
+  it('every scene id has a committed baseline', () => {
     // Typo guard. A misspelled key masks NOTHING (the scene never looks itself
     // up) while reading as though the region were handled — the exact silent
     // failure this file exists to prevent.
+    //
+    // ⚠ This resolved `<spec>/{linux,darwin}/<scene>.png` until 2026-08-11, and
+    // kept doing so AFTER the `{platform}` segment was deleted from
+    // `snapshotPathTemplate` — so it was probing two directories that no longer
+    // exist and could not pass for ANY entry. It read as "one uncaptured
+    // scene" because the loop fails on the first entry and `mandelbulb` is the
+    // first key; the real scope was every entry in the registry. A path built
+    // in a test is a second, unchecked copy of the production path template,
+    // and this is what that costs.
+    const missing: string[] = [];
     for (const [sceneId, scene] of Object.entries(VRT_LIVE_SURFACES)) {
-      const found = PLATFORMS.some((p) =>
-        existsSync(resolve(VRT_DIR, '__screenshots__', scene.spec, p, `${sceneId}.png`)),
-      );
-      expect(
-        found,
-        `${sceneId}: no baseline PNG under __screenshots__/${scene.spec}/{linux,darwin}/ — ` +
-          'either the scene id is misspelled (so the mask silently never applies) or the ' +
-          'baseline was never captured',
-      ).toBe(true);
+      if (!existsSync(resolve(VRT_DIR, '__screenshots__', scene.spec, `${sceneId}.png`))) {
+        missing.push(`${scene.spec}/${sceneId}.png`);
+      }
     }
+    // Report ALL of them, not just the first: with one baseline set authored by
+    // CI, "which scenes are uncaptured" is the actionable list, and failing on
+    // entry one hides the other 40.
+    expect(
+      missing,
+      'live-surface scene ids with no committed baseline under e2e/vrt/__screenshots__/. ' +
+        'Either the scene id is misspelled (so the mask silently never applies) or the ' +
+        'baseline was never captured — capture with `task vrt:commit`, which dispatches ' +
+        'vrt-update.yml on linux CI, the only baseline author.',
+    ).toEqual([]);
   });
 });
 
@@ -642,15 +682,64 @@ describe('VRT masks: nobody routes around the registry', () => {
     });
   });
 
-  it('the un-companioned VRT_MODULE_MASKS pile only shrinks', () => {
-    const live = liveLegacyMaskTypes();
+  it('every legacy mask names WHY the region cannot be diffed', () => {
+    // THE REPLACEMENT FOR THE DELETED COUNT. Every MaskRect deletes pixels from
+    // the diff with nothing put back, so the card may render that region blank
+    // forever and still pass. `why` is required by the type; this asserts it is
+    // an explanation rather than a length. Deny-by-default and per-ENTRY, not
+    // per-file: a second mask added to an already-explained module still has to
+    // explain itself.
+    const bad: string[] = [];
+    for (const [type, rects] of Object.entries(VRT_MODULE_MASKS)) {
+      for (const rect of rects) {
+        const why = rect.why ?? '';
+        if (why.length <= 40) {
+          bad.push(`${type} '${rect.selector}': why is ${why.length} chars — say what it is`);
+          continue;
+        }
+        if (!MASK_CAUSE_VOCABULARY.some((w) => why.toLowerCase().includes(w.toLowerCase()))) {
+          bad.push(
+            `${type} '${rect.selector}': why names no recognised cause. Say what MAKES the ` +
+              `region unstable (${MASK_CAUSE_VOCABULARY.slice(0, 6).join(' / ')} / …), or that ` +
+              `it is a placeholder/empty state or a scene-overridden FALLBACK.`,
+          );
+        }
+      }
+    }
     expect(
-      live.length,
-      `${live.length} module cards are masked by VRT_MODULE_MASKS with NO companion assertion ` +
-        `(ceiling ${LEGACY_UNCOMPANIONED_MASK_CEILING}). Each one may render nothing and still ` +
-        'pass. Migrate entries into e2e/vrt/vrt-live-surfaces.ts with a companion and lower the ' +
-        `ceiling in the same commit.\n  ${live.join(', ')}`,
-    ).toBeLessThanOrEqual(LEGACY_UNCOMPANIONED_MASK_CEILING);
+      bad.join('\n'),
+      'a mask with no stated cause is coverage deleted for a reason nobody can check. ' +
+        'Better than any `why`: migrate the entry into e2e/vrt/vrt-live-surfaces.ts, where the ' +
+        'same region gets a measured companion + a per-run negative control.',
+    ).toBe('');
+  });
+
+  it('...and that check can SEE a bare mask (negative control on the same predicate)', () => {
+    // The scan above reads identically green whether every entry explains
+    // itself or the loop found nothing. Feed the SAME predicate known answers.
+    const probe = (why: string): boolean =>
+      why.length > 40 &&
+      MASK_CAUSE_VOCABULARY.some((w) => why.toLowerCase().includes(w.toLowerCase()));
+    expect(probe(''), 'an empty why must fail').toBe(false);
+    expect(probe('canvas'), 'a one-word why must fail').toBe(false);
+    expect(
+      probe('this region is masked because it is masked and has been for a long time now'),
+      'a long why naming no cause must still fail — length is not an explanation',
+    ).toBe(false);
+    expect(
+      probe('live preview canvas repainting off the engine clock every frame, so no two runs match'),
+      'a why naming a real driver must pass',
+    ).toBe(true);
+    // …and the live table is non-empty, so the real assertion is not vacuous.
+    expect(
+      Object.keys(VRT_MODULE_MASKS).length,
+      'VRT_MODULE_MASKS is empty — retire this guard deliberately rather than leaving it green',
+    ).toBeGreaterThan(0);
+    expect(
+      liveLegacyMaskTypes().length,
+      'no legacy mask is LIVE any more (every one is inert via EXEMPT_FROM_VRT / VRT_SCENES). ' +
+        'That is the goal state — delete the table and this guard together when it happens.',
+    ).toBeGreaterThan(0);
   });
 
   it('a scene is masked from exactly ONE place', () => {

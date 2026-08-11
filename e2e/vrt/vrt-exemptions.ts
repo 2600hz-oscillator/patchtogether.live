@@ -11,16 +11,37 @@
 //
 // Each entry needs a reason + (where applicable) the alternative test
 // that covers the same surface. Reasons are surfaced in test output and
-// the vrt-meta self-test enforces length > 10 so "TODO" placeholders
-// can't sneak in.
+// the vrt-meta self-test enforces length > 40 so "TODO" and "no baseline"
+// placeholders can't sneak in.
 //
 // Per-module-card MASK config also lives here, keyed by module type.
 // Masks fill non-deterministic regions (animated canvas, scope sweep,
 // camera frames) with a uniform colour in both baseline + actual
 // before pixel-diff, so the chrome around the canvas still asserts.
+// Every MaskRect carries a REQUIRED `why` naming the cause — see MaskRect.
 
 export interface MaskRect {
   selector: string;
+  /**
+   * REQUIRED. What is non-deterministic about this region, and what gates the
+   * card instead. A mask DELETES pixels from the diff with nothing replacing
+   * them — the card can render that region blank forever and still pass — so
+   * every one is a reviewed decision and the reason lives beside the selector.
+   *
+   * ⚠ This field replaced `LEGACY_UNCOMPANIONED_MASK_CEILING = 12`
+   * (vrt-live-surfaces.test.ts, deleted 2026-08-10). The ceiling counted how
+   * many of these masks had no companion assertion and could say nothing about
+   * any of them — the measured table it carried (masked area ÷ card area, four
+   * entries larger than the worst mask the live-surface registry argues for)
+   * had to be written in a comment because the number could not express it.
+   * A name with a reason is checkable; a number is not.
+   *
+   * PREFER A COMPANION. `e2e/vrt/vrt-live-surfaces.ts` masks the same region
+   * but pairs it with a measured ink/variance assertion plus a per-run negative
+   * control, so a region that goes blank is RED instead of green. Migrating an
+   * entry there is strictly better than writing a better `why` here.
+   */
+  why: string;
 }
 
 /** Modules that ship a VRT baseline today and may need region masks.
@@ -54,41 +75,62 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // SAMSLOOP — loop-based WAV sample player. The waveform canvas is
   // static after upload, but unloaded shows "NO SAMPLE LOADED" text —
   // mask the canvas so the chrome diffs deterministically.
-  samsloop: [{ selector: 'canvas' }],
+  samsloop: [
+    { selector: 'canvas', why: 'the waveform canvas is empty on a fresh spawn and shows only placeholder text until a WAV is loaded, so it is not a stable render; the card chrome is the gate.' },
+  ],
   // TWOTRACKS — 2-reel tape-loop emulator. Each reel has a waveform
   // canvas (empty on fresh spawn); mask both canvases so the card chrome
   // diffs deterministically.
-  twotracks: [{ selector: 'canvas' }],
+  twotracks: [
+    { selector: 'canvas', why: 'both reel waveform canvases are empty on a fresh spawn; the transport + reel chrome is the gate.' },
+  ],
   // TILER: live tiled-OUT preview canvas (non-deterministic per frame) — mask it;
   // the card chrome (TILE fader + PatchPanel) is VRT'd. Baseline via vrt-update.
-  tiler: [{ selector: 'canvas' }],
+  tiler: [
+    { selector: 'canvas', why: 'live tiled-OUT preview canvas, a different frame every rAF; the TILE fader + PatchPanel chrome is the gate.' },
+  ],
   // VFPGA-RUNNER — host card with a live preview canvas + per-CV always-on
   // scope canvases (both animate off the card rAF), so mask every canvas and
   // gate on the deterministic chrome (preset select + param knob grid + CV
   // SCALE/OFFSET knobs + gate LEDs + port handle rows). Currently in
   // EXEMPT_FROM_VRT below; the mask covers the canvases if promoted into
   // MODULES once darwin/linux baselines are captured.
-  vfpgaRunner: [{ selector: 'canvas' }],
+  vfpgaRunner: [
+    { selector: 'canvas', why: 'a live preview canvas plus per-CV always-on scope canvases, all animating off the card rAF; the preset select, knob grid and gate LEDs are the gate.' },
+  ],
   // OUTLINES — stateful particle generator; the card carries a live COMBINE
   // preview canvas (shapes spawn + move + spin off the engine rAF), so the
   // canvas region is non-deterministic in the standard solo-spawn VRT. Mask it
   // and gate on the deterministic chrome (7 knobs D/V/SPD/DEC/SHP/ROT/RATE +
   // GATE/COL/D/V/SPD/DEC/SHP/ROT/VID input rows + OVR/CNT/CMB/MAP output rows +
   // the SHAPE/ROT readouts). Promoted into the VRT baseline set (the canvas mask
-  // covers the live preview). Only the DARWIN baseline was regenerated via
-  // vrt-update.yml after the SHAPE+ROTATION card change; the LINUX baseline is
-  // still pending a workflow_dispatch, so `linux/outlines` stays in
-  // EXEMPT_BASELINE_PAIRS below (the recorderbox/cellshade new-module pattern).
-  outlines: [{ selector: 'canvas' }],
-  videoOut: [{ selector: 'canvas' }],
+  // covers the live preview). There is ONE baseline, authored by the
+  // vrt-update.yml dispatch on linux CI — the split that used to be described
+  // here ("only the DARWIN baseline was regenerated after the SHAPE+ROTATION
+  // card change; the LINUX one is still pending") is exactly the two-population
+  // problem the {platform} collapse removed, and it cannot recur.
+  outlines: [
+    { selector: 'canvas', why: 'live COMBINE preview canvas — particles spawn, move and spin off the engine rAF; the 7 knobs + handle rows are the gate.' },
+  ],
+  videoOut: [
+    { selector: 'canvas', why: 'the output canvas renders whatever is patched into it and repaints off the engine clock; the solo-spawn chrome is the gate.' },
+  ],
   // RECORDERBOX — live preview canvas (+ a hidden full-res capture canvas,
   // off-screen at left:-9999px so its mask rect lands outside the captured
   // card box). Mask the canvas + gate on the deterministic chrome (title,
   // IN/OUT/A·L/A·R handles, FILE field, RECORD button).
-  recorderbox: [{ selector: 'canvas' }],
-  chroma: [{ selector: 'canvas' }],
-  luma: [{ selector: 'canvas' }],
-  feedback: [{ selector: 'canvas' }],
+  recorderbox: [
+    { selector: 'canvas', why: 'a live preview canvas blitted off the engine clock, plus a hidden off-screen full-res capture canvas; the title, handles, FILE field and RECORD button are the gate.' },
+  ],
+  chroma: [
+    { selector: 'canvas', why: 'live keyed-output preview canvas repainting off the engine clock; the key controls and handle rows are the gate.' },
+  ],
+  luma: [
+    { selector: 'canvas', why: 'live keyed-output preview canvas repainting off the engine clock; the key controls and handle rows are the gate.' },
+  ],
+  feedback: [
+    { selector: 'canvas', why: 'a live video feedback render loop that never reaches a fixed point, so no two frames match; the fader + handle chrome is the gate.' },
+  ],
   // SPIROGRAPHS — live spirograph generator with a continuously-animated OUT
   // preview canvas (each spiro's center drifts + bounces every frame off the
   // engine clock). Mask the canvas so the deterministic chrome (COUNT fader +
@@ -96,22 +138,32 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // bank + the sectioned PatchPanel) is the regression gate. Currently in
   // EXEMPT_FROM_VRT below; the mask covers the live preview if promoted into
   // MODULES once darwin/linux baselines are captured.
-  spirographs: [{ selector: 'canvas' }],
-  monoglitch: [{ selector: 'canvas' }],
+  spirographs: [
+    { selector: 'canvas', why: 'live spirograph preview — each spiro\'s centre drifts and bounces every frame off the engine clock; the COUNT fader, selector, colorwheel and fader bank are the gate.' },
+  ],
+  monoglitch: [
+    { selector: 'canvas', why: 'live glitch preview canvas that re-randomises off the engine clock; the fader and handle-row chrome is the gate.' },
+  ],
   // RUTTETRA: authentic forward-scatter scope. Its canvas is INCLUDED in
   // the diff via the VRT scene (SHAPES → RUTTETRA) so the baseline proves
   // real 3D scanlines, not a flat quad. The scene auto-overrides this mask
   // (vrt.spec.ts: `mod.type in VRT_SCENES ? [] : masks`), kept here as the
   // no-scene fallback.
-  ruttetra: [{ selector: 'canvas' }],
+  ruttetra: [
+    { selector: 'canvas', why: 'NO-SCENE FALLBACK ONLY — the SHAPES→RUTTETRA scene overrides this mask and diffs the canvas for real (vrt.spec.ts drops masks for scened modules).' },
+  ],
   // GRAPHIC EQ carries a live audio-reactive preview canvas; mask it (it is
   // also EXEMPT_FROM_VRT — animated bars defeat deterministic capture).
-  graphicEq: [{ selector: 'canvas' }],
+  graphicEq: [
+    { selector: 'canvas', why: 'analyser-driven bar canvas; the bars move with the audio and defeat deterministic capture, so the chrome is the gate.' },
+  ],
   // FREEZEFRAME carries a live video_out preview canvas; mask it so the
   // deterministic chrome (4 QUANT knobs + VID/GATE/OUT/R/G/B/L handle rows)
   // is the regression gate. The S&H + posterize correctness is covered by
   // freezeframe.test.ts (unit) + the freezeframe e2e (pixel sampling).
-  freezeframe: [{ selector: 'canvas' }],
+  freezeframe: [
+    { selector: 'canvas', why: 'live video_out preview canvas repainting off the engine clock; the S&H + posterize correctness is covered by freezeframe.test.ts and the freezeframe e2e pixel probes instead.' },
+  ],
   // CELLSHADE (rebuilt 4-pass cel-shader) carries a live OUT preview
   // canvas; mask it so the deterministic chrome (THRESH/THICK/BANDS/SOFT/
   // SMOOTH/INK faders + handle rows + the BANDS readout) is the regression
@@ -119,41 +171,55 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // cellshade.test.ts (CPU mirror of all 4 passes), the theory-derived
   // cellshade-functional e2e, and the UNMASKED frozen composite scenes in
   // cellshade-composite.spec.ts.
-  cellshade: [{ selector: 'canvas' }],
+  cellshade: [
+    { selector: 'canvas', why: 'live OUT preview canvas repainting off the engine clock; all 4 shader passes are covered by cellshade.test.ts (CPU mirror) and by the UNMASKED frozen composite scenes.' },
+  ],
   // POSTERBOX (retro palette-crush video processor) carries a live OUT
   // preview canvas; mask it so the deterministic chrome (DEPTH/DITHER/MIX
   // faders + the DEPTH readout + the PatchPanel drill-down) is the
   // regression gate. The quantizer + Bayer-dither correctness is covered by
   // posterbox.test.ts (CPU mirror of the shader) + the theory-derived
   // posterbox-functional.spec.ts (readPixels probes).
-  posterbox: [{ selector: 'canvas' }],
+  posterbox: [
+    { selector: 'canvas', why: 'live OUT preview canvas repainting off the engine clock; the quantizer and Bayer dither are covered by posterbox.test.ts and posterbox-functional.spec.ts readPixels probes.' },
+  ],
   // TEXTMARQUEE carries a live OUT preview canvas (continuously animated when
   // scrolling) — mask it. The card ALSO contains a contenteditable region whose
   // rendered SYSTEM-FONT glyphs rasterize differently across platforms (the
   // exact known linux-VRT glyph nondeterminism), so the LINUX baseline is
-  // exempted via EXEMPT_BASELINE_PAIRS below; the darwin baseline gates the
+  // captured by the vrt-update.yml dispatch; the committed baseline gates the
   // chrome (toolbar buttons + FG/BG swatches + the four knob rows).
-  textmarquee: [{ selector: 'canvas' }],
+  textmarquee: [
+    { selector: 'canvas', why: 'live OUT preview canvas, continuously animated off the rAF loop while scrolling; the toolbar, FG/BG swatches and four knob rows are the gate.' },
+  ],
   // 4PLEXVID carries a live OUT-1 preview canvas; mask it so the
   // deterministic chrome (4 selector knobs + handle rows) diffs while the
   // live render is excluded. (Kept here for the follow-up baseline; the
   // module is currently in EXEMPT_FROM_VRT below — promote it into MODULES
   // when the darwin/linux PNGs are captured.)
-  '4plexvid': [{ selector: 'canvas' }],
+  '4plexvid': [
+    { selector: 'canvas', why: 'live OUT-1 preview canvas blitted off the engine clock; the four selector knobs and the handle rows are the gate.' },
+  ],
   // ONE TO NINE — 1-in/9-out 3×3 splitter. The card carries a live MONITOR
   // preview canvas (input + grid + numbers via blitOutputToDrawingBuffer off
   // the engine clock); mask it so the deterministic chrome (GRID toggle +
   // IN/OUT1..OUT9 patch-panel) is the regression gate. The crop math is
   // covered by onetonine.test.ts + the bespoke onetonine e2e.
-  onetonine: [{ selector: 'canvas' }],
-  shapegen: [{ selector: 'canvas' }],
+  onetonine: [
+    { selector: 'canvas', why: 'live MONITOR preview canvas blitted off the engine clock; the crop math is covered by onetonine.test.ts and the bespoke onetonine e2e.' },
+  ],
+  shapegen: [
+    { selector: 'canvas', why: 'live generated-shape preview canvas repainting off the engine clock; the shape and knob chrome is the gate.' },
+  ],
   // SOURCERY — 2-input region shape-match recolor. The card carries a live
   // on-card preview canvas (blitOutputToDrawingBuffer off the engine clock,
   // black when nothing is patched) and v1 segmentation is source-dependent +
   // shimmers frame-to-frame, so the canvas region is non-deterministic; mask it
   // and gate on the deterministic card chrome. Correctness is covered by the
   // pure core (sourcery-core.test.ts) + the bespoke e2e (sourcery.spec.ts).
-  sourcery: [{ selector: 'canvas' }],
+  sourcery: [
+    { selector: 'canvas', why: 'a live preview canvas blitted off the engine clock, plus v1 segmentation that is source-dependent and shimmers frame to frame; sourcery-core.test.ts and sourcery.spec.ts cover correctness.' },
+  ],
   // MANDLEBLOT — Mandelbrot fractal with time-driven hue cycle. The
   // shader's colour mode mixes mu + uTime + log(uZoom) into the hue, so
   // every frame is a different colour even at zero motion. Mask the
@@ -161,17 +227,21 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // the regression gate; the shader correctness is covered by unit +
   // E2E. Pinning the canvas as well would need a deterministic-time
   // hook on the engine clock — deferred to a follow-up.
-  mandleblot: [{ selector: 'canvas' }],
+  mandleblot: [
+    { selector: 'canvas', why: 'the WebGL shader mixes uTime into the hue, so every frame is a different colour even at zero motion; the 6 knobs and the zoom readout are the gate.' },
+  ],
   // MIRRORPOOL — live orbit/free-look liquid-pool render (wind swell + rain
   // rings + Fresnel reflect/refract); the preview is animated + time-based, so
   // mask the canvas and let the deterministic chrome (two camera X-Y pads +
   // WIND/DIR/RAIN/BRIGHT/MODE/DIST/ZOOM faders + POOL/SCENE + CV handle rows +
   // VIDEO out) gate. NOTE: the solo-spawn baseline is DEFERRED
-  // on BOTH platforms via EXEMPT_BASELINE_PAIRS (mirrorpool is HELD for owner
+  // entirely — no baseline is pinned (mirrorpool is HELD for owner
   // look-preview — a look-affecting video module never captures a baseline
   // before the owner approves the look). Physics coverage is
   // mirrorpool-core.test.ts + the (baseline-deferred) mirrorpool-composite.spec.ts.
-  mirrorpool: [{ selector: 'canvas' }],
+  mirrorpool: [
+    { selector: 'canvas', why: 'live orbit/free-look WebGL pool render (wind swell, rain rings, Fresnel reflect/refract); the physics is covered by mirrorpool-core.test.ts.' },
+  ],
   // GRAINS OF VISION — granular video synth; the OUT preview is a live,
   // self-animating render (temporal grains + feedback trails + reverb tail), so
   // mask the canvas and let the deterministic chrome (GRAIN/FEEDBACK/REVERB/COMP
@@ -180,7 +250,9 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // pinned; it is also in EXEMPT_FROM_VRT below (mirrorpool precedent). Grain /
   // feedback / reverb / composite math is covered by grainsOfVision.test.ts + the
   // bespoke grains-of-vision.spec.ts.
-  grainsOfVision: [{ selector: 'canvas' }],
+  grainsOfVision: [
+    { selector: 'canvas', why: 'a self-animating granular render loop with feedback trails and a reverb tail; grain/feedback/reverb math is covered by grainsOfVision.test.ts and its bespoke e2e.' },
+  ],
   // FRAMETABLE — video wavetable oscillator (60-frame ring → per-pixel frame
   // SELECT). The card carries a live video_out preview canvas; mask it so the
   // deterministic chrome (FREEZE/SAVE buttons + MORPH/SPREAD/SHIMMER/SHAPE faders +
@@ -188,7 +260,9 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // (look-affecting WebGL) — no solo-spawn baseline is pinned; also in
   // EXEMPT_FROM_VRT below (mirrorpool/grains precedent). The inverse-CDF selection
   // + freeze/save math is covered by frametable-core.test.ts + frametable.spec.ts.
-  frametable: [{ selector: 'canvas' }],
+  frametable: [
+    { selector: 'canvas', why: 'live video_out preview of a 60-frame ring, blitted off the engine clock; the inverse-CDF selection and freeze/save math is covered by frametable-core.test.ts.' },
+  ],
   // VIDEOCUBE — the video isomorph of the audio CUBE. The card carries a live
   // video_out preview canvas (blitOutputToDrawingBuffer off the engine clock);
   // mask it so the deterministic chrome (WRAP/MATERIAL/SCREEN toggles + the
@@ -197,13 +271,17 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // affecting WebGL) — no solo-spawn baseline pinned; also in EXEMPT_FROM_VRT
   // below (mirrorpool/frametable precedent). The occupancy combine + luma-
   // reduction math is covered by videocube-core.test.ts + videocube.spec.ts.
-  videocube: [{ selector: 'canvas' }],
+  videocube: [
+    { selector: 'canvas', why: 'live video_out preview blitted off the engine clock; occupancy combine and luma reduction are covered by videocube-core.test.ts.' },
+  ],
   // SCOREBOARD — 4-digit 7-segment counter widget. The card carries a live
   // preview canvas; the counter starts at 0 on factory mount (or 1234 when
   // the VRT scene sets `__scoreboardVrtSeed`). Canvas masked here as the
   // fallback so the chrome (port handles + COLOR knob) diffs deterministically
   // when the module is promoted into MODULES without a registered scene.
-  scoreboard: [{ selector: 'canvas' }],
+  scoreboard: [
+    { selector: 'canvas', why: 'NO-SCENE FALLBACK: the counter canvas reads 0 on a bare mount and 1234 under the VRT scene seed, so a solo capture is not a stable render.' },
+  ],
   // QUADRALOGICAL — 4-input video mixer. The card carries a live on-card MIX
   // preview canvas (blitOutputToDrawingBuffer off the engine clock), so the
   // canvas region is non-deterministic in the standard solo-spawn VRT; mask it
@@ -211,7 +289,9 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // transition row + dynamic faders + FG/BG toggle + handle rows). The
   // weight-model + composite correctness is covered by the unit suite
   // (quadralogical.test.ts) + the dedicated e2e (quadralogical.spec.ts).
-  quadralogical: [{ selector: 'canvas' }],
+  quadralogical: [
+    { selector: 'canvas', why: 'live MIX preview canvas blitted off the engine clock; the weight model and composite are covered by quadralogical.test.ts and quadralogical.spec.ts.' },
+  ],
   // COLOUR OF MAGIC — multi-colorspace processor. The solo-spawn card carries a
   // live on-card preview canvas (blitOutputToDrawingBuffer off the engine clock,
   // black when nothing is patched), so the standard solo VRT is non-deterministic;
@@ -220,7 +300,9 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // + palette swatches + handle rows). The deterministic per-block composite VRT
   // (recolorization / mono-override clobber / palette remap) lives in
   // vrt-colourofmagic.spec.ts.
-  colourofmagic: [{ selector: 'canvas' }],
+  colourofmagic: [
+    { selector: 'canvas', why: 'live on-card preview canvas blitted off the engine clock, black when nothing is patched; the deterministic per-block composite VRT lives in vrt-colourofmagic.spec.ts.' },
+  ],
   // ANALOG VCO — the mask was DELETED, not migrated, and this comment said the
   // opposite for months. CORRECTED 2026-08-08.
   //
@@ -268,7 +350,9 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // handle rows + RCT/SPD/PST/MPH knobs + preset readout). Currently in
   // EXEMPT_FROM_VRT below (chaotic/time-based, like doom/mandelbulb); this mask
   // covers the live preview if it is ever promoted into MODULES.
-  milkdrop: [{ selector: 'canvas' }],
+  milkdrop: [
+    { selector: 'canvas', why: 'the butterchurn preset animates continuously off the engine clock after an async load; the handle rows and RCT/SPD/PST/MPH knobs are the gate.' },
+  ],
 };
 
 /** Modules intentionally skipped from VRT entirely. Each entry needs a
@@ -355,7 +439,7 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // owner preview: no VRT baseline is pinned pre-approval. Coverage meanwhile:
   // mirrorpool-core.test.ts (Fresnel/swell/normal/Poisson/PTZ) + per-port +
   // behavioral. Capture darwin/linux baselines via vrt-update.yml once the owner
-  // approves the look (then drop the composite pairs in EXEMPT_BASELINE_PAIRS).
+  // approves the look (then capture the composite scenes with `task vrt:commit`).
   mirrorpool: 'VRT baseline pending owner look-approval (look-affecting WebGL video); mirrorpool-core.test.ts + per-port + behavioral provide coverage. Capture darwin/linux baselines via vrt-update.yml in a follow-up.',
   // GRAINS OF VISION — maximally look-affecting WebGL granular video synth, HELD
   // for owner preview: no VRT baseline is pinned pre-approval (mirrorpool
@@ -598,7 +682,7 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // (6 knobs ZOOM/ROT X/ROT Y/POWER/DETAIL/HUE + SPIN/SCRN toggles + 6 CV
   // handle rows + VIDEO out) is the regression gate. Darwin baseline captured
   // here; linux baseline pending a `task vrt:update` run on linux CI (see
-  // EXEMPT_BASELINE_PAIRS → linux/mandelbulb). DE/shading correctness is
+  // the vrt-update.yml capture on linux CI). DE/shading correctness is
   // additionally covered by mandelbulb-math.test.ts + mandelbulb.test.ts.
   // JOYSTICK first-slice PR: card is small + simple (XY pad + four CV
   // ports), VRT baseline pending. Unit + E2E provide coverage.
@@ -697,17 +781,17 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // Functional coverage: quadralogical.test.ts (weight model + edge-weight
   // composite + all 8 blend2 branches + normalling) + e2e/tests/quadralogical
   // .spec.ts (corner dominance + per-edge distinctness + independence + freeze).
-  quadralogical: 'SOLO-spawn VRT exempt (live MIX preview canvas with nothing patched). The deterministic per-edge composite VRT is vrt-quadralogical.spec.ts (8 effect baselines, darwin captured; linux via EXEMPT_BASELINE_PAIRS). Unit (weight model + edge composite + all 8 blends) + e2e (corner dominance + per-edge distinctness/independence) provide coverage.',
+  quadralogical: 'SOLO-spawn VRT exempt (live MIX preview canvas with nothing patched). The deterministic per-edge composite VRT is vrt-quadralogical.spec.ts (8 effect baselines captured by linux CI). Unit (weight model + edge composite + all 8 blends) + e2e (corner dominance + per-edge distinctness/independence) provide coverage.',
   // COLOUR OF MAGIC — multi-colorspace processor. SOLO-spawn VRT exempt (live
   // preview canvas; nothing patched renders black). The deterministic per-block
   // composite VRT is vrt-colourofmagic.spec.ts (6 scenes: pass / rgb / ydbdr /
   // hsv recolorization + mono-override channel clobber + palette CMY remap,
   // clock-pinned structured source, darwin captured; linux via
-  // EXEMPT_BASELINE_PAIRS). Unit (colourofmagic-colorspace.test.ts — every
+  // the vrt-update.yml capture). Unit (colourofmagic-colorspace.test.ts — every
   // colorspace + adj/over-clamp + hue-rotation + palette path) + e2e
   // (colourofmagic.spec.ts — all 8 outs emit, recolorization, mono-override
   // clobber, over/clamp) provide coverage.
-  colourofmagic: 'SOLO-spawn VRT exempt (live preview canvas; nothing patched is black). The deterministic per-block composite VRT is vrt-colourofmagic.spec.ts (6 scenes: pass/rgb/ydbdr/hsv recolorization + mono-override channel clobber + palette CMY remap, darwin captured; linux via EXEMPT_BASELINE_PAIRS). Unit (colourofmagic-colorspace.test.ts) + e2e (colourofmagic.spec.ts) provide coverage.',
+  colourofmagic: 'SOLO-spawn VRT exempt (live preview canvas; nothing patched is black). The deterministic per-block composite VRT is vrt-colourofmagic.spec.ts (6 scenes: pass/rgb/ydbdr/hsv recolorization + mono-override channel clobber + palette CMY remap, captured by linux CI). Unit (colourofmagic-colorspace.test.ts) + e2e (colourofmagic.spec.ts) provide coverage.',
   // MAPPY — multi-surface manual projection mapper (v1). The SOLO-spawn card
   // carries a LIVE composite preview canvas + an SVG corner-drag overlay whose
   // handles only appear for CONNECTED inputs, so a SOLO (nothing-patched) VRT
@@ -809,7 +893,7 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // the engraved-black control captions legible on the beige faceplate, so the
   // baselines pin the FIXED appearance). All three are deterministic beige Moog
   // faceplates (knobs + a discrete RANGE/SYNC switch, no canvas / animation).
-  // Linux baselines are darwin-only for now — see EXEMPT_BASELINE_PAIRS
+  // Baselines are authored by linux CI (`task vrt:commit`)
   // (linux/moog921a, linux/moog921b, linux/moog904b) pending a `task vrt:update`
   // run on linux CI. DSP unit + ART (source-SHA-pinned .f32) + per-module-
   // per-port e2e provide the functional coverage.
@@ -866,14 +950,18 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
  *  inversion applied to VRT: a guard that is OPT-IN is itself an instance of
  *  the class it guards.
  *
- *  THE RULE. Every EXEMPT_FROM_VRT key must appear here. This set is FROZEN at
- *  the 81 that existed when the brake landed (2026-08-04), so:
+ *  THE RULE. Every EXEMPT_FROM_VRT key must appear here, and the two lists must
+ *  match EXACTLY — vrt-meta.test.ts asserts set equality in both directions, so:
  *
  *    * a NEW module CANNOT self-exempt — adding a key to EXEMPT_FROM_VRT
  *      without an allowlist edit fails vrt-meta.test.ts in ~1 s. Shipping a
  *      module with no VRT is now a REVIEWED decision, not a side effect.
- *    * the set only ever SHRINKS. When a module earns baselines, delete it
- *      from BOTH lists and lower PERMANENT_EXEMPT_CEILING by the same count.
+ *    * the set only ever SHRINKS BY NAME. When a module earns baselines, delete
+ *      it from BOTH lists. There is no count to keep in step — the ceiling that
+ *      used to shadow this list was deleted 2026-08-10 (see the note above the
+ *      deny-by-default block in vrt-meta.test.ts): a hand-typed population count
+ *      is a merge hazard by construction, and set equality already refuses
+ *      every drift the count could have caught.
  *
  *  NOT AN ENDORSEMENT. Membership records that a module was exempt on the day
  *  the brake landed — nothing more. Many entries are mechanical ("no baseline
@@ -913,7 +1001,7 @@ export const ALLOWED_PERMANENT_EXEMPT: ReadonlySet<string> = new Set([
 
 /** Strict VRT subset — the deterministic, pure-DOM/CSS knob-and-fader cards
  *  that ship a baseline on BOTH platforms (darwin + linux), aren't masked
- *  for canvas non-determinism, and aren't in EXEMPT_BASELINE_PAIRS pending a
+ *  for canvas non-determinism, and have a committed baseline rather than a
  *  fresh capture. These are the ones safe to promote into `task ci` as a
  *  required gate — a diff here is virtually guaranteed to be a real UI
  *  regression, not platform/GPU/timing flake.
@@ -927,7 +1015,7 @@ export const ALLOWED_PERMANENT_EXEMPT: ReadonlySet<string> = new Set([
  *    1. Module has a baseline PNG on BOTH platforms.
  *    2. Module is NOT in VRT_MODULE_MASKS (no canvas mask → diff is
  *       semantically meaningful end-to-end).
- *    3. Module is NOT in EXEMPT_BASELINE_PAIRS for either platform (no
+ *    3. Module has a COMMITTED baseline (no
  *       pending re-capture; both baselines reflect current UI).
  *    4. Card has no animated chrome (LED pulse, blinking cursor, time-
  *       driven readouts). Pure CSS-styled knobs/faders/ports only.
@@ -950,7 +1038,7 @@ export const STRICT_VRT_MODULES = new Set<string>([
   // 360x401. The darwin baseline was re-captured (f1cd0e5f); the linux
   // baseline still shows the old 320x313 layout (pre-device-picker).
   // Re-add once linux baseline is re-captured + linux/audioOut removed
-  // from EXEMPT_BASELINE_PAIRS.
+  // by the vrt-update.yml capture.
   'buggles',              // bug-themed audio card
   'cartesian',            // X/Y grid sequencer card (S&H header toggle; linux baseline regenerated)
   'charlottesEchos',      // delay/echo knob card
@@ -978,10 +1066,10 @@ export const STRICT_VRT_MODULES = new Set<string>([
   // prefers-reduced-motion, so the capture IS deterministic) + an owl toggle +
   // a gate input row. The darwin baseline was regenerated, but the linux
   // baseline is pending a `vrt-update.yml` workflow_dispatch (see
-  // EXEMPT_BASELINE_PAIRS → linux/timelorde). The strict lane requires BOTH
+  // the vrt-update.yml capture). The strict lane requires a current
   // platform baselines current (vrt-meta self-test), so timelorde rides the
   // full (informational) VRT lane until the linux baseline lands — then
-  // re-add it here + drop linux/timelorde from EXEMPT_BASELINE_PAIRS.
+  // re-add it here once `task vrt:commit` has captured it.
   'vca',                  // mono VCA card
   'wavecel',              // wave-cell knob card
   'wavetableVco',         // wavetable VCO card
@@ -1016,792 +1104,3 @@ export const STRICT_VRT_MODULES = new Set<string>([
   'moog995',              // attenuators
 ]);
 
-/** Per-(platform, type) baselines intentionally missing while a follow-
- *  up CI capture lands the other platform's PNG. The exempted pair is
- *  SKIPPED at the test level rather than allowed to fail.
- *
- *  ⚠ This Set is ONE of FOUR mechanisms that take a scene dark on a platform.
- *  The other three live in spec sources (`e2e/vrt/vrt-platform-gaps.ts`
- *  enumerates all four). Reading only this Set under-counts the real linux
- *  deficit by 41 % — that was the bug fixed on 2026-08-01; do not add a gate
- *  that reads this Set alone and calls the answer "the deficit". */
-export const EXEMPT_BASELINE_PAIRS = new Set<string>([
-  // ===================================================================
-  // DRAIN BATCH — 2026-08-01, 15 pairs. PAID-FOR COVERAGE SITTING DARK.
-  // ===================================================================
-  // linux/{macrooscillator, samsloop, scope, videoOut, audioOut, analogVco,
-  //        lfo, feedback, lines, monoglitch, shapedramps,
-  //        unityscalemathematik, vdelay, timelorde}
-  //
-  // Every one of those had a COMMITTED linux baseline under
-  // e2e/vrt/__screenshots__/vrt.spec.ts/linux/ — and was `test.skip()`-ed on
-  // linux anyway, because the pair is consulted BEFORE the PNG. The repo had
-  // already paid for the pixels and then refused to look at them.
-  //
-  // Worse, it was a DEADLOCK, not just waste. Three of them (analogVco,
-  // audioOut, timelorde) carry a STRICT_VRT_MODULES comment reading "re-add
-  // once the linux baseline is re-captured + the pair removed" — but a pending
-  // pair is skipped UNCONDITIONALLY, so `--update-snapshots` writes NOTHING for
-  // it and the re-capture those comments wait on can never happen while the
-  // pair is listed. Draining is the only exit. (CLAUDE.md: drain first,
-  // dispatch second.)
-  //
-  // MEASURED before draining (`git log -1` per PNG): every linux baseline in
-  // this batch dates 2026-05-12 … 2026-06-13, while its darwin counterpart was
-  // re-pinned 2026-07-10 or 2026-08-01. So all 15 predate BOTH #1159's
-  // repo-wide palette change (2026-07-22) AND #1267's tolerance tightening
-  // (threshold 0.2→0.1, maxDiffPixelRatio 0.05→0.01) — the exemption is
-  // precisely why #1267's linux regen skipped them. Expect the follow-up
-  // `vrt-update.yml -f platform=linux` dispatch to REWRITE most of them.
-  // ⚠ Their linux render CANNOT be verified from a darwin dev machine; only
-  // linux CI can. None is in STRICT_VRT_MODULES, so this touches the
-  // informational `vrt` lane only, never the required `vrt-strict` gate.
-  //
-  // The vrt-meta shared-pair ceiling moves 119 → 104 in this same commit
-  // (ratchets only ever shrink). The TOTAL linux deficit is UNCHANGED at 151:
-  // a pair whose PNG is already committed was never part of the deficit —
-  // which is exactly how it hid.
-  // ===================================================================
-  //
-  // MIRRORPOOL (2026-07-15): the solo-spawn masked VRT (chrome around the
-  // masked animated pool canvas) AND the deterministic composite scenes are
-  // DEFERRED on BOTH platforms — MIRRORPOOL is a maximally look-affecting
-  // video source HELD for owner preview, so no VRT baseline is captured until
-  // the owner has approved the look (a look-affecting module never pins a
-  // baseline pre-approval). Once approved, capture darwin locally + linux via
-  // vrt-update.yml, then drop these pairs. Functional coverage meanwhile:
-  // mirrorpool-core.test.ts (Fresnel/swell/normal/Poisson/PTZ) + the per-port
-  // + behavioral sweeps.
-  'darwin/mirrorpool',
-  'linux/mirrorpool',
-  'darwin/mirrorpool-refract',
-  'linux/mirrorpool-refract',
-  'darwin/mirrorpool-mirror',
-  'linux/mirrorpool-mirror',
-  'darwin/mirrorpool-storm',
-  'linux/mirrorpool-storm',
-  // WORKFLOW audio-UX composite scenes (2026-07-11, deliberate darwin-first):
-  // the OPEN 🎧 audio-I/O panel (workflow-audio-io-composite.spec.ts — the
-  // plain-mounted card faces, device-name text masked) and the bottom dock
-  // drawer with the docked CLIPPLAYER's patch-to picker open
-  // (workflow-dock-composite.spec.ts — pins the menu-spawn position). Darwin
-  // baselines captured locally + visually inspected; linux baselines pending
-  // a vrt-update.yml workflow_dispatch on the PR branch (the
-  // cellshade-composite precedent).
-  'linux/workflow-audio-io',
-  'linux/workflow-dock-patch',
-  // CLIP PLAYER AS A DOCK PANE (2026-07-26, deliberate darwin-first): the
-  // owner ask "need to be able to have clip player (built in) open along side
-  // a module in drawer" as pixels — a module pane + the clip player pane
-  // SIDE-BY-SIDE 50/50 in the dock full-view
-  // (workflow-dock-composite.spec.ts). Darwin baseline captured locally +
-  // flake-checked 3×; the linux baseline is pending a vrt-update.yml
-  // workflow_dispatch on the PR branch (the workflow-dock-patch precedent
-  // directly above). Functional coverage until then:
-  // workflow-dock-occupancy.spec.ts asserts the SCREEN geometry of the split
-  // (equal widths, open order, gap, independent scroll) on both platforms.
-  'linux/workflow-dock-clip-split',
-  // NOTE (2026-07-26): the `?shell=1` WORKFLOW-SHELL family — the 3 ZOOM
-  // scenes (workflow-shell-zoom.spec.ts), the 12 P1 BATCH-1 CURATED FACE
-  // scenes (compact lane tile + dock full-view faceplate per migrated module,
-  // workflow-shell-faces.spec.ts) and the 2 REAR CARD scenes
-  // (workflow-rear-card.spec.ts) — was DRAINED here: the pairs are removed so
-  // the vrt-update.yml `platform=linux` dispatch on this branch actually
-  // CAPTURES them (the skip is unconditional, so a pair still listed means
-  // `--update-snapshots` writes nothing — the #1064 drum-wave drain ordering).
-  // Their linux baselines land on this branch in the bot's regen commit.
-  //
-  // P1 BATCH 2 (2026-07-26, deliberate darwin-first — the batch-1 pattern
-  // above, at the point in its lifecycle BEFORE the drain): the 12 CURATED
-  // FACE scenes for the six newly-migrated modules (compact lane tile + dock
-  // full-view faceplate per module, workflow-shell-faces.spec.ts) and the 2
-  // new REAR CARD scenes (workflow-rear-card.spec.ts — dx7, the batch's most
-  // complex face on the simplest possible rear, and sixstrum, its busiest
-  // field at 23 holes). darwin baselines captured locally and flake-checked
-  // 3× (42/42 clean); the linux pairs below are pending a vrt-update.yml
-  // `platform=linux` dispatch on this branch, at which point they get DRAINED
-  // exactly like batch 1's did and the vrt-meta linux-deficit ceiling comes
-  // back down by 14.
-  'linux/face-dx7-compact',
-  'linux/face-dx7-dock',
-  'linux/face-sixstrum-compact',
-  'linux/face-sixstrum-dock',
-  // DRAINED 2026-08-02 (the snaredrum face PR): `linux/face-snaredrum-compact`
-  // and `linux/face-snaredrum-dock` came out FIRST so a `vrt-update.yml
-  // -f platform=linux` dispatch on this branch could actually capture them —
-  // a still-listed pair is `test.skip()`-ed unconditionally and
-  // `--update-snapshots` writes NOTHING for a skipped test. Both ratchets in
-  // vrt-meta.test.ts drop by 2 in the same commit.
-  'linux/face-tomtom-compact',
-  'linux/face-tomtom-dock',
-  'linux/face-shimmershine-compact',
-  'linux/face-shimmershine-dock',
-  'linux/face-qbrt-compact',
-  'linux/face-qbrt-dock',
-  'linux/rear-dx7',
-  'linux/rear-sixstrum',
-  //
-  // FACE BATCH 3 · analogVco (2026-08-08) — DRAINED IN THIS PR, not parked, and
-  // it was parked for one push before this note replaced it. Recording that,
-  // because the mistake is the single most repeatable one in this file.
-  //
-  // `linux/face-analogVco-{compact,dock}` were briefly listed here with the note
-  // "awaiting ONE vrt-update.yml dispatch before merge" — written directly ON
-  // TOP of the batch-3 block below, which exists to say that dispatch captures
-  // NOTHING. A listed pair is `test.skip()`-ed UNCONDITIONALLY
-  // (workflow-shell-faces.spec.ts consults the pair before the PNG) and
-  // `--update-snapshots` writes nothing for a skipped test, so the dispatch
-  // returns green having captured exactly zero. analogVco has been in this
-  // precise deadlock ONCE BEFORE — see the STRICT_VRT_MODULES drain note around
-  // line 1036, where it is one of the three named modules whose "re-add once the
-  // linux baseline is re-captured" comment could never come true while its pair
-  // was listed. Drain first, dispatch second; the entry is gone rather than
-  // rewritten.
-  //
-  // BOTH vrt-meta ratchets therefore return to their PRE-PR values in the same
-  // commit — SHARED_LINUX_PAIR_CEILING back to 91 (list-anchored: immediate, the
-  // moment those two lines go) and LINUX_DEFICIT_CEILING back to 148
-  // (ARTIFACT-anchored: it only reaches 148 once the bot's two linux PNGs land).
-  // The interval between this push and that capture is the known-red window
-  // CLAUDE.md names — 2 genuinely UNDECLARED gaps, red BY DESIGN — and it closes
-  // inside this same PR. Do NOT "fix" that red by re-adding the pairs; that is
-  // the deadlock, not the exit. Ledger re-pinned in the same commit.
-  //
-  // ⚠ THE COMPACT SCENE IS **NOT** MASKED — and an earlier cut of this PR said
-  // the opposite here, which is why the correction is written down rather than
-  // quietly deleted. That cut gave `face-analogVco-compact` the registry's only
-  // face entry (a magenta rect over the free-running oscillator's live glyph)
-  // and derived it honestly at 1/10 unmasked vs 10/10 masked.
-  //
-  // The mask was DELETED before merge. #1420 suspends the AudioContext in
-  // `bootWithFace` BEFORE the tile is framed, so the glyph tap is an analyser on
-  // a stopped graph and reads zeros — the same flat centreline every other face
-  // draws. Re-measured on darwin against a FRESH UNMASKED baseline: 0 px frozen
-  // vs 394 px unfrozen, 0 px across two independent boots, and 10/10 separate
-  // gate processes (scripts/vrt-derive-trials.sh). So the linux capture IS a
-  // plain re-render, and nothing magenta is baked into either platform's PNG.
-  //
-  // What the dispatch on this branch had to fix is the leftover: the linux
-  // compact baseline was captured by the bot WHILE the mask still existed, so it
-  // carried 594 magenta px (8.23 % of an 88x82 tile) against a 72 px budget.
-  // That over-budget diff is what makes `--update-snapshots` rewrite it unaided,
-  // which is why no `git rm` was needed and no undeclared platform gap was
-  // manufactured.
-  //
-  // FACE BATCH 3 (2026-08-03) — DRAINED IN THIS PR, not parked. The 6 CURATED
-  // FACE scenes for the three newly-promoted modules (clap, drummergirl,
-  // pentemelodica — compact lane tile + dock full-view faceplate each) were
-  // captured darwin-first, then `linux/face-{clap,drummergirl,pentemelodica}-
-  // {compact,dock}` came OUT here so a `vrt-update.yml -f platform=linux`
-  // dispatch on this branch could actually capture them: a still-listed pair is
-  // `test.skip()`-ed UNCONDITIONALLY and `--update-snapshots` writes NOTHING
-  // for a skipped test, so the dispatch would have come back green having
-  // captured exactly zero. Drain first, dispatch second.
-  //
-  // BOTH vrt-meta ratchets move in the SAME commit as this drain:
-  // SHARED_LINUX_PAIR_CEILING 97 → 91 (list-anchored — it drops the moment
-  // these 6 lines go) and LINUX_DEFICIT_CEILING 154 → 148 (ARTIFACT-anchored —
-  // ground truth is "a darwin PNG with no linux sibling", so it only actually
-  // reaches 148 when the bot's 6 linux PNGs land; the window between this push
-  // and that capture is the known-red interval CLAUDE.md calls "a drain without
-  // its re-capture", and it closes in this same PR).
-  //
-  // ⚠ sixstrum needs NO new pair: `linux/face-sixstrum-{compact,dock}` are
-  // already listed above (batch 2, never captured), so its face RE-DO is free
-  // on linux — and they stay listed, so the unscoped dispatch will skip them.
-  // Its two DARWIN baselines did move and were re-captured here — measured
-  // 205 px (compact) and 11379 px (dock, 7.6x the 1500 budget), i.e. both
-  // genuinely FAIL, so `--update-snapshots` rewrote them and the `git rm`
-  // route (which would have manufactured an undeclared gap) was not needed.
-  //
-  // ⚠ `darwin/rear-sixstrum` was a THIRD moved baseline that this batch first
-  // MISSED, and it is the sub-tolerance case: `rearFieldPlan` derives the rear
-  // card's per-page CV band ids/labels/order straight from `face.pages`
-  // (rear-card-model.ts:287-300), so the re-do's five relabelled+reordered
-  // pages moved it — but only ONE band header falls inside the 1220x425
-  // element capture, so the change measured just **611 px**, UNDER the 1500 px
-  // REAR_MAX_DIFF. It therefore PASSED, and `--update-snapshots` rewrote
-  // nothing (verified: byte-identical sha256 after a full --update run). It was
-  // fixed by `git rm`-ing the darwin baseline so Playwright wrote a MISSING
-  // snapshot — safe precisely because it is darwin: `git rm`-ing a LINUX
-  // baseline would manufacture an undeclared platform gap.
-  //
-  // PF-8 DOCK LANE-RAIL REMOVAL (2026-07-27) was DRAINED here, NOT parked.
-  // The migrated shell no longer paints the lane jack rail at view='dock-full'
-  // — it was a DUPLICATE patch surface under the faceplate's real one (the
-  // RearCard on TAB) with its EXPAND button already suppressed, and it cost
-  // ~23 px of the dock's fold budget.
-  //
-  // It moves FIVE of the seventeen dock scenes, not all of them, and the
-  // reason is MEASURED rather than assumed: `.dock-faceplate` caps at
-  // `min(60vh, 680px)` = 425 px in the VRT viewport, so a face whose content
-  // OVERFLOWS that cap renders the rail below the fold, where the element
-  // screenshot never saw it. Post-change overflow, measured: cloudseed 498,
-  // kickdrum/sixstrum 370, snaredrum/tidyVco 282, tomtom 194, dx7 166,
-  // karplus 106, shimmershine 58, filter/lfo/qbrt 18 — all still capped, all
-  // pixel-identical (verified: 12 of 17 dock scenes PASS unchanged on darwin).
-  // The five UNCAPPED faces do move: adsr 379→354, delay/mixer/reverb
-  // 421→398, vca 331→306.
-  //
-  // Both platforms' baselines for those five are RE-CAPTURED on this branch:
-  // darwin locally, linux via a `vrt-update.yml -f platform=linux` dispatch.
-  // They are deliberately NOT listed as EXEMPT_BASELINE_PAIRS. Parking them
-  // would have RAISED the vrt-meta linux-deficit ratchet 119 → 124, and that
-  // ratchet only ever shrinks — a scene whose linux baseline we can regenerate
-  // in one dispatch is not a platform deficit, it is a re-capture, and letting
-  // it inflate the ceiling is exactly how these ceilings rot. Drain first,
-  // dispatch second (CLAUDE.md): the pairs had to be absent from this Set
-  // BEFORE the dispatch, because an exempt scene is test.skip()-ed
-  // unconditionally and --update-snapshots writes nothing for it.
-  //
-  // The COMPACT lane tiles are deliberately untouched: the rail change is
-  // dock-only and all 17 compact baselines were verified unchanged locally.
-  //
-  // P1 BATCH 3 (2026-07-26) was DRAINED here: the 10 CURATED FACE scenes for
-  // the five newly-migrated modules (compact lane tile + dock full-view
-  // faceplate per module, workflow-shell-faces.spec.ts — karplus, filter,
-  // mixer, delay, reverb) had their pairs REMOVED so the vrt-update.yml
-  // `platform=linux` dispatch on this branch actually CAPTURES them. The
-  // pending-pair skip is UNCONDITIONAL, so a pair still listed here means
-  // `--update-snapshots` writes nothing for it and the dispatch comes back
-  // green having captured zero baselines (the #1064 drum-wave + batch-1/2
-  // drain ordering: drop the pairs FIRST, then dispatch). The vrt-meta
-  // linux-deficit ceiling drops 128 → 118 in this same commit.
-  //
-  // CLIPPLAYER: darwin baseline (the clip-launcher card — 8×8 launch grid +
-  // piano-roll note editor + transport knobs; no animated canvas) captured
-  // locally; linux baseline pending a `vrt-update.yml` workflow_dispatch on
-  // this branch. (2026-07-16: per-clip automation FINAL model — the title's
-  // global ◉ AUTO button is GONE (kept: per-lane assigned-module chips +
-  // override dot + MAX badge) and a per-lane ◉ ARM row was added under the
-  // RATE row in the grid footer; the darwin diff stays within the 5% budget so
-  // the baseline is unchanged — regen both platforms via vrt-update.yml when
-  // this branch gets its owner pass.) Functional coverage is
-  // clip-types.test.ts + clipplayer.test.ts (def + factory launch/
-  // quantized-switch/stop via the real tick loop) + the per-clip automation
-  // suite (clip-automation-*.test.ts + clipplayer-automation-seams.test.ts +
-  // e2e clip-automation.spec.ts) + the per-module-per-port + behavioral
-  // sweeps + the bespoke real-source-chain clipplayer.spec.ts (TIMELORDE →
-  // clip → voice → audible RMS).
-  'linux/clipplayer',
-  // KRIA: darwin baseline (the 4-track grid sequencer card — track/page
-  // selectors + a 16-step editor grid + a 16-slot pattern strip + BPM knob; no
-  // animated canvas) captured locally; linux baseline pending a `vrt-update.yml`
-  // workflow_dispatch on this branch (same pattern as CLIPPLAYER above).
-  // Functional coverage is kria-types.test.ts + kria.test.ts (def + factory
-  // 4-track tick loop / pattern-cue quantize / reset) + kria-grid.test.ts (grid
-  // binding edits + LED frame) + the per-module-per-port + behavioral sweeps +
-  // the bespoke real-source-chain kria.spec.ts (TIMELORDE → KRIA → voice → RMS).
-  'linux/kria',
-  // SCALER / POLARIZER / DEPOLARIZER: the tiny CV-utility cards
-  // (1-in/1-out, ≤1 knob, no canvas) — linux baselines CAPTURED (vrt-update.yml
-  // linux dispatch), so their pairs are dropped from here: they now DIFF on both
-  // platforms in the full `vrt` lane (informational). First Track-2 linux-coverage
-  // batch; once these prove stable on CI they get promoted to STRICT_VRT_MODULES.
-  // RINGBACK: DRAINED 2026-08-02 with the face promotion. The pair had been
-  // pending "a vrt-update.yml dispatch on this branch" since the module landed,
-  // and a listed pair is `test.skip()`-ed UNCONDITIONALLY — so the dispatch it
-  // was waiting for could never have written the baseline while it sat here
-  // (CLAUDE.md: drain first, dispatch second). The face PR dispatches linux for
-  // its two new `face-ringback-*` scenes anyway, so this scene rides along and
-  // the ratchet drops by one. Both linux-deficit ceilings in vrt-meta.test.ts
-  // move in this same commit.
-  // SPECTROGRAPH: darwin baseline (the scrolling-sonogram card — its live
-  // preview canvas is DE-EXEMPTED via the __spectrographVrtFreeze scene in
-  // vrt-scenes.ts, which fills the buffer from a FIXED synthetic spectrum so
-  // the preview is pixel-stable; plus the deterministic chrome: title + GAIN
-  // knob + COLOR/B-W view toggle + the yellow PatchPanel IN/COLOR/B-W
-  // drill-down) captured locally; linux baseline pending a `vrt-update.yml`
-  // workflow_dispatch on this branch (same new-module pattern as RECORDERBOX
-  // above). Functional coverage is spectrograph-draw.test.ts (the pure
-  // log-bin + heat/inverted-grayscale colormap core) + the per-module-per-port
-  // + behavioral sweeps + the bespoke spectrograph.spec.ts (real VCO → IN →
-  // COLOR/B-W OUT → non-black structured frame at the video OUTPUT).
-  'linux/spectrograph',
-  // FEATURECV: darwin baseline (the audio→CV feature-extractor card — title +
-  // LOUD/BRIGHT/PUNCH meter bars + ONSET led (all snapshot-driven; with nothing
-  // patched the features read 0 so the chrome is pixel-stable, NO canvas to
-  // mask) + GAIN/ATK/REL knobs + the BI/UNI polarity toggle + SENS/DEBNCE knobs
-  // over the yellow PatchPanel IN/LOUD/BRIGHT/PUNCH/ONSET drill-down) captured
-  // locally; linux baseline pending a `vrt-update.yml` workflow_dispatch on this
-  // branch (same new-module pattern as SPECTROGRAPH above). Functional coverage
-  // is featurecv-dsp.test.ts (the pure rms/zcr/crest/flux/onset core) + the ART
-  // scenario + the per-module-per-port + behavioral sweeps + the bespoke
-  // featurecv-source-chain.spec.ts (noise → featurecv.bright → filter.cutoff →
-  // audible RMS change).
-  'linux/featurecv',
-  // OUTLINES (was CIRCLES): the card gained a SHAPE selector + ROTATION knob
-  // (+ their CV input rows + small readouts), so the deterministic chrome
-  // changed and the baseline was regenerated. The live COMBINE preview canvas
-  // is masked, so the chrome (7 knobs D/V/SPD/DEC/SHP/ROT/RATE +
-  // GATE/COL/D/V/SPD/DEC/SHP/ROT/VID input rows + OVR/CNT/CMB/MAP output rows)
-  // is the gate. Darwin baseline regenerated locally; linux pending a
-  // `vrt-update.yml` workflow_dispatch on this branch. Functional coverage is
-  // outlines.test.ts + outlines.spec.ts + the per-module-per-port + behavioral
-  // sweeps.
-  'linux/outlines',
-  // RECORDERBOX: darwin baseline (the recorder sink card — preview canvas
-  // masked, deterministic chrome: title + IN/OUT/A·L/A·R handles + FILE field
-  // + RECORD button) captured locally; linux baseline pending a
-  // `vrt-update.yml` workflow_dispatch on this branch. Functional coverage is
-  // recorderbox.test.ts + recorderbox-recorder.test.ts + the per-port sweep +
-  // the bespoke recorderbox.spec.ts (real VCO + ACIDWARP → finalized MP4 +
-  // crash-recovery).
-  'linux/recorderbox',
-  // SYNESTHESIA: darwin baseline captured on this machine via VRT_SCENES
-  // (analogVco→a_in, band 2 lit, freeze-on-suspend). Linux baseline pending a
-  // `task vrt:update` run on linux CI; functional coverage is the
-  // synesthesia-dsp + worklet unit tests.
-  'linux/synesthesia',
-  // FLIPPER: darwin baseline captured locally; linux pending a `task vrt:update`
-  // on linux CI. Static card (no animation); functional coverage is
-  // flipper-dsp.test.ts.
-  'linux/flipper',
-  // DRAINED 2026-08-01 (linux/macrooscillator): its linux baseline is COMMITTED, so this pair
-  // was skipping a card we had already paid for. See the DRAIN BATCH note at the
-  // head of this Set.
-  // PENTEMELODICA: darwin baseline (the 5-voice card: 5 strips + mixer +
-  // filter, static computed waveform previews — no animated canvas) captured
-  // locally; linux baseline pending a `vrt-update.yml` workflow_dispatch on
-  // this branch. Functional coverage is pentemelodica-dsp.test.ts +
-  // pentemelodica.test.ts + the per-port sweep + the bespoke e2e.
-  'linux/pentemelodica',
-  // DRAINED 2026-08-01 (linux/samsloop): its linux baseline is COMMITTED, so this pair
-  // was skipping a card we had already paid for. See the DRAIN BATCH note at the
-  // head of this Set.
-  'linux/stages',
-  // SCOPE: this PR re-captures the darwin baseline with deterministic
-  // audio content (via VRT_SCENES). The linux baseline still shows the
-  // old magenta-masked canvas — a follow-up `task vrt:update` run on
-  // linux will re-capture, then this entry comes out.
-  // DRAINED 2026-08-01 (linux/scope): its linux baseline is COMMITTED, so this pair
-  // was skipping a card we had already paid for. See the DRAIN BATCH note at the
-  // head of this Set.
-  // SCOPE X/Y + INTENSITY scenes (vrt-scope-modes.spec.ts): darwin baselines
-  // captured here; linux pending a `task vrt:update` on linux CI (same as the
-  // base `linux/scope` card above). Without these the new scenes run on linux
-  // with no baseline and fail the required VRT check.
-  'linux/scope-xy-lissajous',
-  'linux/scope-intensity-dot',
-  'linux/scope-intensity-long',
-  // VIDEO-OUT: this PR re-captures the darwin baseline with a real,
-  // frozen VIDEOBOX frame driven through the output (via VRT_SCENES) to
-  // prove the VIDEOBOX -> VIDEO-OUT path renders video content. VP9
-  // decode isn't bit-identical across platforms, so the linux baseline
-  // is pending a `task vrt:update` run on linux CI; the hard non-black +
-  // moving gate is e2e/tests/videobox-output.spec.ts.
-  // DRAINED 2026-08-01 (linux/videoOut): its linux baseline is COMMITTED, so this pair
-  // was skipping a card we had already paid for. See the DRAIN BATCH note at the
-  // head of this Set.
-  // RASTERIZE (crossing-the-streams slice 1): the darwin baseline is
-  // captured on this machine via VRT_SCENES with the deterministic
-  // `__rasterizeVrtSeed` seed (fix for task #198 — see rasterize.ts +
-  // vrt-scenes.ts). The seed makes the painted frame bit-deterministic
-  // (synthetic 261 Hz sine, no analyser / no wall clock), so both
-  // platforms render identical CANVAS pixels — only the surrounding
-  // chrome AA differs across platforms. Linux baseline pending a
-  // `task vrt:update` run on linux CI to capture that chrome.
-  'linux/rasterize',
-  // RESHAPER (renamed from RUTTETRA): the darwin baseline is captured on
-  // this machine (canvas masked — coord-remap shows flat content when
-  // unpatched). Linux baseline pending a `task vrt:update` run on linux CI.
-  'linux/reshaper',
-  // RUTTETRA (new authentic forward-scatter scope): darwin baseline
-  // captured here via VRT_SCENES (SHAPES → RUTTETRA), proving real 3D
-  // scanlines. WebGL line-rasterization isn't bit-identical across GPUs/
-  // platforms, so the linux baseline is pending a `task vrt:update` run on
-  // linux CI.
-  'linux/ruttetra',
-  // WAVESCULPT (alpha-rotate bugfix): darwin baseline captured on this
-  // machine via VRT_SCENES (ALPHA layer at rot=0.45, deterministic
-  // render-freeze hook). The linux baseline is pending a `task vrt:update`
-  // run on linux CI — WebGL ribbon AA + CRT post differs sub-thresholdly
-  // across GPU drivers, so we capture darwin here and defer linux.
-  'linux/wavesculpt',
-  // CUBE (3D wavetable-navigator oscillator, first slice): darwin baseline
-  // captured on this machine via VRT_SCENES (analogVco → pitch, rotated/morphed
-  // slice through the default tables, freeze-on-suspend so the snapshot-driven
-  // 2D viz holds). The 2D surface-height + waveform canvases differ
-  // sub-thresholdly across platforms (canvas AA), so the linux baseline is
-  // pending a `task vrt:update` run on linux CI — functional coverage is the
-  // cube-dsp unit tests + cube worklet capture test + node-ART baselines +
-  // the per-port e2e. NOT in STRICT_VRT_MODULES (the missing linux baseline
-  // runs only in the informational full-VRT lane, not the merge gate).
-  'linux/cube',
-  // HYPERCUBE: pair REMOVED with the module (owner ruling — failed experiment,
-  // deleted wholesale). Its darwin baseline went with it, so this is a gap
-  // CLOSED by deletion, not by capture: the shared-pair ceiling and the
-  // linux-deficit ceiling both drop by 1.
-  // AUDIO OUT (device picker dropdown added): the card grew an OUT device
-  // dropdown row (setSinkId picker) so the darwin baseline was regen'd in
-  // this PR. Linux baseline pending a `task vrt:update` run on linux CI.
-  // DRAINED 2026-08-01 (linux/audioOut): its linux baseline is COMMITTED, so this pair
-  // was skipping a card we had already paid for. See the DRAIN BATCH note at the
-  // head of this Set.
-  // ANALOG VCO (live waveform scope + Wave morph knob added): the card grew a
-  // single-cycle scope canvas at the top + a 6th fader (Wave), so the darwin
-  // baseline was re-captured in this PR (canvas masked). Linux baseline pending
-  // a `task vrt:update` run on linux CI. Module also moved out of the strict
-  // VRT lane (animated chrome).
-  // DRAINED 2026-08-01 (linux/analogVco): its linux baseline is COMMITTED, so this pair
-  // was skipping a card we had already paid for. See the DRAIN BATCH note at the
-  // head of this Set.
-  // BACKDRAFT — moved to EXEMPT_FROM_VRT (above) when it gained full output
-  // capabilities (corner-resize + Full Frame/Full Screen/Present): the preview
-  // is now variable-size + non-deterministic, so the whole module is exempt
-  // pending a fresh darwin/linux baseline. The stale darwin baseline PNG was
-  // deleted; this linux/backdraft pair is no longer needed.
-  // LFO (DEPTH knob added): the card grew a knob row + DEPTH input port, so
-  // the darwin baseline is re-captured here. The linux baseline is pending a
-  // `task vrt:update` run on linux CI (this dev machine is darwin-only).
-  // DRAINED 2026-08-01 (linux/lfo): its linux baseline is COMMITTED, so this pair
-  // was skipping a card we had already paid for. See the DRAIN BATCH note at the
-  // head of this Set.
-  // COFEFVE DELAY (own-code analog delay, replaced COCOA DELAY): darwin
-  // baseline captured on this machine (static knob/fader/dropdown card — no
-  // canvas/animation, so it's deterministic). The linux baseline is pending a
-  // `task vrt:update` run on linux CI (sub-pixel text AA differs across
-  // platforms); darwin is the regression gate here.
-  'linux/cofefve',
-  // RESOFILTER (Resonarium MultiFilter port): darwin baseline captured on this
-  // machine (static knob card — no canvas/animation, deterministic). Linux
-  // baseline pending a `task vrt:update` run on linux CI (sub-pixel AA differs
-  // across platforms); darwin is the regression gate here.
-  'linux/resofilter',
-  // SAMPLE & HOLD / quantizer: darwin baseline captured on this machine
-  // (static SCALE-knob card + scale-name label — no canvas/animation, so it's
-  // deterministic). Linux baseline pending a `task vrt:update` run on linux CI
-  // (sub-pixel text AA differs across platforms); darwin is the regression gate
-  // here. Functional coverage is the sample-hold-dsp unit tests + the worklet
-  // capture test + the composite ART scenario + e2e/tests/sample-hold.spec.ts.
-  'linux/sampleHold',
-  // FOXY (hybrid SWOLEVCO→RASTERIZE→XYZ→live-wavetable→WAVECEL): darwin
-  // baseline captured on this machine via VRT_SCENES (self-driving internal
-  // chain, frozen on AudioContext suspend). The pipeline mixes the
-  // AudioContext sine-table + analyser refill timing (raster) with CPU
-  // float math (XYZ field + wavetable), which can differ sub-thresholdly
-  // across platforms, so the linux baseline is pending a `task vrt:update`
-  // run on linux CI; the deterministic darwin capture is the gate here.
-  'linux/foxy',
-  // PEAKSTATE (animated mandala generator): darwin baseline captured on this
-  // machine via VRT_SCENES (self-driving internal pen + ring, frozen on the
-  // `__peakstateVrtSeed` flag → one deterministic 120-sample paint then no
-  // further advance). The 2D canvas-to-GL upload + bilinear-filtered blit
-  // can differ sub-thresholdly across GPU drivers, so the linux baseline is
-  // pending a `task vrt:update` run on linux CI; the deterministic darwin
-  // capture is the regression gate here.
-  'linux/peakstate',
-  // In-card-title sweep (PR #383): the per-card title chrome was moved
-  // into ModuleTitle.svelte. Cards whose `<header class="title">…` was
-  // previously inlined in the card scope lost their per-card title CSS
-  // (font-family / margin / letter-spacing) once the element moved into
-  // a child component; ModuleTitle publishes a single shared baseline
-  // (font-size: 0.85rem, weight: 500, text-align: center, margin: 0 0 8px,
-  // letter-spacing: 0.05em). Darwin baselines captured here; linux baselines
-  // pending regen after in-card-title sweep — darwin captured here.
-  // DRAINED 2026-08-01 (linux/feedback): its linux baseline is COMMITTED, so this pair
-  // was skipping a card we had already paid for. See the DRAIN BATCH note at the
-  // head of this Set.
-  // DRAINED 2026-08-01 (linux/lines): its linux baseline is COMMITTED, so this pair
-  // was skipping a card we had already paid for. See the DRAIN BATCH note at the
-  // head of this Set.
-  // EDGES (Sobel edge-detection video processor): deterministic card chrome
-  // (IN/threshold/thickness handles + 2 faders, no canvas/animation), so it
-  // ships a REAL solo-spawn baseline. Darwin baseline captured on this
-  // machine; linux baseline pending a `vrt-update.yml` workflow_dispatch on
-  // this branch (sub-pixel text AA differs across platforms) — darwin is the
-  // regression gate here. The edge-render correctness is proven by the pure
-  // Sobel/threshold/thickness unit suite (edges.test.ts) + the bespoke
-  // e2e/tests/edges.spec.ts (SHAPES → EDGES → OUTPUT shows edges; raising
-  // threshold drops edge pixels; raising thickness adds them).
-  'linux/edges',
-  // LUSH GARDEN (generative garden video source): ships a REAL deterministic
-  // baseline via the VRT_SCENES.lushgarden seeded scene (__lushgardenVrtSeed
-  // → fixed fully-grown 24-plant set, spawning suppressed, capture waits for
-  // every referenced cutout bake to settle). Darwin baseline captured on this
-  // machine; linux baseline pending a `vrt-update.yml` workflow_dispatch on
-  // this branch — darwin is the regression gate here. Garden behavior is
-  // additionally proven by the pure scene-math unit suite
-  // (lushgarden-scene.test.ts) + the bespoke e2e/tests/lushgarden.spec.ts
-  // (continuous spawn / gated growth / reset / background passthrough).
-  'linux/lushgarden',
-  // MAPPER (video keyer / matte processor — generalises OUTLINES' `mapped`
-  // output to an arbitrary key): deterministic card chrome (VID/KEY/threshold
-  // handles + 1 fader, no canvas/animation), so it ships a REAL solo-spawn
-  // baseline. Darwin baseline captured on this machine; linux baseline pending
-  // a `vrt-update.yml` workflow_dispatch on this branch (sub-pixel text AA
-  // differs across platforms) — darwin is the regression gate here. The keyer
-  // correctness is proven by the pure luma/mask/pixel unit suite
-  // (mapper.test.ts) + the bespoke e2e/tests/mapper.spec.ts (SHAPES key +
-  // ACIDWARP video → MAPPER → OUTPUT shows the video only in the keyed region;
-  // raising threshold shrinks the keyed area).
-  'linux/mapper',
-  // DRAINED 2026-08-01 (linux/monoglitch): its linux baseline is COMMITTED, so this pair
-  // was skipping a card we had already paid for. See the DRAIN BATCH note at the
-  // head of this Set.
-  // DRAINED 2026-08-01 (linux/shapedramps): its linux baseline is COMMITTED, so this pair
-  // was skipping a card we had already paid for. See the DRAIN BATCH note at the
-  // head of this Set.
-  // DRAINED 2026-08-01 (linux/unityscalemathematik): its linux baseline is COMMITTED, so this pair
-  // was skipping a card we had already paid for. See the DRAIN BATCH note at the
-  // head of this Set.
-  // DRAINED 2026-08-01 (linux/vdelay): its linux baseline is COMMITTED, so this pair
-  // was skipping a card we had already paid for. See the DRAIN BATCH note at the
-  // head of this Set.
-  // FREEZEFRAME (video sample & hold + per-channel posterize): darwin
-  // baseline captured on this machine (live preview canvas masked — see
-  // VRT_MODULE_MASKS). linux baseline pending a `task vrt:update` run on
-  // linux CI; the deterministic chrome (4 QUANT knobs + 7 handle rows) is
-  // the same across platforms but the masked-canvas chrome PNG can shift
-  // sub-thresholdly under linux Chromium timing.
-  'linux/freezeframe',
-  // CELLSHADE (rebuilt 4-pass cel-shader): the darwin card baseline was
-  // REGENERATED for the rebuild (the unmasked chrome changed: "Bits"→"Bands"
-  // relabel, the "N BANDS" readout, +3 knobs SOFT/SMOOTH/INK, +3 CV jacks —
-  // §12 R6); the linux baseline stays pending a `vrt-update.yml`
-  // workflow_dispatch on this branch. The banding/smoothing/ink correctness
-  // is proven by cellshade.test.ts (CPU mirror of all 4 passes) + the
-  // theory-derived e2e/tests/cellshade-functional.spec.ts + the bespoke
-  // e2e/tests/cellshade.spec.ts.
-  'linux/cellshade',
-  // CELLSHADE rebuild composite scenes (cellshade-composite.spec.ts):
-  // deliberate darwin-first — darwin baselines captured locally; linux
-  // baselines pending the same vrt-update.yml dispatch. The three scenes are
-  // the UNMASKED-canvas regression gate for the new engine (hard bands /
-  // ink-dominant / high-smooth abstraction).
-  'linux/cellshade-bands',
-  'linux/cellshade-ink',
-  'linux/cellshade-smooth',
-  // POSTERBOX (retro palette-crush video processor, 2026-07-11): darwin
-  // baseline captured on this machine (live OUT preview canvas masked — see
-  // VRT_MODULE_MASKS). linux baseline pending a `vrt-update.yml`
-  // workflow_dispatch on the PR branch (the darwin-first new-module pattern,
-  // same as CELLSHADE above). The 3 composite-state scenes
-  // (posterbox-brutal-1bit / posterbox-dither-hatch / posterbox-subtle-565
-  // in vrt-posterbox-states.spec.ts) follow the same pattern. Quantizer +
-  // Bayer-dither correctness is proven by posterbox.test.ts (CPU mirror) +
-  // the theory-derived e2e/tests/posterbox-functional.spec.ts (continuity
-  // anchors, hue-order, dither checker, mix sweep via readPixels).
-  'linux/posterbox',
-  'linux/posterbox-brutal-1bit',
-  'linux/posterbox-dither-hatch',
-  'linux/posterbox-subtle-565',
-  // TEXTMARQUEE (rich-text marquee video generator): darwin baseline captured
-  // on this machine (the live OUT preview canvas is masked — see
-  // VRT_MODULE_MASKS). The card embeds a contenteditable rich-text region whose
-  // SYSTEM-FONT glyphs rasterize differently across platforms — the EXACT known
-  // linux-VRT glyph nondeterminism ([[vrt-flake-1px-layout-rounding]] +
-  // CLAUDE.md text-rendering note) — so the linux baseline is exempted rather
-  // than fighting cross-platform font rasterization. The pos/scroll/wrap math +
-  // the rich-text layout/measurement are proven cross-platform by
-  // textmarquee-layout.test.ts (pure, deterministic), and the spawn/edit/CV
-  // surface by textmarquee.spec.ts.
-  'linux/textmarquee',
-  // MANDLEBLOT (Mandelbrot fractal generator): darwin baseline captured on
-  // this machine (canvas masked — the colour pass cycles hue with uTime, so
-  // the canvas region is non-deterministic; the chrome around it diffs).
-  // The linux baseline is pending a `task vrt:update` run on linux CI; the
-  // shader pipeline is the same across platforms but Playwright's
-  // `<canvas>` masking timing on linux Chromium can shift the chrome PNG
-  // sub-thresholdly — darwin is the regression gate here.
-  'linux/mandleblot',
-  // MANDELBULB (WebGL2 ray-marched 3D fractal video source): darwin baseline
-  // captured on this machine (live raymarch preview + auto-spin canvas masked
-  // via VRT_MODULE_MASKS — every frame differs, so the canvas region is
-  // non-deterministic; the chrome around it diffs). The linux baseline is
-  // pending a `task vrt:update` run on linux CI; the shader pipeline is the
-  // same across platforms but Playwright's `<canvas>` masking timing on linux
-  // Chromium can shift the chrome PNG sub-thresholdly — darwin is the
-  // regression gate here. Same rationale as MANDLEBLOT above.
-  'linux/mandelbulb',
-  // NIBBLES (new snake-game video module): darwin baseline captured on this
-  // machine via VRT_SCENES (__nibblesVrtSeed pins the RNG → deterministic
-  // snake + food placement; freezeAudio suspends the rAF preview poll). The
-  // CPU rasteriser is bit-deterministic, but the captured frame depends on
-  // how many game ticks land in the settle window which can vary sub-
-  // thresholdly across platforms; linux baseline pending a `task vrt:update`
-  // run on linux CI.
-  'linux/nibbles',
-  // TOYBOX (swappable fragment-shader source, Phase 1): darwin baseline
-  // captured on this machine (live animated preview canvas masked via
-  // VRT_MODULE_MASKS — the layer-0 shader runs off the engine clock, so the
-  // canvas region is non-deterministic; the chrome around it diffs). The
-  // linux baseline is pending a `task vrt:update` run on linux CI; the
-  // shader pipeline is the same across platforms but the masked-canvas
-  // chrome PNG can shift sub-thresholdly under linux Chromium timing —
-  // darwin is the regression gate here. The dedicated frozen render proof
-  // (real per-shader content, distinct across the 4 entries) lives in
-  // e2e/vrt/vrt-toybox.spec.ts, also darwin-only by the same precedent.
-  'linux/toybox',
-  //
-  // TEN `linux/toybox-*` ENTRIES WERE DELETED HERE (2026-08-01), not drained.
-  // They were MISNAMED and therefore read by nothing:
-  //   * the real snapshot stems under __screenshots__/vrt-toybox.spec.ts/darwin/
-  //     are `combine-composite`, `truchet`, `obj-tex-sphere`, … — there is no
-  //     `toybox-` prefix on any of them, so `EXEMPT_BASELINE_PAIRS.has(
-  //     'linux/toybox-truchet')` could never be true;
-  //   * and `vrt-toybox.spec.ts` does not import this Set AT ALL. It goes dark
-  //     on linux through mechanism C (a per-test
-  //     `test.skip(VRT_PLATFORM === 'linux', …)`), which is where the "darwin
-  //     baseline captured locally; linux pending a vrt-update" rationale for
-  //     every toybox scene now lives, next to the skip that implements it.
-  // They were previously excused in vrt-platform-gaps.test.ts as "shadowed by
-  // mechanism C and harmless". Shadowing is not what was happening — nothing
-  // resolved them at all — and had anyone "fixed" the names to the real stems,
-  // mechanisms A and C would have started claiming the same 10 gaps and broken
-  // the C negative control. Deleting is the fix (reconcile = fix or delete);
-  // the phantom-entry ceiling drops 15 → 5.
-  // COMPOSITE VRT — first category (vrt-composite.spec.ts). Captures
-  // NIBBLES.length_cv → SCOPE.ch1 at 5 CV levels via the
-  // `__nibblesForceLength` test hook. Darwin baselines captured on this
-  // machine; the linux baselines depend on cross-platform paint timing of
-  // BOTH cards in the same viewport — pending a `task vrt:update` run on
-  // linux CI. The hard regression-coverage gate lives in
-  // `e2e/tests/nibbles-cv-scope.spec.ts` (asserts SCOPE.ch1 sample tracks
-  // lengthToCv(length) — i.e. the CV signal actually arrives at the SCOPE
-  // input — and is monotonic across the 5-step sweep).
-  'linux/nibbles-cv-min',
-  'linux/nibbles-cv-25',
-  'linux/nibbles-cv-50',
-  'linux/nibbles-cv-75',
-  'linux/nibbles-cv-max',
-  // MOOG cluster (921a/921b/904b/992/993/994/995/984/903a/923/904c/907a/914/
-  // 911a/961/962/912/960/956/905) — 20 deterministic beige-faceplate knob/fader/
-  // seq cards (no canvas/animation). linux baselines CAPTURED via a linux-only
-  // grep-scoped vrt-update.yml dispatch, so their pairs are dropped here: they
-  // now diff on BOTH platforms in the full `vrt` lane. Track-2 batch 2; promoted
-  // to STRICT_VRT_MODULES once proven stable on CI.
-  // ELECTRA CONTROL — fixed 6×6 Electra-laid-out control surface. Unlike CONTROL
-  // SURFACE (binding-dependent body → VRT-exempt), the empty grid is fully
-  // DETERMINISTIC (fixed chrome + 3 bank groups + 36 dim placeholder dials, no
-  // canvas/animation), so it ships a REAL baseline (not exempt). Darwin baseline
-  // captured on this machine; linux baseline pending a `vrt-update.yml`
-  // workflow_dispatch on this branch (sub-pixel text AA differs across
-  // platforms) — darwin is the regression gate here. Functional coverage:
-  // electra-control.test.ts (geometry + real-Y.Doc mutators) + the bespoke
-  // electra-control.spec.ts (assign → grid → label → flash).
-  'linux/electraControl',
-  // ---- darwin-side QUARANTINE: pre-existing flakes verified on main
-  // (reproduced by reverting the cards-shrink-to-fit CSS in PR #447 and
-  // re-running VRT — same failures on a clean main checkout). Quarantined
-  // here so #447 unblocks. ROOT-CAUSE fix is OWED on the tracked tasks
-  // below — these entries come out when the fix lands.
-  // rasterize: canvas-render timing variance flake, tracked as task #198
-  'darwin/rasterize',
-  // wavesculpt-blink-scopes-trial: canvas-render timing variance flake, tracked as task #202
-  'darwin/wavesculpt-blink-scopes-trial',
-  // wavesculpt-blink-scopes-trial-wiggle: canvas-render timing variance flake, tracked as task #202
-  'darwin/wavesculpt-blink-scopes-trial-wiggle',
-  // wavesculpt-blink-custom-colors: canvas-render timing variance flake, tracked as task #202
-  'darwin/wavesculpt-blink-custom-colors',
-  // QUADRALOGICAL Phase-2 per-edge effect VRT scenes (vrt-quadralogical.spec.ts):
-  // darwin baselines captured on this machine (flat-colour sources → CHROMA
-  // tintMix=1 → deterministic mix, frozen on quad.freeze + AudioContext
-  // suspend). WebGL fragment blend math differs sub-thresholdly across GPU
-  // drivers, so the linux baselines are pending a `vrt-update.yml`
-  // workflow_dispatch on linux CI; the deterministic darwin captures are the
-  // regression gate here. Functional coverage = quadralogical.test.ts (all 8
-  // blend2 branches + edge-weight model) + e2e/tests/quadralogical.spec.ts
-  // (per-edge effect distinctness + independence).
-  'linux/edge-dissolve',
-  'linux/edge-add',
-  'linux/edge-multiply',
-  'linux/edge-wipe',
-  'linux/edge-chroma',
-  'linux/edge-luma',
-  'linux/edge-diff',
-  'linux/edge-iris',
-  // COLOUR OF MAGIC per-block composite VRT (vrt-colourofmagic.spec.ts): darwin
-  // baselines captured locally (clock-pinned structured source → frozen frame).
-  // WebGL colorspace decode math differs sub-thresholdly across GPU drivers, so
-  // the linux baselines are pending a `vrt-update.yml` workflow_dispatch on
-  // linux CI; the darwin captures are the regression gate here. Functional
-  // coverage = colourofmagic-colorspace.test.ts + e2e/tests/colourofmagic.spec.ts.
-  'linux/com-pass',
-  'linux/com-rgb',
-  'linux/com-ydbdr',
-  'linux/com-hsv',
-  'linux/com-yiq',
-  'linux/com-ycc',
-  'linux/com-yiq-i-tap',
-  'linux/com-override',
-  'linux/com-palette',
-  // OUTPUT aspect 16:9 preview card (vrt-aspect-16x9.spec.ts): darwin baseline
-  // captured locally; linux pending a `vrt-update.yml` workflow_dispatch on
-  // linux CI. WebGL blit/AA differs sub-thresholdly across GPU drivers. The
-  // in-place engine realloc + LINES→OUTPUT survival is covered functionally by
-  // e2e/tests/video-aspect-switch.spec.ts; the geometry math by
-  // video-res.test.ts.
-  'linux/aspect16x9-output',
-  // TIMELORDE: the card big display is the owner's OWL PAINTING (a bundled
-  // static asset) whose YELLOW EYES + BLUE BORDER beat-pulse (a colour-keyed
-  // brightness boost) + an owl show/hide toggle button + a `gate` input row.
-  // The boost is FROZEN to the idle/steady owl under prefers-reduced-motion
-  // (which the VRT runner sets) so the capture stays deterministic — but the
-  // darwin baseline was regenerated for the new art and the linux baseline is
-  // pending a `vrt-update.yml` workflow_dispatch on this branch (same pattern
-  // as SCALER / OUTLINES above). Functional coverage: the pure
-  // timelorde-wizard.test.ts (beat-pulse math, colour-key boost, gate→on/off,
-  // display-mode) + timelorde.test.ts (gate→wizardOn factory write-through) +
-  // the per-module-per-port sweep + timelorde-video.spec.ts (owl ↔ feed).
-  // DRAINED 2026-08-01 (linux/timelorde): its linux baseline is COMMITTED, so this pair
-  // was skipping a card we had already paid for. See the DRAIN BATCH note at the
-  // head of this Set.
-  // NINE LIVES (2026-06-28): darwin baseline captured locally (the 9-output LFO
-  // card is deterministic chrome — Rate + Waveform faders over the yellow
-  // PatchPanel RESET/OUT1..OUT9 drill-down, NO canvas/animation); linux baseline
-  // pending a `vrt-update.yml` workflow_dispatch on this branch (the darwin-first
-  // new-module pattern, same as SCALER / RINGBACK / FEATURECV above). Functional
-  // coverage: packages/dsp/src/lib/ninelives-dsp.test.ts (the ⅓ rate ladder +
-  // reset re-sync + no-NaN sweep) + ninelives.test.ts (def shape + factory
-  // wiring) + the per-module-per-port emit/handle sweep (all 9 outputs always
-  // emit; reset accepts a gate source).
-  'linux/ninelives',
-  // KICK DRUM (2026-07-02): darwin baseline captured locally (the wide 3u
-  // banded kick-voice card is deterministic chrome — SUB·BODY·CLICK /
-  // DRIVE·EQ·TRANSLATE / DYNAMICS·STEREO·OUT fader bands + the HARD toggle
-  // over the PatchPanel TRIG/ACC/V-OCT/CHOKE → OUT L/R drill-down, NO
-  // canvas/animation); linux baseline pending a `vrt-update.yml`
-  // workflow_dispatch on the PR branch (the darwin-first new-module pattern,
-  // same as NINE LIVES / RINGBACK / FEATURECV above). Functional coverage:
-  // packages/dsp/src/lib/kickdrum-dsp.test.ts (the pure Phase-1 core) +
-  // kickdrum.test.ts (def contract + worklet stereo/choke/accent/level) +
-  // the ART audio profile (art/scenarios/kickdrum/profile.test.ts) + the
-  // per-module-per-port sweep + the bespoke real-source-chain
-  // e2e/tests/kickdrum.spec.ts (SEQUENCER → trigger_in → AUDIOOUT, audible
-  // RMS + sub-dominant spectrum).
-  'linux/kickdrum',
-  // SNARE DRUM (2026-07-04): darwin baseline captured locally (the wide 3u
-  // banded snare-voice card is deterministic chrome — HEAD·BODY·WIRE /
-  // CRACK·ROLL·DRIVE / STEREO·OUT fader bands + the HARD toggle over the
-  // PatchPanel TRIG/ROLL/SPD/ACC/V-OCT/CHOKE → OUT L/R drill-down, NO
-  // canvas/animation); linux baseline pending a `vrt-update.yml`
-  // workflow_dispatch on the PR branch (the darwin-first new-module pattern,
-  // same as KICK DRUM above). Functional coverage: the pure cores
-  // packages/dsp/src/lib/snaredrum-dsp.test.ts + snare-roll-dsp.test.ts +
-  // snaredrum.test.ts (def contract + worklet roll/choke/accent/stereo) + the
-  // ART audio profile (art/scenarios/snaredrum/profile.test.ts) + the
-  // per-module-per-port sweep + the bespoke real-source-chain
-  // e2e/tests/snaredrum-roll.spec.ts (SEQUENCER → trigger_in single hit AND
-  // held gate_in → sustained two-hand roll, audible stereo RMS on both L/R).
-  'linux/snaredrum',
-  // TIDY VCO (2026-07-11): darwin baselines captured locally for the new
-  // flagship VA subtractive voice card; linux baselines pending a
-  // vrt-update.yml workflow_dispatch on the PR branch (dockscope/clap
-  // precedent). Non-VRT coverage until then: tidy-vco.test.ts (def
-  // contract + worklet poly/mono/hold/level behaviors), the DSP core +
-  // sonic-range suites (tuning gate, 5-point control proofs), the ART
-  // audio profile (art/scenarios/tidy-vco/profile.test.ts), the
-  // per-module-per-port sweep rows, and the bespoke real-source-chain
-  // e2e/tests/tidy-vco.spec.ts (POLYSEQZ→poly AND SEQUENCER→gate/pitch →
-  // audible RMS + in-tune fundamental).
-  'linux/tidyVco',
-  // TIDY VCO composite-state VRT scenes (vrt-tidy-vco.spec.ts,
-  // 2026-07-11): the 3 sonically-distinct control-state captures
-  // (acid / pad / bass — all 22 faders + the HOLD pad parked off-default
-  // per scene); darwin captured locally, linux pending the same
-  // vrt-update.yml dispatch (the vrt-clap composite-scene precedent).
-  'linux/tidyvco-acid',
-  'linux/tidyvco-pad',
-  'linux/tidyvco-bass',
-]);

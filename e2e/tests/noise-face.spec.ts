@@ -17,7 +17,8 @@
 // a change to the arithmetic moves both together — AND asserts the three values
 // are DISTINCT, which is the property the wrong implementation cannot have.
 //
-// Runs on /rack?mode=workflow&shell=1 (no DB, no relay) — the normal e2e lane.
+// Runs on /rack (no DB, no relay) — the normal e2e lane. The faceplate shell is
+// the DEFAULT rack since #1459; `?shell=legacy` is the escape hatch, not this.
 
 import { test, expect, type Locator, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
@@ -33,9 +34,9 @@ const SLOW_RENDER = process.env.E2E_SWIFTSHADER === '1' || !!process.env.CI;
 /** The face's params at a given LEVEL, in the shape the model reads. */
 const at = (level: number) => ({ level });
 
-/** Boot the migrated shell (`?shell=1`) and wait for the workflow chrome. */
+/** Boot the rack and wait for the workflow chrome. */
 async function gotoShell(page: Page): Promise<void> {
-  await page.goto('/rack?mode=workflow&shell=1');
+  await page.goto('/rack');
   await expect(page.getByTestId('workflow-topbar')).toBeVisible({
     timeout: SLOW_RENDER ? 30_000 : 15_000,
   });

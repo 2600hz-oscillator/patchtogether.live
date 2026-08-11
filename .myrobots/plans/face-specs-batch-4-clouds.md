@@ -1,5 +1,20 @@
 # FACE SPEC — `clouds` (batch 4)
 
+> ## ⚠ READ §0-BIS BEFORE QUOTING ANY NUMBER FROM THIS FILE
+>
+> **§§2–8 are the measurements taken against `main` on 2026-08-09 and they are
+> preserved as a RECORD, not as a reference.** Four of their headline figures did
+> not survive re-measurement, and every site that states one is marked inline
+> with `⚠ SUPERSEDED`. The corrected values, and *why the original instrument
+> produced them*, are in §0-BIS immediately below.
+>
+> Superseded, in one line each:
+> **"bit-zero for the first 0.25 s"** → one GRAIN LENGTH, 60 ms…1.5 s, moving
+> with SIZE · **"the step is at exactly t = 2.000 s"** → a ramp, 2.02 → 2.30 s ·
+> **"about 10.5 dB, implying N ≈ 11"** → 10.60 dB, and N is 24 (saturated) ·
+> **§8's "no dead controls"** → SIZE's top 19.50 % was bit-identical to its
+> maximum, undetected here and **fixed in #1456**.
+
 ## 0-BIS. RE-MEASURED AT BUILD TIME — three numbers below are WRONG (2026-08-10)
 
 **Appended by the implementation (PR #1451), not by the spec's author.** The
@@ -9,7 +24,7 @@ these figures are quotable and two of them are quoted twice below.
 
 | §  | the spec says | measured |
 |----|---------------|----------|
-| §3, §4-A, §5, §6-A | "bit-zero for the first **0.25 s**" | bit-zero for exactly **one GRAIN LENGTH**: 60.0 / 134.1 / **300.0** / 670.8 / 800.0 ms at size 0 / .25 / .5 / .75 / .9. POSITION-invariant to the sample. |
+| §3, §4-A, §5, §6-A | "bit-zero for the first **0.25 s**" | bit-zero for exactly **one GRAIN LENGTH**: 60.0 / 134.1 / **300.0** / 670.8 / 1087.2 / 1500.0 ms at size 0 / .25 / .5 / .75 / .9 / 1. POSITION-invariant to the sample. (The .9 and 1 figures were 800.0 / 800.0 when first re-measured — that was the dead zone, fixed in **#1456**; confirmed on the shipping worklet after the fix.) |
 | §3, §5 | "the step is at exactly **t = 2.000 s**, to the sample" | 2.0 s is when the RING fills. At 2.00 s the output is still ~12 dB down; the climb runs **2.02 → 2.30 s**, i.e. `BUFFER_SECONDS + one grain`. |
 | §4-B, §6-C | "about **10.5 dB**, implying N ≈ 11 grains" | **10.60 dB** measured. N is not ~11: the pool SATURATES at **24** from density 0.489 at the shipped SIZE. The first-principles ratio `10·log10(N·E[env]²/E[env²])` gives 12.55 dB and is 4.7 dB out at TEXTURE 0, because it does not model the output `tanh` — so no derived dB is printed anywhere. |
 
@@ -27,6 +42,32 @@ floor(bufLen·0.4))` caps the grain at 800 ms, so **SIZE 0.805 / 0.85 / 0.9 / 1.
 render BIT-IDENTICAL output — 19.5 % of the dial**. §8's "no dead controls" is
 false. Worklet arithmetic, so it is deferred to a DSP PR; the face prints
 `CLAMPED` and a bit-identity oracle turns that claim red when it is fixed.
+
+> **FIXED 2026-08-10 in the follow-up DSP PR (#1456), and the oracle did its
+> job** — it went red at the fix and forced the claim to be withdrawn.
+> Re-measured on the SHIPPING WORKLET rather than the mirror this time
+> (`registerProcessor` shim + 128-sample block pump; the mirror is now pinned
+> bit-identical to it as a permanent leg):
+>
+> * The plateau was **exactly 19.50 %** of travel, 0.805 → 1.0, and the
+>   threshold sits between size 0.8047 and 0.8048 — `log(800/60)/log(25)`.
+> * **The instrument point the original note missed:** bit-identity is NOT by
+>   itself evidence of a dead control, because `lengthSamples =
+>   floor(ms/1000·sr)` quantises. Two sizes render identically within
+>   **Δsize ≈ 6e-6…2.7e-5** everywhere on the dial. What made this a defect is
+>   the plateau's **WIDTH** — ~10⁴× the quantisation floor. A scan that only
+>   asked "are these two identical?" would have called the whole dial dead.
+> * **Cause:** two independent literals that disagreed. The law's top
+>   (`maxMs = 1500`) and the clamp (`0.4 · 2.0 s = 800 ms`) were separately
+>   typed, so nothing could notice. **Fix:** `GRAIN_MAX_MS` is now DERIVED from
+>   `GRAIN_CAP_FRACTION` (raised 0.4 → 0.75, preserving the declared 1500 ms),
+>   so the clamp is a guard that provably never binds.
+> * **Cost, measured:** every SIZE at or below 0.8047 renders BIT-IDENTICALLY
+>   before and after (sha256 over 12 probes plus the ART property corner), so no
+>   reachable setting that produced a distinct sound changed. Everything above
+>   changed — from one hash to eight distinct ones. Peak at SIZE 1 fell 0.961 →
+>   0.707. No ART `.f32` baselines exist for clouds (§8-C), so nothing to
+>   re-pin.
 
 **Resolved from the spec's open questions:** §6-A's `clouds-buffer-fill` is NOT
 shipped and no widened `FaceReadoutValue` was built — there is no honest
@@ -78,10 +119,10 @@ are only coherent when nothing is transposing them.**
 
 | rank | control | why |
 |---|---|---|
-| 1 | `blend` | ranked first on a processor because the module is **silent for its first quarter-second and 12 dB down for two seconds** (§4-A) — BLEND is the control that tells you whether you are hearing it at all. |
+| 1 | `blend` | ranked first on a processor because the module is **silent for its first quarter-second and 12 dB down for two seconds** (§4-A) — BLEND is the control that tells you whether you are hearing it at all. ⚠ SUPERSEDED (§0-BIS): the silence is one GRAIN LENGTH, not a quarter second. The ranking argument survives. |
 | 2 | `density` | the grain count. The largest real span on broadband: 8.80 dB. |
-| 3 | `pitch` | ranked 3 because it is **also a −10.5 dB fader the instant it leaves zero** (§4-B), which is the module's single most surprising behaviour. |
-| 4 | `size` | grain length. 5.05 dB span, non-monotone (§4-D). |
+| 3 | `pitch` | ranked 3 because it is **also a −10.5 dB fader the instant it leaves zero** (§4-B), which is the module's single most surprising behaviour. ⚠ SUPERSEDED (§0-BIS): 10.60 dB, and the `N ≈ 11` inference is wrong. |
+| 4 | `size` | grain length. 5.05 dB span, non-monotone (§4-D). ⚠ SUPERSEDED: that ladder was measured with the top 19.50 % of the dial CLAMPED (§0-BIS); the 0.75 and 1.0 columns changed in #1456. |
 | 5 | `position` | **the strongest control in the module and the one no level metric can see** (§4-C). Ranked 5, not higher, precisely because at the lane tiers it would show as a dial that does nothing. |
 | 6 | `freeze` | the latch — a `momentary`?ate **no**: it is a LATCHING toggle, not a press-pad (§5-A). |
 | 7 | `clouds-buffer-{n}` | the picture. First legal panel rank. |
@@ -94,6 +135,11 @@ FREEZE, which is a real param and is ranked.
 
 ## 3. INERT AT SPAWN — twice over, and the second one is a stopwatch
 
+⚠ **SUPERSEDED — BOTH HEADLINE NUMBERS IN THIS SECTION ARE WRONG. See §0-BIS.**
+The 0.25 s bucket grid below cannot resolve a 60 ms window and reports a
+transition's LEVEL rather than its EDGE. Kept verbatim because *how* it went
+wrong is the section's real value.
+
 Unpatched: `out_l` / `out_r` peak **0.000e+0**.
 
 With audio patched and `blend 1`, *measured* quarter-second RMS ladder from the very
@@ -104,10 +150,14 @@ first sample (broadband noise in, defaults):
  └── first 0.25 s: DIGITAL SILENCE ──┘                └── the step is at exactly t = 2.0 s
 ```
 
-- **The first quarter second is bit-zero.**
-- **The next 1.75 s run ~12 dB below steady state.**
-- The step lands at **t = 2.000 s**, which is `BUFFER_SECONDS` to the sample: until the
-  ring buffer has been written all the way round, most grains are reading zeros.
+- ~~**The first quarter second is bit-zero.**~~ ⚠ It is bit-zero for exactly ONE
+  GRAIN LENGTH — 300 ms at this SIZE, 60 ms…1.5 s across the travel.
+- **The next 1.75 s run ~12 dB below steady state.** ✓ survives.
+- ~~The step lands at **t = 2.000 s**, which is `BUFFER_SECONDS` to the sample~~ ⚠
+  2.0 s is when the RING fills; the LEVEL ramps from ≈2.02 s to ≈2.30 s, because a
+  grain spawned just before the fill reads partly-unwritten tape for its whole
+  life. Until the ring has been written all the way round, most grains are
+  reading zeros — that part is right.
 
 **NEGATIVE CONTROL:** the dry path over the same window measures a 0.00 dB span, so this
 is the module and not the probe.
@@ -120,12 +170,16 @@ nothing anywhere — card, docs or manifest — that says so.
 
 ## 4. WHAT THE FACE MUST MAKE VISIBLE — five measured facts
 
-### A. See §3. The two-second fill is a *fact about the instrument*, not a startup detail.
+### A. See §3 — AND §0-BIS, which supersedes both of §3's headline figures.
 
 It recurs every time the buffer is cleared or the source stops, and it is what makes
 FREEZE feel magic when it works and broken when it does not.
 
 ### B. PITCH is a −10.5 dB fader the moment it leaves zero — symmetrically
+
+⚠ **SUPERSEDED in part (§0-BIS): the step is 10.60 dB, and the `N ≈ 11`
+inference below is wrong** — the pool SATURATES at 24 from density 0.489 at the
+shipped SIZE. The SHAPE (a threshold at zero, not a slope) is confirmed.
 
 *Measured*, broadband noise, `blend 1`, 2–6 s average:
 
@@ -137,9 +191,14 @@ FREEZE feel magic when it works and broken when it does not.
 nothing more.** That shape is the tell: at `pitch 0` every grain reads the buffer at
 exactly the write rate, so the overlapping grains stay **phase-coherent** and sum
 linearly (`N·a`); at any other pitch they decorrelate and sum in power (`√N·a`). The
-difference is `10·log10(N)`, and **10.5 dB implies N ≈ 11** simultaneously-sounding
+difference is `10·log10(N)`, and ~~**10.5 dB implies N ≈ 11** simultaneously-sounding
 grains, against a `MAX_GRAINS` of 24 — which is a plausible steady-state count at
-`density 0.5`.
+`density 0.5`~~ ⚠ **WRONG (§0-BIS): N is 24, saturated.** The inference fails
+because `10·log10(N)` is not the right model — the real ratio is
+`10·log10(N·E[env]²/E[env²])` (12.55 dB here) and even that is 4.7 dB out at
+TEXTURE 0, because neither models the output `tanh`. A plausible number reached
+by inverting the wrong formula, which is why the face prints no derived dB
+anywhere.
 
 So PITCH is not "transpose"; it is "transpose **and** drop 10.5 dB". A player automating
 PITCH through zero gets a 10 dB level bump at the centre detent.
@@ -175,6 +234,13 @@ Broadband, 2–6 s average, `blend 1`:
 | `position` | −5.30 | −5.47 | **−5.46** | −5.46 | −5.47 | 0.17 dB |
 | `blend` | −10.81 | −11.91 | −10.37 | −7.83 | **−5.46** | 6.44 dB |
 
+⚠ **THE `size` ROW WAS MEASURED WITH THE TOP OF THE DIAL CLAMPED.** Its 1.0
+column was really "the same render as 0.805". Re-measured on the shipping
+worklet after #1456 (same probe, 2.5–6 s, blend 1): **−10.47 / −10.21 / −5.27 /
+−7.59 / −6.01** at 0 / .25 / .5 / .75 / **1**, with −5.67 at 0.8047 and −5.45 at
+0.9. Still non-monotone, still loudest near the default; the top of the travel
+is now a real 800→1500 ms extension rather than a repeat of 800 ms.
+
 - **SIZE peaks in the middle** (−5.46 at 0.5) and is 5 dB quieter at both ends. A knob
   whose loudest point is its default and which gets quieter in both directions.
 - **DENSITY's top half is level-flat** (−5.46 / −5.53 / −5.50) but **not inert**:
@@ -206,6 +272,11 @@ rails everywhere. The face should not warn about a hazard this module does not h
 ---
 
 ## 5. THE FACE
+
+⚠ **THIS IS THE SPEC'S DRAFT, NOT WHAT SHIPPED.** Every `hint` below repeats
+§3's superseded figures ("first quarter second", "at exactly 2.0 s", "10.5 dB").
+The shipped face (PR #1451, `cloudsDef.face`) states the corrected ones, and
+this block is preserved only to show what changed. **Read the def, not this.**
 
 ```ts
 face: {
@@ -292,8 +363,10 @@ Percentage of the 2-second ring that has been written since the last clear, prin
 `filling 43 %` / `full` / `FROZEN`.
 **NEGATIVE CONTROL — time itself.** No knob readback of any kind can produce this; it is
 not a function of any param. It must reach the engine. **SECOND CONTROL — `freeze`:** it
-must STOP advancing under freeze and must not reset. *Measured anchors:* bit-zero for
-0.25 s, −12 dB until 2.0 s, steady after.
+must STOP advancing under freeze and must not reset. *Measured anchors:* ~~bit-zero for
+0.25 s, −12 dB until 2.0 s, steady after~~ ⚠ **SUPERSEDED (§0-BIS):** bit-zero
+for one GRAIN LENGTH, −12 dB until the 2.0 s ring fill, then a ~0.3 s ramp to
+steady. (This readout was NOT built — there is no honest observable; see §0-BIS.)
 ⚠ **This needs the widened `FaceReadoutValue`** (`readLive` / an engine leg);
 `FaceReadoutValue` is params-only today. **This readout cannot ship honestly as a
 param-derived value at all** — there is no param to derive it from — so either it lands
@@ -301,7 +374,10 @@ with the widened reader or it is omitted. **Do not substitute a static string.**
 
 ### B. `clouds-grain-ms` — the grain length in milliseconds
 
-`SIZE` maps to a grain length; print the ms, not the 0..1.
+`SIZE` maps to a grain length; print the ms, not the 0..1. ⚠ **AND THE SPEC
+MISSED THAT THE MAPPING WAS BROKEN** — the ms it prints was clamped at 800 while
+the dial asked for 1500, so this readout shipped with a `CLAMPED` badge until
+#1456 fixed the DSP. It now prints 60 ms…1500 ms with no badge. §0-BIS.
 **NEGATIVE CONTROL — `density`.** Grain LENGTH must be invariant to how many are firing,
 while §4-D shows DENSITY moving the output 8.8 dB. **SECOND — `pitch`:** a transposed
 grain covers a different amount of buffer in the same output time, so the readout must
@@ -318,10 +394,16 @@ because coherence is a **threshold**, not a slope (measured −5.46 dB at 0 agai
 −15.97 / −16.03 at ±12 and −15.95 / −17.46 at ±24 — the step is at zero, not spread
 across the travel). **SECOND CONTROL — `pitch_cv`:** a slow LFO on pitch crossing zero
 produces a periodic 10 dB bump that no static readout can predict; needs `readLive`.
-⚠ **HONESTY TERM: 10.5 dB is `10·log10(N)` for the ~11 grains sounding at
+⚠ ~~**HONESTY TERM: 10.5 dB is `10·log10(N)` for the ~11 grains sounding at
 `density 0.5`.** It is therefore **density-dependent** and the readout must either
-compute it from the live density or print it as approximate. A hard-coded "−10.5 dB"
-would be right at one setting and wrong everywhere else.
+compute it from the live density or print it as approximate.~~ **SUPERSEDED
+(§0-BIS): the model is wrong, not just the constant.** N is 24 (saturated),
+`10·log10(N)` is not the right ratio, and the corrected ratio
+`10·log10(N·E[env]²/E[env²])` is *still* 2 dB out at the defaults and 4.7 dB out
+at TEXTURE 0, because neither models the output `tanh`. The shipped face prints
+the STATE plus a measured constant and derives no dB at all — the honest move
+when the formula is the thing that is broken. A hard-coded "−10.5 dB" would
+indeed be wrong; so would a computed one.
 
 ---
 
@@ -339,7 +421,8 @@ the strongest possible argument for a panel.
 ## 8. ALREADY-WRONG
 
 - **A · nothing anywhere states the two-second fill.** Not the def's `docs.explanation`,
-  not `module-manifest.ts`, not the card. Measured: bit-zero for 0.25 s, ~12 dB down to
+  not `module-manifest.ts`, not the card. Measured: ~~bit-zero for 0.25 s~~ ⚠ one GRAIN
+  LENGTH (§0-BIS), ~12 dB down to
   2.0 s. `clouds` is in `STRICT_DOCS`, so the completeness gate is satisfied by prose
   that omits the module's most confusing behaviour — the gate checks that a sentence
   EXISTS, not that it is the right sentence.

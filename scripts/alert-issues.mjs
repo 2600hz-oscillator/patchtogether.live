@@ -95,6 +95,10 @@ export const STATS_END = '<!-- alert-stats:end -->';
 export const KNOWN_CHECK_IDS = [
   'web-health-status',
   'web-health-body',
+  // The gate that watches the gate: the DB read is opt-in (`?deep=1`) since it
+  // wakes Neon, and this fires if the probe did NOT run — because a response
+  // that was never probed would otherwise sail through every DB check below it.
+  'web-db-not-probed',
   'web-db-unreachable',
   'web-db-schema-drift',
   'relay-health-status',
@@ -117,8 +121,9 @@ export const HARNESS_CHECK_ID = 'probe-harness';
 export const CHECK_TITLES = {
   'web-health-status': 'web /api/health returned a non-200',
   'web-health-body': 'web /api/health body missing ok:true',
+  'web-db-not-probed': 'web /api/health did not RUN the DB probe (the DB checks are testing nothing)',
   'web-db-unreachable': 'web /api/health reports the database UNREACHABLE',
-  'web-db-schema-drift': 'web /api/health reports schema drift (mode-missing)',
+  'web-db-schema-drift': 'web /api/health reports schema drift (racks-missing)',
   'relay-health-status': 'relay /health returned a non-200',
   'relay-health-body': 'relay /health body missing ok:true',
   'relay-metrics-status': 'relay /metrics returned a non-200',

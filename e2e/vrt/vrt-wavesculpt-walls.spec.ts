@@ -19,16 +19,17 @@
 // blink baselines use, and audio is suspended after a settle. So a single
 // screenshot is reproducible across runs/rAFs.
 //
-// Linux deferred (mirrors the main wavesculpt + blink baselines): WebGL
-// rasterization differs sub-thresholdly across GPU drivers; darwin captured
-// here, linux pending a `task vrt:update` run on linux CI.
+// ⚠ WebGL rasterization differs sub-thresholdly across GPU drivers, which is
+// why these scenes were dark on linux for months. They are not any more: the
+// baseline IS the linux render, so the only driver in the comparison is the
+// runner's.
+// Baselines are authored by LINUX CI — one set, no {platform} segment (see
+// vrt.config.ts). `task vrt:commit` dispatches the capture; a local macOS run
+// is a smoke test, not a capture.
 
 import { test, expect } from '@playwright/test';
 import { spawnPatch } from '../tests/_helpers';
-import { EXEMPT_BASELINE_PAIRS } from './vrt-exemptions';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
-
-const VRT_PLATFORM = process.platform === 'darwin' ? 'darwin' : 'linux';
 
 interface WallCase {
   name: string;
@@ -45,14 +46,6 @@ test.describe.configure({ mode: 'default' });
 test.describe('VRT: WAVESCULPT video walls', () => {
   for (const c of CASES) {
     test(`${c.name} matches baseline`, async ({ page }) => {
-      test.skip(
-        VRT_PLATFORM === 'linux',
-        `wavesculpt ${c.name} on linux: baseline pending (capture on linux CI)`,
-      );
-      test.skip(
-        EXEMPT_BASELINE_PAIRS.has(`${VRT_PLATFORM}/wavesculpt-${c.name}`),
-        `wavesculpt-${c.name} on ${VRT_PLATFORM}: quarantined (see EXEMPT_BASELINE_PAIRS)`,
-      );
 
       const errors: string[] = [];
       page.on('pageerror', (e) => errors.push(e.message));
@@ -67,7 +60,7 @@ test.describe('VRT: WAVESCULPT video walls', () => {
       // this the captured text metrics differ run-to-run and platform-to-platform.
       // Full root cause: e2e/vrt/_fonts.ts.
       await pinVrtFonts(page);
-      await page.goto('/rack');
+      await page.goto('/rack?shell=legacy&seed=none');
       await page.waitForLoadState('networkidle');
       await awaitVrtFonts(page);
 

@@ -21,19 +21,17 @@
 //   clap-dry-snap  — 4 pulses, narrow ringy filter, tail off, snap full,
 //                    max drive (the bone-dry tuned machine burst).
 //
-// Informational lane (`task vrt`) — darwin baselines captured locally;
-// linux needs a `vrt-update.yml` workflow_dispatch (the
-// EXEMPT_BASELINE_PAIRS gate in vrt-exemptions.ts skips linux until that
-// runs). Audio-only card, no WebGL — negligible CI cost.
+// Informational lane (`task vrt`). Audio-only card, no WebGL — negligible CI
+// cost.
+// Baselines are authored by LINUX CI — one set, no {platform} segment (see
+// vrt.config.ts). `task vrt:commit` dispatches the capture; a local macOS run
+// is a smoke test, not a capture.
 //
-// Output: e2e/vrt/__screenshots__/vrt-clap.spec.ts/{platform}/<id>.png
+// Output: e2e/vrt/__screenshots__/vrt-clap.spec.ts/<id>.png
 
 import { test, expect } from '@playwright/test';
 import { spawnPatch } from '../tests/_helpers';
-import { EXEMPT_BASELINE_PAIRS } from './vrt-exemptions';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
-
-const VRT_PLATFORM = process.platform === 'darwin' ? 'darwin' : 'linux';
 
 test.describe.configure({ mode: 'default' });
 
@@ -63,10 +61,6 @@ const SCENES: ClapScene[] = [
 test.describe('VRT: CLAP composite control states', () => {
   for (const scene of SCENES) {
     test(`${scene.id} matches baseline`, async ({ page }) => {
-      test.skip(
-        EXEMPT_BASELINE_PAIRS.has(`${VRT_PLATFORM}/${scene.id}`),
-        `${scene.id} on ${VRT_PLATFORM}: baseline pending (see EXEMPT_BASELINE_PAIRS)`,
-      );
 
       const errors: string[] = [];
       page.on('pageerror', (e) => errors.push(e.message));
@@ -78,7 +72,7 @@ test.describe('VRT: CLAP composite control states', () => {
       // this the captured text metrics differ run-to-run and platform-to-platform.
       // Full root cause: e2e/vrt/_fonts.ts.
       await pinVrtFonts(page);
-      await page.goto('/rack');
+      await page.goto('/rack?shell=legacy&seed=none');
       await page.waitForLoadState('networkidle');
       await awaitVrtFonts(page);
 

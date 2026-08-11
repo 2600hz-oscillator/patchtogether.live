@@ -242,7 +242,7 @@ export function clampMidiChannel(c: unknown): number {
 }
 
 /** The lane/column channel this module sits in (`data.channel`), or null when
- *  it is not a column member (free canvas / dawless rack). NEVER written here. */
+ *  it is not a column member (free canvas). NEVER written here. */
 export function laneChannelOf(data: Partial<MidiOutBuddyData> | undefined | null): number | null {
   const raw = data?.channel;
   if (typeof raw !== 'number' || !Number.isFinite(raw)) return null;

@@ -20,18 +20,16 @@
 // Because the sources are flat colours, the captured frame is determined purely
 // by (joystick pos, edge fx, edge params) — exactly the thing we want to lock.
 //
-// Informational lane (`task vrt`) — darwin baseline captured locally; linux
-// needs a `vrt-update.yml` workflow_dispatch (the EXEMPT_BASELINE_PAIRS gate in
-// vrt-exemptions.ts skips linux until that runs).
+// Informational lane (`task vrt`).
+// Baselines are authored by LINUX CI — one set, no {platform} segment (see
+// vrt.config.ts). `task vrt:commit` dispatches the capture; a local macOS run
+// is a smoke test, not a capture.
 //
-// Output: e2e/vrt/__screenshots__/vrt-quadralogical.spec.ts/{platform}/<id>.png
+// Output: e2e/vrt/__screenshots__/vrt-quadralogical.spec.ts/<id>.png
 
 import { test, expect } from '@playwright/test';
 import { spawnPatch } from '../tests/_helpers';
-import { EXEMPT_BASELINE_PAIRS } from './vrt-exemptions';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
-
-const VRT_PLATFORM = process.platform === 'darwin' ? 'darwin' : 'linux';
 
 test.describe.configure({ mode: 'default' });
 
@@ -81,10 +79,6 @@ const EFFECT_SCENES: EffectScene[] = [
 test.describe('VRT: QUADRALOGICAL per-edge effects', () => {
   for (const scene of EFFECT_SCENES) {
     test(`${scene.id} matches baseline`, async ({ page }) => {
-      test.skip(
-        EXEMPT_BASELINE_PAIRS.has(`${VRT_PLATFORM}/${scene.id}`),
-        `${scene.id} on ${VRT_PLATFORM}: baseline pending (see EXEMPT_BASELINE_PAIRS)`,
-      );
 
       // Video e2e on CI's SwiftShader is SLOW — generous budget.
       test.setTimeout(90_000);
@@ -100,7 +94,7 @@ test.describe('VRT: QUADRALOGICAL per-edge effects', () => {
       // this the captured text metrics differ run-to-run and platform-to-platform.
       // Full root cause: e2e/vrt/_fonts.ts.
       await pinVrtFonts(page);
-      await page.goto('/rack');
+      await page.goto('/rack?shell=legacy&seed=none');
       await page.waitForLoadState('networkidle');
       await awaitVrtFonts(page);
 

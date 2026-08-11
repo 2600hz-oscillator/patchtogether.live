@@ -57,7 +57,7 @@ export interface PinnedSpawnSpec {
    *    always-on hidden instance is spawned regardless (mixmstrs & friends
    *    are multi-instance types).
    *  - 'type': ANY node of the type exists, pinned or not. For RACK
-   *    SINGLETONS (timelorde, maxInstances=1): a dawless-authored patch
+   *    SINGLETONS (timelorde, maxInstances=1): an imported patch
    *    loaded into a workflow rack already carries a canvas TIMELORDE, and
    *    spawning a second (hidden) one would give the rack two competing
    *    clocks — the topbar clock surface targets whichever one exists
@@ -110,7 +110,7 @@ export const WORKFLOW_PINNED_MODULES: readonly PinnedModuleSpec[] = [
  *
  *  - timelorde: the clock-icon surface (BPM readout + tempo knob + tap
  *    tempo + patch-out). presence 'type' — a rack singleton; an existing
- *    canvas TIMELORDE (dawless import) satisfies the invariant and the
+ *    canvas TIMELORDE (from an import) satisfies the invariant and the
  *    surface drives it instead.
  *  - midiclock: the hidden MIDI-DIN→TIMELORDE bridge. Inert (no MIDI
  *    access) until the DIN surface's assign flow connects it; assigning

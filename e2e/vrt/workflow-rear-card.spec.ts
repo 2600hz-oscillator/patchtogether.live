@@ -31,15 +31,13 @@
 // the boot style tag kills transitions anyway. Element-capture of the
 // faceplate, workflow-shell-faces budgets.
 //
-// darwin-first: darwin baselines captured locally (3× stable); the linux
-// pairs are EXEMPT_BASELINE_PAIRS-deferred until a vrt-update.yml dispatch
-// lands them (the workflow-shell-faces precedent).
+// Baselines are authored by LINUX CI — one set, no {platform} segment (see
+// vrt.config.ts). `task vrt:commit` dispatches the capture; a local macOS run
+// is a smoke test, not a capture.
 
 import { test, expect, type Page } from '@playwright/test';
-import { EXEMPT_BASELINE_PAIRS } from './vrt-exemptions';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
 
-const VRT_PLATFORM = process.platform === 'darwin' ? 'darwin' : 'linux';
 test.describe.configure({ mode: 'default' });
 
 /** The two bracket scenes.
@@ -88,7 +86,7 @@ async function waitForHooks(page: Page): Promise<void> {
  *  member's node id — the workflow-shell-faces boot recipe. */
 async function bootWithMember(page: Page, type: string): Promise<string> {
   await pinVrtFonts(page);
-  await page.goto('/rack?mode=workflow&shell=1');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await awaitVrtFonts(page);
   await waitForHooks(page);
@@ -126,10 +124,6 @@ async function bootWithMember(page: Page, type: string): Promise<string> {
 test.describe('VRT: rear card — the dock full-view TAB flip side', () => {
   for (const { type, ports, holes, stereoHoles } of SCENES) {
     test(`rear-${type}: the flip-side jack field matches baseline`, async ({ page }) => {
-      test.skip(
-        EXEMPT_BASELINE_PAIRS.has(`${VRT_PLATFORM}/rear-${type}`),
-        `rear-${type} on ${VRT_PLATFORM}: baseline pending (see EXEMPT_BASELINE_PAIRS)`,
-      );
       const errors: string[] = [];
       page.on('pageerror', (e) => errors.push(e.message));
 

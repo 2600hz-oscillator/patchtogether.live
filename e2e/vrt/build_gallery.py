@@ -3,28 +3,33 @@
 (docs/vrt), plus a machine-readable coverage.json for the gate that checks it.
 
 ---------------------------------------------------------------------------
-WHAT CHANGED (2026-08-02) AND WHY IT MATTERED
+WHAT IT DOES
 ---------------------------------------------------------------------------
-This gallery used to key every entry by the PNG's BARE STEM:
+Walks EVERY `<baseline_dir>/<spec>/<stem>.png`, keys the inventory by the
+`(spec_dir, stem)` SCENE — never by the bare stem, which is not unique across
+spec dirs — files each scene into exactly one tab (TOTAL: asserted, not
+assumed), and writes an `index.html` catalog plus the machine-readable
+`coverage.json` that `scripts/vrt-gallery.test.ts` compares against its own
+independent walk of the same tree.
 
-    found[category][png.stem] = png          # <- darwin and linux collide
+---------------------------------------------------------------------------
+HISTORICAL NOTE — THE PLATFORM DIMENSION WAS REMOVED (2026-08-10)
+---------------------------------------------------------------------------
+Baselines used to be captured per platform (`<spec>/darwin/<stem>.png` AND
+`<spec>/linux/<stem>.png`). This gallery rendered the two side by side, badged
+a darwin-only scene as a parity GAP and summed a per-spec darwin/linux/gap
+table. All of that went with the `{platform}` segment of `vrt.config.ts`'s
+`snapshotPathTemplate`: CI renders on LINUX, so a darwin-only baseline was
+never diffed where it counted — ZERO regression protection while still reading
+as "covered" everywhere. There is now ONE baseline set, authored by linux CI,
+and nothing left to compare it against.
 
-`__screenshots__/<spec>/darwin/adsr.png` and `.../linux/adsr.png` have the same
-stem, so the second one walked overwrote the first. 416 committed PNGs
-collapsed into 282 cards, each showing ONE arbitrary platform (whichever
-`rglob` yielded last), and the page said "282 baselines" — a count of SCENES
-presented as a count of BASELINES.
-
-That is the exact failure this repo has now hit four times: a metric blind to
-the dimension under test returns a clean, plausible number. The dimension under
-test here is PLATFORM. CI renders on LINUX, so a scene captured on darwin and
-never captured on linux contributes ZERO regression protection — and the old
-gallery rendered it identically to a fully-covered scene. A parity gap was not
-merely un-highlighted, it was structurally invisible.
-
-So the inventory is now keyed by `(spec_dir, stem)` and holds BOTH platforms,
-every card shows darwin and linux SIDE BY SIDE, and a missing platform renders
-as a loud MISSING tile rather than as nothing at all.
+The bug that motivated the platform-aware rewrite is kept in one line because
+its SHAPE recurs: the inventory was keyed by the bare stem, so `darwin/adsr.png`
+and `linux/adsr.png` collided, 416 PNGs rendered as 282 cards, and the page
+reported a count of SCENES as a count of BASELINES. The `(spec_dir, stem)` key
+outlives the collapse — it is why two spec dirs sharing a stem still cannot
+overwrite each other, on the way in or on the way out.
 
 ---------------------------------------------------------------------------
 DIRECTORY SCOPE — STATED, BECAUSE AN UNSTATED SCOPE READS AS FULL COVERAGE
@@ -32,13 +37,17 @@ DIRECTORY SCOPE — STATED, BECAUSE AN UNSTATED SCOPE READS AS FULL COVERAGE
 Two gates in this repo were silently narrow because they only ever built the
 `__screenshots__/vrt.spec.ts/…` path and nothing said so (CLAUDE.md: "state a
 gate's directory scope in the gate"). This one walks EVERY
-`__screenshots__/*/<platform>/*.png`, the category assignment is TOTAL (every
-entry lands in exactly one tab — asserted, not assumed), and the scope is
+`__screenshots__/*/*.png`, the category assignment is TOTAL, and the scope is
 printed on the page itself along with the per-directory table.
 
+`unexpected_subdirs()` guards the other end of that scope: a spec dir holds
+PNGs and nothing else, so a DIRECTORY found inside one (a leftover `darwin/` or
+`linux/` from before the collapse) would hold baselines that no loop reads and
+no page shows, with every count staying internally consistent. It is reported
+loudly instead.
+
 What this gallery can and cannot tell you:
-  ✓ which scenes have a committed baseline, and on which platforms
-  ✓ where darwin and linux disagree about what is covered
+  ✓ which scenes have a committed baseline, and which curated faces do not
   ✗ whether a committed PNG still MATCHES today's render — only a VRT run
     answers that, and a sub-tolerance drift is invisible to it too
 
@@ -52,9 +61,10 @@ demoted one disappears. Same registry-driven discipline as
 `e2e/tests/faces-parity.spec.ts`, which imports the same set.
 
 Per module it shows the COMPACT lane tile and the DOCK full-view faceplate (the
-two required tiers), plus the REAR card where one exists, each on BOTH
-platforms. A module is `1:1` only when every required tier is pinned on darwin
-AND linux.
+two required tiers), plus the REAR card where one exists. A module is `1:1`
+only when every required tier has a committed baseline; a required tier with
+none renders a loud MISSING tile rather than nothing at all, so a face promoted
+before its baselines land reads as a GAP instead of as an absence.
 
 ⚠ A parser that silently matches nothing returns a clean-looking empty page, so
 `parse_strict_faces()` HARD-FAILS on an empty parse, and the parsed list is
@@ -65,14 +75,14 @@ red test, not a quietly missing tab.
 ---------------------------------------------------------------------------
 Inputs / outputs
 ---------------------------------------------------------------------------
-  --baseline-dir   e2e/vrt/__screenshots__/<spec>/<platform>/<stem>.png
+  --baseline-dir   e2e/vrt/__screenshots__/<spec>/<stem>.png
   --results-dir    e2e/vrt/test-results  (optional; a green run has none)
   --strict-faces   packages/web/src/lib/ui/workflow/strict-faces.ts
   --output-dir     docs/vrt
 
   <output-dir>/index.html
   <output-dir>/coverage.json                        — the machine summary
-  <output-dir>/baselines/<platform>/<spec>/<stem>.png
+  <output-dir>/baselines/<spec>/<stem>.png
   <output-dir>/actual/<stem>.png                    — iff the last run failed
   <output-dir>/diff/<stem>.png                      — iff the last run failed
 
@@ -90,12 +100,6 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
-
-# The platform CI gates on, and the one most baselines are authored on first.
-# Kept in the same order everywhere so the two thumbnails never swap places.
-PLATFORMS: Tuple[str, str] = ("darwin", "linux")
-GATING_PLATFORM = "linux"
-AUTHORING_PLATFORM = "darwin"
 
 # The two face tiers every STRICT_FACES module must pin, and the optional one.
 # `workflow-shell-faces.spec.ts` writes `face-<type>-<tier>.png`;
@@ -205,8 +209,7 @@ CATEGORIES: List[Tuple[str, str, str]] = [
         "ui-v2",
         "UI v2",
         "The curated faceplates — every module on the STRICT_FACES ratchet, "
-        "compact lane tile + dock full-view (+ rear card where one exists), "
-        "on both platforms.",
+        "compact lane tile + dock full-view (+ rear card where one exists).",
     ),
     (
         "modules",
@@ -289,42 +292,33 @@ def face_key(
 
 
 class Entry:
-    """One SCENE — a `(spec_dir, stem)` pair — and its per-platform baselines.
+    """One SCENE — a `(spec_dir, stem)` pair — and its committed baseline.
 
-    The old gallery had no such object: it had a dict keyed by stem alone, so
-    the platform dimension had nowhere to live and the second PNG overwrote the
-    first. Everything about parity visibility follows from this shape.
+    Keyed by the PAIR, never by the stem alone: two spec dirs are free to use
+    the same scene name and the second walked must not overwrite the first.
+    (That collision is what the platform dimension used to trigger; the key
+    survives it because the hazard does.)
+
+    `image` is Optional because a scene can be OWED a baseline it does not
+    have — the UI v2 tab enumerates the STRICT_FACES ratchet, not the disk, so
+    a face promoted before its baselines land is rendered as a MISSING tile.
     """
 
-    __slots__ = ("spec", "stem", "images", "category")
+    __slots__ = ("spec", "stem", "image", "category")
 
     def __init__(self, spec: str, stem: str) -> None:
         self.spec = spec
         self.stem = stem
-        self.images: Dict[str, Path] = {}
+        self.image: Optional[Path] = None
         self.category = "composite"
 
     @property
     def key(self) -> str:
         return "{}/{}".format(self.spec, self.stem)
 
-    @property
-    def platforms(self) -> List[str]:
-        return [p for p in PLATFORMS if p in self.images]
-
-    @property
-    def parity(self) -> str:
-        """`both` | `darwin-only` | `linux-only`. `darwin-only` is the one that
-        matters: CI gates on linux, so that scene is never diffed where it
-        counts."""
-        have = self.platforms
-        if len(have) == len(PLATFORMS):
-            return "both"
-        return "{}-only".format(have[0]) if have else "none"
-
 
 def list_entries(baseline_dir: Path, strict_faces: frozenset) -> List[Entry]:
-    """Walk EVERY `<baseline_dir>/<spec>/<platform>/<stem>.png`.
+    """Walk EVERY `<baseline_dir>/<spec>/<stem>.png`.
 
     Deliberately walks the whole tree rather than a known list of spec dirs —
     a directory nobody registered still shows up (in `composite`, the catch-all)
@@ -332,31 +326,31 @@ def list_entries(baseline_dir: Path, strict_faces: frozenset) -> List[Entry]:
     """
     entries: Dict[Tuple[str, str], Entry] = {}
     for spec_path in sorted(p for p in baseline_dir.iterdir() if p.is_dir()):
-        for platform in PLATFORMS:
-            pdir = spec_path / platform
-            if not pdir.is_dir():
-                continue
-            for png in sorted(pdir.glob("*.png")):
-                k = (spec_path.name, png.stem)
-                e = entries.get(k)
-                if e is None:
-                    e = Entry(spec_path.name, png.stem)
-                    e.category = categorize(spec_path.name, png.stem, strict_faces)
-                    entries[k] = e
-                e.images[platform] = png
+        for png in sorted(spec_path.glob("*.png")):
+            k = (spec_path.name, png.stem)
+            e = entries.get(k)
+            if e is None:
+                e = Entry(spec_path.name, png.stem)
+                e.category = categorize(spec_path.name, png.stem, strict_faces)
+                entries[k] = e
+            e.image = png
     return [entries[k] for k in sorted(entries)]
 
 
-def unexpected_platform_dirs(baseline_dir: Path) -> List[str]:
-    """Platform dirs under a spec dir that are neither darwin nor linux.
+def unexpected_subdirs(baseline_dir: Path) -> List[str]:
+    """DIRECTORIES sitting inside a spec dir, where only `*.png` belongs.
 
-    A THIRD platform would be silently dropped by every loop above, and the
-    counts would still look consistent. Report it instead.
+    Repurposed 2026-08-10 from `unexpected_platform_dirs()`, which flagged a
+    third platform dir for exactly this reason: whatever it holds is dropped by
+    every loop above while the counts stay internally consistent. Post-collapse
+    the same hazard wears a new hat — a leftover `darwin/` or `linux/` from
+    before the flattening is a pile of baselines that nothing reads and nothing
+    renders. Report it instead of walking past it.
     """
     odd: List[str] = []
     for spec_path in sorted(p for p in baseline_dir.iterdir() if p.is_dir()):
         for child in sorted(spec_path.iterdir()):
-            if child.is_dir() and child.name not in PLATFORMS:
+            if child.is_dir():
                 odd.append("{}/{}".format(spec_path.name, child.name))
     return odd
 
@@ -433,10 +427,11 @@ def list_run_artifacts(results_dir: Optional[Path]) -> Dict[str, Dict[str, Path]
     """Map baseline stem → {"actual": Path, "diff": Path} for the last run.
 
     Playwright names failure artifacts `<arg>-actual.png` / `<arg>-diff.png`, so
-    the only handle is the stem — a run artifact carries no spec-dir. Stems are
-    unique across the tree today (vrt-platform-gaps' `collidingSceneStems()`
-    asserts it), so the attach is unambiguous; if that ever stops being true
-    the worst case is a card showing a sibling's diff, never a false "match".
+    the only handle is the stem — a run artifact carries no spec-dir. Two spec
+    dirs sharing a stem would therefore attach the same artifact to both cards;
+    the worst case is a card showing a sibling's diff, never a false "match",
+    which is why the inventory itself is keyed by `(spec, stem)` and only this
+    attach falls back to the stem.
     """
     found: Dict[str, Dict[str, Path]] = {}
     if results_dir is None or not results_dir.is_dir():
@@ -463,12 +458,12 @@ def copy_image(src: Path, dst: Path) -> None:
     shutil.copy2(src, dst)
 
 
-def rel_image(entry: Entry, platform: str) -> str:
-    """Output-relative href. Includes the platform AND the spec dir, so two
-    scenes can never overwrite each other on the way out — the collapse this
-    rewrite fixes happened on the way IN, and re-introducing it on the way out
-    would be the same bug wearing a different hat."""
-    return "baselines/{}/{}/{}.png".format(platform, entry.spec, entry.stem)
+def rel_image(entry: Entry) -> str:
+    """Output-relative href. Includes the SPEC DIR, so two scenes sharing a
+    stem can never overwrite each other on the way out — the historical
+    collapse happened on the way IN, and re-introducing it on the way out would
+    be the same bug wearing a different hat."""
+    return "baselines/{}/{}.png".format(entry.spec, entry.stem)
 
 
 # ---------------------------------------------------------------------------
@@ -492,20 +487,17 @@ def _missing(label: str, why: str) -> str:
     )
 
 
-def _platform_thumbs(entry: Entry) -> str:
-    out: List[str] = []
-    for p in PLATFORMS:
-        if p in entry.images:
-            out.append(_thumb(rel_image(entry, p), p, "{} on {}".format(entry.stem, p)))
-        else:
-            why = (
-                "no {} baseline committed for {} — this scene is NEVER diffed on "
-                "the platform CI gates on".format(p, entry.stem)
-                if p == GATING_PLATFORM
-                else "no {} baseline committed for {}".format(p, entry.stem)
-            )
-            out.append(_missing(p, why))
-    return "".join(out)
+def _baseline_thumb(entry: Entry, what: str) -> str:
+    """The scene's ONE baseline, or the MISSING tile standing in for it.
+
+    `entry.image` is None only where the tab enumerates something the disk does
+    not (a promoted face with no capture yet) — and that case is the whole
+    reason the MISSING tile exists: an absent required baseline must LOOK
+    absent, not simply be left out of the page.
+    """
+    if entry.image is not None:
+        return _thumb(rel_image(entry), "baseline", entry.stem)
+    return _missing("baseline", "no baseline committed for {}".format(what))
 
 
 def _blurb_for(entry: Entry) -> str:
@@ -520,9 +512,11 @@ def render_scene_cards(
     cards: List[str] = []
     for e in entries:
         art = artifacts.get(e.stem, {})
-        parity = e.parity
-        status_cls = "pass" if parity == "both" else "gap"
-        thumbs = [_platform_thumbs(e)]
+        # A scene card exists BECAUSE its PNG does, so there is no coverage
+        # verdict left to badge here — the only status worth painting is
+        # whether the last run left a diff behind for it.
+        status_cls = "gap" if art else "pass"
+        thumbs = [_baseline_thumb(e, e.key)]
         for kind in ("actual", "diff"):
             if kind in art:
                 thumbs.append(_thumb("{}/{}.png".format(kind, e.stem), kind, e.stem))
@@ -530,14 +524,14 @@ def render_scene_cards(
         cards.append(
             """
     <article id="{anchor}" class="card card-{cls}">
-        <h3>{stem} <span class="status status-{cls}">{parity}</span></h3>
+        <h3>{stem} <span class="status status-{cls}">{label}</span></h3>
         <p class="blurb"><code>{spec}</code>{blurb}</p>
         <div class="row">{thumbs}</div>
     </article>""".format(
                 anchor=html.escape(e.key),
                 stem=html.escape(e.stem),
                 cls=status_cls,
-                parity=html.escape(parity),
+                label="diffed" if art else "pinned",
                 spec=html.escape(e.spec),
                 blurb=(" · " + html.escape(blurb)) if blurb else "",
                 thumbs="".join(thumbs),
@@ -549,8 +543,11 @@ def render_scene_cards(
 def render_ui_v2(
     strict_faces: List[str], by_face: Dict[Tuple[str, str], Entry]
 ) -> Tuple[str, Dict[str, object]]:
-    """The UI v2 tab: one section per STRICT_FACES module, a row per tier,
-    darwin and linux side by side. Returns (html, summary)."""
+    """The UI v2 tab: one section per STRICT_FACES module, a row per tier.
+
+    Driven by the RATCHET, not by the disk — so a module promoted before its
+    baselines land owes a MISSING row rather than quietly enumerating to
+    nothing. Returns (html, summary)."""
     sections: List[str] = []
     full_parity: List[str] = []
     gapped: Dict[str, List[str]] = {}
@@ -569,16 +566,13 @@ def render_ui_v2(
             entry = by_face.get((module, tier))
             required = tier in REQUIRED_FACE_TIERS
             if entry is None:
-                cells = "".join(
-                    _missing(p, "no {} baseline for face {} ({})".format(p, module, tier))
-                    for p in PLATFORMS
+                cells = _missing(
+                    "baseline", "no baseline for face {} ({})".format(module, tier)
                 )
                 if required:
-                    missing.append("{}: no baseline on either platform".format(tier))
+                    missing.append("{}: no baseline committed".format(tier))
             else:
-                cells = _platform_thumbs(entry)
-                if required and entry.parity != "both":
-                    missing.append("{}: {}".format(tier, entry.parity))
+                cells = _baseline_thumb(entry, entry.key)
             rows.append(
                 '<div class="face-row"><span class="tier">{t}{req}</span>'
                 '<div class="row">{c}</div></div>'.format(
@@ -612,6 +606,9 @@ def render_ui_v2(
                 rows="".join(rows),
             )
         )
+    # `fullParity` keeps its name across the platform collapse: it is still the
+    # "1:1" set, but the parity is now between the module's REQUIRED TIERS and
+    # what is pinned, not between two platforms.
     summary = {
         "strictFaces": strict_faces,
         "fullParity": full_parity,
@@ -621,54 +618,55 @@ def render_ui_v2(
 
 
 def render_coverage_table(entries: List[Entry], baseline_dir: Path) -> str:
-    per_spec: Dict[str, List[int]] = {}
+    """Per-directory inventory — enumerated from the DISK, not from `entries`.
+
+    A spec dir with zero committed baselines has no entries, so listing the
+    table from `entries` would make it VANISH from the page: the one state
+    where the directory most needs saying. It gets a row reading 0 instead.
+    """
+    per_spec: Dict[str, int] = {}
     for e in entries:
-        row = per_spec.setdefault(e.spec, [0, 0, 0])
-        if AUTHORING_PLATFORM in e.images:
-            row[0] += 1
-        if GATING_PLATFORM in e.images:
-            row[1] += 1
-        if e.parity != "both":
-            row[2] += 1
+        per_spec[e.spec] = per_spec.get(e.spec, 0) + 1
+    on_disk = sorted(p.name for p in baseline_dir.iterdir() if p.is_dir())
     rows = []
-    for spec in sorted(per_spec):
-        d, l, gap = per_spec[spec]
+    for spec in on_disk:
+        n = per_spec.get(spec, 0)
         rows.append(
-            '<tr class="{cls}"><td><code>{s}</code></td><td>{d}</td><td>{l}</td>'
-            "<td>{g}</td></tr>".format(
-                cls="row-gap" if gap else "row-ok",
-                s=html.escape(spec),
-                d=d,
-                l=l,
-                g=gap or "—",
+            '<tr class="{cls}"><td><code>{s}</code></td><td>{n}</td></tr>'.format(
+                cls="row-gap" if n == 0 else "row-ok", s=html.escape(spec), n=n
             )
         )
-    td = sum(1 for e in entries if AUTHORING_PLATFORM in e.images)
-    tl = sum(1 for e in entries if GATING_PLATFORM in e.images)
-    tg = sum(1 for e in entries if e.parity != "both")
+    empty = sum(1 for spec in on_disk if per_spec.get(spec, 0) == 0)
     return """
         <h2>Directory scope</h2>
         <p class="scope">This gallery reads <strong>every</strong>
-        <code>{root}/&lt;spec&gt;/&lt;platform&gt;/*.png</code> — all
+        <code>{root}/&lt;spec&gt;/*.png</code> — all
         <strong>{n}</strong> spec directories below, not just
         <code>vrt.spec.ts</code>. Two gates in this repo were silently narrow
         because they only ever resolved that one directory and nothing said so;
-        an unstated scope reads as full coverage.</p>
+        an unstated scope reads as full coverage. {empty_note}</p>
+        <p class="scope">There is ONE baseline per scene (2026-08-10): the
+        <code>{{platform}}</code> segment is gone, because CI renders on linux
+        and a darwin-only baseline was never diffed where it counted.</p>
         <p class="scope">It reports what is <em>committed</em>. It cannot tell
         you whether a committed PNG still <em>matches</em> today's render — only
         a VRT run does that, and a sub-tolerance drift is invisible to that run
         too.</p>
         <table class="cov">
-          <thead><tr><th>spec directory</th><th>darwin</th><th>linux</th><th>gap</th></tr></thead>
+          <thead><tr><th>spec directory</th><th>baselines</th></tr></thead>
           <tbody>{rows}</tbody>
-          <tfoot><tr><th>TOTAL ({n} dirs)</th><th>{td}</th><th>{tl}</th><th>{tg}</th></tr></tfoot>
+          <tfoot><tr><th>TOTAL ({n} dirs)</th><th>{total}</th></tr></tfoot>
         </table>""".format(
         root=html.escape(str(baseline_dir)),
-        n=len(per_spec),
+        n=len(on_disk),
+        empty_note=(
+            "Directories holding <strong>no</strong> committed baseline are "
+            "listed too ({} of them) rather than quietly omitted.".format(empty)
+            if empty
+            else ""
+        ),
         rows="".join(rows),
-        td=td,
-        tl=tl,
-        tg=tg,
+        total=len(entries),
     )
 
 
@@ -756,6 +754,7 @@ def render_html(
     artifacts: Dict[str, Dict[str, Path]],
     strict_faces: List[str],
     ui_v2_html: str,
+    ui_v2_summary: Dict[str, object],
     commit: str,
     baseline_dir: Path,
 ) -> str:
@@ -764,8 +763,10 @@ def render_html(
         by_cat[e.category].append(e)
 
     n_scenes = len(entries)
-    n_images = sum(len(e.images) for e in entries)
-    n_gap = sum(1 for e in entries if e.parity != "both")
+    # The only coverage verdict left after the platform collapse: a promoted
+    # face whose required tiers are not all pinned. Every OTHER card on the page
+    # exists because its PNG does, so it cannot be a gap.
+    n_gap = len(ui_v2_summary["gapped"])  # type: ignore[arg-type]
     n_diff = sum(1 for e in entries if e.stem in artifacts)
 
     nav: List[str] = []
@@ -813,14 +814,12 @@ def render_html(
         else ""
     )
     summary = (
-        '<p class="summary">{scenes} scenes · {images} baseline PNGs · '
-        '<span class="{gcls}">{gap} platform gap{plural}</span>'
-        "{diff} · {faces} curated faces</p>".format(
+        '<p class="summary">{scenes} scenes · one committed baseline each · '
+        '{faces} curated faces, <span class="{gcls}">{gap} with a missing '
+        "tier</span>{diff}</p>".format(
             scenes=n_scenes,
-            images=n_images,
             gcls="bad" if n_gap else "ok",
             gap=n_gap,
-            plural="" if n_gap == 1 else "s",
             diff=(
                 ' · <span class="bad">{} diffed</span>'.format(n_diff) if n_diff else ""
             ),
@@ -845,7 +844,7 @@ def render_html(
     <div class="container">
         <h1>VRT GALLERY</h1>
         <p class="subtitle">Playwright screenshot baselines for patchtogether.live —
-        every scene on <strong>both</strong> platforms, side by side</p>
+        <strong>one</strong> committed baseline per scene, captured by linux CI</p>
         {summary}
         {commit_strip}
         <nav class="nav">{nav}</nav>
@@ -899,26 +898,27 @@ def main() -> int:
     entries = list_entries(args.baseline_dir, frozenset(strict_faces))
     assert_total_categorization(entries)
 
-    odd = unexpected_platform_dirs(args.baseline_dir)
+    odd = unexpected_subdirs(args.baseline_dir)
     if odd:
         sys.stderr.write(
-            "warning: platform dir(s) that are neither darwin nor linux and are "
-            "therefore NOT rendered: {}\n".format(", ".join(odd))
+            "warning: SUBDIRECTORY(ies) inside a spec dir, where only *.png belongs "
+            "— anything they hold is NOT rendered and NOT counted. A leftover "
+            "darwin/ or linux/ from before the 2026-08-10 platform collapse is the "
+            "likely cause: {}\n".format(", ".join(odd))
         )
 
     if not entries:
         sys.stderr.write(
-            "warning: no baselines under {} — run `task vrt:update` first.\n".format(
-                args.baseline_dir
-            )
+            "warning: no baselines under {} — capture them via `task vrt:commit` "
+            "(vrt-update.yml on linux CI) first.\n".format(args.baseline_dir)
         )
 
     for sub in ("baselines", "actual", "diff"):
         (args.output_dir / sub).mkdir(parents=True, exist_ok=True)
 
     for e in entries:
-        for platform, src in e.images.items():
-            copy_image(src, args.output_dir / rel_image(e, platform))
+        if e.image is not None:
+            copy_image(e.image, args.output_dir / rel_image(e))
 
     artifacts = list_run_artifacts(args.results_dir)
     for stem, kinds in artifacts.items():
@@ -948,20 +948,13 @@ def main() -> int:
     coverage = {
         "baselineDir": str(args.baseline_dir),
         "specDirs": sorted({e.spec for e in entries}),
-        "platforms": list(PLATFORMS),
-        "gatingPlatform": GATING_PLATFORM,
         "scenes": len(entries),
-        "images": sum(len(e.images) for e in entries),
-        "byPlatform": {
-            p: sum(1 for e in entries if p in e.images) for p in PLATFORMS
-        },
-        "gaps": sorted(e.key for e in entries if e.parity != "both"),
         "byCategory": {
             cid: sorted(e.key for e in entries if e.category == cid)
             for cid, _, _ in CATEGORIES
         },
         "rendered": sorted(e.key for e in entries),
-        "unexpectedPlatformDirs": odd,
+        "unexpectedSubdirs": odd,
         "orphanFaceScenes": orphan_faces,
         "uiV2": ui_v2_summary,
     }
@@ -976,23 +969,18 @@ def main() -> int:
             artifacts,
             strict_faces,
             ui_v2_html,
+            ui_v2_summary,
             repo_short_sha(),
             args.baseline_dir,
         ),
         encoding="utf8",
     )
 
-    gaps = len(coverage["gaps"])
     print(
-        "  wrote {} ({} scenes / {} PNGs across {} spec dirs; {} darwin, {} linux, "
-        "{} platform gap(s); {} curated faces, {} at 1:1)".format(
+        "  wrote {} ({} scenes across {} spec dirs; {} curated faces, {} at 1:1)".format(
             index,
             coverage["scenes"],
-            coverage["images"],
             len(coverage["specDirs"]),
-            coverage["byPlatform"][AUTHORING_PLATFORM],
-            coverage["byPlatform"][GATING_PLATFORM],
-            gaps,
             len(strict_faces),
             len(ui_v2_summary["fullParity"]),
         )

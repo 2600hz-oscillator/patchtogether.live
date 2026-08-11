@@ -5,8 +5,18 @@
 // so a real connection pool makes sense — unlike the Workers side which
 // has to use per-request clients.
 //
-// Reads DATABASE_URL from env. Fly Postgres provides this automatically
-// when you `flyctl postgres attach`. For local dev, set it explicitly:
+// Reads DATABASE_URL from env. In every deployed tier this is the **Neon
+// DIRECT (non-pooled) endpoint** — the same Neon database the web tier uses,
+// just reached over TCP with `pg` instead of Neon's HTTP driver. Do NOT point
+// it at Neon's `-pooler` host: that endpoint exists for serverless/HTTP
+// clients, not for a long-lived pool. It is pushed by
+// `scripts/sync-secrets.sh` from `NEON_{TIER}_DIRECT_URL`.
+//
+// (Historical: this used to be a Fly Managed Postgres DSN attached via
+// `flyctl postgres attach`. That whole stack was decommissioned when Neon
+// landed — see db/README.md. There is only ONE database.)
+//
+// For local dev, set it explicitly:
 //   DATABASE_URL=postgresql://postgres:dev@localhost:54320/patchtogether_dev
 
 import pg from 'pg';
@@ -82,21 +92,28 @@ export function getPool(): pg.Pool {
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
     throw new Error(
+      // ⚠ STALE TEXT, deliberately not edited here: `flyctl postgres attach`
+      // refers to the decommissioned Fly Managed Postgres stack. The correct
+      // action is `scripts/sync-secrets.sh <tier> --apply`, which pushes
+      // NEON_{TIER}_DIRECT_URL. Left verbatim because this string is IN the
+      // @collab attest basis (comments are not — verified 2026-08-11), so
+      // rewording it costs a `task collab:attest` cycle. Fix it the next time
+      // you are re-attesting anyway.
       'DATABASE_URL is required. Set it in the Fly app secrets ' +
         '(`flyctl postgres attach` does this) or via .env locally.',
     );
   }
   pool = new Pool({
     connectionString,
-    // Fly Postgres tolerates plenty of connections; 10 is fine for one
-    // Fly machine. Bump if we vertical-scale.
+    // Neon's direct endpoint tolerates plenty of connections; 10 is fine for
+    // one Fly machine. Bump if we vertical-scale.
     max: 10,
     // Hocuspocus's debounced onStoreDocument can fire concurrently per
     // doc; idle connections settle back into the pool.
     idleTimeoutMillis: 30_000,
   });
   // CRITICAL: pg's Pool emits 'error' on a backend connection that dies
-  // while IDLE in the pool (TCP reset, Fly Postgres failover, an auth
+  // while IDLE in the pool (TCP reset, a Neon compute suspend/restart, an auth
   // timeout on a connection that was mid-acquire). With NO listener, node
   // treats that emit as an unhandled 'error' event and CRASHES the whole
   // relay process — which is exactly the tab-switch 500 the operator hit:

@@ -18,7 +18,7 @@
 //   3. the dial's persistent readout is the DEF's formatter reaching the DOM —
 //      "300 ms", never the raw "0.30" a magnitude-banded fallback prints.
 //
-// Runs on /rack?mode=workflow&shell=1 (no DB/relay), the normal e2e lane.
+// Runs on /rack (no DB/relay), the normal e2e lane.
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
@@ -66,7 +66,7 @@ test.describe('adsr curated face — the ranked tiers', () => {
   test('rank 1 is RELEASE at mini, it writes the graph, and it reads out in real units', async ({
     page,
   }) => {
-    await page.goto('/rack?mode=workflow&shell=1');
+    await page.goto('/rack');
     await expect(page.getByTestId('workflow-topbar')).toBeVisible();
     await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
     await spawnPatch(page, [{ id: 'env', type: 'adsr', position: { x: 460, y: 240 } }]);

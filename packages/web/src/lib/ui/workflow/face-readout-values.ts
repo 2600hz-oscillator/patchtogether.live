@@ -53,6 +53,13 @@ import {
 } from '$lib/ui/modules/clouds-face-model';
 import { noiseFaceParams, noiseTapDbText } from '$lib/ui/modules/noise-face-model';
 import {
+  asleepText,
+  cofefveFaceParams,
+  echoRepeatsText,
+  echoSpacingText,
+  enablerText,
+} from '$lib/ui/modules/cofefve-face-model';
+import {
   clapBandwidthHz,
   clapBurstMs,
   clapQ,
@@ -71,6 +78,16 @@ import {
   drummergirlSweepMs,
   drummergirlSweepSemitones,
 } from '$lib/ui/modules/drummergirl-face-model';
+import {
+  cubeCrushLevelsText,
+  cubeCutTiltText,
+  cubeF0Text,
+  cubeFaceParams,
+  cubeFoldDriveText,
+  cubeHarmonicsText,
+  cubeSpreadDepthText,
+  cubeYLiveText,
+} from '$lib/ui/modules/cube-face-model';
 import {
   filterCutoffReachText,
   filterFaceParams,
@@ -186,6 +203,43 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
   'macro-strike-need': (read) => macroStrikeText(macroFaceParams(read)),
   'macro-alias': (read) => macroAliasText(macroFaceParams(read)),
 
+  // ── COFEFVE ──────────────────────────────────────────────────────────────
+  // EIGHT values, and they exist for a different reason from every other block
+  // in this file. The others derive a NUMBER a knob readback would get wrong.
+  // These derive whether a control DOES ANYTHING AT ALL: seven of cofefve's
+  // twenty-three params do nothing at the factory default — five of them
+  // bit-exactly — because each is the dependent half of an enabler pair whose
+  // enabler ships closed, and no `paramId` readout can express "this dial is
+  // asleep": the
+  // dial's own value is perfectly valid and perfectly irrelevant.
+  //
+  //   `asleep`   counts them. A function of FIVE enablers at once, so no single
+  //              param can stand in for it — and it must NOT move when a
+  //              dependent moves, which is the leg that catches a counter that
+  //              is counting the wrong set.
+  //   `spacing`  is the EFFECTIVE echo period. A `delayTime` readback is not
+  //              merely imprecise while SYNC is on, it is describing a delay
+  //              the DSP has replaced.
+  //   `repeats`  is a COUNT from the loop gain, so ±0.5 feedback must print the
+  //              same answer (measured: the two tails are identical to the
+  //              sample) and TIME must not move it at all.
+  //   the five `wait-*` lines are the sidebar's per-pair state. `wait-pan` is
+  //              the one that carries a correction: PING-PONG needs a left/
+  //              right DIFFERENCE and is independent of PAN, so a line naming
+  //              PAN alone would teach a dependency the DSP does not have.
+  //
+  // All eight are negative-controlled in BOTH directions, permanently, in
+  // cofefve-face-model.test.ts — against the REAL worklet processor class for
+  // the claims that are about audio.
+  'cofefve-asleep': (read) => asleepText(cofefveFaceParams(read)),
+  'cofefve-echo-spacing': (read) => echoSpacingText(cofefveFaceParams(read)),
+  'cofefve-repeats': (read) => echoRepeatsText(cofefveFaceParams(read)),
+  'cofefve-wait-wow': (read) => enablerText('wow', cofefveFaceParams(read)),
+  'cofefve-wait-duck': (read) => enablerText('duck', cofefveFaceParams(read)),
+  'cofefve-wait-sync': (read) => enablerText('sync', cofefveFaceParams(read)),
+  'cofefve-wait-pan': (read) => enablerText('pan', cofefveFaceParams(read)),
+  'cofefve-wait-drive': (read) => enablerText('drive', cofefveFaceParams(read)),
+
   // ── CLAP ─────────────────────────────────────────────────────────────────
   // Three envelope figures + the band-pass pair. NONE is a knob read back:
   // `voice` is 170 ms at SNAP 0.5 and 40 ms at SNAP 1 while TAIL reads 150 at
@@ -204,16 +258,18 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
   // nearest dial:
   //
   //   reads      a `paramId: 'position'` readout prints 0.50 at EVERY size,
-  //              while the reachable span shrinks 1.94 s → 1.20 s and the read
-  //              point moves 0.97 s → 1.40 s. POSITION is the strongest control
+  //              while the reachable span shrinks 1.94 s → 0.50 s and the read
+  //              point moves 1.03 s → 1.75 s. POSITION is the strongest control
   //              on the module (max|Δ| 0.99 against a marked source) and the
   //              one no level metric can see (0.17 dB across its whole travel),
   //              so a number in the BUFFER'S OWN UNITS is the only readout that
   //              says anything true about it.
-  //   grain      SIZE reads 0.50 for a 300 ms grain and cannot say that the
-  //              grain CEILING is 800 ms — which makes size 0.805…1.0 render
-  //              BIT-IDENTICAL output, 19.5 % of the dial. It also names its
-  //              FRAME: `g.age` counts output samples while `g.readPos` moves
+  //   grain      SIZE reads 0.50 for a 300 ms grain and cannot say that the law
+  //              behind it runs 60…1500 ms exponentially. (It also could not say
+  //              that the top 19.50 % of that dial was BIT-IDENTICAL to its
+  //              maximum, which is what this readout printed as `CLAMPED` until
+  //              #1456 raised the grain ceiling to meet the law.) It also names
+  //              its FRAME: `g.age` counts output samples while `g.readPos` moves
   //              at `pitchRatio`, so a transposed grain sounds for one time and
   //              reads another, and the two differ by 2^(pitch/12).
   //   pitch      a semitone readback prints `0.50 st` — a musically negligible
@@ -227,15 +283,18 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
   //   silent for / full level at
   //              NOT a function of any one knob and not a constant either: the
   //              silence at spawn is exactly ONE GRAIN LENGTH (measured 60.0 /
-  //              134.1 / 300.0 / 670.8 / 800.0 ms at size 0 / .25 / .5 / .75 /
-  //              .9) and full level lands one grain after the 2.0 s ring fills.
-  //              This is the module's single most confusing behaviour and no
-  //              surface anywhere stated it before this face.
+  //              134.1 / 300.0 / 670.8 / 1087.2 / 1500.0 ms at size 0 / .25 /
+  //              .5 / .75 / .9 / 1) and full level lands one grain after the
+  //              2.0 s ring fills. This is the module's single most confusing
+  //              behaviour and no surface anywhere stated it before this face.
   //
   // Every claim is re-derived from `cloudsMath` — the pure-math mirror of the
   // worklet — by ORACLE legs in clouds-face-model.test.ts, so a DSP change
   // turns a stale sentence red rather than letting the faceplate keep insisting
   // on it. Negative controls in both directions, permanently, in the same file.
+  // ⚠ AND THE MIRROR ITSELF IS PINNED to the shipping worklet, sample for
+  // sample, in art/scenarios/clouds/size-travel.test.ts — without that leg
+  // every oracle above would be measuring a reimplementation.
   'clouds-position-reach': (read) => cloudsPositionText(cloudsFaceParams(read)),
   'clouds-grain-ms': (read) => cloudsGrainText(cloudsFaceParams(read)),
   'clouds-coherence': (read) => cloudsCoherenceText(cloudsFaceParams(read)),
@@ -417,6 +476,33 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
     const { base, cvAmount } = vcaFaceParams(read);
     return formatVcaGainAtFullCv(base, cvAmount);
   },
+
+  // ── CUBE ─────────────────────────────────────────────────────────────────
+  // Seven, and the second one is the reason the other six exist. cube's
+  // `slice_y` is a real control that is INERT IN EXACTLY ONE STATE — the state
+  // the module spawns in — because the ray march integrates over a window
+  // centred on the ray origin, so sliding the plane along its own normal is
+  // nearly a no-op, and at spawn the normal IS the axis Y translates along.
+  // Measured max rmsΔ over the whole of Y: 0.115 flat, 0.759 at ROT X 0.8. A
+  // `paramId: 'slice_y'` readout prints 0.50 in both. Every one of these is
+  // negative-controlled in cube-face-model.test.ts on the input a knob
+  // readback would be blind to.
+  'cube-cut-tilt': (read) => cubeCutTiltText(cubeFaceParams(read)),
+  'cube-y-live': (read) => cubeYLiveText(cubeFaceParams(read)),
+  'cube-crush-levels': (read) => cubeCrushLevelsText(cubeFaceParams(read)),
+  // ⚠ IMPORTS `CUBE_SPREAD_DEPTH`. The def's own prose said ±5 % in five places
+  // against a shipped 0.18 — which is what re-typing a DSP constant into prose
+  // buys you, five times over.
+  'cube-spread-depth': (read) => cubeSpreadDepthText(cubeFaceParams(read)),
+  // ⚠ LABELLED "knobs" ON THE FACE. A `valueId` is a pure function of PARAMS
+  // and can never see the V/oct cable, so printing this unqualified would be
+  // the kick-drum-TAIL trap: right when you turn the knob, wrong when the
+  // module is played.
+  'cube-f0-knobs': (read) => cubeF0Text(cubeFaceParams(read)),
+  // cube is a bare wavetable oscillator with NO band-limiting, so this is how
+  // close the current tuning is to folding its partials back down. No knob.
+  'cube-harmonics': (read) => cubeHarmonicsText(cubeFaceParams(read)),
+  'cube-fold-drive': (read) => cubeFoldDriveText(cubeFaceParams(read)),
 };
 
 /** The derived value for a declared id, or `null` (⇒ the readout prints `—`

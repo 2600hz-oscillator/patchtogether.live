@@ -247,15 +247,17 @@
 //   COMMITTED and the dispatch reports green. This is the documented A2/#1213
 //   hole, and CLAUDE.md's rule applies verbatim:
 //
-//     git rm e2e/vrt/__screenshots__/vrt-composite.spec.ts/linux/snh-seq-scope-on.png \
-//            e2e/vrt/__screenshots__/vrt-composite.spec.ts/linux/snh-seq-scope-off.png
+//     git rm e2e/vrt/__screenshots__/vrt-composite.spec.ts/snh-seq-scope-on.png \
+//            e2e/vrt/__screenshots__/vrt-composite.spec.ts/snh-seq-scope-off.png
 //
 //   FIRST, then dispatch — Playwright always writes a MISSING snapshot.
 //
 // Also note for that dispatch:
-//   * `vco-scope-audio-trace` is `darwinOnly` on purpose (its determinism
-//     argument is keyed to the capture machine's sampleRate/128 = 375 Hz), so
-//     it needs no linux baseline and will be skipped.
+//   * `vco-scope-audio-trace` carried `darwinOnly: true` until 2026-08-10 (its
+//     determinism argument is keyed to the capture machine's sampleRate/128 =
+//     375 Hz). The flag is gone with the platform dimension, so the scene now
+//     captures on linux like any other — and if the runner is not at 48 kHz the
+//     trace phase will not settle and it will FAIL loudly rather than skip.
 //   * `toybox` and `warrenspectrum` now have VRT_SCENES entries, so their linux
 //     baselines are stale by construction (the scene changes what is rendered,
 //     not just how stable it is) and WILL fail loudly rather than silently.
@@ -558,7 +560,7 @@ export const VRT_LIVE_SURFACES: Record<string, LiveSurfaceScene> = {
             'expensive mask here, because this card IS its viewport. That cost is stated ' +
             'plainly rather than buried: it buys back a scene the gate cannot otherwise ' +
             'baseline at all, and the alternative (quarantine, like the three blink_mode-1 ' +
-            'cases already sitting in EXEMPT_BASELINE_PAIRS) deletes 100 % and asserts ' +
+            'cases that used to sit in EXEMPT_BASELINE_PAIRS) deletes 100 % and asserts ' +
             'nothing. Revert it the moment boltPhase is pinned — the fix is written and ' +
             'measured, only the attest blocks it. ' +
             'MEASURED on the 721x541 CSS-px render through the REAL blink capture path, 3 ' +
@@ -599,7 +601,7 @@ export const VRT_LIVE_SURFACES: Record<string, LiveSurfaceScene> = {
             'expensive mask here, because this card IS its viewport. That cost is stated ' +
             'plainly rather than buried: it buys back a scene the gate cannot otherwise ' +
             'baseline at all, and the alternative (quarantine, like the three blink_mode-1 ' +
-            'cases already sitting in EXEMPT_BASELINE_PAIRS) deletes 100 % and asserts ' +
+            'cases that used to sit in EXEMPT_BASELINE_PAIRS) deletes 100 % and asserts ' +
             'nothing. Revert it the moment boltPhase is pinned. ' +
             'MEASURED on the 721x541 CSS-px render through the REAL blink capture path, 3 ' +
             'runs: ink 0.2096 / 0.2098 / 0.2098, stdDev 81.43 / 81.15 / 81.26, buckets 11 / 12 ' +

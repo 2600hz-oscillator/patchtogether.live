@@ -560,7 +560,7 @@ function mixerColumnsData(): { columns?: Record<string, string[] | undefined> } 
 }
 
 /** Ordered member ids of the SELECTED lane — bottom tile first, most recently
- *  ADDED last. Empty in a non-workflow (dawless) rack, which has no columns. */
+ *  ADDED last. Empty in a rack whose pinned mixer has no columns yet. */
 export function selectedLaneMembers(): string[] {
   return laneMembers(
     patch.nodes as Record<string, ModuleNode | undefined>,
@@ -569,7 +569,8 @@ export function selectedLaneMembers(): string[] {
   );
 }
 
-/** Does this rack have channel columns at all? A dawless rack has no pinned
+/** Does this rack have channel columns at all? A rack whose pinned mixer
+ *  carries no order manifest has none. A rack with no pinned
  *  mixer, so lane select has nothing to select — the card says so rather than
  *  pretending the lane is merely empty. */
 function hasLaneColumns(): boolean {

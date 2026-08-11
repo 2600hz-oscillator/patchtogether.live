@@ -48,7 +48,7 @@ const loadedContexts = new WeakSet<BaseAudioContext>();
 //
 // Numerically identical to packages/dsp/src/clouds.ts (the mirror contract in
 // this file's header). They are EXPORTED because the faceplate has to state
-// them — "2.0 s of ring", "24 grains", "the grain clamps at 800 ms" are the
+// them — "2.0 s of ring", "24 grains", "the grain runs 60…1500 ms" are the
 // three facts this module's panel exists to make visible — and a second copy
 // typed into the UI is exactly the card-disagrees-with-its-def class CLAUDE.md
 // is about. $lib/ui/modules/clouds-face-model imports them from here.
@@ -56,10 +56,24 @@ export const CLOUDS_BUFFER_SECONDS = 2.0;
 export const CLOUDS_MAX_GRAINS = 24;
 /** Grain length law: `minMs · (maxMs/minMs)^size`, before the buffer clamp. */
 export const CLOUDS_GRAIN_MIN_MS = 60;
-export const CLOUDS_GRAIN_MAX_MS = 1500;
-/** `safeLen = min(lengthSamples, floor(bufLen · this))` — the clamp that makes
- *  the top 19.5 % of SIZE bit-identical to its maximum. */
-export const CLOUDS_GRAIN_CAP_FRACTION = 0.4;
+/**
+ * `safeLen = min(lengthSamples, floor(bufLen · this))` — the ceiling a grain is
+ * hard-limited to, and the physical guard POSITION's travel is carved out of
+ * (`headroom = availableHistory − safeLen`).
+ *
+ * ⚠ IT USED TO BE 0.4, AND THE LAW'S TOP USED TO BE A SEPARATE LITERAL 1500 ms.
+ * The two disagreed, and the disagreement was a DEAD ZONE: the clamp bound from
+ * SIZE 0.804744 upward, so the top 19.50 % of the dial rendered BIT-IDENTICAL
+ * output (measured on the shipping worklet — art/scenarios/clouds/size-travel.test.ts,
+ * against a `Math.floor` quantisation floor of Δsize ≈ 1e-5 everywhere else).
+ * `CLOUDS_GRAIN_MAX_MS` is now DERIVED from this fraction, so the clamp cannot
+ * contradict the law again and no part of SIZE is dead.
+ */
+export const CLOUDS_GRAIN_CAP_FRACTION = 0.75;
+/** DERIVED from the cap, never re-typed — 1500 ms, the same top the law always
+ *  declared, now actually reachable. */
+export const CLOUDS_GRAIN_MAX_MS =
+  CLOUDS_BUFFER_SECONDS * CLOUDS_GRAIN_CAP_FRACTION * 1000;
 /** Spawn rate law: `sr/maxIntervalSamples` … `sr/minIntervalSamples`, i.e.
  *  grains per second at density 0 and density 1. */
 export const CLOUDS_SPAWN_MIN_HZ = 6;
@@ -324,7 +338,7 @@ export const cloudsDef: AudioModuleDef = {
 
   docs: {
     explanation:
-      "A granular texture processor after Mutable Instruments' Clouds. It continuously records the incoming stereo audio into a short ring buffer, then sprays overlapping grains — tiny windowed snippets — out of that buffer to recombine the sound into a shimmering cloud, a smeared pad, a pitch-shifted drone, or a frozen ambient texture. POSITION picks where in the buffer the grains read from, SIZE sets each grain's length, DENSITY sets how many grains overlap, TEXTURE morphs the grain window from soft to hard, PITCH transposes the grains, and FREEZE latches the buffer so the texture keeps playing with no fresh input. BLEND crossfades the grain cloud against the dry signal. Mental model: it turns any source into a controllable swarm of micro-loops. IT IS SILENT WHEN YOU PATCH IT, and that is the module rather than a fault: the ring is empty at spawn, a grain always starts at least one grain-length behind the write head, and until the head has written that far there is nothing to read — so the wet path is bit-zero for exactly one grain length (300 ms at the shipped SIZE, 60 ms at SIZE 0, 800 ms at the top) and then runs about 12 dB below its steady level until the whole 2-second ring has been written. Full level arrives at 2.0 s plus one more grain. The same silence recurs on every FREEZE taken before anything was recorded.",
+      "A granular texture processor after Mutable Instruments' Clouds. It continuously records the incoming stereo audio into a short ring buffer, then sprays overlapping grains — tiny windowed snippets — out of that buffer to recombine the sound into a shimmering cloud, a smeared pad, a pitch-shifted drone, or a frozen ambient texture. POSITION picks where in the buffer the grains read from, SIZE sets each grain's length, DENSITY sets how many grains overlap, TEXTURE morphs the grain window from soft to hard, PITCH transposes the grains, and FREEZE latches the buffer so the texture keeps playing with no fresh input. BLEND crossfades the grain cloud against the dry signal. Mental model: it turns any source into a controllable swarm of micro-loops. IT IS SILENT WHEN YOU PATCH IT, and that is the module rather than a fault: the ring is empty at spawn, a grain always starts at least one grain-length behind the write head, and until the head has written that far there is nothing to read — so the wet path is bit-zero for exactly one grain length (300 ms at the shipped SIZE, 60 ms at SIZE 0, 1500 ms at the top) and then runs about 12 dB below its steady level until the whole 2-second ring has been written. Full level arrives at 2.0 s plus one more grain. The same silence recurs on every FREEZE taken before anything was recorded.",
     inputs: {
       in_l: 'Left channel of the stereo source continuously written into the granular ring buffer (unless FREEZE is engaged, which stops new writes).',
       in_r: 'Right channel of the stereo source written into the buffer alongside in_l. If unpatched it is normalled from in_l, so a mono source into in_l alone fills both halves of the buffer and the grain cloud comes back centred rather than hard-left.',
@@ -343,7 +357,7 @@ export const cloudsDef: AudioModuleDef = {
     },
     controls: {
       position: 'Playhead position into the recorded buffer (0..1): where grains are sampled from. Sweep it to scrub through the captured audio; with FREEZE on it scans the held snapshot.',
-      size: 'Grain length (0..1). Short grains give a fine granular stutter/buzz; long grains overlap into a smooth, time-stretched smear.',
+      size: "Grain length (0..1), mapped exponentially onto 60 ms at 0 through 1500 ms at 1. Short grains give a fine granular stutter/buzz; long grains overlap into a smooth, time-stretched smear. THE WHOLE TRAVEL IS LIVE — until #1456 a grain was capped at 800 ms while the dial still asked for 1500, so its top 19.5 % rendered bit-identical output; the ceiling is now the law's own top. Two consequences of a long grain, both real and neither obvious: the module is bit-silent for one grain length after a spawn or a clear (1.5 s at the top of this dial), and POSITION's reachable window is the ring MINUS one grain, so it shrinks from 1.94 s of travel at SIZE 0 to 0.50 s at SIZE 1.",
       pitch: 'Per-grain pitch shift in semitones (-24..+24). Sums with the V/oct PITCH input; pitch the grains up for shimmer, down for sub-octave drones.',
       density: 'How densely grains are triggered (0..1). Low density leaves audible gaps (sparse, pointillist); high density packs grains into a continuous wash.',
       texture: 'Grain-window shape macro (0..1): morphs the envelope each grain fades in/out with, from a soft rounded window (gentle, smooth) to a harder edge (grittier, more pronounced grain attacks).',
@@ -383,12 +397,17 @@ export const cloudsDef: AudioModuleDef = {
   // with ORACLE legs that re-derive the claim from `cloudsMath` so a DSP change
   // reddens a stale sentence instead of leaving the faceplate insisting on it.
   //
-  // ⚠ AND ONE THING IT REFUSES TO PAINT AS WORKING: SIZE's top 19.5 %.
-  // `safeLen = min(lengthSamples, 0.4·bufLen)` caps the grain at 800 ms, so
-  // size 0.805, 0.85, 0.9 and 1.0 render BIT-IDENTICAL output. That is worklet
-  // arithmetic — a separate DSP change, never folded into a face wave — and
-  // until it is fixed the grain readout says CLAMPED rather than pretending the
-  // last fifth of the dial does something.
+  // ⚠ IT ALSO REFUSED TO PAINT ONE CONTROL AS WORKING, AND THAT WORKED. The
+  // face shipped with a `CLAMPED` badge on SIZE's top 19.50 % — `safeLen =
+  // min(lengthSamples, 0.4·bufLen)` capped the grain at 800 ms while the dial
+  // asked for 1500, so 0.805 / 0.85 / 0.9 / 1.0 rendered BIT-IDENTICAL output —
+  // and a bit-identity oracle pinned that claim to the DSP so a fix would turn
+  // it red. #1456 fixed it (the ceiling is derived from the law now), the
+  // oracle went red as designed, and the badge is gone. What replaced it is the
+  // inverse assertion, against the SHIPPING WORKLET rather than the mirror:
+  // art/scenarios/clouds/size-travel.test.ts renders the whole top of the dial
+  // and requires every step to differ, with the OLD ceiling kept alive as the
+  // negative control so "all different" can never quietly become vacuous.
   face: {
     // 1-6 are the LANE budget (faceTierCap('full') = 6). BLEND leads because
     // this is a processor that is inaudible for its first moments and BLEND is
@@ -435,7 +454,7 @@ export const cloudsDef: AudioModuleDef = {
         label: '1 · the ring — 2 s, and it must FILL',
         hint:
           'Measured from spawn: BIT-ZERO for exactly one grain length (300 ms at the shipped SIZE, ' +
-          '60 ms at SIZE 0, 800 ms at the top), then ~12 dB down until the whole 2.0 s ring has ' +
+          '60 ms at SIZE 0, 1.5 s at the top), then ~12 dB down until the whole 2.0 s ring has ' +
           'been written, reaching full level one grain after that. FREEZE latches the buffer so ' +
           'the texture keeps playing with no input — and freezing BEFORE anything has been ' +
           'recorded holds it at digital silence.',
@@ -448,9 +467,9 @@ export const cloudsDef: AudioModuleDef = {
           'DENSITY is the spawn rate (6/s to 1200/s) and SIZE the grain length, and together they ' +
           'fill a pool of 24: at the shipped SIZE the pool is FULL from DENSITY 0.49, so the top ' +
           'half of that dial spawns grains that are DROPPED — it changes the sound completely ' +
-          '(max|Δ| 0.73–0.96) and the level by 0.07 dB. SIZE is loudest at its own default and ' +
-          '5 dB quieter at both ends, and its top 19.5 % is bit-identical to maximum. TEXTURE’s ' +
-          'upper half is worth 0.01 dB.',
+          '(max|Δ| 0.73–0.96) and the level by 0.07 dB. SIZE runs 60 ms to 1500 ms and every step ' +
+          'of it is live — its top 19.5 % was bit-identical to maximum until #1456 raised the ' +
+          'grain ceiling to meet the law. TEXTURE’s upper half is worth 0.01 dB.',
         controls: ['density', 'size', 'texture'],
       },
       {
@@ -496,15 +515,17 @@ export const cloudsDef: AudioModuleDef = {
       // something that genuinely changes the answer:
       //
       //   reads  — a `paramId: 'position'` readout prints 0.50 at every SIZE,
-      //            while the reachable span shrinks from 1.94 s to 1.20 s and
-      //            the read point moves 0.97 s → 1.40 s. It is the number that
+      //            while the reachable span shrinks from 1.94 s to 0.50 s and
+      //            the read point moves 1.03 s → 1.75 s. It is the number that
       //            makes the module's most invisible control legible at all.
+      //            (That span is WIDER since #1456, because POSITION's window is
+      //            the ring minus one grain and the grain now reaches 1.5 s —
+      //            the same readout, one more thing it is right about.)
       //   grain  — a `paramId: 'size'` readout prints 0.50 for a 300 ms grain,
-      //            says nothing about the 800 ms CEILING that makes the top
-      //            fifth of the dial bit-identical, and cannot express that a
-      //            transposed grain covers a DIFFERENT amount of tape than it
-      //            sounds for (the two clocks differ by 2^(pitch/12), and the
-      //            value names its frame for exactly that reason).
+      //            says nothing about the 60…1500 ms law behind it, and cannot
+      //            express that a transposed grain covers a DIFFERENT amount of
+      //            tape than it sounds for (the two clocks differ by
+      //            2^(pitch/12), and the value names its frame for that reason).
       //   pitch  — a `paramId: 'pitch'` readout prints `0.50 st` for a detune
       //            that costs the FULL ~10.6 dB, because coherence is a
       //            threshold and a semitone readback is a slope.

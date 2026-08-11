@@ -16,14 +16,14 @@
 //   • 'placeholder' — an UN-MIGRATED module under the shell preview: a uniform
 //                     styled <ModuleShellPlaceholder> in the lane + its verbatim
 //                     legacy card reachable in the dock full-view.
-//   • 'legacy'      — the module's own *Card.svelte, verbatim (dawless always;
-//                     workflow when the preview is OFF, or for the snowflakes
-//                     below). This is the CURRENT behaviour, byte-for-byte.
+//   • 'legacy'      — the module's own *Card.svelte, verbatim: what
+//                     `?shell=legacy` selects, and what the snowflakes below
+//                     get unconditionally.
 //
-// This is a PURE render-time derivation: it reads only the mode, the preview
-// flag, whether the user has docked the node, and whether the type is MIGRATED
-// (the caller passes `migrated(n.type)` from ./strict-faces — injected as a
-// boolean so this stays registry-free + trivially testable). It is NEVER
+// This is a PURE render-time derivation: it reads only the faces flag, whether
+// the user has docked the node, and whether the type is MIGRATED (the caller
+// passes `migrated(n.type)` from ./strict-faces — injected as a boolean so this
+// stays registry-free + trivially testable). It is NEVER
 // persisted to the Y.Doc / dockStore entries (the un-migrated auto-fallback is
 // transient view furniture, exactly like the pinned drawer — persisting it would
 // storm the CRDT / desync peers; see the cv-modulation-live-store-write +
@@ -77,10 +77,11 @@ export const NON_SHELL_LANE_TYPES: ReadonlySet<string> = new Set<string>([
 
 /** Inputs to the pure lane-render decision. */
 export interface LaneRenderInput {
-  /** True in workflow mode (dawless always renders the legacy card). */
-  workflowMode: boolean;
-  /** The `?shell=1` opt-in preview flag (default off ⇒ zero behaviour change). */
-  shellPreview: boolean;
+  /** Render FACEPLATES in the lane — the default. False only under the
+   *  `?shell=legacy` escape hatch, which renders the verbatim legacy cards
+   *  inside the same shell. (This was `shellPreview`, an opt-in `?shell=1`
+   *  flag, until faceplates became the product.) */
+  shellFaces: boolean;
   /** The user has an explicit persisted dock ENTRY for this node. */
   userDocked: boolean;
   /** The module type id (n.type). */
@@ -96,16 +97,16 @@ export interface LaneRenderInput {
  * The core bridge decision. Order matters:
  *   1. an explicit user dock ALWAYS wins → 'stub' (the P2.5a contract is
  *      unchanged; a user who docked a module still sees the stub + rail card,
- *      preview on or off);
- *   2. dawless, preview-off, or a non-card/snowflake type → 'legacy' (the
- *      exact current render — this is why preview-off is a perfect no-op);
- *   3. otherwise the workflow shell: 'shell' for a migrated type, else
+ *      faces on or off);
+ *   2. `?shell=legacy`, or a non-card/snowflake type → 'legacy' (the verbatim
+ *      module card);
+ *   3. otherwise the faceplate: 'shell' for a migrated type, else
  *      'placeholder'.
  * PURE — same inputs, same output, no side effects.
  */
 export function laneRenderKind(i: LaneRenderInput): LaneRenderKind {
   if (i.userDocked) return 'stub';
-  if (!i.workflowMode || !i.shellPreview || !i.hasCard) return 'legacy';
+  if (!i.shellFaces || !i.hasCard) return 'legacy';
   return i.migrated ? 'shell' : 'placeholder';
 }
 

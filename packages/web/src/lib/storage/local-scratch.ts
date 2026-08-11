@@ -17,28 +17,42 @@
 // reload seeds it back in milliseconds — the same warm-refresh behaviour
 // `/r/[id]` already has, minus the relay.
 //
-// Keyed BY MODE (dawless | workflow) so the two scratch entry points don't
-// cross-load each other's patch (the workflow shell auto-spawns its pinned
-// trio; the dawless canvas must stay a blank sandbox). The id is a per-device
-// UUID rather than a bare 'local-scratch' constant so its IndexedDB DB name
-// can never collide with the real rack id space, and a future "reset scratch"
-// affordance can just mint a fresh id.
+// ONE id, because there is ONE rack shell. This used to be keyed by rack MODE
+// ('dawless' | 'workflow') so the two scratch entry points could not cross-load
+// each other's patch. Dawless is gone, so the key is unkeyed again — and the
+// two mode-suffixed keys a returning browser may still hold are PRUNED rather
+// than adopted (see pruneLegacyModeKeys), which is the client-side half of the
+// clean reset this migration performs on the server.
+//
+// The id is a per-device UUID rather than a bare 'local-scratch' constant so
+// its IndexedDB DB name can never collide with the real rack id space, and the
+// "reset scratch" affordance (File → New rack) can just mint a fresh one.
 //
 // Persisted in localStorage (must survive a refresh — sessionStorage would
-// not) under `pt:local-scratch-id:<mode>`. Graceful degrade: a throwing /
-// private-mode localStorage falls back to a per-mount EPHEMERAL id (no crash,
-// just no cross-refresh persistence in that hostile environment) — the same
-// posture as presence.ts's getOrCreateAnonTabId.
+// not). Graceful degrade: a throwing / private-mode localStorage falls back to
+// a per-mount EPHEMERAL id (no crash, just no cross-refresh persistence in that
+// hostile environment) — the same posture as presence.ts's getOrCreateAnonTabId.
 
-import type { RackMode } from '$lib/graph/rack-mode';
+/** localStorage key holding this device's scratch replica id. */
+const LOCAL_SCRATCH_KEY = 'pt:local-scratch-id';
 
-/** localStorage key prefix; one entry per rack mode. */
-const LOCAL_SCRATCH_KEY_PREFIX = 'pt:local-scratch-id:';
-
-/** localStorage key holding the mode of the MOST RECENTLY opened scratch rack.
- *  Powers the landing "Return to last rack" card (which mode to reopen). Kept
- *  separate from the per-mode id keys so a single read tells us "last kind". */
-const LAST_SCRATCH_MODE_KEY = 'pt:last-scratch-mode';
+/**
+ * Keys written by the two-mode era. A browser that last ran the dawless build
+ * still holds one or both of these plus `pt:last-scratch-mode`.
+ *
+ * They are DELETED, never read: adopting the old workflow id would resurrect a
+ * patch authored under a shell that no longer exists (and adopting the dawless
+ * one would load a patch with no pinned singletons into a shell that requires
+ * them — exactly the cross-mode load the deleted patch-mode guard used to
+ * refuse). The owner authorised destroying saved racks for a clean reset; this
+ * is that reset on the client. The orphaned IndexedDB replicas are left in
+ * place, the same way File → New rack has always orphaned the previous one.
+ */
+const LEGACY_MODE_KEYS = [
+  'pt:local-scratch-id:dawless',
+  'pt:local-scratch-id:workflow',
+  'pt:last-scratch-mode',
+] as const;
 
 /** Matches presence.ts's helper (kept local — it isn't exported there): a
  *  UUID when the platform offers one, else a short random fallback. */
@@ -48,128 +62,121 @@ function cryptoRandomId(): string {
   return Math.random().toString(36).slice(2, 14);
 }
 
-/** localStorage key for a mode's scratch id. Exported for tests + tooling. */
-export function localScratchStorageKey(mode: RackMode): string {
-  return `${LOCAL_SCRATCH_KEY_PREFIX}${mode}`;
-}
-
-/**
- * Get (or lazily create) the STABLE local-scratch replica id for `mode`.
- *
- *   → 'local-scratch-dawless-<uuid>' | 'local-scratch-workflow-<uuid>'
- *
- * Stable across calls for the same mode (persisted in localStorage), distinct
- * per mode. Falls back to a fresh ephemeral id — never throws — when
- * localStorage is unavailable or throws (private mode / sandboxed contexts):
- * persistence is silently skipped in that environment, the canvas just runs
- * refresh-volatile exactly as it did before this fix.
- */
-export function getOrCreateLocalScratchId(mode: RackMode): string {
-  const key = localScratchStorageKey(mode);
+/** The localStorage handle, or null when unavailable/throwing (private mode,
+ *  sandboxed iframes, SSR). Every accessor below funnels through this so a
+ *  hostile environment degrades identically everywhere. */
+function storage(): Storage | null {
   try {
-    const ls = (globalThis as unknown as { localStorage?: Storage }).localStorage;
-    if (ls) {
-      const existing = ls.getItem(key);
-      if (existing) return existing;
-      const fresh = `local-scratch-${mode}-${cryptoRandomId()}`;
-      ls.setItem(key, fresh);
-      return fresh;
-    }
-  } catch {
-    /* localStorage may throw in private mode / sandboxed iframes; fall through
-       to an ephemeral id so the page never crashes. */
-  }
-  return `local-scratch-${mode}-${cryptoRandomId()}`;
-}
-
-/**
- * Read the stored scratch id for `mode` WITHOUT minting one when absent — the
- * read-only counterpart to getOrCreateLocalScratchId. Returns null when no id
- * has been persisted yet (the user has never opened that mode's scratch) or
- * localStorage is unavailable. Used by "Return to last rack" to test for a
- * prior rack without side-effecting a brand-new id into existence.
- */
-export function peekLocalScratchId(mode: RackMode): string | null {
-  try {
-    const ls = (globalThis as unknown as { localStorage?: Storage }).localStorage;
-    return ls ? ls.getItem(localScratchStorageKey(mode)) : null;
+    return (globalThis as unknown as { localStorage?: Storage }).localStorage ?? null;
   } catch {
     return null;
   }
 }
 
 /**
- * Mint a FRESH scratch id for `mode` and persist it, REPLACING any existing
- * one. This is the "File → New rack" (logged-out) primitive: a new id ⇒ a new
- * replica DB name ⇒ the reloaded scratch canvas rehydrates an EMPTY doc instead
- * of the old one (the previous id's IndexedDB rows are simply orphaned — the
- * documented "reset scratch" affordance this file's header anticipated). Falls
- * back to a returned-but-unpersisted ephemeral id when localStorage throws.
+ * Remove every key the two-mode era wrote. Idempotent, best-effort, and called
+ * from each entry point below so a returning browser is cleaned on its first
+ * touch of the scratch canvas OR of the landing card — whichever it reaches
+ * first. Exported for the test that feeds the old shape in.
  */
-export function resetLocalScratchId(mode: RackMode): string {
-  const fresh = `local-scratch-${mode}-${cryptoRandomId()}`;
+export function pruneLegacyModeKeys(): void {
+  const ls = storage();
+  if (!ls) return;
+  for (const k of LEGACY_MODE_KEYS) {
+    try {
+      ls.removeItem(k);
+    } catch {
+      /* a throwing removeItem must not take the canvas down with it */
+    }
+  }
+}
+
+/** localStorage key for the scratch id. Exported for tests + tooling. */
+export function localScratchStorageKey(): string {
+  return LOCAL_SCRATCH_KEY;
+}
+
+/**
+ * Get (or lazily create) the STABLE local-scratch replica id.
+ *
+ *   → 'local-scratch-<uuid>'
+ *
+ * Stable across calls (persisted in localStorage). Falls back to a fresh
+ * ephemeral id — never throws — when localStorage is unavailable or throws
+ * (private mode / sandboxed contexts): persistence is silently skipped in that
+ * environment, the canvas just runs refresh-volatile.
+ */
+export function getOrCreateLocalScratchId(): string {
+  pruneLegacyModeKeys();
+  const ls = storage();
+  if (ls) {
+    try {
+      const existing = ls.getItem(LOCAL_SCRATCH_KEY);
+      if (existing) return existing;
+      const fresh = `local-scratch-${cryptoRandomId()}`;
+      ls.setItem(LOCAL_SCRATCH_KEY, fresh);
+      return fresh;
+    } catch {
+      /* fall through to an ephemeral id so the page never crashes */
+    }
+  }
+  return `local-scratch-${cryptoRandomId()}`;
+}
+
+/**
+ * Read the stored scratch id WITHOUT minting one when absent — the read-only
+ * counterpart to getOrCreateLocalScratchId. Returns null when no id has been
+ * persisted yet (the user has never opened the scratch canvas) or localStorage
+ * is unavailable. Used by "Return to last rack" to test for a prior rack
+ * without side-effecting a brand-new id into existence.
+ */
+export function peekLocalScratchId(): string | null {
+  pruneLegacyModeKeys();
   try {
-    (globalThis as unknown as { localStorage?: Storage }).localStorage?.setItem(
-      localScratchStorageKey(mode),
-      fresh,
-    );
+    return storage()?.getItem(LOCAL_SCRATCH_KEY) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Mint a FRESH scratch id and persist it, REPLACING any existing one. This is
+ * the "File → New rack" (logged-out) primitive: a new id ⇒ a new replica DB
+ * name ⇒ the reloaded scratch canvas rehydrates an EMPTY doc instead of the old
+ * one (the previous id's IndexedDB rows are simply orphaned). Falls back to a
+ * returned-but-unpersisted ephemeral id when localStorage throws.
+ */
+export function resetLocalScratchId(): string {
+  pruneLegacyModeKeys();
+  const fresh = `local-scratch-${cryptoRandomId()}`;
+  try {
+    storage()?.setItem(LOCAL_SCRATCH_KEY, fresh);
   } catch {
     /* private mode / sandboxed → ephemeral, exactly like getOrCreate. */
   }
   return fresh;
 }
 
-/**
- * Record `mode` as the most-recently-opened scratch kind (called when the
- * scratch canvas mounts). Best-effort — a throwing/absent localStorage is a
- * silent no-op (the "Return to last rack" card just won't offer that session).
- */
-export function recordLastScratchMode(mode: RackMode): void {
-  try {
-    (globalThis as unknown as { localStorage?: Storage }).localStorage?.setItem(
-      LAST_SCRATCH_MODE_KEY,
-      mode,
-    );
-  } catch {
-    /* ignore — the card degrades to hidden, never crashes. */
-  }
-}
-
-/** Read the most-recently-opened scratch mode, or null when none/garbage. */
-export function readLastScratchMode(): RackMode | null {
-  try {
-    const v = (globalThis as unknown as { localStorage?: Storage }).localStorage?.getItem(
-      LAST_SCRATCH_MODE_KEY,
-    );
-    return v === 'workflow' || v === 'dawless' ? v : null;
-  } catch {
-    return null;
-  }
-}
-
 /** A prior scratch rack the landing can offer to reopen. */
 export interface LastScratchRack {
-  /** The rack kind (drives which scratch route to reopen). */
-  mode: RackMode;
   /** The persisted per-device scratch id (⇒ the replica DB name). */
   id: string;
-  /** The route to navigate to — preserves `?mode=` for workflow. */
+  /** The route to navigate to. */
   href: string;
 }
 
 /**
  * Resolve the last scratch rack from localStorage ALONE (sync, no IndexedDB):
- * the recorded last mode plus a persisted id for that mode. Returns null when
+ * a persisted scratch id is itself the "the user has opened a rack before"
+ * signal, because it is minted on the scratch canvas's mount. Returns null when
  * there is no prior session. Callers that need the stricter "actually persisted
- * in IndexedDB" guarantee additionally probe `replicaDbName(id)` — this is the
- * cheap first gate that also yields the id + reopen href.
+ * in IndexedDB" guarantee additionally probe `scratchReplicaDbName(id)` — this
+ * is the cheap first gate that also yields the id + reopen href.
  */
 export function readLastScratchRack(): LastScratchRack | null {
-  const mode = readLastScratchMode();
-  if (!mode) return null;
-  const id = peekLocalScratchId(mode);
+  const id = peekLocalScratchId();
   if (!id) return null;
-  return { mode, id, href: mode === 'workflow' ? '/rack?mode=workflow' : '/rack' };
+  return { id, href: '/rack' };
 }
 
 /** Replica DB-name prefix — MIRRORS lib/multiplayer/local-replica.ts

@@ -162,6 +162,45 @@
 // the one worklet constant the model has to mirror, which is anchored by
 // measuring the shipping DSP rather than by a comment.
 
+// FACE BATCH 3 · cube (2026-08-10) — the biggest face in the repo (26 params
+// + 2 panels = 28 cells) and the first one whose HERO IS THE MODULE'S EXISTING
+// RENDERER rather than a picture drawn for the faceplate.
+//
+// cube is "a solid and a cut": three wavetables stacked into a 3-D density
+// field, read by one movable plane whose 256 samples ARE the waveform. The
+// spec that preceded this face priced a cheaper 2-D hero; the owner required
+// full visualisation parity, and the parity is not cosmetic — the volume
+// render is the only surface anywhere that shows the cut INSIDE the solid. So
+// the renderer moved out of CubeCard.svelte into `cube/CubeVizSurface.svelte`
+// and BOTH mounts use it. That moved the WebGL attest basis SET (the card out,
+// the surface in) and needs a real-GPU re-attest.
+//
+// ⚠ ITS RANKING IS THE INVERSE OF ITS OWN DEF, and that is the argument. The
+// def and the legacy card both lead with TUNE / FINE / MORPH / CONNECT and put
+// the three rotations 12th-14th of 15 — an implementation order, since the
+// field is computed before it is cut. Measured, the cut owns the timbre by 5×
+// (`slice_ry` 0.885 rmsΔ over its travel against `morph_fc`'s 0.178), so the
+// SLICE band is first and the SOLID second.
+//
+// ⚠ AND THE FACE'S BEST WORK IS ONE READOUT. `slice_y` is a real control that
+// is inert in EXACTLY ONE STATE: the state the module spawns in. The ray march
+// integrates over a window centred on the ray origin, so sliding the plane
+// along its own normal moves the window and its contents together, and at
+// spawn the normal IS the axis Y translates along (0.115 flat, 0.759 at ROT X
+// 0.8). No surface has ever said so, and a knob readback structurally cannot —
+// it prints 0.50 in both. `cube-y-live` prints `asleep — plane is flat` or
+// `live`, and the `tilted` preset is one click that changes it.
+//
+// ⚠ THE PRE-#1448 DEFECT LIST IS PARTLY STALE AND THIS FACE DOES NOT REPEAT
+// IT. Re-measured on the shipped default tables: CRUSH at its maximum is
+// `acRms` 0.5528 (it used to be exactly 0.000000, a full-scale DC step), SPACE
+// DIFFUSE at 1.0 is 0.2450 (likewise), and the two-table pigeonhole that left
+// CONNECT bit-exactly dead at one end of MORPH is gone with the third factory
+// table. A face that documented a repaired control as broken would be worse
+// than one that said nothing, so every number this face prints was re-derived
+// against the current DSP and is re-derived again on every run by
+// cube-face-model.test.ts.
+
 // FACE BATCH 4 · clouds (2026-08-10) — the granular TEXTURE processor, and the
 // entry whose argument is that a face can be worth building for a module with
 // NOTHING WRONG WITH IT.
@@ -191,12 +230,16 @@
 //   * PITCH IS A ~10.6 dB FADER AT ZERO — a THRESHOLD, not a slope: −5.47 dB at
 //     0 against −17.60 at ±0.5 st.
 //
-// ⚠ AND ONE THING THE FACE REFUSES TO PAINT AS WORKING, found in re-measurement
-// and NOT in the spec: SIZE's top 19.5 % is BIT-IDENTICAL to its own maximum
-// (`safeLen = min(lengthSamples, 0.4·bufLen)` caps the grain at 800 ms, so
-// 0.805 / 0.85 / 0.9 / 1.0 render the same samples). Worklet arithmetic, so it
-// is a separate DSP change — never folded into a face wave — and until then the
-// grain readout says CLAMPED.
+// ⚠ AND ONE THING THE FACE REFUSED TO PAINT AS WORKING — WHICH IS NOW FIXED,
+// and the sequence is the argument for the whole discipline. Re-measurement
+// found (the spec had not) that SIZE's top 19.50 % rendered BIT-IDENTICAL
+// output: `safeLen = min(lengthSamples, 0.4·bufLen)` capped the grain at 800 ms
+// while the dial's law asked for 1500. The face shipped a `CLAMPED` badge there
+// rather than a working-looking dial, plus a bit-identity ORACLE pinning the
+// defect to the DSP. #1456 raised the ceiling to the law's own top, the oracle
+// went red exactly as it promised, and both badge and oracle are gone —
+// replaced by the inverse claim measured on the SHIPPING WORKLET
+// (art/scenarios/clouds/size-travel.test.ts).
 //
 // ⚠ ITS HERO PANEL HAS NO CLOCK, and that is the design rather than a
 // limitation. A live write head would need the worklet's `fillLevel`, which is
@@ -269,6 +312,89 @@
 // primitive, so the dock faceplate shows LEVEL as a knob where the card draws a
 // fader — platform-wide behaviour (clouds, mixer and vca all have fader cards),
 // flagged rather than hidden.
+
+// FACE BATCH 5 · cofefve (2026-08-10) — the analog delay, PROMOTED from having
+// no face at all, and the entry whose argument is that A FACEPLATE MUST BE ABLE
+// TO SAY THAT A CONTROL IS WAITING ON ANOTHER CONTROL.
+//
+// FIVE of its twenty-three params are BIT-EXACTLY inaudible at the factory
+// default and two more are within a percent of it — SEVEN asleep in all,
+// because each is the dependent half of an ENABLER PAIR whose enabler ships
+// closed. Nothing on the legacy card says so, so a new user turns a third of
+// the panel and hears nothing. That is a legibility defect, not a DSP one: four
+// of the five pairs are the ordinary correct convention (a depth at zero
+// silences its rate, a feature off silences its shaping controls), and the
+// face's job is to make the dependency VISIBLE — the ranking puts every enabler
+// above its dependents, a five-line sidebar block names each pair's live state,
+// four presets open all five enablers in one click each, and the hero counts
+// what is currently asleep.
+//
+// ⚠ AND BAND HINTS DO NOT PAINT AT REST EITHER — which is worth recording,
+// because the face was designed on the assumption that they do. `face.hint` and
+// `face.title` being annotation-gated was known; `bandHeaderPlan` blanks EVERY
+// band hint under the same flag, by the same owner directive. The declaration
+// is present, module-face-lint's reachability clause is green, and the rendered
+// dock shows six bare band labels. Only capturing the panel and looking at it
+// showed that. So this face's argument rests entirely on the three surfaces
+// that DO paint unconditionally — the hero count, the hero picture's captions
+// and greyed WOW ripple, and the five-line sidebar block — and the band hints
+// carry the MECHANISM as a fourth tier for annotation mode.
+//
+// ⚠ THE SAME LOOK-AT-IT PASS CAUGHT A SHARED-PRIMITIVE DEFECT, which this face
+// deliberately does NOT fix. Three of the newly declared `options` rosters
+// ellipsized in their `.seg` buttons (`SYS…`, `PING-P…`, `CIRCUL…`, `STATE…`)
+// while `faces-parity` stayed green, because it reads `textContent` — the DOM
+// says `Ping-Pong` while the panel paints `PING-P…`. The cause is measured on
+// cofefve's def: `.seg` is `flex: 1`, i.e. flex-BASIS 0, so buttons split the
+// group's max-content width EQUALLY and every caption gets exactly the roster
+// MEAN — zero margin by construction, so the widest caption of any uneven
+// roster always clips. It is ALREADY LIVE on cloudseed `pre`/`post`,
+// warrensspectrum `LIVE`/`FREEZE` and tidyVco `-1`/`0`/`+1`. The one-line fix
+// (`flex: 1 1 auto`) repaints those three modules' dock baselines, so it wants
+// its own PR and an owner preview. Two caption workarounds were tried and
+// MEASURED, and both failed: shortening `System` to `SYS` NARROWED the group
+// and clipped `MIDI` harder, and equalising by character count still clipped by
+// 1–3 px because equal characters are not equal pixels. Hunting a caption set
+// that measures identically is calibrating against one renderer — the thing
+// CLAUDE.md's frame-count rule exists to forbid — so the full names stay.
+//
+// ⚠ THE SPEC IT WAS BUILT FROM WAS WRONG ABOUT PAN, and the error was in the
+// INSTRUMENT rather than the analysis — which is why it is recorded here.
+// Measured with the SAME signal in both inputs, PAN MODE moves nothing at any
+// setting of anything except PAN, from which "PAN is its enabler" follows and
+// is false. PING-PONG swaps the two channels' FEEDBACK, and a swap of two equal
+// things is the identity, so a probe feeding L and R the same waveform is
+// structurally blind to the one mode that does not need PAN at all. Feed them
+// different waveforms, or skew them with STEREO, and PING-PONG wakes at PAN 0
+// (measured 2.31e-1 / 2.84e-1 against a bit-exact 0.00e+0 at pan alone). PAN
+// MODE therefore has TWO enablers with different jurisdictions, both ranked
+// above it, and the `ping-pong` preset opens STEREO and leaves PAN at 0 so the
+// corrected fact is the one a click teaches.
+//
+// ⚠ TWO DEFECTS FIXED INLINE, both pure def/card. `syncPeriod` was declared as
+// a user PARAM while being host-written 62 times a second by the factory's own
+// `setInterval` — a control that cannot hold a value, and one that a COMPLETE
+// face would have been obliged to paint. It is off the control surface; the
+// worklet still declares it and the bridge still writes it, so no audio and no
+// wiring changed. And `CofefveCard.svelte` re-typed 34 literal ranges the def
+// already declares — the most of any card in its batch — so it is now bound
+// through `paramSpec` and enrolled in RANGE_BOUND_CARDS + MAPPING_BOUND_CARDS,
+// which is what makes the divergence visible to a gate at all.
+//
+// ⚠ ONE DEFECT DELIBERATELY NOT FIXED: DRIVE GAIN ships at 0.1 of 10, which is
+// neither the DSP's own exact bypass (`driveGain <= 0` is an early return) nor
+// an audible drive — a sliver of saturation at 1 % of the control's travel that
+// leaves DRIVE MIX and DRIVE ITERATIONS with almost no authority. Whether that
+// default is intended is an owner question, and changing it changes the
+// module's shipped sound and re-pins its ART baseline, so it is DOCUMENTED (on
+// the param, in the band hint, in the sidebar) rather than changed in a face PR.
+//
+// Every number this face prints is DERIVED and negative-controlled in BOTH
+// directions in cofefve-face-model.test.ts, and the claims that are about audio
+// are re-derived from the REAL worklet processor class on every run — so a DSP
+// fix turns a stale claim RED instead of leaving the faceplate insisting on a
+// repaired defect.
+
 export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // P1 batch 1 — first 6 module faces
   'adsr',
@@ -304,10 +430,14 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   'macrooscillator',
   // FACE BATCH 3 · the DTMF dialer (2026-08-09) — see the header note above.
   'bluebox',
+  // FACE BATCH 3 · the 3-D wavetable navigator (2026-08-10) — see below.
+  'cube',
   // FACE BATCH 4 · the granular texture processor (2026-08-10) — see above.
   'clouds',
   // FACE BATCH 4 · the three-tap noise source (2026-08-10) — see above.
   'noise',
+  // FACE BATCH 5 · the analog delay (2026-08-10) — see the header note above.
+  'cofefve',
 ]);
 
 /**

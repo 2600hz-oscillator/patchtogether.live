@@ -16,15 +16,13 @@
 // relationship IS the assertion. SvelteFlow floating chrome is hidden and the
 // footer's live status text is masked.
 //
-// darwin-first: the darwin baselines are captured locally; the linux pairs are
-// EXEMPT_BASELINE_PAIRS-deferred until a vrt-update.yml dispatch lands them
-// (vrt-meta's linux-deficit ratchet accounts for the pairs).
+// Baselines are authored by LINUX CI — one set, no {platform} segment (see
+// vrt.config.ts). `task vrt:commit` dispatches the capture; a local macOS run
+// is a smoke test, not a capture.
 
 import { test, expect, type Page } from '@playwright/test';
-import { EXEMPT_BASELINE_PAIRS } from './vrt-exemptions';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
 
-const VRT_PLATFORM = process.platform === 'darwin' ? 'darwin' : 'linux';
 test.describe.configure({ mode: 'default' });
 
 /** The scenes: one pinned baseline per zoom. `faceTier` is the settled
@@ -76,16 +74,12 @@ async function waitForHooks(page: Page): Promise<void> {
 test.describe('VRT: ?shell=1 rack holds position vs the lane grid at fixed zooms', () => {
   for (const { id, zoom, faceTier } of SCENES) {
     test(`${id}: the framed rack region matches baseline at zoom ${zoom}`, async ({ page }) => {
-      test.skip(
-        EXEMPT_BASELINE_PAIRS.has(`${VRT_PLATFORM}/${id}`),
-        `${id} on ${VRT_PLATFORM}: baseline pending (see EXEMPT_BASELINE_PAIRS)`,
-      );
 
       const errors: string[] = [];
       page.on('pageerror', (e) => errors.push(e.message));
 
       await pinVrtFonts(page);
-      await page.goto('/rack?mode=workflow&shell=1');
+      await page.goto('/rack');
       await page.waitForLoadState('networkidle');
       await awaitVrtFonts(page);
       await waitForHooks(page);

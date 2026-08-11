@@ -17,18 +17,58 @@
 // module-docs-lint's `controlFamilies` → card-testid grep, which exists for
 // this same divergence class.
 //
-// RATCHET, not a sweep: 144 of the ~150 cards still re-type their ranges, so
-// this set names the cards that have been converted and only ever GROWS. Bring
-// a card in when you touch it (boy-scout), by routing its range/curve/default
-// props through the def — `paramSpec(def, id)` in card-kit, or the card's own
+// NOT A SWEEP: 133 of the 215 card sources still re-type at least one range
+// number, so this set names the cards that have been converted. Bring a card in
+// when you touch it (boy-scout), by routing its range/curve/default props
+// through the def — `paramSpec(def, id)` in card-kit, or the card's own
 // `pmin/pmax/pdef` helpers.
+//
+// ⚠ STATED SCOPE, MEASURED 2026-08-10. This gate reads 13 of 215 card sources.
+// The other 202 are NOT checked for def-binding at all. This paragraph is PROSE,
+// not an assertion — the population is deliberately no longer counted anywhere
+// (see the note on the floors below), so treat the figures as of their date and
+// re-measure rather than trusting them.
+//
+// ⚠ THE TWO RATCHET FLOORS ARE GONE (2026-08-10). `RANGE_BOUND_FLOOR` and
+// `MAPPING_BOUND_FLOOR` were hand-typed copies of `RANGE_BOUND_CARDS.length` /
+// `MAPPING_BOUND_CARDS.length`, and they auto-merged WRONG in FIVE separate
+// face merges — a full card of silent slack each time.
+//
+//   The fifth is the one that settles the argument, so it is recorded here
+//   rather than left in the deleted block's history. cube and main BOTH read
+//   `12 / 10` — cube's count correct for cube+clouds, main's correct for
+//   clouds+cofefve — and because the two literals were IDENTICAL AS TEXT, git
+//   presented them as already resolved. No conflict, no warning, and the true
+//   union was THIRTEEN and ELEVEN.
+//
+//   That is the pure form: the previous four surfaced only because an adjacent
+//   COMMENT happened to differ, which is luck, not a mechanism. And in the
+//   fourth, clouds and cofefve had EACH counted correctly for their own tree
+//   and each written `11 / 9` — two authors both obeying the rule, still
+//   producing a wrong merged value. A number that is right when written and
+//   wrong when merged, through nobody's error, cannot be fixed by discipline.
+//
+// They are replaced by an ARTIFACT ANCHOR
+// ('every def-bound card is enrolled', below) that derives the same
+// only-grows protection from the card sources themselves, so there is no
+// literal for a merge to get right or wrong.
+//   WHAT WAS LOST, precisely: a card can now be un-bound (re-type its ranges)
+//   and dropped from these lists in one commit without a number going red. The
+//   anchor catches the drop-only half — a card that still binds via paramSpec
+//   and is not listed is RED — but not the deliberate regression. That is the
+//   pre-authorised coverage loss of the kill-ratchets PR, recorded here rather
+//   than in a commit message.
 
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { adsrDef } from '$lib/audio/modules/adsr';
 import { backdraftDef } from '$lib/video/modules/backdraft';
+import { chromaconsoleDef } from '$lib/audio/modules/chromaconsole';
+import { cubeDef } from '$lib/audio/modules/cube';
 import { cloudsDef } from '$lib/audio/modules/clouds';
+import { cofefveDelayDef } from '$lib/audio/modules/cofefve';
 import { delayDef } from '$lib/audio/modules/delay';
 import { macrooscillatorDef } from '$lib/audio/modules/macrooscillator';
 import { noiseDef } from '$lib/audio/modules/noise';
@@ -108,6 +148,18 @@ import type { ParamDef } from '$lib/graph/types';
  *    `STRICT_VRT_MODULES`, i.e. the required `vrt-strict` gate on both
  *    platforms, so that vocabulary fix gets its own PR instead of riding a face.
  *    The clause below keeps the unbound half honest in the meantime.
+ *  - CubeCard: converted with the cube face (2026-08-10), range AND mapping in
+ *    one step. It was HALF bound already, and the half it was missing is the
+ *    instructive one: it resolved `min`/`max`/`defaultValue` through local
+ *    `minFor()`/`maxFor()`/`defaultFor()` helpers that read the def — genuinely
+ *    correct — and then re-typed `label`, `units` and `curve` beside them in
+ *    three private arrays (`KNOBS`, `VIEW_KNOBS`, `ADSR_KNOBS`), including a
+ *    `curve={k.pid === 'view_zoom' ? 'log' : 'linear'}` TERNARY reproducing the
+ *    def's own curve assignment as a card-side rule. All 23 controls agreed, so
+ *    nothing was broken — but "the ranges come from the def, the mapping comes
+ *    from a ternary" is a card one def edit away from disagreeing with itself,
+ *    with no gate able to see it. The three arrays are now id lists resolved
+ *    through `paramSpec`.
  *  - CloudsCard: converted with the clouds face promotion (2026-08-10; binds
  *    via paramSpec). Range AND mapping bound — the card's six faders re-typed
  *    30 numbers plus six `curve`s and one `units`, all of which AGREED, and it
@@ -123,11 +175,30 @@ import type { ParamDef } from '$lib/graph/types';
  *    `curve`) that its own def already declares, on the same screen as a line
  *    that correctly read `noiseDef.params[0]!.defaultValue`. Half the card was
  *    already bound; the divergence hazard lived entirely in the other half.
+ *  - CofefveCard: converted with the cofefve face promotion (2026-08-10), and
+ *    the largest re-typing this set has absorbed — 34 literal range props over
+ *    19 controls, including a `curve="log"` on a `0.001..2 s` TIME knob where a
+ *    mistyped `linear` would have moved the dial's midpoint by three orders of
+ *    magnitude. All 34 AGREED with the def; the point is that nothing could
+ *    have told you if they had not. Its `driveIterations` slider is a NATIVE
+ *    `<input type=range>`, whose `min="1" max="16"` STRING attributes the
+ *    `min={…}` grep is structurally unable to see — bound anyway, because a
+ *    gate's blind spot is not a licence to leave a second copy of a number.
+ *  - ChromaconsoleCard: NOT converted — found ALREADY BOUND and simply never
+ *    enrolled (2026-08-10). It reads every slot bound off
+ *    `paramSpec(chromaconsoleDef, slotId)` and re-types nothing, so it has been
+ *    passing all three clauses for free while sitting outside the set that
+ *    certifies them. That gap is exactly what the artifact anchor below now
+ *    forbids: a card the SOURCE says is def-bound must be enrolled, so
+ *    "converted but unlisted" cannot happen again and delisting one is RED.
  */
 const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }>> = {
   'AdsrCard.svelte': adsrDef,
   'BackdraftCard.svelte': backdraftDef,
+  'ChromaconsoleCard.svelte': chromaconsoleDef,
+  'CubeCard.svelte': cubeDef,
   'CloudsCard.svelte': cloudsDef,
+  'CofefveCard.svelte': cofefveDelayDef,
   'DelayCard.svelte': delayDef,
   'MacrooscillatorCard.svelte': macrooscillatorDef,
   'FilterCard.svelte': filterDef,
@@ -146,7 +217,10 @@ const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }
  */
 const MAPPING_BOUND_CARDS: readonly string[] = [
   'AdsrCard.svelte',
+  'ChromaconsoleCard.svelte',
+  'CubeCard.svelte',
   'CloudsCard.svelte',
+  'CofefveCard.svelte',
   'DelayCard.svelte',
   'MacrooscillatorCard.svelte',
   'FilterCard.svelte',
@@ -157,40 +231,48 @@ const MAPPING_BOUND_CARDS: readonly string[] = [
   'WarrensspectrumCard.svelte',
 ];
 
-/** The ratchet floors — lower either and this test is the thing that says no. */
-// ⚠ A MERGE CANNOT COMPUTE THESE, AND THAT IS A SILENT HAZARD. Four cards were
-// converted the same day off a shared 3/2 base — delay, ringback, snaredrum,
-// each PR raising the floor by ONE to 5/4 (range/mapping). Git then merges the
-// LISTS cleanly (different lines) and sees NO CONFLICT on the floors, because
-// every branch wrote the identical literal. The merged truth is the UNION —
-// 6 range-bound / 5 mapping-bound — so the inherited 5/4 passes with a full
-// card of slack in each, and the next card to fall back out of the set is
-// absorbed in silence rather than reddening this test. Whenever this file
-// merges, RE-DERIVE the floors from the lists; never inherit the literal.
-//
-// ⚠ IT HAS NOW FIRED FOR REAL, TWICE IN ONE WAVE, exactly as written above.
-// The 2026-08-09 face wave ran four sibling branches off a shared base of 7/6.
-// On BOTH the filter merge and the macrooscillator merge, main and the branch
-// had each written `8` from `7` on the SAME line, so git auto-merged the
-// literal with no conflict while the merged LISTS held 9 entries. One full card
-// of slack, delivered silently, from a clean merge.
-//
-// Two things make that worth more than a warning. First, `MAPPING_BOUND_FLOOR`
-// conflicted only by luck of line ordering — do not treat a conflict on one as
-// evidence about the other. Second, and this is the general shape: the hazard
-// is that the floor is a COPY of a fact the file already contains. Counting
-// `Object.keys(RANGE_BOUND_CARDS).length` would make it unforgeable, but it
-// would also make the ratchet vacuous (it can never fail, because it is derived
-// from the thing it checks). So the literal stays, and the discipline is: after
-// ANY merge of this file, count the entries and write that number.
-// ⚠ RE-DERIVED BY COUNTING THE MERGED LISTS on 2026-08-10 (the clouds face),
-// exactly as the paragraph above instructs — not by adding one to what was
-// there. The inherited pair was 9/7 against lists of 10/8, i.e. one full card
-// of slack in each, which is the silent auto-merge this file has now been
-// burned by three times. Counted: RANGE_BOUND_CARDS = 11, MAPPING_BOUND_CARDS
-// = 9. Count again after the next merge; never inherit these literals.
-const RANGE_BOUND_FLOOR = 11;
-const MAPPING_BOUND_FLOOR = 9;
+/**
+ * THE ARTIFACT ANCHOR that replaced the two hand-typed floors.
+ *
+ * The floors were `RANGE_BOUND_CARDS.length` / `MAPPING_BOUND_CARDS.length`
+ * retyped as literals, and they were wrong three times in three face waves —
+ * always the same way, always from a CLEAN merge. Sibling branches each add a
+ * different card (the lists merge fine, different lines) and each writes the
+ * identical `n+1` on the same line (the literal merges fine, no conflict), so
+ * the merged floor is one short of the merged list and the slack is invisible.
+ * Counting the list instead would make the ratchet vacuous. Neither branch of
+ * that dilemma is worth having, so the literal is gone.
+ *
+ * What replaces it derives the only-grows property from the CARD SOURCES, which
+ * no merge can round down: a card that calls `paramSpec(` and contains ZERO
+ * literal range props IS def-bound, whatever the list says — so it must be
+ * enrolled. Delist one and the anchor reddens naming it.
+ *
+ * The predicate is deliberately conservative (`paramSpec(` + clean). Cards that
+ * bind through a bespoke helper — BackdraftCard's `pmin/pmax/pdef` — are still
+ * enrolled by hand; the anchor does not demand them, it only refuses to let the
+ * ones it CAN recognise leave.
+ */
+const CARD_DIR = dirname(fileURLToPath(import.meta.url));
+
+/** Every `*.svelte` in the card directory, as (file, source) pairs. */
+function allCardSources(): { file: string; src: string }[] {
+  return readdirSync(CARD_DIR)
+    .filter((f) => f.endsWith('.svelte'))
+    .sort()
+    .map((file) => ({ file, src: readFileSync(resolve(CARD_DIR, file), 'utf8') }));
+}
+
+/** Counts of each literal shape in one source — the anchor's own instrument. */
+function literalCounts(src: string): { range: number; mapping: number } {
+  let range = 0;
+  let mapping = 0;
+  for (const line of src.split('\n')) {
+    range += [...line.matchAll(LITERAL_RANGE)].length;
+    mapping += [...line.matchAll(LITERAL_MAPPING)].length;
+  }
+  return { range, mapping };
+}
 
 /**
  * A range-ish prop bound to a NUMERIC LITERAL. Covers `min/max/defaultValue`
@@ -314,14 +396,74 @@ describe('card ranges come from the DEF, not from re-typed numbers', () => {
     expect(bad.join('\n'), 'a card curve that disagrees with its def re-maps the control').toEqual('');
   });
 
-  it('the converted-card sets only grow', () => {
+  it('the two sets are well-formed (no dupes, mapping ⊆ range, no ghosts)', () => {
     const range = Object.keys(RANGE_BOUND_CARDS);
-    expect(range.length).toBeGreaterThanOrEqual(RANGE_BOUND_FLOOR);
-    expect(MAPPING_BOUND_CARDS.length).toBeGreaterThanOrEqual(MAPPING_BOUND_FLOOR);
     expect(new Set(MAPPING_BOUND_CARDS).size, 'no duplicate entries').toBe(MAPPING_BOUND_CARDS.length);
     // Mapping-bound is a SUBSET of range-bound: binding a curve without binding
-    // the range it maps onto is not a state this ratchet has a meaning for.
+    // the range it maps onto is not a state these lists have a meaning for.
     for (const f of MAPPING_BOUND_CARDS) expect(range, `${f} must also be range-bound`).toContain(f);
+    // …and anchored to the artifact in the other direction: an entry naming a
+    // card file that no longer exists is a licence nobody is watching.
+    const present = new Set(allCardSources().map((c) => c.file));
+    expect(
+      range.filter((f) => !present.has(f)),
+      'these entries name card files that do not exist (renamed? deleted?)',
+    ).toEqual([]);
+  });
+
+  it('EVERY def-bound card is enrolled (the artifact anchor that replaced the floors)', () => {
+    // Ground truth is the CARD SOURCE, not the list: `paramSpec(` + zero literal
+    // range props means the card is already def-bound, so leaving it out of
+    // RANGE_BOUND_CARDS is coverage that exists and is not being claimed —
+    // which is how ChromaconsoleCard sat bound-but-unlisted until 2026-08-10.
+    // It is also the only-grows protection the deleted floors were for: a card
+    // cannot be quietly delisted while its source still binds.
+    const missingRange: string[] = [];
+    const missingMapping: string[] = [];
+    for (const { file, src } of allCardSources()) {
+      if (!src.includes('paramSpec(')) continue;
+      const { range, mapping } = literalCounts(src);
+      if (range === 0 && !(file in RANGE_BOUND_CARDS)) missingRange.push(file);
+      // Mapping enrolment is only demanded of cards that are ALSO range-clean —
+      // the subset rule above makes a mapping-only entry meaningless.
+      if (range === 0 && mapping === 0 && !MAPPING_BOUND_CARDS.includes(file)) {
+        missingMapping.push(file);
+      }
+    }
+    expect(
+      missingRange,
+      'these cards bind via paramSpec and re-type NO range literal, so they are ' +
+        'def-bound in fact but not in this file. Add `<Card>.svelte: <def>` to ' +
+        'RANGE_BOUND_CARDS — an unlisted bound card is coverage nobody is claiming, ' +
+        'and delisting one is how the deleted floors used to be needed.',
+    ).toEqual([]);
+    expect(
+      missingMapping,
+      'these cards re-type no `curve`/`units` literal either — add them to ' +
+        'MAPPING_BOUND_CARDS so the format clause runs on them too.',
+    ).toEqual([]);
+  });
+
+  it('...and that anchor can SEE a delisted card (negative control on the same predicate)', () => {
+    // A `toEqual([])` over a scan that matched nothing reads identically green.
+    // Re-run the anchor's own predicate against a set with one real entry
+    // removed, and require it to name exactly that card.
+    const enrolled = { ...RANGE_BOUND_CARDS } as Record<string, unknown>;
+    delete enrolled['AdsrCard.svelte'];
+    const flagged = allCardSources()
+      .filter(({ src }) => src.includes('paramSpec('))
+      .filter(({ src }) => literalCounts(src).range === 0)
+      .map(({ file }) => file)
+      .filter((f) => !(f in enrolled));
+    expect(flagged, 'the anchor must name the card that was removed').toEqual(['AdsrCard.svelte']);
+    // …and the instrument must not be matching everything either: a card that
+    // does NOT call paramSpec is outside the anchor's subject by construction.
+    const sources = allCardSources();
+    expect(sources.length, 'the card scan found no sources at all').toBeGreaterThan(100);
+    expect(
+      sources.filter(({ src }) => !src.includes('paramSpec(')).length,
+      'the anchor demands enrolment only of paramSpec cards — most cards are not',
+    ).toBeGreaterThan(100);
   });
 
   it('the greps can actually FAIL (negative control on the instrument)', () => {

@@ -33,7 +33,7 @@ async function cardState(page: Page): Promise<string> {
 }
 
 async function spawnEs9(page: Page): Promise<void> {
-  await page.goto('/rack?mode=workflow');
+  await page.goto('/rack?shell=legacy');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
     { id: NODE, type: 'es9', position: { x: 140, y: 140 }, domain: 'audio' },

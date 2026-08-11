@@ -135,7 +135,7 @@ test.describe('SOURCERY — 2-input region shape-match recolor', () => {
   test('real 2-source chain: A + B patched → structured non-black output', async ({ page, errorWatch }) => {
 
     await installRenderSmokeHooks(page);
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, baseNodes(), baseEdges());
 
@@ -161,7 +161,7 @@ test.describe('SOURCERY — 2-input region shape-match recolor', () => {
   test('parameter response: ROT rotates the intra-region sampling frame', async ({ page, errorWatch }) => {
 
     await installRenderSmokeHooks(page);
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, baseNodes(), baseEdges());
 
@@ -188,7 +188,7 @@ test.describe('SOURCERY — 2-input region shape-match recolor', () => {
   test('parameter response: SKEW rotates the transferred hue', async ({ page, errorWatch }) => {
 
     await installRenderSmokeHooks(page);
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, baseNodes(), baseEdges());
 
@@ -210,7 +210,7 @@ test.describe('SOURCERY — 2-input region shape-match recolor', () => {
   test('B unpatched → passthrough of A (non-black, no holes)', async ({ page, errorWatch }) => {
 
     await installRenderSmokeHooks(page);
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
     // Only A + the module + output — B (chroma) deliberately not wired to src.b.
     const nodes = baseNodes().filter((n) => n.id !== 'chroma' && n.id !== 'linesB');

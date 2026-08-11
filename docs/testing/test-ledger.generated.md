@@ -11,7 +11,7 @@ source tree, so they cannot go stale. Prose + roadmap: `docs/testing/README.md`.
 | Bucket | What | Count |
 | --- | --- | ---: |
 | 1 | HARD SKIPS / QUARANTINES (backlog → drive to 0) | 6 |
-| 2 | COVERAGE EXEMPTIONS (deliberate auto-enrollment opt-outs) | 472 |
+| 2 | COVERAGE EXEMPTIONS (deliberate auto-enrollment opt-outs) | 374 |
 | 3 | INFORMATIONAL-ONLY CI LANES (run, never block merge) | 5 |
 
 ## CI gating truth (from `.github/workflows/ci.yml`)
@@ -19,7 +19,7 @@ source tree, so they cannot go stale. Prose + roadmap: `docs/testing/README.md`.
 Required status-check **contexts** (2 — branch ruleset 16042163; not in-repo,
 see `.claude/skills/pr-workflow.md`):
 - `typecheck + unit + ART + E2E`  (ci.yml:2222)
-- `vrt-strict (visual regression — strict subset)`  (ci.yml:2650)
+- `vrt-strict (visual regression — strict subset)`  (ci.yml:2670)
 
 Jobs gated THROUGH the `ci` umbrella (a failure of any blocks merge) — 11:
 - `actionlint`, `art`, `behavioral-smoke`, `build`, `build-web`, `dsp-build`, `e2e`, `typecheck`, `unit`, `webgl-attest`, `webgl-smoke`
@@ -46,7 +46,7 @@ _none_
 ### spawn-smoke QUARANTINE map (e2e/tests/modules.spec.ts) — 1
 - `toybox` — task #102: SwiftShader software-renderer timeout (heavy WebGL)
 
-## Bucket 2 — coverage exemptions (472)
+## Bucket 2 — coverage exemptions (374)
 
 Declarative auto-enrollment opt-out lists. A module opted out of a UNIVERSAL
 sweep still carries dedicated coverage (a bespoke spec / unit core / ART). These
@@ -448,107 +448,6 @@ tracked-to-zero backlog (reconcile = fix or delete); see the roadmap.
 - `toybox.inA` — video input only drives output when a layer selects it as its source
 - `toybox.inB` — video input only drives output when a layer selects it as its source
 
-### `EXEMPT_BASELINE_PAIRS` (98) — per-<platform>/<scene> VRT baseline pairs deferred (pending a vrt-update capture)
-<sub>e2e/vrt/vrt-exemptions.ts</sub>
-- `darwin/mirrorpool`
-- `darwin/mirrorpool-mirror`
-- `darwin/mirrorpool-refract`
-- `darwin/mirrorpool-storm`
-- `darwin/rasterize`
-- `darwin/wavesculpt-blink-custom-colors`
-- `darwin/wavesculpt-blink-scopes-trial`
-- `darwin/wavesculpt-blink-scopes-trial-wiggle`
-- `linux/aspect16x9-output`
-- `linux/cellshade`
-- `linux/cellshade-bands`
-- `linux/cellshade-ink`
-- `linux/cellshade-smooth`
-- `linux/clipplayer`
-- `linux/cofefve`
-- `linux/com-hsv`
-- `linux/com-override`
-- `linux/com-palette`
-- `linux/com-pass`
-- `linux/com-rgb`
-- `linux/com-ycc`
-- `linux/com-ydbdr`
-- `linux/com-yiq`
-- `linux/com-yiq-i-tap`
-- `linux/cube`
-- `linux/edge-add`
-- `linux/edge-chroma`
-- `linux/edge-diff`
-- `linux/edge-dissolve`
-- `linux/edge-iris`
-- `linux/edge-luma`
-- `linux/edge-multiply`
-- `linux/edge-wipe`
-- `linux/edges`
-- `linux/electraControl`
-- `linux/face-dx7-compact`
-- `linux/face-dx7-dock`
-- `linux/face-qbrt-compact`
-- `linux/face-qbrt-dock`
-- `linux/face-shimmershine-compact`
-- `linux/face-shimmershine-dock`
-- `linux/face-sixstrum-compact`
-- `linux/face-sixstrum-dock`
-- `linux/face-tomtom-compact`
-- `linux/face-tomtom-dock`
-- `linux/featurecv`
-- `linux/flipper`
-- `linux/foxy`
-- `linux/freezeframe`
-- `linux/kickdrum`
-- `linux/kria`
-- `linux/lushgarden`
-- `linux/mandelbulb`
-- `linux/mandleblot`
-- `linux/mapper`
-- `linux/mirrorpool`
-- `linux/mirrorpool-mirror`
-- `linux/mirrorpool-refract`
-- `linux/mirrorpool-storm`
-- `linux/nibbles`
-- `linux/nibbles-cv-25`
-- `linux/nibbles-cv-50`
-- `linux/nibbles-cv-75`
-- `linux/nibbles-cv-max`
-- `linux/nibbles-cv-min`
-- `linux/ninelives`
-- `linux/outlines`
-- `linux/peakstate`
-- `linux/pentemelodica`
-- `linux/posterbox`
-- `linux/posterbox-brutal-1bit`
-- `linux/posterbox-dither-hatch`
-- `linux/posterbox-subtle-565`
-- `linux/rasterize`
-- `linux/rear-dx7`
-- `linux/rear-sixstrum`
-- `linux/recorderbox`
-- `linux/reshaper`
-- `linux/resofilter`
-- `linux/ruttetra`
-- `linux/sampleHold`
-- `linux/scope-intensity-dot`
-- `linux/scope-intensity-long`
-- `linux/scope-xy-lissajous`
-- `linux/snaredrum`
-- `linux/spectrograph`
-- `linux/stages`
-- `linux/synesthesia`
-- `linux/textmarquee`
-- `linux/tidyVco`
-- `linux/tidyvco-acid`
-- `linux/tidyvco-bass`
-- `linux/tidyvco-pad`
-- `linux/toybox`
-- `linux/wavesculpt`
-- `linux/workflow-audio-io`
-- `linux/workflow-dock-clip-split`
-- `linux/workflow-dock-patch`
-
 ### Opt-IN completeness ratchets (the more members the better)
 
 - `STRICT_DOCS`: **184** — modules held to the FULL living-docs completeness bar (deny-missing-docs) <sub>(packages/web/src/lib/docs/strict-docs.ts)</sub>
@@ -563,5 +462,5 @@ not a merge blocker.
 - `collab`  (ci.yml:965) — umbrella aggregate step labels it informational
 - `collab-attest`  (ci.yml:1995) — in umbrella needs+env but absent from the failing `if` (waited-on, non-blocking)
 - `grand-attest`  (ci.yml:2063) — in umbrella needs+env but absent from the failing `if` (waited-on, non-blocking)
-- `vrt`  (ci.yml:2385) — continue-on-error: true
+- `vrt`  (ci.yml:2387) — continue-on-error: true
 

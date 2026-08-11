@@ -315,7 +315,7 @@ test('dx7: changing preset updates the dropdown value', async ({ page, rack }) =
 // stamp through exactly that binary.
 
 /**
- * Update rows in the dawless scratch replica, WITHOUT creating the DB (an
+ * Update rows in the scratch replica, WITHOUT creating the DB (an
  * unconditional `indexedDB.open` would seed an empty shell and race the
  * replica). A RISING count is the deterministic flush signal — the stamp has
  * reached IndexedDB — which is what makes the reload below an assertion rather
@@ -323,7 +323,7 @@ test('dx7: changing preset updates the dropdown value', async ({ page, rack }) =
  */
 async function replicaRows(page: Page): Promise<number> {
   return page.evaluate(async () => {
-    const id = window.localStorage.getItem('pt:local-scratch-id:dawless');
+    const id = window.localStorage.getItem('pt:local-scratch-id');
     if (!id) return 0;
     const name = `pt-rack-v1-${id}`;
     const list =
@@ -367,7 +367,7 @@ async function readStamp(page: Page, nodeId: string) {
 
 test.describe('dx7 preset stamp — persistence', () => {
   // Opt IN to the IndexedDB scratch replica (see scratch-persist.spec.ts):
-  // /rack disables it under the e2e harness by default, and it is what makes a
+  // /rack?shell=legacy&seed=none disables it under the e2e harness by default, and it is what makes a
   // real `page.reload()` a meaningful assertion instead of a fresh empty doc.
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {
@@ -376,7 +376,7 @@ test.describe('dx7 preset stamp — persistence', () => {
   });
 
   test('a preset change stamps 5 values and survives a real browser reload', async ({ page }) => {
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
 
     const idbOk = await page.evaluate(() => typeof indexedDB !== 'undefined' && indexedDB !== null);
