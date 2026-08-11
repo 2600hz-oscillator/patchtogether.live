@@ -39,7 +39,7 @@ import { spawnPatch } from './_helpers';
 import { UNMIGRATED_AUDIO_MODULE } from './_face-fixtures';
 
 async function gotoWorkflow(page: Page): Promise<void> {
-  await page.goto('/rack?shell=legacy');
+  await page.goto('/rack');
   await expect(page.getByTestId('workflow-topbar')).toBeVisible();
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
 }

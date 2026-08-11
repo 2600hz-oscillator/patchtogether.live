@@ -160,7 +160,7 @@ test.describe('CUBE v4 — reload / screen-off / initial render', () => {
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, [
       { id: 'cb', type: 'cube', position: { x: 200, y: 100 }, domain: 'audio' },

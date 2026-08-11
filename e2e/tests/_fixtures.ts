@@ -22,7 +22,7 @@
 //     hand-rolled collectors, and converting a previously-unwatched spec is a
 //     behavior change that needs its own triage (see the LoC report, row 3).
 //
-//   * `rack` — the standard `goto('/rack?shell=legacy')` + `networkidle` nav that
+//   * `rack` — the standard `goto('/rack?shell=legacy&seed=none')` + `networkidle` nav that
 //     opened ~90% of specs. Destructure `rack` and the page is already on the
 //     rack when the body runs (fixtures resolve before the test body):
 //
@@ -83,7 +83,7 @@ export const test = base.extend<{ errorWatch: ErrorWatch; rack: void }>({
   // `?shell=legacy` keeps the CARDS and nothing else — every spec here now runs
   // against the real shell chrome and the seeded pinned + video-zone nodes.
   rack: async ({ page }, use) => {
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
     await use();
   },

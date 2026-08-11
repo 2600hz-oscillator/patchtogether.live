@@ -95,7 +95,7 @@ async function captureTiler(
   page: import('@playwright/test').Page,
   tileIndex: number,
 ): Promise<{ grid: number[]; nonZeroFrac: number }> {
-  await page.goto('/rack?shell=legacy');
+  await page.goto('/rack?shell=legacy&seed=none');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,

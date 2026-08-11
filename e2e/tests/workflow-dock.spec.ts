@@ -39,7 +39,7 @@ function collectErrors(page: Page): string[] {
 }
 
 async function gotoWorkflow(page: Page): Promise<void> {
-  await page.goto('/rack?shell=legacy');
+  await page.goto('/rack?shell=legacy&seed=none');
   await expect(page.getByTestId('workflow-topbar')).toBeVisible();
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
 }
@@ -343,7 +343,7 @@ test.describe('P2.5b pan cable tail (workflow racks)', () => {
 test.describe('canvas cards keep their full PatchPanel handle stack', () => {
   test('a legacy-card lane node mounts every handle and offers the dock menu', async ({ page }) => {
     const errors = collectErrors(page);
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack?shell=legacy&seed=none');
     await expect(page.getByTestId('workflow-topbar')).toBeVisible();
     await page.locator('.svelte-flow__pane').waitFor({ state: 'visible' });
 

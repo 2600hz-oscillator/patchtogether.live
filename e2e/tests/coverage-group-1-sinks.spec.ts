@@ -37,7 +37,7 @@ test('audioOut: master fader sweep changes downstream signal level', async ({ pa
     if (m.type() === 'error') errors.push(m.text());
   });
 
-  await page.goto('/rack?shell=legacy');
+  await page.goto('/rack?shell=legacy&seed=none');
   await page.waitForLoadState('networkidle');
 
   // noise -> audioOut.L AND noise -> scope.ch1 (the scope is a parallel
@@ -202,7 +202,7 @@ test('sticky: meta-domain card renders without engine binding', async ({ page })
     if (m.type() === 'error') errors.push(m.text());
   });
 
-  await page.goto('/rack?shell=legacy');
+  await page.goto('/rack?shell=legacy&seed=none');
   await page.waitForLoadState('networkidle');
 
   // Sticky is meta-domain — spawnPatch passes domain:'meta', the

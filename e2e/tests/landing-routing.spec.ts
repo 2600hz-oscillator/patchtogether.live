@@ -20,7 +20,7 @@ import { test, expect } from '@playwright/test';
 
 test.describe('landing routing', () => {
   test('/rack boots the canvas and is cross-origin isolated', async ({ page }) => {
-    const resp = await page.goto('/rack?shell=legacy');
+    const resp = await page.goto('/rack?shell=legacy&seed=none');
     expect(resp, 'no response for /rack').toBeTruthy();
     expect(resp!.status(), `/rack status ${resp!.status()}`).toBe(200);
 

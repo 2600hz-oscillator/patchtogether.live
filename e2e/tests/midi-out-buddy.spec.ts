@@ -40,7 +40,7 @@ async function installFakeMidiOut(page: Page): Promise<void> {
 
 test('midi-out-buddy: drops + card mounts with EVERY declared input handle, no console errors', async ({ page, errorWatch }) => {
   await installFakeMidiOut(page);
-  await page.goto('/rack?shell=legacy');
+  await page.goto('/rack?shell=legacy&seed=none');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'm', type: TYPE, position: { x: 200, y: 200 } }]);
 
@@ -87,7 +87,7 @@ test('midi-out-buddy: drops + card mounts with EVERY declared input handle, no c
 // ─────────────────────────────────────────────────────────────────────────────
 test('midi-out-capture-instrument: the buffer EXISTS and is empty before anything sends', async ({ page }) => {
   await installFakeMidiOut(page);
-  await page.goto('/rack?shell=legacy');
+  await page.goto('/rack?shell=legacy&seed=none');
   await page.waitForLoadState('networkidle');
 
   const probe = await page.evaluate(() => {
@@ -132,7 +132,7 @@ test('midi-out-capture-instrument: the buffer EXISTS and is empty before anythin
 
 test('midi-out-buddy: Connect MIDI… reveals the OUT device + channel selectors', async ({ page }) => {
   await installFakeMidiOut(page);
-  await page.goto('/rack?shell=legacy');
+  await page.goto('/rack?shell=legacy&seed=none');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'm', type: TYPE, position: { x: 200, y: 200 } }]);
 
@@ -150,7 +150,7 @@ test('midi-out-buddy: Connect MIDI… reveals the OUT device + channel selectors
 test('midi-out-buddy: SEQUENCER gate/pitch → captured MIDI NoteOn on the fake output', async ({ page, errorWatch }) => {
   test.setTimeout(45_000);
   await installFakeMidiOut(page);
-  await page.goto('/rack?shell=legacy');
+  await page.goto('/rack?shell=legacy&seed=none');
   await page.waitForLoadState('networkidle');
 
   // SEQUENCER (fast, playing) → midiOutBuddy gate + pitch.

@@ -120,7 +120,7 @@ test.describe('BACKDRAFT — video feedback generator', () => {
     // hook has to be installed BEFORE the app boots, so this test owns its own
     // navigation. (Same reason SPATIAL TRANSFORM and PIXELATE below dropped it.)
     await installRenderSmokeHooks(page);
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
     // Enough frames for the feedback trails to build and the two masks to bite;
     // the assertions below are floors on structure, not on trail depth.
@@ -215,7 +215,7 @@ test.describe('BACKDRAFT — video feedback generator', () => {
     // one — on a slow renderer it could be ZERO engine frames, which would make
     // the stillness assertion trivially true for a second reason.
     await installRenderSmokeHooks(page);
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
     const FRAMES = 8;
 
@@ -357,7 +357,7 @@ test.describe('BACKDRAFT — video feedback generator', () => {
       // captures spawn the SAME node ids, so re-spawning onto the live doc
       // would read capture 1's already-settled feedback ring (identical
       // frames, diff exactly 0 — the shard-1 failure on #1036).
-      await page.goto('/rack?shell=legacy');
+      await page.goto('/rack?shell=legacy&seed=none');
       await page.waitForLoadState('networkidle');
       await spawnPatch(
         page,
@@ -545,7 +545,7 @@ test.describe('BACKDRAFT — video feedback generator', () => {
     async function capture(pixelate: number): Promise<RenderStats> {
       // FRESH RACK PER CAPTURE: both captures spawn the SAME node ids, so
       // re-spawning onto the live doc would read the previous scene.
-      await page.goto('/rack?shell=legacy');
+      await page.goto('/rack?shell=legacy&seed=none');
       await page.waitForLoadState('networkidle');
       await spawnPatch(
         page,
@@ -735,7 +735,7 @@ test.describe('BACKDRAFT — video feedback generator', () => {
     }
 
     await installRenderSmokeHooks(page);
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
     await spawnPatch(
       page,

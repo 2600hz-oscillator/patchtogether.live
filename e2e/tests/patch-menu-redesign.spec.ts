@@ -54,7 +54,7 @@ async function openFrom(page: Page, nodeId: string, side: 'left' | 'right') {
 }
 
 async function spawnSeqAdsr(page: Page) {
-  await page.goto('/rack?shell=legacy');
+  await page.goto('/rack?shell=legacy&seed=none');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
     { id: 'seq', type: 'sequencer', position: { x: 80, y: 120 } },

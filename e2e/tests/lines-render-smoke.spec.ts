@@ -28,7 +28,7 @@ test.describe('LINES — deterministic render smoke', () => {
     // Pause the engine rAF loop + pin the clock BEFORE boot.
     await installRenderSmokeHooks(page);
 
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
 
     // LINES (a pure procedural source — no decode/getUserMedia/asset) → OUTPUT

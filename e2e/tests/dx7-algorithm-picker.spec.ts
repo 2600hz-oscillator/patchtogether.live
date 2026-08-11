@@ -24,7 +24,7 @@ test.describe.configure({ mode: 'parallel' });
  *  (the same seam workflow-shell-faces.spec.ts uses — `paramCells` only
  *  renders through ModuleShell, so the legacy card route cannot exercise it). */
 async function bootDx7Shell(page: Page): Promise<string> {
-  await page.goto('/rack?shell=legacy');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await page.waitForFunction(() => {
     const w = globalThis as unknown as {

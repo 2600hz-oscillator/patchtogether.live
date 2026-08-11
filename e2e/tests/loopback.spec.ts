@@ -59,7 +59,7 @@ test.describe('LOOPBACK (deterministic render smoke)', () => {
     await installRenderSmokeHooks(page);
     await installLoopbackTestFrame(page);
 
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(
@@ -99,7 +99,7 @@ test.describe('LOOPBACK (deterministic render smoke)', () => {
     await installRenderSmokeHooks(page);
     await installLoopbackTestFrame(page);
 
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
 
     // One LOOPBACK node sampling the synthetic frame; toggle `crop` between the
@@ -142,7 +142,7 @@ test.describe('LOOPBACK -> RECORDERBOX (real chain)', () => {
     await installRenderSmokeHooks(page);
     await installLoopbackTestFrame(page);
 
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(

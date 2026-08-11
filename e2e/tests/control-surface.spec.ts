@@ -33,7 +33,7 @@ async function readSurfaceBindings(page: Page, surfaceId: string) {
 }
 
 async function setup(page: Page) {
-  await page.goto('/rack?shell=legacy');
+  await page.goto('/rack?shell=legacy&seed=none');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
     { id: 'cs-1', type: 'controlSurface', position: { x: 700, y: 80 }, domain: 'meta' },

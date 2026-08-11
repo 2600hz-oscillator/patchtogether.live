@@ -38,7 +38,7 @@ const NODE_ID = 'rec1';
 
 test.describe('RECORDERBOX crash-recovery prompt', () => {
   test('Save / Discard are inside the card and clickable', async ({ page }) => {
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('domcontentloaded');
     await page.waitForFunction(
       () => typeof (globalThis as unknown as { __ensureEngine?: unknown }).__ensureEngine === 'function',

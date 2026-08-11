@@ -802,7 +802,7 @@ test.describe('workflow: adding a module reveals it in-view (no click)', () => {
   for (const shell of [false, true]) {
     const label = shell ? 'mode=workflow&shell=1' : 'mode=workflow';
     test(`a real palette spawn into a column lands the tile WITHIN the viewport (${label})`, async ({ page }) => {
-      await page.goto(shell ? '/rack?shell=legacy' : '/rack?shell=legacy');
+      await page.goto(shell ? '/rack' : '/rack?shell=legacy');
       await waitForPinnedTrio(page);
       await waitForHooks(page);
 

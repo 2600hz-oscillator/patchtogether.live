@@ -72,7 +72,7 @@ test('livecode: spawn → run JS produces named modules with cables', async ({ p
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto('/rack?shell=legacy');
+  await page.goto('/rack?shell=legacy&seed=none');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'lc', type: 'livecode', position: { x: 100, y: 100 } }]);
 
@@ -256,7 +256,7 @@ test('livecode: editable name label — rename + reject duplicate', async ({ pag
 });
 
 test('livecode: JS recreates the voice-demo patch → graph-isomorphic', async ({ page }) => {
-  await page.goto('/rack?shell=legacy');
+  await page.goto('/rack?shell=legacy&seed=none');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'lc', type: 'livecode', position: { x: 50, y: 400 } }]);
 
@@ -296,7 +296,7 @@ set('out', 'master',   0.4);`;
 
   const dslSummary = await readPatchSummary(page);
 
-  await page.goto('/rack?shell=legacy');
+  await page.goto('/rack?shell=legacy&seed=none');
   await page.waitForLoadState('networkidle');
   await loadVoiceDemo(page);
   await page.waitForFunction(() => {

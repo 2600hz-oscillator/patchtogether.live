@@ -26,7 +26,7 @@ import { test, expect, type Page, type Locator } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 async function gotoWorkflow(page: Page, opts: { shell: boolean }): Promise<void> {
-  await page.goto(opts.shell ? '/rack?shell=legacy' : '/rack?shell=legacy');
+  await page.goto(opts.shell ? '/rack' : '/rack?shell=legacy');
   await expect(page.getByTestId('workflow-topbar')).toBeVisible();
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
 }

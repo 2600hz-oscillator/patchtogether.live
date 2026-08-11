@@ -126,7 +126,7 @@ for (const m of MODULES) {
         if (msg.type() === 'error') errors.push(msg.text());
       });
 
-      await page.goto('/rack?shell=legacy');
+      await page.goto('/rack?shell=legacy&seed=none');
       await page.waitForLoadState('networkidle');
 
       await spawnPatch(page, [

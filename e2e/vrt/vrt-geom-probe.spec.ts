@@ -24,7 +24,7 @@ import { pinVrtFonts, awaitVrtFonts } from './_fonts';
 test('combine-editor capture geometry', async ({ page }) => {
   test.setTimeout(90_000);
   await pinVrtFonts(page);
-  await page.goto('/rack?shell=legacy');
+  await page.goto('/rack?shell=legacy&seed=none');
   await page.waitForLoadState('networkidle');
   await awaitVrtFonts(page);
   await spawnPatch(

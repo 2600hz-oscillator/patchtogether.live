@@ -41,7 +41,7 @@ import {
 const SLOW_RENDER = process.env.E2E_SWIFTSHADER === '1' || !!process.env.CI;
 
 async function gotoShell(page: Page): Promise<void> {
-  await page.goto('/rack?shell=legacy');
+  await page.goto('/rack');
   await expect(page.getByTestId('workflow-topbar')).toBeVisible({
     timeout: SLOW_RENDER ? 30_000 : 15_000,
   });

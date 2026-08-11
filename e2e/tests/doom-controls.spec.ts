@@ -136,7 +136,7 @@ test.describe('CV input drives the player (single-player) (#2)', () => {
   test.setTimeout(180_000);
   test('LFO → DOOM.p1_up makes the marine move (player.y changes over time)', async ({ page }) => {
     page.on('pageerror', (e) => console.error('pageerror:', e.message));
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
     const skip = await assetsMissing(page);
     if (skip) { test.skip(true, skip); return; }
@@ -192,7 +192,7 @@ test.describe('Keyboard goes inert when CV is patched (#3)', () => {
   test.setTimeout(180_000);
   test('with CV patched, keyboard ArrowUp produces no additional motion', async ({ page }) => {
     page.on('pageerror', (e) => console.error('pageerror:', e.message));
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
     const skip = await assetsMissing(page);
     if (skip) { test.skip(true, skip); return; }
@@ -305,7 +305,7 @@ test.describe('q → KEY_ESCAPE intercept in DOOM keyboard mode (#5)', () => {
   test.setTimeout(180_000);
   test('pressing q with the card focused injects KEY_ESCAPE (opens menu)', async ({ page }) => {
     page.on('pageerror', (e) => console.error('pageerror:', e.message));
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
     const skip = await assetsMissing(page);
     if (skip) { test.skip(true, skip); return; }
@@ -379,7 +379,7 @@ test.describe('q → KEY_ESCAPE intercept in DOOM keyboard mode (#5)', () => {
 test.describe('DOOM Volume control writes params.audioGain (the −42 dB fix UI) (#7)', () => {
   test('Volume knob renders + drives params.audioGain via the setParam path', async ({ page }) => {
     page.on('pageerror', (e) => console.error('pageerror:', e.message));
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
 
     // No WASM/WAD needed — the Volume control is plain card UI bound to the
@@ -446,7 +446,7 @@ test.describe('DOOM Volume control writes params.audioGain (the −42 dB fix UI)
 test.describe('DOOM evt_kill → SCOREBOARD.score fires (same-domain video CV bridge) (#6)', () => {
   test('forcePulse(evt_kill) increments SCOREBOARD score downstream', async ({ page }) => {
     page.on('pageerror', (e) => console.error('pageerror:', e.message));
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
 
     // No WASM required for this one — we use the forcePulse test hook

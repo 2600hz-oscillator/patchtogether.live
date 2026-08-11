@@ -33,7 +33,7 @@ const SLOW_RENDER = process.env.E2E_SWIFTSHADER === '1' || !!process.env.CI;
 
 /** Boot the migrated shell (`?shell=1`) and wait for the workflow chrome. */
 async function gotoShell(page: Page): Promise<void> {
-  await page.goto('/rack?shell=legacy');
+  await page.goto('/rack');
   // The BOOT wait: the first test of a run pays SvelteKit's on-demand /rack
   // compile. Same bound the sibling workflow specs carry.
   await expect(page.getByTestId('workflow-topbar')).toBeVisible({

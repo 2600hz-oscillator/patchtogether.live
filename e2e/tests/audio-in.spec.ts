@@ -25,7 +25,7 @@ async function setupPage(page: import('@playwright/test').Page): Promise<string[
   page.on('console', (m) => {
     if (m.type() === 'error') errors.push(m.text());
   });
-  await page.goto('/rack?shell=legacy');
+  await page.goto('/rack?shell=legacy&seed=none');
   await page.waitForLoadState('networkidle');
   return errors;
 }
@@ -308,7 +308,7 @@ test.describe('WORKFLOW audio I/O surface (🎧 always-on pinned AUDIO IN/OUT)',
     // no descendant can opt back in, which is why the assertion below pins
     // the computed opacity (Playwright's toBeVisible ignores opacity, and
     // the inner wrapper legitimately keeps visibility:visible).
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
     await waitForWorkflowPins(page);
 
@@ -347,7 +347,7 @@ test.describe('WORKFLOW audio I/O surface (🎧 always-on pinned AUDIO IN/OUT)',
     // (the P2.5a drawer pattern). This pins the geometry: each card's box
     // sits fully INSIDE its host's box, and no flow chrome exists in the
     // panel at all.
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
     await waitForWorkflowPins(page);
 
@@ -395,7 +395,7 @@ test.describe('WORKFLOW audio I/O surface (🎧 always-on pinned AUDIO IN/OUT)',
   test('menu patch-out wires pinned AUDIO IN → SCOPE and the fake-mic signal materializes', async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
     await waitForWorkflowPins(page);
 
@@ -503,7 +503,7 @@ test.describe('WORKFLOW audio I/O surface (🎧 always-on pinned AUDIO IN/OUT)',
     // "patch from" picker). The panel now mirrors AUDIO IN's patch rows in
     // reverse: two "receive from" rows (AUDIO OUT L / R) that open the SAME
     // source picker, so the pinned instance behaves like an added one.
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
     await waitForWorkflowPins(page);
 

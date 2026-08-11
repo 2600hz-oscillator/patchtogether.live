@@ -74,7 +74,7 @@ for (const type of TARGETS) {
     test.setTimeout(90_000);
     const mod = REGISTRY.find((m) => m.type === type)!;
     await pinVrtFonts(page);
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
     await awaitVrtFonts(page);
     await page.addStyleTag({

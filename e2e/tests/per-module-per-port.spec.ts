@@ -1108,7 +1108,7 @@ test.describe('per-module per-port: handle presence', () => {
       // with a GL viewport (WAVESCULPT) also skip the per-frame draw.
       if (touchesVideo(mod)) await freezeVideoRender(page);
 
-      await page.goto('/rack?shell=legacy');
+      await page.goto('/rack?shell=legacy&seed=none');
       await page.waitForLoadState('networkidle');
 
       await spawnSolo(page, mod);
@@ -1405,7 +1405,7 @@ test.describe('per-module per-port: outputs emit signal', () => {
         // quiet-window wait was a fixed cost in front of the real gate.
         // (_helpers.ts already says as much at its HMR retry: "networkidle is
         // too strict here".)
-        await page.goto('/rack?shell=legacy');
+        await page.goto('/rack?shell=legacy&seed=none');
 
         const sink = pickOutputSink(port.type);
         if (!sink) {
@@ -1727,7 +1727,7 @@ test.describe('per-module per-port: inputs accept signal (wire-up)', () => {
         if (m.type() === 'error') errors.push(`console: ${m.text()}`);
       });
 
-      await page.goto('/rack?shell=legacy');
+      await page.goto('/rack?shell=legacy&seed=none');
       await page.waitForLoadState('networkidle');
 
       // DOOM-asset skip — when the WASM blob isn't present the module
@@ -1829,7 +1829,7 @@ test.describe('per-module per-port: inputs accept signal (wire-up)', () => {
 //
 // ⚠ WHAT THIS BUDGET CANNOT ABSORB, stated plainly so nobody sizes to it. The
 // runner that went red printed `[perf-midi-cc] FPS diagnostic: idle=2.0` and had
-// a 79-SECOND window with zero `/rack?shell=legacy` navigations across all four workers. At
+// a 79-SECOND window with zero `/rack?shell=legacy&seed=none` navigations across all four workers. At
 // ~2 fps a single `spawnPatch` can legally consume its whole 30 s mount cap, so
 // 26 of them do not fit in any budget worth writing down. This change fixes the
 // REVIEW defect — the per-port term is live again, and wavesculpt gets the

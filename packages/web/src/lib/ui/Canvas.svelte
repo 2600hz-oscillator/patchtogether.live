@@ -453,6 +453,32 @@
    *  stale `?shell=1` bookmark) resolves to faceplates. */
   let shellFaces = $derived(page.url?.searchParams?.get('shell') !== 'legacy');
 
+  /** `?seed=none` — A TEST-ONLY EMPTY RACK. Suppresses the four one-shot
+   *  SEEDERS below (the pinned M/E/C + surface singletons, the default
+   *  MIXMSTRS→AUDIO OUT wire, the default videoOut, and the video-zone
+   *  recorderbox/synesthesia), leaving a genuinely empty graph.
+   *
+   *  WHY IT EXISTS. Deleting the second shell deleted the only URL that gave an
+   *  EMPTY canvas, and ~200 e2e specs are about MODULE behaviour, not about the
+   *  shell: they spawn two nodes and assert the graph has two nodes, or
+   *  right-click at (200,200) expecting bare pane. Against a rack that seeds
+   *  ten nodes and frames its viewport on a video zone at flow-y 4320, every
+   *  one of them fails for a reason that has nothing to do with what it tests.
+   *  The alternative was rewriting all ~200 to add-and-subtract the seeded
+   *  population, which buries the assertion each one actually makes.
+   *
+   *  ⚠ GATED ON `testHooksEnabled()`, so it cannot be reached in a production
+   *  build no matter what a user puts in the URL — same seam as `__patch` /
+   *  `__ydoc` / `__flow`. It is a FIXTURE, not a product mode: nothing in the
+   *  app links to it and no user-facing behaviour branches on it.
+   *
+   *  It suppresses SEEDING ONLY. The shell chrome, the lane geometry, the dock
+   *  and `shellFaces` are all untouched — a `?seed=none` rack is the same UI,
+   *  just without the starter content. */
+  let seedShellDefaults = $derived(
+    !(testHooksEnabled() && page.url?.searchParams?.get('seed') === 'none'),
+  );
+
   /** The ACTIVE channel-column pitch (flow-space px): the tight 216px RACKLINE
    *  pitch under the `?shell=1` preview, else the app-scale 765px (34hp) band.
    *  Threaded into the RENDER-derived member positions, the drop/drag hit-tests,
@@ -1205,6 +1231,7 @@
     // its `if (patch.nodes[spec.id]) continue` skips restored pins — no clobber
     // race. scratchSeeded is undefined for real racks → guard unchanged.
     if ((provider && !providerHasSynced) || scratchSeeded === false) return;
+    if (!seedShellDefaults) return; // ?seed=none — the empty-rack test fixture
     const missing = planPinnedSpawns(snapshot.nodes);
     if (missing.length === 0) return;
     ydoc.transact(() => {
@@ -1244,6 +1271,7 @@
     // user deleted before their stored latch is restored. Undefined (real
     // racks) → guard unchanged.
     if ((provider && !providerHasSynced) || scratchSeeded === false) return;
+    if (!seedShellDefaults) return; // ?seed=none — the empty-rack test fixture
     const plan = planDefaultWires(snapshot.nodes, snapshot.edges);
     if (!plan.latch) return;
     ydoc.transact(() => {
@@ -1280,6 +1308,7 @@
   // gate + non-tracked origin as the pinned ensure.
   $effect(() => {
     if ((provider && !providerHasSynced) || scratchSeeded === false) return;
+    if (!seedShellDefaults) return; // ?seed=none — the empty-rack test fixture
     const mixer = patch.nodes[WCOL_MIXER_ID];
     if (!mixer) return; // wait for the pinned mixer (the latch home) to land
     const seeded = (mixer.data as { workflowVideoOutSeeded?: boolean } | undefined)?.workflowVideoOutSeeded === true;
@@ -1323,6 +1352,7 @@
   // video tap lands. Same seed gate + non-tracked origin as the pins.
   $effect(() => {
     if ((provider && !providerHasSynced) || scratchSeeded === false) return;
+    if (!seedShellDefaults) return; // ?seed=none — the empty-rack test fixture
     const mixer = patch.nodes[WCOL_MIXER_ID];
     if (!mixer) return; // wait for the pinned mixer (the latch home + wire source)
     for (const spec of VIDEO_ZONE_EXTRA_DEFAULTS) {

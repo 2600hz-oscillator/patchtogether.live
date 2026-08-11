@@ -26,7 +26,7 @@ async function step0PlayEvery(page: import('@playwright/test').Page) {
 }
 
 async function openEditorWithNote(page: import('@playwright/test').Page) {
-  await page.goto('/rack?shell=legacy');
+  await page.goto('/rack?shell=legacy&seed=none');
   await spawnPatch(page, [{ id: 'pe-cp', type: 'clipplayer', domain: 'audio', x: 200, y: 120 }]);
   const card = page.getByTestId('clipplayer-card').first();
   await card.waitFor({ state: 'visible' });

@@ -106,7 +106,7 @@ test.describe('Fix E render worker — acidwarp', () => {
       (globalThis as unknown as { __videoWorkerEnabled?: boolean }).__videoWorkerEnabled = true;
     });
 
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(
@@ -186,7 +186,7 @@ test.describe('Fix E render worker — acidwarp', () => {
     });
     await installRenderSmokeHooks(page);
 
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(
@@ -223,7 +223,7 @@ test.describe('Fix E render worker — acidwarp', () => {
   test('DEFAULT (no flag): worker path engages where capable; clean fallback otherwise @webgl-smoke', async ({ page, errorWatch }) => {
     test.setTimeout(60_000);
 
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(
@@ -284,7 +284,7 @@ test.describe('Fix E render worker — acidwarp', () => {
       g.__videoEngineFreezeTime = 2.0;
     });
 
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(

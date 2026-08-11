@@ -54,7 +54,7 @@ function domainOf(cable: string): string {
 }
 
 async function gotoWorkflow(page: Page): Promise<void> {
-  await page.goto('/rack?shell=legacy');
+  await page.goto('/rack');
   // 15s FIRST-LOAD budget — the SAME number workflow-shell.spec.ts and
   // workflow-dock-occupancy.spec.ts already use for this exact route, so it is
   // CI-validated rather than guessed.

@@ -120,12 +120,12 @@ async function hold(page: Page, scopeId: string, onTick?: (i: number) => Promise
 test('snaredrum face: the dock HIT and HOLD-TO-ROLL pads audition an UNPATCHED snare, and HARD writes the graph', async ({ page }) => {
   // ⚠ SIZED, NOT FLAT (ci-swiftshader-video-e2e-timeouts). Playwright's 30 s
   // default is the whole budget for a test whose topbar wait alone is allowed
-  // 30 s, and faces-parity documents a 13.2 s cold `/rack?shell=legacy` compile under
+  // 30 s, and faces-parity documents a 13.2 s cold `/rack` compile under
   // SwiftShader on this route. A failure bound only.
   test.setTimeout(SLOW_RENDER ? 150_000 : 75_000);
 
   await installRenderSmokeHooks(page);
-  await page.goto('/rack?shell=legacy');
+  await page.goto('/rack');
   await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: 30_000 });
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
 

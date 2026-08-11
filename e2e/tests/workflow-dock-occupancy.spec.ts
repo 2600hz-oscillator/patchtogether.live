@@ -74,7 +74,7 @@ async function waitForPinnedTrio(page: Page): Promise<void> {
 }
 
 async function gotoShellWorkflow(page: Page): Promise<void> {
-  await page.goto('/rack?shell=legacy');
+  await page.goto('/rack');
   // 15s first-load budget (the workflow-shell.spec.ts pattern): on a COLD dev
   // server the very first /rack compile can exceed the 5s expect default —
   // reproduced locally with a cleared .vite cache; every later load is ~1s.

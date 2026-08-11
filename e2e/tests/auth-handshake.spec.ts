@@ -38,7 +38,7 @@ async function attempt(
 
 test.describe('@auth', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
     await page.waitForFunction(
       () =>

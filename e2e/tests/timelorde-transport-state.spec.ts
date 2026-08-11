@@ -69,7 +69,7 @@ async function setParam(page: Page, key: string, value: number): Promise<void> {
 }
 
 async function spawnClock(page: Page, params: Record<string, number> = {}): Promise<void> {
-  await page.goto('/rack?shell=legacy');
+  await page.goto('/rack?shell=legacy&seed=none');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,
@@ -150,7 +150,7 @@ test.describe('TIMELORDE transport state', () => {
     // it does not fight a MIDICLOCK — and that removes the RUN button, i.e. the
     // only pre-existing hint that the transport is stopped disappears in exactly
     // the case where a hardware stop is the likely cause.
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
     await spawnPatch(
       page,

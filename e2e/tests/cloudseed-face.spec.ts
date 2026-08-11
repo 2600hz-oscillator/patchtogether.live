@@ -54,7 +54,7 @@ function defParamIds(page: Page): Promise<string[]> {
 }
 
 async function openCloudseedDock(page: Page) {
-  await page.goto('/rack?shell=legacy');
+  await page.goto('/rack');
   await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_MS });
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
   await spawnPatch(page, [{ id: NODE, type: 'cloudseed', position: { x: 460, y: 240 } }]);

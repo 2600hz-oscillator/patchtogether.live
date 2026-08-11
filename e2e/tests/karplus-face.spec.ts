@@ -107,7 +107,7 @@ test('karplus face: the dock PLUCK cell auditions an UNPATCHED string, and write
   // test does its `page.evaluate` round-trips against. This spec asserts
   // nothing about a rendered frame, so the render loop is pure contention.
   await installRenderSmokeHooks(page);
-  await page.goto('/rack?shell=legacy');
+  await page.goto('/rack');
   // 30 s, not the 5 s default, and a FAILURE BOUND rather than the gate: the
   // FIRST navigation to /rack on a cold dev server compiles the whole route
   // graph on demand.

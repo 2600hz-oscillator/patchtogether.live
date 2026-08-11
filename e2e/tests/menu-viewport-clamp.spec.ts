@@ -64,7 +64,7 @@ function expectNearAnchor(
 }
 
 async function gotoClassic(page: Page): Promise<void> {
-  await page.goto('/rack?shell=legacy');
+  await page.goto('/rack');
   await page.waitForFunction(() => {
     const w = window as unknown as { __patch?: unknown; __flow?: unknown };
     return !!w.__patch && !!w.__flow;
@@ -73,7 +73,7 @@ async function gotoClassic(page: Page): Promise<void> {
 }
 
 async function gotoWorkflowShell(page: Page): Promise<void> {
-  await page.goto('/rack?shell=legacy');
+  await page.goto('/rack');
   await expect(page.getByTestId('workflow-topbar')).toBeVisible();
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
   await page.waitForFunction(() => {

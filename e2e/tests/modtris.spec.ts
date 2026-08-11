@@ -54,7 +54,7 @@ test('modtris: drop module → card mounts with no console errors', async ({ pag
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto('/rack?shell=legacy');
+  await page.goto('/rack?shell=legacy&seed=none');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'm', type: 'modtris', position: { x: 200, y: 200 } }]);
   const card = page.locator('.svelte-flow__node-modtris');

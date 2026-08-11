@@ -50,7 +50,7 @@ test.describe('CAMERA → OUTPUT (deterministic render smoke)', () => {
       (window as unknown as { __camerainputTestFrame?: boolean }).__camerainputTestFrame = true;
     });
 
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(
@@ -102,7 +102,7 @@ test.describe('CAMERA → OUTPUT (fake webcam) — getUserMedia integration @cam
       if (m.type() === 'error') errors.push(m.text());
     });
 
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(
@@ -209,7 +209,7 @@ test.describe('CAMERA → OUTPUT (fake webcam) — getUserMedia integration @cam
       };
     });
 
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(page, [
@@ -276,7 +276,7 @@ test.describe('CAMERA → OUTPUT (fake webcam) — getUserMedia integration @cam
       };
     });
 
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(page, [
@@ -289,7 +289,7 @@ test.describe('CAMERA → OUTPUT (fake webcam) — getUserMedia integration @cam
     });
   });
 
-  // THE OWNER P0 (`/rack?shell=legacy`: "camera → output renders
+  // THE OWNER P0 (`/rack`: "camera → output renders
   // nothing"). The camera's SOURCE lives on its card: CameraInputCard owns
   // getUserMedia + the <video> element and hands it to the engine handle via
   // `attachExternalSource` (and DETACHES it on unmount). Under the shell preview
@@ -309,7 +309,7 @@ test.describe('CAMERA → OUTPUT (fake webcam) — getUserMedia integration @cam
   test('under ?shell=1 the camera card + picker stay in the lane and camera → OUTPUT paints moving pixels', async ({ page }) => {
     test.setTimeout(90_000);
 
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack');
     await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: 15_000 });
 
     await spawnPatch(

@@ -165,7 +165,7 @@ interface RenderedCell {
 }
 
 async function gotoShell(page: Page): Promise<void> {
-  await page.goto('/rack?shell=legacy');
+  await page.goto('/rack');
   // 15 s (not the 5 s default): this is the BOOT wait, and the FIRST test of a
   // run pays SvelteKit's on-demand /rack route compilation before the workflow
   // chrome mounts — which overran 5 s on a cold dev server and failed only the

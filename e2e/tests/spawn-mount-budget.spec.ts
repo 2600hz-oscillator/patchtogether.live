@@ -83,7 +83,7 @@ test.describe('spawnPatch mount budget — FRAMES, not milliseconds', () => {
     page,
   }) => {
     test.setTimeout(120_000);
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
 
     await starveMainThread(page, {
@@ -112,7 +112,7 @@ test.describe('spawnPatch mount budget — FRAMES, not milliseconds', () => {
 
   test('the FRAME budget is what fails — not the wall-clock cap', async ({ page }) => {
     test.setTimeout(120_000);
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
 
     await starveMainThread(page, { msPerFrame: HOG_MS_PER_FRAME });

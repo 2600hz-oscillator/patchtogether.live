@@ -172,7 +172,7 @@ async function installMocks(page: Page, opts: { mediaCorsOk: boolean } = { media
 async function gotoApp(page: Page): Promise<string[]> {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
-  await page.goto('/rack?shell=legacy');
+  await page.goto('/rack?shell=legacy&seed=none');
   await page.waitForLoadState('networkidle');
   return errors;
 }
@@ -281,7 +281,7 @@ test.describe('PEERTUBE — network-mocked source chain', () => {
     test.setTimeout(60_000);
 
     await installHlsMocks(page);
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
 
     // PEERTUBE -> (video) VIDEO OUT, plus audio_l/audio_r fanned to a SCOPE +

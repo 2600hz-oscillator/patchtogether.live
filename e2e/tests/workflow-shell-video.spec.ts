@@ -50,7 +50,7 @@ const SYNESTHESIA = 'workflow-synesthesia';
 const VIDEO_ZONE_GAP = 24; // shell pitch 216 − tile 192 (videoZonePackedXs)
 
 async function gotoShell(page: Page): Promise<void> {
-  await page.goto('/rack?shell=legacy');
+  await page.goto('/rack');
   // 15s: first paint pays SvelteKit's on-demand route compile on a cold dev
   // server (and SwiftShader contention on CI) — same budget the sibling
   // first-visibility asserts use.

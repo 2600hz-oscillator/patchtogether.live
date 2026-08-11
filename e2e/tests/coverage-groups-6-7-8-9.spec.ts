@@ -369,7 +369,7 @@ test('cameraInput: spawns without errors (no live camera in headless CI; just sm
     if (m.type() === 'error') errors.push(m.text());
   });
 
-  await page.goto('/rack?shell=legacy');
+  await page.goto('/rack?shell=legacy&seed=none');
   await page.waitForLoadState('networkidle');
 
   // Just spawn it — getUserMedia will fail in headless Chromium and

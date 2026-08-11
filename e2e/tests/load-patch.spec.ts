@@ -48,7 +48,7 @@ async function generateFixtureIfMissing(page: Page): Promise<void> {
   } catch {
     // fall through to generation
   }
-  await page.goto('/rack?shell=legacy');
+  await page.goto('/rack?shell=legacy&seed=none');
   await page.waitForLoadState('networkidle');
   await page.waitForFunction(() => {
     const w = globalThis as unknown as { __ensureEngine?: () => Promise<unknown> };
@@ -159,7 +159,7 @@ test('@load cold-load: clicking Load as the first user action produces audio', a
       if (m.type() === 'error') errors.push(m.text());
     });
 
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
 
     // Wait for the dev globals to be installed (so ensureEngine inside the

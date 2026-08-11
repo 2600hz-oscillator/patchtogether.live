@@ -106,7 +106,7 @@ test.describe('WAVECEL video outputs (cross-domain bridge) @webgl-serial', () =>
     // Pin the engine clock + pause the rAF loop BEFORE boot so the test owns the
     // exact frame count and any patched modulator can't drift the frame.
     await installRenderSmokeHooks(page);
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(
@@ -193,7 +193,7 @@ test.describe('WAVECEL video outputs (cross-domain bridge) @webgl-serial', () =>
     test.setTimeout(60_000);
 
     await installRenderSmokeHooks(page);
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(

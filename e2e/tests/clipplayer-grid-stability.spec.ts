@@ -36,7 +36,7 @@ import { spawnPatch } from './_helpers';
 test.describe.configure({ mode: 'default' });
 
 async function gotoShellWorkflow(page: Page): Promise<void> {
-  await page.goto('/rack?shell=legacy');
+  await page.goto('/rack');
   // 15s first-load budget (the workflow-shell.spec.ts pattern — cold dev-server
   // compile latency on the very first /rack load).
   await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: 15_000 });

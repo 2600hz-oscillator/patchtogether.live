@@ -108,7 +108,7 @@ test.describe('LUSH GARDEN — generative garden source', () => {
 
   test('continuous mode: plants spawn at RATE and the clean preview renders non-black', async ({ page }) => {
     const errors = collectErrors(page);
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(page, [
@@ -141,7 +141,7 @@ test.describe('LUSH GARDEN — generative garden source', () => {
 
   test('grow gate: [GATED] badge, rate-spawning stops, one plant per rising edge, reset clears', async ({ page }) => {
     const errors = collectErrors(page);
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
 
     // Two STOPPED sequencers: growSeq → grow, rstSeq → reset. Both idle at
@@ -238,7 +238,7 @@ test.describe('LUSH GARDEN — generative garden source', () => {
 
   test('background input passes through the clean output outside plant silhouettes', async ({ page }) => {
     const errors = collectErrors(page);
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
 
     // Keep the garden EMPTY (gated mode via a stopped sequencer → zero

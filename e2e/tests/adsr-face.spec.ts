@@ -66,7 +66,7 @@ test.describe('adsr curated face — the ranked tiers', () => {
   test('rank 1 is RELEASE at mini, it writes the graph, and it reads out in real units', async ({
     page,
   }) => {
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack');
     await expect(page.getByTestId('workflow-topbar')).toBeVisible();
     await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
     await spawnPatch(page, [{ id: 'env', type: 'adsr', position: { x: 460, y: 240 } }]);

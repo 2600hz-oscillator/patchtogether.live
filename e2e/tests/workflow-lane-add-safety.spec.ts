@@ -61,7 +61,7 @@ function colPos(ch: number): { x: number; y: number } {
 }
 
 async function gotoShellWorkflow(page: Page): Promise<void> {
-  await page.goto('/rack?shell=legacy');
+  await page.goto('/rack');
   // 15s: first paint pays SvelteKit's on-demand route compile on a cold dev
   // server (and SwiftShader contention on CI) — same budget the sibling
   // first-visibility asserts use.

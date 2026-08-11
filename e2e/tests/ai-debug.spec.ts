@@ -33,7 +33,7 @@ test('AI debug snapshot — voice-demo flow', async ({ page }) => {
   // ---------- SHELL ----------
   let response;
   try {
-    response = await page.goto('/rack?shell=legacy');
+    response = await page.goto('/rack?shell=legacy&seed=none');
   } catch (err) {
     section('SHELL', `goto failed: ${err}`);
     section('VERDICT', 'fail — page never loaded');

@@ -62,7 +62,7 @@ async function openPair(browser: Browser): Promise<DoomPair> {
   const pageB = await ctxB.newPage();
 
   for (const p of [pageA, pageB]) {
-    await p.goto('/rack?shell=legacy');
+    await p.goto('/rack?shell=legacy&seed=none');
     await p.waitForLoadState('networkidle');
     await p.waitForFunction(() =>
       typeof (window as unknown as { __attachProvider?: unknown }).__attachProvider === 'function',
