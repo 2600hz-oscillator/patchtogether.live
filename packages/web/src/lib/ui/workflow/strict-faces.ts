@@ -265,7 +265,7 @@
 //
 //   · THE THREE TAPS ARE NOT LEVEL-MATCHED. One linear gain is written to all
 //     three tap gains in the same `setParam`, and they leave the module at
-//     white −4.77, brown −11.84, pink −17.25 dBFS (LEVEL 1) — a 12.5 dB spread
+//     white −4.77, brown −11.84, pink −17.08 dBFS (LEVEL 1) — a 12.3 dB spread
 //     that `level`'s own readback is INVARIANT to, because it prints 0.50 for
 //     all three. Three derived readouts, closed-form from the coefficients.
 //   · BROWN IS A ONE-POLE LOW-PASS, NOT A SLOPE. Flat below ≈ 77 Hz, −6 dB/oct

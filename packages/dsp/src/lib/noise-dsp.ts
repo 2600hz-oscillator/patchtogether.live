@@ -17,8 +17,18 @@
 //
 // ⚠ THE THREE ARE NOT LEVEL-MATCHED, and nothing downstream matches them: RMS
 // at unity is white 0.5774 (-4.77 dBFS), brown 0.2558 (-11.84), pink 0.1400
-// steady-state / 0.1362 over a 2 s table (-17.25). One LEVEL knob scales all
-// three, so brown leaves 7.1 dB and pink 12.5 dB below white.
+// (-17.08). One LEVEL knob scales all three, so brown leaves 7.1 dB and pink
+// 12.3 dB below white.
+//
+// ⚠ QUOTE THE STEADY STATE, and quote the table deficit SEPARATELY. Pink's
+// shipped 2 s table measures 0.1362 (-17.32), 0.24 dB under the steady state,
+// because Voss row 15 only updates every 32 768 samples and starts at zero —
+// so the slow rows are still filling for the first third of the table. Both
+// numbers are true and they are NOT interchangeable: the faceplate prints the
+// closed form, so prose that quotes the measurement instead contradicts the
+// readout sitting two inches from it. (It did: the sidebar said "pink -12.5 dB"
+// beside a hero showing a 12.3 dB spread.) One number is the headline; the
+// deficit is its own stated fact.
 //
 // Seeding: every generator takes an optional `seed`; when given, samples come
 // from mulberry32(seed) (bit-identical run-to-run), else from Math.random

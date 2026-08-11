@@ -197,7 +197,7 @@ test.describe('noise face — three derived readouts from one knob', () => {
       Number(await panel.getByTestId(`noise-ladder-${tap}`).getAttribute('data-fill'));
 
     // THE ORDER IS THE FACT. white is loudest, brown 7.1 dB under it, pink
-    // 12.5 dB under that — from the same knob. A ladder drawn off `level`
+    // 12.3 dB under WHITE — from the same knob. A ladder drawn off `level`
     // itself would give three identical bars.
     const white = await fill('white');
     const brown = await fill('brown');

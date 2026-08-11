@@ -349,7 +349,7 @@ describe('noise face model — the READOUTS say what one knob cannot', () => {
     const texts = NOISE_TAPS.map((t) => noiseTapDbText(t, p));
     expect(new Set(texts).size, `three distinct readouts, got ${texts.join(' / ')}`).toBe(3);
     // A `paramId: 'level'` readout would print one number for all three. These
-    // are 12.5 dB and 7.0 dB apart, and that gap is LEVEL-INVARIANT.
+    // are 12.3 dB and 7.1 dB apart, and that gap is LEVEL-INVARIANT.
     expect(noiseTapOffsetDb('white')).toBe(0);
     expect(noiseTapOffsetDb('pink')).toBeCloseTo(-12.3, 1);
     expect(noiseTapOffsetDb('brown')).toBeCloseTo(-7.07, 1);

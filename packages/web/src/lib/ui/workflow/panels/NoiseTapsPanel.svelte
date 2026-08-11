@@ -16,7 +16,7 @@
   //   BELOW — the LEVELS. One bar per tap at its RMS in dBFS at the live
   //     LEVEL, on a −60…0 dBFS ruler with the full-scale edge marked. This is
   //     the half that MOVES, and it is the half the single knob is blind to:
-  //     one gain writes all three, and they come out 12.5 dB and 7.0 dB apart.
+  //     one gain writes all three, and they come out 12.3 dB and 7.1 dB apart.
   //
   // ⚠ NEITHER HALF IS A TRACE. Every point comes from `noise-face-model`, whose
   // curves are the generators' own arithmetic — brown's exact one-pole

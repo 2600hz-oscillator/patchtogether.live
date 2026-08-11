@@ -7,7 +7,7 @@
 // that cannot say what this module does. `level` is a single linear gain
 // written to all three tap gains simultaneously (noise.ts `setParam`), so a
 // `paramId: 'level'` readout prints ONE number — `0.50` — for THREE outputs
-// that are 12.5 dB and 7.0 dB apart. The knob readback is not merely
+// that are 12.3 dB and 7.1 dB apart. The knob readback is not merely
 // incomplete about that; it is INVARIANT to it, which is the exact blindness
 // `FaceReadout.valueId` exists for (see face-readout-values.ts).
 //
@@ -264,7 +264,7 @@ export const NOISE_LADDER_FLOOR_DB = -60;
 
 /** 0 (silent) .. 1 (full scale) for a tap's RMS at the live LEVEL — the
  *  ladder's fill fraction. This is the ONE part of the picture that moves
- *  with the knob, and it is what makes the 12.5 dB / 7.0 dB spread visible
+ *  with the knob, and it is what makes the 12.3 dB / 7.1 dB spread visible
  *  rather than merely stated. */
 export function noiseLadderFill(tap: NoiseTap, p: NoiseFaceParams): number {
   const d = noiseTapDb(tap, p);

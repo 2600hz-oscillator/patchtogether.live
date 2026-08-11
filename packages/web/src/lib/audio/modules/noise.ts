@@ -39,8 +39,8 @@
 //     USER'S INTERFACE: 70.5 Hz at 44.1 k, 153.6 Hz at 96 k.
 //
 // 3 · The three taps are NOT LEVEL-MATCHED, which nothing anywhere said. At
-//     LEVEL 1 their RMS is white -4.77 dBFS, brown -11.84, pink -17.25: brown
-//     runs 7.1 dB and pink 12.5 dB below white, from the SAME knob. Patch two
+//     LEVEL 1 their RMS is white -4.77 dBFS, brown -11.84, pink -17.08: brown
+//     runs 7.1 dB and pink 12.3 dB below white, from the SAME knob. Patch two
 //     taps into a mixer at equal channel gain and they are not equal.
 //     (Closed forms + the oracle that re-derives them from the generators:
 //     $lib/ui/modules/noise-face-model + its test.)
@@ -103,18 +103,18 @@ export const noiseDef: AudioModuleDef = {
 
   docs: {
     explanation:
-      "A pure noise source with three independent spectral flavors on three separate outputs: white (flat), pink (1/f, -3 dB/oct) and brown (leaky-integrated white). Each flavor is a 2-second table generated ONCE when the module spawns and looped forever after, so the colour is baked into the table — there is no filter and no morph, and every jack is live the instant the module appears. Mental model: patch any combination into different channels to layer timbres — white for brightness, pink for warmth, brown for rumble. TWO THINGS WORTH KNOWING BEFORE YOU MIX. First, the taps are NOT level-matched: one LEVEL knob drives all three, but brown leaves 7.1 dB and pink 12.5 dB below white, so equal channel gains do not give equal loudness. Second, brown is a one-pole low-pass rather than a pure slope — it is flat below about 77 Hz (at a 48 kHz interface; the corner scales with the sample rate) and only -6 dB/oct above that, which is why it reads as rumble rather than as a tilt.",
+      "A pure noise source with three independent spectral flavors on three separate outputs: white (flat), pink (1/f, -3 dB/oct) and brown (leaky-integrated white). Each flavor is a 2-second table generated ONCE when the module spawns and looped forever after, so the colour is baked into the table — there is no filter and no morph, and every jack is live the instant the module appears. Mental model: patch any combination into different channels to layer timbres — white for brightness, pink for warmth, brown for rumble. TWO THINGS WORTH KNOWING BEFORE YOU MIX. First, the taps are NOT level-matched: one LEVEL knob drives all three, but brown leaves 7.1 dB and pink 12.3 dB below white, so equal channel gains do not give equal loudness. Second, brown is a one-pole low-pass rather than a pure slope — it is flat below about 77 Hz (at a 48 kHz interface; the corner scales with the sample rate) and only -6 dB/oct above that, which is why it reads as rumble rather than as a tilt.",
     inputs: {},
     outputs: {
       white:
         "Full-spectrum white noise with flat frequency response; uniform random amplitude across all audible frequencies. The loudest of the three taps by a wide margin (-4.77 dBFS at LEVEL 1) and the tap the lane meter reads, since it is the first audio output declared. One of three independent outputs sharing the LEVEL control.",
-      pink: "1/f pink noise at -3 dB per octave slope; warmer than white noise with attenuated highs. Useful for smooth, natural-sounding textures. The QUIETEST tap — 12.5 dB below white from the same LEVEL setting. One of three independent outputs sharing the LEVEL control.",
+      pink: "1/f pink noise at -3 dB per octave slope; warmer than white noise with attenuated highs. Useful for smooth, natural-sounding textures. The QUIETEST tap — 12.3 dB below white from the same LEVEL setting. One of three independent outputs sharing the LEVEL control.",
       brown:
         "Leaky-integrated white noise: FLAT below its -3 dB corner (about 77 Hz at 48 kHz, and the corner moves with the interface sample rate) and -6 dB per octave above it, so it is the darkest flavor without being a pure 1/f² tilt. It also has no hard bound — its peak drifts past full scale on most spawns at LEVEL 1, where white and pink cannot. Sits 7.1 dB below white. One of three independent outputs sharing the LEVEL control.",
     },
     controls: {
       level:
-        "Master gain applied equally to all three noise outputs, from silence (0) to full amplitude (1). Equally in the sense of one multiplier, NOT one loudness: the three tables have different RMS, so the taps stay 7.1 dB and 12.5 dB apart at every setting. Default 0.5 provides moderate headroom; raise it to push the noise through downstream processing, lower it to blend subtly into a mix. Above about 0.78 the brown tap can peak past full scale.",
+        "Master gain applied equally to all three noise outputs, from silence (0) to full amplitude (1). Equally in the sense of one multiplier, NOT one loudness: the three tables have different RMS, so the taps stay 7.1 dB and 12.3 dB apart at every setting. Default 0.5 provides moderate headroom; raise it to push the noise through downstream processing, lower it to blend subtly into a mix. Above about 0.78 the brown tap can peak past full scale.",
     },
   },
 
@@ -132,7 +132,7 @@ export const noiseDef: AudioModuleDef = {
   // stated NOWHERE in the product today, and each one costs a user real time:
   //
   //   · THE TAPS ARE NOT LEVEL-MATCHED. One gain, three tables, and they leave
-  //     7.1 dB (brown) and 12.5 dB (pink) below white. Every mix that trims
+  //     7.1 dB (brown) and 12.3 dB (pink) below white. Every mix that trims
   //     "noise" to taste against the wrong tap starts here.
   //   · BROWN IS A LOW-PASS, NOT A SLOPE — flat below ~77 Hz — and that corner
   //     MOVES WITH THE INTERFACE, because `LEAK` has no sampleRate term.
@@ -200,7 +200,7 @@ export const noiseDef: AudioModuleDef = {
       'Three independent 2-second tables, drawn once when the module spawns and looped forever ' +
       'after — the colour is baked into the table, so there is no filter and no morph to reach ' +
       'for. LEVEL is one multiplier on all three, which is not the same as one loudness: they ' +
-      'leave 7.1 dB and 12.5 dB apart.',
+      'leave 7.1 dB and 12.3 dB apart.',
 
     // THE HERO. The module's one control at hero size, and beside it the three
     // numbers that control cannot produce. No `cell`: a panel's first legal
@@ -253,7 +253,7 @@ export const noiseDef: AudioModuleDef = {
         entries: [
           { label: 'the three', text: 'parallel · never summed' },
           { label: 'brown −3 dB at', text: '77 Hz · 48 kHz' },
-          { label: 'vs white', text: 'brown −7.1 · pink −12.5 dB' },
+          { label: 'vs white', text: 'brown −7.1 · pink −12.3 dB' },
           { label: 'brown peak', text: 'past 0 dBFS from LEVEL 0.78' },
           { label: 'lane meter', text: 'reads WHITE only' },
           { label: 'each table', text: '2 s, new per spawn' },
