@@ -109,6 +109,10 @@ pattern is filed as a perf issue (#213) — phase 2 candidate for lazy-loading.
   "fix" this — see memory `feedback_cable_drag_zorder`.
 - **Sync layer reverts edits + creates `*" N".ts` junk** on certain files.
   Commit-immediately-after-edit mitigates; junk files stay untracked.
-- **VRT is required**; some modules opt out via `EXEMPT_BASELINE_PAIRS`
-  in `e2e/vrt/vrt.spec.ts` when their render is non-deterministic
-  (animated 3D, CRT feedback, etc.).
+- **VRT is required**; a module whose render is non-deterministic (animated
+  3D, CRT feedback) opts out via `EXEMPT_FROM_VRT` + `ALLOWED_PERMANENT_EXEMPT`
+  in `e2e/vrt/vrt-exemptions.ts` — a NAMED, two-sided exemption with a reason,
+  never a self-serve one.
+- **There is ONE baseline set and linux CI authors it** (`snapshotPathTemplate`
+  has no `{platform}` segment). `task vrt:commit` dispatches the capture; a
+  local macOS run is a smoke test.

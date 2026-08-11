@@ -107,7 +107,7 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // covers the live preview). Only the DARWIN baseline was regenerated via
   // vrt-update.yml after the SHAPE+ROTATION card change; the LINUX baseline is
   // still pending a workflow_dispatch, so `linux/outlines` stays in
-  // EXEMPT_BASELINE_PAIRS below (the recorderbox/cellshade new-module pattern).
+  // captured by the vrt-update.yml dispatch (the recorderbox/cellshade pattern).
   outlines: [
     { selector: 'canvas', why: 'live COMBINE preview canvas — particles spawn, move and spin off the engine rAF; the 7 knobs + handle rows are the gate.' },
   ],
@@ -186,7 +186,7 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // scrolling) — mask it. The card ALSO contains a contenteditable region whose
   // rendered SYSTEM-FONT glyphs rasterize differently across platforms (the
   // exact known linux-VRT glyph nondeterminism), so the LINUX baseline is
-  // exempted via EXEMPT_BASELINE_PAIRS below; the darwin baseline gates the
+  // captured by the vrt-update.yml dispatch; the committed baseline gates the
   // chrome (toolbar buttons + FG/BG swatches + the four knob rows).
   textmarquee: [
     { selector: 'canvas', why: 'live OUT preview canvas, continuously animated off the rAF loop while scrolling; the toolbar, FG/BG swatches and four knob rows are the gate.' },
@@ -234,7 +234,7 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // mask the canvas and let the deterministic chrome (two camera X-Y pads +
   // WIND/DIR/RAIN/BRIGHT/MODE/DIST/ZOOM faders + POOL/SCENE + CV handle rows +
   // VIDEO out) gate. NOTE: the solo-spawn baseline is DEFERRED
-  // on BOTH platforms via EXEMPT_BASELINE_PAIRS (mirrorpool is HELD for owner
+  // entirely — no baseline is pinned (mirrorpool is HELD for owner
   // look-preview — a look-affecting video module never captures a baseline
   // before the owner approves the look). Physics coverage is
   // mirrorpool-core.test.ts + the (baseline-deferred) mirrorpool-composite.spec.ts.
@@ -438,7 +438,7 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // owner preview: no VRT baseline is pinned pre-approval. Coverage meanwhile:
   // mirrorpool-core.test.ts (Fresnel/swell/normal/Poisson/PTZ) + per-port +
   // behavioral. Capture darwin/linux baselines via vrt-update.yml once the owner
-  // approves the look (then drop the composite pairs in EXEMPT_BASELINE_PAIRS).
+  // approves the look (then capture the composite scenes with `task vrt:commit`).
   mirrorpool: 'VRT baseline pending owner look-approval (look-affecting WebGL video); mirrorpool-core.test.ts + per-port + behavioral provide coverage. Capture darwin/linux baselines via vrt-update.yml in a follow-up.',
   // GRAINS OF VISION — maximally look-affecting WebGL granular video synth, HELD
   // for owner preview: no VRT baseline is pinned pre-approval (mirrorpool
@@ -681,7 +681,7 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // (6 knobs ZOOM/ROT X/ROT Y/POWER/DETAIL/HUE + SPIN/SCRN toggles + 6 CV
   // handle rows + VIDEO out) is the regression gate. Darwin baseline captured
   // here; linux baseline pending a `task vrt:update` run on linux CI (see
-  // EXEMPT_BASELINE_PAIRS → linux/mandelbulb). DE/shading correctness is
+  // the vrt-update.yml capture on linux CI). DE/shading correctness is
   // additionally covered by mandelbulb-math.test.ts + mandelbulb.test.ts.
   // JOYSTICK first-slice PR: card is small + simple (XY pad + four CV
   // ports), VRT baseline pending. Unit + E2E provide coverage.
@@ -780,17 +780,17 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // Functional coverage: quadralogical.test.ts (weight model + edge-weight
   // composite + all 8 blend2 branches + normalling) + e2e/tests/quadralogical
   // .spec.ts (corner dominance + per-edge distinctness + independence + freeze).
-  quadralogical: 'SOLO-spawn VRT exempt (live MIX preview canvas with nothing patched). The deterministic per-edge composite VRT is vrt-quadralogical.spec.ts (8 effect baselines, darwin captured; linux via EXEMPT_BASELINE_PAIRS). Unit (weight model + edge composite + all 8 blends) + e2e (corner dominance + per-edge distinctness/independence) provide coverage.',
+  quadralogical: 'SOLO-spawn VRT exempt (live MIX preview canvas with nothing patched). The deterministic per-edge composite VRT is vrt-quadralogical.spec.ts (8 effect baselines captured by linux CI). Unit (weight model + edge composite + all 8 blends) + e2e (corner dominance + per-edge distinctness/independence) provide coverage.',
   // COLOUR OF MAGIC — multi-colorspace processor. SOLO-spawn VRT exempt (live
   // preview canvas; nothing patched renders black). The deterministic per-block
   // composite VRT is vrt-colourofmagic.spec.ts (6 scenes: pass / rgb / ydbdr /
   // hsv recolorization + mono-override channel clobber + palette CMY remap,
   // clock-pinned structured source, darwin captured; linux via
-  // EXEMPT_BASELINE_PAIRS). Unit (colourofmagic-colorspace.test.ts — every
+  // the vrt-update.yml capture). Unit (colourofmagic-colorspace.test.ts — every
   // colorspace + adj/over-clamp + hue-rotation + palette path) + e2e
   // (colourofmagic.spec.ts — all 8 outs emit, recolorization, mono-override
   // clobber, over/clamp) provide coverage.
-  colourofmagic: 'SOLO-spawn VRT exempt (live preview canvas; nothing patched is black). The deterministic per-block composite VRT is vrt-colourofmagic.spec.ts (6 scenes: pass/rgb/ydbdr/hsv recolorization + mono-override channel clobber + palette CMY remap, darwin captured; linux via EXEMPT_BASELINE_PAIRS). Unit (colourofmagic-colorspace.test.ts) + e2e (colourofmagic.spec.ts) provide coverage.',
+  colourofmagic: 'SOLO-spawn VRT exempt (live preview canvas; nothing patched is black). The deterministic per-block composite VRT is vrt-colourofmagic.spec.ts (6 scenes: pass/rgb/ydbdr/hsv recolorization + mono-override channel clobber + palette CMY remap, captured by linux CI). Unit (colourofmagic-colorspace.test.ts) + e2e (colourofmagic.spec.ts) provide coverage.',
   // MAPPY — multi-surface manual projection mapper (v1). The SOLO-spawn card
   // carries a LIVE composite preview canvas + an SVG corner-drag overlay whose
   // handles only appear for CONNECTED inputs, so a SOLO (nothing-patched) VRT
@@ -892,7 +892,7 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // the engraved-black control captions legible on the beige faceplate, so the
   // baselines pin the FIXED appearance). All three are deterministic beige Moog
   // faceplates (knobs + a discrete RANGE/SYNC switch, no canvas / animation).
-  // Linux baselines are darwin-only for now — see EXEMPT_BASELINE_PAIRS
+  // Baselines are authored by linux CI (`task vrt:commit`)
   // (linux/moog921a, linux/moog921b, linux/moog904b) pending a `task vrt:update`
   // run on linux CI. DSP unit + ART (source-SHA-pinned .f32) + per-module-
   // per-port e2e provide the functional coverage.
@@ -1000,7 +1000,7 @@ export const ALLOWED_PERMANENT_EXEMPT: ReadonlySet<string> = new Set([
 
 /** Strict VRT subset — the deterministic, pure-DOM/CSS knob-and-fader cards
  *  that ship a baseline on BOTH platforms (darwin + linux), aren't masked
- *  for canvas non-determinism, and aren't in EXEMPT_BASELINE_PAIRS pending a
+ *  for canvas non-determinism, and have a committed baseline rather than a
  *  fresh capture. These are the ones safe to promote into `task ci` as a
  *  required gate — a diff here is virtually guaranteed to be a real UI
  *  regression, not platform/GPU/timing flake.
@@ -1014,7 +1014,7 @@ export const ALLOWED_PERMANENT_EXEMPT: ReadonlySet<string> = new Set([
  *    1. Module has a baseline PNG on BOTH platforms.
  *    2. Module is NOT in VRT_MODULE_MASKS (no canvas mask → diff is
  *       semantically meaningful end-to-end).
- *    3. Module is NOT in EXEMPT_BASELINE_PAIRS for either platform (no
+ *    3. Module has a COMMITTED baseline (no
  *       pending re-capture; both baselines reflect current UI).
  *    4. Card has no animated chrome (LED pulse, blinking cursor, time-
  *       driven readouts). Pure CSS-styled knobs/faders/ports only.
@@ -1037,7 +1037,7 @@ export const STRICT_VRT_MODULES = new Set<string>([
   // 360x401. The darwin baseline was re-captured (f1cd0e5f); the linux
   // baseline still shows the old 320x313 layout (pre-device-picker).
   // Re-add once linux baseline is re-captured + linux/audioOut removed
-  // from EXEMPT_BASELINE_PAIRS.
+  // by the vrt-update.yml capture.
   'buggles',              // bug-themed audio card
   'cartesian',            // X/Y grid sequencer card (S&H header toggle; linux baseline regenerated)
   'charlottesEchos',      // delay/echo knob card
@@ -1065,10 +1065,10 @@ export const STRICT_VRT_MODULES = new Set<string>([
   // prefers-reduced-motion, so the capture IS deterministic) + an owl toggle +
   // a gate input row. The darwin baseline was regenerated, but the linux
   // baseline is pending a `vrt-update.yml` workflow_dispatch (see
-  // EXEMPT_BASELINE_PAIRS → linux/timelorde). The strict lane requires BOTH
+  // the vrt-update.yml capture). The strict lane requires a current
   // platform baselines current (vrt-meta self-test), so timelorde rides the
   // full (informational) VRT lane until the linux baseline lands — then
-  // re-add it here + drop linux/timelorde from EXEMPT_BASELINE_PAIRS.
+  // re-add it here once `task vrt:commit` has captured it.
   'vca',                  // mono VCA card
   'wavecel',              // wave-cell knob card
   'wavetableVco',         // wavetable VCO card

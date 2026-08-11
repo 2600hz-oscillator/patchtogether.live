@@ -2379,8 +2379,10 @@ jobs:
   # card here can NOT block merge. It still runs on every PR for visibility
   # (gallery + report artifacts) so regressions are reviewable; treat a red here
   # as a signal to inspect, not a merge blocker. See retro 2026-06-06.
-  # Missing-baseline edge cases are gated by `EXEMPT_BASELINE_PAIRS` in the VRT
-  # spec files (with linux captures pending per-spec).
+  # A scene with no committed baseline FAILS here as "snapshot doesn't exist"
+  # rather than being skipped. That is deliberate (#1458): the old
+  # `EXEMPT_BASELINE_PAIRS` route made missing coverage invisible on green runs.
+  # Fix it by capturing — `task vrt:commit` — not by declaring it away.
   # -----------------------------------------------------------------------
   vrt:
     name: VRT (visual regression)
@@ -2603,7 +2605,7 @@ jobs:
               `**[▶ View the VRT diff gallery →](${url})**`,
               ``,
               `If the change is INTENTIONAL, accept the new baselines (regenerated on`,
-              `linux + darwin by CI, committed back to this branch) by running EITHER:`,
+              `linux CI — the only baseline author — and committed back to this branch) by running EITHER:`,
               ``,
               '```',
               `# from a local checkout of this branch:`,
@@ -2632,9 +2634,10 @@ jobs:
   # -----------------------------------------------------------------------
   # VRT (strict subset) — fast, deterministic gate. Runs ONLY the pure-DOM
   # knob/fader cards listed in STRICT_VRT_MODULES (see
-  # e2e/vrt/vrt-exemptions.ts). These cards have baselines on BOTH platforms,
-  # no canvas masks, and no animated chrome — a diff here is a real UI
-  # regression, not platform/GPU/timing flake.
+  # e2e/vrt/vrt-exemptions.ts). These cards have committed baselines, no canvas
+  # masks, and no animated chrome — a diff here is a real UI regression, not
+  # GPU/timing flake. Same-platform by construction since #1458: the baseline
+  # this compares against was rendered by this same runner image.
   #
   # REQUIRED status check for VRT (2026-06-06): the `main: green PRs only`
   # ruleset (16042163) was flipped to require this job's name

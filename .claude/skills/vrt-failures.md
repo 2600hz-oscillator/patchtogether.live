@@ -47,15 +47,17 @@ section — download the `playwright-report` zip from the failing job.
 
 - **Font hinting drift** between machines — usually means the test ran on a
   different OS than the baseline was captured on. Solution: per-platform
-  baselines (already in place; if you see this, it's because a baseline
-  needs darwin/linux recapture).
+  baselines (already in place; if you see this, the baseline needs a
+  recapture — `task vrt:commit`).
 - **Anti-alias edge differences** — small, scattered red pixels along curve
   edges. Often legitimate (a 1-pixel-shift element actually moved); rarely
   noise.
 - **Animation timing** — if a test captures during an animated state, the
-  diff varies per run. Solution: pause the animation in the test setup, or
-  add the module to `EXEMPT_BASELINE_PAIRS` if its render can't be made
-  deterministic (e.g., wavesculpt's animated 3D camera + CRT feedback).
+  diff varies per run. Solution: pause the animation in the test setup; freeze
+  the AudioContext (`freezeAudio`); mask the live region via `VRT_MODULE_MASKS`
+  or `VRT_LIVE_SURFACES` **with a measured companion**; or, as a last resort,
+  a NAMED `EXEMPT_FROM_VRT` + `ALLOWED_PERMANENT_EXEMPT` pair with a >40-char
+  reason (e.g. wavesculpt's animated 3D camera + CRT feedback).
 
 ## Stuff to never do
 
