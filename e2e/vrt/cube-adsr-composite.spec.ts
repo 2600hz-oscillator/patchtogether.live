@@ -22,7 +22,6 @@ import { test, expect } from '@playwright/test';
 import { spawnPatch } from '../tests/_helpers';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
 
-const VRT_PLATFORM = process.platform === 'darwin' ? 'darwin' : 'linux';
 
 test.describe.configure({ mode: 'default' });
 
@@ -57,7 +56,6 @@ test.describe('VRT: CUBE per-voice-ADSR composite', () => {
   });
 
   test('cube-adsr-midilane matches baseline', async ({ page }) => {
-    test.skip(VRT_PLATFORM === 'linux', 'darwin baseline only; linux pending a vrt-update on CI');
 
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));

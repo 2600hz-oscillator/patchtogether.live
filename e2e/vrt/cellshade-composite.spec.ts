@@ -37,10 +37,8 @@
 
 import { test, expect } from '@playwright/test';
 import { spawnPatch } from '../tests/_helpers';
-import { EXEMPT_BASELINE_PAIRS } from './vrt-exemptions';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
 
-const VRT_PLATFORM = process.platform === 'darwin' ? 'darwin' : 'linux';
 
 test.describe.configure({ mode: 'default' });
 
@@ -102,10 +100,6 @@ const SCENES: Scene[] = [
 test.describe('VRT: CELLSHADE rebuild composite scenes', () => {
   for (const scene of SCENES) {
     test(`${scene.id} matches baseline`, async ({ page }) => {
-      test.skip(
-        EXEMPT_BASELINE_PAIRS.has(`${VRT_PLATFORM}/${scene.id}`),
-        `${scene.id} on ${VRT_PLATFORM}: baseline pending (see EXEMPT_BASELINE_PAIRS)`,
-      );
 
       test.setTimeout(90_000);
 

@@ -31,7 +31,6 @@ import { spawnPatch } from '../tests/_helpers';
 import { REGISTRY } from '../tests/_registry';
 import {
   EXEMPT_FROM_VRT,
-  EXEMPT_BASELINE_PAIRS,
   STRICT_VRT_MODULES,
   VRT_MODULE_MASKS,
 } from './vrt-exemptions';
@@ -39,7 +38,6 @@ import { applyVrtScene, VRT_SCENES } from './vrt-scenes';
 import { expectVrtSceneScreenshot } from './vrt-capture';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
 
-const VRT_PLATFORM = process.platform === 'darwin' ? 'darwin' : 'linux';
 
 // `VRT_STRICT=1` filters the suite down to the deterministic, pure-DOM
 // knob/fader cards listed in STRICT_VRT_MODULES. Used by `task vrt:strict`
@@ -65,10 +63,6 @@ test.describe.configure({ mode: 'default' });
 test.describe('VRT: every module card matches its baseline', () => {
   for (const mod of COVERED_MODULES) {
     test(`${mod.type} card matches baseline`, async ({ page }) => {
-      test.skip(
-        EXEMPT_BASELINE_PAIRS.has(`${VRT_PLATFORM}/${mod.type}`),
-        `${mod.type} on ${VRT_PLATFORM}: baseline pending (see EXEMPT_BASELINE_PAIRS)`,
-      );
       // Capture page errors so a broken card fails the test before the
       // screenshot diff does — easier to debug than a thousand-pixel diff.
       const errors: string[] = [];

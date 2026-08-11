@@ -36,10 +36,8 @@
 // lands them (the workflow-shell-faces precedent).
 
 import { test, expect, type Page } from '@playwright/test';
-import { EXEMPT_BASELINE_PAIRS } from './vrt-exemptions';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
 
-const VRT_PLATFORM = process.platform === 'darwin' ? 'darwin' : 'linux';
 test.describe.configure({ mode: 'default' });
 
 /** The two bracket scenes.
@@ -126,10 +124,6 @@ async function bootWithMember(page: Page, type: string): Promise<string> {
 test.describe('VRT: rear card — the dock full-view TAB flip side', () => {
   for (const { type, ports, holes, stereoHoles } of SCENES) {
     test(`rear-${type}: the flip-side jack field matches baseline`, async ({ page }) => {
-      test.skip(
-        EXEMPT_BASELINE_PAIRS.has(`${VRT_PLATFORM}/rear-${type}`),
-        `rear-${type} on ${VRT_PLATFORM}: baseline pending (see EXEMPT_BASELINE_PAIRS)`,
-      );
       const errors: string[] = [];
       page.on('pageerror', (e) => errors.push(e.message));
 

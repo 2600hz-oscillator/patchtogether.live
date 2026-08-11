@@ -118,7 +118,6 @@
 // `dock-row-plan` / `module-face-lint` units, which read the whole faceplate.
 
 import { test, expect } from '@playwright/test';
-import { EXEMPT_BASELINE_PAIRS } from './vrt-exemptions';
 import { diffRegion } from './vrt-surface-stats';
 import { DOCK_TAB_MIN_BANDS } from '../../packages/web/src/lib/ui/workflow/dock-tabs-model';
 import {
@@ -145,7 +144,6 @@ import {
 } from './_shell-faces';
 import { readAudioClock, resumeAudioContext } from './vrt-audio-freeze';
 
-const VRT_PLATFORM = process.platform === 'darwin' ? 'darwin' : 'linux';
 test.describe.configure({ mode: 'default' });
 
 /** The per-channel delta (0-255) at which `diffRegion` counts a pixel as
@@ -159,10 +157,6 @@ const NC_SHIFT_PX = 8;
 test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock full-view', () => {
   for (const { type, pages } of FACES) {
     test(`face-${type}-compact: the compact lane tile matches baseline`, async ({ page }) => {
-      test.skip(
-        EXEMPT_BASELINE_PAIRS.has(`${VRT_PLATFORM}/face-${type}-compact`),
-        `face-${type}-compact on ${VRT_PLATFORM}: baseline pending (see EXEMPT_BASELINE_PAIRS)`,
-      );
       const errors: string[] = [];
       page.on('pageerror', (e) => errors.push(e.message));
 
@@ -191,10 +185,6 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
     });
 
     test(`face-${type}-dock: the dock full-view faceplate matches baseline`, async ({ page }) => {
-      test.skip(
-        EXEMPT_BASELINE_PAIRS.has(`${VRT_PLATFORM}/face-${type}-dock`),
-        `face-${type}-dock on ${VRT_PLATFORM}: baseline pending (see EXEMPT_BASELINE_PAIRS)`,
-      );
       const errors: string[] = [];
       page.on('pageerror', (e) => errors.push(e.message));
 

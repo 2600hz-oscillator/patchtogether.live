@@ -13,8 +13,8 @@
 // since Playwright only rewrites a snapshot on FAILURE, `--update-snapshots`
 // cannot repair it either. Measured on this repo: #1159 recoloured every
 // cable token and re-pinned a handful of PNGs; 76 of the token-pinned
-// baselines were still on the OLD hues nine days later, across BOTH
-// platforms, with a green required lane the whole time.
+// baselines were still on the OLD hues nine days later, on both of the
+// baseline sets that existed then, with a green required lane the whole time.
 //
 // WHERE IT RUNS. The PNGs are git-LFS objects and the `unit` lane checks out
 // `lfs: false`, so there the files are pointer stubs and this gate would
@@ -35,20 +35,19 @@
 //      `maxDiffPixelRatio`, so the recapture PASSES the comparison and
 //      Playwright — which only rewrites a snapshot on FAILURE — writes nothing.
 //      A MISSING snapshot is always written. (CLAUDE.md, the A2/#1213 hole.)
-//   2. darwin: recapture locally (`task vrt` / `task vrt:one -- <grep>`). CI
-//      renders on linux only, so darwin baselines are authored on a dev box.
-//   3. linux: `gh workflow run vrt-update.yml -f ref=<branch> -f platform=linux`,
-//      UNSCOPED, and NEVER a hand edit on macOS. DRAIN any `EXEMPT_BASELINE_PAIRS`
-//      entry for those scenes FIRST — an exempt pair is `test.skip()`-ed
-//      unconditionally, so the dispatch writes nothing for it and comes back
-//      green having captured zero.
-//   4. Baselines the gate reports as `quarantined` cannot be repaired at all
-//      (nothing compares them, so nothing can rewrite them). They are excluded
-//      from the assertion for exactly that reason, and are printed every run so
-//      the debt stays visible rather than becoming invisible coverage.
+//   2. `gh workflow run vrt-update.yml -f ref=<branch>` (or `task vrt:commit`),
+//      UNSCOPED, and NEVER a hand edit on macOS. Linux CI is the only baseline
+//      author — a local darwin render is a smoke test, not a capture.
 //
-// A palette change that cannot follow steps 1-3 must not be landed by relaxing
-// this gate.
+// A palette change that cannot follow those two steps must not be landed by
+// relaxing this gate.
+//
+// ⚠ THE `quarantined` BUCKET IS GONE (2026-08-10) and that is a coverage
+// INCREASE, not a deletion. It held baselines listed in EXEMPT_BASELINE_PAIRS:
+// `test.skip()`-ed unconditionally, therefore compared by nothing, therefore
+// neither assertable nor repairable. With the platform dimension collapsed
+// there is no such set and no such state — every committed baseline is
+// compared, so every one of them is held to the current palette.
 
 import { describe, expect, it } from 'vitest';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
@@ -69,10 +68,6 @@ import {
   stripeSourceToken,
 } from '$lib/ui/vrt-cable-stripe';
 import { readCardSourceWithDelegates } from '$lib/ui/card-source';
-// vitest's resolve.alias doesn't reach across the /e2e/ workspace, so this is a
-// relative path — same as vrt-meta.test.ts.
-import { EXEMPT_BASELINE_PAIRS } from '../../../../../e2e/vrt/vrt-exemptions';
-
 // This file lives at packages/web/src/lib/ui/. Five `..` hops = repo root.
 const REPO_ROOT = resolve(import.meta.dirname, '../../../../..');
 const CARD_DIR = resolve(REPO_ROOT, 'packages/web/src/lib/ui/modules');
@@ -224,10 +219,9 @@ function cardBasenameByType(): Record<string, string> {
 
 /** One token-pinned baseline, measured once. */
 interface Pinned {
-  /** `<spec>/<platform>/<scene>` — unique across the whole screenshot tree. */
+  /** `<spec>/<scene>` — unique across the whole screenshot tree. */
   key: string;
   spec: string;
-  platform: string;
   scene: string;
   type: string;
   card: string;
@@ -244,7 +238,6 @@ interface Pinned {
 interface Measured {
   pinned: Pinned[];
   skipped: string[];
-  quarantined: string[];
   pointers: number;
 }
 
@@ -267,44 +260,17 @@ function measure(readBytes: (path: string) => Buffer = readFileSync): Measured {
   const explicit = cardBasenameByType();
   const pinned: Pinned[] = [];
   const skipped: string[] = [];
-  const quarantined: string[] = [];
   let pointers = 0;
   for (const spec of baselineDirs()) {
     const sceneType = CARD_CAPTURE_DIRS[spec];
     const edge = CABLE_EDGE_DIRS[spec];
     if (!sceneType && !edge) continue; // declared non-card, or unclassified (asserted below)
-    const specDir = resolve(SCREENSHOT_ROOT, spec);
-    for (const platform of readdirSync(specDir).sort()) {
-      const dir = resolve(specDir, platform);
-      if (!statSync(dir).isDirectory()) continue;
+    const dir = resolve(SCREENSHOT_ROOT, spec);
+    {
       for (const file of readdirSync(dir).sort()) {
         if (!file.endsWith('.png')) continue;
         const scene = file.replace(/\.png$/, '');
-        const key = `${spec}/${platform}/${scene}`;
-        // A pair in EXEMPT_BASELINE_PAIRS is `test.skip()`-ed UNCONDITIONALLY, so
-        // its PNG is not compared by anything and CANNOT be repaired by
-        // `--update-snapshots` (the test never runs). Holding it to the current
-        // palette would make this gate un-satisfiable, so it is reported instead
-        // of asserted — see the `quarantined` list printed by the coverage test.
-        //
-        // ⚠ DO NOT DELETE A QUARANTINED PNG AS A MATTER OF COURSE. An earlier
-        // revision of this PR removed 14 of them on the reasoning "a baseline
-        // nothing compares is not coverage". Fourteen of those exact pairs are
-        // being DRAINED by PR #1272 — after which the scenes ARE compared on
-        // linux, so deleting the PNGs would have left 10 modules with no linux
-        // baseline and turned the `unit` lane red on main. The two PRs share
-        // ZERO files, so nothing would have conflicted and nothing would have
-        // warned. They are restored, and #1272's `vrt-update.yml` dispatch has
-        // since re-captured all 15 on linux (bot commit ef29f3db) — verified
-        // to paint the CURRENT palette, so this gate stays green whichever PR
-        // lands first. Delete a quarantined baseline only when you have checked
-        // that no in-flight PR drains its pair.
-        // (The Set is GLOBAL and keyed `<platform>/<sceneId>`: every card-capture
-        // spec consults it with its own scene id, which is the PNG stem.)
-        if (EXEMPT_BASELINE_PAIRS.has(`${platform}/${scene}`)) {
-          quarantined.push(key);
-          continue;
-        }
+        const key = `${spec}/${scene}`;
         const type = edge ? edge.type : sceneType!(scene);
         const card = explicit[type] ?? conventionalCardBasename(type);
         let token: string;
@@ -333,13 +299,13 @@ function measure(readBytes: (path: string) => Buffer = readFileSync): Measured {
         }
         const band = findStripeBand(new Uint8Array(bytes));
         pinned.push({
-          key, spec, platform, scene, type, card, token,
+          key, spec, scene, type, card, token,
           got: band?.hex, bg: band?.bgHex, y: band?.y, saturation: band?.saturation,
         });
       }
     }
   }
-  return { pinned, skipped, quarantined, pointers };
+  return { pinned, skipped, pointers };
 }
 
 /** Which of the measured baselines disagree with a given palette? */
@@ -391,12 +357,10 @@ function scanExcluded(dirs: string[]): { banded: string[]; read: number; stubs: 
     const dir = resolve(SCREENSHOT_ROOT, spec);
     if (!existsSync(dir)) continue;
     const hits: string[] = [];
-    for (const platform of readdirSync(dir).sort()) {
-      const pd = resolve(dir, platform);
-      if (!statSync(pd).isDirectory()) continue;
-      for (const f of readdirSync(pd).sort()) {
+    {
+      for (const f of readdirSync(dir).sort()) {
         if (!f.endsWith('.png')) continue;
-        const bytes = readFileSync(resolve(pd, f));
+        const bytes = readFileSync(resolve(dir, f));
         if (bytes.subarray(0, LFS_POINTER_PREFIX.length).toString('utf8') === LFS_POINTER_PREFIX) {
           stubs++;
           continue;
@@ -404,7 +368,7 @@ function scanExcluded(dirs: string[]): { banded: string[]; read: number; stubs: 
         read++;
         const band = findStripeBand(new Uint8Array(bytes));
         const label = band && hue[band.hex.toLowerCase()];
-        if (label) hits.push(`${platform}/${f} y=${band!.y} ${band!.hex} (${label})`);
+        if (label) hits.push(`${f} y=${band!.y} ${band!.hex} (${label})`);
       }
     }
     if (hits.length) {
@@ -417,7 +381,7 @@ function scanExcluded(dirs: string[]): { banded: string[]; read: number; stubs: 
 const cableBandedDirs = (dirs: string[]): string[] => scanExcluded(dirs).banded;
 
 describe('VRT baselines paint the CURRENT --cable-* stripe', () => {
-  const { pinned, skipped, quarantined, pointers } = measure();
+  const { pinned, skipped, pointers } = measure();
   const unreadable = pointers > 0;
   const tokens = CABLE_VARS as unknown as Record<string, string>;
 
@@ -601,12 +565,8 @@ describe('VRT baselines paint the CURRENT --cable-* stripe', () => {
       const src = readFileSync(specPath, 'utf8');
       const dir = resolve(SCREENSHOT_ROOT, spec);
       const types = new Set<string>();
-      for (const platform of readdirSync(dir)) {
-        const pd = resolve(dir, platform);
-        if (!statSync(pd).isDirectory()) continue;
-        for (const f of readdirSync(pd)) {
-          if (f.endsWith('.png')) types.add(toType(f.replace(/\.png$/, '')));
-        }
+      for (const f of readdirSync(dir)) {
+        if (f.endsWith('.png')) types.add(toType(f.replace(/\.png$/, '')));
       }
       for (const t of types) {
         // The recognised ways a spec can name the module it screenshots. A spec
@@ -653,8 +613,6 @@ describe('VRT baselines paint the CURRENT --cable-* stripe', () => {
       `${Object.keys(CARD_CAPTURE_DIRS).length} card-capture + ` +
       `${Object.keys(CABLE_EDGE_DIRS).length} cable-edge dirs ` +
       `(${Object.keys(NON_CARD_CAPTURE_DIRS).length} excluded, each claim asserted).\n` +
-      `  EXEMPT_BASELINE_PAIRS (never compared by any test, so their pixels can be neither ` +
-      `asserted nor repaired): ${quarantined.join(', ') || '(none)'}\n` +
       `  not token-pinned (${skipped.length}):\n    ${skipped.join('\n    ')}`,
     );
     expect(
@@ -747,9 +705,7 @@ describe('VRT baselines paint the CURRENT --cable-* stripe', () => {
       (p) => p.token === '--cable-video' && !pendingSet.has(p.key) && p.y !== undefined,
     );
     expect(target, 'no --cable-video baseline available to control with').toBeTruthy();
-    const path = resolve(
-      SCREENSHOT_ROOT, target!.spec, target!.platform, `${target!.scene}.png`,
-    );
+    const path = resolve(SCREENSHOT_ROOT, target!.spec, `${target!.scene}.png`);
     // A fully-covered stripe can span TWO rows, and the band is chosen by
     // saturation — repainting just one leaves the other pure and winning
     // (measured: the gate still read #b57bff). #ff0000 hides this because its
@@ -836,7 +792,7 @@ describe('VRT baselines paint the CURRENT --cable-* stripe', () => {
       );
       if (!target) continue;
       targets.push(target);
-      const path = resolve(SCREENSHOT_ROOT, target.spec, target.platform, `${target.scene}.png`);
+      const path = resolve(SCREENSHOT_ROOT, target.spec, `${target.scene}.png`);
       perturbed.set(
         path,
         Buffer.from(repaintStripeRow(new Uint8Array(readFileSync(path)), target.y!, PERTURBED)),

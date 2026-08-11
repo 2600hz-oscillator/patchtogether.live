@@ -29,10 +29,8 @@
 import { test, expect } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { spawnPatch, type SpawnNode, type SpawnEdge } from '../tests/_helpers';
-import { EXEMPT_BASELINE_PAIRS } from './vrt-exemptions';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
 
-const VRT_PLATFORM = process.platform === 'darwin' ? 'darwin' : 'linux';
 
 interface ScopeCase {
   name: string;
@@ -104,10 +102,6 @@ test.describe.configure({ mode: 'default' });
 test.describe('VRT: SCOPE X/Y mode + INTENSITY persistence', () => {
   for (const c of CASES) {
     test(`${c.name} matches baseline`, async ({ page }) => {
-      test.skip(
-        EXEMPT_BASELINE_PAIRS.has(`${VRT_PLATFORM}/scope-${c.name}`),
-        `scope-${c.name} on ${VRT_PLATFORM}: baseline pending (see EXEMPT_BASELINE_PAIRS)`,
-      );
 
       const errors: string[] = [];
       page.on('pageerror', (e) => errors.push(e.message));

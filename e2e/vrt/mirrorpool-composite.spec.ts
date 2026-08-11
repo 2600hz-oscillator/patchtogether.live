@@ -30,10 +30,8 @@
 
 import { test, expect } from '@playwright/test';
 import { spawnPatch } from '../tests/_helpers';
-import { EXEMPT_BASELINE_PAIRS } from './vrt-exemptions';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
 
-const VRT_PLATFORM = process.platform === 'darwin' ? 'darwin' : 'linux';
 
 test.describe.configure({ mode: 'default' });
 
@@ -70,10 +68,6 @@ const SCENES: Scene[] = [
 test.describe('VRT: MIRRORPOOL composite scenes', () => {
   for (const s of SCENES) {
     test(`${s.id} matches baseline`, async ({ page }) => {
-      test.skip(
-        EXEMPT_BASELINE_PAIRS.has(`${VRT_PLATFORM}/${s.id}`),
-        `${s.id} on ${VRT_PLATFORM}: baseline deferred (HELD for owner preview — see EXEMPT_BASELINE_PAIRS)`,
-      );
 
       test.setTimeout(90_000);
 

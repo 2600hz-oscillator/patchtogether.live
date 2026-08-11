@@ -25,10 +25,8 @@
 
 import { test, expect } from '@playwright/test';
 import { spawnPatch } from '../tests/_helpers';
-import { EXEMPT_BASELINE_PAIRS } from './vrt-exemptions';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
 
-const VRT_PLATFORM = process.platform === 'darwin' ? 'darwin' : 'linux';
 
 interface WallCase {
   name: string;
@@ -45,14 +43,6 @@ test.describe.configure({ mode: 'default' });
 test.describe('VRT: WAVESCULPT video walls', () => {
   for (const c of CASES) {
     test(`${c.name} matches baseline`, async ({ page }) => {
-      test.skip(
-        VRT_PLATFORM === 'linux',
-        `wavesculpt ${c.name} on linux: baseline pending (capture on linux CI)`,
-      );
-      test.skip(
-        EXEMPT_BASELINE_PAIRS.has(`${VRT_PLATFORM}/wavesculpt-${c.name}`),
-        `wavesculpt-${c.name} on ${VRT_PLATFORM}: quarantined (see EXEMPT_BASELINE_PAIRS)`,
-      );
 
       const errors: string[] = [];
       page.on('pageerror', (e) => errors.push(e.message));

@@ -28,10 +28,8 @@
 
 import { test, expect } from '@playwright/test';
 import { spawnPatch } from '../tests/_helpers';
-import { EXEMPT_BASELINE_PAIRS } from './vrt-exemptions';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
 
-const VRT_PLATFORM = process.platform === 'darwin' ? 'darwin' : 'linux';
 
 test.describe.configure({ mode: 'default' });
 
@@ -81,10 +79,6 @@ const EFFECT_SCENES: EffectScene[] = [
 test.describe('VRT: QUADRALOGICAL per-edge effects', () => {
   for (const scene of EFFECT_SCENES) {
     test(`${scene.id} matches baseline`, async ({ page }) => {
-      test.skip(
-        EXEMPT_BASELINE_PAIRS.has(`${VRT_PLATFORM}/${scene.id}`),
-        `${scene.id} on ${VRT_PLATFORM}: baseline pending (see EXEMPT_BASELINE_PAIRS)`,
-      );
 
       // Video e2e on CI's SwiftShader is SLOW — generous budget.
       test.setTimeout(90_000);

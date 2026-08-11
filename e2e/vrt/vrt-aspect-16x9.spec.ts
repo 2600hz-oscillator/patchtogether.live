@@ -20,10 +20,8 @@
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from '../tests/_helpers';
-import { EXEMPT_BASELINE_PAIRS } from './vrt-exemptions';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
 
-const VRT_PLATFORM = process.platform === 'darwin' ? 'darwin' : 'linux';
 
 // A fixed-param SHAPES (a centered triangle) — a static, time-independent
 // procedural fill, so the blit is pixel-stable.
@@ -107,10 +105,6 @@ const CARDS: Array<{ id: string; sinkType: 'videoOut'; cardClass: string }> = [
 test.describe('VRT: OUTPUT aspect 16:9 — preview cards letterbox at the live aspect', () => {
   for (const c of CARDS) {
     test(`${c.id} card renders at 16:9`, async ({ page }) => {
-      test.skip(
-        EXEMPT_BASELINE_PAIRS.has(`${VRT_PLATFORM}/${c.id}`),
-        `${c.id} on ${VRT_PLATFORM}: baseline pending (see EXEMPT_BASELINE_PAIRS)`,
-      );
       const errors: string[] = [];
       page.on('pageerror', (e) => errors.push(e.message));
       page.on('console', (m) => {

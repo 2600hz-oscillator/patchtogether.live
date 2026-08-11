@@ -20,15 +20,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
 
-const EXEMPT_BASELINE_PAIRS = new Set<string>(['linux/landing']);
-const VRT_PLATFORM = process.platform === 'darwin' ? 'darwin' : 'linux';
-
-function skipIfNoBaseline(t: typeof test, name: string): void {
-  t.skip(
-    EXEMPT_BASELINE_PAIRS.has(`${VRT_PLATFORM}/${name}`),
-    `${name} on ${VRT_PLATFORM}: baseline pending (CI capture follow-up)`,
-  );
-}
 
 async function hideJitterers(page: Page): Promise<void> {
   await page.addStyleTag({
@@ -85,7 +76,6 @@ async function awaitStableHeight(page: Page): Promise<void> {
 test.describe.configure({ mode: 'default' });
 
 test('landing: static front door', async ({ page }) => {
-  skipIfNoBaseline(test, 'landing');
   // Pin the bundled Inter face BEFORE first paint so the brand / hero / tile
   // glyphs resolve deterministically (same #598 fix the card sweep uses).
   await pinVrtFonts(page);

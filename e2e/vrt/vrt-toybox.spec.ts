@@ -26,7 +26,6 @@ import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch, ensureCombineOpen } from '../tests/_helpers';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
 
-const VRT_PLATFORM = process.platform === 'darwin' ? 'darwin' : 'linux';
 
 // The four bundled content ids + the layer `kind` each maps to (GEN → 'gen',
 // FX → 'shader'). Frozen iTime is fixed per id so the captured frame is
@@ -237,10 +236,6 @@ async function setObjAndFreeze(
 test.describe('VRT: TOYBOX per-content frozen render', () => {
   for (const c of CONTENTS) {
     test(`${c.id} renders real frozen content`, async ({ page }) => {
-      test.skip(
-        VRT_PLATFORM === 'linux',
-        `linux/toybox-${c.id}: darwin baseline only; linux pending a vrt:update on CI`,
-      );
 
       const errors: string[] = [];
       page.on('pageerror', (e) => errors.push(e.message));
@@ -287,10 +282,6 @@ test.describe('VRT: TOYBOX per-content frozen render', () => {
 test.describe('VRT: TOYBOX OBJ layer frozen render', () => {
   for (const m of MODELS) {
     test(`obj ${m.id} renders recognizable lit 3D geometry`, async ({ page }) => {
-      test.skip(
-        VRT_PLATFORM === 'linux',
-        `linux/toybox-obj-${m.id}: darwin baseline only; linux pending a vrt:update on CI`,
-      );
 
       const errors: string[] = [];
       page.on('pageerror', (e) => errors.push(e.message));
@@ -535,10 +526,6 @@ test.describe('VRT: TOYBOX Phase-5 CV-route proof', () => {
     { name: 'cv2-high', raw: 1 },   // fade t → 1 : shows layer 1 (cos-gradient)
   ]) {
     test(`cv2 → fade.t driven ${drive.name} composites distinctly`, async ({ page }) => {
-      test.skip(
-        VRT_PLATFORM === 'linux',
-        `linux/toybox-${drive.name}: darwin baseline only; linux pending a vrt:update on CI`,
-      );
       const errors: string[] = [];
       page.on('pageerror', (e) => errors.push(e.message));
       page.on('console', (m) => {
@@ -650,10 +637,6 @@ async function loadPresetAndFreeze(page: Page, presetId: string, time: number): 
 test.describe('VRT: TOYBOX Phase-6 presets', () => {
   for (const p of PRESETS) {
     test(`preset ${p.id} composites end-to-end`, async ({ page }) => {
-      test.skip(
-        VRT_PLATFORM === 'linux',
-        `linux/toybox-preset-${p.id}: darwin baseline only; linux pending a vrt:update on CI`,
-      );
       const errors: string[] = [];
       page.on('pageerror', (e) => errors.push(e.message));
       page.on('console', (m) => {
@@ -799,10 +782,6 @@ async function setObjTexturedAndFreeze(page: Page, modelId: string, time: number
 test.describe('VRT: TOYBOX OBJ surface-texture', () => {
   for (const m of TEXMAP_MODELS) {
     test(`obj ${m.id} shows a layer's rendered output as a surface texture`, async ({ page }) => {
-      test.skip(
-        VRT_PLATFORM === 'linux',
-        `linux/toybox-obj-tex-${m.id}: darwin baseline only; linux pending a vrt:update on CI`,
-      );
       const errors: string[] = [];
       page.on('pageerror', (e) => errors.push(e.message));
       page.on('console', (msg) => {
@@ -837,10 +816,6 @@ test.describe('VRT: TOYBOX OBJ surface-texture', () => {
 
 test.describe('VRT: TOYBOX Phase-4 combine graph', () => {
   test('a non-default combine graph composites the expected frozen output', async ({ page }) => {
-    test.skip(
-      VRT_PLATFORM === 'linux',
-      'linux/toybox-combine-composite: darwin baseline only; linux pending a vrt:update on CI',
-    );
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => {
@@ -872,10 +847,6 @@ test.describe('VRT: TOYBOX Phase-4 combine graph', () => {
   });
 
   test('the bespoke SVG node editor renders the default graph deterministically', async ({ page }) => {
-    test.skip(
-      VRT_PLATFORM === 'linux',
-      'linux/toybox-combine-editor: darwin baseline only; linux pending a vrt:update on CI',
-    );
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => {
@@ -1059,10 +1030,6 @@ async function loadErosionAndFreeze(page: Page, time: number): Promise<void> {
 
 test.describe('VRT: TOYBOX Shadertoy multi-buffer growing peak', () => {
   test('the growing-peak preset raymarches a converged frozen frame', async ({ page }) => {
-    test.skip(
-      VRT_PLATFORM === 'linux',
-      'linux/toybox-preset-growing-peak: darwin baseline only; linux pending a vrt:update on CI',
-    );
     // The multi-pass float raymarch is the heaviest TOYBOX path on SwiftShader.
     test.setTimeout(120_000);
     const errors: string[] = [];
@@ -1181,10 +1148,6 @@ async function setFragOverBaseAndFreeze(page: Page, fragId: string, time: number
 
 test.describe('VRT: TOYBOX FRAG over a base layer (content-bank)', () => {
   test('frag-kaleido folds the layer below (iChannel0) into a mandala', async ({ page }) => {
-    test.skip(
-      VRT_PLATFORM === 'linux',
-      'linux/toybox-frag-kaleido: darwin baseline only; linux pending a vrt:update on CI',
-    );
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
@@ -1308,10 +1271,6 @@ async function setFeedbackAndFreeze(page: Page, mode: number, time: number): Pro
 test.describe('VRT: TOYBOX feedback (stateful combine op)', () => {
   for (const f of FEEDBACK_MODES_VRT) {
     test(`feedback ${f.name} converges to a stable composite`, async ({ page }) => {
-      test.skip(
-        VRT_PLATFORM === 'linux',
-        `linux/toybox-feedback-${f.name}: darwin baseline only; linux pending a vrt:update on CI`,
-      );
       const errors: string[] = [];
       page.on('pageerror', (e) => errors.push(e.message));
       page.on('console', (m) => {

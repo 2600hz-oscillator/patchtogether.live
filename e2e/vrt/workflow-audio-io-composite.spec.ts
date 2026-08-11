@@ -22,10 +22,8 @@
 // accounts for the pair).
 
 import { test, expect, type Page } from '@playwright/test';
-import { EXEMPT_BASELINE_PAIRS } from './vrt-exemptions';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
 
-const VRT_PLATFORM = process.platform === 'darwin' ? 'darwin' : 'linux';
 test.describe.configure({ mode: 'default' });
 
 /** Wait until the workflow ensure has written the pinned audio pair. */
@@ -48,10 +46,6 @@ async function waitForAudioPins(page: Page): Promise<void> {
 test.describe('VRT: workflow 🎧 audio-I/O panel (open)', () => {
   test('open panel with both card faces properly fitted matches baseline', async ({ page }) => {
     const id = 'workflow-audio-io';
-    test.skip(
-      EXEMPT_BASELINE_PAIRS.has(`${VRT_PLATFORM}/${id}`),
-      `${id} on ${VRT_PLATFORM}: baseline pending (see EXEMPT_BASELINE_PAIRS)`,
-    );
 
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));

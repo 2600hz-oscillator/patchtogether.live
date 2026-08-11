@@ -140,14 +140,28 @@ export default defineConfig({
   // test-results/; we want them under __screenshots__/ so they're easy
   // to commit + diff in PRs.
   //
-  // Per-platform subdir ({platform}) — Playwright substitutes
-  // process.platform (`linux` on CI, `darwin` on local macOS dev,
-  // `win32` on Windows). Without this, devs on macOS see the entire
-  // 49-baseline set as drifted because the authoritative baselines
-  // are captured under Linux CI. Each platform gets its own committed
-  // baseline directory; both are LFS-tracked via the path-glob in
-  // .gitattributes (`e2e/vrt/__screenshots__/**/*.png filter=lfs`).
-  snapshotPathTemplate: '__screenshots__/{testFilePath}/{platform}/{arg}{ext}',
+  // ⚠ NO `{platform}` SEGMENT — ONE baseline set, authored by LINUX CI.
+  //
+  // It used to be '__screenshots__/{testFilePath}/{platform}/{arg}{ext}',
+  // which substitutes `process.platform` on the RUNNING machine: a macOS dev
+  // wrote `darwin/`, CI read `linux/`. Two populations, therefore divergence,
+  // therefore an apparatus to track divergence — four gap-declaration
+  // mechanisms, three ratchets, a 617-line enumerator and a per-platform
+  // capture matrix. Measured on `main` the day it was removed: 300 darwin PNGs
+  // against 156 linux, of which 146 darwin scenes had NO linux sibling — i.e.
+  // 146 scenes that looked covered everywhere and were never diffed on the
+  // platform that gates.
+  //
+  // A local macOS run now compares against the LINUX baselines, so it will
+  // show AA/font drift. That is the honest reading and it always was: the
+  // green a Mac dev used to get proved nothing about CI, because CI never read
+  // the darwin set. Use the Docker fast path (`task vrt:docker`) for a
+  // pixel-exact local loop, and treat a native local run as a smoke test —
+  // does it render, does it throw.
+  //
+  // LFS-tracked via the path-glob in .gitattributes
+  // (`e2e/vrt/__screenshots__/**/*.png filter=lfs`).
+  snapshotPathTemplate: '__screenshots__/{testFilePath}/{arg}{ext}',
 
   expect: {
     // ⚠⚠ THE SCREENSHOT SETTLE BUDGET LIVES HERE, NOT UNDER

@@ -29,10 +29,8 @@
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from '../tests/_helpers';
-import { EXEMPT_BASELINE_PAIRS } from './vrt-exemptions';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
 
-const VRT_PLATFORM = process.platform === 'darwin' ? 'darwin' : 'linux';
 test.describe.configure({ mode: 'default' });
 
 /** Wait until the workflow ensure has written the pinned clipplayer. */
@@ -92,10 +90,6 @@ async function settleHeight(el: ReturnType<Page['locator']>): Promise<void> {
 test.describe('VRT: workflow bottom dock composites', () => {
   test('docked clipplayer with its patch-to picker open matches baseline', async ({ page }) => {
     const id = 'workflow-dock-patch';
-    test.skip(
-      EXEMPT_BASELINE_PAIRS.has(`${VRT_PLATFORM}/${id}`),
-      `${id} on ${VRT_PLATFORM}: baseline pending (see EXEMPT_BASELINE_PAIRS)`,
-    );
 
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
@@ -160,10 +154,6 @@ test.describe('VRT: workflow bottom dock composites', () => {
   // tile carries the EXPAND pill — the real gesture the owner uses.
   test('clip player SIDE-BY-SIDE with a module pane matches baseline', async ({ page }) => {
     const id = 'workflow-dock-clip-split';
-    test.skip(
-      EXEMPT_BASELINE_PAIRS.has(`${VRT_PLATFORM}/${id}`),
-      `${id} on ${VRT_PLATFORM}: baseline pending (see EXEMPT_BASELINE_PAIRS)`,
-    );
 
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));

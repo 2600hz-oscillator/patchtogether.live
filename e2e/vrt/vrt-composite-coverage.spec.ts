@@ -29,7 +29,6 @@ import { pinVrtFonts, awaitVrtFonts } from './_fonts';
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from '../tests/_helpers';
 
-const VRT_PLATFORM = process.platform === 'darwin' ? 'darwin' : 'linux';
 
 // Every composite pair lands on SCOPE.ch1 as the consumer — its analyser-
 // driven canvas renders the bridged signal as a visible trace excursion
@@ -185,10 +184,6 @@ test.describe('VRT: video→audio CV/gate composite pairs (#414 regression cover
       // across the AudioContext sine-table + Float32 path per platform.
       // darwin captured here; linux pending a `task vrt:update` run on
       // linux CI.
-      test.skip(
-        VRT_PLATFORM === 'linux',
-        `${pair.id} on linux: composite baseline pending (capture on linux CI)`,
-      );
 
       await pinVrtFonts(page);
       await page.goto('/rack');

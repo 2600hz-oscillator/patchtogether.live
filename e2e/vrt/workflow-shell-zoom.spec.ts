@@ -21,10 +21,8 @@
 // (vrt-meta's linux-deficit ratchet accounts for the pairs).
 
 import { test, expect, type Page } from '@playwright/test';
-import { EXEMPT_BASELINE_PAIRS } from './vrt-exemptions';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
 
-const VRT_PLATFORM = process.platform === 'darwin' ? 'darwin' : 'linux';
 test.describe.configure({ mode: 'default' });
 
 /** The scenes: one pinned baseline per zoom. `faceTier` is the settled
@@ -76,10 +74,6 @@ async function waitForHooks(page: Page): Promise<void> {
 test.describe('VRT: ?shell=1 rack holds position vs the lane grid at fixed zooms', () => {
   for (const { id, zoom, faceTier } of SCENES) {
     test(`${id}: the framed rack region matches baseline at zoom ${zoom}`, async ({ page }) => {
-      test.skip(
-        EXEMPT_BASELINE_PAIRS.has(`${VRT_PLATFORM}/${id}`),
-        `${id} on ${VRT_PLATFORM}: baseline pending (see EXEMPT_BASELINE_PAIRS)`,
-      );
 
       const errors: string[] = [];
       page.on('pageerror', (e) => errors.push(e.message));
