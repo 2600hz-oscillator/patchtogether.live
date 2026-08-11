@@ -19,7 +19,7 @@ source tree, so they cannot go stale. Prose + roadmap: `docs/testing/README.md`.
 Required status-check **contexts** (2 — branch ruleset 16042163; not in-repo,
 see `.claude/skills/pr-workflow.md`):
 - `typecheck + unit + ART + E2E`  (ci.yml:2222)
-- `vrt-strict (visual regression — strict subset)`  (ci.yml:2650)
+- `vrt-strict (visual regression — strict subset)`  (ci.yml:2652)
 
 Jobs gated THROUGH the `ci` umbrella (a failure of any blocks merge) — 11:
 - `actionlint`, `art`, `behavioral-smoke`, `build`, `build-web`, `dsp-build`, `e2e`, `typecheck`, `unit`, `webgl-attest`, `webgl-smoke`
@@ -462,5 +462,5 @@ not a merge blocker.
 - `collab`  (ci.yml:965) — umbrella aggregate step labels it informational
 - `collab-attest`  (ci.yml:1995) — in umbrella needs+env but absent from the failing `if` (waited-on, non-blocking)
 - `grand-attest`  (ci.yml:2063) — in umbrella needs+env but absent from the failing `if` (waited-on, non-blocking)
-- `vrt`  (ci.yml:2385) — continue-on-error: true
+- `vrt`  (ci.yml:2387) — continue-on-error: true
 
