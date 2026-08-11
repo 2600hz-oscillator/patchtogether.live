@@ -548,11 +548,24 @@ tasks:
         FLAGS="-f ref=$BRANCH"
         [ -n "${GREP:-}" ] && FLAGS="$FLAGS -f grep=$GREP"
         echo "Dispatching vrt-update.yml for branch '$BRANCH'${GREP:+ grep=$GREP} …"
-        # gh reads vrt-update.yml from the DEFAULT branch and passes `ref` as an
-        # input (a workflow_dispatch run on a non-default ref does NOT count
-        # toward a PR's required-status gate — the workflow's `revalidate` job
-        # close+reopens the PR to re-fire pull_request; see vrt-update.yml).
-        gh workflow run vrt-update.yml $FLAGS
+        # ⚠ `--ref "$BRANCH"` RUNS THE BRANCH'S OWN COPY of vrt-update.yml, and
+        # that is load-bearing whenever a PR changes the capture itself.
+        #
+        # Without it `gh` reads the workflow from the DEFAULT branch and only
+        # passes `ref` as an INPUT — so main's capture logic runs against the
+        # branch's checkout. That silently mixes two versions, and it is not
+        # hypothetical: during #1458 (the {platform} collapse) main still
+        # declared a TWO-PLATFORM matrix while the branch had collapsed
+        # `snapshotPathTemplate` to one set. A default-branch dispatch there
+        # would have started a macos-latest job writing DARWIN pixels into the
+        # now-platform-less baseline path and committing them as canonical —
+        # the exact failure the PR exists to remove. Caught by noticing the run
+        # reported `head_branch: main`; that field is the tell.
+        #
+        # The `revalidate` job still handles the required-status gate (a
+        # workflow_dispatch run on ANY ref does not count toward it), so
+        # nothing is lost by preferring the branch's copy.
+        gh workflow run vrt-update.yml --ref "$BRANCH" $FLAGS
         echo "Dispatched. Track it with:  gh run list --workflow=vrt-update.yml"
 
   vrt:docker:
