@@ -293,10 +293,10 @@ was true about the one list it read.
   CEILING` *and* `CEILING - actual === 0` — because a ceiling can only trip by
   growing, and a drain that forgets to lower the number passes in total silence
   leaving slack that absorbs the next regression. ⚠ **But do not add one.** The
-  three VRT platform ceilings are the last hand-typed counts in the repo and
-  they exist only until the platform dimension collapses; everything else was
-  deleted 2026-08-10. See **"NEVER hand-type a population count"** below — the
-  both-directions rule is damage control for a data structure we no longer use.
+  VRT platform ceilings survive only until Phase 2 collapses the platform
+  dimension; nine unrelated counters were deleted outright on 2026-08-10. See
+  **"NEVER hand-type a population count"** below — the both-directions rule is
+  damage control for a data structure we are removing, not a pattern to copy.
 - **A drain without its re-capture ships a red lane.** Removing pairs is step 1
   of 2. The 2026-08-01 15-pair drain deferred the dispatch to "a follow-up" and
   every one of the 15 came back as a **dimension mismatch** (212×564 vs
@@ -569,13 +569,22 @@ asserted.
 
 ## NEVER hand-type a population count
 
-**No hand-typed population count anywhere in this repo.** Not a ceiling, not a
-floor, not a "frozen at N" — no literal whose value is *how many of something
-there are*. This is a P0 owner directive (2026-08-10): *"i want to eliminate the
-need for any of this. i don't want to have to track this data"* … *"eliminate
-ratchets entirely even if we lose test coverage as a result"*. Nine such counters
-were deleted in one PR and coverage loss was pre-authorised. **Silent coverage
-loss was not** — every protection dropped is named in that PR's body.
+**Never write a new hand-typed population count.** Not a ceiling, not a floor,
+not a "frozen at N" — no literal whose value is *how many of something there
+are*. This is a P0 owner directive (2026-08-10): *"i want to eliminate the need
+for any of this. i don't want to have to track this data"* … *"eliminate
+ratchets entirely even if we lose test coverage as a result"*. Nine were deleted
+in the first sweep and coverage loss was pre-authorised. **Silent coverage loss
+was not** — every protection dropped is named in that PR's body.
+
+⚠ **The sweep is not finished.** Phase 1 took the nine it was scoped to; the
+`vrt-meta` / `vrt-platform-gaps` platform ceilings go with Phase 2, and a
+further tail survives in `card-def-debt.ts`, `card-def-agreement.test.ts`,
+`raw-write-ledger.ts`, `mutate.guard.test.ts`, `worklet-guard.test.ts`,
+`dual-mono.test.ts` and the STRICT_* floors. **They are legacy, not precedent.**
+Remove the one in front of you when you touch its file (boy-scout), using the
+replacements below; never copy the pattern into new code, and never re-derive a
+count "just for this one".
 
 **Why, measured.** Three faces were authored concurrently from a base of
 `9 / 7` (`card-range-source.test.ts`). cube wrote `10 / 8`; clouds and cofefve
