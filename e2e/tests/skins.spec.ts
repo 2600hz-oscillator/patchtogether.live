@@ -12,7 +12,7 @@
 // option flips documentElement's --bg CSS var to the expected hex, and a
 // reload re-applies the chosen palette.
 
-import { test, expect } from './_fixtures';
+import { test, expect, openFileMenu } from './_fixtures';
 
 test.describe.configure({ mode: 'parallel' });
 
@@ -25,6 +25,8 @@ async function readVar(page: import('@playwright/test').Page, name: string): Pro
 
 /** Open the palette-switcher popover. */
 async function openSwitcher(page: import('@playwright/test').Page) {
+  await openFileMenu(page);
+  await page.getByTestId('workflow-file-theme').click();
   await page.getByTestId('skin-switcher-trigger').click();
   await expect(page.getByTestId('skin-switcher-popover')).toBeVisible();
 }

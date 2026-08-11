@@ -33,7 +33,7 @@
 //      drill-down port rows — including the precedence rule on a gate INPUT
 //      row (patched → unpatch menu; unpatched → the shipped MIDI-assign menu).
 //
-// Runs on /rack (dawless) + /rack — the normal e2e lane,
+// Runs on /rack (faceplates) + /rack?shell=legacy (cards) — the normal e2e lane,
 // no DB/relay. Multiplayer convergence + undo of the removal op itself are
 // pinned as pure unit tests against a real syncedStore peer pair
 // (packages/web/src/lib/ui/unpatch-menu.test.ts) — the removal reuses the

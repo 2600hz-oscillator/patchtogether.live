@@ -429,7 +429,7 @@ test.describe('WORKFLOW audio I/O surface (🎧 always-on pinned AUDIO IN/OUT)',
     }, undefined, { timeout: 5_000 });
 
     // The hosted AudioinCard reaches `streaming` (fake mic, pre-granted) —
-    // the same helper the dawless card tests use, against the same testids.
+    // the same helper the legacy-card tests use, against the same testids.
     await ensureAudioInStreaming(page);
 
     // Click-driven patch-out: AUDIO IN L → the drill-down picker → SCOPE.ch1.
@@ -471,7 +471,7 @@ test.describe('WORKFLOW audio I/O surface (🎧 always-on pinned AUDIO IN/OUT)',
       .toBe(true);
 
     // …and REAL signal flows down it: the scope trace is non-flat (the
-    // same pixel-variance proxy the dawless AUDIO IN → SCOPE test uses).
+    // same pixel-variance proxy the legacy-card AUDIO IN → SCOPE test uses).
     await page.waitForTimeout(800);
     const scopeCanvas = page.locator('[data-testid="scope-canvas"]').first();
     await expect(scopeCanvas).toBeVisible({ timeout: 5_000 });

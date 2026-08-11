@@ -28,6 +28,7 @@
 // cold-load scenario the two reporting users hit in the wild.
 
 import { test, expect, type Page } from '@playwright/test';
+import { fileMenuClick } from './_fixtures';
 import { readFile, writeFile, access } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -173,7 +174,7 @@ test('@load cold-load: clicking Load as the first user action produces audio', a
     // AudioContext can resume from inside ensureEngine() inside
     // loadPerformanceZipBytes().
     const fileChooserPromise = page.waitForEvent('filechooser');
-    await page.getByRole('button', { name: 'Load Perf (.zip)', exact: true }).click();
+    await fileMenuClick(page, 'workflow-file-load-performance');
     const chooser = await fileChooserPromise;
     await chooser.setFiles(FIXTURE_PATH);
 

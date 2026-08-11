@@ -32,19 +32,19 @@ import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 const REPLICA_DB_PREFIX = 'pt-rack-v1-';
-const scratchStorageKey = (mode: 'dawless' | 'workflow') => `pt:local-scratch-id:${mode}`;
+const SCRATCH_STORAGE_KEY = 'pt:local-scratch-id';
 
-async function readScratchId(page: Page, mode: 'dawless' | 'workflow'): Promise<string | null> {
-  return page.evaluate((key) => window.localStorage.getItem(key), scratchStorageKey(mode));
+async function readScratchId(page: Page): Promise<string | null> {
+  return page.evaluate((key) => window.localStorage.getItem(key), SCRATCH_STORAGE_KEY);
 }
 
-/** Poll until the page has minted a scratch id for the mode, then return it. */
-async function waitForScratchId(page: Page, mode: 'dawless' | 'workflow'): Promise<string> {
+/** Poll until the page has minted a scratch id, then return it. */
+async function waitForScratchId(page: Page): Promise<string> {
   await expect
-    .poll(() => readScratchId(page, mode), { timeout: 10_000 })
-    .toMatch(new RegExp(`^local-scratch-${mode}-`));
-  const id = await readScratchId(page, mode);
-  if (!id) throw new Error(`scratch id for ${mode} never appeared`);
+    .poll(() => readScratchId(page), { timeout: 10_000 })
+    .toMatch(/^local-scratch-/);
+  const id = await readScratchId(page);
+  if (!id) throw new Error('scratch id never appeared');
   return id;
 }
 
@@ -141,7 +141,7 @@ test.describe('persisted rack — restored video is live without a manual add/de
     );
     test.skip(!idbOk, 'IndexedDB unavailable — scratch replica cannot persist');
 
-    const scratchId = await waitForScratchId(page, 'dawless');
+    const scratchId = await waitForScratchId(page);
     const before = await replicaRowCount(page, scratchId);
 
     // Seed TWO independent video chains through the REAL graph path (spawnPatch
@@ -178,7 +178,7 @@ test.describe('persisted rack — restored video is live without a manual add/de
         timeout: 15_000,
       });
     }
-    expect(await readScratchId(page, 'dawless')).toBe(scratchId);
+    expect(await readScratchId(page)).toBe(scratchId);
 
     // THE REGRESSION: WITHOUT any add/delete, the engine boots on its own and the
     // restored video renders. On the bugged build __engine() stays null forever

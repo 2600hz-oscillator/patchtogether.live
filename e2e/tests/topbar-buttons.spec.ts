@@ -8,7 +8,7 @@
 // pins the surviving button set so a regression that re-adds (or accidentally
 // drops a survivor) is caught.
 
-import { test, expect } from './_fixtures';
+import { test, expect, openFileMenu, fileMenuClick } from './_fixtures';
 import { readFileSync } from 'node:fs';
 import { spawnPatch } from './_helpers';
 
@@ -33,9 +33,11 @@ test('topbar: Clear + zip Export/Load survivors remain', async ({ page, rack }) 
   const header = page.locator('header');
 
   // SURVIVORS.
-  await expect(header.getByRole('button', { name: 'Clear' })).toBeVisible();
-  await expect(page.getByTestId('export-perf-zip-btn')).toBeVisible();
-  await expect(page.getByTestId('load-perf-zip-btn')).toBeVisible();
+  await openFileMenu(page);
+  await expect(page.getByTestId('workflow-file-clear')).toBeVisible();
+  await expect(page.getByTestId('workflow-file-save-performance')).toBeVisible();
+  await expect(page.getByTestId('workflow-file-load-performance')).toBeVisible();
+  await page.keyboard.press('Escape');
   await expect(
     header.getByRole('button', { name: 'Export Perf (.zip)', exact: true }),
   ).toBeVisible();
@@ -68,7 +70,7 @@ test('topbar: Raw JSON → Export JSON downloads a valid envelope', async ({ pag
 
   const [download] = await Promise.all([
     page.waitForEvent('download'),
-    page.getByTestId('raw-json-select').selectOption('export-json'),
+    fileMenuClick(page, 'workflow-file-export-json', 'workflow-file-rawjson'),
   ]);
 
   // Filename is the envelope default (patch.imp.json — a .json file).
@@ -110,13 +112,13 @@ test('topbar: Raw JSON Export → Import round-trips the patch via the menu', as
   // Export via the menu, capture the file.
   const [download] = await Promise.all([
     page.waitForEvent('download'),
-    page.getByTestId('raw-json-select').selectOption('export-json'),
+    fileMenuClick(page, 'workflow-file-export-json', 'workflow-file-rawjson'),
   ]);
   const savedPath = (await download.path()) as string;
   expect(savedPath).toBeTruthy();
 
   // Clear the rack.
-  await page.getByRole('button', { name: 'Clear' }).click();
+  await fileMenuClick(page, 'workflow-file-clear');
   await expect.poll(async () =>
     page.evaluate(() => Object.keys((globalThis as unknown as { __patch: { nodes: Record<string, unknown> } }).__patch.nodes).length),
   ).toBe(0);
@@ -125,7 +127,7 @@ test('topbar: Raw JSON Export → Import round-trips the patch via the menu', as
   // which Playwright intercepts via the filechooser event; feed it the file.
   const [chooser] = await Promise.all([
     page.waitForEvent('filechooser'),
-    page.getByTestId('raw-json-select').selectOption('import-json'),
+    fileMenuClick(page, 'workflow-file-import-json', 'workflow-file-rawjson'),
   ]);
   await chooser.setFiles(savedPath);
 

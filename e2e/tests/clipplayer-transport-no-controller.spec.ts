@@ -43,7 +43,7 @@ async function clickTransport(page: import('@playwright/test').Page, id: string)
 }
 
 /** Spawn a clip player + a stopped TIMELORDE (the rack clock a fresh rack always
- *  has — auto-spawned dawless, or the workflow pinned clock), and open a clip. */
+ *  has — the auto-spawned canvas one, or the pinned clock), and open a clip. */
 async function seedClipRack(page: import('@playwright/test').Page, extra: Parameters<typeof spawnPatch>[1] = []) {
   await spawnPatch(page, [
     { id: 'cp', type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' },

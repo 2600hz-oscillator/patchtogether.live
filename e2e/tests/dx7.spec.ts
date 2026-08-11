@@ -315,7 +315,7 @@ test('dx7: changing preset updates the dropdown value', async ({ page, rack }) =
 // stamp through exactly that binary.
 
 /**
- * Update rows in the dawless scratch replica, WITHOUT creating the DB (an
+ * Update rows in the scratch replica, WITHOUT creating the DB (an
  * unconditional `indexedDB.open` would seed an empty shell and race the
  * replica). A RISING count is the deterministic flush signal — the stamp has
  * reached IndexedDB — which is what makes the reload below an assertion rather
@@ -323,7 +323,7 @@ test('dx7: changing preset updates the dropdown value', async ({ page, rack }) =
  */
 async function replicaRows(page: Page): Promise<number> {
   return page.evaluate(async () => {
-    const id = window.localStorage.getItem('pt:local-scratch-id:dawless');
+    const id = window.localStorage.getItem('pt:local-scratch-id');
     if (!id) return 0;
     const name = `pt-rack-v1-${id}`;
     const list =

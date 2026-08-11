@@ -5,7 +5,7 @@
 // it clearly. Failures dump captured console + screenshot path so the agent
 // can read the diagnostic without separate steps.
 
-import { test, expect, loadVoiceDemo } from './_fixtures';
+import { test, expect, loadVoiceDemo, openFileMenu, fileMenuClick } from './_fixtures';
 import { captureConsole, formatConsole } from './helpers';
 import { spawnPatch } from './_helpers';
 
@@ -51,8 +51,14 @@ test.describe('AI smoke check', () => {
     // dropdown; that control was deleted with the example patches, so the
     // shell check moved to two controls that are actually part of the rack
     // UI — the preset-slot bar and the Raw JSON action menu.)
-    await expect(page.getByTestId('preset-slot-bar'), 'preset slot bar missing').toBeVisible();
-    await expect(page.getByTestId('raw-json-select'), 'Raw JSON menu missing').toBeVisible();
+    // The topbar's actions live behind File.. now (the bare-button bar went
+    // with the second shell). Assert the trigger + one row inside it, so this
+    // still fails if the menu stops opening rather than merely stops existing.
+    await expect(page.getByTestId('workflow-file-trigger'), 'File.. missing').toBeVisible();
+    await openFileMenu(page);
+    await expect(page.getByTestId('workflow-file-rawjson'), 'Raw JSON row missing').toBeVisible();
+    await expect(page.getByTestId('workflow-file-quicksave'), 'Quicksave row missing').toBeVisible();
+    await page.keyboard.press('Escape');
 
     const errors = cc.pageErrors.length + cc.errors.length;
     if (errors > 0) {
@@ -67,7 +73,8 @@ test.describe('AI smoke check', () => {
   // the live autotest env once main is deployed, catching regressions where a
   // refactor removes the entry point or a layout change hides it.
   test('auth: landing page exposes a sign-in entry point @smoke', async ({ page, rack }) => {
-    const link = page.getByTestId('signin-link');
+    await openFileMenu(page);
+    const link = page.getByTestId('workflow-file-signin');
     await expect(link, 'sign-in link missing on landing page').toBeVisible();
 
     // Must point at an auth-handled route. /dashboard is the canonical
@@ -297,7 +304,7 @@ test.describe('AI smoke check', () => {
     // graph edges draw 5. Pinned in stereo-only-channel.spec.ts.
     await expect(page.locator('.svelte-flow__edge')).toHaveCount(5);
 
-    await page.getByRole('button', { name: 'Clear' }).click();
+    await fileMenuClick(page, 'workflow-file-clear');
     await page.waitForTimeout(150);
 
     await expect(page.locator('.svelte-flow__node')).toHaveCount(0);

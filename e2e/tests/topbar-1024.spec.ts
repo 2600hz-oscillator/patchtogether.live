@@ -25,21 +25,21 @@ async function boot(page: Page): Promise<void> {
   // no rack topbar at all.
   await page.goto('/rack?shell=legacy');
   await page.waitForLoadState('networkidle');
-  await page.locator('header.topbar').waitFor({ state: 'visible', timeout: 10_000 });
+  await page.locator('header.workflow-topbar').waitFor({ state: 'visible', timeout: 10_000 });
   // Wait for the widest actions-cluster controls to be mounted before we
   // measure, so the widths are the settled ones. (This used to wait on the
   // "Load example…" select leaving its transient "Loading…" placeholder; that
   // control is gone, and with it the only topbar label that changed width
   // after boot — every remaining label is a static string.)
-  await expect(page.getByTestId('raw-json-select')).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByTestId('export-perf-zip-btn')).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId('workflow-file-trigger')).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId('workflow-topbar-placeholders')).toBeVisible({ timeout: 15_000 });
 }
 
 /** Assert every topbar control — specifically the auth control and the
  *  version stamp — is fully inside the viewport, and nothing in the header
  *  overflows horizontally. */
 async function assertTopbarContained(page: Page, width: number): Promise<void> {
-  const header = page.locator('header.topbar');
+  const header = page.locator('header.workflow-topbar');
 
   // The auth control (anon e2e env → the Sign in link, the exact element the
   // owner's screenshot showed pushed off) is visible and fully inside.
@@ -90,7 +90,7 @@ async function assertTopbarContained(page: Page, width: number): Promise<void> {
  *  control vertically overlap (a wrapped .actions row would sit fully below
  *  the h1). */
 async function assertSingleRow(page: Page): Promise<void> {
-  const h1 = await page.locator('header.topbar h1').boundingBox();
+  const h1 = await page.locator('header.workflow-topbar h1').boundingBox();
   const signin = await page.getByTestId('signin-link').boundingBox();
   expect(h1).not.toBeNull();
   expect(signin).not.toBeNull();

@@ -59,11 +59,15 @@ test.describe('VRT: topbar heading + button layout', () => {
     await pinVrtFonts(page);
     // The overflow-fixed topbar is the CANVAS topbar (Canvas.svelte), on /rack
     // since the landing move (#995); `/` is the static landing (no rack topbar).
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await awaitVrtFonts(page);
 
-    const topbar = page.locator('header.topbar').first();
+    // `header.topbar` was the SECOND shell's bar and no longer exists in the
+    // DOM at all — this scene re-targets the one topbar rather than being
+    // deleted, because "the topbar renders and does not overflow" is still the
+    // thing worth a baseline.
+    const topbar = page.locator('header.workflow-topbar').first();
     await topbar.waitFor({ state: 'visible', timeout: 10_000 });
 
     // Wait until the actions cluster is mounted. (This used to wait on the
@@ -71,7 +75,7 @@ test.describe('VRT: topbar heading + button layout', () => {
     // one topbar label whose WIDTH changed after boot. That control is gone;
     // every remaining label is a static string, and the height-settle loop
     // below is now the whole settle gate.)
-    await expect(page.getByTestId('raw-json-select')).toBeVisible({
+    await expect(page.getByTestId('workflow-file-trigger')).toBeVisible({
       timeout: 15_000,
     });
 

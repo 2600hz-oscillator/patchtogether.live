@@ -335,29 +335,28 @@ test.describe('P2.5b pan cable tail (workflow racks)', () => {
   });
 });
 
-test.describe('dawless is unchanged by the docking core', () => {
-  test('/rack: no rails, no dock menu entries, PatchPanel handle stack intact on canvas cards', async ({ page }) => {
+// The "dawless is unchanged by the docking core" describe was DELETED with the
+// shell it was about. Its one non-dawless claim — a canvas card mounts its FULL
+// PatchPanel handle stack (5 handles on a mixer), because the gate is
+// provider-presence and canvas cards are inside the provider — is kept below
+// against the real shell, where it is now the only place it can be true.
+test.describe('canvas cards keep their full PatchPanel handle stack', () => {
+  test('a legacy-card lane node mounts every handle and offers the dock menu', async ({ page }) => {
     const errors = collectErrors(page);
     await page.goto('/rack?shell=legacy');
-    await expect(page.locator('header.topbar')).toBeVisible();
+    await expect(page.getByTestId('workflow-topbar')).toBeVisible();
     await page.locator('.svelte-flow__pane').waitFor({ state: 'visible' });
 
-    // Zero dock chrome anywhere.
-    await expect(page.getByTestId('dock-rail-top')).toHaveCount(0);
-    await expect(page.getByTestId('workflow-leftbar')).toHaveCount(0);
-    await expect(page.getByTestId('dock-zone-bottom')).toHaveCount(0);
-
-    // A canvas card still mounts its FULL PatchPanel handle stack (the
-    // gate is provider-presence, and canvas cards are inside the provider).
     await spawnPatch(page, [{ id: 'mx', type: 'mixer', position: { x: 300, y: 200 } }]);
     const node = page.locator('.svelte-flow__node[data-id="mx"]');
     await expect(node.locator('.svelte-flow__handle')).toHaveCount(5);
 
-    // Right-click → NO dock entries in dawless (workflow-only feature).
+    // Dock entries EXIST now (they were workflow-only, and everything is the
+    // shell) — the inverse of what this block used to assert, which is exactly
+    // why it could not simply be re-pointed.
     await node.click({ button: 'right' });
     await expect(page.locator('.ctx-menu')).toBeVisible();
-    await expect(page.getByTestId('ctx-dock-top')).toHaveCount(0);
-    await expect(page.getByTestId('ctx-undock')).toHaveCount(0);
+    await expect(page.getByTestId('ctx-dock-top')).toBeVisible();
     await page.keyboard.press('Escape');
 
     expect(errors, `pageerrors: ${errors.join(' | ')}`).toEqual([]);

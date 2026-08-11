@@ -54,7 +54,7 @@ test.describe('landing links', () => {
     await page.getByTestId('tile-new-workflow-rack').click();
     await expect(page).toHaveURL(/\/rack\?mode=workflow$/);
     // The workflow shell's distinguishing chrome: the WorkflowTopbar (File..)
-    // — not the dawless topbar. Anonymous users get the full shell.
+    // — the one topbar. Anonymous users get the full shell.
     await expect(page.getByTestId('workflow-topbar')).toBeVisible();
     await expect(page.getByTestId('workflow-file-trigger')).toBeVisible();
   });

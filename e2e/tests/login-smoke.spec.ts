@@ -63,10 +63,10 @@ test.describe('login smoke (real Clerk sign-in → dashboard renders)', () => {
     const resp = await page.goto('/dashboard');
     expect(resp?.status(), 'authenticated /dashboard must not 5xx').toBeLessThan(500);
 
-    // The dashboard's real surface: the create cards (dawless + workflow)
+    // The dashboard's real surface: the create card
     // render for a signed-in user. These testids are the P1 dashboard cards.
     await expect(page.getByTestId('landing-tiles').or(page.locator('main'))).toBeVisible();
-    await expect(page.getByText(/new dawless patch/i)).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(/new patch/i)).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText(/new workflow patch/i)).toBeVisible();
 
     expect(serverErrors, `no 5xx responses during login flow: ${serverErrors.join(' | ')}`).toEqual([]);

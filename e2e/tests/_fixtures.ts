@@ -206,3 +206,44 @@ export async function loadVoiceDemo(page: Page): Promise<void> {
   });
   await waitForMounted(page, [...VOICE_DEMO_NODE_IDS]);
 }
+
+// ---------------------------------------------------------------------------
+// THE FILE.. MENU — the only route to the actions the deleted topbar carried.
+// ---------------------------------------------------------------------------
+//
+// The old full-width topbar put New rack / Clear / Export Perf / Load Perf /
+// Raw JSON / the 5-slot preset strip / Save Set / Load Set / the account link
+// on screen as bare buttons. Every one of them now lives behind
+// `workflow-file-trigger`, most inside a collapsible SECTION. These helpers are
+// the seam so ~a dozen specs don't each re-derive "click File, maybe click a
+// section header, then click the row".
+//
+// Lives here (NOT `_helpers.ts`) on purpose: `_helpers.ts` is in the
+// collab-attest basis, and test-harness churn must not move that hash.
+
+/** Open the File.. menu (idempotent — a no-op when it is already open). */
+export async function openFileMenu(page: Page): Promise<void> {
+  const menu = page.getByTestId('workflow-file-menu');
+  if (await menu.isVisible().catch(() => false)) return;
+  await page.getByTestId('workflow-file-trigger').click();
+  await expect(menu).toBeVisible();
+}
+
+/**
+ * Click a File.. row by testid, opening the menu first.
+ *
+ * `section` expands a collapsible group before the row is reachable — pass the
+ * section's OWN testid (e.g. 'workflow-file-quicksave'). Rows that sit directly
+ * in the menu (New rack, Save performance, Save set, Clear) need no section.
+ */
+export async function fileMenuClick(
+  page: Page,
+  rowTestId: string,
+  section?: string,
+): Promise<void> {
+  await openFileMenu(page);
+  if (section) {
+    await page.getByTestId(section).click();
+  }
+  await page.getByTestId(rowTestId).click();
+}
