@@ -53,11 +53,11 @@
     }),
   );
 
-  /** AS HEARD = the bank under the pickup comb. BANK ONLY = the same bank with
-   *  every pickup weight forced to 1, which is what POSITION 0 / 0.5 / 1
-   *  literally are. Flipping between them is how you SEE what the comb removed.
+  /** COMB = the bank under the live pickup. FLAT = the same bank at POSITION 0,
+   *  where every weight is +1 — which is literally what POSITION 0 / 0.5 / 1
+   *  are. Flipping between them is how you SEE what the comb removed.
    *  COMPONENT STATE — see the header. */
-  const VIEWS = ['as heard', 'bank only'] as const;
+  const VIEWS = ['comb', 'flat'] as const;
   let view = $state<(typeof VIEWS)[number]>(VIEWS[0]);
   let weighted = $derived(view === VIEWS[0]);
 
@@ -99,16 +99,22 @@
     viewBox="0 0 {PLOT_W} {PLOT_H}"
     preserveAspectRatio="none"
     role="img"
-    aria-label="the {liveBars.length} active modal partials on a log-frequency axis, coloured by output tap, each scaled by its cosine pickup weight"
+    aria-label="the {liveBars.length} active modal partials on a log-frequency axis, coloured by output tap, each drawn at its signed cosine pickup weight above or below the centre line"
   >
-    <line class="base" x1="0" x2={PLOT_W} y1={PLOT_H} y2={PLOT_H} />
+    <!-- SIGNED bars from a centre line. The sign of cos(2*PI*POSITION*n) is not
+         decoration: it is the whole difference between POSITION 0 and the
+         shipped 0.5 (measured, the EVEN tap at 0.5 is the exact polarity
+         inverse of the EVEN tap at 0), and at the default it separates the two
+         taps into opposite polarity at full weight — which the picture now
+         shows rather than describes. -->
+    <line class="base" x1="0" x2={PLOT_W} y1={PLOT_H / 2} y2={PLOT_H / 2} />
     {#each liveBars as b (b.index)}
       <line
         class="bar {b.tap}"
         x1={xOf(b.hz)}
         x2={xOf(b.hz)}
-        y1={PLOT_H}
-        y2={PLOT_H - b.height * PLOT_H}
+        y1={PLOT_H / 2}
+        y2={PLOT_H / 2 - (b.weight * PLOT_H) / 2}
       />
     {/each}
   </svg>

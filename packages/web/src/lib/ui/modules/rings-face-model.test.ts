@@ -333,6 +333,35 @@ describe('rings comb picture — pinned to the bank the DSP actually builds', ()
     expect(stretched[2]!.hz).toBeGreaterThan(harmonic[2]!.hz * 1.5);
   });
 
+  it('REGRESSION — the bar IS the pickup weight, with no loudness term', () => {
+    // ⚠ THIS LEG EXISTS BECAUSE THE FIRST VERSION WAS UPSIDE DOWN, and every
+    // gate passed it. It scaled each bar by the band-pass peak gain `Q**0.6`,
+    // which made the drawn order the EXACT REVERSE of the measured spectrum
+    // (loudest-first `2 3 0 1 5 4 …`, drawn `11 10 9 8 …`). Only rendering the
+    // dock and looking at it caught that. Pinning `height === |weight|` is what
+    // stops a plausible-looking loudness model growing back.
+    for (const over of [{}, { position: 0.3 }, { position: 0.25 }, { structure: 0.8 }]) {
+      for (const b of ringsCombBank(P(over))) {
+        if (!b.active) continue;
+        expect(b.height, `partial ${b.index} of ${JSON.stringify(over)}`).toBeCloseTo(Math.abs(b.weight), 12);
+      }
+    }
+  });
+
+  it('the picture is INVARIANT to the two controls that cannot move a comb', () => {
+    // DAMPING and BRIGHTNESS change the ring time and the Q taper — they do not
+    // move a partial or change a pickup weight. If a future edit reintroduces a
+    // loudness term they will start moving the picture, and this goes red.
+    const base = JSON.stringify(ringsCombBank(P()));
+    for (const over of [{ damping: 0 }, { damping: 1 }, { brightness: 0 }, { brightness: 1 }, { level: 0.1 }]) {
+      expect(JSON.stringify(ringsCombBank(P(over))), JSON.stringify(over)).toBe(base);
+    }
+    // POSITIVE half: the three that DO own the picture must all move it.
+    for (const over of [{ position: 0.3 }, { structure: 0.9 }, { note: 12 }]) {
+      expect(JSON.stringify(ringsCombBank(P(over))), JSON.stringify(over)).not.toBe(base);
+    }
+  });
+
   it('heights are normalised and finite at both ends of every control', () => {
     // TOTALITY: the panel calls this on every render, so a NaN from an extreme
     // dial position would take the faceplate down mid-drag.

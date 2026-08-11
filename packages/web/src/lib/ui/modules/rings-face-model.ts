@@ -80,9 +80,6 @@ export const RINGS_MODAL_PARTIALS = 24;
 /** SYMPATHETIC detunes its second string by `structure * this` semitones
  *  (`RingsSympatheticStrings.configure`). */
 export const RINGS_DETUNE_SEMITONES = 19;
-/** The per-partial Q-gain exponent the band-pass uses (`MODAL_Q_GAIN_EXP`). */
-export const RINGS_Q_GAIN_EXP = 0.6;
-
 const clamp01 = (v: number): number => Math.max(0, Math.min(1, v));
 
 /** The notated fundamental from the NOTE offset alone. ⚠ BLIND TO THE `pitch`
@@ -224,34 +221,44 @@ export interface RingsCombPartial {
   /** Which output tap this partial lands in. `RingsModal.process` accumulates
    *  partial i into ODD when i is EVEN — index 0, the fundamental, is ODD. */
   tap: 'odd' | 'even';
-  /** Relative drawn height in 0..1: the band-pass peak gain `Q**0.6` times
-   *  |weight|, normalised across the bank. */
+  /** Drawn magnitude in 0..1 — `|weight|`, the pickup comb and nothing else.
+   *  See the header note on why there is no loudness term. */
   height: number;
   /** FALSE for a partial above the Nyquist guard the DSP skips. */
   active: boolean;
 }
 
 /**
- * The reference rate the PICTURE is computed at.
- *
- * ⚠ A PICTURE MAY NAME A RATE WHERE A READOUT MAY NOT. Only the Q-gain
- * ENVELOPE depends on it, and only weakly: the pickup comb, the partial
- * positions and the odd/even tap assignment — everything this panel exists to
- * show — are pure functions of POSITION, STRUCTURE and NOTE. The bank's rough
- * loudness taper is drawn for scale, not read as a number, and the panel
- * captions the rate so the one rate-dependent element is not passed off as
- * universal.
+ * The Nyquist guard the DSP applies (`partialFreq < sr * 0.49`), evaluated at a
+ * reference rate. It decides only WHICH partials exist, never how they are
+ * drawn — the DSP itself skips them, so the picture must too.
  */
 export const RINGS_PICTURE_SR = 48000;
 
 /**
- * The drawn bank: 24 partials at their stretched positions, each weighted by
- * the cosine pickup and coloured by the tap it lands in.
+ * The drawn bank: 24 partials at their STRUCTURE-stretched positions, each
+ * scaled by its cosine pickup weight and coloured by the tap it lands in.
  *
- * Transcribed from `RingsModal.configure` + `.process` (both the worklet and
- * its mirror, which are byte-for-byte the same algorithm — measured max|d|
- * 2.980e-8 over a 1 s strummed render). The negative control on that
- * transcription lives in rings-face-model.test.ts and runs the REAL DSP.
+ * ⚠ THE BAR IS THE PICKUP WEIGHT, NOT A LOUDNESS — and the first version of
+ * this function got that wrong in a way worth recording, because every gate
+ * passed it and only rendering the dock and looking at it caught it.
+ *
+ * It scaled each bar by the band-pass PEAK GAIN, `Q**0.6`
+ * (`MODAL_Q_GAIN_EXP`), reasoning that a partial's bar should show how loud it
+ * is. Peak gain is not contribution: `Q` is proportional to partial frequency
+ * here, and a high-Q filter is NARROW, so it captures less of a broadband
+ * strike. Measured against the shipping worklet at the shipped defaults, the
+ * drawn order was EXACTLY REVERSED — loudest-first by measurement
+ * `2 3 0 1 5 4 6 7 …`, tallest-first as drawn `11 10 9 8 7 …`. The picture
+ * said the top of the bank was the loud end; the spectrum says the bottom is.
+ *
+ * The fix is not a better loudness model. A truthful one would need the
+ * excitation spectrum and the filter bandwidths — a second reimplementation of
+ * the DSP for a decoration — and it would drag the sample rate back into a
+ * picture that is otherwise free of it. So the bar shows the ONE thing this
+ * panel is named for and can state exactly: `cos(2*PI*position*n)`, the pickup
+ * comb. That is POSITION's entire effect, it is sample-rate independent, and it
+ * is what makes the two nulls and the mirror symmetry visible.
  */
 export function ringsCombBank(
   p: RingsFaceParams,
@@ -259,42 +266,27 @@ export function ringsCombBank(
 ): RingsCombPartial[] {
   const f0 = ringsKnobF0Hz(p);
   const structure = clamp01(p.structure);
-  const damping = clamp01(p.damping);
-  const brightness = clamp01(p.brightness);
   const position = clamp01(p.position);
 
   const stiffness = structure * 0.5;
-  const q = 500 * Math.pow(10, 3 * (1 - damping));
-  let qLoss = brightness * (2 - brightness) * 0.85 + 0.15;
-  const qLossDampingRate = structure * (2 - structure) * 0.1;
-
   let stretch = 1;
-  let qCurrent = q;
   const w0 = 2 * Math.PI * position;
 
   const out: RingsCombPartial[] = [];
   for (let i = 0; i < RINGS_MODAL_PARTIALS; i++) {
     const hz = f0 * (i + 1) * stretch;
     const active = hz < sr * 0.49;
-    const fNorm = Math.min(hz, sr * 0.49) / sr;
-    const qq = Math.max(0.5, 1 + fNorm * qCurrent);
-    const gain = Math.pow(qq, RINGS_Q_GAIN_EXP);
     const weight = Math.cos(w0 * i);
     out.push({
       index: i,
       hz,
       weight,
       tap: (i & 1) === 0 ? 'odd' : 'even',
-      height: active ? gain * Math.abs(weight) : 0,
+      height: active ? Math.abs(weight) : 0,
       active,
     });
     stretch += stiffness;
-    qLoss += qLossDampingRate * (1 - qLoss);
-    qCurrent *= qLoss;
   }
-
-  const max = out.reduce((m, b) => Math.max(m, b.height), 0);
-  if (max > 0) for (const b of out) b.height /= max;
   return out;
 }
 

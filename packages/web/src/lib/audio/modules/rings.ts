@@ -557,9 +557,17 @@ export const ringsDef: AudioModuleDef = {
     // unconditionally where a hint does not. `docs.controls.brightness` now
     // carries it instead, in full and with its numbers.
     pages: [
-      { id: 'body', label: 'body · tune',        controls: ['model', 'structure', 'note'] },
-      { id: 'ring', label: 'ring',               controls: ['damping', 'brightness'] },
-      { id: 'taps', label: 'pickup · strum · out', controls: ['rings-comb-{n}', 'rings-strum-{n}', 'position', 'level'] },
+      { id: 'body', label: 'body · tune', controls: ['model', 'structure', 'note'] },
+      { id: 'ring', label: 'ring',        controls: ['damping', 'brightness'] },
+      // ⚠ LABELLED `out`, NOT `pickup · strum · out`, and the difference is
+      // what actually renders. The band CLAIMS four keys because `face.order`
+      // completeness requires every key to live on a page — but the hero
+      // promotes three of them (the comb picture, POSITION and the STRUM
+      // audition), and `heroFacePlan` REMOVES a promoted key from its band. So
+      // the longer label named two things that are not in the band, which is
+      // the same defect as a tab that leads nowhere. Caught by rendering the
+      // dock and reading it.
+      { id: 'taps', label: 'out',         controls: ['rings-comb-{n}', 'rings-strum-{n}', 'position', 'level'] },
     ],
 
     // A live trace of the output. Safe on this module in a way it was not on
