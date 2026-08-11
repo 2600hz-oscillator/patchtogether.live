@@ -1,14 +1,14 @@
 // e2e/tests/landing-routing.spec.ts
 //
 // Phase 1 of the landing-page overhaul: the scratch canvas moved from `/` to
-// `/rack`, and `/` is now a static, prerendered landing / front door.
+// `/rack?shell=legacy&seed=none`, and `/` is now a static, prerendered landing / front door.
 //
 // This spec pins the load-bearing routing invariants:
-//   1. `/rack` boots the canvas AND is cross-origin isolated (SharedArrayBuffer
+//   1. `/rack?shell=legacy&seed=none` boots the canvas AND is cross-origin isolated (SharedArrayBuffer
 //      for Faust — the reason the canvas can't sit under Clerk). (Finding A: the
 //      isolation is enforced globally by _headers `/*` + vite server/preview
 //      headers, reinforced by hooks.server.ts ISOLATED_EXACT which now lists
-//      `/rack`, not `/`.)
+//      `/rack?shell=legacy&seed=none`, not `/`.)
 //   2. `/` renders the landing with NO canvas / no AudioContext.
 //   3. Anon `GET /` returns 200 even with the beta gate active (Finding C: `/`
 //      is an EXACT carve-out in BETA_GATE_PUBLIC_PATHS — the public front door).
@@ -19,17 +19,17 @@
 import { test, expect } from '@playwright/test';
 
 test.describe('landing routing', () => {
-  test('/rack boots the canvas and is cross-origin isolated', async ({ page }) => {
-    const resp = await page.goto('/rack');
-    expect(resp, 'no response for /rack').toBeTruthy();
-    expect(resp!.status(), `/rack status ${resp!.status()}`).toBe(200);
+  test('the rack route boots the canvas and is cross-origin isolated', async ({ page }) => {
+    const resp = await page.goto('/rack?shell=legacy&seed=none');
+    expect(resp, 'no response for /rack?shell=legacy&seed=none').toBeTruthy();
+    expect(resp!.status(), `/rack?shell=legacy&seed=none status ${resp!.status()}`).toBe(200);
 
     await expect(page.locator('[data-testid="canvas-root"]')).toBeVisible();
 
     // The audio engine needs SharedArrayBuffer, which requires cross-origin
     // isolation. This is the invariant the whole route-move had to preserve.
     const isolated = await page.evaluate(() => crossOriginIsolated === true);
-    expect(isolated, '/rack must be cross-origin isolated').toBe(true);
+    expect(isolated, 'the rack route must be cross-origin isolated').toBe(true);
   });
 
   test('clicking a rack tile from the landing arrives cross-origin ISOLATED (full-page nav, not a soft nav)', async ({
@@ -37,7 +37,7 @@ test.describe('landing routing', () => {
   }) => {
     // The hole the direct-load test above could not see (a gate that reads only
     // one side): `/` is deliberately NOT isolated, so a CLIENT-SIDE navigation
-    // into `/rack` keeps the landing's document and arrives with
+    // into `/rack?shell=legacy&seed=none` keeps the landing's document and arrives with
     // `crossOriginIsolated === false` — SharedArrayBuffer undefined, Faust WASM
     // threads degraded, and the ES-9 bridge card stuck in 'unsupported' with no
     // connect button (owner report 2026-08-05). The rack-bound landing tiles
@@ -53,8 +53,11 @@ test.describe('landing routing', () => {
       'landing must be non-isolated for this test to prove anything',
     ).toBe(false);
 
-    await page.getByTestId('tile-new-workflow-rack').click();
-    await page.waitForURL('**/rack?mode=workflow');
+    // The second rack tile ('tile-new-workflow-rack') selected the DELETED
+    // shell and is gone; the claim it carried — a landing click-through arrives
+    // cross-origin ISOLATED — moves onto the one remaining tile.
+    await page.getByTestId('tile-new-rack').click();
+    await page.waitForURL('**/rack');
     await expect(page.locator('[data-testid="canvas-root"]')).toBeVisible();
     expect(
       await page.evaluate(() => crossOriginIsolated),
@@ -115,9 +118,11 @@ test.describe('landing routing', () => {
     // Content is present in the INITIAL server HTML → prerendered/SSR, not a
     // client-only render. (A csr-only page would ship an empty shell.) The
     // tile labels are lowercase in the markup — CSS uppercases them for display.
-    expect(html).toContain('new dawless rack');
-    expect(html).toContain('new workflow rack');
+    expect(html).toContain('new rack');
     expect(html).toContain('sign in');
+    // ONE rack tile now — the second one existed only to select the other
+    // shell. Asserted as an ABSENCE so this cannot quietly pass if it returns.
+    expect(html).not.toContain('new workflow rack');
 
     // The landing reads NO auth state: none of the canvas's per-request header
     // chip markers (the signed-in `account-link` / signed-out `signin-link`)

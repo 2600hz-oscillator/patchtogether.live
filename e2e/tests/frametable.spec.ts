@@ -165,7 +165,7 @@ test.describe('FRAMETABLE — video wavetable oscillator (3 modes)', () => {
   test('real source chain: ACIDWARP → FRAMETABLE (default SMOOTH) → non-black STRUCTURED video_out', async ({ page, errorWatch }) => {
     void errorWatch;
     await installRenderSmokeHooks(page);
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, chainNodes(), chainEdges());
 
@@ -184,7 +184,7 @@ test.describe('FRAMETABLE — video wavetable oscillator (3 modes)', () => {
   test('the three modes render DISTINCT non-black output over the same ring', async ({ page, errorWatch }) => {
     void errorWatch;
     await installRenderSmokeHooks(page);
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
     // A wide window over a ring holding TWO scenes → the modes differ maximally:
     // CHAOS per-pixel dithers the two scenes (high spatial variance), SMOOTH/MORPH
@@ -230,7 +230,7 @@ test.describe('FRAMETABLE — video wavetable oscillator (3 modes)', () => {
   test('FREEZE holds the output while the input changes; releasing tracks again', async ({ page, errorWatch }) => {
     void errorWatch;
     await installRenderSmokeHooks(page);
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
     // CHAOS + spread=1 → a single-frame DELTA on the newest ring layer (real-time),
     // so the output IS the most-recently-captured frame — the crispest way to see
@@ -260,7 +260,7 @@ test.describe('FRAMETABLE — video wavetable oscillator (3 modes)', () => {
   test('LAG contract: SMOOTH lags (holds) by default; LIVE forces real-time (tracks); CHAOS is always real-time', async ({ page, errorWatch }) => {
     void errorWatch;
     await installRenderSmokeHooks(page);
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
     // SMOOTH, deep read (morph=1 → trailing centre near the OLDEST frames), a flat
     // field (waveAmt=0) so the temporal read is clean, small spread for a tight read.
@@ -307,7 +307,7 @@ test.describe('FRAMETABLE — video wavetable oscillator (3 modes)', () => {
   test('SAVE→LOAD round-trip: ring → PNG atlas → detile restores the buffer; card LOAD persists the file id', async ({ page, errorWatch }) => {
     void errorWatch;
     await installRenderSmokeHooks(page);
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, chainNodes({ mode: MODE_CHAOS, morph: 0.5, spread: 20, shimmer: 0 }), chainEdges());
 

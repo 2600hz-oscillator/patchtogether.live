@@ -277,12 +277,16 @@
 //   * PITCH IS A ~10.6 dB FADER AT ZERO — a THRESHOLD, not a slope: −5.47 dB at
 //     0 against −17.60 at ±0.5 st.
 //
-// ⚠ AND ONE THING THE FACE REFUSES TO PAINT AS WORKING, found in re-measurement
-// and NOT in the spec: SIZE's top 19.5 % is BIT-IDENTICAL to its own maximum
-// (`safeLen = min(lengthSamples, 0.4·bufLen)` caps the grain at 800 ms, so
-// 0.805 / 0.85 / 0.9 / 1.0 render the same samples). Worklet arithmetic, so it
-// is a separate DSP change — never folded into a face wave — and until then the
-// grain readout says CLAMPED.
+// ⚠ AND ONE THING THE FACE REFUSED TO PAINT AS WORKING — WHICH IS NOW FIXED,
+// and the sequence is the argument for the whole discipline. Re-measurement
+// found (the spec had not) that SIZE's top 19.50 % rendered BIT-IDENTICAL
+// output: `safeLen = min(lengthSamples, 0.4·bufLen)` capped the grain at 800 ms
+// while the dial's law asked for 1500. The face shipped a `CLAMPED` badge there
+// rather than a working-looking dial, plus a bit-identity ORACLE pinning the
+// defect to the DSP. #1456 raised the ceiling to the law's own top, the oracle
+// went red exactly as it promised, and both badge and oracle are gone —
+// replaced by the inverse claim measured on the SHIPPING WORKLET
+// (art/scenarios/clouds/size-travel.test.ts).
 //
 // ⚠ ITS HERO PANEL HAS NO CLOCK, and that is the design rather than a
 // limitation. A live write head would need the worklet's `fillLevel`, which is

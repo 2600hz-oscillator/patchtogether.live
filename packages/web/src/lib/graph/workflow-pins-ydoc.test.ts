@@ -8,7 +8,7 @@
 // entry per always-on module — no duplicate-singleton race and no cleanup
 // dependency. This proves that for the FULL P2 set (trio + timelorde +
 // midiclock + audioIn + audioOut), plus the presence:'type' rule: a
-// dawless-authored canvas TIMELORDE already in the doc means NO
+// free-canvas TIMELORDE already in the doc means NO
 // pinned-timelorde competitor is spawned by either peer.
 
 import { describe, it, expect } from 'vitest';
@@ -153,9 +153,9 @@ describe('workflow pinned ensure on real Y.Docs', () => {
     expect(nodeIds(a)).toEqual(ALL_WORKFLOW_PINNED.map((s) => s.id).sort());
   });
 
-  it('a dawless canvas TIMELORDE in the doc suppresses pinned-timelorde on BOTH peers', () => {
+  it('a free-canvas TIMELORDE in the doc suppresses pinned-timelorde on BOTH peers', () => {
     const a = makePeer();
-    // A dawless import: a random-id canvas TIMELORDE, no pinned flag.
+    // An imported patch: a random-id canvas TIMELORDE, no pinned flag.
     a.doc.transact(() => {
       a.patch.nodes['timelorde-ab12cd34'] = {
         id: 'timelorde-ab12cd34',

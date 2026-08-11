@@ -97,7 +97,7 @@ async function captureCell(
   page: Page,
   params: { threshold?: number; thickness?: number; bits?: number },
 ): Promise<CellStats> {
-  await page.goto('/rack');
+  await page.goto('/rack?shell=legacy&seed=none');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,

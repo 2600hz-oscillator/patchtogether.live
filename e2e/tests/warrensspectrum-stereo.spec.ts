@@ -151,7 +151,7 @@ async function measure(
 
 test.describe("warren's spectrum — stereo comes from the filterbank (phase 2)", () => {
   test('mono at the DEFAULT, stereo once the bands are panned', async ({ page }) => {
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy&seed=none');
 
     // A noise source into `audio_in` — the module is an EFFECT and generates
     // nothing on its own, so an unpatched SUT would make every assertion

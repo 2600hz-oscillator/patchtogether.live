@@ -740,7 +740,7 @@ test.describe('WAVESCULPT v2 — wavetable-engine 3D-camera video synth', () => 
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
 
     // SHAPES (a bright static test pattern) → wall1 (FRONT face), full
@@ -802,7 +802,7 @@ test.describe('WAVESCULPT v2 — wavetable-engine 3D-camera video synth', () => 
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
 
     // Drive a gate so the ribbons have energy that the feedback loop can
@@ -954,7 +954,7 @@ test.describe('WAVESCULPT v2 — wavetable-engine 3D-camera video synth', () => 
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(page, [

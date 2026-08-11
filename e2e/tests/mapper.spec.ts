@@ -85,7 +85,7 @@ async function captureMapper(
   page: Page,
   threshold: number,
 ): Promise<{ shownFrac: number; colourFrac: number; n: number }> {
-  await page.goto('/rack');
+  await page.goto('/rack?shell=legacy&seed=none');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,

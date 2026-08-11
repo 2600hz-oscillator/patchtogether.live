@@ -22,7 +22,7 @@
 //   noteSink-CLASS member (adsr: a note gate, no audio role) gets the gate
 //   tap too. Swept across the six P1 batch-1 faces.
 //
-// Runs on /rack?mode=workflow&shell=1 (the owner's preview surface) in the
+// Runs on /rack (the owner's preview surface) in the
 // normal e2e lane (no DB/relay). Drives the REAL palette-drop + assign paths
 // via the dev hooks (__setSpawnFlowPos/__spawnFromPalette/__assignNodeToChannel)
 // — the actual wcolDropTarget → membership → reconcile pipeline, not raw
@@ -61,7 +61,7 @@ function colPos(ch: number): { x: number; y: number } {
 }
 
 async function gotoShellWorkflow(page: Page): Promise<void> {
-  await page.goto('/rack?mode=workflow&shell=1');
+  await page.goto('/rack');
   // 15s: first paint pays SvelteKit's on-demand route compile on a cold dev
   // server (and SwiftShader contention on CI) — same budget the sibling
   // first-visibility asserts use.

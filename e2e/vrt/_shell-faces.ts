@@ -705,7 +705,7 @@ export async function bootWithFace(
   opts: BootFaceOptions = {},
 ): Promise<string> {
   await pinVrtFonts(page);
-  await page.goto('/rack?mode=workflow&shell=1');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await awaitVrtFonts(page);
   await waitForHooks(page);

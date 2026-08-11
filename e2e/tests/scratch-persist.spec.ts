@@ -2,7 +2,7 @@
 //
 // SCRATCH PERSISTENCE (FIX A) — the `/rack` scratch canvas mirrors its Y.Doc
 // into an IndexedDB local replica keyed by a stable per-device id
-// (localStorage `pt:local-scratch-id:<mode>`), so a browser REFRESH rehydrates
+// (localStorage `pt:local-scratch-id`), so a browser REFRESH rehydrates
 // the patch instead of throwing it away. Before the fix the scratch doc lived
 // only in a volatile in-memory Y.Doc — a reload = a new JS context = a fresh
 // empty createPatch() = the whole rack gone (worst for logged-out users, whose
@@ -10,7 +10,7 @@
 //
 // This is data-durability coverage: add a node through the real graph path,
 // prove it reached IndexedDB, reload, and assert it comes back — plus that the
-// two modes (dawless | workflow) persist to SEPARATE replicas.
+// ONE scratch doc: there is one rack shell, so there is one replica.
 //
 // Runs on `/rack` (no DB / no relay needed — the scratch replica is pure
 // client IndexedDB). Gated on IndexedDB availability so a hardened/private
@@ -23,22 +23,21 @@ import { spawnPatch } from './_helpers';
 // REPLICA_DB_PREFIX + lib/multiplayer/local-scratch.ts key format). A change
 // on either side should surface here — that's the point of pinning them.
 const REPLICA_DB_PREFIX = 'pt-rack-v1-';
-const scratchStorageKey = (mode: 'dawless' | 'workflow') => `pt:local-scratch-id:${mode}`;
+const SCRATCH_STORAGE_KEY = 'pt:local-scratch-id';
 
-/** Read the persisted scratch id for a mode (null until the page has minted
- *  it — the top-level bind does so synchronously on mount). */
-async function readScratchId(page: Page, mode: 'dawless' | 'workflow'): Promise<string | null> {
-  return page.evaluate((key) => window.localStorage.getItem(key), scratchStorageKey(mode));
+/** Read the persisted scratch id (null until the page has minted it — the
+ *  top-level bind does so synchronously on mount). */
+async function readScratchId(page: Page): Promise<string | null> {
+  return page.evaluate((key) => window.localStorage.getItem(key), SCRATCH_STORAGE_KEY);
 }
 
-/** Poll until the page has persisted a scratch id for the mode, then return
- *  it. */
-async function waitForScratchId(page: Page, mode: 'dawless' | 'workflow'): Promise<string> {
+/** Poll until the page has persisted a scratch id, then return it. */
+async function waitForScratchId(page: Page): Promise<string> {
   await expect
-    .poll(() => readScratchId(page, mode), { timeout: 10_000 })
-    .toMatch(new RegExp(`^local-scratch-${mode}-`));
-  const id = await readScratchId(page, mode);
-  if (!id) throw new Error(`scratch id for ${mode} never appeared`);
+    .poll(() => readScratchId(page), { timeout: 10_000 })
+    .toMatch(/^local-scratch-/);
+  const id = await readScratchId(page);
+  if (!id) throw new Error('scratch id never appeared');
   return id;
 }
 
@@ -84,12 +83,8 @@ async function replicaRowCount(page: Page, scratchId: string): Promise<number> {
 
 /** Add a node to the live graph (spawnPatch drives the real Y.Doc the replica
  *  mirrors), then BLOCK until that write has flushed to IndexedDB. */
-async function addNodeAndFlush(
-  page: Page,
-  mode: 'dawless' | 'workflow',
-  nodeId: string,
-): Promise<string> {
-  const scratchId = await waitForScratchId(page, mode);
+async function addNodeAndFlush(page: Page, nodeId: string): Promise<string> {
+  const scratchId = await waitForScratchId(page);
   const before = await replicaRowCount(page, scratchId);
   await spawnPatch(page, [{ id: nodeId, type: 'analogVco', position: { x: 180, y: 160 } }]);
   await expect(page.locator(`.svelte-flow__node[data-id="${nodeId}"]`)).toBeVisible();
@@ -130,7 +125,7 @@ test.describe('scratch canvas persistence', () => {
   });
 
   test('a node added on /rack survives a browser refresh', async ({ page }) => {
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
 
     const idbOk = await page.evaluate(
@@ -138,7 +133,7 @@ test.describe('scratch canvas persistence', () => {
     );
     test.skip(!idbOk, 'IndexedDB unavailable — scratch replica cannot persist');
 
-    const scratchId = await addNodeAndFlush(page, 'dawless', 'scratch-persist-vco');
+    const scratchId = await addNodeAndFlush(page, 'scratch-persist-vco');
 
     // The refresh: a full document reload = new JS context = fresh empty doc.
     await page.reload();
@@ -149,53 +144,30 @@ test.describe('scratch canvas persistence', () => {
     await expect(page.locator('.svelte-flow__node[data-id="scratch-persist-vco"]')).toBeVisible({
       timeout: 15_000,
     });
-    expect(await readScratchId(page, 'dawless')).toBe(scratchId);
+    expect(await readScratchId(page)).toBe(scratchId);
   });
 
-  test('dawless and workflow scratch persist to SEPARATE replicas (mode isolation)', async ({
-    page,
-  }) => {
-    await page.goto('/rack?mode=workflow');
-    await page.waitForLoadState('networkidle');
+  // The "dawless and workflow scratch persist to SEPARATE replicas" test was
+  // DELETED, not re-pointed: mode isolation was the whole assertion and there
+  // is now exactly ONE scratch doc. The client-side migration that replaces it
+  // (the two mode-suffixed localStorage keys are PRUNED rather than adopted) is
+  // unit-covered in lib/storage/local-scratch.test.ts, which feeds the real old
+  // key shape in.
 
-    const idbOk = await page.evaluate(
-      () => typeof indexedDB !== 'undefined' && indexedDB !== null,
-    );
-    test.skip(!idbOk, 'IndexedDB unavailable — scratch replica cannot persist');
-
-    // Add a marker on the WORKFLOW scratch and confirm it survives a workflow
-    // refresh (independent persistence).
-    const workflowId = await addNodeAndFlush(page, 'workflow', 'scratch-wf-marker');
-    await page.reload();
-    await page.waitForLoadState('networkidle');
-    await expect(page.locator('.svelte-flow__node[data-id="scratch-wf-marker"]')).toBeVisible({
-      timeout: 15_000,
-    });
-
-    // Now open the DAWLESS scratch (same browser context → localStorage still
-    // holds the workflow id, and mints a DISTINCT dawless id). The workflow
-    // marker must NOT bleed in — it lives in a separate replica DB.
-    await page.goto('/rack');
-    await page.waitForLoadState('networkidle');
-    const dawlessId = await waitForScratchId(page, 'dawless');
-    expect(dawlessId).not.toBe(workflowId); // distinct id → distinct replica DB
-    await expect(page.locator('.svelte-flow__node[data-id="scratch-wf-marker"]')).toHaveCount(0);
-  });
-
-  // REGRESSION (workflow mount-race): on /rack?mode=workflow Canvas's "ensure"
+  // REGRESSION (workflow mount-race): on /rack Canvas's "ensure"
   // effects re-create the pinned modules at DETERMINISTIC keys on mount, with no
   // provider to gate them. If they ran before the IndexedDB seed, the empty
   // defaults raced the stored pinned state at the same Yjs key (clientID
   // tiebreak) and ~half the refreshes discarded the user's saved pinned
   // settings. The fix defers the Canvas mount until the replica seeds, so the
-  // ensures skip the already-restored nodes. (The mode-isolation test above
+  // ensures skip the already-restored nodes. (The deleted mode-isolation test
   // only checks a UNIQUE-id marker node, which seeds fine either way and cannot
   // catch this — pinned nodes are the only at-risk keys.)
   const PINNED_TIMELORDE = 'pinned-timelorde';
   const PINNED_MIXMSTRS = 'pinned-mixmstrs';
 
-  test('a pinned-module param on /rack?mode=workflow survives refresh', async ({ page }) => {
-    await page.goto('/rack?mode=workflow');
+  test('a pinned-module param on /rack survives refresh', async ({ page }) => {
+    await page.goto('/rack?shell=legacy');
     await page.waitForLoadState('networkidle');
 
     const idbOk = await page.evaluate(
@@ -205,7 +177,7 @@ test.describe('scratch canvas persistence', () => {
 
     // The ensure has spawned the pinned modules with default (empty-params) state.
     await waitForPinned(page, [PINNED_TIMELORDE, PINNED_MIXMSTRS]);
-    const scratchId = await waitForScratchId(page, 'workflow');
+    const scratchId = await waitForScratchId(page);
 
     // Adjust NON-DEFAULT settings on pinned modules through the REAL doc (the
     // same Y.Doc the replica mirrors) — a mixer level + the clock BPM.
@@ -258,7 +230,7 @@ test.describe('scratch canvas persistence', () => {
 
   // OWNER-REPORTED BUG (the reason for the gate fix): "new workflow rack, add a
   // module, refresh → I lose my rack." The prior tests seeded a pre-built patch
-  // (mode-isolation marker) or drove pinned params; NEITHER exercised the owner's
+  // (a unique marker) or drove pinned params; NEITHER exercised the owner's
   // flow of ADDING A FRESH MODULE after the workflow shell has loaded, then
   // reloading. This asserts the user-added node id is still in the LIVE graph
   // (`window.__patch.nodes`) after a refresh, and that the DAWLESS canvas remains
@@ -272,10 +244,10 @@ test.describe('scratch canvas persistence', () => {
   // still opts in.)
   const WF_USER_ADD = 'scratch-wf-useradd';
 
-  test('a user-added module on /rack?mode=workflow survives refresh (owner bug)', async ({
+  test('a user-added module on /rack survives refresh (owner bug)', async ({
     page,
   }) => {
-    await page.goto('/rack?mode=workflow');
+    await page.goto('/rack?shell=legacy');
     await page.waitForLoadState('networkidle');
 
     const idbOk = await page.evaluate(
@@ -289,7 +261,7 @@ test.describe('scratch canvas persistence', () => {
 
     // Add a module AFTER load through the real live-doc path (__patch/__ydoc, the
     // same seam the add menu drives) and block until it flushes to IndexedDB.
-    const workflowId = await addNodeAndFlush(page, 'workflow', WF_USER_ADD);
+    const workflowId = await addNodeAndFlush(page, WF_USER_ADD);
 
     // The refresh: full document reload = new JS context = fresh empty doc that
     // must be rehydrated from the IndexedDB replica.
@@ -305,21 +277,23 @@ test.describe('scratch canvas persistence', () => {
       WF_USER_ADD,
       { timeout: 15_000 },
     );
-    expect(await readScratchId(page, 'workflow')).toBe(workflowId);
+    expect(await readScratchId(page)).toBe(workflowId);
 
-    // DAWLESS opens a SEPARATE blank sandbox on its OWN id — the workflow add
-    // must NOT cross-load into it (no shared replica DB).
-    await page.goto('/rack');
+    // The old tail of this test opened the DAWLESS scratch and asserted the
+    // workflow add did NOT cross-load. There is one scratch doc now, so the
+    // inverse is the contract: revisiting /rack keeps the SAME id and the SAME
+    // node. Asserting that here rather than deleting the leg keeps a positive
+    // control on the id being stable across a navigation (not just a reload).
+    await page.goto('/rack?shell=legacy');
     await page.waitForLoadState('networkidle');
-    const dawlessId = await waitForScratchId(page, 'dawless');
-    expect(dawlessId).not.toBe(workflowId); // distinct id → distinct replica DB
-    // The dawless canvas is a blank sandbox: the workflow-added node is absent,
-    // and none of the workflow pinned trio leaked in either.
-    await expect(page.locator(`.svelte-flow__node[data-id="${WF_USER_ADD}"]`)).toHaveCount(0);
-    const dawlessHasWorkflowNode = await page.evaluate((id) => {
-      const w = globalThis as unknown as { __patch?: { nodes: Record<string, unknown> } };
-      return !!w.__patch && Object.prototype.hasOwnProperty.call(w.__patch.nodes, id);
-    }, WF_USER_ADD);
-    expect(dawlessHasWorkflowNode).toBe(false);
+    expect(await waitForScratchId(page)).toBe(workflowId);
+    await page.waitForFunction(
+      (id) => {
+        const w = globalThis as unknown as { __patch?: { nodes: Record<string, unknown> } };
+        return !!w.__patch && Object.prototype.hasOwnProperty.call(w.__patch.nodes, id);
+      },
+      WF_USER_ADD,
+      { timeout: 15_000 },
+    );
   });
 });

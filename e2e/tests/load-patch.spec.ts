@@ -28,6 +28,7 @@
 // cold-load scenario the two reporting users hit in the wild.
 
 import { test, expect, type Page } from '@playwright/test';
+import { fileMenuClick } from './_fixtures';
 import { readFile, writeFile, access } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -47,7 +48,7 @@ async function generateFixtureIfMissing(page: Page): Promise<void> {
   } catch {
     // fall through to generation
   }
-  await page.goto('/rack');
+  await page.goto('/rack?shell=legacy&seed=none');
   await page.waitForLoadState('networkidle');
   await page.waitForFunction(() => {
     const w = globalThis as unknown as { __ensureEngine?: () => Promise<unknown> };
@@ -158,7 +159,7 @@ test('@load cold-load: clicking Load as the first user action produces audio', a
       if (m.type() === 'error') errors.push(m.text());
     });
 
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
 
     // Wait for the dev globals to be installed (so ensureEngine inside the
@@ -173,7 +174,7 @@ test('@load cold-load: clicking Load as the first user action produces audio', a
     // AudioContext can resume from inside ensureEngine() inside
     // loadPerformanceZipBytes().
     const fileChooserPromise = page.waitForEvent('filechooser');
-    await page.getByRole('button', { name: 'Load Perf (.zip)', exact: true }).click();
+    await fileMenuClick(page, 'workflow-file-load-performance');
     const chooser = await fileChooserPromise;
     await chooser.setFiles(FIXTURE_PATH);
 

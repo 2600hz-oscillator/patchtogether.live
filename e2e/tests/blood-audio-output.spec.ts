@@ -63,7 +63,7 @@ async function readScopePeak(page: Page, scopeId: string): Promise<{ peak: numbe
 test('BLOOD audio_l → SCOPE: the game-audio mixer produces audible signal in-game', async ({ page }) => {
   test.setTimeout(90_000);
   page.on('pageerror', (e) => console.error('pageerror:', e.message));
-  await page.goto('/rack');
+  await page.goto('/rack?shell=legacy&seed=none');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(

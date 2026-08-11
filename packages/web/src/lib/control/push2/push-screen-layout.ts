@@ -82,7 +82,7 @@ export const COL_VALUE = '#FFFFFF';
 export const COL_MUTED = '#9AA0A6';
 export const COL_FLAG = '#5A5A5A';
 export const COL_CELL_OFF = '#2E2E2E';
-/** Lane accent when the view carries no lane colour (no lane / dawless rack). */
+/** Lane accent when the view carries no lane colour (no lane). */
 export const COL_LANE_FALLBACK = '#6F7488';
 
 // ── The op vocabulary ──────────────────────────────────────────────────────

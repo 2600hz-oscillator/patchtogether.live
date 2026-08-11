@@ -901,13 +901,13 @@ export interface ModuleNode {
    *     in their dock drawer (never as canvas cards), are refused by the
    *     delete path (`removePatchNode`, mutate.ts) and skipped by Clear, and
    *     are excluded from `maxInstances` counting (cap.ts) + the singleton
-   *     cleanup pass. Never set in dawless racks.
+   *     cleanup pass.
    *   - `hiddenCard?: boolean` — workflow-mode HEADLESS instance
    *     (graph/hidden-card.ts; the P4 camera manager's mapped cameras).
    *     Presentation-only: renders no canvas card (its face is a topbar
    *     menu) but is otherwise an ordinary node — user-deletable via the
    *     standard remove path and COUNTED toward `maxInstances`. Never set
-   *     in dawless racks.
+   *     on a free-canvas node.
    */
   data?: Record<string, unknown>;
 }

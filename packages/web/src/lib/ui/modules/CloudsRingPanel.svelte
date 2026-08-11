@@ -143,11 +143,12 @@
         ? ' FULL'
         : ''}</span
     >
-    {#if plan.grainClamped}
-      <!-- Painted only in the dead top of SIZE. The faceplate's refusal to
-           show a clamped dial as a working one. -->
-      <span class="k-clamp" data-testid="clouds-ring-clamp">SIZE CLAMPED</span>
-    {/if}
+    <!-- ⚠ A `SIZE CLAMPED` BADGE USED TO SIT HERE, and its deletion is the
+         visible half of #1456. The grain ceiling (800 ms) contradicted the SIZE
+         law's top (1500 ms), so the dial's top 19.50 % rendered bit-identical
+         output and this panel refused to paint it as working. The ceiling is
+         now derived from the law, the whole travel is alive, and a badge that
+         can never light is a mechanism with nothing left to measure. -->
     <button
       type="button"
       class="mode"
@@ -268,9 +269,6 @@
   .k-count {
     color: var(--domain, #4dd6c1);
     font-variant-numeric: tabular-nums;
-  }
-  .k-clamp {
-    color: #f0a44a;
   }
   .key .mode {
     margin-left: auto;

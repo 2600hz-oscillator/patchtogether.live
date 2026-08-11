@@ -7,7 +7,7 @@
 //
 // The three surfaces drive EXISTING module mechanisms — nothing here
 // invents a parallel path:
-//  - The clock surface targets THE rack TIMELORDE (pinned or a dawless
+//  - The clock surface targets THE rack TIMELORDE (pinned or an imported
 //    import's canvas one) and writes its `bpm` param — the same param the
 //    card knob + the Electra tap pad drive.
 //  - The MIDI-DIN surface assigns a MIDI input by wiring the hidden pinned
@@ -45,7 +45,7 @@ export type SurfaceEdges = Iterable<SurfaceEdgeLike | undefined>;
  *  1. the deterministic pinned instance (`pinned-timelorde`) — the normal
  *     workflow-rack case;
  *  2. otherwise the lexicographically-smallest node of type 'timelorde' —
- *     a dawless-authored patch loaded into a workflow rack carries a
+ *     an imported patch carries a
  *     random-id canvas TIMELORDE; it IS the rack clock (maxInstances=1),
  *     so the surface drives it rather than spawning a competitor. Lex
  *     order makes every client pick the same one in the (transient)

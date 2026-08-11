@@ -40,10 +40,9 @@
     }
   }
 
-  // WORKFLOW MODE P1: both create cards hit the SAME endpoint — the only
-  // difference is the mode field. 'dawless' is the existing rack UI (the
-  // renamed "new dawless patch" card); 'workflow' boots the workflow shell.
-  async function createRackspace(mode: 'dawless' | 'workflow') {
+  // ONE create card, ONE rack kind. (There were two, selecting the deleted
+  // `racks.mode` column; the shell is now the only shell.)
+  async function createRackspace() {
     if (atCap) return;
     creating = true;
     error = null;
@@ -51,7 +50,7 @@
       const res = await fetch('/api/rackspaces', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name: 'Untitled rackspace', mode }),
+        body: JSON.stringify({ name: 'Untitled rackspace' }),
       });
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { message?: string };
@@ -133,25 +132,14 @@
     <div class="actions-row">
       <button
         class="primary"
-        data-testid="new-dawless-patch"
-        onclick={() => createRackspace('dawless')}
+        data-testid="new-patch"
+        onclick={createRackspace}
         disabled={creating || atCap}
         title={atCap
           ? `Limit reached (${ownedCount}/${RACK_CAP} owned). Delete one first.`
-          : 'Create a new dawless patch — the classic full-canvas rack'}
+          : 'Create a new patch — a shared rack with a share URL'}
       >
-        {creating ? 'Creating…' : '+ New dawless patch'}
-      </button>
-      <button
-        class="primary workflow"
-        data-testid="new-workflow-patch"
-        onclick={() => createRackspace('workflow')}
-        disabled={creating || atCap}
-        title={atCap
-          ? `Limit reached (${ownedCount}/${RACK_CAP} owned). Delete one first.`
-          : 'Create a new workflow patch — toolbar-driven shell with always-on mixer / electra / clip player drawers'}
-      >
-        {creating ? 'Creating…' : '+ New workflow patch'}
+        {creating ? 'Creating…' : '+ New patch'}
       </button>
       <span class="owned-count" class:cap={atCap}>
         {ownedCount}/{RACK_CAP} owned
@@ -179,7 +167,6 @@
               <span class="name">{r.name || 'Untitled rackspace'}</span>
               <span class="meta">
                 {r.id} · {r.memberUserIds.length}/{4} members
-                {#if r.mode === 'workflow'}<span class="role mode-badge">workflow</span>{/if}
                 {#if r.ownerUserId !== data.userId}<span class="role">guest</span>{/if}
               </span>
             </a>
@@ -314,15 +301,6 @@
   button.primary:disabled {
     opacity: 0.5;
     cursor: not-allowed;
-  }
-  /* The workflow create card: same weight as the dawless one, tinted with
-     the gate colour so the two entry points read as siblings, not twins. */
-  button.primary.workflow {
-    background: var(--cable-gate, #f97316);
-  }
-  .mode-badge {
-    color: var(--cable-gate, #f97316);
-    border-color: var(--cable-gate, #f97316);
   }
   .actions-row {
     display: flex;

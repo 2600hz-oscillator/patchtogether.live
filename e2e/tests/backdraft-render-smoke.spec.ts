@@ -226,7 +226,7 @@ test.describe('BACKDRAFT — deterministic render smoke', () => {
     // Pause the engine rAF loop + pin the clock BEFORE boot.
     await installRenderSmokeHooks(page);
 
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
 
     // BACKDRAFT is an EFFECT: a deterministic source (shapes, a static shape =
@@ -292,7 +292,7 @@ test.describe('BACKDRAFT — deterministic render smoke', () => {
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
     await installRenderSmokeHooks(page);
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
 
     // A DENSE, deterministic source (ACIDWARP plasma — frame.time-pinned by the
@@ -408,7 +408,7 @@ test.describe('BACKDRAFT — deterministic render smoke', () => {
     };
 
     await installRenderSmokeHooks(page, T0);
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
 
     // SOURCE: a SHAPES square zoomed until it overflows the frame = a flat white

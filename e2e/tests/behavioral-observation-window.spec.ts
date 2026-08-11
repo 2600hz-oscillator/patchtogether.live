@@ -364,7 +364,7 @@ test.describe('behavioral sweep — the video observation window is FRAMES, not 
     page,
   }) => {
     test.setTimeout(120_000);
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
     await installFrameProbeCanvas(page, { msPerFrame: HOG_MS_PER_FRAME });
 
@@ -419,7 +419,7 @@ test.describe('behavioral sweep — the video observation window is FRAMES, not 
     // the previous hog's rAF loop down, so the two legs cannot contaminate
     // each other.
     const leg = async (msPerFrame: number) => {
-      await page.goto('/rack');
+      await page.goto('/rack?shell=legacy&seed=none');
       await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
       await installFrameProbeCanvas(page, { msPerFrame });
       // GROUND TRUTH first, in the page. Everything else on this leg is a
@@ -546,7 +546,7 @@ test.describe('behavioral sweep — the video observation window is FRAMES, not 
 
   test('the wall-clock cap BOUNDS the failure — the frame count is the gate', async ({ page }) => {
     test.setTimeout(120_000);
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
     await installFrameProbeCanvas(page, { msPerFrame: HOG_MS_PER_FRAME });
 

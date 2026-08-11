@@ -61,8 +61,20 @@ These exist in the operator's local secrets file as the source the sync script
 reads; they are **not** stored in the repo:
 
 `INVITE_SECRET_{DEV,AUTOTEST,PROD}`, `CLERK_SECRET_KEY` / `CLERK_SECRET_KEY_LIVE`,
-`NEON_{DEV,AUTOTEST,PROD}_URL` (web Neon HTTP), `FLY_PG_{DEV,AUTOTEST,PROD}_URL`
-(relay Postgres path).
+`NEON_{DEV,AUTOTEST,PROD}_URL` (web — Neon **pooled**, HTTP driver),
+`NEON_{DEV,AUTOTEST,PROD}_DIRECT_URL` (relay — Neon **direct**/non-pooled, `pg` over TCP),
+`NEON_API_KEY` + `NEON_PROJECT_ID` (Neon control-plane API),
+`CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`, `SENTRY_AUTH_TOKEN`.
+
+> ⚠ **`FLY_PG_{DEV,AUTOTEST,PROD}_URL` is DEAD — do not use it.** It predates
+> Neon and still holds a `postgres://…@patchtogether-pg*.flycast:5432` DSN whose
+> host was decommissioned with the Fly Managed Postgres stack (`db/README.md`).
+> `scripts/sync-secrets.sh` read it for the relay's `DATABASE_URL` until
+> 2026-08-11 — pushing it would have pointed the relay at a dead host and
+> silently stopped Yjs snapshot persistence. The script now reads
+> `NEON_{TIER}_DIRECT_URL` and hard-refuses any non-Neon host. Delete the
+> `FLY_PG_*` keys from `cf.env` once you have confirmed nothing else reads them.
+> There is only ONE database — see `runbooks/architecture.md`.
 
 ## Inspect what's set (names only — values are redacted by the providers)
 

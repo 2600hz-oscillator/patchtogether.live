@@ -76,7 +76,7 @@ async function captureEdges(
   page: import('@playwright/test').Page,
   edgesParams: { threshold: number; thickness: number },
 ): Promise<{ whiteFrac: number; nonZeroFrac: number; n: number }> {
-  await page.goto('/rack');
+  await page.goto('/rack?shell=legacy&seed=none');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,

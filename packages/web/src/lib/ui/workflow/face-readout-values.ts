@@ -264,16 +264,18 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
   // nearest dial:
   //
   //   reads      a `paramId: 'position'` readout prints 0.50 at EVERY size,
-  //              while the reachable span shrinks 1.94 s → 1.20 s and the read
-  //              point moves 0.97 s → 1.40 s. POSITION is the strongest control
+  //              while the reachable span shrinks 1.94 s → 0.50 s and the read
+  //              point moves 1.03 s → 1.75 s. POSITION is the strongest control
   //              on the module (max|Δ| 0.99 against a marked source) and the
   //              one no level metric can see (0.17 dB across its whole travel),
   //              so a number in the BUFFER'S OWN UNITS is the only readout that
   //              says anything true about it.
-  //   grain      SIZE reads 0.50 for a 300 ms grain and cannot say that the
-  //              grain CEILING is 800 ms — which makes size 0.805…1.0 render
-  //              BIT-IDENTICAL output, 19.5 % of the dial. It also names its
-  //              FRAME: `g.age` counts output samples while `g.readPos` moves
+  //   grain      SIZE reads 0.50 for a 300 ms grain and cannot say that the law
+  //              behind it runs 60…1500 ms exponentially. (It also could not say
+  //              that the top 19.50 % of that dial was BIT-IDENTICAL to its
+  //              maximum, which is what this readout printed as `CLAMPED` until
+  //              #1456 raised the grain ceiling to meet the law.) It also names
+  //              its FRAME: `g.age` counts output samples while `g.readPos` moves
   //              at `pitchRatio`, so a transposed grain sounds for one time and
   //              reads another, and the two differ by 2^(pitch/12).
   //   pitch      a semitone readback prints `0.50 st` — a musically negligible
@@ -287,15 +289,18 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
   //   silent for / full level at
   //              NOT a function of any one knob and not a constant either: the
   //              silence at spawn is exactly ONE GRAIN LENGTH (measured 60.0 /
-  //              134.1 / 300.0 / 670.8 / 800.0 ms at size 0 / .25 / .5 / .75 /
-  //              .9) and full level lands one grain after the 2.0 s ring fills.
-  //              This is the module's single most confusing behaviour and no
-  //              surface anywhere stated it before this face.
+  //              134.1 / 300.0 / 670.8 / 1087.2 / 1500.0 ms at size 0 / .25 /
+  //              .5 / .75 / .9 / 1) and full level lands one grain after the
+  //              2.0 s ring fills. This is the module's single most confusing
+  //              behaviour and no surface anywhere stated it before this face.
   //
   // Every claim is re-derived from `cloudsMath` — the pure-math mirror of the
   // worklet — by ORACLE legs in clouds-face-model.test.ts, so a DSP change
   // turns a stale sentence red rather than letting the faceplate keep insisting
   // on it. Negative controls in both directions, permanently, in the same file.
+  // ⚠ AND THE MIRROR ITSELF IS PINNED to the shipping worklet, sample for
+  // sample, in art/scenarios/clouds/size-travel.test.ts — without that leg
+  // every oracle above would be measuring a reimplementation.
   'clouds-position-reach': (read) => cloudsPositionText(cloudsFaceParams(read)),
   'clouds-grain-ms': (read) => cloudsGrainText(cloudsFaceParams(read)),
   'clouds-coherence': (read) => cloudsCoherenceText(cloudsFaceParams(read)),

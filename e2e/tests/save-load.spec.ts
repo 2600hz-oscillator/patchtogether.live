@@ -13,7 +13,7 @@
 // base64 Y.encodeStateAsUpdate — the per-module moduleSchemas map was dropped
 // with the migration substrate (parseEnvelope still tolerantly READS v1).
 
-import { test, expect, loadVoiceDemo } from './_fixtures';
+import { test, expect, loadVoiceDemo, openFileMenu, fileMenuClick } from './_fixtures';
 import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
@@ -180,7 +180,7 @@ test('save-load: __persistence.load() restores the patch from a saved envelope',
   });
 
   // Clear the patch.
-  await page.getByRole('button', { name: 'Clear' }).click();
+  await fileMenuClick(page, 'workflow-file-clear');
   await expect(page.locator('.svelte-flow__node')).toHaveCount(0);
 
   // Load the captured envelope back through the same path the .zip import uses.

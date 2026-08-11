@@ -40,7 +40,7 @@ test.describe('VRT: SYNESTHESIA composite', () => {
     // this the captured text metrics differ run-to-run and platform-to-platform.
     // Full root cause: e2e/vrt/_fonts.ts.
     await pinVrtFonts(page);
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
     await awaitVrtFonts(page);
 

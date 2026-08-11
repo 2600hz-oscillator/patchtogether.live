@@ -103,7 +103,7 @@ export interface HeadlessSourceInput {
  *   - the module's source lives on its card (DOM_SOURCE_LANE_TYPES), AND
  *   - the lane is NOT rendering that card:
  *       * 'shell' / 'placeholder' — the shell swapped it out  → YES,
- *       * 'legacy' — the card IS in the lane (dawless, preview-off, or a
+ *       * 'legacy' — the card IS in the lane (?shell=legacy, or a
  *         NON_SHELL carve-out like cameraInput/videoOut) → no,
  *       * 'stub'   — the user DOCKED it, so the real card is mounted in the
  *         dock rail (DockCardHost) → no. Double-mounting would run TWO

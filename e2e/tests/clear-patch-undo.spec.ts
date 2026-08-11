@@ -26,7 +26,7 @@
 //   5. assert the 2 nodes + the edge are restored — in both __patch and the
 //      rendered DOM.
 
-import { test, expect } from './_fixtures';
+import { test, expect, openFileMenu } from './_fixtures';
 import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
@@ -70,7 +70,8 @@ test('Clear patch is undoable: Clear empties the rack, undo restores nodes + edg
 
   // 2. Click the REAL Clear toolbar button (the user gesture undo must back
   //    up). It's disabled while nodeCount === 0, so it must be enabled now.
-  const clearBtn = page.getByRole('button', { name: 'Clear', exact: true });
+  await openFileMenu(page);
+  const clearBtn = page.getByTestId('workflow-file-clear');
   await expect(clearBtn).toBeEnabled();
   await clearBtn.click();
 
@@ -85,7 +86,11 @@ test('Clear patch is undoable: Clear empties the rack, undo restores nodes + edg
   await expect(page.locator('.svelte-flow__node[data-id="lfo-1"]')).toHaveCount(0);
   await expect(page.locator('.svelte-flow__node[data-id="flt-1"]')).toHaveCount(0);
   // Clear disables itself once empty — corroborates nodeCount hit 0.
+  // Clicking a File.. row CLOSES the menu, so the row has left the DOM; re-open
+  // to read its disabled state back. (Bare topbar buttons stayed on screen.)
+  await openFileMenu(page);
   await expect(clearBtn).toBeDisabled();
+  await page.keyboard.press('Escape');
 
   // 4. Undo via the SAME UndoManager Cmd-Z drives (the dev-only hook). This is
   //    the safety net that was dead before LOCAL_ORIGIN was added to the Clear
