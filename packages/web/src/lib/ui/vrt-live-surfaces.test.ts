@@ -62,7 +62,6 @@ function repoRoot(): string {
 }
 
 const VRT_DIR = resolve(repoRoot(), 'e2e/vrt');
-const PLATFORMS = ['linux', 'darwin'] as const;
 
 // ───────────────────────────────────────────────────────────────────────────
 // RATCHET 1 — spec files still allowed to hand-roll a `mask:` array instead of
@@ -223,21 +222,35 @@ describe('VRT live-surface registry: structure', () => {
     }
   });
 
-  it('every scene id has a committed baseline on at least one platform', () => {
+  it('every scene id has a committed baseline', () => {
     // Typo guard. A misspelled key masks NOTHING (the scene never looks itself
     // up) while reading as though the region were handled — the exact silent
     // failure this file exists to prevent.
+    //
+    // ⚠ This resolved `<spec>/{linux,darwin}/<scene>.png` until 2026-08-11, and
+    // kept doing so AFTER the `{platform}` segment was deleted from
+    // `snapshotPathTemplate` — so it was probing two directories that no longer
+    // exist and could not pass for ANY entry. It read as "one uncaptured
+    // scene" because the loop fails on the first entry and `mandelbulb` is the
+    // first key; the real scope was every entry in the registry. A path built
+    // in a test is a second, unchecked copy of the production path template,
+    // and this is what that costs.
+    const missing: string[] = [];
     for (const [sceneId, scene] of Object.entries(VRT_LIVE_SURFACES)) {
-      const found = PLATFORMS.some((p) =>
-        existsSync(resolve(VRT_DIR, '__screenshots__', scene.spec, p, `${sceneId}.png`)),
-      );
-      expect(
-        found,
-        `${sceneId}: no baseline PNG under __screenshots__/${scene.spec}/{linux,darwin}/ — ` +
-          'either the scene id is misspelled (so the mask silently never applies) or the ' +
-          'baseline was never captured',
-      ).toBe(true);
+      if (!existsSync(resolve(VRT_DIR, '__screenshots__', scene.spec, `${sceneId}.png`))) {
+        missing.push(`${scene.spec}/${sceneId}.png`);
+      }
     }
+    // Report ALL of them, not just the first: with one baseline set authored by
+    // CI, "which scenes are uncaptured" is the actionable list, and failing on
+    // entry one hides the other 40.
+    expect(
+      missing,
+      'live-surface scene ids with no committed baseline under e2e/vrt/__screenshots__/. ' +
+        'Either the scene id is misspelled (so the mask silently never applies) or the ' +
+        'baseline was never captured — capture with `task vrt:commit`, which dispatches ' +
+        'vrt-update.yml on linux CI, the only baseline author.',
+    ).toEqual([]);
   });
 });
 

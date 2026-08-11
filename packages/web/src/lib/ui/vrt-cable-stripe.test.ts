@@ -449,17 +449,56 @@ describe('VRT baselines paint the CURRENT --cable-* stripe', () => {
       `CABLE_EDGE_DIRS (a cable token frames the captured element), or to ` +
       `NON_CARD_CAPTURE_DIRS (with the reason it has no cable band), in vrt-cable-stripe.ts.`,
     ).toEqual([]);
-    // ...and the reverse: a table entry for a directory that no longer exists is
-    // dead weight that quietly shrinks the gate's real scope.
-    const dirs = new Set(baselineDirs());
+    // ...and the reverse: a table entry that describes nothing real is dead
+    // weight that quietly shrinks the gate's real scope.
+    //
+    // ⚠ ANCHORED TO THE SPEC FILE, NOT TO THE BASELINE DIRECTORY, and the
+    // difference is not cosmetic. Each table key is a claim ABOUT A SPEC
+    // ("`vrt-toybox.spec.ts` captures a canvas framed in `--cable-video`"),
+    // so the artifact that makes the claim live is `e2e/vrt/<key>`. Keying off
+    // `__screenshots__/<key>/` instead conflates "this spec exists" with "this
+    // spec has PNGs committed right this second", and those come apart for
+    // ordinary reasons: a spec authored before its first capture, and — the
+    // case that found this — a migration window. When the `{platform}`
+    // collapse deleted the darwin tree, 21 of the 30 entries pointed at
+    // directories that were absent for a few hours and then came back
+    // unchanged. Re-deriving the tables against that tree would have deleted
+    // 21 correct entries and then needed all 21 restored.
+    //
+    // A spec that is deleted or renamed still reddens here, which is the rot
+    // this was written to catch.
     const dead = [
       ...Object.keys(CARD_CAPTURE_DIRS),
       ...Object.keys(CABLE_EDGE_DIRS),
       ...Object.keys(NON_CARD_CAPTURE_DIRS),
     ]
+      .filter((d) => !existsSync(resolve(SPEC_DIR, d)))
+      .sort();
+    expect(
+      dead,
+      'classification entries naming a VRT spec that no longer exists under e2e/vrt/. ' +
+        'Delete the entry, or restore the spec.',
+    ).toEqual([]);
+
+    // State the gate's live scope every run, green included: a classified spec
+    // with no committed baselines is checking nothing right now. Informational
+    // by design — the assertion that baselines EXIST belongs to vrt-meta and
+    // vrt-live-surfaces, and duplicating it here would just fail twice for one
+    // cause while making this gate unusable mid-migration.
+    const dirs = new Set(baselineDirs());
+    const unpopulated = [
+      ...Object.keys(CARD_CAPTURE_DIRS),
+      ...Object.keys(CABLE_EDGE_DIRS),
+    ]
       .filter((d) => !dirs.has(d))
       .sort();
-    expect(dead, 'classification entries for baseline dirs that no longer exist').toEqual([]);
+    if (unpopulated.length) {
+      console.info(
+        `[vrt-cable-stripe] ${unpopulated.length} classified spec(s) have NO committed ` +
+          `baselines, so this gate currently checks nothing for them:\n    ` +
+          `${unpopulated.join('\n    ')}`,
+      );
+    }
     // A directory may not be claimed by two tables at once — overlapping claims
     // make "which rule applied?" unanswerable and hide one of them.
     const claimed = [
@@ -557,6 +596,13 @@ describe('VRT baselines paint the CURRENT --cable-* stripe', () => {
       if (spec === 'vrt.spec.ts') continue; // registry-driven: scene id IS the type
       const src = readFileSync(specPath, 'utf8');
       const dir = resolve(SCREENSHOT_ROOT, spec);
+      // A classified spec with no baselines yet has no stems to check. Guard
+      // the read rather than letting it throw: an unguarded readdirSync here
+      // turned the whole gate into an ENOENT crash the moment the `{platform}`
+      // collapse emptied the tree, which reports as a broken test file instead
+      // of as the one assertion that actually has something to say. A gate
+      // should fail with its own message or not at all.
+      if (!existsSync(dir)) continue;
       const types = new Set<string>();
       for (const f of readdirSync(dir)) {
         if (f.endsWith('.png')) types.add(toType(f.replace(/\.png$/, '')));

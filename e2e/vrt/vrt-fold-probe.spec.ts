@@ -107,10 +107,13 @@ test('dock faceplate fold geometry, every curated face', async ({ page }) => {
 // `AUDIT_LEGACY=1` reruns it against the PRE-unfold scene (720 px viewport,
 // clamp left on), which is the audit's own negative control: it separates "this
 // change moved the pixels" from "the baseline had already drifted".
+// ONE baseline set — no `{platform}` segment (vrt.config.ts). This used to
+// append `process.platform === 'darwin' ? 'darwin' : 'linux'`, which after the
+// collapse resolves to a directory that does not exist, so the probe would
+// have reported every committed baseline as absent.
 const BASELINE_DIR = join(
   import.meta.dirname,
   '__screenshots__/workflow-shell-faces.spec.ts',
-  process.platform === 'darwin' ? 'darwin' : 'linux',
 );
 
 test('exact diff of every committed dock baseline', async ({ page }) => {
