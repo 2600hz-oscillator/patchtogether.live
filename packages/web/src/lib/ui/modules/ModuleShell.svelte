@@ -72,7 +72,11 @@
   import { isAnnotating } from '$lib/ui/annotate-mode.svelte';
   import { shellCellFor, type ShellCellEnv } from '$lib/ui/workflow/shell-cells';
   import { shellParamWrite } from '$lib/ui/workflow/shell-param-writes';
-  import { dockBandVisible, dockTabPlan } from '$lib/ui/workflow/dock-tabs-model';
+  import {
+    dockBandVisible,
+    dockTabPlan,
+    heroRailBelowBands,
+  } from '$lib/ui/workflow/dock-tabs-model';
   import { dockRowPlan, type RowPlanDefLike } from '$lib/ui/workflow/dock-row-plan';
   import {
     declaredParamCells,
@@ -417,6 +421,11 @@
    *  the SAME pure answer DockFullView's rail computes. A rail without the
    *  matching hide (or a hide without the rail) is a blank faceplate. */
   let dockTabs = $derived(dockTabPlan(dockBands));
+
+  /** PF-16 — does the hero rail render BELOW the bands? The pure predicate, so
+   *  the reason and its measurement live in one place and a unit test can hold
+   *  it. See `heroRailBelowBands`. */
+  let heroBelow = $derived(heroRailBelowBands(dockTabs));
 
   /**
    * PF-21 — the ROW PLAN: which section bands share a horizontal row.
@@ -1027,7 +1036,12 @@
          to a second line at exactly the widths where the graph mattered most.
          Below, they get the full faceplate width — which is also the reading
          order the numbers want: the graphic states what the voice IS, the
-         strip states what it MEASURES. -->
+         strip states what it MEASURES.
+
+         ⚠ ON A RAILED FACE THE HERO RENDERS *AFTER* THE BANDS — see
+         `heroRailBelowBands` and the ORDER note above `.dock-pages`. -->
+    {#if !heroBelow}{@render heroRail()}{/if}
+    {#snippet heroRail()}
     {#if heroGlyph || hero}
       <div
         class="tile-body dock-hero"
@@ -1078,6 +1092,23 @@
         {/if}
       </div>
     {/if}
+    {/snippet}
+    <!-- ⚠ ORDER — THE TAB PANEL FOLLOWS ITS TAB RAIL. On a RAILED face the
+         bands render FIRST and the hero rail becomes a context strip BELOW
+         them (`heroRailBelowBands`); on every other face the hero stays where
+         it has always been. Both the reason and the measurement are in the
+         model — the short version is that a rail promises "click here to
+         change what you see", and a hero taller than the pane spends the whole
+         visible budget before the switched content begins. MEASURED on
+         wavesculpt at 1280×720: hero 445 px into a 352 px scroll box, active
+         band top 547 px, ZERO pixels of it on screen — eight tabs that changed
+         nothing a user could see. -->
+    {#if heroBelow}
+      {@render dockPages()}{@render heroRail()}
+    {:else}
+      {@render dockPages()}
+    {/if}
+    {#snippet dockPages()}
     <div class="dock-pages" data-testid="face-pages">
       <!-- PF-16 — a TABBED face hides its inactive bands with CSS; it NEVER
            unmounts them. faces-parity asserts one `control-<paramId>` per def
@@ -1104,6 +1135,7 @@
         {/if}
       {/each}
     </div>
+    {/snippet}
     {#snippet bandSection(band: DockFaceBand)}
         <!-- THE BAND HEADER, as TWO independent questions (bandHeaderPlan).
              The LABEL answers "is there a tab rail already naming this band?";
@@ -1155,6 +1187,22 @@
           {:else if head.hint}
             <p class="page-hint page-hint-solo">{head.hint}</p>
           {/if}
+          <!-- ⚠ THE BAND BODY IS `display: contents` UNLESS THE FACE IS RAILED.
+               An untabbed band already gets its horizontal packing one level
+               up — `dockRowPlan` puts two whole bands side by side — so its
+               flat row and its clusters stay the stacked blocks they have
+               always been, and this wrapper contributes NOTHING to layout (no
+               box, no line box: the children remain the section's own flow
+               children). Every untabbed faceplate is therefore byte-identical.
+
+               A RAILED band cannot be packed that way: the rail shows ONE band
+               at a time, so the band owns the entire pane width and stacking a
+               2-knob cluster over a 4-knob cluster leaves ~70 % of that width
+               empty while the band grows a row taller for each one. MEASURED
+               on wavesculpt's RED band at 866 px of usable width: five stacked
+               rows, 424 px tall, none of them wider than ~250 px. Flowed, the
+               same thirteen cells are two rows. -->
+          <div class="page-body" class:flow={!!dockTabs}>
           {#if band.controls.length}
             <div class="page-controls">
               {#each band.controls as ctl (ctl.key)}
@@ -1177,6 +1225,7 @@
               </div>
             </div>
           {/each}
+          </div>
         </section>
     {/snippet}
     <!-- PF-17 — the OSS ATTRIBUTION footer. A module whose DSP is a port of
@@ -1343,6 +1392,21 @@
     max-width: none;
     align-items: flex-start;
     gap: 4px;
+  }
+  /* ⚠ AND THE SEGMENTS INSIDE IT SIZE TO THEIR OWN NAMES. `Segmented`'s `.seg`
+     is `flex: 1` — equal widths from a zero basis — which is right in a 46 px
+     lane column and wrong in a dock band with 866 px to spend: every button
+     gets the width of the SHORTEST roster entry's share, so wavesculpt's VIEW
+     read `PROXIMITY · BIRDSEYE · SPECTRO…` and its BLINK read
+     `RIBBONS · SCOPES TRIAL · REALITY BASED…` with ~450 px of the row empty
+     beside them. The ellipsis is `Segmented`'s deliberate no-clip behaviour, so
+     nothing was broken and nothing could go red — `faces-parity` reads
+     `textContent`, which is the FULL name either way (the `LP · H… · B…`
+     precedent). A content floor keeps the equal-growth behaviour wherever there
+     IS spare width to share and stops it truncating a name that would have fit.
+     DOCK ONLY: the lane cap is the no-clip guarantee and is untouched. */
+  .rl-tile.dock-full .ms-cell-sel :global(.seg) {
+    min-width: max-content;
   }
 
   /* The cell's own caption under a dock-tier selector/import (the DECLARED
@@ -1649,6 +1713,31 @@
     flex-wrap: wrap;
     align-items: flex-start;
     gap: 8px 10px;
+  }
+
+  /* THE BAND BODY. `display: contents` is not a trick here, it is the whole
+     point: on an untabbed face this element must contribute NOTHING, so the
+     flat row and the clusters stay direct participants in the section's flow
+     and every existing faceplate renders byte-identically. */
+  .page-body {
+    display: contents;
+  }
+  /* …and on a RAILED band it becomes the wrapping row. `align-items:
+     flex-start` for the same reason `.dock-row` uses it — a 1-knob cluster
+     beside a 4-knob one must not grow an empty box under its caption — and the
+     18 px column gap is `.dock-row`'s, because these read as the same kind of
+     "two groups side by side". */
+  .page-body.flow {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 8px 18px;
+  }
+  /* The stacked-block spacing below is what a flowed row must NOT inherit: a
+     top margin on a flex item pushes its whole row down. */
+  .page-body.flow > .page-controls,
+  .page-body.flow > .page-cluster {
+    margin-top: 0;
   }
 
   /* CLUSTER inside a band (ModuleFacePage.clusters): a quieter, SMALLER

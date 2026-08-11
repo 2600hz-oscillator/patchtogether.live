@@ -330,12 +330,15 @@
       </li>
     {/each}
   </ul>
-  </div>
 
   <!-- THE TWO JOYSTICKS, in the card's own order and with the card's own
        axes. The HEIGHT knob sits BETWEEN them exactly as it does on the card,
        because pos_z is the third camera axis and belongs with the other two —
-       not because a row of three looks tidy. -->
+       not because a row of three looks tidy.
+       ⚠ THEY ARE THE STAGE'S THIRD COLUMN, not a row beneath it. Stacked, the
+       panel was 372 px tall and never wider than ~530 of the 786 px it had;
+       the plan, the sticks and the legend are three ~170 px-tall blocks that
+       fit side by side, so the same content is ~200 px. -->
   <div class="sticks">
     <XyPad
       xValue={camera.pos_x}
@@ -399,6 +402,7 @@
       onYChange={(v) => setNodeParam(nodeId, 'rot', clampTo(P_ROT, v))}
     />
   </div>
+  </div>
 
   <div class="taps" role="group" aria-label="Which output this readout describes">
     {#each WAVESCULPT_TAPS as t (t.id)}
@@ -429,20 +433,23 @@
   }
 
   /* The plan is SQUARE (the room is), so it is sized rather than stretched and
-     the legend takes the width a letterboxed square would have wasted. The
-     drag maths recovers the drawn square from `min(w, h)` regardless, so this
-     is a layout choice and not a correctness dependency. */
+     the sticks and the legend take the width a letterboxed square would have
+     wasted. The drag maths recovers the drawn square from `min(w, h)`
+     regardless, so this is a layout choice and not a correctness dependency.
+     THREE COLUMNS — plan · sticks · legend — because all three are ~170 px
+     tall and the bay is 786 px wide. `flex-wrap` rather than a fixed grid so a
+     narrow pane degrades into the stacked column instead of overflowing. */
   .stage {
-    display: grid;
-    grid-template-columns: 196px minmax(0, 320px);
-    gap: 10px;
-    align-items: start;
-    justify-content: start;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 14px;
+    align-items: flex-start;
+    justify-content: flex-start;
   }
 
   .ws-room svg {
-    width: 196px;
-    height: 196px;
+    width: 170px;
+    height: 170px;
     display: block;
     background: rgb(0 0 0 / 0.4);
     border: 1px solid rgb(255 255 255 / 0.08);
@@ -547,7 +554,7 @@
     display: flex;
     align-items: flex-start;
     gap: 10px;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
   }
   .height {
     display: grid;

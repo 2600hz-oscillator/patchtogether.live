@@ -106,6 +106,18 @@
     });
   }
 
+  /** Jump straight to a factory table — the card's `<select>`, restored. The
+   *  `user` option is a LABEL for the current upload, never a destination, so
+   *  choosing it is a no-op rather than a write that would clear the frames. */
+  function pickTable(i: number, value: string): void {
+    if (!value.startsWith('factory:')) return;
+    withOsc(i, (od) => {
+      od.wavetableSource = value;
+      delete od.wavetableFrames;
+      delete od.wavetableLabel;
+    });
+  }
+
   let status = $state<Record<number, string | null>>({});
   let error = $state<Record<number, string | null>>({});
   let presetSel = $state<Record<number, string>>({});
@@ -193,7 +205,30 @@
           aria-label={`Previous factory wavetable for ${v.label}`}
           onclick={() => stepTable(v.idx, -1)}>◀</button
         >
-        <span class="table" data-testid={`wavesculpt-bay-table-${v.idx + 1}`}>{tableLabel(v.idx)}</span>
+        <!-- ⚠ A SELECT, NOT A CAPTION. The legacy card gave every oscillator a
+             full `<select>` over `getFactoryTables()` plus a `USER · <label>`
+             entry, i.e. RANDOM ACCESS to any table; the first bay shipped a
+             read-only name between two steppers, which is sequential-only and
+             the one measured per-voice capability the face had lost against
+             the card. The steppers stay — browsing a table set one at a time is
+             the better gesture and the panel's `probe` presses `next-1` — but
+             the name itself is now the jump. -->
+        <select
+          class="table"
+          data-testid={`wavesculpt-bay-table-${v.idx + 1}`}
+          value={sourceOf(v.idx)}
+          aria-label={`Factory wavetable for ${v.label}`}
+          onchange={(ev) => pickTable(v.idx, (ev.target as HTMLSelectElement).value)}
+        >
+          {#if sourceOf(v.idx) === 'user'}
+            <!-- A user upload is not IN the factory roster, so it needs its own
+                 entry or the select would silently read as the first table. -->
+            <option value="user">USER · {tableLabel(v.idx)}</option>
+          {/if}
+          {#each tables as t (t.id)}
+            <option value={`factory:${t.id}`}>{t.label}</option>
+          {/each}
+        </select>
         <button
           type="button"
           class="step"
@@ -283,6 +318,14 @@
   }
   .table {
     text-align: center;
+    background: none;
+    border: 0;
+    padding: 0;
+    min-width: 0;
+    cursor: pointer;
+  }
+  .table:hover {
+    color: rgb(255 255 255 / 0.95);
   }
 
   .step {

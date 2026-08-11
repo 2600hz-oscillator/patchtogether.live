@@ -19,6 +19,7 @@ import {
   activeDockTab,
   dockBandVisible,
   dockTabPlan,
+  heroRailBelowBands,
   DOCK_TAB_MIN_BANDS,
 } from './dock-tabs-model';
 import '$lib/audio/modules';
@@ -87,6 +88,28 @@ describe('dockBandVisible — what the shell hides', () => {
     const tabs = dockTabPlan(plan)!;
     const shown = plan.filter((b) => dockBandVisible(b.id, tabs, 'nope'));
     expect(shown.map((b) => b.id)).toEqual(['p0']);
+  });
+});
+
+describe('heroRailBelowBands — the tab panel follows its rail', () => {
+  // ⚠ THE PIXELS ARE GATED IN A BROWSER, NOT HERE. This holds the DECISION;
+  // `faces-parity`'s railed leg holds the consequence (every tab must put
+  // controls ON SCREEN, and a different set per tab), because a unit test
+  // cannot see a scroll box. Both directions, so a predicate stuck on one
+  // answer fails.
+  it('an UNTABBED face keeps the hero above the bands', () => {
+    expect(heroRailBelowBands(null)).toBe(false);
+    expect(heroRailBelowBands(undefined)).toBe(false);
+    expect(heroRailBelowBands([])).toBe(false);
+  });
+
+  it('a TABBED face moves the hero below them', () => {
+    expect(heroRailBelowBands(dockTabPlan(bands(DOCK_TAB_MIN_BANDS)))).toBe(true);
+  });
+
+  it('flips at exactly the tab threshold, off the SAME plan the rail is built from', () => {
+    expect(heroRailBelowBands(dockTabPlan(bands(DOCK_TAB_MIN_BANDS - 1)))).toBe(false);
+    expect(heroRailBelowBands(dockTabPlan(bands(DOCK_TAB_MIN_BANDS)))).toBe(true);
   });
 });
 
