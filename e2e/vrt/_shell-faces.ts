@@ -243,6 +243,32 @@ export const FACES = [
   // deliberate linux-only state into exactly the undeclared gap it avoids.
   // `git status` for untracked PNGs after every VRT run until the pair exists.
   { type: 'cofefve', pages: 6 },
+  // FACE BATCH 4 (2026-08-11) — the random source. SIX bands, six rendered: the
+  // hero promotes the loop PANEL out of QUANTISER (which keeps STEPS + SCALE)
+  // and DÉJÀ VU out of T LOOP (which keeps LENGTH), so nothing empties.
+  //
+  // ⚠ THE THIRD FREE-RUNNING FACE IN THIS ROSTER, and therefore the third entry
+  // that can exercise #1420's pre-frame audio freeze rather than being
+  // indifferent to it. marbles is producing `clk` pulses and T gates from the
+  // instant it spawns, with nothing patched — measured at the shipped defaults,
+  // 16 `clk` edges in 8 s (2.000 Hz), 6 `t1` and 10 `t2` — and its `meter`
+  // glyph taps `t1`. It carries NO mask.
+  //
+  // ⚠ THAT IT CATCHES A FREEZE REGRESSION IS A PREDICTION, NOT A MEASUREMENT,
+  // and this entry says so rather than borrowing analogVco's numbers. A GATE
+  // tap is a different subject from analogVco's saw and macrooscillator's
+  // periodic `out`: t1 is high for a FIXED 50 % of each step at the default PW,
+  // so an unfrozen capture lands on a two-level signal rather than a phase, and
+  // whether the meter reads lit or unlit is decided by which half of the step
+  // the frame falls in. Run `vrt-face-audio-probe` against this tile before
+  // quoting a pixel delta here; a passing scene is not the measurement.
+  //
+  // ⚠ ITS HERO PANEL IS INDEPENDENT OF ALL OF THAT. The loops picture has no
+  // clock, no playhead and no analyser — every pixel is a pure function of the
+  // thirteen params through `marblesLoopPlan` — so the DOCK tile is
+  // deterministic whether the graph runs or not, which is why the freeze
+  // question above is about the COMPACT tile's glyph alone.
+  { type: 'marbles', pages: 6 },
 ] as const;
 
 /** TIGHT per-scene diff budgets (absolute pixels; Playwright takes the MIN of

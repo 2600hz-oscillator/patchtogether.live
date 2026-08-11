@@ -81,7 +81,6 @@ export const VOCABULARY_DEBT: Readonly<Record<string, readonly string[]>> = {
   'KickdrumCard.svelte': ['attack.label', 'attack_eq.label', 'body_decay.label', 'body_eq.label', 'body_shape.label', 'ceiling.label', 'click_len.label', 'click_level.label', 'click_tone.label', 'drive.label', 'level.label', 'pitch_amt.label', 'pitch_time.label', 'sub_decay.label', 'sub_eq.label', 'sustain.label', 'tension.label', 'translate.label', 'width.label'],
   'LushGardenCard.svelte': ['fov.label', 'horizon.label', 'rate.label', 'view.label'],
   'MandleblotCard.svelte': ['color_cycle.label', 'iterations.label', 'rotation.label', 'zoom.label'],
-  'MarblesCard.svelte': ['t_jitter.label', 'x_length.label'],
   'MeowboxCard.svelte': ['decay.label', 'level.label', 'pitch.label', 'pitch.units'],
   'MilkdropCard.svelte': ['morph.label', 'presetSelect.label', 'reactivity.label', 'speed.label'],
   // The RETURN strips (pre-fader-sends PR). The def label is the SELF-
@@ -135,7 +134,10 @@ export const VOCABULARY_DEBT: Readonly<Record<string, readonly string[]>> = {
  *  OPERATIONAL was 10 before `AnalogVcoCard`'s `fmAmount.min`/`pmAmount.min`
  *  and `MarblesCard`'s `length.curve`/`x_length.curve` were bound to the def. */
 export const OPERATIONAL_DEBT_CEILING = 6;
-export const VOCABULARY_DEBT_CEILING = 250; // 242 + the 8 ledgered MIXMSTRS return-strip labels above
+export const VOCABULARY_DEBT_CEILING = 248; // was 250 until MarblesCard bound its LABELS to the def
+                                            // with the marbles face (2026-08-11), draining
+                                            // `t_jitter.label` ("Jitter" vs "T Jitter") and
+                                            // `x_length.label` ("X Len" vs "X Length").
 
 /** Flatten a ledger to `card:param.field` triples (the countable form). */
 export function debtTriples(ledger: Readonly<Record<string, readonly string[]>>): string[] {

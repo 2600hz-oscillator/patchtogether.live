@@ -396,6 +396,56 @@
 // fix turns a stale claim RED instead of leaving the faceplate insisting on a
 // repaired defect.
 
+// FACE BATCH 4 · marbles (2026-08-11) — the rack's only RANDOM SOURCE, and the
+// FIRST FACE AUTHORED UNDER THE NO-PROSE DIRECTIVE.
+//
+// Owner, 2026-08-11, on the shipped clouds faceplate: *"i really don't like any
+// of this text… we should prefer almost zero AI authored text, and all future
+// faceplate work should reflect that. our old faces are pretty self
+// explanatory. i want to lose all the ai text, and bring back right click →
+// annotate based on authored docs."* So this face has NO `hint`, NO band hints,
+// NO explanatory captions and NO editorial band headers — six plain labels
+// (`CLOCK`, `T GATES`, `T LOOP`, `X`, `QUANTISER`, `X LOOP`), a picture, and
+// eleven bare values. Everything it learned is in the def's `docs`, one
+// right-click away, and in the PR body.
+//
+// ⚠ marbles IS THE MODULE MOST TEMPTED TO NARRATE, which is what makes it a
+// real test of that directive rather than an easy one: randomness genuinely
+// cannot be read off knob positions. The answer taken here is to choose values
+// that ARE the fact:
+//
+//   · `T random` / `X random` print `p = (2·dv − 1)²`, so DÉJÀ VU's travel
+//     reads 100 % → 0 % → 100 %. That the MAXIMUM of the knob is not the
+//     maximum of the behaviour is then visible by turning one dial.
+//   · `T loop` / `X loop` print `free`, not `8 steps`, while their DÉJÀ VU is
+//     0 — because LENGTH is BIT-EXACTLY inert there, and that is the shipped
+//     default. The picture does the same thing in pixels: one slot, not eight.
+//   · `glide 0 %` and `quantiser off` sit next to each other at the shipped
+//     STEPS 0.50, which is the whole story of that dial's dead gap.
+//
+// ⚠ THE SPEC IT WAS BUILT FROM WAS WRONG FOUR TIMES, every one the same failure
+// — probing a random process at ONE SEED on a coarse grid — and the corrections
+// are recorded on the def. The headline: it reported the T loop as SATURATED
+// across the top half of DÉJÀ VU while only the X loop was non-monotone. BOTH
+// are non-monotone and both peak at exactly 0.5; the saturation was an artifact
+// of `length 4` plus an IOI-tolerance metric on a seed whose four slots
+// happened to sit on one side of the gate threshold. The oracle measures the
+// per-clock GATE WORD at the shipped length 8 instead, which has neither
+// problem.
+//
+// ⚠ ONE DEFECT DOCUMENTED, NOT FIXED: `t_model` 1 (CLUSTERS) is a two-line
+// commented STUB that falls through to the COIN generator, in both the worklet
+// core and the host mirror — bit-identical `t1` AND `t2` at three separate
+// biases, with DRUMS as a passing control. Implementing it means porting the
+// firmware's cluster generator, which changes audio and re-pins nothing that
+// exists yet (there is no `art/baselines/marbles/`), so it is its own PR. The
+// faceplate prints `CLUSTERS → COIN` rather than painting a dead model as a
+// working one.
+//
+// ⚠ AND IT IS THE ROSTER'S THIRD FREE-RUNNING FACE, so its `meter` glyph is a
+// third witness for #1420's pre-frame audio freeze — see e2e/vrt/_shell-faces
+// for what is measured and what is only predicted.
+
 export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // P1 batch 1 — first 6 module faces
   'adsr',
@@ -439,6 +489,8 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   'noise',
   // FACE BATCH 5 · the analog delay (2026-08-10) — see the header note above.
   'cofefve',
+  // FACE BATCH 4 · the random source (2026-08-11) — see the header note above.
+  'marbles',
 ]);
 
 /**
