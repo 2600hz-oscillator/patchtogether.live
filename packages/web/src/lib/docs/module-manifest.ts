@@ -1433,6 +1433,13 @@ export function buildModuleManifest(
       // beside the def because the def, the card, MACSEQ and the faceplate all
       // read it and the def↔face pair would otherwise be a cycle.
       if (file === 'macro-engine-roster.ts') return false;
+      // MARBLES' two named rosters (T-model + scale labels and their `options`
+      // form) — not a ModuleDef. It sits here rather than on the def because
+      // `marbles.ts` imports its worklet as `…?url`, which Node cannot resolve,
+      // so anything importing the def is unloadable from a Playwright process
+      // and `marbles-face.spec.ts` could not check the printed strings against
+      // the declared ones. The def re-exports both arrays.
+      if (file === 'marbles-names.ts') return false;
       return true;
     })
     .sort((a, b) => a.file.localeCompare(b.file));

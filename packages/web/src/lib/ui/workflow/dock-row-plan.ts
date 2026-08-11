@@ -126,7 +126,20 @@ export function cellWidthClass(ctl: FaceControl, def: RowPlanDefLike | undefined
     // a COLOUR swatch (56 px at hero, narrower than a knob's 64 px column) —
     // unlike its sibling declared cell, whose grid CHIP is a 120–168 px roster
     // chip and holds a row.
-    return kind === 'knob' || kind === 'toggle' || kind === 'momentary' || kind === 'color'
+    //
+    // ⚠ `fader` JOINS THEM (2026-08-11, marbles). It was landing on the
+    // deny-by-default `wide` arm — correct behaviour for a kind this predicate
+    // had never been taught, and wrong for this one: `ModuleShell`'s fader
+    // branch renders `<div class="kcol ms-cell-fader">` and `Fader.svelte` is
+    // 22 px wide. noise could not surface it (one param, promoted to the hero,
+    // zero bands, so no fader ever reached a band); marbles is the first face
+    // to put faders IN bands, and unfixed every one of its six bands would have
+    // taken a row of its own.
+    return kind === 'knob' ||
+      kind === 'toggle' ||
+      kind === 'momentary' ||
+      kind === 'color' ||
+      kind === 'fader'
       ? 'column'
       : 'wide';
   }
