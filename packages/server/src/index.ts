@@ -322,6 +322,10 @@ const reaper = startReaper(slots, hocuspocus as unknown as LiveConnectionSource,
 // hatch for a deliberate ephemeral prod-memory run. See db.ts:shouldFailFast.
 if (shouldFailFast()) {
   // eslint-disable-next-line no-console
+  // ⚠ STALE TEXT below (`flyctl postgres attach`): that stack is decommissioned;
+  // the real action is `scripts/sync-secrets.sh <tier> --apply` (Neon DIRECT
+  // url). Not edited here because the string is in the @collab attest basis and
+  // rewording it forces a re-attest — comments are free, strings are not.
   console.error(
     'event=relay_no_database_url level=fatal ' +
       'msg="NODE_ENV=production but DATABASE_URL is unset — refusing to boot the ' +

@@ -4,6 +4,35 @@ Status: **manual user step**. The code is the foundation (probes + `/metrics` +
 request-id access logs + env-gated Sentry + GH Actions backstop); the steps below
 wire the external services on top.
 
+> ## ⚠ READ THIS FIRST — this is a PLAN, not a record of what is configured
+>
+> Better Stack **was** stood up (2026-06-10) and is live, but **not with the
+> numbers written below**. Several instructions here were never executed as
+> written, and reading them as configuration has already misled people. Verified
+> against the live Uptime API on **2026-08-11**:
+>
+> | this doc says | actually configured | where |
+> |---|---|---|
+> | check frequency **30 s** | **180 s** for the six relay monitors; **1800 s** (30 min) for the two `/api/health` monitors | §2 step 4 |
+> | 3 regions (Frankfurt / N. Virginia / Singapore) | all four: `eu`, `us`, `as`, `au` | §2 step 5 |
+> | escalation policy, SMS, phone | **none** — `email: true`, `sms/call/push: false`, `policy_id: null` on all 8 monitors | §3, §B |
+> | "three monitors" (dev only) | **8 monitors** (dev *and* prod) + **2 heartbeats** | §5 |
+>
+> The two `/api/health` monitors were deliberately moved to 1800 s on
+> **2026-08-11** to stop them waking the Neon compute — a 30 s poll on an
+> endpoint that touches Postgres keeps a serverless database permanently warm.
+> **Do not "restore" them to 30 s.**
+>
+> **The live inventory — monitor IDs, heartbeat IDs, thresholds, on-call — lives
+> in the private infra-docs repo (`runbooks/observability.md`), not here.** Treat
+> this file as the *procedure* for standing a monitor up, and go there for
+> *what exists*.
+>
+> Note the phrase "30 s" also appears below in a **correct** sense: the relay's
+> own in-process alarm/heartbeat interval really is 30 s
+> (`ALARM_CHECK_INTERVAL_MS = 30_000` in `packages/server/src/http-introspection.ts`).
+> That is a different number from the monitor poll cadence — don't conflate them.
+
 **Decided stack (this is what we run):**
 
 - **Fly relay logs → Better Stack** via Fly's official **fly-log-shipper** app
@@ -21,7 +50,7 @@ wire the external services on top.
 
 The GitHub Actions backstop (`.github/workflows/live-smoke-alert.yml`) runs every
 10 minutes whether or not Better Stack is configured. Better Stack is the upgrade
-path: faster cadence (30 s vs 10 min), a per-channel escalation policy (incl.
+path: faster cadence (180 s vs 10 min), a per-channel escalation policy (incl.
 SMS), and richer historical graphs.
 
 ---
@@ -55,8 +84,14 @@ For each row in the table above:
 1. **Uptime → Monitors → Create monitor**.
 2. **URL or IP** → paste the URL.
 3. **Type** → `HTTPS`.
-4. **Check frequency** → 30 s (`/api/health` + `/health`) or 1 min (`/metrics`; the body-match is more expensive).
-5. **Regions** → `Frankfurt + N. Virginia + Singapore` (3-of-3 must fail before paging — avoids false-positives from a single edge POP outage).
+4. **Check frequency** → **180 s** for relay `/health` + `/metrics`. For a
+   `/api/health` endpoint that reaches Postgres, use **1800 s** — see the
+   warning at the top of this file: a fast poll on a DB-touching endpoint keeps
+   the Neon compute from ever suspending. (This step used to say 30 s. It was
+   never configured that way, and 30 s is the wrong answer for `/api/health`.)
+5. **Regions** → the account default is all four (`eu`, `us`, `as`, `au`), and
+   that is what the 8 live monitors use. Narrowing to 3 was proposed here and
+   never done; all regions must fail before paging either way.
 6. **Request settings** → leave method `GET`, no headers needed (the relay is unauthed; the web `/api/health` is in the beta-gate carve-out).
 7. **Expected response** → for `/api/health` and `/health`: status `200`. For `/metrics`: open the **Advanced response checks** dialog and add:
    - Match type: **JSON**
@@ -160,7 +195,7 @@ same destination as the uptime monitors):
 
 | Rule | Match (substring/query) | Why |
 |---|---|---|
-| Relay memory CRIT | `[relay-alarm] CRIT` | reactive OOM page — fires the moment rss crosses crit, independent of the 30 s /metrics poll |
+| Relay memory CRIT | `[relay-alarm] CRIT` | reactive OOM page — fires the moment rss crosses crit, independent of the 180 s /metrics poll |
 | Relay crash guard tripped | `event=relay_uncaught_exception` OR `event=relay_unhandled_rejection` | the relay stayed up but something threw — investigate before it compounds into an OOM |
 
 ### C. Ship Cloudflare web/Worker logs → Better Stack Logs (Logpush)

@@ -22,8 +22,25 @@
 # Keys consumed (per tier):
 #   INVITE_SECRET_{DEV,AUTOTEST,PROD}     — the lockstep HMAC secret
 #   CLERK_SECRET_KEY / CLERK_SECRET_KEY_LIVE — Clerk backend key (see notes)
-#   FLY_PG_{DEV,AUTOTEST,PROD}_URL        — relay DATABASE_URL (Fly Postgres)
+#   NEON_{DEV,AUTOTEST,PROD}_DIRECT_URL   — relay DATABASE_URL (Neon DIRECT/non-pooled)
 #   NEON_{DEV,AUTOTEST,PROD}_URL          — web DATABASE_URL (pooled Neon)
+#
+# ⚠ THERE IS ONE DATABASE. Both tiers talk to the SAME Neon Postgres; they
+# differ only in DRIVER and therefore in which Neon endpoint they use:
+#   relay = `pg` Pool over TCP  → the DIRECT (non-pooled) endpoint
+#   web   = Neon HTTP `neon()`  → the `-pooler` endpoint
+# Structural proof it is one DB, not two: `rack_snapshots.rack_id` and
+# `rack_update_journal.rack_id` are FOREIGN KEYS to `racks(id)`
+# (db/schema/001_init.sql, 004_rack_update_journal.sql), and a Postgres FK
+# cannot span databases.
+#
+# ⚠ HISTORICAL TRAP — `FLY_PG_{DEV,AUTOTEST,PROD}_URL`: this script used to read
+# those keys for the relay. They are a DEAD LEFTOVER of the pre-Neon Fly Managed
+# Postgres stack (decommissioned — see db/README.md), and in cf.env they STILL
+# hold `postgres://…@patchtogether-pg{,-dev,-autotest}.flycast:5432` DSNs whose
+# hosts no longer exist. Pushing one would point the relay's DATABASE_URL at a
+# dead host and break Yjs persistence on that tier. Do not reintroduce them; the
+# `assert_neon_url` guard below refuses them.
 #
 # TARGETS (per tier)
 # ------------------
@@ -34,7 +51,7 @@
 #   Relay (packages/server/src):
 #     INVITE_SECRET     — auth.ts getInviteSecret() (anon verify)        [LOCKSTEP]
 #     CLERK_SECRET_KEY  — auth.ts verifyClerkJwt() (member verify)
-#     DATABASE_URL      — db.ts getPool() (snapshot persist + membership) = Fly PG
+#     DATABASE_URL      — db.ts getPool() (snapshot persist + membership) = Neon DIRECT
 #   Web (packages/web/src):
 #     INVITE_SECRET     — lib/server/invites.ts getSecret() (anon mint)  [LOCKSTEP]
 #     CLERK_SECRET_KEY  — hooks.server.ts / health (Clerk handler)
@@ -90,21 +107,21 @@ case "$TIER" in
     FLY_APP="patchtogether-server-dev"
     CF_PROJECT="patchtogether-live-dev"
     INVITE_KEY="INVITE_SECRET_DEV"
-    FLY_PG_KEY="FLY_PG_DEV_URL"
+    RELAY_DB_KEY="NEON_DEV_DIRECT_URL"
     NEON_KEY="NEON_DEV_URL"
     ;;
   autotest)
     FLY_APP="patchtogether-server-autotest"
     CF_PROJECT="patchtogether-live-autotest"
     INVITE_KEY="INVITE_SECRET_AUTOTEST"
-    FLY_PG_KEY="FLY_PG_AUTOTEST_URL"
+    RELAY_DB_KEY="NEON_AUTOTEST_DIRECT_URL"
     NEON_KEY="NEON_AUTOTEST_URL"
     ;;
   prod)
     FLY_APP="patchtogether-server"
     CF_PROJECT="patchtogether-live"
     INVITE_KEY="INVITE_SECRET_PROD"
-    FLY_PG_KEY="FLY_PG_PROD_URL"
+    RELAY_DB_KEY="NEON_PROD_DIRECT_URL"
     NEON_KEY="NEON_PROD_URL"
     ;;
 esac
@@ -144,10 +161,37 @@ fingerprint() {
 # ── Resolve values ───────────────────────────────────────────────────────────
 INVITE_SECRET_VAL="$(read_env "$INVITE_KEY")" || die "missing $INVITE_KEY in $ENV_FILE"
 CLERK_SECRET_VAL="$(read_env "$CLERK_KEY")"    || die "missing $CLERK_KEY in $ENV_FILE"
-FLY_PG_VAL="$(read_env "$FLY_PG_KEY")"         || die "missing $FLY_PG_KEY in $ENV_FILE"
+RELAY_DB_VAL="$(read_env "$RELAY_DB_KEY")"     || die "missing $RELAY_DB_KEY in $ENV_FILE"
 NEON_VAL="$(read_env "$NEON_KEY")"             || die "missing $NEON_KEY in $ENV_FILE"
 
 [[ "${#INVITE_SECRET_VAL}" -ge 32 ]] || die "$INVITE_KEY is < 32 chars; the relay/web both reject short secrets in prod"
+
+# ── Guard: BOTH DATABASE_URLs must be Neon ───────────────────────────────────
+# Deny-by-default on host, never on the credential. The failure this exists to
+# prevent is silent and total: a Fly-Postgres-era `.flycast` DSN (the old
+# FLY_PG_* keys, still present in cf.env) points the relay at a host that was
+# decommissioned with that stack, so `pg` cannot connect and Yjs snapshots stop
+# persisting — while the relay still boots and still answers /health.
+# The value is never echoed; only its HOST is, and only when rejecting.
+assert_neon_url() {
+  local key="$1" val="$2" want="$3"   # want: 'direct' | 'pooled'
+  local host="${val#*://}"; host="${host#*@}"; host="${host%%/*}"; host="${host%%\?*}"
+  case "$host" in
+    *.neon.tech|*.neon.tech:*) ;;
+    *) die "$key does not point at Neon (host: $host). The relay/web DATABASE_URL must be a Neon endpoint; \
+a '.flycast' or other Fly-Postgres host is a decommissioned leftover — see db/README.md." ;;
+  esac
+  case "$want" in
+    direct)
+      [[ "$host" != *-pooler.* ]] || die "$key is the POOLED endpoint (host: $host) but the relay needs the \
+DIRECT one: it uses a real \`pg\` Pool over TCP, not Neon's HTTP driver." ;;
+    pooled)
+      [[ "$host" == *-pooler.* ]] || die "$key is the DIRECT endpoint (host: $host) but the web tier needs \
+the POOLED one (Neon HTTP from the Workers runtime)." ;;
+  esac
+}
+assert_neon_url "$RELAY_DB_KEY" "$RELAY_DB_VAL" direct
+assert_neon_url "$NEON_KEY"     "$NEON_VAL"     pooled
 
 # ── Plan ─────────────────────────────────────────────────────────────────────
 MODE="DRY-RUN (no changes; pass --apply to push)"
@@ -162,12 +206,12 @@ echo
 echo "RELAY ($FLY_APP) secrets:"
 note "INVITE_SECRET    <- $INVITE_KEY   ($(fingerprint "$INVITE_SECRET_VAL"))   [LOCKSTEP]"
 note "CLERK_SECRET_KEY <- $CLERK_KEY    ($(fingerprint "$CLERK_SECRET_VAL"))"
-note "DATABASE_URL     <- $FLY_PG_KEY   ($(fingerprint "$FLY_PG_VAL"))"
+note "DATABASE_URL     <- $RELAY_DB_KEY   ($(fingerprint "$RELAY_DB_VAL"))   [Neon DIRECT]"
 echo
 echo "WEB ($CF_PROJECT) secrets:"
 note "INVITE_SECRET    <- $INVITE_KEY   ($(fingerprint "$INVITE_SECRET_VAL"))   [LOCKSTEP]"
 note "CLERK_SECRET_KEY <- $CLERK_KEY    ($(fingerprint "$CLERK_SECRET_VAL"))"
-note "DATABASE_URL     <- $NEON_KEY     ($(fingerprint "$NEON_VAL"))"
+note "DATABASE_URL     <- $NEON_KEY     ($(fingerprint "$NEON_VAL"))   [Neon POOLED]"
 echo
 
 # Sanity: confirm the SAME invite secret feeds both sides (the whole point).
@@ -191,7 +235,7 @@ echo ">> Pushing RELAY secrets to Fly app $FLY_APP"
 flyctl secrets set \
   "INVITE_SECRET=$INVITE_SECRET_VAL" \
   "CLERK_SECRET_KEY=$CLERK_SECRET_VAL" \
-  "DATABASE_URL=$FLY_PG_VAL" \
+  "DATABASE_URL=$RELAY_DB_VAL" \
   --app "$FLY_APP"
 
 echo ">> Pushing WEB secrets to CF Pages project $CF_PROJECT"
