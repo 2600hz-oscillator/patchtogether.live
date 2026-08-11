@@ -12,11 +12,12 @@
 // term), so the blitted preview is pixel-stable across runs. We settle the
 // card layout + a couple of rAF blits before snapshotting.
 //
-// Informational lane (`task vrt`) — darwin baseline captured locally; linux
-// pending a `vrt-update.yml` workflow_dispatch (see EXEMPT_BASELINE_PAIRS →
-// linux/aspect16x9-*).
+// Informational lane (`task vrt`).
+// Baselines are authored by LINUX CI — one set, no {platform} segment (see
+// vrt.config.ts). `task vrt:commit` dispatches the capture; a local macOS run
+// is a smoke test, not a capture.
 //
-// Output: e2e/vrt/__screenshots__/vrt-aspect-16x9.spec.ts/{platform}/<id>.png
+// Output: e2e/vrt/__screenshots__/vrt-aspect-16x9.spec.ts/<id>.png
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from '../tests/_helpers';

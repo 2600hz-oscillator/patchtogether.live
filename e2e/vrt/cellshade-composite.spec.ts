@@ -29,11 +29,12 @@
 // is suspended so the card preview rAF holds the frozen frame (the
 // vrt-colourofmagic recipe).
 //
-// Informational lane (`task vrt`) — darwin baselines captured locally; linux
-// gated in EXEMPT_BASELINE_PAIRS until a vrt-update.yml workflow_dispatch runs
-// (the standard darwin-first pattern; deficit ratchet bumped in vrt-meta).
+// Informational lane (`task vrt`).
+// Baselines are authored by LINUX CI — one set, no {platform} segment (see
+// vrt.config.ts). `task vrt:commit` dispatches the capture; a local macOS run
+// is a smoke test, not a capture.
 //
-// Output: e2e/vrt/__screenshots__/cellshade-composite.spec.ts/{platform}/<id>.png
+// Output: e2e/vrt/__screenshots__/cellshade-composite.spec.ts/<id>.png
 
 import { test, expect } from '@playwright/test';
 import { spawnPatch } from '../tests/_helpers';

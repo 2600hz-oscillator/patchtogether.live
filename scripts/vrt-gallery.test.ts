@@ -5,38 +5,51 @@
 // ---------------------------------------------------------------------------
 // WHY THIS EXISTS
 // ---------------------------------------------------------------------------
-// The gallery keyed every entry by the PNG's BARE STEM, so
-// `<spec>/darwin/adsr.png` and `<spec>/linux/adsr.png` collided and the second
-// one walked silently overwrote the first. 416 committed PNGs rendered as 282
-// cards, each showing ONE arbitrary platform, and the page printed "282
-// baselines" — a count of SCENES presented as a count of BASELINES.
+// Nothing checked the gallery against the tree it claims to render, and the
+// first thing that went wrong was invisible for exactly that reason: the
+// inventory was keyed by the PNG's bare stem, so two baselines with the same
+// stem collided, 416 files rendered as 282 cards, and the page reported a
+// count of SCENES as a count of BASELINES.
 //
-// Nothing could have caught that, because nothing checked the gallery against
-// the tree it claims to render. This does, from an INDEPENDENT instrument: the
-// assertions below walk `__screenshots__` in TypeScript and compare against the
-// Python script's own `coverage.json`. Two walkers, one answer, or red.
+// This checks it, from an INDEPENDENT instrument: the assertions below walk
+// `__screenshots__` in TypeScript and compare against the Python script's own
+// `coverage.json`. Two walkers, one answer, or red.
+//
+// ---------------------------------------------------------------------------
+// THERE IS ONE BASELINE SET (2026-08-10)
+// ---------------------------------------------------------------------------
+// `snapshotPathTemplate` dropped its `{platform}` segment, so a scene is one
+// PNG at `<spec>/<stem>.png` rather than a darwin/linux pair. Everything this
+// file used to carry about PARITY went with it — the two-platform walk, the
+// gap set, the darwin-only/linux-only assertions, and the stem-collision
+// regression test, whose bug is now structurally impossible (see the comment
+// where that test used to be).
 //
 // ---------------------------------------------------------------------------
 // WHAT EACH TEST IS FOR — and what it is structurally unable to see
 // ---------------------------------------------------------------------------
-//  1. TOTALITY      every committed baseline appears; nothing rendered lacks a
-//                   file on disk. Both directions, because a renderer that
-//                   drops entries and one that invents them look identical from
-//                   a single count.
-//  2. PARITY        the gaps the gallery reports equal the gaps on disk.
-//  3. CROSS-LANGUAGE the UI v2 tab is driven from `strict-faces.ts`, parsed by
-//                   a Python REGEX. A regex that drifts returns [] and renders
-//                   an empty tab that reads exactly like "no faces promoted
-//                   yet". So the real TypeScript module is IMPORTED here and
-//                   compared against what the parser produced.
-//  4. NEGATIVE CONTROL on the INSTRUMENT, not the data. Every assertion above
+//  1. VACUITY      the tree is actually readable. See the long note on the
+//                  first test: every other assertion here is an agreement
+//                  between two walks, and two walks of an absent tree agree.
+//  2. TOTALITY     every committed baseline appears; nothing rendered lacks a
+//                  file on disk. Both directions, because a renderer that
+//                  drops entries and one that invents them look identical from
+//                  a single count.
+//  3. MISSING      the one coverage verdict left: a module on the STRICT_FACES
+//                  ratchet whose required tiers are not all pinned must render
+//                  a loud MISSING tile, not simply be short a row.
+//  4. CROSS-LANGUAGE the UI v2 tab is driven from `strict-faces.ts`, parsed by
+//                  a Python REGEX. A regex that drifts returns [] and renders
+//                  an empty tab that reads exactly like "no faces promoted
+//                  yet". So the real TypeScript module is IMPORTED here and
+//                  compared against what the parser produced.
+//  5. NEGATIVE CONTROL on the INSTRUMENT, not the data. Every assertion above
 //     is derived from the same walk; if the walk under-reports, they all agree
-//     with each other and stay green. So a synthetic tree is built where the
-//     answer is known: a darwin-only scene MUST report as a gap and MUST render
-//     a MISSING tile, and adding the linux sibling MUST make the gap
-//     disappear. Perturb the thing the metric claims to measure and confirm the
-//     number moves — in BOTH directions.
-//  5. FAIL-LOUD     the parser hard-fails rather than rendering an empty tab.
+//     with each other and stay green. So synthetic trees are built where the
+//     answer is known, and the number is checked to MOVE in both directions —
+//     add a scene / drop a scene, pin a face tier / unpin it, plant a leftover
+//     `linux/` subdirectory / don't.
+//  6. FAIL-LOUD    the parser hard-fails rather than rendering an empty tab.
 //
 // ⚠ What NONE of this can see: whether a committed PNG still MATCHES today's
 // render. The gallery reads the baseline TREE. Only a VRT run answers that, and
@@ -61,14 +74,10 @@ import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { STRICT_FACES } from '../packages/web/src/lib/ui/workflow/strict-faces';
-// The VACUITY TRIPWIRE, reused rather than re-invented. Every assertion in the
-// "real tree" blocks below compares two walks of `__screenshots__` — so with
-// that tree ABSENT or a partial checkout, both walks return empty, they agree
-// perfectly, and the whole file goes green while measuring nothing. That is the
-// same hole `vrt-platform-gaps.ts` documents for the vrt-meta ratchets, and it
-// already owns the floors; a second set of numbers here would only drift from
-// them.
-import { assertBaselineTreeIsReadable } from '../e2e/vrt/vrt-platform-gaps';
+// The anchor for the VACUITY TRIPWIRE — see the first test for why this is a
+// list of NAMES and not a floor. `vrt-exemptions.ts` is a dependency-free data
+// module, so importing it here costs nothing and drags in no registry.
+import { STRICT_VRT_MODULES } from '../e2e/vrt/vrt-exemptions';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const SCRIPT = join(ROOT, 'e2e', 'vrt', 'build_gallery.py');
@@ -77,7 +86,13 @@ const STRICT_FACES_TS = join(
   ROOT,
   'packages/web/src/lib/ui/workflow/strict-faces.ts',
 );
-const PLATFORMS = ['darwin', 'linux'] as const;
+
+/** The spec dir + tiers the UI v2 tab is built from. Names, mirrored from
+ *  `build_gallery.py`'s `REQUIRED_FACE_TIERS` — the OPTIONAL `rear` tier is
+ *  deliberately absent: it renders only when a baseline exists, so it can never
+ *  contribute a MISSING tile. */
+const FACES_SPEC = 'workflow-shell-faces.spec.ts';
+const REQUIRED_FACE_TIERS = ['compact', 'dock'] as const;
 
 /** The smallest legal PNG — a 1×1 transparent pixel. The gallery COPIES image
  *  bytes and never decodes them, so a fixture needs no encoder. */
@@ -88,14 +103,11 @@ const PNG_1PX = Buffer.from(
 
 interface Coverage {
   scenes: number;
-  images: number;
   specDirs: string[];
   rendered: string[];
-  gaps: string[];
-  byPlatform: Record<string, number>;
   byCategory: Record<string, string[]>;
   orphanFaceScenes: string[];
-  unexpectedPlatformDirs: string[];
+  unexpectedSubdirs: string[];
   uiV2: {
     strictFaces: string[];
     fullParity: string[];
@@ -138,41 +150,46 @@ function build(baselineDir: string, opts: { strictFaces?: string } = {}): Built 
 }
 
 /** INDEPENDENT walk of the baseline tree — deliberately NOT sharing code with
- *  the Python side. `<spec>/<platform>/<stem>.png` → `<spec>/<stem>`. */
-function walkBaselines(root: string): Map<string, Set<string>> {
-  const out = new Map<string, Set<string>>();
+ *  the Python side. `<spec>/<stem>.png` → the scene key `<spec>/<stem>`.
+ *  Non-recursive on purpose: a spec dir holds PNGs and nothing else, and a
+ *  directory found inside one is the gallery's `unexpectedSubdirs` finding
+ *  rather than more baselines (asserted below, in both directions). */
+function walkBaselines(root: string): Set<string> {
+  const out = new Set<string>();
   for (const spec of readdirSync(root, { withFileTypes: true })) {
     if (!spec.isDirectory()) continue;
-    for (const platform of PLATFORMS) {
-      const dir = join(root, spec.name, platform);
-      if (!existsSync(dir)) continue;
-      for (const f of readdirSync(dir)) {
-        if (!f.endsWith('.png')) continue;
-        const key = `${spec.name}/${f.slice(0, -'.png'.length)}`;
-        if (!out.has(key)) out.set(key, new Set());
-        out.get(key)!.add(platform);
-      }
+    for (const f of readdirSync(join(root, spec.name))) {
+      if (!f.endsWith('.png')) continue;
+      out.add(`${spec.name}/${f.slice(0, -'.png'.length)}`);
     }
   }
   return out;
 }
 
-function fixtureTree(scenes: Array<[string, string, string[]]>): string {
+/** A fixture tree in the CURRENT flat layout: `<spec>/<stem>.png`.
+ *  `legacy` plants `<spec>/<subdir>/<stem>.png` — the pre-collapse shape, used
+ *  only to prove the leftover-subdirectory tripwire fires. */
+function fixtureTree(
+  scenes: Array<[string, string]>,
+  legacy: Array<[string, string, string]> = [],
+): string {
   const root = mkdtempSync(join(tmpdir(), 'vrt-fixture-'));
-  for (const [spec, stem, platforms] of scenes) {
-    for (const p of platforms) {
-      const dir = join(root, spec, p);
-      mkdirSync(dir, { recursive: true });
-      writeFileSync(join(dir, `${stem}.png`), PNG_1PX);
-    }
+  for (const [spec, stem] of scenes) {
+    mkdirSync(join(root, spec), { recursive: true });
+    writeFileSync(join(root, spec, `${stem}.png`), PNG_1PX);
+  }
+  for (const [spec, subdir, stem] of legacy) {
+    mkdirSync(join(root, spec, subdir), { recursive: true });
+    writeFileSync(join(root, spec, subdir, `${stem}.png`), PNG_1PX);
   }
   return root;
 }
 
 /** A one-module STRICT_FACES source, so a fixture's UI v2 tab is FULLY covered
  *  and every MISSING tile in the page is attributable to the scene under test.
- *  Using the REAL 18-module set against a fixture tree would paint 36 unrelated
- *  MISSING tiles and make the tile count meaningless as an instrument. */
+ *  Using the REAL 28-module set against a fixture tree would paint dozens of
+ *  unrelated MISSING tiles and make the tile count meaningless as an
+ *  instrument. */
 function tinyFacesSource(module = 'adsr'): string {
   const p = join(tmpdir(), `strict-faces-${module}-${Math.random().toString(36).slice(2)}.ts`);
   writeFileSync(
@@ -182,13 +199,12 @@ function tinyFacesSource(module = 'adsr'): string {
   return p;
 }
 
-/** The `face-<m>-{compact,dock}` scenes on both platforms — the covered baseline
- *  every fixture starts from. */
-function coveredFaceScenes(module = 'adsr'): Array<[string, string, string[]]> {
-  return [
-    ['workflow-shell-faces.spec.ts', `face-${module}-compact`, ['darwin', 'linux']],
-    ['workflow-shell-faces.spec.ts', `face-${module}-dock`, ['darwin', 'linux']],
-  ];
+/** The `face-<m>-{compact,dock}` scenes — the fully-pinned face every fixture
+ *  starts from. */
+function coveredFaceScenes(module = 'adsr'): Array<[string, string]> {
+  return REQUIRED_FACE_TIERS.map(
+    (tier) => [FACES_SPEC, `face-${module}-${tier}`] as [string, string],
+  );
 }
 
 /** Count rendered MISSING TILES — matched on the tile's full class attribute,
@@ -199,65 +215,101 @@ function coveredFaceScenes(module = 'adsr'): Array<[string, string, string[]]> {
 const countMissingTiles = (html: string): number =>
   (html.match(/class="thumb thumb-missing"/g) ?? []).length;
 
-// The real tree is walked once — it is ~416 files and the script is ~1 s.
+// The real tree is walked once — the script is ~1 s over it.
 const real = build(BASELINES);
 const onDisk = walkBaselines(BASELINES);
 
-// The real build COPIES all 416 baseline PNGs (~14 MB) into a temp dir. Every
-// fixture build below cleans up after itself; this one has no owning `it`, so
-// without this it leaks a full copy of the tree per invocation — on every unit
-// lane, and on every local `task test` while iterating.
+// The real build COPIES every baseline PNG into a temp dir. Every fixture build
+// below cleans up after itself; this one has no owning `it`, so without this it
+// leaks a full copy of the tree per invocation — on every unit lane, and on
+// every local `task test` while iterating.
 afterAll(() => rmSync(real.outDir, { recursive: true, force: true }));
 
 describe('vrt gallery — TOTALITY (every committed baseline appears, nothing invented)', () => {
   it('the baseline tree is READABLE — refusing to pass vacuously', () => {
-    // MUST come first. Two walks of an empty tree agree on `[]`, and every
-    // other assertion in this file is an agreement between those two walks — so
-    // a deleted or partially-checked-out `__screenshots__` turns the entire
-    // suite green with zero coverage. Measured floors live in
-    // vrt-platform-gaps.ts (30 dirs / 282 darwin / 134 linux today).
-    const totals = assertBaselineTreeIsReadable();
-    expect(totals.darwin + totals.linux).toBe(real.coverage.images);
-    expect(totals.specs).toBeGreaterThanOrEqual(real.coverage.specDirs.length);
+    // MUST come first, and it is deliberately NOT A COUNT.
+    //
+    // Every other assertion in this file is an AGREEMENT between two walks of
+    // `__screenshots__` — the TypeScript one above and the Python one inside
+    // build_gallery.py. On an absent, empty or partially-checked-out tree both
+    // return nothing, they agree perfectly, and the whole suite goes green
+    // having measured nothing at all.
+    //
+    // The tripwire this replaces lived in `e2e/vrt/vrt-platform-gaps.ts`
+    // (deleted with the platform dimension) and was three hand-typed FLOORS:
+    // "≥25 spec dirs / ≥240 darwin / ≥100 linux". CLAUDE.md now forbids that
+    // shape outright — "NEVER hand-type a population count" — and it was the
+    // wrong instrument besides: it went stale on every capture, and it could
+    // not have survived this PR, which deliberately drops 146 scenes' worth of
+    // darwin-only baselines pending a linux recapture.
+    //
+    // So the anchor is NAMES. `STRICT_VRT_MODULES` is the deterministic subset
+    // that gates the REQUIRED `vrt-strict` lane, and `vrt-meta.test.ts`
+    // separately asserts each one has a committed `vrt.spec.ts/<type>.png` —
+    // so "a strict module's baseline is readable" is a property the repo
+    // already guarantees, stated here as a tripwire. A name is checkable
+    // against the tree where a number is not: this cannot pass on an empty
+    // tree, it needs no maintenance as baselines are added or removed, and a
+    // rename or demotion fails with the name in the message rather than with
+    // an arithmetic complaint.
+    expect(
+      [...STRICT_VRT_MODULES],
+      'STRICT_VRT_MODULES is empty, so the filter below is vacuous and this ' +
+        'tripwire measures nothing — the anchor itself must be non-empty',
+    ).not.toEqual([]);
+
+    const unreadable = [...STRICT_VRT_MODULES]
+      .map((type) => `vrt.spec.ts/${type}`)
+      .filter((key) => !onDisk.has(key));
+    expect(
+      unreadable,
+      'these STRICT_VRT_MODULES baselines are NOT readable under ' +
+        `${BASELINES}. Every assertion in this file compares two walks of that ` +
+        'tree, so an unreadable tree makes them agree on nothing and pass. If ' +
+        'this is a partial/lfs:false checkout, this lane cannot run the gate ' +
+        'and must not pretend otherwise; if the baselines were deliberately ' +
+        'removed, vrt-meta.test.ts is red for the same reason and is the place ' +
+        `to start: ${unreadable.join(', ')}`,
+    ).toEqual([]);
+
+    // …and the PYTHON walk found the same names. The tripwire above proves the
+    // tree is there; this proves the script SAW it, which is the half that
+    // would otherwise still be an agreement about nothing.
+    const notRendered = [...STRICT_VRT_MODULES]
+      .map((type) => `vrt.spec.ts/${type}`)
+      .filter((key) => !real.coverage.rendered.includes(key));
+    expect(
+      notRendered,
+      `build_gallery.py rendered no card for: ${notRendered.join(', ')}`,
+    ).toEqual([]);
   });
 
   it('renders exactly the scenes on disk, across EVERY spec directory', () => {
     // Both directions in one assertion. A gallery that DROPS entries and one
-    // that INVENTS them are indistinguishable from a bare count, and the bug
-    // this replaces dropped 134 of them while the count looked fine.
-    expect(real.coverage.rendered.slice().sort()).toEqual(
-      [...onDisk.keys()].sort(),
-    );
+    // that INVENTS them are indistinguishable from a bare count.
+    expect(real.coverage.rendered.slice().sort()).toEqual([...onDisk].sort());
     expect(real.coverage.scenes).toBe(onDisk.size);
   });
 
-  it('counts every PNG, not one per stem (the platform-collapse regression)', () => {
-    // THE regression under test. Pre-fix this read 282 for a 416-file tree,
-    // because darwin and linux shared a dict key.
-    const pngs = [...onDisk.values()].reduce((n, s) => n + s.size, 0);
-    expect(real.coverage.images).toBe(pngs);
-    expect(real.coverage.images).toBeGreaterThan(real.coverage.scenes);
-    for (const p of PLATFORMS) {
-      expect(real.coverage.byPlatform[p]).toBe(
-        [...onDisk.values()].filter((s) => s.has(p)).length,
-      );
-    }
-  });
+  // ⚠ THE "counts every PNG, not one per stem" TEST LIVED HERE and is gone
+  // (2026-08-10). It pinned the platform-collapse regression: darwin and linux
+  // shared a dict key, so 416 PNGs reported as 282 scenes. With one baseline
+  // per scene the two numbers are the same number — `images` is no longer even
+  // emitted in coverage.json — so there is nothing left to disagree. The
+  // surviving half of that bug is the `(spec, stem)` key, which still stops two
+  // spec dirs sharing a stem from overwriting each other, and it is covered by
+  // the exact-set assertion above rather than by a count.
 
   it('every rendered image resolves to a real file in the output tree', () => {
     // The other direction: a card whose <img> 404s looks like a broken render,
     // not like a missing baseline, so it would be read as a display glitch.
     for (const key of real.coverage.rendered) {
-      const [spec, stem] = [
-        key.slice(0, key.lastIndexOf('/')),
-        key.slice(key.lastIndexOf('/') + 1),
-      ];
-      for (const p of onDisk.get(key)!) {
-        expect(
-          existsSync(join(real.outDir, 'baselines', p, spec, `${stem}.png`)),
-          `${key} on ${p} is listed but no file was copied`,
-        ).toBe(true);
-      }
+      const cut = key.lastIndexOf('/');
+      const [spec, stem] = [key.slice(0, cut), key.slice(cut + 1)];
+      expect(
+        existsSync(join(real.outDir, 'baselines', spec, `${stem}.png`)),
+        `${key} is listed but no file was copied`,
+      ).toBe(true);
     }
   });
 
@@ -270,52 +322,73 @@ describe('vrt gallery — TOTALITY (every committed baseline appears, nothing in
     expect(new Set(flat).size, 'a scene appears in two tabs').toBe(flat.length);
   });
 
-  it('reports no unexpected platform directory and no orphan face scene', () => {
-    // A third platform dir would be dropped by every loop with the counts still
-    // internally consistent; an orphan `face-<x>-dock` is a baseline for a
-    // module that left the ratchet.
-    expect(real.coverage.unexpectedPlatformDirs).toEqual([]);
+  it('reports no unexpected SUBDIRECTORY and no orphan face scene', () => {
+    // A directory inside a spec dir holds PNGs that every loop walks past with
+    // the counts staying internally consistent — post-collapse that means a
+    // leftover `darwin/` or `linux/`. An orphan `face-<x>-dock` is a baseline
+    // for a module that left the ratchet.
+    expect(real.coverage.unexpectedSubdirs).toEqual([]);
     expect(real.coverage.orphanFaceScenes).toEqual([]);
   });
 });
 
-describe('vrt gallery — PARITY (a darwin/linux gap is VISIBLE, not silent)', () => {
-  it('reports exactly the scenes that lack a linux sibling', () => {
-    const expected = [...onDisk.entries()]
-      .filter(([, p]) => p.size !== PLATFORMS.length)
-      .map(([k]) => k)
-      .sort();
-    expect(real.coverage.gaps.slice().sort()).toEqual(expected);
+describe('vrt gallery — an UNPINNED required face tier is VISIBLE, not silent', () => {
+  it('renders exactly one MISSING tile per unpinned required tier', () => {
+    // The UI v2 tab enumerates the STRICT_FACES RATCHET, not the disk, so a
+    // face promoted before its baselines land owes a MISSING row. Every other
+    // card on the page exists BECAUSE its PNG does and can never paint one —
+    // which is what makes an EXACT count the right assertion here rather than
+    // a floor: the expectation is derived from the same two names (the ratchet
+    // and the tree) that the gallery derives it from, independently.
+    const expected = [...STRICT_FACES].flatMap((module) =>
+      REQUIRED_FACE_TIERS.filter(
+        (tier) => !onDisk.has(`${FACES_SPEC}/face-${module}-${tier}`),
+      ),
+    );
+    expect(
+      countMissingTiles(real.html),
+      `expected one MISSING tile per unpinned required tier (${expected.length} of ` +
+        'them on this tree). A mismatch means either a scene card is painting a ' +
+        'MISSING tile — it cannot, by construction — or the UI v2 tab dropped a row.',
+    ).toBe(expected.length);
+    // ⚠ NOT `toBeGreaterThan(0)`. Asserting the tree HAS a gap would make this
+    // go RED on the day every promoted face is pinned — a test that fails when
+    // the work succeeds. That the tile renders at all is proven by the fixture
+    // negative controls below, at exact counts, on trees whose answer is known.
   });
 
-  it('renders a MISSING tile for every absent platform', () => {
-    // One tile per missing platform. Without this the gallery could report the
-    // gap in coverage.json and still render a card that LOOKS complete — which
-    // is exactly the failure mode being fixed.
-    const absent = [...onDisk.values()].reduce(
-      (n, p) => n + (PLATFORMS.length - p.size),
-      0,
-    );
-    // ≥ rather than ==: a module promoted into STRICT_FACES before its
-    // baselines land has NO file on disk to be counted by `absent`, yet the UI
-    // v2 tab still owes it a MISSING row. Both are real gaps; only the first is
-    // visible from the tree.
-    expect(countMissingTiles(real.html)).toBeGreaterThanOrEqual(absent);
-    // ⚠ DELIBERATELY NOT `toBeGreaterThan(0)`. Asserting the real tree HAS a
-    // gap would make this gate go RED on the day parity is finally reached —
-    // a test that fails when the work succeeds, which is worse than no test.
-    // That the MISSING tile renders at all is proven by the fixture negative
-    // controls below, at exact counts, on trees whose answer is known.
+  it('names the unpinned tiers in coverage.json, module by module', () => {
+    // The page and the machine summary must agree about WHICH faces are short,
+    // not just how many tiles were painted.
+    for (const module of STRICT_FACES) {
+      const unpinned = REQUIRED_FACE_TIERS.filter(
+        (tier) => !onDisk.has(`${FACES_SPEC}/face-${module}-${tier}`),
+      );
+      if (unpinned.length === 0) {
+        expect(real.coverage.uiV2.fullParity, `${module} is fully pinned`).toContain(
+          module,
+        );
+        continue;
+      }
+      const reasons = real.coverage.uiV2.gapped[module] ?? [];
+      for (const tier of unpinned) {
+        expect(
+          reasons.some((r) => r.startsWith(`${tier}:`)),
+          `${module} has no ${tier} baseline but coverage.json does not say so ` +
+            `(reasons: ${JSON.stringify(reasons)})`,
+        ).toBe(true);
+      }
+    }
   });
 });
 
 describe('vrt gallery — the UI v2 tab is driven from the LIVE STRICT_FACES', () => {
-  it("the Python parse equals the TypeScript module, entry for entry", () => {
+  it('the Python parse equals the TypeScript module, entry for entry', () => {
     // THE cross-language gate. `strict-faces.ts` is the single source; the
     // gallery reads it with a regex and this test reads it with a real import.
     // A drifted regex is red here instead of a quietly empty tab.
     expect(real.coverage.uiV2.strictFaces).toEqual([...STRICT_FACES].sort());
-    expect(real.coverage.uiV2.strictFaces.length).toBeGreaterThan(0);
+    expect(real.coverage.uiV2.strictFaces).not.toEqual([]);
   });
 
   it('classifies every promoted face as 1:1 or names what it is missing', () => {
@@ -340,24 +413,19 @@ describe('vrt gallery — the UI v2 tab is driven from the LIVE STRICT_FACES', (
     // The direction a hand-copied list can never fail in: a demoted module
     // leaves its baselines behind, and they must not keep rendering as curated.
     const tree = fixtureTree([
-      ['workflow-shell-faces.spec.ts', 'face-adsr-compact', ['darwin', 'linux']],
-      ['workflow-shell-faces.spec.ts', 'face-adsr-dock', ['darwin', 'linux']],
-      ['workflow-shell-faces.spec.ts', 'face-notaface-dock', ['darwin', 'linux']],
+      ...coveredFaceScenes(),
+      [FACES_SPEC, 'face-notaface-dock'],
     ]);
     try {
-      const faces = join(tmpdir(), `strict-faces-${Date.now()}.ts`);
-      writeFileSync(
-        faces,
-        "export const STRICT_FACES: ReadonlySet<string> = new Set<string>(['adsr']);\n",
-      );
+      const faces = tinyFacesSource();
       const built = build(tree, { strictFaces: faces });
       expect(built.coverage.uiV2.strictFaces).toEqual(['adsr']);
       expect(built.coverage.orphanFaceScenes).toEqual([
-        'workflow-shell-faces.spec.ts/face-notaface-dock',
+        `${FACES_SPEC}/face-notaface-dock`,
       ]);
       expect(built.coverage.byCategory['ui-v2'].sort()).toEqual([
-        'workflow-shell-faces.spec.ts/face-adsr-compact',
-        'workflow-shell-faces.spec.ts/face-adsr-dock',
+        `${FACES_SPEC}/face-adsr-compact`,
+        `${FACES_SPEC}/face-adsr-dock`,
       ]);
       rmSync(built.outDir, { recursive: true, force: true });
       rmSync(faces, { force: true });
@@ -370,66 +438,76 @@ describe('vrt gallery — the UI v2 tab is driven from the LIVE STRICT_FACES', (
 describe('vrt gallery — NEGATIVE CONTROL on the instrument', () => {
   // Everything above is derived from ONE walk of the tree. If that walk
   // under-reports, every assertion agrees with every other and the suite is
-  // green while measuring nothing. These two tests build a tree whose answer is
+  // green while measuring nothing. These tests build trees whose answer is
   // known independently and check the number MOVES in both directions.
-  // Each fixture is IDENTICAL except for the one scene under test, and the
-  // MISSING-tile count is asserted EXACTLY — not `toContain`. An exact count is
-  // what makes "the number moved" mean something; a substring check passes just
-  // as happily on a page painting tiles for unrelated reasons.
+  // Each fixture is IDENTICAL except for the one thing under test, and counts
+  // are asserted EXACTLY — not `toContain`. An exact count is what makes "the
+  // number moved" mean something; a substring check passes just as happily on a
+  // page painting tiles for unrelated reasons.
   const faces = tinyFacesSource();
 
-  it('all-covered is the CONTROL: zero gaps, zero MISSING tiles', () => {
+  it('all-covered is the CONTROL: every scene rendered, zero MISSING tiles', () => {
     const tree = fixtureTree([
       ...coveredFaceScenes(),
-      ['vrt.spec.ts', 'covered', ['darwin', 'linux']],
-      ['vrt.spec.ts', 'alsocovered', ['darwin', 'linux']],
+      ['vrt.spec.ts', 'covered'],
+      ['vrt.spec.ts', 'alsocovered'],
     ]);
     try {
       const built = build(tree, { strictFaces: faces });
+      // `rendered` is sorted by `(spec, stem)`, so vrt.spec.ts precedes
+      // workflow-shell-faces.spec.ts — asserted as a LIST, not a set, because
+      // the ordering is part of what a stable machine summary promises.
+      expect(built.coverage.rendered).toEqual([
+        'vrt.spec.ts/alsocovered',
+        'vrt.spec.ts/covered',
+        `${FACES_SPEC}/face-adsr-compact`,
+        `${FACES_SPEC}/face-adsr-dock`,
+      ]);
       expect(built.coverage.scenes).toBe(4);
-      expect(built.coverage.images).toBe(8);
-      expect(built.coverage.gaps).toEqual([]);
       expect(countMissingTiles(built.html)).toBe(0);
       expect(built.coverage.uiV2.fullParity).toEqual(['adsr']);
+      expect(built.coverage.uiV2.gapped).toEqual({});
       rmSync(built.outDir, { recursive: true, force: true });
     } finally {
       rmSync(tree, { recursive: true, force: true });
     }
   });
 
-  it('DROPPING one linux PNG makes exactly one gap and one MISSING tile appear', () => {
-    // The perturbation: the control tree with `alsocovered`'s linux sibling
-    // removed. Nothing else changes, so any movement is attributable.
-    const tree = fixtureTree([
-      ...coveredFaceScenes(),
-      ['vrt.spec.ts', 'covered', ['darwin', 'linux']],
-      ['vrt.spec.ts', 'alsocovered', ['darwin']],
-    ]);
+  it('DROPPING one scene PNG drops exactly that scene — nothing else moves', () => {
+    // The perturbation on the WALK: the control tree with `alsocovered`
+    // removed. Nothing else changes, so any movement is attributable. A walker
+    // that under-reports would have failed the control above; one that
+    // over-reports (a stale copy, an invented card) fails here.
+    const tree = fixtureTree([...coveredFaceScenes(), ['vrt.spec.ts', 'covered']]);
     try {
       const built = build(tree, { strictFaces: faces });
-      expect(built.coverage.scenes).toBe(4);
-      expect(built.coverage.images).toBe(7);
-      expect(built.coverage.gaps).toEqual(['vrt.spec.ts/alsocovered']);
-      expect(countMissingTiles(built.html)).toBe(1);
-      expect(built.html).toContain('darwin-only');
+      expect(built.coverage.rendered).toEqual([
+        'vrt.spec.ts/covered',
+        `${FACES_SPEC}/face-adsr-compact`,
+        `${FACES_SPEC}/face-adsr-dock`,
+      ]);
+      expect(built.coverage.scenes).toBe(3);
+      expect(countMissingTiles(built.html)).toBe(0);
       rmSync(built.outDir, { recursive: true, force: true });
     } finally {
       rmSync(tree, { recursive: true, force: true });
     }
   });
 
-  it('a linux-only scene is a gap too — parity is SYMMETRIC, not linux-blind', () => {
-    // A detector wired to "does a linux file exist" would also report this, but
-    // one wired to "is darwin present and linux absent" would call it covered.
+  it('UNPINNING one required face tier makes exactly one MISSING tile appear', () => {
+    // The perturbation on the MISSING-tile instrument: the control tree with
+    // adsr's DOCK baseline removed and nothing else touched.
     const tree = fixtureTree([
-      ...coveredFaceScenes(),
-      ['vrt.spec.ts', 'linuxonly', ['linux']],
+      [FACES_SPEC, 'face-adsr-compact'],
+      ['vrt.spec.ts', 'covered'],
     ]);
     try {
       const built = build(tree, { strictFaces: faces });
-      expect(built.coverage.gaps).toEqual(['vrt.spec.ts/linuxonly']);
       expect(countMissingTiles(built.html)).toBe(1);
-      expect(built.html).toContain('linux-only');
+      expect(built.coverage.uiV2.fullParity).toEqual([]);
+      expect(built.coverage.uiV2.gapped).toEqual({
+        adsr: ['dock: no baseline committed'],
+      });
       rmSync(built.outDir, { recursive: true, force: true });
     } finally {
       rmSync(tree, { recursive: true, force: true });
@@ -440,13 +518,43 @@ describe('vrt gallery — NEGATIVE CONTROL on the instrument', () => {
     // The face tab is driven from the ratchet, so a module can be promoted
     // before its baselines land. That must read as a GAP — the tab enumerating
     // only what happens to be on disk is how a missing face goes unnoticed.
-    const tree = fixtureTree([['vrt.spec.ts', 'covered', ['darwin', 'linux']]]);
+    // This is the state 146 scenes are in as the single-baseline collapse
+    // lands, so it is the case that matters most right now.
+    const tree = fixtureTree([['vrt.spec.ts', 'covered']]);
     try {
       const built = build(tree, { strictFaces: faces });
       expect(built.coverage.uiV2.fullParity).toEqual([]);
       expect(Object.keys(built.coverage.uiV2.gapped)).toEqual(['adsr']);
-      // compact + dock, each absent on both platforms.
-      expect(countMissingTiles(built.html)).toBe(4);
+      // compact + dock, one tile each.
+      expect(countMissingTiles(built.html)).toBe(2);
+      rmSync(built.outDir, { recursive: true, force: true });
+    } finally {
+      rmSync(tree, { recursive: true, force: true });
+    }
+  });
+
+  it('a leftover platform SUBDIRECTORY is REPORTED, and its PNGs are not rendered', () => {
+    // The repurposed tripwire, negative-controlled. `unexpectedSubdirs()` took
+    // over from `unexpected_platform_dirs()`: pre-collapse a THIRD platform dir
+    // would be silently dropped by every loop, post-collapse it is a leftover
+    // `darwin/`/`linux/` doing the same thing. Both shapes are "baselines no
+    // loop reads while every count stays internally consistent", which is why
+    // the guard was repurposed rather than deleted.
+    //
+    // The control leg is the fixture above with no subdirectory at all
+    // (`unexpectedSubdirs` is asserted `[]` on the real tree and implicitly on
+    // every other fixture here), so this leg is the perturbation: plant one and
+    // the report must move — AND the scene inside it must NOT appear as a card,
+    // because "reported" and "quietly rendered anyway" are different bugs.
+    const tree = fixtureTree(
+      [...coveredFaceScenes(), ['vrt.spec.ts', 'covered']],
+      [['vrt.spec.ts', 'linux', 'stranded']],
+    );
+    try {
+      const built = build(tree, { strictFaces: faces });
+      expect(built.coverage.unexpectedSubdirs).toEqual(['vrt.spec.ts/linux']);
+      expect(built.coverage.rendered).not.toContain('vrt.spec.ts/stranded');
+      expect(built.coverage.scenes).toBe(3);
       rmSync(built.outDir, { recursive: true, force: true });
     } finally {
       rmSync(tree, { recursive: true, force: true });
@@ -458,7 +566,7 @@ describe('vrt gallery — FAIL LOUD rather than render an empty UI v2 tab', () =
   it('refuses to build when STRICT_FACES cannot be parsed', () => {
     // A silent [] here renders an empty tab that reads as "no promoted faces
     // yet" — indistinguishable from the truth, and wrong. It must be an error.
-    const tree = fixtureTree([['vrt.spec.ts', 'x', ['darwin', 'linux']]]);
+    const tree = fixtureTree([['vrt.spec.ts', 'x']]);
     const bogus = join(tmpdir(), `strict-faces-bogus-${Date.now()}.ts`);
     writeFileSync(bogus, 'export const SOMETHING_ELSE = 1;\n');
     try {
@@ -472,7 +580,7 @@ describe('vrt gallery — FAIL LOUD rather than render an empty UI v2 tab', () =
   });
 
   it('refuses to build when the STRICT_FACES source is absent', () => {
-    const tree = fixtureTree([['vrt.spec.ts', 'x', ['darwin', 'linux']]]);
+    const tree = fixtureTree([['vrt.spec.ts', 'x']]);
     try {
       expect(() =>
         build(tree, { strictFaces: join(tmpdir(), 'definitely-not-here.ts') }),
@@ -487,12 +595,15 @@ describe('vrt gallery — the page STATES its directory scope', () => {
   it('names the baseline root and every spec directory it walked', () => {
     // An unstated scope reads as full coverage — the exact omission that let
     // two narrow gates in this repo pass for months while resolving only
-    // `__screenshots__/vrt.spec.ts/`.
+    // `__screenshots__/vrt.spec.ts/`. The table is built from the DISK, so a
+    // spec dir whose baselines are all pending a recapture still gets a row
+    // (reading 0) instead of vanishing off the page.
     expect(real.html).toContain('Directory scope');
     expect(real.html).toContain('spec directories below, not just');
     expect(real.coverage.specDirs.length).toBeGreaterThan(1);
-    for (const spec of real.coverage.specDirs) {
-      expect(real.html, `coverage table omits ${spec}`).toContain(spec);
+    for (const spec of readdirSync(BASELINES, { withFileTypes: true })) {
+      if (!spec.isDirectory()) continue;
+      expect(real.html, `coverage table omits ${spec.name}`).toContain(spec.name);
     }
   });
 });

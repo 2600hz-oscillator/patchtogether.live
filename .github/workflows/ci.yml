@@ -2543,7 +2543,6 @@ jobs:
           set -euo pipefail
           COUNT=$(flox activate -- node scripts/vrt-changeset-gallery.mjs \
             --from-results e2e/vrt/test-results \
-            --platform linux \
             --pr "${PR_NUMBER}" \
             --out docs/vrt-failure \
             --json /tmp/vrt-failure.json)

@@ -31,9 +31,9 @@
 // the boot style tag kills transitions anyway. Element-capture of the
 // faceplate, workflow-shell-faces budgets.
 //
-// darwin-first: darwin baselines captured locally (3× stable); the linux
-// pairs are EXEMPT_BASELINE_PAIRS-deferred until a vrt-update.yml dispatch
-// lands them (the workflow-shell-faces precedent).
+// Baselines are authored by LINUX CI — one set, no {platform} segment (see
+// vrt.config.ts). `task vrt:commit` dispatches the capture; a local macOS run
+// is a smoke test, not a capture.
 
 import { test, expect, type Page } from '@playwright/test';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';

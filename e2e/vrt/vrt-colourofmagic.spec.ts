@@ -14,10 +14,12 @@
 // (cyan/magenta/yellow). The canvas IS the regression target here (unlike the
 // masked solo-spawn VRT), so nothing is masked.
 //
-// Informational lane (`task vrt`) — darwin baseline captured locally; linux
-// gated in EXEMPT_BASELINE_PAIRS until a vrt-update.yml workflow_dispatch runs.
+// Informational lane (`task vrt`).
+// Baselines are authored by LINUX CI — one set, no {platform} segment (see
+// vrt.config.ts). `task vrt:commit` dispatches the capture; a local macOS run
+// is a smoke test, not a capture.
 //
-// Output: e2e/vrt/__screenshots__/vrt-colourofmagic.spec.ts/{platform}/<id>.png
+// Output: e2e/vrt/__screenshots__/vrt-colourofmagic.spec.ts/<id>.png
 
 import { test, expect } from '@playwright/test';
 import { spawnPatch } from '../tests/_helpers';

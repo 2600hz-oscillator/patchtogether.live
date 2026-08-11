@@ -18,12 +18,12 @@
 // the height-stability settle loop guards the ±1 px text-raster flake
 // (memory: vrt-flake-1px-layout-rounding).
 //
-// Informational lane (`task vrt`). Darwin baselines captured locally; linux
-// pending a `vrt-update.yml` workflow_dispatch on the PR branch — gated via
-// EXEMPT_BASELINE_PAIRS + the linux-deficit ratchet, exactly like the
-// modules' default cards (the darwin-first new-module pattern).
+// Informational lane (`task vrt`).
+// Baselines are authored by LINUX CI — one set, no {platform} segment (see
+// vrt.config.ts). `task vrt:commit` dispatches the capture; a local macOS run
+// is a smoke test, not a capture.
 //
-// Output: e2e/vrt/__screenshots__/vrt-karplus-tomtom-states.spec.ts/{platform}/<id>.png
+// Output: e2e/vrt/__screenshots__/vrt-karplus-tomtom-states.spec.ts/<id>.png
 
 import { test, expect } from '@playwright/test';
 import { spawnPatch } from '../tests/_helpers';

@@ -9,9 +9,9 @@
 // baseline name stays `landing-empty` (the canvas chrome is route-
 // independent, so the darwin pixels are unchanged by the move).
 //
-// Same per-platform layout as the other VRT specs (see vrt.config.ts
-// snapshotPathTemplate). Linux baseline pending — exempted on first land
-// via EXEMPT_BASELINE_PAIRS.
+// Baselines are authored by LINUX CI — one set, no {platform} segment (see
+// vrt.config.ts). `task vrt:commit` dispatches the capture; a local macOS run
+// is a smoke test, not a capture.
 
 import { test, expect, type Page } from '@playwright/test';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';

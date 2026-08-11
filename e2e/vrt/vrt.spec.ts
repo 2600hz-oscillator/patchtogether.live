@@ -8,7 +8,7 @@
 // Spawns the module via the dev __ydoc/__patch globals, waits for first
 // paint, screenshots the card element, asserts byte-equal (under the
 // tolerance budget set in vrt.config.ts) against the committed baseline
-// under e2e/vrt/__screenshots__/vrt.spec.ts/{platform}/<type>.png
+// under e2e/vrt/__screenshots__/vrt.spec.ts/<type>.png
 // (LFS-tracked).
 //
 // MASKS come from ONE of two places, and the difference matters:

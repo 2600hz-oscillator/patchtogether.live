@@ -199,10 +199,15 @@ export default defineConfig({
     toHaveScreenshot: {
       // Tolerance budget. Browsers + GPU drivers emit sub-pixel
       // anti-aliasing differences that aren't semantically meaningful
-      // even on the same platform across runs. Baselines are committed
-      // per-platform (see snapshotPathTemplate above), so we no longer
-      // need to absorb cross-platform AA drift here — but small
-      // intra-platform drift on text-heavy cards still does occur.
+      // even on the same machine across runs. The GATE only ever compares
+      // linux-against-linux (one baseline set, authored by CI), so this
+      // does not have to absorb cross-platform AA drift — but small
+      // same-platform drift on text-heavy cards still does occur.
+      //
+      // ⚠ A LOCAL macOS RUN *IS* A CROSS-PLATFORM COMPARISON and this budget
+      // will not absorb it. That is the intended reading, not a defect: the
+      // green a Mac dev used to get came from comparing against a darwin set
+      // CI never read. Use `task vrt:docker` for a pixel-exact local loop.
       //
       // 0.1 = a pixel must differ by >10% per channel before it counts.
       // maxDiffPixelRatio = 0.01 = up to 1% of pixels may differ under that
@@ -210,8 +215,8 @@ export default defineConfig({
       //
       // TIGHTENED 2026-07-31 from threshold 0.2 / ratio 0.05. The old comment
       // said this "can be tightened toward 0.01 once baselines settle on each
-      // platform" — the per-platform `snapshotPathTemplate` above IS that
-      // settling, and it landed long ago; the tightening never followed.
+      // platform"; the tightening never followed the settling. There is one
+      // platform now, so the caveat is retired along with it.
       //
       // WHY IT MATTERS, measured, not theorised: at 5% a 320x240 card could
       // change 3,840 pixels — a ~62x62 block, a whole knob — and stay green.
@@ -233,9 +238,9 @@ export default defineConfig({
       // MANDELBULB, WAVESCULPT-BLINK, …) intermittently blow on the CI
       // macOS runner — most visibly during `--update-snapshots`, where
       // "Failed to re-generate expected. Timeout 5000ms exceeded" aborts
-      // the WHOLE darwin baseline regen (vrt-update.yml) before it can
-      // commit, so a single heavy-card render stall (a different card
-      // each dispatch — wavesculpt-blink, then mandleblot) repeatedly
+      // the WHOLE baseline regen (vrt-update.yml) before it can commit —
+      // the capture is ONE job — so a single heavy-card render stall (a
+      // different card each dispatch — wavesculpt-blink, then mandleblot)
       // (The settle/capture budget that used to be MIS-SPELLED here as
       // `timeout: 15_000` now lives on `expect.timeout` above, where
       // Playwright actually reads it. See the note there.)

@@ -606,6 +606,9 @@ def render_ui_v2(
                 rows="".join(rows),
             )
         )
+    # `fullParity` keeps its name across the platform collapse: it is still the
+    # "1:1" set, but the parity is now between the module's REQUIRED TIERS and
+    # what is pinned, not between two platforms.
     summary = {
         "strictFaces": strict_faces,
         "fullParity": full_parity,
@@ -615,16 +618,25 @@ def render_ui_v2(
 
 
 def render_coverage_table(entries: List[Entry], baseline_dir: Path) -> str:
+    """Per-directory inventory — enumerated from the DISK, not from `entries`.
+
+    A spec dir with zero committed baselines has no entries, so listing the
+    table from `entries` would make it VANISH from the page: the one state
+    where the directory most needs saying. It gets a row reading 0 instead.
+    """
     per_spec: Dict[str, int] = {}
     for e in entries:
         per_spec[e.spec] = per_spec.get(e.spec, 0) + 1
+    on_disk = sorted(p.name for p in baseline_dir.iterdir() if p.is_dir())
     rows = []
-    for spec in sorted(per_spec):
+    for spec in on_disk:
+        n = per_spec.get(spec, 0)
         rows.append(
-            '<tr class="row-ok"><td><code>{s}</code></td><td>{n}</td></tr>'.format(
-                s=html.escape(spec), n=per_spec[spec]
+            '<tr class="{cls}"><td><code>{s}</code></td><td>{n}</td></tr>'.format(
+                cls="row-gap" if n == 0 else "row-ok", s=html.escape(spec), n=n
             )
         )
+    empty = sum(1 for spec in on_disk if per_spec.get(spec, 0) == 0)
     return """
         <h2>Directory scope</h2>
         <p class="scope">This gallery reads <strong>every</strong>
@@ -632,7 +644,7 @@ def render_coverage_table(entries: List[Entry], baseline_dir: Path) -> str:
         <strong>{n}</strong> spec directories below, not just
         <code>vrt.spec.ts</code>. Two gates in this repo were silently narrow
         because they only ever resolved that one directory and nothing said so;
-        an unstated scope reads as full coverage.</p>
+        an unstated scope reads as full coverage. {empty_note}</p>
         <p class="scope">There is ONE baseline per scene (2026-08-10): the
         <code>{{platform}}</code> segment is gone, because CI renders on linux
         and a darwin-only baseline was never diffed where it counted.</p>
@@ -646,7 +658,13 @@ def render_coverage_table(entries: List[Entry], baseline_dir: Path) -> str:
           <tfoot><tr><th>TOTAL ({n} dirs)</th><th>{total}</th></tr></tfoot>
         </table>""".format(
         root=html.escape(str(baseline_dir)),
-        n=len(per_spec),
+        n=len(on_disk),
+        empty_note=(
+            "Directories holding <strong>no</strong> committed baseline are "
+            "listed too ({} of them) rather than quietly omitted.".format(empty)
+            if empty
+            else ""
+        ),
         rows="".join(rows),
         total=len(entries),
     )

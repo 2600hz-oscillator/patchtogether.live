@@ -13,10 +13,12 @@
 // held chord), dial CUBE's ADSR, settle the card layout, freeze the
 // AudioContext, then screenshot.
 //
-// Informational lane (`task vrt`, FULL_MATCH). Darwin baseline captured locally;
-// linux pending a `vrt-update.yml` workflow_dispatch (gated below).
+// Informational lane (`task vrt`, FULL_MATCH).
+// Baselines are authored by LINUX CI — one set, no {platform} segment (see
+// vrt.config.ts). `task vrt:commit` dispatches the capture; a local macOS run
+// is a smoke test, not a capture.
 //
-// Output: e2e/vrt/__screenshots__/cube-adsr-composite.spec.ts/{platform}/cube-adsr-midilane.png
+// Output: e2e/vrt/__screenshots__/cube-adsr-composite.spec.ts/cube-adsr-midilane.png
 
 import { test, expect } from '@playwright/test';
 import { spawnPatch } from '../tests/_helpers';

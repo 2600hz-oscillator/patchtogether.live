@@ -11,10 +11,12 @@
 // continuous pass-through (base=1) so the meter holds a steady level; we then
 // freeze the AudioContext so the trace + meter are pixel-stable across runs.
 //
-// Informational lane (`task vrt`, FULL_MATCH) — not the strict gate. Darwin
-// baseline captured locally; linux pending a `task vrt:update` on CI.
+// Informational lane (`task vrt`, FULL_MATCH) — not the strict gate.
+// Baselines are authored by LINUX CI — one set, no {platform} segment (see
+// vrt.config.ts). `task vrt:commit` dispatches the capture; a local macOS run
+// is a smoke test, not a capture.
 //
-// Output: e2e/vrt/__screenshots__/vrt-synesthesia-composite.spec.ts/{platform}/<id>.png
+// Output: e2e/vrt/__screenshots__/vrt-synesthesia-composite.spec.ts/<id>.png
 
 import { test, expect } from '@playwright/test';
 import { spawnPatch } from '../tests/_helpers';

@@ -12,10 +12,9 @@
 //     PNGs (image-rendering:pixelated, no flicker); we wait for those images to
 //     decode before capturing.
 //
-// Per-platform baselines (see vrt.config.ts snapshotPathTemplate). Only the
-// darwin baseline is committed from local dev; the linux baseline is captured
-// by the vrt-update.yml workflow_dispatch on CI and is EXEMPT here until then
-// (the recorderbox/dashboard new-baseline pattern).
+// Baselines are authored by LINUX CI — one set, no {platform} segment (see
+// vrt.config.ts). `task vrt:commit` dispatches the capture; a local macOS run
+// is a smoke test, not a capture.
 
 import { test, expect, type Page } from '@playwright/test';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';

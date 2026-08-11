@@ -19,9 +19,13 @@
 // blink baselines use, and audio is suspended after a settle. So a single
 // screenshot is reproducible across runs/rAFs.
 //
-// Linux deferred (mirrors the main wavesculpt + blink baselines): WebGL
-// rasterization differs sub-thresholdly across GPU drivers; darwin captured
-// here, linux pending a `task vrt:update` run on linux CI.
+// ⚠ WebGL rasterization differs sub-thresholdly across GPU drivers, which is
+// why these scenes were dark on linux for months. They are not any more: the
+// baseline IS the linux render, so the only driver in the comparison is the
+// runner's.
+// Baselines are authored by LINUX CI — one set, no {platform} segment (see
+// vrt.config.ts). `task vrt:commit` dispatches the capture; a local macOS run
+// is a smoke test, not a capture.
 
 import { test, expect } from '@playwright/test';
 import { spawnPatch } from '../tests/_helpers';

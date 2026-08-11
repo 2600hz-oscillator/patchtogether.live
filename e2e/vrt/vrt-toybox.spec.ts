@@ -16,11 +16,12 @@
 // stable across runs. We wait until the freeze-rendered canvas is non-black
 // (the async GLSL fetch+compile has landed) before screenshotting.
 //
-// Informational lane (`task vrt`, FULL_MATCH) — darwin baseline captured
-// locally; linux pending a `task vrt:update` on CI (see EXEMPT_BASELINE_PAIRS
-// → linux/toybox + the linux/toybox-<id> pairs below).
+// Informational lane (`task vrt`, FULL_MATCH).
+// Baselines are authored by LINUX CI — one set, no {platform} segment (see
+// vrt.config.ts). `task vrt:commit` dispatches the capture; a local macOS run
+// is a smoke test, not a capture.
 //
-// Output: e2e/vrt/__screenshots__/vrt-toybox.spec.ts/{platform}/<id>.png
+// Output: e2e/vrt/__screenshots__/vrt-toybox.spec.ts/<id>.png
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch, ensureCombineOpen } from '../tests/_helpers';

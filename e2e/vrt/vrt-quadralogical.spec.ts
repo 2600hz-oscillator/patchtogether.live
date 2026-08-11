@@ -20,11 +20,12 @@
 // Because the sources are flat colours, the captured frame is determined purely
 // by (joystick pos, edge fx, edge params) — exactly the thing we want to lock.
 //
-// Informational lane (`task vrt`) — darwin baseline captured locally; linux
-// needs a `vrt-update.yml` workflow_dispatch (the EXEMPT_BASELINE_PAIRS gate in
-// vrt-exemptions.ts skips linux until that runs).
+// Informational lane (`task vrt`).
+// Baselines are authored by LINUX CI — one set, no {platform} segment (see
+// vrt.config.ts). `task vrt:commit` dispatches the capture; a local macOS run
+// is a smoke test, not a capture.
 //
-// Output: e2e/vrt/__screenshots__/vrt-quadralogical.spec.ts/{platform}/<id>.png
+// Output: e2e/vrt/__screenshots__/vrt-quadralogical.spec.ts/<id>.png
 
 import { test, expect } from '@playwright/test';
 import { spawnPatch } from '../tests/_helpers';

@@ -22,12 +22,13 @@
 //   tidyvco-bass   — dark tracked filter, heavy sub, tight EGs, unison
 //                    width (the mono-unison bass stab).
 //
-// Informational lane (`task vrt`) — darwin baselines captured locally;
-// linux needs a `vrt-update.yml` workflow_dispatch (the
-// EXEMPT_BASELINE_PAIRS gate in vrt-exemptions.ts skips linux until that
-// runs). Audio-only card, no WebGL — negligible CI cost.
+// Informational lane (`task vrt`). Audio-only card, no WebGL — negligible CI
+// cost.
+// Baselines are authored by LINUX CI — one set, no {platform} segment (see
+// vrt.config.ts). `task vrt:commit` dispatches the capture; a local macOS run
+// is a smoke test, not a capture.
 //
-// Output: e2e/vrt/__screenshots__/vrt-tidy-vco.spec.ts/{platform}/<id>.png
+// Output: e2e/vrt/__screenshots__/vrt-tidy-vco.spec.ts/<id>.png
 
 import { test, expect } from '@playwright/test';
 import { spawnPatch } from '../tests/_helpers';

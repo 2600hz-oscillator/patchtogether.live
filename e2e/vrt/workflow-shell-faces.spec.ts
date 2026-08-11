@@ -36,9 +36,9 @@
 // (strict-faces.ts). The freeze is asserted, at boot AND again at capture time,
 // and negative-controlled on every run by the audio-freeze control below.
 //
-// darwin-first: darwin baselines are captured locally (3× stable); the linux
-// pairs are EXEMPT_BASELINE_PAIRS-deferred until a vrt-update.yml dispatch
-// lands them (vrt-meta's linux-deficit ratchet accounts for the pairs).
+// Baselines are authored by LINUX CI — one set, no {platform} segment (see
+// vrt.config.ts). `task vrt:commit` dispatches the capture; a local macOS run
+// is a smoke test, not a capture.
 //
 // ── THE FOLD, AND WHY THIS SCENE USED TO BE BLIND TO HALF OF IT ─────────────
 //

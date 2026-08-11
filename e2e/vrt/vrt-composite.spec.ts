@@ -20,7 +20,7 @@
 // (we don't fake those — only the CV emit).
 //
 // Output:
-//   e2e/vrt/__screenshots__/vrt-composite.spec.ts/{platform}/<id>.png
+//   e2e/vrt/__screenshots__/vrt-composite.spec.ts/<id>.png
 //
 // Coverage: the screenshot bounds cover BOTH cards plus the cable between
 // them — Playwright's full-page mode at the pinned VRT viewport
@@ -37,10 +37,6 @@ test.describe.configure({ mode: 'default' });
 test.describe('VRT: composite-state scenes', () => {
   for (const scene of COMPOSITE_VRT_SCENES) {
     test(`${scene.id} matches baseline`, async ({ page }) => {
-      // darwinOnly scenes can't reliably reproduce their deterministic baseline
-      // under CI's headless/SwiftShader environment (e.g. the ADSR scope
-      // analyser settle) — capture/compare on darwin, skip cleanly on linux.
-
       // Capture page errors so a broken card fails the test BEFORE the
       // screenshot diff does — easier to debug than a thousand-pixel diff
       // from a black canvas.

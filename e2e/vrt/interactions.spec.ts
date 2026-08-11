@@ -11,11 +11,9 @@
 //   - palette-vcos          → palette drilled into "Audio modules → VCOs"
 //   - saved-groups-picker   → modal overlay (api stubbed for determinism)
 //
-// Same path template + per-platform layout as vrt.spec.ts (see
-// vrt.config.ts snapshotPathTemplate). Linux baselines are pending on
-// first-land — exempted via EXEMPT_BASELINE_PAIRS below. Capture follow-up
-// via `task vrt:update` inside docker on a linux runner and remove the
-// exemption entries.
+// Baselines are authored by LINUX CI — one set, no {platform} segment (see
+// vrt.config.ts). `task vrt:commit` dispatches the capture; a local macOS run
+// is a smoke test, not a capture.
 //
 // Why these are split out from vrt.spec.ts: that file iterates over the
 // MODULES list with a single test body; bolting in per-state setup logic

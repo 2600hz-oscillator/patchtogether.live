@@ -14,10 +14,12 @@
 // loop, for text-row raster determinism) then freeze the AudioContext so the
 // voice waveform previews + meters are pixel-stable across runs.
 //
-// Informational lane (`task vrt`, FULL_MATCH). Darwin baseline captured
-// locally; linux pending a `vrt-update.yml` workflow_dispatch (gated below).
+// Informational lane (`task vrt`, FULL_MATCH).
+// Baselines are authored by LINUX CI — one set, no {platform} segment (see
+// vrt.config.ts). `task vrt:commit` dispatches the capture; a local macOS run
+// is a smoke test, not a capture.
 //
-// Output: e2e/vrt/__screenshots__/pentemelodica-composite.spec.ts/{platform}/pentemelodica-midilane.png
+// Output: e2e/vrt/__screenshots__/pentemelodica-composite.spec.ts/pentemelodica-midilane.png
 
 import { test, expect } from '@playwright/test';
 import { spawnPatch } from '../tests/_helpers';
