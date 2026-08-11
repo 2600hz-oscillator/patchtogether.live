@@ -357,7 +357,7 @@ export const cloudsDef: AudioModuleDef = {
     },
     controls: {
       position: 'Playhead position into the recorded buffer (0..1): where grains are sampled from. Sweep it to scrub through the captured audio; with FREEZE on it scans the held snapshot.',
-      size: "Grain length (0..1), mapped exponentially onto 60 ms at 0 through 1500 ms at 1. Short grains give a fine granular stutter/buzz; long grains overlap into a smooth, time-stretched smear. THE WHOLE TRAVEL IS LIVE — until #1452 a grain was capped at 800 ms while the dial still asked for 1500, so its top 19.5 % rendered bit-identical output; the ceiling is now the law's own top. Two consequences of a long grain, both real and neither obvious: the module is bit-silent for one grain length after a spawn or a clear (1.5 s at the top of this dial), and POSITION's reachable window is the ring MINUS one grain, so it shrinks from 1.94 s of travel at SIZE 0 to 0.50 s at SIZE 1.",
+      size: "Grain length (0..1), mapped exponentially onto 60 ms at 0 through 1500 ms at 1. Short grains give a fine granular stutter/buzz; long grains overlap into a smooth, time-stretched smear. THE WHOLE TRAVEL IS LIVE — until #1456 a grain was capped at 800 ms while the dial still asked for 1500, so its top 19.5 % rendered bit-identical output; the ceiling is now the law's own top. Two consequences of a long grain, both real and neither obvious: the module is bit-silent for one grain length after a spawn or a clear (1.5 s at the top of this dial), and POSITION's reachable window is the ring MINUS one grain, so it shrinks from 1.94 s of travel at SIZE 0 to 0.50 s at SIZE 1.",
       pitch: 'Per-grain pitch shift in semitones (-24..+24). Sums with the V/oct PITCH input; pitch the grains up for shimmer, down for sub-octave drones.',
       density: 'How densely grains are triggered (0..1). Low density leaves audible gaps (sparse, pointillist); high density packs grains into a continuous wash.',
       texture: 'Grain-window shape macro (0..1): morphs the envelope each grain fades in/out with, from a soft rounded window (gentle, smooth) to a harder edge (grittier, more pronounced grain attacks).',
@@ -402,7 +402,7 @@ export const cloudsDef: AudioModuleDef = {
   // min(lengthSamples, 0.4·bufLen)` capped the grain at 800 ms while the dial
   // asked for 1500, so 0.805 / 0.85 / 0.9 / 1.0 rendered BIT-IDENTICAL output —
   // and a bit-identity oracle pinned that claim to the DSP so a fix would turn
-  // it red. #1452 fixed it (the ceiling is derived from the law now), the
+  // it red. #1456 fixed it (the ceiling is derived from the law now), the
   // oracle went red as designed, and the badge is gone. What replaced it is the
   // inverse assertion, against the SHIPPING WORKLET rather than the mirror:
   // art/scenarios/clouds/size-travel.test.ts renders the whole top of the dial
@@ -468,7 +468,7 @@ export const cloudsDef: AudioModuleDef = {
           'fill a pool of 24: at the shipped SIZE the pool is FULL from DENSITY 0.49, so the top ' +
           'half of that dial spawns grains that are DROPPED — it changes the sound completely ' +
           '(max|Δ| 0.73–0.96) and the level by 0.07 dB. SIZE runs 60 ms to 1500 ms and every step ' +
-          'of it is live — its top 19.5 % was bit-identical to maximum until #1452 raised the ' +
+          'of it is live — its top 19.5 % was bit-identical to maximum until #1456 raised the ' +
           'grain ceiling to meet the law. TEXTURE’s upper half is worth 0.01 dB.',
         controls: ['density', 'size', 'texture'],
       },
@@ -518,7 +518,7 @@ export const cloudsDef: AudioModuleDef = {
       //            while the reachable span shrinks from 1.94 s to 0.50 s and
       //            the read point moves 1.03 s → 1.75 s. It is the number that
       //            makes the module's most invisible control legible at all.
-      //            (That span is WIDER since #1452, because POSITION's window is
+      //            (That span is WIDER since #1456, because POSITION's window is
       //            the ring minus one grain and the grain now reaches 1.5 s —
       //            the same readout, one more thing it is right about.)
       //   grain  — a `paramId: 'size'` readout prints 0.50 for a 300 ms grain,

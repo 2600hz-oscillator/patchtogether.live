@@ -144,7 +144,7 @@
         : ''}</span
     >
     <!-- ⚠ A `SIZE CLAMPED` BADGE USED TO SIT HERE, and its deletion is the
-         visible half of #1452. The grain ceiling (800 ms) contradicted the SIZE
+         visible half of #1456. The grain ceiling (800 ms) contradicted the SIZE
          law's top (1500 ms), so the dial's top 19.50 % rendered bit-identical
          output and this panel refused to paint it as working. The ceiling is
          now derived from the law, the whole travel is alive, and a badge that

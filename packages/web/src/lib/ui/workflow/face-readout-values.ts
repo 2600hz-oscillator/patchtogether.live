@@ -213,7 +213,7 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
   //              behind it runs 60…1500 ms exponentially. (It also could not say
   //              that the top 19.50 % of that dial was BIT-IDENTICAL to its
   //              maximum, which is what this readout printed as `CLAMPED` until
-  //              #1452 raised the grain ceiling to meet the law.) It also names
+  //              #1456 raised the grain ceiling to meet the law.) It also names
   //              its FRAME: `g.age` counts output samples while `g.readPos` moves
   //              at `pitchRatio`, so a transposed grain sounds for one time and
   //              reads another, and the two differ by 2^(pitch/12).

@@ -12,7 +12,7 @@
 //     the macrooscillator discipline and it is what makes a defect claim
 //     shippable — and it WORKED: the second of those claims used to assert the
 //     defect (the top 19.5 % of SIZE was bit-identical to its maximum), it said
-//     in as many words that a DSP fix must turn it red, and #1452 did.
+//     in as many words that a DSP fix must turn it red, and #1456 did.
 //
 //     ⚠ THE MIRROR IS THE INSTRUMENT HERE, AND IT IS ONLY AS GOOD AS ITS
 //     PARITY WITH THE SHIPPING WORKLET. That parity is not assumed: it is
@@ -207,8 +207,8 @@ describe('clouds face model — ORACLE: the silence at spawn is EXACTLY one grai
   });
 });
 
-describe('clouds face model — ORACLE: the WHOLE of SIZE is alive (the #1452 fix, pinned)', () => {
-  // ⚠ THIS BLOCK ASSERTED THE EXACT OPPOSITE UNTIL #1452, AND THE INVERSION IS
+describe('clouds face model — ORACLE: the WHOLE of SIZE is alive (the #1456 fix, pinned)', () => {
+  // ⚠ THIS BLOCK ASSERTED THE EXACT OPPOSITE UNTIL #1456, AND THE INVERSION IS
   // THE POINT. `safeLen = min(lengthSamples, floor(bufLen · 0.4))` capped the
   // grain at 800 ms against a law that asked for 1500, so SIZE 0.805 / 0.85 /
   // 0.9 / 1.0 rendered BIT-IDENTICAL samples — 19.50 % of the dial, measured.
@@ -251,14 +251,14 @@ describe('clouds face model — ORACLE: the WHOLE of SIZE is alive (the #1452 fi
         expect(
           bitIdentical(rendered[i]!, rendered[j]!),
           `size ${TOP_LADDER[i]} and size ${TOP_LADDER[j]} must render DIFFERENTLY — this ` +
-            `is the fifth of the dial that was one bit-identical plateau before #1452`,
+            `is the fifth of the dial that was one bit-identical plateau before #1456`,
         ).toBe(false);
       }
     }
   });
 
   it('NEGATIVE CONTROL: the same detector, fed the OLD ceiling, still finds the plateau', () => {
-    // Pre-clamping the SIZE the mirror renders at reproduces the pre-#1452
+    // Pre-clamping the SIZE the mirror renders at reproduces the pre-#1456
     // arithmetic EXACTLY (`lengthSamples(0.804744) === floor(0.4·bufLen)` at any
     // integer sample rate), so this is the old module through the new code — and
     // it must come back dead. Without this leg the clause above cannot tell

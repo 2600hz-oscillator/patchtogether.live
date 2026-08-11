@@ -197,7 +197,7 @@
 // output: `safeLen = min(lengthSamples, 0.4·bufLen)` capped the grain at 800 ms
 // while the dial's law asked for 1500. The face shipped a `CLAMPED` badge there
 // rather than a working-looking dial, plus a bit-identity ORACLE pinning the
-// defect to the DSP. #1452 raised the ceiling to the law's own top, the oracle
+// defect to the DSP. #1456 raised the ceiling to the law's own top, the oracle
 // went red exactly as it promised, and both badge and oracle are gone —
 // replaced by the inverse claim measured on the SHIPPING WORKLET
 // (art/scenarios/clouds/size-travel.test.ts).

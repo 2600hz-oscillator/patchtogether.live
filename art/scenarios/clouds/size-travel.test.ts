@@ -6,7 +6,7 @@
 // pumped through `process()` in 128-sample blocks — the real cadence, the real
 // class, zero reimplementation (art/setup/worklet.ts). Two separate jobs:
 //
-//   1 · THE DEFECT #1452 FIXED. The grain-length law asked for up to 1500 ms
+//   1 · THE DEFECT #1456 FIXED. The grain-length law asked for up to 1500 ms
 //       while `safeLen = min(lengthSamples, floor(bufLen · 0.4))` allowed 800,
 //       so every SIZE above log(800/60)/log(25) = 0.804744 produced the same
 //       800 ms grain: MEASURED, the top 19.50 % of the dial rendered
@@ -173,7 +173,7 @@ describe('ART clouds / the instrument itself', () => {
   });
 });
 
-describe('ART clouds / SIZE has no dead zone (the #1452 fix, pinned to the worklet)', () => {
+describe('ART clouds / SIZE has no dead zone (the #1456 fix, pinned to the worklet)', () => {
   const src = noise(SR * SECONDS);
   /** Steps of 0.01–0.05 across the region that used to be one flat plateau.
    *  MEASURED quantisation floor elsewhere on the dial: two sizes render
@@ -190,7 +190,7 @@ describe('ART clouds / SIZE has no dead zone (the #1452 fix, pinned to the workl
       for (let j = i + 1; j < TOP_LADDER.length; j++) {
         expect(
           bitIdentical(rendered[i]!, rendered[j]!),
-          `SIZE ${TOP_LADDER[i]} vs ${TOP_LADDER[j]}: identical samples. Before #1452 the ` +
+          `SIZE ${TOP_LADDER[i]} vs ${TOP_LADDER[j]}: identical samples. Before #1456 the ` +
             `whole 0.8047..1 band was ONE render (19.50 % of the dial); if this is back, the ` +
             `grain ceiling is contradicting the SIZE law again`,
         ).toBe(false);
@@ -199,7 +199,7 @@ describe('ART clouds / SIZE has no dead zone (the #1452 fix, pinned to the workl
   });
 
   it('NEGATIVE CONTROL: the same detector, at the OLD ceiling, still reports the plateau', () => {
-    // Pre-clamping the SIZE fed to the worklet reproduces the pre-#1452
+    // Pre-clamping the SIZE fed to the worklet reproduces the pre-#1456
     // arithmetic exactly — `lengthSamples(0.804744) === floor(0.4·bufLen)` at
     // any integer sample rate — so this renders the OLD module through the NEW
     // code and must come back dead. This is the leg that makes the clause above

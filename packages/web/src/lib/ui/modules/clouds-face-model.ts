@@ -15,7 +15,7 @@
 //
 // (The third thing it had was a real DEAD ZONE — SIZE's top 19.50 % rendered
 // bit-identical output, which this model printed as `CLAMPED` rather than
-// painting a dead dial as a working one. Fixed in the DSP in #1452; the badge
+// painting a dead dial as a working one. Fixed in the DSP in #1456; the badge
 // is gone and the oracle that pinned it is now inverted, asserting the whole
 // travel is ALIVE against the shipping worklet.)
 //
@@ -77,7 +77,7 @@ export function cloudsRequestedGrainMs(size: number): number {
  *
  * ⚠ THIS USED TO BE 800 ms AGAINST A LAW THAT ASKED FOR 1500, AND THE
  * DISAGREEMENT WAS A DEAD ZONE — the top 19.50 % of SIZE rendered bit-identical
- * output. Fixed in the DSP (#1452): `CLOUDS_GRAIN_MAX_MS` is now derived from
+ * output. Fixed in the DSP (#1456): `CLOUDS_GRAIN_MAX_MS` is now derived from
  * `CLOUDS_GRAIN_CAP_FRACTION`, so the two are the same number by construction
  * and the clamp never binds. Kept mirrored here — including the `Math.min` in
  * `cloudsGrainMs` below — because this model's contract is to compute what the
@@ -192,7 +192,7 @@ export function cloudsPositionSecondsBack(p: CloudsFaceParams): number {
  * "the first quarter second is bit-zero"; that was a bucket artifact of its own
  * 0.25 s measurement grid. The real quantity is a grain length and it MOVES —
  * across a 25× range now that SIZE's top fifth is no longer clamped (it was a
- * 13× range and flat above 0.8047 before #1452).
+ * 13× range and flat above 0.8047 before #1456).
  */
 export function cloudsSilenceMs(p: CloudsFaceParams): number {
   return cloudsGrainMs(p.size);

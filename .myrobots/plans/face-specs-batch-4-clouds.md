@@ -13,7 +13,7 @@
 > with SIZE · **"the step is at exactly t = 2.000 s"** → a ramp, 2.02 → 2.30 s ·
 > **"about 10.5 dB, implying N ≈ 11"** → 10.60 dB, and N is 24 (saturated) ·
 > **§8's "no dead controls"** → SIZE's top 19.50 % was bit-identical to its
-> maximum, undetected here and **fixed in #1452**.
+> maximum, undetected here and **fixed in #1456**.
 
 ## 0-BIS. RE-MEASURED AT BUILD TIME — three numbers below are WRONG (2026-08-10)
 
@@ -24,7 +24,7 @@ these figures are quotable and two of them are quoted twice below.
 
 | §  | the spec says | measured |
 |----|---------------|----------|
-| §3, §4-A, §5, §6-A | "bit-zero for the first **0.25 s**" | bit-zero for exactly **one GRAIN LENGTH**: 60.0 / 134.1 / **300.0** / 670.8 / 1087.2 / 1500.0 ms at size 0 / .25 / .5 / .75 / .9 / 1. POSITION-invariant to the sample. (The .9 and 1 figures were 800.0 / 800.0 when first re-measured — that was the dead zone, fixed in **#1452**; confirmed on the shipping worklet after the fix.) |
+| §3, §4-A, §5, §6-A | "bit-zero for the first **0.25 s**" | bit-zero for exactly **one GRAIN LENGTH**: 60.0 / 134.1 / **300.0** / 670.8 / 1087.2 / 1500.0 ms at size 0 / .25 / .5 / .75 / .9 / 1. POSITION-invariant to the sample. (The .9 and 1 figures were 800.0 / 800.0 when first re-measured — that was the dead zone, fixed in **#1456**; confirmed on the shipping worklet after the fix.) |
 | §3, §5 | "the step is at exactly **t = 2.000 s**, to the sample" | 2.0 s is when the RING fills. At 2.00 s the output is still ~12 dB down; the climb runs **2.02 → 2.30 s**, i.e. `BUFFER_SECONDS + one grain`. |
 | §4-B, §6-C | "about **10.5 dB**, implying N ≈ 11 grains" | **10.60 dB** measured. N is not ~11: the pool SATURATES at **24** from density 0.489 at the shipped SIZE. The first-principles ratio `10·log10(N·E[env]²/E[env²])` gives 12.55 dB and is 4.7 dB out at TEXTURE 0, because it does not model the output `tanh` — so no derived dB is printed anywhere. |
 
@@ -43,7 +43,7 @@ render BIT-IDENTICAL output — 19.5 % of the dial**. §8's "no dead controls" i
 false. Worklet arithmetic, so it is deferred to a DSP PR; the face prints
 `CLAMPED` and a bit-identity oracle turns that claim red when it is fixed.
 
-> **FIXED 2026-08-10 in the follow-up DSP PR (#1452), and the oracle did its
+> **FIXED 2026-08-10 in the follow-up DSP PR (#1456), and the oracle did its
 > job** — it went red at the fix and forced the claim to be withdrawn.
 > Re-measured on the SHIPPING WORKLET rather than the mirror this time
 > (`registerProcessor` shim + 128-sample block pump; the mirror is now pinned
@@ -122,7 +122,7 @@ are only coherent when nothing is transposing them.**
 | 1 | `blend` | ranked first on a processor because the module is **silent for its first quarter-second and 12 dB down for two seconds** (§4-A) — BLEND is the control that tells you whether you are hearing it at all. ⚠ SUPERSEDED (§0-BIS): the silence is one GRAIN LENGTH, not a quarter second. The ranking argument survives. |
 | 2 | `density` | the grain count. The largest real span on broadband: 8.80 dB. |
 | 3 | `pitch` | ranked 3 because it is **also a −10.5 dB fader the instant it leaves zero** (§4-B), which is the module's single most surprising behaviour. ⚠ SUPERSEDED (§0-BIS): 10.60 dB, and the `N ≈ 11` inference is wrong. |
-| 4 | `size` | grain length. 5.05 dB span, non-monotone (§4-D). ⚠ SUPERSEDED: that ladder was measured with the top 19.50 % of the dial CLAMPED (§0-BIS); the 0.75 and 1.0 columns changed in #1452. |
+| 4 | `size` | grain length. 5.05 dB span, non-monotone (§4-D). ⚠ SUPERSEDED: that ladder was measured with the top 19.50 % of the dial CLAMPED (§0-BIS); the 0.75 and 1.0 columns changed in #1456. |
 | 5 | `position` | **the strongest control in the module and the one no level metric can see** (§4-C). Ranked 5, not higher, precisely because at the lane tiers it would show as a dial that does nothing. |
 | 6 | `freeze` | the latch — a `momentary`?ate **no**: it is a LATCHING toggle, not a press-pad (§5-A). |
 | 7 | `clouds-buffer-{n}` | the picture. First legal panel rank. |
@@ -236,7 +236,7 @@ Broadband, 2–6 s average, `blend 1`:
 
 ⚠ **THE `size` ROW WAS MEASURED WITH THE TOP OF THE DIAL CLAMPED.** Its 1.0
 column was really "the same render as 0.805". Re-measured on the shipping
-worklet after #1452 (same probe, 2.5–6 s, blend 1): **−10.47 / −10.21 / −5.27 /
+worklet after #1456 (same probe, 2.5–6 s, blend 1): **−10.47 / −10.21 / −5.27 /
 −7.59 / −6.01** at 0 / .25 / .5 / .75 / **1**, with −5.67 at 0.8047 and −5.45 at
 0.9. Still non-monotone, still loudest near the default; the top of the travel
 is now a real 800→1500 ms extension rather than a repeat of 800 ms.
@@ -377,7 +377,7 @@ with the widened reader or it is omitted. **Do not substitute a static string.**
 `SIZE` maps to a grain length; print the ms, not the 0..1. ⚠ **AND THE SPEC
 MISSED THAT THE MAPPING WAS BROKEN** — the ms it prints was clamped at 800 while
 the dial asked for 1500, so this readout shipped with a `CLAMPED` badge until
-#1452 fixed the DSP. It now prints 60 ms…1500 ms with no badge. §0-BIS.
+#1456 fixed the DSP. It now prints 60 ms…1500 ms with no badge. §0-BIS.
 **NEGATIVE CONTROL — `density`.** Grain LENGTH must be invariant to how many are firing,
 while §4-D shows DENSITY moving the output 8.8 dB. **SECOND — `pitch`:** a transposed
 grain covers a different amount of buffer in the same output time, so the readout must
