@@ -24,7 +24,7 @@
 //   * patch drill-down        — a lane tile at the LEFT window edge
 //   * remap menu              — NUMPAD+ key remap menu at the corner
 //
-// Runs against /rack (classic canvas) and /rack (the
+// Runs against /rack?shell=legacy&seed=none (classic canvas) and /rack (the
 // dock) — the fix is ungated (plain bug fix), so no feature flag is involved.
 
 import { test, expect, type Page, type Locator } from '@playwright/test';
@@ -64,7 +64,7 @@ function expectNearAnchor(
 }
 
 async function gotoClassic(page: Page): Promise<void> {
-  await page.goto('/rack');
+  await page.goto('/rack?shell=legacy&seed=none');
   await page.waitForFunction(() => {
     const w = window as unknown as { __patch?: unknown; __flow?: unknown };
     return !!w.__patch && !!w.__flow;

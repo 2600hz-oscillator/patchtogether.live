@@ -91,7 +91,7 @@ async function maxHold(
 test('kickdrum face: the dock STRIKE cell auditions an UNPATCHED kick, and HARD writes the graph', async ({ page }) => {
   // ⚠ SIZED, NOT FLAT (ci-swiftshader-video-e2e-timeouts). Playwright's 30 s
   // default was the WHOLE budget for a test whose topbar wait alone is allowed
-  // 30 s, and `faces-parity` documents a 13.2 s cold `/rack` compile under
+  // 30 s, and `faces-parity` documents a 13.2 s cold `/rack?shell=legacy&seed=none` compile under
   // SwiftShader on this exact route. A failure bound only — nothing green
   // depends on it.
   test.setTimeout(SLOW_RENDER ? 120_000 : 60_000);
@@ -104,7 +104,7 @@ test('kickdrum face: the dock STRIKE cell auditions an UNPATCHED kick, and HARD 
   await installRenderSmokeHooks(page);
   await page.goto('/rack');
   // ⚠ 30 s, not the 5 s default, and it is a FAILURE BOUND rather than the
-  // gate: the FIRST navigation to /rack on a cold dev server compiles the whole
+  // gate: the FIRST navigation to /rack?shell=legacy&seed=none on a cold dev server compiles the whole
   // route graph on demand, which measured >5 s here on a fresh worktree and
   // failed this line once before any of the real assertions ran. Nothing about
   // the claims below depends on how long the boot took.

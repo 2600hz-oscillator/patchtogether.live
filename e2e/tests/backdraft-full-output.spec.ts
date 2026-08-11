@@ -59,7 +59,7 @@ import { spawnPatch } from './_helpers';
 // spec) and the copies could drift silently in either direction;
 // card-control-ranges.test.ts already pins the CSS against this map, so
 // importing it makes the pair CSS<->map<->rendered-box transitive.
-import { RACK_SIZE_DEFAULTS } from '../../packages/web/src/lib/ui/rack-sizes';
+import { RACK_SIZE_DEFAULTS } from '../../packages/web/src/lib/ui/rack?shell=legacy&seed=none-sizes';
 
 const RACK_UNIT = 180;
 const TIER = RACK_SIZE_DEFAULTS.backdraft!;

@@ -33,7 +33,7 @@
 //      drill-down port rows — including the precedence rule on a gate INPUT
 //      row (patched → unpatch menu; unpatched → the shipped MIDI-assign menu).
 //
-// Runs on /rack (faceplates) + /rack (cards) — the normal e2e lane,
+// Runs on /rack?shell=legacy&seed=none (faceplates) + /rack (cards) — the normal e2e lane,
 // no DB/relay. Multiplayer convergence + undo of the removal op itself are
 // pinned as pure unit tests against a real syncedStore peer pair
 // (packages/web/src/lib/ui/unpatch-menu.test.ts) — the removal reuses the
@@ -60,7 +60,7 @@ function colPos(ch: number): { x: number; y: number } {
 
 async function gotoWorkflow(page: Page): Promise<void> {
   await page.goto('/rack');
-  // 15s FIRST-LOAD budget — SvelteKit dev compiles /rack on demand, so the
+  // 15s FIRST-LOAD budget — SvelteKit dev compiles /rack?shell=legacy&seed=none on demand, so the
   // very first navigation of a run pays that compile (the CI-validated number
   // workflow-rear-card.spec.ts and workflow-shell.spec.ts already use).
   await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: 20_000 });
@@ -460,7 +460,7 @@ test('rear card: a fanned-out OUTPUT lists every cable + "Unpatch all (N)", stay
 /** Spawn SEQUENCER → ADSR with one pre-wired gate edge (the patch-panel
  *  jack-indicator fixture: two light, non-WebGL PatchPanel cards). */
 async function spawnSeqAdsrWired(page: Page): Promise<void> {
-  await page.goto('/rack');
+  await page.goto('/rack?shell=legacy&seed=none');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,

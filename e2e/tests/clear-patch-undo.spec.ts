@@ -86,7 +86,11 @@ test('Clear patch is undoable: Clear empties the rack, undo restores nodes + edg
   await expect(page.locator('.svelte-flow__node[data-id="lfo-1"]')).toHaveCount(0);
   await expect(page.locator('.svelte-flow__node[data-id="flt-1"]')).toHaveCount(0);
   // Clear disables itself once empty — corroborates nodeCount hit 0.
+  // Clicking a File.. row CLOSES the menu, so the row has left the DOM; re-open
+  // to read its disabled state back. (Bare topbar buttons stayed on screen.)
+  await openFileMenu(page);
   await expect(clearBtn).toBeDisabled();
+  await page.keyboard.press('Escape');
 
   // 4. Undo via the SAME UndoManager Cmd-Z drives (the dev-only hook). This is
   //    the safety net that was dead before LOCAL_ORIGIN was added to the Clear

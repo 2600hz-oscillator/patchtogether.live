@@ -3,8 +3,8 @@
 // "NEW … RACK" MUST ACTUALLY BE NEW (owner report 2026-08-07: "when i do 'new
 // workflow rack', i don't get a fresh rack, i still get what's in local cache").
 //
-// THE REGRESSION THIS PINS. The landing tile was a plain <a href="/rack">
-// link. `/rack` resolves its doc through `getOrCreateLocalScratchId`, which
+// THE REGRESSION THIS PINS. The landing tile was a plain <a href="/rack?shell=legacy&seed=none">
+// link. `/rack?shell=legacy&seed=none` resolves its doc through `getOrCreateLocalScratchId`, which
 // returns the EXISTING per-device id — so the link reopened the previous rack
 // out of its IndexedDB replica. That was correct while scratch docs were
 // ephemeral, and became WRONG the moment local persistence shipped ("refresh
@@ -38,7 +38,7 @@ async function scratchId(page: Page): Promise<string | null> {
   return await page.evaluate(() => localStorage.getItem('pt:local-scratch-id'));
 }
 
-// OPT IN to the scratch replica. `/rack` disables the IndexedDB replica under
+// OPT IN to the scratch replica. `/rack?shell=legacy` disables the IndexedDB replica under
 // the e2e harness by default (navigator.webdriver) so the general suite stays
 // ephemeral. This spec is ABOUT persistence, so without the opt-in it would be
 // VACUOUS — every rack would look "fresh" and the tile bug would be invisible.
@@ -50,7 +50,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 const TILE = 'tile-new-rack';
-const URL_ = '/rack';
+const URL_ = '/rack?shell=legacy&seed=none';
 
 test(`landing "${TILE}" gives a genuinely FRESH rack, not the cached one`, async ({
   page,

@@ -15,7 +15,7 @@
 // The pure translate math is unit-tested in channel-columns.test.ts; this spec
 // asserts the WIRING end-to-end by projecting the target flow point through the
 // LIVE viewport (flowToScreenPosition) after the pan settles and checking where
-// it lands on screen. Driving /rack keeps it in the normal e2e
+// it lands on screen. Driving /rack?shell=legacy keeps it in the normal e2e
 // lane (no DB/relay).
 
 import { test, expect, type Page } from '@playwright/test';

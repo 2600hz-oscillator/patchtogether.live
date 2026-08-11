@@ -367,7 +367,7 @@ async function readStamp(page: Page, nodeId: string) {
 
 test.describe('dx7 preset stamp — persistence', () => {
   // Opt IN to the IndexedDB scratch replica (see scratch-persist.spec.ts):
-  // /rack disables it under the e2e harness by default, and it is what makes a
+  // /rack?shell=legacy&seed=none disables it under the e2e harness by default, and it is what makes a
   // real `page.reload()` a meaningful assertion instead of a fresh empty doc.
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {

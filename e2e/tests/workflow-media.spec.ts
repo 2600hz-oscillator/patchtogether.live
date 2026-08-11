@@ -1,6 +1,6 @@
 // e2e/tests/workflow-media.spec.ts
 //
-// The media system on /rack:
+// The media system on /rack?shell=legacy:
 //
 //   +  media loader — hidden-input pick (files / folder) + drop target
 //      feeding the centralized mediaLibrary; rejected files surface in a
@@ -17,7 +17,7 @@
 //      at the destination (library file → samsloop node.data → worklet →
 //      wire → scope), not just an edge.
 //
-// Driving /rack keeps this in the NORMAL e2e lane (no
+// Driving /rack?shell=legacy keeps this in the NORMAL e2e lane (no
 // DB/relay) — same rationale as workflow-mode.spec.ts.
 
 import { test, expect, type Page } from '@playwright/test';

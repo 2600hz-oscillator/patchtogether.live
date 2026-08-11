@@ -39,7 +39,7 @@ function collectErrors(page: Page): string[] {
 }
 
 async function gotoWorkflow(page: Page): Promise<void> {
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?shell=legacy');
   await expect(page.getByTestId('workflow-topbar')).toBeVisible();
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
 }
@@ -343,7 +343,7 @@ test.describe('P2.5b pan cable tail (workflow racks)', () => {
 test.describe('canvas cards keep their full PatchPanel handle stack', () => {
   test('a legacy-card lane node mounts every handle and offers the dock menu', async ({ page }) => {
     const errors = collectErrors(page);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?shell=legacy');
     await expect(page.getByTestId('workflow-topbar')).toBeVisible();
     await page.locator('.svelte-flow__pane').waitFor({ state: 'visible' });
 
@@ -354,7 +354,9 @@ test.describe('canvas cards keep their full PatchPanel handle stack', () => {
     // Dock entries EXIST now (they were workflow-only, and everything is the
     // shell) — the inverse of what this block used to assert, which is exactly
     // why it could not simply be re-pointed.
-    await node.click({ button: 'right' });
+    // Right-click the card TITLE, matching nodeMenuPick above — a right-click
+    // on the node BODY lands on a control and opens that control's menu.
+    await node.locator('.title').first().click({ button: 'right' });
     await expect(page.locator('.ctx-menu')).toBeVisible();
     await expect(page.getByTestId('ctx-dock-top')).toBeVisible();
     await page.keyboard.press('Escape');

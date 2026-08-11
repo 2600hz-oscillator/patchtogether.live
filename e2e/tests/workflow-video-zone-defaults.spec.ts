@@ -15,7 +15,7 @@
 // Each module carries its OWN one-shot latch (on the pinned mixer) so a user
 // DELETE is respected forever — the last test deletes recorderbox, reloads, and
 // proves it does NOT respawn (the scratch IndexedDB replica rehydrates the
-// latch). Driving /rack keeps it in the normal e2e lane (no
+// latch). Driving /rack?shell=legacy keeps it in the normal e2e lane (no
 // DB/relay). The pure spawn layout + wire plan are unit-tested in
 // channel-columns.test.ts; this spec is the end-to-end WIRING proof.
 

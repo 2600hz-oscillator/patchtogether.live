@@ -72,7 +72,7 @@ test.describe('workflow shell', () => {
   });
 
   test('boots the workflow topbar + left rail, replaces the slot bar, spawns the pinned trio off-canvas', async ({ page }) => {
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy');
     await expect(page.getByTestId('workflow-topbar')).toBeVisible();
     await expect(page.getByTestId('workflow-leftbar')).toBeVisible();
     // There is no second topbar: the slot bar was deleted with the old shell
@@ -95,7 +95,7 @@ test.describe('workflow shell', () => {
   });
 
   test('M / E toggle the bottom dock drawers with the FULL pinned card; one at a time; C opens the clip PANE; ESC closes', async ({ page }) => {
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy');
     await waitForPinnedTrio(page);
     // :visible — the workflow topbar's always-mounted audio-I/O card hosts
     // (P2) are standalone flows inside a visibility-hidden panel, so the
@@ -144,7 +144,7 @@ test.describe('workflow shell', () => {
   });
 
   test('M/E/C are inert while typing in an input / contenteditable', async ({ page }) => {
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy');
     await waitForPinnedTrio(page);
     // Real text-entry surfaces, appended to the live document so the real
     // window keydown listener (not a synthetic target) sees the events.
@@ -182,7 +182,7 @@ test.describe('workflow shell', () => {
   });
 
   test('pinned nodes refuse deletion; Clear keeps the trio', async ({ page }) => {
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy');
     await waitForPinnedTrio(page);
     // Programmatic delete through the shared primitive path: drive the
     // graph directly (the UI exposes no delete affordance for pinned nodes
@@ -244,7 +244,7 @@ test.describe('workflow shell', () => {
   test('default wiring: pinned MIXMSTRS master L/R auto-wires to pinned AUDIO OUT (one-shot, user delete respected)', async ({ page }) => {
     // Owner directive: "the audio out in the rack should be default wired to
     // the master L/R outs from the in rack mixmstrs in workflow mode."
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy');
     await waitForPinnedTrio(page);
     await waitForDefaultWires(page);
 
@@ -311,7 +311,7 @@ test.describe('workflow shell', () => {
     // AUDIO OUT's terminal tap (the limiter feeding ctx.destination) with
     // ZERO hand-patching between mixer and output — the default wires are
     // the only mixer→out cables in the rack.
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy');
     await waitForPinnedTrio(page);
     await waitForDefaultWires(page);
 
@@ -440,7 +440,7 @@ test.describe('workflow shell', () => {
   });
 
   test('File.. menu: quicksave slot 1 round-trips through quickload', async ({ page }) => {
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy');
     await waitForPinnedTrio(page);
 
     // Open File.. → Quicksave → slot 1 (captures the current rack: the
@@ -502,7 +502,7 @@ test.describe('workflow shell', () => {
   // not a feature regression.
 
   test('File.. menu: Clear rack deletes canvas modules + cables and KEEPS the pinned trio', async ({ page }) => {
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy');
     await waitForPinnedTrio(page);
 
     // Two wired canvas modules to clear.
@@ -556,7 +556,7 @@ test.describe('workflow shell', () => {
   });
 
   test('File.. menu: the output-aspect toggle flips 4:3 ⇄ 16:9 and leaves the menu open', async ({ page }) => {
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy');
     await waitForPinnedTrio(page);
 
     await page.getByTestId('workflow-file-trigger').click();

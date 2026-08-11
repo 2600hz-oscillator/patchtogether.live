@@ -94,7 +94,7 @@ const SLOW_RENDER = process.env.E2E_SWIFTSHADER === '1' || !!process.env.CI;
 // The FIXED term is sized off the COLD boot, not the warm one: on a freshly
 // started dev server (vite cache cleared) under SwiftShader the 4-cell `adsr`
 // row — the alphabetically first, so the one that pays SvelteKit's on-demand
-// /rack compile — measured 13.2s all-in vs 3.2s warm.
+// /rack?shell=legacy&seed=none compile — measured 13.2s all-in vs 3.2s warm.
 //
 // So the ceiling is DERIVED from the cells the face actually rendered rather
 // than bumped by a flat constant: batch 3 adds five more faces (and any face
@@ -167,7 +167,7 @@ interface RenderedCell {
 async function gotoShell(page: Page): Promise<void> {
   await page.goto('/rack');
   // 15 s (not the 5 s default): this is the BOOT wait, and the FIRST test of a
-  // run pays SvelteKit's on-demand /rack route compilation before the workflow
+  // run pays SvelteKit's on-demand /rack?shell=legacy&seed=none route compilation before the workflow
   // chrome mounts — which overran 5 s on a cold dev server and failed only the
   // alphabetically-first module. The sibling workflow specs (camera-input,
   // dock-pane-close-chrome, workflow-dock-occupancy) already carry this exact
