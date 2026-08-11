@@ -6,11 +6,19 @@
 //
 //   ORACLE — the claim re-derived from `cloudsMath`, the pure-math mirror of
 //     the worklet, on every run. The face says "it is bit-silent for exactly
-//     one grain length" and "the top 19.5 % of SIZE is bit-identical"; both are
+//     one grain length" and "no part of the SIZE dial is dead"; both are
 //     re-measured here rather than remembered, so a DSP change turns a stale
 //     sentence RED instead of leaving the faceplate insisting on it. This is
 //     the macrooscillator discipline and it is what makes a defect claim
-//     shippable.
+//     shippable — and it WORKED: the second of those claims used to assert the
+//     defect (the top 19.5 % of SIZE was bit-identical to its maximum), it said
+//     in as many words that a DSP fix must turn it red, and #1456 did.
+//
+//     ⚠ THE MIRROR IS THE INSTRUMENT HERE, AND IT IS ONLY AS GOOD AS ITS
+//     PARITY WITH THE SHIPPING WORKLET. That parity is not assumed: it is
+//     asserted sample-for-sample against the real `packages/dsp/src/clouds.ts`
+//     processor in art/scenarios/clouds/size-travel.test.ts. Without that leg
+//     every oracle in this file certifies a reimplementation.
 //
 //   NEGATIVE CONTROL — each readout perturbed on the input a knob readback
 //     would be BLIND to, in BOTH directions: the input that must move it does,
@@ -35,13 +43,11 @@ import {
 import {
   CLOUDS_COHERENCE_DROP_DB,
   CLOUDS_GRAIN_CEILING_MS,
-  CLOUDS_GRAIN_CLAMP_SIZE,
   cloudsAxisCaption,
   cloudsCoherenceText,
   cloudsFaceParams,
   cloudsFullLevelS,
   cloudsFullLevelText,
-  cloudsGrainClamped,
   cloudsGrainCount,
   cloudsGrainCountText,
   cloudsGrainMs,
@@ -51,6 +57,7 @@ import {
   cloudsPositionReach,
   cloudsPositionSecondsBack,
   cloudsPositionText,
+  cloudsRequestedGrainMs,
   cloudsRingPlan,
   cloudsSilenceMs,
   cloudsSilenceText,
@@ -200,42 +207,84 @@ describe('clouds face model — ORACLE: the silence at spawn is EXACTLY one grai
   });
 });
 
-describe('clouds face model — ORACLE: the top of SIZE is BIT-IDENTICAL (a real defect)', () => {
-  // ⚠ THIS IS A DEFECT CLAIM PINNED TO THE DSP. `safeLen = min(lengthSamples,
-  // floor(bufLen · 0.4))` caps the grain at 800 ms, so 19.5 % of SIZE's travel
-  // renders the same samples. The face prints CLAMPED there rather than
-  // painting a dead dial as a working one — and when the DSP is fixed (a
-  // separate PR; a face wave never carries a DSP change) THIS test goes red and
-  // forces the claim to be withdrawn.
+describe('clouds face model — ORACLE: the WHOLE of SIZE is alive (the #1456 fix, pinned)', () => {
+  // ⚠ THIS BLOCK ASSERTED THE EXACT OPPOSITE UNTIL #1456, AND THE INVERSION IS
+  // THE POINT. `safeLen = min(lengthSamples, floor(bufLen · 0.4))` capped the
+  // grain at 800 ms against a law that asked for 1500, so SIZE 0.805 / 0.85 /
+  // 0.9 / 1.0 rendered BIT-IDENTICAL samples — 19.50 % of the dial, measured.
+  // The face printed `CLAMPED` there rather than painting a dead dial as a
+  // working one, and said in as many words that a DSP fix must turn this red.
+  // It did. The ceiling is now DERIVED from the law, so the clamp cannot bind,
+  // and what is pinned here is the fix rather than the defect.
+  //
+  // ⚠ AND "ALL DIFFERENT" IS NOT SELF-VALIDATING. A detector that reported
+  // "different" unconditionally would pass the first leg on the BROKEN module,
+  // so the second leg feeds the same detector the OLD ceiling (by pre-clamping
+  // the size it renders at, which reproduces the old arithmetic exactly) and
+  // requires it to find the plateau again. Both directions, every run.
   const SECONDS = 3;
   const src = noise(SR * SECONDS);
+  /** The ladder that used to be one flat plateau. Steps of 0.02–0.05 are 3–4
+   *  orders of magnitude above the `Math.floor(ms/1000·sr)` quantisation floor
+   *  (measured Δsize ≈ 6e-6…2.7e-5 across the travel), so "these render
+   *  differently" is a claim about the CONTROL and not about float resolution. */
+  const TOP_LADDER = [0.79, 0.8, 0.804, 0.81, 0.85, 0.9, 0.95, 1] as const;
+  /** Where the old 800 ms ceiling started binding: log(800/60)/log(25). */
+  const OLD_CLAMP_SIZE = Math.log(800 / 60) / Math.log(1500 / 60);
 
-  it('the clamp threshold the model computes is where the DSP actually stops', () => {
-    expect(CLOUDS_GRAIN_CLAMP_SIZE).toBeCloseTo(0.8047, 3);
-    expect(CLOUDS_GRAIN_CEILING_MS).toBe(800);
-    const top = render({ size: 1 }, SECONDS, src).outL;
-    // Just ABOVE the threshold: identical to maximum.
-    for (const size of [0.805, 0.85, 0.9, 0.99]) {
-      expect(
-        bitIdentical(render({ size }, SECONDS, src).outL, top),
-        `size ${size} must render BIT-IDENTICALLY to size 1 (the grain is clamped)`,
-      ).toBe(true);
-      expect(cloudsGrainClamped(size), `the model agrees size ${size} is clamped`).toBe(true);
+  it('every step of the top fifth renders DIFFERENT samples, and the clamp never binds', () => {
+    expect(CLOUDS_GRAIN_CEILING_MS, 'the ceiling is the law’s own top now').toBe(1500);
+    // The clamp is a safety net that must never fire anywhere on the dial —
+    // stated as an identity rather than as a comment, so a future
+    // BUFFER_SECONDS / cap-fraction edit that re-introduces a dead top is red.
+    for (const size of [0, 0.25, 0.5, 0.75, 0.9, 1]) {
+      expect(cloudsGrainMs(size), `size ${size}: the ceiling must not bind`).toBeCloseTo(
+        cloudsRequestedGrainMs(size),
+        9,
+      );
     }
-    // …and just BELOW it, the knob is alive again. Without this leg the clause
-    // would pass on a module where SIZE did nothing anywhere.
-    for (const size of [0.5, 0.75, 0.8, 0.804]) {
-      expect(
-        bitIdentical(render({ size }, SECONDS, src).outL, top),
-        `size ${size} must still DIFFER from size 1 — the clamp starts at ${CLOUDS_GRAIN_CLAMP_SIZE.toFixed(4)}`,
-      ).toBe(false);
-      expect(cloudsGrainClamped(size), `the model agrees size ${size} is live`).toBe(false);
+    expect(cloudsGrainMs(1)).toBeCloseTo(1500, 6);
+
+    const rendered = TOP_LADDER.map((size) => render({ size }, SECONDS, src).outL);
+    for (let i = 0; i < TOP_LADDER.length; i++) {
+      for (let j = i + 1; j < TOP_LADDER.length; j++) {
+        expect(
+          bitIdentical(rendered[i]!, rendered[j]!),
+          `size ${TOP_LADDER[i]} and size ${TOP_LADDER[j]} must render DIFFERENTLY — this ` +
+            `is the fifth of the dial that was one bit-identical plateau before #1456`,
+        ).toBe(false);
+      }
     }
   });
 
-  it('the readout SAYS clamped exactly where the samples stop moving', () => {
-    expect(cloudsGrainText(at({ size: 0.9 }))).toBe('800 ms out · CLAMPED');
+  it('NEGATIVE CONTROL: the same detector, fed the OLD ceiling, still finds the plateau', () => {
+    // Pre-clamping the SIZE the mirror renders at reproduces the pre-#1456
+    // arithmetic EXACTLY (`lengthSamples(0.804744) === floor(0.4·bufLen)` at any
+    // integer sample rate), so this is the old module through the new code — and
+    // it must come back dead. Without this leg the clause above cannot tell
+    // "the knob works" from "the comparison always says different".
+    const oldWay = (size: number): Float32Array =>
+      render({ size: Math.min(size, OLD_CLAMP_SIZE) }, SECONDS, src).outL;
+    const top = oldWay(1);
+    for (const size of [0.81, 0.85, 0.9, 0.95, 1]) {
+      expect(
+        bitIdentical(oldWay(size), top),
+        `at the OLD 800 ms ceiling, size ${size} was bit-identical to maximum — if this is ` +
+          `false the plateau detector is broken, not the DSP`,
+      ).toBe(true);
+    }
+    // …and the SAME detector separates two sizes below the old ceiling, so it
+    // is not simply answering "identical" to everything either.
+    expect(bitIdentical(oldWay(0.5), oldWay(0.75))).toBe(false);
+  });
+
+  it('the readout prints the law’s real top, and says CLAMPED nowhere', () => {
     expect(cloudsGrainText(at({ size: 0.5 }))).toBe('300 ms out');
+    expect(cloudsGrainText(at({ size: 0.9 }))).toBe('1087 ms out');
+    expect(cloudsGrainText(at({ size: 1 }))).toBe('1500 ms out');
+    for (let size = 0; size <= 1.0001; size += 0.02) {
+      expect(cloudsGrainText(at({ size })), `size ${size.toFixed(2)}`).not.toContain('CLAMPED');
+    }
   });
 });
 
@@ -398,13 +447,13 @@ describe('clouds face model — NEGATIVE CONTROLS (both directions, every readou
   it('`reads` (position) moves with POSITION and SIZE, and with nothing else', () => {
     // ⚠ SIZE IS THE HALF A KNOB READBACK IS BLIND TO. `paramId: 'position'`
     // prints 0.50 at every size while the reachable span shrinks from 1.94 s to
-    // 1.20 s and the read point moves 0.97 s → 1.40 s.
+    // 0.50 s and the read point moves 1.03 s → 1.75 s.
     bothDirections('clouds-position-reach', cloudsPositionText, ['position', 'size']);
     expect(cloudsPositionText(DEFAULTS)).toBe('1.15 s back · of 0.30–2.00 s');
     expect(cloudsPositionSecondsBack(at({ size: 0 }))).toBeCloseTo(1.03, 2);
-    expect(cloudsPositionSecondsBack(at({ size: 0.9 }))).toBeCloseTo(1.4, 2);
-    const near = cloudsPositionReach(at({ size: 0.9 })).near;
-    expect(near, 'the near edge is one grain, so it moves with SIZE').toBeCloseTo(0.8, 3);
+    expect(cloudsPositionSecondsBack(at({ size: 1 }))).toBeCloseTo(1.75, 2);
+    const near = cloudsPositionReach(at({ size: 1 })).near;
+    expect(near, 'the near edge is one grain, so it moves with SIZE').toBeCloseTo(1.5, 3);
   });
 
   it('`grain` moves with SIZE and PITCH, and with nothing else', () => {
