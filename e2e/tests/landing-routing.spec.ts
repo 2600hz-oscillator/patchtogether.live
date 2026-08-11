@@ -19,7 +19,7 @@
 import { test, expect } from '@playwright/test';
 
 test.describe('landing routing', () => {
-  test('/rack?shell=legacy&seed=none boots the canvas and is cross-origin isolated', async ({ page }) => {
+  test('the rack route boots the canvas and is cross-origin isolated', async ({ page }) => {
     const resp = await page.goto('/rack?shell=legacy&seed=none');
     expect(resp, 'no response for /rack?shell=legacy&seed=none').toBeTruthy();
     expect(resp!.status(), `/rack?shell=legacy&seed=none status ${resp!.status()}`).toBe(200);
@@ -29,7 +29,7 @@ test.describe('landing routing', () => {
     // The audio engine needs SharedArrayBuffer, which requires cross-origin
     // isolation. This is the invariant the whole route-move had to preserve.
     const isolated = await page.evaluate(() => crossOriginIsolated === true);
-    expect(isolated, '/rack?shell=legacy&seed=none must be cross-origin isolated').toBe(true);
+    expect(isolated, 'the rack route must be cross-origin isolated').toBe(true);
   });
 
   test('clicking a rack tile from the landing arrives cross-origin ISOLATED (full-page nav, not a soft nav)', async ({

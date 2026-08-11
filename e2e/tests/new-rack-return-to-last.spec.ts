@@ -173,12 +173,16 @@ test.describe('landing: Return to last rack', () => {
     await page.goto('/');
     const card = page.getByTestId('return-to-last-rack');
     await expect(card).toBeVisible({ timeout: 10_000 });
-    await expect(card).toHaveAttribute('href', '/rack?shell=legacy&seed=none');
+    // The card's href comes from local-scratch's readLastScratchRack() and is
+    // the BARE route. ⚠ My URL sweep rewrote this literal too — it is an
+    // EXPECTED VALUE, not a page to navigate to, and the sweep could not tell
+    // the difference (same class as the `lib/ui/rack-sizes` import it also hit).
+    await expect(card).toHaveAttribute('href', '/rack');
 
     // Clicking it reopens the scratch rack (same id → same replica).
     await card.click();
     await expect(page.locator('[data-testid="canvas-root"]')).toBeVisible();
-    expect(new URL(page.url()).pathname).toBe('/rack?shell=legacy&seed=none');
+    expect(new URL(page.url()).pathname).toBe('/rack');
     expect(await readScratchId(page)).toBe(scratchId);
   });
 });
