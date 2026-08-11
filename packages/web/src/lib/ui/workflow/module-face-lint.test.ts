@@ -265,11 +265,13 @@ describe('module-face lint — consistency (all faced modules)', () => {
     // captures a dead meter perfectly deterministically, faces-parity does not
     // read the glyph, and the declaration itself is valid.
     //
-    // UNCONDITIONAL, with no exemption list, because the whole faced roster
-    // already satisfies it — measured at the time of writing: 26 `live-audio`,
-    // 1 `env-params`, 1 `algorithm`, 1 `wave-morph`, 1 `dual`, 1 `none`, and
-    // zero `static`. A face that wants a glyph its module cannot feed should
-    // say `none` and get the extra lane cell instead.
+    // UNCONDITIONAL, with NO exemption list and NO count, because the whole
+    // faced roster already satisfies it: every declared glyph resolves to a
+    // live binding (`live-audio` for the great majority, plus adsr's
+    // `env-params`, dx7's `algorithm`, lfo's `wave-morph` and tidyVco's
+    // `dual`), and the only `none` is marbles. A face that wants a glyph its
+    // module cannot feed should say `none` and get the extra lane cell
+    // instead.
     expect(deadGlyphProblems(allDefs() as never, (d) => glyphBinding(d as never))).toEqual([]);
   });
 
