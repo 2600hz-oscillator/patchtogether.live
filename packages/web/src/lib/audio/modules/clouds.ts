@@ -538,26 +538,6 @@ export const cloudsDef: AudioModuleDef = {
 
     sidebar: [
       {
-        kind: 'signal-flow',
-        label: 'signal flow',
-        // process()'s real order. DRY is `parallel` because it is a
-        // correctness field, not decoration: the dry path is tapped BEFORE the
-        // ring and rejoins at the crossfade, so drawn inline it would teach
-        // that BLEND 0 passes something the grain engine touched. It does not —
-        // at BLEND 0 the output is bit-identical to the input (measured
-        // max|out − dry| = 0.000e+0 over 8 s of broadband).
-        stages: [
-          { label: 'IN L/R', role: 'generator', note: 'R normalled from L' },
-          { label: 'RING 2.0 s', role: 'bus', note: 'writes stop under FREEZE' },
-          { label: 'GRAIN SCHED', role: 'bus', note: 'DENSITY · pool of 24' },
-          { label: 'READ @ POSITION', role: 'bus', note: 'SIZE · PITCH' },
-          { label: 'WINDOW', role: 'bus', note: 'TEXTURE · rect→tri→Hann' },
-          { label: '÷ √N · ×1.4 · tanh', role: 'bus', note: 'peak −0.10 dBFS' },
-          { label: 'DRY', role: 'bus', parallel: true, note: 'bit-exact at BLEND 0' },
-          { label: 'BLEND → OUT', role: 'bus', note: 'dips 1.05 dB at 0.2' },
-        ],
-      },
-      {
         kind: 'readouts',
         // THE TWO SECONDS, as numbers rather than as a moving picture. The
         // panel cannot draw a filling ring honestly — `fillLevel` is not an

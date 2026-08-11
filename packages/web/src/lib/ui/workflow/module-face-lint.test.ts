@@ -1527,7 +1527,6 @@ describe('module-face lint — FACEPLATE STRUCTURE (PF-20: hero / sidebar / hint
           ],
         },
         sidebar: [
-          { kind: 'signal-flow', label: 'flow', stages: [{ label: 'SUB', role: 'generator' }] },
           { kind: 'presets', label: 'p', entries: [{ id: 'a', label: 'A', values: { tune: 60 } }] },
           { kind: 'readouts', label: 'r', entries: [{ label: 'pitch', paramId: 'tune' }] },
           { kind: 'custom', label: 'c', panelId: 'stereo-crossover' },

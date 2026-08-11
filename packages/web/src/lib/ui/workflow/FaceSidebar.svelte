@@ -2,16 +2,19 @@
   // PF-20 — THE DOCK SIDEBAR: the faceplate's context column.
   //
   // The single largest structural gap between the shell and the mocks. The
-  // mocked panels are instruments: a signal-flow diagram down the right edge, a
-  // preset list you can SELECT from, labelled readouts, and room for the one
-  // bespoke picture the module needs. The shell had none of it, so every face
-  // built on the shell drifted the same way — which is why this is platform
-  // work and not another per-card fix.
+  // mocked panels are instruments: a preset list you can SELECT from, labelled
+  // readouts, and room for the one bespoke picture the module needs. The shell
+  // had none of it, so every face built on the shell drifted the same way —
+  // which is why this is platform work and not another per-card fix.
   //
-  // FOUR TYPED BLOCK KINDS, and they stay generic by construction: three are
-  // pure data this file paints (`signal-flow`, `presets`, `readouts`), and the
-  // fourth (`custom`) resolves an id through the sidebar-panels registry. No
-  // branch anywhere below names a module.
+  // THREE TYPED BLOCK KINDS, and they stay generic by construction: two are
+  // pure data this file paints (`presets`, `readouts`), and the third
+  // (`custom`) resolves an id through the sidebar-panels registry. No branch
+  // anywhere below names a module.
+  //
+  // ⚠ A FOURTH KIND, `signal-flow`, was removed with its twelve adopters — a
+  // hand-authored DSP chain nothing verified against the DSP. See the note on
+  // `FaceSidebarBlock` in graph/types.ts before drawing another one.
   //
   // WHERE IT LIVES, and why that is load-bearing. It is mounted by DockFullView
   // as the `.page.has-sidebar` grid's second column — a SIBLING of `.editor`,
@@ -98,35 +101,7 @@
     <section class="side-block" data-side-block={block.kind}>
       <div class="side-h">{block.label}</div>
 
-      {#if block.kind === 'signal-flow'}
-        <!-- THE CHAIN. An ordered list of stages with the ONE distinction that
-             makes a chain readable: a GENERATOR makes sound, a BUS stage
-             processes whatever reaches it. The legend prints only the roles
-             actually used, so a bus-only chain does not advertise a generator
-             swatch it never draws. -->
-        <ol class="flow" data-testid="side-flow">
-          {#each block.stages as st, j (st.label + j)}
-            <li
-              class="flow-stage"
-              class:parallel={st.parallel}
-              data-flow-role={st.role ?? 'bus'}
-              data-flow-parallel={st.parallel ? 'true' : undefined}
-            >
-              <span class="dot" aria-hidden="true"></span>
-              <span class="fs-label">{st.label}</span>
-              {#if st.parallel}<span class="fs-branch" title="parallel branch — it taps the bus earlier and rejoins it here">∥</span>{/if}
-              {#if st.note}<span class="fs-note">{st.note}</span>{/if}
-            </li>
-          {/each}
-        </ol>
-        {#if block.stages.some((s) => s.role === 'generator')}
-          <div class="flow-legend">
-            <span class="lg gen"><span class="dot" aria-hidden="true"></span>generator</span>
-            <span class="lg bus"><span class="dot" aria-hidden="true"></span>bus stage</span>
-          </div>
-        {/if}
-
-      {:else if block.kind === 'presets'}
+      {#if block.kind === 'presets'}
         <!-- A REAL SELECTION, not decoration — and it carries TWO facts, not
              one (see presetRowStates for the full argument). `aria-pressed`
              says where the sound CAME FROM: the row stays lit after you turn a
@@ -199,102 +174,6 @@
      bodies, so the column matches the mock's chrome by construction. */
   .side-block {
     min-width: 0;
-  }
-
-  /* ── signal-flow ── */
-  .flow {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0;
-  }
-  .flow-stage {
-    position: relative;
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
-    padding: 3px 0 3px 2px;
-    font-size: 11px;
-    color: var(--text, #eef1f5);
-    min-width: 0;
-  }
-  /* The connector: a hairline from each stage's dot down to the next one, so
-     the list reads as a CHAIN rather than as bullets. Suppressed on the last
-     stage (`:last-child`) — a wire leaving the output goes nowhere. */
-  .flow-stage:not(:last-child)::before {
-    content: '';
-    position: absolute;
-    left: 5px;
-    top: 14px;
-    bottom: -2px;
-    width: 1px;
-    background: var(--line2, #333b48);
-  }
-  .flow-stage .dot {
-    flex: none;
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: var(--mod, #7b8394);
-    box-shadow: 0 0 0 2px var(--inset, #0a0c0f);
-    transform: translateY(1px);
-  }
-  .flow-stage[data-flow-role='generator'] .dot {
-    background: var(--domain, #38d3c8);
-  }
-  .fs-label {
-    flex: 1 1 auto;
-    min-width: 0;
-    letter-spacing: 0.04em;
-  }
-  .fs-note {
-    font-family: var(--f-mono, ui-monospace, monospace);
-    font-size: 9px;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    color: var(--faint, #646c77);
-    white-space: nowrap;
-  }
-  /* A PARALLEL stage is drawn off the spine: its dot is hollow and its
-     connector dashed, because it is not a link in the chain — it taps the bus
-     earlier and rejoins it here. */
-  .flow-stage.parallel .dot {
-    background: var(--inset, #0a0c0f);
-    box-shadow: 0 0 0 1.5px var(--mod, #7b8394), 0 0 0 3px var(--inset, #0a0c0f);
-  }
-  .flow-stage.parallel .fs-label {
-    font-style: italic;
-  }
-  .fs-branch {
-    font-family: var(--f-mono, ui-monospace, monospace);
-    font-size: 10px;
-    color: var(--faint, #646c77);
-  }
-  .flow-legend {
-    display: flex;
-    gap: 12px;
-    margin-top: 8px;
-    font-family: var(--f-mono, ui-monospace, monospace);
-    font-size: 9px;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--faint, #646c77);
-  }
-  .flow-legend .lg {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-  }
-  .flow-legend .dot {
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: var(--mod, #7b8394);
-  }
-  .flow-legend .gen .dot {
-    background: var(--domain, #38d3c8);
   }
 
   /* ── presets ── */

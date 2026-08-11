@@ -197,33 +197,6 @@ export const drummergirlDef: AudioModuleDef = {
 
     sidebar: [
       {
-        kind: 'signal-flow',
-        label: 'signal flow',
-        // The chain as the .dsp actually builds it.
-        //
-        // ⚠ PITCH ENV IS `parallel`, and this is the diagram's one real claim.
-        // It is not in the audio path at all: it multiplies the SINE's
-        // frequency (`vco(g) = os.osc(baseFreq * pow(2, pitchEnv(g)))`, :71) and
-        // never touches the noise or the amplitude. Drawn inline between GATE
-        // and SINE it would teach that the pitch envelope shapes the hit's
-        // loudness — which is precisely the DECAY-vs-sweep confusion this face
-        // exists to dispel.
-        //
-        // ⚠ GATE IS MARKED `generator` ON PURPOSE. In this voice the gate is
-        // the excitation: with nothing patched the module is not quiet, it is
-        // silent. Its note states the level-sensitivity the def's own prose
-        // currently denies.
-        stages: [
-          { label: 'GATE',      role: 'generator', note: 'level — release on the fall' },
-          { label: 'PITCH ENV', role: 'generator', parallel: true, note: 'SHAPE · octaves · sine only' },
-          { label: 'SINE',      role: 'generator', note: 'C2 × PITCH' },
-          { label: 'NOISE',     role: 'generator', note: 'seeded — deterministic' },
-          { label: 'TONE',      role: 'bus',       note: 'sine ↔ noise' },
-          { label: 'AMP ENV',   role: 'bus',       note: 'A·S·R from SHAPE, D from DECAY' },
-          { label: 'VOLUME',    role: 'bus',       note: '× 0…2' },
-        ],
-      },
-      {
         // THE UNBUNDLING, AS FIVE LIVE NUMBERS. One fader is claimed to move
         // five independent quantities; this block is that claim made falsifiable
         // — drag SHAPE and watch all five move, drag DECAY and watch none of
