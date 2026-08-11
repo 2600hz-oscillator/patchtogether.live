@@ -1515,6 +1515,25 @@
     function onNavKey(e: KeyboardEvent) {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (isTypingTarget(e.target)) return;
+      // ── NO LANES ⇒ NO NAV. ────────────────────────────────────────────────
+      // The pinned mixer owns the channel-column manifest, so without it there
+      // are no lanes to centre on and `laneCenterViewport` would teleport the
+      // camera into empty space by pure geometry. This used to be spelled
+      // `if (!workflowMode) return` — dawless had no mixer — and has to be said
+      // against the ARTIFACT now that every rack is a shell rack.
+      if (!patch.nodes[WCOL_MIXER_ID]) return;
+      // ── A CARD THAT OWNS THE KEYBOARD WINS. ───────────────────────────────
+      // `isTypingTarget` only catches input/textarea/select/contenteditable. A
+      // module card can own the keyboard WITHOUT any of those: the clip player
+      // arms its 1–8 clip keys on FOCUS-WITHIN (you click into the card), and
+      // its own spec asserts those digits are inert until you do. This listener
+      // is on `window`, so before the shell became the only rack it simply did
+      // not exist on the rack that spec ran against — now it fires on the same
+      // keystroke and pans the camera to lane 5 while the card handles the 5.
+      // Two features, one keystroke; the focused card is the one the user is
+      // looking at, so it wins.
+      const active = document.activeElement;
+      if (active instanceof Element && active.closest('.svelte-flow__node')) return;
       const k = e.key;
       if (k === 'v' || k === 'V') {
         const vp = readWorkflowViewportMetrics();
@@ -1869,6 +1888,17 @@
   let wcolLaneTopY = $derived.by<number>(() => {
     void snapshot;
     const mixer = patch.nodes[WCOL_MIXER_ID];
+    // NO PINNED MIXER ⇒ NO LANES ⇒ nothing for anything to clear. This used to
+    // read `if (!workflowMode) return COLUMN_BASELINE_Y`, which is the same
+    // claim expressed through the deleted shell fork: dawless had no mixer.
+    // It has to be said against the ARTIFACT now, because a rack can be a shell
+    // rack and still have no mixer (`?seed=none`, or the window before the
+    // pinned ensure lands). Without it the derivation computes a lane top from
+    // an absent mixer, the GROW-UP PUSH below treats every free-canvas card as
+    // dipping into the lanes, and it rewrites their Y on every pass — a card
+    // that never stops moving, which surfaced as Playwright's "element is not
+    // stable" on a click that should be trivial.
+    if (!mixer) return COLUMN_BASELINE_Y;
     const md = mixer?.data as
       | { columns?: Record<string, string[]>; sends?: Record<string, string[]> }
       | undefined;
