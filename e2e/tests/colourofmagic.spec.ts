@@ -161,7 +161,7 @@ test.describe('COLOUR OF MAGIC — multi-colorspace video processor', () => {
   test('real chain: all 22 outputs (6 colour + 16 taps) emit a non-black frame', async ({ page, errorWatch }) => {
 
     await installRenderSmokeHooks(page);
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, baseNodes(), baseEdges());
 
@@ -203,7 +203,7 @@ test.describe('COLOUR OF MAGIC — multi-colorspace video processor', () => {
   test('YIQ I-bias warms the picture; YCbCr studio-swing responds + crushes', async ({ page, errorWatch }) => {
 
     await installRenderSmokeHooks(page);
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, baseNodes(), baseEdges());
 
@@ -230,7 +230,7 @@ test.describe('COLOUR OF MAGIC — multi-colorspace video processor', () => {
   test('palette REPLACE visibly recolours the rgb out at the default swatches (nudge)', async ({ page, errorWatch }) => {
 
     await installRenderSmokeHooks(page);
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, baseNodes(), baseEdges());
 
@@ -248,7 +248,7 @@ test.describe('COLOUR OF MAGIC — multi-colorspace video processor', () => {
   test('recolorization: bias_r reddens rgb; luma is grayscale; Db bias moves blue-yellow', async ({ page, errorWatch }) => {
 
     await installRenderSmokeHooks(page);
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, baseNodes(), baseEdges());
 
@@ -277,7 +277,7 @@ test.describe('COLOUR OF MAGIC — multi-colorspace video processor', () => {
     await installRenderSmokeHooks(page);
 
     // Baseline A: red-dominant source (green ≈ 0), NO override → g out is dark.
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, baseNodes({}, RED_TINT), baseEdges());
     const a = await setStepRead(page, { nodeId: 'com', portId: 'g', steps: FIXED_STEPS });
@@ -285,7 +285,7 @@ test.describe('COLOUR OF MAGIC — multi-colorspace video processor', () => {
 
     // Baseline B: same source + a SECOND lines grating patched into rgb_g_in →
     // the green channel is CLOBBERED with the bright grating.
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
     const nodesB = [
       ...baseNodes({}, RED_TINT),
@@ -310,7 +310,7 @@ test.describe('COLOUR OF MAGIC — multi-colorspace video processor', () => {
   test('OVER vs CLAMP differ at an out-of-range bias', async ({ page, errorWatch }) => {
 
     await installRenderSmokeHooks(page);
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, baseNodes(), baseEdges());
 

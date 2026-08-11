@@ -72,10 +72,10 @@ describe('probeDatabase', () => {
     expect(r.error).toMatch(/unset/);
   });
 
-  it('reachable + racks.mode present → ok, schema=current, ms', async () => {
+  it('reachable + racks table present → ok, schema=current, ms', async () => {
     let t = 1000;
     const r = await probeDatabase(true, {
-      queryModeColumnCount: async () => 1, // information_schema returned the column
+      queryRacksTableCount: async () => 1, // information_schema returned the table
       now: () => (t += 7),
     });
     expect(r.ok).toBe(true);
@@ -84,15 +84,15 @@ describe('probeDatabase', () => {
     expect(r.error).toBeUndefined();
   });
 
-  it('reachable but pre-005 (racks.mode absent) → ok, schema=mode-missing', async () => {
-    const r = await probeDatabase(true, { queryModeColumnCount: async () => 0 });
+  it('reachable but unmigrated (no racks table) → ok, schema=racks-missing', async () => {
+    const r = await probeDatabase(true, { queryRacksTableCount: async () => 0 });
     expect(r.ok).toBe(true);
-    expect(r.schema).toBe('mode-missing'); // the deploy-before-migrate drift signal
+    expect(r.schema).toBe('racks-missing'); // the deploy-before-migrate drift signal
   });
 
   it('reports the error (not a throw) when the query REJECTS (db unreachable)', async () => {
     const r = await probeDatabase(true, {
-      queryModeColumnCount: async () => {
+      queryRacksTableCount: async () => {
         throw new Error('ECONNREFUSED');
       },
     });
@@ -103,7 +103,7 @@ describe('probeDatabase', () => {
 
   it('times out and never hangs when the query stalls', async () => {
     const r = await probeDatabase(true, {
-      queryModeColumnCount: () => new Promise<number>(() => {}), // never settles
+      queryRacksTableCount: () => new Promise<number>(() => {}), // never settles
       timeoutMs: 5,
     });
     expect(r.ok).toBe(false);
@@ -143,11 +143,11 @@ describe('skippedDatabaseProbe — an unasked question is not a bad answer', () 
     // If only the skipped path set `probed`, `probed === true` could never be
     // asserted by the smoke script — the check would pass vacuously on every
     // real response by being absent rather than false.
-    expect((await probeDatabase(true, { queryModeColumnCount: async () => 1 })).probed).toBe(true);
-    expect((await probeDatabase(true, { queryModeColumnCount: async () => 0 })).probed).toBe(true);
+    expect((await probeDatabase(true, { queryRacksTableCount: async () => 1 })).probed).toBe(true);
+    expect((await probeDatabase(true, { queryRacksTableCount: async () => 0 })).probed).toBe(true);
     expect((await probeDatabase(false)).probed).toBe(true);
     const threw = await probeDatabase(true, {
-      queryModeColumnCount: async () => {
+      queryRacksTableCount: async () => {
         throw new Error('ECONNREFUSED');
       },
     });

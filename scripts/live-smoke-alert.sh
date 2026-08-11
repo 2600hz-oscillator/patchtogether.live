@@ -92,15 +92,20 @@ elif ! echo "$web_body" | jq -e '.deps.database.probed == true' >/dev/null 2>&1;
   reasons+=("web /api/health did not run the DB probe (deps.database.probed != true) — the ?deep=1 request or the endpoint's handling of it has regressed, so the DB checks below are NOT testing anything")
 elif echo "$web_body" | jq -e '.deps.database.ok != true' >/dev/null 2>&1; then
   # Real DB read probe: an UNREACHABLE Postgres is a P0 the presence-only db
-  # check missed (it returned ok:true while every racks.mode read 500'd).
+  # check missed (it returned ok:true while every rack read 500'd).
   failures+=("web-db-unreachable")
   reasons+=("web /api/health database UNREACHABLE: $(echo "$web_body" | jq -r '.deps.database.error // "unknown"')")
-elif echo "$web_body" | jq -e '.deps.database.schema == "mode-missing"' >/dev/null 2>&1; then
-  # Reachable but pre-005 schema drift (deploy-before-migrate): the app runs on
-  # the dawless fallback, but this is EXACTLY the state that hid the /r/[id] 500
-  # for a week — alert until db/schema/005_rackspace_mode.sql is applied.
+elif echo "$web_body" | jq -e '.deps.database.schema == "racks-missing"' >/dev/null 2>&1; then
+  # Reachable but UNMIGRATED (deploy-before-migrate): no `racks` table at all.
+  # This is EXACTLY the state that hid the /r/[id] 500 for a week — alert until
+  # db/schema/001_init.sql is applied.
+  #
+  # ⚠ The marker used to be `mode-missing` (the racks.mode COLUMN, migration
+  # 005). Migration 006 DROPS that column, so this branch could never fire
+  # again — a dead alert that reads exactly like a passing one. It now watches
+  # the base TABLE, a marker that is only ever ADDED.
   failures+=("web-db-schema-drift")
-  reasons+=("web /api/health schema=mode-missing — apply db/schema/005_rackspace_mode.sql (app degraded to dawless)")
+  reasons+=("web /api/health schema=racks-missing — the DB has no \`racks\` table; apply db/schema/001_init.sql")
 fi
 
 echo "[2/3] curl $RELAY_URL/health"

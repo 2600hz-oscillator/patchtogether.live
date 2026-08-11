@@ -8,10 +8,6 @@
   import { createAudioGate } from '$lib/audio/audio-gate.svelte';
   import { ydoc, patch, bindRackspace, unbindRackspace } from '$lib/graph/store';
   import { makeEnvelope } from '$lib/graph/persistence';
-  import {
-    ensureRackModeInDoc,
-    RACK_META_MAP_KEY,
-  } from '$lib/graph/rack-mode';
   import { attachProvider } from '$lib/multiplayer/provider';
   import { attachLocalReplica, clearLocalReplica } from '$lib/multiplayer/local-replica';
   import { createCarlController, type CarlController } from '$lib/carl/controller';
@@ -86,23 +82,6 @@
   // the proxies seen by `$derived`/`$effect` blocks would dangle.
   if (data.isMember) bindRackspace(data.rackspace.id);
 
-  // WORKFLOW MODE P1 — doc-meta mirror. The server's `racks.mode` column is
-  // AUTHORITATIVE (the shell below renders from data.rackspace.mode); here we
-  // mirror it into the patch doc's rackMeta map so collaborators + tooling can
-  // read the agreed mode straight off the doc. Re-asserted on every rackMeta
-  // change (ensureRackModeInDoc is idempotent — matching values write nothing,
-  // so agreeing clients can't ping-pong), which also heals a foreign snapshot
-  // or stray write that tried to flip it.
-  $effect(() => {
-    if (!data.isMember) return;
-    const doc = ydoc;
-    const mode = data.rackspace.mode;
-    const meta = doc.getMap(RACK_META_MAP_KEY);
-    const assert = () => ensureRackModeInDoc(doc, mode);
-    assert();
-    meta.observe(assert);
-    return () => meta.unobserve(assert);
-  });
 
   // Stage B PR B-c (awareness): resolve a stable presence identity for this
   // session. Authed users pull displayName from Clerk's reactive context;
@@ -795,7 +774,6 @@
         {provider}
         {presenceUser}
         {audioGate}
-        mode={data.rackspace.mode}
         rackspaceId={data.rackspace.id}
       />
     {/key}

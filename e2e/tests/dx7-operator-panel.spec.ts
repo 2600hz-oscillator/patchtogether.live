@@ -17,7 +17,7 @@ import { type Page } from '@playwright/test';
 test.describe.configure({ mode: 'parallel' });
 
 async function bootDx7Dock(page: Page): Promise<string> {
-  await page.goto('/rack?mode=workflow&shell=1');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await page.waitForFunction(() => {
     const w = globalThis as unknown as { __setSpawnFlowPos?: unknown; __spawnFromPalette?: unknown };

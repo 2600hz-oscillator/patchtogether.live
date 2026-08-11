@@ -403,7 +403,7 @@ describe('lane select — the 8 buttons above the display (CC 102..109)', () => 
     expect(lastViewed(1), 'the memory is REWRITTEN, not left dangling').toBe('gain1');
   });
 
-  it('a rack with no channel columns says so (a dawless rack has no lanes)', async () => {
+  it('a rack with no channel columns says so', async () => {
     seedClipPlayer();
     sim = await installSimulatedPush2AndBind(CP);
     const v = currentPushCardView();

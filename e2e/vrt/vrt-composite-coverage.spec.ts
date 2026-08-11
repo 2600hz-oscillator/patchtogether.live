@@ -185,7 +185,7 @@ test.describe('VRT: video→audio CV/gate composite pairs (#414 regression cover
       // drift that argument was about is no longer in it.
 
       await pinVrtFonts(page);
-      await page.goto('/rack');
+      await page.goto('/rack?shell=legacy&seed=none');
       await page.waitForLoadState('networkidle');
       await awaitVrtFonts(page);
 

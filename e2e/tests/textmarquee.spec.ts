@@ -39,7 +39,7 @@ async function readModel(page: Page, id: string): Promise<unknown> {
 }
 
 async function spawnMarquee(page: Page): Promise<void> {
-  await page.goto('/rack');
+  await page.goto('/rack?shell=legacy&seed=none');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,

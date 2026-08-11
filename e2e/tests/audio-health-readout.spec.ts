@@ -38,7 +38,7 @@ import { test, expect } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 test('audio health readout is live, and playbackStats exists in this browser', async ({ page }) => {
-  await page.goto('/rack');
+  await page.goto('/rack?shell=legacy&seed=none');
 
   const readout = page.locator('[data-testid="audio-health"]');
   await expect(readout).toBeVisible();

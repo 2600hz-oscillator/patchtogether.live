@@ -57,7 +57,7 @@ const firstSlotRect = (ch: number, shell: boolean) => {
 const colPos = (ch: number, shell: boolean) => ({ x: (ch - 1) * pitchOf(shell) + 60, y: 40 });
 
 async function gotoWorkflow(page: Page, shell: boolean): Promise<void> {
-  await page.goto(shell ? '/rack?mode=workflow&shell=1' : '/rack?mode=workflow');
+  await page.goto(shell ? '/rack' : '/rack?shell=legacy');
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
   await page.waitForFunction(
     () => {

@@ -142,7 +142,7 @@ describe('planPinnedSpawns', () => {
   });
 
   it('an UNPINNED canvas timelorde DOES satisfy the presence:"type" spec', () => {
-    // A dawless-authored patch loaded into a workflow rack carries a
+    // An imported patch carries a
     // random-id canvas TIMELORDE; it is the rack clock (maxInstances=1) —
     // no hidden competitor may spawn.
     const nodes = [

@@ -27,7 +27,7 @@ import { spawnPatch } from './_helpers';
 import { readScopeSnapshot, summarize, runFor } from './_module-coverage-helpers';
 
 test.beforeEach(async ({ page }) => {
-  await page.goto('/rack');
+  await page.goto('/rack?shell=legacy&seed=none');
 });
 
 function mean(a: ArrayLike<number>): number {

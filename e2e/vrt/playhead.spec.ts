@@ -75,7 +75,7 @@ test('polyseqz: per-step playhead baselines (step 0, 1, 7)', async ({ page }) =>
   // this the captured text metrics differ run-to-run and platform-to-platform.
   // Full root cause: e2e/vrt/_fonts.ts.
   await pinVrtFonts(page);
-  await page.goto('/rack');
+  await page.goto('/rack?shell=legacy&seed=none');
   await page.waitForLoadState('networkidle');
   await awaitVrtFonts(page);
 
@@ -136,7 +136,7 @@ test('polyseqz: per-step playhead baselines (step 0, 1, 7)', async ({ page }) =>
 
 test('sequencer: per-step playhead baselines (step 0, 1, 15)', async ({ page }) => {
   await pinVrtFonts(page);
-  await page.goto('/rack');
+  await page.goto('/rack?shell=legacy&seed=none');
   await page.waitForLoadState('networkidle');
   await awaitVrtFonts(page);
 
@@ -183,7 +183,7 @@ test('drumseqz: per-step playhead baselines (step 0, 1, 15)', async ({ page }) =
   // snapshot mid-step while playback is still running. Animations are frozen
   // for the screenshot capture itself.
   await pinVrtFonts(page);
-  await page.goto('/rack');
+  await page.goto('/rack?shell=legacy&seed=none');
   await page.waitForLoadState('networkidle');
   await awaitVrtFonts(page);
 

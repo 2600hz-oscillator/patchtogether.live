@@ -76,7 +76,7 @@ export interface CapDef {
  * they must not consume a type's `maxInstances` budget — "additional
  * instances spawn as normal canvas cards" (e.g. the pinned ELECTRA CONTROL
  * plus the one user-spawnable canvas instance its `maxInstances: 1`
- * allows). Dawless racks never contain pinned nodes, so this is inert
+ * allows). A rack with no pinned nodes never reaches it, so this is inert
  * there.
  *
  * EXCEPTION (P2): presence-by-TYPE surface pins (PINNED_COUNTS_TOWARD_CAP

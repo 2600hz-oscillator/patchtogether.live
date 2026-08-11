@@ -28,7 +28,7 @@ import { spawnPatch } from './_helpers';
 const NODE = 'cs';
 const SLOW_RENDER = process.env.E2E_SWIFTSHADER === '1' || !!process.env.CI;
 /** The BOOT wait, not an assertion window. Whichever test runs first pays
- *  SvelteKit's on-demand /rack route compile — measured at >15 s on a cold dev
+ *  SvelteKit's on-demand /rack?shell=legacy&seed=none route compile — measured at >15 s on a cold dev
  *  server here, which failed only the alphabetically-first spec in the file
  *  while the two behind it passed in 45 s combined. Doubled under SLOW_RENDER:
  *  on CI that compile lands on a 4-vCPU runner already software-rasterizing
@@ -54,7 +54,7 @@ function defParamIds(page: Page): Promise<string[]> {
 }
 
 async function openCloudseedDock(page: Page) {
-  await page.goto('/rack?mode=workflow&shell=1');
+  await page.goto('/rack');
   await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_MS });
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
   await spawnPatch(page, [{ id: NODE, type: 'cloudseed', position: { x: 460, y: 240 } }]);

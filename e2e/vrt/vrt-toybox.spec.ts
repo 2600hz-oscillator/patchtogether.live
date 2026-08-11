@@ -250,7 +250,7 @@ test.describe('VRT: TOYBOX per-content frozen render', () => {
       // this the captured text metrics differ run-to-run and platform-to-platform.
       // Full root cause: e2e/vrt/_fonts.ts.
       await pinVrtFonts(page);
-      await page.goto('/rack');
+      await page.goto('/rack?shell=legacy&seed=none');
       await page.waitForLoadState('networkidle');
       await awaitVrtFonts(page);
 
@@ -290,7 +290,7 @@ test.describe('VRT: TOYBOX OBJ layer frozen render', () => {
       });
 
       await pinVrtFonts(page);
-      await page.goto('/rack');
+      await page.goto('/rack?shell=legacy&seed=none');
       await page.waitForLoadState('networkidle');
       await awaitVrtFonts(page);
 
@@ -533,7 +533,7 @@ test.describe('VRT: TOYBOX Phase-5 CV-route proof', () => {
       });
 
       await pinVrtFonts(page);
-      await page.goto('/rack');
+      await page.goto('/rack?shell=legacy&seed=none');
       await page.waitForLoadState('networkidle');
       await awaitVrtFonts(page);
       await spawnPatch(
@@ -644,7 +644,7 @@ test.describe('VRT: TOYBOX Phase-6 presets', () => {
       });
 
       await pinVrtFonts(page);
-      await page.goto('/rack');
+      await page.goto('/rack?shell=legacy&seed=none');
       await page.waitForLoadState('networkidle');
       await awaitVrtFonts(page);
       await spawnPatch(
@@ -789,7 +789,7 @@ test.describe('VRT: TOYBOX OBJ surface-texture', () => {
       });
 
       await pinVrtFonts(page);
-      await page.goto('/rack');
+      await page.goto('/rack?shell=legacy&seed=none');
       await page.waitForLoadState('networkidle');
       await awaitVrtFonts(page);
       await spawnPatch(
@@ -823,7 +823,7 @@ test.describe('VRT: TOYBOX Phase-4 combine graph', () => {
     });
 
     await pinVrtFonts(page);
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
     await awaitVrtFonts(page);
     await spawnPatch(
@@ -854,7 +854,7 @@ test.describe('VRT: TOYBOX Phase-4 combine graph', () => {
     });
 
     await pinVrtFonts(page);
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
     await awaitVrtFonts(page);
     await spawnPatch(
@@ -1037,7 +1037,7 @@ test.describe('VRT: TOYBOX Shadertoy multi-buffer growing peak', () => {
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
     await pinVrtFonts(page);
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
     await awaitVrtFonts(page);
     await spawnPatch(
@@ -1153,7 +1153,7 @@ test.describe('VRT: TOYBOX FRAG over a base layer (content-bank)', () => {
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
     await pinVrtFonts(page);
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
     await awaitVrtFonts(page);
     await spawnPatch(
@@ -1372,7 +1372,7 @@ test.describe('VRT: TOYBOX feedback (stateful combine op)', () => {
       });
 
       await pinVrtFonts(page);
-      await page.goto('/rack');
+      await page.goto('/rack?shell=legacy&seed=none');
       await page.waitForLoadState('networkidle');
       await awaitVrtFonts(page);
       await spawnPatch(

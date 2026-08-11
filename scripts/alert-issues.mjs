@@ -123,7 +123,7 @@ export const CHECK_TITLES = {
   'web-health-body': 'web /api/health body missing ok:true',
   'web-db-not-probed': 'web /api/health did not RUN the DB probe (the DB checks are testing nothing)',
   'web-db-unreachable': 'web /api/health reports the database UNREACHABLE',
-  'web-db-schema-drift': 'web /api/health reports schema drift (mode-missing)',
+  'web-db-schema-drift': 'web /api/health reports schema drift (racks-missing)',
   'relay-health-status': 'relay /health returned a non-200',
   'relay-health-body': 'relay /health body missing ok:true',
   'relay-metrics-status': 'relay /metrics returned a non-200',

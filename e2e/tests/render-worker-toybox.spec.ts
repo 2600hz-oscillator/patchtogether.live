@@ -90,7 +90,7 @@ test.describe('Fix E render worker — toybox', () => {
       (globalThis as unknown as { __videoWorkerEnabled?: boolean }).__videoWorkerEnabled = true;
     });
 
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(

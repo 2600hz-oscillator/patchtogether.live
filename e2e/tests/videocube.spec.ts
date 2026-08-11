@@ -149,7 +149,7 @@ test.describe('VIDEOCUBE — video isomorph of the audio CUBE', () => {
   test('real 3-source chain: ACIDWARP×3 → VIDEOCUBE → non-black STRUCTURED morph on video_out', async ({ page, errorWatch }) => {
     void errorWatch;
     await installRenderSmokeHooks(page);
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, videoNodes(), videoEdges());
 
@@ -178,7 +178,7 @@ test.describe('VIDEOCUBE — video isomorph of the audio CUBE', () => {
     await page.addInitScript(() => {
       (globalThis as unknown as { __videoEngineFreezeRender?: boolean }).__videoEngineFreezeRender = true;
     });
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, [{ id: 'vc', type: 'videocube', position: { x: 420, y: 120 }, domain: 'video' }], []);
     await expect(page.locator('[data-testid="videocube-card"]')).toHaveCount(1);
@@ -237,7 +237,7 @@ test.describe('VIDEOCUBE — video isomorph of the audio CUBE', () => {
   test('the render is LIVE — MORPH, the orbit VIEW camera, and slice Y each change the volume', async ({ page, errorWatch }) => {
     void errorWatch;
     await installRenderSmokeHooks(page);
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
     // A mid-connect blend so MORPH FC has a wide A↔C span to move.
     await spawnPatch(page, videoNodes({ connect: 0.4, morph_fc: 0 }), videoEdges());
@@ -305,7 +305,7 @@ test.describe('VIDEOCUBE — video isomorph of the audio CUBE', () => {
     test.setTimeout(60_000);
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(
@@ -365,7 +365,7 @@ test.describe('VIDEOCUBE — video isomorph of the audio CUBE', () => {
   test('slice-viz jacks: per-port gating, slice_view/reader/Y·rot response, triptych divergence, depth occupancy', async ({ page, errorWatch }) => {
     void errorWatch;
     await installRenderSmokeHooks(page);
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
 
     // Moving sources (speed 1) so the reader modes (SMOOTH trailing vs MORPH
@@ -526,7 +526,7 @@ test.describe('VIDEOCUBE — video isomorph of the audio CUBE', () => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
     await installRenderSmokeHooks(page);
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(

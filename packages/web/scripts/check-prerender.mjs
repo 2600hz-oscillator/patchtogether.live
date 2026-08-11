@@ -20,7 +20,7 @@ import { fileURLToPath } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const OUT = resolve(__dirname, '../.svelte-kit/cloudflare/index.html');
 
-const SENTINELS = ['new dawless rack', 'sign in', 'landing-tiles'];
+const SENTINELS = ['new rack', 'sign in', 'landing-tiles'];
 
 let html;
 try {

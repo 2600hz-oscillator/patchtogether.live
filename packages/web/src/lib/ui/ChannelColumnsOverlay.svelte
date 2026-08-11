@@ -7,7 +7,7 @@
   // the pure channel-columns geometry (flow coords) to screen rects via
   // flowToScreenPosition, re-projected on every viewport `tick`. Presentation-
   // only: pointer-events:none so it never intercepts card/cable interaction, and
-  // it is mounted ONLY in workflow mode (dawless renders nothing → VRT stays
+  // it is mounted on every rack (VRT stays
   // pixel-identical). Each column's number badge is tinted by its channel colour
   // (the automation-lane colour = the single source of truth for channel colour).
 

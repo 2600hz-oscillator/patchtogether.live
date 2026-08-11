@@ -114,7 +114,7 @@ for (const mod of REGISTRY) {
       if (m.type() === 'error') errors.push(m.text());
     });
 
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(

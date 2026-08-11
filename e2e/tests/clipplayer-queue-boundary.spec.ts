@@ -126,7 +126,7 @@ async function readState(page: import('@playwright/test').Page) {
 }
 
 async function spawnClipPlayer(page: import('@playwright/test').Page, quantize: number) {
-  await page.goto('/rack');
+  await page.goto('/rack?shell=legacy&seed=none');
   await spawnPatch(page, [
     { id: CP, type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio',
       params: { quantize, stepDiv: 2, gateLength: 0.9, octave: 0 } },

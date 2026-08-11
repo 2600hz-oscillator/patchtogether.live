@@ -33,7 +33,7 @@ test('AI debug snapshot — voice-demo flow', async ({ page }) => {
   // ---------- SHELL ----------
   let response;
   try {
-    response = await page.goto('/rack');
+    response = await page.goto('/rack?shell=legacy&seed=none');
   } catch (err) {
     section('SHELL', `goto failed: ${err}`);
     section('VERDICT', 'fail — page never loaded');
@@ -56,7 +56,7 @@ test('AI debug snapshot — voice-demo flow', async ({ page }) => {
   // ---------- DOM (pre-click) ----------
   const preDom = await page.evaluate(() => ({
     h1: document.querySelector('h1')?.textContent ?? null,
-    presetBar: !!document.querySelector('[data-testid="preset-slot-bar"]'),
+    fileMenu: !!document.querySelector('[data-testid="workflow-file-trigger"]'),
     allButtons: Array.from(document.querySelectorAll('button')).map((b) =>
       (b.textContent ?? '').trim().slice(0, 40)
     ),

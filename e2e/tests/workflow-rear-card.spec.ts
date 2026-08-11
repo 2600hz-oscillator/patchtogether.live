@@ -22,7 +22,7 @@
 //      rear view owns it when it's closed, and Shift-TAB owns neither — so the
 //      two flip states can never phase-diverge.
 //
-// Runs on /rack?mode=workflow&shell=1 (no DB/relay) — the normal e2e lane,
+// Runs on /rack (no DB/relay) — the normal e2e lane,
 // same recipe as workflow-shell-faces.spec.ts.
 
 import { test, expect, type Page } from '@playwright/test';
@@ -54,13 +54,13 @@ function domainOf(cable: string): string {
 }
 
 async function gotoWorkflow(page: Page): Promise<void> {
-  await page.goto('/rack?mode=workflow&shell=1');
+  await page.goto('/rack');
   // 15s FIRST-LOAD budget — the SAME number workflow-shell.spec.ts and
   // workflow-dock-occupancy.spec.ts already use for this exact route, so it is
   // CI-validated rather than guessed.
   //
   // ROOT CAUSE of the cold-server flake this replaces: SvelteKit dev compiles
-  // /rack ON DEMAND. The very FIRST navigation of a run — a fresh
+  // /rack?shell=legacy&seed=none ON DEMAND. The very FIRST navigation of a run — a fresh
   // `task e2e:serve`, or a cleared node_modules/.vite — pays that compile
   // before the topbar can mount, blowing the 5s expect default; every later
   // load hits the warm module graph, which is why ONLY the first invocation

@@ -27,7 +27,7 @@
 // an inequality, and it is renderer-independent: no frame budget, no
 // wall-clock, no tuning.
 //
-// Runs on /rack?mode=workflow (no DB, no relay) — the normal e2e lane.
+// Runs on /rack?shell=legacy (no DB, no relay) — the normal e2e lane.
 
 import { test, expect, type Locator, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
@@ -41,7 +41,7 @@ import {
 const SLOW_RENDER = process.env.E2E_SWIFTSHADER === '1' || !!process.env.CI;
 
 async function gotoShell(page: Page): Promise<void> {
-  await page.goto('/rack?mode=workflow&shell=1');
+  await page.goto('/rack');
   await expect(page.getByTestId('workflow-topbar')).toBeVisible({
     timeout: SLOW_RENDER ? 30_000 : 15_000,
   });

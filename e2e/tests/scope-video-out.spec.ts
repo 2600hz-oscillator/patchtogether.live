@@ -140,7 +140,7 @@ test.describe('SCOPE.out (mono-video) -> OUTPUT @webgl-serial', () => {
     // Pause the engine rAF loop (the test owns the exact frame count) + pin the
     // engine clock BEFORE boot. No __scopeVrtFreeze: drawScope has no clock term.
     await installRenderSmokeHooks(page);
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
 
     // DETERMINISTIC source: ANALOG-VCO (a fixed-pitch audio oscillator) → SCOPE
@@ -231,7 +231,7 @@ test.describe('SCOPE.out (mono-video) -> OUTPUT @webgl-serial', () => {
     test.setTimeout(60_000);
 
     await installRenderSmokeHooks(page);
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy&seed=none');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(

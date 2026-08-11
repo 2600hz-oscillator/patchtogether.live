@@ -1,10 +1,10 @@
 // packages/web/src/lib/ui/workflow/legacy-fallback.test.ts
 //
-// The legacy-fallback MIGRATION bridge (P0.3b) — pure derivation gate. Proves:
-//   - preview OFF (default) is a strict NO-OP: every non-docked node → 'legacy'
-//     (byte-identical to the pre-P0.3b render);
+// The legacy-fallback bridge — pure derivation gate. Proves:
+//   - `?shell=legacy` (shellFaces false) → every non-docked node renders its
+//     verbatim module card;
 //   - the user-dock swap still wins (unchanged P2.5a contract);
-//   - preview ON: un-migrated → placeholder, migrated → shell;
+//   - the DEFAULT (shellFaces true): un-migrated → placeholder, migrated → shell;
 //   - the emitted node-type mapping + the swap-eligibility rule.
 
 import { describe, it, expect } from 'vitest';
@@ -16,10 +16,9 @@ import {
   type LaneRenderInput,
 } from './legacy-fallback';
 
-/** A fully-swappable, workflow, preview-on, un-migrated baseline. */
+/** A fully-swappable, faces-on (default), un-migrated baseline. */
 const base: LaneRenderInput = {
-  workflowMode: true,
-  shellPreview: true,
+  shellFaces: true,
   userDocked: false,
   type: 'tidyvco',
   hasCard: true,
@@ -27,34 +26,29 @@ const base: LaneRenderInput = {
 };
 
 describe('laneRenderKind — the pure bridge decision', () => {
-  it('user-docked ALWAYS wins → stub (preview on or off, migrated or not)', () => {
-    for (const shellPreview of [true, false]) {
+  it('user-docked ALWAYS wins → stub (faces on or off, migrated or not)', () => {
+    for (const shellFaces of [true, false]) {
       for (const migrated of [true, false]) {
-        expect(laneRenderKind({ ...base, userDocked: true, shellPreview, migrated })).toBe('stub');
+        expect(laneRenderKind({ ...base, userDocked: true, shellFaces, migrated })).toBe('stub');
       }
     }
   });
 
-  it('preview OFF is a strict no-op → legacy for every non-docked node', () => {
-    expect(laneRenderKind({ ...base, shellPreview: false })).toBe('legacy');
-    // even a migrated type renders legacy when the preview is off
-    expect(laneRenderKind({ ...base, shellPreview: false, migrated: true })).toBe('legacy');
+  it('?shell=legacy → legacy for every non-docked node', () => {
+    expect(laneRenderKind({ ...base, shellFaces: false })).toBe('legacy');
+    // even a migrated type renders its legacy card under the escape hatch
+    expect(laneRenderKind({ ...base, shellFaces: false, migrated: true })).toBe('legacy');
   });
 
-  it('dawless mode → always legacy (shell is workflow-only)', () => {
-    expect(laneRenderKind({ ...base, workflowMode: false })).toBe('legacy');
-    expect(laneRenderKind({ ...base, workflowMode: false, migrated: true })).toBe('legacy');
-  });
-
-  it('preview ON + un-migrated + swappable → placeholder', () => {
+  it('DEFAULT + un-migrated + swappable → placeholder', () => {
     expect(laneRenderKind(base)).toBe('placeholder');
   });
 
-  it('preview ON + migrated + swappable → shell', () => {
+  it('DEFAULT + migrated + swappable → shell', () => {
     expect(laneRenderKind({ ...base, migrated: true })).toBe('shell');
   });
 
-  it('a non-card / snowflake type stays legacy even with preview on', () => {
+  it('a non-card / snowflake type stays legacy even by default', () => {
     expect(laneRenderKind({ ...base, hasCard: false })).toBe('legacy');
     expect(laneRenderKind({ ...base, hasCard: false, migrated: true })).toBe('legacy');
   });
@@ -68,8 +62,8 @@ describe('emittedTypeFor — kind → xyflow node type', () => {
     expect(emittedTypeFor('legacy', 'tidyvco')).toBe('tidyvco');
   });
 
-  it('the full pipeline: preview-off round-trips to the legacy type', () => {
-    const kind = laneRenderKind({ ...base, shellPreview: false });
+  it('the full pipeline: ?shell=legacy round-trips to the legacy type', () => {
+    const kind = laneRenderKind({ ...base, shellFaces: false });
     expect(emittedTypeFor(kind, base.type)).toBe(base.type);
   });
 });
@@ -138,10 +132,10 @@ describe('isShellSwappable — eligibility', () => {
     expect(laneRenderKind({ ...base, type: 'es9', hasCard: isShellSwappable('es9', true) })).toBe(
       'placeholder',
     );
-    // Preview OFF must still be byte-identical to before — the carve-out removal
-    // must not change the dawless / non-preview render at all.
+    // ?shell=legacy must still render the verbatim card — the carve-out
+    // removal must not change the legacy render at all.
     expect(
-      laneRenderKind({ ...base, shellPreview: false, type: 'es9', hasCard: true }),
+      laneRenderKind({ ...base, shellFaces: false, type: 'es9', hasCard: true }),
     ).toBe('legacy');
   });
 });

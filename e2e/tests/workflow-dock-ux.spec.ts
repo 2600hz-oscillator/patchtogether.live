@@ -31,7 +31,7 @@
 //     gate at the bottom of this file, which also re-proves the rear card
 //     still carries every declared hole.
 //
-// Runs on /rack?mode=workflow&shell=1 (no DB/relay) — same lane as
+// Runs on /rack (no DB/relay) — same lane as
 // workflow-shell.spec.ts. All fixed behavior is ?shell=1-gated.
 
 import { test, expect, type Page } from '@playwright/test';
@@ -39,7 +39,7 @@ import { spawnPatch } from './_helpers';
 import { UNMIGRATED_AUDIO_MODULE } from './_face-fixtures';
 
 async function gotoWorkflow(page: Page): Promise<void> {
-  await page.goto('/rack?mode=workflow&shell=1');
+  await page.goto('/rack');
   await expect(page.getByTestId('workflow-topbar')).toBeVisible();
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
 }

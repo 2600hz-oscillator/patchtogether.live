@@ -1,19 +1,17 @@
 // e2e/tests/workflow-mode.spec.ts
 //
-// WORKFLOW MODE P1 — the shell fork, exercised on the /rack scratch canvas:
-//   /rack                 → DAWLESS: the current UI, byte-for-byte (topbar +
-//                           preset slot bar render; no workflow chrome).
-//   /rack?mode=workflow   → WORKFLOW: WorkflowTopbar (File.. menu) + empty
-//                           left rail + the pinned M/E/C trio auto-spawned
-//                           (drawer-only — never canvas cards) + the bottom
-//                           dock drawer toggles.
+// THE SHELL, exercised on the /rack scratch canvas: WorkflowTopbar (File..
+// menu) + the left rail + the pinned M/E/C trio auto-spawned (drawer-only —
+// never canvas cards) + the bottom dock drawer toggles.
 //
-// Driving /rack keeps this in the NORMAL e2e lane (no DB/relay needed —
-// the seeded /r/[id] path needs Neon, which shard runners don't have; the
-// server-side mode plumbing is unit-tested in lib/server/rackspaces.test.ts
-// and the seed route accepts `mode` for the DB-backed lane). The workflow
-// ensure effect + dock keymap + File.. menu are identical code on both
-// routes — only the mode SOURCE differs (?mode= vs. the rackspace column).
+// This file used to have a second half asserting "dawless is unchanged" on a
+// bare /rack. That shell is DELETED, so those assertions are gone rather than
+// re-pointed: there is no second UI for them to be about, and re-pointing them
+// at `?shell=legacy` would have re-asserted the shell's own chrome twice under
+// a name that says the opposite.
+//
+// Driving /rack keeps this in the NORMAL e2e lane (no DB/relay needed — the
+// seeded /r/[id] path needs Neon, which shard runners don't have).
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
@@ -59,38 +57,6 @@ async function waitForPinnedTrio(page: Page): Promise<void> {
   );
 }
 
-test.describe('dawless is unchanged', () => {
-  test('/rack renders the current topbar; zero workflow chrome', async ({ page }) => {
-    await page.goto('/rack');
-    // The existing dawless topbar chrome, exactly as before.
-    await expect(page.locator('header.topbar')).toBeVisible();
-    await expect(page.getByTestId('preset-slot-bar')).toBeVisible();
-    await expect(page.getByTestId('raw-json-select')).toBeVisible();
-    await expect(page.getByTestId('new-rack-btn')).toBeVisible();
-    // The "Load example…" dropdown is GONE from the product (owner ruling);
-    // asserting its absence keeps this "dawless is unchanged" test honest
-    // about what changed rather than silently dropping the row.
-    await expect(page.getByTestId('load-example-select')).toHaveCount(0);
-    // No workflow shell pieces anywhere.
-    await expect(page.getByTestId('workflow-topbar')).toHaveCount(0);
-    await expect(page.getByTestId('workflow-leftbar')).toHaveCount(0);
-    await expect(page.getByTestId('dock-zone-bottom')).toHaveCount(0);
-    // No pinned nodes auto-spawn on the dawless scratch canvas.
-    const pinnedCount = await page.evaluate(() => {
-      const w = globalThis as unknown as {
-        __patch?: { nodes: Record<string, { data?: { pinned?: boolean } } | undefined> };
-      };
-      if (!w.__patch) return 0;
-      return Object.values(w.__patch.nodes).filter((n) => n?.data?.pinned === true).length;
-    });
-    expect(pinnedCount).toBe(0);
-    // The M key does nothing in dawless (keymap is workflow-gated).
-    await page.locator('.svelte-flow__pane').waitFor({ state: 'visible' });
-    await page.keyboard.press('m');
-    await expect(page.getByTestId('dock-zone-bottom')).toHaveCount(0);
-  });
-});
-
 test.describe('workflow shell', () => {
   // A fresh workflow rack now auto-spawns the video-zone defaults (videoOut +
   // recorderbox + synesthesia — PR #1155). These tests exercise the workflow
@@ -106,10 +72,11 @@ test.describe('workflow shell', () => {
   });
 
   test('boots the workflow topbar + left rail, replaces the slot bar, spawns the pinned trio off-canvas', async ({ page }) => {
-    await page.goto('/rack?mode=workflow');
+    await page.goto('/rack?shell=legacy');
     await expect(page.getByTestId('workflow-topbar')).toBeVisible();
     await expect(page.getByTestId('workflow-leftbar')).toBeVisible();
-    // File.. REPLACES the top-left slot bar (Q5 reversible default).
+    // There is no second topbar: the slot bar was deleted with the old shell
+    // and File.. carries every action it had.
     await expect(page.getByTestId('preset-slot-bar')).toHaveCount(0);
     await expect(page.getByTestId('workflow-file-trigger')).toBeVisible();
     // The P3 media slots are LIVE (loader + assets picker — behavior in
@@ -128,7 +95,7 @@ test.describe('workflow shell', () => {
   });
 
   test('M / E toggle the bottom dock drawers with the FULL pinned card; one at a time; C opens the clip PANE; ESC closes', async ({ page }) => {
-    await page.goto('/rack?mode=workflow');
+    await page.goto('/rack?shell=legacy');
     await waitForPinnedTrio(page);
     // :visible — the workflow topbar's always-mounted audio-I/O card hosts
     // (P2) are standalone flows inside a visibility-hidden panel, so the
@@ -177,7 +144,7 @@ test.describe('workflow shell', () => {
   });
 
   test('M/E/C are inert while typing in an input / contenteditable', async ({ page }) => {
-    await page.goto('/rack?mode=workflow');
+    await page.goto('/rack?shell=legacy');
     await waitForPinnedTrio(page);
     // Real text-entry surfaces, appended to the live document so the real
     // window keydown listener (not a synthetic target) sees the events.
@@ -215,7 +182,7 @@ test.describe('workflow shell', () => {
   });
 
   test('pinned nodes refuse deletion; Clear keeps the trio', async ({ page }) => {
-    await page.goto('/rack?mode=workflow');
+    await page.goto('/rack?shell=legacy');
     await waitForPinnedTrio(page);
     // Programmatic delete through the shared primitive path: drive the
     // graph directly (the UI exposes no delete affordance for pinned nodes
@@ -277,7 +244,7 @@ test.describe('workflow shell', () => {
   test('default wiring: pinned MIXMSTRS master L/R auto-wires to pinned AUDIO OUT (one-shot, user delete respected)', async ({ page }) => {
     // Owner directive: "the audio out in the rack should be default wired to
     // the master L/R outs from the in rack mixmstrs in workflow mode."
-    await page.goto('/rack?mode=workflow');
+    await page.goto('/rack?shell=legacy');
     await waitForPinnedTrio(page);
     await waitForDefaultWires(page);
 
@@ -344,7 +311,7 @@ test.describe('workflow shell', () => {
     // AUDIO OUT's terminal tap (the limiter feeding ctx.destination) with
     // ZERO hand-patching between mixer and output — the default wires are
     // the only mixer→out cables in the rack.
-    await page.goto('/rack?mode=workflow');
+    await page.goto('/rack?shell=legacy');
     await waitForPinnedTrio(page);
     await waitForDefaultWires(page);
 
@@ -473,7 +440,7 @@ test.describe('workflow shell', () => {
   });
 
   test('File.. menu: quicksave slot 1 round-trips through quickload', async ({ page }) => {
-    await page.goto('/rack?mode=workflow');
+    await page.goto('/rack?shell=legacy');
     await waitForPinnedTrio(page);
 
     // Open File.. → Quicksave → slot 1 (captures the current rack: the
@@ -529,13 +496,13 @@ test.describe('workflow shell', () => {
     await waitForPinnedTrio(page);
   });
 
-  // ── TOPBAR PARITY: the two controls ported from the dawless topbar. ───────
-  // The dawless topbar is scheduled for deletion; these prove the workflow
+  // ── TOPBAR PARITY: controls ported from the deleted topbar. ──────────────
+  // That topbar is now gone; these prove the workflow
   // topbar carries its `Clear` and `AspectToggle` first, so that deletion is
   // not a feature regression.
 
   test('File.. menu: Clear rack deletes canvas modules + cables and KEEPS the pinned trio', async ({ page }) => {
-    await page.goto('/rack?mode=workflow');
+    await page.goto('/rack?shell=legacy');
     await waitForPinnedTrio(page);
 
     // Two wired canvas modules to clear.
@@ -589,7 +556,7 @@ test.describe('workflow shell', () => {
   });
 
   test('File.. menu: the output-aspect toggle flips 4:3 ⇄ 16:9 and leaves the menu open', async ({ page }) => {
-    await page.goto('/rack?mode=workflow');
+    await page.goto('/rack?shell=legacy');
     await waitForPinnedTrio(page);
 
     await page.getByTestId('workflow-file-trigger').click();

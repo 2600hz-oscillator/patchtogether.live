@@ -107,9 +107,9 @@ test('karplus face: the dock PLUCK cell auditions an UNPATCHED string, and write
   // test does its `page.evaluate` round-trips against. This spec asserts
   // nothing about a rendered frame, so the render loop is pure contention.
   await installRenderSmokeHooks(page);
-  await page.goto('/rack?mode=workflow&shell=1');
+  await page.goto('/rack');
   // 30 s, not the 5 s default, and a FAILURE BOUND rather than the gate: the
-  // FIRST navigation to /rack on a cold dev server compiles the whole route
+  // FIRST navigation to /rack?shell=legacy&seed=none on a cold dev server compiles the whole route
   // graph on demand.
   await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: 30_000 });
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });

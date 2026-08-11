@@ -52,19 +52,20 @@ beforeAll(async () => {
           `Apply db/schema/001_init.sql to ${TEST_DB_URL}.`,
       );
     }
-    // createRackspace/joinRackspace now read/write racks.mode (workflow-mode
-    // P1) — probe for the column so a not-yet-migrated test DB fails with an
-    // actionable message instead of a mid-test SQL error.
-    const modeColumn = await pool.query(
-      `SELECT 1 FROM information_schema.columns
-       WHERE table_schema='public' AND table_name='racks' AND column_name='mode'`,
-    );
-    if (modeColumn.rowCount !== 1) {
-      throw new Error(
-        `test DB missing the racks.mode column. ` +
-          `Apply db/schema/005_rackspace_mode.sql to ${TEST_DB_URL}.`,
-      );
-    }
+    // ⚠ THERE WAS A THIRD PROBE HERE and it is deliberately gone: it required
+    // the `racks.mode` COLUMN to be present, because createRackspace /
+    // joinRackspace used to read and write it. 006 DROPS that column, so the
+    // probe's precondition became unsatisfiable by construction — CI applies
+    // every migration, so the column is always absent, so this suite always
+    // hard-failed with "apply 005" pointing at a migration that had already
+    // been superseded.
+    //
+    // The lesson is the probe's SUBJECT, not its existence: a schema probe must
+    // name what THIS code touches, and neither function reads `mode` any more.
+    // The two checks above (racks + rack_members) are exactly that, and they
+    // still fail loudly on a genuinely unmigrated DB — which is the whole
+    // reason the probe block exists. Re-adding a column probe here is only
+    // correct if the code under test starts reading that column again.
     pgAvailable = true;
   } catch (e) {
     probeError = e as Error;
