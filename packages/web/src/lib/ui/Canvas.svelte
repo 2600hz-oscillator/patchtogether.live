@@ -467,10 +467,13 @@
    *  The alternative was rewriting all ~200 to add-and-subtract the seeded
    *  population, which buries the assertion each one actually makes.
    *
-   *  ⚠ GATED ON `testHooksEnabled()`, so it cannot be reached in a production
-   *  build no matter what a user puts in the URL — same seam as `__patch` /
-   *  `__ydoc` / `__flow`. It is a FIXTURE, not a product mode: nothing in the
-   *  app links to it and no user-facing behaviour branches on it.
+   *  ⚠ GATED ON `testHooksEnabled()` — the SAME seam as `__patch` / `__ydoc` /
+   *  `__flow`, with the same reachability, stated precisely: ON under local
+   *  dev and on the dev + autotest DEPLOYS (which set `VITE_E2E_HOOKS=1`), OFF
+   *  on prod. So a prod user cannot reach it whatever they put in the URL, and
+   *  on dev.patchtogether.live it is exactly as reachable as the other test
+   *  hooks already are. It is a FIXTURE, not a product mode: nothing in the app
+   *  links to it and no user-facing behaviour branches on it.
    *
    *  It suppresses SEEDING ONLY. The shell chrome, the lane geometry, the dock
    *  and `shellFaces` are all untouched — a `?seed=none` rack is the same UI,
