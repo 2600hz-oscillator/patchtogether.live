@@ -557,9 +557,9 @@ export const ringsDef: AudioModuleDef = {
     // unconditionally where a hint does not. `docs.controls.brightness` now
     // carries it instead, in full and with its numbers.
     pages: [
-      { id: 'body', label: 'body',   controls: ['model', 'structure', 'note'] },
-      { id: 'ring', label: 'ring',   controls: ['damping', 'brightness'] },
-      { id: 'taps', label: 'pickup', controls: ['rings-comb-{n}', 'rings-strum-{n}', 'position', 'level'] },
+      { id: 'body', label: 'body · tune',        controls: ['model', 'structure', 'note'] },
+      { id: 'ring', label: 'ring',               controls: ['damping', 'brightness'] },
+      { id: 'taps', label: 'pickup · strum · out', controls: ['rings-comb-{n}', 'rings-strum-{n}', 'position', 'level'] },
     ],
 
     // A live trace of the output. Safe on this module in a way it was not on
