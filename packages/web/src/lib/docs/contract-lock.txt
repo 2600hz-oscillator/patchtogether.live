@@ -768,6 +768,8 @@ cube param view_rot_x -3.1416..3.1416 linear default=0.6
 cube param view_rot_y -3.1416..3.1416 linear default=0.7
 cube param view_zoom 0.3..3 log default=1
 cube param wrap 0..1 discrete default=0
+cube family cube-table-stack kind=cell prefix=cube-table-stack
+cube family cube-view kind=cell prefix=cube-view
 cvBuddy meta domain=audio
 cvBuddy in gate gate edge=gate
 cvBuddy in pitch cv

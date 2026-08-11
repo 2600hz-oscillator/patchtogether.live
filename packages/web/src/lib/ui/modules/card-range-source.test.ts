@@ -31,9 +31,24 @@
 //
 // ⚠ THE TWO RATCHET FLOORS ARE GONE (2026-08-10). `RANGE_BOUND_FLOOR` and
 // `MAPPING_BOUND_FLOOR` were hand-typed copies of `RANGE_BOUND_CARDS.length` /
-// `MAPPING_BOUND_CARDS.length`, and they auto-merged WRONG in three separate
-// face waves — the last one landing 9/7 against lists of 10/8, a full card of
-// silent slack in each. They are replaced by an ARTIFACT ANCHOR
+// `MAPPING_BOUND_CARDS.length`, and they auto-merged WRONG in FIVE separate
+// face merges — a full card of silent slack each time.
+//
+//   The fifth is the one that settles the argument, so it is recorded here
+//   rather than left in the deleted block's history. cube and main BOTH read
+//   `12 / 10` — cube's count correct for cube+clouds, main's correct for
+//   clouds+cofefve — and because the two literals were IDENTICAL AS TEXT, git
+//   presented them as already resolved. No conflict, no warning, and the true
+//   union was THIRTEEN and ELEVEN.
+//
+//   That is the pure form: the previous four surfaced only because an adjacent
+//   COMMENT happened to differ, which is luck, not a mechanism. And in the
+//   fourth, clouds and cofefve had EACH counted correctly for their own tree
+//   and each written `11 / 9` — two authors both obeying the rule, still
+//   producing a wrong merged value. A number that is right when written and
+//   wrong when merged, through nobody's error, cannot be fixed by discipline.
+//
+// They are replaced by an ARTIFACT ANCHOR
 // ('every def-bound card is enrolled', below) that derives the same
 // only-grows protection from the card sources themselves, so there is no
 // literal for a merge to get right or wrong.
@@ -51,6 +66,7 @@ import { fileURLToPath } from 'node:url';
 import { adsrDef } from '$lib/audio/modules/adsr';
 import { backdraftDef } from '$lib/video/modules/backdraft';
 import { chromaconsoleDef } from '$lib/audio/modules/chromaconsole';
+import { cubeDef } from '$lib/audio/modules/cube';
 import { cloudsDef } from '$lib/audio/modules/clouds';
 import { cofefveDelayDef } from '$lib/audio/modules/cofefve';
 import { delayDef } from '$lib/audio/modules/delay';
@@ -131,6 +147,18 @@ import type { ParamDef } from '$lib/graph/types';
  *    `STRICT_VRT_MODULES`, i.e. the required `vrt-strict` gate on both
  *    platforms, so that vocabulary fix gets its own PR instead of riding a face.
  *    The clause below keeps the unbound half honest in the meantime.
+ *  - CubeCard: converted with the cube face (2026-08-10), range AND mapping in
+ *    one step. It was HALF bound already, and the half it was missing is the
+ *    instructive one: it resolved `min`/`max`/`defaultValue` through local
+ *    `minFor()`/`maxFor()`/`defaultFor()` helpers that read the def — genuinely
+ *    correct — and then re-typed `label`, `units` and `curve` beside them in
+ *    three private arrays (`KNOBS`, `VIEW_KNOBS`, `ADSR_KNOBS`), including a
+ *    `curve={k.pid === 'view_zoom' ? 'log' : 'linear'}` TERNARY reproducing the
+ *    def's own curve assignment as a card-side rule. All 23 controls agreed, so
+ *    nothing was broken — but "the ranges come from the def, the mapping comes
+ *    from a ternary" is a card one def edit away from disagreeing with itself,
+ *    with no gate able to see it. The three arrays are now id lists resolved
+ *    through `paramSpec`.
  *  - CloudsCard: converted with the clouds face promotion (2026-08-10; binds
  *    via paramSpec). Range AND mapping bound — the card's six faders re-typed
  *    30 numbers plus six `curve`s and one `units`, all of which AGREED, and it
@@ -161,6 +189,7 @@ const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }
   'AdsrCard.svelte': adsrDef,
   'BackdraftCard.svelte': backdraftDef,
   'ChromaconsoleCard.svelte': chromaconsoleDef,
+  'CubeCard.svelte': cubeDef,
   'CloudsCard.svelte': cloudsDef,
   'CofefveCard.svelte': cofefveDelayDef,
   'DelayCard.svelte': delayDef,
@@ -181,6 +210,7 @@ const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }
 const MAPPING_BOUND_CARDS: readonly string[] = [
   'AdsrCard.svelte',
   'ChromaconsoleCard.svelte',
+  'CubeCard.svelte',
   'CloudsCard.svelte',
   'CofefveCard.svelte',
   'DelayCard.svelte',

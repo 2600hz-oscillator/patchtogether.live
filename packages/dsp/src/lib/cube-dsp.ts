@@ -62,8 +62,15 @@ export const HARD_THRESHOLD = 0.5;
  *  the L (−) and R (+) channels — so the deterministic ART `.f32` baselines
  *  (which pin their own explicit depthOffsets) are unaffected. Shared by the
  *  worklet (fallback path) and the web factory (production off-thread path) so
- *  both agree on the spread amount. ±0.18 is clearly audible yet stays well
- *  inside the unit cube's ±0.866 half-diagonal march extent. */
+ *  both agree on the spread amount. ±0.18 stays well inside the unit cube's
+ *  ±0.866 half-diagonal march extent.
+ *
+ *  ⚠ THIS CONSTANT USED TO CLAIM "±0.18 is clearly audible". MEASURED, IT IS
+ *  NOT: at SPREAD 1 the side/mid ratio is −36.2 dB and corr(L, R) is 0.999979.
+ *  The offset is real and the separate L/R ports do preserve it, but the image
+ *  is narrow — a widener, not a stereo field. Stated here because the number
+ *  was ALSO re-typed as "±5 %" into five doc strings while the constant read
+ *  0.18, so this line is the one place both facts can be true at once. */
 export const CUBE_SPREAD_DEPTH = 0.18;
 
 /** Depth offset for the L (sign −1) / R (sign +1) channel given a spread knob in
@@ -428,8 +435,15 @@ export function crush(value: number, k: number): number {
 /**
  * Spatial grid steps for SPACE CRUSH amount k ∈ [0,1], INDEPENDENT of CRUSH.
  *   k = 0 → 256 (transparent); k = 1 → 6 (chunky voxels). Linear, rounded.
- * Distinct range from crushGridSteps (256→4) so the two crushers read
- * differently when stacked. SPACE CRUSH voxelizes the (x,y,z) LOOKUP coords —
+ *
+ * ⚠ THE OLD CLAIM HERE — "distinct range from crushGridSteps (256→4) so the two
+ * crushers read differently when stacked" — IS ESSENTIALLY FALSE and is kept as
+ * a correction rather than deleted, because the endpoints look distinct while
+ * the grids are not. Measured side by side (crush / space-crush): 256/256 at
+ * k=0, 193/194, 130/131, 67/69, 29/31 — within one or two cells over the whole
+ * travel, diverging only at the very stop (4 vs 6). What genuinely differs is
+ * WHAT each one quantises, which is the next sentence and was always the real
+ * distinction. SPACE CRUSH voxelizes the (x,y,z) LOOKUP coords —
  * coarsening the volumetric data the slice intersects — whereas CRUSH also
  * quantizes the output amplitude.
  */

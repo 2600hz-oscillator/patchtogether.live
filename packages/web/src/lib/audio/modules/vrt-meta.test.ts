@@ -445,7 +445,9 @@ describe('vrt-meta — EXEMPT_FROM_VRT is DENY-BY-DEFAULT (frozen allowlist)', (
 // ruling — failed experiment, deleted wholesale). Its darwin baseline went
 // with it, so this is a pair CLOSED BY DELETION, not by capture. Number read
 // off the ratchet's own report, not decremented by hand.
-const SHARED_LINUX_PAIR_CEILING = 90;
+// 90 → 89 (2026-08-10, the cube face): `linux/cube` drained. Read off the
+// ratchet's own report, not decremented by hand.
+const SHARED_LINUX_PAIR_CEILING = 89;
 
 describe('vrt-meta — EXEMPT_BASELINE_PAIRS size RATCHET (only shrinks)', () => {
   // ⚠ 2026-08-01 — READ THIS BEFORE TRUSTING THE NUMBER BELOW.
@@ -763,6 +765,20 @@ describe('vrt-meta — EXEMPT_BASELINE_PAIRS size RATCHET (only shrinks)', () =>
 // together with the module and its `linux/hypercube` pair, so the ARTIFACT-side
 // ground truth (a darwin PNG with no linux sibling) loses exactly one gap. Read
 // off the ratchet's own report — it printed 147 — rather than decremented.
+// CUBE FACE (2026-08-10): 147 → 146, and the arithmetic is worth spelling out
+// because THREE movements land in this one PR and no two of them cancel:
+//   +2  the face adds `face-cube-{compact,dock}` as darwin PNGs;
+//   −2  the `vrt-update.yml -f platform=linux` dispatch on this branch commits
+//       their linux siblings;
+//   −1  `linux/cube` is DRAINED from EXEMPT_BASELINE_PAIRS and the same
+//       dispatch captures `linux/cube.png`, closing a gap that has been open
+//       since the module's first slice.
+// Net −1. ⚠ Between the push and the bot's commit this reads 149 with 2
+// UNDECLARED (`face-cube-*`) — red BY DESIGN, the interval CLAUDE.md calls "a
+// drain without its re-capture". Do NOT raise this number and do NOT re-add
+// the drained pair to green it: a listed pair is skipped unconditionally, so
+// re-adding it is the deadlock that makes the capture impossible.
+// COUNT WHAT THE BOT COMMITS: THREE linux PNGs.
 // FACE BATCH 4 · clouds (2026-08-10): UNCHANGED at 147, the artifact-anchored
 // shape again. The face commits two new DARWIN PNGs (`face-clouds-{compact,
 // dock}`) and the `vrt-update.yml -f platform=linux` dispatch on this branch
@@ -781,7 +797,15 @@ describe('vrt-meta — EXEMPT_BASELINE_PAIRS size RATCHET (only shrinks)', () =>
 // baselines in #1425 — and CloudsCard's conversion binds range/curve/units
 // props to values byte-identical to the literals they replace. Count what the
 // bot commits against that two.
-const LINUX_DEFICIT_CEILING = 147;
+// ⚠ MERGED (cube face <- clouds face, 2026-08-10). BOTH histories above are
+// true and neither literal is: clouds nets 0 against main and cube nets -1, so
+// two branches wrote different numbers from the same base of 147 and git had no
+// way to combine them. The value below is READ OFF THE RATCHET'S OWN REPORT on
+// the merged tree, which is the only thing that can know the union: it printed
+// "146 real gap(s)" with ZERO undeclared, so 146 it is. That happens to equal
+// cube's literal — but it was DERIVED, not chosen, and clouds' 147 would have
+// left one scene of slack for the next regression to hide in.
+const LINUX_DEFICIT_CEILING = 146;
 
 describe('vrt-meta — LINUX-baseline DEFICIT RATCHET (all four mechanisms)', () => {
   // THE HONESTY GATE. CI renders on LINUX. A scene captured on darwin but
