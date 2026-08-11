@@ -136,29 +136,84 @@ describe('rings-body — the model name the MODEL control cannot say', () => {
 // ── `rings-partial2-hz` — WHERE THE SECOND RESONANCE IS ──────────────────────
 
 describe('rings-partial2-hz — a quantity that CHANGES IDENTITY with the model', () => {
+  // ── the peak-find, sized against the assertion it serves ──────────────────
+  //
+  // ⚠ THIS PROBE WAS 22x MORE EXPENSIVE THAN THE CLAIM IT CHECKS, and it cost a
+  // red CI run to notice (vitest's default 5000 ms budget; the leg measured
+  // 3.4-3.8 s LOCALLY, i.e. already 70 % of the budget before CI's ~2.5x
+  // unit-lane factor and a saturated runner pool). It was 400 scan points over
+  // a 91 200-sample tail, five times over — 182 M iterations at three
+  // transcendental calls each. Both halves were over-specified, and the fix is
+  // to size each against what is actually being asserted rather than to raise
+  // the budget:
+  //
+  //   SCAN STEP  the assertion is "within 25 cents". The old step was 0.0005
+  //              RELATIVE = 0.87 cents, ~29x finer than the tolerance. 5 cents
+  //              is ample and turns 400 points into 69.
+  //   WINDOW     the peak's width is set by the DECAY, not by the window: at
+  //              damping 0.5 the T60 is ~400 ms, so tau is 57.9 ms and the
+  //              intrinsic width is 1/(pi*tau) = 5.50 Hz = 16.1 cents at
+  //              588.66 Hz. Analysing 1.9 s of a tail that is gone by ~0.4 s
+  //              buys no resolution and pays three trig calls per zero sample.
+  //              24 000 samples (0.5 s) covers the ring.
+  //
+  // Measured: 182 M iterations -> 8.3 M. The NEGATIVE CONTROL below is what
+  // makes the cheaper probe safe — a shorter window WIDENS the measured peak,
+  // so the discrimination has to be demonstrated rather than assumed.
+  const SCAN_CENTS = 170;
+  const SCAN_STEP_CENTS = 5;
+  const ANALYSIS_SAMPLES = 24_000;
+  const TOLERANCE_CENTS = 25;
+
+  /** The EVEN tap's spectral peak nearest `aroundHz`, in cents from it. */
+  function peakCentsFrom(structure: number, aroundHz: number): number {
+    const exciter = burst(SR, 4800);
+    // Render only what is analysed: 4800 exciter + the analysis window.
+    const n = 4800 + ANALYSIS_SAMPLES;
+    const { even } = ringsMath.render(n, SR, 0, { ...baseParams, structure }, exciter);
+    const tail = even.slice(4800);
+    let bestCents = 0;
+    let bestDb = -Infinity;
+    for (let c = -SCAN_CENTS; c <= SCAN_CENTS; c += SCAN_STEP_CENTS) {
+      const d = goertzelDb(tail, aroundHz * Math.pow(2, c / 1200));
+      if (d > bestDb) { bestDb = d; bestCents = c; }
+    }
+    return bestCents;
+  }
+
   it('ORACLE (MODAL) — partial 2 lands where the shipping bank puts it', () => {
     // Pin the closed form to the REAL DSP by peak-finding partial 2 on the EVEN
     // tap (§1: EVEN is where the even-numbered harmonics live) across the whole
     // STRUCTURE travel.
+    //
+    // ⚠ The scan is CENTRED ON THE PREDICTION and spans +-170 cents ON PURPOSE:
+    // a WIDE scan at structure 0 can be won by h4, which is the instrument
+    // artifact the source spec reported as a finding (and which does not
+    // reproduce — measured, EVEN's h2 beats its h4 by 1.7 dB).
     for (const structure of [0, 0.25, 0.5, 0.75, 1.0]) {
-      const exciter = burst(SR * 2, 4800);
-      const { even } = ringsMath.render(SR * 2, SR, 0, { ...baseParams, structure }, exciter);
-      const tail = even.slice(SR / 10);
       const predicted = ringsSecondPartialHz(P({ structure }));
+      const cents = Math.abs(peakCentsFrom(structure, predicted));
+      expect(cents, `structure ${structure}: predicted ${predicted.toFixed(2)} Hz, peak ${cents} cents off`)
+        .toBeLessThan(TOLERANCE_CENTS);
+    }
+  });
 
-      // Scan a tight window around the prediction and require the true peak to
-      // sit on it. ⚠ The window is tight ON PURPOSE: a WIDE scan at structure 0
-      // can be won by h4, which is the instrument artifact the source spec
-      // reported as a finding.
-      let bestHz = 0, bestDb = -Infinity;
-      for (let hz = predicted * 0.9; hz <= predicted * 1.1; hz += predicted * 0.0005) {
-        const d = goertzelDb(tail, hz);
-        if (d > bestDb) { bestDb = d; bestHz = hz; }
-      }
-      // within a quarter-tone of the prediction
-      const cents = Math.abs(1200 * Math.log2(bestHz / predicted));
-      expect(cents, `structure ${structure}: predicted ${predicted.toFixed(2)} Hz, found ${bestHz.toFixed(2)} Hz`)
-        .toBeLessThan(25);
+  it('NEGATIVE CONTROL — the cheapened peak-find still REJECTS a wrong prediction', () => {
+    // ⚠ WITHOUT THIS THE OPTIMISATION ABOVE IS UNSAFE, and the old expensive
+    // version had no equivalent: it only ever checked that the peak sat ON the
+    // prediction, never that a wrong prediction would be caught. A shorter
+    // analysis window widens the measured peak, so "within 25 cents" could
+    // quietly become a claim that passes for any nearby frequency.
+    //
+    // Offset the prediction by 80 cents — comfortably inside the scan span, so
+    // the probe CAN still see the true peak — and require it to be found far
+    // from the wrong centre.
+    const OFFSET_CENTS = 80;
+    for (const structure of [0, 0.5, 1.0]) {
+      const wrong = ringsSecondPartialHz(P({ structure })) * Math.pow(2, OFFSET_CENTS / 1200);
+      const cents = Math.abs(peakCentsFrom(structure, wrong));
+      expect(cents, `structure ${structure}: an ${OFFSET_CENTS}-cent-wrong prediction must NOT pass`)
+        .toBeGreaterThan(TOLERANCE_CENTS);
     }
   });
 
