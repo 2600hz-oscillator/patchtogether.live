@@ -27,7 +27,6 @@ import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch, ensureCombineOpen } from '../tests/_helpers';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
 
-
 // The four bundled content ids + the layer `kind` each maps to (GEN → 'gen',
 // FX → 'shader'). Frozen iTime is fixed per id so the captured frame is
 // reproducible; different times per shader keep the baselines visually

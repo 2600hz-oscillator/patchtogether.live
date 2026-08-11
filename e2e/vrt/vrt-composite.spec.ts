@@ -31,7 +31,6 @@ import { COMPOSITE_VRT_SCENES } from './vrt-composite-scenes';
 import { expectVrtSceneScreenshot } from './vrt-capture';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
 
-
 test.describe.configure({ mode: 'default' });
 
 test.describe('VRT: composite-state scenes', () => {

@@ -16,7 +16,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
 
-
 async function hideJitterers(page: Page): Promise<void> {
   await page.addStyleTag({
     content: `

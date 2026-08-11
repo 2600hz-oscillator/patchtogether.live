@@ -31,7 +31,6 @@ import type { Page } from '@playwright/test';
 import { spawnPatch, type SpawnNode, type SpawnEdge } from '../tests/_helpers';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
 
-
 interface ScopeCase {
   name: string;
   nodes: SpawnNode[];

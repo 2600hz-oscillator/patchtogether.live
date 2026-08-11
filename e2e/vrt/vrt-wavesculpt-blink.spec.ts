@@ -28,7 +28,6 @@ import { spawnPatch } from '../tests/_helpers';
 import { expectVrtSceneScreenshot } from './vrt-capture';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
 
-
 interface BlinkCase {
   name: string;
   blinkMode: number;

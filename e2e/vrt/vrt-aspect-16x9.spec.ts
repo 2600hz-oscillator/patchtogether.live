@@ -23,7 +23,6 @@ import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from '../tests/_helpers';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
 
-
 // A fixed-param SHAPES (a centered triangle) — a static, time-independent
 // procedural fill, so the blit is pixel-stable.
 const SHAPES_PARAMS = { shape: 2, tile: 0, rotate: 0, zoom: 2.2 };

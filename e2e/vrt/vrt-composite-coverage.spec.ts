@@ -29,7 +29,6 @@ import { pinVrtFonts, awaitVrtFonts } from './_fonts';
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from '../tests/_helpers';
 
-
 // Every composite pair lands on SCOPE.ch1 as the consumer — its analyser-
 // driven canvas renders the bridged signal as a visible trace excursion
 // (CV: steady DC offset; gate held HIGH: solid line at top). DRUMMERGIRL +

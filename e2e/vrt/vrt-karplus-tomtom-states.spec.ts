@@ -29,7 +29,6 @@ import { test, expect } from '@playwright/test';
 import { spawnPatch } from '../tests/_helpers';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
 
-
 test.describe.configure({ mode: 'default' });
 
 interface StateScene {

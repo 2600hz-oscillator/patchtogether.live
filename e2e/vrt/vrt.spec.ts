@@ -38,7 +38,6 @@ import { applyVrtScene, VRT_SCENES } from './vrt-scenes';
 import { expectVrtSceneScreenshot } from './vrt-capture';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
 
-
 // `VRT_STRICT=1` filters the suite down to the deterministic, pure-DOM
 // knob/fader cards listed in STRICT_VRT_MODULES. Used by `task vrt:strict`
 // (the gate inside `task ci`) so a fast deterministic VRT pass can block
