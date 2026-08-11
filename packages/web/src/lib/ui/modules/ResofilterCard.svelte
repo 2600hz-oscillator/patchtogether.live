@@ -26,14 +26,46 @@
     type ResofilterMode,
   } from '$lib/audio/modules/resofilter';
   import type { ModuleNode } from '$lib/graph/types';
-  import { cardParams, portsFromDef } from './card-kit';
+  import { cardParams, paramSpec, portsFromDef } from './card-kit';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
   const { set, live } = cardParams(resofilterDef, () => id, () => node);
 
-  const defaultFor = (pid: string): number =>
-    resofilterDef.params.find((p) => p.id === pid)!.defaultValue;
+  // ⚠ THE RANGES COME FROM THE DEF, ONCE. Every `min`/`max`/`defaultValue`
+  // below used to be re-typed here — 0 and 1 four times over, plus the cutoff
+  // pair reached for through an inline `.find()` — which is the backdraft
+  // divergence class in its latent form: a card whose control writes values its
+  // own def forbids is invisible to `contract-lock`, to `module-docs-lint` and
+  // to every range assertion in the repo, because all of them read the DEF.
+  // Enrolled in RANGE_BOUND_CARDS *and* MAPPING_BOUND_CARDS so a re-typed
+  // literal is a source-level failure rather than a thing someone notices.
+  //
+  // ⚠ ONE OF THE FOUR BOUND CURVES BELOW CHANGES NOTHING THAT RENDERS, AND
+  // SAYING SO IS THE POINT. MODE used to hand-type a linear curve where the def
+  // declares `discrete`; it now passes the def's own value, which makes the
+  // card and the def agree — but `Knob.svelte` branches on `log` and `exp`
+  // only, so `discrete` falls straight through to the linear mapping and not a
+  // pixel moves. This is CLAUDE.md's "before fixing a declaration to satisfy a
+  // gate, check the consumer reads it": the binding removes a SECOND COPY of a
+  // def field, which is real, and it does NOT make MODE a detented control,
+  // which would need the primitive to change.
+  //
+  // (The literal is spelled out in prose rather than quoted because
+  // `card-range-source`'s LITERAL_MAPPING grep is LINE-BASED and does not skip
+  // comments — a quoted example in a comment reddens it. That is the safe
+  // direction for a source grep to be wrong in, so it is recorded here rather
+  // than worked around in the gate.)
+  //
+  // The honest repair for that is the five-state Segmented the def now declares
+  // `options` for — which is what the DOCK FACEPLATE renders. It is not done
+  // here because it moves this card's pixels: #1213 measured 865 px for exactly
+  // this swap on `filter`, which is UNDER `DOCK_MAX_DIFF` and therefore both
+  // invisible to the VRT gate and unrepinnable by `--update-snapshots`. It
+  // wants its own PR, an owner preview, and a `git rm` of the baseline first.
+  const P = (pid: string) => paramSpec(resofilterDef, pid);
+
+  const defaultFor = (pid: string): number => P(pid).defaultValue;
 
   function paramVal(k: string): number {
     const v = node?.params?.[k];
@@ -66,12 +98,12 @@
       <div class="knobs">
         <Knob
           value={paramVal('cutoff')}
-          min={resofilterDef.params.find((p) => p.id === 'cutoff')!.min}
-          max={resofilterDef.params.find((p) => p.id === 'cutoff')!.max}
+          min={P('cutoff').min}
+          max={P('cutoff').max}
           defaultValue={defaultFor('cutoff')}
           label="Cutoff"
-          units="Hz"
-          curve="log"
+          units={P('cutoff').units}
+          curve={P('cutoff').curve}
           onchange={set('cutoff')}
           moduleId={id}
           paramId="cutoff"
@@ -79,11 +111,11 @@
         />
         <Knob
           value={paramVal('resonance')}
-          min={0}
-          max={1}
+          min={P('resonance').min}
+          max={P('resonance').max}
           defaultValue={defaultFor('resonance')}
           label="Reso"
-          curve="linear"
+          curve={P('resonance').curve}
           onchange={set('resonance')}
           moduleId={id}
           paramId="resonance"
@@ -92,11 +124,11 @@
         <div class="mode-group" data-testid="resofilter-mode-group">
           <Knob
             value={paramVal('mode')}
-            min={0}
-            max={RESOFILTER_MAX_MODE}
+            min={P('mode').min}
+            max={P('mode').max}
             defaultValue={defaultFor('mode')}
             label="Mode"
-            curve="linear"
+            curve={P('mode').curve}
             onchange={set('mode')}
             moduleId={id}
             paramId="mode"
@@ -106,11 +138,11 @@
         </div>
         <Knob
           value={paramVal('mix')}
-          min={0}
-          max={1}
+          min={P('mix').min}
+          max={P('mix').max}
           defaultValue={defaultFor('mix')}
           label="Mix"
-          curve="linear"
+          curve={P('mix').curve}
           onchange={set('mix')}
           moduleId={id}
           paramId="mix"

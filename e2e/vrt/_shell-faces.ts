@@ -243,6 +243,42 @@ export const FACES = [
   // deliberate linux-only state into exactly the undeclared gap it avoids.
   // `git status` for untracked PNGs after every VRT run until the pair exists.
   { type: 'cofefve', pages: 6 },
+  // FACE BATCH 4 — the clean multi-mode filter. FOUR params and no declared
+  // `pages`, so the dock renders the single page-less `__all` band; the hero
+  // promotes CUTOFF out of it and the remaining three (RESO, MODE, MIX) keep it
+  // alive, so unlike `noise` it does NOT empty to zero.
+  //
+  // ⚠ ITS SIDEBAR PICTURE IS PARAM-DERIVED, NOT AN ANALYSER TRACE, which is
+  // what makes this tile deterministic. Every point of the response curve is a
+  // pure function of the four durable params through the SVF's own transfer
+  // function (`resofilter-face-model`) — no engine read, no rAF, no
+  // `AudioContext.currentTime` — so it is identical on a running graph, a
+  // frozen graph and an empty rack. Like cofefve and clouds, this scene is NOT
+  // a witness for #1420's freeze.
+  //
+  // The `scope` glyph on the COMPACT tile IS a live analyser trace, and it is
+  // flat for the ordinary insert reason: nothing patched in, so both outputs
+  // are exactly 0.000e+0 (measured, all five modes, including at resonance
+  // 0.999 where the filter is a hair from self-oscillating — a linear SVF with
+  // no input has nothing to ring).
+  //
+  // ⚠ THE DOCK TILE FRAMES A FIVE-BUTTON SEGMENTED ROW WITH THREE OF ITS FIVE
+  // CAPTIONS ELLIPSIZED, AND THE BASELINE IS SUPPOSED TO SHOW THAT. MODE
+  // declares `options` for the first time in this PR; `.seg` is `flex: 1 1 0%`,
+  // so the 182.5 px cell splits into 31 px buttons = 15.0 px of content box,
+  // and the captions lay out at LP 14.13 · HP 16.02 · BP 15.11 · NT 15.72 px.
+  // HP, NT and AP therefore paint as `H…`, `N…`, `A…` — the same state the
+  // SHIPPED `filter` dock has been in since #1430 (`LP · H… · B…`), so this
+  // scene pins the platform's behaviour rather than a regression.
+  //
+  // ⚠ IF A FUTURE DIFF SHOWS THOSE THREE CAPTIONS SUDDENLY COMPLETE, that is
+  // the `.seg { flex: 1 1 auto }` fix landing (it is worth ~1 px per button,
+  // which is all this needs) — ACCEPT it, and expect the sibling Segmented
+  // modules to move in the same run. No DOM gate can tell you: `scrollWidth`,
+  // `measureText` (which drops `letter-spacing`) and `faces-parity`'s
+  // `textContent` read all five as clean today. This baseline is the only
+  // surface in the repo that can see it.
+  { type: 'resofilter', pages: 1 },
 ] as const;
 
 /** TIGHT per-scene diff budgets (absolute pixels; Playwright takes the MIN of

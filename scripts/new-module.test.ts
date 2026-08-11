@@ -52,9 +52,24 @@ const REGISTRY_FILES = [
   'packages/web/src/lib/ui/modules-card-map.test.ts',
 ] as const;
 
-/** Read by loadCloneShape('resofilter') — a real def, so the clone assertions
- *  keep testing the real port shape rather than a hand-written stand-in. */
-const CLONE_SOURCE_FILES = ['packages/web/src/lib/audio/modules/resofilter.ts'] as const;
+/**
+ * Read by loadCloneShape('resofilter') — a real def, so the clone assertions
+ * keep testing the real port shape rather than a hand-written stand-in.
+ *
+ * ⚠ THE SECOND FILE IS NOT INCIDENTAL. `resofilter` declares
+ * `params: RESOFILTER_PARAMS`, importing them from a shared def-free module
+ * (the `ringback-crush-model` rule: the ranges live in ONE place the def, the
+ * card and the face model all read). So `--from resofilter` has to FOLLOW that
+ * identifier across a file boundary, and this fixture has to contain the file
+ * it lands in — otherwise the sandbox is testing a resolution that cannot
+ * succeed, which is a green scaffolder over a broken clone. Adding the
+ * identifier-following branch to `findArrayField` and this line to the fixture
+ * are two halves of one change.
+ */
+const CLONE_SOURCE_FILES = [
+  'packages/web/src/lib/audio/modules/resofilter.ts',
+  'packages/web/src/lib/audio/resofilter-params.ts',
+] as const;
 
 /** Directories the scaffolder writes new files into (and loadCloneShape scans). */
 const FIXTURE_DIRS = [

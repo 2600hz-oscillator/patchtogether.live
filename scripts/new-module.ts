@@ -329,17 +329,82 @@ function sliceMatchedBrackets(src: string, openIdx: number, open: string, close:
   throw new Error(`unmatched '${open}' starting at ${openIdx}`);
 }
 
-/** Find the body of a top-level array field `field: [ … ]` inside the def
- *  object literal. Returns null if not found. */
-function findArrayField(defBody: string, field: string): string | null {
+/**
+ * Resolve an import specifier used inside `packages/web/src/lib/**` to a file
+ * path, for the identifier-following branch below. Handles the `$lib/` alias
+ * and ordinary relative paths; returns null for anything else (a package
+ * import is not something this scaffolder should be reading through).
+ */
+function resolveDefImport(spec: string, fromFile: string): string | null {
+  const withExt = (p: string): string | null => {
+    for (const cand of [p, `${p}.ts`, join(p, 'index.ts')]) {
+      if (existsSync(cand) && !cand.endsWith('/')) {
+        try {
+          if (readFileSync(cand, 'utf8')) return cand;
+        } catch { /* a directory — fall through */ }
+      }
+    }
+    return null;
+  };
+  if (spec.startsWith('$lib/')) return withExt(rp('packages/web/src/lib', spec.slice('$lib/'.length)));
+  if (spec.startsWith('.')) return withExt(resolvePath(dirname(fromFile), spec));
+  return null;
+}
+
+/**
+ * Find the body of a top-level array field `field: [ … ]` inside the def
+ * object literal. Returns null if not found.
+ *
+ * ⚠ IT ALSO FOLLOWS AN IDENTIFIER, and that is not a nicety. A def is allowed
+ * to compose its surface from a shared module — the `ringback-crush-model`
+ * rule, "the ranges live in ONE place the def AND the card import" — and
+ * `resofilter` does exactly that (`params: RESOFILTER_PARAMS`, because a face
+ * MODEL that an e2e spec must import cannot import a def: the def's Vite `?url`
+ * worklet import kills the whole spec file under Playwright's Node loader).
+ * Before this branch existed, adopting that pattern silently broke
+ * `--from <thatModule>`, which is how `scripts/new-module.test.ts` found it —
+ * the test clones the REAL resofilter def precisely so the scaffolder is held
+ * to what modules actually look like rather than to a stand-in.
+ */
+function findArrayField(defBody: string, field: string, srcFile?: string, fullSrc?: string): string | null {
   // Match `<field>:` followed by optional whitespace then `[`. Tolerates
   // `readonly` modifiers, multi-line layout, and trailing commas.
   const re = new RegExp(`\\b${field}\\s*:\\s*\\[`);
   const m = defBody.match(re);
-  if (!m || m.index === undefined) return null;
-  const openIdx = defBody.indexOf('[', m.index);
-  if (openIdx === -1) return null;
-  return sliceMatchedBrackets(defBody, openIdx, '[', ']').body.trim();
+  if (m && m.index !== undefined) {
+    const openIdx = defBody.indexOf('[', m.index);
+    if (openIdx !== -1) return sliceMatchedBrackets(defBody, openIdx, '[', ']').body.trim();
+  }
+  if (!srcFile || !fullSrc) return null;
+
+  // `<field>: IDENT,` — follow it to its `export const IDENT … = [ … ]`, in
+  // this file or in whichever module this file imports IDENT from.
+  const refRe = new RegExp(`\\b${field}\\s*:\\s*([A-Za-z_$][\\w$]*)\\s*[,}]`);
+  const ref = defBody.match(refRe)?.[1];
+  if (!ref) return null;
+
+  const arrayIn = (text: string): string | null => {
+    const dre = new RegExp(`\\b(?:export\\s+)?const\\s+${ref}\\b[^=]*=\\s*\\[`);
+    const dm = text.match(dre);
+    if (!dm || dm.index === undefined) return null;
+    // ⚠ THE OPENING BRACKET IS THE LAST CHARACTER OF THE MATCH, not the first
+    // `[` after it. A TYPE ANNOTATION gets there first: `export const X:
+    // readonly ParamDef[] = [ … ]` has its earliest `[` inside `ParamDef[]`, so
+    // an `indexOf('[', dm.index)` slices `ParamDef[` … `]` and returns an EMPTY
+    // body — a null-shaped failure that reads as "this module declares no
+    // params" rather than as a parse bug.
+    const open = dm.index + dm[0].length - 1;
+    return sliceMatchedBrackets(text, open, '[', ']').body.trim() || null;
+  };
+
+  const here = arrayIn(fullSrc);
+  if (here) return here;
+
+  const importRe = new RegExp(`import\\s*{[^}]*\\b${ref}\\b[^}]*}\\s*from\\s*['"]([^'"]+)['"]`);
+  const spec = fullSrc.match(importRe)?.[1];
+  if (!spec) return null;
+  const target = resolveDefImport(spec, srcFile);
+  return target ? arrayIn(readFileSync(target, 'utf8')) : null;
 }
 
 /** Best-effort clone of an existing module's port + param shape. Aborts
@@ -365,7 +430,7 @@ function loadCloneShape(fromType: string): ClonedShape {
     for (const fname of fileGuesses) {
       const fp = join(dir, fname);
       if (existsSync(fp)) {
-        const cloned = tryExtractShape(readFileSync(fp, 'utf8'), fromType, domain);
+        const cloned = tryExtractShape(readFileSync(fp, 'utf8'), fromType, domain, fp);
         if (cloned) return cloned;
       }
     }
@@ -378,7 +443,7 @@ function loadCloneShape(fromType: string): ClonedShape {
         const src = readFileSync(fp, 'utf8');
         const typeRe = new RegExp(`type\\s*:\\s*['\"]${fromType}['\"]`);
         if (typeRe.test(src)) {
-          const cloned = tryExtractShape(src, fromType, domain);
+          const cloned = tryExtractShape(src, fromType, domain, fp);
           if (cloned) return cloned;
         }
       }
@@ -387,7 +452,7 @@ function loadCloneShape(fromType: string): ClonedShape {
   throw new Error(`--from: could not find an existing module with type '${fromType}'`);
 }
 
-function tryExtractShape(src: string, fromType: string, domain: Domain): ClonedShape | null {
+function tryExtractShape(src: string, fromType: string, domain: Domain, srcFile?: string): ClonedShape | null {
   // Locate the `export const <name>Def: <DomainModuleDef> = {` opening,
   // then slice to the matching `};`. Tolerant of TS type-annotation /
   // `satisfies` / multi-line declarations.
@@ -401,9 +466,9 @@ function tryExtractShape(src: string, fromType: string, domain: Domain): ClonedS
     const typeRe = new RegExp(`type\\s*:\\s*['\"]${fromType}['\"]`);
     if (!typeRe.test(body)) continue;
 
-    const inputsBody = findArrayField(body, 'inputs');
-    const outputsBody = findArrayField(body, 'outputs');
-    const paramsBody = findArrayField(body, 'params');
+    const inputsBody = findArrayField(body, 'inputs', srcFile, src);
+    const outputsBody = findArrayField(body, 'outputs', srcFile, src);
+    const paramsBody = findArrayField(body, 'params', srcFile, src);
     if (inputsBody === null || outputsBody === null || paramsBody === null) {
       throw new Error(
         `--from ${fromType}: shape uses computed inputs/outputs/params ` +
