@@ -146,7 +146,7 @@ test.describe('TV LIBRARIAN — tuned-stream audio reaches the destination @vide
     test.setTimeout(60_000);
 
     await installMocks(page);
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy');
     await page.waitForLoadState('networkidle');
 
     // TV LIBRARIAN → AUDIO OUT (the audibility probe) + a SCOPE (the weak probe,

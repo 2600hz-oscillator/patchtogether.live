@@ -57,7 +57,7 @@ test.describe('SAMSLOOP memory bench (gated, manual)', () => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
 
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy');
     // networkidle hangs intermittently on dev server (Vite HMR ws keepalive).
     await page.waitForLoadState('domcontentloaded');
     await page.waitForFunction(

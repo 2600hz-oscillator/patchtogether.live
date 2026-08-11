@@ -116,7 +116,7 @@ function delta(a: Counters, b: Counters): Counters {
 }
 
 async function bootAndCapture(page: Page): Promise<unknown> {
-  await page.goto('/rack');
+  await page.goto('/rack?shell=legacy');
   await page.waitForLoadState('domcontentloaded');
   await page.waitForFunction(
     () => typeof (globalThis as unknown as { __ensureEngine?: unknown }).__ensureEngine === 'function',

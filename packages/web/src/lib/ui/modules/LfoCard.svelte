@@ -1,5 +1,5 @@
 <script lang="ts">
-  // The LEGACY (dawless `/rack`) LFO card. The curated RACKLINE face lives on
+  // The LEGACY (`?shell=legacy`) LFO card. The curated RACKLINE face lives on
   // the def (`lfoDef.face`) and is rendered by ModuleShell; this card is the
   // pre-shell surface and stays until the workflow shell is the only route.
   //

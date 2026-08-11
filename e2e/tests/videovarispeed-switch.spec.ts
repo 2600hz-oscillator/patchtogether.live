@@ -264,7 +264,7 @@ test.describe('VIDEOVARISPEED 7-slot switch path (multi-slot stall regression)',
       if (t.includes('[videovarispeed] createMediaElementSource failed')) keepAliveWarnings.push(t);
     });
 
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy');
     await page.waitForLoadState('networkidle');
 
     // Patch: VIDEOVARISPEED → VIDEO-OUT, alongside a clip player (the realistic

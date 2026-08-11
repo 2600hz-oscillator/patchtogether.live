@@ -54,7 +54,7 @@ async function bootCanvas(page: Page): Promise<void> {
   // this the captured text metrics differ run-to-run and platform-to-platform.
   // Full root cause: e2e/vrt/_fonts.ts.
   await pinVrtFonts(page);
-  await page.goto('/rack');
+  await page.goto('/rack?shell=legacy');
   await page.waitForLoadState('networkidle');
   await awaitVrtFonts(page);
   await hideJitterers(page);

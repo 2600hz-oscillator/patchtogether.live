@@ -53,7 +53,7 @@ async function clippedIn(page: Page, testid: string): Promise<string[]> {
 test('clouds faceplate: the band LABEL carrying the two-second fact is not clipped', async ({
   page,
 }) => {
-  await page.goto('/rack?mode=workflow&shell=1');
+  await page.goto('/rack?shell=legacy');
   await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: 30_000 });
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
   await spawnPatch(page, [{ id: 'cl', type: 'clouds', position: { x: 120, y: 120 } }]);
@@ -103,7 +103,7 @@ test('clouds faceplate: the band LABEL carrying the two-second fact is not clipp
 });
 
 test('clouds faceplate: no ring-axis caption is clipped, in EITHER label mode', async ({ page }) => {
-  await page.goto('/rack?mode=workflow&shell=1');
+  await page.goto('/rack?shell=legacy');
   await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: 30_000 });
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
   await spawnPatch(page, [{ id: 'cl', type: 'clouds', position: { x: 120, y: 120 } }]);

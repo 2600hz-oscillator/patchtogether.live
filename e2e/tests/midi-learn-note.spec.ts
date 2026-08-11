@@ -84,7 +84,7 @@ async function injectNote(page: Page, channel: number, note: number, velocity: n
 }
 
 async function bootDrumseqz(page: Page): Promise<void> {
-  await page.goto('/rack');
+  await page.goto('/rack?shell=legacy');
   await page.waitForLoadState('networkidle');
   await page.evaluate(() => window.localStorage.removeItem('pt.midi-bindings.v1'));
   await spawnPatch(
@@ -101,7 +101,7 @@ test('MIDI assign: a gate INPUT row binds a NOTE (binding materializes + bound s
 
   // ADSR has a top-level (auto-grouped) `gate` input — its row is directly
   // hittable once the patch panel opens (no nested sections to expand).
-  await page.goto('/rack');
+  await page.goto('/rack?shell=legacy');
   await page.waitForLoadState('networkidle');
   await page.evaluate(() => window.localStorage.removeItem('pt.midi-bindings.v1'));
   await spawnPatch(

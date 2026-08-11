@@ -69,7 +69,7 @@ test.describe('VIDEOCUBE — joystick axis assign buttons (MIDI / Surface / Elec
   });
 
   test('slice-ROT X/Y assign buttons open the shared menu + bind the correct axis param + drive it', async ({ page }) => {
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, [
       { id: 'vc', type: 'videocube', position: { x: 40, y: 40 }, domain: 'video' },

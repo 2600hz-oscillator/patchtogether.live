@@ -89,7 +89,7 @@ test.describe('TOYBOX presets (Phase 6)', () => {
     // page.goto below.
     await installRenderSmokeHooks(page);
 
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy');
     await page.waitForLoadState('networkidle');
     await spawnPatch(
       page,

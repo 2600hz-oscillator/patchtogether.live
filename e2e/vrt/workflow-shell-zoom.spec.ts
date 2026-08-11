@@ -79,7 +79,7 @@ test.describe('VRT: ?shell=1 rack holds position vs the lane grid at fixed zooms
       page.on('pageerror', (e) => errors.push(e.message));
 
       await pinVrtFonts(page);
-      await page.goto('/rack?mode=workflow&shell=1');
+      await page.goto('/rack?shell=legacy');
       await page.waitForLoadState('networkidle');
       await awaitVrtFonts(page);
       await waitForHooks(page);

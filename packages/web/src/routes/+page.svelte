@@ -19,7 +19,6 @@
     resetLocalScratchId,
     type LastScratchRack,
   } from '$lib/storage/local-scratch';
-  import type { RackMode } from '$lib/graph/rack-mode';
 
   // "Return to last rack" — CLIENT-ONLY (the page stays prerendered/static; this
   // reads localStorage + IndexedDB, never auth). Hidden until hydration resolves
@@ -51,19 +50,19 @@
     blurb: string;
     external?: boolean;
     /**
-     * This tile promises a BRAND-NEW scratch rack of this mode, so it must MINT
-     * A FRESH SCRATCH ID before navigating.
+     * This tile promises a BRAND-NEW scratch rack, so it must MINT A FRESH
+     * SCRATCH ID before navigating.
      *
-     * ⚠ WHY THIS EXISTS. `/rack?mode=…` calls `getOrCreateLocalScratchId`,
-     * which returns the EXISTING id — so the plain link reopened the previous
-     * rack from its IndexedDB replica. That was correct before scratch docs
+     * ⚠ WHY THIS EXISTS. `/rack` calls `getOrCreateLocalScratchId`, which
+     * returns the EXISTING id — so the plain link reopened the previous rack
+     * from its IndexedDB replica. That was correct before scratch docs
      * persisted and became a LIE the moment "refresh doesn't lose the rack"
-     * shipped, without either tile being edited: "new workflow rack" and
-     * "Return to last rack" quietly became the same button (owner report
-     * 2026-08-07, "i don't get a fresh rack, i still get what's in local
-     * cache"). Minting here is the same primitive File → New rack already uses.
+     * shipped, without the tile being edited: "new rack" and "Return to last
+     * rack" quietly became the same button (owner report 2026-08-07, "i don't
+     * get a fresh rack, i still get what's in local cache"). Minting here is
+     * the same primitive File → New rack already uses.
      */
-    freshScratch?: RackMode;
+    freshScratch?: true;
   }
 
   /**
@@ -83,9 +82,9 @@
     href.startsWith('/rack') || href.startsWith('/r/');
 
   /**
-   * Make a "new … rack" tile actually NEW: mint a fresh scratch id for that
-   * mode, so the full-page navigation that follows binds an EMPTY doc under a
-   * new replica DB name instead of rehydrating the previous rack.
+   * Make the "new rack" tile actually NEW: mint a fresh scratch id, so the
+   * full-page navigation that follows binds an EMPTY doc under a new replica DB
+   * name instead of rehydrating the previous rack.
    *
    * We do NOT preventDefault — the <a href> still performs the navigation (and
    * still does so as a full page load via data-sveltekit-reload, which the
@@ -96,24 +95,17 @@
    * semantics the existing New-rack primitive has always had, deliberately kept
    * identical rather than inventing a second, subtly-different meaning of new.
    */
-  function startFreshScratch(mode: RackMode): void {
-    resetLocalScratchId(mode);
+  function startFreshScratch(): void {
+    resetLocalScratchId();
   }
 
   const tiles: Tile[] = [
     {
       id: 'new-rack',
-      label: 'new dawless rack',
+      label: 'new rack',
       href: '/rack',
       blurb: 'open a fresh scratch canvas — patch modules, make sound.',
-      freshScratch: 'dawless',
-    },
-    {
-      id: 'new-workflow-rack',
-      label: 'new workflow rack',
-      href: '/rack?mode=workflow',
-      blurb: 'the toolbar-driven shell — media loader, dock rails, always-on mixer/electra/clips.',
-      freshScratch: 'workflow',
+      freshScratch: true,
     },
     {
       id: 'rackspaces',
@@ -205,13 +197,10 @@
           href={lastRack.href}
           data-sveltekit-reload
           data-testid="return-to-last-rack"
-          data-rack-mode={lastRack.mode}
         >
           <span class="tile-body">
             <span class="tile-label">Return to last rack</span>
-            <span class="tile-blurb"
-              >reopen your last {lastRack.mode} session — right where you left it.</span
-            >
+            <span class="tile-blurb">reopen your last session — right where you left it.</span>
           </span>
         </a>
       </div>
@@ -224,7 +213,7 @@
         <a
           class="mod-card tile"
           href={t.href}
-          onclick={t.freshScratch ? () => startFreshScratch(t.freshScratch!) : undefined}
+          onclick={t.freshScratch ? startFreshScratch : undefined}
           data-sveltekit-reload={crossesIsolationBoundary(t.href) ? '' : undefined}
           data-testid="tile-{t.id}"
           rel={t.external ? 'noopener' : undefined}

@@ -21,7 +21,7 @@
 //
 // Setup mirrors collab.spec.ts's canonical two-context pattern — separate
 // cookie jars/localStorage/ydocs, both attached to one Hocuspocus room via
-// the dev-only __attachProvider — but on /rack?mode=workflow (the mode is
+// the dev-only __attachProvider — but on /rack?shell=legacy (the mode is
 // per-page shell chrome; the shared ydoc is mode-agnostic). Pure-sync: no
 // DATABASE_URL-gated assertions, so the spec is real (not vacuous) on the
 // dedicated collab lane AND under the local relay.
@@ -40,7 +40,7 @@ async function attachWorkflow(
   page: import('@playwright/test').Page,
   rackspaceId: string,
 ): Promise<void> {
-  await page.goto('/rack?mode=workflow');
+  await page.goto('/rack?shell=legacy');
   await expect(page.getByTestId('workflow-topbar')).toBeVisible();
   await page.waitForLoadState('networkidle');
   await page.waitForFunction(

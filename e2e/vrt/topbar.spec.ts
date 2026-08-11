@@ -59,7 +59,7 @@ test.describe('VRT: topbar heading + button layout', () => {
     await pinVrtFonts(page);
     // The overflow-fixed topbar is the CANVAS topbar (Canvas.svelte), on /rack
     // since the landing move (#995); `/` is the static landing (no rack topbar).
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy');
     await page.waitForLoadState('networkidle');
     await awaitVrtFonts(page);
 

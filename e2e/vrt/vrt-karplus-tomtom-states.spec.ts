@@ -138,7 +138,7 @@ test.describe('VRT: KARPLUS + TOM DRUM composite states', () => {
       // this the captured text metrics differ run-to-run and platform-to-platform.
       // Full root cause: e2e/vrt/_fonts.ts.
       await pinVrtFonts(page);
-      await page.goto('/rack');
+      await page.goto('/rack?shell=legacy');
       await page.waitForLoadState('networkidle');
       await awaitVrtFonts(page);
 

@@ -37,7 +37,7 @@ async function setup16x9(
   sinkCardClass: string,
 ): Promise<ReturnType<Page['locator']>> {
   await pinVrtFonts(page);
-  await page.goto('/rack');
+  await page.goto('/rack?shell=legacy');
   await page.waitForLoadState('networkidle');
   await awaitVrtFonts(page);
 

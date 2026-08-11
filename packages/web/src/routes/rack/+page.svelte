@@ -1,11 +1,9 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import { page } from '$app/state';
   import Canvas from '$lib/ui/Canvas.svelte';
-  import { normalizeRackMode } from '$lib/graph/rack-mode';
   import { ydoc, bindRackspace, unbindRackspace } from '$lib/graph/store';
   import { attachLocalReplica } from '$lib/multiplayer/local-replica';
-  import { getOrCreateLocalScratchId, recordLastScratchMode } from '$lib/storage/local-scratch';
+  import { getOrCreateLocalScratchId } from '$lib/storage/local-scratch';
 
   // `homeAuth` is derived SERVER-SIDE in +layout.server.ts (the scratch
   // canvas at `/rack` doesn't mount the client <ClerkProvider> — that would
@@ -24,21 +22,19 @@
       : null,
   );
 
-  // WORKFLOW MODE P1 — `/rack?mode=workflow` boots the scratch canvas in the
-  // workflow shell (no rackspace / no DB): a local workflow sandbox, and the
-  // seam the non-collab e2e lane uses to exercise the shell. Anything except
-  // exactly 'workflow' is the dawless scratch canvas, unchanged.
-  let mode = $derived(normalizeRackMode(page.url.searchParams.get('mode')));
-
   // SCRATCH PERSISTENCE — the scratch canvas has no rackspace id and no relay,
   // so it never attached a durable sink and a refresh threw the whole patch
-  // away. Give it a STABLE per-device id (localStorage, keyed by mode) and
-  // mirror its Y.Doc into IndexedDB via the existing local-replica machinery,
-  // so a reload rehydrates the doc in milliseconds — the warm-refresh
-  // behaviour `/r/[id]` already has, minus the relay. This stays a SEPARATE
-  // persistent local sandbox (Option A): signing in / joining a real rack does
-  // NOT migrate the scratch patch — it simply persists locally.
-  let scratchId = $derived(getOrCreateLocalScratchId(mode));
+  // away. Give it a STABLE per-device id (localStorage) and mirror its Y.Doc
+  // into IndexedDB via the existing local-replica machinery, so a reload
+  // rehydrates the doc in milliseconds — the warm-refresh behaviour `/r/[id]`
+  // already has, minus the relay. This stays a SEPARATE persistent local
+  // sandbox (Option A): signing in / joining a real rack does NOT migrate the
+  // scratch patch — it simply persists locally.
+  //
+  // `?mode=` is GONE: there is one rack shell, so there is one
+  // scratch doc. (`?shell=legacy` selects legacy CARDS inside that same shell —
+  // Canvas reads it directly from the URL; it does not fork the doc.)
+  let scratchId = $derived(getOrCreateLocalScratchId());
 
   // E2E REPLICA OPT-OUT (default OFF only under an ACTUAL automated run). The
   // general e2e / per-module-per-port suite tests MODULE CORRECTNESS on `/rack`;
@@ -97,20 +93,19 @@
   // `scratchSeeded={undefined}` (NOT false) so the ensures run immediately.
   let seeded = $state(false);
 
-  // Bind the singleton store to this device+mode scratch doc, then (when the
+  // Bind the singleton store to this device's scratch doc, then (when the
   // replica is enabled) attach it and flip `seeded` when the seed resolves.
-  // Re-runs on a scratchId change (a `?mode=` switch): idempotent rebind + a
-  // fresh replica against the mode-correct doc. Teardown detaches the replica
-  // but KEEPS the stored data. The `{#key scratchId}` wrapper below remounts
-  // Canvas whenever the id changes so its subscriptions reattach.
+  // Re-runs on a scratchId change (File → New rack mints a fresh id):
+  // idempotent rebind + a fresh replica. Teardown detaches the replica but
+  // KEEPS the stored data. The `{#key scratchId}` wrapper below remounts Canvas
+  // whenever the id changes so its subscriptions reattach.
+  //
+  // The landing's "Return to last rack" card needs no separate stamp: the
+  // persisted scratch id is minted HERE, on mount, so its mere existence is the
+  // "this device has opened a rack" signal (see local-scratch.ts).
   $effect(() => {
     const id = scratchId;
     seeded = false;
-    // Stamp this as the most-recently-opened scratch kind so the landing's
-    // "Return to last rack" card knows which mode to reopen. Cheap localStorage
-    // write; runs whether or not the IndexedDB replica is enabled (the card
-    // additionally verifies the replica DB exists).
-    recordLastScratchMode(mode);
     bindRackspace(id);
     if (!replicaEnabled) return; // ephemeral /rack (test harness, no opt-in)
     const replica = attachLocalReplica(id, ydoc);
@@ -134,7 +129,6 @@
 {#key scratchId}
   <Canvas
     {headerAuth}
-    {mode}
     rackspaceId={scratchId}
     scratchSeeded={replicaEnabled ? seeded : undefined}
   />

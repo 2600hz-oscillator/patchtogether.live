@@ -264,7 +264,7 @@ const sinkNode: SpawnNode = { id: 'f-out', type: 'videoOut', position: { x: 980,
 
 async function bootRack(page: Page): Promise<void> {
   await installRenderSmokeHooks(page);
-  await page.goto('/rack');
+  await page.goto('/rack?shell=legacy');
   await page.waitForLoadState('networkidle');
 }
 

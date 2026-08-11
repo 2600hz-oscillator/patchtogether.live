@@ -50,7 +50,7 @@ test('legacy uncompanioned mask audit', async ({ page }) => {
       continue;
     }
     await pinVrtFonts(page);
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy');
     await page.waitForLoadState('networkidle');
     await awaitVrtFonts(page);
     await page.addStyleTag({

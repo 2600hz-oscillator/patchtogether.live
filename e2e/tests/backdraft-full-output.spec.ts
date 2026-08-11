@@ -148,7 +148,7 @@ async function setup(page: Page): Promise<string[]> {
     if (m.type() === 'error') errors.push(m.text());
   });
   await freezeVideoRender(page);
-  await page.goto('/rack');
+  await page.goto('/rack?shell=legacy');
   await page.waitForLoadState('networkidle');
   return errors;
 }

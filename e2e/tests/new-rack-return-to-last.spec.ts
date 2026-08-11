@@ -99,7 +99,7 @@ test.describe('File → New rack (scratch / logged-out)', () => {
   test('workflow: New rack gives a fresh empty WORKFLOW rack (mode preserved, singletons present, prior module gone)', async ({
     page,
   }) => {
-    await page.goto('/rack?mode=workflow');
+    await page.goto('/rack?shell=legacy');
     await page.waitForLoadState('networkidle');
 
     const idbOk = await page.evaluate(
@@ -133,7 +133,7 @@ test.describe('File → New rack (scratch / logged-out)', () => {
   test('dawless: New rack gives a fresh empty DAWLESS rack (mode preserved, prior module gone)', async ({
     page,
   }) => {
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy');
     await page.waitForLoadState('networkidle');
 
     const idbOk = await page.evaluate(
@@ -181,7 +181,7 @@ test.describe('landing: Return to last rack', () => {
       (window as unknown as { __ptScratchReplica?: boolean }).__ptScratchReplica = true;
     });
 
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy');
     await page.waitForLoadState('networkidle');
     const idbOk = await page.evaluate(
       () => typeof indexedDB !== 'undefined' && indexedDB !== null,

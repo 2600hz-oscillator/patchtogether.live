@@ -137,7 +137,7 @@ test.describe('4PLEXVID — gate-advanced 4x4 video router (DRS)', () => {
     // every step) BEFORE boot.
     await installRenderSmokeHooks(page);
 
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy');
     await page.waitForLoadState('networkidle');
 
     // SHAPES into in1 (bright, structured). in2/in3/in4 left UNPATCHED (the

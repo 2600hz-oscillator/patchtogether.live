@@ -113,7 +113,7 @@ test.describe('VRT: SCOPE X/Y mode + INTENSITY persistence', () => {
       // this the captured text metrics differ run-to-run and platform-to-platform.
       // Full root cause: e2e/vrt/_fonts.ts.
       await pinVrtFonts(page);
-      await page.goto('/rack');
+      await page.goto('/rack?shell=legacy');
       await page.waitForLoadState('networkidle');
       await awaitVrtFonts(page);
 

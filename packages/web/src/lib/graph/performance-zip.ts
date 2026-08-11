@@ -26,7 +26,6 @@
 
 import { zipSync, unzipSync, strToU8, strFromU8 } from 'fflate';
 import type { PerformanceBundle } from './performance-bundle';
-import type { RackMode } from './rack-mode';
 
 /** Reject any single bundled video larger than this on import. This is a
  *  per-FILE sanity guard, NOT a per-bundle cap: a perf with 7 VIDEOVARISPEED
@@ -76,11 +75,6 @@ export interface PerformanceZipBundle {
   media: PerformanceMedia[];
   /** Epoch-ms stamp (caller supplies; this module never reads the clock). */
   savedAt?: number;
-  /** Source rack MODE, stamped into the manifest so the CROSS-MODE import guard
-   *  (patch-mode.ts) can reject a workflow patch dropped onto a dawless rack (or
-   *  vice-versa) without inferring from content. Additive + backward-compatible:
-   *  a legacy manifest omits it (undefined ⇒ the loader infers from content). */
-  mode?: RackMode;
 }
 
 /** In-manifest descriptor for one stored media entry (the bytes live at `path`). */
@@ -99,8 +93,6 @@ interface PerformanceManifest {
   savedAt: number;
   bundle: PerformanceBundle;
   media: MediaEntry[];
-  /** Source rack mode (cross-mode import guard). Omitted for legacy bundles. */
-  mode?: RackMode;
 }
 
 /** Filesystem-safe in-zip filename fragment. */
@@ -166,9 +158,6 @@ export function buildPerformanceZip(input: PerformanceZipBundle): Uint8Array {
     savedAt: input.savedAt ?? 0,
     bundle: input.bundle,
     media,
-    // Only emit `mode` when supplied so a stamp-less caller's manifest stays
-    // byte-identical to the pre-guard format (back-compat + deterministic).
-    ...(input.mode ? { mode: input.mode } : {}),
   };
   files[MANIFEST_JSON] = strToU8(JSON.stringify(manifest));
   input.media.forEach((m, i) => {
@@ -229,12 +218,11 @@ export function parsePerformanceZip(zip: ArrayBuffer | Uint8Array): PerformanceZ
       slot: typeof m.slot === 'number' ? m.slot : 0,
     });
   }
-  // Normalize the mode stamp: a legacy manifest omits it, so return undefined
-  // (NOT 'dawless') → the guard falls through to content inference. Only the two
-  // known modes survive; anything else reads as absent.
-  const mode: RackMode | undefined =
-    manifest.mode === 'workflow' || manifest.mode === 'dawless' ? manifest.mode : undefined;
-  return { bundle: manifest.bundle, media, savedAt: manifest.savedAt, mode };
+  // A `mode` stamp written by the two-shell era is simply IGNORED here (and
+  // `PerformanceManifest` no longer declares it): there is one rack shell, so
+  // there is nothing for it to select. Old zips still load — the extra manifest
+  // key is inert, exactly as an old loader treated it when it was added.
+  return { bundle: manifest.bundle, media, savedAt: manifest.savedAt };
 }
 
 /** True if `bytes` looks like a performance zip (cheap pre-check — peeks for

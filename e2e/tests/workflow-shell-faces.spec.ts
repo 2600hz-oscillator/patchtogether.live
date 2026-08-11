@@ -19,14 +19,14 @@
 //      the legacy card renders in the lane exactly as today (the P0.3b
 //      no-op guarantee now covering a module that HAS a face).
 //
-// Runs on /rack?mode=workflow (no DB/relay) — the normal e2e lane, same as
+// Runs on /rack?shell=legacy (no DB/relay) — the normal e2e lane, same as
 // workflow-shell.spec.ts.
 
 import { test, expect, type Page, type Locator } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 async function gotoWorkflow(page: Page, opts: { shell: boolean }): Promise<void> {
-  await page.goto(opts.shell ? '/rack?mode=workflow&shell=1' : '/rack?mode=workflow');
+  await page.goto(opts.shell ? '/rack?shell=legacy' : '/rack?shell=legacy');
   await expect(page.getByTestId('workflow-topbar')).toBeVisible();
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
 }

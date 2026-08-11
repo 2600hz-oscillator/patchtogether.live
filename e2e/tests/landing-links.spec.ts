@@ -24,8 +24,9 @@ test.describe('landing links', () => {
     // WORKFLOW MODE: the unauthenticated front door offers BOTH shells
     // (owner directive 2026-07-11 — the dashboard-only card left anonymous
     // users with no path into workflow mode).
+    // ONE rack tile: the second one selected the deleted shell.
     await expect(page.getByTestId('tile-new-rack')).toHaveAttribute('href', '/rack');
-    await expect(page.getByTestId('tile-new-workflow-rack')).toHaveAttribute('href', '/rack?mode=workflow');
+    await expect(page.getByTestId('tile-new-workflow-rack')).toHaveCount(0);
     await expect(page.getByTestId('tile-rackspaces')).toHaveAttribute('href', '/dashboard');
     await expect(page.getByTestId('tile-modules')).toHaveAttribute('href', '/docs/modules');
     await expect(page.getByTestId('tile-art')).toHaveAttribute('href', `${GH_PAGES}/art/`);

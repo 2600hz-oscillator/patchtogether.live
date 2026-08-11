@@ -122,11 +122,10 @@ describe('needsHeadlessSourceMount — the pure headless-mount decision', () => 
     expect(needsHeadlessSourceMount({ kind: 'stub', type: 'videobox' })).toBe(false);
   });
 
-  it('is a strict NO-OP with the preview off (that path can only produce legacy/stub)', () => {
+  it('is a strict NO-OP under ?shell=legacy (that path can only produce legacy/stub)', () => {
     for (const type of DOM_SOURCE_LANE_TYPES) {
       const kind = laneRenderKind({
-        workflowMode: true,
-        shellPreview: false,
+        shellFaces: false,
         userDocked: false,
         type,
         hasCard: true,
@@ -139,12 +138,11 @@ describe('needsHeadlessSourceMount — the pure headless-mount decision', () => 
 });
 
 describe('cameraInput — the CAPTURE-SOURCE carve-out (source + device picker live on the card)', () => {
-  it('keeps its REAL card in the lane under the shell preview', () => {
+  it('keeps its REAL card in the lane under the faceplate default', () => {
     expect(NON_SHELL_LANE_TYPES.has('cameraInput')).toBe(true);
     expect(
       laneRenderKind({
-        workflowMode: true,
-        shellPreview: true,
+        shellFaces: true,
         userDocked: false,
         type: 'cameraInput',
         // isShellSwappable() returns false for a NON_SHELL type — Canvas passes

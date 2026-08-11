@@ -33,7 +33,7 @@ async function openTwoContexts(
   const pageB = await ctxB.newPage();
 
   for (const p of [pageA, pageB]) {
-    await p.goto('/rack');
+    await p.goto('/rack?shell=legacy');
     await p.waitForLoadState('networkidle');
     await p.waitForFunction(
       () =>

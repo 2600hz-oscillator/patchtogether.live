@@ -72,7 +72,7 @@ test.describe('PatchPanel: overlay-replace nested sections', () => {
 
   test('MIXMSTRS: collapsed root menu fits on a 1366×768 viewport', async ({ page }) => {
     await page.setViewportSize({ width: 1366, height: 768 });
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, [{ id: 'mm', type: 'mixmstrs', position: { x: 100, y: 100 } }]);
     await openMenu(page, 'mm');

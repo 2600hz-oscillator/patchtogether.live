@@ -51,7 +51,7 @@
 // The browser-free pre-gates are module-face-lint's dockFacePlan parity +
 // momentary/compact-cap tests and shell-cells' coverage test; the deliberate
 // in-lane top-N curation is covered by workflow-shell-faces. Runs on
-// /rack?mode=workflow (no DB/relay) — the normal e2e lane.
+// /rack?shell=legacy (no DB/relay) — the normal e2e lane.
 
 import { test, expect, type Locator, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
@@ -165,7 +165,7 @@ interface RenderedCell {
 }
 
 async function gotoShell(page: Page): Promise<void> {
-  await page.goto('/rack?mode=workflow&shell=1');
+  await page.goto('/rack?shell=legacy');
   // 15 s (not the 5 s default): this is the BOOT wait, and the FIRST test of a
   // run pays SvelteKit's on-demand /rack route compilation before the workflow
   // chrome mounts — which overran 5 s on a cold dev server and failed only the

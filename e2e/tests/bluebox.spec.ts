@@ -288,7 +288,7 @@ test('bluebox: setting btn_5 param directly drives the tone (no UI click)', asyn
 // instrument here, because it reports the CLAMPED box the moment an overflow
 // rule engages, which is exactly the state this exists to detect.
 test('bluebox faceplate: no tone-bank caption is clipped, in EITHER label mode', async ({ page }) => {
-  await page.goto('/rack?mode=workflow&shell=1');
+  await page.goto('/rack?shell=legacy');
   await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: 30_000 });
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
   await spawnPatch(page, [{ id: 'bb', type: 'bluebox', position: { x: 120, y: 120 } }]);

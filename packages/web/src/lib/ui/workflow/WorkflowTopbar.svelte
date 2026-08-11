@@ -8,17 +8,20 @@
   // output-aspect pill, Canvas.clearPatch, and the existing sign-in/account
   // link. NO new behavior lives in this component.
   //
-  // TOPBAR PARITY (PR 1 of the dawless-removal sequence): `Clear` and
-  // `AspectToggle` were ported here from the dawless topbar's `.actions`
-  // cluster so that deleting that topbar in a later PR is not a feature
-  // regression. Clear is the ONLY destructive action in the menu and sits
-  // LAST, below its own danger divider — never adjacent to Quicksave.
+  // TOPBAR PARITY. This is now the ONLY topbar — the second shell's
+  // full-width bar (5-slot preset strip + actions cluster) was deleted with
+  // that shell, so anything it carried had to arrive here first or be lost.
+  // `Clear` and `AspectToggle` were ported in the earlier PR of that sequence;
+  // `Save set` / `Load set` and the per-slot `Load into…` / `Clear slot` rows
+  // were ported in the one that deleted it. Clear is the ONLY destructive
+  // action in the menu and sits LAST, below its own danger divider — never
+  // adjacent to Quicksave.
   //
-  // In workflow mode the dawless top-left slot bar is NOT rendered — the
-  // File.. menu REPLACES it (File → Quicksave/Quickload 1–5 drive the same
-  // IndexedDB slots). REVERSIBLE DEFAULT pending owner question Q5
-  // (replace vs. duplicate): re-rendering the bar next to File.. is a
-  // one-line template change in Canvas.svelte.
+  // The slot bar's four affordances map onto four menu sections:
+  //   left-click a green slot  → Quickload N
+  //   right-click → Replace    → Quicksave N (replaces in place)
+  //   right-click → Load…      → Load into slot N
+  //   right-click → Clear slot → Clear slot N
   //
   // P2 fills three of the reserved slots with LIVE surfaces (the pinned
   // module faces — see graph/workflow-pins.ts WORKFLOW_PINNED_SURFACES):
@@ -64,7 +67,7 @@
     slotBusy: boolean;
     /** True while a performance export/import is in flight. */
     perfBusy: boolean;
-    /** Any nodes in the rack? Gates Save performance (mirrors dawless). */
+    /** Any nodes in the rack? Gates Save performance. */
     hasNodes: boolean;
     /** True while a New rack create/navigate is in flight — gates the row. */
     newRackBusy: boolean;
@@ -79,11 +82,21 @@
     /** File → Clear rack: unpatch everything (Canvas.clearPatch). PINNED
      *  workflow singletons survive by design; their edges do not. */
     onClear: () => void;
-    /** Header account state (same seam as the dawless topbar). */
+    /** File → Load into slot N: file-pick a performance and store it in slot N
+     *  WITHOUT loading it (the old per-slot right-click "Load…"). */
+    onLoadIntoSlot: (index: number) => void | Promise<void>;
+    /** File → Clear slot N: empty slot N (the old per-slot "Clear slot"). */
+    onClearSlot: (index: number) => void | Promise<void>;
+    /** File → Save set: bundle ALL five slots + the MIDI map into one portable
+     *  `.set` file (the old topbar's "Save Set"). */
+    onSaveSet: () => void | Promise<void>;
+    /** File → Load set: restore all five slots + the MIDI map from a `.set`. */
+    onLoadSet: () => void | Promise<void>;
+    /** Header account state. */
     signedIn: boolean;
     headerAuth?: { isSignedIn: boolean; imageUrl: string | null; initials: string | null } | null;
     // ---- P2 surface plumbing (snapshot-derived by Canvas) ----
-    /** THE rack timelorde (pinned, or a dawless import's canvas one). */
+    /** THE rack timelorde (pinned, or an imported patch's canvas one). */
     timelordeNode?: ModuleNode | null;
     /** The hidden pinned MIDICLOCK bridge. */
     midiclockNode?: ModuleNode | null;
@@ -126,6 +139,10 @@
     onExportJson,
     onImportJson,
     onClear,
+    onLoadIntoSlot,
+    onClearSlot,
+    onSaveSet,
+    onLoadSet,
     signedIn,
     headerAuth = null,
     timelordeNode = null,
@@ -146,7 +163,8 @@
   type MenuId = 'file' | 'clock' | 'din' | 'io' | 'assets' | 'cameras';
   let openMenu = $state<MenuId | null>(null);
   let fileOpen = $derived(openMenu === 'file');
-  /** Which File.. submenu section is expanded ('quicksave' | 'quickload' | 'rawjson' | 'theme' | null). */
+  /** Which File.. submenu section is expanded ('quicksave' | 'quickload' |
+   *  'loadinto' | 'clearslot' | 'rawjson' | 'theme' | null). */
   let section = $state<string | null>(null);
   let triggerEl: HTMLButtonElement | null = $state(null);
 
@@ -248,7 +266,7 @@
 
         <!-- Quicksave 1–5: store the CURRENT rack into a preset slot
              (buildPerformanceZipBytes → the same IndexedDB slot store the
-             dawless preset bar uses). -->
+             `Load set` bundle reads). -->
         <button
           class="row section"
           role="menuitem"
@@ -295,6 +313,81 @@
             {/each}
           </div>
         {/if}
+
+        <!-- Load into slot 1–5: file-pick a performance and PARK it in a slot
+             without loading it. The old bar reached this by right-clicking a
+             slot → "Load…"; deleting that bar without this row would have
+             dropped the only way to populate a slot from a file. -->
+        <button
+          class="row section"
+          role="menuitem"
+          data-testid="workflow-file-load-into-slot"
+          aria-expanded={section === 'loadinto'}
+          onclick={() => toggleSection('loadinto')}
+        >Load into slot <span class="chev">{section === 'loadinto' ? '▾' : '▸'}</span></button>
+        {#if section === 'loadinto'}
+          <div class="slot-row" data-testid="workflow-load-into-slots">
+            {#each Array(SLOT_COUNT) as _, i (i)}
+              <button
+                class="slot"
+                class:occupied={slotOccupied[i]}
+                data-testid={`workflow-load-into-${i + 1}`}
+                disabled={slotBusy}
+                onclick={() => fire(() => onLoadIntoSlot(i))}
+                title={`Pick a performance file and store it in slot ${i + 1}${slotOccupied[i] ? ' (replaces its contents)' : ''}`}
+              >{i + 1}</button>
+            {/each}
+          </div>
+        {/if}
+
+        <!-- Clear slot 1–5: empty an occupied slot (old right-click → "Clear
+             slot"). Green-only, like Quickload: clearing an empty slot is a
+             no-op the UI should not offer. -->
+        <button
+          class="row section"
+          role="menuitem"
+          data-testid="workflow-file-clear-slot"
+          aria-expanded={section === 'clearslot'}
+          onclick={() => toggleSection('clearslot')}
+        >Clear slot <span class="chev">{section === 'clearslot' ? '▾' : '▸'}</span></button>
+        {#if section === 'clearslot'}
+          <div class="slot-row" data-testid="workflow-clear-slots">
+            {#each Array(SLOT_COUNT) as _, i (i)}
+              <button
+                class="slot"
+                class:occupied={slotOccupied[i]}
+                data-testid={`workflow-clear-slot-${i + 1}`}
+                disabled={slotBusy || !slotOccupied[i]}
+                onclick={() => fire(() => onClearSlot(i))}
+                title={slotOccupied[i]
+                  ? `Empty slot ${i + 1}`
+                  : `Slot ${i + 1} is already empty`}
+              >{i + 1}</button>
+            {/each}
+          </div>
+        {/if}
+
+        <div class="divider"></div>
+
+        <!-- The `.set` bundle: ALL five slots + the MIDI map in one portable
+             file. Ported verbatim from the deleted bar's Save Set / Load Set
+             buttons — the ONLY whole-bar transport there is. -->
+        <button
+          class="row"
+          role="menuitem"
+          data-testid="workflow-file-save-set"
+          disabled={slotBusy}
+          onclick={() => fire(onSaveSet)}
+          title="Save all five preset slots + the MIDI mapping as one portable .set file"
+        >Save set</button>
+        <button
+          class="row"
+          role="menuitem"
+          data-testid="workflow-file-load-set"
+          disabled={slotBusy}
+          onclick={() => fire(onLoadSet)}
+          title="Load a .set file — repopulates all five preset slots and restores the MIDI mapping"
+        >Load set</button>
 
         <div class="divider"></div>
 
@@ -358,7 +451,7 @@
         {/if}
 
         <!-- Output aspect — the EXISTING AspectToggle, hosted inline next to
-             Theme (both are display settings). Ported from the dawless
+             Theme (both are display settings). Ported from the deleted
              topbar, where it sat bare in the .actions cluster. Hosted rather
              than wrapped in `fire()` so the menu STAYS OPEN and you can see
              the 4:3 ⇄ 16:9 state flip on the control itself. -->
@@ -391,7 +484,7 @@
         <!-- DANGER ZONE, last and visually separated. Clear is the one
              DESTRUCTIVE action in this menu, so it deliberately does NOT sit
              next to Quicksave/Quickload where a slip costs you the rack.
-             Behaviour is byte-for-byte the dawless `Clear` button
+             Behaviour is byte-for-byte the old `Clear` button
              (Canvas.clearPatch): same handler, same `nodeCount === 0`
              disable. PLACEMENT is the reviewable question — see the PR body. -->
         <div class="divider danger-divider"></div>
@@ -537,7 +630,6 @@
   </div>
 
   <span class="spacer"></span>
-  <span class="mode-tag" data-testid="workflow-mode-tag" title="This rackspace is a workflow patch">workflow</span>
 </header>
 
 <style>
@@ -626,7 +718,7 @@
     gap: 4px;
     padding: 2px 10px 8px 22px;
   }
-  /* Same red/green slot language as the dawless preset bar. */
+  /* Same red/green slot language the preset bar used. */
   .slot {
     width: 26px;
     height: 24px;
@@ -727,15 +819,5 @@
   }
   .spacer {
     flex: 1;
-  }
-  .mode-tag {
-    color: var(--cable-gate, #f97316);
-    border: 1px solid var(--cable-gate, #f97316);
-    border-radius: 3px;
-    padding: 1px 8px;
-    font-family: ui-monospace, monospace;
-    font-size: 0.65rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
   }
 </style>

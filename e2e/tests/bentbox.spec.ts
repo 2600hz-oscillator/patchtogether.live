@@ -46,7 +46,7 @@ test.describe('BENTBOX — CRT-emulation output', () => {
     test.setTimeout(60_000);
 
     await freezeBentbox(page);
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy');
     await page.waitForLoadState('networkidle');
 
     // Spawn a SHAPES source feeding into BENTBOX so the bending pipeline has

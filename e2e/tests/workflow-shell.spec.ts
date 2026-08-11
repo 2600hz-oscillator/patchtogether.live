@@ -10,7 +10,7 @@
 // its real card in the lane EXACTLY as today — the bridge is inert until owner
 // sign-off, so nothing else in workflow mode changes.
 //
-// Runs on /rack?mode=workflow (no DB/relay) — the normal e2e lane, same as
+// Runs on /rack?shell=legacy (no DB/relay) — the normal e2e lane, same as
 // workflow-dock.spec.ts. Shell state is transient/local (never in the Y.Doc).
 
 import { test, expect, type Page } from '@playwright/test';
@@ -18,7 +18,7 @@ import { spawnPatch } from './_helpers';
 import { UNMIGRATED_AUDIO_MODULE } from './_face-fixtures';
 
 async function gotoWorkflow(page: Page, opts: { shell: boolean }): Promise<void> {
-  await page.goto(opts.shell ? '/rack?mode=workflow&shell=1' : '/rack?mode=workflow');
+  await page.goto(opts.shell ? '/rack?shell=legacy' : '/rack?shell=legacy');
   await expect(page.getByTestId('workflow-topbar')).toBeVisible();
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
 }

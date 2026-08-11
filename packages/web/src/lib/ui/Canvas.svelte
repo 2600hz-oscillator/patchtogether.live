@@ -130,18 +130,6 @@
     type PerformanceMedia,
   } from '$lib/graph/performance-zip';
   import { savePerformanceZip } from '$lib/graph/performance-save';
-  // CROSS-MODE import guard: a workflow patch must not load into a dawless rack
-  // (or vice-versa). detectPatchMode + assertLoadable are the pure decisions;
-  // decodeEnvelopeNodes feeds the legacy (stamp-less) inference; stampEnvelopeMode
-  // records the source mode on export. All run as a PRECONDITION — before any
-  // destructive load step — so a rejected import leaves the live graph untouched.
-  import {
-    detectPatchMode,
-    assertLoadable,
-    stampEnvelopeMode,
-    type PatchModeNode,
-  } from '$lib/graph/patch-mode';
-  import { decodeEnvelopeNodes } from '$lib/graph/patch-envelope-nodes';
   // Quick-switch PRESET SLOT bar (top-left of the menu bar) + the portable
   // `.set` container that bundles all five slots + the MIDI map. The pure
   // (de)serialize core lives in preset-set.ts; the per-browser IndexedDB
@@ -192,49 +180,6 @@
     // in $lib/graph/load-diagnostics.
     loadNotice = summarizeLoadDiagnostics(result.diagnostics);
     return result;
-  }
-
-  // ---------------- Cross-mode import guard (precondition) ----------------
-  //
-  // Reject a workflow patch dropped onto a dawless rack (and vice-versa) BEFORE
-  // any destructive step. `mode` (the live rack mode prop) is the authority.
-
-  /** Read-only decode of an envelope's nodes for legacy (stamp-less) inference;
-   *  defensive — a garbage/undecodable update infers 'dawless' (the safe
-   *  default; a real workflow export carries the explicit stamp anyway). */
-  function safeDecodeNodes(env: unknown): PatchModeNode[] {
-    try {
-      return decodeEnvelopeNodes(env as { update?: unknown });
-    } catch {
-      return [];
-    }
-  }
-
-  /** Classify a raw-JSON envelope (or a perf-zip's `bundle.patch`): stamp-first,
-   *  else infer from the decoded nodes. */
-  function patchModeOfEnvelope(env: unknown): RackMode {
-    const stamp = env && typeof env === 'object' ? (env as Record<string, unknown>).mode : undefined;
-    return detectPatchMode({ mode: stamp, nodes: safeDecodeNodes(env) });
-  }
-
-  /** THE precondition: may `patchMode` load into the current rack? On a mismatch,
-   *  surface the direction-specific message in the visible error notice and
-   *  return false — the caller MUST abort before mutating the graph. */
-  function guardCrossModeLoad(patchMode: RackMode, context: string): boolean {
-    const verdict = assertLoadable(patchMode, mode);
-    if (verdict.ok) return true;
-    error = verdict.message;
-    trace(`${context}: blocked cross-mode load — ${verdict.message}`);
-    return false;
-  }
-
-  /** Guarded raw-envelope load shared by Import JSON + the __persistence.load
-   *  test hook: run the cross-mode precondition FIRST, and only call the
-   *  destructive persistenceLoad when it passes. Returns the LoadResult, or null
-   *  when blocked (error already surfaced, graph untouched). */
-  function loadEnvelopeGuarded(env: unknown) {
-    if (!guardCrossModeLoad(patchModeOfEnvelope(env), 'import JSON')) return null;
-    return persistenceLoad(env, ydoc, patch);
   }
 
   import { AudioEngine, PatchEngine } from '$lib/audio/engine';
@@ -335,8 +280,6 @@
     overlapsRemoteGroupBuilding,
     type RemoteGroupBuilding,
   } from '$lib/multiplayer/group-building-presence';
-  import SkinSwitcher from '$lib/ui/SkinSwitcher.svelte';
-  import AspectToggle from '$lib/ui/AspectToggle.svelte';
   import { videoAspectStore } from '$lib/ui/video-aspect-store.svelte';
   import { audioLatencyStore, type AudioLatencyMode } from '$lib/ui/audio-latency-store.svelte';
   import { createAudioHealthMonitor } from '$lib/audio/audio-health.svelte';
@@ -384,12 +327,10 @@
     shouldAutoSpawnTimelorde,
     pickTimelordeDefaultPosition,
   } from '$lib/audio/modules/timelorde-autospawn';
-  // WORKFLOW MODE P1 — the shell fork. Dawless renders the topbar below
-  // EXACTLY as before (every workflow branch is gated on `workflowMode`);
-  // workflow replaces the topbar with WorkflowTopbar (File.. menu =
-  // recomposed existing handlers), overlays the empty left rail, ensures
-  // the pinned M/E/C singleton trio, and hosts the docked drawer (the
-  // first dock zone — $lib/ui/dock).
+  // THE SHELL. WorkflowTopbar (File.. menu = recomposed existing handlers),
+  // the left rail, the pinned M/E/C singleton trio, and the docked drawer (the
+  // first dock zone — $lib/ui/dock). None of it is conditional: there is one
+  // rack shell, so the fork that used to gate every branch here is gone.
   import WorkflowTopbar from '$lib/ui/workflow/WorkflowTopbar.svelte';
   import {
     resolveWorkflowTimelorde,
@@ -438,7 +379,6 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import { resetLocalScratchId } from '$lib/storage/local-scratch';
-  import type { RackMode } from '$lib/graph/rack-mode';
   import type { HocuspocusProvider } from '@hocuspocus/provider';
   import type { PresenceUser } from '$lib/multiplayer/presence';
   import { installSimulatedMidiDevice, installSimulatedNoteDevice } from '$lib/midi/midi-learn.svelte';
@@ -476,11 +416,6 @@
       imageUrl: string | null;
       initials: string | null;
     } | null;
-    // WORKFLOW MODE P1: the rack shell. 'dawless' (default) renders the
-    // existing UI unchanged; 'workflow' forks the shell (see the imports
-    // block above). Sourced from the rackspace's server-side mode column
-    // on /r/[id], or ?mode=workflow on the /rack scratch canvas.
-    mode?: RackMode;
     // DOCKING P2.5a: the localStorage key scope for this rack's dock state
     // (`pt.dock.v2:${rackspaceId}`). /r/[id] passes the rackspace id; the
     // scratch canvases fall back to 'scratch'.
@@ -504,22 +439,19 @@
     presenceUser = null,
     audioGate,
     headerAuth = null,
-    mode = 'dawless',
     rackspaceId = undefined,
     scratchSeeded = undefined,
   }: Props = $props();
 
-  /** True when this canvas renders the workflow shell. */
-  let workflowMode = $derived(mode === 'workflow');
-
-  /** P0.3b OWNER-PREVIEW FLAG — the workflow-shell rollout (uniform lane
-   *  placeholders / curated ModuleShell faces + the dock full-view legacy
-   *  fallback) is gated behind `?shell=1` so it is a strict no-op by default:
-   *  existing workflow racks render EXACTLY as today (no VRT/e2e drift), and the
-   *  owner previews the new look at `/rack?mode=workflow&shell=1`. Flipping the
-   *  default to on (+ the VRT baseline regen) is the post-preview follow-up.
-   *  Dawless never sees it (workflowMode gate). */
-  let shellPreview = $derived(workflowMode && page.url?.searchParams?.get('shell') === '1');
+  /** THE ONE UI SWITCH. Faceplates in the lane are the DEFAULT and need no
+   *  querystring; `?shell=legacy` is the single escape hatch, rendering each
+   *  module's verbatim *Card.svelte inside the same shell.
+   *
+   *  This was `shellPreview`, an opt-in `?shell=1` preview. The preview became
+   *  the product, so the flag INVERTED: the default arm is now the new look and
+   *  the flag selects the old one. Anything other than exactly `legacy` (including a
+   *  stale `?shell=1` bookmark) resolves to faceplates. */
+  let shellFaces = $derived(page.url?.searchParams?.get('shell') !== 'legacy');
 
   /** The ACTIVE channel-column pitch (flow-space px): the tight 216px RACKLINE
    *  pitch under the `?shell=1` preview, else the app-scale 765px (34hp) band.
@@ -529,7 +461,7 @@
    *  call is byte-identical. NEVER threaded into a PERSISTED write (drop-spawn x/y,
    *  the videoOut/A-V-defaults spawn, the grow-up push-ups all keep COLUMN_W), so
    *  the persisted graph + collab convergence are untouched — pure render deriv. */
-  let wcolPitch = $derived(columnPitch(shellPreview));
+  let wcolPitch = $derived(columnPitch(shellFaces));
 
   /** The flow-space Y the flush lane/send stacks bottom-anchor to. Under the
    *  `?shell=1` preview the stacks lift SHELL_LANE_BADGE_CLEARANCE_Y above the
@@ -539,7 +471,7 @@
    *  drag-reorder sibling centers, and the in-lane drop-spawn position (which,
    *  like the pitch, persists the RENDERED frame under the preview so the tile
    *  never flashes at the un-lifted slot). */
-  let wcolStackAnchorY = $derived(shellPreview ? shellStackAnchorY() : COLUMN_BASELINE_Y);
+  let wcolStackAnchorY = $derived(shellFaces ? shellStackAnchorY() : COLUMN_BASELINE_Y);
 
   // The header shows "Sign in" only when we're confident the user is signed
   // out. On the public `/` canvas (no client ClerkProvider) that signal is
@@ -618,7 +550,7 @@
     // their LEGACY card in the lane, so they reserve their NATIVE rack tier, not
     // the shell tile. Preview-OFF keeps the per-TYPE rack tier for every type →
     // byte-identical.
-    if (shellPreview && !NON_SHELL_LANE_TYPES.has(type)) return SHELL_TILE_H_SLOT;
+    if (shellFaces && !NON_SHELL_LANE_TYPES.has(type)) return SHELL_TILE_H_SLOT;
     const size = rackSizeByType[type]?.size;
     const u = size ? parseInt(size, 10) || 1 : 1;
     return u * RACK_UNIT;
@@ -633,7 +565,7 @@
    *  (`--rack-hp` × RACK_UNIT, the same math _module-card.css applies) → byte-
    *  identical. Falls back to one tile. */
   function wcolCardWidthPx(type: string): number {
-    if (shellPreview && !NON_SHELL_LANE_TYPES.has(type)) return SHELL_TILE_W;
+    if (shellFaces && !NON_SHELL_LANE_TYPES.has(type)) return SHELL_TILE_W;
     return (rackSizeByType[type]?.hp ?? 1) * RACK_UNIT;
   }
 
@@ -790,9 +722,7 @@
         // the latest value, never a lagging one.
         save: () => {
           flushAllCcCommits();
-          // Stamp the source mode (mirrors exportPatchJson) so a round-trip
-          // through this hook carries the mode the guard checks on load.
-          return stampEnvelopeMode(makeEnvelope(ydoc), mode);
+          return makeEnvelope(ydoc);
         },
         load: (env: unknown) => {
           // Caller passes a parsed envelope object (or its JSON form).
@@ -901,10 +831,8 @@
   }
   function loadEnvelopeFromObject(env: unknown) {
     // Indirection so the test global doesn't need its own import of
-    // parseEnvelope / loadEnvelopeIntoStore. Routed through the cross-mode guard
-    // (loadEnvelopeGuarded) so a mismatched patch is rejected here too — a
-    // same-mode load is unaffected. Returns null when the guard blocks.
-    return loadEnvelopeGuarded(env);
+    // parseEnvelope / loadEnvelopeIntoStore.
+    return persistenceLoad(env, ydoc, patch);
   }
 
   // B3: subscribe to the shared PatchSnapshot bus (one Yjs subscription
@@ -1112,8 +1040,7 @@
     // the pinned ensure below (deterministic `pinned-timelorde`, canvas-
     // hidden — the topbar clock surface is its face). Racing this random-id
     // canvas auto-spawn against that ensure on an empty rack would seed TWO
-    // clocks, so the dawless path stands down entirely in workflow mode.
-    if (workflowMode) return;
+    // clocks, so this canvas auto-spawn stands down entirely.
     if (didAutoSpawnTimelorde) return;
     if (!providerHasSynced) return;
     if (!shouldAutoSpawnTimelorde(snapshot.nodes)) {
@@ -1255,7 +1182,7 @@
   // ELECTRA CONTROL and one CLIPPLAYER (graph/workflow-pins.ts) — plus,
   // since P2, the always-on topbar surface modules (TIMELORDE / the hidden
   // MIDICLOCK bridge / AUDIO IN / AUDIO OUT — WORKFLOW_PINNED_SURFACES;
-  // TIMELORDE is presence-by-TYPE so a dawless import's canvas clock
+  // TIMELORDE is presence-by-TYPE so an imported patch's canvas clock
   // satisfies it instead of gaining a hidden competitor). Runs on
   // every snapshot (no latch) so the set SELF-HEALS after any wholesale
   // node replacement (quickload / performance load / raw-JSON import all
@@ -1264,11 +1191,14 @@
   // clients converge on ONE Y.Map entry per type — no duplicate race, no
   // cleanup dependency. Gate mirrors the TIMELORDE auto-spawn: with a
   // provider, wait for first sync (never race server state); without one
-  // (the /rack?mode=workflow sandbox) spawn immediately — the "literally
-  // empty /rack canvas" e2e expectation only applies to DAWLESS /rack.
+  // (the /rack scratch sandbox) spawn immediately.
+  //
+  // ⚠ THIS IS WHY `/rack` IS NO LONGER AN EMPTY CANVAS. Every rack is a shell
+  // rack now, so every rack gets the pinned set (and the video-zone defaults
+  // below). Specs that asserted a literally-empty `/rack` were asserting a
+  // property of the deleted second shell; they count the seeded set instead.
   // Non-tracked origin → never on the undo stack.
   $effect(() => {
-    if (!workflowMode) return;
     // Wait for first sync WITH a provider (never race server state); WITHOUT a
     // provider on the scratch canvas, wait for the local replica seed instead
     // (scratchSeeded === false) so the ensure runs against the SEEDED doc and
@@ -1309,7 +1239,6 @@
   // latch (fresh pins), mirroring the node ensure's self-healing story.
   // Same non-tracked origin → never on the undo stack.
   $effect(() => {
-    if (!workflowMode) return;
     // Same seed gate as the pinned-module ensure above: defer on a pending
     // scratch replica seed so the default-wire seed can't resurrect a cable the
     // user deleted before their stored latch is restored. Undefined (real
@@ -1350,7 +1279,6 @@
   // the deterministic id converges racing clients on one Y.Map entry. Same seed
   // gate + non-tracked origin as the pinned ensure.
   $effect(() => {
-    if (!workflowMode) return;
     if ((provider && !providerHasSynced) || scratchSeeded === false) return;
     const mixer = patch.nodes[WCOL_MIXER_ID];
     if (!mixer) return; // wait for the pinned mixer (the latch home) to land
@@ -1394,7 +1322,6 @@
   // recorderbox spec additionally waits on a videoOut existing so its master-
   // video tap lands. Same seed gate + non-tracked origin as the pins.
   $effect(() => {
-    if (!workflowMode) return;
     if ((provider && !providerHasSynced) || scratchSeeded === false) return;
     const mixer = patch.nodes[WCOL_MIXER_ID];
     if (!mixer) return; // wait for the pinned mixer (the latch home + wire source)
@@ -1463,7 +1390,6 @@
   // modifier. Plain listener (not capture) so capture-phase ESC consumers
   // (pickup-cancel, lasso, the File.. menu) win first.
   $effect(() => {
-    if (!workflowMode) return;
     function onDockKey(e: KeyboardEvent) {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (isTypingTarget(e.target)) return;
@@ -1556,7 +1482,6 @@
   // videoAreaViewport); here we read the live SCREEN-space pane size + current
   // zoom and hand the transform to xyflow's animated setViewport.
   $effect(() => {
-    if (!workflowMode) return;
     function onNavKey(e: KeyboardEvent) {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (isTypingTarget(e.target)) return;
@@ -1598,7 +1523,7 @@
   // it never changes the at-rest view a VRT captures). One-shot (a latch).
   let didFrameLanesOnLoad = false;
   $effect(() => {
-    if (!shellPreview || didFrameLanesOnLoad) return;
+    if (!shellFaces || didFrameLanesOnLoad) return;
     if (!flowApi || !flowEl) return; // not mounted yet — re-runs when they bind
     // rAF-poll (bounded) until SvelteFlow's on-init fitView has produced a real
     // viewport, then re-frame ONCE onto the lane band (inheriting the fitted
@@ -1652,7 +1577,6 @@
   // explicit deps above are the re-run triggers), and it's internally
   // reentrancy-guarded + idempotent.
   $effect(() => {
-    if (!workflowMode) return;
     const liveIds = new Set(snapshot.nodes.map((n) => n.id));
     void mediaLibrary.items.length; // track add/remove
     untrack(() => {
@@ -1706,7 +1630,6 @@
    *  the existing layouts/node.position split, so .ptperf exports and
    *  newcomers always see a sane position while the module is docked. */
   function dockNode(nodeId: string, zone: DockZone): void {
-    if (!workflowMode) return;
     const n = patch.nodes[nodeId] as ModuleNode | undefined;
     if (!n || isPinnedNode(n) || !isDockableType(n.type)) return;
     const pos = currentNodePosition(nodeId);
@@ -1733,7 +1656,6 @@
   // presence to stub). Runs per snapshot; untracked so the sweep's own
   // store writes never loop the effect.
   $effect(() => {
-    if (!workflowMode) return;
     const liveIds = new Set(snapshot.nodes.map((n) => n.id));
     const grouped = new Set<string>();
     for (const n of snapshot.nodes) {
@@ -1766,7 +1688,6 @@
   // would sit on the destroyed doc and never fire. Re-point through
   // onBindRackspace, exactly like the snapshot bus does.
   $effect(() => {
-    if (!workflowMode) return;
     const onNodes = (event: { transaction: { local: boolean }; changes: { keys: Map<string, { action: string; oldValue?: unknown }> } }) => {
       if (event.transaction.local) return;
       let hasAdds = false;
@@ -1803,7 +1724,6 @@
    *  A docked id whose node is mid-retirement resolves to nothing here —
    *  the rail slot simply disappears until the tombstone revives. */
   function railCards(zone: DockZone): Array<{ node: ModuleNode; title: string; pinned: boolean }> {
-    if (!workflowMode) return [];
     const out: Array<{ node: ModuleNode; title: string; pinned: boolean }> = [];
     for (const { nodeId } of dockStore.entriesFor(zone)) {
       const node = snapshot.nodes.find((n) => n.id === nodeId);
@@ -1846,7 +1766,7 @@
   /** Snapshot the gesture's tails: docked nodes that (a) have ≥1 edge and
    *  (b) have a mounted rail card (collapsed rails degrade to no tail). */
   function buildDockPanTails(): DockTailSpec[] {
-    if (!workflowMode || !flowApi) return [];
+    if (!flowApi) return [];
     const ids = dockStore.dockedIds;
     if (ids.length === 0) return [];
     const docked = new Set(ids);
@@ -1878,13 +1798,12 @@
   // flow-space bands to screen on every pan/zoom (workflow racks only).
   let wcolViewportTick = $state(0);
   // STRATA (P0.2): publish the derived LOD tier on context for descendant cards
-  // (P0.3 consumes it; nothing does yet). Harmless in dawless mode.
+  // (P0.3 consumes it; nothing does yet).
   provideLodTier();
   // Push the live viewport zoom into the shared workflow-zoom store from the
   // SAME onmove tick that re-projects the channel-columns overlay — no new
   // per-frame listener. `setWorkflowZoom` dedupes, so a pure pan is free.
   function publishWorkflowZoom(): void {
-    if (!workflowMode) return;
     const z = flowApi?.getViewport?.()?.zoom;
     if (typeof z === 'number') setWorkflowZoom(z);
   }
@@ -1893,12 +1812,12 @@
   }
   function onViewportMove(): void {
     if (dockPanTails.length > 0) dockPanTick++;
-    if (workflowMode) wcolViewportTick++;
+    wcolViewportTick++;
     publishWorkflowZoom();
   }
   function onViewportMoveEnd(): void {
     if (dockPanTails.length > 0) dockPanTails = [];
-    if (workflowMode) wcolViewportTick++;
+    wcolViewportTick++;
     publishWorkflowZoom();
   }
 
@@ -1919,7 +1838,6 @@
    *  pinned at the bottom). */
   let wcolLaneTopY = $derived.by<number>(() => {
     void snapshot;
-    if (!workflowMode) return COLUMN_BASELINE_Y;
     const mixer = patch.nodes[WCOL_MIXER_ID];
     const md = mixer?.data as
       | { columns?: Record<string, string[]>; sends?: Record<string, string[]> }
@@ -1936,7 +1854,7 @@
     // headroom above the fullest lane's top tile, clamped to the default top
     // (short stacks keep today's look). Legacy (preview OFF) keeps the exact
     // max(default, tallest-stack) math → byte-identical.
-    const height = shellPreview
+    const height = shellFaces
       ? computeShellLaneHeightPx(stacks, defaultLaneHeightPx(wcolCardHeightPx('tidyVco')))
       : computeLaneHeightPx(stacks, defaultLaneHeightPx(wcolCardHeightPx('tidyVco')));
     return laneTopYForHeight(height);
@@ -1950,7 +1868,6 @@
   // Lane members (data.channel/sendSlot), pinned singletons, video-domain cards
   // and the video area's contents are excluded.
   $effect(() => {
-    if (!workflowMode) return;
     const laneTopY = wcolLaneTopY; // dependency: re-run when lanes grow/shrink
     if ((provider && !providerHasSynced) || scratchSeeded === false) return;
     const candidates: ModuleBoxLike[] = [];
@@ -1987,7 +1904,6 @@
    *  dockStore.closeFullView(id) and keeps the module's lane
    *  placeholder/shell in place (Option #1). */
   let fullViewCards = $derived.by(() => {
-    if (!workflowMode) return [];
     const out: Array<{ node: ModuleNode; title: string }> = [];
     for (const id of dockStore.fullViewNodeIds) {
       const node = snapshot.nodes.find((n) => n.id === id);
@@ -2005,11 +1921,11 @@
    *  patched-but-black under `?shell=1`).
    *
    *  Uses the SAME pure lane decision the flowNodes derivation uses, so the two
-   *  can never disagree: 'legacy' (dawless, preview-off, or a NON_SHELL carve-out
+   *  can never disagree: 'legacy' (`?shell=legacy`, or a NON_SHELL carve-out
    *  like cameraInput/videoOut) and 'stub' (real card in the dock rail) both
    *  render the card SOMEWHERE and are excluded — only 'shell'/'placeholder'
-   *  qualify. Preview-off can never produce those, so this is a strict no-op
-   *  there ⇒ byte-identical behaviour. Additionally excluded:
+   *  qualify. `?shell=legacy` can never produce those, so this is a strict
+   *  no-op there. Additionally excluded:
    *    - a node whose full faceplate is OPEN in the dock (DockFullView already
    *      mounts its real card — a second mount would run two media elements for
    *      one node and the first to unmount would detach the survivor's source),
@@ -2018,7 +1934,7 @@
    *      hosting them would ADD engine state the shell-off rack doesn't have —
    *      the opposite of the parity this fix exists to guarantee. */
   let headlessSourceNodes = $derived.by<ModuleNode[]>(() => {
-    if (!shellPreview) return [];
+    if (!shellFaces) return [];
     const collapsed = collapsedGroupIds;
     const out: ModuleNode[] = [];
     for (const n of snapshot.nodes) {
@@ -2028,8 +1944,7 @@
       if (parentGroupId && collapsed.has(parentGroupId)) continue;
       if (dockStore.isFullView(n.id)) continue;
       const kind = laneRenderKind({
-        workflowMode,
-        shellPreview,
+        shellFaces,
         userDocked: !!dockStore.entryFor(n.id),
         type: n.type,
         hasCard: isShellSwappable(n.type, cardTypeSet.has(n.type)),
@@ -2048,7 +1963,7 @@
   // preview mid-view. Exactly the surface class acquireRenderLease exists for
   // (VideoOutCard's fullscreen/present modes use the same seam). Refcounted +
   // released the moment the full-view closes ($effect cleanup); non-video
-  // occupants and dawless racks never reach the acquire.
+  // occupants never reach the acquire.
   $effect(() => {
     const fvs = fullViewCards;
     const e = engine;
@@ -2087,44 +2002,39 @@
   // ---------------- WORKFLOW MODE P2: topbar surface plumbing ----------------
   //
   // Snapshot-derived nodes/state the three topbar surfaces (clock / MIDI
-  // DIN / audio I/O) render from. All null/false in dawless racks — the
-  // derivations are gated so the dawless path does zero extra scanning.
+  // DIN / audio I/O) render from.
   let workflowTimelordeNode = $derived(
-    workflowMode ? resolveWorkflowTimelorde(snapshot.nodes) : null,
+    resolveWorkflowTimelorde(snapshot.nodes),
   );
   let workflowMidiclockNode = $derived(
-    workflowMode ? snapshot.nodes.find((n) => n.id === 'pinned-midiclock') ?? null : null,
+    snapshot.nodes.find((n) => n.id === 'pinned-midiclock') ?? null,
   );
   let workflowAudioInNode = $derived(
-    workflowMode ? snapshot.nodes.find((n) => n.id === 'pinned-audioIn') ?? null : null,
+    snapshot.nodes.find((n) => n.id === 'pinned-audioIn') ?? null,
   );
   let workflowAudioOutNode = $derived(
-    workflowMode ? snapshot.nodes.find((n) => n.id === 'pinned-audioOut') ?? null : null,
+    snapshot.nodes.find((n) => n.id === 'pinned-audioOut') ?? null,
   );
   /** A cable feeds TIMELORDE's clock input (DIN assignment or hand-patch)
    *  → tap tempo + tempo knob flip to the externally-clocked state. */
   let workflowExternallyClocked = $derived(
-    workflowMode
-      ? hasWorkflowExternalClock(snapshot.edges, workflowTimelordeNode?.id ?? null)
-      : false,
+    hasWorkflowExternalClock(snapshot.edges, workflowTimelordeNode?.id ?? null),
   );
   /** The DIN bridge's clock edge into TIMELORDE exists (the ⚇ menu shows
    *  the assigned device + unassign ✕). */
   let workflowDinAssigned = $derived(
-    workflowMode
-      ? isDinAssigned(snapshot.edges, 'pinned-midiclock', workflowTimelordeNode?.id ?? null)
-      : false,
+    isDinAssigned(snapshot.edges, 'pinned-midiclock', workflowTimelordeNode?.id ?? null),
   );
   // ---------------- WORKFLOW MODE P4: camera manager plumbing ----------------
   /** The mapped (hiddenCard) camera nodes the 📷 menu lists, in stable
    *  ordinal order. DYNAMIC (0..N, user-added) — never auto-ensured. */
   let workflowCameraNodes = $derived(
-    workflowMode ? listWorkflowCameras(snapshot.nodes) : [],
+    listWorkflowCameras(snapshot.nodes),
   );
   /** One more camera would exceed cameraInput.maxInstances (the ＋ row's
    *  disabled state — hidden cameras + canvas CAMERA cards both count). */
   let workflowCameraAtCapNow = $derived(
-    workflowMode ? workflowCameraAtCap(snapshot.nodes) : false,
+    workflowCameraAtCap(snapshot.nodes),
   );
 
   // Mirror snapshot → SvelteFlow node/edge arrays. We DROPPED bind:nodes /
@@ -2162,8 +2072,7 @@
 
   // WORKFLOW MODE P1/P4 — ids of every canvas-hidden node: the pinned
   // drawer/topbar singletons (P1/P2) plus the hiddenCard headless camera
-  // instances (P4), for the defensive edge filter below. Empty in dawless
-  // racks.
+  // instances (P4), for the defensive edge filter below.
   let canvasHiddenNodeIds = $derived.by<Set<string>>(() => {
     const ids = new Set<string>();
     for (const n of snapshot.nodes) {
@@ -2299,67 +2208,65 @@
     // index in the column/send ORDER array (position = render output). So the
     // visual column always matches the DSP chain, a drag-nudge can never reorder
     // it, and per-user free layouts don't apply to column members. Built once per
-    // pass from the pinned mixer's order manifest; dawless racks skip it entirely.
+    // pass from the pinned mixer's order manifest.
     const wcolPosByNode = new Map<string, { x: number; y: number }>();
-    if (workflowMode) {
-      const mixer = snap.nodes.find((m) => m.id === WCOL_MIXER_ID);
-      const md = mixer?.data as
-        | { columns?: Record<string, string[]>; sends?: Record<string, string[]> }
-        | undefined;
-      const cols = md?.columns ?? {};
-      const sends = md?.sends ?? {};
-      // FLUSH bottom-up stacking (owner: no gaps, cards sit directly on top of
-      // each other, FIRST-added card anchored at the very bottom, newest on top).
-      // Heights are per-TYPE rack constants → deterministic + collab-convergent.
-      const typeOf = new Map(snap.nodes.map((n) => [n.id, n.type]));
-      const heightsFor = (order: string[]) =>
-        order.map((id) => wcolCardHeightPx(typeOf.get(id) ?? ''));
-      const widthsFor = (order: string[]) =>
-        order.map((id) => wcolCardWidthPx(typeOf.get(id) ?? ''));
-      for (let ch = 1; ch <= COLUMN_COUNT; ch++) {
-        const order = cols[String(ch)] ?? [];
-        const positions = columnFlushPositions(ch, heightsFor(order), widthsFor(order), wcolPitch, wcolStackAnchorY);
-        order.forEach((id, i) => wcolPosByNode.set(id, positions[i]!));
-      }
-      for (let s = 1; s <= SEND_BOX_COUNT; s++) {
-        const order = sends[String(s)] ?? [];
-        const positions = sendFlushPositions(s, heightsFor(order), widthsFor(order), wcolPitch, wcolStackAnchorY);
-        order.forEach((id, i) => wcolPosByNode.set(id, positions[i]!));
-      }
-      // SHELL PREVIEW: the video-zone default trio (videoOut / recorderbox /
-      // synesthesia) is NOT a channel member, so it renders at its PERSISTED
-      // spawn X — the wide 765px video-zone pitch. Under the narrowed lanes that
-      // strands them far right of the tight columns, so RE-DERIVE their RENDER
-      // position to the shell pitch, PACKED left-to-right (videoZonePackedXs):
-      // a tile-swapped default reserves one uniform SHELL_TILE_W slot (an
-      // all-tile zone packs to EXACTLY the historic fixed 216px slots), while a
-      // LEGACY-rendered default — videoOut, the video-surface snowflake whose
-      // real card stays in the lane — reserves its ACTUAL live width
-      // (node.data.width, the freely-resizable card), so it never overlaps its
-      // tile neighbours and a corner-drag resize simply pushes them right. The
-      // override anchors POSITION only; the card sizes itself. Also nudge each
-      // TOP DOWN by SHELL_VIDEO_ZONE_TILE_INSET_Y so the whole tile sits INSIDE
-      // the darker video area — un-inset, the tile top lands on the zone's
-      // dashed border (drawn at COLUMN_BASELINE_Y == the slot's un-inset top)
-      // and its jack rail collides with the lane-number badges just above it.
-      // Pure render OVERRIDE (like the channel members) — the persisted x/y is
-      // untouched, so preview OFF is byte-identical and no Y.Doc write / collab
-      // divergence.
-      if (shellPreview) {
-        const present = VIDEO_ZONE_DEFAULTS.filter((spec) => typeOf.has(spec.id));
-        const widths = present.map((spec) => {
-          if (!NON_SHELL_LANE_TYPES.has(spec.type)) return SHELL_TILE_W;
-          // Legacy in-lane card (videoOut): its live resizable width.
-          const n = snap.nodes.find((m) => m.id === spec.id);
-          const w = (n?.data as { width?: number } | undefined)?.width;
-          return typeof w === 'number' && w > 0 ? w : spec.nominalWidth;
-        });
-        const origin = videoZoneSlotPos(0, wcolPitch);
-        const xs = videoZonePackedXs(origin.x, widths, wcolPitch);
-        present.forEach((spec, i) => {
-          wcolPosByNode.set(spec.id, { x: xs[i]!, y: origin.y + SHELL_VIDEO_ZONE_TILE_INSET_Y });
-        });
-      }
+    const mixer = snap.nodes.find((m) => m.id === WCOL_MIXER_ID);
+    const md = mixer?.data as
+      | { columns?: Record<string, string[]>; sends?: Record<string, string[]> }
+      | undefined;
+    const cols = md?.columns ?? {};
+    const sends = md?.sends ?? {};
+    // FLUSH bottom-up stacking (owner: no gaps, cards sit directly on top of
+    // each other, FIRST-added card anchored at the very bottom, newest on top).
+    // Heights are per-TYPE rack constants → deterministic + collab-convergent.
+    const typeOf = new Map(snap.nodes.map((n) => [n.id, n.type]));
+    const heightsFor = (order: string[]) =>
+      order.map((id) => wcolCardHeightPx(typeOf.get(id) ?? ''));
+    const widthsFor = (order: string[]) =>
+      order.map((id) => wcolCardWidthPx(typeOf.get(id) ?? ''));
+    for (let ch = 1; ch <= COLUMN_COUNT; ch++) {
+      const order = cols[String(ch)] ?? [];
+      const positions = columnFlushPositions(ch, heightsFor(order), widthsFor(order), wcolPitch, wcolStackAnchorY);
+      order.forEach((id, i) => wcolPosByNode.set(id, positions[i]!));
+    }
+    for (let s = 1; s <= SEND_BOX_COUNT; s++) {
+      const order = sends[String(s)] ?? [];
+      const positions = sendFlushPositions(s, heightsFor(order), widthsFor(order), wcolPitch, wcolStackAnchorY);
+      order.forEach((id, i) => wcolPosByNode.set(id, positions[i]!));
+    }
+    // SHELL PREVIEW: the video-zone default trio (videoOut / recorderbox /
+    // synesthesia) is NOT a channel member, so it renders at its PERSISTED
+    // spawn X — the wide 765px video-zone pitch. Under the narrowed lanes that
+    // strands them far right of the tight columns, so RE-DERIVE their RENDER
+    // position to the shell pitch, PACKED left-to-right (videoZonePackedXs):
+    // a tile-swapped default reserves one uniform SHELL_TILE_W slot (an
+    // all-tile zone packs to EXACTLY the historic fixed 216px slots), while a
+    // LEGACY-rendered default — videoOut, the video-surface snowflake whose
+    // real card stays in the lane — reserves its ACTUAL live width
+    // (node.data.width, the freely-resizable card), so it never overlaps its
+    // tile neighbours and a corner-drag resize simply pushes them right. The
+    // override anchors POSITION only; the card sizes itself. Also nudge each
+    // TOP DOWN by SHELL_VIDEO_ZONE_TILE_INSET_Y so the whole tile sits INSIDE
+    // the darker video area — un-inset, the tile top lands on the zone's
+    // dashed border (drawn at COLUMN_BASELINE_Y == the slot's un-inset top)
+    // and its jack rail collides with the lane-number badges just above it.
+    // Pure render OVERRIDE (like the channel members) — the persisted x/y is
+    // untouched, so preview OFF is byte-identical and no Y.Doc write / collab
+    // divergence.
+    if (shellFaces) {
+      const present = VIDEO_ZONE_DEFAULTS.filter((spec) => typeOf.has(spec.id));
+      const widths = present.map((spec) => {
+        if (!NON_SHELL_LANE_TYPES.has(spec.type)) return SHELL_TILE_W;
+        // Legacy in-lane card (videoOut): its live resizable width.
+        const n = snap.nodes.find((m) => m.id === spec.id);
+        const w = (n?.data as { width?: number } | undefined)?.width;
+        return typeof w === 'number' && w > 0 ? w : spec.nominalWidth;
+      });
+      const origin = videoZoneSlotPos(0, wcolPitch);
+      const xs = videoZonePackedXs(origin.x, widths, wcolPitch);
+      present.forEach((spec, i) => {
+        wcolPosByNode.set(spec.id, { x: xs[i]!, y: origin.y + SHELL_VIDEO_ZONE_TILE_INSET_Y });
+      });
     }
     for (const n of snap.nodes) {
       // Skip children belonging to a collapsed group — the group card
@@ -2375,8 +2282,7 @@
       // graph/workflow-pins.ts; drawer-only is the REVERSIBLE Q3 default)
       // and hiddenCard headless instances (data.hiddenCard —
       // graph/hidden-card.ts; the P4 camera manager's mapped cameras,
-      // whose face is the topbar 📷 menu). Dawless racks never contain
-      // either flag (inert there).
+      // whose face is the topbar 📷 menu).
       if (isCanvasHiddenNode(n)) continue;
       const remoteUser = remoteByNode[n.id];
       // Per-user layouts: getNodePosition returns the user's override
@@ -2392,17 +2298,15 @@
       // DOCKING P2.5a: a docked node renders as a small DockStubCard IN ITS
       // PLACE — same node id, so every cable stays attached natively. The
       // real card face lives in the dock rail (DockCardHost). Reading
-      // entryFor subscribes this pass to dock/undock; dawless racks never
-      // read the store (workflowMode gate) — zero tracking, zero overhead.
-      const dockEntry = workflowMode ? dockStore.entryFor(n.id) : null;
+      // entryFor subscribes this pass to dock/undock.
+      const dockEntry = dockStore.entryFor(n.id);
       // P0.3b LEGACY-FALLBACK BRIDGE: generalizes the docked→stub swap. A pure
       // derivation from mode + the `?shell=1` preview + user-dock + STRICT_FACES
       // membership — NEVER persisted. Preview OFF (default) ⇒ 'legacy' for every
       // non-docked node ⇒ byte-identical to the old `dockEntry ? 'dockStub' :
       // n.type`. Preview ON ⇒ un-migrated → placeholder, migrated → shell.
       const renderKind = laneRenderKind({
-        workflowMode,
-        shellPreview,
+        shellFaces,
         userDocked: !!dockEntry,
         type: n.type,
         hasCard: isShellSwappable(n.type, cardTypeSet.has(n.type)),
@@ -2676,7 +2580,7 @@
       for (const id of Object.keys(patch.nodes)) {
         // PINNED workflow singletons survive Clear — they're structural to
         // a workflow rack (always-on M/E/C drawers). Their edges still go
-        // (Clear = unpatch everything). Inert in dawless (never pinned).
+        // (Clear = unpatch everything).
         if (isPinnedNode(patch.nodes[id])) continue;
         delete patch.nodes[id];
       }
@@ -2711,7 +2615,7 @@
           const res = await fetch('/api/rackspaces', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ name: 'Untitled rackspace', mode }),
+            body: JSON.stringify({ name: 'Untitled rackspace' }),
           });
           if (res.ok) {
             const { rackspace } = (await res.json()) as { rackspace: { id: string } };
@@ -2723,17 +2627,17 @@
           /* network error → fall through to a scratch rack. */
         }
       }
-      // Logged-out (or the persisted create failed): a fresh scratch rack of the
-      // current kind. Reset the per-device id, then either hard-reload the
-      // scratch route (already here → the derived id won't re-read localStorage,
-      // so reload rebinds to the new empty doc) or navigate to it.
-      resetLocalScratchId(mode);
+      // Logged-out (or the persisted create failed): a fresh scratch rack.
+      // Reset the per-device id, then either hard-reload the scratch route
+      // (already here → the derived id won't re-read localStorage, so reload
+      // rebinds to the new empty doc) or navigate to it.
+      resetLocalScratchId();
       const onScratch =
         typeof window !== 'undefined' && window.location.pathname === '/rack';
       if (onScratch) {
         window.location.reload();
       } else {
-        await goto(mode === 'workflow' ? '/rack?mode=workflow' : '/rack');
+        await goto('/rack');
       }
     } finally {
       newRackBusy = false;
@@ -2762,9 +2666,7 @@
       // A save taken during/just after a hardware CC twist must capture the
       // settled value — flush the coalesced CC pumps before snapshotting.
       flushAllCcCommits();
-      // Stamp the source rack mode so the cross-mode import guard can reject
-      // this patch on load into the wrong rack (additive; old importers ignore).
-      const env = stampEnvelopeMode(makeEnvelope(ydoc), mode);
+      const env = makeEnvelope(ydoc);
       downloadEnvelope(env, DEFAULT_FILENAME);
       trace(
         `exported patch JSON (${Object.keys(patch.nodes).length} nodes, ${Object.keys(patch.edges).length} edges)`,
@@ -2783,17 +2685,14 @@
     error = null;
     try {
       // Pick + parse (non-destructive) FIRST — this replaces the old
-      // pickAndLoadEnvelope, which loaded atomically and gave no seam to run
-      // the cross-mode precondition before the destructive wipe.
+      // pickAndLoadEnvelope, which loaded atomically and gave no seam to run a
+      // precondition before the destructive wipe.
       const file = await pickFile('.imp.json,application/json');
       if (!file) {
         trace('import JSON cancelled');
         return;
       }
       const env = parseEnvelope(await file.text());
-      // PRECONDITION: reject a cross-mode patch before ensureEngine / the load
-      // wipe — leaves the current graph exactly as it was.
-      if (!guardCrossModeLoad(patchModeOfEnvelope(env), 'import JSON')) return;
       // P4: DESTRUCTIVE-WIPE confirm. loadEnvelopeIntoStore clears-then-re-adds
       // the whole graph; in a shared rack that clear tombstones every peer's
       // copy + the relay snapshot + the journal — a durable, multi-user wipe.
@@ -2824,20 +2723,6 @@
       error = `Import JSON failed: ${msg}`;
       trace(`import JSON failed: ${msg}`);
     }
-  }
-
-  /** Action-menu dispatcher for the "Raw JSON" `<select>` (top-RIGHT of the
-   *  topbar). It is an ACTION menu, so the bound value resets to the
-   *  placeholder after each dispatch — letting the user re-pick the same
-   *  action. */
-  type RawJsonKey = 'export-json' | 'import-json';
-  let rawJsonChoice = $state('');
-  async function onRawJsonChosen(key: RawJsonKey) {
-    switch (key) {
-      case 'export-json': exportPatchJson(); break;
-      case 'import-json': await importPatchJson(); break;
-    }
-    rawJsonChoice = '';
   }
 
   // ---------------- Performance device-resolution helpers ----------------
@@ -3037,9 +2922,7 @@
     // TWOTRACKS reel tapes: worklet-owned PCM that can't ride the envelope.
     // Dump each reel out-of-band as 'audio' media keyed `<nodeId>:<reel>`.
     media.push(...(await collectTwotracksTapes()));
-    // Stamp the source rack mode into the manifest for the cross-mode import
-    // guard (additive; a legacy loader ignores it).
-    return buildPerformanceZip({ bundle, media, savedAt: Date.now(), mode });
+    return buildPerformanceZip({ bundle, media, savedAt: Date.now() });
   }
 
   async function exportPerformanceZip(): Promise<void> {
@@ -3070,12 +2953,6 @@
     const parsed = parsePerformanceZip(zipBytes);
     const bundle = validateBundle(parsed.bundle);
 
-    // PRECONDITION: reject a cross-mode performance BEFORE any destructive /
-    // side-effecting step (ensureEngine, IDB blob seeding, persistenceLoad).
-    // parse + validate above are read-only, so the live rack is untouched on a
-    // block. Stamp-first (parsed.mode), else infer from the patch content.
-    const patchMode = detectPatchMode({ mode: parsed.mode, nodes: safeDecodeNodes(bundle.patch) });
-    if (!guardCrossModeLoad(patchMode, 'load performance')) return;
 
     await ensureEngine();
 
@@ -3269,8 +3146,6 @@
   // Reactive occupancy mirror (red/green). Seeded from IDB on mount; mutated by
   // the slot ops below so the bar re-colours without an IDB round-trip.
   let slotOccupied = $state<boolean[]>(new Array(SLOT_COUNT).fill(false));
-  // Open per-slot context menu (right-click). null = closed.
-  let slotMenu = $state<{ index: number; x: number; y: number } | null>(null);
   let slotBusy = $state(false);
 
   /** Refresh the whole bar's red/green state from IndexedDB. */
@@ -3278,31 +3153,9 @@
     slotOccupied = await listOccupied();
   }
 
-  /** LEFT-click a slot: green → instantly load its stored perf zip; red →
-   *  open the load picker (a convenience so an empty slot is also clickable). */
-  async function onSlotClick(index: number): Promise<void> {
-    if (slotBusy) return;
-    if (slotOccupied[index]) {
-      await loadSlot(index);
-    } else {
-      await loadIntoSlot(index);
-    }
-  }
-
-  /** RIGHT-click a slot: open its context menu at the cursor. */
-  function onSlotContextMenu(event: MouseEvent, index: number): void {
-    event.preventDefault();
-    event.stopPropagation();
-    slotMenu = { index, x: event.clientX, y: event.clientY };
-  }
-
-  function closeSlotMenu(): void {
-    slotMenu = null;
-  }
 
   /** Load (or Replace) a slot from a picked performance .zip → store in IDB. */
   async function loadIntoSlot(index: number): Promise<void> {
-    closeSlotMenu();
     error = null;
     if (slotBusy) return;
     slotBusy = true;
@@ -3325,7 +3178,6 @@
 
   /** Instantly switch to a green slot's stored performance (no file dialog). */
   async function loadSlot(index: number): Promise<void> {
-    closeSlotMenu();
     error = null;
     if (slotBusy) return;
     slotBusy = true;
@@ -3345,8 +3197,8 @@
 
   /** WORKFLOW File..→Quicksave N: store the CURRENT rack into slot N —
    *  the same perf-zip bytes Export Perf produces, into the same IndexedDB
-   *  slot store the dawless preset bar reads (pure recomposition; the
-   *  dawless bar itself is unchanged). Replaces the slot's contents when
+   *  slot store Save set / Load set bundle (pure recomposition — the slot
+   *  store itself is unchanged). Replaces the slot's contents when
    *  already occupied (mirrors "Replace with…" semantics, minus the file
    *  picker). */
   async function quicksaveSlot(index: number): Promise<void> {
@@ -3370,7 +3222,6 @@
 
   /** Clear a slot back to empty (red). */
   async function clearSlot(index: number): Promise<void> {
-    closeSlotMenu();
     if (slotBusy) return;
     slotBusy = true;
     try {
@@ -3976,7 +3827,7 @@
         // MAJOR 1: an EXPLICIT user deletion of a managed (wcol-) cable durably
         // suppresses it (+ its stereo/control-pair siblings via the reconcile's
         // all-or-nothing yield) until the next deliberate column edit.
-        if (live && workflowMode && id.startsWith('wcol-e-')) {
+        if (live && id.startsWith('wcol-e-')) {
           const colKey = wcolEdgeColumnKey(live);
           if (colKey) wcolMarkDetached(id, colKey);
         }
@@ -4039,7 +3890,7 @@
     // snaps to list order and a cross-column drag re-assigns the channel. A drag
     // OUT of every band unassigns (retract membership → the reconcile prunes its
     // wcol edges). Non-member drags fall through to the normal position write.
-    if (workflowMode && patch.nodes[WCOL_MIXER_ID]) {
+    if (patch.nodes[WCOL_MIXER_ID]) {
       const stillMember = new Set<string>();
       const laneReassign: { id: string; ch: number }[] = [];
       ydoc.transact(() => {
@@ -4295,11 +4146,11 @@
   // allowlisted types in workflow racks (owner Q3: control-first + scope,
   // workflow only); a right-clicked DockStubCard gets "Undock" instead.
   let ctxMenuDocked = $derived.by<boolean>(() => {
-    if (!workflowMode || !ctxMenuNodeId) return false;
+    if (!ctxMenuNodeId) return false;
     return dockStore.isDocked(ctxMenuNodeId);
   });
   let ctxMenuDockable = $derived.by<boolean>(() => {
-    if (!workflowMode || !ctxMenuNodeId || ctxMenuDocked) return false;
+    if (!ctxMenuNodeId || ctxMenuDocked) return false;
     const n = patch.nodes[ctxMenuNodeId];
     return !!n && !isPinnedNode(n as ModuleNode) && isDockableType(n.type);
   });
@@ -4479,7 +4330,7 @@
     // of splicing it through the first (owner bug: tidyvco + cloudseed on ch1
     // both reached the mixer, no tidyvco→cloudseed link). Route through the same
     // membership path the palette-drop uses so both gestures converge.
-    if (workflowMode && patch.nodes[WCOL_MIXER_ID]) {
+    if (patch.nodes[WCOL_MIXER_ID]) {
       const ch = channel + 1; // column channels are 1-based; lanes are 0-based
       ydoc.transact(() => {
         const d = node.data as { channel?: number; sendSlot?: number } | undefined;
@@ -4565,11 +4416,9 @@
   // wcol- edge set (clip-control on the source, chain links on adjacent pairs,
   // send-to-mixer on the tail). Idempotent + non-undo-tracked (AUTO_JANITOR_
   // ORIGIN inside the reconciler), so it self-heals on every peer without ever
-  // fighting a hand-drawn cable (wcol- namespace + yield rule). Dawless racks
-  // never run it (workflowMode gate) — zero overhead + pixel-identical.
+  // fighting a hand-drawn cable (wcol- namespace + yield rule).
   const wcolResolveDef: ColumnDefResolver = (t) => defLookup(t) as never;
   $effect(() => {
-    if (!workflowMode) return;
     void snapshot; // re-run on any graph change
     reconcileColumns(wcolResolveDef);
   });
@@ -4695,7 +4544,7 @@
   function wcolDropTarget(
     flowPos: { x: number; y: number },
   ): { channel?: number; sendSlot?: number } | null {
-    if (!workflowMode || !patch.nodes[WCOL_MIXER_ID]) return null;
+    if (!patch.nodes[WCOL_MIXER_ID]) return null;
     // Resolve against the ACTIVE pitch (narrow under `?shell=1`): the spawn
     // flow-pos comes from the cursor's screen→flow projection over the RENDERED
     // (narrowed) lanes, so the column it lands in is a pitch-relative hit-test.
@@ -6042,7 +5891,7 @@
       for (const id of edgeIds) {
         const live = patch.edges[id];
         if (!live) continue;
-        if (workflowMode && id.startsWith('wcol-e-')) {
+        if (id.startsWith('wcol-e-')) {
           const colKey = wcolEdgeColumnKey(live);
           if (colKey) wcolMarkDetached(id, colKey);
         }
@@ -6110,7 +5959,7 @@
         // suppress the dropped leg, or the next column reconcile re-adds it and
         // the mode silently reverts — the same detach-suppression the unpatch
         // and Backspace paths run.
-        if (workflowMode && id.startsWith('wcol-e-')) {
+        if (id.startsWith('wcol-e-')) {
           const colKey = wcolEdgeColumnKey(live);
           if (colKey) wcolMarkDetached(id, colKey);
         }
@@ -7755,177 +7604,44 @@
 </script>
 
 <div class="root" class:lasso-mode={lassoMode} data-testid="canvas-root">
-  {#if workflowMode}
-    <!-- WORKFLOW shell: File.. menu topbar (recomposes the same handlers
-         the dawless topbar binds below). The dawless top-left slot bar is
-         NOT rendered in workflow mode — File..→Quicksave/Quickload replace
-         it (reversible Q5 default; see WorkflowTopbar.svelte). -->
-    <WorkflowTopbar
-      {appVersion}
-      {slotOccupied}
-      {slotBusy}
-      perfBusy={perfZipBusy}
-      hasNodes={nodeCount > 0}
-      newRackBusy={newRackBusy}
-      onNewRack={newRack}
-      onQuicksave={quicksaveSlot}
-      onQuickload={loadSlot}
-      onSavePerformance={exportPerformanceZip}
-      onLoadPerformance={loadPerformanceZip}
-      onExportJson={exportPatchJson}
-      onImportJson={importPatchJson}
-      onClear={clearPatch}
-      signedIn={headerSignedIn}
-      {headerAuth}
-      timelordeNode={workflowTimelordeNode}
-      midiclockNode={workflowMidiclockNode}
-      audioInNode={workflowAudioInNode}
-      audioOutNode={workflowAudioOutNode}
-      externallyClocked={workflowExternallyClocked}
-      dinAssigned={workflowDinAssigned}
-      nodeTypes={nodeTypes as unknown as Record<string, unknown>}
-      {rackSizeByType}
-      onEnsureEngine={ensureEngine}
-      currentUserId={currentUserId ?? null}
-      cameraNodes={workflowCameraNodes}
-      cameraAtCap={workflowCameraAtCapNow}
-    />
-  {:else}
-  <header class="topbar">
-    <h1>patchtogether <span class="app-version" data-testid="app-version">v{appVersion}</span></h1>
-    <!-- Quick-switch PRESET SLOTS (top-left): five numbered buttons.
-         EMPTY = red, OCCUPIED = green. Left-click a green slot to switch to it
-         instantly; right-click any slot for Load / Replace / Clear. Save Set /
-         Load Set bundle the whole bar (+ MIDI map) as a portable .set file. -->
-    <div class="preset-bar" data-testid="preset-slot-bar">
-      {#each Array(SLOT_COUNT) as _, i (i)}
-        <button
-          class="slot"
-          class:occupied={slotOccupied[i]}
-          data-testid={`preset-slot-${i + 1}`}
-          data-occupied={slotOccupied[i] ? 'true' : 'false'}
-          disabled={slotBusy}
-          onclick={() => onSlotClick(i)}
-          oncontextmenu={(e) => onSlotContextMenu(e, i)}
-          title={slotOccupied[i]
-            ? `Preset slot ${i + 1} (loaded) — click to switch, right-click to replace/clear`
-            : `Preset slot ${i + 1} (empty) — right-click to load a performance .zip`}
-        >{i + 1}</button>
-      {/each}
-      <button
-        class="set-btn"
-        data-testid="save-set-btn"
-        disabled={slotBusy}
-        onclick={saveSet}
-        title="Save the whole preset bar (all loaded slots + MIDI mapping) as a portable .set file"
-      >Save Set</button>
-      <button
-        class="set-btn"
-        data-testid="load-set-btn"
-        disabled={slotBusy}
-        onclick={loadSet}
-        title="Load a .set file — repopulates all five preset slots + restores the MIDI mapping"
-      >Load Set</button>
-    </div>
-    <!-- No "+ Add module" button here: the module palette opens by
-         right-clicking an empty spot on the canvas pane (onPaneContextMenu),
-         which also anchors the spawn at the click point. The button was
-         removed so the topbar fits narrow (1024px) viewports. -->
-    <div class="actions">
-      <!-- The "Load example…" ACTION menu was REMOVED (owner ruling, PR 1 of
-           the dawless-removal sequence): the six curated demos and their
-           bundled envelopes are gone from the product entirely. A new user
-           starts from an empty rack + the right-click module palette. -->
-      <button
-        data-testid="new-rack-btn"
-        onclick={newRack}
-        disabled={newRackBusy}
-        title="New rack — a fresh empty rack of this kind (signed in: a new saved rack; logged out: a clean scratch canvas)"
-      >New rack</button>
-      <button onclick={clearPatch} disabled={nodeCount === 0}>Clear</button>
-      <button
-        onclick={exportPerformanceZip}
-        disabled={nodeCount === 0 || perfZipBusy}
-        data-testid="export-perf-zip-btn"
-        title="Export the WHOLE rack as a portable .zip (patch + ALL embedded images/videos/samples + CV routes + control-surface + MIDI/gamepad maps). Move it to another machine and Load performance to reproduce the show exactly."
-      >Export Perf (.zip)</button>
-      <button
-        onclick={loadPerformanceZip}
-        disabled={perfZipBusy}
-        data-testid="load-perf-zip-btn"
-        title="Load a portable performance .zip into a fresh rack — restores the patch + ALL embedded media + mappings on any machine (no re-pick needed)."
-      >Load Perf (.zip)</button>
-      <!-- "Raw JSON" — lightweight envelope-only export/import (no media/zip).
-           ACTION menu: each option fires its handler, then
-           onRawJsonChosen() resets the value to the placeholder so the
-           same action can be re-picked. Restores the raw-JSON convenience the
-           old Save/Load buttons gave (removed in #771). Sits in the top-RIGHT
-           actions cluster, clear of the top-LEFT preset slots. -->
-      <select
-        class="raw-json"
-        data-testid="raw-json-select"
-        aria-label="Raw JSON export / import"
-        bind:value={rawJsonChoice}
-        onchange={(e) => onRawJsonChosen(e.currentTarget.value as RawJsonKey)}
-        title="Export the current patch as a raw JSON envelope (graph only, no media), or import one."
-      >
-        <option value="" disabled selected>Raw JSON</option>
-        <option value="export-json">Export JSON (only)</option>
-        <option value="import-json">Import JSON</option>
-      </select>
-      <AspectToggle />
-      <SkinSwitcher />
-      <!-- The "Send to Electra" button now lives ON the ELECTRA CONTROL card
-           (ElectraControlCard.svelte), not the topbar — a rack without an
-           ElectraControl module intentionally has no send button. -->
-      {#if headerSignedIn}
-        <a
-          class="account-link"
-          href="/dashboard"
-          data-testid="account-link"
-          title="Your dashboard"
-        >
-          {#if headerAuth?.imageUrl}
-            <img class="account-avatar" src={headerAuth.imageUrl} alt="Account" />
-          {:else}
-            <span class="account-avatar account-avatar-fallback">
-              {headerAuth?.initials ?? '\u{1F464}'}
-            </span>
-          {/if}
-        </a>
-      {:else}
-        <a class="signin-link" href="/dashboard" data-testid="signin-link">Sign in</a>
-      {/if}
-    </div>
-  </header>
-  {/if}
-
-  <!-- Per-slot right-click context menu. A full-screen transparent backdrop
-       closes it on any outside click / right-click. -->
-  {#if slotMenu}
-    {@const sm = slotMenu}
-    <div
-      class="slot-menu-backdrop"
-      role="presentation"
-      onclick={closeSlotMenu}
-      oncontextmenu={(e) => { e.preventDefault(); closeSlotMenu(); }}
-    ></div>
-    <div
-      class="slot-menu"
-      data-testid="preset-slot-menu"
-      style={`left:${sm.x}px; top:${sm.y}px;`}
-      role="menu"
-    >
-      <div class="slot-menu-title">Slot {sm.index + 1}</div>
-      {#if slotOccupied[sm.index]}
-        <button role="menuitem" data-testid="slot-menu-switch" onclick={() => loadSlot(sm.index)}>Switch to this</button>
-        <button role="menuitem" data-testid="slot-menu-replace" onclick={() => loadIntoSlot(sm.index)}>Replace with…</button>
-        <button role="menuitem" data-testid="slot-menu-clear" onclick={() => clearSlot(sm.index)}>Clear slot</button>
-      {:else}
-        <button role="menuitem" data-testid="slot-menu-load" onclick={() => loadIntoSlot(sm.index)}>Load…</button>
-      {/if}
-    </div>
-  {/if}
+  <!-- THE topbar: the File.. menu. There is no second one — the old
+       full-width slot bar + actions cluster was deleted with the second
+       shell, and every action it carried lives in this menu (see
+       WorkflowTopbar.svelte). -->
+  <WorkflowTopbar
+    {appVersion}
+    {slotOccupied}
+    {slotBusy}
+    perfBusy={perfZipBusy}
+    hasNodes={nodeCount > 0}
+    newRackBusy={newRackBusy}
+    onNewRack={newRack}
+    onQuicksave={quicksaveSlot}
+    onQuickload={loadSlot}
+    onSavePerformance={exportPerformanceZip}
+    onLoadPerformance={loadPerformanceZip}
+    onExportJson={exportPatchJson}
+    onImportJson={importPatchJson}
+    onClear={clearPatch}
+    onLoadIntoSlot={loadIntoSlot}
+    onClearSlot={clearSlot}
+    onSaveSet={saveSet}
+    onLoadSet={loadSet}
+    signedIn={headerSignedIn}
+    {headerAuth}
+    timelordeNode={workflowTimelordeNode}
+    midiclockNode={workflowMidiclockNode}
+    audioInNode={workflowAudioInNode}
+    audioOutNode={workflowAudioOutNode}
+    externallyClocked={workflowExternallyClocked}
+    dinAssigned={workflowDinAssigned}
+    nodeTypes={nodeTypes as unknown as Record<string, unknown>}
+    {rackSizeByType}
+    onEnsureEngine={ensureEngine}
+    currentUserId={currentUserId ?? null}
+    cameraNodes={workflowCameraNodes}
+    cameraAtCap={workflowCameraAtCapNow}
+  />
 
   {#if error}
     <pre class="error" data-testid="load-error">{error}</pre>
@@ -7940,51 +7656,43 @@
     </div>
   {/if}
 
-  {#if workflowMode}
-    <!-- DOCKING P2.5a: the TOP dock rail — a reserved-space flex sibling
-         ABOVE the canvas row (never an overlay inside .svelte-flow). Empty
-         → renders zero pixels. -->
+  <!-- DOCKING P2.5a: the TOP dock rail — a reserved-space flex sibling
+       ABOVE the canvas row (never an overlay inside .svelte-flow). Empty
+       → renders zero pixels. -->
+  <DockRail
+    zone="top"
+    cards={topRailCards}
+    nodeTypes={nodeTypes as unknown as Record<string, unknown>}
+    {rackSizeByType}
+    onUndock={undockNode}
+    {rearView}
+  />
+
+  <!-- The canvas row: [left dock rail | flow]. -->
+  <div class="canvas-row">
+    <!-- The LEFT dock rail IS the workflow left toolbar (owner Q5):
+         empty → the P1 44px scaffold strip; docked cards are its
+         contents. Reserved-space flex sibling of .flow. -->
     <DockRail
-      zone="top"
-      cards={topRailCards}
+      zone="left"
+      cards={leftRailCards}
       nodeTypes={nodeTypes as unknown as Record<string, unknown>}
       {rackSizeByType}
       onUndock={undockNode}
       {rearView}
     />
-  {/if}
-
-  <!-- The canvas row: [left dock rail | flow]. The wrapper exists in BOTH
-       modes so dawless and workflow share one layout path (in dawless it
-       contains only .flow and is layout-transparent — verified pixel-
-       identical by the full VRT sweep). -->
-  <div class="canvas-row">
-    {#if workflowMode}
-      <!-- The LEFT dock rail IS the workflow left toolbar (owner Q5):
-           empty → the P1 44px scaffold strip; docked cards are its
-           contents. Reserved-space flex sibling of .flow. -->
-      <DockRail
-        zone="left"
-        cards={leftRailCards}
-        nodeTypes={nodeTypes as unknown as Record<string, unknown>}
-        {rackSizeByType}
-        onUndock={undockNode}
-        {rearView}
-      />
-    {/if}
   <div class="flow" class:rear-view={rearView} class:flip-back={flipBack} data-rear-view={rearView ? 'true' : undefined} bind:this={flowEl}>
-    <!-- STRATA (P0.2): in WORKFLOW mode drop the zoom floor to 0.2 so fit-all can
-         frame all 8 lanes + both sends (§3.4: ~0.22 at 1080p). Dawless keeps
-         xyflow's 0.5 default → dawless zoom/VRT unchanged. fitViewOptions only
-         lowers the fit floor to match; padding + maxZoom stay at xyflow defaults
-         so the initial on-load fit zoom is unchanged. maxZoom is untouched. -->
+    <!-- STRATA (P0.2): the zoom floor is 0.2 (not xyflow's 0.5) so fit-all can
+         frame all 8 lanes + both sends (§3.4: ~0.22 at 1080p). fitViewOptions
+         only lowers the FIT floor to match; padding + maxZoom stay at xyflow
+         defaults. maxZoom is untouched. -->
     <SvelteFlow
       nodes={flowNodes}
       edges={flowEdges}
       {nodeTypes}
       fitView
-      minZoom={workflowMode ? 0.2 : 0.5}
-      fitViewOptions={workflowMode ? { minZoom: 0.2 } : undefined}
+      minZoom={0.2}
+      fitViewOptions={{ minZoom: 0.2 }}
       colorMode="dark"
       zoomOnDoubleClick={false}
       onconnect={handleConnect}
@@ -8071,11 +7779,9 @@
         />
       {/if}
       <FlowBridge bind:api={flowApi} />
-      {#if workflowMode}
-        <!-- WORKFLOW CHANNEL COLUMNS guide: 8 numbered columns + SEND 1/2 rail,
-             pinned to flow space. Workflow racks only → dawless VRT unchanged. -->
-        <ChannelColumnsOverlay columnColors={wcolColumnColors} laneTopY={wcolLaneTopY} tick={wcolViewportTick} pitch={wcolPitch} paneLocalProjection={shellPreview} />
-      {/if}
+      <!-- CHANNEL COLUMNS guide: 8 numbered columns + SEND 1/2 rail, pinned
+           to flow space. -->
+      <ChannelColumnsOverlay columnColors={wcolColumnColors} laneTopY={wcolLaneTopY} tick={wcolViewportTick} pitch={wcolPitch} paneLocalProjection={shellFaces} />
       <CadillacOverlay {provider} />
       <!-- 2026-05-27: the per-node editable name label moved INSIDE every
            module card's title chrome (see ModuleTitle.svelte). The floating
@@ -8087,62 +7793,60 @@
            data-testid hooks ('name-label-button' / 'name-label-input' /
            'name-label-error') so existing e2e selectors still resolve. -->
     </SvelteFlow>
-    {#if workflowMode}
-      <!-- THE BOTTOM DRAWER — ONE container, ONE occupant (dock unification,
-           owner design call): EITHER the expanded full-view faceplate OR the
-           P2.5a rail (the toggled pinned M/E/C occupant + cards docked to
-           'bottom'). The {#if}/{:else} makes the exclusivity STRUCTURAL — the
-           two bottom elements can never coexist in the DOM, so there is no
-           z-fight for hotkeys to lose (the "c behind the full-view" bug). The
-           dockStore occupancy invariant (pinned XOR full-view) keeps the state
-           side equally exclusive; ESC closes whichever is open (dock-key
-           handler above). Preview-off, fullViewCards is always empty → the
-           rail renders exactly as shipped. -->
-      {#if fullViewCards.length > 0}
-        <!-- EXPANDED FULL-VIEW (P0.3b re-spec + owner split extension): up to
-             TWO RACKLINE faceplates SIDE-BY-SIDE (50/50, open order =
-             left→right), each an independently scrollable pane (its own
-             overflow container — no shared scrollbar). A pane's ✕ closes just
-             that pane (the survivor returns to full width); ESC / the M-E-C
-             handoff close the whole view. data-fullview-flipped is the TAB
-             rear-card seam: ONE view-global flag, so with the 50/50 split
-             BOTH panes flip together — each pane renders its RearCard (the
-             flip-side patch field) while flipped. -->
-        <div
-          class="dock-fullview-drawer"
-          data-testid="dock-fullview-drawer"
-          data-pane-count={fullViewCards.length}
-          data-fullview-flipped={dockStore.fullViewFlipped}
-        >
-          {#each fullViewCards as fv (fv.node.id)}
-            <div class="dock-fullview-pane" data-testid="dock-fullview-pane" data-pane-node={fv.node.id}>
-              <DockFullView
-                node={fv.node}
-                nodeTypes={nodeTypes as unknown as Record<string, unknown>}
-                rackSize={rackSizeByType[fv.node.type]}
-                migrated={migrated(fv.node.type)}
-                title={fv.title}
-                onClose={() => dockStore.closeFullView(fv.node.id)}
-                onCollapse={() => dockStore.closeFullView(fv.node.id)}
-                flipped={dockStore.fullViewFlipped}
-              />
-            </div>
-          {/each}
-        </div>
-      {:else}
-        <!-- The P1 M/E/C drawer GENERALIZED (P2.5a): the pinned occupant
-             (drawer-only forever, owner Q2) alongside docked cards. Renders
-             zero pixels when nothing is pinned-open or docked. -->
-        <DockRail
-          zone="bottom"
-          cards={bottomRailCards}
-          nodeTypes={nodeTypes as unknown as Record<string, unknown>}
-          {rackSizeByType}
-          onUndock={undockNode}
-          onClosePinned={() => dockStore.close('bottom')}
-          {rearView}
-        />
-      {/if}
+    <!-- THE BOTTOM DRAWER — ONE container, ONE occupant (dock unification,
+         owner design call): EITHER the expanded full-view faceplate OR the
+         P2.5a rail (the toggled pinned M/E/C occupant + cards docked to
+         'bottom'). The {#if}/{:else} makes the exclusivity STRUCTURAL — the
+         two bottom elements can never coexist in the DOM, so there is no
+         z-fight for hotkeys to lose (the "c behind the full-view" bug). The
+         dockStore occupancy invariant (pinned XOR full-view) keeps the state
+         side equally exclusive; ESC closes whichever is open (dock-key
+         handler above). Preview-off, fullViewCards is always empty → the
+         rail renders exactly as shipped. -->
+    {#if fullViewCards.length > 0}
+      <!-- EXPANDED FULL-VIEW (P0.3b re-spec + owner split extension): up to
+           TWO RACKLINE faceplates SIDE-BY-SIDE (50/50, open order =
+           left→right), each an independently scrollable pane (its own
+           overflow container — no shared scrollbar). A pane's ✕ closes just
+           that pane (the survivor returns to full width); ESC / the M-E-C
+           handoff close the whole view. data-fullview-flipped is the TAB
+           rear-card seam: ONE view-global flag, so with the 50/50 split
+           BOTH panes flip together — each pane renders its RearCard (the
+           flip-side patch field) while flipped. -->
+      <div
+        class="dock-fullview-drawer"
+        data-testid="dock-fullview-drawer"
+        data-pane-count={fullViewCards.length}
+        data-fullview-flipped={dockStore.fullViewFlipped}
+      >
+        {#each fullViewCards as fv (fv.node.id)}
+          <div class="dock-fullview-pane" data-testid="dock-fullview-pane" data-pane-node={fv.node.id}>
+            <DockFullView
+              node={fv.node}
+              nodeTypes={nodeTypes as unknown as Record<string, unknown>}
+              rackSize={rackSizeByType[fv.node.type]}
+              migrated={migrated(fv.node.type)}
+              title={fv.title}
+              onClose={() => dockStore.closeFullView(fv.node.id)}
+              onCollapse={() => dockStore.closeFullView(fv.node.id)}
+              flipped={dockStore.fullViewFlipped}
+            />
+          </div>
+        {/each}
+      </div>
+    {:else}
+      <!-- The P1 M/E/C drawer GENERALIZED (P2.5a): the pinned occupant
+           (drawer-only forever, owner Q2) alongside docked cards. Renders
+           zero pixels when nothing is pinned-open or docked. -->
+      <DockRail
+        zone="bottom"
+        cards={bottomRailCards}
+        nodeTypes={nodeTypes as unknown as Record<string, unknown>}
+        {rackSizeByType}
+        onUndock={undockNode}
+        onClosePinned={() => dockStore.close('bottom')}
+        {rearView}
+      />
     {/if}
     <button
       type="button"
@@ -8168,7 +7872,7 @@
       nodeTypes={nodeTypes as unknown as Record<string, unknown>}
     />
     <PickupCable />
-    {#if workflowMode && dockPanTails.length > 0 && flowApi}
+    {#if dockPanTails.length > 0 && flowApi}
       <!-- DOCKING P2.5b: gesture-scoped stub→rail tail (presentation-only;
            mounted onmovestart, killed onmoveend — zero idle cost). -->
       <DockPanTail
@@ -8476,16 +8180,14 @@
     background: var(--bg);
     color: var(--text);
   }
-  .root > .topbar,
   .root > .error,
   .root > .bottombar,
   .root > .trace-panel {
     flex: 0 0 auto;
   }
   /* DOCKING P2.5a: .flow sits inside .canvas-row — a flex ROW that hosts
-   * the LEFT dock rail as a reserved-space sibling (workflow mode only; in
-   * dawless the row contains only .flow, so the layout is unchanged: the
-   * row takes the old `.root > .flow` flex slot and .flow fills it). */
+   * the LEFT dock rail as a reserved-space sibling. The row takes the old
+   * `.root > .flow` flex slot and .flow fills what the rail leaves. */
   .root > .canvas-row {
     flex: 1 1 auto;
     display: flex;
@@ -8517,232 +8219,6 @@
     flex: 1 1 0;
     min-width: 0;
     display: flex;
-  }
-  .topbar {
-    display: flex;
-    /* DYNAMIC overflow guard (owner report: at narrow widths the row of
-       topbar controls ran past the viewport and pushed the rightmost
-       control — the Sign in / account link at the end of .actions — clean
-       off the header; at 1280 it sat ~80px past the edge). flex-wrap lets
-       a whole CLUSTER (the .actions div) flow to a second row instead, so
-       every control stays inside the viewport at any width ≥ 1024px
-       (guarded by the topbar-1024 e2e at 1024/1280/1920).
-
-       VRT note: the wrap makes the topbar TALLER below ~1450px, including
-       the 1280×720 VRT viewport, which moves the canvas origin. Per-card
-       baselines (vrt.spec, the strict gate) are insulated from that:
-       SvelteFlow nodes are transform-positioned (own composited layer,
-       whole-pixel snapped), so a card's element screenshot doesn't change
-       with the pane offset — verified by running the FULL vrt lane against
-       the committed baselines with this wrap in place. Only the
-       topbar/landing-page scenes (which frame the header itself) were
-       re-captured. */
-    flex-wrap: wrap;
-    align-items: baseline;
-    gap: 0.5rem 1rem;
-    padding: 0.8rem 1.25rem;
-    border-bottom: 1px solid #1f242c;
-  }
-  /* Never let the topbar's flex row squeeze the controls THEMSELVES. Under the
-     default flex-shrink:1 a tight row compressed each control below its
-     content width, and the ones with `white-space: normal` (the theme-picker
-     dropdown + the aspect / Electra buttons, which live in CHILD components
-     and so can't be reached by a `.topbar button` rule scoped to this file)
-     wrapped their label to two lines. That ~doubled the row height, grew the
-     topbar by a non-integer amount, and shifted the SvelteFlow canvas + every
-     card down to a fractional Y — rastering all text-heavy module cards ±1px
-     on CI (the documented VRT 1px-layout-rounding flake). Pinning children to
-     flex-shrink:0 keeps each control at its natural single-line size; when a
-     row gets tight the flex-wrap above moves whole controls to the next row
-     instead of compressing them. (.actions below deliberately overrides this
-     for ITSELF — it wraps internally, so shrinking it is safe.) */
-  .topbar > * {
-    flex-shrink: 0;
-  }
-  .topbar h1 {
-    margin: 0;
-    font-weight: 500;
-    font-size: 1.05rem;
-  }
-  /* Version suffix: a subtle, dimmer, smaller tag after the brand word. Stays
-     on the same single line so it never grows the topbar row height (see the
-     .topbar > * flex-shrink:0 note above). The VRT masks this element so a
-     version bump can't churn the topbar snapshot. */
-  .topbar h1 .app-version {
-    color: var(--text-dim);
-    font-weight: 400;
-    font-size: 0.8rem;
-  }
-  .topbar .caption {
-    color: var(--text-dim);
-    font-size: 0.8rem;
-  }
-  .topbar .actions {
-    margin-left: auto;
-    display: flex;
-    /* The cluster wraps INTERNALLY: whole controls flow to the next row
-       (each keeps its natural size via the .actions > * rule below), and
-       rows stay right-anchored so the auth control hugs the right edge. */
-    flex-wrap: wrap;
-    justify-content: flex-end;
-    gap: 0.4rem;
-    /* Override .topbar > * flex-shrink:0 for the cluster itself: letting it
-       shrink below its one-line content width is safe (it wraps instead of
-       compressing) and guarantees it can never push past the viewport even
-       if it ends up alone on a row narrower than its content. min-width:0
-       lets flexbox actually take it below the content width. */
-    flex-shrink: 1;
-    min-width: 0;
-  }
-  .topbar .actions > * {
-    flex-shrink: 0;
-  }
-  /* The wide select may give up a handful of px before the cluster wraps —
-     a native select clips its label without changing height, so a slight
-     squeeze is invisible while it saves a whole extra row on in-between
-     viewport widths. Floored so it never collapses into an unusable
-     sliver. (Higher specificity than the .actions > * pin above.) */
-  .topbar select.raw-json {
-    flex-shrink: 1;
-    min-width: 6.5rem;
-  }
-  .topbar button {
-    background: #2a2f3a;
-    color: var(--text);
-    border: 1px solid #404652;
-    padding: 0.35rem 0.8rem;
-    font-size: 0.8rem;
-    border-radius: 4px;
-    cursor: pointer;
-  }
-  /* "Raw JSON" dropdown — neutral utility control (matches .topbar button):
-     it's a convenience export/import. (The accent `.primary` /
-     `.load-example` / `.glitches` rules went with the "Load example…"
-     dropdown and the curated-demo buttons it had already replaced.) */
-  .topbar select.raw-json {
-    background: #2a2f3a;
-    color: var(--text);
-    border: 1px solid #404652;
-    padding: 0.35rem 0.8rem;
-    font-size: 0.8rem;
-    font-family: inherit;
-    border-radius: 4px;
-    cursor: pointer;
-  }
-  .topbar select.raw-json option {
-    background: #2a2f3a;
-    color: var(--text);
-  }
-  .topbar button:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-  }
-  /* ---- Preset SLOT bar (top-left) ---- */
-  .topbar .preset-bar {
-    display: flex;
-    align-items: center;
-    gap: 0.3rem;
-  }
-  .topbar .preset-bar .slot {
-    /* Compact, fixed-width numbered button. EMPTY = red, OCCUPIED = green. */
-    width: 1.7rem;
-    padding: 0.3rem 0;
-    text-align: center;
-    font-weight: 600;
-    /* Empty (default): red. */
-    background: #5a2230;
-    border-color: #8a3346;
-    color: #ffd7df;
-  }
-  .topbar .preset-bar .slot.occupied {
-    background: #1f5a32;
-    border-color: #2f8a4c;
-    color: #d7ffe2;
-  }
-  .topbar .preset-bar .slot:hover:not(:disabled) {
-    filter: brightness(1.2);
-  }
-  .topbar .preset-bar .set-btn {
-    margin-left: 0.2rem;
-  }
-  /* ---- Per-slot right-click context menu ---- */
-  .slot-menu-backdrop {
-    position: fixed;
-    inset: 0;
-    z-index: 9998;
-    background: transparent;
-  }
-  .slot-menu {
-    position: fixed;
-    z-index: 9999;
-    min-width: 9rem;
-    background: #2a2f3a;
-    border: 1px solid #404652;
-    border-radius: 5px;
-    padding: 0.25rem;
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
-    display: flex;
-    flex-direction: column;
-    gap: 0.15rem;
-  }
-  .slot-menu .slot-menu-title {
-    color: var(--text-dim);
-    font-size: 0.72rem;
-    padding: 0.2rem 0.45rem;
-  }
-  .slot-menu button {
-    background: transparent;
-    color: var(--text);
-    border: none;
-    text-align: left;
-    padding: 0.35rem 0.45rem;
-    font-size: 0.8rem;
-    border-radius: 4px;
-    cursor: pointer;
-  }
-  .slot-menu button:hover {
-    background: #3a4150;
-  }
-  .topbar .signin-link {
-    background: #2a2f3a;
-    color: var(--text);
-    border: 1px solid #404652;
-    padding: 0.35rem 0.8rem;
-    font-size: 0.8rem;
-    border-radius: 4px;
-    text-decoration: none;
-    display: inline-flex;
-    align-items: center;
-    margin-left: 0.4rem;
-  }
-  .topbar .signin-link:hover {
-    background: #353a47;
-  }
-  .topbar .account-link {
-    display: inline-flex;
-    align-items: center;
-    margin-left: 0.4rem;
-    text-decoration: none;
-  }
-  .topbar .account-avatar {
-    width: 28px;
-    height: 28px;
-    border-radius: 50%;
-    border: 1px solid #404652;
-    object-fit: cover;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-  }
-  .topbar .account-avatar-fallback {
-    background: #2a2f3a;
-    color: var(--text);
-    font-size: 0.72rem;
-    font-weight: 600;
-    line-height: 1;
-  }
-  .topbar .account-link:hover .account-avatar {
-    border-color: #6ba0d4;
   }
   /* DOCKING P2.5a: transient dock toast (auto-evict / delete notices). */
   .dock-toast {

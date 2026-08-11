@@ -18,7 +18,7 @@
 // literal instead of an inequality, and it is renderer-independent: no frame
 // budget, no wall-clock, no tuning.
 //
-// Runs on /rack?mode=workflow (no DB, no relay) — the normal e2e lane.
+// Runs on /rack?shell=legacy (no DB, no relay) — the normal e2e lane.
 
 import { test, expect, type Locator, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
@@ -33,7 +33,7 @@ const SLOW_RENDER = process.env.E2E_SWIFTSHADER === '1' || !!process.env.CI;
 
 /** Boot the migrated shell (`?shell=1`) and wait for the workflow chrome. */
 async function gotoShell(page: Page): Promise<void> {
-  await page.goto('/rack?mode=workflow&shell=1');
+  await page.goto('/rack?shell=legacy');
   // The BOOT wait: the first test of a run pays SvelteKit's on-demand /rack
   // compile. Same bound the sibling workflow specs carry.
   await expect(page.getByTestId('workflow-topbar')).toBeVisible({
@@ -463,7 +463,7 @@ test.describe('VCA legacy card — the def-owned readout reaches the card too', 
   test('the base fader prints the DEF formatter, not the raw number', async ({ page }) => {
     test.setTimeout(SLOW_RENDER ? 60_000 : 30_000);
     // NO `shell=1`: this is the legacy card path, the one `paramProps` feeds.
-    await page.goto('/rack?mode=workflow');
+    await page.goto('/rack?shell=legacy');
     await page.locator('.svelte-flow__pane:visible').first().waitFor({
       state: 'visible',
       timeout: SLOW_RENDER ? 30_000 : 15_000,

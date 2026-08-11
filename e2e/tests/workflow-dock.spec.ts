@@ -1,6 +1,6 @@
 // e2e/tests/workflow-dock.spec.ts
 //
-// WORKFLOW MODE P2.5a — the DOCKING CORE on /rack?mode=workflow:
+// WORKFLOW MODE P2.5a — the DOCKING CORE on /rack?shell=legacy:
 //
 //   * THE SPIKE (gated PatchPanel): a REAL module card renders in a dock
 //     rail OUTSIDE the SvelteFlow provider — zero pageerrors, functional
@@ -19,7 +19,7 @@
 //   * Dawless unchanged: no rails, no dock menu entries, PatchPanel's
 //     canvas handle stack intact.
 //
-// Driving /rack?mode=workflow keeps this in the NORMAL e2e lane (no
+// Driving /rack?shell=legacy keeps this in the NORMAL e2e lane (no
 // DB/relay) — same rationale as workflow-mode.spec.ts. Docking is LOCAL
 // state (never in the Y.Doc), so no multi-context spec here (the tagged
 // multi-user dock spec is P2.5b's, per the owner's attest answer).
@@ -39,7 +39,7 @@ function collectErrors(page: Page): string[] {
 }
 
 async function gotoWorkflow(page: Page): Promise<void> {
-  await page.goto('/rack?mode=workflow');
+  await page.goto('/rack?shell=legacy');
   await expect(page.getByTestId('workflow-topbar')).toBeVisible();
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
 }
@@ -338,7 +338,7 @@ test.describe('P2.5b pan cable tail (workflow racks)', () => {
 test.describe('dawless is unchanged by the docking core', () => {
   test('/rack: no rails, no dock menu entries, PatchPanel handle stack intact on canvas cards', async ({ page }) => {
     const errors = collectErrors(page);
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy');
     await expect(page.locator('header.topbar')).toBeVisible();
     await page.locator('.svelte-flow__pane').waitFor({ state: 'visible' });
 

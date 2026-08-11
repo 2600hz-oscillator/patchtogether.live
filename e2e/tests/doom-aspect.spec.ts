@@ -45,7 +45,7 @@ test.describe('DOOM — aspect / letterbox shape in the 4:3 engine pipeline', ()
       if (m.type() === 'error') errors.push(`console.error: ${m.text()}`);
     });
 
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy');
     await page.waitForLoadState('networkidle');
 
     // Pre-flight: WASM + WAD on the dev server. Skip clean if missing —

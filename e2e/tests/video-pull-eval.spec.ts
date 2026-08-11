@@ -109,7 +109,7 @@ test.describe('video pull evaluation — unwatched chains cost zero', () => {
   test('offscreen generator chain stops drawing; watched OUTPUT keeps 1:1 cadence', async ({ page, errorWatch }) => {
     test.setTimeout(60_000);
 
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(page, pullPatchNodes(), pullPatchEdges());
@@ -182,7 +182,7 @@ test.describe('video pull evaluation — unwatched chains cost zero', () => {
     // use-render-lease fix only VideoOutCard held the lease: measured on
     // main, a presenting backdraft drew 1:1 on-screen (+80/+80) and exactly
     // ZERO frames once scrolled off — the projector froze on the last frame.
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(page, [
@@ -257,7 +257,7 @@ test.describe('video pull evaluation — unwatched chains cost zero', () => {
       (globalThis as unknown as { __videoPullEval?: boolean }).__videoPullEval = false;
     });
 
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(page, pullPatchNodes(), pullPatchEdges());

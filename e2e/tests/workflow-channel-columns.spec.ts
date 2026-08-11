@@ -17,7 +17,7 @@
 //      the source channel's send amount auto-raises, and with the dry channel
 //      muted the WET-only path is still audible.
 //
-// Driving /rack?mode=workflow keeps this in the normal e2e lane (no DB/relay).
+// Driving /rack?shell=legacy keeps this in the normal e2e lane (no DB/relay).
 // Audio RMS uses the same real AudioContext the other audio specs assert on (the
 // --autoplay-policy launch flag lets it start headless); thresholds are tolerant
 // and timeouts generous for the CI software renderer / slow round-trips.
@@ -238,7 +238,7 @@ test.describe('workflow channel columns', () => {
   });
 
   test('palette-drop into columns 1/2/3 wires clip-control + tail send + automation lane', async ({ page }) => {
-    await page.goto('/rack?mode=workflow');
+    await page.goto('/rack?shell=legacy');
     await waitForPinnedTrio(page);
 
     await dropInBand(page, 'tidyVco', colPos(1));
@@ -270,7 +270,7 @@ test.describe('workflow channel columns', () => {
   });
 
   test('REAL source chain: the clip player drives each channel to audible RMS at the mixer + audio out', async ({ page }) => {
-    await page.goto('/rack?mode=workflow');
+    await page.goto('/rack?shell=legacy');
     await waitForPinnedTrio(page);
 
     await dropInBand(page, 'tidyVco', colPos(1));
@@ -296,7 +296,7 @@ test.describe('workflow channel columns', () => {
     // that actually reddened main. Two palette drops through the reconciler
     // plus an audio-RMS read; the work is genuine, the budget was not sized.
     test.slow();
-    await page.goto('/rack?mode=workflow');
+    await page.goto('/rack?shell=legacy');
     await waitForPinnedTrio(page);
 
     // Two tidyVcos dropped into the SAME column (channel 1). The second drop
@@ -328,7 +328,7 @@ test.describe('workflow channel columns', () => {
   test('SOURCE→DSP: drop tidyvco then cloudseed into the SAME column → tidyvco patched THROUGH cloudseed (one island, not two)', async ({ page }) => {
     // The owner's exact case. cloudseed is a DSP (has an audio input → NOT a
     // clip source), so it must INSERT into the chain, not form a parallel island.
-    await page.goto('/rack?mode=workflow');
+    await page.goto('/rack?shell=legacy');
     await waitForPinnedTrio(page);
 
     await dropInBand(page, 'tidyVco', colPos(4));
@@ -365,7 +365,7 @@ test.describe('workflow channel columns', () => {
     // IDENTICALLY to [source, FX] — chain order is decided by ROLE, not insertion
     // order. The old island partitioning started a new island at the trailing
     // source → TWO islands → BOTH reached the mixer (4 edges into ch), no splice.
-    await page.goto('/rack?mode=workflow');
+    await page.goto('/rack?shell=legacy');
     await waitForPinnedTrio(page);
     await waitForHooks(page);
     await page.waitForFunction(
@@ -436,7 +436,7 @@ test.describe('workflow channel columns', () => {
   });
 
   test('DRAG a free card into a column assigns + chains it (the drag-drop path)', async ({ page }) => {
-    await page.goto('/rack?mode=workflow');
+    await page.goto('/rack?shell=legacy');
     await waitForPinnedTrio(page);
     // A tidyvco already in column 5.
     await dropInBand(page, 'tidyVco', colPos(5));
@@ -496,7 +496,7 @@ test.describe('workflow channel columns', () => {
     // membership, so the reconciler owns the wiring deterministically. This test
     // drives the REAL commit handler (__assignNodeToChannel = the menu callback)
     // and is run 10× (REPEAT) to catch the reported intermittency.
-    await page.goto('/rack?mode=workflow');
+    await page.goto('/rack?shell=legacy');
     await waitForPinnedTrio(page);
     await waitForHooks(page);
     await page.waitForFunction(
@@ -566,7 +566,7 @@ test.describe('workflow channel columns', () => {
   });
 
   test('SEND 1: a DSP dropped in the send box forms the aux loop + auto-raises the send + is audible end-to-end', async ({ page }) => {
-    await page.goto('/rack?mode=workflow');
+    await page.goto('/rack?shell=legacy');
     await waitForPinnedTrio(page);
 
     // One source in channel 1, then a reverb in SEND 1.
@@ -615,7 +615,7 @@ test.describe('workflow channel columns', () => {
   // -------- PART B: CV Buddy lane note tap + ES-9 return audio --------
 
   test('CV BUDDY lane: REAL clip lane taps the CV Buddy inputs + (with ES-9) its return reaches the channel', async ({ page }) => {
-    await page.goto('/rack?mode=workflow');
+    await page.goto('/rack?shell=legacy');
     await waitForPinnedTrio(page);
 
     // An ES-9 in the rack (free canvas, NOT a column member) — the CV Buddy's
@@ -663,7 +663,7 @@ test.describe('workflow channel columns', () => {
     // a stock Playwright default doing gating work nobody sized it for.
     // ×3 → 90 s; costs nothing when green.
     test.slow();
-    await page.goto('/rack?mode=workflow');
+    await page.goto('/rack?shell=legacy');
     await waitForPinnedTrio(page);
 
     // An in-app source (tidyVco) on channel 2 — the audible lane head.
@@ -709,7 +709,7 @@ test.describe('workflow channel columns', () => {
     // REAL palette-drop + the REAL card <select>, and asserts the lane +
     // clip-tap edge set is BYTE-IDENTICAL across the change.
     await installMidiOutCapture(page);
-    await page.goto('/rack?mode=workflow');
+    await page.goto('/rack?shell=legacy');
     await waitForPinnedTrio(page);
 
     await dropInBand(page, 'midiOutBuddy', colPos(3));
@@ -802,7 +802,7 @@ test.describe('workflow: adding a module reveals it in-view (no click)', () => {
   for (const shell of [false, true]) {
     const label = shell ? 'mode=workflow&shell=1' : 'mode=workflow';
     test(`a real palette spawn into a column lands the tile WITHIN the viewport (${label})`, async ({ page }) => {
-      await page.goto(shell ? '/rack?mode=workflow&shell=1' : '/rack?mode=workflow');
+      await page.goto(shell ? '/rack?shell=legacy' : '/rack?shell=legacy');
       await waitForPinnedTrio(page);
       await waitForHooks(page);
 

@@ -22,7 +22,7 @@
 //     hand-rolled collectors, and converting a previously-unwatched spec is a
 //     behavior change that needs its own triage (see the LoC report, row 3).
 //
-//   * `rack` — the standard `goto('/rack')` + `networkidle` navigation that
+//   * `rack` — the standard `goto('/rack?shell=legacy')` + `networkidle` nav that
 //     opened ~90% of specs. Destructure `rack` and the page is already on the
 //     rack when the body runs (fixtures resolve before the test body):
 //
@@ -67,8 +67,23 @@ export const test = base.extend<{ errorWatch: ErrorWatch; rack: void }>({
     watch.assertClean();
   },
 
+  // THE rack fixture — ~169 specs reach the canvas only through here.
+  //
+  // `?shell=legacy` is deliberate, not incidental. The bare default `/rack` renders
+  // each module as a FACEPLATE tile (ModuleShell / ModuleShellPlaceholder), so
+  // a module's own card testids do not exist in the lane; `?shell=legacy`
+  // renders the verbatim *Card.svelte inside the same shell, which is what
+  // every card-interaction spec here is written against. Specs that test the
+  // FACEPLATE render (or the shell chrome itself) navigate explicitly instead
+  // of using this fixture.
+  //
+  // ⚠ This is NOT "the old default". The old bare `/rack` was the deleted
+  // second shell: no WorkflowTopbar, no dock rails, no channel-columns
+  // overlay, no pinned singletons, an empty graph and xyflow's 0.5 zoom floor.
+  // `?shell=legacy` keeps the CARDS and nothing else — every spec here now runs
+  // against the real shell chrome and the seeded pinned + video-zone nodes.
   rack: async ({ page }, use) => {
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy');
     await page.waitForLoadState('networkidle');
     await use();
   },

@@ -93,7 +93,7 @@ test.describe('PEAKSTATE — deterministic render smoke', () => {
       (globalThis as unknown as { __peakstateVrtSeed?: boolean }).__peakstateVrtSeed = true;
     });
 
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy');
     await page.waitForLoadState('networkidle');
 
     // PEAKSTATE is a pure generated SOURCE (no video input) → OUTPUT so it
@@ -165,7 +165,7 @@ test.describe('PEAKSTATE — deterministic render smoke', () => {
     await page.addInitScript(() => {
       (globalThis as unknown as { __peakstateVrtSeed?: boolean }).__peakstateVrtSeed = true;
     });
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy');
     await page.waitForLoadState('networkidle');
 
     // Spawn all three sinks up front but wire ONLY rgb_out, so phase 2 is a

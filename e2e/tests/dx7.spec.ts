@@ -376,7 +376,7 @@ test.describe('dx7 preset stamp — persistence', () => {
   });
 
   test('a preset change stamps 5 values and survives a real browser reload', async ({ page }) => {
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy');
     await page.waitForLoadState('networkidle');
 
     const idbOk = await page.evaluate(() => typeof indexedDB !== 'undefined' && indexedDB !== null);

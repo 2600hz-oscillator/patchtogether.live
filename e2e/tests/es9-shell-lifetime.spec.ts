@@ -49,7 +49,7 @@ async function cardMounted(page: Page): Promise<boolean> {
 }
 
 async function spawnEs9(page: Page, shell: boolean): Promise<void> {
-  await page.goto(`/rack?mode=workflow${shell ? '&shell=1' : ''}`);
+  await page.goto(`/rack?shell=legacy${shell ? '&shell=1' : ''}`);
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
     { id: NODE, type: 'es9', position: { x: 140, y: 140 }, domain: 'audio' },

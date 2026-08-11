@@ -87,7 +87,7 @@ type W = {
 
 async function bootVideoPatch(page: Page, errors: string[]): Promise<void> {
   page.on('pageerror', (e) => errors.push(e.message));
-  await page.goto('/rack');
+  await page.goto('/rack?shell=legacy');
   await page.waitForLoadState('networkidle');
   // Isolate from any persisted bindings on this dev origin.
   await page.evaluate(() => window.localStorage.removeItem('pt.midi-bindings.v1'));

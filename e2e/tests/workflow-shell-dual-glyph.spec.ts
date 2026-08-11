@@ -27,7 +27,7 @@ import { setNodeParams } from './_module-coverage-helpers';
 const DOCK_HERO_GLYPH_W = 214;
 
 async function gotoWorkflowShell(page: Page): Promise<void> {
-  await page.goto('/rack?mode=workflow&shell=1');
+  await page.goto('/rack?shell=legacy');
   await expect(page.getByTestId('workflow-topbar')).toBeVisible();
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
 }

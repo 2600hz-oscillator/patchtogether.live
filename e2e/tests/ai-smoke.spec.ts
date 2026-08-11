@@ -11,7 +11,7 @@ import { spawnPatch } from './_helpers';
 
 test.describe('AI smoke check', () => {
   test('app: HTTP 200 + COOP/COEP headers @smoke', async ({ page }) => {
-    const response = await page.goto('/rack');
+    const response = await page.goto('/rack?shell=legacy');
     expect(response, 'no response').toBeTruthy();
     expect(response!.status(), `status ${response!.status()}`).toBe(200);
     const headers = response!.headers();
@@ -31,12 +31,12 @@ test.describe('AI smoke check', () => {
   });
 
   test('app: title is patchtogether.live @smoke', async ({ page }) => {
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy');
     await expect(page).toHaveTitle('patchtogether.live');
   });
 
   test('app: cross-origin-isolated context (Faust SharedArrayBuffer prereq) @smoke', async ({ page }) => {
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy');
     const isolated = await page.evaluate(() => globalThis.crossOriginIsolated);
     expect(isolated, 'crossOriginIsolated must be true').toBe(true);
   });

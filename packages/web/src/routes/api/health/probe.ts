@@ -64,10 +64,17 @@ export async function probeHocuspocus(
 export interface DatabaseProbe {
   /** True iff the DB was REACHED and the probe query returned. */
   ok: boolean;
-  /** Migration currency (only when reachable): 'mode-missing' = the pre-005
-   *  schema-drift class that 500'd every racks.mode read for a week
-   *  (deploy-before-migrate) while `db:'configured'` still said 200. */
-  schema?: 'current' | 'mode-missing';
+  /** Migration currency (only when reachable): 'racks-missing' = the DB
+   *  answered but has no `racks` table at all — the deploy-before-migrate
+   *  schema-drift class that 500'd every rack read for a week while
+   *  `db:'configured'` still said 200.
+   *
+   *  ⚠ This marker used to be the `racks.mode` COLUMN (migration 005). 006
+   *  drops that column, so keeping it would have inverted the probe's meaning
+   *  and reported every migrated tier as degraded forever. It is anchored to
+   *  the base table (001) instead — a marker that only ever gets ADDED, so it
+   *  cannot be falsified by a later migration the way a column can. */
+  schema?: 'current' | 'racks-missing';
   /** Round-trip time in ms (only on a completed query). */
   ms?: number;
   /** Human-readable failure reason (only when !ok). Never a secret. */
@@ -76,31 +83,31 @@ export interface DatabaseProbe {
 
 export interface DbProbeDeps {
   /** Runs the migration-marker query and resolves to the number of rows
-   *  matching the racks.mode information_schema lookup (1 = column present /
-   *  005 applied, 0 = pre-005), or REJECTS if the DB is unreachable. The
+   *  matching the `racks` information_schema lookup (1 = table present / 001
+   *  applied, 0 = no schema at all), or REJECTS if the DB is unreachable. The
    *  +server.ts wires this to the real Neon `sql()`; tests inject a fake. */
-  queryModeColumnCount: () => Promise<number>;
+  queryRacksTableCount: () => Promise<number>;
   now: () => number;
   timeoutMs: number;
 }
 
 /**
  * Probe the Postgres tier with a REAL read — an information_schema lookup for
- * the racks.mode column (the marker for migration 005). NEVER throws: an
- * unreachable DB is `{ ok:false, error }`; a reachable-but-pre-005 DB is
- * `{ ok:true, schema:'mode-missing' }`. This is the signal the presence-only
- * `DATABASE_URL ? 'configured'` check LACKED — it returned 200 while every
- * racks.mode read 500'd for a week. Bounded so a stuck DB can't hang the health
- * endpoint (the query may keep running in the background if the timeout wins,
- * but the probe returns); information_schema is chosen over `SELECT mode` so the
- * probe is data-independent and never itself trips the mode()-aggregate 42809.
+ * the `racks` table (the marker for migration 001). NEVER throws: an
+ * unreachable DB is `{ ok:false, error }`; a reachable-but-unmigrated DB is
+ * `{ ok:true, schema:'racks-missing' }`. This is the signal the presence-only
+ * `DATABASE_URL ? 'configured'` check LACKED — it returned 200 while every rack
+ * read 500'd for a week. Bounded so a stuck DB can't hang the health endpoint
+ * (the query may keep running in the background if the timeout wins, but the
+ * probe returns); information_schema is chosen over `SELECT … FROM racks` so
+ * the probe is data-independent.
  */
 export async function probeDatabase(
   hasUrl: boolean,
   deps: Partial<DbProbeDeps> = {},
 ): Promise<DatabaseProbe> {
   if (!hasUrl) return { ok: false, error: 'database url unset (DATABASE_URL)' };
-  const run = deps.queryModeColumnCount;
+  const run = deps.queryRacksTableCount;
   if (!run) return { ok: false, error: 'db probe query not wired' };
   const now = deps.now ?? Date.now;
   const timeoutMs = deps.timeoutMs ?? 2000;
@@ -116,7 +123,7 @@ export async function probeDatabase(
         );
       }),
     ]);
-    return { ok: true, schema: count > 0 ? 'current' : 'mode-missing', ms: now() - start };
+    return { ok: true, schema: count > 0 ? 'current' : 'racks-missing', ms: now() - start };
   } catch (e) {
     return { ok: false, ms: now() - start, error: e instanceof Error ? e.message : 'db probe failed' };
   } finally {

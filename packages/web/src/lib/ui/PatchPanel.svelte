@@ -877,7 +877,7 @@
   //     contracts are unambiguous);
   //   * the re-measure $effect below is a no-op (nothing to re-measure —
   //     the stub's handles never move).
-  // INSIDE the provider (every canvas card, dawless and workflow alike)
+  // INSIDE the provider (every canvas card)
   // the try succeeds and behavior is byte-identical to before this gate.
   function captureFlowStore(): ReturnType<typeof useStore> | null {
     try {

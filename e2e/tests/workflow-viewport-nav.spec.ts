@@ -15,7 +15,7 @@
 // The pure translate math is unit-tested in channel-columns.test.ts; this spec
 // asserts the WIRING end-to-end by projecting the target flow point through the
 // LIVE viewport (flowToScreenPosition) after the pan settles and checking where
-// it lands on screen. Driving /rack?mode=workflow keeps it in the normal e2e
+// it lands on screen. Driving /rack keeps it in the normal e2e
 // lane (no DB/relay).
 
 import { test, expect, type Page } from '@playwright/test';
@@ -92,7 +92,7 @@ test.describe('workflow viewport navigation (keyboard pan)', () => {
   });
 
   test("'3' centers column 3 horizontally with its baseline at the viewport bottom", async ({ page }) => {
-    await page.goto('/rack?mode=workflow');
+    await page.goto('/rack?shell=legacy');
     await waitForPinnedTrio(page);
     await waitForFlowHook(page);
 
@@ -110,7 +110,7 @@ test.describe('workflow viewport navigation (keyboard pan)', () => {
   });
 
   test("'V' snaps the video area's lower-left corner to the viewport's lower-left corner", async ({ page }) => {
-    await page.goto('/rack?mode=workflow');
+    await page.goto('/rack?shell=legacy');
     await waitForPinnedTrio(page);
     await waitForFlowHook(page);
 
@@ -127,7 +127,7 @@ test.describe('workflow viewport navigation (keyboard pan)', () => {
   });
 
   test('GUARD: a number pressed while a text input is focused does NOT pan', async ({ page }) => {
-    await page.goto('/rack?mode=workflow');
+    await page.goto('/rack?shell=legacy');
     await waitForPinnedTrio(page);
     await waitForFlowHook(page);
 

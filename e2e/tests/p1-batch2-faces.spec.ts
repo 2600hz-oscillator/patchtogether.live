@@ -28,7 +28,7 @@
 // preview OFF (the default) a batch-2 module still renders its REAL legacy
 // card in the lane. Promotion to STRICT_FACES must not leak out of `?shell=1`.
 //
-// Runs on /rack?mode=workflow (no DB/relay) — the normal e2e lane.
+// Runs on /rack?shell=legacy (no DB/relay) — the normal e2e lane.
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
@@ -72,7 +72,7 @@ const BATCH2 = [
 const NODE = 'b2';
 
 async function gotoWorkflow(page: Page, opts: { shell: boolean }): Promise<void> {
-  await page.goto(opts.shell ? '/rack?mode=workflow&shell=1' : '/rack?mode=workflow');
+  await page.goto(opts.shell ? '/rack?shell=legacy' : '/rack?shell=legacy');
   await expect(page.getByTestId('workflow-topbar')).toBeVisible();
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
 }

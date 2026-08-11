@@ -86,7 +86,7 @@ async function waitForHooks(page: Page): Promise<void> {
  *  member's node id — the workflow-shell-faces boot recipe. */
 async function bootWithMember(page: Page, type: string): Promise<string> {
   await pinVrtFonts(page);
-  await page.goto('/rack?mode=workflow&shell=1');
+  await page.goto('/rack?shell=legacy');
   await page.waitForLoadState('networkidle');
   await awaitVrtFonts(page);
   await waitForHooks(page);

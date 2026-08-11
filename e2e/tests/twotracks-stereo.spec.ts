@@ -156,7 +156,7 @@ async function measure(
 
 test.describe('twotracks — OUT L and OUT R are two separable jacks', () => {
   test('mono drive → jacks identical; stereo drive → jacks differ', async ({ page }) => {
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy');
 
     // ── LEG 1: MONO DRIVE. One noise output into reel A's LEFT input only.
     //    The worklet normals the unconnected right input to the left, so both

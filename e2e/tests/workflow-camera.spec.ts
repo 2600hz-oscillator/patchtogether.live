@@ -1,6 +1,6 @@
 // e2e/tests/workflow-camera.spec.ts
 //
-// WORKFLOW MODE P4 — the camera manager on /rack?mode=workflow:
+// The camera manager on /rack:
 //
 //   📷 topbar slot → ＋ maps a HEADLESS camera (a FULL cameraInput module
 //   carrying the `hiddenCard` node-data flag — NO canvas card anywhere,
@@ -17,7 +17,7 @@
 //   (renderer-tolerant: SwiftShader vs real GPU both clear them), never a
 //   wall-clock pixel race.
 //
-// Driving /rack?mode=workflow keeps this in the NORMAL e2e lane (no
+// Driving /rack keeps this in the NORMAL e2e lane (no
 // DB/relay) — same rationale as workflow-mode.spec.ts. Collaborator
 // visibility (the flag is synced node data) is covered at unit level
 // against real Y.Docs (graph/hidden-card.test.ts), not by a multi-context
@@ -62,7 +62,7 @@ async function mappedCameras(page: Page): Promise<PatchNode[]> {
 }
 
 async function gotoWorkflow(page: Page): Promise<void> {
-  await page.goto('/rack?mode=workflow');
+  await page.goto('/rack?shell=legacy');
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
 }
 

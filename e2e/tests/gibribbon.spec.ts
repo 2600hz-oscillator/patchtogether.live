@@ -183,7 +183,7 @@ test('gibribbon: card mounts cleanly + 1024×576 canvas renders the white ribbon
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-  await page.goto('/rack');
+  await page.goto('/rack?shell=legacy');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
     { id: 'g', type: 'gibribbon', position: { x: 200, y: 200 }, domain: 'video' },
@@ -297,7 +297,7 @@ test('gibribbon: joystick X/Y axes are consumed (no dead ports) — aim engaged,
   // path consumes the values without throwing or dropping the press).
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
-  await page.goto('/rack');
+  await page.goto('/rack?shell=legacy');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
     { id: 'g', type: 'gibribbon', position: { x: 200, y: 200 }, domain: 'video' },

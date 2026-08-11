@@ -58,7 +58,7 @@ async function installForwardSpy(page: import('@playwright/test').Page, id: stri
 }
 
 async function spawnBloodReady(page: import('@playwright/test').Page): Promise<boolean> {
-  await page.goto('/rack');
+  await page.goto('/rack?shell=legacy');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,

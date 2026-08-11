@@ -352,7 +352,7 @@ export const SETTLE_MS = { sameDomainScope: 800, other: 1500 } as const;
 // The CI lane is not that box. It is four Playwright workers on a 4-vCPU
 // runner with no GPU.
 
-/** `page.goto('/rack')` + networkidle + spawnPatch + step seeding, per spawn. */
+/** `page.goto('/rack?shell=legacy')` + networkidle + spawnPatch + step seeding, per spawn. */
 export const NAV_AND_SPAWN_MS = 1_400;
 /** One scope snapshot: a `page.evaluate` round trip + Float32 marshalling. */
 export const SCOPE_CAPTURE_MS = 35;

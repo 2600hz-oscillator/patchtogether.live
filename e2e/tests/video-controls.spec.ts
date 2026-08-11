@@ -199,7 +199,7 @@ test.describe('video controls drive output (deterministic render smoke)', () => 
     // Pause the rAF loop + pin the clock BEFORE boot — kills LINES auto-scroll
     // (the OLD test's drift confound) so the param is the only thing that moves.
     await installRenderSmokeHooks(page);
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(
@@ -248,7 +248,7 @@ test.describe('video controls drive output (deterministic render smoke)', () => 
     // test had to set speed:0 to fake this; the freeze does it for free + for
     // EVERY frame.time read, not just the one param.)
     await installRenderSmokeHooks(page);
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(
@@ -289,7 +289,7 @@ test.describe('video controls drive output (deterministic render smoke)', () => 
     test.setTimeout(60_000);
 
     await installRenderSmokeHooks(page);
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(
@@ -332,7 +332,7 @@ test.describe('video controls drive output (deterministic render smoke)', () => 
     test.setTimeout(60_000);
 
     await installRenderSmokeHooks(page);
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy');
     await page.waitForLoadState('networkidle');
 
     // LUMA is a single-input luminance processor (gamma / contrast / posterize /
@@ -370,7 +370,7 @@ test.describe('video controls drive output (deterministic render smoke)', () => 
     test.setTimeout(60_000);
 
     await installRenderSmokeHooks(page);
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy');
     await page.waitForLoadState('networkidle');
 
     // CHROMA is a single-input hue-shifter / colorizer, pure (no frame.time). On
@@ -412,7 +412,7 @@ test.describe('video controls drive output (deterministic render smoke)', () => 
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
     await installRenderSmokeHooks(page);
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy');
     await page.waitForLoadState('networkidle');
 
     // CHROMAKEY keys on HUE distance, so the FG must carry SATURATED color.
@@ -470,7 +470,7 @@ test.describe('video controls drive output (deterministic render smoke)', () => 
     test.setTimeout(60_000);
 
     await installRenderSmokeHooks(page);
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy');
     await page.waitForLoadState('networkidle');
 
     // INWARDS (a denser-pixel source) is FG so the luma key has a varied luma
@@ -513,7 +513,7 @@ test.describe('video controls drive output (deterministic render smoke)', () => 
     test.setTimeout(60_000);
 
     await installRenderSmokeHooks(page);
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy');
     await page.waitForLoadState('networkidle');
 
     // COLORIZER maps mono → solid tint (R = mono*tintR, etc), pure (no frame.time).
@@ -589,7 +589,7 @@ test.describe('video controls drive output (deterministic render smoke)', () => 
     test.setTimeout(60_000);
 
     await installRenderSmokeHooks(page);
-    await page.goto('/rack');
+    await page.goto('/rack?shell=legacy');
     await page.waitForLoadState('networkidle');
 
     // Two visually-distinct, frozen-pure sources (LINES line field + INWARDS

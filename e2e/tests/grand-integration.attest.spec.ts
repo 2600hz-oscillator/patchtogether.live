@@ -313,7 +313,7 @@ test.describe('grand-integration @grand-attest', () => {
 
   test('workflow-mode: kick/snare/tidy-mono/sixstrum through clips + automation + synesthesia + recorderbox, hard state throughout', async ({ page }) => {
     // ── Step 1 — Enter workflow mode; wait for the pinned spine ──
-    await page.goto('/rack?mode=workflow');
+    await page.goto('/rack?shell=legacy');
     await expect(page.getByTestId('workflow-topbar')).toBeVisible();
     await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
     await waitForPinned(page);

@@ -21,7 +21,7 @@ import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 async function spawnNumpadPlus(page: Page): Promise<void> {
-  await page.goto('/rack');
+  await page.goto('/rack?shell=legacy');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'np', type: 'numpadPlus', position: { x: 200, y: 200 } }]);
   await expect(page.locator('[data-testid="numpad-plus-card"]')).toBeVisible();

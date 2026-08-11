@@ -45,16 +45,16 @@ export const GET: RequestHandler = async () => {
   const hocuspocus = await probeHocuspocus(buildEnv.VITE_SERVER_WS_URL);
 
   // REAL DB read probe (not presence-only): an information_schema lookup for the
-  // racks.mode column (the migration-005 marker). Replaces the old
-  // `DATABASE_URL ? 'configured'` check that returned 200 while every racks.mode
-  // read 500'd for a week (deploy-before-migrate — the /r/[id] P0). Bounded +
+  // `racks` table (the migration-001 marker). Replaces the old
+  // `DATABASE_URL ? 'configured'` check that returned 200 while every rack read
+  // 500'd for a week (deploy-before-migrate — the /r/[id] P0). Bounded +
   // never throws; runs the Neon HTTP tagged template (Workers-safe).
   const hasDb = Boolean(privateEnv.DATABASE_URL);
   const database = await probeDatabase(hasDb, {
-    queryModeColumnCount: async () => {
+    queryRacksTableCount: async () => {
       const rows = await sql()`
-        SELECT 1 FROM information_schema.columns
-        WHERE table_schema = 'public' AND table_name = 'racks' AND column_name = 'mode'
+        SELECT 1 FROM information_schema.tables
+        WHERE table_schema = 'public' AND table_name = 'racks'
         LIMIT 1`;
       return (rows as unknown[]).length;
     },
@@ -67,8 +67,8 @@ export const GET: RequestHandler = async () => {
     // deps.database too — see scripts/live-smoke-alert.sh).
     ok: true,
     // 'down' = a CONFIGURED DB is UNREACHABLE (a real outage); 'degraded' = the
-    // relay is down OR the schema is pre-005 (app runs, on the dawless
-    // fallback); 'healthy' = all green. A tier with NO DATABASE_URL (prod
+    // relay is down OR the DB has no `racks` table (unmigrated);
+    // 'healthy' = all green. A tier with NO DATABASE_URL (prod
     // before launch, a DB-less dev/e2e runner) is NOT 'down' — an absent DB
     // never drove status before, and reporting 'down' for it would false-alarm.
     status:
@@ -80,7 +80,7 @@ export const GET: RequestHandler = async () => {
     version: buildEnv.VITE_APP_VERSION ?? 'unknown',
     auth: hasSecret && hasPublishable ? 'configured' : 'missing',
     // REAL read result (was presence-only 'configured'): 'ok' = reachable +
-    // schema current; 'degraded' = reachable but pre-005 (mode column absent);
+    // schema current; 'degraded' = reachable but unmigrated (no `racks` table);
     // 'error' = unreachable; 'missing' = no DATABASE_URL. Full probe in
     // deps.database.
     db: !hasDb ? 'missing' : !database.ok ? 'error' : database.schema === 'current' ? 'ok' : 'degraded',

@@ -42,7 +42,7 @@ test('the default workflow rack emits ZERO GL feedback-loop errors', async ({ pa
   // The owner's exact repro: just open a fresh workflow rack. Its auto-spawned
   // video zone (videoOut + recorderbox + synesthesia) has nothing patched in,
   // which is the state that used to flood.
-  await page.goto('/rack?mode=workflow');
+  await page.goto('/rack?shell=legacy');
   await page.waitForLoadState('networkidle');
   await page.waitForTimeout(OBSERVE_MS);
 

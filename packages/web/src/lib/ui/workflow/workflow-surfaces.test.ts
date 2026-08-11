@@ -44,7 +44,7 @@ describe('resolveWorkflowTimelorde', () => {
     expect(resolveWorkflowTimelorde(nodes)?.id).toBe('pinned-timelorde');
   });
 
-  it('falls back to the lex-smallest canvas timelorde (dawless import)', () => {
+  it('falls back to the lex-smallest canvas timelorde (imported patch)', () => {
     const nodes = [
       { id: 'timelorde-zz', type: 'timelorde' },
       { id: 'timelorde-aa', type: 'timelorde' },

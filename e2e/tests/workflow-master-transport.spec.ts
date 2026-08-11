@@ -3,7 +3,7 @@
 // P0 GUARD — WORKFLOW MASTER TRANSPORT drives real clip playback, end to end.
 // Joins the transport guard family (clipplayer-transport-no-controller covers
 // the dawless card seam); this one drives the OWNER-FACING workflow surface on
-// /rack?mode=workflow AND ?shell=1: the pinned clipplayer in the `c` drawer,
+// /rack?shell=legacy AND ?shell=1: the pinned clipplayer in the `c` drawer,
 // a lane instrument auto-wired by the wcol reconciler, and the pinned master
 // chain (MIXMSTRS → audio out).
 //
@@ -277,15 +277,15 @@ async function wcolEdges(page: Page): Promise<string[]> {
 }
 
 for (const [label, url] of [
-  ['preview-off', '/rack?mode=workflow'],
-  ['shell', '/rack?mode=workflow&shell=1'],
+  ['legacy-cards', '/rack?shell=legacy'],
+  ['faces', '/rack'],
 ] as const) {
   test(`master transport drives audible clip playback through the real lane chain (${label})`, async ({ page }) => {
     // Software-renderer scale (see SLOW_RENDER): up to ~14.1s of measurement
     // windows + boot + the reconciler-edge poll + four click/assert round-trips.
     // The local (real-GPU) ceiling still gets headroom over the flat 30s default
     // because a COLD dev server pays SvelteKit's on-demand route compile on the
-    // first `/rack?mode=workflow` boot (measured: the flat 20s bootWorkflow poll
+    // first `/rack?shell=legacy` boot (measured: the flat 20s bootWorkflow poll
     // blown on the first COLD run, 9.6s per test once warm).
     test.setTimeout(SLOW_RENDER ? 90_000 : 60_000);
     const budgetWarns: string[] = [];

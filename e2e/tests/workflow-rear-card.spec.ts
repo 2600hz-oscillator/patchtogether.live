@@ -22,7 +22,7 @@
 //      rear view owns it when it's closed, and Shift-TAB owns neither — so the
 //      two flip states can never phase-diverge.
 //
-// Runs on /rack?mode=workflow&shell=1 (no DB/relay) — the normal e2e lane,
+// Runs on /rack (no DB/relay) — the normal e2e lane,
 // same recipe as workflow-shell-faces.spec.ts.
 
 import { test, expect, type Page } from '@playwright/test';
@@ -54,7 +54,7 @@ function domainOf(cable: string): string {
 }
 
 async function gotoWorkflow(page: Page): Promise<void> {
-  await page.goto('/rack?mode=workflow&shell=1');
+  await page.goto('/rack?shell=legacy');
   // 15s FIRST-LOAD budget — the SAME number workflow-shell.spec.ts and
   // workflow-dock-occupancy.spec.ts already use for this exact route, so it is
   // CI-validated rather than guessed.
