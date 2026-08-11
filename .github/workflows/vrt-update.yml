@@ -53,7 +53,16 @@ jobs:
   capture:
     name: regenerate VRT baselines
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    # 40 -> 75 (2026-08-10). MEASURED, not padded: with the platform dimension
+    # collapsed every scene runs on linux, so the sweep went from ~151 executed
+    # tests to 297. The first capture at 40 min was KILLED at test 241 of 297
+    # having written ~146 baselines it never got to commit (run 31450544563;
+    # GitHub reports a timeout-minutes kill as `cancelled`, not `failure`, which
+    # is why it did not look like a timeout). Rate: 241 tests in 36.8 min of
+    # Playwright = 9.2 s/test, so 297 tests ~= 45.5 min + ~3.5 min of
+    # checkout/npm/DSP setup ~= 49 min. 75 leaves ~50 % headroom for a slow
+    # runner. On-demand workflow: this costs zero per-PR wall time.
+    timeout-minutes: 75
     outputs:
       # 'true' only when a baseline commit was actually pushed. A capture that
       # rewrote nothing still SUCCEEDS, so `revalidate` needs this to tell
