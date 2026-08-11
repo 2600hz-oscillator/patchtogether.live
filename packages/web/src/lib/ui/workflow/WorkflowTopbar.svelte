@@ -281,6 +281,7 @@
                 class="slot"
                 class:occupied={slotOccupied[i]}
                 data-testid={`workflow-quicksave-${i + 1}`}
+                data-occupied={slotOccupied[i] ? 'true' : 'false'}
                 disabled={slotBusy}
                 onclick={() => fire(() => onQuicksave(i))}
                 title={`Quicksave the current rack into slot ${i + 1}${slotOccupied[i] ? ' (replaces its contents)' : ''}`}
@@ -304,6 +305,7 @@
                 class="slot"
                 class:occupied={slotOccupied[i]}
                 data-testid={`workflow-quickload-${i + 1}`}
+                data-occupied={slotOccupied[i] ? 'true' : 'false'}
                 disabled={slotBusy || !slotOccupied[i]}
                 onclick={() => fire(() => onQuickload(i))}
                 title={slotOccupied[i]
@@ -332,6 +334,7 @@
                 class="slot"
                 class:occupied={slotOccupied[i]}
                 data-testid={`workflow-load-into-${i + 1}`}
+                data-occupied={slotOccupied[i] ? 'true' : 'false'}
                 disabled={slotBusy}
                 onclick={() => fire(() => onLoadIntoSlot(i))}
                 title={`Pick a performance file and store it in slot ${i + 1}${slotOccupied[i] ? ' (replaces its contents)' : ''}`}
@@ -357,6 +360,7 @@
                 class="slot"
                 class:occupied={slotOccupied[i]}
                 data-testid={`workflow-clear-slot-${i + 1}`}
+                data-occupied={slotOccupied[i] ? 'true' : 'false'}
                 disabled={slotBusy || !slotOccupied[i]}
                 onclick={() => fire(() => onClearSlot(i))}
                 title={slotOccupied[i]

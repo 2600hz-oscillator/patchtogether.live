@@ -53,8 +53,11 @@ test.describe('landing routing', () => {
       'landing must be non-isolated for this test to prove anything',
     ).toBe(false);
 
-    await page.getByTestId('tile-new-workflow-rack').click();
-    await page.waitForURL('**/rack?shell=legacy');
+    // The second rack tile ('tile-new-workflow-rack') selected the DELETED
+    // shell and is gone; the claim it carried — a landing click-through arrives
+    // cross-origin ISOLATED — moves onto the one remaining tile.
+    await page.getByTestId('tile-new-rack').click();
+    await page.waitForURL('**/rack');
     await expect(page.locator('[data-testid="canvas-root"]')).toBeVisible();
     expect(
       await page.evaluate(() => crossOriginIsolated),
@@ -116,8 +119,10 @@ test.describe('landing routing', () => {
     // client-only render. (A csr-only page would ship an empty shell.) The
     // tile labels are lowercase in the markup — CSS uppercases them for display.
     expect(html).toContain('new rack');
-    expect(html).toContain('new workflow rack');
     expect(html).toContain('sign in');
+    // ONE rack tile now — the second one existed only to select the other
+    // shell. Asserted as an ABSENCE so this cannot quietly pass if it returns.
+    expect(html).not.toContain('new workflow rack');
 
     // The landing reads NO auth state: none of the canvas's per-request header
     // chip markers (the signed-in `account-link` / signed-out `signin-link`)

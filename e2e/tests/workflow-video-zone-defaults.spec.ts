@@ -38,7 +38,8 @@ const EXPECTED_EDGES = [
 
 // ---- Scratch replica (mirror scratch-persist.spec.ts contract strings) ----
 const REPLICA_DB_PREFIX = 'pt-rack-v1-';
-const scratchStorageKey = (mode: 'workflow') => `pt:local-scratch-id:${mode}`;
+// ONE scratch id — the key is no longer suffixed by rack mode.
+const SCRATCH_STORAGE_KEY = 'pt:local-scratch-id';
 
 type EdgeShape = { source: { nodeId: string; portId: string }; target: { nodeId: string; portId: string } };
 type PatchView = {
@@ -144,7 +145,7 @@ test.describe('workflow video zone defaults (recorderbox + synesthesia auto-wire
 
     const scratchId = await page.evaluate(
       (key) => window.localStorage.getItem(key),
-      scratchStorageKey('workflow'),
+      SCRATCH_STORAGE_KEY,
     );
     expect(scratchId, 'workflow scratch id minted').toBeTruthy();
 

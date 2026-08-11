@@ -32,29 +32,37 @@ test('topbar: removed Save/Load/Save Perf/Load Perf buttons are gone', async ({ 
 test('topbar: Clear + zip Export/Load survivors remain', async ({ page, rack }) => {
   const header = page.locator('header');
 
-  // SURVIVORS.
+  // SURVIVORS — all four now live in the File.. menu. `Export Perf (.zip)` /
+  // `Load Perf (.zip)` were BARE topbar buttons; they are the same two actions
+  // as `workflow-file-save-performance` / `-load-performance`, so asserting
+  // both forms would be asserting the same thing twice, once against markup
+  // that no longer exists.
   await openFileMenu(page);
   await expect(page.getByTestId('workflow-file-clear')).toBeVisible();
   await expect(page.getByTestId('workflow-file-save-performance')).toBeVisible();
   await expect(page.getByTestId('workflow-file-load-performance')).toBeVisible();
   await page.keyboard.press('Escape');
+  // …and NOT as bare buttons any more. Asserted as an absence so the menu
+  // version cannot quietly coexist with a resurrected bar.
   await expect(
     header.getByRole('button', { name: 'Export Perf (.zip)', exact: true }),
-  ).toBeVisible();
+  ).toHaveCount(0);
   await expect(
     header.getByRole('button', { name: 'Load Perf (.zip)', exact: true }),
-  ).toBeVisible();
+  ).toHaveCount(0);
 });
 
-// "Raw JSON" menu (restored raw-JSON envelope export/import; the convenience
-// the old Save/Load buttons gave). Present in the top-RIGHT actions cluster
-// with exactly two actions.
-test('topbar: Raw JSON menu present with Export/Import JSON options', async ({ page, rack }) => {
-  const select = page.getByTestId('raw-json-select');
-  await expect(select).toBeVisible();
-  // The two action options (plus the disabled placeholder).
-  await expect(select.locator('option[value="export-json"]')).toHaveText('Export JSON (only)');
-  await expect(select.locator('option[value="import-json"]')).toHaveText('Import JSON');
+// "Raw JSON" (raw-JSON envelope export/import; the convenience the old
+// Save/Load buttons gave). It was a `<select>` in the top-RIGHT actions
+// cluster; it is now a File.. submenu with the same two actions.
+test('topbar: Raw JSON submenu present with Export/Import JSON rows', async ({ page, rack }) => {
+  await openFileMenu(page);
+  await page.getByTestId('workflow-file-rawjson').click();
+  await expect(page.getByTestId('workflow-file-export-json')).toBeVisible();
+  await expect(page.getByTestId('workflow-file-import-json')).toBeVisible();
+  // The old `<select>` is gone, not merely relocated.
+  await expect(page.getByTestId('raw-json-select')).toHaveCount(0);
+  await page.keyboard.press('Escape');
 });
 
 // "Export JSON (only)" downloads the patch as a raw JSON envelope (no zip).
