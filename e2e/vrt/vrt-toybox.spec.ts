@@ -1284,9 +1284,14 @@ async function setFeedbackAndFreeze(page: Page, mode: number, time: number): Pro
       const canvas = document.querySelector(
         '[data-testid="toybox-canvas"]',
       ) as HTMLCanvasElement | null;
-      if (!canvas) return { ok: false, why: 'no [data-testid="toybox-canvas"] in the DOM' };
+      // Uniform shape on every return path — the caller reads `trail` on all of
+      // them, and a union of differently-shaped objects makes that a type error
+      // the moment the e2e workspace gains a tsconfig (it has none today, which
+      // is exactly why this is written out rather than relied upon).
+      const bail = (why: string) => ({ ok: false, why, advanced: 0, trail: [] as string[], sig: '', elapsedMs: 0 });
+      if (!canvas) return bail('no [data-testid="toybox-canvas"] in the DOM');
       const c2d = canvas.getContext('2d');
-      if (!c2d) return { ok: false, why: 'toybox canvas has no 2d context to sample' };
+      if (!c2d) return bail('toybox canvas has no 2d context to sample');
 
       /** Coarse per-frame signature: the channel means, quantized. */
       const sample = () => {
@@ -1317,7 +1322,7 @@ async function setFeedbackAndFreeze(page: Page, mode: number, time: number): Pro
           return {
             ok: false,
             why: `wall-clock cap: ${advanced}/${frames} frames in ${Date.now() - started} ms`,
-            advanced, trail, sig: last.sig,
+            advanced, trail, sig: last.sig, elapsedMs: Date.now() - started,
           };
         }
       }
