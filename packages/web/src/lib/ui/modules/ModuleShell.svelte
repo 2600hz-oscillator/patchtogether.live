@@ -54,7 +54,7 @@
   // module would generalise BOTH at once — until then a registry indirection
   // here would be one indirection serving one caller.
   import Dx7AlgorithmGlyph from './dx7/Dx7AlgorithmGlyph.svelte';
-  import { Button, ColorField, KnobConic, ParamGrid, ScopeScreen, Segmented, Selector, Toggle, VuMeter } from '$lib/ui/controls';
+  import { Button, ColorField, Fader, KnobConic, ParamGrid, ScopeScreen, Segmented, Selector, Toggle, VuMeter } from '$lib/ui/controls';
   import {
     curatedFace,
     dockFacePlan,
@@ -699,6 +699,32 @@
               paramId={pd.id}
               hero={view === 'dock-full'}
               compact={view !== 'dock-full'}
+            />
+          </div>
+        {:else if cellKind === 'fader'}
+          <!-- A LEVEL the module says is a THROW, not a dial. Declared rather
+               than sniffed: nothing in a ParamDef distinguishes a level from
+               any other continuous scalar, so only the module knows. 1-D → 1-D,
+               so no gesture is lost either way — but a card that draws a fader
+               and a face that draws a knob are not the same control, and
+               "preserve today's look" is the owner's constraint on the modules
+               this exists for (noise, and clouds/mixer/vca behind it).
+               `Fader.svelte` derives `control-<paramId>` itself, exactly like
+               KnobConic, so the parity multiset is unchanged by the swap. -->
+          <div class="kcol ms-cell-fader" data-cell-kind="param" data-cell-control="fader" data-cell-key={ctl.key}>
+            <Fader
+              value={params.paramVal(pd.id)}
+              min={pd.min}
+              max={pd.max}
+              defaultValue={pd.defaultValue}
+              label={pd.label}
+              units={pd.units ?? ''}
+              curve={pd.curve}
+              onchange={paramWrite(pd.id)}
+              readLive={params.live(pd.id)}
+              moduleId={id}
+              paramId={pd.id}
+              formatValue={pd.format}
             />
           </div>
         {:else if cellKind === 'selector'}

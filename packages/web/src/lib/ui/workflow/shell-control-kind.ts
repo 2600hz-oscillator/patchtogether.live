@@ -37,7 +37,8 @@ export type ParamCellKind =
   | 'segmented'
   | 'selector'
   | 'grid'
-  | 'color';
+  | 'color'
+  | 'fader';
 
 /**
  * The primitives a module must DECLARE (`face.paramCells`) because no property
@@ -48,14 +49,27 @@ export type ParamCellKind =
  *   'grid'  — the states are PICTURES (dx7's 32 algorithm topologies).
  *   'color' — the integer is a PACKED 0xRRGGBB, not a position on a scale
  *             (wavesculpt's `red_color`/`grn_color`/`blu_color`).
+ *   'fader' — the param is a LEVEL the player expects to see as a THROW, not a
+ *             dial. Nothing in a ParamDef distinguishes "level" from any other
+ *             continuous scalar, so it can only be declared.
  *
- * ⚠ THE TWO ARE INDISTINGUISHABLE TO EVERY RESOLVER IN THE REPO, and that is
- * the argument for declaring rather than sniffing. `1..32 discrete` and
- * `0..16777215 discrete` differ only in MAGNITUDE, and no gate reads
+ * ⚠ 'grid' AND 'color' ARE INDISTINGUISHABLE TO EVERY RESOLVER IN THE REPO,
+ * and that is the argument for declaring rather than sniffing. `1..32 discrete`
+ * and `0..16777215 discrete` differ only in MAGNITUDE, and no gate reads
  * magnitude — a heuristic here would be a rule about how big a number is
  * allowed to get before it stops being a scale.
+ *
+ * ⚠ 'fader' IS DECLARED FOR A DIFFERENT REASON: not because it is ambiguous
+ * with another primitive, but because the AFFORDANCE IS THE MODULE'S CHOICE.
+ * A face has no way to know that a card drew a throw rather than a dial, and
+ * silently substituting one for the other is a real regression even though the
+ * value semantics are identical — 1-D to 1-D, so unlike a 2-D pad flattened to
+ * two knobs no GESTURE is lost, but the control still stops looking like
+ * itself. (Owner directive 2026-08-10, prompted by `noise`: its LEVEL is a
+ * fader on the card and rendered as a KnobConic on the face. `clouds`, `mixer`
+ * and `vca` are fader cards too and hit this the day they are faced.)
  */
-export type DeclaredParamCell = 'grid' | 'color';
+export type DeclaredParamCell = 'grid' | 'color' | 'fader';
 
 /**
  * How many named states still fit as an inline button row before the dock

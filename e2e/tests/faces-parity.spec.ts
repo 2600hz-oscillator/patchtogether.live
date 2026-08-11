@@ -135,6 +135,7 @@ type CellControl =
   | 'selector'
   | 'grid'
   | 'color'
+  | 'fader'
   | 'action'
   | 'file'
   | 'panel'
@@ -470,6 +471,30 @@ async function driveCell(
     await expect
       .poll(() => readParam(page, nodeId, pid), {
         message: `${where}: dragging the knob commits a param change into the graph`,
+      })
+      .not.toBe(before);
+    return;
+  }
+
+  // A FADER is a THROW over the same 1-D scale a knob covers, so it is driven
+  // the same way and asserted the same way: `dragKnob` is a pointer drag over
+  // the control's own box, which is exactly what a fader wants too. The kind
+  // exists because the AFFORDANCE differs (a card that draws a throw and a face
+  // that draws a dial are not the same control), not because the value
+  // semantics do — so a separate drive helper would be two implementations of
+  // one gesture. `Fader.svelte` derives `control-<paramId>` itself, so the
+  // locator is identical.
+  if (cell.control === 'fader') {
+    const pid = cell.key;
+    const p = spec.params.find((q) => q.id === pid);
+    expect(p, `${where}: backed by a real ParamDef`).toBeTruthy();
+    const fader = host.locator(`[data-testid="control-${pid}"]`);
+    await expect(fader, `${where}: the fader is a real, visible control`).toBeVisible();
+    const before = await readParam(page, nodeId, pid);
+    await dragKnob(page, fader, p!, before ?? p!.defaultValue);
+    await expect
+      .poll(() => readParam(page, nodeId, pid), {
+        message: `${where}: dragging the fader commits a param change into the graph`,
       })
       .not.toBe(before);
     return;

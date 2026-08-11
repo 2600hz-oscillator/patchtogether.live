@@ -618,7 +618,7 @@ export interface ModuleFace {
    * not a state), and must carry the RANGE its primitive needs (a step count a
    * grid can chart; the exact packed-RGB space for a colour).
    */
-  paramCells?: Readonly<Record<string, 'grid' | 'color'>>;
+  paramCells?: Readonly<Record<string, 'grid' | 'color' | 'fader'>>;
   /**
    * Param ids that are MOMENTARY PADS, not values — the "press-param" pattern
    * (tomtom/clap `strike`): the worklet ORs the param with its trigger input

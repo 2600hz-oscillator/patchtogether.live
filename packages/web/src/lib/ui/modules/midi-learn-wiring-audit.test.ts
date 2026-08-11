@@ -43,6 +43,30 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
  *  exemptions. */
 const ALLOWED_UNWIRED: Record<string, { count: number; reason: string }> = {
   // e.g. 'SomeCard.svelte': { count: 1, reason: 'XY pad, not a single CC param' },
+  //
+  // ⚠ A FACEPLATE PANEL, NOT A CARD — and the exemption is forced by a
+  // COLLISION between two gates, not by anyone forgetting to wire it.
+  //
+  // `Knob.svelte` emits `data-testid="control-<paramId>"` whenever it is given
+  // one, and that is also how MIDI-learn is enabled — the two ride the same
+  // pair of props. But `pos_z` ALREADY has its own param cell in the face's
+  // ROOM band, complete with MIDI-assign; this knob is the card's
+  // between-the-pads HEIGHT gesture, restored inside the hero panel so the
+  // three camera affordances sit together the way they do on the card. Passing
+  // `paramId` here would emit a SECOND `control-pos_z` and fail faces-parity's
+  // exact id-multiset equality — a real, immediate break — to buy a MIDI
+  // binding the player already has one band away.
+  //
+  // Both XyPads in the same file ARE wired (`moduleId` + `xParamId`/`yParamId`),
+  // because `XyPad` keeps its assign buttons on `<testid>-assign-x|-y` and
+  // never emits a `control-` id, so it has no such collision.
+  'WavesculptRoomPanel.svelte': {
+    count: 1,
+    reason:
+      'HEIGHT (pos_z) inside the hero panel: pos_z already has a MIDI-assignable param cell in ' +
+      'the ROOM band, and passing paramId here would emit a duplicate control-pos_z that fails ' +
+      "faces-parity's multiset equality. The two XyPads in this file are fully wired.",
+  },
 };
 
 /** Strip HTML comments + JS `//` line comments so commented-out or

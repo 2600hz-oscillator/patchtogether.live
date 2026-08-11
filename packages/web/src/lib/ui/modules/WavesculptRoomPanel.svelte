@@ -48,6 +48,9 @@
   import { onDestroy } from 'svelte';
   import { patch } from '$lib/graph/store';
   import { setNodeParam } from '$lib/graph/mutate';
+  import XyPad from '$lib/ui/controls/XyPad.svelte';
+  import Knob from '$lib/ui/controls/Knob.svelte';
+  import { paramSpec } from './card-kit';
   import { nodeVersion } from '$lib/graph/node-versions.svelte';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
@@ -201,75 +204,50 @@
     return 0.16 + 0.5 * Math.min(1, gain / hi);
   }
 
-  // ── THE DRAG ─────────────────────────────────────────────────────────────
-
-  let dragging = $state(false);
+  // ── THE TWO JOYSTICKS ────────────────────────────────────────────────────
+  //
+  // ⚠ RESTORED AFTER THE FACE SHIPPED WITHOUT THEM. The first cut replaced the
+  // card's two pads with five knobs plus a draggable plan, and the parity table
+  // did not notice because it had a row per PARAM and none per GESTURE — a 2-D
+  // pad is ONE gesture over TWO params, so a metric whose unit is the param is
+  // structurally invariant to "one pad" vs "two knobs". `faces-parity` is blind
+  // the same way: it counts `control-<paramId>` ids, and both shapes emit the
+  // same ones.
+  //
+  // These are the card's own two, with the card's own semantics
+  // (`WavesculptCard.svelte:367`, `:408`): POSITION is x = pos_x, y = pos_y with
+  // y UP-positive; VIEW is x = zoom on a LOG axis, y = rot, again y-up.
+  //
+  // ⚠ EVERY BOUND COMES FROM THE DEF VIA `paramSpec`, NEVER RE-TYPED — the
+  // CubeCard defect, where a card passed literal `xMin={-1} xMax={1}` to a pad
+  // whose def said ±0.2, so the pad WROTE values the contract forbade and the
+  // model silently clamped them. (The legacy card still hardcodes `0.3`/`3` for
+  // zoom in `writeZR`; this panel does not, and that divergence is worth
+  // closing on the card too.)
+  const P_POS_X = paramSpec(wavesculptDef, 'pos_x');
+  const P_POS_Y = paramSpec(wavesculptDef, 'pos_y');
+  const P_POS_Z = paramSpec(wavesculptDef, 'pos_z');
+  const P_ZOOM = paramSpec(wavesculptDef, 'zoom');
+  const P_ROT = paramSpec(wavesculptDef, 'rot');
 
   /**
-   * Pointer → plan coords.
-   *
-   * ⚠ IT MUST UNDO THE LETTERBOX, and the naive version was WRONG — caught by
-   * looking at the rendered baseline rather than by any gate. The viewBox is
-   * SQUARE and `preserveAspectRatio` defaults to `xMidYMid meet`, so in a
-   * 780 × 168 hero bay the drawing occupies a 168 px square in the MIDDLE and
-   * the rest is empty. Mapping straight off `getBoundingClientRect()` would
-   * make the far-left of the bay read as `px = -1` — a camera position 4.6×
-   * further out than where the marker actually is — so the room plan would not
-   * follow the pointer. Recovering the drawn square from `min(w, h)` is exact
-   * at ANY element size, which a pinned CSS width would not be: a later layout
-   * change could silently re-break it.
+   * ZOOM rides a LOG axis, and the pad is linear — so the pad is driven in LOG
+   * SPACE and converted at the seam. `XyPad` takes a plain min/max, and feeding
+   * it 0.3..3 linearly would put unity zoom at 10 % of the travel instead of
+   * halfway, which is both wrong to the hand and a different control from the
+   * card's. The bounds are still the def's; only the coordinate is logged.
    */
-  function planFromEvent(ev: PointerEvent): { px: number; py: number } {
-    const el = ev.currentTarget as SVGSVGElement;
-    const r = el.getBoundingClientRect();
-    // Guard a zero-size rect (a hidden tab's band is CSS-hidden, not unmounted,
-    // and faces-parity scrolls cells into view before driving them).
-    const side = Math.min(r.width, r.height) || 1;
-    const left = r.left + (r.width - side) / 2;
-    const top = r.top + (r.height - side) / 2;
-    return {
-      px: Math.max(-1, Math.min(1, ((ev.clientX - left) / side) * 2 - 1)),
-      py: Math.max(-1, Math.min(1, ((ev.clientY - top) / side) * 2 - 1)),
-    };
-  }
+  const ZOOM_LOG_MIN = Math.log(P_ZOOM.min);
+  const ZOOM_LOG_MAX = Math.log(P_ZOOM.max);
+  const clampTo = (p: { min: number; max: number }, v: number): number =>
+    Math.max(p.min, Math.min(p.max, v));
 
-  function writeCamera(ev: PointerEvent): void {
-    const { px, py } = planFromEvent(ev);
-    const next = wavesculptDragToCamera(camera, px, py);
-    // A user gesture, so it is a DURABLE, undoable write — the same seam and
-    // the same per-pointermove cadence the legacy card's XY pads already use.
-    setNodeParam(nodeId, 'pos_x', next.pos_x);
-    setNodeParam(nodeId, 'pos_z', next.pos_z);
-  }
-
-  function onDown(ev: PointerEvent): void {
-    dragging = true;
-    (ev.currentTarget as SVGSVGElement).setPointerCapture?.(ev.pointerId);
-    writeCamera(ev);
-    ev.preventDefault();
-  }
-  function onMove(ev: PointerEvent): void {
-    if (!dragging) return;
-    writeCamera(ev);
-  }
-  function onUp(ev: PointerEvent): void {
-    if (!dragging) return;
-    dragging = false;
-    (ev.currentTarget as SVGSVGElement).releasePointerCapture?.(ev.pointerId);
-  }
-
-  /** Keyboard parity for the drag — a picture you edit must be operable
-   *  without a pointer. One step is 0.05 of each param's ±1 range. */
-  function onKey(ev: KeyboardEvent): void {
-    const step = ev.shiftKey ? 0.2 : 0.05;
-    const dx = ev.key === 'ArrowLeft' ? -step : ev.key === 'ArrowRight' ? step : 0;
-    const dz = ev.key === 'ArrowUp' ? -step : ev.key === 'ArrowDown' ? step : 0;
-    if (dx === 0 && dz === 0) return;
-    ev.preventDefault();
-    const cl = (v: number): number => Math.max(-1, Math.min(1, v));
-    setNodeParam(nodeId, 'pos_x', cl(camera.pos_x + dx));
-    setNodeParam(nodeId, 'pos_z', cl(camera.pos_z + dz));
-  }
+  // ⚠ THE PLAN IS A PICTURE, NOT A CONTROL, and it used to be both. Its drag
+  // wrote pos_x/pos_z, which duplicated POSITION's x-axis with a DIFFERENT
+  // second axis — two gestures writing one param, and neither matching the
+  // card. With the real pads restored the plan goes read-only: one gesture per
+  // axis, and the picture is free to show what no pad can (which emitters
+  // currently reach you).
 
   let caption = $derived(`${wavesculptTapCaption(camera, tap)}  ·  ${wavesculptCameraCaption(camera)}`);
   let darkCount = $derived(plan.emitters.filter((e) => e.dark).length);
@@ -279,16 +257,9 @@
   <div class="stage">
   <svg
     viewBox="0 0 {VB} {VB}"
-    class:dragging
-    role="application"
-    tabindex="0"
-    aria-label="Room plan seen from above — drag the camera to fly it through the box. Horizontal is camera X, vertical is camera Z (height into the room)."
+    role="img"
+    aria-label="Room plan seen from above: the four wall oscillators with the cones they aim at the room centre, and the camera. A hollow crossed emitter is facing away and therefore silent."
     data-testid="wavesculpt-room-stage"
-    onpointerdown={onDown}
-    onpointermove={onMove}
-    onpointerup={onUp}
-    onpointercancel={onUp}
-    onkeydown={onKey}
   >
     <!-- The unit box, seen from above. -->
     <rect
@@ -359,6 +330,74 @@
       </li>
     {/each}
   </ul>
+  </div>
+
+  <!-- THE TWO JOYSTICKS, in the card's own order and with the card's own
+       axes. The HEIGHT knob sits BETWEEN them exactly as it does on the card,
+       because pos_z is the third camera axis and belongs with the other two —
+       not because a row of three looks tidy. -->
+  <div class="sticks">
+    <XyPad
+      xValue={camera.pos_x}
+      yValue={camera.pos_y}
+      xMin={P_POS_X.min}
+      xMax={P_POS_X.max}
+      yMin={P_POS_Y.min}
+      yMax={P_POS_Y.max}
+      xDefault={P_POS_X.defaultValue}
+      yDefault={P_POS_Y.defaultValue}
+      xLabel="X"
+      yLabel="Y"
+      title="position"
+      size={96}
+      testid="wavesculpt-pad-pos"
+      moduleId={nodeId}
+      xParamId="pos_x"
+      yParamId="pos_y"
+      onXChange={(v) => setNodeParam(nodeId, 'pos_x', clampTo(P_POS_X, v))}
+      onYChange={(v) => setNodeParam(nodeId, 'pos_y', clampTo(P_POS_Y, v))}
+    />
+
+    <div class="height">
+      <span class="cap">height</span>
+      <!-- ⚠ NO `paramId`/`moduleId` ON THIS KNOB, deliberately. `Knob.svelte`
+           emits `data-testid="control-<paramId>"` when given one, and pos_z
+           already has its own cell in the ROOM band — a second one would be a
+           duplicate `control-pos_z` and fail faces-parity's multiset equality.
+           MIDI-assign lives on that real cell; this is the card's between-the-
+           pads gesture, restored. -->
+      <Knob
+        value={camera.pos_z}
+        min={P_POS_Z.min}
+        max={P_POS_Z.max}
+        defaultValue={P_POS_Z.defaultValue}
+        label="H"
+        curve={P_POS_Z.curve}
+        onchange={(v) => setNodeParam(nodeId, 'pos_z', clampTo(P_POS_Z, v))}
+      />
+    </div>
+
+    <XyPad
+      xValue={Math.log(Math.max(P_ZOOM.min, Math.min(P_ZOOM.max, camera.zoom)))}
+      yValue={camera.rot}
+      xMin={ZOOM_LOG_MIN}
+      xMax={ZOOM_LOG_MAX}
+      yMin={P_ROT.min}
+      yMax={P_ROT.max}
+      xDefault={Math.log(P_ZOOM.defaultValue)}
+      yDefault={P_ROT.defaultValue}
+      xLabel="ZM"
+      yLabel="ROT"
+      title="view"
+      size={96}
+      testid="wavesculpt-pad-view"
+      moduleId={nodeId}
+      xParamId="zoom"
+      yParamId="rot"
+      xFormat={(v) => Math.exp(v).toFixed(2)}
+      onXChange={(v) => setNodeParam(nodeId, 'zoom', clampTo(P_ZOOM, Math.exp(v)))}
+      onYChange={(v) => setNodeParam(nodeId, 'rot', clampTo(P_ROT, v))}
+    />
   </div>
 
   <div class="taps" role="group" aria-label="Which output this readout describes">
@@ -502,6 +541,25 @@
   }
   .legend li.dark .swatch {
     opacity: 0.35;
+  }
+
+  .sticks {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .height {
+    display: grid;
+    justify-items: center;
+    gap: 3px;
+    padding-top: 14px;
+  }
+  .height .cap {
+    font: 600 8.5px/1 var(--font-mono, ui-monospace, monospace);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: rgb(255 255 255 / 0.45);
   }
 
   .taps {
