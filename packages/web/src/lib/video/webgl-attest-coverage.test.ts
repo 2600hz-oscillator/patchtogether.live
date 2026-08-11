@@ -50,6 +50,7 @@ import {
   isFullyCollabCapacityGated,
   findAllWebglSourceFiles,
   sourceCreatesWebglContext,
+  stripComments,
   AUDIO_WEBGL_MODULE_DEFS,
   REPO_ROOT,
 } from '../../../../../scripts/webgl-attest-lib';
@@ -287,8 +288,48 @@ describe('WebGL attestation — fail-closed coverage guard (§12)', () => {
     ).toEqual([]);
   });
 
+  /**
+   * Does a card's RENDER TREE create a WebGL context — the card's own source,
+   * or any `.svelte` it (transitively) imports?
+   *
+   * ⚠ WHY THE TREE AND NOT THE FILE. The check used to read the card file
+   * alone, which silently made "the renderer must live in ONE 1200-line card"
+   * a structural rule. cube's volume render is the module's whole instrument
+   * and the faceplate hero has to paint the SAME picture, so it moved into
+   * `cube/CubeVizSurface.svelte` and the card renders it — at which point a
+   * file-scoped check calls a perfectly live flag stale. Following the imports
+   * keeps the claim the check actually makes ("this module IS a GPU render
+   * path") true while letting the renderer be a component.
+   *
+   * STILL FAIL-CLOSED: it only ever ADDS files to look at, so a module that
+   * genuinely stopped rendering WebGL anywhere in its tree still reddens, and
+   * the failure message prints every file it scanned so a false green is
+   * inspectable rather than mysterious. The basis itself is untouched —
+   * `resolveWebglBasis` walks the whole `ui/modules` tree by content, so the
+   * extracted surface enrolled itself with no list to edit (which is check (3)).
+   */
+  function cardTreeCreatesWebglContext(cardAbs: string): { found: boolean; scanned: string[] } {
+    const seen = new Set<string>();
+    const scanned: string[] = [];
+    const visit = (abs: string): boolean => {
+      if (seen.has(abs) || !existsSync(abs)) return false;
+      seen.add(abs);
+      scanned.push(abs.slice(REPO_ROOT.length + 1));
+      const src = readFileSync(abs, 'utf8');
+      if (sourceCreatesWebglContext(src)) return true;
+      // Relative `.svelte` imports only — a $lib-aliased shared primitive is a
+      // control, never a renderer, and resolving the alias here would drag the
+      // whole component library into every scan.
+      for (const m of stripComments(src).matchAll(/from\s+['"](\.[^'"]*\.svelte)['"]/g)) {
+        if (visit(resolve(dirname(abs), m[1]!))) return true;
+      }
+      return false;
+    };
+    return { found: visit(cardAbs), scanned };
+  }
+
   it('(6) rendersWebGL ↔ card-getContext cross-check holds in both directions', () => {
-    // Forward: every rendersWebGL-flagged audio module's CARD source must
+    // Forward: every rendersWebGL-flagged audio module's CARD RENDER TREE must
     // actually create a WebGL context (the flag is real, not stale).
     const flagged = listModuleDefs().filter((d) => (d as { rendersWebGL?: boolean }).rendersWebGL);
     for (const def of flagged) {
@@ -297,9 +338,11 @@ describe('WebGL attestation — fail-closed coverage guard (§12)', () => {
       const cardPath = `packages/web/src/lib/ui/modules/${cardName}.svelte`;
       const abs = join(REPO_ROOT, cardPath);
       expect(existsSync(abs), `card for rendersWebGL module ${def.type} not found at ${cardPath}`).toBe(true);
+      const { found, scanned } = cardTreeCreatesWebglContext(abs);
       expect(
-        sourceCreatesWebglContext(abs, true),
-        `module ${def.type} is flagged rendersWebGL but ${cardPath} does NOT create a WebGL context — stale flag`,
+        found,
+        `module ${def.type} is flagged rendersWebGL but NEITHER ${cardPath} NOR any .svelte ` +
+          `it renders creates a WebGL context — stale flag. Scanned:\n  ${scanned.join('\n  ')}`,
       ).toBe(true);
     }
 

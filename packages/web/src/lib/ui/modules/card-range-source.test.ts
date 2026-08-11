@@ -28,6 +28,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { adsrDef } from '$lib/audio/modules/adsr';
 import { backdraftDef } from '$lib/video/modules/backdraft';
+import { cubeDef } from '$lib/audio/modules/cube';
 import { cloudsDef } from '$lib/audio/modules/clouds';
 import { cofefveDelayDef } from '$lib/audio/modules/cofefve';
 import { delayDef } from '$lib/audio/modules/delay';
@@ -108,6 +109,18 @@ import type { ParamDef } from '$lib/graph/types';
  *    `STRICT_VRT_MODULES`, i.e. the required `vrt-strict` gate on both
  *    platforms, so that vocabulary fix gets its own PR instead of riding a face.
  *    The clause below keeps the unbound half honest in the meantime.
+ *  - CubeCard: converted with the cube face (2026-08-10), range AND mapping in
+ *    one step. It was HALF bound already, and the half it was missing is the
+ *    instructive one: it resolved `min`/`max`/`defaultValue` through local
+ *    `minFor()`/`maxFor()`/`defaultFor()` helpers that read the def — genuinely
+ *    correct — and then re-typed `label`, `units` and `curve` beside them in
+ *    three private arrays (`KNOBS`, `VIEW_KNOBS`, `ADSR_KNOBS`), including a
+ *    `curve={k.pid === 'view_zoom' ? 'log' : 'linear'}` TERNARY reproducing the
+ *    def's own curve assignment as a card-side rule. All 23 controls agreed, so
+ *    nothing was broken — but "the ranges come from the def, the mapping comes
+ *    from a ternary" is a card one def edit away from disagreeing with itself,
+ *    with no gate able to see it. The three arrays are now id lists resolved
+ *    through `paramSpec`.
  *  - CloudsCard: converted with the clouds face promotion (2026-08-10; binds
  *    via paramSpec). Range AND mapping bound — the card's six faders re-typed
  *    30 numbers plus six `curve`s and one `units`, all of which AGREED, and it
@@ -130,6 +143,7 @@ import type { ParamDef } from '$lib/graph/types';
 const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }>> = {
   'AdsrCard.svelte': adsrDef,
   'BackdraftCard.svelte': backdraftDef,
+  'CubeCard.svelte': cubeDef,
   'CloudsCard.svelte': cloudsDef,
   'CofefveCard.svelte': cofefveDelayDef,
   'DelayCard.svelte': delayDef,
@@ -149,6 +163,7 @@ const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }
  */
 const MAPPING_BOUND_CARDS: readonly string[] = [
   'AdsrCard.svelte',
+  'CubeCard.svelte',
   'CloudsCard.svelte',
   'CofefveCard.svelte',
   'DelayCard.svelte',
@@ -204,8 +219,18 @@ const MAPPING_BOUND_CARDS: readonly string[] = [
 // count is only valid for the tree it was taken in, so it must be RE-TAKEN
 // after every merge, not carried across one. Counted here, post-merge:
 // RANGE_BOUND_CARDS = 12, MAPPING_BOUND_CARDS = 10.
-const RANGE_BOUND_FLOOR = 12;
-const MAPPING_BOUND_FLOOR = 10;
+
+// ⚠ AND THE FIFTH, WHICH IS THE ONE THAT DID NOT CONFLICT AT ALL. cube merged
+// this same file an hour after clouds and BOTH trees read `12 / 10` — cube's
+// count was right for cube+clouds, main's was right for clouds+cofefve, and
+// because the two literals were IDENTICAL AS TEXT git presented them as
+// already resolved. Nothing conflicted, nothing warned, and the union is
+// THIRTEEN and ELEVEN. That is the pure form of this bug: the previous four
+// were caught only because an adjacent COMMENT happened to differ, which is
+// luck, not a mechanism. Counted post-merge, in this tree:
+// RANGE_BOUND_CARDS = 13, MAPPING_BOUND_CARDS = 11.
+const RANGE_BOUND_FLOOR = 13;
+const MAPPING_BOUND_FLOOR = 11;
 
 /**
  * A range-ish prop bound to a NUMERIC LITERAL. Covers `min/max/defaultValue`

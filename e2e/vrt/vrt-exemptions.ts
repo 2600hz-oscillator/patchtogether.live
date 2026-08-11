@@ -1418,16 +1418,14 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // run on linux CI — WebGL ribbon AA + CRT post differs sub-thresholdly
   // across GPU drivers, so we capture darwin here and defer linux.
   'linux/wavesculpt',
-  // CUBE (3D wavetable-navigator oscillator, first slice): darwin baseline
-  // captured on this machine via VRT_SCENES (analogVco → pitch, rotated/morphed
-  // slice through the default tables, freeze-on-suspend so the snapshot-driven
-  // 2D viz holds). The 2D surface-height + waveform canvases differ
-  // sub-thresholdly across platforms (canvas AA), so the linux baseline is
-  // pending a `task vrt:update` run on linux CI — functional coverage is the
-  // cube-dsp unit tests + cube worklet capture test + node-ART baselines +
-  // the per-port e2e. NOT in STRICT_VRT_MODULES (the missing linux baseline
-  // runs only in the informational full-VRT lane, not the merge gate).
-  'linux/cube',
+  // CUBE — DRAINED 2026-08-10 with the cube face. It had sat here since the
+  // module's first slice as "pending a linux capture", which meant cube had
+  // ZERO VRT protection on the platform CI actually renders on, while counting
+  // as covered everywhere. A face wave that adds two more cube scenes is the
+  // wrong moment to add two more darwin-only baselines on top of that, so the
+  // pair goes and the same `vrt-update.yml -f platform=linux` dispatch that
+  // captures `face-cube-{compact,dock}` captures `cube` as well: THREE linux
+  // PNGs, and a dispatch that commits fewer is the red flag.
   // HYPERCUBE: pair REMOVED with the module (owner ruling — failed experiment,
   // deleted wholesale). Its darwin baseline went with it, so this is a gap
   // CLOSED by deletion, not by capture: the shared-pair ceiling and the

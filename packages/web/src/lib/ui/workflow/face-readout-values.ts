@@ -78,6 +78,16 @@ import {
   drummergirlSweepSemitones,
 } from '$lib/ui/modules/drummergirl-face-model';
 import {
+  cubeCrushLevelsText,
+  cubeCutTiltText,
+  cubeF0Text,
+  cubeFaceParams,
+  cubeFoldDriveText,
+  cubeHarmonicsText,
+  cubeSpreadDepthText,
+  cubeYLiveText,
+} from '$lib/ui/modules/cube-face-model';
+import {
   filterCutoffReachText,
   filterFaceParams,
   filterPeakDbText,
@@ -426,6 +436,33 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
     const { base, cvAmount } = vcaFaceParams(read);
     return formatVcaGainAtFullCv(base, cvAmount);
   },
+
+  // ── CUBE ─────────────────────────────────────────────────────────────────
+  // Seven, and the second one is the reason the other six exist. cube's
+  // `slice_y` is a real control that is INERT IN EXACTLY ONE STATE — the state
+  // the module spawns in — because the ray march integrates over a window
+  // centred on the ray origin, so sliding the plane along its own normal is
+  // nearly a no-op, and at spawn the normal IS the axis Y translates along.
+  // Measured max rmsΔ over the whole of Y: 0.115 flat, 0.759 at ROT X 0.8. A
+  // `paramId: 'slice_y'` readout prints 0.50 in both. Every one of these is
+  // negative-controlled in cube-face-model.test.ts on the input a knob
+  // readback would be blind to.
+  'cube-cut-tilt': (read) => cubeCutTiltText(cubeFaceParams(read)),
+  'cube-y-live': (read) => cubeYLiveText(cubeFaceParams(read)),
+  'cube-crush-levels': (read) => cubeCrushLevelsText(cubeFaceParams(read)),
+  // ⚠ IMPORTS `CUBE_SPREAD_DEPTH`. The def's own prose said ±5 % in five places
+  // against a shipped 0.18 — which is what re-typing a DSP constant into prose
+  // buys you, five times over.
+  'cube-spread-depth': (read) => cubeSpreadDepthText(cubeFaceParams(read)),
+  // ⚠ LABELLED "knobs" ON THE FACE. A `valueId` is a pure function of PARAMS
+  // and can never see the V/oct cable, so printing this unqualified would be
+  // the kick-drum-TAIL trap: right when you turn the knob, wrong when the
+  // module is played.
+  'cube-f0-knobs': (read) => cubeF0Text(cubeFaceParams(read)),
+  // cube is a bare wavetable oscillator with NO band-limiting, so this is how
+  // close the current tuning is to folding its partials back down. No knob.
+  'cube-harmonics': (read) => cubeHarmonicsText(cubeFaceParams(read)),
+  'cube-fold-drive': (read) => cubeFoldDriveText(cubeFaceParams(read)),
 };
 
 /** The derived value for a declared id, or `null` (⇒ the readout prints `—`
