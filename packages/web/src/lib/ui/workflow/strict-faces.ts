@@ -440,6 +440,26 @@
 // Its hero picture reaches `hero.cell` where meowbox's and noise's could not:
 // a panel's first legal rank is 7 and rings has nine rankable keys, so the
 // pickup comb is a real hero cell rather than a sidebar consolation.
+//
+// ⚠ IT SHIPS WITH NO SIDEBAR AT ALL, and that is the second owner directive
+// this face absorbed mid-build. It carried one `signal-flow` block; the owner,
+// looking at analogVco's, ruled the genre out entirely — "this really isn't
+// accurate. lets stop doing these and clean up the existing ones, get rid of
+// them." So the block is gone and NOTHING replaced it: an empty sidebar is
+// reported as empty rather than padded with filler. Seven faces already ship
+// this way (adsr, karplus, mixer, delay, reverb, tomtom, qbrt).
+//
+// The two directives are one rule. A faceplate states values; the explanation
+// — the chain, the measurements, the two-knobs-set-the-decay finding — lives in
+// `docs` for right-click → annotate. A stage list is additionally the surface
+// most likely to go stale: a hand-maintained picture of code that moves
+// underneath it, with no gate able to notice.
+//
+// ⚠ 12 OTHER FACES STILL DECLARE `signal-flow` (clouds, macrooscillator, vca,
+// cube, drummergirl, kickdrum, sixstrum, pentemelodica, bluebox, analogVco,
+// clap, meowbox). The shared renderer therefore STAYS until that sweep lands —
+// deleting it here would blank twelve dock panels in a faceplate PR for one
+// module.
 export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // P1 batch 1 — first 6 module faces
   'adsr',

@@ -601,24 +601,24 @@ export const ringsDef: AudioModuleDef = {
       ],
     },
 
-    // The chain, as bare stage labels. The per-stage `note` captions were cut
-    // under the same directive as the band hints — a diagram may identify its
-    // stages; it may not explain them.
-    sidebar: [
-      {
-        kind: 'signal-flow',
-        label: 'signal flow',
-        stages: [
-          { label: 'IN',           role: 'generator' },
-          { label: 'STRUM',        role: 'generator', parallel: true },
-          { label: 'BANK · 24 BP', role: 'bus' },
-          { label: 'KS PAIR',      role: 'bus', parallel: true },
-          { label: 'PICKUP COMB',  role: 'bus' },
-          { label: 'ODD → tanh',   role: 'bus' },
-          { label: 'EVEN → tanh',  role: 'bus', parallel: true },
-        ],
-      },
-    ],
+    // ⚠ NO `sidebar`, AND THE EMPTINESS IS THE POINT — no filler was invented
+    // to replace what came out. This face carried one `signal-flow` block (IN /
+    // STRUM / BANK / KS PAIR / PICKUP COMB / ODD / EVEN) and it is GONE: owner
+    // directive 2026-08-11, looking at analogVco's — "this really isn't
+    // accurate. lets stop doing these and clean up the existing ones, get rid
+    // of them. lose the signal flow diagrams." No new ones ship.
+    //
+    // It follows the no-prose ruling rather than sitting beside it: a signal
+    // chain drawn on the panel is authored explanation in diagram form, and the
+    // owner judges the genre inaccurate as well as unwanted. A stage list is
+    // also the surface most likely to drift — it is a hand-maintained picture
+    // of code that changes underneath it, with no gate that can tell.
+    //
+    // The chain itself is not lost. It is in `docs.explanation` and
+    // `docs.inputs.*` above, in prose, which is what right-click -> annotate is
+    // to be sourced from — available on request instead of always on screen.
+    // Seven other STRICT_FACES already ship with no sidebar (adsr, karplus,
+    // mixer, delay, reverb, tomtom, qbrt), so this is the ordinary shape.
   },
 
   docs: {
