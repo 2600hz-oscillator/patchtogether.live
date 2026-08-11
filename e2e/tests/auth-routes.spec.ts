@@ -67,10 +67,29 @@ test.describe('auth-route shape', () => {
     // deps.hocuspocus is the cross-tier relay probe.
     expect(body.deps?.hocuspocus, 'deps.hocuspocus present').toBeTruthy();
     expect(typeof body.deps.hocuspocus.ok, 'deps.hocuspocus.ok is boolean').toBe('boolean');
-    // deps.database is the REAL DB read probe (the P0 blind-spot fix): a known
-    // ok boolean, and when reachable a known schema verdict.
+    // deps.database is PRESENT but NOT PROBED on the shallow default — the DB
+    // read is opt-in (`?deep=1`) because this endpoint is polled every 3
+    // minutes and a query on that path kept Neon awake 24/7 (99.8% of the
+    // bill; the 2026-07-29 HTTP 402 outage). Assert the shallow contract
+    // explicitly, so a regression that silently re-adds the query is visible
+    // here rather than only on the invoice.
     expect(body.deps?.database, 'deps.database present').toBeTruthy();
-    expect(typeof body.deps.database.ok, 'deps.database.ok is boolean').toBe('boolean');
+    expect(body.deps.database.probed, 'shallow /api/health must NOT probe the DB').toBe(false);
+    expect(body.deps.database.ok, 'unprobed reports ok=null, not a boolean verdict').toBeNull();
+    expect(body.db, 'db field says unprobed on the shallow path').toBe('unprobed');
+    // …and an unprobed DB must never be reported as an outage.
+    expect(body.status, 'shallow must not report down from an unprobed DB').not.toBe('down');
+  });
+
+  // The DEEP probe: same endpoint, `?deep=1`, actually reads the database.
+  // This is the contract the live-smoke script depends on every 10 minutes.
+  test('GET /api/health?deep=1 runs the REAL DB read @smoke', async ({ request }) => {
+    const r = await request.get('/api/health?deep=1');
+    expect(r.status(), `health 200; got ${r.status()}`).toBe(200);
+    const body = await r.json();
+    expect(body.deps?.database, 'deps.database present').toBeTruthy();
+    expect(body.deps.database.probed, 'deep must actually probe').toBe(true);
+    expect(typeof body.deps.database.ok, 'deps.database.ok is boolean when probed').toBe('boolean');
     if (body.deps.database.ok) {
       expect(['current', 'mode-missing'], `db schema; got ${body.deps.database.schema}`).toContain(
         body.deps.database.schema,

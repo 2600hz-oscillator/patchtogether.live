@@ -63,11 +63,17 @@ if [[ -n "$BETA_GATE_PASS" ]]; then
   auth_args=(-u "${BETA_GATE_USER}:${BETA_GATE_PASS}")
 fi
 
-echo "[1/3] curl $WEB_URL/api/health"
-# `${auth_args[@]+"${auth_args[@]}"}` is the empty-array-safe expansion;
-# under `set -u`, a bare `${auth_args[@]}` errors when the array has no
-# elements set (bash < 4.4 quirk that still bites macOS bash 3.2).
-web_resp=$(curl -sS -m 10 -w '\n__HTTP_STATUS:%{http_code}' ${auth_args[@]+"${auth_args[@]}"} "$WEB_URL/api/health" || true)
+echo "[1/3] curl $WEB_URL/api/health?deep=1"
+# ⚠ `?deep=1` IS LOAD-BEARING. `/api/health` is SHALLOW by default and does not
+# touch Postgres — because Better Stack polls it every 3 minutes on prod and dev,
+# and Neon suspends idle compute only after 300s, so a DB read on that path kept
+# both branches ~99% awake and was 99.8% of the Neon bill (and caused the
+# 2026-07-29 HTTP 402 outage). This script runs every 10 minutes, so asking for
+# the real read here is affordable; a 3-minute uptime monitor is not.
+#
+# Without `deep=1` the DB gates below would silently stop testing anything —
+# which is why `probed` is asserted immediately after.
+web_resp=$(curl -sS -m 10 -w '\n__HTTP_STATUS:%{http_code}' ${auth_args[@]+"${auth_args[@]}"} "$WEB_URL/api/health?deep=1" || true)
 web_status=$(echo "$web_resp" | awk -F: '/^__HTTP_STATUS:/ {print $2}' | tr -d ' \n')
 web_body=$(echo "$web_resp" | sed '/^__HTTP_STATUS:/d')
 if [[ "$web_status" != "200" ]]; then
@@ -76,6 +82,14 @@ if [[ "$web_status" != "200" ]]; then
 elif ! echo "$web_body" | jq -e '.ok == true' >/dev/null 2>&1; then
   failures+=("web-health-body")
   reasons+=("web /api/health body missing ok:true; got: $web_body")
+elif ! echo "$web_body" | jq -e '.deps.database.probed == true' >/dev/null 2>&1; then
+  # THE GATE THAT WATCHES THE GATE. Every DB check below is worthless if the
+  # probe never ran, and "never ran" is indistinguishable from "ran and passed"
+  # unless something asserts it. If `?deep=1` is dropped from the curl above, or
+  # the endpoint stops honouring it, this fires instead of the DB checks quietly
+  # passing on an unprobed response.
+  failures+=("web-db-not-probed")
+  reasons+=("web /api/health did not run the DB probe (deps.database.probed != true) — the ?deep=1 request or the endpoint's handling of it has regressed, so the DB checks below are NOT testing anything")
 elif echo "$web_body" | jq -e '.deps.database.ok != true' >/dev/null 2>&1; then
   # Real DB read probe: an UNREACHABLE Postgres is a P0 the presence-only db
   # check missed (it returned ok:true while every racks.mode read 500'd).
