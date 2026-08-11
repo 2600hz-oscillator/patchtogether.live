@@ -590,6 +590,29 @@ describe('module-face lint — DECLARED param cells (face.paramCells) + PANEL ti
           }
           break;
         }
+        case 'fader': {
+          // A THROW is a CONTINUOUS scale. The one shape it must not back is a
+          // discrete roster: those are `segmented`/`selector`/`grid` territory,
+          // and a fader over 3 named states is a slider you cannot read. The
+          // range itself is deliberately unconstrained — a level is a level
+          // whether it is 0..1, 0..2 or −60..+6 dB.
+          if (p.curve === 'discrete') {
+            problems.push(
+              `${def.type}: face.paramCells['${key}'] = 'fader' but the param is ${shape} — a ` +
+                `throw needs a CONTINUOUS param. A discrete roster belongs on a segmented row, ` +
+                `a selector or a grid, all of which NAME their states; a fader would show them ` +
+                `as unlabelled detents on a scale.`,
+            );
+          }
+          if (p.options?.length) {
+            problems.push(
+              `${def.type}: face.paramCells['${key}'] = 'fader' but the param declares an ` +
+                `\`options\` roster — the roster names its states and a fader cannot show names. ` +
+                `Drop one of the two declarations.`,
+            );
+          }
+          break;
+        }
         case 'color': {
           if (!isPackedRgbParam(p)) {
             problems.push(

@@ -151,15 +151,28 @@ export const noiseDef: AudioModuleDef = {
   // — the legacy card is byte-identical in the pixel lane (its only change is
   // reading its range off the def instead of re-typing it), the module keeps
   // its one prominent LEVEL control and its three audio jacks, and nothing is
-  // renamed, recoloured or reorganised. THE ONE THING THAT CHANGES AND CANNOT
-  // BE AVOIDED: the dock faceplate paints ranked params with `KnobConic`, so
-  // in the dock LEVEL is a big knob where the card draws a fader. `ModuleShell`
-  // has no fader primitive for a face cell — this is the platform, identical
-  // for every faced module (clouds, mixer and vca all have fader cards), not a
-  // choice this face made.
+  // renamed, recoloured or reorganised.
+  //
+  // THE ONE THING THAT DID NOT SURVIVE THE FIRST PASS, and the reason this face
+  // was held: `ModuleShell` paints a ranked param with `KnobConic`, so the dock
+  // showed LEVEL as a big knob where the card draws a fader. The owner's answer
+  // was a platform one rather than an exception — the `fader` cell kind (see
+  // `face.paramCells` below), which `noise` is the first module to declare and
+  // which clouds, mixer and vca inherit the day they are faced.
   face: {
     // One param, so one rank. Nothing to prioritise and nothing dropped.
     order: ['level'],
+
+    // LEVEL IS A THROW, NOT A DIAL — and this declaration is the reason this
+    // face waited a release rather than shipping with the batch. `ModuleShell`
+    // paints a ranked param with `KnobConic` by default, so the face rendered
+    // LEVEL as a big knob where `NoiseCard` has always drawn a fader. That is
+    // not a cosmetic difference on a module whose ENTIRE visual identity is one
+    // centred fader, and the owner ruled accordingly (2026-08-10): add the cell
+    // kind, keep noise looking like today. Nothing in a ParamDef says "this is
+    // a level" — `0..1 linear` is the same shape as any other continuous
+    // scalar — so the shell cannot infer it and the module has to say so.
+    paramCells: { level: 'fader' },
 
     // NO `pages`, and this is the first face in the registry where that has a
     // visible consequence. With a single ranked key promoted to the hero, the
@@ -226,7 +239,7 @@ export const noiseDef: AudioModuleDef = {
         panelId: 'noise-taps',
       },
       {
-        // FIVE FIXED FACTS — every one a constant of the design rather than a
+        // SIX FIXED FACTS — every one a constant of the design rather than a
         // live value, which is exactly what a `text` readout is for. The three
         // LIVE numbers are the hero's, because they are the ones LEVEL moves.
         //

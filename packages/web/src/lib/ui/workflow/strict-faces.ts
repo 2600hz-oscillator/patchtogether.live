@@ -301,17 +301,18 @@
 // tile capturable. The two existing witnesses are periodic (a saw at a fixed
 // phase), so a mis-ordered freeze shows up on them as a PHASE difference —
 // which is why macrooscillator catches it only intermittently. A broadband
-// witness has no phase to land on. NOT YET MEASURED as such: this face's
-// baselines are deferred to the VRT platform sweep, so the claim is a
-// PREDICTION for the probe to settle, not a result.
+// witness has no phase to land on. NOT YET MEASURED as such — the claim is a
+// PREDICTION for `vrt-face-audio-probe` to settle, not a result.
 //
 // OWNER CONSTRAINT, 2026-08-10 ("preserve today's look"): the legacy card is
 // pixel-unchanged, the module keeps one prominent LEVEL control and its three
-// jacks, and nothing is renamed or recoloured. The one unavoidable difference
-// is that `ModuleShell` paints a ranked param with `KnobConic` and has no fader
-// primitive, so the dock faceplate shows LEVEL as a knob where the card draws a
-// fader — platform-wide behaviour (clouds, mixer and vca all have fader cards),
-// flagged rather than hidden.
+// jacks, and nothing is renamed or recoloured. The one difference the first
+// pass could NOT honour is the reason this face was held a release: a ranked
+// param paints as `KnobConic`, so the dock showed LEVEL as a dial where the
+// card draws a FADER — on a module whose whole visual identity is one centred
+// throw. The owner's answer was the platform `fader` cell kind rather than an
+// exception, and `noise` is its first consumer (`face.paramCells`); clouds,
+// mixer and vca are fader cards too and inherit it when they are faced.
 
 // FACE BATCH 5 · cofefve (2026-08-10) — the analog delay, PROMOTED from having
 // no face at all, and the entry whose argument is that A FACEPLATE MUST BE ABLE

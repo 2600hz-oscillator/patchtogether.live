@@ -132,6 +132,48 @@ test.describe('noise face — three derived readouts from one knob', () => {
     }
   });
 
+  test('LEVEL is a FADER at every tier, not a dial — the owner constraint, gated', async ({
+    page,
+  }) => {
+    // ⚠ WHY THIS IS A TEST AND NOT A CODE REVIEW NOTE. `faces-parity` drives a
+    // fader and a knob with the SAME pointer drag against the SAME
+    // `control-level` testid, and asserts the same thing of both — so the two
+    // primitives are literally indistinguishable to it, and dropping
+    // `face.paramCells` would leave every gate in this repo green while the
+    // module stopped looking like itself. Measured, both directions, before
+    // this leg was written: with the declaration the cell resolves `fader`, and
+    // with it removed the same cell resolves `knob` and every other assertion
+    // in this file still passes.
+    //
+    // The VRT baseline cannot stand in for it either. A primitive swap that
+    // lands under `DOCK_MAX_DIFF` is invisible to the pixel gate (filter's
+    // MODE, #1213), and a swap that is over it gets silently re-pinned by the
+    // next `--update-snapshots`. Neither reads as "the affordance changed".
+    await gotoShell(page);
+    const id = await spawnNoise(page);
+
+    // THE LANE TIER. `fader` is TIER-INDEPENDENT like `grid` and `color`: a
+    // throw fits a knob column, and the knob it replaces is exactly as wrong
+    // there as at the dock.
+    const lane = page.locator(`.svelte-flow__node[data-id="${id}"] [data-testid="module-shell"]`);
+    await expect(
+      lane.locator('[data-cell-key="level"]'),
+      'the LANE tile paints LEVEL as a throw',
+    ).toHaveAttribute('data-cell-control', 'fader');
+
+    // THE DOCK TIER — the one the owner objected to twice.
+    const dock = await openDock(page, id);
+    await expect(
+      dock.locator('[data-cell-key="level"]'),
+      'the DOCK faceplate paints LEVEL as a throw, matching NoiseCard',
+    ).toHaveAttribute('data-cell-control', 'fader');
+
+    // …AND IT IS THE SAME CONTROL, not a look-alike: `Fader.svelte` derives
+    // `control-<paramId>` itself, which is what keeps the parity multiset
+    // unchanged by the swap and MIDI-learn reachable on the face.
+    await expect(dock.locator('[data-testid="control-level"]')).toBeVisible();
+  });
+
   test('the TAPS panel paints the corner and a ladder that moves with LEVEL', async ({ page }) => {
     await gotoShell(page);
     const id = await spawnNoise(page);
