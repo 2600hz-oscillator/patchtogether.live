@@ -152,43 +152,27 @@ const LFS_POINTER_PREFIX = 'version https://git-lfs';
  * 40-wide hole and nobody would have known. That is the whole argument for
  * paying the one-edit cost, and it is now measured rather than reasoned.
  *
- * THE 16 BELOW ARE NOT #1279's. `vrt-toybox` is blanket-`test.skip`-ed on
- * linux and CI renders on linux, so nothing has ever compared these on any CI
- * run — they need a darwin recapture, which is a separate PR.
+ * ⚠ DRAINED TO EMPTY 2026-08-10 — BY PAYMENT, NOT BY DELETION, and the
+ * distinction is the whole point of keeping this note.
+ *
+ * The 16 survivors were all `vrt-toybox.spec.ts/darwin/*`. They were stale
+ * because `vrt-toybox` was blanket-`test.skip`-ed on linux and CI renders on
+ * linux, so NOTHING on any CI run had ever compared them — they were carrying a
+ * pre-#1159 `--cable-video` frame with no mechanism that could notice. The
+ * standing plan was "a darwin recapture, in a separate PR", which never came.
+ *
+ * The single-baseline collapse pays it outright: the blanket skip is gone, the
+ * darwin PNGs are deleted, and the vrt-update capture writes fresh LINUX
+ * baselines for all 27 toybox scenes — rendered against the CURRENT palette by
+ * construction. There is no deferred work left to name, so the list is empty
+ * rather than carrying entries that describe files which no longer exist.
+ *
+ * ⚠ AN EMPTY EXACT SET IS STILL A REAL ASSERTION here, unlike an empty ceiling:
+ * `toEqual([])` fails the moment ANY committed baseline paints a retired hue.
+ * That is strictly stronger than what it replaced. If the capture ever lands a
+ * stale-looking toybox frame, this reddens naming it.
  */
-const PENDING_PALETTE_REGEN: readonly string[] = [
-  // ── FOUND 2026-08-02 BY VALIDATING THE EXCLUSIONS (16) ────────────────────
-  // These were not "missed" — they were UNREACHABLE. `vrt-toybox` sat in
-  // NON_CARD_CAPTURE_DIRS, so `measure()` never opened it and neither
-  // instrument control could: the pixel control only re-measures rows
-  // `measure()` returned. The exclusion claim was simply false — the canvas
-  // wrapper is `border: 1px solid var(--cable-video)`.
-  //
-  // DRAIN WHEN: the baselines are recaptured. Deliberately NOT done here —
-  // they are darwin-only GPU captures (`vrt-toybox` is blanket-skipped on
-  // linux, which is why nothing on CI has ever compared them), and 16
-  // look-affecting WebGL baselines belong in their own PR with owner eyes, not
-  // smuggled into a gate change. #1279 does NOT regenerate them — it names
-  // vrt-toybox as its own negative control, regenerating zero. `git rm` them
-  // first: a ~1px frame on a 200x150 capture is under `maxDiffPixelRatio`, so
-  // `--update-snapshots` writes nothing (the A2/#1213 trap this gate is for).
-  'vrt-toybox.spec.ts/darwin/combine-composite',
-  'vrt-toybox.spec.ts/darwin/cos-gradient',
-  'vrt-toybox.spec.ts/darwin/feedback-blur',
-  'vrt-toybox.spec.ts/darwin/feedback-tunnel',
-  'vrt-toybox.spec.ts/darwin/frag-kaleido',
-  'vrt-toybox.spec.ts/darwin/hsv-plasma',
-  'vrt-toybox.spec.ts/darwin/noise-fbm',
-  'vrt-toybox.spec.ts/darwin/obj-bird-ernest',
-  'vrt-toybox.spec.ts/darwin/obj-icosahedron',
-  'vrt-toybox.spec.ts/darwin/obj-sphere',
-  'vrt-toybox.spec.ts/darwin/obj-spot',
-  'vrt-toybox.spec.ts/darwin/obj-teapot',
-  'vrt-toybox.spec.ts/darwin/preset-flighty',
-  'vrt-toybox.spec.ts/darwin/preset-worley-bloom',
-  'vrt-toybox.spec.ts/darwin/truchet',
-  'vrt-toybox.spec.ts/darwin/worley-cells',
-];
+const PENDING_PALETTE_REGEN: readonly string[] = [];
 
 /**
  * Scene stems whose card does NOT pin `.stripe` to a `--cable-*` token, and is
