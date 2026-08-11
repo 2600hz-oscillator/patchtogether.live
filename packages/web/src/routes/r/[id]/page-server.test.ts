@@ -47,7 +47,6 @@ const RACK = {
   ownerUserId: 'user_owner',
   memberUserIds: ['user_owner'],
   createdAt: 0,
-  mode: 'dawless' as const,
 };
 
 function makeEvent({

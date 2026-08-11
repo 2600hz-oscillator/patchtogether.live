@@ -17,7 +17,7 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { env as privateEnv } from '$env/dynamic/private';
 import { env as publicEnv } from '$env/dynamic/public';
-import { probeHocuspocus, probeDatabase } from './probe';
+import { probeHocuspocus, probeDatabase, skippedDatabaseProbe } from './probe';
 import { sql } from '$lib/server/db';
 
 /** SHA-256 prefix of a secret value, or null if unset. One-way; the value is
@@ -31,7 +31,26 @@ async function fingerprint(value: string | undefined): Promise<string | null> {
   return `len=${value.length} sha256:${hex.slice(0, 8)}`;
 }
 
-export const GET: RequestHandler = async () => {
+export const GET: RequestHandler = async ({ url }) => {
+  // ── THE DB READ IS OPT-IN (`?deep=1`), AND THE DEFAULT IS SHALLOW ──
+  //
+  // ⚠ THIS ENDPOINT IS POLLED EVERY 3 MINUTES, ON PROD AND DEV, FOREVER.
+  // (Better Stack uptime monitors "prod web /api/health" and
+  // "dev.patchtogether.live/api/health", both on a 3m interval — confirmed in
+  // the dashboard 2026-08-11. The setup doc's "30s" is stale.)
+  //
+  // Neon suspends idle compute after 300s. A request every 180s means that gap
+  // NEVER opens. From 2026-07-19 — the day after commit d8726e96 gave this
+  // handler a real DB query — prod and dev sat ~99% awake and billed the
+  // 0.25 CU floor around the clock. Compute was 99.8% of the bill; storage was
+  // three cents; there are no users. The databases were not doing work, they
+  // were merely forbidden to sleep. That also burned the free allowance and
+  // caused the 2026-07-29 HTTP 402 outage (~24h of 500s on every rackspace).
+  //
+  // So: the uptime path must be cheap and MUST NOT touch Postgres. Anything
+  // that wants the real read asks for it, on a cadence measured in tens of
+  // minutes (scripts/live-smoke-alert.sh does exactly this).
+  const deep = url.searchParams.get('deep') === '1';
   const hasSecret = Boolean(privateEnv.CLERK_SECRET_KEY);
   const hasPublishable = Boolean(publicEnv.PUBLIC_CLERK_PUBLISHABLE_KEY);
   const inviteSecretFingerprint = await fingerprint(privateEnv.INVITE_SECRET);
@@ -50,15 +69,23 @@ export const GET: RequestHandler = async () => {
   // 500'd for a week (deploy-before-migrate — the /r/[id] P0). Bounded +
   // never throws; runs the Neon HTTP tagged template (Workers-safe).
   const hasDb = Boolean(privateEnv.DATABASE_URL);
-  const database = await probeDatabase(hasDb, {
-    queryRacksTableCount: async () => {
-      const rows = await sql()`
-        SELECT 1 FROM information_schema.tables
-        WHERE table_schema = 'public' AND table_name = 'racks'
-        LIMIT 1`;
-      return (rows as unknown[]).length;
-    },
-  });
+  // Both halves of the merge, and they are orthogonal: `deep` decides WHETHER
+  // the probe runs (#1460 — the 3-minute uptime poll was keeping Neon awake
+  // 24/7), the query decides WHAT it asks. The marker moved off `racks.mode`
+  // because migration 006 DROPS that column — probing for it would report every
+  // correctly-migrated tier as `degraded` forever, and the live-smoke would
+  // alert on it. It asks for the `racks` TABLE (migration 001) instead.
+  const database = deep
+    ? await probeDatabase(hasDb, {
+        queryRacksTableCount: async () => {
+          const rows = await sql()`
+            SELECT 1 FROM information_schema.tables
+            WHERE table_schema = 'public' AND table_name = 'racks'
+            LIMIT 1`;
+          return (rows as unknown[]).length;
+        },
+      })
+    : skippedDatabaseProbe('shallow probe — add ?deep=1 to run the DB read (it wakes Neon)');
 
   return json({
     // ok + HTTP 200 stay constant for backward-compat with existing uptime
@@ -71,10 +98,15 @@ export const GET: RequestHandler = async () => {
     // 'healthy' = all green. A tier with NO DATABASE_URL (prod
     // before launch, a DB-less dev/e2e runner) is NOT 'down' — an absent DB
     // never drove status before, and reporting 'down' for it would false-alarm.
+    // ⚠ EVERY DB TERM IS GUARDED BY `deep`. Without that, the shallow response
+    // reports `status:'down'` on a perfectly healthy tier — `database.ok` is
+    // `null` when unprobed, and `!null` is `true`, so the "unreachable" branch
+    // fires for a probe that was never run. An unasked question must never be
+    // read as a bad answer.
     status:
-      hasDb && !database.ok
+      deep && hasDb && !database.ok
         ? 'down'
-        : !hocuspocus.ok || (database.ok && database.schema !== 'current')
+        : !hocuspocus.ok || (deep && database.ok === true && database.schema !== 'current')
           ? 'degraded'
           : 'healthy',
     version: buildEnv.VITE_APP_VERSION ?? 'unknown',
@@ -83,7 +115,18 @@ export const GET: RequestHandler = async () => {
     // schema current; 'degraded' = reachable but unmigrated (no `racks` table);
     // 'error' = unreachable; 'missing' = no DATABASE_URL. Full probe in
     // deps.database.
-    db: !hasDb ? 'missing' : !database.ok ? 'error' : database.schema === 'current' ? 'ok' : 'degraded',
+    // 'unprobed' on the shallow default — distinct from 'error'. A monitor that
+    // treats them the same either pages on a healthy tier or, if it inverts,
+    // certifies a dead one.
+    db: !deep
+      ? 'unprobed'
+      : !hasDb
+        ? 'missing'
+        : !database.ok
+          ? 'error'
+          : database.schema === 'current'
+            ? 'ok'
+            : 'degraded',
     env: {
       CLERK_SECRET_KEY: hasSecret,
       PUBLIC_CLERK_PUBLISHABLE_KEY: hasPublishable,

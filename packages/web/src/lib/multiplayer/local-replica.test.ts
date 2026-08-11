@@ -103,7 +103,7 @@ describe('attachLocalReplica — seed across sessions', () => {
     // rather than a real rack id. local-replica is id-agnostic (the DB name is
     // just REPLICA_DB_PREFIX + id) — this guards against any accidental
     // id-shape assumption creeping into the validate → seed → persist path.
-    const scratchId = `local-scratch-dawless-${freshRackId()}`;
+    const scratchId = `local-scratch-${freshRackId()}`;
 
     // Session 1: fresh attach on the scratch canvas, patch, unmount.
     const doc1 = new Y.Doc();

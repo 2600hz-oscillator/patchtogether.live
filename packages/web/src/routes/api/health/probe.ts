@@ -62,18 +62,30 @@ export async function probeHocuspocus(
 }
 
 export interface DatabaseProbe {
-  /** True iff the DB was REACHED and the probe query returned. */
-  ok: boolean;
+  /** True iff the DB was REACHED and the probe query returned.
+   *  ⚠ `null` when the probe DID NOT RUN (the shallow default — see `probed`).
+   *  Deliberately NOT `false`: "unreachable" and "not asked" are different
+   *  facts, and a consumer that conflates them either false-alarms or, worse,
+   *  reads a skipped probe as a healthy one. */
+  ok: boolean | null;
+  /** Whether the DB query actually ran. FALSE on the shallow `/api/health`,
+   *  which is polled every 3 minutes by uptime monitors and must not wake the
+   *  database. The field is always PRESENT rather than omitted, so a consumer
+   *  can tell "not probed" from "field vanished in a refactor". */
+  probed?: boolean;
+  /** Why the probe was skipped (only when `probed === false`). */
+  skipped?: string;
   /** Migration currency (only when reachable): 'racks-missing' = the DB
    *  answered but has no `racks` table at all — the deploy-before-migrate
    *  schema-drift class that 500'd every rack read for a week while
    *  `db:'configured'` still said 200.
    *
-   *  ⚠ This marker used to be the `racks.mode` COLUMN (migration 005). 006
-   *  drops that column, so keeping it would have inverted the probe's meaning
-   *  and reported every migrated tier as degraded forever. It is anchored to
-   *  the base table (001) instead — a marker that only ever gets ADDED, so it
-   *  cannot be falsified by a later migration the way a column can. */
+   *  ⚠ This marker used to be the `racks.mode` COLUMN (migration 005).
+   *  Migration 006 DROPS that column, so keeping it would have INVERTED the
+   *  probe's meaning: every correctly-migrated tier would report `degraded`
+   *  forever and the live-smoke would alert on it. Anchored to the base table
+   *  (001) instead — a marker that only ever gets ADDED, so a later migration
+   *  cannot falsify it the way a column can. */
   schema?: 'current' | 'racks-missing';
   /** Round-trip time in ms (only on a completed query). */
   ms?: number;
@@ -91,6 +103,23 @@ export interface DbProbeDeps {
   timeoutMs: number;
 }
 
+/** The shallow result: the probe did not run, and says so explicitly.
+ *
+ *  ⚠ WHY THIS EXISTS — measured 2026-08-11. `/api/health` ran a real Neon query
+ *  (commit d8726e96, 2026-07-18) and Better Stack polls it every 3 MINUTES on
+ *  both prod and dev. Neon suspends idle compute after 300s, so a request every
+ *  180s means the gap NEVER opens: both branches sat 99% awake from 2026-07-19
+ *  onward, billing the 0.25 CU floor around the clock. Compute was 99.8% of the
+ *  bill; storage was three cents. The databases were not working — they were
+ *  merely forbidden to sleep. It also consumed the free allowance and caused the
+ *  2026-07-29 HTTP 402 outage that 500'd every rackspace URL for ~24 hours.
+ *
+ *  So the frequently-polled path must not touch the database. Deep checks ask
+ *  for it explicitly (`?deep=1`) on a cadence measured in tens of minutes. */
+export function skippedDatabaseProbe(reason: string): DatabaseProbe {
+  return { ok: null, probed: false, skipped: reason };
+}
+
 /**
  * Probe the Postgres tier with a REAL read — an information_schema lookup for
  * the `racks` table (the marker for migration 001). NEVER throws: an
@@ -101,16 +130,37 @@ export interface DbProbeDeps {
  * (the query may keep running in the background if the timeout wins, but the
  * probe returns); information_schema is chosen over `SELECT … FROM racks` so
  * the probe is data-independent.
+ *
+ * ⚠ It is NOT run on the default `/api/health` — see `skippedDatabaseProbe`.
  */
 export async function probeDatabase(
   hasUrl: boolean,
   deps: Partial<DbProbeDeps> = {},
 ): Promise<DatabaseProbe> {
-  if (!hasUrl) return { ok: false, error: 'database url unset (DATABASE_URL)' };
+  if (!hasUrl) return { ok: false, probed: true, error: 'database url unset (DATABASE_URL)' };
   const run = deps.queryRacksTableCount;
-  if (!run) return { ok: false, error: 'db probe query not wired' };
+  if (!run) return { ok: false, probed: true, error: 'db probe query not wired' };
   const now = deps.now ?? Date.now;
-  const timeoutMs = deps.timeoutMs ?? 2000;
+  // ⚠ 2000 ms WAS RIGHT WHEN THE DB WAS ALWAYS AWAKE, AND IS WRONG NOW.
+  //
+  // The deep probe is opt-in (`?deep=1`) and its only regular caller is the
+  // 10-minute live-smoke. 10 min > Neon's 300 s suspend, so EVERY deep probe
+  // now lands on COLD compute by construction — the previous design never did,
+  // because the 3-minute uptime poll kept the branch permanently awake. That is
+  // the whole point of the change, and it moves this timeout from "generous"
+  // to "load-bearing".
+  //
+  // Measured 2026-08-11 on an idle autotest branch (verified `state: idle`,
+  // last active 50 min prior): cold 927 ms, warm 51 ms. 927 against 2000 fits,
+  // but ~1.1 s of headroom against a CONTENDED cold start is not margin worth
+  // trusting — and the failure mode is expensive in the wrong direction: a
+  // timeout reports `status:'down'`, which opens an alert issue and pages, so
+  // the cheap fix would manufacture false outages.
+  //
+  // 10 s costs nothing on the warm path (51 ms) and only ever matters on the
+  // cold one. Neon's own scale-to-zero guidance puts cold starts in the
+  // hundreds of ms; this is ~10x that.
+  const timeoutMs = deps.timeoutMs ?? 10_000;
   const start = now();
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
@@ -123,9 +173,9 @@ export async function probeDatabase(
         );
       }),
     ]);
-    return { ok: true, schema: count > 0 ? 'current' : 'racks-missing', ms: now() - start };
+    return { ok: true, probed: true, schema: count > 0 ? 'current' : 'racks-missing', ms: now() - start };
   } catch (e) {
-    return { ok: false, ms: now() - start, error: e instanceof Error ? e.message : 'db probe failed' };
+    return { ok: false, probed: true, ms: now() - start, error: e instanceof Error ? e.message : 'db probe failed' };
   } finally {
     if (timer) clearTimeout(timer);
   }

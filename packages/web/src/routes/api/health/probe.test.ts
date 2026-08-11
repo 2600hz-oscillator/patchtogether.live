@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { wsToHealthUrl, probeHocuspocus, probeDatabase } from './probe';
+import { wsToHealthUrl, probeHocuspocus, probeDatabase, skippedDatabaseProbe } from './probe';
 
 describe('wsToHealthUrl', () => {
   it('wss → https + /health', () => {
@@ -108,5 +108,66 @@ describe('probeDatabase', () => {
     });
     expect(r.ok).toBe(false);
     expect(r.error).toMatch(/timed out/);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// THE SHALLOW DEFAULT — and the derived-field traps it sets.
+//
+// `/api/health` is polled every 3 MINUTES by Better Stack on prod and dev
+// (confirmed in the dashboard 2026-08-11; the setup doc's "30s" is stale).
+// Neon suspends idle compute after 300s, so a DB read on that path meant the
+// gap never opened: both branches ~99% awake from 2026-07-19, compute 99.8% of
+// the bill, and the 2026-07-29 HTTP 402 outage. Hence `?deep=1`.
+//
+// The subtle part is not skipping the query — it is that `ok` becomes `null`,
+// and every downstream `!database.ok` then reads an UNASKED question as a BAD
+// ANSWER. Both traps below were live in the first draft of this change.
+describe('skippedDatabaseProbe — an unasked question is not a bad answer', () => {
+  it('reports ok=null and probed=false, NOT ok=false', () => {
+    const r = skippedDatabaseProbe('shallow');
+    // ok=false would be a LIE: it claims the DB was found unreachable.
+    expect(r.ok).toBeNull();
+    expect(r.probed).toBe(false);
+    expect(r.skipped).toBe('shallow');
+  });
+
+  it('the field is PRESENT, so a consumer can tell "not probed" from "gone"', () => {
+    // Omitting deps.database entirely would make a monitor that reads
+    // `.deps.database.ok` see `null` either way — indistinguishable from a
+    // refactor that dropped the field. `probed` is the discriminator.
+    expect(Object.prototype.hasOwnProperty.call(skippedDatabaseProbe('x'), 'probed')).toBe(true);
+  });
+
+  it('every REAL probe result is marked probed=true (the flag is not shallow-only)', async () => {
+    // If only the skipped path set `probed`, `probed === true` could never be
+    // asserted by the smoke script — the check would pass vacuously on every
+    // real response by being absent rather than false.
+    expect((await probeDatabase(true, { queryRacksTableCount: async () => 1 })).probed).toBe(true);
+    expect((await probeDatabase(true, { queryRacksTableCount: async () => 0 })).probed).toBe(true);
+    expect((await probeDatabase(false)).probed).toBe(true);
+    const threw = await probeDatabase(true, {
+      queryRacksTableCount: async () => {
+        throw new Error('ECONNREFUSED');
+      },
+    });
+    expect(threw.probed).toBe(true);
+  });
+
+  it('TRAP 1: a naive `!ok` reads the skipped probe as unreachable', () => {
+    const skipped = skippedDatabaseProbe('shallow');
+    // This is the +server.ts status expression BEFORE the `deep &&` guard.
+    // It must be demonstrably wrong, or the guard has nothing to defend.
+    expect(!skipped.ok).toBe(true); // ← would have reported status:'down'
+    // The guarded form, which is what ships:
+    const deep = false;
+    expect(deep && !skipped.ok).toBe(false);
+  });
+
+  it('TRAP 2: `ok === true` is the safe test for the degraded branch', () => {
+    const skipped = skippedDatabaseProbe('shallow');
+    // `skipped.ok && …` is falsy-correct by luck; `ok === true` says what it
+    // means and survives ok becoming any other falsy sentinel later.
+    expect(skipped.ok === true).toBe(false);
   });
 });

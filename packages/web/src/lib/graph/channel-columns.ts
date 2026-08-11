@@ -54,7 +54,7 @@ export const COLUMN_W = COLUMN_HP * HP_UNIT;
  *  It is used ONLY under the preview: every pitch-dependent geometry fn below
  *  takes the ACTIVE pitch as a trailing param that DEFAULTS to COLUMN_W, so a
  *  preview-OFF call (no arg) is byte-identical to before. The Canvas resolves
- *  the pitch once (columnPitch(shellPreview)) and threads it into the
+ *  the pitch once (columnPitch(shellFaces)) and threads it into the
  *  RENDER-derived positions / drop hit-tests / overlay bands / viewport nav —
  *  never into a PERSISTED write (spawn x/y + grow-up push-ups keep COLUMN_W), so
  *  narrowing is a pure render derivation: collab-safe, no Y.Doc change. */
@@ -64,8 +64,8 @@ export const SHELL_COLUMN_W = 216;
  *  under the `?shell=1` preview, else the app-scale COLUMN_W (34hp / 765px). The
  *  Canvas calls this and threads the result into the pure geometry fns so those
  *  stay flag-free (preview-off passes COLUMN_W → identical math). */
-export function columnPitch(shellPreview: boolean): number {
-  return shellPreview ? SHELL_COLUMN_W : COLUMN_W;
+export function columnPitch(shellFaces: boolean): number {
+  return shellFaces ? SHELL_COLUMN_W : COLUMN_W;
 }
 
 /** Each aux-send box is one column wide; the two boxes sit SIDE BY SIDE to the
