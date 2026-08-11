@@ -1051,7 +1051,9 @@ export const STRICT_VRT_MODULES = new Set<string>([
   'meowbox',              // meow-themed card
   'mixer',                // 4-channel mixer fader card
   'mixmstrs',             // master mixer fader card
-  'noise',                // noise-source knob card
+  'noise',                // noise-source FADER card (like mixer/mixmstrs above,
+                          //   not a knob card — the distinction is the whole
+                          //   point of its `face.paramCells: { level: 'fader' }`)
   'polyseqz',             // poly chord sequencer card (S&H header toggle; linux baseline regenerated)
   'qbrt',                 // q-bit/quantizer knob card
   'reverb',               // reverb knob card
