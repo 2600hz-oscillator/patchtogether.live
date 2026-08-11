@@ -616,11 +616,11 @@ cofefve param lowCut 0.01..1 linear default=0.75
 cofefve param pan -1.5707963267948966..1.5707963267948966 linear default=0
 cofefve param panMode 0..2 discrete default=0
 cofefve param stereoOffset -0.5..0.5 linear default=0
-cofefve param syncPeriod 0..30 linear default=0 unit=s
 cofefve param tempoSync 0..19 discrete default=0
 cofefve param wetVolume 0..2 linear default=0.5
 cofefve stereo inL+inR
 cofefve stereo outL+outR
+cofefve family cofefve-echo kind=cell prefix=cofefve-echo
 colorizer meta domain=video
 colorizer in in mono-video
 colorizer in tintB cv param=tintB cvScale=linear
@@ -768,6 +768,8 @@ cube param view_rot_x -3.1416..3.1416 linear default=0.6
 cube param view_rot_y -3.1416..3.1416 linear default=0.7
 cube param view_zoom 0.3..3 log default=1
 cube param wrap 0..1 discrete default=0
+cube family cube-table-stack kind=cell prefix=cube-table-stack
+cube family cube-view kind=cell prefix=cube-view
 cvBuddy meta domain=audio
 cvBuddy in gate gate edge=gate
 cvBuddy in pitch cv

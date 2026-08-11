@@ -116,7 +116,30 @@ function typeFromDrawerSymbol(pascal: string): string {
  * HERE rather than into DOM_SOURCE_LANE_TYPES, because a headless card would
  * then be a SECOND renderer for one node.
  */
-const FACE_MOUNTS_SOURCE: Readonly<Record<string, { component: string; why: string }>> = {};
+const FACE_MOUNTS_SOURCE: Readonly<Record<string, { component: string; why: string }>> = {
+  // cube (#1452, merged 2026-08-10) — and it is the reason this branch of the
+  // gate exists at all. cube had the identical card-installs-the-drawer shape
+  // wavesculpt did, and was hours from shipping the identical black output.
+  // Its face work fixed it by accident of good architecture: the volume
+  // renderer moved OUT of CubeCard.svelte into cube/CubeVizSurface.svelte,
+  // which owns the install/uninstall pair itself (gated on `ownsVideoOut` so
+  // two live mounts cannot race), and BOTH the card and the hero panel mount
+  // that component. So whichever surface is live, video_out has a real frame.
+  //
+  // ⚠ THIS DECLARATION IS LOAD-BEARING, not paperwork. CubeCard.svelte now
+  // contains ZERO install calls, so the card-shaped half of this gate finds
+  // nothing to attribute and would have said nothing about cube either way.
+  // The artifact anchor (which reads the DEFS, not the cards) is what caught
+  // it — and it caught it on the very merge that faced the module, which is
+  // the behaviour the anchor was written for.
+  cube: {
+    component: 'CubeVizSurface',
+    why:
+      'the face mounts the renderer itself — cube/CubeVizSurface.svelte installs and ' +
+      'uninstalls the frame drawer, and is mounted by BOTH CubeCard and the hero panel, ' +
+      'so video_out never falls through to the black-fill branch under ?shell=1',
+  },
+};
 
 /** card component BASENAME → module type id, exactly the way buildNodeTypes
  *  resolves it (explicit `def.card` wins, else the PascalCase convention). */

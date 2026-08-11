@@ -174,6 +174,25 @@ export const FACES = [
   // moving with every gate still green. Re-establish it by measurement, never
   // by reading a passing scene.
   { type: 'wavesculpt', pages: 8 },
+  // FACE BATCH 3 (2026-08-10) — the 3-D wavetable navigator. SIX bands, all six
+  // surviving the hero split: the hero promotes `cube-view` and `slice_ry` out
+  // of band 1, which still holds ROT Z / ROT X / Y / WRAP.
+  //
+  // ⚠ THE ONLY FACE IN THIS ROSTER WHOSE HERO IS A LIVE WebGL2 CONTEXT, and the
+  // determinism argument is NOT the audio freeze — it is that cube's picture has
+  // no clock at all. The volume, the plane and the camera are all params
+  // (`view_rot_*` are knobs, not a spin), the renderer SKIPS the draw entirely
+  // when its scene signature is unchanged, and the wave overlay is the posted
+  // slice, which on a suspended graph never arrives — so an idle tile repaints
+  // nothing. The hero CAPTION is the same story from the other side: it is
+  // computed through the pure `sampleSlice` rather than tapped off the engine,
+  // precisely so it prints a real number in a frozen capture instead of `—`.
+  //
+  // ⚠ WHAT WOULD SILENTLY RETIRE THAT: giving cube any time-varying view (an
+  // auto-orbit, a spinning plane) makes this the first face tile that genuinely
+  // animates, and it would flake rather than fail. Re-derive with
+  // vrt-face-audio-probe before assuming a passing scene proves stillness.
+  { type: 'cube', pages: 6 },
   // FACE BATCH 4 (2026-08-10) — the granular texture processor. Three bands:
   // the ring (which the hero promotes BOTH the buffer panel and POSITION out
   // of, leaving FREEZE — so the band survives and the count stays 3), the
@@ -195,6 +214,43 @@ export const FACES = [
   // cleanly even without the audio freeze, so — unlike analogVco and
   // macrooscillator — it is not a witness for it.
   { type: 'clouds', pages: 3 },
+  // FACE BATCH 5 — the analog delay. SIX declared bands, six rendered: the hero
+  // promotes `delayTime` and the echo-train panel out of band 1, which still
+  // holds SYNC, CLK SRC and FEEDBACK, so nothing empties.
+  //
+  // ⚠ ITS HERO PANEL IS AN INSERT'S PICTURE, NOT A TRACE, which is what makes
+  // this tile deterministic on a rack with no source patched into it. Every
+  // stem is computed from the durable params through the DSP's own loop
+  // arithmetic — no analyser, no rAF poll, no engine read — so the picture is
+  // identical whether the graph is running or frozen. (The `scope` glyph on the
+  // COMPACT tile is a live trace, and it is flat for the ordinary reason: an
+  // unpatched insert outputs silence. #1420's freeze covers it regardless.)
+  //
+  // ⚠ LINUX ONLY — THIS SCENE HAS NO DARWIN BASELINE, ON PURPOSE, and the gap
+  // is stated here rather than left to be discovered. The `vrt-update` dispatch
+  // captured linux and then its darwin job FAILED on two UNRELATED scenes
+  // (`face-mixer-compact`, `face-ringback-dock`), both tripping #1420's guard —
+  // "the AudioContext is 'running', not 'suspended', at CAPTURE time". The
+  // darwin sweep is ONE job, so those two aborted the whole capture and none of
+  // its baselines were written.
+  //
+  // Shipping linux-only is the CORRECT state here, not a compromise, and the
+  // asymmetry runs the safe way: CI renders on LINUX, so the platform that
+  // gates this face is the one that has a baseline. The reverse — committing a
+  // local darwin capture and waiting for linux — is what manufactures the
+  // UNDECLARED gap the deficit ratchet exists to catch (ground truth is a
+  // darwin PNG with NO linux sibling; a linux PNG with no darwin sibling is not
+  // a gap and `vrt-meta` is green on it, verified). A darwin baseline lands
+  // whenever the mixer/ringback capture defect is fixed and the next dispatch
+  // succeeds — no exemption entry, no ratchet move, nothing to unwind.
+  //
+  // ⚠ AND A LOCAL DARWIN VRT RUN SILENTLY RECREATES IT. Playwright's
+  // `updateSnapshots` defaults to `'missing'`, so any darwin run — including a
+  // read-only "did it still render?" check — writes `darwin/face-cofefve-*.png`
+  // as UNTRACKED files that a `git add -A` would happily commit, turning this
+  // deliberate linux-only state into exactly the undeclared gap it avoids.
+  // `git status` for untracked PNGs after every VRT run until the pair exists.
+  { type: 'cofefve', pages: 6 },
 ] as const;
 
 /** TIGHT per-scene diff budgets (absolute pixels; Playwright takes the MIN of

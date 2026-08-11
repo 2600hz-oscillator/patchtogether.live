@@ -11,16 +11,37 @@
 //
 // Each entry needs a reason + (where applicable) the alternative test
 // that covers the same surface. Reasons are surfaced in test output and
-// the vrt-meta self-test enforces length > 10 so "TODO" placeholders
-// can't sneak in.
+// the vrt-meta self-test enforces length > 40 so "TODO" and "no baseline"
+// placeholders can't sneak in.
 //
 // Per-module-card MASK config also lives here, keyed by module type.
 // Masks fill non-deterministic regions (animated canvas, scope sweep,
 // camera frames) with a uniform colour in both baseline + actual
 // before pixel-diff, so the chrome around the canvas still asserts.
+// Every MaskRect carries a REQUIRED `why` naming the cause — see MaskRect.
 
 export interface MaskRect {
   selector: string;
+  /**
+   * REQUIRED. What is non-deterministic about this region, and what gates the
+   * card instead. A mask DELETES pixels from the diff with nothing replacing
+   * them — the card can render that region blank forever and still pass — so
+   * every one is a reviewed decision and the reason lives beside the selector.
+   *
+   * ⚠ This field replaced `LEGACY_UNCOMPANIONED_MASK_CEILING = 12`
+   * (vrt-live-surfaces.test.ts, deleted 2026-08-10). The ceiling counted how
+   * many of these masks had no companion assertion and could say nothing about
+   * any of them — the measured table it carried (masked area ÷ card area, four
+   * entries larger than the worst mask the live-surface registry argues for)
+   * had to be written in a comment because the number could not express it.
+   * A name with a reason is checkable; a number is not.
+   *
+   * PREFER A COMPANION. `e2e/vrt/vrt-live-surfaces.ts` masks the same region
+   * but pairs it with a measured ink/variance assertion plus a per-run negative
+   * control, so a region that goes blank is RED instead of green. Migrating an
+   * entry there is strictly better than writing a better `why` here.
+   */
+  why: string;
 }
 
 /** Modules that ship a VRT baseline today and may need region masks.
@@ -54,21 +75,29 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // SAMSLOOP — loop-based WAV sample player. The waveform canvas is
   // static after upload, but unloaded shows "NO SAMPLE LOADED" text —
   // mask the canvas so the chrome diffs deterministically.
-  samsloop: [{ selector: 'canvas' }],
+  samsloop: [
+    { selector: 'canvas', why: 'the waveform canvas is empty on a fresh spawn and shows only placeholder text until a WAV is loaded, so it is not a stable render; the card chrome is the gate.' },
+  ],
   // TWOTRACKS — 2-reel tape-loop emulator. Each reel has a waveform
   // canvas (empty on fresh spawn); mask both canvases so the card chrome
   // diffs deterministically.
-  twotracks: [{ selector: 'canvas' }],
+  twotracks: [
+    { selector: 'canvas', why: 'both reel waveform canvases are empty on a fresh spawn; the transport + reel chrome is the gate.' },
+  ],
   // TILER: live tiled-OUT preview canvas (non-deterministic per frame) — mask it;
   // the card chrome (TILE fader + PatchPanel) is VRT'd. Baseline via vrt-update.
-  tiler: [{ selector: 'canvas' }],
+  tiler: [
+    { selector: 'canvas', why: 'live tiled-OUT preview canvas, a different frame every rAF; the TILE fader + PatchPanel chrome is the gate.' },
+  ],
   // VFPGA-RUNNER — host card with a live preview canvas + per-CV always-on
   // scope canvases (both animate off the card rAF), so mask every canvas and
   // gate on the deterministic chrome (preset select + param knob grid + CV
   // SCALE/OFFSET knobs + gate LEDs + port handle rows). Currently in
   // EXEMPT_FROM_VRT below; the mask covers the canvases if promoted into
   // MODULES once darwin/linux baselines are captured.
-  vfpgaRunner: [{ selector: 'canvas' }],
+  vfpgaRunner: [
+    { selector: 'canvas', why: 'a live preview canvas plus per-CV always-on scope canvases, all animating off the card rAF; the preset select, knob grid and gate LEDs are the gate.' },
+  ],
   // OUTLINES — stateful particle generator; the card carries a live COMBINE
   // preview canvas (shapes spawn + move + spin off the engine rAF), so the
   // canvas region is non-deterministic in the standard solo-spawn VRT. Mask it
@@ -79,16 +108,28 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // vrt-update.yml after the SHAPE+ROTATION card change; the LINUX baseline is
   // still pending a workflow_dispatch, so `linux/outlines` stays in
   // EXEMPT_BASELINE_PAIRS below (the recorderbox/cellshade new-module pattern).
-  outlines: [{ selector: 'canvas' }],
-  videoOut: [{ selector: 'canvas' }],
+  outlines: [
+    { selector: 'canvas', why: 'live COMBINE preview canvas — particles spawn, move and spin off the engine rAF; the 7 knobs + handle rows are the gate.' },
+  ],
+  videoOut: [
+    { selector: 'canvas', why: 'the output canvas renders whatever is patched into it and repaints off the engine clock; the solo-spawn chrome is the gate.' },
+  ],
   // RECORDERBOX — live preview canvas (+ a hidden full-res capture canvas,
   // off-screen at left:-9999px so its mask rect lands outside the captured
   // card box). Mask the canvas + gate on the deterministic chrome (title,
   // IN/OUT/A·L/A·R handles, FILE field, RECORD button).
-  recorderbox: [{ selector: 'canvas' }],
-  chroma: [{ selector: 'canvas' }],
-  luma: [{ selector: 'canvas' }],
-  feedback: [{ selector: 'canvas' }],
+  recorderbox: [
+    { selector: 'canvas', why: 'a live preview canvas blitted off the engine clock, plus a hidden off-screen full-res capture canvas; the title, handles, FILE field and RECORD button are the gate.' },
+  ],
+  chroma: [
+    { selector: 'canvas', why: 'live keyed-output preview canvas repainting off the engine clock; the key controls and handle rows are the gate.' },
+  ],
+  luma: [
+    { selector: 'canvas', why: 'live keyed-output preview canvas repainting off the engine clock; the key controls and handle rows are the gate.' },
+  ],
+  feedback: [
+    { selector: 'canvas', why: 'a live video feedback render loop that never reaches a fixed point, so no two frames match; the fader + handle chrome is the gate.' },
+  ],
   // SPIROGRAPHS — live spirograph generator with a continuously-animated OUT
   // preview canvas (each spiro's center drifts + bounces every frame off the
   // engine clock). Mask the canvas so the deterministic chrome (COUNT fader +
@@ -96,22 +137,32 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // bank + the sectioned PatchPanel) is the regression gate. Currently in
   // EXEMPT_FROM_VRT below; the mask covers the live preview if promoted into
   // MODULES once darwin/linux baselines are captured.
-  spirographs: [{ selector: 'canvas' }],
-  monoglitch: [{ selector: 'canvas' }],
+  spirographs: [
+    { selector: 'canvas', why: 'live spirograph preview — each spiro\'s centre drifts and bounces every frame off the engine clock; the COUNT fader, selector, colorwheel and fader bank are the gate.' },
+  ],
+  monoglitch: [
+    { selector: 'canvas', why: 'live glitch preview canvas that re-randomises off the engine clock; the fader and handle-row chrome is the gate.' },
+  ],
   // RUTTETRA: authentic forward-scatter scope. Its canvas is INCLUDED in
   // the diff via the VRT scene (SHAPES → RUTTETRA) so the baseline proves
   // real 3D scanlines, not a flat quad. The scene auto-overrides this mask
   // (vrt.spec.ts: `mod.type in VRT_SCENES ? [] : masks`), kept here as the
   // no-scene fallback.
-  ruttetra: [{ selector: 'canvas' }],
+  ruttetra: [
+    { selector: 'canvas', why: 'NO-SCENE FALLBACK ONLY — the SHAPES→RUTTETRA scene overrides this mask and diffs the canvas for real (vrt.spec.ts drops masks for scened modules).' },
+  ],
   // GRAPHIC EQ carries a live audio-reactive preview canvas; mask it (it is
   // also EXEMPT_FROM_VRT — animated bars defeat deterministic capture).
-  graphicEq: [{ selector: 'canvas' }],
+  graphicEq: [
+    { selector: 'canvas', why: 'analyser-driven bar canvas; the bars move with the audio and defeat deterministic capture, so the chrome is the gate.' },
+  ],
   // FREEZEFRAME carries a live video_out preview canvas; mask it so the
   // deterministic chrome (4 QUANT knobs + VID/GATE/OUT/R/G/B/L handle rows)
   // is the regression gate. The S&H + posterize correctness is covered by
   // freezeframe.test.ts (unit) + the freezeframe e2e (pixel sampling).
-  freezeframe: [{ selector: 'canvas' }],
+  freezeframe: [
+    { selector: 'canvas', why: 'live video_out preview canvas repainting off the engine clock; the S&H + posterize correctness is covered by freezeframe.test.ts and the freezeframe e2e pixel probes instead.' },
+  ],
   // CELLSHADE (rebuilt 4-pass cel-shader) carries a live OUT preview
   // canvas; mask it so the deterministic chrome (THRESH/THICK/BANDS/SOFT/
   // SMOOTH/INK faders + handle rows + the BANDS readout) is the regression
@@ -119,41 +170,55 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // cellshade.test.ts (CPU mirror of all 4 passes), the theory-derived
   // cellshade-functional e2e, and the UNMASKED frozen composite scenes in
   // cellshade-composite.spec.ts.
-  cellshade: [{ selector: 'canvas' }],
+  cellshade: [
+    { selector: 'canvas', why: 'live OUT preview canvas repainting off the engine clock; all 4 shader passes are covered by cellshade.test.ts (CPU mirror) and by the UNMASKED frozen composite scenes.' },
+  ],
   // POSTERBOX (retro palette-crush video processor) carries a live OUT
   // preview canvas; mask it so the deterministic chrome (DEPTH/DITHER/MIX
   // faders + the DEPTH readout + the PatchPanel drill-down) is the
   // regression gate. The quantizer + Bayer-dither correctness is covered by
   // posterbox.test.ts (CPU mirror of the shader) + the theory-derived
   // posterbox-functional.spec.ts (readPixels probes).
-  posterbox: [{ selector: 'canvas' }],
+  posterbox: [
+    { selector: 'canvas', why: 'live OUT preview canvas repainting off the engine clock; the quantizer and Bayer dither are covered by posterbox.test.ts and posterbox-functional.spec.ts readPixels probes.' },
+  ],
   // TEXTMARQUEE carries a live OUT preview canvas (continuously animated when
   // scrolling) — mask it. The card ALSO contains a contenteditable region whose
   // rendered SYSTEM-FONT glyphs rasterize differently across platforms (the
   // exact known linux-VRT glyph nondeterminism), so the LINUX baseline is
   // exempted via EXEMPT_BASELINE_PAIRS below; the darwin baseline gates the
   // chrome (toolbar buttons + FG/BG swatches + the four knob rows).
-  textmarquee: [{ selector: 'canvas' }],
+  textmarquee: [
+    { selector: 'canvas', why: 'live OUT preview canvas, continuously animated off the rAF loop while scrolling; the toolbar, FG/BG swatches and four knob rows are the gate.' },
+  ],
   // 4PLEXVID carries a live OUT-1 preview canvas; mask it so the
   // deterministic chrome (4 selector knobs + handle rows) diffs while the
   // live render is excluded. (Kept here for the follow-up baseline; the
   // module is currently in EXEMPT_FROM_VRT below — promote it into MODULES
   // when the darwin/linux PNGs are captured.)
-  '4plexvid': [{ selector: 'canvas' }],
+  '4plexvid': [
+    { selector: 'canvas', why: 'live OUT-1 preview canvas blitted off the engine clock; the four selector knobs and the handle rows are the gate.' },
+  ],
   // ONE TO NINE — 1-in/9-out 3×3 splitter. The card carries a live MONITOR
   // preview canvas (input + grid + numbers via blitOutputToDrawingBuffer off
   // the engine clock); mask it so the deterministic chrome (GRID toggle +
   // IN/OUT1..OUT9 patch-panel) is the regression gate. The crop math is
   // covered by onetonine.test.ts + the bespoke onetonine e2e.
-  onetonine: [{ selector: 'canvas' }],
-  shapegen: [{ selector: 'canvas' }],
+  onetonine: [
+    { selector: 'canvas', why: 'live MONITOR preview canvas blitted off the engine clock; the crop math is covered by onetonine.test.ts and the bespoke onetonine e2e.' },
+  ],
+  shapegen: [
+    { selector: 'canvas', why: 'live generated-shape preview canvas repainting off the engine clock; the shape and knob chrome is the gate.' },
+  ],
   // SOURCERY — 2-input region shape-match recolor. The card carries a live
   // on-card preview canvas (blitOutputToDrawingBuffer off the engine clock,
   // black when nothing is patched) and v1 segmentation is source-dependent +
   // shimmers frame-to-frame, so the canvas region is non-deterministic; mask it
   // and gate on the deterministic card chrome. Correctness is covered by the
   // pure core (sourcery-core.test.ts) + the bespoke e2e (sourcery.spec.ts).
-  sourcery: [{ selector: 'canvas' }],
+  sourcery: [
+    { selector: 'canvas', why: 'a live preview canvas blitted off the engine clock, plus v1 segmentation that is source-dependent and shimmers frame to frame; sourcery-core.test.ts and sourcery.spec.ts cover correctness.' },
+  ],
   // MANDLEBLOT — Mandelbrot fractal with time-driven hue cycle. The
   // shader's colour mode mixes mu + uTime + log(uZoom) into the hue, so
   // every frame is a different colour even at zero motion. Mask the
@@ -161,7 +226,9 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // the regression gate; the shader correctness is covered by unit +
   // E2E. Pinning the canvas as well would need a deterministic-time
   // hook on the engine clock — deferred to a follow-up.
-  mandleblot: [{ selector: 'canvas' }],
+  mandleblot: [
+    { selector: 'canvas', why: 'the WebGL shader mixes uTime into the hue, so every frame is a different colour even at zero motion; the 6 knobs and the zoom readout are the gate.' },
+  ],
   // MIRRORPOOL — live orbit/free-look liquid-pool render (wind swell + rain
   // rings + Fresnel reflect/refract); the preview is animated + time-based, so
   // mask the canvas and let the deterministic chrome (two camera X-Y pads +
@@ -171,7 +238,9 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // look-preview — a look-affecting video module never captures a baseline
   // before the owner approves the look). Physics coverage is
   // mirrorpool-core.test.ts + the (baseline-deferred) mirrorpool-composite.spec.ts.
-  mirrorpool: [{ selector: 'canvas' }],
+  mirrorpool: [
+    { selector: 'canvas', why: 'live orbit/free-look WebGL pool render (wind swell, rain rings, Fresnel reflect/refract); the physics is covered by mirrorpool-core.test.ts.' },
+  ],
   // GRAINS OF VISION — granular video synth; the OUT preview is a live,
   // self-animating render (temporal grains + feedback trails + reverb tail), so
   // mask the canvas and let the deterministic chrome (GRAIN/FEEDBACK/REVERB/COMP
@@ -180,7 +249,9 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // pinned; it is also in EXEMPT_FROM_VRT below (mirrorpool precedent). Grain /
   // feedback / reverb / composite math is covered by grainsOfVision.test.ts + the
   // bespoke grains-of-vision.spec.ts.
-  grainsOfVision: [{ selector: 'canvas' }],
+  grainsOfVision: [
+    { selector: 'canvas', why: 'a self-animating granular render loop with feedback trails and a reverb tail; grain/feedback/reverb math is covered by grainsOfVision.test.ts and its bespoke e2e.' },
+  ],
   // FRAMETABLE — video wavetable oscillator (60-frame ring → per-pixel frame
   // SELECT). The card carries a live video_out preview canvas; mask it so the
   // deterministic chrome (FREEZE/SAVE buttons + MORPH/SPREAD/SHIMMER/SHAPE faders +
@@ -188,7 +259,9 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // (look-affecting WebGL) — no solo-spawn baseline is pinned; also in
   // EXEMPT_FROM_VRT below (mirrorpool/grains precedent). The inverse-CDF selection
   // + freeze/save math is covered by frametable-core.test.ts + frametable.spec.ts.
-  frametable: [{ selector: 'canvas' }],
+  frametable: [
+    { selector: 'canvas', why: 'live video_out preview of a 60-frame ring, blitted off the engine clock; the inverse-CDF selection and freeze/save math is covered by frametable-core.test.ts.' },
+  ],
   // VIDEOCUBE — the video isomorph of the audio CUBE. The card carries a live
   // video_out preview canvas (blitOutputToDrawingBuffer off the engine clock);
   // mask it so the deterministic chrome (WRAP/MATERIAL/SCREEN toggles + the
@@ -197,13 +270,17 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // affecting WebGL) — no solo-spawn baseline pinned; also in EXEMPT_FROM_VRT
   // below (mirrorpool/frametable precedent). The occupancy combine + luma-
   // reduction math is covered by videocube-core.test.ts + videocube.spec.ts.
-  videocube: [{ selector: 'canvas' }],
+  videocube: [
+    { selector: 'canvas', why: 'live video_out preview blitted off the engine clock; occupancy combine and luma reduction are covered by videocube-core.test.ts.' },
+  ],
   // SCOREBOARD — 4-digit 7-segment counter widget. The card carries a live
   // preview canvas; the counter starts at 0 on factory mount (or 1234 when
   // the VRT scene sets `__scoreboardVrtSeed`). Canvas masked here as the
   // fallback so the chrome (port handles + COLOR knob) diffs deterministically
   // when the module is promoted into MODULES without a registered scene.
-  scoreboard: [{ selector: 'canvas' }],
+  scoreboard: [
+    { selector: 'canvas', why: 'NO-SCENE FALLBACK: the counter canvas reads 0 on a bare mount and 1234 under the VRT scene seed, so a solo capture is not a stable render.' },
+  ],
   // QUADRALOGICAL — 4-input video mixer. The card carries a live on-card MIX
   // preview canvas (blitOutputToDrawingBuffer off the engine clock), so the
   // canvas region is non-deterministic in the standard solo-spawn VRT; mask it
@@ -211,7 +288,9 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // transition row + dynamic faders + FG/BG toggle + handle rows). The
   // weight-model + composite correctness is covered by the unit suite
   // (quadralogical.test.ts) + the dedicated e2e (quadralogical.spec.ts).
-  quadralogical: [{ selector: 'canvas' }],
+  quadralogical: [
+    { selector: 'canvas', why: 'live MIX preview canvas blitted off the engine clock; the weight model and composite are covered by quadralogical.test.ts and quadralogical.spec.ts.' },
+  ],
   // COLOUR OF MAGIC — multi-colorspace processor. The solo-spawn card carries a
   // live on-card preview canvas (blitOutputToDrawingBuffer off the engine clock,
   // black when nothing is patched), so the standard solo VRT is non-deterministic;
@@ -220,7 +299,9 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // + palette swatches + handle rows). The deterministic per-block composite VRT
   // (recolorization / mono-override clobber / palette remap) lives in
   // vrt-colourofmagic.spec.ts.
-  colourofmagic: [{ selector: 'canvas' }],
+  colourofmagic: [
+    { selector: 'canvas', why: 'live on-card preview canvas blitted off the engine clock, black when nothing is patched; the deterministic per-block composite VRT lives in vrt-colourofmagic.spec.ts.' },
+  ],
   // ANALOG VCO — the mask was DELETED, not migrated, and this comment said the
   // opposite for months. CORRECTED 2026-08-08.
   //
@@ -268,7 +349,9 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // handle rows + RCT/SPD/PST/MPH knobs + preset readout). Currently in
   // EXEMPT_FROM_VRT below (chaotic/time-based, like doom/mandelbulb); this mask
   // covers the live preview if it is ever promoted into MODULES.
-  milkdrop: [{ selector: 'canvas' }],
+  milkdrop: [
+    { selector: 'canvas', why: 'the butterchurn preset animates continuously off the engine clock after an async load; the handle rows and RCT/SPD/PST/MPH knobs are the gate.' },
+  ],
 };
 
 /** Modules intentionally skipped from VRT entirely. Each entry needs a
@@ -866,14 +949,18 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
  *  inversion applied to VRT: a guard that is OPT-IN is itself an instance of
  *  the class it guards.
  *
- *  THE RULE. Every EXEMPT_FROM_VRT key must appear here. This set is FROZEN at
- *  the 81 that existed when the brake landed (2026-08-04), so:
+ *  THE RULE. Every EXEMPT_FROM_VRT key must appear here, and the two lists must
+ *  match EXACTLY — vrt-meta.test.ts asserts set equality in both directions, so:
  *
  *    * a NEW module CANNOT self-exempt — adding a key to EXEMPT_FROM_VRT
  *      without an allowlist edit fails vrt-meta.test.ts in ~1 s. Shipping a
  *      module with no VRT is now a REVIEWED decision, not a side effect.
- *    * the set only ever SHRINKS. When a module earns baselines, delete it
- *      from BOTH lists and lower PERMANENT_EXEMPT_CEILING by the same count.
+ *    * the set only ever SHRINKS BY NAME. When a module earns baselines, delete
+ *      it from BOTH lists. There is no count to keep in step — the ceiling that
+ *      used to shadow this list was deleted 2026-08-10 (see the note above the
+ *      deny-by-default block in vrt-meta.test.ts): a hand-typed population count
+ *      is a merge hazard by construction, and set equality already refuses
+ *      every drift the count could have caught.
  *
  *  NOT AN ENDORSEMENT. Membership records that a module was exempt on the day
  *  the brake landed — nothing more. Many entries are mechanical ("no baseline
@@ -1418,16 +1505,14 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // run on linux CI — WebGL ribbon AA + CRT post differs sub-thresholdly
   // across GPU drivers, so we capture darwin here and defer linux.
   'linux/wavesculpt',
-  // CUBE (3D wavetable-navigator oscillator, first slice): darwin baseline
-  // captured on this machine via VRT_SCENES (analogVco → pitch, rotated/morphed
-  // slice through the default tables, freeze-on-suspend so the snapshot-driven
-  // 2D viz holds). The 2D surface-height + waveform canvases differ
-  // sub-thresholdly across platforms (canvas AA), so the linux baseline is
-  // pending a `task vrt:update` run on linux CI — functional coverage is the
-  // cube-dsp unit tests + cube worklet capture test + node-ART baselines +
-  // the per-port e2e. NOT in STRICT_VRT_MODULES (the missing linux baseline
-  // runs only in the informational full-VRT lane, not the merge gate).
-  'linux/cube',
+  // CUBE — DRAINED 2026-08-10 with the cube face. It had sat here since the
+  // module's first slice as "pending a linux capture", which meant cube had
+  // ZERO VRT protection on the platform CI actually renders on, while counting
+  // as covered everywhere. A face wave that adds two more cube scenes is the
+  // wrong moment to add two more darwin-only baselines on top of that, so the
+  // pair goes and the same `vrt-update.yml -f platform=linux` dispatch that
+  // captures `face-cube-{compact,dock}` captures `cube` as well: THREE linux
+  // PNGs, and a dispatch that commits fewer is the red flag.
   // HYPERCUBE: pair REMOVED with the module (owner ruling — failed experiment,
   // deleted wholesale). Its darwin baseline went with it, so this is a gap
   // CLOSED by deletion, not by capture: the shared-pair ceiling and the
