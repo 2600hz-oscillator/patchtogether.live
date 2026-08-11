@@ -104,10 +104,11 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // and gate on the deterministic chrome (7 knobs D/V/SPD/DEC/SHP/ROT/RATE +
   // GATE/COL/D/V/SPD/DEC/SHP/ROT/VID input rows + OVR/CNT/CMB/MAP output rows +
   // the SHAPE/ROT readouts). Promoted into the VRT baseline set (the canvas mask
-  // covers the live preview). Only the DARWIN baseline was regenerated via
-  // vrt-update.yml after the SHAPE+ROTATION card change; the LINUX baseline is
-  // still pending a workflow_dispatch, so `linux/outlines` stays in
-  // captured by the vrt-update.yml dispatch (the recorderbox/cellshade pattern).
+  // covers the live preview). There is ONE baseline, authored by the
+  // vrt-update.yml dispatch on linux CI — the split that used to be described
+  // here ("only the DARWIN baseline was regenerated after the SHAPE+ROTATION
+  // card change; the LINUX one is still pending") is exactly the two-population
+  // problem the {platform} collapse removed, and it cannot recur.
   outlines: [
     { selector: 'canvas', why: 'live COMBINE preview canvas — particles spawn, move and spin off the engine rAF; the 7 knobs + handle rows are the gate.' },
   ],
