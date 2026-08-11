@@ -25,7 +25,7 @@ declare global {
     }
     // No bespoke platform.env bindings yet — DATABASE_URL is read directly
     // from process.env (shimmed by nodejs_compat on Workers). If we wire
-    // Hyperdrive later (needs Fly Postgres with TLS), bring back a typed
+    // Hyperdrive later (it fronts a TCP Postgres endpoint), bring back a typed
     // HYPERDRIVE binding here.
     interface Platform {
       /** Cloudflare Pages Functions execution context. adapter-cloudflare

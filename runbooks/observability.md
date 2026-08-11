@@ -144,15 +144,28 @@ After an autotest deploy, `deploy.yml`'s `smoke-live` job runs `@smoke`-tagged e
 invariants mode — findings are uploaded as artifacts, the job doesn't fail).
 Review the `chaos-findings-<run-id>` artifact for invariant violations.
 
-## BetterStack (optional, faster paging)
+## BetterStack — LIVE (set up 2026-06-10, verified 2026-08-11)
 
-BetterStack is the **upgrade path** on top of the GitHub Actions backstop: 30 s
-cadence (vs 10 min), per-channel escalation, and richer historical graphs. Setup
-is a **manual operator step** documented here:
+Better Stack is **not optional and not pending** — it is the primary alerting
+path for both dev and prod, on top of the GitHub Actions backstop. As of
+2026-08-11 there are **8 uptime monitors** (4 per tier: web `/api/health`, relay
+`/health`, relay `/metrics`, and a `/metrics` keyword monitor on
+`alert_state":"ok`) plus **2 heartbeats** (relay dev + relay prod, 60 s period /
+240 s grace). All were `up` at last check.
+
+Cadence is **180 s** for the six relay monitors and **1800 s** for the two
+`/api/health` monitors — the latter deliberately slow so the poll does not keep
+the Neon compute permanently awake. Notification is **email only**: no
+escalation policy, no SMS, no phone.
+
+The standing-up *procedure* is documented at:
 
 > **[`docs/observability/setup-betterstack.md`](../docs/observability/setup-betterstack.md)**
+> — but read the warning at the top of that file: it is a plan, and several of
+> its numbers were never executed as written.
 
-It monitors three surfaces: web dev `/api/health`, relay dev `/health`, and relay
-dev `/metrics` (body match on `rss_mb` exceeding the critical threshold). Follow
-that doc to create the account and the three monitors — use a team-owned contact
-email (do not hard-code a personal address into the repo).
+**The live inventory — monitor IDs, heartbeat IDs, on-call, dashboards — is not
+in this repo.** It lives in the private infra-docs repo
+(`runbooks/observability.md`), because it is operational detail tied to account
+resources. Use a team-owned contact email; do not hard-code a personal address
+into this repo.

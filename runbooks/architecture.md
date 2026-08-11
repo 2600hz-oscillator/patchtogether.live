@@ -12,7 +12,7 @@ database, and an auth provider.
 | --- | --- | --- |
 | Web app | SvelteKit + Vite, `@sveltejs/adapter-cloudflare` | Cloudflare Pages (Workers runtime) |
 | Real-time relay | Hocuspocus (Yjs CRDT over WebSocket) | Fly.io (single machine per tier) |
-| Database | Postgres | Neon (web tier, HTTP driver) + Fly Postgres path for relay (TCP) |
+| Database | Postgres | Neon — **one database**; web uses the pooled endpoint over the HTTP driver, relay uses the direct (non-pooled) endpoint over `pg`/TCP |
 | Auth | Clerk (session JWTs) | Clerk-hosted; verified locally in web + relay |
 | DSP | Faust `.dsp` → WASM + TS AudioWorklets | client browser |
 | Emulator modules | Emscripten-compiled C (DOOM, …) → WASM | client browser |
@@ -40,7 +40,7 @@ database, and an auth provider.
         └───────┬─────────────────┬────────┘   └─────────────────┬──────────────┘
                 │ verifyToken      │ Neon HTTP                    │ snapshot persist
                 │ (local, no       │ (@neondatabase/serverless)   │ (pg over TCP /
-                │  network call)   ▼                              │  Fly Postgres path)
+                │  network call)   ▼                              │  direct endpoint)
                 │          ┌───────────────┐                      │
                 │          │     NEON      │◄─────────────────────┘
                 │          │   Postgres    │   rack_snapshots (Yjs bytea),
@@ -53,6 +53,29 @@ database, and an auth provider.
         │ (auth/identity)│  (verified via @clerk/backend, mostly offline)
         └───────────────┘
 ```
+
+> ### ⚠ There is exactly ONE database
+>
+> Web and relay reach the **same Neon Postgres**. They differ only in *driver*,
+> and therefore in which Neon **endpoint** they use:
+>
+> | tier | driver | endpoint | source key in `cf.env` |
+> |---|---|---|---|
+> | web (CF Workers) | `neon()` HTTP (`@neondatabase/serverless`) | **pooled** (`…-pooler.…`) | `NEON_{TIER}_URL` |
+> | relay (Fly, Node) | `pg` `Pool` over TCP | **direct** (non-pooled) | `NEON_{TIER}_DIRECT_URL` |
+>
+> Two endpoints are not two databases. Structural proof: `rack_snapshots.rack_id`
+> and `rack_update_journal.rack_id` are FOREIGN KEYS to `racks(id)`
+> (`db/schema/001_init.sql`, `004_rack_update_journal.sql`), and a Postgres
+> foreign key cannot span databases.
+>
+> This is called out because the opposite belief — that the relay has its own
+> "Fly Postgres" — was written down in several places and **sent a real
+> investigation looking for a second database that does not exist**. The Fly
+> Managed Postgres stack was decommissioned when Neon landed (`db/README.md`).
+> The dead `FLY_PG_{DEV,AUTOTEST,PROD}_URL` keys still linger in `cf.env` holding
+> unreachable `*.flycast` DSNs; `scripts/sync-secrets.sh` no longer reads them
+> and refuses any non-Neon host.
 
 ### Key flows
 
