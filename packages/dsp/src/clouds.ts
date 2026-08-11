@@ -70,6 +70,34 @@ declare function registerProcessor(name: string, ctor: typeof AudioWorkletProces
 const BUFFER_SECONDS = 2.0;
 const MAX_GRAINS = 24;
 
+// ── THE GRAIN LENGTH LAW, AND THE CLAMP THAT MUST NOT CONTRADICT IT ─────────
+//
+// SIZE maps exponentially onto a grain length:
+//   ms = GRAIN_MIN_MS · (GRAIN_MAX_MS / GRAIN_MIN_MS)^size
+// and the result is then hard-limited to GRAIN_CAP_FRACTION of the ring, so
+// POSITION keeps somewhere to travel: `headroom = availableHistory − safeLen`
+// goes to zero as the grain approaches the whole buffer, and a grain longer
+// than the ring would read through the write head into its own future.
+//
+// ⚠ THOSE TWO NUMBERS USED TO DISAGREE, AND THE DISAGREEMENT WAS A DEAD ZONE.
+// The law asked for up to 1500 ms while the clamp allowed 0.4 · 2.0 s = 800 ms,
+// so every SIZE above log(800/60)/log(25) = 0.804744 produced the SAME 800 ms
+// grain. MEASURED on this worklet (art/scenarios/clouds/size-travel.test.ts):
+// the top 19.50 % of SIZE rendered BIT-IDENTICAL output — and that plateau is a
+// defect rather than arithmetic, because the `Math.floor` quantisation floor
+// everywhere else on the dial is Δsize ≈ 6e-6…2.7e-5, i.e. the dead band was
+// ~10⁴× wider than anything the flooring explains.
+//
+// THE FIX IS TO MAKE THE CEILING THE LAW'S OWN TOP. `GRAIN_CAP_FRACTION` stays
+// the physical guard (it is what POSITION's travel is carved out of) and
+// `GRAIN_MAX_MS` is DERIVED from it, so the clamp below is a safety net that
+// provably never binds and the two can never drift apart again. 0.75 preserves
+// the 1500 ms the law always declared and leaves POSITION 0.5 s of tape at the
+// longest grain.
+const GRAIN_MIN_MS = 60;
+const GRAIN_CAP_FRACTION = 0.75;
+const GRAIN_MAX_MS = BUFFER_SECONDS * GRAIN_CAP_FRACTION * 1000; // 1500 ms
+
 interface Grain {
   active: boolean;
   readPos: number;
@@ -155,11 +183,12 @@ class GranularEngine {
     const idx = this.findFreeGrain();
     if (idx < 0) return;
     const g = this.grains[idx]!;
-    const minMs = 60;
-    const maxMs = 1500;
-    const ms = minMs * Math.pow(maxMs / minMs, size);
+    const ms = GRAIN_MIN_MS * Math.pow(GRAIN_MAX_MS / GRAIN_MIN_MS, size);
     const lengthSamples = Math.max(8, Math.floor((ms / 1000) * sr));
-    const safeLen = Math.min(lengthSamples, Math.floor(this.bufLen * 0.4));
+    // NON-BINDING BY CONSTRUCTION — see the constants above. Kept as a guard so
+    // a future BUFFER_SECONDS / fraction edit cannot produce a grain longer than
+    // the ring; asserted never to bind in art/scenarios/clouds/size-travel.test.ts.
+    const safeLen = Math.min(lengthSamples, Math.floor(this.bufLen * GRAIN_CAP_FRACTION));
     g.length = safeLen;
     g.age = 0;
     const availableHistory = Math.max(safeLen + 1, Math.min(this.fillLevel, this.bufLen));
