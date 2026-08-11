@@ -3,7 +3,7 @@
 // P0 GUARD — WORKFLOW MASTER TRANSPORT drives real clip playback, end to end.
 // Joins the transport guard family (clipplayer-transport-no-controller covers
 // the legacy card seam); this one drives the OWNER-FACING workflow surface on
-// /rack?shell=legacy AND ?shell=1: the pinned clipplayer in the `c` drawer,
+// /rack (faces) AND ?shell=legacy: the pinned clipplayer in the `c` drawer,
 // a lane instrument auto-wired by the wcol reconciler, and the pinned master
 // chain (MIXMSTRS → audio out).
 //

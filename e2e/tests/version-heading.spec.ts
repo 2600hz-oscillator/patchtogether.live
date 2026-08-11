@@ -46,5 +46,7 @@ test('topbar heading renders "patchtogether" + the package version', async ({ pa
   await expect(version).toHaveText(`v${ROOT_PKG_VERSION}`);
 
   // The brand word sits alongside the version in the same heading.
-  await expect(page.locator('header.workflow-topbar h1')).toContainText('patchtogether');
+  // `/` is the LANDING, whose own header keeps `class="topbar"`
+  // (routes/+page.svelte). This is NOT the canvas topbar.
+  await expect(page.locator('header.topbar h1')).toContainText('patchtogether');
 });

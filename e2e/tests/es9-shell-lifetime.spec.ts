@@ -49,7 +49,11 @@ async function cardMounted(page: Page): Promise<boolean> {
 }
 
 async function spawnEs9(page: Page, shell: boolean): Promise<void> {
-  await page.goto(`/rack?shell=legacy${shell ? '&shell=1' : ''}`);
+  // `shell` true → the FACEPLATE default (bare /rack); false → legacy cards.
+  // ⚠ Was `?shell=legacy${shell ? '&shell=1' : ''}` after the sweep — a
+  // duplicate `shell` param, and `searchParams.get` returns the FIRST, so
+  // both arms silently resolved to legacy.
+  await page.goto(`/rack${shell ? '' : '?shell=legacy'}`);
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
     { id: NODE, type: 'es9', position: { x: 140, y: 140 }, domain: 'audio' },
