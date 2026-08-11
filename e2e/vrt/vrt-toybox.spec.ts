@@ -1234,37 +1234,126 @@ async function setFeedbackAndFreeze(page: Page, mode: number, time: number): Pro
     },
     { mode },
   );
-  await page.evaluate(() => {
-    (globalThis as unknown as { __toyboxPrevSig?: string }).__toyboxPrevSig = '';
-  });
-  // Each freeze advances ONE feedback frame; keep advancing until the coarse
-  // signature repeats (the loop reached its fixed point) AND the frame is lit.
-  await page.waitForFunction(
-    ({ time }) => {
-      const g = globalThis as unknown as {
-        __toyboxFreeze?: (t?: number) => void;
-        __toyboxPrevSig?: string;
-      };
-      g.__toyboxFreeze?.(time);
-      const canvas = document.querySelector('[data-testid="toybox-canvas"]') as HTMLCanvasElement | null;
-      if (!canvas) return false;
+  // Advance the ping-pong a FIXED NUMBER OF FRAMES, then assert it converged.
+  //
+  // ⚠ FRAMES, NOT MILLISECONDS, and not "stop as soon as it settles" either.
+  // Both halves of that matter, and the old code got both wrong:
+  //
+  //     await page.waitForFunction(<advance one frame; converged?>,
+  //                                { timeout: 15_000 })
+  //
+  // 1. WALL-CLOCK BUDGET. `__toyboxFreeze(time)` renders exactly ONE feedback
+  //    frame synchronously (ToyboxCard.svelte: engine.step() → blitOnce()), so
+  //    "how far has the loop advanced" is a FRAME COUNT. A 15 s budget buys a
+  //    different number of frames on every renderer — the single highest-yield
+  //    rule in CLAUDE.md — and here it bought enough for one mode and not the
+  //    other. MEASURED under SwiftShader (the renderer CI uses, and the one a
+  //    headless macOS run gets too — see vrt.config.ts), 400 frames per mode:
+  //
+  //        tunnel  converges at frame  9   (Droste zoom — snaps almost at once)
+  //        blur    converges at frame 49   (diffusion — 5.4x slower to settle)
+  //        both    bit-identical from frame 49 through frame 400
+  //
+  //    So `tunnel` passed on CI at 20.5 s and `blur` timed out, for a reason
+  //    that has nothing to do with either shader: blur simply needs 5.4x the
+  //    iterations, and the budget was denominated in the wrong unit. Note what
+  //    this ISN'T — blur converges perfectly well and then stays converged for
+  //    351 further frames. "Never settles" and "needs more frames than the
+  //    clock bought" look identical from a timeout; they are not the same bug.
+  //
+  // 2. STOPPING ON CONVERGENCE MAKES THE CAPTURED FRAME RENDERER-DEPENDENT.
+  //    Even fixed, a loop that halts the moment two signatures match pins
+  //    whatever frame that happened to be — frame 49 here, some neighbouring
+  //    frame under a different rasterizer's rounding — so the BASELINE itself
+  //    becomes a function of the renderer. Advancing a constant number of
+  //    frames pins the same frame index everywhere, which is what a baseline
+  //    needs, and demotes convergence from a stopping condition to an
+  //    ASSERTION with a real failure message.
+  //
+  // 120 frames = 2.4x the slowest measured convergence, deep inside the
+  // proven-flat region. Cost is bounded and small: ~23 ms/frame locally, so
+  // ~2.8 s per mode, replacing a wait that was up to 15 s.
+  const FEEDBACK_CONVERGE_FRAMES = 120;
+  // Bounds the FAILURE, never the gate (CLAUDE.md). A frame loop that has gone
+  // pathological should report how far it got rather than hang to the test cap.
+  const FEEDBACK_CONVERGE_MS = 60_000;
+
+  const converge = await page.evaluate(
+    ({ time, frames, maxMs }) => {
+      const g = globalThis as unknown as { __toyboxFreeze?: (t?: number) => void };
+      const canvas = document.querySelector(
+        '[data-testid="toybox-canvas"]',
+      ) as HTMLCanvasElement | null;
+      if (!canvas) return { ok: false, why: 'no [data-testid="toybox-canvas"] in the DOM' };
       const c2d = canvas.getContext('2d');
-      if (!c2d) return false;
-      const { data } = c2d.getImageData(0, 0, canvas.width, canvas.height);
-      let lit = 0, r = 0, gg = 0, b = 0;
-      for (let i = 0; i < data.length; i += 4) {
-        if (data[i]! > 16 || data[i + 1]! > 16 || data[i + 2]! > 16) lit++;
-        r += data[i]!; gg += data[i + 1]!; b += data[i + 2]!;
+      if (!c2d) return { ok: false, why: 'toybox canvas has no 2d context to sample' };
+
+      /** Coarse per-frame signature: the channel means, quantized. */
+      const sample = () => {
+        const { data } = c2d.getImageData(0, 0, canvas.width, canvas.height);
+        let lit = 0, r = 0, gg = 0, b = 0;
+        for (let i = 0; i < data.length; i += 4) {
+          if (data[i]! > 16 || data[i + 1]! > 16 || data[i + 2]! > 16) lit++;
+          r += data[i]!; gg += data[i + 1]!; b += data[i + 2]!;
+        }
+        return {
+          lit,
+          sig: `${Math.round(r / 5000)},${Math.round(gg / 5000)},${Math.round(b / 5000)}`,
+        };
+      };
+
+      const started = Date.now();
+      const trail: string[] = [];
+      let last = { lit: 0, sig: '' };
+      let advanced = 0;
+      for (let i = 1; i <= frames; i++) {
+        g.__toyboxFreeze?.(time);
+        last = sample();
+        advanced = i;
+        // Keep a short trail for the failure message: the first frames (where a
+        // ramp is visible) and the last few (where it should be flat).
+        if (i <= 6 || i > frames - 4) trail.push(`f${i}:${last.sig}`);
+        if (Date.now() - started > maxMs) {
+          return {
+            ok: false,
+            why: `wall-clock cap: ${advanced}/${frames} frames in ${Date.now() - started} ms`,
+            advanced, trail, sig: last.sig,
+          };
+        }
       }
-      if (lit <= canvas.width * canvas.height * 0.05) return false;
-      const sig = `${Math.round(r / 5000)},${Math.round(gg / 5000)},${Math.round(b / 5000)}`;
-      const prev = g.__toyboxPrevSig;
-      g.__toyboxPrevSig = sig;
-      return prev === sig;
+      // The convergence CLAIM, now an assertion: the final frame must be lit,
+      // and must be identical to the one before it.
+      g.__toyboxFreeze?.(time);
+      const after = sample();
+      const litFloor = canvas.width * canvas.height * 0.05;
+      return {
+        ok: after.lit > litFloor && after.sig === last.sig,
+        why:
+          after.lit <= litFloor
+            ? `frame is DARK: ${after.lit} lit px <= ${litFloor} floor (5% of ${canvas.width}x${canvas.height})`
+            : after.sig === last.sig
+              ? ''
+              : `still MOVING after ${frames} frames: f${frames}=${last.sig} then ${after.sig}`,
+        advanced, trail, sig: after.sig,
+        elapsedMs: Date.now() - started,
+      };
     },
-    { time },
-    { timeout: 15_000 },
+    { time, frames: FEEDBACK_CONVERGE_FRAMES, maxMs: FEEDBACK_CONVERGE_MS },
   );
+
+  expect(
+    converge.ok,
+    `toybox feedback mode ${mode} did not reach a stable composite in ` +
+      `${FEEDBACK_CONVERGE_FRAMES} frames (units: FEEDBACK FRAMES, one per ` +
+      `__toyboxFreeze call, not milliseconds). ${converge.why}. ` +
+      `signature trail: ${(converge.trail ?? []).join(' ')}. ` +
+      `Measured convergence when this was written: tunnel 9 frames, blur 49. ` +
+      `If a shader change made this genuinely slower, raise the frame budget; ` +
+      `if the trail never flattens, the loop has no fixed point and that is a ` +
+      `determinism bug, not a budget one.`,
+  ).toBe(true);
+  // Let the compositor present the final frozen frame before the capture, as
+  // the waitForFunction version did on its way out.
   await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
 }
 

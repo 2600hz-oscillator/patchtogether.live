@@ -29,6 +29,37 @@ const BASE_URL = process.env.E2E_BASE_URL ?? 'http://localhost:5173';
 const IS_LOCAL_TARGET =
   BASE_URL.startsWith('http://localhost') || BASE_URL.startsWith('http://127.0.0.1');
 
+// ── RENDERER SELECTION ─────────────────────────────────────────────────────
+//
+// `e2e/playwright.config.ts` has honoured E2E_SWIFTSHADER / E2E_REAL_GPU for a
+// long time; THIS config never did, so "reproduce under the renderer that
+// actually failed" — the CLAUDE.md rule — had no lever for the VRT lane at all.
+// Added 2026-08-11 while sizing the timeouts below.
+//
+// ⚠ MEASURED, and it is the opposite of the intuitive answer: a HEADLESS
+// Chromium on macOS is ALREADY on SwiftShader with no flags at all. Probing
+// UNMASKED_RENDERER_WEBGL through this config's exact `args` reports
+//
+//     ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0)
+//            (0x0000C0DE)), SwiftShader driver)
+//
+// so a local VRT run and CI already share a renderer, and the gap between them
+// is CPU width, not rasterizer. That is worth stating because it means a local
+// timing figure IS transferable here (unlike the e2e lane, where a Mac dev gets
+// Metal) — while a local PIXEL comparison still is not, because font
+// rasterization differs. Setting the flag explicitly pins the property instead
+// of inheriting it by accident, and E2E_REAL_GPU=1 is the escape hatch for
+// asking "is this scene GPU-dependent?".
+const GPU_ARGS =
+  process.env.E2E_SWIFTSHADER === '1'
+    ? ['--use-gl=angle', '--use-angle=swiftshader', '--use-cmd-decoder=passthrough']
+    : process.env.E2E_REAL_GPU === '1'
+      ? [
+          '--use-gl=angle',
+          `--use-angle=${process.env.E2E_ANGLE_BACKEND || (process.platform === 'darwin' ? 'metal' : 'default')}`,
+        ]
+      : [];
+
 // `VRT_STRICT=1` narrows the spec set to ONLY vrt.spec.ts (the per-
 // module card-baseline pass, filtered to STRICT_VRT_MODULES inside the
 // spec). The auxiliary specs (composite scenes, playhead, interactions,
@@ -132,9 +163,51 @@ export default defineConfig({
     : [['list'], ['html', { open: 'never', outputFolder: './report' }]],
   outputDir: './test-results',
 
-  // Per-spec timeout — module spawn + first paint should be well under
-  // 10s, but we bake in slack for slow CI runners.
-  timeout: 30_000,
+  // ── PER-TEST TIMEOUT ─────────────────────────────────────────────────────
+  //
+  // ⚠ THIS USED TO BE 30_000, WHICH WAS SMALLER THAN THE SUM OF THE BUDGETS
+  // NESTED INSIDE IT. `vrt.spec.ts` alone declares `card.waitFor` 10 s +
+  // `expect.timeout` for the screenshot, and then still has to pay page load,
+  // networkidle, font decode, spawnPatch, the height-settle loop and the
+  // live-surface companion + its negative control. At the old pair (30 s outer,
+  // 15 s screenshot) the declared inner waits were already 25 s of a 30 s cap,
+  // so on a slow renderer the outer bound killed tests that were making normal
+  // progress. That is an arithmetic defect, not a renderer problem: no value of
+  // "how fast is the runner" makes 10 + 15 + setup fit in 30.
+  //
+  // MEASURED — the first full single-baseline capture on linux CI (run
+  // 31453467770, 292 passing tests, ubuntu-latest / SwiftShader):
+  //
+  //     median  5.6 s          > 15 s   48 tests
+  //     p90    19.6 s          > 20 s   22 tests
+  //     p95    25.9 s          > 25 s   16 tests
+  //     p99    31.0 s          > 30 s    4 tests
+  //     max    51.6 s  (cellshade-smooth, which passes under a 90 s spec-local cap)
+  //
+  // The old 30 s cap sat at the **p99 of its own passing population**. The
+  // slowest test that passed under it did so at 26.2 s — 3.8 s of headroom —
+  // and the tests just past it (mandelbulb, mandleblot, toybox combine-editor)
+  // were the five capture failures. A budget at p99 is not a margin, it is a
+  // coin flip, and it is the reason a *different* scene failed each dispatch.
+  //
+  // 90 s is chosen so the outer bound EXCEEDS the sum of its own inner budgets
+  // (10 s waitFor + 30 s screenshot + setup + companions ≈ 45 s worst observed)
+  // with better than 2x headroom, and it matches what the heavy specs already
+  // declare for themselves via `test.setTimeout(90_000)` — cellshade-composite,
+  // mirrorpool-composite and vrt-colourofmagic all pass under exactly this
+  // number today, including a 51.6 s one. Those per-spec calls are now
+  // redundant with the default rather than load-bearing above it.
+  //
+  // CI WALL-TIME COST: zero on green. A timeout is a cap, not a sleep — only a
+  // test that is ALREADY failing runs to it, and it then costs 90 s instead of
+  // 30 s. The required lane (`VRT_STRICT=1`) is the deterministic pure-DOM
+  // subset whose median is 5.6 s, so it never approaches either number.
+  //
+  // ⚠ Do NOT "fix" a slow scene by raising this further. Past ~90 s the answer
+  // is that the scene is not converging, which is a determinism finding — see
+  // the frame-count convergence loop in vrt-toybox.spec.ts for what that fix
+  // looks like when it is real.
+  timeout: 90_000,
 
   // Snapshot path template. Default would scatter PNGs under
   // test-results/; we want them under __screenshots__/ so they're easy
@@ -194,8 +267,29 @@ export default defineConfig({
     // `expect.timeout` IS the knob: it bounds the whole assertion, which for
     // toHaveScreenshot is the screenshot-until-two-consecutive-captures-agree
     // retry loop. CI wall-time delta ≈ 0: only a screenshot that is ALREADY
-    // failing runs to the cap, and it then costs 15 s instead of 5 s.
-    timeout: 15_000,
+    // failing runs to the cap.
+    //
+    // RAISED 15_000 → 30_000 (2026-08-11), sized from the capture that exposed
+    // it rather than guessed. The retry loop needs at least TWO captures that
+    // AGREE, so the budget must hold at least two — and preferably four, since
+    // the first pair disagreeing is the normal case on an animated card.
+    //
+    // MEASURED, from the failing call logs of run 31453467770: the loop got
+    // through exactly TWO capture attempts before the 15 s cap, on both the
+    // page path (cellshade-ink) and the element path (mandleblot) — i.e. ~7 s
+    // per attempt for a heavy WebGL card under SwiftShader. 15 s bought two
+    // attempts with no room to compare them; 30 s buys ~4.
+    //
+    // ⚠ READ THE CALL LOG BEFORE TOUCHING THIS — it distinguishes the two
+    // failures that look identical from the outside, and they need opposite
+    // fixes:
+    //   * "Failed to take two consecutive stable screenshots" + a px ladder
+    //     (e.g. `4082 / 3954 / 3936 px`) = the page genuinely never settles.
+    //     Raising the budget cannot fix that; freeze the source of motion.
+    //   * "Timeout Nms exceeded" with only 2 capture attempts logged and NO px
+    //     ladder = the loop never got far enough to compare anything. That is
+    //     pacing, and it is what all of the 2026-08-11 failures were.
+    timeout: 30_000,
     toHaveScreenshot: {
       // Tolerance budget. Browsers + GPU drivers emit sub-pixel
       // anti-aliasing differences that aren't semantically meaningful
@@ -304,6 +398,8 @@ export default defineConfig({
             // Disable the smoothScrolling animation that fires on the
             // first .svelte-flow viewport mount.
             '--disable-smooth-scrolling',
+            // Empty unless E2E_SWIFTSHADER / E2E_REAL_GPU is set — see GPU_ARGS.
+            ...GPU_ARGS,
           ],
         },
       },
