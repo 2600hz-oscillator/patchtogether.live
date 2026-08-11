@@ -118,7 +118,7 @@ tracked-to-zero backlog (reconcile = fix or delete); see the roadmap.
 - `pong` — animated game state defeats deterministic capture
 - `push2Control` — meta control-surface card (Ableton Push 2)
 - `quadralogical` — SOLO-spawn VRT exempt (live MIX preview canvas with nothing patched).
-- `rings` — VRT baseline pending
+- `rings` — VRT baseline pending for the legacy card
 - `scoreboard` — VRT baseline pending
 - `shapegen` — VRT baseline pending
 - `sidecar` — VRT baseline pending
