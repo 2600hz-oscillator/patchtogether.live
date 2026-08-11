@@ -545,8 +545,16 @@ tasks:
           echo "Refusing to regenerate VRT baselines for '$BRANCH' — check out the PR branch first, or pass one: task vrt:commit -- <branch>." >&2
           exit 1
         fi
+        # Normalize ONCE so every later reference is safe under `set -u`, and
+        # use an if-block rather than `[ … ] && …` — a trailing test that
+        # evaluates false makes the line exit non-zero, which under `set -e`
+        # aborts the whole target. Both bugs were live: `task vrt:commit` with
+        # no GREP set died on "GREP: unbound variable" before dispatching
+        # anything, so the documented ONLY-baseline-author entry point did not
+        # run at all and every capture went out as a hand-typed `gh` command.
+        GREP="${GREP:-}"
         FLAGS="-f ref=$BRANCH"
-        [ -n "${GREP:-}" ] && FLAGS="$FLAGS -f grep=$GREP"
+        if [ -n "$GREP" ]; then FLAGS="$FLAGS -f grep=$GREP"; fi
         echo "Dispatching vrt-update.yml for branch '$BRANCH'${GREP:+ grep=$GREP} …"
         # ⚠ `--ref "$BRANCH"` RUNS THE BRANCH'S OWN COPY of vrt-update.yml, and
         # that is load-bearing whenever a PR changes the capture itself.
