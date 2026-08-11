@@ -206,6 +206,38 @@ describe('cellWidthClass — the instrument, perturbed in both directions', () =
     ).toBe('wide');
   });
 
+  it('a declared FADER is a COLUMN — the shell renders it inside `.kcol`', () => {
+    // ⚠ THIS WAS A LATENT DEFECT UNTIL marbles (2026-08-11), and the shape of
+    // it is the file header's own deny-by-default arm doing exactly what it
+    // should to a kind nobody had taught it. `fader` (#1464) fell through to
+    // `wide`, which is the SAFE direction but the wrong answer: `ModuleShell`'s
+    // fader branch is `<div class="kcol ms-cell-fader">` and `Fader.svelte` is
+    // 22 px wide — narrower than the 40–68.8 px knob columns this class exists
+    // to identify. noise, the kind's first consumer, could not surface it: one
+    // param, promoted to the hero, zero bands, so no fader ever reached a band.
+    //
+    // Both directions, so the clause cannot go vacuous: the DECLARATION is what
+    // moves the class, and dropping it leaves a plain knob column.
+    const p = knobParam('level');
+    expect(cellWidthClass(ctl('level'), { type: 'x', params: [p] })).toBe('column');
+    expect(
+      cellWidthClass(ctl('level'), {
+        type: 'x',
+        params: [p],
+        face: { paramCells: { level: 'fader' } },
+      }),
+    ).toBe('column');
+    // …and it is still distinguishable from the WIDE declared cell beside it,
+    // so "everything is a column" would not pass either.
+    expect(
+      cellWidthClass(ctl('level'), {
+        type: 'x',
+        params: [{ ...p, curve: 'discrete', min: 0, max: 5 }],
+        face: { paramCells: { level: 'grid' } },
+      }),
+    ).toBe('wide');
+  });
+
   it('a declared MOMENTARY pad stays a column (it is a Button in a knob column)', () => {
     // A press-param SHAPE: 0..1 discrete resting at 0 (looksLikeSwitch). Only
     // the DECLARATION tells it apart from a latching switch — which is the
