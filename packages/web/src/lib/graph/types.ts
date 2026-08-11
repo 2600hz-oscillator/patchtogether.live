@@ -611,14 +611,23 @@ export interface ModuleFace {
    * is invisible to every gate. A heuristic on the span would be a rule about
    * how large an integer may be before it stops being a scale.
    *
+   * ⚠ THE THIRD ONE IS DECLARED FOR A DIFFERENT REASON ENTIRELY. `'fader'` is
+   * not ambiguous with another primitive — it is the module telling the shell
+   * that its LEVEL is a THROW rather than a dial. Nothing in a ParamDef
+   * separates "a level" from any other continuous scalar, so a face cannot
+   * infer it, and silently substituting a knob for a fader is a real
+   * regression even though the value semantics are identical. (Owner
+   * directive 2026-08-10, prompted by `noise`, whose card draws a fader.)
+   *
    * UI metadata like the rest of `face`: OUT of contract-signature /
    * contract-lock (choosing a primitive is not an I/O change), linted by
-   * module-face-lint.test.ts — every key must be a declared DISCRETE param that
-   * is also ranked in `order`, must not also be on `momentary` (a press-pad is
-   * not a state), and must carry the RANGE its primitive needs (a step count a
-   * grid can chart; the exact packed-RGB space for a colour).
+   * module-face-lint.test.ts — every key must be a declared param that is also
+   * ranked in `order`, must not also be on `momentary` (a press-pad is not a
+   * state), and must carry the SHAPE its primitive needs (a step count a grid
+   * can chart; the exact packed-RGB space for a colour; a CONTINUOUS scale for
+   * a fader — the first two are discrete-only, the third discrete-never).
    */
-  paramCells?: Readonly<Record<string, 'grid' | 'color'>>;
+  paramCells?: Readonly<Record<string, 'grid' | 'color' | 'fader'>>;
   /**
    * Param ids that are MOMENTARY PADS, not values — the "press-param" pattern
    * (tomtom/clap `strike`): the worklet ORs the param with its trigger input

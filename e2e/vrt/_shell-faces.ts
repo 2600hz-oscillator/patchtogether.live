@@ -184,6 +184,31 @@ export const FACES = [
   // cleanly even without the audio freeze, so — unlike analogVco and
   // macrooscillator — it is not a witness for it.
   { type: 'clouds', pages: 3 },
+  // FACE BATCH 4 (2026-08-10) — the three-tap noise source, and the FIRST
+  // ZERO-BAND entry in this roster. Not a mistake and not a truncation: the
+  // module has ONE param, `face.hero.control` promotes it, and `heroFacePlan`
+  // DROPS a band its hero emptied ("a labelled void where they were"), so the
+  // dock renders a hero rail and a sidebar and no section bands at all. The
+  // `toHaveCount(pages)` assert in `openDock` is therefore a real structural
+  // gate here too — it fails if a band ever comes back.
+  //
+  // ⚠ FREE-RUNNING, AND THE FIRST BROADBAND WITNESS FOR #1420's FREEZE. All
+  // three noise tables `.start()` unconditionally at factory time, so the
+  // `meter` glyph on the compact tile is live from spawn — this tile can only
+  // baseline because the shared boot path suspends the graph before framing.
+  // analogVco and macrooscillator are the existing witnesses and both are
+  // PERIODIC (a saw at some phase), which is why a mis-ordered freeze reads as
+  // an intermittent 0/0/192/173 px on macrooscillator. Broadband noise has no
+  // phase to land on, so the prediction is that this tile catches the same
+  // regression deterministically.
+  //
+  // ⚠ THAT IS A PREDICTION, NOT A MEASUREMENT — say so rather than let a later
+  // reader take it for a derived number like the two entries above. The two
+  // PNGs (`face-noise-compact`, `face-noise-dock`) are authored by the linux
+  // capture job like every other baseline, and the probe that would settle
+  // this has not been run against them. Run `vrt-face-audio-probe` on this
+  // tile before quoting a number here; a passing scene is not the measurement.
+  { type: 'noise', pages: 0 },
   // FACE BATCH 5 — the analog delay. SIX declared bands, six rendered: the hero
   // promotes `delayTime` and the echo-train panel out of band 1, which still
   // holds SYNC, CLK SRC and FEEDBACK, so nothing empties.

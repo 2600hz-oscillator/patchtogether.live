@@ -250,6 +250,70 @@
 // stronger guarantee than #1420's freeze, which this face therefore does not
 // depend on. (Its `meter` glyph is unlit at the lane tiers for the
 // mixer/reverb reason: an insert with nothing patched outputs exactly zero.)
+
+// FACE BATCH 4 · noise (2026-08-10) — the SMALLEST module in the registry to
+// carry a face, and the entry that had to argue with its own spec to exist.
+//
+// `.myrobots/plans/face-specs-batch-3-noise.md` returns a verdict of NO FACE ON
+// MERIT, and its arithmetic is correct: one param, zero inputs, zero modes, so
+// `faceTierCap` gives mini 1 and compact 2 and ALL FOUR TIERS RENDER THE SAME
+// SINGLE KNOB. This face does not dispute that and does not dress it up.
+//
+// It is promoted anyway because the spec measures a faceplate by its TIER
+// LADDER and this module's problem is not curation, it is that THREE TRUE
+// FACTS ABOUT IT ARE STATED NOWHERE — and each is invisible to the one control:
+//
+//   · THE THREE TAPS ARE NOT LEVEL-MATCHED. One linear gain is written to all
+//     three tap gains in the same `setParam`, and they leave the module at
+//     white −4.77, brown −11.84, pink −17.08 dBFS (LEVEL 1) — a 12.3 dB spread
+//     that `level`'s own readback is INVARIANT to, because it prints 0.50 for
+//     all three. Three derived readouts, closed-form from the coefficients.
+//   · BROWN IS A ONE-POLE LOW-PASS, NOT A SLOPE. Flat below ≈ 77 Hz, −6 dB/oct
+//     above — and the corner MOVES WITH THE INTERFACE (70.5 Hz at 44.1 k,
+//     153.6 at 96 k) because `LEAK = 0.99` carries no `sampleRate` term while
+//     the table length does. The def, the DSP header and the module manifest
+//     all said a flat "1/f², heavy low-frequency content"; all three are
+//     corrected in this PR, and the sidebar picture draws the actual knee.
+//   · BROWN HAS NO BOUND. White is clamped at 1 by its uniform draw and pink by
+//     its ROWS+1 normaliser; brown is a random walk, and 118 of 200 seeded 2 s
+//     tables peak ABOVE full scale at LEVEL 1 (median 1.021, worst 1.362).
+//     `noise-dsp.ts` says "peak excursions stay comfortably under ±1 … verified
+//     to ~64k samples" — the shipped table is 96 000.
+//
+// ⚠ THE PICTURE COULD NOT HAVE BEEN A HERO CELL, AT THE FAR END OF A CONSTRAINT
+// TWO FACES HAVE NOW HIT. A panel's first legal rank is 7 (module-face-lint
+// refuses a panel SELECTED at a lane tier, and the lane plate is six cells).
+// meowbox reached that wall with five keys and drummergirl dropped its picture
+// over it; noise has ONE key and can never approach it. The `custom` sidebar
+// block carries no `face.order` key at all, which is what makes a picture
+// possible on a one-param module — and is the general answer, not a workaround.
+//
+// ⚠ AND IT IS THE FIRST FACE WHOSE HERO EMPTIES ITS ONLY BAND. One ranked key,
+// promoted to `hero.control`, leaves the page-less `__all` band with nothing in
+// it, and `heroFacePlan` drops an emptied band. `dock-faceplate-model.ts` wrote
+// that branch defensively — "a no-op on every face declared today … landed now
+// so the first face that needs it does not have to discover it" — and this is
+// the face that needs it. Its VRT roster entry is `pages: 0`.
+//
+// ⚠ FREE-RUNNING, LIKE analogVco AND macrooscillator, AND BROADBAND UNLIKE
+// EITHER. All three tables `.start()` unconditionally at factory time, so its
+// `meter` glyph is live from spawn; #1420's pre-frame freeze is what makes the
+// tile capturable. The two existing witnesses are periodic (a saw at a fixed
+// phase), so a mis-ordered freeze shows up on them as a PHASE difference —
+// which is why macrooscillator catches it only intermittently. A broadband
+// witness has no phase to land on. NOT YET MEASURED as such — the claim is a
+// PREDICTION for `vrt-face-audio-probe` to settle, not a result.
+//
+// OWNER CONSTRAINT, 2026-08-10 ("preserve today's look"): the legacy card is
+// pixel-unchanged, the module keeps one prominent LEVEL control and its three
+// jacks, and nothing is renamed or recoloured. The one difference the first
+// pass could NOT honour is the reason this face was held a release: a ranked
+// param paints as `KnobConic`, so the dock showed LEVEL as a dial where the
+// card draws a FADER — on a module whose whole visual identity is one centred
+// throw. The owner's answer was the platform `fader` cell kind rather than an
+// exception, and `noise` is its first consumer (`face.paramCells`); clouds,
+// mixer and vca are fader cards too and inherit it when they are faced.
+
 // FACE BATCH 5 · cofefve (2026-08-10) — the analog delay, PROMOTED from having
 // no face at all, and the entry whose argument is that A FACEPLATE MUST BE ABLE
 // TO SAY THAT A CONTROL IS WAITING ON ANOTHER CONTROL.
@@ -371,6 +435,8 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   'cube',
   // FACE BATCH 4 · the granular texture processor (2026-08-10) — see above.
   'clouds',
+  // FACE BATCH 4 · the three-tap noise source (2026-08-10) — see above.
+  'noise',
   // FACE BATCH 5 · the analog delay (2026-08-10) — see the header note above.
   'cofefve',
 ]);

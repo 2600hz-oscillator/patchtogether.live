@@ -51,6 +51,7 @@ import {
   cloudsPositionText,
   cloudsSilenceText,
 } from '$lib/ui/modules/clouds-face-model';
+import { noiseFaceParams, noiseTapDbText } from '$lib/ui/modules/noise-face-model';
 import {
   asleepText,
   cofefveFaceParams,
@@ -372,6 +373,40 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
   // else. The model reads `MEOWBOX_SUSTAIN` for the "held" figure rather than
   // typing 0.4, so the printed number cannot drift from the envelope constant.
   'meowbox-comb-null': () => meowboxCombNullText(),
+
+  // ── NOISE ────────────────────────────────────────────────────────────────
+  // THREE readouts on a module with ONE param, and the arithmetic is the whole
+  // argument for them. `level` is a single linear gain written to all three tap
+  // gains in the same `setParam` call, so the obvious declaration —
+  // `{ label: 'level', paramId: 'level' }` — prints ONE number, `0.50`, for
+  // THREE outputs that leave the module 12.5 dB and 7.0 dB apart:
+  //
+  //   white  σ = 1/√3            = 0.5774   −4.77 dBFS at LEVEL 1
+  //   pink   σ = 1/√(3·(ROWS+1)) = 0.1400  −17.08      (−12.3 dB vs white)
+  //   brown  σ = NORM·√(¼⅓/(1−a²)) = 0.2558 −11.84      (−7.1 dB vs white)
+  //
+  // That spread is not a tolerance, it is a PROPERTY of three unmatched
+  // generators sharing one fader, and the knob readback is INVARIANT to it —
+  // the exact blindness this registry exists for. Patch WHITE and BROWN into a
+  // two-channel mixer at identical LEVEL and the brown side is 7 dB quiet; no
+  // surface in the repo said so before this face.
+  //
+  // ⚠ WHAT IS DELIBERATELY *NOT* HERE, and why. A `noise-brown-corner-hz`
+  // readout would be the obvious fourth, and it cannot be honest through this
+  // registry: `FaceReadoutValue` is `(read) => string` and receives no sample
+  // rate, while brown's corner MOVES with the interface (70.5 Hz at 44.1 k,
+  // 76.8 at 48 k, 153.6 at 96 k — `LEAK` carries no `sampleRate` term). A live
+  // readout would print one of those three as if it were all of them. The
+  // corner is therefore stated as fixed sidebar prose WITH its rate, and drawn
+  // on the panel; the widened reader stays a platform follow-up.
+  //
+  // Every closed form above is re-derived from the SHIPPING generators on every
+  // run by noise-face-model.test.ts (Welch PSD + measured RMS), with negative
+  // controls in both directions — including the tolerance leg that proves a
+  // 0.5 dB model error would redden it.
+  'noise-white-db': (read) => noiseTapDbText('white', noiseFaceParams(read)),
+  'noise-pink-db': (read) => noiseTapDbText('pink', noiseFaceParams(read)),
+  'noise-brown-db': (read) => noiseTapDbText('brown', noiseFaceParams(read)),
 
   // ── PENTEMELODICA ────────────────────────────────────────────────────────
   // `at cutoff` is a function of MODE **and** RESONANCE — a MODE readout would
