@@ -70,10 +70,12 @@ unsure, ask the user — never blanket-recapture.
 ## Determinism
 
 The harness is intentionally deterministic where possible:
-- Playwright VRT baselines are frozen per-platform (darwin + linux); we
-  capture each tier separately. Some modules opt out via `EXEMPT_BASELINE_PAIRS`
-  in `e2e/vrt/vrt.spec.ts` when their render is non-deterministic (animated
-  3D, CRT feedback, etc.).
+- Playwright VRT baselines are ONE set, authored by linux CI — the platform
+  dimension was removed 2026-08-10 (#1458) because CI gates on linux and a
+  darwin-only baseline gave zero protection while counting as covered. A
+  module whose render is non-deterministic (animated 3D, CRT feedback) opts out
+  by NAME via `EXEMPT_FROM_VRT` + `ALLOWED_PERMANENT_EXEMPT` in
+  `e2e/vrt/vrt-exemptions.ts`.
 - ART baselines are float-precision `.f32` + SHA. Any divergence is an
   intentional output change.
 - Unit tests use seeded RNG; never `Math.random()` in a test.

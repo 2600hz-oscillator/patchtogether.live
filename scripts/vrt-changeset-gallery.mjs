@@ -78,9 +78,6 @@ function parseArgs(argv) {
     // render fails the VRT job with the diff in the run output, but commits no
     // PNGs, so the git-diff mode finds nothing. fromResults surfaces it.
     fromResults: null,
-    // Platform label for the run-driven cards (the runner's OS). Defaults to the
-    // same darwin|linux split vrt.config.ts uses.
-    platform: process.platform === 'darwin' ? 'darwin' : 'linux',
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -90,10 +87,9 @@ function parseArgs(argv) {
     else if (a === '--title') args.title = argv[++i];
     else if (a === '--json') args.json = argv[++i];
     else if (a === '--from-results') args.fromResults = argv[++i];
-    else if (a === '--platform') args.platform = argv[++i];
     else if (a === '--help' || a === '-h') {
       console.log(
-        'Usage: node scripts/vrt-changeset-gallery.mjs [--base <ref>] [--from-results <dir>] [--platform <os>] [--out <dir>] [--pr <n>] [--title <s>] [--json <file>]',
+        'Usage: node scripts/vrt-changeset-gallery.mjs [--base <ref>] [--from-results <dir>] [--out <dir>] [--pr <n>] [--title <s>] [--json <file>]',
       );
       process.exit(0);
     }
@@ -205,8 +201,8 @@ function walk(dir) {
 // ignore — we recompute with pixelmatch for a consistent diff + px stats). A
 // brand-new/missing baseline yields only `-actual` (status A). Entries carry the
 // decoded buffers directly (no git), so the shared render loop treats them
-// uniformly with the git-diff entries. `platform` is the runner OS label.
-function collectFromResults(dir, platform) {
+// uniformly with the git-diff entries.
+function collectFromResults(dir) {
   const absDir = isAbsolute(dir) ? dir : join(ROOT, dir);
   if (!existsSync(absDir)) {
     console.error(`[vrt-changeset] --from-results dir not found: ${dir}`);
@@ -224,8 +220,8 @@ function collectFromResults(dir, platform) {
     const spec = folder.replace(/-(chromium|webkit|firefox)[-\w]*$/i, '');
     const newBuf = readFileSync(actualPath);
     const oldBuf = existsSync(expectedPath) ? readFileSync(expectedPath) : null;
-    // Synthetic baseline path so describe() yields spec/platform/card uniformly.
-    const synthetic = `${BASELINE_GLOB}/${spec}/${platform}/${card}.png`;
+    // Synthetic baseline path so describe() yields spec/card uniformly.
+    const synthetic = `${BASELINE_GLOB}/${spec}/${card}.png`;
     entries.push({
       status: oldBuf ? 'M' : 'A',
       path: synthetic,
@@ -316,9 +312,11 @@ async function encodePngFromRGBA(rgba, width, height) {
 
 // ---- naming ---------------------------------------------------------------
 
-// Derive a friendly title from a baseline path.
-//   e2e/vrt/__screenshots__/vrt.spec.ts/linux/adsr.png
-//     spec=vrt.spec.ts platform=linux card=adsr
+// Derive a friendly title from a baseline path. The baseline tree is SINGLE-set
+// (no {platform} segment — see vrt.config.ts snapshotPathTemplate), so a changed
+// baseline is identified by (spec, card).
+//   e2e/vrt/__screenshots__/vrt.spec.ts/adsr.png
+//     spec=vrt.spec.ts card=adsr
 function describe(path) {
   const rel = path.startsWith(`${BASELINE_GLOB}/`)
     ? path.slice(BASELINE_GLOB.length + 1)
@@ -326,9 +324,8 @@ function describe(path) {
   const parts = rel.split('/');
   const file = parts.pop();
   const card = file.replace(/\.png$/i, '');
-  const platform = parts.pop() || '?';
   const spec = parts.join('/') || '?';
-  return { spec, platform, card };
+  return { spec, card };
 }
 
 function slugify(path) {
@@ -346,10 +343,6 @@ function esc(s) {
 }
 
 function renderHtml({ cards, meta }) {
-  const byPlatform = {};
-  for (const c of cards) (byPlatform[c.platform] ??= []).push(c);
-  const platforms = Object.keys(byPlatform).sort();
-
   const summaryBits = [
     `<strong>${cards.length}</strong> changed baseline${cards.length === 1 ? '' : 's'}`,
     meta.added ? `${meta.added} added` : null,
@@ -358,31 +351,29 @@ function renderHtml({ cards, meta }) {
     meta.renamed ? `${meta.renamed} renamed` : null,
   ].filter(Boolean);
 
-  const cardHtml = platforms
-    .map((plat) => {
-      const items = byPlatform[plat]
-        .map((c) => {
-          const badge =
-            c.status === 'A'
-              ? '<span class="badge add">ADDED</span>'
-              : c.status === 'D'
-                ? '<span class="badge del">DELETED</span>'
-                : c.status === 'R'
-                  ? '<span class="badge ren">RENAMED</span>'
-                  : '<span class="badge mod">MODIFIED</span>';
-          const diffNote = c.diffPixels != null
-            ? `<span class="diffstat">${c.diffPixels.toLocaleString()} px (${(c.diffRatio * 100).toFixed(2)}%)</span>`
-            : `<span class="diffstat na">${esc(c.diffNote || 'no pixel diff')}</span>`;
-          const cell = (label, src, cls = '') =>
-            src
-              ? `<figure class="${cls}"><figcaption>${label}</figcaption><a href="${esc(src)}" target="_blank"><img loading="lazy" src="${esc(src)}" alt="${esc(label)} ${esc(c.card)}"></a></figure>`
-              : `<figure class="${cls} empty"><figcaption>${label}</figcaption><div class="ph">—</div></figure>`;
-          return `
+  const cardHtml = cards
+    .map((c) => {
+      const badge =
+        c.status === 'A'
+          ? '<span class="badge add">ADDED</span>'
+          : c.status === 'D'
+            ? '<span class="badge del">DELETED</span>'
+            : c.status === 'R'
+              ? '<span class="badge ren">RENAMED</span>'
+              : '<span class="badge mod">MODIFIED</span>';
+      const diffNote = c.diffPixels != null
+        ? `<span class="diffstat">${c.diffPixels.toLocaleString()} px (${(c.diffRatio * 100).toFixed(2)}%)</span>`
+        : `<span class="diffstat na">${esc(c.diffNote || 'no pixel diff')}</span>`;
+      const cell = (label, src, cls = '') =>
+        src
+          ? `<figure class="${cls}"><figcaption>${label}</figcaption><a href="${esc(src)}" target="_blank"><img loading="lazy" src="${esc(src)}" alt="${esc(label)} ${esc(c.card)}"></a></figure>`
+          : `<figure class="${cls} empty"><figcaption>${label}</figcaption><div class="ph">—</div></figure>`;
+      return `
         <section class="card" id="${esc(c.id)}">
           <header>
             <h3>${esc(c.card)}</h3>
             ${badge}${diffNote}
-            <div class="path">${esc(c.spec)} · ${esc(c.platform)}</div>
+            <div class="path">${esc(c.spec)}</div>
           </header>
           <div class="triptych">
             ${cell('OLD (base)', c.oldSrc, 'old')}
@@ -408,9 +399,6 @@ function renderHtml({ cards, meta }) {
               : ''
           }
         </section>`;
-        })
-        .join('\n');
-      return `<h2 class="plat">${esc(plat)} <span class="count">(${byPlatform[plat].length})</span></h2>\n${items}`;
     })
     .join('\n');
 
@@ -432,8 +420,6 @@ function renderHtml({ cards, meta }) {
   .meta { color:#9aa0a6; font-size:12.5px; }
   .meta strong { color:#e7e7ea; }
   main { max-width:1500px; margin:0 auto; padding:8px 24px 64px; }
-  h2.plat { margin:28px 0 10px; font-size:13px; text-transform:uppercase; letter-spacing:1.5px; color:#8ab4f8; border-bottom:1px solid #2a2a2e; padding-bottom:6px; }
-  h2.plat .count { color:#6b7178; }
   .card { background:#1d1d20; border:1px solid #2a2a2e; border-radius:10px; padding:14px 16px; margin:14px 0; }
   .card header { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:12px; }
   .card h3 { margin:0; font-size:15px; }
@@ -518,9 +504,9 @@ async function main() {
     } catch {
       headSha = 'unknown';
     }
-    entries = collectFromResults(args.fromResults, args.platform);
+    entries = collectFromResults(args.fromResults);
     console.error(
-      `[vrt-changeset] from-results=${args.fromResults} platform=${args.platform} — ${entries.length} mismatch(es)`,
+      `[vrt-changeset] from-results=${args.fromResults} — ${entries.length} mismatch(es)`,
     );
   } else {
     // Git-driven: diff = base ref (OLD) vs working tree (NEW).
@@ -546,7 +532,7 @@ async function main() {
     else if (e.status === 'R') meta.renamed++;
     else meta.modified++;
 
-    const { spec, platform, card } = describe(e.path);
+    const { spec, card } = describe(e.path);
     const id = slugify(e.path);
 
     // Run-driven entries carry decoded buffers already; git-driven entries read
@@ -613,7 +599,6 @@ async function main() {
     cards.push({
       id,
       spec,
-      platform,
       card,
       status: e.status,
       oldSrc,
@@ -625,7 +610,7 @@ async function main() {
     });
   }
 
-  // Sort: biggest visual change first within each platform, then by card name.
+  // Sort: biggest visual change first, then by card name.
   cards.sort(
     (x, y) =>
       (y.diffRatio ?? -1) - (x.diffRatio ?? -1) || x.card.localeCompare(y.card),
@@ -651,7 +636,7 @@ async function main() {
     ...meta,
     outDir: relative(ROOT, outDir),
     cards: cards.map((c) => ({
-      path: `${BASELINE_GLOB}/${c.spec}/${c.platform}/${c.card}.png`,
+      path: `${BASELINE_GLOB}/${c.spec}/${c.card}.png`,
       status: c.status,
       diffPixels: c.diffPixels,
       diffRatio: c.diffRatio,

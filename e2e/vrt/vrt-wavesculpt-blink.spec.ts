@@ -25,11 +25,8 @@
 
 import { test, expect } from '@playwright/test';
 import { spawnPatch } from '../tests/_helpers';
-import { EXEMPT_BASELINE_PAIRS } from './vrt-exemptions';
 import { expectVrtSceneScreenshot } from './vrt-capture';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
-
-const VRT_PLATFORM = process.platform === 'darwin' ? 'darwin' : 'linux';
 
 interface BlinkCase {
   name: string;
@@ -103,22 +100,19 @@ test.describe.configure({ mode: 'default' });
 test.describe('VRT: WAVESCULPT BLINK render modes', () => {
   for (const c of CASES) {
     test(`blink ${c.name} matches baseline`, async ({ page }) => {
-      // Linux baselines deferred — WebGL ribbon/tube AA + CRT post differs
-      // sub-thresholdly across GPU drivers; darwin captured here, linux
-      // pending a `task vrt:update` run on linux CI (mirrors the main
-      // wavesculpt baseline's linux deferral in EXEMPT_BASELINE_PAIRS).
-      test.skip(
-        VRT_PLATFORM === 'linux',
-        `wavesculpt blink ${c.name} on linux: baseline pending (capture on linux CI)`,
-      );
-      // Per-mode platform exemptions live in EXEMPT_BASELINE_PAIRS so the
-      // QUARANTINE entries (e.g. darwin/wavesculpt-blink-scopes-trial,
-      // tracked as task #202) take effect here. Root-cause fix is owed on
-      // the tracked task — this is a quarantine, not a tolerance.
-      test.skip(
-        EXEMPT_BASELINE_PAIRS.has(`${VRT_PLATFORM}/wavesculpt-blink-${c.name}`),
-        `wavesculpt-blink-${c.name} on ${VRT_PLATFORM}: quarantined (see EXEMPT_BASELINE_PAIRS)`,
-      );
+      // ⚠ WebGL ribbon/tube AA + CRT post differs sub-thresholdly across GPU
+      // drivers, which is why these were dark on linux for months. The
+      // baseline IS the linux render now, so the only driver in the comparison
+      // is the runner's.
+      //
+      // ⚠ THE #202 QUARANTINE IS GONE WITH THE MECHANISM, NOT FIXED. Three
+      // blink modes (`wavesculpt-blink-scopes-trial`, `-scopes-trial-wiggle`,
+      // `-custom-colors`) sat in EXEMPT_BASELINE_PAIRS as darwin quarantines —
+      // unconditional `test.skip()`s — because they would not settle. Nothing
+      // skips them now: if they still cannot produce two consecutive stable
+      // captures they FAIL, loudly, on the capture and on every run after. That
+      // is the intended reading. Root-cause fix is owed on #202; a re-quarantine
+      // is not available and is not the answer.
 
       const errors: string[] = [];
       page.on('pageerror', (e) => errors.push(e.message));

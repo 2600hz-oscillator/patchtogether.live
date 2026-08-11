@@ -84,7 +84,7 @@ per-module appends and are no longer the conflict surface. The remaining
 hand-maintained list files that this hazard applies to are:
 
 - `packages/web/src/lib/docs/module-manifest.ts` (`DESCRIPTIONS`)
-- `e2e/vrt/vrt-exemptions.ts` (`EXEMPT_FROM_VRT` / `EXEMPT_BASELINE_PAIRS`)
+- `e2e/vrt/vrt-exemptions.ts` (`EXEMPT_FROM_VRT` / `ALLOWED_PERMANENT_EXEMPT`)
 - `packages/web/src/lib/ui/modules-card-map.test.ts` (`EXPECTED_NODE_TYPES`)
 - the per-port spec lists (`e2e/tests/per-module-per-port*.spec.ts`)
 

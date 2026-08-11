@@ -1,19 +1,25 @@
 # VRT: update baselines (on demand)
 #
-# Regenerates the Playwright VRT baselines under e2e/vrt/__screenshots__/ on
-# BOTH platforms and commits them back to the chosen branch:
-#   - linux baselines  → ubuntu-latest runner (postgres via service container)
-#   - darwin baselines → macos-latest runner  (postgres via the preinstalled host install)
-# then re-validates the PR by re-firing a `pull_request` CI run (a GITHUB_TOKEN
-# push does NOT auto-trigger CI, and a workflow_dispatch run does NOT count
-# toward a PR's required-status-check gate — see the `revalidate` job below for
-# the full story). We close+reopen the PR so the `reopened` pull_request event
-# re-runs the required checks against the fresh baselines.
+# THE ONLY BASELINE AUTHOR. There is ONE baseline set — `snapshotPathTemplate`
+# has no `{platform}` segment (see e2e/vrt/vrt.config.ts) — and this workflow,
+# on ubuntu-latest, is what writes it. A developer never commits a baseline:
+# they push, CI compares, and an intentional render change is captured HERE and
+# reviewed as a PR diff through the changeset gallery ci.yml posts.
 #
-# This is the fast path for "update all VRTs": one dispatch regenerates every
-# scene on both platforms with --update-snapshots (no early-abort, no artifact
-# scraping). The regenerated baselines land as a commit ON the branch, so the
-# diff stays reviewable in the PR before merge.
+# ⚠ THIS USED TO BE A TWO-PLATFORM MATRIX (ubuntu + macos-latest), because
+# baselines were committed per-platform. That was the defect, not the design:
+# CI gates on linux, so the darwin half was a second population nothing on the
+# merge path ever read. Measured the day it was removed — 300 darwin PNGs, 156
+# linux, 146 darwin scenes with NO linux sibling. The macos job, the
+# `platform` input, and the skip-propagation hazard its `if:` created in
+# `revalidate` all went with it.
+#
+# After the capture it re-validates the PR by re-firing a `pull_request` CI run
+# (a GITHUB_TOKEN push does NOT auto-trigger CI, and a workflow_dispatch run
+# does NOT count toward a PR's required-status-check gate — see the
+# `revalidate` job below for the full story). We close+reopen the PR so the
+# `reopened` pull_request event re-runs the required checks against the fresh
+# baselines.
 #
 # Usage:  gh workflow run vrt-update.yml -f ref=<branch>
 name: VRT update baselines
@@ -25,15 +31,6 @@ on:
         description: Branch to regenerate VRT baselines for
         required: true
         type: string
-      platform:
-        description: Which platform(s) to regenerate — pick one to skip the redundant runner (mind CI wall-time)
-        required: false
-        default: both
-        type: choice
-        options:
-          - both
-          - linux
-          - darwin
       grep:
         description: Optional Playwright --grep to scope capture to specific cards (leaves other baselines untouched)
         required: false
@@ -50,14 +47,22 @@ concurrency:
 
 jobs:
   # ---------------------------------------------------------------------------
-  # linux baselines — mirrors the ci.yml `vrt` job (postgres service container),
-  # but runs vrt:update and commits the e2e/vrt/__screenshots__/**/linux/* PNGs.
+  # The capture. Mirrors the ci.yml `vrt` job (postgres service container), but
+  # runs vrt:update and commits the regenerated e2e/vrt/__screenshots__/ PNGs.
   # ---------------------------------------------------------------------------
-  linux:
-    name: regenerate linux baselines
-    if: ${{ inputs.platform != 'darwin' }}
+  capture:
+    name: regenerate VRT baselines
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    # 40 -> 75 (2026-08-10). MEASURED, not padded: with the platform dimension
+    # collapsed every scene runs on linux, so the sweep went from ~151 executed
+    # tests to 297. The first capture at 40 min was KILLED at test 241 of 297
+    # having written ~146 baselines it never got to commit (run 31450544563;
+    # GitHub reports a timeout-minutes kill as `cancelled`, not `failure`, which
+    # is why it did not look like a timeout). Rate: 241 tests in 36.8 min of
+    # Playwright = 9.2 s/test, so 297 tests ~= 45.5 min + ~3.5 min of
+    # checkout/npm/DSP setup ~= 49 min. 75 leaves ~50 % headroom for a slow
+    # runner. On-demand workflow: this costs zero per-PR wall time.
+    timeout-minutes: 75
     outputs:
       # 'true' only when a baseline commit was actually pushed. A capture that
       # rewrote nothing still SUCCEEDS, so `revalidate` needs this to tell
@@ -119,7 +124,7 @@ jobs:
         if: steps.cache-doom-wasm.outputs.cache-hit != 'true'
         run: flox activate -- bash packages/web/native/build-doom-wasm.sh
 
-      - name: Regenerate VRT baselines (linux)
+      - name: Regenerate VRT baselines
         env:
           GREP: ${{ inputs.grep }}
         run: |
@@ -129,90 +134,9 @@ jobs:
             flox activate -- task vrt:update
           fi
 
-      - name: Commit + push linux baselines
+      - name: Commit + push baselines
         id: commit
-        run: flox activate -- bash .github/scripts/vrt-commit-baselines.sh "${{ inputs.ref }}" "linux"
-
-  # ---------------------------------------------------------------------------
-  # darwin baselines — macos runner. Service containers can't run on macOS, so
-  # postgres comes from the preinstalled host install. Runs after `linux` so its
-  # commit rebases cleanly on top (the two platforms touch disjoint dirs).
-  # ---------------------------------------------------------------------------
-  darwin:
-    name: regenerate darwin baselines
-    needs: linux
-    if: ${{ always() && inputs.platform != 'linux' && (needs.linux.result == 'success' || needs.linux.result == 'skipped') }}
-    runs-on: macos-latest
-    timeout-minutes: 60
-    outputs:
-      pushed: ${{ steps.commit.outputs.pushed }}
-    env:
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/patchtogether_test
-    steps:
-      - name: Checkout ${{ inputs.ref }} (LFS for VRT baseline PNGs)
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.ref }}
-          lfs: true
-          persist-credentials: true
-
-      - name: Start PostgreSQL (host install)
-        run: |
-          set -euo pipefail
-          # macos-latest ships postgresql@14 via Homebrew (arm64 prefix /opt/homebrew).
-          brew install postgresql@14 >/dev/null 2>&1 || true
-          brew services start postgresql@14
-          PGBIN="$(brew --prefix postgresql@14)/bin"
-          for i in $(seq 1 30); do "$PGBIN/pg_isready" -h localhost && break || sleep 2; done
-          "$PGBIN/createuser" -s postgres 2>/dev/null || true
-          "$PGBIN/psql" -d postgres -c "ALTER USER postgres PASSWORD 'postgres';"
-          "$PGBIN/createdb" -O postgres patchtogether_test 2>/dev/null || true
-
-      - name: Install Flox
-        uses: flox/install-flox-action@v2
-
-      - name: Cache npm + Playwright browsers
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.npm
-            ~/.cache/ms-playwright
-          key: ${{ runner.os }}-deps-${{ hashFiles('package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-deps-
-
-      - name: Install workspace deps + Playwright Chromium
-        run: flox activate -- task setup
-
-      - name: Apply DB schema
-        run: flox activate -- scripts/apply-db-schema.sh "$DATABASE_URL"
-
-      - name: Cache DOOM WASM artifact
-        id: cache-doom-wasm
-        uses: actions/cache@v4
-        with:
-          path: |
-            packages/web/static/doom/doom.js
-            packages/web/static/doom/doom.wasm
-          key: ${{ runner.os }}-doom-wasm-${{ hashFiles('packages/web/native/build-doom-wasm.sh', 'packages/web/native/doomgeneric/**') }}
-
-      - name: Build DOOM WASM (emcc)
-        if: steps.cache-doom-wasm.outputs.cache-hit != 'true'
-        run: flox activate -- bash packages/web/native/build-doom-wasm.sh
-
-      - name: Regenerate VRT baselines (darwin)
-        env:
-          GREP: ${{ inputs.grep }}
-        run: |
-          if [ -n "$GREP" ]; then
-            flox activate -- task vrt:update -- --grep "$GREP"
-          else
-            flox activate -- task vrt:update
-          fi
-
-      - name: Commit + push darwin baselines
-        id: commit
-        run: flox activate -- bash .github/scripts/vrt-commit-baselines.sh "${{ inputs.ref }}" "darwin"
+        run: flox activate -- bash .github/scripts/vrt-commit-baselines.sh "${{ inputs.ref }}"
 
   # ---------------------------------------------------------------------------
   # Re-validate: the baseline commit was pushed by GITHUB_TOKEN, which does NOT
@@ -235,47 +159,33 @@ jobs:
   # (the baselines are already pushed; whoever opens the PR later gets a normal
   # pull_request run).
   #
-  # ── WHY THE `if:` IS LOAD-BEARING (and why its ABSENCE was silent) ─────────
-  # A job with `needs:` and NO `if:` defaults to `success()`, which requires
-  # every needed job to have SUCCEEDED. A SKIPPED dependency does not satisfy
-  # that — GitHub propagates the skip. So `needs: [linux, darwin]` with no `if:`
-  # meant revalidate only ever ran for `platform=both`:
-  #   platform=linux  → darwin skips (its own `if:`) → revalidate SKIPPED
-  #   platform=darwin → linux  skips (its own `if:`) → revalidate SKIPPED
-  # …which is precisely the single-platform dispatch CLAUDE.md RECOMMENDS in
-  # order to save the redundant runner. The documented close+reopen — the whole
-  # reason a bot-pushed baseline gets validated at all — was therefore notional
-  # for every single-platform capture, and nothing reported it: a skipped job is
-  # a grey check on a GREEN run.
+  # ── THE `if:` IS STILL LOAD-BEARING, FOR ONE REASON NOW ────────────────
+  # A capture that rewrote NOTHING still SUCCEEDS — Playwright only rewrites a
+  # snapshot whose comparison FAILS — so `needs: capture` alone would
+  # close+reopen the PR and burn ~25 min of CI on a branch whose baselines did
+  # not move. `capture.outputs.pushed` is what tells "captured" from "ran and
+  # changed nothing".
   #
-  # `always()` ALONE would be worse than the bug: it would close+reopen the PR
-  # after a FAILED capture too, re-firing ~25 min of CI against baselines that
-  # were never regenerated. So it is `always()` (evaluate me even though a
-  # dependency skipped) narrowed by four clauses:
-  #   1+2. each platform job is `success` or `skipped` — never `failure` or
-  #        `cancelled`. Covers one-fails, both-fail, and a cancelled run.
-  #   3.   at least ONE platform job actually RAN and succeeded, so a dispatch
-  #        that somehow skips both cannot reach here.
-  #   4.   at least one job actually PUSHED a commit. A capture that rewrote
-  #        nothing still SUCCEEDS (Playwright only rewrites a snapshot whose
-  #        comparison FAILS), and re-validating an unchanged branch is a wasted
-  #        CI cycle plus pointless close/reopen churn on the PR.
-  # The `darwin` job above already uses this `always() && …` idiom, as does
-  # `flake-check` in flake-check-3x.yml, whose comment documents this exact
-  # hazard. This job was the one place that needed it and did not have it.
+  # ⚠ AND THE HAZARD THAT USED TO LIVE HERE IS GONE WITH THE MATRIX, not fixed.
+  # `needs: [linux, darwin]` with no `if:` defaults to `success()`, and GitHub
+  # PROPAGATES a skipped dependency — so with two platform jobs each carrying
+  # their own `if:`, a single-platform dispatch (the one CLAUDE.md recommended,
+  # to save the redundant runner) skipped the other job and therefore skipped
+  # revalidate, silently, on a green run. The documented close+reopen was
+  # notional for every single-platform capture between 2026-06 and 2026-08-03.
+  # With ONE capture job there is no sibling to skip and no propagation to
+  # reason about: the defect was deleted along with the dimension that created
+  # it, which is strictly better than the `always() && …` patch that was
+  # standing in for it.
+  #
   # Guarded by scripts/vrt-update-revalidate.test.ts, which simulates GitHub's
-  # skip propagation over the real YAML for every dispatch case.
+  # skip propagation over the real YAML.
   # ---------------------------------------------------------------------------
   revalidate:
     name: re-validate CI on ${{ inputs.ref }} (close+reopen PR)
     runs-on: ubuntu-latest
-    needs: [linux, darwin]
-    if: |
-      always()
-      && (needs.linux.result == 'success' || needs.linux.result == 'skipped')
-      && (needs.darwin.result == 'success' || needs.darwin.result == 'skipped')
-      && (needs.linux.result == 'success' || needs.darwin.result == 'success')
-      && (needs.linux.outputs.pushed == 'true' || needs.darwin.outputs.pushed == 'true')
+    needs: capture
+    if: ${{ needs.capture.outputs.pushed == 'true' }}
     permissions:
       pull-requests: write   # close + reopen the PR to re-fire pull_request
     steps:

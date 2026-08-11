@@ -92,10 +92,12 @@ async function captureStability(
 // unfixable by `--update-snapshots` (the A2/#1213 hole). "43 scenes passed" is
 // therefore NOT the evidence that adding the audio freeze moved nothing; this
 // is.
+// ONE baseline set — no `{platform}` segment (vrt.config.ts). See the sibling
+// note in vrt-fold-probe.spec.ts: the old per-platform join resolves to a
+// directory that no longer exists.
 const BASELINE_DIR = join(
   import.meta.dirname,
   '__screenshots__/workflow-shell-faces.spec.ts',
-  process.platform === 'darwin' ? 'darwin' : 'linux',
 );
 
 test('exact diff of every committed compact baseline', async ({ page }) => {

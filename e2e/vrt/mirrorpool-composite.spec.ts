@@ -22,18 +22,20 @@
 // canvas is a page capture with a masked mismatch colour, never an exact-pixel
 // solo assert.
 //
-// BASELINE STATUS: DEFERRED on BOTH platforms via EXEMPT_BASELINE_PAIRS —
-// MIRRORPOOL is a maximally look-affecting video source HELD for owner
-// preview; no VRT baseline is pinned until the owner approves the look. Once
-// approved, capture darwin locally + linux via vrt-update.yml, then drop the
-// mirrorpool-* pairs from EXEMPT_BASELINE_PAIRS.
+// ⚠ BASELINE STATUS: NONE PINNED. MIRRORPOOL is a maximally look-affecting
+// video source HELD for owner preview, so no baseline exists to compare
+// against yet — these scenes will FAIL as "snapshot doesn't exist" until the
+// owner approves the look and `task vrt:commit` captures them on linux CI.
+// That is deliberate and visible, which is the point: the deferral used to be
+// an EXEMPT_BASELINE_PAIRS entry, i.e. an unconditional `test.skip()` that made
+// the debt invisible on every green run.
+// Baselines are authored by LINUX CI — one set, no {platform} segment (see
+// vrt.config.ts). `task vrt:commit` dispatches the capture; a local macOS run
+// is a smoke test, not a capture.
 
 import { test, expect } from '@playwright/test';
 import { spawnPatch } from '../tests/_helpers';
-import { EXEMPT_BASELINE_PAIRS } from './vrt-exemptions';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
-
-const VRT_PLATFORM = process.platform === 'darwin' ? 'darwin' : 'linux';
 
 test.describe.configure({ mode: 'default' });
 
@@ -70,10 +72,6 @@ const SCENES: Scene[] = [
 test.describe('VRT: MIRRORPOOL composite scenes', () => {
   for (const s of SCENES) {
     test(`${s.id} matches baseline`, async ({ page }) => {
-      test.skip(
-        EXEMPT_BASELINE_PAIRS.has(`${VRT_PLATFORM}/${s.id}`),
-        `${s.id} on ${VRT_PLATFORM}: baseline deferred (HELD for owner preview — see EXEMPT_BASELINE_PAIRS)`,
-      );
 
       test.setTimeout(90_000);
 

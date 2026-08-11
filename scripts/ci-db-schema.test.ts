@@ -76,21 +76,65 @@ export function workflows(dir = WORKFLOW_DIR): Array<[string, string]> {
 
 export interface ApplyStep {
   workflow: string;
+  /** The `jobs:` key that owns the step — '' if the scan cannot place it. */
+  job: string;
   line: number;
   /** The env var the URL is read from, e.g. `DATABASE_URL`. */
   urlVar: string;
+}
+
+/** The `jobs:` key owning each line, or '' outside the jobs block. A job key is
+ *  the only 2-space top-level mapping key under `jobs:`. This is what makes the
+ *  coverage assertion below per-JOB rather than per-WORKFLOW — see the comment
+ *  there for the hole that distinction closes. */
+function jobOwnerByLine(src: string): string[] {
+  const out: string[] = [];
+  let inJobs = false;
+  let job = '';
+  for (const line of src.split('\n')) {
+    if (/^jobs:\s*$/.test(line)) {
+      inJobs = true;
+      out.push('');
+      continue;
+    }
+    if (inJobs && /^[A-Za-z]/.test(line)) inJobs = false; // dedent to a new top-level key
+    if (inJobs) {
+      const m = /^ {2}([A-Za-z0-9_-]+):\s*$/.exec(line);
+      if (m) job = m[1];
+    }
+    out.push(inJobs ? job : '');
+  }
+  return out;
 }
 
 /** Every call to the shared applier, across all workflows. */
 export function applySteps(wfs = workflows()): ApplyStep[] {
   const found: ApplyStep[] = [];
   for (const [name, src] of wfs) {
+    const owner = jobOwnerByLine(src);
     src.split('\n').forEach((line, i) => {
       const m = line.match(/apply-db-schema\.sh\s+"\$([A-Z_][A-Z0-9_]*)"/);
-      if (m) found.push({ workflow: name, line: i + 1, urlVar: m[1] });
+      if (m) found.push({ workflow: name, job: owner[i] ?? '', line: i + 1, urlVar: m[1] });
     });
   }
   return found;
+}
+
+/** `<workflow>::<job>` for every job that sets a test DB url in its own body.
+ *  Measured 2026-08-10: no workflow sets one at workflow level, so a job-scoped
+ *  scan is complete — and a workflow-level one appearing later shows up as a
+ *  job with a url and no apply, which is the safe direction. */
+export function jobsWithTestDbUrl(wfs = workflows()): string[] {
+  const out: string[] = [];
+  for (const [name, src] of wfs) {
+    const owner = jobOwnerByLine(src);
+    src.split('\n').forEach((line, i) => {
+      if (!/^\s+(DATABASE_URL|PG_TEST_URL):/.test(line)) return;
+      const job = owner[i] ?? '';
+      if (job) out.push(`${name}::${job}`);
+    });
+  }
+  return [...new Set(out)].sort();
 }
 
 export interface ConditionalApply extends ApplyStep {
@@ -245,13 +289,41 @@ describe('every workflow applies the schema through the shared applier', () => {
     // THE assertion that keeps this file honest. Every other check below is
     // vacuously true over an empty list.
     expect(steps.length).toBeGreaterThan(0);
-    // Pinned to the count at the time of writing so a workflow that loses its
-    // apply step (or a regex that stops matching) is loud rather than quiet.
+  });
+
+  it('the jobs that apply the schema are EXACTLY the jobs with a test DB url', () => {
+    // ⚠ THIS REPLACES A HAND-TYPED `expect(steps.length).toBe(14)` (2026-08-10),
+    // and the replacement is strictly stronger rather than merely count-free.
+    //
+    // The literal existed because the coverage check below keys on WORKFLOW: a
+    // workflow with two DB-using jobs stayed "applying" after one of them lost
+    // its apply step, and only the total moved. That is not hypothetical — it is
+    // exactly what happened when vrt-update.yml's two-platform matrix collapsed
+    // to one capture job (#1458): the per-workflow check stayed green and the
+    // literal was the only thing that noticed, which is the wrong instrument
+    // noticing for the wrong reason.
+    //
+    // Keyed per JOB and asserted as a SET, both directions are named:
+    //   * a job that gains a test DB url and no apply → appears on the left;
+    //   * a job that loses its apply step             → appears on the left;
+    //   * an apply against no declared url            → appears on the right.
+    // Measured today: 13 jobs, 13 applies, a perfect 1:1. A count could only
+    // ever have said "13".
+    const applying = [...new Set(steps.map((s) => `${s.workflow}::${s.job}`))].sort();
     expect(
-      steps.length,
-      `expected 14 schema-apply steps, found ${steps.length}:\n` +
-        steps.map((s) => `  ${s.workflow}:${s.line} ($${s.urlVar})`).join('\n'),
-    ).toBe(14);
+      jobsWithTestDbUrl(),
+      'the set of jobs declaring a test DB url and the set applying the schema have ' +
+        'diverged. A job on the left but not the right runs tests against a table-less ' +
+        'database; one on the right but not the left applies to a url it never sets.',
+    ).toEqual(applying);
+  });
+
+  it('...and every apply step was placed in a job (the attribution is not silently empty)', () => {
+    // The set equality above compares `workflow::job` keys. If `jobOwnerByLine`
+    // ever stopped resolving, EVERY key would collapse to `workflow::` on both
+    // sides and the assertion would pass while measuring nothing.
+    const unplaced = steps.filter((s) => !s.job).map((s) => `${s.workflow}:${s.line}`);
+    expect(unplaced, 'apply steps the job scan could not place').toEqual([]);
   });
 
   it('no workflow hand-rolls `psql -f db/schema/…` any more', () => {
@@ -370,11 +442,51 @@ describe('negative controls: the checkers can actually fail', () => {
     expect(rawPsqlApplies(synthetic)).toEqual([]);
   });
 
-  it('applySteps() finds the applier and reads back the right url var', () => {
+  it('applySteps() finds the applier and reads back the right url var AND job', () => {
     const synthetic: Array<[string, string]> = [
-      ['ok.yml', '        run: flox activate -- scripts/apply-db-schema.sh "$PG_TEST_URL"\n'],
+      [
+        'ok.yml',
+        [
+          'jobs:',
+          '  build:',
+          '    steps:',
+          '      - name: Apply DB schema',
+          '        run: flox activate -- scripts/apply-db-schema.sh "$PG_TEST_URL"',
+        ].join('\n'),
+      ],
     ];
-    expect(applySteps(synthetic)).toEqual([{ workflow: 'ok.yml', line: 1, urlVar: 'PG_TEST_URL' }]);
+    expect(applySteps(synthetic)).toEqual([
+      { workflow: 'ok.yml', job: 'build', line: 5, urlVar: 'PG_TEST_URL' },
+    ]);
+  });
+
+  it('NEGATIVE CONTROL: the per-JOB scan sees a second job that lost its apply', () => {
+    // THE case a per-WORKFLOW check is structurally unable to see, and the
+    // reason the literal `14` existed. Two DB-using jobs in one file; only one
+    // applies. Per workflow this file is "applying" and green.
+    const synthetic: Array<[string, string]> = [
+      [
+        'two-jobs.yml',
+        [
+          'jobs:',
+          '  alpha:',
+          '    env:',
+          '      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/x_test',
+          '    steps:',
+          '      - run: flox activate -- scripts/apply-db-schema.sh "$DATABASE_URL"',
+          '  beta:',
+          '    env:',
+          '      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/x_test',
+          '    steps:',
+          '      - run: echo no schema here',
+        ].join('\n'),
+      ],
+    ];
+    expect(jobsWithTestDbUrl(synthetic)).toEqual(['two-jobs.yml::alpha', 'two-jobs.yml::beta']);
+    const applying = applySteps(synthetic).map((s) => `${s.workflow}::${s.job}`);
+    expect(applying).toEqual(['two-jobs.yml::alpha']);
+    // …so the real assertion would be RED, naming beta.
+    expect(jobsWithTestDbUrl(synthetic)).not.toEqual(applying);
   });
 
   it('isEphemeralTestUrl() REJECTS a real host and a non-test database', () => {

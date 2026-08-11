@@ -267,8 +267,7 @@ surface — run `flox activate -- task pr:conflict-sweep` after any merge:
 | `$lib/ui/workflow/shell-cells.ts` | one `SHELL_CELLS` record |
 | `$lib/ui/workflow/sidebar-panels.ts` | `custom` sidebar block registry |
 | `e2e/vrt/workflow-shell-faces.spec.ts` | the `FACES` roster |
-| `e2e/vrt/vrt-exemptions.ts` | `EXEMPT_BASELINE_PAIRS` (linux pairs) |
-| `packages/web/src/lib/audio/modules/vrt-meta.test.ts` | BOTH ratchets |
+| `packages/web/src/lib/audio/modules/vrt-meta.test.ts` | only if you touch `STRICT_VRT_MODULES` |
 | `$lib/control/push2/push-card-config.ts` + `push-card-schema.test.ts` | see below |
 | `$lib/docs/contract-lock.txt` | GENERATED — see below |
 
@@ -345,12 +344,14 @@ cause (a `hero.cell` suppresses the glyph there). Those belong in
 `VRT_LIVE_SURFACES` (`e2e/vrt/vrt-live-surfaces.ts:338`) with a mask **and** a
 measured companion — not in a face PR.
 
-**New linux pairs, in ONE commit:** add `linux/face-<t>-{compact,dock}` to
-`EXEMPT_BASELINE_PAIRS`, move BOTH `vrt-meta` ceilings by the same count
-(`SHARED_LINUX_PAIR_CEILING` is list-anchored and moves immediately;
-`LINUX_DEFICIT_CEILING` is artifact-anchored and does **not** move until the
-PNGs land), and re-pin the ledger with `flox activate -- task
-test:ledger:accept`. Then drain + dispatch — see CLAUDE.md's ordering rules.
+**New face scenes need NOTHING declared** (since #1458). Add the module to the
+`FACES` roster, push, and run `flox activate -- task vrt:commit` — linux CI
+writes `face-<t>-compact.png` and `face-<t>-dock.png` and commits them to the
+branch. There is no pair to add, no ceiling to move, no ledger to re-pin, and no
+drain-before-dispatch ordering: all of that existed to manage a second baseline
+population that no longer exists. Until the capture lands the two scenes FAIL as
+"snapshot doesn't exist", which is the visible-debt state the exemption pair used
+to hide.
 
 ## Accept loops — what each re-pins
 

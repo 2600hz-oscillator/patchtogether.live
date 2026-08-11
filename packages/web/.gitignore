@@ -16,7 +16,7 @@ build/
 src/lib/docs/module-docs.generated.ts
 
 # Numbered-control DEVICE-FACE doc images — build-COPIED from the canonical
-# LFS source (e2e/vrt/__annotated__/darwin/) by scripts/copy-doc-faces.sh at
+# LFS source (e2e/vrt/__annotated__/) by scripts/copy-doc-faces.sh at
 # `task build`. Committing them here would duplicate the LFS PNGs, so the
 # static copy is a build artifact, not a source of truth.
 static/docs/module-faces/

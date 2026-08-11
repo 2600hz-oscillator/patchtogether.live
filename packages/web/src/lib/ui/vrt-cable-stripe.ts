@@ -619,6 +619,17 @@ export const NON_CARD_CAPTURE_DIRS: Record<string, string> = {
   'groups.spec.ts': 'group frame, stripe is var(--accent) not a cable token',
   'interactions.spec.ts': 'menus/palettes, no module card',
   'landing.spec.ts': 'marketing page',
+  // NEW DIRECTORY, and it appeared because the platform collapse gave these
+  // three scenes their FIRST baseline on any platform: mirrorpool-mirror,
+  // -refract and -storm existed on neither darwin nor linux before the
+  // single-baseline capture. So this entry is not bookkeeping for a rename —
+  // it is classifying genuinely new coverage. Same shape as its six sibling
+  // `*-composite` dirs: `spawnPatch` builds a multi-node patch and the assert
+  // is `expect(page).toHaveScreenshot(…)`, i.e. the VIEWPORT, so there is no
+  // single card stripe band for this gate to sample. (Cables ARE in frame —
+  // the scene spawns edges — but this bucket is about the absence of a card
+  // BAND to measure, not the absence of cables.)
+  'mirrorpool-composite.spec.ts': 'full-page composite (multiple cards)',
   'pentemelodica-composite.spec.ts': 'full-page composite (multiple cards)',
   'topbar.spec.ts': 'page chrome, no module card',
   'vrt-composite-coverage.spec.ts': 'full-page composite (multiple cards)',
