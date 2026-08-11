@@ -13,8 +13,8 @@
 // since Playwright only rewrites a snapshot on FAILURE, `--update-snapshots`
 // cannot repair it either. Measured on this repo: #1159 recoloured every
 // cable token and re-pinned a handful of PNGs; 76 of the token-pinned
-// baselines were still on the OLD hues nine days later, across BOTH
-// platforms, with a green required lane the whole time.
+// baselines were still on the OLD hues nine days later, on both of the
+// baseline sets that existed then, with a green required lane the whole time.
 //
 // WHERE IT RUNS. The PNGs are git-LFS objects and the `unit` lane checks out
 // `lfs: false`, so there the files are pointer stubs and this gate would
@@ -35,20 +35,19 @@
 //      `maxDiffPixelRatio`, so the recapture PASSES the comparison and
 //      Playwright — which only rewrites a snapshot on FAILURE — writes nothing.
 //      A MISSING snapshot is always written. (CLAUDE.md, the A2/#1213 hole.)
-//   2. darwin: recapture locally (`task vrt` / `task vrt:one -- <grep>`). CI
-//      renders on linux only, so darwin baselines are authored on a dev box.
-//   3. linux: `gh workflow run vrt-update.yml -f ref=<branch> -f platform=linux`,
-//      UNSCOPED, and NEVER a hand edit on macOS. DRAIN any `EXEMPT_BASELINE_PAIRS`
-//      entry for those scenes FIRST — an exempt pair is `test.skip()`-ed
-//      unconditionally, so the dispatch writes nothing for it and comes back
-//      green having captured zero.
-//   4. Baselines the gate reports as `quarantined` cannot be repaired at all
-//      (nothing compares them, so nothing can rewrite them). They are excluded
-//      from the assertion for exactly that reason, and are printed every run so
-//      the debt stays visible rather than becoming invisible coverage.
+//   2. `gh workflow run vrt-update.yml -f ref=<branch>` (or `task vrt:commit`),
+//      UNSCOPED, and NEVER a hand edit on macOS. Linux CI is the only baseline
+//      author — a local darwin render is a smoke test, not a capture.
 //
-// A palette change that cannot follow steps 1-3 must not be landed by relaxing
-// this gate.
+// A palette change that cannot follow those two steps must not be landed by
+// relaxing this gate.
+//
+// ⚠ THE `quarantined` BUCKET IS GONE (2026-08-10) and that is a coverage
+// INCREASE, not a deletion. It held baselines listed in EXEMPT_BASELINE_PAIRS:
+// `test.skip()`-ed unconditionally, therefore compared by nothing, therefore
+// neither assertable nor repairable. With the platform dimension collapsed
+// there is no such set and no such state — every committed baseline is
+// compared, so every one of them is held to the current palette.
 
 import { describe, expect, it } from 'vitest';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
@@ -69,10 +68,6 @@ import {
   stripeSourceToken,
 } from '$lib/ui/vrt-cable-stripe';
 import { readCardSourceWithDelegates } from '$lib/ui/card-source';
-// vitest's resolve.alias doesn't reach across the /e2e/ workspace, so this is a
-// relative path — same as vrt-meta.test.ts.
-import { EXEMPT_BASELINE_PAIRS } from '../../../../../e2e/vrt/vrt-exemptions';
-
 // This file lives at packages/web/src/lib/ui/. Five `..` hops = repo root.
 const REPO_ROOT = resolve(import.meta.dirname, '../../../../..');
 const CARD_DIR = resolve(REPO_ROOT, 'packages/web/src/lib/ui/modules');
@@ -96,22 +91,31 @@ const REQUIRED = process.env.VRT_STRIPE_PALETTE_REQUIRED === '1';
 const LFS_POINTER_PREFIX = 'version https://git-lfs';
 
 /**
- * LOWER BOUND on how many baselines this gate must actually compare.
+ * ⚠ `MIN_TOKEN_PINNED_BASELINES` (200) IS GONE (2026-08-10) — a hand-typed
+ * population count, the species CLAUDE.md now forbids outright.
  *
- * Without it the gate is one bad regex away from vacuity: a `.stripe` markup
- * change would silently move every card into "not token-pinned" and the suite
- * would stay green while checking nothing. This is a VACUITY TRIPWIRE, not a
- * coverage target — it wants headroom, not precision.
+ * WHAT IT CLAIMED TO PROTECT, checked before deleting rather than assumed:
+ * "one bad regex away from vacuity — a `.stripe` markup change would silently
+ * move every card into not-token-pinned and the suite would stay green".
+ * Traced against the tests that remain, that exact failure is caught THREE
+ * times over, each by a NAME rather than a number:
  *
- * Measured 2026-08-01 with the widened directory scope: 190 token-pinned
- * baselines (128 in `vrt.spec.ts`, 62 across the other 8 single-card dirs).
- * Re-measured 2026-08-02 after validating the exclusions: 219 (+27 `vrt-toybox`
- * as a cable-edge dir, +1 `vrt-aspect-16x9`, +1 `vrt-synesthesia-video` — all
- * three were mis-declared NON-card and therefore unreachable). Floor keeps its
- * original ~20 rows of headroom.
+ *   * every card falling out of `pinned` puts every scene into `skipped`, so
+ *     `dropped` explodes and `toEqual(NOT_TOKEN_PINNED_SCENES)` — 26 named
+ *     scenes, asserted in BOTH directions — fails naming the newcomers;
+ *   * a spec directory vanishing from the walk is caught by the
+ *     classification test, which anchors to `readdirSync(SCREENSHOT_ROOT)` and
+ *     fails on a table entry for a directory that no longer exists;
+ *   * a directory being silently EXCLUDED from the walk means it is in
+ *     `NON_CARD_CAPTURE_DIRS`, and every claim in that table is separately
+ *     asserted true (no cable band in the scan window).
+ *
+ * And the degenerate case a floor is really for — the PNG loop reading zero
+ * files — makes `dropped` empty against a non-empty declared list, which is
+ * red. A floor could add nothing except slack: it carried ~20 baselines of it,
+ * which the test below it already says out loud is enough room for a card to
+ * quietly stop being token-pinned.
  */
-const MIN_TOKEN_PINNED_BASELINES = 200;
-
 /**
  * Baselines that are token-pinned, COMPARED by a test, and still painting a
  * pre-#1159 hue — because the PR that regenerates them is a different one.
@@ -148,43 +152,27 @@ const MIN_TOKEN_PINNED_BASELINES = 200;
  * 40-wide hole and nobody would have known. That is the whole argument for
  * paying the one-edit cost, and it is now measured rather than reasoned.
  *
- * THE 16 BELOW ARE NOT #1279's. `vrt-toybox` is blanket-`test.skip`-ed on
- * linux and CI renders on linux, so nothing has ever compared these on any CI
- * run — they need a darwin recapture, which is a separate PR.
+ * ⚠ DRAINED TO EMPTY 2026-08-10 — BY PAYMENT, NOT BY DELETION, and the
+ * distinction is the whole point of keeping this note.
+ *
+ * The 16 survivors were all `vrt-toybox.spec.ts/darwin/*`. They were stale
+ * because `vrt-toybox` was blanket-`test.skip`-ed on linux and CI renders on
+ * linux, so NOTHING on any CI run had ever compared them — they were carrying a
+ * pre-#1159 `--cable-video` frame with no mechanism that could notice. The
+ * standing plan was "a darwin recapture, in a separate PR", which never came.
+ *
+ * The single-baseline collapse pays it outright: the blanket skip is gone, the
+ * darwin PNGs are deleted, and the vrt-update capture writes fresh LINUX
+ * baselines for all 27 toybox scenes — rendered against the CURRENT palette by
+ * construction. There is no deferred work left to name, so the list is empty
+ * rather than carrying entries that describe files which no longer exist.
+ *
+ * ⚠ AN EMPTY EXACT SET IS STILL A REAL ASSERTION here, unlike an empty ceiling:
+ * `toEqual([])` fails the moment ANY committed baseline paints a retired hue.
+ * That is strictly stronger than what it replaced. If the capture ever lands a
+ * stale-looking toybox frame, this reddens naming it.
  */
-const PENDING_PALETTE_REGEN: readonly string[] = [
-  // ── FOUND 2026-08-02 BY VALIDATING THE EXCLUSIONS (16) ────────────────────
-  // These were not "missed" — they were UNREACHABLE. `vrt-toybox` sat in
-  // NON_CARD_CAPTURE_DIRS, so `measure()` never opened it and neither
-  // instrument control could: the pixel control only re-measures rows
-  // `measure()` returned. The exclusion claim was simply false — the canvas
-  // wrapper is `border: 1px solid var(--cable-video)`.
-  //
-  // DRAIN WHEN: the baselines are recaptured. Deliberately NOT done here —
-  // they are darwin-only GPU captures (`vrt-toybox` is blanket-skipped on
-  // linux, which is why nothing on CI has ever compared them), and 16
-  // look-affecting WebGL baselines belong in their own PR with owner eyes, not
-  // smuggled into a gate change. #1279 does NOT regenerate them — it names
-  // vrt-toybox as its own negative control, regenerating zero. `git rm` them
-  // first: a ~1px frame on a 200x150 capture is under `maxDiffPixelRatio`, so
-  // `--update-snapshots` writes nothing (the A2/#1213 trap this gate is for).
-  'vrt-toybox.spec.ts/darwin/combine-composite',
-  'vrt-toybox.spec.ts/darwin/cos-gradient',
-  'vrt-toybox.spec.ts/darwin/feedback-blur',
-  'vrt-toybox.spec.ts/darwin/feedback-tunnel',
-  'vrt-toybox.spec.ts/darwin/frag-kaleido',
-  'vrt-toybox.spec.ts/darwin/hsv-plasma',
-  'vrt-toybox.spec.ts/darwin/noise-fbm',
-  'vrt-toybox.spec.ts/darwin/obj-bird-ernest',
-  'vrt-toybox.spec.ts/darwin/obj-icosahedron',
-  'vrt-toybox.spec.ts/darwin/obj-sphere',
-  'vrt-toybox.spec.ts/darwin/obj-spot',
-  'vrt-toybox.spec.ts/darwin/obj-teapot',
-  'vrt-toybox.spec.ts/darwin/preset-flighty',
-  'vrt-toybox.spec.ts/darwin/preset-worley-bloom',
-  'vrt-toybox.spec.ts/darwin/truchet',
-  'vrt-toybox.spec.ts/darwin/worley-cells',
-];
+const PENDING_PALETTE_REGEN: readonly string[] = [];
 
 /**
  * Scene stems whose card does NOT pin `.stripe` to a `--cable-*` token, and is
@@ -224,10 +212,9 @@ function cardBasenameByType(): Record<string, string> {
 
 /** One token-pinned baseline, measured once. */
 interface Pinned {
-  /** `<spec>/<platform>/<scene>` — unique across the whole screenshot tree. */
+  /** `<spec>/<scene>` — unique across the whole screenshot tree. */
   key: string;
   spec: string;
-  platform: string;
   scene: string;
   type: string;
   card: string;
@@ -244,7 +231,6 @@ interface Pinned {
 interface Measured {
   pinned: Pinned[];
   skipped: string[];
-  quarantined: string[];
   pointers: number;
 }
 
@@ -267,44 +253,17 @@ function measure(readBytes: (path: string) => Buffer = readFileSync): Measured {
   const explicit = cardBasenameByType();
   const pinned: Pinned[] = [];
   const skipped: string[] = [];
-  const quarantined: string[] = [];
   let pointers = 0;
   for (const spec of baselineDirs()) {
     const sceneType = CARD_CAPTURE_DIRS[spec];
     const edge = CABLE_EDGE_DIRS[spec];
     if (!sceneType && !edge) continue; // declared non-card, or unclassified (asserted below)
-    const specDir = resolve(SCREENSHOT_ROOT, spec);
-    for (const platform of readdirSync(specDir).sort()) {
-      const dir = resolve(specDir, platform);
-      if (!statSync(dir).isDirectory()) continue;
+    const dir = resolve(SCREENSHOT_ROOT, spec);
+    {
       for (const file of readdirSync(dir).sort()) {
         if (!file.endsWith('.png')) continue;
         const scene = file.replace(/\.png$/, '');
-        const key = `${spec}/${platform}/${scene}`;
-        // A pair in EXEMPT_BASELINE_PAIRS is `test.skip()`-ed UNCONDITIONALLY, so
-        // its PNG is not compared by anything and CANNOT be repaired by
-        // `--update-snapshots` (the test never runs). Holding it to the current
-        // palette would make this gate un-satisfiable, so it is reported instead
-        // of asserted — see the `quarantined` list printed by the coverage test.
-        //
-        // ⚠ DO NOT DELETE A QUARANTINED PNG AS A MATTER OF COURSE. An earlier
-        // revision of this PR removed 14 of them on the reasoning "a baseline
-        // nothing compares is not coverage". Fourteen of those exact pairs are
-        // being DRAINED by PR #1272 — after which the scenes ARE compared on
-        // linux, so deleting the PNGs would have left 10 modules with no linux
-        // baseline and turned the `unit` lane red on main. The two PRs share
-        // ZERO files, so nothing would have conflicted and nothing would have
-        // warned. They are restored, and #1272's `vrt-update.yml` dispatch has
-        // since re-captured all 15 on linux (bot commit ef29f3db) — verified
-        // to paint the CURRENT palette, so this gate stays green whichever PR
-        // lands first. Delete a quarantined baseline only when you have checked
-        // that no in-flight PR drains its pair.
-        // (The Set is GLOBAL and keyed `<platform>/<sceneId>`: every card-capture
-        // spec consults it with its own scene id, which is the PNG stem.)
-        if (EXEMPT_BASELINE_PAIRS.has(`${platform}/${scene}`)) {
-          quarantined.push(key);
-          continue;
-        }
+        const key = `${spec}/${scene}`;
         const type = edge ? edge.type : sceneType!(scene);
         const card = explicit[type] ?? conventionalCardBasename(type);
         let token: string;
@@ -333,13 +292,13 @@ function measure(readBytes: (path: string) => Buffer = readFileSync): Measured {
         }
         const band = findStripeBand(new Uint8Array(bytes));
         pinned.push({
-          key, spec, platform, scene, type, card, token,
+          key, spec, scene, type, card, token,
           got: band?.hex, bg: band?.bgHex, y: band?.y, saturation: band?.saturation,
         });
       }
     }
   }
-  return { pinned, skipped, quarantined, pointers };
+  return { pinned, skipped, pointers };
 }
 
 /** Which of the measured baselines disagree with a given palette? */
@@ -391,12 +350,10 @@ function scanExcluded(dirs: string[]): { banded: string[]; read: number; stubs: 
     const dir = resolve(SCREENSHOT_ROOT, spec);
     if (!existsSync(dir)) continue;
     const hits: string[] = [];
-    for (const platform of readdirSync(dir).sort()) {
-      const pd = resolve(dir, platform);
-      if (!statSync(pd).isDirectory()) continue;
-      for (const f of readdirSync(pd).sort()) {
+    {
+      for (const f of readdirSync(dir).sort()) {
         if (!f.endsWith('.png')) continue;
-        const bytes = readFileSync(resolve(pd, f));
+        const bytes = readFileSync(resolve(dir, f));
         if (bytes.subarray(0, LFS_POINTER_PREFIX.length).toString('utf8') === LFS_POINTER_PREFIX) {
           stubs++;
           continue;
@@ -404,7 +361,7 @@ function scanExcluded(dirs: string[]): { banded: string[]; read: number; stubs: 
         read++;
         const band = findStripeBand(new Uint8Array(bytes));
         const label = band && hue[band.hex.toLowerCase()];
-        if (label) hits.push(`${platform}/${f} y=${band!.y} ${band!.hex} (${label})`);
+        if (label) hits.push(`${f} y=${band!.y} ${band!.hex} (${label})`);
       }
     }
     if (hits.length) {
@@ -417,7 +374,7 @@ function scanExcluded(dirs: string[]): { banded: string[]; read: number; stubs: 
 const cableBandedDirs = (dirs: string[]): string[] => scanExcluded(dirs).banded;
 
 describe('VRT baselines paint the CURRENT --cable-* stripe', () => {
-  const { pinned, skipped, quarantined, pointers } = measure();
+  const { pinned, skipped, pointers } = measure();
   const unreadable = pointers > 0;
   const tokens = CABLE_VARS as unknown as Record<string, string>;
 
@@ -492,17 +449,56 @@ describe('VRT baselines paint the CURRENT --cable-* stripe', () => {
       `CABLE_EDGE_DIRS (a cable token frames the captured element), or to ` +
       `NON_CARD_CAPTURE_DIRS (with the reason it has no cable band), in vrt-cable-stripe.ts.`,
     ).toEqual([]);
-    // ...and the reverse: a table entry for a directory that no longer exists is
-    // dead weight that quietly shrinks the gate's real scope.
-    const dirs = new Set(baselineDirs());
+    // ...and the reverse: a table entry that describes nothing real is dead
+    // weight that quietly shrinks the gate's real scope.
+    //
+    // ⚠ ANCHORED TO THE SPEC FILE, NOT TO THE BASELINE DIRECTORY, and the
+    // difference is not cosmetic. Each table key is a claim ABOUT A SPEC
+    // ("`vrt-toybox.spec.ts` captures a canvas framed in `--cable-video`"),
+    // so the artifact that makes the claim live is `e2e/vrt/<key>`. Keying off
+    // `__screenshots__/<key>/` instead conflates "this spec exists" with "this
+    // spec has PNGs committed right this second", and those come apart for
+    // ordinary reasons: a spec authored before its first capture, and — the
+    // case that found this — a migration window. When the `{platform}`
+    // collapse deleted the darwin tree, 21 of the 30 entries pointed at
+    // directories that were absent for a few hours and then came back
+    // unchanged. Re-deriving the tables against that tree would have deleted
+    // 21 correct entries and then needed all 21 restored.
+    //
+    // A spec that is deleted or renamed still reddens here, which is the rot
+    // this was written to catch.
     const dead = [
       ...Object.keys(CARD_CAPTURE_DIRS),
       ...Object.keys(CABLE_EDGE_DIRS),
       ...Object.keys(NON_CARD_CAPTURE_DIRS),
     ]
+      .filter((d) => !existsSync(resolve(SPEC_DIR, d)))
+      .sort();
+    expect(
+      dead,
+      'classification entries naming a VRT spec that no longer exists under e2e/vrt/. ' +
+        'Delete the entry, or restore the spec.',
+    ).toEqual([]);
+
+    // State the gate's live scope every run, green included: a classified spec
+    // with no committed baselines is checking nothing right now. Informational
+    // by design — the assertion that baselines EXIST belongs to vrt-meta and
+    // vrt-live-surfaces, and duplicating it here would just fail twice for one
+    // cause while making this gate unusable mid-migration.
+    const dirs = new Set(baselineDirs());
+    const unpopulated = [
+      ...Object.keys(CARD_CAPTURE_DIRS),
+      ...Object.keys(CABLE_EDGE_DIRS),
+    ]
       .filter((d) => !dirs.has(d))
       .sort();
-    expect(dead, 'classification entries for baseline dirs that no longer exist').toEqual([]);
+    if (unpopulated.length) {
+      console.info(
+        `[vrt-cable-stripe] ${unpopulated.length} classified spec(s) have NO committed ` +
+          `baselines, so this gate currently checks nothing for them:\n    ` +
+          `${unpopulated.join('\n    ')}`,
+      );
+    }
     // A directory may not be claimed by two tables at once — overlapping claims
     // make "which rule applied?" unanswerable and hide one of them.
     const claimed = [
@@ -600,13 +596,16 @@ describe('VRT baselines paint the CURRENT --cable-* stripe', () => {
       if (spec === 'vrt.spec.ts') continue; // registry-driven: scene id IS the type
       const src = readFileSync(specPath, 'utf8');
       const dir = resolve(SCREENSHOT_ROOT, spec);
+      // A classified spec with no baselines yet has no stems to check. Guard
+      // the read rather than letting it throw: an unguarded readdirSync here
+      // turned the whole gate into an ENOENT crash the moment the `{platform}`
+      // collapse emptied the tree, which reports as a broken test file instead
+      // of as the one assertion that actually has something to say. A gate
+      // should fail with its own message or not at all.
+      if (!existsSync(dir)) continue;
       const types = new Set<string>();
-      for (const platform of readdirSync(dir)) {
-        const pd = resolve(dir, platform);
-        if (!statSync(pd).isDirectory()) continue;
-        for (const f of readdirSync(pd)) {
-          if (f.endsWith('.png')) types.add(toType(f.replace(/\.png$/, '')));
-        }
+      for (const f of readdirSync(dir)) {
+        if (f.endsWith('.png')) types.add(toType(f.replace(/\.png$/, '')));
       }
       for (const t of types) {
         // The recognised ways a spec can name the module it screenshots. A spec
@@ -653,25 +652,28 @@ describe('VRT baselines paint the CURRENT --cable-* stripe', () => {
       `${Object.keys(CARD_CAPTURE_DIRS).length} card-capture + ` +
       `${Object.keys(CABLE_EDGE_DIRS).length} cable-edge dirs ` +
       `(${Object.keys(NON_CARD_CAPTURE_DIRS).length} excluded, each claim asserted).\n` +
-      `  EXEMPT_BASELINE_PAIRS (never compared by any test, so their pixels can be neither ` +
-      `asserted nor repaired): ${quarantined.join(', ') || '(none)'}\n` +
       `  not token-pinned (${skipped.length}):\n    ${skipped.join('\n    ')}`,
     );
+    // No floor here — see the note where MIN_TOKEN_PINNED_BASELINES used to
+    // be. What this test still does is PRINT the scope every run, green
+    // included, so "the gate compared almost nothing" is visible in the log of
+    // the runs people actually read. The assertion that a resolver break is RED
+    // lives in the exact-set test immediately below.
     expect(
-      pinned.length,
-      `only ${pinned.length} baselines resolved to a --cable-* stripe token (floor ` +
-      `${MIN_TOKEN_PINNED_BASELINES}). A drop means the source-side resolver stopped recognising ` +
-      `cards — the gate would be vacuous. Not-pinned reasons:\n  ${skipped.join('\n  ')}`,
-    ).toBeGreaterThanOrEqual(MIN_TOKEN_PINNED_BASELINES);
+      pinned.length > 0,
+      `NO baseline resolved to a --cable-* stripe token at all. Either the screenshot tree is ` +
+      `unreadable or the source-side resolver stopped recognising cards. Not-pinned reasons:\n  ` +
+      `${skipped.join('\n  ')}`,
+    ).toBe(true);
   });
 
   it('the set of NOT-token-pinned cards is exactly the declared one', () => {
     if (unreadable && !REQUIRED) return;
-    // The count floor above has ~20 baselines of slack, so a single card
-    // converting `.stripe` from `var(--cable-audio)` to a hardcoded `#38d3c8`
-    // would drop out of `pinned` and stay under the floor — the escape hatch
-    // from this gate is to STOP being token-pinned, and a floor rewards it with
-    // silence. Pin the identity of the excused cards, not just their number.
+    // THE gate on the resolver, and the reason no count floor is needed above.
+    // A single card converting `.stripe` from `var(--cable-audio)` to a
+    // hardcoded `#38d3c8` would drop out of `pinned` — the escape hatch from
+    // this gate is to STOP being token-pinned, and any count with slack in it
+    // rewards that with silence. Pin the IDENTITY of the excused cards.
     const dropped = [...new Set(skipped.map((s) => s.split(': ')[0].split('/').pop()!))].sort();
     expect(
       dropped,
@@ -747,9 +749,7 @@ describe('VRT baselines paint the CURRENT --cable-* stripe', () => {
       (p) => p.token === '--cable-video' && !pendingSet.has(p.key) && p.y !== undefined,
     );
     expect(target, 'no --cable-video baseline available to control with').toBeTruthy();
-    const path = resolve(
-      SCREENSHOT_ROOT, target!.spec, target!.platform, `${target!.scene}.png`,
-    );
+    const path = resolve(SCREENSHOT_ROOT, target!.spec, `${target!.scene}.png`);
     // A fully-covered stripe can span TWO rows, and the band is chosen by
     // saturation — repainting just one leaves the other pure and winning
     // (measured: the gate still read #b57bff). #ff0000 hides this because its
@@ -836,7 +836,7 @@ describe('VRT baselines paint the CURRENT --cable-* stripe', () => {
       );
       if (!target) continue;
       targets.push(target);
-      const path = resolve(SCREENSHOT_ROOT, target.spec, target.platform, `${target.scene}.png`);
+      const path = resolve(SCREENSHOT_ROOT, target.spec, `${target.scene}.png`);
       perturbed.set(
         path,
         Buffer.from(repaintStripeRow(new Uint8Array(readFileSync(path)), target.y!, PERTURBED)),

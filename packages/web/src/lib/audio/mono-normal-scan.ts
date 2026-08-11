@@ -3,7 +3,7 @@
 // THE ENUMERATOR for mono normals declared in packages/dsp/src worklets.
 // Extracted from the gate (mono-normal-not-defeated.test.ts) so the scan lives
 // in ONE place and can be unit-tested against synthetic source without touching
-// the repo — the house pattern of card-def-agreement.ts / vrt-platform-gaps.ts.
+// the repo — the house pattern of card-def-agreement.ts.
 //
 // ── WHY THIS EXISTS (the gate that could not see 30 % of its own population) ──
 // The gate shipped in #1343 detected a mono normal with ONE regex matching ONE

@@ -6,8 +6,8 @@
 //   - matches ONLY vrt-annotated.spec.ts (so the card faces never run in the
 //     `task vrt` regression gate, where they'd be diffed as if they were
 //     regression baselines — they are DOC ASSETS),
-//   - writes the numbered PNGs to e2e/vrt/__annotated__/{platform}/{type}.png
-//     (committed via LFS; the doc build copies darwin into static/).
+//   - writes the numbered PNGs to e2e/vrt/__annotated__/{type}.png
+//     (committed via LFS; the doc build copies them into static/).
 //
 // The legend JSON ({type}.legend.json — number → stable test id) is written by
 // the spec; the doc page resolves it to authored docs.controls blobs.
@@ -31,10 +31,16 @@ export default defineConfig({
   outputDir: './test-results-annotated',
   timeout: 30_000,
 
-  // Annotated faces live under __annotated__/{platform}/{type}.png — a flat
-  // per-platform dir (no {testFilePath} nesting), since these are doc assets
-  // the build copies straight into static/docs/module-faces/.
-  snapshotPathTemplate: '__annotated__/{platform}/{arg}{ext}',
+  // Annotated faces live under __annotated__/{type}.png — a flat dir (no
+  // {testFilePath} nesting), since these are doc assets the build copies
+  // straight into static/docs/module-faces/, next to the {type}.legend.json
+  // the spec writes.
+  //
+  // ⚠ NO `{platform}` SEGMENT, matching vrt.config.ts — see the long note
+  // there. These were `__annotated__/darwin/` and copy-doc-faces.sh hardcoded
+  // that subdir, so the published doc face was whatever the last macOS author
+  // rendered. One set, one path.
+  snapshotPathTemplate: '__annotated__/{arg}{ext}',
 
   expect: {
     // ⚠ `timeout` is NOT a `toHaveScreenshot` key — it belongs HERE, on

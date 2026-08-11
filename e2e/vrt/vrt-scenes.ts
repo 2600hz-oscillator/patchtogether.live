@@ -296,9 +296,10 @@ export const VRT_SCENES: Record<string, VrtScene> = {
   // baseline proves the VIDEOBOX -> VIDEO-OUT path renders video content
   // (the regression this PR fixes — output used to be black). We load the
   // trimmed lobby clip into a VIDEOBOX, seek to a FIXED timestamp, and
-  // pause, so the decoded frame is the same one every run. Codec frame-
-  // timing isn't bit-identical across platforms, so the darwin baseline is
-  // captured here and linux is marked pending (EXEMPT_BASELINE_PAIRS); the
+  // pause, so the decoded frame is the same one every run. Codec frame-timing
+  // is not bit-identical ACROSS platforms, which is why this scene used to be
+  // captured on darwin and deferred on linux; with one baseline set, authored
+  // by the platform that gates, that comparison never crosses platforms. The
   // hard non-black + moving gate lives in tests/videobox-output.spec.ts.
   videoOut: {
     nodes: [

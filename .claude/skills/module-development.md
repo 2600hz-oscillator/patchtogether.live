@@ -70,7 +70,7 @@ remain the cross-PR conflict surface (see `pr-workflow` silent-drop section):
 | File | What to add |
 |------|-------------|
 | `packages/web/src/lib/docs/module-manifest.ts` | A one-line `DESCRIPTIONS[<type>]` entry — **gated by its own unit test**; a new module fails `unit` without it. (Ship real, robust module docs too — not just this one-liner.) |
-| `e2e/vrt/vrt-exemptions.ts` | Only if your module's render is non-deterministic (animated 3D, CRT feedback): add `EXEMPT_FROM_VRT` with a reason, or an `EXEMPT_BASELINE_PAIRS` entry for a per-platform baseline that's still pending. |
+| `e2e/vrt/vrt-exemptions.ts` | Only if your module's render is non-deterministic (animated 3D, CRT feedback): add `EXEMPT_FROM_VRT` with a >40-char reason **and** the matching `ALLOWED_PERMANENT_EXEMPT` entry — a module cannot self-exempt. Otherwise nothing: the baseline is captured by `task vrt:commit` on linux CI, never committed by you. |
 | `packages/web/src/lib/ui/modules-card-map.test.ts` | Add the new type to `EXPECTED_NODE_TYPES` (the coverage self-test's expected set). |
 | `e2e/tests/per-module-per-port*.spec.ts` + the per-port driver lists | Only if your module needs a bespoke driver or a per-port exemption; most modules are auto-enrolled. |
 

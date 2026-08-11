@@ -20,9 +20,8 @@ push new code/tests and use CI as the first check that they pass.
   vitest is lenient where svelte-check is strict (e.g. import-less worklet
   TS2306), so a test can pass vitest yet fail the typecheck gate.
 - This is the cheapest possible feedback loop; a CI cycle here is ~25 min under
-  load. Most of our recent red CI (per-port emit, stale SHA pins, missing
-  linux-VRT exemptions) was catchable locally with the exact spec for the new
-  module.
+  load. Most of our recent red CI (per-port emit, stale SHA pins) was catchable
+  locally with the exact spec for the new module.
 - **Capability- and renderer-dependent modules pass locally yet fail on CI** —
   for any module whose test depends on a hardware H.264 encoder, `getUserMedia`,
   or WebGL precision, **gate the assertion on a runtime capability probe**
@@ -147,168 +146,90 @@ always compiles via the dedicated `dsp-build` job.)
 > `task dsp:build` after, not `dsp:fetch-dist`, so you're testing this worktree's
 > actual sources.
 
-### VRT baselines: DRAIN the pending pairs BEFORE you dispatch the regen
+### VRT baselines: there is ONE SET and LINUX CI AUTHORS IT
 
-Ordering is load-bearing when you capture missing platform baselines with the
-`vrt-update.yml` workflow. A scene still listed in `EXEMPT_BASELINE_PAIRS`
-(`e2e/vrt/vrt-exemptions.ts`) is `test.skip()`-ed **UNCONDITIONALLY**, so a
-`--update-snapshots` run **writes NOTHING for it** — the dispatch comes back
-green having captured exactly zero of the baselines you wanted. **Drain first,
-dispatch second:**
+`snapshotPathTemplate` has **no `{platform}` segment** (`e2e/vrt/vrt.config.ts`).
+A baseline is one PNG at `__screenshots__/<spec>/<scene>.png`, written by the
+`vrt-update.yml` capture job on ubuntu-latest. **You never commit a baseline.**
 
-1. Remove the pending `<platform>/<scene>` pairs from `EXEMPT_BASELINE_PAIRS`
-   **and** lower the vrt-meta linux-deficit ratchet by the same count
-   (`packages/web/src/lib/audio/modules/vrt-meta.test.ts` — the ceiling only
-   shrinks, so it moves in the SAME commit) **and** re-run `flox activate --
-   task test:ledger:accept`. That third one is easy to miss and it is a hard
-   red: `docs/testing/test-ledger.generated.md` counts `EXEMPT_BASELINE_PAIRS`
-   (bucket 2, `scripts/test-ledger.mjs`), so ANY edit to an exemption list
-   leaves the generated ledger stale and `scripts/test-ledger.test.ts` fails in
-   the unit lane. It is a GENERATED artifact — re-pin it, never hand-edit it,
-   and land it in the SAME commit as the drain. Push that commit.
-2. *Then* dispatch against the branch that now has the pairs removed:
-   `flox activate -- gh workflow run vrt-update.yml -f ref=<branch> -f
-   platform=linux` (pick the ONE platform you need — the other runner is
-   redundant CI wall-time).
-3. The bot commits the PNGs onto the branch and close+reopens the PR so a real
-   `pull_request` run re-validates them (a GITHUB_TOKEN push doesn't fire CI,
-   and a `workflow_dispatch` run doesn't count toward required checks).
-   ⚠ That step (`revalidate`) declared `needs: [linux, darwin]` with no `if:`,
-   and a skipped `needs` **skips its dependents** — so from the single-platform
-   dispatch recommended in step 2 it **never ran**, silently, on a green run.
-   Fixed 2026-08-03; every baseline captured single-platform before that date
-   went in WITHOUT the documented re-validation. It now runs whenever at least
-   one platform succeeded *and* actually pushed a commit, and a capture that
-   committed nothing emits a `::warning::` and suppresses the re-validation
-   instead of burning a CI cycle on an unchanged branch.
+```sh
+flox activate -- task vrt:commit          # dispatch the capture for THIS branch
+flox activate -- task vrt                 # local smoke test: does it render, does it throw
+flox activate -- task vrt:docker          # OPTIONAL pixel-exact local loop (needs Docker)
+```
 
-Three dispatch gotchas, all confirmed on real runs:
+- **A local macOS run is not a verification.** It compares Metal-rendered text
+  against a linux baseline, so it reports AA/font drift that is not a
+  regression. That is the honest reading and it always was: before 2026-08-10 a
+  Mac dev's green came from comparing against a `darwin/` set **CI never read**.
+- `task vrt:docker` runs the suite in `mcr.microsoft.com/playwright:<pinned>-noble`
+  — the image tag is derived from `e2e/package.json`'s `@playwright/test` pin, so
+  a different Playwright means a different Chromium means different pixels.
+  Docker is **optional**; nothing in the repo requires it.
+- An intentional render change is reviewed as a **PR diff** through the
+  changeset gallery ci.yml posts (OLD / NEW / DIFF with a slider), not by
+  looking at PNG bytes.
 
-- **Never pass `-f grep=…`.** The run dies as `startup_failure` before any job
-  starts. Dispatch **unscoped** — the full-scene capture is the fast path, and
-  a skipped-because-still-exempt scene is untouched anyway.
-- The bot's push lands the follow-on runs in **`action_required`** (awaiting
-  manual approval), not `queued`. Check `gh run list` and approve rather than
-  assuming CI is merely slow.
-- **`--update-snapshots` CANNOT regenerate a PASSING-but-stale baseline** — and
-  this is a hole in the drain-first rule above, not an instance of it. Playwright
-  only rewrites a snapshot when the comparison **FAILS**. So a scene that is
-  never exempt, never skipped, and genuinely out of date still comes back with
-  **nothing committed** if its diff lands *under* the tolerance
-  (`DOCK_MAX_DIFF`, 1500 px). Found on A2 (#1213): swapping filter's MODE from a
-  bare detented knob to a labelled Segmented moved the dock face by **865 px** —
-  a whole primitive swap — and the dispatch committed zero files, twice.
-  **Fix: `git rm` the stale baseline first, then dispatch.** Playwright always
-  writes a *missing* snapshot. ⚠ The same arithmetic means the ordinary VRT gate
-  would not have flagged that swap either; a sub-tolerance render change is
-  invisible to both the gate and the regen. Treat a "green dispatch that
-  committed nothing" as a RED FLAG to investigate, never as "nothing to do".
-- **`git rm`-ing a LINUX baseline is not free — it manufactures an UNDECLARED
-  platform gap.** Ground truth for the deficit ratchet is "a darwin PNG with no
-  linux sibling", so deleting the linux PNG creates exactly that, and a gap no
-  mechanism explains is RED (`vrt-platform-gaps.ts` → `vrt-meta.test.ts`) for
-  the whole window until the bot's capture lands. So the `git rm` route costs a
-  temporary `EXEMPT_BASELINE_PAIRS` entry **plus** its ratchet move **plus** the
-  ledger re-pin — and then the reverse of all three. **MEASURE FIRST, then
-  choose**: run the scene locally and read the printed pixel diff. Over
-  `DOCK_MAX_DIFF` (measured 20516 px on the 2026-08-02 faceplate hero/annotation
-  change, 13.7× the 1500 budget) the comparison FAILS, so `--update-snapshots`
-  rewrites the baseline on its own and you should NOT remove it. Reserve the
-  `git rm` for the genuinely sub-tolerance case that motivated the rule. Either
-  way, **COUNT the files the bot commits against what you expected** — that is
-  the check that catches the miss, not the choice of route.
-- ⚠ **A `git rm`-ed baseline is SILENTLY RECREATED by the next plain VRT run —
-  no `--update-snapshots` required.** Playwright's `updateSnapshots` defaults to
-  **`'missing'`** (its own default; neither `vrt.config.ts` nor
-  `playwright.config.ts` overrides it), and `'missing'` *creates* an absent
-  snapshot. The test still fails — *"A snapshot doesn't exist …, writing
-  actual"* — so it is loud in the RUN OUTPUT and completely silent in the
-  **tree**: what lands is an untracked PNG that no gate reads and that a
-  `git add -A` will happily commit.
-  **This bites the `git rm` route directly, and the two removal shapes fail
-  differently:**
-  - Removed the **pair** (both platforms, the no-gap route): any later local
-    darwin run — *including a plain verification run you did not think of as a
-    capture* — restores `darwin/<scene>.png` alone and **re-manufactures the
-    exact darwin-without-linux gap the pair removal existed to avoid**.
-    Measured on vca (#1429): a read-only "did it still move?" sweep recreated
-    `darwin/rear-vca.png` between the `git rm` and the bot's capture.
-  - Removed **linux only**: a local darwin run canNOT repair it and canNOT
-    corrupt it either — `snapshotPathTemplate` is
-    `'…/{testFilePath}/{platform}/{arg}{ext}'` and `{platform}` resolves on the
-    RUNNING machine, so a darwin run only ever writes under `darwin/`. The
-    linux path stays empty until the bot captures it. (Worth stating because
-    the intuitive fear — "my darwin render lands at the linux path" — is the
-    one thing that cannot happen.)
-  **The check is `git status` for untracked PNGs after EVERY VRT run in a
-  window where you have deleted a baseline** — not just after the ones you
-  intended as captures. Delete anything the run recreated before committing,
-  and let the dispatch own the recapture.
+**Why it was ever otherwise, and what it cost.** `{platform}` resolves on the
+RUNNING machine, so a Mac dev wrote `darwin/` and CI read `linux/`. Two
+populations, therefore divergence, therefore an apparatus to track divergence:
+four gap-declaration mechanisms, three ratchets, a 617-line enumerator, a
+per-platform capture matrix and a merge-collision surface. Measured on `main`
+the day it was removed: **300 darwin PNGs, 156 linux, 146 darwin scenes with NO
+linux sibling** — 146 scenes that looked covered everywhere and were never
+diffed on the platform that gates. All of it is deleted; the sections that
+documented drain order, the four mechanisms, and the dispatch gotchas went with
+it. If you find a reference to `EXEMPT_BASELINE_PAIRS`, `darwinOnly`,
+`VRT_PLATFORM`, `vrt-platform-gaps.ts` or `task vrt:audit`, it is stale prose.
 
-### A platform gap is declared FOUR ways — `EXEMPT_BASELINE_PAIRS` is only one
+**Three hazards survive the collapse — they were never about platforms:**
 
-CI renders on **linux**. A scene captured on darwin but skipped on linux gives
-ZERO protection while still counting as "covered" everywhere. That deficit is
-declared through **four** separate mechanisms, and for months the ratchet read
-one of them:
+- ⚠ **`--update-snapshots` CANNOT regenerate a PASSING-but-stale baseline.**
+  Playwright only rewrites on a FAILING comparison, so a scene genuinely out of
+  date still commits **nothing** if its diff lands under tolerance. Found on A2
+  (#1213): swapping filter's MODE from a bare detented knob to a labelled
+  Segmented moved the dock face by **865 px** — a whole primitive swap — and the
+  dispatch committed zero files, twice. **Fix: `git rm` the stale baseline
+  first**; Playwright always writes a MISSING snapshot (`updateSnapshots`
+  defaults to `'missing'`, and `'changed'` — what `task vrt:update` passes —
+  explicitly creates missing ones too). The same arithmetic means the ordinary
+  VRT gate would not have flagged that swap either. **Treat a green dispatch
+  that committed nothing as a RED FLAG, never as "nothing to do", and COUNT the
+  files the bot commits against what you predicted.**
+- ⚠ **A `git rm`-ed baseline is SILENTLY RECREATED by the next plain VRT run.**
+  `'missing'` *creates* an absent snapshot. The test still fails — *"A snapshot
+  doesn't exist …, writing actual"* — so it is loud in the RUN OUTPUT and
+  completely silent in the **tree**: what lands is an untracked PNG that no gate
+  reads and that a `git add -A` will happily commit. **`git status` for
+  untracked PNGs after EVERY VRT run in a window where you have deleted a
+  baseline** — including read-only "did it still render?" runs you did not think
+  of as captures. Measured on vca (#1429) before the collapse; the mechanism is
+  unchanged, only the path is.
+- ⚠ **Bare `--update-snapshots` is `=all` in Playwright 1.59** and had already
+  rewritten 22 unrelated baselines once. `task vrt:update` passes `=changed`.
+  The flag lives in the **Taskfile**, not in `e2e/package.json` — that file is a
+  `TOOLCHAIN_PIN_FILE` in the WebGL attest basis.
 
-| # | mechanism | where | gaps (2026-08-01) |
-|---|---|---|---|
-| A | `'linux/<scene>'` in the SHARED `EXEMPT_BASELINE_PAIRS` | `e2e/vrt/vrt-exemptions.ts` | 89 |
-| B | a **private** `const EXEMPT_BASELINE_PAIRS` inside a spec | 4 spec files | 10 |
-| C | `test.skip(VRT_PLATFORM === 'linux', …)` — blanket, no list | 8 spec files | 49 |
-| D | `darwinOnly: true` on a `CompositeVrtScene` | `e2e/vrt/vrt-composite-scenes.ts` | 3 |
+**Two things the capture job can still get wrong, both worth knowing:**
 
-**Measured: 151 real gaps, 89 seen, 62 invisible — and the number it printed was
-119**, matching neither, because 30 of its entries named scenes that were not
-gaps at all. A count of *declarations* was being read as a count of *gaps*, so
-it was wrong in both directions at once. Nothing failed; every assertion it made
-was true about the one list it read.
-
-- **Enumerate mechanisms in ONE place.** `e2e/vrt/vrt-platform-gaps.ts` reads
-  all four; `vrt-meta.test.ts` ratchets its total (≤151, only shrinks) and fails
-  with a per-mechanism breakdown. **A bare number is what let this hide** — name
-  the contributors in the message.
-- **Anchor the metric to the ARTIFACT, not the list.** Ground truth is a darwin
-  PNG with no linux sibling; the mechanisms must then *explain* each gap. A gap
-  nobody declares is UNDECLARED → red. Adding a fifth mechanism without teaching
-  the enumerator fails automatically.
-- **A pair whose PNG is already committed is a DEADLOCK, not just waste.** The
-  pair is consulted before the PNG, so the scene is skipped despite the
-  baseline — and `--update-snapshots` writes nothing for a skipped test, so the
-  "re-capture then drop the pair" plan it waits on can never run. 15 of these
-  were drained on 2026-08-01; the stale ratchet is now capped at the 4 tracked
-  flake quarantines.
-- **A checker that resolves ONE directory cannot speak for the tree.** Both the
-  stale ratchet and `scripts/vrt-exemptions-audit.mjs` only ever built the
-  `__screenshots__/vrt.spec.ts/…` path, so stale *scene* pairs under other spec
-  dirs were structurally invisible. Widening them found **3** more immediately
-  (narrow 16 → widened 19 on `77cd1bbc`) — the three `darwin/wavesculpt-blink-*`
-  quarantines. Not four: `darwin/rasterize` lives under `vrt.spec.ts`, so the
-  narrow check always saw it. The same one-directory blindness was live in the
-  cable-stripe palette gate, which read `vrt.spec.ts` only and missed 39
-  token-pinned baselines in six sibling dirs — **state a gate's directory scope
-  in the gate**, because an unstated scope reads as full coverage.
-- **A CEILING that survives is asserted in BOTH directions** — `actual <=
-  CEILING` *and* `CEILING - actual === 0` — because a ceiling can only trip by
-  growing, and a drain that forgets to lower the number passes in total silence
-  leaving slack that absorbs the next regression. ⚠ **But do not add one.** The
-  VRT platform ceilings survive only until Phase 2 collapses the platform
-  dimension; nine unrelated counters were deleted outright on 2026-08-10. See
-  **"NEVER hand-type a population count"** below — the both-directions rule is
-  damage control for a data structure we are removing, not a pattern to copy.
-- **A drain without its re-capture ships a red lane.** Removing pairs is step 1
-  of 2. The 2026-08-01 15-pair drain deferred the dispatch to "a follow-up" and
-  every one of the 15 came back as a **dimension mismatch** (212×564 vs
-  264×527 …) — Playwright hard-fails on size *before* it computes a ratio, so no
-  tolerance argument applies and `maxDiffPixelRatio` is irrelevant. Confirm the
-  committed baseline still matches the render, or `git rm` it and dispatch, in
-  the SAME PR.
+- **The sweep is ONE job.** A single scene that cannot settle aborts the whole
+  capture and nothing is committed. This is live: the 2026-08-09 darwin regen
+  died on `face-mixer-compact` and `face-ringback-dock`, both tripping #1420's
+  `AudioContext is 'running', not 'suspended', at CAPTURE time` guard. **The
+  guard is correct** — a face glyph is an AnalyserNode view, and baselining it
+  off a running graph is baselining a moving target — so the fix belongs in
+  whatever leaves the context running.
+- **A capture that rewrote nothing still SUCCEEDS.** `vrt-commit-baselines.sh`
+  emits `pushed=false` and a `::warning::` for exactly that case, and
+  `revalidate` reads it so an unchanged branch does not burn a close+reopen
+  cycle. (`revalidate` exists because a GITHUB_TOKEN push does not fire CI and a
+  `workflow_dispatch` run does not count toward a required-status gate —
+  confirmed on #524.)
 
 ### A FOOTER can move every dock baseline — the mechanism is HEIGHT, not pixels
 
 Added 2026-08-09 (#1425). A new footer readout re-pinned **133** baselines
-across two platforms and made `vrt-strict` red on a *different card each cycle*
+(two platform sets then; one now) and made `vrt-strict` red on a *different card each cycle*
 (15 → 2 → 2 → 1). It looked like a card-render bistability. It was arithmetic.
 
 Measured at the VRT viewport (1280 CSS px, AudioContext booted — the state the
@@ -326,7 +247,8 @@ faceplate scene is laid out *inside* that canvas.
   Restore the baselines and fix the layout: with bar height back to main's,
   `vrt-strict` went green with **zero** re-pins, and the only baselines that
   legitimately moved were the **7** page-level captures with the footer in
-  frame (`workflow-shell-zoom` ×3 per platform, `workflow-dock-composite` ×1).
+  frame (`workflow-shell-zoom` ×3 per platform, `workflow-dock-composite` ×1 —
+  counted across the two baseline sets that existed then).
 - **Gate it in a browser.** A unit test cannot see a flex row wrap, and *where*
   it wraps depends on platform font metrics. `audio-health-readout.spec.ts`
   hides the element and asserts the bottombar height does not move, with a
@@ -352,10 +274,6 @@ prefer failing loudly over silently falling back to a shared default.
 
 Two more from the same session, both cheap:
 
-- Bare `--update-snapshots` is `=all` in Playwright 1.59, and had already
-  rewritten 22 unrelated baselines once. `task vrt:update` now passes
-  `=changed`. ⚠ **The flag lives in the Taskfile, NOT in `e2e/package.json`** —
-  see the next bullet for why that distinction cost a red gate.
 - **A toolchain PIN file hashed WHOLESALE makes every unrelated edit a
   re-attest.** `e2e/package.json` is in `TOOLCHAIN_PIN_FILES`
   (`scripts/webgl-attest-lib.ts`) because it pins `@playwright/test` — the
@@ -406,7 +324,7 @@ per-module appends — they are no longer the conflict surface. The remaining
 hand-maintained list files that concurrent PRs still collide on are:
 
 - `packages/web/src/lib/docs/module-manifest.ts` (`DESCRIPTIONS`)
-- `e2e/vrt/vrt-exemptions.ts` (`EXEMPT_FROM_VRT` / `EXEMPT_BASELINE_PAIRS`)
+- `e2e/vrt/vrt-exemptions.ts` (`EXEMPT_FROM_VRT` / `ALLOWED_PERMANENT_EXEMPT`)
 - `packages/web/src/lib/ui/modules-card-map.test.ts` (`EXPECTED_NODE_TYPES`)
 - the per-port / VRT spec lists (`e2e/tests/per-module-per-port*.spec.ts`)
 - `packages/web/src/lib/control/push2/push-card-config.ts` (`PUSH_CARD_CONTROLS`)
@@ -577,11 +495,13 @@ ratchets entirely even if we lose test coverage as a result"*. Nine were deleted
 in the first sweep and coverage loss was pre-authorised. **Silent coverage loss
 was not** — every protection dropped is named in that PR's body.
 
-⚠ **The sweep is not finished.** Phase 1 took the nine it was scoped to; the
-`vrt-meta` / `vrt-platform-gaps` platform ceilings go with Phase 2, and a
-further tail survives in `card-def-debt.ts`, `card-def-agreement.test.ts`,
-`raw-write-ledger.ts`, `mutate.guard.test.ts`, `worklet-guard.test.ts`,
-`dual-mono.test.ts` and the STRICT_* floors. **They are legacy, not precedent.**
+⚠ **The sweep is not finished.** Phase 1 took the nine it was scoped to; Phase 2
+(#1458) took the three VRT platform ceilings by deleting the dimension that
+produced them, plus `MIN_TOKEN_PINNED_BASELINES` and the gallery's three
+baseline-tree floors under the boy-scout rule. A tail survives in
+`card-def-debt.ts`, `card-def-agreement.test.ts`, `raw-write-ledger.ts`,
+`mutate.guard.test.ts`, `worklet-guard.test.ts`, `dual-mono.test.ts` and the
+STRICT_* floors. **They are legacy, not precedent.**
 Remove the one in front of you when you touch its file (boy-scout), using the
 replacements below; never copy the pattern into new code, and never re-derive a
 count "just for this one".
@@ -624,9 +544,18 @@ structure. **This is a property of the construct, not of anyone's care.**
 paid now (needs hardware, an owner decision, a re-attest window, a platform
 migration) — and then the count is **DERIVED from the artifact**, never a typed
 literal in a shared file, and it ships with its **deletion criteria stated in the
-file**. The three surviving VRT platform ceilings (`LINUX_DEFICIT_CEILING`,
-`SHARED_LINUX_PAIR_CEILING`, `STALE_PAIR_CEILING`) are exactly this: they vanish
-with the `{platform}` dimension and have no successor.
+file**. The three VRT platform ceilings (`LINUX_DEFICIT_CEILING`,
+`SHARED_LINUX_PAIR_CEILING`, `STALE_PAIR_CEILING`) were exactly this, and #1458
+is the criteria being met: they vanished with the `{platform}` dimension and
+**no successor counter was written**. That is what paying one looks like — you
+delete the mechanism, you do not re-scope it.
+
+⚠ **When you delete one, check what it protected FIRST.** Phase 1 found two of
+the plan's three "this is redundant" claims were WRONG on measurement. #1458
+traced `MIN_TOKEN_PINNED_BASELINES` (200) to three surviving name-anchored
+checks that each catch its stated failure before removing it, and kept that
+trace where the constant stood. "It is a count, therefore delete it" is not the
+rule; "a count is never the right SHAPE, so find the shape that is" is.
 
 **And do not inventory payable debt.** A ledger of *known answers* is deferred
 typing, and every agent who touches the area afterwards pays a re-count tax.

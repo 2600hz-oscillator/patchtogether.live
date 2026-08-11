@@ -22,17 +22,14 @@
 // pixels. The intensity scenes use a shorter timebase (timeMs=10) so a
 // 2-screen trail still fits inside the 2048-sample analyser buffer.
 //
-// Linux deferred (mirrors the main scope baseline — see EXEMPT_BASELINE_PAIRS
-// `linux/scope`): captured on darwin here; linux pending a `task vrt:update`
-// on linux CI.
+// Baselines are authored by LINUX CI — one set, no {platform} segment (see
+// vrt.config.ts). `task vrt:commit` dispatches the capture; a local macOS run
+// is a smoke test, not a capture.
 
 import { test, expect } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { spawnPatch, type SpawnNode, type SpawnEdge } from '../tests/_helpers';
-import { EXEMPT_BASELINE_PAIRS } from './vrt-exemptions';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
-
-const VRT_PLATFORM = process.platform === 'darwin' ? 'darwin' : 'linux';
 
 interface ScopeCase {
   name: string;
@@ -104,10 +101,6 @@ test.describe.configure({ mode: 'default' });
 test.describe('VRT: SCOPE X/Y mode + INTENSITY persistence', () => {
   for (const c of CASES) {
     test(`${c.name} matches baseline`, async ({ page }) => {
-      test.skip(
-        EXEMPT_BASELINE_PAIRS.has(`${VRT_PLATFORM}/scope-${c.name}`),
-        `scope-${c.name} on ${VRT_PLATFORM}: baseline pending (see EXEMPT_BASELINE_PAIRS)`,
-      );
 
       const errors: string[] = [];
       page.on('pageerror', (e) => errors.push(e.message));

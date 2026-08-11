@@ -16,16 +16,13 @@
 // Everything else — panel chrome, dock-card headers + zoom controls, card
 // faces, faders, patch-out rows — is unmasked geometry.
 //
-// darwin-first: the darwin baseline is captured locally; the linux pair is
-// EXEMPT_BASELINE_PAIRS-deferred until a vrt-update.yml dispatch lands it
-// (the cellshade-composite pattern; vrt-meta's linux-deficit ratchet
-// accounts for the pair).
+// Baselines are authored by LINUX CI — one set, no {platform} segment (see
+// vrt.config.ts). `task vrt:commit` dispatches the capture; a local macOS run
+// is a smoke test, not a capture.
 
 import { test, expect, type Page } from '@playwright/test';
-import { EXEMPT_BASELINE_PAIRS } from './vrt-exemptions';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
 
-const VRT_PLATFORM = process.platform === 'darwin' ? 'darwin' : 'linux';
 test.describe.configure({ mode: 'default' });
 
 /** Wait until the workflow ensure has written the pinned audio pair. */
@@ -48,10 +45,6 @@ async function waitForAudioPins(page: Page): Promise<void> {
 test.describe('VRT: workflow 🎧 audio-I/O panel (open)', () => {
   test('open panel with both card faces properly fitted matches baseline', async ({ page }) => {
     const id = 'workflow-audio-io';
-    test.skip(
-      EXEMPT_BASELINE_PAIRS.has(`${VRT_PLATFORM}/${id}`),
-      `${id} on ${VRT_PLATFORM}: baseline pending (see EXEMPT_BASELINE_PAIRS)`,
-    );
 
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));

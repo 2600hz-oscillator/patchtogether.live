@@ -7,6 +7,11 @@
 // git-diff mode finds nothing — `--from-results` surfaces it. Also locks in the
 // slider/onion-skin compare markup (Piece B) and the added-vs-modified split.
 //
+// The baseline tree is a SINGLE set (vrt.config.ts snapshotPathTemplate has no
+// `{platform}` segment), so a changed baseline is identified by (spec, card) and
+// the emitted paths are asserted in full below — an exact string, not a shape
+// match, so a re-introduced platform segment cannot pass.
+//
 // Drives the real .mjs via child_process (like new-module.test.ts) against a
 // synthetic Playwright results dir built with sharp. Output goes to an OS temp
 // dir (absolute --out), so nothing touches the repo tree.
@@ -49,7 +54,7 @@ function runFromResults(): { count: string; html: string; summary: any } {
   const jsonPath = join(outDir, 'summary.json');
   const out = execFileSync(
     'node',
-    [SCRIPT, '--from-results', resultsDir, '--platform', 'linux', '--out', outDir, '--pr', '4242', '--json', jsonPath],
+    [SCRIPT, '--from-results', resultsDir, '--out', outDir, '--pr', '4242', '--json', jsonPath],
     { cwd: ROOT, encoding: 'utf8' },
   );
   return {
@@ -75,7 +80,10 @@ describe('vrt-changeset-gallery --from-results', () => {
 
     const { count, html, summary } = runFromResults();
 
-    // Two mismatches found, classified correctly.
+    // Both mismatches found, classified correctly. These literals are NOT
+    // population counts: they are the exact contents of the fixture set this
+    // test just authored two statements above (one -expected/-actual pair, one
+    // lone -actual), so they cannot drift as the repo grows.
     expect(count).toBe('2');
     expect(summary.count).toBe(2);
     expect(summary.modified).toBe(1);
@@ -87,6 +95,18 @@ describe('vrt-changeset-gallery --from-results', () => {
     expect(add.status).toBe('A');
     // The modified card has a real pixel diff (luminance change is detected).
     expect(mod.diffPixels).toBeGreaterThan(0);
+
+    // A baseline is identified by (spec, card) — the reconstructed path has NO
+    // platform segment. Asserted as a whole string so a reintroduced
+    // `/linux/` or `/darwin/` fails rather than slipping past a substring match.
+    expect(mod.path).toBe(
+      'e2e/vrt/__screenshots__/vrt-composite-mixer-cv-sum/mixer-cv-sum.png',
+    );
+    expect(add.path).toBe(
+      'e2e/vrt/__screenshots__/vrt-spec-ts-newcard/newcard.png',
+    );
+    // …and the card's sub-label is the bare spec (it used to read "spec · platform").
+    expect(html).toContain('<div class="path">vrt-composite-mixer-cv-sum</div>');
 
     // Piece B: the modified card gets the slider/onion-skin compare widget…
     expect(html).toContain('class="compare"');

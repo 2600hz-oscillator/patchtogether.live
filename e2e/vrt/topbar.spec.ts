@@ -15,40 +15,39 @@
 // put. Such a length change is rare and the owner previews the VRT diff, then
 // re-captures via vrt-update.yml — the mask covers the common same-length bump.)
 //
-// Baseline: e2e/vrt/__screenshots__/topbar.spec.ts/{platform}/topbar-heading-buttons.png
+// Baseline: e2e/vrt/__screenshots__/topbar.spec.ts/topbar-heading-buttons.png
 //
 // The full `vrt` lane is INFORMATIONAL (the strict gate is only vrt.spec.ts).
-// The darwin baseline is captured locally; the linux baseline lands via a
-// `vrt-update.yml` workflow_dispatch. Until a platform's PNG is committed, the
-// test SKIPS on that platform (and self-heals once it lands) — it NEVER fails
-// for a missing baseline. Regeneration (`task vrt:update`, incl. the CI job)
-// sets an update mode, so the skip is bypassed and the baseline is written.
+// Baselines are authored by LINUX CI — one set, no {platform} segment (see
+// vrt.config.ts). `task vrt:commit` dispatches the capture; a local macOS run
+// is a smoke test, not a capture.
+// Until the PNG is committed the test SKIPS (and self-heals once it lands) —
+// it NEVER fails for a missing baseline. Regeneration (`task vrt:update`, incl.
+// the CI job) sets an update mode, so the skip is bypassed and the baseline is
+// written.
 
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { test, expect } from '@playwright/test';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
 
-const PLATFORM = process.platform === 'darwin' ? 'darwin' : 'linux';
 const BASELINE = join(
   import.meta.dirname,
   '__screenshots__',
   'topbar.spec.ts',
-  PLATFORM,
   'topbar-heading-buttons.png',
 );
 
 test.describe('VRT: topbar heading + button layout', () => {
   test('topbar heading + button layout matches baseline', async ({ page }) => {
-    // Only skip in a NORMAL run when this platform's baseline isn't committed
-    // yet. During a regen (`--update-snapshots` → 'all' | 'changed' | 'mixed')
+    // Only skip in a NORMAL run when the baseline isn't committed yet. During a regen (`--update-snapshots` → 'all' | 'changed' | 'mixed')
     // do NOT skip, so the baseline is actually generated.
     const updating = ['all', 'changed', 'mixed'].includes(
       test.info().config.updateSnapshots,
     );
     test.skip(
       !updating && !existsSync(BASELINE),
-      `topbar VRT baseline for ${PLATFORM} not committed yet — dispatch vrt-update.yml (see PR notes)`,
+      'topbar VRT baseline not committed yet — dispatch vrt-update.yml (`task vrt:commit`)',
     );
 
     // Pin the topbar chrome text (h1 + all button/select labels) to the bundled

@@ -35,8 +35,6 @@ import { annotateControlsOnCard, removeControlOverlay } from './annotate-control
  *  resolver maps to authored doc keys. */
 const NODE_ID = 'annot-1';
 
-const VRT_PLATFORM = process.platform === 'darwin' ? 'darwin' : 'linux';
-
 // Phase-1 sample set — proves the pipeline end-to-end across a knob/fader
 // utility (adsr), a knob modulation module (lfo), and a numbered-step
 // sequencer (sequencer). Override with ANNOTATED_MODULES="adsr,lfo" to
@@ -116,7 +114,7 @@ test.describe('VRT card-faces: numbered card screenshots + key for the docs site
       // doc-asset config is deliberately lenient [maxDiffPixelRatio 0.1], so a
       // small overlay change stays under tolerance and the committed PNG
       // silently never updates.)
-      const facePath = resolve(annotatedDir(), VRT_PLATFORM, `${type}.png`);
+      const facePath = resolve(annotatedDir(), `${type}.png`);
       mkdirSync(dirname(facePath), { recursive: true });
       await card.screenshot({ path: facePath, animations: 'disabled' });
 
@@ -138,7 +136,7 @@ test.describe('VRT card-faces: numbered card screenshots + key for the docs site
       mkdirSync(dirname(legendPath), { recursive: true });
       writeFileSync(
         legendPath,
-        JSON.stringify({ type, platform: VRT_PLATFORM, controls: legend }, null, 2) + '\n',
+        JSON.stringify({ type, controls: legend }, null, 2) + '\n',
         'utf8',
       );
 

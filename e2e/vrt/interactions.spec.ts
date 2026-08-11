@@ -11,11 +11,9 @@
 //   - palette-vcos          → palette drilled into "Audio modules → VCOs"
 //   - saved-groups-picker   → modal overlay (api stubbed for determinism)
 //
-// Same path template + per-platform layout as vrt.spec.ts (see
-// vrt.config.ts snapshotPathTemplate). Linux baselines are pending on
-// first-land — exempted via EXEMPT_BASELINE_PAIRS below. Capture follow-up
-// via `task vrt:update` inside docker on a linux runner and remove the
-// exemption entries.
+// Baselines are authored by LINUX CI — one set, no {platform} segment (see
+// vrt.config.ts). `task vrt:commit` dispatches the capture; a local macOS run
+// is a smoke test, not a capture.
 //
 // Why these are split out from vrt.spec.ts: that file iterates over the
 // MODULES list with a single test body; bolting in per-state setup logic
@@ -30,22 +28,6 @@ import { pinVrtFonts, awaitVrtFonts } from './_fonts';
 // Per-test exemption set, keyed `${platform}/${snapshot-stem}`. Each
 // platform's missing baseline is opt-in so a future regression surfaces
 // as a real diff, not a silent skip. Delete entries as linux captures land.
-const EXEMPT_BASELINE_PAIRS = new Set<string>([
-  'linux/patch-panel-open',
-  'linux/node-context-menu',
-  'linux/port-context-menu',
-  'linux/module-palette',
-  'linux/palette-vcos',
-  'linux/saved-groups-picker',
-]);
-const VRT_PLATFORM = process.platform === 'darwin' ? 'darwin' : 'linux';
-
-function skipIfNoBaseline(t: typeof test, name: string): void {
-  t.skip(
-    EXEMPT_BASELINE_PAIRS.has(`${VRT_PLATFORM}/${name}`),
-    `${name} on ${VRT_PLATFORM}: baseline pending (CI capture follow-up)`,
-  );
-}
 
 /** Hide elements known to introduce 1-2 px non-determinism (other-user
  *  cursors, feedback widget). Belt-and-suspenders on top of
@@ -84,7 +66,6 @@ test.describe.configure({ mode: 'default' });
 // 1. Module palette — default view (nested categories).
 // ----------------------------------------------------------------------
 test('module-palette: default nested view', async ({ page }) => {
-  skipIfNoBaseline(test, 'module-palette');
   await bootCanvas(page);
 
   // Fixed right-click anchor for determinism (the palette is an ELEMENT
@@ -105,7 +86,6 @@ test('module-palette: default nested view', async ({ page }) => {
 //    to "vcos".
 // ----------------------------------------------------------------------
 test('palette-vcos: nested drill-down (Audio → VCOs)', async ({ page }) => {
-  skipIfNoBaseline(test, 'palette-vcos');
   await bootCanvas(page);
 
   await openModulePalette(page, { position: { x: 300, y: 200 } });
@@ -131,7 +111,6 @@ test('palette-vcos: nested drill-down (Audio → VCOs)', async ({ page }) => {
 //    panel-layout regressions show up first here).
 // ----------------------------------------------------------------------
 test('patch-panel-open: analogVco patch panel popout', async ({ page }) => {
-  skipIfNoBaseline(test, 'patch-panel-open');
   await bootCanvas(page);
   await spawnPatch(page, [
     { id: 'vco-pp', type: 'analogVco', position: { x: 80, y: 80 } },
@@ -161,7 +140,6 @@ test('patch-panel-open: analogVco patch panel popout', async ({ page }) => {
 //    menu is the dominant visual surface.
 // ----------------------------------------------------------------------
 test('node-context-menu: right-click on VCA', async ({ page }) => {
-  skipIfNoBaseline(test, 'node-context-menu');
   await bootCanvas(page);
   await spawnPatch(page, [
     { id: 'vca-ctx', type: 'vca', position: { x: 100, y: 100 } },
@@ -188,7 +166,6 @@ test('node-context-menu: right-click on VCA', async ({ page }) => {
 //    stacked at 8,8 with opacity:0.
 // ----------------------------------------------------------------------
 test('port-context-menu: right-click on LFO output', async ({ page }) => {
-  skipIfNoBaseline(test, 'port-context-menu');
   await bootCanvas(page);
   // Need a SECOND module so the "Patch to..." submenu has entries; otherwise
   // the menu still opens but its content is the "no other modules" stub,
@@ -228,7 +205,6 @@ test('port-context-menu: right-click on LFO output', async ({ page }) => {
 //    Canvas.svelte.
 // ----------------------------------------------------------------------
 test('saved-groups-picker: modal with stubbed library', async ({ page }) => {
-  skipIfNoBaseline(test, 'saved-groups-picker');
   // Route-stub must register before navigation so the first GET is caught.
   await page.route('**/api/saved-groups', async (route) => {
     if (route.request().method() !== 'GET') return route.fallback();

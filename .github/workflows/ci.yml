@@ -2379,8 +2379,10 @@ jobs:
   # card here can NOT block merge. It still runs on every PR for visibility
   # (gallery + report artifacts) so regressions are reviewable; treat a red here
   # as a signal to inspect, not a merge blocker. See retro 2026-06-06.
-  # Missing-baseline edge cases are gated by `EXEMPT_BASELINE_PAIRS` in the VRT
-  # spec files (with linux captures pending per-spec).
+  # A scene with no committed baseline FAILS here as "snapshot doesn't exist"
+  # rather than being skipped. That is deliberate (#1458): the old
+  # `EXEMPT_BASELINE_PAIRS` route made missing coverage invisible on green runs.
+  # Fix it by capturing — `task vrt:commit` — not by declaring it away.
   # -----------------------------------------------------------------------
   vrt:
     name: VRT (visual regression)
@@ -2389,7 +2391,25 @@ jobs:
     # (may flake — see retro 2026-06-06).
     continue-on-error: true
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # ⚠ 20 -> 50 (2026-08-10), AND THIS IS A REAL RUNNER-MINUTES INCREASE —
+    # flagged rather than buried, per CLAUDE.md's ">~2 min needs sign-off".
+    #
+    # WHY: this lane used to skip roughly half its own suite. 146 scenes were
+    # dark on linux via four platform-gap mechanisms, so ~151 of 297 tests
+    # actually executed here. Collapsing to one baseline set removes every one
+    # of those skips: all 297 now run. Measured at 9.2 s/test on this runner
+    # (241 tests in 36.8 min, run 31450544563), that is ~23 min -> ~45 min.
+    # The 20-minute cap killed this job mid-sweep on the very first push.
+    #
+    # WALL-CLOCK COST TO A MERGE: ~zero. This job is `continue-on-error: true`
+    # and is NOT in the `ci` umbrella's `needs`, so time-to-merge is set by the
+    # required lanes, not by this one. RUNNER-MINUTES COST: ~+25 min per PR
+    # run, which is the number to weigh. The alternative is keeping 146 scenes
+    # dark on the platform that gates, which is what this PR exists to end.
+    #
+    # `vrt-strict` (the REQUIRED lane) is unaffected: it runs only vrt.spec.ts
+    # filtered to STRICT_VRT_MODULES, all of which already ran on linux.
+    timeout-minutes: 50
     # Scoped explicitly: contents/actions read for checkout+LFS+artifact download,
     # pull-requests write so the on-failure VRT diff-gallery step can upsert its
     # PR comment (the repo has no top-level permissions block → default applies).
@@ -2543,7 +2563,6 @@ jobs:
           set -euo pipefail
           COUNT=$(flox activate -- node scripts/vrt-changeset-gallery.mjs \
             --from-results e2e/vrt/test-results \
-            --platform linux \
             --pr "${PR_NUMBER}" \
             --out docs/vrt-failure \
             --json /tmp/vrt-failure.json)
@@ -2604,7 +2623,7 @@ jobs:
               `**[▶ View the VRT diff gallery →](${url})**`,
               ``,
               `If the change is INTENTIONAL, accept the new baselines (regenerated on`,
-              `linux + darwin by CI, committed back to this branch) by running EITHER:`,
+              `linux CI — the only baseline author — and committed back to this branch) by running EITHER:`,
               ``,
               '```',
               `# from a local checkout of this branch:`,
@@ -2633,9 +2652,10 @@ jobs:
   # -----------------------------------------------------------------------
   # VRT (strict subset) — fast, deterministic gate. Runs ONLY the pure-DOM
   # knob/fader cards listed in STRICT_VRT_MODULES (see
-  # e2e/vrt/vrt-exemptions.ts). These cards have baselines on BOTH platforms,
-  # no canvas masks, and no animated chrome — a diff here is a real UI
-  # regression, not platform/GPU/timing flake.
+  # e2e/vrt/vrt-exemptions.ts). These cards have committed baselines, no canvas
+  # masks, and no animated chrome — a diff here is a real UI regression, not
+  # GPU/timing flake. Same-platform by construction since #1458: the baseline
+  # this compares against was rendered by this same runner image.
   #
   # REQUIRED status check for VRT (2026-06-06): the `main: green PRs only`
   # ruleset (16042163) was flipped to require this job's name

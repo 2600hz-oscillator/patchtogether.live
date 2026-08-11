@@ -226,23 +226,20 @@ export const FACES = [
   // COMPACT tile is a live trace, and it is flat for the ordinary reason: an
   // unpatched insert outputs silence. #1420's freeze covers it regardless.)
   //
-  // ⚠ LINUX ONLY — THIS SCENE HAS NO DARWIN BASELINE, ON PURPOSE, and the gap
-  // is stated here rather than left to be discovered. The `vrt-update` dispatch
-  // captured linux and then its darwin job FAILED on two UNRELATED scenes
-  // (`face-mixer-compact`, `face-ringback-dock`), both tripping #1420's guard —
-  // "the AudioContext is 'running', not 'suspended', at CAPTURE time". The
-  // darwin sweep is ONE job, so those two aborted the whole capture and none of
-  // its baselines were written.
+  // ⚠ THIS SCENE WAS "LINUX ONLY" AND IS NOW SIMPLY NORMAL (2026-08-10). Its
+  // linux baseline was captured; the sibling darwin job of the same dispatch
+  // FAILED on two UNRELATED scenes (`face-mixer-compact`,
+  // `face-ringback-dock`), both tripping #1420's guard — "the AudioContext is
+  // 'running', not 'suspended', at CAPTURE time" — and the darwin sweep is ONE
+  // job, so those two aborted the whole capture. With the darwin baseline set
+  // deleted there is nothing left to be missing here.
   //
-  // Shipping linux-only is the CORRECT state here, not a compromise, and the
-  // asymmetry runs the safe way: CI renders on LINUX, so the platform that
-  // gates this face is the one that has a baseline. The reverse — committing a
-  // local darwin capture and waiting for linux — is what manufactures the
-  // UNDECLARED gap the deficit ratchet exists to catch (ground truth is a
-  // darwin PNG with NO linux sibling; a linux PNG with no darwin sibling is not
-  // a gap and `vrt-meta` is green on it, verified). A darwin baseline lands
-  // whenever the mixer/ringback capture defect is fixed and the next dispatch
-  // succeeds — no exemption entry, no ratchet move, nothing to unwind.
+  // ⚠ THE CAPTURE DEFECT ITSELF IS NOT FIXED and does not disappear with the
+  // platform dimension: if those two scenes trip the guard on LINUX too, they
+  // abort the one remaining capture job and NOTHING gets written. The guard is
+  // correct — a face glyph baselined off a running graph is a moving target —
+  // so the fix belongs in whatever leaves the context running, not in the
+  // guard.
   //
   // ⚠ AND A LOCAL DARWIN VRT RUN SILENTLY RECREATES IT. Playwright's
   // `updateSnapshots` defaults to `'missing'`, so any darwin run — including a

@@ -466,7 +466,7 @@ tasks:
         vars: { SCRIPT: vrt, ARGS: '{{.CLI_ARGS}}' }
 
   vrt:strict:
-    desc: Run the deterministic VRT subset (STRICT_VRT_MODULES) — pure knob/fader cards on both platforms, no canvas masks. BLOCKING lane in `task ci`. A flake here is a real flake to fix, not tolerate (per memory `feedback_no_flake_tolerance`).
+    desc: Run the deterministic VRT subset (STRICT_VRT_MODULES) — pure knob/fader cards, no canvas masks. BLOCKING lane in `task ci`. A flake here is a real flake to fix, not tolerate (per memory `feedback_no_flake_tolerance`).
     # Same deps as `task vrt` — DSP bundle + registry manifest. The
     # filter to STRICT_VRT_MODULES happens inside vrt.spec.ts when
     # VRT_STRICT=1 is set (also narrows testMatch in vrt.config.ts so
@@ -498,7 +498,7 @@ tasks:
           npm run {{.SCRIPT}} -w {{.E2E}} -- {{.ARGS}}
 
   vrt:update:
-    desc: Refresh VRT baselines (e2e/vrt/__screenshots__/**) LOCALLY (this platform only). Inspect the diff and commit. For cross-platform (linux + darwin) baselines, use `task vrt:commit` (CI job) instead.
+    desc: 'Refresh VRT baselines LOCALLY. ⚠ NOT the accept path: linux CI is the only baseline author, and a macOS render will differ from it. Use `task vrt:commit` to accept, or `task vrt:docker` for a pixel-exact local loop.'
     deps: [dsp:build, test:emit-manifest]
     cmds:
       # Same E2E_PORT hazard as `task vrt` (see `vrt:run`) — and strictly worse
@@ -524,17 +524,16 @@ tasks:
 
   vrt:commit:
     desc: |
-      [accept VRT changes] Trigger the vrt-update.yml CI job (workflow_dispatch)
-      for THIS branch — regenerates linux + darwin baselines on CI, commits them
-      back to the branch, then close+reopens the PR so the required checks re-fire
-      against the fresh baselines. This is the cross-platform "accept the new
-      look" button: a darwin dev box can't produce linux baselines locally, so
-      the loud VRT-diff PR comment points here instead of `task vrt:update`.
-      The `vrt` lane is INFORMATIONAL (never blocks merge); inspect the diff
-      gallery the comment links BEFORE accepting.
+      [accept VRT changes — THE ONLY BASELINE AUTHOR] Trigger the vrt-update.yml
+      CI job (workflow_dispatch) for THIS branch: regenerates the baselines on
+      linux CI, commits them back to the branch, then close+reopens the PR so
+      the required checks re-fire against the fresh ones.
+      Devs never commit a baseline. There is ONE set and CI writes it — a local
+      macOS render is a smoke test, not a capture. The loud VRT-diff PR comment
+      points here for exactly that reason; inspect the diff gallery it links
+      BEFORE accepting. (The `vrt` lane is INFORMATIONAL; `vrt-strict` gates.)
       Examples:
-        task vrt:commit                       # both platforms, current branch
-        PLATFORM=linux task vrt:commit        # only linux baselines (skip the macOS runner)
+        task vrt:commit                       # current branch
         GREP=adsr   task vrt:commit           # scope capture to matching cards (single token)
         task vrt:commit -- some-other-branch  # explicit branch override
     cmds:
@@ -546,26 +545,74 @@ tasks:
           echo "Refusing to regenerate VRT baselines for '$BRANCH' — check out the PR branch first, or pass one: task vrt:commit -- <branch>." >&2
           exit 1
         fi
+        # Normalize ONCE so every later reference is safe under `set -u`, and
+        # use an if-block rather than `[ … ] && …` — a trailing test that
+        # evaluates false makes the line exit non-zero, which under `set -e`
+        # aborts the whole target. Both bugs were live: `task vrt:commit` with
+        # no GREP set died on "GREP: unbound variable" before dispatching
+        # anything, so the documented ONLY-baseline-author entry point did not
+        # run at all and every capture went out as a hand-typed `gh` command.
+        GREP="${GREP:-}"
         FLAGS="-f ref=$BRANCH"
-        [ -n "${PLATFORM:-}" ] && FLAGS="$FLAGS -f platform=$PLATFORM"
-        [ -n "${GREP:-}" ] && FLAGS="$FLAGS -f grep=$GREP"
-        echo "Dispatching vrt-update.yml for branch '$BRANCH'${PLATFORM:+ platform=$PLATFORM}${GREP:+ grep=$GREP} …"
-        # gh reads vrt-update.yml from the DEFAULT branch and passes `ref` as an
-        # input (a workflow_dispatch run on a non-default ref does NOT count
-        # toward a PR's required-status gate — the workflow's `revalidate` job
-        # close+reopens the PR to re-fire pull_request; see vrt-update.yml).
-        gh workflow run vrt-update.yml $FLAGS
+        if [ -n "$GREP" ]; then FLAGS="$FLAGS -f grep=$GREP"; fi
+        echo "Dispatching vrt-update.yml for branch '$BRANCH'${GREP:+ grep=$GREP} …"
+        # ⚠ `--ref "$BRANCH"` RUNS THE BRANCH'S OWN COPY of vrt-update.yml, and
+        # that is load-bearing whenever a PR changes the capture itself.
+        #
+        # Without it `gh` reads the workflow from the DEFAULT branch and only
+        # passes `ref` as an INPUT — so main's capture logic runs against the
+        # branch's checkout. That silently mixes two versions, and it is not
+        # hypothetical: during #1458 (the {platform} collapse) main still
+        # declared a TWO-PLATFORM matrix while the branch had collapsed
+        # `snapshotPathTemplate` to one set. A default-branch dispatch there
+        # would have started a macos-latest job writing DARWIN pixels into the
+        # now-platform-less baseline path and committing them as canonical —
+        # the exact failure the PR exists to remove. Caught by noticing the run
+        # reported `head_branch: main`; that field is the tell.
+        #
+        # The `revalidate` job still handles the required-status gate (a
+        # workflow_dispatch run on ANY ref does not count toward it), so
+        # nothing is lost by preferring the branch's copy.
+        gh workflow run vrt-update.yml --ref "$BRANCH" $FLAGS
         echo "Dispatched. Track it with:  gh run list --workflow=vrt-update.yml"
 
-  vrt:audit:
+  vrt:docker:
     desc: |
-      [read-only] Report EXEMPT_BASELINE_PAIRS hygiene: STALE pairs (baseline PNG
-      already on disk → the card is needlessly SKIPPED on that platform = silent
-      coverage loss; drop the pair) vs PENDING/scene pairs (no vrt.spec.ts
-      baseline yet → land it with `task vrt:commit`). The vrt-meta unit test
-      ratchets the stale count toward zero; this lists the offenders to clean.
+      [OPTIONAL local fast path] Run the VRT suite inside the SAME container
+      image CI renders in, so a local run is pixel-comparable to the gate.
+      Requires Docker. Nothing in this repo requires this target — a native
+      `task vrt` still works as a smoke test (does it render, does it throw),
+      and `task vrt:commit` remains the only way to author a baseline.
+      Why it exists: the baselines are authored by linux CI, so a native macOS
+      run compares Metal-rendered text against Chromium-on-linux and reports
+      font/AA drift that is not a regression. Under this image the comparison is
+      the real one.
+      ⚠ It runs against a dev server on the HOST (E2E_BASE_URL points back at
+      host.docker.internal), so bring one up first: `task e2e:serve`.
+      Examples:
+        task e2e:serve && task vrt:docker
+        task vrt:docker -- --grep adsr
     cmds:
-      - node scripts/vrt-exemptions-audit.mjs
+      - |
+        set -eu
+        command -v docker >/dev/null 2>&1 || {
+          echo "docker not found. This target is OPTIONAL — a native 'task vrt' is a valid" >&2
+          echo "smoke test, and 'task vrt:commit' authors baselines on CI. Skipping." >&2
+          exit 1
+        }
+        PORT="${E2E_PORT:-5173}"
+        # The image tag MUST track e2e/package.json's @playwright/test pin —
+        # a different Playwright means a different bundled Chromium means
+        # different pixels, which is the whole reason for using the image.
+        IMAGE="mcr.microsoft.com/playwright:v$(node -p "require('./e2e/package.json').devDependencies['@playwright/test'].replace(/^[^0-9]*/,'')")-noble"
+        echo "Running VRT in $IMAGE against http://host.docker.internal:$PORT …"
+        docker run --rm -it \
+          -v "$PWD":/work -w /work \
+          -e E2E_BASE_URL="http://host.docker.internal:$PORT" \
+          -e E2E_SKIP_WEBSERVER=1 \
+          --add-host=host.docker.internal:host-gateway \
+          "$IMAGE" \
+          npx playwright test --config e2e/vrt/vrt.config.ts --workers=1 {{.CLI_ARGS}}
 
   vrt:one:
     desc: |
@@ -611,12 +658,12 @@ tasks:
   vrt:annotated:
     desc: |
       Generate the NUMBERED card-FACE doc assets for ALL sample modules: a
-      numbered leader-line card screenshot → e2e/vrt/__annotated__/{platform}/
-      {type}.png (LFS) + number→test-id map → __annotated__/{type}.legend.json.
+      numbered leader-line card screenshot → e2e/vrt/__annotated__/{type}.png
+      (LFS) + number→test-id map → __annotated__/{type}.legend.json.
       The doc page (/docs/modules/[id]) renders the numbered face + a KEY that
       RESOLVES each number to its authored `docs.controls` blob. The face IS the
-      asset, not a regression baseline. Then copies the darwin faces into static/
-      via docs:faces. Override the set with ANNOTATED_MODULES="adsr,lfo".
+      asset, not a regression baseline. Then copies the faces into static/ via
+      docs:faces. Override the set with ANNOTATED_MODULES="adsr,lfo".
     deps: [dsp:build, test:emit-manifest]
     cmds:
       - npm run vrt:annotated -w {{.E2E}} -- {{.CLI_ARGS}}
@@ -642,9 +689,9 @@ tasks:
 
   docs:faces:
     desc: |
-      Copy the canonical (darwin) numbered card faces from
-      e2e/vrt/__annotated__/darwin/*.png into packages/web/static/docs/
-      module-faces/{type}.png so the prerendered doc page can <img src> them.
+      Copy the numbered card faces from e2e/vrt/__annotated__/*.png into
+      packages/web/static/docs/module-faces/{type}.png so the prerendered doc
+      page can <img src> them.
       Idempotent; a no-op when no card faces exist yet.
     cmds:
       - bash scripts/copy-doc-faces.sh

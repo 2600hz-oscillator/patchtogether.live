@@ -21,7 +21,6 @@ import { INTERACTIVE_DOC_MODULES } from '$lib/docs/interactive/interactive-doc-m
 // repo root.)
 interface FaceLegend {
   type: string;
-  platform: string;
   controls: LegendEntry[];
 }
 const FACE_LEGENDS = import.meta.glob('../../../../../../../e2e/vrt/__annotated__/*.legend.json', {

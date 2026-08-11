@@ -11,22 +11,21 @@
 // source. The VU ballistics settle to that level; we then suspend the
 // AudioContext so the worklet stops posting + the meters hold → pixel-stable.
 //
-// Informational lane (`task vrt`, FULL_MATCH) — not the strict gate. Darwin
-// baseline captured locally; linux pending a `task vrt:update` on CI.
+// Informational lane (`task vrt`, FULL_MATCH) — not the strict gate.
+// Baselines are authored by LINUX CI — one set, no {platform} segment (see
+// vrt.config.ts). `task vrt:commit` dispatches the capture; a local macOS run
+// is a smoke test, not a capture.
 //
-// Output: e2e/vrt/__screenshots__/vrt-synesthesia-video.spec.ts/{platform}/<id>.png
+// Output: e2e/vrt/__screenshots__/vrt-synesthesia-video.spec.ts/<id>.png
 
 import { test, expect } from '@playwright/test';
 import { spawnPatch } from '../tests/_helpers';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
 
-const VRT_PLATFORM = process.platform === 'darwin' ? 'darwin' : 'linux';
-
 test.describe.configure({ mode: 'default' });
 
 test.describe('VRT: SYNESTHESIA video mode', () => {
   test('copy-A solid-red levels redline the R meter', async ({ page }) => {
-    test.skip(VRT_PLATFORM === 'linux', 'darwin baseline only; linux pending a vrt:update on CI');
 
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));

@@ -9,22 +9,12 @@
 // baseline name stays `landing-empty` (the canvas chrome is route-
 // independent, so the darwin pixels are unchanged by the move).
 //
-// Same per-platform layout as the other VRT specs (see vrt.config.ts
-// snapshotPathTemplate). Linux baseline pending — exempted on first land
-// via EXEMPT_BASELINE_PAIRS.
+// Baselines are authored by LINUX CI — one set, no {platform} segment (see
+// vrt.config.ts). `task vrt:commit` dispatches the capture; a local macOS run
+// is a smoke test, not a capture.
 
 import { test, expect, type Page } from '@playwright/test';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
-
-const EXEMPT_BASELINE_PAIRS = new Set<string>(['linux/landing-empty']);
-const VRT_PLATFORM = process.platform === 'darwin' ? 'darwin' : 'linux';
-
-function skipIfNoBaseline(t: typeof test, name: string): void {
-  t.skip(
-    EXEMPT_BASELINE_PAIRS.has(`${VRT_PLATFORM}/${name}`),
-    `${name} on ${VRT_PLATFORM}: baseline pending (CI capture follow-up)`,
-  );
-}
 
 async function hideJitterers(page: Page): Promise<void> {
   await page.addStyleTag({
@@ -42,7 +32,6 @@ async function hideJitterers(page: Page): Promise<void> {
 test.describe.configure({ mode: 'default' });
 
 test('landing-empty: public canvas with no modules', async ({ page }) => {
-  skipIfNoBaseline(test, 'landing-empty');
   // Pin the topbar chrome text (h1 / "Load example…" +
   // "Raw JSON" dropdowns / Clear / Export·Load Perf / skin switcher) to the
   // bundled Inter face
