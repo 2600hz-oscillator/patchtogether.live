@@ -390,6 +390,20 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
     // but the render kind and this classification answer different questions
     // (see paramCellKind's closing note), so it still needs acknowledging here.
     'cofefve:clockSource',
+    // RINGS, 2026-08-11. The RESONATOR MODEL selector — MODAL (0) against
+    // SYMPATHETIC (1). `0..1 discrete resting at 0` is the press-pad shape by
+    // coincidence of arity: this is a two-state choice you make and leave, and
+    // the worklet reads its LEVEL every sample (`modelIdx` selects which of the
+    // two engines produces the block) rather than edge-detecting it, so a
+    // momentary render would snap the instrument back to MODAL on release.
+    // ⚠ IT DOES *NOT* DECLARE `options`, unlike cofefve's sibling above, so it
+    // paints as an ANONYMOUS <Toggle>. That is a known wart rather than an
+    // oversight: `MODAL`/`SYMPATHETIC` is a 5-against-11-character roster and
+    // `.seg` is `flex: 1` (flex-BASIS 0), so the two buttons split the group
+    // equally and the longer caption is guaranteed to ellipsize — the
+    // shared-primitive defect cofefve measured and left for its own PR. The
+    // face's `rings-body` hero readout names the live model instead.
+    'rings:model',
     // REMOVED 2026-07-27 — 'tidyVco:hold'. The acknowledgement was WRONG (it
     // claimed "sample-and-hold ENGAGE"): the card drives it pointerdown/
     // CUBE, 2026-08-10. Three states you switch and leave: WRAP is a rule

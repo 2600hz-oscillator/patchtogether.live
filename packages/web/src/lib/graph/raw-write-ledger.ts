@@ -244,11 +244,6 @@ export const RAW_WRITE_LEDGER: Readonly<Record<string, RawWriteEntry>> = {
     kind: 'debt',
     why: 'card button write — user gesture, should be undoable + synced',
   },
-  'ui/modules/RingsCard.svelte': {
-    keys: ['model'],
-    kind: 'debt',
-    why: 'model selector write — user gesture, should be undoable + synced',
-  },
   'ui/modules/SamsloopCard.svelte': {
     keys: ['start', 'end', 'mode'],
     kind: 'debt',

@@ -123,6 +123,12 @@ import {
   meowboxTremoloText,
 } from '$lib/ui/modules/meowbox-face-model';
 import {
+  ringsBodyText,
+  ringsEvenTapText,
+  ringsFaceParams,
+  ringsSecondPartialText,
+} from '$lib/ui/modules/rings-face-model';
+import {
   penteDecayToSustainMs,
   penteModeGainAtCutoff,
   pentePeakLinear,
@@ -407,6 +413,55 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
   'noise-white-db': (read) => noiseTapDbText('white', noiseFaceParams(read)),
   'noise-pink-db': (read) => noiseTapDbText('pink', noiseFaceParams(read)),
   'noise-brown-db': (read) => noiseTapDbText('brown', noiseFaceParams(read)),
+
+  // ── RINGS ────────────────────────────────────────────────────────────────
+  // THREE, and what they have in common is the constraint that chose them:
+  // every one is SAMPLE-RATE INDEPENDENT, verified against the shipping
+  // worklet at 44.1 / 48 / 96 kHz. That is not a coincidence, it is what is
+  // left after the obvious readout was ruled out — see the block below.
+  //
+  //   `body`       NAMES THE LIVE MODEL, which the MODEL control cannot do for
+  //                itself: it is a 0..1 discrete param with no `options`
+  //                roster, so the dock paints it as an anonymous <Toggle> — a
+  //                two-state switch over two genuinely different instruments
+  //                (a 24-partial band-pass bank against two Karplus-Strong
+  //                loops) that additionally sit 5.37 dB apart at identical
+  //                macros. It also carries STRUCTURE's meaning switch, the
+  //                same class of fact: the slider stretches partial spacing in
+  //                one model and detunes a string pair by up to 19 semitones
+  //                in the other, and its own readback is `0.25` in both.
+  //   `partial 2`  where the second thing IS — and in SYMPATHETIC there is no
+  //                partial 2, there is a second STRING, so the readout SWITCHES
+  //                ITS OWN MEANING with the model or it is lying at half the
+  //                settings this module has. Pinned against the shipping
+  //                worklet: measured ratio 2.0000 / 2.2500 / 2.5000 / 2.7500 /
+  //                3.0000 at structure 0 / .25 / .5 / .75 / 1 against a
+  //                prediction of exactly those. Labelled `knob partial 2` on
+  //                the face for the `cube-f0-knobs` reason — a `valueId` is a
+  //                pure function of PARAMS and can never see the pitch cable.
+  //   `even tap`   THE ONE WITH NO KNOB TO READ. A `paramId: 'position'`
+  //                readout prints `0.25` and `0.75` with no hint that one of
+  //                the two outputs is at DIGITAL ZERO there (measured peak
+  //                5.028e-16 and 1.302e-15 against an unaffected ODD), and
+  //                prints two different numbers at 0.30 and 0.70 which are
+  //                bit-identical settings (max|delta| exactly 0.000e+0).
+  //
+  // ⚠ WHAT IS DELIBERATELY *NOT* HERE, AND WHY — the same shape as `noise`'s
+  // brown corner, an order of magnitude worse. RING TIME is the number this
+  // faceplate most wants: TWO knobs set it and only one says so. It cannot be
+  // printed honestly through this registry. `FaceReadoutValue` is
+  // `(read) => string` and receives no sample rate, and MODAL's T60 depends on
+  // it — measured 3889 / 7420 / 476 ms at 44.1 / 48 / 96 kHz for ONE fixed pair
+  // of knob settings, because the decay constant is `q/(pi*sampleRate)` with no
+  // compensating term. Nor is the ratio a way out: the BRIGHTNESS ring
+  // multiplier measures 18.2x / 25.3x / 3.4x across the same three rates. So
+  // the finding is carried by the band LABEL ("2 · ring time — BOTH set it",
+  // which paints unconditionally where a hint does not), the corrected
+  // `docs.controls.brightness`, and the sidebar — and the rate dependence is
+  // documented on the def as the DSP defect it is.
+  'rings-body': (read) => ringsBodyText(ringsFaceParams(read)),
+  'rings-partial2-hz': (read) => ringsSecondPartialText(ringsFaceParams(read)),
+  'rings-even-tap-state': (read) => ringsEvenTapText(ringsFaceParams(read)),
 
   // ── PENTEMELODICA ────────────────────────────────────────────────────────
   // `at cutoff` is a function of MODE **and** RESONANCE — a MODE readout would
