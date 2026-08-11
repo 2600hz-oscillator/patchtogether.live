@@ -8,38 +8,46 @@
 // does not fire CI, and a `workflow_dispatch` run does not count toward a
 // required-status gate (confirmed on PR #524).
 //
-// It shipped as `needs: [linux, darwin]` with NO `if:`. A job with `needs:`
-// and no `if:` defaults to `success()`, which a SKIPPED dependency does not
-// satisfy — GitHub propagates the skip. Both platform jobs carry their own
-// `if:` on `inputs.platform`, so a single-platform dispatch skips one of them
-// and therefore skipped `revalidate` too:
+// ── THE HISTORICAL BUG, AND WHY IT CANNOT RECUR ────────────────────────────
+// The workflow used to be a TWO-PLATFORM matrix and `revalidate` shipped as
+// `needs: [linux, darwin]` with NO `if:`. A job with `needs:` and no `if:`
+// defaults to `success()`, which a SKIPPED dependency does not satisfy —
+// GitHub propagates the skip. Both platform jobs carried their own `if:` on
+// `inputs.platform`, so a single-platform dispatch skipped one of them and
+// therefore skipped `revalidate` too:
 //
 //     platform=linux  → darwin skipped → revalidate SKIPPED
 //     platform=darwin → linux  skipped → revalidate SKIPPED
 //     platform=both   → revalidate runs
 //
-// …and single-platform is the dispatch CLAUDE.md RECOMMENDS ("pick the ONE
-// platform you need — the other runner is redundant CI wall-time"). So the
+// …and single-platform was the dispatch CLAUDE.md RECOMMENDED. So the
 // documented re-validation was notional for the recommended usage, and the run
 // still reported green: a skipped job is a grey check, not a red one.
 //
-// ── WHY THIS IS A TEST AND NOT A COMMENT ───────────────────────────────────
-// The condition now spans four clauses across three jobs and two `outputs:`
-// wirings. Nothing in the YAML enforces that they compose to the intended
-// behaviour, and the failure mode is SILENT IN BOTH DIRECTIONS: too strict and
-// revalidate never runs again (the original bug, restored); too loose and it
-// close+reopens a PR after a FAILED capture, re-firing ~25 min of CI against
-// baselines that were never regenerated.
+// ⚠ 2026-08-10 — THE MATRIX IS GONE and the defect went with it rather than
+// being patched around. There is ONE baseline set (no `{platform}` in
+// `snapshotPathTemplate`) authored by ONE `capture` job, so there is no sibling
+// to skip and no propagation to model. What is left to get wrong is narrower
+// and is what this file now pins.
+//
+// ── WHAT IS STILL LOAD-BEARING ─────────────────────────────────────────────
+// A capture that rewrote NOTHING still SUCCEEDS — Playwright only rewrites a
+// snapshot whose comparison FAILS — so `needs: capture` ALONE is wrong in the
+// loose direction: it would close+reopen the PR and burn ~25 min of CI on a
+// branch whose baselines never moved. `capture.outputs.pushed` is the only
+// thing that distinguishes "captured" from "ran and changed nothing", and the
+// failure mode is SILENT IN BOTH DIRECTIONS: too strict and revalidate never
+// runs again (the original bug, restored); too loose and it re-fires CI over
+// nothing.
 //
 // So this file re-implements GitHub's job-gating semantics and runs the REAL
-// workflow file through them for every dispatch case.
+// workflow file through them for every outcome the capture can have.
 //
 // ── WHAT THIS GATE CANNOT SEE (stated, per the blind-gates rule) ────────────
 //  · It models GitHub's documented semantics, not GitHub. If Actions changes
 //    how skips propagate, this agrees with the docs and not with the runner.
 //  · `cancelled()` is modelled as false; a mid-run workflow cancellation is
-//    outside the scenario set (the `result == 'success' || 'skipped'` clauses
-//    exclude it anyway, which is asserted).
+//    outside the scenario set.
 //  · Only `.github/workflows/vrt-update.yml` is scanned. The same
 //    skipped-dependency class in any OTHER workflow is outside this gate — the
 //    other workflows were audited by hand when this landed (deploy.yml,
@@ -50,10 +58,10 @@
 //    needs/inputs lookups). It THROWS on anything else rather than guessing —
 //    an unsupported operator is a loud failure, never a silent `false`.
 //
-// The blindness that CANNOT hide: the parser's non-vacuity test pins the three
-// job names and requires each to have been found with a condition. If the scan
-// ever stops recognising the file, that test goes red instead of every
-// simulation passing over an empty job list.
+// The blindness that CANNOT hide: the parser's non-vacuity test pins the job
+// names and requires each to have been found with its wiring. If the scan ever
+// stops recognising the file, that test goes red instead of every simulation
+// passing over an empty job list.
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -341,91 +349,87 @@ const CAPTURED: RunSpec = { result: 'success', pushed: 'true' };
 const NOTHING: RunSpec = { result: 'success', pushed: 'false' };
 const FAILED: RunSpec = { result: 'failure' };
 
-describe('vrt-update revalidate is reachable from a SINGLE-platform dispatch', () => {
-  it('the scan is not vacuous — it found the three jobs and their wiring', () => {
+describe('vrt-update revalidate fires when — and only when — a baseline was pushed', () => {
+  it('the scan is not vacuous — it found the jobs and their wiring', () => {
     // ⚠ A BARE GREEN BELOW WOULD BE INDISTINGUISHABLE FROM A BROKEN SCANNER.
-    expect(JOBS.map((j) => j.name)).toEqual(['linux', 'darwin', 'revalidate']);
-    expect(byName('linux')!.ifExpr, 'linux lost its platform guard').toContain('platform');
-    expect(byName('darwin')!.ifExpr, 'darwin lost its platform guard').toContain('platform');
-    expect(byName('revalidate')!.needs).toEqual(['linux', 'darwin']);
+    expect(JOBS.map((j) => j.name)).toEqual(['capture', 'revalidate']);
+    expect(
+      byName('capture')!.ifExpr,
+      'the capture job grew an `if:`. If a platform/scope guard is coming back, the ' +
+        'skip-propagation hazard comes back with it — restore the matrix cases below ' +
+        'and re-read the header before shipping it.',
+    ).toBeNull();
+    expect(byName('revalidate')!.needs).toEqual(['capture']);
     expect(
       byName('revalidate')!.ifExpr,
-      'revalidate has NO `if:` — with `needs:` that defaults to success(), which a ' +
-        'SKIPPED dependency does not satisfy, so every single-platform dispatch ' +
-        'silently skips the close+reopen re-validation.',
+      'revalidate has NO `if:` — with `needs: capture` that defaults to success(), which ' +
+        'a capture that rewrote NOTHING satisfies, so the PR gets close+reopened and ~25 ' +
+        'min of CI burns against baselines that never moved.',
     ).not.toBeNull();
-    // The `pushed` clause is only meaningful if both platform jobs actually
-    // expose that output; a missing wiring would make revalidate unreachable.
-    expect(byName('linux')!.outputs, 'linux must expose `pushed`').toContain('pushed');
-    expect(byName('darwin')!.outputs, 'darwin must expose `pushed`').toContain('pushed');
+    // The `pushed` clause is only meaningful if the capture job actually
+    // exposes that output; a missing wiring would make revalidate unreachable.
+    expect(byName('capture')!.outputs, 'capture must expose `pushed`').toContain('pushed');
   });
 
   it.each([
-    ['linux-only, baselines captured', 'linux', { linux: CAPTURED }, true],
-    ['darwin-only, baselines captured', 'darwin', { darwin: CAPTURED }, true],
-    ['both, both captured', 'both', { linux: CAPTURED, darwin: CAPTURED }, true],
-    [
-      'both, only linux captured anything',
-      'both',
-      { linux: CAPTURED, darwin: NOTHING },
-      true,
-    ],
-    ['linux-only, capture FAILED', 'linux', { linux: FAILED }, false],
-    ['darwin-only, capture FAILED', 'darwin', { darwin: FAILED }, false],
-    ['both, linux FAILED', 'both', { linux: FAILED, darwin: CAPTURED }, false],
-    ['both, darwin FAILED', 'both', { linux: CAPTURED, darwin: FAILED }, false],
-    ['both, BOTH failed', 'both', { linux: FAILED, darwin: FAILED }, false],
-    ['linux-only, captured NOTHING', 'linux', { linux: NOTHING }, false],
-    ['both, captured NOTHING', 'both', { linux: NOTHING, darwin: NOTHING }, false],
-  ] as [string, string, Record<string, RunSpec>, boolean][])(
+    ['baselines captured and pushed', { capture: CAPTURED }, true],
+    ['capture FAILED', { capture: FAILED }, false],
+    ['capture ran and rewrote NOTHING', { capture: NOTHING }, false],
+  ] as [string, Record<string, RunSpec>, boolean][])(
     'case: %s → revalidate runs = %s',
-    (_label, platform, runs, expected) => {
-      expect(revalidateRuns({ platform }, runs)).toBe(expected);
+    (_label, runs, expected) => {
+      expect(revalidateRuns({}, runs)).toBe(expected);
     },
   );
 
-  it('a single-platform dispatch skips the OTHER platform but still re-validates', () => {
-    // The precise shape of the bug: the skip is real and expected — what must
-    // not happen is that skip propagating into revalidate.
-    const linuxOnly = simulate(JOBS, { platform: 'linux' }, { linux: CAPTURED });
-    expect(linuxOnly.darwin.result).toBe('skipped');
-    expect(linuxOnly.revalidate.result).not.toBe('skipped');
-
-    const darwinOnly = simulate(JOBS, { platform: 'darwin' }, { darwin: CAPTURED });
-    expect(darwinOnly.linux.result).toBe('skipped');
-    expect(darwinOnly.revalidate.result).not.toBe('skipped');
-  });
-
-  it('NEGATIVE CONTROL: the ORIGINAL (if-less) revalidate is unreachable single-platform', () => {
-    // The permanent proof that the simulator can SEE the bug. Strip the `if:`
-    // from revalidate — exactly the file as shipped — and every single-platform
-    // dispatch must come back skipped. If this ever passes as `true`, the
-    // simulator has stopped modelling skip propagation and every green above
-    // is worthless.
-    const broken = JOBS.map((j) =>
-      j.name === 'revalidate' ? { ...j, ifExpr: null } : j,
-    );
-    expect(revalidateRuns({ platform: 'linux' }, { linux: CAPTURED }, broken)).toBe(false);
-    expect(revalidateRuns({ platform: 'darwin' }, { darwin: CAPTURED }, broken)).toBe(false);
-    // …and the reason it looked fine for so long: platform=both DID work.
-    expect(
-      revalidateRuns({ platform: 'both' }, { linux: CAPTURED, darwin: CAPTURED }, broken),
-    ).toBe(true);
+  it('NEGATIVE CONTROL: an if-LESS revalidate re-fires CI over a capture that pushed nothing', () => {
+    // The permanent proof that the simulator can SEE the failure this `if:`
+    // exists to prevent. Strip it and a zero-file capture — which is a SUCCESS
+    // as far as the job is concerned — still close+reopens the PR.
+    const broken = JOBS.map((j) => (j.name === 'revalidate' ? { ...j, ifExpr: null } : j));
+    expect(revalidateRuns({}, { capture: NOTHING }, broken)).toBe(true);
+    // The shipped condition rejects it.
+    expect(revalidateRuns({}, { capture: NOTHING })).toBe(false);
+    // …and both agree that a FAILED capture never re-validates, because
+    // `success()` already covers that half. The `if:` is doing the OTHER half.
+    expect(revalidateRuns({}, { capture: FAILED }, broken)).toBe(false);
   });
 
   it('NEGATIVE CONTROL: a bare `always()` would re-validate a FAILED capture', () => {
-    // The other direction — the naive fix is not merely weaker, it is wrong:
-    // it close+reopens the PR after a capture that produced nothing, burning a
-    // full CI cycle on baselines that were never regenerated. The real
-    // condition must reject what this accepts.
+    // The other direction — the naive fix is not merely weaker, it is wrong.
     const naive = JOBS.map((j) =>
       j.name === 'revalidate' ? { ...j, ifExpr: 'always()' } : j,
     );
-    expect(revalidateRuns({ platform: 'linux' }, { linux: FAILED }, naive)).toBe(true);
-    expect(revalidateRuns({ platform: 'linux' }, { linux: NOTHING }, naive)).toBe(true);
+    expect(revalidateRuns({}, { capture: FAILED }, naive)).toBe(true);
+    expect(revalidateRuns({}, { capture: NOTHING }, naive)).toBe(true);
     // The shipped condition rejects both.
-    expect(revalidateRuns({ platform: 'linux' }, { linux: FAILED })).toBe(false);
-    expect(revalidateRuns({ platform: 'linux' }, { linux: NOTHING })).toBe(false);
+    expect(revalidateRuns({}, { capture: FAILED })).toBe(false);
+    expect(revalidateRuns({}, { capture: NOTHING })).toBe(false);
+  });
+
+  it('SKIP PROPAGATION is still modelled, though this workflow no longer exercises it', () => {
+    // The matrix is gone, so nothing in the real file can produce a skipped
+    // dependency any more — which means the simulator's most important
+    // behaviour would go untested and could rot silently before the next
+    // workflow that needs it. Exercise it against a SYNTHETIC two-job shape
+    // identical to the one this workflow shipped with, using the SAME
+    // `simulate` the cases above call.
+    const matrix: Job[] = [
+      { name: 'capture', needs: [], ifExpr: "inputs.platform != 'darwin'", outputs: ['pushed'] },
+      { name: 'other', needs: [], ifExpr: "inputs.platform != 'linux'", outputs: ['pushed'] },
+      { name: 'revalidate', needs: ['capture', 'other'], ifExpr: null, outputs: [] },
+    ];
+    const linuxOnly = simulate(matrix, { platform: 'linux' }, { capture: CAPTURED });
+    expect(linuxOnly.other.result, 'the guarded sibling must skip').toBe('skipped');
+    expect(
+      linuxOnly.revalidate.result,
+      'a SKIPPED dependency must propagate into an if-less dependent — that propagation ' +
+        'IS the bug this file was written for, and a simulator that stopped modelling it ' +
+        'would pass every other case in here vacuously.',
+    ).toBe('skipped');
+    // …and the reason it looked fine for so long: both-platform DID work.
+    const both = simulate(matrix, { platform: 'both' }, { capture: CAPTURED, other: CAPTURED });
+    expect(both.revalidate.result).not.toBe('skipped');
   });
 
   it('NEGATIVE CONTROL: the evaluator is not stuck returning one value', () => {

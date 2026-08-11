@@ -91,22 +91,31 @@ const REQUIRED = process.env.VRT_STRIPE_PALETTE_REQUIRED === '1';
 const LFS_POINTER_PREFIX = 'version https://git-lfs';
 
 /**
- * LOWER BOUND on how many baselines this gate must actually compare.
+ * ⚠ `MIN_TOKEN_PINNED_BASELINES` (200) IS GONE (2026-08-10) — a hand-typed
+ * population count, the species CLAUDE.md now forbids outright.
  *
- * Without it the gate is one bad regex away from vacuity: a `.stripe` markup
- * change would silently move every card into "not token-pinned" and the suite
- * would stay green while checking nothing. This is a VACUITY TRIPWIRE, not a
- * coverage target — it wants headroom, not precision.
+ * WHAT IT CLAIMED TO PROTECT, checked before deleting rather than assumed:
+ * "one bad regex away from vacuity — a `.stripe` markup change would silently
+ * move every card into not-token-pinned and the suite would stay green".
+ * Traced against the tests that remain, that exact failure is caught THREE
+ * times over, each by a NAME rather than a number:
  *
- * Measured 2026-08-01 with the widened directory scope: 190 token-pinned
- * baselines (128 in `vrt.spec.ts`, 62 across the other 8 single-card dirs).
- * Re-measured 2026-08-02 after validating the exclusions: 219 (+27 `vrt-toybox`
- * as a cable-edge dir, +1 `vrt-aspect-16x9`, +1 `vrt-synesthesia-video` — all
- * three were mis-declared NON-card and therefore unreachable). Floor keeps its
- * original ~20 rows of headroom.
+ *   * every card falling out of `pinned` puts every scene into `skipped`, so
+ *     `dropped` explodes and `toEqual(NOT_TOKEN_PINNED_SCENES)` — 26 named
+ *     scenes, asserted in BOTH directions — fails naming the newcomers;
+ *   * a spec directory vanishing from the walk is caught by the
+ *     classification test, which anchors to `readdirSync(SCREENSHOT_ROOT)` and
+ *     fails on a table entry for a directory that no longer exists;
+ *   * a directory being silently EXCLUDED from the walk means it is in
+ *     `NON_CARD_CAPTURE_DIRS`, and every claim in that table is separately
+ *     asserted true (no cable band in the scan window).
+ *
+ * And the degenerate case a floor is really for — the PNG loop reading zero
+ * files — makes `dropped` empty against a non-empty declared list, which is
+ * red. A floor could add nothing except slack: it carried ~20 baselines of it,
+ * which the test below it already says out loud is enough room for a card to
+ * quietly stop being token-pinned.
  */
-const MIN_TOKEN_PINNED_BASELINES = 200;
-
 /**
  * Baselines that are token-pinned, COMPARED by a test, and still painting a
  * pre-#1159 hue — because the PR that regenerates them is a different one.
@@ -615,21 +624,26 @@ describe('VRT baselines paint the CURRENT --cable-* stripe', () => {
       `(${Object.keys(NON_CARD_CAPTURE_DIRS).length} excluded, each claim asserted).\n` +
       `  not token-pinned (${skipped.length}):\n    ${skipped.join('\n    ')}`,
     );
+    // No floor here — see the note where MIN_TOKEN_PINNED_BASELINES used to
+    // be. What this test still does is PRINT the scope every run, green
+    // included, so "the gate compared almost nothing" is visible in the log of
+    // the runs people actually read. The assertion that a resolver break is RED
+    // lives in the exact-set test immediately below.
     expect(
-      pinned.length,
-      `only ${pinned.length} baselines resolved to a --cable-* stripe token (floor ` +
-      `${MIN_TOKEN_PINNED_BASELINES}). A drop means the source-side resolver stopped recognising ` +
-      `cards — the gate would be vacuous. Not-pinned reasons:\n  ${skipped.join('\n  ')}`,
-    ).toBeGreaterThanOrEqual(MIN_TOKEN_PINNED_BASELINES);
+      pinned.length > 0,
+      `NO baseline resolved to a --cable-* stripe token at all. Either the screenshot tree is ` +
+      `unreadable or the source-side resolver stopped recognising cards. Not-pinned reasons:\n  ` +
+      `${skipped.join('\n  ')}`,
+    ).toBe(true);
   });
 
   it('the set of NOT-token-pinned cards is exactly the declared one', () => {
     if (unreadable && !REQUIRED) return;
-    // The count floor above has ~20 baselines of slack, so a single card
-    // converting `.stripe` from `var(--cable-audio)` to a hardcoded `#38d3c8`
-    // would drop out of `pinned` and stay under the floor — the escape hatch
-    // from this gate is to STOP being token-pinned, and a floor rewards it with
-    // silence. Pin the identity of the excused cards, not just their number.
+    // THE gate on the resolver, and the reason no count floor is needed above.
+    // A single card converting `.stripe` from `var(--cable-audio)` to a
+    // hardcoded `#38d3c8` would drop out of `pinned` — the escape hatch from
+    // this gate is to STOP being token-pinned, and any count with slack in it
+    // rewards that with silence. Pin the IDENTITY of the excused cards.
     const dropped = [...new Set(skipped.map((s) => s.split(': ')[0].split('/').pop()!))].sort();
     expect(
       dropped,

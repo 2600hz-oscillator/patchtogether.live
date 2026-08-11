@@ -124,9 +124,13 @@ const RECORD_EXEMPTIONS = [
   { id: 'per-port.EXEMPT_INPUT_DRIVE', file: 'e2e/tests/per-module-per-port.spec.ts', konst: 'EXEMPT_INPUT_DRIVE', desc: 'per-PORT input-drive exemptions (gameplay-deep / asset-gated inputs)' },
 ];
 
-const SET_EXEMPTIONS = [
-  { id: 'vrt.EXEMPT_BASELINE_PAIRS', file: 'e2e/vrt/vrt-exemptions.ts', konst: 'EXEMPT_BASELINE_PAIRS', desc: 'per-<platform>/<scene> VRT baseline pairs deferred (pending a vrt-update capture)' },
-];
+// Set-shaped exemptions (bare `new Set([...])` with no per-entry reason).
+// EMPTY since 2026-08-10: its only member was `vrt.EXEMPT_BASELINE_PAIRS`, the
+// `<platform>/<scene>` skip list, and it died with the {platform} baseline
+// dimension — one baseline set means there is no other platform to defer to.
+// The array is kept, not inlined away, because the SHAPE is still supported and
+// the next set-shaped exemption should land here rather than reinventing it.
+const SET_EXEMPTIONS = [];
 
 // Opt-IN completeness RATCHETS (the more members the better — the inverse of an
 // exemption). Reported for drift visibility, clearly separated from opt-outs.
