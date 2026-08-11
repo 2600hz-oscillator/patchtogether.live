@@ -402,17 +402,32 @@ export const marblesDef: AudioModuleDef = {
       scale: 'grid',
     },
 
-    // A VuMeter on the primary output.
+    // ⚠ NO GLYPH, AND THAT IS A MEASUREMENT RATHER THAN A PREFERENCE. This
+    // face shipped `glyph: 'meter'` through three review passes before the
+    // binding was actually read: `primaryAudioOutPortId` matches
+    // `o.type === 'audio'`, and marbles declares NO audio output — t1/t2/clk
+    // are `gate` and x1/x2/x3 are `cv`. So `glyphBinding` falls all the way
+    // through to `{ kind: 'static' }`, `tap` is undefined, and `<VuMeter>`
+    // renders with its `level = 0` default: TWELVE SEGMENTS THAT CAN NEVER
+    // LIGHT, on the one module in the rack that is producing from the instant
+    // it spawns. A permanently dead meter is the exact thing this programme
+    // refuses to paint, so there is no glyph at all.
     //
-    // ⚠ `primaryAudioOutPortId` RESOLVES THE FIRST AUDIO-ISH OUTPUT, which here
-    // is `t1` — a GATE. That is the right tap for a lane tile on this module:
-    // marbles FREE-RUNS, so a meter twitching on t1 is the honest "this thing
-    // is producing" signal, and it is the only one a 64 px tile can carry.
-    // (Determinism is #1420's: the shared face boot suspends the AudioContext
-    // before the tile is framed, so the analyser reads zeros at capture time
-    // like every other face. marbles is the roster's THIRD free-running entry
-    // and therefore a third witness for that freeze — see e2e/vrt/_shell-faces.)
-    glyph: 'meter',
+    // No other kind resolves either — `envelope` needs A/D/S/R, `algorithm`
+    // needs an `algorithm` param, `waveform` needs a 0..2 `shape` — so every
+    // glyph on this module is decoration until the resolver learns to tap a
+    // gate or CV output, which is a platform change and not a face PR's.
+    //
+    // ⚠ AND IT MEANS marbles IS NOT A FREEZE WITNESS. A draft of this face
+    // claimed it was the roster's third free-running exerciser of #1420's
+    // pre-frame AudioContext freeze. It free-runs, but with no analyser tap
+    // the capture has nothing to be a moving target — the claim was about a
+    // glyph that was never live. See e2e/vrt/_shell-faces.
+    //
+    // The compact tier gains a cell for it: `faceTierCap('compact')` is 3
+    // without a glyph and 2 with one, so the lane tile shows RATE, DÉJÀ VU and
+    // T BIAS instead of two of them beside a dead bar.
+    glyph: 'none',
 
     title: 'Random',
 

@@ -442,9 +442,16 @@
 // faceplate prints `CLUSTERS → COIN` rather than painting a dead model as a
 // working one.
 //
-// ⚠ AND IT IS THE ROSTER'S THIRD FREE-RUNNING FACE, so its `meter` glyph is a
-// third witness for #1420's pre-frame audio freeze — see e2e/vrt/_shell-faces
-// for what is measured and what is only predicted.
+// ⚠ AND IT DECLARES NO GLYPH, which is the one finding this face made about
+// ITSELF. It shipped `glyph: 'meter'` through three passes on the reasoning
+// that marbles free-runs and a meter is what a 64 px tile can honestly say —
+// until the binding was read rather than assumed. `primaryAudioOutPortId`
+// matches `type === 'audio'`, and marbles declares none: t1/t2/clk are `gate`,
+// x1/x2/x3 are `cv`. `glyphBinding` therefore returns `{ kind: 'static' }`,
+// `tap` is undefined, and `<VuMeter>` falls back to its `level = 0` default —
+// twelve segments that can never light, on the busiest module in the rack. It
+// also means marbles is NOT a witness for #1420's audio freeze, which the same
+// draft claimed: it free-runs, but nothing on the face was ever reading it.
 
 export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // P1 batch 1 — first 6 module faces
