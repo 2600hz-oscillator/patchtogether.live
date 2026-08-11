@@ -35,6 +35,7 @@ import {
   MARBLES_FACE_DEFAULTS,
   MARBLES_GLIDE_TABLE,
   MARBLES_QUANT_LEVELS,
+  MARBLES_QUANT_THRESHOLDS,
   MARBLES_QUANT_MIN_STEPS,
   MARBLES_SCALE_BAND,
   MARBLES_STUB_MODEL,
@@ -66,7 +67,49 @@ import {
   type MarblesFaceParams,
 } from './marbles-face-model';
 
+// ── SAMPLE RATES, CHOSEN BY MEASUREMENT ─────────────────────────────────────
+//
+// ⚠ THE UNIT LANE'S BUDGET IS 5000 ms PER TEST AND CI RUNS ~2.5x SLOWER THAN A
+// QUIET LOCAL MACHINE. The level-ladder oracle below shipped at 3061 ms local —
+// 61 % of the budget before that multiplier — and went RED on CI twice. It was
+// not close to non-convergence; it was doing arithmetic nothing read.
+//
+// WHAT THE WASTE ACTUALLY WAS, measured rather than guessed. These oracles read
+// ONE value per clock (at a fixed lag after the rising edge). At `rate: 36` the
+// clock is 16 Hz, so SR 32000 renders 2000 samples per clock to deliver ONE
+// number — and above the STEPS step-threshold there is no glide at all, so the
+// other 1999 are a held constant. VERIFIED, not assumed: the clocked value
+// SEQUENCE is byte-identical at SR 32000 / 16000 / 8000 / 4000 (the stream
+// advances per CLOCK EVENT, not per sample), and all 42 ladder cells agree at
+// every one of those rates.
+//
+// ⚠ AND THE WINDOW IS *NOT* THE WASTE — checked before shortening it, because
+// the two look identical from a timeout. Convergence needs 348 clocks in the
+// worst cell (12 degrees under a spread-0.4 distribution is a coupon-collector
+// problem), and 24 s at 16 Hz gives 384. Cutting the window to 12 s produces 7
+// mismatches. So the window STAYS and only the rate moves.
+//
+//   ladder leg   sr 32000 → 4000, window unchanged:  3009 ms → 344 ms, 0/42 drift
+//   scale band   sr 32000 → 4000, window unchanged:  1390 ms → ~170 ms, same answers
+//   glide leg    sr 32000 → 16000, 20 s → 10 s:      1715 ms → 423 ms (see below)
+//
 const SR = 32000;
+
+/** For the CLOCK-SAMPLED oracles: one value per clock is all they read, and the
+ *  sequence is rate-invariant (see above). 250 samples per clock at `rate: 36`,
+ *  so `CLOCK_LAG` sits 10 % into a ~125-sample high phase. */
+const SR_CLOCKED = 4000;
+const CLOCK_LAG = 25;
+
+/** For the GLIDE oracle, which is the one leg that genuinely resolves timing
+ *  INSIDE a step and so cannot drop as far. Measured across SR 32000 / 16000 /
+ *  8000 the settle fraction moves by at most 0.1 pp (91.0/91.0/91.0,
+ *  94.7/94.7/94.7, 52.0/51.9/51.9, 19.8/19.8/19.7 at STEPS 0/.2/.35/.45) — and
+ *  the assertion's own tolerance is `toBeCloseTo(x, 1)`, i.e. +-5 pp. The probe
+ *  is therefore 50x finer than the thing it is compared against. 16000 keeps
+ *  >=1333 samples per period at the fastest rate tested. */
+const SR_GLIDE = 16000;
+const GLIDE_SECONDS = 10;
 
 function params(over: Partial<MarblesParams> = {}): MarblesParams {
   const p: Record<string, number> = {};
@@ -96,6 +139,18 @@ function duty(buf: Float32Array): number {
   for (let i = 0; i < buf.length; i++) if (buf[i]! >= 0.5) hi++;
   return hi / buf.length;
 }
+
+/** The seven quantiser levels and a STEPS value inside each. Shared by the
+ *  ladder oracle and its discrimination control. */
+const LEVEL_LADDER = [
+  [0.55, 1],
+  [0.62, 2],
+  [0.72, 3],
+  [0.79, 4],
+  [0.86, 5],
+  [0.93, 6],
+  [0.99, 7],
+] as const;
 
 /** The X value read at a FIXED LAG after each clock edge — never mid-glide. */
 function clocked(x: Float32Array, clk: Float32Array, lag = 200): number[] {
@@ -335,27 +390,79 @@ describe('marbles face model — the X quantiser', () => {
   it('ORACLE: the level ladder predicts the degrees-per-octave of all six scales', () => {
     // 0.2 output units = 1 V = one octave, and SPREAD 0.4 cannot reach the rail,
     // so a false "collapse" cannot be manufactured by clipping.
-    for (const [steps, level] of [
-      [0.55, 1],
-      [0.62, 2],
-      [0.72, 3],
-      [0.79, 4],
-      [0.86, 5],
-      [0.93, 6],
-      [0.99, 7],
-    ] as const) {
+    //
+    // MEASURED ONCE into a matrix, so the discrimination control below re-reads
+    // the same 42 renders instead of paying for them twice.
+    const measured: number[][] = [];
+    for (const [steps, level] of LEVEL_LADDER) {
       expect(marblesQuantLevel(steps), `steps ${steps} → level`).toBe(level);
+      const row: number[] = [];
       for (let sc = 0; sc < PRESET_SCALES.length; sc++) {
-        const r = marblesMath.render(SR * 24, SR, params({ rate: 36, spread: 0.4, steps, scale: sc }));
-        const inOctave = new Set(
-          clocked(r.x1, r.clk).filter((v) => v >= 0 && v < 0.2).map((v) => v.toFixed(6)),
-        ).size;
+        const r = marblesMath.render(
+          SR_CLOCKED * 24,
+          SR_CLOCKED,
+          params({ rate: 36, spread: 0.4, steps, scale: sc }),
+        );
+        row.push(
+          new Set(
+            clocked(r.x1, r.clk, CLOCK_LAG).filter((v) => v >= 0 && v < 0.2).map((v) => v.toFixed(6)),
+          ).size,
+        );
+      }
+      measured.push(row);
+    }
+
+    // (a) THE MODEL PREDICTS EVERY CELL.
+    for (let i = 0; i < LEVEL_LADDER.length; i++) {
+      const [steps, level] = LEVEL_LADDER[i]!;
+      for (let sc = 0; sc < PRESET_SCALES.length; sc++) {
         expect(
-          inOctave,
+          measured[i]![sc],
           `steps ${steps} (level ${level}), ${MARBLES_SCALE_NAMES[sc]}: measured degrees in [0,1) V`,
         ).toBe(marblesActiveDegrees(sc, steps).length);
       }
     }
+
+    // (b) DISCRIMINATION — and this leg did not exist until the CI timeout sent
+    // me back to the file. Clause (a) alone proves the model AGREES with the
+    // DSP; it does not prove the comparison could ever DISAGREE, and a sweep
+    // that cannot reject anything is a green light rather than a gate. Two
+    // perturbed models, both plausible mistakes, must be rejected — and by a
+    // LARGE margin, not one cell:
+    //
+    //   reading the neighbouring level's weight threshold → 28/42 cells differ
+    //     (in BOTH directions; L1 with −1 and L7 with +1 contribute 0 because
+    //     the threshold table clamps, which is why the total is the assertion
+    //     and not any single row)
+    //   ignoring SCALE and always answering scale 0     → 13/42 cells differ
+    const disagreements = (predict: (sc: number, i: number) => number): number => {
+      let n = 0;
+      for (let i = 0; i < LEVEL_LADDER.length; i++) {
+        for (let sc = 0; sc < PRESET_SCALES.length; sc++) {
+          if (measured[i]![sc] !== predict(sc, i)) n++;
+        }
+      }
+      return n;
+    };
+    const offByOne = (off: number) => (sc: number, i: number) => {
+      const level = LEVEL_LADDER[i]![1];
+      const t = MARBLES_QUANT_THRESHOLDS[Math.min(6, Math.max(0, level - 1 + off))]!;
+      const scale = PRESET_SCALES[sc]!;
+      return scale.degree.slice(0, scale.numDegrees).filter((d) => d.weight >= t).length;
+    };
+    expect(
+      disagreements((sc, i) => marblesActiveDegrees(sc, LEVEL_LADDER[i]![0]).length),
+      'the shipping model must agree with the DSP on every cell',
+    ).toBe(0);
+    expect(
+      disagreements(offByOne(-1)),
+      'a model reading the level BELOW must be rejected — if it is not, this sweep proves nothing',
+    ).toBe(28);
+    expect(disagreements(offByOne(1)), 'and the level ABOVE, equally').toBe(28);
+    expect(
+      disagreements((sc, i) => marblesActiveDegrees(0, LEVEL_LADDER[i]![0]).length),
+      'a model blind to SCALE must be rejected too — the weakest plausible mistake',
+    ).toBe(13);
   });
 
   it('ORACLE: the quantiser does NOTHING below 0.536, and the module ships at 0.50', () => {
@@ -378,9 +485,18 @@ describe('marbles face model — the X quantiser', () => {
   });
 
   it('ORACLE: SCALE is invariant below the threshold and six-way inside the band', () => {
+    // Same SR cut as the ladder, and for the same reason: this compares the
+    // CLOCKED value sequences, which are rate-invariant. The 12 s WINDOW is the
+    // compared data and is unchanged — shortening it would make two scales
+    // easier to mistake for each other, which is the failure direction that
+    // matters here.
     const fingerprint = (steps: number, sc: number): string => {
-      const r = marblesMath.render(SR * 12, SR, params({ rate: 36, spread: 0.4, steps, scale: sc }));
-      return clocked(r.x1, r.clk).map((v) => v.toFixed(6)).join(',');
+      const r = marblesMath.render(
+        SR_CLOCKED * 12,
+        SR_CLOCKED,
+        params({ rate: 36, spread: 0.4, steps, scale: sc }),
+      );
+      return clocked(r.x1, r.clk, CLOCK_LAG).map((v) => v.toFixed(6)).join(',');
     };
     const distinctAt = (steps: number): number =>
       new Set(PRESET_SCALES.map((_, sc) => fingerprint(steps, sc))).size;
@@ -432,19 +548,33 @@ describe('marbles face model — the X quantiser', () => {
   });
 
   it('ORACLE: STEPS below 0.5 is a PORTAMENTO, and the glide is a FRACTION of the step', () => {
+    // ⚠ THE ONE LEG THAT CANNOT DROP TO `SR_CLOCKED`: it resolves a settling
+    // time INSIDE a step rather than reading one value per clock. It still had
+    // two over-provisions. The window was 20 s when the probe reads clock edges
+    // 12..27 — 81 clocks rendered at `rate: 12` to use 28 — and the rate was 2x
+    // finer than needed (see `SR_GLIDE`: the fraction moves <=0.1 pp across
+    // 32000/16000/8000 against a +-5 pp assertion tolerance). 1715 ms → 423 ms.
     const measure = (rate: number, steps: number): number => {
-      const period = Math.round(SR / marblesClockHz(rate));
-      const r = marblesMath.render(SR * 20, SR, params({ rate, spread: 0.6, steps }));
+      const period = Math.round(SR_GLIDE / marblesClockHz(rate));
+      const r = marblesMath.render(
+        SR_GLIDE * GLIDE_SECONDS,
+        SR_GLIDE,
+        params({ rate, spread: 0.6, steps }),
+      );
       const e = edges(r.clk);
+      expect(e.length, `rate ${rate}: the window must still reach clock 27`).toBeGreaterThan(28);
+      // The settle target is read just before the NEXT edge; the guard band
+      // scales with the period so it is the same fraction of a step at any rate.
+      const skip = Math.max(2, Math.round(period * 0.0075));
       const fr: number[] = [];
       for (const k of [12, 17, 22, 27]) {
         const at = e[k];
         if (at === undefined || at + period >= r.x1.length) continue;
-        const target = r.x1[at + period - 60]!;
+        const target = r.x1[at + period - skip]!;
         const span = Math.abs(target - r.x1[at]!);
         if (span < 5e-3) continue;
-        let settle = period - 60;
-        for (let i = 0; i < period - 60; i++) {
+        let settle = period - skip;
+        for (let i = 0; i < period - skip; i++) {
           if (Math.abs(r.x1[at + i]! - target) <= 0.02 * span) {
             settle = i;
             break;
@@ -471,10 +601,14 @@ describe('marbles face model — the X quantiser', () => {
     }
     // NEGATIVE CONTROL — above 0.5 there is no glide at all: the value is held
     // for the whole step, so a period holds exactly ONE distinct sample.
-    const hard = marblesMath.render(SR * 12, SR, params({ rate: 24, spread: 0.6, steps: 0.6 }));
+    const hard = marblesMath.render(
+      SR_GLIDE * GLIDE_SECONDS,
+      SR_GLIDE,
+      params({ rate: 24, spread: 0.6, steps: 0.6 }),
+    );
     const e = edges(hard.clk);
-    const period = Math.round(SR / marblesClockHz(24));
-    const seg = Array.from(hard.x1.slice(e[12]!, e[12]! + period - 60));
+    const period = Math.round(SR_GLIDE / marblesClockHz(24));
+    const seg = Array.from(hard.x1.slice(e[12]!, e[12]! + period - 30));
     expect(new Set(seg.map((v) => v.toFixed(9))).size, 'no glide above the step threshold').toBe(1);
     expect(marblesGlideFraction(0.6)).toBe(0);
     expect(marblesGlideFraction(0)).toBeGreaterThan(0.8);
