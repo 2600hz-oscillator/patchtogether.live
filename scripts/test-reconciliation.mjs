@@ -332,7 +332,7 @@ function extractRecordKeys(src, constName) {
 /** Extract the string members of a `new Set<...>([ 'a', 'b', … ])` literal
  *  (`const NAME … = new Set<string>([ … ])`) from TS source. Comments are
  *  stripped first so a quoted word inside a `// …` block comment is never
- *  mistaken for a member (STRICT_DOCS / EXEMPT_BASELINE_PAIRS / STRICT_VRT_MODULES
+ *  mistaken for a member (STRICT_DOCS / STRICT_VRT_MODULES / ALLOWED_PERMANENT_EXEMPT
  *  all carry heavy inline commentary). Heuristic but deterministic; the
  *  exemption files are flat Set literals so it is reliable. Returns a Set. */
 function extractSetItems(src, constName) {
