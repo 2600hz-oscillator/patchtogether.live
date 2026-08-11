@@ -259,9 +259,10 @@ export async function expectVrtSceneScreenshot(args: {
    * THE RATCHETED ESCAPE HATCH — selectors from the pre-registry
    * `VRT_MODULE_MASKS` table, resolved against `target`. These have NO
    * companion: the region is deleted from the diff and nothing replaces it.
-   * The only caller is vrt.spec.ts, and the count is capped by a shrinking
-   * ceiling in packages/web/src/lib/ui/vrt-live-surfaces.test.ts. Do not add
-   * new callers — register the surface instead.
+   * The only caller is vrt.spec.ts. Each rect must carry a `why` naming the
+   * cause (required by the type, gated in
+   * packages/web/src/lib/ui/vrt-live-surfaces.test.ts). Do not add new
+   * callers — register the surface instead.
    */
   legacyMaskSelectors?: string[];
   options?: VrtScreenshotOptions;

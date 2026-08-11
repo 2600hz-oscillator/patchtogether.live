@@ -154,9 +154,21 @@ describe('VRT coverage self-test', () => {
     ).toEqual([]);
   });
 
-  it('every exempted module has a non-empty reason', () => {
+  it('every exempted module has a SUBSTANTIVE reason', () => {
+    // Raised 10 → 40 (2026-08-10) when PERMANENT_EXEMPT_CEILING was deleted.
+    // With the count gone, the NAME plus its reason is the whole review surface
+    // for "this module ships with no visual coverage", so the reason has to
+    // carry weight. 40 is not arbitrary: it is the same bar every other `why`
+    // in the VRT gates already meets, and the shortest live reason today is 46
+    // (cameraInput), so it is a floor under the existing corpus rather than a
+    // migration. A ten-character reason is "no baseline" — the placeholder this
+    // list grew 76 → 81 on.
     for (const [t, reason] of Object.entries(EXEMPT_FROM_VRT)) {
-      expect(reason.length, `${t} exemption needs a reason`).toBeGreaterThan(10);
+      expect(
+        reason.length,
+        `${t}: an EXEMPT_FROM_VRT entry needs a reason that says what covers the ` +
+          `module instead, or why it cannot be captured. Got ${reason.length} chars.`,
+      ).toBeGreaterThan(40);
     }
   });
 
@@ -318,19 +330,18 @@ describe('vrt-meta — STRICT_VRT_MODULES RATCHET (only grows)', () => {
 });
 
 /**
- * THE PERMANENT-EXEMPT CEILING. Frozen at the 81 entries that existed when the
- * brake landed (2026-08-04). Asserted in BOTH directions, like every other
- * ratchet in this file: a ceiling can only trip by GROWING, so a drain that
- * forgets to lower the number passes in total silence and leaves slack for the
- * next regression to hide in.
- *
- * LOWER this by exactly the number of modules you drain out of
- * EXEMPT_FROM_VRT + ALLOWED_PERMANENT_EXEMPT, in the SAME commit. NEVER raise
- * it to make a red gate green — a new module needing an exemption is a
- * reviewed decision, and raising the ceiling is how you record having made it.
+ * ⚠ `PERMANENT_EXEMPT_CEILING` (81) IS GONE (2026-08-10). It counted the
+ * entries of a list this file ALREADY pins name-for-name: the last assertion in
+ * this block asserts `[...ALLOWED_PERMANENT_EXEMPT].sort()` EQUALS
+ * `Object.keys(EXEMPT_FROM_VRT).sort()`, so the deny-by-default property the
+ * ceiling was credited with — "a new module cannot self-exempt" — is carried by
+ * the ALLOWLIST, not by the number. Adding an exemption already costs two named
+ * edits plus a >40-char reason, all of which appear in the diff; the count added
+ * a third place to notice the same thing and a hand-typed literal in a file
+ * three concurrent face branches edit. Verified before deleting: with the
+ * ceiling removed, the synthetic `someBrandNewModule` in the negative control
+ * below is still refused.
  */
-const PERMANENT_EXEMPT_CEILING = 81;
-
 describe('vrt-meta — EXEMPT_FROM_VRT is DENY-BY-DEFAULT (frozen allowlist)', () => {
   // EXEMPT_FROM_VRT used to be a pure OPT-OUT: any module could remove itself
   // from visual coverage by adding a key with a >10-char reason. That gate
@@ -345,8 +356,8 @@ describe('vrt-meta — EXEMPT_FROM_VRT is DENY-BY-DEFAULT (frozen allowlist)', (
       `these modules exempted themselves from VRT without an allowlist entry: ${unlisted.join(', ')}.\n` +
         'Shipping a module with NO visual coverage is a reviewed decision. Either give it a ' +
         'VRT baseline (the strongly preferred path — see vrt-update.yml), or add it to ' +
-        'ALLOWED_PERMANENT_EXEMPT in e2e/vrt/vrt-exemptions.ts AND raise ' +
-        'PERMANENT_EXEMPT_CEILING, so the exemption shows up in review.',
+        'ALLOWED_PERMANENT_EXEMPT in e2e/vrt/vrt-exemptions.ts with a reason that says what ' +
+        'covers the module instead, so the exemption shows up in review by NAME.',
     ).toEqual([]);
   });
 
@@ -356,23 +367,9 @@ describe('vrt-meta — EXEMPT_FROM_VRT is DENY-BY-DEFAULT (frozen allowlist)', (
     expect(
       stale,
       `ALLOWED_PERMANENT_EXEMPT names modules that are no longer in EXEMPT_FROM_VRT: ${stale.join(', ')}. ` +
-        'Delete them from the allowlist and lower PERMANENT_EXEMPT_CEILING by the same count.',
+        'Delete them from the allowlist — a stale licence silently re-exempts the next module ' +
+        'that reuses the name.',
     ).toEqual([]);
-  });
-
-  it('the exemption count only SHRINKS — and the ceiling has no slack', () => {
-    const actual = Object.keys(EXEMPT_FROM_VRT).length;
-    expect(
-      actual,
-      `EXEMPT_FROM_VRT grew to ${actual} over a ceiling of ${PERMANENT_EXEMPT_CEILING} — see the RATCHET rule`,
-    ).toBeLessThanOrEqual(PERMANENT_EXEMPT_CEILING);
-    expect(
-      PERMANENT_EXEMPT_CEILING - actual,
-      `THE PERMANENT-EXEMPT CEILING HAS GONE SLACK: ${actual} exemption(s) under a ceiling of ` +
-        `${PERMANENT_EXEMPT_CEILING}. Modules were drained and the number was not lowered, so ` +
-        `${PERMANENT_EXEMPT_CEILING - actual} new module(s) can now self-exempt for free. ` +
-        `Lower PERMANENT_EXEMPT_CEILING to ${actual}.`,
-    ).toBe(0);
   });
 
   it('...and that check can actually SEE an unlisted exemption (negative control)', () => {
@@ -1021,7 +1018,7 @@ describe('vrt-meta — STALE EXEMPT_BASELINE_PAIRS RATCHET (only shrinks)', () =
 // counted here rather than one being left to prose:
 //
 //   A. `bootWithFace(…, { freezeAudio: <not true> })` — source-scanned, below.
-//   B. `VRT_SCENES[type].freezeAudio === false` — counted STRUCTURALLY off the
+//   B. `VRT_SCENES[type].freezeAudio === false` — read STRUCTURALLY off the
 //      imported table (anchored to the artifact, not to source text).
 //
 // ⚠ STATED SCOPE. The mechanism-A scan reads only files that CALL
@@ -1029,9 +1026,19 @@ describe('vrt-meta — STALE EXEMPT_BASELINE_PAIRS RATCHET (only shrinks)', () =
 // cannot see an options object assembled dynamically (`o.freezeAudio = false`,
 // `o['freezeAudio']`), so those forms are separately asserted at ZERO rather
 // than assumed absent.
-/** VRT_SCENES entries that capture with the AudioContext RUNNING. Ratcheted in
- *  BOTH directions below: it may only shrink, and it may carry no slack. */
-const SCENE_FREEZE_OFF_CEILING = 7;
+//
+// ⚠ `SCENE_FREEZE_OFF_CEILING = 7` IS GONE (2026-08-10). It counted mechanism
+// B and could say nothing about any individual entry. Mechanism B is now
+// deny-by-default IN THE TYPE — `VrtScene` makes `freezeAudioWhy` required
+// whenever `freezeAudio: false`, so `tsc` refuses an undeclared opt-out before
+// a test ever runs — and the assertion below checks the reason is substantive
+// rather than checking how many there are.
+//
+// ⚠ AND THE TWO MECHANISMS ARE NOT REDUNDANT WITH EACH OTHER, contrary to the
+// plan that scheduled this deletion. `FREEZE_OPT_OUTS` below enumerates
+// `bootWithFace` CALL SITES in the e2e/vrt specs (3 files, 5 sites); the
+// ceiling counted VRT_SCENES TABLE ENTRIES (7 scenes). Disjoint populations,
+// disjoint mechanisms — measured before deleting either.
 
 describe('vrt-meta — the face-scene AUDIO FREEZE is deny-by-default', () => {
   const VRT_DIR = resolve(repoRoot(), 'e2e/vrt');
@@ -1174,26 +1181,54 @@ describe('vrt-meta — the face-scene AUDIO FREEZE is deny-by-default', () => {
     ).toEqual([]);
   });
 
-  // MECHANISM B, counted off the artifact rather than the source text.
-  it('the VRT_SCENES freeze-off count only shrinks, with no slack', () => {
-    const off = Object.entries(VRT_SCENES)
-      .filter(([, s]) => s.freezeAudio === false)
+  // MECHANISM B, read off the artifact rather than the source text.
+  it('every VRT_SCENES freeze opt-out declares WHAT makes it deterministic instead', () => {
+    const off = Object.entries(VRT_SCENES).filter(([, s]) => s.freezeAudio === false);
+    const undeclared = off
+      .filter(([, s]) => ((s as { freezeAudioWhy?: string }).freezeAudioWhy ?? '').length <= 40)
       .map(([type]) => type)
       .sort();
     expect(
-      off.length,
-      `VRT_SCENES entries capturing with the AudioContext RUNNING: ${off.join(', ')}. Each has ` +
-        `an inline reason at its declaration (a canvas whose determinism comes from a frame ` +
-        `pin rather than a suspend). Adding one raises this number — justify it there and ` +
-        `here. This is the sibling mechanism to the bootWithFace opt-out above; both are ` +
-        `counted so neither can be the one nobody is watching.`,
-    ).toBeLessThanOrEqual(SCENE_FREEZE_OFF_CEILING);
+      undeclared,
+      `these VRT_SCENES entries capture with the AudioContext RUNNING and do not say what ` +
+        `pins them instead. The type already requires \`freezeAudioWhy\` on \`freezeAudio: ` +
+        `false\`, so reaching this assertion means the reason is a placeholder. Every real one ` +
+        `names its own freeze — a seed flag, a paused <video>, a module-side freeze param.`,
+    ).toEqual([]);
+    // …and a stale WHY is refused in the other direction: a scene that got a
+    // real suspend back must not keep the licence lying around.
+    const orphanWhy = Object.entries(VRT_SCENES)
+      .filter(([, s]) => s.freezeAudio !== false && (s as { freezeAudioWhy?: string }).freezeAudioWhy)
+      .map(([type]) => type);
     expect(
-      SCENE_FREEZE_OFF_CEILING - off.length,
-      `THE VRT_SCENES FREEZE-OFF CEILING HAS GONE SLACK: ${off.length} under a ceiling of ` +
-        `${SCENE_FREEZE_OFF_CEILING}. A scene was given a real freeze and the number was not ` +
-        `lowered, so the ratchet now tolerates ${SCENE_FREEZE_OFF_CEILING - off.length} new ` +
-        `silent opt-out(s). Set it to ${off.length}.`,
-    ).toBe(0);
+      orphanWhy,
+      'these scenes declare freezeAudioWhy but DO freeze — delete the reason, or it will ' +
+        'silently license the next opt-out on that scene.',
+    ).toEqual([]);
+  });
+
+  it('...and that check can SEE an undeclared opt-out (negative control on the same predicate)', () => {
+    // The `toEqual([])` above reads identically green whether every scene
+    // declares a reason or the filter is broken. Run the SAME predicate over a
+    // synthetic table where the answer is known.
+    type Probe = { freezeAudio?: boolean; freezeAudioWhy?: string };
+    const synthetic: Record<string, Probe> = {
+      good: { freezeAudio: false, freezeAudioWhy: 'x'.repeat(41) },
+      bare: { freezeAudio: false },
+      placeholder: { freezeAudio: false, freezeAudioWhy: 'TODO' },
+      frozen: { freezeAudio: true },
+    };
+    const undeclared = Object.entries(synthetic)
+      .filter(([, s]) => s.freezeAudio === false)
+      .filter(([, s]) => (s.freezeAudioWhy ?? '').length <= 40)
+      .map(([type]) => type)
+      .sort();
+    expect(undeclared).toEqual(['bare', 'placeholder']);
+    // …and the live table is actually non-empty, so the real run is not vacuous.
+    expect(
+      Object.values(VRT_SCENES).filter((s) => s.freezeAudio === false).length,
+      'no VRT_SCENES entry opts out of the freeze at all — if that is now true the guard ' +
+        'should be retired deliberately, not left scanning for a shape that cannot occur.',
+    ).toBeGreaterThan(0);
   });
 });
