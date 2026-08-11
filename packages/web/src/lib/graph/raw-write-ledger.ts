@@ -301,7 +301,19 @@ export const RAW_WRITE_LEDGER: Readonly<Record<string, RawWriteEntry>> = {
  *  `CEILING - actual === 0` — a drain that forgets to lower this number is red,
  *  not silent slack. Was 53 before `FilterCard`'s `mode` was routed through
  *  `setNodeParam` (the PR that widened the guard; ledger defect #7). */
-export const RAW_WRITE_DEBT_CEILING = 52;
+// 52 -> 51: RingsCard's `model` selector was drained in the rings face PR (it
+// now writes through `set()` like every fader on the card), and a drain moves
+// the entry and this number in the SAME commit.
+//
+// ⚠ THIS IS A HAND-TYPED POPULATION COUNT, i.e. exactly the construct CLAUDE.md
+// forbids in new code and lists this file under as surviving LEGACY. It was
+// decremented rather than deleted deliberately: removing it is a repo-wide
+// policy change that needs its own trace of what the `<=` half protects (a NEW
+// debt entry being added silently — the two unconditional checks either side of
+// it, tree-subset-ledger and ledger-subset-tree, do not catch that), and
+// smuggling that into a faceplate PR is how silent coverage loss ships. Flagged
+// in that PR's body as the boy-scout debt this one did not pay.
+export const RAW_WRITE_DEBT_CEILING = 51;
 
 /** Every `(file, key)` pair in one bucket. */
 export function ledgerPairs(kind: RawWriteKind): string[] {
