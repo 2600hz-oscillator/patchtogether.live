@@ -53,6 +53,20 @@ import {
 } from '$lib/ui/modules/clouds-face-model';
 import { noiseFaceParams, noiseTapDbText } from '$lib/ui/modules/noise-face-model';
 import {
+  marblesBpmText,
+  marblesFaceParams,
+  marblesGateWidthText,
+  marblesGlideText,
+  marblesLoopText,
+  marblesModelText,
+  marblesQuantiserText,
+  marblesRandomText,
+  marblesScaleLiveText,
+  marblesSplitText,
+  marblesStepText,
+  marblesXShapeText,
+} from '$lib/ui/modules/marbles-face-model';
+import {
   asleepText,
   cofefveFaceParams,
   echoRepeatsText,
@@ -407,6 +421,71 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
   'noise-white-db': (read) => noiseTapDbText('white', noiseFaceParams(read)),
   'noise-pink-db': (read) => noiseTapDbText('pink', noiseFaceParams(read)),
   'noise-brown-db': (read) => noiseTapDbText('brown', noiseFaceParams(read)),
+
+  // ── MARBLES ──────────────────────────────────────────────────────────────
+  // ELEVEN values, every one a BARE number or state — no sentence anywhere on
+  // that faceplate (owner directive 2026-08-11). marbles is the module most
+  // tempted to narrate, because randomness cannot be read off knob positions;
+  // the answer taken here is to pick values that state the fact BY THEMSELVES.
+  //
+  //   `t-random` / `x-random`
+  //              `p = (2·dv − 1)²`, the per-step chance a section departs from
+  //              its loop. It is the reason this module needs a face at all:
+  //              100 % at DÉJÀ VU 0, 0 % at 0.5, and back to 100 % at the top,
+  //              so the number rises again exactly where a player expects it to
+  //              keep falling. A `paramId: 'deja_vu'` readout prints `1.00` at
+  //              the setting that repeats LEAST.
+  //   `t-loop` / `x-loop`
+  //              the length, or `free`. It must NOT print a length at DÉJÀ VU
+  //              0, where LENGTH is bit-exactly inert (one distinct t1 stream
+  //              across lengths 1…16, measured) — that is the negative control,
+  //              and it is the module's shipped default.
+  //   `bpm` / `step`
+  //              `f = 2 Hz·2^(RATE/12)`. Derived because a clock module that
+  //              prints `0 st` has said nothing, and JITTER-invariant because
+  //              a readout of the last interval would not be.
+  //   `model`    the model the DSP RUNS. CLUSTERS is an unimplemented stub that
+  //              falls through to COIN (bit-identical t1 AND t2 at three
+  //              biases, with DRUMS as the control), so this prints
+  //              `CLUSTERS → COIN` rather than asserting a behaviour.
+  //   `t-split`  exact for the two Bernoulli models (`P(t1) = 1 − BIAS`) and a
+  //              bare `—` for the three that have no closed form.
+  //   `gate-width`
+  //              `5 % + 90 %·PW`, beside a fixed `clk 50 %` entry the face
+  //              declares as `text`: two adjacent numbers that disagree say PW
+  //              does not touch the clock without a word of explanation.
+  //   `glide` / `quantiser` / `scales`
+  //              the three that make STEPS legible. At the shipped 0.50 they
+  //              read `0 %` / `off` / `1 of 6` — the portamento has ended at
+  //              0.49, the quantiser starts at 0.536, and the module spawns in
+  //              the gap. `scales` is `scale`-INVARIANT by construction, which
+  //              is the point: it counts how many of the six DIFFER here.
+  //   `x-shape`  both ends of SPREAD are degenerate and neither is a knob
+  //              position: `DC 10·BIAS − 5 V` below 0.01, a two-level ±5 V coin
+  //              flip above 0.99.
+  //
+  // Every one is re-derived from `marblesMath` — a real render of the engine
+  // core the worklet shares — by ORACLE legs in marbles-face-model.test.ts,
+  // with negative controls in both directions.
+  'marbles-bpm': (read) => marblesBpmText(marblesFaceParams(read)),
+  'marbles-step': (read) => marblesStepText(marblesFaceParams(read)),
+  'marbles-t-random': (read) => marblesRandomText(marblesFaceParams(read).deja_vu),
+  'marbles-x-random': (read) => marblesRandomText(marblesFaceParams(read).x_deja_vu),
+  'marbles-t-loop': (read) => {
+    const p = marblesFaceParams(read);
+    return marblesLoopText(p.deja_vu, p.length);
+  },
+  'marbles-x-loop': (read) => {
+    const p = marblesFaceParams(read);
+    return marblesLoopText(p.x_deja_vu, p.x_length);
+  },
+  'marbles-model': (read) => marblesModelText(marblesFaceParams(read)),
+  'marbles-t-split': (read) => marblesSplitText(marblesFaceParams(read)),
+  'marbles-gate-width': (read) => marblesGateWidthText(marblesFaceParams(read)),
+  'marbles-glide': (read) => marblesGlideText(marblesFaceParams(read)),
+  'marbles-quantiser': (read) => marblesQuantiserText(marblesFaceParams(read)),
+  'marbles-scales': (read) => marblesScaleLiveText(marblesFaceParams(read)),
+  'marbles-x-shape': (read) => marblesXShapeText(marblesFaceParams(read)),
 
   // ── PENTEMELODICA ────────────────────────────────────────────────────────
   // `at cutoff` is a function of MODE **and** RESONANCE — a MODE readout would
