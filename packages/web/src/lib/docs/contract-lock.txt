@@ -363,7 +363,6 @@ cartesian out pitch polyPitchGate
 cartesian param gateLength 0.1..0.95 linear default=0.5
 cartesian param lfoDiv 0..7 discrete default=3
 cartesian param lfoShape 0..3 linear default=0
-cartesian param mode 0..1 discrete default=0
 cartesian param octave -2..2 discrete default=0
 cartesian param snh 0..1 discrete default=1
 cartesian family cart-pitch kind=cell prefix=cart-pitch
