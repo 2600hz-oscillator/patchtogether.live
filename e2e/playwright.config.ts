@@ -94,6 +94,39 @@ export default defineConfig({
   // animation frames where the OS schedules cooperatively.
   workers: process.env.CI ? 4 : undefined, // undefined = Playwright default (≈ half cores)
   forbidOnly: !!process.env.CI,
+  // ⚠ THE `RETRIES` ENV VAR ON THE CI JOBS IS INERT — MEASURED 2026-08-12.
+  //
+  // Every `e2e` and `behavioral` job on CI prints `RETRIES: 3` in its step
+  // environment. NOTHING IN THIS REPOSITORY READS IT: `grep -rn RETRIES` over
+  // `.github/`, `Taskfile.yml`, `e2e/`, `.flox/` and this file returns nothing
+  // but `--health-retries` on the postgres service and the three ATTEST
+  // scripts' own private `WEBGL_/COLLAB_/GRAND_ATTEST_RETRIES`. It is not in
+  // ci.yml on any branch. It is a repository-level Actions variable set
+  // outside the tree, and the effective retry count on those lanes is the
+  // line below — ONE, i.e. two attempts, not four.
+  //
+  // WHY IT MATTERS beyond tidiness: it is a control that lies about what it
+  // does, and it lies in the direction of reassurance. Anyone reasoning about
+  // "how much does CI mask a load-sensitive failure?" from that variable gets
+  // the wrong number, and the number they get is a bigger safety net than
+  // exists. It cannot be fixed from the tree — deleting it needs repo settings
+  // access — so it is recorded here, at the line that actually decides.
+  //
+  // ⚠ AND DO NOT "FIX" IT BY READING IT HERE. Honouring RETRIES would take the
+  // lane from 2 attempts to 4, i.e. MORE masking, which is the opposite of
+  // what the finding asks for. The fix is to delete the Actions variable.
+  //
+  // WHAT retries=1 STILL COSTS, measured on two consecutive GREEN main runs
+  // (31581123866, 31577091742): a test that fails once and passes on the retry
+  // is reported as `1 flaky` in a summary line and the job is SUCCESS. Two are
+  // live right now — `behavioral-observation-window.spec.ts:363` (both runs,
+  // required e2e shard 1/10) and `per-module-per-port-behavioral.spec.ts:3259`
+  // wavecel (behavioral shard 6/6, a non-blocking lane). Both are noted at
+  // their own definitions with the captured first-attempt failure. The attest
+  // scripts already model the right response — `collab-attest.ts` and
+  // `grand-attest.ts` REFUSE on a flaky outcome rather than absorb it — and
+  // that is the shape the e2e lane wants once these two are root-caused.
+  // Turning it on before then would simply redden main.
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI
     ? [['github'], ['html', { open: 'never' }]]

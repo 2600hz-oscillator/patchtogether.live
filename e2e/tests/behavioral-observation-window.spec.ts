@@ -360,6 +360,35 @@ async function readFramesWallClockSpaced(
 }
 
 test.describe('behavioral sweep — the video observation window is FRAMES, not milliseconds', () => {
+  // ⚠ THIS TEST FLAKED ON TWO CONSECUTIVE GREEN MAIN RUNS — 2026-08-12,
+  // required e2e shard 1/10, runs 31581123866 and 31577091742. Both reported
+  // `1 flaky` and SUCCESS, so nothing in the CI summary distinguished them from
+  // a healthy run; the failure is only in the log. Recorded here because the
+  // next person to read this file is who needs it.
+  //
+  // FIRST-ATTEMPT FAILURE, verbatim:
+  //
+  //   video capture: only 1/3 samples spaced 16 FRAMES after 1 rendered FRAMES
+  //   / 22238 ms. The 20000 ms cap BOUNDS THE FAILURE; it is not the gate —
+  //   hitting it means the rAF loop stalled, not that the renderer is slow.
+  //
+  // READ THE NUMBERS BEFORE TOUCHING ANY BUDGET, because they say the opposite
+  // of "the runner was slow": ONE rendered frame in 22.2 s. At HOG_MS_PER_FRAME
+  // the ceiling is 8.33 fps and the expected 32 frames cost ~3.8 s, so this is
+  // not a slow-frame case at the margin — it is a STALLED rAF loop, exactly as
+  // the instrument's own message says. Raising VIDEO_CAPTURE_CAP_MS would
+  // convert a diagnosed stall into a longer wait for the same stall, and is the
+  // wrong fix.
+  //
+  // THE LEADING HYPOTHESIS, UNCONFIRMED — this test's hog is a BUSY-WAIT
+  // (`while (performance.now() < until)`), deliberately, because a timer would
+  // yield and a WebGL draw does not. On a 4-vCPU runner with `workers: 4`,
+  // that pins a core for the whole capture while three sibling workers run
+  // their own video/WebGL specs. A compositor that stops producing frames under
+  // that contention gives exactly this signature. It is a hypothesis, not a
+  // finding: reproducing it needs the loaded 4-worker runner, and it passed 3x
+  // locally. Do not "fix" it from the armchair — instrument the rAF cadence
+  // (the stall vs the throttle are different causes) and reproduce first.
   test('samples land exactly N rendered frames apart, however slow the frames are', async ({
     page,
   }) => {
