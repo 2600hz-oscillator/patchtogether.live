@@ -54,7 +54,7 @@
   // module would generalise BOTH at once — until then a registry indirection
   // here would be one indirection serving one caller.
   import Dx7AlgorithmGlyph from './dx7/Dx7AlgorithmGlyph.svelte';
-  import { Button, ColorField, Fader, KnobConic, ParamGrid, ScopeScreen, Segmented, Selector, Toggle, VuMeter } from '$lib/ui/controls';
+  import { Button, ColorField, Fader, KnobConic, ParamGrid, ScopeScreen, Segmented, Selector, Toggle, VuMeter, XyPad } from '$lib/ui/controls';
   import {
     curatedFace,
     dockFacePlan,
@@ -79,6 +79,7 @@
     momentaryParamIds,
     momentaryValue,
     paramCellKind,
+    xyPadsByAnchor,
     type DeclaringDefLike,
   } from '$lib/ui/workflow/shell-control-kind';
   import type { MomentaryDefLike } from '$lib/audio/momentary-params';
@@ -476,6 +477,8 @@
 
   /** Declared param cells (`'grid'` / `'color'`) — see ModuleFace.paramCells. */
   let declaredCells = $derived(declaredParamCells(def as DeclaringDefLike | undefined));
+  /** The declared 2-D pads, keyed by their ANCHOR (x) param id. */
+  let xyPads = $derived(xyPadsByAnchor(def as DeclaringDefLike | undefined));
 
   /**
    * The LIVE node (the Y.Doc entry, not the flow-node snapshot) + its version
@@ -706,6 +709,47 @@
               paramId={pd.id}
               hero={view === 'dock-full'}
               compact={view !== 'dock-full'}
+            />
+          </div>
+        {:else if cellKind === 'xy' && xyPads.get(pd.id) && paramDef(xyPads.get(pd.id)!.y)}
+          <!-- A DECLARED 2-D PAD (face.xyPads) — ONE cell over TWO params.
+               The kind exists because two dials can reach every value the pad
+               can and cannot reach them TOGETHER: a camera tilt is one gesture,
+               and splitting it into two sequential drags is a lost CAPABILITY,
+               not a lost look. That is what separates it from `fader` beside it.
+
+               ⚠ BOTH RANGES COME FROM THE DEF, per axis, never re-typed here —
+               and this control is the reason that rule exists at all.
+               BackdraftCard passed literal `xMin={-1} xMax={1}` to two XyPads
+               against a def declaring ±0.2 and ±0.5, so the pads WROTE VALUES
+               THE CONTRACT FORBIDS, the model clamped them, and most of the
+               stick's travel did nothing. Every def-reading gate was green.
+
+               DOCK-ONLY: `laneOrder` withholds the anchor from every lane tier
+               (the pad is square, a lane knob column is 46px), which since
+               PF-22 costs it no rank — so a module whose pad IS its main
+               control may rank it FIRST and still keep a legal face. -->
+          {@const pad = xyPads.get(pd.id)!}
+          {@const py = paramDef(pad.y)!}
+          <div class="kcol ms-cell-xy" data-cell-kind="param" data-cell-control="xy" data-cell-key={ctl.key}>
+            <XyPad
+              xValue={params.paramVal(pd.id)}
+              yValue={params.paramVal(py.id)}
+              xMin={pd.min}
+              xMax={pd.max}
+              yMin={py.min}
+              yMax={py.max}
+              xDefault={pd.defaultValue}
+              yDefault={py.defaultValue}
+              xLabel={pd.label}
+              yLabel={py.label}
+              onXChange={paramWrite(pd.id)}
+              onYChange={paramWrite(py.id)}
+              title={pad.label ?? `${pd.label} / ${py.label}`}
+              size={view === 'dock-full' ? 96 : 64}
+              moduleId={id}
+              xParamId={pd.id}
+              yParamId={py.id}
             />
           </div>
         {:else if cellKind === 'fader'}

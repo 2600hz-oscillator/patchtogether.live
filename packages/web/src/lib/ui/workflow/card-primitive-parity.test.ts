@@ -155,13 +155,13 @@ const FACE_ANSWER: Readonly<Record<string, FaceAnswer>> = {
 
   // ── THE GAPS ──
   XyPad: {
-    via: 'none',
-    why:
-      'NO `xy` ParamCellKind. A 2-D pad binds a PAIR of params and `face.paramCells` is keyed ' +
-      'by ONE param id, so the pairing cannot be declared at all — the two axes resolve to two ' +
-      'independent KnobConics and the DIAGONAL GESTURE is lost, which is the one downgrade in ' +
-      'this table that costs a capability rather than a look. Reachable today only by hand, ' +
-      'inside a bespoke `panel` cell (see PF-22 for why that has a rank floor).',
+    via: 'param-cell',
+    kind: 'xy',
+    note:
+      'DECLARED through `face.xyPads`, not `face.paramCells` — a pad binds a PAIR and that map ' +
+      'is keyed by one id. Both axis ids are REQUIRED by the type, so a pad naming one axis ' +
+      'does not compile. Dock-only (square pad vs a 46px lane column), and since PF-22 it costs ' +
+      'no lane rank, so it may rank FIRST.',
   },
   NoteEntry: {
     via: 'none',
@@ -399,30 +399,32 @@ describe('card ↔ face PRIMITIVE PARITY — CONTROLS on the predicate', () => {
 
   const backdraft = readFileSync(join(CARD_DIR, 'BackdraftCard.svelte'), 'utf8');
 
-  it('POSITIVE: a real card with real XyPads, faced, names BOTH axes of BOTH pads', () => {
-    // BackdraftCard is the card the whole card↔def divergence class is named
-    // after and it mounts two `<XyPad>`s over four params. Pretend it is faced.
-    const asIfFaced: FacedDef = {
-      type: 'backdraft',
-      face: { order: ['camTiltX', 'camTiltY', 'camPosX', 'camPosY'] },
-      params: [{ id: 'camTiltX' }, { id: 'camTiltY' }, { id: 'camPosX' }, { id: 'camPosY' }],
-    };
-    const found = downgradesIn(asIfFaced, 'BackdraftCard.svelte', backdraft);
+  /** BackdraftCard is the card the whole card↔def divergence class is named
+   *  after, and it mounts two `<XyPad>`s over four params. Read as if faced. */
+  const AS_IF_FACED: FacedDef = {
+    type: 'backdraft',
+    face: { order: ['camTiltX', 'camTiltY', 'camPosX', 'camPosY'] },
+    params: [{ id: 'camTiltX' }, { id: 'camTiltY' }, { id: 'camPosX' }, { id: 'camPosY' }],
+  };
+  /** XyPad answered as it was BEFORE the `xy` cell kind existed. Keeping the
+   *  historical answer as a fixture is what lets the positive control keep
+   *  working after the gap it was written for was closed — the alternative is
+   *  deleting the only leg that proves the predicate can fire on a real card. */
+  const GAPPED = { ...FACE_ANSWER, XyPad: { via: 'none', why: 'control' } as FaceAnswer };
+
+  it('POSITIVE: with XyPad marked as a gap, a real card names BOTH axes of BOTH pads', () => {
+    const found = downgradesIn(AS_IF_FACED, 'BackdraftCard.svelte', backdraft, GAPPED);
     expect(found.map((o) => o.param).sort()).toEqual(['camPosX', 'camPosY', 'camTiltX', 'camTiltY']);
     expect(new Set(found.map((o) => o.primitive))).toEqual(new Set(['XyPad']));
   });
 
-  it('NEGATIVE: the same card with the SAME params, but XyPad answered, is clean', () => {
-    // Perturb the INSTRUMENT, not the code: give XyPad a cell kind and the very
-    // same source must stop reporting. If it still reports, the scan is keying
-    // off something other than the answer table and the gate proves nothing.
-    const asIfFaced: FacedDef = {
-      type: 'backdraft',
-      face: { order: ['camTiltX', 'camTiltY', 'camPosX', 'camPosY'] },
-      params: [{ id: 'camTiltX' }, { id: 'camTiltY' }, { id: 'camPosX' }, { id: 'camPosY' }],
-    };
-    const patched = { ...FACE_ANSWER, XyPad: { via: 'param-cell', kind: 'knob' } as FaceAnswer };
-    expect(downgradesIn(asIfFaced, 'BackdraftCard.svelte', backdraft, patched)).toEqual([]);
+  it('NEGATIVE: the SAME card and params, with XyPad ANSWERED, is clean', () => {
+    // The leg that makes the positive control mean something: ONLY the answer
+    // table differs between the two, so the scan is provably keying off it and
+    // not off some property of the card. It is also the live assertion that the
+    // `xy` cell kind closed the gap — `FACE_ANSWER` here is the real table.
+    expect(downgradesIn(AS_IF_FACED, 'BackdraftCard.svelte', backdraft)).toEqual([]);
+    expect(FACE_ANSWER.XyPad!.via, 'XyPad now has a first-class cell kind').toBe('param-cell');
   });
 
   it('NEGATIVE: an UNRANKED param bound to a gap primitive is not a downgrade', () => {
@@ -431,7 +433,7 @@ describe('card ↔ face PRIMITIVE PARITY — CONTROLS on the predicate', () => {
       face: { order: [] },
       params: [{ id: 'camTiltX' }, { id: 'camTiltY' }],
     };
-    expect(downgradesIn(unranked, 'BackdraftCard.svelte', backdraft)).toEqual([]);
+    expect(downgradesIn(unranked, 'BackdraftCard.svelte', backdraft, GAPPED)).toEqual([]);
   });
 
   it('PERMANENT: the FULL registry sweep can go red (not just the synthetic legs)', () => {
@@ -533,6 +535,6 @@ describe('card ↔ face PRIMITIVE PARITY — stated scope', () => {
     // param to a gap primitive, the platform still owes that module a cell kind,
     // whether or not the module also hand-built a panel. Making the panel
     // silence the gate would re-open the hole one indirection down.
-    expect(FACE_ANSWER.XyPad!.via).toBe('none');
+    expect(FACE_ANSWER.NoteEntry!.via).toBe('none');
   });
 });

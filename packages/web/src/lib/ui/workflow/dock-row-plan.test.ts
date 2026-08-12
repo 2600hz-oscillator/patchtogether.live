@@ -362,6 +362,19 @@ describe('cellWidthClass — the instrument, perturbed in both directions', () =
       { kind: 'grid', def: { type: 'x', params: [knobParam('p')], face: { paramCells: { p: 'grid' } } } },
       { kind: 'color', def: { type: 'x', params: [knobParam('p')], face: { paramCells: { p: 'color' } } } },
       { kind: 'fader', def: { type: 'x', params: [knobParam('p')], face: { paramCells: { p: 'fader' } } } },
+      // The pad is declared through `face.xyPads`, NOT `face.paramCells` — it
+      // binds a PAIR and that map is keyed by one id. Driving the real resolver
+      // through the real declaration field is the point of this sweep: an `xy`
+      // that only resolved from a hand-written `paramCells` entry would pass a
+      // fixture written the other way and fail on every real face.
+      {
+        kind: 'xy',
+        def: {
+          type: 'x',
+          params: [knobParam('p'), knobParam('q')],
+          face: { xyPads: [{ x: 'p', y: 'q' }] },
+        },
+      },
       { kind: 'momentary', def: { type: 'x', params: [knobParam('p')], face: { momentary: ['p'] } } },
       {
         kind: 'toggle',

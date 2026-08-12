@@ -548,6 +548,23 @@ export interface ModuleFacePage {
  * a no-op for the GPU attest with nothing to remember. (P1 authoring note; no
  * video def carries a `face` yet.)
  */
+/**
+ * ONE declared 2-D pad: the two params its axes drive (see
+ * `ModuleFace.xyPads`). Both ids are REQUIRED — that is the type-level half of
+ * the pairing, and it is why this is an interface rather than a map entry.
+ */
+export interface FaceXyPad {
+  /** The param the HORIZONTAL axis drives. ANCHORS the cell: the pad renders at
+   *  this key's rank in `face.order`. */
+  x: string;
+  /** The param the VERTICAL axis drives (drag UP = larger, the joystick
+   *  convention `XyPad.svelte` already implements). Folded into the x cell —
+   *  it never renders a cell of its own. */
+  y: string;
+  /** Caption under the pad. Omitted = the two params' own labels. */
+  label?: string;
+}
+
 export interface ModuleFace {
   /** The priority RANKING — earliest = highest priority. Keys are param ids,
    *  control-family templates (`<familyId>-{n}`), or static control keys (see
@@ -628,6 +645,44 @@ export interface ModuleFace {
    * a fader — the first two are discrete-only, the third discrete-never).
    */
   paramCells?: Readonly<Record<string, 'grid' | 'color' | 'fader'>>;
+  /**
+   * DECLARED 2-D PADS — the one cell that binds a PAIR of params.
+   *
+   * ⚠ IT IS A SEPARATE FIELD FROM `paramCells` BECAUSE OF ITS ARITY, and that
+   * is the whole design note. `paramCells` is `Record<paramId, kind>` — keyed
+   * by ONE id and single-valued by construction, which is exactly the property
+   * its own doc-comment cites as keeping the declaration surface honest. A pad
+   * cannot be expressed in it at all: there is no key that means "these two,
+   * together". Squeezing it in would have meant either a second parallel field
+   * of partners (two places to disagree) or widening the value to an object
+   * (churning every consumer of a string union for one kind's benefit).
+   *
+   * Declaring the pair as a PAIR makes the arity a TYPE property: `x` and `y`
+   * are both required, so an xy cell naming one axis does not compile. That is
+   * the check a `Record` could not give — a missing partner would just be a
+   * missing map entry, i.e. silence.
+   *
+   * ⚠ AND THE PAIRING IS THE POINT, not the primitive. Two params rendered as
+   * two dials CAN reach every value a pad can; what they cannot do is reach
+   * them TOGETHER. A camera tilt is one gesture, and splitting it into two
+   * sequential drags is a lost capability, not a lost look — which is what
+   * separates this from the `fader` kind next door.
+   *
+   * The X param ANCHORS the cell: the pad renders at x's rank and `y` is folded
+   * into it rather than rendering a second time. Both must still appear in
+   * `order` (face completeness is what proves no control was dropped) and both
+   * must be CONTINUOUS — a pad over a discrete param is a stepper wearing a
+   * joystick. module-face-lint enforces all of it.
+   *
+   * DOCK-ONLY, for the same measured reason a PF-14 panel is: the pad is square
+   * and a lane knob column is 46 px (`--kcol-max`). It costs no lane rank —
+   * `laneOrder` excludes it — so it may rank FIRST, which for a module whose
+   * pad IS its main control is the honest ranking.
+   *
+   * UI metadata like the rest of `face`: OUT of contract-signature /
+   * contract-lock (choosing a primitive is not an I/O change).
+   */
+  xyPads?: readonly FaceXyPad[];
   /**
    * Param ids that are MOMENTARY PADS, not values — the "press-param" pattern
    * (tomtom/clap `strike`): the worklet ORs the param with its trigger input
