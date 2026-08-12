@@ -1077,12 +1077,20 @@ export const wavesculptDef: AudioModuleDef = {
     // is the wave that oscillator plays + draws. DOM-driven (selection rides
     // node.data), not a ParamDef — declared so the docs layer sees it.
     { id: 'wavesculpt-osc', label: 'Per-oscillator wavetable source', kind: 'cell', testidPrefix: 'wavesculpt-osc' },
-    // THE ROOM PLAN — the faceplate's hero picture, and the joystick the face
-    // would otherwise have lost (the platform has no XY-pad primitive, so the
-    // five camera axes would be five dials). Declared as a FAMILY because a
+    // THE ROOM PLAN — the faceplate's hero picture: which emitters currently
+    // reach the camera, and which one is DARK. Declared as a FAMILY because a
     // `<prefix>-{n}` key only resolves to a real cell against
     // `def.controlFamilies` — there is no legend for this module, so an
     // undeclared key would render as a dead static cell and fail the lint.
+    // That is the whole reason for the declaration.
+    //
+    // ⚠ THE OLD VERSION OF THIS COMMENT SAID "the platform has no XY-pad
+    // primitive", AND THAT IS FALSE — `$lib/ui/controls/XyPad.svelte` exists,
+    // with per-axis MIDI assign and arrow-key nudge, and the hero panel now
+    // mounts two of them. What the platform lacks is a param-CELL KIND for it
+    // (`face.paramCells` is 'grid' | 'color' | 'fader'), which is a much
+    // smaller statement. On the strength of the wrong sentence this face
+    // shipped once with both of the card's joysticks replaced by knobs.
     // Painted by WavesculptRoomPanel via shell-cells.ts.
     { id: 'wavesculpt-room', label: 'Room plan — the camera', kind: 'cell', testidPrefix: 'wavesculpt-room' },
   ],

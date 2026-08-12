@@ -378,10 +378,19 @@ export function wavesculptRoomPlan(cam: WavesculptCamera): RoomPlan {
  * plan point?
  *
  * `eyeFromCamera` is `eye = pos·1.5 + rotationalOffset(zoom, rot)`, so the
- * inverse is exact rather than a search — and it is what makes the hero picture
- * a joystick instead of a diagram. Both axes clamp to the params' declared
- * −1..+1, which is why dragging past the reachable set parks the marker on the
- * boundary instead of doing nothing.
+ * inverse is exact rather than a search. Both axes clamp to the params'
+ * declared −1..+1, which is why dragging past the reachable set parks the
+ * marker on the boundary instead of doing nothing.
+ *
+ * ⚠ NOTHING IN PRODUCTION CALLS THIS TODAY, and that is deliberate rather than
+ * an oversight. The plan's drag wrote `pos_x`/`pos_z`, duplicating the POSITION
+ * pad's x-axis against a DIFFERENT second axis; one gesture per axis was the
+ * fix, so the plan is now a read-only picture and the camera is flown by the
+ * two joysticks. The mapping is kept because it is the exact inverse of a
+ * shipped function and is asserted as such below — if a plan drag ever returns
+ * it must land where you drop it, and re-deriving this by search is how that
+ * stops being true. It is NOT a ledger entry: there is nothing to track and
+ * nothing to pay off.
  */
 export function wavesculptDragToCamera(
   cam: WavesculptCamera,

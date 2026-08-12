@@ -60,7 +60,6 @@
     WAVESCULPT_VOICES,
     wavesculptCamera,
     wavesculptCameraCaption,
-    wavesculptDragToCamera,
     wavesculptRoomPlan,
     wavesculptTapCaption,
     type WavesculptCamera,
@@ -447,6 +446,14 @@
     justify-content: flex-start;
   }
 
+  /* ⚠ NO `cursor: grab`, NO `touch-action`, NO `:focus-visible`, NO
+     `.dragging` — ALL FOUR WERE STILL HERE after the plan became read-only,
+     and none of them had a handler behind it any more. A grab cursor on an
+     element that accepts no pointer input states an affordance the panel does
+     not provide, which is the same defect class as a pad whose range
+     contradicts its def: the control lying about itself, invisible to every
+     gate. The plan is a PICTURE (which emitters currently reach you); the
+     camera is driven by the two joysticks beside it, one gesture per axis. */
   .ws-room svg {
     width: 170px;
     height: 170px;
@@ -454,15 +461,6 @@
     background: rgb(0 0 0 / 0.4);
     border: 1px solid rgb(255 255 255 / 0.08);
     border-radius: 3px;
-    cursor: grab;
-    touch-action: none;
-  }
-  .ws-room svg:focus-visible {
-    outline: 1px solid rgb(255 255 255 / 0.45);
-    outline-offset: 1px;
-  }
-  .ws-room svg.dragging {
-    cursor: grabbing;
   }
 
   .box {

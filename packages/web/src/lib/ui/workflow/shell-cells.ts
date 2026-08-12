@@ -959,7 +959,14 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
     // `out_blu` emits digital zero. Nothing in the legacy card says so.
     'wavesculpt-room-{n}': {
       kind: 'panel',
-      label: 'the room · drag the camera',
+      // ⚠ THE LABEL NO LONGER SAYS "drag the camera", BECAUSE THE PLAN NO
+      // LONGER DRAGS. Its drag wrote `pos_x`/`pos_z`, which duplicated the
+      // POSITION pad's x-axis against a DIFFERENT second axis — one gesture per
+      // axis was the fix, and the label outlived it by a round. A caption that
+      // instructs an interaction the element does not offer is the same defect
+      // class as a pad whose range contradicts its def: the control lying about
+      // itself. The `cursor: grab` and `.dragging` styles went with it.
+      label: 'the room · who reaches you',
       component: WavesculptRoomPanel,
       minWidth: 380,
       // A `text` probe on a DIFFERENT element, and the DRIVEN element is the
@@ -969,9 +976,9 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
       // the default (MIX is), so the click always crosses a boundary — and
       // `wavesculpt-face-model.test.ts` asserts the five captions are PAIRWISE
       // DISTINCT at every camera, which is what keeps the probe from being a
-      // coin flip. (The drag is the panel's other affordance; it writes params,
-      // and a param write is invisible to a `data`/`text` probe, so it is
-      // gated by the model test's exact-inverse assertion instead.)
+      // coin flip. (The TAP row is now the panel's ONLY affordance — the plan
+      // is a read-only picture, so there is no second, param-writing gesture
+      // for a `data`/`text` probe to be blind to.)
       probe: {
         testid: 'wavesculpt-room-tap-red',
         action: 'click',
