@@ -66,7 +66,7 @@ import type { AudioModuleDef } from '$lib/audio/module-registry';
 import { patch as livePatch } from '$lib/graph/store';
 import { C3_MIDI, midiToVOct } from '$lib/audio/note-entry';
 import { getSchedulerClock, SCHEDULER_TICK_MS } from '$lib/audio/scheduler-clock';
-import { createPlayheadTracker } from './playhead-tracker';
+import { createPlayheadTracker, createPlayheadTrackerOf } from './playhead-tracker';
 import { createEdgeCounter } from '$lib/audio/edge-detect';
 import { MACRO_MAX_MODEL } from './macro-engine-roster';
 import {
@@ -391,14 +391,43 @@ export const macseqDef: AudioModuleDef = {
     void SCHEDULER_TICK_MS; // referenced by the shared scheduler-clock
 
     const playhead = createPlayheadTracker();
+    // The gate READOUT, on the same seam the step readout already uses.
+    //
+    // ⚠ IT IS A FUNCTION OF TIME, NOT A LAST-WRITE MIRROR, AND THAT IS THE FIX.
+    // `read('gateValue')` answers "is a note sounding RIGHT NOW". A plain
+    // `lastEmittedGate` variable cannot answer that in a lookahead scheduler:
+    // emitStep runs up to LOOKAHEAD_S (200 ms) BEFORE the sound, so the mirror
+    // led the engine by a whole lookahead while playing, and no transport path
+    // pulled it back down — stopping mid-note left it reporting a HIGH gate
+    // indefinitely. Scheduling (value, atTime) pairs and reading them back at
+    // ctx.currentTime makes the readout and the AudioParam the SAME timeline by
+    // construction, so they cannot drift apart again. `currentStep` has worked
+    // this way since the off-by-one playhead fix; the gate simply never got it.
+    const gatePlayhead = createPlayheadTrackerOf<number>();
     let totalAdvances = 0;
     let totalSequenceEnds = 0;
     let lateStepsDropped = 0;
     let lastEmittedVOct = 0;
-    let lastEmittedGate = 0;
     // Last MODELCV value we actually wrote to modelCvSrc. Used for HOLD-LAST
     // behavior on null steps + as the read("modelCv") backing value.
     let lastEmittedModelCv = 0;
+
+    /** Force the gate LOW and drop the readout's queued future with it.
+     *
+     *  ⚠ THE ONE PLACE THE GATE GOES LOW OUTSIDE emitStep. The three transport
+     *  paths (stop, start-reanchor, reset_cv) used to write `gateSrc.offset`
+     *  directly and leave the readout alone. `cancelScheduledValues` un-writes
+     *  the AudioParam's queued future, so the readout has to drop ITS queued
+     *  future in the same breath — otherwise a gate-high that the engine just
+     *  cancelled still arrives on the readout's timeline a few ms later.
+     *  Routing every gate-low through one function is what makes the two
+     *  impossible to diverge (score.ts's silenceGate is the same seam). */
+    function silenceGate(atTime: number) {
+      gateSrc.offset.cancelScheduledValues(atTime);
+      gateSrc.offset.setValueAtTime(0, atTime);
+      gatePlayhead.reset();
+      gatePlayhead.schedule(0, atTime);
+    }
 
     /** Drain the transport CV inputs + dispatch effects. Returns the
      *  isPlaying value AFTER any play_cv toggle. Mirrors the base
@@ -420,8 +449,7 @@ export const macseqDef: AudioModuleDef = {
         stepIndex = 0;
         playhead.reset();
         nextStepTime = ctx.currentTime + 0.05;
-        gateSrc.offset.cancelScheduledValues(ctx.currentTime);
-        gateSrc.offset.setValueAtTime(0, ctx.currentTime);
+        silenceGate(ctx.currentTime);
       }
       const queued = pickQueuedSlotFromEvents(ev);
       if (queued !== null && live) {
@@ -505,17 +533,21 @@ export const macseqDef: AudioModuleDef = {
 
       if (!step.on) {
         // Pitch: hold-on-off-gate semantics (don't disturb pitchSrc).
-        // Gate: low; bookkeeping flag goes low.
-        lastEmittedGate = 0;
+        // Gate: stays low for this step — mirrored onto the readout timeline at
+        // the step's own time, not at "now".
+        gatePlayhead.schedule(0, atTime);
         return;
       }
 
       const vOct = resolveStepVOct(step, octave);
+      const gateOffAt = atTime + stepDurForGate * gateLengthFrac;
       pitchSrc.offset.setValueAtTime(vOct, atTime);
       gateSrc.offset.setValueAtTime(1, atTime);
-      gateSrc.offset.setValueAtTime(0, atTime + stepDurForGate * gateLengthFrac);
+      gateSrc.offset.setValueAtTime(0, gateOffAt);
       lastEmittedVOct = vOct;
-      lastEmittedGate = 1;
+      // Mirror BOTH edges the engine just scheduled, at the engine's own times.
+      gatePlayhead.schedule(1, atTime);
+      gatePlayhead.schedule(0, gateOffAt);
     }
 
     function tick() {
@@ -535,14 +567,12 @@ export const macseqDef: AudioModuleDef = {
           stepIndex = 0;
           playhead.reset();
           nextStepTime = ctx.currentTime + 0.05;
-          gateSrc.offset.cancelScheduledValues(ctx.currentTime);
-          gateSrc.offset.setValueAtTime(0, ctx.currentTime);
+          silenceGate(ctx.currentTime);
           clockCounter.reset();
           transportCv.resetEdges();
           lastTransportPollTime = ctx.currentTime;
         } else if (!shouldRun && prevPlaying) {
-          gateSrc.offset.cancelScheduledValues(ctx.currentTime);
-          gateSrc.offset.setValueAtTime(0, ctx.currentTime);
+          silenceGate(ctx.currentTime);
         }
         prevPlaying = shouldRun;
 
@@ -640,7 +670,9 @@ export const macseqDef: AudioModuleDef = {
         if (key === 'totalSequenceEnds') return totalSequenceEnds;
         if (key === 'lateStepsDropped') return lateStepsDropped;
         if (key === 'pitchVOct')   return lastEmittedVOct;
-        if (key === 'gateValue')   return lastEmittedGate;
+        // Sounding-now, read off the same timeline the AudioParam was written
+        // on — never a last-write mirror. See gatePlayhead above.
+        if (key === 'gateValue')   return gatePlayhead.currentAt(ctx.currentTime, 0);
         if (key === 'modelCv')     return lastEmittedModelCv;
         return undefined;
       },
