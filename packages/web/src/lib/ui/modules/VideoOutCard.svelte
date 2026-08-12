@@ -132,10 +132,15 @@
   $effect(() => fs.attach());
 
   // ---------- Present on a second display ----------
-  // Opens a SEPARATE popup window on the chosen display and blits THIS card's
-  // live canvas into it each frame — the main window stays interactive (unlike
-  // true fullscreen, which relocates the whole tab). Capability-gated by the
-  // menu (only shows when getScreenDetails exists + >1 screen).
+  // Opens a SEPARATE popup window on the chosen display and blits THIS NODE's
+  // engine output into it each frame — not this card's canvas, and not owned by
+  // this card at all (node-present-registry). The main window stays interactive
+  // (unlike true fullscreen, which relocates the whole tab). Capability-gated by
+  // the menu (only shows when getScreenDetails exists + >1 screen).
+  //
+  // ⚠ The blit reads the engine at ITS resolution, so what lands on the
+  // projector no longer inherits this card's on-screen size — a small OUTPUT
+  // card used to project an upscaled card-sized canvas.
   const present = createPresent({
     nodeId: () => id,
     engine: () => engineCtx.get(),

@@ -99,8 +99,10 @@
   $effect(() => fs.attach());
 
   // ---------- Present on a second display ----------
-  // Separate popup window on the chosen display fed THIS card's live canvas
-  // via a per-frame canvas blit; the main window stays interactive (unlike fullscreen).
+  // Separate popup window on the chosen display, fed a per-frame blit of THIS
+  // NODE's engine output — not of this card's canvas, and not owned by this card
+  // at all (node-present-registry), so it survives a collapse. The main window
+  // stays interactive (unlike fullscreen).
   const present = createPresent({
     nodeId: () => id,
     engine: () => engineCtx.get(),

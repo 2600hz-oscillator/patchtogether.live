@@ -327,8 +327,9 @@
   $effect(() => fs.attach());
 
   // Present on a second display: a separate popup fed by a per-frame blit of
-  // THIS canvas; the main window stays interactive. Capability-gated by the
-  // menu (getScreenDetails + >1 screen).
+  // THIS NODE's engine output — not of the card's canvas, and not owned by this
+  // card at all (node-present-registry). The main window stays interactive.
+  // Capability-gated by the menu (getScreenDetails + >1 screen).
   const present = createPresent({
     nodeId: () => id,
     engine: () => engineCtx.get(),
