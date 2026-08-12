@@ -30,7 +30,7 @@ import {
   LANE_PLATE_MAX_CELLS,
   type FaceTier,
 } from './curated-face';
-import { laneBodyPlan } from './module-shell-model';
+import { laneBodyPlan, PLATE_ROW_H } from './module-shell-model';
 import { rearFieldPlan, type RearDefLike } from './rear-card-model';
 import { momentaryParamIds, paramCellKind } from './shell-control-kind';
 
@@ -108,6 +108,10 @@ describe('tidyVco face — the LANE ladder (what the player rides)', () => {
       cellCount: 6,
       glyph: false,
       knobSize: 'sm',
+      // tidyVco's cells are plain knob columns, so the plate keeps its design
+      // row and therefore its two rows. A face whose cells are FADERS reports
+      // 96 here and gets one row of three (see LANE_CELL_H / plateRowsFor).
+      rowH: PLATE_ROW_H,
     });
     expect(laneBodyPlan(4, true, 'full').glyph, 'even 4 cells is two rows').toBe(false);
   });
