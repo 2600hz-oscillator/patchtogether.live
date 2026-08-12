@@ -137,7 +137,8 @@
   // true fullscreen, which relocates the whole tab). Capability-gated by the
   // menu (only shows when getScreenDetails exists + >1 screen).
   const present = createPresent({
-    getCanvas: () => canvasEl,
+    nodeId: () => id,
+    engine: () => engineCtx.get(),
     fullscreen: fs,
   });
 
@@ -296,8 +297,11 @@
   onDestroy(() => {
     if (rafId !== null) cancelAnimationFrame(rafId);
     if (resizeAbort) resizeAbort.abort();
-    // Close any present popup + stop the blit loop when the card is gone.
-    present.dispose();
+    // NO present teardown here — deliberately. The projector belongs to the
+    // NODE, not to this card (see $lib/ui/modules/node-present-registry). This
+    // card is a NON_SHELL_LANE_TYPE so it is never swapped out and never showed
+    // the collapse bug, but the ownership rule is the same for all four
+    // presenting cards and a per-card exception is how one of them drifts back.
   });
 
   // ---------- Corner-drag resize ----------

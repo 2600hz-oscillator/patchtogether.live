@@ -1,13 +1,20 @@
 // use-present.test.ts
 //
-// Multi-display present controller: holds one popup session PER screen so a
-// venue can light up every projector, and `presentAll` fans out in one call
-// (one user gesture). Drives the controller with a fake `start` seam + a fake
-// canvas so it runs under node with no real window.open / DOM. (The $state runes
-// resolve to plain values under the vitest svelte transform.)
+// The CARD-SIDE view of the present controller: it resolves the video engine
+// and the target screen's rect, then delegates every session to the NODE-scoped
+// registry (node-present-registry). Driven here with a fake registry-backing
+// `start` seam and a fake engine so it runs under node with no window.open and
+// no DOM. (The $state runes resolve to plain values under the vitest svelte
+// transform.)
+//
+// The multi-display semantics asserted here — one popup PER screen, presentAll
+// fanning out in one gesture — are the card-facing contract. Their node-keyed
+// storage, the render lease and the graph-lifetime teardown are pinned in
+// node-present-registry.test.ts.
 
 import { describe, it, expect, vi } from 'vitest';
 import { createPresent } from './use-present.svelte';
+import { createNodePresentRegistry, type PresentEngine } from './node-present-registry.svelte';
 import type { PresentSession, StartPresentArgs } from './present-window';
 
 /** A controllable fake session — flip `closed` to simulate the user closing the
@@ -20,22 +27,40 @@ function fakeSession(): PresentSession & { stop: ReturnType<typeof vi.fn> } {
   };
 }
 
-function makeController(opts: { canvas?: HTMLCanvasElement | null; blocked?: boolean } = {}) {
-  const created: { id?: string; session: ReturnType<typeof fakeSession> }[] = [];
-  const canvas = opts.canvas === undefined ? ({} as HTMLCanvasElement) : opts.canvas;
-  let nextRectId = 0;
+function fakeVideoEngine(): PresentEngine & { releases: number } {
+  const e = {
+    canvas: { width: 1920, height: 1080 } as unknown as PresentEngine['canvas'],
+    blitOutputToDrawingBuffer: vi.fn(),
+    releases: 0,
+    acquireRenderLease: vi.fn(() => () => { e.releases++; }),
+  };
+  return e;
+}
+
+function makeController(opts: { engine?: boolean; blocked?: boolean; nodeId?: string } = {}) {
+  const created: ReturnType<typeof fakeSession>[] = [];
   const start = vi.fn((_args: StartPresentArgs): PresentSession | null => {
     if (opts.blocked) return null;
     const session = fakeSession();
-    created.push({ id: String(nextRectId++), session });
+    created.push(session);
     return session;
   });
-  const ctrl = createPresent({
-    getCanvas: () => canvas,
-    fullscreen: { getScreenRect: () => ({ left: 0, top: 0, width: 1920, height: 1080 }) },
+  const registry = createNodePresentRegistry({
     start,
+    setInterval: () => null,
+    clearInterval: () => {},
   });
-  return { ctrl, start, created };
+  const engine = fakeVideoEngine();
+  const host = opts.engine === false
+    ? null
+    : { getDomain: <T,>(_d: string) => engine as unknown as T };
+  const ctrl = createPresent({
+    nodeId: () => opts.nodeId ?? 'n1',
+    engine: () => host as never,
+    fullscreen: { getScreenRect: () => ({ left: 0, top: 0, width: 1920, height: 1080 }) },
+    registry,
+  });
+  return { ctrl, start, created, registry, engine };
 }
 
 describe('present controller — multi-display sessions', () => {
@@ -60,7 +85,7 @@ describe('present controller — multi-display sessions', () => {
     const { ctrl, created } = makeController();
     ctrl.present('screen-a');
     ctrl.present('screen-a');
-    expect(created[0].session.stop).toHaveBeenCalledTimes(1); // old one torn down
+    expect(created[0]!.stop).toHaveBeenCalledTimes(1); // old one torn down
     expect(ctrl.presentingCount).toBe(1);
   });
 
@@ -90,8 +115,8 @@ describe('present controller — multi-display sessions', () => {
     expect(ctrl.isPresenting).toBe(false);
   });
 
-  it('no canvas → present is a no-op (returns false, nothing opened)', () => {
-    const { ctrl, start } = makeController({ canvas: null });
+  it('no engine → present is a no-op (returns false, nothing opened)', () => {
+    const { ctrl, start } = makeController({ engine: false });
     expect(ctrl.present('s1')).toBe(false);
     expect(ctrl.presentAll(['s1', 's2'])).toBe(0);
     expect(start).not.toHaveBeenCalled();
@@ -104,11 +129,40 @@ describe('present controller — multi-display sessions', () => {
     expect(ctrl.presentingCount).toBe(0);
   });
 
-  it('dispose tears every popup down', () => {
-    const { ctrl, created } = makeController();
-    ctrl.presentAll(['s1', 's2']);
-    ctrl.dispose();
-    expect(ctrl.presentingCount).toBe(0);
-    for (const c of created) expect(c.session.stop).toHaveBeenCalled();
+  // ── THE OWNER P0, AT THE SEAM THE CARD SEES ───────────────────────────────
+  // A card CANNOT tear a projector down, because the only method that ever did
+  // is gone from the interface. `tsc` is the gate; this asserts the runtime
+  // shape too, so a JS caller cannot resurrect it either.
+  it('exposes NO dispose() — a view unmount has no way to close a projector', () => {
+    const { ctrl } = makeController();
+    expect((ctrl as unknown as { dispose?: unknown }).dispose).toBeUndefined();
+  });
+
+  // The reactive read is off the REGISTRY, not a closure, which is what lets a
+  // card that mounted AFTER the projector opened show "Stop presenting".
+  it('a FRESH controller for the same node sees the projector the old one opened', () => {
+    const { ctrl, registry } = makeController();
+    ctrl.present('s1');
+    const reMounted = createPresent({
+      nodeId: () => 'n1',
+      engine: () => null,
+      fullscreen: { getScreenRect: () => null },
+      registry,
+    });
+    expect(reMounted.isPresenting, 'the re-expanded card knows it is presenting').toBe(true);
+    expect(reMounted.presentingCount).toBe(1);
+  });
+
+  it('controllers for DIFFERENT nodes do not see each other', () => {
+    const a = makeController({ nodeId: 'a' });
+    const b = createPresent({
+      nodeId: () => 'b',
+      engine: () => null,
+      fullscreen: { getScreenRect: () => null },
+      registry: a.registry,
+    });
+    a.ctrl.present('s1');
+    expect(a.ctrl.isPresenting).toBe(true);
+    expect(b.isPresenting).toBe(false);
   });
 });

@@ -222,6 +222,7 @@
   // in an off-screen host when the shell swaps its lane card away.
   import { DOM_SOURCE_LANE_TYPES, needsHeadlessSourceMount } from '$lib/ui/workflow/dom-source-modules';
   import { nodeMedia } from '$lib/ui/media/node-media-registry';
+  import { nodePresent } from '$lib/ui/modules/node-present-registry.svelte';
   import { RACK_SIZE_DEFAULTS } from '$lib/ui/rack-sizes';
   // ModuleNameLabel moved INTO every module card's title chrome (see
   // ModuleTitle.svelte) when the floating-overhead NodeToolbar was dropped.
@@ -2008,9 +2009,16 @@
    *  against the live node set rather than hooked onto every delete path — a
    *  node removed by ANY route (context menu, lasso, undo, a peer's CRDT
    *  delete, Clear, a patch load) is swept here, so no delete site has to
-   *  remember to call disposeNode. */
+   *  remember to call disposeNode.
+   *
+   *  The NODE-OWNED PROJECTOR ($lib/ui/modules/node-present-registry) is swept
+   *  from the same place for the same reason: a "Present on second display"
+   *  popup used to die with its card's onDestroy, which under the shell is a
+   *  COLLAPSE. Graph lifetime is the only correct owner of both. */
   $effect(() => {
-    nodeMedia.sweep(snapshot.nodes.map((n) => n.id));
+    const liveIds = snapshot.nodes.map((n) => n.id);
+    nodeMedia.sweep(liveIds);
+    nodePresent.sweep(liveIds);
   });
 
   let headlessSourceNodes = $derived.by<ModuleNode[]>(() => {
