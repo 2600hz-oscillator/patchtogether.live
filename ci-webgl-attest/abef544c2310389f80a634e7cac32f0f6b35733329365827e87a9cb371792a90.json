@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "webglContentHash": "5f23a111cf08d73701a38ad5766c8737073426570f66f2829f07276bc8fd2efe",
-  "attestedAt": "2026-08-12T02:40:34.041Z",
+  "webglContentHash": "abef544c2310389f80a634e7cac32f0f6b35733329365827e87a9cb371792a90",
+  "attestedAt": "2026-08-12T04:29:58.057Z",
   "attestedBy": "patchtogether-maintainer",
-  "gitHeadAtAttest": "77e7d0e42cc4b307e91691b25238b060bdea4ec7",
+  "gitHeadAtAttest": "6b9c15f35cd6e044b141a33ed04db07b0a4e5ac1",
   "playwrightVersion": "1.50.0",
   "os": "darwin 25.4.0 (arm64)",
   "machineClass": "local-trusted-gpu-workstation",
@@ -12,17 +12,11 @@
   "suites": {
     "A-heavy": {
       "specFiles": 56,
-      "passed": 194,
+      "passed": 195,
       "failed": 0,
-      "flaky": 1,
+      "flaky": 0,
       "skipped": 1,
-      "flakyDetails": [
-        {
-          "test": "flag ON: TOYBOX gen layer renders in the worker; downstream OUTPUT is non-black",
-          "file": "render-worker-toybox.spec.ts",
-          "firstError": "Error: TOYBOX OUTPUT is not all-black (nonZeroFrac=0.000) |  | expect(received).toBeGreaterThan(expected) | "
-        }
-      ]
+      "flakyDetails": []
     },
     "A-serial": {
       "specFiles": 2,
@@ -49,5 +43,5 @@
       "flakyDetails": []
     }
   },
-  "durationSec": 193
+  "durationSec": 189
 }

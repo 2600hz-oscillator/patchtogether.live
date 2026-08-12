@@ -61,7 +61,12 @@ const SKIP_RENDER: Record<string, string> = {
 // mandleblot, already heavy here) whose first-paint shader compile on CI's
 // SwiftShader software renderer overruns the default 30s test budget — give it
 // the same heavy headroom (structural assertions unchanged).
-const HEAVY_RENDER = new Set(['b3ntb0x', 'mandleblot', 'mandelbulb', 'twotracks', 'colourofmagic', 'sourcery']);
+// And 'warrensvisions': a 520px two-column card whose mount compiles two
+// programs and whose every frame runs a 128² inverse FFT on the CPU plus a
+// full-res composite — measured at ~4.2 ms/frame on SwiftShader against a
+// 1.80 ms passthrough floor. The structural assertions are unchanged; this is
+// headroom for the software renderer's first paint, not a slower test.
+const HEAVY_RENDER = new Set(['b3ntb0x', 'mandleblot', 'mandelbulb', 'twotracks', 'colourofmagic', 'sourcery', 'warrensvisions']);
 const HEAVY_MOUNT_TIMEOUT = 30_000;
 const HEAVY_TEST_TIMEOUT = 90_000;
 

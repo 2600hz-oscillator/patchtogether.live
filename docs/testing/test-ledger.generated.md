@@ -450,7 +450,7 @@ tracked-to-zero backlog (reconcile = fix or delete); see the roadmap.
 
 ### Opt-IN completeness ratchets (the more members the better)
 
-- `STRICT_DOCS`: **184** — modules held to the FULL living-docs completeness bar (deny-missing-docs) <sub>(packages/web/src/lib/docs/strict-docs.ts)</sub>
+- `STRICT_DOCS`: **185** — modules held to the FULL living-docs completeness bar (deny-missing-docs) <sub>(packages/web/src/lib/docs/strict-docs.ts)</sub>
 - `STRICT_VRT_MODULES`: **48** — modules whose card MUST ship a VRT baseline (deny-missing-baseline) <sub>(e2e/vrt/vrt-exemptions.ts)</sub>
 
 ## Bucket 3 — informational-only CI lanes (5)
