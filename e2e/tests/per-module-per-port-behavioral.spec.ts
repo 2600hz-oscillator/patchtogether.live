@@ -578,7 +578,7 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   //    (swellField/cameraBasis math) + mirrorpool-composite.spec.ts + VRT.
   //    RE-ENABLE (whole class): a real-GPU CI lane or the shape-sensitive /
   //    per-port-calibrated video metric in the RATCHET TODO.
-  mirrorpool: 'video-out-canvas animated pool: on PR #1096 (run 29647252153, shard 3) it did not time out but DETERMINISTICALLY failed the delta on rain_cv (Δμvar 1.6–2.7 vs the ~1428 animated-pool variance floor, nb Δ=0.0000) — the same video-variance-metric class as its per-port wind_dir/wind_speed/cam_z/pos_z exempts (now shadowed by this whole-module skip); whole-module because it is ALSO subject to the group\'s rotating SwiftShader contention timeout and the video-variance tail is broader than one run shows. Covered by mirrorpool-core.test.ts (swellField/cameraBasis) + mirrorpool-composite.spec.ts + VRT. RE-ENABLE via a real-GPU CI lane or the shape-sensitive/calibrated video metric (RATCHET TODO).',
+  mirrorpool: 'video-out-canvas animated pool: on PR #1096 (run 29647252153, shard 3) it did not time out but DETERMINISTICALLY failed the delta on rain_cv (Δμvar 1.6–2.7 vs the ~1428 animated-pool variance floor, nb Δ=0.0000) — the same video-variance-metric class as its per-port wind_dir/wind_speed exempts (now shadowed by this whole-module skip; the cam_z/pos_z rows were deleted 2026-08-10 as DEAD keys — that camera basis no longer exists); whole-module because it is ALSO subject to the group\'s rotating SwiftShader contention timeout and the video-variance tail is broader than one run shows. Covered by mirrorpool-core.test.ts (swellField/cameraBasis) + mirrorpool-composite.spec.ts + VRT. RE-ENABLE via a real-GPU CI lane or the shape-sensitive/calibrated video metric (RATCHET TODO).',
 
   // ── MOOG System 55/35 routing / mixer / utility modules (batch-2 +
   //    batch-5). These are PURE gain / patch-bay / format-converter /
@@ -1097,11 +1097,17 @@ const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
   'toybox.inA': 'video input only reaches output when a layer selects it as its source; default patch selects neither (correct no-op); covered by toybox-video-inputs.spec.ts',
   'toybox.inB': 'video input only reaches output when a layer selects it as its source; default patch selects neither (correct no-op); covered by toybox-video-inputs.spec.ts',
 
-  // ── SEQUENCER reset jumps the playhead but produces NO new output
-  //    that scope can see beyond the gate train already firing; the
-  //    `position_cv` port is the actual observable. Covered by sequencer
-  //    specs that read playhead position.
-  'sequencer.reset': 'reset advances playhead silently; covered by sequencer specs',
+  // ⚠ `'sequencer.reset'` DELETED 2026-08-10 — a DEAD exemption the new
+  //    REGISTRY anchor caught on its first run. SEQUENCER's reset input is
+  //    called `reset_cv`; there has been no port named `reset` for some time,
+  //    so `BEHAVIORAL_SWEEP_EXEMPT['sequencer.reset']` could never be looked up
+  //    and the entry bought nothing. The rename was in fact ALREADY handled —
+  //    `'sequencer.reset_cv'` sits a few lines below, and its reason literally
+  //    reads "same as reset" — so this key was a stale DUPLICATE left behind by
+  //    that migration. Deleting it changes no test's behaviour. This is exactly
+  //    the class the deleted population COUNT was structurally unable to see:
+  //    the dead key occupied a slot in the cap and looked like live debt, so
+  //    the cap was pricing the same port twice.
   // ── SEQUENCER reset_cv: same class as `reset` — a rising edge snaps the
   //    playhead to step 0 (sequencer.ts pollTransportCv → stepIndex=0), but
   //    with no NEW pattern that snap is inaudible against the gate train the
@@ -1148,10 +1154,15 @@ const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
   //    delta. Covered by scope-ch2-related specs.
   'scope.ch2':  'overlay-only input; covered by dedicated scope ch2 specs',
 
-  // ── ADSR retrigger semantics: depends on prior gate state; the
-  //    universal driver doesn't sequence retrig events.
-  //    Covered by adsr-vca-invert.spec.ts.
-  'adsr.retrig': 'retrig depends on prior gate state; covered by adsr-vca-invert.spec.ts',
+  // ⚠ `'adsr.retrig'` DELETED 2026-08-10 — a DEAD exemption the new REGISTRY
+  //    anchor caught on its first run. ADSR declares inputs gate / attack /
+  //    decay / sustain / release; there is no `retrig` port, so the key could
+  //    never be looked up. ADSR is not whole-module exempt; of its five real
+  //    inputs, `attack` and `sustain` carry their own per-port entries (below)
+  //    and gate / decay / release are swept. Deleting this key changes no
+  //    test's behaviour — the retrigger semantics it described are still
+  //    covered by adsr-vca-invert.spec.ts, which is where the reason already
+  //    pointed.
 
 
   // ── CUBE morph_fc / connect / crush: each DOES shape the slice readout (the
@@ -1484,60 +1495,182 @@ const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
   //    see the systemic-fix TODO at the BEHAVIORAL_SWEEP_EXEMPT header below.)
   'dx7.poly': 'poly note/gate retriggers the FM voice (zc/centroid wobble) but mean-RMS delta straddles the ~0.01 floor under the overlapping context-gate voice (jitter); covered by dx7.test.ts + dx7 ART/specs',
 
-  // ── MIRRORPOOL spatial-rearrangement CVs (wind_speed / wind_dir / cam_z).
+  // ── MIRRORPOOL spatial-rearrangement CVs (wind_speed / wind_dir).
   //    The pool surface animates every frame (wind swell + rain rings), so the
-  //    OUT carries a ~1390 luma-variance floor. 8 of 11 CVs perturb it clearly
-  //    (rain / brightness / surface_mode / cam_x / cam_y / pan / tilt / zoom all
-  //    read observable deltas). These three are the video-variance class (cf.
+  //    OUT carries a ~1390 luma-variance floor. Most CVs perturb it clearly
+  //    (rain / brightness / surface_mode / the orbit + look camera CVs / zoom
+  //    all read observable deltas). These two are the video-variance class (cf.
   //    lines.phase / tempest.rim / lushgarden.view): they REARRANGE the ripple
-  //    field or dolly the camera along the view axis WITHOUT moving global
-  //    frame-variance — Δμvar 0.06–3.7 vs the ±16 floor → NO-DELTA.
+  //    field WITHOUT moving global frame-variance — Δμvar 0.06–3.7 vs the ±16
+  //    floor → NO-DELTA.
   //      • wind_dir  — rotates the swell crest direction; a busy field of the
   //        same energy just reorients (variance-invariant).
   //      • wind_speed — adds swell energy on top of the already-rippling base
   //        (default 0.3 + rain chop); the incremental variance change stays
   //        sub-threshold vs the animation floor.
-  //      • cam_z — dollies the camera ALONG its view axis (pan=0 looks down −z),
-  //        the variance-quiet translation direction; cam_x (lateral) PASSES.
-  //    All three are real, CV-wired inputs — the camera basis (cam_z dolly, FOV)
-  //    is pinned in mirrorpool-core.test.ts:cameraBasis and the swell field
-  //    (wind_dir/wind_speed change the height + gradient) in swellField tests;
-  //    the composite VRT (mirrorpool-composite.spec.ts, baseline held for owner
-  //    preview) shows them visually. RE-ENABLE via a per-port-calibrated
-  //    (optical-flow / spatial) metric — the systemic behavioral-metric fix.
+  //    Both are real, CV-wired inputs — the swell field (wind_dir/wind_speed
+  //    change the height + gradient) is pinned in mirrorpool-core.test.ts's
+  //    swellField tests, and the composite VRT (mirrorpool-composite.spec.ts,
+  //    baseline held for owner preview) shows them visually. RE-ENABLE via a
+  //    per-port-calibrated (optical-flow / spatial) metric — the systemic
+  //    behavioral-metric fix.
+  //
+  // ⚠ `'mirrorpool.cam_z_cv'` and `'mirrorpool.pos_z_cv'` DELETED 2026-08-10 —
+  //    two more DEAD exemptions the new REGISTRY anchor caught on its first
+  //    run, and the most instructive of the four. MIRRORPOOL's camera model was
+  //    reworked from a cam_*/pos_* basis to an orbit/look one: its live CV
+  //    inputs are now orbit_az_cv / orbit_el_cv / orbit_dist_cv / look_yaw_cv /
+  //    look_pitch_cv / zoom_cv, and NONE of cam_x/cam_y/cam_z/pos_x/pos_y/pos_z
+  //    exists any more. Both keys, and the "pos_x_cv/pos_y_cv stay gated,
+  //    paralleling cam_x/cam_y which PASS" reasoning attached to them, referred
+  //    to ports that had already been deleted. MIRRORPOOL is additionally
+  //    WHOLE-module exempt (BEHAVIORAL_MODULE_EXEMPT), so these per-port rows
+  //    were doubly unreachable. Deleting them changes no test's behaviour.
   'mirrorpool.wind_dir_cv': 'rotates swell direction — variance-invariant reorientation of an equal-energy field (video-variance class, cf. lines.phase); covered by mirrorpool-core.test.ts:swellField + mirrorpool-composite.spec.ts',
   'mirrorpool.wind_speed_cv': 'adds swell energy on top of the already-animating base (default wind+rain); incremental Δμvar sub-threshold vs the ~1390 animation floor; covered by mirrorpool-core.test.ts:swellField + mirrorpool-composite.spec.ts',
-  'mirrorpool.cam_z_cv': 'dollies the camera along its view axis (variance-quiet translation; cam_x lateral PASSES); camera basis pinned in mirrorpool-core.test.ts:cameraBasis + mirrorpool-composite.spec.ts',
-  // pos_z is the bipolar-POSITION dolly (translates the eye ±2R along z, on top
-  // of PTZ) — the SAME variance-quiet-translation class as cam_z_cv above: at
-  // pan=0 the view axis is −z, so an along-view dolly rearranges the frame
-  // without moving global luma-variance. Its lateral (pos_x_cv) and vertical
-  // (pos_y_cv) siblings STAY in the sweep — they parallel cam_x/cam_y which
-  // PASS, and translate even further (±2R). The pos_* eye math (default = PTZ
-  // eye, ±2R reach, above-surface lift, ±2R clamp) is pinned in
-  // mirrorpool-core.test.ts:cameraBasis + shown in mirrorpool-composite.spec.ts.
-  'mirrorpool.pos_z_cv': 'bipolar-position dolly along the view axis (±2R) — variance-quiet translation, same class as cam_z_cv; pos_x_cv/pos_y_cv stay gated (parallel cam_x/cam_y, which PASS); eye math pinned in mirrorpool-core.test.ts:cameraBasis + mirrorpool-composite.spec.ts',
 
 };
 
-// ─── RATCHET — behavioral exemption caps ─────────────────────────────────
-// BEHAVIORAL_MODULE_EXEMPT (whole-module) + BEHAVIORAL_SWEEP_EXEMPT (per-port)
-// let a module/port OPT OUT of the behavioral CV→output sweep. Every entry is
-// reconciliation BACKLOG (see the "every exemption is BACKLOG" law above).
-// These caps FREEZE the lists at today's size so they can only SHRINK —
-// adding a NEW exemption fails this test on purpose.
-//   RATCHET RULE: exemptions only shrink. LOWER the number when you fix
-//   coverage and delete an entry. Only RAISE it for a genuinely new,
-//   documented exemption — NEVER to make a red sweep go green.
-test('RATCHET: behavioral exemption lists only shrink', () => {
+// ─── ARTIFACT ANCHOR — behavioral exemption keys must name live modules/ports ─
+//
+// ⚠ THE TWO CAPS ARE GONE (2026-08-10) — P0 owner directive, "ratchets are an
+// anti pattern; remove all ratchets".
+//
+//   `Object.keys(BEHAVIORAL_MODULE_EXEMPT).length  <= 77`
+//   `Object.keys(BEHAVIORAL_SWEEP_EXEMPT).length   <= 108`
+//
+// WHAT THEY WERE: two hand-typed population counts, each trailed by a
+// multi-thousand-character raise history (78→77, 113→108, 135→113, 175→135,
+// 66→62 …). That history is deleted WITH the numbers, and deliberately so: it
+// was a log of the COUNTER's movements, not of the coverage decisions. Every
+// entry in both maps already carries its own reason string naming the measured
+// delta, the class of failure, what pins the behaviour instead, and the
+// re-enable path — THAT is where the justification lives, and it travels with
+// the entry instead of accumulating in a shared line three branches edit.
+//
+// WHAT THEY PROTECTED: "an exemption list can only shrink; adding one fails on
+// purpose." That protection is DROPPED. A future PR can add a named exemption
+// with a reason and no test goes red. This is the pre-authorised coverage loss
+// of the kill-ratchets directive. Two things blunt it: the "every exemption is
+// BACKLOG, there is no permanent exempt bucket" law stated at the top of this
+// file, and the fact that an addition has always been reviewed by reading its
+// reason string — a count could only report that the number moved, never
+// whether the move was justified.
+//
+// WHAT REPLACES THEM is protection neither count ever had. Both maps are read
+// exactly once each — `BEHAVIORAL_MODULE_EXEMPT[mod.type]` and
+// `BEHAVIORAL_SWEEP_EXEMPT[`${mod.type}.${p.id}`]` in the sweep below — so a key
+// naming a module or an INPUT PORT that has since been renamed or deleted is
+// silently never consulted: a dead exemption, invisible, occupying a slot in
+// the very cap that was supposed to be watching. Not hypothetical: this anchor
+// went RED on its FIRST run against four such keys — `sequencer.reset`
+// (renamed to `reset_cv`), `adsr.retrig` (port gone), and
+// `mirrorpool.cam_z_cv` / `mirrorpool.pos_z_cv` (the whole cam_*/pos_* camera
+// basis replaced by orbit_*/look_*). All four are deleted above, each with a
+// note where it stood. The caps had counted all four as live debt for months.
+//
+// ⚠ STATED SCOPE — what this anchor still cannot see:
+//   • an exempted module/port whose behaviour has since been FIXED stays
+//     exempt silently. The sweep `test.fixme`s a whole-module exemption and
+//     simply filters a per-port one out of `drivableInputs`, so neither can
+//     ever report "unexpectedly passing". Reclaiming that debt needs a human
+//     to delete the entry and re-run.
+//   • per-port entries SHADOWED by a whole-module exemption on the same module
+//     (all the mirrorpool rows, for instance) are unreachable but not flagged
+//     here. per-module-per-port.spec.ts pins its shadowed set name-by-name;
+//     this file does not.
+test('behavioral exemption keys are anchored to REGISTRY', () => {
+  const modulesByType = new Map(REGISTRY.map((m) => [m.type, m]));
+  const totalInputPorts = REGISTRY.reduce((n, m) => n + m.inputs.length, 0);
+
+  // ── VACUITY FLOOR ──
+  // Every assertion below is a lookup against REGISTRY. If REGISTRY resolved
+  // nothing, "no key is stale" would be trivially true and this test would pass
+  // while proving NOTHING. These are sanity FLOORS, not ratchets: the tree
+  // carries ~196 modules and well over a thousand input ports, so they only
+  // trip if the manifest is empty or truncated.
   expect(
-    Object.keys(BEHAVIORAL_MODULE_EXEMPT).length,
-    'BEHAVIORAL_MODULE_EXEMPT grew past its frozen cap — see the RATCHET rule above',
-  ).toBeLessThanOrEqual(77); // 78→77 (2026-08-10): the hypercube module was DELETED wholesale (owner ruling — failed experiment), removing its whole-module row. A real un-exemption via deletion; lowered in the same commit, and the new number was COUNTED off the merged map (ts-parse of the object literal), not decremented. // RE-FROZEN at 78 (2026-08-08): +1 cvBuddyMini (the two-jack CV Buddy — IDENTICAL passthrough structure to cvBuddy and it SHARES cvBuddy's handle, so it fails for exactly the same structural reason: the sweep observes only pitchCv, which only the pitch input feeds. It was exempted in per-module-per-port.spec.ts when it shipped (#1398) but never mirrored here, so the red stayed invisible until a PR carried the `behavioral` label. This raise is a BOOKKEEPING correction, not new debt — the module was already structurally unsweepable on the day it landed. Both entries retire together when the per-input-scoped sink lands, since one handle serves both.) // RE-FROZEN at 77 (2026-07-21): +1 cvBuddy (lane→ES-9 CV/gate/clock sender — a separate-output-per-input passthrough: the sweep observes only the first output pitchCv, which ONLY the pitch input feeds, so gate/velocity read Δ=0 by construction, and run/clock are owner/transport-driven not input-driven; whole-module exempt like the hardware-idle es9, no single observed output responds to all inputs; inputs-accept still pins each wire-up; covered by cv-buddy slot-alloc/clock-math/es9-reconcile unit tests + owner hardware-verify; re-enable via a per-input-scoped sink). // RE-FROZEN at 76 (2026-07-19): +1 videocube (video isomorph of audio CUBE — 3 60-frame GPU rings + a 24-fetch occupancy combine, the SwiftShader per-frame-WebGL→video-out-canvas timeout class ×3, cf. frametable; whole-module exempt, covered by videocube-core.test.ts + per-port ACIDWARP→video_a emit + videocube.spec.ts). // RE-FROZEN at 75 (2026-07-19): +1 frametable (video wavetable oscillator — SwiftShader per-frame-WebGL→video-out-canvas timeout class, cf. freezeframe/chroma/fader/mappy; whole-module exempt, covered by frametable-core.test.ts + per-port ACIDWARP→video_in emit + frametable.spec.ts). // RE-FROZEN at 74 (2026-07-19): +1 grainsOfVision (granular video synth — animated-video variance-floor class, cf. backdraft/milkdrop: granular scatter + feedback trails + reverb tail self-animate every frame so the out/grains luma-variance range swamps any per-input footprint; whole-module exempt, covered by grainsOfVision.test.ts + grains-of-vision.spec.ts). // RE-FROZEN at 73 (2026-07-18, task #188 follow-up): +2 more video-domain modules from the PR #1096 behavioral run (run 29647252153, shard 3) — lumakey (genuine Class-A SwiftShader contention TIMEOUT, flaky-passed on retry, all 5 ports clear otherwise) + mirrorpool (did NOT time out — deterministically delta-failed rain_cv at Δμvar 1.6–2.7 vs its ~1428 animated-pool floor, the video-variance class of its already-per-port wind/cam/pos exempts; whole-module because it's video-out-canvas so ALSO contention-timeout-prone + the video-variance tail rotates broader than one run). // RE-FROZEN at 71 (2026-07-18, task #188): +6 CI-contention video/WebGL modules that SKIP here (chroma/fader/feedback/freezeframe/mappy = the SwiftShader per-frame-WebGL→video-out-canvas timeout class, cf. cellshade/posterbox; hypercube = a live WebGL2-tesseract card under the same 24-way SwiftShader contention — all timeout/flaky-timeout on run 29636629277, NOT per-port delta fails, and skipping them REDUCES lane wall-time) + +3 coarse-metric subtle-CV voices (kickdrum/tomtom/tidyVco: secondary CV trims perturb Δμrms 0.002–0.008 inside the metric floor with a NON-DETERMINISTIC/disjoint failing set across attempts → per-port would be whack-a-mole, so whole-module in the subtle-CV-effect class; DSP verified + unit-test-pinned; re-enable via the RATCHET-TODO calibrated metric). // RE-FROZEN at 62 (2026-07-16): +2 es9 + sixstrum (structurally silent in CI — es9's outputs source from physical hardware absent in CI, sixstrum is silent-until-struck with no base-strum driver; both were already whole-module/output exempt in per-module-per-port.spec.ts but never mirrored here, so the sweep hard-failed them on every main push; see their entries for coverage + re-enable paths). The two land INSIDE the old 66 cap's slack (prior re-enables — adsr/treeohvox/moog984/993/961/911a/960 — left the map at 60 without lowering the cap), and the cap is re-frozen at the actual list size 62 so it can only shrink again. // (history, old cap 66) +1 blood (data-gated emulator — driven + control inputs both idle without the non-redistributable WAD, absent in CI); +1 milkdrop (self-animating multi-pass visualizer — out luma-variance jitter floor swamps any per-input delta, cf. bentbox/b3ntb0x; covered by milkdrop-render-smoke.spec.ts); +1 spirographs (line generator — 25/31 geometry CV inputs reshape a thin curve sub-threshold on the coarse video-variance metric, cf. milkdrop/tempest.rim; deterministic, CV wired; covered by spirographs.test.ts + render-smoke)
+    REGISTRY.length,
+    'VACUITY: REGISTRY resolved almost no modules — every anchor below would pass trivially. '
+    + 'Run `flox activate -- task test:emit-manifest` (e2e/.generated/registry-manifest.json).',
+  ).toBeGreaterThan(100);
   expect(
-    Object.keys(BEHAVIORAL_SWEEP_EXEMPT).length,
-    'BEHAVIORAL_SWEEP_EXEMPT grew past its frozen cap — see the RATCHET rule above',
-  ).toBeLessThanOrEqual(108); // 113→108 (2026-08-10): the hypercube module was DELETED wholesale (owner ruling — failed experiment), removing its 5 per-port rows (morph_fc / connect / crush / alpha / slice_y). A real un-exemption via deletion; lowered in the same commit, COUNTED off the merged map, not decremented. // 135→113 (2026-08-02): the warrenspectrum module was DELETED (warren's spectrum replaces it), removing its 22 per-port rows — a real un-exemption via deletion, lowered in the same commit. Previously RE-FROZEN at 135 (2026-07-18, task #188): the cap had DRIFTED to 175 while the map held only 134 entries (prior re-enables removed entries without lowering the cap — the same slack the module cap had at 66→62), so the ratchet was toothless (40 free slots). Re-frozen to the TRUE size = 134 existing + 1 new so new additions fail the guard again as intended. +1 moog911.t1_cv (attack-TIME CV: the retrigger window is default-time-dominated → Δμrms=0.005 inside the env ±0.105 floor → near-threshold flake, passed one attempt/failed the other on run 29636629277; ISOLATED marginal port — gate/t2_cv/t3_cv pass with margin — so per-port like sibling esus_cv; covered by moog911.test.ts). // (history, old cap 175) +1 mirrorpool.pos_z_cv (bipolar-position dolly along the view axis, ±2R — SAME variance-quiet class as cam_z_cv; lateral pos_x_cv + vertical pos_y_cv STAY gated, paralleling cam_x/cam_y which PASS; re-enable via the per-port-calibrated/optical-flow metric alongside cam_z_cv; still well under this cap). // +3 mirrorpool.{wind_dir_cv,wind_speed_cv,cam_z_cv} (animated-pool ~1390 luma-variance floor; wind rotates/adds equal-energy swell + cam_z dollies along the view axis — video-variance-class spatial-rearrangement inputs blind to the global-variance metric, cf. lines.phase/tempest.rim/lushgarden.view; the other 8 CVs PASS; camera/swell math pinned in mirrorpool-core.test.ts + composite VRT); +3 lushgarden.{rate,horizon,view} (stochastic-garden variance floor ±300 std masks the three scene-geometry CVs — view is a pure translation (lines.phase class), horizon a depth-proportional anchor shift, rate a spawn-cadence wiggle; each read Δμvar <4 at least once over 7 repeats → near-threshold flakes; grow/reset/background stay gated and detect at Δμvar 770–2690; math pinned in lushgarden-scene.test.ts, re-enable via per-port-calibrated metric or __lushgardenVrtSeed-seeded driver); +1 snaredrum.roll_speed_cv (CV only modulates the drumroll rate, which needs gate_in held high; the sweep drives trigger_in single strikes → no roll → no delta, cf. pentemelodica.fmN; rate map unit-proven in snare-roll-dsp.test.ts, density asserted in snaredrum-roll.spec.ts); +1 tempest.rim (claw occupies ~1/16 lanes; sliding it doesn't move global frame-variance — video-variance class; claw motion unit-proven in tempest.test.ts + render-smoke); +1 textmarquee.posY (vertical text translation keeps covered pixel-area/frame-variance unchanged → near-threshold flake, video-variance class; posX/scrollX stay gated; covered by textmarquee-layout.test.ts + render-smoke); +1 moog962.shift (advancing the seq-switch selector across UNPATCHED in1..in3 gives Δμrms 0.004 inside the ±0.089 out-noise floor → near-threshold flake; in1/in2/in3 stay gated; covered by moog962.test.ts); +1 lines.phase (phase scroll translates the line bands but preserves frame-variance, Δμvar 2.36 vs ±63.7 → near-threshold flake, video-variance class; orient/amp/thickness stay gated; covered by lines-render-smoke.spec.ts); +1 moog911.esus_cv (sustain-level CV only shapes the held-sustain phase; short retriggering window is attack/release-dominated, Δμrms 0.003 inside ±0.105 → near-threshold flake; t1/t2/t3/gate stay gated; covered by moog911.test.ts); +1 textmarquee.scrollY (vertical scroll of the horizontal band keeps frame-variance ≈ constant, Δμvar 1.45–2.08 → near-threshold flake, same geometry as posY; posX/scrollX stay gated; covered by textmarquee-layout.test.ts); +1 moog921b.freq_bus (1V/oct pitch bus responds — perturbed cent jitters ±24Hz — but a symmetric sweep collapses the mean-cent metric to Δμcent 3–10Hz → metric-mismatch flake, not dead CV; width_bus/fine/range stay gated; covered by moog921b.test.ts)
+    totalInputPorts,
+    `VACUITY: REGISTRY declares ${totalInputPorts} input ports across ${REGISTRY.length} modules — `
+    + 'far too few for the port anchor to be able to fail. The manifest emitter is broken.',
+  ).toBeGreaterThan(300);
+
+  // ── ARTIFACT ANCHOR ──
+  // Ground truth is the REGISTRY module / INPUT port, not the list. The sweep
+  // keys per-port exemptions off `mod.inputs`, so the resolver must check the
+  // INPUT side specifically — matching any port would let a renamed input hide
+  // behind a same-named output.
+  const moduleKeyIsLive = (moduleType: string): boolean => modulesByType.has(moduleType);
+  const inputKeyIsLive = (key: string): boolean => {
+    const dot = key.indexOf('.');
+    if (dot < 0) return false;
+    const mod = modulesByType.get(key.slice(0, dot));
+    if (!mod) return false;
+    const portId = key.slice(dot + 1);
+    return mod.inputs.some((p) => p.id === portId);
+  };
+
+  expect(
+    Object.keys(BEHAVIORAL_MODULE_EXEMPT).filter((k) => !moduleKeyIsLive(k)).sort(),
+    'STALE EXEMPTION: these BEHAVIORAL_MODULE_EXEMPT keys name modules that are no longer in '
+    + 'REGISTRY. The module was renamed or deleted, so `BEHAVIORAL_MODULE_EXEMPT[mod.type]` can '
+    + 'never match and the entry buys nothing — delete it (and re-pin the ledger: '
+    + '`flox activate -- task test:ledger:accept`).',
+  ).toEqual([]);
+
+  expect(
+    Object.keys(BEHAVIORAL_SWEEP_EXEMPT).filter((k) => !inputKeyIsLive(k)).sort(),
+    'STALE EXEMPTION: these BEHAVIORAL_SWEEP_EXEMPT keys name a `<moduleType>.<inputPortId>` pair '
+    + 'that no longer exists in REGISTRY (module gone, or the INPUT port was renamed/dropped). The '
+    + 'sweep can never look the key up, so it is a dead exemption that LOOKS like live coverage '
+    + 'debt. If the port was renamed, do NOT blindly re-key it — re-run the port unexempted first, '
+    + 'because the behaviour may have been fixed by the same change that renamed it. Then re-pin '
+    + 'the ledger: `flox activate -- task test:ledger:accept`.',
+  ).toEqual([]);
+
+  // ── PERMANENT NEGATIVE CONTROL, BOTH DIRECTIONS ──
+  // Runs on EVERY execution, not once at authoring time. Without it, an anchor
+  // that silently resolved nothing (empty manifest, a refactor that made a
+  // resolver return `true` unconditionally) prints the same empty array as a
+  // genuinely clean tree — "no stale keys" and "never looked" are
+  // indistinguishable from the output. So force both answers out of the SAME
+  // resolvers the assertions above used.
+  const liveModule = REGISTRY.find((m) => m.inputs.length > 0);
+  expect(liveModule, 'NEGATIVE CONTROL: no REGISTRY module has an input port').toBeTruthy();
+  const liveType = liveModule!.type;
+  const livePort = liveModule!.inputs[0].id;
+
+  expect(
+    moduleKeyIsLive('__no_such_module__'),
+    'NEGATIVE CONTROL (false leg): the module resolver called a non-existent module type LIVE — '
+    + 'it accepts anything, so the stale-module assertion above is decoration.',
+  ).toBe(false);
+  expect(
+    moduleKeyIsLive(liveType),
+    `NEGATIVE CONTROL (true leg): the module resolver called the real module "${liveType}" STALE — `
+    + 'it rejects everything, so it would have reddened on a clean tree.',
+  ).toBe(true);
+  expect(
+    inputKeyIsLive('__no_such_module__.in'),
+    'NEGATIVE CONTROL (false leg, module half): the input resolver called a port on a '
+    + 'non-existent module LIVE.',
+  ).toBe(false);
+  expect(
+    inputKeyIsLive(`${liveType}.__no_such_port__`),
+    `NEGATIVE CONTROL (false leg, PORT half): the input resolver called "${liveType}.__no_such_port__" `
+    + 'LIVE — it only checks the module and never looks at the port id, so a renamed input would '
+    + 'never be caught. This is the exact leg that would have hidden the four dead keys.',
+  ).toBe(false);
+  expect(
+    inputKeyIsLive(`${liveType}.${livePort}`),
+    `NEGATIVE CONTROL (true leg): the input resolver called the real input "${liveType}.${livePort}" `
+    + 'STALE — it rejects everything, so the empty stale-list above proves nothing.',
+  ).toBe(true);
 });
 
 // TODO(behavioral-coverage, systemic fix — tracks the header note + the

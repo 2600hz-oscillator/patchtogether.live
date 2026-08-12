@@ -172,8 +172,13 @@ const KNOWN_MIRROR_GAPS: Record<string, { pct: number; reason: string }> = {
   },
 };
 
-/** Ratchet: only shrinks. Lower it as gaps close, in the same commit. */
-const MAX_KNOWN_GAPS = 5;
+/* ⚠ `MAX_KNOWN_GAPS` (5) IS GONE (2026-08-12, the no-ratchets sweep). It was a
+ * hand-typed copy of `Object.keys(KNOWN_MIRROR_GAPS).length`, and both
+ * properties it was credited with are carried by unconditional assertions on
+ * the same list: a divergence with no entry is RED at `failures → toEqual([])`
+ * (deny-by-default), and an entry that now PASSES is RED at
+ * `stale → toEqual([])` plus the case/tap anchor below. Adding a sixth gap is
+ * already a named entry with a measured `pct` and a `reason` in the diff. */
 
 describe('analog-vco — the TS mirror matches the SHIPPED Faust DSP', () => {
   for (const c of CASES) {
@@ -232,22 +237,13 @@ describe('analog-vco — the TS mirror matches the SHIPPED Faust DSP', () => {
       ).toEqual([]);
       expect(
         stale,
-        `${c.name}: KNOWN_MIRROR_GAPS entries that now PASS — remove them and lower ` +
-          `MAX_KNOWN_GAPS.\n  ${stale.join('\n  ')}`,
+        `${c.name}: KNOWN_MIRROR_GAPS entries that now PASS — delete the ` +
+          `entr(ies).\n  ${stale.join('\n  ')}`,
       ).toEqual([]);
     });
   }
 
-  it('the known-gap list only SHRINKS, and every entry names a real case/tap', () => {
-    const n = Object.keys(KNOWN_MIRROR_GAPS).length;
-    expect(n, 'KNOWN_MIRROR_GAPS grew — a new divergence is a regression, not an entry')
-      .toBeLessThanOrEqual(MAX_KNOWN_GAPS);
-    expect(
-      MAX_KNOWN_GAPS - n,
-      `THE GAP CEILING HAS GONE SLACK: ${n} gap(s) under a ceiling of ${MAX_KNOWN_GAPS}. ` +
-        `Lower MAX_KNOWN_GAPS to ${n}.`,
-    ).toBe(0);
-
+  it('every known-gap entry names a real case/tap', () => {
     // ANCHOR TO THE ARTIFACT: an entry naming a case or tap that does not exist
     // is an entry nobody is watching.
     const caseNames = new Set(CASES.map((c) => c.name));

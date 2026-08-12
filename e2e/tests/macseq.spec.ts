@@ -23,6 +23,7 @@
 import { test, expect } from './_fixtures';
 import { spawnPatch, type SpawnNode, type SpawnEdge } from './_helpers';
 import { readScopeSnapshot, summarize, runFor } from './_module-coverage-helpers';
+import { MODEL_NAMES } from '../../packages/web/src/lib/audio/modules/macro-engine-roster';
 
 test.describe.configure({ mode: 'parallel' });
 
@@ -145,7 +146,17 @@ test('macseq → macrooscillator: every MODEL_NAMES entry is reachable via MODEL
     const w = globalThis as unknown as { __macseqModelNames: () => string[] };
     return w.__macseqModelNames();
   });
-  expect(modelNames.length).toBeGreaterThanOrEqual(14);
+  // ⚠ `>= 14` STOOD HERE (removed 2026-08-12, the no-ratchets sweep). It was a
+  // FIFTH hand-typed copy of the roster size, in a file that cannot see the
+  // roster — which is the exact complaint `macro-engine-roster.ts` opens with
+  // ("IT EXISTS BECAUSE '14' WAS ENCODED IN FOUR PLACES"). Zero slack, so
+  // retiring any engine reddened a MACSEQ test that has nothing to say about
+  // the roster's size. Derived from the roster instead, which is also the
+  // stronger claim: the page's `__macseqModelNames()` bridge must agree with
+  // the module the card and def both read.
+  expect(modelNames, 'the page bridge must expose the whole engine roster').toEqual([
+    ...MODEL_NAMES,
+  ]);
 
   // Program the 16-step pattern: each step is ON, midi=60 (C4 = 0V), and
   // cycles through MODEL_NAMES so step i selects modelIndex (i % N).

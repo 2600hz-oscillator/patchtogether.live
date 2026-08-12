@@ -20,10 +20,12 @@
 //      (CLAUDE.md: "negative-control the instrument, not just the code".)
 //   4. Nobody can route around the registry: no VRT spec may hand-roll a
 //      `mask:` array outside the shared capture seam, except the pinned
-//      LEGACY set below — which may only ever SHRINK.
-//   5. The pre-registry `VRT_MODULE_MASKS` table (canvas masks with no
-//      companion at all) is capped by a ratchet that may only ever SHRINK, so
-//      a new module cannot join the un-companioned pile.
+//      LEGACY set below — each entry NAMED and anchored to the file it names.
+//   5. Every entry in the pre-registry `VRT_MODULE_MASKS` table (canvas masks
+//      with no companion at all) must state a checkable CAUSE for the region it
+//      deletes, per entry rather than per module.
+//
+// Neither 4 nor 5 has a COUNT any more — see the two removal notes below.
 //
 // This is a pure-unit gate: no browser, no snapshot, no flake, ~0 CI seconds.
 // It runs in the `unit` lane, which is REQUIRED — so the rules above are
@@ -64,12 +66,36 @@ function repoRoot(): string {
 const VRT_DIR = resolve(repoRoot(), 'e2e/vrt');
 
 // ───────────────────────────────────────────────────────────────────────────
-// RATCHET 1 — spec files still allowed to hand-roll a `mask:` array instead of
-// going through e2e/vrt/vrt-capture.ts. Every one of these is a scene whose
-// masked region has NO companion assertion, i.e. coverage that is currently
-// deleted. The list may only ever SHRINK: migrating a spec to the seam means
-// deleting its line here in the same commit. Adding a line is the failure the
-// guard exists to catch.
+// THE LEGACY INLINE-MASK LIST — spec files still allowed to hand-roll a `mask:`
+// array instead of going through e2e/vrt/vrt-capture.ts. Every one of these is a
+// scene whose masked region has NO companion assertion, i.e. coverage that is
+// currently deleted. Migrating a spec to the seam means deleting its line here
+// in the same commit, and the anchor below makes forgetting to RED.
+//
+// ⚠ `LEGACY_INLINE_MASK_SPECS.size <= 6` IS GONE (2026-08-10). It was the LAST
+// hand-typed population count in this file; the sibling
+// `LEGACY_UNCOMPANIONED_MASK_CEILING = 12` went the same way earlier the same
+// day (see the note under the table below, which also records what its removal
+// cost). WHAT THE 6 PROTECTED and WHO CARRIES IT NOW:
+//
+//   · a NEW spec hand-rolling a mask → 'no VRT file hand-rolls a mask outside
+//     the capture seam' (deny by default: an unlisted file with a `mask:` is
+//     RED), plus 'no file OUTSIDE e2e/vrt/ that a VRT spec imports hand-rolls a
+//     mask' and the import-graph reach-out control that keeps that scan
+//     non-vacuous. None of the three consults this list except as an exemption;
+//     none of them needs a number.
+//   · a STALE entry → 'the legacy inline-mask list only shrinks', which resolves
+//     every name against the tree: a listed file that does not exist is RED, and
+//     a listed file that no longer hand-rolls a mask is RED. That is what makes
+//     the list SHRINK on its own rather than because a literal says so.
+//
+// ⚠ WHAT IS GENUINELY LOST: growth-BY-LISTING. Adding a seventh spec to this set
+// AND hand-rolling a mask in it used to trip the `<= 6`; now it does not, and
+// the brake is review of the new named line in the diff. Pre-authorised coverage
+// loss of the kill-ratchets directive, recorded here rather than in a commit
+// message — and the same trade the sibling count below made, for the same
+// reason: a literal three concurrent branches each compute correctly and merge
+// wrongly is not a protection, it is a coin flip with a green light.
 const LEGACY_INLINE_MASK_SPECS = new Set<string>([
   // Masks the app-version stamp (build metadata — vdev locally, vX.Y.Z on CI).
   'landing.spec.ts',
@@ -87,10 +113,10 @@ const LEGACY_INLINE_MASK_SPECS = new Set<string>([
 ]);
 
 // ───────────────────────────────────────────────────────────────────────────
-// RATCHET 2 — the pre-registry canvas-mask table. An entry here masks a card's
-// canvas with NO companion, so the module is free to render nothing. Entries
-// whose module is EXEMPT_FROM_VRT or has a VRT_SCENES entry are inert (the
-// spec never applies them), so the ratchet counts only the LIVE ones.
+// THE PRE-REGISTRY CANVAS-MASK TABLE. An entry here masks a card's canvas with
+// NO companion, so the module is free to render nothing. Entries whose module is
+// EXEMPT_FROM_VRT or has a VRT_SCENES entry are inert (the spec never applies
+// them), so only the LIVE ones are of interest.
 //
 // ⚠ THE COUNT IS GONE (2026-08-10). `LEGACY_UNCOMPANIONED_MASK_CEILING = 12`
 // was a hand-typed population count, and it is the clearest case in the repo of
@@ -464,8 +490,8 @@ describe('VRT masks: nobody routes around the registry', () => {
   // 170 }` is a legitimate DSP parameter and is reachable from no VRT spec).
   //
   // Files OUTSIDE e2e/vrt/ get NO legacy exemption: LEGACY_INLINE_MASK_SPECS
-  // is a ratchet over the specs that already existed, not a licence to open a
-  // new one somewhere the guard used not to look.
+  // names the specs that already existed, not a licence to open a new one
+  // somewhere the guard used not to look.
   const importedOutsideVrtDir = (): string[] => {
     const entries = readdirSync(VRT_DIR)
       .filter((f) => f.endsWith('.ts'))
@@ -533,10 +559,15 @@ describe('VRT masks: nobody routes around the registry', () => {
       expect(
         findHandRolledMasks(src).length,
         `${f} no longer hand-rolls a mask — delete it from LEGACY_INLINE_MASK_SPECS ` +
-          '(the list is a ratchet; a stale entry re-opens the hole)',
+          '(a stale entry is one nobody is watching, and it re-opens the hole for ' +
+          'whatever mask is added to that file next)',
       ).toBeGreaterThan(0);
     }
-    expect(LEGACY_INLINE_MASK_SPECS.size).toBeLessThanOrEqual(6);
+    // (`expect(LEGACY_INLINE_MASK_SPECS.size).toBeLessThanOrEqual(6)` stood
+    // here until 2026-08-10 — see the removal note above the set for what it
+    // protected and which assertions carry that now. The loop above IS the
+    // only-shrinks mechanism: it is anchored to the tree, so it cannot go
+    // stale, and it names the file instead of reporting that a total moved.)
   });
 
   // ── GUARD THE GUARD ──────────────────────────────────────────────────────

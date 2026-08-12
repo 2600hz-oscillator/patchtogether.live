@@ -326,16 +326,21 @@ describe('worklet-guard — the source gate (DENY BY DEFAULT)', () => {
     ).toEqual([]);
   });
 
-  it('RATCHETS BOTH WAYS: exactly 7 unguarded sites remain, all webgl-attest-basis', () => {
-    // 8→7 (2026-08-10): hypercube.ts was DELETED with the module, so its
-    // construction site is GONE. Counted off the merged list, not decremented.
-    const CEILING = 7;
-    expect(sites.length, 'unguarded worklet constructions').toBeLessThanOrEqual(CEILING);
-    expect(
-      CEILING - sites.length,
-      'slack in the ceiling — a drain that forgets to lower this number passes ' +
-        'in silence and the slack absorbs the next regression',
-    ).toBe(0);
+  it('the unguarded population is EXACTLY the named list, and every reason is the same one', () => {
+    // ⚠ `CEILING` (7) IS GONE (2026-08-12, the no-ratchets sweep). It was a
+    // hand-typed literal equal BY CONSTRUCTION to `UNGUARDED_EXEMPTIONS.length`:
+    // the deny-by-default leg above forces every site to be named, and the
+    // artifact anchor forces every name to be a live site, so the two lists are
+    // the same set and the number was a third copy of their size — one that a
+    // concurrent branch adding or deleting a worklet silently invalidates.
+    //
+    // Replaced with the DERIVED form, which is strictly stronger: it also
+    // catches the one case the two `toEqual([])`s cannot, a DUPLICATE
+    // `file::processor` key (both legs compare sets, so two sites sharing a key
+    // pass them and fail this).
+    expect(sites.length, 'unguarded worklet constructions vs named exemptions').toBe(
+      UNGUARDED_EXEMPTIONS.length,
+    );
     expect(new Set(UNGUARDED_EXEMPTIONS.map((e) => e.why))).toEqual(
       new Set(['webgl attest basis']),
     );
@@ -344,15 +349,36 @@ describe('worklet-guard — the source gate (DENY BY DEFAULT)', () => {
   it('the guarded population is real, and it is the whole audio tree', () => {
     // The gate above is satisfiable by DELETING every worklet in the repo. This
     // is the other half: the seam must actually be in wide use.
+    //
+    // ⚠ `>= 57` STOOD HERE (removed 2026-08-12, the no-ratchets sweep). It read
+    // as a generous vacuity floor and was nothing of the kind: the tree
+    // measured **58**, so it had ONE slot of slack — a single module dropping
+    // the seam would still have passed, and every second module added would
+    // have needed the literal bumped. A floor sitting on its own population is
+    // a ratchet whatever the comment calls it.
+    //
+    // Both halves are DERIVED now. (a) the seam is in wider use than the
+    // exemption list — measured 58 guarded against 7 named unguarded, and both
+    // sides come off the same tree, so it never needs a bump. (b) the terminal
+    // sink is named, so a walk that silently resolved nothing cannot pass.
     let guarded = 0;
+    const guardedFiles: string[] = [];
     for (const abs of walkSources(resolve(WEB_SRC, 'lib/audio'))) {
       const code = readFileSync(abs, 'utf8');
-      guarded += (code.match(/createWorkletNode\s*\(/g) ?? []).length;
+      const n = (code.match(/createWorkletNode\s*\(/g) ?? []).length;
+      if (n > 0) guardedFiles.push(abs.replace(/^.*\/lib\/audio\//, ''));
+      guarded += n;
     }
-    // 57 audio-module sites + audio-out + the engine gate-edge bridge (the
-    // three webgl-attest-basis audio defs are exempt, above). A FLOOR, not a
-    // pin: new modules push it up, and a mass revert of the seam drops below it.
-    expect(guarded, 'createWorkletNode call sites under lib/audio').toBeGreaterThanOrEqual(57);
+    expect(
+      guarded,
+      `the guarded seam must outnumber the named unguarded exemptions — ` +
+        `${guarded} createWorkletNode call sites vs ${sites.length} bare constructions`,
+    ).toBeGreaterThan(sites.length);
+    expect(
+      guardedFiles,
+      'the terminal sink must construct through the seam — a walk that resolved nothing ' +
+        'would satisfy the comparison above by emptying both sides',
+    ).toContain('modules/audio-out.ts');
   });
 
   it('the Faust path — the one node the seam cannot construct — is guarded', () => {

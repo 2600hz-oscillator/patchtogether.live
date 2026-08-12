@@ -302,9 +302,20 @@ describe('mono normals are not defeated by their factory', () => {
         + 'If it is a mono normal, this gate is BLIND to it — the exact defect this file exists '
         + 'to prevent. Teach resolveOperand the spelling, or classify it.',
       ).toEqual([]);
-      // Ratchet the other way too: the audit must actually be looking at things.
-      // A scanner that silently matched nothing would satisfy the line above.
-      expect(scan.candidates.length).toBeGreaterThan(300);
+      // Non-vacuity, the other way: the audit must actually be looking at
+      // things. A scanner that silently matched nothing would satisfy the line
+      // above. (`> 300` stood here until 2026-08-12 — the tree measured ~307,
+      // so it was a floor sitting ON the population and any legitimate DSP
+      // deletion reddened it. Replaced with the DERIVED form, which is both
+      // stronger and stable: every pinned mono normal must appear among the
+      // candidates, because a normal that is not even a candidate is a normal
+      // the scanner has gone blind to.)
+      const candidateKeys = new Set(scan.candidates.map((c) => c.dspFile));
+      expect(
+        [...KNOWN_MONO_NORMALS].map((k) => k.split(':')[0]!).filter((f) => !candidateKeys.has(f)),
+        'pinned mono normal(s) whose DSP file yielded NO fallback candidate at all — the ' +
+          'scanner stopped seeing that file, so every "no violations" assertion above is vacuous',
+      ).toEqual([]);
     });
 
     it('resolves every identifier unambiguously', () => {
@@ -316,7 +327,18 @@ describe('mono normals are not defeated by their factory', () => {
     });
 
     it('scanned the whole DSP tree, not a subset', () => {
-      expect(scan.files.length).toBeGreaterThanOrEqual(63);
+      // `scan.files.length >= 63` stood here until 2026-08-12. 63 was EXACTLY
+      // the number of non-test files under packages/dsp/src, so the floor sat
+      // on the population: deleting any DSP module reddened it for no reason,
+      // and adding one bought slack it never spent. Both halves of what it
+      // claimed are DERIVED below instead — the walk must reach every file the
+      // pin list names, and the found set must equal the pinned set.
+      const scanned = new Set(scan.files);
+      expect(
+        [...KNOWN_MONO_NORMALS].map((k) => k.split(':')[0]!).filter((f) => !scanned.has(f)),
+        'the DSP walk did not reach file(s) that the pin list says carry a mono normal — ' +
+          'the scan narrowed, so the assertions above are quantifying over a subset',
+      ).toEqual([]);
       expect(normals.length).toBe(KNOWN_MONO_NORMALS.length);
     });
   });
@@ -344,7 +366,7 @@ describe('mono normals are not defeated by their factory', () => {
       ).toEqual([]);
     });
 
-    it('keeps no stale STEREO_WITHOUT_NORMAL row, and ratchets it BOTH ways', () => {
+    it('keeps no stale STEREO_WITHOUT_NORMAL row', () => {
       const gaps = new Set(
         stereo.filter((m) => !(m.dspFile && withNormal.has(m.dspFile))).map((m) => m.file),
       );
@@ -355,14 +377,23 @@ describe('mono normals are not defeated by their factory', () => {
           + 'HAS a normal. A stale exemption is one nobody is watching — remove the row.',
         ).toBe(true);
       }
-      const CEILING = 2; // only shrinks
-      expect(Object.keys(STEREO_WITHOUT_NORMAL).length).toBeLessThanOrEqual(CEILING);
-      expect(CEILING - Object.keys(STEREO_WITHOUT_NORMAL).length).toBe(0);
+      // ⚠ `CEILING` (2) IS GONE (2026-08-12, the no-ratchets sweep). It was a
+      // hand-typed copy of `Object.keys(STEREO_WITHOUT_NORMAL).length`, and the
+      // two properties it was credited with are both carried elsewhere on this
+      // same describe: a module that needs a row and has none is RED at the
+      // `unexplained → toEqual([])` above (deny-by-default), and a row naming a
+      // module that no longer needs one is RED at the loop above (the artifact
+      // anchor). Adding a THIRD row is therefore already a named, reasoned diff
+      // — the number only added a second place to notice it, in a file two
+      // concurrent stereo branches edit.
     });
 
     it('the def-anchored instrument is non-vacuous', () => {
       // If the def parser silently read nothing, every assertion above passes.
-      expect(stereo.length).toBeGreaterThanOrEqual(10);
+      // (`stereo.length >= 10` stood here until 2026-08-12; the tree measured
+      // exactly 10, so it was a floor on the population, and the NAME on the
+      // next line is the non-vacuity check that actually holds — a def parser
+      // reading nothing cannot produce `stereovca.ts`.)
       expect(stereo.map((m) => m.file)).toContain('stereovca.ts');
       expect(stereo.every((m) => m.inPairs.length > 0 && m.outPairs.length > 0)).toBe(true);
     });
@@ -381,7 +412,9 @@ describe('mono normals are not defeated by their factory', () => {
 
     it('parsed a non-empty roster (the parser fails OPEN otherwise)', () => {
       expect(rosterSection).not.toBe('');
-      expect(roster.size).toBeGreaterThanOrEqual(6);
+      // (`roster.size >= 6` stood here until 2026-08-12 with one slot of slack
+      // against a roster of 7 — the NAME below is what makes a fail-open parse
+      // impossible to miss, and it does not go stale when the roster grows.)
       expect(roster).toContain('clouds');
     });
 
@@ -686,12 +719,22 @@ describe('mono normals are not defeated by their factory', () => {
       expect(r.candidates.length).toBeGreaterThan(0);
     });
 
-    it('PERMANENT: the found-count may never fall below the known population', () => {
+    it('PERMANENT: the found set is exactly the pinned set, in all three spellings', () => {
       // The leg that makes the next unmatchable spelling impossible to ship
       // silently. If someone rewrites a module and the scanner stops seeing its
       // normal, this is red even though every "no violations" assertion above
       // would still pass.
-      expect(normals.length).toBeGreaterThanOrEqual(13);
+      //
+      // ⚠ `normals.length >= 13` STOOD HERE (removed 2026-08-12, the
+      // no-ratchets sweep). 13 was `KNOWN_MONO_NORMALS.length`, so the only
+      // case it caught that the DERIVED line below does not is a normal being
+      // deleted from the DSP *and* its pin row deleted in the SAME commit.
+      // That residual is named in the sweep PR's body. Two things still catch
+      // most of it: for a stereo module it reddens `unexplained` in LEG 2 (an
+      // L/R-in-and-out module with no normal and no STEREO_WITHOUT_NORMAL row),
+      // and the spelling identity below reddens if a whole spelling class stops
+      // resolving. A count could not tell those two apart anyway — it only said
+      // "fewer", never which.
       expect(normals.length).toBe(KNOWN_MONO_NORMALS.length);
       // …and the spellings actually present in-tree are pinned, so a refactor
       // that changes HOW a normal is written is a visible, reviewed diff.

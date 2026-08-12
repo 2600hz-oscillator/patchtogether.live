@@ -49,8 +49,10 @@ import { fileURLToPath } from 'node:url';
 // The behavioral per-module specs are titled
 //   `<moduleType>: each declared input perturbs the module's observable output …`
 // (per-module-per-port-behavioral.spec.ts). This marker distinguishes them from
-// the sibling `RATCHET:` housekeeping test in the same file and from any future
-// non-per-module test, so the aggregator only ever counts real module rows.
+// the sibling exemption-ANCHOR housekeeping test in the same file and from any
+// future non-per-module test, so the aggregator only ever counts real module
+// rows. NOTE the filter keys on this MARK, never on a specific housekeeping
+// title — renaming or replacing that test cannot break the aggregator.
 export const BEHAVIORAL_TITLE_MARK = 'each declared input perturbs';
 
 // ───────────────────────── pure: behavioral report ─────────────────────────

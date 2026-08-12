@@ -1,19 +1,27 @@
 // packages/web/src/lib/docs/strict-docs.ts
 //
-// The RATCHET set for the living-docs system: module types that have been
-// PROMOTED to the full documentation bar. For a module in this set the
+// The PROMOTED set for the living-docs system: module types that have been
+// raised to the full documentation bar. For a module in this set the
 // module-docs lint enforces COMPLETENESS — every port, every param, and every
 // declared control family MUST carry an authored `docs` entry (the
 // deny(missing_docs) guarantee at the I/O surface), so adding a new port to a
 // strict module fails CI until it is documented.
 //
 // Modules NOT in this set are checked only for CONSISTENCY (no orphaned doc
-// keys) — they degrade gracefully while the ratchet rolls out. Promote a module
-// here once its `docs` are authored + verified. The set only grows:
+// keys) — they degrade gracefully while the bar rolls out. Promote a module
+// here once its `docs` are authored + verified:
 //  - batches of ~5 as background work,
 //  - every NEW module ships into it,
 //  - any module incidentally touched for a fix is brought up + added (the
 //    boy-scout rule — see CLAUDE.md "Living docs: document on touch").
+//
+// ⚠ THERE IS NO COUNT. The `|STRICT_DOCS| >= 172` floor was deleted 2026-08-12
+// (the no-ratchets sweep) and module-docs-lint.test.ts now asserts the property
+// the floor was standing in for: ANY module whose co-located `docs` are already
+// COMPLETE must be in this set. So authoring complete docs IS the promotion,
+// and deleting a name here while its docs stay complete is RED — which the old
+// floor could not see, since it sat 13 below the set's actual size. To
+// un-promote for real, remove the docs, not the name.
 //
 // See .myrobots/plans/living-docs-drift-2026-06-24.md.
 
@@ -257,8 +265,8 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   // press-and-hold buttons) — so the static face is the right fallback for each.
   // HYPERCUBE was a member of this batch; it was DELETED wholesale on
   // 2026-08-10 (owner ruling — failed experiment), a real un-promotion by
-  // deletion, and the set shrinks by 1. The frozen floor is 172, so the
-  // ratchet in module-docs-lint.test.ts needs no edit.
+  // deletion, and the set shrinks by 1. (No number to edit: the frozen floor
+  // that used to be bumped here was deleted 2026-08-12 — see the header.)
   'cloudseed',
   'foxy',
   'twotracks',
@@ -270,9 +278,10 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   // ported from the CallSine VST's SPECTRAL half; born strict (docs authored
   // co-located on the def and fact-checked against src/dsp/SpectralResynth.cpp).
   // It REPLACES two strict members retired in the same PR — `callsine` (aliased
-  // onto it) and `warrenspectrum` (dropped) — so the set moves 184 → 183. The
-  // frozen floor is 172, so no ratchet edit is needed; recorded here because a
-  // net shrink should never be silent.
+  // onto it) and `warrenspectrum` (dropped) — a net shrink of one, recorded
+  // here because a net shrink should never be silent. (Both retirements were
+  // real: their defs went with them, so the derived deny-by-default check in
+  // module-docs-lint.test.ts stays satisfied.)
   'warrensspectrum',
   // Batch 14 — FINAL audio batch: the last undocumented AUDIO modules, which
   // completes the audio catalog (2026-06-26). The arcade GAME modules FROGGER /
