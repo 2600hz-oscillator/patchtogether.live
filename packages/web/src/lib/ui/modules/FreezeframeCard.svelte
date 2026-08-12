@@ -5,15 +5,25 @@
   // Layout:
   //   Left:   video_in (VID) + gate_in (GATE).
   //   Right:  video_out (OUT) + r_out / g_out / b_out / luma_out (R/G/B/L).
-  //   Body:   4 QUANT knobs (R/G/B/LUMA) + a live preview of video_out.
+  //   Body:   4 QUANT knobs (R/G/B/LUMA), the DECAY row (DECAY + INVERT
+  //           switches, DECAY TIME fader) + a live preview of video_out.
   //
-  // The S&H + posterize logic lives in the module factory; this card just
-  // wires the knobs to node.params and shows a small preview of the
+  // The S&H + posterize + decay logic lives in the module factory; this card
+  // just wires the controls to node.params and shows a small preview of the
   // combined output (the canonical surface.texture), mirroring
   // FourPlexVidCard's blit.
+  //
+  // ⚠ RANGES COME FROM THE DEF, NEVER RE-TYPED HERE. `def('decay_time').min`
+  // rather than `min={0.05}`: a card that restates a number its def already
+  // declares is not a duplicate, it is a SECOND value that can silently
+  // disagree — the backdraft ±0.2-vs-±1 defect, which every def-reading gate
+  // was structurally blind to. (The QUANT faders' literal `min={0}`/`max={1}`
+  // predate that rule; they agree with the def and card-def-agreement checks
+  // that they keep agreeing.)
   import { onMount, onDestroy } from 'svelte';
   import { type NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
+  import Toggle from '$lib/ui/controls/Toggle.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { useEngine } from '$lib/audio/engine-context';
   import { setNodeParam } from '$lib/graph/mutate';
@@ -38,6 +48,28 @@
   function def(name: string) {
     return freezeframeDef.params.find((x) => x.id === name)!;
   }
+
+  // ── THE DECAY ROW HAS TO FIT IN A HARD 540 px, and it is arithmetic ──────
+  // freezeframe is a 3u/2hp card and the rack CLAMPS a 3u card to 540 CSS px —
+  // that is a ceiling, not a min-height that grows. The first cut of this row
+  // was a default 80 px-track Fader (a 94 px `.fader-wrap`, so a 112 px row)
+  // and it put a control 35.8 px PAST the card's bottom edge. Nobody saw that
+  // by looking; `card-control-overflow` measured it.
+  //
+  // Two changes pay for the row, and both figures below are MEASURED with the
+  // gate's own metric — worst control-bottom minus card-bottom, in CSS px, so
+  // xyflow's zoom transform can't inflate them:
+  //
+  //   44 px decay track  → a 58 px wrap, still taller than the 48 px toggles,
+  //                        so the fader (not the switches) sets the row height
+  //   QUANT grid margin 22→12 px and row gap 26→16 px  (two rows = ONE gap)
+  //
+  //   before:  +35.8 px  (overflowing)
+  //   after:   −30.2 px  (deepest control sits 30 px ABOVE the card's edge)
+  //
+  // The QUANT faders themselves are untouched. ⚠ Re-measure before adding
+  // anything else here — 30 px is one short row's worth of slack and no more.
+  const DECAY_TRACK_PX = 44;
 
   const inputs = portsFromDef(freezeframeDef.inputs, { video_in: 'VIDEO', gate_in: 'GATE' });
   const outputs = portsFromDef(freezeframeDef.outputs, {
@@ -106,6 +138,42 @@
       <Fader value={p('quant_b')}    min={0} max={1} defaultValue={def('quant_b').defaultValue}    label="QUANT B"    curve="linear" onchange={setParam('quant_b')}    moduleId={id} paramId="quant_b" />
       <Fader value={p('quant_luma')} min={0} max={1} defaultValue={def('quant_luma').defaultValue} label="QUANT LUMA" curve="linear" onchange={setParam('quant_luma')} moduleId={id} paramId="quant_luma" />
     </div>
+
+    <!-- PHOSPHOR DECAY. Only observable while the image is FROZEN — a captured
+         frame is age zero, so with GATE unpatched these do nothing visible.
+         That is the effect's definition, not a card bug; the authored docs on
+         the def say it in the user's words. -->
+    <div class="decay-row">
+      <Toggle
+        value={p('decay')}
+        label={def('decay').label}
+        hint="held frames fade"
+        onchange={setParam('decay')}
+        moduleId={id}
+        paramId="decay"
+      />
+      <Toggle
+        value={p('decay_invert')}
+        label={def('decay_invert').label}
+        hint="to white"
+        onchange={setParam('decay_invert')}
+        moduleId={id}
+        paramId="decay_invert"
+      />
+      <Fader
+        value={p('decay_time')}
+        min={def('decay_time').min}
+        max={def('decay_time').max}
+        defaultValue={def('decay_time').defaultValue}
+        label={def('decay_time').label}
+        units={def('decay_time').units}
+        curve={def('decay_time').curve}
+        trackHeight={DECAY_TRACK_PX}
+        onchange={setParam('decay_time')}
+        moduleId={id}
+        paramId="decay_time"
+      />
+    </div>
   </PatchPanel>
 </div>
 
@@ -134,11 +202,24 @@
   }
   .preview-label { font-size: 0.55rem; color: var(--text-dim); letter-spacing: 0.1em; font-family: ui-monospace, monospace; }
   .fader-grid {
-    margin-top: 22px;
+    /* 22px→12px margin and 26px→16px row gap: 20px reclaimed for the DECAY row
+       inside the 3u card's hard 540px clamp. See DECAY_TRACK_PX above. */
+    margin-top: 12px;
     padding: 0 14px;
     display: grid;
     grid-template-columns: repeat(2, 1fr);
-    gap: 26px 6px;
+    gap: 16px 6px;
+    justify-items: center;
+  }
+  .decay-row {
+    margin-top: 8px;
+    padding: 0 14px;
+    display: grid;
+    /* The fader is the tall item; the switches sit on the same baseline as its
+       track rather than floating at the top of the row. */
+    grid-template-columns: repeat(3, 1fr);
+    align-items: end;
+    gap: 6px;
     justify-items: center;
   }
 </style>

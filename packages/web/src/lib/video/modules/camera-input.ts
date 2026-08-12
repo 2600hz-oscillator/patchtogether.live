@@ -422,8 +422,43 @@ export const cameraInputDef: VideoModuleDef = {
         // shrinks to fit with black bars. Math adapts to ctx.res (so a 16:9
         // webcam cover-fills a 16:9 canvas edge-to-edge with no crop). Falls
         // back to (1,1) when dims are unknown (idle / pre-stream).
-        const srcW = videoEl?.videoWidth ?? 0;
-        const srcH = videoEl?.videoHeight ?? 0;
+        // ⚠ THE TEST SEAM MUST OVERRIDE GEOMETRY, NOT JUST THE UPLOAD.
+        // testFrameEnabled() bypasses the frame upload above, but the quad was
+        // still sized from the LIVE <video> — so if the stream reached metadata
+        // partway through a determinism run, the "frozen" frame was re-sampled
+        // at a different scale: same texels, different crop. That is a REAL
+        // nondeterminism in the attest's Pass C render smoke, and it fired 3/3
+        // on a real GPU with a bit-identical value each time (0x0 → 640x360,
+        // dVar 275.62 against a 1.0 budget). It was invisible to the dMean gate,
+        // which read 0.14 and PASSED: rescaling a checkerboard barely moves the
+        // mean, so the one statistic being watched was blind to the one thing
+        // that changed. `loopback.ts` — whose comment says it "parallels
+        // CAMERA's seam" — already does this in effectiveCrop(); camera simply
+        // omitted it. Now it does not.
+        // ⚠ THE TEST SEAM MUST OVERRIDE GEOMETRY, NOT JUST THE UPLOAD.
+        // testFrameEnabled() bypasses the frame upload above, but the quad was
+        // still sized from the LIVE <video> — so if the stream reached metadata
+        // partway through a determinism run, the "frozen" frame was re-sampled
+        // at a different scale: same texels, different crop. Measured on the
+        // attest's Pass C render smoke: 3/3 failures on a real GPU with a
+        // bit-identical value each run, 0x0 → 640x360, dVar 275.62 against a
+        // 1.0 budget. It was invisible to the dMean gate, which read 0.14 and
+        // PASSED — rescaling a checkerboard barely moves the mean, so the one
+        // statistic being watched was blind to the one thing that changed.
+        //
+        // ⚠ IT DOES NOT REPRODUCE EVERYWHERE, so do not "verify" this by
+        // watching it pass. The trigger is a RACE: #1459 added `&seed=none`,
+        // boot got faster, and the first determinism burst began landing BEFORE
+        // the stream instead of after. A slower machine still wins the race and
+        // sees 3/3 green with this fix reverted (measured here). CI cannot see
+        // it at all — SwiftShader plus the preview build are slow enough that
+        // the stream always wins — which is why the attest was the only gate
+        // that ever caught it, and why this is fixed by CONSTRUCTION rather
+        // than by tuning. `loopback.ts` — whose comment says it "parallels
+        // CAMERA's seam" — already does exactly this in effectiveCrop().
+        const testFrame = testFrameEnabled();
+        const srcW = testFrame ? TEST_FRAME_W : (videoEl?.videoWidth ?? 0);
+        const srcH = testFrame ? TEST_FRAME_H : (videoEl?.videoHeight ?? 0);
         const srcAspect = srcW > 0 && srcH > 0 ? srcW / srcH : ctx.res.width / ctx.res.height;
         const { sx, sy } = aspectFitScale(
           srcAspect,
