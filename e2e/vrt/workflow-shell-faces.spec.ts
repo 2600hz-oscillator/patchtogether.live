@@ -106,20 +106,36 @@
 //      changes. It is contamination rather than blindness, it costs 1 % of the
 //      budget, and removing it means capturing `.faceplate` instead — which
 //      moves all 21 baselines again. Recorded, not silently absorbed.
-//   6. THE LANE. This spec is in vrt.config's FULL_MATCH, not STRICT_MATCH, so
-//      it runs in ci.yml's `vrt` job — `continue-on-error: true`, outside the
-//      `ci` umbrella's needs. A moved baseline therefore posts a diff gallery
-//      and a PR comment; it does NOT block the merge. "Impossible to miss" here
-//      means VISIBLE, not ENFORCED. Promoting these scenes to `vrt-strict` is a
-//      required-check change with its own wall-time argument, not this PR's.
+//   6. ~~THE LANE.~~ CLOSED 2026-08-12 — and it was the most expensive item on
+//      this list, because it silently subsumed all five above it. This note
+//      used to read: "it runs in ci.yml's `vrt` job — `continue-on-error: true`
+//      … it does NOT block the merge. 'Impossible to miss' here means VISIBLE,
+//      not ENFORCED. Promoting these scenes to `vrt-strict` is a required-check
+//      change with its own wall-time argument, not this PR's."
+//
+//      It stayed a follow-up long enough to be demonstrated twice. #1468
+//      removed a sidebar block from twelve modules and merged with all twelve
+//      dock baselines stale; the required lane was green throughout. Every
+//      residual scope declared above is a statement about a gate that COULD NOT
+//      FAIL A MERGE, which makes the declarations bookkeeping rather than
+//      protection.
+//
+//      The spec is now in vrt.config's STRICT_MATCH as well as FULL_MATCH, so
+//      it runs in the REQUIRED `vrt-strict` job. Measured cost and the
+//      time-to-merge argument are in vrt.config.ts beside the list; the short
+//      version is +9.56 min on a job that was 6.6 min against a 16.14 min
+//      critical path, i.e. ~zero time-to-merge delta.
 //
 // The band structure additionally has non-pixel gates: `faceplate-platform.
 // spec.ts` (the PF-21 row sweep + the annotation/sidebar sweeps) and the pure
 // `dock-row-plan` / `module-face-lint` units, which read the whole faceplate.
 
 import { test, expect } from '@playwright/test';
+import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { diffRegion } from './vrt-surface-stats';
 import { DOCK_TAB_MIN_BANDS } from '../../packages/web/src/lib/ui/workflow/dock-tabs-model';
+import { STRICT_FACES } from '../../packages/web/src/lib/ui/workflow/strict-faces';
 import {
   COMPACT_MAX_DIFF,
   DOCK_MAX_DIFF,
@@ -258,6 +274,73 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
       ).toEqual([]);
     });
   }
+
+  // ── THE ROSTER IS DENY-BY-DEFAULT, AND THE BASELINES MUST EXIST ──────────
+  //
+  // ⚠ PROMOTING THIS SPEC INTO THE REQUIRED LANE FIXES NOTHING FOR A FACE THAT
+  // IS NOT IN IT. `FACES` is a hand-maintained array in `_shell-faces.ts` and
+  // `STRICT_FACES` is a hand-maintained set in `strict-faces.ts`; they happen
+  // to agree today and NOTHING ASSERTED THAT. A face promoted to STRICT_FACES
+  // without a `FACES` entry generates no scene, so there is nothing to compare,
+  // nothing to be stale, and nothing to go red — a module fully shipped to the
+  // dock with zero pixel coverage, in the lane that now gates merges. That is
+  // the same shape as the lane hole itself: a gate whose SUBJECT is opt-in.
+  //
+  // Set equality in BOTH directions, and both directions have teeth:
+  //   * in STRICT_FACES, not in FACES → a shipped face with no pixel scene.
+  //   * in FACES, not in STRICT_FACES → a scene for a face users cannot reach,
+  //     i.e. two baselines nobody is looking at, and an entry that will read as
+  //     "covered" in any audit of this file.
+  //
+  // Plus the baselines themselves: `toHaveScreenshot` WRITES a missing snapshot
+  // and fails, which is correct but arrives mid-sweep after a full boot. This
+  // says it in the first second of the job, names every missing file at once,
+  // and — the part that matters — cannot be satisfied by the run itself. A
+  // `git rm`-ed baseline silently recreated by a later plain VRT run (the
+  // standing hazard in CLAUDE.md) is an UNTRACKED png; this leg reads the
+  // filesystem, so it goes green again only when someone commits it.
+  test('every shipped face has a scene, and every scene has its baselines', () => {
+    const rostered = new Set(FACES.map((f) => f.type));
+    const missingScene = [...STRICT_FACES].filter((t) => !rostered.has(t)).sort();
+    const orphanScene = [...rostered].filter((t) => !STRICT_FACES.has(t)).sort();
+
+    expect(
+      missingScene,
+      `these modules are in STRICT_FACES — they render a curated faceplate to real ` +
+        `users — but have NO entry in the FACES roster, so this spec generates no ` +
+        `scene for them and no pixel gate covers them at any tier. Add ` +
+        `{ type, pages } to FACES in _shell-faces.ts and capture the baselines ` +
+        `(\`task vrt:commit\`).`,
+    ).toEqual([]);
+    expect(
+      orphanScene,
+      `these have VRT scenes but are not in STRICT_FACES, so they are not shipped ` +
+        `as faces. Either promote them or delete the roster entries — a scene for ` +
+        `an unreachable face is two baselines nobody reads that still read as ` +
+        `coverage.`,
+    ).toEqual([]);
+    // NON-VACUITY: both lists being empty is also what a failure to load either
+    // side looks like. Anchor to the artifacts.
+    expect(rostered.size, 'the FACES roster is empty — did the import resolve?').toBeGreaterThan(0);
+    expect(STRICT_FACES.size, 'STRICT_FACES is empty — did the import resolve?').toBeGreaterThan(0);
+
+    const missingBaseline: string[] = [];
+    for (const { type } of FACES) {
+      for (const variant of ['compact', 'dock'] as const) {
+        const rel = `./__screenshots__/workflow-shell-faces.spec.ts/face-${type}-${variant}.png`;
+        if (!existsSync(fileURLToPath(new URL(rel, import.meta.url)))) {
+          missingBaseline.push(`face-${type}-${variant}.png`);
+        }
+      }
+    }
+    expect(
+      missingBaseline,
+      `these baselines are not committed. Playwright would WRITE them and fail ` +
+        `mid-sweep, which looks like a capture problem rather than a missing pin; ` +
+        `worse, a plain VRT run recreates a deleted one as an UNTRACKED file that ` +
+        `no gate reads. Capture with \`task vrt:commit\` and commit the result.`,
+    ).toEqual([]);
+  });
 
   // ── THE PERMANENT NEGATIVE CONTROL FOR THE AUDIO FREEZE ───────────────────
   //
