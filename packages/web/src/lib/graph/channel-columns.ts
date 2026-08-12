@@ -189,6 +189,43 @@ export function sendBoxForFlowX(x: number, pitch: number = COLUMN_W): 1 | 2 {
 }
 
 /**
+ * Is a flow-space Y inside the lane band's VERTICAL extent, `[laneTopY,
+ * COLUMN_BASELINE_Y)`?
+ *
+ * That interval is EXACTLY the rect ChannelColumnsOverlay paints for every
+ * column and every send box (it projects `laneTopY → COLUMN_BASELINE_Y`), so
+ * "inside a lane" means the same thing to the hit-test as it does to the user's
+ * eye. `laneTopY` is the LIVE top — the lanes grow upward with the tallest
+ * stack (laneTopYForHeight / computeLaneHeightPx) — never a constant, so the
+ * caller must pass the current one. Below the baseline is the VIDEO ZONE; above
+ * the top is free canvas.
+ */
+export function laneBandContainsY(y: number, laneTopY: number): boolean {
+  return y >= laneTopY && y < COLUMN_BASELINE_Y;
+}
+
+/**
+ * Hit-test a flow-space POINT to a lane drop target — the 2-D form of
+ * columnForFlowX, and the ONE function both membership sites (palette spawn and
+ * card drag-stop) resolve a lane through.
+ *
+ * POSITION DECIDES MEMBERSHIP (owner rule): a point outside the painted lane
+ * band in EITHER axis is free canvas → `null` → no lane, and a point inside one
+ * is that lane. columnForFlowX on its own is X-ONLY, which silently made the
+ * lanes infinitely tall: everything spawned above the lanes and everything
+ * dropped below the baseline (the video zone) that merely SHARED a column's X
+ * joined that channel and was teleported into its stack.
+ */
+export function laneTargetForFlowPoint(
+  point: { x: number; y: number },
+  laneTopY: number,
+  pitch: number = COLUMN_W,
+): number | 'send' | null {
+  if (!laneBandContainsY(point.y, laneTopY)) return null;
+  return columnForFlowX(point.x, pitch);
+}
+
+/**
  * Deterministic flow-space TOP-LEFT position of member `index` (0-based, 0 = top
  * / source) of a `total`-member column `ch`. BOTTOM-ANCHORED: the tail
  * (index = total-1) sits one slot above the baseline (near the number), and

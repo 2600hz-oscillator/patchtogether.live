@@ -104,8 +104,10 @@ test.describe('VRT: ?shell=1 rack holds position vs the lane grid at fixed zooms
           __setSpawnFlowPos: (p: { x: number; y: number }) => void;
           __spawnFromPalette: (t: string) => void;
         };
-        // x=30 lands inside narrowed column 1's [0, SHELL_COLUMN_W) band.
-        w.__setSpawnFlowPos({ x: 30, y: 40 });
+        // x=30 lands inside narrowed column 1's [0, SHELL_COLUMN_W) band; y=4280
+        // lands inside the lane's PAINTED band (the drop hit-test is 2-D — a Y
+        // above the lanes is free canvas and joins no lane).
+        w.__setSpawnFlowPos({ x: 30, y: 4280 });
         w.__spawnFromPalette('vca');
       });
       await page.waitForFunction(() => {

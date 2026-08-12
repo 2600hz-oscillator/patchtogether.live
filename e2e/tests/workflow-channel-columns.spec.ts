@@ -29,19 +29,26 @@ import { installMidiOutCapture } from '../_helpers/midi';
 /** channel-columns.ts geometry (kept in sync with the pure module). */
 const COLUMN_W = 765; // 34 * HP_UNIT(22.5) — wide enough for a 720px tidyvco/sixstrum
 const SEND_RAIL_X0 = 8 * COLUMN_W; // 6120
+/** COLUMN_BASELINE_Y — COLUMN_SLOT_H(720) × COLUMN_MAX_SLOTS(6). The lane band's
+ *  BOTTOM edge, and the anchor every in-band drop position below is taken from:
+ *  the drop hit-test is 2-D (laneTargetForFlowPoint), so a spawn/drop must land
+ *  inside `[laneTopY, COLUMN_BASELINE_Y)` in Y as well as inside a column in X.
+ *  A Y just above the baseline is in-band at every lane height. */
+const COLUMN_BASELINE_Y = 4320;
 
 const PINNED_MIXER = 'pinned-mixmstrs';
 const PINNED_CLIP = 'pinned-clipplayer';
 
-/** A flow-space spawn anchor inside channel column `ch` (X selects the column;
- *  members bottom-anchor regardless of the drop Y). */
+/** A flow-space spawn anchor inside channel column `ch`'s painted band (X
+ *  selects the column; members then bottom-anchor regardless of the drop Y). */
 function colPos(ch: number): { x: number; y: number } {
-  return { x: (ch - 1) * COLUMN_W + 60, y: 40 };
+  return { x: (ch - 1) * COLUMN_W + 60, y: COLUMN_BASELINE_Y - 40 };
 }
 /** A flow-space spawn anchor inside send box `box` — the two boxes sit SIDE BY
- *  SIDE, so the box is chosen by X (box 1 then box 2, each one column wide). */
+ *  SIDE, so the box is chosen by X (box 1 then box 2, each one column wide),
+ *  and they share the columns' Y band. */
 function sendPos(box: number): { x: number; y: number } {
-  return { x: SEND_RAIL_X0 + (box - 1) * COLUMN_W + 60, y: 100 };
+  return { x: SEND_RAIL_X0 + (box - 1) * COLUMN_W + 60, y: COLUMN_BASELINE_Y - 40 };
 }
 
 async function waitForPinnedTrio(page: Page): Promise<void> {
@@ -467,13 +474,16 @@ test.describe('workflow channel columns', () => {
     expect(cloudId).toBeTruthy();
 
     // Drive the drag-stop the way SvelteFlow does: move the node into column 5's
-    // flow band, then fire handleNodeDragStop with the moved node.
+    // flow band, then fire handleNodeDragStop with the moved node. The Y must
+    // put the card's CENTER inside the band (the drag hit-test probes the
+    // center, not the top edge) — 800px above the baseline clears that for any
+    // legacy card height up to 4u.
     await page.evaluate(({ id, x, y }) => {
       const w = globalThis as unknown as {
         __handleNodeDragStop?: (p: { targetNode: unknown; nodes: { id: string; position: { x: number; y: number } }[] }) => void;
       };
       w.__handleNodeDragStop?.({ targetNode: null, nodes: [{ id, position: { x, y } }] });
-    }, { id: cloudId!, x: 4 * COLUMN_W + 60, y: 100 });
+    }, { id: cloudId!, x: 4 * COLUMN_W + 60, y: COLUMN_BASELINE_Y - 800 });
 
     // The dragged cloudseed joined column 5 and chained under the tidyvco.
     await expect.poll(async () => (await orderOf(page, 'columns', 5)).length, { timeout: 8_000 }).toBe(2);

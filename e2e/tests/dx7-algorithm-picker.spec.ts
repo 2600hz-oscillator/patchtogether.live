@@ -38,7 +38,10 @@ async function bootDx7Shell(page: Page): Promise<string> {
       __setSpawnFlowPos: (p: { x: number; y: number }) => void;
       __spawnFromPalette: (t: string) => void;
     };
-    w.__setSpawnFlowPos({ x: 30, y: 40 });
+    // Inside lane 1's PAINTED band: the drop hit-test is 2-D, so the anchor
+    // needs a Y in `[laneTopY, COLUMN_BASELINE_Y=4320)`, not just an X in the
+    // column. 4280 is in-band at every lane height.
+    w.__setSpawnFlowPos({ x: 30, y: 4280 });
     w.__spawnFromPalette('dx7');
   });
   await page.waitForFunction(() => {

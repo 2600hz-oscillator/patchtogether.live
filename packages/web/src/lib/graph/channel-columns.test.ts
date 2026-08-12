@@ -17,6 +17,8 @@ import {
   sendBoxXBand,
   sendRailXBand,
   columnForFlowX,
+  laneBandContainsY,
+  laneTargetForFlowPoint,
   sendBoxForFlowX,
   columnMemberPos,
   sendMemberPos,
@@ -100,6 +102,73 @@ describe('column geometry', () => {
     // Left of the columns, and right of the sends rail → null (free canvas).
     expect(columnForFlowX(-50)).toBeNull();
     expect(columnForFlowX(sendRailXBand()[1] + 50)).toBeNull();
+  });
+
+  // POSITION DECIDES MEMBERSHIP. columnForFlowX above is X-ONLY by design — it
+  // answers "which column's X band is this?" and nothing else. On its own at a
+  // membership site it made the lanes infinitely tall, so a module spawned on
+  // the grid far above the lanes (or below the baseline, in the video zone)
+  // joined whichever channel shared its X. laneTargetForFlowPoint is the 2-D
+  // form both membership sites use.
+  describe('laneTargetForFlowPoint — the lane band is BOUNDED in Y as well as X', () => {
+    // The default legacy band: 2× a 3u tidyvco (1080) above the baseline.
+    const laneTopY = laneTopYForHeight(defaultLaneHeightPx(RACK_UNIT * 3));
+    const inLaneY = (laneTopY + COLUMN_BASELINE_Y) / 2;
+    const colX = (ch: number) => columnXBand(ch)[0] + 5;
+
+    it('a point INSIDE the band resolves to that column — same answer as the X-only test', () => {
+      for (let ch = 1; ch <= COLUMN_COUNT; ch++) {
+        expect(laneTargetForFlowPoint({ x: colX(ch), y: inLaneY }, laneTopY)).toBe(ch);
+        // Negative control on the instrument: the X-only test agrees HERE, so
+        // any disagreement below is the Y gate doing work, not a broken X.
+        expect(columnForFlowX(colX(ch))).toBe(ch);
+      }
+      expect(laneTargetForFlowPoint({ x: sendRailXBand()[0] + 5, y: inLaneY }, laneTopY)).toBe('send');
+    });
+
+    it('ABOVE the band top → null, even with the X squarely inside a column', () => {
+      for (let ch = 1; ch <= COLUMN_COUNT; ch++) {
+        expect(laneTargetForFlowPoint({ x: colX(ch), y: laneTopY - 1 }, laneTopY)).toBeNull();
+      }
+      // The reported bug verbatim: a spawn "on the grid" well above the lanes.
+      expect(laneTargetForFlowPoint({ x: colX(1) + 25, y: 40 }, laneTopY)).toBeNull();
+      // …and the sends rail is bounded the same way.
+      expect(laneTargetForFlowPoint({ x: sendRailXBand()[0] + 5, y: 40 }, laneTopY)).toBeNull();
+    });
+
+    it('BELOW the baseline (the video zone) → null', () => {
+      expect(laneTargetForFlowPoint({ x: colX(3), y: COLUMN_BASELINE_Y }, laneTopY)).toBeNull();
+      const zone = videoAreaBand();
+      expect(laneTargetForFlowPoint({ x: colX(3), y: (zone.y0 + zone.y1) / 2 }, laneTopY)).toBeNull();
+    });
+
+    it('the band edges are [laneTopY, COLUMN_BASELINE_Y) — top inclusive, baseline exclusive', () => {
+      expect(laneBandContainsY(laneTopY, laneTopY)).toBe(true);
+      expect(laneBandContainsY(laneTopY - 0.5, laneTopY)).toBe(false);
+      expect(laneBandContainsY(COLUMN_BASELINE_Y - 0.5, laneTopY)).toBe(true);
+      expect(laneBandContainsY(COLUMN_BASELINE_Y, laneTopY)).toBe(false);
+    });
+
+    it('a GROWN lane accepts drops its short self would have refused', () => {
+      // The lanes grow upward with the tallest stack, so the band the hit-test
+      // reads must be the LIVE one, not a constant. A Y that is outside the
+      // default band is inside the grown one.
+      const grownTop = laneTopYForHeight(computeLaneHeightPx([3000], defaultLaneHeightPx(RACK_UNIT * 3)));
+      const y = grownTop + 10;
+      expect(laneTargetForFlowPoint({ x: colX(2), y }, laneTopY), 'outside the DEFAULT band').toBeNull();
+      expect(laneTargetForFlowPoint({ x: colX(2), y }, grownTop), 'inside the GROWN band').toBe(2);
+    });
+
+    it('X still decides WHICH lane: outside every band in X is null at any in-band Y', () => {
+      expect(laneTargetForFlowPoint({ x: -50, y: inLaneY }, laneTopY)).toBeNull();
+      expect(laneTargetForFlowPoint({ x: sendRailXBand()[1] + 50, y: inLaneY }, laneTopY)).toBeNull();
+    });
+
+    it('honours the narrow ?shell=1 pitch on the X axis', () => {
+      const shellX = columnXBand(4, SHELL_COLUMN_W)[0] + 5;
+      expect(laneTargetForFlowPoint({ x: shellX, y: inLaneY }, laneTopY, SHELL_COLUMN_W)).toBe(4);
+      expect(laneTargetForFlowPoint({ x: shellX, y: laneTopY - 1 }, laneTopY, SHELL_COLUMN_W)).toBeNull();
+    });
   });
 
   it('the sends rail sits immediately right of column 8, split into 2 side-by-side boxes', () => {
