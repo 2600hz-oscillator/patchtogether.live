@@ -119,9 +119,35 @@ export const FACE_TIER_CAPS: Record<FaceTier, number> = {
  * a lane tier. Pure.
  */
 export function laneOrder(face: ModuleFace): readonly string[] {
-  const heroCell = face.hero?.cell;
-  if (!heroCell) return face.order;
-  return face.order.filter((k) => k !== heroCell);
+  const dockOnly = new Set<string>();
+  if (face.hero?.cell) dockOnly.add(face.hero.cell);
+  // A declared 2-D pad is dock-only for the same MEASURED reason a panel is: it
+  // is square, and a lane knob column is 46 px (`--kcol-max`). Squeezing it to
+  // 46×46 would keep the gesture and lose the precision; splitting it into two
+  // dials would keep the precision and lose the gesture, which is the exact
+  // downgrade the kind exists to end. So the lane simply shows the next
+  // controls — and because the pad costs no rank, it may rank FIRST.
+  for (const pad of face.xyPads ?? []) dockOnly.add(pad.x);
+  if (!dockOnly.size) return face.order;
+  return face.order.filter((k) => !dockOnly.has(k));
+}
+
+/**
+ * `face.order` with each pad's PARTNER axis folded away — the roster EVERY tier
+ * reads, dock included.
+ *
+ * A pad is one cell over two params. Its `y` key stays in `face.order` (that is
+ * what proves no control was dropped, and it is what the docs + rear card key
+ * off) but it must not also render a cell of its own, or the dock paints the
+ * partner twice: once inside the pad and once as a stray dial beside it —
+ * which would ALSO break faces-parity's exact `control-*` multiset, since the
+ * pad already emits the partner's testid. Pure.
+ */
+export function foldedOrder(face: ModuleFace): readonly string[] {
+  const pads = face.xyPads ?? [];
+  if (!pads.length) return face.order;
+  const partners = new Set(pads.map((p) => p.y));
+  return face.order.filter((k) => !partners.has(k));
 }
 
 /**
@@ -333,8 +359,12 @@ export function curatedFace(def: FaceDefLike, tier: FaceTier): CuratedFace | nul
   const cap = faceTierCap(tier, glyph !== 'none', cellH);
   // PF-22 — the DOCK renders the hero picture, so it keeps the whole order; a
   // LANE cannot paint a 280px panel in a 46px column, so the picture does not
-  // consume a lane rank. See `laneOrder`.
-  const order = tier === 'dock' ? face.order : laneOrder(face);
+  // consume a lane rank. See `laneOrder`. `foldedOrder` applies at EVERY tier:
+  // a pad's partner axis is inside the pad, never a cell of its own.
+  const order = foldedOrder({
+    ...face,
+    order: tier === 'dock' ? face.order : laneOrder(face),
+  });
   const ranked = order.map((k) => resolveFaceControl(k, def));
   const controls = Number.isFinite(cap) ? ranked.slice(0, cap) : ranked;
 

@@ -342,6 +342,12 @@ export const LANE_CELL_H: Record<ParamCellKind, number> = {
   grid: PLATE_ROW_H,
   color: PLATE_ROW_H,
   fader: 96,
+  // A SQUARE pad plus its two-axis readout. Carried at its real height even
+  // though `laneOrder` makes an xy cell DOCK-ONLY today, so the number is
+  // already right if that ever changes — an entry that lied "42" would be a
+  // trap set for the person who lifts the restriction, which is precisely how
+  // `fader` shipped with the wrong width class.
+  xy: 96,
 };
 
 /** The rendered lane height (px) of one param cell kind. */

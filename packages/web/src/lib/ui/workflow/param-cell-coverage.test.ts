@@ -70,6 +70,7 @@ const ALL_KINDS = [
   'grid',
   'color',
   'fader',
+  'xy',
 ] as const satisfies readonly ParamCellKind[];
 
 // A total map from the union to this list — if `ParamCellKind` grows a member
@@ -94,6 +95,14 @@ const UNEXERCISED_BY_FACES_PARITY: Readonly<Record<string, { why: string; covere
       'STRICT_FACES dock renders a colour cell and faces-parity never enters its driveCell arm.',
     coveredBy: 'e2e/tests/color-field.spec.ts',
   },
+  xy: {
+    why:
+      'The 2-D pad cell lands one PR before its first consumer. No shipped def declares ' +
+      '`face.xyPads`, so no STRICT_FACES dock renders a pad and faces-parity never enters its ' +
+      'driveCell arm — which for this kind would be the arm that proves ONE drag moves BOTH ' +
+      'axes, i.e. the entire reason the kind exists.',
+    coveredBy: 'e2e/tests/xy-pad-cell.spec.ts',
+  },
 };
 
 interface FaceDefLike {
@@ -102,6 +111,7 @@ interface FaceDefLike {
   face?: {
     momentary?: readonly string[];
     paramCells?: Readonly<Record<string, 'grid' | 'color' | 'fader'>>;
+    xyPads?: readonly { x: string; y: string; label?: string }[];
   };
 }
 

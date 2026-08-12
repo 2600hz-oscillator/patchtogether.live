@@ -54,6 +54,7 @@
 // /rack?shell=legacy (no DB/relay) — the normal e2e lane.
 
 import { test, expect, type Locator, type Page } from '@playwright/test';
+import { idsCoveredBy, paramsCoveredByCell } from './support/cell-coverage';
 import { spawnPatch } from './_helpers';
 import { STRICT_FACES } from '../../packages/web/src/lib/ui/workflow/strict-faces';
 // The COLOUR probe's "pick a different one" + its formatter, imported from the
@@ -137,6 +138,7 @@ type CellControl =
   | 'grid'
   | 'color'
   | 'fader'
+  | 'xy'
   | 'action'
   | 'file'
   | 'panel'
@@ -160,6 +162,9 @@ interface RenderedCell {
   control: CellControl;
   kind: string;
   key: string;
+  /** The cell's `data-control-params`, verbatim — a 2-D pad declares both axis
+   *  ids here. Interpreted by `paramsCoveredByCell`, never in the page. */
+  covered: string | null;
   /** The `face.pages` band this cell lives in. Load-bearing for a TABBED face
    *  (PF-16): the inactive bands are CSS-hidden, so the drive loop has to open
    *  the owning tab before it can touch the cell. */
@@ -375,6 +380,9 @@ async function renderedCells(dockShell: Locator): Promise<RenderedCell[]> {
       control: (el.getAttribute('data-cell-control') ?? 'inert') as CellControl,
       kind: el.getAttribute('data-cell-kind') ?? '',
       key: el.getAttribute('data-cell-key') ?? '',
+      // RAW attribute — interpreted by `paramsCoveredByCell` in Node (see the
+      // domIds note above and support/cell-coverage.ts).
+      covered: el.querySelector('[data-control-params]')?.getAttribute('data-control-params') ?? null,
       page: el.closest('[data-face-page]')?.getAttribute('data-face-page') ?? null,
     })),
   );
@@ -579,6 +587,46 @@ async function driveCell(
         message: `${where}: dragging the fader commits a param change into the graph`,
       })
       .not.toBe(before);
+    return;
+  }
+
+  // A 2-D PAD is ONE cell over TWO params, and the drive reflects that: a
+  // SINGLE DIAGONAL drag must move BOTH. That is a strictly stronger assertion
+  // than the knob arm makes, and it is the one that matters — two dials can
+  // reach every value this pad can, and cannot reach them together. A pad wired
+  // to only one axis (the likeliest way to break it) passes every 1-D check and
+  // fails here.
+  if (cell.control === 'xy') {
+    const pad = host.locator('[data-control-params]');
+    await expect(pad, `${where}: the pad is a real, visible control`).toBeVisible();
+    const axes = ((await pad.getAttribute('data-control-params')) ?? '').split(',').filter(Boolean);
+    expect(
+      axes.length,
+      `${where}: an xy cell must declare BOTH axis param ids in data-control-params`,
+    ).toBe(2);
+    for (const pid of axes) {
+      expect(
+        spec.params.some((q) => q.id === pid),
+        `${where}: axis '${pid}' is backed by a real ParamDef`,
+      ).toBe(true);
+    }
+    const before = await Promise.all(axes.map((pid) => readParam(page, nodeId, pid)));
+    // Drag from the pad's centre toward its lower-left corner: both axes move,
+    // and away from centre so a default-at-an-edge param still has travel.
+    const box = (await pad.boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width * 0.15, box.y + box.height * 0.85, { steps: 8 });
+    await page.mouse.up();
+    for (const [i, pid] of axes.entries()) {
+      await expect
+        .poll(() => readParam(page, nodeId, pid), {
+          message:
+            `${where}: ONE diagonal drag must commit BOTH axes — '${pid}' did not move. A pad ` +
+            `wired to a single axis passes every 1-D assertion in this spec.`,
+        })
+        .not.toBe(before[i]);
+    }
     return;
   }
 
@@ -1062,9 +1110,27 @@ test.describe('faces render-parity: every STRICT_FACES dock full-view carries th
       const dockShell = await openDock(page, 'm');
 
       // ── 1. PARAM PARITY: exact id-multiset equality, DOM vs live def. ──
-      const domIds = await dockShell
-        .locator('[data-testid^="control-"]')
-        .evaluateAll((els) => els.map((el) => el.getAttribute('data-testid')!.slice('control-'.length)));
+      // ⚠ A CONTROL MAY COVER MORE THAN ONE PARAM. The `control-<paramId>`
+      // convention assumes one element per param, which is true of every 1-D
+      // primitive and FALSE of a 2-D pad: `XyPad` is one element driving two.
+      // Reading only the testid would report both axes as MISSING — a faced pad
+      // would look like two lost controls.
+      //
+      // So an element may DECLARE the full set it covers in
+      // `data-control-params`, and this reads that when present. Exact multiset
+      // equality is unchanged; what changes is that the identity now generalises
+      // to any N-to-1 control instead of being wired to the 1:1 case.
+      const domIds = (
+        await dockShell.locator('[data-testid^="control-"]').evaluateAll((els) =>
+          // RAW attributes only — the rule that interprets them is
+          // `idsCoveredBy`, in Node, so `xy-pad-cell.spec.ts` can drive the SAME
+          // function against a real pad. See support/cell-coverage.ts.
+          els.map((el) => ({
+            testid: el.getAttribute('data-testid'),
+            covered: el.getAttribute('data-control-params'),
+          })),
+        )
+      ).flatMap(idsCoveredBy);
       const defIds = spec.params.map((p) => p.id);
       expect(
         [...domIds].sort(),
@@ -1092,11 +1158,24 @@ test.describe('faces render-parity: every STRICT_FACES dock full-view carries th
 
       // ── 3. PER-CELL OPERABILITY: drive every cell, not one sampled knob. ──
       const cells = await renderedCells(dockShell);
+      // ⚠ THE INVARIANT IS PARAMS COVERED, NOT CELLS RENDERED. It used to read
+      // `cells.length === params + families`, which silently assumes every cell
+      // renders exactly ONE param — true of every 1-D primitive and false the
+      // moment a control binds two (a 2-D pad). Under the old identity a face
+      // with one pad was one cell SHORT and went red for a control that was
+      // working perfectly. Counting coverage instead is the general form: the
+      // next N-to-1 control needs no edit here.
+      const paramCells = cells.filter((c) => c.kind === 'param');
+      const covered = cells.reduce((n, c) => n + paramsCoveredByCell(c.kind, c.covered), 0);
+      expect(
+        covered,
+        `${type}: the dock's param cells cover EVERY def param exactly once ` +
+          `(${paramCells.length} param cells covering ${covered} of ${defIds.length} params)`,
+      ).toBe(defIds.length);
       expect(
         cells.length,
-        `${type}: the dock renders one cell per curated control ` +
-          `(params ${defIds.length} + families ${spec.controlFamilies?.length ?? 0})`,
-      ).toBe(defIds.length + (spec.controlFamilies?.length ?? 0));
+        `${type}: no cell beyond the param cells and the declared control families`,
+      ).toBe(paramCells.length + (spec.controlFamilies?.length ?? 0));
       const keys = cells.map((c) => c.key);
       expect(new Set(keys).size, `${type}: every rendered cell carries a UNIQUE data-cell-key`).toBe(keys.length);
 

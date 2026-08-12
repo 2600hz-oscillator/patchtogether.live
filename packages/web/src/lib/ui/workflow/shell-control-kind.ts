@@ -38,7 +38,8 @@ export type ParamCellKind =
   | 'selector'
   | 'grid'
   | 'color'
-  | 'fader';
+  | 'fader'
+  | 'xy';
 
 /**
  * The primitives a module must DECLARE (`face.paramCells`) because no property
@@ -66,10 +67,32 @@ export type ParamCellKind =
  * value semantics are identical — 1-D to 1-D, so unlike a 2-D pad flattened to
  * two knobs no GESTURE is lost, but the control still stops looking like
  * itself. (Owner directive 2026-08-10, prompted by `noise`: its LEVEL is a
- * fader on the card and rendered as a KnobConic on the face. `clouds`, `mixer`
- * and `vca` are fader cards too and hit this the day they are faced.)
+ * fader on the card and rendered as a KnobConic on the face.)
+ *
+ * ⚠ THE OLD VERSION OF THAT SENTENCE PREDICTED `clouds`, `mixer` and `vca`
+ * would "hit this the day they are faced". ALL THREE ARE FACED AND NONE
+ * DECLARES IT, so the prediction came true and read as a future tense. It is
+ * not three modules either: measured 2026-08-12, TWENTY-THREE faced modules
+ * rank ONE HUNDRED AND TWENTY-ONE params their cards draw as faders and their
+ * faceplates paint as knobs, and `noise` is still the only declarer. Whether
+ * to convert them is a LOOK ruling with real cost — `LANE_CELL_H.fader` is 96
+ * against a 42 px plate row, so declaring one halves that module's lane plate
+ * from six cells to three — and it is with the owner. Recorded here in the
+ * past tense so the note cannot read as "not yet" again.
+ *
+ * ⚠ 'xy' IS DECLARED THROUGH A DIFFERENT FIELD — `face.xyPads`, not
+ * `face.paramCells` — because it is the one kind that binds TWO params, and
+ * this map is keyed by one id. It appears in this union because it still
+ * ARRIVES BY DECLARATION (nothing in a pair of ParamDefs says "these two are
+ * one gesture"), and `declaredParamCells` folds it in so every consumer of
+ * "which kind did the module declare" keeps one answer to read.
  */
-export type DeclaredParamCell = 'grid' | 'color' | 'fader';
+export type DeclaredParamCell = 'grid' | 'color' | 'fader' | 'xy';
+
+/** The subset a module writes in `face.paramCells` — the single-id kinds. `xy`
+ *  is absent BY CONSTRUCTION: a pad hand-written here would have no partner,
+ *  and a pad with one axis is not a degraded pad, it is a broken one. */
+export type AuthoredParamCell = Exclude<DeclaredParamCell, 'xy'>;
 
 /**
  * How many named states still fit as an inline button row before the dock
@@ -103,9 +126,27 @@ export function momentaryParamIds(def: { face?: { momentary?: readonly string[] 
 /** Shared empty map so the common (undeclared) case allocates nothing. */
 const EMPTY_CELLS: ReadonlyMap<string, DeclaredParamCell> = new Map();
 
-/** The `face.paramCells` shape, for a def-like that only needs that field. */
+/** The declaration fields, for a def-like that only needs them. */
 export interface DeclaringDefLike {
-  face?: { paramCells?: Readonly<Record<string, DeclaredParamCell>> };
+  face?: {
+    paramCells?: Readonly<Record<string, AuthoredParamCell>>;
+    xyPads?: readonly { x: string; y: string; label?: string }[];
+  };
+}
+
+/** The params folded INTO another cell rather than rendering one of their own —
+ *  today, exactly the `y` axis of each declared pad. A consumer that walks a
+ *  face's controls must drop these or the pad's partner renders twice: once
+ *  inside the pad and once as a stray knob beside it. Pure. */
+export function foldedParamIds(def: DeclaringDefLike | undefined): ReadonlySet<string> {
+  return new Set((def?.face?.xyPads ?? []).map((p) => p.y));
+}
+
+/** The declared pad ANCHORED at each x param id (empty when none). Pure. */
+export function xyPadsByAnchor(
+  def: DeclaringDefLike | undefined,
+): ReadonlyMap<string, { x: string; y: string; label?: string }> {
+  return new Map((def?.face?.xyPads ?? []).map((p) => [p.x, p]));
 }
 
 /**
@@ -125,8 +166,15 @@ export function declaredParamCells(
   def: DeclaringDefLike | undefined,
 ): ReadonlyMap<string, DeclaredParamCell> {
   const decl = def?.face?.paramCells;
-  if (!decl) return EMPTY_CELLS;
-  return new Map(Object.entries(decl));
+  const pads = def?.face?.xyPads;
+  if (!decl && !pads?.length) return EMPTY_CELLS;
+  const out = new Map<string, DeclaredParamCell>(Object.entries(decl ?? {}));
+  // A pad's X param anchors an 'xy' cell. Folded in HERE rather than resolved
+  // at each call site so "which primitive did the module declare" stays one
+  // question with one answer — the same argument the map-not-a-set-per-kind
+  // note above makes, one field wider.
+  for (const pad of pads ?? []) out.set(pad.x, 'xy');
+  return out;
 }
 
 /**

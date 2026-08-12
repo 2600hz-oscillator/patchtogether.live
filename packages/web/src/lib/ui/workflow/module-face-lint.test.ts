@@ -722,6 +722,92 @@ describe('module-face lint — DECLARED param cells (face.paramCells) + PANEL ti
   }
 
   /**
+   * `face.xyPads` drift — the checks a 2-D pad needs and no other cell does.
+   *
+   * The TYPE already guarantees the thing a `Record` could not: both axis ids
+   * are required, so a pad naming one axis does not compile. What it cannot
+   * guarantee is that the two ids MEAN anything, and every clause here is a way
+   * for a well-typed pad to be a no-op or a lie:
+   *
+   *   - an axis naming no param → the pad renders nothing and the OTHER axis
+   *     silently falls back to a knob, which is the exact downgrade the kind
+   *     exists to end, now wearing a declaration;
+   *   - an axis not RANKED → face completeness would already flag the missing
+   *     control, but the message would blame the wrong thing;
+   *   - x === y → one param on both axes: a diagonal-only pad, which looks
+   *     operable and is a bug;
+   *   - a param claimed by TWO pads, or by a pad AND `paramCells` → two cells
+   *     racing for one param, and `declaredParamCells` would resolve it by
+   *     insertion order, i.e. arbitrarily;
+   *   - a MOMENTARY axis → a press-pad is not a coordinate;
+   *   - a DISCRETE axis → a pad over steps is a stepper wearing a joystick.
+   *     This is the mirror of the `grid`/`color` clauses (discrete-only) and
+   *     matches `fader`'s (discrete-never) for the same reason: a continuous
+   *     gesture needs a continuous scale under it.
+   */
+  function xyPadProblems(def: CellFaceDef): string[] {
+    const pads = def.face?.xyPads ?? [];
+    if (!pads.length) return [];
+    const problems: string[] = [];
+    const byId = new Map((def.params ?? []).map((p) => [p.id, p]));
+    const ranked = new Set(def.face?.order ?? []);
+    const momentary = new Set(def.face?.momentary ?? []);
+    const declared = new Set(Object.keys(def.face?.paramCells ?? {}));
+    const claimed = new Set<string>();
+
+    for (const pad of pads) {
+      if (pad.x === pad.y) {
+        problems.push(
+          `${def.type}: face.xyPads pad has x === y ('${pad.x}') — one param on both axes is a ` +
+            `pad that can only move diagonally, and it looks perfectly operable`,
+        );
+      }
+      for (const [axis, key] of [['x', pad.x], ['y', pad.y]] as const) {
+        const p = byId.get(key);
+        if (!p) {
+          problems.push(
+            `${def.type}: face.xyPads ${axis} = '${key}' is not a declared param — the pad ` +
+              `cannot render and its OTHER axis falls back to a knob`,
+          );
+          continue;
+        }
+        if (!ranked.has(key)) {
+          problems.push(
+            `${def.type}: face.xyPads ${axis} = '${key}' is not ranked in face.order. Both axes ` +
+              `must be ranked: 'x' positions the cell, and 'y' is what proves the param was not ` +
+              `dropped from the face.`,
+          );
+        }
+        if (momentary.has(key)) {
+          problems.push(
+            `${def.type}: face.xyPads ${axis} = '${key}' is also face.momentary — a press-pad ` +
+              `is not a coordinate`,
+          );
+        }
+        if (declared.has(key)) {
+          problems.push(
+            `${def.type}: '${key}' is claimed by BOTH face.xyPads and face.paramCells — two ` +
+              `cells for one param, resolved by map insertion order, i.e. arbitrarily`,
+          );
+        }
+        if (claimed.has(key)) {
+          problems.push(
+            `${def.type}: '${key}' is an axis of MORE THAN ONE pad — it can only render once`,
+          );
+        }
+        claimed.add(key);
+        if (p.curve === 'discrete' || p.options?.length) {
+          problems.push(
+            `${def.type}: face.xyPads ${axis} = '${key}' is DISCRETE — a pad over steps is a ` +
+              `stepper wearing a joystick. A 2-D drag needs a continuous scale under both axes.`,
+          );
+        }
+      }
+    }
+    return problems;
+  }
+
+  /**
    * Every LANE tier at which a PANEL cell would be SELECTED. A panel carries its
    * own design floor (a 280 px operator map); a 46 px `--kcol-max` knob column
    * cannot hold one, so a panel is DOCK-ONLY.
@@ -757,6 +843,76 @@ describe('module-face lint — DECLARED param cells (face.paramCells) + PANEL ti
       problems.push(...paramCellProblems(def as unknown as CellFaceDef));
     }
     expect(problems.join('\n'), 'face.paramCells drift — a declared primitive that is a no-op or a contradiction').toBe('');
+  });
+
+  it('every face.xyPads axis is a ranked, non-momentary, CONTINUOUS param claimed once', () => {
+    const problems: string[] = [];
+    for (const def of allDefs()) problems.push(...xyPadProblems(def as unknown as CellFaceDef));
+    expect(problems.join('\n'), 'face.xyPads drift — a pad that is a no-op or a contradiction').toBe('');
+  });
+
+  it('NEGATIVE CONTROL: every xyPads clause fires on a def built to violate exactly it', () => {
+    // No shipped def declares a pad yet, so the sweep above is VACUOUSLY green
+    // and would stay green if `xyPadProblems` were `return []`. Same argument
+    // as the paramCells controls below it, and the same shape.
+    const CONT = (id: string): ParamDef => ({
+      id,
+      label: id,
+      min: -1,
+      max: 1,
+      defaultValue: 0,
+      curve: 'linear',
+    });
+    const base = (over: Partial<CellFaceDef>): CellFaceDef => ({
+      type: 'synthetic',
+      params: [CONT('px'), CONT('py')],
+      face: { order: ['px', 'py'], xyPads: [{ x: 'px', y: 'py' }] },
+      ...over,
+    });
+
+    // Well-formed → silent. Without this the rest could pass by always firing.
+    expect(xyPadProblems(base({}))).toEqual([]);
+    // …and inert for a def with no pads at all.
+    expect(xyPadProblems({ type: 's', params: [CONT('px')], face: { order: ['px'] } })).toEqual([]);
+
+    const fires = (over: Partial<CellFaceDef>, needle: string) => {
+      const out = xyPadProblems(base(over));
+      expect(out.join('\n'), `expected a problem mentioning ${needle}`).toContain(needle);
+    };
+    fires({ face: { order: ['px'], xyPads: [{ x: 'px', y: 'ghost' }] } }, 'not a declared param');
+    fires({ face: { order: ['px'], xyPads: [{ x: 'px', y: 'py' }] } }, 'not ranked in face.order');
+    fires({ face: { order: ['px', 'py'], xyPads: [{ x: 'px', y: 'px' }] } }, 'x === y');
+    fires(
+      { face: { order: ['px', 'py'], xyPads: [{ x: 'px', y: 'py' }], momentary: ['py'] } },
+      'is not a coordinate',
+    );
+    fires(
+      {
+        params: [CONT('px'), { id: 'py', label: 'py', min: 0, max: 3, defaultValue: 0, curve: 'discrete' }],
+      },
+      'is DISCRETE',
+    );
+    fires(
+      {
+        params: [CONT('px'), CONT('py'), CONT('pz'), CONT('pw')],
+        face: {
+          order: ['px', 'py', 'pz', 'pw'],
+          xyPads: [{ x: 'px', y: 'py' }, { x: 'px', y: 'pw' }],
+        },
+      },
+      'MORE THAN ONE pad',
+    );
+    fires(
+      {
+        params: [CONT('px'), CONT('py')],
+        face: {
+          order: ['px', 'py'],
+          xyPads: [{ x: 'px', y: 'py' }],
+          paramCells: { px: 'fader' },
+        },
+      },
+      'face.paramCells',
+    );
   });
 
   it('no PANEL cell is selected at a LANE tier (panels are dock-only)', () => {
