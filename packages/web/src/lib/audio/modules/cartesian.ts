@@ -37,7 +37,7 @@
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import { patch as livePatch } from '$lib/graph/store';
-import { isInputPortConnected } from './transport-helpers';
+import { isInputPortConnected, isOutputPortConnected } from './transport-helpers';
 import {
   coerceToNoteStep,
   C3_MIDI,
@@ -314,6 +314,11 @@ export const cartesianDef: AudioModuleDef = {
       }
     }
 
+    /** How many AudioParam events `scheduleLfo` has written. Exposed via
+     *  `read('lfoScheduledWrites')` so the write RATE is measurable rather
+     *  than asserted — see cartesian-lfo-idle.test.ts. */
+    let lfoScheduledWrites = 0;
+
     /** Schedule LFO output samples from `from` audio-time up through
      *  `nowAt + LFO_LOOKAHEAD_S`. */
     function scheduleLfo(nowAt: number) {
@@ -333,6 +338,7 @@ export const cartesianDef: AudioModuleDef = {
         try {
           lfoXSrc.offset.setValueAtTime(x, t);
           lfoYSrc.offset.setValueAtTime(y, t);
+          lfoScheduledWrites += 2;
         } catch { /* time may be in the past on audio thread; ignore */ }
         lfoLastX = x;
         lfoLastY = y;
@@ -398,11 +404,33 @@ export const cartesianDef: AudioModuleDef = {
         const nowAt = ctx.currentTime;
         const elapsed = nowAt - lastClockSampleTime;
 
+        const edges = Object.values(livePatch.edges);
+
+        // ⚠ THE LFO ONLY WRITES WHEN SOMETHING IS LISTENING.
+        //
+        // `scheduleLfo` rolls a 60 ms lookahead at LFO_DT_S (2 ms) across two
+        // ConstantSources — 500 setValueAtTime/s per output. It used to run
+        // unconditionally, on every tick, whether or not lfo_x / lfo_y went
+        // anywhere: measured 1036 scheduled AudioParam events in 1.0 s from a
+        // cartesian sitting on the canvas with NOTHING patched to it at all
+        // (518 lfo_x + 518 lfo_y), while the sequencer half was silent
+        // (totalAdvances 0). That is the whole idle cost of the module, spent
+        // on a signal no node can observe.
+        //
+        // The gate is OUTPUT connectivity, not lfo_clock: a patched clock with
+        // unpatched outputs is still inaudible. Edge detection and rate
+        // measurement below stay live regardless, so the moment a cable lands
+        // the LFO resumes at the measured rate with no warm-up — and
+        // `lfoScheduledThrough` already snaps forward to now, so no backlog of
+        // stale sample times is emitted on reconnect.
+        const lfoHeard =
+          isOutputPortConnected(edges, nodeId, 'lfo_x') ||
+          isOutputPortConnected(edges, nodeId, 'lfo_y');
+
         // LFO: detect rising edges on lfo_clock + roll out lookahead samples.
         updateLfoClock(nowAt, elapsed);
-        scheduleLfo(nowAt);
+        if (lfoHeard) scheduleLfo(nowAt);
 
-        const edges = Object.values(livePatch.edges);
         const clockPatched = isInputPortConnected(edges, nodeId, 'clock');
         const xPatched     = isInputPortConnected(edges, nodeId, 'x_cv');
         const yPatched     = isInputPortConnected(edges, nodeId, 'y_cv');
@@ -501,6 +529,10 @@ export const cartesianDef: AudioModuleDef = {
         if (key === 'lfoY')          return lfoLastY;
         if (key === 'lfoMeasuredHz') return lfoMeasuredHz;
         if (key === 'lfoPhase')      return lfoPhase;
+        // Cumulative AudioParam events scheduled by the LFO. Lets a test
+        // MEASURE the write rate instead of asserting a behaviour it cannot
+        // see. See cartesian-lfo-idle.test.ts.
+        if (key === 'lfoScheduledWrites') return lfoScheduledWrites;
         if (typeof key === 'string' && key.startsWith('pitchVOctLane:')) {
           const i = Number.parseInt(key.slice('pitchVOctLane:'.length), 10);
           return Number.isFinite(i) && i >= 0 && i < POLY_CHANNEL_PAIRS

@@ -231,6 +231,12 @@ export interface EdgeLike {
   target: { nodeId: string; portId: string };
 }
 
+/** Same, for the SOURCE end. Separate from EdgeLike so an input-only caller
+ *  is not forced to supply a `source` it never reads. */
+export interface SourceEdgeLike {
+  source: { nodeId: string; portId: string };
+}
+
 /**
  * Returns true iff some edge in `edges` terminates at (nodeId, portId).
  * Used by sequencers to detect "is the clock input patched?" / "is the
@@ -247,6 +253,32 @@ export function isInputPortConnected(
   for (const edge of edges) {
     if (!edge) continue;
     if (edge.target.nodeId === nodeId && edge.target.portId === portId) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Returns true iff some edge in `edges` ORIGINATES at (nodeId, portId) — i.e.
+ * anything downstream is listening to that output.
+ *
+ * The mirror of `isInputPortConnected`, and it exists for a different reason:
+ * an input check asks "should I read this?", an output check asks "is anyone
+ * going to hear what I am about to write?". A module that schedules AudioParam
+ * events for an output nobody has patched is burning the audio thread for a
+ * signal that cannot be observed (see cartesian's embedded LFO).
+ *
+ * Pure, like its sibling. Callers pass `Object.values(livePatch.edges)`.
+ */
+export function isOutputPortConnected(
+  edges: ReadonlyArray<SourceEdgeLike | undefined | null>,
+  nodeId: string,
+  portId: string,
+): boolean {
+  for (const edge of edges) {
+    if (!edge) continue;
+    if (edge.source.nodeId === nodeId && edge.source.portId === portId) {
       return true;
     }
   }
