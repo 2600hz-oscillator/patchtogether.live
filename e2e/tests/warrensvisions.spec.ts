@@ -30,11 +30,25 @@ import { installRenderSmokeHooks } from './_render-smoke';
 const SETTLE_FRAMES = 16;
 // A short burst for "did anything change" reads once already settled.
 const BURST_FRAMES = 6;
-// The DC term slews with SLEW (0.25 s), so a level comparison needs ~4 time
+// The DC term slews with SLEW (0.25 s), so a comparison of LEVEL needs ~4 time
 // constants of settling before two reads can be expected to agree. 60 frames
 // at the pinned 60 Hz step is 1 s — 98 % converged. This is a FRAME count for
 // the same reason everything else here is.
 const LEVEL_SETTLE_FRAMES = 60;
+// ⚠ The STRUCTURAL comparisons use this SAME budget, and an attempt to give
+// them a cheaper one FAILED ON MEASUREMENT — recorded so it is not retried.
+//
+// The argument for trimming was that `rowSig` has the frame mean removed and
+// is therefore blind to the DC envelope these 60 frames exist to settle, so 30
+// would do. That is true about the DC and wrong about the test: SLEW governs
+// every component's CONTRAST as well as the DC, so at 30 frames the whole
+// reconstruction is still low-amplitude and every structural difference
+// shrinks with it. The COHERENCE legs collapsed from a clean separation to
+// moved 1.54 vs returned 1.58 — indistinguishable, on a module that works.
+//
+// The budget is not padding. It is how long the AC amplitude takes to become
+// representative, and the structural metric needs that as much as the level
+// one does.
 
 interface SpawnNode {
   id: string;
