@@ -55,6 +55,7 @@ import {
   TICKS_PER_BAR,
   dynamicAt,
   emptyScoreData,
+  slotEmitPlan,
   tickWidth,
   tieChainFrom,
   tieRoleFor,
@@ -145,10 +146,10 @@ export const scoreDef: AudioModuleDef = {
 
   docs: {
     explanation:
-      "A sheet-music sequencer — you write notes onto an actual staff and SCORE plays it back as pitch + gate + envelope CV. The page is up to 4 pages of four rows by four bars in 4/4; click on the staff to place notes with the toolbar's note-value tools (whole down to sixteenth), add sharps/flats, tie notes together to hold them across beats, and drop dynamic markings (pp..ff) that scale the envelope's loudness. A playhead walks the score at a 16th-note resolution from its own BPM (or from an external clock patched into CLOCK IN). It carries a built-in ADSR envelope (the A/D/S/R knobs and CV inputs) that shapes the ENV output for each note; tied notes hold a single envelope across the whole tie. An optional stop-music marker ends or (with loop on) wraps the piece. The four pitch/gate/env/clock outputs drive a voice exactly like the step SEQUENCER, but the pattern is real notation rather than a step grid.",
+      "A sheet-music sequencer — you write notes onto an actual staff and SCORE plays it back as pitch + gate + envelope CV. The page is up to 4 pages of four rows by four bars in 4/4; click on the staff to place notes with the toolbar's note-value tools (whole down to sixteenth, plus eighth-note triplets), add sharps/flats, tie notes together to hold them across beats, and drop dynamic markings (pp..ff) that scale the envelope's loudness. A playhead walks the score from its own BPM (or from an external clock patched into CLOCK IN, one rising edge per 16th); notes sound on the full 48-tick-per-bar grid, so triplets land between the 16ths rather than being rounded onto them. It carries a built-in ADSR envelope (the A/D/S/R knobs and CV inputs) that shapes the ENV output for each note; tied notes hold a single envelope across the whole tie. An optional stop-music marker ends or (with loop on) wraps the piece. The four pitch/gate/env/clock outputs drive a voice exactly like the step SEQUENCER, but the pattern is real notation rather than a step grid.",
     inputs: {
       clock:
-        "External clock: each rising edge advances the playhead one 16th-note. While patched the internal BPM is ignored; unpatch to fall back to the BPM clock.",
+        "External clock: each rising edge advances the playhead one 16th-note. Notes placed between 16ths (eighth-note triplets) still sound, at their exact fraction of the pulse. While patched the internal BPM is ignored; unpatch to fall back to the BPM clock.",
       attack:
         "CV that displaces the built-in ADSR's ATTACK time (log-scaled around the knob) — modulate it to make notes swell faster or slower.",
       decay: "CV that displaces the ADSR's DECAY time around the knob.",
@@ -263,9 +264,32 @@ export const scoreDef: AudioModuleDef = {
 
     // ---- Tick loop ----
     // The score timeline is `pages * BARS_PER_PAGE * TICKS_PER_BAR` grid
-    // ticks. We advance by 16th-note increments — each advance moves
-    // `tickIndex` by 3 (one 16th = 3 grid ticks). `tickIndex` is in 16th
-    // units, so `tickIndex * 3` is the absolute grid position.
+    // ticks. The TRANSPORT advances in 16th-note SLOTS — one external clock
+    // pulse, or one internal `slotDur`, moves `tickIndex` by one — and each
+    // slot spans `GRID_TICKS_PER_SLOT` grid ticks.
+    //
+    // ⚠ THE SLOT IS THE TRANSPORT UNIT; IT IS NOT THE PLACEMENT GRID, AND
+    // CONFLATING THE TWO SILENCED EVERY TRIPLET IN THIS MODULE FOR THREE
+    // MONTHS. This loop used to emit at `tickIndex * 3` only, and
+    // `noteStartingAt` matches the absolute tick EXACTLY, so the reachable set
+    // was {0,3,6,…,45}. `triplet8th` is 4 ticks wide, so the toolbar offers
+    // {0,4,8,…,44} — and `4k ≡ 0 (mod 3)` only for k ∈ {0,3,6,9}. FOUR of
+    // twelve positions per bar sounded; the 2nd and 3rd note of every triplet
+    // group never did, in either clock mode, since the module's first commit
+    // (#52, 2026-05-08).
+    //
+    // NOTHING LOOKED WRONG, which is why it lasted. The card draws x linearly
+    // in ticks, so a bar of triplets rendered at correct 1/3-beat spacing; the
+    // note highlight is written INSIDE the emit, so the playhead skipped the
+    // silent notes in visual agreement with the audio; and the one triplet per
+    // beat that did fire got the right gate length. You saw a correct triplet
+    // score, and heard a quarter pulse.
+    //
+    // Each slot now runs `slotEmitPlan(tickIndex)` — its grid ticks at sub-slot
+    // time offsets. Clock semantics are untouched (one pulse is still one 16th;
+    // `total16ths` still bounds the sequence; CLOCK OUT still pulses per slot)
+    // and plan index 0 has offset 0, so every note on a multiple of 3 keeps its
+    // exact former timestamp.
     let tickIndex = 0;
     let nextStepTime = ctx.currentTime + 0.05;
     let prevPlaying = false;
@@ -330,13 +354,30 @@ export const scoreDef: AudioModuleDef = {
       return note.bar * TICKS_PER_BAR + note.tick + tickWidth(note.duration);
     }
 
-    /** Schedule the start (and gate-off) of one 16th-note slot's note (if
-     *  any). `slotDur` is how long one 16th would last in seconds. */
-    function emitTick(absTick: number, atTime: number, slotDur: number) {
-      // #229 canary: emitTick with a past timestamp = the drop guard failed
-      // and Web Audio is about to clamp+bunch this onto "now". Kept at 0.
+    /**
+     * Run one scheduler SLOT: one clock-out pulse at the slot boundary, then
+     * every grid tick the slot spans, each at its sub-slot time.
+     *
+     * The clock pulse stays at the SLOT rate. A downstream module's clock cable
+     * means "a 16th"; tripling it here would re-time every patch that uses
+     * SCORE as a clock source. Only note emission subdivides.
+     */
+    function emitSlot(slotIndex: number, atTime: number, slotDur: number) {
+      // #229 canary: a slot with a past timestamp = the drop guard failed and
+      // Web Audio is about to clamp+bunch this onto "now". Kept at 0. Measured
+      // on the slot boundary, exactly as it was before subdividing — the
+      // sub-slot emits only ever move FORWARD from it, so this cannot
+      // manufacture a past-due that the pre-fix code would not also have had.
       if (atTime < ctx.currentTime - LATE_DROP_EPS) pastDueEmits++;
       emitClockPulse(atTime);
+      for (const { absTick, offset } of slotEmitPlan(slotIndex)) {
+        emitTick(absTick, atTime + offset * slotDur, slotDur);
+      }
+    }
+
+    /** Schedule the start (and gate-off) of the note starting exactly at
+     *  `absTick`, if any. `slotDur` is how long one 16th lasts in seconds. */
+    function emitTick(absTick: number, atTime: number, slotDur: number) {
       const data = readScoreData(nodeId);
       const note = noteStartingAt(absTick, data.notes);
       if (!note) return;
@@ -584,7 +625,7 @@ export const scoreDef: AudioModuleDef = {
                 }
               }
               tickPlayhead.schedule(tickIndex, nowAt + 0.005);
-              emitTick(tickIndex * 3, nowAt + 0.005, slotDur);
+              emitSlot(tickIndex, nowAt + 0.005, slotDur);
               tickIndex = (tickIndex + 1) % total16ths;
               totalAdvances++;
             }
@@ -618,7 +659,7 @@ export const scoreDef: AudioModuleDef = {
               lateStepsDropped++;
             } else {
               tickPlayhead.schedule(tickIndex, nextStepTime);
-              emitTick(tickIndex * 3, nextStepTime, slotDur);
+              emitSlot(tickIndex, nextStepTime, slotDur);
             }
             nextStepTime += slotDur;
             tickIndex = (tickIndex + 1) % total16ths;
