@@ -1047,3 +1047,164 @@ test.describe('lane tile geometry — no cell paints over another, at any lane t
     ).toContain('fader');
   });
 });
+
+// ── SEGMENTED CAPTIONS: THE ROSTER A FACE SHIPS WITH IS NEVER CLIPPED ───────
+//
+// `Segmented` is the dock's ≤6-state param roster (`paramCellKind` resolves it
+// at the 'dock' tier only). Its buttons were `flex: 1` — the shorthand for
+// `1 1 0%`, i.e. EVERY BUTTON THE SAME WIDTH regardless of its caption — so a
+// row sized its cells to the average and clipped everything above it.
+//
+// MEASURED on main, resofilter's five-state MODE row (macOS system stack,
+// 182.469 px row, 4 px gaps): five 15.297 px content boxes against captions of
+// LP 14.125 · HP 16.016 · BP 15.109 · NT 15.719 · AP 15.5 px. Three of the five
+// overflowed — by 0.719, 0.422 and 0.203 px — and each rendered as `H…` `N…`
+// `A…`: a whole state name replaced by one letter and an ellipsis, for a
+// fraction of a pixel. This sweep reports ELEVEN clipped captions across five
+// faces against that CSS — resofilter 3, cofefve 4 (up to 16.203 px), tidyVco 2,
+// cloudseed 1 (`divine inspiration`, 30.109 px) and filter 1 — and every one of
+// them measures exactly 0.000 px of overflow with `flex: 1 1 auto`. That run IS
+// the negative control for this gate; it was done, not assumed.
+//
+// ⚠ WHY THIS IS AN e2e AND NOT A UNIT. There is no non-render instrument for
+// it. `measureText` drops `letter-spacing` (0.06em here — and the trailing
+// letter-space IS the whole overflow on two of the three); a model of the flex
+// algebra would be re-deriving the browser's own answer; `textContent` (what
+// faces-parity reads) is identical whether the glyph painted or an ellipsis
+// did. The only thing that knows is the layout engine.
+//
+// ⚠ AND WHY IT IS NOT `scrollWidth`, WHICH LOOKS LIKE THE OBVIOUS PROBE.
+// `scrollWidth`/`clientWidth` are INTEGER-QUANTISED. They did flag these three
+// (18 vs 15 on HP), but only because the content box happened to round down; a
+// caption overflowing a 15.6 px box by 0.2 px reports 16 against 16 and reads
+// clean. The predicate below compares the text's own inline box (a Range rect)
+// with the box that paints it — both sub-pixel, both out of the same layout.
+//
+// ⚠ SCOPE. This is the DOCK faceplate. Segmented does not appear at a lane tier
+// unless a face declares `paramCells: { x: 'segmented' }`, and none does today —
+// if one ever does, its lane row is NOT swept here.
+test.describe('Segmented captions — no state name is ellipsized in the roster it ships with', () => {
+  /**
+   * Every `.seg` caption on the page, with the sub-pixel amount by which its
+   * inline box overflows the box that paints it. Positive ⇒ the browser is
+   * ellipsizing. Evaluated IN THE PAGE in one round trip — no per-sample
+   * protocol traffic on the thread being measured.
+   */
+  const captionFits = () => {
+    const out: { label: string; overflow: number; boxW: number; inlineW: number }[] = [];
+    for (const el of document.querySelectorAll('.segmented .seg .seg-text')) {
+      const txt = el as HTMLElement;
+      if (!txt.firstChild) continue;
+      const rng = document.createRange();
+      rng.selectNodeContents(txt);
+      const inlineW = rng.getBoundingClientRect().width;
+      const boxW = txt.getBoundingClientRect().width;
+      out.push({
+        label: txt.textContent?.trim() ?? '',
+        overflow: Number((inlineW - boxW).toFixed(3)),
+        boxW: Number(boxW.toFixed(3)),
+        inlineW: Number(inlineW.toFixed(3)),
+      });
+    }
+    return out;
+  };
+
+  /** Sub-pixel float noise only, in CSS px. The clean case measures EXACTLY
+   *  0.000 on every caption of every face; the defect measured 0.203 px at its
+   *  smallest, an order of magnitude above this. */
+  const EPS_CSS_PX = 0.05;
+
+  test('every dock Segmented row fits its captions, on every migrated face', async ({ page }) => {
+    await gotoShell(page);
+    const faced = await migratedFaces(page);
+    expect(faced.length, 'the registry publishes migrated faces').toBeGreaterThan(0);
+    // ONE shell boot for the whole roster — the two sweeps above pay a boot per
+    // adopter; this one re-spawns into the same page, which is why it can walk
+    // every face rather than a subset. MEASURED over the 32-face roster: 3.5 s
+    // on a real GPU and 11.6 / 11.3 / 10.9 s over three consecutive runs under
+    // `E2E_SWIFTSHADER=1` (the renderer CI actually uses). The allowance below
+    // is ~16x that — a CAP that bounds a hang, not a duration anything spends.
+    test.setTimeout(30_000 + faced.length * 5_000);
+
+    const clipped: string[] = [];
+    const facesWithRows: string[] = [];
+    let captionsSeen = 0;
+
+    for (const { type } of faced) {
+      await spawnPatch(page, [{ id: 'seg', type, position: { x: 460, y: 240 } }]);
+      await openFaceplate(page, 'seg');
+      const captions = await page.evaluate(captionFits);
+      if (captions.length) facesWithRows.push(type);
+      captionsSeen += captions.length;
+      for (const c of captions) {
+        if (c.overflow > EPS_CSS_PX) {
+          clipped.push(
+            `${type}: '${c.label}' needs ${c.inlineW} CSS px and is painted in ${c.boxW} — ` +
+              `${c.overflow} px of it is ellipsized away`,
+          );
+        }
+      }
+      await page.keyboard.press('Escape');
+      await expect(page.getByTestId('dock-full-view')).toBeHidden();
+    }
+
+    expect(
+      clipped,
+      `dock Segmented captions cut off by the flex track. Faces carrying a roster: ` +
+        `${facesWithRows.join(', ') || '(none)'}`,
+    ).toEqual([]);
+
+    // ── POSITIVE CONTROL: the sweep actually LOOKED at some captions ────────
+    // Every assertion above is inside a loop, so a shell that opened no dock —
+    // or a `paramCellKind` change that stopped resolving 'segmented' at all —
+    // would walk the whole roster and assert nothing, in silence.
+    expect(
+      captionsSeen,
+      `no Segmented caption was measured at all. Either no face resolves a ` +
+        `'segmented' cell any more, or the dock did not open. Faces seen with a ` +
+        `roster: ${facesWithRows.join(', ') || '(none)'}`,
+    ).toBeGreaterThan(0);
+
+    // ── NEGATIVE CONTROL, PERMANENT: the predicate can still MOVE ───────────
+    // A fit check reads "0 offenders" both when nothing is clipped and when the
+    // instrument is broken (a selector that matches nothing, a Range rect that
+    // stopped reporting the UNCLIPPED inline box). So perturb the exact quantity
+    // it measures and require the SAME function to notice — the predicate the
+    // gate calls, not a re-typed copy that can go blind separately.
+    //
+    // ⚠ AND PERTURB IT SUB-PIXEL, BY A KNOWN AMOUNT. The first draft of this
+    // control just made a caption 40 characters long, and the predicate
+    // correctly reported ZERO overflow: `.segmented-wrap` is `inline-flex`, so
+    // with `flex: 1 1 auto` the ROW GREW to 275.359 px and painted every glyph.
+    // That is the fix working, and it made the control useless — a big
+    // perturbation of the wrong variable. Shaving the PAINTED BOX by a quarter
+    // pixel cannot be absorbed by anything, and it is the size of the real
+    // defect (0.203 px at its smallest), so it proves the sensitivity the gate
+    // actually needs rather than that "something moved".
+    await spawnPatch(page, [{ id: 'seg', type: 'resofilter', position: { x: 460, y: 240 } }]);
+    await openFaceplate(page, 'seg');
+    const clean = await page.evaluate(captionFits);
+    expect(clean.length, 'the negative-control subject has a Segmented row').toBeGreaterThan(0);
+    expect(
+      clean.filter((c) => c.overflow > EPS_CSS_PX),
+      'the negative-control subject is clean BEFORE it is perturbed',
+    ).toEqual([]);
+    const SHAVE_CSS_PX = 0.25;
+    await page.evaluate((shave) => {
+      const first = document.querySelector('.segmented .seg .seg-text') as HTMLElement | null;
+      if (first) first.style.maxWidth = `${first.getBoundingClientRect().width - shave}px`;
+    }, SHAVE_CSS_PX);
+    const perturbed = await page.evaluate(captionFits);
+    expect(
+      perturbed[0]?.overflow,
+      `the fit predicate did not see a caption box shaved by ${SHAVE_CSS_PX} CSS px, so the ` +
+        `green run above proves nothing about clipping. Measured: ${JSON.stringify(perturbed[0])}`,
+    ).toBeGreaterThan(EPS_CSS_PX);
+    expect(
+      perturbed[0]?.overflow,
+      `…and it must report the RIGHT MAGNITUDE, not merely a non-zero one: the box lost ` +
+        `${SHAVE_CSS_PX} CSS px, so the overflow is that much. A predicate that reported a ` +
+        `constant would pass the assertion above. Measured: ${JSON.stringify(perturbed[0])}`,
+    ).toBeCloseTo(SHAVE_CSS_PX, 1);
+  });
+});
