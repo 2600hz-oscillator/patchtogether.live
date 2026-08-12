@@ -520,11 +520,27 @@ export interface ModuleFacePage {
  * Co-located on the def like `docs` so a control change and its curation edit
  * land in the SAME PR diff (see .myrobots/plans workflow-mode UI refactor §3.6).
  *
- * This is UI METADATA, NOT part of the I/O contract: `face` is deliberately kept
- * OUT of contract-signature.ts / contract-lock.txt (a re-ranking is not a
- * contract change). It has its OWN drift gate — module-face-lint.test.ts —
- * mirroring the living-docs ratchet (consistency for every faced module,
- * completeness for the STRICT_FACES set).
+ * This is UI METADATA, not I/O, so MOST of `face` is deliberately kept out of
+ * contract-signature.ts / contract-lock.txt — a re-ranking is not a contract
+ * change. It has its own drift gate, module-face-lint.test.ts, mirroring the
+ * living-docs ratchet (consistency for every faced module, completeness for
+ * the STRICT_FACES set).
+ *
+ * ⚠ `sidebar` IS PROJECTED INTO THE GOLDEN, AND THE REST IS NO LONGER LEFT TO
+ * THIS PARAGRAPH. #1468 deleted a whole sidebar block from twelve modules and
+ * `task docs:accept` produced an EMPTY DIFF — because "is it I/O?" was the
+ * wrong question. The right one is "if this vanished, is there any review
+ * surface on which a human would see it?", and for a sidebar the answer was
+ * no: module-face-lint's `sidebarProblems()` returns early on absence, the
+ * faceplate-platform e2e sweeps only the modules that HAVE one, and the dock
+ * VRT baseline is re-pinned by whoever removes it.
+ *
+ * So the decision is now made field by field and enforced:
+ * `FACE_FIELDS_NOT_IN_LOCK` (contract-signature.ts) names every unprojected
+ * field with a `why` and the gate that DOES cover it, and contract-lock.test.ts
+ * walks the keys live defs actually declare — a key that is neither projected
+ * nor named is RED, and a name with no field behind it is red too. Adding a
+ * field here means writing that decision down.
  *
  * KEYS use the SAME unified control-key space the docs system defines
  * (control-doc-resolver.ts): each entry is one of
@@ -661,9 +677,14 @@ export interface ModuleFace {
   //
   // ALL FOUR ARE DOCK-ONLY. Ranks 1-6 are the LANE budget (faceTierCap); the
   // dock shows everything, so the title, the hint, the hero and the sidebar
-  // never reach a 192×180 tile. Like the rest of `face` they are UI metadata:
-  // OUT of contract-signature.ts / contract-lock.txt (declaring a sidebar is
-  // not an I/O change), linted by module-face-lint.test.ts.
+  // never reach a 192×180 tile.
+  //
+  // ⚠ THREE OF THE FOUR are UI metadata out of contract-lock.txt and linted by
+  // module-face-lint.test.ts. `sidebar` IS NOT: it is projected into the
+  // golden, one line per block, because nothing else in the repo could see one
+  // disappear (#1468 removed twelve and every gate stayed green). See
+  // FACE_FIELDS_NOT_IN_LOCK in contract-signature.ts, where title / hint / hero
+  // each name the gate that covers them instead.
 
   /** The faceplate's PAGE TITLE — the mock's "Voice". A short category word,
    *  above the hint. Omitted = no title row. */

@@ -81,6 +81,7 @@ analogVco param pw 0.05..0.95 linear default=0.5
 analogVco param shape 0..1 linear default=0
 analogVco param tune -36..36 linear default=0 unit=semi
 analogVco family analogvco-cycle kind=cell prefix=analogvco-cycle
+analogVco face sidebar 0 kind=readouts label=naive oscillator entries=first aliased harmonic · 48 kHz:value=analogvco-alias-harmonic,band-limiting:text
 archivist meta domain=video
 archivist in play_trigger gate param=cv_play_trigger edge=gate
 archivist out audio_l audio
@@ -327,6 +328,7 @@ bluebox param btn_9 0..1 discrete default=0
 bluebox param btn_bluebox 0..1 discrete default=0
 bluebox param btn_redbox 0..1 discrete default=0
 bluebox family bluebox-tonebank kind=cell prefix=bluebox-tonebank
+bluebox face sidebar 0 kind=readouts label=the bank entries=oscillators:text,full scale at:text,release:text
 buggles meta domain=audio
 buggles in chaos_cv cv
 buggles in clock_cv cv
@@ -452,6 +454,8 @@ clap param tail 30..800 log default=150 unit=ms
 clap param tone 400..3000 log default=1000 unit=Hz
 clap param width 0..1 linear default=0.5
 clap family clap-hero kind=cell prefix=clap-hero
+clap face sidebar 0 kind=presets label=presets entries=808,909-dense,linn-room,dry-snap
+clap face sidebar 1 kind=readouts label=band-pass entries=bandwidth:value=clap-bandwidth-hz,Q:value=clap-q
 clipplayer meta domain=audio exposesSequence
 clipplayer in reset gate edge=trigger
 clipplayer in stop_all gate edge=trigger
@@ -520,6 +524,7 @@ clouds param texture 0..1 linear default=0.5
 clouds stereo in_l+in_r
 clouds stereo out_l+out_r
 clouds family clouds-buffer kind=cell prefix=clouds-buffer
+clouds face sidebar 0 kind=readouts label=the two seconds entries=silent for:value=clouds-silence,full level at:value=clouds-full-level,grain pool:value=clouds-grain-count,pitch ≠ 0:text,blend 0:text
 cloudseed meta domain=audio
 cloudseed in cross_seed_cv cv param=cross_seed cvScale=linear
 cloudseed in dry_cv cv param=dry_out cvScale=linear
@@ -621,6 +626,9 @@ cofefve param wetVolume 0..2 linear default=0.5
 cofefve stereo inL+inR
 cofefve stereo outL+outR
 cofefve family cofefve-echo kind=cell prefix=cofefve-echo
+cofefve face sidebar 0 kind=readouts label=enabler → what it wakes entries=wow:value=cofefve-wait-wow,duck:value=cofefve-wait-duck,sync:value=cofefve-wait-sync,pan:value=cofefve-wait-pan,drive:value=cofefve-wait-drive
+cofefve face sidebar 1 kind=presets label=openers entries=tape,ducked,pingpong,onbeat
+cofefve face sidebar 2 kind=readouts label=the hazards entries=dry at 2.0:text,wet at 2.0:text,drive off:text
 colorizer meta domain=video
 colorizer in in mono-video
 colorizer in tintB cv param=tintB cvScale=linear
@@ -770,6 +778,8 @@ cube param view_zoom 0.3..3 log default=1
 cube param wrap 0..1 discrete default=0
 cube family cube-table-stack kind=cell prefix=cube-table-stack
 cube family cube-view kind=cell prefix=cube-view
+cube face sidebar 0 kind=presets label=set the plane entries=flat,tilted,quarter,mirror
+cube face sidebar 1 kind=readouts label=this plane entries=f0 (knobs):value=cube-f0-knobs,harmonics:value=cube-harmonics,fold drive:value=cube-fold-drive,CV rate:text,band-limiting:text
 cvBuddy meta domain=audio
 cvBuddy in gate gate edge=gate
 cvBuddy in pitch cv
@@ -947,6 +957,8 @@ drummergirl param pitch -36..36 linear default=0 unit=semi
 drummergirl param shape 0..1 linear default=0.3
 drummergirl param tone 0..1 linear default=0.3
 drummergirl param volume 0..2 linear default=1
+drummergirl face sidebar 0 kind=readouts label=what SHAPE is doing entries=preset:value=drummergirl-shape-index,attack:value=drummergirl-attack-ms,sustain:value=drummergirl-sustain-db,release:value=drummergirl-release-ms,sweep time:value=drummergirl-sweep-ms
+drummergirl face sidebar 1 kind=presets label=shape presets entries=shape-0,shape-1,shape-2,shape-3,shape-4,shape-5,shape-6,shape-7,shape-8,shape-9,shape-10,shape-11,shape-12,shape-13,shape-14,shape-15
 drumseqz meta domain=audio exposesSequence
 drumseqz in clock gate edge=trigger
 drumseqz in play_cv gate edge=trigger
@@ -1126,6 +1138,8 @@ filter param cutoff_cv_amt -1..1 linear default=1
 filter param mode 0..2 discrete default=0
 filter param res_cv_amt -1..1 linear default=1
 filter param resonance 0..0.99 linear default=0.1
+filter face sidebar 0 kind=custom label=response panel=filter-response props=cutoffParam:cutoff,depthParam:cutoff_cv_amt,modeParam:mode,resParam:resonance
+filter face sidebar 1 kind=presets label=starting points entries=gentle,squelch,rumble,eg-ready
 flipper meta domain=audio
 flipper in in1 gate edge=gate
 flipper in in2 gate edge=gate
@@ -1482,6 +1496,9 @@ kickdrum param width 0..1 linear default=0.2
 kickdrum stereo audio_l+audio_r
 kickdrum family kickdrum-hero kind=cell prefix=kickdrum-hero
 kickdrum family kickdrum-strike kind=other prefix=kickdrum-strike
+kickdrum face sidebar 0 kind=custom label=stereo crossover panel=stereo-crossover props=splitHz:120,widthParam:width
+kickdrum face sidebar 1 kind=presets label=presets entries=deep-club,techno-punch,909-classic,sub-boom,lo-fi-thump
+kickdrum face sidebar 2 kind=readouts label=output entries=level:param=level,ceiling:param=ceiling,width:param=width
 kria meta domain=audio
 kria in clock gate edge=trigger
 kria in reset gate edge=trigger
@@ -1584,6 +1601,8 @@ macrooscillator param note -60..60 linear default=0 unit=st
 macrooscillator param timbre 0..1 linear default=0.3
 macrooscillator family macro-hero kind=cell prefix=macro-hero
 macrooscillator family macro-strike kind=other prefix=macro-strike
+macrooscillator face sidebar 0 kind=presets label=engines worth knowing entries=va,fm2,chord,speech,wavetable,granular,modal,kick
+macrooscillator face sidebar 1 kind=readouts label=this engine entries=timbre:value=macro-timbre-here,morph:value=macro-morph-here,aux tap:value=macro-aux-tap,vs loudest:value=macro-level-gap,unpatched:value=macro-strike-need,band-limiting:value=macro-alias
 macseq meta domain=audio exposesSequence
 macseq in clock gate edge=trigger
 macseq in next_cv gate edge=trigger
@@ -1695,6 +1714,9 @@ marbles param x_bias 0..1 linear default=0.5
 marbles param x_deja_vu 0..1 linear default=0
 marbles param x_length 1..16 discrete default=8
 marbles family marbles-loop kind=cell prefix=marbles-loop
+marbles face sidebar 0 kind=readouts label=T entries=model:value=marbles-model,t1 / t2:value=marbles-t-split,gate:value=marbles-gate-width,clk:text,T loop:value=marbles-t-loop
+marbles face sidebar 1 kind=readouts label=X entries=X loop:value=marbles-x-loop,shape:value=marbles-x-shape,glide:value=marbles-glide,quantiser:value=marbles-quantiser,scales:value=marbles-scales
+marbles face sidebar 2 kind=presets label=presets entries=locked,shuffled,glide,pentatonic
 matrixMix meta domain=meta
 meowbox meta domain=audio
 meowbox in decay cv param=decay cvScale=log
@@ -1709,6 +1731,9 @@ meowbox param level 0..2 linear default=1
 meowbox param morph 0..1 linear default=0.25
 meowbox param pitch -36..36 linear default=0 unit=semi
 meowbox family meowbox-meow kind=other prefix=meowbox-meow
+meowbox face sidebar 0 kind=presets label=the five anchors entries=kitten,adult,purr,yowl,hiss
+meowbox face sidebar 1 kind=custom label=formant bank panel=formant-bank
+meowbox face sidebar 2 kind=readouts label=derived entries=peak gain F1·F2·F3:value=meowbox-formant-gain,tremolo depth:value=meowbox-tremolo,mono-sum null:value=meowbox-comb-null
 midiclock meta domain=audio
 midiclock out clock gate edge=trigger
 midiclock out midistart gate edge=trigger
@@ -2359,6 +2384,8 @@ noise out brown audio
 noise out pink audio
 noise out white audio
 noise param level 0..1 linear default=0.5
+noise face sidebar 0 kind=custom label=the three taps panel=noise-taps
+noise face sidebar 1 kind=readouts label=the tables entries=the three:text,brown −3 dB at:text,vs white:text,brown peak:text,lane meter:text,each table:text
 numpadPlus meta domain=audio
 numpadPlus in clock gate edge=trigger
 numpadPlus in layer cv
@@ -2509,6 +2536,8 @@ pentemelodica param v5_wave 0..1 linear default=0
 pentemelodica param wetdry 0..1 linear default=1
 pentemelodica stereo out_l+out_r
 pentemelodica family pentemelodica-voices kind=cell prefix=pentemelodica-voice
+pentemelodica face sidebar 0 kind=presets label=voice layouts entries=unison,octaves,fifths
+pentemelodica face sidebar 1 kind=readouts label=the envelope, measured entries=attack:param=attack,decay to S:value=pentemelodica-decay-to-sustain,sustain:param=sustain
 picturebox meta domain=video maxInstances=8
 picturebox in asset_gate gate param=asset_gate edge=trigger
 picturebox in asset_pitch pitch param=asset_pitch
@@ -2659,6 +2688,8 @@ resofilter param mix 0..1 linear default=1
 resofilter param mode 0..4 discrete default=0
 resofilter param resonance 0..1 linear default=0.3
 resofilter stereo out_l+out_r
+resofilter face sidebar 0 kind=custom label=response panel=svf-response props=cutoffParam:cutoff,mixParam:mix,modeParam:mode,resParam:resonance
+resofilter face sidebar 1 kind=presets label=starting points entries=gentle-lp,squelch,notch-out,phaser
 reverb meta domain=audio
 reverb in audio audio
 reverb out audio audio
@@ -2963,6 +2994,7 @@ sixstrum param sustain 0..1 linear default=1
 sixstrum param tuning 0..2 discrete default=0
 sixstrum family sixstrum-preset kind=other prefix=sixstrum-preset
 sixstrum family sixstrum-strum kind=other prefix=sixstrum-strum
+sixstrum face sidebar 0 kind=readouts label=next strike entries=open strings:value=sixstrum-open-strings,low string:value=sixstrum-low-string-hz,pick notch:value=sixstrum-pick-notch,burst:value=sixstrum-burst-ms
 skifree meta domain=audio maxInstances=1 vizPassthrough
 skifree in x cv
 skifree in y cv
