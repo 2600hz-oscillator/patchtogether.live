@@ -221,6 +221,7 @@
   // DOM-SOURCE seam: a video module whose source lives on its CARD stays alive
   // in an off-screen host when the shell swaps its lane card away.
   import { DOM_SOURCE_LANE_TYPES, needsHeadlessSourceMount } from '$lib/ui/workflow/dom-source-modules';
+  import { nodeMedia } from '$lib/ui/media/node-media-registry';
   import { RACK_SIZE_DEFAULTS } from '$lib/ui/rack-sizes';
   // ModuleNameLabel moved INTO every module card's title chrome (see
   // ModuleTitle.svelte) when the floating-overhead NodeToolbar was dropped.
@@ -1996,6 +1997,22 @@
    *      group children: those render no lane card in preview-off EITHER, so
    *      hosting them would ADD engine state the shell-off rack doesn't have —
    *      the opposite of the parity this fix exists to guarantee. */
+  /** NODE-OWNED MEDIA teardown. A DOM-source module's <video>/<img>, object URL
+   *  and MediaStream are owned by $lib/ui/media/node-media-registry so they
+   *  survive a CARD unmount (expand/collapse moves the real card between the
+   *  headless host and the dock full-view — that is a card MOVE, not a node
+   *  deletion, and tearing media down there is the owner-reported "stops
+   *  playing when collapsed").
+   *
+   *  Teardown is therefore keyed to GRAPH lifetime instead, and reconciled
+   *  against the live node set rather than hooked onto every delete path — a
+   *  node removed by ANY route (context menu, lasso, undo, a peer's CRDT
+   *  delete, Clear, a patch load) is swept here, so no delete site has to
+   *  remember to call disposeNode. */
+  $effect(() => {
+    nodeMedia.sweep(snapshot.nodes.map((n) => n.id));
+  });
+
   let headlessSourceNodes = $derived.by<ModuleNode[]>(() => {
     if (!shellFaces) return [];
     const collapsed = collapsedGroupIds;

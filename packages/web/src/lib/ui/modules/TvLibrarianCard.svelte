@@ -20,6 +20,8 @@
   // hosted here") + dataset attribution; geo-blocked channels are MARKED;
   // dead/unavailable streams fail cleanly → auto-skip, never hang.
   import { onMount, onDestroy } from 'svelte';
+  import { nodeMedia, type NodeMediaLease } from '$lib/ui/media/node-media-registry';
+  import { setNodeHls, getNodeHls, destroyNodeHls } from '$lib/ui/media/node-hls';
   import { type NodeProps } from '@xyflow/svelte';
   import Hls from 'hls.js';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
@@ -76,8 +78,22 @@
   );
 
   // ---- Render-local (transient) state ----
+  // The <video> is owned by the NODE, not by this card (see
+  // $lib/ui/media/node-media-registry): expand/collapse moves the card between
+  // two different MOUNTS, and the pre-fix card destroyed its element, detached
+  // the engine and tore down hls on every such move.
+  let videoHost: HTMLDivElement | null = $state(null);
   let videoEl: HTMLVideoElement | null = $state(null);
+  let mediaLease: NodeMediaLease<HTMLElement> | null = null;
+  const MEDIA_SLOT = 'main';
+  /** Mirror of the NODE-owned hls.js instance ($lib/ui/media/node-hls).
+   *  Rehydrated on adopt so a remounted card knows an instance is already
+   *  attached and never builds a second one for the same element. */
   let hls: Hls | null = null;
+  function setHls(next: Hls | null): void {
+    hls = next;
+    setNodeHls(id, next);
+  }
   let countries = $state<CountryMeta[]>([]);
   let channels = $state<Channel[]>([]);       // filtered, playable
   let datasetError = $state<string | null>(null);
@@ -209,7 +225,7 @@
 
   function teardownHls(): void {
     if (loadTimeout) { clearTimeout(loadTimeout); loadTimeout = null; }
-    try { hls?.destroy(); } catch { /* */ }
+    destroyNodeHls(id);
     hls = null;
   }
 
@@ -255,15 +271,16 @@
     }, 12000);
 
     if (Hls.isSupported()) {
-      hls = new Hls({ enableWorker: true, lowLatencyMode: false });
-      hls.on(Hls.Events.MANIFEST_PARSED, () => { void videoEl?.play().catch(() => {}); });
-      hls.on(Hls.Events.ERROR, (_e, d) => {
+      const inst = new Hls({ enableWorker: true, lowLatencyMode: false });
+      setHls(inst);
+      inst.on(Hls.Events.MANIFEST_PARSED, () => { void videoEl?.play().catch(() => {}); });
+      inst.on(Hls.Events.ERROR, (_e, d) => {
         // Fatal errors (incl. COEP/CORS blocks → fragLoadError code 0) →
-        // unavailable. Non-fatal errors hls.js recovers from on its own.
+        // unavailable. Non-fatal errors inst.js recovers from on its own.
         if (d?.fatal) markUnavailable();
       });
-      hls.loadSource(url);
-      hls.attachMedia(videoEl);
+      inst.loadSource(url);
+      inst.attachMedia(videoEl);
     } else if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
       // Safari native HLS.
       videoEl.src = url;
@@ -334,6 +351,35 @@
   }
 
   // ---- Attach <video> element to the engine module (poll until ready) ----
+  // ---- Adopt the NODE-owned <video> into this card ----
+  $effect(() => {
+    const host = videoHost;
+    if (!host) return;
+    const lease = nodeMedia.adopt(id, MEDIA_SLOT, host, {
+      kind: 'video',
+      init: (el) => {
+        const v = el as HTMLVideoElement;
+        v.crossOrigin = 'anonymous';
+        // THE AUDIO TRAP the card header documents: created muted so the
+        // programmatic play() is allowed to start without a user gesture.
+        v.muted = true;
+        v.playsInline = true;
+        v.setAttribute('data-testid', 'tv-video');
+      },
+    });
+    mediaLease = lease;
+    videoEl = lease.el as HTMLVideoElement;
+    // Rehydrate the hls mirror: an instance may already be feeding this
+    // element from a previous mount.
+    hls = getNodeHls(id) as Hls | null;
+    // Teardown belongs to the NODE, not to this card.
+    nodeMedia.setDisposer(id, MEDIA_SLOT, () => destroyNodeHls(id));
+    return () => {
+      lease.release();
+      if (mediaLease === lease) mediaLease = null;
+    };
+  });
+
   onMount(() => {
     let attempts = 0;
     const attach = setInterval(() => {
@@ -378,11 +424,15 @@
     stopTriggerLoop();
     if (audioWireTimer) clearTimeout(audioWireTimer);
     if (unavailableSkipTimer) clearTimeout(unavailableSkipTimer);
-    teardownHls();
-    const ve = videoEngine();
-    try { ve?.attachExternalSource(id, 'video', null); } catch { /* */ }
-    getExtras()?.setStreamOnline(false);
-    getExtras()?.unwireAudio();
+    // NOTE what is deliberately ABSENT: no teardownHls, no detach, no
+    // unwireAudio, no setStreamOnline(false). The element, its hls.js demuxer
+    // and its audio wiring belong to the NODE and must survive this card being
+    // unmounted — expand/collapse MOVES the card between the headless host and
+    // the dock full-view. The stream really is still online; saying otherwise
+    // here is what made the tuner go dead on a collapse. Teardown runs from
+    // nodeMedia's disposer when the node leaves the graph.
+    mediaLease?.release();
+    mediaLease = null;
   });
 
   // ---- Corner-drag resize ----
@@ -432,13 +482,10 @@
       <!-- Preview -->
       <div class="preview-wrap" data-testid="tv-preview">
         <!-- svelte-ignore a11y_media_has_caption -->
-        <video
-          bind:this={videoEl}
-          data-testid="tv-video"
-          crossorigin="anonymous"
-          muted
-          playsinline
-        ></video>
+        <!-- The <video> is NOT declared here: it belongs to the NODE and is
+             adopted into this host div (see the $effect above). Declaring it
+             in markup is what tied its lifetime to the card. -->
+        <div class="video-host" bind:this={videoHost}></div>
         {#if streamState === 'loading'}
           <div class="overlay" data-testid="tv-loading">tuning…</div>
         {:else if streamState === 'unavailable'}
@@ -572,7 +619,13 @@
     overflow: hidden;
     flex: 0 0 auto;
   }
-  video {
+  /* The <video> is ADOPTED into .video-host at runtime (node-owned, see
+   * $lib/ui/media/node-media-registry), so Svelte cannot scope-class it —
+   * these rules must be :global(). `display: contents` makes the adopted
+   * element participate in the parent's layout exactly as the old inline
+   * <video> did, so every descendant selector still matches. */
+  .video-host { display: contents; }
+  .video-host :global(video) {
     display: block;
     width: 100%; height: 100%;
     object-fit: contain;

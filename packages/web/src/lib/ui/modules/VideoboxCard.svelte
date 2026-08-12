@@ -32,6 +32,7 @@
   import { createFullscreen } from './use-fullscreen.svelte';
   import { createFullFrame } from './use-full-frame.svelte';
   import { attachRenderLease } from './use-render-lease.svelte';
+  import { nodeMedia, type NodeMediaLease } from '$lib/ui/media/node-media-registry';
   import VideoCanvasContextMenu from './VideoCanvasContextMenu.svelte';
   import type { VideoEngine } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
@@ -87,8 +88,18 @@
   let cardHeight = $derived<number>((node?.data?.height as number | undefined) ?? DEFAULT_HEIGHT);
 
   // ---- DOM refs + local state ----
+  // The <video> is owned by the NODE, not by this card: it lives in
+  // $lib/ui/media/node-media-registry and is ADOPTED into `videoHost` while
+  // this card is mounted. Expand/collapse moves the card between the headless
+  // host and the dock full-view — two different MOUNTS — and the pre-fix card
+  // destroyed its element + revoked its object URL on every such move, which
+  // is the owner-reported "stops playing when collapsed". See the registry
+  // header for the measurement.
+  let videoHost: HTMLDivElement | null = $state(null);
   let videoEl: HTMLVideoElement | null = $state(null);
-  let objectUrl: string | null = null;
+  /** Registry-owned: read via `nodeMedia.objectUrl(id, MEDIA_SLOT)`, written
+   *  via `setObjectUrl`. NEVER revoked by this card. */
+  const MEDIA_SLOT = 'main';
   let localFileName = $state<string | null>(null);
   let isDragOver = $state(false);
   let loadError = $state<string | null>(null);
@@ -182,12 +193,20 @@
       if (!t) return;
       if (!t.data) t.data = {};
       const d = t.data as Partial<VideoboxData>;
+      const isSameFile =
+        prevId !== undefined && meta.handleId !== undefined && prevId === meta.handleId;
       d.fileMeta = meta;
-      // Reset playhead to start so peers don't extrapolate against
-      // stale lastSyncPosition that may exceed the new duration.
-      d.isPlaying = false;
-      d.lastSyncTime = Date.now();
-      d.lastSyncPosition = 0;
+      // Reset the playhead ONLY for a genuinely DIFFERENT file, so peers don't
+      // extrapolate against a stale lastSyncPosition that may exceed the new
+      // duration. Doing it unconditionally was a SECOND, independent cause of
+      // "it stopped playing": the IndexedDB handle-reload path re-loads the
+      // SAME file through here, so a card that restored itself came back
+      // paused at 0 even though the node's synced state said it was playing.
+      if (!isSameFile) {
+        d.isPlaying = false;
+        d.lastSyncTime = Date.now();
+        d.lastSyncPosition = 0;
+      }
     }, LOCAL_ORIGIN);
   }
 
@@ -208,26 +227,13 @@
       loadError = `Not a video file: ${file.type || file.name}`;
       return;
     }
-    // Free the previous object URL — leaving them around accumulates
-    // ~30 MB of blob storage per swap which the browser eventually GCs
-    // anyway but it's polite to release explicitly.
-    if (objectUrl) {
-      try { URL.revokeObjectURL(objectUrl); } catch { /* */ }
-      objectUrl = null;
-    }
-    objectUrl = URL.createObjectURL(file);
+    // Hand the new object URL to the NODE-owned registry. It revokes the
+    // PREVIOUS url for this node (so a swap still frees ~30 MB of blob
+    // storage) and keeps the new one alive across card unmounts — this card
+    // must never revoke it itself.
+    nodeMedia.setObjectUrl(id, MEDIA_SLOT, URL.createObjectURL(file), file.name);
+    const objectUrl = nodeMedia.objectUrl(id, MEDIA_SLOT)!;
     localFileName = file.name;
-    // Register this node's bytes resolver for the portable "Export performance"
-    // (.zip) path: the exporter (Canvas) collects loaded video bytes across all
-    // VIDEOBOX cards via the registry. Capture the URL + name now (the closure
-    // re-reads `objectUrl`/`localFileName` so a later swap is reflected).
-    registerVideoExport(id, async () => {
-      const url = objectUrl;
-      if (!url) return null;
-      const resp = await fetch(url);
-      const ab = await (await resp.blob()).arrayBuffer();
-      return { bytes: new Uint8Array(ab), name: localFileName ?? file.name };
-    });
     if (!videoEl) return;
     videoEl.src = objectUrl;
     // muted=false so audio plays through MediaElementSource (which IS
@@ -549,6 +555,38 @@
     if (gateTimer !== null) { clearInterval(gateTimer); gateTimer = null; }
   }
 
+  // ---- Adopt the NODE-owned <video> into this card ----
+  //
+  // The element is created once per node and parked off-screen; every card
+  // mount adopts it and every unmount releases it. Adoption is a TRANSFER and
+  // release is owner-checked in the registry, so the two mounts a collapse
+  // straddles cannot fight over it in either order.
+  let mediaLease: NodeMediaLease<HTMLElement> | null = null;
+  $effect(() => {
+    const host = videoHost;
+    if (!host) return;
+    const lease = nodeMedia.adopt(id, MEDIA_SLOT, host, {
+      kind: 'video',
+      init: (el) => {
+        const v = el as HTMLVideoElement;
+        v.playsInline = true;
+        v.setAttribute('data-testid', 'videobox-video');
+      },
+    });
+    mediaLease = lease;
+    videoEl = lease.el as HTMLVideoElement;
+    // REHYDRATE the card-local reactive mirror from the node-owned registry.
+    // Without this a remount believes the node has no local file, re-shows the
+    // re-link prompt and lets the transport pause a video that is still
+    // playing (measured on the re-expand leg).
+    localFileName = nodeMedia.mediaName(id, MEDIA_SLOT);
+    attachVideoEl();
+    return () => {
+      lease.release();
+      if (mediaLease === lease) mediaLease = null;
+    };
+  });
+
   // ---- Attach the <video> element to the engine module ----
   //
   // Mirrors CameraInputCard: the factory may not exist yet when the
@@ -562,6 +600,23 @@
 
   // ---- Mount / unmount ----
   onMount(() => {
+    // Register the portable "Export performance" (.zip) bytes resolver ONCE on
+    // mount, reading the NODE-owned url rather than a card-local one. It used
+    // to be registered inside loadFile, which meant a card remount (collapse /
+    // expand) left the node's loaded video out of the export even though the
+    // bytes were still live. Name falls back to the synced fileMeta so a
+    // remounted card that never ran loadFile still exports a named file.
+    registerVideoExport(id, async () => {
+      const url = nodeMedia.objectUrl(id, MEDIA_SLOT);
+      if (!url) return null;
+      const resp = await fetch(url);
+      const ab = await (await resp.blob()).arrayBuffer();
+      return {
+        bytes: new Uint8Array(ab),
+        name: localFileName ?? fileMeta?.name ?? 'videobox.mp4',
+      };
+    });
+
     let attempts = 0;
     const attach = setInterval(() => {
       attempts++;
@@ -584,15 +639,16 @@
     stopDriftLoop();
     stopGateLoop();
     if (audioWireTimer) { clearTimeout(audioWireTimer); audioWireTimer = null; }
-    const ve = videoEngine();
-    try { ve?.attachExternalSource(id, 'video', null); } catch { /* */ }
-    const extras = getExtras();
-    extras?.unwireAudio();
+    // NOTE what is deliberately ABSENT here: no `attachExternalSource(id,
+    // 'video', null)`, no `revokeObjectURL`, no `unwireAudio()`. The element,
+    // its URL and its audio wiring belong to the NODE and must survive this
+    // card being unmounted — a collapse/expand is a card move, not a node
+    // deletion. Teardown happens in nodeMedia.sweep() when the node actually
+    // leaves the graph. `unregisterVideoExport` stays: the export resolver is
+    // re-registered on the next load and closes over card-local state.
     unregisterVideoExport(id);
-    if (objectUrl) {
-      try { URL.revokeObjectURL(objectUrl); } catch { /* */ }
-      objectUrl = null;
-    }
+    mediaLease?.release();
+    mediaLease = null;
   });
 
   // ---- Displayed current position ----
@@ -738,12 +794,10 @@
       data-testid="videobox-fs-wrap"
       oncontextmenu={onPreviewContextMenu}
     >
-      <!-- svelte-ignore a11y_media_has_caption -->
-      <video
-        bind:this={videoEl}
-        data-testid="videobox-video"
-        playsinline
-      ></video>
+      <!-- The <video> is NOT declared here: it belongs to the NODE and is
+           adopted into this host div (see the $effect above). Declaring it in
+           markup is what tied its lifetime to the card. -->
+      <div class="video-host" bind:this={videoHost}></div>
       {#if !hasLocalFile && !fileMeta}
         <div class="overlay drop-hint" data-testid="videobox-drop-hint">
           <div>Drop a video file</div>
@@ -900,7 +954,13 @@
      * resized card shows a bigger preview. */
     flex: 1;
   }
-  video {
+  /* The <video> is ADOPTED into .video-host at runtime (node-owned, see the
+   * registry), so Svelte cannot scope-class it — these rules must be
+   * :global(). `display: contents` on the host makes the adopted element
+   * participate in .preview-wrap's flex layout exactly as the old inline
+   * <video> did, so every descendant selector below still matches. */
+  .video-host { display: contents; }
+  .video-host :global(video) {
     display: block;
     max-width: 100%;
     max-height: 100%;
@@ -1039,7 +1099,7 @@
    * so the video scales UP as large as possible while preserving aspect,
    * centered, with black bars on the off-axis. width/height:auto could leave
    * a small-intrinsic clip un-scaled in the center of the screen. */
-  .preview-wrap.fullscreen video {
+  .preview-wrap.fullscreen :global(video) {
     width: 100%;
     height: 100%;
     object-fit: contain;
@@ -1091,7 +1151,7 @@
     aspect-ratio: auto;
     cursor: pointer;
   }
-  .preview-wrap.full-frame video {
+  .preview-wrap.full-frame :global(video) {
     width: 100%;
     height: 100%;
     object-fit: contain;
