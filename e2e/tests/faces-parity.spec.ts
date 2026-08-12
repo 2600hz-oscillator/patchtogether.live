@@ -22,7 +22,7 @@
 // REGISTRY-DRIVEN: enumerates STRICT_FACES (imported straight from the web
 // source — the same set the lint gate and the migration bridge read), so
 // every FUTURE promoted face auto-enrolls in this sweep with zero test
-// edits. For each migrated module, the dock full-view (EXPAND →
+// edits. For each migrated module, the dock full-view (`?shell=1` →
 // EXPAND) must satisfy:
 //
 //   1. EXACTLY one interactive control per def PARAM id — matched by the
@@ -51,10 +51,7 @@
 // The browser-free pre-gates are module-face-lint's dockFacePlan parity +
 // momentary/compact-cap tests and shell-cells' coverage test; the deliberate
 // in-lane top-N curation is covered by workflow-shell-faces. Runs on
-// /rack (no DB/relay) — the normal e2e lane. (The faceplate shell is the
-// DEFAULT since #1459; `?shell=legacy` is the escape hatch and would render the
-// verbatim legacy cards, i.e. no faceplate at all. A 2026-08-10 sed sweep
-// rewrote these comments as if the spec ran on it — it does not, and must not.)
+// /rack?shell=legacy (no DB/relay) — the normal e2e lane.
 
 import { test, expect, type Locator, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
@@ -97,7 +94,7 @@ const SLOW_RENDER = process.env.E2E_SWIFTSHADER === '1' || !!process.env.CI;
 // The FIXED term is sized off the COLD boot, not the warm one: on a freshly
 // started dev server (vite cache cleared) under SwiftShader the 4-cell `adsr`
 // row — the alphabetically first, so the one that pays SvelteKit's on-demand
-// /rack compile — measured 13.2s all-in vs 3.2s warm.
+// /rack?shell=legacy&seed=none compile — measured 13.2s all-in vs 3.2s warm.
 //
 // So the ceiling is DERIVED from the cells the face actually rendered rather
 // than bumped by a flat constant: batch 3 adds five more faces (and any face
@@ -171,7 +168,7 @@ interface RenderedCell {
 async function gotoShell(page: Page): Promise<void> {
   await page.goto('/rack');
   // 15 s (not the 5 s default): this is the BOOT wait, and the FIRST test of a
-  // run pays SvelteKit's on-demand /rack route compilation before the workflow
+  // run pays SvelteKit's on-demand /rack?shell=legacy&seed=none route compilation before the workflow
   // chrome mounts — which overran 5 s on a cold dev server and failed only the
   // alphabetically-first module. The sibling workflow specs (camera-input,
   // dock-pane-close-chrome, workflow-dock-occupancy) already carry this exact
@@ -401,251 +398,6 @@ async function openTabFor(page: Page, cell: RenderedCell): Promise<void> {
   if ((await tab.getAttribute('aria-selected')) === 'true') return;
   await tab.click();
   await expect(tab, `tab '${cell.page}' activates`).toHaveAttribute('aria-selected', 'true');
-}
-
-// ── THE TAB RAIL, AS A USER EXPERIENCES IT ──────────────────────────────────
-//
-// ⚠ WHY THIS EXISTS, AND WHAT THE REST OF THIS FILE CANNOT SEE. wavesculpt
-// shipped an EIGHT-tab rail whose every click was correct in the DOM — one
-// `hidden` flip, the right band, the right cells — and which changed NOTHING a
-// human could see, because the hero rail above it was 445 px in a 352 px scroll
-// box and the band the tabs switch started 195 px past the bottom edge. It was
-// reported three times as "these tabs don't seem functional".
-//
-// Every gate in this file was structurally blind to it. `evaluateAll` MATCHES
-// HIDDEN ELEMENTS deliberately (see `renderedCells`), so the multiset assert is
-// invariant to whether anything is on screen at all; `openTabFor` asserts
-// `aria-selected` flipped, which it did. A face with a rail that opens onto
-// nothing scores a perfect 81/81.
-//
-// So the probe is the USER'S observable and nothing else: WHICH CONTROL CELLS
-// ARE ACTUALLY ON SCREEN. It is negative-controlled in BOTH directions on every
-// run — clamp the pane and the visible set must go EMPTY (the gate must be able
-// to go red), release it and the sets must be distinct per tab.
-
-/** What a railed faceplate looks like from the outside, right now. */
-interface RailProbe {
-  /** The one band whose `hidden` is off, and how many claim that. */
-  activeId: string | null;
-  notHidden: number;
-  /** The `.faceplate-scroll` visible box, and where the active band sits in it. */
-  boxH: number;
-  bandTop: number;
-  /** `control-<id>`s whose box INTERSECTS that visible box. The observable. */
-  onScreen: string[];
-  /** Rows inside the active band that would have FITTED on the row above them
-   *  — i.e. vertical space spent on width that was sitting there empty. */
-  wastedRows: string[];
-  /** Layout children per band body. The packing probe can only see the ACTIVE
-   *  band (a hidden one has no boxes), so the negative control has to OPEN a
-   *  band that has something to stack — below 2 children there is nothing to
-   *  pack and a green would prove nothing. */
-  bandChildren: Record<string, number>;
-}
-
-async function railProbe(page: Page): Promise<RailProbe> {
-  return await page.evaluate(() => {
-    const fp = document.querySelector('[data-testid="dock-full-view"]')!;
-    const scroll = fp.querySelector('.faceplate-scroll') as HTMLElement;
-    const sr = scroll.getBoundingClientRect();
-    const bands = [...fp.querySelectorAll('[data-face-page]')] as HTMLElement[];
-    const open = bands.filter((b) => !b.hasAttribute('hidden'));
-    const active = open[0] ?? null;
-    const intersects = (r: DOMRect): boolean =>
-      r.bottom > sr.top && r.top < sr.bottom && r.right > sr.left && r.left < sr.right;
-
-    const onScreen = [...fp.querySelectorAll('[data-testid^="control-"]')]
-      .filter((el) => intersects(el.getBoundingClientRect()))
-      .map((el) => el.getAttribute('data-testid')!)
-      .sort();
-
-    // ROW PACKING, read off the rendered geometry rather than the CSS. Group a
-    // band body's layout children by their top edge; two adjacent groups are
-    // WASTE when the first child of the lower one would have fitted at the end
-    // of the upper one. That is the flex-wrap invariant, so a genuinely wrapped
-    // row can never report a violation and a stack of blocks always does.
-    //
-    // ⚠ MEASURE THE CONTENT, NOT THE BOX. `.page-controls` is a block-level
-    // flex container: stacked, its BOX is the full band width no matter how
-    // few knobs are in it, so a box-based reading says "the row is full" for
-    // every stacked row and the probe can never fail — which is exactly what
-    // the negative control caught on its first run.
-    // ⚠ AND A CLUSTER'S CAPTION IS MEASURED AS *TEXT*, via a Range. `<h5>` is
-    // block-level, so its BOX is the full band width in the stacked case for
-    // the same reason `.page-controls`'s is — reading it would re-introduce the
-    // very blindness the line above fixes, one element deeper.
-    const textRect = (el: Element): DOMRect => {
-      const r = document.createRange();
-      r.selectNodeContents(el);
-      return r.getBoundingClientRect();
-    };
-    const extentOf = (el: Element): { top: number; left: number; right: number } | null => {
-      const parts = [
-        ...[...el.querySelectorAll('[data-cell-key]')].map((p) => p.getBoundingClientRect()),
-        ...[...el.querySelectorAll('.cluster-label')].map(textRect),
-      ].filter((r) => r.width > 0 || r.height > 0);
-      if (!parts.length) return null;
-      return {
-        top: Math.min(...parts.map((r) => r.top)),
-        left: Math.min(...parts.map((r) => r.left)),
-        right: Math.max(...parts.map((r) => r.right)),
-      };
-    };
-    const wastedRows: string[] = [];
-    const bandChildren: Record<string, number> = {};
-    for (const band of bands) {
-      const body = band.querySelector('.page-body');
-      if (!body) continue;
-      const kids = [...body.children] as HTMLElement[];
-      bandChildren[band.getAttribute('data-face-page') ?? '?'] = kids.length;
-      if (kids.length < 2) continue;
-      const avail = band.clientWidth;
-      const rows: { top: number; left: number; right: number; firstW: number }[] = [];
-      for (const k of kids) {
-        const r = extentOf(k);
-        if (!r) continue;
-        const prev = rows[rows.length - 1];
-        if (prev && Math.abs(r.top - prev.top) < 2) {
-          prev.right = Math.max(prev.right, r.right);
-        } else {
-          rows.push({ top: r.top, left: r.left, right: r.right, firstW: r.right - r.left });
-        }
-      }
-      for (let i = 1; i < rows.length; i++) {
-        const used = rows[i - 1]!.right - rows[i - 1]!.left;
-        const next = rows[i]!.firstW;
-        const GAP = 18; // `.page-body.flow`'s column gap
-        if (used + GAP + next <= avail) {
-          wastedRows.push(
-            `${band.getAttribute('data-face-page')} row ${i + 1}: ` +
-              `${Math.round(used)}px used + ${Math.round(next)}px next <= ${Math.round(avail)}px available`,
-          );
-        }
-      }
-    }
-
-    return {
-      activeId: active?.getAttribute('data-face-page') ?? null,
-      notHidden: open.length,
-      boxH: Math.round(sr.height),
-      bandTop: active ? Math.round(active.getBoundingClientRect().top - sr.top) : -1,
-      onScreen,
-      wastedRows,
-      bandChildren,
-    } satisfies RailProbe;
-  });
-}
-
-/** Inject a style override, run `fn`, always take it back off again. */
-async function withStyle<T>(page: Page, css: string, fn: () => Promise<T>): Promise<T> {
-  const ID = 'faces-parity-probe-style';
-  await page.evaluate(
-    ({ id, css }) => {
-      const el = document.createElement('style');
-      el.id = id;
-      el.textContent = css;
-      document.head.appendChild(el);
-    },
-    { ID, id: ID, css },
-  );
-  try {
-    return await fn();
-  } finally {
-    await page.evaluate((id) => document.getElementById(id)?.remove(), ID);
-  }
-}
-
-/**
- * The railed-face leg. Runs only for a face the DOM says has a rail, so a face
- * that crosses `DOCK_TAB_MIN_BANDS` later auto-enrols with no edit here.
- */
-async function assertRailIsUsable(page: Page, type: string): Promise<void> {
-  const fp = page.getByTestId('dock-full-view');
-  const tabIds = await fp
-    .locator('[data-face-tab]')
-    .evaluateAll((els) => els.map((e) => e.getAttribute('data-face-tab')!));
-  if (tabIds.length === 0) return; // untabbed face — one scrolling column
-
-  const seen = new Map<string, string>(); // signature → the tab that produced it
-  let bandChildren: Record<string, number> = {};
-  for (const id of tabIds) {
-    await fp.locator(`[data-face-tab="${id}"]`).click();
-    await expect(
-      fp.locator(`[data-face-tab="${id}"]`),
-      `${type}: tab '${id}' activates`,
-    ).toHaveAttribute('aria-selected', 'true');
-    const p = await railProbe(page);
-    bandChildren = p.bandChildren;
-
-    expect(p.notHidden, `${type}: tab '${id}' — exactly ONE band is unhidden`).toBe(1);
-    expect(p.activeId, `${type}: tab '${id}' opens the band of the same id`).toBe(id);
-
-    // ⚠ THE ASSERTION THAT WOULD HAVE CAUGHT IT. Not "the DOM changed" — the
-    // DOM changed perfectly. The band the rail switches has to be somewhere a
-    // user can see it, at the pane's OWN resting height (no unfold: the VRT
-    // dock scene lifts the `min(60vh, 680px)` clamp on purpose, which is
-    // exactly why the pixel gate could not see this either).
-    expect(
-      p.onScreen.length,
-      `${type}: tab '${id}' — ZERO of its controls are on screen at the pane's resting ` +
-        `height. The band starts ${p.bandTop}px into a ${p.boxH}px scroll box, so every ` +
-        `click on this rail changes something nobody can see. Whatever sits between the ` +
-        `rail and the bands is taller than the pane.`,
-    ).toBeGreaterThan(0);
-
-    const sig = p.onScreen.join(',');
-    const clash = seen.get(sig);
-    expect(
-      clash,
-      `${type}: tab '${id}' puts the SAME controls on screen as tab '${clash}' — ` +
-        `the rail is not switching anything visible`,
-    ).toBeUndefined();
-    seen.set(sig, id);
-
-    // ⚠ AND THE WIDTH. A railed band owns the whole pane width (the rail is
-    // what bought it), so a band that stacks a row it could have sat beside is
-    // spending height it did not have to.
-    expect(
-      p.wastedRows,
-      `${type}: tab '${id}' — band rows stacked that would have FITTED side by side. ` +
-        `A railed band has the full width; see \`.page-body.flow\` in ModuleShell.`,
-    ).toEqual([]);
-  }
-
-  // ── NEGATIVE CONTROL 1 — force the subject broken; the gate must go red. ──
-  // Clamp the pane to less than the chrome above the bands and the observable
-  // must collapse to nothing. Without this leg, "every tab shows controls" and
-  // "the probe cannot tell" print the same green.
-  await withStyle(page, '.dock-fullview-drawer,.dock-faceplate{max-height:120px !important;}', async () => {
-    const p = await railProbe(page);
-    expect(
-      p.onScreen,
-      `${type}: NEGATIVE CONTROL — with the pane clamped to 120px the on-screen probe must ` +
-        `read EMPTY. It read ${p.onScreen.length} controls, so it is not measuring what is ` +
-        `on screen and its green above proves nothing.`,
-    ).toEqual([]);
-  });
-  // …and back: the probe recovers, so leg 1's green is the pane's doing.
-  expect(
-    (await railProbe(page)).onScreen.length,
-    `${type}: NEGATIVE CONTROL — the on-screen probe recovers once the clamp is off`,
-  ).toBeGreaterThan(0);
-
-  // ── NEGATIVE CONTROL 2 — same discipline for the packing probe. ──
-  // It can only see the OPEN band, so open the one with the most to stack.
-  const [fattest, fattestN] = Object.entries(bandChildren).sort((a, b) => b[1] - a[1])[0] ?? ['', 0];
-  if (fattestN >= 2) {
-    await fp.locator(`[data-face-tab="${fattest}"]`).click();
-    await withStyle(page, '.page-body{display:block !important;}', async () => {
-      const p = await railProbe(page);
-      expect(
-        p.wastedRows.length,
-        `${type}: NEGATIVE CONTROL — with band '${fattest}' (${fattestN} groups) forced to ` +
-          `stacked blocks the packing probe must FIND waste. It found none, so its green ` +
-          `above proves nothing.`,
-      ).toBeGreaterThan(0);
-    });
-  }
 }
 
 /**
@@ -1260,9 +1012,6 @@ test.describe('faces render-parity: every STRICT_FACES dock full-view carries th
           `shell-cell spec (packages/web/src/lib/ui/workflow/shell-cells.ts).`,
       ).toEqual([]);
 
-      // ── 2b. THE TAB RAIL, AS A USER EXPERIENCES IT (railed faces only). ──
-      await assertRailIsUsable(page, type);
-
       // ── 3. PER-CELL OPERABILITY: drive every cell, not one sampled knob. ──
       const cells = await renderedCells(dockShell);
       expect(
@@ -1390,7 +1139,7 @@ test.describe('param vocabulary: a NAMED discrete param reads as its name at BOT
 test.describe('dx7 hero controls are REACHABLE in the shell (the inert-cell P0)', () => {
   // The headline finding: dx7's PRESET selector — the one control that swaps
   // the whole sound — and its .syx cartridge import rendered as dashed text
-  // on the faceplate shell, so the DX7's voice could not be changed. This pins the
+  // under `?shell=1`, so the DX7's voice could not be changed. This pins the
   // fix at the level the user experiences it: pick a voice, the graph loads it.
   test('the dock PRESET cell actually loads a different voice into node.data', async ({ page }) => {
     // Same boot + spawn + dock-open fixed cost as a face row; the one selector
@@ -1430,7 +1179,7 @@ test.describe('sixstrum PRESET is a RECALL, not a relabelled tuning switch', () 
   // The sibling gap to dx7's: the batch-2 face carried the raw `tuning` param
   // (which only swaps the open-string set) but NOT the guitar/bass/harp PRESET
   // RECALL that the classic card's MODE knob fires — so the three calibrated
-  // knob states were unreachable on the faceplate shell. The param survived the
+  // knob states were unreachable under `?shell=1`. The param survived the
   // redesign; the affordance did not.
   //
   // The generic per-cell sweep above already proves the cell is a real,

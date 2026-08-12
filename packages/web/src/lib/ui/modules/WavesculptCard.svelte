@@ -91,39 +91,6 @@
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
   const engineCtx = useEngine();
-  // ⚠ THE LAST BARE `useStore()` IN THE TREE, AND IT IS STILL BARE ON PURPOSE
-  // — it wants `captureFlowStore()` from ./card-kit, and the one-line swap is
-  // WRITTEN AND DEFERRED, not overlooked. A bare call THROWS outside a
-  // `<SvelteFlow>` provider, during component INIT, which aborts the Svelte
-  // flush; the symptom is never a stack trace, it is a surface rendering the
-  // wrong thing (see card-kit's docstring for the DockFullView occupant-swap
-  // case). Every other plain-mountable card already routes through the
-  // self-gate.
-  //
-  // WHY IT IS STILL HERE, measured 2026-08-11: this file is in the WebGL
-  // ATTEST BASIS, and the swap is the ONLY change on this branch that moves
-  // the hash. Bisected against the real basis — with this line bare the tree
-  // hashes `9fc8fd6f…`, which has a committed record in `ci-webgl-attest/`;
-  // with `captureFlowStore()` it hashes `e9e72c88…`, which does not, and CI's
-  // refusal prints exactly that. Everything else the face adds (docs, `face`,
-  // `controlFamilies`, comments) is stripped from the basis by design and is
-  // free.
-  //
-  // AND THE DEFECT IT GUARDS IS NOT CURRENTLY REACHABLE. Probed on this head
-  // with console + pageerror listeners: the dock full-view opens clean in
-  // `?shell=1` AND `?shell=legacy`, single pane and split, zero errors —
-  // because wavesculpt is in STRICT_FACES, so DockFullView renders the
-  // FACEPLATE and never plain-mounts this card, and `HeadlessSourceHost`
-  // mounts it inside its own provider. So this is HARDENING, and hardening is
-  // not worth a ~10-minute trusted-machine GPU re-attest inside a face PR.
-  // Same call the owner made on this PR for `chord_quality`'s `options`
-  // roster: reverted, hash byte-identical, land it with the next legitimate
-  // re-attest.
-  //
-  // DELETION CRITERIA, so this cannot rot: the next PR that legitimately
-  // re-attests WebGL makes this `captureFlowStore()` and deletes the matching
-  // entry in `card-flow-store-guard.test.ts`. That gate's artifact anchor goes
-  // RED if the entry outlives the bare call, so the two cannot drift apart.
   const flowStore = useStore();
 
   // ----- Resize plumbing (mirror BentboxCard) -----

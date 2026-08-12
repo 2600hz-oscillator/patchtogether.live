@@ -166,7 +166,27 @@ jobs:
   unit:
     name: unit
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # ⚠ THIS IS A HUNG-JOB SAFETY CAP, NOT A PERFORMANCE GATE — and at 10 it
+    # had stopped being either. Measured across eight consecutive CI runs
+    # (2026-08-12): 9m32s, 9m34s, 9m49s, 9m50s, 9m31s, 6m46s … against a 10m
+    # cap. Ten to twenty-eight seconds of margin, so the job had become a coin
+    # flip, and it lost on #1476 at 10m12s.
+    #
+    # The failure mode is the reason this matters more than the flake rate: a
+    # cancelled job reports NEITHER pass NOR fail, and the "typecheck + unit +
+    # ART + E2E" umbrella turns red as a consequence — so a PR looks like it
+    # has a failing test when nothing failed at all. Twice tonight that read
+    # as a regression and cost a diagnosis each time.
+    #
+    # Raising the cap does NOT add CI wall-time (a cap only decides when a
+    # HUNG job is killed; a healthy run still finishes in ~9m40s). If this
+    # suite ever genuinely needs 20 minutes, that is a real regression worth
+    # its own investigation rather than another silent cancellation.
+    #
+    # Same class as the e2e shard-3 900s global timeout that reddened main
+    # hours earlier: a budget invisible until crossed, crossed by ordinary
+    # growth rather than by any one PR. Both want a WARNING before the cliff.
+    timeout-minutes: 20
 
     services:
       postgres:

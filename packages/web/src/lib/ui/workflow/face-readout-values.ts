@@ -168,13 +168,6 @@ import {
   sixstrumStringHz,
 } from '$lib/ui/modules/sixstrum-face-model';
 import { formatVcaGainAtFullCv, vcaFaceParams } from '$lib/audio/vca-gain-model';
-import {
-  wavesculptCamera,
-  wavesculptQuietestText,
-  wavesculptSpreadText,
-  wavesculptViewComboText,
-  wavesculptVoicesLiveText,
-} from '$lib/ui/modules/wavesculpt-face-model';
 
 /** A derived readout: live params in (through the caller's reader, which
  *  already resolves def defaults for untouched params), formatted string out.
@@ -665,42 +658,6 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
     return formatVcaGainAtFullCv(base, cvAmount);
   },
 
-  // ── WAVESCULPT ───────────────────────────────────────────────────────────
-  // ⚠ THE OBVIOUS READOUT HERE IS WRONG, and naming it is the point. A
-  // `paramId: 'rot'` readback prints `0.00` at the spawn camera and `0.30` at
-  // the VRT scene's camera — BOTH of which are positions where the BLUE voice
-  // is EXACTLY silent — with nothing to say it. `distanceGain` clamps a
-  // directional dot product at zero, so an emitter facing away from you is not
-  // quiet, it is off, and its per-voice tap (`out_blu`) emits digital zero with
-  // it. A knob readback is invariant to the one quantity in dispute; these
-  // three are the derivation that is not.
-  //
-  // All three go through `distanceGain` + `eyeFromCamera` — the same two
-  // exports the FACTORY calls per voice — so they cannot drift from the audio.
-  //
-  // ⚠ THE LABELS SAY `knob`, AND THEY MUST. This reader is durable-params-only
-  // and all five camera axes carry `paramTarget` CV inputs, so a camera being
-  // flown by an LFO is invisible here. The hero PANEL reads the engine handle
-  // and therefore does see it — the split is deliberate, and the captions state
-  // which side of it they are on (the analogVco `knob pitch` precedent).
-  //
-  // Negative-controlled in BOTH directions, permanently, in
-  // wavesculpt-face-model.test.ts: `voices live` must move on ZOOM with `rot`
-  // held (3 of 4 at zoom 2, 4 of 4 at zoom 3); `quietest` must name a DIFFERENT
-  // voice as the camera orbits and print a real dB figure where all four are
-  // live; `spread` must move on `pos_y` while `voices live` does not, and must
-  // NOT move on `master_gain` (a bus trim applied after the per-voice split).
-  'wavesculpt-voices-live': (read) => wavesculptVoicesLiveText(wavesculptCamera(read)),
-  'wavesculpt-quietest-voice': (read) => wavesculptQuietestText(wavesculptCamera(read)),
-  'wavesculpt-voice-spread-db': (read) => wavesculptSpreadText(wavesculptCamera(read)),
-  // The point in the 3×3 VIEW × BLINK grid, named from the def's own rosters.
-  // All nine combinations are reachable and preserved, but only THREE draw a
-  // distinct picture: `WavesculptCard.tick()` returns early for BIRDSEYE and
-  // SPECTROGRAPH before the WebGL path, so `drawScopes` — the only reader of
-  // BLINK, and of `scale` with it — is unreachable from either. The readout
-  // prints the pair and appends `idle` when the second half is deferred, which
-  // is the only place in the UI a player can learn that.
-  'wavesculpt-view-combo': (read) => wavesculptViewComboText(read),
   // ── CUBE ─────────────────────────────────────────────────────────────────
   // Seven, and the second one is the reason the other six exist. cube's
   // `slice_y` is a real control that is INERT IN EXACTLY ONE STATE — the state
