@@ -285,28 +285,6 @@ export const sixstrumDef: AudioModuleDef = {
 
     sidebar: [
       {
-        kind: 'signal-flow',
-        label: 'signal flow',
-        // The real chain, per string and then on the sum. BODY is the one
-        // `parallel` stage and the mark is load-bearing: it is a wet/dry blend
-        // of two band-passes tapped off the finished mix (`master * (1 - body)
-        // + wet * body`), so drawing it inline would teach that turning BODY up
-        // REPLACES the strings rather than adding air behind them.
-        stages: [
-          { label: 'PLUCK', role: 'generator', note: 'strum · poly · chord' },
-          { label: 'PICK BURST', role: 'generator', note: 'seeded noise' },
-          { label: 'PICK TONE', role: 'bus', note: 'burst low-pass' },
-          { label: 'PICK POS', role: 'bus', note: 'comb notch' },
-          { label: '6 × STRING', role: 'bus', note: 'damping · stiffness' },
-          { label: 'MUTE CHOKE', role: 'bus', note: 'per string' },
-          { label: 'AMP ADSR', role: 'bus', note: 'per string' },
-          { label: 'SUM ÷ √n', role: 'bus', note: 'sounding strings' },
-          { label: 'LEVEL', role: 'bus', note: 'dB' },
-          { label: 'BODY', role: 'bus', parallel: true, note: 'two band-passes' },
-          { label: 'OUT', role: 'bus', note: 'mono' },
-        ],
-      },
-      {
         kind: 'readouts',
         // ⚠ THE BLOCK LABEL IS THE RULE. Every number here is a NEXT-STRIKE
         // quantity — the pitches are latched at the strike, and the comb notch

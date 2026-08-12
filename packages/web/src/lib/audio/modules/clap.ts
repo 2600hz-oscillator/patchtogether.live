@@ -219,27 +219,6 @@ export const clapDef: AudioModuleDef = {
 
     sidebar: [
       {
-        kind: 'signal-flow',
-        label: 'signal flow',
-        // The REAL chain, in clapStep's order. THE ROOM IS A BRANCH: the tail
-        // pole taps `band` — the band-pass output, BEFORE the burst VCA — and
-        // rejoins at the sum. Drawing it inline after the burst VCA would teach
-        // that the room inherits the burst envelope. It does not; that is the
-        // entire point of the circuit.
-        stages: [
-          { label: 'STRIKE', role: 'generator', note: 'latches N · spread' },
-          { label: 'NOISE', role: 'generator', note: 'xorshift32, reseeded' },
-          { label: 'COLOR POLE', role: 'bus', note: '9k → 700 Hz' },
-          { label: 'BAND · WIDTH', role: 'bus', note: 'Q 5.6 → 0.6' },
-          { label: 'BURST VCA', role: 'bus', note: '√snap' },
-          { label: 'ROOM POLE', role: 'bus', parallel: true, note: 'one pole darker' },
-          { label: 'ROOM VCA', role: 'bus', parallel: true, note: '√(1−snap)' },
-          { label: 'DRIVE 2×OS', role: 'bus', note: 'tanh, 1→4×' },
-          { label: 'DC BLOCK', role: 'bus', note: '20 Hz' },
-          { label: 'LEVEL → CLIP', role: 'bus', note: 'level runs INTO the tanh' },
-        ],
-      },
-      {
         kind: 'presets',
         label: 'presets',
         // The four corners of the lineage this voice was built to span (the

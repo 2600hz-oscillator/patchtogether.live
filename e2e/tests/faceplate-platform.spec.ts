@@ -360,16 +360,17 @@ test.describe('PF-20 dock faceplate platform (kickdrum)', () => {
       side.locator('[data-testid^="control-"]'),
       'a sidebar block must NEVER emit a control-<paramId> testid (faces-parity multiset)',
     ).toHaveCount(0);
-    await expect(side.getByTestId('side-flow')).toBeVisible();
     await expect(side.getByTestId('side-presets')).toBeVisible();
     await expect(side.getByTestId('side-readouts')).toBeVisible();
     await expect(side.getByTestId('sidebar-panel-stereo-crossover')).toBeVisible();
-    // The chain names the three generators as generators, and marks the ONE
-    // parallel stage as parallel — TRANSLATE taps the raw sub pre-drive, and a
-    // diagram that drew it inline would teach the wrong chain.
-    await expect(side.locator('[data-flow-role="generator"]')).toHaveCount(3);
-    await expect(side.locator('[data-flow-parallel="true"]')).toHaveCount(1);
-    await expect(side.locator('[data-flow-parallel="true"]')).toContainText('TRANSLATE');
+    // …and NOTHING draws a signal-flow chain any more. The kind was removed
+    // (hand-authored DSP models nothing verified against the DSP), so this is
+    // the standing negative control: re-adding a renderer for it turns this
+    // red rather than quietly repopulating twelve faceplates.
+    await expect(
+      side.getByTestId('side-flow'),
+      'the signal-flow sidebar kind is gone — see FaceSidebarBlock in graph/types.ts',
+    ).toHaveCount(0);
   });
 
   test('the COMPACT lane tile keeps its live glyph — the dock suppression is DOCK-ONLY', async ({ page }) => {

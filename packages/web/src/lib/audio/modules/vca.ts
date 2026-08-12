@@ -274,52 +274,13 @@ export const vcaDef: AudioModuleDef = {
       readouts: [{ label: 'at cv 1', valueId: 'vca-gain-at-full-cv' }],
     },
 
-    // THE SIDEBAR — one block, and the editor pays nothing for it: this face
-    // holds two 40 px knobs in a ~1170 px band, so the column converts dead
-    // space into content rather than taking width from a control.
-    sidebar: [
-      {
-        kind: 'signal-flow',
-        label: 'signal flow',
-        // WHAT MAKES THIS MORE THAN FURNITURE. Drawn as `in → × → out` it would
-        // be; what it actually states are three things no other surface can:
-        //
-        //   1. the gain stages are a CONTROL BRANCH (`parallel`), not links in
-        //      the audio chain — drawing them inline would teach that the CV
-        //      passes THROUGH the audio path;
-        //   2. the de-zip is on the two KNOBS and the cv is untouched, which is
-        //      the #1313 correction and the answer to both "why is my pluck
-        //      soft" (it no longer is) and "can I ring-modulate with this"
-        //      (yes, now);
-        //   3. OUT INV exists at all. It is this module's most undiscoverable
-        //      feature — that jack lives only on the REAR card.
-        //
-        // ⚠ OUT INV is a `parallel` TAP of OUT, and the note says so in those
-        // words on purpose. It is a VARIANT of the same mono signal, not the
-        // right-hand half of a stereo pair (the dual-mono ledger's GROUP D);
-        // the diagram must not imply an L/R relationship the module does not
-        // have.
-        stages: [
-          { label: 'AUDIO IN', role: 'bus' },
-          { label: 'BASE', parallel: true, note: 'de-zipped knob' },
-          { label: 'CV × AMT', parallel: true, note: 'cv is full-bandwidth' },
-          // ⚠ THE NOTE IS LENGTH-BUDGETED. `.fs-note` is `white-space: nowrap`
-          // with no ellipsis and no wrap, so a note too long for the ~288 px
-          // sidebar column does not truncate — it OVERLAPS the stage label. The
-          // first draft here ("unclamped: may exceed 1 or go below 0", 37 ch)
-          // collided with `SUM` in the rendered dock. Budget asserted in
-          // vca-gain-model.test.ts; see the note there for the measurement.
-          { label: 'SUM', parallel: true, note: 'unclamped: >1 boosts, <0 flips' },
-          { label: '× GAIN', role: 'bus', note: 'the multiply' },
-          { label: 'OUT', role: 'bus' },
-          // Also budgeted: the first draft ("× −1 tap of OUT, always live")
-          // came to 35 ch and ended flush against the column edge on darwin.
-          // CI renders on LINUX with different font metrics, so a row with no
-          // headroom is a row that may overlap there and nowhere else.
-          { label: 'OUT INV', role: 'bus', parallel: true, note: 'always-live × −1 tap' },
-        ],
-      },
-    ],
+    // NO SIDEBAR. The only block this face ever declared was the signal-flow
+    // diagram, and the whole kind is gone (see the union in graph/types.ts), so
+    // `sidebarPlan` returns null and DockFullView keeps the full-width editor.
+    // The two facts the chain carried have real homes: `cv` is read at full
+    // bandwidth → the rear card's `~` tick (pinned against vca.dsp below), and
+    // OUT INV → the rear card's output rail, which is where that jack lives.
+
     // REAR CARD curation: neither input is a per-param CV (the worklet owns
     // the gain law), so derivation would fold both into one 'signal' band —
     // the spec's vca table reads better as signal → gain stage.

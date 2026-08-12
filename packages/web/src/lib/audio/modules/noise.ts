@@ -216,17 +216,12 @@ export const noiseDef: AudioModuleDef = {
       ],
     },
 
-    // TWO BLOCKS, AND THE THIRD WAS CUT AFTER LOOKING AT THE RENDER.
-    //
-    // A `signal-flow` diagram was drafted and dropped. Not because it was
-    // wrong — table → looping source → per-tap gain → jack is exactly the
-    // factory — but because it is FOUR STAGES OF THE SAME STRAIGHT LINE, three
-    // times over, and its one real claim ("the three chains are never summed")
-    // is a sentence, not a diagram. It also cost ~130 px of sidebar, and the
-    // dock's two panes share a row height: a tall sidebar stretches the
-    // faceplate pane beside it, which on a ONE-CONTROL module is 230 px of
-    // visible void under the hero. Measured by rendering it, which is the only
-    // way that particular cost shows up (CLAUDE.md: screenshot the thing).
+    // TWO BLOCKS. A chain diagram was drafted here and cut after looking at
+    // the render — it was four stages of the same straight line, three times
+    // over, and it cost ~130 px of sidebar on a ONE-CONTROL module. The whole
+    // block kind has since been removed for the more basic reason (nothing
+    // verified any of them against the DSP), so there is no third block to
+    // reconsider.
     sidebar: [
       {
         // THE PICTURE: the three spectra relative to white on a log ruler, over
