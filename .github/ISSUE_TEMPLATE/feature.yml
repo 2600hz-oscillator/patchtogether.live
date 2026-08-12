@@ -1,0 +1,36 @@
+name: Feature
+description: Something should exist
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What should exist
+      description: The behavior from the user's side, not the implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why
+      description: What it enables, or what is painful without it.
+    validations:
+      required: true
+  - type: textarea
+    id: done
+    attributes:
+      label: What done looks like
+      description: |
+        How we would know it works — the test or the observable outcome, not a
+        checklist of files.
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      options:
+        - p1 — high-value correctness
+        - p2 — maintainability / debt
+        - p3 — after the p2s
+        - p0 — address immediately
+    validations:
+      required: true

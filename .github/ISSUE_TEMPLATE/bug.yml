@@ -1,0 +1,31 @@
+name: Bug
+description: Something is broken
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happens
+      description: What you saw, and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce
+      description: |
+        Steps, or the module + patch that triggers it. Note the environment if it
+        matters (browser, real GPU vs SwiftShader, with/without hardware).
+    validations:
+      required: true
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      options:
+        - p0 — address immediately
+        - p1 — high-value correctness
+        - p2 — maintainability / debt
+        - p3 — after the p2s
+    validations:
+      required: true
