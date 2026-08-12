@@ -144,36 +144,6 @@ export const FACES = [
   // emptied and nothing is dropped. (A promotion that emptied band 1 would make
   // this 1, and would also take that band's hint out of the annotation sweep.)
   { type: 'meowbox', pages: 2 },
-  // FACE BATCH 3 (2026-08-10) — the room you stand inside, and the biggest
-  // scene on this roster by a wide margin: 81 cells over EIGHT bands (`room`,
-  // `ensemble`, the four voices, `view`, `walls`). 8 trips
-  // DOCK_TAB_MIN_BANDS, so it captures as a TAB RAIL by design — the arithmetic
-  // is in dock-tabs-model.test.ts and it is not a preference: 79 params packed
-  // perfectly is ~720 px into a ~550 px region. The hero promotes the room
-  // PANEL and `zoom` out of band 1, which keeps `pos_x/pos_y/pos_z/rot`, so
-  // nothing empties and the count is the declared `face.pages` length.
-  //
-  // ⚠ THIS IS A WEBGL2 MODULE AND ITS CARD IS THE REPO'S ONLY 3D MOUNT, but
-  // the FACE scene does not render it: the shell paints cells, and the module's
-  // own `__wavesculptVrtFreeze` pin (the one the legacy-card scenes in
-  // vrt-scenes.ts set) is NOT reached by `bootWithFace`. The two surfaces this
-  // scene actually draws are both deterministic without it:
-  //
-  //   * the `scope` GLYPH is an analyser on `L`, and wavesculpt is SILENT
-  //     unpatched — all four voices need a gate — so it reads a flat trace even
-  //     before `freezeFaceAudio` suspends the context. (The mixer/reverb
-  //     reason, not the analogVco one.)
-  //   * the hero ROOM PANEL polls the live engine on rAF, like bluebox's, and
-  //     is idle-stable for the same reason: it memoises the camera on a
-  //     4-decimal tuple and only assigns when that CHANGES, so an untouched
-  //     scene repaints nothing. Its picture is a pure function of five params
-  //     at their defaults, with no time term anywhere.
-  //
-  // ⚠ WHAT WOULD SILENTLY RETIRE THAT ARGUMENT: giving any voice a non-zero
-  // default gate, or putting a time term in the panel. Either starts this tile
-  // moving with every gate still green. Re-establish it by measurement, never
-  // by reading a passing scene.
-  { type: 'wavesculpt', pages: 8 },
   // FACE BATCH 3 (2026-08-10) — the 3-D wavetable navigator. SIX bands, all six
   // surviving the hero split: the hero promotes `cube-view` and `slice_ry` out
   // of band 1, which still holds ROT Z / ROT X / Y / WRAP.

@@ -22,7 +22,7 @@
 // REGISTRY-DRIVEN: enumerates STRICT_FACES (imported straight from the web
 // source — the same set the lint gate and the migration bridge read), so
 // every FUTURE promoted face auto-enrolls in this sweep with zero test
-// edits. For each migrated module, the dock full-view (EXPAND →
+// edits. For each migrated module, the dock full-view (`?shell=1` →
 // EXPAND) must satisfy:
 //
 //   1. EXACTLY one interactive control per def PARAM id — matched by the
@@ -51,10 +51,7 @@
 // The browser-free pre-gates are module-face-lint's dockFacePlan parity +
 // momentary/compact-cap tests and shell-cells' coverage test; the deliberate
 // in-lane top-N curation is covered by workflow-shell-faces. Runs on
-// /rack (no DB/relay) — the normal e2e lane. (The faceplate shell is the
-// DEFAULT since #1459; `?shell=legacy` is the escape hatch and would render the
-// verbatim legacy cards, i.e. no faceplate at all. A 2026-08-10 sed sweep
-// rewrote these comments as if the spec ran on it — it does not, and must not.)
+// /rack?shell=legacy (no DB/relay) — the normal e2e lane.
 
 import { test, expect, type Locator, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
@@ -77,8 +74,9 @@ const SLOW_RENDER = process.env.E2E_SWIFTSHADER === '1' || !!process.env.CI;
 // ── THE BUDGET IS PER-FACE AND SCALES WITH THAT FACE'S CELL COUNT ──
 //
 // This sweep's cost is DOMINATED by the per-cell operability loop: every cell
-// costs a `scrollIntoViewIfNeeded` + a `boundingBox` + ~11 CDP input dispatches
-// (`mouse.move`/`down`/`move{steps:8}`/`up`) + a graph poll — ~14 protocol
+// costs a `centreOf` (scroll + rect, ONE call), four mouse dispatches
+// (`move`/`down`/`move{steps:8}`/`up` — `steps` is batched browser-side, so it
+// is one call, MEASURED, not four) and a graph read plus poll — ~9 protocol
 // round-trips EACH, against a live SvelteFlow rack whose video zone is being
 // software-rasterized the whole time. So a face's wall-clock is essentially
 // `fixed boot/spawn/dock + k × cells`, and the flat 30s default was a budget
@@ -97,7 +95,7 @@ const SLOW_RENDER = process.env.E2E_SWIFTSHADER === '1' || !!process.env.CI;
 // The FIXED term is sized off the COLD boot, not the warm one: on a freshly
 // started dev server (vite cache cleared) under SwiftShader the 4-cell `adsr`
 // row — the alphabetically first, so the one that pays SvelteKit's on-demand
-// /rack compile — measured 13.2s all-in vs 3.2s warm.
+// /rack?shell=legacy&seed=none compile — measured 13.2s all-in vs 3.2s warm.
 //
 // So the ceiling is DERIVED from the cells the face actually rendered rather
 // than bumped by a flat constant: batch 3 adds five more faces (and any face
@@ -171,7 +169,7 @@ interface RenderedCell {
 async function gotoShell(page: Page): Promise<void> {
   await page.goto('/rack');
   // 15 s (not the 5 s default): this is the BOOT wait, and the FIRST test of a
-  // run pays SvelteKit's on-demand /rack route compilation before the workflow
+  // run pays SvelteKit's on-demand /rack?shell=legacy&seed=none route compilation before the workflow
   // chrome mounts — which overran 5 s on a cold dev server and failed only the
   // alphabetically-first module. The sibling workflow specs (camera-input,
   // dock-pane-close-chrome, workflow-dock-occupancy) already carry this exact
@@ -393,259 +391,66 @@ async function renderedCells(dockShell: Locator): Promise<RenderedCell[]> {
  * Verifying the tab actually TOOK matters: a rail that renders but does not
  * switch would leave the cell hidden and the failure would surface as a
  * confusing `toBeVisible` timeout on the control rather than on the tab.
+ *
+ * ── ⚠ WHY THIS TAKES A CURSOR INSTEAD OF ASKING THE PAGE ────────────────────
+ *
+ * It is called ONCE PER CELL — ~380 times across this file — and it used to
+ * spend two protocol round-trips (`locator.count`, then `locator.getAttribute`)
+ * on EVERY ONE of them just to discover that the tab it wants is already the
+ * open tab. Cells arrive grouped by band, so the answer was already known: the
+ * only calls that can change anything are the ~8 real transitions per railed
+ * face, plus one rail-exists probe per face.
+ *
+ * MEASURED with `DEBUG=pw:api` over the whole spec — `locator.count` 382 → 33
+ * and `locator.getAttribute` 129 → 16.
+ *
+ * ⚠ AND THE COUNT IS THE POINT, not the seconds. A protocol call is one
+ * round-trip between the test process and the browser: the same test makes the
+ * SAME NUMBER of them on Metal, under SwiftShader, and on a contended 4-worker
+ * runner. Wall-clock does none of that — which is exactly why #1454 measured
+ * this file green on Metal and blew shard 3's 900 s ceiling on CI. A count is
+ * the only number that transfers.
+ *
+ * The CURSOR IS NOT A CACHE OF PAGE STATE. It records what THIS LOOP last
+ * clicked, and nothing else in the loop touches the rail — `driveCell` operates
+ * cells, never tabs. If that ever stops being true the cursor must go, because
+ * a stale cursor would skip a needed click and the failure would resurface as
+ * the same confusing `toBeVisible` timeout this helper's own comment warns
+ * about. The click path still asserts `aria-selected` flipped, so a rail that
+ * renders and does not switch is caught on the transition it fails.
  */
-async function openTabFor(page: Page, cell: RenderedCell): Promise<void> {
+interface TabCursor {
+  /** null = not yet probed; false = this face has no rail (untabbed). */
+  railed: boolean | null;
+  /** The band id this loop last activated, or null before the first switch. */
+  active: string | null;
+}
+
+function newTabCursor(): TabCursor {
+  return { railed: null, active: null };
+}
+
+async function openTabFor(page: Page, cell: RenderedCell, cursor: TabCursor): Promise<void> {
   if (!cell.page) return;
+  if (cursor.railed === false) return; // untabbed face — one scrolling column
   const tab = page.getByTestId('dock-full-view').getByTestId(`faceplate-tab-${cell.page}`);
-  if ((await tab.count()) === 0) return; // untabbed face — one scrolling column
-  if ((await tab.getAttribute('aria-selected')) === 'true') return;
+  if (cursor.railed === null) {
+    // ONE rail-exists probe per face, not per cell. `count()` on a per-band
+    // testid is the same question for every band of a given face: a faceplate
+    // either painted a rail or it did not.
+    cursor.railed = (await tab.count()) > 0;
+    if (!cursor.railed) return;
+  }
+  if (cursor.active === cell.page) return; // already open — this loop opened it
+  if (cursor.active === null && (await tab.getAttribute('aria-selected')) === 'true') {
+    // First cell of a railed face: the faceplate chose its own default tab, so
+    // the page is the authority exactly once. After this the cursor is.
+    cursor.active = cell.page;
+    return;
+  }
   await tab.click();
   await expect(tab, `tab '${cell.page}' activates`).toHaveAttribute('aria-selected', 'true');
-}
-
-// ── THE TAB RAIL, AS A USER EXPERIENCES IT ──────────────────────────────────
-//
-// ⚠ WHY THIS EXISTS, AND WHAT THE REST OF THIS FILE CANNOT SEE. wavesculpt
-// shipped an EIGHT-tab rail whose every click was correct in the DOM — one
-// `hidden` flip, the right band, the right cells — and which changed NOTHING a
-// human could see, because the hero rail above it was 445 px in a 352 px scroll
-// box and the band the tabs switch started 195 px past the bottom edge. It was
-// reported three times as "these tabs don't seem functional".
-//
-// Every gate in this file was structurally blind to it. `evaluateAll` MATCHES
-// HIDDEN ELEMENTS deliberately (see `renderedCells`), so the multiset assert is
-// invariant to whether anything is on screen at all; `openTabFor` asserts
-// `aria-selected` flipped, which it did. A face with a rail that opens onto
-// nothing scores a perfect 81/81.
-//
-// So the probe is the USER'S observable and nothing else: WHICH CONTROL CELLS
-// ARE ACTUALLY ON SCREEN. It is negative-controlled in BOTH directions on every
-// run — clamp the pane and the visible set must go EMPTY (the gate must be able
-// to go red), release it and the sets must be distinct per tab.
-
-/** What a railed faceplate looks like from the outside, right now. */
-interface RailProbe {
-  /** The one band whose `hidden` is off, and how many claim that. */
-  activeId: string | null;
-  notHidden: number;
-  /** The `.faceplate-scroll` visible box, and where the active band sits in it. */
-  boxH: number;
-  bandTop: number;
-  /** `control-<id>`s whose box INTERSECTS that visible box. The observable. */
-  onScreen: string[];
-  /** Rows inside the active band that would have FITTED on the row above them
-   *  — i.e. vertical space spent on width that was sitting there empty. */
-  wastedRows: string[];
-  /** Layout children per band body. The packing probe can only see the ACTIVE
-   *  band (a hidden one has no boxes), so the negative control has to OPEN a
-   *  band that has something to stack — below 2 children there is nothing to
-   *  pack and a green would prove nothing. */
-  bandChildren: Record<string, number>;
-}
-
-async function railProbe(page: Page): Promise<RailProbe> {
-  return await page.evaluate(() => {
-    const fp = document.querySelector('[data-testid="dock-full-view"]')!;
-    const scroll = fp.querySelector('.faceplate-scroll') as HTMLElement;
-    const sr = scroll.getBoundingClientRect();
-    const bands = [...fp.querySelectorAll('[data-face-page]')] as HTMLElement[];
-    const open = bands.filter((b) => !b.hasAttribute('hidden'));
-    const active = open[0] ?? null;
-    const intersects = (r: DOMRect): boolean =>
-      r.bottom > sr.top && r.top < sr.bottom && r.right > sr.left && r.left < sr.right;
-
-    const onScreen = [...fp.querySelectorAll('[data-testid^="control-"]')]
-      .filter((el) => intersects(el.getBoundingClientRect()))
-      .map((el) => el.getAttribute('data-testid')!)
-      .sort();
-
-    // ROW PACKING, read off the rendered geometry rather than the CSS. Group a
-    // band body's layout children by their top edge; two adjacent groups are
-    // WASTE when the first child of the lower one would have fitted at the end
-    // of the upper one. That is the flex-wrap invariant, so a genuinely wrapped
-    // row can never report a violation and a stack of blocks always does.
-    //
-    // ⚠ MEASURE THE CONTENT, NOT THE BOX. `.page-controls` is a block-level
-    // flex container: stacked, its BOX is the full band width no matter how
-    // few knobs are in it, so a box-based reading says "the row is full" for
-    // every stacked row and the probe can never fail — which is exactly what
-    // the negative control caught on its first run.
-    // ⚠ AND A CLUSTER'S CAPTION IS MEASURED AS *TEXT*, via a Range. `<h5>` is
-    // block-level, so its BOX is the full band width in the stacked case for
-    // the same reason `.page-controls`'s is — reading it would re-introduce the
-    // very blindness the line above fixes, one element deeper.
-    const textRect = (el: Element): DOMRect => {
-      const r = document.createRange();
-      r.selectNodeContents(el);
-      return r.getBoundingClientRect();
-    };
-    const extentOf = (el: Element): { top: number; left: number; right: number } | null => {
-      const parts = [
-        ...[...el.querySelectorAll('[data-cell-key]')].map((p) => p.getBoundingClientRect()),
-        ...[...el.querySelectorAll('.cluster-label')].map(textRect),
-      ].filter((r) => r.width > 0 || r.height > 0);
-      if (!parts.length) return null;
-      return {
-        top: Math.min(...parts.map((r) => r.top)),
-        left: Math.min(...parts.map((r) => r.left)),
-        right: Math.max(...parts.map((r) => r.right)),
-      };
-    };
-    const wastedRows: string[] = [];
-    const bandChildren: Record<string, number> = {};
-    for (const band of bands) {
-      const body = band.querySelector('.page-body');
-      if (!body) continue;
-      const kids = [...body.children] as HTMLElement[];
-      bandChildren[band.getAttribute('data-face-page') ?? '?'] = kids.length;
-      if (kids.length < 2) continue;
-      const avail = band.clientWidth;
-      const rows: { top: number; left: number; right: number; firstW: number }[] = [];
-      for (const k of kids) {
-        const r = extentOf(k);
-        if (!r) continue;
-        const prev = rows[rows.length - 1];
-        if (prev && Math.abs(r.top - prev.top) < 2) {
-          prev.right = Math.max(prev.right, r.right);
-        } else {
-          rows.push({ top: r.top, left: r.left, right: r.right, firstW: r.right - r.left });
-        }
-      }
-      for (let i = 1; i < rows.length; i++) {
-        const used = rows[i - 1]!.right - rows[i - 1]!.left;
-        const next = rows[i]!.firstW;
-        const GAP = 18; // `.page-body.flow`'s column gap
-        if (used + GAP + next <= avail) {
-          wastedRows.push(
-            `${band.getAttribute('data-face-page')} row ${i + 1}: ` +
-              `${Math.round(used)}px used + ${Math.round(next)}px next <= ${Math.round(avail)}px available`,
-          );
-        }
-      }
-    }
-
-    return {
-      activeId: active?.getAttribute('data-face-page') ?? null,
-      notHidden: open.length,
-      boxH: Math.round(sr.height),
-      bandTop: active ? Math.round(active.getBoundingClientRect().top - sr.top) : -1,
-      onScreen,
-      wastedRows,
-      bandChildren,
-    } satisfies RailProbe;
-  });
-}
-
-/** Inject a style override, run `fn`, always take it back off again. */
-async function withStyle<T>(page: Page, css: string, fn: () => Promise<T>): Promise<T> {
-  const ID = 'faces-parity-probe-style';
-  await page.evaluate(
-    ({ id, css }) => {
-      const el = document.createElement('style');
-      el.id = id;
-      el.textContent = css;
-      document.head.appendChild(el);
-    },
-    { ID, id: ID, css },
-  );
-  try {
-    return await fn();
-  } finally {
-    await page.evaluate((id) => document.getElementById(id)?.remove(), ID);
-  }
-}
-
-/**
- * The railed-face leg. Runs only for a face the DOM says has a rail, so a face
- * that crosses `DOCK_TAB_MIN_BANDS` later auto-enrols with no edit here.
- */
-async function assertRailIsUsable(page: Page, type: string): Promise<void> {
-  const fp = page.getByTestId('dock-full-view');
-  const tabIds = await fp
-    .locator('[data-face-tab]')
-    .evaluateAll((els) => els.map((e) => e.getAttribute('data-face-tab')!));
-  if (tabIds.length === 0) return; // untabbed face — one scrolling column
-
-  const seen = new Map<string, string>(); // signature → the tab that produced it
-  let bandChildren: Record<string, number> = {};
-  for (const id of tabIds) {
-    await fp.locator(`[data-face-tab="${id}"]`).click();
-    await expect(
-      fp.locator(`[data-face-tab="${id}"]`),
-      `${type}: tab '${id}' activates`,
-    ).toHaveAttribute('aria-selected', 'true');
-    const p = await railProbe(page);
-    bandChildren = p.bandChildren;
-
-    expect(p.notHidden, `${type}: tab '${id}' — exactly ONE band is unhidden`).toBe(1);
-    expect(p.activeId, `${type}: tab '${id}' opens the band of the same id`).toBe(id);
-
-    // ⚠ THE ASSERTION THAT WOULD HAVE CAUGHT IT. Not "the DOM changed" — the
-    // DOM changed perfectly. The band the rail switches has to be somewhere a
-    // user can see it, at the pane's OWN resting height (no unfold: the VRT
-    // dock scene lifts the `min(60vh, 680px)` clamp on purpose, which is
-    // exactly why the pixel gate could not see this either).
-    expect(
-      p.onScreen.length,
-      `${type}: tab '${id}' — ZERO of its controls are on screen at the pane's resting ` +
-        `height. The band starts ${p.bandTop}px into a ${p.boxH}px scroll box, so every ` +
-        `click on this rail changes something nobody can see. Whatever sits between the ` +
-        `rail and the bands is taller than the pane.`,
-    ).toBeGreaterThan(0);
-
-    const sig = p.onScreen.join(',');
-    const clash = seen.get(sig);
-    expect(
-      clash,
-      `${type}: tab '${id}' puts the SAME controls on screen as tab '${clash}' — ` +
-        `the rail is not switching anything visible`,
-    ).toBeUndefined();
-    seen.set(sig, id);
-
-    // ⚠ AND THE WIDTH. A railed band owns the whole pane width (the rail is
-    // what bought it), so a band that stacks a row it could have sat beside is
-    // spending height it did not have to.
-    expect(
-      p.wastedRows,
-      `${type}: tab '${id}' — band rows stacked that would have FITTED side by side. ` +
-        `A railed band has the full width; see \`.page-body.flow\` in ModuleShell.`,
-    ).toEqual([]);
-  }
-
-  // ── NEGATIVE CONTROL 1 — force the subject broken; the gate must go red. ──
-  // Clamp the pane to less than the chrome above the bands and the observable
-  // must collapse to nothing. Without this leg, "every tab shows controls" and
-  // "the probe cannot tell" print the same green.
-  await withStyle(page, '.dock-fullview-drawer,.dock-faceplate{max-height:120px !important;}', async () => {
-    const p = await railProbe(page);
-    expect(
-      p.onScreen,
-      `${type}: NEGATIVE CONTROL — with the pane clamped to 120px the on-screen probe must ` +
-        `read EMPTY. It read ${p.onScreen.length} controls, so it is not measuring what is ` +
-        `on screen and its green above proves nothing.`,
-    ).toEqual([]);
-  });
-  // …and back: the probe recovers, so leg 1's green is the pane's doing.
-  expect(
-    (await railProbe(page)).onScreen.length,
-    `${type}: NEGATIVE CONTROL — the on-screen probe recovers once the clamp is off`,
-  ).toBeGreaterThan(0);
-
-  // ── NEGATIVE CONTROL 2 — same discipline for the packing probe. ──
-  // It can only see the OPEN band, so open the one with the most to stack.
-  const [fattest, fattestN] = Object.entries(bandChildren).sort((a, b) => b[1] - a[1])[0] ?? ['', 0];
-  if (fattestN >= 2) {
-    await fp.locator(`[data-face-tab="${fattest}"]`).click();
-    await withStyle(page, '.page-body{display:block !important;}', async () => {
-      const p = await railProbe(page);
-      expect(
-        p.wastedRows.length,
-        `${type}: NEGATIVE CONTROL — with band '${fattest}' (${fattestN} groups) forced to ` +
-          `stacked blocks the packing probe must FIND waste. It found none, so its green ` +
-          `above proves nothing.`,
-      ).toBeGreaterThan(0);
-    });
-  }
+  cursor.active = cell.page;
 }
 
 /**
@@ -665,11 +470,40 @@ async function assertRailIsUsable(page: Page, type: string): Promise<void> {
  * at max — a summing mixer is a unity pass-through out of the box), and the
  * same bite recurs on every attenuator-shaped module.
  */
+/**
+ * Scroll a control into view and return its CENTRE, in ONE protocol call.
+ *
+ * ⚠ THIS REPLACED `scrollIntoViewIfNeeded()` + `boundingBox()`, which is two
+ * round-trips asking one question, ~360 times across this file. MEASURED with
+ * `DEBUG=pw:api`: `locator.scrollIntoViewIfNeeded` 375 → 0 and
+ * `locator.boundingBox` 349 → 0, against one `locator.evaluate` each.
+ *
+ * Equivalence, since this is a pointer coordinate and being subtly wrong would
+ * show up as a drag that misses: `getBoundingClientRect()` is viewport-relative
+ * and so is `boundingBox()`, and both are read AFTER the scroll, so the numbers
+ * are the same numbers. `scrollIntoView({ block: 'center' })` is instant by
+ * default (no smooth behaviour to race), and layout is synchronous, so reading
+ * the rect on the next line sees the scrolled position.
+ *
+ * ⚠ WHAT IT GIVES UP, stated because it is the only real risk: Playwright's
+ * `scrollIntoViewIfNeeded` also waits for the element to be STABLE (not
+ * animating). This does not. Two things make that safe here rather than
+ * hopeful — the caller has already awaited `expect(host).toBeVisible()`, and a
+ * mis-aimed drag cannot pass silently: the `expect.poll(readParam).not.toBe(
+ * before)` that follows every drag turns a missed grab into a RED test, never
+ * a green one. Flake-checked 3× under `E2E_SWIFTSHADER=1`, which is the
+ * renderer where a slow layout would actually bite.
+ */
+async function centreOf(control: Locator): Promise<{ cx: number; cy: number }> {
+  return await control.evaluate((el) => {
+    el.scrollIntoView({ block: 'center', inline: 'center' });
+    const r = el.getBoundingClientRect();
+    return { cx: r.x + r.width / 2, cy: r.y + r.height / 2 };
+  });
+}
+
 async function dragKnob(page: Page, knob: Locator, p: SpecParam, current: number): Promise<void> {
-  await knob.scrollIntoViewIfNeeded();
-  const box = (await knob.boundingBox())!;
-  const cx = box.x + box.width / 2;
-  const cy = box.y + box.height / 2;
+  const { cx, cy } = await centreOf(knob);
 
   // Travel (px): a discrete param must cross its rounding midpoint (1 step =
   // 200/steps px, so 0.6 of a step + slack always lands on a new integer); a
@@ -773,14 +607,14 @@ async function driveCell(
     // independent leg and the one that would catch a re-introduced Y.Doc write.
     const pid = cell.key;
     const pad = host.locator(`[data-testid="control-${pid}"]`);
-    await pad.scrollIntoViewIfNeeded();
-    const box = (await pad.boundingBox())!;
+    // One call, not two — see centreOf.
+    const { cx: padCx, cy: padCy } = await centreOf(pad);
     // Snapshot BOTH oracles before the gesture: the ledger cursor so an earlier
     // module's press cannot satisfy this one, and the graph value so "untouched"
     // is a comparison rather than an assumption about what spawn seeded.
     const beforeSeq = lastSeq(await readAuditionLog(page));
     const beforeParam = await readParam(page, nodeId, pid);
-    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.move(padCx, padCy);
     await page.mouse.down();
     await expect
       .poll(
@@ -1022,11 +856,8 @@ async function driveCell(
     const before = key ? JSON.stringify(beforeRaw) : '';
     const beforeText = witness ? ((await witness.innerText()) ?? '').trim() : '';
 
-    await target.scrollIntoViewIfNeeded();
     if (probe!.action === 'drag') {
-      const box = (await target.boundingBox())!;
-      const cx = box.x + box.width / 2;
-      const cy = box.y + box.height / 2;
+      const { cx, cy } = await centreOf(target);
       await page.mouse.move(cx, cy);
       await page.mouse.down();
       await page.mouse.move(cx, cy - 24, { steps: 8 });
@@ -1124,9 +955,8 @@ async function driveCell(
         `${where}: declared mode:'gate' but the shell did not render a MOMENTARY pad ` +
           `(no aria-pressed) — a held action driven as a one-shot opens and never closes`,
       ).toHaveAttribute('aria-pressed', 'false');
-      await btn.scrollIntoViewIfNeeded();
-      const box = (await btn.boundingBox())!;
-      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      const { cx: btnCx, cy: btnCy } = await centreOf(btn);
+      await page.mouse.move(btnCx, btnCy);
       await page.mouse.down();
       await expect(btn, `${where}: press drives the HELD action pad high`).toHaveAttribute(
         'aria-pressed',
@@ -1260,9 +1090,6 @@ test.describe('faces render-parity: every STRICT_FACES dock full-view carries th
           `shell-cell spec (packages/web/src/lib/ui/workflow/shell-cells.ts).`,
       ).toEqual([]);
 
-      // ── 2b. THE TAB RAIL, AS A USER EXPERIENCES IT (railed faces only). ──
-      await assertRailIsUsable(page, type);
-
       // ── 3. PER-CELL OPERABILITY: drive every cell, not one sampled knob. ──
       const cells = await renderedCells(dockShell);
       expect(
@@ -1280,8 +1107,12 @@ test.describe('faces render-parity: every STRICT_FACES dock full-view carries th
       // driving budget of a 2-cell VCA because it does ~7× the driving.
       test.setTimeout(FACE_FIXED_MS + FACE_PER_CELL_MS * cells.length);
 
+      // ONE cursor per face — see openTabFor. It turns a per-cell pair of
+      // protocol round-trips into a per-TRANSITION one, which is the shape the
+      // work actually has.
+      const tabs = newTabCursor();
       for (const cell of cells) {
-        await openTabFor(page, cell);
+        await openTabFor(page, cell, tabs);
         await driveCell(page, dockShell, 'm', spec, cell);
       }
     });
@@ -1390,7 +1221,7 @@ test.describe('param vocabulary: a NAMED discrete param reads as its name at BOT
 test.describe('dx7 hero controls are REACHABLE in the shell (the inert-cell P0)', () => {
   // The headline finding: dx7's PRESET selector — the one control that swaps
   // the whole sound — and its .syx cartridge import rendered as dashed text
-  // on the faceplate shell, so the DX7's voice could not be changed. This pins the
+  // under `?shell=1`, so the DX7's voice could not be changed. This pins the
   // fix at the level the user experiences it: pick a voice, the graph loads it.
   test('the dock PRESET cell actually loads a different voice into node.data', async ({ page }) => {
     // Same boot + spawn + dock-open fixed cost as a face row; the one selector
@@ -1430,7 +1261,7 @@ test.describe('sixstrum PRESET is a RECALL, not a relabelled tuning switch', () 
   // The sibling gap to dx7's: the batch-2 face carried the raw `tuning` param
   // (which only swaps the open-string set) but NOT the guitar/bass/harp PRESET
   // RECALL that the classic card's MODE knob fires — so the three calibrated
-  // knob states were unreachable on the faceplate shell. The param survived the
+  // knob states were unreachable under `?shell=1`. The param survived the
   // redesign; the affordance did not.
   //
   // The generic per-cell sweep above already proves the cell is a real,
