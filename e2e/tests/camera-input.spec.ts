@@ -25,12 +25,25 @@
 // seam, then drives engine.step() a FIXED burst and reads CAMERA's own FBO once —
 // no getUserMedia, no 'streaming', no rAF timing → bit-stable under any load.
 //
+// ⚠ `__camerainputTestFrame` BYPASSES THE UPLOAD, NOT THE GEOMETRY — so that
+// claim was only ever true because the test out-ran the stream, and on
+// 2026-08-11 it stopped out-running it. camera-input.ts's `draw()` picks its
+// aspect-fit / cover-crop scale from the LIVE element
+// (`videoEl?.videoWidth / videoEl?.videoHeight`, the `srcAspect` lines) even when
+// the seam is supplying the pixels. A stream that reaches metadata BETWEEN the
+// two bursts therefore re-scales the very frame this test asserts is frozen —
+// identical texels, different sampling. The test now DENIES getUserMedia up
+// front so no live element ever gets dimensions, and asserts that premise held
+// (see the geometry guard below). That removes the race by construction instead
+// of by winning it.
+//
 // The live getUserMedia → 'streaming' flow is inherently async/wall-clock and
 // CANNOT be made bit-deterministic; it belongs in the light sharded lane (where
 // it's always been stable), NOT in the GPU attest. Hence the tag split.
 //
 // Runs under the `chromium-camera` Playwright project (camera permission
-// pre-granted) so the card's onMount auto-acquire succeeds quietly.
+// pre-granted) so the @camera-integration describe's auto-acquire succeeds
+// quietly; the render smoke above opts back OUT of that stream deliberately.
 
 import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
@@ -48,6 +61,24 @@ test.describe('CAMERA → OUTPUT (deterministic render smoke)', () => {
     await installRenderSmokeHooks(page);
     await page.addInitScript(() => {
       (window as unknown as { __camerainputTestFrame?: boolean }).__camerainputTestFrame = true;
+    });
+
+    // DENY the live stream (see the header). The seam supplies the pixels, but
+    // camera-input.ts still sizes the quad from the live element, so a stream
+    // arriving mid-test re-scales the "frozen" frame. Measured on this project
+    // before the deny: burst A at 0×0 (fallback aspect, no crop) vs burst B at
+    // 640×360 (cover-crop) moved variance 4537.73 → 4813.35 — dVar 275.62 against
+    // a 1.0 budget — while dMean was 0.14 and passed the mean gate untroubled.
+    // Two bursts taken after the stream had settled differed by EXACTLY 0.0, so
+    // the render itself is deterministic and the stream was the only variable.
+    await page.addInitScript(() => {
+      const md = navigator.mediaDevices;
+      if (!md) return;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (md as any).getUserMedia = () =>
+        Promise.reject(
+          new DOMException('render-smoke: camera denied by design', 'NotAllowedError'),
+        );
     });
 
     await page.goto('/rack?shell=legacy&seed=none');
@@ -85,9 +116,33 @@ test.describe('CAMERA → OUTPUT (deterministic render smoke)', () => {
     // epsilon. A genuine black/flat regression still fails; driver pixel
     // divergence never trips it.
     const b = await stepAndReadStats(page, { nodeId: 'v-cam', steps: FIXED_STEPS });
+
+    // GEOMETRY GUARD — the test's own premise, asserted on every run rather than
+    // once at authoring time. The frame-stability asserts below can only mean
+    // "the render is deterministic" if the synthetic frame was the ONLY thing
+    // driving it; a live element with real dimensions silently changes the
+    // cover-crop scale and shows up as an unattributable variance delta. Assert
+    // the offenders directly so THAT regression names itself here instead.
+    const geom = await page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __engine?: () => { getDomain: (d: string) => { read: (id: string, k: string) => unknown } } | null;
+      };
+      return {
+        attached: w.__engine?.()?.getDomain('video')?.read('v-cam', 'hasVideoElement') ?? null,
+        sized: Array.from(document.querySelectorAll('video'))
+          .filter((v) => v.videoWidth > 0 || v.videoHeight > 0)
+          .map((v) => `${v.videoWidth}x${v.videoHeight}`),
+      };
+    });
+    expect(
+      geom.sized,
+      `no LIVE camera stream may drive the frozen render — the seam bypasses the upload, not the aspect-fit ` +
+        `(hasVideoElement=${geom.attached}; sized elements: ${geom.sized.join(', ') || 'none'})`,
+    ).toEqual([]);
+
     expect(b.framesDelta, 'second burst also advanced the exact frame count').toBe(FIXED_STEPS);
     expect(Math.abs(b.mean - a.mean), `frozen camera output is frame-stable (mean ${a.mean.toFixed(3)} vs ${b.mean.toFixed(3)})`).toBeLessThan(0.5);
-    expect(Math.abs(b.variance - a.variance), 'frozen camera output variance is frame-stable').toBeLessThan(1.0);
+    expect(Math.abs(b.variance - a.variance), `frozen camera output variance is frame-stable (var ${a.variance.toFixed(3)} vs ${b.variance.toFixed(3)})`).toBeLessThan(1.0);
 
   });
 });
