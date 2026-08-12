@@ -310,11 +310,11 @@ export function planAudioCommit(args: PlanAudioCommitArgs): AudioCommitPlan {
 
   // ---- leg-level occupancy ----
   const written = new Set(legs.map((l) => l.id));
-  const claimedInputs = new Set(legs.map((l) => `${toNodeId} ${l.toPortId}`));
+  const claimedInputs = new Set(legs.map((l) => `${toNodeId}\u0000${l.toPortId}`));
   const replaceEdgeIds: string[] = [];
   for (const [key, e] of Object.entries(edges)) {
     if (!e?.target) continue;
-    if (!claimedInputs.has(`${e.target.nodeId} ${e.target.portId}`)) continue;
+    if (!claimedInputs.has(`${e.target.nodeId}\u0000${e.target.portId}`)) continue;
     const id = e.id ?? key;
     if (written.has(id)) continue; // the plan's own leg — keep it, don't churn it
     replaceEdgeIds.push(id);

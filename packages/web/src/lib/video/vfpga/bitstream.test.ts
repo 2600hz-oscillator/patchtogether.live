@@ -262,7 +262,7 @@ describe('bitPlanes packed mask vs escape', () => {
 // ----------------------------------------------------------------------
 describe('symbol table', () => {
   it('round-trips empty / NUL / lone-surrogate / emoji string keys', () => {
-    const f = fab({ consts: { '': 1, 'a b': 2, '\uD800': 3, '🎛️': 4 } });
+    const f = fab({ consts: { '': 1, 'a\u0000b': 2, '\uD800': 3, '🎛️': 4 } });
     expect(rt(f)).toStrictEqual(f);
   });
   it('dedups a string used as both tile id and output target', () => {
