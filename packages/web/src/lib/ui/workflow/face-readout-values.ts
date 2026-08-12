@@ -137,6 +137,12 @@ import {
   meowboxTremoloText,
 } from '$lib/ui/modules/meowbox-face-model';
 import {
+  resofilterCvReachText,
+  resofilterFaceParams,
+  resofilterPeakText,
+  resofilterWidthText,
+} from '$lib/ui/modules/resofilter-face-model';
+import {
   ringsBodyText,
   ringsEvenTapText,
   ringsFaceParams,
@@ -572,6 +578,47 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
     const p = pentemelodicaFaceParams(read);
     return fmtMs(penteDecayToSustainMs(p.decay, p.sustain));
   },
+
+  // ── RESOFILTER ───────────────────────────────────────────────────────────
+  // THREE readouts for FOUR controls, and the first two are each other's
+  // negative control rather than each needing a separate one.
+  //
+  // RESONANCE is ONE dial setting ONE number (`k = 2 − 2·res`, floored at
+  // 0.003) that becomes a different KIND of quantity in each mode, so the
+  // obvious declaration — `{ label: 'reso', paramId: 'resonance' }` — prints
+  // `0.30` in all five states while what the player hears changes category:
+  //
+  //   LP · HP   a PEAK at cutoff, exactly 1/k: −6.0 dB at res 0 → +50.5 at 1.0
+  //   BP        that same peak AND the band's −3 dB width
+  //   NT        WIDTH ONLY. The notch is a true zero at cutoff at EVERY
+  //             resonance; the dial takes it 2.53 oct → 0.004 oct, which a
+  //             broadband level metric reads as 0.55 dB of nothing.
+  //   AP        NEITHER. Magnitude is exactly 1 at every frequency and every
+  //             resonance (span 0.00 dB), and the dial is a phase angle.
+  //
+  // So `peak` is live in LP/HP/BP and `—` in NT/AP; `width` is live in BP/NT/AP
+  // and `—` in LP/HP. Every mode has exactly one of them except BAND-PASS,
+  // which has both — and a derivation that got the MODE partition wrong would
+  // print a number where the other says `—`, which is what makes the pair
+  // self-checking rather than two separate assertions.
+  //
+  // `cv reach` is the third because it is invariant to everything those two
+  // move with and moves with the one thing they are both blind to. It also
+  // reports a fact nothing else states: `cutoff_cv` declares `cvScale: linear`
+  // on a LOG-tapered param, so the CV adds ±9990 **Hz** and clamps — from the
+  // 1 kHz default that is 5.64 octaves down and 3.46 up, and at the bottom of
+  // the dial it cannot travel down at all. Thirty-eight of the registry's
+  // forty-four log-curve CV targets declare `log` instead, which is symmetric
+  // at ±4.98 octaves everywhere; resofilter is one of six that do not.
+  //
+  // ⚠ THE SPEC'S OWN NUMBERS DID NOT ALL SURVIVE RE-MEASUREMENT, and two of its
+  // errors were the same error — a high-Q filter read before it settled. See
+  // the `resofilter-face-model` header. Every closed form here is re-derived
+  // from the SHIPPING `renderResofilter` on every run by
+  // resofilter-face-model.test.ts, with negative controls in both directions.
+  'resofilter-peak-db': (read) => resofilterPeakText(resofilterFaceParams(read)),
+  'resofilter-band-width': (read) => resofilterWidthText(resofilterFaceParams(read)),
+  'resofilter-cv-reach': (read) => resofilterCvReachText(resofilterFaceParams(read)),
 
   // ── SIX STRUM ────────────────────────────────────────────────────────────
   // `rings for` is RING's and MATERIAL's JOINT answer through the worklet's own

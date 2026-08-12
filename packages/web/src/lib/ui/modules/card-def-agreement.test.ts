@@ -45,8 +45,6 @@ import {
 import {
   OPERATIONAL_DEBT,
   VOCABULARY_DEBT,
-  OPERATIONAL_DEBT_CEILING,
-  VOCABULARY_DEBT_CEILING,
   debtTriples,
 } from './card-def-debt';
 
@@ -103,40 +101,45 @@ describe('card ↔ def AGREEMENT (deny-by-default across every registered card)'
     ).toBe('');
   });
 
-  it('neither ledger has stale entries (anchored to the SOURCE, not to the list)', () => {
+  it('the ledgers and the SOURCE are the SAME SET — anchored both ways, and counted neither way', () => {
     // Ground truth is a divergence in a card file; the ledgers must then
-    // EXPLAIN each one. An entry for a divergence that has since been fixed is
-    // an exemption nobody is watching — it silently re-exempts the next
+    // EXPLAIN each one, and an entry for a divergence that has since been fixed
+    // is an exemption nobody is watching — it silently re-exempts the next
     // regression on the same param.
+    //
+    // ⚠ THIS ABSORBED "both ratchets move in BOTH directions" (2026-08-11).
+    // That test asserted `actual <= CEILING` and `CEILING - actual === 0`
+    // against two hand-typed literals in `card-def-debt.ts`; both constants are
+    // deleted under CLAUDE.md's standing "NEVER hand-type a population count"
+    // directive, which names this file's ledger in the surviving legacy tail
+    // and says to remove the counter when you touch it. The trace of what each
+    // number protected is kept where the constants stood, per the #1458 rule.
+    //
+    // Nothing is lost, and the reason is that the count was never the check:
+    // GROWTH is already red on its own terms in the two deny-by-default clauses
+    // above (an unledgered divergence fails there, with the card, line, param
+    // and both values in the message — strictly more than "6 became 7"), and a
+    // forgotten DRAIN is the stale half below. What the two numbers were
+    // standing in for is one property, stated here with no arithmetic: the set
+    // of live divergences and the set of ledger entries are THE SAME SET.
     const live = new Set(ROWS.map(triple));
-    const stale: string[] = [];
-    for (const [name, ledger] of [
+    const ledgers = [
       ['OPERATIONAL_DEBT', OPERATIONAL_DEBT],
       ['VOCABULARY_DEBT', VOCABULARY_DEBT],
-    ] as const) {
-      for (const t of debtTriples(ledger)) if (!live.has(t)) stale.push(`${name} → ${t}`);
-    }
-    expect(
-      stale.join('\n'),
-      'stale card-def debt entr(ies) — delete them AND lower the matching ceiling by the same count',
-    ).toBe('');
-  });
+    ] as const;
+    const ledgered = new Map<string, string>();
+    for (const [name, l] of ledgers) for (const t of debtTriples(l)) ledgered.set(t, name);
 
-  it('both ratchets move in BOTH directions', () => {
-    for (const [name, rows, ceiling] of [
-      ['OPERATIONAL', ROWS.filter(isOperational), OPERATIONAL_DEBT_CEILING],
-      ['VOCABULARY', ROWS.filter((d) => !isOperational(d)), VOCABULARY_DEBT_CEILING],
-    ] as const) {
-      expect(rows.length, `${name} card-def debt GREW past ${ceiling}`).toBeLessThanOrEqual(ceiling);
-      // A ceiling can only trip by GROWING. Assert the other direction so a
-      // drain that forgets to lower the number is red rather than leaving slack
-      // that absorbs the next regression.
-      expect(
-        ceiling - rows.length,
-        `${name} card-def debt is ${rows.length} but its ceiling still says ${ceiling} — ` +
-          'lower it in the SAME commit',
-      ).toBe(0);
-    }
+    expect(
+      [...live].filter((t) => !ledgered.has(t)).sort(),
+      'card↔def divergence with NO ledger entry — bind the prop to the def, or add the exact ' +
+        '`<param>.<field>` to card-def-debt.ts WITH THE REASON it cannot be bound yet',
+    ).toEqual([]);
+    expect(
+      [...ledgered].filter(([t]) => !live.has(t)).map(([t, n]) => `${n} → ${t}`).sort(),
+      'stale card-def debt entr(ies) — the divergence is gone, so delete the entry. ' +
+        '(There is no longer a ceiling to lower with it.)',
+    ).toEqual([]);
   });
 
   it('COVERAGE is reported, not assumed — and the scan is not vacuous', () => {

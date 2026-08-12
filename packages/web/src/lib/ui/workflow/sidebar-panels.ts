@@ -33,6 +33,7 @@ import FilterResponsePanel from './panels/FilterResponsePanel.svelte';
 import MeowboxFormantBankPanel from './panels/MeowboxFormantBankPanel.svelte';
 import NoiseTapsPanel from './panels/NoiseTapsPanel.svelte';
 import StereoCrossoverPanel from './panels/StereoCrossoverPanel.svelte';
+import SvfResponsePanel from './panels/SvfResponsePanel.svelte';
 
 /** The props every sidebar panel takes: the node it describes, plus whatever
  *  primitives its block DECLARED. Keeping the module's numbers in the
@@ -108,6 +109,24 @@ const SIDEBAR_PANELS: Readonly<Record<string, Component<SidebarPanelProps>>> = {
   // `noiseGenerators`, so they are the plausible second and third adopters —
   // widen it behind declared props then, not now, on one module's guess.
   'noise-taps': NoiseTapsPanel as unknown as Component<SidebarPanelProps>,
+
+  // A TPT STATE-VARIABLE FILTER's delivered response: the selected tap's curve
+  // at the live cutoff/resonance, complex-crossfaded with the dry path by MIX,
+  // over the CUTOFF CV window.
+  //
+  // ⚠ IT DRAWS PHASE IN ALLPASS, and that is the reason it exists rather than a
+  // detail of it. An SVF's allpass tap has unity magnitude at EVERY frequency
+  // and EVERY resonance (measured span 0.00 dB across the whole dial), so a
+  // magnitude-only picture draws a flat line for the one mode whose knob is
+  // hardest to understand — a picture certifying that a live control is dead.
+  //
+  // Not fully generic yet, and it says how far: the param IDS come through the
+  // block's `props` (pentemelodica's fourth tap is the same real notch and is
+  // the plausible second adopter), but the DAMPING LAW `k = 2 − 2·res` is
+  // resofilter's, imported from its DSP lib through `resofilter-face-model`.
+  // Widen that behind a declared prop when a second module wants the picture —
+  // not now, on one module's guess about the next one.
+  'svf-response': SvfResponsePanel as unknown as Component<SidebarPanelProps>,
 };
 
 /** The component for a declared `custom` panel id, or `null`. */

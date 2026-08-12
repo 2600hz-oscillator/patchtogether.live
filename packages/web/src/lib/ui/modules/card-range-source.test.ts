@@ -75,6 +75,7 @@ import { marblesDef } from '$lib/audio/modules/marbles';
 import { noiseDef } from '$lib/audio/modules/noise';
 import { filterDef } from '$lib/audio/modules/filter';
 import { meowboxDef } from '$lib/audio/modules/meowbox';
+import { resofilterDef } from '$lib/audio/modules/resofilter';
 import { ringbackDef } from '$lib/audio/modules/ringback';
 import { ringsDef } from '$lib/audio/modules/rings';
 import { snaredrumDef } from '$lib/audio/modules/snaredrum';
@@ -190,6 +191,25 @@ import type { ParamDef } from '$lib/graph/types';
  *    `<input type=range>`, whose `min="1" max="16"` STRING attributes the
  *    `min={…}` grep is structurally unable to see — bound anyway, because a
  *    gate's blind spot is not a licence to leave a second copy of a number.
+ *  - ResofilterCard: converted with the resofilter face promotion (2026-08-11;
+ *    binds via paramSpec). Range AND mapping bound — and it is the entry that
+ *    shows why the two halves cannot be separated even when you want them to
+ *    be. The conversion was FIRST attempted as range-only, on the reasoning
+ *    that its MODE knob passes `curve="linear"` where the def says `discrete`
+ *    and `Knob.svelte` branches on `log`/`exp` alone, so binding the prop makes
+ *    a gate green and moves no pixel — CLAUDE.md's "check the consumer reads
+ *    it", and this is one of the four cards that warning names. The
+ *    curve-AGREEMENT clause below caught that immediately and correctly: a
+ *    range-bound card is certified def-bound, and "the disagreement is
+ *    currently harmless" is exactly the argument that lets one become harmful.
+ *    So all four `curve`s and the one `units` are bound, three of them
+ *    meaningfully and MODE's not at all, with the no-op stated on the card
+ *    rather than left for someone to rediscover. What the binding does NOT do
+ *    is make MODE detented; that needs the primitive, and the five-state
+ *    Segmented the def now declares `options` for moves this card's pixels
+ *    (#1213 measured 865 px for the same swap on filter — UNDER
+ *    `DOCK_MAX_DIFF`, so invisible to the VRT gate AND unrepinnable by
+ *    `--update-snapshots`). Its own PR, with an owner preview and a `git rm`.
  *  - ChromaconsoleCard: NOT converted — found ALREADY BOUND and simply never
  *    enrolled (2026-08-10). It reads every slot bound off
  *    `paramSpec(chromaconsoleDef, slotId)` and re-types nothing, so it has been
@@ -211,6 +231,7 @@ const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }
   'MeowboxCard.svelte': meowboxDef,
   'MarblesCard.svelte': marblesDef,
   'NoiseCard.svelte': noiseDef,
+  'ResofilterCard.svelte': resofilterDef,
   'RingbackCard.svelte': ringbackDef,
   'RingsCard.svelte': ringsDef,
   'SnaredrumCard.svelte': snaredrumDef,
@@ -234,6 +255,7 @@ const MAPPING_BOUND_CARDS: readonly string[] = [
   'FilterCard.svelte',
   'MarblesCard.svelte',
   'NoiseCard.svelte',
+  'ResofilterCard.svelte',
   'RingbackCard.svelte',
   'RingsCard.svelte',
   'SnaredrumCard.svelte',
