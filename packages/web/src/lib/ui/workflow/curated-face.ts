@@ -22,9 +22,10 @@
 // — that is the lint gate's job (module-face-lint.test.ts). The selector treats
 // an unrecognized key as a humanized static control so it stays pure.
 
-import type { ModuleFace, ModuleFacePage } from '$lib/graph/types';
+import type { ModuleFace, ModuleFacePage, ParamLandmark, ParamOption } from '$lib/graph/types';
 import {
   LANE_CELL_H,
+  LANE_KNOB_READOUT_H,
   LANE_ROW_MAX_CELLS,
   LANE_ROW_MAX_CELLS_WITH_GLYPH,
   PLATE_COLS,
@@ -150,32 +151,67 @@ export function foldedOrder(face: ModuleFace): readonly string[] {
   return face.order.filter((k) => !partners.has(k));
 }
 
+/** Does this param earn a persistent readout line under its dial? Mirrors
+ *  `knobReadout`'s gate (knob-vocabulary-model): declaring ANY of the three
+ *  vocabulary fields prints a line, declaring none prints nothing. A named
+ *  predicate so the HEIGHT here and the RENDER there answer one question once. */
+function earnsReadout(p: FaceParamLike): boolean {
+  return !!(p.options?.length || p.landmarks?.length || p.format);
+}
+
 /**
- * The tallest LANE CELL a face paints, in CSS px — the height the plate's row
- * geometry has to accommodate.
+ * The height of EVERY lane cell a face paints, in CSS px, in rank order — what
+ * the plate's per-ROW track geometry is computed from.
  *
- * ⚠ ONLY DECLARED CELLS CAN BE TALL, and that is what makes this computable
- * from the face alone (no ParamDefs, so `FaceDefLike` is enough). `fader` — the
- * one kind taller than a plate row — is a `DeclaredParamCell`: nothing in a
- * ParamDef implies it, so it can only arrive through `face.paramCells`. The
- * invariant is not left to prose: `curated-face.test.ts` asserts that EVERY
- * kind in `LANE_CELL_H` taller than `PLATE_ROW_H` is declarable, so an inferred
- * kind that grows tall fails there instead of silently reading as short here.
+ * ⚠ A LIST, NOT A MAX, AND THAT IS THE WHOLE FIX. This used to return the
+ * tallest cell on the face, which forced `grid-auto-rows` to that height for
+ * every row and then made `plateRowsFor` divide the body by it. Two faces with
+ * one 57 px cell each got the same punishment whether that cell sat in row 1
+ * (where it can paint over the row below) or row 2 (where nothing is beneath
+ * it). Measured over the live roster: 4 of the 11 readout-bearing faces —
+ * cofefve, filter, resofilter, tidyVco — are in the second group and lose
+ * nothing under a per-row rule.
+ *
+ * TWO ways a cell outgrows the 42 px design row, and they differ in KIND:
+ *
+ *   1. A DECLARED tall cell — `fader` (#1464), 96 px. Nothing in a ParamDef
+ *      implies it, so it can only arrive through `face.paramCells`.
+ *      `curated-face.test.ts` asserts EVERY kind in `LANE_CELL_H` taller than
+ *      `PLATE_ROW_H` is declarable, so an inferred kind that grows tall fails
+ *      there rather than silently reading as short here.
+ *   2. An EARNED READOUT — `LANE_KNOB_READOUT_H`. NOT declarable and NOT a
+ *      property of the cell kind: any param declaring `options` / `landmarks` /
+ *      `format` makes its 'knob' cell 15 px taller, so one kind is two heights
+ *      in one plate. That is why this needs the DEF's params and not only the
+ *      face. Still pure — it reads declarations, never a registry.
  *
  * Scanned over the ranked prefix that can REACH the lane, not the whole order —
  * a fader parked at rank 9 is dock-only and must not shrink the lane plate.
  * `laneOrder` for the same reason one step further out: a hero picture never
  * reaches the lane either, so it must not displace a cell that does.
  */
-export function faceLaneCellHeight(face: ModuleFace | undefined): number {
-  if (!face) return PLATE_ROW_H;
+export function faceLaneCellHeights(def: FaceDefLike): number[] {
+  const face = def.face;
+  if (!face) return [];
   const declared = face.paramCells ?? {};
-  let h = PLATE_ROW_H;
-  for (const key of laneOrder(face).slice(0, LANE_PLATE_MAX_CELLS)) {
-    const kind = declared[key as keyof typeof declared];
-    if (kind) h = Math.max(h, LANE_CELL_H[kind]);
-  }
-  return h;
+  const momentary = new Set(face.momentary ?? []);
+  const byId = new Map((def.params ?? []).map((p) => [p.id, p]));
+  return laneOrder(face)
+    .slice(0, LANE_PLATE_MAX_CELLS)
+    .map((key) => {
+      const kind = declared[key as keyof typeof declared];
+      // A DECLARED cell is that primitive, not a dial — it paints no readout.
+      if (kind) return LANE_CELL_H[kind];
+      // A press-pad is a <Button>, not a KnobConic. Everything else a PARAM key
+      // resolves to in the LANE is a dial (`paramCellKind` returns 'knob' at
+      // every non-dock tier, an `options` roster included), so the vocabulary
+      // gate is the whole question. Over-reserving on a shape this misses costs
+      // airiness; under-reserving is the overlap — which is why `momentary` is
+      // the ONLY exclusion taken.
+      if (momentary.has(key)) return PLATE_ROW_H;
+      const p = byId.get(key);
+      return p && earnsReadout(p) ? LANE_KNOB_READOUT_H : PLATE_ROW_H;
+    });
 }
 
 /**
@@ -183,20 +219,36 @@ export function faceLaneCellHeight(face: ModuleFace | undefined): number {
  * At 'compact' a glyph-bearing face surfaces two cells (the glyph takes the
  * third column's room) and a glyph-less face three; at 'full' the plate holds
  * six DESIGN cells (ranked controls outrank the glyph, which simply drops when
- * the cells need both rows) — but only THREE when the face's cells are faders,
- * because a 96px cell leaves room for one plate row rather than two.
+ * the cells need both rows) — fewer when the face's own cells are too tall for
+ * two rows, e.g. a face of 96 px faders, which leaves room for one plate row.
  *
- * ⚠ THE CAP IS THE PLAN'S OWN ANSWER, not a parallel derivation. It asks
- * `laneBodyPlan` what it would render given unlimited controls, so "selected"
+ * ⚠ THE CAP IS THE PLAN'S OWN ANSWER, not a parallel derivation. It hands
+ * `laneBodyPlan` the SAME per-cell heights the shell will render, so "selected"
  * and "rendered" cannot drift BY CONSTRUCTION rather than by a test noticing.
  * They previously drifted twice (compact promised 3 and painted 2; full
  * promised 8 and painted 6), and the marbles overlap would have made it three:
  * the cap would have kept saying 6 while the tile could only hold 3.
+ *
+ * ⚠ IT TAKES THE HEIGHT LIST. The old signature asked "what would you render
+ * given unlimited controls, if every cell were this tall?" — which only worked
+ * while every cell WAS the same height. With per-row tracks the answer depends
+ * on WHICH rows the tall cells are in, so the real question can only be asked
+ * of a real list; `faceLaneCellHeights` is already capped at the six a plate
+ * can ever hold. A bare number is still accepted and still means "every
+ * lane-reachable cell is this tall", exactly as before.
  * Pure.
  */
-export function faceTierCap(tier: FaceTier, hasGlyph: boolean, cellH: number = PLATE_ROW_H): number {
+export function faceTierCap(
+  tier: FaceTier,
+  hasGlyph: boolean,
+  cells: number | readonly number[] = PLATE_ROW_H,
+): number {
   if (tier === 'dock') return FACE_TIER_CAPS.dock;
-  return laneBodyPlan(Number.MAX_SAFE_INTEGER, hasGlyph, tier, cellH).cellCount;
+  const plan =
+    typeof cells === 'number'
+      ? laneBodyPlan(LANE_PLATE_MAX_CELLS, hasGlyph, tier, cells)
+      : laneBodyPlan(cells, hasGlyph, tier);
+  return plan.cellCount;
 }
 
 export type FaceControlKind = 'param' | 'family' | 'static';
@@ -247,19 +299,33 @@ export interface CuratedFace {
   glyph: NonNullable<ModuleFace['glyph']>;
   pages?: ResolvedFacePage[];
   /**
-   * The tallest LANE CELL this face paints (CSS px) — `faceLaneCellHeight`.
-   * Carried on the result so the SHELL and the CAP read the same number from
-   * the same call instead of each re-deriving it; a second derivation is how
-   * the planner and the renderer disagreed in the first place.
+   * The height of every LANE CELL this face paints (CSS px, rank order) —
+   * `faceLaneCellHeights`. Carried on the result so the SHELL and the CAP read
+   * the same list from the same call instead of each re-deriving it; a second
+   * derivation is how the planner and the renderer disagreed in the first place.
    */
-  cellH: number;
+  cellHeights: number[];
 }
 
 /** Minimal def shape the selector reads — works for AudioModuleDef,
  *  VideoModuleDef, or a hand-built test fixture. */
+/**
+ * The param fields the selector reads. `options` / `landmarks` / `format` are
+ * here for ONE reason and it is geometric: they are `knobReadout`'s gate, so
+ * they decide whether a lane knob cell is 42 px or 57 — see
+ * `faceLaneCellHeights`. Everything else about them is the renderer's business.
+ */
+export interface FaceParamLike {
+  id: string;
+  label?: string;
+  options?: readonly ParamOption[];
+  landmarks?: readonly ParamLandmark[];
+  format?: (v: number) => string;
+}
+
 export interface FaceDefLike {
   face?: ModuleFace;
-  params?: readonly { id: string; label?: string }[];
+  params?: readonly FaceParamLike[];
   controlFamilies?: readonly { id: string; label?: string }[];
 }
 
@@ -355,8 +421,8 @@ export function curatedFace(def: FaceDefLike, tier: FaceTier): CuratedFace | nul
   if (!face) return null;
 
   const glyph = face.glyph ?? 'none';
-  const cellH = faceLaneCellHeight(face);
-  const cap = faceTierCap(tier, glyph !== 'none', cellH);
+  const cellHeights = faceLaneCellHeights(def);
+  const cap = faceTierCap(tier, glyph !== 'none', cellHeights);
   // PF-22 — the DOCK renders the hero picture, so it keeps the whole order; a
   // LANE cannot paint a 280px panel in a 46px column, so the picture does not
   // consume a lane rank. See `laneOrder`. `foldedOrder` applies at EVERY tier:
@@ -372,7 +438,7 @@ export function curatedFace(def: FaceDefLike, tier: FaceTier): CuratedFace | nul
     tier,
     controls,
     glyph,
-    cellH,
+    cellHeights,
   };
   if (tier === 'dock' && face.pages && face.pages.length) {
     out.pages = face.pages.map((p) => resolvePage(p, def));

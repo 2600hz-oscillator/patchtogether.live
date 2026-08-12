@@ -185,9 +185,9 @@ describe('roleLineForDef — the migrated header role line', () => {
 
 describe('laneBodyPlan — the fixed-tile no-clip guarantee', () => {
   it('mini: one hero cell + the glyph', () => {
-    expect(laneBodyPlan(8, true, 'mini')).toEqual({ layout: 'row', cellCount: 1, glyph: true, knobSize: 'md', rowH: PLATE_ROW_H });
-    expect(laneBodyPlan(0, true, 'mini')).toEqual({ layout: 'row', cellCount: 0, glyph: true, knobSize: 'md', rowH: PLATE_ROW_H });
-    expect(laneBodyPlan(5, false, 'mini')).toEqual({ layout: 'row', cellCount: 1, glyph: false, knobSize: 'md', rowH: PLATE_ROW_H });
+    expect(laneBodyPlan(8, true, 'mini')).toEqual({ layout: 'row', cellCount: 1, glyph: true, knobSize: 'md', rowTracks: [] });
+    expect(laneBodyPlan(0, true, 'mini')).toEqual({ layout: 'row', cellCount: 0, glyph: true, knobSize: 'md', rowTracks: [] });
+    expect(laneBodyPlan(5, false, 'mini')).toEqual({ layout: 'row', cellCount: 1, glyph: false, knobSize: 'md', rowTracks: [] });
   });
 
   it('compact row: whole md cells only — 2 with a glyph (which fills the rest), 3 without', () => {
@@ -196,37 +196,37 @@ describe('laneBodyPlan — the fixed-tile no-clip guarantee', () => {
       cellCount: LANE_ROW_MAX_CELLS_WITH_GLYPH,
       glyph: true,
       knobSize: 'md',
-      rowH: PLATE_ROW_H,
+      rowTracks: [],
     });
     expect(laneBodyPlan(3, false, 'compact')).toEqual({
       layout: 'row',
       cellCount: LANE_ROW_MAX_CELLS,
       glyph: false,
       knobSize: 'md',
-      rowH: PLATE_ROW_H,
+      rowTracks: [],
     });
     // A small face keeps every cell.
-    expect(laneBodyPlan(2, true, 'compact')).toEqual({ layout: 'row', cellCount: 2, glyph: true, knobSize: 'md', rowH: PLATE_ROW_H });
+    expect(laneBodyPlan(2, true, 'compact')).toEqual({ layout: 'row', cellCount: 2, glyph: true, knobSize: 'md', rowTracks: [] });
   });
 
   it('full keeps the ROW (md cells, glyph) while the whole face fits it — the vca case', () => {
-    expect(laneBodyPlan(2, true, 'full')).toEqual({ layout: 'row', cellCount: 2, glyph: true, knobSize: 'md', rowH: PLATE_ROW_H });
-    expect(laneBodyPlan(3, false, 'full')).toEqual({ layout: 'row', cellCount: 3, glyph: false, knobSize: 'md', rowH: PLATE_ROW_H });
+    expect(laneBodyPlan(2, true, 'full')).toEqual({ layout: 'row', cellCount: 2, glyph: true, knobSize: 'md', rowTracks: [] });
+    expect(laneBodyPlan(3, false, 'full')).toEqual({ layout: 'row', cellCount: 3, glyph: false, knobSize: 'md', rowTracks: [] });
   });
 
   it('full switches to the 3-col PLATE when the face outgrows the row: whole rows only, max 6 cells', () => {
     // kickdrum/tidyVco/cloudseed: 8 ranked at full → 2 whole rows = 6 cells,
     // ranks 7-8 not rendered in-lane, no room for a whole glyph strip.
-    expect(laneBodyPlan(8, true, 'full')).toEqual({ layout: 'plate', cellCount: 6, glyph: false, knobSize: 'sm', rowH: PLATE_ROW_H });
+    expect(laneBodyPlan(8, true, 'full')).toEqual({ layout: 'plate', cellCount: 6, glyph: false, knobSize: 'sm', rowTracks: [PLATE_ROW_H, PLATE_ROW_H] });
     expect(laneBodyPlan(8, true, 'full').cellCount).toBe(PLATE_COLS * PLATE_MAX_ROWS);
     // adsr: 4 ranked → 2 rows (3+1), all four render, glyph strip doesn't fit.
-    expect(laneBodyPlan(4, true, 'full')).toEqual({ layout: 'plate', cellCount: 4, glyph: false, knobSize: 'sm', rowH: PLATE_ROW_H });
+    expect(laneBodyPlan(4, true, 'full')).toEqual({ layout: 'plate', cellCount: 4, glyph: false, knobSize: 'sm', rowTracks: [PLATE_ROW_H, PLATE_ROW_H] });
   });
 
   it('full PLATE keeps the glyph strip when the cells need only one row — the lfo case', () => {
     // lfo: 3 ranked with a glyph → 3 > row max (2) → plate, one row of cells +
     // a whole full-width glyph strip.
-    expect(laneBodyPlan(3, true, 'full')).toEqual({ layout: 'plate', cellCount: 3, glyph: true, knobSize: 'sm', rowH: PLATE_ROW_H });
+    expect(laneBodyPlan(3, true, 'full')).toEqual({ layout: 'plate', cellCount: 3, glyph: true, knobSize: 'sm', rowTracks: [PLATE_ROW_H] });
   });
 
   it('never plans more cells than exist, and never a partial row beyond the plate cap', () => {
@@ -296,25 +296,33 @@ describe('lane cell HEIGHT — the plate fits every ParamCellKind, not just a kn
   });
 
   it('EVERY kind that the plate renders keeps its cells inside their grid track', () => {
-    // The overlap condition, stated directly: a cell taller than the row pitch
-    // paints over the next row. With `rowH` reported by the plan, the track IS
-    // the cell height, so the pitch can never be short — which is the whole
-    // fix. Asserted per kind so a future kind whose height the plan does not
-    // carry through cannot pass.
+    // The overlap condition, stated directly: a cell taller than its own row's
+    // track paints over the row below. With PER-ROW tracks reported by the plan
+    // the track IS the row's tallest cell, so the pitch can never be short —
+    // which is the whole fix. Asserted per kind so a future kind whose height
+    // the plan does not carry through cannot pass.
     const offenders: string[] = [];
     for (const kind of KINDS) {
       const h = LANE_CELL_H[kind];
       // 12 controls forces the plate at 'full' for any kind.
       const plan = laneBodyPlan(12, false, 'full', h);
       if (plan.layout !== 'plate') continue;
-      const overlap = h - (plan.rowH + PLATE_GAP_Y);
-      if (overlap > 0) {
-        offenders.push(
-          `${kind}: a ${h}px cell in a ${plan.rowH}px track (pitch ${plan.rowH + PLATE_GAP_Y}px) ` +
-            `overlaps the row below by ${overlap} CSS px`,
-        );
+      // Every track must clear the cells it holds; only a row with a row BELOW
+      // it can overlap anything, so the last track is free to be short.
+      for (const [i, track] of plan.rowTracks.entries()) {
+        const isLast = i === plan.rowTracks.length - 1;
+        const overlap = h - track;
+        if (overlap > 0 && !isLast) {
+          offenders.push(
+            `${kind}: a ${h}px cell in row ${i}'s ${track}px track overlaps the row below ` +
+              `by ${overlap} CSS px`,
+          );
+        }
       }
-      expect(plan.rowH, `${kind}: the plan must report the height its cells need`).toBe(h);
+      expect(
+        Math.max(...plan.rowTracks),
+        `${kind}: the plan must report the height its cells need`,
+      ).toBe(h);
     }
     expect(offenders.join('\n'), 'lane plate cells overlapping the row below').toBe('');
   });

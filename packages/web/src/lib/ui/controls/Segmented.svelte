@@ -167,7 +167,27 @@
   }
   .segmented { display: flex; gap: 4px; }
   .seg {
-    flex: 1;
+    /* ⚠ `1 1 auto`, NOT the `flex: 1` shorthand — which is `1 1 0%` and makes
+       every button EXACTLY the same width regardless of what it says. A row
+       then sizes its cells to the AVERAGE caption and clips every caption
+       above it, by a fraction of a pixel, which paints as a full ellipsis.
+       MEASURED on resofilter's dock row (macOS system stack, 182.469 px row):
+       `1 1 0%` gives five 15.297 px content boxes against captions of
+       LP 14.125 · HP 16.016 · BP 15.109 · NT 15.719 · AP 15.5 px, so HP, NT and
+       AP overflowed by 0.719 / 0.422 / 0.203 px and rendered `H…` `N…` `A…` —
+       three of five states unreadable. With `auto` the flex BASE is the
+       caption's own max-content (trailing letter-space included, which is what
+       the 0.2 px overflows were), free space is still shared equally by the
+       `1` grow factor, and all five measure exactly 0 px of overflow. Sibling
+       rows move the same way — the registry-driven sweep in
+       `faceplate-platform.spec.ts` reproduces ELEVEN clipped captions across
+       five faces the moment this line goes back to `flex: 1`: filter HP by
+       0.922 px, tidyVco -1/+1 by 0.656/2.516, cofefve's four by 3.3-16.2, and
+       cloudseed's `divine inspiration` by 30.109.
+       This does NOT retire the ellipsis below: a roster whose captions cannot
+       all fit still shrinks (weighted by base, so the longest gives up most)
+       and still ellipsizes — it just no longer clips a row that HAD room. */
+    flex: 1 1 auto;
     min-width: 0;
     height: 24px;
     padding: 0 8px;

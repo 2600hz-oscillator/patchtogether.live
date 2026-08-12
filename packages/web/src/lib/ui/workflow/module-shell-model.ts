@@ -355,6 +355,25 @@ export function laneCellHeight(kind: ParamCellKind): number {
   return LANE_CELL_H[kind];
 }
 
+/**
+ * A KNOB COLUMN THAT ALSO PAINTS AN EARNED READOUT LINE (px).
+ *
+ * ⚠ THE ONE CELL HEIGHT `LANE_CELL_H` STRUCTURALLY CANNOT HOLD, which is why it
+ * sits beside the table rather than in it. That Record is keyed by
+ * `ParamCellKind`; THIS height is a property of the PARAM. `KnobConic` paints a
+ * readout whenever the param declares a vocabulary (`options` / `landmarks` /
+ * `format` — `knobReadout`'s gate), so two cells of the identical kind 'knob',
+ * side by side in one plate, are 42 px and 57 px.
+ *
+ * MEASURED 2026-08-12 on adsr's full-tier plate: 55.0 CSS px in the app's own
+ * font stack; 57 under the VRT scenes' PINNED webfonts (the 9 px readout line
+ * box becomes 10 and the 11 px label 12) — the same environment spread
+ * `LANE_CELL_H.fader` records at 96 vs 94. The CEILING is taken, for the same
+ * reason: over-reserving costs a few px of airiness, under-reserving is a cell
+ * painting over the row below.
+ */
+export const LANE_KNOB_READOUT_H = 57;
+
 /** The vertical room the plate has for rows, gap included (px) — a row costs
  *  `h + PLATE_GAP_Y` and the last row's gap is not paid, so the budget carries
  *  one spare gap. */
@@ -382,6 +401,88 @@ export const PLATE_MAX_ROWS = plateRowsFor(PLATE_ROW_H);
  *  additionally refuses the strip under a row of 96px faders (100 + 42 = 142). */
 export function plateGlyphFits(rows: number, cellH: number): boolean {
   return rows * (cellH + PLATE_GAP_Y) + PLATE_ROW_H <= PLATE_AVAIL_H;
+}
+
+// ── PER-ROW TRACKS: only a cell with a LOWER NEIGHBOUR can paint over one ────
+//
+// ⚠ THE PLATE'S TRACK IS A PROPERTY OF A ROW, NOT OF THE FACE, and answering
+// both with one number is what produced the adsr overlap. `grid-auto-rows` sets
+// ONE size for every row; `align-items: start` means a cell taller than its
+// track is NOT clipped — it paints over whatever is beneath it. So a single
+// per-face track has to be tall enough for the tallest cell ANYWHERE, and
+// `plateRowsFor` then divides the body by that inflated number and evicts rows
+// that had nothing wrong with them.
+//
+// MEASURED 2026-08-12 over all 32 migrated faces at the full lane tier, with a
+// TWO-AXIS overlap test (x AND y). ⚠ Use both axes: a y-only test reports every
+// same-row sibling as overlapping and gives 11 faces. The truth is:
+//
+//     7 faces overlap, EVERY ONE of them by exactly 9.0 CSS px
+//       (adsr, cloudseed, delay, kickdrum, lfo, macrooscillator, ringback)
+//     32 readout-bearing cells across 11 faces
+//     4 of those 11 have NOTHING BENEATH the tall cell and collide with nothing
+//       (cofefve, filter, resofilter, tidyVco)
+//
+// "All exactly 9.0" is the tell that this is structural, not per-module: 9.0 =
+// 55 (the rendered readout cell) − 46 (the 42 px track + 4 px gap row pitch).
+// One mechanism, seven instances — so the fix belongs in the pitch, not in a
+// per-face exception.
+//
+// The rule this file now implements: A ROW IS AS TALL AS ITS OWN TALLEST CELL,
+// and rows are admitted while they still fit the body. A tall cell in the LAST
+// row costs nothing (nothing is beneath it); a tall cell anywhere else pushes
+// only the rows BELOW it down, instead of shrinking the whole plate.
+/**
+ * The plate's per-ROW track heights (px), in row order, for `cellHeights` laid
+ * out 3-across — admitting rows while the running total still fits the body.
+ *
+ * Never empty: a tile that renders nothing is worse than one over-tall row, and
+ * `laneBodyPlan` caps the CELL COUNT to what these rows hold, so nothing is
+ * painted outside the body either way.
+ */
+export function plateRowTracks(cellHeights: readonly number[]): number[] {
+  const rows: number[] = [];
+  let used = 0;
+  for (let i = 0; i < cellHeights.length; i += PLATE_COLS) {
+    const h = Math.max(PLATE_ROW_H, ...cellHeights.slice(i, i + PLATE_COLS));
+    const cost = (rows.length ? PLATE_GAP_Y : 0) + h;
+    if (rows.length && used + cost > LANE_BODY_H) break;
+    used += cost;
+    rows.push(h);
+  }
+  return rows.length ? rows : [Math.max(PLATE_ROW_H, cellHeights[0] ?? PLATE_ROW_H)];
+}
+
+/** The stacked height of `rows` tracks including the gaps between them (px). */
+export function plateRowsHeight(rows: readonly number[]): number {
+  if (!rows.length) return 0;
+  return rows.reduce((a, b) => a + b, 0) + (rows.length - 1) * PLATE_GAP_Y;
+}
+
+/**
+ * Does a full-width glyph strip still fit BELOW these per-row tracks? Same
+ * question `plateGlyphFits` asks, against the real row heights rather than one
+ * assumed cell.
+ *
+ * ⚠ AND IT REFUSES OUTRIGHT ON A TALLER-THAN-DESIGN ROW, which is a deliberate
+ * conservatism rather than arithmetic. The STRIP's own height is modelled here
+ * as one design row, and that model is WRONG: measured 2026-08-12 at the full
+ * lane tier, a live scope strip renders **84 CSS px** (delay, reverb, cloudseed)
+ * where others render 40 (adsr, kickdrum, lfo, ringback). The 42 px budget has
+ * only ever been calibrated against design-height rows, where two rows already
+ * exclude the strip and a single row leaves enough slack that the error was
+ * invisible.
+ *
+ * Per-row tracks would otherwise hand a strip to every plate that shrank to one
+ * TALL row — and measured, that newly gives cloudseed an 84 px scope in ~12 px
+ * of remaining room. Trading a 9 px overlap for a picture sliced to a seventh of
+ * itself is not a fix. So: design rows keep the behaviour they have had since
+ * the plate shipped; a tall row refuses the strip until the strip's real height
+ * is modelled per glyph kind. That is the named follow-up, with its numbers.
+ */
+export function plateGlyphFitsRows(rows: readonly number[]): boolean {
+  if (rows.some((h) => h > PLATE_ROW_H)) return false;
+  return plateRowsHeight(rows) + PLATE_GAP_Y + PLATE_ROW_H <= LANE_BODY_H;
 }
 
 // ── The DOCK HERO GLYPH width — owner P1 batch-1 feedback ───────────────────
@@ -413,28 +514,53 @@ export interface LaneBodyPlan {
   /** Knob size for the rendered cells (mini's lg override stays a view concern). */
   knobSize: 'sm' | 'md';
   /**
-   * The plate's grid row height (px) — what ModuleShell writes to
-   * `--plate-row-h`. The CSS cannot derive this: `grid-auto-rows` is a fixed
-   * track, so a cell taller than the track OVERFLOWS IT AND PAINTS OVER THE
-   * NEXT ROW rather than being clipped. Reporting the height the cells actually
-   * need is what keeps the grid and the cells the same size.
+   * The plate's PER-ROW grid track heights (px), row order — what ModuleShell
+   * writes to `grid-template-rows`. Empty for the ROW layout.
+   *
+   * ⚠ A LIST, NOT A NUMBER, AND THAT IS THE FIX. The CSS cannot derive it:
+   * `grid-auto-rows` is one fixed track for every row and `align-items: start`
+   * means a cell taller than its track paints OVER the row below instead of
+   * being clipped. One number per PLATE forces the whole grid to the tallest
+   * cell anywhere in it and then evicts rows to pay for it; one number per ROW
+   * costs only the rows that actually contain a tall cell.
    */
-  rowH: number;
+  rowTracks: number[];
 }
 
 /**
  * The lane body plan for a curated face: which layout, how many WHOLE cells,
- * and whether the glyph fits. `controlCount` is the tier-curated control count
- * (curatedFace().controls.length); `hasGlyph` = face.glyph !== 'none'. Pure —
+ * and whether the glyph fits.
+ *
+ * `cells` is ONE HEIGHT PER RANKED CONTROL, in rank order. That is the point:
+ * the plate lays cells out 3-across, so WHICH row a tall cell lands in decides
+ * whether it can paint over anything, and a single number cannot express that.
+ *
+ * For convenience it also accepts the historic form — a COUNT, with an optional
+ * uniform `uniformCellH` — which means "this many cells, all this tall". Same
+ * answers as before for every caller that has only same-height cells; the list
+ * form is the one the shell uses. `hasGlyph` = face.glyph !== 'none'. Pure —
  * geometry constants only, so the guarantee is unit-testable. The 'dock' tier
  * never reaches this (the dock faceplate renders pages / wraps freely).
  */
 export function laneBodyPlan(
-  controlCount: number,
+  cells: number | readonly number[],
   hasGlyph: boolean,
   tier: FaceTier,
-  cellH: number = PLATE_ROW_H,
+  uniformCellH: number = PLATE_ROW_H,
 ): LaneBodyPlan {
+  // The historic form — a COUNT of cells that are all the same height — is kept
+  // because it is what most callers mean and it is exactly what this function
+  // used to take. It is synthesized into the list form so there is ONE code
+  // path below. Capped at what a plate can ever hold: callers legitimately pass
+  // "more controls than could possibly fit" (the old `faceTierCap` passed
+  // MAX_SAFE_INTEGER), and every branch below treats any count ≥ 6 alike.
+  const cellHeights =
+    typeof cells === 'number'
+      ? (Array<number>(Math.max(0, Math.min(cells, PLATE_COLS * PLATE_MAX_ROWS))).fill(
+          uniformCellH,
+        ) as readonly number[])
+      : cells;
+  const controlCount = typeof cells === 'number' ? cells : cells.length;
   const rowMax = hasGlyph ? LANE_ROW_MAX_CELLS_WITH_GLYPH : LANE_ROW_MAX_CELLS;
   if (tier === 'mini') {
     return {
@@ -442,7 +568,7 @@ export function laneBodyPlan(
       cellCount: Math.min(controlCount, 1),
       glyph: hasGlyph,
       knobSize: 'md',
-      rowH: cellH,
+      rowTracks: [],
     };
   }
   if (tier === 'compact' || controlCount <= rowMax) {
@@ -455,25 +581,29 @@ export function laneBodyPlan(
       cellCount: Math.min(controlCount, rowMax),
       glyph: hasGlyph,
       knobSize: 'md',
-      rowH: cellH,
+      rowTracks: [],
     };
   }
   // 'full' with a face too big for the row → the 3-col plate grid, whole rows
   // only. Ranked controls outrank the glyph: the strip renders only when a
   // whole strip-row still fits UNDER the cell rows.
   //
-  // ⚠ `plateRowsFor(cellH)` is the no-clip guarantee actually being kept. It
-  // used to be the constant 2, which is the answer for a 42px cell and a lie
-  // for any other — and the failure mode is OVERLAP, not truncation, so it did
-  // not even look like a fit bug.
-  const rows = plateRowsFor(cellH);
-  const cellCount = Math.min(controlCount, PLATE_COLS * rows);
-  const usedRows = Math.ceil(cellCount / PLATE_COLS);
+  // ⚠ `plateRowTracks` is the no-clip guarantee actually being kept, and it
+  // replaced TWO wrong answers in a row. First the constant 2 — correct for a
+  // 42px cell and a lie for any other, failing as OVERLAP rather than
+  // truncation, so it did not even look like a fit bug. Then `plateRowsFor`,
+  // one track for the whole plate — which fixes the overlap by evicting rows,
+  // and evicts them from faces whose tall cell was in the LAST row and could
+  // never have overlapped anything (measured: 4 of the 11 readout-bearing
+  // faces). Per-row tracks charge the height to the row that incurs it.
+  const rowTracks = plateRowTracks(cellHeights);
+  const cellCount = Math.min(controlCount, PLATE_COLS * rowTracks.length);
+  const usedTracks = rowTracks.slice(0, Math.ceil(cellCount / PLATE_COLS));
   return {
     layout: 'plate',
     cellCount,
-    glyph: hasGlyph && plateGlyphFits(usedRows, cellH),
+    glyph: hasGlyph && plateGlyphFitsRows(usedTracks),
     knobSize: 'sm',
-    rowH: cellH,
+    rowTracks: usedTracks,
   };
 }

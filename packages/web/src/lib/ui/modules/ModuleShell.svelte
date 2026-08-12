@@ -191,14 +191,15 @@
   // design-time constant): which layout (row/plate), how many WHOLE cells, and
   // whether the glyph fits. Lane views only — the dock faceplate wraps freely
   // and always shows everything.
-  // `face.cellH` — the tallest cell KIND this face paints. Passed rather than
-  // assumed: the plate's `grid-auto-rows` is a FIXED track, so a cell taller
-  // than the track paints OVER the next row instead of being clipped (marbles,
-  // 2026-08-11: 50.0 CSS px of overlap per column, three columns).
+  // `face.cellHeights` — the height of EVERY lane cell this face paints, in
+  // rank order. Passed rather than assumed: the plate's grid tracks are FIXED,
+  // so a cell taller than its track paints OVER the row below instead of being
+  // clipped (marbles, 2026-08-11: 50.0 CSS px per column, three columns; the
+  // earned-readout knob, 2026-08-12: 9.0 px on seven faces). A LIST rather than
+  // a max, because only a cell with a row BENEATH it can collide — see
+  // `plateRowTracks`.
   let lanePlan = $derived(
-    view === 'lane'
-      ? laneBodyPlan(controls.length, hasGlyph, effTier, face?.cellH ?? PLATE_ROW_H)
-      : null,
+    view === 'lane' ? laneBodyPlan(face?.cellHeights ?? [], hasGlyph, effTier) : null,
   );
 
   // Whether the glyph cell RENDERS in the current view/tier — the dock hero
@@ -1253,8 +1254,10 @@
       class:center={cells.length === 0}
       class:plate={lanePlan?.layout === 'plate'}
       data-body-layout={lanePlan?.layout ?? 'row'}
-      data-plate-row-h={lanePlan?.layout === 'plate' ? lanePlan.rowH : undefined}
-      style:--plate-row-h={lanePlan?.layout === 'plate' ? `${lanePlan.rowH}px` : undefined}
+      data-plate-row-h={lanePlan?.layout === 'plate' ? lanePlan.rowTracks.join(' ') : undefined}
+      style:grid-template-rows={lanePlan?.layout === 'plate'
+        ? lanePlan.rowTracks.map((h) => `${h}px`).join(' ')
+        : undefined}
     >
       {#each cells as ctl (ctl.key)}
         {@render controlCell(ctl, lanePlan?.knobSize ?? 'md')}
