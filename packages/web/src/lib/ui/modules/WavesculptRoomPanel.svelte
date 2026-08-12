@@ -502,8 +502,19 @@
     fill: none;
   }
 
+  /* ⚠ `margin-right: auto` IS LAYOUT, NOT SPACING. The hero bay is as wide as
+     the faceplate, so on a wide screen this row left ~800 px dead to the RIGHT
+     of everything (MEASURED at 1920×1080: bay 1426 px, content ending at
+     x≈615) — the owner's "shitty use of horizontal space", in the one place a
+     picture and its controls should own the width. Putting the auto margin on
+     the MIDDLE flex item sends the slack between the legend and the sticks, so
+     plan + legend stay one unit on the left (the legend names the dots in the
+     plan; separating them would be worse than the void) and the two joysticks
+     move right, beside the ZOOM dial that already sits there. `space-between`
+     would instead have stranded the legend mid-row. No-op on a row with no
+     slack — at 1280×720 this row is already full. */
   .legend {
-    margin: 0;
+    margin: 0 auto 0 0;
     padding: 0;
     list-style: none;
     display: grid;

@@ -1741,6 +1741,20 @@
     flex-wrap: wrap;
     align-items: flex-start;
     gap: 8px 18px;
+    /* …AND THE GROUPS SPREAD ACROSS THE BAND. Owner, 2026-08-11: "shitty use
+       of horizontal space". MEASURED on wavesculpt at 1920×1080 — the RED
+       band is 1506 px wide and its five clusters ended at x≈900, leaving ~600
+       px of void to the right of every band on the widest screens, because a
+       flowed row was `flex-start` and the clusters are intrinsically sized.
+       `space-between` distributes the SLACK, not the controls: a cluster's own
+       knobs stay packed, so nothing inside a group moves apart.
+       ⚠ It is a no-op on a row with no slack, which is the narrow case — at
+       1280×720 the same band already fills its 866 px, so this cannot make a
+       small pane worse. A WRAPPED row is the case to watch (the last line
+       would spread two items to the extremes); `justify-content` is therefore
+       paired with the per-line `align-content: flex-start` above so a wrapped
+       band still reads top-down. */
+    justify-content: space-between;
   }
   /* The stacked-block spacing below is what a flowed row must NOT inherit: a
      top margin on a flex item pushes its whole row down. */

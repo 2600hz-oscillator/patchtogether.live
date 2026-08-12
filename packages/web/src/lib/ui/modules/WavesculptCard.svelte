@@ -30,10 +30,11 @@
   // synth formula (mix of saw/sine/triangle morph).
 
   import { onMount, onDestroy } from 'svelte';
-  import { useStore, type NodeProps } from '@xyflow/svelte';
+  import { type NodeProps } from '@xyflow/svelte';
   import { useEngine } from '$lib/audio/engine-context';
   import { patch } from '$lib/graph/store';
   import { setNodeParam } from '$lib/graph/mutate';
+  import { captureFlowStore } from './card-kit';
   import { startCornerResize } from './card-resize';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
@@ -91,7 +92,19 @@
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
   const engineCtx = useEngine();
-  const flowStore = useStore();
+  // ⚠ GUARDED, and on this card it stopped being theoretical the day the face
+  // landed. A bare `useStore()` THROWS during component init anywhere outside
+  // a `<SvelteFlow>` provider, which aborts the Svelte flush mid-render — the
+  // symptom is never "a stack trace", it is a dock pane that keeps the
+  // PREVIOUS occupant or a card that mounts with no video (see card-kit's
+  // `captureFlowStore` for the DockFullView occupant-swap case). Every other
+  // plain-mountable card in the tree already routes through the self-gate;
+  // this one was the last bare call, and it now has TWO plain-mount surfaces
+  // to survive — the dock full-view / rail, and `HeadlessSourceHost`, which is
+  // what keeps `video_out` and `lum_depth` alive once the shell swapped the
+  // lane card for the faceplate. Inside a provider this is byte-identical;
+  // outside it is null and card-resize falls back to zoom 1.
+  const flowStore = captureFlowStore();
 
   // ----- Resize plumbing (mirror BentboxCard) -----
   // Rounded to whole-u (180px) rack tiles (#759) so default + min land on the

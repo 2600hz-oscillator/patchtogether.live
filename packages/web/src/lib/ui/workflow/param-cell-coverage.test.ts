@@ -88,20 +88,17 @@ void _EXHAUSTIVE;
  * means adding a row; landing its first face means deleting one.
  */
 const UNEXERCISED_BY_FACES_PARITY: Readonly<Record<string, { why: string; coveredBy: string }>> = {
-  // FADER lands one PR ahead of its first consumer, which is the normal state
-  // of a platform primitive and exactly what this map is for. The owner asked
-  // for the kind so `noise` can keep its card's look when its face is resumed
-  // (its LEVEL is a fader on the card and was rendering as a KnobConic);
-  // clouds, mixer and vca are fader cards too. `face/noise` is HELD and its own
-  // agent owns the adoption, so nothing in STRICT_FACES declares it yet and
-  // faces-parity never enters the branch.
-  fader: {
-    why:
-      'The fader cell kind lands one PR before its first consumer (face/noise is held pending ' +
-      'the VRT sweep and will declare it on resume), so no STRICT_FACES dock renders one and ' +
-      'faces-parity never enters its driveCell arm.',
-    coveredBy: 'e2e/tests/fader.spec.ts',
-  },
+  // ⚠ `fader` WAS HERE AND IS GONE, deleted on the wavesculpt rebase
+  // 2026-08-11 — and the deletion was demanded by the gate, not noticed by a
+  // human. The kind landed one PR ahead of its first consumer (`face/noise`
+  // was held), which is the normal state of a platform primitive and exactly
+  // what this map is for; while it sat unlanded, marbles, noise and rings all
+  // merged declaring it, so the real gate started covering it and the entry
+  // became a lie. The stale-entry leg named all three modules in its failure
+  // message. That is the both-directions half doing the job the count-based
+  // version could not: nothing here had to be re-derived, and the diff is the
+  // review.
+  //
   // …and the entry that got here the way the ratchet intends. `color` was the one
   // entry, written naming its own future consumer ("wavesculpt has no `face`
   // yet"); the wavesculpt face landed 2026-08-10 declaring
