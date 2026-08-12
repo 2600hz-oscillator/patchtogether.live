@@ -27,7 +27,12 @@
 import { listModuleDefs } from '$lib/audio/module-registry';
 import { listVideoModuleDefs } from '$lib/video/module-registry';
 import { listMetaModuleDefs } from '$lib/meta/module-registry';
-import type { ControlFamily, ModuleDocs } from '$lib/graph/types';
+import type {
+  ControlFamily,
+  FaceSidebarBlock,
+  ModuleDocs,
+  ModuleFace,
+} from '$lib/graph/types';
 
 /** The minimal structural shape the projection reads off any registered def
  *  (audio / video / meta). Everything optional so each domain's def shape
@@ -51,6 +56,10 @@ interface ContractDefLike {
   vizPassthrough?: boolean;
   exposableControls?: readonly { id: string; paramId?: string; kind?: string }[];
   controlFamilies?: readonly ControlFamily[];
+  /** ⚠ ONLY `sidebar` IS PROJECTED — see `serializeFaceSidebar` and the
+   *  `FACE_FIELDS_NOT_IN_LOCK` ledger below for the rest of the face, each
+   *  named with the gate that does cover it. */
+  face?: ModuleFace;
 }
 interface ContractPortLike {
   id: string;
@@ -72,6 +81,140 @@ interface ContractParamLike {
 
 const byId = (a: { id: string }, b: { id: string }) => a.id.localeCompare(b.id);
 const num = (n: number): string => String(n);
+
+// ── face.sidebar — THE FIELD THIS GOLDEN COULD NOT SEE ─────────────────────
+//
+// ⚠ #1468 DELETED AN ENTIRE SIDEBAR BLOCK FROM TWELVE MODULES AND
+// `task docs:accept` PRODUCED AN EMPTY DIFF. Its own body records it: "the
+// golden does not include `face.sidebar` at all, so it is structurally blind
+// to a whole sidebar block appearing or vanishing."
+//
+// The old reasoning — recorded on `ModuleFace` as "declaring a sidebar is not
+// an I/O change" — is true and beside the point. The question a golden answers
+// is not "is this I/O?" but "is there a REVIEW SURFACE on which this
+// disappearing would be visible?", and for a sidebar the honest answer was no.
+// Audited across every gate that mentions `face.sidebar`:
+//
+//   module-face-lint  `sidebarProblems()` opens with `if (!blocks) return []`
+//                     — it validates blocks that EXIST and is exactly as blind
+//                     to deletion as the golden was.
+//   faceplate-platform (e2e) sweeps `__moduleSpecs` filtered to
+//                     `faceSidebar.length > 0`, so a roster of sixteen
+//                     dropping to four passes its only anti-vacuity guard.
+//   dock-faceplate-model  pins `sidebarPlan(...) === null` — a shape assertion,
+//                     re-pinned by whoever removes the sidebar.
+//   VRT face-*-dock   the ONLY gate that saw the twelve, as pixels, on an
+//                     accept loop the same author drives — and on the
+//                     non-blocking lane until this branch moves it.
+//
+// Every one of those is presence-conditional or re-pinned by the deleter. So
+// the sidebar joins the golden: not because it is I/O, but because a
+// name-per-block text diff is the cheapest thing in the repo that a human
+// reviewing a PR cannot fail to see.
+//
+// WHAT IS PROJECTED, and why each field: the block's KIND and LABEL (a
+// disappearing block is one deleted line; a relabelled one is a changed line),
+// the `custom` block's `panelId` (which component the shell resolves — a
+// rebinding is a behaviour change the label would hide), and each entry's
+// IDENTITY. Entries are pinned by name rather than counted, so a preset losing
+// one row is a readable one-line diff, not `entries=5` becoming `entries=4`.
+//
+// ORDER IS MEANINGFUL and therefore NOT sorted: the sidebar renders top to
+// bottom in declaration order, and cofefve/marbles both declare two blocks of
+// the same kind whose order is the whole point. Blocks carry their index.
+
+/** One sidebar ENTRY → its identity, for the golden. `presets` entries have a
+ *  stable `id`; `readouts` entries do not, so they are keyed by the source they
+ *  print from — which is the thing that changes when a readout is rewired. */
+function sidebarEntryKey(e: unknown): string {
+  const r = e as { id?: string; label?: string; paramId?: string; valueId?: string; text?: string };
+  if (r.id) return r.id;
+  const src = r.paramId
+    ? `param=${r.paramId}`
+    : r.valueId
+      ? `value=${r.valueId}`
+      : r.text !== undefined
+        ? 'text'
+        : '?';
+  return `${r.label ?? '?'}:${src}`;
+}
+
+/** `<type> face sidebar <i> …` lines for one def, in declaration order. */
+function serializeFaceSidebar(t: string, blocks: readonly FaceSidebarBlock[]): string[] {
+  return blocks.map((b, i) => {
+    const parts = [`${t} face sidebar ${i} kind=${b.kind}`, `label=${b.label}`];
+    if (b.kind === 'custom') {
+      parts.push(`panel=${b.panelId}`);
+      const props = b.props ?? {};
+      const keys = Object.keys(props).sort();
+      if (keys.length) parts.push(`props=${keys.map((k) => `${k}:${String(props[k])}`).join(',')}`);
+    } else {
+      parts.push(`entries=${b.entries.map(sidebarEntryKey).join(',')}`);
+    }
+    return parts.join(' ');
+  });
+}
+
+/**
+ * THE REST OF `ModuleFace`, EACH NAMED WITH WHAT DOES COVER IT.
+ *
+ * ⚠ THIS IS THE POINT OF THE LEDGER, NOT AN APOLOGY FOR IT. The defect above
+ * was not "sidebar was missing" — it was that NOTHING ENUMERATED THE FIELDS, so
+ * a field could be absent from the golden without anyone ever deciding it
+ * should be. `contract-lock.test.ts` walks the keys actually present on every
+ * registered def's `face` and requires each to be either PROJECTED or named
+ * here; a key that is neither turns the gate RED, and an entry naming a key no
+ * def uses turns it red too (anchored to the artifact, so a licence cannot
+ * outlive its subject). Adding a field to `ModuleFace` is therefore a decision
+ * someone has to write down.
+ *
+ * `why` and `coveredBy` are REQUIRED by the type — `tsc` refuses the
+ * undeclared form before a test runs.
+ */
+export const FACE_FIELDS_NOT_IN_LOCK: Readonly<
+  Record<string, { why: string; coveredBy: string }>
+> = {
+  order: {
+    why: 'The curated control ORDER is a layout decision, and every key in it is already pinned as a param/family line. Reordering changes no contract and no behaviour.',
+    coveredBy: 'module-face-lint (every key resolves to a param/family) + faces-parity (the exact rendered multiset).',
+  },
+  pages: {
+    why: 'Band grouping and captions. Structural, but pinned somewhere a text golden cannot be: the dock RENDER, per band, where a dropped page is visible as a missing section.',
+    coveredBy: 'VRT face-<type>-dock (band layout) + the openDock toHaveCount(pages) structural assert + dock-row-plan units.',
+  },
+  glyph: {
+    why: 'Which live trace the shell taps for the tile. A change is a pixel change by construction.',
+    coveredBy: 'VRT face-<type>-compact + vrt-face-audio-probe.',
+  },
+  glyphDepthGain: {
+    why: 'A scalar on the glyph trace. Same argument as glyph — visible only as pixels.',
+    coveredBy: 'VRT face-<type>-compact.',
+  },
+  paramCells: {
+    why: 'Which PRIMITIVE renders a param (grid/color/fader). Not the range or the mapping, which are pinned on the param line; the widget choice.',
+    coveredBy: 'shell-cells (every key resolves to a registered cell spec) + param-cell-coverage + faces-parity driveCell.',
+  },
+  momentary: {
+    why: 'Marks a param as press-and-release. It changes how a cell is DRIVEN, and the audition ledger is the observable — a text line would restate what the probe measures.',
+    coveredBy: 'faces-parity ShellActionCell.probe + audition-ledger (both directions, unit lane, every run).',
+  },
+  rear: {
+    why: 'Rear-card port grouping/clusters/audio-rate ticks. Every PORT it arranges is already a pinned `in`/`out` line; this is the arrangement.',
+    coveredBy: 'rear-card-model units + VRT rear-<type>.',
+  },
+  title: {
+    why: 'Display text on the faceplate. Faces carry near-zero authored prose by owner ruling, and a title change is a pixel change.',
+    coveredBy: 'VRT face-<type>-dock.',
+  },
+  hint: {
+    why: 'Display text under the title, same argument as title: a faceplate states values, the explanation lives in `docs`, and a change here is a change to pixels rather than to any contract a consumer reads.',
+    coveredBy: 'VRT face-<type>-dock + the faceplate-platform annotation sweep.',
+  },
+  hero: {
+    why: 'Which keys are PROMOTED into the hero slot. A promotion removes the key from its band rather than duplicating it, so the move is already gated by an exact multiset comparison that a text line could not improve on.',
+    coveredBy: "faces-parity's exact param multiset (a duplicate/unknown is an unbacked extra) + dock-faceplate-model heroFacePlan pins + VRT face-<type>-dock.",
+  },
+};
 
 /** One INPUT/OUTPUT port → a canonical line body (sans the `<type> in/out`
  *  prefix). Fields appear in a fixed order; absent fields are omitted. */
@@ -126,8 +269,16 @@ export function serializeModuleContract(def: ContractDefLike): string[] {
       `${t} family ${f.id} kind=${f.kind} prefix=${f.testidPrefix}${f.countParam ? ` count=${f.countParam}` : ''}`,
     );
   }
+  // face.sidebar — see the block comment above `serializeFaceSidebar`. NOT
+  // sorted: the column renders in declaration order.
+  if (def.face?.sidebar) lines.push(...serializeFaceSidebar(t, def.face.sidebar));
   return lines;
 }
+
+/** The `ModuleFace` keys `serializeModuleContract` actually projects. Read by
+ *  the coverage gate so "projected" is derived from this list rather than
+ *  re-typed there. */
+export const FACE_FIELDS_IN_LOCK: readonly string[] = ['sidebar'];
 
 /** Every registered def (audio + video + meta), sorted by type. Requires the
  *  module barrels to have been side-effect-imported (the gate test does this). */

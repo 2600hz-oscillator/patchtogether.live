@@ -2691,7 +2691,33 @@ jobs:
     name: vrt-strict (visual regression — strict subset)
     needs: dsp-build
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # ⚠ 10 -> 25 (2026-08-12), because this lane just grew the FACEPLATES.
+    #
+    # `workflow-shell-faces.spec.ts` moved into VRT_STRICT's testMatch (see the
+    # long note in e2e/vrt/vrt.config.ts). Until then every `face-*` baseline
+    # was gated ONLY by the informational `vrt` job — `continue-on-error: true`,
+    # outside the `ci` umbrella's `needs` — so no faceplate regression could
+    # block a merge. #1468 shipped with twelve stale dock baselines and this
+    # lane was green throughout.
+    #
+    # MEASURED, run 31581123866 (ubuntu-latest):
+    #   this job before        6.60 min
+    #   the faces spec         9.56 min   (64 scenes + 2 negative controls)
+    #   this job after        ~16.2 min
+    #   longest REQUIRED job  16.14 min   (e2e shard 10/10)
+    #
+    # TIME-TO-MERGE DELTA: ~zero — this lands level with the existing critical
+    # path rather than becoming the new bound. RUNNER-MINUTES: +9.6/run, which
+    # is the number to weigh, and it is a duplicate rather than new work: the
+    # spec stays in FULL_MATCH too because `task vrt:update` (the CAPTURE) does
+    # not set VRT_STRICT, and removing it there would silently stop capturing
+    # 64 baselines.
+    #
+    # 25 rather than 20: the old cap was already below the new duration, and a
+    # cap sitting near the p99 of its own passing population is a coin flip
+    # (the vrt.config timeout note has the arithmetic). A timeout costs nothing
+    # on green — only an already-failing job runs to it.
+    timeout-minutes: 25
 
     steps:
       # VRT baselines are LFS-tracked under e2e/vrt/__screenshots__/. Check out

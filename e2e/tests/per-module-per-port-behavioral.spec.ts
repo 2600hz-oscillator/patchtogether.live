@@ -3389,6 +3389,40 @@ test.describe('per-module per-port: BEHAVIORAL input coverage (output changes on
       continue;
     }
 
+    // ⚠ MEASURED CI FLAKE — wavecel, 2026-08-12, behavioral shard 6/6, run
+    // 31577091742. Reported `1 flaky` and the job was SUCCESS; the behavioural
+    // lane is additionally non-blocking, so this failure was masked twice over.
+    //
+    // FIRST-ATTEMPT FAILURE, verbatim:
+    //
+    //   wavecel.spread_cv (type=cv) → out_l (type=audio): NO observable delta
+    //   C(rms=0.389±0.200 zc=22±1 cent=310±27Hz crest=2.66±1.23)
+    //   P(rms=0.389±0.184 zc=22±1 cent=311±28Hz crest=2.65±1.20)
+    //   Δμ(rms=0.000 peak=0.000 zc=0 cent=0Hz crest=0.01)
+    //
+    // ⚠ THIS IS NOT A TIMING SIGNATURE AND MUST NOT BE TREATED AS ONE. The two
+    // means are IDENTICAL to three decimals across every feature — the CV did
+    // nothing, rather than the measurement being noisy (each arm's own spread
+    // is ±0.2, so a noise explanation would move the means, not pin them).
+    //
+    // THE LEADING HYPOTHESIS, UNCONFIRMED, and it comes from the module's own
+    // documented behaviour: wavecel's SPREAD panned taps read NEIGHBOURING
+    // WAVETABLE FRAMES, and the def says the width is "the difference between
+    // neighbouring waveshapes — widest where the table changes fastest", with
+    // "at Spread 1 … L and R identical". So where the loaded table's adjacent
+    // frames are identical, widening the spread is CORRECTLY a no-op and
+    // out_l cannot move. If the default table load is async, a probe that
+    // arrives before it lands measures a flat table and sees exactly this,
+    // intermittently — a race against the wavetable load in the TEST SETUP,
+    // not a budget.
+    //
+    // NEXT STEP, stated so it is not re-derived: assert the loaded table has
+    // ≥2 DISTINCT frames before probing spread_cv (a non-vacuity precondition
+    // on the subject, the same shape as the audio-freeze control's `moving > 0`
+    // leg), and if the table genuinely is flat at defaults then spread_cv
+    // belongs in BEHAVIORAL_SWEEP_EXEMPT with that reason — not left to pass
+    // on a retry. Not done here: it needs a repro on the real sweep, and this
+    // session's remit was the gates, not this module.
     test(title, async ({ page }) => {
       const errors: string[] = [];
       page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));

@@ -27,20 +27,46 @@
 //   damping 0.5, brightness 0.5   337 ms @ 44.1k   392 ms @ 48k   163 ms @ 96k
 //   damping 0.5, brightness 1.0  3889 ms @ 44.1k  7420 ms @ 48k   476 ms @ 96k
 //
-// That is a 15.6x swing across the SAME two knob settings, decided entirely by
-// the interface. The cause is structural: MODAL's Q is set proportional to
-// partial frequency, `Q = 1 + (f/sr)*q`, so the decay constant is
-// `tau = q/(pi*sr)` and carries `sr` with no compensating term — exactly the
-// shape of `noise`'s `LEAK` constant. Nor is the RATIO stable enough to print
-// instead: the BRIGHTNESS ring multiplier T60(b=1)/T60(b=0) measures
-// 18.2x / 25.3x / 3.4x at 44.1 / 48 / 96 kHz.
+// That was a 15.6x swing across the SAME two knob settings, decided entirely by
+// the interface, and it had TWO causes, not one.
 //
-// So the ring-time finding is carried by the surfaces that need no number — the
-// band LABEL ("2 · ring time — BOTH of these set it", which paints
+// ── CAUSE 1, FIXED ──────────────────────────────────────────────────────────
+// MODAL's Q is set proportional to partial frequency, `Q = 1 + (f/sr)*q`, so
+// the decay constant is `tau = q/(pi*sr)`, and `q` came from the DAMPING knob
+// alone with nothing to cancel the `sr`. `MODAL_Q_REFERENCE_SR` now scales `q`
+// by `sr/48000`, which cancels it exactly and is bit-identical at 48 kHz.
+// Measured on the fundamental (261.6 Hz, where bilinear warping is 1.00018 and
+// therefore rules itself out as the cause), per-partial tau before -> after:
+//
+//   44.1k  115.4 ms -> 106.1     48k  106.1 ms -> 106.1     96k  53.6 -> 106.1
+//
+// i.e. a 2.15x spread became flat to within the warping term.
+// `rings-sample-rate.test.ts` holds that, reading the decay off the real
+// biquad poles rather than off a render.
+//
+// ── CAUSE 2, NOT FIXED, AND THE REASON THE READOUT STILL CANNOT EXIST ───────
+// An RBJ biquad's decay is `2Q/(sin(w0)*sr)`, and `sin(w0)` collapses as `w0`
+// approaches pi — so a partial that happens to land near Nyquist rings
+// pathologically long, and WHICH partials land there is a function of the
+// sample rate. At the shipped f0 the bank has 22 active modes at 44.1k, 23 at
+// 48k and 24 at 96k, and the top one at 48k sits at 0.47*sr. Whole-bank tau
+// spread, before -> after cause 1:
+//
+//   damping 0.5, brightness 0.5    2.80x -> 1.52x
+//   damping 0.5, brightness 1.0   17.97x ->  9.00x
+//
+// Better, and still not one number. Removing the remainder means changing how
+// near-Nyquist partials are voiced, which MOVES 48 kHz audio and needs an owner
+// audition, so it is named rather than folded in.
+//
+// Nor is the RATIO stable enough to print instead: the BRIGHTNESS ring
+// multiplier T60(b=1)/T60(b=0) measured 18.2x / 25.3x / 3.4x at 44.1 / 48 /
+// 96 kHz.
+//
+// So the ring-time finding stays carried by the surfaces that need no number —
+// the band LABEL ("2 · ring time — BOTH of these set it", which paints
 // unconditionally where a hint does not), the sidebar, and a corrected
-// `docs.controls.brightness` — and the sample-rate dependence is documented on
-// the def as the DSP defect it is. Fixing it moves audio, so it is not folded
-// into a faceplate PR.
+// `docs.controls.brightness`.
 
 /** The params the RINGS faceplate reads. Resolved through the caller's reader,
  *  which already falls back to the def default for an untouched param. */
