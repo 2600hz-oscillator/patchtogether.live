@@ -161,7 +161,22 @@ const FROM_TEST_ROOT = resolve(__dirname, '../../../../..');
 // onto the sharded SwiftShader matrix; adding `**/videocube.spec.ts` to
 // WEBGL_HEAVY_GLOBS enrolls it (the glob file is a STANDALONE_BASIS_FILE → the
 // hash moves → the same one-time re-attest). 57 → 58.
-const EXPECTED_HEAVY_SPEC_COUNT = 58;
+// REMOVED 2026-08-12 (boy-scout, P0 "NEVER hand-type a population count"):
+// `EXPECTED_HEAVY_SPEC_COUNT` was a typed literal whose value was HOW MANY
+// heavy specs exist. Adding one unrelated e2e spec that happens to match the
+// glob made this red and demanded a re-count — the exact tax the directive
+// names, and a value that auto-merges WRONG when two branches each add a spec.
+//
+// What it actually protected, and where that protection now lives:
+//   * "a spec was silently dropped / the glob broke" → (4) now asserts the
+//     resolved set is NON-EMPTY, that every resolved path EXISTS on disk, and
+//     that it contains no duplicates. A broken glob resolves nothing and still
+//     goes red; a mis-typed pattern that resolves a non-file goes red too.
+//   * "attestable == all (nothing is fully @collab/@capacity-gated)" → (4b)
+//     now asserts `excluded` is EMPTY, which is the same statement as a
+//     PROPERTY rather than as an arithmetic identity between two counts.
+// No successor counter was written. Specs are excluded from the hash basis, so
+// none of this affects the WebGL attest.
 
 describe('WebGL attestation — fail-closed coverage guard (§12)', () => {
   const basis = resolveWebglBasis();
@@ -220,13 +235,17 @@ describe('WebGL attestation — fail-closed coverage guard (§12)', () => {
 
   it('(4) the heavy WebGL spec glob resolves the expected count — but specs are NOT hashed', () => {
     const specs = resolveHeavyWebglSpecs();
-    expect(
-      specs.length,
-      `heavy glob resolved ${specs.length} specs, expected exactly ${EXPECTED_HEAVY_SPEC_COUNT} ` +
-        `— if you intentionally added/removed/consolidated a heavy spec, update ` +
-        `EXPECTED_HEAVY_SPEC_COUNT (the SET changed → e2e/webgl-heavy-globs.ts moves ` +
-        `the hash → re-attest); if not, a spec was silently dropped/mis-classified.`,
-    ).toBe(EXPECTED_HEAVY_SPEC_COUNT);
+    // NON-EMPTY: a broken/renamed glob resolves nothing, and a suite that
+    // measures nothing must never pass vacuously.
+    expect(specs.length, 'heavy WebGL spec glob resolved NOTHING — the glob is broken').toBeGreaterThan(0);
+    // EVERY resolved path is a real file: a mis-typed pattern that resolves a
+    // directory or a stale path is a silent mis-classification.
+    const missing = specs.filter((p) => !existsSync(join(REPO_ROOT, p)));
+    expect(missing, `heavy glob resolved paths that do not exist: ${missing.join(', ')}`).toEqual([]);
+    // No duplicates — two overlapping globs would double-count a spec and make
+    // the sharded matrix run it twice.
+    const dupes = specs.filter((p, i) => specs.indexOf(p) !== i);
+    expect(dupes, `heavy glob resolved duplicate specs: ${dupes.join(', ')}`).toEqual([]);
     // Specs are the attest DRIVER, not the rendered content, so they are
     // DELIBERATELY EXCLUDED from the hash basis — editing a test must never force
     // a GPU re-attest (2026-06-26). Assert the INVERSE of the old invariant: no
@@ -262,9 +281,11 @@ describe('WebGL attestation — fail-closed coverage guard (§12)', () => {
         `${p} is fully @collab/@capacity-gated but counted as attestable`,
       ).toBe(false);
     }
-    // The attestable set is non-empty and ≤ the glob set. No heavy spec is fully
-    // @collab/@capacity-gated today, so it currently equals the glob count.
-    expect(attestable.length).toBe(EXPECTED_HEAVY_SPEC_COUNT);
+    // The attestable set is non-empty, and no heavy spec is fully
+    // @collab/@capacity-gated today — stated as a PROPERTY of the excluded set
+    // rather than as an identity between two counts.
+    expect(attestable.length, 'the attestable heavy set is empty').toBeGreaterThan(0);
+    expect(excluded, `heavy specs excluded as fully gated: ${excluded.join(', ')}`).toEqual([]);
     expect(attestable.length).toBeLessThanOrEqual(all.length);
   });
 

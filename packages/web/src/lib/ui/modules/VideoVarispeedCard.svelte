@@ -57,6 +57,7 @@
     requestHandleReadPermission,
     type StoredFileHandle,
   } from '$lib/video/video-file-store';
+  import { nodeMedia, type NodeMediaLease } from '$lib/ui/media/node-media-registry';
   import {
     registerVideoExport,
     unregisterVideoExport,
@@ -91,12 +92,21 @@
   // element is what the engine samples + the transport loop drives; `videoEl`
   // is derived from `activeSlot` so all the existing transport code that
   // reads/mutates `videoEl` automatically follows the active element.
+  // All 7 elements belong to the NODE, not to this card: they live in
+  // $lib/ui/media/node-media-registry and are ADOPTED into `slotHosts[i]`
+  // while this card is mounted. Expand/collapse moves the card between the
+  // headless host and the dock full-view — two different MOUNTS — and the
+  // pre-fix card destroyed all 7 elements and revoked all 7 object URLs on
+  // every such move, which is the owner-reported "stops playing when
+  // collapsed". See the registry header for the measurement.
+  let slotHosts = $state<(HTMLDivElement | null)[]>(new Array(ASSET_SLOTS).fill(null));
   let slotEls = $state<(HTMLVideoElement | null)[]>(new Array(ASSET_SLOTS).fill(null));
   let activeSlot = $state(0);
   let videoEl = $derived<HTMLVideoElement | null>(slotEls[activeSlot] ?? null);
-  // Per-slot object URLs (local bytes; never synced) — index 0 is the single
-  // video's url (kept in sync with the legacy `objectUrl` accessor below).
-  let slotUrls: (string | null)[] = new Array(ASSET_SLOTS).fill(null);
+  /** Registry key for asset slot `i`. Per-slot object URLs (local bytes, never
+   *  synced) are owned by the registry under these keys — this card reads them
+   *  via `nodeMedia.objectUrl` and NEVER revokes one. */
+  const slotKey = (i: number): string => `slot${i}`;
   // Per-slot local filenames (drives the active card's data-has-local-file).
   let slotNames = $state<(string | null)[]>(new Array(ASSET_SLOTS).fill(null));
   // Per-slot LOCAL duration (seconds), captured from el.duration at
@@ -114,8 +124,6 @@
   // than restarting from 0. Incremental (not closed-form) so it integrates a
   // time-varying SPEED CV and survives loop wraps/clamps without drift.
   let slotPos: number[] = new Array(ASSET_SLOTS).fill(0);
-  // Legacy single-video accessors map onto slot 0.
-  let objectUrl: string | null = null;
   let localFileName = $state<string | null>(null);
   let isDragOver = $state(false);
   let loadError = $state<string | null>(null);
@@ -307,7 +315,14 @@
       if (!t.data) t.data = {};
       const d = t.data as Partial<VideoVarispeedData>;
       d.fileMeta = meta;
-      d.isPlaying = false;
+      // NOTE: this deliberately does NOT reset `isPlaying`. It used to, which
+      // is a SECOND, independent cause of "it stopped playing": the IndexedDB
+      // handle-reload path runs through loadFile → writeFileMeta, so a card
+      // that restored its own file came back PAUSED even when the node's
+      // synced state said it was playing. Play state belongs to the transport
+      // (writePlaying), not to a metadata write. A genuinely NEW file still
+      // pauses — `loadFileIntoSlot` is only reached from an explicit user load,
+      // which sets the transport state itself.
     }, LOCAL_ORIGIN);
   }
   function writeLoop(next: boolean): void {
@@ -358,16 +373,12 @@
       return;
     }
     const el = slotEls[slot];
-    // Revoke a previous url for THIS slot.
-    if (slotUrls[slot]) {
-      try { URL.revokeObjectURL(slotUrls[slot]!); } catch { /* */ }
-      slotUrls[slot] = null;
-    }
+    // Hand the new url to the NODE-owned registry: it revokes THIS slot's
+    // previous url and keeps the new one alive across card unmounts.
     const url = URL.createObjectURL(file);
-    slotUrls[slot] = url;
+    nodeMedia.setObjectUrl(id, slotKey(slot), url, file.name);
     slotNames[slot] = file.name;
     if (slot === 0) {
-      objectUrl = url;
       localFileName = file.name;
     }
     // The portable "Export performance" (.zip) resolver is multi-slot: it
@@ -681,14 +692,14 @@
     if (slot < 0 || slot >= ASSET_SLOTS) return;
     const el = slotEls[slot];
     if (el) { try { el.pause(); el.removeAttribute('src'); el.load(); } catch { /* */ } }
-    if (slotUrls[slot]) {
-      try { URL.revokeObjectURL(slotUrls[slot]!); } catch { /* */ }
-      slotUrls[slot] = null;
-    }
+    // An explicit user CLEAR is the one place a card may free a slot's url —
+    // it is a deliberate content change, not a view teardown. The registry
+    // owns the revoke so the bookkeeping stays in one place.
+    nodeMedia.setObjectUrl(id, slotKey(slot), null);
     slotNames[slot] = null;
     slotDuration[slot] = 0;
     slotPos[slot] = 0;
-    if (slot === 0) { objectUrl = null; localFileName = null; }
+    if (slot === 0) { localFileName = null; }
     writeSlotMeta(slot, null);
     // If we cleared the ACTIVE slot, fall back to slot 0 if it has a video.
     if (slot === activeSlot && slot !== 0 && slotHasLocalVideo(0)) selectAssetSlot(0);
@@ -1004,7 +1015,7 @@
   async function resolveAllSlotBytes() {
     const out: { bytes: Uint8Array; name: string; slot: number }[] = [];
     for (let i = 0; i < ASSET_SLOTS; i++) {
-      const u = slotUrls[i];
+      const u = nodeMedia.objectUrl(id, slotKey(i));
       if (!u) continue;
       try {
         const resp = await fetch(u);
@@ -1016,6 +1027,49 @@
     }
     return out.length > 0 ? out : null;
   }
+
+  // ---- Adopt the NODE-owned <video> elements into this card ----
+  //
+  // One effect per slot host. Adoption is a TRANSFER and release is
+  // owner-checked in the registry, so the two card mounts a collapse
+  // straddles cannot fight over an element in either order.
+  const slotLeases: (NodeMediaLease<HTMLElement> | null)[] = new Array(ASSET_SLOTS).fill(null);
+  $effect(() => {
+    const hosts = slotHosts;
+    const leases: NodeMediaLease<HTMLElement>[] = [];
+    for (let i = 0; i < ASSET_SLOTS; i++) {
+      const host = hosts[i];
+      if (!host) continue;
+      const lease = nodeMedia.adopt(id, slotKey(i), host, {
+        kind: 'video',
+        init: (el) => {
+          const v = el as HTMLVideoElement;
+          v.playsInline = true;
+          // Slot 0 is the MAIN preview (audible); 1..6 are the hidden
+          // preloaded pool and stay muted, exactly as the old markup declared.
+          if (i > 0) v.muted = true;
+          v.setAttribute(
+            'data-testid',
+            i === 0 ? 'videovarispeed-video' : `videovarispeed-slot-video-${i}`,
+          );
+        },
+      });
+      slotLeases[i] = lease;
+      const el = lease.el as HTMLVideoElement;
+      slotEls[i] = el;
+      // REHYDRATE the card-local reactive mirrors from the node-owned
+      // registry + the live element. Without this a remount believes the node
+      // has no local bytes, re-shows the re-link prompt and lets the transport
+      // pause a video that is still playing (measured on the re-expand leg).
+      slotNames[i] = nodeMedia.mediaName(id, slotKey(i));
+      if (Number.isFinite(el.duration) && el.duration > 0) slotDuration[i] = el.duration;
+      if (i === 0) localFileName = slotNames[0];
+      leases.push(lease);
+    }
+    return () => {
+      for (const l of leases) l.release();
+    };
+  });
 
   // ---- Mount / unmount ----
   onMount(() => {
@@ -1048,19 +1102,15 @@
     if (audioWireTimer) { clearTimeout(audioWireTimer); audioWireTimer = null; }
     if (keepAliveTimer) { clearTimeout(keepAliveTimer); keepAliveTimer = null; }
     if (cropPushTimer) { clearTimeout(cropPushTimer); cropPushTimer = null; }
-    const ve = videoEngine();
-    try { ve?.attachExternalSource(id, 'video', null); } catch { /* */ }
-    const extras = getExtras();
-    extras?.unwireAudio();
+    // NOTE what is deliberately ABSENT here: no `attachExternalSource(id,
+    // 'video', null)`, no per-slot `revokeObjectURL`, no `unwireAudio()`. All
+    // 7 elements, their urls and their audio wiring belong to the NODE and
+    // must survive this card being unmounted — a collapse/expand is a card
+    // move, not a node deletion. Teardown happens in nodeMedia.sweep() when
+    // the node actually leaves the graph.
     unregisterVideoExport(id);
-    // Revoke every per-slot object URL (slot 0 == objectUrl).
-    for (let i = 0; i < ASSET_SLOTS; i++) {
-      if (slotUrls[i]) {
-        try { URL.revokeObjectURL(slotUrls[i]!); } catch { /* */ }
-        slotUrls[i] = null;
-      }
-    }
-    objectUrl = null;
+    for (const l of slotLeases) l?.release();
+    slotLeases.fill(null);
   });
 
   // ---- Displayed current position ----
@@ -1138,7 +1188,10 @@
   <div class="body">
     <div class="preview-wrap" data-testid="videovarispeed-preview">
       <!-- svelte-ignore a11y_media_has_caption -->
-      <video bind:this={slotEls[0]} data-testid="videovarispeed-video" playsinline></video>
+      <!-- The <video> is NOT declared here: it belongs to the NODE and is
+           adopted into this host div (see the $effect above). Declaring it in
+           markup is what tied its lifetime to the card. -->
+      <div class="video-host" bind:this={slotHosts[0]}></div>
       {#if !hasLocalFile && !fileMeta}
         <div class="overlay drop-hint" data-testid="videovarispeed-drop-hint">
           <div>Drop a video file</div>
@@ -1314,8 +1367,7 @@
          off-screen but resident so a gate switch is an instant element swap. -->
     <div class="slot-pool" aria-hidden="true">
       {#each [1, 2, 3, 4, 5, 6] as si (si)}
-        <!-- svelte-ignore a11y_media_has_caption -->
-        <video bind:this={slotEls[si]} data-testid="videovarispeed-slot-video-{si}" playsinline muted></video>
+        <div class="video-host" bind:this={slotHosts[si]}></div>
       {/each}
     </div>
 
@@ -1385,7 +1437,13 @@
     overflow: hidden;
     flex: 1;
   }
-  video {
+  /* The <video> elements are ADOPTED into .video-host at runtime (node-owned,
+   * see $lib/ui/media/node-media-registry), so Svelte cannot scope-class them
+   * — these rules must be :global(). `display: contents` on the host makes the
+   * adopted element participate in the parent's layout exactly as the old
+   * inline <video> did, so every descendant selector still matches. */
+  .video-host { display: contents; }
+  .video-host :global(video) {
     display: block;
     max-width: 100%;
     max-height: 100%;
@@ -1562,7 +1620,7 @@
   /* Hidden preloaded slot <video> elements (slots 1..6). Resident but
      off-layout; the active element renders via the engine FBO, not here. */
   .slot-pool { position: absolute; width: 0; height: 0; overflow: hidden; pointer-events: none; }
-  .slot-pool video { width: 1px; height: 1px; }
+  .slot-pool :global(video) { width: 1px; height: 1px; }
 
   /* "Load multiple…" 7-slot panel (right-click toggle). Floats as an absolute
      overlay sheet over the card body INSTEAD of stacking in normal flow: the
