@@ -561,10 +561,14 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // writeseq-transport.test.ts) + e2e/tests/writeseq.spec.ts. A follow-up PR
   // captures the darwin + linux baselines via the vrt-update.yml workflow.
   writeseq: 'VRT baseline pending; unit (alignment + transport) + e2e/tests/writeseq.spec.ts provide coverage. Capture darwin/linux baselines via vrt-update.yml in a follow-up.',
-  // RINGS first-slice PR: VRT baseline pending; ART + unit + E2E
-  // provide coverage. Linux baseline is darwin-only for v1; a
-  // follow-up PR will capture both platforms and promote into MODULES.
-  rings: 'VRT baseline pending; ART + unit + E2E provide coverage. Linux baseline is darwin-only for v1.',
+  // RINGS: the legacy CARD has no baseline. Its faceplate does — as of the face
+  // PR, `face-rings-compact` and `face-rings-dock` are captured by the linux
+  // job like every other face scene — so the pixel surface a migrated module
+  // actually presents IS covered; this entry is only about the `?shell=legacy`
+  // card. ⚠ The previous reason here said "Linux baseline is darwin-only for
+  // v1", which is stale prose: #1458 deleted the `{platform}` dimension and
+  // there is now ONE baseline set, authored by linux CI.
+  rings: 'VRT baseline pending for the legacy card; the FACEPLATE is baselined (face-rings-compact/dock). ART + unit + E2E cover the module.',
   // MARBLES first-slice PR: plain fader card (no custom canvas
   // viz), so VRT adds little; unit tests cover the DSP core. Promote +
   // capture baselines in a follow-up PR.
