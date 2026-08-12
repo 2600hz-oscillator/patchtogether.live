@@ -14,17 +14,15 @@ control you skip because "it obviously will be" is not a control.
 
 **Verdict: PROMOTE — the module clears the bar on merit, and the argument
 against it ("only two params") is the same one that would have rejected `vca`,
-which is in `STRICT_FACES`. But it is SEQUENCED BEHIND THE SAME PLATFORM GAP as
-`wavetableVco`.**
+which is in `STRICT_FACES`.**
 
-⚠ **THE SEQUENCING, first.** `StereovcaCard.svelte` renders both params with
-`<Fader>`, and **`'fader'` is not a `ParamCellKind` on `main`** —
-`shell-control-kind.ts:33-41` is exactly `knob | momentary | toggle | segmented
-| selector | grid | color`, and `paramCellKind()` returns `'knob'` for both
-(neither is switch-shaped, neither declares `options`, neither is `momentary`).
-Promoting today converts two faders into two dials. On a **two-control module**
-that substitution is 100 % of the control surface, which is why it is stated
-before anything else. See §5 constraint 1.
+✅ **THE BLOCKER THIS SPEC WAS WRITTEN BEHIND IS GONE.** It said `'fader'` was
+not a `ParamCellKind`, so promoting would convert both of
+`StereovcaCard.svelte`'s `<Fader>`s into dials — 100 % of a two-control surface.
+`'fader'` is a declared `ParamCellKind` as of #1480
+(`shell-control-kind.ts:33-41`, `DeclaredParamCell`), so `paramCells: { offset:
+'fader', level: 'fader' }` in §7 is now shippable rather than aspirational.
+**Nothing sequences this face any more.**
 
 **The headline: at spawn, with audio patched, this module is BIT-ZERO — and
 `LEVEL`, its rank-1-looking control, is bit-exactly inert over its ENTIRE
@@ -336,25 +334,22 @@ a `faces-parity` row and a permanent `*-face-model.test.ts`.
 3. **It is the 1u reference tile** (`size: '1u'`, `hp: 1`). Whatever a 1u face
    looks like, this module defines it. That is worth getting right once.
 
-**Verdict: PROMOTE**, behind the `fader` kind.
+**Verdict: PROMOTE.**
 
 ---
 
 ## 7. THE FACE
 
-### Three platform constraints
+### Two platform constraints
 
-1. ⚠ **BOTH params are `<Fader>` and `'fader'` is not a `ParamCellKind` on
-   `main`.** `paramCellKind()` returns `'knob'` for both, so promoting today
-   swaps 100 % of this module's control surface from travels to dials. On a
-   two-fader utility that reads as a different module. **Hold behind the kind**;
-   the `paramCells` block below is written in the form it will take and does not
-   typecheck until then, which is the correct loud failure.
-2. **2 params, so a panel cannot be ranked.** A panel's first legal rank is 7
-   (`faceTierCap('full') = 6`; `module-face-lint`'s `panelTierProblems`), which
-   two params can never reach. `hero.cell` stays unset; the picture is a sidebar
-   `custom` block (meowbox precedent) and the glyph keeps painting at the dock.
-3. ✅ **Both outputs are `type: 'audio'`**, so `glyph: 'meter'` binds to a real
+1. **A panel is DOCK-ONLY.** `module-face-lint`'s `panelTierProblems` refuses a
+   panel cell selected at any lane tier. This spec puts the picture in a sidebar
+   `custom` block (meowbox precedent) and lets the glyph paint at the dock.
+   ⚠ **The original reason given — "a panel's first legal rank is 7, which two
+   params can never reach" — is stale**: PF-22 (#1480) makes a hero picture
+   dock-only and therefore rank-free, so `hero.cell` IS reachable here. The
+   sidebar remains a legitimate choice; it is no longer the only one.
+2. ✅ **Both outputs are `type: 'audio'`**, so `glyph: 'meter'` binds to a real
    analyser tap. With nothing patched the output is exactly zero, so the meter
    is **unlit** at capture — the mixer/reverb precedent, deterministic under
    VRT, and honest: an unlit meter on a module that is genuinely silent is the
@@ -392,8 +387,8 @@ face: {
     },
   ],
 
-  // ⚠ Both are FADERS on the card; `fader` is not a ParamCellKind on main.
-  // See constraint 1 — this block is the target shape, not a shippable one.
+  // Both are FADERS on the card, and `'fader'` is a declared ParamCellKind
+  // since #1480 — so this reproduces the card's affordance exactly.
   paramCells: { offset: 'fader', level: 'fader' },
 
   // An INSERT with nothing patched outputs exactly zero, so the meter is unlit
@@ -414,18 +409,12 @@ face: {
       kind: 'custom', label: 'gain window', panelId: 'gain-window',
       props: { offsetParam: 'offset', levelParam: 'level', strengthPorts: 'strength_l,strength_r' },
     },
-    {
-      kind: 'signal-flow', label: 'signal flow',
-      stages: [
-        { label: 'IN L', role: 'generator' },
-        { label: 'IN R', role: 'generator', parallel: true, note: 'normals from IN L' },
-        { label: 'STRENGTH L', role: 'bus', parallel: true, note: 'raw bipolar CV, no scaling' },
-        { label: 'STRENGTH R', role: 'bus', parallel: true, note: 'normals from STRENGTH L' },
-        { label: '+ OFFSET', role: 'bus', note: 'the sum IS the gain — unclamped' },
-        { label: 'x LEVEL', role: 'bus', note: 'the only way back under unity' },
-        { label: 'OUT L / OUT R', role: 'bus' },
-      ],
-    },
+    // ⚠ A `signal-flow` sidebar block stood here (IN L/R + STRENGTH L/R →
+    // + OFFSET → x LEVEL → OUT L/R). THAT CELL KIND NO LONGER EXISTS — #1468
+    // removed it and its twelve adopters, and `graph/types.ts:798` warns that
+    // re-adding one is the mistake. Its two load-bearing notes — "the sum IS
+    // the gain, unclamped" and "x LEVEL is the only way back under unity" — are
+    // §3-B/§3-C and belong in the band hint and the `gain-window` picture.
     {
       kind: 'readouts', label: 'normalling',
       entries: [
@@ -545,7 +534,7 @@ corners.
 - **"am I a VCA or a ring modulator right now?"** — needs the strength signal's
   frequency content. Not a param, and §4-A established it has **no spectral
   signature** either. **This face deliberately does not claim to know**, and
-  says so in the signal-flow note instead.
+  says so in the band hint.
 
 ⚠ **Counting this module, that is the fourth independent request to widen
 `FaceReadoutValue`** (analogVco and macrooscillator filed it; bluebox hit the
@@ -624,7 +613,6 @@ must resolve def defaults for untouched params (the crossover panel's
 | **STRICT_DOCS** | already in it (`strict-docs.ts:143`). No new keys; §10-D is an edit to existing ones. |
 | **ART** | **two scenarios exist** (`stereovca/{profile,ring-mod-spectrum}`). A face PR touches neither. §10-B re-pins both — keep it separate. ⚠ `ring-mod-spectrum.test.ts` drives `stereoVcaMath.render`, the pure mirror **exported from the def**, not the worklet; `profile.test.ts` drives the real processor. A def edit that touched `stereoVcaMath` would move one and not the other. |
 | **VRT** | The card is in the REQUIRED `vrt-strict` set. A face PR that does not touch `StereovcaCard.svelte` moves no card baseline; §10-E's `paramSpec` binding is a pixel no-op but capture and diff it anyway. New face scenes: `face-stereovca-{compact,dock}` = **2 baselines**. ⚠ At `compact` the cap is **2 with a glyph**, so the lane tile shows both params — the tile is the whole module, which makes it the most informative compact scene in the roster and the one most worth eyeballing in the changeset gallery. |
-| **e2e** | +1 `faces-parity` row, **2 cells** — the smallest face in the repo. ≈ +3 s. Its `driveCell` arm enters the `fader` branch for both once that kind lands; if this is the first such face, delete the `UNEXERCISED_BY_FACES_PARITY` entry in the same PR. |
+| **e2e** | +1 `faces-parity` row, **2 cells** — the smallest face in the repo. ≈ +3 s. Its `driveCell` arm enters the `fader` branch for both; `noise` is already that branch's first consumer, so check `param-cell-coverage.test.ts`'s `UNEXERCISED_BY_FACES_PARITY` rather than assuming an entry needs deleting. |
 | **Push 2** | no `PUSH_CARD_CONTROLS` entry; 2 params fit the 8-control card with no re-rank risk. None needed. |
-| **BLOCKER** | **the `fader` `ParamCellKind` does not exist on `main`** (§7, constraint 1). On a two-fader module the substitution is the entire control surface. Sequence after the kind. |
 | **the bottom line** | The smallest module in the batch and the one whose face says the most per control: at spawn it is silent, half its panel cannot change that, its gain reaches ×2 unclamped, and the patch everybody wants needs both knobs in positions neither knob suggests. Two params, five true sentences none of them can print. |

@@ -5,60 +5,35 @@
 (`chore/v0.6.0-instrumentation` @ `88f4886`) · **Companion:**
 `.myrobots/plans/warrens-spectrum-2026-08-02.md` §3.2.1 / §3.2.2
 
-> **TRIAGE 2026-08-04 — NOT VERIFIABLE FROM THIS REPO. Kept; flagged for the
-> owner.** Every claim in this file is a `file:line` citation into
-> **`../callsine`**, a repo this triage cannot see, so whether the two-line fix
-> landed upstream is unknown here.
-> What IS confirmed on our side: the companion plan shipped — `callsine` was
-> **deleted** from this repo (**#1305**) and replaced by `warrensspectrum`, and
-> the owner's Q8 answer (**CORRECT, not faithful**) means our module deliberately
-> does **not** wait on this upstream fix. So nothing in patchtogether.live is
-> blocked on it.
-> **Delete only after checking `../callsine`** — this is the only record of the
-> SLICE-ceiling diagnosis and of the two existing SLICE tests identified as blind
-> gates (§7.1).
+> **STATUS 2026-08-12 — THE CEILING FIX HAS LANDED UPSTREAM (uncommitted).**
+> Checked directly against `/Users/2600hz/Documents/workspace/callsine`
+> (`chore/v0.6.0-instrumentation`, HEAD still `88f4886`, `src/dsp/SpectralResynth.cpp`
+> **modified in the working tree**):
+> - **D1 FIXED** — `setSliceMs` now clamps the *milliseconds* to `[2, 200]` and
+>   derives the hop from that; the `fftSize_ * 0.5` ceiling is gone, and the new
+>   comment carries §3.1's no-OLA argument.
+> - **D2 FIXED** — `setHostSyncedHop` is now `std::max(samplesPerSlice, 32)` with
+>   **no ceiling**, for §1.2's reason (blocks ≥ hop fire spurious off-grid frames).
+> - **D3 NOT FIXED** — the priming is still `hopSize_ - samplesUntilNext`, with no
+>   `-1` (§1.3).
+> - **D4 NOT FIXED** — `PluginProcessor.cpp:170` is still a bare
+>   `juce::roundToInt(sps)` feeding `t % spsInt` (§1.4).
+> - **None of §7's tests exist** — no `getHopSize`/`getAnalysisCount` accessors, no
+>   sibling-comparison ART gate, no `PlayHead` anywhere under `test/art/`. The
+>   §7.1 blind gates now pass *for the right reason* but still assert only tail
+>   RMS on a single 24000-sample block.
+> The trimmed sections below are the surviving work. On our side nothing is
+> blocked either way: `callsine` was deleted from this repo (**#1305**) and
+> replaced by `warrensspectrum`, whose owner ruling was **CORRECT, not faithful**.
 
-This plan fixes the plugin. The decision about **our** module is separate and already made
-(§3.2.2 of the companion plan: *correct, not faithful*) — our implementation does not wait on
-this landing upstream.
-
-**Every claim below is `file:line`-cited. Where a conclusion is an inference rather than a
-read, it is labelled `[INFERENCE]`.** That discipline exists because the previous two passes
-over this exact area were reliable readers and unreliable reasoners: every citation resolved,
-and one of the conclusions drawn from them was still wrong (§1.2).
-
----
-
-## 0. TL;DR
-
-- The **FREE-mode SLICE ceiling is real, total, and already recorded in the plugin's own
-  committed ART goldens.** SLICE 37 ms and SLICE 200 ms render **identical audio**.
-- The **host-sync clamp is real but block-size-dependent** — it is masked at block ≤ 1024 and
-  triples the analysis rate at block ≥ 2048. The brief (and the merged plan) overstated it.
-- **The fix is two lines, not a refactor.** The commit-decimation design in the brief is more
-  machinery than the bug requires; it is retained as an optional later phase and only for
-  *taste*, not correctness (§3.3).
-- There is a **real test harness** in that repo (Catch2 unit + ART goldens + an offline render
-  CLI). The brief's "if there is none" branch does not apply. Two of the existing SLICE tests
-  are **blind gates** that assert something the code does not do (§7.1).
-- **No preset migration is needed** — but presets *will sound different*, and that is the fix.
+**Every claim below is `file:line`-cited into `../callsine`. Where a conclusion is an
+inference rather than a read, it is labelled `[INFERENCE]`.** That discipline exists because
+the previous two passes over this exact area were reliable readers and unreliable reasoners:
+every citation resolved, and one of the conclusions drawn from them was still wrong (§1.2).
 
 ---
 
-## 1. Corrections to the brief — verified against the source
-
-### 1.1 What the brief got right
-
-| brief claim | verdict | citation |
-|---|---|---|
-| `resynth_.prepare(sampleRate, 11)` → `fftSize_ = 2048`, not a parameter | ✅ | `PluginProcessor.cpp:55`; `SpectralResynth.cpp:146-147` |
-| `prepare()` clamps order to `[8,14]` | ✅ | `SpectralResynth.cpp:146` |
-| `setSliceMs` clamps hop to `[96, 1024]` @48 k = `[2.00, 21.33] ms` | ✅ | `SpectralResynth.cpp:368-372` |
-| declared range is `2..200 ms` | ✅ | `PluginParams.h:163-166` |
-| `setHostSyncedHop` clamps to `[32, 2047]` | ✅ | `SpectralResynth.cpp:382` |
-| 1/16 @ BPM *B* = `720000/B` samples @48 k; passes the ceiling only at *B* ≥ 352 | ✅ | `PluginProcessor.cpp:168-170`; 720000/2047 = 351.7 |
-| `prime` is derived from the **already-clamped** hop | ✅ | `SpectralResynth.cpp:386` |
-| order 15 (32768) would be needed for 200 ms, past `clamp(8,14)` | ✅ | 200 ms @48 k = 9600; ceiling is `fftSize·0.5` so `fftSize ≥ 19200` → order 15 |
+## 1. The diagnosis — what each defect was, and which survive
 
 ### 1.2 ⚠ What the brief (and the merged plan) got WRONG — the host-sync grid is NOT destroyed
 
@@ -123,27 +98,19 @@ const int phase     = static_cast<int>(t % spsInt);   // spsInt may be 0
 `kEffDenom[0] = 0.0f` would divide by zero but the `sliceMode > 0` test at `:149` excludes it.
 **`[INFERENCE]`** no real host sends such a BPM; this is defensive hardening, not a live bug.
 
-### 1.5 Things the brief listed that turn out to be non-issues
+### 1.5 Two facts about the defaults that the rest of the plan rests on
 
-- **"reported plugin latency"** — there is **no latency reporting anywhere in the plugin**.
-  `grep -n "atency"` over `PluginProcessor.{h,cpp}` and `SpectralResynth.{h,cpp}` returns
-  exactly one hit, a *comment* (`SpectralResynth.h:194`). No `setLatencySamples` call exists.
-  The bank renders continuously at audio rate and the FFT only updates targets
-  (`SpectralResynth.h:36-37`), so the engine adds no latency by construction. **Nothing to
-  break.**
-- **"1/64 and finer work"** — there is no 1/64 division. The choices are
-  `FREE, 1/4, 1/8, 1/16, 1/32, 1/4T, 1/8T, 1/16T` (`PluginParams.h:228-231`) with
-  `kEffDenom = {0,4,8,16,32,6,12,24}` (`PluginProcessor.cpp:162-164`). Minimum BPM to pass the
-  ceiling is `11520000 / (effDenom × 2047)`: **1/4 → 1407, 1/8 → 704, 1/16 → 352, 1/32 → 176,
-  1/4T → 938, 1/8T → 469, 1/16T → 235.** *Not one of the eight* passes unclamped at 120 BPM;
-  the finest available division needs 176 BPM. (Moot at block ≤ 1024 per §1.2 — but it means
-  the "which divisions survive" framing has no correct answer above zero.)
-- **default SLICE "5.33 ms"** — it is **10.0 ms** (`PluginParams.h:165`), i.e. 480 samples,
-  comfortably under the 1024 ceiling. This matters: **the default is not clamped** (§8).
-- **default SLICE MODE** — it is **`1/16`, choice index 3** (`PluginParams.h:231`), **not
+- **default SLICE is 10.0 ms** (`PluginParams.h:165`) = 480 samples — under every
+  old ceiling, so the FREE default was never clamped and is unaffected by the fix.
+- **default SLICE MODE is `1/16`, choice index 3** (`PluginParams.h:231`), **not
   FREE**. A fresh instance in a playing host takes the host-sync path. The comment at
   `PluginParams.h:226-227` ("Existing presets with no saved value land on FREE") is about
-  *loading old presets*, not about the default.
+  *loading old presets*, not about the default. This is why §8.2's sound change hits the
+  out-of-the-box patch.
+
+Also confirmed while reading, and worth not re-discovering: there is **no latency
+reporting anywhere in the plugin** (one comment hit at `SpectralResynth.h:194`, no
+`setLatencySamples`), so nothing downstream of the hop can break on it.
 
 ### 1.6 The strongest evidence, and it is an artifact rather than an argument
 
@@ -167,28 +134,28 @@ every SliceMode value falls back to FREE. **`spectralSliceMode` has zero ART cov
 
 ---
 
-## 2. What is actually broken — the four defects, ranked
+## 2. The four defects — two fixed upstream, two still live
 
-| # | defect | scope | severity |
+| # | defect | scope | status |
 |---|---|---|---|
-| **D1** | FREE-mode SLICE ceiling `fftSize·0.5` | **always**, every host, every block size | ~90 % of the declared range and ~61 % of knob travel inert |
-| **D2** | host-sync ceiling `fftSize−1` | **only** at host block ≥ 2048 | 3× over-analysis, ≈61 ms grid error |
-| **D3** | priming off-by-one (`:386`) | all block sizes, host-sync only | 1 sample early; up to 25 % duplicate FFTs |
-| **D4** | unguarded `t % spsInt` (`:172`) | pathological BPM only | latent div-by-zero |
+| **D1** | FREE-mode SLICE ceiling `fftSize·0.5` | **always**, every host, every block size | **FIXED** — clamp is now on the *ms* value, `[2, 200]` |
+| **D2** | host-sync ceiling `fftSize−1` | **only** at host block ≥ 2048 | **FIXED** — no ceiling; `max(samplesPerSlice, 32)` |
+| **D3** | priming off-by-one (`:386`) | all block sizes, host-sync only | **LIVE** — 1 sample early; up to 25 % duplicate FFTs |
+| **D4** | unguarded `t % spsInt` (`:172`) | pathological BPM only | **LIVE** — latent div-by-zero |
 
-On the knob-travel figure: `NormalisableRange(2, 200, 0.1, 0.4)` means
-`value = 2 + 198·p^2.5` (JUCE `convertFrom0to1` applies `p^(1/skew)`). Solving for the 21.33 ms
-ceiling gives `p = (19.33/198)^0.4 = 0.394` — **the top 60.6 % of the knob does nothing**. In
-numeric terms 178.7 of 198 ms, 90.2 % of the span, is unreachable. (The brief's "89 %" is the
-endpoint ratio `1 − 21.33/200`; both are defensible, the travel number is the one a user feels.)
+What D1 cost, kept because it is the argument for the ceiling never coming back:
+`NormalisableRange(2, 200, 0.1, 0.4)` means `value = 2 + 198·p^2.5` (JUCE
+`convertFrom0to1` applies `p^(1/skew)`). Solving for the 21.33 ms ceiling gives
+`p = (19.33/198)^0.4 = 0.394` — **the top 60.6 % of the knob did nothing**, 178.7 of
+198 ms, 90.2 % of the span, unreachable.
 
 ---
 
 ## 3. The fix
 
-### 3.1 The conceptual error being corrected
+### 3.1 The conceptual error that was corrected — do not let it back in
 
-The ceiling comment (`SpectralResynth.cpp:366-367`) reads:
+The old ceiling comment read:
 
 > *"ceiling at half the FFT window so the hop never exceeds the window we're integrating over."*
 
@@ -201,23 +168,23 @@ continuously and the FFT only updates targets. **With no OLA there is no COLA re
 the reconstruction argument for `hop ≤ N/2` does not exist here.
 
 What *does* survive is a weaker, real constraint: `circular_` is exactly `fftSize_` long
-(`SpectralResynth.cpp:151`) and `analyzeFrame` reads the most recent `N` samples
-(`:421-426`), so with `hop > N` the input between frames is never analysed. **For a hold
-control that is the intended semantic, not a defect** — SLICE = 200 ms means *"snapshot the
-spectrum and hold it for 200 ms"*, and a snapshot is by definition not a continuous integral.
+(`SpectralResynth.cpp:151`) and `analyzeFrame` reads the most recent `N` samples, so with
+`hop > N` the input between frames is never analysed. **For a hold control that is the
+intended semantic, not a defect** — SLICE = 200 ms means *"snapshot the spectrum and hold it
+for 200 ms"*, and a snapshot is by definition not a continuous integral.
 
-### 3.2 ✅ RECOMMENDED — Phase 1 is two lines
+### 3.2 The measured grid behaviour — why D3 is still worth fixing
 
-Replace the two ceilings with **sanity bounds** rather than window-derived ones, and fix the
-priming off-by-one. Verified by simulation across every block size:
+Simulated across every block size (1/16 @ 120 BPM, 48 kHz, 20 grid periods):
 
 | variant | analyses (want 20) | exactly on-grid | max offset |
 |---|---:|---:|---:|
-| today (clamp, no fix) | 21–60 depending on block | 1–5 of 20 | 1 … 2946 |
-| **ceiling removed only** | **21 at every block** | 1 of 20 | **1** |
+| original (clamped) | 21–60 depending on block | 1–5 of 20 | 1 … 2946 |
+| **ceiling removed only** ← *upstream is here* | **21 at every block** | 1 of 20 | **1** |
 | **ceiling removed + `prime−1`** | **20 at every block** | **20 of 20** | **0** |
 
-That is the whole fix for D1–D3. No new state, no new members, no refactor of `analyzeFrame`.
+One extra analysis per 20 grid periods and a 1-sample offset survive on the current
+upstream tree. No new state, no new members, no refactor of `analyzeFrame` closes it.
 
 ### 3.3 ⛔ Why the brief's commit-decimation design is NOT phase 1
 
@@ -264,77 +231,25 @@ decided by ear after phase 1 ships (phase 4, §10).
 
 ---
 
-## 4. Exact edit list
+## 4. Remaining edit list
 
-Five sites. All in `/Users/2600hz/Documents/workspace/callsine`.
+E1 and E2's ceiling halves are **already applied upstream** (see the status block
+at the top); what follows is what is not.
 
-### E1 — `src/dsp/SpectralResynth.cpp:362-373` · `setSliceMs` (fixes **D1**)
-
-```cpp
-// BEFORE
-void SpectralResynth::setSliceMs(float ms)
-{
-    // Slice controls the analysis hop. Shorter = more responsive (tracks
-    // transients), longer = slower-changing pad. Floor at 2 ms so we
-    // don't analyze every block; ceiling at half the FFT window so the
-    // hop never exceeds the window we're integrating over.
-    const float samples = std::clamp(
-        static_cast<float>(ms * 0.001 * sampleRate_),
-        2.0f * static_cast<float>(sampleRate_ * 0.001),
-        static_cast<float>(fftSize_) * 0.5f);
-    hopSize_ = std::max(1, static_cast<int>(samples));
-}
-```
+### E2b — `src/dsp/SpectralResynth.cpp` · `setHostSyncedHop` priming (fixes **D3**)
 
 ```cpp
-// AFTER
-void SpectralResynth::setSliceMs(float ms)
-{
-    // SLICE is a RESYNTHESIS control: how long ONE analysed spectrum is
-    // HELD by the sine bank. It is NOT the STFT overlap factor. This
-    // class does no overlap-add reconstruction (see the header), so the
-    // Hann-COLA constraint hop <= N/2 does not apply to it, and the old
-    // fftSize_*0.5 ceiling made ~90 % of the declared 2..200 ms range
-    // (PluginParams.h:163-166) unreachable -- the top 61 % of the knob
-    // did nothing. With hop > fftSize_ the input between frames is not
-    // analysed; for a HOLD control that is the semantic, not a defect.
-    // Floor stays 2 ms == the declared parameter minimum.
-    // Ceiling is a sanity bound (1 s) only, and never binds for the knob.
-    const float samples = std::clamp(
-        static_cast<float>(ms * 0.001 * sampleRate_),
-        2.0f * static_cast<float>(sampleRate_ * 0.001),
-        static_cast<float>(sampleRate_));
-    hopSize_ = std::max(1, static_cast<int>(samples));
-}
-```
-
-### E2 — `src/dsp/SpectralResynth.cpp:375-388` · `setHostSyncedHop` (fixes **D2** + **D3**)
-
-```cpp
-// BEFORE
-    hopSize_ = std::clamp(samplesPerSlice, 32, fftSize_ - 1);
-    // Prime samplesSinceHop_ so the next analyzeFrame() fires after
-    // `samplesUntilNext` samples ...
+// TODAY (still)
     const int prime = std::clamp(hopSize_ - samplesUntilNext, 0, hopSize_ - 1);
     samplesSinceHop_ = prime;
 ```
 
 ```cpp
-// AFTER
-    // Ceiling is a SANITY bound (4 s), not fftSize_-1. The old ceiling
-    // silently rewrote every musical division below ~176 BPM, and at host
-    // block sizes >= 2048 -- where the per-block re-prime below no longer
-    // masks it -- it TRIPLED the analysis rate and put frames up to 61 ms
-    // off the beat. (The old comment claimed this ceiling "matches
-    // setSliceMs"; setSliceMs ceilinged at fftSize_*0.5, half of this.)
-    hopSize_ = std::clamp(samplesPerSlice, 32,
-                          std::max(32, static_cast<int>(sampleRate_ * 4.0)));
-    // Prime samplesSinceHop_ so the next analyzeFrame() fires exactly
-    // `samplesUntilNext` samples into this block.
+// WANTED
     // The -1 is load-bearing: process() PRE-increments samplesSinceHop_
     // before the >= test (:922-923), so at sample n it holds prime+n+1 and
-    // first fires at n = hop-prime-1. Priming to hop-until therefore fired
-    // one sample EARLY and fired TWICE whenever a block boundary landed on
+    // first fires at n = hop-prime-1. Priming to hop-until therefore fires
+    // one sample EARLY and fires TWICE whenever a block boundary lands on
     // a grid boundary (25 % spurious extra FFTs at a 64-sample block).
     const int prime = std::clamp(hopSize_ - samplesUntilNext - 1,
                                  0, hopSize_ - 1);
@@ -429,17 +344,15 @@ frames genuinely are 6000 samples apart. `hopSize_` was lying about the analysis
 consumer swallowed the lie. This is the one place the fix *changes the sound of the default
 patch* (§8.2).
 
-### 5.3 MassPass is NOT affected — and it already does the right thing
+### 5.3 MassPass was never affected — and it was the proof the ceilings were a bug
 
 `MassPass::setSliceMs` clamps to **`[1, 200] ms`** (`MassPass.cpp:206-214`) and
-`MassPass::setHostSyncedSlice` to **`[32, 1<<20]`** (`:216-223`). It honours the whole declared
-range and every musical division. Both engines are driven from the same knob
-(`PluginProcessor.cpp:186-187`, `:175-176`) — **so the plugin already contains a correct
-implementation of this control, and the two engines disagree.** That is independent
-corroboration that the `SpectralResynth` ceilings are a defect and not a design choice, and it
-is the strongest single argument for the fix. It also means the fix makes the two engines
-*agree*, which is a behaviour users can already A/B via the MODE switch
-(`PluginParams.h:125`).
+`MassPass::setHostSyncedSlice` to **`[32, 1<<20]`** (`:216-223`). It always honoured the whole
+declared range and every musical division, while `SpectralResynth` did not — and both engines
+are driven from the *same knob* (`PluginProcessor.cpp:186-187`, `:175-176`), A/B-able via the
+MODE switch (`PluginParams.h:125`). **The plugin contained a correct implementation of this
+control alongside the broken one**, which was the strongest single argument that the
+`SpectralResynth` ceilings were a defect and not a design choice. The two now agree.
 
 ---
 
@@ -505,29 +418,32 @@ SLICE, because "one hop" grows from ≤ 21 ms to up to 200 ms.
 Entry points: `flox activate -- task test-unit` (unit only, `ctest -L unit`),
 `flox activate -- task test` (unit + smoke + ART).
 
-### 7.1 ⚠ FIRST: two existing tests are blind gates — fix them before anything else
+### 7.1 ⚠ Two existing tests were blind gates — the fix made them TRUE, not SIGHTED
+
+Both still stand exactly as described; the ceiling removal changed the *facts* they
+assert without changing what they can *see*. This is the most transferable finding in
+the file, so it is kept in full.
 
 **`test_spectral_resynth.cpp:397-431`** — *"host-synced hop matches equivalent ms-based slice"*.
-Its stated rationale is **factually false**:
+Its stated rationale used to be **factually false**:
 
 > *"setHostSyncedHop(6000, 0) at 48 kHz should be functionally equivalent to setSliceMs(125) —
 > both pin `hopSize_` to 6000 samples"*
 
-Neither does. `setSliceMs(125)` → **1024**; `setHostSyncedHop(6000,0)` → **2047**. They are not
-6000 and they are not equal to each other. The test passes because it compares **tail RMS of a
-steady 220 Hz sine within 5 %** (`:419-430`) — a metric **invariant to hop size** for a
+Before the fix, neither did: `setSliceMs(125)` → **1024**; `setHostSyncedHop(6000,0)` → **2047**.
+Not 6000, and not equal to each other. The test passed anyway because it compares **tail RMS of
+a steady 220 Hz sine within 5 %** (`:419-430`) — a metric **invariant to hop size** for a
 stationary input. Textbook blind gate: *a metric blind to the very dimension under test returns
-a clean number.* After the fix both genuinely become 6000 and it passes **for the right reason**
-— keep the test, rewrite the comment, and add an assertion that can actually see the hop.
+a clean number.* Both now genuinely become 6000, so it passes **for the right reason** — but
+the assertion is still the blind one. **Still owed: an assertion that can actually see the hop.**
 
-**`test_spectral_resynth.cpp:433-463`** — sweeps `sps ∈ {480, 2400, 6000, 12000, 24000}`. **Four
-of the five clamp to 2047**, so it tests one value four times, and it asserts only
-`rms > 1e-3` and no NaN. Its comment claims coverage of "~30 BPM @ 1/4 … ~300 BPM @ 1/32T";
-only the 480 case is unclamped. After the fix all five are distinct — again, right for the
-right reason.
+**`test_spectral_resynth.cpp:433-463`** — sweeps `sps ∈ {480, 2400, 6000, 12000, 24000}`. Four
+of the five used to clamp to 2047, so it tested one value four times while asserting only
+`rms > 1e-3` and no NaN, under a comment claiming coverage of "~30 BPM @ 1/4 … ~300 BPM @
+1/32T". All five are distinct now — again, right for the right reason.
 
-**Both also call `process()` with the entire 24000-sample buffer as one block**
-(`:413`, `:448`), i.e. block size 24000 — the regime §1.2 shows is broken and no host uses.
+**Both still call `process()` with the entire 24000-sample buffer as one block**
+(`:413`, `:448`), i.e. block size 24000 — a regime no host uses.
 
 ### 7.2 New unit tests
 
@@ -548,9 +464,11 @@ the sound does not move. So assert on **output**.
   880 Hz.
 - Assert `lag(SLICE=200 ms) > lag(SLICE=2 ms) + 50 ms`, and `lag` **strictly increases** across
   `{2, 10, 40, 100, 200} ms`.
-- ⚠ **This assertion MUST FAIL on today's code** — record that in the test comment. Today
-  `lag(37 ms) == lag(200 ms)` exactly, which is the bug. A test that passes before *and* after
-  is not measuring the fix.
+- ⚠ **This assertion had to FAIL on the pre-fix code** — record that in the test comment.
+  Pre-fix, `lag(37 ms) == lag(200 ms)` exactly, which was the bug. A test that passes before
+  *and* after is not measuring the fix. **Writing it now means writing it against the fixed
+  code, so verify it fails with the ceiling temporarily restored** (the same discipline as
+  test 3), or it is untested as an instrument.
 
 **Test 2 — host-sync grid across BLOCK SIZES.** The gap nothing covers today.
 For `block ∈ {64, 128, 256, 512, 1024, 2048, 4096}`: feed 20 grid periods of 1/16 @ 120 BPM,
@@ -577,12 +495,14 @@ Flake-check: **3× locally** per repo standard, e.g.
 
 ### 7.3 ART — and closing the hole that hid this for months
 
-**The prediction, which is the acceptance criterion.** After the fix, re-running the ART suite
-must move **exactly two** goldens:
+**The prediction, which is the acceptance criterion when the upstream change is committed.**
+Re-running the ART suite must move **exactly two** goldens:
 
 - `sweep__spectralSlice__mid.json` (37 ms) and `sweep__spectralSlice__max.json` (200 ms) must
   change **and must become different from each other**.
-- **Every other golden must be byte-identical apart from `realtimeFactor`** (§8).
+- **Every other golden must be byte-identical apart from `realtimeFactor`** (§8) — the FREE
+  default at 10 ms was never clamped, and the harness installs no playhead, so every non-SLICE
+  sweep takes the unchanged path. The fix is *self-verifying* against 100+ committed baselines.
 
 If `min` moves, or if a non-SLICE golden moves, **stop — the change is broader than intended.**
 Regenerate with `cmake --build build --target art_regen` and review the diff entry by entry.
@@ -610,21 +530,10 @@ builds JUCE. The one ART playhead case adds one render. **No sign-off threshold 
 
 ## 8. Default preservation
 
-### 8.1 ✅ FREE mode at the default — bit-identical, guaranteed
-
-Default SLICE is **10.0 ms** (`PluginParams.h:165`) = **480 samples** @48 k. The old floor is
-96 and the old ceiling 1024, so **the clamp never engaged at the default** — E1 changes only
-the ceiling, and 480 < 1024 < 48000. Byte-for-byte identical output.
-
-This extends to **almost the whole ART suite**: the harness installs no playhead, so every case
-takes the FREE path, and every sweep other than `spectralSlice` runs at the default 10 ms slice.
-**Every golden except `sweep__spectralSlice__{mid,max}` must come back byte-identical** — which
-is exactly the §7.3 acceptance criterion. The fix is *self-verifying* against 100+ committed
-baselines.
-
-Also unchanged: the whole currently-reachable SLICE range. For any SLICE ≤ 21.33 ms the old
-clamp was a no-op, so **2–21 ms is bit-identical after the fix** — the fix is strictly additive
-over the range that works.
+FREE mode at the default is **bit-identical**: SLICE 10.0 ms = 480 samples, under the old
+1024 ceiling, so the clamp never engaged there. Same for the whole 2–21 ms band — the fix is
+strictly additive over the range that already worked. The host-synced default is not, and
+that is the one thing to be deliberate about:
 
 ### 8.2 ⚠ Host-synced default — NOT bit-identical. Exactly why, and by how much.
 
@@ -650,23 +559,10 @@ which this plan **recommends against**.
 
 ## 9. Presets and saved state — no migration needed, but the sound changes
 
-**How state is stored.** `getStateInformation` → `apvts_.copyState()` → XML → `copyXmlToBinary`
-(`PluginProcessor.cpp:513-518`); `setStateInformation` is the inverse (`:520-525`).
-`PresetManager` writes the same tree wrapped in `<warrens_spectrum_preset version="1">`
-(`PresetManager.h:33-47`) into
-`~/Library/Application Support/Warren's Spectrum/Presets/` (`:22-31`); `loadFromFile` accepts
-both wrapped and raw (`:56-59`).
-
-**Raw or normalised?** **Raw (denormalised).** JUCE's APVTS stores the un-normalised value in
-the tree — `ParameterAdapter::setDenormalisedValue(tree.getProperty(valuePropertyID, …))`
-(`extern/JUCE/modules/juce_audio_processors/utilities/juce_AudioProcessorValueTreeState.cpp:413`),
-and `flushToTree` writes the denormalised value (`:467`). A preset with SLICE at 150 ms stores
-`value="150"`.
-
-**Therefore no migration is required.** The fix changes **no `ParameterID`, no
-`NormalisableRange`, no default, and no parameter count**. Every existing preset and DAW session
-round-trips to the identical stored numbers. There is nothing to re-map. *(This holds regardless
-of the raw-vs-normalised question, which is why it is the robust argument.)*
+**No migration is required.** The fix changes **no `ParameterID`, no `NormalisableRange`, no
+default, and no parameter count**, and JUCE's APVTS stores the *denormalised* value in the tree
+(`ParameterAdapter::setDenormalisedValue` /`flushToTree`), so a preset with SLICE at 150 ms
+stores `value="150"` and round-trips identically. Nothing to re-map.
 
 ### 9.1 ⚠ The real risk: presets don't move, but they will SOUND different
 
@@ -691,10 +587,12 @@ evidence to check before release; grep it for `spectralSlice` values > 21.33.
 
 ## 10. Phasing — smallest shippable first
 
-**Phase 1 — the fix (ship alone).** E1 + E2 + E3 + E4. Fixes D1–D4. Rewrite the two blind
-tests (§7.1); add unit tests 1, 2, 3, 5 (§7.2); re-run ART and confirm **exactly two goldens
-moved** (§7.3). Update `PluginParams.h:205-206`'s now-wrong "≈30 ms at hop=512" comment.
-*Small, self-verifying against 100+ existing baselines, and complete on its own.*
+**Phase 1 — the fix (ship alone).** The two ceilings are **already applied in the upstream
+working tree**; still owed in the same commit: **E2b** (the `prime−1`, D3), **E3** (the
+`spsInt` guard, D4), **E4** (the two now-wrong header comments), the assertions the §7.1 blind
+gates still lack, unit tests 1/2/3/5 (§7.2), a re-run of ART confirming **exactly two goldens
+moved** (§7.3), and `PluginParams.h:205-206`'s now-wrong "≈30 ms at hop=512" comment.
+*Self-verifying against 100+ existing baselines, and complete on its own.*
 
 **Phase 2 — the gate that stops this recurring.** ART sibling-comparison for continuous params
 + the ART playhead case (§7.3). Triage whatever else the sibling gate turns red. Optionally E5
@@ -729,5 +627,6 @@ rather than a rounded frame multiple, or SLICE becomes quantised (§3.3 item 1).
 4. **§10 phase 4** — is the *steppier* long-SLICE character (tracks die and rebirth each slice)
    what you want from a Panharmonium-style SLICE, or do you want the smoother decoupled version?
    This is the only genuinely aesthetic question here.
-5. **§3.2** — sanity ceilings are proposed at **1 s** (FREE) and **4 s** (host-sync, so 1/4 at
-   very low BPM still fits). Both are arbitrary. Preferences?
+5. ~~sanity ceilings~~ — **settled by the upstream edit**: FREE clamps the *ms* to the declared
+   `[2, 200]`, host-sync takes `max(sps, 32)` with no ceiling at all. Both are better answers
+   than the arbitrary 1 s / 4 s this plan proposed.

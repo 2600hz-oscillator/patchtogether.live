@@ -1,19 +1,12 @@
 # Gate-faithful recording — build sequencing (2026-07-13)
 
-> **RE-VERIFIED 2026-08-04: still UNSTARTED, still LIVE backlog.** `gateLen` does
-> not exist anywhere in `packages/web/src` (every `gateLen` grep hit is the
-> substring inside the *global* `gateLength` knob — `clipplayer.ts:175`).
-> `emitLaneStep` still derives the gate from that duty knob (`clipplayer.ts:1363`,
-> `:2059`). Note #990 ("held/tied notes hold the POLY gate across the span") is the
-> **predecessor** research phase, not this work.
->
-> ⚠ **One instruction below is now stale: base off `main`, not
-> `feat/launchpad-single-rework`.** That integration branch merged as **#1078** on
-> 2026-07-13 (the same day this was written) and everything it carried —
-> clip-nav's `handleKeysNote`, scene-launch's `sceneQueue` — has been on `main`
-> for three weeks. The branch still exists on `origin` but is long dead.
+> **RE-VERIFIED 2026-08-12: still UNSTARTED, still LIVE backlog, owner GO
+> standing on all 3 phases.** No `gateLen` on `NoteEvent` anywhere in
+> `packages/web/src` (the only `gateLen` in the tree is GATEMAIDEN's unrelated
+> min-gate-width param). `emitLaneStep` still derives the gate from the *global*
+> `gateLength` duty knob. Note #990 ("held/tied notes hold the POLY gate across
+> the span") is the **predecessor** research phase, not this work.
 
-**Status:** proposal delivered + **owner GO on all 3 phases**. NOT started.
 This doc reconstructs the plan (the original `gate-recording-proposal-2026-07-13.md`
 was saved into a worktree that has since been removed — it was gitignored, so it's
 gone). Research predecessor: `.myrobots/plans/gate-heldnote-model-2026-07-01.md`.
@@ -103,13 +96,6 @@ tests. Guard emit-core regression with `clipplayer.test.ts`.
 ---
 
 ## Build discipline (learned this session — do not skip)
-- ~~**Base off `feat/launchpad-single-rework`** (the integration branch): it has the
-  latest clip engine + clip-nav's `handleKeysNote` + scene-launch's `sceneQueue`.
-  Basing off main would conflict with clip-nav on `launchpad-control.svelte.ts`.
-  PR targets `feat/launchpad-single-rework`.~~
-  **SUPERSEDED 2026-08-04 — base off `main` and target `main`.** #1078 merged that
-  integration branch on 2026-07-13; the clip engine, `handleKeysNote` and
-  `sceneQueue` are all on `main`, so the conflict this avoided no longer exists.
 - **Adding fields/ports → run the FULL web unit suite** (`npm run -w packages/web
   test`), not just the touched files. `gateLen` on NoteEvent is a data field (no
   PortDef/ParamDef change → no contract-lock churn), but frozen-contract tests +

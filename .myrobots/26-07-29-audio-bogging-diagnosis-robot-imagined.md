@@ -3,22 +3,18 @@
 Not asked for as a document. Written because the diagnosis cost ~4.5 M tokens of
 agent work and the numbers should not have to be re-measured.
 
-> ## ✅ RE-VERIFIED 2026-08-04 — STILL LIVE, nothing here has been superseded
+> ## RE-VERIFIED 2026-08-12 — four of five remaining items still open
 >
-> Every item in "Remaining work, ranked" is still open, and the six owner
-> questions at the bottom are still unanswered:
->
-> - **#2 cap the video engine to 60 fps** — no governor or fps cap in
->   `video/engine.ts`. OPEN, still needs owner sign-off.
+> - **#1 Buffer → Stable** — still the 30-second owner experiment. Never reported back.
+> - **#2 cap the video engine to 60 fps** — no governor, no fps cap and no
+>   `document.hidden` gate in `video/engine.ts`. OPEN, still needs owner sign-off.
 > - **#3 narrow `recorderbox`'s pull-exempt** — `isPullExempt`
 >   (`video/engine.ts:1013-1020`) still returns `true` for **any** node with
->   non-empty `audioInputs`, and the comment names RECORDERBOX explicitly. So
->   recorderbox still pins the whole upstream chain whether or not it is armed.
->   OPEN, exactly as diagnosed.
-> - **#4 card-layer rAF coalescing** — **73 card files still hold 239 raw
->   `requestAnimationFrame` sites**; only 5 cards plus 2 shared controls use the
->   ticker. (The doc's "72 of ~80 cards / only 8 use `onMeterFrame`" was the same
->   measurement in different units.) OPEN. Tracked as P0-1 in `FABLE_PERF_PLAN`.
+>   non-empty `audioInputs`. So recorderbox still pins the whole upstream chain
+>   whether or not it is armed. OPEN, exactly as diagnosed.
+> - **#4 card-layer rAF coalescing** — **74 card files, 244 raw
+>   `requestAnimationFrame` sites** (was 73 / 239 on 2026-08-04 — it is growing);
+>   12 files use the shared ticker. OPEN. Tracked as P0-1 in `FABLE_PERF_PLAN`.
 > - **#5 per-module render-cost CI gate** — still does not exist. OPEN.
 > - **The separate P0 preset-load DOM leak still has no ticket.** ⚠ Note the
 >   later, narrower finding in `2026-08-03-SESSION-STATE.md` §1: #1262 concluded
@@ -132,9 +128,13 @@ matched the owner's control exactly (late 25 ms ticks: full patch 17/20 →
 device-layer underrun *literally cannot occur*. `AudioContext.renderCapacity` is
 not implemented in Playwright's Chromium (three flag spellings tried).
 
-**There is no underrun detection anywhere in the app**
-(`grep renderCapacity|playoutStats|onprocessorerror` → 0 hits). That is arguably
-the real gap.
+**There was no underrun detection anywhere in the app** (`grep
+renderCapacity|playoutStats|onprocessorerror` → 0 hits), and that was the real
+gap. **CLOSED by #1425**: `$lib/audio/playback-stats` (the underrun counter, off
+`AudioContext.playbackStats` — note two of those three greps were the *wrong API
+names*) plus `$lib/audio/worklet-guard`'s `processorerror` latch and the
+tick-latency histogram. A re-run of this diagnosis should now read the numbers
+instead of inferring them.
 
 ## Ruled OUT, with evidence
 
@@ -173,8 +173,9 @@ Worth recording because I told the owner otherwise before the evidence arrived:
    consumed", so it stops pinning the whole upstream chain when idle.
 4. **Card-layer rAF coalescing** (perf-plan P0-1) — ~80 of the 150 ms/s. The card
    present layer is entirely ungated: an offscreen video card still does a
-   full-res GL blit + a `drawImage` GPU sync every frame. **72 of ~80 cards still
-   run raw rAF; only 8 use the shared `onMeterFrame` ticker.** Already half-built.
+   full-res GL blit + a `drawImage` GPU sync every frame. **74 card files hold
+   244 raw rAF sites; 12 files use the shared `onMeterFrame` ticker** (2026-08-12
+   re-count — the population is growing, not shrinking). Already half-built.
 5. **A per-module render-cost CI gate.** There is none. A module can regress its
    per-frame cost 10× and nothing notices until an unrelated test times out — a
    flaky timeout is the worst possible signal for a perf regression, and it burned

@@ -8,17 +8,19 @@ to the Launchpad; (3) a phased plan with effort, risks, and owner questions.
 
 This is DESIGN ONLY. Nothing below was built. All paths are absolute-from-repo-root.
 
-> **TRIAGE 2026-08-04 — STILL UN-BUILT AND STILL THE LIVE SPEC. Re-verified.**
+> **RE-VERIFIED 2026-08-12 — STILL UN-BUILT AND STILL THE LIVE SPEC.**
 > §2's central asymmetry is unchanged: `packages/web/src/lib/meta/modules/`
-> contains `launchpad-control.ts` and (new since) `push2-control.ts`, but **there
-> is still no monome module def** — the monome remains a bare adapter under
-> `lib/control/monome` with no first-class card, exactly as §0.4 describes. None
-> of Phases 1–3 shipped.
-> The one thing that moved: a THIRD controller (Push 2) shipped in the interim,
-> which strengthens §2.3's file-for-file argument — there are now two peers to
+> contains `launchpad-control.ts`, `push2-control.ts` and `electra-control.ts`,
+> but **there is still no monome module def** — no `MonomeControlCard.svelte`, no
+> `MonomeDocs.svelte`, no `/docs/modules/monomeControl` route. The monome remains
+> a bare adapter under `lib/control/monome` reachable only through the clipplayer
+> card's GRID button, exactly as §0.4 describes. None of Phases 1–3 shipped.
+> Three controllers are now first-class (Push 2 and Electra shipped in the
+> interim), which strengthens §2.3's file-for-file argument — there are peers to
 > pattern-match against, not one. Re-check §0's file:line citations against the
-> tree before building; the clip-player surface has changed (scene repeats
-> **#1091**, SHIFT hold-only **#1094**, card parity **#1100**).
+> tree before building; the clip-player surface has changed a great deal since
+> (scene repeats **#1091**, SHIFT hold-only **#1094**, card parity **#1100**,
+> SONG MODE **#1099**).
 
 ---
 
@@ -40,9 +42,10 @@ This is DESIGN ONLY. Nothing below was built. All paths are absolute-from-repo-r
   `module-docs-ensure.test.ts`, `module-docs-lint.test.ts`. Accept loop = `task docs:accept`.
 - **STRICT_DOCS** ratchet (`strict-docs.ts`) — `clipplayer` is in it (line ~234), so every
   clipplayer port/param/family MUST carry authored docs.
-- **docs-hash-transparency** — only matters for files in the WebGL attest basis (video defs).
-  None of the control-surface files here are in that basis, so **no `docs-hash-ignore`
-  markers are needed** for anything in this plan.
+- **Attest hashing** — no longer a concern for docs at all: `scripts/attest-code-basis.ts`
+  strips comments and a def's `docs`/`controlFamilies`/`face` from every attest basis, so
+  documentation is free to write anywhere. *(This section originally described the
+  `docs-hash-ignore` marker discipline, deleted repo-wide 2026-08-09.)*
 
 ### 0.2 How a module doc PAGE renders
 - **Catalog** `/docs/modules/+page.svelte` — auto-built from `buildModuleManifest()`, which
@@ -204,8 +207,7 @@ which already lists both) — owner question.
 - The controllers block is AUTHORED data (a small hand-maintained map), same class as
   `MODULE_GUIDES`. No GENERATED or PINNED surface changes except the one contract line the new
   meta module adds (accepted via `task docs:accept`).
-- Nothing here touches a WebGL-attest-basis file → **no `docs-hash-ignore` markers, no
-  re-attest.**
+- Nothing here touches a WebGL-attest-basis file → **no re-attest.**
 
 ---
 

@@ -294,23 +294,19 @@ face: {
   },
 
   sidebar: [
-    // THE PICTURE. A `custom` block, NOT a `hero.cell` — module-face-lint
-    // refuses a PANEL cell selected at a lane tier and the 'full' lane cap is
-    // SIX, so a panel's first legal rank is 7. This module has two rankable
-    // keys and can never reach it. A `custom` sidebar block carries no
-    // `face.order` key and therefore no rank at all (the meowbox precedent,
-    // stated in sidebar-panels.ts).
+    // THE PICTURE. A `custom` sidebar block carries no `face.order` key and
+    // therefore no rank (the meowbox precedent, stated in sidebar-panels.ts).
+    // ⚠ Since PF-22 (#1480) a `hero.cell` is ALSO rank-free — a hero picture is
+    // dock-only and may rank FIRST — so the two routes are now both open and
+    // the choice is a design one, not an arithmetic one.
     { kind: 'custom', label: 'the conversion', panelId: 'gate-trigger-map',
       props: { lenParam: 'gateLen', shapeParam: 'trigShape', threshold: 0.5 } },
 
-    { kind: 'signal-flow', label: 'signal flow', stages: [
-      { label: 'IN',        role: 'generator', note: 'any cv — level AND edges' },
-      { label: '>= 0.5',    role: 'bus',       note: 'GATE_HI, absolute' },
-      { label: 'LEVEL',     role: 'bus',       note: 'high, or within LEN of a rise' },
-      { label: 'GATE',      role: 'bus',       note: 'held square {0,1}' },
-      { label: 'EDGE',      role: 'bus', parallel: true, note: 'rising only' },
-      { label: 'TRIG',      role: 'bus', parallel: true, note: '5 ms shaped pulse' },
-    ] },
+    // ⚠ A `signal-flow` sidebar block stood here. THAT CELL KIND NO LONGER
+    // EXISTS — #1468 removed it and its twelve adopters, and
+    // `graph/types.ts:798` warns in as many words that re-adding one is the
+    // mistake. The chain it drew (IN → >=0.5 → LEVEL/GATE, EDGE/TRIG) is
+    // §2-C/§2-D and is stated in the readouts block below.
 
     { kind: 'readouts', label: 'what is true right now', entries: [
       { label: 'trig above 0.5', valueId: 'gatemaiden-trig-hi' },
@@ -354,7 +350,8 @@ the picture.** Everything load-bearing is in one of those three.
 All four are pure functions of the two params, which is what
 `FaceReadoutValue` — `(read: (paramId) => number | undefined) => string`
 (`face-readout-values.ts:149`) — can express. Nothing here needs the platform
-widened. That is not true of the other two modules in this batch (§7-B).
+widened. That is not true of the other two modules in this batch (see the
+sampleHold spec §6-A, which files the `FaceReadoutValue` widening).
 
 ### A. `gatemaiden-trig-hi` — the number that decides whether the pulse is seen
 
@@ -422,7 +419,7 @@ back"). Both are needed.
 
 ---
 
-## 7. TWO PLATFORM FACTS THIS BATCH ESTABLISHES
+## 7. THE PLATFORM FACT THIS BATCH ESTABLISHES
 
 ### A. THE GLYPH SYSTEM IS AUDIO-OUT-ONLY, AND THIS IS THE FIRST FACE IT FAILS
 
@@ -443,17 +440,6 @@ The general fix, if the owner wants glyphs on CV utilities: `glyphBinding` needs
 a CV/gate branch (`outputs.find(o => CV_FAMILY.has(o.type))` feeding the same
 analyser tap). That is a platform PR, not a face PR, and it would light up all
 three of these plus every future utility.
-
-### B. A PANEL'S FIRST LEGAL RANK IS 7, WHICH THIS MODULE CAN NEVER REACH
-
-`module-face-lint`'s `panelTierProblems` refuses a PANEL cell selected at any
-lane tier, and the `'full'` lane cap is `LANE_PLATE_MAX_CELLS = PLATE_COLS ×
-PLATE_MAX_ROWS = 6`. With two rankable keys, `gatemaiden` cannot rank a panel at
-7 no matter how it is ordered. The `custom` sidebar block carries no `face.order`
-key and is therefore exempt — the answer `sidebar-panels.ts` already documents
-for meowbox and drummergirl. **All three batch-6 modules hit this wall**
-(1, 2 and 4 rankable keys), so it is now the rule for utilities rather than an
-exception.
 
 ---
 

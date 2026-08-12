@@ -1,21 +1,19 @@
 # FACE SPEC — `swolevco` (batch 5)
 
-## 0. STATUS
+## 0. PROVENANCE
 
-**Authored 2026-08-10. Every claim below was measured or read against `main`**
-(`153e5c36`). Nothing here is implemented; no def, card or DSP file is touched.
+Measured against `main` at `153e5c36` (2026-08-10). **BANKED — not built.**
 
 **Verdict: PROMOTE — and the ranking argument is handed to us by the
 measurement: the two knobs that rank OFF the lane are the two that are
 bit-exactly inert at the shipped default.**
 
 archetype: **the COMPLEX (West-Coast) oscillator** — Buchla 259-style, a primary
-+ a sine modulator in one box. Deferred from batch 4 as a "genuine candidate, no
-measurement done".
++ a sine modulator in one box.
 
 Not in `STRICT_FACES`; no `face:` block. In `STRICT_DOCS`; **not** in
 `STRICT_VRT_MODULES`; **not** in `PUSH_CARD_CONTROLS`. 8 params, 7 in, 4 out
-(3 audio + 1 `mono-video`). contract-lock = **20 lines**.
+(3 audio + 1 `mono-video`).
 
 **Method.** The REAL `swolevcoDef.factory` under `node-web-audio-api`'s
 `OfflineAudioContext` via `art/setup/offline.ts` `renderOfflineDef` — swolevco is
@@ -205,12 +203,10 @@ rigidly phase-locked at unison. Recorded as *measured*, mechanism **inferred**
 ## 5. THE FACE
 
 ```ts
+// ⚠ NO `title`, NO `hint` — owner no-prose ruling, 2026-08-11. "RATIO decides
+// everything about the modulator" is a `docs` sentence; what the panel carries
+// is the band label, the band hint and the readouts below.
 face: {
-  title: 'Complex oscillator',
-  hint:
-    'Two oscillators, three taps. RATIO decides everything about the modulator: at 0 it free-runs ' +
-    'on M.TUNE / M.FINE, above 0 it is the primary times RATIO and those two knobs do nothing.',
-
   order: [
     // hero ladder — mini 1 / compact 2 + glyph / plate 6
     'fold',        // largest measured timbral travel (5.1x centroid)
@@ -251,14 +247,12 @@ face: {
     ],
   },
 
+  // ⚠ THE `signal-flow` BLOCK THIS DRAFT CARRIED IS GONE — the KIND was deleted
+  // (#1468, owner ruling). Twelve modules declared hand-authored stage lists
+  // that nothing verified against the DSP; a chain picture must be DERIVED from
+  // something the build can check, or it must not exist. The `×0.5 exactly` fact
+  // it carried is bit-verified (§1) and belongs in `docs` and in the picture.
   sidebar: [
-    { kind: 'signal-flow', label: 'two oscillators, three taps', stages: [
-      { label: 'PRIMARY', role: 'generator', note: 'saw/tri/sqr' },
-      { label: 'FOLD',    role: 'bus',       note: '4x oversampled' },
-      { label: 'OUT',     role: 'bus' },
-      { label: 'MODULATOR', role: 'generator', parallel: true, note: 'sine' },
-      { label: 'SUM',     role: 'bus',       note: 'x0.5 exactly' },
-    ] },
     { kind: 'readouts', label: 'what M.TUNE / M.FINE do here', entries: [
       { label: 'RATIO = 0',  text: "the modulator's own pitch" },
       { label: 'RATIO > 0',  text: 'nothing — primary x RATIO wins' },
@@ -267,11 +261,9 @@ face: {
 }
 ```
 
-⚠ **`title` / `hint` are ANNOTATION and paint NOTHING at rest**
-(`facePageHeader(def, annotations = false)` returns `null` first,
-`dock-faceplate-model.ts:90`). Every load-bearing fact above is a **band label**,
-a **band hint**, a **READOUT** or a **sidebar `text` entry**. The hint is a
-convenience for the annotated view only.
+⚠ Every load-bearing fact above is a **band label**, a **band hint**, a
+**READOUT** or a **sidebar `text` entry** — the four surfaces that paint without
+annotations.
 
 ⚠ **Band-hint budget.** `'RATIO 0 = free-run; above 0 M.TUNE / M.FINE are
 ignored'` is **56 characters**. Band hints are dock-only and never render on a
@@ -279,11 +271,10 @@ tabbed face; this face has **2** bands, well under `DOCK_TAB_MIN_BANDS` (7), so
 they do render. Shorter fallback that keeps the fact, **31 chars**:
 `'RATIO 0 -> M.TUNE; else ignored'`.
 
-⚠ **`panelId`/family `swolevco-routing-{n}` is a NEW control family** and would
-move `contract-lock` (+1 `family` line). If the owner would rather not touch the
-contract, the picture moves to a sidebar `custom` block exactly as
-`resofilter`'s does — same drawing, no contract change, no rank. **Both are
-correct; the `hero.cell` is better because it suppresses the dock glyph, and on a
+⚠ **`swolevco-routing-{n}` as a control FAMILY vs. a sidebar `custom` block.**
+Both are correct; the family costs a `contract-lock` line and buys a real
+`hero.cell`, the sidebar block costs nothing and carries no rank. **The
+`hero.cell` is better here because it suppresses the dock glyph, and on a
 free-running oscillator that glyph is a 40 px wobbling line.**
 
 ---
@@ -386,20 +377,25 @@ exactly the ones a face is for. The batch-wide fix is in the INDEX (§6).
   literal `min={-36} max={36}`, `min={0} max={8}`, … for every one of the eight
   faders, and **`swolevco` is not in `RANGE_BOUND_CARDS`**, so `card-range-source`
   cannot see a divergence. The backdraft class, unguarded.
-- **E · `docs.controls.timbre` says "climb from sweet to screaming"** for a
-  control worth +23 % of centroid (§4-D). Not false, but it oversells by an order
-  of magnitude relative to FOLD's +412 %. `swolevco` is in `STRICT_DOCS`.
+- **E · the docs oversell TIMBRE by an order of magnitude.**
+  `docs.explanation` says "pour FM in with Timbre to climb from sweet to
+  screaming" and `docs.controls.timbre` promises "clangorous, bell-like and noisy
+  Buchla-style timbres" — for a control worth **+23 %** of centroid against
+  FOLD's **+412 %** (§4-D). Neither is false; both mis-rank it. `swolevco` is in
+  `STRICT_DOCS`. (Exact phrasings re-read on `main` 2026-08-12; both stand.)
 - **No dead controls** — but **two mode-dead ones**, which is the face's whole
   argument (§3).
 
 ---
 
-## 10. COST
+## 10. THE ONE COST THAT IS NOT ARITHMETIC
 
-| | |
-|---|---|
-| **contract-lock** | **+1 line** if the routing panel ships as a `ControlFamily` (`swolevco family swolevco-routing kind=cell …`). **+0** if it ships as a sidebar `custom` block instead. |
-| **ART** | none from the face. §9-A/B are real audio changes and are not in the face PR. swolevco has **no** ART scenario today. |
-| **VRT** | not in `STRICT_VRT_MODULES`. +`face-swolevco-{compact,dock}` × 2 platforms = **4 informational baselines**. ⚠ **FREE-RUNNING** — the third such face. Derive glyph determinism the analogVco way (**10 separate processes, unmasked**), do not assume #1420's freeze covers it. |
-| **e2e** | +1 `faces-parity` row, **9 cells** (8 params + 1 panel), no audition. ≈ +15 s including page boot; ≈ +1.5 s per shard. |
-| **the bottom line** | A clean promotion. One control family or none, no prerequisite, and the strongest rank-is-an-argument story in the batch. |
+⚠ **swolevco FREE-RUNS**, which makes its face baselines the third test of
+#1420's pre-frame `AudioContext` freeze (after `analogVco` and
+`macrooscillator`). **Derive glyph determinism the analogVco way — 10 separate
+processes, unmasked — do not assume the freeze covers it.** Face baselines are
+now captured in the REQUIRED `vrt-strict` lane (#1483), so a non-deterministic
+glyph is a merge blocker rather than an informational diff.
+
+swolevco has **no** ART scenario today; §9-A/B are real audio changes and are
+not in the face PR.

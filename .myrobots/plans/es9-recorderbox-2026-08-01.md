@@ -3,16 +3,18 @@
 **Date:** 2026-08-01 · **owner decisions answered 2026-08-02**
 **Status:** SPEC ONLY. Nothing ships. Explicitly gated behind the new shell + Push 2.
 
-> **TRIAGE 2026-08-04 — CONFIRMED STILL UN-BUILT; the spec itself is current.**
-> Merged as a docs-only PR (**#1286**) and nothing has been implemented against
-> it: there is no multitrack/stem capture path in the recorderbox sources under
-> `packages/web/src/lib/video/recorderbox-*.ts`. All **12 owner questions are
-> answered in §6**, so this is build-ready the moment the gate (new shell +
-> Push 2) opens — and those answers are the reason it is kept verbatim.
-> §1's three corrections (the capture point, the "gap accounting is free" claim
-> being false against the code it cites, and the lossy skip-on-full transport) are
-> the load-bearing part; re-confirm them against `../patchtogether.es9` before
-> building, since that repo moves independently of this one.
+> **RE-VERIFIED 2026-08-12 — STILL UN-BUILT, and every load-bearing claim still
+> holds.** Nothing named `es9Recorderbox` exists anywhere in the tree. Spot-checked
+> against the code: `recorderbox.ts` is still hard stereo (`dest.channelCount = 2`),
+> `recorderbox-recorder.ts` still clocks the CFR grid off `performance.now()`,
+> `bridge.worker.ts` still does `sampleTime += got` beside two counter-free
+> `outRing.skip()` sites, `recorderbox-capture.ts` still documents the lossless
+> MessagePort tap, `VITE_ES9_BRIDGE_URL` is still the seam nobody uses, and
+> `../patchtogether.es9` still has **no git remote and no `.github/`** (§7 G3).
+> **Line numbers throughout have drifted** (e.g. `channelCount = 2` is now :243,
+> `sampleTime += got` now :218) — re-grep, don't trust the offsets.
+> All **12 owner questions are answered in §6**, which is the reason this is kept
+> verbatim: it is build-ready the moment the gate (new shell + Push 2) opens.
 **Owner questions:** **all 12 ANSWERED** — see §6. Remaining unknowns are engineering, not owner
 input; they are in §6.1.
 **Repos:** `inet.modular` @ `77cd1bbc`, `../patchtogether.es9` @ `b22bf3c`
@@ -240,9 +242,12 @@ AAC) → OPFS scratch → Save-As to a user-picked folder.
   (`recorderbox-store.ts:1-32`). **Origin-local, this-machine-this-browser only.**
 - `grep -rn "storage.estimate|QuotaExceeded" packages/web/src/lib/video/` → **zero hits in any
   recorderbox file.** Disk-full is unhandled.
-- The `face`/`docs` fields **do exist** on `VideoModuleDef`, wrapped in `docs-hash-ignore` markers,
-  with the comment *"authoring a `face` on a video module (a P1 concern — none carry one yet) must
-  stay hash-neutral for the GPU attest"* (`packages/web/src/lib/video/module-registry.ts:29-41`).
+- The `face`/`docs` fields **do exist** on `VideoModuleDef` and are **hash-transparent by
+  construction** — `scripts/attest-code-basis.ts` strips `docs`/`controlFamilies`/`face` off a
+  module-scope def before hashing, so authoring them on a video module costs no GPU re-attest
+  and needs no markers (`packages/web/src/lib/video/module-registry.ts`). *(The
+  `docs-hash-ignore` marker pairs this plan was written against were deleted repo-wide on
+  2026-08-09.)*
 
 ### 3.4 The browser's 2-channel ceiling — reconfirmed
 
@@ -610,9 +615,7 @@ export const es9RecorderboxDef: VideoModuleDef = {
   ],
   outputs: [ { id: 'out', type: 'video' } ],   // passthrough, as recorderbox
   params: [ /* below */ ],
-  // docs-hash-ignore:start
   docs: { … }, face: { … },
-  // docs-hash-ignore:end
   factory(ctx, node) { … },
 };
 ```
@@ -696,9 +699,11 @@ face: {
 `mini` (rank 1) shows RECORD + the meter glyph — what you want across a rack of 8 lanes mid-take. The
 HELPER panel, take list and recovery prompt are rank-7+/page content, i.e. **dock-only**.
 
-**⚠ This would be the FIRST video def carrying a `face`** (`video/module-registry.ts:32-41`: *"none
-carry one yet"*). The `face` block **must** be inside `docs-hash-ignore` markers — video defs are in
-the WebGL attest basis, and a face is required to be hash-neutral for the GPU attest. Same for `docs`.
+**⚠ This would be the FIRST video def carrying a `face`** (`video/module-registry.ts`: *"none
+carry one yet"*). No marker discipline is needed: video defs are in the WebGL attest basis, but
+a module-scope def's own `face`/`docs`/`controlFamilies` are stripped from the hash by
+`scripts/attest-code-basis.ts`, so authoring them costs no GPU re-attest. ⚠ A **nested** `face:`
+(e.g. on a geometry object) is *not* stripped — keep the face at the def's top level.
 
 ### 4.11 Patching it — two paths
 
@@ -1136,7 +1141,7 @@ kill the writer and assert the file opens.
 
 - `es9-recorderbox.ts` def, 18-port factory, `es9-recorderbox-capture` worklet, `record.worker.ts`
   with the `bufferedAmount` high-water mark.
-- The `face` (first video def to carry one — **must** be inside `docs-hash-ignore`).
+- The `face` (first video def to carry one — hash-transparent, no markers needed).
 - `DESCRIPTIONS` entry in `module-manifest.ts`, `STRICT_DOCS` entry, `EXPECTED_NODE_TYPES` entry,
   `docs:accept`.
 - Run the registry sweeps locally, 3× per the flake standard, before pushing.

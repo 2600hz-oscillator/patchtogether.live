@@ -22,6 +22,10 @@
 >    (`clip-song.ts`, `clip-arrange.ts`, `ClipArrangeEditor.svelte`); and the module
 >    **face PLATFORM** (#1301 — §10's faceplate paragraph describes the *docs* view,
 >    a different thing). ~18 modules were also deleted in #1013/#1033.
+>    **Added 2026-08-12:** the spec's two-shell model is gone — **DAWLESS mode was
+>    deleted in #1459** and the faceplate shell is now the default, with
+>    `?shell=legacy` as the escape hatch; ~32 modules now carry a real `face:` and
+>    `vrt-strict` gates them (#1483). HYPERCUBE was removed outright (#1448).
 > 3. **One claim went from aspirational to true after authorship:** §11's "unpatched
 >    outputs render at zero cost" was shipped by sink-driven pull evaluation (#1045,
 >    2026-07-11). §14's health-probe "hard 1.5-second budget" could not be verified
