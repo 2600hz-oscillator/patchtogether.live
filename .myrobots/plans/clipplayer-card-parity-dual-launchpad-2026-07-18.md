@@ -1,23 +1,26 @@
 # Clip-player card parity + dual-Launchpad rework — DESIGN
 
 **Date:** 2026-07-18
-**Status:** ~~DESIGN ONLY~~ **PARTS A + B SHIPPED; PART C IS THE REMAINDER.**
+**Status: PARTS A + B SHIPPED (#1100). PART C IS NOT BUILT — it is the whole live remainder.**
 
-> **TRIAGE 2026-08-04.** **#1100** ("card parity control strip + keyboard 1-8
-> (Parts A+B)", merged 2026-07-18) built PART A (full card parity with the
-> single-pad Launchpad) and PART B (computer-keyboard 1–8 → the 8 top control
-> buttons, with hold). **PART C — the dual-Launchpad rework (two independent
-> single-pad controllers + the combined 16-step view) — was NOT built**; the
-> single-pad rework (#1078) shipped single-only and the double was deliberately
-> left as the follow-up. Read PART C as the live spec; read the §0 enumeration as
-> a snapshot of the single-pad surface *at that date* and re-verify it against
-> `launchpad-map.ts` before building (scene repeats #1091 and the SHIFT
-> hold-only fix #1094 both landed after this was written).
-**Scope:** three owner asks against the clip-player surface stack —
-1. FULL CARD PARITY with the single-pad Launchpad control.
-2. Computer-keyboard **1–8** → the card's 8 top control buttons (with **hold**).
-3. DUAL-Launchpad rework: two INDEPENDENT single-pad controllers of the same
-   card, plus a COMBINED 16-step view.
+> **TRIAGE.** **#1100** ("card parity control strip + keyboard 1-8 (Parts A+B)",
+> merged 2026-07-18) built PART A (full card parity with the single-pad Launchpad)
+> and PART B (computer-keyboard 1–8 → the 8 top control buttons, with hold). Both
+> sections have been removed from this file; read the shipped code.
+>
+> **PART C — the dual-Launchpad rework (two independent single-pad controllers +
+> the combined 16-step view) — was NOT built.** Confirmed in the tree:
+> `launchpad-control.svelte.ts` still imports the `// L matrix (pair)` frame
+> helpers, and `let deployment: 'pair' | 'single' = 'pair'` with module-level
+> `singleView` / `selectedClipIndex` singletons is unchanged. Part C is gated on
+> ~10 unanswered owner questions, collected at the end.
+>
+> ⚠ **§0 is a SNAPSHOT of the single-pad surface at 2026-07-18. RE-VERIFY EVERY
+> EXACT CC / PAD NUMBER AGAINST `launchpad-map.ts` BEFORE BUILDING.** At least four
+> changes post-date it: scene repeats (**#1091**), the SHIFT hold-only fix
+> (**#1094**), the KEYS stuck-gate fix (**#1423**) and right-click Delete clip
+> (**#1427**). §0 is kept because it is the only written enumeration of the surface
+> Part C has to instantiate twice — not because its numbers are current.
 
 **Files in play (all under `packages/web/src/lib/`):**
 - `control/launchpad/launchpad-control.svelte.ts` — the stateful control brain (single + pair).
@@ -30,12 +33,11 @@
 
 ---
 
-## 0. The single-pad control surface, enumerated (the parity target)
+## 0. The single-pad control surface, enumerated (SNAPSHOT — re-verify)
 
-This is the concrete "every single-pad function" list. It is the union of the
-**permanent top row** (owned first in every view) + the four **views** + the
-**KEYS** sub-view + the **length-edit** takeover. Source: `handleSingleKey` and
-the classifiers in `launchpad-map.ts`.
+The union of the **permanent top row** (owned first in every view) + the four
+**views** + the **KEYS** sub-view + the **length-edit** takeover. Source:
+`handleSingleKey` and the classifiers in `launchpad-map.ts`.
 
 ### 0.1 PERMANENT TOP ROW (CC 91–98, `topRowAction`) — live in EVERY view
 | CC | col | action | edge | function |
@@ -56,7 +58,7 @@ the classifiers in `launchpad-map.ts`.
 ### 0.2 GRID view (`handleSingleGrid`)
 - 8×8 matrix: x = channel/lane (0–7 left→right), rows = slots top→bottom, through a scroll window (`sceneScrollOffset`).
   - pad tap = **launch/stop** the clip (`queueLane`, content-gated create on empty).
-  - **double-tap** the same clip = select it + open Clip view, reverting the lane's play/queue intent (owner rule).
+  - **double-tap** the same clip = select it + open Clip view, **reverting the lane's play/queue intent** (owner rule).
 - right scene column, **no shift** = **scene/row launch** (fire the slot across all lanes, `applySceneLaunchWrite`).
 - right scene column, **+shift** = grid-shift palette (`gridShiftRight`): `copy`(arm) · `paste`(arm) · `clipDiv`(arm) · `swingUp`(nudge) · `swingDown`(nudge) · `len`(arm) · `scrollUp` · `scrollDown`.
 - HOLD GRID (CC 92) + HOLD a scene button → **scene-repeat count view** (pad k sets k repeats; pad 64 = infinite; `setSceneRepeat`).
@@ -81,220 +83,12 @@ the classifiers in `launchpad-map.ts`.
 
 ---
 
-## PART A — Full card parity with the single-pad Launchpad
-
-### A.1 Design principle
-Treat the **card as another independent single-pad-style controller** of the
-same clip node — exactly the same mental model the dual rework (Part C) applies
-to two physical pads. The card gets:
-1. a **permanent control strip** of 8 buttons mirroring CC 91–98 (drives keyboard 1–8, Part B);
-2. a **4-view body** (Grid / Clip / Arranger / Control) mirroring the device views;
-3. a **shift modifier** that reveals the alternate palettes, exactly like the device.
-
-Every card action writes the **same synced `node.data` field** the device
-writes (no new engine logic). The card's **view + shift are LOCAL** to the card
-(each surface owns its own view/shift — the device and the card can be in
-different views at once, just like the two pads in Part C). Persistent edits
-(mono/mute/rate/arm/copy-paste/length/div/swing/scene-repeat/rec/song/notes)
-land on `node.data`; transient view state is card-local `$state`.
-
-> **Reuse note:** many action seams already exist as pure helpers
-> (`clip-types`, `clip-scene-repeats`, `clip-surface-map`, `arp-engine`). The
-> card should call those directly rather than re-deriving. Where a write seam
-> lives only inside `launchpad-control` (module-private, e.g. `queueLane`,
-> `toggleMono`, `setSceneRepeat` wrappers), factor a shared, node-id-parameterized
-> action module (`clip-actions.ts`) that BOTH the card and the launchpad import,
-> so parity can't drift. This is the single biggest reuse win and it de-risks
-> Part C too (the two controllers call the same seam).
-
-### A.2 What the card already has (no new work)
-Transport ▶/■, STOP-ALL ■, RST, SES/ARR, REC ●, OVR/RPL, ARR⤢ (pop-out
-arranger), S&H, STEP/OCT/GATE/QNT, launch pads (click/dbl-click→edit),
-per-lane color, per-lane MONO (1/5), per-lane RATE select, per-lane AUTO-ARM ◉,
-scene-repeat **read-only** flair, monome GRID connect, automation chips/override/MAX;
-editor: back, scale, root, length-cycle, octave/row nav, clear, clear-auto,
-NOW, QUEUE, note toggle, right-click velocity; arrangement: song timeline with
-move/select/delete/slot-cycle/length-nudge.
-
-### A.3 The parity GAP → new on-card affordances (grouped, mapped 1:1)
-
-**Group 1 — Permanent control strip (NEW, 8 buttons; = keyboard 1–8):**
-| # | button | maps to single-pad | notes |
-|---|--------|--------------------|-------|
-| 1 | ▶/■ Transport | CC 91 | already exists in header — move/alias into the strip |
-| 2 | GRID | CC 92 | selects the Grid (session) body |
-| 3 | CLIP | CC 93 | selects the Clip (editor) body on `selectedClip` |
-| 4 | ARR | CC 94 | selects the Arranger (song-timeline) body — card's ARR is richer than the device placeholder |
-| 5 | CTRL | CC 95 | selects the new Control (deck) body |
-| 6 | ↶ Undo | CC 96 | launchpad-scoped undo (see A.6) |
-| 7 | ↷ Redo | CC 97 | launchpad-scoped redo |
-| 8 | ⇧ Shift | CC 98 | **press-and-hold** modifier (A.5); also driven by keyboard-8 |
-
-This unifies the card's ad-hoc `view` ('session'|'edit') + `arrangeMode` into a
-single 4-view enum matching the device: `grid` (=session grid), `clip`
-(=editor), `arranger` (=arrangement song view), `control` (=new deck). `SES/ARR`
-+ double-click-to-edit + `back ‹` become the view buttons (kept as aliases for
-back-compat / discoverability).
-
-**Group 2 — Grid view additions:**
-- **Scene-launch column** (NEW): one button per visible slot-row, right of the grid → fire that slot across all lanes (`applySceneLaunchWrite`). (The card comment already flags "the card has no scene-launch button yet.")
-- **Scene-repeat SET** (NEW): promote the read-only flair to an editable stepper (click flair → small number popover, or shift+click a scene-launch button → count field). Replaces the device's HOLD-GRID+HOLD-scene gesture with a mouse-native control.
-- **Scene-window scroll** (NEW): up/down affordance to reach scenes ≥ 8 (`sceneScrollOffset`, `slotForScene`, `maxSceneScrollOffset`). Card currently shows only slots 0–7.
-- **Copy / Paste / Paste-rev (clip)** + **Copy / Paste (scene)** (NEW): a small function bar shown under Shift (or always-visible in a "clip ops" tray). Uses the typed `CopyBuffer` (clip|scene) + `writeClipWithAuto` / `pasteSceneInto`.
-- **Clip-Div (per-clip rate)** (NEW): a per-clip division control (distinct from per-lane RATE) — shift+click a pad cycles `clip.div`, or a context control on the selected clip.
-- **Swing ±** (NEW): per-channel swing nudge (`laneSwing`/`clampSwing`) for the selected lane, with a small meter.
-- **NOW** (already: shift-click = immediate) — surface an explicit sticky NOW toggle so it matches the device's `nowHeld`.
-
-**Group 3 — Clip (editor) view additions:**
-- **DOUBLE** (NEW): `doubleNoteClip` button in the editor head.
-- **FOLLOW** toggle (NEW): `followOn` — freeze/track the playhead window (the card currently always shows all cols; add for parity + long clips).
-- **KEYS** entry (NEW): opens the KEYS sub-view (Group 4).
-- **Velocity-edit mode** (parity): a Shift-mode where a plain click cycles velocity (the device's shift-in-Clip), complementing the existing right-click.
-- Step-scroll: card shows up to 16 cols; only needed if a clip is > 16 steps → add a step-window scroller for long clips (parity with `stepLeft/stepRight`).
-
-**Group 4 — KEYS sub-view (NEW, the largest piece):**
-- On-screen isomorphic **keyboard** (playable with mouse; drives `pushAudition`), **QUEUE-REC**, **OVERDUB**, **OCT ±**, **PANIC**, **LEN**, a **playhead strip**.
-- **Scale-select** row (`keysScaleRight`) + **ARP** controls (`arpToggle`, div/dir/range/latch via `arp-engine`).
-- Reuses `clip-record` (`recordNoteAt`/`extendRecordedNote`/`clearStep`) and `arp-engine` exactly as the device does.
-
-**Group 5 — Control (deck) view additions:**
-- **Per-lane MUTE** (NEW — the card has mono/rate/arm but **no mute**): `toggleMute`.
-- **Per-lane STOP** (NEW dedicated buttons; card only stops by clicking a playing pad): `queueLane(lane,'stop')`.
-- **Tempo ±** (NEW): `nudgeTempo` on TIMELORDE.
-- RESET, REC, SONG already exist (surface them in the Control body too).
-
-**Group 6 — Permanent modifiers/overlays:**
-- **Shift** (Group 1 #8) — see A.5.
-- **Per-lane automation arm** — already on the card as ◉ (direct); the device's "shift+column" gesture is a superset the card already covers. Keep ◉; no shift gesture needed on the card.
-- **Undo / Redo** — see A.6.
-
-### A.4 Proposed card layout
-```
-┌ CLIP PLAYER ─────────────── [S&H] ──────────────┐
-│ CONTROL STRIP (keyboard 1–8):                    │
-│  [1 ▶] [2 GRID] [3 CLIP] [4 ARR] [5 CTRL]        │
-│  [6 ↶] [7 ↷] [8 ⇧]           (active view lit)   │
-├──────────────────────────────────────────────────┤
-│ VIEW BODY (one of):                              │
-│                                                  │
-│ GRID: [scene◄►scroll]                            │
-│   8×8 launch matrix  │ scene-launch column       │
-│   per-lane: color / mono / rate / arm ◉ (as now) │
-│   Shift tray: COPY PASTE P-REV | DIV SWING± LEN  │
-│               NOW  | SCENE-COPY SCENE-PASTE      │
-│   STEP OCT GATE QNT RST                          │
-│                                                  │
-│ CLIP: [‹ back] scale root len DOUBLE FOLLOW KEYS │
-│   piano-roll (shift = velocity)  oct/row/step nav│
-│   NOW  QUEUE   CLR  CLR-AUTO                      │
-│                                                  │
-│ KEYS: playhead strip                             │
-│   keyboard grid   │ scale-select / arp (shift)   │
-│   QREC OVERDUB OCT± PANIC LEN                     │
-│                                                  │
-│ ARR: song timeline (existing) + tools            │
-│                                                  │
-│ CTRL: RESET | per-lane MONO MUTE RATE STOP       │
-│   TEMPO − +   STOP-ALL   REC  SONG               │
-└──────────────────────────────────────────────────┘
-```
-The control strip is the anchor for Part B. Everything else is a view body; the
-active view button lights (mirrors `RGB_VIEW_ACTIVE` on the device).
-
-### A.5 Shift on the card
-- A card-local `let shiftHeld = $state(false)`.
-- Set true on: on-card Shift button `pointerdown` (cleared on `pointerup`/`pointerleave`), OR keyboard-8 keydown (cleared on keyup) — see Part B.
-- Mirrors the device: **momentary hold, no latch**.
-- While held, view bodies reveal their alternate palette (Grid → ops tray/scene column shifts to functions; Clip → velocity-edit; KEYS → arp column) and pad clicks read `shiftHeld` (e.g. Grid shift-click = NOW).
-- Back-compat: the physical keyboard `Shift` key remains a NOW alias for pad clicks (`ev.shiftKey`), independent of the card Shift modifier.
-
-### A.6 Undo/redo on the card
-The device's undo (`lpUndo`) is an origin-tagged `Y.UndoManager` created in
-`start()` for single mode only. For the card to drive the SAME buttons, factor
-the undo manager out of `launchpad-control` into the shared action module
-(`clip-actions.ts`) so it is created per-bound-node regardless of surface, and
-both the card ↶/↷ and the device CC 96/97 call it. (Alternatively the card uses
-the existing global app undo; but the owner asked for parity with the launchpad-
-scoped undo — **OWNER Q**.)
-
----
-
-## PART B — Keyboard 1–8 → the card's 8 top control buttons
-
-### B.1 Focus / highlight model (which card owns 1–8)
-A card is **keyboard-active** when BOTH:
-1. it is the **single selected** flow node (svelte-flow `.selected`; if 0 or >1
-   nodes are selected, no card owns 1–8 — avoids ambiguity), AND
-2. it is a clip-player card.
-
-Clicking anywhere inside a node keeps it selected in svelte-flow, so "hold 8,
-then click a pad" keeps the card keyboard-active through the click. A visible
-**highlight ring** (reuse the `.selected` accent glow, or add a subtle "1–8
-active" chip on the control strip) tells the user which card owns the keys.
-
-Rationale for selection (not hover / not raw DOM focus): hover is lost the
-instant the pointer moves to the strip; raw focus is stolen by every control
-click. Selection is the durable "this is the card I'm working with" signal and
-already has a visual. (Optionally also accept `:focus-within` as a second
-trigger — **OWNER Q**: selection-only, or selection OR focus-within.)
-
-### B.2 Listener + hold semantics
-- Install a **window-level `keydown` + `keyup`** listener (capture phase) in a
-  `$effect` that runs only while the card is keyboard-active (add on activate,
-  remove on deactivate / unmount).
-- On `keydown` where `e.key` ∈ `'1'..'8'`:
-  - **Guard** (B.3) — bail if typing into an editable target or a non-shift
-    modifier (Ctrl/Cmd/Alt) is down.
-  - `e.preventDefault(); e.stopPropagation();` (own the digit so it doesn't
-    reach flow / browser).
-  - **Momentary buttons (1–7):** act on the FIRST keydown only. **Suppress
-    key-repeat**: if `e.repeat` → ignore. (transport/views/undo/redo fire once
-    per physical press.)
-  - **Shift (8):** `keydown` → `shiftHeld = true`; `keyup` → `shiftHeld =
-    false`. This is the HOLD. Ignore `e.repeat` on the down edge (don't re-fire).
-- **Stuck-shift guards (critical):** when shift becomes held, also register
-  one-shot `window` `blur` + `document` `visibilitychange` handlers that
-  force-release shift, and keep the `keyup` listener at window/capture so a
-  keyup that lands after focus moved into a form control still releases. On card
-  deactivation while shift is held, force-release. (Missing keyup is the classic
-  stuck-modifier bug — the launchpad's own `handleShift` only trusts the CC
-  edge; the card must synthesize the release on focus loss.)
-
-### B.3 Coexistence with text inputs (don't hijack typing)
-Skip the mapping (let the key pass through) when the event target OR
-`document.activeElement` is editable:
-```
-input:not([type=color]):not([type=range]), textarea, select, [contenteditable=""], [contenteditable="true"]
-```
-Specifically the module **title** (`ModuleTitle` inline rename), the per-lane
-**color** inputs, and the per-lane **rate** selects. Color/range inputs don't
-consume digit keys meaningfully, but skipping when focused is the safe,
-predictable rule. Also skip when `e.metaKey || e.ctrlKey || e.altKey` (leave
-OS/browser/app shortcuts — cmd-1, etc. — alone). Shift is NOT excluded (shift-8
-is not a thing here; digit keys are unmodified).
-
-### B.4 Exact mapping
-`1`→Transport · `2`→GRID · `3`→CLIP · `4`→ARR(anger) · `5`→CTRL · `6`→Undo ·
-`7`→Redo · `8`→Shift(hold). Identical order to CC 91–98.
-
-### B.5 Pitfalls (called out)
-- **Stuck shift** on blur / lost keyup → force-release (B.2).
-- **Key-repeat** re-firing view switches / undo storms → `e.repeat` guard.
-- **Multi-select ambiguity** → require exactly one selected card.
-- **Typing hijack** → editable-target guard (B.3).
-- **svelte-flow shortcut collision** → digits are unused by flow today (verified:
-  no digit handling in `Canvas.svelte`), but capture-phase + `stopPropagation`
-  insulates against future ones.
-- **Two clip-player cards** both selected → neither owns 1–8 (by design).
-
----
-
 ## PART C — Dual-Launchpad rework (two independent single-pad controllers)
 
 ### C.1 New premise
 Retire today's owner-locked **L=matrix / R=deck** split. In dual mode BOTH pads
 are **independent single-pad controllers of the SAME clip node**, each running
-the full single-pad surface (Part 0). One pad can be in Clip while the other is
+the full single-pad surface (§0). One pad can be in Clip while the other is
 in Grid; each has its own view, shift, arm, scroll, editor window, KEYS, arp.
 Only the synced `node.data` is shared. The lone exception is the **combined
 16-step view** (C.5).
@@ -446,7 +240,7 @@ stateDiagram-v2
 **Retire / repurpose:**
 - `handleL`, `handleR`, `handleRDeck`, `handleREdit` pair routing (replaced by two `handleSingleKey` controllers). `handleRLength` becomes per-controller.
 - Pair frames: `computeLSessionFrame(... lTopMute)` (the L matrix + per-lane MUTE top row) and `computeRDeckFrame` (the command deck) — replaced by the single-mode per-view frames on each unit. Keep `computeLSessionFrame` core if reused, but the pair-only `lTopMute`/deck paths go dead.
-- Pair KEYS 16-wide keyboard (`computeKeysFrame` with `KEYS_PH_CELLS`=16 spanning L|R): the NEW combined view is a 16-step **editor**, not the old 16-wide keyboard. Decide whether the old dual-KEYS keyboard survives as a per-pad 8-wide KEYS (yes — single-mode KEYS already is 8-wide) or is removed. **OWNER Q**: is a 16-wide dual KEYS keyboard still wanted, or is combined-editor the only 16-wide surface?
+- Pair KEYS 16-wide keyboard (`computeKeysFrame` with `KEYS_PH_CELLS`=16 spanning L|R): the NEW combined view is a 16-step **editor**, not the old 16-wide keyboard. **OWNER Q**: is a 16-wide dual KEYS keyboard still wanted, or is combined-editor the only 16-wide surface (per-pad KEYS stays 8-wide)?
 - `startPairing`'s L/R semantics: the press-a-pad handshake still resolves which physical unit is L vs R (needed for per-unit persistence + the combined L|R placement), but L/R no longer implies matrix/deck — just "left pad / right pad" placement.
 - Sim + tests: `installSimulatedLaunchpad` driver (`pressL`/`pressR`/`ccL`/`ccR`) stays, but the **semantics change** — `pressL(x,y)` now hits pad L's *active view* (default Grid: x=lane, y from bottom). The poly **real-source-chain** e2e (MIDI-LANE/matrix → clip → RMS) that relies on `pressL` launching a clip must be updated to set pad L to Grid first (default) and use the single-grid transpose. VRT baselines for the pair (matrix vs deck) are replaced by per-view frames.
 
@@ -454,29 +248,19 @@ stateDiagram-v2
 
 ---
 
-## Effort estimate (phased, design→ship)
+## Effort estimate (Part C only)
 
 | phase | scope | estimate |
 |---|---|---|
-| 0 | Factor shared `clip-actions.ts` (node-id-parameterized action seams + undo) | 0.5–1 d |
-| A1 | Card control strip (8 buttons) + 4-view refactor of the card body | 1–1.5 d |
-| A2 | Grid additions: scene-launch, scroll, scene-repeat set, copy/paste (clip+scene), clip-div, swing, NOW | 1.5–2 d |
-| A3 | Clip additions: double/follow/velocity-mode/step-scroll | 0.5 d |
-| A4 | KEYS sub-view on card (keyboard + record + scale + arp) — heaviest | 1.5–2 d |
-| A5 | Control view on card (mute/stop/tempo + deck) | 0.5–1 d |
-| B | Keyboard 1–8 focus model + hold + guards + tests | 1 d |
 | C1 | Per-controller state refactor (module singletons → `CtrlState`×2, routing, painting, persistence) | 2–3 d |
 | C2 | Combined 16-step view (frame + handler + state machine) | 1.5–2 d |
 | C3 | Retire pair code + migrate sim/e2e/VRT + unit tests | 1.5–2 d |
 | — | 3× flake-check new/changed tests, typecheck, docs gate, review | 1 d |
-| **total** | | **~13–18 days** (≈3 weeks focused) |
-
-Parts A and C can proceed in parallel (different files) once phase 0 lands. B
-depends on A1 (the strip must exist).
 
 ---
 
 ## Risks
+
 - **Independent-dual-state refactor (C1)** is the highest-risk change: the
   single-mode state is deeply woven as module-level vars across ~40 functions.
   Threading a `CtrlState` handle through every handler + render path is a large
@@ -484,15 +268,12 @@ depends on A1 (the strip must exist).
   + methods in a `Controller` class, instantiate twice, keep pure classifiers/
   frames untouched; land behind the existing `deployment` switch so single mode
   is unaffected until dual is flipped.
-- **Keyboard-capture pitfalls (B):** stuck shift on lost keyup/blur, typing
-  hijack, key-repeat storms, multi-select ambiguity. All have explicit guards
-  above; the stuck-modifier release-on-blur is the one most likely to be missed.
 - **Shared-write races:** two pads editing the same clip's div/swing (per-pad
   local previews that commit independently) can clobber each other on the same
   clip; the array-rebuild seams are last-writer-wins. Document that the last
   commit wins; consider a per-clip guard if it bites.
-- **Parallel KEYS / arp:** `noteRec` is single-per-node; two pads recording at
-  once is undefined. Proposal blocks/steals; needs an owner decision.
+- **Parallel KEYS / arp:** `noteRec` is single-per-node; **two pads recording at
+  once is undefined.** The proposal blocks or steals; it needs an owner decision.
 - **Combined-view seam complexity:** double-tap detection on a *view button*
   (not a pad) + snapshot/restore of the OTHER pad + cross-pad span edits. Keep
   cross-pad spans a stretch goal to contain scope.
@@ -501,24 +282,19 @@ depends on A1 (the strip must exist).
   Per repo standard (poly-modules-test-real-source-chain) the MIDI-LANE→module→
   RMS chain MUST stay green — update the sim driver + spec to drive pad L in Grid
   view. Budget CI wall-time (>2 min needs sign-off).
-- **Card size / VRT determinism:** the card grows a lot (control strip + view
-  bodies + KEYS keyboard). The 3u tier has room, but VRT card baselines will
-  churn; keep fixed-integer geometry (the card comment already notes this for
-  the scene-flair). New card = full `task test` + `task vrt` + docs manifest
-  (`DESCRIPTIONS`/`STRICT_DOCS`) per repo standards.
 
 ---
 
-## OWNER QUESTIONS
-1. **Undo scope on the card:** launchpad-scoped undo (factor `lpUndo` to shared) or the global app undo for the card's ↶/↷?
-2. **Keyboard focus trigger:** single-selected node only, or also `:focus-within`?
-3. **Card parity depth:** faithfully mirror **shift** (fewer buttons, shift reveals palettes) — as specced — or expose every function as an always-visible button (bigger card, no shift dependence)?
-4. **Copy buffer in dual mode:** one shared machine clipboard (copy on L, paste on R) or per-pad buffers?
-5. **Parallel KEYS:** allow both pads in KEYS at once (needs per-pad noteRec/arp — a bigger change), block the second entry, or let the second steal `noteRec`?
-6. **Combined target clip:** adopt the triggering pad's `selectedClip` (as specced) or require both pads to already be on the same clip?
-7. **Combined exit — other pad:** restore its pre-combined view (as specced) or leave it in Clip?
-8. **`keys` inside combined:** drop combined + enter KEYS (as specced), or stub the keys button while combined?
-9. **Cross-pad note spans in combined:** support anchor-on-L / release-on-R spans now, or keep spans within one pad for v1?
-10. **Dual KEYS keyboard:** is a 16-wide dual-pad KEYS keyboard still wanted, or is the combined 16-step **editor** the only cross-pad surface (per-pad KEYS stays 8-wide)?
-11. **Rename `deployment` `'pair'` → `'dual'`** to reflect the new independent-controllers premise (persistence-key migration), or keep `'pair'`?
-```
+## OWNER QUESTIONS — Part C is blocked on these
+
+1. **Copy buffer in dual mode:** one shared machine clipboard (copy on L, paste on R) or per-pad buffers?
+2. **Parallel KEYS:** allow both pads in KEYS at once (needs per-pad noteRec/arp — a bigger change), block the second entry, or let the second steal `noteRec`?
+3. **Combined target clip:** adopt the triggering pad's `selectedClip` (as specced) or require both pads to already be on the same clip?
+4. **Combined exit — other pad:** restore its pre-combined view (as specced) or leave it in Clip?
+5. **`keys` inside combined:** drop combined + enter KEYS (as specced), or stub the keys button while combined?
+6. **Cross-pad note spans in combined:** support anchor-on-L / release-on-R spans now, or keep spans within one pad for v1?
+7. **Dual KEYS keyboard:** is a 16-wide dual-pad KEYS keyboard still wanted, or is the combined 16-step **editor** the only cross-pad surface (per-pad KEYS stays 8-wide)?
+8. **Block combined-entry while a length-edit or KEYS-record is active** on the other pad, instead of force-exiting it?
+9. **Rename `deployment` `'pair'` → `'dual'`** to reflect the new independent-controllers premise (persistence-key migration), or keep `'pair'`?
+10. **Undo scope:** the card's ↶/↷ currently needs a decision that also governs dual — launchpad-scoped undo (factor `lpUndo` into a shared, per-bound-node action module both surfaces import) or the global app undo?
+11. **Keyboard focus trigger** (Part B, shipped as selection-only): single-selected node only, or also `:focus-within`?

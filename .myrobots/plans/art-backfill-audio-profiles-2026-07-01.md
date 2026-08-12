@@ -1,61 +1,24 @@
 # FEATURE SPEC — Backfill "audio profiles" (ART) for every audio module
 
-**Status:** proposed · **Date:** 2026-07-01 · **Owner ask:** every audio module
-gets ART coverage, and every *output* of every audio module is profiled where
-possible. Deliver in batches.
+**Date:** 2026-07-01 · **Owner ask:** every audio module gets ART coverage, and
+every *output* of every audio module is profiled where possible. Deliver in
+batches.
 
-> **TRIAGE 2026-08-04 — IN PROGRESS; §0's headline numbers are STALE.**
-> The batch plan was accepted and is running. Shipped: **Phase 0 (#999** — capture
-> harness + the coverage-gate ratchet + pilots**), batch 1 (#1001), batch 2
-> (#1002), batch 3 (#1005), batch 4 (#1006)**, and batches 5–6 (see the ledger in
-> `art/setup/profile-coverage.ts:47-59`). The ratchet has walked
-> **101 → 95 → 89 → 83 → 75 → 67 → 59 → 56**; `ART_BACKLOG_MAX` in that file is
-> the live number, and `art/scenarios/_meta/audio-profile-gate.test.ts` is the
-> gate the owner asked for in §6b.
-> **Do not read §0's numbers as current:** "48 `.f32` files / 7 covered modules"
-> was true on 2026-07-01; the tree now has **136 `.f32` baselines across 57
-> baseline groups**. §0's *method*, the exclusion-list reasoning and the batch
-> ordering are still the working plan; only the counts moved.
-> §6b (the owner's verbatim answers: "1 - gate. 2 - signature, distinct.") is the
-> reason this file is kept rather than deleted.
-
----
-
-## 0. Executive summary
-
-- **Coverage headline:** **7 of 126** audio-domain module defs currently produce
-  ANY committed ART baseline (an "audio profile" that shows up in the ART
-  gallery). **119 modules produce ZERO ARTs.** There are **48** `.f32` baseline
-  files total, all belonging to those 7 modules (`analogVco`, `cube`,
-  `featurecv`, `hypercube`, `sampleHold`, `synesthesia`, `treeohvox`).
-- **Uncovered outputs:** across all 126 modules there are **466 audio-family
-  output ports** (cable types `audio`/`cv`/`gate`/`pitch`/`polyPitchGate`). The
-  119 uncovered modules account for **408** of them (157 are the main `audio`
-  signal). Even inside the 7 "covered" modules, only a handful of their 58
-  audio-family ports have a dedicated per-output baseline (e.g. `synesthesia`
-  has 40 audio-family outputs but 4 band baselines).
-- **What an audio profile IS (product sense):** a committed raw
-  `art/baselines/<group>/<name>.f32` mono/48 kHz float dump that the ART gallery
-  (`art/build_gallery.py`) renders as a **waveform + log-frequency spectrogram +
-  stats card** (peak dBFS, RMS dBFS, duration/samples). It is regression-pinned
-  by a companion `.sha` source hash (RMS tier-B compare + SHA gate).
-- **The load-bearing constraint:** `node-web-audio-api` **cannot host our custom
-  `AudioWorklet`/Faust-WASM processors**, so ART renders offline from a
-  **pure-TS DSP core** (extracted `packages/dsp/src/lib/<name>-dsp.ts`) or a
-  **faithful TS mirror** of the `.dsp` recurrences — NOT the live worklet. Native
-  Web Audio primitive nodes (`OscillatorNode`, `BiquadFilterNode`) DO work under
-  `OfflineAudioContext` for verification. Therefore the real per-module effort
-  is: *does a pure core exist / can it be extracted / must a mirror be written?*
-- **Batch plan outline:** ~15 ordered batches of ~5–8 modules, easiest-highest-
-  value first — (1) modules that ALREADY have a pure `-dsp.ts` core, (2) the Moog
-  pure-core cluster, (3) self-driving sources, (4) FX driven by a shared VCO/noise
-  source, (5) envelopes/modulators driven by a shared gate/clock, (6) poly/MIDI
-  voices via the real poly source, then the long tail. ~13–18 modules go on an
-  explicit EXCLUSION list (live mic/HID/MIDI-device/user-code/free-running games).
-- **Open questions:** (a) require ≥1 audio profile per module as a CI gate, or
-  keep informational? (b) capture every output or just the "signature" outputs?
-  (c) accept the pure-TS-mirror rendering path as canonical, or invest in a real
-  worklet-hosting offline renderer first?
+> **TRIAGE 2026-08-12 — the backfill is RUNNING; batches 7–15 are the remainder.**
+> Phase 0 (capture harness + the coverage gate) and batches 1–6 shipped. Measured
+> on this tree: **134 `.f32` baselines across 56 baseline groups**, and
+> `art/setup/profile-coverage.ts` still lists **44** unprofiled modules in
+> `ART_BACKLOG`. The live inventory is that file — read it, do not re-count from
+> prose here.
+>
+> ⚠ **`ART_BACKLOG_MAX` (`profile-coverage.ts:120`) is exactly the hand-typed
+> population count that was killed repo-wide** (CLAUDE.md, "NEVER hand-type a
+> population count", owner P0 2026-08-10). It is legacy, not precedent: it is a
+> boy-scout removal target for whoever next touches that file, and §6b's
+> "self-enforcing ratchet like `STRICT_DOCS`" framing is **against repo standard**
+> now. The *deliverable* — a profile per non-excluded module — is alive and
+> unaffected; only the enforcement shape is wrong. Replace it with a derived
+> assertion over the registry, never a successor counter.
 
 ---
 
@@ -63,293 +26,128 @@ possible. Deliver in batches.
 
 ### 1.1 Harness + tasks
 
-- Workspace: `art/` (`@patchtogether.live/art`, `art/package.json`). Runner is
-  vitest under Node with `node-web-audio-api` shimming `OfflineAudioContext`
-  (`art/vitest.config.ts` — `include: ['scenarios/**/*.test.ts']`, `pool:'forks'`
-  + `singleFork:true` for determinism, `$lib` alias mirrors the web package).
-- Tasks (`Taskfile.yml`): `art:415` (`task art` → `npm test -w art`, deps
-  `dsp:build`), `art:update:421` (`task art:update` → `UPDATE_BASELINES=1 …`,
-  regenerates `.f32`+`.sha`), `art:one:427` (single scenario by path/name;
-  honours `REPEAT=N` for the pre-MR 3× flake-check; deps `dsp:ensure` so a
-  Faust-less worktree still runs).
-- CI gate: `.github/workflows/ci.yml:234` (`art` job, ~60 s) — restores the
-  `dsp-dist` artifact + LFS baselines, runs `task art`. ART is part of the
-  required `typecheck + unit + ART + E2E` status check (ci.yml header).
+- Workspace: `art/` (`@patchtogether.live/art`). Runner is vitest under Node with
+  `node-web-audio-api` shimming `OfflineAudioContext` (`art/vitest.config.ts` —
+  `pool:'forks'` + `singleFork:true` for determinism).
+- Tasks: `task art`, `task art:update` (regenerates `.f32`+`.sha`, and now chains
+  `art:fingerprints:accept`), `task art:one` (single scenario; honours `REPEAT=N`).
+- CI gate: the `art` job in `.github/workflows/ci.yml`, part of the required
+  `typecheck + unit + ART + E2E` status check.
 
 ### 1.2 The render → capture → pin flow
 
-`art/setup/render.ts` is the shared helper library:
-- `SAMPLE_RATE = 48000` (`render.ts:15`) — every offline render is mono, 48 kHz.
-- `render()` (`render.ts:42`) is a **Phase-1 STUB**: it asserts the compiled
-  `dist/<name>.{wasm|js}` + `.sha` exist, then returns a **synthetic 440 Hz
-  sine** (`render.ts:66`) — it does NOT actually render the module. Real
-  scenarios therefore do NOT use it for capture (see 1.3).
-- `moduleSourceSha(name)` (`render.ts:74`) hashes `packages/dsp/src/<name>.{dsp,ts}`
-  (16-hex sha256 slice, matches the build). `builtSha(name)` (`render.ts:83`)
-  reads `dist/<name>.sha`.
-- Baseline I/O: `readBaseline`/`writeBaseline` (`render.ts:89`/`106`) read/write
-  `art/baselines/<scenario>.f32`; `readBaselineSha`/`writeBaselineSha`
-  (`render.ts:113`/`120`) the companion `.sha`.
-- `compareBuffers()` (`render.ts:135`) — **tier A** = bit-identical, **tier B** =
-  RMS diff < 1e-4 (the default used for real audio), **tier C** = a loose
-  mel-spectrogram stub (RMS×100).
-- `SHOULD_UPDATE_BASELINES` (`render.ts:181`) = `UPDATE_BASELINES=1`.
+`art/setup/render.ts` is the shared helper library: `SAMPLE_RATE = 48000` (mono),
+`moduleSourceSha(name)` (16-hex sha256 slice of the DSP source), `builtSha(name)`,
+baseline/`.sha` I/O, and `compareBuffers()` — **tier A** bit-identical, **tier B**
+RMS diff < 1e-4 (the default for real audio), **tier C** a loose mel stub.
 
-**Canonical capture-and-pin pattern** (see `assertBaseline` in
+**Canonical capture-and-pin pattern** (`assertBaseline` in
 `art/scenarios/analog-vco/fm-sync-model.test.ts`): compute `srcSha =
-moduleSourceSha(name)`; if `UPDATE_BASELINES` or no baseline exists → write
-`.f32` + write `.sha`; else **assert `existingSha === srcSha`** (forces a
-re-capture when the DSP source changes) THEN `compareBuffers(rendered, baseline,
-'B')`. The `.sha` is a source-hash PIN: a coefficient change in the DSP flips
-the gate red and demands an intentional `task art:update`.
+moduleSourceSha(name)`; if `UPDATE_BASELINES` or no baseline exists → write `.f32`
++ `.sha`; else **assert `existingSha === srcSha`** (forces a re-capture when the
+DSP source changes) THEN `compareBuffers(rendered, baseline, 'B')`. The `.sha` is a
+source-hash PIN: a coefficient change flips the gate red and demands an intentional
+`task art:update`.
 
-> **`.sha`-regenerate-LAST discipline** (repo memory `art-sha-pin-regenerate-last`
-> + CLAUDE.md): the source-SHA pin hashes the worklet (and its `-dsp.ts` lib —
-> see `combinedSourceSha` in `treeohvox/voice-character.test.ts`). Re-pin the
-> `.sha` as the FINAL edit step and confirm only `.sha` (not `.f32`) changed for
-> a pure re-pin, else CI `art` fails on a stale pin though audio is unchanged.
+### 1.3 THE LOAD-BEARING CONSTRAINT (why scenarios don't use `render()`)
 
-### 1.3 The rendering constraint (why scenarios don't use `render()`)
-
-`node-web-audio-api` cannot instantiate our custom `AudioWorkletProcessor`s (or
-the Faust-WASM worklets). Every REAL baseline scenario therefore renders through
-one of three offline-safe paths:
+`node-web-audio-api` **cannot instantiate our custom `AudioWorkletProcessor`s** or
+the Faust-WASM worklets. Every REAL baseline scenario therefore renders through one
+of three offline-safe paths:
 
 1. **Pure-TS DSP core** the worklet wraps — e.g. `treeohvox/voice-character.test.ts`
-   imports `renderVoiceSequence` from `packages/dsp/src/lib/treeohvox-dsp.ts`;
-   `sample-hold/quantized-vco-steps.test.ts` imports `sampleHoldStep`/
-   `quantizeVoltage` from `sample-hold-dsp.ts`. Bit-exact + SHA-pinnable.
-2. **Faithful TS mirror** of the `.dsp` per-sample recurrences written inline in
-   the scenario — `analog-vco/fm-sync-model.test.ts` mirrors `analog-vco.dsp`
-   (with an explicit 1-sample sync-propagation delay to stay deterministic).
-3. **Native Web Audio primitives under `OfflineAudioContext`** for verification
-   — `sample-hold` renders `OscillatorNode`s at the quantized frequencies and
-   FFT-confirms. (Primitive nodes work; only custom worklets don't.)
+   imports `renderVoiceSequence` from `packages/dsp/src/lib/treeohvox-dsp.ts`.
+   Bit-exact + SHA-pinnable.
+2. **Faithful TS mirror** of the `.dsp` per-sample recurrences written inline in the
+   scenario — `analog-vco/fm-sync-model.test.ts` mirrors `analog-vco.dsp` (with an
+   explicit 1-sample sync-propagation delay to stay deterministic).
+3. **Native Web Audio primitives under `OfflineAudioContext`** for verification —
+   `OscillatorNode`/`BiquadFilterNode` DO work; only custom worklets don't.
 
-There is NO "drive the real module graph and snapshot every port" offline
-harness today — that only exists in the E2E lane (Playwright, real browser).
+So the real per-module effort is always: *does a pure core exist / can it be
+extracted / must a mirror be written?* There is NO "drive the real module graph and
+snapshot every port" offline harness — that only exists in the E2E lane.
+
+(#1376 later added `art/setup/faust-offline.ts`, which renders a real Faust wasm
+headlessly in Node. That is a fourth path for Faust modules and it is what
+invalidated the "no faithful automated gate exists for the shipped wasm" objection
+— see the A3 block in `dsp-stack-bass-freq-audit-2026-07-01.md`.)
 
 ### 1.4 The "audio profile" product surface (the gallery)
 
-`art/build_gallery.py` walks `art/baselines/<scenario>/<name>.f32`, and for each
-renders ONE deterministic PNG: a **waveform** (amp vs time; min/max envelope for
-long signals) on top and a **log-frequency STFT spectrogram** (Hann, 3/4 overlap,
-magma, −80 dB floor) below, plus a per-baseline **stats line** — `peak (dBFS) ·
-rms (dBFS) · duration ms · N samples`. It emits `docs/art/index.html` grouping
-cards by scenario (dark theme, mirrors the VRT gallery). Published to GitHub
-Pages by `.github/workflows/art-gallery.yml` (triggers on `art/baselines/**`;
-shares the single Pages site with `pages.yml`). The landing blurb: *"per-baseline
-waveform + spectrogram of every ART audio baseline."*
+`art/build_gallery.py` walks `art/baselines/<scenario>/<name>.f32` and renders ONE
+deterministic PNG per baseline: a **waveform** on top and a **log-frequency STFT
+spectrogram** (Hann, 3/4 overlap, magma, −80 dB floor) below, plus a **stats line**
+— `peak (dBFS) · rms (dBFS) · duration ms · N samples`. Emitted to
+`docs/art/index.html`, published by `.github/workflows/art-gallery.yml`.
 
 **Consequence:** a module has a "profile" iff it has ≥1 `.f32` under
-`art/baselines/`. The gallery reads `art/baselines/` ONLY — the 53 stub scenarios
-(below) contribute nothing.
+`art/baselines/`. Stub scenarios (SHA/artifact-existence asserts, no `.f32`)
+contribute nothing to the gallery and are re-authoring targets, not coverage.
 
 ### 1.5 Honesty guard
 
-`art/scenarios/_meta/baseline-uniqueness.test.ts` md5-hashes every committed
-`.f32` and fails if two are byte-identical — this exists BECAUSE the old
-`render()` stub returned the same 440 Hz sine for every module, producing ~11
-self-comparing baselines that were deleted. Any backfill must produce genuinely
-distinct captures or this guard (correctly) fails.
+`art/scenarios/_meta/baseline-uniqueness.test.ts` md5-hashes every committed `.f32`
+and fails if two are byte-identical. It exists BECAUSE the old `render()` stub
+returned the same 440 Hz sine for every module, producing ~11 self-comparing
+baselines that were deleted.
+
+⚠ **THE STUB IS STILL THERE, AND THE GUARD ONLY POLICES ITS SYMPTOM.**
+`art/setup/render.ts:66-68` still returns
+`Math.sin(2π·440·i/sr) * 0.1` with the comment *"Deterministic placeholder: 440 Hz
+sine. Replaced when real render lands."* Leaving a 440 Hz-sine `render()` in the
+shared helper invites new stub scenarios — the exact thing the md5 guard exists to
+catch *after the fact*. **Either finish it into a real offline host or delete it
+and standardise on `art/setup/capture.ts`.** This is the one genuine source defect
+left in the harness.
 
 ---
 
-## 2. Inventory + coverage
+## 2. The spec
 
-### 2.1 Method
-
-Enumerated the live registry by importing `listModuleDefs()`
-(`packages/web/src/lib/audio/module-registry.ts:221`) after `registerAudioModules()`
-(glob-driven registration, `packages/web/src/lib/audio/modules/index.ts` —
-`collectAudioDefs()` keeps every exported `*Def` with `domain:'audio'` + a
-`factory`). Output-port cable types per `PortDef` (`graph/types.ts:231`) and the
-`StandardCableType` union (`graph/types.ts:41`). "Audio-family" = `audio`, `cv`,
-`gate`, `pitch`, `polyPitchGate`. Cross-referenced against `art/baselines/**` and
-the 60 `art/scenarios/*` dirs.
-
-### 2.2 Headline numbers
-
-| Metric | Count |
-|---|---|
-| Audio-domain module defs (`domain:'audio'`) | **126** |
-| Modules with ≥1 committed `.f32` baseline (has an "audio profile") | **7** |
-| Modules with ZERO ART baseline | **119** |
-| Committed `.f32` baseline files (total) | 48 |
-| `art/scenarios/*` dirs (total) | 60 |
-| …that actually `writeBaseline` (produce `.f32`) | **9 files / 7 module groups** |
-| …that are STUBS (SHA/artifact-existence or behavioural asserts, no `.f32`) | 53 dirs |
-| Audio-family output ports (all 126 modules) | 466 |
-| …on the 119 uncovered modules | **408** (157 are `audio`-typed main signal) |
-| …on the 7 covered modules | 58 (only ~a dozen individually pinned) |
-| Modules that render WebGL but live in the audio registry | 3 (`cube`, `hypercube`, `wavesculpt`) |
-
-The 7 covered scenario groups + baseline counts: `analog-vco` (17), `cube` (16),
-`featurecv` (4), `hypercube` (4), `synesthesia` (4), `sample-hold` (2),
-`treeohvox` (1). (Scenario/baseline dirs are kebab-case; module `type` ids are
-camelCase — e.g. dir `analog-vco` ↔ type `analogVco`, `sample-hold` ↔ `sampleHold`.)
-
-### 2.3 Stub scenarios ≠ profiles
-
-53 of the 60 scenario dirs exist but capture NO baseline — e.g. `meowbox`,
-`helm`, `dx7`, `clouds`, `warps`, `veils`, `noise`, `drumseqz`, `polyseqz`,
-`macrooscillator`, plus cross-cutting behavioural dirs (`cv-range-uniformity`,
-`note-pitch`, `lfo-shared-clock`, `tempo-stability`, `sequencer-transport`,
-`adsr-invert`, `vca-invert`). Many are "toolchain validation" — they call the
-stub `render()` + assert `builtSha === moduleSourceSha` (e.g.
-`meowbox/meow-c4.test.ts`). These prove the module COMPILES; they do NOT profile
-its audio. They are re-authoring targets, not coverage.
-
----
-
-## 3. Why the gaps exist — what each uncovered module NEEDS
-
-Grouped by "what it takes to profile it" (`*` = a pure `-dsp.ts` core already
-exists in `packages/dsp/src/lib/`, so it is near-zero-authoring; full per-module
-table in Appendix A).
-
-**A. Has an extractable/existing pure core — LOW effort (highest value first).**
-Rendering path #1 is already available; the only work is a scenario that drives
-the core and pins outputs.
-`bluebox*`, `chowkick*`, `reverb*`(spring-reverb-dsp), `ringback*`, `resofilter*`,
-`ninelives*`, `wavetableVco*`, `flipper*`, `gatemaiden*`, `moog962*`, `moog960*`,
-`moog911*`, `moog911a*`, `moogCp3*`, `moog904a/b/c*`, `moog907a*`, `moog914*`,
-`moog921Vco*`, `twotracks*`, `pentemelodica*`, `polyhelm*`, `helm*`, `adsr*`,
-`wavesculpt*`.
-
-**B. Self-driving SOURCE (no required input) — LOW/MED.** Generate audio from
-params alone; some need a seeded PRNG (determinism, §5).
-`noise` (seed RNG), `moog903a`/`moog923` (noise sources — seed RNG), `moog956`,
-plus the `*` sources above (`bluebox`, `chowkick`, `wavetableVco`, `moog921Vco`).
-
-**C. SOURCE needing a pitch/gate note — MED.** A voice; drive with a fixed
-pitch/gate schedule (or the pure core's own sequence renderer).
-`meowbox`, `macrooscillator` (async wavetable load), `drummergirl`, `hydrogen`
-(seed sample-trigger jitter), `marbles` (seed RNG), `symbiote`, `numpadPlus`,
-`elements`, `rings`, `swolevco`, `riotgirls`, `samsloop`, `dx7`, `foxy`, `wavecel`,
-`qbrt`.
-
-**D. FX / PROCESSOR — needs a DRIVING SOURCE — MED.** No audio without input;
-feed a canonical VCO (or noise) test signal, capture wet output(s).
-`delay`, `cocoadelay`, `charlottesEchos`, `clouds`, `cloudseed`, `shimmershine`,
-`warps`, `warrenspectrum` (8 band outs), `destroy`, `callsine`, `filter`,
-`resofilter*`, `reverb*`, `ringback*`, `twotracks*`, `vca`, `stereovca`, `scaler`,
-`sidecar`, `veils`, `attenumix`, `mixer`, `mixmstrs`, `aquaTank`, `moog902`,
-`moog905`, `moog912`, `moog921b`, `moog984`, `moog994`, `moog995`, `moog961`,
-`rasterize`, `scope`, `peaks`.
-
-**E. MODULATION / ENVELOPE — needs a GATE/TRIGGER or CLOCK source — MED.** CV/gate
-outputs only; drive with a canonical gate (envelopes) or clock (sequencers).
-`adsr*`, `moog911*`, `moog911a*`, `moog912`, `moog993`, `lfo` (pin phase/epoch),
-`stages`, `tides2`, `buggles` (seed RNG), `cartesian`, `illogic`, `slewSwitch`,
-`fourplexer`, `unityscalemathematik`, `analogLogicMaths`, `depolarizer`,
-`polarizer`, `negativity`, `moog992`, `moog921a`, `moog960*`.
-Clocked step sources: `sequencer`, `polyseqz`, `drumseqz`, `macseq`, `kria`,
-`grids` (seed RNG), `score`, `writeseq`, `timelorde`, `atlantisCatalyst`,
-`clipplayer`.
-
-**F. POLY / MIDI note voice — needs the REAL poly source — MED/HIGH.** Per repo
-memory `poly-modules-test-real-source-chain`: driving the engine class directly
-passes-but-lies; the profile must be driven by a poly note schedule that mirrors
-the MIDI-LANE/POLYSEQZ `polyPitchGate` source.
-`dx7`, `polyhelm*`, `pentemelodica*`, `wavecel`, `numpadPlus`, plus every
-`polyPitchGate`-out step source (`sequencer`, `polyseqz`, `cartesian`,
-`clipplayer`, `midiLane`).
-
-**G. Genuinely UNPROFILABLE (offline) — EXCLUDE (§4.2).** Live external input or
-non-deterministic gameplay: `audioIn` (mic/getUserMedia), `gamepad`/`joystick`
-(HID), `midiLane`/`midiCvBuddy`/`midiOutBuddy`/`midiclock` (live MIDIAccess),
-`livecode` (user-authored runtime code), the free-running games
-`pong`/`modtris`/`frogger`/`skifree`/`qbrt` (audio driven by RNG + gameplay
-state), and the terminal sinks with no capturable audio-family OUTPUT port —
-`audioOut`, `midiOutBuddy`, `clockedRunner`, `spectrograph` (video-only out).
-
----
-
-## 4. The spec
-
-### 4.1 Definition of an "audio profile" (precise)
+### 2.1 Definition of an "audio profile" (precise)
 
 For a given module output port, an **audio profile** is:
 
-- **Captured artifact:** a raw little-endian **Float32, MONO, 48 000 Hz** PCM
-  dump at `art/baselines/<group>/<scenario-variant>.f32`, plus a companion
-  `<…>.sha` = `moduleSourceSha` (worklet + any `-dsp.ts` lib, per
-  `combinedSourceSha`) at capture time.
-- **Length:** default **0.5 s** for steady sources/FX (matches `analog-vco`,
-  `DURATION_S`); **≥1.0 s** for envelope/sequence/decay-tail modules so the ADSR
-  or step pattern is visible; drivers that need async loads (wavetables, FLAC/WAV
-  samples) render **after** the load settles (DETERMINISM.md convention).
-- **Derived in the gallery (not stored):** waveform, log-freq spectrogram, and
-  **stats** (peak dBFS, RMS dBFS, duration, samples) — all computed by
-  `build_gallery.py` from the `.f32`. Optional future: add spectral-centroid to
-  the stats line (§7 Q).
-- **Regression semantics:** RMS **tier B** (`compareBuffers(...,'B')`, < 1e-4)
-  against the committed `.f32`, gated by the `.sha` source pin.
+- **Captured artifact:** a raw little-endian **Float32, MONO, 48 000 Hz** PCM dump
+  at `art/baselines/<group>/<scenario-variant>.f32`, plus a companion `<…>.sha` =
+  `moduleSourceSha` (worklet + any `-dsp.ts` lib, per `combinedSourceSha`).
+- **Length:** default **0.5 s** for steady sources/FX; **≥1.0 s** for
+  envelope/sequence/decay-tail modules so the ADSR or step pattern is visible;
+  drivers that need async loads (wavetables, FLAC/WAV samples) render **after** the
+  load settles.
+- **Derived in the gallery (not stored):** waveform, log-freq spectrogram, stats.
+- **Regression semantics:** RMS **tier B** against the committed `.f32`, gated by
+  the `.sha` source pin.
 
-**Per-output rule:** capture **each distinct audio-family output** the module
-exposes that carries independent information. Bus duplicates (`out_l`/`out_r` of a
-mono-summed effect) may share one profile if provably identical; genuinely
-different taps (VCO `saw`/`square`/`sine`, `env`/`env_inv`, per-band outs) each
-get their own baseline. Video (`mono-video`/`video`) outputs are OUT of ART scope
-(they belong to VRT/WebGL-attest).
+**Per-output rule:** capture **each distinct audio-family output** that carries
+independent information. Bus duplicates (`out_l`/`out_r` of a mono-summed effect)
+may share one profile if provably identical; genuinely different taps (VCO
+`saw`/`square`/`sine`, `env`/`env_inv`, per-band outs) each get their own baseline.
+Video outputs are OUT of ART scope (VRT/WebGL-attest owns those).
 
-### 4.2 Standard driving scenario per category
+### 2.2 Standard driving scenario per category
 
-A profile scenario = **(driver) → (module core) → capture every output**.
-Canonical drivers (reuse the existing pinned constants; do not re-derive):
+A profile scenario = **(driver) → (module core) → capture every output**. Reuse the
+existing pinned constants; do not re-derive.
 
 | Category | Driver | Notes |
 |---|---|---|
-| **source** (self-driving) | none — params only | seed PRNG if RNG-based (§5) |
+| **source** (self-driving) | none — params only | seed PRNG if RNG-based |
 | **source** (voice) | fixed pitch/gate schedule, e.g. C-D-Eb-F @ 130 BPM (treeohvox precedent) | render the core's own sequence fn where present |
 | **FX / processor** | canonical VCO test signal (C4 saw + sine) and/or seeded white noise, ~0.5 s | dry→wet; capture all wet taps |
 | **envelope / modulator** | canonical gate: `TRIGGER_PULSE_S` / `GATE_HI` held square from `$lib/audio/gate-trigger` | ≥1 s to show attack→release |
 | **clocked step source** | fixed clock (240 BPM per DETERMINISM.md) + seeded steps | epoch pinned to 0; assert stepped output |
 | **poly voice** | `polyPitchGate` note schedule mirroring MIDI-LANE/POLYSEQZ | real-source-chain rule (poly memory) |
-| **video-module-with-audio-out** (`cube`/`hypercube`/`synesthesia`/`wavesculpt`/`swolevco`/`foxy`/`wavecel`) | drive audio path only; capture `L`/`R`/band audio; ignore `video_out` | video handled by VRT/WebGL, hash-transparent |
+| **video-module-with-audio-out** (`cube`/`synesthesia`/`wavesculpt`/`swolevco`/`foxy`/`wavecel`) | drive audio path only; capture `L`/`R`/band audio; ignore `video_out` | video handled by VRT/WebGL |
 
-### 4.3 Reusable harness / template ("drive + capture every output")
+The shared harness this table assumes now exists: `art/setup/capture.ts` and
+`art/setup/drivers.ts` (plus `clip-driver.ts`, `offline.ts`, `faust-offline.ts`).
 
-Add to `art/setup/` a small **capture helper** so a new module is a ~30-line
-scenario. Two tiers, matching the existing rendering paths:
-
-1. **`captureCore(coreModule, driver, outputs[])`** — for modules with a pure
-   `-dsp.ts` core (path #1). Given a per-block/per-sample core step fn, a driver
-   (source/gate/clock/poly schedule from a shared `art/setup/drivers.ts`), and
-   the list of output taps, it renders N samples, returns a `Record<outputId,
-   Float32Array>`, and a `pinAll(group, srcSha, buffers)` writes/asserts every
-   output via the `assertBaseline` pattern (lifted out of `analog-vco` into
-   `art/setup`). This is the low-effort common case.
-2. **`captureOffline(buildGraph)`** — for modules verifiable with native Web
-   Audio primitives (path #3), wrapping `OfflineAudioContext` render.
-
-`art/setup/drivers.ts`: shared canonical drivers — `vcoTestSignal()`,
-`seededNoise(seed)`, `gateTrain(bpm, pulse)`, `clock(bpm)`, `polySchedule(notes)`
-— each pure + deterministic, pinning epoch/phase/PRNG-seed.
-
-**Minimal per-module authoring** then becomes:
-```ts
-// art/scenarios/<name>/profile.test.ts
-import { captureCore, pinAll, srcSha } from '../../setup/capture';
-import { drive } from '../../setup/drivers';
-import { <core> } from '../../../packages/dsp/src/lib/<name>-dsp';
-it('profiles every output', async () => {
-  const bufs = captureCore(<core>, drive.vco(), ['out', 'aux']);
-  await pinAll('<name>', await srcSha('<name>'), bufs);      // writes .f32 + .sha
-});
-```
-Optionally add a **registry-driven sweep** (mirroring the per-module-per-port
-E2E pattern) that asserts every non-excluded `AudioModuleDef` has ≥1 baseline
-group — turning "add a module" into "add a profile or add to the exclusion
-list", a self-enforcing ratchet like the living-docs `STRICT_DOCS` set.
-
-### 4.4 Coverage target + exclusion list
+### 2.3 Coverage target + exclusion list
 
 **Target:** every audio-domain module NOT on the exclusion list has ≥1 audio
-profile, and every independent audio-family output is captured. Realistic scope:
-**~108 of 126** modules profilable (126 − 18 excluded), covering **~380+** of the
-408 currently-uncovered audio-family output ports.
+profile, and every independent audio-family output is captured.
 
 **Exclusion list (18) — cannot be deterministically profiled offline:**
 
@@ -364,132 +162,88 @@ profile, and every independent audio-family output is captured. Realistic scope:
 | `clockedRunner` | utility, no audio output |
 | `spectrograph` | video-only outputs (analysis sink) |
 
-*Conditional/stretch:* the games could get a **seeded, scripted** capture (fixed
-input tape + `CHAOS_SEED`-style replay) if the owner wants game bleeps profiled;
-`audioIn`/MIDI modules could get a **synthetic-input pass-through** profile that
-tests only their scaling, not a "real" source. Both are explicitly deferred.
+*Conditional/stretch, both **explicitly deferred**:* the games could get a
+**seeded, scripted** capture (fixed input tape + `CHAOS_SEED`-style replay) if the
+owner wants game bleeps profiled; `audioIn`/MIDI modules could get a
+**synthetic-input pass-through** profile that tests only their scaling, not a
+"real" source.
 
-### 4.5 Batch plan (ordered; ~5–8 modules each)
+### 2.4 Remaining batches (7–15)
 
-Easiest-highest-value first. "Effort" is rough per-batch author+flake-check time.
+Batches 1–6 shipped. What is left, easiest-highest-value first:
 
 | # | Theme | Modules (~) | Path | Effort |
 |---|---|---|---|---|
-| **1** | **Pure-core sources/FX (already extractable)** | `bluebox`, `chowkick`, `wavetableVco`, `reverb`, `ringback`, `resofilter`, `twotracks` | #1 core | **S** (½ day) |
-| 2 | Moog filter/util pure cores | `moog904a`, `moog904b`, `moog904c`, `moog907a`, `moog914`, `moogCp3`, `moog962` | #1 core | S–M |
-| 3 | Moog VCO + envelope pure cores | `moog921Vco`, `moog911`, `moog911a`, `moog960`, `adsr`, `ninelives`, `gatemaiden`, `flipper` | #1 core | M |
-| 4 | Self-driving primitive sources | `noise`, `moog903a`, `moog923`, `moog956`, `moog921b`, `moog905`, `moog902` | #2 mirror | M (seed RNG) |
-| 5 | Utility CV/logic math | `analogLogicMaths`, `illogic`, `depolarizer`, `polarizer`, `negativity`, `unityscalemathematik`, `fourplexer`, `slewSwitch` | #2/#3 | S–M |
-| 6 | Mix/VCA/attenuator FX | `vca`, `stereovca`, `scaler`, `attenumix`, `mixer`, `mixmstrs`, `veils`, `moog984`/`994`/`995` | #3 offline | M (needs VCO driver) |
-| 7 | Time-domain FX (delay/reverb family) | `delay`, `cocoadelay`, `charlottesEchos`, `clouds`, `cloudseed`, `shimmershine`, `warps` | #1/#2 | M |
+| 7 | Time-domain FX (delay/reverb family) | `delay`, `charlottesEchos`, `clouds`, `cloudseed`, `shimmershine`, `warps` | #1/#2 | M |
 | 8 | Spectral / destructive FX | `destroy`, `callsine`, `filter`, `warrenspectrum`(8 bands), `sidecar`, `peaks`, `rasterize`, `scope` | #1/#3 | M |
 | 9 | Voice sources (mono) | `meowbox`, `elements`, `rings`, `swolevco`, `samsloop`, `foxy`, `wavecel` | #1/#2 | M |
-| 10 | Drum/sample voices (seeded) | `drummergirl`, `hydrogen`, `riotgirls`, `macrooscillator`, `symbiote`, `marbles` | #1/#2 | M (async loads + RNG seed) |
+| 10 | Drum/sample voices (seeded) | `drummergirl`, `riotgirls`, `macrooscillator`, `symbiote`, `marbles` | #1/#2 | M (async loads + RNG seed) |
 | 11 | Envelopes / function gens | `moog912`, `moog993`, `stages`, `tides2`, `lfo`, `moog921a`, `moog992` | #3 gate | M (gate driver) |
 | 12 | Modulation utilities | `buggles`, `cartesian`, `atlantisCatalyst` (seed), `featurecv`(extend), `moog961` | #2/#3 | M |
 | 13 | Clocked step sequencers | `sequencer`, `polyseqz`, `drumseqz`, `macseq`, `kria`, `grids`(seed), `score`, `writeseq` | #3 clock | M–L (clock+epoch pin) |
-| 14 | Poly voices (real source chain) | `dx7`, `polyhelm`, `pentemelodica`, `wavecel`, `numpadPlus` | #1 + poly | **L** (real poly source) |
-| 15 | WebGL-audio + big multi-out | `cube`(extend), `hypercube`(extend), `wavesculpt`, `synesthesia`(extend to all bands), `timelorde` | #1 core | M (hash-transparent audio path) |
+| 14 | Poly voices (real source chain) | `dx7`, `pentemelodica`, `wavecel`, `numpadPlus` | #1 + poly | **L** (real poly source) |
+| 15 | WebGL-audio + big multi-out | `cube`(extend), `wavesculpt`, `synesthesia`(extend to all bands), `timelorde` | #1 core | M (hash-transparent audio path) |
 
-(Batches 1–3 are the "first batch" cluster: all path-#1, already-extracted cores,
-maximum profiles for minimum authoring. Modules with `*` cores in §3 concentrate
-here.) Total ≈ 15 batches; the 7 covered modules get *extended* (more outputs) in
-batches 12/15 rather than re-created.
+Cross-check the module lists against `ART_BACKLOG` before starting a batch — some
+of the names above have since been profiled or deleted (`helm`/`polyhelm`/
+`hydrogen`/`hypercube` are gone from the tree entirely).
 
-### 4.6 Determinism + source-SHA discipline (folded into delivery)
+### 2.5 Determinism, per batch
 
-Every batch PR follows the repo test discipline:
-- **Seed all non-determinism.** Inject a fixed PRNG for `noise`/`buggles`/
-  `drummergirl`/`hydrogen`/`marbles`/`grids`/`moog903a`/`moog923`; pin
-  `epoch=0`/`phase=0` for `lfo` + clocked sources (DETERMINISM.md "Random seed"
-  row currently says *None pinned* — the offline profiles MUST pin it; add a row
-  to the matrix per batch). Prefer the `analog-vco` explicit-1-sample-delay
-  technique for any feedback/mutual loop.
-- **`.sha` regenerate LAST.** Author the scenario → run `task art:update` →
-  confirm `git diff` shows the intended `.f32` change → re-pin `.sha` as the
-  final step → confirm ONLY `.sha` changed on a pure re-pin.
-- **Flake-check 3×** the new scenario before the MR:
-  `REPEAT=3 flox activate -- task art:one -- <name>` (bails on first failure).
-- **Uniqueness guard** (`_meta/baseline-uniqueness.test.ts`) must stay green —
-  distinct captures only, never a placeholder.
-- **Merge only on the final commit's green `art` job**; a red `art` on main is a
-  P0, never absorbed as flake.
-- **LFS + gallery:** `.f32` are LFS-tracked (`art/baselines/**`); the merge to
-  main triggers `art-gallery.yml` to re-render `docs/art/`. Estimate CI delta:
-  each batch adds ~seconds to the `art` job (offline renders are fast); flag if a
-  batch pushes the ~60 s `art` job past ~2 min (CLAUDE.md >2 min rule).
+**Seed all non-determinism.** Inject a fixed PRNG for `noise`/`buggles`/
+`drummergirl`/`marbles`/`grids`/`moog903a`/`moog923`; pin `epoch=0`/`phase=0` for
+`lfo` + clocked sources (DETERMINISM.md's "Random seed" row says *None pinned* —
+the offline profiles MUST pin it; add a row to the matrix per batch). Prefer the
+`analog-vco` explicit-1-sample-delay technique for any feedback/mutual loop.
+
+The uniqueness guard must stay green — distinct captures only, never a placeholder.
 
 ---
 
-## 5. Risks / notes
+## 3. Risks / notes
 
-- **Rendering-path debt.** Path #2 (hand-written TS mirror) is labor + drift
-  risk: the mirror can silently diverge from the `.dsp`. The `.sha` pin catches
-  *source* changes but not a mirror that was wrong from day one. Prefer
-  extracting a real `-dsp.ts` core (path #1) — this doubles as unit-testable DSP
-  and matches the extracted-core campaign (#944/#945). Recommend: **when a module
-  needs a mirror, extract a core instead** and land it in the same PR.
-- **Faust-only modules.** 12 `.dsp` files vs 73 TS worklets in `packages/dsp/src`.
-  Faust modules with no TS core need either a mirror or a `faustwasm`-node offline
-  host (does not exist yet — see §7 Q3).
-- **Multi-out explosion.** `synesthesia` (40 af-outs), `clipplayer` (24),
-  `gamepad` (18), `timelorde` (13) — capturing *every* port is a lot of `.f32`.
-  Apply the "independent information only" rule (4.1) to avoid 40 near-identical
-  band dumps; profile a representative subset + assert the rest structurally.
-- **The `render()` stub.** Either finish it into a real offline host or delete it
-  and standardize on `art/setup/capture.ts`; leaving a 440 Hz-sine `render()` in
-  the shared helper invites new stub scenarios (the exact thing the uniqueness
-  guard polices).
+- **Rendering-path debt.** Path #2 (hand-written TS mirror) is labour + drift risk:
+  the mirror can silently diverge from the `.dsp`. The `.sha` pin catches *source*
+  changes but not a mirror that was wrong from day one. **When a module needs a
+  mirror, extract a real `-dsp.ts` core instead** and land it in the same PR — or
+  use the `faust-offline.ts` path, which renders the shipped wasm and has no
+  mirror-drift class at all.
+- **Faust-only modules.** Faust modules with no TS core need either a mirror or the
+  offline Faust host.
+- **Multi-out explosion.** `synesthesia` (40 audio-family outs), `clipplayer` (24),
+  `gamepad` (18), `timelorde` (13). Apply the "independent information only" rule
+  to avoid 40 near-identical band dumps; profile a representative subset + assert
+  the rest structurally. (This is the owner's "signature, distinct" answer below.)
 
 ---
 
-## 6. Open questions for the owner
+## 4. OWNER DECISIONS (2026-07-01, verbatim: "1 - gate. 2 - signature, distinct. 3 - ts-pure for now 4 - exclusion list 5 - yes add 6 - agent fan")
 
-1. **Gate or informational?** Should "≥1 audio profile per non-excluded module"
-   become a **required** registry-sweep CI check (like living-docs `STRICT_DOCS`
-   / per-module-per-port), or stay informational until the backfill completes?
-2. **Every output, or signature outputs?** Capture *every* independent
-   audio-family output (408 ports), or a curated "signature" set per module
-   (main + notably-distinct taps)? Affects `.f32` count + LFS size materially.
-3. **Rendering path.** Accept the pure-TS-core / TS-mirror path as canonical
-   (fast, but requires a core per module), or invest first in a real
-   worklet-hosting offline renderer (`@grame/faustwasm` in Node + a custom-worklet
-   host) so ART renders the ACTUAL shipped DSP? The latter is a bigger up-front
-   build but removes mirror-drift risk permanently.
-4. **Games + live-input.** Leave `pong`/`modtris`/`frogger`/`skifree`/`qbrt` +
-   `audioIn`/MIDI on the exclusion list, or invest in seeded scripted-input /
-   synthetic-input profiles for them (stretch)?
-5. **Stats surface.** Add spectral-centroid (and maybe a spectral-flatness /
-   crest factor) to the gallery stats line, per the "profile" framing, or keep
-   peak/RMS/duration only?
-6. **Batch cadence + ownership.** Agent-fan-out batches of 5–8 (like the
-   living-docs rollout), or owner-reviewed one batch at a time? Any modules to
-   prioritize out of order (e.g. the ones most prone to silent DSP regressions)?
-
-## 6b. OWNER DECISIONS (2026-07-01, verbatim: "1 - gate. 2 - signature, distinct.
-## 3 - ts-pure for now 4 - exclusion list 5 - yes add 6 - agent fan")
-
-1. **GATE.** "≥1 audio profile per non-excluded module" becomes a REQUIRED
-   registry-sweep unit check. Implemented as a RATCHET so CI stays green during
-   the backfill: new modules required immediately; the current backlog lives in
-   an explicit `ART_BACKLOG` exclusion list that each batch SHRINKS (like the
-   behavioral quarantine caps — the list only ever gets shorter, enforced).
+1. **GATE.** "≥1 audio profile per non-excluded module" is a REQUIRED
+   registry-sweep unit check (`art/scenarios/_meta/audio-profile-gate.test.ts`).
+   ⚠ It was implemented as a shrinking backlog **ratchet**; see the triage note at
+   the top — that shape is now against repo standard even though the requirement
+   stands.
 2. **SIGNATURE outputs** — profile the DISTINCT outs per module (main outs +
-   genuinely different taps), not all 408 ports (no 8× identical clipplayer lanes).
-3. **TS-pure cores** are the canonical render path for now; the worklet-hosting
+   genuinely different taps), not every port (no 8× identical clipplayer lanes).
+3. **TS-pure cores** are the canonical render path for now; a worklet-hosting
    offline renderer is a separate future infra project.
 4. **Exclusion list stands** (games/HID/MIDI-device/live-input/sinks, ~18).
-5. **Gallery stats:** ADD spectral-centroid + crest factor (+ flatness) to the
-   stats card alongside peak/RMS/duration.
+5. **Gallery stats: ADD spectral-centroid + crest factor (+ flatness)** to the
+   stats card alongside peak/RMS/duration. **STILL UNVERIFIED — check
+   `art/build_gallery.py` before assuming this shipped.**
 6. **Agent fan-out** batches of 5–8, adversarially reviewed per batch; sources +
    filters with existing pure cores go first.
 
 ---
 
-## Appendix A — full per-module coverage table
+## Appendix A — per-module table (`af_out` / `core`)
 
-`af_out` = audio-family output ports · `baseline` = has a committed `.f32` ·
-`core` = a pure `-dsp.ts` core exists in `packages/dsp/src/lib/`.
+`af_out` = audio-family output ports · `baseline` = had a committed `.f32` when this
+was written (**stale — read `ART_BACKLOG` for current coverage**) · `core` = a pure
+`-dsp.ts` core exists in `packages/dsp/src/lib/`. **The `core` column is the reason
+this table is kept**: it is the only written inventory of which modules already have
+a pure core, i.e. which are near-zero-authoring under render path #1.
 
 ```
 adsr                 modulation   af_out=2  baseline=none     core  env, env_inv (cv)
@@ -510,7 +264,6 @@ clipplayer           modulation   af_out=24 baseline=none     -     8× (pitch/g
 clockedRunner        utilities    af_out=0  baseline=none     -     (no output)  [EXCLUDE]
 clouds               effects      af_out=2  baseline=none     -     out_l/out_r (audio)
 cloudseed            effects      af_out=2  baseline=none     -     out_l/out_r (audio)
-cocoadelay           effects      af_out=2  baseline=none     -     outL/outR (audio)
 cube                 sources      af_out=3  baseline=COVERED  core  L/R/sync (audio) + video_out
 delay                effects      af_out=1  baseline=none     -     audio
 depolarizer          utilities    af_out=1  baseline=none     -     out (cv)
@@ -528,9 +281,6 @@ frogger              games        af_out=3  baseline=none     -     home/dead/le
 gamepad              utility      af_out=18 baseline=none     -     sticks/triggers/buttons  [EXCLUDE: HID]
 gatemaiden           utility      af_out=2  baseline=none     core  gate/trig (gate)
 grids                modulation   af_out=5  baseline=none     -     bd/sd/hh/accent/clock (gate)  [seed RNG]
-helm                 sources      af_out=2  baseline=none     core  out_l/out_r (audio)  [poly]
-hydrogen             sources      af_out=2  baseline=none     -     out_l/out_r (audio)  [seed RNG + async samples]
-hypercube            sources      af_out=2  baseline=COVERED  -     L/R (audio) + video_out
 illogic              utilities    af_out=10 baseline=none     -     att1-4/sum/diff (cv), and/nand/or/not (gate)
 joystick             utility      af_out=4  baseline=none     -     x/y/nx/ny (cv)  [EXCLUDE: HID]
 kria                 modulation   af_out=8  baseline=none     -     4× (pitch/gate)
@@ -579,7 +329,6 @@ numpadPlus           sources      af_out=9  baseline=none     -     4× (pitch/g
 peaks                modulation   af_out=2  baseline=none     -     out0/out1 (audio)
 pentemelodica        sources      af_out=7  baseline=none     core  out_l/r + voice1-5 (audio)  [poly]
 polarizer            utilities    af_out=1  baseline=none     -     out (cv)
-polyhelm             sources      af_out=2  baseline=none     core  out_l/out_r (audio)  [poly, real-source memory]
 polyseqz             modulation   af_out=3  baseline=none     -     poly, gate/clock
 pong                 games        af_out=2  baseline=none     -     score_left/right (gate)  [EXCLUDE: game]
 qbrt                 filters      af_out=2  baseline=none     -     L/R (audio)  [game-ish]
@@ -622,23 +371,21 @@ writeseq             modulation   af_out=3  baseline=none     -     pitch/gate/c
 
 ## Appendix B — key source references
 
-- Harness/tasks: `Taskfile.yml:415/421/427`; CI gate `.github/workflows/ci.yml:234`.
-- Render + pin helpers: `art/setup/render.ts` (`:15` SR, `:42/66` stub `render()`,
-  `:74` `moduleSourceSha`, `:83` `builtSha`, `:89/106` baseline I/O, `:113/120`
-  `.sha` I/O, `:135` `compareBuffers` tiers A/B/C, `:181` `UPDATE_BASELINES`).
+- Render + pin helpers: `art/setup/render.ts` (SR, the stub `render()`,
+  `moduleSourceSha`, `builtSha`, baseline/`.sha` I/O, `compareBuffers` tiers,
+  `UPDATE_BASELINES`). Capture harness: `art/setup/capture.ts`,
+  `art/setup/drivers.ts`, `art/setup/clip-driver.ts`, `art/setup/offline.ts`,
+  `art/setup/faust-offline.ts`.
+- Coverage gate + backlog: `art/setup/profile-coverage.ts`,
+  `art/scenarios/_meta/audio-profile-gate.test.ts`.
 - Capture-and-pin pattern: `art/scenarios/analog-vco/fm-sync-model.test.ts`
   (`assertBaseline`); pure-core render: `art/scenarios/treeohvox/voice-character.test.ts`
   (`combinedSourceSha`, `renderVoiceSequence`); offline-primitive render:
   `art/scenarios/sample-hold/quantized-vco-steps.test.ts`.
-- Gallery: `art/build_gallery.py` (waveform+spectrogram+stats); deploy
-  `.github/workflows/art-gallery.yml`; landing blurb in the same workflow.
+- Gallery: `art/build_gallery.py`; deploy `.github/workflows/art-gallery.yml`.
 - Honesty guard: `art/scenarios/_meta/baseline-uniqueness.test.ts`.
 - Determinism matrix: `art/DETERMINISM.md`.
-- Registry/model: `packages/web/src/lib/audio/module-registry.ts:58/221`;
-  glob registration `packages/web/src/lib/audio/modules/index.ts`;
-  `PortDef`/`CableType`/`Domain` `packages/web/src/lib/graph/types.ts:231/41/14`.
 - Pure cores available: `packages/dsp/src/lib/*-dsp.ts` (+ `*-engine.ts`,
-  `*-core.ts`) — 30+ files incl. bluebox/chowkick/resofilter/reverb/ringback/
-  twotracks/moog-*/treeohvox/synesthesia/sample-hold/featurecv/cube/wavesculpt.
-- Relevant memories: `art-sha-pin-regenerate-last`, `poly-modules-test-real-source-chain`,
-  `flake-check-3x-standard`, `project_resume_2026-06-28` (extracted-core campaign #944/#945).
+  `*-core.ts`).
+- Relevant memories: `art-sha-pin-regenerate-last`,
+  `poly-modules-test-real-source-chain`, `flake-check-3x-standard`.

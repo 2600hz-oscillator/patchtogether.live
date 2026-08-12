@@ -1,9 +1,16 @@
 # FACE SPEC — `wavecel` (batch 5)
 
+> **Two owner rulings, 2026-08-11, apply to this file** (verbatim at
+> `rings.ts:585-590` and `:645-650`): *"we should prefer almost zero AI authored
+> text, and all future faceplate work should reflect that"* and *"lets stop doing
+> these and clean up the existing ones, get rid of them. lose the signal flow
+> diagrams."* Every proposed `hint` has been **deleted** from §5; its measured
+> content is in §3/§4. Do not re-author it. Measurements belong in `docs.controls`
+> (the `rings.ts:592-596` precedent), not on the panel.
+
 ## 0. STATUS
 
-**Authored 2026-08-10. Every claim below was measured or read against `main`**
-(`153e5c36`). Nothing here is implemented; no def, card or DSP file is touched.
+**Authored 2026-08-10 against `main` at `153e5c36`. UNBUILT** — no `face:` block.
 
 **Verdict: PROMOTE — and the headline is that the marquee STEREO control on a
 "stereo wavetable oscillator" leaves the two channels 99.94 % correlated at
@@ -12,16 +19,16 @@ maximum.**
 archetype: **the STEREO WAVETABLE voice** — the advanced sibling of
 `wavetableVco`. Deferred from batch 4 as a genuine candidate with no measurement.
 
-Not in `STRICT_FACES`; no `face:` block. In `STRICT_DOCS`; **not** in
-`STRICT_VRT_MODULES`; **not** in `PUSH_CARD_CONTROLS`. 10 params, **4 declared
+Not in `STRICT_FACES`. In `STRICT_DOCS`; **not** in `STRICT_VRT_MODULES`; **not**
+in `PUSH_CARD_CONTROLS`; **not** in `RANGE_BOUND_CARDS`. 10 params, **4 declared
 control families** (`wavecel-preset-select`, `-source-select`, `-viz-toggle`,
 `-wav-input`), 7 in, 4 out (2 audio + `mono-video` + `video`). contract-lock =
-**26 lines**. A complete `face.order` therefore needs **14 keys**, not 10.
+**26 lines**. **A complete `face.order` therefore needs 14 keys, not 10.**
 
 **Method.** The REAL `wavecelDef.factory` (an `AudioWorkletNode` over
 `packages/dsp/src/wavecel.ts` + `lib/wavetable-osc` + `lib/adsr-env`) under
-`node-web-audio-api`'s `OfflineAudioContext`, 48 kHz. Determinism control:
-`max|run1 − run2| = 0.000e+0` on identical params, so `Δ` is meaningful here.
+`node-web-audio-api`'s `OfflineAudioContext`, 48 kHz. **Determinism control:
+`max|run1 − run2| = 0.000e+0`** on identical params, so `Δ` is meaningful here.
 
 ---
 
@@ -60,30 +67,28 @@ and it is the state a face has to be designed for.
 ⚠ **Ranks 7–11 are the argument.** All five amplitude controls measure
 `Δ = 0.00e+0` in the shipped state; putting any of them in a 192×180 lane tile
 paints a dead dial. In the dock they are live *and* the band label can say the
-condition. **A `panel`'s first legal rank is 7** (`module-face-lint` refuses a
-panel selected at a lane tier, `faceTierCap('full') = 6`) — with 14 keys, rank 15
-is comfortable.
+condition. With 14 keys the panel's rank-7 floor is comfortably cleared at rank 15.
 
 ⚠ **`face.order` completeness is 14 keys, not 10.** `module-face-lint`'s
-`STRICT_FACES` completeness rule counts every declared `ControlFamily`, and
-wavecel declares four. A face authored from `params` alone is red on arrival.
+`STRICT_FACES` completeness rule counts every declared `ControlFamily`, and wavecel
+declares four. **A face authored from `params` alone is red on arrival.**
 
-**NO AUDITION** — but see §8: the module free-runs, so a "hear it" button has
-nothing to add, and a `trigger` press would need an `action` with a
-`ShellActionCell.probe` reaching a callable the def does not expose.
+**NO AUDITION** — the module free-runs, so a "hear it" button has nothing to add,
+and a `trigger` press would need an `action` with a `ShellActionCell.probe` reaching
+a callable the def does not expose.
 
 ---
 
 ## 3. INERT AT SPAWN — five of ten params
 
 `base_vol`, `attack`, `decay`, `sustain`, `release`: **`Δ = 0.00e+0` on both audio
-outputs across their full declared ranges**, both unpatched and with a gate
-waveform on the `trigger` bus.
+outputs across their full declared ranges**, both unpatched and with a gate waveform
+on the `trigger` bus.
 
 **POSITIVE CONTROL — a real graph EDGE.** The factory decides gated-vs-drone from
 `livePatch.edges`, **not** from bus presence (`wavecel.ts:319-330`), so a driver
-buffer alone leaves the module in drone mode. Seeding one real edge into
-`trigger` and re-running, gate high 1.0–5.0 s, 100 ms windows:
+buffer alone leaves the module in drone mode. Seeding one real edge into `trigger`
+and re-running, gate high 1.0–5.0 s, 100 ms windows:
 
 | patch | measured envelope |
 |---|---|
@@ -111,14 +116,14 @@ broken** — and nothing on the panel says so.
 | side/mid | **−240 dB** | −50.16 | −46.54 | −43.94 | −36.81 | **−34.06 dB** |
 | L/R corr | **1.000000** | 0.999986 | 0.999967 | 0.999941 | 0.999696 | **0.999429** |
 
-**At the top of its travel, the stereo spread of a stereo oscillator puts 34 dB
-of side energy under the mid and leaves the channels 99.94 % correlated.** Fold
-that to mono and you lose 0.02 % of the energy.
+**At the top of its travel, the stereo spread of a stereo oscillator puts 34 dB of
+side energy under the mid and leaves the channels 99.94 % correlated.** Fold that
+to mono and you lose 0.02 % of the energy.
 
-⚠ **AND MY FIRST INSTRUMENT SAID SOMETHING ELSE.** A per-channel RMS sweep read
+⚠ **AND THE FIRST INSTRUMENT SAID SOMETHING ELSE.** A per-channel RMS sweep read
 `out_l −4.79 → −4.78 dB` and `out_r −4.79 → −4.58 dB` and looked like a working,
-asymmetric stereo control. **RMS is invariant to correlation** — the exact class
-of blindness CLAUDE.md's VALIDATE-THE-INSTRUMENT section is about. The
+asymmetric stereo control. **RMS is invariant to correlation** — the exact class of
+blindness CLAUDE.md's VALIDATE-THE-INSTRUMENT section is about. The
 mid/side/correlation probe is negative-controlled by `spread = 1`, where it must
 read **exactly** −240 dB / 1.000000 (it does), and positively by `spread = 5`.
 
@@ -133,8 +138,8 @@ read **exactly** −240 dB / 1.000000 (it does), and positively by `spread = 5`.
 | peak | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 |
 
 Peak is pinned at 1.000 at every position — the oscillator runs at full scale
-throughout — while RMS swings **3.87 dB** and is loudest in the *middle*. A
-player sweeping MORPH hears a level ride they did not ask for.
+throughout — while RMS swings **3.87 dB** and is loudest in the *middle*. A player
+sweeping MORPH hears a level ride they did not ask for.
 
 ### C. A gated wavecel emits EXACTLY ONE render quantum of full-scale drone
 
@@ -150,10 +155,9 @@ silent wavecel.** Small, precisely bounded, and its own tiny fix.
 
 ### D. Four of ten params are not knobs at all
 
-`wavecel-preset-select`, `-source-select`, `-wav-input`, `-viz-toggle` are
-declared control families with no `ParamDef`. They are half the module's
-identity (which table is loaded) and they are invisible to every param-reading
-gate.
+`wavecel-preset-select`, `-source-select`, `-wav-input`, `-viz-toggle` are declared
+control families with no `ParamDef`. They are half the module's identity (which
+table is loaded) and they are **invisible to every param-reading gate.**
 
 ---
 
@@ -162,7 +166,6 @@ gate.
 ```ts
 face: {
   title: 'Wavetable voice',
-  hint: 'Full-scale drone until POLY or TRIG is patched; then the ADSR owns the level.',
 
   order: [
     'wavecel-preset-select-{n}',  // the table IS the sound (dx7 precedent)
@@ -179,15 +182,11 @@ face: {
 
   pages: [
     { id: 'table', label: 'wavetable',
-      hint: 'MORPH scans the frames; the picture shows which one',
       controls: ['wavecel-preset-select-{n}', 'wavecel-source-select-{n}',
                  'wavecel-wav-input-{n}', 'morph', 'wavecel-table-{n}'] },
-    { id: 'timbre', label: 'fold + width',
-      hint: 'SPREAD reads NEIGHBOURING frames, not a detune',
-      controls: ['fold', 'spread'] },
+    { id: 'timbre', label: 'fold + width', controls: ['fold', 'spread'] },
     { id: 'pitch', label: 'pitch', controls: ['tune', 'fine'] },
-    { id: 'amp', label: 'amplitude — needs POLY or TRIG',
-      hint: 'all five are inert while nothing is patched',
+    { id: 'amp', label: 'amp — needs a gate',
       controls: ['base_vol', 'attack', 'decay', 'sustain', 'release'],
       clusters: [{ label: 'adsr', controls: ['attack', 'decay', 'sustain', 'release'] }] },
     { id: 'screen', label: 'screen', controls: ['wavecel-viz-toggle-{n}'] },
@@ -200,7 +199,7 @@ face: {
     readouts: [
       { label: 'frame', valueId: 'wavecel-frame' },
       { label: 'width', valueId: 'wavecel-stereo-width' },
-      { label: 'amp',   valueId: 'wavecel-amp-mode' },   // ⚠ see §6-C
+      { label: 'amp',   valueId: 'wavecel-amp-mode' },   // ⚠ see §6-C — NOT SHIPPABLE
     ],
   },
 
@@ -214,18 +213,12 @@ face: {
 }
 ```
 
-⚠ **FIVE bands.** `DOCK_TAB_MIN_BANDS` is **7**, so this face is **not** tabbed
-and its band hints DO render. Adding two more bands would silently delete every
-hint above — the tabbing threshold is a cliff, not a gradient.
+⚠ **FIVE bands**, so this face is **not** tabbed. Adding two more turns it into a
+tab rail — the threshold is a cliff, not a gradient.
 
-⚠ **Band label budget.** `'amplitude — needs POLY or TRIG'` is **30 characters**.
-Label clipping is invisible to `faces-parity` (`toHaveText` reads
-`textContent`), so state the budget: shorter fallback **19 chars**,
-`'amp — needs a gate'`, with the full sentence in the band HINT (which has more
-room) and in the sidebar (which paints unconditionally).
-
-⚠ **`title` / `hint` paint NOTHING at rest.** Everything load-bearing above is a
-band label, a band hint, a readout or a sidebar `text`.
+⚠ **Band label budget.** `'amp — needs a gate'` is **18 characters**. Label clipping
+is invisible to `faces-parity` (`toHaveText` reads `textContent`), so state the
+budget; the full condition lives in the sidebar, which paints unconditionally.
 
 ---
 
@@ -241,22 +234,21 @@ into the frame number would be describing a different module.
 
 ### B. `wavecel-stereo-width` — the readout that IS the face
 
-Prints the side/mid ratio for the current `spread`, anchored on §4-A: **`mono`**
-at 1, `−46 dB` at 2, **`−34 dB`** at 5. **NEGATIVE CONTROL — `morph`:** the width
-must be invariant to it (measured: side/mid is a function of `spread` alone).
+Prints the side/mid ratio for the current `spread`, anchored on §4-A: **`mono`** at
+1, `−46 dB` at 2, **`−34 dB`** at 5. **NEGATIVE CONTROL — `morph`:** the width must
+be invariant to it (measured: side/mid is a function of `spread` alone).
 **SECOND — `spread = 1`:** it must print the *word* `mono`, not `−240 dB`, because
 the channels are bit-identical and a number implies a difference exists.
 
 ### C. `wavecel-amp-mode` — NAMED AND NOT SHIPPABLE TODAY
 
 It would print `drone (full scale)` vs `gated`. **It cannot ship**:
-`FaceReadoutValue` resolves `valueId` against the module's live **params**
-(`face-readout-values.ts`), and the distinction is a function of the **patch
-edges**, which are not params. Recorded here so the next author does not
-"fix" it into existence as a static string — the same call batch 4 made for
+`FaceReadoutValue` is params-only, and the distinction is a function of the **patch
+edges**. Recorded here so the next author does not "fix" it into existence as a
+static string — the same call batch 4 made for
 `sidecar-reduction-db` / `clouds-buffer-fill`. **Until `FaceReadoutValue` widens,
-the fact lives in the sidebar `readouts` block above**, which paints
-unconditionally and says the same thing without pretending to be live.
+the fact lives in the sidebar `readouts` block above**, which paints unconditionally
+and says the same thing without pretending to be live.
 
 ---
 
@@ -265,32 +257,31 @@ unconditionally and says the same thing without pretending to be live.
 **The wavetable, in the HERO** — all frames drawn as a small waterfall with the
 `morph` frame highlighted, and the SPREAD neighbours drawn at reduced opacity so
 the width control's *mechanism* (adjacent frames, one shared phase) is visible.
-That is exactly the thing §4-A shows the ear cannot hear, and it is the honest
-way to present a control that measures −34 dB: **show what it does, do not
-imply how much.**
+That is exactly the thing §4-A shows the ear cannot hear, and it is the honest way
+to present a control that measures −34 dB: **show what it does, do not imply how
+much.**
 
-Do not put a scope trace here. The dock glyph is suppressed by `hero.cell`
-anyway, and the free-running waveform looks the same at half the settings.
+Do not put a scope trace here. The dock glyph is suppressed by `hero.cell` anyway,
+and the free-running waveform looks the same at half the settings.
 
 ---
 
 ## 8. ALREADY-WRONG
 
-- **A · SPREAD at maximum is 99.94 % correlated** (§4-A). Whether the spread
-  depth should be widened is a DSP question and **its own PR** — `wavecel` has
-  an ART scenario and a `wavecel-spread-parity.test.ts`, both of which would
-  re-pin.
-- **B · 2.667 ms of full-scale output when a gate cable lands** (§4-C). One
-  render quantum; fix is to seed `trigger_connected` in `processorOptions`
-  rather than through a k-rate write. Tiny, and its own PR.
+- **A · SPREAD at maximum is 99.94 % correlated** (§4-A). **Whether the spread
+  depth should be widened is a DSP question and its own PR** — it would re-pin
+  `wavecel`'s ART scenario **and** `wavecel-spread-parity.test.ts`.
+- **B · 2.667 ms of full-scale output when a gate cable lands** (§4-C). One render
+  quantum; **the fix is to seed `trigger_connected` in `processorOptions`** rather
+  than through a k-rate write. **Tiny, and its own PR.**
 - **C · MORPH swings 3.87 dB non-monotonically** (§4-B) on a control documented
-  purely as a timbre scan. `wavecel` is in `STRICT_DOCS`.
-- **D · `WavecelCard.svelte` re-types 20 literal `min=`/`max=` props** and
-  `wavecel` is **not** in `RANGE_BOUND_CARDS`, so `card-range-source` is
-  structurally unable to see a divergence. The backdraft class.
-- **E · the `poly`/`trigger` connectedness read is `livePatch.edges`**, which is
-  correct and is also why every offline probe of this module is wrong by default
-  (§3). Worth a line in the def comment for the next person with a harness.
+  purely as a timbre scan. **`wavecel` is in `STRICT_DOCS`.**
+- **D · `WavecelCard.svelte` re-types 20 literal `min=`/`max=` props** and `wavecel`
+  is **not** in `RANGE_BOUND_CARDS`, so `card-range-source` is structurally unable
+  to see a divergence. The backdraft class.
+- **E · the `poly`/`trigger` connectedness read is `livePatch.edges`**, *"which is
+  correct and is also why every offline probe of this module is wrong by default"*
+  (§3). **Worth a line in the def comment for the next person with a harness.**
 
 ---
 
@@ -300,6 +291,6 @@ anyway, and the free-running waveform looks the same at half the settings.
 |---|---|
 | **contract-lock** | **+1 line** for the `wavecel-table` panel family. **+0** if the picture goes to a sidebar `custom` block instead. |
 | **ART** | none from the face. §8-A/B are audio changes and are not in the face PR. |
-| **VRT** | +`face-wavecel-{compact,dock}` × 2 platforms = **4 informational baselines**. ⚠ **FREE-RUNNING** — derive glyph determinism the analogVco way (10 separate processes, unmasked). |
-| **e2e** | +1 `faces-parity` row, **15 cells** (10 params + 4 families + 1 panel). ≈ +20 s; ≈ +2 s per shard. |
+| **VRT** | +`face-wavecel-{compact,dock}` informational baselines. ⚠ **FREE-RUNNING** — derive glyph determinism the analogVco way (10 separate processes, unmasked). |
+| **e2e** | +1 `faces-parity` row, **15 cells** (10 params + 4 families + 1 panel). ≈ +20 s. |
 | **the bottom line** | A strong promotion with one genuinely surprising number. The five gated controls make the "why is nothing happening" band the most useful thing on the faceplate. |

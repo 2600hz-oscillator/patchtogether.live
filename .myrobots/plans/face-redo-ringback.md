@@ -1,27 +1,20 @@
 # face re-do — ringback
 
-> ⚠ **STATUS CORRECTED 2026-08-04 — read `face-redo-INDEX.md` §0 before building.**
-> PF-20 (**PR #1301**) **HAS MERGED** (`c6ff9253`); every "unmerged branch" citation below
-> now resolves on `main`. **`face.title` and `face.hint` do NOT paint by default** —
-> `facePageHeader()` returns `null` before reading anything unless annotate mode is on
-> (`packages/web/src/lib/ui/workflow/dock-faceplate-model.ts:90`), and the owner ruled on
-> 2026-08-03 that `face.title` stays annotation-only. **Any argument below that parks a
-> load-bearing fact in `face.hint` because it "still paints" is VOID.** PF-21 dock ROW
-> PACKING (`9bf12df7`) also landed after this was written. **This re-do is NOT built** —
-> the module's shipped `face` still declares no `hero` and no `sidebar`. Live backlog.
-> ✅ The re-do ledger's ringback defect #6 (`out_l`/`out_r` both mapped to output 0, so
-> two mono destinations collapsed to (L+R)/2) **is FIXED** — a `ChannelSplitter(2)` landed
-> in **#1313** (`290dcdb5`).
+> **LIVE BACKLOG — not built.** The shipped `face` declares `order`/`pages`/`glyph`/`rear`
+> and no `hero`, no `sidebar`, no readout strip. `face.title` does NOT paint by default —
+> `facePageHeader()` returns `null` unless annotate mode is on
+> (`dock-faceplate-model.ts:90`), owner ruling 2026-08-03.
+>
+> ⚠ **Owner ruling 2026-08-11** (verbatim at `packages/web/src/lib/audio/modules/rings.ts:585-590`,
+> `:645-650`): *"we should prefer almost zero AI authored text, and all future faceplate work
+> should reflect that"* and *"lets stop doing these and clean up the existing ones, get rid of
+> them. lose the signal flow diagrams."* The two band hints and the `signal-flow` sidebar block
+> are struck; what they carried is folded into §1.
 
 **Verdict: MECHANICAL ONLY.** The shipped face is right — the ranking, the pages, the glyph, the
 rear card, the ranges and the card are all correct and *measured*, and this spec changes **none of
-them**. What it adds is the PF-20 declaration surface the face predates (`title`, `hint`, two band
-hints, a hero with a two-entry derived readout strip, a two-block sidebar) plus one small
-vocabulary fix that the platform's own "the dock always prints a value" correction newly exposes.
-
-> Status: SPEC ONLY. Designed against `origin/feat/faceplate-platform-v2` (PR #1301 — **MERGED**, `c6ff9253`) with
-> the two owner corrections applied: readouts are a full-width STRIP BELOW the graphic, and band
-> `hint` prose is ANNOTATION-ONLY. Citations are `file:line`; inferences are labelled.
+them**. What it adds is a hero with a two-entry derived readout strip, a `presets` sidebar, and one
+small vocabulary fix that the platform's "the dock always prints a value" correction newly exposes.
 
 ---
 
@@ -43,10 +36,12 @@ against the read until the signal breaks the way you want".
 3. `ringWriteSpan(buf, cursor, cursor+rate, input + fb*wet, n)` — the write, into every integer
    cell the head sweeps, always at least one (`:132`, `:66-85`).
 4. `cursor = (cursor + rate) % n` (`:134`).
-5. `out = (1-mix)*input + mix*wet` — a **LINEAR** dry/wet (`:137`, `:104-107`).
+5. `out = (1-mix)*input + mix*wet` — a **LINEAR** dry/wet (`:137`, `:104-107`). ⚠ **The DRY copy is
+   the raw input and never enters the ring** — turning MIX down does not clean the ring up, it
+   fades in an untouched copy.
 
-A diagram that drew *write → read* would teach a zero-latency ring; the order above is
-load-bearing, and it is what the sidebar in §6 encodes.
+⚠ **READ precedes WRITE at the same cursor.** Anything that described this as write→read would
+teach a zero-latency ring, which is the opposite of the mechanism.
 
 **What each control genuinely changes about the SOUND** (not its label):
 
@@ -67,14 +62,14 @@ of the four defaults in turn and asserts the output deviates by > 0.01, precisel
 REACHABILITY argument cannot be borrowed here. Timbral sensitivity, measured on the real per-sample
 core over a C4 saw: **rate 5.05× · size 4.76× · mix 3.28× · feedback 2.18×** (`:515-530`).
 
-**Two "stereo" facts the module's surfaces overstate.** (a) Both `RingChannel`s run *identical*
-params and a mono input is mirrored to both (`packages/dsp/src/ringback.ts:72, 95-96`), so a mono
-source gives `L === R` — RINGBACK adds no width. (b) The two output *jacks* do not carry separate
-channels at all — §9 defect 1.
+**A "stereo" fact the module's surfaces overstate.** Both `RingChannel`s run *identical* params and
+a mono input is mirrored to both (`packages/dsp/src/ringback.ts:72, 95-96`), so a mono source gives
+`L === R` — RINGBACK adds no width. (The separate defect that the two output *jacks* did not carry
+separate channels is FIXED — §9.1.)
 
 **Card.** `RingbackCard.svelte` is 101 lines: four `Knob`s whose min/max/defaultValue/curve/units/
 format all come from `paramSpec(ringbackDef, …)` (`:31-34, 59-70`). **Zero re-typed range
-numbers** — the only literals are CSS. `card-range-source.test.ts:75` gates it.
+numbers** — the only literals are CSS. It is in both `RANGE_BOUND_CARDS` and `MAPPING_BOUND_CARDS`.
 
 ---
 
@@ -86,23 +81,17 @@ against the DSP* rather than argued in a comment (`ringback-crush-model.test.ts:
 — an RMS meter moves 3.96 dB across RATE's whole range while the waveform's roughness moves 5.05×);
 the rear card's three bands and its four `~` ticks are pinned (`:445-467`) and the `audioRate` claim
 is checked against the worklet's *read pattern*, not just its descriptors (`:325-348`). The genuine
-gaps are all PF-20-shaped — the face was authored before the platform existed:
+gaps are all platform-shaped — the face was authored before the platform existed:
 
-1. **No `face.title`, no `face.hint`.** `facePageHeader` returns `null` for a face declaring
-   neither (`dock-faceplate-model.ts`, `facePageHeader`), so the faceplate opens on a knob instead
-   of on a category word and a sentence.
-2. **No `hero`, and the committed baseline shows the cost.** In
-   `e2e/vrt/__screenshots__/workflow-shell-faces.spec.ts/darwin/face-ringback-dock.png` the dock's
-   first band is a ~216 px scope glyph sitting alone in a ~1160 px band — **roughly 80 % of the top
-   band is empty**. That is a measurement off the committed PNG, not pixel arithmetic. The PF-20
-   hero rail (`ModuleShell.svelte`, `.dock-hero.has-hero`) is exactly the fix.
-3. **No `sidebar`.** For the one module in the rack whose mechanism is a *mismatch between two
-   operations at one cursor*, a full-width editor with no context column throws away the surface
-   where that mechanism can be drawn.
-4. **No band hints.** Now annotation-only, but still worth authoring.
-5. **SIZE prints no readout at all today** — the platform branch already overturns that
-   (`e2e/tests/ringback-face.spec.ts` on `feat/faceplate-platform-v2` now asserts `64.0 smp` at the
-   dock and `toHaveCount(0)` in the lane). That is mechanical and correct; §7 refines the *string*.
+1. **No `hero`, and the committed baseline shows the cost.** In the committed
+   `face-ringback-dock` PNG the dock's first band is a ~216 px scope glyph sitting alone in a
+   ~1160 px band — **roughly 80 % of the top band is empty**. That is a measurement off the
+   committed PNG, not pixel arithmetic.
+2. **No readout strip**, on the one module in the rack whose defining quantity (the LAP) is a
+   *ratio of two params* that no per-param formatter can express.
+3. **SIZE prints no readout at all today** — the platform already overturns that
+   (`e2e/tests/ringback-face.spec.ts` asserts `64.0 smp` at the dock and `toHaveCount(0)` in the
+   lane). That is mechanical and correct; §7 refines the *string*.
 
 `order` and `pages` are identical here, and that is deliberate and explained (`ringback.ts:161-165`)
 — the signal flows ring-then-blend, which is also the priority order. Do not "fix" one to match the
@@ -110,7 +99,7 @@ other.
 
 ---
 
-## 3. THE ~8 CONTROLS THAT MATTER
+## 3. THE CONTROLS THAT MATTER
 
 **This module has FOUR params.** There is no top-8 and no cut line — every control is on every dock
 face. The ranking decides only the lane tiers, and it is already derived rather than declared.
@@ -132,46 +121,32 @@ spawns fully wet, so one could rank `mix` first on REACHABILITY grounds — the 
 That does not transfer: the VCA spawns at `base = 0`, silent, with every other cell inert, whereas
 nothing here is inert at spawn (`:532-544`). A mini tile whose one control is the bypass can only
 make the module quieter. **If you disagree: move `'mix'` to the front of `order` and change nothing
-else.** `pages`, the rear card and the hero are untouched by the ranking.
+else.**
 
 ---
 
-## 4. BAND STRUCTURE + THE ANNOTATION PROSE
+## 4. BAND STRUCTURE
 
 Unchanged from what ships (`ringback.ts:227-230`) — two bands, ids `ring` and `output`, neither
 colliding with the curated rear group id `signal` (`:252`), so the leading rear band is claimed
 once. Two bands is far under `DOCK_TAB_MIN_BANDS = 7` (`dock-tabs-model.ts:46`), so this face is
-never tabbed and its hints can render under annotation.
+never tabbed.
 
 ```ts
 pages: [
-  {
-    id: 'ring',
-    label: 'crush ring',
-    hint: 'the cursor writes whole cells and reads them back interpolated — SIZE ÷ RATE is one lap, and that ratio is the comb pitch',
-    controls: ['rate', 'size', 'feedback'],
-  },
-  {
-    id: 'output',
-    label: 'output blend',
-    hint: 'the dry copy never enters the ring — MIX fades between two signals, it does not clean one up',
-    controls: ['mix'],
-  },
+  { id: 'ring',   label: 'crush ring',   controls: ['rate', 'size', 'feedback'] },
+  { id: 'output', label: 'output blend', controls: ['mix'] },
 ],
 ```
 
 ⚠ `rate` **stays listed in `pages[0].controls`** even though the hero promotes it. `heroFacePlan`
 can only MOVE a key some band already claims; leaving it off would drop it into the defensive
-`__unpaged` band (`dock-faceplate-model.ts`, `heroFacePlan` + `withoutKeys`). After promotion band 1
-renders `size, feedback` and band 2 renders `mix` — 3 in bands + 1 in the hero = 4, the multiset
-faces-parity asserts.
+`__unpaged` band. After promotion band 1 renders `size, feedback` and band 2 renders `mix` — 3 in
+bands + 1 in the hero = 4, the multiset faces-parity asserts.
 
-**Does the face read with every hint hidden?** Yes. `crush ring` and `output blend` are *names* that
-say what the group is — a ring you crush with, and the blend at the output. Neither hint carries a
-fact the face is wrong without: the ratio fact now lives in the **LAP readout** (§5), and the
-"dry never enters the ring" fact is drawn as a `parallel` branch in the sidebar (§6). That is the
-correction-2 discipline applied rather than asserted: both load-bearing facts were moved to
-surfaces that always paint, and what remains in the hints is elaboration.
+`crush ring` and `output blend` are *names* that say what the group is. Both facts that would
+otherwise have been prose have a permanent numeric home: the SIZE ÷ RATE ratio is the **LAP
+readout** (§5), and "the dry never enters the ring" is §1 step 5.
 
 ---
 
@@ -184,15 +159,14 @@ fills the rest of the rail. A bespoke "ring diagram" panel would cost a ~400-lin
 `KickdrumHeroPanel.svelte`, 401 lines), a `shell-cells.ts` registration and a rank-7 key, to show
 what the scope already shows. Not earned for a four-knob effect. *Caveat:* the scope flatlines on a
 silent rack (visible in the baseline) — true of every FX glyph, a platform property rather than a
-ringback defect, and the choice here was measured against the alternative.
+ringback defect.
 
 **`hero.control: 'rate'`** — rank 1, the mismatch itself, and the param the picture beside it is
 most sensitive to. Promotion puts a 64 px dial with a 17 px readout beside the trace it drives.
 
 **`hero.action`: NONE.** RINGBACK is an insert with no internal source and no trigger — there is
 nothing to audition. (`getActiveEngine()` at `engine-ref.ts:23` is reachable from a plain `.ts`
-module, so this is *not* the platform blocker two round-2 agents claimed; the module simply has
-nothing to play.) An audition would mean synthesising a test source — a feature, not a face.
+module, so this is *not* a platform blocker; the module simply has nothing to play.)
 
 ### THE READOUT STRIP — full-width, directly beneath the graphic
 
@@ -259,50 +233,27 @@ one-line revert:** if the spawn-fully-wet surprise deserves the most-read line, 
 engine or context — so the hardware **sample rate is unreachable**, and there is no nominal-SR
 constant in `$lib/audio` to borrow (the only literals are `dx7-render.ts:45`'s opt default and
 `midi-timing.ts:32`'s render quantum). Hardcoding 48 kHz is wrong by ~1.5 semitones on 44.1 kHz
-hardware. Samples are exact and SR-independent. If the reader is ever widened to carry a context
-sample rate, `375 Hz @48k` becomes available — a follow-up, not a blocker.
+hardware. Samples are exact and SR-independent. **If the reader is ever widened to carry a context
+sample rate, `375 Hz @48k` becomes available — a follow-up, not a blocker.**
 
-**The brief's other candidate, settled: RINGBACK HAS NO BIT DEPTH.** `ringWriteSpan` stores Float32
+**The other candidate, settled: RINGBACK HAS NO BIT DEPTH.** `ringWriteSpan` stores Float32
 values unmodified (`ringback-core.ts:80-84`) — there is **no amplitude quantisation anywhere** in
 this module. The "bitcrushed" character is *entirely* time-domain. An "effective bit depth" readout
 would be a fabricated quantity. The sample-rate *corner* does exist, but it is exactly what
-`formatRingbackRate` already prints on the hero dial as `SR/2.0` (`ringback-crush-model.ts:131-136`)
-— printing it again is the repetition the brief forbids.
+`formatRingbackRate` already prints on the hero dial as `SR/2.0` (`ringback-crush-model.ts:131-136`).
 
 ---
 
-## 6. THE SIDEBAR
+## 6. THE SIDEBAR — `presets` only
 
-Two blocks. An empty column would be worse than a full-width editor, and these two are not filler.
+The `signal-flow` block this spec proposed is **struck by the 2026-08-11 owner ruling.** Its two
+correctness payloads — READ precedes WRITE at the same cursor, and DRY is a parallel branch that
+never enters the ring — are §1 steps 2/3 and 5.
 
-**(a) `signal-flow` — because the mechanism is an ORDER, and no knob shows it.**
-
-```ts
-{
-  kind: 'signal-flow',
-  label: 'signal flow',
-  stages: [
-    { label: 'IN L · R',   role: 'generator', note: 'mono mirrors' },
-    { label: 'READ',       role: 'bus', note: 'interp @ cursor' },
-    { label: 'WRITE',      role: 'bus', note: 'whole cells + FB' },
-    { label: 'CURSOR',     role: 'bus', note: '+RATE, wraps SIZE' },
-    { label: 'DRY',        role: 'bus', parallel: true, note: 'never enters the ring' },
-    { label: 'MIX',        role: 'bus', note: 'linear crossfade' },
-    { label: 'OUT L · R',  role: 'bus' },
-  ],
-}
-```
-
-Two correctness points, both cited. **READ precedes WRITE** at the same cursor
-(`ringback-core.ts:129` then `:132`) — reversing them would teach a zero-latency ring, which is the
-opposite of the mechanism. **DRY is `parallel: true`** because `mixSample(input, wet, mix)`
-(`:137`) takes the *raw* input, which never entered the ring; drawing it inline would teach that
-turning MIX down cleans the ring up. It does not — it fades in an untouched copy.
-
-**(b) `presets` — the one genuinely new declaration, and the argument for it is a measured fact
-the UI currently cannot reach.** The module is at its **smoothest at INTEGER rates** (normalised
-roughness 0.290 / 0.256 / 0.235 / 0.221 at 1 / 2 / 3 / 4, against the dry saw's own 0.255) and rough
-in between (0.805 at 1.25) — measured, and stated in `ringback-crush-model.ts:120-129`. The dial is
+**`presets` — the one genuinely new declaration, and the argument for it is a measured fact the UI
+currently cannot reach.** The module is at its **smoothest at INTEGER rates** (normalised roughness
+0.290 / 0.256 / 0.235 / 0.221 at 1 / 2 / 3 / 4, against the dry saw's own 0.255) and rough in
+between (0.805 at 1.25) — measured, and stated in `ringback-crush-model.ts:120-129`. The dial is
 **not detented and has no tick to aim at**; today that finding is reachable only by reading the doc
 page. A preset roster is the surface that makes it playable. Four params means every entry is a
 **complete** recall by construction:
@@ -323,16 +274,15 @@ page. A preset roster is the surface that makes it playable. Four params means e
 
 Every value is inside its declared range (`RINGBACK_RATE` 0.05..4, `RINGBACK_SIZE` 2..4096,
 `RINGBACK_FEEDBACK` 0..0.98, `RINGBACK_MIX` 0..1 — `ringback-crush-model.ts:68-86`), which
-`module-face-lint`'s preset clause checks. **If you disagree: drop this block and keep
-`signal-flow` alone** — the sidebar still paints and nothing else in this spec moves.
+`module-face-lint`'s preset clause checks. **If you disagree: drop the block** — `sidebarPlan`
+returns `null`, the editor goes full-width, and nothing else in this spec moves.
 
 **`custom` / `stereo-crossover`: NO — and it is kickdrum-specific in substance.** The registry
 comment calls it "generic across any def that declares a crossover frequency + a width param"
 (`sidebar-panels.ts`), and RINGBACK has **neither**. There is no crossover, no M/S stage and no
-width anywhere in the core; both channels run identical params (`packages/dsp/src/ringback.ts:95-96`).
-Declaring it would paint a picture of a DSP stage this module does not have.
-
-**`readouts` sidebar block: NO** — it would duplicate the strip.
+width anywhere in the core; both channels run identical params
+(`packages/dsp/src/ringback.ts:95-96`). **`readouts` sidebar block: NO** — it would duplicate the
+strip.
 
 ---
 
@@ -346,18 +296,17 @@ worklet's third copy is parsed out of `packages/dsp/src/ringback.ts` and compare
 confirms the check moves (`:288-296`).
 
 **Card grep for re-typed range numbers: ZERO found.** `RingbackCard.svelte:31-34` builds four
-`paramSpec` objects off `ringbackDef` and passes `pRate.min` / `pRate.max` / `pRate.defaultValue` /
-`pRate.curve` / `pRate.units` / `pRate.format` through (`:59-70`). Not agreement-by-maintenance —
-agreement by construction. `card-range-source.test.ts:75` holds it at the source level.
+`paramSpec` objects off `ringbackDef` and passes `pRate.min` / `.max` / `.defaultValue` / `.curve` /
+`.units` / `.format` through (`:59-70`). Not agreement-by-maintenance — agreement by construction.
 
 **ONE vocabulary change, and it is created by the platform correction itself.** `size` deliberately
 declares no `format` (`ringback.ts:99-105`), on the argument that the quantity a player hears is
-`size/rate`. That argument is about the **comb pitch**, not the ring **length** — and under PF-20
-the dock now prints a number for `size` regardless (`knobValueReadout`,
-`knob-vocabulary-model.ts`). So the choice is no longer "print or not"; it is "print the raw ladder"
-vs "print what the DSP runs". The DSP **rounds** (`ringback-core.ts:88-91`), so a dial at 63.7
-would print `63.7 smp` beside a ring that is 64 cells — the exact surface-disagrees-with-model class
-the platform exists to end, worst at small sizes where 0.5 samples is 5–25 % of the ring. Add:
+`size/rate`. That argument is about the **comb pitch**, not the ring **length** — and the dock now
+prints a number for `size` regardless (`knobValueReadout`, `knob-vocabulary-model.ts`). So the
+choice is no longer "print or not"; it is "print the raw ladder" vs "print what the DSP runs". The
+DSP **rounds** (`ringback-core.ts:88-91`), so a dial at 63.7 would print `63.7 smp` beside a ring
+that is 64 cells — the exact surface-disagrees-with-model class the platform exists to end, worst
+at small sizes where 0.5 samples is 5–25 % of the ring. Add:
 
 ```ts
 export function formatRingbackSize(size: number): string {
@@ -367,11 +316,10 @@ export function formatRingbackSize(size: number): string {
 
 …and give `size` `format: formatRingbackSize`. **`format` is UI vocabulary and
 contract-transparent** — `contract-signature` reads only id/min/max/curve/defaultValue/units
-(`ringback.ts:94-97`) — so this costs zero contract-lock lines. The `size/rate` quantity moves to
-the LAP readout, where it belongs. ⚠ **This changes the platform branch's own assertion in
-`e2e/tests/ringback-face.spec.ts` from `'64.0 smp'` to `'64 smp'`** — that edit is part of this
-work, not a surprise. *Alternative, stated:* leave `size` formatless; the divergence is ≤ 0.5
-samples and only visible mid-drag.
+(`ringback.ts:94-97`) — so this costs zero contract-lock lines. ⚠ **This changes
+`e2e/tests/ringback-face.spec.ts`'s assertion from `'64.0 smp'` to `'64 smp'`** — that edit is part
+of this work, not a surprise. *Alternative, stated:* leave `size` formatless; the divergence is
+≤ 0.5 samples and only visible mid-drag.
 
 ---
 
@@ -380,31 +328,31 @@ samples and only visible mid-drag.
 - **contract-lock delta: ZERO.** `face` is UI metadata with no branch in `contract-signature.ts`;
   `format` is likewise contract-transparent (`ringback.ts:94-97`). No new `ParamDef`, `PortDef`,
   `ControlFamily` or `edge:`.
-- **VRT.** `face-ringback-dock` **moves on both platforms** — a title header + a hero rail + a strip
-  is far over `DOCK_MAX_DIFF = 1500` and probably a **height** change, which Playwright hard-fails
-  on before it computes a ratio. Both baselines are committed (the linux pair was **drained**
-  2026-08-02, `vrt-exemptions.ts:1137-1146`), so per CLAUDE.md **`git rm` both PNGs first**, then
-  capture darwin locally and dispatch `vrt-update.yml -f platform=linux` — `--update-snapshots`
-  cannot rewrite a baseline it does not fail on.
-  **Must NOT move:** `face-ringback-compact` (hero/title/sidebar are dock-only; hints are
-  annotation-only) and `vrt.spec.ts/*/ringback.png` (the card is untouched apart from the `size`
-  format string, which `RingbackCard.svelte:29-30` documents as **zero-pixel** — `Knob` renders its
-  value tag only inside `{#if dragging || hovering}` and no VRT scene hovers). **A diff on either is
-  a FINDING, not a re-pin.**
+- **VRT.** `face-ringback-dock` **moves** — a hero rail + a strip is far over `DOCK_MAX_DIFF = 1500`
+  and probably a **height** change, which Playwright hard-fails on before it computes a ratio. The
+  baseline is committed, so **`git rm` it first** (`--update-snapshots` cannot rewrite a baseline it
+  does not fail on) and let the linux capture job author the replacement.
+  **Must NOT move:** `face-ringback-compact` (the hero is dock-only) and `vrt.spec.ts/ringback.png`
+  (the card is untouched apart from the `size` format string, which `RingbackCard.svelte:29-30`
+  documents as **zero-pixel** — `Knob` renders its value tag only inside `{#if dragging || hovering}`
+  and no VRT scene hovers). **A diff on either is a FINDING, not a re-pin.**
   **No required-lane baseline moves:** `workflow-shell-faces.spec.ts` is in `FULL_MATCH` only, not
   `STRICT_MATCH` (`e2e/vrt/vrt.config.ts:37`), and `ringback` is not in `STRICT_VRT_MODULES`.
+  ⚠ `face-ringback-dock` is one of the two scenes that aborted the 2026-08-09 regen on the
+  `AudioContext is 'running', not 'suspended', at CAPTURE time` guard. The sweep is ONE job — that
+  scene failing means nothing is committed. Fix whatever leaves the context running before
+  dispatching.
 - **e2e.** faces-parity cell count **UNCHANGED** — 4 params, and `hero` promotes rather than copies
   (`heroFacePlanIsTotal`). `workflow-shell-faces.spec.ts:68`'s `{ type: 'ringback', pages: 2 }`
   structural gate is unchanged. `ringback-face.spec.ts` gains hero + strip assertions and the
   `64 smp` string edit; no new spec file.
 - **CI wall-time: ≈ 0.** Unit additions are pure arithmetic in an existing spec file (< 50 ms); the
-  e2e adds assertions to tests that already boot. Three orders of magnitude under the ~2 min
-  sign-off threshold.
+  e2e adds assertions to tests that already boot.
 - **ART: NIL — confirmed, not assumed.** `art/scenarios/ringback/profile.test.ts:24-25` pins
   `dspSourceSha` over the **worklet entry + the core lib** only; the web def is not in that basis,
   so a `face:` edit cannot move `out.sha`.
 - **Attest: NIL.** An AUDIO def — the WebGL basis is video defs, the collab basis is
-  persistence/store/snapshot/mutate/duplicate/doom-sync. No new module ⇒ no `_drivers.ts` append.
+  persistence/store/snapshot/mutate/duplicate/doom-sync.
 - **Push 2: NIL, stated because CLAUDE.md flags the class.** `ringback` has no `PUSH_CARD_CONTROLS`
   entry, so its card is generic-tier resolved from the live def — but this spec adds **no param**,
   so it cannot re-rank.
@@ -413,86 +361,72 @@ samples and only visible mid-drag.
 
 ---
 
-## 9. DEFECTS FOUND IN SHIPPED CODE
+## 9. DEFECT LEDGER
 
-*Follow-up bugs, not spec content.*
+**9.1 · `out_l` and `out_r` were the SAME two-channel output. ✅ FIXED — AND SO IS TWOTRACKS.**
+Both output ports used to map to `{ node: worklet, output: 0 }` while the worklet was built with
+`outputChannelCount: [2]`, so: patching **only** `out_l` delivered **both** channels (which is why
+it shipped); patching `out_l` and `out_r` into two mono destinations downmixed each to `(L+R)/2`,
+**collapsing the stereo image to mono at both jacks**; and patching both into one destination summed
+the pair with itself (+6 dB). `ringback.ts:295-310` now builds a `ctx.createChannelSplitter(2)` with
+a comment quoting the finding nearly verbatim, and the outputs map is `splitter/0` + `splitter/1`
+(`:329-330`).
 
-**1. `out_l` and `out_r` are the SAME two-channel output — the L/R jacks do not separate the
-channels.** `ringback.ts:313-316` maps **both** output ports to `{ node: worklet, output: 0 }`,
-while the worklet is built with `outputChannelCount: [2]` (`:291`). Both correct idioms exist in the
-repo and neither is used: SHIMMERSHINE declares two *mono* worklet outputs (`shimmershine.ts:329`
-`outputChannelCount: [1, 1]`, `:361-364` `output: 0` / `output: 1`), and KICKDRUM/CUBE fan one
-stereo output through a `ChannelSplitter(2)` (`kickdrum.ts:442, 448`; `cube.ts:385`). The engine
-connects an audio→audio edge with a plain `sout.node.connect(din.node, sout.output, din.input)`
-(`engine.ts:478`), so:
-- patching **only** `out_l` delivers **both** channels — it sounds stereo, which is why this shipped;
-- patching `out_l` and `out_r` into two mono destinations downmixes each to `(L+R)/2` — **the stereo
-  image collapses to mono at both jacks**;
-- patching both into one destination sums the pair with itself (+6 dB).
+⚠ The spec's other half — *"inherited from TWOTRACKS — fix both or neither"* — was unverified at the
+time and is **now VERIFIED: TWOTRACKS IS ALSO FIXED.** `twotracks.ts:373` builds
+`ctx.createChannelSplitter(2)` and `:596-598` maps `out_l` → `splitter/0`, `out_r` → `splitter/1`.
+Its comment (`:355-372`) is the fuller write-up — it records that the INPUT side was always right
+(reel A takes worklet inputs 0/1, reel B 2/3), which is what makes it an output-side mistake rather
+than a mono design, and it closes with *"Same failure and same fix as RINGBACK — see ringback.ts."*
+Both halves are paid.
 
-*Cost to a user:* the `L`/`R` jack labels this face authored (`ringback.ts:78-79, 89-90`), the rear
-card's `stereo in` band, and the living-docs line "stereo out (L OUT / R OUT)"
-(`module-manifest.ts:229`) all describe a separation the outputs do not provide. **Inherited from
-TWOTRACKS**, which has the identical shape (`twotracks.ts:518-521`) — fix both or neither.
-*Why nothing catches it:* `per-module-per-port` only asserts an edge materialises; the ART profile
-renders **one** channel and says so (`art/scenarios/ringback/profile.test.ts:17-20`); no unit test
-reads the outputs map. *A test that would:* a factory unit test asserting the two entries resolve to
-**distinct** `(node, output)` pairs (or to a splitter), plus an e2e patching a hard-panned stereo
-source through RINGBACK into two analysers and asserting they differ. *Honest caveat:* because both
-`RingChannel`s run identical params and a mono input is mirrored (`packages/dsp/src/ringback.ts:72`),
-a **mono** source gives `L === R` and the bug is inaudible — which is exactly why it survived
-review. Own PR + owner audition (it changes the audio graph and may invalidate the ART profile's
-"provably identical" argument).
+*Kept for the next reader:* the reason nothing caught it. `per-module-per-port` only asserts an edge
+materialises; the ART profile renders **one** channel and says so
+(`art/scenarios/ringback/profile.test.ts:17-20`); no unit test read the outputs map. A test that
+would: a factory unit test asserting the two entries resolve to **distinct** `(node, output)` pairs,
+plus an e2e patching a hard-panned stereo source through RINGBACK into two analysers and asserting
+they differ. And the reason it survived review: both `RingChannel`s run identical params and a mono
+input is mirrored (`packages/dsp/src/ringback.ts:72`), so a **mono** source gives `L === R` and the
+bug is inaudible.
 
-**2. (Not a defect — recorded so the next reader does not re-open it.)** `mixSample` is a **linear**
-dry/wet (`ringback-core.ts:104-107`), where DELAY was moved to equal-power in #1174. That is
-correct here for the shipped defaults: the wet path is a *near-copy* of the dry delayed by
-`size` samples (1.3 ms at the default 64), so the two are strongly correlated and equal-power would
+**9.2 · NEGATIVE RESULT, recorded so the next reader does not re-open it.** `mixSample` is a
+**linear** dry/wet (`ringback-core.ts:104-107`) where DELAY was moved to equal-power in #1174. That
+is correct here for the shipped defaults: the wet path is a *near-copy* of the dry delayed by `size`
+samples (**1.3 ms at the default 64**), so the two are strongly correlated and equal-power would
 **boost** the midpoint. At the top of the SIZE range (4096 ≈ 85 ms) they decorrelate and the
-argument weakens — but the module ships at `mix = 1`, so the midpoint is rarely visited. No change.
+argument weakens — but the module ships at `mix = 1`, so the midpoint is rarely visited.
+**No change.**
 
 ---
 
 ## 10. VERIFICATION GATE
-
-Run in this order. Every row is scoped — no full-suite runs.
 
 ```sh
 # 1. the model: readouts, lane fit, def↔worklet ranges, the a-rate claim, the face,
 #    and the TWO NEW derived readouts with their three-leg negative controls (§5)
 flox activate -- task test:one -- ringback-crush-model
 REPEAT=3 flox activate -- task test:one -- ringback-crush-model     # flake-check the NEW group
-
 # 2. the platform gates the new declarations answer to
-flox activate -- task test:one -- module-face-lint      # hero ranked/promoted-once; sidebar
-                                                        # panels + valueIds registered; presets
-                                                        # in range; no dead hint (2 bands < 7)
+flox activate -- task test:one -- module-face-lint      # hero ranked/promoted-once; presets in range
 flox activate -- task test:one -- dock-faceplate-model  # hero split totality
 flox activate -- task test:one -- card-range-source     # the card still re-types nothing
-
 # 3. typecheck — svelte-check is stricter than vitest
 flox activate -- task typecheck
-
 # 4. e2e against ONE warm server
 flox activate -- task e2e:serve
-flox activate -- task e2e:one -- tests/ringback-face.spec.ts        # incl. the '64 smp' edit (§7)
-REPEAT=3 flox activate -- task e2e:one -- tests/ringback-face.spec.ts
+REPEAT=3 flox activate -- task e2e:one -- tests/ringback-face.spec.ts   # incl. the '64 smp' edit (§7)
 flox activate -- npx --workspace e2e playwright test faces-parity --grep ringback
 flox activate -- npx --workspace e2e playwright test per-module-per-port --grep ringback
-
-# 5. VRT — DRAIN-EQUIVALENT FIRST (the baselines exist and will fail on DIMENSIONS)
-flox activate -- git rm e2e/vrt/__screenshots__/workflow-shell-faces.spec.ts/darwin/face-ringback-dock.png
-flox activate -- git rm e2e/vrt/__screenshots__/workflow-shell-faces.spec.ts/linux/face-ringback-dock.png
-flox activate -- task vrt:one -- face-ringback      # re-capture darwin; INSPECT the diff
-# then, on the pushed branch, for the linux pair ONLY:
-flox activate -- gh workflow run vrt-update.yml -f ref=<branch> -f platform=linux   # never -f grep
-
+# 5. VRT — the baseline exists and will fail on DIMENSIONS, so remove it first
+flox activate -- git rm e2e/vrt/__screenshots__/workflow-shell-faces.spec.ts/face-ringback-dock.png
+flox activate -- task vrt:one -- face-ringback      # local smoke; then `git status` for untracked PNGs
 flox activate -- task e2e:stop
+flox activate -- task vrt:commit
 ```
 
 **The two assertions that must come back GREEN-UNCHANGED**, and which are findings if they do not:
-`face-ringback-compact` (hero/title/sidebar are dock-only) and `vrt.spec.ts/*/ringback.png` (the
-legacy card's value tag renders only on hover, so the `size` format edit is zero-pixel).
+`face-ringback-compact` (the hero is dock-only) and `vrt.spec.ts/ringback.png` (the legacy card's
+value tag renders only on hover, so the `size` format edit is zero-pixel).
 
 **The negative control a reviewer should run by hand before believing the strip:** open the dock,
 move **SIZE** only, and confirm the `tail` readout moves while the FEEDBACK dial still reads

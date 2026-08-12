@@ -4,20 +4,21 @@ Companion to `module-sizing-rack-format.md`. These override/confirm the plan.
 (That companion file no longer exists — removed in the 117→40 corpus triage,
 **#1175**. This decisions file is now the surviving record.)
 
-> **TRIAGE 2026-08-04 — DECISIONS RECORD. All three phases have since landed;
-> kept because it is the only statement of WHY the rack is shaped this way.**
+> **DECISIONS RECORD. All three phases have since landed; kept because it is the
+> only statement of WHY the rack is shaped this way.**
 > - **Phase 1 — shipped** as **#759** ("exact Nu module sizing — pixel-perfect
 >   rack grid (Phase 1)"). The `size?: RackSize` / `hp?: number` def fields the
->   "Width + grid model" section specifies are live at
->   `packages/web/src/lib/graph/types.ts:937,939`, with `lib/ui/rack-sizes.ts` as
->   the mapping.
+>   "Width + grid model" section specifies are live on `NodeDef` in
+>   `packages/web/src/lib/graph/types.ts`, with `lib/ui/rack-sizes.ts` as the
+>   per-module mapping.
 > - **Phase 2 (lock a module to a slot) — shipped**: `node.data.rackLocked` is
->   read in `Canvas.svelte:2480-2482, :4389`, and per the decision it is a
->   right-click Lock/Unlock persisted in the patch, not a drag-to-screw
->   affordance.
+>   read in `Canvas.svelte`, and per the decision it is a right-click
+>   Lock/Unlock persisted in the patch, not a drag-to-screw affordance.
 > - **Phase 3 ("back of rack" — jacks only) — shipped** as the rear-card flip on
->   TAB (**#1169**; `Canvas.svelte:7526` `rearView`).
-> Nothing here is outstanding work. Do not delete: the per-module 1u/3u table and
+>   TAB (**#1169**; `rearView` in `Canvas.svelte`).
+> Nothing here is outstanding work — including the "pick the HP unit + the
+> common-size set + map each module to an hp" sub-task, which `rack-sizes.ts`
+> discharges with a per-module hp. Do not delete: the per-module 1u/3u table and
 > the "uniform 3u slot grid + 1u sub-positioning" simplification are user rulings
 > that the code implements but does not explain.
 
@@ -63,20 +64,12 @@ single) is DROPPED. Replace with: uniform 3u slot grid + 1u sub-positioning.
   Eurorack-style **HP horizontal-size concept**: find a set of **common HP
   sizes** to standardize most modules onto, but UNIQUE hp sizes are fine
   (especially big modules like MIXMSTRS). So width = quantized-to-HP where it
-  fits, bespoke where it doesn't. (This is a NEW Phase-1/Phase-2 sub-task: pick
-  the HP unit + the common-size set + map each module to an hp.)
+  fits, bespoke where it doesn't.
 - **Rack bounds:** infinite canvas + snap to a uniform **3u grid** (no fixed
   rack width; keep free pan/zoom).
 - **Migration:** rack is **opt-in**; free-floating stays the default. "Screw
   down" snaps + locks a module into the nearest slot. Existing patches load
   unchanged.
-
-## Sequencing (user, 2026-06-13)
-Finish the trigger/IO work → PR (awaiting CI). THEN the UI/sizing work as a
-SEPARATE PR — may start it once the trigger PR is pushed + CI running. The
-systemic ▷/▭ port glyphs ride the SIZING PR (it reworks card rendering +
-regenerates all card VRTs anyway — one regen, not two). GATEMAIDEN's own card
-already shows ▷/▭ in its port labels.
 
 ## Width + grid model (user, 2026-06-13) — SUPERSEDES earlier width Q
 - **All widths are a multiple of 1u.** The grid unit is a SQUARE **1u × 1u
@@ -91,18 +84,12 @@ already shows ▷/▭ in its port labels.
   CONTRACTS to snap to the grid — **whichever is the SMALLER resize** (round to
   nearest grid line, not always up/down).
 
-## Three-phase UI plan (confirmed, user 2026-06-13)
-- **Phase 1 (PR #759, in progress):** the 1u/3u resize — every module snaps to a
-  tier on the 1u×1u grid.
-- **Phase 2 (next UI PR):** the on-canvas grid (dotted, theme-colored) + the
-  ability to LOCK a module to a rack slot. The affordance is **right-click →
-  "Lock" / "Unlock"** (NOT a "screw"/drag-to-icon affordance). A locked module
-  can't be dragged off its slot until unlocked. (Lock state persists in the
-  patch; per-user vs shared TBD when building Phase 2.)
-- **Phase 3:** "back of rack" view — modules show only their I/O jacks
-  (no controls), laid out labeled for fast patching.
+## The Lock affordance (user, 2026-06-13)
+The ability to LOCK a module to a rack slot is **right-click → "Lock" /
+"Unlock"** (NOT a "screw"/drag-to-icon affordance). A locked module can't be
+dragged off its slot until unlocked, and the lock state persists in the patch.
 
 ## Canvas grid styling (user, 2026-06-13)
 The 3u snap grid renders on the canvas as **light dotted lines**, colored from
 the active **theme** (e.g. the Matrix theme → green dotted lines). Subtle —
-a guide, not a dominant element. (Phase-2 UI detail.)
+a guide, not a dominant element.
