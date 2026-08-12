@@ -3650,6 +3650,29 @@ warrensspectrum param spectralSlew 0.02..4 linear default=0.6 unit=s
 warrensspectrum param spectralSlice 2..200 linear default=10 unit=ms
 warrensspectrum param spectralStab 1..16 discrete default=3
 warrensspectrum family ws-filterbank kind=cell prefix=ws-band
+warrensvisions meta domain=video maxInstances=1
+warrensvisions in center_cv cv param=visionsCenter cvScale=linear
+warrensvisions in coherence_cv cv param=visionsCoherence cvScale=linear
+warrensvisions in components_cv cv param=visionsComponents cvScale=linear
+warrensvisions in drift_cv cv param=visionsDrift cvScale=linear
+warrensvisions in gate gate param=engineFreeze edge=gate
+warrensvisions in mix_cv cv param=visionsMix cvScale=linear
+warrensvisions in residual_cv cv param=visionsResidual cvScale=linear
+warrensvisions in shape_cv cv param=visionsShape cvScale=linear
+warrensvisions in video_in video
+warrensvisions out out video
+warrensvisions param engineFreeze 0..1 discrete default=0
+warrensvisions param visionsCenter -3600..3600 linear default=0 unit=ct
+warrensvisions param visionsCoherence 0..1 linear default=1
+warrensvisions param visionsComponents 1..256 discrete default=64
+warrensvisions param visionsDrift 0..1 linear default=0
+warrensvisions param visionsFloor -90..-20 linear default=-42 unit=dB
+warrensvisions param visionsMix 0..1 linear default=1
+warrensvisions param visionsResidual 0..2 linear default=0.5
+warrensvisions param visionsShape 0..1 linear default=0
+warrensvisions param visionsSlew 0.02..4 log default=0.25 unit=s
+warrensvisions param visionsSlice 1..16 discrete default=2 unit=fr
+warrensvisions param visionsStability 1..16 discrete default=3 unit=fr
 wavecel meta domain=audio
 wavecel in fm audio
 wavecel in fold_cv cv param=fold cvScale=linear

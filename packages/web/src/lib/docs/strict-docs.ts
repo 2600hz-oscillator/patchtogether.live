@@ -339,6 +339,7 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   'colourofmagic',
   // SOURCERY (2026-07-04): 2-input region shape-match recolor processor.
   'sourcery',
+  'warrensvisions',
   // Video batch 6 (2026-06-26): plasma/ramp/spirograph generators + fractals + scoreboard.
   'acidwarp',
   'shapedramps',

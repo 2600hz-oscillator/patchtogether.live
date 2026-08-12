@@ -207,6 +207,7 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   shapegen: { size: '2u', hp: 2 }, // 304×300px
   shapes: { size: '2u', hp: 2 }, // 320×220px
   sourcery: { size: '2u', hp: 2 }, // 300×304px — 2 video ins + preview + 4 knobs (mirrors shapegen)
+  warrensvisions: { size: '3u', hp: 2 }, // preview beside 12 controls — the widest video card
   spirographs: { size: '3u', hp: 2 }, // 260×~360px — 160×120 preview + count/selector + colorwheel + per-spiro fader bank
   tiler: { size: '2u', hp: 2 }, // 200×200px — 160×120 preview + one TILE fader (mirrors cellshade)
   vdelay: { size: '3u', hp: 2 }, // 431×220px

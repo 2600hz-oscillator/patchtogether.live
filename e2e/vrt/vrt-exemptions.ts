@@ -220,6 +220,16 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   sourcery: [
     { selector: 'canvas', why: 'a live preview canvas blitted off the engine clock, plus v1 segmentation that is source-dependent and shimmers frame to frame; sourcery-core.test.ts and sourcery.spec.ts cover correctness.' },
   ],
+  // WARREN'S VISIONS — the 2D spectral video resynthesizer. Only the live
+  // preview canvas is non-deterministic (a blit off the engine clock, black
+  // with nothing patched). Everything else on the card — the COHERENCE dial,
+  // the LIVE/FREEZE toggle, the 10-knob grid and the 10-port panel — is static
+  // DOM and IS the gate, so this is a MASK and NOT an exemption: the module
+  // stays in the sweep and gets a real baseline. Algorithm correctness is
+  // covered by warrensvisions-core.test.ts and warrensvisions.spec.ts.
+  warrensvisions: [
+    { selector: 'canvas', why: 'a live preview canvas blitted off the engine clock; the card chrome is deterministic and is what this baseline gates. warrensvisions-core.test.ts and warrensvisions.spec.ts cover the algorithm.' },
+  ],
   // MANDLEBLOT — Mandelbrot fractal with time-driven hue cycle. The
   // shader's colour mode mixes mu + uTime + log(uZoom) into the hue, so
   // every frame is a different colour even at zero motion. Mask the

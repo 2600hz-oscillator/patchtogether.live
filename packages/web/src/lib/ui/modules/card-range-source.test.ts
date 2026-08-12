@@ -73,6 +73,7 @@ import { delayDef } from '$lib/audio/modules/delay';
 import { macrooscillatorDef } from '$lib/audio/modules/macrooscillator';
 import { marblesDef } from '$lib/audio/modules/marbles';
 import { noiseDef } from '$lib/audio/modules/noise';
+import { warrensvisionsDef } from '$lib/video/modules/warrensvisions';
 import { filterDef } from '$lib/audio/modules/filter';
 import { meowboxDef } from '$lib/audio/modules/meowbox';
 import { ringbackDef } from '$lib/audio/modules/ringback';
@@ -199,6 +200,7 @@ import type { ParamDef } from '$lib/graph/types';
  */
 const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }>> = {
   'AdsrCard.svelte': adsrDef,
+  'WarrensvisionsCard.svelte': warrensvisionsDef,
   'BackdraftCard.svelte': backdraftDef,
   'ChromaconsoleCard.svelte': chromaconsoleDef,
   'CubeCard.svelte': cubeDef,
@@ -223,6 +225,7 @@ const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }
  */
 const MAPPING_BOUND_CARDS: readonly string[] = [
   'AdsrCard.svelte',
+  'WarrensvisionsCard.svelte',
   'ChromaconsoleCard.svelte',
   'CubeCard.svelte',
   'CloudsCard.svelte',
