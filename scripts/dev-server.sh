@@ -42,7 +42,34 @@ fi
 
 STATE_DIR="$ROOT/.dev-server"
 PID_FILE="$STATE_DIR/$MODE.pid"
+PORT_FILE="$STATE_DIR/$MODE.port"
 LOG_FILE="$STATE_DIR/$MODE.log"
+
+# ⚠ STOP MUST TARGET THE PORT WE STARTED, NOT THE DEFAULT.
+#
+# `start` records the port it booted; `stop` reads it back when the caller did
+# not name one. Without this, `E2E_PORT=N task e2e:serve` followed by a bare
+# `task e2e:stop` resolved PORT to the DEFAULT 5173 and the "belt + suspenders"
+# `lsof -ti tcp:$PORT | xargs kill` below killed whatever was listening there —
+# which in this repo's normal working state is ANOTHER WORKTREE'S dev server.
+# Measured 2026-08-11: it killed the server belonging to a sibling agent
+# checkout while stopping this one (whose own pid file was found and honoured,
+# so the state dir is correctly worktree-local — only the PORT fallback was
+# global).
+#
+# This is the `task vrt`/`E2E_PORT` lesson from CLAUDE.md in its destructive
+# direction: `e2e:serve`, `e2e:one` and `vrt:one` all honour `E2E_PORT` and
+# `e2e:stop`'s fallback did not, and "an isolation mechanism that only half the
+# entry points honour is not isolation." An EXPLICIT `E2E_PORT` still wins, so
+# stopping a server you did not start is still possible when you mean it.
+if [ -z "${E2E_PORT:-}" ] && [ -f "$STATE_DIR/$MODE.port" ]; then
+  RECORDED_PORT="$(cat "$STATE_DIR/$MODE.port" 2>/dev/null || true)"
+  case "$RECORDED_PORT" in
+    ''|*[!0-9]*) ;;                    # blank or junk — keep the default
+    *) PORT="$RECORDED_PORT" ;;
+  esac
+fi
+
 URL="http://localhost:$PORT"
 
 port_is_serving() {
@@ -95,6 +122,8 @@ cmd_start() {
       >"$LOG_FILE" 2>&1 &
   fi
   echo $! >"$PID_FILE"
+  # So a later bare `task e2e:stop` frees THIS port rather than the default.
+  echo "$PORT" >"$PORT_FILE"
 
   if cmd_wait 120; then
     echo "[dev-server] UP at $URL (pid=$(cat "$PID_FILE"))"
@@ -121,6 +150,7 @@ cmd_stop() {
     fi
     rm -f "$PID_FILE"
   fi
+  rm -f "$PORT_FILE"
   # Belt + suspenders: free the port even if the PID file was stale (e.g. the
   # server was started outside this script). Avoid leaking a dev server.
   local port_pids
