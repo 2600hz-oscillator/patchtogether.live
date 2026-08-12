@@ -243,6 +243,27 @@ export const FACES = [
   // deliberate linux-only state into exactly the undeclared gap it avoids.
   // `git status` for untracked PNGs after every VRT run until the pair exists.
   { type: 'cofefve', pages: 6 },
+  // FACE BATCH 4 (2026-08-11) — the random source. SIX bands, six rendered: the
+  // hero promotes the loop PANEL and DÉJÀ VU out of T LOOP (which keeps LENGTH)
+  // and nothing empties.
+  //
+  // ⚠ FREE-RUNNING AND NOT A FREEZE WITNESS, which is worth stating because a
+  // draft of this entry claimed the opposite and it took reading
+  // `glyphBinding` to disprove it. marbles genuinely produces from the instant
+  // it spawns — measured at the shipped defaults, 16 `clk` edges in 8 s
+  // (2.000 Hz), 6 `t1` and 10 `t2` — but it declares NO `audio` output (t1/t2/
+  // clk are `gate`, x1/x2/x3 are `cv`), and `primaryAudioOutPortId` matches
+  // `type === 'audio'` only. So no glyph on this module can resolve to a live
+  // analyser tap; the face therefore declares `glyph: 'none'` rather than a
+  // `meter` that would render twelve segments at a hard-coded 0. There is
+  // nothing here for #1420's freeze to hold still. analogVco and
+  // macrooscillator remain the roster's two witnesses.
+  //
+  // ⚠ THE DOCK TILE IS DETERMINISTIC BY CONSTRUCTION, not by the freeze. Its
+  // hero picture has no clock, no playhead and no analyser — every pixel is a
+  // pure function of the thirteen params through `marblesLoopPlan` — so it
+  // captures identically on a running graph, a frozen one and a silent rack.
+  { type: 'marbles', pages: 6 },
   // FACE BATCH 4 — the clean multi-mode filter. FOUR params and no declared
   // `pages`, so the dock renders the single page-less `__all` band; the hero
   // promotes CUTOFF out of it and the remaining three (RESO, MODE, MIX) keep it

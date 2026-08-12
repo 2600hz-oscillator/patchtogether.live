@@ -1691,6 +1691,7 @@ marbles param t_model 0..5 discrete default=0
 marbles param x_bias 0..1 linear default=0.5
 marbles param x_deja_vu 0..1 linear default=0
 marbles param x_length 1..16 discrete default=8
+marbles family marbles-loop kind=cell prefix=marbles-loop
 matrixMix meta domain=meta
 meowbox meta domain=audio
 meowbox in decay cv param=decay cvScale=log

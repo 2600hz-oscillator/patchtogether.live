@@ -96,7 +96,6 @@ export const VOCABULARY_DEBT: Readonly<Record<string, readonly string[]>> = {
   'KickdrumCard.svelte': ['attack.label', 'attack_eq.label', 'body_decay.label', 'body_eq.label', 'body_shape.label', 'ceiling.label', 'click_len.label', 'click_level.label', 'click_tone.label', 'drive.label', 'level.label', 'pitch_amt.label', 'pitch_time.label', 'sub_decay.label', 'sub_eq.label', 'sustain.label', 'tension.label', 'translate.label', 'width.label'],
   'LushGardenCard.svelte': ['fov.label', 'horizon.label', 'rate.label', 'view.label'],
   'MandleblotCard.svelte': ['color_cycle.label', 'iterations.label', 'rotation.label', 'zoom.label'],
-  'MarblesCard.svelte': ['t_jitter.label', 'x_length.label'],
   'MeowboxCard.svelte': ['decay.label', 'level.label', 'pitch.label', 'pitch.units'],
   'MilkdropCard.svelte': ['morph.label', 'presetSelect.label', 'reactivity.label', 'speed.label'],
   // The RETURN strips (pre-fader-sends PR). The def label is the SELF-
@@ -173,8 +172,17 @@ export const VOCABULARY_DEBT: Readonly<Record<string, readonly string[]>> = {
 // edited by every card conversion, and CLAUDE.md's measured example of a count
 // auto-merging WRONG is three concurrent FACE branches doing exactly that
 // (`9/7` → `10/8`, `11/9`, `11/9`, truth `12/10`, one of them merging cleanly
-// and wrongly). There are three face branches in flight beside this one. A
-// deleted constant cannot merge wrong; a decremented one can.
+// and wrongly). A deleted constant cannot merge wrong; a decremented one can.
+//
+// ⚠ AND IT HAPPENED WHILE THIS BRANCH WAS OPEN, which is as good a proof as the
+// argument is going to get. `marbles` (#1467) landed on main the same day and
+// lowered `VOCABULARY_DEBT_CEILING` 250 → 248 for its two drained label
+// entries, concurrently with this branch deleting both constants. Git surfaced
+// it as a conflict ONLY because the two edits happened to touch adjacent lines;
+// had the resofilter drain been to the VOCABULARY ledger instead of the
+// OPERATIONAL one, both branches would have written a correct-for-their-own-tree
+// number and the union would have merged cleanly and WRONG. The ledger LISTS
+// merged with no help at all, because a named entry carries its own identity.
 
 /** Flatten a ledger to `card:param.field` triples (the countable form). */
 export function debtTriples(ledger: Readonly<Record<string, readonly string[]>>): string[] {
