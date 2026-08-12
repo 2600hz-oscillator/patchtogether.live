@@ -446,8 +446,16 @@ export function fmtReachHz(hz: number): string {
 }
 
 /**
- * The CV REACH readout: `20 Hz – 11.0 kHz`, the window a full-scale CUTOFF CV
- * can throw the corner through.
+ * The CV REACH readout: `20 Hz – 10.99 kHz` at the def default, the window a
+ * full-scale CUTOFF CV can throw the corner through.
+ *
+ * ⚠ THE STRING IN THIS COMMENT IS THE ONE THE PANEL PAINTS, to two decimals,
+ * and that is deliberate rather than fussy. It read `11.0 kHz` in the first
+ * draft — a perfectly true rounding of the same number — which is precisely the
+ * shape of the noise defect (#1464's third commit): a hero readout and a
+ * sidebar entry printing two DIFFERENT TRUE values of one quantity, both
+ * correct, neither wrong, and no gate able to see it because only one of them
+ * was ever read. Quote what `fmtReachHz` produces, or quote raw Hz.
  *
  * NEGATIVE CONTROL — it must move with CUTOFF (the window is centred on the
  * knob in Hz and both ends clamp) while `peak` and `width` are both INVARIANT
