@@ -103,7 +103,9 @@ const FULL_MATCH = [
 // `VRT_PROBE=1` swaps the whole suite for the MEASUREMENT tools below. None of
 // them asserts anything and none is in FULL_MATCH, so no lane picks them up by
 // accident and they cost CI nothing. (This said "the two" while listing five;
-// corrected in passing while adding the sixth.)
+// corrected in passing while adding the sixth, and again at the eighth — the
+// prose is a LIST and goes stale silently, so add your entry when you add the
+// file.)
 //
 //   * vrt-frame-stability.spec.ts — does this card SETTLE? Prints the pixels
 //     that change between consecutive frames, and the bounding box of the
@@ -123,6 +125,14 @@ const FULL_MATCH = [
 //     of every committed dock baseline at threshold 1/255 AND at the 26/255 the
 //     gate applies. The instrument that measured the below-fold blindness, and
 //     the one that tells a stale-but-passing baseline from an identical one.
+//   * vrt-lane-tier-probe.spec.ts — what does a LANE TILE lay out, per tier?
+//     Prints the tile body box, the chosen layout (row/plate), every cell's
+//     CSS-px geometry and any pair of cells whose painted boxes INTERSECT, at
+//     mini / compact / full. The `full` lane tier has no pixel baseline (see
+//     workflow-shell-faces' own residual-scope list), which is how marbles
+//     shipped a tile of overlapping faders to dev; this is the instrument that
+//     measured it, and it found adsr's 13 px knob-readout overrun on the same
+//     run. `PROBE_TYPES=<types>` picks the modules.
 //   * vrt-face-audio-probe.spec.ts — is the AUDIO GRAPH running under a curated
 //     face scene, and does the compact tile settle? Prints, per module, an
 //     AnalyserNode's peak + frame-to-frame motion on the module's own audio
@@ -131,6 +141,7 @@ const FULL_MATCH = [
 //     the paired capture diffs are the pixel consequence. `PROBE_FACES=<types>`
 //     points it at modules outside the FACES roster.
 const PROBE_MATCH = [
+  'vrt-lane-tier-probe.spec.ts',
   'vrt-surface-probe.spec.ts',
   'vrt-face-audio-probe.spec.ts',
   'vrt-frame-stability.spec.ts',

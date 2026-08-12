@@ -214,6 +214,31 @@ export const FACES = [
   // cleanly even without the audio freeze, so — unlike analogVco and
   // macrooscillator — it is not a witness for it.
   { type: 'clouds', pages: 3 },
+  // FACE BATCH 4 (2026-08-10) — the three-tap noise source, and the FIRST
+  // ZERO-BAND entry in this roster. Not a mistake and not a truncation: the
+  // module has ONE param, `face.hero.control` promotes it, and `heroFacePlan`
+  // DROPS a band its hero emptied ("a labelled void where they were"), so the
+  // dock renders a hero rail and a sidebar and no section bands at all. The
+  // `toHaveCount(pages)` assert in `openDock` is therefore a real structural
+  // gate here too — it fails if a band ever comes back.
+  //
+  // ⚠ FREE-RUNNING, AND THE FIRST BROADBAND WITNESS FOR #1420's FREEZE. All
+  // three noise tables `.start()` unconditionally at factory time, so the
+  // `meter` glyph on the compact tile is live from spawn — this tile can only
+  // baseline because the shared boot path suspends the graph before framing.
+  // analogVco and macrooscillator are the existing witnesses and both are
+  // PERIODIC (a saw at some phase), which is why a mis-ordered freeze reads as
+  // an intermittent 0/0/192/173 px on macrooscillator. Broadband noise has no
+  // phase to land on, so the prediction is that this tile catches the same
+  // regression deterministically.
+  //
+  // ⚠ THAT IS A PREDICTION, NOT A MEASUREMENT — say so rather than let a later
+  // reader take it for a derived number like the two entries above. The two
+  // PNGs (`face-noise-compact`, `face-noise-dock`) are authored by the linux
+  // capture job like every other baseline, and the probe that would settle
+  // this has not been run against them. Run `vrt-face-audio-probe` on this
+  // tile before quoting a number here; a passing scene is not the measurement.
+  { type: 'noise', pages: 0 },
   // FACE BATCH 5 — the analog delay. SIX declared bands, six rendered: the hero
   // promotes `delayTime` and the echo-train panel out of band 1, which still
   // holds SYNC, CLK SRC and FEEDBACK, so nothing empties.
@@ -248,6 +273,49 @@ export const FACES = [
   // deliberate linux-only state into exactly the undeclared gap it avoids.
   // `git status` for untracked PNGs after every VRT run until the pair exists.
   { type: 'cofefve', pages: 6 },
+  // FACE BATCH 4 (2026-08-11) — the random source. SIX bands, six rendered: the
+  // hero promotes the loop PANEL and DÉJÀ VU out of T LOOP (which keeps LENGTH)
+  // and nothing empties.
+  //
+  // ⚠ FREE-RUNNING AND NOT A FREEZE WITNESS, which is worth stating because a
+  // draft of this entry claimed the opposite and it took reading
+  // `glyphBinding` to disprove it. marbles genuinely produces from the instant
+  // it spawns — measured at the shipped defaults, 16 `clk` edges in 8 s
+  // (2.000 Hz), 6 `t1` and 10 `t2` — but it declares NO `audio` output (t1/t2/
+  // clk are `gate`, x1/x2/x3 are `cv`), and `primaryAudioOutPortId` matches
+  // `type === 'audio'` only. So no glyph on this module can resolve to a live
+  // analyser tap; the face therefore declares `glyph: 'none'` rather than a
+  // `meter` that would render twelve segments at a hard-coded 0. There is
+  // nothing here for #1420's freeze to hold still. analogVco and
+  // macrooscillator remain the roster's two witnesses.
+  //
+  // ⚠ THE DOCK TILE IS DETERMINISTIC BY CONSTRUCTION, not by the freeze. Its
+  // hero picture has no clock, no playhead and no analyser — every pixel is a
+  // pure function of the thirteen params through `marblesLoopPlan` — so it
+  // captures identically on a running graph, a frozen one and a silent rack.
+  { type: 'marbles', pages: 6 },
+  // FACE BATCH 4 — the exciter-driven resonator. THREE declared bands, three
+  // rendered: the hero promotes the comb panel, POSITION and the STRUM audition
+  // out of band 3, which still holds LEVEL, so nothing empties.
+  //
+  // ⚠ THIS TILE IS DETERMINISTIC FOR THE STRONGEST REASON IN THE ROSTER, and
+  // it is worth distinguishing from the "unpatched insert is silent" cases
+  // (cofefve, mixer, reverb). rings is not merely quiet at rest — it is
+  // BIT-ZERO: measured peak exactly 0.000e+0 on both taps, in both models, over
+  // a 1 s render of the shipping worklet with nothing patched and nothing
+  // struck. There is no internal exciter, no free-run and no noise floor, so
+  // the `scope` glyph on the compact tile has nothing to draw whether the graph
+  // is frozen or running. This scene therefore does NOT depend on #1420's
+  // freeze — unlike analogVco, macrooscillator and noise, which are the
+  // roster's real witnesses for it.
+  //
+  // ⚠ AND THE HERO PICTURE IS DRAWN, NOT TRACED. Every bar of the pickup comb
+  // is a pure function of the durable params through `RingsModal.configure`'s
+  // own laws (rings-face-model.ts) — no analyser, no rAF, no engine read — so
+  // the dock tile is identical on a frozen graph, a live graph and a silent
+  // rack. That is what lets a module with no sound at rest still have a
+  // faceplate that says something.
+  { type: 'rings', pages: 3 },
 ] as const;
 
 /** TIGHT per-scene diff budgets (absolute pixels; Playwright takes the MIN of

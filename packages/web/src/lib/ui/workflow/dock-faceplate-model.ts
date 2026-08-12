@@ -415,10 +415,10 @@ export function readoutText(
 
 /**
  * The sidebar blocks a face actually paints: declared blocks minus the ones
- * that would render EMPTY (a `presets` block with no entries, a `signal-flow`
- * with no stages, a `readouts` whose every entry is malformed, a `custom` with
- * a blank panel id). An empty block is a labelled void — worse than no block —
- * and dropping it here means the shell never has to ask.
+ * that would render EMPTY (a `presets` block with no entries, a `readouts`
+ * whose every entry is malformed, a `custom` with a blank panel id). An empty
+ * block is a labelled void — worse than no block — and dropping it here means
+ * the shell never has to ask.
  *
  * Returns `null` (never `[]`) when nothing survives, because `null` is the
  * answer DockFullView branches on to decide whether the `.page` grid gets its
@@ -429,8 +429,6 @@ export function sidebarPlan(def: FaceplateDefLike | undefined): FaceSidebarBlock
   const blocks = def?.face?.sidebar ?? [];
   const kept = blocks.filter((b) => {
     switch (b.kind) {
-      case 'signal-flow':
-        return b.stages.length > 0;
       case 'presets':
         return b.entries.length > 0;
       case 'readouts':

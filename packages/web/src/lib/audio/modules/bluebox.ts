@@ -296,25 +296,6 @@ export const blueboxDef: AudioModuleDef = {
 
     sidebar: [
       {
-        kind: 'signal-flow',
-        label: 'signal flow',
-        // The real chain, in process()'s order. The KEYS stage is a generator
-        // and the BANK a bus on purpose: the keys make no sound, they raise
-        // targets in a bank that is always running. The phase accumulators
-        // advance unconditionally even at zero amplitude, which is why the same
-        // key pressed twice produces two different waveforms — drawn as the
-        // parallel branch, because it is not in line with anything.
-        stages: [
-          { label: '12 KEYS', role: 'generator', note: 'param OR gate, ≥ 0.5' },
-          { label: 'TONE BANK', role: 'bus', note: '10 slots, += 0.25' },
-          { label: 'AR RAMP', role: 'bus', note: 'one pole, τ 1 ms' },
-          { label: 'FREE PHASE', role: 'bus', parallel: true, note: 'never reset' },
-          { label: 'SINE SUM', role: 'bus', note: '10 × sin 2πp' },
-          { label: '÷ 4', role: 'bus', note: 'output norm' },
-          { label: 'OUT', role: 'bus', note: 'mono' },
-        ],
-      },
-      {
         kind: 'readouts',
         // THREE FIXED FACTS — every one a CONSTANT of the design, which is
         // exactly what a `text` readout is for and what a context column should

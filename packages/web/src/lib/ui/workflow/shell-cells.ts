@@ -43,7 +43,9 @@ import CloudsRingPanel from '$lib/ui/modules/CloudsRingPanel.svelte';
 import CofefveEchoTrainPanel from '$lib/ui/modules/CofefveEchoTrainPanel.svelte';
 import KickdrumHeroPanel from '$lib/ui/modules/KickdrumHeroPanel.svelte';
 import MacrooscillatorHeroPanel from '$lib/ui/modules/MacrooscillatorHeroPanel.svelte';
+import MarblesLoopPanel from '$lib/ui/modules/MarblesLoopPanel.svelte';
 import PentemelodicaVoicesPanel from '$lib/ui/modules/PentemelodicaVoicesPanel.svelte';
+import RingsCombPanel from '$lib/ui/modules/RingsCombPanel.svelte';
 import WavesculptRoomPanel from '$lib/ui/modules/WavesculptRoomPanel.svelte';
 import WavesculptWavetableBay from '$lib/ui/modules/WavesculptWavetableBay.svelte';
 import type { FaceControl } from './curated-face';
@@ -561,6 +563,46 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
       },
     },
   },
+  marbles: {
+    // THE TWO LOOPS + THE QUANTISER RULER — promoted into the hero slot
+    // (`face.hero.cell`).
+    //
+    // ⚠ A PANEL BECAUSE THE THREE THINGS IT SHOWS CANNOT BE KNOB POSITIONS.
+    // LENGTH and X LENGTH are BIT-EXACTLY inert at DÉJÀ VU 0 (the shipped
+    // default), so a dial reading `8` describes a loop that does not exist;
+    // DÉJÀ VU's own maximum is its MIDDLE, so its position tells you nothing
+    // about how locked the module is; and SCALE is inert below STEPS 0.536, so
+    // the selected scale name is not evidence that any of it is in use. A row
+    // that draws ONE slot, a fill that peaks at mid-travel, and a ruler with no
+    // solid ticks say all three without a caption.
+    //
+    // ⚠ AND IT HAS NO CLOCK — no playhead, no analyser, no rAF. marbles
+    // FREE-RUNS, so anything time-derived would make the VRT baseline a race
+    // against boot latency. Every pixel is a pure function of the params
+    // (`marblesLoopPlan`), which makes the tile deterministic on a running
+    // graph, a frozen one and a silent rack alike — a stronger guarantee than
+    // #1420's freeze, which this picture therefore does not depend on. (The
+    // `meter` glyph at the LANE tiers does, and marbles is a witness for it.)
+    'marbles-loop-{n}': {
+      kind: 'panel',
+      label: 'loops',
+      component: MarblesLoopPanel,
+      minWidth: 320,
+      // A `text` probe on a DIFFERENT element, the clouds/kickdrum/bluebox
+      // reason: the slot LABELLING is private view state (component state,
+      // never node.data — relabelling your own picture must not relabel a
+      // collaborator's screen or dirty the patch), so there is no key to watch.
+      // The button drives the axis row, whose two labellings can NEVER coincide
+      // — `time` always carries a unit suffix and `step` never does, asserted
+      // over every slot at every rate in marbles-face-model.test.ts — so the
+      // probe cannot go vacuous at some setting where they happen to agree.
+      probe: {
+        testid: 'marbles-loop-mode',
+        action: 'click',
+        effect: { kind: 'text', testid: 'marbles-loop-axis', expect: 'changed' },
+      },
+    },
+  },
   cloudseed: {
     // CLEAR TAIL — the one gesture this reverb has that is not a value. It
     // flushes every delay line, diffuser, shelf and lowpass in the tank
@@ -609,6 +651,52 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
       // string that was never plucked, and the sweep asserted only that the
       // button was enabled. `delivered` is precisely the boolean being thrown
       // away (face-redo ledger defect #22).
+      probe: { effect: { kind: 'audition', seam: 'manual-strike' } },
+    },
+  },
+  rings: {
+    // THE PICKUP COMB — the 24-partial bank under its cosine pickup, coloured
+    // by which output tap each partial lands in, over the POSITION dial's whole
+    // travel. Rank 7 on the face, the first rank a panel may legally hold.
+    //
+    // It is the one thing about this module def introspection cannot
+    // synthesise, and the one surface that is ALIVE AT REST: rings is bit-
+    // silent until struck (measured peak exactly 0.000e+0 on both taps with
+    // nothing patched), so its `scope` glyph draws a flat line on a fresh
+    // spawn while this picture already shows the body it is about to ring.
+    'rings-comb-{n}': {
+      kind: 'panel',
+      label: 'pickup comb',
+      component: RingsCombPanel,
+      minWidth: 380,
+      // A `text` probe for the ClapHeroPanel reason: the view flip is PRIVATE
+      // component state (flipping your own plot must not re-draw a
+      // collaborator's), so there is no node.data key to watch. The caption
+      // names the view AND counts the partials the comb is suppressing, so a
+      // dead button cannot change it.
+      probe: {
+        testid: 'rings-comb-view',
+        action: 'click',
+        effect: { kind: 'text', testid: 'rings-comb-caption', expect: 'changed' },
+      },
+    },
+    // THE AUDITION, and on this module it is the difference between a
+    // faceplate and a photograph. RINGS is a BODY, not a voice: with nothing
+    // patched and nothing struck the output is not quiet, it is exactly zero
+    // — the Float32Arrays are untouched — and before this PR the module could
+    // not be struck from ANY surface. The legacy card had a MODEL button, six
+    // faders and a jack field, and no way to make a sound.
+    //
+    // Fires the SAME host-side trigger source the card's new STRUM button
+    // fires (manual-strike-actions → the factory's `manualTrigger` read key),
+    // so there is one implementation and not two. `mode: 'trigger'` because
+    // the DSP edge-detects STRUM and ignores how long the level stays high —
+    // the port declares `edge: 'trigger'` and this honours it.
+    'rings-strum-{n}': {
+      kind: 'action',
+      label: 'strum',
+      title: 'Audition: strike the resonator once (identical to a strum rising edge)',
+      onFire: (nodeId) => { fireManualStrike(nodeId); },
       probe: { effect: { kind: 'audition', seam: 'manual-strike' } },
     },
   },

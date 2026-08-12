@@ -1371,26 +1371,23 @@ export const wavesculptDef: AudioModuleDef = {
         ],
       },
 
+      // ⚠ THE `signal-flow` BLOCK THIS FACE CARRIED IS GONE, and nothing was
+      // invented to replace it. It listed the factory's chain (WAVETABLE ×4 /
+      // LUMA BANDPASS / ADSR ×4 / FX SLOT ×4 / DIST GAIN ×4 / PAN ×4 /
+      // PER-VOICE TAP / MASTER → L/R). Owner directive 2026-08-11, looking at
+      // analogVco's — "this really isn't accurate. lets stop doing these and
+      // clean up the existing ones, get rid of them." The kind itself was
+      // deleted fleet-wide in #1468, so this is not a style choice: the union
+      // arm no longer exists and re-adding one would not typecheck.
+      //
+      // The reason survives the removal: a stage list is a hand-authored model
+      // of the DSP that NOTHING verifies against the DSP — not contract-lock,
+      // not module-face-lint, not ART — so it is free to drift the moment the
+      // worklet moves. That is doubly true here, where the chain's one
+      // interesting fact (the per-voice taps leave BEFORE the master trim) is
+      // now stated where a gate can read it: the `outputs` block below, and
+      // `docs.outputs.*` in prose for right-click → annotate.
       sidebar: [
-        {
-          kind: 'signal-flow',
-          label: 'signal flow',
-          // The real chain, in the factory's order. LUMA BANDPASS is a bus
-          // stage rather than a branch because it is genuinely in line — the
-          // wall video's brightness shapes each line's audio on the way
-          // through. The four per-voice TAPS are `parallel` because they leave
-          // BEFORE the master trim and never rejoin it.
-          stages: [
-            { label: 'WAVETABLE ×4', role: 'generator', note: 'one worklet, 4 accumulators' },
-            { label: 'LUMA BANDPASS', role: 'bus', note: 'from the walls — lum_depth' },
-            { label: 'ADSR ×4', role: 'bus', note: 'JS-side, gate1..4' },
-            { label: 'FX SLOT ×4', role: 'bus', note: 'pre-spatial-mix' },
-            { label: 'DIST GAIN ×4', role: 'bus', note: 'the camera number' },
-            { label: 'PAN ×4', role: 'bus' },
-            { label: 'PER-VOICE TAP', role: 'bus', parallel: true, note: 'out_red/grn/blu/alp' },
-            { label: 'MASTER → L/R', role: 'bus', note: 'master_gain' },
-          ],
-        },
         {
           kind: 'readouts',
           label: 'the room',

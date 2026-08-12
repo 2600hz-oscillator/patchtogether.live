@@ -314,7 +314,7 @@ const DESCRIPTIONS: Record<string, string> = {
   dx7:
     'Pure-TypeScript 6-operator DX7-style FM synthesizer. 32 algorithms, 5-voice polyphony via the polyPitchGate cable, bundled bank of factory-inspired patches (E.PIANO 1, BASS 1, HARMONICA, STRINGS 1, MARIMBA, etc.), and a .syx file picker for loading custom 32-voice cartridge dumps (in-memory only). On top of the six per-operator DX7 envelope generators, a per-voice master OUTPUT-VCA ADSR (Attack / Decay / Sustain / Release) gives a player-dialable amplitude swell / long-release without editing the SYX: one envelope per voice multiplies the summed-carrier output, gated by the same note-on/note-off as the operator EGs (soft/click-safe retrigger). Defaults are ~pass-through (fast attack, full sustain, fast release) so loaded patches sound identical until you touch the master ADSR; a long master release now outlives operator-EG silence (a voice frees only once both the operator EGs and the master amp envelope have faded). NOT a Plaits-backed implementation — see .myrobots/plans/dx7-and-polyphony.md for the design rationale.',
   noise:
-    'Basic noise source. Three independent audio outputs — WHITE (full-spectrum), PINK (1/f, -3 dB/oct via Voss-McCartney), BROWN (1/f², -6 dB/oct via leaky-integrated white). All outputs share a single LEVEL knob. No CV inputs.',
+    'Basic noise source. Three independent audio outputs — WHITE (full-spectrum), PINK (1/f, -3 dB/oct via Voss-McCartney), BROWN (leaky-integrated white: flat below a ~77 Hz corner at 48 kHz, -6 dB/oct above it). All outputs share a single LEVEL knob, which is one multiplier and not one loudness — brown leaves 7.1 dB and pink 12.3 dB below white. No CV inputs.',
   buggles:
     'Chaotic random voltage source — clean-room functional implementation of the Buchla / Make Noise wogglebug archetype. Internal "woggle clock" emits triggers at the RATE knob; outputs include SMOOTH (slewed random), STEPPED (sample-and-held), CLOCK (woggle gate), BURST (probabilistic clusters of 3-7 triggers), and RING (smooth × sub-osc ring-mod, the signature dirty texture). CV inputs modulate rate + chaos; EXT CLK replaces the internal scheduler when patched. The "Wogglebug" name is Make Noise\'s trademark — BUGGLES is our name; no proprietary schematic is copied.',
   warrensspectrum:
@@ -1433,6 +1433,13 @@ export function buildModuleManifest(
       // beside the def because the def, the card, MACSEQ and the faceplate all
       // read it and the def↔face pair would otherwise be a cycle.
       if (file === 'macro-engine-roster.ts') return false;
+      // MARBLES' two named rosters (T-model + scale labels and their `options`
+      // form) — not a ModuleDef. It sits here rather than on the def because
+      // `marbles.ts` imports its worklet as `…?url`, which Node cannot resolve,
+      // so anything importing the def is unloadable from a Playwright process
+      // and `marbles-face.spec.ts` could not check the printed strings against
+      // the declared ones. The def re-exports both arrays.
+      if (file === 'marbles-names.ts') return false;
       return true;
     })
     .sort((a, b) => a.file.localeCompare(b.file));

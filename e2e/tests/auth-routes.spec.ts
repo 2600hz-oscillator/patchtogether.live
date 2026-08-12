@@ -119,8 +119,24 @@ test.describe('auth-route shape', () => {
   test('deployed tier can REACH its configured database @smoke', async ({ request }) => {
     test.skip(!IS_LIVE_TARGET, 'live-deploy only (E2E_BASE_URL must be a remote host)');
 
-    const body = await (await request.get('/api/health')).json();
+    // ⚠ `?deep=1` IS REQUIRED. `/api/health` is SHALLOW by default and does not
+    // touch Postgres — it is polled every 3 minutes by uptime monitors, and a DB
+    // read on that path kept Neon awake 24/7 (99.8% of the bill). Without the
+    // flag `deps.database.ok` is `null` (not probed) and this assertion fails
+    // with "Probe error: none reported" — which is precisely the trap: there is
+    // no error because the query never ran. THIS TEST FAILED ON MAIN EXACTLY
+    // THAT WAY, reporting a healthy autotest tier as an infrastructure outage.
+    const body = await (await request.get('/api/health?deep=1')).json();
     test.skip(body.db === 'missing', 'tier has no DATABASE_URL configured — nothing to reach');
+
+    // Assert the probe RAN before trusting its verdict. An unasked question is
+    // not a bad answer, and without this the failure above is unreadable.
+    expect(
+      body.deps.database.probed,
+      'the DB probe did not RUN — `?deep=1` was dropped from the request above, ' +
+        'or the endpoint stopped honouring it. The reachability verdict below is ' +
+        'meaningless until this is true.',
+    ).toBe(true);
 
     expect(
       body.deps.database.ok,

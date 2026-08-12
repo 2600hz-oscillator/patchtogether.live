@@ -611,12 +611,21 @@ export interface ModuleFace {
    * is invisible to every gate. A heuristic on the span would be a rule about
    * how large an integer may be before it stops being a scale.
    *
+   * ⚠ THE THIRD ONE IS DECLARED FOR A DIFFERENT REASON ENTIRELY. `'fader'` is
+   * not ambiguous with another primitive — it is the module telling the shell
+   * that its LEVEL is a THROW rather than a dial. Nothing in a ParamDef
+   * separates "a level" from any other continuous scalar, so a face cannot
+   * infer it, and silently substituting a knob for a fader is a real
+   * regression even though the value semantics are identical. (Owner
+   * directive 2026-08-10, prompted by `noise`, whose card draws a fader.)
+   *
    * UI metadata like the rest of `face`: OUT of contract-signature /
    * contract-lock (choosing a primitive is not an I/O change), linted by
-   * module-face-lint.test.ts — every key must be a declared DISCRETE param that
-   * is also ranked in `order`, must not also be on `momentary` (a press-pad is
-   * not a state), and must carry the RANGE its primitive needs (a step count a
-   * grid can chart; the exact packed-RGB space for a colour).
+   * module-face-lint.test.ts — every key must be a declared param that is also
+   * ranked in `order`, must not also be on `momentary` (a press-pad is not a
+   * state), and must carry the SHAPE its primitive needs (a step count a grid
+   * can chart; the exact packed-RGB space for a colour; a CONTINUOUS scale for
+   * a fader — the first two are discrete-only, the third discrete-never).
    */
   paramCells?: Readonly<Record<string, 'grid' | 'color' | 'fader'>>;
   /**
@@ -744,29 +753,6 @@ export interface ModuleFaceHero {
   readouts?: readonly FaceReadout[];
 }
 
-/** One stage of a `signal-flow` sidebar block. `role` carries the ONE
- *  distinction a signal chain needs to be readable — a GENERATOR makes sound,
- *  a BUS stage processes what reaches it — and the block prints a legend for
- *  it, so the diagram explains its own colours. */
-export interface FaceFlowStage {
-  label: string;
-  role?: 'generator' | 'bus';
-  /**
-   * TRUE for a stage that is NOT INLINE: it taps the bus earlier and rejoins
-   * it further down. Drawn as a dashed branch off the spine rather than a link
-   * in the chain.
-   *
-   * ⚠ This is a correctness field, not decoration. Kick drum's TRANSLATE
-   * exciter taps a copy of the RAW sub from before the drive; drawn inline
-   * between EQ and DYNAMICS it would teach a producer that turning it up
-   * excites the driven, EQ'd signal — the opposite of why it survives a phone
-   * speaker. A diagram that teaches the wrong chain is worse than no diagram.
-   */
-  parallel?: boolean;
-  /** Optional sub-caption ("hard", "50 Hz"). */
-  note?: string;
-}
-
 /**
  * One entry of a `presets` sidebar block. `values` is a param-id → value map
  * applied through the ORDINARY param write path when the entry is selected —
@@ -782,14 +768,22 @@ export interface FacePreset {
 }
 
 /**
- * A typed SIDEBAR block. The kinds are deliberately few and generic: three
- * that cover what a faceplate's context column actually says (the chain, the
- * presets, the numbers) plus `custom` for the genuinely bespoke picture, which
- * resolves through a REGISTRY (sidebar-panels.ts) exactly like PF-14's panel
- * cells — the def declares an id, never a component, so `face` stays data.
+ * A typed SIDEBAR block. The kinds are deliberately few and generic: two that
+ * cover what a faceplate's context column actually says (the presets, the
+ * numbers) plus `custom` for the genuinely bespoke picture, which resolves
+ * through a REGISTRY (sidebar-panels.ts) exactly like PF-14's panel cells —
+ * the def declares an id, never a component, so `face` stays data.
+ *
+ * ⚠ THERE IS NO `signal-flow` KIND, and re-adding one is the mistake this note
+ * exists to prevent. Twelve modules declared a hand-authored stage list
+ * modelling their own DSP chain, and NOTHING verified any of them against the
+ * DSP — not contract-lock, not module-face-lint, not ART. They were prose in a
+ * diagram's clothes, free to drift the moment a worklet changed, and the owner
+ * removed the kind rather than correct twelve snapshots that would start
+ * drifting again the same day. A future chain picture must be DERIVED from
+ * something the build can check, or it must not exist.
  */
 export type FaceSidebarBlock =
-  | { kind: 'signal-flow'; label: string; stages: readonly FaceFlowStage[] }
   | { kind: 'presets'; label: string; entries: readonly FacePreset[] }
   | { kind: 'readouts'; label: string; entries: readonly FaceReadout[] }
   | {

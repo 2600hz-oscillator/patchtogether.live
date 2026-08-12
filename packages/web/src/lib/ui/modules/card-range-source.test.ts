@@ -71,9 +71,12 @@ import { cloudsDef } from '$lib/audio/modules/clouds';
 import { cofefveDelayDef } from '$lib/audio/modules/cofefve';
 import { delayDef } from '$lib/audio/modules/delay';
 import { macrooscillatorDef } from '$lib/audio/modules/macrooscillator';
+import { marblesDef } from '$lib/audio/modules/marbles';
+import { noiseDef } from '$lib/audio/modules/noise';
 import { filterDef } from '$lib/audio/modules/filter';
 import { meowboxDef } from '$lib/audio/modules/meowbox';
 import { ringbackDef } from '$lib/audio/modules/ringback';
+import { ringsDef } from '$lib/audio/modules/rings';
 import { snaredrumDef } from '$lib/audio/modules/snaredrum';
 import { vcaDef } from '$lib/audio/modules/vca';
 import { warrensspectrumDef } from '$lib/audio/modules/warrensspectrum';
@@ -168,6 +171,16 @@ import type { ParamDef } from '$lib/graph/types';
  *    read identically today and diverge the day any of those five gains a unit
  *    on the def — the omission is invisible to both greps, which only ever see
  *    what a card DOES write.
+ *  - MarblesCard: converted with the marbles face promotion (2026-08-11). It
+ *    carried NINE literal min/max pairs, the most of any card left unbound in
+ *    its batch, and gained the two params it had never had a control for
+ *    (`pw_mean`, `x_deja_vu`) in the same commit.
+ *  - NoiseCard: converted with the noise face promotion (2026-08-10; binds via
+ *    paramSpec). Range AND mapping bound, and it is the SMALLEST instance of
+ *    the class — ONE fader re-typing four numbers (`min` `max` `defaultValue`
+ *    `curve`) that its own def already declares, on the same screen as a line
+ *    that correctly read `noiseDef.params[0]!.defaultValue`. Half the card was
+ *    already bound; the divergence hazard lived entirely in the other half.
  *  - CofefveCard: converted with the cofefve face promotion (2026-08-10), and
  *    the largest re-typing this set has absorbed — 34 literal range props over
  *    19 controls, including a `curve="log"` on a `0.001..2 s` TIME knob where a
@@ -196,7 +209,10 @@ const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }
   'MacrooscillatorCard.svelte': macrooscillatorDef,
   'FilterCard.svelte': filterDef,
   'MeowboxCard.svelte': meowboxDef,
+  'MarblesCard.svelte': marblesDef,
+  'NoiseCard.svelte': noiseDef,
   'RingbackCard.svelte': ringbackDef,
+  'RingsCard.svelte': ringsDef,
   'SnaredrumCard.svelte': snaredrumDef,
   'VcaCard.svelte': vcaDef,
   'WarrensspectrumCard.svelte': warrensspectrumDef,
@@ -216,7 +232,10 @@ const MAPPING_BOUND_CARDS: readonly string[] = [
   'DelayCard.svelte',
   'MacrooscillatorCard.svelte',
   'FilterCard.svelte',
+  'MarblesCard.svelte',
+  'NoiseCard.svelte',
   'RingbackCard.svelte',
+  'RingsCard.svelte',
   'SnaredrumCard.svelte',
   'VcaCard.svelte',
   'WarrensspectrumCard.svelte',

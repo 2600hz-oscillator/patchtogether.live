@@ -566,7 +566,6 @@ describe('sidebarPlan — an EMPTY block is worse than no block', () => {
 
   it('drops every kind of empty block, and returns null when NONE survive', () => {
     const def = withSidebar([
-      { kind: 'signal-flow', label: 'flow', stages: [] },
       { kind: 'presets', label: 'p', entries: [] },
       { kind: 'readouts', label: 'r', entries: [{ label: 'bad' }] },
       { kind: 'custom', label: 'c', panelId: '  ' },
@@ -577,11 +576,11 @@ describe('sidebarPlan — an EMPTY block is worse than no block', () => {
   it('keeps the blocks that will actually paint, in declaration order', () => {
     const def = withSidebar([
       { kind: 'presets', label: 'p', entries: [] },
-      { kind: 'signal-flow', label: 'flow', stages: [{ label: 'SUB', role: 'generator' }] },
       { kind: 'readouts', label: 'r', entries: [{ label: 'bad' }, { label: 'good', paramId: 'tune' }] },
       { kind: 'custom', label: 'c', panelId: 'stereo-crossover' },
+      { kind: 'presets', label: 'p2', entries: [{ id: 'a', label: 'A', values: { tune: 50 } }] },
     ]);
-    expect(sidebarPlan(def)!.map((b) => b.kind)).toEqual(['signal-flow', 'readouts', 'custom']);
+    expect(sidebarPlan(def)!.map((b) => b.kind)).toEqual(['readouts', 'custom', 'presets']);
   });
 });
 

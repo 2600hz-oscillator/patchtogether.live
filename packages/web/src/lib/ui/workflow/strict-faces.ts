@@ -297,6 +297,70 @@
 // stronger guarantee than #1420's freeze, which this face therefore does not
 // depend on. (Its `meter` glyph is unlit at the lane tiers for the
 // mixer/reverb reason: an insert with nothing patched outputs exactly zero.)
+
+// FACE BATCH 4 · noise (2026-08-10) — the SMALLEST module in the registry to
+// carry a face, and the entry that had to argue with its own spec to exist.
+//
+// `.myrobots/plans/face-specs-batch-3-noise.md` returns a verdict of NO FACE ON
+// MERIT, and its arithmetic is correct: one param, zero inputs, zero modes, so
+// `faceTierCap` gives mini 1 and compact 2 and ALL FOUR TIERS RENDER THE SAME
+// SINGLE KNOB. This face does not dispute that and does not dress it up.
+//
+// It is promoted anyway because the spec measures a faceplate by its TIER
+// LADDER and this module's problem is not curation, it is that THREE TRUE
+// FACTS ABOUT IT ARE STATED NOWHERE — and each is invisible to the one control:
+//
+//   · THE THREE TAPS ARE NOT LEVEL-MATCHED. One linear gain is written to all
+//     three tap gains in the same `setParam`, and they leave the module at
+//     white −4.77, brown −11.84, pink −17.08 dBFS (LEVEL 1) — a 12.3 dB spread
+//     that `level`'s own readback is INVARIANT to, because it prints 0.50 for
+//     all three. Three derived readouts, closed-form from the coefficients.
+//   · BROWN IS A ONE-POLE LOW-PASS, NOT A SLOPE. Flat below ≈ 77 Hz, −6 dB/oct
+//     above — and the corner MOVES WITH THE INTERFACE (70.5 Hz at 44.1 k,
+//     153.6 at 96 k) because `LEAK = 0.99` carries no `sampleRate` term while
+//     the table length does. The def, the DSP header and the module manifest
+//     all said a flat "1/f², heavy low-frequency content"; all three are
+//     corrected in this PR, and the sidebar picture draws the actual knee.
+//   · BROWN HAS NO BOUND. White is clamped at 1 by its uniform draw and pink by
+//     its ROWS+1 normaliser; brown is a random walk, and 118 of 200 seeded 2 s
+//     tables peak ABOVE full scale at LEVEL 1 (median 1.021, worst 1.362).
+//     `noise-dsp.ts` says "peak excursions stay comfortably under ±1 … verified
+//     to ~64k samples" — the shipped table is 96 000.
+//
+// ⚠ THE PICTURE COULD NOT HAVE BEEN A HERO CELL, AT THE FAR END OF A CONSTRAINT
+// TWO FACES HAVE NOW HIT. A panel's first legal rank is 7 (module-face-lint
+// refuses a panel SELECTED at a lane tier, and the lane plate is six cells).
+// meowbox reached that wall with five keys and drummergirl dropped its picture
+// over it; noise has ONE key and can never approach it. The `custom` sidebar
+// block carries no `face.order` key at all, which is what makes a picture
+// possible on a one-param module — and is the general answer, not a workaround.
+//
+// ⚠ AND IT IS THE FIRST FACE WHOSE HERO EMPTIES ITS ONLY BAND. One ranked key,
+// promoted to `hero.control`, leaves the page-less `__all` band with nothing in
+// it, and `heroFacePlan` drops an emptied band. `dock-faceplate-model.ts` wrote
+// that branch defensively — "a no-op on every face declared today … landed now
+// so the first face that needs it does not have to discover it" — and this is
+// the face that needs it. Its VRT roster entry is `pages: 0`.
+//
+// ⚠ FREE-RUNNING, LIKE analogVco AND macrooscillator, AND BROADBAND UNLIKE
+// EITHER. All three tables `.start()` unconditionally at factory time, so its
+// `meter` glyph is live from spawn; #1420's pre-frame freeze is what makes the
+// tile capturable. The two existing witnesses are periodic (a saw at a fixed
+// phase), so a mis-ordered freeze shows up on them as a PHASE difference —
+// which is why macrooscillator catches it only intermittently. A broadband
+// witness has no phase to land on. NOT YET MEASURED as such — the claim is a
+// PREDICTION for `vrt-face-audio-probe` to settle, not a result.
+//
+// OWNER CONSTRAINT, 2026-08-10 ("preserve today's look"): the legacy card is
+// pixel-unchanged, the module keeps one prominent LEVEL control and its three
+// jacks, and nothing is renamed or recoloured. The one difference the first
+// pass could NOT honour is the reason this face was held a release: a ranked
+// param paints as `KnobConic`, so the dock showed LEVEL as a dial where the
+// card draws a FADER — on a module whose whole visual identity is one centred
+// throw. The owner's answer was the platform `fader` cell kind rather than an
+// exception, and `noise` is its first consumer (`face.paramCells`); clouds,
+// mixer and vca are fader cards too and inherit it when they are faced.
+
 // FACE BATCH 5 · cofefve (2026-08-10) — the analog delay, PROMOTED from having
 // no face at all, and the entry whose argument is that A FACEPLATE MUST BE ABLE
 // TO SAY THAT A CONTROL IS WAITING ON ANOTHER CONTROL.
@@ -379,6 +443,127 @@
 // fix turns a stale claim RED instead of leaving the faceplate insisting on a
 // repaired defect.
 
+// FACE BATCH 4 · marbles (2026-08-11) — the rack's only RANDOM SOURCE, and the
+// FIRST FACE AUTHORED UNDER THE NO-PROSE DIRECTIVE.
+//
+// Owner, 2026-08-11, on the shipped clouds faceplate: *"i really don't like any
+// of this text… we should prefer almost zero AI authored text, and all future
+// faceplate work should reflect that. our old faces are pretty self
+// explanatory. i want to lose all the ai text, and bring back right click →
+// annotate based on authored docs."* So this face has NO `hint`, NO band hints,
+// NO explanatory captions and NO editorial band headers — six plain labels
+// (`CLOCK`, `T GATES`, `T LOOP`, `X`, `QUANTISER`, `X LOOP`), a picture, and
+// eleven bare values. Everything it learned is in the def's `docs`, one
+// right-click away, and in the PR body.
+//
+// ⚠ marbles IS THE MODULE MOST TEMPTED TO NARRATE, which is what makes it a
+// real test of that directive rather than an easy one: randomness genuinely
+// cannot be read off knob positions. The answer taken here is to choose values
+// that ARE the fact:
+//
+//   · `T random` / `X random` print `p = (2·dv − 1)²`, so DÉJÀ VU's travel
+//     reads 100 % → 0 % → 100 %. That the MAXIMUM of the knob is not the
+//     maximum of the behaviour is then visible by turning one dial.
+//   · `T loop` / `X loop` print `free`, not `8 steps`, while their DÉJÀ VU is
+//     0 — because LENGTH is BIT-EXACTLY inert there, and that is the shipped
+//     default. The picture does the same thing in pixels: one slot, not eight.
+//   · `glide 0 %` and `quantiser off` sit next to each other at the shipped
+//     STEPS 0.50, which is the whole story of that dial's dead gap.
+//
+// ⚠ THE SPEC IT WAS BUILT FROM WAS WRONG FOUR TIMES, every one the same failure
+// — probing a random process at ONE SEED on a coarse grid — and the corrections
+// are recorded on the def. The headline: it reported the T loop as SATURATED
+// across the top half of DÉJÀ VU while only the X loop was non-monotone. BOTH
+// are non-monotone and both peak at exactly 0.5; the saturation was an artifact
+// of `length 4` plus an IOI-tolerance metric on a seed whose four slots
+// happened to sit on one side of the gate threshold. The oracle measures the
+// per-clock GATE WORD at the shipped length 8 instead, which has neither
+// problem.
+//
+// ⚠ ONE DEFECT DOCUMENTED, NOT FIXED: `t_model` 1 (CLUSTERS) is a two-line
+// commented STUB that falls through to the COIN generator, in both the worklet
+// core and the host mirror — bit-identical `t1` AND `t2` at three separate
+// biases, with DRUMS as a passing control. Implementing it means porting the
+// firmware's cluster generator, which changes audio and re-pins nothing that
+// exists yet (there is no `art/baselines/marbles/`), so it is its own PR. The
+// faceplate prints `CLUSTERS → COIN` rather than painting a dead model as a
+// working one.
+//
+// ⚠ AND IT DECLARES NO GLYPH, which is the one finding this face made about
+// ITSELF. It shipped `glyph: 'meter'` through three passes on the reasoning
+// that marbles free-runs and a meter is what a 64 px tile can honestly say —
+// until the binding was read rather than assumed. `primaryAudioOutPortId`
+// matches `type === 'audio'`, and marbles declares none: t1/t2/clk are `gate`,
+// x1/x2/x3 are `cv`. `glyphBinding` therefore returns `{ kind: 'static' }`,
+// `tap` is undefined, and `<VuMeter>` falls back to its `level = 0` default —
+// twelve segments that can never light, on the busiest module in the rack. It
+// also means marbles is NOT a witness for #1420's audio freeze, which the same
+// draft claimed: it free-runs, but nothing on the face was ever reading it.
+
+// FACE BATCH 4 · rings (2026-08-11) — the exciter-driven RESONATOR, PROMOTED
+// from having no face at all, and the entry whose argument is that A MODULE
+// THAT CANNOT BE SOUNDED IS NOT A FACEPLATE PROBLEM UNTIL SOMEONE LOOKS.
+//
+// rings is a BODY, not a voice. With nothing patched and nothing struck the
+// output is not "quiet", it is EXACTLY ZERO — measured peak 0.000e+0 on both
+// taps in both models over a 1 s render of the shipping worklet; the
+// Float32Arrays are untouched. And until this PR the module could not be
+// struck from ANY surface: `RingsCard` had a MODEL button, six faders and a
+// jack field, and no strum. A user who spawned RINGS and turned all seven
+// knobs heard nothing, with no indication why. That is the sixstrum defect on
+// a legacy card rather than on a face, and it is fixed here on BOTH surfaces
+// through ONE seam — a `strumCs` ConstantSource on worklet input 2 plus the
+// factory's `manualTrigger` read key, the karplus pattern verbatim.
+//
+// ⚠ THE SPEC IT WAS BUILT FROM WAS STALE IN FOUR PLACES, and re-measuring
+// first is the only reason this face does not repeat them. `strum` was said to
+// declare no `edge` — it declares `edge: 'trigger'` and has since #1436. The
+// ODD/EVEN separation was given as "116 dB, every bin" — measured per bin
+// h1..h8 it is 129 / 124 / 113 / 110 / 110 / 110 / 98 / 84, so the honest
+// figure is 84 dB at the worst bin and 116 is not the minimum of the spec's
+// own table either. A claimed peak-find artifact at structure 0 does not
+// reproduce (EVEN's h2 beats its h4 by 1.7 dB, as the spec's own §1 table
+// already showed). And SYMPATHETIC's T60 was said to go back UP at high
+// damping; measured it plateaus (490 / 342 / 340 ms at damping .5 / .75 / 1)
+// rather than reversing. Everything else in it reproduced to the digit,
+// including the mirror-symmetry table, the 5.37 dB model step and the 0.107 dB
+// limiter no-op.
+//
+// ⚠ AND THE READOUT THIS FACE MOST WANTED IS NOT ON IT. Two knobs set the ring
+// time and only one says so — BRIGHTNESS is documented as a tone control and
+// moves T60 25x at a fixed DAMPING — but the number cannot be printed
+// honestly: MODAL's T60 depends on the INTERFACE SAMPLE RATE, measured
+// 3889 / 7420 / 476 ms at 44.1 / 48 / 96 kHz for one fixed pair of settings,
+// because the decay constant is `q/(pi*sampleRate)` with no compensating term.
+// The ratio is no better (18.2x / 25.3x / 3.4x). So the finding is carried by
+// the band LABEL, which paints unconditionally where a hint does not, and the
+// rate dependence is documented on the def as the DSP defect it is — a patch
+// saved at 48 k is a different instrument at 96 k. Fixing that moves audio, so
+// it is not folded into a faceplate PR.
+//
+// Its hero picture reaches `hero.cell` where meowbox's and noise's could not:
+// a panel's first legal rank is 7 and rings has nine rankable keys, so the
+// pickup comb is a real hero cell rather than a sidebar consolation.
+//
+// ⚠ IT SHIPS WITH NO SIDEBAR AT ALL, and that is the second owner directive
+// this face absorbed mid-build. It carried one `signal-flow` block; the owner,
+// looking at analogVco's, ruled the genre out entirely — "this really isn't
+// accurate. lets stop doing these and clean up the existing ones, get rid of
+// them." So the block is gone and NOTHING replaced it: an empty sidebar is
+// reported as empty rather than padded with filler. Seven faces already ship
+// this way (adsr, karplus, mixer, delay, reverb, tomtom, qbrt).
+//
+// The two directives are one rule. A faceplate states values; the explanation
+// — the chain, the measurements, the two-knobs-set-the-decay finding — lives in
+// `docs` for right-click → annotate. A stage list is additionally the surface
+// most likely to go stale: a hand-maintained picture of code that moves
+// underneath it, with no gate able to notice.
+//
+// ⚠ OTHER FACES STILL DECLARE `signal-flow`, so the shared renderer STAYS
+// until the fleet sweep (#1468) lands — deleting it here would blank their dock
+// panels in a faceplate PR for one module. Deliberately NOT stating how many:
+// that is a population count, it goes stale the moment #1468 lands a partial,
+// and `grep -l "kind: 'signal-flow'"` answers it against the tree.
 export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // P1 batch 1 — first 6 module faces
   'adsr',
@@ -420,8 +605,14 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   'cube',
   // FACE BATCH 4 · the granular texture processor (2026-08-10) — see above.
   'clouds',
+  // FACE BATCH 4 · the three-tap noise source (2026-08-10) — see above.
+  'noise',
   // FACE BATCH 5 · the analog delay (2026-08-10) — see the header note above.
   'cofefve',
+  // FACE BATCH 4 · the random source (2026-08-11) — see the header note above.
+  'marbles',
+  // FACE BATCH 4 · the exciter-driven resonator (2026-08-11) — see above.
+  'rings',
 ]);
 
 /**

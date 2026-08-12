@@ -51,6 +51,21 @@ import {
   cloudsPositionText,
   cloudsSilenceText,
 } from '$lib/ui/modules/clouds-face-model';
+import { noiseFaceParams, noiseTapDbText } from '$lib/ui/modules/noise-face-model';
+import {
+  marblesBpmText,
+  marblesFaceParams,
+  marblesGateWidthText,
+  marblesGlideText,
+  marblesLoopText,
+  marblesModelText,
+  marblesQuantiserText,
+  marblesRandomText,
+  marblesScaleLiveText,
+  marblesSplitText,
+  marblesStepText,
+  marblesXShapeText,
+} from '$lib/ui/modules/marbles-face-model';
 import {
   asleepText,
   cofefveFaceParams,
@@ -121,6 +136,12 @@ import {
   meowboxTailText,
   meowboxTremoloText,
 } from '$lib/ui/modules/meowbox-face-model';
+import {
+  ringsBodyText,
+  ringsEvenTapText,
+  ringsFaceParams,
+  ringsSecondPartialText,
+} from '$lib/ui/modules/rings-face-model';
 import {
   penteDecayToSustainMs,
   penteModeGainAtCutoff,
@@ -379,6 +400,154 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
   // else. The model reads `MEOWBOX_SUSTAIN` for the "held" figure rather than
   // typing 0.4, so the printed number cannot drift from the envelope constant.
   'meowbox-comb-null': () => meowboxCombNullText(),
+
+  // ── NOISE ────────────────────────────────────────────────────────────────
+  // THREE readouts on a module with ONE param, and the arithmetic is the whole
+  // argument for them. `level` is a single linear gain written to all three tap
+  // gains in the same `setParam` call, so the obvious declaration —
+  // `{ label: 'level', paramId: 'level' }` — prints ONE number, `0.50`, for
+  // THREE outputs that leave the module 12.5 dB and 7.0 dB apart:
+  //
+  //   white  σ = 1/√3            = 0.5774   −4.77 dBFS at LEVEL 1
+  //   pink   σ = 1/√(3·(ROWS+1)) = 0.1400  −17.08      (−12.3 dB vs white)
+  //   brown  σ = NORM·√(¼⅓/(1−a²)) = 0.2558 −11.84      (−7.1 dB vs white)
+  //
+  // That spread is not a tolerance, it is a PROPERTY of three unmatched
+  // generators sharing one fader, and the knob readback is INVARIANT to it —
+  // the exact blindness this registry exists for. Patch WHITE and BROWN into a
+  // two-channel mixer at identical LEVEL and the brown side is 7 dB quiet; no
+  // surface in the repo said so before this face.
+  //
+  // ⚠ WHAT IS DELIBERATELY *NOT* HERE, and why. A `noise-brown-corner-hz`
+  // readout would be the obvious fourth, and it cannot be honest through this
+  // registry: `FaceReadoutValue` is `(read) => string` and receives no sample
+  // rate, while brown's corner MOVES with the interface (70.5 Hz at 44.1 k,
+  // 76.8 at 48 k, 153.6 at 96 k — `LEAK` carries no `sampleRate` term). A live
+  // readout would print one of those three as if it were all of them. The
+  // corner is therefore stated as fixed sidebar prose WITH its rate, and drawn
+  // on the panel; the widened reader stays a platform follow-up.
+  //
+  // Every closed form above is re-derived from the SHIPPING generators on every
+  // run by noise-face-model.test.ts (Welch PSD + measured RMS), with negative
+  // controls in both directions — including the tolerance leg that proves a
+  // 0.5 dB model error would redden it.
+  'noise-white-db': (read) => noiseTapDbText('white', noiseFaceParams(read)),
+  'noise-pink-db': (read) => noiseTapDbText('pink', noiseFaceParams(read)),
+  'noise-brown-db': (read) => noiseTapDbText('brown', noiseFaceParams(read)),
+
+  // ── MARBLES ──────────────────────────────────────────────────────────────
+  // ELEVEN values, every one a BARE number or state — no sentence anywhere on
+  // that faceplate (owner directive 2026-08-11). marbles is the module most
+  // tempted to narrate, because randomness cannot be read off knob positions;
+  // the answer taken here is to pick values that state the fact BY THEMSELVES.
+  //
+  //   `t-random` / `x-random`
+  //              `p = (2·dv − 1)²`, the per-step chance a section departs from
+  //              its loop. It is the reason this module needs a face at all:
+  //              100 % at DÉJÀ VU 0, 0 % at 0.5, and back to 100 % at the top,
+  //              so the number rises again exactly where a player expects it to
+  //              keep falling. A `paramId: 'deja_vu'` readout prints `1.00` at
+  //              the setting that repeats LEAST.
+  //   `t-loop` / `x-loop`
+  //              the length, or `free`. It must NOT print a length at DÉJÀ VU
+  //              0, where LENGTH is bit-exactly inert (one distinct t1 stream
+  //              across lengths 1…16, measured) — that is the negative control,
+  //              and it is the module's shipped default.
+  //   `bpm` / `step`
+  //              `f = 2 Hz·2^(RATE/12)`. Derived because a clock module that
+  //              prints `0 st` has said nothing, and JITTER-invariant because
+  //              a readout of the last interval would not be.
+  //   `model`    the model the DSP RUNS. CLUSTERS is an unimplemented stub that
+  //              falls through to COIN (bit-identical t1 AND t2 at three
+  //              biases, with DRUMS as the control), so this prints
+  //              `CLUSTERS → COIN` rather than asserting a behaviour.
+  //   `t-split`  exact for the two Bernoulli models (`P(t1) = 1 − BIAS`) and a
+  //              bare `—` for the three that have no closed form.
+  //   `gate-width`
+  //              `5 % + 90 %·PW`, beside a fixed `clk 50 %` entry the face
+  //              declares as `text`: two adjacent numbers that disagree say PW
+  //              does not touch the clock without a word of explanation.
+  //   `glide` / `quantiser` / `scales`
+  //              the three that make STEPS legible. At the shipped 0.50 they
+  //              read `0 %` / `off` / `1 of 6` — the portamento has ended at
+  //              0.49, the quantiser starts at 0.536, and the module spawns in
+  //              the gap. `scales` is `scale`-INVARIANT by construction, which
+  //              is the point: it counts how many of the six DIFFER here.
+  //   `x-shape`  both ends of SPREAD are degenerate and neither is a knob
+  //              position: `DC 10·BIAS − 5 V` below 0.01, a two-level ±5 V coin
+  //              flip above 0.99.
+  //
+  // Every one is re-derived from `marblesMath` — a real render of the engine
+  // core the worklet shares — by ORACLE legs in marbles-face-model.test.ts,
+  // with negative controls in both directions.
+  'marbles-bpm': (read) => marblesBpmText(marblesFaceParams(read)),
+  'marbles-step': (read) => marblesStepText(marblesFaceParams(read)),
+  'marbles-t-random': (read) => marblesRandomText(marblesFaceParams(read).deja_vu),
+  'marbles-x-random': (read) => marblesRandomText(marblesFaceParams(read).x_deja_vu),
+  'marbles-t-loop': (read) => {
+    const p = marblesFaceParams(read);
+    return marblesLoopText(p.deja_vu, p.length);
+  },
+  'marbles-x-loop': (read) => {
+    const p = marblesFaceParams(read);
+    return marblesLoopText(p.x_deja_vu, p.x_length);
+  },
+  'marbles-model': (read) => marblesModelText(marblesFaceParams(read)),
+  'marbles-t-split': (read) => marblesSplitText(marblesFaceParams(read)),
+  'marbles-gate-width': (read) => marblesGateWidthText(marblesFaceParams(read)),
+  'marbles-glide': (read) => marblesGlideText(marblesFaceParams(read)),
+  'marbles-quantiser': (read) => marblesQuantiserText(marblesFaceParams(read)),
+  'marbles-scales': (read) => marblesScaleLiveText(marblesFaceParams(read)),
+  'marbles-x-shape': (read) => marblesXShapeText(marblesFaceParams(read)),
+  // ── RINGS ────────────────────────────────────────────────────────────────
+  // THREE, and what they have in common is the constraint that chose them:
+  // every one is SAMPLE-RATE INDEPENDENT, verified against the shipping
+  // worklet at 44.1 / 48 / 96 kHz. That is not a coincidence, it is what is
+  // left after the obvious readout was ruled out — see the block below.
+  //
+  //   `body`       NAMES THE LIVE MODEL, which the MODEL control cannot do for
+  //                itself: it is a 0..1 discrete param with no `options`
+  //                roster, so the dock paints it as an anonymous <Toggle> — a
+  //                two-state switch over two genuinely different instruments
+  //                (a 24-partial band-pass bank against two Karplus-Strong
+  //                loops) that additionally sit 5.37 dB apart at identical
+  //                macros. It also carries STRUCTURE's meaning switch, the
+  //                same class of fact: the slider stretches partial spacing in
+  //                one model and detunes a string pair by up to 19 semitones
+  //                in the other, and its own readback is `0.25` in both.
+  //   `partial 2`  where the second thing IS — and in SYMPATHETIC there is no
+  //                partial 2, there is a second STRING, so the readout SWITCHES
+  //                ITS OWN MEANING with the model or it is lying at half the
+  //                settings this module has. Pinned against the shipping
+  //                worklet: measured ratio 2.0000 / 2.2500 / 2.5000 / 2.7500 /
+  //                3.0000 at structure 0 / .25 / .5 / .75 / 1 against a
+  //                prediction of exactly those. Labelled `knob partial 2` on
+  //                the face for the `cube-f0-knobs` reason — a `valueId` is a
+  //                pure function of PARAMS and can never see the pitch cable.
+  //   `even tap`   THE ONE WITH NO KNOB TO READ. A `paramId: 'position'`
+  //                readout prints `0.25` and `0.75` with no hint that one of
+  //                the two outputs is at DIGITAL ZERO there (measured peak
+  //                5.028e-16 and 1.302e-15 against an unaffected ODD), and
+  //                prints two different numbers at 0.30 and 0.70 which are
+  //                bit-identical settings (max|delta| exactly 0.000e+0).
+  //
+  // ⚠ WHAT IS DELIBERATELY *NOT* HERE, AND WHY — the same shape as `noise`'s
+  // brown corner, an order of magnitude worse. RING TIME is the number this
+  // faceplate most wants: TWO knobs set it and only one says so. It cannot be
+  // printed honestly through this registry. `FaceReadoutValue` is
+  // `(read) => string` and receives no sample rate, and MODAL's T60 depends on
+  // it — measured 3889 / 7420 / 476 ms at 44.1 / 48 / 96 kHz for ONE fixed pair
+  // of knob settings, because the decay constant is `q/(pi*sampleRate)` with no
+  // compensating term. Nor is the ratio a way out: the BRIGHTNESS ring
+  // multiplier measures 18.2x / 25.3x / 3.4x across the same three rates. So
+  // the finding is carried by the band LABEL ("2 · ring time — BOTH set it",
+  // which paints unconditionally where a hint does not) and the corrected
+  // `docs.controls.brightness` — and the rate dependence is documented on the
+  // def as the DSP defect it is. (An earlier draft also cited the sidebar; this
+  // face no longer has one, per the signal-flow ruling.)
+  'rings-body': (read) => ringsBodyText(ringsFaceParams(read)),
+  'rings-partial2-hz': (read) => ringsSecondPartialText(ringsFaceParams(read)),
+  'rings-even-tap-state': (read) => ringsEvenTapText(ringsFaceParams(read)),
 
   // ── PENTEMELODICA ────────────────────────────────────────────────────────
   // `at cutoff` is a function of MODE **and** RESONANCE — a MODE readout would

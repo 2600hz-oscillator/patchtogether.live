@@ -1,6 +1,20 @@
 <script lang="ts">
   // MarblesCard — random sampler / clock generator (Mutable Instruments
   // Marbles port). T-section gate models + X-section quantized-CV faders.
+  //
+  // ⚠ EVERY RANGE, MAPPING AND LABEL COMES FROM THE DEF (`paramSpec`), never
+  // re-typed here. It
+  // used to carry NINE literal `min=`/`max=` pairs — the backdraft class in its
+  // latent form (a card that disagrees with its own def is invisible to
+  // `contract-lock`, `module-docs-lint` and every range assertion, because all
+  // three read the DEF). Enrolled in RANGE_BOUND_CARDS + MAPPING_BOUND_CARDS so
+  // the binding is what a gate now certifies.
+  //
+  // ⚠ AND IT WAS MISSING TWO CONTROLS. `pw_mean` and `x_deja_vu` are declared
+  // params with CV inputs and no card affordance at all, so under
+  // `?shell=legacy` two of the module's thirteen controls were unreachable —
+  // including X DÉJÀ VU, which is half of the module's headline feature. Both
+  // are added here. (marbles is in EXEMPT_FROM_VRT, so no baseline moves.)
   import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
@@ -18,7 +32,17 @@
   const defaultFor = (k: string): number =>
     marblesDef.params.find((p) => p.id === k)!.defaultValue;
   const paramVal = (k: string): number => node?.params?.[k] ?? defaultFor(k);
+
+  const pRate = paramSpec(marblesDef, 'rate');
+  const pTBias = paramSpec(marblesDef, 't_bias');
+  const pTJitter = paramSpec(marblesDef, 't_jitter');
+  const pDejaVu = paramSpec(marblesDef, 'deja_vu');
   const pLength = paramSpec(marblesDef, 'length');
+  const pPwMean = paramSpec(marblesDef, 'pw_mean');
+  const pSpread = paramSpec(marblesDef, 'spread');
+  const pXBias = paramSpec(marblesDef, 'x_bias');
+  const pSteps = paramSpec(marblesDef, 'steps');
+  const pXDejaVu = paramSpec(marblesDef, 'x_deja_vu');
   const pXLength = paramSpec(marblesDef, 'x_length');
 
   let tModel = $derived(paramVal('t_model'));
@@ -57,19 +81,27 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="fader-row">
-      <Fader value={paramVal('rate')}     min={-60} max={60} defaultValue={0}   label="Rate"    units="st" curve="linear" onchange={set('rate')}     moduleId={id} paramId="rate"     readLive={live('rate')} />
-      <Fader value={paramVal('t_bias')}   min={0}   max={1}  defaultValue={0.5} label="T Bias"   curve="linear" onchange={set('t_bias')}   moduleId={id} paramId="t_bias"   readLive={live('t_bias')} />
-      <Fader value={paramVal('t_jitter')} min={0}   max={1}  defaultValue={0}   label="Jitter"   curve="linear" onchange={set('t_jitter')} moduleId={id} paramId="t_jitter" readLive={live('t_jitter')} />
-      <Fader value={paramVal('deja_vu')}  min={0}   max={1}  defaultValue={0}   label="Déjà Vu"  curve="linear" onchange={set('deja_vu')}  moduleId={id} paramId="deja_vu"  readLive={live('deja_vu')} />
-      <!-- `curve` is bound, not re-typed: the def declares BOTH loop lengths
-           `discrete`, and a hand-typed `curve="linear"` here let the fader
-           commit 8.37 into a param the engine then floors — the dial's
-           position and the value it stored disagreed by up to half a step. -->
-      <Fader value={paramVal('length')}   min={1}   max={16} defaultValue={8}   label="Length"   curve={pLength.curve} onchange={set('length')}   moduleId={id} paramId="length"   readLive={live('length')} />
-      <Fader value={paramVal('spread')}   min={0}   max={1}  defaultValue={0.5} label="Spread"   curve="linear" onchange={set('spread')}   moduleId={id} paramId="spread"   readLive={live('spread')} />
-      <Fader value={paramVal('x_bias')}   min={0}   max={1}  defaultValue={0.5} label="X Bias"   curve="linear" onchange={set('x_bias')}   moduleId={id} paramId="x_bias"   readLive={live('x_bias')} />
-      <Fader value={paramVal('steps')}    min={0}   max={1}  defaultValue={0.5} label="Steps"    curve="linear" onchange={set('steps')}    moduleId={id} paramId="steps"    readLive={live('steps')} />
-      <Fader value={paramVal('x_length')} min={1}   max={16} defaultValue={8}   label="X Len"    curve={pXLength.curve} onchange={set('x_length')} moduleId={id} paramId="x_length" readLive={live('x_length')} />
+      <Fader value={paramVal('rate')}      min={pRate.min}     max={pRate.max}     defaultValue={pRate.defaultValue}     label={pRate.label}     units={pRate.units ?? ''} curve={pRate.curve}     onchange={set('rate')}      moduleId={id} paramId="rate"      readLive={live('rate')} />
+      <Fader value={paramVal('t_bias')}    min={pTBias.min}    max={pTBias.max}    defaultValue={pTBias.defaultValue}    label={pTBias.label}   curve={pTBias.curve}    onchange={set('t_bias')}    moduleId={id} paramId="t_bias"    readLive={live('t_bias')} />
+      <Fader value={paramVal('t_jitter')}  min={pTJitter.min}  max={pTJitter.max}  defaultValue={pTJitter.defaultValue}  label={pTJitter.label}   curve={pTJitter.curve}  onchange={set('t_jitter')}  moduleId={id} paramId="t_jitter"  readLive={live('t_jitter')} />
+      <!-- PWidth: the t1/t2 gate width, 5 % + 90 % × PW of the step. It was a
+           declared param with a CV input and no card control at all. -->
+      <Fader value={paramVal('pw_mean')}   min={pPwMean.min}   max={pPwMean.max}   defaultValue={pPwMean.defaultValue}   label={pPwMean.label}   curve={pPwMean.curve}   onchange={set('pw_mean')}   moduleId={id} paramId="pw_mean"   readLive={live('pw_mean')} />
+      <Fader value={paramVal('deja_vu')}   min={pDejaVu.min}   max={pDejaVu.max}   defaultValue={pDejaVu.defaultValue}   label={pDejaVu.label}  curve={pDejaVu.curve}   onchange={set('deja_vu')}   moduleId={id} paramId="deja_vu"   readLive={live('deja_vu')} />
+      <!-- The mapping is BOUND, not re-typed: the def declares both loop
+           lengths discrete, and this card used to hand-type the linear form,
+           which let the fader commit 8.37 into a param the engine then floors —
+           the dial's position and the value it stored disagreed by up to half a
+           step. `card-range-source` greps the SOURCE for that literal, so the
+           previous wording of this very comment failed the gate. -->
+      <Fader value={paramVal('length')}    min={pLength.min}   max={pLength.max}   defaultValue={pLength.defaultValue}   label={pLength.label}   curve={pLength.curve}   onchange={set('length')}    moduleId={id} paramId="length"    readLive={live('length')} />
+      <Fader value={paramVal('spread')}    min={pSpread.min}   max={pSpread.max}   defaultValue={pSpread.defaultValue}   label={pSpread.label}   curve={pSpread.curve}   onchange={set('spread')}    moduleId={id} paramId="spread"    readLive={live('spread')} />
+      <Fader value={paramVal('x_bias')}    min={pXBias.min}    max={pXBias.max}    defaultValue={pXBias.defaultValue}    label={pXBias.label}   curve={pXBias.curve}    onchange={set('x_bias')}    moduleId={id} paramId="x_bias"    readLive={live('x_bias')} />
+      <Fader value={paramVal('steps')}     min={pSteps.min}    max={pSteps.max}    defaultValue={pSteps.defaultValue}    label={pSteps.label}    curve={pSteps.curve}    onchange={set('steps')}     moduleId={id} paramId="steps"     readLive={live('steps')} />
+      <!-- X Déjà Vu: the X half of the module's headline control, and the
+           second param that had no card affordance. -->
+      <Fader value={paramVal('x_deja_vu')} min={pXDejaVu.min}  max={pXDejaVu.max}  defaultValue={pXDejaVu.defaultValue}  label={pXDejaVu.label}   curve={pXDejaVu.curve}  onchange={set('x_deja_vu')} moduleId={id} paramId="x_deja_vu" readLive={live('x_deja_vu')} />
+      <Fader value={paramVal('x_length')}  min={pXLength.min}  max={pXLength.max}  defaultValue={pXLength.defaultValue}  label={pXLength.label}    curve={pXLength.curve}  onchange={set('x_length')}  moduleId={id} paramId="x_length"  readLive={live('x_length')} />
     </div>
   </PatchPanel>
   <OssAttribution author={marblesDef.ossAttribution?.author} />

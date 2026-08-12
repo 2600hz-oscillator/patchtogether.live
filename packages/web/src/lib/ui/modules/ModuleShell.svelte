@@ -94,6 +94,7 @@
     laneBodyPlan,
     roleLineForDef,
     DOCK_HERO_GLYPH_W,
+    PLATE_ROW_H,
     hasVideoSurface,
     type ShellDefLike,
   } from '$lib/ui/workflow/module-shell-model';
@@ -193,8 +194,14 @@
   // design-time constant): which layout (row/plate), how many WHOLE cells, and
   // whether the glyph fits. Lane views only — the dock faceplate wraps freely
   // and always shows everything.
+  // `face.cellH` — the tallest cell KIND this face paints. Passed rather than
+  // assumed: the plate's `grid-auto-rows` is a FIXED track, so a cell taller
+  // than the track paints OVER the next row instead of being clipped (marbles,
+  // 2026-08-11: 50.0 CSS px of overlap per column, three columns).
   let lanePlan = $derived(
-    view === 'lane' ? laneBodyPlan(controls.length, hasGlyph, effTier) : null,
+    view === 'lane'
+      ? laneBodyPlan(controls.length, hasGlyph, effTier, face?.cellH ?? PLATE_ROW_H)
+      : null,
   );
 
   // Whether the glyph cell RENDERS in the current view/tier — the dock hero
@@ -1251,6 +1258,8 @@
       class:center={cells.length === 0}
       class:plate={lanePlan?.layout === 'plate'}
       data-body-layout={lanePlan?.layout ?? 'row'}
+      data-plate-row-h={lanePlan?.layout === 'plate' ? lanePlan.rowH : undefined}
+      style:--plate-row-h={lanePlan?.layout === 'plate' ? `${lanePlan.rowH}px` : undefined}
     >
       {#each cells as ctl (ctl.key)}
         {@render controlCell(ctl, lanePlan?.knobSize ?? 'md')}

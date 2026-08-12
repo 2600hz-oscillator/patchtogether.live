@@ -36,6 +36,7 @@ import { staticKey, type LegendEntry } from '$lib/docs/control-doc-resolver';
 import { STRICT_FACES } from './strict-faces';
 import { curatedFace, dockFacePlan, dockPlanControls, type FaceDefLike } from './curated-face';
 import { DOCK_TAB_MIN_BANDS, dockTabPlan } from './dock-tabs-model';
+import { glyphBinding } from './shell-glyph-live';
 import {
   bandHeaderPlan,
   faceAnnotations,
@@ -224,6 +225,74 @@ describe('module-face lint — consistency (all faced modules)', () => {
     }
     expect(problems.join('\n'), 'invalid glyph / duplicate rank — fix the face').toBe('');
   });
+
+  /**
+   * Every problem with the glyphs a def DECLARES: a declared glyph must resolve
+   * to a LIVE binding. Pure; `bind` is injected so the negative controls can
+   * drive the same predicate the sweep drives.
+   */
+  function deadGlyphProblems(
+    defs: readonly { type: string; face?: { glyph?: string } }[],
+    bind: (def: unknown) => { kind: string },
+  ): string[] {
+    const problems: string[] = [];
+    for (const def of defs) {
+      const glyph = def.face?.glyph;
+      if (!glyph || glyph === 'none') continue;
+      const kind = bind(def).kind;
+      if (kind === 'static') {
+        problems.push(
+          `${def.type}: face.glyph='${glyph}' resolves to a STATIC binding — nothing feeds it. ` +
+            `A 'meter' with no tap renders twelve segments at VuMeter's \`level = 0\` default and ` +
+            `a 'scope' renders a fixed trace, so the tile paints a live-looking readout of ` +
+            `NOTHING. Give the module a seam the resolver can bind (glyphBinding: a primary ` +
+            `AUDIO output, an A/D/S/R set, an \`algorithm\` param, a 0..2 \`shape\`), or declare ` +
+            `\`glyph: 'none'\`.`,
+        );
+      }
+    }
+    return problems;
+  }
+
+  it('no declared glyph resolves to a DEAD (static) binding', () => {
+    // ⚠ WRITTEN BECAUSE marbles SHIPPED EXACTLY THIS THROUGH THREE PASSES
+    // (2026-08-11). It declared `glyph: 'meter'` on the argument that it
+    // free-runs and a meter is what a 64 px tile can honestly say — but
+    // `primaryAudioOutPortId` matches `type === 'audio'`, and marbles declares
+    // none (t1/t2/clk are `gate`, x1/x2/x3 are `cv`). `glyphBinding` fell
+    // through to `static`, `tap` was undefined, and the tile painted a meter
+    // that could never move. NOTHING in the repo could see it: the VRT baseline
+    // captures a dead meter perfectly deterministically, faces-parity does not
+    // read the glyph, and the declaration itself is valid.
+    //
+    // UNCONDITIONAL, with NO exemption list and NO count, because the whole
+    // faced roster already satisfies it: every declared glyph resolves to a
+    // live binding (`live-audio` for the great majority, plus adsr's
+    // `env-params`, dx7's `algorithm`, lfo's `wave-morph` and tidyVco's
+    // `dual`), and the only `none` is marbles. A face that wants a glyph its
+    // module cannot feed should say `none` and get the extra lane cell
+    // instead.
+    expect(deadGlyphProblems(allDefs() as never, (d) => glyphBinding(d as never))).toEqual([]);
+  });
+
+  it('NEGATIVE CONTROL: the dead-glyph predicate fires, and only on the dead case', () => {
+    // Both directions against the REAL resolver, so the clause above cannot be
+    // vacuously green: a module with a gate-only output and a `meter` is the
+    // exact shape marbles had, and adding one audio output is the only change.
+    const gateOnly = {
+      type: 'synthetic',
+      outputs: [{ id: 't1', type: 'gate' }],
+      params: [],
+      face: { order: [], glyph: 'meter' },
+    };
+    const withAudio = { ...gateOnly, outputs: [{ id: 'out', type: 'audio' }] };
+    const noGlyph = { ...gateOnly, face: { order: [], glyph: 'none' } };
+
+    expect(glyphBinding(gateOnly as never).kind, 'the dead shape really is static').toBe('static');
+    expect(deadGlyphProblems([gateOnly] as never, (d) => glyphBinding(d as never))).toHaveLength(1);
+    expect(deadGlyphProblems([withAudio] as never, (d) => glyphBinding(d as never))).toEqual([]);
+    expect(deadGlyphProblems([noGlyph] as never, (d) => glyphBinding(d as never))).toEqual([]);
+  });
 });
 
 describe('module-face lint — completeness (STRICT_FACES set)', () => {
@@ -404,6 +473,20 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
     // but the render kind and this classification answer different questions
     // (see paramCellKind's closing note), so it still needs acknowledging here.
     'cofefve:clockSource',
+    // RINGS, 2026-08-11. The RESONATOR MODEL selector — MODAL (0) against
+    // SYMPATHETIC (1). `0..1 discrete resting at 0` is the press-pad shape by
+    // coincidence of arity: this is a two-state choice you make and leave, and
+    // the worklet reads its LEVEL every sample (`modelIdx` selects which of the
+    // two engines produces the block) rather than edge-detecting it, so a
+    // momentary render would snap the instrument back to MODAL on release.
+    // ⚠ IT DOES *NOT* DECLARE `options`, unlike cofefve's sibling above, so it
+    // paints as an ANONYMOUS <Toggle>. That is a known wart rather than an
+    // oversight: `MODAL`/`SYMPATHETIC` is a 5-against-11-character roster and
+    // `.seg` is `flex: 1` (flex-BASIS 0), so the two buttons split the group
+    // equally and the longer caption is guaranteed to ellipsize — the
+    // shared-primitive defect cofefve measured and left for its own PR. The
+    // face's `rings-body` hero readout names the live model instead.
+    'rings:model',
     // REMOVED 2026-07-27 — 'tidyVco:hold'. The acknowledgement was WRONG (it
     // claimed "sample-and-hold ENGAGE"): the card drives it pointerdown/
     // CUBE, 2026-08-10. Three states you switch and leave: WRAP is a rule
@@ -1541,7 +1624,6 @@ describe('module-face lint — FACEPLATE STRUCTURE (PF-20: hero / sidebar / hint
           ],
         },
         sidebar: [
-          { kind: 'signal-flow', label: 'flow', stages: [{ label: 'SUB', role: 'generator' }] },
           { kind: 'presets', label: 'p', entries: [{ id: 'a', label: 'A', values: { tune: 60 } }] },
           { kind: 'readouts', label: 'r', entries: [{ label: 'pitch', paramId: 'tune' }] },
           { kind: 'custom', label: 'c', panelId: 'stereo-crossover' },

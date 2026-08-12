@@ -116,7 +116,10 @@ const UNEXERCISED_BY_FACES_PARITY: Readonly<Record<string, { why: string; covere
 interface FaceDefLike {
   type: string;
   params?: readonly ParamDef[];
-  face?: { momentary?: readonly string[]; paramCells?: Readonly<Record<string, 'grid' | 'color'>> };
+  face?: {
+    momentary?: readonly string[];
+    paramCells?: Readonly<Record<string, 'grid' | 'color' | 'fader'>>;
+  };
 }
 
 function allDefs(): FaceDefLike[] {

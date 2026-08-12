@@ -24,10 +24,13 @@
 
 import type { ModuleFace, ModuleFacePage } from '$lib/graph/types';
 import {
+  LANE_CELL_H,
   LANE_ROW_MAX_CELLS,
   LANE_ROW_MAX_CELLS_WITH_GLYPH,
   PLATE_COLS,
   PLATE_MAX_ROWS,
+  PLATE_ROW_H,
+  laneBodyPlan,
 } from './module-shell-model';
 
 /** The curation LADDER — the tiers a face is sliced into. Distinct from the
@@ -67,15 +70,50 @@ export const FACE_TIER_CAPS: Record<FaceTier, number> = {
 };
 
 /**
+ * The tallest LANE CELL a face paints, in CSS px — the height the plate's row
+ * geometry has to accommodate.
+ *
+ * ⚠ ONLY DECLARED CELLS CAN BE TALL, and that is what makes this computable
+ * from the face alone (no ParamDefs, so `FaceDefLike` is enough). `fader` — the
+ * one kind taller than a plate row — is a `DeclaredParamCell`: nothing in a
+ * ParamDef implies it, so it can only arrive through `face.paramCells`. The
+ * invariant is not left to prose: `curated-face.test.ts` asserts that EVERY
+ * kind in `LANE_CELL_H` taller than `PLATE_ROW_H` is declarable, so an inferred
+ * kind that grows tall fails there instead of silently reading as short here.
+ *
+ * Scanned over the ranked prefix that can REACH the lane, not the whole order —
+ * a fader parked at rank 9 is dock-only and must not shrink the lane plate.
+ */
+export function faceLaneCellHeight(face: ModuleFace | undefined): number {
+  if (!face) return PLATE_ROW_H;
+  const declared = face.paramCells ?? {};
+  let h = PLATE_ROW_H;
+  for (const key of face.order.slice(0, LANE_PLATE_MAX_CELLS)) {
+    const kind = declared[key as keyof typeof declared];
+    if (kind) h = Math.max(h, LANE_CELL_H[kind]);
+  }
+  return h;
+}
+
+/**
  * The EFFECTIVE cap for a tier — the ladder, reconciled with the lane fit plan.
  * At 'compact' a glyph-bearing face surfaces two cells (the glyph takes the
  * third column's room) and a glyph-less face three; at 'full' the plate holds
- * six either way (ranked controls outrank the glyph, which simply drops when
- * the cells need both rows). Every other tier is the plain ladder value. Pure.
+ * six DESIGN cells (ranked controls outrank the glyph, which simply drops when
+ * the cells need both rows) — but only THREE when the face's cells are faders,
+ * because a 96px cell leaves room for one plate row rather than two.
+ *
+ * ⚠ THE CAP IS THE PLAN'S OWN ANSWER, not a parallel derivation. It asks
+ * `laneBodyPlan` what it would render given unlimited controls, so "selected"
+ * and "rendered" cannot drift BY CONSTRUCTION rather than by a test noticing.
+ * They previously drifted twice (compact promised 3 and painted 2; full
+ * promised 8 and painted 6), and the marbles overlap would have made it three:
+ * the cap would have kept saying 6 while the tile could only hold 3.
+ * Pure.
  */
-export function faceTierCap(tier: FaceTier, hasGlyph: boolean): number {
-  if (tier === 'compact') return hasGlyph ? LANE_ROW_MAX_CELLS_WITH_GLYPH : LANE_ROW_MAX_CELLS;
-  return FACE_TIER_CAPS[tier];
+export function faceTierCap(tier: FaceTier, hasGlyph: boolean, cellH: number = PLATE_ROW_H): number {
+  if (tier === 'dock') return FACE_TIER_CAPS.dock;
+  return laneBodyPlan(Number.MAX_SAFE_INTEGER, hasGlyph, tier, cellH).cellCount;
 }
 
 export type FaceControlKind = 'param' | 'family' | 'static';
@@ -125,6 +163,13 @@ export interface CuratedFace {
   controls: FaceControl[];
   glyph: NonNullable<ModuleFace['glyph']>;
   pages?: ResolvedFacePage[];
+  /**
+   * The tallest LANE CELL this face paints (CSS px) — `faceLaneCellHeight`.
+   * Carried on the result so the SHELL and the CAP read the same number from
+   * the same call instead of each re-deriving it; a second derivation is how
+   * the planner and the renderer disagreed in the first place.
+   */
+  cellH: number;
 }
 
 /** Minimal def shape the selector reads — works for AudioModuleDef,
@@ -227,7 +272,8 @@ export function curatedFace(def: FaceDefLike, tier: FaceTier): CuratedFace | nul
   if (!face) return null;
 
   const glyph = face.glyph ?? 'none';
-  const cap = faceTierCap(tier, glyph !== 'none');
+  const cellH = faceLaneCellHeight(face);
+  const cap = faceTierCap(tier, glyph !== 'none', cellH);
   const ranked = face.order.map((k) => resolveFaceControl(k, def));
   const controls = Number.isFinite(cap) ? ranked.slice(0, cap) : ranked;
 
@@ -235,6 +281,7 @@ export function curatedFace(def: FaceDefLike, tier: FaceTier): CuratedFace | nul
     tier,
     controls,
     glyph,
+    cellH,
   };
   if (tier === 'dock' && face.pages && face.pages.length) {
     out.pages = face.pages.map((p) => resolvePage(p, def));
