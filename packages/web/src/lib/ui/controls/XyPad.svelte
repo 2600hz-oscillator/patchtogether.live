@@ -68,20 +68,6 @@
     xParamId?: string;
     /** Param id the VERTICAL axis drives (for the Y assign button). */
     yParamId?: string;
-    /**
-     * Optional readout formatters, per axis.
-     *
-     * ⚠ THEY EXIST BECAUSE AN AXIS IS NOT ALWAYS IN THE PARAM'S OWN UNITS. A
-     * LOG param (wavesculpt's `zoom`, 0.3..3 curve 'log') has to be driven in
-     * LOG SPACE or the pad's linear travel puts unity at 10 % instead of
-     * halfway — so the caller passes `log(v)` as the axis value and converts
-     * back at `onXChange`. Without a formatter the readout then prints the log
-     * coordinate: MEASURED, the VIEW pad read `ZM 0.00` at zoom 1.00, because
-     * ln(1) is 0. Every text assertion still passed; it was caught by looking
-     * at the rendered dock.
-     */
-    xFormat?: (v: number) => string;
-    yFormat?: (v: number) => string;
   }
 
   let {
@@ -103,8 +89,6 @@
     moduleId,
     xParamId,
     yParamId,
-    xFormat,
-    yFormat,
   }: Props = $props();
 
   function clampX(v: number): number { return Math.min(xMax, Math.max(xMin, v)); }
@@ -291,8 +275,8 @@
     ></div>
   </div>
   <div class="xy-readout" data-testid={testid ? `${testid}-readout` : undefined}>
-    <span>{xLabel} <strong>{xFormat ? xFormat(dispX) : fmt(dispX)}</strong></span>
-    <span>{yLabel} <strong>{yFormat ? yFormat(dispY) : fmt(dispY)}</strong></span>
+    <span>{xLabel} <strong>{fmt(dispX)}</strong></span>
+    <span>{yLabel} <strong>{fmt(dispY)}</strong></span>
   </div>
 
   {#if assignable}
