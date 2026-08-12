@@ -693,7 +693,26 @@ jobs:
     name: e2e (shard ${{ matrix.shard }}/10)
     needs: [dsp-build, build-web]
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # ⚠ HUNG-JOB SAFETY CAP, NOT A PERFORMANCE GATE — and it has to clear the
+    # --global-timeout below PLUS this job's non-Playwright overhead, or the
+    # timeout can never fire and the shard dies mute (which is the whole reason
+    # the guard exists). Measured 2026-08-12, job minus Playwright step, across
+    # three green main runs:
+    #
+    #     149 149 150 153 156 157 161 165 179 183   → MAX 183 s
+    #
+    # 183 s already EXCEEDS the 180 s that ci-playwright-timeout.test.ts's
+    # MIN_MARGIN_MIN encodes, so at the old 20 min ceiling a 17 min budget gives
+    # 1020 + 183 = 1203 s against 1200 — the job is killed ~3 s BEFORE
+    # Playwright would have exited on its own terms and written its report. The
+    # margin invariant is necessary but, on this job, not sufficient.
+    #
+    # 25 min restores real slack: 1020 + 183 = 1203 s against 1500 s.
+    #
+    # ⚠ THIS ADDS NO CI WALL-TIME. A cap only decides when a HUNG job is killed;
+    # the slowest healthy shard still finishes in ~16 min end to end. Same
+    # reasoning, and the same week, as the `unit` job's 10 → 20 (see above).
+    timeout-minutes: 25
 
     strategy:
       # Don't fail-fast: if shard 1 fails on a flake, we still want shards
