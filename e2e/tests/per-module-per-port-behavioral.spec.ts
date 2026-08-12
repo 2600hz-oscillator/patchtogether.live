@@ -77,6 +77,7 @@ import {
 } from './_module-coverage-helpers';
 import { REGISTRY, type RegistryModule } from './_registry';
 import { driverFor, type ModuleDriver } from './_drivers';
+import { collectPageErrors } from './_page-errors';
 
 // ────────── Module-level skips ──────────
 // Modules whose card can't render under bare spawnPatch (mirrors
@@ -3338,17 +3339,10 @@ async function populateAllSequencerSteps(page: Page, heldNoteDriver = false): Pr
 }
 
 // ────────── Console error filter ──────────
-// Same heuristic as per-module-per-port.spec.ts.
-function filterErrors(errors: string[]): string[] {
-  return errors.filter((e) =>
-    !e.includes('AudioContext')
-    && !e.includes('doom.js')
-    && !e.includes('DOOM1.WAD')
-    && !e.includes('[vite]')
-    && !e.includes('Failed to load resource')
-    && !(e.includes('[reconciler] reconcile failed') && e.includes('disconnect')),
-  );
-}
+// Shared with per-module-per-port.spec.ts + gibribbon.spec.ts — see
+// `_page-errors.ts`. The private copy that used to live here dropped EVERY
+// "Failed to load resource" unconditionally, so a 404'd worklet was invisible
+// to this sweep too.
 
 // ────────── Tests ──────────
 
@@ -3424,11 +3418,7 @@ test.describe('per-module per-port: BEHAVIORAL input coverage (output changes on
     // on a retry. Not done here: it needs a repro on the real sweep, and this
     // session's remit was the gates, not this module.
     test(title, async ({ page }) => {
-      const errors: string[] = [];
-      page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
-      page.on('console', (m) => {
-        if (m.type() === 'error') errors.push(`console: ${m.text()}`);
-      });
+      const errors = collectPageErrors(page);
 
       const driver = driverFor(mod);
       // When set, the driver sequencer plays one constant held note (stable
@@ -3633,8 +3623,9 @@ test.describe('per-module per-port: BEHAVIORAL input coverage (output changes on
       ).toEqual([]);
 
       expect(
-        filterErrors(errors),
-        `${mod.type} behavioral: no console / page errors during input drive`,
+        errors.significant(),
+        `${mod.type} behavioral: no console / page errors during input drive (a failed resource `
+        + `load reads as "Failed to load resource" with the url in brackets; see _page-errors.ts)`,
       ).toEqual([]);
     });
   }

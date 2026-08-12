@@ -21,6 +21,7 @@
 import { test, expect } from './_fixtures';
 import { type Page } from '@playwright/test';
 import { spawnPatch, type SpawnNode, type SpawnEdge } from './_helpers';
+import { collectPageErrors } from './_page-errors';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -179,9 +180,7 @@ async function readScopePeak(page: Page, scopeNodeId: string): Promise<{ peak: n
 }
 
 test('gibribbon: card mounts cleanly + 1024×576 canvas renders the white ribbon', async ({ page }) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+  const errors = collectPageErrors(page);
 
   await page.goto('/rack?shell=legacy&seed=none');
   await page.waitForLoadState('networkidle');
@@ -220,17 +219,18 @@ test('gibribbon: card mounts cleanly + 1024×576 canvas renders the white ribbon
   });
   expect(nonBg).toBeGreaterThan(50); // the white ribbon line is ≥ this many lit px
 
-  // Filter benign noise: AudioContext autoplay warnings, and the DOOM1.WAD
-  // 404 (the WAD is gitignored + absent in CI — GibRibbon falls back to
-  // line-art figures by design; sprite decode is unit-tested separately).
-  const real = errors.filter(
-    (e) =>
-      !e.includes('AudioContext') &&
-      !e.includes('DOOM1.WAD') &&
-      !/404 \(Not Found\)/.test(e) &&
-      !e.includes('Failed to load resource'),
-  );
-  expect(real).toEqual([]);
+  // Benign noise is decided in ONE place (`_page-errors.ts`): AudioContext
+  // autoplay warnings, and a failed load of a NAMED optional asset — here
+  // /doom/DOOM1.WAD, which GibRibbon reads for its gib sprites and which is
+  // gitignored + user-supplied, so it falls back to line-art figures by design
+  // (sprite decode is unit-tested separately).
+  //
+  // The three clauses this replaces were `DOOM1.WAD` + `/404 \(Not Found\)/` +
+  // `Failed to load resource` — the last two of which dropped EVERY failed
+  // resource load in the product, not just the WAD's. This spec is the one
+  // place in the repo where that 404 genuinely happens, so it is also the place
+  // most likely to hide a second, real one behind it.
+  expect(errors.significant()).toEqual([]);
 });
 
 test('gibribbon: AUTOPLAY — a bare card (no clock/CV patched) self-plays', async ({ page, rack }) => {
