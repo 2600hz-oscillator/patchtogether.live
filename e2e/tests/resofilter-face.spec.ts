@@ -24,14 +24,25 @@
 //      against the model; this pins the model against what the panel actually
 //      shows after the button is pressed, which is the other half of the loop.
 //
-// ⚠ WHAT THIS FILE DELIBERATELY DOES NOT ASSERT: that the five MODE captions
-// are legible. Three of them (`HP`, `NT`, `AP`) are ellipsized to `H…`, `N…`,
-// `A…` at the dock — measured, and the same state the shipped `filter` dock has
-// been in since #1430 — and NO DOM predicate can see it: `textContent` is
-// untouched by an ellipsis, `scrollWidth === clientWidth` for a single line,
-// and `measureText` drops `letter-spacing` (0.6 px × 2 chars, which is the
-// whole deficit). The VRT dock baseline is the only surface that can, and
-// `e2e/vrt/_shell-faces.ts` says what it is expected to show.
+// ⚠ THE MODE CAPTIONS USED TO BE ELLIPSIZED HERE, AND THIS NOTE USED TO SAY NO
+// DOM PREDICATE COULD SEE IT. Both halves are now out of date, and the second
+// was the more interesting mistake.
+//
+// `HP`, `NT` and `AP` rendered as `H…`, `N…`, `A…` at the dock — measured, and
+// the same state the shipped `filter` dock had been in since #1430 — because
+// `.seg` was `flex: 1` (= `1 1 0%`), which makes every button the width of the
+// AVERAGE caption. Fixed 2026-08-12 with `flex: 1 1 auto`.
+//
+// The claim that only a VRT baseline could see it was wrong in a way worth
+// keeping: `textContent` is indeed untouched by an ellipsis, `measureText` does
+// drop `letter-spacing` (0.6 px × 2 chars — the whole deficit on two of the
+// three), and `scrollWidth`/`clientWidth` are integer-quantised so they catch
+// it only when the box happens to round down. But comparing the caption's own
+// INLINE BOX (a Range rect) against the box that paints it is sub-pixel, is
+// pure DOM, and reports exactly the 0.719 / 0.422 / 0.203 px overflows. That
+// predicate now sweeps every migrated face's dock in
+// `faceplate-platform.spec.ts` — "no gate can see this" turned out to mean "no
+// gate had been pointed at it".
 
 import { test, expect, type Locator, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
