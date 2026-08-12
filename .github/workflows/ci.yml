@@ -200,6 +200,26 @@ jobs:
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: patchtogether_test
         ports:
+          # ⚠ THE FIXED HOST PORT DOES NOT COLLIDE UNDER CONCURRENCY — checked
+          # 2026-08-12, because it looks like it should and keeps being
+          # re-investigated.
+          #
+          # Every `runs-on:` in this repo is `ubuntu-latest` (57/57 across all
+          # workflows; no self-hosted runners), and a GitHub-HOSTED job gets its
+          # own dedicated VM. A service container publishes into THAT VM's
+          # network namespace, so two concurrent jobs are two separate hosts and
+          # there is nothing to contend for. Corroborating: six other workflows
+          # publish `5432:5432` — the DEFAULT postgres port, maximally
+          # collision-prone if a host were ever shared — with no history of it.
+          #
+          # The port is also load-bearing, so do not churn it: it matches the
+          # `localhost:54320` fallback in rackspaces-capacity.test.ts (line 31)
+          # that lets that test run against a local Postgres with no PG_TEST_URL.
+          #
+          # This reasoning DOES expire if a self-hosted runner is ever added
+          # with more than one concurrent job per machine. At that point make
+          # the host port dynamic and set PG_TEST_URL from it — do not just
+          # pick a different constant.
           - 54320:5432
         options: >-
           --health-cmd pg_isready
