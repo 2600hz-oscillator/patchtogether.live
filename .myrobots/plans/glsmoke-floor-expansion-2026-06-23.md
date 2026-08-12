@@ -34,6 +34,8 @@ NOT the 4090 self-hosted runner (shelved; memo
 >   wants; just do not read the reverse operation as free.
 > - The REAL-GPU-ONLY / INFRA-GATED classification below is the durable part and
 >   is still the reference for what can never join the floor.
+> **Re-checked 2026-08-12:** `e2e/tests/peakstate-render-smoke.spec.ts` still
+> carries no `@webgl-smoke` tag, so the cheapest win named here is still unbuilt.
 
 ## The classification of the 21 SwiftShader-FAILING heavy specs (gl-ci-viability workflow)
 **14 convertible-to-SwiftShader · 5 real-gpu-only · 2 infra-gated.**
@@ -72,8 +74,8 @@ pure UI/store ones convert, the ones that assert worker pixels may not):
 
 ## Attest hardening backlog (the OTHER prong)
 - caffeinate -dimsu wrap: **already done** (scripts/webgl-attest.sh:26). task #150 stale.
-- JSON-store prune: ci-webgl-attest/ is 50 files, only ever grows; add a prune
-  (keep only the live hash; git retains history) → kills the manual git-rm-superseded step.
+- ~~JSON-store prune: ci-webgl-attest/ is 50 files, only ever grows~~ — **DONE.**
+  `ci-webgl-attest/` holds 2 files on `main` as of 2026-08-12.
 - #151 toybox real-GPU flake: the 5 real-gpu-only specs (esp the toybox worker ones)
   must be rock-solid in the attest — they're the irreducible set.
 - Clearer preflightSolo messaging for the co-tenant (Edge) refusals.

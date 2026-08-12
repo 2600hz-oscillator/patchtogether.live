@@ -50,9 +50,9 @@ The blind analyst reconstructed the whole estate: unit (web 493 / dsp 37 / serve
 **⚠️ ACTION ITEMS — real, verified, ours to fix:**
 
 1. **`collab-attest` does not gate the merge umbrella** — the blind agent flagged this as a P0 bug, but checking our actual `ci.yml` shows it is **INTENTIONAL, not a bug**: the failing-test block explicitly omits `$COLLAB_ATTEST` with a comment ("collab-attest UN-GATED 2026-06-28: rolled back the #847 gating") because the local-relay attest was a merge-blocking treadmill (flakiest DOOM-MP specs fail at retries=0 off the owner's box). It sits informational alongside the un-gated `collab` + `behavioral` lanes, pending a CI-native re-gate (Wave-2). *The blind agent correctly read the code; it just lacked the context that the omission is deliberate.* No action — it's a known parked state (task #158).
-2. **CI applies an incomplete DB schema.** All 11 schema-apply steps across workflows run only `001_init.sql`; `002_feedback.sql` + `003_saved_groups.sql` are never applied in CI — while `collab-attest.ts` applies 001+003 locally. CI and the local attest environment run different schemas; feedback/saved-groups DB paths in CI are untested-or-vacuous. **P1.**
-3. `vrt-strict` is absent from the aggregate `needs` while the PR comment claims it's required (branch-protection may cover it — verify ruleset, cf. task #67).
-4. The in-repo `/docs/testing` page is stale ("VRT … not yet implemented") — it predates the VRT system.
+2. ~~**CI applies an incomplete DB schema.**~~ **FIXED — and the blind lane under-called it.** All 14 sites hand-copied a `psql -f …` list; `002`, `003` **and** `004` were in none of them, so the whole journal/replay durability feature was exercised by ZERO CI runs while every `@collab` test passed (`journal.ts` catches 42P01, warns once and degrades to snapshot-only). Plain `psql -f a -f b` also exits 0 on a file error, so the step went green on a half-applied schema. Replaced by `scripts/apply-db-schema.sh`, which reads the DIRECTORY with `ON_ERROR_STOP=1` and refuses to report success on an empty glob; `scripts/ci-db-schema.test.ts` asserts every caller targets a localhost `*_test` database.
+3. ~~`vrt-strict` is absent from the aggregate `needs`~~ — **RESOLVED: branch protection does cover it.** Ruleset 16042163 requires `vrt-strict (visual regression — strict subset)` by literal name; CLAUDE.md's docs-only-gate section is built on that fact.
+4. **The in-repo `/docs/testing` page is STILL stale, and 2026-08-12 found WHY.** It is not merely out of date — its auto-detect looks in the wrong place. `+page.svelte:170` branches on `data.vrtImplemented`, and the probe is for a repo-root `vrt/` directory that has never existed; the harness is at **`e2e/vrt/`**. So the page has printed *"Status: planned, not yet implemented … the harness directory `vrt/` does not exist yet"* (`:175-179`) through the entire life of the VRT system, and the intro at `:36` says the same. **Cheap fix, and it is the "auto-detected" wording that made it invisible** — a probe that answers honestly about the wrong path reads exactly like a fact.
 5. Attestation bus-factor: the current WebGL attestation is one person, one machine, one day old — noted as a trust-model observation.
 
 ## 3) Confirmed bugs (lifecycle + stability lanes, 26 findings confirmed)
@@ -93,22 +93,30 @@ Ranked by verified severity:
 5. **Reconciler JSON-deep-clones every node's data every pass** even when params didn't change (`reconciler.ts:152`).
 6. twotracks allocates 4 Float32Arrays per 128-sample block; layout writes trigger pointless full snapshot rebuilds (snapshot reads only nodes/edges); worker toybox allocates ~8+ mat4s per layer per frame; sync GPU→CPU readbacks per frame in Synesthesia card; shapegen regenerates per frame when no clock patched.
 
-## 5) Recommended action plan (my synthesis, ranked)
+## 5) Recommended action plan — DELETED 2026-08-12
 
-| P | Action | Source |
-|---|---|---|
-| P0 | ci.yml: add `$COLLAB_ATTEST` to the aggregate failure condition (+ audit `vrt-strict` requiredness) | testing verify |
-| P0 | Relay: real retry/backoff on failed persist + do-not-unload-on-failed-store + Better Stack alert on store failure (the "will retry" lie) | stability #2 |
-| P1 | Reconciler/engine hardening PR: guard `addNode`, guard the `engine.ts:268` disconnect closure, purge edges/taps on eviction & removeNode, close AudioContext on Canvas destroy, un-stub the disconnect regression test | lifecycle 1/2/7, stability #1 |
-| P1 | Video engine: try/catch around `handle.surface.draw` + re-arm policy | lifecycle #3 |
-| P1 | CI: apply all three schema files everywhere | testing verify |
-| P1 | Relay: pool timeouts, listen().catch, guard loadSnapshot, Clerk-outage discrimination | stability 4/6/10 |
-| P2 | warrenspectrum + twotracks worklet hoists (ART-covered, safe) | perf 5/6 |
-| P2 | Video engine O(1) input maps behind `topoStale` | perf #4 |
-| P2 | meter-frame adoption wave (60 rAF files → gated) | perf #7 |
-| P2 | Per-frame reflect-write audit (bentbox/b3ntb0x/backdraft → render-local, #719 pattern) | perf 1/2 |
-| P2 | Livecode execution budget (fold into queued rewrite); recorderbox roll-path fixes; DOOM re-key fix | stability #3, lifecycle 4/5/6/10 |
-| P3 | Stale /docs/testing page; docs/adr+design dirs empty; hydrogen rejection cache; present-shell load-failure handling | misc |
+**The ranked P0–P3 table was deleted in the janitorial sweep.** It had aged out
+in three different directions at once and was the most likely thing in this file
+to send someone at already-finished work:
+
+- Its P0 `$COLLAB_ATTEST` row was **already wrong when written** — §2 item 1 in
+  this same file explains the omission is deliberate.
+- Its P0 relay-persist row, its P1 relay-hardening row and its P2 video rows
+  were largely delivered by the 2026-07-10/11 burst (#1043–#1047: update
+  journal, R2 snapshot blobs, relay CD, sink-driven pull eval, y-indexeddb local
+  replica). `stack-study-executive-report.md` §3 carries the current scoreboard
+  for exactly that set and is maintained; this table was not.
+- Its remaining rows (meter-frame adoption wave, per-frame reflect-write audit,
+  livecode execution budget, recorderbox roll-path, DOOM peer re-key, the stale
+  `/docs/testing` page) are still live and are stated in §3 and §4 above, where
+  the evidence is.
+
+⚠ The `db.ts` swallow is **still there** and now carries a comment arguing it is
+deliberate (`packages/server/src/db.ts:207-228`): a persist failure must not
+crash the relay, and Hocuspocus re-fires the debounced store on the next edit or
+disconnect. The blind lane's specific scenario — LAST client leaves, that store
+fails, doc unloads — is the one that comment does not answer. The update journal
+is the mitigation that landed; nobody has re-measured the residual window.
 
 ## 6) Meta-observations (what this exercise measured)
 
@@ -118,22 +126,22 @@ Ranked by verified severity:
 
 ## 7) Correctness bugs (blind lane + independent verifier: 7 confirmed, 0 refuted, 1 downgraded)
 
-All 7 are concrete DSP defects in shipped modules — each cited to exact lines with a reachable trigger, and each independently re-confirmed by a second blind reviewer ("all citations accurate to the line; nothing misread the code or ignored a guard").
+All 7 were concrete DSP defects in shipped modules — each cited to exact lines with a reachable trigger, and each independently re-confirmed by a second blind reviewer ("all citations accurate to the line; nothing misread the code or ignored a guard").
 
-| # | Where | Bug | Sev |
+**Re-checked against the tree 2026-08-12. ONE of the seven is still live.**
+
+| # | Where | Bug | 2026-08-12 |
 |---|---|---|---|
-| 1 | `dsp/src/helm.ts` (Lfo.tick + step-glide) | **LFO & glide advance once per BLOCK, not per sample** — `phase += freqHz/sr` and `exp(-1/(sr·tau))` are per-sample rates but `lfo1/lfo2.tick`+`seq.smooth` run outside the `i<blockLen` loop → every LFO runs ~`blockLen`× too slow (a "4 Hz" LFO ≈ 0.03 Hz) | **HIGH** |
-| 2 | `dsp/src/macrooscillator.ts` (hihat) | Phase wrap uses a single `-= 1`; above ~5.4 kHz × ratio the increment exceeds 1, phase drifts unbounded and the square latches to constant −1 → high-ratio partials collapse to DC | MED |
-| 3 | `dsp/src/elements.ts` (`rawBuffer`) | `rawBuffer` allocated + read but **never written** (grep-proven); at `space ≤ 0.05` (`rawGain=1`) the aux crossfade zeroes the entire aux channel | MED |
-| 4 | `dsp/src/helm.ts` (voices) | `allocateVoice(MAX_VOICES=8)` hands out 8 slots but render/free only cover `vi<voiceCount` (default 6) → the 7th held note is **silent AND permanently leaks its slot** | MED |
-| 5 | `dsp/src/elements.ts` (`setMeta`) | Clamps against global `EXCITER_MODEL_NOISE`(6) instead of the `last` arg(4); at max strike (`strikeMeta=1.0`) selects model 5 (FLOW), past the intended PARTICLES(4) range | MED |
-| 7 | `web/.../video/toybox-combine-graph.ts` (`wouldCreateCycle`) | Cycle check loads **all** edges incl. layer-input feedback edges, which `topoSort`/`validateConnect` exempt → a valid forward wiring is falsely rejected as `'cycle'` (self-contradiction: topoSort accepts what validateConnect rejects) | MED |
-| 8 | `web/.../audio/modules/wavesculpt.ts` (`master_gain`) | **Dead knob**: declared 0..2 "overall output level", stored by setParam, but `busL/busR.gain` pinned to 1 and never updated, `tick()` never reads it → moving it neither mutes nor boosts | MED |
+| 2 | `dsp/src/macrooscillator.ts` (hihat) | Phase wrap uses a single `-= 1`; above ~5.4 kHz × ratio the increment exceeds 1, phase drifts unbounded and the square latches to constant −1 → high-ratio partials collapse to DC | **STILL OPEN** — `if (this.phases[i]! >= 1) this.phases[i]! -= 1;` is unchanged at `packages/dsp/src/macrooscillator.ts:1038` |
+| 1, 4 | `dsp/src/helm.ts` (block-rate LFO/glide; the 7th voice silent + leaked) | — | **MOOT — the file is gone.** `helm` was deleted in the #1013/#1033 module cull |
+| 3, 5 | `dsp/src/elements.ts` (`rawBuffer` never written; `setMeta` clamps against the wrong bound) | — | **MOOT — the file is gone**, same cull |
+| 7 | `web/.../video/toybox-combine-graph.ts` (`wouldCreateCycle`) | valid forward wiring falsely rejected as `'cycle'` | **FIXED** — feedback taps are now excluded by `wouldCreateCycle` itself (`toybox-combine-graph.ts:980`) |
+| 8 | `web/.../audio/modules/wavesculpt.ts` (`master_gain`) | dead knob | **FIXED** — `busL/busR.gain` are now driven from `master_gain` (`wavesculpt.ts:1115-1116`) |
+| 6 | `dsp/src/lib/rbj-biquad.ts` `updatePeaking` caching on (fc, dbGain) but not Q — downgraded to MINOR at the time because no caller varied Q | — | **FIXED** — the cache-key rule is now stated and enforced in the file (`rbj-biquad.ts:28`) |
 
-**Downgraded to MINOR (real smell, no reachable trigger):**
-- #6 `dsp/src/lib/rbj-biquad.ts` `updatePeaking` caches on (fc, dbGain) but not Q → a Q-only change would early-return stale coefficients. *This is my own kick-drum code.* The verifier correctly downgraded it: both production callers (`kickdrum-dsp.ts:385-386`) pass Q as a hardcoded constant, so no caller varies Q → no reachable bug today. Worth a one-line fix (add Q to the cache key) as a latent-defect guard before anyone reuses the helper with a dynamic Q, but not urgent.
-
-**Recommended:** finding #1 (helm LFO block-rate) is HIGH and airtight — it means every Helm patch's modulation has been running two orders of magnitude too slow, likely long-masked because users just turn the LFO rate up to compensate. Worth a dedicated fix PR with an ART/unit test pinning LFO cycle length. Findings #3, #4, #8 are each a small, self-contained fix with an obvious test. These are excellent candidates for a "blind-found DSP bugs" cleanup batch.
+The one-line lesson the table keeps: **four of the seven were retired by deleting
+the module, not by fixing it.** A defect ledger that outlives its subject reads as
+six open bugs when it is one.
 
 ## 8) Overall verdict
 

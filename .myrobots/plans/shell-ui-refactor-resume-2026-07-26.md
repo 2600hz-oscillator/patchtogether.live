@@ -29,33 +29,17 @@ Written at shutdown. This is the file to read first when picking the work back u
 
 ---
 
-## Where things stand
-
-Main is `2392dac7`. Three PRs merged overnight, each green on its own final commit, each
-auto-deployed to dev:
-
-| PR | contents |
-|---|---|
-| **#1169** | Batch 1 — rear-card flip (TAB), side-by-side 50/50 dock, 6 faces (adsr, cloudseed, kickdrum, lfo, tidyVco, vca), the `?shell=1` no-video P0, menu viewport-clamp at 12 sites, render-parity + pitch-accuracy gates |
-| **#1171** | Batch 2 — dx7, sixstrum, snaredrum, tomtom, shimmershine, qbrt + `shell-cells.ts` (real interactive family/static cells), `face.momentary`, `faceTierCap` |
-| **#1173** | Two load-induced e2e flake fixes (`clipplayer-rate-reset`, `clip-automation`) |
-
-**12 modules are faced and live on dev.**
-
-### Update (later on 2026-07-26): EVERYTHING IN FLIGHT LANDED
-
-- **#1174 — batch 3 MERGED** (`b127c029`), main CI green, attests unchanged, linux baselines drained →
-  dispatched → captured (vrt-meta ceiling back to 118; STRICT_FACES floor 17). **17 modules faced.**
-  The owner authorized merging in-flight work at shutdown; NOTE the five batch-3 faces merged
-  **without a visual preview** (the owner approved delay's + filter's BEHAVIOUR changes, not the look)
-  — worth a look on dev. CI wall-time delta ≈ +2.0 min, right at the sign-off threshold.
-  Integration also fixed two rotting test fixtures (the "un-migrated" fixture is now DERIVED from
-  STRICT_FACES instead of hard-coded) and avoided a spurious collab re-attest (the hash driver was a
-  test-helper edit in the hand-listed basis, not filter's params — fixture moved to a non-basis file).
-- **#1172 merged** (`af46ef4f`) once main's flake fixes were merged in.
-- **#1008** — `feat/mobile-view`, a draft untouched since 2026-07-03, CONFLICTING. Revive or close.
-
----
+> **2026-08-12 janitorial sweep:** the "Where things stand" and "NEXT UP"
+> sections were DELETED — both were spent, and the 2026-08-04 triage banner
+> above already itemises what replaced each entry. What follows is the two
+> sections that are the ONLY record of their content.
+>
+> ⚠ **Decision 5's MECHANISM is obsolete even though the RULING stands.**
+> `?shell=1` is gone: the shell is the default and `?shell=legacy` is the escape
+> hatch (#1459 killed dawless mode). `shellPreview` was renamed `shellFaces` and
+> the predicate is now `if (!i.shellFaces || !i.hasCard) return 'legacy'`
+> (`legacy-fallback.ts:109`, with the rename recorded at `:81-82`). Read the
+> ruling ("leave as is; do not add a gate conjunction there"), not the citations.
 
 ## OWNER DECISIONS — recorded 2026-07-26
 
@@ -101,36 +85,6 @@ un-migrated→legacy card / migrated→ModuleShell, never mentioning the flag). 
 gate: `migrated={shellPreview && migrated(fv.node.type)}` plus a regression test asserting the flag-off
 dock renders the legacy card. **VRT would not have caught this** — faced modules tend to be in
 `EXEMPT_FROM_VRT`, so there is often no legacy-card baseline to move.
-
----
-
-## NEXT UP
-
-1. **Owner previews the 5 batch-3 faces on dev** (merged without visual preview — see above).
-2. **Revisit the dx7 face — owner: "looks nothing like its mock."** The mock was produced as part of
-   this process. Known gap: the mock's OP1–6 pages need ~78 new params, which is a MODULE REWORK, not a
-   face. Decide: ship patch-driven with a preset picker, or schedule the rework. The mocks themselves
-   were lost in a crash (they lived in a wiped scratchpad) — regenerate or recover them first.
-   NOTE: `.myrobots/` is GITIGNORED, so anything saved there is local-only.
-3. **Batch 4 shortlist:** timelorde (master clock, high traffic); a "visualizers" batch (scope +
-   dockscope + spectrograph — glyph-dominated faces); sequencer; noise; sampleHold.
-4. **Platform gaps found during batch 3**, both of which will recur on every future face:
-   - `ParamDef` has no enum/options field, so a `curve:'discrete'` param renders as a bare detented
-     knob with NO option labels (filter's MODE shows no LP/HP/BP). The legacy card's labelled buttons
-     were strictly more legible. Wants a Segmented/Selector cell — the machinery exists in batch 2's
-     `shell-cells.ts`.
-   - `PortDef` has no `label` field, yet `rear-card-model`'s `RearPortLike` and `patch-panel-labels`'
-     `PortDescriptor` both already declare `label?` and `resolveVerboseLabel` honours it. ~6 lines,
-     additive, contract-transparent. (This is why mixer's rear holes read `IN1..IN4`, not `CH1..CH4`.)
-   - Rear/lane jack labels double their suffix (`TRIGGER IN`, `ACCENT IN`). Fix is a one-line
-     `_in`/`_out` rule in the shared `patch-panel-labels.ts` — global, moves existing rear baselines.
-5. **karplus's PLUCK button is unreachable in the shell face** — it uses the `manualTrigger` seam, not
-   a param, so it can't be ranked and `faces-parity` rejects dead cells. Fix: adopt tomtom's `strike`
-   press-param (discrete 0/1, OR'd with `trigger_in`). Costs a 9th param ⇒ contract-lock diff + ART
-   re-pin. Batch 2 already built the momentary control kind this needs.
-6. **A 4th clipplayer-family flake**, `clipplayer-queue-boundary.spec.ts:127/:148`, blocked #1174's
-   shard 2/10. Also `clip-automation.spec.ts:428` ("module-assign + per-lane arm") times out under
-   saturation on unmodified main. Both need the same treatment as #1173.
 
 ---
 

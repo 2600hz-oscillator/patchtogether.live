@@ -1,13 +1,17 @@
 # Behavioral reconciliation campaign — plan (2026-06-16)
 
-> **TRIAGE 2026-08-04 — STILL UN-EXECUTED, and the numbers moved the WRONG WAY.**
+> **TRIAGE 2026-08-04, re-counted 2026-08-12 — STILL UN-EXECUTED.**
 > The step-1 blocker — "build the shared **structural-diff video metric** +
 > spawn-once-perturb helper" — was never built, so the ~25 animated-video class
-> is still parked exactly as described. Counted against the tree today:
-> **`BEHAVIORAL_MODULE_EXEMPT` = 77** (was 67 when this was written) and
-> **`BEHAVIORAL_SWEEP_EXEMPT` = 113** (was ~165). So module-level exemptions GREW
-> by 10 while per-port shrank — the campaign never started and new modules
-> enrolled themselves into the exempt map.
+> is still parked exactly as described. Counted against the tree today (both maps
+> are literals in `e2e/tests/per-module-per-port-behavioral.spec.ts`, at `:102`
+> and `:987`): **`BEHAVIORAL_MODULE_EXEMPT` = 77** (was 67 when this was written,
+> and unchanged since the 2026-08-04 count) and **`BEHAVIORAL_SWEEP_EXEMPT` =
+> 108** (was ~165). Module-level exemptions GREW by 10 while per-port shrank —
+> the campaign never started and new modules enrolled themselves into the exempt
+> map. ⚠ Do not copy these two numbers anywhere: they are derived here for
+> triage only, and a hand-typed population count is exactly what the 2026-08-10
+> owner directive forbids.
 > What DID change around it: **#986** added a fast REQUIRED `behavioral-smoke`
 > subset gate, and **#1318** found that a member of that required subset
 > (`resofilter.reso_cv`) was passing on noise — i.e. the "metric must FIT the
