@@ -13,10 +13,12 @@
   // exactly 0.00 dB — while `max|Δ|` against resonance 0 runs 9.3e-4 → 1.4e0
   // over the same travel. A magnitude plot would therefore draw a perfectly
   // flat line for the one mode whose dial is hardest to understand: a picture
-  // certifying that the control does nothing. So AP draws its phase instead.
-  // (At MIX < 1 the allpass's DELIVERED magnitude is no longer flat — the dry
-  // path cancels against the rotating phase and it becomes a phaser — so the
-  // magnitude trace comes back as the dashed reference and phase leads.)
+  // certifying that the control does nothing. So AP-FULLY-WET draws its phase.
+  //
+  // ⚠ "AP-FULLY-WET", NOT "AP" — see the `phaseLeads` note below. Mix any dry
+  // back and the delivered magnitude stops being flat (it becomes a real notch,
+  // which is the phaser), so the magnitude trace leads again and phase is not
+  // drawn at all. One quantity per picture, in both states.
   //
   // ⚠ IT DRAWS NO NUMBER OF ITS OWN. Every value comes from
   // `resofilter-face-model`, the same module the three hero readouts call, so
@@ -37,9 +39,9 @@
   import { patch } from '$lib/graph/store';
   import { nodeVersion } from '$lib/graph/node-versions.svelte';
   import type { ModuleNode, ParamDef } from '$lib/graph/types';
-  import { RESOFILTER_MODE_SHORT } from '$lib/audio/modules/resofilter';
   import {
     MODES_WITH_PEAK,
+    RESOFILTER_MODE_SHORT,
     PLOT_FLOOR_DB,
     PLOT_TOP_DB,
     resofilterFaceParams,

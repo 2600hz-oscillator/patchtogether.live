@@ -105,7 +105,15 @@ import { RESOFILTER_PARAMS, resofilterParam } from '$lib/audio/resofilter-params
 // ⚠ IMPORTED, NEVER MIRRORED. `k = 2 − 2·res` floored at 0.003 is the ONE
 // number every readout on this face is a function of; a re-typed copy here
 // would let a DSP change leave the faceplate confidently wrong.
-import { resToK } from '../../../../../dsp/src/lib/resofilter-dsp';
+import { RESOFILTER_MODE_SHORT, resToK } from '../../../../../dsp/src/lib/resofilter-dsp';
+
+/** The five short mode tags, re-exported so a CONSUMER of this model never has
+ *  to reach for the def. `SvfResponsePanel` needs them for its legend, and a
+ *  sidebar panel importing a module def would pull the Vite `?url` worklet
+ *  import into the shell's chunk — the thing `sidebar-panels.ts` means by "the
+ *  shell never imports a module". `FilterResponsePanel` reads only
+ *  `filter-face-model` for the same reason. */
+export { RESOFILTER_MODE_SHORT };
 
 /** The five modes, by `mode` param value. */
 export type SvfModeIndex = 0 | 1 | 2 | 3 | 4;
