@@ -503,13 +503,11 @@ both were wrong, so Phase 3 built the inventory MECHANICALLY (three independent
 searches — named SCREAMING_CASE integer constants used to bound a cardinality;
 integer-vs-cardinality comparisons inside files that enumerate the tree;
 `expect(<cardinality>).toBe*(N≥2)` anywhere) and closed the tail. **There is now
-no hand-typed population count in `packages/`, `e2e/`, `scripts/` or `art/`** —
-with ONE known outstanding instance, deliberately not touched:
-`EXPECTED_HEAVY_SPEC_COUNT = 58` in `webgl-attest-coverage.test.ts`, which PR
-#1479 already removes on its own branch with a stronger property assertion.
-Duplicating that removal here would have conflicted with the better version, so
-this is the last one and it belongs to that PR. **If it is still on `main` after
-#1479 lands, that is a bug in this claim.**
+no hand-typed population count in `packages/`, `e2e/`, `scripts/` or `art/`.**
+(The last one outside this sweep, `EXPECTED_HEAVY_SPEC_COUNT = 58` in
+`webgl-attest-coverage.test.ts`, was removed by #1479 in parallel — deliberately
+not duplicated here, because that PR replaced it with a stronger property
+assertion and a second removal would only have conflicted with it.)
 
 - **The searches, so the next agent can re-run them rather than re-guess:**
   `git grep -nE '_CEILING|_FLOOR|EXPECTED_[A-Z_]*COUNT|FROZEN'`, plus

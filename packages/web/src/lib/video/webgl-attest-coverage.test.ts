@@ -435,8 +435,15 @@ describe('webgl-attest: docs on REAL basis files are hash-transparent', () => {
   });
 
   it('the doc-bearing set is non-trivial (a zero-length set passes vacuously)', () => {
-    // 68 at the 2026-08-09 conversion; the FLOOR is what matters.
-    expect(docBearing.length).toBeGreaterThanOrEqual(50);
+    // ⚠ `>= 50` STOOD HERE (removed 2026-08-12, the no-ratchets sweep). It was
+    // a hand-typed integer over the basis file list — a population that grows
+    // with every new WebGL module — recording 68 at the 2026-08-09 conversion,
+    // so it carried ~26 % slack and would have needed bumping eventually while
+    // never catching anything the leg BELOW does not already catch by name.
+    // Non-vacuity is what was actually being claimed, so it is claimed at zero;
+    // the named `cube`/`wavesculpt` check on the next `it()` is what makes a
+    // normalizer that silently stopped stripping impossible to miss.
+    expect(docBearing.length, 'the normalizer stripped a docs prop from NOTHING').toBeGreaterThan(0);
   });
 
   it('the rendersWebGL AUDIO defs are among them (cube / wavesculpt)', () => {

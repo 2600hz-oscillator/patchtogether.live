@@ -188,7 +188,7 @@ describe('Phase 5b guard: no raw node.params writes outside the mutation seam', 
     expect(
       stale.join('\n'),
       'ledger entr(ies) naming a raw write that is no longer in the tree — delete them ' +
-        '(and lower RAW_WRITE_DEBT_CEILING if the entry was `debt`)',
+        '(there is no number to lower: RAW_WRITE_DEBT_CEILING was removed 2026-08-12)',
     ).toBe('');
   });
 
