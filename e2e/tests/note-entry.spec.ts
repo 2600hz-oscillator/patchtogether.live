@@ -99,7 +99,7 @@ test('note-entry: out-of-range note (c#8 above c8) becomes null', async ({ page,
 
 test('note-entry: Cartesian cell accepts text-entry note names', async ({ page, rack }) => {
   await spawnPatch(page, [
-    { id: 'cart', type: 'cartesian', params: { mode: 0 } },
+    { id: 'cart', type: 'cartesian' },
   ]);
 
   const c0 = page.locator('[data-testid="cart-pitch-cart-0"]');

@@ -21,7 +21,13 @@ import '$lib/audio/modules';
 import '$lib/video/modules';
 import '$lib/meta/modules';
 
-import { serializeContractLock, serializeModuleContract } from './contract-signature';
+import {
+  FACE_FIELDS_IN_LOCK,
+  FACE_FIELDS_NOT_IN_LOCK,
+  getContractDefs,
+  serializeContractLock,
+  serializeModuleContract,
+} from './contract-signature';
 
 const LOCK_PATH = fileURLToPath(new URL('./contract-lock.txt', import.meta.url));
 
@@ -129,6 +135,86 @@ describe('contract-signature — canonical + change-detecting', () => {
     expect(sig(redefaulted)).not.toBe(sig(base));
   });
 
+  it('detects a sidebar block APPEARING and VANISHING', () => {
+    // THE REGRESSION TEST FOR #1468. Twelve modules lost a whole sidebar
+    // block and `task docs:accept` produced an EMPTY DIFF, because the golden
+    // did not project `face` at all. Both directions, because the deletion is
+    // the direction that actually happened and the harder one to notice.
+    const withSidebar = {
+      ...base,
+      face: {
+        order: ['amount'],
+        sidebar: [
+          {
+            kind: 'readouts' as const,
+            label: 'Measured',
+            entries: [{ label: 'PEAK', valueId: 'fixturePeak' }],
+          },
+        ],
+      },
+    };
+    expect(sig(withSidebar)).not.toBe(sig(base));
+    expect(sig(withSidebar)).toContain(
+      'fixturemod face sidebar 0 kind=readouts label=Measured entries=PEAK:value=fixturePeak',
+    );
+    // ...and removing it returns to the bare signature, i.e. the diff is real
+    // in both directions rather than an additive-only line.
+    expect(sig({ ...withSidebar, face: { order: ['amount'] } })).toBe(sig(base));
+  });
+
+  it('detects a sidebar RELABEL, REORDER, PANEL REBIND and a LOST ENTRY', () => {
+    // Each of these is a change a `blocks.length` count would have missed, and
+    // three of them are changes a kind-only line would have missed too.
+    const two = {
+      ...base,
+      face: {
+        order: ['amount'],
+        sidebar: [
+          {
+            kind: 'presets' as const,
+            label: 'Presets',
+            entries: [
+              { id: 'soft', label: 'Soft', values: { amount: 0.2 } },
+              { id: 'hard', label: 'Hard', values: { amount: 0.9 } },
+            ],
+          },
+          {
+            kind: 'custom' as const,
+            label: 'Response',
+            panelId: 'svf-response',
+            props: { split: 400 },
+          },
+        ],
+      },
+    };
+    const relabel = structuredClone(two);
+    relabel.face.sidebar[0]!.label = 'Voicings';
+    expect(sig(relabel)).not.toBe(sig(two));
+
+    const reorder = {
+      ...two,
+      face: { ...two.face, sidebar: [two.face.sidebar[1]!, two.face.sidebar[0]!] },
+    };
+    expect(
+      sig(reorder as never),
+      'the column renders top-to-bottom; order is not cosmetic',
+    ).not.toBe(sig(two));
+
+    const rebind = structuredClone(two);
+    (rebind.face.sidebar[1] as { panelId: string }).panelId = 'filter-response';
+    expect(sig(rebind), 'which component the shell resolves is a behaviour change').not.toBe(
+      sig(two),
+    );
+
+    const lostEntry = structuredClone(two);
+    (lostEntry.face.sidebar[0] as { entries: unknown[] }).entries.pop();
+    expect(sig(lostEntry), 'a preset row that vanished must be a readable line diff').not.toBe(
+      sig(two),
+    );
+    expect(sig(lostEntry)).toContain('entries=soft');
+    expect(sig(two)).toContain('entries=soft,hard');
+  });
+
   it('detects a new control family', () => {
     const withFamily = {
       ...base,
@@ -138,5 +224,101 @@ describe('contract-signature — canonical + change-detecting', () => {
     };
     expect(sig(withFamily)).not.toBe(sig(base));
     expect(sig(withFamily)).toContain('family step kind=step-grid prefix=step-gate');
+  });
+});
+
+// -- THE GATE'S OWN SCOPE, ASSERTED ----------------------------------------
+//
+// THE #1468 DEFECT WAS NOT "sidebar WAS MISSING". It was that nothing
+// enumerated the fields, so a face field could be absent from the golden
+// without anyone ever DECIDING it should be -- and the decision, when it was
+// finally looked for, turned out to be a sentence on the type saying
+// "declaring a sidebar is not an I/O change", written before most of the gates
+// that were supposed to cover it instead existed.
+//
+// So the population is derived from the LIVE DEFS, not from a list: every key
+// any registered def actually puts on `face` must be either PROJECTED into the
+// golden or NAMED in `FACE_FIELDS_NOT_IN_LOCK` with a `why` and a `coveredBy`.
+// Adding a field to `ModuleFace` is now a decision someone writes down.
+describe('contract-lock scope - every face field is projected or declared', () => {
+  const defs = getContractDefs();
+
+  /** Keys a def actually declares on `face`. THE predicate; every leg below
+   *  calls it, including the negative control, so the control cannot drift
+   *  away from the check the way a re-typed copy does. */
+  const declaredKeys = (face: Record<string, unknown>): string[] =>
+    Object.keys(face).filter((k) => face[k] !== undefined);
+  const undeclaredIn = (face: Record<string, unknown>): string[] =>
+    declaredKeys(face)
+      .filter((k) => !FACE_FIELDS_IN_LOCK.includes(k) && !(k in FACE_FIELDS_NOT_IN_LOCK))
+      .sort();
+
+  const liveFaceKeys = (): Set<string> => {
+    const seen = new Set<string>();
+    for (const d of defs) {
+      const face = (d as { face?: Record<string, unknown> }).face;
+      if (!face) continue;
+      for (const k of declaredKeys(face)) seen.add(k);
+    }
+    return seen;
+  };
+
+  it('no face field is silently outside the golden', () => {
+    const seen = liveFaceKeys();
+    expect(seen.size, 'no def declared a `face` at all - the registry did not load').toBeGreaterThan(
+      0,
+    );
+    const undeclared = [...seen]
+      .filter((k) => !FACE_FIELDS_IN_LOCK.includes(k) && !(k in FACE_FIELDS_NOT_IN_LOCK))
+      .sort();
+    expect(
+      undeclared,
+      'these `face` fields are live on a real def but are neither projected into ' +
+        'contract-lock.txt nor named in FACE_FIELDS_NOT_IN_LOCK. Decide which: ' +
+        'project it in serializeModuleContract, or add an entry saying WHY it is ' +
+        'out and WHAT covers it instead. Leaving it undeclared is how face.sidebar ' +
+        'stayed invisible to the golden through twelve deletions (#1468).',
+    ).toEqual([]);
+  });
+
+  it('...and no declaration outlives its field (anchored to the artifact)', () => {
+    const live = liveFaceKeys();
+    const ghosts = Object.keys(FACE_FIELDS_NOT_IN_LOCK)
+      .filter((k) => !live.has(k))
+      .sort();
+    expect(
+      ghosts,
+      'these entries excuse a `face` field that no registered def declares any more. ' +
+        'A stale exemption is a licence nobody is watching - delete it, or project ' +
+        'the field if it came back under a new name.',
+    ).toEqual([]);
+    // Both lists must be disjoint, or a field could be "covered elsewhere" AND
+    // pinned here, which is two answers to one question.
+    expect(
+      FACE_FIELDS_IN_LOCK.filter((k) => k in FACE_FIELDS_NOT_IN_LOCK),
+      'a field cannot be both projected and excused',
+    ).toEqual([]);
+  });
+
+  it('NEGATIVE CONTROL - the scope check can see an undeclared field', () => {
+    // The same `undeclaredIn` the leg above runs, fed a face carrying a key
+    // that is in neither list. A `toEqual([])` over a scan that matched
+    // nothing reads identically green, and this gate's whole job is to notice
+    // an absence.
+    expect(undeclaredIn({ order: [], sidebar: [], hero: {} }), 'a fully declared face').toEqual([]);
+    expect(undeclaredIn({ order: [], footer: {} }), 'a hypothetical new field').toEqual(['footer']);
+    // ...and `undefined` is not a declaration: an optional field left unset
+    // must not count as live, or the ghost check above would never fire.
+    expect(undeclaredIn({ order: [], footer: undefined })).toEqual([]);
+    // The projected field must genuinely be treated as projected, not merely
+    // absent from the excuse list by luck.
+    expect(FACE_FIELDS_IN_LOCK).toContain('sidebar');
+  });
+
+  it('every excuse names a gate, not a shrug', () => {
+    for (const [field, e] of Object.entries(FACE_FIELDS_NOT_IN_LOCK)) {
+      expect(e.why.length, `${field}: why must be a real sentence`).toBeGreaterThan(40);
+      expect(e.coveredBy.length, `${field}: coveredBy must name a gate`).toBeGreaterThan(10);
+    }
   });
 });

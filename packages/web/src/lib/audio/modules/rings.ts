@@ -56,6 +56,28 @@ const _MODAL_MAX_PARTIALS = 24;
 // drone (4 decades puts -60 dB past 200 s).
 const _MODAL_Q_BASE = 500;
 const _MODAL_Q_DECADES = 3;
+// The sample rate MODAL_Q_BASE / MODAL_Q_DECADES are quoted at, and the reason
+// this constant has to exist at all.
+//
+// ⚠ RING TIME USED TO DEPEND ON THE INTERFACE SAMPLE RATE. Q is set
+// proportional to partial frequency, `Q_i = 1 + (f_i/sr)*q`, so the decay
+// constant is `tau = q/(pi*sr)` — and `q` came from the DAMPING knob alone,
+// with nothing to cancel the `sr`. Measured T60 on the shipping worklet for
+// ONE fixed pair of knob settings (MODAL, ODD tap, strum-excited):
+//
+//   damping 0.5, brightness 0.5    337 ms @ 44.1k    392 ms @ 48k   163 ms @ 96k
+//   damping 0.5, brightness 1.0   3889 ms @ 44.1k   7420 ms @ 48k   476 ms @ 96k
+//
+// A 15.6x swing decided entirely by the audio interface. A rack saved at 48 k
+// was a different instrument on someone else's hardware, which is a
+// correctness bug in a shipped module, not a tuning preference.
+//
+// Scaling `q` by `sr / MODAL_Q_REFERENCE_SR` cancels the `sr` in `tau` exactly,
+// so the ring time is now whatever the knobs say and nothing else. Anchoring
+// the reference at 48000 makes the fix BIT-IDENTICAL at 48 kHz — the factor is
+// exactly 1 there — so every existing 48 k measurement, unit test and ART
+// assertion is untouched and only the other rates move, onto the 48 k answer.
+const _MODAL_Q_REFERENCE_SR = 48000;
 // Peak gain of each partial's band-pass, as Q**MODAL_Q_GAIN_EXP. Bounded by
 // two MEASURED constraints, both at the shipped defaults over a 2 s render:
 //   exp 1.0 — the reference's SVF band-pass gain (peak gain = Q). Correct for
@@ -104,7 +126,7 @@ class _Biquad {
   }
 }
 
-class _RingsModal {
+export class _RingsModal {
   filters: _Biquad[] = [];
   position = 0.5;
   numModes = _MODAL_MAX_PARTIALS;
@@ -141,7 +163,13 @@ class _RingsModal {
     // so we drive the SAME decade curve with (1 - damping) rather than silently
     // reversing every existing patch.
     const dClamped = Math.max(0, Math.min(1, damping));
-    const q = _MODAL_Q_BASE * Math.pow(10, _MODAL_Q_DECADES * (1 - dClamped));
+    // The `sr / MODAL_Q_REFERENCE_SR` term is the sample-rate invariance fix —
+    // see the constant. Without it `tau = q/(pi*sr)` and the ring time is a
+    // property of the user's audio interface rather than of the DAMPING knob.
+    const q =
+      _MODAL_Q_BASE *
+      Math.pow(10, _MODAL_Q_DECADES * (1 - dClamped)) *
+      (sr / _MODAL_Q_REFERENCE_SR);
     const bClamped = Math.max(0, Math.min(1, brightness));
     let qLoss = bClamped * (2 - bClamped) * 0.85 + 0.15;
     const qLossDampingRate = structure * (2 - structure) * 0.1;
@@ -475,14 +503,25 @@ export const ringsDef: AudioModuleDef = {
   //     does not (face.hint/title and band hints are all annotation-gated).
   //
   // ⚠ THE RING TIME IS NOT A READOUT, AND THAT IS THE INTERESTING CONSTRAINT.
-  // It is the number this faceplate most wants to print and it cannot print it
-  // honestly: MODAL's T60 depends on the INTERFACE SAMPLE RATE, measured
+  // It is the number this faceplate most wants to print and it still cannot
+  // print it honestly, though the reason has shrunk by half.
+  //
+  // MODAL's T60 depended on the INTERFACE SAMPLE RATE — measured
   // 3889 / 7420 / 476 ms at 44.1 / 48 / 96 kHz for one fixed pair of knob
-  // settings. See rings-face-model.ts for the full measurement, the reason
-  // (`tau = q/(pi*sr)` carries no compensating term), and why the RATIO is no
-  // better. That is a DSP defect — a patch saved at 48 k is a different
-  // instrument at 96 k — and fixing it moves audio, so it is DOCUMENTED here
-  // and left for its own PR rather than folded into a faceplate.
+  // settings, a 15.6x swing decided by the user's hardware. The DOMINANT cause
+  // is fixed: `tau = q/(pi*sr)` carried `sr` with no compensating term, and
+  // `MODAL_Q_REFERENCE_SR` now cancels it (bit-identical at 48 kHz; held by
+  // rings-sample-rate.test.ts against the real biquad poles).
+  //
+  // What remains is a DIFFERENT mechanism — a biquad's decay is
+  // `2Q/(sin(w0)*sr)`, so a partial that lands near Nyquist rings
+  // pathologically long, and which partials land there depends on the rate.
+  // Whole-bank spread went 2.80x -> 1.52x at the shipped default and
+  // 17.97x -> 9.00x at brightness 1.0. Closing that means re-voicing the
+  // near-Nyquist partials, which MOVES 48 kHz audio and needs an owner
+  // audition, so it stays DOCUMENTED here rather than folded into a faceplate.
+  // See rings-face-model.ts for both measurements and why the RATIO is no
+  // better a candidate for a readout than the absolute number.
   //
   // ⚠ MODEL PAINTS AS AN ANONYMOUS TOGGLE AND THIS FACE DOES NOT FIX IT. It is
   // a 0..1 discrete param with no `options` roster, so `paramCellKind` resolves

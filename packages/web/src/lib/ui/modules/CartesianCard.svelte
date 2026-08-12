@@ -5,7 +5,7 @@
   import NoteEntry from '$lib/ui/controls/NoteEntry.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import { patch, ydoc } from '$lib/graph/store';
-  import { nodeVersion } from '$lib/graph/node-versions.svelte';
+  import { nodeVersion, edgesVersion, nodesStructuralVersion } from '$lib/graph/node-versions.svelte';
   import {
     cartesianDef,
     defaultCells,
@@ -32,7 +32,23 @@
   // module no longer re-runs this card's derived chain.
   let cardVersion = $derived(nodeVersion(id));
 
-  let mode       = $derived((void cardVersion, (node?.params.mode ?? 0) >= 0.5 ? 1 : 0));
+  let wiringVersion = $derived(edgesVersion() + nodesStructuralVersion());
+
+  // ⚠ THE MODE PILL IS A READOUT, NOT A SWITCH — because the CABLE selects the
+  // mode and always did. This used to be a button bound to a `mode` param that
+  // the factory never read: pressing it wrote a value nothing consumed, and
+  // both of its states produced bit-identical audio. The param is gone; the
+  // pill now reports the mode the engine is ACTUALLY in, which is decided by
+  // whether anything is patched into CLOCK IN (cartesian.ts's tick branches on
+  // exactly this predicate).
+  let clockPatched = $derived.by(() => {
+    void wiringVersion;
+    for (const edge of Object.values(patch.edges)) {
+      if (!edge) continue;
+      if (edge.target.nodeId === id && edge.target.portId === 'clock') return true;
+    }
+    return false;
+  });
   // Gate-sampled S&H toggle (baked into the pitch CV; ON by default — the snh
   // fallback supplies ON for old saves, no schemaVersion bump needed).
   let snhOn      = $derived((void cardVersion, (node?.params.snh ?? 1) >= 0.5));
@@ -68,10 +84,6 @@
     if (Array.isArray(raw)) return (raw as unknown[]).map(coerceToCartesianCell);
     return defaultCells();
   });
-
-  function toggleMode() {
-    set('mode')(mode === 1 ? 0 : 1);
-  }
 
   let currentStep = $state(0);
   let raf: number | null = null;
@@ -194,9 +206,23 @@
   <div class="stripe" style="background: var(--cable-gate);"></div>
   <header class="title">
     <ModuleTitle {id} {data} defaultLabel="Cartesian" inline />
-    <button class="mode-btn" class:cart={mode === 1} onclick={toggleMode} title={mode === 1 ? 'Cartesian (X/Y)' : 'Linear'}>
-      {mode === 1 ? 'X/Y' : 'LIN'}
-    </button>
+    <!-- Deliberately still a <button> element, and deliberately inert: the
+         card is in the STRICT VRT subset, whose baseline only linux CI can
+         author, so swapping the element type to a <span> would risk a
+         text-centering shift on a required gate for no user-visible gain.
+         aria-disabled + tabindex=-1 + no handler make it non-interactive;
+         the pixels are unchanged. -->
+    <button
+      type="button"
+      class="mode-btn"
+      class:cart={clockPatched}
+      aria-disabled="true"
+      tabindex="-1"
+      data-testid="cartesian-mode-readout"
+      title={clockPatched
+        ? 'CLOCKED (X/Y) — a cable is patched into CLOCK IN, so each rising edge advances the cursor one pad. Unpatch it for FREEFORM.'
+        : 'FREEFORM (LIN) — nothing is patched into CLOCK IN, so the X/Y CV inputs steer the cursor continuously. Patch a clock for CLOCKED.'}
+    >{clockPatched ? 'X/Y' : 'LIN'}</button>
     <!-- Gate-sampled S&H toggle — alongside the mode-btn in the centered header
          (the corner patch-trigger owns the absolute top-right). ON by default. -->
     <button
@@ -310,6 +336,11 @@
     justify-content: center;
     gap: 8px;
   }
+  /* A READOUT, not a control (see the clockPatched note in the script). Every
+     declaration below is byte-identical to the button this used to be, save
+     `cursor`, which does not render into a screenshot — cartesian is in
+     STRICT_VRT_MODULES and that baseline is authored by linux CI, so the pill
+     deliberately keeps its element type and its geometry. */
   .mode-btn {
     width: 32px;
     height: 22px;
@@ -318,7 +349,7 @@
     color: var(--text);
     border-radius: 3px;
     font-size: 0.6rem;
-    cursor: pointer;
+    cursor: default;
     line-height: 1;
     padding: 0;
     font-family: ui-monospace, monospace;

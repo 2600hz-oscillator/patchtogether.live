@@ -101,7 +101,7 @@ test('keyboard-nav Sequencer: rapid-add scenario (type, right, type, right, ...)
 });
 
 test('keyboard-nav Cartesian: ArrowUp from row-1 cell pitch hits gate of cell directly above', async ({ page, rack }) => {
-  await spawnPatch(page, [{ id: 'cart', type: 'cartesian', params: { mode: 0 } }]);
+  await spawnPatch(page, [{ id: 'cart', type: 'cartesian' }]);
 
   // Cell idx 5 (row 1, col 1). Pitch -> Up -> gate of idx 5 -> Up -> pitch
   // of idx 1 (cell directly above) -> Up -> gate of idx 1.
@@ -159,7 +159,7 @@ test('keyboard-nav: default value of new sequencer step is c3', async ({ page, r
 });
 
 test('keyboard-nav: default value of new cartesian cell is c3', async ({ page, rack }) => {
-  await spawnPatch(page, [{ id: 'cart', type: 'cartesian', params: { mode: 0 } }]);
+  await spawnPatch(page, [{ id: 'cart', type: 'cartesian' }]);
 
   for (const i of [0, 5, 15]) {
     const c = page.locator(`[data-testid="cart-pitch-cart-${i}"]`);

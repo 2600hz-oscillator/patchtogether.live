@@ -7,11 +7,16 @@
 // (v1 single-array -> v2 page model), and page-count constraint.
 
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { stripSourceComments } from '$lib/source-guards/strip-source-comments';
 import {
   BARS_PER_PAGE,
   DEFAULT_PAGES,
   DYNAMIC_SCALE,
   MAX_PAGES,
+  GRID_TICKS_PER_SLOT,
+  NOTE_DURATIONS,
   TICKS_PER_BAR,
   TOTAL_BARS,
   SCORE_MIN_MIDI,
@@ -20,6 +25,10 @@ import {
   canPlace,
   dynamicAt,
   emptyScoreData,
+  placeableTicksInBar,
+  reachableTicksInBar,
+  slotEmitPlan,
+  slotGridTicks,
   staffStepToMidi,
   tickWidth,
   tieChainFrom,
@@ -277,6 +286,126 @@ describe('triplet packing', () => {
       ...notes,
       note({ id: 'c', bar: 0, tick: 8, duration: 'triplet8th', midi: 64, staffStep: 3 }),
     ])).toBe(TICKS_PER_BAR - 12);
+  });
+});
+
+// ── PLACEABLE ⇒ REACHABLE ─────────────────────────────────────────────────
+//
+// ⚠ THE TEST DIRECTLY ABOVE WAS GREEN FOR THREE MONTHS WHILE CERTIFYING A
+// PLACEMENT THE ENGINE COULD NOT SOUND, and it is the cleanest example of a
+// gate reading one side of a two-sided contract that this module owns. It
+// exercises `canPlace` / `barCapacityRemaining` — the AUTHORING side — and
+// never `slotGridTicks` / the emit path. It asserts, correctly and uselessly,
+// that ticks 4 and 8 are legal; ticks 4 and 8 were two of the eight positions
+// per bar the scheduler could never visit. The test would read identically
+// green if score.ts did not exist.
+//
+// The missing assertion is the JOIN: a tick the toolbar can PLACE must be a
+// tick the transport can REACH. Both halves are now derived from the shipping
+// functions, so neither a new note value nor a change to the slot width can
+// re-open the gap without this going red.
+describe('placement grid ⇔ scheduler grid (the join the tests above never made)', () => {
+  const reachable = new Set(reachableTicksInBar());
+
+  it.each(NOTE_DURATIONS)('every tick the toolbar can place a %s on is REACHED by the transport', (d) => {
+    const placeable = placeableTicksInBar(d);
+    const unreachable = placeable.filter((t) => !reachable.has(t));
+    expect(
+      unreachable,
+      `duration '${d}' (width ${tickWidth(d)}) can be placed at ticks ` +
+        `[${placeable.join(',')}] but the scheduler only ever emits at ` +
+        `[${[...reachable].join(',')}]. A note on an unreached tick is placed, ` +
+        `drawn at the right x, saved and synced — and never sounds, because ` +
+        `noteStartingAt matches the absolute tick EXACTLY. This is how triplets ` +
+        `lost 8 of their 12 positions per bar from the module's first commit.`,
+    ).toEqual([]);
+  });
+
+  it('NEGATIVE CONTROL — the join can fail, and it is the pre-fix arithmetic that fails it', () => {
+    // Kept executable so the finding is not something to take on faith, and so
+    // a regression that puts the stride back reddens HERE with the reason.
+    // This is the OLD reachable set: slot starts only, no sub-slot emits.
+    const preFix = new Set(
+      Array.from({ length: TICKS_PER_BAR / GRID_TICKS_PER_SLOT }, (_, i) => i * GRID_TICKS_PER_SLOT),
+    );
+    const dropped = placeableTicksInBar('triplet8th').filter((t) => !preFix.has(t));
+    expect(
+      dropped,
+      'the pre-fix scheduler dropped exactly the 2nd and 3rd note of every ' +
+        'triplet group; if this list is empty the control is vacuous',
+    ).toEqual([4, 8, 16, 20, 28, 32, 40, 44]);
+    // …and the four that DID sound were just the beat downbeats, which is why
+    // a bar of triplets sounded like a plain quarter pulse.
+    expect(placeableTicksInBar('triplet8th').filter((t) => preFix.has(t))).toEqual([0, 12, 24, 36]);
+    // The instrument is the same one the real leg uses: the shipping set must
+    // be a strict superset of the pre-fix one, or the fix did nothing.
+    for (const t of preFix) expect(reachable.has(t), `slot start ${t} still reached`).toBe(true);
+    expect(reachable.size).toBeGreaterThan(preFix.size);
+  });
+
+  it('a slot emits its ticks in order, and slots tile the bar exactly', () => {
+    expect(slotGridTicks(0)).toEqual([0, 1, 2]);
+    expect(slotGridTicks(5)).toEqual([15, 16, 17]);
+    // No gaps, no overlaps, no off-by-one at the bar boundary.
+    expect(reachableTicksInBar()).toEqual(Array.from({ length: TICKS_PER_BAR }, (_, i) => i));
+  });
+
+  it('the plan preserves the OLD timestamp for every slot-aligned note', () => {
+    // The compatibility claim, asserted rather than asserted-in-prose: index 0
+    // is offset 0, so a quarter/eighth/16th note — every duration whose width
+    // is a multiple of GRID_TICKS_PER_SLOT — sounds at exactly the second it
+    // sounded before. Only the two new sub-slot emits are new events.
+    for (const n of [0, 1, 7, 15]) {
+      const plan = slotEmitPlan(n);
+      expect(plan[0]).toEqual({ absTick: n * GRID_TICKS_PER_SLOT, offset: 0 });
+      expect(plan.map((e) => e.offset)).toEqual([0, 1 / 3, 2 / 3]);
+    }
+  });
+
+  // ── AND THE ENGINE ACTUALLY RUNS THE PLAN ────────────────────────────────
+  //
+  // ⚠ WITHOUT THIS LEG THE WHOLE describe IS A FUNCTION AGREEING WITH ITSELF.
+  // Every assertion above reads score-data.ts; none of them can see score.ts
+  // keeping a private `tickIndex * 3`, which is exactly the shape of the
+  // original defect — a placement grid and a playback grid, each internally
+  // consistent, that nothing joined. score.ts has no unit harness (it needs an
+  // AudioContext + the Faust worklet), so the join is made at SOURCE level,
+  // the same altitude card-range-source works at.
+  //
+  // Comments are stripped first, and they have to be: the explanation now
+  // standing over that loop QUOTES `tickIndex * 3` to say what went wrong, and
+  // a raw grep would report the documentation as the defect. Shared stripper,
+  // shared for that reason.
+  it('score.ts emits through slotEmitPlan and keeps no private stride', () => {
+    const engine = stripSourceComments(
+      readFileSync(fileURLToPath(new URL('./score.ts', import.meta.url)), 'utf8'),
+    );
+    expect(
+      /slotEmitPlan\(/.test(engine),
+      'score.ts must emit via slotEmitPlan — otherwise the reachability sweep ' +
+        'above is score-data.ts agreeing with itself while the engine does ' +
+        'something else entirely.',
+    ).toBe(true);
+    const strides = [...engine.matchAll(/tickIndex\s*\*\s*3\b/g)].map((m) => m[0]);
+    expect(
+      strides,
+      'a bare `tickIndex * 3` in score.ts is the pre-fix stride: it emits only ' +
+        'at slot boundaries, which drops 8 of the 12 triplet positions per bar. ' +
+        'Derive the ticks from slotEmitPlan(tickIndex) instead.',
+    ).toEqual([]);
+    // NEGATIVE CONTROL on this grep, in both directions, on the same pattern —
+    // a `toEqual([])` over a scan that matches nothing reads identically green.
+    expect([...'emitTick(tickIndex * 3, nowAt, d);'.matchAll(/tickIndex\s*\*\s*3\b/g)]).toHaveLength(1);
+    expect([...'emitSlot(tickIndex, nowAt, d);'.matchAll(/tickIndex\s*\*\s*3\b/g)]).toHaveLength(0);
+    // …and the stripper is genuinely load-bearing here: the real file DOES
+    // quote the old stride in prose, so an un-stripped scan would be red.
+    const raw = readFileSync(fileURLToPath(new URL('./score.ts', import.meta.url)), 'utf8');
+    expect(
+      [...raw.matchAll(/tickIndex\s*\*\s*3\b/g)].length,
+      'score.ts still explains the defect in a comment — if this reaches 0 the ' +
+        'stripper is no longer being exercised by this leg and the note above ' +
+        'has been deleted along with the reason.',
+    ).toBeGreaterThan(0);
   });
 });
 

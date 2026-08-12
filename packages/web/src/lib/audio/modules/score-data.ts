@@ -115,6 +115,107 @@ export function tickWidth(duration: NoteDuration): number {
   return DURATION_TICKS[duration];
 }
 
+/** Every duration the toolbar can place, so a gate can sweep the whole set
+ *  instead of naming the ones it happens to remember. Deriving it from
+ *  `DURATION_TICKS` means a new note value is swept the moment it exists. */
+export const NOTE_DURATIONS = Object.keys(DURATION_TICKS) as NoteDuration[];
+
+// ── THE SCHEDULER'S GRID — AND WHY IT LIVES HERE, NOT IN score.ts ──────────
+//
+// score.ts advances its transport in SIXTEENTH-NOTE SLOTS: one external clock
+// pulse, or one internal `slotDur`, moves `tickIndex` by one, and one 16th is
+// `GRID_TICKS_PER_SLOT` grid ticks wide. That is a deliberate contract — a
+// patch's clock cable means "a 16th per pulse" and changing it would re-time
+// every saved rack — but it is NOT the placement grid.
+//
+// ⚠ THE TWO GRIDS ARE COPRIME AT THE TRIPLET, AND FOR THREE MONTHS THAT MEANT
+// SILENCE. `triplet8th` is 4 ticks wide, so `quantizeTick` offers 12 positions
+// per bar {0,4,8,…,44}. The scheduler used to emit at `tickIndex * 3` ONLY, and
+// `noteStartingAt` matches EXACTLY — so the reachable set was {0,3,6,…,45} and
+// a triplet sounded iff `4k ≡ 0 (mod 3)`, i.e. k ∈ {0,3,6,9}. FOUR of twelve.
+// The 2nd and 3rd note of every triplet group, in every beat of every bar, in
+// both clock modes, were placed, drawn at the correct x, saved, synced — and
+// never emitted. The playhead skipped them too, because the highlight is
+// written inside the emit, so the UI agreed with itself and disagreed with the
+// score. Every other duration is a multiple of 3 and was unaffected, which is
+// why nothing ever looked broken.
+//
+// The fix is to keep the SLOT as the transport unit and emit the grid ticks
+// INSIDE it (`slotGridTicks`), at sub-slot offsets. Clock semantics unchanged;
+// all 48 positions reachable; a note on a multiple of 3 keeps its exact former
+// timestamp.
+//
+// This is exported from the pure module so the gate calls THE SAME function the
+// engine calls. A re-typed copy of "which ticks does the scheduler visit" in a
+// test is precisely how a placement grid and a playback grid drift apart
+// without anything going red — which is the bug above, stated as a process.
+
+/** Grid ticks spanned by one scheduler slot (a 16th note). 48 / 16. */
+export const GRID_TICKS_PER_SLOT = 3;
+
+/**
+ * The absolute grid ticks one scheduler slot covers, in emit order.
+ * `slotGridTicks(n)` = [3n, 3n+1, 3n+2].
+ *
+ * The engine emits each of these at `slotStart + (i / GRID_TICKS_PER_SLOT) *
+ * slotDur`, so index `i` is also the sub-slot fraction.
+ */
+export function slotGridTicks(tickIndex: number): number[] {
+  const base = tickIndex * GRID_TICKS_PER_SLOT;
+  const out: number[] = [];
+  for (let i = 0; i < GRID_TICKS_PER_SLOT; i++) out.push(base + i);
+  return out;
+}
+
+/** One note-emission within a scheduler slot. */
+export interface SlotEmit {
+  /** Absolute grid tick to look a note up at. */
+  absTick: number;
+  /** Fraction of the slot at which it sounds — multiply by `slotDur`. */
+  offset: number;
+}
+
+/**
+ * THE PLAN score.ts EXECUTES for one scheduler slot. Exported so the engine and
+ * the gate share one definition of "which ticks sound, and when" — the two grids
+ * drifted apart in the first place because playback re-derived that inline.
+ *
+ * `slotEmitPlan(n)[i].offset` is a FRACTION of the slot, not seconds, so the
+ * caller multiplies by whatever `slotDur` the current bpm gives. Index 0 has
+ * offset 0, which is what makes every note on a multiple of `GRID_TICKS_PER_SLOT`
+ * keep byte-identical timing across this change.
+ */
+export function slotEmitPlan(tickIndex: number): SlotEmit[] {
+  return slotGridTicks(tickIndex).map((absTick, i) => ({
+    absTick,
+    offset: i / GRID_TICKS_PER_SLOT,
+  }));
+}
+
+/**
+ * Every within-bar grid tick the scheduler reaches, for a bar-aligned sweep.
+ * Derived from `slotEmitPlan` — i.e. from the thing the engine runs, not from a
+ * restatement of it. See the note above.
+ */
+export function reachableTicksInBar(): number[] {
+  const slots = TICKS_PER_BAR / GRID_TICKS_PER_SLOT;
+  const out: number[] = [];
+  for (let s = 0; s < slots; s++) out.push(...slotEmitPlan(s).map((e) => e.absTick));
+  return out;
+}
+
+/**
+ * Every within-bar tick `quantizeTick` can produce for a duration — i.e. every
+ * position the AUTHORING side offers. Excludes the end-of-bar clamp artifact
+ * (`TICKS_PER_BAR - 1`), which `canPlace` rejects anyway for any width > 1.
+ */
+export function placeableTicksInBar(duration: NoteDuration): number[] {
+  const w = tickWidth(duration);
+  const out: number[] = [];
+  for (let t = 0; t + w <= TICKS_PER_BAR; t += w) out.push(t);
+  return out;
+}
+
 export function emptyScoreData(): ScoreData {
   return {
     notes: [],

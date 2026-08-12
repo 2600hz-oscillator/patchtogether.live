@@ -17,17 +17,27 @@
 // module-docs-lint's `controlFamilies` → card-testid grep, which exists for
 // this same divergence class.
 //
-// NOT A SWEEP: 133 of the 215 card sources still re-type at least one range
-// number, so this set names the cards that have been converted. Bring a card in
-// when you touch it (boy-scout), by routing its range/curve/default props
-// through the def — `paramSpec(def, id)` in card-kit, or the card's own
-// `pmin/pmax/pdef` helpers.
+// NOT A SWEEP: most card sources still re-type at least one range number, so
+// this set names the cards that have been CONVERTED. Bring a card in when you
+// touch it (boy-scout), by routing its range/curve/default props through the
+// def — `paramSpec(def, id)` in card-kit, or the card's own `pmin/pmax/pdef`
+// helpers.
 //
-// ⚠ STATED SCOPE, MEASURED 2026-08-10. This gate reads 13 of 215 card sources.
-// The other 202 are NOT checked for def-binding at all. This paragraph is PROSE,
-// not an assertion — the population is deliberately no longer counted anywhere
-// (see the note on the floors below), so treat the figures as of their date and
-// re-measure rather than trusting them.
+// ⚠ STATED SCOPE: every card NOT in `RANGE_BOUND_CARDS` is unchecked for
+// def-binding. That is the gate's blind spot and it is large. It is stated
+// WITHOUT A NUMBER on purpose — an earlier revision of this paragraph carried
+// "13 of 215" and was wrong within two merges, which is the same failure the
+// deleted floors below had, just relocated into prose. Measure it against the
+// tree when you need it:
+//
+//     ls packages/web/src/lib/ui/modules/*.svelte | wc -l      # the population
+//     grep -c "Card.svelte':" <this file>                      # the covered set
+//
+// The two things that ARE asserted rather than described: no card may leave the
+// covered set while its source still binds (the artifact anchor below), and a
+// card's own COMMENTS cannot make it look unconverted (the comment-stripping
+// legs at the bottom — which is how AnalogVcoCard and KarplusCard were found
+// sitting outside the set while fully bound).
 //
 // ⚠ THE TWO RATCHET FLOORS ARE GONE (2026-08-10). `RANGE_BOUND_FLOOR` and
 // `MAPPING_BOUND_FLOOR` were hand-typed copies of `RANGE_BOUND_CARDS.length` /
@@ -63,7 +73,9 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { stripSourceComments } from '$lib/source-guards/strip-source-comments';
 import { adsrDef } from '$lib/audio/modules/adsr';
+import { analogVcoDef } from '$lib/audio/modules/analog-vco';
 import { backdraftDef } from '$lib/video/modules/backdraft';
 import { chromaconsoleDef } from '$lib/audio/modules/chromaconsole';
 import { cubeDef } from '$lib/audio/modules/cube';
@@ -75,6 +87,7 @@ import { marblesDef } from '$lib/audio/modules/marbles';
 import { noiseDef } from '$lib/audio/modules/noise';
 import { warrensvisionsDef } from '$lib/video/modules/warrensvisions';
 import { filterDef } from '$lib/audio/modules/filter';
+import { karplusDef } from '$lib/audio/modules/karplus';
 import { meowboxDef } from '$lib/audio/modules/meowbox';
 import { resofilterDef } from '$lib/audio/modules/resofilter';
 import { ringbackDef } from '$lib/audio/modules/ringback';
@@ -221,6 +234,18 @@ import type { ParamDef } from '$lib/graph/types';
  */
 const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }>> = {
   'AdsrCard.svelte': adsrDef,
+  // ⚠ THESE TWO WERE FOUND BY THE COMMENT FIX, NOT ADDED ALONGSIDE IT. Both
+  // were already fully def-bound in source; the artifact anchor could not
+  // demand their enrolment because each card's own comment quotes the literals
+  // it documents removing, so `literalCounts` read them as `range !== 0` and
+  // the anchor concluded they were unconverted. That is the QUIET half of
+  // comment blindness — no red run, just two cards silently outside the set
+  // that certifies them, free to be delisted or to regress.
+  //   AnalogVcoCard is range-bound only: it still hand-types `units="st"` /
+  //   `curve="linear"`, so it stays out of MAPPING_BOUND_CARDS and is held to
+  //   the value-wise curve-agreement clause instead.
+  'AnalogVcoCard.svelte': analogVcoDef,
+  'KarplusCard.svelte': karplusDef,
   'WarrensvisionsCard.svelte': warrensvisionsDef,
   'BackdraftCard.svelte': backdraftDef,
   'ChromaconsoleCard.svelte': chromaconsoleDef,
@@ -248,6 +273,10 @@ const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }
  */
 const MAPPING_BOUND_CARDS: readonly string[] = [
   'AdsrCard.svelte',
+  // Range AND mapping: every Fader reads `P.<id>.{min,max,curve,units}` off
+  // `paramSpec(karplusDef, …)`. See the note in RANGE_BOUND_CARDS for why it
+  // was not enrolled until the comment stripper landed.
+  'KarplusCard.svelte',
   'WarrensvisionsCard.svelte',
   'ChromaconsoleCard.svelte',
   'CubeCard.svelte',
@@ -290,12 +319,43 @@ const MAPPING_BOUND_CARDS: readonly string[] = [
  */
 const CARD_DIR = dirname(fileURLToPath(import.meta.url));
 
-/** Every `*.svelte` in the card directory, as (file, source) pairs. */
+/**
+ * ⚠ COMMENTS ARE PROSE, NOT MARKUP — AND BOTH DIRECTIONS OF THAT MATTER HERE.
+ *
+ * This gate forbids `xMin={-1}` in a card, and "we removed the `xMin={-1}`
+ * literals" is the natural way to WRITE DOWN that a card was converted. A raw
+ * grep therefore flags the explanation as the offence. That is the loud half,
+ * and the sibling guard at `lfo-face-model.test.ts:279` hit it on its first run.
+ *
+ * The QUIET half is worse and is specific to this file. The artifact anchor
+ * below ("EVERY def-bound card is enrolled") decides a card is CONVERTED — and
+ * must therefore stay enrolled — from `literalCounts(src).range === 0`. A
+ * genuinely-converted card whose comment quotes `xMin={-1}` reads as
+ * `range !== 0`, so the anchor STOPS DEMANDING ITS ENROLMENT and the card can
+ * be delisted with nothing going red. Comment blindness is a hole in the
+ * anchor, not a cosmetic annoyance.
+ *
+ * So every read of a card goes through the SHARED quote-aware stripper
+ * (`$lib/source-guards/strip-source-comments`), which preserves byte offsets so
+ * the line-by-line reporting below still points at the right line. It is shared
+ * rather than re-typed here because a re-typed copy of a predicate is precisely
+ * how the previous self-test went blind; its hostile-form legs (`'https://x'`,
+ * `` `a // b` ``, `/[//]/`, `'/**\/*.ts'`) live with it and run on every unit
+ * sweep. The pairing that proves it for THIS gate — the same text as prose and
+ * as code, through the same `cardCode`+`LITERAL_RANGE` path the sweep uses — is
+ * the permanent leg at the bottom of this file.
+ */
+function cardCode(src: string): string {
+  return stripSourceComments(src);
+}
+
+/** Every `*.svelte` in the card directory, as (file, source) pairs. `src` is
+ *  COMMENT-STRIPPED — see `cardCode`. */
 function allCardSources(): { file: string; src: string }[] {
   return readdirSync(CARD_DIR)
     .filter((f) => f.endsWith('.svelte'))
     .sort()
-    .map((file) => ({ file, src: readFileSync(resolve(CARD_DIR, file), 'utf8') }));
+    .map((file) => ({ file, src: cardCode(readFileSync(resolve(CARD_DIR, file), 'utf8')) }));
 }
 
 /** Counts of each literal shape in one source — the anchor's own instrument. */
@@ -333,8 +393,9 @@ const LITERAL_RANGE = /(?:^|[^A-Za-z0-9_])([A-Za-z]*(?:[Mm]in|[Mm]ax)|defaultVal
  */
 const LITERAL_MAPPING = /(?:^|[^A-Za-z0-9_])(curve|units)=(["'])([^"']*)\2/g;
 
+/** One card's source, COMMENT-STRIPPED — see `cardCode`. */
 function cardSource(file: string): string {
-  return readFileSync(fileURLToPath(new URL(`./${file}`, import.meta.url)), 'utf8');
+  return cardCode(readFileSync(fileURLToPath(new URL(`./${file}`, import.meta.url)), 'utf8'));
 }
 
 /** Every `<Control … />` tag in a card, as (paramId, props) pairs. */
@@ -525,5 +586,85 @@ describe('card ranges come from the DEF, not from re-typed numbers', () => {
       '<Fader min={pAttack.min} max={pAttack.max} curve={pAttack.curve} units={pAttack.units} width={204} trackHeight={80} />';
     expect([...ok.matchAll(LITERAL_RANGE)]).toEqual([]);
     expect([...ok.matchAll(LITERAL_MAPPING)]).toEqual([]);
+  });
+
+  // ── COMMENT STRIPPING: THE PERMANENT LEG, BOTH DIRECTIONS ────────────────
+  //
+  // The pair is the whole point. A stripper that returned '' would silence this
+  // entire gate and pass every "documented" leg; a stripper that returned its
+  // input unchanged would pass every "code" leg. Only asserting BOTH halves of
+  // the SAME text, through the SAME `cardCode` + `LITERAL_RANGE` /
+  // `LITERAL_MAPPING` path the sweep above uses, can tell those apart.
+  //
+  // ⚠ These call `cardCode`, NOT a re-typed copy of the stripper. Re-typing the
+  // predicate into the self-test is exactly how the previous generation of
+  // guards in this repo went blind (the raw-write self-test only ever fed
+  // itself the bracket form), so the only way for this leg to pass while the
+  // sweep is broken is for them to stop being the same function.
+  const scanRange = (src: string): string[] =>
+    [...cardCode(src).matchAll(LITERAL_RANGE)].map((m) => m[1]!);
+  const scanMapping = (src: string): string[] =>
+    [...cardCode(src).matchAll(LITERAL_MAPPING)].map((m) => m[1]!);
+
+  it.each([
+    // The shape a converted card actually writes: prose naming what it removed.
+    ['a markup comment', '<!-- was: <XyPad xMin={-1} xMax={1} /> -->'],
+    ['a line comment', '// ranges used to be hand-typed: xMin={-1}'],
+    ['a block comment', '/* xMin={-1} xMax={1} — now paramSpec(def, "camTiltX") */'],
+    ['a trailing comment', 'const p = paramSpec(def, "x"); // replaces step={0.01}'],
+    ['a JSDoc block', '/** @see the old `valueMax={12}` */'],
+  ])('a range literal quoted inside %s is NOT an offence', (_what, src) => {
+    expect(scanRange(src), `${_what}: an illustration in prose is not a re-typed range`).toEqual([]);
+  });
+
+  it.each([
+    ['a markup comment', '<!-- was: <Fader curve="log" /> -->'],
+    ['a line comment', '// curve="linear" was wrong here'],
+  ])('a mapping literal quoted inside %s is NOT an offence', (_what, src) => {
+    expect(scanMapping(src), `${_what}: prose is not a re-typed mapping`).toEqual([]);
+  });
+
+  it('…and the SAME text as CODE still is (the stripper is not an eraser)', () => {
+    expect(scanRange('<XyPad xMin={-1} xMax={1} />')).toEqual(['xMin', 'xMax']);
+    expect(scanRange('const p = paramSpec(def, "x"); <Fader step={0.01} />')).toEqual(['step']);
+    expect(scanMapping('<Fader curve="log" />')).toEqual(['curve']);
+  });
+
+  it('a `//` that is NOT a comment survives — the four shapes a regex stripper eats', () => {
+    // Each of these appears in real card/module source in this tree, and each
+    // breaks at least one of the one-off `//`-stripping regexes this gate used
+    // to be one line away from growing. If any were eaten, the code AFTER it on
+    // the line would vanish and a genuine `xMin={-1}` could hide behind a URL.
+    for (const [what, src] of [
+      ['a URL in a string', `<a href="https://x//y">z</a> <XyPad xMin={-1} />`],
+      ['a template literal', 'const t = `a // b`; <XyPad xMin={-1} />'],
+      ['a regex character class', 'const re = /[//]/g; <XyPad xMin={-1} />'],
+      ['a glob string', `const g = '/**/*.svelte'; <XyPad xMin={-1} />`],
+    ] as const) {
+      expect(scanRange(src), `${what}: the literal after it must still be caught`).toEqual(['xMin']);
+    }
+  });
+
+  it('the ANCHOR sees through comments too — a bound card documenting its old literals stays enrolled', () => {
+    // THE QUIET FAILURE, made executable. `literalCounts` is what the artifact
+    // anchor uses to decide "this card is converted, so it must stay enrolled".
+    // Un-stripped, the comment below reads as `range = 2`, the anchor concludes
+    // the card is NOT converted, and it silently stops demanding enrolment —
+    // green, with the protection gone. This is the leg that would have caught
+    // that, and it calls `literalCounts` rather than restating it.
+    const documented = [
+      '<script>',
+      '  // converted 2026-08-12: was `<XyPad xMin={-1} xMax={1} />`',
+      '  const p = paramSpec(def, "camTiltX");',
+      '</script>',
+      '<XyPad xMin={p.min} xMax={p.max} />',
+    ].join('\n');
+    expect(
+      literalCounts(cardCode(documented)),
+      'a card that DOCUMENTS the literals it removed is still range-clean',
+    ).toEqual({ range: 0, mapping: 0 });
+    // …and the same card with the literals genuinely back is not.
+    const regressed = documented.replace('<XyPad xMin={p.min} xMax={p.max} />', '<XyPad xMin={-1} xMax={1} />');
+    expect(literalCounts(cardCode(regressed)).range, 'a real regression still counts').toBe(2);
   });
 });

@@ -22,6 +22,9 @@ import type { Page } from '@playwright/test';
 import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 import { readScopePeakOverWindow } from './_module-coverage-helpers';
+// THE SAME reset instrument the CARD's RST test uses. Shared deliberately —
+// see the header of _clip-reset-trace.ts.
+import { startStepTrace, stopStepTrace, waitForResetSnap } from './_clip-reset-trace';
 
 test.describe.configure({ mode: 'parallel' });
 
@@ -187,32 +190,138 @@ test('@launchpad RESET pad snaps every active lane back to step 1 (control-deck)
   const l0 = await waitForEngine(page, 'cp', 'currentStep:0', (v) => v >= 8, 6000);
   expect(l0.ok, `lane 0 mid-clip before reset (saw ${l0.last})`).toBe(true);
 
+  // ── WHY THIS IS NOT A TIMED STEP-BAND ANY MORE ──────────────────────────
+  //
+  // ⚠ THIS ASSERTION WAS BUDGET-BUMPED TWICE AND NEVER CHANGED SHAPE.
+  //   #1100 (a79d360cb)  2500 → 5000 ms, "CI-LOAD RACE … saw step ~43/~45"
+  //   #1174 (37cb72709)  two sequential 5000 ms polls → one atomic poll,
+  //                      "the CI reading (84/85 at bpm 240) is a value on its
+  //                       way UP — raising the timeout would have made it WORSE"
+  // Both notes are correct and both left an ABSOLUTE `0 <= step <= 6` band read
+  // over CDP after the press. A third bump is not a fix, and #1174's own
+  // sentence says why: the binding constraint is the latency between the reset
+  // FIRING and the first READ, so a longer window only buys more chances to
+  // read a playhead that is climbing away at 16 steps/s.
+  //
+  // The band is not even SOUND. `MAX_CLIP_STEPS` is 128 at 16 steps/s, so the
+  // natural wrap horizon is 8 s — a window long enough to absorb a stalled
+  // main thread is also long enough to read `<= 6` from a LOOP WRAP with no
+  // reset at all. The sibling CARD RST test measured exactly that (#1173, its
+  // numbers are in _clip-reset-trace.ts) and was rebuilt; this test kept the
+  // instrument that measurement condemned, while its comment claimed "same
+  // tolerance as the card RST test".
+  //
+  // Two load-invariant observables replace it, and they answer DIFFERENT
+  // questions — which is the point, because the old single band could not tell
+  // "the pad never dispatched" from "the engine never consumed it".
+  //
+  //   A. `data.resetNonce` — a MONOTONIC COUNTER on synced node data, and the
+  //      only thing `doReset()` writes. It proves pad → decode → dispatch →
+  //      Y.Doc happened, with no timing dependence at all: a counter that has
+  //      incremented stays incremented no matter how starved the thread was.
+  //      This half is what the launchpad test is actually FOR.
+  //   B. the shared in-page trace — a BACKWARD JUMP in both playheads too fast
+  //      to be a wrap. `currentStep` is monotone between wraps and resets, so a
+  //      decrease has exactly two causes and the wrap is excluded by
+  //      ARITHMETIC. This half is the engine consuming the nonce.
+  //
+  // Neither has an acceptance window to widen. The recorder starts BEFORE the
+  // press and keeps running through it, so however long dispatch takes, the
+  // event is inside the trace rather than missed by a poll that arrived late.
+  const nonceBefore = ((await nodeData(page, 'cp'))?.resetNonce as number | undefined) ?? 0;
+  await startStepTrace(page, 'cp', ['currentStep:0', 'currentStep:1']);
+
   // Select the CONTROL view (permanent top row) + press the hardware RESET pad.
   await selectControl(page);
   await press(page, RESET_PAD.x, RESET_PAD.y);
 
-  // Snap back near the top LONG before a natural wrap. Band <=6 (the fast clock
-  // keeps climbing during dispatch latency — same tolerance as the card RST test).
-  // Timeout 5000 ms (was 2500): `currentStep` rides the AUDIO clock and climbs
-  // even while the MAIN-THREAD scheduler tick (the only consumer of resetNonce)
-  // is momentarily starved on a loaded CI runner — that stall left the snap
-  // unprocessed and the poll expired at step ~45 (CI-only; passes locally + at
-  // 4 workers). 5000 ms tolerates the stall and stays WELL under the 8 s /
-  // 128-step wrap horizon, so a loop wrap can never fake the low reading.
-  //
-  // BOTH lanes are sampled ATOMICALLY (one evaluate per tick): ONE reset snaps
-  // them together, so "both low at the same instant" is the real claim. Polling
-  // them sequentially raced — lane 0's poll absorbed the stall, and lane 1 was
-  // then read after it had already snapped AND climbed back past 6 (saw 84/85
-  // on CI: a value on its way up, not a reset that never landed).
-  const snap = await waitForEngineAll(
-    page, 'cp', ['currentStep:0', 'currentStep:1'], (v) => v >= 0 && v <= 6, 5000,
-  );
-  expect(snap.ok, `both lanes snapped toward the top on ONE reset (saw ${JSON.stringify(snap.last)})`).toBe(true);
+  // A — the pad reached the graph. Counter comparison, not a step band.
+  await expect
+    .poll(
+      async () => ((await nodeData(page, 'cp'))?.resetNonce as number | undefined) ?? 0,
+      {
+        message:
+          `the RESET pad never incremented data.resetNonce (was ${nonceBefore}). That is the ` +
+          `pad → launchpad-map decode → doReset → Y.Doc half, which has no timing in it — ` +
+          `so this failing means the press was not routed, NOT that the runner was slow. ` +
+          `Check the CONTROL view selection and DECK_RESET_COL/ROW.`,
+        timeout: 5000,
+      },
+    )
+    .toBeGreaterThan(nonceBefore);
+
+  // B — the engine consumed it. Same predicate the card RST test calls.
+  // Resolves in ~50 ms when healthy; the 8 s ceiling BOUNDS THE FAILURE and is
+  // not the gate — it absorbs a starved main-thread scheduler tick (the only
+  // consumer of resetNonce) without widening any acceptance window, because
+  // there is no longer an acceptance window.
+  const proved = await waitForResetSnap(page, 8000);
+  const trace = await stopStepTrace(page);
+  expect(
+    proved,
+    `resetNonce advanced (the pad dispatched), but no BACKWARD jump too fast to be a loop ` +
+      `wrap was recorded — so the graph got the reset and the engine did not act on it. ` +
+      `trace: ${JSON.stringify(trace)}`,
+  ).toBe(true);
+
   // Still PLAYING (reset ≠ stop) + advancing.
   expect(await readEngine(page, 'cp', 'activeLane:0')).toBe(0);
   const resumed = await waitForEngine(page, 'cp', 'currentStep:0', (v) => v >= 6, 4000);
   expect(resumed.ok, `lane 0 kept advancing after reset (saw ${resumed.last})`).toBe(true);
+});
+
+test('@launchpad RESET negative control: without the pad press, neither observable fires', async ({ page, rack }) => {
+  // ⚠ THE LEG THAT KEEPS THE ONE ABOVE HONEST, and the one the old absolute
+  // band could not have had: a free-running 128-step clip WRAPS every 8 s, and
+  // a wrap reads `step <= 6` exactly like a reset does. Under the old
+  // assertion, "the reset works" and "we waited long enough for a wrap" were
+  // indistinguishable from the output.
+  //
+  // So: run the identical patch, select CONTROL, press NOTHING, and watch for
+  // longer than a wrap horizon. Both observables must stay silent — the nonce
+  // because nothing dispatched, and the trace because `waitForResetSnap`
+  // excludes a wrap by arithmetic rather than by out-running it.
+  await spawnPatch(page, [
+    { id: 'cp', type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio',
+      params: { quantize: 0, stepDiv: 2, gateLength: 0.9, octave: 0 } },
+    { id: 'tl', type: 'timelorde', position: { x: 520, y: 80 }, domain: 'audio', params: { running: 0, bpm: 240 } },
+  ]);
+  await expect(page.locator('.svelte-flow__node-clipplayer')).toHaveCount(1);
+  await installSingle(page, 'cp');
+  await seedDenseClips(page, 'cp', [0, 1]);
+  await setTransport(page, 1);
+
+  const l0 = await waitForEngine(page, 'cp', 'currentStep:0', (v) => v >= 8, 6000);
+  expect(l0.ok, `lane 0 mid-clip before the control window (saw ${l0.last})`).toBe(true);
+
+  const nonceBefore = ((await nodeData(page, 'cp'))?.resetNonce as number | undefined) ?? 0;
+  await startStepTrace(page, 'cp', ['currentStep:0', 'currentStep:1']);
+  await selectControl(page);
+  // NO press. 9 s > the 8 s / 128-step wrap horizon, so at least one genuine
+  // wrap is expected INSIDE this window — which is precisely what must not be
+  // mistaken for a reset.
+  const falsePositive = await waitForResetSnap(page, 9000);
+  const trace = await stopStepTrace(page);
+  const nonceAfter = ((await nodeData(page, 'cp'))?.resetNonce as number | undefined) ?? 0;
+
+  expect(
+    nonceAfter,
+    'resetNonce moved with no pad pressed — something else is writing it',
+  ).toBe(nonceBefore);
+  expect(
+    falsePositive,
+    `waitForResetSnap reported a reset with NO pad pressed. Over ${trace.spanMs} ms it saw ` +
+      `${trace.drops.length} backward jump(s) and classified one as too-fast-for-a-wrap; at ` +
+      `rate ${trace.rate} steps/s those are loop wraps. The arithmetic wrap exclusion is ` +
+      `broken, which would make the test above pass on a wrap. trace: ${JSON.stringify(trace)}`,
+  ).toBe(false);
+  // NON-VACUITY: the window must actually have contained the thing being
+  // excluded, or "no false positive" is a statement about an idle rack.
+  expect(
+    trace.drops.length,
+    `no backward jump at all in ${trace.spanMs} ms — the clip never wrapped, so this control ` +
+      `never exercised the wrap exclusion it exists to test. Is the transport running?`,
+  ).toBeGreaterThan(0);
 });
 
 test('@launchpad MUTE pad silences a running lane in place — RMS drops to ~0 while its step keeps advancing; unmute returns audio', async ({ page, rack }) => {
