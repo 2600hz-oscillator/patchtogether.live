@@ -107,7 +107,13 @@ jobs:
       - name: Install + run actionlint (pinned)
         run: |
           VER=1.7.12
-          curl -sSfL -o actionlint.tar.gz \
+          # --retry-all-errors is the load-bearing flag: without it curl does NOT
+          # retry a 503, because a 503 is a well-formed HTTP response rather than a
+          # transport error. One un-retried 503 from the releases CDN reddened this
+          # required job — and the umbrella with it — on main (run 31633557811).
+          # Keep in sync with Taskfile.yml's `actionlint` target.
+          curl -sSfL --retry 3 --retry-delay 2 --retry-all-errors --connect-timeout 10 \
+            -o actionlint.tar.gz \
             "https://github.com/rhysd/actionlint/releases/download/v${VER}/actionlint_${VER}_linux_amd64.tar.gz"
           tar -xzf actionlint.tar.gz actionlint
           ./actionlint -shellcheck=
@@ -628,7 +634,7 @@ jobs:
       - name: Download DOOM1.WAD (shareware)
         if: steps.cache-doom-wad.outputs.cache-hit != 'true'
         run: |
-          curl -L --fail --silent --show-error \
+          curl -L --fail --silent --show-error --retry 3 --retry-delay 2 --retry-all-errors --connect-timeout 10 \
             -o packages/web/static/doom/DOOM1.WAD \
             https://distro.ibiblio.org/slitaz/sources/packages/d/doom1.wad
           echo "5b2e249b9c5133ec987b3ea77596381dc0d6bc1d  packages/web/static/doom/DOOM1.WAD" \
@@ -1099,7 +1105,7 @@ jobs:
       - name: Download DOOM1.WAD (shareware)
         if: steps.cache-doom-wad.outputs.cache-hit != 'true'
         run: |
-          curl -L --fail --silent --show-error \
+          curl -L --fail --silent --show-error --retry 3 --retry-delay 2 --retry-all-errors --connect-timeout 10 \
             -o packages/web/static/doom/DOOM1.WAD \
             https://distro.ibiblio.org/slitaz/sources/packages/d/doom1.wad
           echo "5b2e249b9c5133ec987b3ea77596381dc0d6bc1d  packages/web/static/doom/DOOM1.WAD" \
