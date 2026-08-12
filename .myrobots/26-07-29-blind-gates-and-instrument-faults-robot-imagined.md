@@ -28,8 +28,13 @@ indistinguishable, from its output alone, from a check that passes.**
 >
 > Cases still live in the tree: the peakstate fix is still the spec-local
 > `BEHAVIORAL_OBSERVED_OUTPUT` override
-> (`e2e/tests/per-module-per-port-behavioral.spec.ts:2524`), deliberately not an
-> `_drivers.ts` entry, exactly as described.
+> (`e2e/tests/per-module-per-port-behavioral.spec.ts:2492` — grep the symbol, the
+> line drifts), deliberately not an `_drivers.ts` entry, exactly as described.
+>
+> **Re-verified again 2026-08-12**, all three anchors: the override is still
+> spec-local; `backdraft-pure-tv.spec.ts:287` still spawns `zoom: 0.8`; and
+> `blind-gates.md:210` **still carries the stale sentence**. Fixing the skill is
+> an open item — see the TODO note at the foot of this file.
 
 ---
 
@@ -184,3 +189,19 @@ tax scales WITH the ceiling.** The case came back at 64.8 s instead of 34.8 s.
 3. **Ask what the metric is invariant to** before believing it.
 4. **State units in the assertion message** (CSS px vs screen px, frames vs ms).
 5. **Reproduce under the environment that actually failed** — `E2E_SWIFTSHADER=1`.
+
+---
+
+## ⚠ OPEN: `.claude/skills/blind-gates.md:210` is still wrong about E4
+
+The skill's "The negative control is the antidote" section still asserts that
+E4's `zoom: 0.8` *"makes it exercise the real path"*. **Case 4 above measured
+that it does not**, and the live spec agrees with this file rather than the
+skill: `backdraft-pure-tv.spec.ts` states in its own comment that there is no
+structure to assert, that a flat clipped field is the genuine legacy result for
+that scene, and that the real contrast is with E1 — backed by an explicit
+anti-vacuity luma floor. **Correct the skill sentence to match**, or a future
+reader will "fix" the spec back to a control that has no control.
+
+(A strong E4 needs TV ON and OFF captured in one test, ~+40 s CI. Called out
+here rather than silently spent.)

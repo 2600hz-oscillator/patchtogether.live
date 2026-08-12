@@ -1,23 +1,21 @@
 # face re-do — dx7
 
-> ⚠ **STATUS CORRECTED 2026-08-04 — read `face-redo-INDEX.md` §0 before building.**
-> PF-20 (**PR #1301**) **HAS MERGED** (`c6ff9253`); every "unmerged branch" citation below
-> now resolves on `main`. **`face.title` and `face.hint` do NOT paint by default** —
-> `facePageHeader()` returns `null` before reading anything unless annotate mode is on
-> (`packages/web/src/lib/ui/workflow/dock-faceplate-model.ts:90`), and the owner ruled on
-> 2026-08-03 that `face.title` stays annotation-only. **Any argument below that parks a
-> load-bearing fact in `face.hint` because it "still paints" is VOID.** PF-21 dock ROW
-> PACKING (`9bf12df7`) also landed after this was written. **This re-do is NOT built** —
-> dx7 declares a `hero` (from the DX7 operator-map wave) but still no `sidebar`, and none
-> of the re-cut below is in the def. Live backlog.
+> **LIVE BACKLOG — not built.** dx7 declares `order`/`pages`/`glyph`/`rear` and no `hero`,
+> no `sidebar`, no readout strip; none of the re-cut below is in the def. `face.title` does
+> NOT paint by default (`dock-faceplate-model.ts:90`), owner ruling 2026-08-03.
+>
+> ⚠ **Owner ruling 2026-08-11** (verbatim at `packages/web/src/lib/audio/modules/rings.ts:585-590`,
+> `:645-650`): *"we should prefer almost zero AI authored text, and all future faceplate work
+> should reflect that"* and *"lets stop doing these and clean up the existing ones, get rid of
+> them. lose the signal flow diagrams."* The page `hint`s and the whole `signal-flow` sidebar
+> this spec originally proposed are struck; the numbers they carried are kept in §1 and §6.
 
 **Verdict: REAL REWORK — STRUCTURAL ONLY.** The control roster, the rank order, the
 `paramCells` grid, the `algorithm` glyph choice and the rear curation are all correct and
 this spec changes NONE of them; what changes is that the operator map becomes the hero
 PICTURE (which also deletes a duplicate diagram the dock paints today), the voice page
-merges away so map and detail stay adjacent, three genuinely derived readouts land in the
-new full-width strip, and a `signal-flow` sidebar teaches the fixed OUTER chain the map
-cannot show.
+merges away so map and detail stay adjacent, and three genuinely derived readouts land in the
+full-width strip.
 
 ---
 
@@ -64,7 +62,7 @@ until `sustain` < 1 — stated at `modules/dx7.ts:301`) and `attack` (0.001 s = 
 open). **Inert at spawn:** every control is inert until a note source is patched — this
 module makes no sound on its own, and unlike kickdrum it has no audition button.
 
-**Measurable facts worth printing.**
+**Measured facts worth printing.**
 
 - The master VCA's release is `value *= exp(-1/(sr·release))` terminating at `value < 1e-5`
   (`adsr-env.ts:88-94`), entered from the sustain level (`:85-86`). So the VCA's full close
@@ -79,25 +77,21 @@ module makes no sound on its own, and unlike kickdrum it has no audition button.
 
 ## 2. WHAT THE CURRENT SHIPPED FACE GETS WRONG
 
-The face (`modules/dx7.ts:193-263`) was authored across DX7 PRs 4/5/6 and is **largely
-right**: the rank order is argued control by control, `paramCells: { algorithm: 'grid' }`
-(`:249`) is the correct answer for a 32-topology picture-state param, `glyph: 'algorithm'`
-(`:242`) already rejects the flatlining scope trace, and the rear curation (`:259-262`) plus
-its page-id warning (`:215-224`) are correct and must be preserved verbatim. The genuine
-gaps:
+The face (`modules/dx7.ts:193-263`) is **largely right**: the rank order is argued control by
+control, `paramCells: { algorithm: 'grid' }` (`:249`) is the correct answer for a 32-topology
+picture-state param, `glyph: 'algorithm'` (`:242`) already rejects the flatlining scope trace,
+and the rear curation (`:259-262`) plus its page-id warning (`:215-224`) are correct and must
+be preserved verbatim. The genuine gaps:
 
-1. **No `title`, no `hint`, no `hero`, no `sidebar`** — the face predates PF-20, so the
-   faceplate opens as a wall of bands with no statement of what the instrument is.
+1. **No `hero`, no `sidebar`** — the face predates PF-20, so the faceplate opens as a wall of
+   bands.
 2. **The dock paints the algorithm topology TWICE.** With `glyph: 'algorithm'` the dock hero
    rail renders a 64 px `Dx7AlgorithmGlyph`, and the `operators` band renders the 280 px
    `Dx7OperatorMap` — which is built by rescaling *the same* `dx7GlyphGeometry` placement
    (`ui/modules/dx7/dx7-op-map-model.ts:101-103`). The small one carries strictly less: no
-   role colour, no carrier rail, no frequency, no EG thumbnail, no mutes. This is a design
-   defect, not a bug, and correction 1 makes it worse (the readouts move out from beside the
-   glyph, giving the redundant diagram more of the rail).
-3. **The band labels carry no annotation prose at all** — no `hint` on any page. Correction 2
-   makes hints annotation-only, but they still have to exist to be annotated.
-4. **`patch` is a two-control band** whose two members are the same job ("get a voice in"),
+   role colour, no carrier rail, no frequency, no EG thumbnail, no mutes. Design defect, not a
+   bug → §9.1.
+3. **`patch` is a two-control band** whose two members are the same job ("get a voice in"),
    and it sits between the hero rail and the operator editor, pushing the 560 px detail panel
    one band further from the map the shipped comment (`:228-231`) went to arithmetic lengths
    to keep adjacent to it.
@@ -124,7 +118,7 @@ pushes it past rank 8 turns that test red for no design gain.
 | 6 | `release` | **The lane budget ends here, and it is a deliberate spend.** Its 0.005 s default closes the master VCA in 57.6 ms, cutting the long tails stored in bell and pad voices. It is the "why don't my bells ring" trap; leaving it dock-only means the trap has no lane-tier fix. | evicts `voiceCount` from the plate |
 | 7 | `voiceCount` | Set once per patch, not ridden. Rank 7 because it is still the first thing you reach in the dock. | — |
 | 8-10 | `attack`, `decay`, `sustain` | Near pass-through at defaults; `decay` is fully inert until `sustain` < 1. | — |
-| 11-12 | `dx7-operator-map-{n}`, `dx7-op-detail-{n}` | Panels; rank 7+ is their first LEGAL rank (`module-face-lint` `panelTierProblems`), and patch DESIGN belongs in the dock anyway. | — |
+| 11-12 | `dx7-operator-map-{n}`, `dx7-op-detail-{n}` | Panels; rank 7+ was their first LEGAL rank under `panelTierProblems`, and patch DESIGN belongs in the dock anyway. | — |
 | 13 | `dx7-syx-input-{n}` | Once per session, if ever. | — |
 
 **THE LOSERS, NAMED.** `voiceCount` lost the plate to `release` — a wrong voice count is
@@ -136,12 +130,12 @@ is a once-per-session import.
 
 ---
 
-## 4. BAND STRUCTURE + THE ANNOTATION PROSE
+## 4. BAND STRUCTURE
 
 **Pages go 4 → 3.** The `patch` band is merged away, not deleted: its two keys are homed in
 `operators` and immediately promoted out of it by the hero. This is the ONLY structure that
 satisfies all four constraints at once — the map must sit directly above the detail; a hero
-key must be ranked (and, to avoid the empty-band trap in §9.3, must leave its band non-empty);
+key must be ranked (and, to avoid the empty-band trap of §9.3, must leave its band non-empty);
 `order` must not move; and no page id may collide with the curated rear group `voice`
 (`modules/dx7.ts:215-224` — that warning is preserved verbatim).
 
@@ -158,28 +152,17 @@ pages: [
   // listed because a hero key must have a home: a ranked-but-unpaged key falls into
   // the defensive '__unpaged' band, which is a different (and wrong) faceplate. If
   // the hero declaration is ever dropped they degrade gracefully back into this band.
-  { id: 'operators', label: 'algorithm · operators',
-    hint: 'one of 32 wiring charts, and the six sine operators it wires — the chip picks the topology, FEEDBACK sets the depth of the single loop that topology places (op 6 in only 17 of the 32), and the detail panel edits whichever operator is selected in the map above',
+  { id: 'operators',   label: 'algorithm · operators',
     controls: ['dx7-preset-select-{n}', 'dx7-syx-input-{n}', 'algorithm', 'feedback',
                'dx7-operator-map-{n}', 'dx7-op-detail-{n}'] },
-  { id: 'performance', label: 'performance',
-    hint: 'how the instrument plays rather than what it sounds like — how many of the POLY cable’s lanes are read, a global semitone offset on top of the patch’s own stored transpose, and the output gain ahead of a fixed 0.4 headroom trim',
-    controls: ['voiceCount', 'transpose', 'level'] },
-  { id: 'ampenv', label: 'master adsr',
-    hint: 'a master output VCA per voice, layered ON TOP of the patch’s own operator envelopes — near pass-through at these defaults except RELEASE, which is a ceiling on every tail the voice has',
-    controls: ['attack', 'decay', 'sustain', 'release'] },
+  { id: 'performance', label: 'performance', controls: ['voiceCount', 'transpose', 'level'] },
+  { id: 'ampenv',      label: 'master adsr', controls: ['attack', 'decay', 'sustain', 'release'] },
 ],
-title: 'Voice',
-hint: 'Six sine operators wired by one of 32 algorithms. The loaded VOICE supplies their ratios, envelopes and levels; the panel rides the wiring, the feedback depth, and how it plays.',
 ```
 
-**Does this read with every hint hidden?** Yes, and the test is that no hint carries a fact
-the face needs. `operators` is legible because the band is literally a topology chip, a depth
-knob and a diagram. `performance` is three self-naming knobs. `ampenv` is the one band where a
-hidden hint could have mattered — "RELEASE is a ceiling" is load-bearing — so that fact is NOT
-left to the hint: it goes in the readout strip as a printed number (`vca close`, §5), which is
-the brief's own rule that a load-bearing fact belongs in a readout, not smuggled into a label.
-The band labels stay names, not sentences.
+The one load-bearing fact that used to live in a hint — **RELEASE is a ceiling on every tail** —
+is NOT prose: it is a printed number in the readout strip (`vca close`, §5). Band labels stay
+names.
 
 ---
 
@@ -199,13 +182,12 @@ hero: {
 ```
 
 **Does this module need a bespoke `hero.cell`? YES, and it is the strongest case in the
-fan-out.** The platform's own doc names "a routing map" as the archetype
-(`origin/feat/faceplate-platform-v2:packages/web/src/lib/graph/types.ts:711`), and the map
-already exists as a registered panel. The decisive argument is not aesthetic: **`hero.cell`
-SUPPRESSES the dock glyph** (`…:ModuleShell.svelte:353`), which is exactly how the duplicate
-diagram of §2.2 gets deleted. The generic glyph it would otherwise use is `'algorithm'` — a
-strictly smaller version of the same picture — and the glyph is untouched at every other
-tier, so the compact tile keeps it.
+fan-out.** The platform's own doc names "a routing map" as the archetype, and the map already
+exists as a registered panel. The decisive argument is not aesthetic: **`hero.cell` SUPPRESSES
+the dock glyph** (`ModuleShell.svelte:353`), which is exactly how the duplicate diagram of §2.2
+gets deleted. The generic glyph it would otherwise use is `'algorithm'` — a strictly smaller
+version of the same picture — and the glyph is untouched at every other tier, so the compact
+tile keeps it.
 
 **The map belongs in the HERO, not in its band** — but only because the band merge of §4
 keeps it directly above the detail panel. Map in the hero with the voice band still in
@@ -214,7 +196,7 @@ two bands down.
 
 **`hero.control` = the preset selector.** On a patch-driven instrument the selector is the
 biggest control by construction. ⚠ **Honest limitation:** `controlCell(key, 'xl')` only
-applies the size to the KNOB branch (`…:ModuleShell.svelte:516`, `size={…knobSize}`); the
+applies the size to the KNOB branch (`ModuleShell.svelte:516`, `size={…knobSize}`); the
 family/selector branch ignores it. So the promotion buys the selector the hero POSITION, not
 hero typography. That is acceptable and should not be "fixed" by turning the roster into a
 param.
@@ -225,14 +207,14 @@ contract-lock line plus a `docs.controls` blurb. A TEST NOTE button is a defensi
 PR; it is not this one. The loader is the honest second half of "get a voice in" and it is a
 `file` cell, already in faces-parity's allowed `data-cell-control` union.
 
-### The READOUT STRIP (correction 1) — three entries, all derived
+### The READOUT STRIP — three entries, all derived
 
 ⚠ **First, the platform limit that shapes every choice below.**
 `FaceReadoutValue = (read: (paramId: string) => number | undefined) => string`
-(`…:face-readout-values.ts:45`). A derived readout can read **PARAMS ONLY**. It cannot see
+(`face-readout-values.ts:45`). A derived readout can read **PARAMS ONLY**. It cannot see
 `node.data.voice`, `node.data.opOn`, `node.data.preset` or `node.data.voiceRev`. That
-kills three otherwise-obvious candidates outright, and I am recording the rejections because
-they are the ones a reader will ask about:
+kills three otherwise-obvious candidates outright, recorded because they are the ones a reader
+will ask about:
 
 - **the resolved frequency of the SELECTED operator** — needs `node.data.voice` *and* the
   selection, which is deliberately local component `$state` and not in `node.data` at all
@@ -270,9 +252,9 @@ adding a `ParamDef.format` to reshape it would change the picker chip too.
 `node.data.opOn` — mute a carrier and it is no longer summed, but the strip still counts it.
 That is unfixable at the registry (params only), so the label names the ALGORITHM's carrier
 count rather than the audible one, and the mute is carried by the hero picture 100 px above
-it, which dims the tile while still drawing its rail drop (`dx7-op-map-model.ts:66`,
-`:129`). If `FaceReadoutValue` is ever widened to take a node reader, this readout should be
-re-derived over `opOn` and re-labelled `carriers` — record that as the follow-up.
+it, which dims the tile while still drawing its rail drop (`dx7-op-map-model.ts:66`, `:129`).
+If `FaceReadoutValue` is ever widened to take a node reader, re-derive this over `opOn` and
+re-label it `carriers` — recorded as the follow-up.
 
 **3 · `vca close` → `dx7-vca-close`.** The honest tail-ceiling, and the one true multi-input
 derivation on this module.
@@ -295,73 +277,46 @@ derivation on this module.
   reinstate the very blindness the readout exists to remove. The DSP's own termination
   threshold is absolute, so the absolute form is both the traceable one and the one with a
   live negative control.
-- **Where the control lives permanently:** a new `packages/web/src/lib/ui/modules/dx7/dx7-face-model.test.ts`,
-  alongside the pure functions, run on every unit sweep.
+- **Where the control lives permanently:** a new
+  `packages/web/src/lib/ui/modules/dx7/dx7-face-model.test.ts`, alongside the pure functions.
 
-**Why exactly three, and what did not make the strip.** `algorithm` as a `paramId` readout is
-the brief's named noise case — the ALG chip is in the band immediately below it.
-`voiceCount`, `transpose` and `level` are plain knob readbacks two bands down and would pad
-the strip to five without adding a fact. The `level × 0.4` end-to-end gain is a real hidden
-number, but it is a monotone transform of one param with no second input and no distinguishing
-perturbation — so per §1's rule it is not a derived readout; it is taught by the sidebar's
-`× 0.4 headroom` stage instead.
+**Why exactly three.** `algorithm` as a `paramId` readout is the named noise case — the ALG
+chip is in the band immediately below it. `voiceCount`, `transpose` and `level` are plain knob
+readbacks two bands down and would pad the strip to five without adding a fact. The
+`level × 0.4` end-to-end gain is a real hidden number, but it is a monotone transform of one
+param with no second input and no distinguishing perturbation — so it is not a derived readout.
 
 ---
 
-## 6. THE SIDEBAR
+## 6. THE SIDEBAR — NONE
 
-**ONE block: `signal-flow`.** The map shows the *inner* chain (which is different for every
-one of the 32 algorithms). It shows nothing of the OUTER chain, which is fixed, is where the
-master ADSR and the hidden trim live, and is not visible anywhere else on the faceplate.
-
-```ts
-sidebar: [
-  {
-    kind: 'signal-flow',
-    label: 'signal flow',
-    // The REAL order, read off the worklet: carriers are summed into the per-voice
-    // master VCA (dsp/src/dx7.ts:831), voices are summed, then LEVEL, then the fixed
-    // 0.4 trim (:849). No stage is `parallel`: the five voices run alongside each
-    // other but that is not what the field means, and the mono PITCH CV + GATE route
-    // is a FALLBACK read only when POLY is unpatched — drawing it as a parallel
-    // branch would teach that both play at once, which is false.
-    stages: [
-      { label: 'POLY / PITCH · GATE', role: 'generator', note: 'first VOICES lanes' },
-      { label: 'OPERATORS × 6',       role: 'generator', note: 'ALGORITHM wiring' },
-      { label: 'CARRIER SUM',         role: 'bus',       note: 'per voice' },
-      { label: 'MASTER ADSR',         role: 'bus',       note: 'per voice' },
-      { label: 'VOICE SUM',           role: 'bus',       note: '≤ 5' },
-      { label: 'LEVEL',               role: 'bus' },
-      { label: '× 0.4 HEADROOM',      role: 'bus',       note: 'fixed' },
-      { label: 'OUT',                 role: 'bus',       note: 'mono' },
-    ],
-  },
-],
-```
+The `signal-flow` block this spec originally proposed (the fixed OUTER chain: POLY/PITCH·GATE →
+OPERATORS ×6 → CARRIER SUM → MASTER ADSR → VOICE SUM → LEVEL → ×0.4 HEADROOM → OUT) is **struck
+by the 2026-08-11 owner ruling.** The two facts it carried survive as numbers in §1: the fixed
+0.4 trim (`dsp/src/dx7.ts:849`) and the per-voice master VCA layered on the patch's own EGs.
 
 **`presets` is REJECTED, and the argument is the strongest reason to say no in this batch.**
-`FacePreset.values` is `Record<paramId, number>`
-(`…:graph/types.ts:759-765`). A DX7 voice is 80 values, of which exactly **two** are params.
-So a `presets` block for E.PIANO 1 could write `{ algorithm: 5, feedback: 4 }` and nothing
-else — it would rewire the current operators into E.PIANO 1's chart and produce a sound that
-is neither patch. That is not a partial recall, it is a wrong one. And the module already
-ships the correct implementation: `selectDx7Preset` stamps `data.preset` + `data.voice` +
-`data.opOn` + `data.voiceRev` + both params in ONE `mutateNode` transaction
-(`ui/modules/dx7-patch-actions.ts:231-240`), reachable from the hero control. A sidebar
-`presets` block would duplicate a working control with a broken version.
+`FacePreset.values` is `Record<paramId, number>` (`graph/types.ts:759-765`). A DX7 voice is 80
+values, of which exactly **two** are params. So a `presets` block for E.PIANO 1 could write
+`{ algorithm: 5, feedback: 4 }` and nothing else — it would rewire the current operators into
+E.PIANO 1's chart and produce a sound that is neither patch. That is not a partial recall, it
+is a wrong one. And the module already ships the correct implementation: `selectDx7Preset`
+stamps `data.preset` + `data.voice` + `data.opOn` + `data.voiceRev` + both params in ONE
+`mutateNode` transaction (`ui/modules/dx7-patch-actions.ts:231-240`), reachable from the hero
+control. A sidebar `presets` block would duplicate a working control with a broken version.
 
-**`readouts` is rejected** — it reads params only, and the three worth printing are already
-in the strip. **`custom` is rejected** — the only picture worth drawing is the operator map,
-and it is the hero.
+**`readouts` is rejected** — params only, and the three worth printing are already in the
+strip. **`custom` is rejected** — the only picture worth drawing is the operator map, and it
+is the hero.
 
-⚠ **THE LAYOUT ARITHMETIC, because dx7 is the one module where a sidebar competes with the
-editor.** `.faceplate-body` floors at 900 px (`…:_dock-faceplate.css:123-124`);
-`.page.has-sidebar` gives the sidebar `--dock-sidebar-w: 288px` (`:45`, `:313`); `.editor`
-adds 22 px padding each side (`:315-316`); `.section` adds **zero** horizontal padding
-(`:339-341`). So the band content width at the floor is **900 − 288 − 44 = 568 px**, and
-`dx7-op-detail` declares `minWidth: 560` (`shell-cells.ts:266`). **It fits by 8 px.**
-`.editor` is `overflow: auto`, so a squeeze scrolls rather than clips — but 8 px is the whole
-margin and a builder MUST confirm it with `vrt:one` before merging, not assume it.
+**MEASURED, kept from the struck sidebar's layout arithmetic.** `.faceplate-body` floors at
+900 px (`_dock-faceplate.css:123-124`); `.editor` adds 22 px padding each side (`:315-316`);
+`.section` adds **zero** horizontal padding (`:339-341`). `dx7-op-detail` declares
+`minWidth: 560` (`shell-cells.ts:266`). With the 288 px sidebar (`--dock-sidebar-w`, `:45`,
+`:313`) the band content width at the floor was **900 − 288 − 44 = 568 px — a margin of 8 px**,
+the whole reason that sidebar needed a `vrt:one` confirmation before merge. **With no sidebar
+the width is 856 px and the constraint is gone.** That is the one concrete thing the ruling
+bought this face.
 
 ---
 
@@ -373,7 +328,7 @@ changes. Two optional items and three hazards found by grepping for re-typed ran
 - OPTIONAL (needs PF-3): `feedback` gains `format: (v) => v === 0 ? 'off' : String(v)`. 0
   genuinely disables the loop (`modules/dx7.ts:296`) and the knob currently prints a bare
   number for a state that means "off". Costs a knob readout change ⇒ a dock VRT move.
-- OPTIONAL (needs PF-3): `algorithm` gains `format: (v) => 'ALG ' + …` — see defect §9.2.
+- OPTIONAL (needs PF-3): `algorithm` gains `format: (v) => 'ALG ' + …` — see §9.2.
   ⚠ It would also flow to the picker chip, which already reads `ALGORITHM nn`; check for a
   doubled prefix before adopting.
 - **HAZARD** `Dx7OpDetail.svelte:132,137,142,185` re-types `min="0" max="31"` (coarse),
@@ -397,26 +352,19 @@ changes. Two optional items and three hazards found by grepping for re-typed ran
   UI metadata and has no branch in `contract-signature.ts`. Cell count is unchanged at
   **13** (9 params + 4 families), so faces-parity's `defIds.length + families` assert holds
   untouched.
-- **Code added:** 3 pure functions + 3 registry entries in `face-readout-values.ts` (which
-  today holds exactly one id, `kickdrum-tail`, at `…:face-readout-values.ts:52`), plus their
-  negative-control test file. No new component, no new sidebar panel, no new shell cell.
-- **VRT — MOVES:** `workflow-shell-faces.spec.ts/darwin/face-dx7-dock.png` (hero rail
-  appears, 64 px glyph disappears, bands 4 → 3, title/hint header appears, sidebar column
-  appears). Re-capture on darwin.
+- **Code added:** 3 pure functions + 3 registry entries in `face-readout-values.ts`, plus
+  their negative-control test file. No new component, no new sidebar panel, no new shell cell.
+- **VRT — MOVES:** `face-dx7-dock` (hero rail appears, 64 px glyph disappears, bands 4 → 3).
+  Baselines are authored by the linux capture job; never commit one.
 - **VRT — MUST NOT MOVE, treat a diff as a finding, not a re-pin:**
-  - `vrt.spec.ts/{darwin,linux}/dx7.png` — the **REQUIRED `vrt-strict` lane** scene
+  - `vrt.spec.ts/dx7.png` — the **REQUIRED `vrt-strict` lane** scene
     (`vrt-exemptions.ts:882` puts dx7 in `STRICT_VRT_MODULES`). It renders the LEGACY
     `Dx7Card.svelte`, which this spec does not touch. A diff here means something leaked out
     of `face`.
-  - `face-dx7-compact.png` — `title`/`hint`/`hero`/`sidebar` are dock-only, the glyph is
-    suppressed only at dock (`…:ModuleShell.svelte:353`), and `order` is unchanged.
-  - `rear-dx7.png` — `face.rear` is unchanged and no page id ever claimed a curated group;
+  - `face-dx7-compact` — `hero`/`sidebar` are dock-only, the glyph is suppressed only at dock
+    (`ModuleShell.svelte:353`), and `order` is unchanged.
+  - `rear-dx7` — `face.rear` is unchanged and no page id ever claimed a curated group;
     deleting the `patch` page cannot reach the rear.
-- ⚠ **No linux coverage for any of the three.** `linux/face-dx7-compact`,
-  `linux/face-dx7-dock` and `linux/rear-dx7` sit in `EXEMPT_BASELINE_PAIRS`
-  (`vrt-exemptions.ts:1047,1048,1063`). **Do not drain them in this PR** — a drain obliges a
-  same-PR re-capture, and the face is moving. Verification is darwin-only and the PR body
-  must say so.
 - **e2e:** exactly one line moves — `e2e/vrt/workflow-shell-faces.spec.ts:52`
   `{ type: 'dx7', pages: 4 }` → `pages: 3`. That row is a hard structural gate
   (`toHaveCount(pages)` fires before the pixel pin), so it fails loudly if the merge is
@@ -426,10 +374,8 @@ changes. Two optional items and three hazards found by grepping for re-typed ran
   tests are pure arithmetic (< 50 ms). The 13 existing dx7 e2e tests are untouched.
 - **ART: NIL — confirmed, not assumed.** No `.sha` pin names any dx7 file; the six
   `art/scenarios/dx7/*.test.ts` are threshold assertions and there is no `art/baselines/dx7/`.
-  (`pattern3-face-pin.test.ts` lists `face` as a transparent field anyway, but it only
-  applies to pinned defs.)
 - **WebGL attest: NIL — confirmed.** `resolveWebglBasis()`'s `AUDIO_WEBGL_MODULE_DEFS` is
-  cube/hypercube/wavesculpt only; no dx7 card creates a WebGL context.
+  cube/wavesculpt only; no dx7 card creates a WebGL context.
 - **Push 2: NIL.** dx7 has an explicit override (`push-card-config.ts:66`), so the card cannot
   drift — provided `face.order` does not move, which this spec guarantees (§3).
 - **Docs:** dx7 is in `STRICT_DOCS`. No new param or family ⇒ no new `docs.controls` key ⇒
@@ -437,77 +383,64 @@ changes. Two optional items and three hazards found by grepping for re-typed ran
 
 ---
 
-## 9. DEFECTS FOUND IN SHIPPED CODE
+## 9. DEFECT LEDGER
 
-**These are FOLLOW-UP BUGS, not spec content.**
+**9.1 — STILL OPEN. The dock renders the algorithm topology twice.** `modules/dx7.ts:243` is
+still `glyph: 'algorithm'` and **no `hero.cell` exists to suppress it**, so the dock hero rail
+paints a 64 px `Dx7AlgorithmGlyph` while the `operators` band paints the 280 px
+`Dx7OperatorMap` from the same geometry (`dx7-op-map-model.ts:101-103`). Costs a player ~64 px
+of the most valuable strip on the faceplate for a strictly-lesser copy of the picture directly
+below it. No gate can see it — VRT pins whatever is there and faces-parity counts cells, not
+pictures. **This spec closes it** as a side effect of `hero.cell`; recorded because the same
+shape will recur on the next module that pairs a glyph with a panel of the same subject.
 
-1. **The dock renders the algorithm topology twice.** `glyph: 'algorithm'`
-   (`modules/dx7.ts:242`) paints a 64 px `Dx7AlgorithmGlyph` in the dock hero rail while the
-   `operators` band paints the 280 px `Dx7OperatorMap` from the same geometry
-   (`dx7-op-map-model.ts:101-103`). Costs a player ~64 px of the most valuable strip on the
-   faceplate for a strictly-lesser copy of the picture directly below it. No gate can see it
-   — VRT pins whatever is there and faces-parity counts cells, not pictures. **This spec
-   closes it** as a side effect of `hero.cell`; it is recorded because the same shape will
-   recur on the next module that pairs a glyph with a panel of the same subject.
+**9.2 — STILL OPEN. The topology caption prints a bare, unlabelled number.**
+`modules/dx7.ts:142` is `{ id:'algorithm', … curve:'discrete' }` and declares **neither
+`format` nor `options`**, so `topologyLabel` (`ModuleShell.svelte:327-336`) falls through to
+`String(Math.round(v))` — the caption beside the diagram reads `5` while the picker chip in the
+same faceplate reads `ALGORITHM nn`. Two surfaces naming one param two ways. After this spec
+the dock glyph is suppressed, so the defect survives only at the compact and plate tiers —
+where it is arguably worse, since there is no chip beside it to disambiguate. Costs
+comprehension, not correctness. Catchable by a unit assertion on `topologyLabel`; nothing tests
+it today.
 
-2. **The topology glyph caption prints a bare, unlabelled number.** `topologyLabel`
-   (`…:ModuleShell.svelte:303-312`) falls through to `String(Math.round(v))` because
-   `algorithm` declares neither `format` nor `options` — so the caption beside the diagram
-   reads `5` while the picker chip in the same faceplate reads `ALGORITHM nn`. Two surfaces
-   naming one param two ways. After this spec the dock glyph is suppressed, so the defect
-   survives only at the compact and plate tiers — where it is arguably worse, since there is
-   no chip beside it to disambiguate. Costs comprehension, not correctness. Catchable by a
-   unit assertion on `topologyLabel`; nothing tests it today.
-
-3. **PLATFORM (unmerged branch): `heroFacePlan` drops emptied CLUSTERS but not emptied
-   BANDS.** `withoutKeys` filters `clusters` on `cl.controls.length > 0`
-   (`…:dock-faceplate-model.ts:100-110`) under the comment "a sub-header over zero cells is a
-   caption for nothing" — but the dock band loop (`…:ModuleShell.svelte:938`) has no such
-   guard, so a face that promotes every control of a band renders a labelled `<section>` with
-   an empty grid. That is precisely the "labelled void" `sidebarPlan` refuses for sidebar
-   blocks. kickdrum never hits it (band 1 keeps four controls). **dx7 is the first face that
-   would**, which is why §4 merges the voice page instead of emptying it. Fix is the same
-   one-line filter on the band list; it belongs in the platform PR, not here.
+**9.3 — `heroFacePlan` dropped emptied CLUSTERS but not emptied BANDS. ✅ FIXED.**
+`withoutKeys` filtered `clusters` on `cl.controls.length > 0` under the comment "a sub-header
+over zero cells is a caption for nothing", but the dock band loop had no such guard, so a face
+promoting every control of a band rendered a labelled `<section>` with an empty grid.
+`dock-faceplate-model.ts:319-321` now filters `bands` on
+`controls.length > 0 || clusters.length > 0`, with a comment naming **dx7 and mixer** as the
+two faces that found it. §4 still merges the voice page rather than emptying it, for the
+adjacency reason, not the empty-band one.
 
 No DSP defects found. The algorithm table, the `{from,to}` feedback pair, the envelope law
-and the message protocol all read as corrected by PRs 0/0b and internally consistent with
-`dx7-render.ts`.
+and the message protocol all read as internally consistent with `dx7-render.ts`.
 
 ---
 
 ## 10. VERIFICATION GATE
 
-In order. Nothing here needs a full suite.
-
 ```sh
 # 1. the pure model + the PERMANENT negative controls for all three readouts
 REPEAT=3 flox activate -- task test:one -- dx7-face-model
-
-# 2. the face lint: hero keys ranked, hero.cell resolves to a panel, every valueId
-#    registered, sidebar block non-empty, no page id colliding with the rear group
+# 2. face lint: hero keys ranked, hero.cell resolves to a panel, every valueId registered,
+#    no page id colliding with the rear group
 flox activate -- task test:one -- module-face-lint
-
 # 3. the hero split is TOTAL for every faced module (the unit twin of faces-parity)
 flox activate -- task test:one -- dock-faceplate-model
-
 # 4. the shell-cell registry still resolves all four dx7 family/panel keys
 flox activate -- task test:one -- shell-cells
-
 # 5. the push card did not drift (voiceCount must stay in the face-derived window)
 flox activate -- task test:one -- push-card-schema
-
 # 6. contract + docs must both produce an EMPTY diff — a non-empty one is a finding
 flox activate -- task docs:check
-
-# 7. e2e — the dock faceplate still renders 13 cells, one control-* per param,
-#    both panels operable, the ALG grid chip portaled
+# 7. e2e — the dock faceplate still renders 13 cells, both panels operable, ALG grid portaled
 flox activate -- task e2e:serve
-flox activate -- task e2e:one -- "faces-parity" 
+flox activate -- task e2e:one -- "faces-parity"
 flox activate -- task e2e:one -- tests/dx7-operator-panel.spec.ts
 flox activate -- task e2e:one -- tests/dx7-algorithm-picker.spec.ts
-
-# 8. VRT — the ONE scene that moves, then the three that must NOT
-flox activate -- task vrt:one -- face-dx7-dock      # expect a diff; inspect, then re-pin
+# 8. VRT — the one that moves, then the three that must NOT
+flox activate -- task vrt:one -- face-dx7-dock
 flox activate -- task vrt:one -- face-dx7-compact   # expect NO diff
 flox activate -- task vrt:one -- rear-dx7           # expect NO diff
 flox activate -- task vrt:one -- dx7                # legacy card, REQUIRED lane: NO diff
