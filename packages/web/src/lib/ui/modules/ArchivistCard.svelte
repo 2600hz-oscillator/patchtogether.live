@@ -28,6 +28,7 @@
   // the same item + can drive play/seek. Each peer loads the URL locally.
 
   import { onMount, onDestroy } from 'svelte';
+  import { nodeMedia, type NodeMediaLease } from '$lib/ui/media/node-media-registry';
   import { type NodeProps } from '@xyflow/svelte';
   import { captureFlowStore } from './card-kit';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
@@ -105,9 +106,18 @@
   ];
 
   // ---- DOM refs ----
+  // All THREE elements are owned by the NODE, not by this card (see
+  // $lib/ui/media/node-media-registry) — an archive.org item is a video, an
+  // image or an audio file, and the card picks per item. The pre-fix card
+  // detached both engine sources on unmount, so a card move blanked a playing
+  // item and the chain went black downstream.
+  let videoHost: HTMLDivElement | null = $state(null);
+  let audioHost: HTMLDivElement | null = $state(null);
+  let imageHost: HTMLDivElement | null = $state(null);
   let mediaEl: HTMLVideoElement | null = $state(null); // <video> for video items
   let audioEl: HTMLAudioElement | null = $state(null); // <audio> for audio items
   let imgEl: HTMLImageElement | null = $state(null);    // <img> for image items
+  const leases: (NodeMediaLease<HTMLElement> | null)[] = [null, null, null];
 
   // ---- Local UI state ----
   let searchTerm = $state('');
@@ -132,6 +142,54 @@
   let cleanOut = $derived<boolean>(item ? hasCleanOutput(item.type) : false);
 
   // Hydrate local inputs from saved data on mount.
+  // ---- Adopt the three NODE-owned elements into this card ----
+  //
+  // Each is a separate registry slot, so an item that switches type does not
+  // disturb the other two. The reactive `class:hidden` / `alt` bindings the
+  // markup used to carry are applied by the effect below, since these elements
+  // are no longer declared by this component.
+  $effect(() => {
+    const hosts: [HTMLDivElement | null, string, 'video' | 'audio' | 'img', string][] = [
+      [videoHost, 'video', 'video', 'archivist-video'],
+      [audioHost, 'audio', 'audio', 'archivist-audio'],
+      [imageHost, 'image', 'img', 'archivist-image'],
+    ];
+    const taken: NodeMediaLease<HTMLElement>[] = [];
+    hosts.forEach(([host, slot, kind, testid], i) => {
+      if (!host) return;
+      const lease = nodeMedia.adopt(id, slot, host, {
+        kind,
+        init: (el) => {
+          el.setAttribute('data-testid', testid);
+          if (kind === 'video') (el as HTMLVideoElement).playsInline = true;
+          if (kind === 'audio') el.classList.add('audio-el');
+          if (kind === 'img') el.classList.add('img-el');
+        },
+      });
+      leases[i] = lease;
+      taken.push(lease);
+      if (kind === 'video') mediaEl = lease.el as HTMLVideoElement;
+      if (kind === 'audio') audioEl = lease.el as unknown as HTMLAudioElement;
+      if (kind === 'img') imgEl = lease.el as HTMLImageElement;
+    });
+    // `onended={onEnded}` was a markup attribute on the video AND the audio.
+    const enders = [mediaEl, audioEl].filter(Boolean) as HTMLMediaElement[];
+    for (const el of enders) el.addEventListener('ended', onEnded);
+    return () => {
+      for (const el of enders) el.removeEventListener('ended', onEnded);
+      for (const l of taken) l.release();
+    };
+  });
+
+  // The `class:hidden` / `alt` bindings, applied imperatively. Reading `item`
+  // here registers the reactive dependency exactly as the markup did.
+  $effect(() => {
+    const t = item?.type;
+    mediaEl?.classList.toggle('hidden', t !== 'video');
+    imgEl?.classList.toggle('hidden', t !== 'image');
+    if (imgEl) imgEl.alt = item?.title ?? 'archive.org image';
+  });
+
   onMount(() => {
     const d = node?.data as Partial<ArchivistData> | undefined;
     if (d) {
@@ -522,10 +580,12 @@
     stopGateLoop();
     if (audioWireTimer) { clearTimeout(audioWireTimer); audioWireTimer = null; }
     if (displayTimer !== null) clearInterval(displayTimer);
-    const ve = videoEngine();
-    try { ve?.attachExternalSource(id, 'video', null); } catch { /* */ }
-    try { ve?.attachExternalSource(id, 'image', null); } catch { /* */ }
-    getExtras()?.unwireAudio();
+    // NOTE what is deliberately ABSENT: no detach of either source, no
+    // unwireAudio. All three elements belong to the NODE and keep playing
+    // across a card move; detaching here blanked a live item. Teardown runs
+    // from nodeMedia when the node leaves the graph.
+    for (const l of leases) l?.release();
+    leases.fill(null);
   });
 
   // ---- `ended` trigger wiring ----
@@ -652,28 +712,12 @@
 
     <!-- Preview -->
     <div class="preview-wrap" data-testid="archivist-preview">
-      <!-- svelte-ignore a11y_media_has_caption -->
-      <video
-        bind:this={mediaEl}
-        class:hidden={item?.type !== 'video'}
-        data-testid="archivist-video"
-        playsinline
-        onended={onEnded}
-      ></video>
-      <!-- svelte-ignore a11y_media_has_caption -->
-      <audio
-        bind:this={audioEl}
-        class="audio-el"
-        data-testid="archivist-audio"
-        onended={onEnded}
-      ></audio>
-      <img
-        bind:this={imgEl}
-        class:hidden={item?.type !== 'image'}
-        class="img-el"
-        alt={item?.title ?? 'archive.org image'}
-        data-testid="archivist-image"
-      />
+      <!-- The three media elements are NOT declared here: they belong to the
+           NODE and are adopted into these host divs (see the $effect above).
+           Declaring them in markup is what tied their lifetime to the card. -->
+      <div class="video-host" bind:this={videoHost}></div>
+      <div class="video-host" bind:this={audioHost}></div>
+      <div class="video-host" bind:this={imageHost}></div>
 
       {#if item?.type === 'audio'}
         <div class="audio-art" data-testid="archivist-audio-art">
@@ -805,15 +849,19 @@
     overflow: hidden;
     flex: 1;
   }
-  video, .img-el {
+  /* The elements are ADOPTED into .video-host at runtime (node-owned), so
+   * Svelte cannot scope-class them — these must be :global(). `display:
+   * contents` keeps them in .preview-wrap's layout as the inline tags were. */
+  .video-host { display: contents; }
+  .video-host :global(video), .video-host :global(.img-el) {
     display: block;
     max-width: 100%; max-height: 100%;
     width: 100%; height: 100%;
     object-fit: contain;
     background: #000;
   }
-  .hidden { display: none; }
-  .audio-el { display: none; }
+  .video-host :global(.hidden) { display: none; }
+  .video-host :global(.audio-el) { display: none; }
   .audio-art {
     display: flex; flex-direction: column; align-items: center; justify-content: center;
     gap: 8px; text-align: center; padding: 12px;
