@@ -27,7 +27,11 @@
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 import { setNodeParams } from './_module-coverage-helpers';
-import { LANE_CELL_H, PLATE_ROW_H } from '../../packages/web/src/lib/ui/workflow/module-shell-model';
+import {
+  LANE_CELL_H,
+  LANE_KNOB_READOUT_H,
+  PLATE_ROW_H,
+} from '../../packages/web/src/lib/ui/workflow/module-shell-model';
 
 const TYPE = 'kickdrum';
 
@@ -808,6 +812,59 @@ test.describe('PF-21 row plan — sections share a row, legibly and without over
 // DOM rather than from a list here. What it does NOT do is boot all ~29 faced
 // modules × 3 tiers: the unit sweep covers the kind union, and this covers the
 // kinds that actually paint.
+/** One measured plate tile — the shape both the sweep and its negative control
+ *  hand to `plateOverruns`. */
+interface PlateTile {
+  rowTracks: number[];
+  cells: { kind: string; x: number; y: number; w: number; h: number }[];
+}
+
+/**
+ * Split a plate's over-tall cells into the two cases that need OPPOSITE
+ * responses — the distinction the whole per-row rule rests on.
+ *
+ * `willCollide` — the cell outgrows its own row's track AND some cell sits
+ *   below it sharing horizontal extent. That is a real collision (or one gap
+ *   away from one) and is a failure.
+ * `harmless` — it outgrows its track with NOTHING beneath it, so it paints into
+ *   empty grid space. Measured over the live roster under the OLD per-face
+ *   track, this was FOUR of the eleven readout-bearing faces (cofefve, filter,
+ *   resofilter, tidyVco) — and they are exactly the faces a per-face track
+ *   would have evicted rows from for no reason. Flagging them is how the next
+ *   reader ends up back in that trap, so the split is the gate, not a softening.
+ *
+ * ONE function, called by the sweep and by the negative control below, so the
+ * control cannot go blind separately from the check (the re-typed-copy failure
+ * CLAUDE.md records).
+ */
+function plateOverruns(tile: PlateTile): { willCollide: string[]; harmless: string[] } {
+  const willCollide: string[] = [];
+  const harmless: string[] = [];
+  const hasLowerNeighbour = (c: PlateTile['cells'][number]) =>
+    tile.cells.some(
+      (o) =>
+        o !== c &&
+        o.y > c.y + 0.5 &&
+        Math.min(c.x + c.w, o.x + o.w) - Math.max(c.x, o.x) > 0.5,
+    );
+  // Rows are laid out top-down in `rowTracks` order, so rank the distinct y
+  // offsets and index by that.
+  const rowYs = [...new Set(tile.cells.map((c) => Math.round(c.y)))].sort((a, b) => a - b);
+  for (const c of tile.cells) {
+    const rowIdx = rowYs.indexOf(Math.round(c.y));
+    const track = tile.rowTracks[rowIdx];
+    if (track === undefined || c.h <= track + 0.5) continue;
+    const where =
+      `a '${c.kind}' cell measures ${c.h.toFixed(1)} CSS px in row ${rowIdx}'s ${track} px track`;
+    if (hasLowerNeighbour(c)) {
+      willCollide.push(`${where} AND has a cell beneath it — it will paint ${(c.h - track).toFixed(1)} px over that row`);
+    } else {
+      harmless.push(`${where}, nothing beneath it`);
+    }
+  }
+  return { willCollide, harmless };
+}
+
 test.describe('lane tile geometry — no cell paints over another, at any lane tier', () => {
   /** Every migrated face — read off the live registry, never a list here. */
   async function facedTypes(page: Page): Promise<string[]> {
@@ -833,7 +890,16 @@ test.describe('lane tile geometry — no cell paints over another, at any lane t
 
     // marbles + noise are the fader faces; adsr and dx7 bring plain knob
     // columns and a declared grid, so "everything is a fader" cannot pass.
-    const WANT = ['marbles', 'noise', 'adsr', 'dx7'];
+    //
+    // ⚠ tidyVco IS HERE FOR THE OTHER HALF OF LEG (b), and without it that leg
+    // is asserted but never exercised. adsr is the face whose tall cell HAS a
+    // row beneath it (row 0, 9.0 px of overlap before the per-row fix);
+    // tidyVco is the face whose tall cell (`oct2`, rank 5) is in the LAST row
+    // with nothing under it, so it overruns a 42 px track by 13 px and collides
+    // with nothing. A leg that only ever sees the first shape cannot show it
+    // discriminates — and a "fix" that flags the second is precisely the
+    // eviction trap the per-row rule exists to avoid.
+    const WANT = ['marbles', 'noise', 'adsr', 'dx7', 'tidyVco'];
     const subjects = faced.filter((t) => WANT.includes(t));
     expect(subjects.sort(), 'every subject of this sweep is a migrated face').toEqual(
       [...WANT].sort(),
@@ -855,31 +921,37 @@ test.describe('lane tile geometry — no cell paints over another, at any lane t
 
     const seenKinds = new Set<string>();
     const problems: string[] = [];
+    /** Every cell that PAINTED a readout line, with its measured height —
+     *  the population leg (e) bounds against `LANE_KNOB_READOUT_H`. */
+    const readoutCells: { where: string; h: number }[] = [];
+    /** Plate cells that OUTGROW their track with NOTHING BENEATH THEM — the
+     *  case leg (b) deliberately does not flag. Collected so the exemption
+     *  is PROVEN to be exercised rather than merely written down. */
+    const innocentOverruns: string[] = [];
     /**
-     * ⚠ A SECOND, PRE-EXISTING DEFECT, FOUND BY THIS TEST AND NOT FIXED BY IT.
+     * ⚠ THE knob↔knob BUCKET IS GONE, AND THAT IS THE POINT (2026-08-12).
      *
-     * A knob cell is NOT the 42 px the plate's design row assumes. `KnobConic`
-     * renders an EARNED readout line — `knobReadout()` returns non-null for a
-     * param that declares a vocabulary — so a knob column is 42 px WITHOUT one
-     * and 57 px WITH one. MEASURED on adsr's full-tier plate: cells of 57 px in
-     * a 46 px pitch, i.e. 9-15 px of row-1-over-row-2, visible as the A/D/S/R
-     * readouts colliding with the knobs beneath them.
+     * It used to hold a SECOND defect this sweep found and did not fix: a knob
+     * cell is not the 42 px the plate's design row assumes, because `KnobConic`
+     * renders an EARNED readout for any param declaring a vocabulary, making
+     * the cell 55 px (57 under the VRT webfonts). Measured on adsr: 13 px of
+     * track overrun and `knob overlaps knob by 36.0×9.0 CSS px`.
      *
-     * It is the same mechanism as the marbles bug this PR fixes and it is NOT
-     * the same fix: the height depends on the PARAM (does it earn a readout?),
-     * not on the cell KIND, so the planner would need per-cell heights rather
-     * than a per-kind table. Both candidate remedies — modelling the readout,
-     * or suppressing it in the plate — change what ~20 faces paint at the full
-     * lane tier, which is an owner-visible design decision and not something to
-     * fold into an urgent restoration.
+     * ⚠ AND THE ORIGINAL COUNT WAS WRONG BECAUSE THE INSTRUMENT WAS SINGLE-AXIS.
+     * A y-only overlap test reports every same-row sibling as colliding and
+     * gives ELEVEN faces. Measured with x AND y over all 32 migrated faces:
+     * SEVEN overlap, every one of them by exactly 9.0 CSS px (adsr, cloudseed,
+     * delay, kickdrum, lfo, macrooscillator, ringback), out of 32 readout-
+     * bearing cells across 11 faces — the other four (cofefve, filter,
+     * resofilter, tidyVco) have NOTHING BENEATH the tall cell and collide with
+     * nothing. "All exactly 9.0" is the tell that it is structural: 9 = 55 − 46,
+     * the rendered cell minus the 42 px track + 4 px gap row pitch.
      *
-     * So it is SEPARATED, not filtered: these are printed on every run, in the
-     * failure message of the assertion below, and the assertion that matters
-     * (no overlap involving any other kind) stays unconditional. Nothing here
-     * is a count, and there is no per-module list to go stale — if the readout
-     * defect is fixed this bucket simply empties.
+     * The remedy shipped with this un-bucketing: the plate's tracks are sized
+     * PER ROW (`plateRowTracks`), so a tall cell costs only the rows beneath it
+     * instead of shrinking the whole plate. A knob↔knob overlap is therefore
+     * now as unconditional a failure as every other pair.
      */
-    const knobOverlaps: string[] = [];
 
     for (const [tier, zoom] of [
       ['mini', 0.2],
@@ -905,8 +977,18 @@ test.describe('lane tile geometry — no cell paints over another, at any lane t
         const out: {
           node: string;
           layout: string;
-          plateRowH: number;
-          cells: { kind: string; x: number; y: number; w: number; h: number }[];
+          /** The plate's PER-ROW tracks, read back off the DOM. */
+          rowTracks: number[];
+          cells: {
+            kind: string;
+            x: number;
+            y: number;
+            w: number;
+            h: number;
+            /** Is the EARNED readout line painted here? The height the plate
+             *  over-ran was this line, so geometry and cause are read together. */
+            readout: boolean;
+          }[];
         }[] = [];
         for (const shell of document.querySelectorAll(
           '.svelte-flow__node [data-testid="module-shell"]',
@@ -923,14 +1005,19 @@ test.describe('lane tile geometry — no cell paints over another, at any lane t
               y: e.offsetTop,
               w: e.offsetWidth,
               h: e.offsetHeight,
+              readout: !!e.querySelector('.readout'),
             };
           });
           out.push({
             node: shell.closest('.svelte-flow__node')?.getAttribute('data-id') ?? '?',
             layout: body.getAttribute('data-body-layout') ?? 'row',
-            // The grid track the plan wrote — read back off the DOM rather than
-            // recomputed here, so a plan that stops threading it through fails.
-            plateRowH: Number(body.getAttribute('data-plate-row-h') ?? 0),
+            // The grid tracks the plan wrote — read back off the DOM rather
+            // than recomputed here, so a plan that stops threading them through
+            // fails. One number per ROW since 2026-08-12.
+            rowTracks: (body.getAttribute('data-plate-row-h') ?? '')
+              .split(/\s+/)
+              .filter(Boolean)
+              .map(Number),
             cells,
           });
         }
@@ -940,7 +1027,21 @@ test.describe('lane tile geometry — no cell paints over another, at any lane t
       expect(measured.length, `${tier}: tiles were measured`).toBeGreaterThan(0);
 
       for (const tile of measured) {
-        for (const c of tile.cells) seenKinds.add(c.kind);
+        for (const c of tile.cells) {
+          seenKinds.add(c.kind);
+          // ⚠ PLATE ONLY. `LANE_KNOB_READOUT_H` is a PLATE figure — a 26 px
+          // `sm` dial plus its label and readout. The ROW layout uses `md`
+          // (and `lg` at mini), so its readout cells are legitimately
+          // taller: measured 69 px at compact and 75 at mini on adsr. They
+          // are not bounded by this constant and must not be judged by it —
+          // the row has no fixed track for anything to overrun.
+          if (c.readout && tile.layout === 'plate') {
+            readoutCells.push({
+              where: `${tier}/${name(tile.node)} '${c.kind}'`,
+              h: c.h,
+            });
+          }
+        }
 
         // (a) NO TWO CELLS OVERLAP — the defect, stated directly.
         for (let i = 0; i < tile.cells.length; i++) {
@@ -949,43 +1050,41 @@ test.describe('lane tile geometry — no cell paints over another, at any lane t
             const b = tile.cells[j];
             const ox = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
             const oy = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+            // ⚠ BOTH AXES. A y-only test calls every same-row sibling an
+            // overlap and inflated this population from 7 faces to 11.
             if (ox > 0.5 && oy > 0.5) {
-              const line =
+              // Unconditional for EVERY pair of kinds, knob↔knob included —
+              // see the note on the removed bucket above.
+              problems.push(
                 `${tier}/${name(tile.node)} (${tile.layout}): ${a.kind} overlaps ${b.kind} by ` +
-                `${ox.toFixed(1)}×${oy.toFixed(1)} CSS px`;
-              // ⚠ THE ONE RESIDUAL, AND IT IS A DIFFERENT DEFECT — SEE BELOW.
-              // A knob↔knob overlap has a separate cause (an EARNED readout
-              // line) that this PR deliberately does not change. Everything
-              // else — every declared cell kind, which is the class that broke
-              // marbles — is unconditional.
-              if (a.kind === 'knob' && b.kind === 'knob') knobOverlaps.push(line);
-              else problems.push(line);
+                  `${ox.toFixed(1)}×${oy.toFixed(1)} CSS px`,
+              );
             }
           }
         }
 
-        // (b) THE PLATE'S TRACK IS NOT SHORTER THAN ITS CELLS — the precise
-        //     precondition for (a). Only the PLATE can produce an overlap: it
-        //     is the one layout with a FIXED `grid-auto-rows` track, and
-        //     `align-items: start` means an over-tall cell spills downward
-        //     instead of being clipped. The ROW layout is a flex line with
-        //     `align-items: center` and no fixed track, so a tall cell there is
-        //     simply a tall line — which is why marbles' compact tile was
-        //     correct all along while its full tile was not.
+        // (b) A CELL THAT OUTGROWS ITS TRACK **AND HAS A CELL BENEATH IT** —
+        //     the precise precondition for (a), and the distinction is the
+        //     whole rule. Only the PLATE can produce an overlap: it is the one
+        //     layout with FIXED grid tracks, and `align-items: start` means an
+        //     over-tall cell spills downward instead of being clipped. The ROW
+        //     layout is a flex line with `align-items: center` and no track, so
+        //     a tall cell there is simply a tall line — which is why marbles'
+        //     compact tile was correct all along while its full tile was not.
+        //
+        // ⚠ "HAS A LOWER NEIGHBOUR" IS LOAD-BEARING, NOT A SOFTENING. A cell
+        // that overruns its track with nothing under it paints into empty grid
+        // space and collides with nothing — measured, that is FOUR of the
+        // eleven readout-bearing faces (cofefve, filter, resofilter, tidyVco),
+        // and they are exactly the faces a per-FACE track would have evicted
+        // rows from for no reason. Flagging them here would push the next
+        // reader straight back into that trap. Leg (a) stays unconditional, so
+        // an actual collision is caught either way; this leg is the near-miss
+        // detector, and a near-miss needs something to miss.
         if (tile.layout === 'plate') {
-          for (const c of tile.cells) {
-            if (c.h > tile.plateRowH + 0.5) {
-              const line =
-                `${tier}/${name(tile.node)}: a '${c.kind}' cell measures ${c.h.toFixed(1)} CSS px in a ` +
-                `${tile.plateRowH} px grid track — it will paint ${(c.h - tile.plateRowH).toFixed(1)} px ` +
-                `over the row below`;
-              // Same separation as the overlap leg: a knob column over-running
-              // its track is the EARNED-READOUT defect (see `knobOverlaps`),
-              // not the declared-tall-cell one this PR fixes.
-              if (c.kind === 'knob') knobOverlaps.push(line);
-              else problems.push(line);
-            }
-          }
+          const { willCollide, harmless } = plateOverruns(tile);
+          innocentOverruns.push(...harmless.map((m) => `${tier}/${name(tile.node)} ${m}`));
+          problems.push(...willCollide.map((m) => `${tier}/${name(tile.node)}: ${m}`));
         }
 
         // (c) THE CONSTANT THE PLATE ARITHMETIC RUNS ON BOUNDS THE REAL CELL.
@@ -1026,12 +1125,53 @@ test.describe('lane tile geometry — no cell paints over another, at any lane t
       }
     }
 
+    expect(problems.join('\n'), 'lane tile cells painting over one another').toBe('');
+
+    // (b′) THE EXEMPTION IS EXERCISED, NOT JUST DECLARED. Leg (b) skips a cell
+    //      that overruns its track with nothing beneath it. If the sweep never
+    //      MET that shape, the skip would be untested prose and a later
+    //      tightening could delete it with every gate still green — which is
+    //      exactly how the four innocent faces would get evicted. tidyVco is in
+    //      the roster to guarantee the shape appears.
+    // …and under a CORRECT plan there is nothing to exempt: every row track is
+    // sized to its own tallest cell, so no cell overruns anything. Recording it
+    // rather than asserting a witness, because the live roster cannot produce
+    // one any more — which is the fix working. The discrimination itself is
+    // proven against a FORCED overrun below.
     expect(
-      problems.join('\n'),
-      'lane tile cells painting over one another. (Known, separate, pre-existing: the ' +
-        `knob-readout overlaps below, which this gate reports but does not fail on — ` +
-        `see the comment on knobOverlaps.)\n${knobOverlaps.join('\n') || '  (none)'}`,
-    ).toBe('');
+      innocentOverruns,
+      'a correctly planned plate has no over-tall cells at all, harmless or otherwise',
+    ).toEqual([]);
+
+    // (e) THE READOUT CELL IS BOUNDED BY THE CONSTANT THE PLAN RESERVES FOR IT
+    //     — the same ceiling-and-floor shape as leg (c), for the other tall
+    //     cell. `faceLaneCellHeights` reserves `LANE_KNOB_READOUT_H` for any
+    //     param that declares a vocabulary, and `plateRowTracks` divides the
+    //     body by that, so a rendered readout cell growing past it would make
+    //     every row track wrong — and the exhaustive unit sweep could not
+    //     notice, because it would still be agreeing with itself. The FLOOR
+    //     stops the ceiling being satisfied by the readout quietly not
+    //     rendering at all, which would make this whole mechanism vacuous while
+    //     every assertion stayed green.
+    const overCeiling = readoutCells.filter((c) => c.h > LANE_KNOB_READOUT_H);
+    expect(
+      overCeiling.map((c) => `${c.where} at ${c.h.toFixed(1)} CSS px`),
+      `a cell PAINTING a readout measured over the LANE_KNOB_READOUT_H = ${LANE_KNOB_READOUT_H} ` +
+        `ceiling the plate's row arithmetic reserves — the plan is now under-reserving, which is ` +
+        `an overlap waiting for a row beneath it`,
+    ).toEqual([]);
+    const underFloor = readoutCells.filter((c) => c.h <= PLATE_ROW_H);
+    expect(
+      underFloor.map((c) => `${c.where} at ${c.h.toFixed(1)} CSS px`),
+      `a cell that PAINTS a readout measured at or under the ${PLATE_ROW_H} px design cell — a ` +
+        `readout is supposed to make the column taller, so the mechanism this test exists for is ` +
+        `no longer exercised by anything`,
+    ).toEqual([]);
+    expect(
+      readoutCells.length,
+      `the sweep must have measured at least one cell PAINTING a readout — that is the cell ` +
+        `whose height broke adsr's plate. Seen: ${readoutCells.map((c) => c.where).join('; ') || '(none)'}`,
+    ).toBeGreaterThan(0);
 
     // ── THE NEGATIVE CONTROL, PERMANENT ─────────────────────────────────────
     // Every assertion above is inside a loop over cells, so a shell that
@@ -1046,165 +1186,95 @@ test.describe('lane tile geometry — no cell paints over another, at any lane t
         `broke the plate. kinds seen: ${[...seenKinds].sort().join(', ') || '(none)'}`,
     ).toContain('fader');
   });
-});
 
-// ── SEGMENTED CAPTIONS: THE ROSTER A FACE SHIPS WITH IS NEVER CLIPPED ───────
-//
-// `Segmented` is the dock's ≤6-state param roster (`paramCellKind` resolves it
-// at the 'dock' tier only). Its buttons were `flex: 1` — the shorthand for
-// `1 1 0%`, i.e. EVERY BUTTON THE SAME WIDTH regardless of its caption — so a
-// row sized its cells to the average and clipped everything above it.
-//
-// MEASURED on main, resofilter's five-state MODE row (macOS system stack,
-// 182.469 px row, 4 px gaps): five 15.297 px content boxes against captions of
-// LP 14.125 · HP 16.016 · BP 15.109 · NT 15.719 · AP 15.5 px. Three of the five
-// overflowed — by 0.719, 0.422 and 0.203 px — and each rendered as `H…` `N…`
-// `A…`: a whole state name replaced by one letter and an ellipsis, for a
-// fraction of a pixel. This sweep reports ELEVEN clipped captions across five
-// faces against that CSS — resofilter 3, cofefve 4 (up to 16.203 px), tidyVco 2,
-// cloudseed 1 (`divine inspiration`, 30.109 px) and filter 1 — and every one of
-// them measures exactly 0.000 px of overflow with `flex: 1 1 auto`. That run IS
-// the negative control for this gate; it was done, not assumed.
-//
-// ⚠ WHY THIS IS AN e2e AND NOT A UNIT. There is no non-render instrument for
-// it. `measureText` drops `letter-spacing` (0.06em here — and the trailing
-// letter-space IS the whole overflow on two of the three); a model of the flex
-// algebra would be re-deriving the browser's own answer; `textContent` (what
-// faces-parity reads) is identical whether the glyph painted or an ellipsis
-// did. The only thing that knows is the layout engine.
-//
-// ⚠ AND WHY IT IS NOT `scrollWidth`, WHICH LOOKS LIKE THE OBVIOUS PROBE.
-// `scrollWidth`/`clientWidth` are INTEGER-QUANTISED. They did flag these three
-// (18 vs 15 on HP), but only because the content box happened to round down; a
-// caption overflowing a 15.6 px box by 0.2 px reports 16 against 16 and reads
-// clean. The predicate below compares the text's own inline box (a Range rect)
-// with the box that paints it — both sub-pixel, both out of the same layout.
-//
-// ⚠ SCOPE. This is the DOCK faceplate. Segmented does not appear at a lane tier
-// unless a face declares `paramCells: { x: 'segmented' }`, and none does today —
-// if one ever does, its lane row is NOT swept here.
-test.describe('Segmented captions — no state name is ellipsized in the roster it ships with', () => {
-  /**
-   * Every `.seg` caption on the page, with the sub-pixel amount by which its
-   * inline box overflows the box that paints it. Positive ⇒ the browser is
-   * ellipsizing. Evaluated IN THE PAGE in one round trip — no per-sample
-   * protocol traffic on the thread being measured.
-   */
-  const captionFits = () => {
-    const out: { label: string; overflow: number; boxW: number; inlineW: number }[] = [];
-    for (const el of document.querySelectorAll('.segmented .seg .seg-text')) {
-      const txt = el as HTMLElement;
-      if (!txt.firstChild) continue;
-      const rng = document.createRange();
-      rng.selectNodeContents(txt);
-      const inlineW = rng.getBoundingClientRect().width;
-      const boxW = txt.getBoundingClientRect().width;
-      out.push({
-        label: txt.textContent?.trim() ?? '',
-        overflow: Number((inlineW - boxW).toFixed(3)),
-        boxW: Number(boxW.toFixed(3)),
-        inlineW: Number(inlineW.toFixed(3)),
-      });
-    }
-    return out;
-  };
-
-  /** Sub-pixel float noise only, in CSS px. The clean case measures EXACTLY
-   *  0.000 on every caption of every face; the defect measured 0.203 px at its
-   *  smallest, an order of magnitude above this. */
-  const EPS_CSS_PX = 0.05;
-
-  test('every dock Segmented row fits its captions, on every migrated face', async ({ page }) => {
+  // ── LEG (b) DISCRIMINATES — BOTH DIRECTIONS, AGAINST A FORCED OVERRUN ─────
+  //
+  // The sweep above can no longer produce an over-tall cell at all: the plan
+  // sizes every row to its own tallest cell, so `plateOverruns` returns two
+  // empty lists on every face. That is the fix working, and it leaves the
+  // neighbour test — the part that decides which over-tall cells MATTER —
+  // asserted but never exercised. A rule nothing exercises is a rule the next
+  // tightening deletes with every gate still green, and deleting THIS one puts
+  // the four innocent faces (cofefve, filter, resofilter, tidyVco) back in the
+  // eviction trap that per-row tracks exist to avoid.
+  //
+  // So force the failure the planner no longer makes: squeeze the tracks back
+  // to the design row, exactly as a per-FACE track would have, and require the
+  // SAME predicate the sweep calls to sort the results into the two buckets.
+  // tidyVco is the subject because it has both shapes at once — three plain
+  // 42 px cells over a row containing `oct2`, whose readout makes it 55.
+  test('leg (b) separates a tall cell WITH a lower neighbour from one without', async ({
+    page,
+  }) => {
     await gotoShell(page);
-    const faced = await migratedFaces(page);
-    expect(faced.length, 'the registry publishes migrated faces').toBeGreaterThan(0);
-    // ONE shell boot for the whole roster — the two sweeps above pay a boot per
-    // adopter; this one re-spawns into the same page, which is why it can walk
-    // every face rather than a subset. MEASURED over the 32-face roster: 3.5 s
-    // on a real GPU and 11.6 / 11.3 / 10.9 s over three consecutive runs under
-    // `E2E_SWIFTSHADER=1` (the renderer CI actually uses). The allowance below
-    // is ~16x that — a CAP that bounds a hang, not a duration anything spends.
-    test.setTimeout(30_000 + faced.length * 5_000);
+    // TWO subjects, one per direction, because no single face carries both
+    // shapes: a face only has a tall cell in a non-last row if its RANKING put
+    // one there. macrooscillator ranks `model` FIRST (a 14-engine roster, so it
+    // earns a readout) with a second row under it; tidyVco ranks `oct2` FIFTH,
+    // which lands in the last row with nothing beneath.
+    await spawnPatch(page, [
+      { id: 't0', type: 'macrooscillator', position: { x: 300, y: 200 } },
+      { id: 't1', type: 'tidyVco', position: { x: 720, y: 200 } },
+    ]);
+    await setZoomTier(page, 't0', 0.7, 'full');
 
-    const clipped: string[] = [];
-    const facesWithRows: string[] = [];
-    let captionsSeen = 0;
+    /** Measure one tile, optionally SQUEEZING its tracks back to the design row
+     *  — the shape a per-FACE track had, and the failure the planner no longer
+     *  makes on its own. */
+    const measure = async (node: string, squeeze: boolean) =>
+      page.evaluate(
+        ({ node, squeeze }) => {
+          const body = document.querySelector(
+            `.svelte-flow__node[data-id="${node}"] [data-testid="module-shell"] .tile-body`,
+          ) as HTMLElement;
+          const planned = (body.getAttribute('data-plate-row-h') ?? '')
+            .split(/\s+/)
+            .filter(Boolean)
+            .map(Number);
+          if (squeeze) body.style.gridTemplateRows = planned.map(() => '42px').join(' ');
+          const cells = [...body.querySelectorAll(':scope > [data-cell-kind]')].map((el) => {
+            const e = el as HTMLElement;
+            return {
+              kind: e.getAttribute('data-cell-control') ?? '?',
+              x: e.offsetLeft,
+              y: e.offsetTop,
+              w: e.offsetWidth,
+              h: e.offsetHeight,
+            };
+          });
+          return { rowTracks: squeeze ? planned.map(() => 42) : planned, cells };
+        },
+        { node, squeeze },
+      );
 
-    for (const { type } of faced) {
-      await spawnPatch(page, [{ id: 'seg', type, position: { x: 460, y: 240 } }]);
-      await openFaceplate(page, 'seg');
-      const captions = await page.evaluate(captionFits);
-      if (captions.length) facesWithRows.push(type);
-      captionsSeen += captions.length;
-      for (const c of captions) {
-        if (c.overflow > EPS_CSS_PX) {
-          clipped.push(
-            `${type}: '${c.label}' needs ${c.inlineW} CSS px and is painted in ${c.boxW} — ` +
-              `${c.overflow} px of it is ellipsized away`,
-          );
-        }
-      }
-      await page.keyboard.press('Escape');
-      await expect(page.getByTestId('dock-full-view')).toBeHidden();
+    // AS PLANNED: tracks sized per row, so neither bucket fills on either face.
+    for (const [node, type] of [
+      ['t0', 'macrooscillator'],
+      ['t1', 'tidyVco'],
+    ] as const) {
+      const planned = plateOverruns(await measure(node, false));
+      expect(planned.willCollide, `${type}: as planned, no cell overruns its row track`).toEqual([]);
+      expect(planned.harmless, `${type}: and therefore nothing to exempt either`).toEqual([]);
     }
 
+    // SQUEEZED — the same predicate, on the same tiles, under the old geometry.
+    const collided = plateOverruns(await measure('t0', true));
     expect(
-      clipped,
-      `dock Segmented captions cut off by the flex track. Faces carrying a roster: ` +
-        `${facesWithRows.join(', ') || '(none)'}`,
-    ).toEqual([]);
-
-    // ── POSITIVE CONTROL: the sweep actually LOOKED at some captions ────────
-    // Every assertion above is inside a loop, so a shell that opened no dock —
-    // or a `paramCellKind` change that stopped resolving 'segmented' at all —
-    // would walk the whole roster and assert nothing, in silence.
-    expect(
-      captionsSeen,
-      `no Segmented caption was measured at all. Either no face resolves a ` +
-        `'segmented' cell any more, or the dock did not open. Faces seen with a ` +
-        `roster: ${facesWithRows.join(', ') || '(none)'}`,
+      collided.willCollide.length,
+      `macrooscillator: a 55 px cell in a 42 px track WITH a row beneath it must be FLAGGED. ` +
+        `Got: ${JSON.stringify(collided)}`,
     ).toBeGreaterThan(0);
 
-    // ── NEGATIVE CONTROL, PERMANENT: the predicate can still MOVE ───────────
-    // A fit check reads "0 offenders" both when nothing is clipped and when the
-    // instrument is broken (a selector that matches nothing, a Range rect that
-    // stopped reporting the UNCLIPPED inline box). So perturb the exact quantity
-    // it measures and require the SAME function to notice — the predicate the
-    // gate calls, not a re-typed copy that can go blind separately.
-    //
-    // ⚠ AND PERTURB IT SUB-PIXEL, BY A KNOWN AMOUNT. The first draft of this
-    // control just made a caption 40 characters long, and the predicate
-    // correctly reported ZERO overflow: `.segmented-wrap` is `inline-flex`, so
-    // with `flex: 1 1 auto` the ROW GREW to 275.359 px and painted every glyph.
-    // That is the fix working, and it made the control useless — a big
-    // perturbation of the wrong variable. Shaving the PAINTED BOX by a quarter
-    // pixel cannot be absorbed by anything, and it is the size of the real
-    // defect (0.203 px at its smallest), so it proves the sensitivity the gate
-    // actually needs rather than that "something moved".
-    await spawnPatch(page, [{ id: 'seg', type: 'resofilter', position: { x: 460, y: 240 } }]);
-    await openFaceplate(page, 'seg');
-    const clean = await page.evaluate(captionFits);
-    expect(clean.length, 'the negative-control subject has a Segmented row').toBeGreaterThan(0);
+    const exempt = plateOverruns(await measure('t1', true));
     expect(
-      clean.filter((c) => c.overflow > EPS_CSS_PX),
-      'the negative-control subject is clean BEFORE it is perturbed',
+      exempt.harmless.length,
+      `tidyVco: a 55 px cell in a 42 px track in the LAST row, with nothing beneath it, must be ` +
+        `EXEMPT — that is the distinction the per-row rule turns on, and flagging it is how the ` +
+        `four innocent faces get evicted. Got: ${JSON.stringify(exempt)}`,
+    ).toBeGreaterThan(0);
+    expect(
+      exempt.willCollide,
+      'tidyVco: and it must not ALSO be reported as a collision',
     ).toEqual([]);
-    const SHAVE_CSS_PX = 0.25;
-    await page.evaluate((shave) => {
-      const first = document.querySelector('.segmented .seg .seg-text') as HTMLElement | null;
-      if (first) first.style.maxWidth = `${first.getBoundingClientRect().width - shave}px`;
-    }, SHAVE_CSS_PX);
-    const perturbed = await page.evaluate(captionFits);
-    expect(
-      perturbed[0]?.overflow,
-      `the fit predicate did not see a caption box shaved by ${SHAVE_CSS_PX} CSS px, so the ` +
-        `green run above proves nothing about clipping. Measured: ${JSON.stringify(perturbed[0])}`,
-    ).toBeGreaterThan(EPS_CSS_PX);
-    expect(
-      perturbed[0]?.overflow,
-      `…and it must report the RIGHT MAGNITUDE, not merely a non-zero one: the box lost ` +
-        `${SHAVE_CSS_PX} CSS px, so the overflow is that much. A predicate that reported a ` +
-        `constant would pass the assertion above. Measured: ${JSON.stringify(perturbed[0])}`,
-    ).toBeCloseTo(SHAVE_CSS_PX, 1);
   });
 });

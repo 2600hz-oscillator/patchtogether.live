@@ -32,7 +32,7 @@ import {
 } from '$lib/ui/workflow/curated-face';
 import { paramCellKind, momentaryParamIds } from '$lib/ui/workflow/shell-control-kind';
 import { shellCellFor } from '$lib/ui/workflow/shell-cells';
-import { laneBodyPlan } from '$lib/ui/workflow/module-shell-model';
+import { PLATE_COLS, laneBodyPlan } from '$lib/ui/workflow/module-shell-model';
 import { DOCK_TAB_MIN_BANDS, dockTabPlan } from '$lib/ui/workflow/dock-tabs-model';
 import {
   activePresetId,
@@ -71,16 +71,33 @@ describe('kickdrum face — the tier ladder (order = PRIORITY)', () => {
     expect(keysAt('compact')).toEqual(['tune', 'sub_decay']);
   });
 
-  it('the plate is SIX cells and that is the WHOLE lane budget — rank 7+ reaches no lane tier', () => {
+  it('the plate is THREE cells — every kickdrum dial earns a readout, so one row is the budget', () => {
+    // ⚠ THIS SAID SIX UNTIL 2026-08-12, and the number moved for a HEIGHT
+    // reason rather than a ranking one. All six ranked kickdrum params declare
+    // a `format`, so every one of them earns a readout line and every cell is
+    // 57 CSS px instead of the 42 px design row. Two 57 px rows plus the 4 px
+    // gap is 118 px against a 112 px body, so the plate holds ONE row: three
+    // cells, and ranks 4+ join rank 7+ as dock-only.
+    //
+    // The plate's tracks are sized PER ROW now, so a tall cell costs only the
+    // rows beneath it — measured across the roster, 4 of the 11 readout-bearing
+    // faces lose nothing because their tall cell is in the last row. kickdrum
+    // is the worst case in the other direction: EVERY cell is tall, so there is
+    // no arrangement of them that fits two rows.
     const full = keysAt('full');
-    expect(full).toEqual(['tune', 'sub_decay', 'drive', 'pitch_amt', 'body_level', 'click_level']);
-    expect(full.length).toBe(LANE_PLATE_MAX_CELLS);
+    expect(full).toEqual(['tune', 'sub_decay', 'drive']);
+    expect(full.length).toBe(PLATE_COLS);
 
-    // The claim that makes rank 7 dock-only, checked against the FIT PLAN
+    // The claim that makes rank 4+ dock-only, checked against the FIT PLAN
     // rather than restated: the plate renders exactly what the cap selects.
-    const plan = laneBodyPlan(full.length, true, 'full');
-    expect(plan.cellCount, 'the plate paints every selected cell (no silent truncation)').toBe(6);
-    expect(plan.glyph, 'a ≥4-cell face needs both plate rows, so the glyph drops at this tier').toBe(false);
+    const plan = laneBodyPlan(curatedFace(def, 'full')!.cellHeights, true, 'full');
+    expect(plan.cellCount, 'the plate paints every selected cell (no silent truncation)').toBe(3);
+    expect(plan.rowTracks, 'ONE row, sized to the readout cells that fill it').toEqual([57]);
+    expect(
+      plan.glyph,
+      'the strip is refused under a taller-than-design row — its 42 px model is a measured\n' +
+        'under-estimate (a live scope renders 84), see plateGlyphFitsRows',
+    ).toBe(false);
 
     // …and every rank past 6 is absent from EVERY lane tier.
     const tail = (kickdrumDef.face!.order as readonly string[]).slice(LANE_PLATE_MAX_CELLS);

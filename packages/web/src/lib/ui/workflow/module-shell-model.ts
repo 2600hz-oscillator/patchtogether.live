@@ -453,12 +453,29 @@ export function plateRowsHeight(rows: readonly number[]): number {
   return rows.reduce((a, b) => a + b, 0) + (rows.length - 1) * PLATE_GAP_Y;
 }
 
-/** Does a full-width glyph strip still fit BELOW these per-row tracks? Same
- *  question `plateGlyphFits` asks, against the real row heights rather than one
- *  assumed cell. (The STRIP's own height is still modelled as a design row —
- *  a live scope renders ~84 px there, which is a separate, pre-existing
- *  mis-model that clips delay's and reverb's strips and is not fixed here.) */
+/**
+ * Does a full-width glyph strip still fit BELOW these per-row tracks? Same
+ * question `plateGlyphFits` asks, against the real row heights rather than one
+ * assumed cell.
+ *
+ * ⚠ AND IT REFUSES OUTRIGHT ON A TALLER-THAN-DESIGN ROW, which is a deliberate
+ * conservatism rather than arithmetic. The STRIP's own height is modelled here
+ * as one design row, and that model is WRONG: measured 2026-08-12 at the full
+ * lane tier, a live scope strip renders **84 CSS px** (delay, reverb, cloudseed)
+ * where others render 40 (adsr, kickdrum, lfo, ringback). The 42 px budget has
+ * only ever been calibrated against design-height rows, where two rows already
+ * exclude the strip and a single row leaves enough slack that the error was
+ * invisible.
+ *
+ * Per-row tracks would otherwise hand a strip to every plate that shrank to one
+ * TALL row — and measured, that newly gives cloudseed an 84 px scope in ~12 px
+ * of remaining room. Trading a 9 px overlap for a picture sliced to a seventh of
+ * itself is not a fix. So: design rows keep the behaviour they have had since
+ * the plate shipped; a tall row refuses the strip until the strip's real height
+ * is modelled per glyph kind. That is the named follow-up, with its numbers.
+ */
 export function plateGlyphFitsRows(rows: readonly number[]): boolean {
+  if (rows.some((h) => h > PLATE_ROW_H)) return false;
   return plateRowsHeight(rows) + PLATE_GAP_Y + PLATE_ROW_H <= LANE_BODY_H;
 }
 

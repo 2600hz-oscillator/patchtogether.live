@@ -363,11 +363,11 @@ describe('the curated face — what each tier actually surfaces', () => {
         cellCount: 2,
         glyph: true,
         knobSize: 'md',
-        // The plate's design row — vca has no declared cell kind, so its
-        // cells are plain knob columns and the plan reports the design
-        // height. (A face with a `fader` cell reports 96 here; see
-        // module-shell-model's LANE_CELL_H.)
-        rowH: PLATE_ROW_H,
+        // EMPTY — the ROW layout has no grid tracks at all. It is a flex line
+        // with `align-items: center` and no fixed track, which is why a tall
+        // cell there is simply a tall line and vca's two 69 px readout dials
+        // have never overlapped anything. Only the PLATE reports tracks.
+        rowTracks: [],
       });
     }
   });

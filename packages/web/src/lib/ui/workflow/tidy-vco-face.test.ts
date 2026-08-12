@@ -108,10 +108,13 @@ describe('tidyVco face — the LANE ladder (what the player rides)', () => {
       cellCount: 6,
       glyph: false,
       knobSize: 'sm',
-      // tidyVco's cells are plain knob columns, so the plate keeps its design
-      // row and therefore its two rows. A face whose cells are FADERS reports
-      // 96 here and gets one row of three (see LANE_CELL_H / plateRowsFor).
-      rowH: PLATE_ROW_H,
+      // ONE TRACK PER ROW, and for tidyVco both are the design row. Its cells
+      // are plain knob columns — `oct2` declares `options` and therefore earns
+      // a 57 px readout cell, but this plan is asked with a uniform count, so
+      // it reports the design height; the SHELL passes the real per-cell list
+      // (see the `faceLaneCellHeights` leg below). A face whose cells are
+      // FADERS reports 96 here and gets one row of three.
+      rowTracks: [PLATE_ROW_H, PLATE_ROW_H],
     });
     expect(laneBodyPlan(4, true, 'full').glyph, 'even 4 cells is two rows').toBe(false);
   });
