@@ -24,6 +24,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { stripSourceComments } from '$lib/source-guards/strip-source-comments';
 import {
   LFO_DEPTH_GAIN,
   LFO_DEPTH_UNITY,
@@ -278,12 +279,18 @@ describe('SOURCE guard — the card cannot re-type a range the def declares', ()
   );
   /** Comments are PROSE, not markup — and the card's own comment quotes the
    *  literals it is documenting the removal of, so an un-stripped grep flags
-   *  the explanation as the offence (it did, first run). Strip `//`, block and
-   *  HTML comments before matching. */
-  const cardCode = cardSrc
-    .replace(/<!--[\s\S]*?-->/g, '')
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/^\s*\/\/.*$/gm, '');
+   *  the explanation as the offence (it did, first run).
+   *
+   *  ⚠ THIS USED TO BE THREE INLINE `.replace()` CALLS, and two of them were
+   *  wrong in ways this card happened not to exercise: `^\s*\/\/.*$` only
+   *  strips a comment that OWNS its line, so `foo(); // xMin={-1}` survived,
+   *  and neither the block nor the line form knew about string or regex
+   *  literals, so `'https://x'` and `/[//]/` were fair game. It is now the
+   *  SHARED quote-aware scanner, whose hostile-form legs live with it. Same
+   *  reason `card-range-source.test.ts` calls it: three separate gates in this
+   *  tree each grew their own stripper, each subtly different, and a re-typed
+   *  copy of a predicate is how the previous generation went blind. */
+  const cardCode = stripSourceComments(cardSrc);
 
   /**
    * The prop names a control range can arrive under. ⚠ THE PREFIXED FORMS ARE

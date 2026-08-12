@@ -1037,7 +1037,48 @@ export const ALLOWED_PERMANENT_EXEMPT: ReadonlySet<string> = new Set([
  *  Demotion rule: if a strict card flakes ONCE in CI, demote it back to
  *  the full lane and root-cause. Per memory `feedback_no_flake_tolerance`:
  *  a strict subset that flakes IS a flake to fix; the whole point of the
- *  lane is signal. */
+ *  lane is signal.
+ *
+ *  ── ⚠ WHY THE VISUAL BAR IS SO MUCH NARROWER THAN THE DOCS BAR ────────────
+ *
+ *  Asked and measured 2026-08-12 (figures are prose, dated; re-derive with
+ *  `wc -l e2e/.generated/registry-manifest.json` and a grep of each list, do
+ *  not trust them):
+ *
+ *    registered modules            196
+ *    EXEMPT_FROM_VRT                81   → 115 have a baseline at all
+ *    STRICT_VRT_MODULES             49   → the REQUIRED lane
+ *    STRICT_DOCS                   185   → the docs bar, on the same registry
+ *
+ *  The gap is not that cards are harder to cover than prose. It is that the
+ *  two bars have OPPOSITE ENROLMENT RULES, and only one of them converges:
+ *
+ *    STRICT_DOCS is a DOCUMENT-ON-TOUCH RATCHET. Every NEW module ships in it,
+ *    and any module you incidentally touch is brought up to the bar then. Its
+ *    membership therefore chases the registry by construction, which is why it
+ *    is at 185 of 196 without anyone running a campaign.
+ *
+ *    STRICT_VRT_MODULES has NO enrolment rule at all. A new module auto-enrols
+ *    into the INFORMATIONAL sweep (vrt.spec.ts covers everything not exempt —
+ *    deny-by-default, and ALLOWED_PERMANENT_EXEMPT above is the brake that
+ *    stops a module self-exempting). But promotion into the REQUIRED subset is
+ *    a purely OPT-IN act with four hand-checked conditions and no trigger, so
+ *    it only ever moves when someone deliberately moves it.
+ *
+ *  That is the repo's own "a guard for that class that is OPT-IN is itself an
+ *  instance of it", sitting inside the required visual gate: 66 modules have a
+ *  committed, diffed baseline that cannot fail a merge. Two of the four
+ *  promotion conditions are also now stale — 1 and 3 both say "BOTH platforms",
+ *  and the {platform} dimension was deleted in #1458 (there is ONE baseline
+ *  set, authored by linux CI).
+ *
+ *  NOT FIXED HERE, deliberately: promoting 66 cards is a per-card determinism
+ *  judgement (condition 4 is the real filter — animated chrome), each one a
+ *  potential flake in the blocking lane, and this branch is already moving the
+ *  faceplates into that lane. What IS fixed here is the far worse instance of
+ *  the same shape: the 64 FACE baselines, which had no required coverage at
+ *  all until workflow-shell-faces.spec.ts joined STRICT_MATCH. The card
+ *  backlog is visible and merely narrow; the face lane was invisible. */
 export const STRICT_VRT_MODULES = new Set<string>([
   // Audio domain — pure knob/fader cards, no canvas
   'adsr',                 // 4-knob envelope card

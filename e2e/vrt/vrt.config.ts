@@ -60,12 +60,44 @@ const GPU_ARGS =
         ]
       : [];
 
-// `VRT_STRICT=1` narrows the spec set to ONLY vrt.spec.ts (the per-
-// module card-baseline pass, filtered to STRICT_VRT_MODULES inside the
-// spec). The auxiliary specs (composite scenes, playhead, interactions,
-// skins) lean harder on animated state + multi-card layout timing — they
-// belong to the informational lane (`task vrt`), not the gate.
-const STRICT_MATCH = ['vrt.spec.ts'];
+// `VRT_STRICT=1` narrows the spec set to the REQUIRED lane: the per-module
+// card-baseline pass (filtered to STRICT_VRT_MODULES inside the spec) and the
+// curated FACEPLATES. The auxiliary specs (composite scenes, playhead,
+// interactions, skins) lean harder on animated state + multi-card layout
+// timing — they belong to the informational lane (`task vrt`), not the gate.
+//
+// ── WHY workflow-shell-faces.spec.ts IS HERE (2026-08-12) ──────────────────
+//
+// ⚠ IT USED NOT TO BE, AND THAT MEANT NO FACEPLATE REGRESSION COULD EVER BLOCK
+// A MERGE. Every `face-<type>-{compact,dock}` baseline lived only in the
+// informational `vrt` job (`continue-on-error: true`, outside the `ci`
+// umbrella's `needs`), so a moved face baseline posted a diff gallery and a PR
+// comment and shipped. The spec's own residual-scope note said so in as many
+// words — "'Impossible to miss' here means VISIBLE, not ENFORCED" — and it was
+// filed as a follow-up rather than a hole. Two PRs demonstrated the hole
+// inside a week: #1468 removed a sidebar block from twelve modules with all
+// twelve dock baselines stale, and the required lane was green throughout.
+//
+// The whole faceplate programme (32 faces, 64 baselines) was gated by a lane
+// that cannot block a merge. Promoting the spec is the smallest change that
+// makes "a face regression is un-mergeable" true, because a faceplate
+// regression is a PIXEL regression — no def-reading gate can substitute.
+//
+// MEASURED CI COST, from run 31581123866 (ubuntu-latest, the numbers this
+// decision was made on):
+//
+//   workflow-shell-faces.spec.ts   9.56 min  (64 scenes + 2 negative controls)
+//   vrt-strict, before             6.60 min  → after ≈ 16.2 min
+//   the merge-gating critical path 16.14 min (e2e shard 10/10)
+//
+// So the time-to-merge delta is ≈ ZERO: vrt-strict lands level with the
+// longest required job rather than becoming the new bound. `timeout-minutes`
+// on that job is raised 10 → 25 in the same commit, since 10 was already below
+// the new figure. RUNNER-MINUTES cost is real and is +9.6/run: the spec stays
+// in FULL_MATCH as well, because `task vrt:update` (the baseline CAPTURE) does
+// NOT set VRT_STRICT, and dropping the faces from FULL_MATCH would silently
+// stop capturing 64 baselines — a far worse failure than a duplicated run.
+const STRICT_MATCH = ['vrt.spec.ts', 'workflow-shell-faces.spec.ts'];
 const FULL_MATCH = [
   'vrt.spec.ts',
   'vrt-wavesculpt-blink.spec.ts',

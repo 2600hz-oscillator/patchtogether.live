@@ -242,6 +242,78 @@ test('score: currently-playing note highlight tracks engine.read currentNoteId',
   expect(['n1', 'n2', 'n3']).toContain(noteId);
 });
 
+test('score: every triplet position SOUNDS — all three notes of a triplet group', async ({ page, rack }) => {
+  // -- THE BUG THIS EXISTS FOR --------------------------------------------
+  //
+  // `triplet8th` is 4 grid ticks wide, so the toolbar snaps it to
+  // {0,4,8,...,44} -- twelve positions per bar. The scheduler used to emit only
+  // at `tickIndex * 3` = {0,3,6,...,45}, and `noteStartingAt` matches the tick
+  // EXACTLY, so a triplet sounded iff its tick was a multiple of 3. Ticks 4
+  // and 8 -- the 2nd and 3rd note of the group -- never fired, in any bar, in
+  // either clock mode, since the module's first commit.
+  //
+  // The unit lane now asserts the placement grid is a subset of the reachable
+  // grid (score-data.test.ts) and that score.ts runs the shared plan. This is
+  // the leg that proves it END TO END, through the real seed -> Y.Doc ->
+  // engine chain, because "placeable subset-of reachable" is still two pure
+  // functions agreeing until something drives the actual scheduler.
+  await spawnPatch(page, [{ id: 'score', type: 'score', params: { bpm: 240, isPlaying: 0 } }]);
+
+  // One triplet group in beat 0: ticks 0 / 4 / 8. Pre-fix, only t1 could fire.
+  await seedScoreThenPlay(page, 'score', {
+    notes: [
+      { id: 't1', bar: 0, tick: 0, duration: 'triplet8th', midi: 72, staffStep: 5, accidental: null },
+      { id: 't2', bar: 0, tick: 4, duration: 'triplet8th', midi: 74, staffStep: 4, accidental: null },
+      { id: 't3', bar: 0, tick: 8, duration: 'triplet8th', midi: 76, staffStep: 3, accidental: null },
+    ],
+    dynamics: [],
+    ties: [],
+    keySignature: 0,
+  });
+
+  // THE ACCUMULATOR LIVES IN THE PAGE, not in a Playwright poll loop. At
+  // 240 BPM a bar is 1 s and the three notes are 83 ms apart, so a CDP
+  // round-trip per sample would both starve the subject and miss notes -- and
+  // "never sounded" and "never looked" print the same failure. An in-page
+  // setInterval keeps sampling through a main-thread stall and the accumulated
+  // Set survives it, so the report distinguishes the two.
+  const seen = await page.evaluate(async () => {
+    const w = globalThis as unknown as {
+      __engine?: () => {
+        read: (node: { id: string; type: string; domain: string }, key: string) => unknown;
+      } | null;
+      __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
+    };
+    const ids = new Set<string>();
+    const t0 = performance.now();
+    let samples = 0;
+    await new Promise<void>((resolve) => {
+      const iv = setInterval(() => {
+        samples++;
+        const eng = w.__engine?.();
+        const v = eng?.read(w.__patch.nodes['score'], 'currentNoteId');
+        if (typeof v === 'string') ids.add(v);
+        // Early-exit the moment all three have been seen; otherwise bound it.
+        if (ids.size >= 3 || performance.now() - t0 > 6000) {
+          clearInterval(iv);
+          resolve();
+        }
+      }, 10);
+    });
+    return { ids: [...ids].sort(), samples, elapsedMs: Math.round(performance.now() - t0) };
+  });
+
+  expect(
+    seen.ids,
+    `only ${seen.ids.join(',') || '(none)'} sounded across ${seen.samples} samples in ` +
+      `${seen.elapsedMs} ms. Ticks 4 and 8 are the 2nd and 3rd note of the triplet ` +
+      `group; if they are missing, the scheduler is back to emitting only at slot ` +
+      `boundaries and 8 of 12 triplet positions per bar are silent again. ` +
+      `(samples=0 would mean the sampler never ran -- a different failure.)`,
+  ).toEqual(['t1', 't2', 't3']);
+  expect(seen.samples, 'the in-page sampler ran at all').toBeGreaterThan(0);
+});
+
 test('score: dynamic marker scales the env output amplitude', async ({ page, rack }) => {
   // ⚠ THE 30s POLL CEILING BELOW WAS UNREACHABLE. Playwright's DEFAULT TEST
   // TIMEOUT is 30s (this config sets no global `timeout`), so the test budget
