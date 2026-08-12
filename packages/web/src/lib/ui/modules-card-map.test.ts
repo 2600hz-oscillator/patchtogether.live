@@ -57,7 +57,7 @@ const EXPECTED_NODE_TYPES = [
   'swolevco', 'synesthesia', 'tempest', 'timelorde', 'treeohvox', 'tvLibrarian',
   'launchpadControlLeft', 'push2Control',
   'unityscalemathematik', 'vca', 'vdelay', 'vfpgaRunner', 'videoMixer', 'videoOut',
-  'videobox', 'videocube', 'videovarispeed', 'warrensspectrum', 'wavecel', 'wavesculpt',
+  'videobox', 'videocube', 'videovarispeed', 'warrensspectrum', 'warrensvisions', 'wavecel', 'wavesculpt',
   'twotracks', 'wavetableVco', 'writeseq', 'textmarquee', 'tiler', 'spirographs',
   'milkdrop',
 ].sort();
