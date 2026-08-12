@@ -71,7 +71,7 @@
   }
 
   onMount(() => {
-    if (canvasEl) { canvasEl.width = 224; canvasEl.height = 168; }
+    if (canvasEl) { canvasEl.width = 288; canvasEl.height = 216; }
     drawRaf = requestAnimationFrame(draw);
   });
   onDestroy(() => { if (drawRaf !== null) cancelAnimationFrame(drawRaf); });
@@ -256,8 +256,15 @@
 
 <style>
   .mod-card {
-    width: 520px;
-    min-height: 320px;
+    /* The RACK TILE is the real size. `.svelte-flow__node.rack-sized > .mod-card`
+     * in _module-card.css has specificity (0,3,0) and pins width to
+     * `--rack-hp × --rack-unit`, which beats any `width:` declared here (0,1,0).
+     * So this value is not a request — it must AGREE with the hp in
+     * rack-sizes.ts (3 × 180px), or the card silently renders at the tile's
+     * width while the layout is built for this one. That disagreement is what
+     * made the knob grid hang 67.7 CSS px past the right edge. */
+    width: 540px;
+    min-height: 360px;
     background: var(--module-bg);
     border: 1px solid var(--border);
     border-radius: 2px;
@@ -280,20 +287,21 @@
   .cols {
     display: flex;
     align-items: flex-start;
+    justify-content: space-between;
     gap: 14px;
     padding: 0 12px;
   }
   .left { display: flex; flex-direction: column; gap: 10px; }
   .screen-wrap {
-    width: 224px;
-    height: 168px;
+    width: 288px;
+    height: 216px;
     border: 1px solid #000;
     box-shadow: inset 0 0 8px rgba(0, 0, 0, 0.6), 0 0 4px rgba(0, 0, 0, 0.3);
     background: #050608;
     border-radius: 3px;
     overflow: hidden;
   }
-  .screen { width: 224px; height: 168px; display: block; }
+  .screen { width: 288px; height: 216px; display: block; }
   .hero {
     display: flex;
     align-items: center;
