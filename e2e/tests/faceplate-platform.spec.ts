@@ -27,6 +27,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 import { setNodeParams } from './_module-coverage-helpers';
+import { LANE_CELL_H, PLATE_ROW_H } from '../../packages/web/src/lib/ui/workflow/module-shell-model';
 
 const TYPE = 'kickdrum';
 
@@ -777,4 +778,271 @@ test.describe('PF-21 row plan — sections share a row, legibly and without over
     }
   });
   }
+});
+
+// ── THE LANE TILE'S NO-CLIP GUARANTEE, MEASURED IN A BROWSER ────────────────
+//
+// `laneBodyPlan` has always CLAIMED that only WHOLE cells render inside the
+// fixed 192×180 tile. Until 2026-08-11 it computed that against ONE hardcoded
+// cell height — 42px, a small knob column — which was true for every cell kind
+// that existed and false the moment one did not fit.
+//
+// `fader` (#1464) is 96px. The plate's `grid-auto-rows` is a FIXED track and
+// `align-items: start`, so an over-tall cell is NOT clipped — it paints over
+// the row below. marbles' full-tier tile shipped to dev with three overlaps of
+// exactly 50.0 CSS px (96 − the 46px row pitch): two thumbs in every column,
+// row 1's labels buried under row 2's tracks, and `t_model`'s `COIN ▾` grid
+// chip floating on top of the T BIAS fader.
+//
+// ⚠ WHY THIS EXISTS AS AN E2E WHEN THE UNIT GATE IS EXHAUSTIVE.
+// `module-shell-model.test.ts` sweeps the whole `ParamCellKind` union and is
+// the stronger gate for the ARITHMETIC. It is structurally blind to exactly one
+// thing: whether `LANE_CELL_H`'s numbers are the heights the browser actually
+// paints. A model that agrees with itself proves nothing about the DOM — the
+// planner/renderer split IS the bug class, so the two sides have to be measured
+// against each other rather than each against itself.
+//
+// ⚠ STATED SCOPE. This sweeps the faces that declare a non-default param cell
+// plus plain-knob controls, and it discovers the KIND of every cell from the
+// DOM rather than from a list here. What it does NOT do is boot all ~29 faced
+// modules × 3 tiers: the unit sweep covers the kind union, and this covers the
+// kinds that actually paint.
+test.describe('lane tile geometry — no cell paints over another, at any lane tier', () => {
+  /** Every migrated face — read off the live registry, never a list here. */
+  async function facedTypes(page: Page): Promise<string[]> {
+    return page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __moduleSpecs?: { type: string; strictFace?: boolean }[];
+      };
+      return (w.__moduleSpecs ?? []).filter((s) => s.strictFace).map((s) => s.type);
+    });
+  }
+
+  test('every rendered lane cell stays inside its own box, and matches LANE_CELL_H', async ({
+    page,
+  }) => {
+    await gotoShell(page);
+    const faced = await facedTypes(page);
+    expect(faced.length, 'the registry publishes migrated faces').toBeGreaterThan(0);
+
+    // marbles is the regression witness and MUST be swept — if the face is ever
+    // dropped from STRICT_FACES this fails loudly rather than quietly sweeping
+    // a roster that no longer contains the shape that broke.
+    expect(faced, 'marbles (the fader face) is a migrated face').toContain('marbles');
+
+    // marbles + noise are the fader faces; adsr and dx7 bring plain knob
+    // columns and a declared grid, so "everything is a fader" cannot pass.
+    const WANT = ['marbles', 'noise', 'adsr', 'dx7'];
+    const subjects = faced.filter((t) => WANT.includes(t));
+    expect(subjects.sort(), 'every subject of this sweep is a migrated face').toEqual(
+      [...WANT].sort(),
+    );
+    test.setTimeout(sweepBudgetMs(subjects.length * 3));
+
+    await spawnPatch(
+      page,
+      subjects.map((type, i) => ({
+        id: `t${i}`,
+        type,
+        position: { x: 260 + (i % 2) * 420, y: 200 + Math.floor(i / 2) * 320 },
+      })),
+    );
+
+    /** node id → module type, so a failure names the FACE and not `t2`. */
+    const idType = new Map(subjects.map((t, i) => [`t${i}`, t]));
+    const name = (node: string) => `${idType.get(node) ?? node}`;
+
+    const seenKinds = new Set<string>();
+    const problems: string[] = [];
+    /**
+     * ⚠ A SECOND, PRE-EXISTING DEFECT, FOUND BY THIS TEST AND NOT FIXED BY IT.
+     *
+     * A knob cell is NOT the 42 px the plate's design row assumes. `KnobConic`
+     * renders an EARNED readout line — `knobReadout()` returns non-null for a
+     * param that declares a vocabulary — so a knob column is 42 px WITHOUT one
+     * and 57 px WITH one. MEASURED on adsr's full-tier plate: cells of 57 px in
+     * a 46 px pitch, i.e. 9-15 px of row-1-over-row-2, visible as the A/D/S/R
+     * readouts colliding with the knobs beneath them.
+     *
+     * It is the same mechanism as the marbles bug this PR fixes and it is NOT
+     * the same fix: the height depends on the PARAM (does it earn a readout?),
+     * not on the cell KIND, so the planner would need per-cell heights rather
+     * than a per-kind table. Both candidate remedies — modelling the readout,
+     * or suppressing it in the plate — change what ~20 faces paint at the full
+     * lane tier, which is an owner-visible design decision and not something to
+     * fold into an urgent restoration.
+     *
+     * So it is SEPARATED, not filtered: these are printed on every run, in the
+     * failure message of the assertion below, and the assertion that matters
+     * (no overlap involving any other kind) stays unconditional. Nothing here
+     * is a count, and there is no per-module list to go stale — if the readout
+     * defect is fixed this bucket simply empties.
+     */
+    const knobOverlaps: string[] = [];
+
+    for (const [tier, zoom] of [
+      ['mini', 0.2],
+      ['compact', 0.45],
+      ['full', 0.7],
+    ] as const) {
+      // One tier settle for the whole patch — every tile crosses together.
+      await setZoomTier(page, 't0', zoom, tier);
+
+      const measured = await page.evaluate(() => {
+        // ⚠ `offsetTop/Left/Width/Height`, NOT `getBoundingClientRect`.
+        // The tiles live under xyflow's viewport TRANSFORM, so every rect is in
+        // SCREEN px and has to be divided by the live zoom to mean anything —
+        // and at zoom 0.2 that division turned a 96 px fader cell into 94.0,
+        // i.e. it manufactured a 2 px "finding" out of subpixel rounding.
+        // (Measured while writing this test. It is the same instrument error
+        // CLAUDE.md records against card-control-overflow, which reports
+        // VIEWPORT-SCALED pixels for exactly this reason.) The offset* family
+        // reports the UNTRANSFORMED border box in CSS px — the units the model
+        // is written in — so there is no zoom in the arithmetic at all.
+        // Siblings in one `.tile-body` share an offsetParent, so their offsets
+        // are directly comparable to each other.
+        const out: {
+          node: string;
+          layout: string;
+          plateRowH: number;
+          cells: { kind: string; x: number; y: number; w: number; h: number }[];
+        }[] = [];
+        for (const shell of document.querySelectorAll(
+          '.svelte-flow__node [data-testid="module-shell"]',
+        )) {
+          const body = shell.querySelector('.tile-body') as HTMLElement | null;
+          if (!body) continue;
+          const cells = [
+            ...body.querySelectorAll(':scope > [data-cell-kind], :scope > .tile-glyph'),
+          ].map((el) => {
+            const e = el as HTMLElement;
+            return {
+              kind: e.getAttribute('data-cell-control') ?? 'glyph',
+              x: e.offsetLeft,
+              y: e.offsetTop,
+              w: e.offsetWidth,
+              h: e.offsetHeight,
+            };
+          });
+          out.push({
+            node: shell.closest('.svelte-flow__node')?.getAttribute('data-id') ?? '?',
+            layout: body.getAttribute('data-body-layout') ?? 'row',
+            // The grid track the plan wrote — read back off the DOM rather than
+            // recomputed here, so a plan that stops threading it through fails.
+            plateRowH: Number(body.getAttribute('data-plate-row-h') ?? 0),
+            cells,
+          });
+        }
+        return out;
+      });
+
+      expect(measured.length, `${tier}: tiles were measured`).toBeGreaterThan(0);
+
+      for (const tile of measured) {
+        for (const c of tile.cells) seenKinds.add(c.kind);
+
+        // (a) NO TWO CELLS OVERLAP — the defect, stated directly.
+        for (let i = 0; i < tile.cells.length; i++) {
+          for (let j = i + 1; j < tile.cells.length; j++) {
+            const a = tile.cells[i];
+            const b = tile.cells[j];
+            const ox = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
+            const oy = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+            if (ox > 0.5 && oy > 0.5) {
+              const line =
+                `${tier}/${name(tile.node)} (${tile.layout}): ${a.kind} overlaps ${b.kind} by ` +
+                `${ox.toFixed(1)}×${oy.toFixed(1)} CSS px`;
+              // ⚠ THE ONE RESIDUAL, AND IT IS A DIFFERENT DEFECT — SEE BELOW.
+              // A knob↔knob overlap has a separate cause (an EARNED readout
+              // line) that this PR deliberately does not change. Everything
+              // else — every declared cell kind, which is the class that broke
+              // marbles — is unconditional.
+              if (a.kind === 'knob' && b.kind === 'knob') knobOverlaps.push(line);
+              else problems.push(line);
+            }
+          }
+        }
+
+        // (b) THE PLATE'S TRACK IS NOT SHORTER THAN ITS CELLS — the precise
+        //     precondition for (a). Only the PLATE can produce an overlap: it
+        //     is the one layout with a FIXED `grid-auto-rows` track, and
+        //     `align-items: start` means an over-tall cell spills downward
+        //     instead of being clipped. The ROW layout is a flex line with
+        //     `align-items: center` and no fixed track, so a tall cell there is
+        //     simply a tall line — which is why marbles' compact tile was
+        //     correct all along while its full tile was not.
+        if (tile.layout === 'plate') {
+          for (const c of tile.cells) {
+            if (c.h > tile.plateRowH + 0.5) {
+              const line =
+                `${tier}/${name(tile.node)}: a '${c.kind}' cell measures ${c.h.toFixed(1)} CSS px in a ` +
+                `${tile.plateRowH} px grid track — it will paint ${(c.h - tile.plateRowH).toFixed(1)} px ` +
+                `over the row below`;
+              // Same separation as the overlap leg: a knob column over-running
+              // its track is the EARNED-READOUT defect (see `knobOverlaps`),
+              // not the declared-tall-cell one this PR fixes.
+              if (c.kind === 'knob') knobOverlaps.push(line);
+              else problems.push(line);
+            }
+          }
+        }
+
+        // (c) THE CONSTANT THE PLATE ARITHMETIC RUNS ON BOUNDS THE REAL CELL.
+        //     `LANE_CELL_H.fader` is what `plateRowsFor` divides the body by, so
+        //     if the rendered fader ever grew past it every row count derived
+        //     from it would be wrong — and the unit sweep could not notice,
+        //     because it would still be agreeing with itself.
+        //
+        //     ⚠ ASSERTED AS A CEILING AND A FLOOR, NOT AS EQUALITY, because the
+        //     cell height is FONT-DEPENDENT and this is a real measured spread,
+        //     not slack: the same marbles fader is 96.0 CSS px under the VRT
+        //     scenes' pinned webfonts and 94.0 in the app's own stack (the 12px
+        //     label line box becomes 10px). An equality assertion here would be
+        //     pinning one font environment and would go red on the other — the
+        //     repo has this exact warning about where a flex row wraps.
+        //     Directional is also the honest shape: over-reserving is safe,
+        //     under-reserving is the overlap.
+        for (const c of tile.cells) {
+          if (c.kind !== 'fader') continue;
+          if (c.h > LANE_CELL_H.fader) {
+            problems.push(
+              `${tier}/${name(tile.node)}: a fader cell measures ${c.h.toFixed(1)} CSS px, ` +
+                `OVER the LANE_CELL_H.fader = ${LANE_CELL_H.fader} ceiling the plate's row ` +
+                `arithmetic is derived from — the plan is now under-reserving`,
+            );
+          }
+          // …and the floor, so the ceiling cannot be satisfied by the fader
+          // quietly collapsing to a knob-sized cell (which would make the whole
+          // tall-cell mechanism vacuous while every assertion stayed green).
+          if (c.h <= PLATE_ROW_H) {
+            problems.push(
+              `${tier}/${name(tile.node)}: a fader cell measures only ${c.h.toFixed(1)} CSS px, ` +
+                `at or under the ${PLATE_ROW_H} px design cell — a fader is supposed to be the ` +
+                `TALL kind, so the plate's tall-cell path is no longer exercised by anything`,
+            );
+          }
+        }
+      }
+    }
+
+    expect(
+      problems.join('\n'),
+      'lane tile cells painting over one another. (Known, separate, pre-existing: the ' +
+        `knob-readout overlaps below, which this gate reports but does not fail on — ` +
+        `see the comment on knobOverlaps.)\n${knobOverlaps.join('\n') || '  (none)'}`,
+    ).toBe('');
+
+    // ── THE NEGATIVE CONTROL, PERMANENT ─────────────────────────────────────
+    // Every assertion above is inside a loop over cells, so a shell that
+    // rendered NO cells — a broken face, a selector returning nothing — would
+    // sweep every tile and assert nothing at all, in total silence. Requiring
+    // the kind that caused the regression to have actually painted is what
+    // makes a green run mean something. `fader` is also the tallest kind, so it
+    // is the one whose absence would make the height leg vacuous.
+    expect(
+      [...seenKinds].sort().join(','),
+      `the sweep must have measured a FADER cell — that is the kind whose height ` +
+        `broke the plate. kinds seen: ${[...seenKinds].sort().join(', ') || '(none)'}`,
+    ).toContain('fader');
+  });
 });

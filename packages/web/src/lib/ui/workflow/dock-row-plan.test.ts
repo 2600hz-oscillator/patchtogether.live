@@ -41,8 +41,10 @@ import {
   dockRowPlan,
   dockRowPlanIsTotal,
   packRun,
+  PARAM_CELL_WIDTH_CLASS,
   type RowPlanDefLike,
 } from './dock-row-plan';
+import type { ParamCellKind } from './shell-control-kind';
 
 // ── fixtures ────────────────────────────────────────────────────────────────
 
@@ -300,6 +302,85 @@ describe('cellWidthClass — the instrument, perturbed in both directions', () =
     expect(bandIsPackable(bands[1], wideDef)).toBe(true);
     const rows = dockRowPlan(bands, wideDef);
     expect(rows.map((r) => r.id)).toEqual(['a', 'b']);
+  });
+
+  // ── EXHAUSTIVE OVER THE KIND UNION, NOT OVER THE KINDS SOMEONE REMEMBERED ──
+  //
+  // Every test above names a kind. That is why `fader` could ship: the file
+  // tested the kinds it knew about, and the one it did not know about took the
+  // deny-by-default arm silently. A per-kind test cannot prevent the next
+  // instance of that — only a sweep over the union can, and only if the union
+  // is READ rather than re-typed here.
+  //
+  // `PARAM_CELL_WIDTH_CLASS` is a `Record<ParamCellKind, …>`, so TS already
+  // refuses a table missing a kind (TS2741). These two legs close the other
+  // half: that the table is the ONLY thing deciding, and that it has not
+  // collapsed to one answer.
+  it('classifies EVERY ParamCellKind explicitly — no kind reaches a default', () => {
+    const kinds = Object.keys(PARAM_CELL_WIDTH_CLASS) as ParamCellKind[];
+    expect(kinds.length, 'the kind table is not empty').toBeGreaterThan(0);
+    for (const k of kinds) {
+      expect(
+        PARAM_CELL_WIDTH_CLASS[k],
+        `${k}: every kind must be classified 'column' or 'wide' by NAME`,
+      ).toMatch(/^(column|wide)$/);
+    }
+    // Both answers are actually used. A table that said 'column' for
+    // everything would satisfy the loop above and destroy the packing rule —
+    // this is the same "would a green run look different if the answer were
+    // 'everything'?" check the repo applies to its other classifiers.
+    const classes = new Set(kinds.map((k) => PARAM_CELL_WIDTH_CLASS[k]));
+    expect([...classes].sort(), 'the classifier must still discriminate').toEqual(['column', 'wide']);
+  });
+
+  it('the live resolver AGREES with the table for every kind — no second opinion', () => {
+    // `cellWidthClass` must be a lookup, not a re-derivation. Drive a real
+    // ParamDef into each kind through the SAME resolver the shell uses and
+    // require the answer to equal the table's. A divergence here is the
+    // planner/renderer split that caused both this bug and the marbles one.
+    const cases: { kind: ParamCellKind; def: RowPlanDefLike }[] = [
+      { kind: 'knob', def: { type: 'x', params: [knobParam('p')] } },
+      {
+        kind: 'segmented',
+        def: {
+          type: 'x',
+          params: [{ ...knobParam('p'), options: [{ value: 0, label: 'a' }, { value: 1, label: 'b' }] }],
+        },
+      },
+      {
+        kind: 'selector',
+        def: {
+          type: 'x',
+          params: [
+            {
+              ...knobParam('p'),
+              options: Array.from({ length: 9 }, (_, i) => ({ value: i, label: `o${i}` })),
+            },
+          ],
+        },
+      },
+      { kind: 'grid', def: { type: 'x', params: [knobParam('p')], face: { paramCells: { p: 'grid' } } } },
+      { kind: 'color', def: { type: 'x', params: [knobParam('p')], face: { paramCells: { p: 'color' } } } },
+      { kind: 'fader', def: { type: 'x', params: [knobParam('p')], face: { paramCells: { p: 'fader' } } } },
+      { kind: 'momentary', def: { type: 'x', params: [knobParam('p')], face: { momentary: ['p'] } } },
+      {
+        kind: 'toggle',
+        def: { type: 'x', params: [{ ...knobParam('p'), min: 0, max: 1, curve: 'discrete' }] },
+      },
+    ];
+    // The sweep must cover the union — if a kind is added and no case is
+    // written for it, this fails rather than quietly testing seven of eight.
+    expect(
+      cases.map((c) => c.kind).sort(),
+      'every ParamCellKind needs a live fixture here',
+    ).toEqual((Object.keys(PARAM_CELL_WIDTH_CLASS) as ParamCellKind[]).sort());
+
+    for (const { kind, def } of cases) {
+      expect(
+        cellWidthClass(ctl('p'), def),
+        `${kind}: the resolver disagrees with PARAM_CELL_WIDTH_CLASS`,
+      ).toBe(PARAM_CELL_WIDTH_CLASS[kind]);
+    }
   });
 });
 
