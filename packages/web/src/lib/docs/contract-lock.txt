@@ -1236,6 +1236,9 @@ freezeframe out g_out video
 freezeframe out luma_out video
 freezeframe out r_out video
 freezeframe out video_out video
+freezeframe param decay 0..1 discrete default=0
+freezeframe param decay_invert 0..1 discrete default=0
+freezeframe param decay_time 0.05..2 log default=0.5 unit=s
 freezeframe param gateLevel 0..1 linear default=0
 freezeframe param quant_b 0..1 linear default=0
 freezeframe param quant_g 0..1 linear default=0

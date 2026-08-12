@@ -5,6 +5,9 @@
 //   2. QUANT posterize mapping: 7:00→256, mid→32, max→2; monotonic.
 //   3. posterizeChannel math (identity at 256, threshold at 2).
 //   4. channel split / luma extraction (Rec.601 weights).
+//   5. PHOSPHOR DECAY: the envelope's exact endpoints, renderer-independence of
+//      the progress accumulator, and the 8-bit residue that the closed-form
+//      design exists to avoid (kept as a permanent negative control).
 
 import { describe, it, expect } from 'vitest';
 import {
@@ -15,6 +18,15 @@ import {
   gateIsPatched,
   holdQualified,
   freezeframeDef,
+  decayEnvelope,
+  advanceDecayProgress,
+  applyDecay,
+  decayTargetValue,
+  DECAY_MIN_S,
+  DECAY_MAX_S,
+  DECAY_DEFAULT_S,
+  DECAY_FLOOR,
+  DECAY_RATE,
   LUMA_WEIGHTS,
   QUANT_MAX_LEVELS,
   QUANT_MID_LEVELS,
@@ -840,5 +852,291 @@ describe('lumaOf — Rec.601 channel extraction', () => {
   it('green contributes more than red, red more than blue (perceptual order)', () => {
     expect(lumaOf(0, 1, 0)).toBeGreaterThan(lumaOf(1, 0, 0));
     expect(lumaOf(1, 0, 0)).toBeGreaterThan(lumaOf(0, 0, 1));
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════
+// PHOSPHOR DECAY
+// ══════════════════════════════════════════════════════════════════════════
+
+/** GL's float→UNORM8 conversion: round to NEAREST code value, clamp to 0..255
+ *  (ES 3.0 §2.1.6.2). The residue simulation below needs to model what an FBO
+ *  write actually STORES, and rounding-vs-truncation is the whole difference. */
+function toByte(v: number): number {
+  return Math.round(Math.min(1, Math.max(0, v)) * 255);
+}
+
+describe('decayEnvelope — the curve, and what DECAY TIME MEANS', () => {
+  it('EXACT at both ends: a fresh frame is untouched, an elapsed one is GONE', () => {
+    // The two assertions the whole design turns on, and both are `toBe`, not
+    // `toBeCloseTo`: renormalizing the truncated exponential exists precisely so
+    // the endpoints are EXACT rather than within-tolerance. "Reaches the target
+    // and stays there" is the feature's acceptance criterion.
+    expect(decayEnvelope(0), 'progress 0 → the held frame is untouched').toBe(1);
+    expect(decayEnvelope(1), 'progress 1 → the target is REACHED, not approached').toBe(0);
+  });
+
+  it('stays at the target once past it (a long freeze does not revive the image)', () => {
+    for (const p of [1, 1.5, 10, 1e6]) expect(decayEnvelope(p)).toBe(0);
+  });
+
+  it('is strictly monotonic-decreasing across the sweep', () => {
+    let prev = Number.POSITIVE_INFINITY;
+    for (let i = 0; i <= 200; i++) {
+      const k = decayEnvelope(i / 200);
+      expect(k, `envelope must decrease at p=${i / 200}`).toBeLessThan(prev);
+      prev = k;
+    }
+  });
+
+  it('is EXPONENTIAL in shape, not linear — most brightness goes early', () => {
+    // The distinguishing property of an exponential against a ramp: at the
+    // halfway point far MORE than half the brightness is already gone (a linear
+    // fade would read exactly 0.5). e^(-ln100/2) = 0.1, renormalized ≈ 0.0909.
+    const half = decayEnvelope(0.5);
+    expect(half).toBeCloseTo((Math.exp(-DECAY_RATE / 2) - DECAY_FLOOR) / (1 - DECAY_FLOOR), 12);
+    expect(half, 'a linear ramp would read 0.5 here; this must be far below it').toBeLessThan(0.2);
+  });
+
+  it('THE KNOB CONVENTION: 1 % at the knob time, NOT the 37 % a 1/e reading leaves', () => {
+    // The decision this test exists to pin (see decayEnvelope's doc comment). If
+    // the curve is ever "simplified" to a plain 1/e time constant, DECAY TIME
+    // silently starts meaning something else and the knob reads as broken — you
+    // dial 0.5 s and half a second later a third of the picture is still up.
+    expect(DECAY_RATE).toBeCloseTo(Math.log(100), 12);
+    // The pre-renormalization exponential is AT the floor when the clock runs out…
+    expect(Math.exp(-DECAY_RATE)).toBeCloseTo(DECAY_FLOOR, 12);
+    // …and this is what the rejected convention would have left behind.
+    expect(Math.exp(-1), 'the rejected reading, recorded so the choice stays legible')
+      .toBeGreaterThan(0.36);
+  });
+
+  it('is TOTAL — a NaN or negative progress cannot leak a NaN uniform into GLSL', () => {
+    expect(decayEnvelope(Number.NaN)).toBe(0);
+    expect(decayEnvelope(Number.POSITIVE_INFINITY)).toBe(0);
+    expect(decayEnvelope(-1)).toBe(1);
+    for (const p of [0, 0.25, 0.5, 0.75, 1]) expect(Number.isFinite(decayEnvelope(p))).toBe(true);
+  });
+});
+
+describe('advanceDecayProgress — RENDERER-INDEPENDENT by construction', () => {
+  // The rule this feature was most likely to violate. CI's SwiftShader renders
+  // at ~7.9 fps against ~60 on a real GPU, so anything accumulated PER FRAME is
+  // a ~7.6× different time constant per machine — one assertion locally, a
+  // different one on the runner. These are the direct negative control: the
+  // same elapsed SECONDS, delivered in wildly different numbers of steps, must
+  // produce the same decay.
+  const runFor = (totalSec: number, steps: number, timeS: number): number => {
+    let p = 0;
+    for (let i = 0; i < steps; i++) p = advanceDecayProgress(p, totalSec / steps, timeS);
+    return p;
+  };
+
+  it('1 step vs 600 steps over the SAME half-second land on the same progress', () => {
+    const a = runFor(0.5, 1, 1);
+    const b = runFor(0.5, 600, 1);
+    expect(a).toBeCloseTo(0.5, 12);
+    expect(b).toBeCloseTo(0.5, 12);
+    expect(Math.abs(a - b), 'frame count must not change the answer').toBeLessThan(1e-12);
+  });
+
+  it.each([
+    ['SwiftShader on CI', 7.9],
+    ['a 60 Hz display', 60],
+    ['a 120 Hz display', 120],
+    ['a 240 Hz display', 240],
+  ])('%s reaches the SAME brightness after the same wall-clock time', (_label, fps) => {
+    // 0.25 s of real time — however many frames that renderer managed to draw.
+    const steps = Math.max(1, Math.round(0.25 * fps));
+    expect(decayEnvelope(runFor(0.25, steps, 0.5))).toBeCloseTo(decayEnvelope(0.5), 6);
+  });
+
+  it('NEGATIVE CONTROL: a PER-FRAME factor (the naive design) is renderer-dependent', () => {
+    // The same 0.25 s and the same knob, decayed by a fixed factor each DRAW —
+    // the shape the repo forbids. Here so the property above cannot be mistaken
+    // for something that holds automatically.
+    const perFrame = (fps: number): number => {
+      let k = 1;
+      for (let i = 0; i < Math.round(0.25 * fps); i++) k *= 0.96;
+      return k;
+    };
+    // MEASURED: 15 frames at 60 fps vs 60 frames at 240 fps, same 0.25 s.
+    expect(perFrame(60)).toBeCloseTo(0.542086, 5);
+    expect(perFrame(240)).toBeCloseTo(0.086352, 5);
+    expect(
+      Math.abs(perFrame(60) - perFrame(240)),
+      'the rejected design differs by 0.456 of FULL SCALE between two renderers',
+    ).toBeGreaterThan(0.45);
+  });
+
+  it('reaches exactly 1 (fully decayed) after the knob time, and stops there', () => {
+    expect(advanceDecayProgress(0, 2, 2)).toBe(1);
+    expect(advanceDecayProgress(0.9, 100, 2)).toBe(1);
+    expect(decayEnvelope(advanceDecayProgress(0, DECAY_MIN_S, DECAY_MIN_S))).toBe(0);
+  });
+
+  it('a MID-FADE knob move changes the RATE, and does not rewrite the past', () => {
+    // Progress is travelled distance, so re-reading the knob cannot teleport the
+    // brightness. Fade 0.25 s at a 1 s setting, then switch the knob to 2 s.
+    const half = advanceDecayProgress(0, 0.25, 1);
+    expect(half).toBeCloseTo(0.25, 12);
+    const after = advanceDecayProgress(half, 0.25, 2);
+    expect(after, 'the 0.25 already travelled is kept').toBeCloseTo(0.375, 12);
+    // The age-based alternative would recompute 0.5 s / 2 s = 0.25 and the image
+    // would JUMP BACK UP mid-fade. It must only ever move one way.
+    expect(after).toBeGreaterThan(half);
+  });
+
+  it('clamps the knob to its declared range, so a bad param cannot divide by ~0', () => {
+    expect(advanceDecayProgress(0, DECAY_MIN_S, 0)).toBe(1);
+    expect(advanceDecayProgress(0, DECAY_MIN_S, -5)).toBe(1);
+    expect(advanceDecayProgress(0, DECAY_MAX_S, 1e9)).toBeCloseTo(1, 12);
+  });
+
+  it('a NON-MONOTONIC clock cannot run the decay BACKWARDS', () => {
+    // The determinism hook can be toggled mid-run, which steps frame.time
+    // sideways. A negative or NaN dt must be inert, never a rewind.
+    expect(advanceDecayProgress(0.4, -10, 1)).toBe(0.4);
+    expect(advanceDecayProgress(0.4, Number.NaN, 1)).toBe(0.4);
+  });
+});
+
+describe('applyDecay + the 8-BIT RESIDUE this design exists to avoid', () => {
+  it('DECAY OFF is BIT-EXACT, not merely close', () => {
+    // The off-state uniform pair is (k = 1, target = 0) and the shader tail is
+    // the same affine form as applyDecay, so every representable 8-bit input
+    // must come back as the IDENTICAL double. `toBe`, so a 1-ULP drift fails.
+    for (let b = 0; b <= 255; b++) expect(applyDecay(b / 255, 1, 0)).toBe(b / 255);
+  });
+
+  it('reaches EXACTLY black for all 256 code values once the envelope hits 0', () => {
+    for (let b = 0; b <= 255; b++) {
+      expect(toByte(applyDecay(b / 255, decayEnvelope(1), decayTargetValue(false)))).toBe(0);
+    }
+  });
+
+  it('reaches EXACTLY white for all 256 code values with INVERT on', () => {
+    for (let b = 0; b <= 255; b++) {
+      expect(toByte(applyDecay(b / 255, decayEnvelope(1), decayTargetValue(true)))).toBe(255);
+    }
+  });
+
+  it('the two directions are SYMMETRIC — one curve, measured to the other end', () => {
+    for (const p of [0, 0.1, 0.33, 0.5, 0.9, 1]) {
+      const k = decayEnvelope(p);
+      const v = 0.42;
+      expect(applyDecay(v, k, 0) / v, 'distance to BLACK shrinks by k').toBeCloseTo(k, 12);
+      expect((1 - applyDecay(v, k, 1)) / (1 - v), 'distance to WHITE shrinks by k').toBeCloseTo(k, 12);
+    }
+  });
+
+  it('NEGATIVE CONTROL: the naive PER-FRAME multiply STALLS on an 8-bit FBO', () => {
+    // WHY THIS TEST IS PERMANENT. `ctx.createFbo()` allocates RGBA8
+    // (VideoEngine.createFboImpl) and GL rounds a float write to the nearest
+    // code value — so an iterative `v ← v·k` sticks wherever `round(v·k) == v`,
+    // i.e. for every v ≤ 0.5/(1−k). The image fades to a dark ghost and sits
+    // there FOREVER. That is what the closed-form uniform avoids, and this
+    // simulation is the evidence, kept next to the thing it justifies so a
+    // future "simplification" back to a feedback pass reads the measurement
+    // before making it.
+    //
+    // Note the second finding in the same numbers: the residue is a function of
+    // the FRAME RATE, because k is. The naive design is renderer-dependent in
+    // its ENDPOINT as well as its rate.
+    const residues: Record<number, number> = {};
+    for (const fps of [60, 120, 240]) {
+      const k = Math.exp(-(1 / fps) / (DECAY_MAX_S / DECAY_RATE));
+      let byte = 255;
+      for (let i = 0; i < 100_000; i++) {
+        const next = toByte((byte / 255) * k);
+        if (next === byte) break; // stalled
+        byte = next;
+      }
+      residues[fps] = byte;
+    }
+    expect(residues, 'the stall point in 8-bit code values, per renderer').toEqual({
+      60: 13,
+      120: 26,
+      240: 52,
+    });
+    // 52/255 is a fifth of full brightness left permanently on screen.
+    expect(residues[240]! / 255).toBeGreaterThan(0.2);
+
+    // …and the SHIPPED closed form, driven over the same elapsed time through
+    // the same predicates the module calls, lands on 0 at every frame rate.
+    for (const fps of [60, 120, 240]) {
+      let p = 0;
+      for (let i = 0; i < Math.round(DECAY_MAX_S * fps); i++) {
+        p = advanceDecayProgress(p, 1 / fps, DECAY_MAX_S);
+      }
+      expect(toByte(applyDecay(1, decayEnvelope(p), 0)), `${fps} fps reaches black`).toBe(0);
+    }
+  });
+});
+
+describe('freezeframe def — the DECAY controls', () => {
+  const param = (id: string) => freezeframeDef.params.find((p) => p.id === id);
+
+  it('DECAY and INVERT are canonical 0/1 switches (the looksLikeToggle shape)', () => {
+    for (const id of ['decay', 'decay_invert']) {
+      const p = param(id);
+      expect(p, `${id} is declared`).toBeDefined();
+      expect(p!.curve).toBe('discrete');
+      expect(p!.min).toBe(0);
+      expect(p!.max).toBe(1);
+      expect(p!.defaultValue, `${id} must default OFF — today's behaviour is the default`).toBe(0);
+    }
+  });
+
+  it('DECAY TIME is the owner-specified 0.05..2 s range, on a log knob', () => {
+    const p = param('decay_time');
+    expect(p).toBeDefined();
+    expect(p!.min, 'owner spec: 0.05 s').toBe(0.05);
+    expect(p!.max, 'owner spec: 2 s').toBe(2);
+    expect(p!.units).toBe('s');
+    expect(p!.curve, 'a 40:1 sweep on a linear knob wastes its bottom half').toBe('log');
+    expect(p!.defaultValue).toBe(DECAY_DEFAULT_S);
+    expect(p!.defaultValue).toBeGreaterThanOrEqual(p!.min);
+    expect(p!.defaultValue).toBeLessThanOrEqual(p!.max);
+  });
+
+  it("the exported range constants ARE the def's numbers (one source, not two)", () => {
+    // The card reads its Fader bounds off the def and the def reads them off
+    // these constants. A second copy anywhere is the backdraft defect.
+    expect(param('decay_time')!.min).toBe(DECAY_MIN_S);
+    expect(param('decay_time')!.max).toBe(DECAY_MAX_S);
+  });
+
+  it('adds NO new ports — the switches are panel controls, not jacks', () => {
+    expect(freezeframeDef.inputs.map((p) => p.id)).toEqual(['video_in', 'gate_in']);
+    expect(freezeframeDef.outputs).toHaveLength(5);
+  });
+});
+
+describe('freezeframe DECAY docs — the caveat a user is misled without', () => {
+  const docs = freezeframeDef.docs;
+
+  it('every DECAY control is documented (the STRICT_DOCS completeness bar)', () => {
+    for (const id of ['decay', 'decay_invert', 'decay_time']) {
+      expect(docs?.controls?.[id]?.length ?? 0, `${id} needs authored prose`).toBeGreaterThan(80);
+    }
+  });
+
+  it('the prose SAYS decay is only visible while frozen', () => {
+    // The honest caveat: with GATE unpatched every frame is freshly captured, so
+    // DECAY legitimately does nothing — and a user who does not know that reads
+    // it as a dead control. Asserted on the switch's own doc, where they look.
+    const prose = `${docs?.controls?.decay ?? ''} ${docs?.explanation ?? ''}`.toLowerCase();
+    expect(prose).toMatch(/froze?n/);
+    expect(prose).toMatch(/live passthrough|nothing you can see|unpatched/);
+  });
+
+  it("the prose states the knob's \"gone by\" reading, not a time constant", () => {
+    const prose = (docs?.controls?.decay_time ?? '').toLowerCase();
+    expect(prose).toMatch(/0\.05/);
+    expect(prose).toMatch(/\b2 s\b|\b2 seconds\b/);
+    // If the curve is ever re-read as 1/e, this sentence becomes a lie.
+    expect(prose, 'the doc must not silently drift to a time-constant reading')
+      .toMatch(/not a 1\/e time constant|37 percent/);
   });
 });

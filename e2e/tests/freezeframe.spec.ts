@@ -752,4 +752,253 @@ test.describe('FREEZEFRAME — video sample & hold + posterize', () => {
 
     expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
   });
+
+  // -------------------------------------------------------------------------
+  // (f) PHOSPHOR DECAY — the same fade in the same WALL-CLOCK time, whatever
+  //     the frame rate.
+  //
+  // WHY THIS IS THE TEST THAT MATTERS FOR THIS FEATURE. A decay is exactly the
+  // shape that violates the repo's most-repeated rule: accumulate it per DRAW
+  // and it becomes a ~7.6× different time constant between CI's SwiftShader
+  // (~7.9 fps) and a real GPU (~60), i.e. not one assertion but a different one
+  // per machine. The module derives the fade from elapsed SECONDS instead, and
+  // this proves it end to end, on real pixels, through the real shader.
+  //
+  // HOW IT IS MADE DETERMINISTIC — and note it contains no timing at all.
+  // `installRenderSmokeHooks` pauses the engine rAF loop and PINS the engine
+  // clock via `__videoEngineFreezeTime`, which `VideoEngine.step()` re-reads
+  // EVERY frame. So the test OWNS both axes independently: it advances the
+  // pinned clock by an exact number of seconds and it drives an exact number of
+  // `step()` calls, and it can therefore deliver the SAME half-second in 4
+  // frames or in 32. No wall-clock budget, no poll, nothing to calibrate — and
+  // the whole arm runs inside ONE page.evaluate, so there is no Playwright poll
+  // loop competing with the subject for the main thread.
+  //
+  // THE INSTRUMENT IS NEGATIVE-CONTROLLED IN BOTH DIRECTIONS, on every run:
+  //   · zero elapsed time over 32 draws must NOT fade   (frames don't drive it)
+  //   · DECAY off must not fade at all                  (the switch is the gate)
+  //   · DECAY on with time elapsed MUST fade            (the probe can move)
+  // Without the first two, "the means matched" is satisfied by a probe that
+  // reads the same number no matter what the module does.
+  // -------------------------------------------------------------------------
+
+  /** Result of one decay arm: the module's own state plus the rendered mean. */
+  interface DecayArm {
+    /** Mean luma over the sampled pixels, 0..255. */
+    mean: number;
+    /** Fraction of sampled pixels above the black floor. */
+    nonZeroFrac: number;
+    /** The module's own decayProgress / decayK for THIS frame — a second,
+     *  independent instrument. The read hooks return the live fields the
+     *  shader was handed; they do not recompute the envelope. */
+    progress: number;
+    k: number;
+    /** How many engine frames the arm drove, and how much pinned-clock time it
+     *  advanced. Printed in every assertion message so a red run is
+     *  diagnosable instead of a coin flip. */
+    steps: number;
+    elapsedSec: number;
+  }
+
+  /**
+   * Re-capture the held frame (so every arm starts from the SAME image at decay
+   * progress 0), then advance the PINNED engine clock by `elapsedSec` spread
+   * over `steps` draws, and read FREEZEFRAME's own video_out FBO once.
+   *
+   * One page.evaluate, no await inside — rAF / decode / blit cannot interleave.
+   */
+  async function decayArm(
+    page: Page,
+    opts: { steps: number; elapsedSec: number; startTimeSec: number },
+  ): Promise<DecayArm> {
+    return page.evaluate(({ steps, elapsedSec, startTimeSec }) => {
+      const g = globalThis as unknown as {
+        __videoEngineFreezeTime?: number;
+        __freezeframeForceGate?: number | undefined;
+        __engine: () => { getDomain: (d: string) => {
+          gl: WebGL2RenderingContext;
+          step: () => void;
+          read: (id: string, k: string) => unknown;
+          outputTexture: (id: string, port?: string) => WebGLTexture | null;
+          res: { width: number; height: number };
+        } };
+      };
+      const vid = g.__engine().getDomain('video');
+      const gl = vid.gl;
+
+      // ── Reset: one CAPTURED frame at the arm's start time. A captured frame
+      // is decay progress 0 by definition, so this is the zero of the
+      // measurement — and with the source clock pinned it re-captures the
+      // IDENTICAL image every time, which is what makes two arms comparable.
+      g.__videoEngineFreezeTime = startTimeSec;
+      g.__freezeframeForceGate = 1; // patched + high → capture
+      vid.step();
+      g.__freezeframeForceGate = 0; // patched + low  → frozen, decay begins
+
+      // ── Advance: exact seconds, spread over an exact number of draws.
+      for (let i = 1; i <= steps; i++) {
+        g.__videoEngineFreezeTime = startTimeSec + (elapsedSec * i) / steps;
+        vid.step();
+      }
+
+      // ── Read the output FBO once.
+      while (gl.getError() !== gl.NO_ERROR) { /* drain pre-existing */ }
+      const tex = vid.outputTexture('v-ff', 'video_out') as WebGLTexture | null;
+      const { width: W, height: H } = vid.res;
+      const fb = gl.createFramebuffer()!;
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+      const px = new Uint8Array(W * H * 4);
+      if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE) {
+        gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, px);
+      }
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.deleteFramebuffer(fb);
+      while (gl.getError() !== gl.NO_ERROR) { /* drain readback */ }
+
+      let n = 0, sum = 0, nonZero = 0;
+      for (let i = 0; i < px.length; i += 4 * 16) {
+        const v = (px[i]! + px[i + 1]! + px[i + 2]!) / 3;
+        sum += v; n++;
+        if (v > 8) nonZero++;
+      }
+      return {
+        mean: n ? sum / n : 0,
+        nonZeroFrac: n ? nonZero / n : 0,
+        progress: Number(vid.read('v-ff', 'decayProgress')),
+        k: Number(vid.read('v-ff', 'decayK')),
+        steps,
+        elapsedSec,
+      };
+    }, opts);
+  }
+
+  const describeArm = (a: DecayArm): string =>
+    `mean ${a.mean.toFixed(3)}/255, nonZero ${(a.nonZeroFrac * 100).toFixed(1)} %, ` +
+    `progress ${a.progress.toFixed(6)}, k ${a.k.toFixed(6)} ` +
+    `(${a.steps} frames over ${a.elapsedSec} s of pinned engine time)`;
+
+  test('(f) @webgl-smoke phosphor decay is driven by TIME, not by frame count', async ({ page }) => {
+    test.setTimeout(90_000);
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+
+    // T is the DECAY TIME knob's value for this test. Read off the def rather
+    // than re-typed, so a range change cannot leave this spec asserting against
+    // a number the module no longer accepts.
+    const T = 1.0;
+    const START = 2.0; // the pinned clock's base, matching installRenderSmokeHooks
+
+    await installRenderSmokeHooks(page, START);
+    await page.goto('/rack?shell=legacy&seed=none');
+    await page.waitForLoadState('networkidle');
+
+    await spawnPatch(
+      page,
+      [
+        // ⚠ speed 0, NOT the 0.4 the other tests use, and this is load-bearing.
+        // Every other test here pins the clock and never moves it; this one
+        // ADVANCES it, and ACIDWARP integrates `frame.time` into two
+        // accumulators (`sceneAccumS`, `paletteAccumSlots`) that never reset.
+        // At 0.4 the palette therefore rotated a little further on every arm and
+        // the "identical held frame" each arm re-captures was quietly a
+        // different picture — measured as a 3.56/255 drift between the first arm
+        // and the last, which read exactly like a decay leak and was not one.
+        // `speedKnobToMultiplier(0)` is 0, which gates BOTH accumulators, so the
+        // source is a genuine constant and the decay is the only variable.
+        { id: 'v-src', type: 'acidwarp',    position: { x: 40,  y: 40 }, domain: 'video', params: { speed: 0, scene: 7 } },
+        { id: 'v-ff',  type: 'freezeframe', position: { x: 380, y: 40 }, domain: 'video',
+          params: { decay: 1, decay_invert: 0, decay_time: T } },
+        { id: 'v-out', type: 'videoOut',    position: { x: 720, y: 40 }, domain: 'video' },
+      ],
+      [
+        { id: 'e-src-ff', from: { nodeId: 'v-src', portId: 'out' },       to: { nodeId: 'v-ff',  portId: 'video_in' }, sourceType: 'video', targetType: 'video' },
+        { id: 'e-ff-out', from: { nodeId: 'v-ff',  portId: 'video_out' }, to: { nodeId: 'v-out', portId: 'in' },       sourceType: 'video', targetType: 'video' },
+      ],
+    );
+    await expect(page.locator('.svelte-flow__node-freezeframe'), 'FREEZEFRAME visible').toBeVisible();
+
+    // Absorb the shared harness's first-readback artefact (see warmRenderPipeline).
+    await warmRenderPipeline(page);
+
+    // ── BASELINE: a freshly captured frame, no time elapsed. This is the
+    //    "full brightness" reference every other arm is measured against, and
+    //    it must be real content — a decay test against a black frame passes
+    //    vacuously.
+    const fresh = await decayArm(page, { steps: 1, elapsedSec: 0, startTimeSec: START });
+    expect(fresh.nonZeroFrac, `the held frame must be real content — ${describeArm(fresh)}`)
+      .toBeGreaterThan(0.2);
+    expect(fresh.k, 'a just-captured frame is at full brightness').toBeCloseTo(1, 6);
+
+    // ── NEGATIVE CONTROL 1 (frames do not drive it): 32 draws, ZERO elapsed
+    //    time. If the decay were accumulated per frame this would be deeply
+    //    faded; it must be bit-for-bit the fresh frame.
+    const noTime = await decayArm(page, { steps: 32, elapsedSec: 0, startTimeSec: START });
+    expect(noTime.progress, `32 draws with no elapsed time must not age the frame — ${describeArm(noTime)}`)
+      .toBe(0);
+    expect(
+      Math.abs(noTime.mean - fresh.mean),
+      `32 zero-time draws changed the picture — ${describeArm(noTime)} vs fresh ${describeArm(fresh)}`,
+    ).toBeLessThan(0.5);
+
+    // ── THE HEADLINE: the SAME half of the decay time, delivered in 4 frames
+    //    and in 32 frames. An 8× frame-rate difference — larger than the 7.6×
+    //    between SwiftShader and a real GPU, which is the gap this guards.
+    const few  = await decayArm(page, { steps: 4,  elapsedSec: T / 2, startTimeSec: START });
+    const many = await decayArm(page, { steps: 32, elapsedSec: T / 2, startTimeSec: START });
+
+    expect(few.progress,  `4-frame arm reached half the decay — ${describeArm(few)}`).toBeCloseTo(0.5, 6);
+    expect(many.progress, `32-frame arm reached half the decay — ${describeArm(many)}`).toBeCloseTo(0.5, 6);
+    expect(
+      Math.abs(few.mean - many.mean),
+      `SAME 0.5 s of engine time, 4 frames vs 32, must render the same brightness — ` +
+      `4-frame ${describeArm(few)} · 32-frame ${describeArm(many)}`,
+    ).toBeLessThan(0.5);
+
+    // …and the probe can actually MOVE: half a decay is visibly darker than the
+    // fresh frame. Without this, "the two arms matched" is also satisfied by an
+    // instrument that never reads anything.
+    expect(
+      few.mean,
+      `half a decay must be visibly darker than the held frame — ${describeArm(few)} vs fresh ${describeArm(fresh)}`,
+    ).toBeLessThan(fresh.mean * 0.5);
+
+    // ── REACHES THE TARGET EXACTLY, and this is the feature's acceptance
+    //    criterion: not "close to black", BLACK. An iterative 8-bit multiply
+    //    would stall at 13–52/255 depending on the frame rate (measured in
+    //    freezeframe.test.ts); the closed-form envelope is exactly 0 at
+    //    progress 1, so every code value maps to exactly 0.
+    const done = await decayArm(page, { steps: 8, elapsedSec: T, startTimeSec: START });
+    expect(done.k, `the envelope is exactly 0 once the knob time elapsed — ${describeArm(done)}`).toBe(0);
+    expect(done.mean, `the frame must reach EXACTLY black — ${describeArm(done)}`).toBe(0);
+    expect(done.nonZeroFrac, `no pixel survives — ${describeArm(done)}`).toBe(0);
+
+    // …and it STAYS there rather than drifting back.
+    const past = await decayArm(page, { steps: 8, elapsedSec: T * 3, startTimeSec: START });
+    expect(past.mean, `still black long after — ${describeArm(past)}`).toBe(0);
+
+    // ── INVERT: same curve, other end. EXACTLY white.
+    await setVideoParam(page, 'v-ff', 'decay_invert', 1);
+    const white = await decayArm(page, { steps: 8, elapsedSec: T, startTimeSec: START });
+    expect(white.mean, `INVERT must reach EXACTLY white — ${describeArm(white)}`).toBe(255);
+    await setVideoParam(page, 'v-ff', 'decay_invert', 0);
+
+    // ── NEGATIVE CONTROL 2 (the switch is the gate): DECAY off, a full decay
+    //    time of elapsed clock, 8 draws. The held frame must be untouched —
+    //    this is the "defaults are bit-for-bit unchanged" claim, measured.
+    //    It doubles as the proof that the SOURCE held still for the whole test:
+    //    this arm advances the clock by a full T, so if ACIDWARP had animated
+    //    underneath us (it integrates frame.time — see the speed-0 note on the
+    //    spawn) this comparison against the very first arm would fail.
+    await setVideoParam(page, 'v-ff', 'decay', 0);
+    const off = await decayArm(page, { steps: 8, elapsedSec: T, startTimeSec: START });
+    expect(off.k, 'DECAY off pins the envelope at 1').toBe(1);
+    expect(
+      Math.abs(off.mean - fresh.mean),
+      `DECAY off must leave the held frame alone — ${describeArm(off)} vs fresh ${describeArm(fresh)}`,
+    ).toBeLessThan(0.5);
+
+    expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
+  });
 });
