@@ -66,6 +66,26 @@ export const DOM_SOURCE_LANE_TYPES: ReadonlySet<string> = new Set<string>([
   'videobox',
   'videocube',
   'videovarispeed',
+  // WAVESCULPT (2026-08-10) — the SECOND source mechanism, and the one that
+  // proved this set's gate was only ever watching the first.
+  //
+  // Its pixels do not come from a `<video>`/`<img>` handed over with
+  // `attachExternalSource`. They come from a WebGL2 scene the CARD draws, which
+  // the card publishes through `installWavesculptFrameDrawer(id, fn)`; the
+  // module's `drawFrame` looks that up per frame and, on a miss, **fills the
+  // canvas with #000** (`wavesculpt.ts` `drawFrame`). Different spelling,
+  // identical lifecycle: the card mount IS the source.
+  //
+  // So the day wavesculpt joined STRICT_FACES its `video_out` went SOLID BLACK —
+  // not absent, black — and `lum_depth` died with it, because the same card is
+  // what samples wall luminosity into `setWavesculptLuma`. Owner-reported.
+  //
+  // ⚠ THE GATE COULD NOT SEE IT. `dom-source-modules.test.ts` grepped exactly
+  // one seam name (`attachExternalSource(`) across exactly one filename shape
+  // (`*Card.svelte`, non-recursive). Both filters have been removed — see that
+  // file's CARD_SOURCE_SEAMS — so the remaining ten modules in this set, and
+  // any eleventh, now go RED on migration instead of silently black.
+  'wavesculpt',
 ]);
 
 /** Inputs to the headless-mount decision. */

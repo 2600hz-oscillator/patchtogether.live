@@ -88,12 +88,26 @@ void _EXHAUSTIVE;
  * means adding a row; landing its first face means deleting one.
  */
 const UNEXERCISED_BY_FACES_PARITY: Readonly<Record<string, { why: string; coveredBy: string }>> = {
-  color: {
-    why:
-      'ColorField lands one PR before its first consumer (wavesculpt has no `face` yet), so no ' +
-      'STRICT_FACES dock renders a colour cell and faces-parity never enters its driveCell arm.',
-    coveredBy: 'e2e/tests/color-field.spec.ts',
-  },
+  // ⚠ `fader` WAS HERE AND IS GONE, deleted on the wavesculpt rebase
+  // 2026-08-11 — and the deletion was demanded by the gate, not noticed by a
+  // human. The kind landed one PR ahead of its first consumer (`face/noise`
+  // was held), which is the normal state of a platform primitive and exactly
+  // what this map is for; while it sat unlanded, marbles, noise and rings all
+  // merged declaring it, so the real gate started covering it and the entry
+  // became a lie. The stale-entry leg named all three modules in its failure
+  // message. That is the both-directions half doing the job the count-based
+  // version could not: nothing here had to be re-derived, and the diff is the
+  // review.
+  //
+  // …and the entry that got here the way the ratchet intends. `color` was the one
+  // entry, written naming its own future consumer ("wavesculpt has no `face`
+  // yet"); the wavesculpt face landed 2026-08-10 declaring
+  // `face.paramCells: { red_color: 'color', … }`, so `liveDockCoverage()` now
+  // reports an adopter and the stale-entry leg below deleted it.
+  //
+  // ⚠ AN EMPTY MAP IS NOT A DEAD MECHANISM HERE. The other direction — a kind
+  // that no face exercises and nobody listed — is still RED, so the next
+  // primitive to land ahead of its first consumer must add a row back.
 };
 
 interface FaceDefLike {
@@ -146,10 +160,9 @@ const parityDrives = (kind: string) =>
  * How many STRICT_FACES modules render at least one cell of each kind, at the
  * DOCK — which is what faces-parity opens and sweeps.
  */
-function liveDockCoverage(): Map<ParamCellKind, string[]> {
+function dockCoverage(defs: Iterable<FaceDefLike>): Map<ParamCellKind, string[]> {
   const out = new Map<ParamCellKind, string[]>(ALL_KINDS.map((k) => [k, []]));
-  for (const def of allDefs()) {
-    if (!STRICT_FACES.has(def.type)) continue;
+  for (const def of defs) {
     const momentary = momentaryParamIds(def);
     const declared = declaredParamCells(def);
     const seen = new Set<ParamCellKind>();
@@ -157,6 +170,14 @@ function liveDockCoverage(): Map<ParamCellKind, string[]> {
     for (const k of seen) out.get(k)!.push(def.type);
   }
   return out;
+}
+
+/** The live answer: the promoted faces, as they are today. ⚠ THE DEF FILTER IS
+ *  SPLIT OUT FROM THE SWEEP so the negative control at the bottom can call the
+ *  SAME function on a synthetic def set. A re-typed copy in the self-test is
+ *  how the previous generation of these guards went blind. */
+function liveDockCoverage(): Map<ParamCellKind, string[]> {
+  return dockCoverage(allDefs().filter((d) => STRICT_FACES.has(d.type)));
 }
 
 describe('param cell coverage — every primitive is WIRED end to end', () => {
@@ -256,15 +277,32 @@ describe('param cell coverage — NEGATIVE CONTROLS on the source greps', () => 
   });
 
   it('the coverage sweep can report a kind as UNEXERCISED (it is not always non-empty)', () => {
-    // The clause that would rot first: if `liveDockCoverage` ever returned a
-    // non-empty list for everything — a resolver bug, a widened default — the
-    // "declare your gaps" test would pass forever with nothing to declare.
-    const coverage = liveDockCoverage();
-    const empties = ALL_KINDS.filter((k) => coverage.get(k)!.length === 0);
+    // The clause that would rot first: if the sweep ever returned a non-empty
+    // list for everything — a resolver bug, a widened default — the "declare
+    // your gaps" test would pass forever with nothing to declare.
+    //
+    // ⚠ THIS LEG USED TO READ THE LIVE REGISTRY, AND IT STOPPED WORKING THE DAY
+    // IT MATTERED. It asserted "some kind has zero adopters", which was true
+    // only while `color` had none. Landing wavesculpt's face — the very event
+    // the header above says this file exists to catch — gave every kind an
+    // adopter and turned the control red for the RIGHT reason and the WRONG
+    // one: nothing was broken, the control had simply run out of subject.
+    //
+    // A negative control anchored to the live registry is a negative control
+    // with an expiry date. This one feeds SYNTHETIC defs to the SAME
+    // `dockCoverage` the live sweep calls, so it holds no matter what the
+    // registry grows into, and it fires in BOTH directions on one input.
+    const synthetic = dockCoverage([
+      { type: 'synthetic-knob-only', params: [{ id: 'k', label: 'K', defaultValue: 0, min: 0, max: 1, curve: 'linear' }] },
+    ]);
+    expect(synthetic.get('knob'), 'the sweep SEES the kind that is there').toEqual([
+      'synthetic-knob-only',
+    ]);
     expect(
-      empties.length,
-      'the sweep found an adopter for EVERY kind, including the ones this file declares as ' +
-        'unexercised — the coverage function is not measuring what it claims',
-    ).toBeGreaterThan(0);
+      ALL_KINDS.filter((k) => synthetic.get(k)!.length === 0),
+      'the sweep reports every kind that is NOT there as empty — if this list shrinks toward ' +
+        'nothing, `dockCoverage` has stopped discriminating and the "declare your gaps" test ' +
+        'above is vacuous',
+    ).toEqual(ALL_KINDS.filter((k) => k !== 'knob'));
   });
 });

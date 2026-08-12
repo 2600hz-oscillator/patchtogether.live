@@ -161,6 +161,53 @@
 // directions, against the REAL processor class on twelve key sets — including
 // the one worklet constant the model has to mirror, which is anchored by
 // measuring the shipping DSP rather than by a comment.
+//
+// FACE BATCH 3 · wavesculpt (2026-08-10) — the largest face on the bar by a
+// factor of two (81 cells: 79 params + 2 families), PROMOTED from no face at
+// all, and the entry whose argument is that a faceplate can make a SHIPPED
+// DEFECT impossible to miss without touching the DSP that causes it.
+//
+// The module is a ROOM YOU STAND INSIDE: four wavetable voices bolted to four
+// walls and aimed at its centre, and ONE camera position that is simultaneously
+// the viewpoint and the mix desk — `distanceGain` scales a voice's ribbon AND
+// its audio gain off the same number. That is the part no other module in the
+// rack has, and it is 5 params out of 79, buried in the legacy card behind two
+// unlabelled joysticks.
+//
+// ⚠ THE DIRECTIONAL TERM CLAMPS AT ZERO, so at the SHIPPED DEFAULT camera the
+// BLUE voice is EXACTLY silent (the eye sits directly behind it on the +Z
+// wall) and `out_blu` emits digital zero with it. Every gate stayed green for
+// the module's whole life: the one test that looks at this asserts zoom-max is
+// no quieter than zoom-min and passes for BLUE with a 0.973 margin, because it
+// never samples the default zoom. Not a wrong assertion — a wrongly chosen
+// sample set. The face does not fix it (moving the default, or flooring the
+// term, changes the spawn sound of every saved patch: owner ears + an ART
+// re-pin, its own PR). It DRAWS it: the hero room-plan crosses the dark
+// emitter and the readout strip counts `3 of 4`.
+//
+// ⚠ ITS LANE RANKING CONTRADICTS THE CARD, ON MEASUREMENT. Total-gain swing
+// per camera axis: zoom 41.3 dB, pos_z 27.6, pos_y 5.7, pos_x 4.6, rot 3.2.
+// The card gives its two big joystick axes to the two LEAST consequential
+// (pos_x, rot) and `pos_z` a small "Height" knob. ⚠ AND `rot` IS RANKED ON A
+// SECOND METRIC — total gain is invariant to WHICH voice produces it, so it
+// ranks `rot` last even though `rot` mutes BLUE across 36.7 % of its travel.
+// One number would have buried the finding; the face states which metric each
+// rank is on.
+//
+// ⚠ FIRST FACEPLATE CONSUMER OF THE `color` CELL. `red_color`/`grn_color`/
+// `blu_color` are packed 0xRRGGBB over 0..16777215, and UNDECLARED they render
+// as knobs sweeping 16.7 million states — which faces-parity would PASS, since
+// it drags the knob and asserts the param moved. `face.paramCells` declares
+// them, and the `color` entry in param-cell-coverage's
+// UNEXERCISED_BY_FACES_PARITY (written naming this module, "wavesculpt has no
+// `face` yet") is deleted in the same commit.
+//
+// ⚠ MEASUREMENTS ARE NOT REPEATED IN PROSE HERE beyond the framing above:
+// every one is RE-DERIVED from `distanceGain` + `eyeFromCamera` — the same two
+// exports the FACTORY calls — on every run by `wavesculpt-face-model.test.ts`,
+// in both directions, including the two that would have caught the wrong
+// instrument (voices-live must move on ZOOM with `rot` held; spread must NOT
+// move on `master_gain`).
 
 // FACE BATCH 3 · cube (2026-08-10) — the biggest face in the repo (26 params
 // + 2 panels = 28 cells) and the first one whose HERO IS THE MODULE'S EXISTING
@@ -662,6 +709,8 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   'macrooscillator',
   // FACE BATCH 3 · the DTMF dialer (2026-08-09) — see the header note above.
   'bluebox',
+  // FACE BATCH 3 · the room you stand inside (2026-08-10) — header note below.
+  'wavesculpt',
   // FACE BATCH 3 · the 3-D wavetable navigator (2026-08-10) — see below.
   'cube',
   // FACE BATCH 4 · the granular texture processor (2026-08-10) — see above.

@@ -3796,6 +3796,7 @@ wavesculpt param wall6_distort 0..1 linear default=0
 wavesculpt param wiggle 0..1 linear default=0
 wavesculpt param zoom 0.3..3 log default=1
 wavesculpt family wavesculpt-osc kind=cell prefix=wavesculpt-osc
+wavesculpt family wavesculpt-room kind=cell prefix=wavesculpt-room
 wavetableVco meta domain=audio
 wavetableVco in fine cv param=fine cvScale=linear
 wavetableVco in fm audio
