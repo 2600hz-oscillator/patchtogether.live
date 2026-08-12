@@ -1956,8 +1956,8 @@ test.describe('per-port heavy-GL budget: DERIVED, not floored', () => {
     expect(
       [...REGISTRY].filter((m) => emitBudgetMs(m) > 0 && emitSkipReason(m) !== null).map((m) => m.type),
       'a module with a NON-ZERO emit budget whose emit test is skipped means the budget function '
-      + 'and the sweep disagree about which tests exist — the exact defect that pinned this '
-      + 'ratchet to colourofmagic, a test that never runs.',
+      + 'and the sweep disagree about which tests exist — the exact defect that once priced this '
+      + 'gate against colourofmagic, a test that never runs.',
     ).toEqual([]);
 
     // The `doom → max(scaled, 90 000)` floor the old accumulator carried is
@@ -1969,9 +1969,9 @@ test.describe('per-port heavy-GL budget: DERIVED, not floored', () => {
       + 'removed doom floor asked for, or that floor was load-bearing and should not have gone.',
     ).toBeGreaterThan(90_000);
 
-    // THE PLAN GOT CHEAPER, so the ratchet comes down with it — in the same
-    // commit, per the rule that a ceiling left slack absorbs the next
-    // regression in silence.
+    // THE PLAN GOT CHEAPER — kept here because it is the measurement, and the
+    // measurement is what tells the next author whether a budget change is a
+    // real cost regression or just a different tree.
     //
     // 980 s → 300 s for the worst live plan (clipplayer, 24 outputs), from two
     // changes to the PLAN and none to the tolerance:
@@ -1991,11 +1991,37 @@ test.describe('per-port heavy-GL budget: DERIVED, not floored', () => {
     // module 17.9 s → 6.3 s. The 300 s budget is therefore ~24× the measured
     // cost of the plan it covers.
     //
-    // That retires the debt rather than shrinking it: this is now a real
+    // That retires the debt rather than shrinking it: what remains is a real
     // `toBeLessThan(CEILING)` — the worst plan fits inside the healthy share of
-    // the shard job — with the shrink-only ratchet kept UNDER it so the number
-    // still cannot drift upward unnoticed.
-    const EMIT_WORST_CEILING_MS = 300_000;
+    // the shard job — and CEILING is FULLY DERIVED from the configured job
+    // timeout, so it is not a hand-typed quantity and stays.
+    //
+    // ⚠ `EMIT_WORST_CEILING_MS` (300_000) IS GONE (2026-08-10) — P0 owner
+    // directive, "ratchets are an anti pattern; remove all ratchets". It was
+    // asserted twice: `worstEmitMs <= EMIT_WORST_CEILING_MS`, plus a zero-slack
+    // twin `expect(EMIT_WORST_CEILING_MS - worstEmitMs).toBe(0)`.
+    //
+    // WHY IT IS A POPULATION COUNT IN MILLISECOND CLOTHING. `worstEmitMs` is
+    // computed from the widest module's LIVE OUTPUT-PORT COUNT
+    // (`liveEmitOutputs(worstEmit) * PER_OUTPUT_MS + …`, × ATTEMPTS) — a
+    // strictly increasing function of a quantity read off the tree. The
+    // zero-slack twin then required the literal to EQUAL that derived value
+    // exactly. So `300_000` was, by construction, a hand-typed copy of
+    // "how many output ports does the widest module have", wearing a unit. It
+    // goes wrong the moment a wider-output video module merges — and it goes
+    // wrong the way the edge ledger did: two branches each computing correctly
+    // for their own tree, the merge silently taking one of them, no conflict
+    // marker, no red test. The `ms` suffix is precisely what made that hard to
+    // see.
+    //
+    // WHAT IS DROPPED, and it is real: the EARLY WARNING that the emit sweep's
+    // worst plan got more expensive AT ALL. `toBeLessThan(CEILING)` only fires
+    // when the plan no longer FITS the shard — a cliff — whereas the zero-slack
+    // pin fired on the first millisecond of growth and forced the author to
+    // look. Nothing replaces that gradient signal here; a plan can now creep
+    // from 6 s to 290 s of budget with every gate green. Name it in the PR
+    // body. (The right successor, if the creep ever bites, is a measured
+    // wall-time trend in CI — not another literal in this file.)
     expect(
       worstEmitMs,
       `the EMIT sweep's largest live plan (${worstEmit.type}, ${liveEmitOutputs(worstEmit)} live of ` +
@@ -2004,16 +2030,6 @@ test.describe('per-port heavy-GL budget: DERIVED, not floored', () => {
         `${JOB_TIMEOUT_MS / 60_000}-minute shard job, for ONE test. If this trips, the fix is a ` +
         `CHEAPER PLAN — fewer spawns per port — not a bigger job timeout.`,
     ).toBeLessThan(CEILING);
-    expect(
-      worstEmitMs,
-      `and it must not creep back up: pinned at ${EMIT_WORST_CEILING_MS} ms, shrink-only.`,
-    ).toBeLessThanOrEqual(EMIT_WORST_CEILING_MS);
-    expect(
-      EMIT_WORST_CEILING_MS - worstEmitMs,
-      'and the ratchet must carry NO SLACK — a ceiling that can only trip by growing absorbs the ' +
-        'next regression in silence. If you made this plan cheaper, lower the ceiling by the ' +
-        'same amount in the same commit.',
-    ).toBe(0);
     // …and the headroom, expressed as the port count the envelope carries, which
     // is the number a future author actually needs.
     const capacityPorts = Math.floor(

@@ -1,18 +1,23 @@
 // packages/web/src/lib/ui/workflow/strict-faces.ts
 //
-// The RATCHET set for the workflow-mode UI-CURATION system — the face analog of
-// STRICT_DOCS ($lib/docs/strict-docs). A module type in this set has been
+// The PROMOTED set for the workflow-mode UI-CURATION system — the face analog
+// of STRICT_DOCS ($lib/docs/strict-docs). A module type in this set has been
 // PROMOTED to the full curation bar: its co-located `face` MUST be COMPLETE —
 // every param, every declared control family, and every numbered-legend control
 // appears in `face.order` (the deny-missing-curation guarantee at the control
 // surface), enforced by module-face-lint.test.ts.
 //
-// Modules NOT in this set are checked only for CONSISTENCY (no orphaned face
-// keys) — they degrade gracefully while the ratchet rolls out. The set only
-// grows:
-//  - every NEW faced module ships into it,
-//  - a module incidentally reskinned for a fix is brought up + added (boy-scout),
-//  - background batches promote the tail.
+// ⚠ THIS SET IS NOT AN INDEPENDENT ALLOWLIST — it is asserted EQUAL to the set
+// of defs that declare a `face` (module-face-lint.test.ts, both directions).
+// AUTHORING A `face` IS THE PROMOTION. There is no count anywhere: the old
+// `|STRICT_FACES| >= 18` floor was deleted 2026-08-12 and the set identity
+// carries what it protected. To un-promote a module, delete its `face`; to
+// promote one, author a complete `face` and add the name here in the same PR.
+//
+// (Historically, modules with an unpromoted `face` were checked only for
+// CONSISTENCY — no orphaned keys — while the bar rolled out. Measured
+// 2026-08-12, that population is EMPTY, which is why the identity can be
+// asserted rather than described.)
 //
 // P1 BATCH 1 (2026-07-25): the first faced-module wave — six total reworks to
 // the gallery spec (see .myrobots/plans, workflow-mode UI refactor §3.6 + §5).

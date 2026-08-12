@@ -375,29 +375,87 @@ describe('module-docs lint — controlFamilies match the card (no drift)', () =>
   });
 });
 
-describe('module-docs lint — STRICT_DOCS RATCHET (only grows)', () => {
-  // STRICT_DOCS is an OPT-IN allowlist: a module is promoted here once its
-  // co-located docs are authored + verified (see strict-docs.ts). This cap
-  // FREEZES the set at today's size so it can only GROW — REMOVING a module
-  // (un-promoting / shrinking documentation coverage) fails this test on purpose.
-  //   RATCHET RULE: strict lists only grow. RAISE the number when you promote a
-  //   module. Only LOWER it for a real, justified un-promotion — NEVER to make a
-  //   red docs gate go green.
-  it('STRICT_DOCS never shrinks below its frozen floor', () => {
-    // 178→169 (2026-07-07): the 15-module deletion PR removed the 14 STRICT
-    // members among them (chowkick / riotgirls / atlantisCatalyst / grids /
-    // peaks / stages / symbiote / veils / warps / aquaTank / elements / tides2 /
-    // qbert / snes9x) — a real un-promotion via module deletion, not a gate
-    // dodge. (The old floor had lagged the list's actual size.)
-    // 169→170 (2026-07-19): +1 frametable (video wavetable oscillator — born
-    // strict, docs authored + verified against the source).
-    // 170→171 (2026-07-19): +1 videocube (video isomorph of audio CUBE — born
-    // strict, docs authored + verified against the source).
-    // 171→172 (2026-07-21): +1 cvBuddy (ES-9 note-lane sink — born strict, docs
-    // authored + verified against the source).
+describe('module-docs lint — STRICT_DOCS is DERIVED FROM THE ARTIFACT, not floored', () => {
+  // ⚠ `STRICT_DOCS.size >= 172` IS GONE (2026-08-12, the no-ratchets sweep).
+  //
+  // WHAT IT PROTECTED: un-promotion. A module quietly deleted from STRICT_DOCS
+  // drops out of the deny-missing-docs bar above and is checked only for
+  // consistency, which is a way to make a red docs gate green.
+  //
+  // WHY A FLOOR WAS THE WRONG SHAPE FOR IT, twice over. It never actually
+  // caught un-promotion — the set was 185 against a floor of 172, so THIRTEEN
+  // modules could have been un-promoted before it noticed. And it is the
+  // construct that auto-merges cleanly and wrongly: two branches each promoting
+  // one module both write the same next number, and the merged truth is one
+  // higher, silently.
+  //
+  // WHAT CARRIES IT INSTEAD — the same protection, DERIVED, with no slack:
+  // completeness is a property of the def, so read it off the def. A module
+  // whose co-located `docs` are already complete MUST be promoted. Removing a
+  // name from STRICT_DOCS while its docs stay complete is now RED, which is the
+  // gate-dodge the floor existed for; un-promoting for real means deleting the
+  // docs, which is a large and obvious diff.
+  //
+  // ⚠ POLICY THIS MAKES EXPLICIT: authoring complete docs IS the promotion.
+  // That was already the stated rule (CLAUDE.md, "every NEW module ships with
+  // co-located docs and is added to STRICT_DOCS"); it just had nothing
+  // enforcing it. Measured at the time of the change: 196 registered defs, 185
+  // in STRICT_DOCS, and **zero** modules complete-but-unpromoted — so this is
+  // a faithful hardening of the live state, not a new bar.
+  it('every module whose docs are COMPLETE is in STRICT_DOCS (deny-by-default)', () => {
+    const unpromoted: string[] = [];
+    for (const def of allDefs()) {
+      if (STRICT_DOCS.has(def.type)) continue;
+      const docs = def.docs;
+      if (!docs?.explanation?.trim()) continue;
+      const inDocs = docs.inputs ?? {};
+      const outDocs = docs.outputs ?? {};
+      const ctrlDocs = docs.controls ?? {};
+      const complete =
+        (def.inputs ?? []).every((p) => inDocs[p.id]?.trim()) &&
+        (def.outputs ?? []).every((p) => outDocs[p.id]?.trim()) &&
+        (def.params ?? []).every((p) => ctrlDocs[p.id]?.trim()) &&
+        (def.controlFamilies ?? []).every((f) => ctrlDocs[`${f.id}-{n}`]?.trim());
+      if (complete) unpromoted.push(def.type);
+    }
     expect(
-      STRICT_DOCS.size,
-      'STRICT_DOCS shrank below its frozen floor — see the RATCHET rule above',
-    ).toBeGreaterThanOrEqual(172);
+      unpromoted.sort(),
+      'module(s) with COMPLETE co-located docs that are not in STRICT_DOCS. Authoring ' +
+        'complete docs IS the promotion — add them to strict-docs.ts. (If this went red on ' +
+        'a DELETION from STRICT_DOCS: that is the un-promotion this replaced the frozen ' +
+        'floor to catch. Un-promote by removing the docs, not the name.)',
+    ).toEqual([]);
+  });
+
+  it('ANCHORED TO THE ARTIFACT: no STRICT_DOCS name is a module that no longer exists', () => {
+    // The other direction, so the list cannot rot. A name that resolves to
+    // nothing is a promotion nobody is watching, and it makes the deny check
+    // above satisfiable by a registry that has shrunk.
+    const live = new Set(allDefs().map((d) => d.type));
+    expect(
+      [...STRICT_DOCS].filter((t) => !live.has(t)).sort(),
+      'STRICT_DOCS name(s) that are not registered module types — delete them',
+    ).toEqual([]);
+  });
+
+  it('NEGATIVE CONTROL: the completeness predicate separates complete from incomplete', () => {
+    // Both assertions above are `toEqual([])`, so a predicate that returned
+    // "incomplete" for everything would be permanently, silently green. This
+    // exercises the SAME shape the check runs, in both directions, every run.
+    const probe = (docs: Record<string, unknown> | undefined, params: { id: string }[]): boolean => {
+      const d = docs as { explanation?: string; controls?: Record<string, string> } | undefined;
+      if (!d?.explanation?.trim()) return false;
+      const c = d.controls ?? {};
+      return params.every((p) => c[p.id]?.trim());
+    };
+    expect(
+      probe({ explanation: 'x', controls: { a: 'documented' } }, [{ id: 'a' }]),
+      'a fully documented def must read COMPLETE',
+    ).toBe(true);
+    expect(
+      probe({ explanation: 'x', controls: {} }, [{ id: 'a' }]),
+      'a def with an undocumented param must read INCOMPLETE',
+    ).toBe(false);
+    expect(probe(undefined, []), 'a def with no docs at all must read INCOMPLETE').toBe(false);
   });
 });

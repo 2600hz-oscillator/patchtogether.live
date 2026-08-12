@@ -11,7 +11,7 @@ source tree, so they cannot go stale. Prose + roadmap: `docs/testing/README.md`.
 | Bucket | What | Count |
 | --- | --- | ---: |
 | 1 | HARD SKIPS / QUARANTINES (backlog → drive to 0) | 6 |
-| 2 | COVERAGE EXEMPTIONS (deliberate auto-enrollment opt-outs) | 374 |
+| 2 | COVERAGE EXEMPTIONS (deliberate auto-enrollment opt-outs) | 370 |
 | 3 | INFORMATIONAL-ONLY CI LANES (run, never block merge) | 5 |
 
 ## CI gating truth (from `.github/workflows/ci.yml`)
@@ -46,7 +46,7 @@ _none_
 ### spawn-smoke QUARANTINE map (e2e/tests/modules.spec.ts) — 1
 - `toybox` — task #102: SwiftShader software-renderer timeout (heavy WebGL)
 
-## Bucket 2 — coverage exemptions (374)
+## Bucket 2 — coverage exemptions (370)
 
 Declarative auto-enrollment opt-out lists. A module opted out of a UNIVERSAL
 sweep still carries dedicated coverage (a bespoke spec / unit core / ART). These
@@ -217,12 +217,11 @@ tracked-to-zero backlog (reconcile = fix or delete); see the roadmap.
 - `videovarispeed` — needs uploaded video file to emit
 - `wavesculpt` — multi-voice cluster
 
-### `BEHAVIORAL_SWEEP_EXEMPT` (108) — per-PORT skips of the behavioral delta sweep (module still enrolled)
+### `BEHAVIORAL_SWEEP_EXEMPT` (104) — per-PORT skips of the behavioral delta sweep (module still enrolled)
 <sub>e2e/tests/per-module-per-port-behavioral.spec.ts</sub>
 - `acidwarp.scene_cv` — infrequent scene transitions may not land inside the 1.5s window
 - `acidwarp.speed_cv` — palette-rotation RATE of an already-full-screen high-variance plasma
 - `adsr.attack` — fast default attack masks CV modulation in scope window
-- `adsr.retrig` — retrig depends on prior gate state
 - `adsr.sustain` — envelope clips at sustain=1 default
 - `analogVco.fine` — cv displacement on a small-range knob (±100 cents)
 - `analogVco.fm` — audio-rate FM with zero-mean noise cancels symmetrically
@@ -246,8 +245,6 @@ tracked-to-zero backlog (reconcile = fix or delete); see the roadmap.
 - `macrooscillator.harm_cv` — harmonics knob no-op on default model (sine)
 - `macrooscillator.pitch` — impulsive output + noisy pitch CV near threshold
 - `mandleblot.zoom_cv` — zooms a self-running high-variance fractal
-- `mirrorpool.cam_z_cv` — dollies the camera along its view axis (variance-quiet translation
-- `mirrorpool.pos_z_cv` — bipolar-position dolly along the view axis (±2R) — variance-quiet translation, same class as cam_z_cv
 - `mirrorpool.wind_dir_cv` — rotates swell direction — variance-invariant reorientation of an equal-energy field (video-variance class, cf.
 - `mirrorpool.wind_speed_cv` — adds swell energy on top of the already-animating base (default wind+rain)
 - `monoglitch.hRamp` — subtle scanline-ramp shift
@@ -291,7 +288,6 @@ tracked-to-zero backlog (reconcile = fix or delete); see the roadmap.
 - `sequencer.queue7_cv` — sets queuedSlot, applied at sequence-end with a POPULATED slot (none in spawn harness) → no-op
 - `sequencer.queue8_cv` — sets queuedSlot, applied at sequence-end with a POPULATED slot (none in spawn harness) → no-op
 - `sequencer.random_cv` — latches queuedNav=random, resolved at sequence-end to an OCCUPIED slot (none in spawn harness) → no-op
-- `sequencer.reset` — reset advances playhead silently
 - `sequencer.reset_cv` — reset_cv snaps playhead silently (same as reset)
 - `shapegen.clock_in` — clock-advance visual delta too subtle for metric
 - `snaredrum.roll_speed_cv` — CV only modulates the drumroll rate, which needs gate_in held high

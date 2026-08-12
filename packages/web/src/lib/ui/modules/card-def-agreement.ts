@@ -180,14 +180,24 @@ export function scanCardDefDivergence(
   return out;
 }
 
-/** Controls a card renders with NO `paramId`, so nothing here can check them.
- *  Positional indexing (`def.params[3]`) is the usual cause. Counted, not
- *  ignored: an unmeasured control must not read as a clean one. */
+/** Controls a card renders with no LITERAL `paramId="…"`, so the textual
+ *  comparison above cannot key on them. Reported, not ignored: an unmeasured
+ *  control must not read as a clean one.
+ *
+ *  `props` comes back with each row so a caller can tell the two causes apart.
+ *  They are NOT the same defect:
+ *
+ *   * `paramId={expr}` — a LOOP VARIABLE or a TEMPLATE id (`wsBand${b}-${f}`,
+ *     `ch${ch}_volume`). The control names its param; `controlTags` just cannot
+ *     resolve the name statically. Structurally uncheckable BY THIS GATE.
+ *   * no `paramId` at all — POSITIONAL indexing (`def.params[3]`). The control
+ *     does not name its param anywhere, which is the lazily-unlabelled case and
+ *     is held at ZERO by the caller. */
 export function uncheckableControls(
   defs: readonly DefLike[],
   read: (basename: string) => string | null,
-): { card: string; line: number }[] {
-  const out: { card: string; line: number }[] = [];
+): { card: string; line: number; props: string }[] {
+  const out: { card: string; line: number; props: string }[] = [];
   for (const def of defs) {
     const basename = cardBasename(def);
     const src = read(basename);
@@ -199,8 +209,14 @@ export function uncheckableControls(
       const hasRangeish =
         /(?:^|[^A-Za-z0-9_])(?:[A-Za-z]*(?:Min|Max)|min|max|defaultValue)=\{/.test(t.props) &&
         /(?:^|[^A-Za-z0-9_])(?:onchange|value)=/.test(t.props);
-      if (hasRangeish) out.push({ card: basename, line: t.line });
+      if (hasRangeish) out.push({ card: basename, line: t.line, props: t.props });
     }
   }
   return out;
 }
+
+/** True when a control declares its param through an EXPRESSION rather than a
+ *  double-quoted literal — the structurally-uncheckable shape above. Exported
+ *  so the gate and its negative control call the SAME predicate; a re-typed
+ *  copy in a self-test is how this file's sibling guards went blind. */
+export const namesParamByExpression = (props: string): boolean => /\bparamId=\{/.test(props);

@@ -120,17 +120,18 @@ describe('2 — the destructive every-input sweep is extinct', () => {
     .map(([k]) => k)
     .sort();
 
-  /** Ratchet, both directions. May only SHRINK; slack is RED. */
-  const SWEEPERS_CEILING = 0;
-
+  // ⚠ `SWEEPERS_CEILING` (0) IS GONE (2026-08-12, the no-ratchets sweep). It
+  // was a ceiling of zero next to an `toEqual([])` on the SAME array: a cap at
+  // zero measures nothing the unconditional assertion below does not already
+  // measure, and the "no slack" twin was `0 - 0 === 0`. Deleting it drops no
+  // protection — the offender list is still asserted EMPTY, and the probe that
+  // builds it is negative-controlled in both directions on every run below.
   it('no source clears handler slots across an input sweep', () => {
     expect(
       sweepers,
       `these files run "for (const inp of access.inputs.values()) inp.onmidimessage = …",
 which writes slots the file never installed:\n${sweepers.join('\n')}`,
     ).toEqual([]);
-    expect(sweepers.length).toBeLessThanOrEqual(SWEEPERS_CEILING);
-    expect(SWEEPERS_CEILING - sweepers.length, 'lower SWEEPERS_CEILING in the same commit').toBe(0);
   });
 
   it('NEGATIVE CONTROL for the probe — it still separates the two shapes', () => {

@@ -36,6 +36,7 @@ import { listMetaModuleDefs } from '$lib/meta/module-registry';
 import {
   scanCardDefDivergence,
   uncheckableControls,
+  namesParamByExpression,
   cardBasename,
   controlTags,
   OPERATIONAL_FIELDS,
@@ -162,58 +163,65 @@ describe('card ↔ def AGREEMENT (deny-by-default across every registered card)'
 
     expect(resolved.length, `card resolution collapsed. ${summary}`).toBeGreaterThan(150);
     expect(checkedControls, `no def-backed control tag found at all. ${summary}`).toBeGreaterThan(500);
-    // ⚠ THE UNCHECKABLE SET IS RATCHETED, NOT ASSERTED TO ZERO — and naming it
-    // is the point. A control addressed POSITIONALLY (`def.params[3]`) carries
-    // no `paramId` for this scan to key on, so it is not "clean", it is
-    // UNMEASURED — the same distinction the `if (!p.edge) continue` hole turned
-    // on. 88 such controls exist today (qbrt, reverb and filter are the cards
-    // the face-redo ledger names; there are more). The count only shrinks, so a
-    // new positional control cannot quietly widen the blind spot.
+    // ⚠ THE UNCHECKABLE SET IS SPLIT BY CAUSE AND THE REAL DEFECT IS HELD AT
+    // ZERO. It used to be a `UNCHECKABLE_CEILING = 87` ratcheted from both
+    // sides; that literal is gone (2026-08-12, the no-ratchets sweep). Naming
+    // the set is still the point — an unmeasured control must not read as a
+    // clean one — but the number was the wrong instrument, and measurement is
+    // what showed why.
     //
-    // 87 → 88 (2026-08-02): NOT a new blind spot, a MERGE-ORDER correction. This
-    // ceiling was calibrated on this gate's own merge base (ef946a3c), where the
-    // count measures exactly 87. `b4a7cb95` (warrens-spectrum phase 2, #1308)
-    // landed BETWEEN that base and this gate reaching main, adding
-    // `WarrensspectrumCard.svelte:182` — so both PRs were green on their own
-    // bases and `main` went red on the merge. A COUNT ratchet has no textual
-    // conflict, so the post-merge conflict sweep is structurally unable to see
-    // this; measuring the base is the only way to tell "stale ceiling" from
-    // "real regression", and it was measured (87 at ef946a3c, 88 from b4a7cb95
-    // onward, byte-identical to main's own red: defs 194 | cards 193 | 649).
+    // MEASURED, on the tree the day the ceiling was deleted: all 87 blind
+    // controls carry `paramId={expression}`. NOT ONE is positionally indexed.
+    // So the ceiling was capping a population of controls that DO name their
+    // param — a loop variable (`ch${ch}_volume`) or a template
+    // (`wsBand${b}-${f}`) that `controlTags` cannot resolve because it reads
+    // only a double-quoted literal — while the defect it was written for, a
+    // control that names its param NOWHERE, has a population of zero.
     //
-    // That entry is genuinely UNCHECKABLE rather than lazily unlabelled: it is
-    // the per-band `<Fader>` whose id is a TEMPLATE (`wsBand${selectedBand}-${f}`,
-    // which `controlTags` only reads as a literal) and whose bands live in node
-    // DATA (`wsBands`), not `params` — so there is no def param to compare it
-    // against, and its min/max already come from ONE place (`bandSpec`), which
-    // is what the divergence class this gate guards actually asks for.
-    // 89 from the CHROMACONSOLE device card — the SAME class as the wavesculpt
-    // entry above, for the same reason. Its slot control is rendered inside an
-    // `{#each DEVICE_SLOT_IDS}`, so its `paramId={slotId}` is a loop variable
-    // and `controlTags` (which reads only a double-quoted literal) cannot see
-    // it. Unrolling the loop into eight literal blocks would duplicate the
-    // knob-vs-segmented conditional eight times to satisfy a source grep.
+    // A zero is assertable. So it is asserted, unconditionally, below.
     //
-    // It is UNCHECKABLE, not unguarded: every range prop on it comes from
-    // `paramSpec(chromaconsoleDef, slotId)` — the def itself — so the card
-    // cannot contradict the def by construction, which is precisely what this
-    // gate's divergence class asks for. The coverage the grep cannot give is
-    // replaced by a direct source assertion in
-    // `src/lib/devices/device-card-source.test.ts`, which fails if that card
-    // ever hardcodes a numeric range instead of reading the def.
-    // 89→87 (2026-08-10): HypercubeCard.svelte was DELETED with the module,
-    // taking its 2 uncheckable controls. Read off the ratchet's own report.
-    const UNCHECKABLE_CEILING = 87;
+    // WHAT THE OLD CEILING ALSO DID AND THIS DOES NOT: cap growth in the
+    // EXPRESSION-BOUND population. That protection is dropped deliberately and
+    // named in the sweep PR's body. It was worth little and cost a lot: the
+    // ceiling had already gone red once on `main` through nobody's error — two
+    // PRs green on their own bases, 87 at one merge-base and 88 after a sibling
+    // landed, with no textual conflict for the post-merge sweep to see (the
+    // note that used to live here recorded exactly that). And it was never the
+    // real guard for these controls anyway: 61 of the 87 hardcode a numeric
+    // range, which is `card-range-source`'s subject and is being drained there
+    // through `RANGE_BOUND_CARDS` — a NAMED, artifact-anchored campaign that
+    // this count was silently substituting for.
+    const positional = blind.filter((b) => !namesParamByExpression(b.props));
     expect(
-      blind.length,
-      `UNCHECKABLE controls grew — a control with range props but no paramId cannot be ` +
-        `compared with its def. Add paramId="<id>". ${summary}\n  ` +
-        blind.map((b) => `${b.card}:${b.line}`).join('\n  '),
-    ).toBeLessThanOrEqual(UNCHECKABLE_CEILING);
+      positional.map((b) => `${b.card}:${b.line}`),
+      `control(s) with range props that name their param NOWHERE — positional ` +
+        `indexing (\`def.params[3]\`). Nothing can compare these with the def. Give each ` +
+        `a \`paramId\` (a literal if you can, an expression if it is a loop/template). ` +
+        `${summary}`,
+    ).toEqual([]);
+  });
+
+  it('NEGATIVE CONTROL: the paramId-shape predicate separates the two causes', () => {
+    // The assertion above is `toEqual([])` over a filtered set, so a predicate
+    // that returned "expression-bound" for EVERYTHING would be permanently,
+    // silently green — the exact failure this file's sibling guards had. It
+    // calls the SAME exported predicate the check calls.
     expect(
-      UNCHECKABLE_CEILING - blind.length,
-      `uncheckable controls are down to ${blind.length} — lower UNCHECKABLE_CEILING to match`,
-    ).toBe(0);
+      namesParamByExpression('paramId={`ch${ch}_volume`} min={0} max={1}'),
+      'a template-bound paramId is EXPRESSION-bound',
+    ).toBe(true);
+    expect(
+      namesParamByExpression('paramId={pid} value={v}'),
+      'a loop-variable paramId is EXPRESSION-bound',
+    ).toBe(true);
+    expect(
+      namesParamByExpression('min={0} max={1} value={v} onchange={set(3)}'),
+      'a control with NO paramId at all is POSITIONAL — it must not read as excused',
+    ).toBe(false);
+    expect(
+      namesParamByExpression('paramId="gain" min={0} max={1}'),
+      'a LITERAL paramId is neither — controlTags resolves it, so it never reaches this set',
+    ).toBe(false);
   });
 
   it('NEGATIVE CONTROL: the comparison fires on each field, and not otherwise', () => {

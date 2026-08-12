@@ -3,7 +3,7 @@
 // THE DUAL-MONO LEDGER GATE. Deny-by-default classification of every module
 // that declares exactly one audio input (plan §0b, PR-3b).
 //
-// Three inversions, per CLAUDE.md:
+// Two inversions, per CLAUDE.md:
 //   1. NAMED entry per module, with a written reason — never a filename and
 //      never "one audio input ⇒ wrap it". A mono-in module nobody classified is
 //      RED, so a NEW module auto-enrolls itself into this decision.
@@ -11,9 +11,13 @@
 //      and the class must survive the module's live PORT SHAPE — an entry
 //      naming a module that no longer qualifies, or whose ports contradict its
 //      class, is RED. A stale exemption is one nobody is watching.
-//   3. RATCHETED BOTH WAYS. `actual <= CEILING` *and* `CEILING - actual === 0`,
-//      so a drain that forgets to lower the number fails instead of leaving
-//      slack for the next regression.
+//
+// There was a third — "RATCHETED BOTH WAYS", a per-class `CEILINGS` table plus
+// a `POPULATION_SIZE`. Both are GONE (2026-08-10); the removal note sits where
+// the constants stood. What replaces them is `GOLDEN_ROSTER`, a text pin of the
+// whole population WITH ITS CLASS, asserted EQUAL to the live derivation — the
+// same both-directions property, in a form that reports which module moved and
+// that no concurrent branch can merge cleanly-and-wrongly.
 //
 // Plus: the gate STATES ITS SCOPE (the `SCOPE` export is asserted, not just
 // documented) and is NEGATIVE-CONTROLLED — every leg is shown to be capable of
@@ -45,7 +49,7 @@ import { listMetaModuleDefs } from '$lib/meta/module-registry';
 
 import {
   DUAL_MONO_LEDGER, SCOPE, auditDualMonoLedger, dualMonoClassOf, monoAudioInputTypes,
-  type DualMonoClass, type DualMonoDefLike,
+  type DualMonoDefLike,
 } from './dual-mono';
 
 const allDefs = (): DualMonoDefLike[] => [
@@ -91,35 +95,60 @@ warrensspectrum  deferred
 wavecel          sum
 `.trim();
 
-/** ONLY shrinks — every ceiling is paired with a zero-slack assertion. */
-const CEILINGS: Record<DualMonoClass, number> = {
-  'dual-mono': 7,
-  'native-stereo': 4,
-  sum: 8,
-  // Groups D + E + the rasterize hybrid. Shrinks when the owner answers the
-  // plan §0b question; must NEVER grow — a new mono-in module belongs in a
-  // real class, not in the parking lot.
-  deferred: 7,
-  'video-domain': 1,
-};
+/**
+ * The roster text `GOLDEN_ROSTER` pins, derived LIVE. One function, called by
+ * the real check AND by its negative control, so the control cannot drift into
+ * exercising a re-typed copy of the derivation (that is how the previous
+ * generation of self-tests in this repo went blind).
+ */
+function rosterText(defs: DualMonoDefLike[]): string {
+  const pop = monoAudioInputTypes(defs);
+  const width = Math.max(...pop.map((t) => t.length)) + 2;
+  return pop
+    .map((t) => `${t.padEnd(width - 1)} ${dualMonoClassOf(t)}`.replace(/\s+$/, ''))
+    .join('\n');
+}
 
-const POPULATION_SIZE = 27;
+const normalizeRoster = (s: string): string =>
+  s.split('\n').map((l) => l.trim().split(/\s+/).join(' ')).join('\n');
 
+// ⚠ SIX HAND-TYPED COUNTS DELETED HERE (2026-08-10):
+//
+//     const CEILINGS: Record<DualMonoClass, number> = {
+//       'dual-mono': 7, 'native-stereo': 4, sum: 8, deferred: 7, 'video-domain': 1,
+//     };
+//     const POPULATION_SIZE = 27;
+//
+// …together with the describe block 'ratcheted in BOTH directions' that read
+// them (`seen.length <= ceiling` plus `ceiling - seen.length === 0`, per class),
+// the test titled `exactly 27 modules declare one audio input`, one clause of
+// 'the classes partition the population exactly', and the negative control 'a
+// class ceiling that grows is caught'.
+//
+// WHAT THEY PROTECTED: that no module joins or leaves the one-audio-input
+// population, and that none changes class, without a human noticing.
+//
+// WHO CARRIES THAT NOW: 'the roster matches the golden, module by module',
+// which asserts `GOLDEN_ROSTER` EQUAL to `rosterText(allDefs())` — the roster
+// derived live from `monoAudioInputTypes(allDefs())` × `dualMonoClassOf()`.
+// That equality is STRICTLY STRONGER than all six numbers: every one of them
+// was, by construction, a count of GOLDEN_ROSTER lines (27 total, splitting
+// 7/4/8/7/1 by class), so a tree that satisfies the roster satisfies them and a
+// tree that violates any of them fails the roster FIRST — naming the module and
+// its class, where the number could only say a total moved. Deny-by-default
+// ('every mono-in module is CLASSIFIED') and the anchors ('no ledger entry names
+// a module that is no longer mono-in', 'every class survives the module's LIVE
+// port shape') are unchanged and still do their own jobs.
+//
+// NOTHING WAS DROPPED. Unlike the other counts in this sweep there is not even a
+// growth-by-listing hole: the roster is not an exemption list you can add
+// yourself to quietly — enrolling a module means editing a text pin that appears
+// in the diff as a new line with its class on it.
 describe('dual-mono ledger — the population', () => {
   it('the registry is actually loaded (the gate is not vacuously empty)', () => {
     const defs = allDefs();
     expect(defs.length).toBeGreaterThan(150);
     expect(defs.some((d) => d.type === 'vca')).toBe(true);
-  });
-
-  it(`exactly ${POPULATION_SIZE} modules declare one audio input`, () => {
-    const pop = monoAudioInputTypes(allDefs());
-    expect(
-      pop.length,
-      `the one-audio-input population moved: ${pop.join(' ')}. A NEW module here needs a `
-      + 'DUAL_MONO_LEDGER entry with a written reason; a departure needs the entry removed '
-      + 'and the class ceiling lowered in the SAME commit.',
-    ).toBe(POPULATION_SIZE);
   });
 
   it('includes milkdrop — the population is NOT filtered to domain=audio', () => {
@@ -162,37 +191,21 @@ describe('dual-mono ledger — deny by default, anchored to the artifact', () =>
   });
 
   it('the roster matches the golden, module by module', () => {
-    const pop = monoAudioInputTypes(allDefs());
-    const width = Math.max(...pop.map((t) => t.length)) + 2;
-    const actual = pop.map((t) => `${t.padEnd(width - 1)} ${dualMonoClassOf(t)}`.replace(/\s+$/, ''))
-      .join('\n');
-    const normalize = (s: string) => s.split('\n')
-      .map((l) => l.trim().split(/\s+/).join(' ')).join('\n');
-    expect(normalize(actual)).toBe(normalize(GOLDEN_ROSTER));
+    // THE both-directions check, and the only one this file needs: a module
+    // joining the population, leaving it, or changing class all show up here as
+    // a readable line diff naming the module. It replaced five class ceilings
+    // and a population size (see the removal note above GOLDEN_ROSTER).
+    expect(normalizeRoster(rosterText(allDefs()))).toBe(normalizeRoster(GOLDEN_ROSTER));
   });
 });
 
-describe('dual-mono ledger — ratcheted in BOTH directions', () => {
-  for (const cls of SCOPE.classes) {
-    it(`'${cls}' is at its ceiling with zero slack`, () => {
-      const seen = auditDualMonoLedger(allDefs()).byClass[cls];
-      const ceiling = CEILINGS[cls];
-      expect(seen.length, `${cls}: ${seen.join(' ')}`).toBeLessThanOrEqual(ceiling);
-      // A ceiling can only trip by GROWING. Without this second clause a drain
-      // that forgets to lower the number passes in total silence.
-      expect(
-        ceiling - seen.length,
-        `CEILINGS['${cls}'] is ${ceiling} but only ${seen.length} modules are in the class `
-        + `(${seen.join(' ')}). Lower the ceiling in the SAME commit.`,
-      ).toBe(0);
-    });
-  }
-
+describe('dual-mono ledger — the classes cover the population, and every entry argues', () => {
   it('the classes partition the population exactly', () => {
     const a = auditDualMonoLedger(allDefs());
     const total = SCOPE.classes.reduce((n, c) => n + a.byClass[c].length, 0);
+    // DERIVED on both sides — no literal. A module in two classes, or in none,
+    // breaks this without anyone having to know how many there are.
     expect(total).toBe(a.population.length);
-    expect(total).toBe(POPULATION_SIZE);
   });
 
   it('every entry carries a real, written reason', () => {
@@ -326,10 +339,29 @@ describe('dual-mono ledger — NEGATIVE CONTROL (every leg can go red)', () => {
       .toMatch(/AudioEngine DOES materialize it/);
   });
 
-  it('a class ceiling that grows is caught', () => {
+  it('a module JOINING the population moves the ROSTER (the surviving both-ways leg)', () => {
+    // REPLACES 'a class ceiling that grows is caught', whose subject was
+    // `CEILINGS['dual-mono']` — deleted 2026-08-10 with the rest of the counts.
+    // The roster equality is what carries both directions now, so that is what
+    // gets negative-controlled, and through the SAME `rosterText` the real check
+    // calls rather than a re-typed copy of the derivation.
     const defs = [...allDefs(), def('zzzFakeMonoIn', [port('audio', 'audio')], [port('audio', 'audio')])];
-    // Pretend it were classified 'dual-mono': the class would hold 8 > 7.
-    const seen = auditDualMonoLedger(defs).byClass['dual-mono'];
-    expect(seen.length + 1).toBeGreaterThan(CEILINGS['dual-mono']);
+    expect(monoAudioInputTypes(defs), 'the synthetic def really does enter the population')
+      .toContain('zzzFakeMonoIn');
+    expect(
+      normalizeRoster(rosterText(defs)),
+      'a new mono-in module must make the derived roster differ from GOLDEN_ROSTER',
+    ).not.toBe(normalizeRoster(GOLDEN_ROSTER));
+    // …and the UNPERTURBED tree still matches, so this is a real control and not
+    // a roster that never matched in the first place.
+    expect(normalizeRoster(rosterText(allDefs()))).toBe(normalizeRoster(GOLDEN_ROSTER));
+  });
+
+  it('a module LEAVING the population moves the ROSTER too (the other direction)', () => {
+    // The direction the old zero-slack clause covered: a drain that forgets to
+    // update the pin. Drop reverb's audio input and the roster must differ.
+    const defs = allDefs().map((d) => (d.type === 'reverb' ? { ...d, inputs: [] } : d));
+    expect(monoAudioInputTypes(defs)).not.toContain('reverb');
+    expect(normalizeRoster(rosterText(defs))).not.toBe(normalizeRoster(GOLDEN_ROSTER));
   });
 });

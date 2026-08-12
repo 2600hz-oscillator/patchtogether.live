@@ -15,7 +15,10 @@
 //     and every page control is in `order` — the deny(missing-curation)
 //     guarantee, so a NEW control on a promoted module fails until it's ranked.
 //
-//  3. RATCHET FLOOR: |STRICT_FACES| only grows (frozen at today's size).
+//  3. SET IDENTITY: STRICT_FACES IS the set of defs that declare a `face` —
+//     asserted in both directions, so un-promotion is red without any count.
+//     (This replaced a `|STRICT_FACES| >= 18` floor on 2026-08-12; the trace of
+//     what that protected sits where it stood, at the bottom of this file.)
 //
 // `face` is UI curation, NOT the I/O contract — it is deliberately OUT of
 // contract-signature.ts / contract-lock.txt. This gate is its pin.
@@ -1844,36 +1847,55 @@ describe('module-face lint — FACEPLATE STRUCTURE (PF-20: hero / sidebar / hint
   });
 });
 
-describe('module-face lint — STRICT_FACES RATCHET (only grows)', () => {
-  // STRICT_FACES is an OPT-IN allowlist: a module is promoted once its co-located
-  // `face` is authored + verified (see strict-faces.ts). This cap FREEZES the set
-  // at today's size so it can only GROW — REMOVING a module (un-promotion) fails
-  // this test on purpose.
-  //   RATCHET RULE: strict lists only grow. RAISE the number when you promote a
-  //   module (the P1 reskin waves). Only LOWER it for a real, justified
-  //   un-promotion — NEVER to make a red face gate go green.
-  it('STRICT_FACES never shrinks below its frozen floor', () => {
-    // 6 (2026-07-25): P1 batch 1 — the first faced-module wave (adsr, cloudseed,
-    // kickdrum, lfo, tidyVco, vca) raised the floor from the P0.4 empty seed.
-    // 12 (2026-07-26): P1 batch 2 — dx7, qbrt, shimmershine, sixstrum,
-    // snaredrum, tomtom.
-    // 17 (2026-07-26): P1 batch 3 — delay, filter, karplus, mixer, reverb (the
-    // plucked-string voice + the four workhorse processors/utilities). The five
-    // module branches each deliberately LEFT this at their base value to avoid
-    // a five-way conflict, so the batch integrator bumps it ONCE to the true
-    // final |STRICT_FACES|.
-    // 18 (2026-08-02): ringback — the stereo crush, promoted from having no
-    // face at all.
-    // ⚠ LEFT AT 18 THROUGH FACE BATCH 3 ON PURPOSE, by this file's own
-    // convention above: clap / drummergirl / pentemelodica landed together and
-    // meowbox / analogVco / bluebox / macrooscillator are four CONCURRENT
-    // branches, so each leaving the literal alone avoids a seven-way conflict on
-    // one number. |STRICT_FACES| is 22 with meowbox in. THE BATCH INTEGRATOR
-    // BUMPS THIS ONCE, to the true final size, when the wave lands — the slack
-    // is a known cost of the convention and is not a ratchet failure.
+describe('module-face lint — STRICT_FACES is DERIVED FROM THE ARTIFACT, not floored', () => {
+  // ⚠ `STRICT_FACES.size >= 18` IS GONE (2026-08-12, the no-ratchets sweep).
+  //
+  // WHAT IT PROTECTED: un-promotion. A module quietly deleted from STRICT_FACES
+  // drops out of the completeness / dock-parity / rear-totality / momentary
+  // bars above and is checked only for consistency — a way to make a red face
+  // gate green.
+  //
+  // WHY A FLOOR WAS THE WRONG SHAPE, and this file said so itself. The deleted
+  // comment recorded the number being LEFT AT 18 through face batch 3 because
+  // seven concurrent branches would otherwise have collided on one literal —
+  // i.e. the construct was already being worked around, with four cards of
+  // slack, and `|STRICT_FACES|` was 32 by the time it was removed. A ratchet
+  // with 14 free slots is not a ratchet.
+  //
+  // WHAT CARRIES IT INSTEAD — the same protection, DERIVED, with no slack: a
+  // face is a property of the def, so read it off the def. Any module that
+  // declares a `face` MUST be promoted. Removing a name from STRICT_FACES while
+  // the def still declares its face is now RED, which is the gate-dodge the
+  // floor existed for; un-promoting for real means deleting the `face`, which
+  // is a large and obvious diff.
+  //
+  // ⚠ POLICY THIS MAKES EXPLICIT: authoring a `face` IS the promotion. The
+  // header prose above still says unpromoted faces 'degrade gracefully while
+  // the ratchet rolls out' — measured 2026-08-12, that population is EMPTY: 32
+  // defs declare a face and all 32 are in STRICT_FACES. This pins the live
+  // state rather than raising the bar.
+  it('every module that declares a `face` is in STRICT_FACES (deny-by-default)', () => {
+    const unpromoted = allDefs()
+      .filter((def) => def.face && !STRICT_FACES.has(def.type))
+      .map((def) => def.type)
+      .sort();
     expect(
-      STRICT_FACES.size,
-      'STRICT_FACES shrank below its frozen floor — see the RATCHET rule above',
-    ).toBeGreaterThanOrEqual(18);
+      unpromoted,
+      'module(s) declaring a co-located `face` that are not in STRICT_FACES. Authoring a ' +
+        'face IS the promotion — add them to strict-faces.ts. (If this went red on a ' +
+        'DELETION from STRICT_FACES: that is the un-promotion this replaced the frozen ' +
+        'floor to catch. Un-promote by removing the `face`, not the name.)',
+    ).toEqual([]);
+  });
+
+  it('ANCHORED TO THE ARTIFACT: no STRICT_FACES name lacks a live `face`', () => {
+    // The other direction, already covered for completeness at the top of this
+    // file ('in STRICT_FACES but has no face'), restated here as a set identity
+    // so the pair reads as one claim: STRICT_FACES IS the faced population.
+    const faced = new Set(allDefs().filter((d) => d.face).map((d) => d.type));
+    expect(
+      [...STRICT_FACES].filter((t) => !faced.has(t)).sort(),
+      'STRICT_FACES name(s) with no co-located `face` on a live def — delete them',
+    ).toEqual([]);
   });
 });

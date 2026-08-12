@@ -252,27 +252,33 @@ describe('VRT coverage self-test', () => {
   });
 });
 
-describe('vrt-meta — STRICT_VRT_MODULES RATCHET (only grows)', () => {
-  // STRICT_VRT_MODULES is an OPT-IN allowlist: the deterministic VRT cards
-  // promoted into the required `task ci` strict lane (see vrt-exemptions.ts).
-  // This cap FREEZES the set at today's size so it can only GROW — DEMOTING a
-  // card (shrinking the strict gate) fails this test on purpose.
-  //   RATCHET RULE: strict lists only grow. RAISE the number when you promote a
-  //   card. Only LOWER it for a real, justified demotion (a card that flaked in
-  //   CI) — NEVER to make a red gate go green.
-  it('STRICT_VRT_MODULES never shrinks below its frozen floor', () => {
-    // 25→29 (2026-06-29): the 4 CV-utility cards (Track-2 batch 1, #951).
-    // 29→49 (2026-06-29): the 20-card MOOG cluster (Track-2 batch 2, #953) —
-    // deterministic beige-faceplate cards, both-platform baselines validated.
-    // 49→48 (2026-07-07): the 15-module deletion PR removed the one STRICT
-    // member among them (negativity) — a real un-promotion via module
-    // deletion, not a gate dodge.
-    expect(
-      STRICT_VRT_MODULES.size,
-      'STRICT_VRT_MODULES shrank below its frozen floor — see the RATCHET rule above',
-    ).toBeGreaterThanOrEqual(48);
-  });
-});
+/**
+ * ⚠ `STRICT_VRT_MODULES.size >= 48` IS GONE (2026-08-12, the no-ratchets sweep).
+ *
+ * WHAT IT PROTECTED, traced before deleting rather than assumed: DEMOTION. A
+ * card quietly removed from STRICT_VRT_MODULES stops gating the required
+ * `vrt-strict` lane, which is a way to make a red visual diff green. None of
+ * the four surviving checks above catch that — "every entry has a committed
+ * baseline", "no entry has a canvas mask", "no entry is also in
+ * EXEMPT_FROM_VRT" and "every entry is a registered module type" all quantify
+ * over the set, so every one of them is trivially satisfied by a SMALLER set.
+ *
+ * WHY IT GOES ANYWAY, and why no successor counter is written. Unlike
+ * STRICT_DOCS and STRICT_FACES — whose membership is now DERIVED from a
+ * property of the def (complete docs / a declared `face`), so un-promotion is
+ * red by construction — strict-VRT membership is an editorial judgement about
+ * DETERMINISM that nothing in the tree records, so there is no artifact to
+ * anchor to. And the floor was not doing the job anyway: the set was 48 against
+ * a floor of 48 at deletion, but the same file's history shows it lagging
+ * (49 → 48 for a real deletion), which is the slack that hides the next
+ * demotion. What remains is the diff: a demotion is one deleted name in
+ * vrt-exemptions.ts, a file the post-merge conflict sweep already watches.
+ * This is pre-authorised coverage loss, named in the sweep PR's body rather
+ * than absorbed silently.
+ *
+ * ⚠ IF a DECLARED determinism property ever lands on a def or a VrtScene, this
+ * is the check to re-derive membership from — not a new floor.
+ */
 
 /**
  * ⚠ `PERMANENT_EXEMPT_CEILING` (81) IS GONE (2026-08-10). It counted the

@@ -86,14 +86,20 @@ describe('parseBehavioralReport', () => {
     expect(parsed.total).toBe(1); // skipped excluded from total
   });
 
-  it('ignores non-behavioral rows (e.g. the RATCHET housekeeping test)', () => {
-    const ratchet = {
-      title: 'RATCHET: behavioral exemption lists only shrink',
+  it('ignores non-behavioral rows (e.g. the exemption-anchor housekeeping test)', () => {
+    // A synthetic stand-in for the housekeeping row that sits in
+    // per-module-per-port-behavioral.spec.ts alongside the per-module rows.
+    // Kept in sync with that test's real title so this fixture does not rot
+    // into prose describing a test that no longer exists — though the filter
+    // under test keys on BEHAVIORAL_TITLE_MARK, never on this title, so a
+    // rename there can never silently break the watchdog.
+    const housekeeping = {
+      title: 'behavioral exemption keys are anchored to REGISTRY',
       ok: false,
       tests: [{ status: 'unexpected', results: [{ status: 'failed' }] }],
     };
-    // RATCHET failing must NOT show up as a failed MODULE.
-    const parsed = parseBehavioralReport(report([moduleSpec('adsr', 'expected')], [ratchet]));
+    // The housekeeping row failing must NOT show up as a failed MODULE.
+    const parsed = parseBehavioralReport(report([moduleSpec('adsr', 'expected')], [housekeeping]));
     expect(parsed.failedModules).toEqual([]);
     expect(parsed.passedModules).toEqual(['adsr']);
   });

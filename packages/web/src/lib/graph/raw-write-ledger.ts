@@ -18,16 +18,17 @@
 // ── Why a LEDGER and not 96 inline annotations ──────────────────────────────
 // The inline `// guard:allow-raw-write` marker is still the idiom for a NEW
 // write, and it stays supported. But a 96-line backlog inherited all at once
-// needs to be COUNTED, and a count spread over 40 files cannot be. The ledger
-// is deny-by-default in both directions:
+// needs to be NAMED, and names spread over 40 files cannot be reviewed as one
+// thing. The ledger is deny-by-default in both directions:
 //
 //   * a write that is in NEITHER bucket and carries NO inline marker → RED;
 //   * an entry naming a write that no longer exists → RED (a stale exemption is
 //     an exemption nobody is watching — the "anchor the metric to the ARTIFACT"
-//     rule); and
-//   * the DEBT total is ratcheted with `actual <= CEILING` AND
-//     `CEILING - actual === 0`, so a drain that forgets to lower the number is
-//     red rather than silent slack absorbing the next regression.
+//     rule).
+//
+// There is NO count. The DEBT total used to be ratcheted from both sides; that
+// literal is gone (2026-08-12) and the trace of what it protected sits where it
+// stood, below.
 //
 // Entries name the PARAM KEY, never a line number: a key survives a refactor,
 // so an already-listed file that grows a NEW raw write still fails.
@@ -36,7 +37,7 @@
 export type RawWriteKind =
   /** Correct as written: it MUST NOT become a tracked (undoable, synced) write. */
   | 'sanctioned'
-  /** Wrong as written: it should route through setNodeParam/mutateNode. Ratcheted. */
+  /** Wrong as written: it should route through setNodeParam/mutateNode. */
   | 'debt'
   /** Not a graph node at all — the receiver just happens to be named `params`. */
   | 'not-a-node';
@@ -296,24 +297,149 @@ export const RAW_WRITE_LEDGER: Readonly<Record<string, RawWriteEntry>> = {
   },
 };
 
-/** The DEBT ceiling: the number of `(file, key)` pairs still owed a fix.
- *  ⚠ IT ONLY SHRINKS, and the test asserts BOTH `actual <= CEILING` and
- *  `CEILING - actual === 0` — a drain that forgets to lower this number is red,
- *  not silent slack. Was 53 before `FilterCard`'s `mode` was routed through
- *  `setNodeParam` (the PR that widened the guard; ledger defect #7). */
-// 52 -> 51: RingsCard's `model` selector was drained in the rings face PR (it
-// now writes through `set()` like every fader on the card), and a drain moves
-// the entry and this number in the SAME commit.
+/* ⚠ `RAW_WRITE_DEBT_CEILING` (51) IS GONE — 2026-08-12, the no-ratchets sweep,
+ *  paying the boy-scout debt the rings-face PR flagged and did not pay.
+ *
+ *  WHAT IT PROTECTED, traced before deleting rather than assumed: the `<=` half
+ *  made a NEW `kind: 'debt'` entry loud. The two unconditional checks either
+ *  side of it genuinely do not catch that — `tree ⊆ ledger` only asks that a
+ *  write be explained SOMEHOW, and `ledger ⊆ tree` only asks that an
+ *  explanation still have a write. Neither reads `kind`.
+ *
+ *  WHY DELETING IT IS THE RIGHT TRADE ANYWAY: growing the debt bucket already
+ *  costs an entry naming the exact `(file, key)`, a `kind: 'debt'` literal and
+ *  a `why` string — three reviewable tokens in the diff. The number added a
+ *  fourth place to notice the same act, in a file that three concurrent face
+ *  branches edit, and it is the construct that auto-merges cleanly and wrongly:
+ *  two branches each draining one entry both write 50, and the merged truth is
+ *  49 with a slot of slack for the next regression to hide in. No successor
+ *  counter is written. Named as dropped protection in the sweep PR's body.
+ */
+
+// ── WHOLE-BAG REPLACEMENT (`x.params = …`) ──────────────────────────────────
+// A form `RAW_PARAM_WRITE` is structurally unable to see: it matches an
+// assignment INTO a bag (`.params[k] =` / `.params.k =`), never a replacement
+// OF one. The three shapes below are not one thing, so they are declared one
+// by one instead of counted.
 //
-// ⚠ THIS IS A HAND-TYPED POPULATION COUNT, i.e. exactly the construct CLAUDE.md
-// forbids in new code and lists this file under as surviving LEGACY. It was
-// decremented rather than deleted deliberately: removing it is a repo-wide
-// policy change that needs its own trace of what the `<=` half protects (a NEW
-// debt entry being added silently — the two unconditional checks either side of
-// it, tree-subset-ledger and ledger-subset-tree, do not catch that), and
-// smuggling that into a faceplate PR is how silent coverage loss ships. Flagged
-// in that PR's body as the boy-scout debt this one did not pay.
-export const RAW_WRITE_DEBT_CEILING = 51;
+// This list replaces `WHOLE_BAG_CEILING = 16` (deleted 2026-08-12). The ceiling
+// made a 17th site loud; so does this, and it also says WHICH site and WHY,
+// while a name that no longer resolves goes RED where a number silently kept
+// its slack. `why` is REQUIRED BY THE TYPE, so `tsc` refuses an undeclared
+// entry before a test runs.
+
+/** How a whole-bag replacement is classified. */
+export type WholeBagKind =
+  /** `if (!n.params) n.params = {}` — bag INITIALISATION, not a value edit. */
+  | 'init'
+  /** A reconciler/proxy SNAPSHOT of a bag, held for later comparison. */
+  | 'snapshot'
+  /** Not a graph node — the receiver just happens to have a `params` field. */
+  | 'not-a-node';
+
+export interface WholeBagEntry {
+  /** lib-relative source file. */
+  readonly file: string;
+  /** The source line VERBATIM (trimmed) — the artifact anchor. Edit the code
+   *  and this must move with it, which is the point: it cannot go stale
+   *  quietly. */
+  readonly code: string;
+  readonly kind: WholeBagKind;
+  readonly why: string;
+}
+
+/**
+ * THE COMPLETE inventory of whole-bag `x.params = …` replacements outside
+ * `graph/mutate.ts`. Deny-by-default: an undeclared `(file, code)` pair is RED,
+ * and an entry matching nothing in the tree is RED.
+ *
+ * ⚠ STATED SCOPE — what this CANNOT see: a SECOND site in an already-listed
+ * file whose source line is character-identical to a listed one (the six
+ * `if (!n.params) n.params = {};` initialisers are already such duplicates).
+ * That is deliberate — those are the same, already-classified act — but it is
+ * the "already-listed file" blindness in miniature, so it is written down
+ * rather than left as an assumed property.
+ */
+export const WHOLE_BAG_WRITES: readonly WholeBagEntry[] = [
+  {
+    file: 'audio/reconciler.ts',
+    code: 'prev.params = { ...node.params };',
+    kind: 'snapshot',
+    why: 'the reconciler stores last-seen params to diff the NEXT tick against — a read, copied',
+  },
+  {
+    file: 'control/launchpad/launchpad-control.svelte.ts',
+    code: 'if (!n.params) n.params = {};',
+    kind: 'init',
+    why: 'bag initialisation before a tracked write; the write itself goes through the seam',
+  },
+  {
+    file: 'control/monome/monome-control.svelte.ts',
+    code: 'if (!n.params) n.params = {};',
+    kind: 'init',
+    why: 'as launchpad-control — bag initialisation before a tracked write',
+  },
+  {
+    file: 'docs/module-manifest.ts',
+    code: 'out.params = synth.params;',
+    kind: 'not-a-node',
+    why: '`out` is a DOC MANIFEST record being assembled, not a ModuleNode — no Y.Doc, no undo stack',
+  },
+  {
+    file: 'graph/cv-buddy-es9-reconcile.ts',
+    code: 'if (!live.params) live.params = {};',
+    kind: 'init',
+    why: 'bag initialisation on the live node before the ES-9 slot reconcile writes into it',
+  },
+  {
+    file: 'graph/persistence.ts',
+    code: 'node.params = {};',
+    kind: 'init',
+    why: 'load path — a node deserialised without a params bag gets an empty one before hydration',
+  },
+  {
+    file: 'graph/toybox-combine.ts',
+    code: 'if (!n.params) n.params = {};',
+    kind: 'init',
+    why: 'as launchpad-control — bag initialisation before a tracked write',
+  },
+  {
+    file: 'graph/toybox-layers.ts',
+    code: 'if (!layer.params) layer.params = {};',
+    kind: 'init',
+    why: 'as launchpad-control — bag initialisation before a tracked write',
+  },
+  {
+    file: 'graph/toybox-layers.ts',
+    code: 'layer.params = { ...params };',
+    kind: 'not-a-node',
+    why: 'a TOYBOX LAYER is a plain record inside the toybox node’s own data, not a ModuleNode',
+  },
+  {
+    file: 'video/modules/outlines-sim.ts',
+    code: 'this.params = p;',
+    kind: 'not-a-node',
+    why: 'an engine class whose own field happens to be called `params` — no graph node involved',
+  },
+  {
+    file: 'video/toybox-control-params.ts',
+    code: 'if (!layer.params) layer.params = {};',
+    kind: 'init',
+    why: 'as toybox-layers — layer bag initialisation',
+  },
+  {
+    file: 'video/toybox-control-params.ts',
+    code: 'if (!n.params) n.params = {};',
+    kind: 'init',
+    why: 'as launchpad-control — bag initialisation before a tracked write',
+  },
+  {
+    file: 'video/worker/worker-proxy-handle.ts',
+    code: 'this.params = { ...opts.node.params };',
+    kind: 'snapshot',
+    why: 'the worker proxy copies the bag across the postMessage boundary — a read, copied',
+  },
+];
 
 /** Every `(file, key)` pair in one bucket. */
 export function ledgerPairs(kind: RawWriteKind): string[] {
