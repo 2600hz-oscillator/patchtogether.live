@@ -11,13 +11,21 @@
 // in packages/web/src/lib/graph/stereo-autowire.test.ts, and what THIS file is
 // for is proving the wired call sites reach it.
 //
-// THE POLICY (owner 2026-08-07, plan §0b DUAL-MONO — this REVERSED the earlier
-// sum-to-mono decision):
+// THE POLICY AS A HAND GESTURE MAKES IT (owner 2026-08-07 for the matrix,
+// AMENDED 2026-08-12 for the two ambiguous rows):
 //
-//   stereo → stereo   L→L, R→R
-//   mono   → stereo   the one out double-patched into BOTH target legs
-//   stereo → mono     BOTH legs into the mono input — NOT a sum, NOT one leg
-//   mono   → mono     one leg
+//   stereo → stereo   L→L, R→R                                    — silent
+//   mono   → stereo   the picker's pair / L / R rows answer it    — in place
+//   stereo → mono     the WIDTH CHOOSER asks which channel        — ONE leg
+//   mono   → mono     one leg                                     — silent
+//
+// ⚠ THE PLANNER'S MATRIX IS UNCHANGED and is NOT what this file pins. `mono →
+// stereo` still double-patches and `stereo → mono` still writes dual-mono when
+// `channelMode: 'both'` reaches `planAudioCommit` — the AI driver, the matrix
+// mixer and the column autowire all still produce exactly that, and
+// packages/web/src/lib/graph/stereo-autowire.test.ts is where those rows live.
+// What changed is that no HAND GESTURE picks `both` for stereo → mono any
+// more, because the owner replaced the guess with a question.
 //
 // ⚠ TWO TESTS HERE PINNED THE OPPOSITE BEHAVIOUR and are deliberately inverted:
 //
@@ -97,6 +105,12 @@ async function cascadePatch(
   page: Page,
   src: { nodeId: string; portId: string },
   dst: { nodeId: string; portId: string },
+  /** `choose` answers the WIDTH CHOOSER (owner 2026-08-12) — required exactly
+   *  when the drop's two ends disagree about width and the picker did not
+   *  already resolve it, i.e. STEREO source → MONO target. Passing it when no
+   *  dialog opens FAILS rather than being ignored, so a caller cannot quietly
+   *  keep it after the behaviour changes back. */
+  opts: { choose?: 'left' | 'right' | 'both' } = {},
 ) {
   await openMenu(page, src.nodeId);
   await chrome(page, src.nodeId)
@@ -123,6 +137,23 @@ async function cascadePatch(
   await expect(portRow).toBeVisible();
   await portRow.click();
   await expect(menu).toHaveCount(0);
+
+  const chooser = page.getByTestId('stereo-drop-choice');
+  if (opts.choose) {
+    await expect(
+      chooser,
+      `expected the width chooser for ${src.portId} → ${dst.portId}`,
+    ).toBeVisible();
+    await chooser
+      .locator(`[data-testid="stereo-drop-choice-option"][data-mode="${opts.choose}"]`)
+      .click();
+    await expect(chooser).toHaveCount(0);
+  } else {
+    await expect(
+      chooser,
+      `an unexpected width chooser opened for ${src.portId} → ${dst.portId}`,
+    ).toHaveCount(0);
+  }
 }
 
 /** Wait for the graph to settle on an exact cable set. Polls the WHOLE summary
@@ -185,12 +216,18 @@ test.describe('leg-group commit — the policy matrix', () => {
     ).toBeGreaterThan(0.005);
   });
 
-  test('stereo → MONO: BOTH legs land on the mono input (DUAL-MONO)', async ({ page, rack }) => {
-    // THE ROW THE 2026-08-07 REVERSAL CREATED, and its first assertion anywhere
-    // in the repo. `filter` is one of the 21 single-audio-input modules that
-    // form the pass-through spine of most patches; under the old policy the
-    // stereo image died here. Two legs, one per channel — NOT a sum, NOT one
-    // leg. PR-3b's engine wrapper is what then runs the DSP twice.
+  test('stereo → MONO: the gesture ASKS which channel and writes ONE leg', async ({
+    page,
+    rack,
+  }) => {
+    // ⚠ THIS TEST USED TO PIN DUAL-MONO — "BOTH legs land on the mono input".
+    // The owner replaced that gesture on 2026-08-12: a stereo source dropped on
+    // a mono jack now asks which channel, and there is no BOTH row. The
+    // dual-mono SHAPE is not gone — `planAudioCommit` still writes it for
+    // `channelMode: 'both'`, which the programmatic writers use and
+    // stereo-autowire.test.ts pins — but no hand gesture produces it any more,
+    // so pinning it HERE (the wired-call-sites file) would pin a path that no
+    // longer exists.
     await spawnPatch(page, [
       { id: 'clouds', type: 'clouds', position: { x: 80, y: 100 } },
       { id: 'filt', type: 'filter', position: { x: 760, y: 100 } },
@@ -200,21 +237,21 @@ test.describe('leg-group commit — the policy matrix', () => {
       page,
       { nodeId: 'clouds', portId: 'out_l' },
       { nodeId: 'filt', portId: 'audio' },
+      { choose: 'right' },
     );
 
-    await expectGraph(page, ['clouds.out_l -> filt.audio', 'clouds.out_r -> filt.audio']);
+    await expectGraph(page, ['clouds.out_r -> filt.audio']);
 
-    // The negative half, stated as its own assertion because it is the one a
-    // re-grown "these two legs are the same signal" special case would break:
-    // exactly TWO distinct cables terminate on that one mono input.
+    // The negative half: exactly ONE cable terminates on that mono input. A
+    // chooser that opened and then wrote the old pair anyway would satisfy
+    // "the R leg exists".
     const onInput = (await readEdges(page)).filter(
       (e) => e.target.nodeId === 'filt' && e.target.portId === 'audio',
     );
     expect(
       onInput.map((e) => e.source.portId).sort(),
-      'the leg group must NOT be collapsed to one leg — dual-mono never sums, '
-        + 'so the round-trip special case that used to collapse it has no purpose',
-    ).toEqual(['out_l', 'out_r']);
+      'the user chose a CHANNEL — the other leg must not be written behind it',
+    ).toEqual(['out_r']);
   });
 
   test('mono → mono: exactly ONE leg', async ({ page, rack }) => {
@@ -377,15 +414,22 @@ test.describe('leg-group removal', () => {
     // Both legs terminate on the SAME port here, so this is the case where a
     // per-edge menu would show two identical rows and an "Unpatch all (2)" for
     // what the user sees as one cable.
+    //
+    // ⚠ SEEDED, NOT GESTURED, since 2026-08-12. The hand gesture that used to
+    // build this shape now asks for a channel and writes one leg, but the shape
+    // itself is still live and still has to delete as ONE cable: the matrix
+    // mixer and the AI driver both call `planAudioCommit` with `both`, and a
+    // rack saved before the chooser carries it. Losing the coverage because the
+    // gesture moved would leave leg-group deletion untested on the exact
+    // topology it was written for — two legs, one input port.
     await spawnPatch(page, [
       { id: 'clouds', type: 'clouds', position: { x: 80, y: 100 } },
       { id: 'filt', type: 'filter', position: { x: 760, y: 100 } },
     ]);
-    await cascadePatch(
-      page,
-      { nodeId: 'clouds', portId: 'out_l' },
-      { nodeId: 'filt', portId: 'audio' },
-    );
+    await seedEdges(page, [
+      { id: 'e-clouds-out_l-filt-audio', from: ['clouds', 'out_l'], to: ['filt', 'audio'] },
+      { id: 'e-clouds-out_r-filt-audio', from: ['clouds', 'out_r'], to: ['filt', 'audio'] },
+    ]);
     await expectGraph(page, ['clouds.out_l -> filt.audio', 'clouds.out_r -> filt.audio']);
 
     await openMenu(page, 'filt');

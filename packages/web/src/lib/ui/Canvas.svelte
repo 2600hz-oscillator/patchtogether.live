@@ -235,6 +235,7 @@
   import PortContextMenu from '$lib/ui/PortContextMenu.svelte';
   import UnpatchMenu from '$lib/ui/UnpatchMenu.svelte';
   import StereoExpandMenu from '$lib/ui/StereoExpandMenu.svelte';
+  import StereoDropChoiceMenu from '$lib/ui/StereoDropChoiceMenu.svelte';
   import {
     isExpandableStereoJackModule,
     type StereoPairDefLike,
@@ -311,6 +312,7 @@
     type ChannelMode,
     type StereoDef,
   } from '$lib/graph/stereo-autowire';
+  import { planDropChoice, type DropChoice } from '$lib/graph/stereo-drop-choice';
   import { computeLegGroups } from '$lib/ui/cable-leg-groups';
   import { stereoPairForPort } from '$lib/graph/stereo-pairs';
   import { computeEdgeAlignedRect } from '$lib/ui/patch-menu-position';
@@ -3530,6 +3532,124 @@
     }
   }
 
+  // ---------------- THE WIDTH-MISMATCH CHOOSER ----------------
+  //
+  // OWNER, 2026-08-12: "whenever we drop a mono source on a stereo jack or a
+  // stereo source on a mono jack … we prompt a quick dialog asking which of the
+  // 2 or both L/R to connect to, and then in the case of stereo → mono ask
+  // which channel we want."
+  //
+  // ⚠ THIS SUPERSEDES THE SILENT DOUBLE-PATCH and does not coexist with it.
+  // `planAudioCommit` still knows how to write every row of the matrix —
+  // `channelMode` is untouched, and it is what the dialog drives — but on a
+  // USER GESTURE the mode for those two rows now comes from a person. There is
+  // no preference, no "remember my choice", and no path that still guesses.
+  //
+  // EVERY hand-made cable goes through `commitAudioCable`, which is the ONLY
+  // caller of `writeAudioLegGroup` for the three gesture paths (drag, carry,
+  // picker). Programmatic writers — the AI driver, the matrix mixer, the
+  // workflow column autowire — call the PLANNER directly and are deliberately
+  // unaffected: a batch that stopped to ask a question would deadlock.
+  let dropChoiceOpen = $state(false);
+  let dropChoicePos = $state({ x: 0, y: 0 });
+  let dropChoice = $state<DropChoice | null>(null);
+  let dropChoicePending = $state<{
+    from: { nodeId: string; portId: string };
+    to: { nodeId: string; portId: string };
+    sourceType: CableType;
+    targetType: CableType;
+    title: string;
+  } | null>(null);
+
+  /** "<MODULE> <PORT> → <MODULE> <PORT>", through the SAME label resolver the
+   *  patch panel rows use, so the dialog cannot name a jack differently from
+   *  the card the user is looking at. */
+  function cableTitle(
+    from: { nodeId: string; portId: string },
+    to: { nodeId: string; portId: string },
+  ): string {
+    const name = (nodeId: string) => {
+      const n = patch.nodes[nodeId];
+      return n ? (defLookup(n.type)?.label ?? n.type) : nodeId;
+    };
+    return (
+      `${name(from.nodeId)} ${resolveVerboseLabel({ id: from.portId })}` +
+      ` → ${name(to.nodeId)} ${resolveVerboseLabel({ id: to.portId })}`
+    );
+  }
+
+  /**
+   * THE ONE gesture-driven audio commit. Asks first when the drop's two ends
+   * disagree about width; writes immediately when they do not.
+   *
+   * `channelMode` is the caller's EXPLICIT choice — the picker's "patch only L"
+   * rows, or a per-leg target row. Pass it and no question is asked, because
+   * one already was. Pass `undefined` (every drop gesture) and this decides.
+   *
+   * ⚠ It must NOT be called inside a `ydoc.transact`: on the ambiguous rows it
+   * returns having written nothing and opened a dialog, and the commit happens
+   * later from `resolveDropChoice` in its own transact.
+   */
+  function commitAudioCable(
+    from: { nodeId: string; portId: string },
+    to: { nodeId: string; portId: string },
+    sourceType: CableType,
+    targetType: CableType,
+    channelMode?: ChannelMode,
+  ): void {
+    if (channelMode === undefined) {
+      const choice = planDropChoice({
+        fromNodeId: from.nodeId,
+        fromPortId: from.portId,
+        fromDef: stereoDefForNode(from.nodeId),
+        toNodeId: to.nodeId,
+        toPortId: to.portId,
+        toDef: stereoDefForNode(to.nodeId),
+        edges: patch.edges,
+        sourceType,
+        targetType,
+      });
+      if (choice) {
+        dropChoice = choice;
+        dropChoicePending = { from, to, sourceType, targetType, title: cableTitle(from, to) };
+        dropChoicePos = { x: lastPointer.x, y: lastPointer.y };
+        dropChoiceOpen = true;
+        trace(
+          `width mismatch ${from.nodeId}.${from.portId} → ${to.nodeId}.${to.portId}` +
+            ` (${choice.kind}) — asking`,
+        );
+        return;
+      }
+    }
+    ydoc.transact(() => {
+      writeAudioLegGroup(from, to, sourceType, targetType, channelMode ?? 'both');
+    }, LOCAL_ORIGIN);
+  }
+
+  /** The user picked a side. RE-PLANS from the live edge set rather than
+   *  replaying the plan the dialog was built from — a collaborator may have
+   *  patched that jack while the menu was open, and committing a stale
+   *  `replaceEdgeIds` would delete an edge nobody warned them about. */
+  function resolveDropChoice(mode: ChannelMode): void {
+    const pending = dropChoicePending;
+    closeDropChoice();
+    if (!pending) return;
+    commitAudioCable(pending.from, pending.to, pending.sourceType, pending.targetType, mode);
+    trace(
+      `drop-choice ${mode} ${pending.from.nodeId}.${pending.from.portId}` +
+        ` → ${pending.to.nodeId}.${pending.to.portId}`,
+    );
+  }
+
+  /** Escape / negative space — the PATCH IS ABANDONED. Dismissing the question
+   *  must not fall back to a default, or the silent double-patch is back with
+   *  one extra keystroke in front of it. */
+  function closeDropChoice(): void {
+    dropChoiceOpen = false;
+    dropChoice = null;
+    dropChoicePending = null;
+  }
+
   /** True when a node's card renders the redesigned PatchPanel (its handles
    *  live in a hidden, pointer-events:none stack at the card corner) rather
    *  than raw, individually-positioned <Handle> dots. The discriminator is
@@ -3734,18 +3854,18 @@
       return;
     }
 
-    ydoc.transact(() => {
-      // ONE writer: leg-group plan + LEG-LEVEL occupancy eviction + every leg,
-      // atomically. (The eviction that used to live inline here — "delete every
-      // edge targeting the same input" — is now the planner's replaceEdgeIds,
-      // which is scoped to the input ports THIS plan writes to.)
-      writeAudioLegGroup(
-        { nodeId: connection.source!, portId: connection.sourceHandle! },
-        { nodeId: connection.target!, portId: connection.targetHandle! },
-        sourceType,
-        targetType,
-      );
-    }, LOCAL_ORIGIN);
+    // ONE writer: the chooser seam, then leg-group plan + LEG-LEVEL occupancy
+    // eviction + every leg, atomically. (The eviction that used to live inline
+    // here — "delete every edge targeting the same input" — is now the
+    // planner's replaceEdgeIds, scoped to the input ports THIS plan writes to.)
+    // No explicit channelMode: a native drag names a HOLE, never a side, so
+    // this is exactly the gesture the width question is for.
+    commitAudioCable(
+      { nodeId: connection.source!, portId: connection.sourceHandle! },
+      { nodeId: connection.target!, portId: connection.targetHandle! },
+      sourceType,
+      targetType,
+    );
     trace(`connect ${connection.source}.${connection.sourceHandle} → ${connection.target}.${connection.targetHandle}`);
   }
 
@@ -6427,9 +6547,9 @@
       trace(`carry-commit reject ${from.nodeId}.${from.portId} → ${to.nodeId}.${to.portId}: ${verdict.reason}`);
       return;
     }
-    ydoc.transact(() => {
-      writeAudioLegGroup(from, to, sourceType, targetType);
-    }, LOCAL_ORIGIN);
+    // Same seam as the drag path: a carried cable clicked onto a port ROW names
+    // a hole, not a side, so a width mismatch asks before it writes.
+    commitAudioCable(from, to, sourceType, targetType);
     trace(`carry-commit ${from.nodeId}.${from.portId} → ${to.nodeId}.${to.portId}`);
   }
 
@@ -6478,10 +6598,12 @@
     nodeId,
     portId,
     leg,
+    stereo,
   }: {
     nodeId: string;
     portId: string;
     leg?: 'left' | 'right';
+    stereo?: boolean;
   }) {
     if (!portMenuSourceNodeId || !portMenuSourcePortId) return;
     // Cascade is committing — release the source PatchPanel's lock + end any
@@ -6533,7 +6655,28 @@
     //     A stale 'left' on an unpaired port would filter nothing
     //     (planAudioCommit never filters a `mono` leg) but reading the pair
     //     here keeps the trace honest.
-    const channelMode: ChannelMode = leg ?? (portMenuStereoPair ? portMenuChannelMode : 'both');
+    //
+    //   * `stereo` — the user picked the WHOLE-PAIR row of a collapsed stereo
+    //     target. That row exists BECAUSE the target is a pair and sits between
+    //     its own "L" and "R" rows, so clicking it is a deliberate "both" about
+    //     this target — the very question the width chooser asks. The picker
+    //     already IS the chooser for mono → stereo, and re-asking would be a
+    //     second dialog for a question the user just answered.
+    //
+    // ⚠ `undefined` means "the user has NOT said", and that is a THIRD state,
+    // not a synonym for 'both'. It is what routes the pick into the width
+    // chooser, and it is why `stereo` has to travel with the pick: an ordinary
+    // MONO target row and a collapsed pair row both arrive with `leg`
+    // undefined, and only one of them is an answer.
+    //
+    // A stereo SOURCE into a MONO target still asks, because the picker's
+    // source-side rows render before a target is chosen and 'both' — dual-mono
+    // — is no longer a legal outcome there.
+    const explicitMode: ChannelMode | undefined =
+      leg ??
+      (portMenuStereoPair && portMenuChannelMode !== 'both' ? portMenuChannelMode : undefined) ??
+      (stereo ? 'both' : undefined);
+    const channelMode: ChannelMode = explicitMode ?? 'both';
 
     const id = audioEdgeId(from.nodeId, from.portId, to.nodeId, to.portId);
     // The already-exists short-circuit is about the CLICKED leg, so it only
@@ -6557,9 +6700,7 @@
       trace(`patch-to reject ${from.nodeId}.${from.portId} → ${to.nodeId}.${to.portId}: ${verdict.reason}`);
       return;
     }
-    ydoc.transact(() => {
-      writeAudioLegGroup(from, to, sourceType, targetType, channelMode);
-    }, LOCAL_ORIGIN);
+    commitAudioCable(from, to, sourceType, targetType, explicitMode);
     trace(
       `patch-to ${from.nodeId}.${from.portId} → ${to.nodeId}.${to.portId}` +
         (channelMode === 'both' ? '' : ` (only ${channelMode === 'left' ? 'L' : 'R'})`),
@@ -8431,6 +8572,20 @@
     if (t) applyStereoExpand(t.nodeId, t.portId, t.direction, value);
   }}
   onclose={closeStereoExpandMenu}
+/>
+
+<!-- A drop whose two ends disagree about width — mono source on a stereo jack,
+     or stereo source on a mono jack. NOTHING is written until a row is picked;
+     Escape / negative space abandons the patch. -->
+<StereoDropChoiceMenu
+  bind:open={dropChoiceOpen}
+  x={dropChoicePos.x}
+  y={dropChoicePos.y}
+  title={dropChoicePending?.title ?? ''}
+  choice={dropChoice}
+  labelFor={(portId) => resolveVerboseLabel({ id: portId })}
+  onpick={resolveDropChoice}
+  oncancel={closeDropChoice}
 />
 
 <style>

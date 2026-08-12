@@ -223,8 +223,10 @@ test.describe('MIXMSTRS stereo jacks expand to L/R on right-click', () => {
   test('a PATCHED jack still expands, via the unpatch menu', async ({ page, rack }) => {
     await spawnRig(page, true);
 
-    // Put a real cable on the pair first, through the ordinary patch flow: a
-    // mono ES-9 point onto the collapsed MASTER jack.
+    // Put a real cable on the pair first, through the ordinary patch flow: the
+    // collapsed stereo MASTER jack onto a mono ES-9 physical point. That is a
+    // WIDTH MISMATCH, so since 2026-08-12 it asks which channel before it
+    // writes — answering is part of the ordinary flow now, not extra ceremony.
     await openPanelAt(page, MIX, { nav: 'outputs' });
     await portRow(page, MIX, 'masterL').click({ button: 'right' });
     const picker = page.locator('[data-testid="port-context-menu"]');
@@ -234,6 +236,10 @@ test.describe('MIXMSTRS stereo jacks expand to L/R on right-click', () => {
       .locator('[data-testid="patch-to-port"][data-port-id="out1"][data-leg=""]')
       .click();
     await expect(picker).toHaveCount(0);
+    const chooser = page.getByTestId('stereo-drop-choice');
+    await expect(chooser, 'a stereo jack onto a mono ES-9 point must ask').toBeVisible();
+    await chooser.locator('[data-testid="stereo-drop-choice-option"][data-mode="left"]').click();
+    await expect(chooser).toHaveCount(0);
 
     await openPanelAt(page, MIX, { nav: 'outputs' });
     await portRow(page, MIX, 'masterL').click({ button: 'right' });

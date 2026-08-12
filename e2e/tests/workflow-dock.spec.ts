@@ -38,6 +38,20 @@ function collectErrors(page: Page): string[] {
   return errors;
 }
 
+/**
+ * Answer the WIDTH CHOOSER (owner 2026-08-12) — the small menu a commit raises
+ * when its two ends disagree about stereo width (a mono source on a stereo
+ * jack, or the reverse). It is asserted VISIBLE first, so a caller that keeps
+ * this line after the dialog stops appearing goes red instead of silently
+ * clicking nothing.
+ */
+async function answerWidthChooser(page: Page, mode: 'left' | 'right' | 'both'): Promise<void> {
+  const chooser = page.getByTestId('stereo-drop-choice');
+  await expect(chooser, 'a width-mismatched commit must ask which channel').toBeVisible();
+  await chooser.locator(`[data-testid="stereo-drop-choice-option"][data-mode="${mode}"]`).click();
+  await expect(chooser).toHaveCount(0);
+}
+
 async function gotoWorkflow(page: Page): Promise<void> {
   await page.goto('/rack?shell=legacy');
   await expect(page.getByTestId('workflow-topbar')).toBeVisible();
@@ -511,6 +525,11 @@ test.describe('dock drawer patch menu + rear-view patching (owner fixes 2026-07-
     await page
       .locator('.svelte-flow__node[data-id="amp"] [data-testid="back-jack"][data-port-id="audio"][data-direction="input"]')
       .click();
+    // MASTER is a stereo pair and VCA.audio is one mono input, so the commit
+    // asks which channel first (owner 2026-08-12). Answering is part of the
+    // gesture now; the seam under test — a drawer-hosted rear jack reaching the
+    // canvas commit path at all — is unchanged.
+    await answerWidthChooser(page, 'left');
     await expect
       .poll(async () =>
         page.evaluate(() => {
@@ -563,6 +582,9 @@ test.describe('dock drawer patch menu + rear-view patching (owner fixes 2026-07-
     await page
       .locator('.svelte-flow__node[data-id="amp"] [data-testid="back-jack"][data-port-id="audio"][data-direction="output"]')
       .click();
+    // The mirror of the case above: a MONO source into the collapsed CH1 pair,
+    // so the chooser asks which side rather than double-patching in silence.
+    await answerWidthChooser(page, 'left');
     await expect
       .poll(async () =>
         page.evaluate(() => {
