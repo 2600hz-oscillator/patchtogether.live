@@ -293,10 +293,6 @@ export const filterDef: AudioModuleDef = {
     // a flat line on a silent rack, in both committed baselines — it is
     // param-derived and alive with nothing patched.
     //
-    // NOT `signal-flow`: this chain is ONE stage. The three sections are
-    // SELECTED AMONG (`ba.selectn`), not chained, and `FaceFlowStage.parallel`
-    // means "taps the bus earlier and rejoins it downstream", which is not what
-    // that is. A diagram teaching the wrong topology is worse than none.
     // NOT `readouts`: it would restate the hero strip.
     sidebar: [
       {

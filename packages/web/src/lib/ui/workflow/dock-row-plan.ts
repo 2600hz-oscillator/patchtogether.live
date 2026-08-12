@@ -68,6 +68,7 @@ import {
   momentaryParamIds,
   paramCellKind,
   type DeclaredParamCell,
+  type ParamCellKind,
 } from './shell-control-kind';
 import { shellCellFor } from './shell-cells';
 
@@ -90,6 +91,43 @@ export const DOCK_ROW_MAX_CONTROLS = 10;
  *              94.3–560 px, i.e. between 1.4× and 8× a knob column.
  */
 export type DockCellWidthClass = 'column' | 'wide';
+
+/**
+ * The width class of every PARAM cell kind, EXHAUSTIVE OVER `ParamCellKind`.
+ *
+ * ⚠ THIS IS A `Record`, NOT A CHAIN OF `===`, AND THAT IS THE POINT. The chain
+ * it replaces listed the column kinds and let everything else fall to the
+ * deny-by-default `wide` arm — which is the correct answer for an UNRESOLVABLE
+ * cell (see `cellWidthClass`) and the wrong one for a kind that simply had not
+ * been added yet. Those two cases were indistinguishable, so `fader` (#1464)
+ * silently classified as a 560px-wide roster while `ModuleShell` rendered it as
+ * a 22px column, and every band holding one would have gone solo. A
+ * `Record<ParamCellKind, …>` makes the next new kind a COMPILE error (TS2741,
+ * missing property) instead of a silent default — the author has to answer the
+ * question rather than inherit an answer.
+ *
+ * Measured widths behind each entry (live dock, 20 faces, 104 cells, 1220px
+ * pane): knob columns 40–68.8px; segmented 94.3 / 107.3 / 430.9; selector 168;
+ * grid chip 120–168; colour swatch 56; fader track 22.
+ */
+export const PARAM_CELL_WIDTH_CLASS: Record<ParamCellKind, DockCellWidthClass> = {
+  // Paints inside one `.kcol` column.
+  knob: 'column',
+  toggle: 'column',
+  momentary: 'column',
+  // A 56px swatch at hero — narrower than a knob's 64px column.
+  color: 'column',
+  // `ModuleShell`'s fader branch renders `<div class="kcol ms-cell-fader">` and
+  // `Fader.svelte`'s track is 22px wide. noise could not surface this (one
+  // param, promoted to the hero, zero bands, so no fader ever reached a band);
+  // marbles is the first face to put faders IN bands, and while this said
+  // 'wide' every one of its six bands would have taken a row of its own.
+  fader: 'column',
+  // Rosters and pictures — 1.4× to 8× a knob column, so they hold a row.
+  segmented: 'wide',
+  selector: 'wide',
+  grid: 'wide',
+};
 
 /** The def fields the row plan reads. A superset of nothing else — it needs the
  *  module TYPE (to resolve family/static cells through `shellCellFor`) and the
@@ -122,26 +160,9 @@ export function cellWidthClass(ctl: FaceControl, def: RowPlanDefLike | undefined
     const pd = (def?.params ?? []).find((p) => p.id === (ctl.paramId ?? ctl.key));
     if (!pd) return 'wide';
     const kind = paramCellKind(pd, momentaryParamIds(def), 'dock', declaredParamCells(def));
-    // knob / toggle / momentary all paint inside one .kcol column, and so does
-    // a COLOUR swatch (56 px at hero, narrower than a knob's 64 px column) —
-    // unlike its sibling declared cell, whose grid CHIP is a 120–168 px roster
-    // chip and holds a row.
-    //
-    // ⚠ `fader` JOINS THEM (2026-08-11, marbles). It was landing on the
-    // deny-by-default `wide` arm — correct behaviour for a kind this predicate
-    // had never been taught, and wrong for this one: `ModuleShell`'s fader
-    // branch renders `<div class="kcol ms-cell-fader">` and `Fader.svelte` is
-    // 22 px wide. noise could not surface it (one param, promoted to the hero,
-    // zero bands, so no fader ever reached a band); marbles is the first face
-    // to put faders IN bands, and unfixed every one of its six bands would have
-    // taken a row of its own.
-    return kind === 'knob' ||
-      kind === 'toggle' ||
-      kind === 'momentary' ||
-      kind === 'color' ||
-      kind === 'fader'
-      ? 'column'
-      : 'wide';
+    // One table, exhaustive over the kind union — see PARAM_CELL_WIDTH_CLASS
+    // for why this is a Record and not a chain of `===`.
+    return PARAM_CELL_WIDTH_CLASS[kind];
   }
   const cell = shellCellFor(def?.type ?? '', ctl);
   if (!cell) return 'wide';

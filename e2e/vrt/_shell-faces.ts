@@ -300,6 +300,28 @@ export const FACES = [
   // `textContent` read all five as clean today. This baseline is the only
   // surface in the repo that can see it.
   { type: 'resofilter', pages: 1 },
+  // FACE BATCH 4 — the exciter-driven resonator. THREE declared bands, three
+  // rendered: the hero promotes the comb panel, POSITION and the STRUM audition
+  // out of band 3, which still holds LEVEL, so nothing empties.
+  //
+  // ⚠ THIS TILE IS DETERMINISTIC FOR THE STRONGEST REASON IN THE ROSTER, and
+  // it is worth distinguishing from the "unpatched insert is silent" cases
+  // (cofefve, mixer, reverb). rings is not merely quiet at rest — it is
+  // BIT-ZERO: measured peak exactly 0.000e+0 on both taps, in both models, over
+  // a 1 s render of the shipping worklet with nothing patched and nothing
+  // struck. There is no internal exciter, no free-run and no noise floor, so
+  // the `scope` glyph on the compact tile has nothing to draw whether the graph
+  // is frozen or running. This scene therefore does NOT depend on #1420's
+  // freeze — unlike analogVco, macrooscillator and noise, which are the
+  // roster's real witnesses for it.
+  //
+  // ⚠ AND THE HERO PICTURE IS DRAWN, NOT TRACED. Every bar of the pickup comb
+  // is a pure function of the durable params through `RingsModal.configure`'s
+  // own laws (rings-face-model.ts) — no analyser, no rAF, no engine read — so
+  // the dock tile is identical on a frozen graph, a live graph and a silent
+  // rack. That is what lets a module with no sound at rest still have a
+  // faceplate that says something.
+  { type: 'rings', pages: 3 },
 ] as const;
 
 /** TIGHT per-scene diff budgets (absolute pixels; Playwright takes the MIN of

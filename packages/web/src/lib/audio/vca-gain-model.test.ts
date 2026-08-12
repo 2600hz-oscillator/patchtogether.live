@@ -24,6 +24,10 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { curatedFace } from '$lib/ui/workflow/curated-face';
+import {
+  sidebarPlan,
+  type FaceplateDefLike,
+} from '$lib/ui/workflow/dock-faceplate-model';
 import { faceReadoutValueFor } from '$lib/ui/workflow/face-readout-values';
 import {
   LANE_KCOL_MAX_PX,
@@ -31,7 +35,7 @@ import {
   readoutFitsLane,
   readoutWidthPx,
 } from '$lib/ui/workflow/lane-readout-fit';
-import { laneBodyPlan } from '$lib/ui/workflow/module-shell-model';
+import { laneBodyPlan, PLATE_ROW_H } from '$lib/ui/workflow/module-shell-model';
 import { vcaDef } from './modules/vca';
 import {
   VCA_BASE,
@@ -354,7 +358,17 @@ describe('the curated face — what each tier actually surfaces', () => {
     // glyph survives at every tier — the ≥4-cell glyph cliff never applies here.
     for (const tier of ['compact', 'full'] as const) {
       const plan = laneBodyPlan(face(tier).controls.length, true, tier);
-      expect(plan, tier).toEqual({ layout: 'row', cellCount: 2, glyph: true, knobSize: 'md' });
+      expect(plan, tier).toEqual({
+        layout: 'row',
+        cellCount: 2,
+        glyph: true,
+        knobSize: 'md',
+        // The plate's design row — vca has no declared cell kind, so its
+        // cells are plain knob columns and the plan reports the design
+        // height. (A face with a `fader` cell reports 96 here; see
+        // module-shell-model's LANE_CELL_H.)
+        rowH: PLATE_ROW_H,
+      });
     }
   });
 
@@ -592,12 +606,6 @@ describe('the face states what the DSP does — anchored to vca.dsp, not to a co
 });
 
 describe('PF-20 faceplate structure — the declarations, and the ones refused', () => {
-  const flowBlock = () => {
-    const b = (vcaDef.face?.sidebar ?? []).find((x) => x.kind === 'signal-flow');
-    expect(b, 'the sidebar carries a signal-flow block').toBeTruthy();
-    return b as { stages: readonly { label: string; note?: string; parallel?: boolean }[] };
-  };
-
   it('declares title + hint + a band hint, and NONE of them carries a load-bearing fact', () => {
     // `facePageHeader` returns null before it reads either field unless the
     // annotate toggle is on, so a fact stated ONLY here is invisible at rest.
@@ -605,29 +613,26 @@ describe('PF-20 faceplate structure — the declarations, and the ones refused',
     expect(vcaDef.face?.hint ?? '').not.toBe('');
     expect(vcaDef.face?.pages?.[0]?.hint ?? '').not.toBe('');
 
-    // The three facts this module has to teach, each pinned to the
-    // ALWAYS-PAINTING surface that carries it.
-    const stageText = flowBlock()
-      .stages.map((s) => `${s.label} ${s.note ?? ''}`)
-      .join(' | ');
-    // 1. the clip risk → the readout strip (a live number; asserted above).
+    // The clip risk → the readout strip (a live number; asserted above). This
+    // is now the ONLY load-bearing fact the FRONT carries: the signal-flow
+    // block that stated the other two was removed with the whole kind, and the
+    // rear card carries both in a form the build can check (the `~` tick is
+    // pinned against vca.dsp above; OUT INV is a real port on the rail).
     expect(vcaDef.face?.hero?.readouts?.[0]?.valueId).toBe('vca-gain-at-full-cv');
-    // 2. the full-bandwidth cv → a flow stage note.
-    expect(stageText, 'the sidebar states the cv bandwidth').toMatch(/full-bandwidth/i);
-    // 3. OUT INV exists → a flow stage. That jack is on the REAR card only, so
-    //    the flow column is the one FRONT surface that can mention it.
-    expect(stageText, 'the sidebar surfaces the rear-only OUT INV tap').toMatch(/OUT INV/);
   });
 
-  it('OUT INV is drawn as a TAP, never as a stereo partner (dual-mono GROUP D)', () => {
-    const inv = flowBlock().stages.find((s) => s.label === 'OUT INV')!;
-    expect(inv.parallel, 'a tap branches off the spine; it is not a link in the chain').toBe(true);
-    expect(inv.note ?? '', 'the note calls it a TAP, in those words').toMatch(/× −1 tap/);
+  it('nothing on the face implies OUT INV is a stereo partner (dual-mono GROUP D)', () => {
     // `audio` and `audio_inv` are VARIANTS of one mono signal, so nothing on
-    // the face may imply an L/R relationship the module does not have.
+    // the face may imply an L/R relationship the module does not have. The
+    // signal-flow stage that used to say "tap" in those words is gone; this
+    // half — the prohibition — is the half that still has a surface to guard.
     expect(JSON.stringify(vcaDef.face), 'no stereo-pair language on the face').not.toMatch(
       /stereo|\bwiden/i,
     );
+    expect(
+      vcaDef.outputs?.map((o) => o.id),
+      'OUT INV is a real port, which is what makes the rear card able to state it',
+    ).toContain('audio_inv');
   });
 
   it('the hero promotes NOTHING, so the meter survives and the band keeps both knobs', () => {
@@ -647,38 +652,15 @@ describe('PF-20 faceplate structure — the declarations, and the ones refused',
     expect(vcaDef.face?.pages?.[0]?.controls).toEqual(['base', 'cvAmount']);
   });
 
-  it('every flow row fits the sidebar column — an over-long note OVERLAPS its label', () => {
-    // ⚠ FOUND IN THE RENDER, not by any gate. `.fs-note` is `white-space:
-    // nowrap` with no ellipsis and no wrap, and `card-control-overflow` cannot
-    // see this at all — the sidebar is mounted OUTSIDE the ModuleShell subtree
-    // by DockFullView, which is exactly what keeps it out of the parity gates.
-    // So a note that does not fit silently collides with the stage label
-    // instead of clipping: the first draft's SUM note (37 ch) printed
-    // `SUM|NCLAMPED: MAY EXCEED 1 …` in the dock baseline.
-    //
-    // UNITS: CHARACTERS, as a proxy for CSS px. Measured off the 1220 px dock
-    // capture — the flow column gives ~260 px of content; the label runs at
-    // 11 px and the note at 9 px mono + 0.06em, ≈5.94 px/glyph, and the dot,
-    // the two 8 px gaps and the `∥` branch mark cost ~34 px before either
-    // string. That lands the joint budget near 36 characters; 34 is the
-    // headroom-bearing figure this asserts. A proxy is worth having anyway:
-    // the failure it catches is monotone in length.
-    const BUDGET_CH = 34;
-    const overlong = flowBlock()
-      .stages.map((s) => ({ s, n: s.label.length + (s.note?.length ?? 0) }))
-      .filter(({ n }) => n > BUDGET_CH)
-      .map(({ s, n }) => `${s.label} (+ note) = ${n} ch`);
-    expect(
-      overlong,
-      `a signal-flow row over ~${BUDGET_CH} chars (label + note) overruns the sidebar column ` +
-        `and the note prints ON TOP of the label — .fs-note neither wraps nor ellipsizes`,
-    ).toEqual([]);
-  });
-
-  it('exactly ONE sidebar block — presets / readouts / custom are all refused', () => {
-    // `presets` on a 2-param module is a list of coordinate pairs; a `readouts`
-    // block duplicates the strip; a `custom` panel means a registry entry for
-    // the straight line already refused above.
-    expect((vcaDef.face?.sidebar ?? []).map((b) => b.kind)).toEqual(['signal-flow']);
+  it('NO sidebar at all, so DockFullView keeps the full-width editor', () => {
+    // The only block this face ever declared was the signal-flow chain, and the
+    // kind is gone. `presets` on a 2-param module is a list of coordinate
+    // pairs; a `readouts` block duplicates the strip; a `custom` panel means a
+    // registry entry for the straight line refused above. So the honest answer
+    // is an empty column — declared by its ABSENCE, not by an empty array.
+    expect(vcaDef.face?.sidebar).toBeUndefined();
+    // `sidebarPlan` must agree: it returns null (never []), which is the value
+    // DockFullView branches on to drop the grid's second column entirely.
+    expect(sidebarPlan(vcaDef as unknown as FaceplateDefLike)).toBeNull();
   });
 });

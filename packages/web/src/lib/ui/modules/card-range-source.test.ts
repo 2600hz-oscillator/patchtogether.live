@@ -77,6 +77,7 @@ import { filterDef } from '$lib/audio/modules/filter';
 import { meowboxDef } from '$lib/audio/modules/meowbox';
 import { resofilterDef } from '$lib/audio/modules/resofilter';
 import { ringbackDef } from '$lib/audio/modules/ringback';
+import { ringsDef } from '$lib/audio/modules/rings';
 import { snaredrumDef } from '$lib/audio/modules/snaredrum';
 import { vcaDef } from '$lib/audio/modules/vca';
 import { warrensspectrumDef } from '$lib/audio/modules/warrensspectrum';
@@ -232,6 +233,7 @@ const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }
   'NoiseCard.svelte': noiseDef,
   'ResofilterCard.svelte': resofilterDef,
   'RingbackCard.svelte': ringbackDef,
+  'RingsCard.svelte': ringsDef,
   'SnaredrumCard.svelte': snaredrumDef,
   'VcaCard.svelte': vcaDef,
   'WarrensspectrumCard.svelte': warrensspectrumDef,
@@ -255,6 +257,7 @@ const MAPPING_BOUND_CARDS: readonly string[] = [
   'NoiseCard.svelte',
   'ResofilterCard.svelte',
   'RingbackCard.svelte',
+  'RingsCard.svelte',
   'SnaredrumCard.svelte',
   'VcaCard.svelte',
   'WarrensspectrumCard.svelte',

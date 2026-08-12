@@ -563,6 +563,70 @@
 // `--update-snapshots`. Its own PR, with an owner preview and a `git rm` first.
 // The card is otherwise pixel-unchanged.
 
+// FACE BATCH 4 · rings (2026-08-11) — the exciter-driven RESONATOR, PROMOTED
+// from having no face at all, and the entry whose argument is that A MODULE
+// THAT CANNOT BE SOUNDED IS NOT A FACEPLATE PROBLEM UNTIL SOMEONE LOOKS.
+//
+// rings is a BODY, not a voice. With nothing patched and nothing struck the
+// output is not "quiet", it is EXACTLY ZERO — measured peak 0.000e+0 on both
+// taps in both models over a 1 s render of the shipping worklet; the
+// Float32Arrays are untouched. And until this PR the module could not be
+// struck from ANY surface: `RingsCard` had a MODEL button, six faders and a
+// jack field, and no strum. A user who spawned RINGS and turned all seven
+// knobs heard nothing, with no indication why. That is the sixstrum defect on
+// a legacy card rather than on a face, and it is fixed here on BOTH surfaces
+// through ONE seam — a `strumCs` ConstantSource on worklet input 2 plus the
+// factory's `manualTrigger` read key, the karplus pattern verbatim.
+//
+// ⚠ THE SPEC IT WAS BUILT FROM WAS STALE IN FOUR PLACES, and re-measuring
+// first is the only reason this face does not repeat them. `strum` was said to
+// declare no `edge` — it declares `edge: 'trigger'` and has since #1436. The
+// ODD/EVEN separation was given as "116 dB, every bin" — measured per bin
+// h1..h8 it is 129 / 124 / 113 / 110 / 110 / 110 / 98 / 84, so the honest
+// figure is 84 dB at the worst bin and 116 is not the minimum of the spec's
+// own table either. A claimed peak-find artifact at structure 0 does not
+// reproduce (EVEN's h2 beats its h4 by 1.7 dB, as the spec's own §1 table
+// already showed). And SYMPATHETIC's T60 was said to go back UP at high
+// damping; measured it plateaus (490 / 342 / 340 ms at damping .5 / .75 / 1)
+// rather than reversing. Everything else in it reproduced to the digit,
+// including the mirror-symmetry table, the 5.37 dB model step and the 0.107 dB
+// limiter no-op.
+//
+// ⚠ AND THE READOUT THIS FACE MOST WANTED IS NOT ON IT. Two knobs set the ring
+// time and only one says so — BRIGHTNESS is documented as a tone control and
+// moves T60 25x at a fixed DAMPING — but the number cannot be printed
+// honestly: MODAL's T60 depends on the INTERFACE SAMPLE RATE, measured
+// 3889 / 7420 / 476 ms at 44.1 / 48 / 96 kHz for one fixed pair of settings,
+// because the decay constant is `q/(pi*sampleRate)` with no compensating term.
+// The ratio is no better (18.2x / 25.3x / 3.4x). So the finding is carried by
+// the band LABEL, which paints unconditionally where a hint does not, and the
+// rate dependence is documented on the def as the DSP defect it is — a patch
+// saved at 48 k is a different instrument at 96 k. Fixing that moves audio, so
+// it is not folded into a faceplate PR.
+//
+// Its hero picture reaches `hero.cell` where meowbox's and noise's could not:
+// a panel's first legal rank is 7 and rings has nine rankable keys, so the
+// pickup comb is a real hero cell rather than a sidebar consolation.
+//
+// ⚠ IT SHIPS WITH NO SIDEBAR AT ALL, and that is the second owner directive
+// this face absorbed mid-build. It carried one `signal-flow` block; the owner,
+// looking at analogVco's, ruled the genre out entirely — "this really isn't
+// accurate. lets stop doing these and clean up the existing ones, get rid of
+// them." So the block is gone and NOTHING replaced it: an empty sidebar is
+// reported as empty rather than padded with filler. Seven faces already ship
+// this way (adsr, karplus, mixer, delay, reverb, tomtom, qbrt).
+//
+// The two directives are one rule. A faceplate states values; the explanation
+// — the chain, the measurements, the two-knobs-set-the-decay finding — lives in
+// `docs` for right-click → annotate. A stage list is additionally the surface
+// most likely to go stale: a hand-maintained picture of code that moves
+// underneath it, with no gate able to notice.
+//
+// ⚠ OTHER FACES STILL DECLARE `signal-flow`, so the shared renderer STAYS
+// until the fleet sweep (#1468) lands — deleting it here would blank their dock
+// panels in a faceplate PR for one module. Deliberately NOT stating how many:
+// that is a population count, it goes stale the moment #1468 lands a partial,
+// and `grep -l "kind: 'signal-flow'"` answers it against the tree.
 export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // P1 batch 1 — first 6 module faces
   'adsr',
@@ -610,6 +674,8 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   'marbles',
   // FACE BATCH 4 · the clean multi-mode filter (2026-08-11) — see above.
   'resofilter',
+  // FACE BATCH 4 · the exciter-driven resonator (2026-08-11) — see above.
+  'rings',
 ]);
 
 /**

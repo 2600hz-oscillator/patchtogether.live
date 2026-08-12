@@ -2,7 +2,7 @@
 //
 // PF-20 — the REGISTRY for `custom` dock-sidebar blocks.
 //
-// The other three sidebar kinds (`signal-flow`, `presets`, `readouts`) are pure
+// The other two sidebar kinds (`presets`, `readouts`) are pure
 // data the shared renderer paints. `custom` is the escape hatch for the picture
 // only the module can draw — a crossover split, a routing map, a scale ring —
 // and it resolves THROUGH HERE so the escape hatch stays generic: a def
