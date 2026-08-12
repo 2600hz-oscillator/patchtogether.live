@@ -97,7 +97,7 @@
   <div class="stripe" style="background: var(--cable-video);"></div>
   <ModuleTitle {id} {data} defaultLabel="WARREN'S VISIONS" />
 
-  <PatchPanel nodeId={id} {inputs} {outputs} panelWidth={128}>
+  <PatchPanel nodeId={id} {inputs} {outputs} panelWidth={340}>
     <div class="body">
       <div class="cols">
         <div class="left">
