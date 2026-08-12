@@ -74,8 +74,9 @@ const SLOW_RENDER = process.env.E2E_SWIFTSHADER === '1' || !!process.env.CI;
 // ── THE BUDGET IS PER-FACE AND SCALES WITH THAT FACE'S CELL COUNT ──
 //
 // This sweep's cost is DOMINATED by the per-cell operability loop: every cell
-// costs a `scrollIntoViewIfNeeded` + a `boundingBox` + ~11 CDP input dispatches
-// (`mouse.move`/`down`/`move{steps:8}`/`up`) + a graph poll — ~14 protocol
+// costs a `centreOf` (scroll + rect, ONE call), four mouse dispatches
+// (`move`/`down`/`move{steps:8}`/`up` — `steps` is batched browser-side, so it
+// is one call, MEASURED, not four) and a graph read plus poll — ~9 protocol
 // round-trips EACH, against a live SvelteFlow rack whose video zone is being
 // software-rasterized the whole time. So a face's wall-clock is essentially
 // `fixed boot/spawn/dock + k × cells`, and the flat 30s default was a budget
@@ -390,14 +391,66 @@ async function renderedCells(dockShell: Locator): Promise<RenderedCell[]> {
  * Verifying the tab actually TOOK matters: a rail that renders but does not
  * switch would leave the cell hidden and the failure would surface as a
  * confusing `toBeVisible` timeout on the control rather than on the tab.
+ *
+ * ── ⚠ WHY THIS TAKES A CURSOR INSTEAD OF ASKING THE PAGE ────────────────────
+ *
+ * It is called ONCE PER CELL — ~380 times across this file — and it used to
+ * spend two protocol round-trips (`locator.count`, then `locator.getAttribute`)
+ * on EVERY ONE of them just to discover that the tab it wants is already the
+ * open tab. Cells arrive grouped by band, so the answer was already known: the
+ * only calls that can change anything are the ~8 real transitions per railed
+ * face, plus one rail-exists probe per face.
+ *
+ * MEASURED with `DEBUG=pw:api` over the whole spec — `locator.count` 382 → 33
+ * and `locator.getAttribute` 129 → 16.
+ *
+ * ⚠ AND THE COUNT IS THE POINT, not the seconds. A protocol call is one
+ * round-trip between the test process and the browser: the same test makes the
+ * SAME NUMBER of them on Metal, under SwiftShader, and on a contended 4-worker
+ * runner. Wall-clock does none of that — which is exactly why #1454 measured
+ * this file green on Metal and blew shard 3's 900 s ceiling on CI. A count is
+ * the only number that transfers.
+ *
+ * The CURSOR IS NOT A CACHE OF PAGE STATE. It records what THIS LOOP last
+ * clicked, and nothing else in the loop touches the rail — `driveCell` operates
+ * cells, never tabs. If that ever stops being true the cursor must go, because
+ * a stale cursor would skip a needed click and the failure would resurface as
+ * the same confusing `toBeVisible` timeout this helper's own comment warns
+ * about. The click path still asserts `aria-selected` flipped, so a rail that
+ * renders and does not switch is caught on the transition it fails.
  */
-async function openTabFor(page: Page, cell: RenderedCell): Promise<void> {
+interface TabCursor {
+  /** null = not yet probed; false = this face has no rail (untabbed). */
+  railed: boolean | null;
+  /** The band id this loop last activated, or null before the first switch. */
+  active: string | null;
+}
+
+function newTabCursor(): TabCursor {
+  return { railed: null, active: null };
+}
+
+async function openTabFor(page: Page, cell: RenderedCell, cursor: TabCursor): Promise<void> {
   if (!cell.page) return;
+  if (cursor.railed === false) return; // untabbed face — one scrolling column
   const tab = page.getByTestId('dock-full-view').getByTestId(`faceplate-tab-${cell.page}`);
-  if ((await tab.count()) === 0) return; // untabbed face — one scrolling column
-  if ((await tab.getAttribute('aria-selected')) === 'true') return;
+  if (cursor.railed === null) {
+    // ONE rail-exists probe per face, not per cell. `count()` on a per-band
+    // testid is the same question for every band of a given face: a faceplate
+    // either painted a rail or it did not.
+    cursor.railed = (await tab.count()) > 0;
+    if (!cursor.railed) return;
+  }
+  if (cursor.active === cell.page) return; // already open — this loop opened it
+  if (cursor.active === null && (await tab.getAttribute('aria-selected')) === 'true') {
+    // First cell of a railed face: the faceplate chose its own default tab, so
+    // the page is the authority exactly once. After this the cursor is.
+    cursor.active = cell.page;
+    return;
+  }
   await tab.click();
   await expect(tab, `tab '${cell.page}' activates`).toHaveAttribute('aria-selected', 'true');
+  cursor.active = cell.page;
 }
 
 /**
@@ -417,11 +470,40 @@ async function openTabFor(page: Page, cell: RenderedCell): Promise<void> {
  * at max — a summing mixer is a unity pass-through out of the box), and the
  * same bite recurs on every attenuator-shaped module.
  */
+/**
+ * Scroll a control into view and return its CENTRE, in ONE protocol call.
+ *
+ * ⚠ THIS REPLACED `scrollIntoViewIfNeeded()` + `boundingBox()`, which is two
+ * round-trips asking one question, ~360 times across this file. MEASURED with
+ * `DEBUG=pw:api`: `locator.scrollIntoViewIfNeeded` 375 → 0 and
+ * `locator.boundingBox` 349 → 0, against one `locator.evaluate` each.
+ *
+ * Equivalence, since this is a pointer coordinate and being subtly wrong would
+ * show up as a drag that misses: `getBoundingClientRect()` is viewport-relative
+ * and so is `boundingBox()`, and both are read AFTER the scroll, so the numbers
+ * are the same numbers. `scrollIntoView({ block: 'center' })` is instant by
+ * default (no smooth behaviour to race), and layout is synchronous, so reading
+ * the rect on the next line sees the scrolled position.
+ *
+ * ⚠ WHAT IT GIVES UP, stated because it is the only real risk: Playwright's
+ * `scrollIntoViewIfNeeded` also waits for the element to be STABLE (not
+ * animating). This does not. Two things make that safe here rather than
+ * hopeful — the caller has already awaited `expect(host).toBeVisible()`, and a
+ * mis-aimed drag cannot pass silently: the `expect.poll(readParam).not.toBe(
+ * before)` that follows every drag turns a missed grab into a RED test, never
+ * a green one. Flake-checked 3× under `E2E_SWIFTSHADER=1`, which is the
+ * renderer where a slow layout would actually bite.
+ */
+async function centreOf(control: Locator): Promise<{ cx: number; cy: number }> {
+  return await control.evaluate((el) => {
+    el.scrollIntoView({ block: 'center', inline: 'center' });
+    const r = el.getBoundingClientRect();
+    return { cx: r.x + r.width / 2, cy: r.y + r.height / 2 };
+  });
+}
+
 async function dragKnob(page: Page, knob: Locator, p: SpecParam, current: number): Promise<void> {
-  await knob.scrollIntoViewIfNeeded();
-  const box = (await knob.boundingBox())!;
-  const cx = box.x + box.width / 2;
-  const cy = box.y + box.height / 2;
+  const { cx, cy } = await centreOf(knob);
 
   // Travel (px): a discrete param must cross its rounding midpoint (1 step =
   // 200/steps px, so 0.6 of a step + slack always lands on a new integer); a
@@ -525,14 +607,14 @@ async function driveCell(
     // independent leg and the one that would catch a re-introduced Y.Doc write.
     const pid = cell.key;
     const pad = host.locator(`[data-testid="control-${pid}"]`);
-    await pad.scrollIntoViewIfNeeded();
-    const box = (await pad.boundingBox())!;
+    // One call, not two — see centreOf.
+    const { cx: padCx, cy: padCy } = await centreOf(pad);
     // Snapshot BOTH oracles before the gesture: the ledger cursor so an earlier
     // module's press cannot satisfy this one, and the graph value so "untouched"
     // is a comparison rather than an assumption about what spawn seeded.
     const beforeSeq = lastSeq(await readAuditionLog(page));
     const beforeParam = await readParam(page, nodeId, pid);
-    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.move(padCx, padCy);
     await page.mouse.down();
     await expect
       .poll(
@@ -774,11 +856,8 @@ async function driveCell(
     const before = key ? JSON.stringify(beforeRaw) : '';
     const beforeText = witness ? ((await witness.innerText()) ?? '').trim() : '';
 
-    await target.scrollIntoViewIfNeeded();
     if (probe!.action === 'drag') {
-      const box = (await target.boundingBox())!;
-      const cx = box.x + box.width / 2;
-      const cy = box.y + box.height / 2;
+      const { cx, cy } = await centreOf(target);
       await page.mouse.move(cx, cy);
       await page.mouse.down();
       await page.mouse.move(cx, cy - 24, { steps: 8 });
@@ -876,9 +955,8 @@ async function driveCell(
         `${where}: declared mode:'gate' but the shell did not render a MOMENTARY pad ` +
           `(no aria-pressed) — a held action driven as a one-shot opens and never closes`,
       ).toHaveAttribute('aria-pressed', 'false');
-      await btn.scrollIntoViewIfNeeded();
-      const box = (await btn.boundingBox())!;
-      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      const { cx: btnCx, cy: btnCy } = await centreOf(btn);
+      await page.mouse.move(btnCx, btnCy);
       await page.mouse.down();
       await expect(btn, `${where}: press drives the HELD action pad high`).toHaveAttribute(
         'aria-pressed',
@@ -1029,8 +1107,12 @@ test.describe('faces render-parity: every STRICT_FACES dock full-view carries th
       // driving budget of a 2-cell VCA because it does ~7× the driving.
       test.setTimeout(FACE_FIXED_MS + FACE_PER_CELL_MS * cells.length);
 
+      // ONE cursor per face — see openTabFor. It turns a per-cell pair of
+      // protocol round-trips into a per-TRANSITION one, which is the shape the
+      // work actually has.
+      const tabs = newTabCursor();
       for (const cell of cells) {
-        await openTabFor(page, cell);
+        await openTabFor(page, cell, tabs);
         await driveCell(page, dockShell, 'm', spec, cell);
       }
     });
