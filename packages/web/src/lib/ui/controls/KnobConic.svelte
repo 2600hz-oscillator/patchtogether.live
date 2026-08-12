@@ -40,13 +40,15 @@
      * PARAM VOCABULARY (PF-1 / PF-3 / PF-10) — what this dial's numbers MEAN.
      * Supplying ANY of the three earns a PERSISTENT readout under the dial.
      *
-     * ⚠ SUPPLYING NONE KEEPS THE BARE KNOB **IN THE LANE ONLY**. PF-20
-     * overturned the other half: at the dock, `persistentReadout` (below) makes
-     * an undeclared param fall back to the numeric ladder, because every mocked
-     * faceplate prints a value under every knob and bare labels were the single
-     * largest share of the shell-vs-mock drift. The "a readout is earned"
-     * argument survives where it was always true — a 46px lane column cannot
-     * spend a text row on what hovering already shows.
+     * ⚠ SUPPLYING NONE KEEPS THE BARE KNOB **IN THE LANE ROW ONLY**. PF-20
+     * overturned the dock (`readoutMode='always'`, below): an undeclared param
+     * there falls back to the numeric ladder, because every mocked faceplate
+     * prints a value under every knob and bare labels were the single largest
+     * share of the shell-vs-mock drift. And the FULL-tier lane plate overturns
+     * it the other way (`readoutMode='none'`): a fixed 42 px grid track has no
+     * row to spend at all. The "a readout is earned" argument survives where it
+     * was always true — a 46px lane column cannot spend a text row on what
+     * hovering already shows.
      *
      * `options` (discrete states) and `landmarks` (continuous waypoints) also
      * paint detent TICKS around the arc. They are never interchangeable — see
@@ -56,17 +58,37 @@
     landmarks?: readonly ParamLandmark[];
     format?: (v: number) => string;
     /**
-     * PF-20 — PRINT THE VALUE WHETHER OR NOT A VOCABULARY WAS DECLARED.
+     * WHICH READOUT RULE THIS DIAL IS UNDER. Three surfaces, three answers, and
+     * the reason each one differs is HOW MUCH VERTICAL ROOM THE CELL HAS.
      *
-     * The gate above is a LANE argument (a 46px column cannot spend a text row
-     * on what hovering shows). It was silently applied to the DOCK too, and
-     * that is where it was wrong: every mocked faceplate carries a formatted
-     * value under every knob, and bare labels were the single largest share of
-     * the shell-vs-mock drift. ModuleShell passes this at `view='dock-full'`
-     * only, so the lane tile is untouched and only the ~19 dock baselines move
-     * — deliberately, once.
+     *   'earned' (default) — the PF-3 gate: the readout line renders only for a
+     *      param that declared a vocabulary (`knobReadout` is null otherwise).
+     *      The lane ROW layout, which is a flex line with no fixed track and a
+     *      112 px body, so one extra text row costs nothing.
+     *
+     *   'always' — PF-20, the DOCK. The gate above was silently applied to the
+     *      faceplate too and that is where it was wrong: every mocked faceplate
+     *      carries a formatted value under every knob, and bare labels were the
+     *      single largest share of the shell-vs-mock drift. An undeclared param
+     *      falls back to the numeric ladder.
+     *
+     *   'none' — the FULL-tier lane PLATE, added 2026-08-12. That grid's
+     *      `grid-auto-rows` is a FIXED 42 px track and `align-items: start`, so
+     *      a cell taller than the track is not clipped — IT PAINTS OVER THE ROW
+     *      BELOW. MEASURED on adsr: a knob column is 41 px bare and 55 px with a
+     *      readout (57 under the VRT scenes' pinned webfonts), in a 46 px row
+     *      pitch, i.e. 9 px of row-1-over-row-2 and 13 px of track overrun, seen
+     *      as the A/D/S/R values colliding with the knobs beneath them. Two rows
+     *      of readout-bearing cells do not fit the 112 px body at any font
+     *      (2×57+4 = 118), so the choice is 6 controls without values or 3 with;
+     *      see ModuleShell for why it is the former.
+     *
+     * ⚠ 'none' SUPPRESSES THE PAINTED LINE ONLY. `aria-valuetext` still reports
+     * the resolved readout and the active detent tick still lights — a screen
+     * reader and the arc must not lose the state name because a grid row is
+     * short.
      */
-    persistentReadout?: boolean;
+    readoutMode?: 'earned' | 'always' | 'none';
   }
 
   let {
@@ -86,7 +108,7 @@
     options,
     landmarks,
     format: formatValue,
-    persistentReadout = false,
+    readoutMode = 'earned',
   }: Props = $props();
 
   // ---- MIDI-Learn (shared factory, kind:'cc') — getters so the factory reads
@@ -176,12 +198,19 @@
 
   // ── PARAM VOCABULARY (PF-1 / PF-3 / PF-10), resolved in the pure layer ──
   let vocab = $derived({ options, landmarks, format: formatValue });
-  /** The persistent readout text — `null` (⇒ NOT RENDERED) for a plain param
-   *  in the LANE; at the dock (`persistentReadout`) a plain param falls back to
-   *  the numeric ladder, so every dial on a faceplate prints its value. */
+  /** The RESOLVED readout text — `null` for a plain param under the 'earned'
+   *  gate; at the dock ('always') a plain param falls back to the numeric
+   *  ladder, so every dial on a faceplate prints its value. This is the
+   *  SEMANTIC value: it feeds `aria-valuetext` and the active detent tick
+   *  regardless of whether the line is painted. */
   let readout = $derived(
-    persistentReadout ? knobValueReadout(liveValue, vocab, units) : knobReadout(liveValue, vocab),
+    readoutMode === 'always'
+      ? knobValueReadout(liveValue, vocab, units)
+      : knobReadout(liveValue, vocab),
   );
+  /** …and whether the TEXT LINE is painted. 'none' (the lane plate) resolves
+   *  the readout and then does not spend a row on it — see the prop's note. */
+  let readoutShown = $derived(readoutMode !== 'none' && readout !== null);
   /** Detent ticks around the arc. Empty unless options/landmarks were declared. */
   let marks = $derived(knobMarks(vocab, min, max, curve));
 
@@ -290,14 +319,16 @@
     {/each}
   </div>
   <div class="label">{label}</div>
-  <!-- PERSISTENT READOUT. In the LANE it renders only when the param declared a
-       vocabulary (`knobReadout` returns null otherwise) — the "a readout is
-       earned" gate, which is a 46px-column argument. At the DOCK the caller
-       passes `persistentReadout` and an undeclared param falls back to the
-       numeric ladder, so every dial on a faceplate prints its value. Same
-       ladder either way, which is what stops a hero readout and the dial under
-       it disagreeing about one number. -->
-  {#if readout !== null}
+  <!-- PERSISTENT READOUT. In the lane ROW it renders only when the param
+       declared a vocabulary (`knobReadout` returns null otherwise) — the "a
+       readout is earned" gate, which is a 46px-column argument. At the DOCK
+       ('always') an undeclared param falls back to the numeric ladder, so every
+       dial on a faceplate prints its value. In the lane PLATE ('none') the line
+       is suppressed: its grid track is a fixed 42 px and an over-tall cell
+       paints over the row below rather than being clipped. Same ladder in every
+       case that DOES print, which is what stops a hero readout and the dial
+       under it disagreeing about one number. -->
+  {#if readoutShown}
     <div class="readout" data-testid={paramId ? `readout-${paramId}` : undefined}>{readout}</div>
   {/if}
   {#if midi.binding}

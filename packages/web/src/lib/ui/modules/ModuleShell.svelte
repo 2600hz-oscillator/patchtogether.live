@@ -205,6 +205,38 @@
   // below; the live tap's lifecycle is keyed to this (mount face → mount tap).
   let glyphShown = $derived(glyphKind !== 'none' && (view === 'dock-full' || (lanePlan?.glyph ?? true)));
 
+  // WHICH READOUT RULE THE KNOB CELLS ARE UNDER (see KnobConic's `readoutMode`).
+  //
+  // ⚠ THE PLATE SUPPRESSES THE READOUT LINE, AND IT IS THE HEIGHT TWIN OF THE
+  // marbles FADER BUG — same grid, same `align-items: start`, different cause.
+  // `LANE_CELL_H` is keyed by cell KIND, and this height is a property of the
+  // PARAM: `KnobConic` renders an EARNED readout whenever the param declares a
+  // vocabulary (`options` / `landmarks` / `format`), so a 'knob' cell is 41 px
+  // for one param and 55 px for its neighbour. The table cannot express that,
+  // and the fixed `grid-auto-rows` track does not clip the difference — it
+  // PAINTS IT OVER THE ROW BELOW.
+  //
+  // MEASURED 2026-08-12, at the full lane tier, over every migrated face: ELEVEN
+  // faces put at least one readout-bearing knob in the plate (adsr 4/4,
+  // cloudseed 6/6, kickdrum 6/6, delay 3/3, lfo 3/3, ringback 3/4, cofefve 1/6,
+  // filter 1/5, macrooscillator 1/6, resofilter 1/4, tidyVco 1/6 — 30 cells),
+  // each 55 CSS px in the app stack (57 under the VRT scenes' pinned webfonts)
+  // against a 42 px track and a 46 px row pitch: 13 px of overrun, 9 px of
+  // overlap on any face with a second row.
+  //
+  // ⚠ THE ALTERNATIVE WAS MEASURED AND REJECTED, and it is worth stating which:
+  // teaching the planner the real height instead (a per-param `cellH`) is the
+  // faithful-to-marbles fix, but `plateRowsFor(55)` is ONE row, so the plate
+  // would drop from 6 cells to 3 on every one of those faces — 20 controls out
+  // of the lane across the nine that hold more than three, and for FIVE of them
+  // (cofefve, filter, macrooscillator, resofilter, tidyVco) a SINGLE readout
+  // cell would have cost half the tile. Two rows of readout-bearing cells do
+  // not fit the 112 px body at any font (2×57 + 4 = 118 > 116), so this is a
+  // choice between six controls without printed values and three with them; the
+  // dock prints every value, the hover tooltip prints the dragged one, and
+  // `aria-valuetext` keeps the state name for AT either way.
+  let plateSuppressesReadout = $derived(lanePlan?.layout === 'plate');
+
   // DUAL glyph (owner spec — tidyVco): the param-derived STATIC CORE WAVEFORM
   // is the identity and renders EVERYWHERE the glyph fits; the live analyser
   // trace rides ALONGSIDE it only where BOTH panes fit WHOLE — the dock hero
@@ -769,7 +801,11 @@
               options={pd.options}
               landmarks={pd.landmarks}
               format={pd.format}
-              persistentReadout={view === 'dock-full'}
+              readoutMode={view === 'dock-full'
+                ? 'always'
+                : plateSuppressesReadout
+                  ? 'none'
+                  : 'earned'}
             />
           </div>
         {/if}
