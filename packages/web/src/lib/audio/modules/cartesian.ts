@@ -28,7 +28,6 @@
 //   lfo_y (cv): embedded LFO output, 90° quadrature.
 //
 // Params:
-//   mode (discrete 0..1, default 0): pad-advance mode (0 = freeform, 1 = clocked).
 //   octave (discrete -2..2, default 0): octave transposition.
 //   gateLength (linear 0.1..0.95, default 0.5): per-step gate duty.
 //   lfoDiv (discrete 0..7, default 3): clock-divider for the embedded LFO.
@@ -119,8 +118,19 @@ export const cartesianDef: AudioModuleDef = {
     { id: 'lfo_x', type: 'cv' },
     { id: 'lfo_y', type: 'cv' },
   ],
+  // ⚠ THERE IS NO `mode` PARAM, AND THAT IS DELIBERATE. One used to be
+  // declared here (discrete 0..1, "0 = freeform, 1 = clocked") with its own
+  // card button and its own `docs.controls` entry. The factory NEVER READ IT:
+  // the tick branches on `isInputPortConnected(edges, nodeId, 'clock')`, so
+  // the CABLE has always been the mode selector. Measured over 40 ticks with
+  // all 16 pads lit, `mode` 0 vs 1 produced bit-identical event logs in both
+  // topologies, while a one-step change to `octave` over the same render did
+  // not — so the probe could see a discrete param move and this one made none.
+  // Wiring it instead of deleting it was the other option and was rejected:
+  // `clockPatched && mode >= 0.5` would silently stop every saved rack that
+  // has a clock patched and the default `mode` of 0, which is an owner call,
+  // not a bug fix.
   params: [
-    { id: 'mode',       label: 'Mode', defaultValue: 0,   min: 0,   max: 1,    curve: 'discrete' },
     { id: 'octave',     label: 'Oct',  defaultValue: 0,   min: -2,  max: 2,    curve: 'discrete' },
     { id: 'gateLength', label: 'Gate', defaultValue: 0.5, min: 0.1, max: 0.95, curve: 'linear' },
     // LFO division: index 0..7 into LFO_DIVISIONS. Default = 1/1.
@@ -138,7 +148,7 @@ export const cartesianDef: AudioModuleDef = {
 
   docs: {
     explanation:
-      "A 4×4 grid sequencer (16 pads) that picks notes by their X/Y position rather than by a single playhead line. Each pad holds a note plus an on/off gate and an optional chord (mono / major / minor); whichever pad is currently selected is what plays. There are two ways to move across the grid: in FREEFORM mode the X and Y CV inputs steer the cursor continuously (a gate fires whenever the selected pad changes), and in CLOCKED mode an incoming clock advances the cursor one step (an axis with nothing patched auto-increments around its 0..3 lane). Built in is a clock-locked LFO with two outputs 90° apart — patch lfo_x → x_cv and lfo_y → y_cv and the cursor draws a circle/Lissajous around the grid. The pitch output is a poly chord cable, so a polyphonic voice can play a pad's whole chord while a mono pitch input still hears just the root.",
+      "A 4×4 grid sequencer (16 pads) that picks notes by their X/Y position rather than by a single playhead line. Each pad holds a note plus an on/off gate and an optional chord (mono / major / minor); whichever pad is currently selected is what plays. There are two ways to move across the grid, and THE CABLE CHOOSES BETWEEN THEM — there is no mode switch. Leave CLOCK IN unpatched and you are in FREEFORM: the X and Y CV inputs steer the cursor continuously, and a gate fires whenever the selected pad changes. Patch anything into CLOCK IN and you are CLOCKED: each rising edge advances the cursor one step, and an axis with no CV patched auto-increments around its 0..3 lane. Built in is a clock-locked LFO with two outputs 90° apart — patch lfo_x → x_cv and lfo_y → y_cv and the cursor draws a circle/Lissajous around the grid. The pitch output is a poly chord cable, so a polyphonic voice can play a pad's whole chord while a mono pitch input still hears just the root.",
     inputs: {
       clock:
         "Step clock for CLOCKED mode: each rising edge advances the cursor one pad (an axis with no X/Y CV patched auto-increments 0→1→2→3→0). Patching a clock here also acts as the play signal. Leave it unpatched to run in FREEFORM mode, where the X/Y CV inputs steer the cursor instead.",
@@ -162,8 +172,6 @@ export const cartesianDef: AudioModuleDef = {
         "The built-in LFO's second phase, a quarter-cycle (90°) behind lfo_x. Patch lfo_x → x_cv and lfo_y → y_cv to walk the cursor in a circle/Lissajous figure across the grid.",
     },
     controls: {
-      mode:
-        "Cursor-advance mode: FREEFORM (0) lets the X/Y CV inputs steer the cursor continuously and fires a gate on each change; CLOCKED (1) advances one pad per incoming clock edge, auto-incrementing whichever axis has no CV patched. The card's LIN/X-Y face button toggles this same setting.",
       octave:
         "Shifts every pad's pitch up or down by whole octaves at once (-2 to +2); chords transpose as a block so their internal intervals stay intact.",
       gateLength:
