@@ -1,22 +1,25 @@
 # FACE SPEC — `warrensspectrum` (batch 5)
 
-## 0. STATUS
+## 0. PROVENANCE
 
-**Authored 2026-08-10. Every claim below was measured or read against `main`**
-(`153e5c36`). Nothing here is implemented; no def, card or DSP file is touched.
+Measured against `main` at `153e5c36` (2026-08-10). **BANKED — not built.**
+
+⚠ **NOT the same module as `warrensvisions` (#1475).** That is the VIDEO
+analogue — a 2D spectral resynthesizer that shipped as its own module. This
+AUDIO module still has no `face:` block and every finding below still stands
+(the `resynthLevel` doc sentence in §4-C/§8-A was re-read on `main` 2026-08-12
+and is unchanged).
 
 **Verdict: PROMOTE — the largest and the most deserving in the batch. It has TWO
 engines behind one control set, and SEVEN of its sixteen controls belong to only
 one of them.**
 
 archetype: **the SPECTRAL RESYNTHESIZER** — SMS partial tracking + a noise
-residual, plus a second MASSPASS engine, plus an 8-band filterbank. Batch 4
-called it *"the strongest"* of its deferrals; it is.
+residual, plus a second MASSPASS engine, plus an 8-band filterbank.
 
 Not in `STRICT_FACES`; no `face:` block. In `STRICT_DOCS`; **in
-`PUSH_CARD_CONTROLS`** (the only module in this batch that is); **not** in
-`STRICT_VRT_MODULES`. 16 params, **1 control family** (`ws-filterbank`, 8 bands),
-9 in, 1 out. contract-lock = **27 lines**. `face.order` = **17 keys**.
+`PUSH_CARD_CONTROLS`**; **not** in `STRICT_VRT_MODULES`. 16 params, **1 control
+family** (`ws-filterbank`, 8 bands), 9 in, 1 out. `face.order` = **17 keys**.
 
 **Method.** The REAL factory driving the REAL worklet
 (`packages/dsp/src/warrensspectrum.ts` → `lib/warrensspectrum-dsp.ts`) under
@@ -184,10 +187,10 @@ unguarded at the top.
 ## 5. THE FACE
 
 ```ts
+// ⚠ NO `title`, NO `hint` — owner no-prose ruling, 2026-08-11. "Two engines
+// behind one panel" is the module's `docs.explanation`; what carries it on the
+// panel is the `ws-engine-name` readout and the band structure below.
 face: {
-  title: 'Spectral resynthesizer',
-  hint: 'Two engines behind one panel. Seven controls belong to only one of them.',
-
   order: [
     'engineMode',          // rank 1: it decides what seven others mean
     'spectralPartials',
@@ -339,13 +342,15 @@ making exactly the mistake the module's control set already makes.
 
 ---
 
-## 9. COST
+## 9. THE TWO COSTS THAT ARE NOT ARITHMETIC
 
-| | |
-|---|---|
-| **contract-lock** | **+1 line** for the `ws-response` panel family (or +0 via a sidebar `custom` block). |
-| **ART** | none from the face. §8-B/D are audio/UX changes and are separate PRs. |
-| **VRT** | +`face-warrensspectrum-{compact,dock}` × 2 = **4 informational baselines**. Silent unpatched? **No** — it is an insert, so with nothing patched the analyser reads zeros and the `meter` glyph pins deterministically. |
-| **e2e** | +1 `faces-parity` row, **25 cells** (16 params + an 8-cell family + 1 panel) — the largest new row in the batch. ≈ +28 s total, ≈ +3 s per shard. |
-| **Push 2** | ⚠ `warrensspectrum` is **already in `PUSH_CARD_CONTROLS`**. A face does not change a push card (the override REPLACES), but **check the 8 entries still match the face's top 8** so the two curations do not diverge silently. |
-| **the bottom line** | The batch's biggest face and its best argument. Sixteen knobs where seven are conditional is precisely the case a faceplate exists for. |
+- **⚠ `warrensspectrum` is already in `PUSH_CARD_CONTROLS`.** A face does not
+  change a push card (the override REPLACES), but **check the 8 entries still
+  match the face's top 8** so the two curations do not diverge silently.
+- **25 driven cells** (16 params + an 8-cell family + 1 panel) makes this the
+  largest `faces-parity` row on the roster. It is an insert, so with nothing
+  patched the analyser reads zeros and the `meter` glyph pins deterministically
+  — which matters more now that face baselines gate merges in `vrt-strict`
+  (#1483) rather than sitting in the informational lane.
+
+§8-B/D are audio/UX changes and are separate PRs; the face itself moves no ART.

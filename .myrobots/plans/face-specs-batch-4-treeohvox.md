@@ -1,17 +1,14 @@
 # FACE SPEC — `treeohvox` (batch 4)
 
-## 0. STATUS
+## 0. PROVENANCE
 
-**Authored 2026-08-09. Every claim below was measured or read against `main`**
-(`ecc48f2e`). Nothing here is implemented; no def, card or DSP file is touched.
+Measured against `main` at `ecc48f2e` (2026-08-09). **BANKED — not built.**
 
-**Verdict: PROMOTE — the highest-traffic voice in the batch.**
-archetype: **monophonic gated VOICE with a filter-envelope character**
-(the acid-bass family; nothing else in the rack is a 303).
+**Verdict: PROMOTE.** archetype: **monophonic gated VOICE with a filter-envelope
+character** (the acid-bass family; nothing else in the rack is a 303).
 
 Not in `STRICT_FACES`; no `face:` block. In `STRICT_DOCS`; **not** in
-`STRICT_VRT_MODULES`. 7 params, 10 in, 1 out. contract-lock = **19 lines**
-(1 meta + 10 in + 1 out + 7 param).
+`STRICT_VRT_MODULES`. 7 params, 10 in, 1 out.
 
 **Method.** `packages/dsp/src/treeohvox.ts` bundled with esbuild against stub
 worklet globals and run offline at 48 kHz in 128-sample blocks — the shipping
@@ -206,14 +203,10 @@ zero over ~13 ms. A checked non-defect.
 ## 5. THE FACE
 
 ```ts
+// ⚠ NO `title`, NO `hint` — owner no-prose ruling, 2026-08-11. The skew, the
+// cliff and the missing limiter belong in `docs`, which right-click → annotate
+// reads; the band LABELS below are what paints unconditionally.
 face: {
-  title: 'Voice',
-  hint:
-    'A polyBLEP saw-to-square through the diode-feedback 303 ladder, with a decay envelope on the ' +
-    'cutoff. RESONANCE is exponentially skewed: the bottom QUARTER of the dial is 55 percent of the ' +
-    'filter’s actual resonance range and the top half is 18 percent, and the first tenth is a 14 dB ' +
-    'level cliff. Gate length is note length. Nothing here limits the output.',
-
   order: [
     'cutoff', 'resonance', 'envelope', 'decay', 'accent', 'treeohvox-note-{n}',  // 1-6 = the lane budget
     'treeohvox-sweep-{n}',                                                        // panel: first legal rank is 7
@@ -253,15 +246,11 @@ face: {
     ],
   },
 
+  // ⚠ THE `signal-flow` BLOCK THIS DRAFT CARRIED IS GONE — the KIND was deleted
+  // (#1468, owner ruling): twelve modules declared hand-authored stage lists and
+  // nothing verified any of them against the DSP. A chain picture must be
+  // DERIVED from something the build can check, or it must not exist.
   sidebar: [
-    { kind: 'signal-flow', label: 'signal flow', stages: [
-      { label: 'polyBLEP OSC', role: 'generator', note: 'saw ↔ square' },
-      { label: 'TB-303 LADDER', role: 'bus', note: 'diode feedback, k·r' },
-      { label: 'FEEDBACK HP',   role: 'bus', parallel: true, note: '150 Hz, in the loop' },
-      { label: 'DECAY ENV → CUTOFF', role: 'bus', parallel: true, note: 'ENVELOPE × DECAY' },
-      { label: 'AMP AR',        role: 'bus', note: 'gate length = note length' },
-      { label: 'OUT',           role: 'bus', note: 'no limiter' },
-    ] },
     { kind: 'presets', label: 'presets', entries: [
       /* classic squelch · dub sub · devil-fish long sweep · square lead —
          each pinned to a measured centroid + peak, so a preset is a claim. */
@@ -281,9 +270,9 @@ and label clipping is invisible to `faces-parity` (`toHaveText` reads `textConte
 **Measure it in the dock before building.** Fallback that keeps the point:
 `2 · the sweep — no meter sees this`.
 
-⚠ `title` / `hint` / band `hint` are ANNOTATION and paint nothing at rest
-(`dock-faceplate-model.ts:90`). Every fact above that must survive is in a LABEL or a
-readout.
+⚠ Band **hints** are dock-only and a TABBED face renders none; four bands is under
+`DOCK_TAB_MIN_BANDS = 7`, so they render here. Every fact that must survive
+regardless is in a band LABEL or a readout.
 
 ⚠ `treeohvox-sweep-{n}` is rank 7 because `faceTierCap('full')` is 6 and a PANEL cell
 cannot be selected at a lane tier. Nine keys total, so rank 7 is inside the roster.
@@ -379,8 +368,8 @@ cannot see a dead audition — that is the sixstrum defect, verbatim.
   ⚠ **Especially bad here**, because `treeohvox-range-source.test.ts` exists *precisely*
   to keep the CUTOFF numbers in one place — and it joins the **def, the AudioParam
   descriptor and the DSP constant**, three of the four sides, while the **card** re-types
-  `40` and `6000` a fourth time, unguarded. `treeohvox` is not in `RANGE_BOUND_CARDS`
-  (8 entries). **Enroll it and convert to `paramSpec()`.**
+  `40` and `6000` a fourth time, unguarded. `treeohvox` is not in `RANGE_BOUND_CARDS`.
+  **Enroll it and convert to `paramSpec()`.**
 - **D · `docs.inputs.gate_in`'s "~1.2 s and the note fades out under you" is loose.**
   Measured: 7.8 dB down at 1.2 s, still audible at 2.9 s, no fixed fade point. §4-G.
   In `STRICT_DOCS`.
@@ -393,12 +382,13 @@ cannot see a dead audition — that is the sixstrum defect, verbatim.
 
 ---
 
-## 9. COST
+## 9. WHAT THE BUILD MUST KEEP SEPARATE
 
-| | |
-|---|---|
-| **contract-lock** | **+2 lines** (`treeohvox family treeohvox-sweep kind=cell …`, `… treeohvox-note kind=other …`). No param or port change; the audition is a family, not a press-param, because there is no gate PARAM. |
-| **ART** | none from the face. `art/scenarios/treeohvox/voice-character.test.ts` + `art/baselines/treeohvox/` exist — **§8-A/B are real audio changes and each needs `task art:update` plus an owner audition.** Keep them out of the face PR. |
-| **VRT** | not in `STRICT_VRT_MODULES`; the required lane does not move. +`face-treeohvox-{compact,dock}` × 2 = **4 informational baselines**. The compact `scope` glyph captures on a silent graph (§3), so #1420's freeze covers it. |
-| **e2e** | +1 `faces-parity` row, 9 cells + the audition probe ≈ +15 s on one shard. |
-| **the factory seam (§7-A)** | ~25 lines. Not a DSP change — no ART, no attest. **Same PR as the face.** |
+- **`art/scenarios/treeohvox/voice-character.test.ts` + `art/baselines/treeohvox/`
+  both exist.** §8-A/B are real audio changes and each needs `task art:update`
+  plus an owner audition — **keep them out of the face PR.**
+- **The audition factory seam (§7-A) is ~25 lines and is NOT a DSP change** — no
+  ART re-pin, no attest. It ships in the SAME PR as the face, because a face that
+  ranks an audition it cannot deliver is the sixstrum defect.
+- The compact `scope` glyph captures on a silent graph (§3), so #1420's
+  pre-frame `AudioContext` freeze covers it.

@@ -1,18 +1,26 @@
 # Fix E — video-off-main-thread, scoped to the SHOES1 underrun (2026-07-01)
 
-> **TRIAGE 2026-08-04 — STILL LIVE BACKLOG. §0 is accurate; §3's Phase A and
+> **RE-VERIFIED 2026-08-12 — STILL LIVE BACKLOG. §0 is accurate; §3's Phase A and
 > Phase B are both un-done.**
-> The shipped infra §0 describes is intact and still flag-gated: `acidwarp.ts:135`
-> is `renderLocus: 'worker'`; `toybox.ts:344` and `vfpga-runner.ts:143` are
-> `'worker-experimental'`.
-> **Phase B has not started** — `video/worker/protocol.ts` still carries no
-> per-frame input-`ImageBitmap` transfer, and **backdraft is NOT on the worker
-> path**, so §2's "the real obstacle" is unchanged. There is no record of Phase A
-> (the copy-back economics measurement) having been run, which is the gate on
-> Phase B by this plan's own sequencing — do that first.
+> The shipped infra §0 describes is intact and still flag-gated, at the same
+> lines: `acidwarp.ts:135` is `renderLocus: 'worker'`; `toybox.ts:344` and
+> `vfpga-runner.ts:143` are `'worker-experimental'`.
+> **Phase B has not started** — `video/worker/protocol.ts` carries only the
+> worker→main `frame{nodeId,bitmap}` direction with no per-frame *input*
+> `ImageBitmap`, `worker-engine.ts:217` still hard-returns `getInputTexture: () =>
+> null`, and **backdraft declares no `renderLocus` at all**, so §2's "the real
+> obstacle" is unchanged. There is no record of Phase A (the copy-back economics
+> measurement) having been run, which is the gate on Phase B by this plan's own
+> sequencing — do that first.
 > ⚠ Backdraft itself has moved a great deal since (PURE TV **#1214**, virtual
 > camera **#1223/#1231**, "lose the display" **#1260**), so re-measure rather than
 > reusing the "heaviest GL cost in the SHOES1 patch" claim as given.
+> ⚠ Also re-measure the §3 "parallel lever" (per-card present-path coalescing): the
+> present path was reworked by **#1479** (*"media outlives the CARD — playback died
+> because the `<video>` element did, not because rendering stopped"*), and
+> `engine.ts` now funnels every present through `blitOutputToDrawingBuffer`, whose
+> blit/read marks are also the liveness signal. Skipping an offscreen card's
+> present is therefore no longer a pure saving — it feeds that keep-alive.
 
 Reconstructed after the original `fixe-offscreen-canvas-plan-2026-06-09.md` was found
 MISSING from disk + git. Sources: three read-only scouts (video pipeline map, shipped
@@ -54,10 +62,11 @@ owner directive). Validate: worker-fed OUTPUT non-black under CI SwiftShader + f
 parity + 3× flake-check + a real-Safari check + owner preview on REAL frames.
 
 **Parallel, independent lever (not worker-related):** the per-card present path does one
-`drawImage`-from-WebGL GL-sync PER visible card per frame (engine.ts:1033-1055 blit +
-Card `ctx2d.drawImage(engine.canvas)`). On SHOES1 (several visible cards + recorderbox) that
-main-thread cost stays regardless of where render runs. Coalescing/■skipping offscreen card
-presents is a separate, cheaper win worth pricing.
+`drawImage`-from-WebGL GL-sync PER visible card per frame (`engine.ts` `blitOutputToDrawingBuffer`
++ Card `ctx2d.drawImage(engine.canvas)`). On SHOES1 (several visible cards + recorderbox) that
+main-thread cost stays regardless of where render runs. Coalescing/skipping offscreen card
+presents is a separate, cheaper win worth pricing — but see the header warning: that blit is
+now also the engine's liveness mark.
 
 ## 4. Decisions needed from the owner
 1. Confirm dropping **synesthesia** from the target set (it isn't GL).

@@ -239,17 +239,19 @@ A cable is a node **input**, so connectivity never reaches the reader. This is
 the bluebox wall verbatim (`strict-faces.ts`, bluebox entry), landing precisely
 on this module's most important fact.
 
-**D · A hero PICTURE is illegal here.** `module-face-lint.test.ts:629-663` fails
-a panel cell selected at any lane tier and the `full` cap is 6, so a panel's
-first legal rank is **7** — unreachable with one param. The transfer-function
-plot, which is the obvious and genuinely good picture for an affine mapper,
-cannot be a `hero.cell`. The meowbox escape (a sidebar `custom` block, which
-carries no `face.order` key and so no rank) works but is **dock-only** — the
-picture would never reach a lane tile.
+**D · A hero PICTURE is dock-only.** `module-face-lint`'s `panelTierProblems`
+fails a panel cell selected at any lane tier. The transfer-function plot — the
+obvious and genuinely good picture for an affine mapper — therefore never
+reaches a lane tile whichever route it takes (`hero.cell` or the meowbox
+sidebar `custom` block). ⚠ **The old "a panel's first legal rank is 7, so a
+1-param module can never have one" arithmetic in this section was true when
+written and is now FALSE**: PF-22 (#1480) makes a hero picture dock-only *and
+therefore rank-free* — it may rank FIRST. A `hero.cell` is reachable here.
 
-**E · It is in the REQUIRED pixel lane** (`vrt-exemptions.ts:1079`). New face
-baselines are informational, but any card edit re-captures a required one plus
-the `depolarizer-cv-unipolar` composite.
+**E · It is in the REQUIRED pixel lane** (`vrt-exemptions.ts:1079`), and so are
+face baselines now (`workflow-shell-faces.spec.ts` joined `STRICT_MATCH`
+2026-08-12). Any card edit re-captures a required baseline plus the
+`depolarizer-cv-unipolar` composite.
 
 ---
 
@@ -317,12 +319,11 @@ intercept 0. **True of the defaults, false of the control.**
 ### D · The def calls DEPTH a "fader"; the card renders a knob
 
 `depolarizer.ts:80` — *"on a linear 0..1 **fader**"*. `DepolarizerCard.svelte:52`
-renders `<Knob>`. Harmless today. It matters for a face only because
-**`ParamCellKind` has no `'fader'` member**: `shell-control-kind.ts:33-40` is
-exactly `'knob' | 'momentary' | 'toggle' | 'segmented' | 'selector' | 'grid' |
-'color'`. A face could not honour the doc, so the **doc** should change, not the
-shell. (Stated because the batch brief asked for a `fader` cell where the card
-uses one — this card does not use one, and the primitive does not exist.)
+renders `<Knob>`. A one-word doc/card divergence; fix the **doc**, since the
+card's knob is what ships. (⚠ The original argument here — *"`ParamCellKind` has
+no `'fader'` member, so a face could not honour the doc"* — is stale: `'fader'`
+is a declared `ParamCellKind` since #1480. The divergence is still real; the
+reason given for which side to change is not.)
 
 ### E · DEPTH has no CV input, and the sibling utilities all do
 
@@ -356,7 +357,8 @@ face: {
 
   hero: {
     control: 'depth',
-    // NO `cell:` — a panel cannot be ranked on a 1-param module (SS4-D).
+    // No `cell:` here — the transfer-function plot would be dock-only (§4-D).
+    // Since PF-22 it COULD be a hero.cell; whether it earns one is unresolved.
     readouts: [
       { label: 'in -1',   valueId: 'depolarizer-at-min' },   // "0.00"
       { label: 'in +1',   valueId: 'depolarizer-at-max' },   // "1.00"
@@ -442,6 +444,6 @@ for, and I am not going to present it as equivalent.**
 | **contract-lock** | **+0 lines.** `face` is UI metadata, out of `contract-signature.ts` (`types.ts:522-527`). §5-E, if taken, is +1 line and a real contract change. |
 | **attest** | **zero.** `scripts/attest-code-basis.ts` strips `face` from every attest hash. |
 | **ART** | none from the face. `art/scenarios/depolarizer/profile.test.ts` is untouched; a §3 merge WOULD re-pin it. |
-| **VRT — ⚠ REQUIRED LANE** | in `STRICT_VRT_MODULES`. +`face-depolarizer-{compact,dock}` = 2 informational baselines; any card edit re-captures the required one plus `depolarizer-cv-unipolar`. |
+| **VRT — ⚠ REQUIRED LANE** | in `STRICT_VRT_MODULES`. +`face-depolarizer-{compact,dock}` = 2 baselines, **also required** since `workflow-shell-faces.spec.ts` joined `STRICT_MATCH` (2026-08-12); any card edit re-captures the required card baseline plus `depolarizer-cv-unipolar`. |
 | **e2e** | +1 `faces-parity` row, **1 cell**. |
 | **the honest bottom line** | One knob, four identical tiers. The face's whole case rests on `depolarizer-knob-push`, and **that readout is really a bug report about §5-A**. Fix the doc and the convention mismatch; do §3; do not ship a faceplate to carry a correction. |

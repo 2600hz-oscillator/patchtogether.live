@@ -340,6 +340,17 @@ Three candidate fixes, in increasing order of confidence:
 
 Measured, not estimated. Totals reconcile exactly to `wc -l` = **8500**.
 
+> ⚠ **Re-measured 2026-08-12: the line counts below are a snapshot the in-flight
+> legend work (§7.2) had already moved by the time this was committed, and four
+> more Push PRs landed after.** `packages/web/src/lib/control/push2/` is now
+> **34 `.ts` files / 12,858 lines** — `push2-map.ts` 349→456,
+> `push-screen-layout.ts` 346→652, `push-card-config.ts` 117→148, plus
+> `push-electra-model`, `push-legend-model`, `push-midi-conflict` and
+> `push2-led-zones` (all outside the 28 counted here). **Re-derive the bucket
+> arithmetic before quoting a share.** What has NOT moved is the finding: the
+> SEMANTIC↔DEVICE seam is real (still zero device imports), and the measured
+> Push 3 delta inside the DEVICE bucket is still one constant and one regex.
+
 | Bucket | Files | Lines | Share | Source lines | Test lines |
 |---|---:|---:|---:|---:|---:|
 | **SEMANTIC** — zero device facts; ports unchanged | 12 | **2409** | **28.3 %** | 1018 | 1391 |
@@ -403,7 +414,7 @@ bucket (1031 source lines across two files) is very close to a no-op.
 ### One latent defect the port would expose
 
 The panel resolution is declared **twice, independently**: `PUSH_DISPLAY_W/H`
-(`push2-display-frame.ts:64-66`, the codec) and `PUSH_SCREEN_W/H` (`push-screen-layout.ts:37-38`, the
+(`push2-display-frame.ts:64-66`, the codec) and `PUSH_SCREEN_W/H` (`push-screen-layout.ts:39-40`, the
 layout). They agree today by coincidence of authorship. The only thing tying them together is the
 `RangeError` in `packPushFrameInto` — a loud runtime guard, but a guard on a fact that should have one
 declaration. **Collapse these before any port**, or the first device with a different panel size
@@ -419,8 +430,8 @@ Six device facts, and where each is declared today:
 
 | # | Fact | Declared at |
 |---|---|---|
-| 1 | Transport identity — VID/PID/interface/endpoint/config | `push2-display-frame.ts:49-57`; port matcher `push2-device.svelte.ts:173-250` |
-| 2 | Panel geometry — W/H/bpp/stride/filler/header/XOR/chunk | `push2-display-frame.ts:64-99` **and again** `push-screen-layout.ts:37-38` |
+| 1 | Transport identity — VID/PID/interface/endpoint/config | `push2-display-frame.ts:49-57`; port matcher `push2-device.svelte.ts:181-197` |
+| 2 | Panel geometry — W/H/bpp/stride/filler/header/XOR/chunk | `push2-display-frame.ts:64-99` **and again** `push-screen-layout.ts:39-40` |
 | 3 | Control map — CC numbers, pad note base, grid origin | `push2-map.ts:58-100`, `push2-sysex.ts:44-56` |
 | 4 | LED colour model — palette anchors, which buttons are RGB vs mono | `push2-sysex.ts:121-150`, `push2-map.ts:276-294` |
 | 5 | Mode handshake — the Live/User SysEx | `push2-sysex.ts:34-41,175-189` |

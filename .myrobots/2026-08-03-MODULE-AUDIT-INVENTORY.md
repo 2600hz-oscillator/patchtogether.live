@@ -6,7 +6,8 @@ That last number is the headline, not a failure: the faceplate programme kept fi
 that modules **do not work**, not that they look wrong. Putting a face on rings while
 its primary output is silent would be decoration over a broken module.
 
-- **120 audio modules total; 21 have faces; 99 remain.** 18 of those 99 are audited.
+- **21 modules had faces when this was written; 32 do as of 2026-08-12**, and the
+  faceplate pipeline is PAUSED by owner directive. 18 audio modules are audited.
 - Method + probe cookbook: `.claude/skills/module-adversarial-audit.md`
 - Face rules + the two STOP gates: `.claude/skills/module-faceplates.md`
 
@@ -33,12 +34,37 @@ read-from-source only is marked READ. Do not blur the two.
 > | wavesculpt MASTER GAIN dead knob | **#1368** |
 > | the mono-normal gate's own blindness (the ⚠ under the stereo-silence class) | **#1351** (46 %, not 30 % — SESSION-STATE §6b) |
 >
-> **Everything else in this file has NO fix PR in the merge log through #1433 —
-> treat it as open backlog and the measured numbers as current.** That includes
-> all of marbles, clouds, foxy, synesthesia DPT, swolevco's dead CV inputs,
-> destroy, featurecv, wavetable-vco's wavePos, spectrograph, and wavesculpt's
-> BLUE/rotation rows (plus both tests §"docs" flags as built around defects).
-> Not re-verified row-by-row — verify before building on any single row.
+> **UPDATE 2026-08-12 — the #1434–#1486 wave closed more rows:**
+>
+> | ledger rows | closed by |
+> |---|---|
+> | timelorde STOP-vs-MUTE naming + the multiplier deficit (the instrument, not the module) | **#1447** |
+> | clouds SIZE's dead top 19.5 % — the ceiling and the law were two literals that disagreed | **#1456** |
+> | rings sample-rate dependence (+ macseq, cartesian ×2, fourplexer) | **#1484** |
+> | score's 8 silent triplets, and five gates that could not see what they check | **#1483** |
+> | marbles `pw_mean` and `x_deja_vu` orphan params — both now have a fader/CV and authored docs | the marbles face, **#1467** |
+> | samsloop's O(n²) capture (card path + the live-peak fold) | **#1422** |
+> | wavesculpt's 11-param CRT block (dropped rather than fixed) | **#1449** |
+> | hypercube | **#1448** — module deleted outright, not repaired |
+>
+> ⚠ **Two rows now CONTRADICT a later re-measurement and must be reconciled
+> before anyone acts on them.** #1451 shipped the clouds face titled *"nothing
+> broken and three things invisible"*, and #1470 shipped resofilter's noting
+> *"four spec figures that did not survive re-measurement"*. This file's clouds
+> rows (TEXTURE inaudible / DENSITY reverses / POSITION at 1.0 / degenerate
+> stereo) predate that. **Re-measure before treating any clouds row as live.**
+>
+> **Everything else in this file still has NO fix PR — treat it as open backlog
+> and the measured numbers as current.** Spot-verified 2026-08-12 as still
+> present in the tree: **marbles CLUSTERS is still a stub**
+> (`marbles-engine.ts:800-804`, still falls through to
+> `generateComplementaryBernoulli`), **swolevco's four CV inputs still land on
+> shadow GainNodes that drive nothing** (`modules/swolevco.ts:415-424`, `:469-475`
+> — `setParam` still owns application), and **destroy's DECIMATE still truncates
+> a `si.smoo` with `int()`** (`packages/dsp/src/destroy.dsp:6,21`). Also still
+> open, not re-checked this pass: foxy, synesthesia DPT, featurecv,
+> wavetable-vco's `wavePos`, spectrograph, and wavesculpt's BLUE/rotation rows
+> (plus both tests §"docs" flags as built around defects).
 
 ---
 
@@ -220,7 +246,9 @@ padding a count. stereovca and spectrograph do not warrant faces.)*
   reach a pixel.** A full-scale sine paints at −13.56 dBFS @6 kHz vs −116.30 dBFS
   @19 kHz. 10.3 % of swept tones paint at or below the floor (invisible).
 - ⚠ **spectrograph's own deterministic VRT fixture loses one of its three planted
-  traces, and the committed darwin PNG pins the two-trace image as correct.** Three
+  traces, and the committed baseline pins the two-trace image as correct.** (Said
+  "the darwin PNG" when written; #1458 collapsed that to one baseline set — the
+  defect is unchanged, the path is not.) Three
   −12 dB peaks paint at −12.0 / −24.0 / **−100.0** dBFS. The code comment claims
   "visible traces in BOTH colormaps". **Another test built around the defect.**
 

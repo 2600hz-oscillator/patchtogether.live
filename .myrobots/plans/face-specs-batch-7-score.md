@@ -14,9 +14,10 @@ both are reachable** — this is a "not yet", not a "never".
 
 **What SHOULD ship instead, now, at zero risk:** the four measured facts in
 §2–§3 as `docs` corrections on the def plus two wrong prose lines in shared
-files (§6), and the two scheduler defects (§3-A, §3-D) as their own
-owner-audition PRs. That is a small, uncontroversial PR that pays most of what a
-face would have paid.
+files (§6), and the remaining scheduler defect (§3-D, the #229 clock ring) as
+its own owner-audition PR. That is a small, uncontroversial PR that pays most of
+what a face would have paid. (§3-A, the triplet dead slots, **shipped in
+#1483**.)
 
 archetype: **the notation sequencer.** A treble staff of up to 4 pages × 16 bars
 in 4/4, played back at a 16th-note resolution into pitch / gate / env / clock CV,
@@ -131,13 +132,12 @@ score's card cannot be reproduced by any arrangement of shell cells, and its
 
 ## 0d. WHAT WOULD FLIP IT
 
-Both are reachable, and the first is worth doing regardless:
-
-1. **The triplet dead-slot fix lands** (§3-A). A faceplate that documented
-   "8 of 12 triplet positions never sound" would be painting a REPAIRABLE defect
-   as permanent — the mistake `clouds` made with its SIZE `CLAMPED` badge before
-   #1456 raised the ceiling and the badge had to be deleted. Fix the scheduler
-   first; then the fact is gone and the face has one less thing to lie about.
+1. ✅ **The triplet dead-slot fix lands** (§3-A). **DONE — #1483.** This
+   condition is MET. (The reasoning stands as a rule: a faceplate that
+   documented "8 of 12 triplet positions never sound" would have painted a
+   REPAIRABLE defect as permanent — the mistake `clouds` made with its SIZE
+   `CLAMPED` badge before #1456 raised the ceiling and the badge had to be
+   deleted.)
 2. **The staff renderer gets extracted for some other reason** — a doc-page
    renderer, a print/export view, a second mount of any kind. The moment
    `ScoreStaffSurface.svelte` exists and both mounts use it, reason 1 above
@@ -282,43 +282,22 @@ and score does not have it.
 
 ## 3. FOUR DEFECTS
 
-### A · EIGHT OF TWELVE TRIPLET POSITIONS NEVER SOUND
+### A · ~~EIGHT OF TWELVE TRIPLET POSITIONS NEVER SOUND~~ — **FIXED in #1483**
 
-The playhead advances in SIXTEENTHS and looks a note up at the absolute grid
-tick `tickIndex * 3` (`score.ts:587`, `:621`), and `noteStartingAt` matches
-`n.tick` **exactly** (`:309-316`). The card snaps a placement with
-`quantizeTick(raw, duration)`, which for `triplet8th` snaps to its 4-tick width.
-3 and 4 are coprime.
+The scheduler emitted only at `tickIndex * 3` while `quantizeTick` snapped
+`triplet8th` to its 4-tick width; 3 and 4 are coprime, so 8 of the 12 triplet
+positions in a bar were drawn, coloured, tie-able, selectable — and silent.
+Fixed by `slotEmitPlan` (`score-data.ts`, `score.ts`), which keeps the SLOT as
+the transport unit but emits at sub-slot grid ticks. A source-join gate now
+asserts `score.ts` calls `slotEmitPlan` and contains no bare `tickIndex * 3`,
+plus an e2e through the real seed → Y.Doc → engine chain.
 
-Measured, driving the REAL `quantizeTick` + `canPlace` + `tickWidth`:
-
-| tool | width | placeable ticks in a bar | REACHABLE | **DEAD** |
-|---|---|---|---|---|
-| whole | 48 | 1 | 1 | 0 |
-| half | 24 | 2 | 2 | 0 |
-| quarter | 12 | 4 | 4 | 0 |
-| eighth | 6 | 8 | 8 | 0 |
-| 16th | 3 | 16 | 16 | 0 |
-| **triplet8th** | **4** | **12** | **4** | **8** — ticks 4, 8, 16, 20, 28, 32, 40, 44 |
-
-Only the four positions at multiples of 12 (the beat boundaries) survive. **The
-2nd and 3rd note of every triplet are drawn on the staff, coloured, tie-able,
-selectable — and silent.**
-
-**NEGATIVE CONTROL on the probe** — perturb the playhead stride and confirm the
-count moves: stride 1 → **0** dead, stride 2 → **0**, stride 3 → **8**,
-stride 4 → **0**, stride 6 → **8**. It tracks the stride, which is what it
-claims to measure.
-
-⚠ **AND A GREEN UNIT TEST CERTIFIES THE PLACEMENT.**
-`score-data.test.ts:270` is *"three triplet-8th notes at 0, 4, 8 fit inside one
-beat (12 ticks)"* and it passes — because `canPlace` is a PACKING predicate and
-knows nothing about the scheduler's stride. A gate reading one side of a
-two-sided contract, proving nothing about the other. This is the module's
-headline defect and it is why the face is deferred: it is a **scheduler** fix
-(advance in twelfths, or match a note against the tick WINDOW rather than the
-exact tick), it changes the timing of every score with a triplet in it, and it
-needs an owner audition.
+⚠ **Keep the WHY, because it is the transferable half.**
+`score-data.test.ts`'s *"three triplet-8th notes at 0, 4, 8 fit inside one beat"*
+was **green throughout** — `canPlace` is a PACKING predicate and knows nothing
+about the scheduler's stride, so it "would read identically green with score.ts
+deleted" (#1483's own words). A gate reading one side of a two-sided contract
+proves nothing about the other.
 
 ### B · THE ENV OUTPUT NEVER REACHES UNITY, AND ff EXCEEDS IT
 
@@ -384,9 +363,8 @@ Recorded so §0d does not have to be re-derived. **Do not build this now.**
   (the one thing that changes what the page SOUNDS like without editing it);
   then the ADSR in its own order, which is the only order it has.
 - **`paramCells`:** all five continuous params `'fader'` — the card draws
-  throws and all five pass the continuous-only clause. score is the module
-  where the `fader` kind reproduces the card exactly, and it is the reason to
-  keep it on the list.
+  throws and all five pass the continuous-only clause. The `fader` kind exists
+  (#1480), so this reproduces the card's affordance exactly.
 - **`glyph: 'envelope'`** — a param-reactive ADSR curve, live from the four
   knobs and deterministic on a frozen graph. `'scope'`/`'meter'` cannot bind:
   score declares no `audio`-typed output.
@@ -437,8 +415,7 @@ rear: { groups: [{ id: 'clock', label: 'clock in', ports: ['clock'] }] }
 
 ## 6. ALREADY-WRONG — the list, ordered by cost to a user
 
-- **A · 8 of 12 triplet positions never sound** (§3-A), with a green unit test
-  certifying the placement. Its own PR, owner audition — a timing change.
+- ~~**A · 8 of 12 triplet positions never sound**~~ — **FIXED, #1483** (§3-A).
 - **B · the external clock still has #229**: a 42.7 ms ring against
   main-thread stalls measured at 80–150 ms (§3-D). Shared with `macseq` and
   `cartesian`; one PR for the three.
@@ -480,4 +457,6 @@ tile, and what it would cost is the staff: a 1257-line extraction, a 374 px
 surface cut to 80, three shell cells for one idea, and a REQUIRED `vrt-strict`
 baseline in motion.
 
-Fix the triplets. Then ask again.
+⚠ **The triplets are fixed (#1483), so §0d's first condition is MET.** The
+verdict now rests entirely on §0d-2 — the staff extraction. Ask again the moment
+`ScoreStaffSurface.svelte` exists for any reason.

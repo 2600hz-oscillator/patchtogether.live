@@ -1,175 +1,91 @@
-# Standards-refactor program — phased roadmap
+# Standards-refactor program — what is LEFT
 
-A phased program to act on the [repo retrospective](./repo-retrospective-2026-06-08.md)
-and the [adversarial-review adoption plan](./adversarial-review-adoption.md). **One
-PR at a time** — small, independently green, conflict-sweep-friendly. Each phase
-lands before the next starts.
+A phased program acting on the June 2026 repo retrospective + adversarial-review
+adoption plan. **One PR at a time** — small, independently green,
+conflict-sweep-friendly.
 
-> **TRIAGE 2026-08-04 — PHASES 1–5 ARE DONE; 6 IS UN-STARTED; 7 stands as
-> decided-not-to-build. Live backlog from Phase 6 onward.**
-> Phase 1 shipped as **#703**; Phases 2–5 are all on main (the `graph/mutate.ts`
-> seam, `validate-edge.ts`, `cap.ts`, the 158-file param-write migration **#721**
-> and its source-scan guard **#723**). Re-verified today: **Phase 6 has not
-> started** — `@collab` is still informational in `ci.yml`, there is no
-> `task db:migrate` and no `schema_migrations` ledger, and
-> `e2e/playwright.config.ts:97` is still `retries: CI ? 1 : 0`.
-> ⚠ Both link targets above (`repo-retrospective-2026-06-08.md`,
-> `adversarial-review-adoption.md`) **no longer exist** — they were removed in the
-> 117→40 corpus triage (**#1175**). The surviving one-page pickup is
-> `adversarial-review-REMAINING-2026-06-09.md`, which duplicates Phases 6–7; this
-> file is the canonical roadmap of the two.
-
-The phases combine the two analyses: foundational workstreams **FW1-FW3** and waves
-0-4 come from the adversarial-review adoption plan; the docs-truth + codified-rules
-work comes from the retrospective.
+> **TRIAGE 2026-08-12 — Phases 1–5 are DONE and their sections are deleted.**
+> Phase 1 shipped as **#703**; Phases 2–5 are all on main (`graph/mutate.ts`,
+> `graph/validate-edge.ts`, `graph/cap.ts`, the 158-file param-write migration
+> **#721**, and its source-scan guard `mutate.guard.test.ts` **#723**).
+> ⚠ Both source analyses (`repo-retrospective-2026-06-08.md`,
+> `adversarial-review-adoption.md`) were removed in the 117→40 corpus triage
+> (**#1175**). The surviving one-page pickup is
+> `adversarial-review-REMAINING-2026-06-09.md`, which duplicates Phases 6–7;
+> **this file is the canonical roadmap of the two.**
 
 ---
 
-## Phase 1 — Docs-truth PR (THIS PR)
+## Phase 6 — CI / test hardening (the real remaining build)
 
-Docs + CLAUDE.md + skills + plan files only. **No product-code/behavior change.**
+- **6b — `@collab` stabilize → required-or-document (#42)** *(the priority one;
+  hardest)*. Root-cause the relay-contention / in-card-title timeout, verify it
+  ran with `DATABASE_URL` (not vacuous), then add `collab` to the `ci` umbrella's
+  `needs:` + failing `if` — or record in CLAUDE.md why it can't be. Re-verified
+  2026-08-12: the dedicated `collab` job exists but is **not** in
+  `ci.yml:2268`'s `needs:` list.
+- **6d — migration ledger + `task db:migrate` + CI applies ALL sql.**
+  `schema_migrations` ledger + `scripts/db-migrate.sh` + `task db:migrate` (Node,
+  not Workers; idempotent + ordered in a txn); fix CI workflows to apply ALL
+  schema files (prevents prod/autotest drift); runbook in `db/README.md`; delete
+  the 002 DROP line once tiers converged. **Do NOT wire into the deploy.yml hot
+  path.** Re-verified 2026-08-12: no `schema_migrations`, no `db:migrate`, no
+  `db-migrate.sh` anywhere.
 
-- Fix the stale/dangerous skills: module-development / coding-conventions /
-  architecture (kill the dead 6-file registry model → glob+palette, PR #551),
-  debugging (remove shell-wedging `gh run view --log-failed`/`--log`),
-  pr-workflow (required check = `vrt-strict (visual regression — strict subset)`;
-  strict-up-to-date is OFF; never `gh pr update-branch`), deploy-pipeline (prod also
-  auto-deploys on push+version-bump).
-- Fix CLAUDE.md's Post-merge conflict-sweep file list to the post-#551
-  hand-maintained surface.
-- Codify the memory-only rules into CLAUDE.md: R1 final-commit green / red-main-push
-  = P0; R2 poly/MIDI real source→module→audible-RMS e2e; R3 capability-probe +
-  CI-green + >2 min wall-time flag (folded into the local-testing standard).
-- Save the two analyses + this roadmap to `.myrobots/plans/`.
-
----
-
-## Phase 2 — Wave-0 quick wins (independent S, low risk)
-
-- **2a — FW1 relay persistence guard + /health + /metrics persist_mode.**
-  `server/db.ts` `persistenceMode()` getter; `index.ts` `NODE_ENV==='production' &&
-  USE_MEMORY → error + process.exit(1)` (with `ALLOW_MEMORY_STORE=1` escape hatch);
-  `persist:'postgres'|'memory'` on `/health`; `persist_mode` on `MetricsSnapshot` +
-  `snapshot()`.
-- **2b — web db.ts throw-on-missing-DATABASE_URL.** `connectionString()`: return
-  DATABASE_URL if set; else if a non-production marker return localhost; else throw a
-  NAMED error (at call time, never module top-level). Stay `neon()` HTTP. Add
-  `db:'configured'|'missing'` to `/api/health`. First resolve `import.meta.env.DEV`
-  vs NODE_ENV reliability on the Workers runtime.
-- **2c — ops hygiene.** `utf8ByteLength` (TextEncoder) byte caps at both sites +
-  fix the actualKB message; `crypto.randomUUID()` saved-group IDs (keep sg_ prefix,
-  no retry loop); relay tagged uncaught-exception structured-log + counters (do NOT
-  crash); fix stale comments (r/[id]:101 auth-is-verified; wrangler.toml Neon-HTTP
-  not pg-over-TCP).
-- **2d — engine singleton exact-lookup.** Replace the node-ID-prefix `startsWith`
-  heuristic with an exact count over `this.nodeTypes`; keep the lex tie-break
-  eviction; add the missing engine.test.ts coverage.
-- **2e — clearPatch one-line LOCAL_ORIGIN.** Add `, LOCAL_ORIGIN` to the clearPatch
-  transact so one Cmd-Z restores everything; e2e: spawn 2 nodes + edge, Clear,
-  Cmd-Z, assert all back.
-
-(Also from Wave 0: the `LOAD_ORIGIN` deliberate-non-tracked tag at persistence.ts:493
-+ test — ship alongside 2e or 2c.)
+### Phase-6 items that are now DONE or whose premise MOVED
+- **6a — video/toybox shard isolation.** ⚠ **The premise is FALSE.** It says
+  "pull heavy WebGL specs into the serialized `e2e-video` lane" — **that lane was
+  DELETED 2026-06-20 (#839)**, so `WEBGL_HEAVY_GLOBS` no longer *relocates* a
+  spec, it **deletes its PR coverage outright** (banner in
+  `e2e/webgl-heavy-globs.ts`). Executing 6a as written would silently remove
+  coverage. What is actually left of it: capture-count-scaled per-spec timeouts
+  (done for the per-port sweep in **#1327**, which found "a flat constant wearing
+  a scaled costume"), and a decision on whether a serialized heavy lane should be
+  *resurrected* rather than assumed to exist.
+- **6c — VRT settle loop + auto-classify.** The height-stability settle loop is
+  built (`e2e/vrt/vrt.spec.ts:153` — requires the rounded height stable for 3
+  consecutive frames, replacing the single-rAF settle that could snap inside the
+  unsettled post-mount frame). Auto-classification was superseded: the
+  `{platform}` collapse (#1458) removed the "N≈all cards failed" flake shape, and
+  intentional render changes are now reviewed as a PR diff through the
+  `vrt-changeset-gallery` (OLD / NEW / DIFF with a slider).
 
 ---
 
-## Phase 3 — Foundational seams (the shared primitives)
+## Phase 7 — Deferred / gated (do NOT build speculatively)
 
-- **3a — FW2 `mutate.ts`.** `mutateNode(nodeId, fn, {origin=LOCAL_ORIGIN})` +
-  `setNodeParam(nodeId, paramId, value, {origin=LOCAL_ORIGIN})`. Re-read
-  `patch.nodes[nodeId]` INSIDE the transaction and mutate IN PLACE (never reassign an
-  integrated Y type). store.test.ts coverage with a real syncedStore.
-- **3b — FW3 `validate-edge.ts` / `validateGraphFragment`.** Pure, framework-free, at
-  the model layer. `validateEdge` checks endpoints exist, direction (out→in), ports
-  resolve, `canConnect`, group exposed-ports via `resolveExposedPort`.
-  `validateGraphFragment` → `{validEdges, droppedEdges, droppedNodes}`. Unit-test all
-  branches.
-- **3c — `graph/cap.ts`.** Extract the 4 duplicated count loops into
-  `instanceCount(nodes,type)` + `wouldExceedCap(nodes,def)`, called by all spawn paths
-  AND the cleanup pass so all layers compute identically.
+- **Canvas.svelte staged extraction** (DEPRIORITIZED). If ever done: incremental,
+  test-anchored, lowest-risk-first, each its own green PR — pure-helpers →
+  persistence → examples → grouping → engine/connection. A native port
+  re-implements the UI ground-up, so this is hygiene, not strategy; schedule it
+  behind the stability/observability waves.
+- **Identity-keyed capacity refcount** — GATE on a real multi-tab-lockout
+  *report*. Decide the canonical participant key shared with DOOM host-election /
+  Carl-Mike leader-election first. The anon token is `anon:<HMAC(rackId)>`
+  (byte-identical per rack), so identity-keying would collapse all anon guests:
+  **if built, anon MUST stay socket-keyed.**
 
 ---
 
-## Phase 4 — Dependents (built on the seams)
+## Loose ends (small)
 
-- **4a — canConnect-at-commit + isValidConnection.** Wire `validateEdge` into
-  `handleConnect` after computing types (silent trace+return, do NOT throw); add
-  `isValidConnection` to the SvelteFlow element reusing `canConnect` to reject the
-  drag visually pre-commit.
-- **4b — sequencer LOCAL_ORIGIN undo.** Thread LOCAL_ORIGIN through the existing
-  sequencer transact (or route via mutateNode); real-Y.Doc unit test: toggleGate then
-  undo restores prior steps.
-- **4c — singleton deterministic post-merge cleanup pass** (type-level `maxInstances`
-  ONLY). In a Canvas snapshot $effect (NOT the reconciler); elected peer (lowest
-  awareness clientID, owner-preferred) issues the delete; re-check inside transact;
-  winners = lex-smallest `cap` ids; cascade-delete edges touching the loser. EXCLUDE
-  picturebox/samsloop/camera per-user logic. real-Y.Doc two-doc tests +
-  DATABASE_URL-gated @collab e2e. Registry-driven test: any module with
-  `maxInstances:1 && undeletable:true` is covered.
-- **4d — import/saved-group drop-invalid-edges + reconciler try/catch-per-addEdge.**
-  Run `validateEdge` on each migrated edge in `loadEnvelopeIntoStore` (push a
-  LoadDiagnostic + continue); same filter in `resurrectSavedGroup` (+ drop
-  unregistered-type children); tighten saved-groups POST `validatePayload` to
-  STRUCTURAL only. Wrap each `engine.addEdge` in reconciler in try/catch that
-  logs+continues; reconciler unit test (one broken edge → all valid items still
-  apply).
-
----
-
-## Phase 5 — Migrations
-
-- **5a — 141-file param→setNodeParam** (batched in module groups; rebase promptly —
-  touches 141 files). Cards writing `node.data` go through `mutateNode`. Per-module-
-  per-port + behavioral sweeps catch regressions; add a param-undo e2e on a
-  representative card.
-- **5b — source-scan guard test (AFTER 5a).** `mutate.guard.test.ts` source-globs
-  module files, failing on raw `.params[..]=` or bare `ydoc.transact(` without
-  LOCAL_ORIGIN outside sanctioned helpers (file:line message; optional
-  `// guard:allow-raw-write` opt-out). MUST land AFTER 5a or it red-walls CI.
-
----
-
-## Phase 6 — CI / test hardening
-
-- **6a — toybox/video shard isolation + capture-count timeouts.** Pull
-  WebGL/toybox-graph-interaction specs into the serialized e2e-video lane; scale
-  per-spec timeout by input/capture count not a flat value; cap e2e-video wall-time so
-  a hang fails fast; keep informational until 3× green on CI.
-- **6b — @collab stabilize → required-or-document (#42).** Root-cause the
-  relay-contention/in-card-title timeout; verify it ran with DATABASE_URL; then add it
-  as a 3rd required context OR record in CLAUDE.md why it can't be.
-- **6c — VRT glyph-flake settle loop + auto-classify.** Finish the height-stability/
-  font settle loop (#598 was incomplete); auto-classify "N≈all cards failed = flake →
-  re-run/regen via vrt-update" vs "1-2 own cards = expected, regen in-PR".
-- **6d — migration ledger + task db:migrate + fix CI to apply all SQL + 002 DROP
-  cleanup.** schema_migrations ledger + scripts/db-migrate.sh + `task db:migrate`
-  (Node, not Workers; idempotent + ordered in a txn); fix CI workflows to apply ALL
-  schema files; runbook in db/README.md; delete the 002 DROP line once tiers
-  converged. Do NOT wire into deploy.yml hot path.
-
----
-
-## Phase 7 — Deferred / gated
-
-- **Canvas.svelte staged extraction** (DEPRIORITIZED). Incremental, test-anchored,
-  lowest-risk-first, each its own green PR: pure-helpers → persistence → examples →
-  grouping → engine/connection. Native port re-implements the UI ground-up, so this
-  is hygiene not strategy — schedule behind the stability/observability waves.
-- **Identity-keyed capacity refcount** — GATE on a real multi-tab-lockout report;
-  decide the canonical participant key shared with DOOM host-election / Carl-Mike
-  leader-election first. If built, anon MUST stay socket-keyed.
+- **reconciler `addEdge` try/catch** — wrap each `engine.addEdge` in
+  `reconciler.ts` in a try/catch that logs+continues so one bad edge can't abort
+  the whole pass. **Verify whether already wrapped before building.**
+- **Capacity UI honesty** — show distinct-user dots AND "X/4 connections" when
+  they differ (the server slot count). Not yet built.
 
 ---
 
 ## PUSH-BACKS — already decided, do NOT build
 
-- Do **NOT** make import/load undoable (use a deliberate `LOAD_ORIGIN` tag instead).
-- Do **NOT** crash the relay on `uncaughtException` (alarm on a tagged log + counters
-  instead; one process serves every rack).
+- Do **NOT** make import/load undoable (use a deliberate `LOAD_ORIGIN` tag).
+- Do **NOT** crash the relay on `uncaughtException` (alarm on a tagged log +
+  counters instead; one process serves every rack).
 - Do **NOT** identity-key capacity as the primary gate (collapses anon guests;
   socket-keyed is the safe side).
 - Do **NOT** add ESLint (use the source-scanning vitest guard idiom).
-- Do **NOT** owner-gate imports / saved-group inserts (breaks the anon-collaborator
-  model; rely on the per-rackspace 4-cap + connection auth).
-- Do **NOT** add a new write-time singleton enforcement layer (already exists +
-  powerless against the cross-peer race; the cleanup pass handles it).
+- Do **NOT** owner-gate imports / saved-group inserts (breaks the
+  anon-collaborator model; rely on the per-rackspace 4-cap + connection auth).
+- Do **NOT** add a new write-time singleton enforcement layer (one already exists
+  and is powerless against the cross-peer race; the cleanup pass handles it).

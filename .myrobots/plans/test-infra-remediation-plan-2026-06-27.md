@@ -1,77 +1,88 @@
-# Test-infra remediation — sequenced plan (2026-06-27)
-
-> **TRIAGE 2026-08-04 — WAVES 0–1 LANDED; WAVES 2–4 ARE PARTIAL AND STILL THE
-> BACKLOG.**
-> - **Wave 0 — DONE**, as **#940** ("honesty quick-wins — ART md5 guard + delete
->   stub baselines + exemption ratchets").
-> - **Wave 1 — DONE** in substance: the WebGL basis fail-OPEN hole was closed
->   (`webgl-attest-coverage.test.ts` now asserts no WebGL-rendering source escapes
->   the basis), and **#946** landed the honest linux-coverage ratchet.
-> - **Wave 2 — PARTIAL.** "Behavioral → blocking for its stable subset" SHIPPED as
->   **#986** (a fast REQUIRED `behavioral-smoke` subset) — but **#1318** later
->   found a member of that required subset passing on noise, so the subset is
->   proven, not trusted. `collab-nightly` / making `@collab` required is **still
->   not done** (`ci.yml`: the per-PR multi-context lane "stays informational
->   here"). The `waitForTimeout` replacement barely moved: **639** remain under
->   `e2e/` today.
-> - **Wave 3 — PARTIAL.** Linux VRT is real now and the ratchet counts all four
->   gap mechanisms (**#1272**), and the REQUIRED lane's stale-palette hole was
->   closed (**#1281**). The DSP-pure-core ratchet and the three "missing safety
->   nets" tracks are un-built.
-> - **Wave 4 — DONE in spirit**: `docs-hash-ignore` markers exist and are enforced.
-> ⚠ One premise moved: the "serialized e2e-video lane" this plan and its parent
-> roast assume was **deleted on 2026-06-20 (#839)** — see the banner in
-> `e2e/webgl-heavy-globs.ts`.
+# Test-infra remediation — what is LEFT (from the 2026-06-27 sequenced plan)
 
 Derived from the adversarial roast (`test-infra-roast-2026-06-27.md`). Discipline:
-**one wave = one PR (mostly), fire CI once per solid branch, never flood.** Each wave
-is gated on the prior landing green. Workflows are used for the parallelizable
-waves (independent tracks); single edits stay single PRs. "Respect wall-time +
-stability" = no whole-suite local e2e, no piling concurrent CI runs, every change
-either ≈0 CI delta or its wall-time delta is measured + flagged if >~2 min.
+**one wave = one PR (mostly), fire CI once per solid branch, never flood.** Every
+change is either ≈0 CI delta or its wall-time delta is measured and flagged if
+>~2 min.
 
-## WAVE 0 — Quick wins (IN FLIGHT: `feat/test-honesty-quickwins`)
-Pure test/gate, ≈0 CI, no pixels/attest. Stops two gates from lying.
-- ART md5-uniqueness guard + DELETE the ~13 stub-vs-itself `.f32` baselines (moog batch / polyhelm / pentemelodica / analog-vco).
-- Exemption-cap RATCHET assertions (behavioral/emit lists `<=` today; STRICT_DOCS/STRICT_VRT `>=` today).
-- filterErrors() narrowing was considered here but moved to Wave 1 (can surface latent red → needs a blast-radius survey first).
+> **TRIAGE 2026-08-12.** Waves 0, 1 and 4 are DONE and their sections are deleted:
+> #940 (ART md5 guard + stub-baseline deletion), the WebGL basis fail-OPEN fix
+> (`packages/web/src/lib/video/webgl-attest-coverage.test.ts`), #946, and the
+> attest-basis narrowing — which landed far better than planned as
+> `scripts/attest-code-basis.ts` (hash CODE not bytes; the 79 `docs-hash-ignore`
+> marker pairs are gone). The **exemption-cap ratchets** Wave 0 shipped were
+> later DELETED repo-wide under the P0 "never hand-type a population count"
+> directive (#1455 / #1458 / #1486) — do not rebuild them, and do not read any
+> "ratchet the metric" phrasing below as live advice.
 
-## WAVE 1 — Honesty gates that may surface latent red (one PR each, careful)
-Run the affected lane locally, FIX the real failures it exposes (or tightly scope), land green.
-- **filterErrors() narrowing**: stop swallowing blanket `Failed to load resource`; allowlist only known-noise (optional DOOM WAD). Survey which of the ~73 "no console errors" specs go red → fix the real 404'd worklet/shader/registry assets they were hiding.
-- **WebGL basis fail-OPEN fix**: MilkdropCard (butterchurn) + any lib-mediated GL (three/regl/pixi imports) + `getContext('webgpu')` currently escape the attest basis. Make "card source for ANY domain:video module" an unconditional basis rule. One re-attest. (Do this BEFORE merging the milkdrop PR so milkdrop is actually covered.)
+## STILL OPEN
 
-## WAVE 2 — Make the real gates actually gate (CI-config + targeted coverage)
-- **Behavioral → blocking for its stable subset**: un-label-gate + `continue-on-error:false` for the rows proven stable; keep the rest informational. (Needs a stability survey of the behavioral rows first — workflow.)
-- **Real output reads in e2e**: every spec whose TITLE claims "audio flows X→Y→OUTPUT" must read AudioOut (AnalyserNode RMS / spectral delta via the existing readScopeSnapshot), not just assert `console errors == []`. Demote "edge materialised" to the rare reasoned opt-out.
-- **collab-nightly #868 (P0)**: shard / drop retries / cut the slow DOOM-WASM-boot specs so it finishes under the 90-min ceiling and REPORTS. Then a THIN real multi-context @collab smoke + a SwiftShader-tolerant deterministic-floor WebGL pass as REQUIRED PR jobs (so the doom/render gates execute on the merged SHA, not just a hash-verify of a hand-writable JSON).
-- **Flake signal**: fail/alert when any test passes only on retry; begin replacing `waitForTimeout`-before-assert with `expect.poll` on the real condition + `networkidle`→a deterministic `__appReady` signal. (Incremental, woven in.)
+### Make the real gates actually gate
+- **`@collab` is still not required.** A dedicated non-sharded `collab` job now
+  exists in `ci.yml` (single runner, `--workers=1`, against `vite preview`, with
+  the DOOM specs opted back in), and `collab-nightly.yml` exists — but `collab`
+  is **absent from the `ci` umbrella's `needs:`** (`ci.yml:2268`), so the per-PR
+  multi-context lane is still informational. Root-cause the relay-contention /
+  in-card-title timeout, verify it ran with `DATABASE_URL` (not vacuous), then
+  arm it — or record in CLAUDE.md why it can't be.
+- **`behavioral-smoke` is proven, not trusted.** The fast REQUIRED subset shipped
+  (#986), but **#1318** found a member of that required subset passing on noise.
+  A required row that can pass on noise is a decoration; audit the subset's rows
+  against a real-output read.
+- **Real output reads in e2e.** Every spec whose TITLE claims "audio flows
+  X→Y→OUTPUT" must read AudioOut (AnalyserNode RMS / spectral delta via
+  `readScopeSnapshot`), not just assert `console errors == []`. Demote "edge
+  materialised" to the rare reasoned opt-out.
+- **Flake signal.** Fail/alert when a test passes only on RETRY.
+  `retries: process.env.CI ? 1 : 0` is unchanged (`e2e/playwright.config.ts:130`).
+- **`waitForTimeout` has not come down.** 602 at authoring, **649 today** under
+  `e2e/`. Replace `waitForTimeout`-before-assert with `expect.poll` on the real
+  condition, and `networkidle` with a deterministic `__appReady` signal. (For
+  anything renderer-dependent the answer is a FRAME count, not a budget — see
+  CLAUDE.md.)
 
-## WAVE 3 — Coverage architecture (large, owner-gated; workflow w/ parallel tracks)
-- **Linux VRT in CI + canvas-content diff for video** in a BLOCKING lane (the runner is already linux); drop the 26-card ceiling + the magenta-mask-everything; make vrt-meta require the platform CI actually runs.
-- **DSP correctness**: extract per-sample worklet math into pure lib cores + unit-test numeric behavior; ratchet the worklet-entries-with-a-core-test metric (22/70 today). For Faust, render the actual compiled `.wasm` in ART (or relabel those as model unit tests).
-- **Missing safety nets** (3 independent tracks → parallel workflow): (1) prior-version Y.Doc snapshot fixtures + load/round-trip vs real Hocuspocus+Postgres (#566/#812); (2) heap-budget soak lane — no synced ydoc writes during pure modulation frames + bounded `usedJSHeapSize`/edge-SVG count (#719 write-storm); (3) stored-XSS tests threading hostile labels/patches/URLs/user-GLSL through the real A→peer collab path + a CSP-presence assert.
+### Coverage architecture (large, owner-gated)
+- **DSP correctness.** Extract per-sample worklet math into pure lib cores and
+  unit-test numeric behaviour. Many `packages/dsp/src/lib/*-dsp.ts` pure cores now
+  exist with tests, but there is no systematic sweep of which worklet entries have
+  one. ⚠ Do **not** re-add the "22/70 with a core test" metric — express it as a
+  named deny-by-default list or an unconditional assertion. For Faust, render the
+  actual compiled `.wasm` in ART, or relabel those as model unit tests.
+- **Three missing safety nets, all still un-built** (independent, parallelisable):
+  1. Prior-version Y.Doc snapshot fixtures + load/round-trip against real
+     Hocuspocus+Postgres (#566 / #812). No fixture corpus exists.
+  2. Heap-budget soak lane — assert no synced ydoc writes during pure modulation
+     frames, plus a bounded `usedJSHeapSize` / edge-SVG count (#719 write-storm).
+     `usedJSHeapSize` appears only in three bespoke perf specs today.
+  3. Stored-XSS tests threading hostile labels / patches / URLs / user-GLSL
+     through the real A→peer collab path, plus a CSP-presence assert. Nothing in
+     the tree matches.
 
-## WAVE 4 — Attest treadmill relief (medium)
-- Narrow both attest bases: hash only renderer/sync-relevant PINNED versions (not whole `package.json`) and only files contributing shader/GL bytes (not all of `lib/video/**`); `docs-hash-ignore` for doc-only edits. Kills owner-local re-attests on unrelated dep bumps / label typos.
+### Attest ergonomics (small, cheap)
+- **Attest build-fail fast-detect.** A missing local npm dep (vite
+  `Failed to resolve import`) boots the app into an error overlay, so EVERY heavy
+  spec fails or times out — a 15+ min `passed=0` run that LOOKS like a slow or
+  hung attest. `scripts/webgl-attest.ts` should probe the dev-server root for the
+  vite error overlay (or an `__appReady` signal) BEFORE the heavy passes and abort
+  loudly with the overlay text. **Not built** — no overlay/`__appReady` probe
+  exists in `scripts/`. Also documented in `.claude/skills/webgl-attest.md`
+  (RULE 4 + the branch-switch node_modules-prune trap: a sibling-branch
+  `npm install` prunes deps the attest branch needs).
 
-## Added 2026-06-28 (from the milkdrop/backdraft attest campaign)
-- **scope-video-out parallel flake → Wave 2 (flake signal).** `scope-video-out.spec.ts`'s
-  2 tests flake under the parallel real-GPU attest: at the default `ceil(cpus/2)=5`
-  workers they flake 2 (→ exceed MAX_FLAKY=1 → refuse, forcing a re-run); at
-  `WEBGL_ATTEST_WORKERS=3` it's ≤1 (clean). The spec is an e2e file → NOT in the
-  attest basis, so hardening its `waitForFunction` (longer/contention-scaled
-  timeout, or `expect.poll` on the real pixel condition + a settle loop) is
-  hash-free and lets the attest run clean at the full default-5. Concrete first
-  instance of Wave 2's "replace waitForTimeout/bare waitForFunction with poll-on-real-condition."
-- **Attest build-fail fast-detect → Wave 1 honesty add (cheap).** A missing local
-  npm dep (vite `Failed to resolve import`) makes the app boot into an error
-  overlay so EVERY heavy spec fails/times out — a 15+ min `passed=0` run that LOOKS
-  like a slow/hung attest. `scripts/webgl-attest.ts` should probe the dev-server
-  root for the vite error overlay (or a `__appReady` signal) BEFORE the heavy
-  passes and abort loudly with the overlay text. Also documented in
-  `.claude/skills/webgl-attest.md` (RULE 4 + the branch-switch node_modules-prune
-  trap: a sibling-branch `npm install` prunes deps the attest branch needs).
+## Premises that MOVED — do not execute as written
+- ⚠ **The serialized `e2e-video` lane this plan assumes was DELETED 2026-06-20
+  (#839).** `WEBGL_HEAVY_GLOBS` no longer *relocates* a spec — it **deletes its
+  PR coverage outright**. See the banner in `e2e/webgl-heavy-globs.ts`. Anyone
+  "pulling specs into the video lane" would silently remove coverage.
+- ⚠ **`scope-video-out` parallel flake.** Under the parallel real-GPU attest at
+  the default `ceil(cpus/2)=5` workers its 2 tests flaked 2× (→ exceeded
+  `MAX_FLAKY=1` → refuse, forcing a re-run); at `WEBGL_ATTEST_WORKERS=3` it was
+  ≤1. The spec is an e2e file → NOT in the attest basis, so hardening its
+  `waitForFunction` is hash-free and lets the attest run clean at the default 5.
+  (`WEBGL_ATTEST_WORKERS` still exists at `scripts/webgl-attest.ts:72`.)
 
 ## Explicitly discounted (roast honesty pass — NOT doing)
-a11y-coverage framing (queued separately), "M5 is the narrowest renderer" (it's a real GPU = the point; just document scope), vitest singleFork (deliberate determinism), EXPECTED_NODE_TYPES blank-line cosmetics, "all e2e wall-time is waste" (integrated chain has real value).
+a11y-coverage framing (queued separately), "M5 is the narrowest renderer" (it's a
+real GPU = the point; just document scope), vitest `singleFork` (deliberate
+determinism), `EXPECTED_NODE_TYPES` blank-line cosmetics, "all e2e wall-time is
+waste" (the integrated chain has real value).

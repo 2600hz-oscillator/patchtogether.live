@@ -289,10 +289,11 @@ face: {
 
   sidebar: [
     // THE PICTURE, and the ONE surface that can print the mode. A `custom`
-    // block, not a `hero.cell` — module-face-lint refuses a PANEL cell selected
-    // at a lane tier and the 'full' lane cap is SIX, so a panel's first legal
-    // rank is 7 and a one-param module can never reach it (the meowbox
-    // precedent, stated in sidebar-panels.ts).
+    // block: it carries no `face.order` key and so no rank (the meowbox
+    // precedent, stated in sidebar-panels.ts). ⚠ Since PF-22 (#1480) a
+    // `hero.cell` is ALSO rank-free — a hero picture is dock-only and may rank
+    // FIRST — so a one-param module CAN carry one. Either route works; the
+    // reason this spec picks `custom` is the store access below, not the rank.
     //
     // A sidebar panel receives `nodeId` and imports `$lib/graph/store` itself
     // (FilterResponsePanel.svelte:31, MeowboxFormantBankPanel.svelte:33), so it
@@ -301,12 +302,10 @@ face: {
     { kind: 'custom', label: 'the scale', panelId: 'scale-ring',
       props: { scaleParam: 'scale', gatePort: 'gate_in' } },
 
-    { kind: 'signal-flow', label: 'signal flow', stages: [
-      { label: 'CV IN',   role: 'generator', note: 'anything bipolar' },
-      { label: 'LATCH',   role: 'bus',       note: 'only while GATE is patched' },
-      { label: 'HOLD',    role: 'bus',       note: 'raw — never quantized' },
-      { label: 'QUANT',   role: 'bus', parallel: true, note: 'snapped to the scale' },
-    ] },
+    // ⚠ A `signal-flow` sidebar block stood here (CV IN → LATCH → HOLD, with
+    // QUANT parallel). THAT CELL KIND NO LONGER EXISTS — #1468 removed it and
+    // its twelve adopters, and `graph/types.ts:798` warns that re-adding one is
+    // the mistake. The chain it drew is §2-C/§2-D; the readouts below carry it.
 
     { kind: 'readouts', label: 'what QUANT does to a note', entries: [
       { label: 'scale',       valueId: 'samplehold-scale-name' },
@@ -418,23 +417,17 @@ arriving", fourplexer's "three of your four inputs have no cable". **That
 convergence is the batch's strongest argument for widening the reader**, and it
 should be filed as one platform issue rather than three face-local workarounds.
 
-### B. A PANEL'S FIRST LEGAL RANK IS 7
+### B. NO LIVE GLYPH
 
-`module-face-lint`'s `panelTierProblems` refuses a PANEL cell selected at a lane
-tier, and the `'full'` cap is `LANE_PLATE_MAX_CELLS = 6`. With **one** rankable
-key, a `hero.cell` is unreachable. The `custom` sidebar block carries no
-`face.order` key and is therefore exempt.
+sampleHold has no `audio`-typed output, so `glyphBinding` cannot resolve an
+analyser tap and every glyph kind falls through to `{ kind: 'static' }`. See
+§4's comment and the gatemaiden spec §7-A for the platform fix.
 
-### C. THERE IS NO `fader` CELL KIND — and no live glyph either
-
-`ParamCellKind` is `knob | momentary | toggle | segmented | selector | grid |
-color` (`shell-control-kind.ts:33-40`). There is **no `'fader'`**; a face renders
-every non-toggle/segmented/selector/grid/color param as a `KnobConic`. That does
-not bite sampleHold (its card already uses a `<Knob>`), but it does bite
-gatemaiden, whose card uses a `<Fader>` — recorded here because the assumption
-that a fader kind exists would silently produce a different-looking dock.
-
-Glyph: see §4's comment and the gatemaiden spec §7-A.
+*(A section here argued that a PANEL's first legal rank is 7 and therefore
+unreachable on a one-param module. **That is no longer true** — PF-22 (#1480)
+makes a hero picture dock-only and therefore rank-free, so it may rank FIRST.
+A section arguing `'fader'` was not a `ParamCellKind` is also stale: it is one
+since #1480, and it does not bite sampleHold anyway — its card draws a `<Knob>`.)
 
 ---
 
@@ -471,7 +464,7 @@ Glyph: see §4's comment and the gatemaiden spec §7-A.
   not in `RANGE_BOUND_CARDS` and the cheap fix is `paramSpec()`.
 - **F · Harmonic Minor's 150 ¢ worst-case snap is 3× Chromatic's** (§2-B) and
   1.5× every other scale's. Correct, and worth printing.
-- **G · `glyph` cannot be live** — no audio-typed output (§6-C).
+- **G · `glyph` cannot be live** — no audio-typed output (§6-B).
 
 ---
 
