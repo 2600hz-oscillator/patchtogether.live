@@ -107,6 +107,19 @@
 //      step count is STRICTLY monotonic-decreasing across the sweep and
 //      hits 256 / 32 / 2 exactly at 0 / 0.5 / 1.
 //
+//   3. PHOSPHOR DECAY (owner request 2026-08-11). With the DECAY switch on, a
+//      HELD frame fades exponentially toward black — or toward WHITE with the
+//      INVERT switch on — over the DECAY TIME knob's seconds. See the
+//      "PHOSPHOR DECAY" block below for the curve, the clock, and the two
+//      things this deliberately is NOT (a per-frame multiply, and a feedback
+//      pass over the hold buffer).
+//
+//      ⚠ IT IS ONLY OBSERVABLE WHILE FROZEN, and that is not a bug. Decay is
+//      the age of the HELD frame, and a captured frame is age 0 — so with the
+//      gate UNPATCHED (live passthrough), or held open, every frame is fresh
+//      and the switch legitimately does nothing at all. A user who does not
+//      know that reads it as a dead control, so the docs say it out loud.
+//
 // Outputs (all video):
 //   video_out : the R/G/B channels recombined WITH their per-channel
 //               quantization applied (the QUANT-luma knob ALSO applies to
@@ -126,6 +139,12 @@
 // Params:
 //   quant_r / quant_g / quant_b / quant_luma (linear 0..1): per-channel
 //     posterize amount (0 = full depth, 1 = 2 levels). See QUANT mapping.
+//   decay (discrete 0/1, default 0): the phosphor-decay switch. OFF is
+//     bit-for-bit today's behaviour — `uDecayK` is 1 and `uDecayTarget` is 0,
+//     so the shader tail evaluates `0 + (rgb - 0) * 1`, exactly `rgb`.
+//   decay_invert (discrete 0/1, default 0): decay toward WHITE instead of black.
+//   decay_time (log, 0.05..2 s): how long a held frame takes to CLEAR. Not a
+//     time CONSTANT — see decayEnvelope for why the knob reads as "gone by".
 //   gateLevel (hidden, linear 0..1): synthetic param the CV bridge drives
 //     with the live gate value. Not a knob — rendered only as the cv jack.
 
@@ -201,6 +220,121 @@ export function posterizeChannel(value: number, levels: number): number {
 /** Rec.601 luma of a normalized RGB triplet (each 0..1). */
 export function lumaOf(r: number, g: number, b: number): number {
   return LUMA_WEIGHTS.r * r + LUMA_WEIGHTS.g * g + LUMA_WEIGHTS.b * b;
+}
+
+// ----------------------------------------------------------------------
+// PHOSPHOR DECAY — the pure math. All of it is exported and unit-tested;
+// none of the numbers below appear as a literal in the GLSL or the card.
+// ----------------------------------------------------------------------
+
+/** DECAY TIME knob floor — 0.05 s (owner spec). */
+export const DECAY_MIN_S = 0.05;
+/** DECAY TIME knob ceiling — 2 s (owner spec). */
+export const DECAY_MAX_S = 2;
+/** DECAY TIME default. Only reachable with DECAY on, which is off by default,
+ *  so this cannot change the shipped look; 0.5 s is a fade you can SEE without
+ *  reading as a stuck frame. (The geometric centre of the log sweep is
+ *  sqrt(0.05 × 2) = 0.316 s, so 0.5 s sits a little past 12 o'clock.) */
+export const DECAY_DEFAULT_S = 0.5;
+
+/**
+ * The fraction of the starting distance-to-target at which an exponential is
+ * declared "gone". 1 % is ~2.5 of 255 code values — below the point any viewer
+ * calls it black (or white), and the classic engineering convention for a
+ * settling time.
+ */
+export const DECAY_FLOOR = 0.01;
+
+/** The exponential's rate in units of NORMALIZED progress: e^-DECAY_RATE = the
+ *  floor, i.e. ln(100) ≈ 4.605. Derived, never typed. */
+export const DECAY_RATE = Math.log(1 / DECAY_FLOOR);
+
+/**
+ * The decay envelope: NORMALIZED progress (0 = just captured, 1 = the knob's
+ * DECAY TIME has fully elapsed) → the surviving fraction of the held frame.
+ *
+ * ── WHAT THE KNOB MEANS, and why this is a real decision ──────────────────
+ * "Pseudo phosphor-decay" means EXPONENTIAL, and an exponential never reaches
+ * its asymptote — so "DECAY TIME = 2 s" has to be given a meaning. The two
+ * candidates and why this one:
+ *
+ *   · 1/e (the time CONSTANT τ). At the knob's time the image is still at
+ *     **37 %** of its starting brightness — plainly still there. The knob would
+ *     read as broken: you set 0.5 s, and half a second later a third of the
+ *     picture is left.
+ *   · **1 % (this one).** τ = T / ln(100), so at the knob's time the image has
+ *     fallen to the floor. The knob reads as what a user means by it: *how long
+ *     until the frame clears*.
+ *
+ * The exponential is then TRUNCATED AND RENORMALIZED — `(e^-rate·p − F)/(1 − F)`
+ * — which buys two exact endpoints for free:
+ *
+ *   envelope(0) = 1  EXACTLY → a just-captured frame is untouched;
+ *   envelope(1) = 0  EXACTLY → **the target is REACHED, not approached.**
+ *
+ * That second one is the acceptance criterion for this feature (see the 8-bit
+ * note on the draw loop), and renormalizing is what makes it true by
+ * construction instead of by tolerance. Without it there would be a 1 % step at
+ * the end; with it the curve is continuous, monotonic, and still exponential in
+ * shape (fast first, long tail).
+ *
+ * PURE and total: clamps, so a NaN/out-of-range progress can't leak a NaN
+ * uniform into the shader.
+ */
+export function decayEnvelope(progress: number): number {
+  if (!Number.isFinite(progress)) return 0;
+  const p = Math.min(1, Math.max(0, progress));
+  const raw = (Math.exp(-DECAY_RATE * p) - DECAY_FLOOR) / (1 - DECAY_FLOOR);
+  return Math.min(1, Math.max(0, raw));
+}
+
+/**
+ * Advance the normalized decay progress by `dtSec` of REAL elapsed time.
+ *
+ * ── WHY PROGRESS, AND NOT AN AGE OR A PER-FRAME FACTOR ────────────────────
+ * The repo's single most-repeated rule is that a renderer-dependent quantity
+ * must never be expressed in FRAMES (CI's SwiftShader runs ~7.9 fps against
+ * ~60 on a real GPU — a per-frame decay factor is a 7.6× different time
+ * constant, i.e. a different instrument per machine). So the accumulator is
+ * seconds-driven. Between knob moves `Σ dtᵢ/T` is exactly `elapsed/T`, so the
+ * result depends ONLY on elapsed time and NOT on how many draws it arrived in —
+ * that is renderer-independence by construction, not by tuning, and it is
+ * asserted directly (`freezeframe.test.ts`, "same elapsed time, 1 step vs 600").
+ *
+ * Accumulating PROGRESS rather than storing an age is what makes the knob
+ * behave when it MOVES: `p` is already-travelled distance, so changing T
+ * changes the rate from here on and leaves the past alone. Recomputing
+ * `age / T` instead would rewrite history and jump the brightness mid-fade.
+ *
+ * Clamped at 1 (fully decayed) so the accumulator can't drift off to infinity
+ * during a long freeze, and floored at 0 dt so a non-monotonic clock (the
+ * determinism hook being toggled mid-run) can't run the decay BACKWARDS.
+ */
+export function advanceDecayProgress(
+  progress: number,
+  dtSec: number,
+  decayTimeS: number,
+): number {
+  const t = Math.min(DECAY_MAX_S, Math.max(DECAY_MIN_S, decayTimeS));
+  const dt = Number.isFinite(dtSec) ? Math.max(0, dtSec) : 0;
+  const prev = Number.isFinite(progress) ? Math.max(0, progress) : 0;
+  return Math.min(1, prev + dt / t);
+}
+
+/**
+ * The CPU mirror of the shader's decay tail: `target + (value − target) · k`.
+ *
+ * Written as the affine form rather than `mix()` deliberately — at k = 1 with
+ * target 0 it is `0 + value·1`, which is `value` BIT-EXACTLY, so DECAY-off is
+ * provably not a rounding perturbation of today's output.
+ */
+export function applyDecay(value: number, k: number, target: number): number {
+  return target + (value - target) * k;
+}
+
+/** The decay target as the shader wants it: 0 = fade to black, 1 = to white. */
+export function decayTargetValue(invert: boolean): number {
+  return invert ? 1 : 0;
 }
 
 /** Gate threshold for "open" (capture) vs "closed" (freeze). The canonical
@@ -328,12 +462,32 @@ uniform float uLevelsR;    // quant step count for R    (>= 2)
 uniform float uLevelsG;    // quant step count for G
 uniform float uLevelsB;    // quant step count for B
 uniform float uLevelsLuma; // quant step count for luma
+uniform float uDecayK;      // surviving fraction of the held frame; 1 = no decay
+uniform float uDecayTarget; // what it decays TO: 0 = black, 1 = white
 
 // Posterize one normalized channel to N levels. Matches posterizeChannel().
 float posterize(float c, float levels) {
   float n = max(2.0, levels);
   float idx = min(n - 1.0, floor(c * n));
   return idx / (n - 1.0);
+}
+
+// PHOSPHOR PERSISTENCE — the CPU mirror is applyDecay().
+//
+// Applied LAST, i.e. AFTER posterize, and the order is a decision: posterize is
+// a reduction of the SIGNAL's colour depth, decay is the DISPLAY's persistence,
+// and a real chain quantizes before it lights a phosphor. It also keeps the
+// control honest — decay BEFORE the posterizer would send a fading image down
+// through fixed buckets, so at QUANT max (2 levels) the "fade" would be a hard
+// cut from full white to black and the DECAY switch would look broken exactly
+// where the module is at its most extreme.
+//
+// Affine, not mix(): at uDecayK = 1 / uDecayTarget = 0 (the DECAY-off uniforms)
+// this is 0.0 + (rgb - 0.0) * 1.0 = rgb, bit-exact on any driver, so turning
+// the feature off is provably a no-op rather than a 1-ULP perturbation.
+// (No backticks in here — this whole shader lives in a JS template literal.)
+vec4 persist(vec3 rgb) {
+  return vec4(uDecayTarget + (rgb - uDecayTarget) * uDecayK, 1.0);
 }
 
 void main() {
@@ -356,28 +510,28 @@ void main() {
     float lumaSafe = max(luma, 1e-5);
     float lq = posterize(luma, uLevelsLuma);
     vec3 outRgb = clamp(q * (lq / lumaSafe), 0.0, 1.0);
-    outColor = vec4(outRgb, 1.0);
+    outColor = persist(outRgb);
     return;
   }
   if (uMode < 1.5) {
     float r = posterize(src.r, uLevelsR);
-    outColor = vec4(r, r, r, 1.0);
+    outColor = persist(vec3(r));
     return;
   }
   if (uMode < 2.5) {
     float g = posterize(src.g, uLevelsG);
-    outColor = vec4(g, g, g, 1.0);
+    outColor = persist(vec3(g));
     return;
   }
   if (uMode < 3.5) {
     float b = posterize(src.b, uLevelsB);
-    outColor = vec4(b, b, b, 1.0);
+    outColor = persist(vec3(b));
     return;
   }
   // luma
   float luma = dot(src, vec3(0.299, 0.587, 0.114));
   float lq = posterize(luma, uLevelsLuma);
-  outColor = vec4(lq, lq, lq, 1.0);
+  outColor = persist(vec3(lq));
 }`;
 
 // Copy shader for the HOLD buffer: when the gate is HIGH (or unpatched →
@@ -399,6 +553,12 @@ interface FreezeframeParams {
   quant_g: number;
   quant_b: number;
   quant_luma: number;
+  /** Phosphor-decay switch (0/1). OFF = today's behaviour, bit for bit. */
+  decay: number;
+  /** Decay toward WHITE instead of black (0/1). */
+  decay_invert: number;
+  /** Seconds until a held frame has fully cleared. See decayEnvelope. */
+  decay_time: number;
   /** Hidden synthetic param driven by the gate CV bridge. */
   gateLevel: number;
 }
@@ -408,6 +568,9 @@ const DEFAULTS: FreezeframeParams = {
   quant_g: 0,
   quant_b: 0,
   quant_luma: 0,
+  decay: 0,
+  decay_invert: 0,
+  decay_time: DECAY_DEFAULT_S,
   gateLevel: 0,
 };
 
@@ -556,12 +719,22 @@ export const freezeframeDef: VideoModuleDef = {
     { id: 'quant_g',    label: 'QUANT G',    defaultValue: DEFAULTS.quant_g,    min: 0, max: 1, curve: 'linear' },
     { id: 'quant_b',    label: 'QUANT B',    defaultValue: DEFAULTS.quant_b,    min: 0, max: 1, curve: 'linear' },
     { id: 'quant_luma', label: 'QUANT LUMA', defaultValue: DEFAULTS.quant_luma, min: 0, max: 1, curve: 'linear' },
+    // PHOSPHOR DECAY. `curve: 'discrete', min 0, max 1` is the repo's canonical
+    // switch shape (looksLikeToggle, $lib/graph/group-controls) — the card
+    // renders these with <Toggle>, the Push generic tier demotes them below the
+    // continuous params, and the auto-expose bar agrees with both.
+    { id: 'decay',        label: 'DECAY',      defaultValue: DEFAULTS.decay,        min: 0, max: 1, curve: 'discrete' },
+    { id: 'decay_invert', label: 'INVERT',     defaultValue: DEFAULTS.decay_invert, min: 0, max: 1, curve: 'discrete' },
+    // Log, like every other time knob in the repo (adsr A/D/R, delay time,
+    // cofefve delayTime) — a 40:1 sweep on a linear knob wastes its bottom half.
+    { id: 'decay_time',   label: 'DECAY TIME', defaultValue: DEFAULTS.decay_time,
+      min: DECAY_MIN_S, max: DECAY_MAX_S, curve: 'log', units: 's' },
     // Hidden synthetic gate param — the cv jack renders but no knob.
     { id: 'gateLevel',  label: 'GATE',       defaultValue: 0, min: 0, max: 1, curve: 'linear' },
   ],
 
   docs: {
-    explanation: "FREEZEFRAME fuses two video effects in one card. First, a SAMPLE & HOLD \"freeze\": with nothing patched to GATE the source passes through live; patch a gate and the image FREEZES, and the GATE jack then honours both readings of the gate cable at once. Send a TRIGGER at it and each rising edge updates EXACTLY ONE frame, after which it is still again. Hold the gate HIGH (level >= 0.5) and you get that same one-frame update at the edge, and then — once the level has STOOD high for about 75 ms — continuous live updating for as long as it stays high. That 75 ms is deliberate and is the shortest honest answer available: the patch bridge does not stream the gate waveform to a video module, it re-reports the level roughly every 25 ms, so for the first tick or two a 5 ms trigger and a gate that has just opened are literally the same bytes. Anything held shorter than the window is therefore classified as a TRIGGER and updates exactly one frame — including a gate DERIVED from a trigger by GATEMAIDEN, whose default width is 50 ms, so inserting GATEMAIDEN into the path does not change the frame count. In practice a square LFO below roughly 6.6 Hz plays while open and stutter-freezes the instant it closes (at 1 Hz about 44 percent of frames update, at 4 Hz about 26 percent); faster than that knee each cycle contributes only its one edge frame and the module reads as a strobe, which is the frame-rate-independent reading anyway. Short pulses cannot be missed or double-counted — the rising edge is detected as the gate value arrives rather than sampled once per rendered frame, and the one-shot is a latch a single frame consumes. The first frame always captures so the buffer seeds with real content instead of black. Second, a PER-CHANNEL POSTERIZE: four QUANT knobs each reduce one channel's colour depth, mapping the sweep geometrically in log2 from 256 levels (full depth) at min, through 32 at midway, to 2 (on/off) at max — crank all four for a hard few-bit posterized look. The shader posterizes each channel with floor(c*levels)/(levels-1); the combined output also applies the QUANT-luma reduction as a hue-preserving luma ratio so that knob still shapes the main out. Five outputs let you tap the recombined image, each isolated channel as a grey intensity image, or the Rec.601 luma. Usage hint: drive GATE from an LFO or clock to strobe/freeze a video feed, then dial the QUANT knobs for VHS/8-bit colour crushing; fan the R/G/B/LUMA taps into separate processors for channel-split effects.",
+    explanation: "FREEZEFRAME fuses two video effects in one card. First, a SAMPLE & HOLD \"freeze\": with nothing patched to GATE the source passes through live; patch a gate and the image FREEZES, and the GATE jack then honours both readings of the gate cable at once. Send a TRIGGER at it and each rising edge updates EXACTLY ONE frame, after which it is still again. Hold the gate HIGH (level >= 0.5) and you get that same one-frame update at the edge, and then — once the level has STOOD high for about 75 ms — continuous live updating for as long as it stays high. That 75 ms is deliberate and is the shortest honest answer available: the patch bridge does not stream the gate waveform to a video module, it re-reports the level roughly every 25 ms, so for the first tick or two a 5 ms trigger and a gate that has just opened are literally the same bytes. Anything held shorter than the window is therefore classified as a TRIGGER and updates exactly one frame — including a gate DERIVED from a trigger by GATEMAIDEN, whose default width is 50 ms, so inserting GATEMAIDEN into the path does not change the frame count. In practice a square LFO below roughly 6.6 Hz plays while open and stutter-freezes the instant it closes (at 1 Hz about 44 percent of frames update, at 4 Hz about 26 percent); faster than that knee each cycle contributes only its one edge frame and the module reads as a strobe, which is the frame-rate-independent reading anyway. Short pulses cannot be missed or double-counted — the rising edge is detected as the gate value arrives rather than sampled once per rendered frame, and the one-shot is a latch a single frame consumes. The first frame always captures so the buffer seeds with real content instead of black. Second, a PER-CHANNEL POSTERIZE: four QUANT knobs each reduce one channel's colour depth, mapping the sweep geometrically in log2 from 256 levels (full depth) at min, through 32 at midway, to 2 (on/off) at max — crank all four for a hard few-bit posterized look. The shader posterizes each channel with floor(c*levels)/(levels-1); the combined output also applies the QUANT-luma reduction as a hue-preserving luma ratio so that knob still shapes the main out. Third, PHOSPHOR DECAY: switch DECAY on and a held frame no longer just sits there — it fades exponentially to black over the DECAY TIME knob's 0.05 to 2 seconds, the way a CRT phosphor gives up once the beam stops refreshing it, and INVERT sends it to white instead. DECAY TIME reads as \"gone by\": at the time you dial in the frame has reached the target exactly and stays there, rather than the 37 percent a 1/e time constant would leave behind. It is only visible WHILE THE IMAGE IS FROZEN, which is not a limitation but what the effect IS — decay is the age of the held frame, so with GATE unpatched (live passthrough) or held open every frame is brand new and the switch legitimately does nothing. The fade is evaluated from elapsed TIME rather than accumulated per frame, so it takes the same real half-second whether the renderer is managing 8 frames a second or 240, and it is applied after the posterizer (a signal is quantized, then a display persists it) so it still fades smoothly even with all four QUANT knobs at max. Five outputs let you tap the recombined image, each isolated channel as a grey intensity image, or the Rec.601 luma. Usage hint: drive GATE from an LFO or clock to strobe/freeze a video feed, then dial the QUANT knobs for VHS/8-bit colour crushing; add DECAY for trailing strobe ghosts; fan the R/G/B/LUMA taps into separate processors for channel-split effects.",
     inputs: {
       video_in: "The source video frame fed into the sample-and-hold buffer and posterizer.",
       gate_in: "Sample-and-hold gate. Unpatched = continuous live passthrough. Patched, the image is FROZEN while the level is LOW. Each RISING EDGE updates EXACTLY ONE frame, so a trigger pulse re-samples once and then holds still. A gate HELD HIGH gets that edge frame too, and then updates CONTINUOUSLY once the level has stood high for about 75 ms — three reports of the ~25 ms patch bridge, which is the soonest a held gate can be told apart from a trigger at all, since until the level is re-reported the two are identical. A high shorter than that window reads as a TRIGGER: notably a 50 ms gate derived from a trigger by GATEMAIDEN, which is why inserting GATEMAIDEN does not change the frame count. Both readings come from this one jack — patch a held gate or slow square LFO for live-while-open, or a clock/trigger for one frame per tick.",
@@ -578,6 +751,9 @@ export const freezeframeDef: VideoModuleDef = {
       quant_g: "QUANT G — posterize amount for the green channel, 256 levels at min down to 2 at max. Affects video_out and g_out.",
       quant_b: "QUANT B — posterize amount for the blue channel, 256 levels at min down to 2 at max. Affects video_out and b_out.",
       quant_luma: "QUANT LUMA — posterize amount for the Rec.601 luma, 256 levels at min down to 2 at max. Drives luma_out and applies an overall luma-depth reduction to video_out as a hue-preserving ratio.",
+      decay: "DECAY — phosphor persistence, OFF by default. Switch it on and a HELD frame fades away instead of sitting there: the image drops exponentially toward black over the DECAY TIME you set, the way a CRT phosphor gives up after the beam stops refreshing it. It only does anything WHILE THE IMAGE IS FROZEN, and that is the honest behaviour rather than a limitation — decay is the AGE of the held frame, and a frame that was just captured is zero seconds old. So with nothing patched to GATE (live passthrough), or with the gate held open, every frame is fresh and this switch changes nothing you can see. Patch a gate, let it close, and the fade begins. Turning DECAY off restores the previous output exactly, not approximately.",
+      decay_invert: "INVERT — flip the decay TARGET from black to white, so a held frame blooms out to a white field instead of sinking to a black one. Same curve and the same DECAY TIME, measured as distance-to-white rather than distance-to-black, so the two directions clear at exactly the same moment. Does nothing unless DECAY is on.",
+      decay_time: "DECAY TIME — how long a held frame takes to CLEAR, from 0.05 s (a fast strobe-trail flicker) to 2 s (a long smear). Read it as \"gone by\": at the time you dial in, the frame has reached the target exactly and stays there — it is not a 1/e time constant, which would still leave 37 percent of the picture on screen when the clock ran out. The shape between the ends is exponential, so most of the brightness goes early and the last of it lingers, which is what phosphor actually does. Moving the knob mid-fade changes the rate from that moment on and leaves the part already faded alone, so it will not jump. Does nothing unless DECAY is on.",
       gateLevel: "GATE — hidden synthetic param the cross-domain CV bridge writes from gate_in; it carries the live gate level into the sample-and-hold decision, is rising-edge detected on arrival for the one-shot trigger, and the fact that it is written at all is how the module detects the gate is patched. The wall clock of the last rising edge is what the 75 ms hold-qualification window is measured from, so a level that has not yet stood that long counts as a trigger rather than a hold. Exposed only as the gate cv jack, not as a knob.",
     },
   },
@@ -593,6 +769,8 @@ export const freezeframeDef: VideoModuleDef = {
     const uLevelsG    = gl.getUniformLocation(program, 'uLevelsG');
     const uLevelsB    = gl.getUniformLocation(program, 'uLevelsB');
     const uLevelsLuma = gl.getUniformLocation(program, 'uLevelsLuma');
+    const uDecayK      = gl.getUniformLocation(program, 'uDecayK');
+    const uDecayTarget = gl.getUniformLocation(program, 'uDecayTarget');
 
     const cTex = gl.getUniformLocation(copyProgram, 'uTex');
     const cHas = gl.getUniformLocation(copyProgram, 'uHasInput');
@@ -658,6 +836,45 @@ export const freezeframeDef: VideoModuleDef = {
      *  CHANGED RENDERED FRAMES, this is the cross-check. */
     let captureCount = 0;
 
+    // ---- PHOSPHOR DECAY state ----
+    //   decayProgress   : normalized 0..1 age of the CURRENTLY HELD frame (see
+    //                     advanceDecayProgress). 0 on every captured frame.
+    //   lastFrameTimeSec: previous draw's `frame.time`, to difference for dt.
+    //                     null = no draw yet, so the first dt is 0.
+    //   decayK          : this frame's surviving fraction — the uniform. Kept as
+    //                     a field so read('decayK') can expose it to tests
+    //                     WITHOUT re-deriving the value (a re-typed copy in a
+    //                     probe is how the last blind gate went blind).
+    //
+    // ⚠ THE CLOCK IS `frame.time`, NOT `nowMs()` AND NOT `frame.timeDelta`, and
+    // all three are different quantities here:
+    //
+    //   · `nowMs()` (performance.now) is right for the GATE-freshness test above
+    //     because that measures the CV BRIDGE's wall-clock write cadence, which
+    //     keeps ticking on its Worker timer whether or not the renderer draws.
+    //     Decay is a property of the RENDER, so it must not use it: under the
+    //     render-smoke determinism hook (`__videoEngineFreezeTime`) a pinned
+    //     render would still fade, and every DRS baseline that ever turns this
+    //     feature on would be a moving target.
+    //   · `frame.time` IS the engine clock: real elapsed seconds in production,
+    //     and PINNED by that same determinism hook — so a frozen render frame is
+    //     genuinely frozen, and a test can advance the decay by exactly the
+    //     interval it chooses. That is what makes the renderer-independence
+    //     assertion in the e2e deterministic rather than a timing race.
+    //   · `frame.timeDelta` is real wall clock AND clamped to 0.1 s (see
+    //     VideoEngine.step), so a 3-second backgrounded-tab stall would advance
+    //     the fade by 0.1 s and the frame would still be sitting there when you
+    //     came back. Differencing `frame.time` reports the truth: three seconds
+    //     passed, the phosphor is out.
+    let decayProgress = 0;
+    let lastFrameTimeSec: number | null = null;
+    let decayK = 1;
+    // 0 = black, 1 = white. FORCED to 0 while DECAY is off even if INVERT is
+    // left on, so the off-state uniforms are (k=1, target=0) — the pair the
+    // shader tail collapses to `rgb` bit-exactly. INVERT alone must not be able
+    // to perturb the output by so much as a ULP.
+    let decayTarget = 0;
+
     function levelsFor(knob: number): number {
       return quantLevels(knob);
     }
@@ -677,6 +894,8 @@ export const freezeframeDef: VideoModuleDef = {
       gl.uniform1f(uLevelsG,    levelsFor(params.quant_g));
       gl.uniform1f(uLevelsB,    levelsFor(params.quant_b));
       gl.uniform1f(uLevelsLuma, levelsFor(params.quant_luma));
+      gl.uniform1f(uDecayK, decayK);
+      gl.uniform1f(uDecayTarget, decayTarget);
       ctx.drawFullscreenQuad();
     }
 
@@ -741,6 +960,42 @@ export const freezeframeDef: VideoModuleDef = {
           ctx.drawFullscreenQuad();
           if (hasInput) { holdSeeded = true; captureCount++; }
         }
+
+        // ---- PHOSPHOR DECAY: advance the held frame's age ----
+        //
+        // Deliberately NOT a feedback pass over the hold buffer, and that
+        // avoids two whole failure modes rather than working around them:
+        //
+        //  (1) THE 8-BIT RESIDUE. `ctx.createFbo()` allocates RGBA8
+        //      (VideoEngine.createFboImpl), and GL rounds a float write to the
+        //      NEAREST code value. An iterative `v ← v·k` therefore STALLS
+        //      wherever `round(v·k) == v`, i.e. at every v ≤ 0.5/(1−k): the
+        //      image fades to a dark ghost and sits there FOREVER. Worse, the
+        //      residue is a function of the FRAME RATE, because k is — 13/255
+        //      at 60 fps, 26 at 120, 52 at 240 for a 2 s decay (measured in
+        //      freezeframe.test.ts, which keeps that simulation as a permanent
+        //      negative control of this design choice). Evaluating the envelope
+        //      CLOSED-FORM into a uniform never accumulates, so the endpoint is
+        //      whatever the curve says it is: envelope(1) is exactly 0, and
+        //      `target + (v − target)·0` is exactly the target for all 256
+        //      input code values.
+        //  (2) THE FEEDBACK LOOP. Sampling `hold` while rendering into it is
+        //      undefined in GL; doing it properly would need a ping-pong pair
+        //      plus a swap threaded through all five output passes. A uniform
+        //      needs neither, so `hold` stays a single FBO and the five
+        //      consumers below are untouched.
+        //
+        // A CAPTURED frame is age zero — which is why decay is invisible while
+        // the module is passing live video, and why the docs say so.
+        const frameTimeSec = Number.isFinite(frame.time) ? frame.time : 0;
+        const dtSec = lastFrameTimeSec === null ? 0 : frameTimeSec - lastFrameTimeSec;
+        lastFrameTimeSec = frameTimeSec;
+        const decayOn = params.decay >= 0.5;
+        decayProgress = capture || !decayOn
+          ? 0
+          : advanceDecayProgress(decayProgress, dtSec, params.decay_time);
+        decayK = decayOn ? decayEnvelope(decayProgress) : 1;
+        decayTarget = decayOn ? decayTargetValue(params.decay_invert >= 0.5) : 0;
 
         // ---- OUTPUT passes: read hold buffer, posterize per mode ----
         // `hasInput` here means "the hold buffer carries real content" —
@@ -824,6 +1079,12 @@ export const freezeframeDef: VideoModuleDef = {
         // for the pixel-level "exactly N updates for N triggers" assertion.
         if (key === 'captureCount') return captureCount;
         if (key === 'triggerArmed') return triggerArmed;
+        // PHOSPHOR DECAY probes. These return the LIVE fields the shader was
+        // actually handed this frame — they do NOT recompute the envelope, so a
+        // probe cannot agree with a broken draw loop by accident.
+        if (key === 'decayProgress') return decayProgress;
+        if (key === 'decayK')        return decayK;
+        if (key === 'decayTarget')   return decayTarget;
         return undefined;
       },
       dispose() { surface.dispose(); },

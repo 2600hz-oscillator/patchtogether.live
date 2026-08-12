@@ -144,6 +144,36 @@ export const FACES = [
   // emptied and nothing is dropped. (A promotion that emptied band 1 would make
   // this 1, and would also take that band's hint out of the annotation sweep.)
   { type: 'meowbox', pages: 2 },
+  // FACE BATCH 3 (2026-08-10) — the room you stand inside, and the biggest
+  // scene on this roster by a wide margin: 81 cells over EIGHT bands (`room`,
+  // `ensemble`, the four voices, `view`, `walls`). 8 trips
+  // DOCK_TAB_MIN_BANDS, so it captures as a TAB RAIL by design — the arithmetic
+  // is in dock-tabs-model.test.ts and it is not a preference: 79 params packed
+  // perfectly is ~720 px into a ~550 px region. The hero promotes the room
+  // PANEL and `zoom` out of band 1, which keeps `pos_x/pos_y/pos_z/rot`, so
+  // nothing empties and the count is the declared `face.pages` length.
+  //
+  // ⚠ THIS IS A WEBGL2 MODULE AND ITS CARD IS THE REPO'S ONLY 3D MOUNT, but
+  // the FACE scene does not render it: the shell paints cells, and the module's
+  // own `__wavesculptVrtFreeze` pin (the one the legacy-card scenes in
+  // vrt-scenes.ts set) is NOT reached by `bootWithFace`. The two surfaces this
+  // scene actually draws are both deterministic without it:
+  //
+  //   * the `scope` GLYPH is an analyser on `L`, and wavesculpt is SILENT
+  //     unpatched — all four voices need a gate — so it reads a flat trace even
+  //     before `freezeFaceAudio` suspends the context. (The mixer/reverb
+  //     reason, not the analogVco one.)
+  //   * the hero ROOM PANEL polls the live engine on rAF, like bluebox's, and
+  //     is idle-stable for the same reason: it memoises the camera on a
+  //     4-decimal tuple and only assigns when that CHANGES, so an untouched
+  //     scene repaints nothing. Its picture is a pure function of five params
+  //     at their defaults, with no time term anywhere.
+  //
+  // ⚠ WHAT WOULD SILENTLY RETIRE THAT ARGUMENT: giving any voice a non-zero
+  // default gate, or putting a time term in the panel. Either starts this tile
+  // moving with every gate still green. Re-establish it by measurement, never
+  // by reading a passing scene.
+  { type: 'wavesculpt', pages: 8 },
   // FACE BATCH 3 (2026-08-10) — the 3-D wavetable navigator. SIX bands, all six
   // surviving the hero split: the hero promotes `cube-view` and `slice_ry` out
   // of band 1, which still holds ROT Z / ROT X / Y / WRAP.
@@ -264,6 +294,42 @@ export const FACES = [
   // pure function of the thirteen params through `marblesLoopPlan` — so it
   // captures identically on a running graph, a frozen one and a silent rack.
   { type: 'marbles', pages: 6 },
+  // FACE BATCH 4 — the clean multi-mode filter. FOUR params and no declared
+  // `pages`, so the dock renders the single page-less `__all` band; the hero
+  // promotes CUTOFF out of it and the remaining three (RESO, MODE, MIX) keep it
+  // alive, so unlike `noise` it does NOT empty to zero.
+  //
+  // ⚠ ITS SIDEBAR PICTURE IS PARAM-DERIVED, NOT AN ANALYSER TRACE, which is
+  // what makes this tile deterministic. Every point of the response curve is a
+  // pure function of the four durable params through the SVF's own transfer
+  // function (`resofilter-face-model`) — no engine read, no rAF, no
+  // `AudioContext.currentTime` — so it is identical on a running graph, a
+  // frozen graph and an empty rack. Like cofefve and clouds, this scene is NOT
+  // a witness for #1420's freeze.
+  //
+  // The `scope` glyph on the COMPACT tile IS a live analyser trace, and it is
+  // flat for the ordinary insert reason: nothing patched in, so both outputs
+  // are exactly 0.000e+0 (measured, all five modes, including at resonance
+  // 0.999 where the filter is a hair from self-oscillating — a linear SVF with
+  // no input has nothing to ring).
+  //
+  // ⚠ THE DOCK TILE FRAMES A FIVE-BUTTON SEGMENTED ROW WITH THREE OF ITS FIVE
+  // CAPTIONS ELLIPSIZED, AND THE BASELINE IS SUPPOSED TO SHOW THAT. MODE
+  // declares `options` for the first time in this PR; `.seg` is `flex: 1 1 0%`,
+  // so the 182.5 px cell splits into 31 px buttons = 15.0 px of content box,
+  // and the captions lay out at LP 14.13 · HP 16.02 · BP 15.11 · NT 15.72 px.
+  // HP, NT and AP therefore paint as `H…`, `N…`, `A…` — the same state the
+  // SHIPPED `filter` dock has been in since #1430 (`LP · H… · B…`), so this
+  // scene pins the platform's behaviour rather than a regression.
+  //
+  // ⚠ IF A FUTURE DIFF SHOWS THOSE THREE CAPTIONS SUDDENLY COMPLETE, that is
+  // the `.seg { flex: 1 1 auto }` fix landing (it is worth ~1 px per button,
+  // which is all this needs) — ACCEPT it, and expect the sibling Segmented
+  // modules to move in the same run. No DOM gate can tell you: `scrollWidth`,
+  // `measureText` (which drops `letter-spacing`) and `faces-parity`'s
+  // `textContent` read all five as clean today. This baseline is the only
+  // surface in the repo that can see it.
+  { type: 'resofilter', pages: 1 },
   // FACE BATCH 4 — the exciter-driven resonator. THREE declared bands, three
   // rendered: the hero promotes the comb panel, POSITION and the STRUM audition
   // out of band 3, which still holds LEVEL, so nothing empties.

@@ -137,6 +137,12 @@ import {
   meowboxTremoloText,
 } from '$lib/ui/modules/meowbox-face-model';
 import {
+  resofilterCvReachText,
+  resofilterFaceParams,
+  resofilterPeakText,
+  resofilterWidthText,
+} from '$lib/ui/modules/resofilter-face-model';
+import {
   ringsBodyText,
   ringsEvenTapText,
   ringsFaceParams,
@@ -162,6 +168,13 @@ import {
   sixstrumStringHz,
 } from '$lib/ui/modules/sixstrum-face-model';
 import { formatVcaGainAtFullCv, vcaFaceParams } from '$lib/audio/vca-gain-model';
+import {
+  wavesculptCamera,
+  wavesculptQuietestText,
+  wavesculptSpreadText,
+  wavesculptViewComboText,
+  wavesculptVoicesLiveText,
+} from '$lib/ui/modules/wavesculpt-face-model';
 
 /** A derived readout: live params in (through the caller's reader, which
  *  already resolves def defaults for untouched params), formatted string out.
@@ -573,6 +586,47 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
     return fmtMs(penteDecayToSustainMs(p.decay, p.sustain));
   },
 
+  // ── RESOFILTER ───────────────────────────────────────────────────────────
+  // THREE readouts for FOUR controls, and the first two are each other's
+  // negative control rather than each needing a separate one.
+  //
+  // RESONANCE is ONE dial setting ONE number (`k = 2 − 2·res`, floored at
+  // 0.003) that becomes a different KIND of quantity in each mode, so the
+  // obvious declaration — `{ label: 'reso', paramId: 'resonance' }` — prints
+  // `0.30` in all five states while what the player hears changes category:
+  //
+  //   LP · HP   a PEAK at cutoff, exactly 1/k: −6.0 dB at res 0 → +50.5 at 1.0
+  //   BP        that same peak AND the band's −3 dB width
+  //   NT        WIDTH ONLY. The notch is a true zero at cutoff at EVERY
+  //             resonance; the dial takes it 2.53 oct → 0.004 oct, which a
+  //             broadband level metric reads as 0.55 dB of nothing.
+  //   AP        NEITHER. Magnitude is exactly 1 at every frequency and every
+  //             resonance (span 0.00 dB), and the dial is a phase angle.
+  //
+  // So `peak` is live in LP/HP/BP and `—` in NT/AP; `width` is live in BP/NT/AP
+  // and `—` in LP/HP. Every mode has exactly one of them except BAND-PASS,
+  // which has both — and a derivation that got the MODE partition wrong would
+  // print a number where the other says `—`, which is what makes the pair
+  // self-checking rather than two separate assertions.
+  //
+  // `cv reach` is the third because it is invariant to everything those two
+  // move with and moves with the one thing they are both blind to. It also
+  // reports a fact nothing else states: `cutoff_cv` declares `cvScale: linear`
+  // on a LOG-tapered param, so the CV adds ±9990 **Hz** and clamps — from the
+  // 1 kHz default that is 5.64 octaves down and 3.46 up, and at the bottom of
+  // the dial it cannot travel down at all. Thirty-eight of the registry's
+  // forty-four log-curve CV targets declare `log` instead, which is symmetric
+  // at ±4.98 octaves everywhere; resofilter is one of six that do not.
+  //
+  // ⚠ THE SPEC'S OWN NUMBERS DID NOT ALL SURVIVE RE-MEASUREMENT, and two of its
+  // errors were the same error — a high-Q filter read before it settled. See
+  // the `resofilter-face-model` header. Every closed form here is re-derived
+  // from the SHIPPING `renderResofilter` on every run by
+  // resofilter-face-model.test.ts, with negative controls in both directions.
+  'resofilter-peak-db': (read) => resofilterPeakText(resofilterFaceParams(read)),
+  'resofilter-band-width': (read) => resofilterWidthText(resofilterFaceParams(read)),
+  'resofilter-cv-reach': (read) => resofilterCvReachText(resofilterFaceParams(read)),
+
   // ── SIX STRUM ────────────────────────────────────────────────────────────
   // `rings for` is RING's and MATERIAL's JOINT answer through the worklet's own
   // loop-gain law: hold RING at 10 s, sweep MATERIAL to 0 and it collapses to
@@ -611,6 +665,42 @@ const FACE_READOUT_VALUES: Readonly<Record<string, FaceReadoutValue>> = {
     return formatVcaGainAtFullCv(base, cvAmount);
   },
 
+  // ── WAVESCULPT ───────────────────────────────────────────────────────────
+  // ⚠ THE OBVIOUS READOUT HERE IS WRONG, and naming it is the point. A
+  // `paramId: 'rot'` readback prints `0.00` at the spawn camera and `0.30` at
+  // the VRT scene's camera — BOTH of which are positions where the BLUE voice
+  // is EXACTLY silent — with nothing to say it. `distanceGain` clamps a
+  // directional dot product at zero, so an emitter facing away from you is not
+  // quiet, it is off, and its per-voice tap (`out_blu`) emits digital zero with
+  // it. A knob readback is invariant to the one quantity in dispute; these
+  // three are the derivation that is not.
+  //
+  // All three go through `distanceGain` + `eyeFromCamera` — the same two
+  // exports the FACTORY calls per voice — so they cannot drift from the audio.
+  //
+  // ⚠ THE LABELS SAY `knob`, AND THEY MUST. This reader is durable-params-only
+  // and all five camera axes carry `paramTarget` CV inputs, so a camera being
+  // flown by an LFO is invisible here. The hero PANEL reads the engine handle
+  // and therefore does see it — the split is deliberate, and the captions state
+  // which side of it they are on (the analogVco `knob pitch` precedent).
+  //
+  // Negative-controlled in BOTH directions, permanently, in
+  // wavesculpt-face-model.test.ts: `voices live` must move on ZOOM with `rot`
+  // held (3 of 4 at zoom 2, 4 of 4 at zoom 3); `quietest` must name a DIFFERENT
+  // voice as the camera orbits and print a real dB figure where all four are
+  // live; `spread` must move on `pos_y` while `voices live` does not, and must
+  // NOT move on `master_gain` (a bus trim applied after the per-voice split).
+  'wavesculpt-voices-live': (read) => wavesculptVoicesLiveText(wavesculptCamera(read)),
+  'wavesculpt-quietest-voice': (read) => wavesculptQuietestText(wavesculptCamera(read)),
+  'wavesculpt-voice-spread-db': (read) => wavesculptSpreadText(wavesculptCamera(read)),
+  // The point in the 3×3 VIEW × BLINK grid, named from the def's own rosters.
+  // All nine combinations are reachable and preserved, but only THREE draw a
+  // distinct picture: `WavesculptCard.tick()` returns early for BIRDSEYE and
+  // SPECTROGRAPH before the WebGL path, so `drawScopes` — the only reader of
+  // BLINK, and of `scale` with it — is unreachable from either. The readout
+  // prints the pair and appends `idle` when the second half is deferred, which
+  // is the only place in the UI a player can learn that.
+  'wavesculpt-view-combo': (read) => wavesculptViewComboText(read),
   // ── CUBE ─────────────────────────────────────────────────────────────────
   // Seven, and the second one is the reason the other six exist. cube's
   // `slice_y` is a real control that is INERT IN EXACTLY ONE STATE — the state

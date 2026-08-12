@@ -82,6 +82,10 @@
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
+// ⚠ TYPE-ONLY, and that is load-bearing here. `scripts/attest-code-basis.ts`
+// erases type-only imports before hashing, and this def is in the WebGL attest
+// basis (`rendersWebGL: true`), so naming the face type costs no GPU re-attest.
+import type { ModuleFace } from '$lib/graph/types';
 import { patch as livePatch } from '$lib/graph/store';
 import { isInputPortConnected } from './transport-helpers';
 import workletUrl from '@patchtogether.live/dsp/dist/wavesculpt-engine.js?url';
@@ -859,6 +863,21 @@ export const wavesculptDef: AudioModuleDef = {
     // Pre-existing tune values are NOT overwritten while chord-mode is
     // active; they're restored from node.params when chord mode flips off.
     ps.push({ id: 'chord_mode',    label: 'Chord',    defaultValue: 0, min: 0, max: 1, curve: 'discrete' });
+    // ⚠ WANTS AN `options: [MAJ, MIN]` ROSTER, AND DELIBERATELY DOES NOT HAVE
+    // ONE YET. Without a roster this sniffs as a TOGGLE (0..1 discrete resting
+    // at 0), so the faceplate paints a switch captioned "Quality" whose ON
+    // state silently means MINOR — while the legacy card already renders a
+    // proper MAJ/MIN radiogroup. PF-1 vocabulary would fix that from one place
+    // and cost nothing in `contract-lock` (`contract-signature.ts` projects
+    // only id/min/max/curve/default/units).
+    //
+    // It is NOT free here, though, and the reason is worth stating so the next
+    // agent does not re-discover it: `params` is CODE, and this def is in the
+    // WebGL attest basis (`rendersWebGL: true`), so adding the roster moves the
+    // GPU content hash (MEASURED: a93a3aba… → ea9cc2b5…) and demands a
+    // trusted-machine re-attest for a two-word vocabulary edit. A faceplate PR
+    // is the wrong place to spend that. Until then the face's `chord` cluster
+    // LABEL carries the meaning, which paints at rest and costs nothing.
     ps.push({ id: 'chord_quality', label: 'Quality',  defaultValue: 0, min: 0, max: 1, curve: 'discrete' });
     // Video mode: 0 = PROXIMITY (3D ribbons, default — the original render),
     // 1 = BIRDSEYE (top-down 2D floorplan showing the spatial system),
@@ -1004,10 +1023,36 @@ export const wavesculptDef: AudioModuleDef = {
     controls.red_color = 'RED oscillator base COLOUR (a colour-wheel picker) — tints the RED osc\'s ribbon, scope line, and neon tube. Packed 0xRRGGBB; chosen via a native colour picker (not a CV knob).';
     controls.grn_color = 'GREEN oscillator base COLOUR (colour picker) — tints the GREEN osc in every blink mode. Packed 0xRRGGBB.';
     controls.blu_color = 'BLUE oscillator base COLOUR (colour picker) — tints the BLUE osc in every blink mode. Packed 0xRRGGBB.';
-    controls.master_gain = 'MASTER GAIN (0..2, default 1) — overall output level of the summed audio mix (L/R), AND the composite drive of the CRT post-process on the render. One knob, both domains: 1 = unity (audio unchanged, picture undistorted), above 1 the mix gets louder while the picture overdrives into soft-clip white smear, 0 mutes L/R and blacks the composite. The per-oscillator taps (out_red/grn/blu/alp) are PRE master gain and are not affected.';
+    // ⚠ THIS DOC USED TO OVER-CLAIM ITS VIDEO HALF, AND IT IS IN STRICT_DOCS.
+    // It said "above 1 the picture overdrives into soft-clip white smear, 0
+    // mutes L/R and blacks the composite". The audio half was and is true; the
+    // video half is arithmetic off ONE shader line (WavesculptCard's BENT_FS):
+    //
+    //   comp    = softClip(comp * uMasterGain);
+    //   yiq.x   = mix(yiq.x, comp - (iq.x + iq.y) * 0.5, uMasterGain * 0.1);
+    //
+    // The BLEND WEIGHT is `master_gain * 0.1`. At gain 0 the weight is 0, so
+    // `yiq.x` is left exactly as it was — the composite path contributes
+    // NOTHING and nothing blacks out (and the scanline darkening, phosphor
+    // mask, bloom 0.4 and noise 0.05 are unconditional, so the CRT character
+    // is still fully on). Full travel 0 → 2 moves mid grey 0.500 → 0.556, and
+    // the first half runs BACKWARDS: 0.500 (g 0) → 0.487 (0.5) → 0.497 (1.0) →
+    // 0.522 (1.5) → 0.556 (2.0). Turning it up from zero darkens the picture
+    // before it recovers.
+    //
+    // ⚠ NOT A WAVESCULPT BUG — the blend line is character-identical in
+    // BENTBOX, whose own doc over-claims more mildly. Fixing the SHADER is a
+    // shared video-behaviour change across two modules and moves both their VRT
+    // baselines: its own PR. Fixing the SENTENCE is wavesculpt-local, and this
+    // is it.
+    controls.master_gain = 'MASTER GAIN (0..2, default 1) — the overall level of the summed stereo mix (L/R), and a small composite drive on the CRT pass. ⚠ THE TWO HALVES ARE NOT THE SAME SIZE. The AUDIO half is a straight bus gain: 0 mutes L/R, 1 is unity, 2 is +6 dB. The VIDEO half is a ~1% effect: the shader blends the driven composite back into luma with weight master_gain × 0.1, so at 0 the weight is ZERO and the picture is left exactly as it was — it does NOT black out, and the light CRT pass (scanlines, phosphor mask, bloom, grain) is unconditional and stays on regardless. Full travel 0 → 2 moves mid grey only 0.500 → 0.556, and the first half runs BACKWARDS (0.500 at 0, 0.487 at 0.5, 0.497 at 1.0), so turning the gain up from zero darkens the picture slightly before it recovers. The per-oscillator taps (out_red/grn/blu/alp) are PRE master gain and are not affected by any of it.';
     // Per-oscillator wavetable selector (DOM-only family).
     controls['wavesculpt-osc-{n}'] =
-      "Oscillator {n}'s wavetable-source strip: a colour-wheel swatch (its base tint), a PRESET dropdown, a FACTORY-table dropdown, and a LOAD button to upload your own .wav as that oscillator's wavetable. The chosen table is the wave each oscillator plays + draws as its ribbon; selection persists on the patch.";
+      "Oscillator {n}'s wavetable-source strip: a colour-wheel swatch (its base tint), a PRESET dropdown, a FACTORY-table dropdown, and a LOAD button to upload your own .wav as that oscillator's wavetable. The chosen table is the wave each oscillator plays + draws as its ribbon; selection persists on the patch. On the FACEPLATE the four strips are one four-row bay (a control family renders exactly once) and the colour swatch is dropped there, because each oscillator's colour is a real param with its own colour-picker cell in that voice's band.";
+    // The faceplate's hero picture (no equivalent on the legacy card, which
+    // splits the same job across two unlabelled joysticks).
+    controls['wavesculpt-room-{n}'] =
+      "ROOM PLAN — the room seen from above, and the camera control. Each of the four oscillators is drawn at its wall position with the cone it aims at the room centre; DRAG the camera marker to fly it (horizontal = camera X, vertical = camera Z/HEIGHT — the axis worth 27.6 dB that the card gives a small knob), or use the arrow keys. An oscillator whose cone faces AWAY from the camera is drawn hollow and crossed because it is SILENT, not merely quiet: the distance gain multiplies its falloff by a directional term that clamps at zero, and its per-oscillator tap goes to digital zero with it — which at the DEFAULT camera is exactly what happens to BLUE. The TAP row picks which output the caption describes: MIX is the summed L + R (POST master gain), and RED/GREEN/BLUE/ALPHA are the per-voice out_red/grn/blu/alp jacks (PRE master gain). The tap choice is your screen only — it is not shared with the rackspace and not saved with the patch.";
     return {
       explanation:
         "A hybrid 4-oscillator 3D video synth — it makes sound AND a live 3D image from the same engine. A unit box holds four 'wall oscillators' (RED / GREEN / BLUE / ALPHA), each emitting a wave ribbon along a vector into the box. One user camera renders the scene; you fly it with an XY pad (X/Y), a HEIGHT slider (Z), ZOOM, and ROTATION. Closer = bigger ribbons AND louder — the same distance number drives both visual size and audio gain, so 'lean in' is consistently louder. Each oscillator is a full wavetable voice: pick its table (preset / factory / your own .wav), set TUNE/FINE/MORPH/SPREAD/FOLD, and shape it with a per-osc ADSR gated by its GATE input and pitched by its PITCH input, plus a pre-mix per-osc FX slot (reverb/delay). The audio output is the summed stereo mix (L/R), with four per-oscillator AUDIO taps (out_red/grn/blu/alp) for routing one voice out independently. The render goes out video_out (a mono-video carrying a light, always-on CRT pass — scanlines, phosphor mask, a little bloom and grain — with no knobs of its own; patch it through BENTBOX for the adjustable, CV-able CRT controls, bearing in mind that stacks two CRT passes) and can be viewed as 3D ribbons, a birds-eye floorplan, or a spectrograph (VIEW). Six VIDEO WALL inputs texture the faces of the room — self-patch video_out → a wall for recursive video feedback, and LUMINOSITY→BANDPASS lets a wall's brightness shape the audio. UNISON/DETUNE and CHORD MODE turn the four voices into a stacked or harmonized instrument; everything is CV-modulatable.",
@@ -1032,7 +1077,399 @@ export const wavesculptDef: AudioModuleDef = {
     // is the wave that oscillator plays + draws. DOM-driven (selection rides
     // node.data), not a ParamDef — declared so the docs layer sees it.
     { id: 'wavesculpt-osc', label: 'Per-oscillator wavetable source', kind: 'cell', testidPrefix: 'wavesculpt-osc' },
+    // THE ROOM PLAN — the faceplate's hero picture: which emitters currently
+    // reach the camera, and which one is DARK. Declared as a FAMILY because a
+    // `<prefix>-{n}` key only resolves to a real cell against
+    // `def.controlFamilies` — there is no legend for this module, so an
+    // undeclared key would render as a dead static cell and fail the lint.
+    // That is the whole reason for the declaration.
+    //
+    // ⚠ THE OLD VERSION OF THIS COMMENT SAID "the platform has no XY-pad
+    // primitive", AND THAT IS FALSE — `$lib/ui/controls/XyPad.svelte` exists,
+    // with per-axis MIDI assign and arrow-key nudge, and the hero panel now
+    // mounts two of them. What the platform lacks is a param-CELL KIND for it
+    // (`face.paramCells` is 'grid' | 'color' | 'fader'), which is a much
+    // smaller statement. On the strength of the wrong sentence this face
+    // shipped once with both of the card's joysticks replaced by knobs.
+    // Painted by WavesculptRoomPanel via shell-cells.ts.
+    { id: 'wavesculpt-room', label: 'Room plan — the camera', kind: 'cell', testidPrefix: 'wavesculpt-room' },
   ],
+
+  // ── THE FACEPLATE ─────────────────────────────────────────────────────────
+  //
+  // Authored from what this module IS, in one sentence: **a room you stand
+  // inside.** Four wavetable voices are bolted to four walls and aimed at its
+  // centre, and ONE camera position is simultaneously the viewpoint and the mix
+  // desk — `distanceGain(src, vec, eye)` is the single number that scales a
+  // voice's ribbon AND its audio gain. Everything else here is a conventional
+  // instrument bolted to that idea: 48 per-oscillator params, six video walls,
+  // an ensemble section and a view switcher. The camera is the part no other
+  // module in the rack has, and it is 5 params out of 79.
+  //
+  // That sentence is also the test this face has to pass. If a player cannot
+  // see WHERE THEY ARE STANDING and WHAT THAT IS DOING TO THE FOUR VOICES, the
+  // face has not described this module — it has described a 79-knob mixer.
+  //
+  // ⚠ 1 · TABBING IS DERIVED, NOT CHOSEN. `dockTabPlan` engages the rail at
+  // `DOCK_TAB_MIN_BANDS = 7`, and any honest banding of 79 params exceeds it.
+  // The documented cost of tabbing — a railed face never row-packs — buys
+  // nothing back here either: 79 cells packed PERFECTLY at the 10-cell row cap
+  // is 8 rows ≈ 720 px at the 90 px band pitch, into a dock content region that
+  // tops out near 550 px (`min(60vh, 680px)` less ~130 px of chrome). This
+  // module cannot be read as one scrolling column at any window size, so the
+  // packing sacrifice costs it nothing it could have had.
+  //
+  // ⚠ 2 · NOTHING CAN BE CUT AT THE FACE LAYER, and the ledger is honest about
+  // that. `faces-parity` asserts EXACT id-multiset equality between the dock's
+  // rendered `control-*` cells and every def param, so all 79 render on day
+  // one; RELOCATE is the only lever a face-only PR has. (The one real CUT this
+  // module had — the eleven CRT params byte-identical to BENTBOX's — landed as
+  // its own def PR before this one, 91 cells → 81.)
+  //
+  // ⚠ 3 · THE LANE SIX ARE RANKED ON MEASUREMENT, AND THE CARD DISAGREES.
+  // Sweeping each camera axis across its full declared range with the other
+  // four at default, total-gain swing:
+  //
+  //     zoom  41.3 dB   pos_z  27.6 dB   pos_y  5.7 dB   pos_x  4.6 dB   rot  3.2 dB
+  //
+  // The card gives its two big joystick axes to `pos_x` and `rot` — the two
+  // LEAST consequential — while `pos_z` at 27.6 dB is a small "Height" knob
+  // wedged between them. This ranking fixes that.
+  //
+  // ⚠ AND `rot` IS RANKED ON A SECOND METRIC, deliberately. Total gain is
+  // INVARIANT to which voice produces it, so it ranks `rot` last — even though
+  // `rot` is the control that MUTES BLUE across 36.7 % of its travel. Ranking
+  // on one number would have buried the module's biggest finding. `rot` is
+  // rank 3 on voice COUNT, and this comment is where that is stated.
+  //
+  // ⚠ 4 · THE DEFAULT CAMERA SILENCES A VOICE, AND THIS FACE'S JOB IS TO SAY
+  // SO. `distanceGain` clamps a directional dot product at zero, so at the
+  // shipped default (eye [0, 0, 2.5], directly behind BLUE on the +Z wall)
+  // BLUE's gain is EXACTLY 0 and `out_blu` emits digital zero with it —
+  // regardless of gate3, pitch_cv3, BLUE's ADSR, its wavetable or its FX slot.
+  // Measured at spawn: RED −25.48 dB, GREEN −26.37 dB, BLUE dark, ALPHA
+  // −23.06 dB. The geometry is deliberate (all four cones cross at the room
+  // centre, and every voice goes silent SOMEWHERE — BLUE is not even the
+  // worst); the defect is that the DEFAULT stands on one of the zeros. Moving
+  // the default, or flooring the directional term, changes the spawn sound of
+  // every saved patch: a def/DSP change needing owner ears and an ART re-pin,
+  // deliberately NOT folded in here. What this face does instead is draw it —
+  // the hero plan crosses the dark emitter and the readout strip counts
+  // `3 of 4`.
+  //
+  // ⚠ 5 · NO `action` CELL, deliberately. WAVESCULPT has no audition seam: its
+  // voices open on `gate1..4` and there is no `manualTrigger` on the handle.
+  // Declaring an action without the factory seam is the sixstrum defect. Unlike
+  // rings the module still RENDERS unpatched, so the faceplate is not a
+  // photograph without one; adding the seam is a factory change and its own PR.
+  face: ((): ModuleFace => {
+    /** One voice's twelve params, in the order the bands read them. DERIVED so
+     *  a fifth voice (or a renamed param) cannot leave the ranking stale. */
+    const voice = (n: number): string[] => [
+      `tune${n}`, `fine${n}`, `morph${n}`, `spread${n}`, `fold${n}`,
+      `A${n}`, `D${n}`, `S${n}`, `R${n}`,
+      `fxType${n}`, `fxAmount${n}`, `thickness${n}`,
+    ];
+    /** The twelve wall params, in FACE order — off `VIDEO_WALL_FACES`, the
+     *  single source of truth for the wall↔face mapping, which today is only
+     *  visible in the legacy card's tiny `W1 · FRONT` captions. */
+    const wallParams = VIDEO_WALL_FACES.flatMap((f) => [
+      `wall${f.wallIdx + 1}_alpha`,
+      `wall${f.wallIdx + 1}_distort`,
+    ]);
+    /** One band per voice. The three colour params are the only asymmetry:
+     *  ALPHA is the mask layer and has none. */
+    const voicePage = (n: number, label: string, colour: string | null) => ({
+      id: label.toLowerCase(),
+      // ⚠ SHORT, BECAUSE ON A TABBED FACE THE LABEL *IS* THE TAB. `bandHeaderPlan`
+      // suppresses the in-band label when a rail exists ("the rail already says
+      // it"), so a long label is a wide chip and eight of them are a rail
+      // nobody can read — MEASURED on the first capture, where three tabs
+      // filled the pane. The wall still rides along because it is two
+      // characters; the rest of the sentence is in the `hint` (annotations) and
+      // in the sidebar's `the room` block (which paints at rest).
+      label: `${label} · ${['+X', '−X', '+Z', '−Z'][n - 1]}`,
+      hint: `${['+X wall, floor height', '−X wall, 25 % up', '+Z wall, mid height', '−Z wall, 75 % up'][n - 1]}, aimed at the room centre — its own table, envelope and PRE-MIX FX slot; gate${n} opens it.`,
+      // ⚠ `controls` IS THE MEMBERSHIP LIST, clusters only GROUP it. A cluster
+      // key the page does not claim is silently ignored by `resolvePage` (it
+      // cannot smuggle an unranked control in), so it would render in the flat
+      // row with the sub-header quietly empty — which module-face-lint fails
+      // loudly rather than leaving to be discovered from a screenshot.
+      // The four clusters claim eight of the twelve; MORPH / SPREAD / FOLD stay
+      // in the flat row above them, which is the reading order the card has.
+      controls: [...(colour ? [colour] : []), ...voice(n)],
+      clusters: [
+        { label: 'pitch', controls: [`tune${n}`, `fine${n}`] },
+        { label: 'envelope', controls: [`A${n}`, `D${n}`, `S${n}`, `R${n}`] },
+        { label: 'fx (pre-mix)', controls: [`fxType${n}`, `fxAmount${n}`] },
+        { label: 'look', controls: [`thickness${n}`] },
+      ],
+    });
+
+    return {
+      // ── RANKS 1-6: THE LANE BUDGET (`faceTierCap('full')` = 6; 'compact'
+      // with a glyph = 2). The lane tile is deliberately a DIFFERENT
+      // INSTRUMENT from the dock: it is a camera controller, which is §1's
+      // sentence rendered at 192 px. Nothing from a voice band reaches it —
+      // with four symmetric voices, promoting `morph1` would promote an
+      // arbitrary quarter of the module.
+      //
+      // `master_gain` takes rank 6 over `video_mode`, which was the first
+      // pick: a VIEW switch is a decision made once, while an output trim is
+      // the one control that must never be more than one gesture away.
+      order: [
+        'zoom', 'pos_z', 'rot', 'pos_x', 'pos_y', 'master_gain',
+        // ── RANK 7+: DOCK-ONLY. A PANEL's first legal rank is 7 —
+        // `module-face-lint` fails any panel SELECTED at a lane tier ("a 380 px
+        // panel in a 46 px knob column"), and `faceTierCap('full')` is 6.
+        'wavesculpt-room-{n}',
+        'wavesculpt-osc-{n}',
+        'unison', 'detune', 'chord_mode', 'chord_quality',
+        'red_color', ...voice(1),
+        'grn_color', ...voice(2),
+        'blu_color', ...voice(3),
+        ...voice(4),
+        'video_mode', 'blink_mode', 'scale', 'wiggle', 'alpha_brightness',
+        'lum_depth', ...wallParams,
+      ],
+
+      // EIGHT BANDS. Four of them are the four voices, which is precedented
+      // rather than novel — DX7 ships GLOBAL + OP1-6.
+      pages: [
+        {
+          id: 'room',
+          // ⚠ EVERY BAND LABEL HERE IS ONE OR TWO WORDS, and that is forced,
+          // not stylistic. This face is TABBED (8 bands ≥ DOCK_TAB_MIN_BANDS),
+          // and on a tabbed face the band LABEL is the tab chip and the only
+          // thing that paints at rest. The first capture used sentence-length
+          // labels and three tabs filled the whole 1220 px pane. So the facts
+          // moved to the surfaces that DO paint inside a band: cluster labels,
+          // the sidebar blocks and the hero panel's caption. The `hint`s below
+          // keep the long form for the annotations toggle.
+          label: 'ROOM',
+          hint:
+            'the same distance number sets a voice’s ribbon size AND its audio gain, and its ' +
+            'directional term CLAMPS AT ZERO — an emitter facing away from you is silent, not quiet.',
+          // The hero promotes the panel and `zoom` out of this band; the other
+          // four axes keep it alive, which is what keeps the hint reachable.
+          controls: ['wavesculpt-room-{n}', 'zoom', 'pos_z', 'rot', 'pos_x', 'pos_y'],
+        },
+        {
+          id: 'ensemble',
+          label: 'ENSEMBLE',
+          hint:
+            'UNISON stacks the four on one pitch; CHORD MODE reads voice 1’s pitch and offsets ' +
+            'the other three, which is why TUNE 2/3/4 stop responding while it is on.',
+          controls: [
+            'wavesculpt-osc-{n}', 'master_gain',
+            'unison', 'detune', 'chord_mode', 'chord_quality',
+          ],
+          clusters: [
+            { label: 'unison', controls: ['unison', 'detune'] },
+            // ⚠ THE CLUSTER IS DOING REAL WORK. `chord_mode` OVERRIDES
+            // `tune2/3/4` — the factory writes `live.tune1 + interval[i]` for
+            // every voice while it is on, and restores the knobs on exit. Put
+            // the toggle anywhere else and a player turns TUNE 3 and hears
+            // nothing move. (Two params encoding one 3-state choice is a MERGE
+            // worth making, but deleting a param is a def PR; the cluster is
+            // the same grouping at zero contract cost.)
+            // ⚠ THE LABEL CARRIES WHAT THE SWITCH CANNOT. `chord_quality` has
+            // no `options` roster (see the param — adding one costs a GPU
+            // re-attest), so it paints as a bare toggle whose ON state means
+            // MINOR and says so nowhere. A cluster label paints at rest and is
+            // free, so it says it here until the roster lands.
+            { label: 'chord · quality ON = minor', controls: ['chord_mode', 'chord_quality'] },
+          ],
+        },
+        voicePage(1, 'RED', 'red_color'),
+        voicePage(2, 'GREEN', 'grn_color'),
+        voicePage(3, 'BLUE', 'blu_color'),
+        voicePage(4, 'ALPHA', null),
+        {
+          id: 'view',
+          label: 'VIEW',
+          hint:
+            'VIEW × BLINK is a 3×3 grid and all nine states persist, but BLINK only DRAWS inside ' +
+            'PROXIMITY: BIRDSEYE and SPECTROGRAPH return before the 3D path, so the scope modes ' +
+            'and SCALE with them are held rather than lost.',
+          controls: ['video_mode', 'wiggle', 'blink_mode', 'scale', 'alpha_brightness'],
+          // ⚠ THE TWO CLUSTER LABELS ARE WHERE THE DEAD-CONTROL FACTS LIVE, and
+          // they are the only place on a tabbed face that can hold them: a band
+          // label is the tab chip and a hint needs the annotations toggle,
+          // while a cluster label paints at rest inside the band.
+          clusters: [
+            // `uScale[]` is read solely by the SCOPE program, and `drawScopes`
+            // runs only at `blink_mode > 0`. `blink_mode` defaults to 0, so on
+            // a freshly spawned module the SCALE knob does NOTHING — a
+            // prominent always-visible control on the legacy card with nothing
+            // anywhere saying so.
+            { label: 'scope modes only — SCALE is dead at RIBBONS', controls: ['blink_mode', 'scale'] },
+            // `uAlphaBrightness` is used inside one branch guarded by
+            // `uHasAlphaIn > 0.5`, so with nothing patched into `alpha_in` the
+            // knob is a complete no-op. Same class as SCALE: a layout fact the
+            // card never states.
+            { label: 'inert until alpha_in is patched', controls: ['alpha_brightness'] },
+          ],
+        },
+        {
+          id: 'walls',
+          label: 'WALLS',
+          hint:
+            'The six faces of the room, seen from inside. LUM→BP is the cross-domain path: the ' +
+            'card samples each line’s two wall-crossing luminosities and pushes them into the ' +
+            'worklet’s per-line band-pass, so a bright wall opens a voice and a black one ' +
+            'narrows it.',
+          controls: ['lum_depth', ...wallParams],
+          clusters: [
+            // The one control here that is not a wall: it is the wall→AUDIO
+            // coupling, and its own cluster label is what says so at rest.
+            { label: 'wall luma → per-line band-pass', controls: ['lum_depth'] },
+            // Then one cluster per FACE, named from `VIDEO_WALL_FACES`. This
+            // mapping is the payoff of the band: it already is the single
+            // source of truth for both the port docs and the card's geometry,
+            // and until now a player could only read it in a 9 px caption.
+            ...VIDEO_WALL_FACES.map((f) => ({
+              label: `${f.label.toLowerCase()} · ${(['x', 'y', 'z'] as const)[f.axis]}${f.sign > 0 ? '+' : '−'}`,
+              controls: [`wall${f.wallIdx + 1}_alpha`, `wall${f.wallIdx + 1}_distort`],
+            })),
+          ],
+        },
+      ],
+
+      // A live trace off the summed bus. ⚠ SAFE ON A FROZEN VRT CAPTURE for a
+      // reason worth stating: WAVESCULPT is SILENT unpatched (all four voices
+      // need gates), so the compact tile reads a flat trace. It is the 3D
+      // render that is unstable here, and the glyph does not draw that.
+      glyph: 'scope',
+
+      // The three packed-RGB params. ⚠ UNDECLARED THEY ARE KNOBS OVER 16.7
+      // MILLION STATES — and `faces-parity` would PASS them, because it drags
+      // the knob and asserts the param moved, which it does. A green gate
+      // certifying three unusable controls is exactly the class CLAUDE.md warns
+      // about; the `color` cell kind exists for it, and wavesculpt is its first
+      // faceplate consumer.
+      paramCells: { red_color: 'color', grn_color: 'color', blu_color: 'color' },
+
+      title: 'Room',
+      hint:
+        'Four wavetable voices bolted to four walls and aimed at the centre, and ONE camera ' +
+        'position that is simultaneously the viewpoint and the mix desk. At the DEFAULT camera ' +
+        'the BLUE voice is EXACTLY silent — it faces away from you — and out_blu emits digital ' +
+        'zero with it.',
+
+      hero: {
+        cell: 'wavesculpt-room-{n}',
+        control: 'zoom',
+        // ⚠ EVERY VALUE HERE IS KNOB-ONLY, AND THE LABELS SAY SO. A registered
+        // `FaceReadoutValue` is handed a DURABLE-param reader, and all five
+        // camera axes carry `paramTarget` CV inputs — so a camera being flown
+        // by an LFO is invisible to these three. The hero PANEL reads the
+        // engine handle and does see it; the split is deliberate, and the
+        // captions state which side of it they are on.
+        //
+        // ⚠ `view` CARRIES NO `knob` PREFIX, and that asymmetry is the point:
+        // `video_mode` and `blink_mode` have no CV inputs, so a durable read is
+        // COMPLETE for them. A blanket prefix would have made the caption lie
+        // in the other direction.
+        readouts: [
+          { label: 'knob voices live', valueId: 'wavesculpt-voices-live' },
+          { label: 'knob quietest', valueId: 'wavesculpt-quietest-voice' },
+          { label: 'knob spread', valueId: 'wavesculpt-voice-spread-db' },
+          { label: 'view', valueId: 'wavesculpt-view-combo' },
+        ],
+      },
+
+      // ⚠ THE `signal-flow` BLOCK THIS FACE CARRIED IS GONE, and nothing was
+      // invented to replace it. It listed the factory's chain (WAVETABLE ×4 /
+      // LUMA BANDPASS / ADSR ×4 / FX SLOT ×4 / DIST GAIN ×4 / PAN ×4 /
+      // PER-VOICE TAP / MASTER → L/R). Owner directive 2026-08-11, looking at
+      // analogVco's — "this really isn't accurate. lets stop doing these and
+      // clean up the existing ones, get rid of them." The kind itself was
+      // deleted fleet-wide in #1468, so this is not a style choice: the union
+      // arm no longer exists and re-adding one would not typecheck.
+      //
+      // The reason survives the removal: a stage list is a hand-authored model
+      // of the DSP that NOTHING verifies against the DSP — not contract-lock,
+      // not module-face-lint, not ART — so it is free to drift the moment the
+      // worklet moves. That is doubly true here, where the chain's one
+      // interesting fact (the per-voice taps leave BEFORE the master trim) is
+      // now stated where a gate can read it: the `outputs` block below, and
+      // `docs.outputs.*` in prose for right-click → annotate.
+      sidebar: [
+        {
+          kind: 'readouts',
+          label: 'the room',
+          // FIXED FACTS — constants of the geometry, which is what a `text`
+          // readout is for. The live numbers are in the readout strip and the
+          // hero panel. Every wall/height here is `WALL_LAYOUT`'s.
+          entries: [
+            { label: 'RED', text: '+X wall · y −1.0' },
+            { label: 'GREEN', text: '−X wall · y −0.5' },
+            { label: 'BLUE', text: '+Z wall · y ±0.0' },
+            { label: 'ALPHA', text: '−Z wall · y +0.5' },
+            { label: 'facing away', text: 'SILENT, not quiet' },
+          ],
+        },
+        {
+          kind: 'readouts',
+          label: 'outputs',
+          // ⚠ THE OUTPUT CHOICE, STATED. This module has SEVEN outputs and no
+          // output-selector param — the choice is made by patching, and the
+          // difference that matters (the four voice taps are PRE master gain,
+          // the mix is POST) has never been visible anywhere but a doc page.
+          // The hero panel's TAP row is the selectable half of this; these four
+          // lines are the map.
+          entries: [
+            { label: 'L + R', text: 'the mix · post gain' },
+            { label: 'out_red…alp', text: 'per voice · pre gain' },
+            { label: 'video_out', text: 'VIEW · CRT baked in' },
+            { label: 'CRT knobs', text: 'patch → BENTBOX' },
+          ],
+        },
+      ],
+
+      // REAR CARD. Every one of the 26 inputs is claimed, so nothing derives:
+      // twelve per-voice jacks, the five camera axes, the three view/mask
+      // inputs and the six walls. The WALL band is the curation that pays —
+      // `VIDEO_WALL_FACES` already knows which port is which face of the room,
+      // and the back of the card is where a player needs it.
+      rear: {
+        groups: [
+          {
+            id: 'voice',
+            label: 'VOICE — gate, pitch and morph, per oscillator',
+            ports: [
+              'gate1', 'pitch_cv1', 'morph1_cv',
+              'gate2', 'pitch_cv2', 'morph2_cv',
+              'gate3', 'pitch_cv3', 'morph3_cv',
+              'gate4', 'pitch_cv4', 'morph4_cv',
+            ],
+          },
+          {
+            id: 'room',
+            label: 'ROOM — the camera, as CV',
+            ports: ['pos_x', 'pos_y', 'pos_z', 'zoom', 'rot'],
+          },
+          {
+            id: 'view',
+            label: 'VIEW — scope scale, wiggle, and the alpha mask',
+            ports: ['scale', 'wiggle', 'alpha_in'],
+          },
+          {
+            id: 'walls',
+            label: 'WALLS — the six faces of the room, seen from inside',
+            ports: VIDEO_WALL_FACES.map((f) => `wall${f.wallIdx + 1}`),
+          },
+        ],
+        clusters: [
+          { group: 'voice', label: 'red', ports: ['gate1', 'pitch_cv1', 'morph1_cv'] },
+          { group: 'voice', label: 'green', ports: ['gate2', 'pitch_cv2', 'morph2_cv'] },
+          { group: 'voice', label: 'blue', ports: ['gate3', 'pitch_cv3', 'morph3_cv'] },
+          { group: 'voice', label: 'alpha', ports: ['gate4', 'pitch_cv4', 'morph4_cv'] },
+        ],
+      },
+    };
+  })(),
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     const initialParams = (node.params ?? {}) as Record<string, number>;

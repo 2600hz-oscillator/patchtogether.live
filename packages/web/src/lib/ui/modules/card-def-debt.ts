@@ -35,10 +35,25 @@ export const OPERATIONAL_DEBT: Readonly<Record<string, readonly string[]>> = {
   // is to teach `Knob.svelte` the branch its two sibling primitives already
   // have, which changes the drag feel of every discrete knob in the rack and is
   // therefore its own reviewed PR.
+  //
+  // ⚠ `ResofilterCard.svelte: mode.curve` WAS THE FOURTH AND IS NOW BOUND
+  // (2026-08-11, the resofilter face). NOT because the reasoning above was
+  // wrong — it is exactly right, and binding the prop changed nothing that
+  // renders — but because the card entered `RANGE_BOUND_CARDS` in that PR, and
+  // `card-range-source`'s curve-AGREEMENT clause refuses a range-bound card
+  // that still hand-types a curve its def disagrees with. That refusal is
+  // correct: a card in the certified def-bound set cannot also be carrying a
+  // known disagreement, however harmless, because "harmless" is a property of
+  // today's `Knob.svelte` and not of the declaration.
+  //
+  // THE REAL DEFECT SURVIVES AND IS NOT TRACKED BY THIS ENTRY ANY MORE — it is
+  // the three cards below plus every other discrete `<Knob>`: the primitive has
+  // no `discrete` branch while `Fader.svelte` and `knob-conic-model.ts` both
+  // do. Teaching it one changes the drag feel of every discrete knob in the
+  // rack, so it stays its own reviewed PR.
   'FoxyCard.svelte': ['gen_mode.curve'],
   'Moog921bCard.svelte': ['range.curve'],
   'PeakstateCard.svelte': ['complexity.curve'],
-  'ResofilterCard.svelte': ['mode.curve'],
 
   // ── The analogVco bug, on its twin ────────────────────────────────────────
   // Identical to the `AnalogVcoCard` defect fixed in the PR that added this
@@ -127,17 +142,47 @@ export const VOCABULARY_DEBT: Readonly<Record<string, readonly string[]>> = {
   'WavesculptCard.svelte': ['alpha_brightness.label', 'pos_z.label'],
 };
 
-/** ⚠ BOTH ONLY SHRINK. `card-def-agreement.test.ts` asserts `actual <= CEILING`
- *  AND `CEILING - actual === 0`, so a drain that forgets to lower the number is
- *  red rather than silent slack.
- *
- *  OPERATIONAL was 10 before `AnalogVcoCard`'s `fmAmount.min`/`pmAmount.min`
- *  and `MarblesCard`'s `length.curve`/`x_length.curve` were bound to the def. */
-export const OPERATIONAL_DEBT_CEILING = 6;
-export const VOCABULARY_DEBT_CEILING = 248; // was 250 until MarblesCard bound its LABELS to the def
-                                            // with the marbles face (2026-08-11), draining
-                                            // `t_jitter.label` ("Jitter" vs "T Jitter") and
-                                            // `x_length.label` ("X Len" vs "X Length").
+// ⚠ THE TWO CEILINGS THAT USED TO LIVE HERE ARE DELETED (2026-08-11), under
+// CLAUDE.md's standing "NEVER hand-type a population count" directive, which
+// names this file in the surviving legacy tail and says to remove the counter
+// when you touch it. `OPERATIONAL_DEBT_CEILING` was 6 and
+// `VOCABULARY_DEBT_CEILING` 250, with `card-def-agreement.test.ts` asserting
+// `actual <= CEILING` AND `CEILING - actual === 0`.
+//
+// WHAT THEY PROTECTED, CHECKED BEFORE REMOVING THEM (the #1458 rule — two of
+// Phase 1's three "this is redundant" claims turned out to be wrong on
+// measurement, so the trace stays where the constant stood):
+//
+//   · `actual <= CEILING` caught the debt GROWING. That is already caught,
+//     strictly earlier and with a better message, by the two deny-by-default
+//     clauses above it: a card control that disagrees with its def is RED
+//     unless its exact `<param>.<field>` triple is added to one of these
+//     ledgers. The ceiling only added "…and also bump a number", which is not
+//     a second check, it is a second edit.
+//   · `CEILING - actual === 0` caught a drain that forgot to lower the number.
+//     Vacuous once there is no number — and the drain itself is still caught,
+//     by the STALE-ENTRY anchor, which is the real mechanism: a ledger entry
+//     naming a divergence that no longer exists in the source is RED.
+//
+// So the surviving set is deny-by-default + a NAMED entry per instance +
+// an anchor to the artifact, which is precisely the shape the directive
+// prescribes as the replacement. No successor counter.
+//
+// ⚠ AND THE REMOVAL IS NOT ONLY HYGIENE HERE. This file is a shared registry
+// edited by every card conversion, and CLAUDE.md's measured example of a count
+// auto-merging WRONG is three concurrent FACE branches doing exactly that
+// (`9/7` → `10/8`, `11/9`, `11/9`, truth `12/10`, one of them merging cleanly
+// and wrongly). A deleted constant cannot merge wrong; a decremented one can.
+//
+// ⚠ AND IT HAPPENED WHILE THIS BRANCH WAS OPEN, which is as good a proof as the
+// argument is going to get. `marbles` (#1467) landed on main the same day and
+// lowered `VOCABULARY_DEBT_CEILING` 250 → 248 for its two drained label
+// entries, concurrently with this branch deleting both constants. Git surfaced
+// it as a conflict ONLY because the two edits happened to touch adjacent lines;
+// had the resofilter drain been to the VOCABULARY ledger instead of the
+// OPERATIONAL one, both branches would have written a correct-for-their-own-tree
+// number and the union would have merged cleanly and WRONG. The ledger LISTS
+// merged with no help at all, because a named entry carries its own identity.
 
 /** Flatten a ledger to `card:param.field` triples (the countable form). */
 export function debtTriples(ledger: Readonly<Record<string, readonly string[]>>): string[] {

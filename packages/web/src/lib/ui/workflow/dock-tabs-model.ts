@@ -106,3 +106,35 @@ export function dockBandVisible(
   if (!tabs) return true;
   return bandId === activeDockTab(tabs, active);
 }
+
+/**
+ * Does the HERO RAIL render BELOW the section bands rather than above them?
+ *
+ * ⚠ ONLY ON A RAILED FACE, and it is a fix rather than a preference. A tab rail
+ * promises "click here to change what you see"; the thing it switches is the
+ * band. Anything rendered between the rail and the band is spent from the same
+ * scroll budget BEFORE the switched content begins, so a hero taller than the
+ * pane makes every tab a no-op TO THE EYE while the DOM changes perfectly.
+ *
+ * MEASURED at 1280×720 (the `.faceplate-scroll` box is 352 px there):
+ *
+ * | railed face   | hero px | active band top | px of the band on screen |
+ * |---------------|---------|-----------------|--------------------------|
+ * | cloudseed     |      20 |             123 |                       76 |
+ * | pentemelodica |     163 |             265 |                       76 |
+ * | **wavesculpt**|   **445** |         **547** |                    **0** |
+ *
+ * Zero. Eight tabs, a correct `hidden` flip on every one of them, and nothing
+ * a user could see — which is exactly how it was reported ("these tabs don't
+ * seem functional / do not change anything"). Ordering the panel first is also
+ * what the tabs ARIA pattern asks for: `role="tabpanel"` follows its
+ * `role="tablist"`, and 445 px of unrelated chrome between them is a defect on
+ * that axis too.
+ *
+ * An UNTABBED face is untouched: it shows every band at once, so the hero is
+ * not competing with a switch, and moving it would churn ~19 baselines for
+ * nothing. Pure.
+ */
+export function heroRailBelowBands(tabs: readonly DockTab[] | null | undefined): boolean {
+  return !!tabs && tabs.length > 0;
+}

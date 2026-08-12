@@ -438,6 +438,20 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
     'cloudseed:early_diffuse_enabled',  // the early all-pass network
     'cloudseed:eq_low_shelf_enabled',   // in-loop low shelf
     'cloudseed:eq_lowpass_enabled',     // in-loop lowpass
+    // WAVESCULPT, 2026-08-10 — the three switch-shaped params its face
+    // promoted. Confirmed against the factory, not assumed: `unison` and
+    // `chord_mode` are read as LEVELS on every envelope tick (`live.unison`,
+    // `live.chord_mode`) and hold their effect for as long as they are on —
+    // chord mode even RESTORES `tune2/3/4` from `node.params` when it flips
+    // off, which only makes sense for a state you leave engaged. `chord_quality`
+    // is a two-state PICK (0 = major, 1 = minor) that selects a chord table; it
+    // fires no edge at all. None of the three has a
+    // pointerdown/pointerup path anywhere in the card, and the module has no
+    // press-pad of any kind. The doc cross-check below is what keeps that
+    // honest.
+    'wavesculpt:unison',
+    'wavesculpt:chord_mode',
+    'wavesculpt:chord_quality',
     // CLOUDS, 2026-08-10. FREEZE is a LATCH, and this is the one-word error
     // that would break the module's headline feature — its shape
     // (`0..1 discrete default 0`) is byte-identical to a press-pad's, which is

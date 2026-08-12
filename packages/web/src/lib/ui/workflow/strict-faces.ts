@@ -161,6 +161,53 @@
 // directions, against the REAL processor class on twelve key sets — including
 // the one worklet constant the model has to mirror, which is anchored by
 // measuring the shipping DSP rather than by a comment.
+//
+// FACE BATCH 3 · wavesculpt (2026-08-10) — the largest face on the bar by a
+// factor of two (81 cells: 79 params + 2 families), PROMOTED from no face at
+// all, and the entry whose argument is that a faceplate can make a SHIPPED
+// DEFECT impossible to miss without touching the DSP that causes it.
+//
+// The module is a ROOM YOU STAND INSIDE: four wavetable voices bolted to four
+// walls and aimed at its centre, and ONE camera position that is simultaneously
+// the viewpoint and the mix desk — `distanceGain` scales a voice's ribbon AND
+// its audio gain off the same number. That is the part no other module in the
+// rack has, and it is 5 params out of 79, buried in the legacy card behind two
+// unlabelled joysticks.
+//
+// ⚠ THE DIRECTIONAL TERM CLAMPS AT ZERO, so at the SHIPPED DEFAULT camera the
+// BLUE voice is EXACTLY silent (the eye sits directly behind it on the +Z
+// wall) and `out_blu` emits digital zero with it. Every gate stayed green for
+// the module's whole life: the one test that looks at this asserts zoom-max is
+// no quieter than zoom-min and passes for BLUE with a 0.973 margin, because it
+// never samples the default zoom. Not a wrong assertion — a wrongly chosen
+// sample set. The face does not fix it (moving the default, or flooring the
+// term, changes the spawn sound of every saved patch: owner ears + an ART
+// re-pin, its own PR). It DRAWS it: the hero room-plan crosses the dark
+// emitter and the readout strip counts `3 of 4`.
+//
+// ⚠ ITS LANE RANKING CONTRADICTS THE CARD, ON MEASUREMENT. Total-gain swing
+// per camera axis: zoom 41.3 dB, pos_z 27.6, pos_y 5.7, pos_x 4.6, rot 3.2.
+// The card gives its two big joystick axes to the two LEAST consequential
+// (pos_x, rot) and `pos_z` a small "Height" knob. ⚠ AND `rot` IS RANKED ON A
+// SECOND METRIC — total gain is invariant to WHICH voice produces it, so it
+// ranks `rot` last even though `rot` mutes BLUE across 36.7 % of its travel.
+// One number would have buried the finding; the face states which metric each
+// rank is on.
+//
+// ⚠ FIRST FACEPLATE CONSUMER OF THE `color` CELL. `red_color`/`grn_color`/
+// `blu_color` are packed 0xRRGGBB over 0..16777215, and UNDECLARED they render
+// as knobs sweeping 16.7 million states — which faces-parity would PASS, since
+// it drags the knob and asserts the param moved. `face.paramCells` declares
+// them, and the `color` entry in param-cell-coverage's
+// UNEXERCISED_BY_FACES_PARITY (written naming this module, "wavesculpt has no
+// `face` yet") is deleted in the same commit.
+//
+// ⚠ MEASUREMENTS ARE NOT REPEATED IN PROSE HERE beyond the framing above:
+// every one is RE-DERIVED from `distanceGain` + `eyeFromCamera` — the same two
+// exports the FACTORY calls — on every run by `wavesculpt-face-model.test.ts`,
+// in both directions, including the two that would have caught the wrong
+// instrument (voices-live must move on ZOOM with `rot` held; spread must NOT
+// move on `master_gain`).
 
 // FACE BATCH 3 · cube (2026-08-10) — the biggest face in the repo (26 params
 // + 2 panels = 28 cells) and the first one whose HERO IS THE MODULE'S EXISTING
@@ -453,6 +500,116 @@
 // also means marbles is NOT a witness for #1420's audio freeze, which the same
 // draft claimed: it free-runs, but nothing on the face was ever reading it.
 
+// FACE BATCH 4 · resofilter (2026-08-11) — the clean multi-mode filter, and the
+// SECOND face authored under the owner's no-prose ruling. (It was authored
+// concurrently with `marbles` above, which landed first; the two branches
+// reached the same shape independently, which is the useful part — the ruling
+// is specific enough to converge on.) Nothing on this panel is a sentence: no
+// `face.title`, no `face.hint`, no band caption, and no signal-flow block —
+// that last one struck by the same day's SEPARATE ruling ("lets stop doing
+// these and clean up the existing ones"), and it would have been a poor block
+// here regardless, since one SVF whose five modes are taps off one shared state
+// is one box rather than a chain. The band header is a plain label and every
+// readout is a value and a unit. Everything explanatory went into `docs`, which
+// is what right-click → annotate already reads.
+//
+// ITS ONE ARGUMENT: RESONANCE is a single dial setting a single number
+// (`k = 2 − 2·res`, floored at 0.003) that becomes a different KIND of quantity
+// in each mode, and no surface on the module said so. A `resonance` readback
+// prints `0.30` in all five states while the player hears
+//
+//   LP · HP   a PEAK at cutoff, exactly 1/k — measured −6.02 / −2.92 / +1.94 /
+//             +13.98 / +33.98 / +50.46 dB at res 0 / .3 / .6 / .9 / .99 /
+//             ≥.9985, identical in both modes and at every cutoff 50 Hz–15 kHz
+//   BP        that peak AND the band's −3 dB width
+//   NT        WIDTH ONLY — the notch is a TRUE ZERO at cutoff at every
+//             resonance, and the dial runs 2.53 → 0.004 octaves, which a
+//             broadband level metric reads as 0.55 dB of nothing at all
+//   AP        NEITHER — magnitude is exactly 1 at every frequency and every
+//             resonance (span 0.00 dB over the whole travel) while `max|Δ|`
+//             runs 9.3e-4 → 1.4e0. A pure phase rotation, invisible to every
+//             level-based instrument in the repo.
+//
+// The face says that with TWO readouts that are each other's negative control
+// — `peak` live in LP/HP/BP, `width` live in BP/NT/AP — plus a sidebar picture
+// that switches to PHASE in allpass, because a magnitude plot there is a flat
+// line, i.e. a picture certifying that a live control is dead.
+//
+// ⚠ FOUR OF THE SPEC'S NUMBERS DID NOT SURVIVE RE-MEASUREMENT, and two of them
+// were the same mistake twice: a Q≈333 filter read before it had settled.
+// `.myrobots/plans/face-specs-batch-4-resofilter.md` reports the plateau gain
+// as 50.441 dB and back-derives an "implied k_min ≈ 0.003006" from it — but
+// `resToK` floors k at EXACTLY 0.003 (50.4576 dB), and the measurement
+// converges there on a 2 s render (50.4547 / 50.4576 / 50.4576 / 50.4576 dB at
+// 1 / 2 / 4 / 8 s). It likewise reports the notch as "50 dB deep and zero
+// octaves wide" at resonance 1.0: −68.0 dB on a 1 s render, −154.9 dB on 4 s
+// and 16 s. The notch is a true zero at every resonance. Its "18 of 60 corners
+// exceed full scale" does not reproduce and cannot — the count is a property of
+// which 60 corners (9 on a plausible grid) — so the face publishes the robust
+// form instead: +50.46 dB of peak gain with nothing limiting, i.e. a −6 dBFS
+// sine leaving at +44.46 dBFS. And its L/R dB figures do not reproduce while
+// its `max|L−R| = 5.281e-1` does to the digit, so the CLAIM holds and only the
+// reference level differed. Everything else in the spec reproduced unchanged.
+//
+// ⚠ AND THE SPEC'S ONE STATED BLOCKER WAS NOT ONE. It calls declaring `options`
+// on MODE "a contract change (task docs:accept)" costing "+5 contract-lock
+// lines". `contract-signature.ts` projects id/min/max/curve/default/units and
+// nothing else, so naming a value moves ZERO lines — measured, contract-lock is
+// byte-identical across this PR. Declaring it also let the def stop
+// hand-duplicating `RESOFILTER_MODE_NAMES` — the copy's stated reason (an SSR
+// `sampleRate` import) was false; the DSP lib takes `sr` as an argument
+// everywhere.
+//
+// ⚠ THE SPEC'S OTHER WARNING ABOUT `options` RE-MEASURES **TRUE**, AND THIS
+// FACE'S FIRST ANSWER TO IT WAS WRONG. It says filter's three two-letter
+// captions already render `LP · H… · B…` at the dock — screenshotted on `main`,
+// they do. The first draft here argued a five-caption roster was SAFE because
+// an EVEN roster splits evenly and therefore cannot clip. The pixels say
+// otherwise: the MODE cell is 182.5 px, `.seg` is `flex: 1 1 0%` → 31 px per
+// button → 15.0 px of content box, and the captions lay out at LP 14.13 ·
+// HP 16.02 · BP 15.11 · NT 15.72 px, so THREE OF FIVE clip (`H…`, `N…`, `A…`).
+// Evenness was never the mechanism; total width is. The deficit is 0.1–0.4 px
+// — ONE more pixel of button width fits all five.
+//
+// ⚠ AND EVERY CHEAP INSTRUMENT CALLED IT CLEAN. `scrollWidth === clientWidth`
+// on all five (a one-line ellipsis leaves no overflow); a canvas `measureText`
+// at the computed font returned 12.92 / 14.80 / 13.91 / 14.52 px, all under
+// 15.0, because `measureText` DROPS `letter-spacing` — 0.6 px × 2 chars is
+// exactly the 1.2 px it misses against a Range measurement; and `faces-parity`
+// reads `textContent`, which an ellipsis does not change. A 3× screenshot of
+// the cell is what found it. It ships anyway, because every alternative a face
+// can reach is worse: without `options` the control is the `0.00`…`4.00` rotary
+// this declaration exists to remove, `paramCells: 'grid'` hides the roster
+// behind a chip, and the real fix (`.seg { flex: 1 1 auto }`) repaints five
+// other modules' dock baselines and wants an owner preview.
+//
+// ⚠ TWO THINGS THE FACE DOCUMENTS RATHER THAN FIXES, both because they are
+// contract or DSP changes that want their own PR and re-pin:
+//   · `cutoff_cv` declares `cvScale: 'linear'` on a LOG-tapered param, so the
+//     CV adds ±9990 **Hz** and clamps. From 1 kHz that is 5.64 octaves down and
+//     3.46 up; at the 20 Hz bottom of the dial it cannot travel down AT ALL.
+//     38 of the registry's 44 log-curve CV targets declare `log` (symmetric at
+//     ±4.98 oct), including the qbrt and moog904c cutoffs. The `cv reach`
+//     readout STATES the window.
+//   · nothing limits the +50.46 dB peak. A DSP question with an ART re-pin.
+//
+// ⚠ AND ONE DELIBERATE NON-FIX ON THE CARD, WHICH THE GATES ARGUED WITH.
+// `ResofilterCard.svelte` is now range- AND mapping-bound, and one of the five
+// bound props is a NO-OP: MODE passed `curve="linear"` where the def says
+// `discrete`, and `Knob.svelte` branches on `log`/`exp` only, so `discrete`
+// falls through to linear and nothing renders differently. The first attempt
+// left it unbound on exactly that reasoning (CLAUDE.md's "check the consumer
+// reads it") and `card-range-source`'s curve-AGREEMENT clause refused, rightly:
+// a range-bound card is CERTIFIED def-bound, and "this disagreement happens to
+// be harmless" is the argument that lets the next one not be. What the binding
+// does not do is make MODE detented. That needs the PRIMITIVE — the five-state
+// Segmented the def now declares `options` for, which the DOCK renders — and
+// swapping it on the card would move the `resofilter` vrt.spec baseline by
+// roughly the 865 px #1213 measured for the identical swap on filter: UNDER
+// DOCK_MAX_DIFF, therefore invisible to the gate AND unrepinnable by
+// `--update-snapshots`. Its own PR, with an owner preview and a `git rm` first.
+// The card is otherwise pixel-unchanged.
+
 // FACE BATCH 4 · rings (2026-08-11) — the exciter-driven RESONATOR, PROMOTED
 // from having no face at all, and the entry whose argument is that A MODULE
 // THAT CANNOT BE SOUNDED IS NOT A FACEPLATE PROBLEM UNTIL SOMEONE LOOKS.
@@ -552,6 +709,8 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   'macrooscillator',
   // FACE BATCH 3 · the DTMF dialer (2026-08-09) — see the header note above.
   'bluebox',
+  // FACE BATCH 3 · the room you stand inside (2026-08-10) — header note below.
+  'wavesculpt',
   // FACE BATCH 3 · the 3-D wavetable navigator (2026-08-10) — see below.
   'cube',
   // FACE BATCH 4 · the granular texture processor (2026-08-10) — see above.
@@ -562,6 +721,8 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   'cofefve',
   // FACE BATCH 4 · the random source (2026-08-11) — see the header note above.
   'marbles',
+  // FACE BATCH 4 · the clean multi-mode filter (2026-08-11) — see above.
+  'resofilter',
   // FACE BATCH 4 · the exciter-driven resonator (2026-08-11) — see above.
   'rings',
 ]);

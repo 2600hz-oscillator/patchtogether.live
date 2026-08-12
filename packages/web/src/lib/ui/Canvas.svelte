@@ -2005,7 +2005,18 @@
       if (isCanvasHiddenNode(n)) continue;
       const parentGroupId = (n.data as { parentGroupId?: string } | undefined)?.parentGroupId;
       if (parentGroupId && collapsed.has(parentGroupId)) continue;
-      if (dockStore.isFullView(n.id)) continue;
+      // ⚠ THE FULL-VIEW SKIP IS CONDITIONAL ON THE DOCK ACTUALLY MOUNTING THE
+      // CARD, and it used to be unconditional. For an UNMIGRATED module the
+      // dock full-view IS the real card (DockCardHost), so hosting a second
+      // copy off-screen would run two <video> elements for one node and the
+      // loser's teardown would detach the survivor's source — that is what the
+      // skip is for. For a MIGRATED module the dock renders the FACEPLATE
+      // instead, so nothing mounts the card and skipping here drops the source
+      // exactly while the player is looking at the module. (wavesculpt: open
+      // the faceplate and `video_out` went black; found with the same
+      // frame-drawer defect.) Same rule as the 'stub' arm of
+      // needsHeadlessSourceMount, applied to the surface that supersedes it.
+      if (dockStore.isFullView(n.id) && !migrated(n.type)) continue;
       const kind = laneRenderKind({
         shellFaces,
         userDocked: !!dockStore.entryFor(n.id),
