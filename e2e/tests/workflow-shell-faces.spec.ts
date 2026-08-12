@@ -238,9 +238,8 @@ test.describe('P1 batch-1 curated faces (?shell=1)', () => {
       'the hero prints the MEASURED tail, not the SUB DEC knob',
     ).toContainText('398 ms');
 
-    // (d) THE SIDEBAR — the chain, the crossover, and presets that SELECT.
+    // (d) THE SIDEBAR — the crossover, and presets that SELECT.
     const side = faceplate.getByTestId('face-sidebar');
-    await expect(side.getByTestId('side-flow')).toBeVisible();
     await expect(side.getByTestId('sidebar-panel-stereo-crossover')).toBeVisible();
     await side.getByTestId('face-preset-909-classic').click();
     await expect(faceplate.getByTestId('readout-tune')).toHaveText('62 Hz');

@@ -390,28 +390,6 @@ export const pentemelodicaDef: AudioModuleDef = {
 
     sidebar: [
       {
-        kind: 'signal-flow',
-        label: 'signal flow',
-        // The DSP's real order (`renderPentemelodica`). Two branch marks, both
-        // correctness rather than decoration:
-        //   * FM · PM is `parallel` because the audio does NOT pass through it
-        //     — it is an external jack bending the oscillator, and drawing it
-        //     inline would teach that the bus runs through a modulator.
-        //   * VOICE 1-5 OUT is `parallel` because it is a TAP: post-envelope,
-        //     pre-level and pre-pan, so it leaves the chain and never rejoins.
-        stages: [
-          { label: 'POLY BUS',      role: 'generator', note: '5 lanes, fixed 1:1' },
-          { label: 'FM · PM',       role: 'bus', parallel: true, note: 'one jack, both' },
-          { label: '5 × OSC',       role: 'generator', note: 'polyBLEP tri→saw→sq' },
-          { label: '5 × ENV',       role: 'bus', note: 'ONE shared A/D/S/R' },
-          { label: 'VOICE 1-5 OUT', role: 'bus', parallel: true, note: 'pre-level, pre-pan' },
-          { label: 'LEVEL · PAN',   role: 'bus', note: 'equal power' },
-          { label: 'SUM × 0.6',     role: 'bus', note: 'CONSTANT, not 1/√N' },
-          { label: 'SVF · MODE',    role: 'bus', note: 'lp→bp→hp→x−bp' },
-          { label: 'WET / DRY',     role: 'bus', note: 'linear' },
-        ],
-      },
-      {
         kind: 'presets',
         // ⚠ VOICE LAYOUTS, AND THE NAME IS THE CONTRACT. Each entry is a
         // COMPLETE recall of all FORTY per-voice params — tune, fine, wave, pw,

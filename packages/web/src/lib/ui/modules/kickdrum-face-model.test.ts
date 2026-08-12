@@ -316,41 +316,13 @@ describe('kickdrum readouts — the units vocabulary under every knob', () => {
   });
 });
 
-describe('kickdrum sidebar — the DECLARED signal flow is the DSP chain', () => {
-  const flow = block('signal-flow');
-
-  it('lists the mock stages, in the mock order', () => {
-    expect(flow.stages.map((s) => s.label)).toEqual([
-      'SUB',
-      'BODY',
-      'CLICK',
-      'DRIVE · HARD',
-      'EQ · TILT',
-      'TRANSLATE',
-      'DYNAMICS',
-      'STEREO · WIDTH',
-      'OUT L · R',
-    ]);
-  });
-
-  it('marks TRANSLATE as the one PARALLEL stage — it taps the RAW sub', () => {
-    const parallel = flow.stages.filter((s) => s.parallel).map((s) => s.label);
-    expect(parallel).toEqual(['TRANSLATE']);
-    // The claim is the def's own PROSE, so the picture and the documentation
-    // cannot drift apart into two different chains.
+describe('kickdrum — the TRANSLATE branch is stated where a reader can check it', () => {
+  // The signal-flow sidebar block used to carry this, and it was the ONLY
+  // surface that did. The block is gone (a hand-authored chain nothing verified
+  // against the DSP), so the claim now has to survive in the def's own prose —
+  // which is what the doc gates already read.
+  it('docs.explanation still names TRANSLATE as a PARALLEL branch off the raw sub', () => {
     expect(kickdrumDef.docs!.explanation!).toContain('PARALLEL branch');
-  });
-
-  it('names the three GENERATORS as generators and everything after them as bus', () => {
-    const gens = flow.stages.filter((s) => s.role === 'generator').map((s) => s.label);
-    expect(gens).toEqual(['SUB', 'BODY', 'CLICK']);
-    // The legend the shared renderer paints keys off exactly this distinction,
-    // so a chain with no generator would advertise a swatch it never draws.
-    expect(flow.stages.filter((s) => s.role !== 'generator')).toHaveLength(6);
-  });
-
-  it('every stage carries a note (an unexplained box is decoration)', () => {
-    for (const s of flow.stages) expect(s.note?.length ?? 0, s.label).toBeGreaterThan(0);
   });
 });
 

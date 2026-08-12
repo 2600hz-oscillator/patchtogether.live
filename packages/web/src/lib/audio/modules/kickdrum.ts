@@ -230,11 +230,10 @@ export const kickdrumDef: AudioModuleDef = {
       // because that is the reading order of the faceplate's top strip: hear
       // it, see it, know what it is.
       //
-      // ⚠ There is NO `kickdrum-chain-{n}` cell. The signal-flow diagram, the
-      // generator/bus legend, the crossover picture and the preset roster are
-      // DECLARED as `face.sidebar` blocks below, not drawn by a bespoke
-      // component. A picture only this module can draw (the graph) is a
-      // legitimate panel; a sidebar is not — every faceplate needs one, so it
+      // ⚠ There is NO `kickdrum-chain-{n}` cell. The crossover picture and the
+      // preset roster are DECLARED as `face.sidebar` blocks below, not drawn by
+      // a bespoke component. A picture only this module can draw (the graph) is
+      // a legitimate panel; a sidebar is not — every faceplate needs one, so it
       // belongs to the platform.
       'kickdrum-hero-{n}',
       'sub_level', 'sub_eq', 'translate',
@@ -391,35 +390,6 @@ export const kickdrumDef: AudioModuleDef = {
 
     // THE SIDEBAR — the context column the shell could not render at all.
     sidebar: [
-      {
-        kind: 'signal-flow',
-        label: 'signal flow',
-        // The REAL chain, in the DSP's order. The three generators are marked
-        // as such: everything after them is a bus stage that processes
-        // whatever reaches it, and that distinction is the only thing a reader
-        // needs to understand why SUB LEVEL and DRIVE behave differently.
-        //
-        // ⚠ TRANSLATE IS `parallel`, and this is the one place the diagram
-        // knowingly differs from the flat arrow-chain in the design mock. The
-        // exciter taps a copy of the RAW sub layer (pre-drive) and sums it back
-        // into the bus just ahead of the EQ (docs.explanation, and the worklet
-        // agrees), so drawing `EQ·TILT → TRANSLATE → DYNAMICS` inline would
-        // teach a producer that turning TRANSLATE up excites the DRIVEN, EQ'd
-        // signal. It does not — it excites the clean sub, which is precisely
-        // why it survives a small speaker. The stage list and its order are the
-        // mock's; only the branch mark is added.
-        stages: [
-          { label: 'SUB', role: 'generator', note: 'sine' },
-          { label: 'BODY', role: 'generator', note: '909 sweep' },
-          { label: 'CLICK', role: 'generator', note: 'noise' },
-          { label: 'DRIVE · HARD', role: 'bus', note: 'saturate' },
-          { label: 'EQ · TILT', role: 'bus', note: '3-band' },
-          { label: 'TRANSLATE', role: 'bus', parallel: true, note: 'raw sub' },
-          { label: 'DYNAMICS', role: 'bus', note: 'shape · glue' },
-          { label: 'STEREO · WIDTH', role: 'bus', note: '› 120 Hz' },
-          { label: 'OUT L · R', role: 'bus', note: 'level → ceiling' },
-        ],
-      },
       {
         kind: 'custom',
         label: 'stereo crossover',

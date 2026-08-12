@@ -254,27 +254,6 @@ export const analogVcoDef: AudioModuleDef = {
 
     sidebar: [
       {
-        kind: 'signal-flow',
-        label: 'signal flow',
-        // ⚠ PM OFFSET IS `parallel`, and that is a correctness field here, not
-        // decoration. It is not a stage the signal passes through: it is added
-        // to the phase at the READ (analog-vco.dsp:103) while the accumulator
-        // advances on pRaw, which is what sync_out is derived from (:93). Drawn
-        // inline between PHASE ACC and the taps it would teach that PM shifts
-        // the sync pulse. It does not.
-        stages: [
-          { label: 'PITCH SUM', role: 'generator', note: 'v/oct + tune + fine + fm' },
-          { label: 'PHASE ACC', role: 'generator', note: 'reset on sync in' },
-          { label: 'PM OFFSET', role: 'bus', parallel: true, note: 'at the read' },
-          { label: 'SAW', role: 'bus', note: '2p - 1' },
-          { label: 'SQUARE', role: 'bus', note: 'pw duty' },
-          { label: 'TRIANGLE', role: 'bus', note: 'peaks at p = 0' },
-          { label: 'SINE', role: 'bus', note: 'sin 2pi p' },
-          { label: 'MORPH', role: 'bus', note: 'shape crossfade' },
-          { label: 'SYNC OUT', role: 'bus', note: 'pre-PM wrap' },
-        ],
-      },
-      {
         kind: 'readouts',
         label: 'naive oscillator',
         // The honest consequence of a 105-line .dsp with no PolyBLEP, no

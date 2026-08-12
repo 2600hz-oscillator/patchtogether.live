@@ -255,39 +255,6 @@ export const meowboxDef: AudioModuleDef = {
 
     sidebar: [
       {
-        kind: 'signal-flow',
-        label: 'signal flow',
-        // The chain as the .dsp actually builds it.
-        //
-        // ⚠ THE PITCH CONTOUR IS `parallel` AND THAT IS THE DIAGRAM'S ONE REAL
-        // CLAIM. It is not in the audio path: it multiplies the four sines'
-        // frequency (`freqHz`, :82) and never touches the noise or the amplitude.
-        // Drawn inline it would teach that the contour shapes the meow's
-        // loudness, which is precisely the confusion the `settles` readout exists
-        // to dispel.
-        //
-        // ⚠ R IS ALSO `parallel`: it is L put through a delay line, not a second
-        // voice. The note says the span the .dsp's own comment gets wrong (:111
-        // says "up to 1 ms"; the ·0.6 at :114 caps it at 0.6).
-        //
-        // ⚠ GATE IS MARKED `generator` ON PURPOSE. In this voice the gate is the
-        // excitation: with nothing patched the module is not quiet, it is
-        // bit-silent. Its note states the level-sensitivity the def's own prose
-        // denied until this PR.
-        stages: [
-          { label: 'GATE',        role: 'generator', note: 'level — sustains at 0.4' },
-          { label: 'PITCH CONTOUR', role: 'generator', parallel: true, note: 'settles SHARP · from MORPH' },
-          { label: '4 SINES',     role: 'generator', note: 'F · 2F · 3F · 4F' },
-          { label: 'NOISE',       role: 'generator', note: 'white' },
-          { label: 'VOICED MIX',  role: 'bus', note: 'from MORPH' },
-          { label: '15 Hz TREMOLO', role: 'bus', note: 'voiced path only' },
-          { label: 'F1 · F2 · F3', role: 'bus', note: '3 × resonbp · peak = a·Q' },
-          { label: 'AMP ADSR',    role: 'bus', note: 'sustain 0.4' },
-          { label: 'LEVEL',       role: 'bus', note: 'left channel only' },
-          { label: 'R = DELAYED L', role: 'bus', parallel: true, note: '0–0.6 ms, inverse to the envelope' },
-        ],
-      },
-      {
         // THE FIVE ANCHORS, AS A REAL SELECTION. `morph` is a continuous fader
         // over a five-entry table and every hand-set value is a crossfade between
         // two of them, so these rows are the only way to land exactly ON one.
