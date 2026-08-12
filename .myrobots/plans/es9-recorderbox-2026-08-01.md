@@ -776,15 +776,11 @@ Take the fsync'd **2.23 GB/s** as the honest sustained number. The combined A/V 
 
 ### Free space IS the ceiling
 
-`df -k` on this machine, **measured today**: 35 319 944 KiB available = **33.68 GiB**, 92 % used.
-
-| load | runway on 33.68 GiB |
-|---|---|
-| 16 ch f32 + video | **2 h 05 m 01 s** |
-| 18 ch f32 + video | **1 h 55 m 47 s** |
-
-This is why §4.9's pre-flight + live `recordSecondsRemaining` readout is a requirement, not a polish
-item.
+Bandwidth is 0.22 % of the disk; **free space is what actually stops a take.** On the
+**33.68 GiB free this machine had on 2026-08-01** (92 % used) the runway is **2 h 05 m** at
+16 ch f32 + video and **1 h 56 m** at 18 ch. Re-measure before quoting either — the durable
+point is the ratio, not the snapshot. This is why §4.9's pre-flight + live
+`recordSecondsRemaining` readout is a requirement, not a polish item.
 
 ### Ring, latency and clock figures
 
