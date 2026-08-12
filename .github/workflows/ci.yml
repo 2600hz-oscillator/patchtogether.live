@@ -835,9 +835,35 @@ jobs:
       # rather than evidence: merge base green at 9m49s, a concurrent run green
       # at 9m41s, two local reproductions (3.0 min dev, 1.5 min preview+CI=1).
       #
-      # 15 min (900000 ms) because the slowest shard uses ~11 of the ~17 minutes
-      # actually available inside the 20 — so anything tripping 15 was already
-      # tripping 20; it just used to die mute.
+      # 17 min (1020000 ms). It was 15, chosen when "the slowest shard uses ~11
+      # of the ~17 minutes actually available inside the 20". THAT PREMISE HAS
+      # EXPIRED — measured across three consecutive green main runs 2026-08-12,
+      # as the Playwright STEP (not the job, which pays another ~150-170 s of
+      # checkout + flox + upload on top):
+      #
+      #     shard 10 : 804s / 799s / 808s     ← slowest, ~13.4 min
+      #     shard  3 : 765s / 757s / 757s
+      #     shard  1 : 560s / 544s / 541s
+      #     all others                    <= 553s
+      #
+      # So the slowest shard uses ~13.4 of those 17 minutes, not ~11, and at a
+      # 900 s budget it was sitting at 89 % with no way to know. 17 min is the
+      # MAXIMUM the margin invariant permits (ceiling 20 − MIN_MARGIN_MIN 3),
+      # and scripts/ci-playwright-timeout.test.ts enforces exactly that.
+      #
+      # ⚠ THIS ADDS NO CI WALL-TIME. A timeout only decides when a WEDGED run
+      # is killed; a healthy shard still finishes in ~13 min. What it buys is
+      # room for the headroom guard below to be meaningful instead of red on
+      # arrival — #1454's 892 s is still caught (87 % of 1020 s).
+      #
+      # ⚠ AND THE CLIFF IS STILL INVISIBLE FROM CI OUTPUT ALONE, which is what
+      # scripts/e2e-shard-budget.sh is for: it prints every shard's percentage
+      # of budget on EVERY run, warns from 70 %, and fails from 85 % — so a
+      # lane running out of room is a gradual, visible signal rather than the
+      # day main goes red. 2026-08-11: shard 3 finished at 892 s against 900 s
+      # — EIGHT SECONDS of slack — after #1470 consumed the headroom and #1454
+      # landed on top. Two individually-green PRs collided on a budget neither
+      # could see.
       #
       # ⚠ ON THE COMMAND LINE, NOT IN e2e/playwright.config.ts, DELIBERATELY.
       # A `globalTimeout` in the config would be one number shared by all six
@@ -857,9 +883,12 @@ jobs:
       # enforces the invariant for whatever IS guarded and PINS the unguarded
       # set, so adding a guard later is cheap and forgetting one is visible.
       - name: Run E2E (shard ${{ matrix.shard }}/10, blob reporter, no @collab, no @capacity, no behavioral)
+        env:
+          E2E_SHARD_BUDGET_LABEL: shard ${{ matrix.shard }}/10
         run: |
-          flox activate -- npx --workspace e2e playwright test \
-            --global-timeout 900000 \
+          flox activate -- bash scripts/e2e-shard-budget.sh -- \
+            npx --workspace e2e playwright test \
+            --global-timeout 1020000 \
             --grep-invert "@collab|@capacity|BEHAVIORAL input coverage" \
             --shard=${{ matrix.shard }}/10 \
             --reporter=blob
