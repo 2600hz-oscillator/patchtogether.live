@@ -19,6 +19,13 @@ import {
   LANE_ROW_MAX_CELLS_WITH_GLYPH,
   PLATE_COLS,
   PLATE_MAX_ROWS,
+  PLATE_ROW_H,
+  PLATE_GAP_Y,
+  LANE_BODY_H,
+  LANE_CELL_H,
+  laneCellHeight,
+  plateRowsFor,
+  plateGlyphFits,
   SHELL_TILE_H,
   SHELL_TILE_W,
   SHELL_TILE_H_SLOT,
@@ -178,9 +185,9 @@ describe('roleLineForDef — the migrated header role line', () => {
 
 describe('laneBodyPlan — the fixed-tile no-clip guarantee', () => {
   it('mini: one hero cell + the glyph', () => {
-    expect(laneBodyPlan(8, true, 'mini')).toEqual({ layout: 'row', cellCount: 1, glyph: true, knobSize: 'md' });
-    expect(laneBodyPlan(0, true, 'mini')).toEqual({ layout: 'row', cellCount: 0, glyph: true, knobSize: 'md' });
-    expect(laneBodyPlan(5, false, 'mini')).toEqual({ layout: 'row', cellCount: 1, glyph: false, knobSize: 'md' });
+    expect(laneBodyPlan(8, true, 'mini')).toEqual({ layout: 'row', cellCount: 1, glyph: true, knobSize: 'md', rowH: PLATE_ROW_H });
+    expect(laneBodyPlan(0, true, 'mini')).toEqual({ layout: 'row', cellCount: 0, glyph: true, knobSize: 'md', rowH: PLATE_ROW_H });
+    expect(laneBodyPlan(5, false, 'mini')).toEqual({ layout: 'row', cellCount: 1, glyph: false, knobSize: 'md', rowH: PLATE_ROW_H });
   });
 
   it('compact row: whole md cells only — 2 with a glyph (which fills the rest), 3 without', () => {
@@ -189,35 +196,37 @@ describe('laneBodyPlan — the fixed-tile no-clip guarantee', () => {
       cellCount: LANE_ROW_MAX_CELLS_WITH_GLYPH,
       glyph: true,
       knobSize: 'md',
+      rowH: PLATE_ROW_H,
     });
     expect(laneBodyPlan(3, false, 'compact')).toEqual({
       layout: 'row',
       cellCount: LANE_ROW_MAX_CELLS,
       glyph: false,
       knobSize: 'md',
+      rowH: PLATE_ROW_H,
     });
     // A small face keeps every cell.
-    expect(laneBodyPlan(2, true, 'compact')).toEqual({ layout: 'row', cellCount: 2, glyph: true, knobSize: 'md' });
+    expect(laneBodyPlan(2, true, 'compact')).toEqual({ layout: 'row', cellCount: 2, glyph: true, knobSize: 'md', rowH: PLATE_ROW_H });
   });
 
   it('full keeps the ROW (md cells, glyph) while the whole face fits it — the vca case', () => {
-    expect(laneBodyPlan(2, true, 'full')).toEqual({ layout: 'row', cellCount: 2, glyph: true, knobSize: 'md' });
-    expect(laneBodyPlan(3, false, 'full')).toEqual({ layout: 'row', cellCount: 3, glyph: false, knobSize: 'md' });
+    expect(laneBodyPlan(2, true, 'full')).toEqual({ layout: 'row', cellCount: 2, glyph: true, knobSize: 'md', rowH: PLATE_ROW_H });
+    expect(laneBodyPlan(3, false, 'full')).toEqual({ layout: 'row', cellCount: 3, glyph: false, knobSize: 'md', rowH: PLATE_ROW_H });
   });
 
   it('full switches to the 3-col PLATE when the face outgrows the row: whole rows only, max 6 cells', () => {
     // kickdrum/tidyVco/cloudseed: 8 ranked at full → 2 whole rows = 6 cells,
     // ranks 7-8 not rendered in-lane, no room for a whole glyph strip.
-    expect(laneBodyPlan(8, true, 'full')).toEqual({ layout: 'plate', cellCount: 6, glyph: false, knobSize: 'sm' });
+    expect(laneBodyPlan(8, true, 'full')).toEqual({ layout: 'plate', cellCount: 6, glyph: false, knobSize: 'sm', rowH: PLATE_ROW_H });
     expect(laneBodyPlan(8, true, 'full').cellCount).toBe(PLATE_COLS * PLATE_MAX_ROWS);
     // adsr: 4 ranked → 2 rows (3+1), all four render, glyph strip doesn't fit.
-    expect(laneBodyPlan(4, true, 'full')).toEqual({ layout: 'plate', cellCount: 4, glyph: false, knobSize: 'sm' });
+    expect(laneBodyPlan(4, true, 'full')).toEqual({ layout: 'plate', cellCount: 4, glyph: false, knobSize: 'sm', rowH: PLATE_ROW_H });
   });
 
   it('full PLATE keeps the glyph strip when the cells need only one row — the lfo case', () => {
     // lfo: 3 ranked with a glyph → 3 > row max (2) → plate, one row of cells +
     // a whole full-width glyph strip.
-    expect(laneBodyPlan(3, true, 'full')).toEqual({ layout: 'plate', cellCount: 3, glyph: true, knobSize: 'sm' });
+    expect(laneBodyPlan(3, true, 'full')).toEqual({ layout: 'plate', cellCount: 3, glyph: true, knobSize: 'sm', rowH: PLATE_ROW_H });
   });
 
   it('never plans more cells than exist, and never a partial row beyond the plate cap', () => {
@@ -234,6 +243,142 @@ describe('laneBodyPlan — the fixed-tile no-clip guarantee', () => {
         }
       }
     }
+  });
+});
+
+// ── THE NO-CLIP GUARANTEE, HELD FOR EVERY CELL KIND ─────────────────────────
+//
+// The guarantee `laneBodyPlan` has always CLAIMED is "only whole cells ever
+// render inside the fixed tile". For six months it was computed against a
+// single hardcoded cell height (42px, a small knob column) — true for every
+// kind that existed, and false the moment one did not fit.
+//
+// `fader` (#1464) is 96px. `grid-auto-rows: 42px` with `align-items: start`
+// does NOT clip an over-tall cell — it lets it paint over the row below — so
+// the failure did not even present as a fit bug. marbles' full-tier tile
+// measured three overlaps of exactly 50.0 CSS px (96 − the 46px row pitch):
+// two thumbs per column, row 1's labels covered, and a `COIN ▾` grid chip
+// floating on the T BIAS fader. Shipped to dev.
+//
+// These tests are written over the KIND UNION rather than over the two kinds
+// that exist today, because "a whole kind reached production without this path
+// ever seeing one" is the actual defect and a test naming `fader` would not
+// have prevented it.
+describe('lane cell HEIGHT — the plate fits every ParamCellKind, not just a knob', () => {
+  // The union, enumerated ONCE from the table's own keys. A new kind lands in
+  // `LANE_CELL_H` (a Record<ParamCellKind, number>, so TS forces it) and is
+  // swept here automatically — there is no list in this file to forget.
+  const KINDS = Object.keys(LANE_CELL_H) as (keyof typeof LANE_CELL_H)[];
+
+  it('sweeps every declared kind (an empty sweep would prove nothing)', () => {
+    expect(KINDS.length).toBeGreaterThan(0);
+    // The table and the accessor are the same truth.
+    for (const k of KINDS) expect(laneCellHeight(k)).toBe(LANE_CELL_H[k]);
+  });
+
+  it('EVERY kind gets whole rows that fit the body — no cell paints outside the tile', () => {
+    const offenders: string[] = [];
+    for (const kind of KINDS) {
+      const h = LANE_CELL_H[kind];
+      const rows = plateRowsFor(h);
+      // What the grid actually occupies: `rows` tracks of `h` plus the gaps
+      // BETWEEN them. This is the number that must clear the body.
+      const used = rows * h + (rows - 1) * PLATE_GAP_Y;
+      if (used > LANE_BODY_H) {
+        offenders.push(
+          `${kind}: cell ${h}px × ${rows} row(s) = ${used}px used, but the lane body is ` +
+            `${LANE_BODY_H}px — the plate would paint ${used - LANE_BODY_H}px outside the tile`,
+        );
+      }
+      expect(rows, `${kind}: a kind must always get at least one row`).toBeGreaterThanOrEqual(1);
+    }
+    expect(offenders.join('\n'), 'lane plate rows that do not fit the tile body').toBe('');
+  });
+
+  it('EVERY kind that the plate renders keeps its cells inside their grid track', () => {
+    // The overlap condition, stated directly: a cell taller than the row pitch
+    // paints over the next row. With `rowH` reported by the plan, the track IS
+    // the cell height, so the pitch can never be short — which is the whole
+    // fix. Asserted per kind so a future kind whose height the plan does not
+    // carry through cannot pass.
+    const offenders: string[] = [];
+    for (const kind of KINDS) {
+      const h = LANE_CELL_H[kind];
+      // 12 controls forces the plate at 'full' for any kind.
+      const plan = laneBodyPlan(12, false, 'full', h);
+      if (plan.layout !== 'plate') continue;
+      const overlap = h - (plan.rowH + PLATE_GAP_Y);
+      if (overlap > 0) {
+        offenders.push(
+          `${kind}: a ${h}px cell in a ${plan.rowH}px track (pitch ${plan.rowH + PLATE_GAP_Y}px) ` +
+            `overlaps the row below by ${overlap} CSS px`,
+        );
+      }
+      expect(plan.rowH, `${kind}: the plan must report the height its cells need`).toBe(h);
+    }
+    expect(offenders.join('\n'), 'lane plate cells overlapping the row below').toBe('');
+  });
+
+  it('a glyph strip is never promised where it would not fit', () => {
+    for (const kind of KINDS) {
+      const h = LANE_CELL_H[kind];
+      const plan = laneBodyPlan(12, true, 'full', h);
+      if (!plan.glyph) continue;
+      const rows = Math.ceil(plan.cellCount / PLATE_COLS);
+      expect(
+        rows * (h + PLATE_GAP_Y) + PLATE_ROW_H,
+        `${kind}: the plan keeps a glyph strip that does not fit under ${rows} row(s)`,
+      ).toBeLessThanOrEqual(LANE_BODY_H + PLATE_GAP_Y);
+    }
+  });
+
+  // ── THE NEGATIVE CONTROL, PERMANENT ───────────────────────────────────────
+  // Every assertion above passes trivially if the geometry stops depending on
+  // the cell height at all — which is EXACTLY the bug (a flat 42px). So push a
+  // cell that cannot fit twice through the SAME predicates the checks call and
+  // require the answers to move. Without this leg, a `plateRowsFor` that
+  // returned the constant 2 would keep the suite green.
+  it('the geometry actually reads the cell height (a flat row count fails here)', () => {
+    // The design cell reproduces the historic hand-derived constant …
+    expect(plateRowsFor(PLATE_ROW_H)).toBe(PLATE_MAX_ROWS);
+    expect(PLATE_MAX_ROWS).toBe(2);
+    // … and a cell too tall for two rows must drop to one.
+    expect(plateRowsFor(LANE_CELL_H.fader)).toBe(1);
+    expect(plateRowsFor(LANE_BODY_H)).toBe(1);
+    // Same for the glyph strip: room under one design row, none under two, and
+    // none under a fader row.
+    expect(plateGlyphFits(1, PLATE_ROW_H)).toBe(true);
+    expect(plateGlyphFits(2, PLATE_ROW_H)).toBe(false);
+    expect(plateGlyphFits(1, LANE_CELL_H.fader)).toBe(false);
+    // And the PLAN moves with it: the same control count and glyph flag give a
+    // different tile for a tall cell than for a short one.
+    expect(laneBodyPlan(6, false, 'full', PLATE_ROW_H).cellCount).toBe(6);
+    expect(laneBodyPlan(6, false, 'full', LANE_CELL_H.fader).cellCount).toBe(PLATE_COLS);
+  });
+
+  it('marbles: the regression, at the numbers that were measured in the browser', () => {
+    // The shipped face: six ranked controls, five of them faders, no glyph.
+    //
+    // BEFORE the fix the tile rendered all six in a 2-row plate of 42px tracks
+    // while each fader cell was 96px, so rows 1 and 2 overlapped by exactly
+    // 96 − 46 = 50 CSS px. Measured in Chromium on the live tile:
+    //   rate×spread 22.6×50.0 · deja_vu×steps 28.2×50.0 · t_bias×t_model 33.9×24.0
+    const fader = LANE_CELL_H.fader;
+    expect(fader - (PLATE_ROW_H + PLATE_GAP_Y)).toBe(50);
+
+    // AFTER: the plate can hold ONE row of 96px cells, so the cap is 3 …
+    expect(plateRowsFor(fader)).toBe(1);
+
+    // … and the two-step path the shell actually walks — cap the controls,
+    // then plan the body — lands on three whole cells with NO overlap. Three
+    // cells and no glyph fit the ROW layout, which lays them side by side, so
+    // one 96px cell clears the 112px body outright.
+    const cap = laneBodyPlan(Number.MAX_SAFE_INTEGER, false, 'full', fader).cellCount;
+    expect(cap).toBe(3);
+    const plan = laneBodyPlan(cap, false, 'full', fader);
+    expect(plan.cellCount).toBe(3);
+    expect(plan.layout).toBe('row');
+    expect(fader).toBeLessThanOrEqual(LANE_BODY_H);
   });
 });
 

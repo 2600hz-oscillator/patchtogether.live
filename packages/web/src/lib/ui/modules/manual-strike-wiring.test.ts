@@ -83,6 +83,19 @@ const EXPECTED_AUDITIONS: Record<string, string[]> = {
   // so a caller reaching for the wrong shape gets a recorded non-delivery
   // instead of a blip.
   'meowbox:meowbox-meow-{n}': [MANUAL_GATE_KEY, MANUAL_GATE_KEY],
+  // face batch 4 — rings, and the strongest case in this list. The others are
+  // voices that are silent with nothing patched into their strike input; rings
+  // is silent FULL STOP — measured peak exactly 0.000e+0 on both taps, in both
+  // models, with nothing patched and nothing struck, because it has no internal
+  // exciter and no free-run at all. Before this seam there was no strum control
+  // anywhere in the product (not on the card, not on any shell tier), so the
+  // module could be spawned, fully explored, and never heard.
+  // ⚠ ONE-SHOT, and the def is why: `strum` declares edge:'trigger' and the
+  // processor fires on the RISING EDGE only, ignoring how long the level stays
+  // high — so a held gate would strike once and then hold a level the DSP does
+  // not read. The factory answers `manualTrigger` and deliberately not
+  // `manualGate`.
+  'rings:rings-strum-{n}': [MANUAL_STRIKE_KEY],
 };
 
 interface Drive {

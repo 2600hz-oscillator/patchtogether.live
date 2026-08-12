@@ -19,6 +19,7 @@
 
 import type { Tier } from '$lib/ui/canvas/lod';
 import type { FaceTier } from './curated-face';
+import type { ParamCellKind } from './shell-control-kind';
 
 /**
  * The uniform RACKLINE lane-tile WIDTH (px) EVERY shell/placeholder tile renders
@@ -286,10 +287,96 @@ export function roleLineForDef(def: ShellDefLike | undefined): string | undefine
 //     label), 4px row gaps in a ~112px body → 2 whole rows = 6 cells max; the
 //     full-width glyph strip renders only when a whole 42px strip still fits
 //     (i.e. the cells needed ≤ one row).
+//
+// ⚠ THE PLATE'S ROW HEIGHT IS A PROPERTY OF THE CELL KIND, NOT A CONSTANT
+// (2026-08-11, marbles). Every number above assumes the plate's cell is a SMALL
+// KNOB COLUMN — 42px — and for six months every cell was. `fader` (#1464) is
+// 96px, and `grid-auto-rows: 42px` + `align-items: start` does not clip an
+// over-tall cell: it PAINTS IT OVER THE ROW BELOW. marbles' full-tier tile
+// measured THREE overlaps of exactly 50.0 CSS px (96 − 46 row pitch) — row 1's
+// faders across row 2's, so every column showed TWO THUMBS, row 1's labels were
+// covered, and column 3's `t_model` grid chip floated on top of the T BIAS
+// fader. See `laneCellHeight`.
+//
+// This is the HEIGHT twin of `cellWidthClass` in dock-row-plan.ts, and it is
+// the same bug: a planner and a renderer disagreeing about how big a cell kind
+// is. The dock row planner learned WIDTH; the lane body planner never learned
+// HEIGHT. Both now read the cell KIND rather than assuming one.
 export const LANE_ROW_MAX_CELLS_WITH_GLYPH = 2;
 export const LANE_ROW_MAX_CELLS = 3;
 export const PLATE_COLS = 3;
-export const PLATE_MAX_ROWS = 2;
+
+/** The plate's DESIGN cell height (px): a small knob column — 26px knob + 5px
+ *  gap + 11px label. Mirrors `--plate-row-h` in _rackline-tile.css. */
+export const PLATE_ROW_H = 42;
+/** The plate grid's row gap (px). Mirrors `.tile-body.plate { gap: 4px 6px }`. */
+export const PLATE_GAP_Y = 4;
+/**
+ * The lane tile's BODY height (px) — what the 180px tile leaves between the
+ * header and the jack rail. The design figure the plate was derived against
+ * ("a ~112px body", above); MEASURED at 113.5 CSS px in Chromium, so this is
+ * the conservative side and never over-provisions a row.
+ */
+export const LANE_BODY_H = 112;
+
+/**
+ * How tall each param cell kind renders in a LANE tile, in CSS px.
+ *
+ * ⚠ EXHAUSTIVE OVER `ParamCellKind` BY TYPE. `Record<ParamCellKind, number>`
+ * makes a NEW cell kind a COMPILE error here rather than a silent default —
+ * which is the whole point: `fader` reached production because every layout
+ * path had a default for a kind it had never been taught, and a default is
+ * indistinguishable from an answer. There is deliberately no fallback arm.
+ *
+ * Everything that paints inside a small knob column is `PLATE_ROW_H` — that IS
+ * the design cell. `fader` is the outlier: `Fader.svelte` is an 80px track plus
+ * 4px gap plus a 12px label (MEASURED: the cell's border box is 96.0 CSS px),
+ * i.e. 2.3 plate rows.
+ */
+export const LANE_CELL_H: Record<ParamCellKind, number> = {
+  knob: PLATE_ROW_H,
+  momentary: PLATE_ROW_H,
+  toggle: PLATE_ROW_H,
+  segmented: PLATE_ROW_H,
+  selector: PLATE_ROW_H,
+  grid: PLATE_ROW_H,
+  color: PLATE_ROW_H,
+  fader: 96,
+};
+
+/** The rendered lane height (px) of one param cell kind. */
+export function laneCellHeight(kind: ParamCellKind): number {
+  return LANE_CELL_H[kind];
+}
+
+/** The vertical room the plate has for rows, gap included (px) — a row costs
+ *  `h + PLATE_GAP_Y` and the last row's gap is not paid, so the budget carries
+ *  one spare gap. */
+const PLATE_AVAIL_H = LANE_BODY_H + PLATE_GAP_Y;
+
+/**
+ * How many WHOLE rows of `cellH`-tall cells the plate can show. At the design
+ * cell (42px) this is 2 — i.e. it REPRODUCES the `PLATE_MAX_ROWS = 2` it
+ * replaced, which is the check that the arithmetic is the one the constant was
+ * hand-derived from. At a 96px fader cell it is 1. Never 0: a tile that renders
+ * nothing is worse than one over-tall cell, and `laneBodyPlan` still caps the
+ * COUNT so nothing is painted outside the body.
+ */
+export function plateRowsFor(cellH: number): number {
+  return Math.max(1, Math.floor(PLATE_AVAIL_H / (cellH + PLATE_GAP_Y)));
+}
+
+/** Whole rows of the DESIGN cell — the historic `PLATE_MAX_ROWS`, now derived
+ *  rather than typed. */
+export const PLATE_MAX_ROWS = plateRowsFor(PLATE_ROW_H);
+
+/** Does a full-width glyph strip (one design row) still fit BELOW `rows` rows
+ *  of `cellH` cells? At 1 row of 42px: 46 + 42 = 88 ≤ 116 → yes. At 2 rows:
+ *  92 + 42 = 134 > 116 → no. Exactly the `rows <= 1` rule it replaces, and it
+ *  additionally refuses the strip under a row of 96px faders (100 + 42 = 142). */
+export function plateGlyphFits(rows: number, cellH: number): boolean {
+  return rows * (cellH + PLATE_GAP_Y) + PLATE_ROW_H <= PLATE_AVAIL_H;
+}
 
 // ── The DOCK HERO GLYPH width — owner P1 batch-1 feedback ───────────────────
 //
@@ -319,6 +406,14 @@ export interface LaneBodyPlan {
   glyph: boolean;
   /** Knob size for the rendered cells (mini's lg override stays a view concern). */
   knobSize: 'sm' | 'md';
+  /**
+   * The plate's grid row height (px) — what ModuleShell writes to
+   * `--plate-row-h`. The CSS cannot derive this: `grid-auto-rows` is a fixed
+   * track, so a cell taller than the track OVERFLOWS IT AND PAINTS OVER THE
+   * NEXT ROW rather than being clipped. Reporting the height the cells actually
+   * need is what keeps the grid and the cells the same size.
+   */
+  rowH: number;
 }
 
 /**
@@ -328,19 +423,51 @@ export interface LaneBodyPlan {
  * geometry constants only, so the guarantee is unit-testable. The 'dock' tier
  * never reaches this (the dock faceplate renders pages / wraps freely).
  */
-export function laneBodyPlan(controlCount: number, hasGlyph: boolean, tier: FaceTier): LaneBodyPlan {
+export function laneBodyPlan(
+  controlCount: number,
+  hasGlyph: boolean,
+  tier: FaceTier,
+  cellH: number = PLATE_ROW_H,
+): LaneBodyPlan {
   const rowMax = hasGlyph ? LANE_ROW_MAX_CELLS_WITH_GLYPH : LANE_ROW_MAX_CELLS;
   if (tier === 'mini') {
-    return { layout: 'row', cellCount: Math.min(controlCount, 1), glyph: hasGlyph, knobSize: 'md' };
+    return {
+      layout: 'row',
+      cellCount: Math.min(controlCount, 1),
+      glyph: hasGlyph,
+      knobSize: 'md',
+      rowH: cellH,
+    };
   }
   if (tier === 'compact' || controlCount <= rowMax) {
     // The design-point row: whole md cells + the glyph filling the remainder.
-    return { layout: 'row', cellCount: Math.min(controlCount, rowMax), glyph: hasGlyph, knobSize: 'md' };
+    // The ROW layout lays its cells side by side, so a tall cell costs height
+    // once, not once per row — a 96px fader clears the 112px body with room to
+    // spare, which is why the compact tile was correct while the plate was not.
+    return {
+      layout: 'row',
+      cellCount: Math.min(controlCount, rowMax),
+      glyph: hasGlyph,
+      knobSize: 'md',
+      rowH: cellH,
+    };
   }
   // 'full' with a face too big for the row → the 3-col plate grid, whole rows
-  // only. Ranked controls outrank the glyph: the strip renders only when the
-  // cells need just one row, leaving a whole strip-row free.
-  const cellCount = Math.min(controlCount, PLATE_COLS * PLATE_MAX_ROWS);
-  const rows = Math.ceil(cellCount / PLATE_COLS);
-  return { layout: 'plate', cellCount, glyph: hasGlyph && rows <= 1, knobSize: 'sm' };
+  // only. Ranked controls outrank the glyph: the strip renders only when a
+  // whole strip-row still fits UNDER the cell rows.
+  //
+  // ⚠ `plateRowsFor(cellH)` is the no-clip guarantee actually being kept. It
+  // used to be the constant 2, which is the answer for a 42px cell and a lie
+  // for any other — and the failure mode is OVERLAP, not truncation, so it did
+  // not even look like a fit bug.
+  const rows = plateRowsFor(cellH);
+  const cellCount = Math.min(controlCount, PLATE_COLS * rows);
+  const usedRows = Math.ceil(cellCount / PLATE_COLS);
+  return {
+    layout: 'plate',
+    cellCount,
+    glyph: hasGlyph && plateGlyphFits(usedRows, cellH),
+    knobSize: 'sm',
+    rowH: cellH,
+  };
 }

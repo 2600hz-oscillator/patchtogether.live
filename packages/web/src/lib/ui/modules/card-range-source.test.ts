@@ -77,6 +77,7 @@ import { warrensvisionsDef } from '$lib/video/modules/warrensvisions';
 import { filterDef } from '$lib/audio/modules/filter';
 import { meowboxDef } from '$lib/audio/modules/meowbox';
 import { ringbackDef } from '$lib/audio/modules/ringback';
+import { ringsDef } from '$lib/audio/modules/rings';
 import { snaredrumDef } from '$lib/audio/modules/snaredrum';
 import { vcaDef } from '$lib/audio/modules/vca';
 import { warrensspectrumDef } from '$lib/audio/modules/warrensspectrum';
@@ -213,6 +214,7 @@ const RANGE_BOUND_CARDS: Readonly<Record<string, { params: readonly ParamDef[] }
   'MarblesCard.svelte': marblesDef,
   'NoiseCard.svelte': noiseDef,
   'RingbackCard.svelte': ringbackDef,
+  'RingsCard.svelte': ringsDef,
   'SnaredrumCard.svelte': snaredrumDef,
   'VcaCard.svelte': vcaDef,
   'WarrensspectrumCard.svelte': warrensspectrumDef,
@@ -236,6 +238,7 @@ const MAPPING_BOUND_CARDS: readonly string[] = [
   'MarblesCard.svelte',
   'NoiseCard.svelte',
   'RingbackCard.svelte',
+  'RingsCard.svelte',
   'SnaredrumCard.svelte',
   'VcaCard.svelte',
   'WarrensspectrumCard.svelte',

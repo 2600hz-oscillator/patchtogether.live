@@ -1045,23 +1045,6 @@ export const macrooscillatorDef: AudioModuleDef = {
 
     sidebar: [
       {
-        kind: 'signal-flow',
-        label: 'signal flow',
-        // ⚠ AUX IS `parallel` AND THAT IS A CORRECTNESS FIELD. It is not
-        // downstream of LEVEL — it leaves the engine and bypasses it entirely
-        // (:1557-1560). Drawn inline it would teach that turning LEVEL down
-        // quietens both outputs. It does not. TRIG is parallel for the other
-        // reason: it is a control edge, not an audio stage.
-        stages: [
-          { label: 'TRIG', role: 'generator', parallel: true, note: 'resets all 14' },
-          { label: 'PITCH', role: 'generator', note: 'v/oct + note' },
-          { label: 'ENGINE ×14', role: 'generator', note: 'all tick, one heard' },
-          { label: 'LEVEL', role: 'bus', note: 'OUT only' },
-          { label: 'OUT', role: 'bus', note: 'the voice' },
-          { label: 'AUX', role: 'bus', parallel: true, note: 'pre-LEVEL sibling' },
-        ],
-      },
-      {
         // The GENERIC presets block, not a bespoke roster panel: the MODEL
         // selector already lists all fourteen by name (`ParamDef.options`), so
         // what a second list would add is not names — it is the per-engine

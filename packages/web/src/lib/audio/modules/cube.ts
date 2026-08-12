@@ -506,29 +506,6 @@ export const cubeDef: AudioModuleDef = {
 
     sidebar: [
       {
-        kind: 'signal-flow',
-        label: 'signal flow',
-        // ⚠ SYNC IS `parallel` AND THAT IS A CORRECTNESS FIELD, not decoration.
-        // It is `sin(2π·phase)` taken off the phase accumulator and is NEVER
-        // multiplied by LEVEL, so it leaves at −3.01 dBFS while L/R leave at
-        // −9.1: patching SYNC alongside L/R into a mixer is a +6 dB surprise,
-        // and drawing it inline would teach that LEVEL quietens it. VIDEO is
-        // parallel for the other reason — it is the card's own GL render, not
-        // a tap of the audio bus.
-        stages: [
-          { label: '3 tables', role: 'generator', note: 'floor · wall · ceiling' },
-          { label: 'field', role: 'generator', note: 'morph · connect' },
-          { label: 'slice plane', role: 'generator', note: 'Y · rot X/Y/Z' },
-          { label: 'scan', role: 'generator', note: '256 rays × 96 steps' },
-          { label: 'grain', role: 'bus', note: 'crush · space' },
-          { label: 'fold', role: 'bus', note: 'up to 5× drive' },
-          { label: 'VCA', role: 'bus', note: 'adsr · base' },
-          { label: 'level', role: 'bus', note: 'L + R' },
-          { label: 'sync', role: 'bus', parallel: true, note: 'pre-LEVEL · +6 dB' },
-          { label: 'video', role: 'bus', parallel: true, note: 'the GL render' },
-        ],
-      },
-      {
         // ⚠ THIS BLOCK IS THE FACE'S BEST WORK, and it is four param writes.
         // cube's default state HIDES ITS OWN STRONGEST INTERACTION: at spawn
         // the plane is flat, so Y slides along its own normal and does almost

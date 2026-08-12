@@ -379,29 +379,8 @@ describe('kickdrum faceplate structure — the hero PROMOTES, it does not copy',
 describe('kickdrum faceplate structure — the sidebar says what the DSP does', () => {
   const blocks = sidebarPlan(kickdrumDef as unknown as FaceplateDefLike)!;
 
-  it('paints four blocks: the chain, the crossover picture, the presets, the output', () => {
-    expect(blocks.map((b) => b.kind)).toEqual(['signal-flow', 'custom', 'presets', 'readouts']);
-  });
-
-  it('the signal-flow marks EXACTLY the three generators, and the rest as bus stages', () => {
-    // The generator/bus split is the one distinction that explains why SUB
-    // LEVEL and DRIVE behave differently. Getting it wrong would teach the
-    // opposite, and no pixel gate can see it.
-    const flow = blocks.find((b) => b.kind === 'signal-flow')!;
-    if (flow.kind !== 'signal-flow') throw new Error('unreachable');
-    const gens = flow.stages.filter((s) => s.role === 'generator').map((s) => s.label);
-    expect(gens).toEqual(['SUB', 'BODY', 'CLICK']);
-    expect(flow.stages.filter((s) => s.role !== 'generator')).toHaveLength(6);
-    // …and the chain's ORDER matches the def's own band order (drive → EQ →
-    // translate → dynamics → stereo → out), which the DSP test above pins.
-    expect(flow.stages.map((s) => s.label).slice(3)).toEqual([
-      'DRIVE · HARD',
-      'EQ · TILT',
-      'TRANSLATE',
-      'DYNAMICS',
-      'STEREO · WIDTH',
-      'OUT L · R',
-    ]);
+  it('paints three blocks: the crossover picture, the presets, the output', () => {
+    expect(blocks.map((b) => b.kind)).toEqual(['custom', 'presets', 'readouts']);
   });
 
   it('the CROSSOVER picture draws the DSP’s ACTUAL split, read from the worklet source', () => {
