@@ -167,14 +167,34 @@ test.describe('resofilter face — one dial, and the two readouts that say what 
     // room for a roster: `paramCellKind` returns `knob` at every LANE tier, so
     // MODE keeps its 46 px column and earns a readout NAMING the state instead
     // of printing a float (PF-1's lane half + PF-3's readout, one code path).
+    //
+    // ⚠ UNCONDITIONAL, DELIBERATELY. The first draft wrapped this in
+    // `if (await lane.locator(…).count())`, which is a gate that passes when
+    // the thing it checks is absent — the failure mode is indistinguishable
+    // from success. Measured before removing the guard: the spawn reveal parks
+    // at the `full` lane tier, and with four params against
+    // `faceTierCap('full') === 6` the plate renders ALL FOUR cells, MODE among
+    // them, printing `LP` under the dial rather than `0.00`.
     const lane = page.locator(`.svelte-flow__node[data-id="${NODE}"] [data-testid="module-shell"]`);
     await expect(lane).toBeVisible();
-    if (await lane.locator('[data-cell-key="mode"]').count()) {
-      await expect(
-        lane.locator('[data-cell-key="mode"]'),
-        'the LANE paints MODE as a knob — a roster does not fit a 46 px column',
-      ).toHaveAttribute('data-cell-control', 'knob');
-    }
+    await expect(lane, 'the spawn reveal parks at the `full` lane tier').toHaveAttribute(
+      'data-shell-tier',
+      'full',
+    );
+    await expect(
+      lane.locator('[data-cell-key="mode"]'),
+      'the LANE paints MODE as a knob — a roster does not fit a 46 px column',
+    ).toHaveAttribute('data-cell-control', 'knob');
+    // …and the roster is resolved THERE too: the dial's accessible value is the
+    // option's name, not its number. `aria-valuetext` is the right place to
+    // assert it — `aria-valuenow` stays `0` (the param value) and the visible
+    // `LP` is painted by a SIBLING value row, outside `control-mode`'s subtree,
+    // which is what the first version of this line got wrong.
+    await expect(
+      lane.locator('[data-testid="control-mode"]'),
+      '…the lane dial NAMES the state (PF-1 lane half) rather than reading 0.00',
+    ).toHaveAttribute('aria-valuetext', 'LP');
+    await expect(lane, 'and it is painted in the tile').toContainText('LP');
 
     const dock = await openDock(page);
     await expect(
