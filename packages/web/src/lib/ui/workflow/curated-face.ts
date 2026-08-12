@@ -70,6 +70,61 @@ export const FACE_TIER_CAPS: Record<FaceTier, number> = {
 };
 
 /**
+ * PF-22 — `face.order` MINUS the keys that can never paint in a lane.
+ *
+ * Today that is exactly one key: `face.hero.cell`, the module's own PICTURE.
+ * Everything under `face.hero` is DOCK-ONLY by construction (see ModuleFace:
+ * "ALL FOUR ARE DOCK-ONLY"), and `module-face-lint` already proves `hero.cell`
+ * resolves to a PF-14 **panel** shell cell — a hand-written component that
+ * declares its own `minWidth`, 280–560 px measured. A 46 px `--kcol-max` lane
+ * knob column cannot hold one.
+ *
+ * ⚠ WHY THIS FUNCTION EXISTS AT ALL, because the bug it fixes is invisible and
+ * expensive. `face.order` is documented as "the priority RANKING — earliest =
+ * highest priority", and it was ALSO the lane budget selector. One list, two
+ * jobs. A panel selected at a lane tier fails the lint, the 'full' lane cap is
+ * SIX, and therefore **a panel's first legal rank was 7** — a floor a module
+ * with fewer than six other rankable keys can never reach. That is not a
+ * theoretical limit; it is a live design distortion, in three shapes:
+ *
+ *   bluebox      ranks its hero picture THIRTEENTH — dead last, behind all
+ *                twelve keypad buttons — and says so in a comment. The face
+ *                that declares that cell as its HERO also declares it the
+ *                lowest-priority control on the module. Both statements are in
+ *                the same object.
+ *   meowbox      (four params + one audition) could not reach rank 7, so its
+ *                formant bank became a `custom` SIDEBAR block instead — a
+ *                different mechanism, chosen for arithmetic rather than design.
+ *   drummergirl  (five params) deferred its picture entirely.
+ *
+ * And two modules cannot have a faceplate AT ALL: `kria` (two params + one
+ * step-grid family = three rankable keys) and `macseq` (five + two = seven,
+ * with a family landing on rank 6). Their grid is the module.
+ *
+ * The fix is NOT to widen a constant — the 46 px column is real and the lint's
+ * own comment is right that delegating to `PLATE_COLS * PLATE_MAX_ROWS = 6`
+ * would be a coincidence of the current numbers. The fix is that a DOCK-ONLY
+ * key should not consume a LANE rank in the first place. Ranking becomes what
+ * it says it is, the panel still cannot reach a knob column, and the protection
+ * is unchanged.
+ *
+ * ⚠ NOTHING THAT RENDERS TODAY MOVES. Every shipped `hero.cell` already ranks
+ * at 7 or later — it had to, or it would be failing the lint — and dropping an
+ * item at index ≥6 cannot change the first six. `curated-face.test.ts` asserts
+ * that as a property over the live registry rather than leaving it as a claim,
+ * so the day a face ranks its hero picture FIRST the assertion is what tells
+ * you the lane content legitimately changed.
+ *
+ * DOCK IS UNTOUCHED: the dock renders the hero, so this is only ever applied to
+ * a lane tier. Pure.
+ */
+export function laneOrder(face: ModuleFace): readonly string[] {
+  const heroCell = face.hero?.cell;
+  if (!heroCell) return face.order;
+  return face.order.filter((k) => k !== heroCell);
+}
+
+/**
  * The tallest LANE CELL a face paints, in CSS px — the height the plate's row
  * geometry has to accommodate.
  *
@@ -83,12 +138,14 @@ export const FACE_TIER_CAPS: Record<FaceTier, number> = {
  *
  * Scanned over the ranked prefix that can REACH the lane, not the whole order —
  * a fader parked at rank 9 is dock-only and must not shrink the lane plate.
+ * `laneOrder` for the same reason one step further out: a hero picture never
+ * reaches the lane either, so it must not displace a cell that does.
  */
 export function faceLaneCellHeight(face: ModuleFace | undefined): number {
   if (!face) return PLATE_ROW_H;
   const declared = face.paramCells ?? {};
   let h = PLATE_ROW_H;
-  for (const key of face.order.slice(0, LANE_PLATE_MAX_CELLS)) {
+  for (const key of laneOrder(face).slice(0, LANE_PLATE_MAX_CELLS)) {
     const kind = declared[key as keyof typeof declared];
     if (kind) h = Math.max(h, LANE_CELL_H[kind]);
   }
@@ -274,7 +331,11 @@ export function curatedFace(def: FaceDefLike, tier: FaceTier): CuratedFace | nul
   const glyph = face.glyph ?? 'none';
   const cellH = faceLaneCellHeight(face);
   const cap = faceTierCap(tier, glyph !== 'none', cellH);
-  const ranked = face.order.map((k) => resolveFaceControl(k, def));
+  // PF-22 — the DOCK renders the hero picture, so it keeps the whole order; a
+  // LANE cannot paint a 280px panel in a 46px column, so the picture does not
+  // consume a lane rank. See `laneOrder`.
+  const order = tier === 'dock' ? face.order : laneOrder(face);
+  const ranked = order.map((k) => resolveFaceControl(k, def));
   const controls = Number.isFinite(cap) ? ranked.slice(0, cap) : ranked;
 
   const out: CuratedFace = {
