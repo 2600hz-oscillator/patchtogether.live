@@ -35,7 +35,7 @@ import {
   readoutFitsLane,
   readoutWidthPx,
 } from '$lib/ui/workflow/lane-readout-fit';
-import { laneBodyPlan } from '$lib/ui/workflow/module-shell-model';
+import { laneBodyPlan, PLATE_ROW_H } from '$lib/ui/workflow/module-shell-model';
 import { vcaDef } from './modules/vca';
 import {
   VCA_BASE,
@@ -358,7 +358,17 @@ describe('the curated face — what each tier actually surfaces', () => {
     // glyph survives at every tier — the ≥4-cell glyph cliff never applies here.
     for (const tier of ['compact', 'full'] as const) {
       const plan = laneBodyPlan(face(tier).controls.length, true, tier);
-      expect(plan, tier).toEqual({ layout: 'row', cellCount: 2, glyph: true, knobSize: 'md' });
+      expect(plan, tier).toEqual({
+        layout: 'row',
+        cellCount: 2,
+        glyph: true,
+        knobSize: 'md',
+        // The plate's design row — vca has no declared cell kind, so its
+        // cells are plain knob columns and the plan reports the design
+        // height. (A face with a `fader` cell reports 96 here; see
+        // module-shell-model's LANE_CELL_H.)
+        rowH: PLATE_ROW_H,
+      });
     }
   });
 

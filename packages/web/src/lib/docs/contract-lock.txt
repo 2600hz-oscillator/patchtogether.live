@@ -2699,6 +2699,8 @@ rings param note -60..60 linear default=0 unit=st
 rings param position 0..1 linear default=0.5
 rings param structure 0..1 linear default=0.25
 rings stereo odd+even
+rings family rings-comb kind=cell prefix=rings-comb
+rings family rings-strum kind=other prefix=rings-strum
 ruttetra meta domain=video
 ruttetra in intensity cv param=intensity cvScale=linear
 ruttetra in xDisp cv param=xDisp cvScale=linear

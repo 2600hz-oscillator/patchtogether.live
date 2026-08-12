@@ -280,13 +280,13 @@
     {#if hole.direction === 'output'}
       <span class="hole" aria-hidden="true"></span>
       <span class="col">
-        <span class="lab"
+        <span class="lab" data-testid="jack-label"
           >{hole.label}{#if remotes.length > 1}<span class="fan">+{remotes.length - 1}</span>{/if}</span
         >
         {#if patched}<span class="ep">→ {remoteName(remotes[0])}</span>{/if}
       </span>
     {:else}
-      <span class="lab">
+      <span class="lab" data-testid="jack-label">
         {hole.label}
         {#if hole.audioRate}<span class="ar" title="audio-rate">~</span>{/if}
         {#if hole.edge}<span class="edge" aria-hidden="true">{hole.edge === 'trigger' ? '▲' : '▬'}</span>{/if}
@@ -397,10 +397,41 @@
     --rc-line: #2c3037;
     --rc-inset: #0a0c0f;
     --rc-mono: var(--f-mono, ui-monospace, 'SF Mono', Menlo, Consolas, monospace);
-    /* rear geometry (spec Appendix A) */
-    --rc-hole: 26px;
-    --rc-cell-min: 96px;
-    --rc-rail-w: 170px;
+
+    /* ── SCALE ────────────────────────────────────────────────────────────
+       Owner 2026-08-11: "these are pretty massive … we could show a lot more
+       if we reduce size on the patch panel view 40%". The goal is DENSITY, so
+       EVERY geometric literal below goes through a dial — a shrunken hole
+       marooned in the old whitespace would save nothing.
+
+       TWO dials, and the split is the whole finding: a box that has to hold a
+       WORD cannot shrink as fast as the space around it.
+
+         --rc-s  SPACE — hole diameter, padding, gaps, row height, rail chrome.
+                 0.6 is the ask, delivered in full.
+         --rc-t  TYPE  — every font-size, PLUS the two widths whose job is to
+                 contain text (--rc-cell-min, --rc-rail-w). LEGIBILITY floors
+                 this at 0.9: 10px x 0.6 = 6px is not a readable uppercase
+                 mono label, and a 0.6 cell would ellipsize labels the old
+                 cell showed in full. Measured over all 1242 rear labels in
+                 the registry, intrinsic width at 9px: median 35.8px,
+                 p95 71.5px, max 95.3px — so the cell must keep ~80px of label
+                 room to truncate no more often than it does today.
+
+       Widening the SPACE dial was cheap and widening the TYPE dial was not,
+       which is also why this is the right place to spend: at 1280x720 the
+       field overflowed VERTICALLY 2.7x (954px of content in a 352px viewport)
+       and did not overflow horizontally at all.
+
+       Sub-glyph marks (~, the trigger/gate ticks, the fan-out badge) are
+       ALREADY at the 8px legibility floor and deliberately do NOT scale. */
+    --rc-s: 0.6;
+    --rc-t: 0.9;
+
+    /* rear geometry (spec Appendix A), all dialled */
+    --rc-hole: calc(26px * var(--rc-s));
+    --rc-cell-min: calc(96px * var(--rc-t));
+    --rc-rail-w: calc(170px * var(--rc-t));
     color: var(--rc-ink);
   }
   /* domain setters — hole ring + derived shades per cell */
@@ -430,29 +461,29 @@
     background: repeating-linear-gradient(135deg, rgba(0, 0, 0, 0.14) 0 2px, rgba(0, 0, 0, 0) 2px 8px);
   }
   .rear-page.dense-rail {
-    --rc-rail-w: 220px;
-    --rc-hole: 22px;
+    --rc-rail-w: calc(220px * var(--rc-t));
+    --rc-hole: calc(22px * var(--rc-s));
   }
   .rear-main {
-    padding: 6px 22px 18px;
+    padding: calc(6px * var(--rc-s)) calc(22px * var(--rc-s)) calc(18px * var(--rc-s));
     min-width: 0;
   }
 
   /* ---- group band (kit .section grammar) ---- */
   .rband {
-    padding: 13px 0 15px;
+    padding: calc(13px * var(--rc-s)) 0 calc(15px * var(--rc-s));
     border-top: 1px solid var(--rc-line);
   }
   .rband:first-of-type {
     border-top: none;
-    padding-top: 8px;
+    padding-top: calc(8px * var(--rc-s));
   }
   .rband-head {
     display: flex;
     align-items: baseline;
-    gap: 10px;
-    margin-bottom: 10px;
-    font-size: 12px;
+    gap: calc(10px * var(--rc-s));
+    margin-bottom: calc(10px * var(--rc-s));
+    font-size: calc(12px * var(--rc-t));
     letter-spacing: 0.12em;
     text-transform: uppercase;
     color: var(--rc-dim);
@@ -461,18 +492,18 @@
   .rband-head .dir {
     color: var(--rc-faint);
     font-family: var(--rc-mono);
-    font-size: 11px;
+    font-size: calc(11px * var(--rc-t));
   }
   .rband-head .tag {
     margin-left: auto;
     font-family: var(--rc-mono);
-    font-size: 10px;
+    font-size: calc(10px * var(--rc-t));
     color: var(--rc-faint);
     text-transform: none;
     letter-spacing: 0.02em;
   }
   .rband-head .tag + .tag {
-    margin-left: 12px;
+    margin-left: calc(12px * var(--rc-s));
   }
   .rband-head.as-button {
     appearance: none;
@@ -488,11 +519,11 @@
   .rband-head .pill {
     margin-left: auto;
     font-family: var(--rc-mono);
-    font-size: 10px;
+    font-size: calc(10px * var(--rc-t));
     color: var(--rc-faint);
     border: 1px solid var(--rc-line);
     border-radius: 999px;
-    padding: 1px 8px;
+    padding: 1px calc(8px * var(--rc-s));
     text-transform: none;
   }
 
@@ -500,17 +531,17 @@
   .rgrid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(var(--rc-cell-min), 1fr));
-    gap: 6px 8px;
+    gap: calc(6px * var(--rc-s)) calc(8px * var(--rc-s));
     align-items: start;
   }
   .rcluster {
     grid-column: 1 / -1;
-    margin: 4px 0 -2px;
+    margin: calc(4px * var(--rc-s)) 0 calc(-2px * var(--rc-s));
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: calc(8px * var(--rc-s));
     font-family: var(--rc-mono);
-    font-size: 9px;
+    font-size: calc(9px * var(--rc-t));
     letter-spacing: 0.14em;
     text-transform: uppercase;
     color: var(--rc-faint);
@@ -523,7 +554,16 @@
     opacity: 0.7;
   }
 
-  /* ---- jack cell: the whole ~96×64 cell is the button (>44px hit floor) ---- */
+  /* ---- jack cell: the whole cell is the button ----------------------------
+     THE WHOLE CELL — label, hole, and the space between them — has always been
+     one <button>; the hole is a decorative <span> inside it. What was wrong was
+     the AFFORDANCE: the only conspicuous hover cue was the hole scaling 12%,
+     with a 3%-white cell wash nobody can see, so a control that accepted a
+     click anywhere LOOKED like a 26px circle. Owner 2026-08-11: "the whole text
+     area should be clickable, no reason to force it to just be the jack."
+     The hit area did not move; the cue moved onto it, which matters more now
+     the hole is 15.6px. See rear-card-hit-target.spec.ts — it clicks the LABEL
+     (never the hole) and asserts the carry starts. */
   .rj {
     appearance: none;
     border: none;
@@ -532,17 +572,24 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 5px;
-    padding: 7px 4px 6px;
-    border-radius: 8px;
+    gap: calc(5px * var(--rc-s));
+    padding: calc(7px * var(--rc-s)) calc(4px * var(--rc-s)) calc(6px * var(--rc-s));
+    border-radius: calc(8px * var(--rc-s));
     cursor: pointer;
     background: transparent;
     color: var(--rc-ink);
-    min-height: 64px;
+    min-height: calc(64px * var(--rc-s));
     position: relative;
   }
+  /* Row-level hover: the whole cell washes + rings in its domain hue and the
+     label lifts to full ink, so the live area and the visible area are the
+     same shape. */
   .rj:hover {
-    background: rgba(255, 255, 255, 0.03);
+    background: var(--rcd-soft);
+    box-shadow: inset 0 0 0 1px var(--rcd-d);
+  }
+  .rj:hover .lab {
+    color: var(--rc-ink);
   }
   .rj:focus-visible {
     outline: 2px solid var(--rcd);
@@ -550,7 +597,7 @@
   }
   .rj .lab {
     font-family: var(--rc-mono);
-    font-size: 10px;
+    font-size: calc(10px * var(--rc-t));
     letter-spacing: 0.06em;
     text-transform: uppercase;
     color: var(--rc-dim);
@@ -560,13 +607,16 @@
     max-width: 100%;
     display: inline-flex;
     align-items: baseline;
-    gap: 3px;
+    gap: calc(3px * var(--rc-s));
     justify-content: center;
   }
   .rj .lab .ar {
     color: var(--rcd);
     font-weight: 700;
   }
+  /* The ▲/▬ ticks and the 1v/oct tag are ALREADY at the 8px legibility floor;
+     they do not take --rc-t. (10px x 0.9 = 9px for the label they sit beside,
+     so the size relationship still reads as "mark, not word".) */
   .rj .lab .edge {
     color: var(--rcd);
     font-size: 8px;
@@ -584,6 +634,8 @@
     height: var(--rc-hole);
     border-radius: 50%;
     flex: none;
+    /* containing block for the carry pulse ring (.rj.carrying .hole::after) */
+    position: relative;
     background: radial-gradient(circle at 50% 42%, #181d25 0 40%, #04060a 46% 100%);
     border: 2px solid var(--rcd);
     box-shadow: inset 0 0 5px rgba(0, 0, 0, 0.9), 0 1px 0 rgba(255, 255, 255, 0.05);
@@ -600,36 +652,33 @@
   }
   .rj .ep {
     font-family: var(--rc-mono);
-    font-size: 9px;
+    font-size: calc(9px * var(--rc-t));
     letter-spacing: 0.03em;
     color: var(--rcd);
     background: var(--rcd-soft);
     border: 1px solid var(--rcd-d);
-    border-radius: 4px;
-    padding: 1px 6px;
+    border-radius: calc(4px * var(--rc-s));
+    padding: 0 calc(6px * var(--rc-s));
     white-space: nowrap;
     max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  /* carry source — dashed domain pulse (the ghost cable's dash vocabulary) */
-  .rj.carrying::after {
+  /* carry source — dashed domain pulse (the ghost cable's dash vocabulary).
+     Anchored to the HOLE, not to the cell: it used to be a ::after on .rj at
+     `top: 38px` with a `.rj.out` override at `left: 23px`, two magic numbers
+     that encoded the OLD cell geometry and would have silently drifted off the
+     socket the moment --rc-s moved. Riding the hole's own box is scale-correct
+     by construction and drops the override. */
+  .rj.carrying .hole::after {
     content: '';
     position: absolute;
-    left: 50%;
-    top: 38px;
-    width: 40px;
-    height: 40px;
-    transform: translate(-50%, -50%);
+    inset: -40%;
     border-radius: 50%;
     border: 2px dashed var(--rcd);
     opacity: 0.8;
     animation: rc-carry-pulse 1.4s ease-in-out infinite;
     pointer-events: none;
-  }
-  .rj.out.carrying::after {
-    left: 23px;
-    top: 50%;
   }
   @keyframes rc-carry-pulse {
     0%,
@@ -650,52 +699,56 @@
   .rear-rail {
     border-left: 1px solid var(--rc-line);
     background: linear-gradient(180deg, #12161e, #0e1219);
-    padding: 14px 12px 18px;
+    padding: calc(14px * var(--rc-s)) calc(12px * var(--rc-s)) calc(18px * var(--rc-s));
     display: flex;
     flex-direction: column;
   }
   .rear-rail .rband-head {
-    margin-bottom: 8px;
+    margin-bottom: calc(8px * var(--rc-s));
   }
   .rail-cells {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: calc(8px * var(--rc-s));
   }
   .dense-rail .rail-cells {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 6px;
+    gap: calc(6px * var(--rc-s));
   }
   .rj.out {
     flex-direction: row;
     justify-content: flex-start;
-    gap: 10px;
+    gap: calc(10px * var(--rc-s));
     text-align: left;
     background: var(--rcd-wash);
     border: 1px solid var(--rcd-d);
-    border-radius: 8px;
-    padding: 9px 10px;
+    border-radius: calc(8px * var(--rc-s));
+    padding: calc(9px * var(--rc-s)) calc(10px * var(--rc-s));
     min-height: 0;
     width: 100%;
   }
+  /* The output tile already washed on hover; keep it and add the same
+     whole-cell ring + label lift the input cells now get, so BOTH shapes say
+     "this entire tile is the control". */
   .rj.out:hover {
     background: color-mix(in srgb, var(--rcd) 28%, transparent);
+    box-shadow: inset 0 0 0 1px var(--rcd);
   }
   .rj.out .hole {
     border-color: transparent;
     background: var(--rc-inset);
-    box-shadow: inset 0 0 0 3px var(--rcd), inset 0 0 6px rgba(0, 0, 0, 0.8);
+    box-shadow: inset 0 0 0 calc(3px * var(--rc-s)) var(--rcd), inset 0 0 6px rgba(0, 0, 0, 0.8);
   }
   .rj.out.patched .hole {
     background: radial-gradient(circle at 50% 42%, var(--rcd) 0 38%, var(--rc-inset) 46% 100%);
-    box-shadow: inset 0 0 0 3px var(--rcd), 0 0 10px var(--rcd-glow);
+    box-shadow: inset 0 0 0 calc(3px * var(--rc-s)) var(--rcd), 0 0 10px var(--rcd-glow);
   }
   .rj.out .col {
     display: flex;
     flex-direction: column;
     align-items: flex-start;
-    gap: 2px;
+    gap: calc(2px * var(--rc-s));
     min-width: 0;
   }
   .rj.out .lab {
@@ -703,43 +756,43 @@
   }
   .rj .fan {
     font-family: var(--rc-mono);
-    font-size: 8.5px;
+    font-size: 8.5px; /* already at the legibility floor — does not scale */
     color: var(--rcd-on);
     font-weight: 800;
     background: var(--rcd);
     border-radius: 999px;
-    padding: 0 5px;
-    margin-left: 4px;
+    padding: 0 calc(5px * var(--rc-s));
+    margin-left: calc(4px * var(--rc-s));
   }
   /* ---- footer: domain legend + interaction hint ---- */
   .rear-foot {
     grid-column: 1 / -1;
     display: flex;
     align-items: center;
-    gap: 18px;
+    gap: calc(18px * var(--rc-s));
     flex-wrap: wrap;
-    padding: 9px 16px 11px;
+    padding: calc(9px * var(--rc-s)) calc(16px * var(--rc-s)) calc(11px * var(--rc-s));
     background: #14171b;
     border-top: 1px solid var(--rc-line);
   }
   .legend {
     display: flex;
-    gap: 14px;
+    gap: calc(14px * var(--rc-s));
     flex-wrap: wrap;
   }
   .legend span {
     display: flex;
     align-items: center;
-    gap: 6px;
-    font-size: 10px;
+    gap: calc(6px * var(--rc-s));
+    font-size: calc(10px * var(--rc-t));
     color: var(--rc-dim);
     font-family: var(--rc-mono);
     letter-spacing: 0.04em;
   }
   .legend .sw {
-    width: 9px;
-    height: 9px;
-    border-radius: 3px;
+    width: calc(9px * var(--rc-s));
+    height: calc(9px * var(--rc-s));
+    border-radius: calc(3px * var(--rc-s));
   }
   .legend .vocab {
     color: var(--rc-faint);
@@ -747,7 +800,7 @@
   .hint {
     margin-left: auto;
     font-family: var(--rc-mono);
-    font-size: 10px;
+    font-size: calc(10px * var(--rc-t));
     color: var(--rc-faint);
     letter-spacing: 0.04em;
   }
@@ -757,7 +810,7 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .rj.carrying::after {
+    .rj.carrying .hole::after {
       animation: none;
     }
     .rj .hole {
