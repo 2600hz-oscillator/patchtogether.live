@@ -21,10 +21,15 @@ post-#662 recovery doc; this one is the current, ground-truth-verified campaign 
 > - **behavioral** is no longer purely informational: **#986** added a REQUIRED
 >   `behavioral-smoke` subset. Its exempt counts moved 63 → **77** module and
 >   160 → **113** sweep.
-> - **VRT** counts all moved (76 → **81** `EXEMPT_FROM_VRT`), and the linux-pair
->   accounting was rebuilt entirely in **#1272** (four gap mechanisms, ratcheted
->   in both directions).
-> - **retries → 0 was never done** — `e2e/playwright.config.ts:97` is unchanged.
+> - **The VRT "linux baseline backlog → 0" END-STATE goal was met by DELETING
+>   THE DIMENSION.** #1458 collapsed `{platform}`: there is now ONE baseline set,
+>   authored by linux CI, and the four gap-declaration mechanisms plus their
+>   ratchets are gone. Anything below about linux/darwin pairs is void.
+> - **retries → 0 was never done** — `e2e/playwright.config.ts:130` is unchanged
+>   (`process.env.CI ? 1 : 0`).
+> - ⚠ **§5 "legit-permanent-exempt" directly contradicts directive point 2** ("no
+>   permanent exempt bucket"). The directive is the one the repo standards
+>   inherited; §5 is the compromise this plan proposed and never got ruled on.
 > Re-derive any number before using it; the directive, not the scorecard, is the
 > reason to keep this.
 
@@ -48,28 +53,14 @@ post-#662 recovery doc; this one is the current, ground-truth-verified campaign 
 
 ## 1. Scorecard
 
-### Gate status TODAY (verified against ci.yml + ruleset 16042163 + #837 run 27872120815)
+### Gate status TODAY — TABLE DELETED 2026-08-12
 
-| Suite / lane | Today | Sharded | Retries | Disabled / exempt / flaky items |
-|---|---|---|---|---|
-| **e2e** (`e2e (shard N/10)`) | **REQUIRED** (umbrella needs+if) | 10 | **1** | ~6 hand `test.fixme`; ~18 runtime `test.skip(true,'…relay flake')` escape hatches; ~30+ legit capability/asset gates |
-| **e2e per-port sweep** (`per-module-per-port`) | runs inside required e2e | — | 1 | SKIP_SPAWN=3; EXEMPT_OUTPUT_EMIT_MODULES≈42; EXEMPT_OUTPUT_EMIT≈60 per-port (~45 DOOM evt_*); EXEMPT_INPUT_DRIVE=2 |
-| **collab** (`collab (@collab multi-context)`) | **INFORMATIONAL** (task #69, NOT in ruleset) | no (workers=1) | **1** | 15 non-DOOM convergence specs (timeout-on-slow-sync); **16 DOOM green-but-vacuous skips**; 2 specs DEAD-on-CI (`!!process.env.CI`); in-card-title `test.fixme` (dead body) |
-| **collab-attest** | **INFORMATIONAL** (`continue-on-error`) | — | — | deterministic ~2 min hash verify; FAILS on PR #837 (stale hash — expected) |
-| **webgl-attest** (real-GPU hash) | **REQUIRED** (umbrella needs+if), **retries=0** | — | **0** | 0 flaky on latest attestation (42 heavy + 5 leak + 1 cam = 48 files); `FULL_TOYBOX_CONTENT` un-gated (23 shaders' GPU draw un-run) |
-| **webgl-smoke** (SwiftShader floor) | **REQUIRED** (umbrella needs+if) | — | **1** | 3 `@webgl-smoke` files; modules.spec toybox `test.fixme` (#102) |
-| **e2e-video** (heavy lane) | **DISABLED** (dispatch-only, task #65) | — | 2 | whole lane dormant; its per-PR role replaced by webgl-attest + webgl-smoke |
-| **behavioral** (`behavioral input coverage (shard N/6)`) | **INFORMATIONAL** (`continue-on-error`, push/dispatch/labeled-only) | 6 | 1 | 3 SKIP_SPAWN; **63** BEHAVIORAL_MODULE_EXEMPT; **160** BEHAVIORAL_SWEEP_EXEMPT (silent filter); contradictory stale "GATED" comment ci.yml:1796-1799 |
-| **VRT** (`vrt-strict`) | **REQUIRED** (ruleset, literal name) | — | — | 76 EXEMPT_FROM_VRT; 36 MASKS; 25 STRICT; **104 linux/* + 4 darwin/* baseline-pairs** (4 darwin = admitted flake quarantines #198/#202) |
-| **VRT** (`VRT (visual regression)` full) | **INFORMATIONAL** (`continue-on-error`) | — | — | — |
-| **ART** (`art`) | **REQUIRED** (umbrella needs+if), REAL gate | — | — | **ZERO** disabled tests (cleanest suite); 29 source-SHA pins guarded in-test |
-
-Verified true-to-fact: #837's FINAL run = `collab` FAILURE, `collab-attest` FAILURE, `art` FAILURE
-(only e2e/build/typecheck/unit/webgl green); compiled-relay reverted in commit e915e9a5; #837 touches
-**only the 15 non-DOOM specs**, NOT the DOOM vacuity skips. `RELAY_VACUITY_MARKERS` exists in
-`scripts/collab-attest-lib.ts:234` and is the audit oracle. `FULL_TOYBOX_CONTENT` set NOWHERE in
-`scripts/`/`Taskfile.yml`/`.github/`. `EXPECTED_HEAVY_SPEC_COUNT=42`. The "behavioral is now GATED
-too (2026-06-03)" comment at ci.yml:1796-1799 is FALSE (no `$BEHAVIORAL` in the `if [[ ]]`).
+The per-lane scorecard was a snapshot of 2026-06-20 and **every row had drifted**
+(it still listed `e2e-video` as dormant rather than deleted, behavioral as purely
+informational, and per-platform VRT baseline pairs that no longer exist). It was
+the single most likely thing in this file to be quoted as current. Read the lane
+truth off `ci.yml` + the ruleset; read this file for the DIRECTIVE and the END
+STATE below.
 
 ### END STATE
 

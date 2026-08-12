@@ -6,7 +6,8 @@
 > multi-context lane stays informational here"), there is still no
 > `task db:migrate` and no `schema_migrations` ledger anywhere in `db/` or
 > `scripts/`, and `retries: process.env.CI ? 1 : 0` is unchanged
-> (`e2e/playwright.config.ts:97`).
+> (`e2e/playwright.config.ts:130` — re-verified 2026-08-12, only the line number
+> moved). **Half of 6d HAS since landed — see the ✅ on that item.**
 > **One item below is now FALSE and would mislead an executor — see the ⚠ on 6a.**
 > The two "in-flight at shelve time" PRs both landed: **#722** (Fix E Phase 1)
 > and **#723** (Phase 5 finish + guard).
@@ -29,7 +30,7 @@ pickup. Full detail: `standards-refactor-roadmap.md` + `adversarial-review-adopt
 - **6b — @collab → required** *(the priority one; hardest)*. Root-cause relay-contention/in-card-title timeout, verify it runs with DATABASE_URL (not vacuous), then make it a 3rd REQUIRED context (or document why not). Ties to task #42 + memories `feedback_collab_tests_vacuous_without_db`, `feedback_never_merge_on_red_collab_is_doom_gate`.
 - **6a — video/toybox CI shard isolation + capture-count timeouts**. ⚠ **The premise of this item is now FALSE.** It says "heavy WebGL specs → serialized e2e-video lane (already partly via WEBGL_HEAVY_GLOBS)". **That lane was DELETED on 2026-06-20 (#839)**, so `WEBGL_HEAVY_GLOBS` no longer *relocates* a spec — it **deletes its PR coverage outright** (`e2e/webgl-heavy-globs.ts` now carries that warning in a banner). Anyone executing 6a as written would silently remove coverage. Re-scope it to what is actually left: scale per-spec timeout by input/capture count (done for the per-port sweep in **#1327**, which found the "flat constant wearing a scaled costume"), and decide whether a serialized heavy lane should be *resurrected* rather than assumed to exist.
 - **6c — VRT glyph-flake settle loop + auto-classify**. Finish the height-stability/font settle loop (#598 incomplete); auto-classify "N≈all cards failed = flake → regen via vrt-update" vs "1–2 own cards = expected, regen in-PR". Known fix in memory `vrt-flake-1px-layout-rounding`.
-- **6d — migration ledger + `task db:migrate` + CI applies ALL sql**. schema_migrations ledger + `scripts/db-migrate.sh` + `task db:migrate` (Node, idempotent, txn-ordered); fix CI to apply ALL schema files (prevents prod/autotest drift); runbook in db/README.md; drop the 002 DROP line once tiers converge. **Do NOT wire into deploy.yml hot path.**
+- **6d — migration ledger + `task db:migrate`**. ✅ **"CI applies ALL sql" is DONE** — `scripts/apply-db-schema.sh` reads the DIRECTORY (not a hand-copied list at 14 sites) with `ON_ERROR_STOP=1`, and `scripts/ci-db-schema.test.ts` asserts every caller targets a localhost `*_test` DB. Its header records what the old lists cost: `002`/`003`/`004` were in NO list, so the whole journal/replay durability feature was exercised by **zero** CI runs while every `@collab` test passed, because `journal.ts` degrades silently on 42P01. ⬜ **Still unbuilt:** the `schema_migrations` ledger, `scripts/db-migrate.sh` + `task db:migrate` (Node, idempotent, txn-ordered), the runbook in `db/README.md`, and dropping the 002 DROP line once tiers converge. **Do NOT wire into deploy.yml hot path.**
 
 ### Phase 7 — deferred / gated (do NOT build speculatively)
 - **Canvas.svelte staged extraction** — DEPRIORITIZED (native macOS port re-implements the UI ground-up; this is hygiene not strategy).

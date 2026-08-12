@@ -25,6 +25,15 @@
 > whole delivered set shipped in the 48-hour burst of 2026-07-10/11 (#1043–#1047),
 > and the shortlist has not moved since.
 >
+> **Re-spot-checked 2026-08-12 — item 1 has gone BACKWARD in adoption terms and
+> nothing else moved.** The worker hoist is still `acidwarp` alone on
+> `renderLocus:'worker'` (toybox + vfpga-runner on `'worker-experimental'`), and
+> every video module shipped in the year since declares main-thread or nothing —
+> including the newest, `warrensvisions`, whose own test *asserts* `'main'`
+> (`warrensvisions.test.ts:43`). The study's #1-ranked item, aimed at the one
+> confirmed real-hardware defect, is the one that stopped, and new work is now
+> being pinned to the side it was supposed to move off.
+>
 > Two figures in §5 have drifted and understate the moat rather than overstating it:
 > **ART goldens are 136 `.f32` files, not 84**, and **the "170 audio modules" the
 > rewrite math rests on is really ~119 defs** (see the correction banner on

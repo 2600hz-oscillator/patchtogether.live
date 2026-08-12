@@ -14,6 +14,15 @@
 > - **§4-D · the BASS preset collapses three of six strings onto one pitch** (`tuning: 1,
 >   register: −12, spread: 0.15` puts strings 1-3 under `KARPLUS_F0_MIN = 30 Hz`). A
 >   shipped preset; a preset-value change, so an owner call.
+>   **2026-08-12: still open, but no longer only recorded here** — the defect is
+>   pinned verbatim in the def at `sixstrum.ts:298-305`, with the note that "the
+>   model test fails the day the preset is fixed".
+>
+> **2026-08-12: the SEVEN defects in §6 below are the reason this file survives** —
+> none of them is recorded in the source. §1's "tuning writes 14 params while
+> advertising one" is now half-addressed: the def documents PRESET and TUNING as
+> distinct, but `SixstrumCard.svelte:157` still labels the `tuning` fader "Mode"
+> and routes it through `setMode`, which stamps all fourteen.
 > - **§2 · `ENV DECAY` and `RELEASE` are inert at the shipped `sustain = 1`** — the def's
 >   own band-5 hint now says so (`sixstrum.ts:224-226`), which documents it rather than
 >   fixing it.
@@ -120,207 +129,14 @@ enforces it.
 
 ---
 
-## 2. THE CONTROLS THAT MATTER — re-ranked on ONE test: does it move a ringing string?
+## 2–5 · DELETED 2026-08-12 (the re-do SHIPPED — #1332)
 
-Classes from the DSP: **L** = live on a sounding string · **NS** = next-strike only (the pitch
-latch, `sixstrum-dsp.ts:342, 352`) · **NG** = next-gesture only · **inert** at shipped defaults.
-
-| rank | control | class | why |
-|---|---|---|---|
-| 1 | `ring` | **L** | `kp.decay` → `ρ` → loop gain, per sample (`karplus-dsp.ts:462-466`). The instrument's sustain. |
-| 2 | `material` | **L** | note-tracking damping cutoff `f0·2^(0.5+5.5·B)` (`karplus-dsp.ts:287`) — the primary bright↔dark, and it **caps RING** (§3-A). |
-| 3 | `sixstrum-strum-{n}` | — | **the audition, RECOVERED.** Rank 3, not 16 as round 2 proposed: on an instrument that cannot self-sound, the strike is not a design-time affordance, it is the *first* thing a hand reaches for. |
-| 4 | `sixstrum-preset-{n}` | NS | the 14-param recall. Rank 4 keeps it in the six-cell plate and out of the one-cell mini tile, where a one-click destructive stamp would be the only control at the coarsest zoom. |
-| 5 | `body` | **L** | post-sum wet mix (`sixstrum-dsp.ts:422-425`), always does something (default 0.35, `0 = dry`). |
-| 6 | `level` | **L** | pre-body gain in dB. |
-| — | *lane budget ends* | | |
-| 7-9 | `strumSpread`, `strumDir`, `tuning` | NG / NG / NS | the strum hand and the instrument. |
-| 10-12 | `register`, `quality`, `spread` | NS | latched at the strike. |
-| 13-15 | `pickTone`, `pickGrain`, `pickPos` | NS | the pick. |
-| 16 | `stiffness` | **L** | in-loop allpass (`karplus-dsp.ts:442-450`) — live, but a fine trim. |
-| 17 | `muteDepth` | L-but-inert | needs a MUTE cable. |
-| 18-21 | `attack`, `sustain`, `release`, `envDecay` | mixed | see the losers. |
-
-**LOSERS, named with the code path:**
-- **`strumSpread` loses rank 1** (it holds it today). It is next-gesture only **and completely
-  dead in poly mode**, and it is the first knob a new user turns expecting a sound.
-- **`envDecay` is DEAD LAST and it is genuinely inert:** at `sustain = 1` the Decay branch hits
-  `|value − susTarget| < 1e-4` on its **first tick** and jumps to Sustain
-  (`packages/dsp/src/lib/adsr-env.ts:74-84`). **Zero samples of decay ever run.** The def admits
-  it (`sixstrum.ts:278`).
-- **`release` loses too, for a subtler reason:** nothing calls `triggerSoft(false)` in
-  strum/chord mode except a MUTE rising edge (`sixstrum-dsp.ts:393`). **With only STRUM patched,
-  the amp envelope never leaves Sustain**, so RELEASE is inert as well.
-- **`quality` loses to `tuning`**: it is gated on `chordConnected` (`:285`) — inert until a CHORD
-  cable lands.
-- **`register` loses the plate** (it is rank 6 today): a ±24-semitone transpose changes *which
-  instrument you have*, not how you play it, and it is latched.
-- **`strumDir` loses**: at `strumSpread = 0` all three directions are **bit-identical**
-  (`:373` gives `d = 0` for every string).
+The re-ranking, the proposed `face` block, five of the six derived-readout
+derivations and the bespoke-cell argument were deleted: sixstrum is in
+`STRICT_FACES` and the shipped def is the record. The one readout kept below is
+the one that was REJECTED, because the reason it was rejected is a live bug.
 
 ---
-
-## 3. THE FACE
-
-```ts
-face: {
-  title: 'Instrument',
-  hint:
-    'Six Karplus-Strong strings, a strum hand and a chord voicer. The pitch is LATCHED at the ' +
-    'strike, so REGISTER, TUNING, CHORD and SPREAD change the NEXT note, not the one ringing — ' +
-    'and MATERIAL caps how long RING can actually hold.',
-
-  order: [
-    'ring','material','sixstrum-strum-{n}','sixstrum-preset-{n}','body','level',   // 1-6 lane budget
-    'sixstrum-strings-{n}',                                                         // the picture
-    'strumSpread','strumDir','tuning','register','quality','spread',
-    'pickTone','pickGrain','pickPos','stiffness','muteDepth',
-    'attack','sustain','release','envDecay',
-  ],
-  pages: [
-    { id: 'tuning', label: '1 · instrument',
-      hint: 'guitar, bass or harp — the open string set AND the body filter bank; the preset stamps fourteen values at once',
-      controls: ['sixstrum-strings-{n}','sixstrum-preset-{n}','tuning','register','quality'] },
-    { id: 'string', label: '2 · strings',
-      hint: 'RING is the sustain and MATERIAL is the brightness — but the loop-gain cap means MATERIAL below ~0.10 pins the ring at 0.78 s whatever RING says',
-      controls: ['ring','material','stiffness','spread'] },
-    { id: 'strum',  label: '3 · strum hand',
-      hint: 'one gesture rolls across six strings over the STRUM window; an unpatched string follows the nearest patched strum at or below it',
-      controls: ['sixstrum-strum-{n}','strumSpread','strumDir','muteDepth'] },
-    { id: 'pick',   label: '4 · pick',
-      hint: 'the excitation burst — measured in periods, so its length in milliseconds halves every octave up',
-      controls: ['pickTone','pickGrain','pickPos'] },
-    { id: 'output', label: '5 · envelope · body · out',
-      hint: 'the amp ADSR sits UNDER the string decay and at the shipped SUSTAIN 1.0 two of its four stages never run',
-      controls: ['attack','envDecay','sustain','release','body','level'] },
-  ],
-  glyph: 'scope',
-
-  hero: {
-    cell: 'sixstrum-strings-{n}',
-    control: 'ring',
-    action: 'sixstrum-strum-{n}',
-    readouts: [
-      { label: 'rings for', valueId: 'sixstrum-t60-ms' },
-      { label: 'chord',     valueId: 'sixstrum-chord' },
-      { label: 'roll',      valueId: 'sixstrum-strum-ms' },
-    ],
-  },
-  sidebar: [
-    { kind: 'signal-flow', label: 'signal flow', stages: [
-      { label: 'STRUM',        role: 'generator', note: 'rolls 1→6' },
-      { label: 'PICK BURST',   role: 'generator', note: 'noise, N periods' },
-      { label: 'COLOR LPF',    role: 'bus', note: 'PICK TONE' },
-      { label: 'PICK COMB',    role: 'bus', parallel: true, note: 'position notch' },
-      { label: '6 × K-S LOOP', role: 'bus', note: 'damping · stiffness' },
-      { label: 'MUTE CHOKE',   role: 'bus', parallel: true, note: 'per string' },
-      { label: 'ADSR',         role: 'bus', note: 'shared shape' },
-      { label: 'SUM ÷√N',      role: 'bus', note: 'active voices' },
-      { label: 'LEVEL',        role: 'bus', note: 'dB' },
-      { label: 'BODY',         role: 'bus', note: 'two band-passes' },
-    ] },
-    { kind: 'presets', label: 'presets', entries: [ /* guitar · bass · harp — the existing 14-param stamps, sixstrum-preset-actions.ts:45-49 */ ] },
-    { kind: 'readouts', label: 'strings', entries: [
-      { label: 'string 1',    valueId: 'sixstrum-s1-hz' },
-      { label: 'damping at',  valueId: 'sixstrum-damp-hz' },
-      { label: 'pick notch',  valueId: 'sixstrum-notch-partial' },
-      { label: 'burst',       valueId: 'sixstrum-burst-ms' },
-    ] },
-  ],
-}
-```
-
-**PF-1 vocabulary, and it kills three duplicate tables.** `tuning` (0..2) → `guitar/bass/harp`
-(the names live in `sixstrum-preset-actions.ts:34` today), `strumDir` (0..2) →
-`down/up/alt` (`SixstrumCard.svelte:50`), `quality` (0..7) → `maj/min/dom7/maj7/min7/sus4/pow5/oct`
-(`SixstrumCard.svelte:51`). `param-vocabulary.test.ts` requires
-`options.length === round(max−min)+1` → 3/3/8 exactly, and `defaultValue` to hit a real option →
-0 in all three. Contract-transparent. **⚠ Ranks 9/10/12 mean none of the three can reach a lane
-tier**, so the `if (tier !== 'dock') return 'knob'` branch is unreachable for them on this face —
-do not claim a lane-tier visual change.
-
-**⚠ PAGE-ID / REAR-GROUP-ID RULE, and the rule as usually stated is wrong.**
-`rear-card-model.ts:287-291`: for each page, a curated group whose id **equals** the page id
-CLAIMS that page's slot and `usedGroupIds.add(g.id)` stops the extra-groups loop from re-emitting
-it. That is a designed merge. The double-render happens only when the curated group id is
-`'voice'` or `'signal'`, because the voice-slot claim (`:262-269`) fires unconditionally.
-sixstrum's only curated rear group is `{ id: 'voice' }` (`sixstrum.ts:195`) and no page id is
-`voice` or `signal` — **keep it that way.**
-
----
-
-## 4. DERIVED READOUTS
-
-All must read the **live AudioParam** (`readParam`, `sixstrum.ts:373-375`), not `node.params` —
-seven CV ports move the param without moving the stored knob (`sixstrum.ts:71-80`). **That is
-itself a universal negative control for this module.**
-
-### A. `sixstrum-t60-ms` — how long a string ACTUALLY rings. NOT a RING readback.
-```
-comp  = |H_lp(a(f0,B), ω0)| · |H_dc(R(f0), ω0)|        # karplus-dsp.ts:298-299, 334-338
-ρ     = 0.001^(1/(f0·ring))                            # :279
-g     = clamp(ρ / max(0.5, comp), 0, 1.1)              # KARPLUS_G_MAX, :466
-t60   = ln(0.001) / ( f0 · ln(g·comp) )
-```
-**Measured:** defaults (E2, material 0.55, ring 2.5) → **2.500 s** (it matches the knob).
-Material 0 at E2 → **0.775 s at any ring ≥ 0.78 s**; material 0 at E4 → **0.195 s**. The loop-gain
-cap releases above material ≈ 0.103 (E2) / 0.111 (E4).
-
-**NEGATIVE CONTROL:** hold RING at 10 s and sweep MATERIAL 0.55 → 0.00. **A RING readback never
-moves; the derived number collapses 10 s → 0.775 s.**
-**Second leg, and it is the sharper one:** at material 0, sweep RING 1 → 10. The knob moves 10×
-and the derived number must be **frozen**. A derivation that tracks the knob there is falsified.
-
-### B. `sixstrum-strum-ms` — the roll window
-```
-window_ms   = strumSpread · SS_STRUM_SPREAD_MAX_S · 1000 = strumSpread · 45   # sixstrum-dsp.ts:58, 292
-per_string  = window/(SS_STRINGS − 1) = strumSpread · 9 ms                     # :373
-```
-Default 0.28 → **12.6 ms · 2.5 ms per string**.
-**NEGATIVE CONTROL:** patch `strum_cv` (`sixstrum.ts:75`). The AudioParam moves and the Y.Doc knob
-does not — a `node.params`-sourced readout is **frozen while the sound rolls**.
-**Second, cheaper leg:** flip DIR. The derived window must **not** move (`dir` only permutes
-`order`, `:366-372`), so a readout that reacts to DIR is instrumented wrong.
-
-### C. `sixstrum-chord` — the resolved chord as note names
-```
-voiceChord(60 + chordCv·12, qualityForIndex(quality), tuningForIndex(tuning))   # sixstrum-tuning.ts:122-130
-each string + round(register) semitones                                          # sixstrum-dsp.ts:342
-unpatched CHORD ⇒ openStrings(tuning)                                            # :285
-```
-Default: `E2 A2 D3 G3 B3 E4`.
-**NEGATIVE CONTROL (the strongest available on this module):** move the CHORD **root CV** with
-every knob still. **Nothing in param space changes at all — a knob readback *cannot* move** —
-while the derived line goes `C E G C E C` → `D F# A D F# D`. Second leg: `quality` 0 → 5 shows
-`0` → `5` on a knob and `maj` → `sus4` derived.
-
-### D. `sixstrum-s1-hz` — string 1's fundamental, **and it finds a shipped bug**
-```
-f0 = clamp( 220 · 2^((open₁ − 57)/12 + register/12 + PAT[0]·spread·14/1200), 30, 4200 )
-     # sixstrum-dsp.ts:46, 55, 297, 317, 342; karplus-dsp.ts:88-89, 362-364
-```
-Default = **82.24 Hz** (E2 −3.5 ¢) — exactly the −3.5 ¢ that
-`packages/web/src/lib/audio/default-pitch-accuracy.test.ts:34` already pins.
-**NEGATIVE CONTROL:** turn **SPREAD** (a "richness" knob nobody reads as pitch) 0.25 → 1.00.
-Register and tuning readbacks are still; the derived f0 moves 82.24 → 81.75 Hz.
-
-**⚠ THE BUG THIS READOUT FINDS.** The shipped **BASS preset**
-(`sixstrum-preset-actions.ts:47`: `tuning: 1, register: −12, spread: 0.15`) puts strings 1-3 at
-**15.42 / 20.59 / 27.49 Hz — all below `KARPLUS_F0_MIN = 30`** (`karplus-dsp.ts:88`), so
-`karplusF0`'s clamp (`:364`) **collapses three of six bass strings onto the identical 30 Hz
-pitch.** Strings 4-6 land at 36.72 / 49.04 / 65.49 Hz. **The shipped BASS voice is a three-note
-unison plus three notes.**
-
-### E. `sixstrum-burst-ms` / `sixstrum-notch-partial` / `sixstrum-damp-hz`
-`burst_ms = pickGrain · 1000/f0` (`karplus-dsp.ts:392`) — 12.13 ms at E2, 3.03 ms at E4.
-**NEGATIVE CONTROL:** REGISTER +12 halves the ms while the GRAIN knob reads `1.00` — the def's own
-"measured in periods so the attack reads the same at every pitch" (`sixstrum.ts:274`) is
-*precisely* why the ms is invisible.
-`notch_partial = 1/β` (`karplus-dsp.ts:424-427`): β 0.17 → partial **5.88**; β 0.5 → **2.00**
-(even harmonics cancelled, confirming `sixstrum.ts:268`). **PAIRED NEGATIVE CONTROL:** REGISTER
-moves the *Hz* form and must **not** move the *partial-index* form. Publish the index; a readout
-that drifts with REGISTER is proven wrong.
-`damp_hz = f0 · 2^(0.5 + 5.5·material)` (`karplus-dsp.ts:287`): 949 Hz at E2 / material 0.55.
 
 ### F. Rejected — a "sounding strings" readout, and the reason is a bug
 `active` counts `energy > 1e-4 || env.value > 1e-4` (`sixstrum-dsp.ts:412`). **With `sustain = 1`
@@ -330,16 +146,6 @@ normaliser is pinned at 0.408 (−7.8 dB) **even in silence.** A readout showing
 be *echoing the bug*. If it ships at all it must read the **energy follower alone**, and its
 negative control is: wait 10 s after a barre at RING 0.1 — the audio is gone, so the number must
 fall. If it prints 6, the instrument is measuring the envelope, not the sound.
-
----
-
-## 5. BESPOKE CELL
-
-**LEGITIMATE — `sixstrum-strings-{n}`:** six horizontal string lines, each carrying its resolved
-note name, its energy, its own `t60` bar and a mute lamp, with the strum roll drawn as a diagonal
-across them. It makes §4-A, §4-C and §4-F visible at once, and it is the one picture no def
-introspection produces. **The `strings` glyph stays demoted** (it needs a worklet→main
-`postMessage` plus a `read()` seam); this panel derives everything from params instead.
 
 ---
 
@@ -373,14 +179,3 @@ introspection produces. **The `strings` glyph stays demoted** (it needs a workle
 - **G · the BASS preset's `F0_MIN` collapse** (§4-D) — a shipped preset, three strings on one pitch.
 
 ---
-
-## 7. COST
-
-| | |
-|---|---|
-| **contract-lock** | **+2 lines** — `sixstrum family sixstrum-strum kind=other prefix=sixstrum-strum` (sorts after `sixstrum-preset`) and `sixstrum family sixstrum-strings kind=cell prefix=sixstrum-strings`. 44 → 46. `ParamDef.options` on the three discretes is **contract-transparent** (`contract-signature.ts:108-111` emits `id min..max curve default=X unit=Y` only). Both families need `docs.controls` keys (STRICT_DOCS). |
-| **card gate** | ⚠ `module-docs-lint.test.ts:232-247` greps every declared `testidPrefix` against `allCardSource()`. `sixstrum-strum` already exists at `SixstrumCard.svelte:192` ✔; **`sixstrum-strings` does not**, so either the card gains that testid or the family is `kind: 'cell'` and the rule is checked against how PF-14 panel families are handled — **verify before committing to the family kind.** |
-| **ART** | none. No DSP edit. §6-G (the BASS preset) is a **preset-value** change, not a DSP change, but it *is* an audible change to a shipped recall — owner call. |
-| **VRT** | three darwin scenes; **two move.** `darwin/face-sixstrum-compact` should be **pixel-identical** (ranks 1-2 stay `ring`+`material`… ⚠ **no — this re-do changes rank 1 from `strumSpread` to `ring`, so the compact tile DOES move**; regenerate and look at it). `darwin/face-sixstrum-dock` moves substantially (5 bands, new labels, two Segmenteds, one Selector, a new action). `darwin/rear-sixstrum` moves — the rear's page-derived CV bands take their ids/labels/**order** from `face.pages` (`rear-card-model.ts:285-300`); `holeCount` stays 23 so `workflow-rear-card.spec.ts` is unchanged. **Linux drains available:** `linux/face-sixstrum-compact` (`vrt-exemptions.ts:1049`), `linux/face-sixstrum-dock` (`:1050`), `linux/rear-sixstrum` — draining all three lowers the vrt-meta linux-deficit ceiling by 3 **in the same commit**, then dispatch unscoped. |
-| **structural pins that MUST move in the same commit** | `e2e/vrt/workflow-shell-faces.spec.ts` `{ type: 'sixstrum', pages: 6 }` → **5**; and `e2e/tests/p1-batch2-faces.spec.ts:60` **PINS the six page labels as an exact array** (`['strum · damp','string','pick','tuning · chord','envelope','body · out']`) — round 2's spec never mentioned that file. |
-| **e2e** | `faces-parity` goes 20 → 22 driven cells (+2 families), and three params move from `dragKnob` to a Segmented/Selector click, which is **cheaper**. Net ≈ +0.5 s. |
