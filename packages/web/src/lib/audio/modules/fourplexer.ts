@@ -32,7 +32,10 @@
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import { patch as livePatch } from '$lib/graph/store';
-import { fourplexerClampSelector } from '$lib/audio/fourplexer-select';
+import {
+  createSelectorCommitter,
+  fourplexerClampSelector,
+} from '$lib/audio/fourplexer-select';
 import workletUrl from '@patchtogether.live/dsp/dist/fourplexer.js?url';
 
 import { createWorkletNode } from '$lib/audio/worklet-guard';
@@ -126,14 +129,35 @@ export const fourplexerDef: AudioModuleDef = {
     // Gate-advanced selections are posted back from the worklet so the new
     // selector index persists in node params (synced + saved) exactly like
     // a UI click. We mirror the worklet's index into livePatch.
+    //
+    // ⚠ THROUGH A RATE-LIMITER, because `gate1..4` are audio-rate ports. The
+    // worklet posts once per rising edge, so the postMessage rate IS the cable
+    // rate — measured 8/s from a musical clock, 440/s from a 440 Hz saw and
+    // 2000/s from a 2 kHz sine, per output. Every one of those changed the
+    // selector (it advances on a 4-cycle, so nothing is absorbed by the `!==`
+    // guard below) and therefore became a Y.Doc write plus a reconciler pass.
+    // The committer coalesces on a leading+trailing throttle: a musical clock
+    // still commits instantly on the leading edge, an audio-rate cable is
+    // capped, and the LAST index of every window is always written, so the
+    // store converges on where the selector actually is rather than on a stale
+    // intermediate position. See fourplexer-select.ts for the measured rates.
+    const selCommitter = createSelectorCommitter({
+      now: () => performance.now(),
+      schedule: (fn, ms) => setTimeout(fn, ms),
+      cancel: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
+      commit: (out, idx) => {
+        const key = `sel${out + 1}`;
+        const target = livePatch.nodes[node.id];
+        if (target && target.params[key] !== idx) {
+          target.params[key] = fourplexerClampSelector(idx); // guard:allow-raw-write — worklet posts back the gate-advanced selector index during playback, not a user edit
+        }
+      },
+    });
+
     workletNode.port.onmessage = (e: MessageEvent) => {
       const m = e.data as SelMessage | undefined;
       if (!m || m.type !== 'sel') return;
-      const key = `sel${m.out + 1}`;
-      const target = livePatch.nodes[node.id];
-      if (target && target.params[key] !== m.idx) {
-        target.params[key] = fourplexerClampSelector(m.idx); // guard:allow-raw-write — worklet posts back the gate-advanced selector index every advance during playback, not a user edit
-      }
+      selCommitter.post(m.out, fourplexerClampSelector(m.idx));
     };
 
     return {
@@ -162,6 +186,11 @@ export const fourplexerDef: AudioModuleDef = {
       },
       dispose() {
         try { workletNode.port.onmessage = null; } catch { /* ignore */ }
+        // Write any index still inside its throttle window before tearing
+        // down, so the selector position a user leaves the rack on always
+        // persists — a coalescer that drops its tail is a data-loss bug.
+        try { selCommitter.flush(); } catch { /* ignore */ }
+        selCommitter.dispose();
         workletNode.disconnect();
       },
     };
