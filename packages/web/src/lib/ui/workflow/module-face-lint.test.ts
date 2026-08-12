@@ -745,8 +745,9 @@ describe('module-face lint — DECLARED param cells (face.paramCells) + PANEL ti
         if (!panelKeys.has(ctl.key)) continue;
         problems.push(
           `${def.type}: panel cell '${ctl.key}' is SELECTED at lane tier '${tier}' — a panel ` +
-            `declares its own minWidth and cannot fit a 46px knob column. Rank it below the ` +
-            `lane caps (ranks 7+ are dock-only) or drop the panel.`,
+            `declares its own minWidth and cannot fit a 46px knob column. PROMOTE IT TO ` +
+            `face.hero.cell (PF-22: a hero picture is dock-only, so it takes no lane rank and ` +
+            `may rank FIRST), or rank it below the lane caps, or drop the panel.`,
         );
       }
     }
@@ -940,6 +941,39 @@ describe('module-face lint — DECLARED param cells (face.paramCells) + PANEL ti
       controlFamilies: [{ id: 'synthetic-panel', label: 'panel' }],
     });
     expect(panelTierProblems(dockOnly, panelKeys)).toEqual([]);
+
+    // PF-22 — the SAME panel at rank ONE, promoted to `face.hero.cell`: also
+    // clean, because `laneOrder` never offers a hero picture to a lane tier.
+    // This is the escape the rank floor did not have, and it is asserted THROUGH
+    // the same predicate so the fix cannot be "the protection stopped running".
+    const heroFirst = synthetic({
+      face: {
+        order: [panelKey, 'algorithm'],
+        paramCells: { algorithm: 'grid' },
+        hero: { cell: panelKey },
+      },
+      controlFamilies: [{ id: 'synthetic-panel', label: 'panel' }],
+    });
+    expect(panelTierProblems(heroFirst, panelKeys)).toEqual([]);
+
+    // …and the exclusion is EXACTLY one key. A SECOND panel at rank 1, not the
+    // hero, still fails at every lane tier it reaches — otherwise `laneOrder`
+    // would read as "declaring any hero disables the check".
+    const twoPanels = 'synthetic-other-{n}';
+    const heroPlusStray = synthetic({
+      face: {
+        order: [twoPanels, panelKey, 'algorithm'],
+        paramCells: { algorithm: 'grid' },
+        hero: { cell: panelKey },
+      },
+      controlFamilies: [
+        { id: 'synthetic-panel', label: 'panel' },
+        { id: 'synthetic-other', label: 'other' },
+      ],
+    });
+    const stray = panelTierProblems(heroPlusStray, new Set([panelKey, twoPanels]));
+    expect(stray.length).toBe(3);
+    expect(stray.every((p) => p.includes(twoPanels))).toBe(true);
 
     // And the rule is INERT for a module with no panels at all — proving the
     // live sweep above is not passing by accidentally flagging nothing.

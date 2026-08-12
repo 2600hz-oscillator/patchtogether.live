@@ -9,6 +9,7 @@ import {
   dockFacePlan,
   dockPlanControls,
   faceTierCap,
+  laneOrder,
   resolveFaceControl,
   FACE_TIER_CAPS,
   LANE_PLATE_MAX_CELLS,
@@ -226,6 +227,84 @@ describe('ModuleFacePage.clusters — the front-side mirror of the rear card’s
 describe('curatedFace — un-faced module', () => {
   it('returns null when the def has no face (un-migrated → placeholder)', () => {
     expect(curatedFace({ params: [{ id: 'x', label: 'X' }] }, 'compact')).toBeNull();
+  });
+});
+
+describe('PF-22 — a HERO PICTURE takes no LANE rank', () => {
+  // The floor this removes: a PF-14 panel cannot render in a 46px lane knob
+  // column, so `module-face-lint` refuses one SELECTED at a lane tier — and the
+  // 'full' lane cap is six, so a panel's first legal rank was SEVEN. A module
+  // with fewer than six other rankable keys could therefore never have a
+  // picture at all (kria: three keys; meowbox: five), and one that could ranked
+  // its HERO dead last to satisfy the arithmetic (bluebox: thirteenth of
+  // thirteen). Ranking said "priority" and meant "lane budget".
+  //
+  // `hero` is DOCK-ONLY by declaration, so the picture is simply not offered to
+  // a lane. The 46px protection is untouched — it is asserted, against this same
+  // exclusion, in module-face-lint's panel negative control.
+
+  const PANEL = 'pic-{n}';
+  const withHeroPicture: FaceDefLike = {
+    params: [
+      { id: 'a', label: 'A' },
+      { id: 'b', label: 'B' },
+    ],
+    controlFamilies: [{ id: 'pic', label: 'Picture' }],
+    face: { order: [PANEL, 'a', 'b'], glyph: 'none', hero: { cell: PANEL } },
+  };
+
+  it('laneOrder drops the hero cell and nothing else, order preserved', () => {
+    expect(laneOrder(withHeroPicture.face!)).toEqual(['a', 'b']);
+  });
+
+  it('a face with no hero, or a hero with no `cell`, is passed through UNCHANGED', () => {
+    // The clause that would rot first: if `laneOrder` filtered on anything
+    // broader than `hero.cell`, every face in the registry would quietly lose a
+    // lane control. `hero.control` PROMOTES a knob and that knob still paints
+    // in the lane, so it must survive.
+    const noHero: FaceDefLike = { ...withHeroPicture, face: { order: [PANEL, 'a', 'b'] } };
+    expect(laneOrder(noHero.face!)).toEqual([PANEL, 'a', 'b']);
+    const controlOnly: FaceDefLike = {
+      ...withHeroPicture,
+      face: { order: ['a', 'b'], hero: { control: 'a' } },
+    };
+    expect(laneOrder(controlOnly.face!)).toEqual(['a', 'b']);
+  });
+
+  it('the picture ranks FIRST and the lane still paints the real controls', () => {
+    // Rank 1 — the honest priority for a module whose picture IS the module —
+    // and mini (cap 1) shows 'a', not the panel.
+    expect(curatedFace(withHeroPicture, 'mini')!.controls.map((c) => c.key)).toEqual(['a']);
+    expect(curatedFace(withHeroPicture, 'compact')!.controls.map((c) => c.key)).toEqual(['a', 'b']);
+    expect(curatedFace(withHeroPicture, 'full')!.controls.map((c) => c.key)).toEqual(['a', 'b']);
+  });
+
+  it('…and the DOCK still gets it — the dock is where the picture renders', () => {
+    expect(curatedFace(withHeroPicture, 'dock')!.controls.map((c) => c.key)).toEqual([
+      PANEL,
+      'a',
+      'b',
+    ]);
+    // The dock PLAN must keep it too, or `heroFacePlan` has nothing to promote
+    // and the hero rail renders empty.
+    expect(dockPlanControls(dockFacePlan(withHeroPicture) ?? []).map((c) => c.key)).toContain(PANEL);
+  });
+
+  it('a hero picture ranked LATE changes the lane by nothing (the shipped case)', () => {
+    // Every `hero.cell` on `main` already ranks at 7+ — it had to, or it would
+    // be failing the lint — and dropping an item at index >= the cap cannot
+    // change the prefix. This is the property that makes the change a no-op for
+    // every face that exists, asserted rather than asserted-about.
+    const late: FaceDefLike = {
+      ...DEF,
+      face: { ...DEF.face!, order: [...DEF.face!.order, PANEL], hero: { cell: PANEL } },
+    };
+    for (const tier of ['mini', 'compact', 'full'] as FaceTier[]) {
+      expect(
+        curatedFace(late, tier)!.controls.map((c) => c.key),
+        `${tier}: a rank-11 hero picture must not move the lane's first cells`,
+      ).toEqual(curatedFace(DEF, tier)!.controls.map((c) => c.key));
+    }
   });
 });
 

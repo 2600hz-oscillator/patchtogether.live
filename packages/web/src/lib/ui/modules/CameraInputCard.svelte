@@ -19,6 +19,7 @@
   //     "(saved camera not found)" and user picks again.
 
   import { onMount, onDestroy, untrack } from 'svelte';
+  import { nodeMedia, type NodeMediaLease } from '$lib/ui/media/node-media-registry';
   import { acquireCameraStream } from '$lib/ui/camera-acquire';
   import { type NodeProps } from '@xyflow/svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
@@ -65,7 +66,17 @@
   const inputs = portsFromDef(cameraInputDef.inputs);
   const outputs = portsFromDef(cameraInputDef.outputs);
 
+  // The <video> and the camera STREAM are owned by the NODE, not by this card
+  // (see $lib/ui/media/node-media-registry). cameraInput keeps its real card
+  // in the lane (a NON_SHELL carve-out) so it dodges the expand/collapse move,
+  // but it is unmounted by every OTHER card move — docking to the rail, a
+  // collapsed group — and `onDestroy` stopped the tracks, which needs a fresh
+  // permission gesture to undo.
+  let videoHost: HTMLDivElement | null = $state(null);
   let videoEl: HTMLVideoElement | null = $state(null);
+  let mediaLease: NodeMediaLease<HTMLElement> | null = null;
+  const MEDIA_SLOT = 'main';
+  /** Mirror of the NODE-owned stream; rehydrated on adopt. */
   let stream: MediaStream | null = null;
   let camState: State = $state('idle');
   let errorMsg = $state<string | null>(null);
@@ -199,6 +210,9 @@
       return;
     }
     stream = result.stream;
+    // The registry owns it from here: it stops the PREVIOUS stream (a device
+    // switch legitimately replaces it) and never stops this one on unmount.
+    nodeMedia.setStream(id, MEDIA_SLOT, stream);
 
     // Permission granted — re-enumerate to pick up real device labels.
     await refreshDevices();
@@ -252,11 +266,12 @@
     addLocalCameraNodeId(providerCtx.get(), id);
   }
 
+  /** An EXPLICIT stop (user pressed stop, device unplugged, permission
+   *  revoked). A genuine content change, not a view teardown — so the registry
+   *  frees the stream here. Never called from onDestroy. */
   function stopStream(): void {
-    if (stream) {
-      for (const t of stream.getTracks()) t.stop();
-      stream = null;
-    }
+    nodeMedia.setStream(id, MEDIA_SLOT, null);
+    stream = null;
     if (videoEl) {
       videoEl.srcObject = null;
     }
@@ -320,6 +335,47 @@
   });
 
   // ---- Lifecycle ----
+  // ---- Adopt the NODE-owned <video> into this card ----
+  $effect(() => {
+    const host = videoHost;
+    if (!host) return;
+    const lease = nodeMedia.adopt(id, MEDIA_SLOT, host, {
+      kind: 'video',
+      init: (el) => {
+        const v = el as HTMLVideoElement;
+        v.playsInline = true;
+        v.muted = true;
+        v.autoplay = true;
+        v.setAttribute('data-testid', 'camera-preview');
+      },
+    });
+    mediaLease = lease;
+    const v = lease.el as HTMLVideoElement;
+    videoEl = v;
+    // Rehydrate from the node: the camera may already be streaming from a
+    // previous mount, in which case the element still holds its srcObject.
+    stream = nodeMedia.stream(id, MEDIA_SLOT);
+    if (stream && v.srcObject !== stream) v.srcObject = stream;
+    if (stream && camState !== 'streaming') {
+      camState = 'streaming';
+      // Re-publish the awareness badge this mount just took responsibility for.
+      addLocalCameraNodeId(providerCtx.get(), id);
+    }
+    return () => {
+      lease.release();
+      if (mediaLease === lease) mediaLease = null;
+    };
+  });
+
+  // The selfie-mirror was a `style:transform` on the element. The element is no
+  // longer declared by this component, so the binding is applied imperatively —
+  // still reactive, because reading p('mirror') registers the dependency.
+  $effect(() => {
+    const v = videoEl;
+    if (!v) return;
+    v.style.transform = p('mirror') > 0.5 ? 'scaleX(-1)' : 'none';
+  });
+
   onMount(() => {
     if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
       camState = 'unsupported';
@@ -393,12 +449,18 @@
   });
 
   onDestroy(() => {
-    stopStream();
-    const ve = videoEngine();
-    ve?.attachExternalSource(id, 'video', null);
-    // Defensive: if stopStream's clear didn't run (e.g. card unmounted
-    // mid-stream-acquisition), still scrub our awareness footprint.
+    // NOTE what is deliberately ABSENT: no stopStream(), no detach. A card
+    // unmount is a view move, not a node deletion, and stopping the camera
+    // here required a fresh permission gesture to undo. The stream belongs to
+    // the node and is stopped by nodeMedia when the node leaves the graph.
+    //
+    // The AWARENESS footprint is different in kind and DOES belong here: it
+    // advertises "this user has a camera active on this node" to rack-mates,
+    // and it is republished on mount. Leaving it set for an unmounted card
+    // would show peers a badge for a card that is not on screen.
     removeLocalCameraNodeId(providerCtx.get(), id);
+    mediaLease?.release();
+    mediaLease = null;
   });
 
   // Subscribe to awareness changes — if a remote rack-mate has THIS node
@@ -496,15 +558,10 @@
            gives the live-preview the selfie-mirror effect; the actual
            shader-side mirror is independent (controlled by params.mirror)
            so downstream modules see whatever the user sees. -->
-      <!-- svelte-ignore a11y_media_has_caption -->
-      <video
-        bind:this={videoEl}
-        data-testid="camera-preview"
-        playsinline
-        muted
-        autoplay
-        style:transform={p('mirror') > 0.5 ? 'scaleX(-1)' : 'none'}
-      ></video>
+      <!-- The <video> is NOT declared here: it belongs to the NODE and is
+           adopted into this host div (see the $effect above). The selfie-mirror
+           transform is applied by a sibling effect. -->
+      <div class="video-host" bind:this={videoHost}></div>
       <!-- Local-only hint. The captured stream stays inside this browser
            tab — collaborators see only a presence badge, not the pixels.
            Multiplayer streaming (WebRTC + SFU) is deferred to a future
@@ -646,7 +703,11 @@
     margin: 4px 0;
     gap: 2px;
   }
-  video {
+  /* The <video> is ADOPTED into .video-host at runtime (node-owned, see
+   * $lib/ui/media/node-media-registry), so these rules must be :global().
+   * `display: contents` keeps the adopted element in the parent's layout. */
+  .video-host { display: contents; }
+  .video-host :global(video) {
     width: 200px;
     height: 112px;
     background: #050608;
