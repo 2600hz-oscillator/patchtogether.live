@@ -3596,7 +3596,7 @@
     sourceType: CableType,
     targetType: CableType,
     channelMode?: ChannelMode,
-  ): void {
+  ): boolean {
     if (channelMode === undefined) {
       const choice = planDropChoice({
         fromNodeId: from.nodeId,
@@ -3618,18 +3618,22 @@
           `width mismatch ${from.nodeId}.${from.portId} → ${to.nodeId}.${to.portId}` +
             ` (${choice.kind}) — asking`,
         );
-        return;
+        return false;
       }
     }
     ydoc.transact(() => {
       writeAudioLegGroup(from, to, sourceType, targetType, channelMode ?? 'both');
     }, LOCAL_ORIGIN);
+    return true;
   }
 
   /** The user picked a side. RE-PLANS from the live edge set rather than
    *  replaying the plan the dialog was built from — a collaborator may have
    *  patched that jack while the menu was open, and committing a stale
-   *  `replaceEdgeIds` would delete an edge nobody warned them about. */
+   *  `replaceEdgeIds` would delete an edge nobody warned them about.
+   *
+   *  ⚠ It passes `mode` EXPLICITLY, which is what stops the re-plan from
+   *  re-opening the dialog it was just dismissed from. */
   function resolveDropChoice(mode: ChannelMode): void {
     const pending = dropChoicePending;
     closeDropChoice();
@@ -3860,13 +3864,18 @@
     // planner's replaceEdgeIds, scoped to the input ports THIS plan writes to.)
     // No explicit channelMode: a native drag names a HOLE, never a side, so
     // this is exactly the gesture the width question is for.
-    commitAudioCable(
+    const wrote = commitAudioCable(
       { nodeId: connection.source!, portId: connection.sourceHandle! },
       { nodeId: connection.target!, portId: connection.targetHandle! },
       sourceType,
       targetType,
     );
-    trace(`connect ${connection.source}.${connection.sourceHandle} → ${connection.target}.${connection.targetHandle}`);
+    // Only trace a CONNECT when one was made. A width-mismatched drop has
+    // written nothing yet — it traced "asking" — and a trace ring that says
+    // `connect` for a cable that does not exist is worse than no trace.
+    if (wrote) {
+      trace(`connect ${connection.source}.${connection.sourceHandle} → ${connection.target}.${connection.targetHandle}`);
+    }
   }
 
   /** When the user starts dragging FROM an input handle, immediately detach any
@@ -6549,8 +6558,9 @@
     }
     // Same seam as the drag path: a carried cable clicked onto a port ROW names
     // a hole, not a side, so a width mismatch asks before it writes.
-    commitAudioCable(from, to, sourceType, targetType);
-    trace(`carry-commit ${from.nodeId}.${from.portId} → ${to.nodeId}.${to.portId}`);
+    if (commitAudioCable(from, to, sourceType, targetType)) {
+      trace(`carry-commit ${from.nodeId}.${from.portId} → ${to.nodeId}.${to.portId}`);
+    }
   }
 
   // ---------------- Pickup-mode cursor tracking + Esc cancel ----------------
@@ -6700,11 +6710,12 @@
       trace(`patch-to reject ${from.nodeId}.${from.portId} → ${to.nodeId}.${to.portId}: ${verdict.reason}`);
       return;
     }
-    commitAudioCable(from, to, sourceType, targetType, explicitMode);
-    trace(
-      `patch-to ${from.nodeId}.${from.portId} → ${to.nodeId}.${to.portId}` +
-        (channelMode === 'both' ? '' : ` (only ${channelMode === 'left' ? 'L' : 'R'})`),
-    );
+    if (commitAudioCable(from, to, sourceType, targetType, explicitMode)) {
+      trace(
+        `patch-to ${from.nodeId}.${from.portId} → ${to.nodeId}.${to.portId}` +
+          (channelMode === 'both' ? '' : ` (only ${channelMode === 'left' ? 'L' : 'R'})`),
+      );
+    }
   }
 
   function deleteNode(nodeId: string) {
