@@ -53,6 +53,20 @@
      * Omitted for an INPUT, which holds one cable and has nothing to fan out.
      */
     onpatchto?: () => void;
+    /**
+     * Show this jack's two L/R holes instead of one collapsed jack (or fold
+     * them back). Omitted when the point is not an expandable stereo pair, so
+     * the row is absent rather than present-and-inert.
+     *
+     * Right-clicking a PATCHED point opens this menu and returns, so without a
+     * row here the expand gesture would work on an empty jack and stop working
+     * the moment a cable landed in it — which is precisely when the user most
+     * wants to see WHICH LEG that cable is on.
+     */
+    onexpandstereo?: () => void;
+    /** TRUE when the pair is already shown as two rows — the row then offers
+     *  the way back. */
+    stereoExpanded?: boolean;
     onclose: () => void;
   }
 
@@ -66,6 +80,8 @@
     onunpatch,
     onchannelmode,
     onpatchto,
+    onexpandstereo,
+    stereoExpanded = false,
     onclose,
   }: Props = $props();
 
@@ -204,6 +220,27 @@
             >
               <span class="cut" aria-hidden="true">+</span>
               <span class="txt">Patch to…</span>
+            </button>
+          </li>
+        {/if}
+        {#if onexpandstereo}
+          <li>
+            <button
+              type="button"
+              class="ctx-item patch-to"
+              role="menuitem"
+              data-testid="unpatch-expand-stereo"
+              data-expanded={stereoExpanded ? 'true' : 'false'}
+              title="Show this stereo jack as two separate L / R holes"
+              onclick={() => {
+                onexpandstereo();
+                onclose();
+              }}
+            >
+              <span class="cut" aria-hidden="true">⇔</span>
+              <span class="txt"
+                >{stereoExpanded ? 'Collapse to one stereo jack' : 'Expand to L / R jacks'}</span
+              >
             </button>
           </li>
         {/if}

@@ -62,6 +62,21 @@
      *  (the "RET1 L" / "RET1 R" rows). The caller turns it into the commit's
      *  `channelMode`, so exactly one edge is written. */
     onpick: (target: { nodeId: string; portId: string; leg?: 'left' | 'right' }) => void;
+    /**
+     * Show the SOURCE jack's two L/R holes on its own card instead of one
+     * collapsed jack (or fold them back). Omitted when the source is not an
+     * expandable stereo pair.
+     *
+     * ⚠ NOT the same control as the channel rows above it, though they sit on
+     * the same menu. The channel rows say WHICH LEGS THE NEXT CABLE CARRIES —
+     * a property of the patch about to be made, reset on every open. This says
+     * HOW THE CARD DRAWS THIS JACK — a persistent view choice that writes no
+     * edge at all. They compose: expanding CH1 gives two rows you can patch
+     * independently, and each of those still has its own channel default.
+     */
+    onexpandstereo?: () => void;
+    /** TRUE when the source jack is already shown as two rows. */
+    stereoExpanded?: boolean;
     onclose: () => void;
   }
 
@@ -77,6 +92,8 @@
     candidatesFor,
     preselectModuleId = null,
     onpick,
+    onexpandstereo,
+    stereoExpanded = false,
     onclose,
   }: Props = $props();
 
@@ -206,6 +223,33 @@
               </button>
             </li>
           {/each}
+        </ul>
+      {/if}
+
+      {#if onexpandstereo}
+        <!-- JACK LAYOUT — an ACTION, not a mode: it changes how the source card
+             draws this jack and closes the menu. Distinct from the channel rows
+             above (which choose what the next cable carries and write an edge);
+             this writes none. -->
+        <ul class="ctx-list ctx-list-channels" role="group" aria-label="Stereo jack layout">
+          <li>
+            <button
+              type="button"
+              class="ctx-item ctx-channel"
+              role="menuitem"
+              data-testid="patch-expand-stereo"
+              data-expanded={stereoExpanded ? 'true' : 'false'}
+              title="Show this stereo jack as two separate L / R holes"
+              onclick={() => {
+                onexpandstereo?.();
+              }}
+            >
+              <span class="tick" aria-hidden="true">⇔</span>
+              <span
+                >{stereoExpanded ? 'collapse to one stereo jack' : 'expand to L / R jacks'}</span
+              >
+            </button>
+          </li>
         </ul>
       {/if}
 

@@ -234,6 +234,16 @@
   import { isAnnotating, toggleAnnotate, clearAnnotate } from '$lib/ui/annotate-mode.svelte';
   import PortContextMenu from '$lib/ui/PortContextMenu.svelte';
   import UnpatchMenu from '$lib/ui/UnpatchMenu.svelte';
+  import StereoExpandMenu from '$lib/ui/StereoExpandMenu.svelte';
+  import {
+    isExpandableStereoJackModule,
+    type StereoPairDefLike,
+  } from '$lib/graph/stereo-pairs';
+  import {
+    isJackExpanded,
+    setJackExpanded,
+  } from '$lib/ui/stereo-jack-expansion.svelte';
+  import { resolveVerboseLabel } from '$lib/ui/patch-panel-labels';
   import { buildUnpatchPlan, type UnpatchPlan, type UnpatchTarget } from '$lib/ui/unpatch-menu';
   import SelectionContextMenu from '$lib/ui/SelectionContextMenu.svelte';
   import GroupBuilderModal from '$lib/ui/GroupBuilderModal.svelte';
@@ -5956,6 +5966,113 @@
     unpatchTarget = null;
   }
 
+  // ---------------- Stereo jack EXPAND / COLLAPSE ----------------
+  //
+  // "right-click any stereo port and expand it to 2 L/R ports" (owner,
+  // 2026-08-10). A collapsed jack is the right default — one cable, one
+  // gesture, both legs — but it hides the two legs the def declares, so on
+  // MIXMSTRS (where every audio rail is a pair) not one of the 26 legs had a
+  // hole of its own to aim at, and a landed cable's side was unreadable.
+  //
+  // ONE ACTION, THREE ENTRY POINTS, because right-click is already claimed on
+  // two of the three states a jack can be in:
+  //   * UNPATCHED INPUT  → StereoExpandMenu (nothing opened here before);
+  //   * PATCHED anything → UnpatchMenu grew an expand row;
+  //   * UNPATCHED OUTPUT → the patch picker grew the same row.
+  // All three call `applyStereoExpand`, so the gesture reads identically
+  // wherever the user right-clicks and there is one place to change it.
+  let stereoExpandOpen = $state(false);
+  let stereoExpandPos = $state({ x: 0, y: 0 });
+  let stereoExpandTarget = $state<{
+    nodeId: string;
+    portId: string;
+    direction: 'input' | 'output';
+  } | null>(null);
+
+  /** The pair a jack belongs to on an OPTED-IN module, or null — the single
+   *  predicate every expand entry point asks, so a row can never appear on a
+   *  jack the action would then refuse. */
+  function expandablePairAt(
+    nodeId: string,
+    portId: string,
+    direction: 'input' | 'output',
+  ): { left: string; right: string } | null {
+    const node = patch.nodes[nodeId];
+    if (!node || !isExpandableStereoJackModule(node.type)) return null;
+    const def = defLookup(node.type) as StereoPairDefLike | undefined;
+    if (!def) return null;
+    const pair = stereoPairForPort(def, portId, direction);
+    return pair ? { left: pair.left, right: pair.right } : null;
+  }
+
+  /** Is the jack under `(nodeId, portId, direction)` currently expanded? */
+  function isExpandedAt(
+    nodeId: string,
+    portId: string,
+    direction: 'input' | 'output',
+  ): boolean {
+    const pair = expandablePairAt(nodeId, portId, direction);
+    return pair ? isJackExpanded(nodeId, direction, pair.left) : false;
+  }
+
+  /** Flip one jack. VIEW STATE ONLY — no edge is written, moved or removed, so
+   *  this deliberately does NOT go through a Y.Doc transact or the undo stack
+   *  (see `stereo-jack-expansion` for why per-viewer is the right scope). */
+  function applyStereoExpand(
+    nodeId: string,
+    portId: string,
+    direction: 'input' | 'output',
+    value: boolean,
+  ): void {
+    const pair = expandablePairAt(nodeId, portId, direction);
+    if (!pair) return;
+    setJackExpanded(nodeId, direction, pair.left, value);
+  }
+
+  /** Header + the two leg labels for the standalone menu. The labels come from
+   *  `resolveVerboseLabel` — the SAME resolver the rows themselves use — so the
+   *  menu cannot promise a label the panel then renders differently. */
+  let stereoExpandView = $derived.by(() => {
+    const t = stereoExpandTarget;
+    if (!stereoExpandOpen || !t) {
+      return { title: '', expanded: false, legLabels: ['L', 'R'] as [string, string] };
+    }
+    const pair = expandablePairAt(t.nodeId, t.portId, t.direction);
+    if (!pair) return { title: '', expanded: false, legLabels: ['L', 'R'] as [string, string] };
+    const node = patch.nodes[t.nodeId];
+    const label = node ? (defLookup(node.type)?.label ?? node.type) : '';
+    return {
+      title: `${label} ${resolveVerboseLabel({ id: pair.left })}`.trim(),
+      expanded: isJackExpanded(t.nodeId, t.direction, pair.left),
+      legLabels: [
+        resolveVerboseLabel({ id: pair.left }),
+        resolveVerboseLabel({ id: pair.right }),
+      ] as [string, string],
+    };
+  });
+
+  function closeStereoExpandMenu(): void {
+    stereoExpandOpen = false;
+    stereoExpandTarget = null;
+  }
+
+  /** "expand / collapse" picked from the UNPATCH menu. */
+  function expandFromUnpatch(): void {
+    const t = unpatchTarget;
+    if (!t) return;
+    applyStereoExpand(t.nodeId, t.portId, t.direction, !isExpandedAt(t.nodeId, t.portId, t.direction));
+    closeUnpatchMenu();
+  }
+
+  /** "expand / collapse" picked from the PATCH PICKER (an unpatched output). */
+  function expandFromPortMenu(): void {
+    const nodeId = portMenuSourceNodeId;
+    const portId = portMenuSourcePortId;
+    if (!nodeId || !portId) return;
+    applyStereoExpand(nodeId, portId, 'output', !isExpandedAt(nodeId, portId, 'output'));
+    portMenuOpen = false;
+  }
+
   /** Delete edges through the SHARED removal seam. Identical to handleDelete's
    *  edge branch: one LOCAL_ORIGIN transact (undoable + synced), with the
    *  managed-cable detach suppression so a user-removed wcol- lane link is not
@@ -6241,14 +6358,39 @@
     document.addEventListener('patchpanel:jackclick', onJackClick);
     document.addEventListener('patchpanel:patchto', onPatchTo);
     document.addEventListener('patchpanel:carrycommit', onCarryCommit);
+    // RIGHT-CLICK AN UNPATCHED STEREO INPUT on an opted-in module → the
+    // expand/collapse menu. This is the ONE jack right-click that previously
+    // fell through to the browser's own menu, which is why the owner's
+    // "right-click any stereo port" gesture appeared to do nothing on the
+    // MIXMSTRS channel and return inputs specifically. The patched and output
+    // cases claim the event before it reaches here, so nothing fights.
+    const onStereoExpand = (e: Event) => {
+      const detail = (e as CustomEvent).detail as
+        | { nodeId: string; portId: string; direction: 'input' | 'output'; x: number; y: number }
+        | null;
+      if (!detail) return;
+      if (connectDragState.mode === 'pickup') {
+        connectDragState.discard();
+        connectDragState.endCascade();
+      }
+      stereoExpandTarget = {
+        nodeId: detail.nodeId,
+        portId: detail.portId,
+        direction: detail.direction,
+      };
+      stereoExpandPos = { x: detail.x, y: detail.y };
+      stereoExpandOpen = true;
+    };
     document.addEventListener('patchpanel:jackcontextmenu', onJackContextMenu);
     document.addEventListener('patchpanel:portmenu', onPortMenu);
+    document.addEventListener('patchpanel:stereoexpand', onStereoExpand);
     return () => {
       document.removeEventListener('patchpanel:jackclick', onJackClick);
       document.removeEventListener('patchpanel:patchto', onPatchTo);
       document.removeEventListener('patchpanel:carrycommit', onCarryCommit);
       document.removeEventListener('patchpanel:jackcontextmenu', onJackContextMenu);
       document.removeEventListener('patchpanel:portmenu', onPortMenu);
+      document.removeEventListener('patchpanel:stereoexpand', onStereoExpand);
     };
   });
 
@@ -8223,6 +8365,18 @@
   moduleEntries={portMenuModuleEntries}
   candidatesFor={portMenuCandidatesFor}
   preselectModuleId={portMenuPreselectNodeId}
+  onexpandstereo={
+    portMenuSourceNodeId &&
+    portMenuSourcePortId &&
+    expandablePairAt(portMenuSourceNodeId, portMenuSourcePortId, 'output')
+      ? expandFromPortMenu
+      : undefined
+  }
+  stereoExpanded={
+    portMenuSourceNodeId && portMenuSourcePortId
+      ? isExpandedAt(portMenuSourceNodeId, portMenuSourcePortId, 'output')
+      : false
+  }
   onpick={pickPortMenuTarget}
   onclose={() => {
     portMenuOpen = false;
@@ -8249,7 +8403,34 @@
   onunpatch={unpatchEdges}
   onchannelmode={setLegGroupChannelMode}
   onpatchto={unpatchTarget?.direction === 'output' ? patchToFromUnpatch : undefined}
+  onexpandstereo={
+    unpatchTarget &&
+    expandablePairAt(unpatchTarget.nodeId, unpatchTarget.portId, unpatchTarget.direction)
+      ? expandFromUnpatch
+      : undefined
+  }
+  stereoExpanded={
+    unpatchTarget
+      ? isExpandedAt(unpatchTarget.nodeId, unpatchTarget.portId, unpatchTarget.direction)
+      : false
+  }
   onclose={closeUnpatchMenu}
+/>
+
+<!-- Right-click → EXPAND a collapsed stereo jack into its two L/R holes, for
+     the one case no other menu claims: an UNPATCHED audio input. -->
+<StereoExpandMenu
+  bind:open={stereoExpandOpen}
+  x={stereoExpandPos.x}
+  y={stereoExpandPos.y}
+  title={stereoExpandView.title}
+  expanded={stereoExpandView.expanded}
+  legLabels={stereoExpandView.legLabels}
+  onchange={(value) => {
+    const t = stereoExpandTarget;
+    if (t) applyStereoExpand(t.nodeId, t.portId, t.direction, value);
+  }}
+  onclose={closeStereoExpandMenu}
 />
 
 <style>
