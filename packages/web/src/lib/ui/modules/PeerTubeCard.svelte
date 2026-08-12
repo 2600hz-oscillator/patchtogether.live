@@ -25,6 +25,8 @@
   // unavailable" + auto-skips to the next result (never crashes / hangs).
 
   import { onMount, onDestroy } from 'svelte';
+  import { nodeMedia, type NodeMediaLease } from '$lib/ui/media/node-media-registry';
+  import { setNodeHls, getNodeHls, destroyNodeHls } from '$lib/ui/media/node-hls';
   import { type NodeProps } from '@xyflow/svelte';
   import { captureFlowStore } from './card-kit';
   import Hls from 'hls.js';
@@ -94,8 +96,22 @@
   );
 
   // ---- Render-local (transient) state ----
+  // The <video> is owned by the NODE, not by this card (see
+  // $lib/ui/media/node-media-registry): expand/collapse moves the card between
+  // two different MOUNTS, and the pre-fix card destroyed its element, detached
+  // the engine and tore down hls on every such move.
+  let videoHost: HTMLDivElement | null = $state(null);
   let videoEl: HTMLVideoElement | null = $state(null);
+  let mediaLease: NodeMediaLease<HTMLElement> | null = null;
+  const MEDIA_SLOT = 'main';
+  /** Mirror of the NODE-owned hls.js instance ($lib/ui/media/node-hls).
+   *  Rehydrated on adopt so a remounted card knows an instance is already
+   *  attached and never builds a second one for the same element. */
   let hls: Hls | null = null;
+  function setHls(next: Hls | null): void {
+    hls = next;
+    setNodeHls(id, next);
+  }
   let searchTerm = $state('');
   let instanceHost = $state('');
   let results = $state<PeerTubeVideo[]>([]);
@@ -141,6 +157,51 @@
       d.name = v?.name ?? null;
     }, LOCAL_ORIGIN);
   }
+
+  // ---- Adopt the NODE-owned <video> into this card ----
+  $effect(() => {
+    const host = videoHost;
+    if (!host) return;
+    const lease = nodeMedia.adopt(id, MEDIA_SLOT, host, {
+      kind: 'video',
+      init: (el) => {
+        const v = el as HTMLVideoElement;
+        v.crossOrigin = 'anonymous';
+        // THE AUDIO TRAP the card header documents: created muted so the
+        // programmatic play() is allowed to start without a user gesture.
+        v.muted = true;
+        v.playsInline = true;
+        v.setAttribute('data-testid', 'peertube-video');
+      },
+    });
+    mediaLease = lease;
+    videoEl = lease.el as HTMLVideoElement;
+    // Rehydrate the hls mirror: an instance may already be feeding this
+    // element from a previous mount.
+    hls = getNodeHls(id) as Hls | null;
+    // Teardown belongs to the NODE, not to this card.
+    nodeMedia.setDisposer(id, MEDIA_SLOT, () => destroyNodeHls(id));
+
+    // These were `onplay=` / `onpause=` / `onended=` attributes in the markup.
+    // The element is no longer declared by this component, so they attach
+    // imperatively for exactly as long as this card is mounted.
+    const v = lease.el as HTMLVideoElement;
+    v.addEventListener('play', onVideoPlay);
+    v.addEventListener('pause', onVideoPause);
+    v.addEventListener('ended', onVideoEnded);
+    // Rehydrate the play mirror from the ELEMENT rather than assuming a fresh
+    // card starts paused — it may well have been playing all along, which is
+    // the whole point of the node-owned lifetime.
+    isPlaying = !v.paused;
+
+    return () => {
+      v.removeEventListener('play', onVideoPlay);
+      v.removeEventListener('pause', onVideoPause);
+      v.removeEventListener('ended', onVideoEnded);
+      lease.release();
+      if (mediaLease === lease) mediaLease = null;
+    };
+  });
 
   onMount(() => {
     const d = node?.data as Partial<PeerTubeData> | undefined;
@@ -247,7 +308,7 @@
 
   function teardownHls(): void {
     if (loadTimeout) { clearTimeout(loadTimeout); loadTimeout = null; }
-    try { hls?.destroy(); } catch { /* */ }
+    destroyNodeHls(id);
     hls = null;
   }
 
@@ -295,15 +356,16 @@
       videoEl.src = stream.url;
       void videoEl.play().catch(() => { /* autoplay blocked → user gesture */ });
     } else if (Hls.isSupported()) {
-      hls = new Hls({ enableWorker: true, lowLatencyMode: false });
-      hls.on(Hls.Events.MANIFEST_PARSED, () => { void videoEl?.play().catch(() => {}); });
-      hls.on(Hls.Events.ERROR, (_e, d) => {
+      const inst = new Hls({ enableWorker: true, lowLatencyMode: false });
+      setHls(inst);
+      inst.on(Hls.Events.MANIFEST_PARSED, () => { void videoEl?.play().catch(() => {}); });
+      inst.on(Hls.Events.ERROR, (_e, d) => {
         // Fatal errors (incl. COEP/CORS blocks on a misconfigured instance) →
-        // unavailable + auto-skip. Non-fatal errors hls.js recovers from itself.
+        // unavailable + auto-skip. Non-fatal errors inst.js recovers from itself.
         if (d?.fatal) markUnavailable('Stream blocked (CORS) or unavailable.');
       });
-      hls.loadSource(stream.url);
-      hls.attachMedia(videoEl);
+      inst.loadSource(stream.url);
+      inst.attachMedia(videoEl);
     } else if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
       // Safari native HLS.
       videoEl.src = stream.url;
@@ -434,11 +496,14 @@
     if (audioWireTimer) clearTimeout(audioWireTimer);
     if (skipTimer) clearTimeout(skipTimer);
     if (displayTimer !== null) clearInterval(displayTimer);
-    teardownHls();
-    const ve = videoEngine();
-    try { ve?.attachExternalSource(id, 'video', null); } catch { /* */ }
-    getExtras()?.setPlaying(false);
-    getExtras()?.unwireAudio();
+    // NOTE what is deliberately ABSENT: no teardownHls, no detach, no
+    // unwireAudio, no setPlaying(false). The element, its hls.js demuxer and
+    // its audio wiring belong to the NODE and must survive this card being
+    // unmounted — expand/collapse MOVES the card between the headless host and
+    // the dock full-view. It really is still playing; saying otherwise here is
+    // what stopped it. Teardown runs from nodeMedia's disposer on node death.
+    mediaLease?.release();
+    mediaLease = null;
   });
 
   // ---- Corner-drag resize ----
@@ -521,16 +586,10 @@
       <!-- Preview -->
       <div class="preview-wrap" data-testid="peertube-preview">
         <!-- svelte-ignore a11y_media_has_caption -->
-        <video
-          bind:this={videoEl}
-          data-testid="peertube-video"
-          crossorigin="anonymous"
-          muted
-          playsinline
-          onplay={onVideoPlay}
-          onpause={onVideoPause}
-          onended={onVideoEnded}
-        ></video>
+        <!-- The <video> is NOT declared here: it belongs to the NODE and is
+             adopted into this host div (see the $effect above). Declaring it
+             in markup is what tied its lifetime to the card. -->
+        <div class="video-host" bind:this={videoHost}></div>
         {#if streamState === 'loading'}
           <div class="overlay" data-testid="peertube-loading">loading…</div>
         {:else if streamState === 'unavailable'}
@@ -651,7 +710,13 @@
     overflow: hidden;
     flex: 0 0 auto;
   }
-  video {
+  /* The <video> is ADOPTED into .video-host at runtime (node-owned, see
+   * $lib/ui/media/node-media-registry), so Svelte cannot scope-class it —
+   * these rules must be :global(). `display: contents` makes the adopted
+   * element participate in the parent's layout exactly as the old inline
+   * <video> did, so every descendant selector still matches. */
+  .video-host { display: contents; }
+  .video-host :global(video) {
     display: block;
     width: 100%; height: 100%;
     object-fit: contain;

@@ -423,3 +423,102 @@ test.describe('CAMERA → OUTPUT (fake webcam) — getUserMedia integration @cam
       .toBe(true);
   });
 });
+
+// The NODE-OWNED MEDIA LIFETIME guard for cameraInput (owner P0 2026-08-12:
+// "videovarispeed stops playing if its card is collapsed … fix it in all
+// places for all video chains").
+//
+// cameraInput is the WORST case of that bug class and the one a user could not
+// recover from. Its card used to call `stream.getTracks().forEach(t => t.stop())`
+// in `onDestroy`, and a stopped capture track cannot be restarted without a
+// fresh permission gesture — so any card MOVE killed the camera for good rather
+// than merely pausing it. The <video> and the MediaStream now belong to the
+// NODE ($lib/ui/media/node-media-registry) and outlive the card.
+//
+// cameraInput keeps its real card in the LANE (a NON_SHELL carve-out), so
+// expanding it mounts a SECOND real card in the dock rather than moving the
+// one that exists. That makes it the best available real-app exercise of the
+// double-mount invariant: exactly one element per node, and an owner-checked
+// release so the mount that tears down last cannot strand the survivor.
+//
+// It lives in THIS FILE for the reason the sibling shell test documents: only
+// `chromium-camera` carries the fake webcam + pre-granted permission, and
+// playwright.config.ts is in the collab attest basis, so adding a project for
+// one test would force a re-attest.
+test.describe('CAMERA node-owned media lifetime @camera-integration', () => {
+  test('a card move (expand + collapse) does NOT stop the capture', async ({ page }) => {
+    test.setTimeout(90_000);
+
+    await page.goto('/rack');
+    await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: 15_000 });
+
+    await spawnPatch(page, [
+      { id: 'v-cam', type: 'cameraInput', position: { x: 80, y: 60 }, domain: 'video', params: { enabled: 1 } },
+    ]);
+
+    const camLane = page.locator('.svelte-flow__node[data-id="v-cam"]');
+    await expect(camLane.locator('[data-testid="camera-status"]'))
+      .toHaveAttribute('data-state', 'streaming', { timeout: 30_000 });
+
+    /** Liveness of the node's capture, read from the DOM wherever the element
+     *  currently lives. `track.readyState` is the decisive signal: 'ended' is
+     *  precisely what `t.stop()` produces and is NOT recoverable. */
+    const captureState = async () =>
+      page.evaluate(() => {
+        const all = [...document.querySelectorAll('[data-testid="camera-preview"]')];
+        const v = all[0] as HTMLVideoElement | undefined;
+        if (!v) return { present: false, count: 0, tracks: [] as string[], where: 'absent' };
+        const s = v.srcObject as MediaStream | null;
+        return {
+          present: true,
+          // ONE element per node is a registry invariant, not an accident —
+          // assert it here where a real double-mount actually happens.
+          count: all.length,
+          tracks: s ? s.getVideoTracks().map((t) => t.readyState) : [],
+          where: v.closest('[data-testid="dock-full-view"]')
+            ? 'dock'
+            : v.closest('[data-testid="node-media-parking"]')
+              ? 'parking'
+              : 'lane',
+        };
+      });
+
+    const before = await captureState();
+    expect(before.present, 'the camera element exists before the move').toBe(true);
+    expect(before.tracks, `a live capture track before the move: ${JSON.stringify(before)}`)
+      .toEqual(['live']);
+
+    // EXPAND — for a NON_SHELL type the lane KEEPS its real card and the dock
+    // full-view mounts a SECOND one. That is precisely the hazard Canvas
+    // documents ("a second mount would run two media elements for one node and
+    // the first to unmount would detach the survivor's source"), so this is the
+    // real-app exercise of the registry's transfer + owner-checked release:
+    // there is only ever ONE element, and whichever mount tears down last
+    // cannot strand it.
+    await page.evaluate(() => {
+      (globalThis as unknown as { __openDockFullView: (i: string) => void })
+        .__openDockFullView('v-cam');
+    });
+    await expect(page.locator('[data-testid="dock-full-view"]')).toHaveCount(1, { timeout: 20_000 });
+
+    const expanded = await captureState();
+    expect(expanded.present, `exactly one element while double-mounted: ${JSON.stringify(expanded)}`)
+      .toBe(true);
+    expect(expanded.count, 'never two <video> elements for one node').toBe(1);
+    expect(expanded.tracks, `capture still live while expanded: ${JSON.stringify(expanded)}`)
+      .toEqual(['live']);
+
+    // COLLAPSE — the dock mount goes away. Pre-fix, that unmount stopped the
+    // tracks and the camera was gone for good.
+    await page.getByTestId('faceplate-collapse').click();
+    await expect(page.locator('[data-testid="dock-full-view"]')).toHaveCount(0, { timeout: 20_000 });
+
+    const after = await captureState();
+    expect(after.present, `the element must survive the card move: ${JSON.stringify(after)}`).toBe(true);
+    expect(after.count, 'still exactly one element after collapse').toBe(1);
+    expect(after.tracks, `the capture track must still be LIVE after collapse: ${JSON.stringify(after)}`)
+      .toEqual(['live']);
+    await expect(camLane.locator('[data-testid="camera-status"]'))
+      .toHaveAttribute('data-state', 'streaming', { timeout: 20_000 });
+  });
+});
