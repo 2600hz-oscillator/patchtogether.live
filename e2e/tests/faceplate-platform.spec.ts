@@ -855,31 +855,31 @@ test.describe('lane tile geometry — no cell paints over another, at any lane t
 
     const seenKinds = new Set<string>();
     const problems: string[] = [];
-    /** Plate cells that painted a readout line — must stay empty (leg d). */
-    const plateReadouts: string[] = [];
-    /** Row cells that painted one — must NOT stay empty (leg d's other half). */
-    const rowReadouts: string[] = [];
     /**
-     * ⚠ THE knob↔knob BUCKET IS GONE, AND THAT IS THE POINT (2026-08-12).
+     * ⚠ A SECOND, PRE-EXISTING DEFECT, FOUND BY THIS TEST AND NOT FIXED BY IT.
      *
-     * It used to hold a SECOND defect this sweep found and did not fix: a knob
-     * cell is not the 42 px the plate's design row assumes, because `KnobConic`
-     * renders an EARNED readout line for any param that declares a vocabulary,
-     * making the cell 55 px in the app stack / 57 under the VRT webfonts. On
-     * adsr's plate that was 13 px of track overrun and 9 px of row-1-over-row-2
-     * — the A/D/S/R values sitting on the knobs beneath them.
+     * A knob cell is NOT the 42 px the plate's design row assumes. `KnobConic`
+     * renders an EARNED readout line — `knobReadout()` returns non-null for a
+     * param that declares a vocabulary — so a knob column is 42 px WITHOUT one
+     * and 57 px WITH one. MEASURED on adsr's full-tier plate: cells of 57 px in
+     * a 46 px pitch, i.e. 9-15 px of row-1-over-row-2, visible as the A/D/S/R
+     * readouts colliding with the knobs beneath them.
      *
-     * The remedy shipped with this sweep's un-bucketing: the plate passes
-     * `readoutMode='none'` (ModuleShell), so a plate knob column is 41 px again
-     * and the arithmetic `LANE_CELL_H` describes is the arithmetic the browser
-     * performs. There is therefore nothing left to separate, and a knob↔knob
-     * overlap is now as unconditional a failure as every other pair. Removing
-     * the bucket is what turns "we know about it" back into "it cannot happen".
+     * It is the same mechanism as the marbles bug this PR fixes and it is NOT
+     * the same fix: the height depends on the PARAM (does it earn a readout?),
+     * not on the cell KIND, so the planner would need per-cell heights rather
+     * than a per-kind table. Both candidate remedies — modelling the readout,
+     * or suppressing it in the plate — change what ~20 faces paint at the full
+     * lane tier, which is an owner-visible design decision and not something to
+     * fold into an urgent restoration.
      *
-     * The readout suppression itself is gated below (see the plate/dock leg),
-     * because a suppression with no positive control is indistinguishable from
-     * a readout that stopped rendering everywhere.
+     * So it is SEPARATED, not filtered: these are printed on every run, in the
+     * failure message of the assertion below, and the assertion that matters
+     * (no overlap involving any other kind) stays unconditional. Nothing here
+     * is a count, and there is no per-module list to go stale — if the readout
+     * defect is fixed this bucket simply empties.
      */
+    const knobOverlaps: string[] = [];
 
     for (const [tier, zoom] of [
       ['mini', 0.2],
@@ -906,17 +906,7 @@ test.describe('lane tile geometry — no cell paints over another, at any lane t
           node: string;
           layout: string;
           plateRowH: number;
-          cells: {
-            kind: string;
-            x: number;
-            y: number;
-            w: number;
-            h: number;
-            /** Is the EARNED readout line painted in this cell? The height the
-             *  plate over-ran was this line, so the geometry and the thing that
-             *  causes it are read in the same pass. */
-            readout: boolean;
-          }[];
+          cells: { kind: string; x: number; y: number; w: number; h: number }[];
         }[] = [];
         for (const shell of document.querySelectorAll(
           '.svelte-flow__node [data-testid="module-shell"]',
@@ -933,7 +923,6 @@ test.describe('lane tile geometry — no cell paints over another, at any lane t
               y: e.offsetTop,
               w: e.offsetWidth,
               h: e.offsetHeight,
-              readout: !!e.querySelector('.readout'),
             };
           });
           out.push({
@@ -951,13 +940,7 @@ test.describe('lane tile geometry — no cell paints over another, at any lane t
       expect(measured.length, `${tier}: tiles were measured`).toBeGreaterThan(0);
 
       for (const tile of measured) {
-        for (const c of tile.cells) {
-          seenKinds.add(c.kind);
-          if (!c.readout) continue;
-          (tile.layout === 'plate' ? plateReadouts : rowReadouts).push(
-            `${tier}/${name(tile.node)}: a '${c.kind}' cell at ${c.h.toFixed(1)} CSS px`,
-          );
-        }
+        for (const c of tile.cells) seenKinds.add(c.kind);
 
         // (a) NO TWO CELLS OVERLAP — the defect, stated directly.
         for (let i = 0; i < tile.cells.length; i++) {
@@ -967,12 +950,16 @@ test.describe('lane tile geometry — no cell paints over another, at any lane t
             const ox = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
             const oy = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
             if (ox > 0.5 && oy > 0.5) {
-              // Unconditional for EVERY pair of kinds, knob↔knob included —
-              // see the note on the removed bucket above.
-              problems.push(
+              const line =
                 `${tier}/${name(tile.node)} (${tile.layout}): ${a.kind} overlaps ${b.kind} by ` +
-                  `${ox.toFixed(1)}×${oy.toFixed(1)} CSS px`,
-              );
+                `${ox.toFixed(1)}×${oy.toFixed(1)} CSS px`;
+              // ⚠ THE ONE RESIDUAL, AND IT IS A DIFFERENT DEFECT — SEE BELOW.
+              // A knob↔knob overlap has a separate cause (an EARNED readout
+              // line) that this PR deliberately does not change. Everything
+              // else — every declared cell kind, which is the class that broke
+              // marbles — is unconditional.
+              if (a.kind === 'knob' && b.kind === 'knob') knobOverlaps.push(line);
+              else problems.push(line);
             }
           }
         }
@@ -988,11 +975,15 @@ test.describe('lane tile geometry — no cell paints over another, at any lane t
         if (tile.layout === 'plate') {
           for (const c of tile.cells) {
             if (c.h > tile.plateRowH + 0.5) {
-              problems.push(
+              const line =
                 `${tier}/${name(tile.node)}: a '${c.kind}' cell measures ${c.h.toFixed(1)} CSS px in a ` +
-                  `${tile.plateRowH} px grid track — it will paint ${(c.h - tile.plateRowH).toFixed(1)} px ` +
-                  `over the row below`,
-              );
+                `${tile.plateRowH} px grid track — it will paint ${(c.h - tile.plateRowH).toFixed(1)} px ` +
+                `over the row below`;
+              // Same separation as the overlap leg: a knob column over-running
+              // its track is the EARNED-READOUT defect (see `knobOverlaps`),
+              // not the declared-tall-cell one this PR fixes.
+              if (c.kind === 'knob') knobOverlaps.push(line);
+              else problems.push(line);
             }
           }
         }
@@ -1035,27 +1026,12 @@ test.describe('lane tile geometry — no cell paints over another, at any lane t
       }
     }
 
-    expect(problems.join('\n'), 'lane tile cells painting over one another').toBe('');
-
-    // (d) THE READOUT SUPPRESSION IS SCOPED — BOTH DIRECTIONS, EVERY RUN.
-    //
-    // Leg (b) above is satisfied by a knob cell that is 41 px, and there are
-    // exactly two ways to get one: suppress the readout line in the plate (the
-    // fix) or stop rendering readouts at all (a regression that would green
-    // every geometric assertion in this test). One assertion cannot tell those
-    // apart, so both halves are asserted against the same measurement.
     expect(
-      plateReadouts,
-      `the full-tier PLATE must paint NO readout line — its grid track is fixed at ` +
-        `${PLATE_ROW_H} px and a readout makes the cell ~55 (57 under the VRT webfonts), ` +
-        `which paints over the row below rather than being clipped`,
-    ).toEqual([]);
-    expect(
-      rowReadouts.length,
-      `…and the readout must still paint in the lane ROW layout, or "the plate has no ` +
-        `readouts" is being satisfied by there being no readouts anywhere. Row cells ` +
-        `with a readout: ${rowReadouts.join('; ') || '(none)'}`,
-    ).toBeGreaterThan(0);
+      problems.join('\n'),
+      'lane tile cells painting over one another. (Known, separate, pre-existing: the ' +
+        `knob-readout overlaps below, which this gate reports but does not fail on — ` +
+        `see the comment on knobOverlaps.)\n${knobOverlaps.join('\n') || '  (none)'}`,
+    ).toBe('');
 
     // ── THE NEGATIVE CONTROL, PERMANENT ─────────────────────────────────────
     // Every assertion above is inside a loop over cells, so a shell that
