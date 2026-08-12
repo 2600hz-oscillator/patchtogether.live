@@ -299,11 +299,11 @@ describe('node media registry — snapshot reports adoption state', () => {
     const lease = r.adopt('n1', 'main', { name: 'dock' });
     r.setObjectUrl('n1', 'main', 'blob:x', 'clip.mp4');
     expect(r.snapshot()).toEqual([
-      { nodeId: 'n1', slot: 'main', adopted: true, hasUrl: true, name: 'clip.mp4', hasStream: false },
+      { nodeId: 'n1', slot: 'main', adopted: true, hasUrl: true, name: 'clip.mp4', hasStream: false, hasDisposer: false },
     ]);
     lease.release();
     expect(r.snapshot()).toEqual([
-      { nodeId: 'n1', slot: 'main', adopted: false, hasUrl: true, name: 'clip.mp4', hasStream: false },
+      { nodeId: 'n1', slot: 'main', adopted: false, hasUrl: true, name: 'clip.mp4', hasStream: false, hasDisposer: false },
     ]);
   });
 });
@@ -350,5 +350,117 @@ describe('node media registry — the filename a remount REHYDRATES from', () =>
     r.setObjectUrl('n1', 'main', 'blob:a', 'a.mp4');
     r.setObjectUrl('n1', 'main', 'blob:b');
     expect(r.mediaName('n1', 'main')).toBe('a.mp4');
+  });
+});
+
+describe('node media registry — the per-entry DISPOSER (hls.js and friends)', () => {
+  // PEERTUBE / TVLIBRARIAN attach an hls.js instance to their element. It is
+  // not something the registry models, and their cards used to destroy it in
+  // onDestroy — which killed playback on a card MOVE just as surely as
+  // revoking a url did. It now hands the teardown here, keyed to node life.
+
+  it('a disposer does NOT run on card release', () => {
+    const h = harness();
+    const r = createNodeMediaRegistry(h.ops);
+    const lease = r.adopt('n1', 'main', { name: 'dock' });
+    let destroyed = 0;
+    r.setDisposer('n1', 'main', () => { destroyed++; });
+    lease.release();
+    expect(destroyed).toBe(0);
+  });
+
+  it('a disposer DOES run on node disposal, before the element is destroyed', () => {
+    const h = harness();
+    const r = createNodeMediaRegistry(h.ops);
+    const lease = r.adopt('n1', 'main', { name: 'dock' });
+    const order: string[] = [];
+    r.setDisposer('n1', 'main', () => {
+      // hls must detach while the element still exists.
+      order.push(`dispose:destroyed=${lease.el.destroyed}`);
+    });
+    r.disposeNode('n1');
+    expect(order).toEqual(['dispose:destroyed=false']);
+    expect(lease.el.destroyed).toBe(true);
+  });
+
+  it('a disposer runs on SWEEP too (the route a real node deletion takes)', () => {
+    const h = harness();
+    const r = createNodeMediaRegistry(h.ops);
+    r.adopt('n1', 'main', { name: 'dock' });
+    let destroyed = 0;
+    r.setDisposer('n1', 'main', () => { destroyed++; });
+    r.sweep([]);
+    expect(destroyed).toBe(1);
+  });
+
+  it('replacing a disposer tears the PREVIOUS one down (no hls leak on re-attach)', () => {
+    const h = harness();
+    const r = createNodeMediaRegistry(h.ops);
+    r.adopt('n1', 'main', { name: 'dock' });
+    const torn: string[] = [];
+    r.setDisposer('n1', 'main', () => torn.push('first'));
+    r.setDisposer('n1', 'main', () => torn.push('second'));
+    expect(torn).toEqual(['first']);
+    r.disposeNode('n1');
+    expect(torn).toEqual(['first', 'second']);
+  });
+
+  it('a disposer runs AT MOST once', () => {
+    const h = harness();
+    const r = createNodeMediaRegistry(h.ops);
+    r.adopt('n1', 'main', { name: 'dock' });
+    let destroyed = 0;
+    r.setDisposer('n1', 'main', () => { destroyed++; });
+    r.disposeNode('n1');
+    r.disposeNode('n1');
+    expect(destroyed).toBe(1);
+  });
+
+  it('a throwing disposer does not block the rest of teardown', () => {
+    const h = harness();
+    const r = createNodeMediaRegistry(h.ops);
+    const lease = r.adopt('n1', 'main', { name: 'dock' });
+    r.setObjectUrl('n1', 'main', 'blob:x');
+    r.setDisposer('n1', 'main', () => { throw new Error('hls exploded'); });
+    expect(() => r.disposeNode('n1')).not.toThrow();
+    expect(h.revoked).toEqual(['blob:x']);
+    expect(lease.el.destroyed).toBe(true);
+  });
+
+  it('setDisposer(null) clears without running it', () => {
+    const h = harness();
+    const r = createNodeMediaRegistry(h.ops);
+    r.adopt('n1', 'main', { name: 'dock' });
+    let destroyed = 0;
+    const d = (): void => { destroyed++; };
+    r.setDisposer('n1', 'main', d);
+    r.setDisposer('n1', 'main', null);
+    // Handing over to null tears the previous one down (it is a hand-over,
+    // not an abandon) — then disposal has nothing left to run.
+    expect(destroyed).toBe(1);
+    r.disposeNode('n1');
+    expect(destroyed).toBe(1);
+  });
+});
+
+describe('node media registry — element KINDS', () => {
+  it('creates the kind the caller asked for (archivist needs three)', () => {
+    const kinds: string[] = [];
+    const ops: NodeMediaOps<FakeEl, FakeHost> = {
+      create(nodeId, slot, kind) {
+        kinds.push(kind);
+        return { id: `${nodeId}/${slot}`, parent: null, destroyed: false, inits: 0 };
+      },
+      mount(el, host) { el.parent = host.name; },
+      park(el) { el.parent = 'PARKING'; },
+      destroy(el) { el.destroyed = true; },
+      revokeUrl() { /* */ },
+      stopStream() { /* */ },
+    };
+    const r = createNodeMediaRegistry(ops);
+    r.adopt('n1', 'video', { name: 'h' }, { kind: 'video' });
+    r.adopt('n1', 'image', { name: 'h' }, { kind: 'img' });
+    r.adopt('n1', 'audio', { name: 'h' }, { kind: 'audio' });
+    expect(kinds).toEqual(['video', 'img', 'audio']);
   });
 });

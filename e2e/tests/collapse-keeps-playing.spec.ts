@@ -1,4 +1,4 @@
-// e2e/tests/video-collapse-keeps-playing.spec.ts
+// e2e/tests/collapse-keeps-playing.spec.ts
 //
 // THE REGRESSION GUARD for the owner P0: "videovarispeed stops playing if its
 // card is collapsed. i put it on scene, expand, load video, play → stops
@@ -21,6 +21,16 @@
 // file's own grep gate). Every such module is spawned and expanded; whichever
 // ones expose a local-file input get the full behavioural scenario. Nothing
 // here is a hand-typed module list.
+//
+// NOT NAMED `video-*` DELIBERATELY. That prefix is a WEBGL_HEAVY_GLOB
+// (e2e/webgl-heavy-globs.ts), which would enrol this spec on the sharded
+// SwiftShader matrix and in the attest's Pass A. It does not belong there: what
+// it measures is PLAYBACK LIFETIME — a media clock and an element's existence —
+// and its one rendering assertion is a monotonic draw counter whose truth does
+// not vary by renderer (verified: green under E2E_SWIFTSHADER=1, which is worth
+// running by hand, not on every attest). Keeping it out also keeps the ATTESTED
+// SET stable, so this change cannot be confused with one that alters what the
+// GPU semaphore covers.
 //
 // DETERMINISM: the assertions are element STATE (`paused`, `currentTime`
 // advancing) and the engine's own draw counter — never pixels, never a

@@ -15,6 +15,7 @@
   //   - `node.params.gain / crop`: in Yjs, synced across collaborators.
 
   import { onMount, onDestroy } from 'svelte';
+  import { nodeMedia, type NodeMediaLease } from '$lib/ui/media/node-media-registry';
   import { type NodeProps } from '@xyflow/svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
@@ -43,7 +44,17 @@
   const inputs = portsFromDef(loopbackDef.inputs);
   const outputs = portsFromDef(loopbackDef.outputs);
 
+  // The <video> and the capture STREAM are owned by the NODE, not by this
+  // card (see $lib/ui/media/node-media-registry). Loopback was the worst case
+  // of the card-lifetime bug: `onDestroy` stopped the tracks, and
+  // getDisplayMedia cannot be restarted without a fresh user gesture — so a
+  // collapse did not merely pause the capture, it ended it permanently and the
+  // user had to re-pick the tab.
+  let videoHost: HTMLDivElement | null = $state(null);
   let videoEl: HTMLVideoElement | null = $state(null);
+  let mediaLease: NodeMediaLease<HTMLElement> | null = null;
+  const MEDIA_SLOT = 'main';
+  /** Mirror of the NODE-owned stream; rehydrated on adopt. */
   let stream: MediaStream | null = null;
   let capState: State = $state('idle');
   let errorMsg = $state<string | null>(null);
@@ -93,6 +104,9 @@
       return;
     }
     stream = result.stream;
+    // The registry owns it from here: it stops the PREVIOUS stream (a re-share
+    // legitimately replaces it) and never stops this one on a card unmount.
+    nodeMedia.setStream(id, MEDIA_SLOT, stream);
 
     if (videoEl) {
       videoEl.srcObject = stream;
@@ -120,11 +134,12 @@
     capState = 'capturing';
   }
 
+  /** An EXPLICIT stop (the user pressed stop, or the share bar ended the
+   *  track). This is a genuine content change, not a view teardown, so the
+   *  registry frees the stream here. It is never called from onDestroy. */
   function stopStream(): void {
-    if (stream) {
-      for (const t of stream.getTracks()) t.stop();
-      stream = null;
-    }
+    nodeMedia.setStream(id, MEDIA_SLOT, null);
+    stream = null;
     if (videoEl) videoEl.srcObject = null;
     videoEngine()?.attachExternalSource(id, 'video', null);
   }
@@ -177,6 +192,34 @@
     return () => cancelAnimationFrame(raf);
   });
 
+  // ---- Adopt the NODE-owned <video> into this card ----
+  $effect(() => {
+    const host = videoHost;
+    if (!host) return;
+    const lease = nodeMedia.adopt(id, MEDIA_SLOT, host, {
+      kind: 'video',
+      init: (el) => {
+        const v = el as HTMLVideoElement;
+        v.playsInline = true;
+        v.muted = true;
+        v.autoplay = true;
+        v.setAttribute('data-testid', 'loopback-preview');
+      },
+    });
+    mediaLease = lease;
+    const v = lease.el as HTMLVideoElement;
+    videoEl = v;
+    // Rehydrate from the node: a capture may already be running from a
+    // previous mount, in which case the element still holds its srcObject.
+    stream = nodeMedia.stream(id, MEDIA_SLOT);
+    if (stream && v.srcObject !== stream) v.srcObject = stream;
+    if (stream && capState !== 'capturing') capState = 'capturing';
+    return () => {
+      lease.release();
+      if (mediaLease === lease) mediaLease = null;
+    };
+  });
+
   onMount(() => {
     if (!isViewportCaptureSupported()) {
       capState = 'unsupported';
@@ -203,8 +246,12 @@
   });
 
   onDestroy(() => {
-    stopStream();
-    videoEngine()?.attachExternalSource(id, 'video', null);
+    // NOTE what is deliberately ABSENT: no stopStream(), no detach. A collapse
+    // MOVES this card between mounts; stopping the tracks here ended a capture
+    // that cannot be restarted without a new user gesture. The stream belongs
+    // to the node and is stopped by nodeMedia when the node leaves the graph.
+    mediaLease?.release();
+    mediaLease = null;
   });
 
   const STATE_LABEL: Record<State, string> = {
@@ -241,14 +288,9 @@
       <!-- The <video> is BOTH the texImage2D source AND a live preview. Because
            it is the tab it captures, the preview is intentionally recursive (a
            video-feedback tunnel) while capturing. -->
-      <!-- svelte-ignore a11y_media_has_caption -->
-      <video
-        bind:this={videoEl}
-        data-testid="loopback-preview"
-        playsinline
-        muted
-        autoplay
-      ></video>
+      <!-- The <video> is NOT declared here: it belongs to the NODE and is
+           adopted into this host div (see the $effect above). -->
+      <div class="video-host" bind:this={videoHost}></div>
       {#if capState === 'capturing'}
         <div class="hint" data-testid="loopback-recursive-hint">
           Capturing this tab — the preview loops recursively
@@ -346,7 +388,11 @@
     margin: 4px 0;
     gap: 2px;
   }
-  video {
+  /* The <video> is ADOPTED into .video-host at runtime (node-owned, see
+   * $lib/ui/media/node-media-registry), so these rules must be :global().
+   * `display: contents` keeps the adopted element in the parent's layout. */
+  .video-host { display: contents; }
+  .video-host :global(video) {
     width: 200px;
     height: 112px;
     background: #050608;

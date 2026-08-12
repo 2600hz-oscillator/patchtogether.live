@@ -175,6 +175,20 @@ const FROM_TEST_ROOT = resolve(__dirname, '../../../../..');
 //   * "attestable == all (nothing is fully @collab/@capacity-gated)" → (4b)
 //     now asserts `excluded` is EMPTY, which is the same statement as a
 //     PROPERTY rather than as an arithmetic identity between two counts.
+//
+// ⚠ THE SIGNAL THAT IS GENUINELY GONE, recorded here so the next person to
+// delete or restore this knows what they are trading (the #1458 precedent for
+// MIN_TOKEN_PINNED_BASELINES). The count had a THIRD, unstated job: it was the
+// only thing that went red when the ATTESTED SET changed. Editing
+// `e2e/webgl-heavy-globs.ts` moves the hash mechanically because that file is a
+// STANDALONE_BASIS_FILE — but ADDING A SPEC WHOSE NAME MATCHES AN EXISTING GLOB
+// (e.g. a new `video-*.spec.ts`) enrols it in Pass A while moving NO hash, and
+// nothing now reports that. That was judged acceptable when this was removed:
+// enrolling an ADDITIONAL spec widens what the GPU semaphore covers rather than
+// invalidating what it already certified, and no GL content changes. If you
+// ever need the signal back, assert THE PROPERTY — e.g. pin the attested set by
+// NAME in a generated artifact on an accept loop — never re-derive a size.
+//
 // No successor counter was written. Specs are excluded from the hash basis, so
 // none of this affects the WebGL attest.
 

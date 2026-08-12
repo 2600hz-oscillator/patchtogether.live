@@ -70,6 +70,7 @@ export interface NodeMediaSnapshot {
   /** Local filename that came with the url, or null. */
   name: string | null;
   hasStream: boolean;
+  hasDisposer: boolean;
 }
 
 /**
@@ -91,7 +92,9 @@ export interface NodeMediaOps<E, H> {
   stopStream(stream: MediaStream): void;
 }
 
-export type NodeMediaKind = 'video' | 'img';
+/** ARCHIVIST needs all three: an archive.org item can be a video, a still
+ *  image, or an audio file, and the card picks the element per item. */
+export type NodeMediaKind = 'video' | 'img' | 'audio';
 
 /** A card's claim on a node's element. `release()` is idempotent AND
  *  owner-checked: it does nothing once another host has adopted the element. */
@@ -148,8 +151,21 @@ export interface NodeMediaRegistry<E, H> {
   setStream(nodeId: string, slot: string, stream: MediaStream | null): void;
   stream(nodeId: string, slot: string): MediaStream | null;
 
-  /** Full teardown for one node: stop streams, revoke urls, destroy elements.
-   *  Called when the node leaves the GRAPH, never when a card unmounts. */
+  /**
+   * Register a teardown for anything the registry does not model itself —
+   * the hls.js instance PEERTUBE / TVLIBRARIAN attach to their element being
+   * the motivating case. It runs on node disposal, in the same sweep that
+   * revokes urls and stops streams, and NEVER on a card unmount.
+   *
+   * Replacing a disposer runs the previous one first: a card that re-attaches
+   * hls for a new stream hands over a new disposer, and the old instance must
+   * not leak. Idempotent per entry — a disposer runs at most once.
+   */
+  setDisposer(nodeId: string, slot: string, dispose: (() => void) | null): void;
+
+  /** Full teardown for one node: run disposers, stop streams, revoke urls,
+   *  destroy elements. Called when the node leaves the GRAPH, never when a
+   *  card unmounts. */
   disposeNode(nodeId: string): void;
 
   /** Dispose every node NOT present in `liveIds`. The graph is the authority
@@ -170,6 +186,8 @@ interface Entry<E, H> {
   /** Local filename for `url` — see NodeMediaRegistry.mediaName. */
   name: string | null;
   stream: MediaStream | null;
+  /** Extra teardown (hls.js, …) — see NodeMediaRegistry.setDisposer. */
+  dispose: (() => void) | null;
 }
 
 function key(nodeId: string, slot: string): string {
@@ -195,7 +213,9 @@ export function createNodeMediaRegistry<E, H>(
     if (existing) return existing;
     const el = ops.create(nodeId, slot, kind);
     if (init) init(el);
-    const entry: Entry<E, H> = { el, kind, owner: null, url: null, name: null, stream: null };
+    const entry: Entry<E, H> = {
+      el, kind, owner: null, url: null, name: null, stream: null, dispose: null,
+    };
     entries.set(k, entry);
     let slots = byNode.get(nodeId);
     if (!slots) { slots = new Set(); byNode.set(nodeId, slots); }
@@ -209,6 +229,8 @@ export function createNodeMediaRegistry<E, H>(
   function disposeKey(k: string): void {
     const e = entries.get(k);
     if (!e) return;
+    // Disposer FIRST: hls.js must detach from the element before we destroy it.
+    if (e.dispose) { const d = e.dispose; e.dispose = null; try { d(); } catch { /* */ } }
     if (e.stream) { try { ops.stopStream(e.stream); } catch { /* */ } }
     if (e.url) { try { ops.revokeUrl(e.url); } catch { /* */ } }
     try { ops.destroy(e.el); } catch { /* */ }
@@ -285,6 +307,19 @@ export function createNodeMediaRegistry<E, H>(
       return entries.get(key(nodeId, slot))?.stream ?? null;
     },
 
+    setDisposer(nodeId, slot, dispose) {
+      const k = key(nodeId, slot);
+      const e = entries.get(k) ?? entryFor(nodeId, slot, 'video');
+      // Hand-over: the OUTGOING instance is torn down now, so re-attaching a
+      // new hls for the same node cannot leak the previous one.
+      if (e.dispose && e.dispose !== dispose) {
+        const prev = e.dispose;
+        e.dispose = null;
+        try { prev(); } catch { /* */ }
+      }
+      e.dispose = dispose;
+    },
+
     disposeNode(nodeId) {
       const slots = byNode.get(nodeId);
       if (!slots) return;
@@ -316,6 +351,7 @@ export function createNodeMediaRegistry<E, H>(
             hasUrl: e.url !== null,
             name: e.name,
             hasStream: e.stream !== null,
+            hasDisposer: e.dispose !== null,
           });
         }
       }
@@ -350,7 +386,7 @@ function parkingHost(): HTMLElement {
 /** Real-DOM ops. Split out so the singleton is a thin binding of the pure core. */
 export const browserNodeMediaOps: NodeMediaOps<HTMLElement, HTMLElement> = {
   create(_nodeId, _slot, kind) {
-    return document.createElement(kind === 'img' ? 'img' : 'video');
+    return document.createElement(kind === 'img' ? 'img' : kind === 'audio' ? 'audio' : 'video');
   },
   mount(el, host) {
     if (el.parentNode !== host) host.appendChild(el);

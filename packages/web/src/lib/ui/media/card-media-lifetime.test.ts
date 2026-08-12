@@ -12,12 +12,22 @@
 // card-testid grep and the `attachExternalSource` grep in the tree: when the
 // only observable is in the SOURCE, guard the source.
 //
-// DENY BY DEFAULT + AUTO-ENROLLING: the subject set is DERIVED from
-// DOM_SOURCE_LANE_TYPES (itself held exhaustive by dom-source-modules.test.ts's
-// grep gate), so a NEW DOM-source video module is enrolled the moment it
-// exists. There is no opt-in list to forget to join and no filename filter —
-// the audited-2026-08-02 blind-gate lesson is that a gate which filters its
-// own subject quietly redefines what it proves.
+// DENY BY DEFAULT + AUTO-ENROLLING. The subject set is DERIVED from the card
+// sources, as the UNION of the two private card<->node channels:
+//   * `attachExternalSource(` — the card hands the node a DOM element;
+//   * `read(id, 'extras')`    — the card drives the node's *HandleExtras.
+// Either one means the node's behaviour depends on a card being mounted, which
+// is the precondition for every bug in this class.
+//
+// ⚠ IT USED TO DERIVE FROM DOM_SOURCE_LANE_TYPES, AND THAT WAS TOO NARROW.
+// That set is itself sound — dom-source-modules.test.ts holds it exhaustive by
+// grep — but it encodes only the FIRST channel, so it answered the wrong
+// question. Measured 2026-08-12: attachExternalSource reaches 9 cards, the
+// extras channel reaches 13, and the UNION is 17. The 8-card delta (toybox,
+// picturebox, painter, textmarquee, doom, blood, nibbles, gibribbon) is where
+// the remaining findings live, and the union would have enrolled each of them
+// the day it was written. A correct list is not the same as the right
+// predicate.
 //
 // WHAT IT FORBIDS, and why each one is a real bug and not a style rule:
 //   * `URL.revokeObjectURL` in an unmount path — the loaded file becomes
@@ -31,6 +41,24 @@
 // All three are legitimate on NODE deletion; they belong to
 // $lib/ui/media/node-media-registry, which is keyed to graph lifetime and
 // swept from Canvas against the live node set.
+//
+// ⚠⚠ WHAT THIS GATE IS STRUCTURALLY UNABLE TO SEE — read this before citing it
+// as coverage. Every pattern above is TEARDOWN-SHAPED: it reads `onDestroy`
+// bodies and asks "does this card destroy something it should not?". There is a
+// second, opposite failure mode in the same class that it CANNOT detect:
+// a module that never INITIALISES. painter, textmarquee and picturebox have no
+// teardown at all — their node renders a placeholder until a card mounts and
+// pushes its canvas/image, so with the shell swapping the card out they are
+// DARK BY DEFAULT rather than broken-on-collapse. This gate certifies all three
+// as clean and they are not.
+//
+// They ARE in the subject set (asserted below), so widening the gate later
+// covers them automatically. Until then the blindness is made explicit by a
+// permanent negative-control leg — 'the gate does NOT see the
+// never-initialises failure mode' — which fails if anyone "fixes" it into
+// looking like coverage. Stating a gate's scope inside the gate is the
+// 2026-08-02 blind-gate discipline: ask what a green run would look like if the
+// answer were "everything".
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
@@ -47,6 +75,52 @@ import { conventionalCardName, type CardDefLike } from '$lib/ui/modules-card-map
 import { DOM_SOURCE_LANE_TYPES } from '$lib/ui/workflow/dom-source-modules';
 
 const CARD_DIR = fileURLToPath(new URL('../modules/', import.meta.url));
+
+/** Channel 1: the card hands the node a DOM element. */
+const ATTACH_RE = /attachExternalSource\s*\(/;
+/** Channel 2: the card drives the node's *HandleExtras. */
+const EXTRAS_RE = /read\s*\(\s*[^,)]+,\s*['"]extras['"]\s*\)/;
+
+/** Card basenames on either private card<->node channel — the gate's subjects,
+ *  derived from the artifact so a new module enrols the day it is written. */
+function subjectCards(): string[] {
+  const out: string[] = [];
+  for (const file of readdirSync(CARD_DIR)) {
+    if (!file.endsWith('Card.svelte')) continue;
+    const code = stripComments(readFileSync(new URL(file, `file://${CARD_DIR}`), 'utf8'));
+    if (ATTACH_RE.test(code) || EXTRAS_RE.test(code)) out.push(file.replace(/\.svelte$/, ''));
+  }
+  return out.sort();
+}
+
+/**
+ * Cards KNOWN to still tear media down on unmount, each named with why it is
+ * not fixed here and what deletes the entry. This is deliberately a NAMED
+ * per-instance exemption, not a count and not a filename filter: a new defect
+ * in a listed card still reddens (the entry pins the exact patterns), an entry
+ * naming a card that no longer violates reddens as STALE, and an entry naming
+ * a card that no longer exists reddens too.
+ *
+ * NOT a debt inventory of payable work: the conversions in THIS change were
+ * paid, not listed. This is the single card whose conversion is genuinely a
+ * separate piece of work.
+ */
+const KNOWN_UNCONVERTED: { card: string; patterns: string[]; why: string; deleteWhen: string }[] = [
+  {
+    card: 'ToyboxCard',
+    patterns: ['revokeObjectURL', 'track.stop()'],
+    why:
+      'TOYBOX is per-LAYER: N <video> elements, N object URLs and N getUserMedia ' +
+      'MediaStreams, all released in onDestroy. Only the filename rides the Y.Doc, ' +
+      'so a card move loses the bytes AND the capture permission — strictly worse ' +
+      'than the videovarispeed case this change fixes. Converting it means giving ' +
+      'the registry a per-layer slot keyed by layer index, which is a design step ' +
+      'of its own rather than a repeat of the single-element conversion.',
+    deleteWhen:
+      'ToyboxCard adopts per-layer slots from $lib/ui/media/node-media-registry and ' +
+      'stops releasing urls/tracks in onDestroy (tracked as the toybox follow-up).',
+  },
+];
 
 /** module type id -> card component basename (explicit `def.card` wins, else
  *  the PascalCase convention) — the same resolution buildNodeTypes uses. */
@@ -161,42 +235,99 @@ const FORBIDDEN: { name: string; re: RegExp; why: string }[] = [
   },
 ];
 
-describe('DOM-source cards must not tear their media down on UNMOUNT', () => {
-  const byType = typeToCardName();
+/** The FORBIDDEN pattern names a card trips in its unmount path. */
+function violationsFor(cardBase: string): string[] {
+  const src = readFileSync(new URL(`${cardBase}.svelte`, `file://${CARD_DIR}`), 'utf8');
+  const hits = new Set<string>();
+  for (const body of unmountBodies(src)) {
+    for (const f of FORBIDDEN) if (f.re.test(body)) hits.add(f.name);
+  }
+  return [...hits];
+}
 
-  // The subject set is derived, so this cannot silently become empty.
-  it('resolves a real card file for every DOM-source module type', () => {
-    const files = new Set(readdirSync(CARD_DIR));
-    const unresolved: string[] = [];
-    for (const type of DOM_SOURCE_LANE_TYPES) {
-      const base = byType.get(type);
-      if (!base || !files.has(`${base}.svelte`)) unresolved.push(type);
-    }
-    expect(unresolved, `DOM-source types with no resolvable card: ${unresolved.join(', ')}`)
+describe('cards on a private node channel must not tear their media down on UNMOUNT', () => {
+  const subjects = subjectCards();
+
+  it('derives a non-trivial subject set from BOTH card<->node channels', () => {
+    // A broken predicate resolves nothing and must not pass vacuously.
+    expect(subjects.length, 'no subject cards resolved — the predicates are broken').toBeGreaterThan(0);
+    // Superset check against the (sound but narrower) attachExternalSource set:
+    // every DOM-source type's card must appear, or the union has regressed.
+    const byType = typeToCardName();
+    const missing = [...DOM_SOURCE_LANE_TYPES]
+      .map((t) => byType.get(t))
+      .filter((base): base is string => !!base && !subjects.includes(base));
+    expect(missing, `DOM_SOURCE_LANE_TYPES cards absent from the union: ${missing.join(', ')}`)
       .toEqual([]);
-    expect(DOM_SOURCE_LANE_TYPES.size).toBeGreaterThan(0);
   });
 
-  it('no DOM-source card revokes urls, stops tracks or detaches in an unmount path', () => {
+  it('enrols the DARK-BY-DEFAULT cards even though it cannot yet judge them', () => {
+    // painter / textmarquee / picturebox fail by never INITIALISING, which the
+    // teardown patterns cannot see (see the header). Enrolling them now means a
+    // widened gate covers them without anyone having to remember.
+    for (const card of ['PainterCard', 'TextmarqueeCard', 'PictureboxCard']) {
+      expect(subjects, `${card} must be a gate subject`).toContain(card);
+    }
+  });
+
+  it('every KNOWN_UNCONVERTED entry names a card that EXISTS', () => {
+    const files = new Set(readdirSync(CARD_DIR));
+    const ghosts = KNOWN_UNCONVERTED.filter((e) => !files.has(`${e.card}.svelte`)).map((e) => e.card);
+    expect(ghosts, `exemption names a card that no longer exists: ${ghosts.join(', ')}`).toEqual([]);
+  });
+
+  it('every KNOWN_UNCONVERTED entry STILL violates — a fixed card must delete its entry', () => {
+    const stale: string[] = [];
+    for (const e of KNOWN_UNCONVERTED) {
+      const hits = violationsFor(e.card);
+      const unmet = e.patterns.filter((p) => !hits.includes(p));
+      if (unmet.length) {
+        stale.push(
+          `${e.card} no longer violates [${unmet.join(', ')}] — DELETE its KNOWN_UNCONVERTED entry ` +
+            `(deleteWhen: ${e.deleteWhen})`,
+        );
+      }
+    }
+    expect(stale).toEqual([]);
+  });
+
+  it('no subject card revokes urls, stops tracks or detaches in an unmount path', () => {
+    const exempt = new Map(KNOWN_UNCONVERTED.map((e) => [e.card, new Set(e.patterns)]));
     const offenders: string[] = [];
-    for (const type of [...DOM_SOURCE_LANE_TYPES].sort()) {
-      const base = byType.get(type);
-      if (!base) continue;
-      const src = readFileSync(new URL(`${base}.svelte`, `file://${CARD_DIR}`), 'utf8');
-      for (const body of unmountBodies(src)) {
-        for (const f of FORBIDDEN) {
-          if (f.re.test(body)) offenders.push(`${base} (${type}): ${f.name} — ${f.why}`);
-        }
+    for (const card of subjects) {
+      for (const name of violationsFor(card)) {
+        // Exemptions are per (card, pattern): a NEW kind of violation in an
+        // already-listed card still reddens.
+        if (exempt.get(card)?.has(name)) continue;
+        const f = FORBIDDEN.find((x) => x.name === name)!;
+        offenders.push(`${card}: ${name} — ${f.why}`);
       }
     }
     expect(offenders).toEqual([]);
   });
 
-  // NEGATIVE CONTROL, permanent leg: the same predicate the gate calls, fed a
-  // body that DOES tear down. If `unmountBodies`/FORBIDDEN ever stop matching
-  // (a refactor, a renamed hook), this goes red instead of the gate silently
-  // passing everything — the failure mode the 2026-08-02 blind-gate audit
-  // found in four gates at once.
+  it('the gate does NOT see the never-initialises failure mode (documented blind spot)', () => {
+    // PERMANENT negative control for the scope statement in the header. A card
+    // that is DARK BY DEFAULT — no teardown at all, the node simply renders
+    // nothing until this mounts and pushes — passes every pattern above. This
+    // asserts the blindness so nobody can read a green gate as coverage; if the
+    // gate is ever widened to catch this shape, this test fails and its prose
+    // (and the header) must be rewritten at the same time.
+    const darkByDefault = `
+      onMount(() => {
+        const ve = videoEngine();
+        ve?.pushCanvas(id, canvasEl);
+      });
+      onDestroy(() => {
+        cancelAnimationFrame(raf);
+      });
+    `;
+    const hits = unmountBodies(darkByDefault).flatMap((b) =>
+      FORBIDDEN.filter((f) => f.re.test(b)).map((f) => f.name),
+    );
+    expect(hits, 'if this now reports a hit, the gate grew a capability the header denies').toEqual([]);
+  });
+
   it('the predicate actually fires on a teardown body (negative control)', () => {
     const hostile = `
       onDestroy(() => {
