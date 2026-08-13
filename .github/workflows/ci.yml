@@ -1042,6 +1042,28 @@ jobs:
             --reporter html \
             ./all-blob-reports
 
+      # SURFACE FLAKY + RUNTIME-SKIPPED TESTS (#1502).
+      #
+      # A green e2e job hides two classes today. `retries: 1` on CI means a test
+      # that fails then passes is reported `flaky` with the JOB STILL GREEN; and
+      # nothing parses results for runtime `test.skip(cond, …)`, which the
+      # generated ledger deliberately excludes. Both are the same shape: the run
+      # knows, and nobody is told.
+      #
+      # Not hypothetical — the #1559 camera regression failed three runs running
+      # and was caught by a human reading logs, not by any gate.
+      #
+      # REPORT-ONLY for now, deliberately. The issue's sequence is: make it
+      # visible, fix the known flakes, THEN pass --fail-on-flaky. A gate that
+      # reddens a required lane on day one gets reverted instead of fixed.
+      - name: Audit merged report for flaky + skipped
+        if: always()
+        run: |
+          flox activate -- npx --workspace e2e playwright merge-reports \
+            --reporter json \
+            ./all-blob-reports > merged-report.json
+          flox activate -- node scripts/e2e-report-audit.mjs merged-report.json
+
       - name: Upload merged HTML report
         uses: actions/upload-artifact@v4
         with:
