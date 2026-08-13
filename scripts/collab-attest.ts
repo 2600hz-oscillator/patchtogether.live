@@ -12,15 +12,17 @@
 // reliably. So we run @collab where the relay actually works, pin a content hash,
 // and CI gates on a cheap ~2-min VERIFY of the committed attestation.
 //
-// THE MEANINGFUL-GATE GUARD (the whole point): a @collab spec that
-// `test.skip(true,'…relay flake / sync did not reach / roster sync …')`s LOCALLY
-// is a VACUOUS run — it proved nothing about multiplayer. On a fresh dedicated
-// relay that MUST NOT happen, so the runner treats ANY relay/sync-vacuity skip
-// as a HARD FAILURE and REFUSES to write an attestation. It also pre-flights the
-// DOOM/SNES assets so the benign asset-skips don't fire, and REFUSES if the DB or
-// relay are not actually up (the @collab lane is VACUOUS without a real DB).
+// THE MEANINGFUL-GATE GUARD (the whole point): a @collab spec that SKIPS
+// LOCALLY produced a VACUOUS run — it proved nothing about multiplayer. On a
+// fresh dedicated relay that MUST NOT happen, so the runner treats ANY skip as a
+// HARD FAILURE unless a NAMED `BENIGN_SKIPS` rule claims it (deny by default —
+// see the classifier header in collab-attest-lib.ts for the four DOOM
+// runtime-load skips and the `test.fixme` quarantine the old allow-by-default
+// shape was minting straight through). It also pre-flights the DOOM/SNES assets
+// so asset skips don't fire, and REFUSES if the DB or relay are not actually up
+// (the @collab lane is VACUOUS without a real DB).
 //
-// On a fully-green run (every @collab spec genuinely passed, ZERO relay-vacuity
+// On a fully-green run (every @collab spec genuinely passed, ZERO unnamed
 // skips, DB + relay confirmed), writes ci-collab-attest/<hash>.json with the
 // metadata + measured pass/skip summary. On ANY failure/flake/vacuity: writes
 // nothing, exits non-zero. Does NOT auto-commit (the commit is the
@@ -38,7 +40,7 @@ import {
   COLLAB_GREP,
   computeCollabHash,
   resolveCollabSpecs,
-  isRelayVacuitySkip,
+  classifySkip,
 } from './collab-attest-lib';
 
 const REPEAT = Math.max(1, parseInt(process.env.REPEAT || '1', 10) || 1);
@@ -60,7 +62,15 @@ interface RunSummary {
   flaky: number;
   skipped: number;
   relayVacuitySkips: { spec: string; title: string; reason: string }[];
-  assetSkips: { spec: string; title: string; reason: string }[];
+  /** Skips matching NO named benign rule. Deny-by-default: these REFUSE, exactly
+   *  like a relay-vacuity skip, because a body that did not run cannot back an
+   *  attestation that says it did. */
+  unclassifiedSkips: { spec: string; title: string; reason: string }[];
+  /** Skips claimed by a NAMED `BENIGN_SKIPS` rule — reported with their `why`,
+   *  never silently. (Was `assetSkips`: an allow-by-default bucket that swallowed
+   *  every unpredicted reason, including a `test.fixme` quarantine and four DOOM
+   *  runtime-load failures. See the classifier header in collab-attest-lib.ts.) */
+  benignSkips: { spec: string; title: string; reason: string; why: string }[];
 }
 
 interface PwSuite {
@@ -301,7 +311,8 @@ function runCollab(): RunSummary {
       flaky: 0,
       skipped: 0,
       relayVacuitySkips: [],
-      assetSkips: [],
+      unclassifiedSkips: [],
+      benignSkips: [],
     };
   }
 
@@ -322,7 +333,8 @@ function runCollab(): RunSummary {
   console.log(
     `\n  → spec files: ${summary.specFiles} | passed=${summary.passed} failed=${summary.failed} ` +
       `flaky=${summary.flaky} skipped=${summary.skipped} ` +
-      `(relay-vacuity skips=${summary.relayVacuitySkips.length}, asset skips=${summary.assetSkips.length})`,
+      `(relay-vacuity=${summary.relayVacuitySkips.length}, unclassified=${summary.unclassifiedSkips.length}, ` +
+      `named-benign=${summary.benignSkips.length})`,
   );
 
   // (a) Hard fail on any failure.
@@ -361,11 +373,33 @@ function runCollab(): RunSummary {
         `On a calm local relay these MUST converge. Diagnose the sync stall; attestation refused.`,
     );
   }
-  // (d) Report (do NOT fail on) benign asset skips — the pre-flight should have
-  //     prevented them, but a missing SNES ROM (user-provided) is acceptable.
-  if (summary.assetSkips.length > 0) {
-    console.log(`  ⚠ ${summary.assetSkips.length} benign asset/resource skip(s) (NOT relay vacuity):`);
-    for (const s of summary.assetSkips) console.log(`     - ${s.spec} › ${s.title}: "${s.reason}"`);
+  // (c2) DENY BY DEFAULT: a skip that no NAMED rule claims refuses too. This is
+  //      the leg that was missing — see the classifier header in
+  //      collab-attest-lib.ts for what it was letting through (four DOOM
+  //      runtime-load skips and a `test.fixme` quarantine, all filed as "benign
+  //      asset skips" and minted). If the skip is legitimately harmless, it gets
+  //      an entry with its own `why`; it does not get to be a number.
+  if (summary.unclassifiedSkips.length > 0) {
+    const lines = summary.unclassifiedSkips
+      .map((s) => `    - ${s.spec} › ${s.title}: "${s.reason || '(no reason given — a test.skip()/test.fixme with no description)'}"`)
+      .join('\n');
+    throw new Error(
+      `${summary.unclassifiedSkips.length} @collab test(s) SKIPPED for a reason no BENIGN_SKIPS rule claims:\n${lines}\n` +
+        `A skipped body proves nothing, so the run cannot back an attestation that says it ran.\n` +
+        `Either fix what made it skip, or — if the skip genuinely does not weaken the\n` +
+        `attestation — add a NAMED { spec, reason, why } entry to BENIGN_SKIPS in\n` +
+        `scripts/collab-attest-lib.ts. Attestation refused.`,
+    );
+  }
+  // (d) Report the NAMED benign skips loudly, each with the `why` that justifies
+  //     it. These are the only skips a green attestation may carry, and an
+  //     operator should have to read the argument every time.
+  if (summary.benignSkips.length > 0) {
+    console.log(`  ⚠ ${summary.benignSkips.length} NAMED benign skip(s) — the attestation does NOT cover these:`);
+    for (const s of summary.benignSkips) {
+      console.log(`     - ${s.spec} › ${s.title}: "${s.reason || '(no reason given)'}"`);
+      console.log(`       why: ${s.why}`);
+    }
   }
   // (e) Sanity: SOMETHING must have genuinely passed (a 0-passed run is vacuous).
   if (summary.passed === 0) {
@@ -385,7 +419,8 @@ function summarize(report: { suites?: PwSuite[] }): RunSummary {
   let skipped = 0;
   const specFiles = new Set<string>();
   const relayVacuitySkips: RunSummary['relayVacuitySkips'] = [];
-  const assetSkips: RunSummary['assetSkips'] = [];
+  const unclassifiedSkips: RunSummary['unclassifiedSkips'] = [];
+  const benignSkips: RunSummary['benignSkips'] = [];
 
   const visit = (suite: PwSuite) => {
     for (const spec of suite.specs ?? []) {
@@ -400,8 +435,10 @@ function summarize(report: { suites?: PwSuite[] }): RunSummary {
           const reason =
             (test.annotations ?? []).find((a) => a.type === 'skip')?.description ?? '';
           const entry = { spec: spec.file ?? '?', title: spec.title ?? '?', reason };
-          if (isRelayVacuitySkip(reason)) relayVacuitySkips.push(entry);
-          else assetSkips.push(entry);
+          const { verdict, rule } = classifySkip(entry.spec, reason);
+          if (verdict === 'benign') benignSkips.push({ ...entry, why: rule!.why });
+          else if (verdict === 'vacuity') relayVacuitySkips.push(entry);
+          else unclassifiedSkips.push(entry);
         }
       }
     }
@@ -415,7 +452,8 @@ function summarize(report: { suites?: PwSuite[] }): RunSummary {
     flaky,
     skipped,
     relayVacuitySkips,
-    assetSkips,
+    unclassifiedSkips,
+    benignSkips,
   };
 }
 
@@ -521,7 +559,10 @@ async function main() {
         flaky: summary.flaky,
         skipped: summary.skipped,
         relayVacuitySkips: summary.relayVacuitySkips.length,
-        assetSkips: summary.assetSkips.length,
+        unclassifiedSkips: summary.unclassifiedSkips.length,
+        // Each entry names the spec + the rule that claims it, so an
+        // attestation records WHAT a green run did not cover — not just how many.
+        namedBenignSkips: summary.benignSkips.map((s) => ({ spec: s.spec, title: s.title })),
       },
       durationSec,
     };
