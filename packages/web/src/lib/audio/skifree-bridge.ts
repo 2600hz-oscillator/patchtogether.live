@@ -37,12 +37,16 @@
 // (#1531/#1574): removing the container has no spelling, so `tsc` refuses the regression
 // before any test runs.
 //
+// LOCATION: deliberately NOT in `lib/audio/modules/` — `module-manifest.ts` globs
+// `../audio/modules/*.ts` and treats every file there as a module DEF, so a helper parked
+// beside the defs reddens the manifest gate. (It caught exactly that on the first push.)
+//
 // ⚠ KNOWN, SEPARATE, NOT FIXED HERE: `__skifree` is a SINGLE GLOBAL with no node keying,
 // so two SKIFREE nodes share one bridge (skifree.ts:140 acknowledges this). That is a
 // distinct defect from the ownership bug and needs a node-keyed bridge to fix properly.
 // Do not mistake this file for having solved it.
 
-import type { SkifreeBridge } from './skifree';
+import type { SkifreeBridge } from './modules/skifree';
 
 /** Read the bridge without creating one. */
 function peek(): SkifreeBridge | undefined {

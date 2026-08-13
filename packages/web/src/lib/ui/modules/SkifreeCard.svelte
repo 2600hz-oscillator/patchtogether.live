@@ -26,7 +26,7 @@
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
-  import { ensureSkifreeBridge, releaseSkifreeCardState } from '$lib/audio/modules/skifree-bridge';
+  import { ensureSkifreeBridge, releaseSkifreeCardState } from '$lib/audio/skifree-bridge';
   import {
     SKIFREE_CANVAS_SIZE,
     type SkifreeBridge,

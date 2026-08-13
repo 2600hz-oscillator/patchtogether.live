@@ -18,7 +18,7 @@ import {
   releaseSkifreeCardState,
   releaseSkifreeGate,
 } from './skifree-bridge';
-import type { SkifreeBridge } from './skifree';
+import type { SkifreeBridge } from './modules/skifree';
 
 function peek(): SkifreeBridge | undefined {
   return (globalThis as unknown as { __skifree?: SkifreeBridge }).__skifree;

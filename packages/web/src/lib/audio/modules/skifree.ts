@@ -39,7 +39,7 @@
 // (PONG's pattern); the game logic runs at rAF cadence inside the bundle.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
-import { ensureSkifreeBridge, releaseSkifreeGate } from './skifree-bridge';
+import { ensureSkifreeBridge, releaseSkifreeGate } from '../skifree-bridge';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import { getSchedulerClock } from '$lib/audio/scheduler-clock';
 
