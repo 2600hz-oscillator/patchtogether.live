@@ -116,17 +116,30 @@ export default defineConfig({
   // lane from 2 attempts to 4, i.e. MORE masking, which is the opposite of
   // what the finding asks for. The fix is to delete the Actions variable.
   //
-  // WHAT retries=1 STILL COSTS, measured on two consecutive GREEN main runs
-  // (31581123866, 31577091742): a test that fails once and passes on the retry
-  // is reported as `1 flaky` in a summary line and the job is SUCCESS. Two are
-  // live right now — `behavioral-observation-window.spec.ts:363` (both runs,
-  // required e2e shard 1/10) and `per-module-per-port-behavioral.spec.ts:3259`
-  // wavecel (behavioral shard 6/6, a non-blocking lane). Both are noted at
-  // their own definitions with the captured first-attempt failure. The attest
+  // WHAT retries=1 STILL COSTS: a test that fails once and passes on the retry
+  // is reported as `1 flaky` in a summary line and the job is SUCCESS.
+  //
+  // ⚠ AND IT IS NOT TWO TESTS. This comment used to name two, from two runs.
+  // MEASURED 2026-08-13 (#1502) by downloading the blob-report artifacts of
+  // TWELVE consecutive completed ci.yml runs, merging each with
+  // `playwright merge-reports --reporter json` and auditing them with
+  // `scripts/e2e-report-audit.mjs`: TEN of the twelve carried at least one
+  // recovered flake, and six distinct tests were involved —
+  //
+  //   behavioral-observation-window.spec.ts   5/12  ← root-caused, see the file
+  //   camera-input.spec.ts                    3/12  ← fixed by #1564
+  //   collapse-keeps-playing.spec.ts          3/12  (videovarispeed ×2, videobox)
+  //   matrixmix / samsloop-record /
+  //     clipplayer-custom-scale               1/12 each
+  //
+  // Two runs of one test is a sample, not a rate; that is why the audit had to
+  // be run over a SERIES before anything was concluded from it. The attest
   // scripts already model the right response — `collab-attest.ts` and
   // `grand-attest.ts` REFUSE on a flaky outcome rather than absorb it — and
-  // that is the shape the e2e lane wants once these two are root-caused.
-  // Turning it on before then would simply redden main.
+  // that is the shape this lane wants. `merge-reports` in ci.yml can arm it
+  // today by passing `--fail-on-flaky`; it deliberately does NOT, because at a
+  // measured 10/12 that would redden the required lane on day one and be
+  // reverted rather than fixed. It gets armed when the tail above is drained.
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI
     ? [['github'], ['html', { open: 'never' }]]

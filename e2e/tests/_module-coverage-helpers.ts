@@ -459,6 +459,13 @@ export interface FrameSpacedCapture {
    *  unit it counts in, rather than asking to be trusted. */
   frames: number[];
   elapsedMs: number;
+  /** Wall clock from entering the page-side capture to its FIRST rAF callback.
+   *  A big number here is the page not rendering YET — a different fact from a
+   *  slow capture, and the one that has to be told apart from it. */
+  firstFrameMs: number;
+  /** Longest interval between two consecutive rAF callbacks. A stalled loop and
+   *  a merely slow one are separated by THIS, never by the total elapsed. */
+  maxFrameGapMs: number;
 }
 
 /**
@@ -471,6 +478,23 @@ export interface FrameSpacedCapture {
  *     window on a software rasteriser as on a GPU. The wall-clock cap exists
  *     only to bound a page whose rAF loop has DIED; it never decides how long
  *     a healthy capture waits.
+ *
+ *     ⚠ AND THE CAP CANNOT, ON ITS OWN, TELL THOSE TWO APART — which is why the
+ *     rejection below REPORTS the evidence instead of asserting a diagnosis.
+ *     Its message used to end "hitting it means the rAF loop stalled, not that
+ *     the renderer is slow", and that claim is false: `elapsed >= capMs` is a
+ *     total, so it fires identically on a dead loop and on a live-but-slow one.
+ *     MEASURED, five first-attempt failures of
+ *     behavioral-observation-window.spec.ts pulled from the blob reports of
+ *     twelve consecutive CI runs (31670594634 / 31677923273 / 31679812131 /
+ *     31688117309 / 31692792299):
+ *
+ *         4×  1 rendered frame  in 22.1–25.7 s   → the loop had not STARTED
+ *         1× 11 rendered frames in 20.0 s        → 0.55 fps, alive and SLOW
+ *
+ *     The old message called all five a stall. `firstFrameMs` and
+ *     `maxFrameGapMs` are what actually separate them, so they are now measured
+ *     and printed on every failure (and returned on every success).
  *  2. The accumulation happens in the page, on the rAF loop, so it costs ONE
  *     Playwright round trip instead of one per sample. That matters here for
  *     the reason CLAUDE.md gives for the workflow-master-transport rework: a
@@ -518,32 +542,59 @@ export async function captureCanvasStatsFrameSpaced(
         samples: { variance: number; nonBlackFrac: number }[];
         frames: number[];
         elapsedMs: number;
+        firstFrameMs: number;
+        maxFrameGapMs: number;
       }>((resolve, reject) => {
         const t0 = performance.now();
         const samples: { variance: number; nonBlackFrac: number }[] = [];
         const frames: number[] = [];
         let frame = 0;
+        // Frame-cadence bookkeeping. `firstFrameMs` isolates "the page had not
+        // started rendering when we arrived"; `maxFrameGapMs` isolates "it
+        // rendered, then stopped". Neither is recoverable from the total.
+        let firstFrameMs = -1;
+        let maxFrameGapMs = 0;
+        let lastTickMs = t0;
         const tick = () => {
+          const now = performance.now();
+          if (firstFrameMs < 0) firstFrameMs = now - t0;
+          else maxFrameGapMs = Math.max(maxFrameGapMs, now - lastTickMs);
+          lastTickMs = now;
           frame++;
           const due = frames.length === 0 || frame - frames[frames.length - 1]! >= spacingFrames;
           if (due) {
             samples.push(grab());
             frames.push(frame);
             if (samples.length >= captures) {
-              resolve({ samples, frames, elapsedMs: performance.now() - t0 });
+              resolve({
+                samples,
+                frames,
+                elapsedMs: performance.now() - t0,
+                firstFrameMs,
+                maxFrameGapMs,
+              });
               return;
             }
           }
           const elapsed = performance.now() - t0;
           if (elapsed >= capMs) {
-            // The message names the unit the GATE is counted in, and the unit
-            // the CAP is counted in, so a red run says which one ran out.
+            // The message names the unit the GATE is counted in, the unit the
+            // CAP is counted in, and — the part that used to be missing — the
+            // CADENCE, so a red run says WHICH of "never started", "stalled
+            // mid-capture" and "running but too slow" actually happened. The
+            // cap alone is blind to that distinction; see the note above.
+            const fps = elapsed > 0 ? (frame * 1000) / elapsed : 0;
             reject(new Error(
               `video capture: only ${samples.length}/${captures} samples spaced ` +
               `${spacingFrames} FRAMES after ${frame} rendered FRAMES / ` +
-              `${Math.round(elapsed)} ms. The ${capMs} ms cap BOUNDS THE FAILURE; ` +
-              `it is not the gate — hitting it means the rAF loop stalled, not ` +
-              `that the renderer is slow.`,
+              `${Math.round(elapsed)} ms (${fps.toFixed(2)} fps; first frame at ` +
+              `${firstFrameMs < 0 ? 'NEVER' : Math.round(firstFrameMs) + ' ms'}, longest gap ` +
+              `between frames ${Math.round(maxFrameGapMs)} ms). The ${capMs} ms cap ` +
+              `BOUNDS THE FAILURE; it is not the gate. READ THE CADENCE BEFORE ` +
+              `TOUCHING THE CAP: a late first frame means the page was not ` +
+              `rendering YET (raise nothing — establish the precondition), a large ` +
+              `gap means the loop stalled, and a healthy cadence with too few ` +
+              `frames means the renderer is genuinely slower than this plan assumes.`,
             ));
             return;
           }

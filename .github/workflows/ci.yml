@@ -1053,9 +1053,29 @@ jobs:
       # Not hypothetical — the #1559 camera regression failed three runs running
       # and was caught by a human reading logs, not by any gate.
       #
-      # REPORT-ONLY for now, deliberately. The issue's sequence is: make it
-      # visible, fix the known flakes, THEN pass --fail-on-flaky. A gate that
-      # reddens a required lane on day one gets reverted instead of fixed.
+      # STILL REPORT-ONLY, AND NOW FOR A MEASURED REASON (2026-08-13).
+      #
+      # The sequence the issue asks for is: make it visible, fix the known
+      # flakes, THEN pass --fail-on-flaky. Step two turned out to be bigger than
+      # "the two named flakes". The blob-report artifacts of TWELVE consecutive
+      # completed ci.yml runs were downloaded, merged with
+      # `playwright merge-reports --reporter json` and fed to this same script:
+      #
+      #   runs with >=1 recovered flake ............ 10 of 12
+      #   behavioral-observation-window.spec.ts .... 5/12  (root-caused here)
+      #   camera-input.spec.ts ..................... 3/12  (fixed by #1564)
+      #   collapse-keeps-playing.spec.ts ........... 3/12  (open)
+      #   matrixmix / samsloop-record /
+      #     clipplayer-custom-scale ................ 1/12 each (open)
+      #
+      # Arming the flag today would therefore redden a REQUIRED lane on ~10 of
+      # every 12 runs, which gets the gate reverted rather than the tests fixed.
+      # The exit path is not untested for being unarmed: scripts/
+      # e2e-report-audit.test.ts drives the real CLI in a subprocess and asserts
+      # BOTH directions (exit 1 with the flag on a flaky report, exit 0 without
+      # it, exit 0 with it on a clean one), so the day it is armed is not the
+      # day it is first exercised. Add `--fail-on-flaky` to the node line below
+      # once the remaining tail is drained.
       - name: Audit merged report for flaky + skipped
         if: always()
         run: |
