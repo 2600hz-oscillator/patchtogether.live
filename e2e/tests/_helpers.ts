@@ -273,8 +273,9 @@ export async function revealInPane(page: Page, target: Locator, margin = 24): Pr
  *
  * Installs a capture-phase scroll recorder on `.svelte-flow`. A non-empty
  * reading means SOMETHING needed the browser scroll that xyflow undoes, i.e.
- * the click was decided by a race. Verified to MOVE: before the fix this
- * recorder read `[473, 0]` on a green local run of the custom-scale spec.
+ * the click was decided by a race. Verified to MOVE: with the reveal removed,
+ * this recorder reads `[473, 0]` on an otherwise-GREEN local run of the
+ * custom-scale spec — i.e. it reddens on the CAUSE while the symptom is hiding.
  */
 export async function watchPaneScrollUndo(page: Page): Promise<void> {
   await page.evaluate(() => {
