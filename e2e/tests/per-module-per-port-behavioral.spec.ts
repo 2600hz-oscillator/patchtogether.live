@@ -271,7 +271,14 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   nibbles:  'gameplay-conditional outputs (snake/pellet/etc); covered by nibbles + video-audio-cvgate-coverage',
   pong:     'gameplay-conditional outputs; covered by pong-related specs',
   modtris:  'gameplay-conditional outputs; covered by modtris-related specs',
-  blood:    'data-gated emulator: outputs need user-supplied, non-redistributable Blood data (BLOOD.RFF/GUI.RFF/SOUNDS.RFF, gitignored, absent in CI) — the NBlood engine aborts in its resource loader without it, so driven + control inputs both observe the idle shader / silent PCM stub; covered by blood-keys.test.ts + the blood-frame-harness (run locally with owned data). See native/nblood/PHASE1-STATUS.md.',
+  // BLOOD — ⚠ REASON CORRECTED 2026-08-13 (#1497): it was "data-gated … data is
+  // gitignored, absent in CI, the engine aborts", and every clause was false —
+  // the shareware is committed (ADR-007) and CI bakes it into the bundle. The
+  // module is BOOT-gated, not data-gated: `blood-ready` costs the dedicated
+  // specs 20–25 s, far past this sweep's per-input window, and until the menu is
+  // driven into a level BOTH arms observe the same idle menu, so there is no
+  // delta to detect — a structural no-delta, not dead CV.
+  blood:    'boot-gated, not data-gated: the bundled shareware is committed + materialized on CI (docs/adr/007-game-asset-distribution.md) but `blood-ready` takes 20–25 s and, until the menu is driven into a level, driven + control arms observe the same idle menu → structural no-delta; real coverage = blood-audio-output.spec.ts (menu→level→fire→SCOPE) + blood-ingame/blood-keyboard specs + blood-keys.test.ts',
   frogger:  'gameplay-conditional outputs; covered by frogger specs',
   skifree:  'gate fires only on in-game crash/eaten; out is animated canvas; covered by e2e/tests/skifree.spec.ts',
   gibribbon: 'gameplay-conditional outputs (evt_hit/miss/fire/kill/gameover fire on in-game judgement; health_cv is idle DC); covered by gibribbon.spec.ts (forcePulse) + gibribbon-events.test.ts',

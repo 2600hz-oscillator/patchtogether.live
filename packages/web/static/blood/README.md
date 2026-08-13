@@ -5,9 +5,11 @@ SHAREWARE** data set ("The Way of All Flesh", episode 1), so the card renders
 without any picker on the beta-gated deploys. The full game stays a user-supplied
 *override* (its data is not redistributable).
 
-> The owner explicitly authorised shipping the shareware here; everything in this
-> repo is beta-gated / pre-public / non-commercial. License implications are the
-> owner's call (see "Legal status" below).
+> **Canonical answer: [ADR-007 — game-asset distribution](../../../../docs/adr/007-game-asset-distribution.md).**
+> It records what ships in-repo, why, and the one **open owner decision** (the
+> Blood shareware has no affirmative redistribution grant). The committed set is
+> asserted against that ADR by `scripts/game-asset-distribution.test.ts`, so
+> adding or removing a file here means amending the ADR.
 
 ## What's bundled (the committed shareware set)
 
@@ -55,13 +57,21 @@ Whole Blood** and **Blood: Fresh Supply** (GOG / Steam). Full-game data is
 
 ## Legal status
 
+**Read [ADR-007](../../../../docs/adr/007-game-asset-distribution.md) — this is a
+summary of it, not a second opinion.**
+
 - **IP owner:** Warner Bros. Games (via Monolith Productions). GT Interactive
   (later Infogrames → Atari) held only publishing rights.
   <https://en.wikipedia.org/wiki/Blood_(video_game)>
 - The 1997 Blood shareware ("The Way of All Flesh") circulates widely as
   abandonware. Unlike id's DOOM shareware, it has no explicit free-redistribution
-  grant; shipping it here is a deliberate owner decision for this beta-gated,
-  non-commercial preview — **not** a claim that it is freely redistributable.
+  grant; shipping it here is a deliberate owner decision — **not** a claim that
+  it is freely redistributable.
+- ⚠ The rationale originally recorded here was "everything in this repo is
+  beta-gated / pre-public / non-commercial". The **deploys** are beta-gated; the
+  **repository is public**, so the bytes above are publicly cloneable. ADR-007
+  §"Consequences 2" states this plainly and leaves the keep-or-remove call to the
+  owner. Nothing here was removed on the strength of an agent's reading.
 - The **full game's** data is never shipped or auto-fetched — it is the
   user-supplied override only.
 - The **engine** (NBlood, GPL-2.0 + the Build engine under Ken Silverman's

@@ -2,15 +2,19 @@
 //
 // Per-browser persistence for USER-SUPPLIED Blood game data.
 //
-// Blood's game files (BLOOD.RFF / GUI.RFF / SOUNDS.RFF / *.ART / *.DAT) are
-// proprietary + NOT redistributable (Warner Bros. owns the IP), so they can
-// NEVER live on the server — locally `task setup:blood` drops them into
-// static/blood/, but on the HOSTED preview the owner can't put them there.
+// This store is for the FULL-GAME OVERRIDE only. The 1997 shareware subset
+// (episode 1) is bundled + served from static/blood/, so the card boots
+// out-of-box without touching IndexedDB at all — see
+// docs/adr/007-game-asset-distribution.md.
 //
-// So the BLOOD card lets the owner pick their own data folder/files in the
-// browser; we cache the raw bytes in IndexedDB keyed by (uppercased) filename
-// so they only ever pick ONCE. On reload the runtime auto-restores from IDB
-// and boots straight into the game — no re-pick.
+// FULL-GAME data (all episodes: the big BLOOD.RFF, TILES000.ART, …) is Warner
+// Bros. IP and is never shipped or auto-fetched, so it can NEVER live on the
+// server. Locally `task setup:blood` copies a user's own copy into
+// static/blood/; on the HOSTED preview there is nowhere to put it. So the card
+// lets the owner pick their own data folder/files in the browser; we cache the
+// raw bytes in IndexedDB keyed by (uppercased) filename so they only ever pick
+// ONCE. On reload the runtime auto-restores from IDB (taking priority over the
+// bundled shareware) and boots straight into the full game — no re-pick.
 //
 // Mirrors the deliberate shape of video-file-store.ts:
 //   * dependency-free raw IndexedDB (no idb-keyval),

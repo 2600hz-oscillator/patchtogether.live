@@ -18,10 +18,15 @@
 // native/nblood/bloodgeneric_patchtogether.cpp): bpt_init boots it to the first
 // presented frame + suspends; each bpt_tick resumes it to the next frame.
 //
-// DATA: Blood game files (BLOOD.RFF / GUI.RFF / SOUNDS.RFF / TILES000.ART / …)
-// are user-supplied + NOT redistributable (native/nblood/PHASE0-STATUS.md §3).
-// Without them the engine aborts in its resource loader, so the card shows a
-// "Blood data missing — run `task setup:blood`" overlay (no out-of-box play).
+// DATA (see docs/adr/007-game-asset-distribution.md — the canonical answer;
+// PHASE0-STATUS.md §3's "user-supplied only" policy is SUPERSEDED):
+// the 1997 SHAREWARE set (episode 1) is BUNDLED + committed under static/blood/,
+// so the card boots OUT-OF-BOX — loadBloodData() fetches it below and no picker
+// is needed. FULL-GAME data (all episodes) stays user-supplied: `task
+// setup:blood` locally, or the in-card picker → setInjectedBloodData(), which
+// takes priority over the served bundle. If the REQUIRED RFFs cannot be
+// resolved at all the engine would abort in its resource loader, so the card
+// shows a "Blood data missing" overlay instead of booting.
 
 /** The subset of the emcc Module surface our shim talks to. */
 export interface BloodModule {
@@ -56,7 +61,7 @@ export interface BloodLoadResult {
 }
 
 const WASM_SHIM_URL = '/blood/blood.js';
-const DATA_DIR_URL = '/blood'; // served static dir (user-supplied via task setup:blood)
+const DATA_DIR_URL = '/blood'; // served static dir: the bundled shareware, or whatever `task setup:blood` copied over it
 
 // The required data files Blood loads at startup (blood.cpp: gSysRes/gGuiRes/
 // gSoundRes.Init). These three MUST be present or the engine aborts in its
@@ -115,8 +120,9 @@ export function hasInjectedBloodData(): boolean {
 /** Resolve the Blood data files + any REQUIRED ones still missing.
  *  PRIORITY: injected (in-browser-picked / IndexedDB-restored) files first;
  *  only fall back to the /blood/ server fetch when nothing is injected (the
- *  local `task setup:blood` path). The card surfaces `missing` as the
- *  "load your data" prompt. We never ship these — they're user-provided. */
+ *  bundled-shareware path). The card surfaces `missing` as the "load your data"
+ *  prompt. We ship the SHAREWARE subset only; full-game data is never shipped
+ *  and never auto-fetched (docs/adr/007-game-asset-distribution.md). */
 export async function loadBloodData(): Promise<{ files: BloodDataFile[]; missing: string[] }> {
   // Injected (in-browser) data wins — this is the hosted-preview path.
   if (injectedFiles.length > 0) {

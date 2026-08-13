@@ -2,6 +2,11 @@
 
 The DOOM module ships **without** `DOOM1.WAD` in the repo. The shareware
 WAD is ~4.2 MB of binary game data that we don't want in git history.
+
+> Why this differs from BLOOD (which *does* commit its shareware data):
+> [ADR-007 — game-asset distribution](../../../../docs/adr/007-game-asset-distribution.md).
+> DOOM's shareware is explicitly redistributable and we skip it for **size**;
+> Blood's is not, and is committed on an owner decision. Both are recorded there.
 At runtime, the first user to spawn a DOOM module on their machine
 fetches `/doom/DOOM1.WAD` from the dev/prod static server; the browser's
 Service Worker + Cache API keeps it locally thereafter (no per-spawn

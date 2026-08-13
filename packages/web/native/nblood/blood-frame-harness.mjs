@@ -8,12 +8,13 @@
 // BLOOD_OUT=blood-node BLOOD_ENVIRONMENT=node):
 //   flox activate -- node packages/web/native/nblood/blood-frame-harness.mjs
 //
-// Game data (BLOOD.RFF / TILES000.ART) is user-supplied + NOT redistributable
-// (PHASE0-STATUS.md §3). If a BLOOD_DATA dir is provided we write its files into
-// MEMFS so the engine reaches the real game render; with NO data the engine
-// reaches its pre-game / data-missing screen, which STILL paints a frame — and
-// that pre-game frame is what the kill-gate asserts when no lawful data is
-// available. Either way we prove the software-render path produces pixels.
+// Game data: point BLOOD_DATA at a data dir and we write its files into MEMFS so
+// the engine reaches the real game render — normally the BUNDLED shareware set
+// at packages/web/static/blood/ (committed; see
+// docs/adr/007-game-asset-distribution.md), or a full-game copy you own. With NO
+// data the engine reaches its pre-game / data-missing screen, which STILL paints
+// a frame — that pre-game frame is what the kill-gate falls back to. Either way
+// we prove the software-render path produces pixels.
 
 import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs';
 import { join, basename } from 'node:path';

@@ -57,10 +57,12 @@
 #   PHASE0-STATUS.md §1) and ship the matching NOTICE.md, exactly like
 #   native/doomgeneric/NOTICE.md does for DOOM.
 #
-# ASSETS: BLOOD.RFF / TILES.ART / *.DAT are NOT bundled (proprietary, NOT
-#   redistributable — unlike the DOOM shareware WAD). The Blood module loads
-#   them at runtime from /blood/ (user-provided via `task setup:blood`). See
-#   packages/web/static/blood/README.md.
+# ASSETS: the 1997 SHAREWARE data set (episode 1) IS bundled + committed under
+#   static/blood/; the module fetches it from /blood/ at runtime and boots
+#   out-of-box. FULL-GAME data (TILES000.ART, the big BLOOD.RFF, …) is NOT
+#   bundled and never auto-fetched — it is the user-supplied override via
+#   `task setup:blood` or the in-card picker. Canonical answer (incl. the legal
+#   status): docs/adr/007-game-asset-distribution.md.
 
 set -euo pipefail
 
