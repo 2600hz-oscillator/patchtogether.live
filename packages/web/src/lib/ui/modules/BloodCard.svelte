@@ -10,9 +10,11 @@
   // keys drive the marine instead of sliding the card. We route the key to the
   // runtime via the engine extras.
   //
-  // DATA: Blood files are user-supplied + NOT redistributable. With them missing
-  // the card shows a "Blood data missing — run `task setup:blood`" overlay
-  // (no out-of-box play, unlike DOOM). See native/nblood/PHASE0-STATUS.md §3.
+  // DATA: the 1997 shareware set is bundled + committed, so this card boots
+  // OUT-OF-BOX (like DOOM). The "Load full Blood data…" picker is the optional
+  // full-game override (cached in IndexedDB). The "Blood data missing" overlay
+  // is the failure path — it means the bundled files did not resolve.
+  // See docs/adr/007-game-asset-distribution.md.
 
   import { onMount, onDestroy } from 'svelte';
   import { type NodeProps } from '@xyflow/svelte';

@@ -732,13 +732,17 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // host migration + spectator-frame relay is the follow-up.
   doom: 'live game-loop framebuffer defeats deterministic capture; unit suites cover TS shim + presence + CV-gate edge detector',
   // BLOOD — NBlood (Build engine) port. Same rationale as DOOM: a live
-  // game-loop framebuffer defeats deterministic capture. Additionally the
-  // game data (BLOOD.RFF/GUI.RFF/SOUNDS.RFF/TILES000.ART) is user-supplied +
-  // gitignored + NOT redistributable, so CI has no data — the card only ever
-  // shows the "data missing — run task setup:blood" overlay on the runner, and
-  // there is no rendered frame to baseline. Unit suites cover the TS shim
-  // (blood-runtime) + the CV-gate scancode map (blood-keys).
-  blood: 'live game-loop framebuffer + user-supplied non-redistributable data (no frame on CI) defeats deterministic capture; unit suites cover blood-runtime shim + blood-keys scancode map',
+  // game-loop framebuffer defeats deterministic capture.
+  // ⚠ CORRECTED 2026-08-13 (#1497): this used to read "user-supplied +
+  // gitignored + NOT redistributable, so CI has no data … the card only ever
+  // shows the data-missing overlay". That was false in every clause. The 1997
+  // shareware set IS committed (ADR-007), ci.yml materialises it from LFS into
+  // the preview bundle, and blood-mount.spec.ts asserts the data-missing prompt
+  // does NOT appear on CI. The card boots and the menu ANIMATES by design (the
+  // engine-clock fix, PHASE1-STATUS.md §3) — which is the real, and sufficient,
+  // reason a screenshot of it cannot be a baseline. Unit suites cover the TS
+  // shim (blood-runtime) + the CV-gate scancode map (blood-keys).
+  blood: 'live game-loop framebuffer defeats deterministic capture: the bundled shareware boots on CI and the main menu animates by design (engine-clock fix), so successive captures differ by construction — NOT a data-availability exemption (the data is committed; see docs/adr/007-game-asset-distribution.md); unit suites cover blood-runtime shim + blood-keys scancode map',
   // WARREN'S SPECTRUM (phase 1, 2026-08-02) — inherits the exemption its
   // `callsine` predecessor carried. The card ships with existing primitives
   // (2 Fader rows + PatchPanel) because the generic FACEPLATE PLATFORM is

@@ -93,7 +93,7 @@ tasks:
           fi
         fi
   setup:blood:
-    desc: 'Install Blood game DATA (BLOOD.RFF + TILES*.ART + RFF/DAT/MAP) into packages/web/static/blood/ for the (planned) BLOOD module. Blood data is PROPRIETARY + user-provided (NOT freely redistributable, unlike the DOOM shareware WAD — see static/blood/README.md). Usage: `task setup:blood BLOOD_ASSETS=/path/to/your/blood/install` — defaults to ~/blood.'
+    desc: 'Install FULL-GAME Blood DATA (BLOOD.RFF + TILES*.ART + RFF/DAT/MAP) from a copy you own into packages/web/static/blood/, to play all episodes. NOT required to run the BLOOD module: the 1997 shareware subset (episode 1) is BUNDLED + committed, so the card boots out-of-box — this task is the OVERRIDE. It copies OVER the bundled shareware, and the shareware filenames are TRACKED (see the warning it prints). Full-game data is never shipped. Provenance + legal status: docs/adr/007-game-asset-distribution.md. Usage: `task setup:blood BLOOD_ASSETS=/path/to/your/blood/install` — defaults to ~/blood.'
     vars:
       BLOOD_ASSETS: '{{.BLOOD_ASSETS | default "~/blood"}}'
     cmds:
@@ -106,8 +106,10 @@ tasks:
           echo "BLOOD: asset directory not found at $SRC"
           echo "       Pass BLOOD_ASSETS=/path/to/your/blood/install explicitly, or put your"
           echo "       Blood install (with BLOOD.RFF) at ~/blood and re-run \`task setup:blood\`."
-          echo "       Blood data is proprietary + user-provided — see"
-          echo "       packages/web/static/blood/README.md for the legal status + file list."
+          echo "       You do NOT need this to run the BLOOD module — the 1997 shareware"
+          echo "       (episode 1) is bundled + committed and the card boots out-of-box."
+          echo "       This task is the FULL-GAME override (all episodes), from a copy you own."
+          echo "       Provenance + legal status: docs/adr/007-game-asset-distribution.md."
           exit 1
         fi
         # BLOOD.RFF is the required anchor file — fail clearly if it's absent
@@ -126,15 +128,31 @@ tasks:
         # the whole dir — only the known game-data extensions — to avoid pulling
         # in EXEs / config / saves.
         copied=0
+        COPIED=""
         while IFS= read -r f; do
           cp "$f" "$DEST/"
           echo "BLOOD:   + $(basename "$f")"
+          COPIED="$COPIED $DEST/$(basename "$f")"
           copied=$((copied+1))
         done < <(find "$BASE" -maxdepth 1 -type f \( \
           -iname '*.RFF' -o -iname '*.ART' -o -iname '*.DAT' -o -iname '*.MAP' \))
         echo "BLOOD: installed $copied data file(s) → $DEST"
-        echo "BLOOD: these files are .gitignored — your local copy will not enter git history."
-        echo "BLOOD: Blood data is PROPRIETARY (Warner Bros. IP) — never commit or redistribute it."
+        # The bundled 1997 shareware filenames are TRACKED (un-ignored in
+        # .gitignore, LFS — ADR-007), so copying a full-game file over one of
+        # them is a MODIFIED tracked file, NOT an ignored local copy. Ask git
+        # which ones rather than restating the set here, so this can't drift.
+        # Scoped to the paths WE just wrote — asking about $DEST as a whole
+        # would also report an unrelated edit (e.g. to README.md) as ours.
+        DIRTY=""
+        [ -n "$COPIED" ] && DIRTY="$(git status --porcelain -- $COPIED | awk '{print $NF}')"
+        if [ -n "$DIRTY" ]; then
+          echo "BLOOD: ⚠ you overwrote TRACKED bundled shareware file(s) — do NOT commit these:"
+          printf 'BLOOD:   %s\n' $DIRTY
+          echo "BLOOD:   restore the bundled shareware with: git checkout -- $DEST"
+        fi
+        echo "BLOOD: any file NOT in the bundled set (TILES000.ART, *.MAP, …) is .gitignored."
+        echo "BLOOD: full-game Blood data is Warner Bros. IP — never commit or redistribute it."
+        echo "BLOOD: what ships in-repo and why: docs/adr/007-game-asset-distribution.md"
 
   # ---------------- Dev loop ----------------
   dev:

@@ -65,7 +65,7 @@ tracked-to-zero backlog (reconcile = fix or delete); see the roadmap.
 - `b3ntb0x` — animated NTSC composite simulation (per-line sync drift + frame persistence) defeats deterministic capture
 - `backdraft` — BOTH original reasons are gone — the card is a fixed 4hp×3u tier (corner-resize retired) and its in-rack feedback DIS…
 - `bentbox` — animated CRT simulation (feedback + per-line time drift) defeats deterministic capture
-- `blood` — live game-loop framebuffer + user-supplied non-redistributable data (no frame on CI) defeats deterministic capture
+- `blood` — live game-loop framebuffer defeats deterministic capture: the bundled shareware boots on CI and the main menu animate…
 - `bluebox` — VRT baseline pending — deterministic keypad card (12 static buttons, no canvas/animation)
 - `cadillac` — no card render — roaming overlay sprite, not a SvelteFlow node body.
 - `cameraInput` — live MediaStream defeats deterministic capture
@@ -145,7 +145,7 @@ tracked-to-zero backlog (reconcile = fix or delete); see the roadmap.
 - `b3ntb0x` — animated NTSC composite with a ±580 per-frame variance floor that swamps every input in the 5-snapshot window (bend_a…
 - `backdraft` — animated-video VARIANCE-FLOOR class (cf.
 - `bentbox` — deep shader chain
-- `blood` — data-gated emulator: outputs need user-supplied, non-redistributable Blood data (BLOOD.RFF/GUI.RFF/SOUNDS.RFF, gitign…
+- `blood` — boot-gated, not data-gated: the bundled shareware is committed + materialized on CI (docs/adr/007-game-asset-distribu…
 - `buggles` — self-noise class: the observed `smooth` output is a slow random walk with a low RMS (~0.015) + high RELATIVE jitter,…
 - `cameraInput` — requires fake-camera browser flag
 - `cartesian` — poly sequencer outputs
@@ -334,7 +334,7 @@ tracked-to-zero backlog (reconcile = fix or delete); see the roadmap.
 <sub>e2e/tests/_per-module-per-port-shared.ts</sub>
 - `archivist` — all outputs (image/video/audio/gates/playhead) are idle until an archive.org item loads (external network)
 - `audioIn` — requires live mic input
-- `blood` — all outputs need user-supplied, non-redistributable Blood data (BLOOD.RFF/GUI.RFF/SOUNDS.RFF, gitignored, absent in C…
+- `blood` — boot cost, not data: the bundled shareware IS committed + materialized on CI (docs/adr/007-game-asset-distribution.md…
 - `bluebox` — silent until a button is pressed
 - `cvBuddy` — passthrough note outputs (silent until inputs driven) + owner-only run/clock that need a running TIMELORDE transport
 - `cvBuddyMini` — passthrough note outputs (silent until inputs driven) + owner-only run/clock that need a running TIMELORDE transport

@@ -79,13 +79,17 @@ const SKIP_OUTPUT_ALIVE: Record<string, string> = {
   //   - module def shape:    doom.test.ts
   //   - video runtime:       doom-wasm.spec.ts (canvas pixel variance)
   doom: 'WASM load + game init + first sound effect exceeds 800ms smoke window; covered by doom-wasm.spec.ts',
-  // BLOOD — like DOOM, the NBlood engine needs the non-redistributable Blood
-  // data (BLOOD.RFF / *.MAP / *.ART), which is gitignored and absent on CI.
-  // Without it the engine idles, so audio_l/audio_r never cross the bare-spawn
-  // peak floor. Dedicated coverage: blood-runtime.test.ts (PCM fill once the
-  // engine ticks) + blood-keys.test.ts / blood-data-store.test.ts (input + data
-  // gating), and blood-mount.spec.ts (card mount + spawn smoke).
-  blood: 'NBlood needs the non-redistributable Blood data (BLOOD.RFF/*.MAP, gitignored + absent on CI); the engine idles without it so audio_l/audio_r stay silent. Covered by blood-runtime.test.ts + blood-mount.spec.ts.',
+  // BLOOD — exactly the DOOM reason above, and ⚠ NOT the data reason this entry
+  // used to give (corrected 2026-08-13, #1497: the 1997 shareware IS committed
+  // and CI materializes it — see docs/adr/007-game-asset-distribution.md). The
+  // 800 ms alive-smoke window cannot cover a 5.9 MB ASYNCIFY WASM load + full
+  // Build engine init, which the dedicated specs budget 20–25 s for; and even
+  // once booted the engine sits in the MENU, so audio needs the menu driven into
+  // a level before it crosses the peak floor. Dedicated coverage:
+  // blood-audio-output.spec.ts (menu→level→fire→SCOPE peak), blood-mount.spec.ts
+  // (out-of-box boot), blood-runtime.test.ts / blood-keys.test.ts /
+  // blood-data-store.test.ts.
+  blood: 'WASM load + Build engine init + driving the menu into a level exceeds the 800ms smoke window (the dedicated specs budget 20-25s for blood-ready); covered by blood-audio-output.spec.ts + blood-mount.spec.ts + blood-runtime.test.ts',
   // VIDEOBOX — file-input source. Until the user picks a local video
   // file the audio outputs emit silent ConstantSourceNodes (so the
   // graph stays patchable), which by definition can't clear the

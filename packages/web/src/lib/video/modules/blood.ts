@@ -10,9 +10,12 @@
 // BloodCard. The multiplayer lockstep stack (doom-lockstep/doom-netcode) is
 // reused VERBATIM in a later phase; Phase 1 ships single-player only.
 //
-// DATA: Blood game files are user-supplied + NOT redistributable
-// (native/nblood/PHASE0-STATUS.md §3) — there is no out-of-box play. With no
-// data the card shows "Blood data missing — run `task setup:blood`".
+// DATA: the 1997 SHAREWARE set (episode 1) is BUNDLED + committed under
+// static/blood/, so there IS out-of-box play; the full game stays a
+// user-supplied override (picker or `task setup:blood`). Canonical answer:
+// docs/adr/007-game-asset-distribution.md (it supersedes PHASE0-STATUS.md §3,
+// which still says "user-supplied only"). If the required RFFs cannot be
+// resolved at all the card shows "Blood data missing".
 //
 // Inputs (CV-typed gates — single player, one group, unlike DOOM's 4 per-slot):
 //   up/down/left/right, fire, altfire, use, jump, crouch, weapnext/weapprev,
@@ -22,11 +25,10 @@
 //   audio_l / audio_r (audio): the live game-audio mixer (MultiVoc SFX + OPL3
 //     music), captured via a blood-pcm AudioWorklet (see setupPcmWorklet).
 //
-// NOTE (kill-gate status): blood.wasm LINKS + the engine boots in WASM; the
-// only thing gating a rendered frame is the user-supplied data
-// (native/nblood/PHASE1-STATUS.md). The factory is wired so that the moment a
-// tester supplies BLOOD.RFF/GUI.RFF/SOUNDS.RFF via `task setup:blood`, the card
-// renders the game.
+// NOTE (kill-gate status): blood.wasm LINKS and the engine renders the real
+// BLOOD main menu from the bundled shareware (PHASE1-STATUS.md §2) — the
+// kill-gate is PASSED, nothing is gating a rendered frame. `task setup:blood`
+// only widens episode 1 to the full game.
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';

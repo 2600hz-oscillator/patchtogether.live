@@ -17,6 +17,7 @@ just enough.
 | 004 | [CV range convention](004-cv-range-convention.md)              | Accepted                 |
 | 005 | [Persistence formats: server Y-state vs. envelope JSON](005-persistence-envelope.md) | Accepted                 |
 | 006 | [Capacity + auth gate ordering for rackspace joins](006-rackspace-join-capacity.md) | Accepted (with known race) |
+| 007 | [Game-asset distribution (DOOM + Blood)](007-game-asset-distribution.md) | Accepted (with an OPEN owner decision) |
 
 ## What goes in an ADR
 

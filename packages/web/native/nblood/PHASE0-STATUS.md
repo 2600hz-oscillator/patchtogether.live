@@ -212,6 +212,17 @@ flox activate -- bash packages/web/native/build-blood-wasm.sh
 
 ## 3. SHAREWARE REDISTRIBUTION — verdict: NOT redistributable (assets are user-supplied)
 
+> ⚠ **SUPERSEDED as POLICY by [ADR-007](../../../../docs/adr/007-game-asset-distribution.md)
+> (2026-08-13, #1497).** The owner later decided to bundle the 1997 shareware
+> subset anyway; `packages/web/static/blood/` commits it and CI materializes it.
+> This section's *legal research* stands and is **not** rebutted — no affirmative
+> redistribution grant exists for the Blood shareware. What changed is the risk
+> decision, not the analysis. Read the conclusion below as the reasoning that led
+> to the ADR's open owner decision, **not** as a description of the tree: the
+> claims "the project never ships or auto-fetches it" and "out-of-box play is
+> therefore not possible" are no longer true, and four e2e exemptions that cited
+> them as fact had to be corrected.
+
 - **Blood IP owner:** Warner Bros. Games (via Monolith). GT Interactive
   (→ Infogrames → Atari) held only **publishing** rights, not the IP. Monolith
   sold publishing rights but kept the IP, which passed to WB.

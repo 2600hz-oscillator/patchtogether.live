@@ -232,7 +232,17 @@ export const EXEMPT_OUTPUT_EMIT_MODULES: Record<string, string> = {
   // specs simulate full games + drive scoring deterministically.
   modtris: 'line_cleared/overfill only fire after ~10 piece drops; covered by modtris-related specs (simulated)',
   pong:    'score_left/score_right only fire on ball-miss after bounces; covered by pong-related specs',
-  blood: 'all outputs need user-supplied, non-redistributable Blood data (BLOOD.RFF/GUI.RFF/SOUNDS.RFF, gitignored, absent in CI) — the NBlood engine aborts in its resource loader without it, so the video surface is the idle shader + audio is the silent PCM stub; covered by blood-keys.test.ts + the blood-frame-harness (run locally with owned data). See native/nblood/PHASE1-STATUS.md.',
+  // BLOOD — ⚠ REASON CORRECTED 2026-08-13 (#1497). The old reason ("data is
+  // user-supplied, non-redistributable, gitignored, absent in CI — the engine
+  // aborts in its resource loader") was false in every clause: the 1997
+  // shareware set is COMMITTED (ADR-007), ci.yml materialises it into the
+  // preview bundle these shards download, and the engine boots. The real reason
+  // is BOOT COST vs this sweep's window: the dedicated specs allow 20–25 s for
+  // `blood-ready` (a 5.9 MB ASYNCIFY WASM through the whole Build engine init)
+  // and the sweep's emit window is ~2 s. After boot the engine sits in the MENU;
+  // audio_l/audio_r only carry level music + SFX once something drives the menu
+  // into a level (8 scancodes), which blood-audio-output.spec.ts does.
+  blood: 'boot cost, not data: the bundled shareware IS committed + materialized on CI (docs/adr/007-game-asset-distribution.md), but reaching `blood-ready` takes the dedicated specs 20–25 s (5.9 MB ASYNCIFY WASM + full Build engine init) against this sweep\'s ~2 s emit window, and after boot the engine idles in the MENU until something drives it into a level; real coverage = blood-audio-output.spec.ts (menu→level→fire→SCOPE peak) + blood-ingame/blood-mount/blood-keyboard specs + blood-keys.test.ts',
   // ── Driver page.evaluate / postSpawn hangs ──
   // These modules' drivers time out under CI load — the per-output
   // serial loop (8 × 20 s, 7 × 20 s) exhausts the test budget before
