@@ -160,6 +160,51 @@ for (const type of TYPES) {
       { timeout: 30_000 },
     );
 
+    // ── REMOVE THE FIXTURE'S HIDDEN DEADLINE (#1553) ───────────────────────
+    //
+    // MEASURED, in-page, sampling every 750 ms (not inferred):
+    //
+    //   t=3752ms  currentTime=3.756  paused=false ended=false
+    //   t=4501ms  currentTime=4.004  paused=TRUE  ended=TRUE   <- clip ran out
+    //   t=9005ms  currentTime=4.004  paused=TRUE  ended=TRUE
+    //
+    // `lobby-clip.webm` is 4.004 s (its EBML Duration header), and a non-looping
+    // <video> sets `paused = true` the moment it ENDS. A second probe confirmed
+    // the collapse does NOT restart it: once ended, it stays ended at 4.004 s
+    // forever. So "media must still be PLAYING after the collapse" can fail for
+    // the most boring reason available — the clip finished — and that is exactly
+    // how it failed in CI, reporting `currentTime: 4.004`, matching the file
+    // duration to the millisecond.
+    //
+    // The media-clock wait below is already renderer-independent and STAYS that
+    // way. What it lacked was headroom against the END of the fixture, and that
+    // margin shrinks as setup time grows on a loaded runner — so the test raced
+    // a budget that is a property of the FIXTURE, not of the code under test.
+    //
+    // Two changes, both required:
+    //   * `loop` — the element can never reach the ended/paused state.
+    //   * seek to 0 — `loop` ALONE is insufficient. If `tBefore` lands late, the
+    //     `tBefore + ADVANCE_S` target can exceed the duration, and a looping
+    //     clock wraps to 0 and never reaches it. Rewinding guarantees a full
+    //     clip of runway ahead of the target.
+    await page.evaluate(() => {
+      for (const v of document.querySelectorAll('video')) {
+        const el = v as HTMLVideoElement;
+        if (!(el.currentSrc || el.getAttribute('src'))) continue;
+        el.loop = true;
+        if (el.ended || el.paused) void el.play().catch(() => {});
+        el.currentTime = 0;
+      }
+    });
+    await page.waitForFunction(
+      () => [...document.querySelectorAll('video')].some((v) => {
+        const el = v as HTMLVideoElement;
+        return !el.paused && el.currentTime > 0.05;
+      }),
+      undefined,
+      { timeout: 30_000 },
+    );
+
     const before = await liveMedia(page);
     const playingBefore = before.filter((m) => !m.paused);
     expect(playingBefore.length, `something must be playing before the collapse: ${JSON.stringify(before)}`)
