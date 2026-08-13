@@ -279,11 +279,36 @@ tasks:
     # Side effect: emits e2e/.generated/registry-manifest.json via
     # packages/web/src/lib/dev/registry-manifest.test.ts. Downstream
     # `task e2e` + `task vrt` read it via e2e/tests/_registry.ts.
+    #
+    # test:present-shell is NOT reached by any `-w` / `--workspaces` form:
+    # present-shell is deliberately not an npm workspace, so it has to be named
+    # here or it is in no lane at all (#1496).
     cmds:
       - npm test -w {{.DSP}}
       - npm test -w {{.SERVER}}
       - npm test -w {{.WEB}}
+      - task: test:present-shell
       - task: test:scripts
+
+  test:present-shell:
+    desc: Run packages/present-shell's node:test suite (the package is deliberately NOT an npm workspace)
+    # WHY THIS TARGET EXISTS AT ALL. present-shell (the Electron kiosk shell for
+    # multi-projector venues) is deliberately absent from root `workspaces`: its
+    # `electron` devDependency postinstalls a ~107 MB platform binary that
+    # ci.yml's ~/.npm + ms-playwright cache does not cover, and root install runs
+    # in every CI job. That exclusion was right; the consequence was not —
+    # `npm test --workspaces` never reached it, so its parse-features tests had
+    # never run in CI since the package landed (#1496).
+    #
+    # Its tests are pure `node:test` + `node:assert` against a dependency-free
+    # .cjs module, so they run here with NOTHING installed — the package stays
+    # inside the required unit lane without the repo ever paying for electron.
+    #
+    # scripts/package-workspace-membership.test.ts asserts THIS file still names
+    # the test entry point below, so renaming or dropping the line reddens the
+    # unit lane rather than silently un-testing the package again.
+    cmds:
+      - node --test packages/present-shell/parse-features.test.cjs
 
   test:one:
     desc: |

@@ -16,6 +16,15 @@ database, and an auth provider.
 | Auth | Clerk (session JWTs) | Clerk-hosted; verified locally in web + relay |
 | DSP | Faust `.dsp` → WASM + TS AudioWorklets | client browser |
 | Emulator modules | Emscripten-compiled C (DOOM, …) → WASM | client browser |
+| Present shell | Electron kiosk wrapper (`packages/present-shell/`) — loads the hosted web app, no runtime bridge | operator's machine, hand-run at a venue |
+
+> **`packages/present-shell/` is deliberately NOT an npm workspace** — its
+> `electron` devDependency postinstalls a ~107 MB platform binary that CI's npm
+> cache does not cover, and root install runs in every CI job. Its tests are
+> dependency-free `node:test` and DO run in the required unit lane via
+> `task test:present-shell`; `scripts/package-workspace-membership.test.ts`
+> holds that wiring in place and forbids any *other* package from being outside
+> both the workspace graph and CI.
 
 ## Data-flow diagram
 

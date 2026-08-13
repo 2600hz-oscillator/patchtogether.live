@@ -97,6 +97,10 @@ Full text in `CLAUDE.md`; these are the ones worth knowing before you start.
 packages/web/        SvelteKit app — UI, audio graph, modules, docs
 packages/dsp/        Faust DSP → WASM worklets
 packages/server/     collaboration relay
+packages/present-shell/  Electron kiosk shell (multi-projector). NOT an npm
+                     workspace on purpose — electron's ~107 MB binary stays out
+                     of CI installs; its node:test suite still runs in the unit
+                     lane via `task test:present-shell`
 art/                 audio regression harness
 e2e/                 Playwright: tests/ (functional) + vrt/ (visual)
 scripts/             CI tooling, attests, generators

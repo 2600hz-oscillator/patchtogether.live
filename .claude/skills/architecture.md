@@ -22,6 +22,13 @@ packages/
   server/     — multiplayer Y.Doc sync server (Hocuspocus, runs on Fly.io)
   dsp/        — AudioWorklet processors; one .ts per module → one .js bundle
   art/        — Audio Regression Test scenarios (Vitest)
+  present-shell/ — Electron kiosk shell for multi-projector venues. NOT an npm
+                   workspace on purpose (its electron devDep postinstalls a
+                   ~107 MB binary CI's cache misses); its dependency-free
+                   node:test suite still runs in the unit lane via
+                   `task test:present-shell`, and
+                   scripts/package-workspace-membership.test.ts keeps every
+                   package in one of those two states.
 e2e/          — Playwright (E2E + VRT) + chaos bots
 art/          — ART scenario folders (sometimes mirrored at top level)
 .github/workflows/ — CI, deploy, chaos cron
