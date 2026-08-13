@@ -48,10 +48,13 @@ import { spawnPatch } from './_helpers';
 // rear-view-patching / workflow-rear-card precedent).
 test.describe.configure({ mode: 'serial' });
 
-/** channel-columns.ts geometry (mirrors workflow-channel-columns.spec.ts). */
+/** channel-columns.ts geometry (mirrors workflow-channel-columns.spec.ts). The
+ *  drop hit-test is 2-D (laneTargetForFlowPoint): the anchor must be inside the
+ *  painted band in Y as well as inside a column in X. */
 const COLUMN_W = 765;
+const COLUMN_BASELINE_Y = 4320; // COLUMN_SLOT_H(720) × COLUMN_MAX_SLOTS(6)
 function colPos(ch: number): { x: number; y: number } {
-  return { x: (ch - 1) * COLUMN_W + 60, y: 40 };
+  return { x: (ch - 1) * COLUMN_W + 60, y: COLUMN_BASELINE_Y - 40 };
 }
 
 // ---------------------------------------------------------------------------

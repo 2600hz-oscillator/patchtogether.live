@@ -75,9 +75,13 @@ const SHELL_BADGE_CLEARANCE_Y = 90; // channel-columns.ts SHELL_LANE_BADGE_CLEAR
  *  216px band (columnCardX at the shell pitch) — the value the drop must persist. */
 const shellColCardX = (ch: number) => (ch - 1) * SHELL_COLUMN_W + (SHELL_COLUMN_W - SHELL_TILE_W) / 2;
 
-/** A flow-space spawn anchor inside channel column `ch` (X selects the column). */
+/** A flow-space spawn anchor inside channel column `ch`'s painted band. X selects
+ *  the column; Y must land in the band `[laneTopY, COLUMN_BASELINE_Y)` — the drop
+ *  hit-test is 2-D (laneTargetForFlowPoint), so an anchor above the lanes is free
+ *  canvas. Just above the baseline is in-band at every lane height. */
+const LANE_ANCHOR_Y = COLUMN_BASELINE_Y - 40;
 function colPos(ch: number): { x: number; y: number } {
-  return { x: (ch - 1) * COLUMN_W + 60, y: 40 };
+  return { x: (ch - 1) * COLUMN_W + 60, y: LANE_ANCHOR_Y };
 }
 
 /** Wait until the Canvas dev spawn/viewport hooks are registered. */
@@ -330,7 +334,7 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
 
     // Anchor each spawn INSIDE the narrow band of columns 1..3 (X selects the
     // column at the tight pitch — the same frame the rendered lanes live in).
-    const shellColPos = (ch: number) => ({ x: (ch - 1) * SHELL_COLUMN_W + 30, y: 40 });
+    const shellColPos = (ch: number) => ({ x: (ch - 1) * SHELL_COLUMN_W + 30, y: LANE_ANCHOR_Y });
     const types = ['tidyVco', 'vca', 'delay'];
     for (let i = 0; i < types.length; i++) {
       await page.evaluate(
@@ -555,7 +559,7 @@ test.describe('P0.3b workflow-shell ?shell=1 bug fixes', () => {
         w.__setSpawnFlowPos(pos);
         w.__spawnFromPalette(type);
       },
-      { type, pos: { x: (ch - 1) * SHELL_COLUMN_W + 30, y: 40 } },
+      { type, pos: { x: (ch - 1) * SHELL_COLUMN_W + 30, y: LANE_ANCHOR_Y } },
     );
   }
 
@@ -947,7 +951,7 @@ test.describe('LANE HEADROOM: the band grows with the fullest stack (?shell=1)',
         w.__setSpawnFlowPos(pos);
         w.__spawnFromPalette(type);
       },
-      { type, pos: { x: (ch - 1) * SHELL_COLUMN_W + 30, y: 40 } },
+      { type, pos: { x: (ch - 1) * SHELL_COLUMN_W + 30, y: LANE_ANCHOR_Y } },
     );
   }
 
