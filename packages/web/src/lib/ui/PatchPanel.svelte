@@ -55,6 +55,8 @@
     type PortDescriptor,
   } from '$lib/ui/patch-panel-labels';
   import { collapseStereoPorts, type CollapsedPort } from '$lib/ui/stereo-jack-collapse';
+  import { expandedLeftIdsFor } from '$lib/ui/stereo-jack-expansion.svelte';
+  import { isExpandableStereoJackModule, stereoPairForPort } from '$lib/graph/stereo-pairs';
   import type { StereoPairDefLike } from '$lib/graph/stereo-pairs';
   import { connectDragState } from '$lib/ui/connect-drag-state.svelte';
   import {
@@ -202,24 +204,43 @@
     return node ? (defLookup(node.type) as StereoPairDefLike | undefined) : undefined;
   });
 
+  /** Pairs the USER has un-collapsed on THIS node, per direction (right-click →
+   *  "expand to L / R jacks"). Reading the reactive set here is what re-renders
+   *  every jack surface below the moment a jack is toggled — the store is the
+   *  single reader, so the rail dots, the drill rows and the back panel can
+   *  never disagree about which jacks are expanded. Empty for every module that
+   *  has not opted in, which is today's behaviour byte for byte. */
+  let expandedInputIds = $derived<ReadonlySet<string>>(
+    expandedLeftIdsFor(nodeId, 'input'),
+  );
+  let expandedOutputIds = $derived<ReadonlySet<string>>(
+    expandedLeftIdsFor(nodeId, 'output'),
+  );
+
   let inputGroups = $derived<GroupedPorts[]>(
     groupingStrategy === 'auto'
-      ? groupPortsByCableType(collapseStereoPorts(inputs, stereoDef, 'input'), 'input')
+      ? groupPortsByCableType(
+          collapseStereoPorts(inputs, stereoDef, 'input', expandedInputIds),
+          'input',
+        )
       : [],
   );
   let outputGroups = $derived<GroupedPorts[]>(
     groupingStrategy === 'auto'
-      ? groupPortsByCableType(collapseStereoPorts(outputs, stereoDef, 'output'), 'output')
+      ? groupPortsByCableType(
+          collapseStereoPorts(outputs, stereoDef, 'output', expandedOutputIds),
+          'output',
+        )
       : [],
   );
 
   // Flat COLLAPSED input/output lists across sections (the all-inputs /
   // all-outputs drill views on sectioned cards, the back panel, the rail dots).
   let allInputs = $derived<CollapsedPort[]>(
-    collapseStereoPorts(handleInputs, stereoDef, 'input'),
+    collapseStereoPorts(handleInputs, stereoDef, 'input', expandedInputIds),
   );
   let allOutputs = $derived<CollapsedPort[]>(
-    collapseStereoPorts(handleOutputs, stereoDef, 'output'),
+    collapseStereoPorts(handleOutputs, stereoDef, 'output', expandedOutputIds),
   );
 
   let hasInputs = $derived(allInputs.length > 0);
@@ -296,8 +317,12 @@
     groupingStrategy === 'sectioned'
       ? sections.map((s) => ({
           ...s,
-          inputs: s.inputs ? collapseStereoPorts(s.inputs, stereoDef, 'input') : undefined,
-          outputs: s.outputs ? collapseStereoPorts(s.outputs, stereoDef, 'output') : undefined,
+          inputs: s.inputs
+            ? collapseStereoPorts(s.inputs, stereoDef, 'input', expandedInputIds)
+            : undefined,
+          outputs: s.outputs
+            ? collapseStereoPorts(s.outputs, stereoDef, 'output', expandedOutputIds)
+            : undefined,
         }))
       : sections,
   );
@@ -501,7 +526,54 @@
       dispatchPortChannelMenu(e, port.id);
       return;
     }
-    if (direction === 'input' && port.cable === 'gate') openGateMidiMenu(e, port);
+    if (direction === 'input' && port.cable === 'gate') {
+      openGateMidiMenu(e, port);
+      return;
+    }
+    // 4. UNPATCHED AUDIO INPUT that is one half of an expandable stereo pair —
+    //    the only right-click on a jack that used to do NOTHING, and the exact
+    //    one the owner reached for: MIXMSTRS renders `ch1L`+`ch1R` as a single
+    //    `CH1` hole, so there was no surface at all for "show me the two legs".
+    dispatchStereoExpandMenu(e, port, direction);
+  }
+
+  /** The module type behind this node — read ONLY to resolve the expandable
+   *  stereo-jack opt-in (`EXPANDABLE_STEREO_JACK_MODULES`). */
+  let moduleType = $derived.by<string | undefined>(() => {
+    void nodesStructuralVersion();
+    void nodeVersion(nodeId);
+    return (patch.nodes[nodeId] as ModuleNode | undefined)?.type;
+  });
+
+  /**
+   * Open the expand/collapse menu for a jack that belongs to a derived stereo
+   * pair on an opted-in module. No-op (and NO preventDefault, so the browser
+   * menu still appears exactly as before) for everything else.
+   *
+   * Resolving the pair from the DEF rather than from the row is what makes this
+   * work in both states: a COLLAPSED row carries `siblingId`/`side`, an EXPANDED
+   * leg row is an ordinary single-port descriptor and carries neither, but both
+   * resolve to the same pair through `stereoPairForPort`. So the same gesture
+   * that expands a jack collapses it again from either leg.
+   */
+  function dispatchStereoExpandMenu(
+    e: MouseEvent,
+    port: CollapsedPort,
+    direction: 'input' | 'output',
+  ): void {
+    const host = hostEl;
+    if (!host || !stereoDef) return;
+    if (!isExpandableStereoJackModule(moduleType)) return;
+    const pair = stereoPairForPort(stereoDef, port.id, direction);
+    if (!pair) return;
+    e.preventDefault();
+    e.stopPropagation();
+    host.dispatchEvent(
+      new CustomEvent('patchpanel:stereoexpand', {
+        bubbles: true,
+        detail: { nodeId, portId: pair.left, direction, x: e.clientX, y: e.clientY },
+      }),
+    );
   }
 
   /** Open Canvas's patch-to picker for THIS output, with the "patch only L /
@@ -829,6 +901,11 @@
       // vanishes the moment the user picks "Unpatch", hiding the jack they
       // just emptied.
       if (target.closest('[data-testid="unpatch-menu"]')) return;
+      // Same argument, same shape, for the Canvas-owned STEREO EXPAND menu:
+      // portaled to <body>, opened FROM a row in this chrome, and acts on that
+      // row. Without this the panel closes on the click that expands the jack —
+      // so the two L/R holes the user just asked for are never on screen.
+      if (target.closest('[data-testid="stereo-expand-menu"]')) return;
       // A carry/patch-to picker owned by Canvas counts as "inside" — don't
       // dismiss the chrome out from under an in-flight patch.
       if (cascadeLockEngaged) return;
@@ -1136,7 +1213,10 @@
               aria-label={`patch ${resolveVerboseLabel(port)} input`}
               style:--jack-color={cableColorVar(port.cable)}
               onclick={() => onBackJackClick(port.id, 'input')}
-              oncontextmenu={(e) => dispatchUnpatchMenu(e, port.id, 'input', port.siblingId)}
+              oncontextmenu={(e) => {
+                if (dispatchUnpatchMenu(e, port.id, 'input', port.siblingId)) return;
+                dispatchStereoExpandMenu(e, port, 'input');
+              }}
             >
               <span class="jack-hole" data-patched={patched ? 'true' : 'false'} aria-hidden="true"></span>
               <span class="jack-label">{resolveVerboseLabel(port)}</span>

@@ -233,6 +233,55 @@ export function isMonoAudioPointModule(moduleType: string | undefined): boolean 
   return moduleType !== undefined && MONO_AUDIO_POINT_MODULES.has(moduleType);
 }
 
+// ---------------- EXPANDABLE STEREO JACKS (the un-collapse opt-in) ----------------
+
+/**
+ * Modules whose collapsed stereo jacks the USER may un-collapse into their two
+ * L/R legs, via right-click → "expand to L / R jacks".
+ *
+ * WHAT THIS GATES, AND WHAT IT DOES NOT. It gates the ENTRY POINT only — which
+ * modules offer the gesture. The mechanism itself (`stereo-jack-expansion` +
+ * `collapseStereoPorts`' `expandedLeftIds` argument) is module-agnostic and
+ * knows nothing about mixmstrs: flipping a module on here is a one-line change,
+ * and dropping the gate entirely (expand everywhere) is deleting the
+ * `isExpandableStereoJackModule` call at the two menu sites. That shape is
+ * deliberate — the owner asked for mixmstrs "for now" and said in the same
+ * breath "we will probably extend this to all our stereo ports" (2026-08-10).
+ *
+ * WHY IT IS NEEDED AT ALL. A collapsed jack is the right default: one cable,
+ * one gesture, both legs. But it makes a per-leg patch invisible — MIXMSTRS
+ * renders `ch1L`+`ch1R` as one `CH1` hole, so "put the left of this stereo
+ * source on ch1 L and the right on ch1 R" has no surface to point at, and the
+ * user cannot SEE which leg a cable landed on. Expanding shows both holes.
+ *
+ * Keyed by module `type` with the reason it is here — the same
+ * named-entry-with-a-reason discipline as `COLLAPSE_EXEMPT` and
+ * `MONO_AUDIO_POINT_MODULES`, and for the same reason: a predicate ("does it
+ * have lots of pairs?") would quietly recruit modules nobody audited.
+ *
+ * ANCHORED TO THE ARTIFACT: `stereo-pairs.test.ts` fails if an entry names a
+ * module type the live registry does not have, and fails if the named module
+ * derives no stereo pairs at all (an expand gesture with nothing to expand).
+ */
+export const EXPANDABLE_STEREO_JACK_MODULES: ReadonlyMap<string, string> = new Map([
+  [
+    'mixmstrs',
+    'MIXMSTRS is the rack mixer: every one of its audio rails is a declared ' +
+      'pair (`ch1L/R`..`ch8L/R`, `ret1L/R`, `ret2L/R`, `masterL/R`, ' +
+      '`send1L/R`, `send2L/R`), so EVERY audio jack on the card is collapsed ' +
+      'and none of the 26 legs is individually visible. It is also the module ' +
+      'where per-leg patching actually comes up — hardware returns arrive as ' +
+      'two independent mono points that have to land on a known side.',
+  ],
+]);
+
+/** Whether `moduleType` offers the right-click "expand to L / R jacks"
+ *  gesture — see `EXPANDABLE_STEREO_JACK_MODULES`. Undefined type ⇒ false
+ *  (the safe direction: jacks stay collapsed, which is today's behaviour). */
+export function isExpandableStereoJackModule(moduleType: string | undefined): boolean {
+  return moduleType !== undefined && EXPANDABLE_STEREO_JACK_MODULES.has(moduleType);
+}
+
 /** The COLLAPSE_EXEMPT key for a pair — the exact (module, direction, pair)
  *  triple. A def with no `type` can never produce a matching key. */
 export function collapseExemptKey(

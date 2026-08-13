@@ -441,6 +441,16 @@ test.describe('WORKFLOW audio I/O surface (🎧 always-on pinned AUDIO IN/OUT)',
     await expect(ch1).toBeVisible();
     await ch1.click();
 
+    // AUDIO IN's `audio_l_out`/`audio_r_out` are a derived stereo pair and
+    // SCOPE's `ch1` is one mono probe, so the commit asks which channel first
+    // (owner 2026-08-12). L is the leg this test has always been about — the
+    // fake mic feeding the scope — and choosing it keeps the edge assertion
+    // below identical.
+    const chooser = page.getByTestId('stereo-drop-choice');
+    await expect(chooser, 'a stereo source on a mono probe must ask').toBeVisible();
+    await chooser.locator('[data-testid="stereo-drop-choice-option"][data-mode="left"]').click();
+    await expect(chooser).toHaveCount(0);
+
     // The patch-out hand-off CLOSED the menu — from here on the panel is
     // hidden (not unmounted), so the signal assertions below double as the
     // "stream survives menu close" proof.

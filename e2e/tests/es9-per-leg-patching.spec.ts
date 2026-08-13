@@ -150,6 +150,10 @@ async function pickTarget(
   nodeId: string,
   portId: string,
   leg?: 'left' | 'right',
+  /** Answers the WIDTH CHOOSER (owner 2026-08-12), which a STEREO source into
+   *  a MONO jack now raises. Passing it when no dialog opens FAILS — the
+   *  helper asserts BOTH directions so a caller cannot keep a stale answer. */
+  choose?: 'left' | 'right',
 ) {
   await menu.locator(`[data-testid="patch-to-module"][data-node-id="${nodeId}"]`).click();
   const row = menu.locator(
@@ -161,6 +165,20 @@ async function pickTarget(
   ).toBeVisible();
   await row.click();
   await expect(menu).toHaveCount(0);
+
+  const chooser = page.getByTestId('stereo-drop-choice');
+  if (choose) {
+    await expect(chooser, `expected the width chooser for → ${nodeId}.${portId}`).toBeVisible();
+    await chooser
+      .locator(`[data-testid="stereo-drop-choice-option"][data-mode="${choose}"]`)
+      .click();
+    await expect(chooser).toHaveCount(0);
+  } else {
+    await expect(
+      chooser,
+      `an unexpected width chooser opened for → ${nodeId}.${portId}`,
+    ).toHaveCount(0);
+  }
 }
 
 test.describe('ES-9 per-leg patching — the owner\'s send/return rack', () => {
@@ -260,24 +278,26 @@ test.describe('ES-9 per-leg patching — the owner\'s send/return rack', () => {
     await expect(out3).toHaveAttribute('data-leg', '');
   });
 
-  test('a STEREO patch into ONE ES-9 jack writes ONE edge, not two summed into it', async ({
+  test('a STEREO patch into ONE ES-9 jack ASKS which channel, and writes ONE edge', async ({
     page,
     rack,
   }) => {
     // ES-9 audio ports are independent PHYSICAL JACKS (owner: "explicitly mono
-    // channels when used for audio and it's in hardware"). The dual-mono rule —
-    // "stereo → mono writes BOTH legs into the mono input" — would put send1L
-    // AND send1R into out3, i.e. two signals summing into one hardware output.
+    // channels when used for audio and it's in hardware"), so two legs must
+    // never sum into out3. That verdict is unchanged.
     //
-    // The gesture is deliberately the DEFAULT one: the stereo row is already
-    // selected, so this is what a user gets without choosing anything.
+    // ⚠ WHAT CHANGED IS WHO CHOOSES. This test used to leave the stereo row
+    // selected and rely on the MONO AUDIO POINT trim to drop a leg — the app
+    // picking a channel on the user's behalf. Since 2026-08-12 the drop asks,
+    // and the row set is the two channels with no BOTH, so the one-edge result
+    // is now the user's answer rather than a silent trim.
     await spawnRig(page);
     const menu = await rightClickOutput(page, MIX, 'send1L');
     await expect(
       menu.locator('[data-testid="patch-channel-mode"][data-mode="both"]'),
-      'stereo is the default selection — this test is about the UNCHOSEN path',
+      'stereo is still the default selection — this test is about the UNCHOSEN path',
     ).toHaveAttribute('data-selected', 'true');
-    await pickTarget(page, menu, ES9, 'out3');
+    await pickTarget(page, menu, ES9, 'out3', undefined, 'left');
 
     await expect
       .poll(() => readEdges(page), {
@@ -287,24 +307,46 @@ test.describe('ES-9 per-leg patching — the owner\'s send/return rack', () => {
       .toEqual(['mix.send1L->es9.out3']);
   });
 
-  test('NEGATIVE CONTROL: the same stereo gesture into a non-hardware target still writes BOTH legs', async ({
+  test('the same gesture into a NON-hardware mono target behaves identically', async ({
     page,
     rack,
   }) => {
-    // Without this, the ES-9 test above would pass just as well if dual-mono
-    // had been deleted outright, and the hardware rule would be
-    // indistinguishable from a global behaviour change. `vca.audio` is an
-    // ordinary mono audio input.
+    // ⚠ THIS CONTROL CHANGED SHAPE, and the reason is worth stating rather than
+    // silently rewriting. It used to assert that `vca.audio` still received
+    // BOTH legs, which is what made the ES-9 rule visibly a HARDWARE rule and
+    // not a global behaviour change. That distinction is no longer observable
+    // from a gesture: the width chooser asks on EVERY stereo → mono drop, so
+    // hardware and non-hardware targets now answer the same way.
+    //
+    // What it controls for now is the inverse and still worth having: that the
+    // chooser was NOT special-cased to the ES-9. Same two rows, same one-leg
+    // result, on an ordinary mono input.
+    //
+    // The hardware rule itself keeps its gate — `per-leg-patching.test.ts`,
+    // "a STEREO source into one ES-9 jack does NOT sum both legs into it",
+    // which drives `planAudioCommit` with `channelMode: 'both'`. That is the
+    // path the AI driver and the matrix mixer still take, so the trim is live
+    // code with a live test; it simply is not reachable by hand any more.
     await spawnPatch(page, [
       { id: MIX, type: 'mixmstrs', position: { x: 80, y: 80 }, domain: 'audio' },
       { id: 'vca1', type: 'vca', position: { x: 900, y: 80 }, domain: 'audio' },
     ]);
     const menu = await rightClickOutput(page, MIX, 'send1L');
-    await pickTarget(page, menu, 'vca1', 'audio');
+    await menu.locator('[data-testid="patch-to-module"][data-node-id="vca1"]').click();
+    await menu.locator('[data-testid="patch-to-port"][data-port-id="audio"][data-leg=""]').click();
 
-    await expect
-      .poll(() => readEdges(page), { timeout: 5000 })
-      .toEqual(['mix.send1L->vca1.audio', 'mix.send1R->vca1.audio']);
+    const chooser = page.getByTestId('stereo-drop-choice');
+    await expect(chooser).toBeVisible();
+    await expect(chooser).toHaveAttribute('data-kind', 'stereo-to-mono');
+    expect(
+      await chooser
+        .locator('[data-testid="stereo-drop-choice-option"]')
+        .evaluateAll((els) => els.map((el) => el.getAttribute('data-mode'))),
+      'an ordinary mono input gets the SAME two rows the ES-9 jack got',
+    ).toEqual(['left', 'right']);
+    await chooser.locator('[data-testid="stereo-drop-choice-option"][data-mode="right"]').click();
+
+    await expect.poll(() => readEdges(page), { timeout: 5000 }).toEqual(['mix.send1R->vca1.audio']);
   });
 
   test('a collapsed jack fed by TWO sources names BOTH in its title and aria-label', async ({
