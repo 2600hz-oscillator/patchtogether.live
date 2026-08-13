@@ -310,7 +310,6 @@ test.describe('per-module: card controls fit within card bounds', () => {
       }
 
       await page.goto('/rack?shell=legacy&seed=none');
-      await page.waitForLoadState('networkidle');
 
       await spawnSolo(page, mod);
 
@@ -382,7 +381,6 @@ test.describe('backdraft: controls fit in EVERY TV MODE, not just the default', 
       test.setTimeout(60_000);
 
       await page.goto('/rack?shell=legacy&seed=none');
-      await page.waitForLoadState('networkidle');
       await spawnPatch(
         page,
         [{

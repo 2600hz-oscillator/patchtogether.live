@@ -1104,7 +1104,6 @@ test.describe('per-module per-port: handle presence', () => {
       if (touchesVideo(mod)) await freezeVideoRender(page);
 
       await page.goto('/rack?shell=legacy&seed=none');
-      await page.waitForLoadState('networkidle');
 
       await spawnSolo(page, mod);
 
@@ -1717,7 +1716,6 @@ test.describe('per-module per-port: inputs accept signal (wire-up)', () => {
       const errors = collectPageErrors(page);
 
       await page.goto('/rack?shell=legacy&seed=none');
-      await page.waitForLoadState('networkidle');
 
       // DOOM-asset skip — when the WASM blob isn't present the module
       // can't materialise its input handles, breaking the edge assertion.

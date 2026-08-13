@@ -120,7 +120,6 @@ for (const mod of REGISTRY) {
     });
 
     await page.goto('/rack?shell=legacy&seed=none');
-    await page.waitForLoadState('networkidle');
 
     await spawnPatch(
       page,

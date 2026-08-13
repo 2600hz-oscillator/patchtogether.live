@@ -212,7 +212,6 @@ test.describe('per-module: output-alive smoke', () => {
       });
 
       await page.goto('/rack?shell=legacy&seed=none');
-      await page.waitForLoadState('networkidle');
 
       // DOOM-specific: gate on the WASM blob being available. The build
       // is .gitignored (deterministic from source — contributors + CI
