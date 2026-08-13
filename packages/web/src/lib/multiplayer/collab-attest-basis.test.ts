@@ -16,7 +16,7 @@
 //       this is THE property that makes a local attest meaningful, so it is
 //       worth pinning against the live spec text.
 
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, it, expect } from 'vitest';
 
@@ -27,6 +27,8 @@ import {
   computeCollabHash,
   collabDepDigest,
   isRelayVacuitySkip,
+  classifySkip,
+  BENIGN_SKIPS,
   COLLAB_GREP,
 } from '../../../../../scripts/collab-attest-lib';
 
@@ -108,8 +110,14 @@ describe('relay-vacuity skip classifier', () => {
     for (const r of vacuous) expect(isRelayVacuitySkip(r)).toBe(true);
   });
 
-  it('does NOT flag benign asset/resource skips as vacuity', () => {
-    const benign = [
+  // ⚠ `isRelayVacuitySkip` is a DIAGNOSIS, not the refusal predicate. These
+  // reasons are not relay stalls — and this test used to be read as proof they
+  // were therefore harmless, which is how four DOOM runtime-load skips and a
+  // `test.fixme` quarantine got minted into attestations as "benign asset
+  // skips". `classifySkip` (below) is what decides refusal, and it denies by
+  // default: every reason here is UNCLASSIFIED and now REFUSES.
+  it('does NOT DIAGNOSE non-relay reasons as relay vacuity (but they are not benign either)', () => {
+    const notRelayStalls = [
       'DOOM WASM not built',
       'DOOM1.WAD missing — see static/doom/DOWNLOAD_INSTRUCTIONS.md',
       'DOOM WASM / WAD missing — run build-doom-wasm.sh + fetch DOOM1.WAD',
@@ -118,7 +126,69 @@ describe('relay-vacuity skip classifier', () => {
       'no ROM fixture present — run the setup script',
       '', // no reason
     ];
-    for (const r of benign) expect(isRelayVacuitySkip(r)).toBe(false);
+    for (const r of notRelayStalls) expect(isRelayVacuitySkip(r)).toBe(false);
+    // The whole point of the inversion: not-a-relay-stall must NOT mean allowed.
+    for (const r of notRelayStalls) {
+      expect(
+        classifySkip('doom-launch.spec.ts', r).verdict,
+        `"${r}" must not be waved through — no BENIGN_SKIPS rule claims it`,
+      ).toBe('unclassified');
+    }
+  });
+
+  describe('deny-by-default (the polarity that was inverted)', () => {
+    it('REFUSES the exact skip that could hide a dead DOOM 2-user gate', () => {
+      // Measured 2026-08-13: four @collab DOOM specs carry this reason verbatim.
+      // Under the old allow-by-default shape all four could skip their entire
+      // bodies and the runner still minted, reporting them as "asset skips".
+      for (const spec of [
+        'doom-launch.spec.ts',
+        'doom-identity-crossview.spec.ts',
+        'doom-late-join.spec.ts',
+        'doom-multiplayer.spec.ts',
+      ]) {
+        expect(classifySkip(spec, 'DOOM runtime failed to load on A within 25s').verdict).toBe(
+          'unclassified',
+        );
+      }
+    });
+
+    it('a NAMED rule claims its own skip, and ONLY in its own spec', () => {
+      // Positive control: the rule fires where it is scoped.
+      expect(classifySkip('in-card-title.spec.ts', '').verdict).toBe('benign');
+      // Negative control, same predicate: the exemption is (spec, reason), never
+      // a bare filename — so an empty-reason skip appearing anywhere ELSE still
+      // refuses, and a DIFFERENT skip inside the already-listed file does too.
+      expect(classifySkip('doom-launch.spec.ts', '').verdict).toBe('unclassified');
+      expect(classifySkip('in-card-title.spec.ts', 'some new skip').verdict).toBe('unclassified');
+    });
+
+    it('a relay stall is still DIAGNOSED as vacuity (so the message says which fix)', () => {
+      expect(classifySkip('doom-launch.spec.ts', 'roster sync did not seat B').verdict).toBe(
+        'vacuity',
+      );
+    });
+
+    it('every BENIGN_SKIPS entry is ANCHORED to a live @collab spec + argues its case', () => {
+      // A ledger entry naming something that no longer exists is RED: if the
+      // spec is deleted, renamed, or drops out of the @collab lane, the entry
+      // can never fire again and must not sit here looking load-bearing.
+      const specs = resolveCollabSpecs(); // repo-relative, e.g. e2e/tests/x.spec.ts
+      for (const rule of BENIGN_SKIPS) {
+        expect(
+          specs.some((s) => s.endsWith(`/${rule.spec}`)),
+          `BENIGN_SKIPS names ${rule.spec}, which is not a live @collab spec — delete the entry`,
+        ).toBe(true);
+        expect(
+          existsSync(join(REPO_ROOT, 'e2e/tests', rule.spec)),
+          `BENIGN_SKIPS names ${rule.spec}, which is not on disk`,
+        ).toBe(true);
+        // Prose-quality floor on the argument, not a count of the entries.
+        expect(rule.why.length, `${rule.spec}: 'why' must actually argue the case`).toBeGreaterThan(
+          80,
+        );
+      }
+    });
   });
 
   it('has ZERO relay-flake vacuity skips left in the @collab specs (de-flake invariant)', () => {
