@@ -463,6 +463,40 @@ test.describe('CAMERA node-owned media lifetime @camera-integration', () => {
     /** Liveness of the node's capture, read from the DOM wherever the element
      *  currently lives. `track.readyState` is the decisive signal: 'ended' is
      *  precisely what `t.stop()` produces and is NOT recoverable. */
+    /**
+     * Wait until the capture is live again, IN-PAGE, then return the state.
+     *
+     * #1559: reading `captureState()` the instant the dock appears is a race.
+     * The element is RE-PARENTED across the card move, and its `srcObject`
+     * re-attaches asynchronously — so the read can land in the gap and report
+     * `{present: true, count: 1, tracks: []}`: the element exists, in the right
+     * place, with no stream yet. That signature reddened a REQUIRED lane across
+     * four separate PRs, none of which touched camera code.
+     *
+     * Waiting on the OBSERVABLE (a track in `srcObject`) rather than on wall
+     * clock keeps this renderer-independent, and it does not weaken the
+     * assertion: if the stream never comes back, this times out and the test
+     * still fails — which is the real defect it is there to catch. What it
+     * stops reporting is "not yet", which was never the question.
+     */
+    const waitForLiveCapture = async () => {
+      await page
+        .waitForFunction(
+          () => {
+            const v = document.querySelector('[data-testid="camera-preview"]') as HTMLVideoElement | null;
+            const s = v?.srcObject as MediaStream | null;
+            return !!s && s.getVideoTracks().some((t) => t.readyState === 'live');
+          },
+          undefined,
+          { timeout: 15_000 },
+        )
+        // Swallow the timeout so the ASSERTION below reports the real state
+        // (which tracks, which readyState, where the element is) instead of a
+        // bare Playwright timeout that says nothing about why.
+        .catch(() => {});
+      return captureState();
+    };
+
     const captureState = async () =>
       page.evaluate(() => {
         const all = [...document.querySelectorAll('[data-testid="camera-preview"]')];
@@ -501,7 +535,7 @@ test.describe('CAMERA node-owned media lifetime @camera-integration', () => {
     });
     await expect(page.locator('[data-testid="dock-full-view"]')).toHaveCount(1, { timeout: 20_000 });
 
-    const expanded = await captureState();
+    const expanded = await waitForLiveCapture();
     expect(expanded.present, `exactly one element while double-mounted: ${JSON.stringify(expanded)}`)
       .toBe(true);
     expect(expanded.count, 'never two <video> elements for one node').toBe(1);
@@ -513,7 +547,12 @@ test.describe('CAMERA node-owned media lifetime @camera-integration', () => {
     await page.getByTestId('faceplate-collapse').click();
     await expect(page.locator('[data-testid="dock-full-view"]')).toHaveCount(0, { timeout: 20_000 });
 
-    const after = await captureState();
+    // Same re-parent race as the expand above — the element moves back out of
+    // the dock and re-attaches its stream asynchronously. This side has not
+    // been observed failing, but it is the identical shape, and fixing only the
+    // half that happened to go red would leave the other half to surface later
+    // as a "new" flake.
+    const after = await waitForLiveCapture();
     expect(after.present, `the element must survive the card move: ${JSON.stringify(after)}`).toBe(true);
     expect(after.count, 'still exactly one element after collapse').toBe(1);
     expect(after.tracks, `the capture track must still be LIVE after collapse: ${JSON.stringify(after)}`)
