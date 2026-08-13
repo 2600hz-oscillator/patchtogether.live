@@ -157,6 +157,13 @@
     setLayerVideoName,
     setLayerVideoSource,
   } from '$lib/graph/toybox-layers';
+  import { nodeMedia } from '$lib/ui/media/node-media-registry';
+  import {
+    expectedVideoLayers,
+    exportRefusalMessage,
+    layerVideoName,
+    missingVideoLayers,
+  } from './toybox-export-guard';
 
   // The two VIDEO input ports (handles on the card's left edge). Ids match the
   // def's inA/inB; the label is the human-facing VID A / VID B.
@@ -424,6 +431,17 @@
   let inputError = $state<string | null>(null);
   let inputLoading = $state(false);
 
+  /** Reactive trigger for reads of the NODE-owned media registry (#1589).
+   *  `nodeMedia` is a plain module singleton, not a rune, and the only writer for
+   *  THIS node while this card is mounted is this card — so a version counter
+   *  bumped beside every write is the honest way to publish "the local bytes
+   *  changed" to `$derived`. (Node deletion also mutates it, via Canvas's sweep,
+   *  but that unmounts the card in the same breath.) */
+  let mediaRev = $state(0);
+  function bumpMediaRev(): void {
+    mediaRev++;
+  }
+
   /** The TOYBOX node's handle extras (per-layer image/video upload bridge), or
    *  null while the engine hasn't materialised this node yet. */
   function getExtras(): ToyboxHandleExtras | null {
@@ -467,6 +485,15 @@
   let currentVideoSource = $derived.by<ToyboxVideoSource>(
     () => readLiveLayers()?.[activeLayer]?.videoSource ?? 'file',
   );
+  /** Does the ACTIVE layer have live local bytes in this session? The filename
+   *  alone does not answer that — it rides the Y.Doc and survives a reload, a
+   *  localStorage preset and a rack-mate's write, none of which carry bytes.
+   *  Showing the name with no bytes is what made the card "look loaded while
+   *  rendering nothing" (#1589), so the two states are now distinguishable. */
+  let activeVideoLoaded = $derived.by<boolean>(() => {
+    void mediaRev;
+    return hasLocalVideo(activeLayer);
+  });
 
   /** Change the active VIDEO layer's source. Selecting a patched feed
    *  ('inA'/'inB') tears down any local <video>/webcam for the layer so we
@@ -629,60 +656,108 @@
     inputError = null;
   }
 
-  // ---- VIDEO: card-owned <video> element per video layer ----
+  // ---- VIDEO: NODE-OWNED <video> element per video layer (#1589) ----
   //
-  // The element + object-URL are LOCAL (never synced). Created on file pick for a
-  // layer, attached to the engine's per-layer frame uploader, looped + muted +
-  // autoplaying so the layer animates. Only the filename rides the Y.Doc.
-  const videoEls = new Map<number, HTMLVideoElement>();
-  const videoUrls = new Map<number, string>();
-  // Webcam MediaStreams per layer (source='camera') — stopped on swap/destroy.
-  const videoStreams = new Map<number, MediaStream>();
-  let videoAttachTimer: ReturnType<typeof setTimeout> | null = null;
+  // These elements, their object URLs and their webcam MediaStreams belong to
+  // the NODE, not to this card. They live in $lib/ui/media/node-media-registry
+  // under one slot per layer, and they are torn down by `nodeMedia.sweep(...)`
+  // from Canvas when the node leaves the GRAPH — never when the card unmounts.
+  //
+  // WHAT WENT WRONG BEFORE (#1589, P0): this card minted the elements with
+  // `document.createElement('video')`, held their urls in a card-local Map, and
+  // `onDestroy` detached every layer, revoked every url, ran
+  // `pause()/srcObject=null/removeAttribute('src')/load()` and stopped every
+  // camera track. TOYBOX is un-migrated, so under the faceplate shell its card
+  // exists ONLY inside the dock full-view — collapsing it, ESC, or the dock
+  // LRU-evicting the pane when a third module is expanded produced that unmount.
+  // Every video layer went dark, the layer row kept showing the filename (that
+  // rides the Y.Doc), and Export then wrote a preset with ZERO video bytes and
+  // said "Exported".
+  //
+  // The IMAGE path is unaffected and deliberately unchanged: `imageBytes` rides
+  // the Y.Doc, so an image layer is reconstructed from the graph on any remount.
+  //
+  // Retry timers are keyed BY LAYER: a single shared handle could only cancel
+  // the last one scheduled, so three of four pending retries leaked past unmount.
+  const videoAttachTimers = new Map<number, ReturnType<typeof setTimeout>>();
 
-  /** Get (or create) layer `i`'s card-owned <video> element. */
-  function ensureVideoEl(i: number): HTMLVideoElement {
-    let el = videoEls.get(i);
-    if (!el) {
-      el = document.createElement('video');
-      el.muted = true;
-      el.loop = true;
-      el.playsInline = true;
-      videoEls.set(i, el);
-    }
-    return el;
+  /** The registry slot for layer `i`'s media. Stable for the node's whole life. */
+  function layerVideoSlot(i: number): string {
+    return `layer-video-${i}`;
   }
 
-  /** Attach layer `i`'s card-owned <video> element to the engine (retry until
-   *  the engine node exists). */
+  /** Layer `i`'s node-owned <video>, created (PARKED off-screen, decoding) on
+   *  first use. `init` runs exactly once per node+slot, so the muted/loop/
+   *  playsinline stamp survives every remount without being re-applied.
+   *
+   *  HISTORY worth keeping: `setObjectUrl`/`setStream` also create an entry when
+   *  a load races the mount, and that path takes no `init` — so the first cut of
+   *  this fix wrote the url first and got a <video> with no `muted`/`loop`/
+   *  `playsinline`. Measured: it never autoplayed and the layer stayed silently
+   *  black, i.e. a bug in the fix for a bug about layers staying silently black.
+   *  The registry now applies a LATE INIT so the order cannot matter; the call
+   *  sites below still mint the element first, which is simply clearer. */
+  function ensureVideoEl(i: number): HTMLVideoElement {
+    return nodeMedia.ensure(id, layerVideoSlot(i), {
+      kind: 'video',
+      init: (raw) => {
+        const el = raw as HTMLVideoElement;
+        el.muted = true;
+        el.loop = true;
+        el.playsInline = true;
+        el.setAttribute('data-testid', `toybox-layer-video-${i}`);
+        el.setAttribute('data-node-id', id);
+      },
+    }) as HTMLVideoElement;
+  }
+
+  /** Layer `i`'s element if the node already has one — never creates. */
+  function peekVideoEl(i: number): HTMLVideoElement | null {
+    return nodeMedia.peek(id, layerVideoSlot(i)) as HTMLVideoElement | null;
+  }
+
+  /** Does layer `i` have LIVE local bytes/stream in THIS session? The Y.Doc's
+   *  filename cannot answer this — that is the exact lie #1589 was about. */
+  function hasLocalVideo(i: number): boolean {
+    const slot = layerVideoSlot(i);
+    return !!nodeMedia.objectUrl(id, slot) || !!nodeMedia.stream(id, slot);
+  }
+
+  /** Attach layer `i`'s node-owned <video> element to the engine (retry until
+   *  the engine node exists). Idempotent — re-attaching the same element is a
+   *  no-op in the uploader, so a remount can safely re-run it for every layer. */
   function ensureVideoAttached(i: number, attempt = 0): void {
-    const el = videoEls.get(i);
+    const el = peekVideoEl(i);
     if (!el) return;
     const extras = getExtras();
     if (extras) { extras.attachLayerVideo(i, el); return; }
     if (attempt >= 50) return;
-    videoAttachTimer = setTimeout(() => ensureVideoAttached(i, attempt + 1), 100);
+    videoAttachTimers.set(i, setTimeout(() => ensureVideoAttached(i, attempt + 1), 100));
   }
 
   /** Tear down layer `i`'s LOCAL video source (file object-URL OR webcam
-   *  stream) + detach it from the engine. Used when a layer switches to a
-   *  PATCHED feed (inA/inB) — the cable provides the texture, so we shouldn't
-   *  keep a decoder/camera open — and on destroy. */
+   *  stream) + detach it from the engine.
+   *
+   *  ⚠ USER INTENT ONLY. The one caller is switching the layer to a PATCHED feed
+   *  (inA/inB): the cable provides the texture, so holding a decoder or a camera
+   *  open would be wrong. It is NOT reachable from `onDestroy` — that is the
+   *  #1589 regression, and `card-media-lifetime.test.ts` fails the build if a
+   *  revoke/stop/detach ever re-appears in an unmount path.
+   *
+   *  The revoke + the track stop happen INSIDE the registry (setObjectUrl(null)
+   *  / setStream(null)), so there is exactly one owner of each. */
   function releaseVideoLayer(i: number): void {
-    const stream = videoStreams.get(i);
-    if (stream) {
-      for (const t of stream.getTracks()) { try { t.stop(); } catch { /* */ } }
-      videoStreams.delete(i);
-    }
-    const url = videoUrls.get(i);
-    if (url) { try { URL.revokeObjectURL(url); } catch { /* */ } videoUrls.delete(i); }
-    const el = videoEls.get(i);
+    const slot = layerVideoSlot(i);
+    nodeMedia.setStream(id, slot, null);
+    nodeMedia.setObjectUrl(id, slot, null);
+    const el = peekVideoEl(i);
     if (el) {
       try { el.pause(); } catch { /* */ }
       try { el.srcObject = null; } catch { /* */ }
       try { el.removeAttribute('src'); el.load(); } catch { /* */ }
     }
     try { getExtras()?.attachLayerVideo(i, null); } catch { /* */ }
+    bumpMediaRev();
   }
 
   /** Start the device webcam into layer `i`'s card-owned <video> (source=
@@ -696,19 +771,22 @@
       inputError = 'Browser does not support camera capture';
       return;
     }
-    // Free any prior local source for this layer first.
-    const prevUrl = videoUrls.get(i);
-    if (prevUrl) { try { URL.revokeObjectURL(prevUrl); } catch { /* */ } videoUrls.delete(i); }
-    const prevStream = videoStreams.get(i);
-    if (prevStream) { for (const t of prevStream.getTracks()) { try { t.stop(); } catch { /* */ } } }
+    // Free any prior local source for this layer first — through the registry,
+    // which owns the revoke + the track stop. The PRIOR stream must be released
+    // BEFORE the request, not after: a platform that allows only one open handle
+    // on a device answers the second getUserMedia with NotReadableError.
+    const slot = layerVideoSlot(i);
+    const el = ensureVideoEl(i); // mint first — see ensureVideoEl.
+    nodeMedia.setObjectUrl(id, slot, null);
+    nodeMedia.setStream(id, slot, null);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-      videoStreams.set(i, stream);
-      const el = ensureVideoEl(i);
+      nodeMedia.setStream(id, slot, stream);
       el.removeAttribute('src');
       el.srcObject = stream;
       try { await el.play(); } catch { /* a user gesture (the select change) should permit it */ }
       ensureVideoAttached(i);
+      bumpMediaRev();
     } catch (err) {
       inputError = err instanceof Error ? err.message : String(err);
     }
@@ -732,19 +810,14 @@
       return;
     }
     const layerIdx = activeLayer;
-    // Free a prior object URL for this layer + stop any webcam stream (a file
-    // pick implies source='file', overriding a prior camera capture).
-    const prevUrl = videoUrls.get(layerIdx);
-    if (prevUrl) { try { URL.revokeObjectURL(prevUrl); } catch { /* */ } }
-    const prevStream = videoStreams.get(layerIdx);
-    if (prevStream) {
-      for (const t of prevStream.getTracks()) { try { t.stop(); } catch { /* */ } }
-      videoStreams.delete(layerIdx);
-    }
-    const url = URL.createObjectURL(file);
-    videoUrls.set(layerIdx, url);
-    // Reuse (or create) a card-owned <video> for this layer.
+    const slot = layerVideoSlot(layerIdx);
     const el = ensureVideoEl(layerIdx);
+    // A file pick implies source='file', overriding a prior camera capture. Hand
+    // BOTH the new url and the stream-clear to the registry: it revokes the
+    // previous url and stops the previous tracks, so this card never does.
+    nodeMedia.setStream(id, slot, null);
+    const url = URL.createObjectURL(file);
+    nodeMedia.setObjectUrl(id, slot, url, file.name);
     el.srcObject = null;
     el.src = url;
     try { await el.play(); } catch { /* autoplay may be blocked until a gesture; the picker click IS one */ }
@@ -754,6 +827,7 @@
     setLayerVideoSource(id, layerIdx, 'file');
     setLayerVideoName(id, layerIdx, file.name);
     bumpRev();
+    bumpMediaRev();
     try { input.value = ''; } catch { /* */ }
   }
 
@@ -1710,24 +1784,36 @@
   // `.toybox.zip` and trigger a browser download.
   let exporting = $state(false);
 
-  /** Resolve a layer's loaded video bytes from its card-owned object URL. Skips
-   *  layers with no local file source (patched feeds / camera / no video). */
+  /** Resolve a layer's loaded video bytes from its NODE-OWNED object URL. Skips
+   *  layers with no local file source (patched feeds / camera / no video).
+   *
+   *  Skipping is the RIGHT behaviour for a layer that has nothing to embed and
+   *  the WRONG behaviour for a layer whose bytes are missing — the two are
+   *  indistinguishable here by construction, which is why the caller consults
+   *  `expectedVideoLayers` instead of trusting this function's silence (#1589).
+   *  A ZERO-LENGTH read is treated as unresolved: an empty entry in the zip is
+   *  the same lie as no entry. */
   async function resolveLayerVideos(
     blob: Record<string, unknown>,
   ): Promise<ToyboxPresetVideo[]> {
     const out: ToyboxPresetVideo[] = [];
     const layers = (blob.layers as Array<Record<string, unknown>> | undefined) ?? [];
     for (let i = 0; i < layers.length; i++) {
-      const url = videoUrls.get(i);
+      const url = nodeMedia.objectUrl(id, layerVideoSlot(i));
       if (!url) continue; // no LOADED local video for this layer
       try {
         const resp = await fetch(url);
         const ab = await (await resp.blob()).arrayBuffer();
         const bytes = new Uint8Array(ab);
-        const name = (layers[i]?.videoName as string | undefined) || `layer-${i}.mp4`;
+        if (bytes.byteLength === 0) continue;
+        const name =
+          layerVideoName(layers[i]) ??
+          nodeMedia.mediaName(id, layerVideoSlot(i)) ??
+          `layer-${i}.mp4`;
         out.push({ layer: i, name, bytes });
       } catch {
-        // A torn-down / revoked URL: skip (the preset still exports without it).
+        // A torn-down / revoked URL: unresolved. The guard below turns this into
+        // a LOUD refusal instead of a silently-incomplete preset.
       }
     }
     return out;
@@ -1741,6 +1827,15 @@
     exporting = true;
     try {
       const videos = await resolveLayerVideos(blob);
+      // REFUSE TO WRITE AN INCOMPLETE PRESET (#1589). Every layer the Y.Doc says
+      // is a local-file video must have produced bytes; if one did not, the zip
+      // would open black on the other side and the user would be told it worked.
+      const missing = missingVideoLayers(
+        expectedVideoLayers(blob.layers),
+        videos.map((v) => v.layer),
+      );
+      const refusal = exportRefusalMessage(missing);
+      if (refusal) { presetError = refusal; return; }
       const label = nodeDisplayName();
       const bytes = exportToyboxPreset({ data: blob, videos, label, savedAt: Date.now() });
       // Trigger a browser download of the .zip.
@@ -1776,17 +1871,13 @@
   /** Attach imported video bytes to layer `i` as a fresh card-owned <video>
    *  (mirrors onVideoFileChange's attach path). */
   function attachImportedVideo(i: number, bytes: Uint8Array, name: string): void {
-    // Free any prior local source for this layer first.
-    const prevUrl = videoUrls.get(i);
-    if (prevUrl) { try { URL.revokeObjectURL(prevUrl); } catch { /* */ } }
-    const prevStream = videoStreams.get(i);
-    if (prevStream) {
-      for (const t of prevStream.getTracks()) { try { t.stop(); } catch { /* */ } }
-      videoStreams.delete(i);
-    }
+    // Prior source (url AND camera stream) is freed BY THE REGISTRY, which owns
+    // the revoke + the track stop — see the VIDEO section header (#1589).
+    const slot = layerVideoSlot(i);
+    const el = ensureVideoEl(i); // mint first — see ensureVideoEl.
+    nodeMedia.setStream(id, slot, null);
     const url = URL.createObjectURL(new Blob([bytes as unknown as BlobPart]));
-    videoUrls.set(i, url);
-    const el = ensureVideoEl(i);
+    nodeMedia.setObjectUrl(id, slot, url, name);
     el.srcObject = null;
     el.src = url;
     void el.play().catch(() => { /* autoplay may need a gesture; the import click was one */ });
@@ -1795,6 +1886,7 @@
     // be explicit so the layer's File source is selected + named consistently).
     setLayerVideoSource(id, i, 'file');
     setLayerVideoName(id, i, name);
+    bumpMediaRev();
   }
 
   async function onImportFileChange(ev: Event): Promise<void> {
@@ -2009,6 +2101,17 @@
 
   onMount(() => {
     rafId = requestAnimationFrame(draw);
+    // ADOPT WHAT THE NODE ALREADY HAS (#1589). A remount — re-expand, an LRU
+    // eviction reversing, a navigation back — finds every layer's <video> still
+    // parked and still playing. Re-assert the engine attachment for each one
+    // (idempotent) so the uploader is wired even if the engine node was itself
+    // rebuilt while no card was mounted, and rehydrate the reactive
+    // "are the bytes loaded?" read from the registry rather than from $state
+    // this instance never had.
+    for (let i = 0; i < LAYER_COUNT; i++) {
+      if (peekVideoEl(i)) ensureVideoAttached(i);
+    }
+    bumpMediaRev();
     // VRT debug hook: pin the engine-side iTime to `time` (constant) so the
     // shader render is deterministic, blit once with the new frozen frame,
     // then pause the preview pull. Call with no/undefined arg to resume.
@@ -2040,24 +2143,23 @@
     };
   });
   onDestroy(() => {
+    // CARD-LOCAL MACHINERY ONLY. This runs on a COLLAPSE, an ESC, a dock LRU
+    // eviction and a navigation just as much as on a node deletion, and it
+    // cannot tell them apart — so nothing whose lifetime is the NODE's may be
+    // touched here.
+    //
+    // What is deliberately ABSENT, and was the whole of #1589: no
+    // `attachLayerVideo(i, null)`, no `URL.revokeObjectURL`, no
+    // `pause()/srcObject=null/removeAttribute('src')/load()`, and no
+    // `track.stop()`. The elements, urls and camera streams belong to
+    // $lib/ui/media/node-media-registry and are freed by `nodeMedia.sweep(...)`
+    // from Canvas when the node leaves the GRAPH — by ANY route: the menu, a
+    // lasso delete, undo, a peer's CRDT delete, Clear, a patch load.
+    // `card-media-lifetime.test.ts` fails the build if any of them returns.
     if (rafId !== null) cancelAnimationFrame(rafId);
     if (imageApplyTimer) { clearTimeout(imageApplyTimer); imageApplyTimer = null; }
-    if (videoAttachTimer) { clearTimeout(videoAttachTimer); videoAttachTimer = null; }
-    // Detach + release every card-owned video element / object URL so we don't
-    // leak blobs or leave the engine pumping a torn-down element.
-    const extras = getExtras();
-    for (const [i, el] of videoEls) {
-      try { extras?.attachLayerVideo(i, null); } catch { /* */ }
-      try { el.pause(); el.srcObject = null; el.removeAttribute('src'); el.load(); } catch { /* */ }
-    }
-    for (const url of videoUrls.values()) { try { URL.revokeObjectURL(url); } catch { /* */ } }
-    // Stop any live webcam capture (source='camera') so the camera light goes off.
-    for (const stream of videoStreams.values()) {
-      for (const t of stream.getTracks()) { try { t.stop(); } catch { /* */ } }
-    }
-    videoEls.clear();
-    videoUrls.clear();
-    videoStreams.clear();
+    for (const t of videoAttachTimers.values()) clearTimeout(t);
+    videoAttachTimers.clear();
   });
 </script>
 
@@ -2537,8 +2639,23 @@
           <span>Choose video…</span>
         </label>
         {#if currentVideoName}
-          <div class="filename" title={currentVideoName} data-testid="toybox-video-filename">{currentVideoName}</div>
-          <div class="sync-hint" data-testid="toybox-video-local">local file (not synced)</div>
+          <div
+            class="filename"
+            title={currentVideoName}
+            data-testid="toybox-video-filename"
+            data-has-local-file={activeVideoLoaded ? 'true' : 'false'}
+          >{currentVideoName}</div>
+          <!-- The NAME rides the Y.Doc; the BYTES do not. A reload, a saved
+               preset or a rack-mate's write gives you the first without the
+               second, and #1589 showed that a card claiming "loaded" while
+               rendering nothing is worse than one that says what it needs. -->
+          {#if activeVideoLoaded}
+            <div class="sync-hint" data-testid="toybox-video-local">local file (not synced)</div>
+          {:else}
+            <div class="input-error" data-testid="toybox-video-relink">
+              not loaded in this session — re-pick the file to see it (export is blocked until you do)
+            </div>
+          {/if}
         {/if}
       {:else if currentVideoSource === 'camera'}
         <button
