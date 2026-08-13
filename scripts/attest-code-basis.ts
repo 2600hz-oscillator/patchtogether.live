@@ -263,7 +263,7 @@ function normalizeTs(text: string, fileName: string, report: NormalizeReport): s
  * The opening tag's end is found with a quote-aware scan so an attribute value
  * containing `>` (Svelte's `generics="T extends A<B>"`) cannot truncate it.
  */
-function svelteScriptSpans(text: string): { openEnd: number; bodyEnd: number }[] {
+export function svelteScriptSpans(text: string): { openEnd: number; bodyEnd: number }[] {
   const spans: { openEnd: number; bodyEnd: number }[] = [];
   const open = /<script\b/gi;
   let m: RegExpExecArray | null;
