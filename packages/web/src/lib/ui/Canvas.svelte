@@ -389,6 +389,8 @@
     planDefaultWires,
     isPinnedNode,
     isTypingTarget,
+    isRackFlipKey,
+    RACK_FLIP_KEY,
   } from '$lib/graph/workflow-pins';
   import { removePatchNode } from '$lib/graph/mutate';
   import { goto } from '$app/navigation';
@@ -1478,17 +1480,18 @@
         }
         return;
       }
-      if (e.key === 'Tab') {
-        // FLIP SEAM (rear card): BARE Tab flips the OPEN full-view to its
-        // rear/patch face — both panes together (global flip). Only hijack Tab
-        // while the full-view is open (focus nav is untouched otherwise — and
-        // while typing / with Cmd-Ctrl-Alt we never get here).
+      if (isRackFlipKey(e)) {
+        // FLIP SEAM (rear card): the bare flip key (`f`, see
+        // workflow-pins.ts `isRackFlipKey`) flips the OPEN full-view to its
+        // rear/patch face — both panes together (global flip). Only claim it
+        // while the full-view is open; with it closed the canvas-wide `isFlip`
+        // below owns the same key (SINGLE-OWNER, by occupancy).
         //
-        // SHIFT-Tab is explicitly NOT a flip: the guard at the top of this
-        // handler only screens meta/ctrl/alt, so Shift-Tab used to reach here
-        // and both flipped the view AND stole reverse focus traversal. Bare Tab
-        // is the ONLY flip key (matching the canvas `isFlip` predicate below).
-        if (e.shiftKey) return;
+        // THIS USED TO BE BARE TAB (#1508) and that was an accessibility
+        // defect: Tab is how a keyboard-only or screen-reader user reaches any
+        // control at all, and the shell consumed it everywhere outside a text
+        // field. Tab is now 100% native in both occupancy states — nothing in
+        // this handler looks at it.
         if (dockStore.fullViewNodeIds.length > 0) {
           e.preventDefault();
           dockStore.toggleFullViewFlipped();
@@ -1509,7 +1512,7 @@
         // SIDE-BY-SIDE 50/50 with a module instead of replacing it. It is a
         // REAL node (`pinned-clipplayer`), so it rides the SAME
         // fullViewNodeIds machinery: same faceplate + per-pane ✕, LRU
-        // third-expand replacement, TAB flips it with its sibling. Toggling is
+        // third-expand replacement, the flip key (F) flips it with its sibling. Toggling is
         // idempotent-by-construction (openFullView de-dupes), so two presses
         // can never stack two clip-player panes.
         dockStore.toggleFullView(spec.id);
@@ -6085,7 +6088,7 @@
   // Owner report: "there's no way to break a patch right now if i put six strum
   // in a lane and then want to unpatch poly." A cable is only a selectable
   // object on the free-rack EDGE LAYER; the workflow lanes and the flip-side
-  // jack fields (legacy back panel + the dock full-view / bare-TAB RearCard)
+  // jack fields (legacy back panel + the dock full-view / flip-key RearCard)
   // render patch POINTS, not cables — so an auto-wired lane link had NO removal
   // affordance at all. Every jack field now dispatches a bubbling
   // `patchpanel:jackcontextmenu` for a PATCHED point and Canvas owns the ONE
@@ -7803,20 +7806,25 @@
       return false;
     }
     function isFlip(e: KeyboardEvent): boolean {
-      // Plain Tab toggles rear view. We deliberately ignore any modifier combo
-      // (Cmd/Ctrl/Alt/Shift-Tab) so OS/browser tab-switching + Shift-Tab focus
-      // traversal are untouched — only a bare Tab is the rack-flip shortcut.
-      if (e.key !== 'Tab' || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return false;
-      // SINGLE-OWNER Tab (double-handler fix): while the dock full-view is OPEN
-      // the DOCK owns bare Tab — onDockKey (above) flips the full-view panes to
+      // The bare flip key (`f`) toggles rear view. ONE predicate shared with
+      // the dock owner above (workflow-pins.ts `isRackFlipKey`), so the two
+      // can never drift onto different keys; it rejects every modifier combo,
+      // so Cmd/Ctrl/Alt-F stay with the browser and Shift-F is just a capital.
+      if (!isRackFlipKey(e)) return false;
+      // A SELECT is a typing target for a single-letter shortcut (type-ahead)
+      // but is NOT caught by shouldIgnore() above, which exists for the
+      // undo/redo pair. Tab needed no such guard; a letter does.
+      if (isTypingTarget(e.target)) return false;
+      // SINGLE-OWNER FLIP KEY (double-handler fix): while the dock full-view is
+      // OPEN the DOCK owns it — onDockKey (above) flips the full-view panes to
       // their rear cards. Both handlers are plain `window` keydown listeners, so
       // preventDefault in one does NOT stop the other: one keystroke used to
       // toggle BOTH `dockStore.fullViewFlipped` AND this canvas-wide `rearView`.
       // Two independent flip states then PHASE-DIVERGE (flip in the dock, close
-      // it, press Tab on the canvas → the canvas came up already inverted).
-      // Guarding on occupancy (not event ordering) makes exactly one handler act
-      // per keystroke, whichever listener happens to be registered first. With
-      // the full-view CLOSED, Tab keeps its original canvas-wide behavior.
+      // it, press the flip key on the canvas → the canvas came up already
+      // inverted). Guarding on occupancy (not event ordering) makes exactly one
+      // handler act per keystroke, whichever listener happens to be registered
+      // first. With the full-view CLOSED, the canvas-wide flip is the owner.
       return dockStore.fullViewNodeIds.length === 0;
     }
     function onKey(e: KeyboardEvent) {
@@ -7832,13 +7840,13 @@
         undoManager.redo();
         trace('redo');
       } else if (isFlip(e)) {
-        // Tab flips the rack front↔rear. NOTE: this overrides Tab's native
-        // focus-traversal while the canvas (not a text field) is focused — the
-        // intended tradeoff (user-requested rack-flip shortcut). Text inputs +
-        // contentEditable are already excluded by shouldIgnore() above.
+        // `f` flips the rack front↔rear. This WAS bare Tab, which overrode
+        // Tab's native focus traversal everywhere outside a text field —
+        // filed and fixed as #1508, because that removes keyboard navigation
+        // from the whole shell rather than trading one shortcut for another.
         e.preventDefault();
         toggleRearView();
-        trace('flip-rack-tab');
+        trace('flip-rack-key');
       }
     }
     window.addEventListener('keydown', onKey);
@@ -8183,15 +8191,25 @@
           <!-- Flip rack (rear view): flips every card over its own Y axis in
                place to reveal the back-panel patch jacks for tracing wiring.
                LOCAL view state only — not synced, not per-node. Sits at the TOP
-               of the Controls cluster via the `before` snippet. -->
+               of the Controls cluster via the `before` snippet.
+
+               DISCOVERABILITY for the keyboard shortcut lives here, on the one
+               visible affordance the gesture has (the dock full-view flip has
+               no button at all). `aria-keyshortcuts` is the standards-correct
+               place — a screen reader announces it WITHOUT changing the
+               accessible name, so the aria-label stays the stable handle every
+               spec locates the button by. The tooltip carries the same key for
+               sighted users. Both read RACK_FLIP_KEY rather than restating the
+               letter, so a rebind cannot leave the UI lying. -->
           <ControlButton
             class="svelte-flow__controls-flip-rack"
             onclick={toggleRearView}
             aria-label="Flip rack (rear view)"
             aria-pressed={rearView}
+            aria-keyshortcuts={RACK_FLIP_KEY}
             data-testid="flip-rack-btn"
             data-active={rearView ? 'true' : undefined}
-            title={rearView ? 'Front view' : 'Flip rack (rear view)'}
+            title={`${rearView ? 'Front view' : 'Flip rack (rear view)'} — shortcut: ${RACK_FLIP_KEY.toUpperCase()}`}
           >
             <!-- Flip/rotate glyph: a rounded arrow pair suggesting a Y-axis flip. -->
             <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="none">
@@ -8253,7 +8271,7 @@
            left→right), each an independently scrollable pane (its own
            overflow container — no shared scrollbar). A pane's ✕ closes just
            that pane (the survivor returns to full width); ESC / the M-E-C
-           handoff close the whole view. data-fullview-flipped is the TAB
+           handoff close the whole view. data-fullview-flipped is the flip-key
            rear-card seam: ONE view-global flag, so with the 50/50 split
            BOTH panes flip together — each pane renders its RearCard (the
            flip-side patch field) while flipped. -->
@@ -8614,7 +8632,7 @@
 
 <!-- Right-click → UNPATCH on a patched patch point, in EVERY jack field
      (legacy PatchPanel rows + back panel, the RearCard in the dock full-view
-     and the bare-TAB rear view). ONE menu, ONE removal seam. -->
+     and the flip-key rear view). ONE menu, ONE removal seam. -->
 <UnpatchMenu
   bind:open={unpatchOpen}
   x={unpatchPos.x}

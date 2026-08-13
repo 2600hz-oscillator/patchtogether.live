@@ -4,7 +4,7 @@
 // of the bottom-drawer full-view (single AND 50/50 split) must show a
 // clearly VISIBLE close button on the drawer chrome itself (the RACKLINE
 // .win-ctrls trio in the title bar), in BOTH the front faceplate state and
-// the TAB-flipped rear-card state — in addition to the lane tile's CLOSE
+// the flipped rear-card state — in addition to the lane tile's CLOSE
 // pill.
 //
 // THE REGRESSION THIS PINS: the ✕ always existed in the DOM, but the whole
@@ -26,6 +26,7 @@
 
 import { test, expect, type Page, type Locator } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+import { pressFlipKey } from './_flip-key';
 import { installRenderSmokeHooks } from './_render-smoke';
 
 async function gotoShellWorkflow(page: Page): Promise<void> {
@@ -104,7 +105,7 @@ test.describe('dock full-view pane ✕ — visible chrome in every state (?shell
     await expectCloseInsidePane(page, 'm1', 'single/front');
 
     // FLIPPED (rear card): the same chrome carries the ✕ — still inside.
-    await page.keyboard.press('Tab');
+    await pressFlipKey(page);
     await expect(paneOf(page, 'm1').getByTestId('dock-full-view')).toHaveAttribute('data-flipped', 'true');
     await expect(paneOf(page, 'm1').getByTestId('rear-chip')).toBeVisible();
     await expectCloseInsidePane(page, 'm1', 'single/rear');
@@ -150,7 +151,7 @@ test.describe('dock full-view pane ✕ — visible chrome in every state (?shell
 
     // FLIPPED split (the owner screenshot state): BOTH rear panes carry a
     // visible ✕; the REAR·PATCH chip never displaces or clips it.
-    await page.keyboard.press('Tab');
+    await pressFlipKey(page);
     await expect(drawer).toHaveAttribute('data-fullview-flipped', 'true');
     for (const id of ['m1', 'm2'] as const) {
       await expect(paneOf(page, id).getByTestId('rear-card')).toBeVisible();
@@ -170,7 +171,7 @@ test.describe('dock full-view pane ✕ — visible chrome in every state (?shell
     await openFullView(page, 'm2');
     const drawer = page.getByTestId('dock-fullview-drawer');
     await expect(drawer).toHaveAttribute('data-pane-count', '2');
-    await page.keyboard.press('Tab');
+    await pressFlipKey(page);
     await expect(drawer).toHaveAttribute('data-fullview-flipped', 'true');
 
     // Close the LEFT pane via ITS ✕ — right survives (content-sized since #1573),

@@ -14,7 +14,7 @@
 //   2. DOCK — the full-view faceplate mounts at the 'dock' face tier and
 //      renders exactly the module's declared `face.pages` as labeled section
 //      bands, in order.
-//   3. REAR — bare TAB flips the faceplate and the rear jack field renders one
+//   3. REAR — the flip key flips the faceplate and the rear jack field renders one
 //      hole per declared port, with the front control face gone.
 //
 // TWO representative modules rather than all six (the sweep covers the rest):
@@ -32,6 +32,7 @@
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+import { pressFlipKey } from './_flip-key';
 
 /** The two representative migrations. `pages` = declared face.pages; `holes` =
  *  declared inputs + outputs (the rear renders exactly one hole per port). */
@@ -124,8 +125,8 @@ test.describe('P1 batch 2 — the migrated faces land on lane + dock + rear', ()
       // The curated control the lane face does not surface is reachable here.
       await expect(faceplate.locator(`[data-testid="control-${laneParam}"]`)).toHaveCount(1);
 
-      // ── 3) REAR: bare TAB flips to the jack field — one hole per port. ──
-      await page.keyboard.press('Tab');
+      // ── 3) REAR: the flip key flips to the jack field — one hole per port. ─
+      await pressFlipKey(page);
       await expect(faceplate).toHaveAttribute('data-flipped', 'true');
       const rear = faceplate.getByTestId('rear-card');
       await expect(rear).toBeVisible();
@@ -136,8 +137,8 @@ test.describe('P1 batch 2 — the migrated faces land on lane + dock + rear', ()
       // The front control face is gone while flipped.
       await expect(faceplate.getByTestId('faceplate-editor')).toBeHidden();
 
-      // TAB flips back to the control face.
-      await page.keyboard.press('Tab');
+      // The flip key flips back to the control face.
+      await pressFlipKey(page);
       await expect(faceplate).toHaveAttribute('data-flipped', 'false');
       await expect(faceplate.locator('[data-testid="face-page"]')).toHaveCount(pages.length);
     });

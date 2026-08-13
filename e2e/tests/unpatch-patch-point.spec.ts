@@ -12,7 +12,7 @@
 //
 //   1) THE OWNER'S EXACT SCENARIO — SIX STRUM dropped in channel column 1 (the
 //      REAL palette-drop path, so the reconciler really owns the wcol- clip
-//      link), its dock full-view flipped to the rear card with TAB, POLY
+//      link), its dock full-view flipped to the rear card with the flip key, POLY
 //      right-clicked → "Unpatch — clip player PITCH1" → the edge is GONE from
 //      the graph, STAYS gone across several reconcile passes (the MAJOR-1
 //      detach suppression), the hole re-renders UNPATCHED, and Cmd-Z restores
@@ -42,6 +42,7 @@
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+import { pressFlipKey } from './_flip-key';
 
 // Serial: these tests drive the shared connect-drag singleton + one warm dev
 // server through real pointer clicks on flipped card faces (the
@@ -119,17 +120,18 @@ async function dropSixStrumInLane1(page: Page): Promise<string> {
 }
 
 /** Open a node's dock full-view (the shipped __openDockFullView hook the shell
- *  tiles' EXPAND buttons call) and TAB it to the rear card. */
+ *  tiles' EXPAND buttons call) and flip it to the rear card. */
 async function openRearCard(page: Page, nodeId: string): Promise<void> {
   await page.evaluate(
     (id) => (globalThis as unknown as { __openDockFullView: (i: string) => void }).__openDockFullView(id),
     nodeId,
   );
   await expect(page.getByTestId('dock-full-view')).toBeVisible({ timeout: 15_000 });
-  // A TAB read as focus traversal (rather than the flip seam) would silently
-  // pass for the wrong reason — drop focus to <body> first.
+  // The flip key is inert inside a text input (isTypingTarget), so a press
+  // swallowed that way would silently pass for the wrong reason — drop focus
+  // to <body> first.
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
-  await page.keyboard.press('Tab');
+  await pressFlipKey(page);
   await expect(page.getByTestId('rear-card')).toBeVisible({ timeout: 15_000 });
 }
 

@@ -10,7 +10,7 @@
 //  * SIDE-BY-SIDE SPLIT: the full-view holds up to TWO modules in OPEN order
 //    (index 0 = opened first = rendered left); a third replaces the
 //    least-recently-opened; closing one pane keeps the other; ESC / the
-//    M-E handoff close the WHOLE view. Plus the TAB rear-card flip seam
+//    M-E handoff close the WHOLE view. Plus the flip-key (F) rear-card flip seam
 //    (state only).
 //  * THE BUILT-IN CLIP PLAYER IS A PANE (owner 2026-07-26): `c` routes through
 //    toggleFullView('pinned-clipplayer'), so it side-by-sides with a module
@@ -196,7 +196,7 @@ describe('dockStore toggleFullView (the C hotkey / EXPAND-pill seam)', () => {
   });
 });
 
-describe('dockStore full-view FLIP seam (TAB rear-card follow-up)', () => {
+describe('dockStore full-view FLIP seam (flip-key rear-card follow-up)', () => {
   it('starts un-flipped; toggling while CLOSED is a no-op', () => {
     expect(dockStore.fullViewFlipped).toBe(false);
     dockStore.toggleFullViewFlipped();

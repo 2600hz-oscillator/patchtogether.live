@@ -17,6 +17,7 @@
 
 import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
+import { pressFlipKey } from './_flip-key';
 
 test.describe.configure({ mode: 'parallel' });
 
@@ -84,7 +85,7 @@ test('flip-rack: toggle reveals per-card back panels in place, then hides them',
   await expect(adsrBack).toBeHidden();
 });
 
-test('flip-rack: the Tab key flips the rack front↔rear', async ({ page, rack }) => {
+test('flip-rack: the flip key flips the rack front↔rear', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'adsr', type: 'adsr', position: { x: 120, y: 120 } }], []);
   await expect(page.locator('.svelte-flow__node')).toHaveCount(1);
 
@@ -92,14 +93,14 @@ test('flip-rack: the Tab key flips the rack front↔rear', async ({ page, rack }
   const flipBtn = page.getByRole('button', { name: 'Flip rack (rear view)' });
   await expect(flow).not.toHaveClass(/rear-view/);
 
-  // Tab on the canvas (nothing text-editable focused) → rear view ON.
+  // The flip key on the canvas (nothing text-editable focused) → rear view ON.
   await page.locator('body').click({ position: { x: 5, y: 300 } });
-  await page.keyboard.press('Tab');
+  await pressFlipKey(page);
   await expect(flow).toHaveClass(/rear-view/);
   await expect(flipBtn).toHaveAttribute('aria-pressed', 'true');
 
-  // Tab again → back to front.
-  await page.keyboard.press('Tab');
+  // Press again → back to front.
+  await pressFlipKey(page);
   await expect(flow).not.toHaveClass(/rear-view/);
   await expect(flipBtn).toHaveAttribute('aria-pressed', 'false');
 });
