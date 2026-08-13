@@ -49,6 +49,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch, type SpawnNode, type SpawnEdge } from './_helpers';
 import { observeScopePeak, runFor } from './_module-coverage-helpers';
+import { collectPageErrors } from './_page-errors';
 import { REGISTRY, type RegistryModule, type RegistryPort } from './_registry';
 import { driverFor } from './_drivers';
 import { perPortDriverFor } from './_per-port-drivers';
@@ -910,24 +911,18 @@ async function readEdgeIds(page: Page): Promise<string[]> {
 
 test.describe.configure({ mode: 'parallel' });
 
-// Console-error filter: AudioContext autoplay warnings, DOOM asset
-// fetches, and Vite HMR chatter aren't meaningful failures here.
-// We also tolerate the reconciler's "disconnect (output 0) is not
-// connected" teardown error — it's a known race when spawnPatch wipes +
-// rebuilds the graph mid-tick (the reconciler tries to disconnect an
-// already-disconnected AudioNode). The reconcile-failed path re-syncs
-// on the next tick, so it's noise not a regression. Pinned by
-// reconciler-disconnect-* unit tests in packages/web.
-function filterErrors(errors: string[]): string[] {
-  return errors.filter((e) =>
-    !e.includes('AudioContext')
-    && !e.includes('doom.js')
-    && !e.includes('DOOM1.WAD')
-    && !e.includes('[vite]')
-    && !e.includes('Failed to load resource')
-    && !(e.includes('[reconciler] reconcile failed') && e.includes('disconnect')),
-  );
-}
+// Console-error policy lives in `_page-errors.ts` — ONE definition shared with
+// the behavioral sweep and gibribbon.spec.ts.
+//
+// It used to be a private copy here whose fifth clause was an unconditional
+// `!e.includes('Failed to load resource')`. That single line blinded every test
+// below to a module that FAILS TO LOAD: the `inputs accept signal` dim's other
+// assertion reads the patch store, so an edge materialises whether or not the
+// engine behind it ever came up, and (measured 2026-08-12) 58 module types have
+// no other live per-port dimension at all. A 404'd worklet was therefore a
+// GREEN row. The replacement records `location().url` and exempts by NAMED,
+// gitignore-anchored resource; `_page-errors.ts` carries the measurement, the
+// stated scope, and the re-derivation command.
 
 // ────────── Heavy-WebGL module predicate ──────────
 //
@@ -1346,11 +1341,7 @@ test.describe('per-module per-port: outputs emit signal', () => {
     test(title, async ({ page }) => {
       test.setTimeout(emitBudgetMs(mod));
 
-      const errors: string[] = [];
-      page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
-      page.on('console', (m) => {
-        if (m.type() === 'error') errors.push(`console: ${m.text()}`);
-      });
+      const errors = collectPageErrors(page);
 
       const driver = driverFor(mod);
       // Per-port driver: category-appropriate setup (page-init shim,
@@ -1657,8 +1648,10 @@ test.describe('per-module per-port: outputs emit signal', () => {
       }
 
       expect(
-        filterErrors(errors),
-        `${mod.type} outputs-emit: no console / page errors`,
+        errors.significant(),
+        `${mod.type} outputs-emit: no console / page errors (a failed resource load — a 404'd `
+        + `worklet, a dropped static asset — reads as "Failed to load resource" with the url in `
+        + `brackets; see _page-errors.ts for the named optional-asset exemptions)`,
       ).toEqual([]);
     });
   }
@@ -1721,11 +1714,7 @@ test.describe('per-module per-port: inputs accept signal (wire-up)', () => {
         test.setTimeout(wireUpBudgetMs(mod.inputs.length));
       }
 
-      const errors: string[] = [];
-      page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
-      page.on('console', (m) => {
-        if (m.type() === 'error') errors.push(`console: ${m.text()}`);
-      });
+      const errors = collectPageErrors(page);
 
       await page.goto('/rack?shell=legacy&seed=none');
       await page.waitForLoadState('networkidle');
@@ -1811,9 +1800,15 @@ test.describe('per-module per-port: inputs accept signal (wire-up)', () => {
         ).toContain('e-up-sut');
       }
 
+      // ⚠ THE LOAD-BEARING ASSERTION OF THIS DIM. The edge check above reads
+      // the patch store, so it materialises whether or not the engine behind
+      // the module ever came up — this is the only line here that can see a
+      // module that FAILED TO LOAD.
       expect(
-        filterErrors(errors),
-        `${mod.type} inputs-accept: no console / page errors during input wire-up`,
+        errors.significant(),
+        `${mod.type} inputs-accept: no console / page errors during input wire-up (a failed `
+        + `resource load — a 404'd worklet, a dropped static asset — reads as "Failed to load `
+        + `resource" with the url in brackets; see _page-errors.ts)`,
       ).toEqual([]);
     });
   }
