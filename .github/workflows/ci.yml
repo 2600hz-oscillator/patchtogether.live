@@ -931,11 +931,33 @@ jobs:
         env:
           E2E_SHARD_BUDGET_LABEL: shard ${{ matrix.shard }}/10
         run: |
+          set -euo pipefail
+          # COST-BASED SHARDING (#1538). `--shard=N/10` splits by TEST COUNT,
+          # which on this suite is near-perfect count balance and 2.31x cost
+          # imbalance: a video/WebGL test under SwiftShader costs ~2.3x a DOM
+          # test, and path-ordered contiguous chunks put the whole video/workflow
+          # family on shard 10 (795 s) while shard 6 finished in 348 s.
+          #
+          # Instead: discover the spec list, then let scripts/e2e-shard-plan.mjs
+          # assign files by MEASURED cost (LPT bin-packing over
+          # e2e/e2e-timings.generated.json). Predicted worst shard 805 s -> 483 s.
+          #
+          # Every shard job runs the planner independently and they must agree
+          # without communicating — the planner is deterministic (total order on
+          # cost then filename), and scripts/e2e-shard-plan.test.ts asserts the
+          # union of all 10 groups equals the discovered list with no duplicates.
+          # That union assertion is the safety argument: assigning files
+          # explicitly makes US responsible for covering the suite, and a
+          # silently dropped spec would look exactly like a speedup.
+          SPECS=$(cd e2e && flox activate -- npx playwright test --list --reporter=json 2>/dev/null \
+            | flox activate -- node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{const r=JSON.parse(d),f=new Set();(function w(s){for(const x of s||[]){if(x.file)f.add(x.file);w(x.suites);}})(r.suites);console.log([...f].sort().join(" "));})')
+          FILES=$(flox activate -- node scripts/e2e-shard-plan.mjs ${{ matrix.shard }} 10 --files $SPECS)
+          echo "shard ${{ matrix.shard }}/10 -> $(echo "$FILES" | wc -w) spec files"
           flox activate -- bash scripts/e2e-shard-budget.sh -- \
             npx --workspace e2e playwright test \
             --global-timeout 1020000 \
             --grep-invert "@collab|@capacity|BEHAVIORAL input coverage" \
-            --shard=${{ matrix.shard }}/10 \
+            $FILES \
             --reporter=blob
 
       - name: Upload blob report (shard ${{ matrix.shard }})
