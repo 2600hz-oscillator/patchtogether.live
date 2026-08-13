@@ -421,6 +421,29 @@ tasks:
       - LEDGER_UPDATE=1 npx vitest run --config vitest.scripts.config.ts test-ledger
       - 'echo "[test:ledger:accept] re-pinned docs/testing/test-ledger.generated.md — review the git diff before committing"'
 
+  face:inventory:
+    desc: |
+      Face-migration inventory (LEG-01) — run the RATCHET: every registered
+      module carries exactly one disposition, the done-set IS STRICT_FACES,
+      blockers resolve both ways, and the generated progress artifact
+      (docs/design/face-migration.generated.md) is fresh. Read-only; the same
+      gate CI runs in the `unit` lane.
+    dir: '{{.WEB}}'
+    cmds:
+      - npx vitest run src/lib/ui/workflow/face-migration-inventory.test.ts
+
+  face:inventory:accept:
+    desc: |
+      [accept-loop] Re-pin the GENERATED face-migration progress artifact
+      (docs/design/face-migration.generated.md) from the inventory record + the
+      live registry — run after an INTENTIONAL disposition change or a new
+      module, then review the git diff (a diff = the migration moved: accept it,
+      or recognize a bug). The test-ledger analog for LEG-01.
+    dir: '{{.WEB}}'
+    cmds:
+      - FACE_INVENTORY_UPDATE=1 npx vitest run src/lib/ui/workflow/face-migration-inventory.test.ts
+      - 'echo "[face:inventory:accept] re-pinned docs/design/face-migration.generated.md — review the git diff before committing"'
+
   # ---------------- Audio Regression Tests ----------------
   art:
     desc: Run Audio Regression Tests

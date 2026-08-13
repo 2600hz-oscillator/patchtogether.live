@@ -72,6 +72,7 @@
     mayShowOverwriteConfirm,
   } from './recorderbox-present-policy';
   import { chunkFileName } from '$lib/video/recorderbox-chunk-name';
+  import { nodeRecorder } from './node-recorder-registry.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -88,8 +89,10 @@
   let quality = $derived<RecorderboxQuality>(coerceQuality(node?.data?.quality));
 
   let previewEl: HTMLCanvasElement | null = $state(null);
-  // Hidden full-res capture canvas the recorder encodes from.
-  let captureEl: HTMLCanvasElement | null = $state(null);
+  // NOTE: there is no capture canvas here any more. The registry creates one
+  // and never appends it to the document, so a card unmount cannot detach it
+  // (a detached canvas keeps its last bitmap — that is how a "fixed" recording
+  // would still have captured a freeze frame for the collapsed span).
   let rafId: number | null = null;
 
   // Encoder support → drives the disabled badge.
@@ -99,9 +102,15 @@
     checked: false,
   });
 
-  let recState = $state<RecorderState>('idle');
-  let elapsed = $state(0);
-  let recorder: RecorderboxRecorder | null = null;
+  // ── #1574: the recording belongs to the NODE, not to this card ──
+  // These are READS of $lib/ui/modules/node-recorder-registry, which owns the
+  // recorder, its capture canvas, its frame pump and its render lease for the
+  // recording's whole lifetime. Collapsing the dock full-view unmounts this
+  // card; before the registry that unmount called `recorder.abandon()` and
+  // destroyed the user's take. The card no longer holds anything it could kill.
+  let live = $derived(nodeRecorder.view(id));
+  let recState = $derived<RecorderState>(live?.state ?? 'idle');
+  let elapsed = $derived(live?.elapsed ?? 0);
 
   // ── No-prompt save (Tweak 1) + GoPro chunking (Tweak 3) ──
   // The destination FOLDER picked ONCE via showDirectoryPicker. Remembered in
@@ -110,7 +119,7 @@
   // browser (then the per-chunk <a download> fallback applies).
   let saveFolder: FileSystemDirectoryHandle | null = $state(null);
   // The last chunk file the recorder reported saving (status line / a11y).
-  let lastSavedChunk = $state<string | null>(null);
+  let lastSavedChunk = $derived<string | null>(live?.lastSavedChunk ?? null);
   // Display name of the remembered destination folder (null = none chosen yet).
   // (Read `.name` via a structural cast — the project's FileSystemDirectoryHandle
   // typing doesn't surface it, but every real handle has a `.name`.)
@@ -228,26 +237,19 @@
       pctx.drawImage(src, x, y, w, h);
     }
 
-    // Capture (full engine res, no letterbox) — only while recording.
-    if (recorder && recState === 'recording' && captureEl) {
-      if (captureEl.width !== ew) captureEl.width = ew;
-      if (captureEl.height !== eh) captureEl.height = eh;
-      const cctx = captureEl.getContext('2d', { alpha: false });
-      if (cctx) {
-        cctx.drawImage(src, 0, 0, ew, eh);
-        recorder.frame();
-      }
-      elapsed = recorder.elapsed();
-    }
+    // CAPTURE IS NOT HERE. It runs on the registry's own pump, which keeps
+    // feeding the encoder while this card is unmounted. This loop is
+    // preview-only and is correct to die with the card.
     rafId = requestAnimationFrame(draw);
   }
 
   // ── Start / stop the recorder when node.data.recording flips ──
   $effect(() => {
     const want = recording;
-    if (want && !recorder && support.canRecord) {
+    const isLive = nodeRecorder.isRecording(id);
+    if (want && !isLive && support.canRecord) {
       void startRecording();
-    } else if (!want && recorder && recState === 'recording') {
+    } else if (!want && isLive) {
       void stopRecording();
     }
   });
@@ -259,7 +261,7 @@
   async function startRecording() {
     if (starting) return;
     const ve = getVideoEngine();
-    if (!ve || !captureEl) { setData('recording', false); return; }
+    if (!ve) { setData('recording', false); return; }
 
     starting = true;
     try {
@@ -328,8 +330,6 @@
 
       const ew = ve.canvas.width || ENGINE_W;
       const eh = ve.canvas.height || ENGINE_H;
-      captureEl.width = ew;
-      captureEl.height = eh;
 
       // Resolve the encode profile for the chosen quality tier at THIS
       // resolution: HIGH = the original H.264 / 14 Mbps; BALANCED/SMALL prefer
@@ -364,9 +364,15 @@
         audioTrack = stream?.getAudioTracks?.()[0] ?? null;
       }
 
-      recorder = new RecorderboxRecorder({
+      // Hand the fully-resolved config to the NODE-keyed registry. It owns the
+      // canvas, the pump and the render lease from here; this card keeps no
+      // handle it could tear down.
+      const started = await nodeRecorder.start(id, {
+        engine: ve,
+        width: ew,
+        height: eh,
+        options: {
         nodeId: id,
-        canvas: captureEl,
         audioCapture,   // PREFERRED — sample-accurate worklet tap (lossless).
         audioTrack,     // FALLBACK — legacy MediaStreamAudioTrackSource path.
         filename,
@@ -381,29 +387,18 @@
         width: ew,
         height: eh,
         saveBytes,
-        onStateChange: (s) => { recState = s; },
-        onChunkSaved: ({ name }) => { lastSavedChunk = name; },
+        },
       });
-      try {
-        await recorder.start();
-      } catch {
-        recorder = null;
-        recState = 'error';
-        setData('recording', false);
-      }
+      if (!started) setData('recording', false);
     } finally {
       starting = false;
     }
   }
 
   async function stopRecording() {
-    const r = recorder;
-    recorder = null;
-    if (r) {
-      try { await r.stop(); } catch { /* */ }
-    }
-    recState = 'idle';
-    elapsed = 0;
+    // The registry finalizes and writes the file; state falls back to 'idle'
+    // automatically because `live` becomes null once the entry is gone.
+    await nodeRecorder.stop(id);
   }
 
   // ── Recovery prompt: scan for this node's mid-flight recordings on mount ──
@@ -498,13 +493,13 @@
   });
 
   onDestroy(() => {
+    // PREVIEW ONLY. #1574: this used to also `recorder.abandon()`, which made
+    // COLLAPSING the card destroy an in-progress recording — the card cannot
+    // distinguish "collapsed" from "node deleted", so it must decide neither.
+    // The recording is owned by node-recorder-registry and ends only on user
+    // intent (Record OFF) or on the node leaving the graph (Canvas's sweep).
+    // There is deliberately no registry method to call here.
     if (rafId !== null) cancelAnimationFrame(rafId);
-    // Card destroyed mid-record: abandon (finalize best-effort, LEAVE the
-    // recover candidate so a reload can recover it).
-    if (recorder && recState === 'recording') {
-      void recorder.abandon();
-    }
-    recorder = null;
   });
 
   function fmtElapsed(s: number): string {
@@ -547,8 +542,6 @@
     {/if}
   </div>
 
-  <!-- Hidden full-res capture surface the recorder encodes. -->
-  <canvas bind:this={captureEl} class="capture" width={ENGINE_W} height={ENGINE_H} aria-hidden="true"></canvas>
 
   <div class="controls">
     <label class="filename-row">
@@ -668,7 +661,6 @@
     border-radius: 1px; image-rendering: pixelated;
     width: 200px; height: 150px; display: block;
   }
-  .capture { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; left: -9999px; }
   .rec-indicator {
     position: absolute; top: 6px; left: 6px;
     display: inline-flex; align-items: center; gap: 5px;

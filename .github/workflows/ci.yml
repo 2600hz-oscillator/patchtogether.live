@@ -986,8 +986,35 @@ jobs:
   # the artifact name matches what reviewers expect (and what the previous
   # monolithic workflow uploaded).
   #
-  # `if: always()` so we still get a merged report even if one shard failed
-  # — that's the whole point of an aggregated dashboard for triage.
+  # `!cancelled()` (not `always()`) so we still get a merged report even if one
+  # shard FAILED — that's the whole point of an aggregated dashboard for triage
+  # — but NOT when the whole run was CANCELLED, where there is nothing to merge.
+  #
+  # Why the distinction (measured on #1581, 2026-08-13). Opening that PR with
+  # four labels attached fired `opened` + one `labeled` pull_request event per
+  # label in the SAME SECOND (`types:` above includes `labeled`), so GitHub
+  # started ELEVEN CI runs for one SHA. `cancel-in-progress` correctly cancelled
+  # ten; the eleventh ran the full suite green. But this job was `always()`, so
+  # in cancelled run 31726408821 it ran ANYWAY, downloaded `Found 0 artifact(s)`
+  # (the cancelled shards never uploaded a blob), and died on
+  # `Error: Directory does not exist: .../e2e/all-blob-reports` — posting a RED
+  # `Merge Playwright reports` check-run against a SHA whose real CI was green.
+  # That false red is indistinguishable from a genuine failure at a glance and
+  # cost a full jobs/logs investigation to clear.
+  #
+  # `cancelled()` is true only when the RUN was cancelled, so the failure path
+  # is untouched: a shard that genuinely fails still merges its report here.
+  # A shard that individually times out also still merges (the run is not
+  # cancelled), and a total wipeout still errors loudly rather than passing
+  # blind — this narrows the trigger, it does not add a green-on-empty path.
+  #
+  # ⚠ Do NOT make the same edit to the `ci` umbrella below. It carries a
+  # REQUIRED context name (`typecheck + unit + ART + E2E`), and a job-level
+  # `if:` skip reports as SUCCESS to branch protection — so `!cancelled()`
+  # there would turn a cancelled run into a GREEN required gate with zero tests
+  # run. The umbrella must stay `always()` and must keep failing on `cancelled`.
+  # This job is safe to skip precisely because it is NOT a required context
+  # (the ruleset requires only `vrt-strict …` and `typecheck + unit + ART + E2E`).
   #
   # Path note (bug fixed 2026-05-24): `npx --workspace e2e playwright ...`
   # runs Playwright with cwd = e2e/, so any relative path passed on the CLI
@@ -999,7 +1026,7 @@ jobs:
   # -----------------------------------------------------------------------
   merge-reports:
     name: Merge Playwright reports
-    if: always()
+    if: ${{ !cancelled() }}
     # (the `e2e-video` lane was deleted 2026-06-20 — it produced the only other
     # blob-report-* artifact; merge-reports now aggregates the e2e shards alone.)
     needs: [e2e]

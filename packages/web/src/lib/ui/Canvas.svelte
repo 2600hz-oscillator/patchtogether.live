@@ -223,6 +223,7 @@
   import { DOM_SOURCE_LANE_TYPES, needsHeadlessSourceMount } from '$lib/ui/workflow/dom-source-modules';
   import { nodeMedia } from '$lib/ui/media/node-media-registry';
   import { nodePresent } from '$lib/ui/modules/node-present-registry.svelte';
+  import { nodeRecorder } from '$lib/ui/modules/node-recorder-registry.svelte';
   import { RACK_SIZE_DEFAULTS } from '$lib/ui/rack-sizes';
   // ModuleNameLabel moved INTO every module card's title chrome (see
   // ModuleTitle.svelte) when the floating-overhead NodeToolbar was dropped.
@@ -719,6 +720,14 @@
       // must still render live video (the owner dock regression).
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__openDockFullView = (nodeId: string) => dockStore.openFullView(nodeId);
+      // #1574: observe the NODE-owned recording from a spec. The whole point of
+      // the registry is that this survives the card being unmounted, so the
+      // probe must NOT read the card — it reads the node's own record.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__nodeRecording = (nodeId: string) => ({
+        recording: nodeRecorder.isRecording(nodeId),
+        ...(nodeRecorder.view(nodeId) ?? {}),
+      });
       // Drag-lock state for e2e — patch-menus-persist tests inspect this
       // to confirm the lock engaged + released at the right moments.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -2040,11 +2049,19 @@
    *  The NODE-OWNED PROJECTOR ($lib/ui/modules/node-present-registry) is swept
    *  from the same place for the same reason: a "Present on second display"
    *  popup used to die with its card's onDestroy, which under the shell is a
-   *  COLLAPSE. Graph lifetime is the only correct owner of both. */
+   *  COLLAPSE. Graph lifetime is the only correct owner of both.
+   *
+   *  ...and the NODE-OWNED RECORDING ($lib/ui/modules/node-recorder-registry),
+   *  third instance of the identical bug (#1574): collapsing recorderbox ran
+   *  `recorder.abandon()` in the card's onDestroy and destroyed the take. Same
+   *  cause, same owner, same sweep — a node deleted by ANY route (menu, lasso,
+   *  undo, a peer's CRDT delete, Clear, a patch load) ends its recording here,
+   *  so no delete site has to remember. */
   $effect(() => {
     const liveIds = snapshot.nodes.map((n) => n.id);
     nodeMedia.sweep(liveIds);
     nodePresent.sweep(liveIds);
+    nodeRecorder.sweep(liveIds);
   });
 
   let headlessSourceNodes = $derived.by<ModuleNode[]>(() => {
