@@ -175,20 +175,33 @@ test.describe('bottom-drawer occupancy: pinned XOR full-view (?shell=1)', () => 
     // No pinned drawer anywhere.
     await expect(page.getByTestId('dock-zone-bottom')).toHaveCount(0);
 
-    // SCREEN GEOMETRY: module (opened first) LEFT, clip player RIGHT, equal
-    // widths, and the two panes + gap + padding fill the drawer.
+    // SCREEN GEOMETRY: module (opened first) LEFT, clip player RIGHT, ordered,
+    // gapped, and both inside the drawer.
+    //
+    // #1573 CHANGED THIS CONTRACT. Panes used to divide the viewport (`flex: 1 1 0`),
+    // so any two panes were equal and together filled the drawer. They now size to
+    // their CONTENT, because a ~300px card sitting in a ~1200px tray was hiding the
+    // canvas behind empty chrome. A module face (900px kit) and the clip player have
+    // genuinely different content widths, so equality is no longer a property of the
+    // layout — asserting it would be asserting the bug.
+    //
+    // What survives is what the test was really protecting: ORDER, a real GAP, and
+    // both panes fitting on screen. Sibling test "A+B sit SIDE-BY-SIDE 50/50" still
+    // asserts equality for two panes of the SAME kit width, which is where equality
+    // is still meaningful.
     const a = (await paneFor(page, 'm1').boundingBox())!;
     const b = (await paneFor(page, CLIP_ID).boundingBox())!;
     const d = (await drawer.boundingBox())!;
     expect(a.x, 'module renders LEFT of the clip player (open order)').toBeLessThan(b.x);
-    expect(Math.abs(a.width - b.width), 'panes split 50/50').toBeLessThanOrEqual(2);
     const GAP = b.x - (a.x + a.width);
     expect(GAP).toBeGreaterThanOrEqual(4);
     expect(GAP).toBeLessThanOrEqual(16);
     expect(
-      Math.abs(d.width - (a.width + b.width + GAP + 16)),
-      '2 panes + gap + padding = drawer',
-    ).toBeLessThanOrEqual(4);
+      a.width + b.width + GAP + 16,
+      '2 panes + gap + padding fit INSIDE the drawer (they no longer have to fill it)',
+    ).toBeLessThanOrEqual(d.width + 4);
+    expect(a.width, 'each pane still has real width').toBeGreaterThan(0);
+    expect(b.width).toBeGreaterThan(0);
 
     // INDEPENDENT SCROLL: each pane owns its overflow container.
     const clipScroll = paneFor(page, CLIP_ID).locator('.faceplate-scroll');
@@ -232,12 +245,16 @@ test.describe('bottom-drawer occupancy: pinned XOR full-view (?shell=1)', () => 
     const clip = (await paneFor(page, CLIP_ID).boundingBox())!;
     const mod = (await paneFor(page, 'm1').boundingBox())!;
     expect(clip.x, 'clip player opened FIRST → renders left').toBeLessThan(mod.x);
-    expect(Math.abs(clip.width - mod.width)).toBeLessThanOrEqual(2);
+    // #1573: panes size to content, so a clip player and a module face are no longer
+    // equal by construction. Order is the property this test is about.
+    expect(clip.width, 'clip pane has real width').toBeGreaterThan(0);
+    expect(mod.width, 'module pane has real width').toBeGreaterThan(0);
   });
 
-  // (2c) Per-pane ✕ closes ONLY the clip player's pane; the module survives at
-  // full width (the shared per-pane close, unchanged).
-  test("the clip pane's own ✕ closes only IT — the module survives at full width", async ({ page }) => {
+  // (2c) Per-pane ✕ closes ONLY the clip player's pane; the module survives
+  // (the shared per-pane close, unchanged). Since #1573 the survivor keeps its
+  // CONTENT width rather than stretching to the drawer.
+  test("the clip pane's own ✕ closes only IT — the module survives", async ({ page }) => {
     await gotoShellWorkflow(page);
     const { pill } = await spawnExpandableTile(page);
     const drawer = page.getByTestId('dock-fullview-drawer');
@@ -252,7 +269,14 @@ test.describe('bottom-drawer occupancy: pinned XOR full-view (?shell=1)', () => 
     await expect(paneFor(page, 'm1')).toBeVisible();
     const m = (await paneFor(page, 'm1').boundingBox())!;
     const d = (await drawer.boundingBox())!;
-    expect(Math.abs(d.width - (m.width + 16)), 'survivor spans the drawer').toBeLessThanOrEqual(4);
+    // #1573: the survivor keeps its CONTENT width instead of stretching to the
+    // drawer. Expanding to full width is precisely the behaviour the owner asked us
+    // to remove ("the tray should not take up more horizontal space than it needs"),
+    // so the old assertion now encodes the bug. What matters is that the survivor is
+    // still laid out inside the drawer with real width.
+    expect(m.width, 'survivor still has real width').toBeGreaterThan(0);
+    expect(m.width + 16, 'survivor fits inside the drawer').toBeLessThanOrEqual(d.width + 4);
+    expect(m.x, 'survivor starts inside the drawer').toBeGreaterThanOrEqual(d.x - 1);
     await expect(pill).toContainText('CLOSE');
     // …and `c` re-opens it beside the survivor.
     await page.keyboard.press('c');
@@ -442,7 +466,9 @@ test.describe('full-view SPLIT: two panes, one drawer occupant (?shell=1)', () =
     await expect(paneFor(page, 'm2')).toBeVisible();
     const b = (await paneFor(page, 'm2').boundingBox())!;
     const d = (await drawer.boundingBox())!;
-    expect(Math.abs(d.width - (b.width + 16)), 'survivor spans the drawer (minus padding)').toBeLessThanOrEqual(4);
+    // #1573: content-sized, so the survivor does NOT stretch back to full width.
+    expect(b.width, 'survivor still has real width').toBeGreaterThan(0);
+    expect(b.width + 16, 'survivor fits inside the drawer').toBeLessThanOrEqual(d.width + 4);
     // The pills track per-module presence.
     await expect(pill1).toContainText('EXPAND');
     await expect(pill2).toContainText('CLOSE');
