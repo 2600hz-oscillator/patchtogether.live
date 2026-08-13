@@ -491,7 +491,6 @@
   .card.bentbox.full-frame {
     padding: 0;
   }
-  .card.bentbox.full-frame .title,
   .card.bentbox.full-frame .stripe,
   .card.bentbox.full-frame .knob-grid,
   .card.bentbox.full-frame .mirror-row {

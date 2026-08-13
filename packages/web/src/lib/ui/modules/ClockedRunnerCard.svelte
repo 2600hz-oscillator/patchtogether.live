@@ -228,15 +228,6 @@
     font-size: 0.75rem;
     margin-bottom: 6px;
   }
-  .title .name {
-    color: var(--accent, #00f0ff);
-    font-weight: 600;
-    flex: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-family: ui-monospace, monospace;
-  }
   .division-select {
     background: rgba(10, 12, 16, 0.8);
     color: var(--cable-gate, #ffd000);

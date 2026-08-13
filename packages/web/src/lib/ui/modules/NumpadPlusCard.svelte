@@ -501,8 +501,6 @@
   @keyframes pulse-remap { 0%,100% { border-color:#f5c248; } 50% { border-color:rgba(245,194,72,0.3); } }
   .kmap-phys { font-size: 0.72rem; font-weight: 700; color: var(--accent, #00f0ff); line-height: 1; }
   .kmap-note { font-size: 0.5rem; color: var(--text-dim); line-height: 1; }
-  .legend-mod { font-size: 0.55rem; color: var(--text-dim); font-family: ui-monospace, monospace; margin-left: 4px; }
-  .legend-mod b { color: var(--accent, #00f0ff); margin-right: 2px; }
 
   .remap-hint {
     font-size: 0.62rem;

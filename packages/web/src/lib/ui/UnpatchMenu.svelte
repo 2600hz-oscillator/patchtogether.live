@@ -140,6 +140,7 @@
       class="ctx-menu"
       use:clampMenu={{ x, y }}
       role="menu"
+          tabindex="-1"
       aria-label="Unpatch"
       data-testid="unpatch-menu"
       oncontextmenu={(e) => e.preventDefault()}

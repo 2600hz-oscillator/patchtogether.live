@@ -187,6 +187,7 @@
   class="editor-overlay nodrag nowheel"
   data-testid="mappy-editor"
   role="dialog"
+          tabindex="-1"
   aria-label="MAPPY mapping editor"
   onpointerdown={(e) => { if (e.target === e.currentTarget) onClose(); }}
 >

@@ -462,7 +462,6 @@
   .card.full-frame {
     padding: 0;
   }
-  .card.full-frame .title,
   .card.full-frame .stripe {
     display: none;
   }
