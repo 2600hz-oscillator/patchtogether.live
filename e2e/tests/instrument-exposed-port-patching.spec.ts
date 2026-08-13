@@ -181,6 +181,20 @@ test('exposed group OUTPUT → external INPUT: cable lands in patch.edges (regre
     { nodeId: 'out-1', handleId: 'L' },
   );
 
+  // ⚠ A GROUP EXPOSED PORT IS UNPAIRED and `audioOut.L`/`R` are a derived pair,
+  // so this drop is a MONO → STEREO width mismatch and since 2026-08-12 it
+  // asks which side (owner). Answering L keeps this test's subject exactly what
+  // it always was — that the exposed-port endpoint RESOLVES rather than bailing
+  // out of `handleConnect` — while the mono/stereo question itself is
+  // stereo-drop-choice.spec.ts's.
+  const chooser = page.getByTestId('stereo-drop-choice');
+  await expect(
+    chooser,
+    'a group exposed OUT is unpaired and audioOut L/R is a pair — the drop must ask',
+  ).toBeVisible();
+  await chooser.locator('[data-testid="stereo-drop-choice-option"][data-mode="left"]').click();
+  await expect(chooser).toHaveCount(0);
+
   // The edge must now exist in patch.edges, addressed to the GROUP node
   // + exposed handle id (group-projection.ts rewrites it to flt-1.audio
   // before the reconciler sees it; that's tested in the unit suite).

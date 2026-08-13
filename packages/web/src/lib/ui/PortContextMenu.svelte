@@ -61,7 +61,15 @@
     /** `leg` is set when the user picked one SIDE of a collapsed stereo target
      *  (the "RET1 L" / "RET1 R" rows). The caller turns it into the commit's
      *  `channelMode`, so exactly one edge is written. */
-    onpick: (target: { nodeId: string; portId: string; leg?: 'left' | 'right' }) => void;
+    onpick: (target: {
+      nodeId: string;
+      portId: string;
+      leg?: 'left' | 'right';
+      /** TRUE when the row picked was the WHOLE-PAIR row of a collapsed stereo
+       *  target — an explicit "both", as opposed to an ordinary mono row which
+       *  also arrives with no `leg`. */
+      stereo?: boolean;
+    }) => void;
     /**
      * Show the SOURCE jack's two L/R holes on its own card instead of one
      * collapsed jack (or fold them back). Omitted when the source is not an
@@ -165,7 +173,13 @@
 
   function pickPort(p: CandidatePort) {
     if (!activeModuleId) return;
-    onpick({ nodeId: activeModuleId, portId: p.portId, leg: p.leg });
+    // `stereo` travels with the pick because it is the ANSWER to the width
+    // question, not a styling hint. A collapsed stereo target renders three
+    // rows — the pair, its L, its R — so clicking the pair row IS the user
+    // saying "both", and the commit path must be able to tell it apart from a
+    // click on an ordinary mono row (both arrive with `leg` undefined). Without
+    // this the drop chooser would re-ask a question the menu just answered.
+    onpick({ nodeId: activeModuleId, portId: p.portId, leg: p.leg, stereo: p.stereo });
     onclose();
   }
 </script>
