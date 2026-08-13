@@ -26,6 +26,7 @@
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { ensureSkifreeBridge, releaseSkifreeCardState } from '$lib/audio/skifree-bridge';
   import {
     SKIFREE_CANVAS_SIZE,
     type SkifreeBridge,
@@ -72,11 +73,7 @@
   }
 
   function ensureBridge(): SkifreeBridge {
-    const w = globalThis as unknown as { __skifree?: SkifreeBridge };
-    if (!w.__skifree) {
-      w.__skifree = { controller: null, onGate: null, cvDriven: false };
-    }
-    return w.__skifree;
+    return ensureSkifreeBridge();
   }
 
   /** Engage / disengage native mouse steering. Engaged only when focused AND
@@ -165,9 +162,14 @@
     controller = null;
     if (scriptTagEl?.parentNode) scriptTagEl.parentNode.removeChild(scriptTagEl);
     scriptTagEl = null;
-    // Clear the bridge so a re-mount starts clean. We leave window.SkiFree
-    // (the loaded bundle code) in place — re-mount reuses it.
-    delete (globalThis as unknown as { __skifree?: unknown }).__skifree;
+    // #1590: release ONLY the CARD-owned field. This used to
+    // `delete globalThis.__skifree`, which destroyed the whole bridge including
+    // the FACTORY's `onGate` — and the factory registers that once at
+    // materialize and never runs again, so the card's remount rebuilt the bridge
+    // with `onGate: null` and GATE (this module's only trigger source) was dead
+    // for the life of the node while everything still LOOKED healthy.
+    // We leave window.SkiFree (the loaded bundle code) in place — re-mount reuses it.
+    releaseSkifreeCardState();
   });
 </script>
 
