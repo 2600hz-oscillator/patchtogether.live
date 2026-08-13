@@ -123,6 +123,15 @@
 .dock-faceplate .faceplate-body {
   min-width: 900px;
 }
+/* …but 900px is the KIT's width, not every occupant's. A legacy card frame is
+   already `width: max-content`, so forcing 900px on its body is precisely the
+   "more horizontal space than it needs" this fixes (#1573). Curated faces
+   (ModuleShell) keep the kit width — for them 900px IS what they need, and the
+   half-width-split scroll behaviour the min-width exists for is unchanged. */
+.dock-faceplate .faceplate-body:has(.fp-card-frame) {
+  min-width: 0;
+  width: max-content;
+}
 
 .dock-faceplate .faceplate {
   position: relative;

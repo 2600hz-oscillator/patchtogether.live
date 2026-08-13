@@ -366,16 +366,16 @@
      .faceplate-scroll padding-bottom — keeps short-content scenes
      pixel-identical). */
   .dock-faceplate {
-    flex: 1 1 auto;
+    /* #1573: match the pane — size to content, never grow. */
+    flex: 0 1 auto;
     min-width: 0;
     max-height: min(60vh, 680px);
     display: flex;
     padding-bottom: 4px;
   }
   .faceplate {
-    flex: 1 1 auto;
+    flex: 0 1 auto;
     min-width: 0;
-    width: 100%;
     display: flex;
     flex-direction: column;
   }
