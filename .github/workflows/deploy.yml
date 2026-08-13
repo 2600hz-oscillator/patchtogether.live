@@ -90,31 +90,38 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Manual deploys require the latest CI run on the chosen branch to be green.
-  # Prevents shipping broken code by accident from the Actions UI.
+  # Manual deploys require THIS COMMIT's CI run to be green — not the branch's
+  # newest run. Those are different questions, and the old code asked the second
+  # while reporting the first: it selected `headSha` in the `--json` and then
+  # dropped it in the `--jq`, so a commit pushed on top of a green one deployed
+  # on its predecessor's evidence, with the job reporting success.
+  #
+  # Decision logic + the full write-up live in scripts/verify-deploy-sha.mjs and
+  # are unit-tested by scripts/verify-deploy-sha.test.ts in the `unit` lane,
+  # which also asserts this job still calls it and that branch-latest lookups
+  # stay out of the deploy path.
   verify-ci:
-    name: Verify CI passed for this branch
+    name: Verify CI passed for this commit
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
-      - name: Check latest CI run for ${{ github.ref_name }}
+      - uses: actions/checkout@v4
+      - name: Check CI run for ${{ github.sha }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DEPLOY_SHA: ${{ github.sha }}
+          REPO: ${{ github.repository }}
         run: |
-          BRANCH="${{ github.ref_name }}"
-          echo "Looking up latest CI run for branch: $BRANCH"
-          STATUS=$(gh run list \
-            --repo "${{ github.repository }}" \
-            --branch "$BRANCH" \
-            --workflow CI \
-            --limit 1 \
-            --json conclusion,headSha \
-            --jq '.[0].conclusion' || echo "missing")
-          echo "Latest CI conclusion: $STATUS"
-          if [[ "$STATUS" != "success" ]]; then
-            echo "::error::Refusing to deploy: latest CI run on '$BRANCH' is '$STATUS' (must be 'success')."
-            exit 1
-          fi
+          set -euo pipefail
+          echo "Deploy target commit: $DEPLOY_SHA (ref ${{ github.ref_name }})"
+          # Query by head_sha so the API answers about THIS commit. The script
+          # re-checks the returned head SHA anyway and fails closed on anything
+          # unparseable — the filter is not trusted as the proof.
+          CI_RUN_JSON=$(gh api \
+            "repos/$REPO/actions/workflows/ci.yml/runs?head_sha=$DEPLOY_SHA&per_page=1" \
+            2>/dev/null || echo "")
+          export CI_RUN_JSON
+          node scripts/verify-deploy-sha.mjs decide
 
   # Detect whether this main-push bumped `package.json:.version`. Other jobs
   # gate on the output. Skipped for non-push events; outputs default to false.
