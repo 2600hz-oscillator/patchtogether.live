@@ -1,19 +1,15 @@
 # CLIP PLAYER — full SONG MODE / arranger (design) — 2026-07-18
 
-> **TRIAGE 2026-08-04 — PARTIALLY BUILT; the rest is live backlog.**
-> **Phase 1 shipped as #1099** ("ARRANGER / SONG MODE phase 1 — record → print →
-> play core", merged 2026-07-18) — i.e. the §0 recommendation was accepted: the
-> launch-event-log was thrown out as the song source of truth and replaced by
-> printed layers. The §3.4 dependency also shipped: the per-clip sibling `auto`
-> map is live (`packages/web/src/lib/audio/modules/clip-types.ts:237` — "PER-CLIP
-> AUTOMATION — the sibling `auto` map (automation redesign Phase 1)").
-> **Still un-built:** the §5 SONG view rebuild, the arranger-automation lane, and
-> §7's later phases. Read §7 for what remains, not the doc's "DESIGN ONLY" header.
-> This file is cited from source — do not delete it without fixing the citation.
+> **PARTIALLY BUILT — phases 0+1 shipped as #1099, the rest is live backlog.**
+> Trimmed 2026-08-12: the sections describing the pre-#1099 tree and the data
+> model that landed verbatim in `clip-song.ts` were deleted, because the code is
+> now the better copy of both. §0 states what remains.
+> **This file is cited from source** (`clip-song.ts:5`) — do not delete it
+> without fixing the citation.
 
-DESIGN ONLY. No code in this pass. Supersedes
-`.myrobots/plans/song-mode-arranger-2026-06-16.md` (the launch-event-log skeleton
-that shipped as the "experimental red ● arranger record").
+Supersedes `.myrobots/plans/song-mode-arranger-2026-06-16.md` (the
+launch-event-log skeleton that shipped as the "experimental red ● arranger
+record").
 
 Owner's model (verbatim intent):
 - The **arranger view BECOMES a SONG view.**
@@ -34,232 +30,42 @@ Owner's model (verbatim intent):
 
 ---
 
-## 0. TL;DR / recommendation
+## 0. What shipped, and what this document is now for
 
-- **Throw out the launch-event-log as the SONG source of truth** (`ArrangeData` /
-  `ArrangeEvent` / block-derivation / reference-playback). It models a fundamentally
-  different thing (a *reference* to clips that re-derive notes at play time) than
-  what the owner wants (a *printed, concrete* note + automation performance). It
-  cannot represent "8 channels of note+timing + 8 channels of automation + an
-  arranger-automation lane" without being bent past recognition.
-- **Keep and refactor the surrounding scaffolding** — the `songBeat` clock, the
-  half-open `eventsInRange` windowing *pattern*, the full-window editor overlay
-  shell + timeline geometry + drag/playhead, the CRDT-safe `writeArrange`
-  transactional discipline, and the Launchpad SES/ARR + REC bindings. These are
-  generic and correct; only the *model they carry* changes.
-- **New SONG model = three printed layers**, all reusing the clip-automation
-  storage disciplines (sibling-keyed maps, per-key writes, coerce boundary,
-  0..1-normalized automation events, single-driver ownership, single-writer
-  recorderId, transient-scrub, container-init-at-load-seam):
-  1. `song.notes[lane]` — concrete `SongNoteEvent[]` per lane (absolute song-beat).
-  2. `song.auto[lane]` — concrete captured clip-automation per lane (absolute
-     song-beat, `targetKey → SongAutoTrack`).
-  3. `song.arrangerAuto` — the arranger-automation lane (`targetKey →
-     SongAutoTrack`), fed by controls assigned to the arranger lane; **overrides**
-     both clip playback automation and `song.auto[lane]` for the same param.
-- **Keep the launch log ONLY as an optional, non-authoritative "structure track"**
-  (`song.launches[]`, exactly today's `ArrangeEvent[]`) captured alongside the
-  print, so the note ribbons remain re-bakeable and block-editable. It never
-  drives audio. Owner question Q1 decides whether we keep it at all or go
-  pure-printed.
-- **Recording flow = perform in Session under a SONG-REC arm; the concrete result
-  prints to the song channels** (Deluge "hold Record → press Song → perform →
-  press Play"). **Playback flow = song time drives the printed channels straight
-  out the existing 8 lane pitch/gate/vel outputs**; clips do not launch live.
-- **Editing + visualization live on the CARD** (Deluge Automation-View idiom on a
-  screen we actually have); the **Launchpad shows STATE only** (SES/ARR, REC,
-  per-channel arm, playhead) — per the automation-redesign owner decision.
-- Effort: **~5–7 phased weeks** for the full thing; a usable "record→print→play"
-  core is ~2 weeks. Biggest risk is **durable size / write-storm** of a
-  multi-minute concrete note+automation print — mitigated by commit-at-boundary +
-  decimation caps, the same discipline clip automation already uses.
+Phase 0 + Phase 1 shipped as **#1099**. The §7 recommendation was accepted: the
+launch-event-log was **thrown out as the song source of truth** and replaced by
+printed layers, and the whole §3 data model landed verbatim in
+`packages/web/src/lib/audio/modules/clip-song.ts` — which cites this file. Read
+the code for the model; read this document for the **parts still un-built** and
+for the reasoning that is nowhere else.
+
+Still un-built, and why they are here:
+
+- **Phase 2** — automation capture + playback. `song.auto[lane]` and
+  `song.arrangerAuto` exist as types and coerce paths; **nothing captures into
+  them** (`clipplayer.ts` only container-inits and clears them). The override
+  precedence that makes them safe is §3.4 / §4.4.
+- **Phase 3** — the card SONG editor (§5). `ClipArrangeEditor.svelte` still edits
+  the *legacy launch log*, not song notes/automation ribbons.
+- **The clean break.** `clipMode` now has THREE values —
+  `'session' | 'arrangement' | 'song'` (`clip-arrange.ts:50`) — and
+  `ClipPlayerData` still carries `arrangement?: ArrangeData` beside `song?`. The
+  legacy skeleton was deliberately kept intact; retiring it is still owed.
+- **Q1 is answered by the shipped code**: `SongData` has **no `launches` field**,
+  so the structure track was dropped rather than re-homed. The launch log survives
+  only as the separate legacy `'arrangement'` mode.
+
+Design constants that shipped with the model: `MAX_SONG_NOTE_EVENTS = 8000`,
+`MAX_SONG_AUTO_TRACKS = 32`, `MAX_SONG_AUTO_EVENTS = 8000` — the durable-size
+guards against the write-storm risk in §7.
 
 ---
 
-## 1. What exists today (assessed against the owner's model)
+## 3. Data model — the parts Phase 2 still has to honour
 
-Grounded in the code, not memory:
-
-**`packages/web/src/lib/audio/modules/clip-arrange.ts`** — the model + pure
-helpers. `ArrangeEvent{beat,lane,slot|'stop',immediate?}`, `ArrangeData{events,
-lengthBeats,loop}`, `recordEvent` (stable beat-sorted insert), `eventsInRange`
-(half-open window), `arrangeLengthBeats`, plus a Phase-2 block layer
-(`arrangeBlocks`, `moveBlock`, `setBlockSlot`, `deleteBlock`, `snapBeat`). Engine-
-free, fully unit-tested. **This is a launch-reference log**: the source of truth is
-*"lane L launched slot S at beat B"*, and the notes are re-derived from the live
-clip at playback. Model is elegant for its purpose and wrong for the owner's.
-
-**`packages/web/src/lib/audio/modules/clipplayer.ts`** (engine) — carries:
-- a self-contained song-position clock: `songBeat`, `lastBeatAt`, `arrangeCursor`
-  (lines ~434–443), advanced by real elapsed beats each tick (~1226–1232);
-- a record hook: `appendArrangeEvent` fires inside `applyLaneQueued` when
-  `isRecording() && clipMode()==='session'` (~966–971), capturing at APPLY time;
-- origin resets on record-arm / entering arrangement / play (~1168–1190);
-- a replay cursor: in `clipMode==='arrangement'`, `eventsInRange` fires launches
-  as `songBeat` advances, wrapping at `arrangeLengthBeats` (~1369–1381);
-- engine `read()` taps: `songBeat`, `clipMode`, `recording`, `arrangeEvents`
-  (~1725–1729).
-
-**`packages/web/src/lib/ui/modules/ClipArrangeEditor.svelte`** — a full-window
-overlay (mirrors MAPPY): 8 lane rows × song-time bars, colored blocks derived from
-the log, drag-to-move (local preview → one `commitMove` on drop), SES/ARR, ● REC,
-REPLACE/OVERDUB, SNAP bar/beat, loop ±, cycle-clip, delete, live playhead read off
-the engine `songBeat`. **`clipplayer-arrange-edit.ts`** — the shared `writeArrange`
-transactional (ydoc.transact, coerce, in-place) discipline + `commitMove`.
-
-**`launchpad-map.ts`** — `CC_REC = CC_UP (91)` = arranger record-arm
-(`node.data.recording`); `CC_SONG = CC_DOWN (92)` = SESSION⇄ARRANGEMENT
-(`node.data.clipMode`); `RGB_SONG_SESSION`/`RGB_SONG_ARRANGE`/`RGB_RECORDING`
-LEDs; `SingleView` includes `'arranger'`.
-
-**`ClipPlayerData`** (clip-types.ts) already reserves: `arrangement?: ArrangeData`,
-`clipMode?: 'session'|'arrangement'`, `recording?: boolean`, `recordMode?:
-'replace'|'overdub'`. Doc copy already tells users the arranger is "experimental"
-and "records session launches of scenes 1–8… recording launches of scene 9+ is a
-follow-up."
-
-### Verdict: THROW OUT the log-as-song; KEEP the plumbing
-
-**Throw out** (model mismatch — these encode a *reference* performance):
-- `ArrangeData`/`ArrangeEvent` **as the song's authoritative content**, and the
-  arrangement-mode replay path that re-launches clips (`applyArrangeEvent` →
-  `setLaneActive`). The owner wants concrete printed channels, not re-launched
-  references. A launch log cannot hold 8 note channels + 8 automation channels + a
-  song-level automation lane; it holds *pointers*.
-- The block-derivation editor semantics (a block = a clip reference spanning
-  launch→next-event). The SONG editor edits *notes* and *automation ribbons*, not
-  clip-reference blocks.
-
-**Keep / refactor** (generic, correct, reusable — no reason to rewrite):
-- the `songBeat` / `lastBeatAt` song clock + origin-reset seam (Phase-1 recommend
-  stays self-contained; owner Q on shared TIMELORDE position);
-- the **half-open windowing pattern** (`from`/`to`, fire-once, loop-wrap split) —
-  reused verbatim to *print* per tick and to *play back* per tick;
-- the editor overlay shell + timeline geometry (viewBox, lane rows, bar lines,
-  drag-to-move → single commit, engine-read playhead) — the container is right;
-  the layer content changes;
-- the `writeArrange` **one-transact, coerce, in-place** CRDT discipline — becomes
-  `writeSong`;
-- the Launchpad SES/ARR + REC scaffolding (renamed to SONG semantics; LEDs and
-  view routing already exist).
-
-**Migration:** the skeleton is shipped-but-experimental and self-described as such.
-Recommend a **clean break** ([[schema-cleanup-campaign-complete]] precedent):
-on load, `coerceSong` ignores any legacy `arrangement`/`clipMode`/`recording`
-fields (they coerce away), and the old launch log is dropped — OR, if Q1 says keep
-the structure track, it is re-homed under `song.launches` read-only. No user has a
-song they can't trivially re-record.
-
-**Rename for clarity:** the "arranger" view becomes the **SONG** view everywhere
-(card button, Launchpad view, docs). `clipMode` value `'arrangement'` → `'song'`.
-
----
-
-## 2. Prior art (short — full appendix in §8)
-
-Deluge's Arranger View: rows = tracks (instruments), horizontal = time; you place
-*clip instances* along each row, arm tracks for arrangement-recording (hold RECORD,
-tap a track's mute pad), then **hold Record → press Song → perform clip launches →
-press Play** to capture a live session performance into the timeline. Automation is
-a separate layer: **Automation Arranger View** (Shift+Song) records/edits param
-automation *on a song-arrangement basis*, distinct from **Automation Clip View**
-(per-clip). Deluge keeps notes/clips and automations as **independent scopes** —
-clearing one leaves the other. "White" (arranger-only) clip instances let you
-record automation that affects only the arrangement, not the source clip. The
-Automation grid is columns=time / rows=value(0–128); hold-pad-A + press-pad-B draws
-a linear ramp; an interpolation toggle switches smooth vs stepped.
-
-We adopt: the record-a-live-performance gesture; per-track arrangement-record
-arming; the notes/automation-are-independent-scopes rule; the Automation-View grid
-idiom (col=time, row=value, hold-A+press-B ramp, interp toggle). We **simplify**
-(§8.2): concrete *printed* channels instead of clip-instance references as the
-authoritative playback; an explicit **arranger-automation LANE** instead of
-white-vs-colored-clip semantics; no sections/12-color grouping (we already have
-scenes + scene-repeats + per-lane color); one song scoped to this clip player's 8
-lanes (not a rack-global arranger); editing on the card, Launchpad state-only.
-
----
-
-## 3. Data model — the Song
-
-New file **`clip-song.ts`** (engine-free, pure, unit-testable — mirrors
-`clip-arrange.ts`'s posture but with the new model). Reuses types from
-`clip-types.ts` (`NoteEvent`, `AutomationEvent`, `AutoTrack`, `automationTargetKey`,
-`parseAutomationTargetKey`).
-
-### 3.1 Top-level
-
-```ts
-/** The recorded Song — a concrete, PRINTED performance over song time. */
-interface SongData {
-  /** schema marker for this sub-model (independent of ClipPlayerData.sv). */
-  v: number;
-  /** Song length in beats. 0 = OPEN (derive from the furthest event, bar-ceil). */
-  lengthBeats: number;
-  /** Loop the song (true) or play once then stop (false). */
-  loop: boolean;
-  /** NOTE + TIMING channels — per instrument lane, sparse. Keyed by lane digit
-   *  '0'..'7' (per-key write discipline, like auto[]/autoAssign). Absent = the
-   *  lane has no recorded notes. */
-  notes?: Record<string, SongNoteChannel | null>;
-  /** AUTOMATION channels captured from CLIP automation as it fired — per lane,
-   *  keyed by lane digit. Each is a targetKey→track map (the printed, flattened
-   *  clip envelopes at absolute song time). */
-  auto?: Record<string, SongAutoChannel | null>;
-  /** The single ARRANGER-AUTOMATION LANE: targetKey → track, captured from live
-   *  tweaks of controls ASSIGNED to the arranger lane. OVERRIDES clip + channel
-   *  automation for the same param (§4.4). */
-  arrangerAuto?: SongAutoChannel;
-  /** Which MODULES feed the arranger-automation lane: module nodeId → true.
-   *  MODULE-level assignment (owner-locked model, same as autoAssign), a SEPARATE
-   *  map from the per-clip autoAssign — a module may feed a clip lane AND/OR the
-   *  arranger lane. Per-key writes. */
-  arrangerAssign?: Record<string, true>;
-  /** OPTIONAL non-authoritative STRUCTURE track: the launch log (today's
-   *  ArrangeEvent[]) captured alongside the print, for re-bake + block edit.
-   *  Never drives audio. Present only if owner Q1 keeps it. */
-  launches?: ArrangeEvent[];
-}
-```
-
-### 3.2 Note channels (up to 8 × note+timing)
-
-```ts
-interface SongNoteChannel {
-  /** step-ordered notes at ABSOLUTE song position, in the SAME step grid the
-   *  lane emitted at. `beat` is fractional song-beats (drift-proof); `step` is
-   *  derived for the editor. Poly: multiple events may share a beat. */
-  events: SongNoteEvent[];
-}
-interface SongNoteEvent {
-  beat: number;        // absolute song-beat of the note ONSET
-  midi: number;        // MIDI note int (same convention as NoteEvent)
-  velocity?: number;   // 0..127
-  lengthBeats?: number;// gate width in song-beats (captured on note-off)
-}
-```
-
-Rationale: reuse `NoteEvent`'s shape but key on **absolute song-beat**, not
-clip-step, because the printed timeline is not clip-relative. `lengthBeats`
-replaces `lengthSteps` for the same reason. Playback and the editor derive
-integer steps from `beat × stepsPerBeat` on the fly.
-
-### 3.3 Automation channels (up to 8 × automation)
-
-```ts
-interface SongAutoChannel { tracks: Record<string, SongAutoTrack>; }
-interface SongAutoTrack {
-  events: SongAutoEvent[];          // step-ordered by beat
-  interp?: 'linear' | 'hold';       // same semantics as AutoTrack.interp
-}
-interface SongAutoEvent { beat: number; value: number; } // value normalized 0..1
-```
-
-Identical in spirit to `AutoTrack`/`AutomationEvent` (0..1 normalized param space,
-optional interp), but positioned in **absolute song-beat** instead of clip-step.
-`tracks` keyed by `automationTargetKey` (`nodeId::paramId`) — the exact key format
-clip automation already uses, so `parseAutomationTargetKey` / target UI / the
-single-driver ownership all carry over.
+The types, coerce boundary, caps and `SongRecState` are all live in
+`clip-song.ts`; do not re-derive them from this document. What remains
+un-implemented is the *relationship* below.
 
 ### 3.4 Relationship to the existing per-clip `auto[]` model
 
@@ -283,75 +89,28 @@ single-driver ownership all carry over.
   distinct menu items; a module fed to the arranger lane gets a second border
   accent / badge.)
 
-### 3.5 Where it lives on `ClipPlayerData` + transient scrub
+### 3.5 Where it lives on `ClipPlayerData` (SHIPPED — one item still owed)
 
-- Replace the reserved `arrangement?: ArrangeData` with `song?: SongData`.
-- `clipMode?: 'session'|'song'` (renamed value); `songRec?: SongRecState` (below).
-- **Container-init at the factory load seam** (like `auto`/`autoAssign`/
-  `automation`): create `song`, `song.notes`, `song.auto`, `song.arrangerAssign`
-  empty so per-key writes never LWW a peer's subtree.
-- **Transient scrub:** add `songRec` (live record-arm + recorderId) to
-  `CLIP_PLAYER_TRANSIENT_DATA_FIELDS`. `song` itself is CONTENT (copied on
-  duplicate); `song.arrangerAssign` is a global module claim like `autoAssign` →
-  scrub it on duplicate (or keep — owner Q7). A duplicated player is born in
-  Session, not recording.
-
-### 3.6 Record-arm state (per-channel, single-writer)
-
-```ts
-interface SongRecState {
-  /** master arm: song is armed to record on next/continued play. */
-  armed?: boolean;
-  mode?: 'replace' | 'overdub';
-  /** the arming client's ydoc.clientID — single-writer for the PRINT commit. */
-  recorderId?: number;
-  /** per-channel note-record enable, keyed by lane digit '0'..'7'. Absent = the
-   *  channel captures nothing this take (Deluge per-track arrangement arm). */
-  noteEnable?: Record<string, true>;
-  /** per-channel automation-record enable (captures that lane's clip automation
-   *  into song.auto[lane]). */
-  autoEnable?: Record<string, true>;
-  /** arranger-automation-lane record enable (captures assigned-module tweaks). */
-  arrangerEnable?: boolean;
-}
-```
-
-Per-key enables mirror `automation.lanes` (concurrent per-channel toggles merge
-key-by-key). `recorderId` = the single client that commits the print (avoids
-double-print in multiplayer — one writer, others watch/play), exactly like
-`isLaneAutomationRecorder`. (Owner Q6: is SONG record single-recorder-per-song, or
-per-channel like clip automation? Recommend single-recorder-per-song for v1 — the
-print is one coherent take — with per-channel *enable* flags.)
+`song?: SongData` + `songRec?: SongRecState` are on `ClipPlayerData`, container-
+init and transient scrub are live. **Still owed:** the reserved
+`arrangement?: ArrangeData` was *added beside* `song?` rather than replaced, and
+`clipMode` kept `'arrangement'` alongside `'song'`. The clean break — coerce the
+legacy fields away on load — has not happened.
 
 ---
 
-## 4. Flows
+## 4. Flows — the Phase-2 half
 
-### 4.1 Model — two transports (as today, renamed)
+Phase 1's gesture is shipped: arm → perform in session → the concrete result
+prints → SONG time plays the printed notes out the 8 lane outputs. Read
+`clipplayer.ts` for it. What is specified here and NOT built is the automation
+capture and its playback precedence.
 
-- **SESSION** (unchanged): launch clips per lane; they loop; QNT-quantized or
-  immediate switching.
-- **SONG** (new authoritative): song time drives the *printed* concrete channels
-  straight out the 8 lane outputs; clips do not launch live.
+### 4.2 What the RECORD tee still has to add
 
-### 4.2 RECORD flow (arm → perform in session → print)
+Per tick, on the recorder client only (`songRec.recorderId` — single-writer,
+already enforced for the note print):
 
-1. **Arm.** Card SONG-REC button (and Launchpad `CC_REC`). Sets
-   `songRec.armed=true`, stamps `recorderId=ydoc.clientID`, defaults all note +
-   auto channel enables on (owner can disable channels per Deluge per-track arm).
-   Optionally arm the arranger lane (`arrangerEnable`). Player stays in SESSION.
-2. **Play + perform.** On transport start with `armed`:
-   - `mode==='replace'` → clear `song.*` + reset song origin (`songBeat=0`).
-   - `mode==='overdub'` → keep `song.*` + keep song time (merge by beat).
-   You now *perform*: launch clips (card / Launchpad / scenes / scene-repeats),
-   and twist controls of modules **assigned to the arranger lane**.
-3. **Print, per tick, on the recorder client only** (single-writer):
-   - **NOTES:** the emit path (`emitLaneStep`) already computes each lane's
-     sounding notes per step (poly pitch/gate/vel). Tee those into
-     `song.notes[lane]` at `beat = songBeat` for enabled channels: append a
-     `SongNoteEvent` per onset; capture `lengthBeats` on the note-off (reuse the
-     `extendRecordedNote` idea from `clip-record.ts`, in song-beats). This is the
-     literal "sequence of notes that results from launching clips over time."
    - **AUTOMATION (clip → channel):** as each lane's per-clip envelopes drive
      params (the existing playback drive), sample the *effective normalized value*
      per enabled channel per tick and append to `song.auto[lane].tracks[key]`
@@ -363,32 +122,21 @@ print is one coherent take — with per-channel *enable* flags.)
      `song.arrangerAssign` records to `song.arrangerAuto.tracks[key]`. Reuse
      `clip-automation-controller.ts`'s `RecordGate` + touch-gate cores verbatim;
      only the destination + positioning (absolute song-beat) differ.
-   - **STRUCTURE (optional):** the existing `appendArrangeEvent` still runs into
-     `song.launches` for re-bake/edit if Q1 keeps it.
    - **Write discipline:** buffer in engine-local arrays during the take; commit to
      the Y.Doc **at song-loop boundaries and on punch-out**, never per tick
      ([[cv-modulation-live-store-write-storm]]). Per-key writes only. Cap +
-     decimate on commit (§6 risks).
-4. **Stop / disarm.** Press Play (stop) or toggle REC off → commit the in-flight
-   partial print, clear `songRec` (transient), keep the printed `song`.
+     decimate on commit (§7 risks).
 
-The gesture is Deluge's: arm → perform in session → the concrete result prints.
+### 4.3 PLAYBACK — the automation half
 
-### 4.3 PLAYBACK flow (SONG mode)
-
-`clipMode==='song'` + transport running:
-- advance `songBeat` by real elapsed beats (existing clock);
-- **notes:** for each lane, fire `song.notes[lane]` events in the half-open window
-  `[arrangeCursor, songBeat)` (reuse the `eventsInRange` pattern) straight into the
-  SAME poly pitch/gate/vel emit path clips use — the *source* is a long concrete
-  timeline instead of a looping clip; the emit is shared;
+In `clipMode==='song'` with the transport running (the note half is shipped):
 - **automation:** drive params from `song.auto[lane]` + `song.arrangerAuto` with
   the override precedence (§3.4). Transient param drive only (never rewrite the
   store); reuse the clip-automation seam-glide / hold-last-value / no-jump policy
   wholesale (loop-wrap, entering/leaving = de-zipper glide; live grab suspends;
   release glides back — all already built in the clip model);
-- **loop / one-shot:** at `lengthBeats`, wrap (split the window, reset
-  `arrangeCursor`, re-anchor held automation) or stop, per `song.loop`;
+- at the `lengthBeats` wrap, **re-anchor held automation** as well as resetting
+  the cursor;
 - clips do **not** launch live in SONG mode; the printed channels are the
   performance. (Owner Q3: allow live clip-launch *punch-in over* the song? Deluge
   lets you jump session↔arranger while playing. Recommend v1: entering Session
@@ -432,9 +180,6 @@ shell is the right container; its *content* is rebuilt.
 - **ARRANGER-AUTOMATION lane row** (visually distinct, full song width): the same
   Automation-View ribbon, one track per assigned target, labeled by module/param.
   A chip row shows modules feeding the arranger lane (like `autoAssignCounts`).
-- **Optional STRUCTURE overlay** (if Q1 keeps `song.launches`): faint clip-launch
-  block markers behind the note ribbons, with a "re-bake notes from structure"
-  action. Off by default.
 - **Editing = CRDT-safe** via a new `writeSong` (the `writeArrange` discipline,
   renamed): one transact, coerce, in-place, per-key; drag = local preview → one
   commit on drop.
@@ -456,58 +201,34 @@ per-channel armed dots, an "OPEN SONG ⤢" button. No editing on the small face
 
 ---
 
-## 6. CRDT / storage — reuse vs extend
+## 6. CRDT / storage — what Phase 2 must reuse rather than reinvent
 
-**Reuse verbatim (no new invention):**
-- sibling-keyed sparse maps + **per-key set/delete** writes (concurrent per-channel
-  / per-target edits merge, never whole-array LWW) — `song.notes`, `song.auto`,
-  `song.arrangerAuto.tracks`, `song.arrangerAssign`;
-- **coerce-at-boundary** (`coerceSong` / `coerceSongNoteChannel` /
-  `coerceSongAutoChannel`) — SyncedStore/patch-load safe, drops garbage, caps
-  sizes, plain-object-severs live Y children ([[yjs-save-load-real-ydoc]]);
-- **container-init at the factory load seam** (LWW-race hardening);
-- **single-writer `recorderId`** for the print commit (no double-print);
-- **transient-field scrub** on duplicate (`songRec` transient; `song` content);
+The storage disciplines below are already load-bearing for the shipped note
+print; the automation channels are deliberately a **parallel structure**, not a
+reinterpretation of `auto[]`, so the two automations stay disjoint CRDT scopes
+and neither clobbers the other.
+
+- sibling-keyed sparse maps + **per-key set/delete** writes (concurrent
+  per-channel / per-target edits merge, never whole-array LWW);
+- **coerce-at-boundary**, **container-init at the factory load seam**,
+  **single-writer `recorderId`**, **transient-field scrub** on duplicate;
 - `automationTargetKey` / `parseAutomationTargetKey`, `AutomationEvent` 0..1
   normalization, `interp`, the `RecordGate` / `QuantizedRecordWindow` /
   `mergeAutomationOverdub` record cores, the no-jump seam-glide/hold-last policy,
   the single-driver ownership pattern (`autoPlaybackOwners` → `songPlaybackOwners`);
 - the `writeArrange` transactional pattern → `writeSong`.
 
-**Extend (genuinely new):**
-- **absolute song-beat positioning** (`SongNoteEvent.beat`, `SongAutoEvent.beat`)
-  vs clip-step — the model's defining difference;
-- **note-print tee** off `emitLaneStep` + song-beat `lengthBeats` capture on
-  note-off (adapt `extendRecordedNote`);
-- **clip-automation → channel capture** (sampling the effective envelope value into
-  a song channel — the "automation that fires during playback" print);
-- **higher size caps + decimation** for multi-minute prints (see risks);
-- **arranger-lane assignment** as a second, separate module→lane map.
-
-Storage is intentionally a **parallel structure**, not a reinterpretation of
-`auto[]`, so the two automations stay disjoint CRDT scopes and neither clobbers the
-other.
+Genuinely new for Phase 2: **clip-automation → channel capture** (sampling the
+effective envelope value into a song channel — the "automation that fires during
+playback" print), and **arranger-lane assignment** as a second, separate
+module→lane map.
 
 ---
 
-## 7. Phased build plan + effort + risks + owner questions
+## 7. Remaining phases + risks + owner questions
 
-### Phases
+### Phases (0 and 1 shipped as #1099)
 
-- **Phase 0 — model + throw-out (0.5 wk).** New `clip-song.ts` (types + pure
-  coerce/query/edit helpers, fully unit-tested). Rip out `ArrangeData` as the song
-  source of truth; rename `clipMode` value → `'song'`; clean-break coerce of legacy
-  fields; add `song`/`songRec` to `ClipPlayerData` + transient scrub + container
-  init. Docs + contract-lock accept (audio def is NOT in the WebGL basis — no
-  re-attest). **Adversarial-verify before close** (the memory's discipline caught
-  7–8 majors/phase on the clip work).
-- **Phase 1 — note print + play (1.5 wk).** Song clock refactor; note-print tee off
-  `emitLaneStep` (per-channel enable, replace/overdub, commit-at-boundary); SONG
-  playback of `song.notes[lane]` out the existing outputs; compact card readout +
-  SES/SONG/REC. **e2e: real TIMELORDE → clip player, perform launches under
-  SONG-REC, assert the printed note channel replays audible RMS out the lane
-  outputs** (mirrors the poly-real-source-chain rule — engine-direct tests are not
-  enough).
 - **Phase 2 — automation channels + arranger lane (1.5 wk).** Capture clip
   automation → `song.auto[lane]`; arranger-lane assignment + capture →
   `song.arrangerAuto`; playback drive with the override precedence + no-jump seams;
@@ -522,11 +243,14 @@ other.
   REC, per-channel arm, playhead, content presence); docs pass (co-located
   `docs`/`controlFamilies`, `STRICT_DOCS`), living-docs accept; scene-repeats
   interplay verified; duplicate/scrub tests.
-- **Phase 5 (deferred / owner-gated) —** structure track re-bake UI (if Q1),
-  live-overdub-over-song (Q3), export/bounce, shared TIMELORDE song position (Q2).
+- **Phase 5 (deferred / owner-gated) —** live-overdub-over-song (Q3),
+  export/bounce, shared TIMELORDE song position (Q2).
+- **Phase 6 (owed, unscheduled) —** the clean break: retire the legacy
+  `'arrangement'` `clipMode` + `ClipPlayerData.arrangement`, coercing them away on
+  load. They were kept intact through Phase 1 and never removed.
 
-Total: **~5–7 weeks** phased with per-phase owner review + adversarial-verify. A
-usable "record → print → play" core (Phases 0–1) is ~2 weeks.
+Remaining effort: **~3.5–4 weeks** across phases 2–4, with per-phase owner review
++ adversarial-verify.
 
 ### Risks
 
@@ -553,31 +277,20 @@ usable "record → print → play" core (Phases 0–1) is ~2 weeks.
 
 ### Owner questions
 
-1. **Structure track:** keep the launch log as an editable non-authoritative
-   `song.launches` (re-bake notes, block-edit), or go **pure printed channels** and
-   drop it entirely? (Recommend: keep it, cheap, and it makes the note ribbons
-   re-bakeable — but it is not the source of truth.)
+Q1 (structure track), Q4 (capture the *emitted* notes), Q5 (one song-wide
+arranger lane), Q6 (single-recorder-per-song) and Q9 (REPLACE default) were all
+**settled by what Phase 1 shipped** — read `clip-song.ts`. Still open:
+
 2. **Song clock:** self-contained `songBeat` (v1, simple) vs a shared TIMELORDE
    song position (tighter long-form, bigger cross-module change)? (Recommend v1
    self-contained, Q re-open for long songs.)
 3. **Live over song:** in SONG playback, allow live clip-launch / knob punch-in
    *over* the song (Deluge session↔arranger jumping), or is song playback strictly
    authoritative and entering Session stops it? (Recommend authoritative for v1.)
-4. **Note capture fidelity:** print the *emitted* notes (post per-lane rate/div,
-   swing, mute, S&H, mono/poly — literally what sounded) vs the *nominal* clip
-   notes? (Recommend emitted = what you heard, matching capture-at-apply-time.)
-5. **Arranger-lane scope:** one arranger-automation lane (owner's phrasing) with
-   many targets — confirm it is a single song-wide lane, not per-channel arranger
-   automation.
-6. **Record arming:** single-recorder-per-song (one coherent take, recommended) vs
-   per-channel single-writer like clip automation (different peers print different
-   channels concurrently)?
 7. **Duplicate:** does duplicating a clip player copy the `song` (content — yes) and
    the `arrangerAssign` (a global module claim — scrub like `autoAssign`, or keep)?
 8. **Override granularity:** arranger automation overrides clip/channel automation
    *per-param* (recommended) — confirm it is not an all-or-nothing song-wide mode.
-9. **Replace vs overdub default** for SONG-REC (recommend replace, matching the
-   clip skeleton).
 
 ---
 
@@ -630,32 +343,20 @@ editor; arranger-automation overriding clip automation.
 
 ---
 
-## 9. Files touched (anticipated; DESIGN only — no changes made)
+## 9. Files phases 2–4 still have to touch
 
-- NEW `packages/web/src/lib/audio/modules/clip-song.ts` — the SongData model + pure
-  helpers (mirrors `clip-arrange.ts`; that file's song-authoritative parts retire).
-- `clip-types.ts` — `song?`/`songRec?` on `ClipPlayerData`, `clipMode` value rename,
-  transient-scrub additions, `songPlaybackOwners` (or in clip-song.ts), reuse of
-  `NoteEvent`/`AutomationEvent`/`automationTargetKey`.
-- `clipplayer.ts` (engine) — note-print tee, channel-automation capture, arranger-
-  lane capture, SONG playback drive + override precedence, song-clock refactor,
-  container init, `read()` taps (`songBeat`, `songNoteCount`, …).
+- `clipplayer.ts` (engine) — channel-automation capture, arranger-lane capture,
+  automation playback drive + override precedence.
 - `clip-automation-controller.ts` / `clip-automation-engine.ts` — reuse
   `RecordGate`/`QuantizedRecordWindow`/`mergeAutomationOverdub` for arranger-lane +
   channel capture (may extend, not fork).
 - NEW `clipplayer-song-edit.ts` — `writeSong` CRDT edit helpers (rename/rebuild of
-  `clipplayer-arrange-edit.ts`).
+  the existing `clipplayer-arrange-edit.ts`, which still serves the legacy log).
 - `ClipArrangeEditor.svelte` → rebuilt as the SONG editor overlay (note ribbons +
-  Automation-View ribbons + arranger lane); `ClipplayerCard.svelte` compact SONG
-  readout.
+  Automation-View ribbons + arranger lane).
 - `launchpad-map.ts` / `launchpad-control.svelte.ts` — rename arranger→SONG
   semantics, state-only LEDs.
 - Docs: co-located `docs`/`controlFamilies`, `STRICT_DOCS`, `module-manifest.ts`,
   `contract-lock` accept; LaunchpadDocs.
-- Tests: `clip-song.test.ts` (pure), per-module-per-port + behavioral + vrt sweeps,
-  a real-source-chain e2e (record→print→replay audible RMS), 3× flake-check on new
-  tests before MR.
-
----
-
-*Design doc. Read/research/spec only — no source changes, no PR, no build.*
+- Tests: per-module-per-port + behavioral + vrt sweeps, a real-source-chain e2e
+  for the automation half, 3× flake-check on new tests before MR.

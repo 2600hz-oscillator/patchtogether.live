@@ -1,5 +1,29 @@
 # FACE SPEC — `wavesculpt`
 
+> ⚠ **PLATFORM CORRECTIONS SINCE THIS WAS WRITTEN — 2026-08-12 janitorial sweep.**
+> - **The `signal-flow` sidebar kind was DELETED** (#1468, removed with its twelve
+>   adopters). `packages/web/src/lib/graph/types.ts:798` now reads "THERE IS NO
+>   `signal-flow` KIND, and re-adding one is the mistake this note prevents."
+>   **Any `signal-flow` sidebar block proposed below is VOID** — the surviving
+>   kinds are the three in `FaceSidebar.svelte`.
+> - **PF-22 freed the hero rank** (#1480): `face.hero.cell` no longer consumes a
+>   LANE rank, so a `panel` may now rank FIRST. Any argument below that a module
+>   cannot be faced because a panel's first legal rank is 7 is OBSOLETE.
+> - **A card↔face PRIMITIVE-PARITY gate now exists** (#1480,
+>   `card-primitive-parity.test.ts`): ranking a param whose card binds it to a
+>   primitive the platform has no cell kind for now FAILS, naming the
+>   `(module, param, primitive)` triple. `XyPad` and `NoteEntry` are the two
+>   declared gaps.
+> - **The face built from this spec SHIPPED (#1454) and was then REVERTED (#1476)**
+>   — "main is red, and it is a SHARD BUDGET collision, not a wavesculpt defect."
+>   wavesculpt is NOT in `STRICT_FACES`; the design was not what failed.
+> - The `xy` primitive gap this spec runs into is now DECLARED rather than silent
+>   (`card-primitive-parity.test.ts:160`), and an `xy` cell kind was in flight at
+>   the time of this sweep — check before assuming two independent dials.
+> - **The faceplate pipeline is PAUSED by owner directive.** This spec is BANKED,
+>   not cancelled and not blocked.
+
+
 ## 0. STATUS
 
 **Authored 2026-08-09.** Every number below was measured or read against this

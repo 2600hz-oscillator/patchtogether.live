@@ -1,25 +1,48 @@
 # FACE SPECS — BATCH 3 · the index
 
+> ⚠ **PLATFORM CORRECTIONS SINCE THIS WAS WRITTEN — 2026-08-12 janitorial sweep.**
+> - **The `signal-flow` sidebar kind was DELETED** (#1468, removed with its twelve
+>   adopters). `packages/web/src/lib/graph/types.ts:798` now reads "THERE IS NO
+>   `signal-flow` KIND, and re-adding one is the mistake this note prevents."
+>   **Any `signal-flow` sidebar block proposed below is VOID** — the surviving
+>   kinds are the three in `FaceSidebar.svelte`.
+> - **PF-22 freed the hero rank** (#1480): `face.hero.cell` no longer consumes a
+>   LANE rank, so a `panel` may now rank FIRST. Any argument below that a module
+>   cannot be faced because a panel's first legal rank is 7 is OBSOLETE.
+> - **A card↔face PRIMITIVE-PARITY gate now exists** (#1480,
+>   `card-primitive-parity.test.ts`): ranking a param whose card binds it to a
+>   primitive the platform has no cell kind for now FAILS, naming the
+>   `(module, param, primitive)` triple. `XyPad` and `NoteEntry` are the two
+>   declared gaps.
+> - **The faceplate pipeline is PAUSED by owner directive.** This spec is BANKED,
+>   not cancelled and not blocked.
+
+
 ## 0. STATUS — CORRECTED 2026-08-04 (verified against `main`, not against this doc)
 
-### UPDATE (2026-08-09): EIGHT of the twelve are BUILT; macrooscillator is IN FLIGHT; FOUR remain
+### UPDATE (2026-08-12): TEN of the twelve are BUILT; TWO remain
 
-Shipped since the table below was last touched: **meowbox — #1417** (2026-08-09,
-"a HELD audition, because the 'trigger' is an ADSR sustaining at 0.4" — its spec
-file carries the as-shipped corrections, six of them structural).
-**macrooscillator is IN FLIGHT as PR #1432** (open 2026-08-09), rebuilt from
-`macrooscillator-face-measurements-2026-08-08.md` after the original worktree
-was destroyed. Built total: clap, drummergirl, pentemelodica, sixstrum (#1332),
-analogVco (#1416), bluebox (#1431), meowbox (#1417) — seven shipped from this
-batch — plus the sixstrum re-do, which the headline below counts as the eighth
-verdict resolved. Remaining unbuilt backlog: **noise, cube, samsloop, twotracks**
-(the two declines + two swap-outs — read their per-file banners before reopening
-either verdict).
+Ground truth is `STRICT_FACES` (`packages/web/src/lib/ui/workflow/strict-faces.ts`)
+plus the `face` declarations in the defs — not the status lines in these files, and
+not the table below, which is kept only for its per-module notes.
 
-**Four of the twelve were BUILT; one was built and then DROPPED; seven are still unbuilt
-backlog.** Ground truth is `STRICT_FACES`
-(`packages/web/src/lib/ui/workflow/strict-faces.ts`) plus the `face.hero`/`face.sidebar`
-declarations in the defs — not the status lines in these files.
+**BUILT (10):** clap · drummergirl · pentemelodica · sixstrum (#1332) · analogVco
+(#1416) · meowbox (#1417) · bluebox (#1431) · macrooscillator (#1432) · cube (#1452)
+· noise (#1464).
+
+**UNBUILT (2):** **samsloop** and **twotracks**.
+
+Two verdicts in the table below were OVERRULED by what shipped, and that is the
+interesting part of this file:
+
+- **noise's spec says "NO CURATED FACE ON MERIT"** and one shipped anyway — #1464,
+  "the smallest face in the registry, and the three facts one knob cannot say".
+  The spec's real yield, its eight defects, has since been paid in full: every one
+  is now either fixed or documented in `noise.ts` / `noise-dsp.ts` / `noise.test.ts`,
+  which is why **that spec file was deleted in this sweep**.
+- **cube's spec was a decline** and cube shipped in #1452, rebuilt from
+  `face-spec-cube-rebuild-2026-08-09.md` after re-measurement found the blocker was
+  a DC fault rather than MORPH.
 
 | module | this doc's verdict | what happened |
 |---|---|---|

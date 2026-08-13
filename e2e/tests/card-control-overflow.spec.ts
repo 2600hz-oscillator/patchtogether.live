@@ -25,13 +25,14 @@
 // cheap on CI's SwiftShader software renderer — same lever the handle-presence
 // sweep uses. Added CI wall-time is comparable to ONE handle-presence pass.
 //
-// EXEMPT RATCHET: many EXISTING cards already overflow (a pre-existing debt
+// EXEMPTIONS: many EXISTING cards already overflow (a pre-existing debt
 // backlog, NOT introduced here). Fixing them all is a separate campaign, so
-// they land in EXEMPT_CONTROL_OVERFLOW — a frozen, one-reason-per-entry map
-// capped by the RATCHET test at the bottom so it can only SHRINK. The gate is
-// therefore GREEN today while still catching any NEW overflow a future card
-// introduces. Follows the same convention as EXEMPT_FROM_VRT /
-// BEHAVIORAL_MODULE_EXEMPT / EXEMPT_OUTPUT_EMIT_MODULES.
+// they land in EXEMPT_CONTROL_OVERFLOW — a NAMED, one-reason-per-entry map,
+// ANCHORED to REGISTRY by the test at the bottom of this file so an entry can
+// never outlive the module it names. The gate is therefore GREEN today while
+// still catching any NEW overflow a future card introduces. Follows the same
+// convention as EXEMPT_FROM_VRT / BEHAVIORAL_MODULE_EXEMPT /
+// EXEMPT_OUTPUT_EMIT_MODULES.
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch, type SpawnNode, type SpawnEdge } from './_helpers';
@@ -54,16 +55,17 @@ const SKIP_SPAWN: Record<string, string> = {
   cadillac: 'roaming overlay sprite, not a flow card (zero ports); covered by cadillac.spec.ts',
 };
 
-// ────────── EXEMPT RATCHET — cards with KNOWN pre-existing overflow ──────────
+// ────────── EXEMPTIONS — cards with KNOWN pre-existing overflow ──────────
 // Format: `<moduleType>` → one-line reason (measured overflow + where the real
-// layout fix belongs). Every entry is layout DEBT we still owe; the RATCHET
-// test caps the list so it can only shrink. Adding a NEW entry (or letting a
-// non-exempt card regress) fails the gate on purpose.
+// layout fix belongs). Every entry is layout DEBT we still owe. Adding a NEW
+// entry is a REVIEWED decision that appears in the diff as a named key plus a
+// measured reason; letting a non-exempt card regress fails the gate on purpose.
 //
-//   RATCHET RULE: exemptions only shrink. LOWER the cap when you fix a card's
-//   layout and delete its entry. Only RAISE it for a genuinely new, documented
-//   pre-existing overflow — NEVER to make a red sweep go green for a card whose
-//   overflow this PR (or a future one) newly introduced.
+//   RULE: delete a card's entry when you reflow its layout. Only ADD one for a
+//   genuinely pre-existing, MEASURED overflow — NEVER to make a red sweep go
+//   green for a card whose overflow this PR (or a future one) newly introduced.
+//   The reason string must carry the measurement, because that string is the
+//   whole of the review.
 //
 // (Populated from the full-registry sweep — see the PR body for the measured
 // per-card overflow figures. GRAINS OF VISION is deliberately NOT here: its card
@@ -286,8 +288,11 @@ test.describe('per-module: card controls fit within card bounds', () => {
     const exemptReason = EXEMPT_CONTROL_OVERFLOW[mod.type];
     if (exemptReason) {
       // Known pre-existing overflow debt (see EXEMPT_CONTROL_OVERFLOW). The
-      // module still exists in the sweep as documented debt; the RATCHET test
-      // caps the list so it can only shrink.
+      // module still appears in the sweep as documented debt, and the anchor
+      // test at the bottom keeps the key honest against REGISTRY.
+      // ⚠ Because this is `test.fixme`, the card is NEVER MEASURED — see the
+      // stated-scope note on the anchor test: an exempt card that has since
+      // been reflowed stays exempt silently.
       test.fixme(`${title} [EXEMPT: ${exemptReason}]`, () => {});
       continue;
     }
@@ -460,17 +465,95 @@ test.describe('backdraft: controls fit in EVERY TV MODE, not just the default', 
   }
 });
 
-// ─── RATCHET — control-overflow exemption cap ────────────────────────────────
-// EXEMPT_CONTROL_OVERFLOW lets a card with KNOWN pre-existing overflow OPT OUT
-// of the bounds assertion. Every entry is layout debt we still owe. This cap
-// FREEZES the list at today's size so it can only SHRINK as cards are fixed —
-// adding a NEW exemption fails this test on purpose.
-//   RATCHET RULE: exemptions only shrink. LOWER the number when you fix a card
-//   and delete its entry. Only RAISE it for a genuinely new, documented
-//   pre-existing overflow — NEVER to make a red sweep go green.
-test('RATCHET: control-overflow exemption list only shrinks', () => {
+// ─── ARTIFACT ANCHOR — every exemption key must still name a live module ─────
+//
+// ⚠ `toBeLessThanOrEqual(6)` on `Object.keys(EXEMPT_CONTROL_OVERFLOW).length`
+// IS GONE (2026-08-10) — P0 owner directive, "ratchets are an anti pattern;
+// remove all ratchets".
+//
+// WHAT IT WAS: a hand-typed population count frozen at 6 (2026-07-19) — the
+// pre-existing overflow backlog found by the first full-registry sweep:
+// clipplayer (transport row ~49px right), cloudseed (EQ knob ~13px right),
+// graphicEq (~15px bottom), ruttetra (~87px bottom, resizable default),
+// synesthesia (~7px bottom, marginal), wavesculpt (~282px bottom, resizable
+// default). GRAINS OF VISION was fixed in that same PR (widened 2hp→4hp +
+// 2-col layout) and is deliberately not exempt.
+//
+// WHAT IT PROTECTED, honestly: it was the ONLY thing that made a 7th exemption
+// red. That protection is DROPPED — a future PR can now add a named exemption
+// with a measured reason and no test goes red. That is the pre-authorised
+// coverage loss of the kill-ratchets directive, and it is a smaller loss than
+// it looks: the count could not tell a justified addition from an unjustified
+// one, only that the number moved, and BOTH already show up as a named key
+// plus a prose reason in the diff. Review the reason string; that was always
+// the real gate.
+//
+// WHAT REPLACES IT is a protection the count NEVER had. EXEMPT_CONTROL_OVERFLOW
+// had NO artifact anchor at all: it is read exactly once, as
+// `EXEMPT_CONTROL_OVERFLOW[mod.type]` in the sweep above, so a key naming a
+// module that was renamed or deleted is simply never consulted — a dead
+// exemption, invisible, occupying a slot in a cap that was itself the only
+// thing anyone was watching. The anchor below makes that RED. A name is
+// checkable against the tree; a number never was.
+//
+// ⚠ STATED SCOPE — what this file STILL cannot see, and neither could the cap:
+// an exempt card that has since been REFLOWED and no longer overflows stays
+// exempt SILENTLY. The sweep `test.fixme`s an exempt module rather than
+// measuring it, so there is no "unexpectedly passing" signal anywhere; the
+// debt can only be reclaimed by a human re-running the card unexempted. Fixing
+// that means measuring exempt cards and asserting they still overflow — a real
+// change to the sweep's shape, deliberately not made here.
+test('control-overflow exemption keys are anchored to REGISTRY', () => {
+  const liveTypes = new Set(REGISTRY.map((m) => m.type));
+
+  // ── VACUITY FLOOR ──
+  // Every assertion below is a lookup against REGISTRY. If REGISTRY resolved
+  // nothing, "no key is stale" would be trivially true and this test would pass
+  // while proving NOTHING. This is a sanity FLOOR, not a ratchet: the tree
+  // carries ~196 modules, so it only trips if the manifest is empty/truncated.
   expect(
-    Object.keys(EXEMPT_CONTROL_OVERFLOW).length,
-    'EXEMPT_CONTROL_OVERFLOW grew past its frozen cap — see the RATCHET rule above',
-  ).toBeLessThanOrEqual(6); // FROZEN at 6 (2026-07-19): the pre-existing overflow backlog found by the first full-registry sweep — clipplayer (transport row ~49px right) + cloudseed (EQ knob ~13px right) + graphicEq (~15px bottom) + ruttetra (~87px bottom, resizable default) + synesthesia (~7px bottom, marginal) + wavesculpt (~282px bottom, resizable default). GRAINS OF VISION was FIXED (widened 2hp→4hp + 2-col layout) so it is NOT exempt. Lower this cap as each card is reflowed.
+    REGISTRY.length,
+    'VACUITY: REGISTRY resolved almost no modules — the anchors below would pass trivially. '
+    + 'Run `flox activate -- task test:emit-manifest` (e2e/.generated/registry-manifest.json).',
+  ).toBeGreaterThan(100);
+
+  // ── ARTIFACT ANCHOR ──
+  // Ground truth is the REGISTRY module, not the list. A key that outlives the
+  // module it names is a dead exemption the sweep can never consult.
+  const moduleKeyIsLive = (moduleType: string): boolean => liveTypes.has(moduleType);
+
+  expect(
+    Object.keys(EXEMPT_CONTROL_OVERFLOW).filter((k) => !moduleKeyIsLive(k)).sort(),
+    'STALE EXEMPTION: these EXEMPT_CONTROL_OVERFLOW keys name modules that are no longer in '
+    + 'REGISTRY. The module was renamed or deleted, so `EXEMPT_CONTROL_OVERFLOW[mod.type]` can '
+    + 'never match and the entry buys nothing — delete it. If the module was RENAMED, re-measure '
+    + 'the new card before re-adding the key under its new name: the layout debt may be gone.',
+  ).toEqual([]);
+
+  // Same hole, same file: SKIP_SPAWN is read the identical way and was never
+  // anchored either.
+  expect(
+    Object.keys(SKIP_SPAWN).filter((k) => !moduleKeyIsLive(k)).sort(),
+    'STALE SKIP: these SKIP_SPAWN keys name modules that are no longer in REGISTRY — delete them.',
+  ).toEqual([]);
+
+  // ── PERMANENT NEGATIVE CONTROL, BOTH DIRECTIONS ──
+  // Runs on EVERY execution, not once at authoring time. Without it, an anchor
+  // that silently resolved nothing (empty manifest, a refactor that made the
+  // resolver return `true` unconditionally) prints the same empty array as a
+  // genuinely clean tree — "no stale keys" and "never looked" are
+  // indistinguishable from the output. So force both answers out of the SAME
+  // resolver the assertions above used.
+  const liveType = REGISTRY[0]?.type;
+  expect(liveType, 'NEGATIVE CONTROL: REGISTRY is empty').toBeTruthy();
+  expect(
+    moduleKeyIsLive('__no_such_module__'),
+    'NEGATIVE CONTROL (false leg): the resolver called a non-existent module type LIVE — it '
+    + 'accepts anything, so the stale-key assertions above are decoration.',
+  ).toBe(false);
+  expect(
+    moduleKeyIsLive(liveType!),
+    `NEGATIVE CONTROL (true leg): the resolver called the real module "${liveType}" STALE — it `
+    + 'rejects everything, so it would have reddened on a clean tree.',
+  ).toBe(true);
 });

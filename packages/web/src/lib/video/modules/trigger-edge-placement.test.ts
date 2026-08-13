@@ -74,7 +74,7 @@
 // requires only that the TARGET have no non-passthrough `cvScale` (:1503) — it
 // never reads the target's declared type, and `canConnect` puts cv/pitch/gate in
 // one interchangeable CV_FAMILY. All ten sites in rule 1's KNOWN_REMAINING are
-// `type: 'cv'`, so rule 3 could not see ONE of the defects rule 1 was ratcheting.
+// `type: 'cv'`, so rule 3 could not see ONE of the defects rule 1 already names.
 //
 // MEASURED: re-typing freezeframe's port to `type: 'cv'` and deleting the
 // setParam `detectEdge` call — the literal owner-reported bug, verbatim — left
@@ -95,8 +95,9 @@
 //     const sample = params[key];  …  detectEdge(state, sample)
 // — is NOT matched. `vfpga-runner.ts` (`tickGates`, called from draw) is exactly
 // that shape and is therefore invisible here; it is listed in KNOWN_UNMATCHABLE
-// by hand so it is at least counted. Widening the matcher to arbitrary dataflow
-// needs a real AST pass; the direct form is where the value is.
+// by hand so it is at least NAMED — nothing asserts anything about that list.
+// Widening the matcher to arbitrary dataflow needs a real AST pass; the direct
+// form is where the value is.
 //
 // The reachability walk (`drawRanges` → `declSites`) knew only `function f(){}`
 // and `const f = () => {}` until 2026-08-02 — a NARROWING introduced with the
@@ -414,18 +415,18 @@ function scanAll(): EdgeSite[] {
 const key = (s: EdgeSite): string => `${s.module}.${s.param}`;
 
 /**
- * THE RATCHET. Sites that still read the level at draw time, verified one by one
- * on 2026-08-01. This list may only SHRINK. Every entry is a real defect: a gate
- * SOURCE patched into any of these ports is delivered by installGateDispatch
- * (they are all raw-passthrough — "NO cvScale => raw passthrough" in their own
- * def comments), so a TRIGGER into them does nothing at all. A HELD gate still
- * works, which is why they have gone unnoticed: the level stands across ticks,
- * so the draw-time detector does see that rise.
+ * THE NAMED DEFECT LIST. Sites that still read the level at draw time, verified
+ * one by one on 2026-08-01. Every entry is a real defect: a gate SOURCE patched
+ * into any of these ports is delivered by installGateDispatch (they are all
+ * raw-passthrough — "NO cvScale => raw passthrough" in their own def comments),
+ * so a TRIGGER into them does nothing at all. A HELD gate still works, which is
+ * why they have gone unnoticed: the level stands across ticks, so the draw-time
+ * detector does see that rise.
  *
  * NOT fixed in the FREEZEFRAME PR on purpose — each needs its own behavioural
  * verification, and BACKDRAFT is a look-affecting module under the WebGL attest
- * (owner-preview-before-merge). Tracked as follow-up work; the point of the
- * ratchet is that they are now COUNTED and no new one can join them.
+ * (owner-preview-before-merge). Tracked as follow-up work; the point of the list
+ * is that every one of them is NAMED, and a site that is not named is RED.
  */
 const KNOWN_REMAINING: readonly string[] = [
   // BACKDRAFT — 6 raw-passthrough clock/gate ports, all edge-read in draw().
@@ -443,7 +444,15 @@ const KNOWN_REMAINING: readonly string[] = [
 ];
 
 /** Sites this scanner is KNOWN to miss (see the header's blind-spot note).
- *  Listed so the true remaining count is honest, not so the gate can see them. */
+ *  Listed so the stated scope is honest, not so the gate can see them.
+ *
+ *  ⚠ PURELY DOCUMENTARY, and it always was. NO RULE IN THIS FILE READS IT — it
+ *  is not a skip-list, not an exemption and not an anchor; the scanner is blind
+ *  to these sites by construction, so listing one changes nothing a test does.
+ *  Its `<= 1` cap was deleted 2026-08-10 with the other counts here, and unlike
+ *  those two there is nothing to point at as the surviving protection, because
+ *  there was never any protection to carry: the cap asserted the length of a
+ *  list nobody consults. Do not read this array as coverage. */
 const KNOWN_UNMATCHABLE: readonly string[] = [
   // vfpga-runner.ts `tickGates()` — reads `params[gateEvtParam(i+1)]` into a
   // local, then detectEdge(…, sample); called from draw(). Same defect class,
@@ -478,21 +487,45 @@ describe('video modules: a TRIGGER must be edge-detected in setParam, not read i
     ).toEqual([]);
   });
 
-  it('the ratchet only shrinks — every known site still exists', () => {
-    // If a listed site is gone, someone FIXED it: drop the entry (and the count
-    // ceiling below) in the same commit. A ratchet nobody tightens is a comment.
+  it('ANCHORED TO THE SOURCE — every named site still exists', () => {
+    // If a listed site is gone, someone FIXED it: drop the entry in the same
+    // commit. An entry nobody can resolve against the tree is one nobody is
+    // watching, and it silently exempts the next defect that takes the name.
     const found = new Set(scanAll().map(key));
     const stale = KNOWN_REMAINING.filter((k) => !found.has(k));
     expect(
       stale,
-      `these ratchet entries no longer exist — they were fixed, so REMOVE them from KNOWN_REMAINING (and lower the ceiling): ${stale.join(', ')}`,
+      `these KNOWN_REMAINING entries no longer exist — they were fixed, so REMOVE them: ${stale.join(', ')}`,
     ).toEqual([]);
   });
 
-  it('the known-remaining count is at its ceiling and cannot grow', () => {
-    expect(KNOWN_REMAINING.length, 'unfixed level-read-at-draw sites').toBeLessThanOrEqual(10);
-    expect(KNOWN_UNMATCHABLE.length, 'sites the scanner cannot see').toBeLessThanOrEqual(1);
-  });
+  // ⚠ TWO COUNTS DELETED HERE (2026-08-10). They were the whole body of
+  // 'the known-remaining count is at its ceiling and cannot grow':
+  //
+  //   expect(KNOWN_REMAINING.length).toBeLessThanOrEqual(10);
+  //   expect(KNOWN_UNMATCHABLE.length).toBeLessThanOrEqual(1);
+  //
+  // WHAT THEY PROTECTED, and who carries it now:
+  //
+  //   · `KNOWN_REMAINING <= 10` — that a NEW draw-time level read cannot appear.
+  //     Carried by 'finds no NEW level-read-at-draw-time site' (deny by default:
+  //     any scanned site not NAMED in KNOWN_REMAINING is RED) together with
+  //     'ANCHORED TO THE SOURCE — every named site still exists' (a name that no
+  //     longer resolves is RED). Those two hold the list equal to the live scan
+  //     by NAME, which is strictly more informative than holding its length at
+  //     ten — they say WHICH module and WHICH param, and a fix that forgets to
+  //     delete its entry still reddens.
+  //     ⚠ WHAT IS GENUINELY LOST: the number also stopped growth-BY-LISTING —
+  //     shipping a new defect AND naming it here in the same commit went red at
+  //     eleven, and now does not. What remains is that the new name appears in
+  //     the diff of a file whose entire premise is that these are defects.
+  //     Pre-authorised coverage loss of the kill-ratchets directive, recorded
+  //     here rather than in a commit message.
+  //
+  //   · `KNOWN_UNMATCHABLE <= 1` — NOTHING. That list is documentary (see its
+  //     doc comment): no rule consults it, so the cap asserted the length of a
+  //     list that has no consumer. There is no successor assertion because there
+  //     was no protection to move.
 
   // ---- INSTRUMENT CHECKS: prove the scanner can actually see the bug. ----
   // Without these, a scanner that silently matched NOTHING would report a clean
@@ -733,7 +766,7 @@ const EDGE_IDIOMS = /(detectEdge|gateEdge|\.scan\(|risingEdge|RisingEdge|EdgeCou
  *  the SAME exposure as a draw-time read: the bridge's `0,1,0` lands inside one
  *  millisecond, so any sampler that is not on the setParam clock can miss it.
  *  Listed here to keep this gate honest about what it is NOT asserting, and
- *  tracked as follow-up alongside the KNOWN_REMAINING ratchet above.
+ *  tracked as follow-up alongside the KNOWN_REMAINING list above.
  *
  *  ⚠ GREW 2 → 5 on 2026-08-09, and the growth is a REVEAL, not a regression.
  *  picturebox, videobox and videovarispeed have ALWAYS detected their edges in
@@ -806,9 +839,23 @@ describe("video modules: a port declaring edge:'trigger' must edge-detect in set
     ).toEqual([]);
   });
 
-  it('the card-owned exemption list stays small and cannot silently grow', () => {
+  it('every card-owned exemption still names a module that declares a trigger input', () => {
     // Each entry is an UNVERIFIED trigger path, not an approved design.
-    expect(CARD_OWNED_EDGE_DETECTION.length).toBeLessThanOrEqual(5);
+    //
+    // ⚠ `CARD_OWNED_EDGE_DETECTION.length <= 5` WAS DELETED HERE (2026-08-10).
+    // WHAT IT PROTECTED: that the exemption pile cannot grow. WHO CARRIES THAT
+    // NOW: the deny-by-default sweep above ('every module with a trigger INPUT
+    // edge-detects it on the setParam clock') is the real gate — a module that
+    // declares a trigger input and does not edge-detect in setParam is RED
+    // unless it is NAMED here — and the anchor loop below makes a name that no
+    // longer declares a trigger input RED, so an entry cannot rot into a silent
+    // blanket exemption.
+    // ⚠ WHAT IS GENUINELY LOST: the number stopped growth-BY-LISTING. A sixth
+    // module could not be added at all; now it can, and the only brake is review
+    // of the new name in the diff (the list grew 2 → 5 on 2026-08-09 by exactly
+    // that route, with the ceiling raised in the same commit — which is what a
+    // ceiling that moves with its list is worth). Pre-authorised coverage loss
+    // of the kill-ratchets directive.
     for (const m of CARD_OWNED_EDGE_DETECTION) {
       expect(modulesDeclaringTriggerInputs(), `${m} no longer declares a trigger input — drop the exemption`)
         .toContain(m);
@@ -858,8 +905,8 @@ describe("video modules: a port declaring edge:'trigger' must edge-detect in set
 // — and `canConnect` puts `cv`, `pitch` and `gate` in ONE interchangeable
 // CV_FAMILY (graph/types.ts), so a gate cable patched into a `type: 'cv'` input
 // is a legal, ordinary patch that gets the REPLAY. All ten sites in rule 1's
-// KNOWN_REMAINING ratchet are `type: 'cv'` ports — i.e. the old rule 3 could not
-// see a single one of the defects its sibling rule was ratcheting.
+// KNOWN_REMAINING list are `type: 'cv'` ports — i.e. the old rule 3 could not
+// see a single one of the defects its sibling rule already names.
 //
 // MEASURED, not reasoned: with the old filter, changing freezeframe's port to
 //
@@ -957,7 +1004,7 @@ function modulesWithUndeclaredGateInputs(): Array<{ module: string; ports: strin
  *  became 15 / 40. Nothing regressed — the old predicate was BLIND to `cv`-typed
  *  ports, which is most of them. Six of the sites it newly saw (backdraft ×6,
  *  b3ntb0x ×2, bentbox ×2) are the SAME sites rule 1's KNOWN_REMAINING already
- *  ratchets as real defects — the clearest possible evidence that the old
+ *  names as real defects — the clearest possible evidence that the old
  *  `type: 'gate'` filter was looking in the wrong place.
  *
  *  ⚠ SHAPE CHANGED 2026-08-09, with the edge-declaration sweep that drained
@@ -980,9 +1027,9 @@ function modulesWithUndeclaredGateInputs(): Array<{ module: string; ports: strin
 const UNDECLARED_GATE_INPUTS: Readonly<Record<string, readonly string[]>> = {
   '4plexvid': ['gate1', 'gate2', 'gate3', 'gate4'],
   acidwarp: ['scene_cv'],
-  b3ntb0x: ['mirror_x_gate', 'mirror_y_gate'], // also in rule 1's ratchet
+  b3ntb0x: ['mirror_x_gate', 'mirror_y_gate'], // also named in rule 1's KNOWN_REMAINING
   backdraft: ['delay_clock', 'mirror_x_gate', 'mirror_y_gate', 'shape_gate', 'pure_geo_gate', 'tv_gate'],
-  bentbox: ['mirror_x_gate', 'mirror_y_gate'], // also in rule 1's ratchet
+  bentbox: ['mirror_x_gate', 'mirror_y_gate'], // also named in rule 1's KNOWN_REMAINING
   blood: ['base'],
   doom: ['portId', 'iddqd_in', 'idkfa_in'], // 'portId' = the computed-id cv-gate spread
   picturebox: ['asset_pitch'],

@@ -6,8 +6,12 @@
 // Registry-sweep: EVERY audio-domain module def must have ≥1 committed ART
 // audio-profile baseline (`art/baselines/<group>/*.f32`, group = kebab-case
 // module id) unless it is structurally excluded (ART_EXCLUDED, with a reason)
-// or still on the backfill RATCHET (ART_BACKLOG). New audio modules are
-// therefore gated IMMEDIATELY; the pre-existing gap only ever SHRINKS.
+// or still on the backfill BACKLOG (ART_BACKLOG, a NAMED list). New audio
+// modules are therefore gated IMMEDIATELY — they are not on the backlog, so
+// the deny-by-default assertion below reddens on them — and the pre-existing
+// gap only ever SHRINKS, because a module that gains a baseline must leave the
+// list. Neither property is a count; see the ART_BACKLOG_MAX removal note in
+// art/setup/profile-coverage.ts.
 //
 // Registry enumeration comes from the COMMITTED contract golden
 // (`packages/web/src/lib/docs/contract-lock.txt` — `<id> meta domain=audio`
@@ -24,7 +28,7 @@ import { describe, expect, it } from 'vitest';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ART_BACKLOG, ART_BACKLOG_MAX, ART_EXCLUDED } from '../../setup/profile-coverage';
+import { ART_BACKLOG, ART_EXCLUDED } from '../../setup/profile-coverage';
 import { moduleIdToBaselineGroup } from '../../setup/capture';
 
 const BASELINES_DIR = fileURLToPath(new URL('../../baselines/', import.meta.url));
@@ -84,32 +88,26 @@ describe('ART audio-profile coverage gate', () => {
     ).toEqual([]);
   });
 
-  it('RATCHET: a module with a baseline must NOT stay in ART_BACKLOG', () => {
+  it('a module with a baseline must NOT stay in ART_BACKLOG', () => {
     const stale = ART_BACKLOG.filter((id) => hasProfile(id));
     expect(
       stale,
-      `These modules now have committed audio profiles — remove them from ART_BACKLOG ` +
-        `(and lower ART_BACKLOG_MAX to the new length):\n${stale.map((id) => `  - ${id}`).join('\n')}`,
+      `These modules now have committed audio profiles — remove them from ART_BACKLOG:\n` +
+        `${stale.map((id) => `  - ${id}`).join('\n')}`,
     ).toEqual([]);
   });
 
-  it(`RATCHET: ART_BACKLOG can only shrink (cap tracks length exactly, = ${ART_BACKLOG_MAX})`, () => {
-    expect(
-      ART_BACKLOG.length,
-      'ART_BACKLOG grew past the ratchet cap. New modules must ship WITH an audio profile ' +
-        '(or a reasoned ART_EXCLUDED entry) — never join the backlog.',
-    ).toBeLessThanOrEqual(ART_BACKLOG_MAX);
-    // STRICT equality, not just ≤: if the cap merely bounded the length, every
-    // batch that shrinks the list would leave HEADROOM a later addition could
-    // hide in without touching this file's diff. Requiring MAX === length means
-    // adding an id forces a loud, reviewable ART_BACKLOG_MAX bump — and batches
-    // are forced to lower the cap as they land (the ratchet clicks).
-    expect(
-      ART_BACKLOG_MAX,
-      `ART_BACKLOG_MAX (${ART_BACKLOG_MAX}) must equal ART_BACKLOG.length ` +
-        `(${ART_BACKLOG.length}) — lower the cap with every batch; never leave headroom.`,
-    ).toBe(ART_BACKLOG.length);
-  });
+  // ⚠ The 'ART_BACKLOG can only shrink (cap tracks length exactly)' test IS
+  // GONE (2026-08-12, the no-ratchets sweep) along with `ART_BACKLOG_MAX` (44). It compared the list's
+  // length against a hand-typed copy of that same length living 50 lines away
+  // in profile-coverage.ts — it never consulted the tree, so it could only fail
+  // when this repo's two literals disagreed with EACH OTHER. The three
+  // properties it was credited with are all carried, name-anchored, by the
+  // sibling tests here: deny-by-default ('every audio module has ≥1
+  // audio-profile baseline…') is what actually stops the list growing, the
+  // artifact anchor ('lists are well-formed…') is what stops it going stale,
+  // and the test directly above is what forces it to shrink. Full reasoning is
+  // recorded where the constant stood.
 
   it('lists are well-formed: real registry ids, unique, and disjoint', () => {
     const idSet = new Set(moduleIds);

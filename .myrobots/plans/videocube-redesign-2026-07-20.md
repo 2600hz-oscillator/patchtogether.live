@@ -1,36 +1,37 @@
 # VideoCube REDESIGN — volumetric 3D spatial video (owner-rejected the flat v1)
 
-> **TRIAGE 2026-08-04 — BUILT. Kept for the OWNER DECISIONS, which are the only
+> **BUILT. Kept for the ROOT CAUSE and the OWNER DECISIONS, which are the only
 > record of why VIDEOCUBE looks the way it does.**
-> The redesign shipped: `packages/web/src/lib/video/modules/videocube.ts` now
-> carries the ray-march (`:29` "The picture ray-march (COMBINE_FRAG) is a 1:1
-> GLSL" mirror), the orbit camera params `view_zoom / view_rot_x / view_rot_y /
-> view_rot_z` (`:158-161, :192-193`), the `screen_on` perf gate (`:165`), and the
-> `cube-dsp.fieldFromHeights` unified field (`:13, :32, :441`). The Z-collapse
-> root cause named below (`z = (lA+lB+lC)/3`) is gone.
-> **The three locked owner decisions of 2026-07-20** — (1) `video_out` is a
-> VOLUMETRIC RENDER, not a flat composite; (2) RAY-MARCH over slice-stack, with
-> the GPU cost accepted because the pixel-truth test is the local-GPU WebGL attest
-> rather than CI SwiftShader; (3) UNIFIED FIELD so audio and video read the SAME
-> 3D field — are what this file is preserved for. It also went on to gain SCAN
-> (the FrameTable MORPH partner to SPREAD), which post-dates this plan.
+> The redesign shipped: `packages/web/src/lib/video/modules/videocube.ts` carries
+> the ray-march under an orbitable camera, the orbit-camera params
+> (`view_zoom` / `view_rot_x` / `view_rot_y` / `view_rot_z`), the `screen_on`
+> perf gate, and the `cube-dsp.fieldFromHeights` unified field. The Z-collapse
+> root cause named below is gone. It later gained **SCAN** (the FrameTable MORPH
+> partner to SPREAD), which post-dates this plan.
+> No outstanding work: "SPREAD + FOLD stay AUDIO-ONLY for v1" was a scoping
+> decision, and the Canvas2D slice-cross-section overlay was marked optional and
+> never wanted.
 
-Owner reviewed VideoCube #1136 (2026-07-20): "most controls do nothing; no cube-slice /
-volumetric visualization; NOT generating volumetric 3D spatial video data based on the source
-data connecting to each other through space. Needs to work the same way Cube works for audio.
-Seems like it needs a redesign." Root-cause + redesign via workflow wf_93c6a00e-165 (audio-Cube
-arch map + redesign proposal), decisions locked by owner AskUserQuestion.
+Owner reviewed VideoCube #1136 (2026-07-20):
+
+> "most controls do nothing; no cube-slice / volumetric visualization; NOT
+> generating volumetric 3D spatial video data based on the source data
+> connecting to each other through space. Needs to work the same way Cube works
+> for audio. Seems like it needs a redesign."
 
 ## ROOT CAUSE (verified in code)
 
-The engine collapses the Z axis: it sets occupancy depth `z = (lumaA+lumaB+lumaC)/3` — the average
-luma of the 3 source pixels AT THAT SAME (x,y) — so `occ()` is evaluated at exactly ONE point per
-pixel. Confirmed in BOTH the shader (`videocube.ts:371 float z=(lA+lB+lC)/3.0`) and the CPU mirror
-(`videocube-core.ts:192`). There is no third spatial axis → no volume, no depth, no real slice, and
-nothing for the spatial/view controls to act on. It's a flat 2D blend with occ() math on top —
-exactly the "flat 2D blend" the owner rejected. Every symptom (dead spatial controls, MORPH bleeds
-the wall, slice Y/ROT only shear the temporal read-lag, SPACE DIFFUSE = fixed-corner smear, view
-controls ABSENT (0 matches), no volumetric viz) traces to that one collapse.
+The engine collapsed the Z axis: it set occupancy depth `z = (lumaA+lumaB+lumaC)/3`
+— the average luma of the 3 source pixels **AT THAT SAME (x,y)** — so `occ()` was
+evaluated at exactly ONE point per pixel. Confirmed in BOTH the shader
+(`videocube.ts:371` `float z=(lA+lB+lC)/3.0`) and the CPU mirror
+(`videocube-core.ts:192`). There was no third spatial axis → no volume, no depth,
+no real slice, and nothing for the spatial/view controls to act on. It was a flat
+2D blend with occ() math on top — exactly the "flat 2D blend" the owner rejected.
+
+**Every symptom** — dead spatial controls, MORPH bleeding the wall, slice Y/ROT
+only shearing the temporal read-lag, SPACE DIFFUSE as a fixed-corner smear, view
+controls ABSENT (0 matches), no volumetric viz — **traces to that one collapse.**
 
 ## OWNER DECISIONS (locked 2026-07-20)
 
@@ -81,32 +82,3 @@ clamp↔mirror-fold; Y=cutting-plane height; ROT X/Y/Z=Euler tilt of the plane; 
 camera (shapes the OUTPUT, deliberate divergence from Cube's viz-only view); FOLD/SPREAD/TUNE/FINE/
 LEVEL=audio-only; READER(SMOOTH/MORPH/CHAOS)/FREEZE/LIVE=frametable ingest (no Cube analog); SCREEN=
 perf gate (skip render when off && video_out unpatched).
-
-## FILE PLAN (build on branch `feat/videocube-2026-07-19`, PR #1136)
-
-- **videocube-core.ts** — REBUILD. KEEP luma/posterize/warpCoord/stripToHeightfield/constants. DELETE
-  `videoField()` (fake shear) + `combinePixel()` (collapsed-z blend). ADD: field-sample helper
-  (columnHeights+fieldFromHeights over F(x,y,z)); per-voxel dominant/occupancy-weighted source-colour;
-  spatial ring→heightfield reduction (rows×256 luma) SHARED with audio; lowestInfoFace diffuse target.
-- **videocube.ts** — REWRITE COMBINE_FRAG flat-blend → ray-march volumetric render (field + march +
-  cutting plane + wireframe + orbit camera). ADD view_zoom/view_rot_x/y/z params + camera uniforms;
-  renderer-gate march steps. Point `reduceRing` at the new shared spatial reduction; update AUDIO_PARAMS
-  /sliceSig for the shared field. KEEP ring capture, detilePending file-load, ensureAudio/recomputeSlice
-  seam, mandelbulb-osc.
-- **VideocubeCard.svelte** — ADD a VIEW section (ZOOM / X / Y / Z) to the KNOBS bank so the layout
-  matches Cube; existing video_out blit shows the volume for free. Optional Canvas2D slice-cross-section
-  overlay. KEEP 3 slot pickers, reader/freeze/live rows, toggles, `videocube-*` testids.
-- **frametable-ring.ts, cube-dsp.ts, mandelbulb-osc.ts** — UNCHANGED (all reused verbatim).
-- **Tests:** rewrite videocube-core.test.ts (field-sample/dominant-colour/spatial-reduction/
-  lowestInfoFace CPU mirror); videocube.test.ts factory smoke (volume render + view params);
-  videocube.spec.ts e2e — non-black VOLUME frame that CHANGES with view_rot/zoom AND slice Y + audio
-  RMS>0, renderer-gated pixel asserts. REPEAT=3 + typecheck before CI.
-- **strict-docs.ts** — rewrite co-located docs for the new controls, wrapped in docs-hash-ignore
-  markers; `task docs:accept`. rack-sizes videocube stays 3u/hp4.
-
-## MERGE DISCIPLINE
-
-Shader changed → one-time WebGL RE-ATTEST on trusted GPU (kill 5173/4173 + clear node_modules/.vite
-first; stale bundle = false refusal). Look-affecting → HOLD for owner VISUAL PREVIEW, NO auto-merge.
-Rebase onto main FIRST (picks up #1134/#1135/#1137), attest LAST. See [[frametable-and-videocube]],
-[[webgl-attest-hash-test-transparent]], [[webgl-attest-reuses-stale-dev-server]], [[cube-architecture-findings]].

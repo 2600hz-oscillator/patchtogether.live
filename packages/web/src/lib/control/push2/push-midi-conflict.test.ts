@@ -9,8 +9,9 @@
 // different failure mode:
 //
 //   1. CC ↔ CC, WITHIN the Push, in BOTH modes. A full 0..127 sweep of the
-//      SHIPPING classifier against a NAMED ledger. Deny by default, ratcheted in
-//      both directions, and stale entries are RED.
+//      SHIPPING classifier against a NAMED ledger. Deny by default AND anchored
+//      to the artifact: an undeclared binding is RED and a stale ledger row is
+//      RED, so the ledger keys and the live bound set are held EQUAL BY NAME.
 //   2. CC ↔ NOTE, within the Push. Push scene CCs 36..43 and pad notes 36..43
 //      share numbers. Asserted to be a non-collision through the CODEC, not by
 //      argument.
@@ -232,9 +233,28 @@ const DELIBERATELY_UNBOUND: Record<number, string> = {
   [PUSH_CC_ENCODER_TEMPO]: 'tempo encoder — a global tempo control is a separate decision (obvious home: timelorde bpm)',
 };
 
-/** Ratchet. Moves only when a binding is deliberately added or removed, and it
- *  is asserted in BOTH directions so a shrink that forgets to lower it is red. */
-const BOUND_CC_COUNT = 42;
+// ⚠ `BOUND_CC_COUNT` (42) IS GONE (2026-08-10), and so is the test whose whole
+// body was the count — 'RATCHETS IN BOTH DIRECTIONS — the count cannot drift up
+// OR down unnoticed'. It counted the keys of `CC_LEDGER`, a list the two
+// assertions immediately below already pin NAME BY NAME, in both directions:
+//
+//   · 'DENY BY DEFAULT — every dispatching CC is in the ledger with its exact
+//     roles' gives   bound ⊆ ledger   (a live binding with no row is RED);
+//   · 'ANCHORED TO THE ARTIFACT — a ledger entry for a CC that dispatches
+//     nothing is RED' gives   ledger ⊆ bound   (a row for a dead binding is RED).
+//
+// Two inclusions are SET EQUALITY. So `bound.size <= 42`,
+// `42 - bound.size === 0` and `Object.keys(CC_LEDGER).length === 42` were all
+// true by construction on any tree where those two were green — the number could
+// not go red, only go stale. WHAT IT PROTECTED (a binding silently added or
+// silently removed) is carried entirely by that pair, and they name WHICH CC
+// moved instead of reporting that a total did.
+//
+// The one place the number was load-bearing is the NEGATIVE CONTROL at the
+// bottom of this block: every name-anchored assertion above is satisfied
+// vacuously by a sweep that found nothing at all. That leg survives in DERIVED
+// form — `boundBase.size` is compared to `Object.keys(CC_LEDGER).length`, read
+// off the ledger rather than re-typed, so there is no literal to keep in sync.
 
 describe('1 — the Push CC map: no CC has two owners, in either mode', () => {
   const boundBase = new Map<number, string>();
@@ -279,13 +299,6 @@ describe('1 — the Push CC map: no CC has two owners, in either mode', () => {
     expect(stale, stale.join('\n')).toEqual([]);
   });
 
-  it('RATCHETS IN BOTH DIRECTIONS — the count cannot drift up OR down unnoticed', () => {
-    const bound = new Set([...boundBase.keys(), ...boundElectra.keys()]);
-    expect(bound.size).toBeLessThanOrEqual(BOUND_CC_COUNT);
-    expect(BOUND_CC_COUNT - bound.size, 'lower BOUND_CC_COUNT in the same commit').toBe(0);
-    expect(Object.keys(CC_LEDGER)).toHaveLength(BOUND_CC_COUNT);
-  });
-
   it('the two modes bind the SAME CC SET — entering the mode strands no button', () => {
     // This is the guarantee behind "everything else routes exactly as before".
     // If electra mode ever silently swallowed a button, these sets diverge.
@@ -312,8 +325,11 @@ describe('1 — the Push CC map: no CC has two owners, in either mode', () => {
   });
 
   it('NEGATIVE CONTROL: the sweep really does see bindings', () => {
-    // Without this, every assertion above would pass against an empty map.
-    expect(boundBase.size).toBe(BOUND_CC_COUNT);
+    // Without this, every assertion above would pass against an empty map: both
+    // inclusions hold trivially when one side is empty. DERIVED, not typed — the
+    // expected size is read off the ledger, so this leg has no number of its own
+    // to go stale (it was `BOUND_CC_COUNT`, deleted 2026-08-10, see above).
+    expect(boundBase.size).toBe(Object.keys(CC_LEDGER).length);
     expect(boundBase.get(PUSH_CC_SHIFT)).toBe('launchpad-top-98');
     expect(boundBase.get(PUSH_CC_ELECTRA_MODE)).toBe('electra-mode-toggle');
     expect(roleForCc(0, false), 'an unbound CC really reads as null').toBeNull();

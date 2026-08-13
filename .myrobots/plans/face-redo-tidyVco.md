@@ -1,20 +1,20 @@
 # face re-do — tidyVco
 
-> ⚠ **STATUS CORRECTED 2026-08-04 — read `face-redo-INDEX.md` §0 before building.**
-> PF-20 (**PR #1301**) **HAS MERGED** (`c6ff9253`); every "unmerged branch" citation below
-> now resolves on `main` — including §11's "on the **unmerged** platform branch, not main,
-> so not a shipped defect", which no longer holds. **`face.title` and `face.hint` do NOT
-> paint by default** — `facePageHeader()` returns `null` before reading anything unless
-> annotate mode is on (`packages/web/src/lib/ui/workflow/dock-faceplate-model.ts:90`), and
-> the owner ruled on 2026-08-03 that `face.title` stays annotation-only. **Any argument
-> below that parks a load-bearing fact in `face.hint` because it "still paints" is VOID.**
-> PF-21 dock ROW PACKING (`9bf12df7`) also landed after this was written. **This re-do is
-> NOT built** — the shipped `face` still declares no `hero` and no `sidebar`. Live backlog.
+> **LIVE BACKLOG — not built.** The shipped `face` declares `order`/`pages`/`glyph`/`rear`
+> and no `hero`, no `sidebar`, no readout strip. `face.title` does NOT paint by default —
+> `facePageHeader()` returns `null` unless annotate mode is on
+> (`dock-faceplate-model.ts:90`), owner ruling 2026-08-03.
+>
+> ⚠ **Owner ruling 2026-08-11** (verbatim at `packages/web/src/lib/audio/modules/rings.ts:585-590`,
+> `:645-650`): *"we should prefer almost zero AI authored text, and all future faceplate work
+> should reflect that"* and *"lets stop doing these and clean up the existing ones, get rid of
+> them. lose the signal flow diagrams."* The five band hints and the `signal-flow` sidebar block
+> are struck; what they carried is folded into §1.
 
 **Verdict: MECHANICAL ONLY.** The shipped ranking, bands, clusters, rear and glyph are right and are
 pinned by a bespoke unit spec plus an owner-regression e2e — nothing in them should move. What this
-face is missing is the PF-20 declaration surface: a title, a hint, five band hints, a hero
-(CUTOFF + the HOLD audition), a three-entry **derived** readout strip, and a two-block sidebar.
+face is missing is a hero (CUTOFF + the HOLD audition), a three-entry **derived** readout strip, and
+a `presets` sidebar.
 
 ---
 
@@ -35,8 +35,11 @@ per-channel closures at `:788-799`):
       → ×comp (1+k)^0.6 → ZDF DIODE LADDER → OTA VCA   [2×, PER CHANNEL]
       → equal-power PAN (WIDTH) → 1/√n → LEVEL dB → DC block → tanh true-peak
 
-The two RC-punch ADSRs are **modulators, not stages**: the filter EG enters only through
-`tidyCutoffHz` (`:363-377`), the amp EG only through `vcaG`. Nothing on the audio spine is an envelope.
+⚠ **The folder sits BEFORE the filter** — the whole West-Coast argument in `docs.explanation`
+(`:458`) — and **DRIVE is inside the oversampled section**, not a front-panel input gain. The two
+RC-punch ADSRs are **modulators, not stages**: the filter EG enters only through `tidyCutoffHz`
+(`:363-377`), the amp EG only through `vcaG`. Nothing on the audio spine is an envelope, and
+nothing taps and rejoins.
 
 **What each control genuinely changes about the SOUND** (measured — numbers from
 `tidy-vco-dsp.sonic-range.test.ts`):
@@ -72,21 +75,16 @@ its **settled** value (`cutoff·2^(4·env·fsus)` = 1.2 kHz). Neither is any kno
 
 **Very little.** The ranking is argued from the DSP and pinned (`tidy-vco-face.test.ts`, 5
 describes); the five pages, the PF-9 envelope clusters, the curated `play` rear band and the
-`audioRate` audit are all correct and independently gated. The genuine gaps are all PF-20-shaped:
+`audioRate` audit are all correct and independently gated. The genuine gaps:
 
-1. **No `title`, no `hint`, no page hints** — the dock opens on five bare band labels
-   (`tidy-vco.ts:330-357`). The baseline shows it: `face-tidyVco-dock.png` is "TIDYVCO / SOURCES"
-   over a glyph, then `OSCILLATOR`, then knobs. Nothing on the plate says what the instrument is.
-2. **No hero, so the audition is buried.** `hold` sits in band 5 (`output`) between WIDTH and LEVEL
+1. **No hero, so the audition is buried.** `hold` sits in band 5 (`output`) between WIDTH and LEVEL
    (`:356`). On the one module in the rack that is *silent until gated*, its only self-audition is
    last on the plate. (Rank 25 is fine; the band placement is not — the fix is the hero, not a
    re-rank. See §5.)
-3. **No readouts.** The two numbers that describe this voice — where the filter sweeps to and where it
+2. **No readouts.** The two numbers that describe this voice — where the filter sweeps to and where it
    settles — appear on neither surface, and neither is derivable by eye from the three dials that
    produce them.
-4. **No sidebar.** The signal order (fold **before** the filter — the whole West-Coast argument in
-   `docs.explanation`, `:458`) is taught only in prose no surface renders.
-5. **The picture is blind to the wavefolder.** The dual glyph draws
+3. **The picture is blind to the wavefolder.** The dual glyph draws
    `sawPulseMixWaveSamples(shape1, shape2, pw, mix)` (`scope-screen-model.ts:135-165`); it ignores
    `sub` and, more importantly, FOLD entirely — the one control whose entire purpose is to change the
    waveshape does not change the waveform picture.
@@ -100,7 +98,7 @@ Not a gap: the glyph does **not** flatline on a silent rack. It is the set's onl
 
 **Unchanged from what ships.** The order is asserted key-by-key at `tidy-vco-face.test.ts:91` and
 `:119`; re-ranking is not a cosmetic edit here, it breaks pinned assertions and (for ranks 4-5) an
-owner-regression e2e. The arguments, restated with the measurements that back them:
+owner-regression e2e.
 
 | rank | key | why it earns the rank (an argument that is WRONG for another module) | what it costs below |
 |---|---|---|---|
@@ -122,7 +120,7 @@ is not a value, and its promotion into the hero is **rank-independent** (see §5
 
 ---
 
-## 4. BAND STRUCTURE + THE ANNOTATION PROSE
+## 4. BAND STRUCTURE
 
 Five pages, ids and labels **UNCHANGED** (renaming `oscillator` desyncs it from the pinned rear group
 of the same id — `tidy-vco.ts:398-402`, `rear-card-model.test.ts:56-90`). The only structural change
@@ -130,42 +128,25 @@ is that `hold` leaves band 5 by promotion, not by deletion.
 
 ```ts
 pages: [
-  {
-    id: 'oscillator', label: 'oscillator',
-    hint: 'two band-limited saw↔pulse oscillators over a −1-octave sub square; PW is shared, and it does nothing until a SHAPE leaves saw.',
-    controls: ['shape1', 'shape2', 'pw', 'detune', 'oct2', 'mix', 'sub'],
-  },
-  {
-    id: 'wavefolder', label: 'wavefolder',
-    hint: 'a reflecting triangle folder BEFORE the filter — the West-Coast move; 0 is a bit-exact bypass and SYM only bites while FOLD is up.',
-    controls: ['fold', 'sym'],
-  },
-  {
-    id: 'filter', label: 'diode filter',
-    hint: 'EMS/303 diode ladder — CUTOFF is the resonant pitch, not the −3 dB knee, and RES whistles past about 0.89.',
-    controls: ['cutoff', 'res', 'drive', 'env', 'track'],
-  },
-  {
-    id: 'envelopes', label: 'envelopes',
-    hint: 'two RC-punch ADSRs — the filter EG sweeps CUTOFF up to ±4 octaves, the amp EG drives the VCA; both retrigger from their current level.',
+  { id: 'oscillator', label: 'oscillator',
+    controls: ['shape1', 'shape2', 'pw', 'detune', 'oct2', 'mix', 'sub'] },
+  { id: 'wavefolder', label: 'wavefolder', controls: ['fold', 'sym'] },
+  { id: 'filter',     label: 'diode filter',
+    controls: ['cutoff', 'res', 'drive', 'env', 'track'] },
+  { id: 'envelopes',  label: 'envelopes',
     controls: ['fatk', 'fdec', 'fsus', 'frel', 'atk', 'dec', 'sus', 'rel'],
     clusters: [
       { label: 'filter eg', controls: ['fatk', 'fdec', 'fsus', 'frel'] },
       { label: 'amp eg',    controls: ['atk', 'dec', 'sus', 'rel'] },
-    ],
-  },
-  {
-    id: 'output', label: 'output',
-    hint: 'WIDTH is the stereo engine three times over: the poly pan fan, the mono unison spread, and the folder’s own L/R split.',
-    controls: ['width', 'level', 'hold'],   // `hold` is PROMOTED out by face.hero
-  },
+    ] },
+  { id: 'output',     label: 'output',
+    controls: ['width', 'level', 'hold'] },   // `hold` is PROMOTED out by face.hero
 ],
 ```
 
-**Does this read with every hint hidden?** Yes, and deliberately. Each label is a noun the controls
-under it name; nothing in a hint is load-bearing. The three facts a player must have — where the
+Each label is a noun the controls under it name. The three facts a player must have — where the
 filter sweeps to, what interval OSC2 plays, and that HOLD auditions the voice — live in the readout
-strip and the hero rail, which paint by default. The hints only add *why*.
+strip and the hero rail, which paint by default.
 
 ---
 
@@ -174,12 +155,12 @@ strip and the hero rail, which paint by default. The hints only add *why*.
 ### No `hero.cell`. Keep the glyph.
 
 Declaring a `hero.cell` **suppresses the shell glyph at the dock** —
-`heroGlyph = hasGlyph && !(view === 'dock-full' && hero?.cell)` (branch `ModuleShell.svelte:353`).
+`heroGlyph = hasGlyph && !(view === 'dock-full' && hero?.cell)` (`ModuleShell.svelte:353`).
 tidyVco's glyph is the platform's only DUAL binding: a param-derived single-cycle core wave *plus* the
 live output trace (`shell-glyph-live.ts:136-156`). **The "single-cycle waveform hero picture" the
-analogVco batch-3 spec proposed for a sibling module is therefore already shipped here, generically**
-— and unlike `analog-vco-scope.ts` (a bespoke zero-crossing windower + 2D draw for the AnalogVco
-card) tidyVco has **no** bespoke scope helper and needs none. Trading a live dual picture for a static
+analogVco spec proposed for a sibling module is therefore already shipped here, generically** — and
+unlike `analog-vco-scope.ts` (a bespoke zero-crossing windower + 2D draw for the AnalogVco card)
+tidyVco has **no** bespoke scope helper and needs none. Trading a live dual picture for a static
 bespoke one to satisfy the word "hero" is exactly the case the brief forbids.
 
 **The one picture change worth making** (the single non-mechanical build item — not a bespoke panel):
@@ -205,23 +186,21 @@ readouts are anchored to it — the big dial and the strip under it are then one
 only self-audition. Three things make it cheap:
 
 - Already declared momentary (`face.momentary: ['hold']`, `tidy-vco.ts:369`), and the shell renders
-  `hero.action` through the ordinary cell renderer (`controlCell(hero.action)`, branch
+  `hero.action` through the ordinary cell renderer (`controlCell(hero.action)`,
   `ModuleShell.svelte:913-915`) — a press-pad Button with no new code.
 - Unlike kickdrum it needs **no PF-6f family and no `getActiveEngine()` plumbing**: `hold` is a real
   AudioParam the worklet ORs into the mono gate (`packages/dsp/src/tidy-vco.ts:239-241`).
 - **Do NOT re-rank it to 7 the way kickdrum ranked its strike.** `heroFacePlan` resolves the key
-  through the flattened dock plan, not the rank (branch `dock-faceplate-model.ts:127-146`), and
+  through the flattened dock plan, not the rank (`dock-faceplate-model.ts:127-146`), and
   `tidy-vco-face.test.ts:119` asserts `face.order.slice(6,8) === ['fold','env']`. Rank 25 is correct;
   it must simply stay listed in `pages[4].controls` or it falls into the defensive `__unpaged` band.
 
 ### THE READOUT STRIP — three entries, all DERIVED
 
-**Why zero `paramId` entries.** PF-20 also gives every dock dial a persistent value readout
-(`persistentReadout`, branch `KnobConic.svelte:58-68`). After that, a `paramId` hero readout prints
-the *same string that is already printed under the dial*. (This is visible on the reference face:
-kickdrum promotes `tune` to `hero.control` **and** declares `{ label: 'settles to', paramId: 'tune' }`
-— the hero dial's own number, twice, side by side.) So on this face the strip carries only quantities
-no dial can print.
+**Why zero `paramId` entries.** Every dock dial now has a persistent value readout
+(`persistentReadout`, `KnobConic.svelte:58-68`). After that, a `paramId` hero readout prints the
+*same string that is already printed under the dial*. So on this face the strip carries only
+quantities no dial can print.
 
 ```ts
 hero: {
@@ -258,30 +237,19 @@ comment. `2*48000` is the clamp argument only; it bites above ~23 kHz commanded 
 
 **Two rejections, stated because stating them is the point.** (a) A `res`/self-osc readout
 (`k = 19.6·res^1.2`, "SELF-OSC past 0.89"): **no perturbation moves it without moving a `res` knob
-readback** — a monotone relabel of one knob, i.e. a param readout wearing a derived id. It goes in
-the `diode filter` band hint. (b) A **poly / mono** indicator — the most useful runtime fact this
-module has (poly wins the moment any lane gates, `tidy-vco-dsp.ts:880-890`) and one that **cannot be
-honest today**: `FaceReadoutValue` is `(paramId) => number|undefined` (branch
-`face-readout-values.ts:37`), params only, and the answer depends entirely on a patched input. It
-goes in the sidebar diagram and the `play` rear band label.
+readback** — a monotone relabel of one knob, i.e. a param readout wearing a derived id. (b) A **poly
+/ mono** indicator — the most useful runtime fact this module has (poly wins the moment any lane
+gates, `tidy-vco-dsp.ts:880-890`) and one that **cannot be honest today**: `FaceReadoutValue` is
+`(paramId) => number|undefined` (`face-readout-values.ts:37`), params only, and the answer depends
+entirely on a patched input. It survives only in the `play` rear band label.
 
 ---
 
-## 6. THE SIDEBAR — two blocks
+## 6. THE SIDEBAR — `presets` only
 
-**`signal-flow`**, because the one thing this instrument teaches wrongly by default is its own order:
-the folder sits **before** the filter, and DRIVE is inside the oversampled section, not a front-panel
-input gain. Stages in the DSP's real order (`:788-799`, `:1021-1037`):
-
-`OSC 1` (generator, "saw↔pulse") · `OSC 2` (generator, "oct · detune") · `SUB` (generator, "−1 oct
-square") · `WAVEFOLDER` (bus, "stereo splits here") · `DRIVE` (bus, "tanh, 2×") · `DIODE LADDER`
-(bus, "24 dB/oct · squelch") · `OTA VCA` (bus, "amp eg") · `PAN · WIDTH` (bus, "equal-power") ·
-`LEVEL · CEILING` (bus, "dB → true-peak").
-
-**No `parallel` stage, and no envelopes in the diagram.** Nothing here taps and rejoins. The two EGs
-are modulators — putting an EG on the audio spine is precisely the "a diagram that teaches the wrong
-chain is worse than none" failure the field's own doc warns about (branch `types.ts`, `FaceFlowStage`).
-The `envelopes` band and its two clusters already teach that split.
+The `signal-flow` block this spec proposed is **struck by the 2026-08-11 owner ruling.** The one
+thing it existed to teach — the folder sits **before** the filter, and DRIVE is inside the
+oversampled section rather than a front-panel input gain — is §1's signal-path block.
 
 **`presets`**, 4 entries, each a **complete 25-param recall** (kickdrum's stated bar). Source the three
 voicings from the corners already authored for this module — `tidyvco-acid`, `tidyvco-pad`,
@@ -298,21 +266,21 @@ range) — plus an `INIT` entry that is `TIDY_VCO_DEFAULTS`. Three deliberate ed
   baselines for a sidebar edit.
 
 No `readouts` block (the hero strip covers it) and no `custom` panel (`stereo-crossover` is the only
-registered id, this module has no crossover, and a new one costs a component + a registry line for
-nothing the glyph does not already show).
+registered id, this module has no crossover).
 
 ---
 
 ## 7. RANGE / CURVE / VOCABULARY CHANGES
 
-**None proposed.** Two findings, both hazards rather than bugs:
+**None proposed.** Three findings, all hazards rather than bugs:
 
 - **`TidyVcoCard.svelte` re-types all 24 ranges — 48 literal numbers** (`:182-235`). Every one
   currently **AGREES** with the def (checked pair by pair against `tidy-vco.ts:133-180`), so this is
   the *hazard*, not the backdraft bug. No runtime gate can see a future divergence. The cheap fix is
-  the ringback precedent — the def exports the ranges and the card imports them — and because the
-  numbers are identical it renders byte-for-byte the same, so it costs **zero** VRT movement. Fold it
-  into this PR or ticket it; do not leave it undocumented.
+  the ringback precedent — the card resolves through `paramSpec` and is enrolled in
+  `RANGE_BOUND_CARDS`/`MAPPING_BOUND_CARDS` — and because the numbers are identical it renders
+  byte-for-byte the same, so it costs **zero** VRT movement. Fold it into this PR or ticket it; do
+  not leave it undocumented.
 - **`pw.max = 0.5` looks narrow and is correct.** `tidyPwEff` re-clamps the knob to 0.05–0.5 before
   adding CV (`:386-388`), so widening the def's max would be a **silent no-op** — and duty > 0.5 is
   the spectral mirror of duty < 0.5, so the knob already spans every distinct timbre. The CV jack
@@ -325,76 +293,82 @@ nothing the glyph does not already show).
 
 ## 8. COST
 
-- **contract-lock: ZERO.** `face` is UI metadata with no branch in `contract-signature.ts` (branch
-  `types.ts`, `ModuleFace` doc). No `ParamDef`/`PortDef`/`ControlFamily`/`edge` change —
-  `contract-lock.txt` must be **byte-identical**, and that is a verification row, not an assumption.
+- **contract-lock: ZERO.** `face` is UI metadata with no branch in `contract-signature.ts`. No
+  `ParamDef`/`PortDef`/`ControlFamily`/`edge` change — `contract-lock.txt` must be **byte-identical**,
+  and that is a verification row, not an assumption.
 - **ART / attest: NIL, by design.** The only symbol the readouts pull from `tidy-vco-dsp.ts`
   (`tidyCutoffHz`) is *already* exported. Adding an `export` to a private const there changes the
   text hashed by `dspSourceSha` and forces an `art:update` re-capture of `out_l`/`out_r` **plus** the
   fingerprint manifest, for zero audio change. Do not.
-- **VRT:** `face-tidyVco-dock` (darwin **and** linux) **MOVES** — title, hint, hero rail, readout
-  strip, sidebar column, `hold` leaving band 5. The height grows, so it is a **dimension change**:
-  Playwright hard-fails on size before computing a ratio and `--update-snapshots` will not help.
-  **`git rm` both dock PNGs, then dispatch `vrt-update.yml`.** (It would have moved regardless:
-  PF-20's `persistentReadout` adds a value line under all 24 dials.) `face-tidyVco-compact` **must
-  NOT move** — every PF-20 field is dock-only and the lane ranking is untouched; a diff there is a
-  finding. `rear-tidyVco`, the legacy `vrt.spec.ts` `tidyVco` scene and the three `vrt-tidy-vco`
-  composites **must NOT move**. tidyVco is *not* in `STRICT_VRT_MODULES`, and `linux/tidyVco` + the
-  three composites are linux-exempt (`vrt-exemptions.ts:1642-1650`), so the required `vrt-strict`
-  lane is untouched.
+- **VRT:** `face-tidyVco-dock` **MOVES** — hero rail, readout strip, sidebar column, `hold` leaving
+  band 5. The height grows, so it is a **dimension change**: Playwright hard-fails on size before
+  computing a ratio and `--update-snapshots` will not help. **`git rm` the dock PNG**, then let the
+  linux capture job author it. `face-tidyVco-compact` **must NOT move** — the hero is dock-only and
+  the lane ranking is untouched; a diff there is a finding. `rear-tidyVco`, the legacy `vrt.spec.ts`
+  `tidyVco` scene and the three `vrt-tidy-vco` composites **must NOT move**. tidyVco is *not* in
+  `STRICT_VRT_MODULES`, so the required `vrt-strict` lane is untouched.
 - **e2e: cell-count delta ZERO.** The hero PROMOTES; `heroFacePlanIsTotal` is asserted on every faced
-  module (branch `dock-faceplate-model.ts:165-186`), and the hero rail renders **inside** the shell
+  module (`dock-faceplate-model.ts:165-186`), and the hero rail renders **inside** the shell
   subtree faces-parity walks, so `control-hold` stays in the multiset and stays driven. The
   tune-cluster regression (`faces-parity.spec.ts:690-716`) is untouched. `toHaveCount(pages)` still
   sees 5 (a hero is not a `face-page`). No new bespoke spec.
 - **New code:** `$lib/ui/modules/tidy-vco-face-model.ts` (~60 LOC, the kickdrum-face-model precedent)
   + 3 lines in `face-readout-values.ts` + `tidy-vco-face-model.test.ts` (~90 LOC of permanent negative
-  controls). `fmtHz` is reused from `kickdrum-format.ts` (branch `:29`) — a second consumer proves
-  that file is platform, not kickdrum; renaming it is a follow-up.
+  controls). `fmtHz` is reused from `kickdrum-format.ts` (`:29`) — a second consumer proves that file
+  is platform, not kickdrum; renaming it is a follow-up.
 - **CI wall-time: ≈ +0.3 s** — unit lane only, ~25 assertions over a pure-math model, no browser and
-  no worklet. The VRT re-capture is a one-off dispatch, not lane time.
+  no worklet.
 
 ---
 
-## 9. DEFECTS FOUND IN SHIPPED CODE
+## 9. DEFECT LEDGER
 
-**PF-0 (`hold` renders as a latching rotary) is NOT live — it was fixed on 2026-07-27 and shipped.**
-Verified on all four legs the design program named: `face.momentary: ['hold']` is declared
-(`tidy-vco.ts:369`); `'tidyVco:hold'` was **deleted** from `ACKNOWLEDGED_LATCHING`
-(`module-face-lint.test.ts:354`, with the removal reason in place); the systemic cross-check the fix
-demanded exists and runs (`module-face-lint.test.ts:362-390` — no acknowledged-latching param may be
-*documented* as momentary); and the shell renders the declared press-pad as a `Button` that writes
-REST on release (`ModuleShell.svelte:468-476`, `firePressParam`). The face must not paper over it
-because there is nothing left to paper over. It is also *why* `hold` can be the hero action for free.
+**PF-0 (`hold` rendering as a latching rotary) is ✅ ALREADY FIXED and shipped** (2026-07-27),
+verified on all four legs: `face.momentary: ['hold']` declared (`tidy-vco.ts:369`);
+`'tidyVco:hold'` deleted from `ACKNOWLEDGED_LATCHING` (`module-face-lint.test.ts:354`); the systemic
+cross-check exists and runs (`:362-390`); and the shell renders the press-pad as a `Button` that
+writes REST on release (`ModuleShell.svelte:468-476`, `firePressParam`). It is *why* `hold` can be
+the hero action for free.
 
-Two real defects, both minor, both follow-ups:
+**1 · STILL OPEN — the lane-plate `oct2` readout overflows and is ungated.**
+`tidy-vco.ts:209-234` still carries the `⚠ KNOWN, MEASURED, UNGATED — OWNER CALL` block verbatim.
+OCT 2's `options` roster earns a PERSISTENT readout under the dial (`KnobConic` renders `.readout`
+only for a param that declared a vocabulary), and that readout is IN FLOW, not overlaid. The
+arithmetic, from the CSS rather than from taste (mirrored in the def at `tidy-vco.ts:214-221`):
 
-1. **The lane-plate `oct2` readout still overflows, still ungated.** `tidy-vco.ts:209-233` reports it
-   as "KNOWN, MEASURED, UNGATED — OWNER CALL"; **it is still live on main, and the platform branch
-   does not fix it.** Mechanism unchanged: `.tile-body.plate` is `overflow: hidden` with
-   `grid-auto-rows: var(--plate-row-h, 42px)` (`_rackline-tile.css:246,251`), and `KnobConic` renders
-   the persistent 9 px `.readout` for any param with a vocabulary at **every** size including `sm`
-   (`KnobConic.svelte:275-276`, `:404-406`). PF-20's `KnobConic` change only *adds* readouts at the
-   dock (branch `:58-68`, `:176-184`); the lane path is byte-identical. **Cost:** OCT 2 is rank 5, the
-   last plate row, so its state name is clipped at exactly the tier where the dial has no other label.
-   **Why nothing catches it:** `workflow-shell-faces.spec.ts` captures only `-compact` and `-dock`
-   (`:182`, `:205`) — the `full` lane plate is the one tier that renders it and the one tier no scene
-   covers. That coverage gap is the fixable half; both candidate fixes move other faces' baselines, so
-   it stays a separate PR.
-2. **Stale count in a comment that calls itself the single source.** `packages/dsp/src/tidy-vco.ts:95`
-   reads "The frozen 23-param contract" above a `PARAM_TABLE` of **25** rows (`:100-126`) — `fold` and
-   `sym` were added under it. Costs a reader who trusts the number; no test can catch a comment.
+```
+  .knob.sm --kb          26 px   (_rackline-tile plate cells)
+  .knob-wrap gap          5 px
+  .label 9 px @ normal  ≈11 px
+  ────────────────────── 42 px = --plate-row-h exactly
+  + .knob-wrap gap        5 px
+  + .readout 9 px @ lh:1  9 px
+  ────────────────────── 56 px in a 42 px row
+```
 
-Cross-face observation (on the **unmerged** platform branch, not main, so not a shipped defect):
-kickdrum declares `{ label: 'settles to', paramId: 'tune' }` while also promoting `tune` to
-`hero.control` — with PF-20's `persistentReadout` live, that prints the hero dial's own value twice
-in one rail. It is the reason this face's strip carries no `paramId` (§5).
+`.tile-body.plate` is `overflow: hidden` with `grid-auto-rows: var(--plate-row-h, 42px)`
+(`_rackline-tile.css:246,251`), and OCT 2 is rank 5 — the LAST plate row — so the overflow has
+nowhere to go, at exactly the tier where the dial has no other label.
+**NOTHING SEES THIS:** `module-face-lint` is pure-model; faces-parity asserts `control-oct2` VISIBLE
+(a clipped-but-present knob still is); `card-control-overflow` measures LEGACY cards, not
+`module-shell`; and **`workflow-shell-faces.spec.ts` captures only `-compact` and `-dock` (`:182`,
+`:205`) — the `full` LANE plate is the one tier that renders this and the one tier no scene covers.**
+That coverage gap is the fixable half. Both candidate fixes (a taller `--plate-row-h`, or suppressing
+the persistent readout at `size:'sm'`) move OTHER faces' baselines — filter's `mode` roster is rank 3
+and DOES land in a captured tier — so this is not a change to make inside a per-module face PR.
+
+**2 · STILL OPEN — a stale count in a comment that calls itself the single source.**
+`packages/dsp/src/tidy-vco.ts:95` reads *"The frozen 23-param contract"* above a `PARAM_TABLE` of
+**25** rows (`:100-126`) — `fold` and `sym` were added under it. Costs a reader who trusts the
+number; no test can catch a comment.
+
+**Cross-face observation.** kickdrum declares `{ label: 'settles to', paramId: 'tune' }` while also
+promoting `tune` to `hero.control` — with `persistentReadout` live, that prints the hero dial's own
+value twice in one rail. It is the reason this face's strip carries no `paramId` (§5).
 
 ---
 
 ## 10. VERIFICATION GATE
-
-Run in this order. Rows 1-6 are unit and take seconds.
 
 ```sh
 # 1. the derived readouts + their PERMANENT negative controls (NEW — flake-check 3×)
@@ -412,11 +386,12 @@ flox activate -- task test:one -- contract-lock
 # 7. dock multiset unchanged (hold moved, not added) + the owner tune-cluster regression
 flox activate -- task e2e:serve
 flox activate -- task e2e:one -- faces-parity --grep tidyVco
-# 8. compact must NOT move; dock is re-captured (git rm the two dock PNGs FIRST — dimension change)
+# 8. the ones that must NOT move; the dock PNG is git rm'd first (dimension change)
 flox activate -- task vrt:one -- face-tidyVco-compact
 flox activate -- task vrt:one -- rear-tidyVco
 flox activate -- task vrt:one -- tidyvco          # legacy card + the 3 composite scenes
 flox activate -- task e2e:stop
+flox activate -- task vrt:commit
 ```
 
 The negative controls in row 1 are the load-bearing ones and must be **permanent legs**, not

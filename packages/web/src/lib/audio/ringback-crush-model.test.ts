@@ -426,17 +426,33 @@ describe('ringback face — the ranking and the glyph are claims about the DSP',
     const dock = curatedFace(ringbackDef, 'dock')!;
     expect(mini.controls.map((c) => c.key)).toEqual(['rate']);
     expect(compact.controls.map((c) => c.key)).toEqual(['rate', 'size']);
-    expect(full.controls).toHaveLength(4);
+    // ⚠ THREE, NOT FOUR, SINCE 2026-08-12 — and the reason is a HEIGHT, not the
+    // ranking. RATE, FEEDBACK and MIX each declare a `format`, so each earns a
+    // readout line and each cell is 57 CSS px rather than the 42 px design row.
+    // RATE is rank 1, so the plate's FIRST row is 57 — and two 57 px rows plus
+    // the 4 px gap is 118 px against a 112 px body. One row fits, so the plate
+    // paints three cells and MIX becomes dock-only.
+    //
+    // This is the narrow half of a trade measured across the whole roster: the
+    // plate's tracks are now sized PER ROW, so a tall cell costs only the rows
+    // beneath it. Four faces whose tall cell sits in the LAST row (cofefve,
+    // filter, resofilter, tidyVco) lose nothing at all; ringback is one of the
+    // four that do, because its tall cell leads the ranking.
+    expect(full.controls).toHaveLength(3);
     expect(dock.controls).toHaveLength(4);
     expect(dock.pages).toHaveLength(2);
 
-    // FOUR cells needs two plate rows, and ranked controls outrank the glyph —
-    // so the `full` LANE tile paints no glyph at all. That is a design fact the
-    // ranking was written against, not a surprise to discover in a screenshot.
-    const plan = laneBodyPlan(full.controls.length, full.glyph !== 'none', 'full');
+    // Ranked controls outrank the glyph, so the `full` LANE tile paints no
+    // glyph at all. That is a design fact the ranking was written against, not
+    // a surprise to discover in a screenshot.
+    const plan = laneBodyPlan(full.cellHeights, full.glyph !== 'none', 'full');
     expect(plan.layout).toBe('plate');
-    expect(plan.cellCount).toBe(4);
-    expect(plan.glyph, 'a 4-cell face renders NO glyph at the full lane tier').toBe(false);
+    expect(plan.cellCount).toBe(3);
+    expect(plan.rowTracks, 'ONE row, sized to the readout-bearing cells in it').toEqual([57]);
+    expect(
+      plan.glyph,
+      'the strip is refused under a taller-than-design row — see plateGlyphFitsRows',
+    ).toBe(false);
     // …while the two tiers that DO show it select exactly two cells beside it.
     expect(laneBodyPlan(compact.controls.length, true, 'compact').glyph).toBe(true);
     expect(laneBodyPlan(mini.controls.length, true, 'mini').glyph).toBe(true);

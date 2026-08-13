@@ -72,10 +72,29 @@ async function pinnedDefSources(): Promise<{ scenario: string; rel: string }[]> 
 describe('PF-11: UI metadata is hash-transparent to the ART source pins', () => {
   it('the pattern-3 set is discoverable (guards a refactor that renames the helper)', async () => {
     const pinned = await pinnedDefSources();
-    // delay + scaler + polarizer + illogic + depolarizer today. The FLOOR is
-    // what matters: if this drops to 0 the whole gate silently passes.
-    expect(pinned.length, 'no docsStrippedRepoSourceSha pins found — did the helper get renamed?')
-      .toBeGreaterThanOrEqual(5);
+    // ⚠ `>= 5` STOOD HERE (removed 2026-08-12, the no-ratchets sweep). It read
+    // as a vacuity floor and was not one: `pinnedDefSources()` is a DIRECTORY
+    // WALK over art/scenarios/**, and the tree measured EXACTLY 5, so the floor
+    // sat on its own population with zero slack. Retiring any one of the five
+    // scenarios would have reddened it for no defect — which is not
+    // hypothetical here, the 15-module deletion PR (537ed4b1) is precisely that
+    // event — and two concurrent branches, one adding a pin and one removing
+    // one, both write 5 and auto-merge to a wrong 5.
+    //
+    // The real claim was never "there are five". It was "the walk still finds
+    // the helper", so it is asserted that way: non-empty, plus a NAME the set
+    // must contain, which a renamed helper cannot satisfy and a shrinking
+    // scenario roster does not disturb.
+    expect(
+      pinned.length,
+      'no docsStrippedRepoSourceSha pins found at all — did the helper get renamed?',
+    ).toBeGreaterThan(0);
+    expect(
+      pinned.map((p) => p.rel),
+      'the walk resolved pins but not the canonical one — `delay.ts` has carried a ' +
+        'pattern-3 source pin since the mechanism was introduced, so its absence means ' +
+        'the scan is reading the wrong tree, not that the pin was retired',
+    ).toContain('packages/web/src/lib/audio/modules/delay.ts');
   });
 
   it('no hash-transparent field on a PINNED def survives into the hashed content', async () => {

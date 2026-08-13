@@ -1,35 +1,23 @@
 # FACE SPECS — BATCH 5 · the index
 
-## 0. STATUS — AUTHORED 2026-08-10, VERIFIED AGAINST `main`
+## 0. PROVENANCE
 
 **Every claim in these twelve files was measured or read against `main` at
-`153e5c36`, not against an earlier spec.** Batch 3's index needed exactly that
-correction three days after it landed and batch 4 wrote the rule in; this batch
-keeps it, and §2 shows why it matters — **one batch-4 rejection is overturned
-here on a re-read of the code.**
+`153e5c36` (2026-08-10), not against an earlier spec.** Batch 3's index needed
+exactly that correction three days after it landed and batch 4 wrote the rule in.
 
-**Nothing here is implemented. No def, card, DSP file or test is touched by this
-PR** — it is twelve documents plus this index plus one HTML review page in
-`.myrobots/plans/`, so it consumes no faceplate PR slot. The working tree diff is
-**14 files, 0 source files**; `flox activate -- task typecheck` is unchanged.
-
-⚠ **This PR is docs-only**, so `ci.yml` path-skips it and
-`.github/workflows/docs-only-gate.yml` posts the two required contexts. That
-bypass fires only when **every** changed file is a doc — do not add a source file
-to this branch. (`.html` is **not** in the `paths-ignore` list; the review page
-lives under `.myrobots/**`, which is, so the bypass still holds. Verify before
-pushing anything else.)
-
-**Ground truth used for "unfaced":** `STRICT_FACES`
+Ground truth for "unfaced" was `STRICT_FACES`
 (`packages/web/src/lib/ui/workflow/strict-faces.ts`) plus whether the def
-declares a `face`. As of `153e5c36` that is **25 faced** of **121 audio modules**;
-the 96 unfaced audio modules were enumerated from `contract-lock.txt` before
-choosing. The 21 already-specced modules (batches 3–4 plus the two 2026-08-09
-one-offs) were excluded first.
+declares a `face`; the unfaced audio modules were enumerated from
+`contract-lock.txt` before choosing, with the already-specced ones excluded.
 
-**The review page** the owner reads is
-`.myrobots/plans/face-specs-batch-5-review.html` — self-contained, theme-aware,
-no external requests.
+**⚠ WHAT HAS MOVED SINCE.** `cofefve` was built (#1450) and `hypercube` was
+DELETED from the repo entirely as a failed experiment (#1448). The other ten
+verdicts are still BANKED — the faceplate pipeline is paused, not cancelled, so
+an unbuilt module's spec is evidence waiting to be spent, not stale prose.
+
+The owner-facing review page is
+`.myrobots/plans/face-specs-batch-5-review.html`.
 
 ---
 
@@ -39,9 +27,9 @@ no external requests.
 |---|---|---|---|---|
 | **swolevco** | voice | **PROMOTE** | The two knobs that rank OFF the lane are the two that measure bit-exactly inert at the shipped default — rank *is* the argument. | `ratio ∈ (0, 0.01]` puts up to **+0.574 of DC** on an `audio` jack; the free-run branch is a strict `> 0`. |
 | **wavecel** | voice | **PROMOTE** | Five of ten params do nothing until a cable lands, so they rank 7–11 and the dock says why. | **SPREAD at maximum leaves L/R 99.94 % correlated** (side/mid −34.06 dB); RMS reported it as a working control. |
-| **hypercube** | voice | **BLOCKED** | Do not face it. `alpha` and `morph_fc` are indistinguishable from no-ops and I cannot yet say whether that is the module or my harness. | **−0.375 DC on both outputs at EVERY setting** — larger than the 0.348 AC signal. |
+| ~~**hypercube**~~ | voice | **MOOT — module DELETED (#1448)** | Was BLOCKED on a harness question; the module was removed rather than repaired. The durable output is the instrument lesson in §6-B. | — |
 | **warrensspectrum** | effect / spectral | **PROMOTE — largest** | Two engines behind one panel; seven of sixteen controls belong to only one of them, so `engineMode` is rank 1. | **`spectralBandCount` is bit-exactly inert in the default engine** and worth 10.35 dB in the other. |
-| **cofefve** | effect / delay | **PROMOTE — overturns a batch-4 rejection** | Seven of twenty-four controls are asleep; the ranking puts every ENABLER directly above its dependents. | **7 of 24 params `Δ = 0.00e+0` at the factory default**, each gated by an enabler that ships at zero. |
+| **cofefve** | effect / delay | **BUILT (#1450)** | Seven of twenty-four controls are asleep; the ranking puts every ENABLER directly above its dependents. | **7 of 24 params `Δ = 0.00e+0` at the factory default**, each gated by an enabler that ships at zero. |
 | **destroy** | effect / crusher | **PROMOTE — cheapest** | Three cells, identical at `full` and `dock`; it ships for two numbers. | **`decimate` 1 → 2 is bit-exactly identical** (same 12 698 distinct values, same 275 Hz centroid). |
 | **slewSwitch** | utility | **PROMOTE** | Two utilities with no shared state — proven, not asserted — and one exact number. | **`LENGTH = 1` outputs the input × 1.41421 (+3.01 dB)** and bit-silences `step_idx` and `eoc`. |
 | **featurecv** | utility / audio→CV | **PROMOTE — blocked on §7-A being ANSWERED** | Four jacks, and the panel currently says nothing true about any of them. | **BRIGHT is bit-identical for a 261 Hz sine and a 261 Hz saw** while separating 261 Hz / 6 kHz / noise cleanly. |
@@ -50,37 +38,27 @@ no external requests.
 | **timelorde** | clock / transport | **PROMOTE** | The singleton the whole rack depends on, and its two most important facts are currently unstatable anywhere. | **Every multiplier loses exactly `(multiplier − 1)` pulses at start** — 1 / 3 / 7 on `2x` / `4x` / `8x`, identical at 60, 120 and 240 bpm. |
 | **unityscalemathematik** | utility / CV | **NO FACE ON MERIT** | All five controls live, three channels perfectly orthogonal, every tier identical. Nothing a picture adds. | none — and that is the verdict. The durable output is the instrument warning (§6-D). |
 
-**Spread:** 3 voice · 3 effect · 5 utility · 1 clock. Three of the twelve
-(`swolevco`, `wavecel`, `hypercube`) also carry a `mono-video`/`video` output, so
-the AV bridge is represented without spending a slot on a video-only module.
+**Ten PROMOTE, one NO-FACE-ON-MERIT** (§5), one since deleted from the repo.
+Batch 4 flagged that it reached no NO-FACE verdict; this one does, deliberately.
+`swolevco` and `wavecel` also carry a `mono-video` output, so the AV bridge is
+represented without spending a slot on a video-only module.
 
-**Ten PROMOTE, one BLOCKED, one NO-FACE-ON-MERIT.** Batch 4 flagged that it
-reached no NO-FACE verdict; this one does, deliberately, and §5 is the
-reasoning.
+### 1.1 THE ONE THAT IS STILL BLOCKED
 
-### 1.1 THE ONE THAT IS GENUINELY BLOCKED
-
-**`hypercube` must not be faced until someone runs the direct-processor
-harness.** `alpha` and `morph_fc` — the two controls that make it a hypercube
-rather than a CUBE — are identical at 0, 0.5 and 1 in rms (8 s.f.), peak
-(6 d.p.), spectral centroid (0.1 Hz) and five log-band energies (0.01 dB), while
-`fold`, `crush` and `spread` all move. **But the fourth wavetable rides
-`port.postMessage`, whose delivery is not guaranteed inside an offline render**,
-so "dead control" and "table never arrived" are not yet distinguishable. The
-`macrooscillator` route (esbuild the worklet against stub globals, hand the
-processor its tables synchronously) settles it in half a day.
-
-**`featurecv` is blocked more softly**: the face is buildable, but the hero
-picture labels the BRIGHT jack and §2 of that spec says nobody currently knows
-what that jack carries.
+**`featurecv`.** The face is buildable, but the hero picture labels the BRIGHT
+jack and §2 of that spec says nobody currently knows what that jack carries.
+Answer it before building — not necessarily fix it.
 
 ---
 
-## 2. WHAT WAS REJECTED, AND WHY — including one batch-4 rejection OVERTURNED
+## 2. WHAT WAS REJECTED, AND WHY
+
+The durable half of this table is the REASONS — a deferral whose reason has
+expired is a candidate, and one of these expired inside a day.
 
 | module | reason |
 |---|---|
-| **`cofefve`** | ⚠ **BATCH-4 REJECTION OVERTURNED.** Batch 4 deferred it with `charlottesEchos` because "charlottes-echos is **migrating to** `analog-delay-core`". Re-read on `main`: **cofefve IS the replacement** — *"a clean-room, OWN-CODE engine (the replacement for the retired Cocoa Delay; its own DSP, no GPL lineage)"* — with its own 209-line worklet and nothing pending. **Taken.** |
+| **`cofefve`** | ⚠ **A BATCH-4 REJECTION OVERTURNED BY RE-READING THE CODE**, and the general lesson: batch 4 deferred it because "charlottes-echos is **migrating to** `analog-delay-core`" — but **cofefve IS the replacement**, with its own worklet and nothing pending. A deferral inherited from another module's plan is worth one grep. (Since BUILT, #1450.) |
 | `charlottesEchos` | Deferral **stands**. Still its own 232-line DSP, still the module the memory has migrating. |
 | `mixmstrs` (91 params), `wavesculpt` (90), `moog960` (36), `foxy` (33) | Batch 4's reasoning holds: each is a face *programme*, not a face. |
 | `buggles`, `polyseqz`, `sequencer`, `cartesian`, `writeseq`, `numpadPlus`, `macseq`, `score` | ⚠ **A MEASUREMENT limit, not a merit judgement.** Every one is driven by a main-thread `setTimeout`/`setInterval` scheduler that does not advance inside an `OfflineAudioContext`: `buggles` measured **bit-zero on all five outputs at every setting**, which is the harness, not the module. Speccing them to this batch's evidence bar needs a **browser-side** harness. `buggles` was the closest call — a chaotic random source is a player favourite. |
@@ -95,12 +73,15 @@ what that jack carries.
 ## 3. THE DEFECTS THIS INVESTIGATION FOUND IN SHIPPED CODE
 
 Ranked by how much they hurt. Every one is cited with its measurement in the
-per-module spec. **None is fixed here.**
+per-module spec. **None was fixed by this investigation**, and as of 2026-08-12
+the ones re-checked against `main` (3, 4, 6, 10, 14) are still open.
+
+⚠ Rows 1 and 2 were `hypercube`'s DC fault and its two no-op controls. **The
+module was deleted (#1448)** rather than repaired, so those defects are gone with
+it — the numbering is left intact because §7-7 and the per-module specs cite it.
 
 | # | module | defect |
 |---|---|---|
-| 1 | **hypercube** | **−0.375 DC on both audio outputs at every setting of every control**, scaling to −0.751 at `level = 2`, against an AC signal of 0.348. The `cube`-rebuild fault class, but at the DEFAULT rather than at a knob extreme. |
-| 2 | **hypercube** | **`alpha` and `morph_fc` are indistinguishable from no-ops** in every phase-invariant statistic (§1.1). The two controls the module is named for. |
 | 3 | **featurecv** | **BRIGHT reads −0.9544 for a 261 Hz sine AND a 261 Hz saw** — four decimals, both polarity modes — while separating 261 Hz / 6 kHz / white noise cleanly. It is tracking pitch, not partials. |
 | 4 | **swolevco** | **`ratio ∈ (0, 0.01]` emits up to +0.574 of DC** on `mod_out` (an `audio` jack) and +0.286 on `sum_out`. One ten-thousandth of the dial above `0` drops the modulator ten octaves. |
 | 5 | **cofefve** | **7 of 24 params are bit-exactly inert at the factory default** — `lfoFrequency`, `duckAttack`, `duckRelease`, `clockSource`, `panMode`, and effectively `driveMix`/`driveIterations` — each gated by an enabler that ships at zero. |
@@ -118,7 +99,7 @@ per-module spec. **None is fixed here.**
 | 17 | **destroy** | **`bits = 1` is −28.3 dB with peak 1.0000** from a 0.5-amplitude input; `bits 1 + decimate 64` is −98.81 dB. |
 | 18 | **wavecel** | **2.667 ms (exactly one 128-sample render quantum) of full-scale output** every time a gate cable lands on a silent wavecel. |
 | 19 | **warrensspectrum · timelorde · illogic · featurecv · ninelives** | **Five modules with NO audio output at all**, so the shell glyph (`primaryAudioOutPortId`) has nothing to tap. The `noise` white-tap finding, five more times — §4.2. |
-| 20 | **eleven of twelve** | **Every card re-types its def's ranges** and **none is in `RANGE_BOUND_CARDS`**. Worst: `cofefve` (34 literal `min=`/`max=` props over 24 params). ⚠ **The two exceptions are `warrensspectrum` and `hypercube`, which re-type ZERO** — and they are not enrolled either, so nothing keeps them clean. |
+| 20 | **eleven of twelve** | **Every card re-types its def's ranges** and **none is in `RANGE_BOUND_CARDS`**. Worst: `cofefve` (34 literal `min=`/`max=` props over 24 params). ⚠ **`warrensspectrum` re-types ZERO** — the one card in the batch already doing the right thing — **and it is not enrolled either, so nothing keeps it that way.** (The tree-wide `card-def-agreement` gate now catches a card that DISAGREES with its def on any of 193 cards; `RANGE_BOUND_CARDS` remains opt-in and is what certifies a card as def-BOUND. Enrolling is still the boy-scout move when you face a module.) |
 
 ---
 
@@ -172,7 +153,7 @@ at a lane tier; `faceTierCap('full') = 6`). Sorting the batch by key count:
 
 | can reach rank 7 → real `hero.cell` | cannot → sidebar `custom` only |
 |---|---|
-| `swolevco` (8 keys), `wavecel` (14), `warrensspectrum` (16), `cofefve` (24), `slewSwitch` (7), `timelorde` (6+1), `featurecv` (6+1), `hypercube` (20) | **`destroy` (3), `illogic` (4), `ninelives` (2), `unityscalemathematik` (5)** |
+| `swolevco` (8 keys), `wavecel` (14), `warrensspectrum` (16), `cofefve` (24), `slewSwitch` (7), `timelorde` (6+1), `featurecv` (6+1) | **`destroy` (3), `illogic` (4), `ninelives` (2), `unityscalemathematik` (5)** |
 
 **Four of twelve cannot have a hero picture at all**, and three of those four are
 modules whose *entire* face value is a picture (`ninelives`'s rate ladder,
@@ -182,19 +163,19 @@ modules rather than the exception. **Worth reflecting in the `ModuleFaceHero`
 doc**: "a picture on a module with fewer than 7 controls goes in the sidebar" is
 the rule, not the escape hatch.
 
-### 4.4 THREE MORE FREE-RUNNING FACES, AND ONE THAT MAY BREAK THE FREEZE
+### 4.4 FOUR MORE FREE-RUNNING FACES
 
-`analogVco` and `macrooscillator` are currently the only free-running modules
-holding a face, and they are the only roster coverage for #1420's pre-frame
+`analogVco` and `macrooscillator` were the only free-running modules holding a
+face when this was written, and the only roster coverage for #1420's pre-frame
 `AudioContext` freeze. **`swolevco`, `wavecel`, `ninelives` and `timelorde` all
 free-run**, so promoting them multiplies that coverage by three.
 
-⚠ **`hypercube` would be the first face whose module is NOT DETERMINISTIC at
-all** — `max|run1 − run2| = 8.453e-1` on identical params, against `0.000e+0` for
-every other module measured in this batch. The freeze stops the graph before the
-frame, so the analyser *should* read zeros regardless — **but that must be
-derived (10 separate processes, unmasked), never assumed.** Another reason
-`hypercube` is blocked.
+⚠ **AND ONE OF THE TWELVE WAS NOT DETERMINISTIC AT ALL** — `max|run1 − run2| =
+8.453e-1` on identical params, against `0.000e+0` for every other module
+measured. (That was `hypercube`, since deleted; the rule outlives it.) The freeze
+stops the graph before the frame, so the analyser *should* read zeros regardless
+— **but for any free-running or non-reproducible module that must be DERIVED (10
+separate processes, unmasked), never assumed.**
 
 ### 4.5 A GENERIC SIDEBAR PANEL WAS DISCOVERED TWICE INDEPENDENTLY
 
@@ -217,9 +198,10 @@ monotonic and identical; every attenuverter bit-silent at 0 and symmetric.
 render the identical five cells. The one asymmetry (UNITY has no CURVE) is
 visible by counting knobs.
 
-**Cost avoided: 4 VRT baselines, a 5-cell `faces-parity` row, and a
-`STRICT_FACES` entry to maintain forever.** The `noise` precedent says that is a
-real saving. The durable output of the file is §6-D below.
+**Cost avoided: two REQUIRED VRT baselines** (`face-unityscalemathematik-
+{compact,dock}`, now gating under `vrt-strict`), **a 5-cell `faces-parity` row,
+and a `STRICT_FACES` entry to maintain forever.** The `noise` precedent says that
+is a real saving. The durable output of the file is §6-D below.
 
 ---
 
@@ -231,7 +213,7 @@ recorded in its own spec, because the shapes recur.
 | # | module | what the bad instrument said | why it was wrong |
 |---|---|---|---|
 | **A** | **wavecel** | "the whole ADSR and BASE are dead — `Δ = 0.00e+0` on three outputs at every value" | The factory reads **`livePatch.edges`**, not bus presence. A driver buffer on the `trigger` input leaves the module in drone mode. Seeding one real edge made all five live. ⚠ **And a second layer**: with the corrected rig but the gate high from sample 0, ATTACK and DECAY *still* read dead, because the note-on landed in the same render quantum as the k-rate `trigger_connected` write. Delaying the gate to t = 1.0 s produced a textbook 1 s ramp at `A = 1`. **Two wrong answers in a row on one control, and SUSTAIN and RELEASE moved throughout — a passing negative control the whole time.** |
-| **B** | **hypercube** | "`alpha` does something — `Δ = 8.45e-1`" | **The module is not reproducible run-to-run** (§4.4). `max|Δ|` was reading phase noise. The tell was incoherence: the *same* Δ at 0.25, 0.5, 0.75 and 1 with `acRms` identical to six decimals. Only a phase-invariant instrument (rms 8 s.f. + centroid + band energies) could speak. |
+| **B** | hypercube *(module since deleted, #1448 — the lesson is not)* | "`alpha` does something — `Δ = 8.45e-1`" | **The module was not reproducible run-to-run** (§4.4). `max|Δ|` was reading phase noise. The tell was incoherence: the *same* Δ at 0.25, 0.5, 0.75 and 1 with `acRms` identical to six decimals. **On a non-reproducible module only a phase-invariant instrument (rms 8 s.f. + centroid + band energies) can speak at all.** |
 | **C** | **timelorde** | "SWING AMOUNT does nothing — 7 pulses at 45° and 7 at 90°" | **A pulse COUNT is invariant to swing by construction** — swing moves *when* an edge lands, never how many. Inter-pulse intervals: 562.5/437.5 ms at 45°, **625.0/375.0 at 90°**. The counter even had a passing negative control (8 → 7 when swing engaged at all). |
 | **D** | **unityscalemathematik · illogic** | "the attenuverter at −1 and +1 are the same — dead control" | **RMS, peak and centroid are all invariant to a sign flip.** Identical to every printed figure; `Δ = 1.60e+0` / `1.80e+0`, exactly twice the amplitude. **An attenuverter is the most common control shape in the unfaced tail** — at least six more modules — and any sweep over them must use a SIGNED comparison. |
 
@@ -250,10 +232,16 @@ negative control that merely proves the needle can twitch.
 
 ## 7. THE RULES THESE SPECS WERE WRITTEN UNDER
 
-1. **`face.hint` and `face.title` DO NOT PAINT at rest.**
+1. **`face.hint` and `face.title` DO NOT PAINT at rest** —
    `facePageHeader(def, annotations = false)` returns `null` before reading
-   anything. **Every load-bearing fact in these twelve files is in a band LABEL, a
-   band HINT, a READOUT or a sidebar `text` entry.**
+   anything — so **every load-bearing fact in these twelve files is in a band
+   LABEL, a band HINT, a READOUT or a sidebar `text` entry.**
+   ⚠ **SUPERSEDED AND HARDENED 2026-08-11**: the owner's no-prose ruling means a
+   new face declares NO `title` and NO `hint` at all, and the explanation lives
+   in the module's `docs` (which right-click → annotate reads). The `face` code
+   blocks in these twelve files still show them; treat those lines as struck.
+   The same day's separate ruling deleted the `signal-flow` sidebar kind (#1468)
+   — **any `kind: 'signal-flow'` block in these specs is dead syntax.**
 2. **A tabbed face renders NO band hints at all, and tabbing engages at 7 bands**
    (`DOCK_TAB_MIN_BANDS`). Three specs sit at exactly **six** bands
    (`warrensspectrum`, `cofefve`) or fewer and say so inline, because a seventh
@@ -275,11 +263,10 @@ negative control that merely proves the needle can twitch.
    the batch's one genuine audition candidate and it is **NOT** declared, because
    the def exposes no engine-reachable callable. Named as a prerequisite PR
    instead.
-7. **Never fold a DSP change into a face wave.** **Eleven** real audio/behaviour
-   fixes surfaced here (§3 #1–#8, #12, #13, #17) and **each is its own PR**. Four
-   of them (`hypercube`'s DC, `swolevco`'s ratio DC, `slewSwitch`'s √2,
-   `destroy`'s decimate) are small and well-scoped; two (`featurecv`'s BRIGHT,
-   `hypercube`'s alpha) are investigations before they are fixes.
+7. **Never fold a DSP change into a face wave.** The real audio/behaviour fixes
+   surfaced here (§3 #3–#8, #12, #13, #17) are **each their own PR**.
+   `swolevco`'s ratio DC, `slewSwitch`'s √2 and `destroy`'s decimate are small
+   and well-scoped; `featurecv`'s BRIGHT is an investigation before it is a fix.
 8. **A control's range comes from ONE place.** Eleven of twelve violate it; §3-20.
 9. **Where I inferred rather than measured, the spec says so** — and where the
    *measurement itself* was wrong, it says that too (§6). Five claims across the
@@ -287,35 +274,23 @@ negative control that merely proves the needle can twitch.
 
 ---
 
-## 8. CI WALL-TIME — the honest arithmetic for ten faces
+## 8. THE COST FACTS THAT SURVIVE
 
-Each face adds **two VRT scenes per platform** (`face-<type>-{compact,dock}`,
-`e2e/vrt/workflow-shell-faces.spec.ts`) and **one `faces-parity` row**
-(registry-driven off `STRICT_FACES`).
+The batch's original wall-time arithmetic was written against a two-platform
+baseline set and an informational face lane. **Both are gone** — there is ONE
+baseline set authored by linux CI (#1458), and `workflow-shell-faces.spec.ts` is
+now in the REQUIRED `vrt-strict` lane (#1483), so **a moved face baseline blocks
+a merge.** Re-derive any number you need against the tree; what still holds is
+the shape:
 
-| lane | delta | gating? |
-|---|---|---|
-| **`vrt` (informational)** | **+40 scenes** (10 faces × 2 scenes × 2 platforms). ⚠ **ESTIMATE, not a measurement** — batch 4 estimated +4 to +5 min for 32 and the way to settle it is still to land ONE face and difference the `Run VRT` step. | **no** — `continue-on-error` |
-| **`vrt-strict` (REQUIRED)** | **+0 scenes.** **None of the twelve is in `STRICT_VRT_MODULES`** — checked. So no required baseline moves from the faces themselves. | **no** |
-| **`e2e` (REQUIRED, 10 shards)** | +10 parity rows. Cells: warrensspectrum **25**, cofefve **25**, wavecel **15**, swolevco 9, slewSwitch 8, featurecv 7, timelorde 7, illogic 4, destroy 3, ninelives 2 = **≈105 driven cells**. At ~0.8 s/cell on SwiftShader plus ~8 s boot per row: **≈ +165 s total ≈ +17 s per shard. Under the 2-minute bar.** ⚠ `timelorde` is `maxInstances = 1` and `undeletable` — its row must use the rack's existing singleton. | **yes** |
-| **darwin baselines** | 40 new PNGs captured locally; **40 linux PNGs need `vrt-update.yml` dispatches**, each drain lowering the vrt-meta linux-deficit ratchet **in the same commit** plus a `task test:ledger:accept` re-pin. | — |
-
-**Recommendation on cost — four PRs, not one:**
-
-1. **PR A — the four with no prerequisite and a small parity row**: `swolevco`,
-   `slewSwitch`, `illogic`, `ninelives`. 23 parity cells, one dispatch. This is
-   also where the VRT estimate above becomes a **measurement**.
-2. **PR B — the two big ones**: `warrensspectrum`, `cofefve`. 50 parity cells and
-   two new sidebar panels; ⚠ `warrensspectrum` is already in
-   `PUSH_CARD_CONTROLS`, so check the push card's 8 entries against the face's
-   top 8 in the same PR.
-3. **PR C — the two needing a small non-DSP seam first**: `wavecel` (the
-   2.7 ms connect click, and the `wavecel-amp-mode` readout question) and
-   `destroy` (whose `curve: 'log'` question should be settled first because
-   `<Fader>` actually implements it).
-4. **PR D — `timelorde` alone.** A singleton, `undeletable`, in every rack; its
-   parity row and its VRT scene both interact with the rest of the roster, and a
-   red run there should have exactly one cause.
-
-`featurecv` and `hypercube` are **not** in this plan. Both wait on an answer
-(§1.1), and both answers are investigations that belong in their own PRs.
+- **`warrensspectrum` (25 cells) and `cofefve` (25) are the expensive parity
+  rows**; `ninelives` (2), `destroy` (3) and `illogic` (4) are nearly free.
+- ⚠ **`timelorde` is `maxInstances = 1` and `undeletable`** — its parity row must
+  use the rack's existing singleton, and its scenes interact with the rest of the
+  roster, so it wants a PR of its own where a red run has exactly one cause.
+- ⚠ **`warrensspectrum` is already in `PUSH_CARD_CONTROLS`** — check the push
+  card's 8 entries against the face's top 8 in the same PR.
+- **`wavecel` and `destroy` each need a small non-DSP question settled first**:
+  wavecel's 2.7 ms connect click and its `wavecel-amp-mode` readout, and
+  destroy's `curve: 'log'` declaration (which `<Fader>` actually implements).
+- **`featurecv` is not schedulable at all** until §1.1 is answered.

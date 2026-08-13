@@ -1,5 +1,18 @@
 # FACE SPEC — `polarizer` (batch 6) — **VERDICT: NO FACE ON MERIT**
 
+> ⚠ **PLATFORM CORRECTIONS SINCE THIS WAS WRITTEN — 2026-08-12 janitorial sweep.**
+> - **PF-22 freed the hero rank** (#1480): `face.hero.cell` no longer consumes a
+>   LANE rank, so a `panel` may now rank FIRST. Any argument below that a module
+>   cannot be faced because a panel's first legal rank is 7 is OBSOLETE.
+> - **A card↔face PRIMITIVE-PARITY gate now exists** (#1480,
+>   `card-primitive-parity.test.ts`): ranking a param whose card binds it to a
+>   primitive the platform has no cell kind for now FAILS, naming the
+>   `(module, param, primitive)` triple. `XyPad` and `NoteEntry` are the two
+>   declared gaps.
+> - **The faceplate pipeline is PAUSED by owner directive.** This spec is BANKED,
+>   not cancelled and not blocked.
+
+
 ## 0. STATUS + THE ONE-LINE ANSWER
 
 **Authored 2026-08-11 against the working tree of `main`.** Nothing here is

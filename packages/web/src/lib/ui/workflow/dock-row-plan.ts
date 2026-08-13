@@ -67,7 +67,7 @@ import {
   declaredParamCells,
   momentaryParamIds,
   paramCellKind,
-  type DeclaredParamCell,
+  type AuthoredParamCell,
   type ParamCellKind,
 } from './shell-control-kind';
 import { shellCellFor } from './shell-cells';
@@ -127,6 +127,12 @@ export const PARAM_CELL_WIDTH_CLASS: Record<ParamCellKind, DockCellWidthClass> =
   segmented: 'wide',
   selector: 'wide',
   grid: 'wide',
+  // A 96px SQUARE pad plus a two-axis readout under it. Unlike `fader` — whose
+  // 22px track is the reason that entry says 'column' — a pad is wide in the
+  // dimension this class measures, so it holds a row. This is the entry the
+  // `fader` regression is a warning about: the answer differs per kind and
+  // cannot be inherited from "it is new, so probably wide".
+  xy: 'wide',
 };
 
 /** The def fields the row plan reads. A superset of nothing else — it needs the
@@ -137,7 +143,10 @@ export interface RowPlanDefLike {
   params?: readonly ParamDef[];
   face?: {
     momentary?: readonly string[];
-    paramCells?: Readonly<Record<string, DeclaredParamCell>>;
+    // The AUTHORED subset — `xy` is declared through `xyPads` below, never
+    // here, because it binds a pair and this map is keyed by one id.
+    paramCells?: Readonly<Record<string, AuthoredParamCell>>;
+    xyPads?: readonly { x: string; y: string; label?: string }[];
   };
 }
 

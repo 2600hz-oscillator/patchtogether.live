@@ -6,8 +6,9 @@
 // (`art/baselines/<group>/*.f32`) UNLESS it is
 //   (a) structurally excluded (ART_EXCLUDED — cannot be deterministically
 //       profiled offline), or
-//   (b) still on the backfill RATCHET (ART_BACKLOG — shrinks batch by batch,
-//       enforced by scenarios/_meta/audio-profile-gate.test.ts).
+//   (b) still on the backfill BACKLOG (ART_BACKLOG — a NAMED list that shrinks
+//       batch by batch, enforced by scenarios/_meta/audio-profile-gate.test.ts;
+//       there is no count, see the note at the bottom of this file).
 //
 // NEW modules are therefore gated IMMEDIATELY: adding an audio def without a
 // profile (and without an explicit, reasoned exclusion) fails the ART lane.
@@ -46,8 +47,8 @@ export const ART_EXCLUDED: Readonly<Record<string, string>> = {
 };
 
 /**
- * THE RATCHET (owner: "gate", implemented like the behavioral quarantine
- * caps): the audio-domain modules that do not yet have an audio profile.
+ * THE BACKFILL BACKLOG (owner: "gate"): the audio-domain modules that do not
+ * yet have an audio profile, named one by one.
  * Seeded 2026-07-01 from the live registry (126 audio defs − 7 already
  * covered − 16 structural exclusions = 103), minus the 2 Phase-0 pilots
  * (the since-retired chowkick, plus adsr) profiled in the same PR → 101 committed entries.
@@ -61,12 +62,16 @@ export const ART_EXCLUDED: Readonly<Record<string, string>> = {
  * 3 backlog ids −3 → 56.
  *
  * RULES (enforced by audio-profile-gate.test.ts):
- *   - a module that gains a baseline MUST be removed from this list;
- *   - the list length can only SHRINK (≤ ART_BACKLOG_MAX);
- *   - entries must be real registry ids, unique, and never in ART_EXCLUDED.
+ *   - a module that gains a baseline MUST be removed from this list (the
+ *     "a module with a baseline must NOT stay in ART_BACKLOG" assertion);
+ *   - entries must be real registry ids, unique, and never in ART_EXCLUDED
+ *     (the "lists are well-formed" artifact anchor — an id that no longer
+ *     names an audio-domain registry module is RED);
+ *   - a NEW audio module may never join this list: it is not on it, so the
+ *     deny-by-default `missing → toEqual([])` assertion reddens on it
+ *     immediately unless it ships a profile or a reasoned ART_EXCLUDED entry.
  *
- * When a backfill batch lands: delete the profiled ids here AND lower
- * ART_BACKLOG_MAX to the new length. NEVER raise ART_BACKLOG_MAX.
+ * When a backfill batch lands: delete the profiled ids here. Nothing else.
  */
 export const ART_BACKLOG: readonly string[] = [
   'buggles',
@@ -115,6 +120,36 @@ export const ART_BACKLOG: readonly string[] = [
   'writeseq',
 ];
 
-/** The ratchet cap. Lower it (to ART_BACKLOG.length) every time a batch
- *  removes entries; the gate fails if the list ever grows past it. */
-export const ART_BACKLOG_MAX = 44;
+/*
+ * ⚠ `ART_BACKLOG_MAX` (44) IS GONE (2026-08-12, the no-ratchets sweep) — P0 owner directive, "ratchets
+ * are an anti pattern; remove all ratchets".
+ *
+ * WHAT IT WAS: a hand-typed copy of `ART_BACKLOG.length`, asserted `<=` and
+ * then asserted `=== ART_BACKLOG.length` verbatim in the same test. A literal
+ * whose only correct value is a quantity already sitting one screen above it,
+ * in a file every backfill batch edits — precisely the construct that
+ * auto-merged WRONG in three concurrent branches on the edge ledger.
+ *
+ * WHAT IT PROTECTED: "the backlog only ever shrinks — a new audio module can
+ * never join it." That protection SURVIVES IN FULL, carried by three
+ * assertions in art/scenarios/_meta/audio-profile-gate.test.ts, none of which
+ * is a count:
+ *   1. DENY BY DEFAULT — 'every audio module has ≥1 audio-profile baseline…'
+ *      lists every audio id that has no baseline, no ART_EXCLUDED entry and no
+ *      ART_BACKLOG membership, and asserts `toEqual([])`. A new module is by
+ *      construction not on the backlog, so it reddens there the moment it
+ *      lands. That is what actually stopped the list growing; the cap only
+ *      re-stated it for the case where someone ALSO edited this file, which is
+ *      a change a reviewer sees in the diff anyway.
+ *   2. ARTIFACT ANCHOR — 'lists are well-formed…' rejects any backlog id that
+ *      is not a live audio-domain id in the contract golden, plus duplicates
+ *      and ART_EXCLUDED overlap. A name is checkable against the tree; a
+ *      number never was.
+ *   3. SHRINK-ON-COVERAGE — 'a module with a baseline must NOT stay in
+ *      ART_BACKLOG' forces removal the moment a profile is committed, which is
+ *      the "batches must lower it" behaviour the cap was credited with.
+ *
+ * NOTHING WAS DROPPED. The equality assertion could only fail if this file's
+ * two literals disagreed with each other; it measured the list against a copy
+ * of itself, never against the tree.
+ */

@@ -52,7 +52,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   RAW_WRITE_LEDGER,
-  RAW_WRITE_DEBT_CEILING,
+  WHOLE_BAG_WRITES,
   ledgerPairs,
 } from './raw-write-ledger';
 
@@ -99,6 +99,15 @@ const RAW_PARAM_WRITE_KEY =
   /\.params\.([A-Za-z_$][\w$]*)\s*(?:\*\*|\?\?|\|\||&&|<<|>>>?|[-+*/%|&^])?=(?![=>])/;
 
 const ALLOW = 'guard:allow-raw-write';
+
+/**
+ * A WHOLE-BAG REPLACEMENT (`x.params = …`) — the form `RAW_PARAM_WRITE` is
+ * structurally unable to see, since it matches an assignment INTO a bag and
+ * never a replacement OF one. Module scope on purpose: the scan and its
+ * permanent negative control must call the SAME constant. A re-typed copy in
+ * the self-test is how this file's previous guard went blind.
+ */
+const WHOLE_BAG = /(?:^|[^A-Za-z0-9_$.])[A-Za-z_$][\w$]*\.params\s*=\s*[^=]/;
 
 /** A line that is PROSE, not code. Needed the moment the guard learned the
  *  dotted form: this very file and `raw-write-ledger.ts` quote `t.params.mode =
@@ -179,23 +188,28 @@ describe('Phase 5b guard: no raw node.params writes outside the mutation seam', 
     expect(
       stale.join('\n'),
       'ledger entr(ies) naming a raw write that is no longer in the tree — delete them ' +
-        '(and lower RAW_WRITE_DEBT_CEILING if the entry was `debt`)',
+        '(there is no number to lower: RAW_WRITE_DEBT_CEILING was removed 2026-08-12)',
     ).toBe('');
   });
 
-  it('the DEBT ratchet moves in BOTH directions', () => {
-    // A ceiling can only trip by GROWING, so it is asserted from below too: a
-    // drain that closes debt and forgets to lower the number would otherwise
-    // pass in total silence and leave slack for the next regression.
-    const debt = ledgerPairs('debt').length;
-    expect(debt, 'raw-write DEBT grew — route the new write through the seam').toBeLessThanOrEqual(
-      RAW_WRITE_DEBT_CEILING,
-    );
+  it('every DEBT entry names a write that is still there and still owed', () => {
+    // ⚠ `RAW_WRITE_DEBT_CEILING` (51) IS GONE (2026-08-12, the no-ratchets
+    // sweep) — see the trace where it stood in raw-write-ledger.ts for what the
+    // `<=` half protected and why the named entry carries it instead.
+    //
+    // What survives here is the part that was never arithmetic: a `debt` row is
+    // a promise that a specific `(file, key)` still needs routing through the
+    // seam, so every one of them must still resolve to a real, un-annotated
+    // write. (The stale check above covers the whole ledger; this one is
+    // scoped to `debt` and states the bucket in its own message, so a `debt`
+    // row silently reclassified to `sanctioned` is still visible as a diff on
+    // a line this test names.)
+    const real = new Set(HITS.filter((h) => h.key).map((h) => `${h.rel}:${h.key}`));
+    const ghosts = ledgerPairs('debt').filter((p) => !real.has(p));
     expect(
-      RAW_WRITE_DEBT_CEILING - debt,
-      `raw-write DEBT is ${debt} but the ceiling still says ${RAW_WRITE_DEBT_CEILING} — ` +
-        'lower RAW_WRITE_DEBT_CEILING to match (a drain moves both in the SAME commit)',
-    ).toBe(0);
+      ghosts,
+      'raw-write DEBT entr(ies) naming a write that is no longer in the tree — delete the row',
+    ).toEqual([]);
   });
 
   it('the guard sees BOTH spellings and every assignment operator (permanent negative control)', () => {
@@ -277,22 +291,35 @@ describe('Phase 5b guard: no raw node.params writes outside the mutation seam', 
     // `Object.assign` and `delete` are held at ZERO: neither exists today, and
     // either would be a genuinely new way to edit a param bag.
     //
-    // WHOLE-BAG REPLACEMENT is RATCHETED, not zeroed, because 16 sites already
-    // exist and they are not one thing: `if (!n.params) n.params = {}` is bag
-    // INITIALISATION, `prev.params = { ...node.params }` is a reconciler
-    // SNAPSHOT, and `this.params = p` is an engine class that merely has a
-    // field called `params`. Triaging them is its own PR; the count makes a
-    // 17th impossible to add in silence.
+    // WHOLE-BAG REPLACEMENT is DECLARED, not counted. `WHOLE_BAG_CEILING = 16`
+    // is gone (2026-08-12, the no-ratchets sweep); the sites are named one by
+    // one in `WHOLE_BAG_WRITES` with the shape each one is, because they are
+    // not one thing: `if (!n.params) n.params = {}` is bag INITIALISATION,
+    // `prev.params = { ...node.params }` is a reconciler SNAPSHOT, and
+    // `this.params = p` is an engine class that merely has a field called
+    // `params`. The list is strictly stronger than the number was — it still
+    // makes a 17th site red, and it additionally reddens on a STALE entry,
+    // which a ceiling cannot do (it just keeps the slack).
     const ZERO: [string, RegExp][] = [
       ['Object.assign into a params bag', /Object\.assign\(\s*[A-Za-z_$][\w$.]*\.params\b/],
       ['delete of a param key', /\bdelete\s+[A-Za-z_$][\w$.]*\.params[.[]/],
     ];
-    const WHOLE_BAG = /(?:^|[^A-Za-z0-9_$.])[A-Za-z_$][\w$]*\.params\s*=\s*[^=]/;
-    /** Only shrinks — see the both-directions assertion below. */
-    const WHOLE_BAG_CEILING = 16;
+    // (WHOLE_BAG is module-scope, above, so the negative control below cannot
+    //  drift from the regex the scan actually runs.)
 
     const zeroHits: string[] = [];
-    const bagHits: string[] = [];
+    /** `<file> <verbatim trimmed line>` — the key WHOLE_BAG_WRITES declares. */
+    const bagKeys = new Set<string>();
+    const bagSites: string[] = [];
+    // The ledger anchors each site by its VERBATIM source line, so the ledger
+    // module quotes every one of them as a `code: '…'` property and the scan
+    // would report its own declarations. `isComment` cannot help — those are
+    // code. They are skipped by SHAPE (a `code:` property), never by filename,
+    // and the leg below asserts that shape is the ONLY reason a line in that
+    // file was skipped — so a REAL whole-bag write there is still RED.
+    const LEDGER = 'graph/raw-write-ledger.ts';
+    const IS_ANCHOR = /^\s*code:\s*'/;
+    const ledgerSkipped: string[] = [];
     for (const [path, src] of Object.entries(FILES)) {
       const rel = libRel(path);
       if (/\.test\.ts$/.test(rel)) continue;
@@ -304,7 +331,13 @@ describe('Phase 5b guard: no raw node.params writes outside the mutation seam', 
         for (const [name, re] of ZERO) {
           if (re.test(line)) zeroHits.push(`src/lib/${rel}:${i + 1} [${name}]  ${line.trim()}`);
         }
-        if (WHOLE_BAG.test(line)) bagHits.push(`src/lib/${rel}:${i + 1}  ${line.trim()}`);
+        if (!WHOLE_BAG.test(line)) continue;
+        if (rel === LEDGER && IS_ANCHOR.test(line)) {
+          ledgerSkipped.push(line.trim());
+          continue;
+        }
+        bagKeys.add(`${rel} ${line.trim()}`);
+        bagSites.push(`src/lib/${rel}:${i + 1}  ${line.trim()}`);
       }
     }
 
@@ -313,14 +346,57 @@ describe('Phase 5b guard: no raw node.params writes outside the mutation seam', 
       'a param write in a form this guard cannot see — teach RAW_PARAM_WRITE about it ' +
         '(do not just annotate the line)',
     ).toBe('');
+
+    // DENY BY DEFAULT — an undeclared whole-bag replacement is RED.
+    const declared = new Set(WHOLE_BAG_WRITES.map((e) => `${e.file} ${e.code}`));
     expect(
-      bagHits.length,
-      `whole-bag \`x.params = …\` replacement(s) grew past ${WHOLE_BAG_CEILING}. This form is ` +
-        `INVISIBLE to RAW_PARAM_WRITE. Sites:\n  ${bagHits.join('\n  ')}`,
-    ).toBeLessThanOrEqual(WHOLE_BAG_CEILING);
+      [...bagKeys].filter((k) => !declared.has(k)).map((k) => k.replace(' ', '  ')).sort(),
+      'whole-bag `x.params = …` replacement(s) with no entry in WHOLE_BAG_WRITES. This form is ' +
+        'INVISIBLE to RAW_PARAM_WRITE, so declare it there (file + the VERBATIM line + kind + ' +
+        `why) or route the write through the seam. All sites:\n  ${bagSites.join('\n  ')}`,
+    ).toEqual([]);
+
+    // ANCHORED TO THE ARTIFACT — a declaration matching nothing is RED. This is
+    // the half a ceiling structurally cannot do: a drained site just widens the
+    // slack under a `<=`, silently.
     expect(
-      WHOLE_BAG_CEILING - bagHits.length,
-      `whole-bag replacements are down to ${bagHits.length} — lower WHOLE_BAG_CEILING to match`,
-    ).toBe(0);
+      [...declared].filter((k) => !bagKeys.has(k)).map((k) => k.replace(' ', '  ')).sort(),
+      'WHOLE_BAG_WRITES entr(ies) matching no line in the tree — the code moved or was fixed, ' +
+        'so delete the entry (or update `code` to the new verbatim line)',
+    ).toEqual([]);
+
+    // The declarations are only skipped in the LEDGER FILE and only in the
+    // `code:` shape — assert that, derived from the list itself, so the skip
+    // cannot quietly start swallowing a real write there.
+    expect(
+      [...ledgerSkipped].sort(),
+      "the ledger's skipped lines must be EXACTLY its own `code:` anchors",
+    ).toEqual(WHOLE_BAG_WRITES.map((e) => `code: '${e.code}',`).sort());
+
+    // The list is non-vacuous only if the scan is: a WHOLE_BAG that matched
+    // nothing would satisfy both assertions above by emptying both sets.
+    expect(bagKeys.size, 'the whole-bag scan resolved no sites at all').toBeGreaterThan(0);
+  });
+
+  it('NEGATIVE CONTROL: the whole-bag probe separates a REPLACEMENT from a write INTO the bag', () => {
+    // The assertions above are set comparisons, so a WHOLE_BAG that matched
+    // everything or nothing would look identical in the output to a clean tree.
+    // This calls the SAME module-scope constant the check calls — a re-typed
+    // copy in the self-test is how the previous one went blind.
+    for (const s of [
+      'if (!n.params) n.params = {};',
+      'prev.params = { ...node.params };',
+      'this.params = p;',
+    ]) {
+      expect(WHOLE_BAG.test(s), `whole-bag probe must MATCH: ${s}`).toBe(true);
+    }
+    for (const s of [
+      'live.params[paramId] = value;',
+      'node.params.mode = m;',
+      'if (a.params === b.params) return;',
+      'const p = node.params;',
+    ]) {
+      expect(WHOLE_BAG.test(s), `whole-bag probe must NOT match: ${s}`).toBe(false);
+    }
   });
 });

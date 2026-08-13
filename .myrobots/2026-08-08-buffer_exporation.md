@@ -73,6 +73,18 @@ counter)** and **Idea 2 (`processorerror` handlers)**. Together they are perhaps
 from a multi-day inference exercise into a number the owner can read off the
 footer.
 
+> **They shipped, as #1425 — Ideas 1, 2 AND 3, one day after this was written.**
+> `$lib/audio/playback-stats` (underrun counter off `AudioContext.playbackStats`),
+> `$lib/audio/worklet-guard` (the `processorerror` latch, with negative controls
+> in both directions), `$lib/audio/audio-out-failover` (the master limiter's
+> runtime fail-over to `ceilingClipCurve()`), and the tick-latency histogram —
+> plus the footer readout. **The instrument now exists; the ideas below that
+> depend on it are unblocked and none of them has been built.** Every design
+> warning those three sections carried was preserved in the shipped source (the
+> `currentTime`-drift detector is refuted at `playback-stats.ts:43-47`; the wrong
+> API names at `:15-23`), so §3's Ideas 1–3 were deleted from this file rather
+> than left to drift out of sync with the code.
+
 ---
 
 # Part 1 — What actually happens today
@@ -94,6 +106,11 @@ Confirmed with `git grep` over the whole repo:
 underrun detector, no jank detector, no long-task counter, and no frame-budget
 counter. **We cannot presently distinguish a user's "it bogs down" from "my laptop
 was thermally throttled" from "a worklet died" from "the tab was backgrounded".**
+
+> **As of #1425 the first and third of those four ARE now distinguishable** — the
+> underrun counter and the `processorerror` latch shipped. The jank / long-task /
+> frame-budget half of this paragraph is still true: no `PerformanceObserver`
+> anywhere, and no rAF-callbacks-per-frame counter.
 
 The only health surfaces that exist:
 
@@ -341,7 +358,10 @@ the compositor and all the WebGL work [D]**.
 ## 1.6 What instrumentation would have answered the owner's report in one session
 
 This is the practical outcome the brief asks for. Five signals, all cheap, all
-implementable in a day, that would have collapsed the 4.5 M-token investigation:
+implementable in a day, that would have collapsed the 4.5 M-token investigation.
+**Signals 1–3 shipped as #1425. Signals 4 and 5 did not, and are still open** —
+the rAF-per-frame counter, and making the footer's `outputLatency` reactive
+rather than a static boot-time read.
 
 | # | signal | source | which of A/B/C/D it isolates | cost |
 |---|---|---|---|---|
@@ -466,9 +486,9 @@ called out.
 
 | # | idea | win | cost | risk | tier |
 |---|---|---|---|---|---|
-| 1 | Underrun counter from `playbackStats` + footer readout | **transformative** — the missing sense organ | S (~40 LOC) | very low | **DO FIRST** |
-| 2 | `processorerror` handler on every worklet node | **transformative** — explains "stops"; makes it recoverable | S (~20 LOC) | very low | **DO FIRST** |
-| 3 | Scheduler tick-latency histogram | high (separates A from D) | S (~30 LOC) | very low | **DO FIRST** |
+| 1 | Underrun counter from `playbackStats` + footer readout | **transformative** — the missing sense organ | S (~40 LOC) | very low | **SHIPPED #1425** |
+| 2 | `processorerror` handler on every worklet node | **transformative** — explains "stops"; makes it recoverable | S (~20 LOC) | very low | **SHIPPED #1425** |
+| 3 | Scheduler tick-latency histogram | high (separates A from D) | S (~30 LOC) | very low | **SHIPPED #1425** |
 | 4 | Audio-first degradation policy, **user-chosen** | high | M | med (visible) | do second |
 | 5 | Patch-aware boot buffer default | med-high | S | low | do second |
 | 6 | Live buffer change without reload | med | L | **high** | **KILLED — §4** |
@@ -481,117 +501,32 @@ called out.
 
 ---
 
-### Idea 1 — Underrun counter from `AudioContext.playbackStats` · **DO FIRST**
+### Ideas 1, 2 and 3 — **SHIPPED as #1425, one day after this was written**
 
-**Mechanism.** Feature-detect `ctx.playbackStats`. Poll once per second (it
-updates ~1 Hz **[W]**) into a Svelte store: `underrunEvents`, `underrunDuration`,
-`totalDuration`, `averageLatency`, `maximumLatency`. Show `underruns: N` next to
-the existing footer latency readout, and after N events in a rolling window offer a
-one-tap "switch to Stable + reload".
+The underrun counter (`$lib/audio/playback-stats`), the `processorerror` handler
+on every worklet node (`$lib/audio/worklet-guard`, plus the master limiter's
+runtime fail-over in `$lib/audio/audio-out-failover`) and the scheduler
+tick-latency histogram all landed together. Their design sections are deleted
+rather than left here to drift out of sync with the code they became — every
+warning they carried survives as source comments, negative-controlled in both
+directions in the unit lane.
 
-**Why this and not `renderCapacity`.** `playbackStats` is the API that exists and
-is documented **[W, MDN]**; `renderCapacity` is **not listed among `AudioContext`'s
-instance properties on MDN [W]** and `playoutStats` is a different interface
-entirely. **This corrects the implementation instruction in `FABLE_PERF_PLAN` P1-2,
-which names all three wrongly.** Feature-detect `playbackStats` as primary; treat
-anything else as an optional extra if a probe finds it.
+Two of those warnings are worth restating because they generalise:
 
-**Expected win.** Converts failure mode **A** from invisible to counted. It is also
-the *sensor* every other adaptive idea (4, 5, 10) depends on — none of them can be
-tuned or even validated without it.
+- **`underrunEvents` can never be asserted in Playwright.** Headless Chromium
+  uses a **null audio sink** — measured `outputLatency` **0.072 ms** vs 10–25 ms
+  on real hardware — so a device underrun *literally cannot occur* and
+  `expect(underruns).toBe(0)` is **vacuously green forever**. Real validation is
+  owner hardware, or a debug worklet that busy-waits per quantum.
+- **Comparing `ctx.currentTime` against `performance.now()` is NOT an underrun
+  detector.** The device clock keeps consuming at 48 kHz whether the buffer held
+  real audio or silence, so `currentTime` advances at wall-clock rate straight
+  *through* a dropout. It returns a clean, confident, always-zero number — the
+  Pearson-correlation failure of 2026-07-28 in a new costume.
 
-**Cost.** ~40 lines + a footer span. Zero ART/VRT/attest churn. ~0 CI wall-time.
-
-**Risk.** Experimental API **[W]** → must feature-detect and degrade to "—". No
-behavioural risk; it is read-only.
-
-**How I'd measure whether it worked — and the trap.**
-- Unit-test the *store logic* against a fake stats object (deterministic, CI-safe).
-- ⚠ **`underrunEvents` cannot be asserted in Playwright.** Headless Chromium uses a
-  **null audio sink** — measured `outputLatency` **0.072 ms** vs 10–25 ms on real
-  hardware **[D]** — so a device underrun **literally cannot occur**. An e2e
-  assertion `expect(underruns).toBe(0)` would be **vacuously green forever**: a
-  textbook blind gate. **Do not write that assertion.**
-- **Negative-control the instrument, both directions** (repo discipline): a debug
-  worklet that busy-waits `N` µs per quantum on a keyboard chord. Turn it on → the
-  counter must climb. Turn it off → it must stop. If the counter does not move when
-  you deliberately overload the render thread, the metric is wrong regardless of
-  what the code does. Make the "off" leg a permanent unit-lane test of the store.
-- **Real validation is owner hardware**: a 10-minute heavy-patch session, Tight vs
-  Stable, reading the counter. That is the measurement the whole exercise exists to
-  enable.
-
-**⚠ A tempting instrument that is structurally blind — do not build it.** The
-obvious no-API alternative is to compare `ctx.currentTime` against
-`performance.now()` on the main thread and call the drift "underrun". **This is
-invariant to the thing it claims to measure.** The device clock keeps consuming at
-48 kHz whether the buffer was filled with real audio or with silence, so
-`currentTime` advances at wall-clock rate *through* a dropout. It would return a
-clean, confident, always-zero number. This is precisely the Pearson-correlation
-failure from the 2026-07-28 session in a new costume.
-
----
-
-### Idea 2 — `processorerror` on every worklet node · **DO FIRST**
-
-**Mechanism.** One helper — `attachProcessorGuard(node, {nodeId, moduleType})` —
-called at every `new AudioWorkletNode` (62 sites in `audio/modules` **[V]**) and
-inside `instantiateFaustModule` (**[V]**, covers the Faust modules in one place).
-On fire: log with module identity, increment a counter, mark the module errored in
-the UI, and — because the node is dead forever **[W]** — offer "rebuild this
-module", which the engine can already do via `removeNode`+`addNode`
-(`engine.ts:334-362` **[V]**).
-
-**Expected win.** Converts failure mode **B** from *silent, permanent, and
-undiagnosable* to *named, attributed, and recoverable*. If the owner's "stops
-completely" is this, it is solved outright; if it isn't, it is **ruled out for
-free**, which is nearly as valuable.
-
-**Cost.** ~20 lines + one call site per constructor. The Faust path is one file.
-
-**Risk.** Very low — adding an event listener changes no audio behaviour. The only
-judgement call is the UI treatment (a badge on the card, not a modal).
-
-**Priority note.** Prioritise the **master limiter** (`audio-out.ts` **[V]**). It
-is the single node whose death silences everything, and it currently has a
-load-time fallback with no runtime equivalent. A runtime latch there could
-auto-fail-over to the same `ceilingClipCurve()` WaveShaper the load path already
-builds (`:80-89` **[V]**) — **the fallback code already exists; it is simply not
-reachable from the runtime failure.**
-
-**How I'd measure.** Unit lane, both directions: a processor that throws on the
-Nth quantum must fire the handler and mark the module errored; a healthy processor
-must never fire it. Both legs permanent — one negative-controls the other. This
-one **is** CI-testable, because a thrown exception does not need a real audio
-device.
-
----
-
-### Idea 3 — Scheduler tick-latency histogram · **DO FIRST**
-
-**Mechanism.** The worker posts at a known cadence (`TICK_MS = 25` **[V]**). Stamp
-the post, and in `dispatch()` (`scheduler-clock.ts:79-91` **[V]**) record
-`now − postedAt` into a small fixed-bucket histogram plus a max. Expose
-`{p50, p99, max, missedBudget}` on the debug surface.
-
-**Expected win.** This is the **discriminator between failure mode A and mode D**,
-and between "the main thread is busy" and "the audio thread is starved" — two
-conditions that look identical from a user report and need opposite fixes. The
-2026-07-29 diagnosis had to build this by hand under CDP to get its dose-response
-curve **[D]**; making it permanent means never building it again.
-
-**Cost.** ~30 lines in one file. No allocation per tick (preallocated bucket array).
-
-**Risk.** Very low. `dispatch()` already has a per-subscriber try/catch, so the
-instrumentation cannot break the tick.
-
-**How I'd measure.** Negative-control both directions in the unit lane: inject a
-synthetic 200 ms main-thread block → the histogram must show it; run clean → p99
-must sit near 0. **Express the buckets in milliseconds and say so in the assertion
-message** — this is a *main-thread scheduling* quantity, not a renderer-dependent
-one, so ms is the correct unit here. (The frames-not-ms rule applies to
-**renderer-dependent** budgets; misapplying it to a wall-clock scheduler metric
-would be its own instrument error.)
+**What this changes for everything below:** Ideas 4, 5, 8 and 10 were all blocked
+on having a sensor. They are not blocked any more, and none of them has been
+built.
 
 ---
 
@@ -681,6 +616,14 @@ is a quadratic loop waiting for someone to raise a cap. A source-level grep for
 that shape across message handlers is cheap and would catch the next one — which is
 the repo's own "guard it at the SOURCE level" precedent.
 
+> **PARTLY DONE — #1422.** The CARD's capture path was pre-allocated, and the
+> live-peak fold (a second quadratic term this section missed) with it. **And it
+> raised the cap 1.42 s → 31.25 s, i.e. 22×**, which is precisely the "someone
+> raises a cap" scenario above. **`samsloopRecAppend`
+> (`audio/modules/samsloop.ts:698-713`) still does `new Float32Array(n+take)` +
+> full copy on every call**, and the repo-wide source grep for the shape was
+> never done. Both remain open.
+
 **How I'd measure.** The scratch harness already written
 (`scratchpad/samsloop-append.mjs`) — same shape, before/after, asserting the
 prealloc path is O(1) per callback.
@@ -713,13 +656,16 @@ Running it before building is the entire point of §1.5's lesson.
 
 ### Idea 9 — Finish the rAF coalescing (existing P0-1) · endorse, don't redesign
 
-**239 sites / 73 files, 8 on the ticker [M]**. tldraw/Figma/Hydra all run exactly
-one loop **[K]**. I have nothing to add to the existing plan's design and I am not
-going to pretend otherwise — **the contribution here is prior-art confirmation that
-this is architectural, not an optimisation.** Two concrete notes:
+**239 sites / 73 files, 8 on the ticker [M]** — re-counted 2026-08-12 as **244
+sites / 74 files, 12 on the ticker**, so the population is *growing*.
+tldraw/Figma/Hydra all run exactly one loop **[K]**. I have nothing to add to the
+existing plan's design and I am not going to pretend otherwise — **the
+contribution here is prior-art confirmation that this is architectural, not an
+optimisation.** Two concrete notes:
 
-- **KriaCard is still a 2-line fix** — it already imports `onMeterFrame` and never
-  calls it **[M]**. Free.
+- **KriaCard is still a 2-line fix** — it already imports `onMeterFrame`
+  (`KriaCard.svelte:17`) and never calls it, running its own rAF at `:222`
+  instead. Still true 2026-08-12. Free.
 - **The 733 `readLive` knob/fader polls [M]** are a separate, larger population
   than the 239 card loops and are governed by only **2 shared components**
   (`Knob.svelte`, `Fader.svelte` **[V]**). Fixing 2 files coalesces hundreds of
@@ -786,9 +732,14 @@ which is the worst possible signal and burned four consecutive main runs **[D]**
   shards. A wall-clock budget here is not one assertion — it is a different
   assertion per run. **It must be a relative/ratio metric** (this module vs a
   fixed reference module in the same run), never an absolute millisecond budget.
-- **It must ratchet in both directions** (`actual <= CEILING` *and*
-  `CEILING - actual === 0`), or a cleanup that lowers cost and forgets the ceiling
-  leaves slack that silently absorbs the next regression.
+- ~~**It must ratchet in both directions** (`actual <= CEILING` *and*
+  `CEILING - actual === 0`).~~ **DEAD ADVICE as of 2026-08-10 — do not build
+  this.** Ratchets were eliminated repo-wide (#1455 / #1458 / #1486) under a P0
+  owner directive: *"eliminate ratchets entirely even if we lose test coverage as
+  a result."* A hand-typed per-module cost ceiling is exactly the construct that
+  auto-merges cleanly and wrongly across parallel branches. If this gate is ever
+  built it must be a **relative** assertion (this module vs a reference module in
+  the same run) with **no typed population count and no typed budget literal**.
 - **It must state its own scope**: which modules it covers, asserted at zero for
   the ones it doesn't, so "not covered" cannot read as "covered and passing".
 
@@ -910,31 +861,26 @@ oscillates and a correlation metric that says it doesn't.
 
 Named explicitly, per the honesty requirement:
 
-1. **Whether `AudioContext.playbackStats` is available in the owner's Chrome, or
-   in Playwright's Chromium.** MDN marks it **experimental [W]** and I could not
-   reach a browser-compat table. **This is the single highest-value 5-minute
-   check before any of Idea 1 is written** — one line in a console. There is no
-   `node_modules` in this worktree, so I could not even confirm whether the
-   TypeScript DOM lib we build against declares it (it may need a local
-   interface declaration).
-2. **Whether `renderCapacity` exists at all.** MDN does not list it among
-   `AudioContext`'s instance properties **[W]**; our planning docs assume it does.
-   I could not resolve this — the spec fetches truncated before reaching the
-   relevant section. **Do not implement against that name without probing.**
-3. **Whether orphaned worklet processors actually accumulate render-thread cost**
+1. ~~Whether `AudioContext.playbackStats` is available.~~ **RESOLVED by shipping
+   it (#1425)** — it is available and feature-detected, with a documented "—"
+   fallback for Firefox/Safari. `renderCapacity` and `playoutStats`, the two
+   names our older planning docs told implementers to use, are both **wrong**;
+   that finding is now recorded at `playback-stats.ts:15-23` where it can be read
+   by whoever needs it.
+2. **Whether orphaned worklet processors actually accumulate render-thread cost**
    (Idea 8). The mechanism is sound and the greps hold **[V]**, but P0-3 is marked
    `[U]` by its own verifier **[D]** and I added no measurement. **This is the
    biggest open question in the report**, and Idea 1 makes it cheap to close.
-4. **The preset-load DOM leak (7,700–9,800 nodes/load).** I could not reproduce it
+3. **The preset-load DOM leak (7,700–9,800 nodes/load).** I could not reproduce it
    without a browser session and could not locate #1262's contradicting evidence in
    the tree. The brief asked me to reconcile the two and **I could not.** It
    remains unresolved in both directions — do not cite either number as settled.
-5. **What the owner's actual failure was.** I did not diagnose it. I have proposed
+4. **What the owner's actual failure was.** I did not diagnose it. I have proposed
    a mechanism for the "stops" clause (§1.4) that nobody had named, and a way to
    test it for ~20 lines. **That is a hypothesis with a cheap experiment attached,
    not a finding**, and the moment it is treated as a finding this report has done
    more harm than good.
-6. **Audiotool's collaboration model and overload strategy** — the single most
+5. **Audiotool's collaboration model and overload strategy** — the single most
    relevant competitor datapoint, and the one I most wanted. Its site returned a
    parse error and my search budget was gone. **Worth 10 minutes of someone's time
    with a working browser**; it is the closest thing to a peer this product has.

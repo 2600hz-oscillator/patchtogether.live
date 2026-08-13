@@ -1,6 +1,6 @@
 # 2026-08-03 — BLIND GATES FOUND
 
-**The unifying finding of the session.** Almost every defect fixed today had been
+**The unifying finding of the session.** Almost every defect fixed that day had been
 sitting behind a gate that was **green while measuring nothing**. None announced
 itself; each produced a confident, plausible, false "all clear".
 
@@ -8,65 +8,67 @@ The recurring mechanism, stated once: **a filter applied before the check silent
 redefines the check's subject.** The gate then reports honestly about a population
 that is not the one anybody cares about.
 
-CLAUDE.md's "VALIDATE THE INSTRUMENT" section and `.claude/skills/blind-gates` carry
-the standing treatment. This file is the day's evidence.
-
-> ## STATUS (2026-08-09) — the §1 "STILL OPEN" rows, re-verified against `main`
->
-> | §1 row | 2026-08-09 |
-> |---|---|
-> | mono-normal gate 30 % blind ("STILL OPEN — see SESSION-STATE §6") | **FIXED — #1351** (2026-08-04). The real blindness was **46 %** (13 normals, 6 missed) — SESSION-STATE §6b carries the corrected figures and the residual audit (0 unclassified). |
-> | `stereo-mono-normal.spec.ts` SUTS omits stereovca ("STILL OPEN") | **CLOSED** — stereovca is now a SUT row (`e2e/tests/stereo-mono-normal.spec.ts:126`, with the `offset: 1` ring-mod caveat documented inline). |
-> | dock VRT capture cuts faces at the fold ("STILL OPEN" on 5 modules) | **FIXED — #1413** (2026-08-08): "the dock baseline was 425 px of a 930 px faceplate — nine of them were". |
-> | VRT `FACES` roster hand-maintained ("STILL OPEN") | **Still hand-maintained** (`e2e/vrt/_shell-faces.ts` — its own comment says so), but verified in sync today: 24 roster entries = 24 `STRICT_FACES` modules. The structural hole (no parity assertion between the two lists) remains open. |
-> | §2 `timelorde-clock-core.test.ts` pins the wrong divider phase | **FIXED — #1347** (2026-08-04, the swing + divider-phase PR). |
->
-> The other §2/§3 rows (wavesculpt's two tests, spectrograph's darwin baseline,
-> `clouds.test.ts` density) were **not re-verified** in this pass — do not read
-> silence here as "fixed".
+> **2026-08-12 janitorial sweep.** The generalised lessons that used to close this
+> file (§4 "the three inversions", §5 "the meta-tell") were DELETED: both are
+> carried verbatim in CLAUDE.md and `.claude/skills/blind-gates`, and one of them
+> had gone actively WRONG — old inversion 3 said *"ratchet in BOTH directions,
+> `actual <= CEILING` and `CEILING - actual === 0`"*, which the 2026-08-10 owner
+> directive reverses outright ("never hand-type a population count"). Keeping a
+> superseded rule next to two live ones is how it gets copied. The §1 table is
+> reduced to the rows that are still open; the fixed rows are named in the PRs
+> that fixed them.
 
 ---
 
-## 1. GATES THAT COULD NOT SEE THEIR OWN SUBJECT
+## 1. GATES THAT COULD NOT SEE THEIR OWN SUBJECT — what is STILL OPEN
 
-| gate | the filter | saw | could not see |
+Nine of the eleven original rows are closed (`mono-normal` blindness → #1351,
+which measured the real figure at **46 %**, 13 normals / 6 missed, not the 30 %
+first reported; `stereo-mono-normal` SUTS → stereovca is now a row; the dock VRT
+fold → #1413; the `FACES` roster parity → now asserted both directions at
+`e2e/vrt/workflow-shell-faces.spec.ts:282-320`; the emit-budget and
+`EXEMPT_OUTPUT_EMIT` counts → #1324 and then the ratchet purge; `vrt-update`'s
+`revalidate` → #1333; `timelorde-clock-core` phase → #1347).
+
+| gate | the filter | could not see | state |
 |---|---|---|---|
-| `mono-normal-not-defeated.test.ts:83` | regex matching one expression on one line | **7** normals | **3 of 10 (30 %)** — both stereovca's, one `samsloop-tap.ts:67`. ⚠ **SHIPPED TODAY IN #1343. STILL OPEN — see SESSION-STATE §6** |
-| behavioral coverage sweep | control-vs-perturbed scatter larger than the floor | — | **24 of 26 snaredrum ports PASS WITH NOTHING WIRED.** The voice's own `cent = 5292 ± 5026 Hz` scatter clears four of thirteen floors unaided. Filed as **#1337** |
-| the emit-budget ratchet | a private accumulator reading 2 of 5 skip reasons | 1 of 180 tests | pinned itself to one of the **116 skipped** — the 1020 s figure I escalated was about a `test.fixme`-d test that has never run |
-| `EXEMPT_OUTPUT_EMIT_MODULES` / `EXEMPT_OUTPUT_EMIT` | a bare count | 43 / 65 pinned | **actual 40 / 63** — five slots of silent pre-authorisation. Fixed in #1324 |
-| VRT `FACES` roster (`workflow-shell-faces.spec.ts:43-77`) | hand-maintained list | listed faces | **a promoted module silently gets NO VRT scene.** Every other face gate is registry-driven. **STILL OPEN** |
-| `stereo-mono-normal.spec.ts` SUTS roster | hand-maintained list | — | **omits stereovca** — nothing in any lane can see its right channel. **STILL OPEN** |
-| dock VRT capture | `max-height: min(60vh, 680px)` | the top of the pane | **on sixstrum, dx7, kickdrum, snaredrum, drummergirl the bands sit BELOW THE FOLD** — baselines stayed pixel-identical while layout changed completely. **STILL OPEN** |
-| `vrt-update.yml`'s `revalidate` | `needs: [linux, darwin]`, no `if: always()` | both-platform runs only | **the documented close+reopen re-validation NEVER ran for single-platform dispatch — the recommended usage.** Every single-platform baseline to date merged unvalidated. Fixed in #1333 |
-| attest pre-flight (`preflightSolo`, duplicated in `grand-` and `webgl-attest`) | **one `ps` sample** | one instant | a co-tenant oscillating **3.5 %→87 % on a ~4 s period** reads quiet or busy depending purely on when you look. **45 samples: 25 over threshold, max 87.1 %.** Filed as **#1331** |
-| `task dsp:ensure` | `.dsp-srchash` over INPUTS | source changes | **never checks the OUTPUTS exist** — a partial dist reports "current" forever. Filed as **#1326** |
+| behavioral coverage sweep | control-vs-perturbed scatter larger than the floor | **24 of 26 snaredrum ports PASS WITH NOTHING WIRED** — the voice's own `cent = 5292 ± 5026 Hz` scatter clears four of thirteen floors unaided | **#1337, open** |
+| attest pre-flight (`preflightSolo`, duplicated in `grand-` and `webgl-attest`) | **one `ps` sample** | a co-tenant oscillating **3.5 %→87 % on a ~4 s period** reads quiet or busy depending purely on when you look. **45 samples: 25 over threshold, max 87.1 %** | **#1331, open** |
+| `task dsp:ensure` | `.dsp-srchash` over INPUTS | **never checks the OUTPUTS exist** — a partial dist reports "current" forever | **#1326, open** |
 
 ---
 
 ## 2. TESTS BUILT AROUND THE DEFECT
 
 Worse than a blind gate: a test that **pins the broken behaviour as correct**, so
-fixing the bug turns CI red.
+fixing the bug turns CI red. Re-checked 2026-08-12:
 
-- **`wavesculpt.test.ts:218-224`** documents the dead BLUE oscillator and asserts only
-  **"≥3 of 4 walls audible."**
-- **`wavesculpt.test.ts:276-279`** asserts a rotation L1 of 0.129 while the prose beside
-  it says "audio is rotation-invariant" — **a passing test contradicting its own docs.**
-- **`stereo-autowire.spec.ts:143-157`** uses cofefve and asserts the **ABSENCE** of the
-  edge that would have fixed OUT-R silence, citing the false comment as justification.
-- **`timelorde-clock-core.test.ts:94-96`** pins the wrong divider phase (a /4 landing on
-  beat 4).
-- **spectrograph's darwin VRT baseline** pins a two-trace image as correct when the
-  fixture plants three.
-- **`clouds.test.ts:172-186`** only compares DENSITY 0 vs 1 — invisible to a knob whose
-  midpoint is the loudest point.
+- **STILL THERE — `wavesculpt.test.ts:218-231`** asserts only **"≥3 of 4 walls
+  audible"**, with the BLUE (+Z) wall's gain of exactly 0 written into the
+  comment as expected. That is the same silent voice the wavesculpt face spec
+  calls out; the face that would have surfaced it was reverted (#1476), so
+  nothing has forced the question.
+- **STILL THERE — `clouds.test.ts:125-139`** compares DENSITY 0 vs 1 only, and is
+  therefore blind to any non-monotonicity in between. (The sibling defect on
+  SIZE — the top 19.5 % bit-identical to the maximum — was found by hand and
+  fixed in #1456, not by this test.)
+- **FIXED — `wavesculpt.test.ts` rotation prose.** The "audio is
+  rotation-invariant" sentence beside a passing L1 = 0.129 assertion is gone; the
+  test now states the per-axis gain deltas and asserts each axis re-mixes.
+- **FIXED — `stereo-autowire.spec.ts`.** It no longer asserts the ABSENCE of the
+  cofefve edge; the sibling is patched and the spec's payload is "cofefve's OUT R
+  must make sound" (`e2e/tests/stereo-autowire.spec.ts:25`, `:179`).
+- **FIXED — `timelorde-clock-core.test.ts`** divider phase (#1347).
+- **UNVERIFIED — spectrograph's baseline** pinned a two-trace image where the
+  fixture plants three. The darwin baseline named here no longer exists (#1458
+  collapsed the platform dimension); whether the surviving single baseline still
+  shows two traces was not re-checked.
 
 ---
 
 ## 3. UNSOUND, NOT MERELY FLAKY
 
-Green runs that were green **on noise**.
+Green runs that were green **on noise**. Kept for the measured numbers.
 
 - **resofilter's behavioral row**: eight consecutive greens where a *different* metric
   carried each pass by a hair. Root cause: BUGGLES.smooth is a ±0.15 V random walk
@@ -79,45 +81,4 @@ Green runs that were green **on noise**.
   that file; it passed only where the probe page happened to hit 120 fps.
 - **The unpatch test (#1341)**: not unsound — the test was RIGHT and the budget was
   wrong. Its final assertion passed at **30.77 s** against a 30.00 s ceiling. **27 of
-  2561 passing tests sit at ≥70 % of budget**; the one that fired ranked only sixth.
-
----
-
-## 4. THE THREE INVERSIONS THAT ACTUALLY FIX THIS CLASS
-
-Applied repeatedly today; they work.
-
-1. **Deny by default, with a NAMED exemption per instance** — the exact
-   `(file, key)` / `(module, port)` / `(card, param, field)` triple. Never a filename,
-   never a bare count. Two concurrent PRs then collide *textually*, which is what
-   `pr:conflict-sweep` can see.
-2. **Anchor to the ARTIFACT, not the list.** An entry naming something that no longer
-   exists is RED. A stale exemption is one nobody is watching.
-3. **Ratchet in BOTH directions** — `actual <= CEILING` **and** `CEILING - actual === 0`.
-   A ceiling can only trip by growing; a drain that forgets to lower it passes in total
-   silence and the slack pre-authorises the next regression.
-
-Plus, learned the hard way today:
-
-4. **Negative-control the gate, not just the code — and feed it EVERY SPELLING.** The
-   mono-normal gate had negative controls and still shipped 30 % blind, because they
-   only ever fed it the shape it could already see.
-5. **Prefer a PERMANENT per-run control leg** over a one-time authoring check. Several
-   gates now carry a leg that fails if the detector stops detecting.
-6. **State the gate's scope INSIDE the gate.** An unstated scope reads as full coverage.
-
----
-
-## 5. AND THE META-TELL
-
-> **"The result is genuinely different here" and "the instrument reads differently here"
-> look identical from the output alone.**
-
-Both were live today, in both directions:
-
-- **The observation-window gate** failed because the *instrument* read differently under
-  load (its Playwright round-trip was 73 % of the measured window on the slow arm).
-- **The score tied-gate** failed because the *result* was genuinely different — an
-  ordering race whose loss is permanent, where no timeout budget could ever have helped.
-
-They need opposite fixes. Establish which before acting.
+  2561 passing tests sat at ≥70 % of budget**; the one that fired ranked only sixth.

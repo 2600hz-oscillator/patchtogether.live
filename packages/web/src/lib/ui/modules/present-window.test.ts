@@ -162,7 +162,7 @@ describe('startPresent', () => {
     const rect: ScreenRect = { left: 1920, top: 0, width: 2560, height: 1440 };
 
     const session = startPresent({
-      canvas,
+      source: () => canvas,
       rect,
       openWindow,
       url: '/present',
@@ -206,7 +206,7 @@ describe('startPresent', () => {
     const openWindow = vi.fn(() => popup as unknown as Window);
     const sched = fakeRaf();
 
-    startPresent({ canvas, rect: null, openWindow, raf: sched.raf, caf: sched.caf });
+    startPresent({ source: () => canvas, rect: null, openWindow, raf: sched.raf, caf: sched.caf });
     // Before ready: no delegation yet.
     expect(posted.some((p) => (p.data as { type?: string })?.type === 'present:go-fullscreen')).toBe(false);
 
@@ -227,7 +227,7 @@ describe('startPresent', () => {
     const openWindow = vi.fn(() => popup as unknown as Window);
     const sched = fakeRaf();
 
-    startPresent({ canvas, rect: null, openWindow, raf: sched.raf, caf: sched.caf });
+    startPresent({ source: () => canvas, rect: null, openWindow, raf: sched.raf, caf: sched.caf });
     env.fireMessage({ source: popup, data: { type: 'present:ready' } });
     vi.advanceTimersByTime(100);
     sched.tick();
@@ -247,7 +247,7 @@ describe('startPresent', () => {
     const openWindow = vi.fn(() => popup as unknown as Window);
     const sched = fakeRaf();
 
-    startPresent({ canvas, rect: null, openWindow, raf: sched.raf, caf: sched.caf });
+    startPresent({ source: () => canvas, rect: null, openWindow, raf: sched.raf, caf: sched.caf });
     env.fireMessage({ source: popup, data: { type: 'present:ready' } });
     vi.advanceTimersByTime(100);
 
@@ -264,7 +264,7 @@ describe('startPresent', () => {
     const openWindow = vi.fn(() => popup as unknown as Window);
     const sched = fakeRaf();
 
-    startPresent({ canvas, rect: null, openWindow, raf: sched.raf, caf: sched.caf });
+    startPresent({ source: () => canvas, rect: null, openWindow, raf: sched.raf, caf: sched.caf });
     // A message from some OTHER source must not start the blit.
     env.fireMessage({ source: {}, data: { type: 'present:ready' } });
     vi.advanceTimersByTime(200);
@@ -279,7 +279,7 @@ describe('startPresent', () => {
     const sched = fakeRaf();
 
     const session = startPresent({
-      canvas, rect: null, openWindow, raf: sched.raf, caf: sched.caf,
+      source: () => canvas, rect: null, openWindow, raf: sched.raf, caf: sched.caf,
     })!;
     env.fireMessage({ source: popup, data: { type: 'present:ready' } });
     vi.advanceTimersByTime(100);
@@ -303,7 +303,7 @@ describe('startPresent', () => {
     const sched = fakeRaf();
 
     const session = startPresent({
-      canvas, rect: null, openWindow, raf: sched.raf, caf: sched.caf,
+      source: () => canvas, rect: null, openWindow, raf: sched.raf, caf: sched.caf,
     })!;
     env.fireMessage({ source: popup, data: { type: 'present:ready' } });
     vi.advanceTimersByTime(100);
@@ -326,7 +326,81 @@ describe('startPresent', () => {
     const canvas = fakeSourceCanvas();
     const openWindow = vi.fn(() => null); // popup blocked
 
-    const session = startPresent({ canvas, rect: null, openWindow });
+    const session = startPresent({ source: () => canvas, rect: null, openWindow });
     expect(session).toBeNull();
+  });
+
+  // ── THE SOURCE IS RE-RESOLVED EVERY FRAME, AND `prepare` RUNS FIRST ────────
+  // Both properties exist because the projector must outlive the CARD that
+  // opened it (owner P0 2026-08-12, $lib/ui/modules/node-present-registry).
+  // A captured element is the card's; a getter is the node's. And `prepare` is
+  // where the registry renders ITS node into the shared engine drawing buffer,
+  // which is only valid if it happens in the same synchronous block as the read.
+  it('re-reads the source EVERY frame, so a swapped surface is followed', () => {
+    const env = installWindow();
+    const first = fakeSourceCanvas(1920, 1080);
+    const second = fakeSourceCanvas(1920, 1080);
+    let current = first;
+    const { popup, ctx } = fakePopup();
+    const openWindow = vi.fn(() => popup as unknown as Window);
+    const sched = fakeRaf();
+
+    startPresent({ source: () => current, rect: null, openWindow, raf: sched.raf, caf: sched.caf });
+    env.fireMessage({ source: popup, data: { type: 'present:ready' } });
+    vi.advanceTimersByTime(100);
+
+    sched.tick();
+    expect(ctx.drawImage.mock.calls.at(-1)![0]).toBe(first);
+    // The surface is replaced underneath the running loop.
+    current = second;
+    sched.tick();
+    expect(
+      ctx.drawImage.mock.calls.at(-1)![0],
+      'a captured reference would still be drawing the OLD surface here',
+    ).toBe(second);
+  });
+
+  it('calls prepare() before EVERY read, and stops calling it once cancelled', () => {
+    const env = installWindow();
+    const canvas = fakeSourceCanvas();
+    const { popup, ctx } = fakePopup();
+    const openWindow = vi.fn(() => popup as unknown as Window);
+    const sched = fakeRaf();
+    const order: string[] = [];
+    const prepare = vi.fn(() => order.push('prepare'));
+    const drawing = ctx.drawImage as unknown as { mockImplementation: (f: () => void) => void };
+    drawing.mockImplementation(() => order.push('draw'));
+
+    const session = startPresent({
+      source: () => canvas, prepare, rect: null, openWindow, raf: sched.raf, caf: sched.caf,
+    })!;
+    env.fireMessage({ source: popup, data: { type: 'present:ready' } });
+    vi.advanceTimersByTime(100);
+    // Not before the loop starts.
+    expect(prepare).not.toHaveBeenCalled();
+
+    sched.tick();
+    sched.tick();
+    expect(prepare).toHaveBeenCalledTimes(2);
+    expect(order).toEqual(['prepare', 'draw', 'prepare', 'draw']);
+
+    session.stop();
+    sched.tick();
+    expect(prepare, 'a cancelled loop prepares nothing').toHaveBeenCalledTimes(2);
+  });
+
+  it('survives a null source (engine not up yet) without drawing or throwing', () => {
+    const env = installWindow();
+    const { popup, ctx } = fakePopup();
+    const openWindow = vi.fn(() => popup as unknown as Window);
+    const sched = fakeRaf();
+
+    startPresent({ source: () => null, rect: null, openWindow, raf: sched.raf, caf: sched.caf });
+    env.fireMessage({ source: popup, data: { type: 'present:ready' } });
+    vi.advanceTimersByTime(100);
+    sched.tick();
+
+    expect(ctx.fillRect, 'still black-fills the sink').toHaveBeenCalled();
+    expect(ctx.drawImage, 'but draws nothing').not.toHaveBeenCalled();
   });
 });

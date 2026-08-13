@@ -53,8 +53,14 @@ const firstSlotRect = (ch: number, shell: boolean) => {
   const anchorY = COLUMN_BASELINE_Y - (shell ? SHELL_BADGE_CLEARANCE_Y : 0);
   return { x: cardX(ch, w, pitchOf(shell)), y: anchorY - h, w, h };
 };
-/** A flow-space spawn anchor inside lane ch at the ACTIVE pitch (X-only hit-test). */
-const colPos = (ch: number, shell: boolean) => ({ x: (ch - 1) * pitchOf(shell) + 60, y: 40 });
+/** A flow-space spawn anchor INSIDE lane ch's painted band, at the ACTIVE pitch.
+ *  The hit-test is 2-D (laneTargetForFlowPoint): X picks the column, and Y must
+ *  land in `[laneTopY, COLUMN_BASELINE_Y)` or the spawn is free canvas. Anchoring
+ *  just above the baseline is inside the band at every lane height. */
+const colPos = (ch: number, shell: boolean) => ({
+  x: (ch - 1) * pitchOf(shell) + 60,
+  y: COLUMN_BASELINE_Y - 40,
+});
 
 async function gotoWorkflow(page: Page, shell: boolean): Promise<void> {
   await page.goto(shell ? '/rack' : '/rack?shell=legacy');

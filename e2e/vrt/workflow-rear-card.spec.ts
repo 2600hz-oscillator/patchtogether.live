@@ -96,7 +96,10 @@ async function bootWithMember(page: Page, type: string): Promise<string> {
       __setSpawnFlowPos: (p: { x: number; y: number }) => void;
       __spawnFromPalette: (t: string) => void;
     };
-    w.__setSpawnFlowPos({ x: 30, y: 40 });
+    // x=30 lands inside narrowed column 1's band; y=4280 lands inside the
+    // lane's PAINTED band (the drop hit-test is 2-D — a Y above the lanes is
+    // free canvas and joins no lane).
+    w.__setSpawnFlowPos({ x: 30, y: 4280 });
     w.__spawnFromPalette(t);
   }, type);
   await page.waitForFunction(() => {

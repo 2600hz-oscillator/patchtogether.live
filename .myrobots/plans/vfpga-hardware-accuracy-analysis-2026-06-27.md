@@ -4,24 +4,33 @@
 
 # VFPGA hardware-accuracy analysis + code-level fidelity plan
 
-> Revisiting design-doc §0 ("model FPGA STRUCTURE + FEEL on a GPU; do NOT simulate gates per-pixel; one literal exception = the LUT16 tile"). This document audits where our VFPGA genuinely mirrors silicon vs. where it is a tasteful *feeling*, then proposes a tiered, test-discipline-respecting path to more code-level fidelity. The skeptic's verdicts are folded in: cut items are removed, revised items carry the critique inline, and only survivors are sequenced.
+> Revisiting design-doc §0 ("model FPGA STRUCTURE + FEEL on a GPU; do NOT simulate gates per-pixel; one literal exception = the LUT16 tile"). This document audits where our VFPGA genuinely mirrors silicon vs. where it is a tasteful *feeling*, then proposes a tiered path to more code-level fidelity. The skeptic's verdicts are folded in: cut items are removed, revised items carry the critique inline.
 
 ---
 
-> **TRIAGE 2026-08-04 — WAVE 1 IS ESSENTIALLY COMPLETE; WAVE 4 IS NOT, AND THE
-> DEFECT IT WOULD FIX IS STILL LIVE.**
-> Shipped since: `packages/web/src/lib/video/vfpga/` now contains **`census.ts`
-> (A2)**, **`bitstream.ts` (A3)** and **`techmap.ts` (A5)** with tests — the
-> Wave-1 "free metadata spine" landed as scoped, and B1/B2/B4 were correctly
-> never built per decision 1.
-> ⚠ **The `lut16.ts` monochrome collapse is STILL THERE** —
-> `packages/web/src/lib/video/vfpga/cells/lut16.ts:67` is still
-> `outColor = vec4(vec3(bit), 1.0)`. So §0's "single highest-leverage real
-> authenticity jump" (Wave 4 C1, the bit-plane k-LUT/BLE) remains un-built **and**
-> the confirmed picture defect it also fixes remains shipped. That is the item to
-> pick up.
-> The **OWNER DECISIONS block below is unchanged and still binding** — it is the
-> reason this file is kept.
+> **TRIAGE 2026-08-12 — WAVE 1 IS COMPLETE; WAVES 2 AND 4 ARE NOT, AND THE DEFECT
+> WAVE 4 WOULD FIX IS STILL SHIPPED.**
+> - **Wave 1 landed as scoped.** `packages/web/src/lib/video/vfpga/` contains
+>   `census.ts` (A2), `bitstream.ts` (A3) and `techmap.ts` (A5) with tests; A1's
+>   placement validation is `place-and-route.ts:338-357` and framestore-howl's
+>   out-of-bounds `out` was fixed with it (its grid is now `1×5`). A1's
+>   *wirelength* helper was correctly never built, and neither were B1/B2/B4 —
+>   per owner decision 1.
+> - **A5 is genuinely wired, not shelf-ware:** `specs/databend-cvbs.ts:47` now
+>   calls `compileLut('a ^ b ^ c ^ d')` instead of hardcoding `0x6996`.
+> - ⚠ **The `lut16.ts` monochrome collapse is STILL THERE** —
+>   `cells/lut16.ts:67` is still `outColor = vec4(vec3(bit), 1.0)`. So §0's
+>   "single highest-leverage real authenticity jump" (Wave 4 C1, the bit-plane
+>   k-LUT/BLE) remains un-built **and** the confirmed picture defect it also fixes
+>   remains shipped. **That is the item to pick up.**
+> - **Wave 2 is entirely un-built**: no `regDiv` (A4 — `clockDiv` is still
+>   serialized by `bitstream.ts` and consumed by no kernel), and `setAllUniforms`
+>   (`modules/vfpga-runner.ts:388`) still writes each CV/gate role onto every pass
+>   declaring a uniform of the matching *name* (B3).
+> - ⚠ Owner decision 3 says "linux+darwin VRT regen" — that is stale. The
+>   `{platform}` dimension was deleted in **#1458**; there is ONE baseline set,
+>   authored by linux CI, so a Tier-C re-baseline now costs half what this
+>   document assumed.
 
 ## OWNER DECISIONS (2026-06-27) — build to these
 
@@ -35,24 +44,22 @@ Ratified after reviewing this analysis:
    supersampling is the named fill-rate risk). Line-ring BRAM / TMDS codec /
    persisted-MV ship regardless.
 3. **Re-baseline carefully** for the pixel-moving Tier-C work (owner-gated video-look
-   review + linux+darwin VRT regen + WebGL re-attest as needed).
+   review + VRT regen + WebGL re-attest as needed).
 4. **Proceed.**
 
-Net build set: Wave 1 (A1 placement-validate [no wirelength] + A2 census + A3 bitstream
-codec + A5 techmap) → Wave 2 (A4 regDiv + B3 CV/gate-through-netlist) → **skip B1/B2/B4**
-→ Wave 4 (C1 bit-plane k-LUT/BLE + C2 packing + C3 line-ring/TMDS/MV, composite gated
-on the spike). Status: **A1 placement-validation + framestore-howl out-of-bounds fix
-SHIPPED** (this PR).
+Remaining build set: Wave 2 (A4 regDiv + B3 CV/gate-through-netlist) → Wave 4
+(C1 bit-plane k-LUT/BLE + C2 packing + C3 line-ring/TMDS/MV, composite gated on
+the spike).
 
 ## 0. TL;DR for the owner
 
-- **Three things are genuinely FPGA hardware at the code level today**, and they are the *right* three: (1) synchronous-register discipline (state only in `reg` ping-pong FBOs, the frame is the clock edge, `swapRegisters` latches all registers together), (2) combinational-loop rejection + `:prev` feedback cut in `place-and-route.ts`, and (3) the literal LUT16 truth table in `cells/lut16.ts`. Everything else is structure-as-metaphor.
+- **Three things are genuinely FPGA hardware at the code level, and they are the *right* three:** (1) synchronous-register discipline (state only in `reg` ping-pong FBOs, the frame is the clock edge, `swapRegisters` latches all registers together), (2) combinational-loop rejection + `:prev` feedback cut in `place-and-route.ts`, and (3) the literal LUT16 truth table in `cells/lut16.ts`. Everything else is structure-as-metaphor.
 - **The real CAD flow (place → route → STA → bitstream) is compile-time, pure-TS, GL-free** — which is exactly what our `fabricToEffect` already structurally is. So *some* authenticity is genuinely cheap and constraint-friendly (no per-frame GPU cost, no SwiftShader exposure, no VRT re-baseline because pixels do not move).
-- **But the "free metadata spine: zero pixels / zero VRT / ~0 CI" story is narrower than it first looks.** It holds for the *bitstream codec*, *regDiv*, *tech-mapper*, and *pos-validation* only. STA's `Fmax`/`slack` are authentic-*shaped* numbers with no physical referent in a system whose only clock is the 60 fps frame; a full PathFinder router runs on *every* fabric instantiation in the registry sweeps and can blow the >2-min CI budget. Both are reframed/descoped below.
-- **The single highest-leverage real authenticity jump is the bit-plane signal model + k-LUT/BLE** (deep tier), because it *also fixes a confirmed defect*: `lut16.ts` collapses to monochrome (`vec4(vec3(bit),1.0)`), so today the "authentic LUT" black-and-whites the picture. Operating on bit-planes of the real image makes accuracy *serve* the glitch aesthetic.
+- **But the "free metadata spine: zero pixels / zero VRT / ~0 CI" story is narrower than it first looks.** It held for the *bitstream codec*, *regDiv*, *tech-mapper* and *pos-validation* only. STA's `Fmax`/`slack` are authentic-*shaped* numbers with no physical referent in a system whose only clock is the 60 fps frame; a full PathFinder router would run on *every* fabric instantiation in the registry sweeps and can blow the >2-min CI budget. Both were reframed and then cut.
+- **The single highest-leverage real authenticity jump is the bit-plane signal model + k-LUT/BLE** (Tier C), because it *also fixes a confirmed defect*: `lut16.ts` collapses to monochrome (`vec4(vec3(bit),1.0)`), so today the "authentic LUT" black-and-whites the picture. Operating on bit-planes of the real image makes accuracy *serve* the glitch aesthetic.
 - **One line we re-affirm from §0:** never simulate gates per pixel at video-res × 60 fps. Model the *toolchain* accurately around the GPU, which renders the configured function.
 
-**Correction to prior synthesis (load-bearing):** earlier notes claimed `pos`/`grid` are "read only by `vfpga-floorplan.ts`." **That file does not exist.** `pos`/`grid` are read by *nothing* in the compiler — placement is fully vestigial, and the floorplan viz (item below) is **greenfield, not an extension**. Effort for the viz is correspondingly higher.
+**Correction to prior synthesis (load-bearing):** earlier notes claimed `pos`/`grid` are "read only by `vfpga-floorplan.ts`." **That file does not exist and never did.** Any floorplan viz would be **greenfield, not an extension** — which is part of why B4 was cut.
 
 ---
 
@@ -62,24 +69,24 @@ SHIPPED** (this PR).
 
 | Aspect | Why it's faithful | Evidence |
 |---|---|---|
-| **Flip-flop / register / clock edge** | `reg` tile writes D into a front FBO during the frame; `<id>:prev` reads last frame's Q from the back FBO; `swapRegisters()` latches *all* register pairs together at end of frame. That is correct single-edge synchronous semantics: every FF holds old Q while combinational logic settles, then latches simultaneously. | `register-swap.ts:25-36`; `vfpga-runner.ts:443-465` (swap at :464); `place-and-route.ts:462-477` (ping-pong pair + `:prev`→back) |
-| **Comb-loop rejection + registered feedback** | P&R builds the this-frame DAG *excluding* `:prev` edges, DFS-finds any remaining cycle, and rejects it as a combinational loop with a readable diagnostic. Feedback is only legal through a clocked `:prev` read. This is the real RTL invariant — silicon cannot have a comb loop either. | `findCycle` `place-and-route.ts:343-377`; reject `:284-292`; `:prev` excluded `:434-451`; back-buffer route `:488` |
-| **LUT4 truth table** | `lut16.ts` thresholds 4 inputs to bits, packs `idx=(d<<3)|(c<<2)|(b<<1)|a`, outputs `(table>>idx)&1u` via real GLSL ES 3.00 integer/bit ops — behaviorally identical to a 16-bit SRAM LUT, and it *proves integer/bit logic runs precision-free on SwiftShader CI*. | `cells/lut16.ts:42-69` (decode at :64-66) |
-| **Topo schedule = combinational pass order** | Kahn topo sort orders passes so consumers run after producers, ties broken deterministically by fabric-declaration order. The GPU serializes spatially-parallel fabric logic, but that serialization is *forced by the GPU*, not a fidelity choice, and dependency order is preserved. | `topoSort` `place-and-route.ts:386-418` |
+| **Flip-flop / register / clock edge** | `reg` tile writes D into a front FBO during the frame; `<id>:prev` reads last frame's Q from the back FBO; `swapRegisters()` latches *all* register pairs together at end of frame. That is correct single-edge synchronous semantics: every FF holds old Q while combinational logic settles, then latches simultaneously. | `register-swap.ts`; `vfpga-runner.ts` (swap at end of frame); `place-and-route.ts` (ping-pong pair + `:prev`→back) |
+| **Comb-loop rejection + registered feedback** | P&R builds the this-frame DAG *excluding* `:prev` edges, DFS-finds any remaining cycle, and rejects it as a combinational loop with a readable diagnostic. Feedback is only legal through a clocked `:prev` read. This is the real RTL invariant — silicon cannot have a comb loop either. | `findCycle` + reject + `:prev` exclusion in `place-and-route.ts` |
+| **LUT4 truth table** | `lut16.ts` thresholds 4 inputs to bits, packs `idx=(d<<3)\|(c<<2)\|(b<<1)\|a`, outputs `(table>>idx)&1u` via real GLSL ES 3.00 integer/bit ops — behaviorally identical to a 16-bit SRAM LUT, and it *proves integer/bit logic runs precision-free on SwiftShader CI*. | `cells/lut16.ts` |
+| **Topo schedule = combinational pass order** | Kahn topo sort orders passes so consumers run after producers, ties broken deterministically by fabric-declaration order. The GPU serializes spatially-parallel fabric logic, but that serialization is *forced by the GPU*, not a fidelity choice, and dependency order is preserved. | `topoSort` in `place-and-route.ts` |
+| **Placement validation** *(added by A1)* | `validateFabric` rejects a `tile.pos` outside `fabric.grid` and two tiles sharing a cell. It caught framestore-howl's out-of-bounds `out` on day one. | `place-and-route.ts:338-357` |
+| **Bitstream codec** *(added by A3)* | `pack(fabric)`/`unpack(bytes)` mirror iCE40/prjxray *shape* — LUT INIT bits, tile-mode/reg flags, per-tile frame address, CRC — with a `unpack(pack(x))` round-trip property test and a byte-identical-effect test. The authored TS object is now correctly labelled the **netlist**; the packed image is the bitstream. | `vfpga/bitstream.ts` |
 
-### 1b. A feeling (the gaps the owner is asking about)
+### 1b. Still a feeling (the remaining gaps)
 
 | Aspect | What we do | What's missing vs. silicon | Gap |
 |---|---|---|---|
-| **"Bitstream"** | The authored `VfpgaFabric` TS object is *branded* the bitstream (`types.ts:146-154`). | No config frames, frame address, sync word, CRC/ECC, or packed SRAM bits. It is structurally a **post-synthesis netlist**, the *input* to bitstream gen, not a config-memory image. | high |
-| **Placement** | `pos`/`grid` exist in the data model (`types.ts:201,247`) and **are read by nothing in the compiler** (grep-confirmed). | Real placement assigns each block an (x,y) that *determines* routing feasibility and delay; illegal/overlapping placements are rejected. Ours is pure decoration — and not even validated (a shipping spec is already out of bounds, see below). | high |
-| **Routing / switch matrix** | `nets[]` is any-source→any-dest adjacency; "the binding IS the switch" (`types.ts:230-242`). `fboForSource` direct-binds an FBO id. | No routing-resource graph, switchboxes, finite channel width, congestion, or wire delay. A net *can never fail to route*; fan-out is unlimited and free (framestore-howl drives two sinks from one tile, `framestore-howl.ts:102-103`). | high |
-| **CV/gate routing** | CV/gate (`CIN`/`GIN`) **never appear as net sources**; they reach tiles via a parallel `config.bind` side-channel + `setAllUniforms` writing each role onto *every pass that declares a uniform of the matching name*. | On real silicon *all* signals route through the fabric; there is no "set this net on everything that shares a label." Two tiles sharing a uniform name both receive the value — a latent collision. | high |
-| **Static timing** | None. Topo order only; every comb chain completes within the frame regardless of depth. | No Tco/Tpd/Tsu/Th/slack/Fmax. Combinational depth carries no cost. | (see §4) |
-| **Cell kernels** | `clb`/`dsp`/`bram` are parameterized per-pixel GLSL float ops chosen by `config.op`. | A CLB is LUTs+FFs+carry+muxes configured by truth tables, not a fixed op menu; DSP is fixed-point 18×25 + 48-bit accumulator; BRAM is a finite N-line ring you can *only* address N lines of (`linebuf.ts` reads arbitrary frame rows). | high |
-| **Carry chains** | Absent entirely (`grep carry` → comment prose only). | Dedicated MUXCY/XORCY fast-carry wire threading vertically through slices. | high |
-| **Resource budget** | `budget:{dsp,bramRows,passes}` validated against *itself*. | A real part has *fixed* silicon totals; P&R fails when a design exceeds them. Ours is a CI-walltime guardrail in FPGA costume. | medium |
-| **Config fields vestigial** | `config.taps`, `lutInit`, `bitPlanes`, `clockDiv` are declared but never consumed by kernels. | In a real toolchain these *are* the configuration the primitive consumes. | medium |
+| **Routing / switch matrix** | `nets[]` is any-source→any-dest adjacency; "the binding IS the switch". `fboForSource` direct-binds an FBO id. | No routing-resource graph, switchboxes, finite channel width, congestion, or wire delay. A net *can never fail to route*; fan-out is unlimited and free. | high — **deliberately cut (B2)** |
+| **CV/gate routing** | CV/gate (`CIN`/`GIN`) **never appear as net sources**; they reach tiles via a parallel `config.bind` side-channel + `setAllUniforms` writing each role onto *every pass that declares a uniform of the matching name*. | On real silicon *all* signals route through the fabric; there is no "set this net on everything that shares a label." Two tiles sharing a uniform name both receive the value — a latent collision. | high — **B3, still open** |
+| **Static timing** | None. Topo order only; every comb chain completes within the frame regardless of depth. | No Tco/Tpd/Tsu/Th/slack/Fmax. Combinational depth carries no cost. | **deliberately cut (B1)** — see §4 |
+| **Cell kernels** | `clb`/`dsp`/`bram` are parameterized per-pixel GLSL float ops chosen by `config.op`. | A CLB is LUTs+FFs+carry+muxes configured by truth tables, not a fixed op menu; DSP is fixed-point 18×25 + 48-bit accumulator; BRAM is a finite N-line ring you can *only* address N lines of (`linebuf.ts` reads arbitrary frame rows). | high — **C1/C3** |
+| **Carry chains** | Absent entirely. | Dedicated MUXCY/XORCY fast-carry wire threading vertically through slices. | **deferred (C2 cut)** |
+| **Resource budget** | `budget:{dsp,bramRows,passes}` validated against *itself*; `census.ts` adds advisory FF/LUT/DSP counts against an optional fixed `device`. | A real part has *fixed* silicon totals; P&R fails when a design exceeds them. Ours is still a CI-walltime guardrail in FPGA costume, and the census is advisory only. | medium — see §7 Q3 |
+| **Config fields vestigial** | `config.taps`, `bitPlanes`, `clockDiv` are declared, serialized by `bitstream.ts`, and **consumed by no kernel**. (`lutInit` is no longer vestigial — A5's `compileLut` feeds it.) | In a real toolchain these *are* the configuration the primitive consumes. | medium — `clockDiv` is A4, `bitPlanes` is C1 |
 | **No kernel correctness tests** | Tests assert cells *place* through P&R; only `smpte` has a CPU mirror. The LUT truth table itself is unpinned. | Design §5 P2 calls for a CPU mirror per kernel. | medium |
 
 ---
@@ -88,10 +95,10 @@ SHIPPED** (this PR).
 
 - **BLE = the atomic cell:** one k-LUT + one FF + an output mux (combinational vs. registered). k=4 academic, k=6 Xilinx, 8-input fracturable ALM (Intel). Our `lut16` is the LUT; our `reg` is the FF; they are not yet *fused* into the canonical unit. *(UG474; Intel ALM; VTR pb_type.)*
 - **A k-LUT is literally a 2^k-bit SRAM table** indexed by k *bits* — exactly what `lut16` computes, and it generalizes cleanly to any k via a 64-entry INIT `texelFetch`. *(UG474; MDPI bitstream LUT extraction.)*
-- **Routing dominates area (~52%) and delay (~55%)** and arrives in *large discrete per-hop increments* — which is *why* a faithful model must model routing, not just logic. Programmable interconnect = connection blocks (Fc) + switch boxes (Fs: subset/Wilton) + finite channel width W + segment lengths (single/double/quad/long). *(Trimberger; Betz & Rose; VTR.)*
+- **Routing dominates area (~52%) and delay (~55%)** and arrives in *large discrete per-hop increments* — which is *why* a faithful model would have to model routing, not just logic. Programmable interconnect = connection blocks (Fc) + switch boxes (Fs: subset/Wilton) + finite channel width W + segment lengths (single/double/quad/long). *(Trimberger; Betz & Rose; VTR.)*
 - **PathFinder negotiated-congestion routing:** maze/A* per net with cost `f(n)=(b(n)+h(n))·p(n)` (base + historical + present congestion), iterative rip-up/reroute until no node is over-capacity — and a design *can fail to route*. *(McMurchie & Ebeling FPGA'95; nextpnr.)*
 - **Block-based STA:** forward arrival = max over fanin (arrival + wire-delay + Tpd); backward required from clock period; slack = required − arrival; critical path = min slack; Fmax = 1/(worst reg-to-reg path). Interconnect delay frequently dominates cell delay. *(STA basics course; Marquardt/Betz/Rose timing-driven placement.)*
-- **Concrete bitstream encodings we can mirror in shape:** iCE40 LOGIC tile 54×16 cfg bits, 8 cells × 20 bits (LUT INIT = LC_i[0..15], DffEnable=LC_i[9], CarryEnable=LC_i[8]); 7-series 101-word frames, 32-bit frame address, ECC in word 50. *(IceStorm; prjxray.)*
+- **Concrete bitstream encodings we mirror in shape:** iCE40 LOGIC tile 54×16 cfg bits, 8 cells × 20 bits (LUT INIT = LC_i[0..15], DffEnable=LC_i[9], CarryEnable=LC_i[8]); 7-series 101-word frames, 32-bit frame address, ECC in word 50. *(IceStorm; prjxray.)*
 - **The whole flow is compile-time, CPU-side, pure data** — it does not run per pixel. That single fact is what makes most of this constraint-friendly.
 
 ---
@@ -100,102 +107,56 @@ SHIPPED** (this PR).
 
 1. **WebGL2 worker @ ~60 fps, per-pixel frag shaders. CI = SwiftShader software renderer** → any precision/perf-sensitive path must be capability-gated and *confirmed green ON CI*, not just on a local GPU (recorderbox #687 / edges #688).
 2. **VRT pins every card to a baseline image** → deterministic rendering required; "randomness" is seeded PRNG (`bend-seed.ts`).
-3. **CI wall-time: any change adding >2 min needs owner sign-off.** A negotiated-congestion router running on *every spec in the registry sweeps* is the realistic offender.
+3. **CI wall-time: any change adding >2 min needs owner sign-off.** A negotiated-congestion router running on *every spec in the registry sweeps* was the realistic offender — and is cut.
 4. **Glitch instrument FIRST.** "More accurate but black-screen/1 fps/unusable" is a FAIL.
 
 ---
 
-## 4. Tiered proposals (skeptic verdicts folded in)
+## 4. The remaining build items
 
-### Tier A — Cheap wins (pure-TS, ~0 CI, no/low pixel risk)
-
-#### A1. Make placement real — *validate `pos`, derive Manhattan wirelength* — **REVISED (tie-break CUT)**
-- **Accurate:** Closes the "placement is cosmetic" gap. `pos`/`grid` are read by nothing today.
-- **Approach:** In `validateFabric`, add: every `tile.pos` within `fabric.grid`, and no two tiles share a cell. Add a pure `wirelength(fabric) = Σ |Δrow|+|Δcol|` helper returned as P&R metadata (consumed by STA wire-delay + viz, not the renderer).
-- **⚠ Skeptic cut:** the proposed **topo tie-break BY POSITION is dropped** — real pass order follows the netlist/clock, not floorplan row-major; it buys *zero* hardware accuracy and is the only part that can move a VRT pixel.
-- **⚠ Must fix in the same PR:** `framestore-howl` declares `grid{rows:1,cols:3}` but places `out` at `{row:0,col:3}` (out of bounds) — pos validation REDs a shipping spec on day one. Fix the spec alongside the validator.
-- **Cost:** ~80 LOC + tests, unit-lane only. **Authenticity:** medium. **Pixel risk:** none (after tie-break cut).
-
-#### A2. Fixed-device census + fan-out advisory — **REVISED (channel-width split out)**
-- **Accurate:** Closes "self-declared budget, infinite fan-out." Count `reg`→FFs, `clb`/`lut16`→LUTs, `dsp`→DSP against an optional **fixed** `device` part on `VfpgaFabric`.
-- **⚠ Skeptic split:** **ship FF/LUT/DSP census + max-fan-out as advisory diagnostics now**; **channel-width / track-occupancy is CUT as a standalone** — it is computed from routed nets and *cannot* exist before the router (A-tier→B5). Land channel-width *with* the router.
-- **Keep advisory, not a hard gate** (a hard gate rejects the current catalog).
-- **Cost:** ~60 LOC + tests. **Authenticity:** medium. **Pixel risk:** none.
-
-#### A3. Bitstream codec (`vfpga/bitstream.ts`) — **KEEP (top pick)**
-- **Accurate:** The strongest *true* point in the audit — the `.vfpga` is a mislabeled netlist with no frames/CRC. `pack(fabric):Uint8Array` / `unpack(bytes):VfpgaFabric` mirroring iCE40/prjxray *shape*: LUT INIT bits, routing-mux select fields, tile-mode bits, reg flags (DffEnable/clockDiv), per-tile frame address, CRC word.
-- **Tests:** property test `unpack(pack(x))` deep-equals `x` **and** `fabricToEffect(unpack(pack(x)))` byte-identical → VRT holds with zero re-baseline. Re-label `types.ts` comments: authored object = **netlist**, packed image = **bitstream**.
-- **Payoff:** finally gives `lutInit` real meaning; enables the most on-brand bend — flip a real config-frame bit before compile = literal SRAM-config bending (databend-cvbs's natural home).
-- **⚠ Only risk:** scope creep into a specific part's frame geometry — keep it real-*shaped*, not a prjxray clone.
-- **Cost:** ~250 LOC + property tests, ~0 CI. **Authenticity:** medium-high. **Pixel risk:** none.
-
-#### A4. Wire the dead `clockDiv` into a divided-clock register (`regDiv`) — **KEEP**
-- **Accurate:** `clockDiv` is declared (`types.ts:217`) and dead. Extend `VfpgaRegisterPair` with `div`; in `draw()`, swap that pair only when `frameCount % div === 0` (pass the frame index into the pure `register-swap.ts`).
+### A4. Wire the dead `clockDiv` into a divided-clock register (`regDiv`) — Wave 2
+- **Accurate:** `clockDiv` is declared and dead. Extend `VfpgaRegisterPair` with `div`; in `draw()`, swap that pair only when `frameCount % div === 0` (pass the frame index into the pure `register-swap.ts`).
 - **Payoff (high for cost):** slow howl-around / strobe / stutter feedback — real framestore-howl/mosh vocabulary; a divided frame-store is a genuinely new bend.
 - **⚠ Caveat:** pixel-moving *over time* → any VRT card using a divider must pin `__videoEngineFreezeTime` at a fixed frame (deterministic → VRT-safe once frozen).
 - **Cost:** ~40 LOC + test. **Authenticity:** low (but a real primitive). **Pixel risk:** time-only, controllable.
 
-#### A5. LUT technology-mapper (`vfpga/techmap.ts`) — **KEEP**
-- **Accurate:** Genuine k=4 tech-mapping — truth-table enumeration is exactly how a LUT INIT is derived. Parse a Boolean expr (`(a & c) ^ d`) → 16-bit INIT, lower onto the existing `uLutInit` knob. Makes INITs *generative* instead of magic floats (databend-cvbs hardcodes `0x6996`).
-- **Scope:** `lut16`/CLB-logic tiles **only** — explicitly NOT the DSP/BRAM video kernels (that is the §0 line we keep).
-- **⚠ Caveat:** >4-input chaining adds real passes → counts against budget/depth; keep opt-in.
-- **Cost:** ~150 LOC + tests, ~0 CI. **Authenticity:** medium. **Pixel risk:** none for equivalent INITs.
-
----
-
-### Tier B — Medium (compile-time CAD; viz-gated; some pixel risk)
-
-#### B1. Critical-path / combinational-depth analyzer — **REVISED (was "STA"; Fmax/slack framing CUT)**
-- **⚠ Skeptic — accuracy claim does NOT hold as "STA":** in our system the only clock is the 60 fps frame, which combinational depth *cannot violate* — every fullscreen pass completes within the frame regardless of any modeled Tpd. **`Fmax`/`slack` would be authentic-shaped numbers computed from invented constants describing nothing physical.** That is complexity dressed as authenticity.
-- **Survivor:** descope to a **critical-path + comb-depth analyzer** over the existing this-frame DAG — longest comb chain between registers, per-path depth. This is genuinely useful as a **viz feeder and a real cap on per-frame pass chains**, and ties cleanly to `budget.passes`.
-- **CUT:** the `Fmax`/`slack`/"meets timing" framing **and** the optional slack→jitter render hook (moves pixels for a fictional metric).
-- **Only worth building if B4 (viz) ships.** **Cost:** ~120 LOC (down from ~300). **Authenticity:** low-honest. **Pixel risk:** none.
-
-#### B2. Routing — *simple deterministic A*/maze router first* — **REVISED (full PathFinder DEFERRED)**
-- **Accurate:** Routing is the axis where we are *most* a feeling (`fboForSource` direct-binds; infinite tracks/fan-out). A real rr-graph (SOURCE/SINK/OPIN/IPIN/CHANX/CHANY + Fc/Fs edges over `grid`) is authentic CAD.
-- **⚠ Skeptic — not feasible as proposed:** 350-500 LOC of negotiated-congestion rip-up/reroute that **changes zero pixels** and runs on **every fabric instantiation in the registry sweeps** is a poor value/effort ratio and a real **>2-min CI** risk. The "0 added CI" claim is **false** unless iterations are hard-capped *and* specs stay tiny.
-- **Survivor:** build a **simple, fixed-cost A*/maze router** (deterministic, bounded) that produces routed paths + occupancy + an explicit "unroutable at channel width W" error (this is where A2's channel-width budget lands). **Defer full negotiated-congestion** until a real consumer exists (a crosstalk bend). **Gate the whole thing behind B4 actually shipping.**
-- **⚠ Must stay advisory:** must NOT change emitted pass order (still topo) or any sampler binding → `fabricToEffect` byte-identical, VRT untouched. **Do NOT auto-insert pipeline stages from routing delay** (that moves pixels).
-- **Cost:** ~150-200 LOC (simple router) + tests, capped → bounded CI. **Authenticity:** high. **Pixel risk:** none (advisory).
-
-#### B3. CV/gate routing through the netlist — **KEEP, but re-tiered to PIXEL-RISK**
-- **Accurate (bug confirmed):** `fboForSource` comments "CIN/GIN handled as uniforms elsewhere" (they never become sampler net sources); `setAllUniforms` adds each role to *any* pass declaring the matching uniform name → two tiles sharing a name both receive it. No real fabric does this.
+### B3. CV/gate routing through the netlist — Wave 2
+- **Accurate (bug confirmed, still live):** `fboForSource` comments "CIN/GIN handled as uniforms elsewhere" (they never become sampler net sources); `setAllUniforms` (`vfpga-runner.ts:388`) adds each role to *any* pass declaring the matching uniform name → two tiles sharing a name both receive it. No real fabric does this.
 - **Fix:** make `CIN`/`GIN` legal `net.from` targeting `<tileId>:<knobUniform>`; drive `setAllUniforms` by the routed `(pass, uniform)` pair P&R recorded, not by name match.
 - **⚠ Skeptic correction:** this is **behavior-changing, not metadata-only** — it can move pixels on any spec relying on the broadcast coincidence. Do **not** ship under the "zero-re-baseline spine" label. **Requires a shipping-spec audit + VRT diff** (smpte-bars, the bent family), owner-gated if any card moves.
 - **Cost:** ~120 LOC + tests. **Authenticity:** high. **Pixel risk:** real → audit + diff.
 
-#### B4. Floorplan + critical-path + bitstream card viz (2D canvas) — **KEEP (the gating consumer)**
-- **⚠ Not "accuracy"** (presentation, not simulation) — but it is the **highest-leverage item** because it is the *only* consumer that justifies building A1's wirelength, B1's critical path, B2's routing, and A3's bitstream. Without it, that metadata is computed and never read.
-- **⚠ Greenfield, not an extension** (`vfpga-floorplan.ts` does not exist — effort underestimated in prior synthesis). 2D canvas: placed tiles at `pos`, routing channels + switchboxes, occupied tracks (congestion heat), critical-path overlay, live bitstream hex dump. No WebGL → no SwiftShader/precision exposure.
-- **⚠ Known risk:** ±1px text/line VRT flake class — apply the height-stability settle loop and regen linux+darwin baselines via `vrt-update.yml`.
-- **Cost:** ~250-400 LOC (canvas drawing) + a VRT card. **Authenticity:** medium (UX). **Sequence as the gate for B1/B2**, not after.
-
----
-
-### Tier C — Deep re-architecture (pixel-changing; owner-gated re-baseline)
-
-#### C1. Bit-plane signal model + generalize LUT16 → true k-LUT / BLE — **KEEP (deepest real jump)**
+### C1. Bit-plane signal model + generalize LUT16 → true k-LUT / BLE — Wave 4, the deepest real jump
 - **Accurate + fixes a confirmed defect:** `lut16.ts` outputs `vec4(vec3(bit),1.0)` — today the "authentic LUT" *black-and-whites the picture*. An RGBA8 texel already carries 32 independent 1-bit planes; routing real 1-bit wires (not whole images) and flipping/combining bit-planes **in place** makes the truth-table glitch *enhance* the image. This is accuracy genuinely serving the aesthetic (the databend/TMDS look done right).
-- **Approach:** add `signalKind: 'image' | 'bitplane'` to nets/tiles; new `cells/ble.ts` doing GLSL ES 3.00 uint/bit ops on selected bit-planes (lut16 proves this is precision-free on SwiftShader); fuse the existing `reg` ping-pong as the BLE's FF + an output-select mux; add fracturable dual-output (`lut6` vs `lut5x2`) as mutually-exclusive VTR modes.
+- **Approach:** add `signalKind: 'image' | 'bitplane'` to nets/tiles; new `cells/ble.ts` doing GLSL ES 3.00 uint/bit ops on selected bit-planes (lut16 proves this is precision-free on SwiftShader); fuse the existing `reg` ping-pong as the BLE's FF + an output-select mux; add fracturable dual-output (`lut6` vs `lut5x2`) as mutually-exclusive VTR modes. This is also what finally gives `config.bitPlanes` a consumer.
 - **⚠ Caveats:** full VRT re-baseline → owner-gated per video-look-review; must **not** degrade to a monochrome logic dump (operate on bit-planes of a real image); capability-gate any RGBA16UI/MRT path SwiftShader may not support.
-- **⚠ Sequencing risk:** `signalKind` means P&R (and any router/analyzer built before this) must handle two signal domains. **Co-design with / land before B1/B2** to avoid rework — see Open Questions.
 - **Cost:** ~400-700 LOC + new baselines. **Authenticity:** high. **Pixel risk:** full re-baseline.
 
-#### C2. Slice/cluster packing — **REVISED (carry chains CUT)**
+### C2. Slice/cluster packing — Wave 4 (carry chains CUT)
 - **KEEP packing:** group BLE tiles into a slice (nested pb_type cluster + local crossbar) rendered in **one** shader pass (T-VPack/AAPack). Real, authentic, **and a perf win** (fewer fullscreen passes → *helps* the >2-min budget). Budget then counts slices/LUTs/FFs.
-- **⚠ CUT — within-pixel carry chains:** a fragment shader cannot propagate a carry *horizontally across pixels* (a §0-class GPU limit); within one pixel it is a few-bit toy adder with thin payoff (the audit itself calls it "mostly structural"). **Defer carry until a concrete counter/accumulator bend needs it**; cross-pixel addition would need a serial/prefix-scan multi-pass.
+- **⚠ CUT — within-pixel carry chains:** a fragment shader cannot propagate a carry *horizontally across pixels* (a §0-class GPU limit); within one pixel it is a few-bit toy adder with thin payoff. **Defer carry until a concrete counter/accumulator bend needs it**; cross-pixel addition would need a serial/prefix-scan multi-pass.
 - **⚠ Caveat:** packing collapses passes → re-bases VRT (owner-gated); correctness-of-fusion must be proven.
 - **Cost:** ~400 LOC (packing only). **Authenticity:** high (structural). **Pixel risk:** re-baseline.
 
-#### C3. Aesthetic-serving hardware sim — **REVISED (split; composite gated on a spike)**
+### C3. Aesthetic-serving hardware sim — Wave 4 (composite gated on a spike)
 The highest aesthetic payoff, but it **must be split** — bundling the safe items with the one CI-killer is the trap.
 - **SHIP (cheap, integer/seeded, SwiftShader-tolerant, owner-gated re-baseline):**
   - **Line-ring BRAM** (`cells/linering.ts`): a real N-line ring (multi-row FBO + integer read/write row pointers in a 1-row state register, `field_id` parity frame-to-frame) so "stuck row" is a true pointer race — `linebuf.ts` today reads arbitrary frame rows with no ring.
-  - **TMDS 8b/10b mini-codec** (`cells/tmds.ts`): encode 8→10, seeded bit-flip, decode → authentic XOR-dechain smear; disparity as a per-line accumulated DC bias. Integer/logic domain → CI-safe.
+  - **TMDS 8b/10b mini-codec** (`cells/tmds.ts`): encode 8→10, seeded bit-flip, decode → authentic XOR-dechain smear; disparity as a per-line accumulated DC bias. Integer/logic domain → CI-safe. (Distinct from the existing `cells/tmdsbend.ts`, which is a bend, not a codec.)
   - **Persisted per-macroblock MV field**: low-res block-grid register *separated from the reference frame* → real datamosh "carry clip B's motion onto image A," impossible with `mosh.ts`'s per-frame re-hash.
 - **⚠ GATE ON A SPIKE — composite encode→corrupt→decode:** genuinely gives the orphaned `quaddemod.ts` a consumer and makes dot-crawl/cross-color *emerge* — but subcarrier supersampling is the **named hard FAIL**: fill-rate on SwiftShader risks ~1 fps + >2-min CI. **Do not co-commit.** Treat as a separate capability-gated experiment that must **prove >1 fps ON CI (SwiftShader)** in a spike before building; cap samples/cycle.
 - **OUT of scope:** full DCT/entropy datamosh decode (model MV-field *semantics* only).
 - **Cost:** ~600-1000 LOC across cells + specs + baselines. **Authenticity:** high. **Pixel risk:** re-baseline; composite also CI-risk.
+
+### Why B1 (STA) and B2 (router) were cut, in one line each
+Worth keeping because the reasoning generalises: **B1** — in a system whose only
+clock is the 60 fps frame, combinational depth *cannot violate* it, so `Fmax` and
+`slack` would be authentic-shaped numbers computed from invented constants
+describing nothing physical. **B2** — 350-500 LOC of negotiated-congestion
+rip-up/reroute that changes **zero pixels** and runs on **every fabric
+instantiation in the registry sweeps** is a poor value/effort ratio and a real
+>2-min CI risk; the "0 added CI" claim was false unless iterations were hard-capped.
+Both had exactly one consumer (the B4 viz), and it was cut.
 
 ---
 
@@ -204,43 +165,31 @@ The highest aesthetic payoff, but it **must be split** — bundling the safe ite
 - **Gates-per-pixel logic sim at video-res × 60 fps.** The §0 line. The GPU renders the configured *function*; we model the toolchain around it. A per-pixel switch/track sim violates §0, is SwiftShader-fragile, and blows both budgets.
 - **True serial per-pixel-clock raster pipeline** (running-disparity across a full line; a sync separator integrating across a frame). A frag shader is inherently parallel/order-free → use 1-D state-texture approximations, not a serial emulation.
 - **Addressable read/WRITE distributed RAM (LUTRAM with per-pixel computed write address).** A frag shader cannot scatter to an arbitrary texel. Keep read-only LUT/ROM and depth-N shift registers (which *are* faithful); flag scatter-RAM as the explicit boundary.
-- **Live SRAM / partial-reconfiguration corruption of a *running* fabric.** We compile to fixed GL programs at load; live corruption would need per-frame shader recompile (impossible at 60 fps). The honest analogue is the ratified seeded-PRNG + reseed-gate over config knobs — *plus* the new bitstream-codec bit-flip-before-compile (A3), which is the closest faithful surface.
+- **Live SRAM / partial-reconfiguration corruption of a *running* fabric.** We compile to fixed GL programs at load; live corruption would need per-frame shader recompile (impossible at 60 fps). The honest analogue is the ratified seeded-PRNG + reseed-gate over config knobs — *plus* the bitstream-codec bit-flip-before-compile (A3), which is the closest faithful surface.
 - **Multi-clock domains / PLL / MMCM / CDC metastability.** One clock = the render frame; the divided clock (A4 `regDiv`) is the one nod toward multi-rate. Sub-frame races are out of scope.
 - **Genuinely non-deterministic glitch** (real bit-errors, analog drift). Forfeits VRT and the deterministic ART/per-port sweeps. Seeded frame-index+uv PRNG is the ratified substitute; true randomness needs an explicit VRT exemption.
 - **DSP fixed-point widths + DSP48 internal pipeline latency.** Our float MAC is functionally correct on an 8-bit video signal; modeling 18×25 fixed-point + saturation/rounding + pipeline latency is high effort for an identical-looking result.
-- **Routing-delay → auto-inserted pipeline stages that change pixels by default.** Keep B1/B2 advisory; any delay→stage mapping is opt-in per spec and owner-gated.
+- **Routing-delay → auto-inserted pipeline stages that change pixels by default.** Any delay→stage mapping would be opt-in per spec and owner-gated.
 
 ---
 
-## 6. Recommended build sequence (smallest-reviewable-first; each shippable under test/CI discipline)
-
-**Wave 1 — free spine (no pixel risk, ~0 CI, no re-baseline):**
-1. **A1** placement validation + Manhattan wirelength (drop tie-break; fix framestore-howl's out-of-bounds `out` in the same PR). *Unit-lane; diff VRT, expect no move.*
-2. **A2** fixed-device FF/LUT/DSP census + max-fan-out **advisory** (channel-width deferred to B2). *Unit-lane.*
-3. **A3** bitstream codec + round-trip + byte-identical-effect property tests; re-label netlist↔bitstream in `types.ts`. *Unit-lane.*
-4. **A5** LUT tech-mapper (Boolean expr → real INIT). *Unit-lane; equivalent INITs = same pixels.*
+## 6. Remaining build sequence
 
 **Wave 2 — controllable pixel/time risk:**
-5. **A4** `clockDiv`/`regDiv` — first deliberately pixel-affecting change; deterministic, VRT-frozen.
-6. **B3** CV/gate-through-the-netlist (kill the global broadcast) — **shipping-spec audit + VRT diff**, owner-gated if any card moves.
+1. **A4** `clockDiv`/`regDiv` — first deliberately pixel-affecting change; deterministic, VRT-frozen.
+2. **B3** CV/gate-through-the-netlist (kill the global broadcast) — **shipping-spec audit + VRT diff**, owner-gated if any card moves.
 
-**Wave 3 — the CAD layer (gated on its consumer):**
-7. **B4** floorplan + critical-path + bitstream **2D-canvas card viz** (greenfield; additive VRT baseline + settle-loop for ±1px). *Ship this as the gating consumer.*
-8. **B1** critical-path / comb-depth analyzer (only because B4 now consumes it; no Fmax framing).
-9. **B2** simple deterministic A*/maze router + channel-width budget (advisory, capped; consumed by B4). *Defer negotiated-congestion until a crosstalk bend exists.*
-
-**Wave 4 — deep authenticity (owner-gated full re-baseline):**
-10. **C1** bit-plane signal model + k-LUT/BLE — **co-design `signalKind` here; ideally land before B1/B2 if those are still pending, to avoid two-domain rework** (see Open Questions).
-11. **C2** slice packing (perf win); **carry chains deferred**.
-12. **C3** line-ring BRAM + TMDS codec + persisted-MV (ship together); **composite encode→decode only after a SwiftShader >1 fps spike proves out.**
+**Wave 4 — deep authenticity (owner-gated re-baseline):**
+3. **C1** bit-plane signal model + k-LUT/BLE — the monochrome-collapse fix.
+4. **C2** slice packing (perf win); **carry chains deferred**.
+5. **C3** line-ring BRAM + TMDS codec + persisted-MV (ship together); **composite encode→decode only after a SwiftShader >1 fps spike proves out.**
 
 ---
 
-## 7. Open questions for the owner
+## 7. Open questions for the owner (still unanswered)
 
-1. **Sequencing C1 vs. B1/B2.** The bit-plane `signalKind: 'image'|'bitplane'` forces the analyzer/router to understand two signal domains. Do we (a) build the CAD layer (B1/B2) single-domain now and accept a rework when C1 lands, or (b) pull C1 forward / co-design the net type first? My recommendation: define `signalKind` in the data model *early* (cheap) even if the bit-plane *kernels* land later.
-2. **Is B1/B2/B4 worth it at all?** The CAD-metadata layer's *only* justification is the viz (B4). If you don't want an FPGA floorplan/critical-path/bitstream-dump card UI, then **B1 and B2 should be cut** — they'd compute numbers nobody reads. Confirm B4 is wanted before we build B1/B2.
-3. **Hard vs. advisory device budget.** A2 ships advisory. Do you want a *hard* "doesn't fit the part" gate eventually (authentic, but it can REJECT existing specs and forces a per-spec `device` declaration), or keep it advisory forever?
-4. **Composite encode→decode appetite.** It's the single biggest aesthetic payoff *and* the single biggest CI/perf risk. Do you want us to spend a spike proving >1 fps on SwiftShader, or shelve composite and ship line-ring/TMDS/MV only?
-5. **Bitstream-bend as a first-class instrument.** A3 enables "flip a real config-frame bit before compile." Do you want this surfaced as a *user-facing bend control* (a knob that corrupts the packed bitstream), which is extremely on-brand but means user input drives a re-compile path?
-6. **Re-baseline budget.** Waves 3-4 each move VRT baselines (and Wave 4 churns the WebGL attest). How many owner-gated video-look reviews + re-baselines are you willing to absorb per cycle — i.e., how fast should Tier C move?
+1. **Hard vs. advisory device budget.** `census.ts` ships advisory. Do you want a *hard* "doesn't fit the part" gate eventually (authentic, but it can REJECT existing specs and forces a per-spec `device` declaration), or keep it advisory forever?
+2. **Bitstream-bend as a first-class instrument.** A3 has shipped, so "flip a real config-frame bit before compile" is now buildable. Do you want it surfaced as a *user-facing bend control* (a knob that corrupts the packed bitstream), which is extremely on-brand but means user input drives a re-compile path?
+3. **Re-baseline budget.** Wave 4 moves VRT baselines and churns the WebGL attest. How many owner-gated video-look reviews + re-baselines are you willing to absorb per cycle — i.e. how fast should Tier C move? (Cheaper than this document assumed: there is now ONE baseline set, not two.)
+
+*(The original Q2 "is B1/B2/B4 worth it at all" and Q4 "composite appetite" were answered by owner decisions 1 and 2 above. The original Q1 — sequencing `signalKind` against the CAD layer — is moot now that B1/B2 are cut: there is no second consumer to force a two-domain rework.)*

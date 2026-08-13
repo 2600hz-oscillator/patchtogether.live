@@ -143,6 +143,39 @@
   });
   let assignable = $derived(!!(moduleId && xParamId && yParamId));
 
+  /**
+   * ⚠ RECONCILING A 2-D CONTROL WITH A 1-D TESTID CONVENTION.
+   *
+   * Every other primitive derives `control-<paramId>` itself, and the faces
+   * gates read that: `faces-parity` asserts EXACT MULTISET EQUALITY between the
+   * dock's `control-*` testids and the def's param ids. A pad breaks the
+   * assumption underneath it — ONE element, TWO params — and there are only
+   * three ways out. Emitting nothing leaves both params MISSING from the
+   * multiset, so a faced pad reads as two lost controls. Splitting the testids
+   * across two child elements (the axis readouts, the assign buttons) satisfies
+   * the count with elements that are not the control, which is the shape the
+   * ColorField spec exists to outlaw one primitive over: "the visible thing and
+   * the operable thing are two different elements".
+   *
+   * So the CONVENTION grows the second form instead of the pad faking the
+   * first. The pad carries `control-<x>` as its anchor AND declares the full
+   * set it covers in `data-control-params`; the gates read that attribute when
+   * present and fall back to the testid when it is absent. That generalises to
+   * ANY N-to-1 control rather than special-casing this one — which is the same
+   * reason `faces-parity`'s cell-count identity became a params-COVERED
+   * identity in the same commit.
+   *
+   * A card that passes an explicit `testid` (BackdraftCard, VideocubeCard)
+   * keeps it — those are unfaced cards with their own e2e selectors, and
+   * renaming their pads to satisfy a gate they are not subject to would be the
+   * tail wagging the dog. They still gain `data-control-params`, which costs
+   * them nothing and makes them visible the day they are faced.
+   */
+  let controlParams = $derived(xParamId && yParamId ? `${xParamId},${yParamId}` : undefined);
+  let padTestId = $derived(
+    testid ? `${testid}-pad` : xParamId ? `control-${xParamId}` : undefined,
+  );
+
   // ONE shared context menu; the active axis picks which assignable it drives.
   let ctxOpen = $state(false);
   let ctxX = $state(0);
@@ -256,7 +289,8 @@
     role="application"
     tabindex="0"
     aria-label={ariaLabel}
-    data-testid={testid ? `${testid}-pad` : undefined}
+    data-testid={padTestId}
+    data-control-params={controlParams}
     onpointerdown={onPointerDown}
     onpointermove={onPointerMove}
     onpointerup={onPointerUp}

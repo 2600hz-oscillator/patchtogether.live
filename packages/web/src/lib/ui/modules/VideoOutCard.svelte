@@ -132,12 +132,18 @@
   $effect(() => fs.attach());
 
   // ---------- Present on a second display ----------
-  // Opens a SEPARATE popup window on the chosen display and blits THIS card's
-  // live canvas into it each frame — the main window stays interactive (unlike
-  // true fullscreen, which relocates the whole tab). Capability-gated by the
-  // menu (only shows when getScreenDetails exists + >1 screen).
+  // Opens a SEPARATE popup window on the chosen display and blits THIS NODE's
+  // engine output into it each frame — not this card's canvas, and not owned by
+  // this card at all (node-present-registry). The main window stays interactive
+  // (unlike true fullscreen, which relocates the whole tab). Capability-gated by
+  // the menu (only shows when getScreenDetails exists + >1 screen).
+  //
+  // ⚠ The blit reads the engine at ITS resolution, so what lands on the
+  // projector no longer inherits this card's on-screen size — a small OUTPUT
+  // card used to project an upscaled card-sized canvas.
   const present = createPresent({
-    getCanvas: () => canvasEl,
+    nodeId: () => id,
+    engine: () => engineCtx.get(),
     fullscreen: fs,
   });
 
@@ -296,8 +302,11 @@
   onDestroy(() => {
     if (rafId !== null) cancelAnimationFrame(rafId);
     if (resizeAbort) resizeAbort.abort();
-    // Close any present popup + stop the blit loop when the card is gone.
-    present.dispose();
+    // NO present teardown here — deliberately. The projector belongs to the
+    // NODE, not to this card (see $lib/ui/modules/node-present-registry). This
+    // card is a NON_SHELL_LANE_TYPE so it is never swapped out and never showed
+    // the collapse bug, but the ownership rule is the same for all four
+    // presenting cards and a per-card exception is how one of them drifts back.
   });
 
   // ---------- Corner-drag resize ----------

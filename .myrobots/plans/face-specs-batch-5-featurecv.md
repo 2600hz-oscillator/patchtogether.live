@@ -1,9 +1,10 @@
 # FACE SPEC — `featurecv` (batch 5)
 
-## 0. STATUS
+## 0. PROVENANCE
 
-**Authored 2026-08-10. Every claim below was measured or read against `main`**
-(`153e5c36`). Nothing here is implemented; no def, card or DSP file is touched.
+Measured against `main` at `153e5c36` (2026-08-10). **BANKED — not built.**
+⚠ The DSP is untouched since the module shipped (`packages/dsp/src/featurecv.ts`,
+last functional change #937), so **§2 and §7-A are still open as written.**
 
 **Verdict: PROMOTE — blocked on §7-A being ANSWERED (not necessarily fixed).
 BRIGHT reads bit-identically for a 261 Hz SINE and a 261 Hz SAW, which is a
@@ -15,8 +16,7 @@ family.
 
 Not in `STRICT_FACES`; no `face:` block. In `STRICT_DOCS`; **not** in
 `STRICT_VRT_MODULES`; **not** in `PUSH_CARD_CONTROLS`. 6 params, 1 in, 4 out
-(`loud` cv, `bright` cv, `punch` cv, `onset` gate `edge=trigger`). contract-lock
-= **13 lines**.
+(`loud` cv, `bright` cv, `punch` cv, `onset` gate `edge=trigger`).
 
 **Method.** REAL factory → REAL worklet (`packages/dsp/src/featurecv.ts`) under
 `node-web-audio-api`'s `OfflineAudioContext`, 48 kHz. Two stimulus sets: a
@@ -120,10 +120,10 @@ measured idle values (−0.95, −0.83) are far from zero.
 ## 5. THE FACE
 
 ```ts
+// ⚠ NO `title`, NO `hint` — owner no-prose ruling, 2026-08-11. The two facts a
+// draft would have put there are load-bearing, so they move into a band HINT
+// and the sidebar `text` entries below, which paint without annotations.
 face: {
-  title: 'Audio to CV',
-  hint: 'BRIGHT reads the same for a sine and a saw at the same pitch. GAIN reaches LOUD and ONSET only.',
-
   order: [
     'bipolar', 'release', 'attack', 'onset_debounce', 'gain', 'onset_sens',
     'featurecv-meters-{n}',   // PANEL, rank 7 — the FIRST legal rank for a panel
@@ -177,8 +177,6 @@ packs 4 + 2 + 1 = 7 cells onto one row.
 ⚠ **Band-label budget**: `'output range'` (12) and `'onset trigger'` (13) are
 safe. The hint `'ATTACK / RELEASE shape LOUD and PUNCH; BRIGHT barely moves'` is
 **56 characters** — fallback **30**: `'shapes LOUD + PUNCH only'`.
-
-⚠ **`title` / `hint` paint NOTHING at rest.**
 
 ---
 
@@ -237,12 +235,13 @@ actually tracks. Rank 7 is a panel's first legal rank and this face has exactly
 
 ---
 
-## 8. COST
+## 8. THE ORDER OF WORK
 
-| | |
-|---|---|
-| **contract-lock** | **+1 line** for the `featurecv-meters` panel family (or +0 as a sidebar `custom` block). |
-| **ART** | none from the face. `featurecv` HAS an ART scenario; §7-A, if it turns out to be a DSP fix, re-pins it. |
-| **VRT** | +`face-featurecv-{compact,dock}` × 2 = **4 informational baselines**. Silent unpatched. |
-| **e2e** | +1 `faces-parity` row, **7 cells**. ≈ +13 s, ≈ +1.3 s per shard. |
-| **the bottom line** | Six controls, four jacks, and the panel currently says nothing true about any of them. Worth building — **after** §7-A gets an answer, because the hero picture labels the jack. |
+⚠ **`featurecv` HAS an ART scenario and four pinned baselines**
+(`art/scenarios/featurecv/feature-extract.test.ts`,
+`art/baselines/featurecv/{noise-bright,ramp-loud,sine-punch,transient-onset}.f32`).
+If §7-A resolves as a DSP fix it **re-pins `noise-bright` at minimum** —
+`task art:update`, which chains the fingerprint manifest, plus an owner audition.
+
+**Build the face AFTER §7-A gets an answer**, because the hero picture labels the
+BRIGHT jack and the face cannot name a quantity nobody has decided the meaning of.

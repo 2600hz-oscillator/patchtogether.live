@@ -1,0 +1,54 @@
+name: Agent-found defect or gap
+description: A defect, blind gate, or coverage gap an agent measured. Carries evidence.
+labels: ["p2"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        File this even if you are fixing it in the same session — then close it with
+        the fix. See `docs/process/issue-workflow.md`.
+  - type: textarea
+    id: what
+    attributes:
+      label: What is wrong
+      description: One or two sentences. Lead with the defect, not the history.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: |
+        `path:line` pinned to a SHA, with a short quote. State what you measured and
+        the command that measures it, so the next agent can re-run rather than re-guess.
+      placeholder: |
+        Verified at main @ abc1234:
+        - `e2e/vrt/vrt.config.ts:185` — `maxDiffPixelRatio: 0.01`
+        - measured: 646 `waitForTimeout` calls across 220 files
+    validations:
+      required: true
+  - type: textarea
+    id: why-invisible
+    attributes:
+      label: Why nothing caught it
+      description: |
+        If a gate exists for this class, what was it structurally unable to see?
+        Leave blank if not applicable.
+  - type: textarea
+    id: fix
+    attributes:
+      label: Proposed fix
+      description: Scope, and how it would be verified (including the negative control).
+    validations:
+      required: true
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      options:
+        - p0 — address immediately
+        - p1 — high-value correctness
+        - p2 — maintainability / debt
+        - p3 — after the p2s
+    validations:
+      required: true

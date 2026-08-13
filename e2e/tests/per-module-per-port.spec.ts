@@ -49,6 +49,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch, type SpawnNode, type SpawnEdge } from './_helpers';
 import { observeScopePeak, runFor } from './_module-coverage-helpers';
+import { collectPageErrors } from './_page-errors';
 import { REGISTRY, type RegistryModule, type RegistryPort } from './_registry';
 import { driverFor } from './_drivers';
 import { perPortDriverFor } from './_per-port-drivers';
@@ -910,24 +911,18 @@ async function readEdgeIds(page: Page): Promise<string[]> {
 
 test.describe.configure({ mode: 'parallel' });
 
-// Console-error filter: AudioContext autoplay warnings, DOOM asset
-// fetches, and Vite HMR chatter aren't meaningful failures here.
-// We also tolerate the reconciler's "disconnect (output 0) is not
-// connected" teardown error — it's a known race when spawnPatch wipes +
-// rebuilds the graph mid-tick (the reconciler tries to disconnect an
-// already-disconnected AudioNode). The reconcile-failed path re-syncs
-// on the next tick, so it's noise not a regression. Pinned by
-// reconciler-disconnect-* unit tests in packages/web.
-function filterErrors(errors: string[]): string[] {
-  return errors.filter((e) =>
-    !e.includes('AudioContext')
-    && !e.includes('doom.js')
-    && !e.includes('DOOM1.WAD')
-    && !e.includes('[vite]')
-    && !e.includes('Failed to load resource')
-    && !(e.includes('[reconciler] reconcile failed') && e.includes('disconnect')),
-  );
-}
+// Console-error policy lives in `_page-errors.ts` — ONE definition shared with
+// the behavioral sweep and gibribbon.spec.ts.
+//
+// It used to be a private copy here whose fifth clause was an unconditional
+// `!e.includes('Failed to load resource')`. That single line blinded every test
+// below to a module that FAILS TO LOAD: the `inputs accept signal` dim's other
+// assertion reads the patch store, so an edge materialises whether or not the
+// engine behind it ever came up, and (measured 2026-08-12) 58 module types have
+// no other live per-port dimension at all. A 404'd worklet was therefore a
+// GREEN row. The replacement records `location().url` and exempts by NAMED,
+// gitignore-anchored resource; `_page-errors.ts` carries the measurement, the
+// stated scope, and the re-derivation command.
 
 // ────────── Heavy-WebGL module predicate ──────────
 //
@@ -1346,11 +1341,7 @@ test.describe('per-module per-port: outputs emit signal', () => {
     test(title, async ({ page }) => {
       test.setTimeout(emitBudgetMs(mod));
 
-      const errors: string[] = [];
-      page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
-      page.on('console', (m) => {
-        if (m.type() === 'error') errors.push(`console: ${m.text()}`);
-      });
+      const errors = collectPageErrors(page);
 
       const driver = driverFor(mod);
       // Per-port driver: category-appropriate setup (page-init shim,
@@ -1657,8 +1648,10 @@ test.describe('per-module per-port: outputs emit signal', () => {
       }
 
       expect(
-        filterErrors(errors),
-        `${mod.type} outputs-emit: no console / page errors`,
+        errors.significant(),
+        `${mod.type} outputs-emit: no console / page errors (a failed resource load — a 404'd `
+        + `worklet, a dropped static asset — reads as "Failed to load resource" with the url in `
+        + `brackets; see _page-errors.ts for the named optional-asset exemptions)`,
       ).toEqual([]);
     });
   }
@@ -1721,11 +1714,7 @@ test.describe('per-module per-port: inputs accept signal (wire-up)', () => {
         test.setTimeout(wireUpBudgetMs(mod.inputs.length));
       }
 
-      const errors: string[] = [];
-      page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
-      page.on('console', (m) => {
-        if (m.type() === 'error') errors.push(`console: ${m.text()}`);
-      });
+      const errors = collectPageErrors(page);
 
       await page.goto('/rack?shell=legacy&seed=none');
       await page.waitForLoadState('networkidle');
@@ -1811,9 +1800,15 @@ test.describe('per-module per-port: inputs accept signal (wire-up)', () => {
         ).toContain('e-up-sut');
       }
 
+      // ⚠ THE LOAD-BEARING ASSERTION OF THIS DIM. The edge check above reads
+      // the patch store, so it materialises whether or not the engine behind
+      // the module ever came up — this is the only line here that can see a
+      // module that FAILED TO LOAD.
       expect(
-        filterErrors(errors),
-        `${mod.type} inputs-accept: no console / page errors during input wire-up`,
+        errors.significant(),
+        `${mod.type} inputs-accept: no console / page errors during input wire-up (a failed `
+        + `resource load — a 404'd worklet, a dropped static asset — reads as "Failed to load `
+        + `resource" with the url in brackets; see _page-errors.ts)`,
       ).toEqual([]);
     });
   }
@@ -1956,8 +1951,8 @@ test.describe('per-port heavy-GL budget: DERIVED, not floored', () => {
     expect(
       [...REGISTRY].filter((m) => emitBudgetMs(m) > 0 && emitSkipReason(m) !== null).map((m) => m.type),
       'a module with a NON-ZERO emit budget whose emit test is skipped means the budget function '
-      + 'and the sweep disagree about which tests exist — the exact defect that pinned this '
-      + 'ratchet to colourofmagic, a test that never runs.',
+      + 'and the sweep disagree about which tests exist — the exact defect that once priced this '
+      + 'gate against colourofmagic, a test that never runs.',
     ).toEqual([]);
 
     // The `doom → max(scaled, 90 000)` floor the old accumulator carried is
@@ -1969,9 +1964,9 @@ test.describe('per-port heavy-GL budget: DERIVED, not floored', () => {
       + 'removed doom floor asked for, or that floor was load-bearing and should not have gone.',
     ).toBeGreaterThan(90_000);
 
-    // THE PLAN GOT CHEAPER, so the ratchet comes down with it — in the same
-    // commit, per the rule that a ceiling left slack absorbs the next
-    // regression in silence.
+    // THE PLAN GOT CHEAPER — kept here because it is the measurement, and the
+    // measurement is what tells the next author whether a budget change is a
+    // real cost regression or just a different tree.
     //
     // 980 s → 300 s for the worst live plan (clipplayer, 24 outputs), from two
     // changes to the PLAN and none to the tolerance:
@@ -1991,11 +1986,37 @@ test.describe('per-port heavy-GL budget: DERIVED, not floored', () => {
     // module 17.9 s → 6.3 s. The 300 s budget is therefore ~24× the measured
     // cost of the plan it covers.
     //
-    // That retires the debt rather than shrinking it: this is now a real
+    // That retires the debt rather than shrinking it: what remains is a real
     // `toBeLessThan(CEILING)` — the worst plan fits inside the healthy share of
-    // the shard job — with the shrink-only ratchet kept UNDER it so the number
-    // still cannot drift upward unnoticed.
-    const EMIT_WORST_CEILING_MS = 300_000;
+    // the shard job — and CEILING is FULLY DERIVED from the configured job
+    // timeout, so it is not a hand-typed quantity and stays.
+    //
+    // ⚠ `EMIT_WORST_CEILING_MS` (300_000) IS GONE (2026-08-10) — P0 owner
+    // directive, "ratchets are an anti pattern; remove all ratchets". It was
+    // asserted twice: `worstEmitMs <= EMIT_WORST_CEILING_MS`, plus a zero-slack
+    // twin `expect(EMIT_WORST_CEILING_MS - worstEmitMs).toBe(0)`.
+    //
+    // WHY IT IS A POPULATION COUNT IN MILLISECOND CLOTHING. `worstEmitMs` is
+    // computed from the widest module's LIVE OUTPUT-PORT COUNT
+    // (`liveEmitOutputs(worstEmit) * PER_OUTPUT_MS + …`, × ATTEMPTS) — a
+    // strictly increasing function of a quantity read off the tree. The
+    // zero-slack twin then required the literal to EQUAL that derived value
+    // exactly. So `300_000` was, by construction, a hand-typed copy of
+    // "how many output ports does the widest module have", wearing a unit. It
+    // goes wrong the moment a wider-output video module merges — and it goes
+    // wrong the way the edge ledger did: two branches each computing correctly
+    // for their own tree, the merge silently taking one of them, no conflict
+    // marker, no red test. The `ms` suffix is precisely what made that hard to
+    // see.
+    //
+    // WHAT IS DROPPED, and it is real: the EARLY WARNING that the emit sweep's
+    // worst plan got more expensive AT ALL. `toBeLessThan(CEILING)` only fires
+    // when the plan no longer FITS the shard — a cliff — whereas the zero-slack
+    // pin fired on the first millisecond of growth and forced the author to
+    // look. Nothing replaces that gradient signal here; a plan can now creep
+    // from 6 s to 290 s of budget with every gate green. Name it in the PR
+    // body. (The right successor, if the creep ever bites, is a measured
+    // wall-time trend in CI — not another literal in this file.)
     expect(
       worstEmitMs,
       `the EMIT sweep's largest live plan (${worstEmit.type}, ${liveEmitOutputs(worstEmit)} live of ` +
@@ -2004,16 +2025,6 @@ test.describe('per-port heavy-GL budget: DERIVED, not floored', () => {
         `${JOB_TIMEOUT_MS / 60_000}-minute shard job, for ONE test. If this trips, the fix is a ` +
         `CHEAPER PLAN — fewer spawns per port — not a bigger job timeout.`,
     ).toBeLessThan(CEILING);
-    expect(
-      worstEmitMs,
-      `and it must not creep back up: pinned at ${EMIT_WORST_CEILING_MS} ms, shrink-only.`,
-    ).toBeLessThanOrEqual(EMIT_WORST_CEILING_MS);
-    expect(
-      EMIT_WORST_CEILING_MS - worstEmitMs,
-      'and the ratchet must carry NO SLACK — a ceiling that can only trip by growing absorbs the ' +
-        'next regression in silence. If you made this plan cheaper, lower the ceiling by the ' +
-        'same amount in the same commit.',
-    ).toBe(0);
     // …and the headroom, expressed as the port count the envelope carries, which
     // is the number a future author actually needs.
     const capacityPorts = Math.floor(

@@ -1,31 +1,20 @@
-# FACE SPEC — `twotracks` (batch 3) — **MY ADDITION TO REACH 12 · RECOMMENDATION: SWAP IT OUT**
+# FACE SPEC — `twotracks` — **BANKED. The module is UNFACED and the faceplate pipeline is paused.**
 
-> ⚠ **STATUS CORRECTED 2026-08-04.** PF-20 (**PR #1301**) **HAS MERGED** (`c6ff9253`) — read
-> the def on `main`. twotracks is **UNBUILT and this spec's own verdict is SWAP OUT (do not
-> face)**. **Three of the facts it is built on have since changed:**
-> - ✅ **§5-A · reel B's ECHOES knob is a permanent no-op** — **FIXED in #1313**
->   (`290dcdb5`): `parameterDescriptors` declared a `decay_b` nothing read and omitted
->   `echoes_b`, which `processReel` reads every block. A `twotracks-worklet-params.test.ts`
->   now walks the whole def→worklet map in BOTH directions. **"A faceplate that ranks and
->   labels a dead control" (§2) is no longer the objection it was.**
-> - ✅ **OUT L and OUT R were the same graph edge** — fixed in **#1323** (`16bf310e`).
-> - ⚠ **The param count has MOVED.** #1352 (`f3c2a966`) added RATE CV in for both decks
->   (owner HIGH PRIORITY), so "31 params" and every rank/lane-budget number below is stale.
-> - ⚠ "12 inert until a take exists" and "the transport is not params at all" were **not
->   re-verified** on 2026-08-04.
+This spec was written for batch 3 and its verdict then was **do not face it yet**. Nothing
+about that has been overturned; the module still has no `face:` block, and the spec is kept
+because an unbuilt module's measurement is worth exactly as much as a built one's.
 
-**Status:** SPEC + MOCKUP ONLY — **UNBUILT, verdict SWAP OUT.** PF-20 platform (PR #1301 — MERGED, `c6ff9253`). Citations file:line.
-
-⚠ **The owner named ten modules. `cube` and `twotracks` are MY additions to reach twelve, and
-both are flagged as swappable.** Both come back as swap-outs.
-
-**Verdict: DO NOT FACE IN THIS BATCH. Land the §5 fixes first (small, mostly deletions), then
-face it in a batch where "dual reel" is the design problem rather than an afterthought.**
-
-31 params, 10 in / 2 out. contract-lock block = **44 lines** (`contract-lock.txt:3403-3446`:
-1 meta + 10 in + 2 out + 31 param). In `STRICT_DOCS` (`strict-docs.ts:261`). Not in
-`STRICT_FACES`; no `face:` block. **VRT: zero scenes, zero baselines** — it is in
-`EXEMPT_FROM_VRT` (`e2e/vrt/vrt-exemptions.ts:801`).
+**Corrections against `main`, verified 2026-08-10:**
+- ✅ **§5-A reel B's ECHOES knob was a permanent no-op — FIXED in #1313** (`290dcdb5`).
+  `parameterDescriptors` declared a `decay_b` nothing read and omitted `echoes_b`, which
+  `processReel` reads every block. `twotracks-worklet-params.test.ts` now walks the whole
+  def→worklet map in both directions. **§5-B (`decay_b` vestigial) went with it.**
+- ✅ **OUT L and OUT R were the same graph edge** — fixed in **#1323** (`16bf310e`).
+- ✅ **§5-M zero `edge:` declarations — FIXED.** All six gate ports now carry
+  `edge=trigger` (`contract-lock.txt:3442-3452`).
+- ⚠ **Every param COUNT below is stale.** #1352 (`f3c2a966`) added RATE CV in for both decks,
+  so "31 params" and the lane-budget arithmetic derived from it need re-deriving before use.
+  The *ratios* (how many are inert until a take exists) were not re-measured.
 
 ---
 
@@ -79,51 +68,45 @@ dead code** (it needs v > 24.5).
 
 ---
 
-## 2. WHY IT SHOULD NOT BE FACED IN THIS BATCH
+## 2. WHY IT IS A HARD FACE — the measured reasons
 
-1. **31 params, 12 of them structurally inert until a take exists.** `readInterp` on a zero-filled
+1. **12 of the params are structurally inert until a take exists.** `readInterp` on a zero-filled
    buffer returns 0, so EQ, filter, reso and cutoff **process silence**
    (`packages/dsp/src/twotracks.ts:709-763`) — and they are *structurally* incapable of touching
    the monitor path even with MONITOR on, because `reelOutSample(tape, src, …)` EQs only `tape`
    (`:783-784`). `rate`, `echoes`, `mode` and `overdub_flag` never execute (`rolling = false`).
-   `a2b`/`b2a` are identity (the `crossPrev` buffers are zero). **A face is a control-surface
-   ranking, and ranking twelve controls that do nothing on a fresh spawn is the worst possible
-   first impression.** Exactly **three** things are live at spawn: `lofi` (which with zero input
-   still emits **DC + hiss** — the only sound a bare twotracks makes), `monitor` (iff something is
-   patched), and `ab` (only in combination with monitor, on reel B).
+   `a2b`/`b2a` are identity (the `crossPrev` buffers are zero). Exactly **three** things are live
+   at spawn: `lofi` (which with zero input still emits **DC + hiss** — the only sound a bare
+   twotracks makes), `monitor` (iff something is patched), and `ab` (only in combination with
+   monitor, on reel B). A face is a control-surface ranking, and twelve of the ranks would be
+   ranking controls that do nothing on a fresh spawn.
 2. **The face-critical interactions are not params at all.** REC / PLAY / STOP, SAVE TAPE, seek and
    scrub-velocity all travel over the `MessagePort` (`TwotracksCard.svelte:211-248`), and
    **`scrubVelocity_*` is deliberately excluded from `def.params`** (`twotracks.ts:641-643`) — so a
-   face plus `ModuleShell` would need plumbing no other faced module has needed. The PF-20 sidebar
-   states the rule verbatim in `sidebar-panels.ts`: *"A panel READS; it does not own state."*
-3. **The module has live bugs, and facing it bakes one of them into a second surface** — reel B's
-   ECHOES knob is a **no-op, always** (§5-A). A faceplate that ranks and labels a dead control is
-   worse than a card that merely contains one.
-4. **Every faced module so far has been ≤ ~10 controls with a single clear job.** twotracks is two
-   decks plus a mixer plus a lofi processor.
+   face plus `ModuleShell` would need plumbing no other faced module has needed. The rule is stated
+   verbatim in `sidebar-panels.ts`: *"A panel READS; it does not own state."*
+3. **It is two decks plus a mixer plus a lofi processor.** Every faced module so far has been
+   ≤ ~10 controls with a single clear job.
 
 **THE CASE FOR, stated fairly.** It is the only tape looper in the rack, it has **more genuinely
 derivable numbers than most faced modules** (§4 lists eight, three with clean negative controls),
-and it has **zero VRT coverage today** — a face would be its first pixel gate ever. Its worst UX
-facts are all *arithmetic a face fixes for free*: reel B silent at ab = 0, +6 dB at centre, a
-+8.7 dB overdub ceiling, and EQ that does nothing until you record. And its 580 px two-column
-legacy card will not survive the uniform-module refactor anyway.
+and it has **zero VRT coverage today** (`EXEMPT_FROM_VRT`, `e2e/vrt/vrt-exemptions.ts`) — a face
+would be its first pixel gate ever. Its worst UX facts are all *arithmetic a face fixes for free*:
+reel B silent at ab = 0, +6 dB at centre, a +8.7 dB overdub ceiling, and EQ that does nothing until
+you record.
 
 ---
 
-## 3. IF THE OWNER OVERRULES — the shape it should take
+## 3. THE SHAPE IT SHOULD TAKE, when it is faced
 
-Not a full spec, because the recommendation is to defer. The shape, so the deferral is actionable:
-
-- **Two tab bands, one per reel, plus a bus band.** 31 params over ≥ 7 bands puts it past
+- **Two tab bands, one per reel, plus a bus band.** Its param count puts it past
   `DOCK_TAB_MIN_BANDS = 7` (`dock-tabs-model.ts:46`), so it is a **tab rail** by construction —
   which is right for a two-deck module and should be embraced, not fought.
-- **`face.title` = `Tape`, `face.hint`** must lead with the three facts that make it usable:
-  *reel B is muted at ab 0, both reels are unity at ab 0.5 (+6 dB), and none of the EQ or filter
-  does anything until a take exists.* ⚠ Since 2026-08-02 `face.hint` is ANNOTATION and OFF by
-  default (INDEX §1.1), so a fact a user must not miss cannot live only there — the first two
-  belong in a `readouts` sidebar block or a band label as well, and the third is what the
-  inert-until-a-take styling on those knobs says at rest.
+- **`face.title` = `Tape`**, and the three facts that make it usable — *reel B is muted at ab 0,
+  both reels are unity at ab 0.5 (+6 dB), and none of the EQ or filter does anything until a take
+  exists* — **cannot live in `face.hint`**: hints are ANNOTATION and OFF by default. The first two
+  belong in a `readouts` sidebar block or a band label; the third is what inert-until-a-take
+  styling on those knobs says at rest.
 - **The hero is the tape**, not a knob: a waveform with the loop window, the playhead and the
   record head — the card already draws all of it (`TwotracksCard.svelte:342-419`).
 - **Promote nothing from `node.data`.** Unlike samsloop, twotracks' non-param controls are
@@ -197,33 +180,25 @@ duty** at 48 kHz (`packages/dsp/src/twotracks.ts:969-1020`). **NEGATIVE CONTROL:
 
 ---
 
-## 5. ALREADY-WRONG — the reason for the deferral
+## 5. ALREADY-WRONG — still open on `main` (A, B and M are fixed; see the header)
 
-- **A · `echoes_b` IS NOT A DECLARED AudioParam.** `parameterDescriptors` declares `echoes` but no
-  `echoes_b` (`packages/dsp/src/twotracks.ts:392` vs the reel-B block `:406-421`). `processReel`
-  reads `parameters['echoes_b']` → undefined → `kv` falls back to **3** (`:564, 579`). Host-side
-  `params.get('echoes_b')?.setValueAtTime(...)` (`twotracks.ts:450`) optional-chains into a silent
-  no-op. **Reel B's ECHOES knob does nothing, ever.** No test catches it — the e2e only asserts the
-  knob's `aria-valuenow` mirrors the param (`e2e/tests/twotracks.spec.ts:179-208`).
-- **B · `decay_b` is a vestigial descriptor** — declared (`packages/dsp/src/twotracks.ts:410`),
-  never read.
 - **C · `packages/web/src/lib/audio/modules/twotracks-transport.ts` (186 lines) IS DEAD CODE**, and
-  **two sweep exemptions cite its tests as their functional justification**
-  (`e2e/tests/per-module-per-port-behavioral.spec.ts:176-179`). Nothing imports it but its own
-  355-line test (`module-manifest.ts:1264` explicitly excludes it), and it **contradicts the
+  **a sweep exemption cites its tests as functional justification**
+  (`e2e/tests/per-module-per-port-behavioral.spec.ts:177-180`). Nothing imports it but its own
+  355-line test (`module-manifest.ts:1390` explicitly excludes it), and it **contradicts the
   shipped worklet twice**: `computeDecayFactor = 0.90 − 0.40x` (`:172-175`) vs the real
   `0.1^(1/n)`; and its ARMED "waits for the cursor to cross start before recording" (`:27, 99-107`)
   vs the shipped frozen ARMED (`packages/dsp/src/twotracks.ts:681-683`). **The module is excused
   from the behavioral lane on the strength of tests for code that never runs.**
-- **D · a stale exemption claim.** `per-module-per-port.spec.ts:187` and
-  `e2e/vrt/vrt-exemptions.ts:801` both cite "twotracks.spec.ts (record → play → SCOPE RMS assert)".
+- **D · a stale exemption claim.** `per-module-per-port.spec.ts:190` cites
+  "twotracks.spec.ts (record → play → SCOPE RMS assert)".
   `grep -i rms e2e/tests/twotracks.spec.ts` → **no matches.** The only audio assertion anywhere is
   `scopePeak > 0.01` in `e2e/tests/twotracks-perfzip.spec.ts:181-184`.
 - **E · 48 kHz hardcoded twice** while `sampleRate` is exposed and unused (`twotracks.ts:536`): the
-  seconds readout `bufLenA / 48000` (`TwotracksCard.svelte:533, 690`) and the WAV header
-  `const sr = 48000` (`twotracks.ts:129`). On a 44.1 kHz context **the readout is 8.8 % wrong and
+  seconds readout `bufLenA / 48000` (`TwotracksCard.svelte:534, 691`) and the WAV header
+  `const sr = 48000` (`twotracks.ts:130`). On a 44.1 kHz context **the readout is 8.8 % wrong and
   exported WAVs play 8.8 % fast.**
-- **F · `twotracks.ts:46` says "≈3.7 MB/reel stereo"; `:78` says "~7.7 MB/reel".**
+- **F · `twotracks.ts:47` says "≈3.7 MB/reel stereo"; `:79` says "~7.7 MB/reel".**
   960 000 × 4 B × 2 ch = 7.68 MB — the first mistook per-channel for stereo.
 - **G · five doc claims contradicted by the code.** `rec_start` "starts recording **from the head
   of the tape**" (`:258`) — the rewind is gated on `modeVal === 0`
@@ -233,11 +208,10 @@ duty** at 48 kHz (`packages/dsp/src/twotracks.ts:969-1020`). **NEGATIVE CONTROL:
   (`:268`) — the param is **inert** (`:648`, `cardParamToWorkletParam` returns null); scrubbing
   goes over the port. `lofi` "adds wow/flutter/**bit-grit**" (`:290`) — there is no bit reduction
   anywhere, and its wow/flutter is amplitude, not pitch. `echoes` "how many times the recorded loop
-  **re-circulates**" (`:264`) — it is a scalar decay applied only in overdub, and it is dead on
-  reel B.
-- **H · `module-manifest.ts:414` is a phase behind:** it documents "a **DECAY knob** that fades
+  **re-circulates**" (`:264`) — it is a scalar decay applied only in overdub.
+- **H · `module-manifest.ts:425` is two phases behind:** it documents "a **DECAY knob** that fades
   previous passes by **0.50–0.90×** per loop" (that param no longer exists; the real range is
-  0.10–0.63) and claims "**Phase 4 adds CV ins**" — there are **no CV inputs.**
+  0.10–0.63) and says "**Phase 4 adds CV ins**" — rate CV in landed in #1352.
 - **I · `overdub_flag` ↔ the worklet flag can desync.** The host pulses a *toggle* on any flag
   change (`twotracks.ts:476-484`) and a patched `overdub_a` gate toggles the same worklet flag
   directly (`packages/dsp/src/twotracks.ts:674-679`) with no write-back. **Drive the gate once and
@@ -251,23 +225,13 @@ duty** at 48 kHz (`packages/dsp/src/twotracks.ts:969-1020`). **NEGATIVE CONTROL:
   `canvas.width` (220 buffer px, `:264, 279`) — the 8 px hit radius and the velocity scale are both
   ~2 % off.
 - **L · the card re-types every range**, with one live divergence: **`echoes` is
-  `curve: 'discrete'` in the def (`twotracks.ts:207`) but `curve="linear"` on the card
-  (`TwotracksCard.svelte:515, 672`)**, papered over by a `Math.round(v)` in `onchange`.
-- **M · zero `edge:` declarations on any of the six gate ports** (`contract-lock.txt:3408-3413`
-  carry no `edge=` while 75 other lines do) — all six are rising-edge triggers by construction.
+  `curve: 'discrete'` in the def (`twotracks.ts:251, :268`) but `curve="linear"` on the card
+  (`TwotracksCard.svelte:516`)**, papered over by a `Math.round(v)` in `onchange`. ⚠ Before
+  "fixing" the declaration, check the consumer: these are `<Knob>`, and `Knob.svelte` has no
+  `discrete` branch — writing `curve="discrete"` would green a gate and change nothing.
 - **N · persistence.** Recorded audio persists **only** through the performance `.zip`
   (`Canvas.svelte:3025-3058` → `load-tape`, `packages/dsp/src/twotracks.ts:490-512`); the plain
   `.imp.json` envelope carries no tape. And twotracks is **not** in
-  `TRANSIENT_DATA_FIELDS_BY_TYPE` (`packages/web/src/lib/graph/persistence.ts:68-77`), so a plain
+  `TRANSIENT_DATA_FIELDS_BY_TYPE` (`packages/web/src/lib/graph/persistence.ts:121-130`), so a plain
   save/load restores `bufLenA = N` against an **empty tape** — SAVE TAPE enabled, "12.3 s" printed
   — until the worklet's first playhead post corrects it (~11 ms).
-
----
-
-## 6. COST — if it ships anyway
-
-| | |
-|---|---|
-| **contract-lock** | +1 or +2 family lines; **+6 modified** if the six `edge:` declarations land. 44 → 45/46. |
-| **VRT** | **zero baselines exist.** twotracks is in `EXEMPT_FROM_VRT` (`vrt-exemptions.ts:801`) *and* carries a canvas mask entry (`:61`) that can never fire. It is also exempt from `per-module-per-port` (`:187`) and the behavioral lane (`:179`). **A face is its first pixel coverage ever** — which is genuinely attractive, and is the strongest single argument against the deferral. |
-| **e2e** | +1 `faces-parity` row (**32 cells**) in the REQUIRED lane. |

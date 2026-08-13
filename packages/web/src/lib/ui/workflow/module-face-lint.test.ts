@@ -15,7 +15,10 @@
 //     and every page control is in `order` — the deny(missing-curation)
 //     guarantee, so a NEW control on a promoted module fails until it's ranked.
 //
-//  3. RATCHET FLOOR: |STRICT_FACES| only grows (frozen at today's size).
+//  3. SET IDENTITY: STRICT_FACES IS the set of defs that declare a `face` —
+//     asserted in both directions, so un-promotion is red without any count.
+//     (This replaced a `|STRICT_FACES| >= 18` floor on 2026-08-12; the trace of
+//     what that protected sits where it stood, at the bottom of this file.)
 //
 // `face` is UI curation, NOT the I/O contract — it is deliberately OUT of
 // contract-signature.ts / contract-lock.txt. This gate is its pin.
@@ -722,6 +725,92 @@ describe('module-face lint — DECLARED param cells (face.paramCells) + PANEL ti
   }
 
   /**
+   * `face.xyPads` drift — the checks a 2-D pad needs and no other cell does.
+   *
+   * The TYPE already guarantees the thing a `Record` could not: both axis ids
+   * are required, so a pad naming one axis does not compile. What it cannot
+   * guarantee is that the two ids MEAN anything, and every clause here is a way
+   * for a well-typed pad to be a no-op or a lie:
+   *
+   *   - an axis naming no param → the pad renders nothing and the OTHER axis
+   *     silently falls back to a knob, which is the exact downgrade the kind
+   *     exists to end, now wearing a declaration;
+   *   - an axis not RANKED → face completeness would already flag the missing
+   *     control, but the message would blame the wrong thing;
+   *   - x === y → one param on both axes: a diagonal-only pad, which looks
+   *     operable and is a bug;
+   *   - a param claimed by TWO pads, or by a pad AND `paramCells` → two cells
+   *     racing for one param, and `declaredParamCells` would resolve it by
+   *     insertion order, i.e. arbitrarily;
+   *   - a MOMENTARY axis → a press-pad is not a coordinate;
+   *   - a DISCRETE axis → a pad over steps is a stepper wearing a joystick.
+   *     This is the mirror of the `grid`/`color` clauses (discrete-only) and
+   *     matches `fader`'s (discrete-never) for the same reason: a continuous
+   *     gesture needs a continuous scale under it.
+   */
+  function xyPadProblems(def: CellFaceDef): string[] {
+    const pads = def.face?.xyPads ?? [];
+    if (!pads.length) return [];
+    const problems: string[] = [];
+    const byId = new Map((def.params ?? []).map((p) => [p.id, p]));
+    const ranked = new Set(def.face?.order ?? []);
+    const momentary = new Set(def.face?.momentary ?? []);
+    const declared = new Set(Object.keys(def.face?.paramCells ?? {}));
+    const claimed = new Set<string>();
+
+    for (const pad of pads) {
+      if (pad.x === pad.y) {
+        problems.push(
+          `${def.type}: face.xyPads pad has x === y ('${pad.x}') — one param on both axes is a ` +
+            `pad that can only move diagonally, and it looks perfectly operable`,
+        );
+      }
+      for (const [axis, key] of [['x', pad.x], ['y', pad.y]] as const) {
+        const p = byId.get(key);
+        if (!p) {
+          problems.push(
+            `${def.type}: face.xyPads ${axis} = '${key}' is not a declared param — the pad ` +
+              `cannot render and its OTHER axis falls back to a knob`,
+          );
+          continue;
+        }
+        if (!ranked.has(key)) {
+          problems.push(
+            `${def.type}: face.xyPads ${axis} = '${key}' is not ranked in face.order. Both axes ` +
+              `must be ranked: 'x' positions the cell, and 'y' is what proves the param was not ` +
+              `dropped from the face.`,
+          );
+        }
+        if (momentary.has(key)) {
+          problems.push(
+            `${def.type}: face.xyPads ${axis} = '${key}' is also face.momentary — a press-pad ` +
+              `is not a coordinate`,
+          );
+        }
+        if (declared.has(key)) {
+          problems.push(
+            `${def.type}: '${key}' is claimed by BOTH face.xyPads and face.paramCells — two ` +
+              `cells for one param, resolved by map insertion order, i.e. arbitrarily`,
+          );
+        }
+        if (claimed.has(key)) {
+          problems.push(
+            `${def.type}: '${key}' is an axis of MORE THAN ONE pad — it can only render once`,
+          );
+        }
+        claimed.add(key);
+        if (p.curve === 'discrete' || p.options?.length) {
+          problems.push(
+            `${def.type}: face.xyPads ${axis} = '${key}' is DISCRETE — a pad over steps is a ` +
+              `stepper wearing a joystick. A 2-D drag needs a continuous scale under both axes.`,
+          );
+        }
+      }
+    }
+    return problems;
+  }
+
+  /**
    * Every LANE tier at which a PANEL cell would be SELECTED. A panel carries its
    * own design floor (a 280 px operator map); a 46 px `--kcol-max` knob column
    * cannot hold one, so a panel is DOCK-ONLY.
@@ -757,6 +846,76 @@ describe('module-face lint — DECLARED param cells (face.paramCells) + PANEL ti
       problems.push(...paramCellProblems(def as unknown as CellFaceDef));
     }
     expect(problems.join('\n'), 'face.paramCells drift — a declared primitive that is a no-op or a contradiction').toBe('');
+  });
+
+  it('every face.xyPads axis is a ranked, non-momentary, CONTINUOUS param claimed once', () => {
+    const problems: string[] = [];
+    for (const def of allDefs()) problems.push(...xyPadProblems(def as unknown as CellFaceDef));
+    expect(problems.join('\n'), 'face.xyPads drift — a pad that is a no-op or a contradiction').toBe('');
+  });
+
+  it('NEGATIVE CONTROL: every xyPads clause fires on a def built to violate exactly it', () => {
+    // No shipped def declares a pad yet, so the sweep above is VACUOUSLY green
+    // and would stay green if `xyPadProblems` were `return []`. Same argument
+    // as the paramCells controls below it, and the same shape.
+    const CONT = (id: string): ParamDef => ({
+      id,
+      label: id,
+      min: -1,
+      max: 1,
+      defaultValue: 0,
+      curve: 'linear',
+    });
+    const base = (over: Partial<CellFaceDef>): CellFaceDef => ({
+      type: 'synthetic',
+      params: [CONT('px'), CONT('py')],
+      face: { order: ['px', 'py'], xyPads: [{ x: 'px', y: 'py' }] },
+      ...over,
+    });
+
+    // Well-formed → silent. Without this the rest could pass by always firing.
+    expect(xyPadProblems(base({}))).toEqual([]);
+    // …and inert for a def with no pads at all.
+    expect(xyPadProblems({ type: 's', params: [CONT('px')], face: { order: ['px'] } })).toEqual([]);
+
+    const fires = (over: Partial<CellFaceDef>, needle: string) => {
+      const out = xyPadProblems(base(over));
+      expect(out.join('\n'), `expected a problem mentioning ${needle}`).toContain(needle);
+    };
+    fires({ face: { order: ['px'], xyPads: [{ x: 'px', y: 'ghost' }] } }, 'not a declared param');
+    fires({ face: { order: ['px'], xyPads: [{ x: 'px', y: 'py' }] } }, 'not ranked in face.order');
+    fires({ face: { order: ['px', 'py'], xyPads: [{ x: 'px', y: 'px' }] } }, 'x === y');
+    fires(
+      { face: { order: ['px', 'py'], xyPads: [{ x: 'px', y: 'py' }], momentary: ['py'] } },
+      'is not a coordinate',
+    );
+    fires(
+      {
+        params: [CONT('px'), { id: 'py', label: 'py', min: 0, max: 3, defaultValue: 0, curve: 'discrete' }],
+      },
+      'is DISCRETE',
+    );
+    fires(
+      {
+        params: [CONT('px'), CONT('py'), CONT('pz'), CONT('pw')],
+        face: {
+          order: ['px', 'py', 'pz', 'pw'],
+          xyPads: [{ x: 'px', y: 'py' }, { x: 'px', y: 'pw' }],
+        },
+      },
+      'MORE THAN ONE pad',
+    );
+    fires(
+      {
+        params: [CONT('px'), CONT('py')],
+        face: {
+          order: ['px', 'py'],
+          xyPads: [{ x: 'px', y: 'py' }],
+          paramCells: { px: 'fader' },
+        },
+      },
+      'face.paramCells',
+    );
   });
 
   it('no PANEL cell is selected at a LANE tier (panels are dock-only)', () => {
@@ -1878,36 +2037,55 @@ describe('module-face lint — FACEPLATE STRUCTURE (PF-20: hero / sidebar / hint
   });
 });
 
-describe('module-face lint — STRICT_FACES RATCHET (only grows)', () => {
-  // STRICT_FACES is an OPT-IN allowlist: a module is promoted once its co-located
-  // `face` is authored + verified (see strict-faces.ts). This cap FREEZES the set
-  // at today's size so it can only GROW — REMOVING a module (un-promotion) fails
-  // this test on purpose.
-  //   RATCHET RULE: strict lists only grow. RAISE the number when you promote a
-  //   module (the P1 reskin waves). Only LOWER it for a real, justified
-  //   un-promotion — NEVER to make a red face gate go green.
-  it('STRICT_FACES never shrinks below its frozen floor', () => {
-    // 6 (2026-07-25): P1 batch 1 — the first faced-module wave (adsr, cloudseed,
-    // kickdrum, lfo, tidyVco, vca) raised the floor from the P0.4 empty seed.
-    // 12 (2026-07-26): P1 batch 2 — dx7, qbrt, shimmershine, sixstrum,
-    // snaredrum, tomtom.
-    // 17 (2026-07-26): P1 batch 3 — delay, filter, karplus, mixer, reverb (the
-    // plucked-string voice + the four workhorse processors/utilities). The five
-    // module branches each deliberately LEFT this at their base value to avoid
-    // a five-way conflict, so the batch integrator bumps it ONCE to the true
-    // final |STRICT_FACES|.
-    // 18 (2026-08-02): ringback — the stereo crush, promoted from having no
-    // face at all.
-    // ⚠ LEFT AT 18 THROUGH FACE BATCH 3 ON PURPOSE, by this file's own
-    // convention above: clap / drummergirl / pentemelodica landed together and
-    // meowbox / analogVco / bluebox / macrooscillator are four CONCURRENT
-    // branches, so each leaving the literal alone avoids a seven-way conflict on
-    // one number. |STRICT_FACES| is 22 with meowbox in. THE BATCH INTEGRATOR
-    // BUMPS THIS ONCE, to the true final size, when the wave lands — the slack
-    // is a known cost of the convention and is not a ratchet failure.
+describe('module-face lint — STRICT_FACES is DERIVED FROM THE ARTIFACT, not floored', () => {
+  // ⚠ `STRICT_FACES.size >= 18` IS GONE (2026-08-12, the no-ratchets sweep).
+  //
+  // WHAT IT PROTECTED: un-promotion. A module quietly deleted from STRICT_FACES
+  // drops out of the completeness / dock-parity / rear-totality / momentary
+  // bars above and is checked only for consistency — a way to make a red face
+  // gate green.
+  //
+  // WHY A FLOOR WAS THE WRONG SHAPE, and this file said so itself. The deleted
+  // comment recorded the number being LEFT AT 18 through face batch 3 because
+  // seven concurrent branches would otherwise have collided on one literal —
+  // i.e. the construct was already being worked around, with four cards of
+  // slack, and `|STRICT_FACES|` was 32 by the time it was removed. A ratchet
+  // with 14 free slots is not a ratchet.
+  //
+  // WHAT CARRIES IT INSTEAD — the same protection, DERIVED, with no slack: a
+  // face is a property of the def, so read it off the def. Any module that
+  // declares a `face` MUST be promoted. Removing a name from STRICT_FACES while
+  // the def still declares its face is now RED, which is the gate-dodge the
+  // floor existed for; un-promoting for real means deleting the `face`, which
+  // is a large and obvious diff.
+  //
+  // ⚠ POLICY THIS MAKES EXPLICIT: authoring a `face` IS the promotion. The
+  // header prose above still says unpromoted faces 'degrade gracefully while
+  // the ratchet rolls out' — measured 2026-08-12, that population is EMPTY: 32
+  // defs declare a face and all 32 are in STRICT_FACES. This pins the live
+  // state rather than raising the bar.
+  it('every module that declares a `face` is in STRICT_FACES (deny-by-default)', () => {
+    const unpromoted = allDefs()
+      .filter((def) => def.face && !STRICT_FACES.has(def.type))
+      .map((def) => def.type)
+      .sort();
     expect(
-      STRICT_FACES.size,
-      'STRICT_FACES shrank below its frozen floor — see the RATCHET rule above',
-    ).toBeGreaterThanOrEqual(18);
+      unpromoted,
+      'module(s) declaring a co-located `face` that are not in STRICT_FACES. Authoring a ' +
+        'face IS the promotion — add them to strict-faces.ts. (If this went red on a ' +
+        'DELETION from STRICT_FACES: that is the un-promotion this replaced the frozen ' +
+        'floor to catch. Un-promote by removing the `face`, not the name.)',
+    ).toEqual([]);
+  });
+
+  it('ANCHORED TO THE ARTIFACT: no STRICT_FACES name lacks a live `face`', () => {
+    // The other direction, already covered for completeness at the top of this
+    // file ('in STRICT_FACES but has no face'), restated here as a set identity
+    // so the pair reads as one claim: STRICT_FACES IS the faced population.
+    const faced = new Set(allDefs().filter((d) => d.face).map((d) => d.type));
+    expect(
+      [...STRICT_FACES].filter((t) => !faced.has(t)).sort(),
+      'STRICT_FACES name(s) with no co-located `face` on a live def — delete them',
+    ).toEqual([]);
   });
 });

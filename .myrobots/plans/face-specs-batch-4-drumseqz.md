@@ -1,22 +1,17 @@
 # FACE SPEC — `drumseqz` (batch 4)
 
-## 0. STATUS
+## 0. PROVENANCE
 
-**Authored 2026-08-09. Every claim below was measured or read against `main`**
-(`ecc48f2e`). Nothing here is implemented; no def, card or DSP file is touched.
+Measured against `main` at `ecc48f2e` (2026-08-09). **BANKED — not built.** The
+faceplate pipeline is paused; nothing below is implemented.
 
-**Verdict: PROMOTE — with a real cost caveat: this is the only module in the batch
-already in `STRICT_VRT_MODULES`, so any card change re-captures a REQUIRED baseline on
-both platforms.**
-
-archetype: **clocked step SEQUENCER** (the four-track drum row; the batch's sequencing
-slot).
+**Verdict: PROMOTE**, archetype **clocked step SEQUENCER** (the four-track drum row).
 
 Not in `STRICT_FACES`; no `face:` block. In `STRICT_DOCS` **and in
-`STRICT_VRT_MODULES`** (`vrt-exemptions.ts:959`). 18 params, 7 in, 9 out, one
-`controlFamily` (`drumseqz-pitch`, `countParam: 'length'`) and one exposed button
-(`playStop → isPlaying`). contract-lock = **37 lines** (`contract-lock.txt:947-983`) —
-the largest block in the batch.
+`STRICT_VRT_MODULES`** — so **any change to `DrumseqzCard.svelte` re-captures a
+REQUIRED baseline**, which is the one cost fact worth carrying into the build.
+18 params, 7 in, 9 out, one `controlFamily` (`drumseqz-pitch`,
+`countParam: 'length'`) and one exposed button (`playStop → isPlaying`).
 
 **Method — and it is different from the other seven.** `drumseqz` has **no worklet**:
 it is a main-thread scheduler writing `ConstantSourceNode`s, so the offline
@@ -181,14 +176,10 @@ because a sequencer legitimately drives non-audio destinations.
 ## 5. THE FACE
 
 ```ts
+// ⚠ NO `title`, NO `hint` — owner no-prose ruling, 2026-08-11. Everything
+// explanatory goes in `docs` (right-click → annotate reads it); a faceplate
+// states values. The band LABELS below carry what must paint unconditionally.
 face: {
-  title: 'Sequencer',
-  hint:
-    'Four tracks, one playhead, one LENGTH. The EUCLID sliders write a 16-step tile into the ' +
-    'pattern and the playhead reads LENGTH steps of it — so at LENGTH 16 the slider means what it ' +
-    'says and nowhere else: EUCLID 5 at LENGTH 12 plays FOUR hits. The per-track OCTAVE and the ' +
-    'global OCTAVE are the same control, added twice.',
-
   order: [
     'drumseqz-pitch-{n}',                              // 1 — the pattern IS the module (a FAMILY, legal at a lane tier)
     'isPlaying', 'bpm', 'length', 'swing', 'gateLength',  // 2-6 = the rest of the lane budget
@@ -197,8 +188,13 @@ face: {
     'trk1_root', 'trk2_root', 'trk3_root', 'trk4_root',
     'octave', 'trk1_octave', 'trk2_octave', 'trk3_octave', 'trk4_octave',
   ],
-  // FIVE BANDS ⇒ the dock TAB RAIL. Four symmetric per-track strips plus a transport is
-  // the pentemelodica shape exactly, and a tabbed face never row-packs.
+  // ⚠ FIVE BANDS IS **NOT** THE TAB RAIL — this spec said it was, and it was
+  // wrong when written. `dockTabPlan` rails at `bands.length >= 7`
+  // (`DOCK_TAB_MIN_BANDS`), and pentemelodica — the face this shape was copied
+  // from — has EIGHT. Five renders as one scrolling column, which means the
+  // band hints below DO paint and PF-21 row packing DOES apply (a railed face
+  // never packs). Re-plan the vertical budget on that basis, and note that a
+  // sixth and seventh band would cross the cliff and delete every hint at once.
   pages: [
     { id: 'transport', label: '1 · transport',
       hint: 'BPM 30–300, or an external CLOCK. SWING shifts the off-steps up to 0.75; GATE sets the ' +
@@ -234,17 +230,11 @@ face: {
     ],
   },
 
-  sidebar: [
-    { kind: 'signal-flow', label: 'signal flow', stages: [
-      { label: 'BPM or CLOCK IN', role: 'generator' },
-      { label: 'SWING',      role: 'bus' },
-      { label: 'PLAYHEAD 0..LENGTH', role: 'bus' },
-      { label: 'STEP → GATE', role: 'bus', note: 'GATE duty' },
-      { label: 'STEP → PITCH', role: 'bus', parallel: true, note: 'step note, else ROOT' },
-      { label: '+ TRK OCT + GLOBAL OCT', role: 'bus', parallel: true, note: 'both, added' },
-      { label: 'QUEUE 1-4', role: 'generator', parallel: true, note: 'swaps the whole snapshot' },
-    ] },
-  ],
+  // ⚠ NO SIDEBAR. The draft carried a `signal-flow` block; that KIND WAS
+  // DELETED (#1468, owner ruling) — twelve modules declared hand-authored
+  // stage lists that nothing verified against the DSP. `graph/types.ts`
+  // states the rule: a chain picture must be DERIVED from something the
+  // build can check, or it must not exist. An empty sidebar is correct.
 }
 ```
 
@@ -255,12 +245,14 @@ terminal form: rather than metering the wrong jack, there is no jack to meter.
 **The hero picture carries the visual load instead.**
 
 ⚠ **Band 2's and band 5's labels are 42 and 51 characters** and both carry the finding.
-Label clipping is invisible to `faces-parity`, and a **tab rail is narrower than a band
-header**. Measure both. Fallbacks: `2 · pattern — LENGTH rescales EUCLID`,
-`5 · octaves — these ADD`.
+Label clipping is invisible to `faces-parity` (`toHaveText` reads `textContent`, and a
+CSS ellipsis leaves no trace). Measure both in the dock. Fallbacks:
+`2 · pattern — LENGTH rescales EUCLID`, `5 · octaves — these ADD`.
 
-⚠ `title` / `hint` / band hints are ANNOTATION and paint nothing at rest
-(`dock-faceplate-model.ts:90`).
+⚠ `face.title` / `face.hint` paint only under annotations (`facePageHeader`
+returns `null` before reading anything) and are not declared at all under the
+no-prose ruling. Band LABELS paint unconditionally; band HINTS paint on any
+non-railed dock face, which this one is (see the `pages` note above).
 
 ⚠ **`drumseqz-pitch-{n}` at rank 1 is legal; `drumseqz-euclid-{n}` at rank 7 is
 required.** The first is a declared `controlFamily` → `kind: 'family'`; the second is a
@@ -340,11 +332,16 @@ thing you count.
 
 ---
 
-## 9. COST — the most expensive VRT footprint in the batch
+## 9. THE THREE COSTS THAT ARE STRUCTURAL, NOT ARITHMETIC
 
-| | |
-|---|---|
-| **contract-lock** | **+1 line** (`drumseqz family drumseqz-euclid kind=cell prefix=drumseqz-euclid`). No audition; the transport is an existing exposed param. |
-| **ART** | none from the face. `art/scenarios/drumseqz/eucl-render.test.ts` exists with **no `art/baselines/drumseqz/`**, so it asserts properties. **The §4-A fix is a behaviour change with no pinned audio protecting it** — write the regression test with the fix. |
-| **VRT — ⚠ THE REQUIRED LANE** | **`drumseqz` IS in `STRICT_VRT_MODULES`** (`vrt-exemptions.ts:959`, "static at step 0 with no playhead"). The face itself adds 4 informational baselines, **but any change to `DrumseqzCard.svelte` re-captures a REQUIRED baseline on BOTH platforms.** The §4-A fix touches the card. **Budget the required re-capture into the DSP-fix PR, not the face PR**, and keep the two apart so a red `vrt-strict` has one cause. |
-| **e2e** | +1 `faces-parity` row. Cells: 18 params + the 16-cell `drumseqz-pitch` family + the panel. ⚠ **A `countParam: 'length'` family is 16 cells at the default and up to 128 if a test sets `length` high** — the parity row must pin `length` at its default or it becomes the most expensive row in the suite. At the default that is ≈ 35 driven cells ≈ **+28 s on one shard**, the largest in the batch. |
+- **⚠ `drumseqz` IS in `STRICT_VRT_MODULES`**, so **any change to
+  `DrumseqzCard.svelte` re-captures a REQUIRED baseline** — and the §4-A fix
+  touches the card. Budget that re-capture into the DSP-fix PR, not the face PR,
+  so a red `vrt-strict` has exactly one cause.
+- **ART: `art/scenarios/drumseqz/eucl-render.test.ts` exists with NO
+  `art/baselines/drumseqz/`**, so it asserts properties only. **The §4-A fix is a
+  behaviour change with no pinned audio protecting it** — write the regression
+  test with the fix.
+- **⚠ A `countParam: 'length'` family is 16 cells at the default and up to 128**
+  if a test raises `length`. The `faces-parity` row must pin `length` at its
+  default or it becomes the most expensive row in the suite.

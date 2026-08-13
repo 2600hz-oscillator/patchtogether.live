@@ -1,62 +1,66 @@
-# DSP correctness bugs — owner decision needed (from blind analysis §7)
+# DSP correctness bugs — what is STILL waiting on the owner
 
-> **⚡ 2026-08-04, LATER THE SAME DAY — THE OWNER SAID GO AND THREE SHIPPED.**
-> Tier A (both) and Tier B are now **FIXED**: #1366, #1368, #1367. What each one
-> measured is recorded at its item below. Still open: the **Tier C hihat wrap**
-> (needs the owner's explicit call, and should be decided together with the
-> identical pattern at `macrooscillator.ts:445`), the **relay
-> silent-loss-on-final-store** engineering discussion, and the **partial CI DB
-> schema**. The paragraph below is the state as of the morning re-verification
-> and is kept for the record.
->
-> **STATUS RE-VERIFIED 2026-08-04 against `origin/main`.** **Not one item below has
-> been fixed.** Four are now **MOOT** because the module was deleted out from under
-> them; **five are still fully open** and one (the CI schema) is partially addressed
-> by an unrelated change. Per-item status is inline (`▸ 2026-08-04:`). Nothing here
-> has been answered, so the document stands as written — it is a **pending decision
-> record**, not a history, which is why it is kept intact rather than trimmed.
->
-> | tier | item | 2026-08-04 |
-> |---|---|---|
-> | A | rbj-biquad `updatePeaking` Q not in cache key | ✅ **FIXED — #1366** |
-> | A | wavesculpt `master_gain` dead knob | ✅ **FIXED — #1368** (audio wired; the doc string is now TRUE) |
-> | B | helm 7th voice silent + slot-leaked | MOOT — helm deleted |
-> | B | elements `rawBuffer` never written | MOOT — elements deleted |
-> | B | toybox `wouldCreateCycle` false-positive | ✅ **FIXED — #1367** |
-> | C | helm LFO/glide per-BLOCK | MOOT — helm deleted |
-> | C | macrooscillator hihat phase-wrap DC latch | **STILL OPEN — needs your call** |
-> | C | elements `setMeta` wrong clamp bound | MOOT — elements deleted |
-> | — | CI applies an incomplete DB schema | **PARTIAL** — 005 was added, 002/003 still never applied |
-> | — | relay silent-loss-on-final-store | **STILL OPEN** — the engineering call was never made |
+The blind analysis found 7 verified DSP correctness bugs. **Five are closed** and
+their entries are deleted: `rbj-biquad` Q-not-in-cache-key (#1366), `wavesculpt`
+`master_gain` dead knob (#1368), `toybox` `wouldCreateCycle` false-positive
+(#1367), and three that went MOOT when `helm` (#1013) and `elements` (#1033)
+were deleted out from under them. The CI-schema item is closed too —
+`scripts/apply-db-schema.sh` now reads the DIRECTORY, so 002/003/004 are applied
+on every lane.
 
-The blind analysis found 7 verified DSP correctness bugs (all independently re-confirmed). I did NOT auto-fix them because **several change the sound of existing patches** — that's your call, not mine to ship silently. Sorted by risk so you can green-light per item. Reply with which to fix and I'll do each as a tested PR.
+Three things survive. Two need a decision that was never made; one is a latent
+defect that was measured, reported and deliberately left.
 
-## Tier A — SAFE to fix now (no change to existing patches; I'll just do these unless you say stop)
-- **`rbj-biquad.ts` `updatePeaking` Q not in cache key** — a Q-only change would return stale coefficients. *This is my own kick-drum code.* Zero behavior change today (both callers pass constant Q), pure latent-defect guard. One-line fix + a unit test that varies Q. **Recommend: fix.**
-  - ▸ **2026-08-04: FIXED — #1366.** Reproduced first: at `fc=150`, `+6 dB`, Q `1.0 → 8.0` returned **bit-identical** coefficients; a fresh biquad at Q=8 differs, so the identity was the cache. Audible error **1.85 dB at 299 Hz** — and both Q values read ≈+6 dB *at fc*, which is why any fc-centred probe was blind to it. Root cause was ARITY: a two-slot key guarding a three-input function; fixed with `k3`.
-    **Blast radius zero**: both callers (`kickdrum-dsp.ts:481,482`) pass Q as a LITERAL and kickdrum's def declares no Q param, so no shipped patch ever rendered differently. ART: zero `.f32` moved, all 136 fingerprints byte-identical.
-    ⚠ **Left unfixed, reported**: `sr` is absent from **all five** guards in that file, and `k1`/`k2` carry different meanings per updater — measured, `updateLowShelf(250,4)` then `updateHighShelf(250,4)` returns the low shelf verbatim. Both latent today (no shared biquads, `sr` fixed per context).
-- **`wavesculpt.ts` `master_gain` dead knob** — declared "overall output level" (0..2) but the bus gains are pinned to 1 and never read it; moving the knob does nothing. Fixing it wires the knob to the bus gain. Existing patches sit at the default — as long as I keep the default = unity (1.0), no existing patch changes; only someone who *moves* the (currently dead) knob is affected, which is the intended behavior. **Recommend: fix (default-unity, verified).**
-  - ▸ **2026-08-04: FIXED — #1368.** `setParam` now drives the L/R bus gains and the shader uniform keeps working; the card imports `clampMasterGain` from the def instead of re-typing the range, so the two consumers cannot drift apart again. **`defaultValue: 1` (unity) bounds the risk**: a rack that never moved the knob is bit-for-bit unaffected, pinned by a test. Only a rack where it WAS moved changes — and since driving the picture was all it did, that was for visual reasons. ⚠ The VRT alone could not have confirmed the video path (every scene renders at the default, where a dropped uniform and a correct one look identical), so a source-level gate was added and verified red by stubbing the feed to a literal `1.0`. `docs.outputs.L` also claimed "post MASTER GAIN" and was equally false; both are now true. **Original finding, for the record:** `wavesculpt.ts:1038-1039` still pins `busL.gain.value = 1; busR.gain.value = 1;` with no `setParam` handler for `master_gain`. Meanwhile the param DID acquire a consumer — but a **video** one: `WavesculptCard.svelte:2352` feeds it to the `uMasterGain` shader uniform. So the knob is live on the picture and dead on the audio, while the shipped co-located doc string (`wavesculpt.ts:932`) still tells the user it is the "overall output level of the summed audio mix (L/R)". **That doc sentence is currently false** — a docs gate reading only the def cannot see it.
+---
 
-## Tier B — ADDS missing sound (currently silent/broken; fixing can only add, not alter existing intended output)
-- **`helm.ts` 7th voice silent + slot-leaked** — `allocateVoice(8)` hands out 8 slots but render/free only cover 6, so the 7th held note is silent AND leaks its slot. Fixing makes 7+ note polyphony audible. Low risk (no one's relying on a note being silent). **Recommend: fix.**
-  - ▸ **2026-08-04: MOOT.** `helm`, `polyhelm` and `hydrogen` were deleted in **#1013**; no `helm*` file exists in the tree.
-- **`elements.ts` `rawBuffer` never written** — at low `space` (≤0.05) the aux channel is zeroed because the crossfade reads an all-zero buffer. Fixing restores aux audio at low space. Changes output only in the currently-broken (silent) region. **Recommend: fix, but it's an Elements/MI port so worth an ear-check after.**
-  - ▸ **2026-08-04: MOOT.** `elements` was deleted in the 15-module purge **#1033**.
-- **`toybox-combine-graph.ts` `wouldCreateCycle` false-positive** — a valid forward wiring is wrongly rejected as a cycle when a layer-input feedback edge exists first (video, not audio). Fixing lets a legal patch connect. **Recommend: fix.**
-  - ▸ **2026-08-04: FIXED — #1367.** Swept as a property against `topoSort` as ground truth over all 54 candidate edges: old `wouldCreateCycle` disagreed with the evaluator on **23**, the caller-side exemption on **12**, the fix on **0**. The two halves had been walking different graphs since the tap feature landed. Fixed in the graph WALK (drop taps already in `g` from the adjacency, take `toPort` so a prospective tap is recognised) rather than the caller, so the next `validateConnect` call site inherits it. Not a weakening: a source's only inbound port is `in0` and every `in0`-into-source edge is a tap, so it removes exactly what the evaluator ignores. **Original finding, for the record:** `validateConnect` gained an exemption at `toybox-combine-graph.ts:940` — but it only exempts the edge **being added** (`!isLayerInputEdge(g, to, toPort)`). `wouldCreateCycle` (`:866-883`) still builds its adjacency from **all** of `g.edges`, so a layer-input feedback edge that is **already present** still closes a false cycle for the next forward wiring. That is exactly the reported case.
+## 1. `macrooscillator` hihat phase-wrap DC latch — NEEDS THE OWNER'S CALL
 
-## Tier C — CHANGES existing patch sound (needs your explicit OK — do NOT ship without it)
-- **`helm.ts` LFO + step-glide run once per BLOCK, not per sample (HIGH)** — every Helm LFO and glide runs **~128× too slow** (a "4 Hz" LFO is really ~0.03 Hz). Fixing makes them correct — i.e. every existing Helm patch's modulation suddenly runs ~128× faster. Huge audible change. Options: (a) fix + accept existing patches shift; (b) fix + rescale the rate param so the *knob* stays visually the same but now accurate; (c) leave as-is (the bug has effectively defined Helm's LFO feel). **Needs your call.**
-  - ▸ **2026-08-04: MOOT.** helm deleted in **#1013**. The decision this asked for is no longer needed.
-- **`macrooscillator.ts` hihat phase-wrap DC latch** — above ~5.4 kHz × ratio the square latches to DC, collapsing high-ratio partials. Fixing changes the hihat timbre at high pitch/ratio. **Needs your call (ear-dependent).**
-  - ▸ **2026-08-04: STILL OPEN — this is the one Tier-C decision that is still live.** `HihatEngine.tick` (`packages/dsp/src/macrooscillator.ts:1038-1039`) is still the single-subtraction wrap `this.phases[i] += (freq*ratio)/sr; if (this.phases[i] >= 1) this.phases[i] -= 1;`, over `HIHAT_RATIOS` topping out at **8.21**. ⚠ **The identical pattern also sits at `:445-446` in a second engine** — whoever takes the decision should check whether that one is reachable at the same increments before fixing only the hihat.
-- **`elements.ts` `setMeta` clamps to wrong bound** — at max strike it selects exciter model FLOW instead of the intended PARTICLES range. Fixing changes which exciter you get at the top of the strike knob. **Needs your call.**
-  - ▸ **2026-08-04: MOOT.** elements deleted in **#1033**.
+**Re-verified 2026-08-12: still the single-subtraction wrap.**
+`HihatEngine.tick` (`packages/dsp/src/macrooscillator.ts:1038-1039`):
 
-## Non-DSP, separately actionable (from other lanes)
-- **CI applies only `001_init.sql`** (never 002_feedback / 003_saved_groups) → feedback + saved-groups DB paths are untested in CI. Safe infra fix, no product risk. **Recommend: fix (can auto-merge).**
-  - ▸ **2026-08-04: PARTIALLY ADDRESSED, and the gap is now narrower than the headline.** All 14 schema-apply steps across the workflows now run `001_init.sql -f 005_rackspace_mode.sql`. `002_feedback.sql`, `003_saved_groups.sql` and `004_rack_update_journal.sql` all exist in `db/schema/` and are still **never applied in CI**. So the finding holds for 002/003/004; only 005 got picked up (and by a different PR, not this decision).
-- **Relay silent-loss-on-final-store** — narrower than the blind report framed it (the swallow is deliberate crash-prevention; Hocuspocus re-stores on the next debounce while loaded). The real gap is the last-client-leaves final store. Fixing it trades crash-safety vs durability — **your engineering call**, worth a short discussion before I touch the deliberate crash-guard.
-  - ▸ **2026-08-04: STILL OPEN.** `packages/server/src/db.ts:190-208` still swallows and still logs `persist FAILED (transient — relay stays up, will retry)`. The discussion this asks for has not happened.
+```ts
+this.phases[i] += (freq * ratio) / sr;
+if (this.phases[i] >= 1) this.phases[i] -= 1;
+```
+
+Above ~5.4 kHz × ratio the square latches to DC, collapsing high-ratio partials.
+`HIHAT_RATIOS` tops out at **8.21**. Fixing it changes the hihat timbre at high
+pitch/ratio — **ear-dependent, so it is not mine to ship silently.**
+
+⚠ **The identical pattern also sits at `:445-446` in a second engine** (still
+present). Whoever takes the decision should check whether that one is reachable
+at the same increments before fixing only the hihat.
+
+## 2. Relay silent-loss on the final store — NEEDS AN ENGINEERING DISCUSSION
+
+Narrower than the blind report framed it: the swallow is **deliberate
+crash-prevention**, and Hocuspocus re-stores on the next debounce while the doc
+is loaded. The real gap is the **last-client-leaves final store**.
+
+`packages/server/src/db.ts:225` still swallows and still logs
+`persist FAILED (transient — relay stays up, will retry)`. Fixing it trades
+crash-safety against durability, which is why it was never done unilaterally.
+**The discussion this asks for has not happened.**
+
+## 3. `rbj-biquad` — the residue that was reported and left unfixed
+
+#1366 fixed the arity bug (a two-slot key guarding a three-input function) by
+adding `k3`. **Re-verified 2026-08-12, both of these are still true** in
+`packages/dsp/src/lib/rbj-biquad.ts`:
+
+- **`sr` is absent from all five cache guards** (`:77`, `:95`, `:113`, `:131`,
+  `:147`). Latent only because `sr` is fixed per context today.
+- **`k1`/`k2` carry different meanings per updater**, so the guards collide
+  across updater kinds. Measured: `updateLowShelf(250, 4)` followed by
+  `updateHighShelf(250, 4)` returns **the low shelf verbatim**. Latent only
+  because no biquad is currently shared between updaters.
+
+Both become real the moment a biquad is shared or a second sample rate appears.
+
+---
+
+**Worth keeping from the closed items, because it is the reason the bug hid:**
+the Q-cache defect was invisible to any fc-centred probe. Both Q values read
+≈+6 dB *at fc*; the audible error was **1.85 dB at 299 Hz**. A probe placed
+where the filter is defined by its parameter is blind to a parameter that only
+shapes the skirt.

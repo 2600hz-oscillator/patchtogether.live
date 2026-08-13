@@ -265,8 +265,8 @@ function railOf(def: StereoPairDefLike, direction: PortDirection): readonly Ster
  *     a pair is invisible here and therefore stays two jacks by default, which
  *     is the safe direction;
  *   • a stem with MORE than one left or more than one right (ambiguous) — it
- *     is skipped, and `ambiguousStereoStems()` reports it so the count is
- *     ratcheted rather than silently zero;
+ *     is skipped, and `ambiguousStereoStems()` NAMES it so the blind spot is
+ *     an enumerable list rather than an unstated zero;
  *   • anything a CARD hardcodes. This reads the DEF; a card that hand-lists
  *     L/R descriptors can still disagree with it (the backdraft class). The
  *     PatchPanel-central collapse in PR-4 is what removes that second source.
@@ -320,8 +320,12 @@ export function allStereoPairs(def: StereoPairDefLike): StereoPair[] {
 
 /**
  * Stems on `def` that the token fallback REFUSED because the rail carries more
- * than one left or more than one right for that stem. Reported so the blind
- * spot is a ratcheted number instead of an unstated zero.
+ * than one left or more than one right for that stem. Returns the NAMES, so the
+ * blind spot is an enumerable list rather than an unstated zero — the caller
+ * asserts a property of it. (This used to say "a ratcheted number"; the three
+ * ceilings that phrasing referred to — DERIVED_PAIR_CEILING,
+ * MODULES_WITH_PAIRS_CEILING, UNPAIRED_AUDIO_PORT_CEILING — were deleted in the
+ * 2026-08-10 sweep, and no successor counter exists.)
  */
 export function ambiguousStereoStems(def: StereoPairDefLike): string[] {
   const found: string[] = [];

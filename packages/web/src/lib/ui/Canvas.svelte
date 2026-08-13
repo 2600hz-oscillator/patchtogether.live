@@ -53,7 +53,7 @@
   import {
     COLUMN_COUNT,
     SEND_BOX_COUNT,
-    columnForFlowX,
+    laneTargetForFlowPoint,
     sendBoxForFlowX,
     columnPitch,
     indexForDropY,
@@ -222,6 +222,7 @@
   // in an off-screen host when the shell swaps its lane card away.
   import { DOM_SOURCE_LANE_TYPES, needsHeadlessSourceMount } from '$lib/ui/workflow/dom-source-modules';
   import { nodeMedia } from '$lib/ui/media/node-media-registry';
+  import { nodePresent } from '$lib/ui/modules/node-present-registry.svelte';
   import { RACK_SIZE_DEFAULTS } from '$lib/ui/rack-sizes';
   // ModuleNameLabel moved INTO every module card's title chrome (see
   // ModuleTitle.svelte) when the floating-overhead NodeToolbar was dropped.
@@ -2008,9 +2009,16 @@
    *  against the live node set rather than hooked onto every delete path — a
    *  node removed by ANY route (context menu, lasso, undo, a peer's CRDT
    *  delete, Clear, a patch load) is swept here, so no delete site has to
-   *  remember to call disposeNode. */
+   *  remember to call disposeNode.
+   *
+   *  The NODE-OWNED PROJECTOR ($lib/ui/modules/node-present-registry) is swept
+   *  from the same place for the same reason: a "Present on second display"
+   *  popup used to die with its card's onDestroy, which under the shell is a
+   *  COLLAPSE. Graph lifetime is the only correct owner of both. */
   $effect(() => {
-    nodeMedia.sweep(snapshot.nodes.map((n) => n.id));
+    const liveIds = snapshot.nodes.map((n) => n.id);
+    nodeMedia.sweep(liveIds);
+    nodePresent.sweep(liveIds);
   });
 
   let headlessSourceNodes = $derived.by<ModuleNode[]>(() => {
@@ -3977,21 +3985,36 @@
         for (const n of moved) {
           const node = patch.nodes[n.id];
           if (!node || isPinnedNode(node) || n.id === WCOL_MIXER_ID || n.id === WCOL_CLIP_ID) continue;
-          // VIDEO cards belong to the video zone, never an audio channel — the
-          // column hit-test is X-only, so without this a videoOut dragged over a
-          // column band (below the baseline) would be swept into that channel.
+          // VIDEO cards belong to the video zone, never an audio channel. The
+          // Y gate below already excludes the video zone (it sits BELOW the
+          // baseline), but a video card dragged up INTO a lane band must still
+          // be refused — the video zone owns it wherever it is parked.
           if (node.domain === 'video') continue;
           const d = node.data as { channel?: number; sendSlot?: number } | undefined;
           const oldCh = typeof d?.channel === 'number' ? d.channel : null;
           const oldSlot = typeof d?.sendSlot === 'number' ? d.sendSlot : null;
-          // Hit-test the DROP against the ACTIVE pitch: under `?shell=1` the lanes
-          // render at the narrow pitch, so the dragged node's flow-X lives in that
-          // narrow frame — the resolved column/send (a persisted MEMBERSHIP scalar,
-          // never a position) must match what the user visually dropped on.
-          const band = columnForFlowX(n.position.x, wcolPitch);
           // Drop center uses the dragged card's OWN flush height (matches the
           // flush layout the sibling centers are computed against).
           const dropCenterY = n.position.y + wcolCardHeightPx(node.type) / 2;
+          // Hit-test the DROP against the ACTIVE pitch and the LIVE lane top:
+          // under `?shell=1` the lanes render at the narrow pitch and grow
+          // upward with the tallest stack, so the resolved column/send (a
+          // persisted MEMBERSHIP scalar, never a position) must match what the
+          // user visually dropped on. POSITION DECIDES MEMBERSHIP: a drop
+          // outside the painted band in EITHER axis is `null` → unassigned.
+          //
+          // The Y probe is the card's CENTER, not its top edge, so "is the card
+          // in the lane" survives the boundary: in legacy mode a full stack's
+          // top tile sits with its top edge EXACTLY on laneTopY, and a top-edge
+          // test would unassign it on a 1px nudge during an in-lane reorder.
+          // (X stays the top-left, unchanged — the columns are wider than the
+          // cards, and re-anchoring X would re-target existing side-of-band
+          // drops.)
+          const band = laneTargetForFlowPoint(
+            { x: n.position.x, y: dropCenterY },
+            wcolLaneTopY,
+            wcolPitch,
+          );
           if (typeof band === 'number') {
             if (oldCh === band) {
               // Reorder within the same column: index from the drop Y, against
@@ -4617,18 +4640,25 @@
 
   /**
    * Compute the workflow-column drop target for a spawn at `flowPos`, or null
-   * when the drop is on free canvas (no band) or not a workflow rack. Returns
-   * the channel (or send slot) + whether the drop is in the TOP THIRD of an
-   * occupied column (insert-at-top-of-chain vs append-at-bottom).
+   * when the drop is on free canvas (outside the painted lane band in EITHER
+   * axis) or not a workflow rack.
+   *
+   * POSITION DECIDES MEMBERSHIP: the hit-test point is the CURSOR (which is
+   * also the new card's top-left — the spawn is anchored under the cursor), and
+   * it must land inside the band the user can actually see. This used to be an
+   * X-ONLY test, which made the lanes infinitely tall: an LFO added "on the
+   * grid" well above the lanes, or in the video zone below the baseline, joined
+   * whichever channel shared its X and was teleported into that stack.
    */
   function wcolDropTarget(
     flowPos: { x: number; y: number },
   ): { channel?: number; sendSlot?: number } | null {
     if (!patch.nodes[WCOL_MIXER_ID]) return null;
-    // Resolve against the ACTIVE pitch (narrow under `?shell=1`): the spawn
-    // flow-pos comes from the cursor's screen→flow projection over the RENDERED
-    // (narrowed) lanes, so the column it lands in is a pitch-relative hit-test.
-    const band = columnForFlowX(flowPos.x, wcolPitch);
+    // Resolve against the ACTIVE pitch (narrow under `?shell=1`) and the LIVE
+    // lane top: the spawn flow-pos comes from the cursor's screen→flow
+    // projection over the RENDERED (narrowed, grown-upward) lanes, so the band
+    // it lands in is a pitch- AND height-relative hit-test.
+    const band = laneTargetForFlowPoint(flowPos, wcolLaneTopY, wcolPitch);
     if (typeof band === 'number') return { channel: band };
     if (band === 'send') return { sendSlot: sendBoxForFlowX(flowPos.x, wcolPitch) };
     return null;
@@ -6745,8 +6775,10 @@
     // at the deterministic column slot, and SUPPRESS the cable-splice (in-band
     // drops order by the column array, never by proximity-splice — the two
     // splice paths must not both fire on one drop).
-    // Video cards live in the video zone, not an audio channel; the column
-    // hit-test is X-only, so exclude video-domain spawns from column membership.
+    // Video cards live in the video zone, not an audio channel — refused here
+    // whatever the cursor is over (the video zone's own band sits BELOW the
+    // baseline, which wcolDropTarget already excludes, but a video card spawned
+    // with the cursor inside a lane must still stay out of the chain).
     const wcolDrop = type === 'cadillac' || domain === 'video' ? null : wcolDropTarget(spawnFlowPos);
     // Was the target send box empty BEFORE this drop? (First-FX auto-raise.)
     const wcolSendWasEmpty = wcolDrop?.sendSlot != null && wcolOrder('sends', wcolDrop.sendSlot).length === 0;

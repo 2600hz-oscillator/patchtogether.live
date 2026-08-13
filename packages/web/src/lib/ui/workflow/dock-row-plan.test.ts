@@ -33,6 +33,7 @@ import { listMetaModuleDefs } from '$lib/meta/module-registry';
 import type { ParamDef } from '$lib/graph/types';
 import { dockFacePlan, type DockFaceBand, type FaceControl, type FaceDefLike } from './curated-face';
 import { heroFacePlan, type FaceplateDefLike } from './dock-faceplate-model';
+import { STRICT_FACES } from './strict-faces';
 import {
   DOCK_ROW_MAX_CONTROLS,
   bandControlCount,
@@ -362,6 +363,19 @@ describe('cellWidthClass — the instrument, perturbed in both directions', () =
       { kind: 'grid', def: { type: 'x', params: [knobParam('p')], face: { paramCells: { p: 'grid' } } } },
       { kind: 'color', def: { type: 'x', params: [knobParam('p')], face: { paramCells: { p: 'color' } } } },
       { kind: 'fader', def: { type: 'x', params: [knobParam('p')], face: { paramCells: { p: 'fader' } } } },
+      // The pad is declared through `face.xyPads`, NOT `face.paramCells` — it
+      // binds a PAIR and that map is keyed by one id. Driving the real resolver
+      // through the real declaration field is the point of this sweep: an `xy`
+      // that only resolved from a hand-written `paramCells` entry would pass a
+      // fixture written the other way and fail on every real face.
+      {
+        kind: 'xy',
+        def: {
+          type: 'x',
+          params: [knobParam('p'), knobParam('q')],
+          face: { xyPads: [{ x: 'p', y: 'q' }] },
+        },
+      },
       { kind: 'momentary', def: { type: 'x', params: [knobParam('p')], face: { momentary: ['p'] } } },
       {
         kind: 'toggle',
@@ -462,7 +476,19 @@ describe('the live faces', () => {
     // A face roster this sweep can see at all (it would print an empty list if
     // the registry import ever stopped resolving — the "green because it looked
     // at nothing" failure).
-    expect(shapes.length).toBeGreaterThanOrEqual(20);
+    //
+    // ⚠ `>= 20` STOOD HERE (removed 2026-08-12, the no-ratchets sweep). It had
+    // real slack — 32 faced defs against a floor of 20 — so it was not yet
+    // biting, but it was a hand-typed integer over the SAME growing population
+    // that `module-face-lint`'s set identity now governs, i.e. the next one to
+    // go stale. Replaced with the derived form: the sweep must see exactly the
+    // promoted set, which cannot drift because both sides are read off the
+    // registry, and a name makes a fail-open registry import impossible to miss.
+    expect(shapes.length, 'the faced-def sweep looked at nothing').toBe(STRICT_FACES.size);
+    expect(
+      shapes.map((s) => s.split(':')[0]),
+      'the registry resolved but not the canonical faced module',
+    ).toContain('ringback');
   });
 
   it('bandControlCount counts CLUSTERED cells too — a cluster is not a section', () => {

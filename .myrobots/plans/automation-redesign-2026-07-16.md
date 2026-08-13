@@ -15,6 +15,15 @@
 > envelope editor, arranger automation, and Deluge-style clip-repeats.
 > The §"Param-jump policy" Phase 0 stack and the launchpad-first §UX are the
 > parts to re-check against today's code before building on them.
+>
+> **Spot-checked 2026-08-12:** layers 1 and 4 of the param-jump stack are BUILT —
+> `packages/web/src/lib/audio/hold-param.ts` owns `cancelAndHoldAtTime` and
+> `automation-touch.ts` fans `notifyAutomationTouch` out to registered
+> controllers. The rest of the nine-layer stack (de-zipper glide, soft-takeover,
+> author-a-value-at-map-time, absolute-vs-offset, explicit re-sync) was NOT
+> re-verified. The APPENDIX prior-art digest is kept deliberately: the un-built
+> layers it feeds — the card envelope editor, arranger automation and
+> Deluge-style clip repeats — would otherwise have to re-derive it.
 
 Source: workflow automation-adversarial-review (10 agents; Bitwig/Ableton/Deluge/Elektron prior art + 5 adversarial dimensions). Reviews current branch feat/clip-automation-lane @ 5b095107. Raw dimension dumps: see workflow output waqryhvlj.
 

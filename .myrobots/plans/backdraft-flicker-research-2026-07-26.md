@@ -9,23 +9,20 @@ display flicker as seen by our virtual camera.
 of light build up and fade away with zero or extremely subtle variations in camera
 position, orientation, etc."*
 
-> **TRIAGE 2026-08-04 — SHIPPED. Kept as the derivation, not as a plan.**
-> FLICKER is live in `packages/web/src/lib/video/modules/backdraft.ts` (the
-> emission-frequency table at `:310`, the `sinc` shutter argument at `:119/:343`),
-> and that file cites this document by path at `:105`. v1 = **#1181**; v2 landed
-> on top. BACKDRAFT has since been reworked twice more around it (**#1223/#1231**
-> the virtual camera + display, **#1260** "lose the display"), so treat the CARD
-> LAYOUT described here as historical while the physics stands.
-> Nothing in this file is outstanding work — it is the sourced model behind
-> shipped code, and it is referenced from source.
-
-> **UPDATE 2026-07-27 — v2 (`feat/backdraft-flicker-v2`).** v1 (PR #1181) shipped
-> the model in §5 and **strobed**. §0–§6 below are preserved as the v1 record —
-> in particular **§5.7's numbers are v1's and are no longer current** (the
-> shutter moved 0.5 → 0.25, and two camera-side terms were added). **§7 is the
-> v1 → v2 accounting**: why it strobed, every mechanism considered, which were
-> adopted and which were rejected and why, the per-position character notes, and
-> the genlock decisions for the two new positions. Read §7 for what ships today.
+> **SHIPPED — kept as the derivation, not as a plan. Re-verified 2026-08-12.**
+> FLICKER is live in `packages/web/src/lib/video/modules/backdraft.ts`, which
+> **cites this document by path at `:105`** — do not delete it without fixing the
+> citation. `BACKDRAFT_FLICKER_SHUTTER = 0.25` and
+> `BACKDRAFT_FLICKER_READOUT = 0.5` are exported there, matching §7. v1 = **#1181**;
+> v2 landed on top. **Nothing in this file is outstanding work.**
+>
+> **§0–§6 are the v1 record**; §5's SHUTTER is v1's 0.5, and §5.7's per-position
+> numbers were deleted in the 2026-08-12 sweep because they no longer describe the
+> code. **§7 is the v1 → v2 accounting and is what ships today**: why v1 strobed,
+> every mechanism considered, which were adopted, which were **rejected and why**
+> (§7.5's eigenvalue-zero argument and §7.6's AGC sensitivity argument are the two
+> worth reading before anyone proposes either again), the per-position character
+> notes, and the genlock decisions.
 
 ---
 
@@ -440,30 +437,13 @@ not a single additional float operation executes, and the CPU helper returns
 
 ### 5.7 Numbers
 
-`m = 0.85`, `SHUTTER = 0.5`, `READOUT = 0.5`, `f_cam = 60`:
-
-| position | f (Hz) | beat | frames/cycle | row depth | mean depth | A | mean gain range |
-|---|---|---|---|---|---|---|---|
-| OFF | – | – | – | 0 | 0 | 1 | `1` exactly |
-| 24 | 24.00 | 24 Hz | 2.5 | 0.795 | 0.744 | 1.199 | 0.477 … 2.091 |
-| 50 | 50.00 | 10 Hz | 6 | 0.627 | 0.463 | 1.060 | 0.635 … 1.485 |
-| 60 | 59.94 | 0.06 Hz | 1000 | 0.542 | 0.345 | 1.032 | 0.676 … 1.388 |
-
-0-D loop simulation (`I_{n+1} = clamp(src + g·F·I_{n−1})`, `src = 0.06`, `F = 1.0`,
-tail after 60-frame settle):
-
-| setting | min | max | fraction of frames at ceiling |
-|---|---|---|---|
-| **OFF** | **1.000** | **1.000** | **1.00** ← saturates and stays (today's behaviour) |
-| 24 Hz | 0.537 | 1.000 | 0.42 |
-| **50 Hz** | **0.502** | **1.000** | **0.33** ← builds and fades |
-| 60 Hz (59.94) | 0.199 | 0.452 | 0.00 |
-
-**Best oscillator: 50 Hz.** 6 virtual camera frames per beat is long enough for the
-loop to genuinely integrate up during the >1 half-cycle and drain during the <1 half —
-24 Hz's 2.5-frame cycle is too fast for the loop to travel far before reversing (it
-dithers rather than pulses), and 59.94 Hz's 16.7 s cycle is a slow swell rather than a
-pulse train. 50 Hz is therefore the acceptance-test setting.
+**Deleted 2026-08-12 — v1's per-position table was computed at `SHUTTER = 0.5` and
+had no 6 or 120 position. The current numbers, at the shipped `SHUTTER = 0.25`
+with the storage and shoulder terms in the signal path, are §7.7's table.** The
+one v1 conclusion worth carrying forward — *50 Hz is the best build-and-fade,
+because 6 virtual-camera frames per beat is long enough for the loop to integrate
+up and drain back down* — survives verbatim in §7.7 and is what the DRS e2e
+asserts the band on.
 
 ---
 
@@ -473,8 +453,11 @@ pulse train. 50 Hz is therefore the acceptance-test setting.
 |---|---|
 | **Deterministic & frame-rate independent** | `g` is a pure function of `frame.time` (the engine's accumulated simulation clock, the repo's Idiom-A pattern — LINES/TEXTMARQUEE), **quantised onto the fixed 60 Hz virtual-camera grid** (§5.4). Same settings ⇒ same evolution on 60 Hz, 120 Hz ProMotion, and SwiftShader. `frame.time` is also the clock pinned by `__videoEngineFreezeTime`, so the DRS harness can advance it in exact 1/60 s steps and get a bit-reproducible sequence — no wall-clock race on CI. |
 | **OFF byte-identical** | shader gate `if (uFlickerOn > 0.5)`; default `flicker = 0`; pure helper returns `enabled:false, gain:1, depth:0`. BACKDRAFT is `EXEMPT_FROM_VRT` so there are no baselines to move; behavioural + existing e2e are the empirical proof. |
-| **Discrete 4-position knob** | `curve: 'discrete'`, `min 0 max 3`, index → `[off, 24, 50, 60]`. Legacy card gets a labelled 4-button row (the FrametableCard MODE idiom, reusing BackdraftCard's existing `.mirror-row`/`.mirror-btn` CSS). The shell's unlabelled-detent gap for discrete params is a known batch-4 item and is **not** touched here. |
 | **DELAY coherence** | §2.5 — reasoned explicitly; automatic because `g` is a function of absolute simulation time, not of a per-tap counter. |
+
+(The v1 row describing a **4-position** knob and its legacy-card button row is
+deleted: the shipped control has **six** positions, and BACKDRAFT's card has been
+reworked twice since — #1223/#1231 the virtual camera, #1260 "lose the display".)
 
 ---
 

@@ -84,11 +84,14 @@
   $effect(() => fs.attach());
 
   // ---------- Present on a second display ----------
-  // Separate popup window on the chosen display fed THIS card's live canvas
-  // via a per-frame canvas blit; the main window stays interactive (unlike
-  // fullscreen). Capability-gated by the menu (getScreenDetails + >1 screen).
+  // Separate popup window on the chosen display, fed a per-frame blit of THIS
+  // NODE's engine output — not of this card's canvas, and not owned by this
+  // card at all (node-present-registry), so it survives a collapse. The main
+  // window stays interactive (unlike fullscreen). Capability-gated by the menu
+  // (getScreenDetails + >1 screen).
   const present = createPresent({
-    getCanvas: () => canvasEl,
+    nodeId: () => id,
+    engine: () => engineCtx.get(),
     fullscreen: fs,
   });
 
@@ -210,8 +213,10 @@
   onDestroy(() => {
     if (rafId !== null) cancelAnimationFrame(rafId);
     if (resizeAbort) resizeAbort.abort();
-    // Close any present popup + stop the blit loop when the card is gone.
-    present.dispose();
+    // NO present teardown here — deliberately. The projector belongs to the
+    // NODE, not to this card (see $lib/ui/modules/node-present-registry): under
+    // the shell a collapse unmounts the card, and closing the popup here is
+    // exactly the owner-reported "the output stops".
   });
 
   // ---------------- Resize handle ----------------

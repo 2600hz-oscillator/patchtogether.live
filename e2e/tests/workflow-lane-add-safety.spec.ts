@@ -51,13 +51,19 @@ function probeTimeoutMs(videoEngines: number): number {
 
 /** channel-columns.ts geometry under `?shell=1` (SHELL_COLUMN_W). */
 const SHELL_COLUMN_W = 216;
+/** COLUMN_BASELINE_Y — the lane band's BOTTOM edge. The drop hit-test is 2-D
+ *  (laneTargetForFlowPoint): a spawn anchor must be inside `[laneTopY,
+ *  COLUMN_BASELINE_Y)` in Y as well as inside a column in X, or it is free
+ *  canvas. Just above the baseline is in-band at every lane height. */
+const COLUMN_BASELINE_Y = 4320;
 
 const PINNED_MIXER = 'pinned-mixmstrs';
 const PINNED_CLIP = 'pinned-clipplayer';
 
-/** A flow-space spawn anchor inside channel column `ch` at the SHELL pitch. */
+/** A flow-space spawn anchor inside channel column `ch`'s painted band, at the
+ *  SHELL pitch. */
 function colPos(ch: number): { x: number; y: number } {
-  return { x: (ch - 1) * SHELL_COLUMN_W + 30, y: 40 };
+  return { x: (ch - 1) * SHELL_COLUMN_W + 30, y: COLUMN_BASELINE_Y - 40 };
 }
 
 async function gotoShellWorkflow(page: Page): Promise<void> {

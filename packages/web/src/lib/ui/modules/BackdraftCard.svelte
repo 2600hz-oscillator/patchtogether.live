@@ -327,9 +327,14 @@
   $effect(() => fs.attach());
 
   // Present on a second display: a separate popup fed by a per-frame blit of
-  // THIS canvas; the main window stays interactive. Capability-gated by the
-  // menu (getScreenDetails + >1 screen).
-  const present = createPresent({ getCanvas: () => canvasEl, fullscreen: fs });
+  // THIS NODE's engine output — not of the card's canvas, and not owned by this
+  // card at all (node-present-registry). The main window stays interactive.
+  // Capability-gated by the menu (getScreenDetails + >1 screen).
+  const present = createPresent({
+    nodeId: () => id,
+    engine: () => engineCtx.get(),
+    fullscreen: fs,
+  });
 
   // Full Frame (in-app): the card's chrome is hidden and the output surface
   // consumes the card border — the "wall of TVs" layout. Persisted in
@@ -524,8 +529,11 @@
   });
   onDestroy(() => {
     if (rafId !== null) cancelAnimationFrame(rafId);
-    // Close any present popup + stop its blit loop when the card is gone.
-    present.dispose();
+    // NO present teardown here — deliberately. The projector belongs to the
+    // NODE, not to this card (see $lib/ui/modules/node-present-registry): under
+    // the shell BACKDRAFT has no lane card at all, so collapsing its dock
+    // full-view unmounts this component, and closing the popup here IS the
+    // owner-reported "the output stops".
     if (edgesUnobserve) { try { edgesUnobserve(); } catch { /* */ } edgesUnobserve = null; }
   });
 

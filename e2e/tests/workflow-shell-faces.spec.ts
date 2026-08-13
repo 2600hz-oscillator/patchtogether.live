@@ -78,17 +78,32 @@ test.describe('P1 batch-1 curated faces (?shell=1)', () => {
     await expect(laneNode.locator('[data-testid="module-shell-placeholder"]')).toHaveCount(0);
 
     // FULL tier: adsr's 4-stage face outgrows the row → the 3-col PLATE grid.
-    // All four stages render as WHOLE cells; the glyph strip doesn't fit a
-    // 2-row plate, so it is not rendered in-lane at this tier (no clipping —
-    // the fit plan drops whole elements, never truncates them).
+    //
+    // ⚠ THREE STAGES, NOT FOUR, SINCE 2026-08-12, and the reason is a HEIGHT.
+    // Every adsr param declares a `format`, so every dial earns a readout line
+    // and every cell is 55 CSS px rather than the 42 px design row. Two such
+    // rows plus the 4 px gap is 118 px against a 112 px body, so the plate
+    // holds ONE row — and DECAY, rank 4, becomes dock-only alongside it.
+    //
+    // Before the plate's tracks were sized PER ROW this face rendered all four
+    // and the first three painted 9.0 CSS px OVER the fourth: `grid-auto-rows`
+    // is a fixed track and `align-items: start` spills rather than clips, so
+    // the A/D/S/R values sat on top of the knob beneath them. Whole cells or
+    // nothing is the guarantee; four overlapping cells was neither.
     await expect(shell).toHaveAttribute('data-shell-tier', 'full');
     await expect(shell.locator('.tile-body')).toHaveAttribute('data-body-layout', 'plate');
+    // ONE track, sized to the readout-bearing cells that fill it.
+    await expect(shell.locator('.tile-body')).toHaveAttribute('data-plate-row-h', '57');
     const tileBox = (await shell.boundingBox())!;
-    for (const paramId of ['attack', 'decay', 'sustain', 'release']) {
+    for (const paramId of ['release', 'attack', 'sustain']) {
       const cell = shell.locator(`[data-testid="control-${paramId}"]`);
       await expect(cell, `full: the ${paramId} cell renders`).toBeVisible();
       await expectWholeInside(cell, tileBox, `full: ${paramId} cell`);
     }
+    await expect(
+      shell.locator('[data-testid="control-decay"]'),
+      'full: DECAY is rank 4 and the plate holds one row of three — it is dock-only here',
+    ).toHaveCount(0);
     await expect(shell.locator('[data-glyph-kind]')).toHaveCount(0);
 
     // COMPACT (the glance tier): the row face — the designer's top-ranked
@@ -149,17 +164,34 @@ test.describe('P1 batch-1 curated faces (?shell=1)', () => {
     await expect(shell).toHaveAttribute('data-shell-type', 'kickdrum');
     await expect(laneNode.locator('[data-testid="module-shell-placeholder"]')).toHaveCount(0);
 
-    // FULL tier: kickdrum's 26-rank face → the PLATE grid, WHOLE rows only:
-    // exactly ranks 1-6 render (2 rows × 3 cols); rank 7+ (the audition,
-    // pitch_time, level, …) are NOT rendered in-lane — never clipped — and the
-    // dock has them. Ranks 1-6 are the WHOLE lane budget, by geometry.
+    // FULL tier: kickdrum's 26-rank face → the PLATE grid, WHOLE rows only.
+    //
+    // ⚠ RANKS 1-3, NOT 1-6, SINCE 2026-08-12 — a HEIGHT change, not a ranking
+    // one. Every ranked kickdrum param declares a `format`, so every dial earns
+    // a readout and every cell is 55 CSS px against the 42 px design row. Two
+    // such rows are 118 px in a 112 px body, so the plate holds ONE row of
+    // three and ranks 4+ join rank 7+ as dock-only. Before the tracks were
+    // sized PER ROW, all six rendered and the first three painted 9.0 CSS px
+    // over the second row.
+    //
+    // kickdrum is the worst case of the trade and worth naming as such: EVERY
+    // one of its cells is tall, so no arrangement of them fits two rows. Faces
+    // whose tall cell lands in the LAST row (cofefve, filter, resofilter,
+    // tidyVco) keep every cell they had.
     await expect(shell).toHaveAttribute('data-shell-tier', 'full');
     await expect(shell.locator('.tile-body')).toHaveAttribute('data-body-layout', 'plate');
+    await expect(shell.locator('.tile-body')).toHaveAttribute('data-plate-row-h', '57');
     const tileBox = (await shell.boundingBox())!;
-    for (const paramId of ['tune', 'sub_decay', 'drive', 'pitch_amt', 'body_level', 'click_level']) {
+    for (const paramId of ['tune', 'sub_decay', 'drive']) {
       const cell = shell.locator(`[data-testid="control-${paramId}"]`);
       await expect(cell, `full: rank cell ${paramId} renders`).toBeVisible();
       await expectWholeInside(cell, tileBox, `full: ${paramId} cell`);
+    }
+    for (const paramId of ['pitch_amt', 'body_level', 'click_level']) {
+      await expect(
+        shell.locator(`[data-testid="control-${paramId}"]`),
+        `full: ${paramId} is rank 4-6 and the plate holds one row of three — dock-only here`,
+      ).toHaveCount(0);
     }
     await expect(shell.locator('[data-testid="control-pitch_time"]')).toHaveCount(0);
     await expect(shell.locator('[data-testid="control-level"]')).toHaveCount(0);

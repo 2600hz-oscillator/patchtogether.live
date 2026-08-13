@@ -216,157 +216,24 @@ coefficient of variation 0.0000 / 0.0014 / 0.0221 / 0.3506 at 0 / 0.25 / 0.5 / 1
 
 ---
 
-## 5. THE FACE
+## 5–7 · DELETED 2026-08-12 (the face SHIPPED — #1467)
 
-```ts
-face: {
-  title: 'Random',
-  hint:
-    'Two generators on one clock: T makes gates, X makes CV sampled on them. DÉJÀ VU locks the loop ' +
-    'at 0.5, not at 1 — and the X one repeats LESS above 0.5, by design. LENGTH and X LENGTH do ' +
-    'nothing at all until their DÉJÀ VU is past the midpoint. STEPS does no quantisation below ' +
-    '~0.55, which is where it ships, so SCALE is inert at the defaults.',
-
-  order: [
-    'rate', 'deja_vu', 'spread', 't_bias', 'steps', 't_model',   // 1-6 = the lane budget
-    'marbles-loop-{n}',                                           // panel: first legal rank is 7
-    'length', 'x_deja_vu', 'x_length', 'scale', 'x_bias', 't_jitter', 'pw_mean',
-  ],
-  // SIX BANDS ⇒ the dock TAB RAIL, deliberately — the pentemelodica precedent. Two
-  // symmetric sections (T and X) with a shared clock is the shape `face.order` cannot
-  // express, and PF-21 row packing does not apply to a tabbed face.
-  pages: [
-    { id: 'clock',  label: '1 · clock — 3.75 to 3840 BPM',
-      hint: 'f = 2 Hz × 2^(RATE/12), measured exact. At the bottom of the fader that is ONE PULSE ' +
-            'EVERY 16 SECONDS. JITTER moves the inter-onset CV from 0.0000 to 0.3506.',
-      controls: ['rate', 't_jitter'] },
-    { id: 'tgates', label: '2 · T — the gates',
-      hint: 'BIAS splits t1 against t2 (measured 100 % → 1.6 % across the travel). PW sets the t1 ' +
-            'duty 3.75 % → 90.8 % and does NOT touch clk, which stays at exactly 50 %.',
-      controls: ['t_bias', 'pw_mean', 't_model'] },
-    { id: 'tloop',  label: '3 · T loop — locks at 0.5, saturated above',
-      hint: 'Measured period-N repetition: 36 % / 25 % / 100 % / 100 % / 100 % at DÉJÀ VU ' +
-            '0 / 0.25 / 0.5 / 0.75 / 1. LENGTH is bit-exactly inert below the lock.',
-      controls: ['deja_vu', 'length'] },
-    { id: 'xcv',    label: '4 · X — the voltages',
-      hint: 'SPREAD 0 pins all three X outputs to exactly 0; X BIAS at either end pins them to a ' +
-            'DC constant. Only the middle of both dials is random.',
-      controls: ['spread', 'x_bias'] },
-    { id: 'xquant', label: '5 · X quantiser — off below 0.55',
-      hint: 'Measured distinct values out of 155 samples: 155 / 155 / 155 / 22 / 15 / 5 / 3 at STEPS ' +
-            '0 / 0.25 / 0.5 / 0.6 / 0.75 / 0.9 / 1. The six SCALES are only all distinguishable ' +
-            'between STEPS 0.7 and 0.8; at 1.0 every scale collapses to octaves.',
-      controls: ['marbles-loop-{n}', 'steps', 'scale'] },
-    { id: 'xloop',  label: '6 · X loop — turning it UP repeats LESS',
-      hint: 'Measured exact repetition: 0 % / 100 % / 50.6 % / 31.3 % at X DÉJÀ VU 0 / 0.5 / 0.75 / 1. ' +
-            'The maximum of the knob is not the maximum of the behaviour.',
-      controls: ['x_deja_vu', 'x_length'] },
-  ],
-  glyph: 'meter',
-  paramCells: { t_model: 'grid', scale: 'grid' },   // §4-C — six named states each, and they will not fit a strip
-
-  hero: {
-    cell:    'marbles-loop-{n}',
-    control: 'deja_vu',
-    readouts: [
-      { label: 'clock',  valueId: 'marbles-bpm' },
-      { label: 'T loop', valueId: 'marbles-t-loop-state' },
-      { label: 'X loop', valueId: 'marbles-x-loop-state' },
-    ],
-  },
-
-  sidebar: [
-    { kind: 'signal-flow', label: 'signal flow', stages: [
-      { label: 'RATE → MASTER PHASE', role: 'generator', note: '2 Hz × 2^(st/12)' },
-      { label: 'JITTER',   role: 'bus' },
-      { label: 'T MODEL',  role: 'bus', note: 'six named, five distinct' },
-      { label: 'BIAS → t1 / t2', role: 'bus' },
-      { label: 'PW',       role: 'bus', note: 'gates only; clk stays 50 %' },
-      { label: 'X SAMPLE @ CLOCK', role: 'bus', parallel: true, note: 'the same phase drives both' },
-      { label: 'SPREAD · BIAS',    role: 'bus', parallel: true },
-      { label: 'QUANTISER',        role: 'bus', parallel: true, note: 'off below STEPS 0.55' },
-    ] },
-    { kind: 'presets', label: 'presets', entries: [
-      /* free clock · locked 8-bar loop (deja_vu 0.5, length 8) · quantised pentatonic
-         (steps 0.75, scale 2) · drum-ish (t_model 2, t_bias 0.35) — each pinned to a
-         MEASURED observable, so a preset is a claim rather than a mood. */
-    ] },
-  ],
-}
-```
-
-⚠ **SIX BANDS MEANS THE TAB RAIL, AND THAT IS THE POINT.** PF-21 row packing shares
-consecutive packable bands into one row — but a **tabbed face never packs**, and this
-module wants tabs: T and X are two instruments, and putting `deja_vu` next to
-`x_deja_vu` in one row would flatten exactly the distinction §4-B exists to teach.
-Same reasoning as pentemelodica.
-
-⚠ Band labels 1, 3, 5 and 6 are 26–44 characters and **all four carry the finding**.
-Label clipping is invisible to `faces-parity`. **Measure every one against the tab rail's
-width, which is narrower than a band header.** Fallbacks that keep the point:
-`1 · clock — 3.75…3840 BPM`, `3 · T loop — locks at 0.5`, `5 · quantiser — off below .55`,
-`6 · X loop — up = less`.
-
-⚠ `title` / `hint` / band hints are ANNOTATION and paint nothing at rest
-(`dock-faceplate-model.ts:90`).
-
-⚠ `marbles-loop-{n}` is rank 7 (`faceTierCap('full')` = 6, and a PANEL cannot be selected
-at a lane tier). Fourteen keys, so rank 7 is comfortable.
-
----
-
-## 6. DERIVED READOUTS
-
-### A. `marbles-bpm` — because "0 st" is not a clock
-
-```
-bpm = 120 · 2^(rate/12)
-```
-*Measured against the worklet:* 3.75 / 30 / 60 / **120** / 240 / 960 / 3840 BPM at rate
-−60 / −24 / −12 / 0 / +12 / +36 / +60. Exact.
-**NEGATIVE CONTROL — `t_jitter`.** The BPM must **not** move with jitter (measured IOI
-mean 6000 / 6000 / 5998 / 5970 samples at jitter 0 / 0.25 / 0.5 / 1.0 — the mean is
-stable to 0.5 % while the sd goes 0 → 2093). A readout that moved with jitter would be
-reporting the last interval, not the rate. **SECOND — `rate_cv`:** the whole point of a
-clock module is that its rate gets modulated; needs `readLive`.
-
-### B. `marbles-t-loop-state` / `marbles-x-loop-state` — the pair that carries §4-B
-
-Print `free` / **`LOCKED · 8`** / `locked, drifting 50 %`, per section.
-**NEGATIVE CONTROL — `length`.** At `deja_vu 0` the readout must print `free` and must
-**not** print a length, because LENGTH is measurably inert there (bit-identical output at
-length 1, 2, 4, 8, 16). A readout that showed "8" at deja_vu 0 would be advertising a
-control that does nothing. **SECOND CONTROL — `x_deja_vu` at 1.0:** the X readout must
-print *less* locked than at 0.5 (measured 31.3 % vs 100 %), i.e. it must be **non-monotone
-in the same direction the module is.** A derivation that simply scaled with the knob
-would be wrong at exactly the setting a player is most likely to try.
-⚠ **HONESTY TERM:** the repetition percentages above are measured over a finite window
-with one RNG seed. The readout should print the *declared* state (locked / drifting), not
-a fabricated percentage.
-
-### C. `marbles-quantiser-state` (sidebar) — "SCALE does nothing right now"
-
-Prints `off` below `steps ≈ 0.55`, `<scale name> · N degrees` above it, and
-`octaves only` at `steps ≥ 0.95`.
-**NEGATIVE CONTROL — `scale`.** Below the threshold the readout must be **invariant to
-SCALE**, which is exactly what the module measures (all six bit-identical, and no
-quantisation at all). **SECOND — `steps` at 0.75:** it must name the scale there, because
-that is the one band where all six are distinguishable. **This readout is the only place
-a player can learn §4-C**, and it is the reason `scale` is worth keeping on the face at
-all rather than deleting.
-
----
-
-## 7. THE BESPOKE CELL
-
-**LEGITIMATE — `marbles-loop-{n}`: the loop ring.** A ring of `length` slots with the
-current position marked, filled for T and X separately, shaded by how locked each section
-is, plus the quantiser's active degrees drawn as tick marks on a second ring. It answers
-§4-B and §4-C simultaneously and there is no number that can.
+The proposed `face` block, the derived-readout derivations and the
+bespoke-cell argument were deleted: the shipped def is the record, and the
+build re-measured the numbers it needed. §§1–4 (the measurements) and §8 (the
+defects) are kept.
 
 ---
 
 ## 8. ALREADY-WRONG
+
+> **Re-checked 2026-08-12.** **B is FIXED** — both selectors now declare
+> `options` (`marbles.ts:191, :202`). **A is still true but no longer only
+> recorded here** — the def states it (`marbles.ts:223`: "CLUSTERS is not
+> implemented in this port and behaves exactly as COIN, so the six positions are
+> five behaviours"), which documents it rather than fixing it. **C, D, E, F and
+> the spawn-default observation are unchanged** — `steps` still defaults to 0.5
+> (`marbles.ts:199`).
 
 - **A · `t_model` 1 (CLUSTERS) is BIT-IDENTICAL to `t_model` 0 (COIN)** on both gate
   outputs at three separate bias settings, with a passing negative control. §4-E. Six
@@ -394,12 +261,3 @@ is, plus the quantiser's active degrees drawn as tick marks on a second ring. It
   spawn defaults**, which is a different and more user-visible thing.
 
 ---
-
-## 9. COST — the most expensive face in the batch
-
-| | |
-|---|---|
-| **contract-lock** | **+1 line** for the panel family, **+12 lines** if the two `options` rosters land (six each). No audition. |
-| **ART** | none from the face. `art/scenarios/marbles/gate-and-cv.test.ts` exists; there is **no `art/baselines/marbles/`**, so the scenario asserts properties, not bytes — §8-A is a behaviour change with no pinned audio to protect it. |
-| **VRT** | not in `STRICT_VRT_MODULES`. +`face-marbles-{compact,dock}` × 2 = **4 informational baselines**. ⚠ **`marbles` FREE-RUNS (§3)**, so it is only the SECOND face in the roster that exercises #1420's pre-frame graph freeze. **Derive its glyph determinism the analogVco way — 10 separate processes, unmasked — before merging.** A tabbed six-band dock is also the tallest face scene in the batch; the dock VRT scene now runs at `FOLD_VIEWPORT` 1280×1400 with `unfoldDockPane()`, so height is covered, but check it. |
-| **e2e** | +1 `faces-parity` row, **15 cells** — the largest new row in the batch, ≈ +20 s on one shard on top of the ~8 s boot. Under the 2-minute bar, but it is the row to watch. |
