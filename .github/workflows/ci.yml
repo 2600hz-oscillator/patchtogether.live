@@ -2416,6 +2416,31 @@ jobs:
     # ruleset 16042163 now gates `vrt-strict`; full canvas vrt is informational
     # (may flake — see retro 2026-06-06).
     continue-on-error: true
+    # OFF THE PER-PR PATH (2026-08-12, #1506). Runs on main pushes, on manual
+    # dispatch, and on a PR carrying the `vrt-full` label — same shape as the
+    # behavioral lane's opt-in above.
+    #
+    # MEASURED, run 31648526721: this job takes 48.6 min. It is
+    # continue-on-error AND absent from the `ci` umbrella's needs, so it can
+    # block nothing — its entire per-PR effect was ~49 runner-minutes and an
+    # "all checks done" signal arriving ~32 min after the required contexts
+    # (slowest e2e shard 16.1 min, vrt-strict 15.2 min) had already settled.
+    # It also contended for runners with the ten e2e shards that DO gate.
+    #
+    # What still covers a PR: `vrt-strict` (REQUIRED, unchanged) and the
+    # separate vrt-changeset-gallery workflow, which fires independently on
+    # `paths: e2e/vrt/__screenshots__/**` and builds its OLD/NEW/DIFF review
+    # gallery from the committed PNGs — it never consumed this job's artifacts,
+    # so baseline review on a PR is unaffected.
+    #
+    # Add the `vrt-full` label to a PR when you want the whole sweep before
+    # merge (a broad render change, a suspected regression outside the strict
+    # subset). Re-labelling re-fires CI — `labeled` is in the trigger types.
+    if: >-
+      github.event_name == 'push'
+      || github.event_name == 'workflow_dispatch'
+      || (github.event_name == 'pull_request'
+          && contains(github.event.pull_request.labels.*.name, 'vrt-full'))
     runs-on: ubuntu-latest
     # ⚠ 20 -> 50 (2026-08-10), AND THIS IS A REAL RUNNER-MINUTES INCREASE —
     # flagged rather than buried, per CLAUDE.md's ">~2 min needs sign-off".

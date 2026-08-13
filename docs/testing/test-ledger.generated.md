@@ -19,7 +19,7 @@ source tree, so they cannot go stale. Prose + roadmap: `docs/testing/README.md`.
 Required status-check **contexts** (2 — branch ruleset 16042163; not in-repo,
 see `.claude/skills/pr-workflow.md`):
 - `typecheck + unit + ART + E2E`  (ci.yml:2248)
-- `vrt-strict (visual regression — strict subset)`  (ci.yml:2696)
+- `vrt-strict (visual regression — strict subset)`  (ci.yml:2721)
 
 Jobs gated THROUGH the `ci` umbrella (a failure of any blocks merge) — 11:
 - `actionlint`, `art`, `behavioral-smoke`, `build`, `build-web`, `dsp-build`, `e2e`, `typecheck`, `unit`, `webgl-attest`, `webgl-smoke`
