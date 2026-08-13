@@ -58,7 +58,7 @@ import { perPortDriverFor } from './_per-port-drivers';
 // Modules whose card body can't be rendered under bare spawnPatch (mirrors
 // modules.spec.ts SKIP_RENDER). For these modules we skip ALL three dims —
 // the dedicated specs at the cited paths cover their I/O.
-const SKIP_SPAWN: Record<string, string> = {
+export const SKIP_SPAWN: Record<string, string> = {
   group: 'requires data.children; covered by e2e/tests/grouping-phase1.spec.ts',
   cadillac: 'overlay sprite, not a flow card (zero ports); covered by e2e/tests/cadillac.spec.ts',
 };
@@ -92,7 +92,7 @@ const SKIP_SPAWN: Record<string, string> = {
 // What stays exempt: only the irreducibly-asset-or-ROM-bound modules
 // (~5-7 entries). Each has a one-line citation of the dedicated spec
 // that exercises the full path with the real asset present.
-const EXEMPT_OUTPUT_EMIT_MODULES: Record<string, string> = {
+export const EXEMPT_OUTPUT_EMIT_MODULES: Record<string, string> = {
   // ES9 — every output carries signal from PHYSICAL ES-9 hardware via the
   // es9-bridge native app's localhost WebSocket; neither exists in CI, so no
   // output can emit (module sits in its documented "bridge not found" idle
@@ -255,7 +255,7 @@ const EXEMPT_OUTPUT_EMIT_MODULES: Record<string, string> = {
 // partial-skip cases.
 //
 // Keep this list tight too (~10-15 entries).
-const EXEMPT_OUTPUT_EMIT: Record<string, string> = {
+export const EXEMPT_OUTPUT_EMIT: Record<string, string> = {
   // SIX STRUM — a plucked-string voice, silent until struck. Driving it in the
   // generic sweep would need a _drivers.ts gatePort entry, but _drivers.ts is a
   // collab-attest BASIS file, so that append forces a full collab re-attest
@@ -506,7 +506,7 @@ const EXEMPT_OUTPUT_EMIT: Record<string, string> = {
 
 // The EXACT key set of EXEMPT_OUTPUT_EMIT_MODULES, sorted. Deliberate
 // duplication: this array is the review surface and the merge-conflict surface.
-const PINNED_MODULE_EXEMPT_KEYS: readonly string[] = Object.freeze([
+export const PINNED_MODULE_EXEMPT_KEYS: readonly string[] = Object.freeze([
   'archivist', 'audioIn', 'blood', 'bluebox', 'cvBuddy', 'cvBuddyMini',
   'drumseqz', 'es9',
   'fader', 'featurecv', 'flipper', 'gamepad', 'illogic', 'joystick', 'macseq',
@@ -521,7 +521,7 @@ const PINNED_MODULE_EXEMPT_KEYS: readonly string[] = Object.freeze([
 // — split on the FIRST '.', which is what the sweep's `${mod.type}.${p.id}`
 // lookup does (module types contain no dot; port ids may contain '/', e.g.
 // 'timelorde.1/8').
-const PINNED_PER_PORT_EXEMPT_KEYS: readonly string[] = Object.freeze([
+export const PINNED_PER_PORT_EXEMPT_KEYS: readonly string[] = Object.freeze([
   'buggles.burst', 'buggles.clock',
   'doom.audio_l', 'doom.audio_r', 'doom.evt_door', 'doom.evt_gun_p1',
   'doom.evt_gun_p2', 'doom.evt_gun_p3', 'doom.evt_gun_p4', 'doom.evt_kill',
@@ -567,7 +567,7 @@ const PINNED_PER_PORT_EXEMPT_KEYS: readonly string[] = Object.freeze([
 // either module ever earns a driver and leaves the whole-module list, these
 // ports go live again and each reason deserves a fresh review, not a silent
 // resurrection.
-const PINNED_SHADOWED_PER_PORT_KEYS: readonly string[] = Object.freeze([
+export const PINNED_SHADOWED_PER_PORT_KEYS: readonly string[] = Object.freeze([
   'illogic.and', 'illogic.nand', 'illogic.not', 'illogic.or',
   'timelorde.1/12', 'timelorde.1/16', 'timelorde.1/32', 'timelorde.1/64',
   'timelorde.1/8',
@@ -578,7 +578,7 @@ const PINNED_SHADOWED_PER_PORT_KEYS: readonly string[] = Object.freeze([
 // is documentation only (MIDI-OUT-BUDDY's own comment says exactly that — it is
 // listed so the sweep records the intentional absence). Pinned so a SECOND one
 // cannot appear unnoticed and be mistaken for real coverage bookkeeping.
-const PINNED_MODULE_EXEMPT_WITHOUT_OUTPUTS: readonly string[] = Object.freeze([
+export const PINNED_MODULE_EXEMPT_WITHOUT_OUTPUTS: readonly string[] = Object.freeze([
   'midiOutBuddy',
 ]);
 
@@ -723,7 +723,7 @@ test('output-emit exemption lists are pinned key-by-key and anchored to REGISTRY
 // consequence isn't visible to the sweep — for that we rely on
 // e2e/tests/doom-keyboard-routing.spec.ts. Keep them OUT of the
 // exemption list so the sweep DOES pin "the input port wires up".
-const EXEMPT_INPUT_DRIVE: Record<string, string> = {
+export const EXEMPT_INPUT_DRIVE: Record<string, string> = {
   // ── TOYBOX: the two VIDEO inputs (inA / inB) only drive the output when a
   // LAYER selects that port as its source (layer.videoSource = 'inA'|'inB').
   // The default patch's layers select NEITHER, so a feed patched into inA/inB
@@ -743,7 +743,7 @@ const EXEMPT_INPUT_DRIVE: Record<string, string> = {
 // Maps an input port `type` → a SpawnNode + edge fragment that drives it.
 // Sources are chosen to be self-running (no further upstream needed) so
 // the sweep's wire-up step is uniform across types.
-type InputSource = {
+export type InputSource = {
   // SpawnNode to add upstream (id, type, domain).
   node: SpawnNode;
   // Output port id on the upstream source.
@@ -776,7 +776,7 @@ type InputSource = {
  *   image  → RASTERIZE.out (upcasts via canConnect mono-video → image)
  *   polyPitchGate → SEQUENCER.pitch    (the only self-running ppg source)
  */
-function pickInputSource(inputType: string, idPrefix: string): InputSource | null {
+export function pickInputSource(inputType: string, idPrefix: string): InputSource | null {
   switch (inputType) {
     case 'audio':
       return {
@@ -846,7 +846,7 @@ function pickInputSource(inputType: string, idPrefix: string): InputSource | nul
 // bridge — see #414); VIDEOOUT.in is the universal video-domain sink.
 // Pitch outputs land on SCOPE.ch1 too (the SCOPE accepts cv-family on
 // ch1 unmodified, the analyser reads the DC offset).
-type SinkSpec = {
+export type SinkSpec = {
   node: SpawnNode;
   inPort: string;
   /** sourceType to declare on the edge (matches the producer port's
@@ -855,7 +855,7 @@ type SinkSpec = {
   targetType: string;
 };
 
-function pickOutputSink(outputType: string): SinkSpec | null {
+export function pickOutputSink(outputType: string): SinkSpec | null {
   switch (outputType) {
     case 'audio':
     case 'cv':
@@ -882,7 +882,7 @@ function pickOutputSink(outputType: string): SinkSpec | null {
 
 // ────────── DOOM-asset gating ──────────
 
-async function doomAssetsPresent(page: Page): Promise<{ wasm: boolean; wad: boolean }> {
+export async function doomAssetsPresent(page: Page): Promise<{ wasm: boolean; wad: boolean }> {
   return await page.evaluate(async () => {
     let wasm = false, wad = false;
     try { wasm = (await fetch('/doom/doom.js', { method: 'HEAD' })).ok; } catch { /* ignore */ }
@@ -898,7 +898,7 @@ async function doomAssetsPresent(page: Page): Promise<{ wasm: boolean; wad: bool
  *  present after the engine has processed it (engine.addEdge could
  *  conceivably drop an edge silently if the source/target node wasn't
  *  ready — that's the #414 bug class repackaged). */
-async function readEdgeIds(page: Page): Promise<string[]> {
+export async function readEdgeIds(page: Page): Promise<string[]> {
   return await page.evaluate(() => {
     const w = globalThis as unknown as {
       __patch?: { edges: Record<string, { id: string }> };
@@ -909,7 +909,6 @@ async function readEdgeIds(page: Page): Promise<string[]> {
 
 // ────────── Tests ──────────
 
-test.describe.configure({ mode: 'parallel' });
 
 // Console-error policy lives in `_page-errors.ts` — ONE definition shared with
 // the behavioral sweep and gibribbon.spec.ts.
@@ -940,7 +939,7 @@ test.describe.configure({ mode: 'parallel' });
 // gate would miss it (and any future audio-domain module with a viewport).
 // Keying on the actual video PORTS catches every current + future heavy-GL
 // card generically — no per-module allow-list to keep in sync.
-function touchesVideo(mod: RegistryModule): boolean {
+export function touchesVideo(mod: RegistryModule): boolean {
   return (
     mod.hasVideoOutput ||
     mod.outputs.some((p) => p.type === 'video' || p.type === 'mono-video') ||
@@ -985,16 +984,16 @@ function touchesVideo(mod: RegistryModule): boolean {
 // historical 90 000 (30_000 base + 0 + 60_000). Every module's budget is
 // therefore >= what it gets today, with equality at zero ports — asserted
 // below, so this cannot silently become a loosening.
-const HEAVY_GL_MOUNT_MS = 60_000;
+export const HEAVY_GL_MOUNT_MS = 60_000;
 
-function heavyVideoTimeout(perPortScaled: number): number {
+export function heavyVideoTimeout(perPortScaled: number): number {
   return perPortScaled + HEAVY_GL_MOUNT_MS;
 }
 
 /** Base cost of ONE per-port test: nav + spawn + fixed setup, port count aside. */
-const PER_PORT_BASE_MS = 30_000;
+export const PER_PORT_BASE_MS = 30_000;
 /** Marginal cost of ONE more wired input on the wire-up sweep. */
-const PER_INPUT_MS = 2_000;
+export const PER_INPUT_MS = 2_000;
 
 /**
  * The wire-up sweep's budget for a heavy-GL module with `inputs` inputs.
@@ -1004,12 +1003,12 @@ const PER_INPUT_MS = 2_000;
  * below computes it from these constants rather than restating it, so it cannot
  * drift out of the comment.
  */
-function wireUpBudgetMs(inputs: number): number {
+export function wireUpBudgetMs(inputs: number): number {
   return heavyVideoTimeout(inputs * PER_INPUT_MS + PER_PORT_BASE_MS);
 }
 
 /** The OLD budget, kept only so the gates can prove nothing shrank. */
-function legacyWireUpBudgetMs(inputs: number): number {
+export function legacyWireUpBudgetMs(inputs: number): number {
   return Math.max(90_000, Math.max(45_000, inputs * PER_INPUT_MS + PER_PORT_BASE_MS));
 }
 
@@ -1023,7 +1022,7 @@ function legacyWireUpBudgetMs(inputs: number): number {
  * about. 0 means every port pays. The old budget returned **30** — inputs 0
  * through 30 all got the identical 90 000 ms, and scaling began at 31.
  */
-function budgetFlatUntilInputs(budget: (inputs: number) => number, limit = 200): number {
+export function budgetFlatUntilInputs(budget: (inputs: number) => number, limit = 200): number {
   for (let i = 0; i < limit; i++) if (budget(i + 1) > budget(i)) return i;
   return limit;
 }
@@ -1047,7 +1046,7 @@ function budgetFlatUntilInputs(budget: (inputs: number) => number, limit = 200):
 // addInitScript runs at document_start on every navigation for this page,
 // so a single call covers the spawnPatch re-navigations the inputs-accept
 // loop performs.
-async function freezeVideoRender(page: Page): Promise<void> {
+export async function freezeVideoRender(page: Page): Promise<void> {
   await page.addInitScript(() => {
     (globalThis as unknown as { __videoEngineFreezeRender?: boolean })
       .__videoEngineFreezeRender = true;
@@ -1057,7 +1056,7 @@ async function freezeVideoRender(page: Page): Promise<void> {
 // Helper: spawn a module solo (the canonical handle-presence + emit
 // setup), with a separate `extraNodes` / `extraEdges` for the upstream-
 // source or downstream-sink wiring.
-async function spawnSolo(
+export async function spawnSolo(
   page: Page,
   mod: RegistryModule,
   extraNodes: SpawnNode[] = [],
@@ -1083,101 +1082,13 @@ async function spawnSolo(
 // approach gives a clear failure message ("module X expected port Y but
 // it's missing") without exploding the shard count.
 
-test.describe('per-module per-port: handle presence', () => {
-  for (const mod of REGISTRY) {
-    const skipReason = SKIP_SPAWN[mod.type];
-    const title = `${mod.type}: every declared input + output renders as a handle`;
-    if (skipReason) {
-      test.fixme(`${title} [SKIPPED: ${skipReason}]`, () => {});
-      continue;
-    }
-    test(title, async ({ page }) => {
-      // Suppress the heavy per-frame video GL render for the whole iteration.
-      // This sweep asserts only DOM-level handle presence; the engine still
-      // mounts the card (shaders compiled, FBOs allocated → handles render),
-      // it just skips the (SwiftShader-bound) per-frame draw passes that
-      // otherwise dominate the wall-time of heavy WebGL cards. See
-      // VideoEngine.step()'s __videoEngineFreezeRender branch. No-op for
-      // non-video modules (only the video engine reads the flag). Keyed on
-      // touchesVideo (any video port), NOT domain — so audio-domain modules
-      // with a GL viewport (WAVESCULPT) also skip the per-frame draw.
-      if (touchesVideo(mod)) await freezeVideoRender(page);
 
-      await page.goto('/rack?shell=legacy&seed=none');
-
-      await spawnSolo(page, mod);
-
-      const card = page.locator(`.svelte-flow__node-${mod.type}`);
-      await expect(card, `${mod.type} card visible`).toBeVisible();
-
-      // Partition rendered handles into inputs (target) vs outputs (source).
-      // SOME modules (sequencer, score) declare an input AND an output with
-      // the SAME id ("clock" for both) — `[data-handleid="clock"]` matches
-      // BOTH, so we can't assert .toHaveCount(1) per id without first
-      // separating by Svelte Flow's source/target class. Same partition as
-      // io-spec-consistency.spec.ts.
-      const rendered = await card.locator('.svelte-flow__handle').evaluateAll((els) => {
-        const inputs: string[] = [];
-        const outputs: string[] = [];
-        for (const el of els) {
-          const id = el.getAttribute('data-handleid');
-          if (!id) continue;
-          const cls = el.getAttribute('class') ?? '';
-          if (cls.includes('source')) outputs.push(id);
-          else inputs.push(id); // 'target' or unspecified
-        }
-        return { inputs, outputs };
-      });
-      const renderedInputs = new Set(rendered.inputs);
-      const renderedOutputs = new Set(rendered.outputs);
-
-      // Per-port pinpoint assertion so failure messages name the offending
-      // port directly (rather than "expected 27 handles, got 26"). This is
-      // the regression net for the DOOM PR #393 class: drop a port from the
-      // def, this test fails by name.
-      for (const port of mod.inputs) {
-        expect(
-          renderedInputs.has(port.id),
-          `${mod.type}.${port.id} (input, type=${port.type}): handle present in card UI (rendered inputs: ${[...renderedInputs].sort().join(', ')})`,
-        ).toBe(true);
-      }
-      for (const port of mod.outputs) {
-        expect(
-          renderedOutputs.has(port.id),
-          `${mod.type}.${port.id} (output, type=${port.type}): handle present in card UI (rendered outputs: ${[...renderedOutputs].sort().join(', ')})`,
-        ).toBe(true);
-      }
-    });
-  }
-});
-
-// ────────── DIM 2: outputs emit ──────────
-//
-// For every declared output, route to a type-compatible sink and assert
-// the sink picks up a signal. Per-module test iterates the outputs
-// internally + emits exempt-skipped notes inline so a failure message
-// pinpoints the offending port.
-
-// ────────── The emit sweep's SKIP DECISION — ONE definition ──────────
-//
-// Every reason the emit sweep declines to run for a module, in one place, so
-// the test loop and the budget ratchet below cannot disagree about which tests
-// EXIST. They did disagree: the ratchet's private mirror re-read the two
-// EXEMPT_* lists and nothing else, so it was structurally blind to the
-// SKIP_SPAWN, effect-shape and pure-CV-utility skips — three of the five
-// reasons. It therefore priced `colourofmagic` (22 outputs, 1 020 s across two
-// attempts) as "the worst LIVE plan" when that test is `test.fixme`-d and has
-// never executed. A mirror that re-derives half a predicate reports a number
-// about a test that does not run; anchoring both callers to this function is
-// what makes the ratchet's subject the same as the loop's.
-//
-// Returns the skip reason (the suffix the fixme title carries) or null when the
-// module's emit test really runs.
-
-/** A module that has an `audio`/`video` input AND self-running outputs (FOXY's
- *  out_l/out_r ring even with no upstream because the wavetable oscillator is
- *  ticking; the `fm` input is OPTIONAL), so it takes the normal emit path. */
-const NOT_EFFECT_DESPITE_AUDIO_INPUT = new Set([
+// ── emit-budget helpers ───────────────────────────────────────────────────
+// Moved here because the heavy-GL BUDGET describe (now in -inputs) and the
+// outputs sweep BOTH call them. Leaving them beside one describe would have
+// made the split a cross-file reference, which is exactly how it first broke:
+// `ReferenceError: emitBudgetMs is not defined`.
+export const NOT_EFFECT_DESPITE_AUDIO_INPUT = new Set([
       'foxy',     // out_l/out_r ring at default tune=0
       'wavetableVco',
       'swolevco',
@@ -1213,12 +1124,12 @@ const NOT_EFFECT_DESPITE_AUDIO_INPUT = new Set([
  *  but typically 0 V / gate low, indistinguishable from "wire dead" via the
  *  scope-peak smoke. Covered by the dedicated specs at their respective names;
  *  per-port EXEMPT_OUTPUT_EMIT entries catch the slivers, this catches shape. */
-const PURE_CV_GATE_UTILITY = new Set([
+export const PURE_CV_GATE_UTILITY = new Set([
   'analogLogicMaths', 'fourplexer', 'unityscalemathematik',
   'cartesian', 'polyseqz', 'frogger',
 ]);
 
-function emitSkipReason(mod: RegistryModule): string | null {
+export function emitSkipReason(mod: RegistryModule): string | null {
   if (mod.outputs.length === 0) return 'no outputs';
   if (SKIP_SPAWN[mod.type]) return SKIP_SPAWN[mod.type]!;
 
@@ -1264,7 +1175,7 @@ function emitSkipReason(mod: RegistryModule): string | null {
 }
 
 /** Outputs the emit sweep actually visits — the ones it does NOT `continue` past. */
-function liveEmitOutputs(mod: RegistryModule): number {
+export function liveEmitOutputs(mod: RegistryModule): number {
   return mod.outputs.filter((p) => !EXEMPT_OUTPUT_EMIT[`${mod.type}.${p.id}`]).length;
 }
 
@@ -1291,7 +1202,7 @@ function liveEmitOutputs(mod: RegistryModule): number {
  * number — the emit sweep's cost is dominated by navigation and engine boot,
  * not by frames.
  */
-const PER_OUTPUT_MS = 5_000;
+export const PER_OUTPUT_MS = 5_000;
 
 /**
  * The emit sweep's budget for ONE module — the SINGLE definition, used by the
@@ -1304,7 +1215,7 @@ const PER_OUTPUT_MS = 5_000;
  * Returns 0 for a module whose emit test does not exist, so "the worst plan"
  * means the worst plan that RUNS.
  */
-function emitBudgetMs(mod: RegistryModule): number {
+export function emitBudgetMs(mod: RegistryModule): number {
   if (emitSkipReason(mod)) return 0;
   const live = liveEmitOutputs(mod);
   if (live === 0) return 0;
@@ -1327,712 +1238,15 @@ function emitBudgetMs(mod: RegistryModule): number {
   return touchesVideo(mod) ? heavyVideoTimeout(scaled) : scaled;
 }
 
-test.describe('per-module per-port: outputs emit signal', () => {
-  for (const mod of REGISTRY) {
-    if (mod.outputs.length === 0) continue;
-    const title = `${mod.type}: every declared output emits a measurable signal`;
-    const skipReason = emitSkipReason(mod);
-    if (skipReason) {
-      test.fixme(`${title} [SKIPPED: ${skipReason}]`, () => {});
-      continue;
-    }
-
-    test(title, async ({ page }) => {
-      test.setTimeout(emitBudgetMs(mod));
-
-      const errors = collectPageErrors(page);
-
-      const driver = driverFor(mod);
-      // Per-port driver: category-appropriate setup (page-init shim,
-      // pre-seeded params/data, additional upstream graph, post-spawn
-      // event dispatch). Null when the module needs no extra work
-      // beyond the default driver path. See _per-port-drivers.ts for
-      // the full registry + rationale.
-      const ppDriver = perPortDriverFor(mod.type);
-
-      // pageSetup MUST run before every navigation (the init script
-      // is bound to the page, not the document, so addInitScript
-      // re-installs the shim on each goto). Install once here AND on
-      // each per-output iteration below — `addInitScript` is idempotent
-      // (Playwright tracks it per-context, second call appends a second
-      // script but the shims are written defensively to no-op on
-      // re-install).
-      if (ppDriver?.pageSetup) await ppDriver.pageSetup(page);
-
-      // Loop over outputs serially within the test — each iteration
-      // re-navigates to '/' to get a fresh AudioContext + fresh engine.
-      // We CAN'T just spawnPatch+rebuild within a single navigation
-      // because the AudioContext keeps the previous SUT's audio sources
-      // alive (their .start() is sticky), and respawning the same SUT
-      // type mid-page sometimes leaves the engine's audio-bridge
-      // bookkeeping confused — NIBBLES.snake observed silent on iter 2
-      // but ringing on a fresh-page direct spawn. The goto() cost is
-      // ~1.5s per output; well worth the determinism.
-      for (const port of mod.outputs) {
-        const exemptReason = EXEMPT_OUTPUT_EMIT[`${mod.type}.${port.id}`];
-        if (exemptReason) {
-          // Log + continue. The handle-presence test already pinned
-          // this port; here we deliberately don't run signal-flow.
-          // eslint-disable-next-line no-console
-          console.log(`[per-port] SKIP emit ${mod.type}.${port.id}: ${exemptReason}`);
-          continue;
-        }
-
-        // FRESH NAVIGATION PER PORT — deliberate, and NOT the expensive part.
-        // Re-using one page would let iteration N-1's still-running audio source
-        // (an AudioBufferSourceNode's .start() is sticky) leak into iteration N
-        // and turn a dead port GREEN, so the nav stays.
-        //
-        // What is gone is the `waitForLoadState('networkidle')` that used to sit
-        // right here. MEASURED on clipplayer (24 ports, E2E_SWIFTSHADER=1):
-        // goto ~10 ms, networkidle ~1000 ms, spawn ~80 ms, read ~50 ms — the
-        // fixed wait was ~85 % of every iteration and ~24 s of the test's 30 s.
-        // It bought nothing: `networkidle` resolves 500 ms after the last
-        // request, which is a PROXY for app readiness, and the very next call —
-        // `spawnPatch` — waits for `__ensureEngine` to be bound, awaits the
-        // engine boot, and then waits for the requested node ids to mount on a
-        // FRAME budget. That chain is strictly stronger AND event-driven, so the
-        // quiet-window wait was a fixed cost in front of the real gate.
-        // (_helpers.ts already says as much at its HMR retry: "networkidle is
-        // too strict here".)
-        await page.goto('/rack?shell=legacy&seed=none');
-
-        const sink = pickOutputSink(port.type);
-        if (!sink) {
-          // Unknown port type — fail loudly so adding a new cable type
-          // forces a decision (extend pickOutputSink or add an exemption).
-          expect(
-            sink,
-            `${mod.type}.${port.id} (type=${port.type}): no sink known for type — extend pickOutputSink or add EXEMPT_OUTPUT_EMIT`,
-          ).not.toBeNull();
-          continue;
-        }
-
-        // SUT params: merge the per-port driver's seed params with the
-        // legacy _drivers.ts params (per-port wins on conflict so the
-        // category-aware driver controls e.g. isPlaying for sequencer).
-        const sutParams = { ...(driver.params ?? {}), ...(ppDriver?.params ?? {}) };
-        const sutNode: SpawnNode = {
-          id: 'sut',
-          type: mod.type,
-          position: { x: 400, y: 60 },
-          domain: mod.domain,
-          params: sutParams,
-        };
-        const nodes: SpawnNode[] = [sutNode, sink.node];
-        const edges: SpawnEdge[] = [
-          {
-            id: 'e-sut-sink',
-            from: { nodeId: 'sut', portId: port.id },
-            to:   { nodeId: sink.node.id, portId: sink.inPort },
-            sourceType: port.type,
-            targetType: sink.targetType,
-          },
-        ];
-        // Per-port driver upstream graph (BUGGLES → ILLOGIC.in1,
-        // SEQUENCER → STAGES.trig, ACIDWARP → VIDEOOUT.in, etc.).
-        if (ppDriver?.upstream) {
-          const extra = ppDriver.upstream('sut');
-          nodes.push(...extra.nodes);
-          edges.push(...extra.edges);
-        }
-        if (driver.gatePort || driver.pitchPort) {
-          nodes.unshift({
-            id: 'driver-seq',
-            type: 'sequencer',
-            position: { x: 60, y: 280 },
-            params: { bpm: 240, length: 4, isPlaying: 1, gateLength: 0.5 },
-          });
-          if (driver.gatePort) {
-            edges.unshift({
-              id: 'e-seq-g',
-              from: { nodeId: 'driver-seq', portId: 'gate' },
-              to:   { nodeId: 'sut',        portId: driver.gatePort },
-              sourceType: 'gate',
-              targetType: 'gate',
-            });
-          }
-          if (driver.pitchPort) {
-            edges.unshift({
-              id: 'e-seq-p',
-              from: { nodeId: 'driver-seq', portId: 'pitch' },
-              to:   { nodeId: 'sut',        portId: driver.pitchPort },
-              sourceType: 'pitch',
-              targetType: 'cv',
-            });
-          }
-        }
-
-        await spawnPatch(page, nodes, edges);
-
-        // Seed SUT-side node.data BEFORE the engine reads it on the
-        // next tick. Sequencer-family modules read data.steps each
-        // tick from livePatch, so writing here is picked up within ~25ms.
-        if (ppDriver?.data) {
-          await page.evaluate(({ id, data }) => {
-            const w = globalThis as unknown as {
-              __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
-              __ydoc: { transact: (fn: () => void) => void };
-            };
-            w.__ydoc.transact(() => {
-              const n = w.__patch.nodes[id];
-              if (!n) return;
-              if (!n.data) n.data = {};
-              for (const [k, v] of Object.entries(data)) n.data[k] = v;
-            });
-          }, { id: 'sut', data: ppDriver.data });
-        }
-
-        // Post-spawn dispatch (synthetic keypresses, MIDI sends,
-        // sequencer-step seeding for driver-seq under the upstream graph).
-        if (ppDriver?.postSpawn) await ppDriver.postSpawn(page, 'sut');
-
-        if (driver.gatePort || driver.pitchPort) {
-          await page.evaluate(() => {
-            const w = globalThis as unknown as {
-              __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
-              __ydoc: { transact: (fn: () => void) => void };
-            };
-            w.__ydoc.transact(() => {
-              const seq = w.__patch.nodes['driver-seq'];
-              if (!seq) return;
-              if (!seq.data) seq.data = {};
-              seq.data.steps = [
-                { on: true, midi: 60 },
-                { on: true, midi: 64 },
-                { on: true, midi: 67 },
-                { on: true, midi: 72 },
-              ];
-            });
-          });
-        }
-
-        // ── THE OBSERVATION WINDOW IS A BOUND, NOT A GATE ──────────────────
-        //
-        // It used to be a GATE, sized by guesswork: 800 ms for a same-domain
-        // scope read, 1 200 for a gate port, 2 000 cross-domain, ≥3 000 for a
-        // heavy-GL module. Every one of those numbers was fiction, because the
-        // loop underneath spent `polls × round-trip` rather than `totalMs` —
-        // MEASURED at 11.4 s for a stated 1 200 ms. The tiering was therefore
-        // never doing the job it was written for; the OVERRUN was.
-        //
-        // Proof that the overrun was load-bearing, not incidental: with the
-        // window made real at its stated 800 ms, `sampleHold.cv_quant` FAILED
-        // (`samples=25 over 811 ms`, peak 0.0000) — and probing it with a
-        // 20 s window shows why. Its signal appears at **1 141 ms**. The stated
-        // window had been too small for that port since it was written; only
-        // the accidental ~10× overrun ever covered it. Restoring the tiering
-        // as-is would ship a real timeout.
-        //
-        // So the window is now sized as what it actually is — a FAILURE BOUND,
-        // per CLAUDE.md ("keep a wall-clock cap only to bound the failure,
-        // never as the gate"). The GATE is the early-out: `observeScopePeak`
-        // returns the instant ch1 clears the floor, so a healthy port pays its
-        // own signal latency (MEASURED: 30–90 ms for continuous CV/audio,
-        // 1 141 ms for the slowest live port) and NOT the window. Making the
-        // bound generous therefore costs the happy path nothing, while removing
-        // the whole class of "the guessed number was 40 % too small".
-        //
-        // The tiering is gone with it: three tiers that were never the real
-        // window are three numbers to get wrong. One bound, one heavy-GL bound.
-        const HEAVY_GL = touchesVideo(mod);
-        // Bounds a dead port. 4.4× the slowest measured live port (1 141 ms),
-        // so a CI runner would have to be >4× slower than a local preview run
-        // before this became the gate again.
-        const OBSERVE_BOUND_MS = 5_000;
-        // Heavy-WebGL modules (touchesVideo) mount a GL pipeline on CI's
-        // SwiftShader before the audio graph warms up, so a continuous tap
-        // (WAVESCULPT.L) can still be ramping — the "peak=0, polls=1" symptom
-        // the old ≥3 s floor was added for. Same reasoning, bigger bound.
-        const OBSERVE_BOUND_HEAVY_GL_MS = 8_000;
-
-        // Read the sink. Audio-domain sink (SCOPE) → analyser snapshot.
-        // Video-domain sink (VIDEOOUT) → canvas-pixel statistics.
-        if (sink.node.type === 'scope') {
-          // The peak-hold runs IN THE PAGE on a 30 ms interval — below the
-          // analyser's ~43 ms refresh (fftSize 2048 @ 48 kHz), so a gate pulse
-          // cannot fall between two readings — and comes back over ONE round
-          // trip. That contiguity is what the old loop's comment claimed and
-          // its ~420 ms real spacing could not deliver. See observeScopePeak.
-          const boundMs = HEAVY_GL ? OBSERVE_BOUND_HEAVY_GL_MS : OBSERVE_BOUND_MS;
-          const obs = await observeScopePeak(page, sink.node.id, {
-            windowMs: boundMs,
-            floor: 0.005,
-          });
-          // INSTRUMENT BEFORE FINDING. `maxPeak = 0` from a window that took no
-          // readings is not evidence about the port — the old loop's
-          // `if (!snap) continue` made "the engine handle never resolved" print
-          // exactly like "the output is dead". Fail as an instrument first.
-          expect(
-            obs.samples,
-            `${mod.type}.${port.id}: the scope observation took NO readings in `
-            + `${Math.round(obs.elapsedMs)} ms (bound=${boundMs} ms) — the engine/scope handle `
-            + `never resolved, so this run says NOTHING about whether the port emits. `
-            + `This is an instrument failure, not a dead port.`,
-          ).toBeGreaterThan(0);
-          expect(
-            obs.maxPeak,
-            `${mod.type}.${port.id} (type=${port.type}): scope.ch1 peak above floor `
-            + `(maxPeak=${obs.maxPeak.toFixed(4)}, lastRms=${obs.lastRms.toFixed(4)}, `
-            + `samples=${obs.samples} over ${Math.round(obs.elapsedMs)} ms of a ${boundMs} ms `
-            + `bound, unpatched ch2 peak=${obs.maxPeakCh2.toFixed(4)})`,
-          ).toBeGreaterThan(0.005);
-        } else {
-          // Video output → VIDEOOUT canvas stats. We assert TWO floors:
-          //   * any-nonblack pixel fraction > 0.1% — catches a totally
-          //     blank canvas (the regression case: video bridge dropped
-          //     the edge or the source's drawFrame() noop'd).
-          //   * variance threshold — calibrated per cable type. `video`
-          //     outputs typically fill the frame, so >5 is fine (matches
-          //     wavecel-video-outs). `mono-video` outputs are often
-          //     waveform-scope renders (a thin trace on a near-black
-          //     canvas) where variance is intrinsically low; >0.5 is
-          //     the floor where a SINGLE-PIXEL trace clears noise.
-          // When the SUT is itself a videoOut module, BOTH the SUT and
-          // the sink render `data-testid="video-out-canvas"` so the
-          // locator matches 2 elements. Use `.last()` to target the
-          // sink (added to the patch AFTER the SUT, so its canvas is
-          // mounted last and represents what came OUT of the SUT's
-          // passthrough). For non-videoOut SUTs, count is 1 and last()
-          // == only().
-          const canvases = page.locator('canvas[data-testid="video-out-canvas"]');
-          await expect(canvases, `${mod.type}.${port.id}: video-out canvas present`).not.toHaveCount(0);
-          const canvas = canvases.last();
-          const stats = await canvas.evaluate((el) => {
-            const c = el as HTMLCanvasElement;
-            const ctx = c.getContext('2d');
-            if (!ctx) return null;
-            const img = ctx.getImageData(0, 0, c.width, c.height);
-            const w = c.width, h = c.height;
-            let n = 0, sum = 0, sumSq = 0, nonBlack = 0;
-            for (let y = 0; y < h; y++) {
-              for (let x = 0; x < w; x++) {
-                const i = (y * w + x) * 4;
-                const v = (img.data[i]! + img.data[i + 1]! + img.data[i + 2]!) / 3;
-                sum += v; sumSq += v * v;
-                // Threshold at 1 (essentially "any pixel above pure 0").
-                // mono-video waveform-scope traces antialias down to v~10-30
-                // at the trace center but the dimmest edge pixels are
-                // v~2-5; setting the floor at 1 catches the trace + the
-                // anti-aliased shoulder without claiming pure-black canvases.
-                if (v > 1) nonBlack++;
-                n++;
-              }
-            }
-            const mean = sum / n;
-            return { variance: sumSq / n - mean * mean, nonBlackFrac: nonBlack / n, n };
-          });
-          expect(stats, `${mod.type}.${port.id}: video stats read succeeded`).not.toBeNull();
-          if (!stats) continue;
-          // Variance floor: relatively loose because bare-spawn video
-          // outputs often render THIN content (a 1-pixel scope trace, a
-          // single-line 3D wavetable) on a near-black canvas — variance
-          // is dominated by background. The nonBlackFrac assertion above
-          // already pins "the canvas is not pure black"; variance > 0.5
-          // is the secondary "the painter actually painted SOMETHING with
-          // contrast" check. wavecel-video-outs.spec.ts asserts >5
-          // SPECIFICALLY because its scene drives an upstream VCO — that
-          // test's upstream-source pattern is the right way to assert
-          // a stronger floor.
-          const varianceFloor = 0.5;
-          expect(
-            stats.nonBlackFrac,
-            `${mod.type}.${port.id} (type=${port.type}): canvas non-blank fraction above floor (nonBlackFrac=${stats.nonBlackFrac.toFixed(4)}, variance=${stats.variance.toFixed(2)})`,
-          ).toBeGreaterThan(0.001);
-          expect(
-            stats.variance,
-            `${mod.type}.${port.id} (type=${port.type}): video-out canvas variance above floor (variance=${stats.variance.toFixed(2)}, floor=${varianceFloor})`,
-          ).toBeGreaterThan(varianceFloor);
-        }
-      }
-
-      expect(
-        errors.significant(),
-        `${mod.type} outputs-emit: no console / page errors (a failed resource load — a 404'd `
-        + `worklet, a dropped static asset — reads as "Failed to load resource" with the url in `
-        + `brackets; see _page-errors.ts for the named optional-asset exemptions)`,
-      ).toEqual([]);
-    });
-  }
-});
-
-// ────────── DIM 3: inputs accept ──────────
-//
-// For every declared input, spawn a type-compatible upstream source,
-// patch the edge, assert the edge materialises + no console errors.
-// This is the "wire-up" coverage — strictly weaker than verifying a
-// downstream effect, but strong enough to catch:
-//   * input port disappearing from the def (regression — failure: pick
-//     fails because mod.inputs no longer contains the port we expected,
-//     OR the edge insert fails because the engine rejects the port id)
-//   * cable-type drift (input typed `cv` in the def but `audio` in the
-//     engine's port table → addEdge rejects it → edge missing post-spawn)
-//   * console-error storms (a buggy input handler that throws on first
-//     CV value)
-
-test.describe('per-module per-port: inputs accept signal (wire-up)', () => {
-  for (const mod of REGISTRY) {
-    if (mod.inputs.length === 0) continue;
-    const skipReason = SKIP_SPAWN[mod.type];
-    const title = `${mod.type}: every declared input accepts a type-compatible upstream cable`;
-    if (skipReason) {
-      test.fixme(`${title} [SKIPPED: ${skipReason}]`, () => {});
-      continue;
-    }
-
-    test(title, async ({ page }) => {
-      // Per-iteration: spawnPatch (~1s under-load) + 100ms wait + edge-read
-      // (~50ms). The default 30s test budget is ALWAYS too tight under shard
-      // CPU contention — even at the previous "> 20 inputs" gate, modules
-      // like BENTBOX (16 inputs) sat at ~24s of pure per-iter work with
-      // zero headroom, and flaked on a heavier-than-usual runner. Scale
-      // unconditionally to (n * 1.5s + 30s) baseline so any module finishes
-      // with ~1× margin on top of the iteration cost.
-      test.setTimeout(Math.max(30_000, mod.inputs.length * 1500 + 30_000));
-      // Video modules: we FREEZE the engine's per-frame GL render for this
-      // iteration (see freezeVideoRender + VideoEngine.step()). The wire-up
-      // assertions are graph/DOM-level — a materialised edge in the patch
-      // store, no console errors — so the heavy GLSL render (a 4-pass float
-      // NTSC pipeline for b3ntb0x, a raymarch for mandelbulb, …) is purely
-      // incidental. Freezing it removes the SwiftShader-bound per-input cost
-      // that used to force the giant `inputs * 6_000` budget below; with the
-      // render off, per-input work is DOM + addEdge only, so a small uniform
-      // headroom on top of the base scaling covers CI contention with ~2×
-      // margin. (Pixel-asserting coverage of these inputs lives in the
-      // bespoke video specs + the behavioral lane, which keep rendering.)
-      // Keyed on touchesVideo (any video port), NOT domain — so audio-domain
-      // GL cards (WAVESCULPT: wall1..6 video ins + video_out) also freeze the
-      // render + get the heavy budget instead of timing out wiring inputs.
-      if (touchesVideo(mod)) {
-        await freezeVideoRender(page);
-        // The inner `Math.max(45_000, …)` that used to sit here is GONE. It was
-        // a second floor stacked under the first — binding below 8 inputs, and
-        // then swallowed whole by the 90 000 above it, so it could never change
-        // any budget. With the tax additive, the 30_000 base carries that job
-        // honestly. See wireUpBudgetMs for the derivation and its gates.
-        test.setTimeout(wireUpBudgetMs(mod.inputs.length));
-      }
-
-      const errors = collectPageErrors(page);
-
-      await page.goto('/rack?shell=legacy&seed=none');
-
-      // DOOM-asset skip — when the WASM blob isn't present the module
-      // can't materialise its input handles, breaking the edge assertion.
-      // The handle-presence dim STILL runs (it reads the def-side handles
-      // off the rendered card, which the SvelteKit dev server renders
-      // regardless of WASM presence).
-      if (mod.type === 'doom') {
-        const { wasm, wad } = await doomAssetsPresent(page);
-        test.skip(!wasm || !wad, 'DOOM WASM/WAD not built — see static/doom/DOWNLOAD_INSTRUCTIONS.md');
-      }
-
-      for (const port of mod.inputs) {
-        const exemptReason = EXEMPT_INPUT_DRIVE[`${mod.type}.${port.id}`];
-        if (exemptReason) {
-          // eslint-disable-next-line no-console
-          console.log(`[per-port] SKIP drive ${mod.type}.${port.id}: ${exemptReason}`);
-          continue;
-        }
-
-        const source = pickInputSource(port.type, `up-${port.id}`);
-        if (!source) {
-          // Unknown port type — fail loudly. New cable types must extend
-          // pickInputSource OR earn an EXEMPT_INPUT_DRIVE entry with a reason.
-          expect(
-            source,
-            `${mod.type}.${port.id} (type=${port.type}): no upstream source known for type — extend pickInputSource or add EXEMPT_INPUT_DRIVE`,
-          ).not.toBeNull();
-          continue;
-        }
-
-        const nodes: SpawnNode[] = [
-          {
-            id: 'sut',
-            type: mod.type,
-            position: { x: 400, y: 60 },
-            domain: mod.domain,
-          },
-          source.node,
-        ];
-        if (source.extraNode) nodes.push(source.extraNode);
-        const edges: SpawnEdge[] = [
-          {
-            id: 'e-up-sut',
-            from: { nodeId: source.node.id, portId: source.outPort },
-            to:   { nodeId: 'sut',           portId: port.id },
-            sourceType: source.sourceType,
-            targetType: port.type,
-          },
-        ];
-        if (source.extraNode) {
-          // RASTERIZE needs its `in` audio input fed from NOISE so it
-          // emits non-blank frames; otherwise the wire-up survives but
-          // is vacuous. This wiring is implementation-detail of the
-          // mono-video / image branch.
-          edges.push({
-            id: 'e-noise-rast',
-            from: { nodeId: source.extraNode.id, portId: 'white' },
-            to:   { nodeId: source.node.id,     portId: 'in' },
-            sourceType: 'audio',
-            targetType: 'audio',
-          });
-        }
-
-        await spawnPatch(page, nodes, edges);
-
-        // Minimal settle window — spawnPatch already waits for the DOM
-        // node count to match, by which time the engine's addEdge has
-        // fired. 100ms gives the cross-domain bridge + CV-bridge a tick
-        // to wire up; we only need to assert "edge materialised", not
-        // "downstream effect observable".
-        await runFor(page, 100);
-
-        // Edge survival check — the edge we asked to insert is still in
-        // the patch graph. A silent engine.addEdge drop (the #414-style
-        // class) would manifest as missing edge ids.
-        const edgeIds = await readEdgeIds(page);
-        expect(
-          edgeIds,
-          `${mod.type}.${port.id} (type=${port.type}): edge survived engine.addEdge`,
-        ).toContain('e-up-sut');
-      }
-
-      // ⚠ THE LOAD-BEARING ASSERTION OF THIS DIM. The edge check above reads
-      // the patch store, so it materialises whether or not the engine behind
-      // the module ever came up — this is the only line here that can see a
-      // module that FAILED TO LOAD.
-      expect(
-        errors.significant(),
-        `${mod.type} inputs-accept: no console / page errors during input wire-up (a failed `
-        + `resource load — a 404'd worklet, a dropped static asset — reads as "Failed to load `
-        + `resource" with the url in brackets; see _page-errors.ts)`,
-      ).toEqual([]);
-    });
-  }
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// THE HEAVY-GL BUDGET IS DERIVED, NOT FLOORED
-//
-// Pure arithmetic against the LIVE registry — no page, no renderer, ~1 ms. These
-// are the gates that would have caught the defect: a budget that reads as scaled
-// and behaves as a constant passes every runtime check there is, because a
-// timeout only spends wall clock when it FIRES. Nothing observes it otherwise.
-//
-// ⚠ WHAT THIS BUDGET CANNOT ABSORB, stated plainly so nobody sizes to it. The
-// runner that went red printed `[perf-midi-cc] FPS diagnostic: idle=2.0` and had
-// a 79-SECOND window with zero `/rack?shell=legacy&seed=none` navigations across all four workers. At
-// ~2 fps a single `spawnPatch` can legally consume its whole 30 s mount cap, so
-// 26 of them do not fit in any budget worth writing down. This change fixes the
-// REVIEW defect — the per-port term is live again, and wavesculpt gets the
-// 52 000 ms the floor was discarding — and it buys real margin on an ordinarily
-// slow runner. It does NOT and must not try to cover a 79 s dead window. If that
-// environment recurs, the answer is a CHEAPER PLAN for 26-port modules (fewer
-// spawns, or the sweep split per-port), not a bigger number.
-// ─────────────────────────────────────────────────────────────────────────────
-test.describe('per-port heavy-GL budget: DERIVED, not floored', () => {
-  const heavyGl = REGISTRY.filter(touchesVideo);
-
-  test('the per-port term is LIVE AT EVERY PORT COUNT — the crossover is 0', () => {
-    // THE DEFECT, as one number. The old budget's per-port term did not start
-    // binding until 31 inputs, so it was dead for 74 of the 78 heavy-GL modules.
-    const legacy = budgetFlatUntilInputs(legacyWireUpBudgetMs);
-    const now = budgetFlatUntilInputs(wireUpBudgetMs);
-    const deadUnderLegacy = heavyGl.filter((m) => m.inputs.length <= legacy);
-    expect(
-      legacy + 1,
-      `sanity: the OLD budget's per-port term must still compute as starting to bind at the 31 ` +
-        `inputs this change documents — if this moved, the arithmetic under the fix changed too ` +
-        `and every number in the comments needs re-deriving.`,
-    ).toBe(31);
-    expect(
-      deadUnderLegacy.length,
-      `…and that crossover left ${deadUnderLegacy.length}/${heavyGl.length} heavy-GL modules on a ` +
-        `FLAT budget, including the largest one under it (${
-          [...deadUnderLegacy].sort((a, b) => b.inputs.length - a.inputs.length)[0]?.type
-        }).`,
-    ).toBeGreaterThan(0);
-    expect(
-      now,
-      `the NEW budget's per-port term must bind from the FIRST port (crossover 0, got ${now}). ` +
-        `Any value above 0 means the budget is flat for every module below it — the defect this ` +
-        `replaces. Crossover is COMPUTED from the constants, so it cannot drift from the prose.`,
-    ).toBe(0);
-  });
-
-  test('NEGATIVE CONTROL: modules with different port counts get DIFFERENT budgets', () => {
-    // The property the old budget failed. Perturb the input the budget claims to
-    // price and require the number to move — for the REAL registry, not a
-    // synthetic pair, because "the formula responds" and "the formula responds
-    // over the range that actually exists" are different claims and only the
-    // second one matters here.
-    const distinctPortCounts = new Set(heavyGl.map((m) => m.inputs.length)).size;
-    const distinctBudgets = new Set(heavyGl.map((m) => wireUpBudgetMs(m.inputs.length))).size;
-    const distinctLegacy = new Set(heavyGl.map((m) => legacyWireUpBudgetMs(m.inputs.length))).size;
-    expect(
-      distinctBudgets,
-      `${heavyGl.length} heavy-GL modules span ${distinctPortCounts} distinct port counts and must ` +
-        `therefore get ${distinctPortCounts} distinct budgets — one per plan. The OLD budget ` +
-        `produced only ${distinctLegacy}, which is what a flat number wearing a scaled costume ` +
-        `looks like from the outside.`,
-    ).toBe(distinctPortCounts);
-    // And the pair that motivated this: the module that went red vs a small one.
-    const wavesculpt = heavyGl.find((m) => m.type === 'wavesculpt');
-    const mandleblot = heavyGl.find((m) => m.type === 'mandleblot');
-    if (wavesculpt && mandleblot) {
-      expect(
-        wireUpBudgetMs(wavesculpt.inputs.length) - wireUpBudgetMs(mandleblot.inputs.length),
-        `wavesculpt (${wavesculpt.inputs.length} inputs) must out-budget mandleblot ` +
-          `(${mandleblot.inputs.length} inputs) by their port difference × ${PER_INPUT_MS} ms. ` +
-          `Under the old floor both got exactly 90 000 ms.`,
-      ).toBe((wavesculpt.inputs.length - mandleblot.inputs.length) * PER_INPUT_MS);
-    }
-  });
-
-  test('the historical 90 000 ms constant is PRESERVED, and no module SHRANK', () => {
-    // This change must not be readable as "the timeout was raised until it
-    // passed". The constant survives verbatim as the zero-port budget, and the
-    // direction of every other move is asserted rather than asserted about.
-    expect(
-      wireUpBudgetMs(0),
-      `a heavy-GL module with ZERO inputs must still budget exactly the historical 90 000 ms — ` +
-        `that anchor is what pins HEAVY_GL_MOUNT_MS (${HEAVY_GL_MOUNT_MS}) instead of leaving it free.`,
-    ).toBe(90_000);
-    const shrunk = heavyGl.filter(
-      (m) => wireUpBudgetMs(m.inputs.length) < legacyWireUpBudgetMs(m.inputs.length),
-    );
-    expect(
-      shrunk.map((m) => m.type),
-      'no module may end up with LESS budget than it has today — a re-derivation that quietly ' +
-        'tightens somebody is a new timeout class, not a fix.',
-    ).toEqual([]);
-  });
-
-  test('the worst-case budget still fits the e2e shard job, with the margin stated', () => {
-    // What a derived budget is structurally unable to see: ITSELF GROWING. A
-    // timeout only spends wall clock when it FIRES, so the first symptom of an
-    // over-large one is a shard dying on the JOB ceiling — which reports as
-    // infrastructure trouble, not as a test failure.
-    const ATTEMPTS = 2; // playwright.config.ts: retries: 1 on CI
-    const JOB_TIMEOUT_MS = 20 * 60_000; // ci.yml: e2e (shard N/10) timeout-minutes
-    const CEILING = JOB_TIMEOUT_MS * 0.5; // the shard has ~1/10 of the suite to run too
-    const worstModule = [...heavyGl].sort((a, b) => b.inputs.length - a.inputs.length)[0]!;
-    const worst = wireUpBudgetMs(worstModule.inputs.length) * ATTEMPTS;
-    expect(
-      worst,
-      `the largest heavy-GL plan in the sweep (${worstModule.type}, ${worstModule.inputs.length} ` +
-        `inputs) can burn ${Math.round(worst / 1000)} s across ${ATTEMPTS} attempts against a ` +
-        `${JOB_TIMEOUT_MS / 60_000}-minute shard ceiling that also has ~1/10 of the suite to run. ` +
-        `If this trips, the fix is a CHEAPER PLAN — fewer spawns per port — not a bigger job timeout.`,
-    ).toBeLessThan(CEILING);
-
-    // THE OTHER CALL SITE. `heavyVideoTimeout` is also applied to the EMIT
-    // sweep's budget, and a gate that priced only the wire-up site would be
-    // exactly the partial-scope blindness this file keeps being fixed for.
-    //
-    // It now calls the REAL `emitBudgetMs` the sweep itself spends. It used to
-    // keep a private hand-rolled copy, and that copy was wrong in the way a
-    // copy always eventually is: it re-read the two EXEMPT_* lists and nothing
-    // else, so it could not see the SKIP_SPAWN, effect-shape or pure-CV-utility
-    // skips — three of the five reasons an emit test does not exist. It
-    // therefore nominated `colourofmagic` (22 outputs, 1 020 s across two
-    // attempts) as "the worst LIVE plan" when that test is `test.fixme`-d and
-    // has never run. The number the ratchet was pinned to described a
-    // hypothetical test. Measured against the real skip set, the worst plan
-    // that actually runs was `clipplayer` at 980 s.
-    const worstEmit = [...REGISTRY].sort((a, b) => emitBudgetMs(b) - emitBudgetMs(a))[0]!;
-    const worstEmitMs = emitBudgetMs(worstEmit) * ATTEMPTS;
-
-    // The emit sweep must be priced against tests that EXIST. Anchor the gate
-    // to the artifact: every module it prices must be one Playwright will run.
-    expect(
-      [...REGISTRY].filter((m) => emitBudgetMs(m) > 0 && emitSkipReason(m) !== null).map((m) => m.type),
-      'a module with a NON-ZERO emit budget whose emit test is skipped means the budget function '
-      + 'and the sweep disagree about which tests exist — the exact defect that once priced this '
-      + 'gate against colourofmagic, a test that never runs.',
-    ).toEqual([]);
-
-    // The `doom → max(scaled, 90 000)` floor the old accumulator carried is
-    // gone. Prove it could not bind rather than leaving a dead branch: doom is
-    // heavy-GL, and ONE live output on a heavy-GL module already exceeds it.
-    expect(
-      heavyVideoTimeout(1 * PER_OUTPUT_MS + PER_PORT_BASE_MS),
-      'a heavy-GL module with ONE live output must already budget more than the 90 000 ms the '
-      + 'removed doom floor asked for, or that floor was load-bearing and should not have gone.',
-    ).toBeGreaterThan(90_000);
-
-    // THE PLAN GOT CHEAPER — kept here because it is the measurement, and the
-    // measurement is what tells the next author whether a budget change is a
-    // real cost regression or just a different tree.
-    //
-    // 980 s → 300 s for the worst live plan (clipplayer, 24 outputs), from two
-    // changes to the PLAN and none to the tolerance:
-    //
-    //   * the per-port `waitForLoadState('networkidle')` is gone. MEASURED at
-    //     ~1 000 ms of every ~1 150 ms iteration — a fixed quiet-window wait
-    //     sitting in front of `spawnPatch`, which already waits for
-    //     `__ensureEngine`, the engine boot and a frame-budgeted mount. Event-
-    //     driven readiness was always there; the fixed wait was pure cost.
-    //   * the scope read is ONE in-page peak-hold instead of `ceil(window/30)`
-    //     Playwright-side polls, each serialising ~4 096 floats over CDP.
-    //     MEASURED at 11.4 s for a stated 1 200 ms window, at a ~10 % sampling
-    //     duty cycle. See `observeScopePeak`.
-    //
-    // MEASURED end-to-end, full emit sweep, `E2E_USE_PREVIEW=1` (the bundle CI
-    // serves) + `E2E_SWIFTSHADER=1`, 1 worker: 2.9 min → 1.8 min, and the worst
-    // module 17.9 s → 6.3 s. The 300 s budget is therefore ~24× the measured
-    // cost of the plan it covers.
-    //
-    // That retires the debt rather than shrinking it: what remains is a real
-    // `toBeLessThan(CEILING)` — the worst plan fits inside the healthy share of
-    // the shard job — and CEILING is FULLY DERIVED from the configured job
-    // timeout, so it is not a hand-typed quantity and stays.
-    //
-    // ⚠ `EMIT_WORST_CEILING_MS` (300_000) IS GONE (2026-08-10) — P0 owner
-    // directive, "ratchets are an anti pattern; remove all ratchets". It was
-    // asserted twice: `worstEmitMs <= EMIT_WORST_CEILING_MS`, plus a zero-slack
-    // twin `expect(EMIT_WORST_CEILING_MS - worstEmitMs).toBe(0)`.
-    //
-    // WHY IT IS A POPULATION COUNT IN MILLISECOND CLOTHING. `worstEmitMs` is
-    // computed from the widest module's LIVE OUTPUT-PORT COUNT
-    // (`liveEmitOutputs(worstEmit) * PER_OUTPUT_MS + …`, × ATTEMPTS) — a
-    // strictly increasing function of a quantity read off the tree. The
-    // zero-slack twin then required the literal to EQUAL that derived value
-    // exactly. So `300_000` was, by construction, a hand-typed copy of
-    // "how many output ports does the widest module have", wearing a unit. It
-    // goes wrong the moment a wider-output video module merges — and it goes
-    // wrong the way the edge ledger did: two branches each computing correctly
-    // for their own tree, the merge silently taking one of them, no conflict
-    // marker, no red test. The `ms` suffix is precisely what made that hard to
-    // see.
-    //
-    // WHAT IS DROPPED, and it is real: the EARLY WARNING that the emit sweep's
-    // worst plan got more expensive AT ALL. `toBeLessThan(CEILING)` only fires
-    // when the plan no longer FITS the shard — a cliff — whereas the zero-slack
-    // pin fired on the first millisecond of growth and forced the author to
-    // look. Nothing replaces that gradient signal here; a plan can now creep
-    // from 6 s to 290 s of budget with every gate green. Name it in the PR
-    // body. (The right successor, if the creep ever bites, is a measured
-    // wall-time trend in CI — not another literal in this file.)
-    expect(
-      worstEmitMs,
-      `the EMIT sweep's largest live plan (${worstEmit.type}, ${liveEmitOutputs(worstEmit)} live of ` +
-        `${worstEmit.outputs.length} outputs) budgets ${Math.round(worstEmitMs / 1000)} s across ` +
-        `${ATTEMPTS} attempts — ${Math.round((100 * worstEmitMs) / JOB_TIMEOUT_MS)} % of the ` +
-        `${JOB_TIMEOUT_MS / 60_000}-minute shard job, for ONE test. If this trips, the fix is a ` +
-        `CHEAPER PLAN — fewer spawns per port — not a bigger job timeout.`,
-    ).toBeLessThan(CEILING);
-    // …and the headroom, expressed as the port count the envelope carries, which
-    // is the number a future author actually needs.
-    const capacityPorts = Math.floor(
-      (CEILING / ATTEMPTS - PER_PORT_BASE_MS - HEAVY_GL_MOUNT_MS) / PER_INPUT_MS,
-    );
-    expect(
-      capacityPorts,
-      `the shard envelope carries ${capacityPorts} inputs in ONE wire-up test; the biggest module ` +
-        `in the sweep needs ${worstModule.inputs.length}. Keep at least 10 inputs of headroom so ` +
-        `the next big video module does not land straight on the cliff.`,
-    ).toBeGreaterThanOrEqual(worstModule.inputs.length + 10);
-  });
-});
+// Re-exported so the three split spec files have ONE import site for everything
+// the shared prelude already pulls in — they never import these directly, which
+// keeps the dependency surface of the split identical to the original file's.
+export { spawnPatch } from './_helpers';
+export type { SpawnNode, SpawnEdge } from './_helpers';
+export { observeScopePeak, runFor } from './_module-coverage-helpers';
+export { collectPageErrors } from './_page-errors';
+export { REGISTRY } from './_registry';
+export type { RegistryModule, RegistryPort } from './_registry';
+export { driverFor } from './_drivers';
+export { perPortDriverFor } from './_per-port-drivers';
+export type { Page } from '@playwright/test';

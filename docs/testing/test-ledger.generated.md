@@ -326,12 +326,12 @@ tracked-to-zero backlog (reconcile = fix or delete); see the roadmap.
 - `writeseq.reset_cv` — reset_cv snaps the playhead to step 0 silently (same class as sequencer.reset_cv)
 
 ### `SKIP_SPAWN` (2) — modules skipped from the per-module-per-port spawn (handle/emit/drive) sweep
-<sub>e2e/tests/per-module-per-port.spec.ts</sub>
+<sub>e2e/tests/_per-module-per-port-shared.ts</sub>
 - `cadillac` — overlay sprite, not a flow card (zero ports)
 - `group` — requires data.children
 
 ### `EXEMPT_OUTPUT_EMIT_MODULES` (41) — whole-module output-emit exemptions (asset/ROM/press-driven)
-<sub>e2e/tests/per-module-per-port.spec.ts</sub>
+<sub>e2e/tests/_per-module-per-port-shared.ts</sub>
 - `archivist` — all outputs (image/video/audio/gates/playhead) are idle until an archive.org item loads (external network)
 - `audioIn` — requires live mic input
 - `blood` — all outputs need user-supplied, non-redistributable Blood data (BLOOD.RFF/GUI.RFF/SOUNDS.RFF, gitignored, absent in C…
@@ -375,7 +375,7 @@ tracked-to-zero backlog (reconcile = fix or delete); see the roadmap.
 - `videovarispeed` — needs decoded video file + varispeed scrubber
 
 ### `EXEMPT_OUTPUT_EMIT` (63) — per-PORT output-emit exemptions (module's other outputs DO emit)
-<sub>e2e/tests/per-module-per-port.spec.ts</sub>
+<sub>e2e/tests/_per-module-per-port-shared.ts</sub>
 - `buggles.burst` — gate fires at burst-rate (~0.5 Hz)
 - `buggles.clock` — gate fires at burst-rate (~0.5 Hz)
 - `doom.audio_l` — WASM init + first SFX outside test budget
@@ -441,7 +441,7 @@ tracked-to-zero backlog (reconcile = fix or delete); see the roadmap.
 - `timelorde.1/8` — period 1.6 s @ test BPM 300
 
 ### `EXEMPT_INPUT_DRIVE` (2) — per-PORT input-drive exemptions (gameplay-deep / asset-gated inputs)
-<sub>e2e/tests/per-module-per-port.spec.ts</sub>
+<sub>e2e/tests/_per-module-per-port-shared.ts</sub>
 - `toybox.inA` — video input only drives output when a layer selects it as its source
 - `toybox.inB` — video input only drives output when a layer selects it as its source
 
