@@ -188,7 +188,15 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
       // this module's own output (shell-glyph-live.ts), so a graph that resumed
       // between boot and capture makes the tile a moving target — which is
       // exactly how a free-running voice was found to be unbaselinable.
-      await assertFaceAudioFrozen(page, `face-${type}-compact`);
+      // RE-FREEZE, don't merely detect (#1546). `bootWithFace` suspends and
+      // retries, but a resume that lands AFTER its last retry and BEFORE this
+      // point turned vrt-strict — a REQUIRED, retries:0 lane — red on an
+      // unrelated PR. `freezeFaceAudio` re-applies the suspend (6 attempts,
+      // settling 3 real frames each) and ENDS with `assertFaceAudioFrozen`, so
+      // this is strictly stronger than the bare assert it replaces: same
+      // two-sided check (state AND a pinned currentTime), with the window
+      // closed instead of reported.
+      await freezeFaceAudio(page, `face-${type}-compact`);
       const tile = page.locator(`.svelte-flow__node[data-id="${memberId}"] [data-testid="module-shell"]`);
       await expect(tile).toHaveScreenshot(`face-${type}-compact.png`, {
         maxDiffPixels: COMPACT_MAX_DIFF,
@@ -262,7 +270,10 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
       // Re-assert AFTER the dock click — this scene is the one that interacts
       // between boot and capture, and `ensureEngine()` resumes a suspended
       // context on every call.
-      await assertFaceAudioFrozen(page, `face-${type}-dock`);
+      // Same as the compact capture above — and this one has a dock
+      // interaction between boot and capture, which is exactly where
+      // `ensureEngine()` resumes the context.
+      await freezeFaceAudio(page, `face-${type}-dock`);
       await settle(page);
       await expect(faceplate).toHaveScreenshot(`face-${type}-dock.png`, {
         maxDiffPixels: DOCK_MAX_DIFF,
