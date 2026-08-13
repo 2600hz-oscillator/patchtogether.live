@@ -36,7 +36,11 @@ tasks:
           mkdir -p "$(dirname "{{.AL_BIN}}")"
           OS=$(uname -s | tr '[:upper:]' '[:lower:]')
           ARCH=$(uname -m); [ "$ARCH" = "x86_64" ] && ARCH=amd64; [ "$ARCH" = "aarch64" ] && ARCH=arm64
-          curl -sSfL -o /tmp/actionlint.tar.gz \
+          # --retry-all-errors is load-bearing: curl does NOT retry a 503 without
+          # it (a 503 is a valid HTTP response, not a transport error). Keep in
+          # sync with ci.yml's actionlint job — see #1534.
+          curl -sSfL --retry 3 --retry-delay 2 --retry-all-errors --connect-timeout 10 \
+            -o /tmp/actionlint.tar.gz \
             "https://github.com/rhysd/actionlint/releases/download/v{{.AL_VER}}/actionlint_{{.AL_VER}}_${OS}_${ARCH}.tar.gz"
           tar -xzf /tmp/actionlint.tar.gz -C "$(dirname "{{.AL_BIN}}")" actionlint
         fi

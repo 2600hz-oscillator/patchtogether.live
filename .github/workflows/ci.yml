@@ -107,7 +107,13 @@ jobs:
       - name: Install + run actionlint (pinned)
         run: |
           VER=1.7.12
-          curl -sSfL -o actionlint.tar.gz \
+          # --retry-all-errors is the load-bearing flag: without it curl does NOT
+          # retry a 503, because a 503 is a well-formed HTTP response rather than a
+          # transport error. One un-retried 503 from the releases CDN reddened this
+          # required job — and the umbrella with it — on main (run 31633557811).
+          # Keep in sync with Taskfile.yml's `actionlint` target.
+          curl -sSfL --retry 3 --retry-delay 2 --retry-all-errors --connect-timeout 10 \
+            -o actionlint.tar.gz \
             "https://github.com/rhysd/actionlint/releases/download/v${VER}/actionlint_${VER}_linux_amd64.tar.gz"
           tar -xzf actionlint.tar.gz actionlint
           ./actionlint -shellcheck=
@@ -648,7 +654,7 @@ jobs:
       - name: Download DOOM1.WAD (shareware)
         if: steps.cache-doom-wad.outputs.cache-hit != 'true'
         run: |
-          curl -L --fail --silent --show-error \
+          curl -L --fail --silent --show-error --retry 3 --retry-delay 2 --retry-all-errors --connect-timeout 10 \
             -o packages/web/static/doom/DOOM1.WAD \
             https://distro.ibiblio.org/slitaz/sources/packages/d/doom1.wad
           echo "5b2e249b9c5133ec987b3ea77596381dc0d6bc1d  packages/web/static/doom/DOOM1.WAD" \
@@ -1167,7 +1173,7 @@ jobs:
       - name: Download DOOM1.WAD (shareware)
         if: steps.cache-doom-wad.outputs.cache-hit != 'true'
         run: |
-          curl -L --fail --silent --show-error \
+          curl -L --fail --silent --show-error --retry 3 --retry-delay 2 --retry-all-errors --connect-timeout 10 \
             -o packages/web/static/doom/DOOM1.WAD \
             https://distro.ibiblio.org/slitaz/sources/packages/d/doom1.wad
           echo "5b2e249b9c5133ec987b3ea77596381dc0d6bc1d  packages/web/static/doom/DOOM1.WAD" \
@@ -2478,6 +2484,31 @@ jobs:
     # ruleset 16042163 now gates `vrt-strict`; full canvas vrt is informational
     # (may flake — see retro 2026-06-06).
     continue-on-error: true
+    # OFF THE PER-PR PATH (2026-08-12, #1506). Runs on main pushes, on manual
+    # dispatch, and on a PR carrying the `vrt-full` label — same shape as the
+    # behavioral lane's opt-in above.
+    #
+    # MEASURED, run 31648526721: this job takes 48.6 min. It is
+    # continue-on-error AND absent from the `ci` umbrella's needs, so it can
+    # block nothing — its entire per-PR effect was ~49 runner-minutes and an
+    # "all checks done" signal arriving ~32 min after the required contexts
+    # (slowest e2e shard 16.1 min, vrt-strict 15.2 min) had already settled.
+    # It also contended for runners with the ten e2e shards that DO gate.
+    #
+    # What still covers a PR: `vrt-strict` (REQUIRED, unchanged) and the
+    # separate vrt-changeset-gallery workflow, which fires independently on
+    # `paths: e2e/vrt/__screenshots__/**` and builds its OLD/NEW/DIFF review
+    # gallery from the committed PNGs — it never consumed this job's artifacts,
+    # so baseline review on a PR is unaffected.
+    #
+    # Add the `vrt-full` label to a PR when you want the whole sweep before
+    # merge (a broad render change, a suspected regression outside the strict
+    # subset). Re-labelling re-fires CI — `labeled` is in the trigger types.
+    if: >-
+      github.event_name == 'push'
+      || github.event_name == 'workflow_dispatch'
+      || (github.event_name == 'pull_request'
+          && contains(github.event.pull_request.labels.*.name, 'vrt-full'))
     runs-on: ubuntu-latest
     # ⚠ 20 -> 50 (2026-08-10), AND THIS IS A REAL RUNNER-MINUTES INCREASE —
     # flagged rather than buried, per CLAUDE.md's ">~2 min needs sign-off".
