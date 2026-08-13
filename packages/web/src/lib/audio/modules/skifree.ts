@@ -39,6 +39,7 @@
 // (PONG's pattern); the game logic runs at rAF cadence inside the bundle.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
+import { ensureSkifreeBridge, releaseSkifreeGate } from './skifree-bridge';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import { getSchedulerClock } from '$lib/audio/scheduler-clock';
 
@@ -256,11 +257,7 @@ export const skifreeDef: AudioModuleDef = {
     // The card's controller calls bridge.onGate({type}) on every event; we
     // pulse the gate. Idempotent — re-materialize overwrites the prior fn.
     function ensureBridge(): SkifreeBridge {
-      const w = globalThis as unknown as { __skifree?: SkifreeBridge };
-      if (!w.__skifree) {
-        w.__skifree = { controller: null, onGate: null, cvDriven: false };
-      }
-      return w.__skifree;
+      return ensureSkifreeBridge();
     }
     const bridge = ensureBridge();
     bridge.onGate = (_evt) => { pulseGate(); };
@@ -337,10 +334,7 @@ export const skifreeDef: AudioModuleDef = {
         try { vidAnalyser.disconnect(); } catch { /* */ }
         // Detach our gate callback from the bridge (the card owns the
         // controller's lifecycle + clears window.__skifree on unmount).
-        const w = globalThis as unknown as { __skifree?: SkifreeBridge };
-        if (w.__skifree && w.__skifree.onGate === bridge.onGate) {
-          w.__skifree.onGate = null;
-        }
+        releaseSkifreeGate(bridge.onGate);
       },
     };
   },
