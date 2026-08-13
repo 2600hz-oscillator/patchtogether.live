@@ -99,3 +99,44 @@ If a test needs a saved-group payload, hit the real `/api/saved-groups` route
 with a test fixture. Don't mock the fetcher inside the component — that's
 deep stubbing that drifts. Boundary-level stubs (Playwright `page.route`,
 MSW) are fine; deep stubs are not.
+
+---
+
+## Moved here from CLAUDE.md (2026-08-12, #1493)
+
+The RULE stays in CLAUDE.md; the measured evidence lives here so the numbers
+exist in exactly one place.
+
+
+## ART baselines and the fingerprint manifest are ONE truth — re-pin BOTH
+
+`art/baselines/**/*.f32` (+ `.sha`) and
+`packages/web/src/lib/art/fingerprints.generated.json` are two artifacts of the
+same truth. Re-pinning a baseline without re-pinning the manifest leaves the
+manifest stale — which is exactly what #1174 did to `delay/audio` (an
+owner-approved equal-power dry/wet fix, +3.01 dB): CI stayed green and the gate
+went red only on fresh LOCAL checkouts.
+
+- **Use `flox activate -- task art:update`.** It now chains
+  `art:fingerprints:accept`, so the manifest cannot be forgotten. If you re-pin
+  a baseline by any other route, run `task art:fingerprints:accept` yourself.
+- **REVIEW the manifest diff entry by entry** — it is the accept-loop, same as
+  `docs:accept`. The diff tells you what kind of change you made: a
+  **labels-only** move (`peakDb`/`rmsDb`) is a pure LEVEL change, while a
+  **spectrum/features** move is a TIMBRAL change. A uniform +3.01 dB on both
+  peak and RMS with a byte-identical spectrum is the signature of a ×√2 scalar
+  gain (e.g. linear→equal-power at mix 0.5). **Any entry you cannot attribute to
+  a known intentional change is a real audio regression — stop, do not re-pin.**
+- Every entry pins a `sourceSha256` (the sha256 of the `.f32` it was computed
+  from, which equals the file's git-LFS oid). `fingerprints.consistency.test.ts`
+  check (d) verifies it on EVERY lane — it needs no python, numpy or LFS, so it
+  catches baseline↔manifest drift even on an `lfs: false` checkout.
+
+**A gate that cannot fail on CI is decoration.** The byte-exact drift gate needs
+materialized LFS bytes + numpy, so it runs in the ci.yml **`art`** job (the only
+lane with the real `.f32` bytes) under `ART_FINGERPRINTS_REQUIRED=1`, which makes
+it FAIL rather than skip-pass if that environment ever loses those inputs. When
+you add a probe-and-skip test, ask where it can actually run — and give it a
+loud-skip env flag in the lane that promises to run it (the
+`rackspaces-capacity.test.ts` "refusing to skip-pass" precedent).
+
