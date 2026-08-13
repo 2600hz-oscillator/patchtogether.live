@@ -133,4 +133,4 @@ Per-tier behavior and triggers: [deployment.md](deployment.md).
 | Relay DB (pg pool) | `packages/server/src/db.ts` |
 | Fly configs | `fly.prod.toml`, `fly.dev.toml`, `fly.autotest.toml` |
 | CF Pages config | `packages/web/wrangler.toml` |
-| DB schema | `db/schema/001_init.sql`, `002_feedback.sql`, `003_saved_groups.sql` |
+| DB schema | `db/schema/001_init.sql` … `006_drop_rackspace_mode.sql` (append-only; see `db/schema/`) |

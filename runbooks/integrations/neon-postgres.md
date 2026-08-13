@@ -22,6 +22,9 @@ deployment target. Web resolves it via SvelteKit `$env/dynamic/private`
 | `db/schema/001_init.sql` | `racks` (owner + name), `rack_members` (user_id + role), `rack_snapshots` (Yjs `bytea`) |
 | `db/schema/002_feedback.sql` | `feedback` (suggestion/bug, patch snapshot) |
 | `db/schema/003_saved_groups.sql` | `saved_groups` (per-user JSONB library) |
+| `db/schema/004_rack_update_journal.sql` | `rack_update_journal` (incremental Yjs updates) |
+| `db/schema/005_rackspace_mode.sql` | `rackspaces.mode` (superseded by 006) |
+| `db/schema/006_drop_rackspace_mode.sql` | drops `rackspaces.mode` |
 
 Migrations are **append-only** during beta (no down-migrations). New changes bump
 the file number (`004_*.sql`) and are applied to each branch in order. Ops guide:
@@ -63,6 +66,9 @@ read the endpoint connection string from the dashboard, then apply schema:
 flox activate -- psql "<NEON_BRANCH_URL>" -f db/schema/001_init.sql
 flox activate -- psql "<NEON_BRANCH_URL>" -f db/schema/002_feedback.sql
 flox activate -- psql "<NEON_BRANCH_URL>" -f db/schema/003_saved_groups.sql
+flox activate -- psql "<NEON_BRANCH_URL>" -f db/schema/004_rack_update_journal.sql
+flox activate -- psql "<NEON_BRANCH_URL>" -f db/schema/005_rackspace_mode.sql
+flox activate -- psql "<NEON_BRANCH_URL>" -f db/schema/006_drop_rackspace_mode.sql
 ```
 
 Then set `DATABASE_URL` on the matching CF Pages project (web) and Fly app

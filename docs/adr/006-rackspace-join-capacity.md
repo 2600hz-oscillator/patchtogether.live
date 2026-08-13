@@ -1,6 +1,6 @@
 # ADR-006: Capacity + auth gate ordering for rackspace joins
 
-- Status: Accepted (with known race)
+- Status: Accepted — **both load-bearing gaps have since been CLOSED (2026-08-12); see "Superseded by implementation" at the end**
 - Date: 2026-05-30
 - Deciders: project owner
 - Tags: multiplayer, auth, persistence
@@ -77,13 +77,14 @@ gap is documented and is post-Stage-B work
 
 **Bad / load-bearing:**
 
-- **There is a known race window** between the `counts.n` evaluation
+- ~~**There is a known race window** between the `counts.n` evaluation
   and the `INSERT`. Two simultaneous joins on slot 4 can both
   succeed. Accepted for v1 (Codex audit P2). Upgrade path:
-  `pg_advisory_xact_lock(rack_id_hash)` around the CTE. See Codex
-  audit finding #4 + the open task #4 in the audit tracker.
-- **Auth-at-handshake does NOT enforce membership.** An authed user
-  who scrapes a rack id can WS-connect to it. The Hocuspocus session
+  `pg_advisory_xact_lock(rack_id_hash)` around the CTE.~~
+  **CLOSED** — the stated upgrade path shipped verbatim; see below.
+- ~~**Auth-at-handshake does NOT enforce membership.** An authed user
+  who scrapes a rack id can WS-connect to it.~~ **CLOSED** — see below.
+  The original text is kept for the record: The Hocuspocus session
   is otherwise harmless (they'd see live edits but can't load the
   page without the HTTP membership check), but this is a leak of
   current-edit metadata. Closing it requires shared rackspace
@@ -110,3 +111,30 @@ gap is documented and is post-Stage-B work
 - Codex audit finding #4 — race + remediation suggestion.
 - ADR-002 — per-rackspace Y.Doc lifecycle (the doc each member binds
   to once joined).
+
+## Superseded by implementation (2026-08-12)
+
+Both "bad / load-bearing" consequences above are fixed in the tree. The ADR is
+left intact — the decision and its reasoning still explain why the CTE is shaped
+the way it is — but the two gaps it accepted no longer exist, and this section is
+what a reader should believe.
+
+**The capacity race is closed.** `packages/web/src/lib/server/rackspaces.ts:309`
+takes a per-rack lock inside the transaction wrapping the CTE:
+
+```sql
+SELECT pg_advisory_xact_lock(hashtext(${rackspaceId})::bigint)
+```
+
+That is the upgrade path this ADR itself named, shipped unchanged. Two
+simultaneous joins on the last slot now serialise.
+
+**Membership IS enforced at the WS handshake.** `packages/server/src/rack-access.ts`
+implements `checkRackAccess()` returning `'ok' | 'not-member' | 'no-such-rack'`,
+and it is wired into the connection path at `packages/server/src/index.ts:165`.
+An authed user who scrapes a rack id no longer gets a session.
+
+Verified 2026-08-12 while resolving #1495: an ADR whose *Status* still advertised
+a live vulnerability that had been fixed weeks earlier is worse than no ADR,
+because agents and reviewers cite it as current.
+
