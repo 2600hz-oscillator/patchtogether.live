@@ -642,8 +642,22 @@
   // e2e tests + chaos musician-bots can drive arbitrary module-spawning
   // combinations without a UI palette. Stripped in prod builds (autotest
   // sets VITE_E2E_HOOKS=1 to re-enable).
+  //
+  // `onMount`, NOT `$effect` — this is mount-only work. Nothing in the body
+  // is read reactively: `patch` / `ydoc` are plain module-scope `let` exports
+  // of `$lib/graph/store` (a `.ts` file, so it has no runes), `connectDragState`
+  // is an `export const` class instance, and every component `$state` this
+  // publishes (`engine`, `flowApi`, `spawnFlowPos`, `slotOccupied`, …) is read
+  // or written INSIDE a closure this body installs, at call time — never here.
+  // So the effect had no dependencies and could only ever run once. It also has
+  // no cleanup: the globals deliberately outlive the component, which `$effect`
+  // (whose contract is "re-run and tear down") actively misdescribes.
+  // ⚠ The invariant that makes this safe — expose a GETTER (`() => engine`),
+  // never the reactive value itself — is enforced by
+  // `scripts/canvas-mount-only-hooks.test.ts`. A bare reactive read added at
+  // this body's top level would latch a stale value instead of re-installing.
   if (testHooksEnabled()) {
-    $effect(() => {
+    onMount(() => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__patch = patch;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -7510,8 +7524,15 @@
 
   // Dev-only: expose helpers so @collab Playwright tests can drive the
   // awareness layer without wiring real Clerk auth + pointer events.
+  //
+  // `onMount`, NOT `$effect` — same reasoning as the hook block near the top of
+  // this script. Every statement here assigns a function to `globalThis`; the
+  // body reads no variable at all outside those closures (`provider` is read at
+  // call time inside `__setLocalCursor` / `__getRemoteCursors`), so the effect
+  // had no dependencies, and it installs no cleanup because the globals are
+  // meant to outlive the component.
   if (testHooksEnabled()) {
-    $effect(() => {
+    onMount(() => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__setLocalCursor = (x: number, y: number) => {
         const a = provider?.awareness;
