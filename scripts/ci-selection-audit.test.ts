@@ -89,14 +89,32 @@ function envGuardVars(specPath: string): string[] {
   return [...new Set(vars)];
 }
 
+// Each `listSpecs` call spawns Playwright's discovery (~3-5 s locally, more on a
+// loaded runner) — so it is done ONCE per lane, up front, and every assertion
+// below reads these maps. Two reasons, and the second is the important one:
+//
+//  * vitest's default 5000 ms timeout. The first version of this file ran
+//    discovery inside the test body at ~4.76 s locally and TIMED OUT on CI —
+//    exactly the hazard CLAUDE.md names ("vitest default 5000 ms; locally-2 s
+//    tests timed out at 5.5-6.3 s"). Hence the explicit timeout below.
+//  * the reachability check iterates every spec. Calling per-lane discovery
+//    inside that loop is O(specs x lanes) PROCESS SPAWNS — hundreds of
+//    Playwright invocations. It only looked cheap because the loop body is
+//    currently unreachable (no spec carries a file-level env guard today), so
+//    the cost was hiding behind an empty set rather than being absent.
+const DISCOVERY_TIMEOUT_MS = 180_000;
+
+const ALL_SPECS = listSpecs();
+const BY_LANE = new Map(LANES.map((lane) => [lane.name, listSpecs(lane.flags)]));
+
 describe('every e2e spec executes in some CI lane', () => {
-  const allSpecs = listSpecs();
+  const allSpecs = ALL_SPECS;
 
   it('discovers the spec corpus (guard is not vacuous)', () => {
     // Anchored to a NAME the corpus must contain, never to a count.
     expect(allSpecs.size).toBeGreaterThan(0);
     expect([...allSpecs].some((f) => f.includes('awareness.spec.ts'))).toBe(true);
-  });
+  }, DISCOVERY_TIMEOUT_MS);
 
   it('the modelled lanes match what ci.yml actually runs', () => {
     const yml = readFileSync(CI_YML, 'utf8');
@@ -106,11 +124,11 @@ describe('every e2e spec executes in some CI lane', () => {
       const pattern = lane.flags[1];
       expect(yml, `ci.yml no longer contains lane '${lane.name}' flags`).toContain(pattern);
     }
-  });
+  }, DISCOVERY_TIMEOUT_MS);
 
   it('no spec is selected by ZERO lanes', () => {
     const selected = new Set<string>();
-    for (const lane of LANES) for (const f of listSpecs(lane.flags)) selected.add(f);
+    for (const set of BY_LANE.values()) for (const f of set) selected.add(f);
 
     const orphans = [...allSpecs]
       .filter((f) => !selected.has(f))
@@ -120,7 +138,7 @@ describe('every e2e spec executes in some CI lane', () => {
       orphans.sort(),
       'these specs match no lane grep — they exist but CI never runs them',
     ).toEqual([]);
-  });
+  }, DISCOVERY_TIMEOUT_MS);
 
   it('no spec is selected only by lanes whose env guarantees it skips', () => {
     // The second half of the 2026-08-12 bug: selection is necessary, not sufficient.
@@ -132,7 +150,7 @@ describe('every e2e spec executes in some CI lane', () => {
       if (required.length === 0) continue;
 
       const runnableSomewhere = LANES.some((lane) => {
-        const selectedHere = listSpecs(lane.flags).has(spec);
+        const selectedHere = BY_LANE.get(lane.name)!.has(spec);
         const envSatisfied = required.every((v) => (lane.env as Record<string, string>)[v]);
         return selectedHere && envSatisfied;
       });
@@ -143,5 +161,5 @@ describe('every e2e spec executes in some CI lane', () => {
       unreachable.sort(),
       'selected by a lane, but that lane never sets the env it requires — it skips on every run',
     ).toEqual([]);
-  });
+  }, DISCOVERY_TIMEOUT_MS);
 });
