@@ -225,21 +225,40 @@ function bucket3() {
     reasons.set(j.name, why.join('; '));
   }
 
-  const items = [...informational]
-    .sort()
-    .map((name) => ({ name, line: byName.get(name).line, reason: reasons.get(name) }));
+  // ⚠ ANCHOR TO THE JOB KEY, NEVER TO A LINE NUMBER.
+  //
+  // This ledger used to print `(ci.yml:985)`. A line number is a reference to a
+  // POSITION, and every edit above that position silently invalidates it:
+  // adding a 26-line comment block over the `e2e` job moved every reference
+  // below it by exactly 26 and turned this freshness gate RED with no job
+  // added, no job removed, no reason changed and no content moved. Measured
+  // 2026-08-12 — the ledger went stale purely from a comment.
+  //
+  // The job KEY is the same information without the fragility: stable across
+  // unrelated edits, unique within `jobs:`, and — unlike a line number —
+  // CHECKABLE against the artifact, which `test-ledger.test.ts` does (a name
+  // that no longer resolves to a job in ci.yml is RED).
+  //
+  // Same disease as the toolchain pin file that was hashed WHOLESALE until it
+  // was narrowed to the dependency surface: the reference was to more than the
+  // thing it cared about.
+  const items = [...informational].sort().map((name) => ({ name, reason: reasons.get(name) }));
 
   // Required status-check CONTEXTS (branch ruleset; not in-repo — see pr-workflow.md).
-  const umbrellaName = (/name:\s*(.+)/.exec(umbrella.text) || [])[1]?.trim() ?? 'ci';
-  const vrtStrict = byName.get('vrt-strict');
-  const vrtStrictName = vrtStrict ? (/name:\s*(.+)/.exec(vrtStrict.text) || [])[1]?.trim() : 'vrt-strict';
+  // `name` is the DISPLAY context the ruleset matches on; `job` is the key it
+  // lives under in ci.yml, which is what makes the entry locatable.
+  const UMBRELLA_JOB = 'ci';
+  const VRT_STRICT_JOB = 'vrt-strict';
+  const umbrellaName = (/name:\s*(.+)/.exec(umbrella.text) || [])[1]?.trim() ?? UMBRELLA_JOB;
+  const vrtStrict = byName.get(VRT_STRICT_JOB);
+  const vrtStrictName = vrtStrict ? (/name:\s*(.+)/.exec(vrtStrict.text) || [])[1]?.trim() : VRT_STRICT_JOB;
 
   return {
     items,
     gatingJobs: gatingJobs.slice().sort(),
     requiredContexts: [
-      { name: umbrellaName, line: umbrella.line },
-      { name: vrtStrictName, line: vrtStrict ? vrtStrict.line : 0 },
+      { name: umbrellaName, job: UMBRELLA_JOB },
+      { name: vrtStrictName, job: VRT_STRICT_JOB },
     ],
   };
 }
@@ -273,9 +292,12 @@ export function generateLedger() {
   // ── CI gating summary (Bucket 3 context) ──
   p('## CI gating truth (from `.github/workflows/ci.yml`)');
   p('');
-  p('Required status-check **contexts** (2 — branch ruleset 16042163; not in-repo,');
-  p('see `.claude/skills/pr-workflow.md`):');
-  for (const c of b3.requiredContexts) p(`- \`${c.name}\`  (ci.yml:${c.line})`);
+  // Boy-scout: the count was hand-typed as `2`. Derived from the list it
+  // labels, so it cannot disagree with the lines printed underneath it.
+  p(`Required status-check **contexts** (${b3.requiredContexts.length} — branch ruleset 16042163; not in-repo,`);
+  p('see `.claude/skills/pr-workflow.md`). Anchored by ci.yml JOB KEY, not by line');
+  p('number — a line number is invalidated by any edit above it:');
+  for (const c of b3.requiredContexts) p(`- \`${c.name}\`  (ci.yml job \`${c.job}\`)`);
   p('');
   p(`Jobs gated THROUGH the \`ci\` umbrella (a failure of any blocks merge) — ${b3.gatingJobs.length}:`);
   p(`- ${b3.gatingJobs.map((j) => `\`${j}\``).join(', ')}`);
@@ -329,7 +351,7 @@ export function generateLedger() {
   p('Jobs that RUN on a PR but never block merge. Red here is a signal to inspect,');
   p('not a merge blocker.');
   p('');
-  for (const it of b3.items) p(`- \`${it.name}\`  (ci.yml:${it.line}) — ${it.reason}`);
+  for (const it of b3.items) p(`- \`${it.name}\` — ${it.reason}`);
   p('');
 
   return L.join('\n') + '\n';

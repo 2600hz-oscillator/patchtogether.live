@@ -176,7 +176,7 @@ export function fireManualStrike(nodeId: string): boolean {
 
 let gateLatch: GateLatchState = emptyGateLatch();
 /** The PRESS-PARAM latch. Same pure reducer, a second instance, keyed by
- *  `${nodeId} ${paramId}` — see `setMomentaryParam` for why this is a
+ *  `${nodeId}\u0000${paramId}` — see `setMomentaryParam` for why this is a
  *  separate latch rather than a shared one with encoded keys. */
 let pressLatch: GateLatchState = emptyGateLatch();
 let panicInstalled = false;

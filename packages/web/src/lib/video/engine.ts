@@ -791,7 +791,7 @@ export class VideoEngine implements DomainEngine {
   }
 
   private paramKey(nodeId: string, paramId: string): string {
-    return `${nodeId} ${paramId}`;
+    return `${nodeId}\u0000${paramId}`;
   }
 
   /**

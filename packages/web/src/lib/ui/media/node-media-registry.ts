@@ -190,8 +190,19 @@ interface Entry<E, H> {
   dispose: (() => void) | null;
 }
 
+// ⚠ The separator is spelled as an ESCAPE, never as a literal NUL byte. A
+// raw 0x00 anywhere in a source file makes `grep` classify the WHOLE FILE as
+// binary, so every search of it returns no matches — silently, exit code 1,
+// indistinguishable from "the symbol does not exist". The runtime string is
+// byte-identical either way, so the escape costs nothing.
+//
+// This file shipped with the raw byte, and `tracked-source-is-greppable` caught
+// it on the guard's first real outing. `video/engine.ts` carried the same
+// idiom and cost three agents time in a single day before anyone found it —
+// one was pushed toward a fallback architecture it did not need, because a
+// search for a symbol that WAS there came back empty.
 function key(nodeId: string, slot: string): string {
-  return `${nodeId} ${slot}`;
+  return `${nodeId}\u0000${slot}`;
 }
 
 /** Build a registry over injected DOM ops. See the header for the invariants. */

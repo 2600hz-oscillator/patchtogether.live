@@ -19,7 +19,7 @@
 // nothing, exits non-zero. Does NOT auto-commit (the commit is the contributor's
 // explicit act). See .myrobots/plans/webgl-attestation-semaphore.md §5.
 
-import { execFileSync, execSync } from 'node:child_process';
+import { execFileSync, execSync, spawn } from 'node:child_process';
 import { readFileSync, writeFileSync, mkdtempSync, existsSync, rmSync, readdirSync } from 'node:fs';
 import { tmpdir, hostname, release, arch, cpus, loadavg } from 'node:os';
 import { join } from 'node:path';
@@ -32,6 +32,14 @@ import {
   WEBGL_CAMERA_SPECS,
   WEBGL_SERIAL_SPECS,
 } from './webgl-attest-lib';
+import {
+  parsePs,
+  foreignCoTenants,
+  formatCoTenants,
+  parseListeners,
+  leakedServers,
+  type PsRow,
+} from './webgl-cotenancy';
 
 const REPEAT = Math.max(1, parseInt(process.env.REPEAT || '1', 10) || 1);
 const DRY = process.argv.includes('--dry-run'); // verify the mechanism w/o the long real-GPU run
@@ -104,7 +112,7 @@ interface PassResult {
 
 /** Run one Playwright pass with the JSON reporter to a temp file and return
  *  measured counts. Throws on a non-zero exit OR any failure/flaky. */
-function runPass(opts: {
+async function runPass(opts: {
   name: string;
   env: Record<string, string>;
   args: string[];
@@ -112,7 +120,7 @@ function runPass(opts: {
   /** Per-pass worker override. Defaults to WORKERS (the parallel passes). The
    *  serial bucket sets workers=1 to run on a quiet GPU (no FBO-readback race). */
   workers?: number;
-}): PassResult {
+}): Promise<PassResult> {
   const tmp = mkdtempSync(join(tmpdir(), 'webgl-attest-'));
   const jsonOut = join(tmp, 'report.json');
   const env: Record<string, string | undefined> = {
@@ -156,12 +164,67 @@ function runPass(opts: {
     };
   }
 
+  // ── RUN THE PASS WITH A CO-TENANCY WATCHDOG ALONGSIDE IT ──────────────────
+  //
+  // This used to be a blocking execFileSync, which is precisely why co-tenancy
+  // could only ever be sampled BEFORE the run. Load arriving mid-pass was
+  // invisible and surfaced as `30 failed` in wavesculpt.spec.ts on a branch that
+  // does not touch wavesculpt — a contention stall wearing a regression's
+  // clothes. Spawning async lets a sampler run on the same event loop.
+  //
+  // Requires SUSTAINED contention (consecutive busy samples), not a single
+  // spike: `ps` catches instantaneous CPU, and one transient blip from a
+  // background app is not worth killing a ~6-minute GPU run over.
+  const SAMPLE_MS = Math.max(1000, parseInt(process.env.WEBGL_ATTEST_SAMPLE_MS || '15000', 10) || 15000);
+  const NEEDED = Math.max(1, parseInt(process.env.WEBGL_ATTEST_BUSY_SAMPLES || '2', 10) || 2);
+  const CPU_MIN = Math.max(1, parseFloat(process.env.WEBGL_ATTEST_BUSY_CPU || '25') || 25);
+  const passStart = Date.now();
+
   let runExit = 0;
-  try {
-    execFileSync('npx', fullArgs, { cwd: REPO_ROOT, env, stdio: 'inherit' });
-  } catch {
-    runExit = 1; // non-zero = at least one failure; we still parse JSON for detail
-  }
+  let contention: ContentionAbort | null = null;
+  let consecutive = 0;
+
+  await new Promise<void>((resolve) => {
+    const child = spawn('npx', fullArgs, { cwd: REPO_ROOT, env, stdio: 'inherit' });
+
+    const timer = setInterval(() => {
+      if (process.env.WEBGL_ATTEST_ALLOW_BUSY === '1') return;
+      const found = sampleForeignCoTenants(CPU_MIN);
+      if (found.length === 0) {
+        consecutive = 0; // must be SUSTAINED; a lone spike resets the streak
+        return;
+      }
+      consecutive += 1;
+      const names = formatCoTenants(found);
+      console.error(
+        `  ⚠ co-tenant seen during ${opts.name} (${consecutive}/${NEEDED}): ${names.join('  ·  ')}`,
+      );
+      if (consecutive < NEEDED) return;
+      contention = new ContentionAbort(opts.name, names, Math.round((Date.now() - passStart) / 1000));
+      clearInterval(timer);
+      // Kill the run rather than let it produce failures that read as a
+      // regression. SIGTERM first; the close handler resolves either way.
+      child.kill('SIGTERM');
+      setTimeout(() => child.kill('SIGKILL'), 5000).unref();
+    }, SAMPLE_MS);
+    timer.unref();
+
+    child.on('error', () => {
+      runExit = 1;
+      clearInterval(timer);
+      resolve();
+    });
+    child.on('close', (code) => {
+      runExit = code === 0 ? 0 : 1;
+      clearInterval(timer);
+      resolve();
+    });
+  });
+
+  // ⚠ ABORT LOUDLY, AND BEFORE PARSING THE REPORT. A contended pass leaves a
+  // JSON report full of failures; reporting those would be reporting the very
+  // false regression this watchdog exists to prevent.
+  if (contention) throw contention;
 
   if (!existsSync(jsonOut)) {
     throw new Error(`Pass ${opts.name}: no JSON report at ${jsonOut} (Playwright did not run?)`);
@@ -354,6 +417,52 @@ function attestActor(): string {
 // see. We detect heavy GPU co-tenants + high load up front and REFUSE rather
 // than burn a ~6-min run and mislabel a co-tenant stall as a regression.
 // Override (e.g. on a dedicated runner you trust) with WEBGL_ATTEST_ALLOW_BUSY=1.
+/** One `ps` sample, reduced to co-tenants that are NOT this process's subtree.
+ *  Returns [] if ps is unavailable — the caller then has no evidence either way
+ *  and must not invent any. */
+function sampleForeignCoTenants(minCpu: number): PsRow[] {
+  let rows: PsRow[];
+  try {
+    rows = parsePs(execSync('ps -A -o %cpu=,pid=,ppid=,comm=', { encoding: 'utf8' }));
+  } catch {
+    return [];
+  }
+  return foreignCoTenants(rows, process.pid, minCpu);
+}
+
+/** Dev servers left listening by a DIFFERENT checkout of this repo. */
+function findLeakedServers() {
+  try {
+    const listeners = parseListeners(
+      execSync('lsof -nP -iTCP -sTCP:LISTEN -Fpn 2>/dev/null || true', { encoding: 'utf8' }),
+    );
+    return leakedServers(listeners, REPO_ROOT, (pid) => {
+      try {
+        const out = execSync(`lsof -a -p ${pid} -d cwd -Fn 2>/dev/null || true`, { encoding: 'utf8' });
+        const line = out.split('\n').find((l) => l.startsWith('n'));
+        return line ? line.slice(1) : null;
+      } catch {
+        return null;
+      }
+    });
+  } catch {
+    return [];
+  }
+}
+
+/** Raised when co-tenancy arrives DURING a pass. Distinct from a test failure
+ *  on purpose: the two need opposite responses and must never print alike. */
+class ContentionAbort extends Error {
+  constructor(
+    readonly pass: string,
+    readonly cotenants: string[],
+    readonly atSec: number,
+  ) {
+    super(`contention during pass ${pass}`);
+    this.name = 'ContentionAbort';
+  }
+}
+
 function preflightSolo(): void {
   if (process.env.WEBGL_ATTEST_ALLOW_BUSY === '1') {
     console.log('Pre-flight: WEBGL_ATTEST_ALLOW_BUSY=1 — skipping the quiet-machine guard.');
@@ -370,41 +479,28 @@ function preflightSolo(): void {
   // load >5. So gate per-process at 25% and let the aggregate load check
   // (load > cores·0.5) catch broad contention. Override via WEBGL_ATTEST_BUSY_CPU.
   const COTENANT_CPU_MIN = Math.max(1, parseFloat(process.env.WEBGL_ATTEST_BUSY_CPU || '25') || 25);
-  // ⚠ MATCH THE RENDERER, NOT THE BRAND. This list was brand-only and MISSED a
-  // measured 42.9 % co-tenant: Discord's GPU-compositing renderer lives at
-  //   /Applications/Discord.app/Contents/Frameworks/Discord Helper (Renderer).app/…
-  // — no "Electron", no "Chromium", no "Chrome" anywhere in that path. (Its
-  // crashpad handler DOES say "Electron Framework", and sits at 0.0 %, so the
-  // one process the old regex could see was the one that never touches the GPU.)
-  // The guard therefore saw zero co-tenants and refused on the LOAD leg instead
-  // — right answer, wrong reason, and it would have passed a minute later at
-  // load 4.64 with that 42.9 % renderer still compositing.
-  //
-  // `Helper \(Renderer\)` is the generic Chromium multi-process renderer name
-  // EVERY Electron app ships, so it catches the next one without another brand
-  // being added here. Brands are kept for the non-Electron cases (Safari,
-  // firefox) and as belt-and-braces.
-  const COTENANT_RE =
-    /Google Chrome|Microsoft Edge|Safari|Chromium|firefox|Brave|Electron|Discord|Slack|Helper \(Renderer\)|Patchtogether\.app|Spotify/i;
-  let cotenants: string[] = [];
-  try {
-    cotenants = execSync('ps -A -o %cpu=,comm=', { encoding: 'utf8' })
-      .split('\n')
-      .map((l) => l.trim())
-      .filter(Boolean)
-      .map((l) => { const i = l.indexOf(' '); return { cpu: parseFloat(l.slice(0, i)) || 0, name: l.slice(i + 1) }; })
-      .filter((p) => p.cpu >= COTENANT_CPU_MIN && COTENANT_RE.test(p.name))
-      .sort((a, b) => b.cpu - a.cpu)
-      .map((p) => `${p.cpu.toFixed(0)}% ${p.name.split('/').pop()}`);
-  } catch { /* ps unavailable → fall back to load only */ }
+  // The renderer-not-brand matching and the ancestry filter both live in
+  // ./webgl-cotenancy so the MID-RUN watchdog below shares this exact predicate
+  // rather than a re-typed copy of it.
+  const cotenants = formatCoTenants(sampleForeignCoTenants(COTENANT_CPU_MIN));
+  const leaked = findLeakedServers();
   const loadBusy = load1 > ncpu * 0.5;
-  if (cotenants.length === 0 && !loadBusy) {
+  if (cotenants.length === 0 && leaked.length === 0 && !loadBusy) {
     console.log(`Pre-flight: machine looks quiet (load(1m)=${load1.toFixed(2)} on ${ncpu} cores). Proceeding.`);
     return;
   }
   console.error('────────────────────────────────────────────────────────────');
   console.error('webgl:attest PRE-FLIGHT — machine is NOT quiet; REFUSING to run.');
   if (cotenants.length) console.error(`  GPU co-tenants: ${cotenants.join('  ·  ')}`);
+  if (leaked.length) {
+    // `task worktree:guard` classifies an idle worktree as abandoned and removes
+    // the CHECKOUT, but it never stops a dev server that worktree started. A
+    // leaked vite keeps compiling and serving, which is CPU and (through the
+    // browser that may still be pointed at it) GPU.
+    console.error('  LEAKED dev servers from other checkouts:');
+    for (const s of leaked) console.error(`    pid ${s.pid} on :${s.port} — ${s.cwd}`);
+    console.error('    → stop each from its own worktree: flox activate -- task e2e:stop');
+  }
   console.error(`  load(1m)=${load1.toFixed(2)} on ${ncpu} cores${loadBusy ? '  (HIGH)' : ''}`);
   console.error('  The real-GPU attest needs the GPU SOLO. A co-tenant browser or');
   console.error('  native GL app steals GPU cycles from the attest\'s single ANGLE/');
@@ -419,7 +515,7 @@ function preflightSolo(): void {
 // ---------------------------------------------------------------------------
 // main
 // ---------------------------------------------------------------------------
-function main() {
+async function main() {
   // (1) Refuse SwiftShader — the whole point is the real GPU.
   if (process.env.E2E_SWIFTSHADER === '1') {
     console.error('E2E_SWIFTSHADER=1 is set — a SwiftShader attestation would be a lie. Unset it and run on the real GPU.');
@@ -474,7 +570,7 @@ function main() {
   // Pass A — heavy set (E2E_WEBGL_HEAVY=only). @collab/@capacity excluded, AND
   // @webgl-serial excluded (those run serially in Pass A-serial below).
   results.push(
-    runPass({
+    await runPass({
       name: 'A-heavy',
       env: { E2E_WEBGL_HEAVY: 'only' },
       args: ['--grep-invert', '@collab|@capacity|@webgl-serial'],
@@ -488,7 +584,7 @@ function main() {
   // Wall-time is ADDITIVE — WEBGL_SERIAL_SPECS is kept strict + logged below.
   const serialStartedAt = Date.now();
   results.push(
-    runPass({
+    await runPass({
       name: 'A-serial',
       env: { E2E_WEBGL_HEAVY: 'only' },
       args: ['--grep', '@webgl-serial'],
@@ -512,7 +608,7 @@ function main() {
   // (`…/videocube.spec.ts` has no `/cube` segment), while still matching
   // `…/tests/cube.spec.ts`. Fixes the whole basename-suffix collision class.
   results.push(
-    runPass({
+    await runPass({
       name: 'B-leakers',
       env: { E2E_WEBGL_HEAVY: '' }, // unset for the child (empty = treated as unset by config)
       args: WEBGL_LEAKER_SPECS.map((s) => `/${s}`),
@@ -522,7 +618,7 @@ function main() {
 
   // Pass C — camera (chromium-camera project; E2E_WEBGL_HEAVY unset).
   results.push(
-    runPass({
+    await runPass({
       name: 'C-camera',
       env: { E2E_WEBGL_HEAVY: '' },
       // NB: `--project=X` (with `=`) — the space form `--project X spec.ts`
@@ -599,4 +695,30 @@ function pick(r: PassResult) {
   };
 }
 
-main();
+// ⚠ CONTENTION IS NOT A REGRESSION, AND MUST NOT PRINT LIKE ONE.
+//
+// The whole point of the mid-run watchdog is that `Pass A-heavy: 30 failed` and
+// "another process took the GPU" are different events that used to produce
+// identical output — and the wrong one got diagnosed, on a branch that did not
+// even touch the failing spec. So a contention abort exits with its OWN code
+// (3) and says, in as many words, that nothing here is evidence about the code.
+main().catch((err: unknown) => {
+  if (err instanceof ContentionAbort) {
+    console.error('────────────────────────────────────────────────────────────');
+    console.error(`webgl:attest ABORTED — the machine stopped being quiet DURING pass ${err.pass}.`);
+    console.error(`  detected ${err.atSec}s into the pass`);
+    console.error(`  GPU co-tenants: ${err.cotenants.join('  ·  ')}`);
+    console.error('');
+    console.error('  ⚠ THIS IS NOT A TEST RESULT. The run was killed on purpose, before it');
+    console.error('  could produce failures that read as a regression — which is exactly what');
+    console.error('  happened when this was only checked at START: 30 failures in one spec,');
+    console.error('  on a branch that does not touch that spec, all of it contention.');
+    console.error('');
+    console.error('  → quit the co-tenant, then re-run. NOTHING was attested.');
+    console.error('  → override (dedicated/trusted runner only): WEBGL_ATTEST_ALLOW_BUSY=1');
+    console.error('────────────────────────────────────────────────────────────');
+    process.exit(3);
+  }
+  console.error(err instanceof Error ? err.stack ?? err.message : String(err));
+  process.exit(1);
+});

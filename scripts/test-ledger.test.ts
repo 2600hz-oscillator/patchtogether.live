@@ -24,9 +24,9 @@ const { generateLedger, LEDGER_PATH, bucket3 } = ledger as unknown as {
   generateLedger: () => string;
   LEDGER_PATH: string;
   bucket3: () => {
-    items: { name: string; line: number; reason: string }[];
+    items: { name: string; reason: string }[];
     gatingJobs: string[];
-    requiredContexts: { name: string; line: number }[];
+    requiredContexts: { name: string; job: string }[];
   };
 };
 
@@ -71,6 +71,41 @@ describe('CI gating classification (derived from ci.yml)', () => {
     const names = b3.requiredContexts.map((c) => c.name);
     expect(names).toContain('typecheck + unit + ART + E2E');
     expect(names.some((n) => n.startsWith('vrt-strict'))).toBe(true);
+  });
+
+  it('every job the ledger names RESOLVES to a job in ci.yml', () => {
+    // ⚠ THIS IS WHAT MAKES A NAME BETTER THAN A LINE NUMBER, and it only works
+    // because the reference is now a name. The ledger used to cite `ci.yml:985`;
+    // nothing could check that, and every edit above line 985 silently
+    // invalidated it — adding a 26-line comment block over the `e2e` job moved
+    // every reference below it and reddened the freshness gate with no job
+    // added, removed or changed (measured 2026-08-12).
+    //
+    // A name is checkable against the artifact, so a renamed or deleted job is
+    // RED here rather than quietly pointing at whatever now occupies that line.
+    const src = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
+    const jobKeys = new Set(
+      src
+        .split('\n')
+        .map((l) => /^ {2}([A-Za-z0-9_-]+):\s*$/.exec(l)?.[1])
+        .filter((k): k is string => Boolean(k)),
+    );
+    // Non-vacuity: if the scan found no jobs at all, every membership test
+    // below would pass over an empty set the other way round.
+    expect(jobKeys.has('e2e'), 'the ci.yml job-key scan is broken — it cannot see `e2e`').toBe(true);
+
+    const referenced = [...b3.items.map((i) => i.name), ...b3.requiredContexts.map((c) => c.job)];
+    const dangling = referenced.filter((n) => !jobKeys.has(n));
+    expect(dangling, 'the ledger names ci.yml jobs that no longer exist').toEqual([]);
+  });
+
+  it('the ledger cites job keys, never ci.yml LINE NUMBERS', () => {
+    // The regression guard for the fix itself: a `ci.yml:<digits>` reference
+    // anywhere in the artifact means position-anchoring has crept back, and
+    // with it a gate that goes red on unrelated comment edits.
+    const text = generateLedger();
+    const positional = text.match(/ci\.yml:\d+/g) ?? [];
+    expect(positional, 'ci.yml:<line> is a reference to a POSITION — anchor to the job key instead').toEqual([]);
   });
 
   it('behavioral-smoke GATES; the full behavioral-coverage sweep does NOT', () => {
