@@ -74,9 +74,27 @@ export interface PresentSession {
 /** Minimal structural typing of a same-origin popup Window we touch. */
 type PresentPopup = Window;
 
+/** Anything the blit loop can read a frame out of: an HTMLCanvasElement, or the
+ *  VideoEngine's OffscreenCanvas. Both are CanvasImageSource with real dims. */
+export type PresentSource = CanvasImageSource & { readonly width: number; readonly height: number };
+
 export interface StartPresentArgs {
-  /** The OUTPUT card's live <canvas> to mirror onto the second display. */
-  canvas: HTMLCanvasElement;
+  /**
+   * The live surface to mirror onto the second display, as a GETTER resolved
+   * every frame.
+   *
+   * ⚠ IT IS A GETTER, AND NOT A CARD ELEMENT, FOR A REASON. This used to be a
+   * captured `canvas: HTMLCanvasElement` — the presenting CARD's own canvas —
+   * which made the projector's lifetime the card's lifetime: collapsing the
+   * card detached that element and the loop went on drawing its last bitmap
+   * forever (owner P0, 2026-08-12; see $lib/ui/modules/node-present-registry).
+   * A getter also follows an engine that swaps its canvas on a resolution
+   * change, which a captured reference silently would not.
+   */
+  source: () => PresentSource | null;
+  /** Run immediately before each frame's read — the caller's chance to render
+   *  the node it wants into a shared drawing buffer. */
+  prepare?: () => void;
   /** Working-area rect of the target display (from the fullscreen controller's
    *  getScreenRect); null falls back to a default-sized popup. */
   rect: ScreenRect | null;
@@ -97,7 +115,7 @@ export interface StartPresentArgs {
  *  — in which case nothing was started and there's nothing to clean up. Never
  *  throws. */
 export function startPresent(args: StartPresentArgs): PresentSession | null {
-  const { canvas, rect } = args;
+  const { source, prepare, rect } = args;
   const openWindow = args.openWindow ?? ((u, t, f) => window.open(u, t, f));
   const url = args.url ?? '/present';
   const raf = args.raf ?? ((cb: FrameRequestCallback) => requestAnimationFrame(cb));
@@ -192,17 +210,23 @@ export function startPresent(args: StartPresentArgs): PresentSession | null {
     const frame = () => {
       if (closed) return;
       try {
+        // Let the caller render what it wants into the source first (the
+        // registry blits ITS node's output into the shared engine buffer here),
+        // then read it in the SAME synchronous block — a WebGL drawing buffer is
+        // only guaranteed to hold that content until the frame ends.
+        prepare?.();
+        const src = source();
         const dw = dst.width;
         const dh = dst.height;
-        const sw = canvas.width || 1;
-        const sh = canvas.height || 1;
+        const sw = src ? src.width || 1 : 1;
+        const sh = src ? src.height || 1 : 1;
         ctx.fillStyle = '#000';
         ctx.fillRect(0, 0, dw, dh);
         const fit = letterbox(sw, sh, dw, dh);
         // Only draw once the source has real pixels (avoids a 1×1 stretch on
-        // the very first frames before the OUTPUT card's rAF has run).
-        if (sw > 1 && sh > 1 && fit.w > 0 && fit.h > 0) {
-          ctx.drawImage(canvas, fit.x, fit.y, fit.w, fit.h);
+        // the very first frames before the engine has rendered).
+        if (src && sw > 1 && sh > 1 && fit.w > 0 && fit.h > 0) {
+          ctx.drawImage(src, fit.x, fit.y, fit.w, fit.h);
         }
       } catch {
         // A transient draw error (e.g. popup mid-teardown) must not kill the
