@@ -3,7 +3,7 @@
 // Shared test helpers for spawning arbitrary modules + edges via the dev-mode
 // `__patch` and `__ydoc` window globals (Canvas.svelte exposes these in dev).
 
-import { expect, type Page } from '@playwright/test';
+import { expect, type Page, type APIRequestContext } from '@playwright/test';
 
 export interface SpawnNode {
   id: string;
@@ -522,15 +522,83 @@ export async function ensureCombineOpen(page: Page): Promise<void> {
 
 // ---------------- Rackspace seed helper ----------------
 //
-// NOTE (2026-08-12, #1501): the `seedRackspace` helpers were REMOVED here along
-// with the only three specs that used them (audio-gate, rack-restoring-status,
-// unsaved-guard). Those specs never executed in any CI lane: the seed endpoint
-// reaches the DB through `neon()` (packages/web/src/lib/server/db.ts), the HTTP
-// driver, and every CI lane's DATABASE_URL is a raw localhost Postgres it cannot
-// speak to. Restoring them needs a Neon-HTTP-capable backend in CI first —
-// tracked separately as the `/r/[id]` coverage gap. The SERVER-side seeding
-// logic keeps its unit coverage in packages/web/src/lib/server/rackspaces.test.ts.
+// Spec tests that target `/r/[id]` need a real rackspace row in the database;
+// the route's +page.server.ts loader 404s otherwise. Before this helper,
+// every such spec was either skip-pending-Clerk-seed or had to mock the
+// loader, which left whole integration paths uncovered (Codex coverage
+// finding #8).
+//
+// `seedRackspace(page, envelope?)` calls the dev-only POST /api/test/seed-rackspace
+// endpoint (gated server-side on RACKSPACE_SEED_ENABLED='1' OR NODE_ENV=development;
+// see routes/api/test/seed-rackspace/+server.ts) and returns the URL ready
+// for `page.goto`. The URL includes the HMAC-derived `?invite=<code>` query
+// string so anon visitors flow through /r/[id]/+page.server.ts's
+// unauthed-with-invite path — no Clerk session required.
+//
+// Optional `envelope` is a PatchEnvelope object (from
+// packages/web/src/lib/graph/persistence.ts) whose `update` field is stored
+// into rack_snapshots; the Hocuspocus relay serves it on first connect so
+// the rack appears pre-populated. Omit for a fresh empty rack.
+export interface SeedEnvelope {
+  envelopeVersion: number;
+  update: string;
+}
 
+export interface SeededRackspace {
+  /** Bare rackspace id (e.g. `r_abc23xy7`). */
+  id: string;
+  /** HMAC-derived invite code for anon access. */
+  inviteCode: string;
+  /** Full path to navigate to: `/r/<id>?invite=<code>`. */
+  url: string;
+}
+
+/**
+ * Seed a fresh rackspace via the test-only API and return navigation info.
+ *
+ * The page argument is used as a convenient `request` carrier so the call
+ * inherits Playwright's baseURL + any configured httpCredentials
+ * (beta-gate basic auth on the autotest tier). Doesn't navigate the page.
+ */
+export async function seedRackspace(
+  page: Page,
+  envelope?: SeedEnvelope,
+  opts?: { name?: string; ownerUserId?: string },
+): Promise<SeededRackspace> {
+  return seedRackspaceVia(page.request, envelope, opts);
+}
+
+/** Same as seedRackspace but accepts a raw APIRequestContext (e.g. from
+ *  a non-Page test scope, like @collab specs that share one request ctx). */
+export async function seedRackspaceVia(
+  request: APIRequestContext,
+  envelope?: SeedEnvelope,
+  opts?: { name?: string; ownerUserId?: string },
+): Promise<SeededRackspace> {
+  const body: Record<string, unknown> = {};
+  if (envelope !== undefined) body.envelope = envelope;
+  if (opts?.name) body.name = opts.name;
+  if (opts?.ownerUserId) body.ownerUserId = opts.ownerUserId;
+  const resp = await request.post('/api/test/seed-rackspace', {
+    data: body,
+    // Always send a JSON content-type so SvelteKit's body parser picks the
+    // right path even when body is `{}`.
+    headers: { 'content-type': 'application/json' },
+  });
+  if (!resp.ok()) {
+    const text = await resp.text().catch(() => '<no body>');
+    throw new Error(`seedRackspace: ${resp.status()} ${text.slice(0, 200)}`);
+  }
+  const json = (await resp.json()) as { id?: unknown; inviteCode?: unknown };
+  if (typeof json.id !== 'string' || typeof json.inviteCode !== 'string') {
+    throw new Error(`seedRackspace: malformed response: ${JSON.stringify(json)}`);
+  }
+  return {
+    id: json.id,
+    inviteCode: json.inviteCode,
+    url: `/r/${json.id}?invite=${json.inviteCode}`,
+  };
+}
 
 /** Read a status-bar field value (e.g., readStatus(page, 'nodes') → '5'). */
 export async function readStatus(page: Page, field: string): Promise<string> {
