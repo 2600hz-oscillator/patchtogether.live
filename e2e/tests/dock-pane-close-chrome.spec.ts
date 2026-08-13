@@ -158,7 +158,7 @@ test.describe('dock full-view pane ✕ — visible chrome in every state (?shell
     }
   });
 
-  test('flipped split: LEFT ✕ closes left only → survivor full width (still flipped); its ✕ closes the view', async ({
+  test('flipped split: LEFT ✕ closes left only → survivor remains (still flipped); its ✕ closes the view', async ({
     page,
   }) => {
     await gotoShellWorkflow(page);
@@ -173,7 +173,7 @@ test.describe('dock full-view pane ✕ — visible chrome in every state (?shell
     await page.keyboard.press('Tab');
     await expect(drawer).toHaveAttribute('data-fullview-flipped', 'true');
 
-    // Close the LEFT pane via ITS ✕ — right survives at full drawer width,
+    // Close the LEFT pane via ITS ✕ — right survives (content-sized since #1573),
     // still on its rear face (the flip seam is view-global and stays put).
     await closeOf(page, 'm1').click();
     await expect(drawer).toHaveAttribute('data-pane-count', '1');
@@ -183,7 +183,12 @@ test.describe('dock full-view pane ✕ — visible chrome in every state (?shell
     await expect(paneOf(page, 'm2').getByTestId('rear-card')).toBeVisible();
     const b = (await paneOf(page, 'm2').boundingBox())!;
     const d = (await drawer.boundingBox())!;
-    expect(Math.abs(d.width - (b.width + 16)), 'survivor spans the drawer (minus padding)').toBeLessThanOrEqual(4);
+    // #1573: panes are content-sized, so the survivor keeps its own width instead of
+    // stretching to the drawer. This test is about the ✕ staying REACHABLE, which
+    // expectCloseInsidePane below asserts directly — that is the real property, and it
+    // is the one the 900px body min-width was originally added to protect.
+    expect(b.width, 'survivor still has real width').toBeGreaterThan(0);
+    expect(b.width + 16, 'survivor fits inside the drawer').toBeLessThanOrEqual(d.width + 4);
     await expectCloseInsidePane(page, 'm2', 'survivor/rear');
 
     // The survivor's ✕ closes the last pane → the whole view is gone.

@@ -15,6 +15,7 @@
   import { onDestroy, onMount } from 'svelte';
   import { type NodeProps } from '@xyflow/svelte';
   import { captureFlowStore } from './card-kit';
+  import { createDebouncedCommit } from './debounced-commit';
   import { patch, ydoc, LOCAL_ORIGIN } from '$lib/graph/store';
   import { useEngine } from '$lib/audio/engine-context';
   import { makeEditor, type EditorHandle } from '$lib/livecode/editor';
@@ -78,7 +79,6 @@
   // ───── Editor ──────────────────────────────────────────────────
   let editorEl: HTMLDivElement | null = $state(null);
   let editor: EditorHandle | null = null;
-  let commitTimer: ReturnType<typeof setTimeout> | null = null;
   const COMMIT_DEBOUNCE_MS = 250;
 
   function commitSource(value: string) {
@@ -93,9 +93,14 @@
     }, LOCAL_ORIGIN);
   }
 
+  // #1583: the debounce FLUSHES on unmount instead of dropping its pending value.
+  // `commitSource` is the only writer of node.data.source, and onDestroy used to
+  // `clearTimeout` the pending commit — so typing and then collapsing (or being
+  // LRU-evicted when a third module is expanded) within COMMIT_DEBOUNCE_ms silently discarded
+  // the edit. createDebouncedCommit exposes no `cancel`, so that is now unwritable.
+  const draft = createDebouncedCommit<string>(commitSource, COMMIT_DEBOUNCE_MS);
   function scheduleCommit(value: string) {
-    if (commitTimer) clearTimeout(commitTimer);
-    commitTimer = setTimeout(() => commitSource(value), COMMIT_DEBOUNCE_MS);
+    draft.schedule(value);
   }
 
   function setDivision(d: string) {
@@ -134,7 +139,9 @@
   });
 
   onDestroy(() => {
-    if (commitTimer) clearTimeout(commitTimer);
+    // FLUSH, never clearTimeout: a card unmount is a VIEW event (collapse / LRU
+    // evict), not a signal that the user abandoned the edit (#1583).
+    draft.flush();
     editor?.destroy();
     editor = null;
   });

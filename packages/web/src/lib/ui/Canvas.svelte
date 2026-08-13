@@ -728,6 +728,13 @@
         recording: nodeRecorder.isRecording(nodeId),
         ...(nodeRecorder.view(nodeId) ?? {}),
       });
+      // #1589: observe the NODE-owned media entries from a spec. Same reasoning
+      // as __nodeRecording — the point of the registry is that these outlive the
+      // card, so the probe must read the NODE's record and never a card's state.
+      // Rows only (no count anywhere): a caller asserts PROPERTIES of them.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__nodeMedia = (nodeId: string) =>
+        nodeMedia.snapshot().filter((s) => s.nodeId === nodeId);
       // Drag-lock state for e2e — patch-menus-persist tests inspect this
       // to confirm the lock engaged + released at the right moments.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -8705,6 +8712,10 @@
     left: 0;
     right: 0;
     bottom: 0;
+    /* Panes re-enable this. Without it the full-width drawer keeps eating
+       pointer events over the area it no longer paints, so the canvas would
+       LOOK exposed and not be clickable — visually fixed, functionally not. */
+    pointer-events: none;
     z-index: 31;
     display: flex;
     flex-direction: row;
@@ -8713,9 +8724,19 @@
     max-height: min(60vh, 680px);
   }
   .dock-fullview-pane {
-    flex: 1 1 0;
+    /* SHRINK-WRAP (#1573): panes size to their content instead of dividing the
+       viewport. A ~400px card used to sit in a ~2000px tray, hiding the canvas
+       behind 1600px of empty chrome and parking the ⤡/✕ controls a screen-width
+       away from the card they act on.
+       `0 1 auto` = never grow, still allowed to shrink; the content's own
+       min-width governs (the 900px kit for curated faces, max-content for a
+       legacy card frame). */
+    flex: 0 1 auto;
     min-width: 0;
     display: flex;
+    /* The drawer spans the viewport for POSITIONING only; re-enable hit-testing
+       on the pane itself so the exposed canvas stays clickable. */
+    pointer-events: auto;
   }
   /* DOCKING P2.5a: transient dock toast (auto-evict / delete notices). */
   .dock-toast {

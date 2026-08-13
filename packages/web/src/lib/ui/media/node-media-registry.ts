@@ -42,6 +42,16 @@
 //      ORDER stops mattering — which is the only way to be safe, since Svelte
 //      gives no cross-tree ordering guarantee.
 //
+// TWO CONSUMER SHAPES, ONE REGISTRY (#1589). A card that DISPLAYS the element
+// calls `adopt`/`release` (videovarispeed, videobox, archivist, peertube…). A
+// card whose element is only a TEXTURE SOURCE — never displayed, handed to the
+// engine and pumped from there — calls `ensure` and gets the element back with
+// no lease at all, because it has no host to mount into and nothing to release.
+// TOYBOX's four per-layer <video>s are that second shape; before #1589 it minted
+// them itself and destroyed them in `onDestroy`, which is exactly the bug this
+// file exists to make unrepresentable. Both shapes share ONE element per
+// (nodeId, slot), one url owner, one stream owner and one graph-keyed teardown.
+//
 // WHY OFF-SCREEN PARKING AND NOT `display:none` — verbatim the constraint
 // HeadlessSourceHost and the workflow camera manager already document: "an
 // off-screen video element is the same scenario as a canvas card scrolled out
@@ -119,6 +129,29 @@ export interface NodeMediaRegistry<E, H> {
     init?: (el: E) => void;
   }): NodeMediaLease<E>;
 
+  /**
+   * Get (creating on first use) the persistent element for (nodeId, slot)
+   * WITHOUT adopting it into a host — it stays PARKED off-screen for its whole
+   * life. For a SOURCE-ONLY consumer: the element is never displayed, it is a
+   * TEXTURE SOURCE the engine pumps frames out of.
+   *
+   * TOYBOX is the motivating case (#1589). Its per-layer <video>s are handed to
+   * the engine through `attachLayerVideo` and are never rendered by the card at
+   * all — the card previously minted them with `document.createElement('video')`
+   * and destroyed them in `onDestroy`. `adopt` is the wrong verb for that shape:
+   * there is no host to mount into, and a lease's `release()` would be a
+   * per-card teardown API for something that has no per-card state.
+   *
+   * ⚠ Deliberately returns the ELEMENT, not a lease. There is nothing to
+   * release, so there is no method a future `onDestroy` can call — the same
+   * structural guard node-recorder-registry gets from having no `dispose()`.
+   * The only teardowns remain `disposeNode` / `sweep`, both keyed to the GRAPH.
+   */
+  ensure(nodeId: string, slot: string, opts?: {
+    kind?: NodeMediaKind;
+    init?: (el: E) => void;
+  }): E;
+
   /** The element for (nodeId, slot) if it exists — never creates one. */
   peek(nodeId: string, slot: string): E | null;
 
@@ -181,6 +214,8 @@ export interface NodeMediaRegistry<E, H> {
 interface Entry<E, H> {
   el: E;
   kind: NodeMediaKind;
+  /** Has a caller's `init` been applied to `el` yet? See entryFor's LATE INIT. */
+  inited: boolean;
   owner: H | null;
   url: string | null;
   /** Local filename for `url` — see NodeMediaRegistry.mediaName. */
@@ -221,11 +256,26 @@ export function createNodeMediaRegistry<E, H>(
   ): Entry<E, H> {
     const k = key(nodeId, slot);
     const existing = entries.get(k);
-    if (existing) return existing;
+    if (existing) {
+      // LATE INIT — ORDER MUST NOT MATTER. `setObjectUrl`/`setStream`/
+      // `setDisposer` create an entry themselves when a load races the mount,
+      // and that path has no `init` to run. Without this, whether the element
+      // ever received its attributes depended on which call happened FIRST.
+      // MEASURED (#1589): TOYBOX wrote the url before minting the element, so
+      // its layer <video> came up with no `muted`/`loop`/`playsinline`, never
+      // autoplayed, and the layer stayed silently black — a bug in the fix for a
+      // bug about layers staying silently black. "Init runs exactly once" is
+      // preserved: the flag makes it once EVER, not once per call site.
+      if (init && !existing.inited) {
+        existing.inited = true;
+        init(existing.el);
+      }
+      return existing;
+    }
     const el = ops.create(nodeId, slot, kind);
     if (init) init(el);
     const entry: Entry<E, H> = {
-      el, kind, owner: null, url: null, name: null, stream: null, dispose: null,
+      el, kind, inited: !!init, owner: null, url: null, name: null, stream: null, dispose: null,
     };
     entries.set(k, entry);
     let slots = byNode.get(nodeId);
@@ -269,6 +319,12 @@ export function createNodeMediaRegistry<E, H>(
           try { ops.park(entry.el); } catch { /* */ }
         },
       };
+    },
+
+    ensure(nodeId, slot, opts) {
+      // No owner transfer: the element is created PARKED by entryFor and stays
+      // there. A host that later `adopt`s the same key still wins normally.
+      return entryFor(nodeId, slot, opts?.kind ?? 'video', opts?.init).el;
     },
 
     peek(nodeId, slot) {
