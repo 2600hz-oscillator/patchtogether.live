@@ -348,5 +348,30 @@
   "workflow-viewport-nav.spec.ts": 16.8,
   "writeseq.spec.ts": 22.3,
   "xy-pad-cell.spec.ts": 6.9
+ },
+ "_contention_comment": "Contention CLASSES: specs that must not be co-scheduled with their own kind. DERIVED by scanning each spec for media markers (getUserMedia/MediaStream/<video>/camera project), never hand-listed \u2014 a new media spec joins automatically at the next accept.",
+ "contention": {
+  "ai-smoke.spec.ts": "media",
+  "archivist.spec.ts": "media",
+  "audio-in.spec.ts": "media",
+  "camera-input.spec.ts": "media",
+  "collapse-keeps-playing.spec.ts": "media",
+  "coverage-groups-6-7-8-9.spec.ts": "media",
+  "grand-integration.attest.spec.ts": "media",
+  "live-glyphs.spec.ts": "media",
+  "loopback.spec.ts": "media",
+  "mappy-output.spec.ts": "media",
+  "onetonine.spec.ts": "media",
+  "peertube.spec.ts": "media",
+  "per-module-per-port-behavioral.spec.ts": "media",
+  "present-second-display.spec.ts": "media",
+  "push2-clip-launch.spec.ts": "media",
+  "recorderbox.spec.ts": "media",
+  "tv-librarian-audio.spec.ts": "media",
+  "videovarispeed-perfzip.spec.ts": "media",
+  "videovarispeed-switch.spec.ts": "media",
+  "workflow-camera.spec.ts": "media",
+  "workflow-media.spec.ts": "media",
+  "workflow-shell-video.spec.ts": "media"
  }
 }

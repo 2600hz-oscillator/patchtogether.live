@@ -12,7 +12,7 @@
 import { describe, expect, it } from 'vitest';
 
 // @ts-expect-error — plain .mjs with JSDoc types, no declaration file
-import { planShards, median, loadTimings } from './e2e-shard-plan.mjs';
+import { planShards, median, loadTimings, loadContention } from './e2e-shard-plan.mjs';
 
 const SHARDS = 10;
 
@@ -62,6 +62,51 @@ describe('the partition covers the suite exactly', () => {
   it('degenerate shard counts behave', () => {
     expect(planShards(files, timings, 1).groups[0].length).toBe(files.length);
     expect(() => planShards(files, timings, 0)).toThrow();
+  });
+});
+
+describe('contention classes are SPREAD, not packed', () => {
+  const timings: Record<string, number> = loadTimings();
+  const contention: Record<string, string> = loadContention();
+  const files = Object.keys(timings);
+
+  it('the media class is derived and non-empty (not vacuous)', () => {
+    // Anchored to a NAME the class must contain — the spec whose 3/3 failure
+    // proved cost balance alone is not sufficient.
+    expect(contention['camera-input.spec.ts']).toBe('media');
+  });
+
+  it('no shard gets a disproportionate share of one class', () => {
+    // WHY THIS EXISTS: cost balancing implicitly assumes specs are INDEPENDENT.
+    // They are not. LPT packs expensive specs together precisely BECAUSE they
+    // are expensive, which put camera-input on a shard with five other media
+    // specs and failed it 3/3 (`{present: true, tracks: []}` — the element
+    // outliving its stream under concurrent decode). Cost spread was perfect
+    // and the lane was still red, so this property cannot be expressed as cost.
+    const { groups } = planShards(files, timings, SHARDS, contention);
+    const perShard = groups.map(
+      (g: string[]) => g.filter((f) => contention[f] === 'media').length,
+    );
+    const total = files.filter((f) => contention[f] === 'media').length;
+    // EXACTLY the round-robin ideal, with no slack. Measured: pure LPT gives
+    // [0,3,3,2,3,2,4,4,0,1] — max 4, and two shards get NONE — while spreading
+    // gives [3,3,2,2,2,2,2,2,2,2]. A `+1` of slack here would admit the LPT
+    // arrangement and this guard would not discriminate; I wrote it that way
+    // first and the negative control caught it.
+    const ceiling = Math.ceil(total / SHARDS);
+    expect(
+      Math.max(...perShard),
+      `media specs per shard ${JSON.stringify(perShard)} — packing them re-creates the contention that reddened a required lane`,
+    ).toBeLessThanOrEqual(ceiling);
+    // And no shard may be starved of the class while another carries a pile:
+    // pure LPT left two shards with ZERO, which is the same imbalance seen from
+    // the other side.
+    expect(Math.max(...perShard) - Math.min(...perShard)).toBeLessThanOrEqual(1);
+  });
+
+  it('spreading does not cost the balance it was added to protect', () => {
+    const { loads } = planShards(files, timings, SHARDS, contention);
+    expect(Math.max(...loads) / Math.min(...loads)).toBeLessThan(1.15);
   });
 });
 

@@ -53,6 +53,11 @@ export function loadTimings(path = join(ROOT, 'e2e/e2e-timings.generated.json'))
   return JSON.parse(readFileSync(path, 'utf8')).files;
 }
 
+/** @returns {Record<string, string>} file -> contention class (e.g. 'media') */
+export function loadContention(path = join(ROOT, 'e2e/e2e-timings.generated.json')) {
+  return JSON.parse(readFileSync(path, 'utf8')).contention ?? {};
+}
+
 /** Median of a numeric array (used as the cost of an unmeasured file). */
 export function median(xs) {
   if (xs.length === 0) return 1;
@@ -73,24 +78,64 @@ export function median(xs) {
  * @param {number} shards
  * @returns {{ groups: string[][], loads: number[], unknown: string[] }}
  */
-export function planShards(files, timings, shards) {
+export function planShards(files, timings, shards, contention = {}) {
   if (shards < 1) throw new Error(`shards must be >= 1, got ${shards}`);
   const known = Object.values(timings);
   const fallback = median(known);
   const unknown = files.filter((f) => timings[f] === undefined).sort();
 
   const cost = (f) => timings[f] ?? fallback;
-  // Descending cost, then filename — a total order, so the result is stable.
-  const ordered = [...files].sort((a, b) => cost(b) - cost(a) || (a < b ? -1 : a > b ? 1 : 0));
+  const byCost = (a, b) => cost(b) - cost(a) || (a < b ? -1 : a > b ? 1 : 0);
 
   const groups = Array.from({ length: shards }, () => []);
   const loads = new Array(shards).fill(0);
-  for (const f of ordered) {
-    // Lightest shard; ties go to the lowest index for determinism.
+  const place = (f, i) => {
+    groups[i].push(f);
+    loads[i] += cost(f);
+  };
+
+  // ── PASS 1: SPREAD each contention class, before cost packing ─────────────
+  //
+  // Cost balancing alone assumes specs are INDEPENDENT — that only their
+  // duration matters. That is false here, and it cost a required lane:
+  // `camera-input.spec.ts` failed 3/3 when cost-packing put it on a shard with
+  // five other media specs (multi-video-playback, videobox-upload-perf,
+  // 4plexvid, live-glyphs, mappy-export-import). At 4 workers that is up to
+  // four concurrent media decodes competing for the fake webcam, and the
+  // symptom was `{present: true, tracks: []}` — the element outliving its
+  // stream. Main was green 5/5 throughout; the OLD count-based partition had
+  // been protecting it by accident.
+  //
+  // Expensive specs cluster under LPT precisely BECAUSE they are expensive, so
+  // the packing actively concentrates a contention class. Round-robining each
+  // class across shards first makes co-location structurally impossible up to
+  // `shards` members, and the cost pass then fills around it.
+  //
+  // Same shape as #1539 (heavy WebGL renders must not co-schedule), solved once
+  // here rather than a second time per class.
+  const classes = new Map();
+  for (const f of files) {
+    const c = contention[f];
+    if (!c) continue;
+    if (!classes.has(c)) classes.set(c, []);
+    classes.get(c).push(f);
+  }
+  for (const [, members] of [...classes.entries()].sort()) {
+    members.sort(byCost);
+    // Start each class on the lightest shard so classes do not all pile onto 0.
+    let i = loads.indexOf(Math.min(...loads));
+    for (const f of members) {
+      place(f, i);
+      i = (i + 1) % shards;
+    }
+  }
+
+  // ── PASS 2: LPT over everything else ──────────────────────────────────────
+  const rest = files.filter((f) => !contention[f]).sort(byCost);
+  for (const f of rest) {
     let pick = 0;
     for (let i = 1; i < shards; i++) if (loads[i] < loads[pick]) pick = i;
-    groups[pick].push(f);
-    loads[pick] += cost(f);
+    place(f, pick);
   }
   for (const g of groups) g.sort();
   return { groups, loads, unknown };
@@ -106,10 +151,11 @@ if (isMain) {
   //        node scripts/e2e-shard-plan.mjs --report
   const args = process.argv.slice(2);
   const timings = loadTimings();
+  const contention = loadContention();
 
   if (args[0] === '--report') {
     const files = Object.keys(timings);
-    const { loads } = planShards(files, timings, Number(args[1] ?? 10));
+    const { loads } = planShards(files, timings, Number(args[1] ?? 10), contention);
     const W = 4;
     const max = Math.max(...loads);
     const min = Math.min(...loads);
@@ -127,7 +173,7 @@ if (isMain) {
     .join(' ')
     .split(/\s+/)
     .filter(Boolean);
-  const { groups, unknown } = planShards(files, timings, count);
+  const { groups, unknown } = planShards(files, timings, count, contention);
   if (unknown.length) {
     console.error(`::warning::${unknown.length} spec(s) have no measured cost (using median): ${unknown.join(', ')}`);
   }
