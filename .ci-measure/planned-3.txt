@@ -1,0 +1,29 @@
+vrt.spec.ts :: dx7 card matches baseline
+vrt.spec.ts :: filter card matches baseline
+vrt.spec.ts :: moog903a card matches baseline
+vrt.spec.ts :: moog905 card matches baseline
+vrt.spec.ts :: moog921a card matches baseline
+vrt.spec.ts :: moog960 card matches baseline
+vrt.spec.ts :: moog962 card matches baseline
+vrt.spec.ts :: moog995 card matches baseline
+vrt.spec.ts :: reverb card matches baseline
+vrt.spec.ts :: scaler card matches baseline
+vrt.spec.ts :: score card matches baseline
+vrt.spec.ts :: wavecel card matches baseline
+workflow-shell-faces.spec.ts :: dock fold negative control: the capture sees below the old fold, and the old one did not
+workflow-shell-faces.spec.ts :: face-analogVco-dock: the dock full-view faceplate matches baseline
+workflow-shell-faces.spec.ts :: face-bluebox-dock: the dock full-view faceplate matches baseline
+workflow-shell-faces.spec.ts :: face-clap-compact: the compact lane tile matches baseline
+workflow-shell-faces.spec.ts :: face-cofefve-compact: the compact lane tile matches baseline
+workflow-shell-faces.spec.ts :: face-delay-dock: the dock full-view faceplate matches baseline
+workflow-shell-faces.spec.ts :: face-drummergirl-compact: the compact lane tile matches baseline
+workflow-shell-faces.spec.ts :: face-dx7-dock: the dock full-view faceplate matches baseline
+workflow-shell-faces.spec.ts :: face-filter-dock: the dock full-view faceplate matches baseline
+workflow-shell-faces.spec.ts :: face-karplus-compact: the compact lane tile matches baseline
+workflow-shell-faces.spec.ts :: face-kickdrum-compact: the compact lane tile matches baseline
+workflow-shell-faces.spec.ts :: face-lfo-compact: the compact lane tile matches baseline
+workflow-shell-faces.spec.ts :: face-macrooscillator-dock: the dock full-view faceplate matches baseline
+workflow-shell-faces.spec.ts :: face-rings-compact: the compact lane tile matches baseline
+workflow-shell-faces.spec.ts :: face-shimmershine-compact: the compact lane tile matches baseline
+workflow-shell-faces.spec.ts :: face-tidyVco-dock: the dock full-view faceplate matches baseline
+workflow-shell-faces.spec.ts :: face-vca-dock: the dock full-view faceplate matches baseline

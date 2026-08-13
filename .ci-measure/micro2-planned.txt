@@ -1,0 +1,2 @@
+vrt.spec.ts :: vca card matches baseline
+workflow-shell-faces.spec.ts :: face-vca-compact: the compact lane tile matches baseline

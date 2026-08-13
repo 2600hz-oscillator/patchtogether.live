@@ -1,0 +1,30 @@
+vrt.spec.ts :: buggles card matches baseline
+vrt.spec.ts :: cartesian card matches baseline
+vrt.spec.ts :: charlottesEchos card matches baseline
+vrt.spec.ts :: illogic card matches baseline
+vrt.spec.ts :: mixer card matches baseline
+vrt.spec.ts :: moog904b card matches baseline
+vrt.spec.ts :: moog907a card matches baseline
+vrt.spec.ts :: moog923 card matches baseline
+vrt.spec.ts :: moog984 card matches baseline
+vrt.spec.ts :: noise card matches baseline
+vrt.spec.ts :: sequencer card matches baseline
+vrt.spec.ts :: stereovca card matches baseline
+vrt.spec.ts :: sticky card matches baseline
+workflow-shell-faces.spec.ts :: face-bluebox-compact: the compact lane tile matches baseline
+workflow-shell-faces.spec.ts :: face-cloudseed-compact: the compact lane tile matches baseline
+workflow-shell-faces.spec.ts :: face-cofefve-dock: the dock full-view faceplate matches baseline
+workflow-shell-faces.spec.ts :: face-cube-dock: the dock full-view faceplate matches baseline
+workflow-shell-faces.spec.ts :: face-delay-compact: the compact lane tile matches baseline
+workflow-shell-faces.spec.ts :: face-drummergirl-dock: the dock full-view faceplate matches baseline
+workflow-shell-faces.spec.ts :: face-dx7-compact: the compact lane tile matches baseline
+workflow-shell-faces.spec.ts :: face-kickdrum-dock: the dock full-view faceplate matches baseline
+workflow-shell-faces.spec.ts :: face-mixer-compact: the compact lane tile matches baseline
+workflow-shell-faces.spec.ts :: face-resofilter-compact: the compact lane tile matches baseline
+workflow-shell-faces.spec.ts :: face-resofilter-dock: the dock full-view faceplate matches baseline
+workflow-shell-faces.spec.ts :: face-reverb-compact: the compact lane tile matches baseline
+workflow-shell-faces.spec.ts :: face-ringback-dock: the dock full-view faceplate matches baseline
+workflow-shell-faces.spec.ts :: face-rings-dock: the dock full-view faceplate matches baseline
+workflow-shell-faces.spec.ts :: face-shimmershine-dock: the dock full-view faceplate matches baseline
+workflow-shell-faces.spec.ts :: face-sixstrum-dock: the dock full-view faceplate matches baseline
+workflow-shell-faces.spec.ts :: face-tomtom-compact: the compact lane tile matches baseline

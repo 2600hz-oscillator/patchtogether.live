@@ -1,0 +1,683 @@
+{
+  "config": {
+    "configFile": "/Users/2600hz/Documents/workspace/inet.modular/.claude/worktrees/wf_f09a5e8e-581-1/e2e/vrt/vrt.config.ts",
+    "rootDir": "/Users/2600hz/Documents/workspace/inet.modular/.claude/worktrees/wf_f09a5e8e-581-1/e2e/vrt",
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {},
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "/Users/2600hz/Documents/workspace/inet.modular/.claude/worktrees/wf_f09a5e8e-581-1/e2e/vrt/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {},
+        "id": "chromium-vrt",
+        "name": "chromium-vrt",
+        "testDir": "/Users/2600hz/Documents/workspace/inet.modular/.claude/worktrees/wf_f09a5e8e-581-1/e2e/vrt",
+        "testIgnore": [],
+        "testMatch": [
+          "vrt.spec.ts",
+          "workflow-shell-faces.spec.ts"
+        ],
+        "timeout": 90000
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "json"
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.59.1",
+    "workers": 1,
+    "webServer": {
+      "command": "npm run dev -w packages/web",
+      "cwd": "../..",
+      "url": "http://localhost:5173",
+      "reuseExistingServer": true,
+      "stdout": "pipe",
+      "stderr": "pipe",
+      "timeout": 120000
+    }
+  },
+  "suites": [
+    {
+      "title": "vrt.spec.ts",
+      "file": "vrt.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "VRT: every module card matches its baseline",
+          "file": "vrt.spec.ts",
+          "line": 62,
+          "column": 6,
+          "specs": [
+            {
+              "title": "adsr card matches baseline",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 90000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium-vrt",
+                  "projectName": "chromium-vrt",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "3eba06aa9c3f8f5a4c73-919c9c3b98f754ff41ff",
+              "file": "vrt.spec.ts",
+              "line": 64,
+              "column": 5
+            },
+            {
+              "title": "destroy card matches baseline",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 90000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium-vrt",
+                  "projectName": "chromium-vrt",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "3eba06aa9c3f8f5a4c73-d2a9a3f878e5ab40285a",
+              "file": "vrt.spec.ts",
+              "line": 64,
+              "column": 5
+            },
+            {
+              "title": "meowbox card matches baseline",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 90000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium-vrt",
+                  "projectName": "chromium-vrt",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "3eba06aa9c3f8f5a4c73-26c05c83c7f48b8e502c",
+              "file": "vrt.spec.ts",
+              "line": 64,
+              "column": 5
+            },
+            {
+              "title": "mixmstrs card matches baseline",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 90000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium-vrt",
+                  "projectName": "chromium-vrt",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "3eba06aa9c3f8f5a4c73-41d17b0a52af429d14d6",
+              "file": "vrt.spec.ts",
+              "line": 64,
+              "column": 5
+            },
+            {
+              "title": "moog911a card matches baseline",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 90000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium-vrt",
+                  "projectName": "chromium-vrt",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "3eba06aa9c3f8f5a4c73-4e03359b270ae2155f54",
+              "file": "vrt.spec.ts",
+              "line": 64,
+              "column": 5
+            },
+            {
+              "title": "moog912 card matches baseline",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 90000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium-vrt",
+                  "projectName": "chromium-vrt",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "3eba06aa9c3f8f5a4c73-ba7fbabd6178bc1e3fc3",
+              "file": "vrt.spec.ts",
+              "line": 64,
+              "column": 5
+            },
+            {
+              "title": "moog921b card matches baseline",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 90000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium-vrt",
+                  "projectName": "chromium-vrt",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "3eba06aa9c3f8f5a4c73-d91a57b629d443734f97",
+              "file": "vrt.spec.ts",
+              "line": 64,
+              "column": 5
+            },
+            {
+              "title": "moog956 card matches baseline",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 90000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium-vrt",
+                  "projectName": "chromium-vrt",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "3eba06aa9c3f8f5a4c73-308ebbf0f24a5d4dc3f0",
+              "file": "vrt.spec.ts",
+              "line": 64,
+              "column": 5
+            },
+            {
+              "title": "moog993 card matches baseline",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 90000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium-vrt",
+                  "projectName": "chromium-vrt",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "3eba06aa9c3f8f5a4c73-a47955cc93a2d5891dab",
+              "file": "vrt.spec.ts",
+              "line": 64,
+              "column": 5
+            },
+            {
+              "title": "polarizer card matches baseline",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 90000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium-vrt",
+                  "projectName": "chromium-vrt",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "3eba06aa9c3f8f5a4c73-4a6f22e7884fdca26736",
+              "file": "vrt.spec.ts",
+              "line": 64,
+              "column": 5
+            },
+            {
+              "title": "shimmershine card matches baseline",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 90000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium-vrt",
+                  "projectName": "chromium-vrt",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "3eba06aa9c3f8f5a4c73-351cba09c5b843247f33",
+              "file": "vrt.spec.ts",
+              "line": 64,
+              "column": 5
+            },
+            {
+              "title": "wavetableVco card matches baseline",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 90000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium-vrt",
+                  "projectName": "chromium-vrt",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "3eba06aa9c3f8f5a4c73-4ba31dfee59046da31cd",
+              "file": "vrt.spec.ts",
+              "line": 64,
+              "column": 5
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "workflow-shell-faces.spec.ts",
+      "file": "workflow-shell-faces.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "VRT: P1 curated faces (?shell=1) — compact lane tile + dock full-view",
+          "file": "workflow-shell-faces.spec.ts",
+          "line": 173,
+          "column": 6,
+          "specs": [
+            {
+              "title": "face-tidyVco-compact: the compact lane tile matches baseline",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 90000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium-vrt",
+                  "projectName": "chromium-vrt",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "614cc6101ad67d96f479-ee2b5e9f9664bd69b909",
+              "file": "workflow-shell-faces.spec.ts",
+              "line": 175,
+              "column": 5
+            },
+            {
+              "title": "face-adsr-dock: the dock full-view faceplate matches baseline",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 90000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium-vrt",
+                  "projectName": "chromium-vrt",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "614cc6101ad67d96f479-6a149de2d4b52d68be2b",
+              "file": "workflow-shell-faces.spec.ts",
+              "line": 211,
+              "column": 5
+            },
+            {
+              "title": "face-lfo-dock: the dock full-view faceplate matches baseline",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 90000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium-vrt",
+                  "projectName": "chromium-vrt",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "614cc6101ad67d96f479-cfbb857e8f3c7035fd1a",
+              "file": "workflow-shell-faces.spec.ts",
+              "line": 211,
+              "column": 5
+            },
+            {
+              "title": "face-cloudseed-dock: the dock full-view faceplate matches baseline",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 90000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium-vrt",
+                  "projectName": "chromium-vrt",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "614cc6101ad67d96f479-ae8def9d0c68cb7777a0",
+              "file": "workflow-shell-faces.spec.ts",
+              "line": 211,
+              "column": 5
+            },
+            {
+              "title": "face-sixstrum-compact: the compact lane tile matches baseline",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 90000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium-vrt",
+                  "projectName": "chromium-vrt",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "614cc6101ad67d96f479-b0bb74a606cf32f2aa64",
+              "file": "workflow-shell-faces.spec.ts",
+              "line": 175,
+              "column": 5
+            },
+            {
+              "title": "face-snaredrum-compact: the compact lane tile matches baseline",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 90000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium-vrt",
+                  "projectName": "chromium-vrt",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "614cc6101ad67d96f479-268f8ee932aa1924ef72",
+              "file": "workflow-shell-faces.spec.ts",
+              "line": 175,
+              "column": 5
+            },
+            {
+              "title": "face-filter-compact: the compact lane tile matches baseline",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 90000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium-vrt",
+                  "projectName": "chromium-vrt",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "614cc6101ad67d96f479-9eacc98aeaa75f6a9393",
+              "file": "workflow-shell-faces.spec.ts",
+              "line": 175,
+              "column": 5
+            },
+            {
+              "title": "face-reverb-dock: the dock full-view faceplate matches baseline",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 90000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium-vrt",
+                  "projectName": "chromium-vrt",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "614cc6101ad67d96f479-36726379c997d57a22a0",
+              "file": "workflow-shell-faces.spec.ts",
+              "line": 211,
+              "column": 5
+            },
+            {
+              "title": "face-clap-dock: the dock full-view faceplate matches baseline",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 90000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium-vrt",
+                  "projectName": "chromium-vrt",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "614cc6101ad67d96f479-27a23bfa20cce445c682",
+              "file": "workflow-shell-faces.spec.ts",
+              "line": 211,
+              "column": 5
+            },
+            {
+              "title": "face-macrooscillator-compact: the compact lane tile matches baseline",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 90000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium-vrt",
+                  "projectName": "chromium-vrt",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "614cc6101ad67d96f479-713aaeadfefdb129dae8",
+              "file": "workflow-shell-faces.spec.ts",
+              "line": 175,
+              "column": 5
+            },
+            {
+              "title": "face-meowbox-compact: the compact lane tile matches baseline",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 90000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium-vrt",
+                  "projectName": "chromium-vrt",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "614cc6101ad67d96f479-e52bbfd58e415e7504ed",
+              "file": "workflow-shell-faces.spec.ts",
+              "line": 175,
+              "column": 5
+            },
+            {
+              "title": "face-meowbox-dock: the dock full-view faceplate matches baseline",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 90000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium-vrt",
+                  "projectName": "chromium-vrt",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "614cc6101ad67d96f479-8a3a3930450933aafad9",
+              "file": "workflow-shell-faces.spec.ts",
+              "line": 211,
+              "column": 5
+            },
+            {
+              "title": "face-cube-compact: the compact lane tile matches baseline",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 90000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium-vrt",
+                  "projectName": "chromium-vrt",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "614cc6101ad67d96f479-4e5711ac6a039d587ade",
+              "file": "workflow-shell-faces.spec.ts",
+              "line": 175,
+              "column": 5
+            },
+            {
+              "title": "face-noise-dock: the dock full-view faceplate matches baseline",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 90000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium-vrt",
+                  "projectName": "chromium-vrt",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "614cc6101ad67d96f479-9891a046a9421fab705a",
+              "file": "workflow-shell-faces.spec.ts",
+              "line": 211,
+              "column": 5
+            },
+            {
+              "title": "face-marbles-compact: the compact lane tile matches baseline",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 90000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium-vrt",
+                  "projectName": "chromium-vrt",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "614cc6101ad67d96f479-f6015ee16fd6e7ad074b",
+              "file": "workflow-shell-faces.spec.ts",
+              "line": 175,
+              "column": 5
+            },
+            {
+              "title": "face-marbles-dock: the dock full-view faceplate matches baseline",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 90000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium-vrt",
+                  "projectName": "chromium-vrt",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "614cc6101ad67d96f479-c069c4ff61170d43bc62",
+              "file": "workflow-shell-faces.spec.ts",
+              "line": 211,
+              "column": 5
+            },
+            {
+              "title": "every shipped face has a scene, and every scene has its baselines",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 90000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium-vrt",
+                  "projectName": "chromium-vrt",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "614cc6101ad67d96f479-cceb9ae2fd4852f7af03",
+              "file": "workflow-shell-faces.spec.ts",
+              "line": 313,
+              "column": 3
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-08-13T20:46:26.268Z",
+    "duration": 45.52999999999997,
+    "expected": 0,
+    "skipped": 29,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}
