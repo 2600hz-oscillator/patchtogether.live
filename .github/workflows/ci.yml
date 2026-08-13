@@ -1092,7 +1092,7 @@ jobs:
       #   distinct tests involved .................. 9
       #   behavioral-observation-window.spec.ts .... 11/18 (root-caused here)
       #   camera-input.spec.ts ..................... 6/18  (fixed by #1564)
-      #   collapse-keeps-playing.spec.ts ........... 5/18  (open)
+      #   collapse-keeps-playing.spec.ts ........... 5/18  (root-caused, #1569)
       #   matrixmix.spec.ts ........................ 2/18  (open)
       #   midi / patch-load-leak / samsloop-record /
       #     clipplayer-custom-scale /
