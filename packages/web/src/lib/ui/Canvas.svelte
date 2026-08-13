@@ -738,6 +738,13 @@
       // is built by the registry so the spec and the registry cannot drift.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__samsloopRecording = (nodeId: string) => nodeSamsloop.probe(nodeId);
+      // #1589: observe the NODE-owned media entries from a spec. Same reasoning
+      // as __nodeRecording — the point of the registry is that these outlive the
+      // card, so the probe must read the NODE's record and never a card's state.
+      // Rows only (no count anywhere): a caller asserts PROPERTIES of them.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__nodeMedia = (nodeId: string) =>
+        nodeMedia.snapshot().filter((s) => s.nodeId === nodeId);
       // Drag-lock state for e2e — patch-menus-persist tests inspect this
       // to confirm the lock engaged + released at the right moments.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

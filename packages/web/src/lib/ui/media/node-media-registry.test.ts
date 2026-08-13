@@ -464,3 +464,170 @@ describe('node media registry — element KINDS', () => {
     expect(kinds).toEqual(['video', 'img', 'audio']);
   });
 });
+
+describe('node media registry — ensure(): the SOURCE-ONLY consumer (#1589)', () => {
+  // TOYBOX's per-layer <video>s are never displayed: they are texture sources
+  // the engine pumps frames out of. They need the element + the url + the stream
+  // + the graph-keyed teardown, and NO host and NO lease.
+  it('creates the element PARKED and never mounts it anywhere', () => {
+    const h = harness();
+    const r = createNodeMediaRegistry(h.ops);
+    const el = r.ensure('tb', 'layer-video-0');
+    expect(h.created).toHaveLength(1);
+    expect(el.parent).toBe('PARKING');
+  });
+
+  it('returns the SAME element every time — one per (node, slot), like adopt', () => {
+    const h = harness();
+    const r = createNodeMediaRegistry(h.ops);
+    const a = r.ensure('tb', 'layer-video-0');
+    const b = r.ensure('tb', 'layer-video-0');
+    const other = r.ensure('tb', 'layer-video-1');
+    expect(b).toBe(a);
+    expect(other).not.toBe(a);
+    expect(h.created).toHaveLength(2);
+  });
+
+  it('init runs exactly once — the muted/loop stamp survives every remount', () => {
+    const h = harness();
+    const r = createNodeMediaRegistry(h.ops);
+    const init = (el: FakeEl): void => { el.inits++; };
+    const el = r.ensure('tb', 'layer-video-0', { init });
+    r.ensure('tb', 'layer-video-0', { init });
+    r.ensure('tb', 'layer-video-0', { init });
+    expect(el.inits).toBe(1);
+  });
+
+  it('LATE INIT: an entry minted by setObjectUrl still gets its init on first ensure', () => {
+    // The ORDER-DEPENDENCE that bit #1589's own fix. setObjectUrl creates the
+    // entry when a load races the mount, and that path takes no init — so a
+    // caller that wrote the url first got an element with no attributes.
+    const h = harness();
+    const r = createNodeMediaRegistry(h.ops);
+    r.setObjectUrl('tb', 'layer-video-0', 'blob:clip', 'clip.webm');
+    expect(h.created).toHaveLength(1);
+    expect(h.created[0]!.inits).toBe(0);
+
+    const el = r.ensure('tb', 'layer-video-0', { init: (e) => { e.inits++; } });
+    expect(el).toBe(h.created[0]);
+    expect(el.inits, 'the element must be inited even though the url came first').toBe(1);
+    // ...and still exactly once, however many times it is asked for afterwards.
+    r.ensure('tb', 'layer-video-0', { init: (e) => { e.inits++; } });
+    r.adopt('tb', 'layer-video-0', { name: 'dock' }, { init: (e) => { e.inits++; } });
+    expect(el.inits).toBe(1);
+    // The url the entry was created for is untouched by the late init.
+    expect(r.objectUrl('tb', 'layer-video-0')).toBe('blob:clip');
+  });
+
+  it('LATE INIT applies through setStream too (the camera-before-mount order)', () => {
+    const h = harness();
+    const r = createNodeMediaRegistry(h.ops);
+    r.setStream('tb', 'layer-video-2', fakeStream('cam'));
+    const el = r.ensure('tb', 'layer-video-2', { init: (e) => { e.inits++; } });
+    expect(el.inits).toBe(1);
+    expect(r.stream('tb', 'layer-video-2')).not.toBeNull();
+  });
+
+  it('does NOT steal an adopted element back to parking', () => {
+    // A card that displays the element and a source-only reader can coexist on
+    // one key; `ensure` is a read, not an ownership move.
+    const h = harness();
+    const r = createNodeMediaRegistry(h.ops);
+    const lease = r.adopt('tb', 'layer-video-0', { name: 'dock' });
+    const el = r.ensure('tb', 'layer-video-0');
+    expect(el).toBe(lease.el);
+    expect(el.parent).toBe('dock');
+  });
+
+  it('an ensure-created entry still owns its url + stream and is swept with the node', () => {
+    // The whole point: no card ever revokes or stops, and graph lifetime still
+    // frees everything. Without this, "no teardown API" would just be a leak.
+    const h = harness();
+    const r = createNodeMediaRegistry(h.ops);
+    const el = r.ensure('tb', 'layer-video-0');
+    r.setObjectUrl('tb', 'layer-video-0', 'blob:clip', 'clip.webm');
+    r.setStream('tb', 'layer-video-1', fakeStream('cam'));
+    expect(r.objectUrl('tb', 'layer-video-0')).toBe('blob:clip');
+    expect(r.mediaName('tb', 'layer-video-0')).toBe('clip.webm');
+
+    r.sweep(['some-other-node']);
+    expect(h.revoked).toEqual(['blob:clip']);
+    expect(h.stopped.map((s) => (s as unknown as { label: string }).label)).toEqual(['cam']);
+    expect(el.destroyed).toBe(true);
+    expect(r.peek('tb', 'layer-video-0')).toBeNull();
+  });
+});
+
+describe('node media registry — THE STRUCTURAL GUARD: no per-CARD teardown exists', () => {
+  // #1531 / #1574 / #1589 are one defect: a view action ran a teardown keyed to
+  // the wrong lifetime. The cure that outlives our attention is not a rule, it
+  // is the ABSENCE of a method to call — `tsc` refuses the regression before any
+  // test runs. This walks the real surface and fails if such a method appears.
+  //
+  // The two teardowns that ARE here are NAMED for the graph: `disposeNode` takes
+  // a node id, `sweep` takes the live node set. A bare `dispose()` / `release()`
+  // / `destroy()` / `detach()` / `abandon()` on the registry would be callable
+  // from an onDestroy with nothing but a node id in scope, which is exactly the
+  // shape every one of those bugs had.
+
+  /** Method names on `surface` that a card's onDestroy could call to tear the
+   *  node's media down. Deny-by-default: anything teardown-shaped that is not
+   *  explicitly graph-keyed by NAME is an offender. */
+  function perCardTeardownMethods(surface: object): string[] {
+    const GRAPH_KEYED = new Set(['disposeNode', 'sweep']);
+    const TEARDOWN_SHAPE = /^(dispose|destroy|teardown|release|detach|abandon|revoke|stop|clear|reset|close|unmount)/i;
+    return Object.keys(surface)
+      .filter((k) => typeof (surface as Record<string, unknown>)[k] === 'function')
+      .filter((k) => TEARDOWN_SHAPE.test(k) && !GRAPH_KEYED.has(k))
+      .sort();
+  }
+
+  it('the registry surface exposes NO per-card teardown', () => {
+    const r = createNodeMediaRegistry(harness().ops);
+    expect(
+      perCardTeardownMethods(r),
+      'a per-card teardown appeared on the registry — this is how #1531/#1574/#1589 happen',
+    ).toEqual([]);
+  });
+
+  it('POSITIVE CONTROL: the probe DOES see the methods that exist', () => {
+    // Without this leg a probe that resolved nothing at all would pass the check
+    // above and read as coverage. It must see the real surface, and it must see
+    // the graph-keyed teardowns it deliberately allows.
+    const r = createNodeMediaRegistry(harness().ops);
+    const methods = Object.keys(r).filter((k) => typeof (r as unknown as Record<string, unknown>)[k] === 'function');
+    for (const expected of ['adopt', 'ensure', 'peek', 'setObjectUrl', 'setStream', 'setDisposer', 'disposeNode', 'sweep', 'snapshot']) {
+      expect(methods, `the surface walk missed ${expected} — the probe is broken, not the code`).toContain(expected);
+    }
+  });
+
+  it('POSITIVE CONTROL: the predicate FLAGS a hostile surface', () => {
+    // The same function, given the shape it exists to reject. If this ever stops
+    // reporting, the check above is vacuous no matter how green it looks.
+    const hostile = {
+      adopt() { /* */ },
+      dispose() { /* */ },
+      release() { /* */ },
+      abandon() { /* */ },
+      detachSource() { /* */ },
+      disposeNode() { /* */ },
+      sweep() { /* */ },
+    };
+    expect(perCardTeardownMethods(hostile)).toEqual(['abandon', 'detachSource', 'dispose', 'release']);
+  });
+
+  it("the LEASE's release() is park-only, so it is not a teardown despite the name", () => {
+    // Stated here so the allowance is explicit rather than an oversight: a lease
+    // is per-adoption and its release only parks the element. The url, the
+    // stream, the disposer and the element itself all survive it — asserted
+    // directly above in 'a CARD unmount must not destroy the media'.
+    const h = harness();
+    const r = createNodeMediaRegistry(h.ops);
+    const lease = r.adopt('n1', 'main', { name: 'dock' });
+    r.setObjectUrl('n1', 'main', 'blob:x');
+    lease.release();
+    expect(h.revoked).toEqual([]);
+    expect(h.created[0]!.destroyed).toBe(false);
+    expect(r.objectUrl('n1', 'main')).toBe('blob:x');
+  });
+});

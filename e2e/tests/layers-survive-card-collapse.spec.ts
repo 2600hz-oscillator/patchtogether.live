@@ -1,0 +1,342 @@
+// e2e/tests/layers-survive-card-collapse.spec.ts
+//
+// #1589 — collapsing TOYBOX must not drop its video layers, and Export must
+// never write a preset it knows is incomplete.
+//
+// TOYBOX is un-migrated, so under the faceplate shell its card exists ONLY
+// inside the dock full-view. Collapsing UNMOUNTS it, and the card's `onDestroy`
+// ran `attachLayerVideo(i, null)`, `URL.revokeObjectURL`,
+// `pause()/srcObject=null/removeAttribute('src')/load()` and `track.stop()` for
+// every layer. Two consequences, and the second is the one that destroys trust:
+//
+//   1. THE CARD LIED. The layer row still showed the filename (it rides the
+//      Y.Doc), so the card looked loaded while rendering nothing.
+//   2. EXPORT WAS SILENTLY CORRUPT. `resolveLayerVideos` skips layers with no
+//      live url, so the `.toybox.zip` carried ZERO video bytes and the card
+//      reported success. The user finds out when the preset opens black.
+//
+// The elements, urls and camera streams now live in
+// $lib/ui/media/node-media-registry, keyed to the NODE and swept from Canvas
+// against the live node set.
+//
+// ── WHY THE NAME HAS NO `toybox-` PREFIX ─────────────────────────────────────
+//
+// `**/toybox-*.spec.ts` is a WEBGL_HEAVY_GLOB (e2e/webgl-heavy-globs.ts), and
+// per that file's own banner, enrolling a spec there DELETES its PR coverage —
+// the lane that ran the excluded specs was removed in #839. A regression guard
+// that runs nowhere is worse than none, so this spec is named to stay in the
+// sharded matrix, exactly as `collapse-keeps-playing.spec.ts` avoids `video-*`
+// for the same reason. (Renaming it to `toybox-…` silently un-runs it.)
+//
+// ── DETERMINISM ──────────────────────────────────────────────────────────────
+//
+// Every assertion is DOM state, the MEDIA CLOCK, the node's own registry record,
+// or the exported zip's BYTES. Never a pixel, never a wall-clock budget standing
+// in for progress. "Advanced N seconds of media time" is renderer-independent by
+// construction — SwiftShader renders ~7.9 fps against ~60 on a real GPU, so a ms
+// budget would be a different assertion on every machine — and the timeouts here
+// only BOUND a failure, they are never the gate.
+//
+// ⚠ The `?shell=legacy` toybox specs keep the real card in the LANE, so the card
+// never moves between mounts and this entire bug class is invisible to them.
+// This spec goes to plain `/rack` deliberately; do not add a shell param.
+
+import { test, expect, type Page } from '@playwright/test';
+import { unzipSync, strFromU8 } from 'fflate';
+import { readFileSync, statSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { spawnPatch } from './_helpers';
+
+const FIXTURE = fileURLToPath(new URL('../fixtures/lobby-clip.webm', import.meta.url));
+const FIXTURE_BYTES = statSync(FIXTURE).size;
+
+const NODE = 'tb';
+const LAYER = 0;
+const LAYER_VIDEO = `[data-testid="toybox-layer-video-${LAYER}"]`;
+
+interface MediaRow {
+  nodeId: string;
+  slot: string;
+  adopted: boolean;
+  hasUrl: boolean;
+  name: string | null;
+  hasStream: boolean;
+}
+
+/** The NODE's own media record — deliberately NOT read off the card, because
+ *  surviving the card's absence is the entire claim under test. */
+async function nodeMedia(page: Page, id: string): Promise<MediaRow[]> {
+  return page.evaluate(
+    (n) => (globalThis as unknown as { __nodeMedia(x: string): MediaRow[] }).__nodeMedia(n),
+    id,
+  );
+}
+
+/** The layer element's live state, sampled IN THE PAGE (never a Playwright poll
+ *  loop — that samples the very main thread it measures). */
+async function layerState(page: Page) {
+  return page.evaluate((sel) => {
+    const v = document.querySelector(sel) as HTMLVideoElement | null;
+    if (!v) return { present: false, hasSrc: false, paused: true, currentTime: 0, where: 'absent' };
+    return {
+      present: true,
+      hasSrc: !!(v.currentSrc || v.getAttribute('src')),
+      paused: v.paused,
+      currentTime: v.currentTime,
+      where: v.closest('[data-testid="node-media-parking"]')
+        ? 'parking'
+        : v.closest('[data-testid="dock-full-view"]')
+          ? 'dock'
+          : 'other',
+    };
+  }, LAYER_VIDEO);
+}
+
+async function boot(page: Page): Promise<string[]> {
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  // Plain /rack — the DEFAULT shell. See the header.
+  await page.goto('/rack');
+  await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: 30_000 });
+  await spawnPatch(page, [{ id: NODE, type: 'toybox', domain: 'video' }], [], { mountTimeout: 40_000 });
+  return errors;
+}
+
+/** Open the dock full-view — the owner's "expand" — and wait for the real card. */
+async function expand(page: Page): Promise<void> {
+  await page.evaluate(
+    (n) => (globalThis as unknown as { __openDockFullView(x: string): void }).__openDockFullView(n),
+    NODE,
+  );
+  await expect(page.getByTestId('toybox-card')).toBeVisible({ timeout: 40_000 });
+}
+
+/** Seed layer `LAYER` as a local-file VIDEO layer, optionally with a filename
+ *  already on the Y.Doc but no bytes (the state a reload / saved preset / a
+ *  rack-mate's write leaves behind). Writes the live Y.Doc exactly as the
+ *  existing toybox specs do. */
+async function seedVideoLayer(page: Page, opts: { name?: string } = {}): Promise<void> {
+  await page.evaluate(
+    ({ node, name }) => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
+        __ydoc: { transact: (fn: () => void) => void };
+      };
+      w.__ydoc.transact(() => {
+        const n = w.__patch.nodes[node];
+        if (!n) return;
+        if (!n.data) n.data = {};
+        const layer: Record<string, unknown> = {
+          kind: 'video',
+          contentId: null,
+          params: {},
+          videoSource: 'file',
+        };
+        if (name) layer.videoMeta = { name };
+        (n.data as Record<string, unknown>).layers = [
+          layer,
+          { kind: 'off', contentId: null, params: {} },
+          { kind: 'off', contentId: null, params: {} },
+          { kind: 'off', contentId: null, params: {} },
+        ];
+      });
+    },
+    { node: NODE, name: opts.name ?? '' },
+  );
+}
+
+/** Load the fixture into the active layer through the REAL file input and wait
+ *  until the node's element is genuinely playing it. */
+async function loadFixture(page: Page): Promise<void> {
+  // The <input type=file> is display:none inside its label — setInputFiles works
+  // on a hidden input, so wait for ATTACHED, not VISIBLE.
+  await expect(page.locator('[data-testid="toybox-video-input"]')).toHaveCount(1, { timeout: 30_000 });
+  await page.locator('[data-testid="toybox-video-input"]').setInputFiles(FIXTURE);
+  await page.waitForFunction(
+    (sel) => {
+      const v = document.querySelector(sel) as HTMLVideoElement | null;
+      return !!v && !!(v.currentSrc || v.getAttribute('src')) && !v.paused && v.currentTime > 0.05;
+    },
+    LAYER_VIDEO,
+    { timeout: 40_000 },
+  );
+}
+
+interface ExportedZip {
+  videos: { layer: number; name: string; path: string }[];
+  byteLengths: number[];
+}
+
+/** Click EXPORT, capture the download, and read the zip back. Returns the
+ *  manifest's video entries and the ACTUAL byte length stored for each — the
+ *  only reading of "the export worked" that a zero-video zip cannot pass. */
+async function exportAndRead(page: Page): Promise<ExportedZip> {
+  const [download] = await Promise.all([
+    page.waitForEvent('download', { timeout: 40_000 }),
+    page.locator('[data-testid="toybox-preset-export"]').first().dispatchEvent('click'),
+  ]);
+  const path = await download.path();
+  expect(path, 'the browser produced no downloaded file').toBeTruthy();
+  const entries = unzipSync(new Uint8Array(readFileSync(path!)));
+  const manifest = JSON.parse(strFromU8(entries['preset.json']!)) as {
+    videos: { layer: number; name: string; path: string }[];
+  };
+  return {
+    videos: manifest.videos ?? [],
+    byteLengths: (manifest.videos ?? []).map((v) => entries[v.path]?.length ?? 0),
+  };
+}
+
+test.describe('#1589 — TOYBOX layer media belongs to the NODE', () => {
+  test('a video layer survives the tray being dismissed, and Export still carries its exact bytes', async ({ page }) => {
+    test.setTimeout(180_000);
+    const errors = await boot(page);
+
+    await expand(page);
+    await seedVideoLayer(page);
+    await loadFixture(page);
+
+    // The element is NODE-owned: it lives in the registry's parking host, not in
+    // the card's subtree. That is what makes the card's unmount survivable, so
+    // assert it rather than inferring it.
+    const loaded = await layerState(page);
+    expect(loaded.where, `layer element must be node-owned (parked), not card-owned: ${JSON.stringify(loaded)}`)
+      .toBe('parking');
+    expect(await nodeMedia(page, NODE)).toContainEqual(
+      expect.objectContaining({ slot: `layer-video-${LAYER}`, hasUrl: true, name: 'lobby-clip.webm' }),
+    );
+
+    // ── POSITIVE CONTROL, run BEFORE the act under test ──────────────────────
+    // Export while everything is mounted and healthy. If this leg ever stops
+    // producing bytes, the post-collapse leg below proves nothing — "the zip is
+    // empty because the fix failed" and "the zip is empty because export is
+    // broken for an unrelated reason" are indistinguishable from one sample.
+    const control = await exportAndRead(page);
+    expect(control.videos.map((v) => v.layer), `control export carried no video: ${JSON.stringify(control)}`)
+      .toEqual([LAYER]);
+    expect(control.videos[0]!.name).toBe('lobby-clip.webm');
+    expect(control.byteLengths[0], 'control export must carry the WHOLE fixture').toBe(FIXTURE_BYTES);
+
+    const tBefore = (await layerState(page)).currentTime;
+
+    // ── THE ACT UNDER TEST: collapse. This unmounts the card. ────────────────
+    await page.getByTestId('faceplate-collapse').click();
+    await expect(page.getByTestId('toybox-card')).toHaveCount(0, { timeout: 20_000 });
+
+    // The element survived, still holds its src, and its MEDIA CLOCK advances —
+    // "present" alone is the half-fix (#1531's projector that is open and dead).
+    const ADVANCE_S = 0.4;
+    await page.waitForFunction(
+      ({ sel, target }) => {
+        const v = document.querySelector(sel) as HTMLVideoElement | null;
+        return !!v && !!(v.currentSrc || v.getAttribute('src')) && !v.paused && v.currentTime > target;
+      },
+      { sel: LAYER_VIDEO, target: tBefore + ADVANCE_S },
+      { timeout: 40_000 },
+    );
+    const collapsed = await layerState(page);
+    expect(
+      collapsed.currentTime,
+      `the layer's media clock must advance past ${tBefore.toFixed(3)}s while the card is gone (got ${JSON.stringify(collapsed)})`,
+    ).toBeGreaterThan(tBefore);
+
+    // The NODE still owns the bytes. This is the record Export reads.
+    expect(
+      await nodeMedia(page, NODE),
+      'the collapse revoked the node-owned object url — this is the #1589 regression',
+    ).toContainEqual(expect.objectContaining({ slot: `layer-video-${LAYER}`, hasUrl: true }));
+
+    // ── RE-EXPAND: the card must not LIE about its state ────────────────────
+    await expand(page);
+    await expect(page.getByTestId('toybox-video-filename')).toHaveAttribute('data-has-local-file', 'true', {
+      timeout: 20_000,
+    });
+    await expect(page.getByTestId('toybox-video-relink')).toHaveCount(0);
+
+    // ...and Export STILL writes the video, with no re-pick. Byte-for-byte the
+    // same as the pre-collapse control: the bytes were never touched.
+    const after = await exportAndRead(page);
+    expect(after.videos.map((v) => v.layer), `post-collapse export carried no video: ${JSON.stringify(after)}`)
+      .toEqual([LAYER]);
+    expect(
+      after.byteLengths[0],
+      `post-collapse export must carry the same ${FIXTURE_BYTES} bytes as the control (${control.byteLengths[0]})`,
+    ).toBe(FIXTURE_BYTES);
+    await expect(page.getByTestId('toybox-preset-notice')).toContainText('+1 video', { timeout: 20_000 });
+
+    expect(errors, `page errors: ${errors.join(' | ')}`).toEqual([]);
+  });
+
+  test('Export REFUSES, loudly, when a layer\'s bytes are not loaded in this session', async ({ page }) => {
+    test.setTimeout(180_000);
+    // Independent of the lifetime fix: a reload, a localStorage preset (which
+    // cannot hold video) and a rack-mate's synced layer all leave a FILENAME
+    // with no bytes. Writing a zero-video zip and reporting success is the part
+    // that destroys trust, so it must fail instead — and say which layer.
+    const errors = await boot(page);
+    await expand(page);
+    await seedVideoLayer(page, { name: 'ghost.webm' });
+
+    // The card admits it: name shown, bytes absent, and it says so.
+    await expect(page.getByTestId('toybox-video-filename')).toHaveAttribute('data-has-local-file', 'false', {
+      timeout: 30_000,
+    });
+    await expect(page.getByTestId('toybox-video-relink')).toBeVisible({ timeout: 20_000 });
+
+    await page.locator('[data-testid="toybox-preset-export"]').first().dispatchEvent('click');
+
+    const err = page.getByTestId('toybox-preset-error');
+    await expect(err).toContainText('Export cancelled', { timeout: 20_000 });
+    await expect(err).toContainText('ghost.webm');
+    await expect(err, 'the refusal must name the layer the way the card labels it').toContainText('layer 1');
+    // No success notice — the two must never both appear.
+    await expect(page.getByTestId('toybox-preset-notice')).toHaveCount(0);
+
+    expect(errors, `page errors: ${errors.join(' | ')}`).toEqual([]);
+  });
+
+  test('NEGATIVE CONTROL: deleting the node DOES revoke the url and destroy the element', async ({ page }) => {
+    test.setTimeout(180_000);
+    // Without this leg the test above would pass just as happily if the registry
+    // simply never released anything — a leak, not a fix. This proves the sweep
+    // still tears down, so "survives collapse" is a real discrimination.
+    await boot(page);
+    await expand(page);
+    await seedVideoLayer(page);
+    await loadFixture(page);
+
+    // Capture the live blob url BEFORE the delete so revocation is provable
+    // rather than inferred from an absence.
+    const url = await page.evaluate(
+      (sel) => (document.querySelector(sel) as HTMLVideoElement).currentSrc || (document.querySelector(sel) as HTMLVideoElement).getAttribute('src')!,
+      LAYER_VIDEO,
+    );
+    expect(url, 'expected a blob: url on the layer element').toMatch(/^blob:/);
+    // The url resolves NOW — the positive half of the revocation probe. Without
+    // it, a fetch that fails after the delete proves nothing (it might never
+    // have resolved).
+    expect(
+      await page.evaluate(async (u) => {
+        try { return (await fetch(u)).ok; } catch { return false; }
+      }, url),
+      'the blob url must resolve BEFORE the delete, or the probe below is vacuous',
+    ).toBe(true);
+
+    // Remove the node from the graph — the ONE event that must tear this down.
+    // `__patch` is the live store, so Canvas's sweep sees it exactly as it sees
+    // a menu delete, a lasso delete, undo, Clear or a peer's CRDT delete.
+    await page.evaluate((n) => {
+      const g = globalThis as unknown as { __patch: { nodes: Record<string, unknown> } };
+      delete g.__patch.nodes[n];
+    }, NODE);
+
+    await expect.poll(async () => (await nodeMedia(page, NODE)).length, { timeout: 30_000 }).toBe(0);
+    await expect(page.locator(LAYER_VIDEO)).toHaveCount(0, { timeout: 20_000 });
+    expect(
+      await page.evaluate(async (u) => {
+        try { return (await fetch(u)).ok; } catch { return false; }
+      }, url),
+      'the object url outlived the node — it was never revoked (a leak)',
+    ).toBe(false);
+  });
+});
