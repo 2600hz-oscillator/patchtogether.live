@@ -492,8 +492,11 @@ describe('negative controls: the checkers can actually fail', () => {
   it('isEphemeralTestUrl() REJECTS a real host and a non-test database', () => {
     expect(isEphemeralTestUrl('postgresql://postgres:postgres@localhost:5432/patchtogether_test')).toBe(true);
     expect(isEphemeralTestUrl('postgres://postgres:postgres@127.0.0.1:54320/patchtogether_test')).toBe(true);
-    // A real Neon branch — the case that would destroy data.
-    expect(isEphemeralTestUrl('postgresql://u:p@ep-twilight-tree-01652938.us-east-2.aws.neon.tech/main')).toBe(false);
+    // A remote Neon branch — the case that would destroy data. The endpoint id
+    // here is SYNTHETIC on purpose: `isEphemeralTestUrl` only looks at hostname
+    // and database name, so naming the project we actually run on bought this
+    // assertion nothing and put a real account identifier in a public repo.
+    expect(isEphemeralTestUrl('postgresql://u:p@ep-example-endpoint-00000000.us-east-2.aws.neon.tech/main')).toBe(false);
     // Local, but the PRODUCTION database name.
     expect(isEphemeralTestUrl('postgresql://postgres:postgres@localhost:5432/patchtogether')).toBe(false);
     expect(isEphemeralTestUrl('not-a-url')).toBe(false);

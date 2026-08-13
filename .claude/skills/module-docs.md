@@ -149,7 +149,7 @@ Module documentation is PINNED to the I/O CONTRACT — like ART pins audio to a
 source-SHA and VRT pins a card to a baseline image. When a module's contract
 changes, the build NOTICES and forces a human to re-author the doc or recognize
 a bug. AI may draft the prose; deterministic, zero-flake unit gates hold the line.
-(Design + research: `.myrobots/plans/living-docs-drift-2026-06-24.md`.) Three tiers:
+Three tiers:
 
 - **GENERATED** — the I/O reference (cable types, ranges, cv/edge sentences):
   derived from `PortDef`/`ParamDef` by `io-explain.ts`. Never hand-authored.

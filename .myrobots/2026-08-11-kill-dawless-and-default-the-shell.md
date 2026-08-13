@@ -37,12 +37,14 @@ correct. The risk is not the column — it is that **the deferral is untested**:
 no prod-shaped row has been through the current code, and the assumption "an
 unused column is inert" has not been exercised against a real prod dataset.
 
-**Mechanics for the deferred step, so they are not re-derived.** Neon topology is
-branch-per-tier, one project (`twilight-tree-01652938`), key in `../neon.txt`
-(SECRET — never echo it or a derived connection string). dev and autotest writes
-pass the auto classifier; **PROD writes are refused by it regardless of
-credentials**, so prod is run by the owner via a `!`-prefixed one-liner, exactly
-as migration 005 was. New keys are NOT needed.
+**Mechanics for the deferred step, so they are not re-derived.** The database
+topology and the location of its credentials are documented in
+`runbooks/secrets-and-accounts.md` and `runbooks/architecture.md` — that is
+their only home, and a session record does not repeat them. What is specific to
+*this* deferral: dev and autotest writes pass the auto classifier; **PROD writes
+are refused by it regardless of credentials**, so prod is run by the owner via a
+`!`-prefixed one-liner, exactly as migration 005 was. **No new credentials are
+needed** — which is why the deferral costs nothing to un-defer.
 
 ⚠ Note 006 is deliberately **non-destructive to rows** — the wipe is NOT written
 into it, because `apply-db-schema.sh` re-applies every `db/schema/*.sql` on every

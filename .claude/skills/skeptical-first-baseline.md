@@ -101,6 +101,4 @@ shows the BUGGY waveform and we'd bless the bug as correct forever. A new
 composite/scope baseline is a **discovery opportunity, not a rubber-stamp.** Honor
 it the same way `vrt-failures` is honored for failures.
 
-See also: `.myrobots/plans/composite-state-vrt-2026-06-28.md` (the high-ROI
-composite-scene plan this skill guards; local working notes), and the memories
-`feedback_vrt_failures` + `feedback_no_flake_tolerance`.
+See also the memories `feedback_vrt_failures` + `feedback_no_flake_tolerance`.
