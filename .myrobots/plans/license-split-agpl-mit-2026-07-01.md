@@ -192,14 +192,16 @@ draft wanted to "hide" is either unhideable (client) or copyleft (game code).
 - **Server business logic + secrets moat:** `packages/server/src/{capacity,
   rack-access,reaper,auth}.ts` (per-rackspace 4-user cap, tier gating, reaping);
   `lib/server/{invites,rackspaces,rackspaces-capacity,home-auth,feedback}.ts`;
-  `routes/api/*`; `hooks.server.ts` (beta gate). `INVITE_SECRET` is the crown
-  jewel (rotating it is the only invite-revocation primitive —
+  `routes/api/*`; `hooks.server.ts` (beta gate). The **invite-signing secret** is
+  the crown jewel (rotating it is the only invite-revocation primitive —
   `$lib/server/invites.ts` HMAC-SHA256). **Precondition:** these must be lifted
   onto a clean API that imports no AGPL graph/CRDT types, or they are a combined
   work and owe source under §13.
-- **Env secrets** — already gitignored, never committed (`INVITE_SECRET`,
-  `CLERK_SECRET_KEY`, `DATABASE_URL`, `BETA_GATE_*`, `BETTERSTACK_HEARTBEAT_URL`,
-  `RELAY_MEM_*`). These are the one unambiguously safe "private" category.
+- **Env secrets** — already gitignored, never committed. Which variables those
+  are, where each one lives and which must match across tiers is inventoried in
+  `runbooks/secrets-and-accounts.md`, which is their only home; a licensing
+  analysis does not need to restate it. These are the one unambiguously safe
+  "private" category.
 
 **NOT in the private tier (corrections vs. draft):**
 - ❌ **DSP/video source** — client-side, unhideable, and first-party AGPL:
@@ -274,7 +276,7 @@ but only behind an arm's-length AGPL-import-free API.**
 
 | # | Item | Client/Server | Value | Mechanism (corrected) |
 |---|---|---|---|---|
-| P0 | Env/infra secrets (`INVITE_SECRET`, `CLERK_SECRET_KEY`, `DATABASE_URL`, beta creds) | **Server** | Highest | `$env/dynamic/private` + Fly/CF secrets (already walled). Only work: never leak into a `VITE_*` var. **Unambiguously safe to keep private.** |
+| P0 | Env/infra secrets (inventory: `runbooks/secrets-and-accounts.md`) | **Server** | Highest | `$env/dynamic/private` + Fly/CF secrets (already walled). Only work: never leak into a `VITE_*` var. **Unambiguously safe to keep private.** |
 | P0 | Relay capacity/access/anti-abuse (`packages/server/src/{capacity,rack-access,reaper,auth}.ts`) | **Server** | High | Private submodule — **only after** lifting onto an API that imports zero AGPL graph/CRDT types (else combined work → §13 forces source). CI boundary lint must prove no AGPL import. |
 | P0 | SSR secret-signing (`$lib/server/invites.ts` HMAC) & api routes | **Server** | High | SvelteKit `$lib/server/*` is guaranteed off the client bundle — keep it there; same zero-AGPL-import rule to make it truly private. |
 | ~~P1~~ | ~~Original DSP source hidden via prebuilt-dist + minify~~ | **Client** | **N/A — REMOVED** | **Struck.** First-party DSP is AGPL; serving minified `dist/*.js` while withholding the buildable source is an AGPL §1/§13 Corresponding-Source **violation**, not protection. Client DSP is unhideable AND must ship its source offer. Keep `packages/dsp/src` public + buildable. |
@@ -487,8 +489,9 @@ risk).**
    rackspaces-capacity,home-auth}` mirrors `packages/server/{capacity,auth,
    rack-access}` — plan a single shared private module (on a clean, AGPL-free
    API) before the physical split so two copies don't drift.
-10. Keep secrets exactly as-is (already walled); document `INVITE_SECRET`
-    rotation as the invite-revocation primitive.
+10. Keep secrets exactly as-is (already walled); document invite-signing-secret
+    rotation as the invite-revocation primitive (in
+    `runbooks/secrets-and-accounts.md`, where the names live).
 
 **Phase 2 — Detangle the architectural knot (enables ANY clean cut; do before
 moving files).**

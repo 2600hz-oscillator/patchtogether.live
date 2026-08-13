@@ -112,6 +112,5 @@ note-entry sequencers using `midiToHz()`
 - `packages/web/src/lib/video/modules/doom.ts:240-340` — gate port
   declarations + 10ms pulse contract.
 - `e2e/tests/cv-range-uniformity.spec.ts` — invariant test.
-- `.myrobots/plans/cv-range-standard.md` — full design rationale.
 - README "CV range convention" section.
 - ADR-003 — bridge wiring picks up pulses via the same convention.

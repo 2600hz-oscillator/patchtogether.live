@@ -11,8 +11,7 @@ the offline combined-master ART baseline, and writes `ci-grand-attest/<hash>.jso
 **CI runs only the cheap VERIFY** (`grand:attest:verify`, no GPU/DB/LFS) — it
 confirms the committed json's hash matches the current basis.
 
-Design + rationale: `.myrobots/plans/grand-integration-e2e-art-2026-07-19.md` +
-`ci-grand-attest/README.md`.
+Design + rationale: `ci-grand-attest/README.md`.
 
 You re-attest whenever you change a basis file — one of the four DSP cores
 (`packages/dsp/src/lib/{kickdrum,snaredrum,tidy-vco,sixstrum}-dsp.ts` + their
