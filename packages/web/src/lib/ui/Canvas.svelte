@@ -220,7 +220,7 @@
   import { migrated } from '$lib/ui/workflow/strict-faces';
   // DOM-SOURCE seam: a video module whose source lives on its CARD stays alive
   // in an off-screen host when the shell swaps its lane card away.
-  import { DOM_SOURCE_LANE_TYPES, needsHeadlessSourceMount } from '$lib/ui/workflow/dom-source-modules';
+  import { HEADLESS_MOUNT_LANE_TYPES, needsHeadlessSourceMount } from '$lib/ui/workflow/dom-source-modules';
   import { nodeMedia } from '$lib/ui/media/node-media-registry';
   import { nodePresent } from '$lib/ui/modules/node-present-registry.svelte';
   import { nodeRecorder } from '$lib/ui/modules/node-recorder-registry.svelte';
@@ -2012,13 +2012,17 @@
     return out;
   });
 
-  /** DOM-SOURCE video modules the shell swapped out of their lane — the nodes
-   *  <HeadlessSourceHost> must keep mounted so their card-owned `<video>`/`<img>`
-   *  source stays ATTACHED to the engine handle (see
-   *  $lib/ui/workflow/dom-source-modules for the whole rationale: node
-   *  registration is graph-driven and already UI-independent, but SOURCE
-   *  attachment was card-mount-driven, so camera/videobox/… → OUTPUT was
-   *  patched-but-black under `?shell=1`).
+  /** Modules the shell swapped out of their lane whose ENGINE-VISIBLE state
+   *  lives on their CARD — the nodes <HeadlessSourceHost> must keep mounted.
+   *  Two halves, one union (see $lib/ui/workflow/dom-source-modules):
+   *    - DOM_SOURCE_LANE_TYPES — the card-owned `<video>`/`<img>` must stay
+   *      ATTACHED to the engine handle (node registration is graph-driven and
+   *      already UI-independent, but SOURCE attachment was card-mount-driven,
+   *      so camera/videobox/… → OUTPUT was patched-but-black under `?shell=1`);
+   *    - CARD_PRODUCER_LANE_TYPES (#1587) — the card IS the producer: its rAF
+   *      loop is the only writer of the module's picture/analysis, so
+   *      wavesculpt/timelorde/synesthesia emitted black on a SAVED rack the
+   *      user never touched.
    *
    *  Uses the SAME pure lane decision the flowNodes derivation uses, so the two
    *  can never disagree: 'legacy' (`?shell=legacy`, or a NON_SHELL carve-out
@@ -2069,7 +2073,7 @@
     const collapsed = collapsedGroupIds;
     const out: ModuleNode[] = [];
     for (const n of snapshot.nodes) {
-      if (!DOM_SOURCE_LANE_TYPES.has(n.type)) continue;
+      if (!HEADLESS_MOUNT_LANE_TYPES.has(n.type)) continue;
       if (isCanvasHiddenNode(n)) continue;
       const parentGroupId = (n.data as { parentGroupId?: string } | undefined)?.parentGroupId;
       if (parentGroupId && collapsed.has(parentGroupId)) continue;

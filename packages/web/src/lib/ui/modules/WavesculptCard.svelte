@@ -30,10 +30,11 @@
   // synth formula (mix of saw/sine/triangle morph).
 
   import { onMount, onDestroy } from 'svelte';
-  import { useStore, type NodeProps } from '@xyflow/svelte';
+  import { type NodeProps } from '@xyflow/svelte';
   import { useEngine } from '$lib/audio/engine-context';
   import { patch } from '$lib/graph/store';
   import { setNodeParam } from '$lib/graph/mutate';
+  import { captureFlowStore } from './card-kit';
   import { startCornerResize } from './card-resize';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
@@ -91,7 +92,21 @@
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
   const engineCtx = useEngine();
-  const flowStore = useStore();
+  // GUARDED (#1587), and this was a live P0 on its own: the dock full-view
+  // PLAIN-MOUNTS an un-migrated card OUTSIDE the SvelteFlow provider, where a
+  // bare `useStore()` THROWS at init. MEASURED: `__openDockFullView('ws1')`
+  // produced ZERO `[data-testid="dock-full-view"]` elements and one pageerror
+  // — "To call useStore outside of <SvelteFlow /> you need to wrap your
+  // component in a <SvelteFlowProvider /> … in DockFullView.svelte". So
+  // WAVESCULPT could not be expanded AT ALL under the faceplate shell; the
+  // "unless the card happens to be open" half of #1587 was not even reachable,
+  // which is also why the issue's confirming probe read identical numbers
+  // expanded and collapsed (the expand mounted nothing). Every other card that
+  // needs the flow store already routes through this helper — this one was the
+  // last bare call in lib/ui/modules, and card-flow-store-guard.test.ts now
+  // refuses a new one. Inside the provider `captureFlowStore()` is
+  // byte-identical to `useStore()`; outside it is null → zoom 1 (card-resize).
+  const flowStore = captureFlowStore();
 
   // ----- Resize plumbing (mirror BentboxCard) -----
   // Rounded to whole-u (180px) rack tiles (#759) so default + min land on the
@@ -2345,8 +2360,15 @@ void main() {
     frameCount++;
   }
 
+  /** The drawer THIS mount installed. Kept so onDestroy can hand it back for
+   *  the OWNER CHECK (#1587): a card MOVE between the headless host and the
+   *  dock full-view is an unmount + a mount with no ordering guarantee, and a
+   *  blind `uninstall(id)` from the stale mount would erase the live mount's
+   *  drawer — leaving the node black forever. */
+  let myFrameDrawer: ((c: OffscreenCanvas | HTMLCanvasElement) => void) | null = null;
+
   function installBridgeFrameDrawer(): void {
-    installWavesculptFrameDrawer(id, (targetCanvas) => {
+    myFrameDrawer = (targetCanvas: OffscreenCanvas | HTMLCanvasElement) => {
       if (!renderCanvas || !gl) return;
       const tc2d = targetCanvas.getContext('2d') as
         | OffscreenCanvasRenderingContext2D
@@ -2368,7 +2390,8 @@ void main() {
         x = 0; y = Math.round((ch - h) / 2);
       }
       tc2d.drawImage(renderCanvas as CanvasImageSource, x, y, w, h);
-    });
+    };
+    installWavesculptFrameDrawer(id, myFrameDrawer);
   }
 
   let displayCanvas: HTMLCanvasElement | null = $state(null);
@@ -2826,7 +2849,10 @@ void main() {
   });
   onDestroy(() => {
     if (rafId !== null) cancelAnimationFrame(rafId);
-    uninstallWavesculptFrameDrawer(id);
+    // Owner-checked — see myFrameDrawer. A stale mount must not erase the
+    // drawer a newer mount already installed.
+    uninstallWavesculptFrameDrawer(id, myFrameDrawer ?? undefined);
+    myFrameDrawer = null;
     disposeGl();
     if (resizeAbort) resizeAbort.abort();
   });
