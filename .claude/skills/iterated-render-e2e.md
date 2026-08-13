@@ -118,3 +118,45 @@ a comment that the literal tracks a default.
 - Memory `ci-swiftshader-video-e2e-timeouts` — scale timeouts by input/capture
   count, never flat
 - Memory `capability-dependent-e2e-local-vs-ci`
+
+---
+
+## Moved here from CLAUDE.md (2026-08-12, #1493)
+
+The RULE stays in CLAUDE.md; the measured evidence lives here so the numbers
+exist in exactly one place.
+
+
+### NEVER express a renderer-dependent wait in MILLISECONDS — count FRAMES
+
+The single highest-yield rule for WebGL/video e2e, and the one that has bitten
+most often. A wall-clock budget silently becomes a **different number of frames
+on every renderer**, so it is not one assertion — it is a different assertion
+per machine.
+
+Measured on backdraft PURE TV (#1214): **7.9 fps** under `E2E_SWIFTSHADER=1`
+vs ~60 fps on a real GPU — **~7.6× before shard contention**, and CI runs *ten*
+e2e shards in parallel on top of that. A 12 s budget was ~700 frames locally and
+**~12** on the runner. The effect needs ~80 frames to build (the nest advances
+exactly one level per frame), so the test could not pass on CI at any wall-clock
+value that still looked sane locally.
+
+- **Wait on a frame count in the page via rAF** (`waitFrames(n)`), not
+  `waitForTimeout`. That is renderer-independent *by construction* rather than
+  by tuning, and needs no per-machine calibration.
+- Keep a wall-clock cap only to **bound the failure**, never as the gate — and
+  bound frame-capture loops by time *as well as* count (40 frames at 8 fps is
+  5 s of pure frame time, which is its own timeout).
+- ⚠ **The ~2.5× "CI is slower" figure is a UNIT-LANE number** (vitest default
+  5000 ms; locally-2 s tests timed out at 5.5–6.3 s). It is far too optimistic
+  for anything touching WebGL. Do not carry it across.
+- Reproduce under the renderer that actually failed — `E2E_SWIFTSHADER=1`
+  exists for exactly this and is what caught both this and the gate-bridge
+  pathology in #1192.
+
+**Establish WHY before touching any budget.** "Slower on CI" and "the result is
+genuinely different on CI" need opposite fixes, and only the first is a timing
+problem. #1214 proved sameness first — 10 bands both renderers, brightness
+ladder 1.000/0.741/0.631/0.561/0.506 vs 1.000/0.739/0.629/0.559/0.505 — and
+only then treated it as a pacing bug.
+

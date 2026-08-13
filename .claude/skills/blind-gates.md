@@ -220,3 +220,164 @@ purpose, under conditions where the effect must be absent.**
 - `testing-conventions.md` — lanes, flake protocol, `REPEAT=3`
 - Memory `flaky-tests-can-be-unsound-not-just-flaky` — ask why the GREEN runs are
   green
+
+---
+
+## Moved here from CLAUDE.md (2026-08-12, #1493)
+
+The RULE stays in CLAUDE.md; the measured evidence lives here so the numbers
+exist in exactly one place.
+
+
+## VALIDATE THE INSTRUMENT — a wrong metric reads exactly like a finding
+
+> **Deeper treatment lives in the `blind-gates` skill** (`.claude/skills/`), with
+> the negative-control discipline worked through case by case; the renderer/frame
+> material is in `iterated-render-e2e`. **This section is the always-loaded
+> summary — when the two disagree, the skill is the detail and this is the rule.**
+> Keep the measured numbers in ONE place (the skill) so they can't drift.
+
+The unifying failure of the 2026-07-28 backdraft session. **Four separate times
+the measurement was wrong and its output looked authoritative.** None of them
+announced themselves; each produced a confident, plausible, false conclusion.
+
+- **Pearson correlation is invariant to global brightness**, and the sampled lags
+  were *even* — so a genuine period-2 limit cycle read as `corr = 1.0` and the
+  conclusion was "the servo doesn't oscillate". It did.
+- **`getBoundingClientRect()` under xyflow's zoom transform** reported a 310 px
+  overflow as 230 px. Sizing from it would have under-provisioned by ~25 %.
+- **A wall-clock budget** is a different number of frames on every renderer, so
+  "12 s" was ~700 frames locally and ~12 on CI (see the frame-count rule above).
+- **A gate that reads only the def** cannot see a card contradicting it (below).
+
+**Before believing a measurement, ask what it is invariant to.** A metric blind
+to the very dimension under test will happily return a clean number. Cheap
+defences, in rough order of value:
+
+1. **Negative-control the instrument, not just the code** — perturb the thing it
+   claims to measure and confirm the number moves. If it doesn't, the metric is
+   wrong regardless of what the code does.
+2. **Sample at co-prime / irregular offsets** when probing anything periodic; an
+   even lag against a period-2 signal aliases to a constant.
+3. **State the units in the assertion message** (`CSS px` vs `screen px`,
+   `frames` vs `ms`). Half these bugs were unit confusions that a printed label
+   would have exposed immediately.
+4. **Reproduce under the environment that actually failed** before theorising —
+   `E2E_SWIFTSHADER=1` settled two of these.
+5. **Never sample a page-side quantity with a Playwright-side poll loop.** Added
+   2026-08-02 (`workflow-master-transport`, shard 10). A `while (Date.now() <
+   deadline) { await page.evaluate(read); await waitForTimeout(50) }` is one
+   `page.evaluate` round-trip per sample **on the same main thread as the thing
+   it measures** — so a loaded runner starves the subject and the sampler
+   *together*, and a stalled thread can burn the whole 4 s window in two reads
+   and then report "the clock never advanced" off a sample size of two.
+   "Frozen" and "never looked" both print `Received: 1` and are
+   indistinguishable from the output. **Move the accumulator INTO the page**
+   (`page.evaluate` returning a Promise, sampling on a `setInterval` finer than
+   the tick under test): it adds no protocol traffic, and the accumulated Set
+   *survives* a stall, so a thread that freezes for 3 s and then runs still
+   reports every value it computed. Report `samples` / `elapsedMs` / the values
+   seen in the assertion message — that is what makes the next red run
+   diagnosable instead of a coin flip. Measured: the reworked scan reads 200×
+   in 4 s where the old loop managed a handful.
+
+⚠ And the meta-tell: **"the result is genuinely different here" and "the
+instrument reads differently here" look identical from the output alone.**
+Establish which before acting; they need opposite fixes. ⚠ And when the fix is
+to the INSTRUMENT, negative-control it in **both** directions before believing
+it — force the subject frozen (the advance gate must go red) *and* force it
+ever-running (the freeze gate must go red). Better still, make one of those a
+PERMANENT leg of the test, so the instrument is negative-controlled on every
+run rather than once at authoring time.
+
+
+## A CARD can silently disagree with its DEF — every def-reading gate is blind to it
+
+**Ask of any new gate: what is it structurally unable to see?** Two holes of this
+exact shape were found on one card in one day.
+
+**The bug (backdraft, 2026-07-28).** The def constrained `camTiltX/Y` to ±0.2 and
+`camPosX/Y` to ±0.5. `BackdraftCard.svelte` passed literal `xMin={-1} xMax={1}`
+to both `XyPad`s. That is **not** a display bug — the pads *wrote values the
+contract forbids*, the model silently clamped them, and most of the stick's
+travel did nothing. The control lied about its own range.
+
+**Why nothing caught it:** `contract-lock`, `module-docs-lint` and the range
+assertions **all read the DEF**. The e2e never touches the pad. So a card
+disagreeing with its own def is invisible to the entire gate set, and the work
+was honestly reported as "ranges constrained ✓" while the UI was still ±1.
+
+- **A control's range must come from ONE place.** Export the range from the def
+  module and have the card import it — never re-type the numbers in the card.
+- **Guard it at the SOURCE level**, since no runtime gate sees it: grep the card
+  for hardcoded ranges on any control whose def declares them. Precedent already
+  in the repo: the `controlFamilies` → card-testid grep in
+  `module-docs-lint.test.ts`, which exists for this same divergence class.
+- The general rule: **a gate that reads only one side of a two-sided contract
+  proves nothing about the other side.**
+
+### A GUARD FOR THAT CLASS THAT IS OPT-IN IS ITSELF AN INSTANCE OF IT
+
+**Audited 2026-08-02. Four gates, all green, all structurally unable to see the
+bug class they exist to catch — because each applied a FILTER before the check
+that quietly redefined the check's subject.** Coverage before → after:
+
+| gate | the filter | saw | could not see |
+|---|---|---|---|
+| `mutate.guard`'s `RAW_PARAM_WRITE` | `\.params\[…\]` — **bracket only** | 3 | **96** dotted writes |
+| `card-range-source`'s `RANGE_BOUND_CARDS` | an **opt-in filename list** | 7 cards | **186** cards |
+| `module-docs-lint`'s edge check | `if (!p.edge) continue` | 63 ports | **299** gate ports |
+| `faces-parity`'s `action` branch | *no probe at all* | 0 | **every** dead audition |
+
+The self-tests were blind the same way (the raw-write self-test only ever fed
+itself the bracket form), so nothing could have gone red. **Ask of any new gate:
+what is it structurally unable to see — and would its green run look any
+different if the answer were "everything"?**
+
+The three inversions, applied to all four (details + measured numbers in the
+`blind-gates` skill):
+
+1. **Deny by default with a NAMED exemption per instance** — the exact
+   `(file, key)` / `(module, port)` / `(card, param, field)` triple, never a
+   filename, so a new defect in an already-listed file still reddens.
+2. **Anchor to the ARTIFACT, not the list** — a ledger entry naming something
+   that no longer exists is RED. A stale exemption is one nobody is watching.
+3. ~~**Ratchet in BOTH directions**~~ — **superseded 2026-08-10.** Inversions 1
+   and 2 stand; the count does not. Where the old advice was "cap the
+   population and assert the cap has no slack", the rule is now **do not have a
+   count**: name each instance, anchor the names to the artifact, and let the
+   diff be the review. See "NEVER hand-type a population count" below.
+
+Plus: **state the gate's scope inside the gate**, asserting what it still cannot
+see — at zero, or in prose with the measured number if it genuinely cannot be
+asserted.
+
+
+### An ACTION-shaped cell needs a probe, exactly like a PANEL does
+
+`ShellActionCell.probe` is **required**. An audition writes nothing to the graph
+by design, so `readParam`/`readData` are structurally blind to it — the
+observable is the **audition ledger** (`$lib/ui/modules/audition-ledger`), which
+records per press whether the seam resolved a callable off the live engine handle
+and called it. `delivered: false` is recorded, never dropped: "pressed and
+reached nothing" must be distinguishable from "never pressed".
+
+The predicate is negative-controlled in **both** directions in the unit lane on
+every run (`audition-ledger.test.ts`), which is the permanent leg; the e2e side
+was verified once by disconnecting karplus's `manualTrigger` read key and
+watching `faces-parity` go red at the probe — with `toBeEnabled()` and `click()`
+both still passing, which is the finding in one line.
+
+**The sibling hole, same card, same day.** `card-control-overflow` only ever
+spawned the module in its DEFAULT state, so controls revealed by a mode switch
+were never measured — it missed a ~310 px overflow for hours. When a module has
+modes, the sweep must enter them, and **assert the mode's controls are actually
+mounted** so it cannot silently re-measure the default layout.
+
+⚠ **That spec reports VIEWPORT-SCALED pixels, not CSS pixels** —
+`measureOverflow` uses `getBoundingClientRect()` and xyflow applies a CSS
+transform for viewport zoom. Pass/fail is scale-invariant (0 is 0), but every
+*magnitude* is scaled: a 720 px card reads as ~530 at 0.736 zoom, and a ~310 px
+CSS overflow prints as ~230. **Never size a card from the printed number**, and
+never compare overflow figures across spawns unless the zoom matches.
+
