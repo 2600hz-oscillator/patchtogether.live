@@ -86,9 +86,35 @@ const QUARANTINE: Record<string, string> = {
   toybox: 'task #102: SwiftShader software-renderer timeout (heavy WebGL); restore coverage then un-fixme',
 };
 
-test.describe.configure({ mode: 'parallel' });
+// ── HEAVY WebGL RENDERS DO NOT RUN CONCURRENTLY ─────────────────────────────
+//
+// MEASURED 2026-08-13 (#1539): all seven HEAVY_RENDER modules land on ONE shard
+// (5/10 — expanded via `playwright test --list --shard=N/10` with the e2e lane's
+// real flags), and that shard runs `--workers=4`. So up to four heavy SwiftShader
+// renders compete for the software renderer at once. That is not bad luck; with
+// count-based sharding it is the expected case.
+//
+// It cost a red run: `module b3ntb0x renders + has 20 handles` exceeded its 90 s
+// budget on BOTH the attempt and the retry, on shard 5, on a PR that touched no
+// WebGL code at all (it deleted three unrelated specs — which re-partitions every
+// shard, because Playwright shards by test COUNT).
+//
+// WHY SERIALISING IS FREE HERE: shard 5 runs ~466 s while shards 3 and 10 set the
+// critical path at ~790 s. Spending shard 5's slack to remove a required-lane
+// flake costs nothing in time-to-merge.
+//
+// `mode: 'default'`, NOT `'serial'`: default runs them in order in a single
+// worker; serial ADDITIONALLY skips the rest of the group after any failure,
+// which would hide six results behind one. We want sequencing, not a cascade.
+//
+// This is a scheduling fix, not a budget change — no timeout was raised. The
+// renderer-independent version (assert on frames, keep the wall clock only as a
+// failure bound) is tracked separately; it does not on its own fix contention,
+// because a starved renderer still produces frames slowly.
+const HEAVY = REGISTRY.filter((m) => HEAVY_RENDER.has(m.type));
+const LIGHT = REGISTRY.filter((m) => !HEAVY_RENDER.has(m.type));
 
-for (const mod of REGISTRY) {
+function declareRenderTest(mod: (typeof REGISTRY)[number]) {
   const expectedHandleCount = mod.inputs.length + mod.outputs.length;
   const skipReason = SKIP_RENDER[mod.type];
   if (skipReason) {
@@ -96,7 +122,7 @@ for (const mod of REGISTRY) {
       `module ${mod.type} renders [SKIPPED: ${skipReason}]`,
       () => { /* see SKIP_RENDER for the alternative coverage */ },
     );
-    continue;
+    return;
   }
   const quarantineReason = QUARANTINE[mod.type];
   if (quarantineReason) {
@@ -104,7 +130,7 @@ for (const mod of REGISTRY) {
       `module ${mod.type} renders + has ${expectedHandleCount} handles + no console errors`,
       () => { /* QUARANTINED — see QUARANTINE map: ${quarantineReason} */ },
     );
-    continue;
+    return;
   }
   const isHeavy = HEAVY_RENDER.has(mod.type);
   test(`module ${mod.type} renders + has ${expectedHandleCount} handles + no console errors`, async ({
@@ -184,3 +210,13 @@ for (const mod of REGISTRY) {
     ).toEqual([]);
   });
 }
+
+test.describe('module render sweep (parallel)', () => {
+  test.describe.configure({ mode: 'parallel' });
+  for (const mod of LIGHT) declareRenderTest(mod);
+});
+
+test.describe('module render sweep — HEAVY WebGL (one at a time)', () => {
+  test.describe.configure({ mode: 'default' });
+  for (const mod of HEAVY) declareRenderTest(mod);
+});
