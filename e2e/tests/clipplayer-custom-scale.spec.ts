@@ -20,7 +20,14 @@
 
 import type { Page } from '@playwright/test';
 import { test, expect } from './_fixtures';
-import { spawnPatch } from './_helpers';
+import {
+  getFlowViewport,
+  readPaneScrollUndo,
+  revealInPane,
+  setFlowViewport,
+  spawnPatch,
+  watchPaneScrollUndo,
+} from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
@@ -101,7 +108,32 @@ test('custom scale: pick rows → APPLY hides the rest → hidden notes SURVIVE 
   const chosen = [allMidis[8], allMidis[12], allMidis[20], allMidis[33]];
   expect(new Set(chosen).size, 'four distinct rows').toBe(4);
   expect(chosen, 'the note we placed is NOT one of them').not.toContain(hiddenNote);
-  for (const m of chosen) await page.getByTestId(`clipplayer-scalerow-cp-${m}`).check();
+  // ⚠ ROW 33 IS BELOW THE PANE — measured y=819 CSS px against a 622 px pane —
+  // so it is NOT clickable where the card sits. Playwright's auto-scroll can
+  // reach it (the wrapper's scrollHeight is 1204), but SvelteFlow UNDOES that
+  // scroll by design, which made every green run a coin-toss and cost CI run
+  // 31726508578 shard 4/10 a 30 s timeout ("row g7 intercepts" = the element at
+  // the STALE point). `revealInPane` pans the flow viewport instead — the app's
+  // own scroll model, which nothing undoes — and is a no-op for the three rows
+  // already on the pane. Full derivation: the block comment in _helpers.ts.
+  const framed = await getFlowViewport(page);
+  await watchPaneScrollUndo(page);
+  for (const m of chosen) {
+    const row = page.getByTestId(`clipplayer-scalerow-cp-${m}`);
+    await revealInPane(page, row);
+    await row.check();
+  }
+  // PERMANENT NEGATIVE-CONTROL LEG (it is verified to MOVE: before the fix this
+  // same recorder read [473, 0] on a PASSING local run). An empty reading is
+  // the proof that no click here depended on the scroll-undo race — if a future
+  // change grows the card or drops a reveal, this reddens at the cause.
+  expect(
+    await readPaneScrollUndo(page),
+    'no click may depend on a browser scroll SvelteFlow undoes (scrollTop values seen, CSS px)',
+  ).toEqual([]);
+  // Put the framing back so the rest of the spec sees the layout it was
+  // written against (APPLY/REMOVE live at the TOP of the card).
+  await setFlowViewport(page, framed);
 
   await expect
     .poll(async () => (await nodeData(page, 'cp'))?.customScale?.[0]?.length ?? 0)
