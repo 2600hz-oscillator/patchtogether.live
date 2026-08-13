@@ -131,9 +131,14 @@ test('custom scale: pick rows → APPLY hides the rest → hidden notes SURVIVE 
     await readPaneScrollUndo(page),
     'no click may depend on a browser scroll SvelteFlow undoes (scrollTop values seen, CSS px)',
   ).toEqual([]);
-  // Put the framing back so the rest of the spec sees the layout it was
-  // written against (APPLY/REMOVE live at the TOP of the card).
+  // Put the framing back so the rest of the spec sees the layout it was written
+  // against (APPLY/REMOVE live at the TOP of the card), then VERIFY it landed —
+  // "the two evaluates after this will surely have let the transform settle" is
+  // the same probably-fine reasoning that produced this flake. `revealInPane`
+  // converges either way and, whichever framing it ends on, leaves APPLY inside
+  // the pane rather than assuming it.
   await setFlowViewport(page, framed);
+  await revealInPane(page, apply);
 
   await expect
     .poll(async () => (await nodeData(page, 'cp'))?.customScale?.[0]?.length ?? 0)
