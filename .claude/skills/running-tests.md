@@ -218,3 +218,32 @@ always compiles via the dedicated `dsp-build` job.)
 > `task dsp:build` after, not `dsp:fetch-dist`, so you're testing this worktree's
 > actual sources.
 
+
+---
+
+## The vendored `playwright-cli` skill — what it is and is NOT for
+
+`.claude/skills/playwright-cli/` is installed by
+`npx @playwright/cli install --skills` (⚠ the bare `playwright-cli` npm package is
+DEPRECATED — the real one is `@playwright/cli`). It is vendored: fix it upstream,
+do not edit it here. Invoke the binary through `npx @playwright/cli` — it is
+deliberately NOT a devDependency, so it costs no install time in any CI job.
+
+It is oriented at **driving a live browser** — `open` / `goto` / `click` against
+snapshot refs. That makes it useful for:
+
+- **authoring** a new spec (test-generation, element-attributes) — directly relevant
+  to the black-box journey tier, where the suite currently has **zero** `getByLabel`
+  uses and only 16 files using `getByRole`;
+- **request-mocking**, where a route mock is cleaner than reaching into app internals;
+- exploratory debugging against a running dev server.
+
+⚠ **It does NOT help you read a `trace.zip` that CI uploaded.** Its `tracing`
+reference covers *recording* a trace from a live CLI session, not inspecting an
+artifact from a failed shard. Diagnosing a CI failure is still: pull the job log
+via the jobs/logs API (never `gh run view --log-failed`, it wedges the shell), and
+if you need the trace, download the artifact and open it with
+`npx playwright show-trace`.
+
+The nine reference files are lazy-loaded, so only the one-line description sits in
+context until you actually open one.

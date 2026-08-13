@@ -21,12 +21,28 @@ const CLAUDE_MD = join(REPO_ROOT, 'CLAUDE.md');
 const AGENTS_MD = join(REPO_ROOT, 'AGENTS.md');
 const SKILLS_DIR = join(REPO_ROOT, '.claude', 'skills');
 
-/** Skill files on disk, by basename without the `.md`. */
+/**
+ * Skills on disk, in BOTH forms Claude Code supports:
+ *
+ *  - flat  — `<name>.md`                    (this repo's hand-authored skills)
+ *  - packaged — `<name>/SKILL.md`           (what `@playwright/cli install --skills`
+ *                                            writes, and the format vendored skills use)
+ *
+ * The flat-only version of this function was blind to the packaged form: a
+ * vendored skill directory produced no `.md` at the top level, so it passed the
+ * index check by being invisible rather than by being listed. That is the same
+ * "the filter quietly redefined the subject" failure this gate exists to catch.
+ */
 function skillsOnDisk(): string[] {
-  return readdirSync(SKILLS_DIR)
-    .filter((f) => f.endsWith('.md'))
-    .map((f) => f.replace(/\.md$/, ''))
-    .sort();
+  const names: string[] = [];
+  for (const entry of readdirSync(SKILLS_DIR, { withFileTypes: true })) {
+    if (entry.isFile() && entry.name.endsWith('.md')) {
+      names.push(entry.name.replace(/\.md$/, ''));
+    } else if (entry.isDirectory() && existsSync(join(SKILLS_DIR, entry.name, 'SKILL.md'))) {
+      names.push(entry.name);
+    }
+  }
+  return names.sort();
 }
 
 /**

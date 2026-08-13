@@ -381,7 +381,8 @@ and is DECLARED on the port (`PortDef.edge`).
 ## The skills
 
 `.claude/skills/` holds the detail behind these rules. Load one when you are working
-in its area:
+in its area. ⧉ marks a **vendored** skill — third-party, installed by a tool rather
+than authored here, so fix it upstream rather than editing it in place:
 
 | skill | when |
 |---|---|
@@ -398,6 +399,7 @@ in its area:
 | `module-adversarial-audit` | auditing a module |
 | `module-development` · `module-docs` · `module-faceplates` | building a module |
 | `module-pr-checklist` | shipping a module |
+| `playwright-cli` ⧉ | driving a real browser, authoring a new spec, mocking a request |
 | `population-counts` | any literal that counts something |
 | `pr-workflow` | opening, merging, conflict sweeps |
 | `running-tests` | the `*:one` loop, REPEAT, warm server |
