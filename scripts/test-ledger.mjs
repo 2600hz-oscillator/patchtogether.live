@@ -118,10 +118,10 @@ const RECORD_EXEMPTIONS = [
   { id: 'vrt.EXEMPT_FROM_VRT', file: 'e2e/vrt/vrt-exemptions.ts', konst: 'EXEMPT_FROM_VRT', desc: 'modules skipped from the per-card VRT sweep' },
   { id: 'behavioral.BEHAVIORAL_MODULE_EXEMPT', file: 'e2e/tests/per-module-per-port-behavioral.spec.ts', konst: 'BEHAVIORAL_MODULE_EXEMPT', desc: 'whole-module skips of the behavioral CONTROL→PATCHED delta sweep' },
   { id: 'behavioral.BEHAVIORAL_SWEEP_EXEMPT', file: 'e2e/tests/per-module-per-port-behavioral.spec.ts', konst: 'BEHAVIORAL_SWEEP_EXEMPT', desc: 'per-PORT skips of the behavioral delta sweep (module still enrolled)' },
-  { id: 'per-port.SKIP_SPAWN', file: 'e2e/tests/per-module-per-port.spec.ts', konst: 'SKIP_SPAWN', desc: 'modules skipped from the per-module-per-port spawn (handle/emit/drive) sweep' },
-  { id: 'per-port.EXEMPT_OUTPUT_EMIT_MODULES', file: 'e2e/tests/per-module-per-port.spec.ts', konst: 'EXEMPT_OUTPUT_EMIT_MODULES', desc: 'whole-module output-emit exemptions (asset/ROM/press-driven)' },
-  { id: 'per-port.EXEMPT_OUTPUT_EMIT', file: 'e2e/tests/per-module-per-port.spec.ts', konst: 'EXEMPT_OUTPUT_EMIT', desc: 'per-PORT output-emit exemptions (module\'s other outputs DO emit)' },
-  { id: 'per-port.EXEMPT_INPUT_DRIVE', file: 'e2e/tests/per-module-per-port.spec.ts', konst: 'EXEMPT_INPUT_DRIVE', desc: 'per-PORT input-drive exemptions (gameplay-deep / asset-gated inputs)' },
+  { id: 'per-port.SKIP_SPAWN', file: 'e2e/tests/_per-module-per-port-shared.ts', konst: 'SKIP_SPAWN', desc: 'modules skipped from the per-module-per-port spawn (handle/emit/drive) sweep' },
+  { id: 'per-port.EXEMPT_OUTPUT_EMIT_MODULES', file: 'e2e/tests/_per-module-per-port-shared.ts', konst: 'EXEMPT_OUTPUT_EMIT_MODULES', desc: 'whole-module output-emit exemptions (asset/ROM/press-driven)' },
+  { id: 'per-port.EXEMPT_OUTPUT_EMIT', file: 'e2e/tests/_per-module-per-port-shared.ts', konst: 'EXEMPT_OUTPUT_EMIT', desc: 'per-PORT output-emit exemptions (module\'s other outputs DO emit)' },
+  { id: 'per-port.EXEMPT_INPUT_DRIVE', file: 'e2e/tests/_per-module-per-port-shared.ts', konst: 'EXEMPT_INPUT_DRIVE', desc: 'per-PORT input-drive exemptions (gameplay-deep / asset-gated inputs)' },
 ];
 
 // Set-shaped exemptions (bare `new Set([...])` with no per-entry reason).
