@@ -471,7 +471,6 @@
   .card.b3ntb0x.full-frame {
     padding: 0;
   }
-  .card.b3ntb0x.full-frame .title,
   .card.b3ntb0x.full-frame .stripe,
   .card.b3ntb0x.full-frame .knob-grid,
   .card.b3ntb0x.full-frame .mirror-row {

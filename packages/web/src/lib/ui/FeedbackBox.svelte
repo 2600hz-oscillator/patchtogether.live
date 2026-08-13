@@ -131,6 +131,7 @@
     <div
       class="feedback-panel"
       role="dialog"
+          tabindex="-1"
       aria-modal="true"
       aria-labelledby="feedback-heading"
       onclick={(e) => e.stopPropagation()}

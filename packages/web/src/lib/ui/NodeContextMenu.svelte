@@ -594,9 +594,9 @@
         <button
           class="ctx-item"
           onclick={pickLock}
-          role="menuitem"
+          role="menuitemcheckbox"
           data-testid="ctx-lock"
-          aria-pressed={locked}
+          aria-checked={locked}
         >
           {locked ? 'Unlock' : 'Lock'}
         </button>

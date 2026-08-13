@@ -460,10 +460,6 @@
     letter-spacing: 0.1em;
     font-family: ui-monospace, monospace;
   }
-  .foxy-card .arrow {
-    color: var(--text-dim);
-    font-size: 1rem;
-  }
   .foxy-card .section-label {
     font-size: 0.5rem;
     color: var(--text-dim);

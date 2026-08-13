@@ -1113,7 +1113,6 @@
   .card.full-frame {
     padding: 0;
   }
-  .card.full-frame .title,
   .card.full-frame .stripe,
   .card.full-frame .pick-btn,
   .card.full-frame .transport,

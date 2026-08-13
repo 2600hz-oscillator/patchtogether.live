@@ -206,6 +206,7 @@
     use:clampMenu={{ x, y }}
     onkeydown={onKeydown}
     role="dialog"
+          tabindex="-1"
     aria-label="Add module"
   >
     <input

@@ -208,6 +208,7 @@
   class="editor-overlay nodrag nowheel"
   data-testid="cliparrange-editor"
   role="dialog"
+          tabindex="-1"
   aria-label="CLIP PLAYER arranger editor"
   onpointerdown={(e) => { if (e.target === e.currentTarget) onClose(); }}
 >
