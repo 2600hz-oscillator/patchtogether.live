@@ -5,6 +5,21 @@ description: How PRs work on this repo. Branch protection ruleset, the 2 require
 
 # PR workflow
 
+## Every PR closes an issue
+
+Before opening a PR, make sure an issue exists for the work and put `Fixes #N` in
+the PR body. This applies to defects **you** found as much as to owner-reported
+work — file it, then close it with the fix. Policy:
+[`docs/process/issue-workflow.md`](../../docs/process/issue-workflow.md).
+
+Checklist before you open:
+
+- [ ] `Fixes #N` in the body (file the issue first if needed)
+- [ ] New/changed tests flake-checked **3×** locally (`REPEAT=3`)
+- [ ] New gate? Its **negative control** is stated in the PR body — what you broke
+      to watch it go red
+- [ ] Baselines moved? The file count the bot committed matches what you predicted
+
 ## Branch protection on `main`
 
 Ruleset id **16042163** ("main: green PRs only") enforces:
@@ -145,3 +160,100 @@ on substantial PRs.
 - `state=DIRTY` → real merge conflict; resolve in your worktree, push.
 - `state=CLEAN` but merge button is greyed → check branch protection allows
   the merge method (`merge | squash | rebase` are all allowed currently).
+
+---
+
+## Moved here from CLAUDE.md (2026-08-12, #1493)
+
+The RULE stays in CLAUDE.md; the measured evidence lives here so the numbers
+exist in exactly one place.
+
+
+## Post-merge conflict sweep
+
+Module *registration* is now glob+palette-driven (PR #551), so `modules/index.ts`,
+`Canvas.svelte`, `module-categories.ts`, and `graph/types.ts` no longer collect
+per-module appends — they are no longer the conflict surface. The remaining
+hand-maintained list files that concurrent PRs still collide on are:
+
+- `packages/web/src/lib/docs/module-manifest.ts` (`DESCRIPTIONS`)
+- `e2e/vrt/vrt-exemptions.ts` (`EXEMPT_FROM_VRT` / `ALLOWED_PERMANENT_EXEMPT`)
+- `packages/web/src/lib/ui/modules-card-map.test.ts` (`EXPECTED_NODE_TYPES`)
+- the per-port / VRT spec lists (`e2e/tests/per-module-per-port*.spec.ts`)
+- `packages/web/src/lib/control/push2/push-card-config.ts` (`PUSH_CARD_CONTROLS`)
+  — the owner-editable PUSH CARD schema (which 8 controls each module puts on
+  the Push 2 display). Hand-maintained like `DESCRIPTIONS`; its typo gate is
+  `push-card-schema.test.ts`, and the AUTHORED-card goldens in that same file
+  are an accept-loop — an intentional edit updates both in ONE commit.
+  ⚠ Because a push card is resolved from the LIVE def, **adding or renaming a
+  param on any module can silently change that module's push card.** The face /
+  generic tiers re-rank themselves, so a new param declared early in `params`
+  walks onto the generic card and pushes the 8th control off. If a module's
+  card matters, give it an explicit entry here — an override REPLACES, so it
+  cannot drift.
+- `packages/web/src/lib/docs/strict-docs.ts` (`STRICT_DOCS`) — hand-maintained.
+  The GENERATED living-docs golden (`contract-lock.txt`) also collides: on
+  conflict, take main + re-run `flox activate -- task docs:accept` to
+  regenerate — never hand-merge it. (`module-docs.generated.ts` is no longer
+  committed — it's a gitignored build artifact, so it can't conflict.)
+- `docs/testing/test-ledger.generated.md` — the GENERATED 3-bucket test ledger
+  (skips/exemptions/informational-lane counts). Collides like `contract-lock.txt`:
+  on conflict, take main + re-run `flox activate -- task test:ledger:accept` —
+  never hand-merge it. (Prose/roadmap: `docs/testing/README.md`.)
+
+**Whenever a PR merges to main, look ahead: sweep the other open PRs for conflicts
+the merge just created on those files, and rebase them** before they rot into
+`CONFLICTING` (which silently blocks them from shipping).
+
+1. After a merge, run `flox activate -- task pr:conflict-sweep` (GitHub
+   recomputes mergeability async, so it polls). It lists the open PRs that now
+   conflict with main.
+2. Rebase each: `git fetch origin && git checkout <branch> && git merge
+   origin/main`, resolve, then **verify your additions survived** (e.g.
+   `git grep <your-symbol>`), and push.
+
+**Never use `gh pr update-branch`** on PRs touching the shared registry files —
+it silently drops the PR's additions when auto-merge picks main's version of a
+conflict, with no marker. Always `git merge origin/main` locally and diff.
+
+
+## Merge only on THIS PR's final-commit green
+
+**Do not merge until THIS PR's CI run is green on its FINAL commit** — not an
+earlier run, not a still-running run, not "the last push was green and this one's
+trivial". The run that gates the merge must be the one built from the exact SHA
+you're merging.
+
+A **red push run on `main` is a P0** to root-cause immediately — never absorbed
+as "flake". (Synesthesia #698 merged near-red after two FAILED PR runs with only
+a just-started green run; it broke main CI and spawned #699/#701/#702 the same
+day. See also `feedback_never_merge_on_red_collab_is_doom_gate` and
+`feedback_no_flake_tolerance`.)
+
+
+## Docs-only PRs: the path lists in ci.yml and docs-only-gate.yml move TOGETHER
+
+`ci.yml` skips a prose-only change (`paths-ignore: ['**/*.md', '.myrobots/**',
+'LICENSE']`) so a typo fix doesn't burn ~25 min. But ruleset 16042163 REQUIRES
+`typecheck + unit + ART + E2E` and `vrt-strict (visual regression — strict
+subset)`, and a path-skipped workflow reports NOTHING — GitHub treats a
+never-reported required check as pending FOREVER, so the PR sits `BLOCKED` with
+zero failures and can never auto-merge (#1184).
+
+`.github/workflows/docs-only-gate.yml` breaks that: it fires on the **exact
+inverse** filter (`paths:` with the SAME list) and posts those two contexts as
+commit statuses — but only when **both** guards agree: every changed file is a
+doc **and** GitHub started no `ci.yml` run for that head SHA. A PR touching docs
+**and** code fires both workflows; the bypass posts nothing and the real suite
+gates it.
+
+- **Editing `ci.yml`'s `paths-ignore` means editing `docs-only-gate.yml`'s
+  `paths` in the SAME commit** — the complement is the whole safety argument.
+  `scripts/docs-only-gate.test.ts` (unit lane) fails on drift, on a context
+  rename, and on any changeset containing a source file.
+- **Never** satisfy a required context by naming a job after it: a job-level
+  `if:` skip reports as SUCCESS to branch protection, which would green-light
+  the mixed docs+code case. Statuses are posted by an explicit guarded call.
+- Renaming the `ci` or `vrt-strict` job still needs a coordinated ruleset PUT —
+  now plus `REQUIRED_CONTEXTS` in `scripts/docs-only-gate.mjs`.
+
