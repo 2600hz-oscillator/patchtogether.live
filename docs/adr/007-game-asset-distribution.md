@@ -1,10 +1,13 @@
 # ADR-007: Game-asset distribution — what ships in-repo, what the user supplies
 
-- Status: **Accepted for the tree as it stands, with ONE OPEN OWNER DECISION** —
-  the committed Blood shareware data has **no affirmative redistribution grant**
-  (see "The open owner decision" below). This ADR records what the repository
-  actually does and why; it does **not** assert that the Blood data is freely
-  redistributable.
+- Status: **Accepted.** The redistribution question was put to the owner on
+  2026-08-13 and answered: **keep shipping the Blood shareware data, risk
+  accepted knowingly** (see "The owner decision" below).
+
+  The underlying fact is unchanged and still worth knowing: the committed Blood
+  shareware data has **no affirmative redistribution grant**. This ADR records
+  what the repository actually does and why; it does **not** assert that the
+  Blood data is freely redistributable.
 - Date: 2026-08-13
 - Deciders: project owner (the decision to bundle the Blood shareware);
   this ADR documents it
@@ -220,24 +223,34 @@ filesystem: a filesystem listing cannot tell a committed shareware file from a
 developer's full-game copy sitting at the same path, so it would read green
 while looking at entirely different bytes.
 
-### 5. The open owner decision
+### 5. The owner decision (2026-08-13) — RESOLVED
 
-**This ADR does not resolve, and cannot resolve, whether we should keep shipping
-the Blood shareware data.** What it does is stop the tree from asserting a
-permission that was never obtained. Two items remain for the owner:
+**Asked and answered.** The analysis above establishes that the Blood shareware
+carries no affirmative free-redistribution grant, and that the repository is
+PUBLIC, so the committed LFS objects are cloneable by anyone — a broader scope
+than the "beta-gated / pre-public" sentence that originally recorded the risk.
 
-1. **Blood shareware redistribution.** No affirmative grant exists (§ "The
-   licence position"). Options: (a) keep it and accept the risk explicitly, now
-   that the public-repo scope in Consequence 2 is on the record; (b) stop
-   committing it and return to the picker/`setup:blood` path — the card already
-   supports both, so this is a data decision, not a code one. **Nothing was
-   deleted by the PR that introduced this ADR**; changing what is committed is
-   an owner call, and a history scrub would be a separate, explicit decision.
-2. **BUILDLIC non-commercial condition** (`PHASE0-STATUS.md` §1, still open):
-   confirm patchtogether.live will not charge for the Blood module, and ship
-   `packages/web/native/nblood/NOTICE.md` (GPLv2 game code + BUILDLIC engine +
-   the EDuke32 linking exception + attribution), which `PHASE1-STATUS.md` §5.6
-   lists as still not done.
+That was put to the owner directly, with the public-repo scope stated. **The
+owner's decision: keep the data committed and accept the exposure.**
+
+Recorded here because that is what an ADR is for: the position is now a
+deliberate, dated choice by the person entitled to make it, rather than an
+inherited assumption nobody had re-examined. The distinction the tree used to
+blur — between "this is shareware, therefore fine" and "the owner accepted this
+risk" — is now explicit, and it is the second.
+
+Anyone revisiting this should re-open the decision rather than re-run the
+analysis: the facts in "The licence position" are unchanged and are not the
+thing in question.
+
+**Still open, and NOT covered by that decision:**
+
+- **BUILDLIC non-commercial condition** (`PHASE0-STATUS.md` §1): confirm
+  patchtogether.live will not charge for the Blood module, and ship
+  `packages/web/native/nblood/NOTICE.md` (GPLv2 game code + BUILDLIC engine +
+  the EDuke32 linking exception + attribution), which `PHASE1-STATUS.md` §5.6
+  lists as still not done. This is an attribution/licence-compliance task, not a
+  redistribution question, and the decision above does not dispose of it.
 
 ## References
 
