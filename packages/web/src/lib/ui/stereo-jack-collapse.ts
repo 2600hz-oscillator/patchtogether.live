@@ -113,11 +113,26 @@ function pairsFor(def: StereoPairDefLike, direction: PortDirection): StereoPair[
  * (no declaration and no shared L/R token — scope's ch1/ch2, es9's in1..in14).
  * Those stay two jacks, which is the safe direction, and the population is
  * ratcheted in stereo-pairs.test.ts rather than left as an unstated zero.
+ *
+ * `expandedLeftIds` — pairs the USER has un-collapsed via right-click, named by
+ * their LEFT port id (`$lib/ui/stereo-jack-expansion`). A pair listed there
+ * skips collapse and its two legs pass through as ordinary rows, keeping their
+ * own per-leg labels ("CH1 L" / "CH1 R") and their positions in the input list.
+ * Everything else on the card collapses exactly as before, so expansion is
+ * per-jack and never a card-wide mode.
+ *
+ * ⚠ EXPANSION IS A RENDER CHOICE AND CHANGES NO WIRING. The returned rows are
+ * plain single-port descriptors — no `siblingId`, no `side` — so a click on one
+ * addresses exactly that leg. `planAudioCommit` still reads the PAIR off the
+ * def, so dropping a mono source on an expanded `CH1 L` writes the same edge it
+ * would have written had the user drilled into the collapsed jack's "L" row.
+ * The gesture is new; the commit seam is untouched.
  */
 export function collapseStereoPorts(
   ports: readonly PortDescriptor[],
   def: StereoPairDefLike | undefined,
   direction: PortDirection,
+  expandedLeftIds?: ReadonlySet<string>,
 ): CollapsedPort[] {
   if (!def || ports.length === 0) return ports.map((p) => ({ ...p }));
   const pairs = pairsFor(def, direction);
@@ -125,10 +140,11 @@ export function collapseStereoPorts(
 
   const present = new Set(ports.map((p) => p.id));
   /** portId → the pair it collapses into, but ONLY for pairs whose two ports
-   *  are BOTH on this surface. */
+   *  are BOTH on this surface AND that the user has not expanded. */
   const pairOf = new Map<string, StereoPair>();
   for (const pair of pairs) {
     if (!present.has(pair.left) || !present.has(pair.right)) continue;
+    if (expandedLeftIds?.has(pair.left)) continue;
     pairOf.set(pair.left, pair);
     pairOf.set(pair.right, pair);
   }
