@@ -128,6 +128,23 @@ export const RAW_WRITE_LEDGER: Readonly<Record<string, RawWriteEntry>> = {
     kind: 'sanctioned',
     why: 'sample bounds derived from the decoded buffer at spawn — engine truth, pre-first-render',
   },
+  // The SAME shape as asset-spawn, one layer later: `writeSamsloopTake` opens the
+  // loop window over the take it is committing in the same statement block that
+  // writes `node.data.sample`. Two independent reasons it must stay raw:
+  //   * the sample itself is a `node.data` write and is NOT undoable, so routing
+  //     only the window through `setNodeParam` would let one Ctrl-Z leave a
+  //     window that does not match the sample it describes;
+  //   * the commit can fire with NO card mounted and no gesture in flight — the
+  //     byte-cap auto-stop while the module is collapsed (#1588) — so it would
+  //     push an undo entry for something the user did not just do. That is the
+  //     #719 class the sanctioned bucket exists for.
+  // (`ui/modules/SamsloopCard.svelte` keeps its own start/end row: the UPLOAD
+  // path still writes them there, and that one is a user gesture.)
+  'ui/modules/node-samsloop-registry.svelte.ts': {
+    keys: ['start', 'end'],
+    kind: 'sanctioned',
+    why: 'loop window derived from the take being committed; the sample write beside it is not undoable, and a cap-stop commits with no card and no gesture',
+  },
 
   // ⚠ TWO call sites are NOT here because they are already inline-annotated,
   // and the inline marker is consulted BEFORE this ledger:
