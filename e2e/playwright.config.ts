@@ -121,16 +121,18 @@ export default defineConfig({
   //
   // ⚠ AND IT IS NOT TWO TESTS. This comment used to name two, from two runs.
   // MEASURED 2026-08-13 (#1502) by downloading the blob-report artifacts of
-  // TWELVE consecutive completed ci.yml runs, merging each with
+  // EIGHTEEN consecutive completed ci.yml runs, merging each with
   // `playwright merge-reports --reporter json` and auditing them with
-  // `scripts/e2e-report-audit.mjs`: TEN of the twelve carried at least one
-  // recovered flake, and six distinct tests were involved —
+  // `scripts/e2e-report-audit.mjs`: SIXTEEN of the eighteen carried at least
+  // one recovered flake, across NINE distinct tests —
   //
-  //   behavioral-observation-window.spec.ts   5/12  ← root-caused, see the file
-  //   camera-input.spec.ts                    3/12  ← fixed by #1564
-  //   collapse-keeps-playing.spec.ts          3/12  (videovarispeed ×2, videobox)
-  //   matrixmix / samsloop-record /
-  //     clipplayer-custom-scale               1/12 each
+  //   behavioral-observation-window.spec.ts   11/18 ← root-caused, see the file
+  //   camera-input.spec.ts                     6/18 ← fixed by #1564
+  //   collapse-keeps-playing.spec.ts           5/18 (videobox 3, videovarispeed 2)
+  //   matrixmix.spec.ts                        2/18
+  //   midi / patch-load-leak / samsloop-record /
+  //     clipplayer-custom-scale /
+  //     workflow-channel-columns               1/18 each
   //
   // Two runs of one test is a sample, not a rate; that is why the audit had to
   // be run over a SERIES before anything was concluded from it. The attest

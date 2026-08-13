@@ -123,10 +123,11 @@
 //
 // All of the above is about what the samples are spaced BY. It says nothing
 // about whether the page was rendering when the spacing was measured — and on
-// five of twelve audited CI runs it was not: the capture began within
-// milliseconds of the navigation and its wall-clock cap expired while the page
-// was still producing its FIRST frame. The full evidence, and why the sibling
-// negative control never hit it, is on the describe block below. The structural
+// ELEVEN of eighteen audited CI runs it was not: the capture began within
+// milliseconds of the navigation and its wall-clock cap expired with the page
+// still at 0.04–0.94 fps, 9–180× under the hog's own construction ceiling. The
+// full evidence, and why the sibling negative control never hit it, is on the
+// describe block below. The structural
 // answer is `openProbePage`: navigate, install the hog, and then WAIT — in the
 // page — until the achieved rAF rate clears twice the rate at which the capture
 // plan breaks even against its own cap, failing loudly if it never does.
@@ -272,15 +273,50 @@ const RENDERING_MIN_FPS = CAPTURE_BREAK_EVEN_FPS * 2;
  * How long the page may take to REACH that rate after a navigation.
  *
  * ⚠ This bounds the PRECONDITION, never the capture, and the two must not be
- * confused — that confusion is the bug this constant exists to fix. MEASURED
- * cold starts on the CI runner, from the five first-attempt failures quoted in
- * the describe block below: 20.0, 22.1, 22.3, 23.2 and 25.7 s to the first
- * usable frame. 60 s is ~2.3× the worst of those, inside the file's own
- * 120 s test timeout, and it is a POLICY THRESHOLD ON A MEASUREMENT — if a red
- * run ever reports "never reached N fps in 60 s", the page is not rendering at
- * all and that is the finding, not a number to raise.
+ * confused — that confusion is the bug this constant exists to fix.
+ *
+ * TWO bounds pin it, and both are ASSERTED at the bottom of this file rather
+ * than argued for here:
+ *
+ *   FROM BELOW, by the measurement. The eleven first-attempt failures tabulated
+ *   in the describe block below had each spent 20.0–25.7 s inside the capture
+ *   with the page still at 0.04–0.94 fps. 40 s is ~1.55× the longest of those.
+ *
+ *   FROM ABOVE, by the envelope. A precondition wait that can outlive its own
+ *   test converts the cold-start case from the diagnostic red this change
+ *   exists to produce into a MUTE Playwright timeout, which is strictly worse
+ *   than the flake. The binding constraint is the two-leg negative control:
+ *   two pages, each of which can spend PAGE_OPEN_MS + this + a full capture cap.
+ *
+ *   ⚠ It was 60 s on the first draft and the envelope test caught it: 2 ×
+ *   (10 + 60 + 20) = 180 000 ms against a 180 000 ms timeout, i.e. exactly ON
+ *   the cliff. That is what the assertion is for.
+ *
+ * It is a POLICY THRESHOLD ON A MEASUREMENT, not a budget: if a red run ever
+ * reports "never reached N fps in 40 s", the page is not rendering at all and
+ * THAT is the finding. Raising this weakens the precondition and eats the
+ * envelope; it does not buy the capture a single frame.
  */
-const RENDERING_START_CAP_MS = 60_000;
+const RENDERING_START_CAP_MS = 40_000;
+
+/**
+ * The per-test timeouts, hoisted so the envelope can be ASSERTED rather than
+ * hoped for.
+ *
+ * ⚠ A precondition wait has a failure mode the thing it replaced did not: it can
+ * push a test past its OWN timeout, and a Playwright timeout is mute — it names
+ * no rate and prints no cadence, which is precisely the diagnosis this change
+ * exists to produce. So the worst case (a full cold-start wait on every page the
+ * test opens, plus a full capture cap on every capture it takes) is checked
+ * against these in the arithmetic block at the bottom of the file. If that check
+ * fails, the answer is a cheaper test — not a bigger number here.
+ */
+const PAGE_TEST_TIMEOUT_MS = 120_000;
+/** The two-leg negative control opens TWO pages and captures on each. */
+const CONTROL_TEST_TIMEOUT_MS = 180_000;
+/** Navigation + hydration wait + probe install, before any of this file's own
+ *  waiting starts. Priced at the slow end; it is ~5 s on a quiet CI shard. */
+const PAGE_OPEN_MS = 10_000;
 
 /**
  * Install a canvas that paints its own rAF frame NUMBER into pixel (0,0), and
@@ -514,38 +550,43 @@ async function readFramesWallClockSpaced(
 }
 
 test.describe('behavioral sweep — the video observation window is FRAMES, not milliseconds', () => {
-  // ── THE COLD START WAS THE BUG (root-caused 2026-08-13, #1502) ────────────
+  // ── THE COLD START WAS THE BUG (root-caused 2026-08-13, #1502 / #1567) ────
   //
   // This test rode green main runs as `1 flaky` + SUCCESS for weeks. The blob
-  // reports of TWELVE consecutive CI runs were merged and audited with
-  // `scripts/e2e-report-audit.mjs`; it flaked on FIVE of them — runs
-  // 31670594634, 31677923273, 31679812131, 31688117309, 31692792299 — always
-  // with the same first-attempt error, e.g.
+  // reports of EIGHTEEN consecutive completed CI runs were downloaded, merged
+  // with `playwright merge-reports --reporter json` and audited with
+  // `scripts/e2e-report-audit.mjs`; it flaked on ELEVEN of them, always with
+  // the same first-attempt error, e.g.
   //
   //   video capture: only 1/3 samples spaced 16 FRAMES after 1 rendered FRAMES
-  //   / 22238 ms. The 20000 ms cap BOUNDS THE FAILURE; it is not the gate —
+  //   / 22278 ms. The 20000 ms cap BOUNDS THE FAILURE; it is not the gate —
   //   hitting it means the rAF loop stalled, not that the renderer is slow.
   //
-  // THE MESSAGE'S DIAGNOSIS WAS WRONG, and that is what kept this open. Across
-  // the five, `samples.length` was 1 and the rendered-frame count at the cap
-  // was 1, 1, 1, 1 and 11 in 22.3 / 22.1 / 23.2 / 25.7 / 20.0 s. Four had not
-  // rendered a SECOND frame; the fifth was running at 0.55 fps — alive, and
-  // 15× under the hog's 8.33 fps construction ceiling. `elapsed >= capMs` is a
-  // TOTAL, so it fires identically on a dead loop and a slow one and cannot
-  // tell you which; the message asserted "stalled" for all five anyway.
+  // THE MESSAGE'S DIAGNOSIS WAS WRONG, and that is what kept this open. Every
+  // one of the eleven, as (rendered frames / elapsed ms → achieved fps):
+  //
+  //   1/21757  1/21906  1/24955  1/20001  2/20114  1/22278
+  //   19/20103  1/22082  1/23168  11/20049  1/25653
+  //
+  // i.e. 0.04–0.94 fps, EVERY ONE of them 9× to 180× under the hog's 8.33 fps
+  // CONSTRUCTION ceiling. Not one is a near-miss at the margin. And three of
+  // the eleven rendered 2, 11 and 19 frames, so the loop was demonstrably
+  // ALIVE — "stalled" was simply false for those. `elapsed >= capMs` is a
+  // TOTAL: it fires identically on a dead loop and a slow one and cannot tell
+  // you which. The message asserted "stalled" for all eleven anyway.
   //
   // WHAT ACTUALLY SEPARATES THE CASES — a measurement, not a hypothesis. The
   // NEGATIVE CONTROL below runs the SAME capture, with the SAME hog, against
-  // the SAME page, and flaked ZERO times in those same twelve runs. Its only
+  // the SAME page, and flaked ZERO times in those same eighteen runs. Its only
   // structural difference is that it spends ~6 s probing the page (four 500 ms
   // rAF-rate windows, then three wall-clock-spaced reads) BEFORE it captures.
-  // At the observed 5/12 rate, twelve clean runs of an equally-exposed test has
-  // probability 0.58^12 ≈ 0.0014, so the asymmetry is the finding: the flake is
-  // in the first seconds after the navigation, not in the capture.
+  // At the observed 11/18 rate, eighteen clean runs of an equally-exposed test
+  // has probability (7/18)^18 ≈ 3e-8, so the asymmetry is the finding: the
+  // flake is in the first seconds after the navigation, not in the capture.
   //
-  // Durations agree. On the nine runs where this test passed it took 9.3–10.9 s
-  // eight times and 19.2 / 26.5 s twice — a long right tail that crosses the
-  // 20 s cap rather than a bimodal healthy/broken split.
+  // Durations agree. Over the first twelve runs audited, the nine passes took
+  // 9.3–10.9 s eight times and 19.2 / 26.5 s twice — a long right tail that
+  // crosses the 20 s cap rather than a bimodal healthy/broken split.
   //
   // SO THE TEST WAS MEASURING ITS OWN PRECONDITION. The capture began within
   // milliseconds of the navigation, and its wall-clock cap then bounded "how
@@ -566,7 +607,7 @@ test.describe('behavioral sweep — the video observation window is FRAMES, not 
   test('samples land exactly N rendered frames apart, however slow the frames are', async ({
     page,
   }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(PAGE_TEST_TIMEOUT_MS);
     const start = await openProbePage(page, HOG_MS_PER_FRAME);
 
     const t0 = Date.now();
@@ -629,7 +670,7 @@ test.describe('behavioral sweep — the video observation window is FRAMES, not 
   test('NEGATIVE CONTROL: the 200 ms spacing is a DIFFERENT window at a different frame rate', async ({
     page,
   }) => {
-    test.setTimeout(180_000);
+    test.setTimeout(CONTROL_TEST_TIMEOUT_MS);
 
     // Both halves run against the SAME page, the SAME renderer and the SAME
     // build — the ONLY variable is how expensive a frame is. A navigation tears
@@ -766,7 +807,7 @@ test.describe('behavioral sweep — the video observation window is FRAMES, not 
   });
 
   test('the wall-clock cap BOUNDS the failure — the frame count is the gate', async ({ page }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(PAGE_TEST_TIMEOUT_MS);
     // Same precondition, for the same reason and with an extra one: this test
     // asserts the cap stops the capture at ~2 s, so a page that has not started
     // rendering would blow that bound too. It has not flaked, but it carries
@@ -885,6 +926,64 @@ test.describe('behavioral sweep — the timeout is DERIVED from the observation 
         `observation plan cheaper (fewer captures, or a tighter frame spacing) rather than ` +
         `raising the ceiling.`,
     ).toBeGreaterThanOrEqual(LARGEST_VIDEO_PLAN_PORTS + 2);
+  });
+
+  test("this file's OWN tests survive their own worst case, so a red is never MUTE", () => {
+    // WHAT A PRECONDITION WAIT CAN BREAK THAT THE OLD CODE COULD NOT.
+    // `openProbePage` may spend up to RENDERING_START_CAP_MS before the capture
+    // even starts, and the capture may then spend up to VIDEO_CAPTURE_CAP_MS.
+    // If that sum can exceed a test's own timeout, the cold-start case stops
+    // producing the diagnostic red this change exists to produce and starts
+    // producing a PLAYWRIGHT TIMEOUT — which names no rate, prints no cadence
+    // and reads as infrastructure trouble. That is a strictly worse outcome
+    // than the flake, so it is asserted rather than reasoned about.
+    const pageWorstCaseMs = PAGE_OPEN_MS + RENDERING_START_CAP_MS + VIDEO_CAPTURE_CAP_MS;
+
+    // The two single-page tests open ONE page and take ONE capture on it.
+    expect(
+      pageWorstCaseMs,
+      `a single-page test's worst case is ${pageWorstCaseMs} ms (open ${PAGE_OPEN_MS} + ` +
+        `precondition ${RENDERING_START_CAP_MS} + capture cap ${VIDEO_CAPTURE_CAP_MS}) against a ` +
+        `${PAGE_TEST_TIMEOUT_MS} ms test timeout. If this fails the cold-start case reports as a ` +
+        `MUTE Playwright timeout instead of "the page never reached N fps" — shorten the ` +
+        `precondition cap or the capture plan; do NOT just raise the timeout, because the timeout ` +
+        `is not what tells you anything.`,
+    ).toBeLessThan(PAGE_TEST_TIMEOUT_MS);
+
+    // The negative control opens TWO pages and captures on each, and also pays
+    // the rate probe + the three wall-clock-spaced reads per leg. Those extra
+    // terms are bounded by the same page budget, so two of it is the bound —
+    // and this is the constraint that actually BINDS RENDERING_START_CAP_MS.
+    // It caught the 60 s first draft sitting exactly ON its timeout.
+    expect(
+      2 * pageWorstCaseMs,
+      `the two-leg negative control's worst case is ${2 * pageWorstCaseMs} ms against its ` +
+        `${CONTROL_TEST_TIMEOUT_MS} ms timeout — same reasoning, twice the pages. This is the ` +
+        `bound that sizes RENDERING_START_CAP_MS (currently ${RENDERING_START_CAP_MS} ms); it is ` +
+        `not the timeout that should move.`,
+    ).toBeLessThan(CONTROL_TEST_TIMEOUT_MS);
+
+    // …and the margin is asserted too, so it cannot be silently eaten down to
+    // the cliff the 60 s draft was sitting on. A worst case that merely FITS
+    // has no room for the runner overhead Playwright itself adds on a failing
+    // attempt (trace, video, screenshot, teardown).
+    const controlMarginRatio = CONTROL_TEST_TIMEOUT_MS / (2 * pageWorstCaseMs);
+    expect(
+      controlMarginRatio,
+      `the two-leg control's worst case leaves only ${controlMarginRatio.toFixed(2)}× margin. ` +
+        `Playwright's own failing-attempt overhead (trace + video + screenshot + teardown) is not ` +
+        `in the model, so a worst case that merely fits is a mute timeout waiting to happen.`,
+    ).toBeGreaterThan(1.2);
+
+    // …and the precondition must be SATISFIABLE by the page this file builds,
+    // or every one of these tests is a red waiting to happen. The hog's
+    // construction ceiling is the only rate a healthy hogged page can be at.
+    expect(
+      HOG_CEILING_FPS,
+      `the hogged page runs at ${HOG_CEILING_FPS.toFixed(2)} fps by construction and the ` +
+        `precondition demands ${RENDERING_MIN_FPS.toFixed(2)} fps. If the hog is ever made ` +
+        `heavier than the precondition allows, every test in this file fails on its OWN setup.`,
+    ).toBeGreaterThan(RENDERING_MIN_FPS);
   });
 
   test('NEGATIVE CONTROL: the budget MOVES when the observation plan moves', () => {

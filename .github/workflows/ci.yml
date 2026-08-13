@@ -1057,19 +1057,22 @@ jobs:
       #
       # The sequence the issue asks for is: make it visible, fix the known
       # flakes, THEN pass --fail-on-flaky. Step two turned out to be bigger than
-      # "the two named flakes". The blob-report artifacts of TWELVE consecutive
-      # completed ci.yml runs were downloaded, merged with
+      # "the two named flakes". The blob-report artifacts of EIGHTEEN
+      # consecutive completed ci.yml runs were downloaded, merged with
       # `playwright merge-reports --reporter json` and fed to this same script:
       #
-      #   runs with >=1 recovered flake ............ 10 of 12
-      #   behavioral-observation-window.spec.ts .... 5/12  (root-caused here)
-      #   camera-input.spec.ts ..................... 3/12  (fixed by #1564)
-      #   collapse-keeps-playing.spec.ts ........... 3/12  (open)
-      #   matrixmix / samsloop-record /
-      #     clipplayer-custom-scale ................ 1/12 each (open)
+      #   runs with >=1 recovered flake ............ 16 of 18
+      #   distinct tests involved .................. 9
+      #   behavioral-observation-window.spec.ts .... 11/18 (root-caused here)
+      #   camera-input.spec.ts ..................... 6/18  (fixed by #1564)
+      #   collapse-keeps-playing.spec.ts ........... 5/18  (open)
+      #   matrixmix.spec.ts ........................ 2/18  (open)
+      #   midi / patch-load-leak / samsloop-record /
+      #     clipplayer-custom-scale /
+      #     workflow-channel-columns ............... 1/18 each (open)
       #
-      # Arming the flag today would therefore redden a REQUIRED lane on ~10 of
-      # every 12 runs, which gets the gate reverted rather than the tests fixed.
+      # Arming the flag today would therefore redden a REQUIRED lane on ~16 of
+      # every 18 runs, which gets the gate reverted rather than the tests fixed.
       # The exit path is not untested for being unarmed: scripts/
       # e2e-report-audit.test.ts drives the real CLI in a subprocess and asserts
       # BOTH directions (exit 1 with the flag on a flaky report, exit 0 without

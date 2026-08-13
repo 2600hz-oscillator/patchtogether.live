@@ -484,17 +484,18 @@ export interface FrameSpacedCapture {
  *     Its message used to end "hitting it means the rAF loop stalled, not that
  *     the renderer is slow", and that claim is false: `elapsed >= capMs` is a
  *     total, so it fires identically on a dead loop and on a live-but-slow one.
- *     MEASURED, five first-attempt failures of
- *     behavioral-observation-window.spec.ts pulled from the blob reports of
- *     twelve consecutive CI runs (31670594634 / 31677923273 / 31679812131 /
- *     31688117309 / 31692792299):
+ *     MEASURED, the ELEVEN first-attempt failures of
+ *     behavioral-observation-window.spec.ts found in the blob reports of
+ *     eighteen consecutive CI runs, as rendered frames / elapsed ms:
  *
- *         4×  1 rendered frame  in 22.1–25.7 s   → the loop had not STARTED
- *         1× 11 rendered frames in 20.0 s        → 0.55 fps, alive and SLOW
+ *         8×  1 or 2 frames in 20.0–25.7 s   → the loop had barely STARTED
+ *         1× 11 frames       in 20.0 s       → 0.55 fps, alive and SLOW
+ *         1× 19 frames       in 20.1 s       → 0.94 fps, alive and SLOW
  *
- *     The old message called all five a stall. `firstFrameMs` and
- *     `maxFrameGapMs` are what actually separate them, so they are now measured
- *     and printed on every failure (and returned on every success).
+ *     The old message called all eleven a stall, and for at least three of them
+ *     that was demonstrably false. `firstFrameMs` and `maxFrameGapMs` are what
+ *     actually separate the cases, so they are now measured and printed on
+ *     every failure (and returned on every success).
  *  2. The accumulation happens in the page, on the rAF loop, so it costs ONE
  *     Playwright round trip instead of one per sample. That matters here for
  *     the reason CLAUDE.md gives for the workflow-master-transport rework: a
