@@ -279,29 +279,51 @@ export function readBasisFile(rel: string): string {
 }
 
 // -------------------------------------------------------------------------
-// Vacuous-skip classifier — THE meaningful-gate guard.
+// Skip classifier — THE meaningful-gate guard. DENY BY DEFAULT.
 // -------------------------------------------------------------------------
 //
-// A @collab spec `test.skip(true, '…')`s for two distinct reasons:
-//   (a) RELAY/SYNC VACUITY: cross-context Yjs sync / roster / presence /
-//       lockstep did not converge ("relay flake", "sync did not reach",
-//       "roster sync did not seat", "never saw/took", "mpLive sync"). LOCALLY,
-//       on a fresh dedicated relay with zero shard contention, this MUST NOT
-//       happen — if it does, the local run is itself vacuous and CANNOT back a
-//       trustworthy attestation. The runner treats this as a HARD FAILURE.
-//   (b) ASSET/RESOURCE: a build artifact (DOOM WASM / DOOM1.WAD / SNES ROM) is
-//       absent, or a context ran out of headroom ("missing", "not built",
-//       "resource-constrained", "failed to load … within"). These are
-//       legitimate environmental skips, NOT relay vacuity — but the runner
-//       PRE-FLIGHTS the assets so they should not fire either, and reports any
-//       that do.
+// ⚠ THIS CLASSIFIER USED TO ALLOW BY DEFAULT, AND THAT MADE THE GATE BLIND.
 //
-// The classifier is the single source of truth for which skip reasons are
-// VACUITY (poison the attestation) vs benign. Tested by the basis guard.
+// The shape was `isRelayVacuitySkip(reason) ? vacuity : benign`, i.e. a skip
+// was filed as a benign "asset skip" — reported, never refused — unless its
+// reason contained one of ELEVEN hard-coded substrings. So the set of skips
+// that could poison an attestation was a hand-maintained ALLOW-LIST of failure
+// phrasings, and every skip reason nobody thought of was waved through.
+//
+// What that was actually letting past, MEASURED 2026-08-13 on this tree:
+//
+//   • FOUR @collab DOOM specs (doom-launch:208, doom-identity-crossview:215,
+//     doom-late-join:207, doom-multiplayer:173) carry
+//     `test.skip(true, 'DOOM runtime failed to load on A within 25s')`.
+//     That reason matches no marker → "benign asset skip". A run in which all
+//     four DOOM multiplayer specs never loaded a runtime and skipped their
+//     entire bodies reported `passed=48 … asset skips=4` and MINTED AN
+//     ATTESTATION. The DOOM 2-user gate is the single most expensive thing the
+//     @collab lane exists to prove, and it could be absent from a green run.
+//
+//   • `in-card-title.spec.ts`'s `test.fixme` (a QUARANTINE, #565) reports as a
+//     skip with an EMPTY reason. Empty matches no marker → "benign asset skip".
+//     Every attestation ever minted carries `asset skips=1` for it — the
+//     summary line has been telling operators a quarantined @collab sync test
+//     is a missing ROM.
+//
+// A gate whose green run looks identical whether DOOM ran or not is not a gate.
+// So the polarity is inverted here: a skip is benign ONLY if a NAMED entry
+// claims it, carrying the exact (spec, reason, why) triple. Everything else —
+// an unrecognised reason, an empty reason, a runtime-load failure, a phrasing
+// nobody predicted — POISONS the attestation. `RELAY_VACUITY_MARKERS` survives,
+// but its job is now to NAME the diagnosis in the refusal message, not to be
+// the only thing that can refuse.
+//
+// WHAT THIS STILL CANNOT SEE (stated inside the gate, per the blind-gates
+// rule): a test that PASSES while asserting nothing. Skip classification says
+// nothing about assertion strength — only that a body which did not run cannot
+// be reported as if it had.
 
-/** Substrings that mark a skip as RELAY/SYNC VACUITY (poisons the attestation).
- *  Case-insensitive. Drawn from every `test.skip(true,'…')` reason across the
- *  @collab specs (see the plan doc's enumeration). */
+/** Substrings that NAME a skip as RELAY/SYNC VACUITY. Case-insensitive. These
+ *  no longer decide refusal on their own (everything unnamed refuses too) —
+ *  they sharpen the refusal message from "unclassified" to "the relay did not
+ *  converge", which are different things to go and fix. */
 export const RELAY_VACUITY_MARKERS = [
   'relay flake',
   'sync did not',
@@ -316,9 +338,63 @@ export const RELAY_VACUITY_MARKERS = [
   'did not deliver',
 ];
 
-/** True iff a skip reason indicates relay/sync vacuity (so a LOCAL skip with
- *  this reason must FAIL the attestation — the run proved nothing). */
+/** True iff a skip reason NAMES relay/sync vacuity. Note this is no longer the
+ *  refusal predicate — see `classifySkip`. A reason returning false here is NOT
+ *  thereby benign; it is merely not diagnosed as a relay stall. */
 export function isRelayVacuitySkip(reason: string): boolean {
   const r = (reason || '').toLowerCase();
   return RELAY_VACUITY_MARKERS.some((m) => r.includes(m));
+}
+
+/** A NAMED benign skip. One entry per instance — never a bare filename, so a
+ *  NEW skip appearing in an already-listed spec still refuses. */
+export interface BenignSkipRule {
+  /** Spec basename under `e2e/tests/`. Anchored: the basis guard fails if this
+   *  file does not exist, or is not in the @collab lane's own spec set, so a
+   *  stale entry naming something that no longer runs is RED rather than inert. */
+  spec: string;
+  /** The reason this rule claims. `''` matches an EMPTY reason ONLY (a
+   *  `test.fixme`), never "any reason"; otherwise a case-insensitive substring. */
+  reason: string;
+  /** Why a run carrying this skip still proves what the attestation claims.
+   *  REQUIRED BY THE TYPE — `tsc` refuses an entry that does not answer it,
+   *  before any test runs. */
+  why: string;
+}
+
+/** The complete set of skips a green attestation may carry. Deny by default:
+ *  anything not matched here refuses, including reasons nobody has written yet. */
+export const BENIGN_SKIPS: readonly BenignSkipRule[] = [
+  {
+    spec: 'in-card-title.spec.ts',
+    reason: '',
+    why:
+      'A `test.fixme` QUARANTINE (#565), not an environmental skip: the peer ' +
+      'rename-sync case times out at its 120s budget on CI. It is named here so ' +
+      'the summary stops calling a quarantined @collab test a missing asset, and ' +
+      'so it is the ONE skip an operator has to argue with rather than a number. ' +
+      'It does not weaken the attestation because no other spec covers it — it is ' +
+      'simply not covered, and saying so out loud is the point.',
+  },
+];
+
+/** How a skip is dispositioned. Both non-benign verdicts REFUSE. */
+export type SkipVerdict = 'benign' | 'vacuity' | 'unclassified';
+
+/** Classify one skip. `specFile` is matched on basename so a report path
+ *  (`tests/foo.spec.ts`) and a repo path (`e2e/tests/foo.spec.ts`) agree. */
+export function classifySkip(
+  specFile: string,
+  reason: string,
+): { verdict: SkipVerdict; rule?: BenignSkipRule } {
+  const base = (specFile || '').split('/').pop() ?? '';
+  const r = (reason || '').trim();
+  for (const rule of BENIGN_SKIPS) {
+    if (rule.spec !== base) continue;
+    const matched =
+      rule.reason === '' ? r === '' : r.toLowerCase().includes(rule.reason.toLowerCase());
+    if (matched) return { verdict: 'benign', rule };
+  }
+  if (isRelayVacuitySkip(r)) return { verdict: 'vacuity' };
+  return { verdict: 'unclassified' };
 }

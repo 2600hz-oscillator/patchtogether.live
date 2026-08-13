@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "collabContentHash": "bf8a71c526999aa7f0eb64d3d80bdb319f834e0fa1a7ba8bc8e65ffb1bc92e3b",
+  "attestedAt": "2026-08-13T20:14:48.294Z",
+  "attestedBy": "patchtogether-maintainer",
+  "gitHeadAtAttest": "b8fe0cb4a5c6650ff6d47aaba2f2b7f1bae834f5",
+  "playwrightVersion": "1.50.0",
+  "hocuspocusVersion": "2.13.5",
+  "os": "darwin 25.4.0 (arm64)",
+  "machineClass": "local-trusted-gpu-workstation",
+  "databaseConfirmed": true,
+  "relayConfirmed": true,
+  "relayPort": 1235,
+  "appPort": 4173,
+  "repeatEach": 3,
+  "retries": 0,
+  "run": {
+    "specFiles": 24,
+    "passed": 156,
+    "failed": 0,
+    "flaky": 0,
+    "skipped": 3,
+    "relayVacuitySkips": 0,
+    "unclassifiedSkips": 0,
+    "namedBenignSkips": [
+      {
+        "spec": "in-card-title.spec.ts",
+        "title": "rename in A appears in B inside the in-card title (peer Yjs sync)"
+      },
+      {
+        "spec": "in-card-title.spec.ts",
+        "title": "rename in A appears in B inside the in-card title (peer Yjs sync)"
+      },
+      {
+        "spec": "in-card-title.spec.ts",
+        "title": "rename in A appears in B inside the in-card title (peer Yjs sync)"
+      }
+    ]
+  },
+  "durationSec": 279
+}
