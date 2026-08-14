@@ -94,27 +94,37 @@ export default defineConfig({
   // animation frames where the OS schedules cooperatively.
   workers: process.env.CI ? 4 : undefined, // undefined = Playwright default (≈ half cores)
   forbidOnly: !!process.env.CI,
-  // ⚠ THE `RETRIES` ENV VAR ON THE CI JOBS IS INERT — MEASURED 2026-08-12.
+  // ⚠ THE `RETRIES` ENV VAR ON THE CI JOBS IS INERT — AND IT IS NOT OURS.
   //
-  // Every `e2e` and `behavioral` job on CI prints `RETRIES: 3` in its step
-  // environment. NOTHING IN THIS REPOSITORY READS IT: `grep -rn RETRIES` over
-  // `.github/`, `Taskfile.yml`, `e2e/`, `.flox/` and this file returns nothing
-  // but `--health-retries` on the postgres service and the three ATTEST
-  // scripts' own private `WEBGL_/COLLAB_/GRAND_ATTEST_RETRIES`. It is not in
-  // ci.yml on any branch. It is a repository-level Actions variable set
-  // outside the tree, and the effective retry count on those lanes is the
-  // line below — ONE, i.e. two attempts, not four.
+  // Every CI job prints `RETRIES: 3` in its step environments. NOTHING IN THIS
+  // REPOSITORY READS IT, and — RE-MEASURED 2026-08-14 (#1502) — nothing in
+  // this repository SETS it either. The 2026-08-12 theory ("a repository-level
+  // Actions variable set outside the tree; deleting it needs repo settings
+  // access") is FALSE on both counts:
+  //   • `gh api repos/:owner/:repo/actions/variables` → `total_count: 0`.
+  //     There is no repo-level Actions variable to delete. (And a repo `vars.*`
+  //     entry would not auto-inject into job env anyway — it only flows where a
+  //     workflow references `${{ vars.… }}`, which ci.yml never does.)
+  //   • In job 94800754180 (run 31810524870, e2e shard 1/10) the env group of
+  //     the `flox/install-flox-action@v2` step does NOT contain RETRIES; the
+  //     env group of every LATER step does — alongside INPUT_DOWNLOAD_URL /
+  //     DOWNLOADED_FILE / SKIP_DOWNLOAD / PRESERVE_DOWNLOAD, which are that
+  //     action's own internals. The flox installer takes a `retries: 3` input
+  //     (its own download/install retry — "Installation attempt 1 of 3") and
+  //     exports it to the JOB env via $GITHUB_ENV, where it leaks into every
+  //     subsequent step of every job that installs flox. Vendored-action
+  //     namespace pollution; fix belongs UPSTREAM (⧉), not here.
   //
   // WHY IT MATTERS beyond tidiness: it is a control that lies about what it
   // does, and it lies in the direction of reassurance. Anyone reasoning about
   // "how much does CI mask a load-sensitive failure?" from that variable gets
   // the wrong number, and the number they get is a bigger safety net than
-  // exists. It cannot be fixed from the tree — deleting it needs repo settings
-  // access — so it is recorded here, at the line that actually decides.
+  // exists. The effective retry count on every lane is the line below — ONE,
+  // i.e. two attempts, not four.
   //
   // ⚠ AND DO NOT "FIX" IT BY READING IT HERE. Honouring RETRIES would take the
   // lane from 2 attempts to 4, i.e. MORE masking, which is the opposite of
-  // what the finding asks for. The fix is to delete the Actions variable.
+  // what the finding asks for.
   //
   // WHAT retries=1 STILL COSTS: a test that fails once and passes on the retry
   // is reported as `1 flaky` in a summary line and the job is SUCCESS.
