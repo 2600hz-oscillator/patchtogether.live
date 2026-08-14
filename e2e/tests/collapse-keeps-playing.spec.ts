@@ -32,12 +32,13 @@
 // SET stable, so this change cannot be confused with one that alters what the
 // GPU semaphore covers.
 //
-// DETERMINISM: the assertions are element STATE (`paused`, `currentTime`
-// advancing) and the engine's own draw counter — never pixels, never a
-// wall-clock budget standing in for progress. Waits are expressed as "the
-// element advanced N seconds of MEDIA time" or as frame counts, both of which
-// are renderer-independent; SwiftShader on CI renders ~7.9fps vs ~60 locally,
-// so a ms budget would be a different assertion on every machine.
+// DETERMINISM: the assertions are SECONDS OF MEDIA ACTUALLY PLAYED (accumulated
+// in the page, wrap-safe and seek-proof — see "THE INSTRUMENT" below), a
+// monotonic decoder frame counter, and the engine's own draw counter — never
+// pixels, never a wall-clock budget standing in for progress, and never a
+// single sample of `currentTime`, which for BOTH subjects here is a cyclic
+// quantity the card itself rewrites. SwiftShader on CI renders ~7.9fps vs ~60
+// locally, so a ms budget would be a different assertion on every machine.
 
 import { test, expect, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
@@ -105,6 +106,297 @@ async function boot(page: Page): Promise<void> {
   await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: 30_000 });
 }
 
+// ───────────────────────────────────────────────────────────────────────────
+// THE INSTRUMENT: PLAYBACK PROGRESS, NOT A CLOCK READING (#1569)
+// ───────────────────────────────────────────────────────────────────────────
+//
+// WHY THIS EXISTS. The assertion used to be `after.currentTime > tBefore` plus
+// `some(!paused)` — two INSTANTANEOUS samples of `currentTime`. That is only a
+// statement about playback if `currentTime` is a free-running media clock. It
+// is NOT, for either subject this sweep actually exercises, and both were
+// MEASURED here (in-page trace at 250 ms, no test-side perturbation):
+//
+//   videovarispeed  the CARD wraps the element itself — its rAF transport calls
+//                   decideEdgeAction() and writes `videoEl.currentTime =
+//                   window.startSec` at the window edge (`el.loop` is false the
+//                   whole time). Trace: 3.816 -> 0.086 -> ... -> 3.944 -> 0.166,
+//                   a clean wrap every ~4.0 s, forever.
+//   videobox        `currentTime` is a WALL CLOCK. VideoboxCard's drift loop
+//                   (decideDriftCorrection, every 500 ms) computes
+//                   `lastSyncPosition + (Date.now()-lastSyncTime)/1000`, clamps
+//                   it to `duration - 0.05`, and SEEKS whenever the element is
+//                   more than 0.5 s off it.
+//
+// So a `>` between two samples of a quantity that WRAPS is not a comparison at
+// all. Both CI failures this fixes are that one fact in two disguises:
+//
+//   videovarispeed  "the media clock must have advanced past 1.373s -> 0.857"
+//                   and "past 0.713s -> 0.058"  (runs 31704647270, 31697446769)
+//                   — the clock went BACKWARDS. It wrapped between the wait and
+//                   the read; ~3.4 s of media time separated them both times.
+//   videobox        "media must still be PLAYING: currentTime 4.004, paused"
+//                   (runs 31665678796, 31666489868, 31671834818) — the clip
+//                   simply ENDED. All three predate the `loop`+rewind fix and
+//                   none has recurred in the runs since.
+//
+// ⚠ THE `loop`+REWIND FIX DID NOT REMOVE VIDEOBOX'S EXPOSURE, it changed which
+// way it fails, and that is why this had to be fixed at the assertion. Replaying
+// main's spec with CI's OWN measured latencies made deterministic (1.5 s before
+// the `before` read, 3.0 s between the wait resolving and the `after` read) put
+// BOTH subjects red on the first attempt, locally, every time:
+//
+//   videobox        the media clock must have advanced past 1.575s -> 0.232
+//   videovarispeed  the media clock must have advanced past 1.574s -> 1.011
+//
+// videobox now fails through the SEEK STORM's oscillation rather than through
+// the clip ending. The same perturbation against this file passes. And the
+// failure probability has a shape: it is roughly `tBefore / clipDuration`,
+// because the read has to land in the window between a wrap and `tBefore`.
+// CI's tBefore was 0.713 s and 1.373 s (~18-34 % of 4.004 s); locally it is
+// ~0.15 s (~4 %) — which is exactly why this is a CI flake and not a local one,
+// and why "it passes here" was never evidence of anything.
+//
+// WHAT REPLACES IT: forward playback PROGRESS, accumulated IN THE PAGE across
+// the whole post-collapse window (CLAUDE.md defence #5 — never sample a
+// page-side quantity with a Playwright-side poll loop). Two properties make it
+// sound where a `>` is not:
+//
+//   WRAP-SAFE   a negative delta credits ZERO. A wrap or a rewind can only cost
+//               progress, never fake it, and can never make the value go down.
+//   SEEK-PROOF  a positive delta is credited only up to what real playback
+//               could have produced since the previous sample — `dt × rate`,
+//               with `rate = 0` while paused. A 3.9 s forward SEEK inside one
+//               100 ms sample is worth 0.15 s, not 3.9 s.
+//
+// That second property is not theoretical here. `el.loop = true` (below) puts
+// VIDEOBOX into a measured ~4 Hz SEEK STORM once its wall-clock expectation
+// saturates at `duration - 0.05`: the element wraps to 0, the drift loop yanks
+// it back to 3.954, repeat. Traced: `currentTime` oscillating 0.07 <-> 3.954
+// and totalVideoFrames climbing 133 -> 4491 in 16 s (~270 decoded fps against a
+// 30 fps clip). A naive delta-sum would have called those yanks "progress".
+//
+// UNITS, stated because half of this class of bug is a unit confusion: the gate
+// is in SECONDS OF MEDIA ACTUALLY PLAYED, bounded above by seconds of real
+// time. It is renderer-independent by construction — SwiftShader changes how
+// fast the page DRAWS, not how fast a decoder advances a media clock.
+
+/** Sampling period of the in-page accumulator. */
+const PROBE_SAMPLE_MS = 100;
+/** Ceiling on the `dt` any single sample may claim. A main-thread stall must
+ *  not hand the next sample a huge credit budget (which is exactly what would
+ *  let a seek through). Under-credits after a stall — conservative on purpose:
+ *  it can only make the gate harder to satisfy, never easier. */
+const PROBE_MAX_DT_MS = 250;
+/** Slack on `dt × rate` so ordinary timer jitter and decode scheduling do not
+ *  clip genuine playback. The instrument's guarantee is therefore: credited
+ *  progress <= 1.5 x real elapsed time, ALWAYS, whatever the clock does. */
+const PROBE_RATE_TOLERANCE = 1.5;
+/** THE GATE, in media seconds. Carried over unchanged from the `ADVANCE_S` the
+ *  old endpoint comparison demanded — this change fixes the UNIT, it does not
+ *  move the bar. Healthy playback banks it in ~0.4 s of real time. */
+const MIN_PROGRESS_S = 0.4;
+/** Bounds the FAILURE, never the gate — carried over from the old
+ *  waitForFunction. 75x the real time MIN_PROGRESS_S needs, and the assertion
+ *  runs (and prints the window) whether or not the wait resolves. */
+const PROGRESS_CAP_MS = 30_000;
+
+interface ProbeRow {
+  testid: string;
+  where: string;
+  /** Seconds of media that were genuinely PLAYED in the window. THE GATE. */
+  playedSec: number;
+  samples: number;
+  playingSamples: number;
+  pausedSamples: number;
+  /** Samples whose clock moved BACKWARDS (a wrap or a rewind). */
+  backwardJumps: number;
+  /** Samples whose clock moved forward FASTER than playback could (a seek). */
+  forwardSeeks: number;
+  minT: number;
+  maxT: number;
+  lastT: number;
+  /** getVideoPlaybackQuality().totalVideoFrames delta — monotonic, so it never
+   *  wraps. NOT seek-independent though (a seek decodes frames too), so it is a
+   *  diagnostic plus one non-vacuity assertion, never the gate. -1 when the
+   *  browser does not expose it. */
+  decodedFrames: number;
+}
+interface ProbeRead {
+  elapsedMs: number;
+  samples: number;
+  rows: ProbeRow[];
+}
+
+/** Start (or restart) the in-page accumulator. Idempotent — a second call
+ *  replaces the first, so no test can leave two timers running. */
+async function installPlaybackProbe(page: Page): Promise<void> {
+  await page.evaluate(
+    ({ sampleMs, maxDtMs, tol }) => {
+      const g = globalThis as unknown as { __mediaProbe?: { stop(): void } };
+      g.__mediaProbe?.stop();
+
+      // ── THE CREDIT RULE — the entire instrument, in one pure function. ──
+      // Everything the probe claims comes from here, so the permanent negative
+      // control at the end of every test calls THIS function, not a copy.
+      const credit = (deltaSec: number, dtMs: number, rate: number): number => {
+        if (!(deltaSec > 0)) return 0; // wrap, rewind, or no motion
+        const budget = (Math.min(Math.max(dtMs, 0), maxDtMs) / 1000) * Math.max(0, rate) * tol;
+        return Math.min(deltaSec, budget);
+      };
+
+      interface Row {
+        testid: string; where: string; playedSec: number; samples: number;
+        playingSamples: number; pausedSamples: number; backwardJumps: number;
+        forwardSeeks: number; minT: number; maxT: number; lastT: number;
+        decodedFrames: number; prevT: number | null; frames0: number;
+      }
+      const rows = new Map<string, Row>();
+      let t0 = performance.now();
+      let last = t0;
+      let samples = 0;
+
+      const frameCount = (v: HTMLVideoElement): number => {
+        const q = (v as unknown as {
+          getVideoPlaybackQuality?: () => { totalVideoFrames: number };
+        }).getVideoPlaybackQuality;
+        if (typeof q !== 'function') return -1;
+        try { return q.call(v).totalVideoFrames; } catch { return -1; }
+      };
+
+      const tick = (): void => {
+        const now = performance.now();
+        const dt = now - last;
+        last = now;
+        samples++;
+        for (const node of document.querySelectorAll('video')) {
+          const v = node as HTMLVideoElement;
+          if (!(v.currentSrc || v.getAttribute('src'))) continue;
+          const key = v.getAttribute('data-testid') ?? '(untagged)';
+          const t = v.currentTime;
+          const frames = frameCount(v);
+          let r = rows.get(key);
+          if (!r) {
+            r = {
+              testid: key, where: '', playedSec: 0, samples: 0, playingSamples: 0,
+              pausedSamples: 0, backwardJumps: 0, forwardSeeks: 0, minT: t, maxT: t,
+              lastT: t, decodedFrames: 0, prevT: null, frames0: frames,
+            };
+            rows.set(key, r);
+          }
+          // `rate` is 0 while paused, so a paused element credits nothing at
+          // all however far its clock is dragged.
+          const rate = v.paused ? 0 : Math.abs(v.playbackRate || 1);
+          if (r.prevT !== null) {
+            const delta = t - r.prevT;
+            const c = credit(delta, dt, rate);
+            r.playedSec += c;
+            if (delta < 0) r.backwardJumps++;
+            else if (delta > c + 1e-6) r.forwardSeeks++;
+          }
+          r.prevT = t;
+          r.lastT = t;
+          r.where = v.closest('[data-testid="dock-full-view"]') ? 'dock'
+            : v.closest('[data-testid="headless-source-host"]') ? 'headless'
+              : v.closest('[data-testid="node-media-parking"]') ? 'parking' : 'lane';
+          r.samples++;
+          if (v.paused) r.pausedSamples++; else r.playingSamples++;
+          if (t < r.minT) r.minT = t;
+          if (t > r.maxT) r.maxT = t;
+          if (frames >= 0 && r.frames0 >= 0) r.decodedFrames = frames - r.frames0;
+        }
+      };
+
+      const round = (n: number): number => Math.round(n * 1000) / 1000;
+      const timer = setInterval(tick, sampleMs);
+      tick();
+      (globalThis as unknown as { __mediaProbe: unknown }).__mediaProbe = {
+        credit,
+        read: () => ({
+          elapsedMs: Math.round(performance.now() - t0),
+          samples,
+          rows: [...rows.values()].map((r) => ({
+            testid: r.testid, where: r.where, playedSec: round(r.playedSec),
+            samples: r.samples, playingSamples: r.playingSamples,
+            pausedSamples: r.pausedSamples, backwardJumps: r.backwardJumps,
+            forwardSeeks: r.forwardSeeks, minT: round(r.minT), maxT: round(r.maxT),
+            lastT: round(r.lastT), decodedFrames: r.decodedFrames,
+          })),
+        }),
+        reset: () => { rows.clear(); t0 = performance.now(); last = t0; samples = 0; tick(); },
+        stop: () => clearInterval(timer),
+      };
+    },
+    { sampleMs: PROBE_SAMPLE_MS, maxDtMs: PROBE_MAX_DT_MS, tol: PROBE_RATE_TOLERANCE },
+  );
+}
+
+async function readProbe(page: Page): Promise<ProbeRead> {
+  return await page.evaluate(() =>
+    (globalThis as unknown as { __mediaProbe: { read(): ProbeRead } }).__mediaProbe.read());
+}
+async function resetProbe(page: Page): Promise<void> {
+  await page.evaluate(() =>
+    (globalThis as unknown as { __mediaProbe: { reset(): void } }).__mediaProbe.reset());
+}
+async function stopProbe(page: Page): Promise<void> {
+  await page.evaluate(() =>
+    (globalThis as unknown as { __mediaProbe: { stop(): void } }).__mediaProbe.stop());
+}
+
+/** The best-progressing element in a window, or null when the page held none. */
+function bestRow(rec: ProbeRead): ProbeRow | null {
+  return rec.rows.reduce<ProbeRow | null>(
+    (best, r) => (best === null || r.playedSec > best.playedSec ? r : best), null);
+}
+
+/**
+ * PERMANENT NEGATIVE CONTROL — runs on every subject, every run, in the same
+ * page, against the SAME `credit` closure the sampler just used. Not a copy of
+ * the rule: the identical function object.
+ *
+ * A gate that cannot fail is worse than no gate, and the two failure modes this
+ * instrument exists to be immune to (a wrap, a seek) are exactly the two that
+ * would silently turn it back into the broken `>` if the rule regressed. Both
+ * directions are asserted: the rule must still say YES to real playback.
+ */
+async function assertCreditRuleIsSound(page: Page): Promise<void> {
+  const JUMP_S = 3.9; // ~a whole lobby-clip.webm, i.e. the storm's own seek size
+  const c = await page.evaluate(
+    ({ sampleMs, jump }) => {
+      const credit = (globalThis as unknown as {
+        __mediaProbe: { credit(d: number, dt: number, r: number): number };
+      }).__mediaProbe.credit;
+      return {
+        playback: credit(sampleMs / 1000, sampleMs, 1),
+        wrap: credit(-jump, sampleMs, 1),
+        forwardSeek: credit(jump, sampleMs, 1),
+        pausedDrag: credit(jump, sampleMs, 0),
+        stalledThenSeek: credit(jump, 30_000, 1),
+      };
+    },
+    { sampleMs: PROBE_SAMPLE_MS, jump: JUMP_S },
+  );
+  const realTimeBudgetSec = (PROBE_SAMPLE_MS / 1000) * PROBE_RATE_TOLERANCE;
+  const stallBudgetSec = (PROBE_MAX_DT_MS / 1000) * PROBE_RATE_TOLERANCE;
+  const seen = JSON.stringify(c);
+
+  // POSITIVE leg — the rule can still say yes, in full, to genuine playback.
+  expect(c.playback, `credit() must pass genuine playback through unchanged (media s): ${seen}`)
+    .toBeCloseTo(PROBE_SAMPLE_MS / 1000, 6);
+  // WRAP leg — a backwards clock credits nothing at all.
+  expect(c.wrap, `a ${JUMP_S}s WRAP must credit exactly 0 media s: ${seen}`).toBe(0);
+  // PAUSED leg — rate 0 means no credit however far the clock is dragged.
+  expect(c.pausedDrag, `a ${JUMP_S}s drag on a PAUSED element must credit exactly 0 media s: ${seen}`)
+    .toBe(0);
+  // SEEK leg — a jump is worth one sample of real time, not the jump.
+  expect(c.forwardSeek, `a ${JUMP_S}s forward SEEK must credit at most ${realTimeBudgetSec}s (one ${PROBE_SAMPLE_MS}ms sample x ${PROBE_RATE_TOLERANCE}), not the jump: ${seen}`)
+    .toBeLessThanOrEqual(realTimeBudgetSec + 1e-9);
+  // STALL leg — a 30 s main-thread stall must not hand the next sample a 30 s
+  // budget; PROBE_MAX_DT_MS caps it.
+  expect(c.stalledThenSeek, `a ${JUMP_S}s seek after a 30s STALL must still credit at most ${stallBudgetSec}s: ${seen}`)
+    .toBeLessThanOrEqual(stallBudgetSec + 1e-9);
+}
+
 for (const type of TYPES) {
   test(`${type}: media survives the expanded tray being dismissed`, async ({ page }) => {
     test.setTimeout(180_000);
@@ -162,31 +454,40 @@ for (const type of TYPES) {
 
     // ── REMOVE THE FIXTURE'S HIDDEN DEADLINE (#1553) ───────────────────────
     //
-    // MEASURED, in-page, sampling every 750 ms (not inferred):
+    // MEASURED, in-page, sampling every 250 ms with NO test-side perturbation
+    // at all (re-run for #1569; the earlier 750 ms trace agreed):
     //
-    //   t=3752ms  currentTime=3.756  paused=false ended=false
-    //   t=4501ms  currentTime=4.004  paused=TRUE  ended=TRUE   <- clip ran out
-    //   t=9005ms  currentTime=4.004  paused=TRUE  ended=TRUE
+    //   videobox        3.813 -> 4.004 paused=TRUE, frames frozen at 120, and
+    //                   it stays there for the remaining 16 s of the trace.
+    //   videovarispeed  3.816 -> 0.086 -> ... -> 3.944 -> 0.166, wrapping every
+    //                   ~4.0 s forever, never paused.
     //
-    // `lobby-clip.webm` is 4.004 s (its EBML Duration header), and a non-looping
-    // <video> sets `paused = true` the moment it ENDS. A second probe confirmed
-    // the collapse does NOT restart it: once ended, it stays ended at 4.004 s
-    // forever. So "media must still be PLAYING after the collapse" can fail for
-    // the most boring reason available — the clip finished — and that is exactly
-    // how it failed in CI, reporting `currentTime: 4.004`, matching the file
-    // duration to the millisecond.
+    // `lobby-clip.webm` is 4.004 s (its EBML Duration header) and a non-looping
+    // <video> sets `paused = true` the moment it ENDS. So "media must still be
+    // PLAYING after the collapse" can fail for the most boring reason there is
+    // — the clip finished — and that is exactly how videobox failed in CI three
+    // times, reporting `currentTime: 4.004` to the millisecond.
     //
-    // The media-clock wait below is already renderer-independent and STAYS that
-    // way. What it lacked was headroom against the END of the fixture, and that
-    // margin shrinks as setup time grows on a loaded runner — so the test raced
-    // a budget that is a property of the FIXTURE, not of the code under test.
+    // `loop` + a rewind is what keeps a 4.004 s fixture playable across a setup
+    // that takes 11-22 s of shard time. It is a real perturbation and it is
+    // documented as one:
     //
-    // Two changes, both required:
-    //   * `loop` — the element can never reach the ended/paused state.
-    //   * seek to 0 — `loop` ALONE is insufficient. If `tBefore` lands late, the
-    //     `tBefore + ADVANCE_S` target can exceed the duration, and a looping
-    //     clock wraps to 0 and never reaches it. Rewinding guarantees a full
-    //     clip of runway ahead of the target.
+    // ⚠ MEASURED CONSEQUENCE, and the reason the instrument below has to be
+    // seek-proof. For VIDEOBOX, `el.loop` fights the card's own transport.
+    // VideoboxCard drives `currentTime` from the WALL CLOCK (decideDriftCorrection
+    // every 500 ms, expectation clamped to `duration - 0.05` = 3.954 s) and
+    // seeks whenever the element is >0.5 s off it. A looping element returns to
+    // 0; the drift loop yanks it back to 3.954; repeat. Traced: `currentTime`
+    // oscillating 0.07 <-> 3.954 at ~4 Hz with totalVideoFrames climbing
+    // 133 -> 4491 in 16 s (~270 decoded fps against a 30 fps clip). The element
+    // is genuinely PLAYING the whole time — which is why this is still the right
+    // trade for a fixture this short — but any measurement here MUST be able to
+    // tell that storm's seeks apart from playback. Hence the credit rule.
+    //
+    // The real root cause is that the fixture is shorter than this test's own
+    // worst-case setup, and the durable fix is a longer fixture — tracked in
+    // #1577 with the traces above. Nothing below depends on which way that
+    // lands: the gate cannot be faked by the storm's seeks either way.
     await page.evaluate(() => {
       for (const v of document.querySelectorAll('video')) {
         const el = v as HTMLVideoElement;
@@ -205,33 +506,61 @@ for (const type of TYPES) {
       { timeout: 30_000 },
     );
 
+    // Arm the accumulator BEFORE the collapse, so the pre-collapse window is a
+    // POSITIVE CONTROL in this very page: it proves the instrument can see
+    // playback HERE, on THIS runner, before the thing under test happens. A
+    // post-collapse zero can then only mean the collapse, never "the probe
+    // never worked".
+    await installPlaybackProbe(page);
+
     const before = await liveMedia(page);
-    const playingBefore = before.filter((m) => !m.paused);
-    expect(playingBefore.length, `something must be playing before the collapse: ${JSON.stringify(before)}`)
+    expect(before.length, `a media element must exist before the collapse: ${JSON.stringify(before)}`)
       .toBeGreaterThan(0);
-    const tBefore = Math.max(...playingBefore.map((m) => m.currentTime));
+    await page.waitForFunction(
+      (need) => {
+        const p = (globalThis as unknown as {
+          __mediaProbe: { read(): { rows: { playedSec: number }[] } };
+        }).__mediaProbe;
+        return p.read().rows.some((r) => r.playedSec >= need);
+      },
+      MIN_PROGRESS_S,
+      { timeout: PROGRESS_CAP_MS },
+    ).catch(() => { /* fall through to the assertion, which PRINTS the window */ });
+    const preRec = await readProbe(page);
+    const pre = bestRow(preRec);
+    expect(
+      pre?.playedSec ?? 0,
+      `POSITIVE CONTROL: the probe must see playback BEFORE the collapse — media s played over ${preRec.elapsedMs} ms / ${preRec.samples} samples: ${JSON.stringify(preRec)}`,
+    ).toBeGreaterThanOrEqual(MIN_PROGRESS_S);
     const drawsBefore = await drawCount(page, nodeId);
 
     // COLLAPSE — the owner's "expanded tray is dismissed".
     await page.getByTestId('faceplate-collapse').click();
     await expect(page.locator('[data-testid="dock-full-view"]')).toHaveCount(0, { timeout: 20_000 });
 
-    // THE ASSERTION: the element still exists, still has its src, and its
-    // MEDIA CLOCK advances past where it was. Waiting on media time rather
-    // than wall-clock makes this renderer-independent by construction; the
-    // timeout only BOUNDS the failure.
-    const ADVANCE_S = 0.4;
-    await page.waitForFunction(
-      (target) => {
-        const vids = [...document.querySelectorAll('video')].map((v) => v as HTMLVideoElement);
-        return vids.some(
-          (v) => !!(v.currentSrc || v.getAttribute('src')) && !v.paused && v.currentTime > target,
-        );
-      },
-      tBefore + ADVANCE_S,
-      { timeout: 30_000 },
-    );
+    // Restart the window HERE, so everything measured below happened strictly
+    // after the tray was dismissed.
+    await resetProbe(page);
 
+    // THE ASSERTION: after the collapse, some element still holding a src
+    // PLAYED at least MIN_PROGRESS_S seconds of media — wrap-safe and
+    // seek-proof (see the instrument header). The wait is a bound on the
+    // FAILURE, never the gate: the assertion below runs either way and prints
+    // the whole window, so a slow runner produces a diagnosis instead of
+    // Playwright's mute timeout.
+    await page.waitForFunction(
+      (need) => {
+        const p = (globalThis as unknown as {
+          __mediaProbe: { read(): { rows: { playedSec: number }[] } };
+        }).__mediaProbe;
+        return p.read().rows.some((r) => r.playedSec >= need);
+      },
+      MIN_PROGRESS_S,
+      { timeout: PROGRESS_CAP_MS },
+    ).catch(() => { /* fall through to the assertion, which PRINTS the window */ });
+
+    const rec = await readProbe(page);
+    const best = bestRow(rec);
     const after = await liveMedia(page);
     const drawsAfter = await drawCount(page, nodeId);
 
@@ -239,20 +568,39 @@ for (const type of TYPES) {
     // typically the off-screen headless host).
     expect(after.length, `the node's media element must survive the collapse: ${JSON.stringify(after)}`)
       .toBeGreaterThan(0);
+
+    // The owner's P0, in the only unit that can state it: SECONDS OF MEDIA
+    // ACTUALLY PLAYED after the collapse. A destroyed, detached or paused
+    // element scores 0; a wrap scores 0 for that sample and cannot go negative;
+    // a seek is worth at most one sample of real time.
     expect(
-      after.some((m) => !m.paused),
-      `media must still be PLAYING after the collapse: ${JSON.stringify(after)}`,
-    ).toBe(true);
-    expect(
-      Math.max(...after.map((m) => m.currentTime)),
-      `the media clock must have advanced past ${tBefore.toFixed(3)}s`,
-    ).toBeGreaterThan(tBefore);
+      best?.playedSec ?? 0,
+      `media must still be PLAYING after the collapse — needed ${MIN_PROGRESS_S} media s of forward playback, saw ${best?.playedSec ?? 0} over ${rec.elapsedMs} ms / ${rec.samples} samples. Elements: ${JSON.stringify(rec.rows)} | DOM: ${JSON.stringify(after)}`,
+    ).toBeGreaterThanOrEqual(MIN_PROGRESS_S);
+
+    // Monotonic decoder counter — a NON-VACUITY check and a diagnostic, NOT a
+    // second gate, and the negative control is why that distinction is written
+    // down: with playback stubbed dead, videobox still logged
+    // `decodedFrames: 329` because the drift loop's SEEKS decode frames too.
+    // So it can be positive while nothing is playing; it can never be positive
+    // while the element is gone. -1 means the browser exposes no such counter.
+    if ((best?.decodedFrames ?? -1) >= 0) {
+      expect(
+        best!.decodedFrames,
+        `the decoder must produce NEW frames after the collapse (totalVideoFrames delta over ${rec.elapsedMs} ms): ${JSON.stringify(rec.rows)}`,
+      ).toBeGreaterThan(0);
+    }
 
     // Rendering was never the fault (measured on the original bug: draws kept
     // advancing while playback died) — assert it stays healthy so a future
     // "fix" cannot trade playback for a frozen chain.
     expect(drawsAfter, `engine draws must keep advancing (${drawsBefore} -> ${drawsAfter})`)
       .toBeGreaterThan(drawsBefore);
+
+    // The permanent control leg — see assertCreditRuleIsSound. Runs after the
+    // real assertions so a failure here is unambiguously about the INSTRUMENT.
+    await assertCreditRuleIsSound(page);
+    await stopProbe(page);
 
     expect(errors, `page errors: ${errors.join(' | ')}`).toEqual([]);
   });

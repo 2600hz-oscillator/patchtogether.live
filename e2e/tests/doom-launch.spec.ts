@@ -17,13 +17,18 @@
 //      separate per-peer game instances in one configured netgame (not a
 //      shared view).
 //
-// Gated on WASM + WAD presence (skip-clean if absent). Tolerates the known
-// @collab 2-context CI relay flake the way the slice-3 spec does: the
-// cross-context roster sync that gives B slot 1 is asserted as best-effort;
-// if it never reaches B within the window we SKIP (the arbiter slot logic +
-// settings round-trip are exhaustively proven by the vitest unit suite +
-// the C-side start-netgame.acceptance.mjs harness). What is LOCALLY provable
-// on the arbiter (A enters the level + A's marine moves) is always asserted.
+// SKIPS: exactly ONE, and only before anything has been proven — the WASM/WAD
+// asset gate (`checkAssets`), so a contributor without the artifacts gets a
+// clean skip rather than a mystery. EVERYTHING past that point ASSERTS.
+//
+// ⚠ This header used to promise the opposite, and was stale for a year: it
+// described the cross-context roster sync as "best-effort … if it never reaches
+// B within the window we SKIP". #837+#841 converted that to a real
+// SYNC_BUDGET_MS-bounded wait that FAILS, and 2026-08-13 (#1592) converted the
+// last one — "DOOM runtime failed to load on A within 25s" — to an assertion
+// too. Both had been readable as "this spec is allowed to prove nothing", which
+// is precisely how `collab:attest` came to treat a dead DOOM 2-user gate as a
+// benign asset skip and mint an attestation over it.
 
 import { test, expect, type Page, type Browser } from '@playwright/test';
 import { spawnPatch, type SpawnNode } from './_helpers';
@@ -99,7 +104,40 @@ async function openPair(browser: Browser): Promise<DoomPair> {
   };
 }
 
-async function spawnAndLoadDoom(page: Page, nodeId: string): Promise<boolean> {
+/** Read the video domain's own load state for a node. The card's `loadStatus`
+ *  is component-local; this is the engine-side truth the app writes. */
+async function readLoadState(page: Page, nodeId: string): Promise<{ loaded: unknown; loadError: unknown }> {
+  return await page.evaluate((id) => {
+    const w = globalThis as unknown as {
+      __engine?: () => { getDomain?: (d: string) => { read?: (id: string, k: string) => unknown } | null } | null;
+    };
+    const dom = w.__engine?.()?.getDomain?.('video');
+    return { loaded: dom?.read?.(id, 'loaded') ?? null, loadError: dom?.read?.(id, 'loadError') ?? null };
+  }, nodeId);
+}
+
+/**
+ * Spawn DOOM on `page` and bring its runtime up. Returns the REASON it failed,
+ * or null on success.
+ *
+ * ⚠ This used to be `Promise<boolean>` with a bare `catch { return false }`, and
+ * the caller turned `false` into `test.skip(true, 'DOOM runtime failed to load
+ * on A within 25s')`. Two things were wrong with that and both cost real time:
+ *
+ *  1. The `catch` ate the CAUSE. "Did the 25s wait expire, or did the runtime
+ *     report a loadError?" are different bugs and the test could not tell you
+ *     which, so a failure here carried no information at all.
+ *  2. It SKIPPED. `checkAssets` has already proven the WASM + WAD are served two
+ *     lines earlier, and `collab:attest` pre-flights both. Past that point a
+ *     runtime that does not come up is a DEFECT, not an environment. Skipping
+ *     made it invisible: the attest classified that reason as a benign "asset
+ *     skip" and minted anyway (see scripts/collab-attest-lib.ts).
+ *
+ * MEASURED on this machine 2026-08-13, three consecutive green runs: spawnPatch
+ * 43 ms, the overlay click 23 ms, `loaded === true` a further 201 ms. The 25 s
+ * budget is a ~100x margin — it bounds a hang, it does not gate a slow machine.
+ */
+async function spawnAndLoadDoom(page: Page, nodeId: string): Promise<string | null> {
   const nodes: SpawnNode[] = [
     { id: nodeId, type: 'doom', position: { x: 60, y: 60 }, domain: 'video' },
   ];
@@ -117,16 +155,16 @@ async function spawnAndLoadDoom(page: Page, nodeId: string): Promise<boolean> {
       nodeId,
       { timeout: 25000 },
     );
-    const err = await page.evaluate((id) => {
-      const w = globalThis as unknown as {
-        __engine?: () => { getDomain?: (d: string) => { read?: (id: string, k: string) => unknown } | null } | null;
-      };
-      return w.__engine?.()?.getDomain?.('video')?.read?.(id, 'loadError') ?? null;
-    }, nodeId);
-    return err === null;
   } catch {
-    return false;
+    const st = await readLoadState(page, nodeId).catch(() => ({ loaded: '<unreadable>', loadError: '<unreadable>' }));
+    return (
+      `video domain never reported loaded===true for "${nodeId}" within 25000 ms ` +
+      `(last read: loaded=${JSON.stringify(st.loaded)}, loadError=${JSON.stringify(st.loadError)}). ` +
+      `The WASM + WAD were confirmed served by checkAssets, so this is a runtime/load defect.`
+    );
   }
+  const { loadError } = await readLoadState(page, nodeId);
+  return loadError === null ? null : `DOOM runtime reported loadError: ${JSON.stringify(loadError)}`;
 }
 
 async function waitForCardHook(page: Page, nodeId: string, timeout = 10000): Promise<void> {
@@ -140,12 +178,54 @@ async function waitForCardHook(page: Page, nodeId: string, timeout = 10000): Pro
   );
 }
 
-async function join(page: Page, nodeId: string): Promise<void> {
+/**
+ * Join the netgame on `page`.
+ *
+ * ⚠ THE ONE UNBOUNDED AWAIT IN THIS SPEC, AND IT AWAITS AN APP PROMISE.
+ * `page.evaluate` takes no timeout, and the promise it awaits here —
+ * `DoomCard.joinGame()` — awaits `tryLoad()` → `extras.ensureLoaded()` →
+ * `DoomRuntime.load()` (a dynamic `import()` of /doom/doom.js plus the
+ * emscripten module factory) and `loadWad()` (a 4 MB fetch). Not one link in
+ * that chain has a timeout, so a stall anywhere in it consumed the WHOLE 180 s
+ * test budget and surfaced as a bare test timeout — the least informative
+ * failure Playwright can emit, and the one that got #1592 filed against the
+ * wrong step.
+ *
+ * It matters most for the GUEST: A's runtime load is watched by an explicit
+ * 25 s `loaded === true` wait, but B never clicks anything, so B's entire
+ * runtime load happens inside this evaluate, unobserved.
+ *
+ * So: race it against a labelled budget and, on expiry, report the page-side
+ * state that says WHY. This is not a timeout bump — the budget is a ceiling on
+ * a step MEASURED at 216/203/256 ms across three green runs, and its only job
+ * is to turn a hang into a sentence.
+ */
+async function join(page: Page, nodeId: string, budgetMs = SYNC_BUDGET_MS): Promise<void> {
   await waitForCardHook(page, nodeId);
-  await page.evaluate(async (id) => {
+  const t0 = Date.now();
+  const work = page.evaluate(async (id) => {
     const w = globalThis as unknown as { __doomCards: Record<string, { join: () => Promise<void> }> };
     await w.__doomCards[id]!.join();
   }, nodeId);
+  let timer: NodeJS.Timeout | undefined;
+  const expired = new Promise<'expired'>((resolve) => {
+    timer = setTimeout(() => resolve('expired'), budgetMs);
+  });
+  try {
+    const outcome = await Promise.race([work.then(() => 'done' as const), expired]);
+    if (outcome === 'expired') {
+      const st = await readLoadState(page, nodeId).catch(() => ({ loaded: '<unreadable>', loadError: '<unreadable>' }));
+      const card = await cardState(page, nodeId).catch(() => null);
+      throw new Error(
+        `__doomCards["${nodeId}"].join() did not settle within ${budgetMs} ms ` +
+          `(elapsed ${Date.now() - t0} ms). joinGame() awaits the WASM+WAD load, so the ` +
+          `stall is almost certainly there. video domain: loaded=${JSON.stringify(st.loaded)}, ` +
+          `loadError=${JSON.stringify(st.loadError)}; card: ${JSON.stringify(card)}.`,
+      );
+    }
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 interface CardState {
@@ -196,8 +276,12 @@ test.describe('@collab DOOM New Game + Launch (slice 4)', () => {
       const NODE = 'sut';
 
       // ─── A (arbiter / host) spawns + loads DOOM ───
-      const aLoaded = await spawnAndLoadDoom(pair.pageA, NODE);
-      if (!aLoaded) { test.skip(true, 'DOOM runtime failed to load on A within 25s'); return; }
+      // A FAILURE, never a skip: checkAssets just proved the WASM + WAD are
+      // served, so anything past this point is a defect in the load path. The
+      // former `test.skip` here was invisible to `collab:attest` — it filed the
+      // reason as a benign asset skip and minted the attestation regardless.
+      const aLoadError = await spawnAndLoadDoom(pair.pageA, NODE);
+      expect(aLoadError, "A's DOOM runtime must come up").toBeNull();
 
       // ─── B sees the SAME node via Yjs sync; load its hook ───
       await pair.pageB.locator('[data-testid="doom-card"]').waitFor({ timeout: 10000 });

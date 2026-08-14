@@ -30,6 +30,7 @@
 
 import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
+import { pressFlipKey } from './_flip-key';
 
 /** Geometry of the dock trays, read in one page round-trip. */
 async function trayGeometry(page: import('@playwright/test').Page) {
@@ -177,10 +178,11 @@ test.describe('#1573 expanded tray hugs its content', () => {
       await expect(page.getByTestId('dock-fullview-pane')).toHaveCount(2, { timeout: 20_000 });
 
       if (flipped) {
-        // Bare Tab is the dock's flip shortcut while the full-view is open, and the
-        // dock is its SINGLE owner in that state (Canvas.svelte:7803). Use the real
-        // keystroke rather than a synthetic event so the guard is exercised too.
-        await page.keyboard.press('Tab');
+        // The flip key is the dock's flip shortcut while the full-view is open,
+        // and the dock is its SINGLE owner in that state (Canvas.svelte isFlip /
+        // onDockKey, split by occupancy). Use the real keystroke rather than a
+        // synthetic event so the guard is exercised too.
+        await pressFlipKey(page);
         await expect(page.locator('[data-fullview-flipped="true"]')).toHaveCount(1, { timeout: 10_000 });
       }
 

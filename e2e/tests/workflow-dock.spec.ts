@@ -26,6 +26,7 @@
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+import { pressFlipKey } from './_flip-key';
 import { readScopePeakOverWindow, runFor } from './_module-coverage-helpers';
 
 /** Collect page errors + console errors for the zero-pageerror asserts. */
@@ -491,7 +492,7 @@ test.describe('dock drawer patch menu + rear-view patching (owner fixes 2026-07-
     //
     // DRIVEN THROUGH THE M DRAWER (2026-07-26): the clip player moved to a
     // dock full-view PANE (`c` = expand), and while the full-view is open the
-    // DOCK owns bare TAB (the single-owner guard) — so the canvas rear view
+    // DOCK owns the flip key (the single-owner guard) — so the canvas rear view
     // never flips and this canvas-commit scenario is structurally impossible
     // there. The regression this test exists for is the DRAWER-hosted card's
     // rear surface (`.dock-*-sized` mirror rules in DockCardHost), which
@@ -508,7 +509,7 @@ test.describe('dock drawer patch menu + rear-view patching (owner fixes 2026-07-
 
     // Tab → rear view; the DOCKED card's back panel becomes the live
     // patch surface (jacks visible + clickable).
-    await page.keyboard.press('Tab');
+    await pressFlipKey(page);
     const outJack = card.locator('[data-testid="back-jack"][data-port-id="masterL"][data-direction="output"]');
     await expect(outJack).toBeVisible({ timeout: 5_000 });
     await page.waitForTimeout(450); // flip-in keyframe settles
@@ -567,7 +568,7 @@ test.describe('dock drawer patch menu + rear-view patching (owner fixes 2026-07-
     await waitForPin(page, 'pinned-mixmstrs');
     const card = await openMixmstrsDrawer(page);
 
-    await page.keyboard.press('Tab');
+    await pressFlipKey(page);
     const inJack = card.locator('[data-testid="back-jack"][data-port-id="ch1L"][data-direction="input"]');
     await expect(inJack).toBeVisible({ timeout: 5_000 });
     await page.waitForTimeout(450);

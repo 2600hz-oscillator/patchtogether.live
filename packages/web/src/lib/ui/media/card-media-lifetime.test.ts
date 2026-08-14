@@ -38,7 +38,12 @@
 //     permanently rather than merely pausing.
 //   * `attachExternalSource(..., null)` in an unmount path — detaches the
 //     engine from an element that still exists and is still playing.
-// All three are legitimate on NODE deletion; they belong to
+//   * `attachLayerVideo(..., null)` in an unmount path — the SAME detach on the
+//     EXTRAS channel. Added with #1589: the gate derived its subject set from
+//     both channels but only ever forbade the first channel's detach verb, so
+//     TOYBOX's per-layer detach was invisible to it. A gate that enrols a card
+//     for a channel it has no pattern for is enrolment, not coverage.
+// All four are legitimate on NODE deletion; they belong to
 // $lib/ui/media/node-media-registry, which is keyed to graph lifetime and
 // swept from Canvas against the live node set.
 //
@@ -93,34 +98,18 @@ function subjectCards(): string[] {
   return out.sort();
 }
 
-/**
- * Cards KNOWN to still tear media down on unmount, each named with why it is
- * not fixed here and what deletes the entry. This is deliberately a NAMED
- * per-instance exemption, not a count and not a filename filter: a new defect
- * in a listed card still reddens (the entry pins the exact patterns), an entry
- * naming a card that no longer violates reddens as STALE, and an entry naming
- * a card that no longer exists reddens too.
- *
- * NOT a debt inventory of payable work: the conversions in THIS change were
- * paid, not listed. This is the single card whose conversion is genuinely a
- * separate piece of work.
- */
-const KNOWN_UNCONVERTED: { card: string; patterns: string[]; why: string; deleteWhen: string }[] = [
-  {
-    card: 'ToyboxCard',
-    patterns: ['revokeObjectURL', 'track.stop()'],
-    why:
-      'TOYBOX is per-LAYER: N <video> elements, N object URLs and N getUserMedia ' +
-      'MediaStreams, all released in onDestroy. Only the filename rides the Y.Doc, ' +
-      'so a card move loses the bytes AND the capture permission — strictly worse ' +
-      'than the videovarispeed case this change fixes. Converting it means giving ' +
-      'the registry a per-layer slot keyed by layer index, which is a design step ' +
-      'of its own rather than a repeat of the single-element conversion.',
-    deleteWhen:
-      'ToyboxCard adopts per-layer slots from $lib/ui/media/node-media-registry and ' +
-      'stops releasing urls/tracks in onDestroy (tracked as the toybox follow-up).',
-  },
-];
+// THE EXEMPTION MECHANISM IS GONE, and that is the point (#1589).
+//
+// This file shipped with a `KNOWN_UNCONVERTED` list holding exactly one entry —
+// ToyboxCard — with a `why` and a `deleteWhen`. TOYBOX now takes per-layer slots
+// from $lib/ui/media/node-media-registry, so the entry was deleted, and with the
+// last entry the whole construct went too: the list, the two tests that walked
+// it, and the per-(card, pattern) filter in the main check. What remains is the
+// UNCONDITIONAL assertion plus the negative controls that call the same
+// predicate — the repo standard for a paid debt ("delete the mechanism entirely
+// and leave no replacement counter"). An empty allowlist kept around for the
+// next occupant is an invitation, and a reviewer cannot tell an empty one from a
+// forgotten one.
 
 /** module type id -> card component basename (explicit `def.card` wins, else
  *  the PascalCase convention) — the same resolution buildNodeTypes uses. */
@@ -233,6 +222,11 @@ const FORBIDDEN: { name: string; re: RegExp; why: string }[] = [
     re: /attachExternalSource\s*\([^)]*\bnull\s*\)/,
     why: 'detaching on unmount blanks a source that still exists; the element is node-owned and outlives the card',
   },
+  {
+    name: "attachLayerVideo(…, null)",
+    re: /attachLayerVideo\s*\([^)]*\bnull\s*\)/,
+    why: 'the EXTRAS-channel detach — same defect as attachExternalSource(…, null), on the channel half the subject set actually uses',
+  },
 ];
 
 /** The FORBIDDEN pattern names a card trips in its unmount path. */
@@ -270,35 +264,20 @@ describe('cards on a private node channel must not tear their media down on UNMO
     }
   });
 
-  it('every KNOWN_UNCONVERTED entry names a card that EXISTS', () => {
-    const files = new Set(readdirSync(CARD_DIR));
-    const ghosts = KNOWN_UNCONVERTED.filter((e) => !files.has(`${e.card}.svelte`)).map((e) => e.card);
-    expect(ghosts, `exemption names a card that no longer exists: ${ghosts.join(', ')}`).toEqual([]);
-  });
-
-  it('every KNOWN_UNCONVERTED entry STILL violates — a fixed card must delete its entry', () => {
-    const stale: string[] = [];
-    for (const e of KNOWN_UNCONVERTED) {
-      const hits = violationsFor(e.card);
-      const unmet = e.patterns.filter((p) => !hits.includes(p));
-      if (unmet.length) {
-        stale.push(
-          `${e.card} no longer violates [${unmet.join(', ')}] — DELETE its KNOWN_UNCONVERTED entry ` +
-            `(deleteWhen: ${e.deleteWhen})`,
-        );
-      }
-    }
-    expect(stale).toEqual([]);
+  it('TOYBOX is a subject on the EXTRAS channel — the one this gate used to enrol and not judge', () => {
+    // Anchored to the ARTIFACT: if the card is renamed or its extras channel
+    // goes away, this reddens rather than quietly certifying nothing. It is the
+    // positive counterpart of the deleted KNOWN_UNCONVERTED entry — the card is
+    // still watched, it is simply no longer excused.
+    expect(subjects, 'ToyboxCard must remain a gate subject').toContain('ToyboxCard');
   });
 
   it('no subject card revokes urls, stops tracks or detaches in an unmount path', () => {
-    const exempt = new Map(KNOWN_UNCONVERTED.map((e) => [e.card, new Set(e.patterns)]));
+    // UNCONDITIONAL. There is no exemption list to consult — see the note above
+    // FORBIDDEN. Every subject card is judged by every pattern.
     const offenders: string[] = [];
     for (const card of subjects) {
       for (const name of violationsFor(card)) {
-        // Exemptions are per (card, pattern): a NEW kind of violation in an
-        // already-listed card still reddens.
-        if (exempt.get(card)?.has(name)) continue;
         const f = FORBIDDEN.find((x) => x.name === name)!;
         offenders.push(`${card}: ${name} — ${f.why}`);
       }
@@ -333,6 +312,7 @@ describe('cards on a private node channel must not tear their media down on UNMO
       onDestroy(() => {
         const ve = videoEngine();
         try { ve?.attachExternalSource(id, 'video', null); } catch {}
+        try { extras?.attachLayerVideo(i, null); } catch {}
         if (objectUrl) { URL.revokeObjectURL(objectUrl); }
         for (const t of stream.getTracks()) t.stop();
       });
@@ -341,8 +321,22 @@ describe('cards on a private node channel must not tear their media down on UNMO
     expect(bodies).toHaveLength(1);
     const hits = FORBIDDEN.filter((f) => f.re.test(bodies[0]!)).map((f) => f.name);
     expect(hits.sort()).toEqual(
-      ['attachExternalSource(…, null)', 'revokeObjectURL', 'track.stop()'].sort(),
+      [
+        'attachExternalSource(…, null)',
+        'attachLayerVideo(…, null)',
+        'revokeObjectURL',
+        'track.stop()',
+      ].sort(),
     );
+  });
+
+  it('the ACTUAL ToyboxCard unmount body is what the hostile control models (#1589)', () => {
+    // A POSITIVE control on the subject that motivated the pattern: the exact
+    // teardown above is what ToyboxCard.onDestroy contained, verbatim in shape.
+    // Asserting it is now clean pins the fix to this gate rather than to a
+    // commit message — and because `subjects` is derived, a rename cannot
+    // silently drop it (the leg above fails first).
+    expect(violationsFor('ToyboxCard')).toEqual([]);
   });
 
   it('the predicate does NOT fire on a clean unmount body (negative control)', () => {

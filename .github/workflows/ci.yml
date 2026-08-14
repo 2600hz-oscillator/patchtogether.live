@@ -10,9 +10,12 @@ name: CI
 #   typecheck       ~30 s  | independent setup
 #   unit            ~90 s  | independent setup (server + web vitest)
 #   dsp-build       ~1-2 min | compiles Faust worklets ONCE → dsp-dist artifact
-#                            | (cache hit ~10 s); art/build/build-web/e2e/collab
-#                            | /vrt/vrt-strict/behavioral `needs:` it + restore
-#   build-web       ~2-3 min | needs: dsp-build; builds the Vite/SvelteKit
+#                            | (cache hit ~10 s); art/build/e2e/collab/vrt/
+#                            | vrt-strict-shard/behavioral `needs:` it + restore
+#   build-web       ~4 min | INDEPENDENT since #1595 — restores the SAME DSP
+#                            | dist cache itself instead of `needs: dsp-build`,
+#                            | so it starts at t=0 and every e2e shard starts
+#                            | 2.25 min earlier. Builds the Vite/SvelteKit
 #                            | preview bundle ONCE (VITE_E2E_HOOKS=1) → the
 #                            | web-preview-dist artifact the e2e shards serve
 #   art             ~60 s  | needs: dsp-build (restores dist, dsp:build no-ops)
@@ -27,6 +30,11 @@ name: CI
 #   merge-reports   ~30 s  | needs: [e2e] — merges the blob-reports
 #   ci (umbrella)   ~0 s   | needs all above; gates branch protection
 #   vrt             ~3-5 min | needs: dsp-build (restores dist)
+#   vrt-strict-shard (× 4) ~6.5 min | matrix 1..4/4, needs: dsp-build; the
+#                            | REQUIRED comparison lane, split by MEASURED
+#                            | per-test cost (scripts/vrt-shard-plan.mjs)
+#   vrt-strict      ~10 s  | needs: vrt-strict-shard — the AGGREGATOR, and the
+#                            | job whose `name:` is the required context
 #
 # dsp-build dedupe (2026-06-01): the slow Faust compile used to run ~16× per
 # run (once per e2e shard, vrt, vrt-strict, behavioral shard, art, build).
@@ -472,6 +480,14 @@ jobs:
   # missing dist. If a job still invokes a `task` that lists dsp:build as a dep,
   # the restored dist + matching .dsp-srchash makes that dep a no-op (the
   # `status:` guard in Taskfile.yml) — no double-build.
+  #
+  # ⚠ ONE consumer no longer takes that edge: `build-web` restores the SAME
+  # cache key directly and runs `task dsp:build` itself (#1595), because sitting
+  # behind this job cost 2.25 min of merge latency on every PR for an artifact
+  # this job produces in 1 second. The argument is in build-web's header; the
+  # short version is that the key is a content hash with no restore-keys and the
+  # `status:` guard re-verifies it, so the cache is an optimisation rather than
+  # a trust boundary. Everyone ELSE still uses the artifact.
   # -----------------------------------------------------------------------
   dsp-build:
     name: dsp-build (Faust worklets, once)
@@ -556,10 +572,55 @@ jobs:
   # here (vite build copies the whole static/ tree into
   # .svelte-kit/output/client/), so the e2e shards no longer build WASM or
   # fetch the WAD — they're inside the downloaded artifact.
+  #
+  # ── NO LONGER `needs: dsp-build` (2026-08-13, #1595) ───────────────────────
+  #
+  # This edge cost 2.25 min of merge latency on EVERY PR and bought a 1-second
+  # artifact. MEASURED, run 31736165616:
+  #
+  #   dsp-build                      2.25 min   of which:
+  #     Install workspace deps       1.77 min
+  #     Build DSP worklets (Faust)   0.02 min   ← the cache HIT makes it a no-op
+  #   build-web                      3.83 min   (of which npm install 1.72 min)
+  #   → every e2e shard, collab, webgl-smoke and behavioral-smoke started at
+  #     6.17 min, i.e. 31 % of a 19.8 min critical path spent not testing.
+  #
+  # And the Faust compile that `dsp-build` exists to run once is not running at
+  # all: across the last 40 completed ci.yml runs the "Build DSP worklets" step
+  # took 1–4 s in EVERY ONE — the `Cache DSP dist` key (a content hash of
+  # packages/dsp/src, packages/dsp/scripts, packages/dsp/package.json and the
+  # flox manifest) hit every time. So the serialization was 135 s of npm install
+  # in front of a cache lookup.
+  #
+  # This job now RESTORES the same cache itself and runs `task dsp:build`, which
+  # is exactly what dsp-build does. It starts at t=0, in parallel.
+  #
+  # CORRECTNESS — why this cannot serve a stale dist, two independent reasons:
+  #   1. The cache key is a CONTENT HASH of every DSP build input, and there are
+  #      deliberately NO `restore-keys` (adding one would reintroduce exactly the
+  #      staleness this argument rules out). A hit is, by construction, the dist
+  #      those inputs produce.
+  #   2. `task dsp:build`'s `status:` guard recomputes `scripts/dsp-src-hash.sh`
+  #      from the working tree and compares it to the restored
+  #      `dist/.dsp-srchash`. A dist that does not match the sources REBUILDS.
+  #      So the cache is an optimisation, not a trust boundary.
+  # `actions/cache/restore` (read-only) rather than `actions/cache`, so this job
+  # never writes the key and cannot race dsp-build's save on a miss.
+  #
+  # ⚠ ON A CACHE MISS this job pays the Faust compile that dsp-build is also
+  # paying, concurrently. That is still never worse than today: before, a miss
+  # cost `dsp-build(135 s + faust) → build-web(230 s)`; now it costs
+  # `build-web(230 s + faust)` with dsp-build running alongside. For any faust
+  # cost ≥ 0 the new path is shorter. It is UNMEASURED here (0 of the last 40
+  # runs missed), which is the honest statement — but the inequality does not
+  # depend on the value.
+  #
+  # dsp-build itself is UNCHANGED and still `needs:`-ed by the other ~14
+  # consumers (art, vrt-strict-shard, build, webgl-smoke, behavioral, …), which
+  # keep the artifact path and its once-per-run guarantee.
   # -----------------------------------------------------------------------
   build-web:
     name: build-web (preview bundle, once)
-    needs: dsp-build
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -614,17 +675,31 @@ jobs:
           path: packages/web/.svelte-kit
           key: ${{ runner.os }}-svelte-kit-${{ hashFiles('packages/web/svelte.config.js', 'packages/web/src/routes/**', 'packages/web/package.json') }}
 
-      # Restore the worklet dist built once by dsp-build, BEFORE `task
-      # build:web` — `vite build` bundles the `?url`-suffixed DSP artifacts
-      # from packages/dsp/dist/, so they must be on disk first.
-      - name: Download DSP dist artifact
-        uses: actions/download-artifact@v4
+      # The worklet dist, BEFORE `task build:web` — `vite build` bundles the
+      # `?url`-suffixed DSP artifacts from packages/dsp/dist/, so they must be
+      # on disk first.
+      #
+      # ⚠ SAME KEY AS dsp-build's `Cache DSP dist`, AND DELIBERATELY NO
+      # `restore-keys`. The key is a content hash of every DSP build input, so a
+      # hit IS the dist those inputs produce; a prefix fallback would restore a
+      # dist built from DIFFERENT sources, which is the one way this could go
+      # wrong. `cache/restore` (read-only) so this job never races dsp-build's
+      # save. See the job header for the full argument.
+      - name: Restore DSP dist from cache (same key as dsp-build)
+        uses: actions/cache/restore@v4
         with:
-          name: dsp-dist
           path: packages/dsp/dist
+          key: ${{ runner.os }}-dsp-dist-${{ hashFiles('packages/dsp/src/**', 'packages/dsp/scripts/**', 'packages/dsp/package.json', '.flox/env/manifest.toml') }}
 
       - name: Install workspace deps
         run: flox activate -- task install
+
+      # On a cache HIT the restored dist carries a matching `.dsp-srchash`, so
+      # `task dsp:build`'s `status:` guard makes this a no-op (~1 s, and that is
+      # what it has been in every one of the last 40 runs). On a MISS it runs the
+      # real Faust + esbuild compile — the guard, not the cache, is what decides.
+      - name: Build DSP worklets if the cache missed (status-guarded no-op on a hit)
+        run: flox activate -- task dsp:build
 
       # DOOM WASM + DOOM1.WAD are static-served assets (under
       # packages/web/static/). `vite build` copies static/ into the client
@@ -1092,7 +1167,7 @@ jobs:
       #   distinct tests involved .................. 9
       #   behavioral-observation-window.spec.ts .... 11/18 (root-caused here)
       #   camera-input.spec.ts ..................... 6/18  (fixed by #1564)
-      #   collapse-keeps-playing.spec.ts ........... 5/18  (open)
+      #   collapse-keeps-playing.spec.ts ........... 5/18  (root-caused, #1569)
       #   matrixmix.spec.ts ........................ 2/18  (open)
       #   midi / patch-load-leak / samsloop-record /
       #     clipplayer-custom-scale /
@@ -2871,46 +2946,103 @@ jobs:
   # this compares against was rendered by this same runner image.
   #
   # REQUIRED status check for VRT (2026-06-06): the `main: green PRs only`
-  # ruleset (16042163) was flipped to require this job's name
+  # ruleset (16042163) was flipped to require the AGGREGATOR job's name
   # (`vrt-strict (visual regression — strict subset)`) instead of the full
   # `VRT (visual regression)` sweep. Drift here blocks merge. The full-sweep
   # `vrt` job above is now the INFORMATIONAL lane for canvas-driven + animated
   # cards (`continue-on-error: true` — covers more surface, may flake, never
-  # blocks merge). Renaming THIS job now requires an accompanying ruleset PUT
-  # (`gh api -X PUT repos/:owner/:repo/rulesets/16042163`) to swap the
-  # `required_status_checks` context — names are matched literally.
+  # blocks merge). Renaming the `vrt-strict` job now requires an accompanying
+  # ruleset PUT (`gh api -X PUT repos/:owner/:repo/rulesets/16042163`) to swap
+  # the `required_status_checks` context — names are matched literally.
+  #
+  # ── SHARDED 2026-08-13 (#1595) ─────────────────────────────────────────────
+  #
+  # ⚠ THE REQUIRED CONTEXT NAME IS UNCHANGED, AND THAT IS DELIBERATE. A matrix
+  # job's check-run name carries its matrix values (`… (1, 4)`), so sharding
+  # THIS job in place would have retired the context the ruleset requires —
+  # GitHub then sees a required check that never reports and every PR sits
+  # BLOCKED with zero failures, forever. So the matrix moved to a NEW job key
+  # (`vrt-strict-shard`) and `vrt-strict` stayed put as a tiny aggregator that
+  # keeps the byte-identical `name:`. `scripts/docs-only-gate.test.ts` reads
+  # `jobName(CI_YML, 'vrt-strict')` and asserts it against the posted context,
+  # so the identity is gated, not merely intended.
+  #
+  # ⚠ The aggregator is `if: always()`, NOT `if: '!cancelled()'`. A job-level
+  # `if:` that SKIPS reports as SUCCESS to branch protection — an aggregator
+  # that can skip is a required check that can green-light a run it never
+  # looked at. `always()` means it reports on every path, and it FAILS on
+  # anything that is not `success` (including `cancelled` and `skipped`, which
+  # is what an empty or mis-typed matrix would produce). Deny by default.
+  #
+  # MEASURED, run 31736165616 (ubuntu-latest, all green):
+  #   this job                     17.30 min  ← longest job in the run
+  #   Playwright step              14.68 min
+  #   sum of the 115 test times    14.34 min
+  #   → fixed per-shard overhead  ≈ 2.97 min  (checkout + flox + LFS + npm + boot)
+  #   critical path                19.80 min  (this job ended 0.1 min before
+  #                                            the slowest e2e shard)
+  #
+  # It was the only large job in the run that was not parallelized, while e2e
+  # beside it ran 10 ways.
+  #
+  # WHY 4 SHARDS, from the measured numbers rather than a guess. Per-shard wall
+  # is `178 s overhead + 860 s / N`:
+  #
+  #     N=2  10.16 min   20.3 job-min
+  #     N=3   7.79 min   23.2 job-min
+  #     N=4   6.59 min   26.2 job-min   ← chosen
+  #     N=5   5.87 min   29.2 job-min
+  #     N=6   5.40 min   32.1 job-min
+  #
+  # 4 is where this lane leaves the critical path: at 6.59 min it ends ~8.9 min
+  # in (after `dsp-build`), against an e2e floor of ~15 min once the pre-e2e
+  # serialization is cut in the same PR. Going past 4 buys wall-clock this run
+  # cannot spend — the floor is e2e, not this — and each extra shard costs
+  # another ~3 min of runner on 44 % fixed overhead. It also leaves headroom:
+  # this lane went 6.6 → 17.3 min in ONE WEEK when the faceplates landed, and
+  # at N=4 a doubling of the roster still lands under 10 min.
+  #
+  # RUNNER-MINUTES: +8.9/run (17.3 → 26.2). That is the number to weigh against
+  # 10.7 min of merge latency removed from every PR.
+  #
+  # ⚠ `--shard=N/M` WOULD NOT WORK HERE, and not only for #1538's cost reason:
+  # this lane has TWO spec files and `fullyParallel: false`, so Playwright's own
+  # splitter cannot make more than two bins — 238 s and 622 s, a 2.61x split
+  # capping the speedup at 1.4x. The unit has to be the TEST, which is what
+  # `scripts/vrt-shard-plan.mjs` packs (LPT over measured per-test cost, spread
+  # 1.02x) and selects via an anchored `--grep`.
   # -----------------------------------------------------------------------
-  vrt-strict:
-    name: vrt-strict (visual regression — strict subset)
+  vrt-strict-shard:
+    name: vrt-strict shard ${{ matrix.shard }}/4
     needs: dsp-build
     runs-on: ubuntu-latest
-    # ⚠ 10 -> 25 (2026-08-12), because this lane just grew the FACEPLATES.
-    #
-    # `workflow-shell-faces.spec.ts` moved into VRT_STRICT's testMatch (see the
-    # long note in e2e/vrt/vrt.config.ts). Until then every `face-*` baseline
-    # was gated ONLY by the informational `vrt` job — `continue-on-error: true`,
-    # outside the `ci` umbrella's `needs` — so no faceplate regression could
-    # block a merge. #1468 shipped with twelve stale dock baselines and this
-    # lane was green throughout.
-    #
-    # MEASURED, run 31581123866 (ubuntu-latest):
-    #   this job before        6.60 min
-    #   the faces spec         9.56 min   (64 scenes + 2 negative controls)
-    #   this job after        ~16.2 min
-    #   longest REQUIRED job  16.14 min   (e2e shard 10/10)
-    #
-    # TIME-TO-MERGE DELTA: ~zero — this lands level with the existing critical
-    # path rather than becoming the new bound. RUNNER-MINUTES: +9.6/run, which
-    # is the number to weigh, and it is a duplicate rather than new work: the
-    # spec stays in FULL_MATCH too because `task vrt:update` (the CAPTURE) does
-    # not set VRT_STRICT, and removing it there would silently stop capturing
-    # 64 baselines.
-    #
-    # 25 rather than 20: the old cap was already below the new duration, and a
-    # cap sitting near the p99 of its own passing population is a coin flip
-    # (the vrt.config timeout note has the arithmetic). A timeout costs nothing
-    # on green — only an already-failing job runs to it.
-    timeout-minutes: 25
+    # 15, against a 6.59 min prediction — 2.3x headroom, and deliberately not
+    # the old 25. A cap costs nothing on green (only an ALREADY-FAILING job runs
+    # to it), but a cap far above the real duration is also a cap that cannot
+    # notice a lane that has silently doubled. The prior 25 was sized for a
+    # 17.3 min job; carrying it over unchanged would have been a number that
+    # meant nothing.
+    timeout-minutes: 15
+
+    strategy:
+      # Don't fail-fast: one drifted baseline on shard 2 must not hide the other
+      # three shards' diffs, or triage costs two CI cycles instead of one. The
+      # aggregator below is what turns "any shard red" into "the gate is red".
+      fail-fast: false
+      matrix:
+        # ⚠ Changing this list changes NOTHING about the required context name
+        # (see the aggregator), but `scripts/vrt-shard-plan.test.ts` READS this
+        # matrix out of this file and plans against it — so the planner's
+        # coverage assertions always describe the split CI actually runs, and a
+        # bump here cannot leave the gate certifying a different partition.
+        shard: [1, 2, 3, 4]
+
+    env:
+      # The lane's identity. Narrows testMatch to vrt.spec.ts +
+      # workflow-shell-faces.spec.ts AND filters vrt.spec.ts to
+      # STRICT_VRT_MODULES — so it must be set for the DISCOVERY step too, or
+      # the plan would be computed over the informational lane's roster.
+      VRT_STRICT: '1'
 
     steps:
       # VRT baselines are LFS-tracked under e2e/vrt/__screenshots__/. Check out
@@ -2994,19 +3126,119 @@ jobs:
       # and the gate now reads every single-card baseline dir, not just
       # vrt.spec.ts.
       # ---------------------------------------------------------------------
+      #
+      # SHARD 1 ONLY. This is a WHOLE-POPULATION gate (it decodes every
+      # committed single-card baseline against the --cable-* tokens); it has
+      # nothing to do with which scenes a shard renders, so running it 4x would
+      # cost 3x10 s of runner for four identical answers. Shard 1 always exists
+      # (the matrix is non-empty and `scripts/vrt-shard-plan.test.ts` refuses an
+      # empty shard), and a failure here reds shard 1, which reds the
+      # aggregator — the required context still cannot go green without it.
       - name: Cable-stripe palette gate (committed baselines vs --cable-* tokens)
+        if: matrix.shard == 1
         env:
           VRT_STRIPE_PALETTE_REQUIRED: '1'
         run: flox activate -- npm exec -w packages/web -- vitest run --config vitest.config.ts vrt-cable-stripe
 
-      - name: Run VRT (strict subset)
-        run: flox activate -- task vrt:strict
+      # `vrt.spec.ts` iterates the registry manifest at file-parse time
+      # (e2e/tests/_registry.ts), so the manifest has to be on disk before
+      # DISCOVERY, not just before the run. Normally this arrives as a `deps:`
+      # of `task vrt:strict`; the shard calls Playwright directly (see below),
+      # so it is explicit here. Cheap (~3 s).
+      - name: Emit registry manifest for VRT
+        run: flox activate -- task test:emit-manifest
+
+      # ---------------------------------------------------------------------
+      # PLAN — discover the lane's tests, then let scripts/vrt-shard-plan.mjs
+      # assign them to shards by MEASURED per-test cost (LPT bin-packing over
+      # e2e/vrt-strict-timings.generated.json).
+      #
+      # Every shard runs the planner independently and they must agree without
+      # communicating: the planner is deterministic (total order on cost, then
+      # key) and it THROWS rather than warns if its output is not a partition of
+      # what was discovered — because on a REQUIRED lane a silently dropped
+      # scene looks exactly like the speedup this change is chasing.
+      #
+      # `--list` starts no browser and no dev server (~10 s).
+      # ---------------------------------------------------------------------
+      - name: Plan this shard's scenes (cost-based, union-asserted)
+        run: |
+          set -euo pipefail
+          flox activate -- npx --workspace e2e playwright test \
+            --config=vrt/vrt.config.ts --list --reporter=json > vrt-strict-list.json
+          flox activate -- node scripts/vrt-shard-plan.mjs ${{ matrix.shard }} 4 \
+            --list vrt-strict-list.json --out vrt-shard-planned.txt > vrt-shard-grep.txt
+          echo "shard ${{ matrix.shard }}/4 plans $(wc -l < vrt-shard-planned.txt) scenes:"
+          sed 's/^/  /' vrt-shard-planned.txt
+
+      # ⚠ Playwright is invoked DIRECTLY, not through `task vrt:strict`. The
+      # Taskfile passes {{.CLI_ARGS}} unquoted into a shell line, and this
+      # shard's `--grep` is an alternation full of spaces, `|`, `(`, `)` and `$`
+      # — it would be word-split into nonsense, and a mangled grep that matches
+      # FEWER tests is a green shard that rendered nothing. The only things
+      # `task vrt:strict` adds are the `dsp:build` dep (a no-op here: the dist
+      # was restored above with a matching .dsp-srchash), `test:emit-manifest`
+      # (run explicitly above) and VRT_STRICT=1 (set in the job env).
+      #
+      # The run log is TEE'd because the `list` reporter's own output is the
+      # only record of WHICH tests executed, and that is what the coverage check
+      # below diffs against the plan. `PIPESTATUS` preserves Playwright's exit
+      # code across the tee.
+      - name: Run VRT (strict subset — shard ${{ matrix.shard }}/4)
+        run: |
+          set -uo pipefail
+          GREP="$(cat vrt-shard-grep.txt)"
+          # `set +e` explicitly: the runner's default shell is `bash -eo
+          # pipefail`, so without this the tee'd pipeline would abort the step
+          # before the coverage check below ever runs — and "the suite failed"
+          # would be indistinguishable from "the shard ran nothing".
+          set +e
+          # --global-timeout: the repo's die-mute guard (ci-playwright-timeout
+          # test) requires every Playwright job to either carry one or be
+          # DECLARED unguarded. This lane's cost is measured (860 CPU-s / 4
+          # shards ≈ 215 s of test time + boot), so 600 s bounds a wedged shard
+          # at ~3x its expected test runtime and fires a full 5 minutes BEFORE
+          # this job's `timeout-minutes: 15` kill — the die-mute guard requires
+          # that ordering, or the runner reaps the job before Playwright can
+          # write its report and the shard dies without evidence.
+          flox activate -- npx --workspace e2e playwright test \
+            --config=vrt/vrt.config.ts --grep "$GREP" --global-timeout 600000 2>&1 | tee vrt-shard-run.log
+          RC=${PIPESTATUS[0]}
+          set -e
+          echo "playwright exit=$RC"
+          # ── ANCHORED TO THE RUN, NOT TO THE PLAN ───────────────────────────
+          # Everything above is a property of a MODEL of Playwright's --grep
+          # matching, computed by the same script that produced the plan. If
+          # Playwright reads the regex differently, all of it still passes and
+          # the shard quietly renders fewer scenes. This diffs the tests that
+          # ACTUALLY EXECUTED — parsed back out of the reporter — against the
+          # plan, in both directions, and treats a SKIP as not-executed.
+          # It runs even when the suite failed: "everything failed" and "nothing
+          # ran" are different diagnoses and must not look alike.
+          flox activate -- node scripts/vrt-shard-coverage.mjs \
+            vrt-shard-planned.txt vrt-shard-run.log \
+            --timings vrt-strict-timings-shard-${{ matrix.shard }}.json
+          exit "$RC"
+
+      # The harvested per-test durations, so `e2e/vrt-strict-timings.generated
+      # .json` can be REFRESHED from a real green run (`task
+      # vrt:strict:timings:accept <run-id>`) instead of drifting until the split
+      # is balanced against a roster that no longer exists. Uploaded on every
+      # run, not just failures — a cost artifact you can only obtain from a red
+      # run is one nobody refreshes.
+      - name: Upload harvested per-test timings (shard ${{ matrix.shard }})
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vrt-strict-timings-${{ matrix.shard }}
+          path: vrt-strict-timings-shard-${{ matrix.shard }}.json
+          retention-days: 7
 
       - name: Upload Playwright VRT-strict test-results (actual + diff PNGs)
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: vrt-strict-test-results
+          name: vrt-strict-test-results-${{ matrix.shard }}
           path: e2e/vrt/test-results
           retention-days: 14
 
@@ -3014,6 +3246,44 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: vrt-strict-playwright-report
+          name: vrt-strict-playwright-report-${{ matrix.shard }}
           path: e2e/vrt/report
           retention-days: 14
+
+  # -----------------------------------------------------------------------
+  # vrt-strict — THE REQUIRED CONTEXT. Carries the exact name ruleset 16042163
+  # matches (`vrt-strict (visual regression — strict subset)`, em-dash
+  # included); does no work of its own beyond aggregating the shards above.
+  #
+  # ⚠ DO NOT give this job a conditional that can SKIP it. A skipped job reports
+  # SUCCESS to branch protection, so a skippable aggregator is a required check
+  # that greens a lane it never ran. `always()` reports on every path — success,
+  # failure, cancellation — and the step below denies by default: anything other
+  # than the literal `success` is red, which covers `cancelled`, `skipped` and
+  # the empty-matrix case.
+  #
+  # `needs.vrt-strict-shard.result` is the MATRIX-WIDE result: `success` only if
+  # every leg succeeded, so no per-shard bookkeeping is needed here and a bump
+  # to the shard count needs no edit in this job.
+  # -----------------------------------------------------------------------
+  vrt-strict:
+    name: vrt-strict (visual regression — strict subset)
+    needs: vrt-strict-shard
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+
+    steps:
+      - name: Aggregate vrt-strict shards
+        env:
+          SHARDS: ${{ needs.vrt-strict-shard.result }}
+        run: |
+          set -euo pipefail
+          echo "vrt-strict-shard (all shards): $SHARDS"
+          if [[ "$SHARDS" != "success" ]]; then
+            echo "::error::vrt-strict is RED — the sharded comparison lane reported '$SHARDS'."
+            echo "Open the per-shard jobs above; each uploads its own diff PNGs"
+            echo "(vrt-strict-test-results-<shard>) and HTML report."
+            exit 1
+          fi
+          echo "All vrt-strict shards green."

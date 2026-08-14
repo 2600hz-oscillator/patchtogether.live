@@ -25,7 +25,7 @@
 //     NOTE (2026-07-27, PF-8): the DOCK half of this fix is superseded. The
 //     migrated shell no longer renders the lane rail at view='dock-full' — it
 //     was a DUPLICATE patch surface (dot-only, its EXPAND button already
-//     suppressed) sitting under the faceplate's real one, the RearCard on TAB,
+//     suppressed) sitting under the faceplate's real one, the RearCard on flip,
 //     and it cost ~23px of the dock's fold budget. The old "anchors to the
 //     faceplate, not the origin" test is replaced by the no-duplicate-rail
 //     gate at the bottom of this file, which also re-proves the rear card
@@ -36,6 +36,7 @@
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+import { pressFlipKey } from './_flip-key';
 import { UNMIGRATED_AUDIO_MODULE } from './_face-fixtures';
 
 async function gotoWorkflow(page: Page): Promise<void> {
@@ -235,9 +236,9 @@ test.describe('P1 dock/expand UX fixes (?shell=1)', () => {
   // FIX 3 (dock seam), SUPERSEDED — see the header note. The dock full-view's
   // migrated shell no longer renders a lane rail at all, so there is no
   // drill-down to anchor there. This is the replacement gate: the DUPLICATE
-  // patch surface is gone, and the dock's REAL one (the RearCard on TAB) still
+  // patch surface is gone, and the dock's REAL one (the RearCard on flip) still
   // carries every declared hole — i.e. the removal cost the user nothing.
-  test('the dock full-view shell renders NO lane rail; TAB is its patch surface', async ({ page }) => {
+  test('the dock full-view shell renders NO lane rail; the rear card is its patch surface', async ({ page }) => {
     await gotoWorkflow(page);
     await spawnPatch(page, [{ id: 'm1', type: 'vca', position: { x: 30, y: 40 } }]);
     const tile = page.locator('.svelte-flow__node[data-id="m1"] [data-testid="module-shell"]');
@@ -258,16 +259,16 @@ test.describe('P1 dock/expand UX fixes (?shell=1)', () => {
     await expect(dockShell.getByTestId('lane-jack-rail'), 'no duplicate rail in the dock').toHaveCount(0);
     await expect(dockShell.getByTestId('patch-trigger'), 'no duplicate drill-down trigger').toHaveCount(0);
 
-    // …because the dock's patch surface is the REAR CARD. TAB flips to it and
+    // …because the dock's patch surface is the REAR CARD. The flip key reaches it and
     // it carries EVERY declared port (vca: audio + cv in, audio + audio_inv
     // out), so nothing patchable was lost with the rail.
     await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
-    await page.keyboard.press('Tab');
+    await pressFlipKey(page);
     await expect(faceplate).toHaveAttribute('data-flipped', 'true');
     const rear = faceplate.getByTestId('rear-card');
     await expect(rear).toBeVisible();
     await expect(rear.locator('[data-testid="back-jack"]'), 'every declared vca port is a hole').toHaveCount(4);
-    await page.keyboard.press('Tab');
+    await pressFlipKey(page);
     await expect(faceplate).toHaveAttribute('data-flipped', 'false');
   });
 });

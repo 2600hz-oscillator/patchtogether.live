@@ -3,7 +3,7 @@
 // Shared test helpers for spawning arbitrary modules + edges via the dev-mode
 // `__patch` and `__ydoc` window globals (Canvas.svelte exposes these in dev).
 
-import { expect, type Page, type APIRequestContext } from '@playwright/test';
+import { expect, type Locator, type Page, type APIRequestContext } from '@playwright/test';
 
 export interface SpawnNode {
   id: string;
@@ -130,6 +130,169 @@ async function revealWorkflowNodes(page: Page, ids: string[]): Promise<void> {
       /* best-effort — a missing __flow (non-dev build) just leaves the viewport
          as-is; the subsequent interaction will surface any real problem. */
     });
+}
+
+// ── A CONTROL OUTSIDE THE PANE CAN ONLY BE CLICKED BY WINNING A RACE ────────
+//
+// SvelteFlow pans by TRANSFORMING `.svelte-flow__viewport`; the wrapper is
+// `overflow: hidden`. An overflow:hidden box is still scrollable FROM SCRIPT,
+// and a transformed descendant contributes to its scrollable overflow — so a
+// tall card really does give `.svelte-flow` a scrollHeight far past its
+// clientHeight, and Playwright's `scrollIntoViewIfNeeded` happily scrolls it.
+// xyflow then UNDOES that scroll, by design, in
+// `@xyflow/svelte/…/SvelteFlow/Wrapper.svelte`:
+//
+//     // Undo scroll events, preventing viewport from shifting when nodes
+//     // outside of it are focused
+//     function wrapperOnScroll(e) { e.currentTarget.scrollTo({top:0,left:0,…}) }
+//
+// So every click on an off-pane control is a RACE between Playwright's
+// post-scroll mouse dispatch and that undo handler, and the loser is reported
+// as a nonsense interception by whatever element now sits at the stale point.
+//
+// MEASURED on the clip editor (2026-08-13, this machine, one PASSING run):
+// `.svelte-flow` clientHeight 622 / scrollHeight 1204 CSS px; the row-33
+// checkbox sits at y=819 CSS px, i.e. 197 px BELOW the pane. A page-side
+// scroll recorder caught the whole fight in the green run —
+// `[{top:473},{top:0}]`, 0.04 ms apart. On CI (run 31726508578, shard 4/10)
+// the undo won instead and `check()` on `clipplayer-scalerow-cp-52` timed out
+// against "row g7 (…-103) intercepts pointer events": 819 − 473 = 346 px is
+// exactly where row index 3 (g7) sits. Same layout, same scroll, opposite
+// winner — that is a race, not a slow machine.
+//
+// THE FIX IS TO STOP NEEDING THE BROWSER SCROLL: pan the flow viewport, which
+// is the app's own scroll model and the one thing xyflow will not undo. Once
+// the element is genuinely inside the pane, `scrollIntoViewIfNeeded` is a
+// no-op, no scroll event fires, and there is nothing left to race.
+
+/** The SvelteFlow viewport (pan + zoom). Same seam `revealWorkflowNodes` uses. */
+export interface FlowViewport {
+  x: number;
+  y: number;
+  zoom: number;
+}
+
+/** Read the current flow viewport. Throws if the `__flow` dev seam is absent —
+ *  a silent fallback here would put the caller back on the racy browser-scroll
+ *  path with no marker. */
+export async function getFlowViewport(page: Page): Promise<FlowViewport> {
+  return await page.evaluate(() => {
+    const flow = (
+      globalThis as unknown as {
+        __flow?: { getViewport?: () => { x: number; y: number; zoom: number } };
+      }
+    ).__flow;
+    if (!flow?.getViewport) throw new Error('__flow.getViewport missing (non-dev build?)');
+    return flow.getViewport();
+  });
+}
+
+/** Restore a viewport captured with `getFlowViewport` (e.g. after revealing a
+ *  control deep in a tall card, so the rest of the spec sees the framing it
+ *  was written against). */
+export async function setFlowViewport(page: Page, vp: FlowViewport): Promise<void> {
+  await page.evaluate((v) => {
+    const flow = (
+      globalThis as unknown as {
+        __flow?: { setViewport?: (vp: { x: number; y: number; zoom: number }) => void };
+      }
+    ).__flow;
+    if (!flow?.setViewport) throw new Error('__flow.setViewport missing (non-dev build?)');
+    flow.setViewport(v);
+  }, vp);
+}
+
+/**
+ * PAN the flow viewport until `target`'s box is fully inside the pane, then
+ * WAIT until it actually is. No-op (and no pan) when it already is, so it is
+ * cheap to call before every interaction in a loop.
+ *
+ * This is the sound alternative to letting Playwright scroll the wrapper: see
+ * the block comment above for why that scroll is undone under us. Nothing here
+ * is expressed in milliseconds — the wait is on the CONTAINMENT itself, which
+ * is the signal that makes the element clickable.
+ *
+ * Fails loudly (never silently leaves the element outside) so a regression
+ * reddens here, at the cause, instead of 30 s later as an interception by an
+ * unrelated element.
+ */
+export async function revealInPane(page: Page, target: Locator, margin = 24): Promise<void> {
+  const geometry = (el: Element, m: number) => {
+    const pane =
+      document.querySelector('.svelte-flow__pane') ?? document.querySelector('.svelte-flow');
+    if (!pane) return null;
+    const r = el.getBoundingClientRect();
+    const p = pane.getBoundingClientRect();
+    return {
+      inside:
+        r.left >= p.left + m &&
+        r.right <= p.right - m &&
+        r.top >= p.top + m &&
+        r.bottom <= p.bottom - m,
+      // Center the offending axis rather than edge-align it: the pane's own
+      // bottom-right chrome (minimap, attribution) is clickable and would
+      // happily intercept an element parked against the edge.
+      dx:
+        r.left >= p.left + m && r.right <= p.right - m
+          ? 0
+          : p.left + p.width / 2 - (r.left + r.width / 2),
+      dy:
+        r.top >= p.top + m && r.bottom <= p.bottom - m
+          ? 0
+          : p.top + p.height / 2 - (r.top + r.height / 2),
+      el: { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) },
+      pane: { x: Math.round(p.x), y: Math.round(p.y), w: Math.round(p.width), h: Math.round(p.height) },
+    };
+  };
+
+  const before = await target.evaluate(geometry, margin);
+  if (!before) throw new Error('revealInPane: no .svelte-flow pane on the page');
+  if (before.inside) return;
+
+  const vp = await getFlowViewport(page);
+  await setFlowViewport(page, { x: vp.x + before.dx, y: vp.y + before.dy, zoom: vp.zoom });
+
+  // Wait on the real signal — the box landing inside the pane — not on a
+  // frame count or a sleep. Units are CSS px, stated in the message.
+  await expect
+    .poll(async () => (await target.evaluate(geometry, margin))?.inside ?? false, {
+      timeout: 5000,
+      message:
+        `revealInPane: after panning by (${Math.round(before.dx)}, ${Math.round(before.dy)}) CSS px ` +
+        `the target is STILL outside the pane (target ${JSON.stringify(before.el)} vs ` +
+        `pane ${JSON.stringify(before.pane)}, margin ${margin} CSS px). Clicking it would ` +
+        `depend on winning the scroll-undo race — see the block comment in _helpers.ts.`,
+    })
+    .toBe(true);
+}
+
+/**
+ * NEGATIVE CONTROL for `revealInPane`, page-side (never a Playwright poll —
+ * the accumulator lives in the page, so a starved main thread cannot make
+ * "nothing scrolled" and "we never looked" identical).
+ *
+ * Installs a capture-phase scroll recorder on `.svelte-flow`. A non-empty
+ * reading means SOMETHING needed the browser scroll that xyflow undoes, i.e.
+ * the click was decided by a race. Verified to MOVE: with the reveal removed,
+ * this recorder reads `[473, 0]` on an otherwise-GREEN local run of the
+ * custom-scale spec — i.e. it reddens on the CAUSE while the symptom is hiding.
+ */
+export async function watchPaneScrollUndo(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const w = document.querySelector('.svelte-flow') as HTMLElement | null;
+    if (!w) throw new Error('watchPaneScrollUndo: no .svelte-flow wrapper');
+    const seen: number[] = [];
+    (globalThis as unknown as { __paneScrollUndo?: number[] }).__paneScrollUndo = seen;
+    w.addEventListener('scroll', () => seen.push(Math.round(w.scrollTop)), { capture: true });
+  });
+}
+
+/** Read the scroll tops recorded since `watchPaneScrollUndo` — `[]` is the
+ *  passing value. */
+export async function readPaneScrollUndo(page: Page): Promise<number[]> {
+  return await page.evaluate(
+    () => (globalThis as unknown as { __paneScrollUndo?: number[] }).__paneScrollUndo ?? [],
+  );
 }
 
 // ── THE MOUNT WAIT IS COUNTED IN FRAMES, NOT MILLISECONDS ───────────────────

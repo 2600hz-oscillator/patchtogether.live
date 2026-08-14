@@ -92,7 +92,7 @@ class DockStore {
   // the pinned-drawer branch.
   #fullView = $state<string[]>([]);
 
-  // FLIP SEAM (follow-up rear-card feature): TAB flips the open full-view to
+  // FLIP SEAM (follow-up rear-card feature): the flip key (F) flips the open full-view to
   // a rear/patch view — GLOBAL for the view (both panes flip together, per
   // owner). Today it is state + a data-attr only; the rear-card renderer is
   // separate work. Reset when the full-view empties.
@@ -263,7 +263,7 @@ class DockStore {
     if (this.#fullView.length === 0) this.#fullViewFlipped = false;
   }
 
-  /** The FLIP seam (rear-card follow-up): TAB flips the whole open full-view
+  /** The FLIP seam (rear-card follow-up): the flip key (F) flips the whole open full-view
    *  to a rear/patch face — state + data-attr only for now. Reactive. */
   get fullViewFlipped(): boolean {
     return this.#fullViewFlipped;

@@ -128,7 +128,9 @@ export default defineConfig({
   //
   //   behavioral-observation-window.spec.ts   11/18 ← root-caused, see the file
   //   camera-input.spec.ts                     6/18 ← fixed by #1564
-  //   collapse-keeps-playing.spec.ts           5/18 (videobox 3, videovarispeed 2)
+  //   collapse-keeps-playing.spec.ts           5/18 ← root-caused (#1569): the
+  //     (videobox 3, videovarispeed 2)                assertion compared two
+  //     round-trip samples of a CYCLIC `currentTime`. See the file.
   //   matrixmix.spec.ts                        2/18
   //   midi / patch-load-leak / samsloop-record /
   //     clipplayer-custom-scale /
@@ -140,8 +142,10 @@ export default defineConfig({
   // `grand-attest.ts` REFUSE on a flaky outcome rather than absorb it — and
   // that is the shape this lane wants. `merge-reports` in ci.yml can arm it
   // today by passing `--fail-on-flaky`; it deliberately does NOT, because at a
-  // measured 10/12 that would redden the required lane on day one and be
-  // reverted rather than fixed. It gets armed when the tail above is drained.
+  // measured 16/18 that would redden the required lane on day one and be
+  // reverted rather than fixed. It gets armed when the tail above is drained —
+  // which needs a FRESH series of >=10 runs measured after the fixes land, not
+  // an argument from the rows that have been struck out.
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI
     ? [['github'], ['html', { open: 'never' }]]
