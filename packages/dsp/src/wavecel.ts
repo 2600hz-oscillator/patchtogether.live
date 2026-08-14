@@ -38,21 +38,6 @@ import {
  *  10 channels (ch 2i = lane-i pitch V/oct, ch 2i+1 = lane-i gate). */
 const POLY_VOICES = 5;
 
-declare const sampleRate: number;
-declare class AudioWorkletProcessor {
-  port: MessagePort;
-  constructor(options?: { processorOptions?: unknown });
-  process?(
-    inputs: Float32Array[][],
-    outputs: Float32Array[][],
-    parameters: Record<string, Float32Array>
-  ): boolean;
-}
-declare function registerProcessor(
-  name: string,
-  ctor: typeof AudioWorkletProcessor
-): void;
-
 // Shim worklet globals when running outside AudioWorkletGlobalScope (vitest
 // captures the class via this shim — see wavecel.test.ts loadProcessor()).
 // Mirrors the cube.ts worklet. NOT `export`ed (top-level exports leak into the

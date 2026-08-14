@@ -38,21 +38,6 @@
 // Gates are read from input channel 0 (the same audio-rate gate convention
 // the rest of the codebase uses — see slewswitch.ts).
 
-declare const sampleRate: number;
-declare class AudioWorkletProcessor {
-  port: MessagePort;
-  constructor(options?: { processorOptions?: unknown });
-  process?(
-    inputs: Float32Array[][],
-    outputs: Float32Array[][],
-    parameters: Record<string, Float32Array>
-  ): boolean;
-}
-declare function registerProcessor(
-  name: string,
-  ctor: typeof AudioWorkletProcessor
-): void;
-
 // Declick crossfade length on a selector flip. ~4 ms — short enough to be
 // perceptually instant (discrete) but long enough to kill the zipper click
 // on an audio-rate input.

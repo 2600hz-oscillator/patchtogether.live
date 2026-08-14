@@ -60,21 +60,6 @@ import {
 } from './lib/moog-cp3-dsp';
 import { WtParamSmoother } from './lib/wavetable-osc';
 
-declare const sampleRate: number;
-declare class AudioWorkletProcessor {
-  port: MessagePort;
-  constructor(options?: { processorOptions?: unknown });
-  process?(
-    inputs: Float32Array[][],
-    outputs: Float32Array[][],
-    parameters: Record<string, Float32Array>,
-  ): boolean;
-}
-declare function registerProcessor(
-  name: string,
-  ctor: typeof AudioWorkletProcessor,
-): void;
-
 // Shim worklet globals when running outside AudioWorkletGlobalScope (vitest
 // captures the class via this shim — see the moog-cp3 DSP test loader).
 const G = globalThis as unknown as {

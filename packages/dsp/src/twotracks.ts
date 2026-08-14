@@ -56,18 +56,6 @@
 // top-level exports break the ART classic-script eval. Class is registered via
 // `registerProcessor` side-effect only.
 
-declare const sampleRate: number;
-declare class AudioWorkletProcessor {
-  port: MessagePort;
-  constructor(options?: { processorOptions?: unknown });
-  process?(
-    inputs: Float32Array[][],
-    outputs: Float32Array[][],
-    parameters: Record<string, Float32Array>,
-  ): boolean;
-}
-declare function registerProcessor(name: string, ctor: typeof AudioWorkletProcessor): void;
-
 // Pure tape transport — the SAME code unit-tested in lib/twotracks-engine.test.ts.
 // (src/lib/ is not a worklet entry; esbuild bundles it into this worklet.)
 import {

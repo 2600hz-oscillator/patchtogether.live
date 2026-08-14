@@ -33,18 +33,6 @@ import {
   type PenteState,
 } from './lib/pentemelodica-dsp';
 
-declare const sampleRate: number;
-declare class AudioWorkletProcessor {
-  port: MessagePort;
-  constructor(options?: { processorOptions?: unknown });
-  process?(
-    inputs: Float32Array[][],
-    outputs: Float32Array[][],
-    parameters: Record<string, Float32Array>,
-  ): boolean;
-}
-declare function registerProcessor(name: string, ctor: typeof AudioWorkletProcessor): void;
-
 /** Read a (possibly k-rate single-value) param array's first sample. */
 function p0(arr: Float32Array | undefined): number {
   return arr && arr.length > 0 ? arr[0]! : 0;

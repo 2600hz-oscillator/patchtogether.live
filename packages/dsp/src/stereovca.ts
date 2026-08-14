@@ -26,20 +26,6 @@
 // strength on both VCAs; conversely, a mono audio source on in_l with
 // independent strength_l + strength_r gives different strengths per side.
 
-declare class AudioWorkletProcessor {
-  port: MessagePort;
-  constructor(options?: { processorOptions?: unknown });
-  process?(
-    inputs: Float32Array[][],
-    outputs: Float32Array[][],
-    parameters: Record<string, Float32Array>,
-  ): boolean;
-}
-declare function registerProcessor(
-  name: string,
-  ctor: typeof AudioWorkletProcessor,
-): void;
-
 class StereoVcaProcessor extends AudioWorkletProcessor {
   static get parameterDescriptors() {
     return [

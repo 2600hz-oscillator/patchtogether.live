@@ -32,21 +32,6 @@
 
 import { Moog962Switch, moog962ClampStages } from './lib/moog962-dsp';
 
-declare const sampleRate: number;
-declare class AudioWorkletProcessor {
-  port: MessagePort;
-  constructor(options?: { processorOptions?: unknown });
-  process?(
-    inputs: Float32Array[][],
-    outputs: Float32Array[][],
-    parameters: Record<string, Float32Array>,
-  ): boolean;
-}
-declare function registerProcessor(
-  name: string,
-  ctor: typeof AudioWorkletProcessor,
-): void;
-
 // Shim worklet globals when running outside AudioWorkletGlobalScope (vitest
 // captures the class via this shim — see the moog962 test loader pattern).
 const G = globalThis as unknown as {

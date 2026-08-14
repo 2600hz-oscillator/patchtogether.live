@@ -40,18 +40,6 @@
 import { WarrensSpectrumEngine } from './lib/warrensspectrum-dsp';
 import { wsNormalizeBands } from './lib/warrensspectrum-filterbank';
 
-declare const sampleRate: number;
-declare class AudioWorkletProcessor {
-  port: MessagePort;
-  constructor(options?: { processorOptions?: unknown });
-  process?(
-    inputs: Float32Array[][],
-    outputs: Float32Array[][],
-    parameters: Record<string, Float32Array>,
-  ): boolean;
-}
-declare function registerProcessor(name: string, ctor: typeof AudioWorkletProcessor): void;
-
 /** GATE_HI mirrors $lib/audio/gate-trigger — a gate is "high" at >= 0.5. */
 const GATE_HI = 0.5;
 

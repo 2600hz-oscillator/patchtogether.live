@@ -34,20 +34,6 @@
 //   outputs[0..3] = out_1..out_4   per-channel direct outs (post-attenuator)
 //   outputs[4]    = mix            tanh(master * sum_of_directs)
 
-declare class AudioWorkletProcessor {
-  port: MessagePort;
-  constructor(options?: { processorOptions?: unknown });
-  process?(
-    inputs: Float32Array[][],
-    outputs: Float32Array[][],
-    parameters: Record<string, Float32Array>,
-  ): boolean;
-}
-declare function registerProcessor(
-  name: string,
-  ctor: typeof AudioWorkletProcessor,
-): void;
-
 class AttenumixProcessor extends AudioWorkletProcessor {
   static get parameterDescriptors() {
     return [

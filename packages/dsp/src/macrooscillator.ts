@@ -132,18 +132,6 @@
 //     the sub-octave / unfolded variant of the same model (Plaits convention
 //     — gives modular patchers a second timbre tap without a second VCO).
 
-declare const sampleRate: number;
-declare class AudioWorkletProcessor {
-  port: MessagePort;
-  constructor(options?: { processorOptions?: unknown });
-  process?(
-    inputs: Float32Array[][],
-    outputs: Float32Array[][],
-    parameters: Record<string, Float32Array>,
-  ): boolean;
-}
-declare function registerProcessor(name: string, ctor: typeof AudioWorkletProcessor): void;
-
 // ---------- DSP helpers ----------
 
 /** PolyBLEP residual — corrects the discontinuity of a naive saw/square
@@ -1185,7 +1173,7 @@ class WavetableEngine {
  *  jitter to construct a granular texture without needing a real
  *  external sample buffer. */
 
-interface Grain {
+interface MacroGrain {
   active: boolean;
   pos: number;        // current samples since grain start.
   length: number;     // total grain length in samples.
@@ -1195,8 +1183,8 @@ interface Grain {
 
 const GRAN_MAX_GRAINS = 8;
 
-class GranularEngine {
-  grains: Grain[] = [];
+class MacroGranularEngine {
+  grains: MacroGrain[] = [];
   // Time since last grain spawn.
   spawnTimer = 0;
   // RNG.
@@ -1440,7 +1428,7 @@ class MacrooscillatorProcessor extends AudioWorkletProcessor {
   private snare = new SnareEngine();
   private hihat = new HihatEngine();
   private wt = new WavetableEngine();
-  private gran = new GranularEngine();
+  private gran = new MacroGranularEngine();
   private speech = new SpeechEngine();
   /** Last-block gate value — used for rising-edge detection across the
    *  block boundary so a gate ↑ that lands at the first sample of a new

@@ -52,18 +52,12 @@ function repoRoot(): string {
  *  must say what blocks coverage, not that it is blocked. */
 const EXEMPT: ReadonlyArray<{ workspace: string; why: string }> = [
   {
-    workspace: 'packages/dsp',
-    why:
-      'AudioWorklet sources each declare their own ambient AudioWorkletProcessor/sampleRate ' +
-      'globals; compiled as ONE tsc program those per-file declares collide (TS2300/TS2451). ' +
-      'Coverage needs a shared worklet ambient d.ts design first — tracked as the #1499 follow-up.',
-  },
-  {
     workspace: 'art',
     why:
       'ART scenarios import packages/dsp worklet sources directly (side-effect, non-module files), ' +
-      'so art inherits the same worklet ambient-typing blocker as packages/dsp; 19 real errors remain ' +
-      'once $lib/vite/svelte ambients are supplied — tracked as the #1499 follow-up.',
+      'so art needs its own program config ($lib/vite/svelte ambients + paths) and a residual-error ' +
+      'triage; packages/dsp itself is covered since #1604 (shared worklet-globals.d.ts) — art is the ' +
+      'remaining half of that issue.',
   },
 ];
 

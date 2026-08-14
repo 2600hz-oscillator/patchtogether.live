@@ -11,21 +11,6 @@
 // file loading + per-octave mip-maps are a follow-on.
 
 // ---- AudioWorkletGlobalScope ambient declarations (erased at compile time) ----
-declare const sampleRate: number;
-declare class AudioWorkletProcessor {
-  port: MessagePort;
-  constructor(options?: { processorOptions?: unknown });
-  process?(
-    inputs: Float32Array[][],
-    outputs: Float32Array[][],
-    parameters: Record<string, Float32Array>
-  ): boolean;
-}
-declare function registerProcessor(
-  name: string,
-  ctor: typeof AudioWorkletProcessor
-): void;
-
 interface LoadMessage {
   type: 'load';
   table: ArrayBuffer;
