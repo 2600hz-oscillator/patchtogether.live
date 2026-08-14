@@ -126,9 +126,14 @@ function declareRenderTest(mod: (typeof REGISTRY)[number]) {
   }
   const quarantineReason = QUARANTINE[mod.type];
   if (quarantineReason) {
+    // The annotation carries the QUARANTINE map's reason onto the report row
+    // itself (ONE source — the map; #1502's audit reads the annotation, and a
+    // fixme without one is an anonymous skip). The title stays IDENTICAL to
+    // the live test's so un-quarantining is a one-entry map deletion.
     test.fixme(
       `module ${mod.type} renders + has ${expectedHandleCount} handles + no console errors`,
-      () => { /* QUARANTINED — see QUARANTINE map: ${quarantineReason} */ },
+      { annotation: { type: 'fixme', description: quarantineReason } },
+      () => { /* QUARANTINED — see QUARANTINE map */ },
     );
     return;
   }

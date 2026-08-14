@@ -264,7 +264,20 @@ test.describe('DOOM audio output regression: A-L / A-R reach a downstream SCOPE'
     // driver that waits for WASM ready + injects keypress") tracks the
     // proper rewrite. Until then, the engine-bridge unit sweep + the
     // handle audit are the regression bar for the audio output class.
-    test.fixme(`doom.${channel} → scope.ch1 produces non-silence`, async ({ page }) => {
+    // The details-object annotation puts the FIXME(#78) reason above onto the
+    // report row — a bare `test.fixme(title, fn)` is an anonymous skip to the
+    // merged-report audit (#1502).
+    test.fixme(
+      `doom.${channel} → scope.ch1 produces non-silence`,
+      {
+        annotation: {
+          type: 'fixme',
+          description:
+            'task #78: scenario needs a synthetic keypress to fire an SFX — idle nomonsters E1M1 '
+            + 'produces no PCM; audio-output class covered by the engine-bridge unit sweep meanwhile',
+        },
+      },
+      async ({ page }) => {
       const errors: string[] = [];
       page.on('pageerror', (e) => errors.push(e.message));
       page.on('console', (m) => {

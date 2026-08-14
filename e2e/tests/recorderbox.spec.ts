@@ -488,7 +488,20 @@ test('RECORDERBOX RECORD picks a FOLDER (no per-save file prompt)', async ({ pag
 // recording + crash-recovery is verified on-device (the user's Mac); the module
 // is covered by unit + per-port + behavioral. Re-enable once gated on actual
 // fragment output instead of isConfigSupported.
-test.fixme('RECORDERBOX records a real VCO + ACIDWARP into a crash-recoverable MP4', async ({ page }) => {
+// The details-object annotation is what puts the quarantine reason ON THE
+// REPORT ROW — a bare `test.fixme(title, fn)` is an anonymous skip to the
+// merged-report audit (#1502).
+test.fixme(
+  'RECORDERBOX records a real VCO + ACIDWARP into a crash-recoverable MP4',
+  {
+    annotation: {
+      type: 'fixme',
+      description:
+        'task #105: quarantined — CI headless Chrome claims H.264 support but has no OS encoder, '
+        + 'so zero moof fragments materialize; verified on-device + covered by unit/per-port/behavioral',
+    },
+  },
+  async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(`console: ${m.text()}`); });
