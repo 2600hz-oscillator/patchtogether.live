@@ -6,15 +6,19 @@
 // Or:   task chaos:run
 
 import { defineConfig, devices } from '@playwright/test';
+// #1597: default to this WORKTREE'S OWN derived port (E2E_PORT/E2E_BASE_URL
+// win) — never the shared 5173 that reuseExistingServer adopted blindly.
+import { localBaseUrl } from '../worktree-port';
 
-const BASE_URL = process.env.E2E_BASE_URL ?? 'http://localhost:5173';
+const { baseUrl: BASE_URL, port: APP_PORT } = localBaseUrl('dev');
 const RACKSPACE_URL = process.env.CHAOS_RACKSPACE_URL;
 // Skip the local dev server boot if we're hitting a deployed tier — either
 // because E2E_BASE_URL points there or because CHAOS_RACKSPACE_URL is an
 // absolute non-localhost URL the bot will navigate to.
 const isLocal = (url: string) =>
   url.startsWith('http://localhost') || url.startsWith('http://127.0.0.1');
-const IS_LOCAL_TARGET = isLocal(BASE_URL) && (!RACKSPACE_URL || isLocal(RACKSPACE_URL));
+const IS_LOCAL_TARGET =
+  isLocal(BASE_URL) && (!RACKSPACE_URL || isLocal(RACKSPACE_URL)) && APP_PORT !== null;
 
 // HTTP Basic credentials for the deployed tiers' beta gate (see
 // packages/web/src/hooks.server.ts). Username defaults to `beta`; pass the
@@ -55,7 +59,8 @@ export default defineConfig({
   ],
   webServer: IS_LOCAL_TARGET
     ? {
-        command: 'npm run dev -w packages/web',
+        // Boot on EXACTLY the port `url:` waits on (see vrt.config.ts, #1597).
+        command: `npm run dev -w packages/web -- --port ${APP_PORT} --strictPort`,
         cwd: '../..',
         url: BASE_URL,
         reuseExistingServer: true,

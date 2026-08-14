@@ -94,10 +94,18 @@ async function freePort(): Promise<number> {
 }
 
 /** Start a trivial HTTP listener whose PROCESS CWD is exactly `cwd`.
- *  The cwd is the whole point — it is what dev-server.sh reads to decide
- *  ownership — so it is set explicitly rather than inherited. */
-async function spawnListener(port: number, cwd: string): Promise<void> {
-  const code = `require('http').createServer((_q,s)=>{s.end('ok')}).listen(${port},'127.0.0.1')`;
+ *  The cwd is the ownership FALLBACK signal dev-server.sh reads (for servers
+ *  that predate the /__worktree endpoint), so it is set explicitly rather
+ *  than inherited. `identityRoot`, when given, makes the listener answer
+ *  GET /__worktree the way the worktreeIdentity() vite plugin does — the
+ *  PRIMARY signal (#1597), which names the tree whose CODE is served rather
+ *  than where the process happens to sit. */
+async function spawnListener(port: number, cwd: string, identityRoot?: string): Promise<void> {
+  const identity = identityRoot ? JSON.stringify({ root: identityRoot, commit: 'test', mode: 'dev' }) : null;
+  const code =
+    `require('http').createServer((q,s)=>{` +
+    `if(${JSON.stringify(identity)}!==null&&q.url.split('?')[0]==='/__worktree'){s.setHeader('content-type','application/json');s.end(${JSON.stringify(identity)});return}` +
+    `s.end('ok')}).listen(${port},'127.0.0.1')`;
   const child = spawn(process.execPath, ['-e', code], { cwd, stdio: 'ignore' });
   spawned.push(child);
   // Poll until it answers, bounded. A fixed sleep would be a different
@@ -151,6 +159,29 @@ describe('dev-server.sh refuses a port it does not own', () => {
     );
   });
 
+  it('IDENTITY beats cwd — refusing direction: a listener SERVING another tree is refused even with its cwd in this checkout', async () => {
+    // #1597's actual hazard is what tree the CODE comes from, not where the
+    // process sits. A server that answers /__worktree with a foreign root is
+    // refused outright — the cwd fallback never gets a say.
+    const port = await freePort();
+    await spawnListener(port, ROOT, OUTSIDE); // cwd ours; identity foreign
+    const r = await runScript(['assert-up'], { E2E_PORT: String(port) });
+    expect(r.code, 'identity naming another tree must refuse regardless of cwd').not.toBe(0);
+    expect(r.stderr).toContain('REFUSING to run against');
+    expect(r.stderr).toContain(OUTSIDE);
+  });
+
+  it('IDENTITY beats cwd — accepting direction: a listener SERVING this tree is ours even with its cwd elsewhere', async () => {
+    // The mirror control: without it the refusing leg would pass equally well
+    // against a probe that refused whenever /__worktree answered at all.
+    const port = await freePort();
+    const { realpathSync } = await import('node:fs');
+    await spawnListener(port, OUTSIDE, realpathSync(ROOT)); // cwd foreign; identity ours
+    const r = await runScript(['assert-up'], { E2E_PORT: String(port) });
+    expect(r.code, "identity naming THIS tree must be accepted regardless of cwd").toBe(0);
+    expect(r.stderr).not.toContain('REFUSING');
+  });
+
   it('assert-up REFUSES a foreign port — the leg that gates e2e:one / vrt:one', async () => {
     const port = await freePort();
     await spawnListener(port, OUTSIDE);
@@ -158,7 +189,7 @@ describe('dev-server.sh refuses a port it does not own', () => {
     expect(r.code, 'assert-up must FAIL on a server this checkout does not own').not.toBe(0);
     expect(r.stderr).toContain('REFUSING to run against');
     // It has to name WHOSE it is, or the message is not actionable.
-    expect(r.stderr).toContain('listener cwd');
+    expect(r.stderr).toContain('serves tree');
   });
 
   it('start REFUSES to reuse a foreign port instead of silently adopting it', async () => {
