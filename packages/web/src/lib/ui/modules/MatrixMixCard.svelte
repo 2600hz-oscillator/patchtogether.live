@@ -41,7 +41,6 @@
   } from '$lib/graph/matrixmix';
 
   let { id, data }: NodeProps = $props();
-  void data;
 
   // Re-derive on every Yjs update so the grid reflects patches made ANYWHERE
   // (drag-connect, patch-to, another collaborator, this card) in real time —
@@ -267,6 +266,9 @@
          (e.g. ADSR × VCA) shows NO scrollbars (content fits the max box),
          while a big one scrolls; horizontal scrollbar rides the top via the
          flex-direction:column-reverse on the scroller. -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -- pointer PLUMBING only: the handler
+         stops the XYFlow canvas drag so this box scrolls instead of moving the node. No user
+         action happens on the div, so there is no keyboard equivalent to provide. -->
     <div class="mm-grid-scroll nodrag" data-testid="matrixmix-grid-scroll" onpointerdown={(e) => e.stopPropagation()}>
       <table class="mm-grid" data-testid="matrixmix-grid">
         <thead>

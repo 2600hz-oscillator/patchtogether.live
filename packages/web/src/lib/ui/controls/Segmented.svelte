@@ -108,7 +108,9 @@
 <div class="segmented-wrap" class:midi-learning={midi.learning} class:midi-bound={!!midi.binding}>
   {#if label}<div class="seg-label">{label}</div>{/if}
   <!-- radiogroup is a non-focusable container; focus lives on the radio buttons -->
-  <!-- svelte-ignore a11y_interactive_supports_focus a11y_no_static_element_interactions -->
+  <!-- svelte-ignore a11y_interactive_supports_focus — a `radiogroup` is a CONTAINER role: focus
+       belongs on the radios inside it, which are real focusable buttons. Making the group itself
+       focusable would add a dead tab stop before every segmented control. -->
   <div
     class="segmented"
     role="radiogroup"

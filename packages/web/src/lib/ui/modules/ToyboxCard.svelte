@@ -2724,6 +2724,10 @@
         style={`height: ${combineViewH}px;`}
         use:persistResize
       >
+        <!-- svelte-ignore a11y_no_static_element_interactions — the combine-graph editor is
+             pointer-only by construction and making it keyboard-operable is interaction-design
+             work, tracked as #1550. A role here without a focus/selection model would be a trap,
+             so this stays declared-and-tracked rather than half-fixed. -->
         <svg
           class="graph-svg"
           viewBox={`0 0 ${G_W} ${G_H}`}
@@ -2742,6 +2746,8 @@
                    both click-to-delete and the contextual right-click land
                    reliably on a thin diagonal bezier. Being the previous sibling
                    lets :hover tint the visible cable via `+ .cable`. -->
+              <!-- svelte-ignore a11y_click_events_have_key_events — click-to-delete an edge; no
+                   keyboard path to select an edge exists yet. #1550. -->
               <path
                 class="cable-hit"
                 data-testid={`toybox-edge-${e.id}`}
@@ -2765,6 +2771,8 @@
               data-testid={`toybox-gnode-${n.id}`}
               data-kind={n.kind}
             >
+              <!-- svelte-ignore a11y_click_events_have_key_events — click-to-select a graph node;
+                   focus traversal between nodes is undesigned. #1550. -->
               <rect
                 x={xy.x}
                 y={xy.y}
@@ -2784,6 +2792,9 @@
               <!-- input ports (left) -->
               {#each inPortsFor(n.kind) as port (port)}
                 {@const p = inPortXY(n, port)}
+                <!-- svelte-ignore a11y_click_events_have_key_events — patching inside the graph
+                     is click-port-then-click-port; there is no keyboard way to make a connection
+                     yet. #1550. -->
                 <circle
                   cx={p.x}
                   cy={p.y}
@@ -2800,6 +2811,8 @@
               <!-- output port (right) -->
               {#if hasOutPort(n.kind)}
                 {@const op = outPortXY(n)}
+                <!-- svelte-ignore a11y_click_events_have_key_events — output half of the same
+                     click-to-patch gesture. #1550. -->
                 <circle
                   cx={op.x}
                   cy={op.y}
@@ -2815,6 +2828,8 @@
 
               <!-- delete affordance (op nodes only) -->
               {#if n.kind !== 'source' && n.kind !== 'output'}
+                <!-- svelte-ignore a11y_click_events_have_key_events — click-to-delete a graph
+                     node; same missing focus model as the node body. #1550. -->
                 <text
                   x={xy.x + NODE_W - 7}
                   y={xy.y + 10}

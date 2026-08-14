@@ -45,7 +45,12 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { spawnPatch } from './_helpers';
 
-const FIXTURE = fileURLToPath(new URL('../fixtures/lobby-clip.webm', import.meta.url));
+// The LONG fixture (#1577): 120 s of low-bitrate synthetic video
+// (generate-lobby-clip-long.mjs), so the clip's end is UNREACHABLE inside this
+// spec's own bounds and no loop/rewind perturbation is needed — the cards run
+// in the state a user actually produces. The headroom is ASSERTED below
+// against this file's own wait constants, not trusted.
+const FIXTURE = fileURLToPath(new URL('../fixtures/lobby-clip-long.webm', import.meta.url));
 
 /** Derive the DOM-source module types from the shared registry SOURCE, so this
  *  sweep auto-enrols a new module rather than needing a list here. */
@@ -360,7 +365,7 @@ function bestRow(rec: ProbeRead): ProbeRow | null {
  * directions are asserted: the rule must still say YES to real playback.
  */
 async function assertCreditRuleIsSound(page: Page): Promise<void> {
-  const JUMP_S = 3.9; // ~a whole lobby-clip.webm, i.e. the storm's own seek size
+  const JUMP_S = 3.9; // the historical storm's own seek size (a whole lobby-clip.webm — the 4s fixture this spec used to ride; the credit rule stays seek-proof even though the storm is gone)
   const c = await page.evaluate(
     ({ sampleMs, jump }) => {
       const credit = (globalThis as unknown as {
@@ -452,59 +457,56 @@ for (const type of TYPES) {
       { timeout: 30_000 },
     );
 
-    // ── REMOVE THE FIXTURE'S HIDDEN DEADLINE (#1553) ───────────────────────
+    // ── THE FIXTURE OUTLASTS THE SPEC — DERIVED, THEN ASSERTED (#1553/#1577) ──
     //
-    // MEASURED, in-page, sampling every 250 ms with NO test-side perturbation
-    // at all (re-run for #1569; the earlier 750 ms trace agreed):
+    // History, because the residue shaped this instrument: the original
+    // fixture (lobby-clip.webm) is 4.004 s — SHORTER than this spec's own
+    // setup on a loaded shard — so videobox failed in CI three times with
+    // `currentTime: 4.004, paused: true`: the clip simply ENDED (#1553). The
+    // stopgap was injecting `el.loop = true` + a rewind here, and for VIDEOBOX
+    // that injection FOUGHT the card's own wall-clock drift correction: wrap
+    // to 0, get yanked back to duration−0.05, ~4 Hz, ~270 decoded fps against
+    // a 30 fps clip for the rest of the spec (#1577's trace) — real playback,
+    // but a state no user can produce, and the reason the credit rule below
+    // must be seek-proof (a property KEPT even though the storm is gone).
     //
-    //   videobox        3.813 -> 4.004 paused=TRUE, frames frozen at 120, and
-    //                   it stays there for the remaining 16 s of the trace.
-    //   videovarispeed  3.816 -> 0.086 -> ... -> 3.944 -> 0.166, wrapping every
-    //                   ~4.0 s forever, never paused.
-    //
-    // `lobby-clip.webm` is 4.004 s (its EBML Duration header) and a non-looping
-    // <video> sets `paused = true` the moment it ENDS. So "media must still be
-    // PLAYING after the collapse" can fail for the most boring reason there is
-    // — the clip finished — and that is exactly how videobox failed in CI three
-    // times, reporting `currentTime: 4.004` to the millisecond.
-    //
-    // `loop` + a rewind is what keeps a 4.004 s fixture playable across a setup
-    // that takes 11-22 s of shard time. It is a real perturbation and it is
-    // documented as one:
-    //
-    // ⚠ MEASURED CONSEQUENCE, and the reason the instrument below has to be
-    // seek-proof. For VIDEOBOX, `el.loop` fights the card's own transport.
-    // VideoboxCard drives `currentTime` from the WALL CLOCK (decideDriftCorrection
-    // every 500 ms, expectation clamped to `duration - 0.05` = 3.954 s) and
-    // seeks whenever the element is >0.5 s off it. A looping element returns to
-    // 0; the drift loop yanks it back to 3.954; repeat. Traced: `currentTime`
-    // oscillating 0.07 <-> 3.954 at ~4 Hz with totalVideoFrames climbing
-    // 133 -> 4491 in 16 s (~270 decoded fps against a 30 fps clip). The element
-    // is genuinely PLAYING the whole time — which is why this is still the right
-    // trade for a fixture this short — but any measurement here MUST be able to
-    // tell that storm's seeks apart from playback. Hence the credit rule.
-    //
-    // The real root cause is that the fixture is shorter than this test's own
-    // worst-case setup, and the durable fix is a longer fixture — tracked in
-    // #1577 with the traces above. Nothing below depends on which way that
-    // lands: the gate cannot be faked by the storm's seeks either way.
-    await page.evaluate(() => {
-      for (const v of document.querySelectorAll('video')) {
-        const el = v as HTMLVideoElement;
-        if (!(el.currentSrc || el.getAttribute('src'))) continue;
-        el.loop = true;
-        if (el.ended || el.paused) void el.play().catch(() => {});
-        el.currentTime = 0;
-      }
+    // Now the fixture is 120 s (generate-lobby-clip-long.mjs) and the media
+    // clock cannot reach its end inside this spec's own bounds. That headroom
+    // claim is exactly the kind of number that rots, so it is DERIVED from
+    // this file's own constants and asserted in-page against the element the
+    // engine actually plays — a shortened fixture or a widened wait reddens
+    // HERE, by name, not on shard 1 once a week.
+    const WORST_CASE_MEDIA_S =
+      30 + // play-confirm wait above
+      PROGRESS_CAP_MS / 1000 + // pre-collapse progress window
+      20 + // dock-gone wait after the collapse
+      PROGRESS_CAP_MS / 1000; // post-collapse progress window
+    const fixtureHeadroom = await page.evaluate(() => {
+      const v = [...document.querySelectorAll('[data-testid="dock-full-view"] video')]
+        .map((el) => el as HTMLVideoElement)
+        .find((el) => el.currentSrc || el.getAttribute('src'));
+      return v ? { duration: v.duration, currentTime: v.currentTime } : null;
     });
-    await page.waitForFunction(
-      () => [...document.querySelectorAll('video')].some((v) => {
-        const el = v as HTMLVideoElement;
-        return !el.paused && el.currentTime > 0.05;
-      }),
-      undefined,
-      { timeout: 30_000 },
-    );
+    expect(fixtureHeadroom, 'a loaded media element must exist to measure').not.toBeNull();
+    // ⚠ VACUITY GUARD: a raw MediaRecorder WebM reports `duration: Infinity`
+    // at loadedmetadata, and `Infinity - t > anything` passes without measuring
+    // a thing. The committed fixture has its Duration header PATCHED IN by its
+    // generator (which refuses to write a file that reads back non-finite) —
+    // so a finite read here is part of the fixture's contract, and a regressed
+    // regeneration reddens loudly instead of waving the headroom check through.
+    expect(
+      Number.isFinite(fixtureHeadroom!.duration),
+      `fixture duration must be FINITE at loadedmetadata (got ${fixtureHeadroom!.duration}) — ` +
+        `regenerate with generate-lobby-clip-long.mjs, whose duration patch is not optional`,
+    ).toBe(true);
+    expect(
+      fixtureHeadroom!.duration - fixtureHeadroom!.currentTime,
+      `THE FIXTURE MUST OUTLAST THE SPEC (units: media seconds): remaining media ` +
+        `(${(fixtureHeadroom!.duration - fixtureHeadroom!.currentTime).toFixed(1)}s of ` +
+        `${fixtureHeadroom!.duration.toFixed(1)}s) must exceed the ${WORST_CASE_MEDIA_S}s worst case ` +
+        `derived from this spec's own waits — otherwise the clip can END mid-spec and 'paused' ` +
+        `stops meaning 'the collapse killed it' (#1553)`,
+    ).toBeGreaterThan(WORST_CASE_MEDIA_S);
 
     // Arm the accumulator BEFORE the collapse, so the pre-collapse window is a
     // POSITIVE CONTROL in this very page: it proves the instrument can see
@@ -577,6 +579,24 @@ for (const type of TYPES) {
       best?.playedSec ?? 0,
       `media must still be PLAYING after the collapse — needed ${MIN_PROGRESS_S} media s of forward playback, saw ${best?.playedSec ?? 0} over ${rec.elapsedMs} ms / ${rec.samples} samples. Elements: ${JSON.stringify(rec.rows)} | DOM: ${JSON.stringify(after)}`,
     ).toBeGreaterThanOrEqual(MIN_PROGRESS_S);
+
+    // ── PERMANENT NO-HIDDEN-DEADLINE LEG (#1577) ─────────────────────────
+    // With the 120 s fixture nothing should reach ANY edge inside this spec:
+    // no clip end (the old #1553 failure), no injected loop wrap, no varispeed
+    // edge-seek. `backwardJumps` counts samples whose clock moved backwards —
+    // exactly the signature of every member of that family — so a shortened
+    // fixture, a resurrected loop injection, or a card that starts wrapping
+    // early reddens HERE with the row that did it, not as a once-a-week
+    // shard-1 mystery. (The gate above is already wrap-SAFE; this leg is what
+    // makes a wrap LOUD instead of merely harmless.)
+    for (const row of rec.rows) {
+      expect(
+        row.backwardJumps,
+        `the media clock went BACKWARDS after the collapse — an edge was reached inside the spec's ` +
+          `window (clip end, loop wrap, or an edge seek). The 120s fixture exists so this cannot ` +
+          `happen; if the fixture or the waits changed, re-derive the headroom. Row: ${JSON.stringify(row)}`,
+      ).toBe(0);
+    }
 
     // Monotonic decoder counter — a NON-VACUITY check and a diagnostic, NOT a
     // second gate, and the negative control is why that distinction is written

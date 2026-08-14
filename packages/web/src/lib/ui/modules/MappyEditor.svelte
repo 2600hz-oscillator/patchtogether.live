@@ -181,8 +181,9 @@
   }
 </script>
 
-<!-- svelte-ignore a11y_no_static_element_interactions -->
-<!-- svelte-ignore a11y_click_events_have_key_events -->
+<!-- svelte-ignore a11y_no_static_element_interactions — the pointerdown is a BACKDROP-close
+     guard (`e.target === e.currentTarget`), not an action of its own. The dialog is already
+     focusable (tabindex="-1") and closes from the keyboard via its own Escape handling. -->
 <div
   class="editor-overlay nodrag nowheel"
   data-testid="mappy-editor"

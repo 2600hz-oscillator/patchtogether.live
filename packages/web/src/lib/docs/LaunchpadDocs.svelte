@@ -149,11 +149,13 @@
 
   // The props are INITIAL values by design (tab state is then local) — the
   // initial-only capture the warning points at is exactly what we want.
-  // svelte-ignore state_referenced_locally
+  // svelte-ignore state_referenced_locally — the `initial*` props are SEEDS by name and by
+  // contract: they pick which tab opens, after which the tab is owned by the reader clicking it.
+  // Re-deriving from the prop would yank the reader back to the initial tab.
   let topTab = $state<TopTab>(initialTopTab);
-  // svelte-ignore state_referenced_locally
+  // svelte-ignore state_referenced_locally — a seed for the same reason as topTab above: the reader owns the tab once open.
   let singleTab = $state<SingleTab>(initialSingleTab);
-  // svelte-ignore state_referenced_locally
+  // svelte-ignore state_referenced_locally — a seed for the same reason as topTab above: the reader owns the tab once open.
   let pairTab = $state<PairTab>(initialPairTab);
 
   /** Roving-tabindex arrow-key navigation for a tablist (←/→/Home/End). */
