@@ -132,7 +132,21 @@ test.describe('EDGES — Sobel edge-detection processor', () => {
   // already covered deterministically by edges.test.ts (CPU mirror of the shader),
   // so this e2e is redundant while quarantined. Re-enable once the waits are
   // bounded / a software-GL-reliable input is used.
-  test.fixme('raising THICKNESS increases edge pixels', async ({ page }) => {
+  // The details-object annotation below is what puts that reason ON THE REPORT
+  // ROW: a bare `test.fixme(title, fn)` records `{ type: 'fixme' }` with no
+  // description, and the merged-report audit (#1502) reads it as an anonymous
+  // skip. The comment explains; the annotation testifies.
+  test.fixme(
+    'raising THICKNESS increases edge pixels',
+    {
+      annotation: {
+        type: 'fixme',
+        description:
+          'task #106: quarantined — capture wait never resolves under CI SwiftShader (150s timeout); '
+          + 'thickness-dilation logic covered deterministically by edges.test.ts (CPU mirror)',
+      },
+    },
+    async ({ page }) => {
     // Same source + threshold; thicker dilation paints wider strokes → more
     // white pixels.
     const thin  = await captureEdges(page, { threshold: 0.2, thickness: 1 });

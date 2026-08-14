@@ -48,6 +48,7 @@ import {
   disabledInventory,
   extractRecordKeys,
   extractSetItems,
+  runtimeSkipInventory,
 } from './test-reconciliation.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -112,7 +113,26 @@ function bucket1() {
   return { blocks, quarantine, disabledTotal, total };
 }
 
-// ───────────────────────── Bucket 2 — coverage exemptions ─────────────────────────
+// ───────────────────── Runtime skips (env gates) — #1502 ─────────────────────
+//
+// The in-body `test.skip(cond, reason)` guards Bucket 1 deliberately EXCLUDES
+// (env gates, not author disables). At REPORT time they still produce
+// `status: 'skipped'` rows a green lane hides, so they are inventoried here and
+// governed by the deny-by-default per-lane skip budget
+// (scripts/e2e-skip-budget.mjs, enforced by the merge-report audits in ci.yml
+// and anchored both directions by scripts/e2e-skip-budget.test.ts).
+// Declaration-level disables are Bucket 1's rows; loop-generated
+// `[SKIPPED:]`-marker placeholders are Bucket 2's — neither is repeated here.
+
+function runtimeSkips() {
+  const files = walk(join(ROOT, 'e2e', 'tests'), '.spec.ts');
+  const items = runtimeSkipInventory(files)
+    .filter((it) => it.kind === 'runtime-guard')
+    .sort((a, b) => (a.loc < b.loc ? -1 : a.loc > b.loc ? 1 : 0));
+  // Budget linkage (which entry admits which site) is the budget TEST's job —
+  // it anchors both directions; the ledger only lists the surface.
+  return { items };
+}
 
 const RECORD_EXEMPTIONS = [
   { id: 'vrt.EXEMPT_FROM_VRT', file: 'e2e/vrt/vrt-exemptions.ts', konst: 'EXEMPT_FROM_VRT', desc: 'modules skipped from the per-card VRT sweep' },
@@ -269,6 +289,7 @@ export function generateLedger() {
   const b1 = bucket1();
   const b2 = bucket2();
   const b3 = bucket3();
+  const rs = runtimeSkips();
   const L = [];
   const p = (s = '') => L.push(s);
 
@@ -320,6 +341,25 @@ export function generateLedger() {
   p(`### spawn-smoke QUARANTINE map (e2e/tests/modules.spec.ts) — ${b1.quarantine.keys.size}`);
   if (b1.quarantine.keys.size === 0) p('_none_');
   for (const k of sortedKeys(b1.quarantine.keys)) p(`- \`${k}\` — ${summarize(b1.quarantine.reasons.get(k))}`);
+  p('');
+
+  // ── Runtime skips (env gates) ──
+  p(`## Runtime skips — in-body env gates (${rs.items.length})`);
+  p('');
+  p('`test.skip(cond, reason)` guards that skip AT RUNTIME when an environment');
+  p('capability is missing (DB, asset, renderer, hardware). NOT disables — the test');
+  p('runs wherever the capability exists — but each produces a `skipped` row a green');
+  p('lane would otherwise hide, so the merged-report audits in ci.yml surface every');
+  p('row and enforce the deny-by-default per-lane budget in');
+  p('`scripts/e2e-skip-budget.mjs`: a reasonless or unknown-reason skip reds the');
+  p('audit. Both directions are anchored by `scripts/e2e-skip-budget.test.ts`.');
+  p('A reason shown as `(dynamic)` is computed at runtime; the budget test anchors');
+  p('those at spec granularity and the lane audit checks the realized string.');
+  p('');
+  for (const it of rs.items) {
+    const reason = it.reasonKind === 'literal' ? summarize(it.reason) : `(dynamic: \`${summarize(it.reason)}\`)`;
+    p(`- \`${it.loc}\` — ${reason}`);
+  }
   p('');
 
   // ── Bucket 2 ──

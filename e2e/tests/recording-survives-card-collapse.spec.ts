@@ -120,7 +120,10 @@ test('a recording keeps GROWING while its card is collapsed', async ({ page }) =
         `Set E2E_REQUIRE_RECORD=1 in a lane with a real encoder to make this a FAILURE instead.`,
     );
     expect(required, '#1574 gate did not run, but E2E_REQUIRE_RECORD demanded it').toBe(false);
-    test.skip();
+    // The reason string reaches the merged report's skip annotation — a bare
+    // `test.skip()` is an anonymous row to the #1502 audit; the console.log
+    // above only reaches this shard's log.
+    test.skip(true, '#1574: no real H.264 encoder in this runtime — no recording can start; set E2E_REQUIRE_RECORD=1 to force a failure instead');
     return;
   }
 
@@ -209,7 +212,8 @@ test('NEGATIVE CONTROL: deleting the node DOES end its recording', async ({ page
     // eslint-disable-next-line no-console
     console.log('[#1574] NEGATIVE CONTROL SKIPPED — no real H.264 encoder in this runtime.');
     expect(required, '#1574 negative control did not run, but E2E_REQUIRE_RECORD demanded it').toBe(false);
-    test.skip();
+    // Reasoned skip for the same #1502-audit visibility as the positive leg.
+    test.skip(true, '#1574: negative control — no real H.264 encoder in this runtime; set E2E_REQUIRE_RECORD=1 to force a failure instead');
     return;
   }
 

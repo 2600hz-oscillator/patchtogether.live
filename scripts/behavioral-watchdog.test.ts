@@ -66,12 +66,16 @@ describe('parseBehavioralReport', () => {
     expect(parsed.total).toBe(4);
   });
 
-  it('reports passed:true when no module row failed', () => {
+  it('reports passed:true when no module row failed — but a flaky row is NOT certified as passed', () => {
     const parsed = parseBehavioralReport(report([moduleSpec('adsr', 'expected'), moduleSpec('vca', 'flaky')]));
     expect(parsed.passed).toBe(true);
     expect(parsed.failedModules).toEqual([]);
-    // flaky (recovered on retry) counts as PASSED, not failed.
-    expect(parsed.passedModules).toEqual(['adsr', 'vca']);
+    // #1502: the flaky→passed mapping is DELETED. A recovered flake is its own
+    // surfaced class — it neither fails the lane (the report-audit owns flake
+    // arming, #1569) nor masquerades as a clean pass.
+    expect(parsed.passedModules).toEqual(['adsr']);
+    expect(parsed.flakyModules).toEqual(['vca']);
+    expect(parsed.total).toBe(2);
   });
 
   it('excludes skipped (test.fixme) rows from both sets', () => {
@@ -116,11 +120,13 @@ describe('moduleIdFromTitle / specOutcome', () => {
     expect(moduleIdFromTitle('adsr: each declared input perturbs …')).toBe('adsr');
     expect(moduleIdFromTitle('no-colon-here')).toBeNull();
   });
-  it('classifies outcomes, treating flaky as passed and unexpected as failed', () => {
+  it('classifies outcomes — flaky is its OWN class, never mapped to passed (#1502)', () => {
     expect(specOutcome({ tests: [{ status: 'expected' }] })).toBe('passed');
-    expect(specOutcome({ tests: [{ status: 'flaky' }] })).toBe('passed');
+    expect(specOutcome({ tests: [{ status: 'flaky' }] })).toBe('flaky');
     expect(specOutcome({ tests: [{ status: 'unexpected' }] })).toBe('failed');
     expect(specOutcome({ tests: [{ status: 'skipped' }] })).toBe('skipped');
+    // a failure alongside a flaky sibling is still a failure — any failure wins
+    expect(specOutcome({ tests: [{ status: 'flaky' }, { status: 'unexpected' }] })).toBe('failed');
     // falls back to spec.ok when statuses are absent
     expect(specOutcome({ ok: false, tests: [] })).toBe('failed');
   });
@@ -201,5 +207,53 @@ describe('buildGrep', () => {
   });
   it('escapes regex metacharacters in ids', () => {
     expect(buildGrep(['moog.911'])).toBe(`(moog\\.911): ${BEHAVIORAL_TITLE_MARK}`);
+  });
+});
+
+// ── the snapshot's BASELINE SEMANTICS for flaky rows (#1502) ────────────────
+//
+// specOutcome no longer maps flaky→passed, which creates a fork the pure
+// functions cannot see: the last-green BASELINE. diffNewlyFailing keys on
+// `baseline.passing`, so if a flaky-at-baseline module were dropped from
+// `passing`, its later HARD failure would not be "newly failing" — deleting
+// the mapping would have quietly MUTED regressions instead of surfacing them.
+// cmdSnapshot therefore unions flaky into `passing` (was-green for diff
+// purposes) while ALSO naming them in a `flaky` field. That decision lives in
+// the CLI layer, so it is pinned here by driving the real CLI in a subprocess.
+describe('snapshot CLI: flaky stays in baseline `passing` (sensitivity) AND is named in `flaky`', () => {
+  it('unions flaky into passing, names it, and keeps failures out', async () => {
+    const { execFileSync } = await import('node:child_process');
+    const { mkdtempSync, writeFileSync, readFileSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join, resolve, dirname } = await import('node:path');
+    const { fileURLToPath } = await import('node:url');
+
+    const dir = mkdtempSync(join(tmpdir(), 'watchdog-snap-'));
+    const fixture = join(dir, 'behavioral.json');
+    writeFileSync(
+      fixture,
+      JSON.stringify(
+        report([
+          moduleSpec('adsr', 'expected'),
+          moduleSpec('vca', 'flaky'),
+          moduleSpec('moog911', 'unexpected'),
+        ]),
+      ),
+    );
+    const out = join(dir, 'last-green.json');
+    const script = resolve(dirname(fileURLToPath(import.meta.url)), 'behavioral-watchdog.mjs');
+    execFileSync(process.execPath, [script, 'snapshot', '--behavioral', fixture, '--out', out], {
+      encoding: 'utf8',
+    });
+    const baseline = JSON.parse(readFileSync(out, 'utf8'));
+    // was-green includes the flaky module — a later hard failure of vca must
+    // register as newly-failing against this baseline…
+    expect(baseline.passing).toEqual(['adsr', 'vca']);
+    // …while the flakiness itself is named, not laundered:
+    expect(baseline.flaky).toEqual(['vca']);
+    // and a hard failure never enters passing (the perturbation leg: the union
+    // is flaky-specific, not "everything that isn't failed").
+    expect(baseline.failing).toEqual(['moog911']);
+    expect(diffNewlyFailing(['vca'], baseline)).toEqual(['vca']);
   });
 });
