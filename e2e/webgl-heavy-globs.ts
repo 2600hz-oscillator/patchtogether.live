@@ -79,6 +79,12 @@ export const WEBGL_HEAVY_GLOBS = [
   // Fail-closed: a future wavesculpt-*.spec won't silently re-enter the heavy
   // lane — it must be added here deliberately (with a fresh attest + count bump).
   '**/wavesculpt.spec.ts',
+  // #1587 producer-lifetime guard. It drives WAVESCULPT's full 3-D card in the
+  // off-screen host AND again in the dock, and reads pixels out of its
+  // `drawFrame` every frame across a mount handoff — the same GPU load class as
+  // wavesculpt.spec.ts, so it belongs on the serialized lane rather than
+  // co-tenanting a SwiftShader context in the sharded matrix.
+  '**/card-producer-lifetime.spec.ts',
   '**/wavecel-video-outs.spec.ts',
   '**/scope-video-out.spec.ts',
   '**/synesthesia-video-mode.spec.ts',
