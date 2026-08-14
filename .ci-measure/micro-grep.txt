@@ -1,1 +1,0 @@
-(?: face audio freeze negative control: a sounding face is unstable RUNNING, identical FROZEN)$

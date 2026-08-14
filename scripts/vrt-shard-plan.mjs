@@ -211,7 +211,7 @@ export function planVrtShards(tests, timings, shards) {
   for (let i = 0; i < shards; i++) {
     const hit = selects(grepFor(groups[i]), tests).map(keyOf).sort();
     const want = groups[i].map(keyOf).sort();
-    if (hit.join(' ') !== want.join(' ')) {
+    if (hit.join('\u0000') !== want.join('\u0000')) {
       const extra = hit.filter((k) => !want.includes(k));
       const missing = want.filter((k) => !hit.includes(k));
       throw new Error(
