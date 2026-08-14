@@ -3,12 +3,19 @@
 // REAR CARD — the RACKLINE flip-side patch field in the dock full-view
 // (rear-card-spec.md). What this pins:
 //
-//   1) TAB flips the OPEN dock full-view to the rear card (data-flipped attr,
-//      the jack FIELD visible, the control face GONE) and TAB again returns —
-//      the front face is HIDDEN, not remounted, so flipping back restores the
-//      same controls. The flip rides dockStore.fullViewFlipped — the ONE
-//      view-global TAB seam the dock-unification split landed — so with the
-//      50/50 side-by-side BOTH panes flip together (asserted below).
+//   1) THE FLIP KEY flips the OPEN dock full-view to the rear card
+//      (data-flipped attr, the jack FIELD visible, the control face GONE) and
+//      again returns — the front face is HIDDEN, not remounted, so flipping
+//      back restores the same controls. The flip rides
+//      dockStore.fullViewFlipped — the ONE view-global flip seam the
+//      dock-unification split landed — so with the 50/50 side-by-side BOTH
+//      panes flip together (asserted below).
+//
+//      ⚠ The flip key USED to be bare TAB and is not any more (#1508): Tab is
+//      the browser's focus-traversal key and hijacking it removed keyboard
+//      navigation from the whole shell. `pressFlipKey` reads the binding from
+//      the app source (_flip-key.ts → RACK_FLIP_KEY); `pressTab` below is now
+//      the NEGATIVE case, asserted to flip nothing.
 //   2) EVERY declared port renders exactly ONE hole (count + id ↔ the live
 //      def via window.__moduleSpecs — the no-orphan-holes guarantee), each
 //      hole domain-classed off its cable type and PAINTED with the live
@@ -17,16 +24,17 @@
 //      pickup (connectDragState + PickupCable ghost), incompatible holes DIM
 //      while carrying (the Bitwig pre-highlight, inverted), click a lit hole
 //      → the SAME validated edge a front-view patch creates.
-//   4) SINGLE-OWNER TAB: exactly ONE flip handler acts per keystroke. The dock
-//      owns bare TAB while the full-view is open, the canvas-wide "Flip rack"
-//      rear view owns it when it's closed, and Shift-TAB owns neither — so the
-//      two flip states can never phase-diverge.
+//   4) SINGLE-OWNER FLIP KEY: exactly ONE flip handler acts per keystroke. The
+//      dock owns it while the full-view is open, the canvas-wide "Flip rack"
+//      rear view owns it when it's closed, and TAB / Shift-TAB own neither —
+//      so the two flip states can never phase-diverge.
 //
 // Runs on /rack (no DB/relay) — the normal e2e lane,
 // same recipe as workflow-shell-faces.spec.ts.
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+import { pressFlipKey } from './_flip-key';
 
 // Serial: these tests drive the shared connect-drag singleton through real
 // pointer clicks (the rear-view-patching.spec precedent).
@@ -91,7 +99,7 @@ function paneOf(page: Page, nodeId: string) {
   return page.locator(`[data-testid="dock-full-view"][data-fullview-node="${nodeId}"]`);
 }
 
-/** Bare TAB — the rack-flip shortcut (Canvas consumes it; no modifiers). */
+/** BARE TAB — native forward focus traversal. Must flip NOTHING (#1508). */
 async function pressTab(page: Page): Promise<void> {
   await page.keyboard.press('Tab');
 }
@@ -112,9 +120,10 @@ function flipRackBtn(page: Page) {
   return page.getByTestId('flip-rack-btn');
 }
 
-/** Drop focus back to <body>. A Shift-TAB that (correctly) flips nothing DOES
- *  move focus, and a later bare TAB read as "typing" if it landed in an input
- *  would silently pass for the wrong reason. */
+/** Drop focus back to <body>. A traversal key that (correctly) flips nothing
+ *  DOES move focus, and the flip key is INERT in a text field / select
+ *  (isTypingTarget) — so a later flip press swallowed that way would silently
+ *  pass for the wrong reason. Park focus somewhere harmless first. */
 async function resetFocus(page: Page): Promise<void> {
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
 }
@@ -160,9 +169,9 @@ async function portsOf(page: Page, type: string): Promise<{ inputs: SpecPort[]; 
   }, type);
 }
 
-// ── (1) TAB ⇄ flip: rear card in, controls gone; TAB again restores ─────────
+// ── (1) FLIP KEY: rear card in, controls gone; press again restores ────────
 
-test('TAB flips the open dock full-view to the rear card and back (controls GONE ⇄ restored)', async ({
+test('the flip key flips the open dock full-view to the rear card and back (controls GONE ⇄ restored)', async ({
   page,
 }) => {
   await gotoWorkflow(page);
@@ -174,11 +183,11 @@ test('TAB flips the open dock full-view to the rear card and back (controls GONE
   await expect(faceplate(page).getByTestId('faceplate-editor')).toBeVisible();
   await expect(rearCard(page)).toHaveCount(0);
 
-  // TAB → the rear card: data-attr flips, the jack field is up, the control
+  // FLIP → the rear card: data-attr flips, the jack field is up, the control
   // face (tab rail + editor + every knob cell) is GONE, the REAR·PATCH chip
   // stamps the title bar. The faceplate frame itself stays (same object,
   // turned around).
-  await pressTab(page);
+  await pressFlipKey(page);
   await expect(faceplate(page)).toHaveAttribute('data-flipped', 'true');
   await expect(rearCard(page)).toBeVisible();
   await expect(faceplate(page).getByTestId('rear-chip')).toBeVisible();
@@ -192,8 +201,8 @@ test('TAB flips the open dock full-view to the rear card and back (controls GONE
   await expect(rearCard(page).getByTestId('rear-rail')).toBeVisible();
   expect(await rearCard(page).getByTestId('rear-band').count()).toBeGreaterThan(0);
 
-  // TAB again → front restored (same mounted face, controls visible again).
-  await pressTab(page);
+  // FLIP again → front restored (same mounted face, controls visible again).
+  await pressFlipKey(page);
   await expect(faceplate(page)).toHaveAttribute('data-flipped', 'false');
   await expect(rearCard(page)).toHaveCount(0);
   await expect(faceplate(page).getByTestId('faceplate-editor')).toBeVisible();
@@ -208,7 +217,7 @@ test('every declared port is addressed by exactly one domain-mapped hole (tidyVc
   await gotoWorkflow(page);
   await spawnPatch(page, [{ id: 'tv', type: 'tidyVco', position: { x: 460, y: 240 } }]);
   await openFullView(page, 'tv');
-  await pressTab(page);
+  await pressFlipKey(page);
   await expect(rearCard(page)).toBeVisible();
 
   const { inputs, outputs } = await portsOf(page, 'tidyVco');
@@ -282,7 +291,7 @@ test('clicking holes patches through the shipped carry seam (pickup ghost, compa
   await gotoWorkflow(page);
   await spawnPatch(page, [{ id: 'env', type: 'adsr', position: { x: 460, y: 240 } }]);
   await openFullView(page, 'env');
-  await pressTab(page);
+  await pressFlipKey(page);
   await expect(rearCard(page)).toBeVisible();
 
   // Baseline: the default workflow patch ships pre-wired edges (master →
@@ -353,9 +362,9 @@ test('clicking holes patches through the shipped carry seam (pickup ghost, compa
   );
 });
 
-// ── (4) the 50/50 side-by-side split: TAB flips BOTH panes together ─────────
+// ── (4) the 50/50 side-by-side split: ONE press flips BOTH panes together ──
 
-test('50/50 split: TAB flips BOTH panes to their rear cards together (one global flip seam)', async ({
+test('50/50 split: the flip key flips BOTH panes to their rear cards together (one global flip seam)', async ({
   page,
 }) => {
   await gotoWorkflow(page);
@@ -370,8 +379,8 @@ test('50/50 split: TAB flips BOTH panes to their rear cards together (one global
   await expect(drawer).toHaveAttribute('data-pane-count', '2');
   await expect(page.getByTestId('dock-full-view')).toHaveCount(2);
 
-  // ONE bare TAB → the view-global flip seam → BOTH panes carry the rear.
-  await pressTab(page);
+  // ONE flip-key press → the view-global flip seam → BOTH panes carry the rear.
+  await pressFlipKey(page);
   await expect(drawer).toHaveAttribute('data-fullview-flipped', 'true');
   for (const nodeId of ['tv', 'env'] as const) {
     await expect(paneOf(page, nodeId)).toHaveAttribute('data-flipped', 'true');
@@ -404,8 +413,8 @@ test('50/50 split: TAB flips BOTH panes to their rear cards together (one global
     `tidyVco: ${tvPorts.inputs.length + tvPorts.outputs.length} declared ports minus ${tvCollapsed} collapsed pair(s)`,
   ).toHaveCount(tvPorts.inputs.length + tvPorts.outputs.length - tvCollapsed);
 
-  // TAB again → both fronts restored.
-  await pressTab(page);
+  // FLIP again → both fronts restored.
+  await pressFlipKey(page);
   await expect(drawer).toHaveAttribute('data-fullview-flipped', 'false');
   await expect(page.getByTestId('rear-card')).toHaveCount(0);
   for (const nodeId of ['tv', 'env'] as const) {
@@ -413,23 +422,22 @@ test('50/50 split: TAB flips BOTH panes to their rear cards together (one global
   }
 });
 
-// ── (5) SINGLE-OWNER TAB: exactly ONE flip handler acts per keystroke ───────
+// ── (5) SINGLE-OWNER FLIP KEY: exactly ONE handler acts per keystroke ──────
 //
-// Bare TAB has TWO consumers in Canvas: the dock keymap (flips the open
+// The flip key has TWO consumers in Canvas: the dock keymap (flips the open
 // full-view to its rear card) and the older canvas-wide "Flip rack" rear view.
 // Both are plain `window` keydown listeners, so preventDefault in one does NOT
 // stop the other — ONE keystroke used to toggle BOTH flip states, and the two
-// then phase-diverged (flip in the dock, close it, TAB on the canvas → the
-// canvas came up already inverted, i.e. TAB appeared to do nothing). And the
-// dock branch screened only meta/ctrl/alt, so SHIFT-TAB flipped it too while
-// stealing reverse focus traversal. Ownership is now decided by full-view
-// OCCUPANCY, not by listener-registration order:
+// then phase-diverged (flip in the dock, close it, press on the canvas → the
+// canvas came up already inverted, i.e. the key appeared to do nothing).
+// Ownership is decided by full-view OCCUPANCY, not by listener-registration
+// order, so it holds whichever listener happens to be registered first:
 //
-//   full-view OPEN   → the DOCK owns bare TAB; the canvas rear view is inert.
-//   full-view CLOSED → the CANVAS owns bare TAB (original behavior, unchanged).
-//   Shift-TAB        → neither; native focus traversal.
+//   full-view OPEN   → the DOCK owns the flip key; the canvas view is inert.
+//   full-view CLOSED → the CANVAS owns the flip key.
+//   TAB / Shift-TAB  → neither; native focus traversal, both directions.
 
-test('full-view OPEN: bare TAB flips ONLY the dock panes — the canvas rear view never moves', async ({
+test('full-view OPEN: the flip key flips ONLY the dock panes — the canvas rear view never moves', async ({
   page,
 }) => {
   await gotoWorkflow(page);
@@ -440,7 +448,7 @@ test('full-view OPEN: bare TAB flips ONLY the dock panes — the canvas rear vie
   await expect(flipRackBtn(page)).toHaveAttribute('aria-pressed', 'false');
 
   await openFullView(page, 'tv');
-  await pressTab(page);
+  await pressFlipKey(page);
 
   // The DOCK flipped…
   await expect(drawer).toHaveAttribute('data-fullview-flipped', 'true');
@@ -450,40 +458,57 @@ test('full-view OPEN: bare TAB flips ONLY the dock panes — the canvas rear vie
   await expect(canvasFlow(page)).not.toHaveClass(/rear-view/);
   await expect(flipRackBtn(page)).toHaveAttribute('aria-pressed', 'false');
 
-  // TAB back — still only the dock moves, so the two states can't drift apart.
-  await pressTab(page);
+  // FLIP back — still only the dock moves, so the two states can't drift apart.
+  await pressFlipKey(page);
   await expect(drawer).toHaveAttribute('data-fullview-flipped', 'false');
   await expect(rearCard(page)).toHaveCount(0);
   await expect(canvasFlow(page)).not.toHaveClass(/rear-view/);
   await expect(flipRackBtn(page)).toHaveAttribute('aria-pressed', 'false');
 });
 
-test('Shift-TAB flips NOTHING — full-view open or closed (reverse focus nav is not hijacked)', async ({
+// PERMANENT REGRESSION LEG for #1508. Tab USED to be the flip key, which meant
+// the shell ate the browser's focus-traversal key everywhere outside a text
+// field — a keyboard-only or screen-reader user could not reach a control at
+// all. Both traversal keys are asserted inert in BOTH occupancy states,
+// because that is exactly where the SINGLE-OWNER guard lives and where the
+// previous phase-divergence bug was.
+test('TAB and Shift-TAB flip NOTHING — full-view open or closed (focus traversal is not hijacked)', async ({
   page,
 }) => {
   await gotoWorkflow(page);
   await spawnPatch(page, [{ id: 'tv', type: 'tidyVco', position: { x: 460, y: 240 } }]);
   const drawer = page.getByTestId('dock-fullview-drawer');
 
-  // (a) full-view CLOSED — the canvas predicate already excluded shift; pinned
-  //     so a regression there can't slip in either.
-  await pressShiftTab(page);
-  await expect(canvasFlow(page)).not.toHaveClass(/rear-view/);
-  await expect(flipRackBtn(page)).toHaveAttribute('aria-pressed', 'false');
+  // (a) full-view CLOSED — the canvas-wide rear view owns the flip key here,
+  //     so this is the state where bare Tab used to turn the whole rack around.
+  for (const press of [pressTab, pressShiftTab]) {
+    await resetFocus(page);
+    await press(page);
+    await expect(canvasFlow(page), 'a traversal key must not flip the canvas').not.toHaveClass(
+      /rear-view/,
+    );
+    await expect(flipRackBtn(page)).toHaveAttribute('aria-pressed', 'false');
+  }
 
-  // (b) full-view OPEN — ONE press is the whole assertion: pre-fix a single
-  //     Shift-TAB set fullViewFlipped=true (a second would have masked it).
+  // (b) full-view OPEN — the DOCK owns the flip key here. ONE press per key is
+  //     the whole assertion: pre-fix a single press set fullViewFlipped=true
+  //     (a second would have masked it by flipping back).
   await resetFocus(page);
   await openFullView(page, 'tv');
   await expect(drawer).toHaveAttribute('data-fullview-flipped', 'false');
-  await pressShiftTab(page);
-  await expect(drawer).toHaveAttribute('data-fullview-flipped', 'false');
-  await expect(rearCard(page)).toHaveCount(0);
-  await expect(faceplate(page).getByTestId('faceplate-editor')).toBeVisible();
-  await expect(canvasFlow(page)).not.toHaveClass(/rear-view/);
+  for (const press of [pressTab, pressShiftTab]) {
+    await press(page);
+    await expect(drawer, 'a traversal key must not flip the dock panes').toHaveAttribute(
+      'data-fullview-flipped',
+      'false',
+    );
+    await expect(rearCard(page)).toHaveCount(0);
+    await expect(faceplate(page).getByTestId('faceplate-editor')).toBeVisible();
+    await expect(canvasFlow(page)).not.toHaveClass(/rear-view/);
+  }
 });
 
-test('no phase divergence: open → flip → close → bare TAB flips the canvas ON (not pre-inverted)', async ({
+test('no phase divergence: open → flip → close → the flip key turns the canvas ON (not pre-inverted)', async ({
   page,
 }) => {
   await gotoWorkflow(page);
@@ -491,7 +516,7 @@ test('no phase divergence: open → flip → close → bare TAB flips the canvas
   const drawer = page.getByTestId('dock-fullview-drawer');
 
   await openFullView(page, 'tv');
-  await pressTab(page); // flip the DOCK
+  await pressFlipKey(page); // flip the DOCK
   await expect(drawer).toHaveAttribute('data-fullview-flipped', 'true');
   await expect(canvasFlow(page)).not.toHaveClass(/rear-view/);
 
@@ -500,17 +525,17 @@ test('no phase divergence: open → flip → close → bare TAB flips the canvas
   await expect(page.getByTestId('dock-full-view')).toHaveCount(0);
 
   // The canvas rear view was never touched by any of the above, so the very
-  // next bare TAB flips it ON — the direction the user expects. Pre-fix the
-  // dock flip had silently flipped the canvas too, so this TAB flipped it OFF
-  // and the rack appeared unresponsive.
+  // next flip-key press turns it ON — the direction the user expects. Pre-fix
+  // the dock flip had silently flipped the canvas too, so this press turned it
+  // OFF and the rack appeared unresponsive.
   await resetFocus(page);
-  await pressTab(page);
+  await pressFlipKey(page);
   await expect(canvasFlow(page)).toHaveClass(/rear-view/);
   await expect(flipRackBtn(page)).toHaveAttribute('aria-pressed', 'true');
 
-  // And the canvas-owned TAB still toggles cleanly from there (unchanged
+  // And the canvas-owned flip still toggles cleanly from there (unchanged
   // legacy behavior once the full-view is out of the way).
-  await pressTab(page);
+  await pressFlipKey(page);
   await expect(canvasFlow(page)).not.toHaveClass(/rear-view/);
   await expect(flipRackBtn(page)).toHaveAttribute('aria-pressed', 'false');
 });
@@ -521,11 +546,11 @@ test('no phase divergence: open → flip → close → bare TAB flips the canvas
 // docked LEGACY card inherited `.rear-view`: the ancestor-generic reveal rule
 // painted its OLD back panel (`.card-back-panel`, absolute inset:0 z-index:8)
 // OVER the pane front while the dock-sized front-inert mirror hid the front —
-// and with TAB dock-owned while the full-view is open, there was NO route back
+// and with the flip key dock-owned while the full-view is open, there was NO route back
 // to the front ("no way to see the front of the panel", 2026-07-26). The fix
 // scopes a drawer exemption in _module-card.css (the .rl-tile precedent): the
 // full-view's ONLY rear is the RearCard, driven by dockStore.fullViewFlipped.
-test('canvas rear view left ON: a docked LEGACY pane still shows its FRONT, and dock-TAB round-trips front⇄RearCard', async ({
+test('canvas rear view left ON: a docked LEGACY pane still shows its FRONT, and the dock flip round-trips front⇄RearCard', async ({
   page,
 }) => {
   await gotoWorkflow(page);
@@ -534,7 +559,7 @@ test('canvas rear view left ON: a docked LEGACY pane still shows its FRONT, and 
 
   // Arm the trap: flip the CANVAS to rear view BEFORE docking.
   await resetFocus(page);
-  await pressTab(page);
+  await pressFlipKey(page);
   await expect(canvasFlow(page)).toHaveClass(/rear-view/);
 
   await openFullView(page, 'sc');
@@ -549,15 +574,15 @@ test('canvas rear view left ON: a docked LEGACY pane still shows its FRONT, and 
   await expect(frontCard).toBeVisible();
   await expect(faceplate(page).locator('.card-back-panel')).toBeHidden();
 
-  // TAB (dock-owned): the flip side is the NEW RearCard — never the old panel.
+  // FLIP (dock-owned): the flip side is the NEW RearCard — never the old panel.
   await resetFocus(page);
-  await pressTab(page);
+  await pressFlipKey(page);
   await expect(faceplate(page)).toHaveAttribute('data-flipped', 'true');
   await expect(rearCard(page)).toBeVisible();
   await expect(faceplate(page).locator('.card-back-panel')).toBeHidden();
 
-  // TAB again: the round trip the bug made impossible — FRONT restored.
-  await pressTab(page);
+  // FLIP again: the round trip the bug made impossible — FRONT restored.
+  await pressFlipKey(page);
   await expect(faceplate(page)).toHaveAttribute('data-flipped', 'false');
   await expect(frontCard).toBeVisible();
 

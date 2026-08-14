@@ -30,6 +30,7 @@
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+import { pressFlipKey } from './_flip-key';
 
 // Serial: drives the shared connect-drag singleton through real clicks.
 test.describe.configure({ mode: 'serial' });
@@ -112,7 +113,7 @@ test('the whole cell is the patch control: clicking the LABEL (never the hole) c
   await gotoWorkflow(page);
   await spawnPatch(page, [{ id: 'env', type: 'adsr', position: { x: 460, y: 240 } }]);
   await openFullView(page, 'env');
-  await page.keyboard.press('Tab');
+  await pressFlipKey(page);
   await expect(rearCard(page)).toBeVisible();
 
   const readEdges = () =>
@@ -165,7 +166,7 @@ test('hovering the LABEL lights the whole cell (and an unhovered cell stays un-l
   await gotoWorkflow(page);
   await spawnPatch(page, [{ id: 'env2', type: 'adsr', position: { x: 460, y: 240 } }]);
   await openFullView(page, 'env2');
-  await page.keyboard.press('Tab');
+  await pressFlipKey(page);
   await expect(rearCard(page)).toBeVisible();
 
   const cell = rearJack(page, 'attack', 'input');
