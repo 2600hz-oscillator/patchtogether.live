@@ -1,10 +1,11 @@
 // art/scenarios/meowbox/meow-c4.test.ts
 //
-// Toolchain validation for MEOWBOX. Asserts the compiled artifacts exist
-// and the source SHA matches the built SHA. The harness's render() is a
-// stub (D17 stage 1) — once real OfflineAudioContext rendering lands, this
-// file flips to baseline-comparison via the same setup helpers as the
-// analog-vco scenario.
+// Toolchain validation for MEOWBOX. Asserts the compiled artifacts exist,
+// the source SHA matches the built SHA, and that the module actually
+// renders finite audio (render() drives the real Faust DSP headlessly).
+// This file does NOT yet pin a .f32 baseline — promoting it to
+// baseline-comparison, the way the analog-vco scenario does, is the
+// remaining step.
 
 import { describe, it, expect } from 'vitest';
 import {

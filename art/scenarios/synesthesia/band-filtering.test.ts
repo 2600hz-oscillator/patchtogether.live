@@ -5,9 +5,11 @@
 //   1. Repo-standard checks (like analog-vco/saw-c4): the compiled worklet
 //      artifact exists + the built .sha still matches the source .ts.
 //   2. REAL per-band baselines: render each band's audio output for its test
-//      tone via the pure renderSynesthesia() helper (NOT the stub render()),
-//      assert it's filtered to the correct band, and pin the rendered waveform
-//      as a .f32 baseline so a future DSP change is caught by a waveform diff.
+//      tone via the pure renderSynesthesia() helper — which drives ALL four
+//      bands from one pass, the shape these per-band assertions need, where
+//      render() returns a single output port — assert it's filtered to the
+//      correct band, and pin the rendered waveform as a .f32 baseline so a
+//      future DSP change is caught by a waveform diff.
 //
 // On first run (or UPDATE_BASELINES=1) the .f32 baselines are written; later
 // runs compare (RMS tier B). Regenerate with `npm run art:update -w art`.

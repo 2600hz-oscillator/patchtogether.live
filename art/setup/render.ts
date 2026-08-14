@@ -1,9 +1,9 @@
 // art/setup/render.ts
 //
 // Helpers for ART scenarios:
-//   - render({ moduleName, durationS, sampleRate, configure })
-//     instantiates a compiled DSP module under an offline render context
-//     and returns the rendered Float32Array.
+//   - render({ moduleName, durationS, ... }) instantiates THAT module's
+//     compiled DSP under an offline render context and returns the rendered
+//     Float32Array. (It dispatches on artifact kind — see render() below.)
 //   - compare(rendered, baselinePath) — RMS-threshold + perceptual-hash tiers.
 //   - readBaseline / writeBaseline — .f32 binary I/O.
 
@@ -21,10 +21,21 @@ export interface RenderOptions {
   moduleName: string;
   durationS: number;
   sampleRate?: number;
-  // Optionally pre-render driver function: called per audio block to feed inputs.
-  // For Phase 1 toolchain validation this is a placeholder; full implementation
-  // pending node-web-audio-api integration.
-  configure?: (node: unknown, ctx: unknown) => void | Promise<void>;
+  /** Params applied to the module: def param ids for worklet-backed modules,
+   *  Faust UI shortnames for Faust modules. Omitted params keep their
+   *  defaults (the def's `defaultValue` / the DSP's own initial value). */
+  params?: Record<string, number>;
+  /** Deterministic probe fed to the module's FIRST input.
+   *
+   *  Defaults to the canonical C4 saw (`drivers.vcoTestSignal`) so a PASSIVE
+   *  module (a delay, a mixer, a filter) has something to process — driven
+   *  with silence it would honestly render silence, and two silent modules
+   *  are byte-identical, which is the very confusion this harness exists to
+   *  avoid. Pass `null` for an explicitly undriven render. */
+  input?: Float32Array | null;
+  /** Which output to return: a def output PORT ID (worklet modules) or an
+   *  output INDEX (either kind). Defaults to the module's first output. */
+  output?: string | number;
 }
 
 export interface RenderResult {
@@ -33,11 +44,72 @@ export interface RenderResult {
   sampleRate: number;
 }
 
+/** Shape of the fields we read off a module def (structurally typed so this
+ *  file needs no value import from packages/web). */
+interface DefLike {
+  type: string;
+  factory: unknown;
+  inputs?: ReadonlyArray<{ id: string }>;
+  outputs?: ReadonlyArray<{ id: string }>;
+}
+
+const isDefLike = (v: unknown): v is DefLike =>
+  !!v && typeof v === 'object' && 'type' in v && 'factory' in v;
+
+/** `charlottes-echos` (dist stem) and `charlottesEchos` (def type) are the
+ *  same module — compare on alphanumerics only. */
+const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+
 /**
- * Render a single DSP module under OfflineAudioContext-equivalent.
- * Phase-1 stub: full integration with @grame/faustwasm runtime + node-web-audio-api
- * will land in days 4–7 alongside the AudioEngine. This stub asserts that the
- * compiled artifacts exist so the toolchain end-to-end is validated.
+ * Locate the module def that OWNS a dist stem, by importing
+ * `packages/web/src/lib/audio/modules/<stem>.ts` and picking the def-shaped
+ * export. (A value import of the whole registry would need every module to be
+ * side-effect registered; the per-file import keeps ART's graph small.)
+ */
+async function loadDef(moduleName: string): Promise<DefLike> {
+  let mod: Record<string, unknown>;
+  try {
+    mod = (await import(
+      `../../packages/web/src/lib/audio/modules/${moduleName}.ts`
+    )) as Record<string, unknown>;
+  } catch (cause) {
+    throw new Error(
+      `render(${moduleName}): no module def at ` +
+        `packages/web/src/lib/audio/modules/${moduleName}.ts — the ART render ` +
+        `harness resolves a worklet module's I/O shape from its def. ` +
+        `(${(cause as Error).message})`,
+    );
+  }
+  const defs = Object.values(mod).filter(isDefLike);
+  if (defs.length === 0) {
+    throw new Error(
+      `render(${moduleName}): ${moduleName}.ts exports no module def ` +
+        `(an object with \`type\` and \`factory\`).`,
+    );
+  }
+  return defs.find((d) => normalize(d.type) === normalize(moduleName)) ?? defs[0]!;
+}
+
+/**
+ * Render a single DSP module offline and return one of its outputs.
+ *
+ * Dispatches on the ARTIFACT KIND the build produced, because the two kinds
+ * cannot be rendered the same way in Node:
+ *
+ *   - **Faust** (`dist/<name>.wasm` + `.json`) → `renderFaustOffline`, the
+ *     headless @grame/faustwasm processor. The def's own factory cannot be
+ *     used here: it resolves the Faust runtime through a browser `fetch`,
+ *     which fails in Node with `undefined … loadDSPFactory`.
+ *   - **TS worklet** (`dist/<name>.js`) → the SHIPPING `def.factory()` under
+ *     node-web-audio-api's OfflineAudioContext (`renderOfflineDef`). Going
+ *     through the def — rather than pumping the processor class directly —
+ *     is what makes the bus shape correct: a worklet is constructed with an
+ *     explicit `numberOfOutputs` (timelorde declares 13) and at least one
+ *     module reads `outputs.length`, so a harness that guessed the bus count
+ *     would silently render nothing.
+ *
+ * Determinism: the default probe and every driver are pure functions of their
+ * arguments, and the render is offline — two calls are bit-identical.
  */
 export async function render(opts: RenderOptions): Promise<RenderResult> {
   const sampleRate = opts.sampleRate ?? SAMPLE_RATE;
@@ -56,16 +128,81 @@ export async function render(opts: RenderOptions): Promise<RenderResult> {
       `Neither ${wasmPath} nor ${jsPath} exists for module ${opts.moduleName}.`
     );
   }
-  // TODO (days 4–7): instantiate via node-web-audio-api OfflineAudioContext +
-  //   @grame/faustwasm runtime; drive inputs from opts.configure; render durationS;
-  //   return populated Float32Array.
-  // For toolchain validation: return a deterministic synthetic buffer so the
-  // baseline-comparison round-trip works end-to-end.
+
   const totalSamples = Math.round(sampleRate * opts.durationS);
-  const buffer = new Float32Array(totalSamples);
-  // Deterministic placeholder: 440 Hz sine. Replaced when real render lands.
-  for (let i = 0; i < totalSamples; i++) {
-    buffer[i] = Math.sin((2 * Math.PI * 440 * i) / sampleRate) * 0.1;
+  // Dynamic imports throughout: drivers/offline/faust-offline all import
+  // SAMPLE_RATE from THIS file, so a static import would be a cycle.
+  let probe: Float32Array | null;
+  if (opts.input === null) probe = null;
+  else if (opts.input) probe = opts.input;
+  else {
+    const { vcoTestSignal } = await import('./drivers');
+    probe = vcoTestSignal({ totalS: opts.durationS, sampleRate });
+  }
+  if (probe && probe.length !== totalSamples) {
+    throw new Error(
+      `render(${opts.moduleName}): input probe length ${probe.length} != ` +
+        `totalSamples ${totalSamples} (durationS ${opts.durationS} @ ${sampleRate} Hz).`,
+    );
+  }
+
+  let buffer: Float32Array;
+  if (existsSync(wasmPath)) {
+    const { renderFaustOffline } = await import('./faust-offline');
+    const index = typeof opts.output === 'number' ? opts.output : 0;
+    if (typeof opts.output === 'string') {
+      throw new Error(
+        `render(${opts.moduleName}): '${opts.output}' — a Faust module's outputs ` +
+          `are positional; pass an output INDEX.`,
+      );
+    }
+    // Name outputs 0..index positionally and keep the requested one; Faust
+    // output k is at position k, so a prefix is all we need.
+    const names = Array.from({ length: index + 1 }, (_, k) => `out${k}`);
+    const rendered = await renderFaustOffline({
+      name: opts.moduleName,
+      totalSamples,
+      inputs: probe ? [probe] : [],
+      params: opts.params,
+      outputs: names,
+      sampleRate,
+    });
+    buffer = rendered[names[index]!]!;
+  } else {
+    const { renderOfflineDef } = await import('./offline');
+    const def = await loadDef(opts.moduleName);
+    const outIds = (def.outputs ?? []).map((o) => o.id);
+    if (outIds.length === 0) {
+      throw new Error(`render(${opts.moduleName}): def '${def.type}' declares no outputs.`);
+    }
+    let outId: string;
+    if (typeof opts.output === 'string') {
+      if (!outIds.includes(opts.output)) {
+        throw new Error(
+          `render(${opts.moduleName}): no output port '${opts.output}'. ` +
+            `Known: ${outIds.join(', ')}`,
+        );
+      }
+      outId = opts.output;
+    } else {
+      const index = opts.output ?? 0;
+      if (!outIds[index]) {
+        throw new Error(
+          `render(${opts.moduleName}): output index ${index} out of range ` +
+            `(def '${def.type}' has ${outIds.length}).`,
+        );
+      }
+      outId = outIds[index]!;
+    }
+    const firstIn = def.inputs?.[0]?.id;
+    const rendered = await renderOfflineDef(def as never, {
+      durationS: opts.durationS,
+      params: opts.params,
+      inputs: probe && firstIn ? { [firstIn]: probe } : {},
+      outputs: [outId],
+      sampleRate,
+    });
+    buffer = rendered[outId]!;
   }
   return { buffer, channels: 1, sampleRate };
 }

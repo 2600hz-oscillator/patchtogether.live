@@ -7,10 +7,8 @@
 // exercise the FULL voice over canonical 303 patches and asserts
 // spectral / temporal character a player would notice.
 //
-// We don't have the real worklet render path wired into ART yet (see
-// art/setup/render.ts — the actual render() is still a stub that returns
-// a synthetic sine). So instead of going through the worklet we go
-// through the same pure-TS DSP — `renderVoiceSequence` from the lib —
+// Rather than going through the worklet we go through the same pure-TS
+// DSP — `renderVoiceSequence` from the lib —
 // which the worklet itself wraps. That gives us bit-exact reproducibility
 // + lets the ART pin on the source SHA (so a coefficient change in the
 // lib invalidates the baseline correctly).

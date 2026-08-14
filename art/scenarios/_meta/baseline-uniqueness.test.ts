@@ -9,11 +9,20 @@
 // construction, not because the module's audio is correct.
 //
 // (Root cause at the time of writing: art/setup/render.ts's Phase-1 `render()`
-// stub ignores `opts.moduleName` and returns the SAME 440 Hz sine for every
+// stub ignored `opts.moduleName` and returned the SAME 440 Hz sine for every
 // module, so ~11 module baselines were byte-identical — md5 8313a1e7… — and a
 // further 2 cube configs collapsed to the same constant −1.0 floor. Those stub
 // scenarios + baselines were deleted; this guard keeps the corpus honest so a
 // new stub can't silently re-introduce a self-comparing baseline.)
+//
+// THAT ROOT CAUSE IS NOW FIXED: `render()` dispatches on the module and
+// renders its real DSP. This guard is deliberately kept, because it polices
+// the SYMPTOM (a self-comparing baseline) from a completely different
+// direction than the harness itself — it reads only committed bytes, so it
+// stays meaningful for baselines written by ANY render path, including the
+// pure-DSP helpers that most scenarios use. The CAUSE side — "the harness is
+// a function of the module it is handed" — is asserted by the sibling
+// _meta/render-harness.test.ts.
 //
 // This is a PURE unit guard: it just md5-hashes every committed baseline and
 // asserts no two share a hash. It needs no DSP build and adds ~0 CI wall-time.

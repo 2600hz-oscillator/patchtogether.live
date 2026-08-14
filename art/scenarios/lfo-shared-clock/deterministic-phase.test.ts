@@ -2,12 +2,16 @@
 //
 // Phase 1 of the shared-state-sync plan, ART tier: assert that the
 // deterministic LFO phase formula produces identical samples on
-// independent invocations with the same (epoch, params). The render
-// harness is currently a stub (see art/setup/render.ts), so we exercise
-// the deterministic path directly via computeLfoState — the same
-// function the worklet's sharedDerivedPhase helper implements. When the
-// harness gains real OfflineAudioContext + worklet support, this test
-// stays valid: computeLfoState is the spec the worklet implements.
+// independent invocations with the same (epoch, params). We exercise the
+// deterministic path directly via computeLfoState — the same function the
+// worklet's sharedDerivedPhase helper implements — because the property
+// under test is the FORMULA, not the audio: computeLfoState is the spec
+// the worklet implements, and asserting it here keeps the test
+// independent of any render path.
+//
+// (This once read "the render harness is currently a stub". It no longer
+// is — art/setup/render.ts renders the module it is handed — but that
+// does not change what this file should assert.)
 
 import { describe, it, expect } from 'vitest';
 import { computeLfoState } from '$lib/audio/modules/lfo-state';
