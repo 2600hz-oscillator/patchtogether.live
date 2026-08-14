@@ -374,11 +374,18 @@
   text-overflow: ellipsis;
 }
 
-/* The lane tile NEVER flips: its real card (which carries the rear-view patch
- * jacks) opens in the dock full-view, and the tile root is deliberately not
- * .mod-card/.card/.moog-panel so the front-inert flip rules never hide it.
- * PatchPanel (lane-rail) still renders its back-panel in the DOM, so suppress it
- * here — otherwise `.rear-view .card-back-panel` would overlay the tile face. */
-.rl-tile .card-back-panel {
-  display: none !important;
-}
+/* THE LANE TILE FLIPS — the rule lives in _module-card.css beside every other
+ * flip participant, NOT here.
+ *
+ * This slot used to hold `.rl-tile .card-back-panel { display: none !important }`
+ * ("the lane tile NEVER flips: its real card opens in the dock full-view").
+ * That was written when the shell was an opt-in second renderer and every rack
+ * a user actually saw was legacy cards. Once the shell became THE rack, that
+ * one line made the documented rack flip (F / the Flip rack control) a total
+ * VISUAL NO-OP for every user: `rearView` flipped, the control read
+ * aria-pressed=true, and nothing on screen moved (#1605).
+ *
+ * The tile's rear face was never missing — PatchPanel (lane-rail) has always
+ * rendered a live `.card-back-panel` into the tile. It was suppressed. So the
+ * fix is to let the tile join the SAME front-inert + reveal pair the legacy
+ * card roots use, which is a property of the rear view and belongs with them. */
