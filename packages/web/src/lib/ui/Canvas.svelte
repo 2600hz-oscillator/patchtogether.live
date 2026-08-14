@@ -225,6 +225,7 @@
   import { nodePresent } from '$lib/ui/modules/node-present-registry.svelte';
   import { nodeRecorder } from '$lib/ui/modules/node-recorder-registry.svelte';
   import { nodeSamsloop } from '$lib/ui/modules/node-samsloop-registry.svelte';
+  import { nodeDoomSession } from '$lib/ui/modules/node-doom-session-registry.svelte';
   import { RACK_SIZE_DEFAULTS } from '$lib/ui/rack-sizes';
   // ModuleNameLabel moved INTO every module card's title chrome (see
   // ModuleTitle.svelte) when the floating-overhead NodeToolbar was dropped.
@@ -740,6 +741,15 @@
       // is built by the registry so the spec and the registry cannot drift.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__samsloopRecording = (nodeId: string) => nodeSamsloop.probe(nodeId);
+      // #1590: the NODE-owned DOOM session probe. `pumpRuns` is the CAUSAL
+      // quantity (units: session-pump invocations, one per frame) — the exact
+      // mechanism whose death starved every peer's lockstep barrier when the
+      // card unmounted — and the probe folds in LIVE engine readings
+      // (gametic/gamestate/PTNet bound) via the session wiring, so it is not
+      // limited to the registry's opinion of itself. Reads the NODE's record,
+      // never a card's: the card is the thing under test for being absent.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__nodeDoomSession = (nodeId: string) => nodeDoomSession.probe(nodeId);
       // #1589: observe the NODE-owned media entries from a spec. Same reasoning
       // as __nodeRecording — the point of the registry is that these outlive the
       // card, so the probe must read the NODE's record and never a card's state.
@@ -2087,13 +2097,23 @@
    *  `$effect` disabled the tap and dropped the PCM accumulator, and NOTHING
    *  called its `stopRecording()` on unmount — so unlike recorderbox there was
    *  no commit path at all and up to 60 s of live audio was destroyed with no
-   *  recover candidate. Swept from here for the same reason as the other three. */
+   *  recover candidate. Swept from here for the same reason as the other three.
+   *
+   *  ...and the NODE-OWNED DOOM SESSION ($lib/ui/modules/node-doom-session-registry),
+   *  the #1583 family's last row (#1590): DoomCard's onDestroy ran stopNetcode()
+   *  — closing every WebRTC peer connection + unbinding Module.PTNet from the
+   *  RUNNING WASM — and killed the rAF loop that was also the lockstep pump, so
+   *  a collapse froze EVERY peer of a netgame (#345: a starved barrier pauses by
+   *  design). The netcode, the lockstep transport + cursors, the launch state
+   *  and the pump loop are node-keyed now; the graph sweep here is the only
+   *  non-user teardown. */
   $effect(() => {
     const liveIds = snapshot.nodes.map((n) => n.id);
     nodeMedia.sweep(liveIds);
     nodePresent.sweep(liveIds);
     nodeRecorder.sweep(liveIds);
     nodeSamsloop.sweep(liveIds);
+    nodeDoomSession.sweep(liveIds);
   });
 
   let headlessSourceNodes = $derived.by<ModuleNode[]>(() => {
