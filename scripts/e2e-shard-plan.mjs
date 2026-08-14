@@ -45,6 +45,7 @@
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { scanContention } from './e2e-contention-scan.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -53,10 +54,41 @@ export function loadTimings(path = join(ROOT, 'e2e/e2e-timings.generated.json'))
   return JSON.parse(readFileSync(path, 'utf8')).files;
 }
 
-/** @returns {Record<string, string>} file -> contention class (e.g. 'media') */
-export function loadContention(path = join(ROOT, 'e2e/e2e-timings.generated.json')) {
-  return JSON.parse(readFileSync(path, 'utf8')).contention ?? {};
+/** @returns {Record<string, string>} file -> contention class (e.g. 'media')
+ *
+ *  DERIVED AT PLAN TIME by scanning the spec sources (#1600) — never read from
+ *  a committed snapshot. The snapshot this replaced was the class map going
+ *  stale the moment any media spec landed: layers-survive (262 CPU-s of video
+ *  decode) joined no class and was packed beside other media specs, the exact
+ *  shape PASS 1 exists to prevent. The scan is ~10 ms; staleness is impossible
+ *  by construction. */
+export function loadContention(dir = join(ROOT, 'e2e/tests')) {
+  return scanContention(dir);
 }
+
+/**
+ * Specs awaiting their FIRST measured cost (#1600) — the ONLY sanctioned way
+ * for a scheduled spec to be absent from e2e-timings.generated.json.
+ *
+ * Deny by default: the freshness gate (e2e-shard-plan.test.ts) reddens on any
+ * scheduled spec that is neither measured nor named here, and reddens AGAIN on
+ * an entry that has become stale (its spec was deleted, or its first accept
+ * has landed and the entry was not removed). An unmeasured spec rides the
+ * MEDIAN, which is how a 309 CPU-s media spec was once scheduled at ~6 s and
+ * failed a shard that was green everywhere else — being on this list is a debt
+ * with a deadline, not a parking lot.
+ *
+ * @type {{ spec: string, why: string }[]}
+ */
+export const PENDING_FIRST_MEASUREMENT = [
+  {
+    spec: 'doom-session-survives-card-collapse.spec.ts',
+    why:
+      'landed 2026-08-14 with the #1618 doom node-lifetime fix; no ci.yml run containing it has ' +
+      'completed yet, so there are no blob reports to accept a cost from. Run ' +
+      '`task e2e:timings:accept -- <run-id>` on the first green main run after #1618 and delete this entry.',
+  },
+];
 
 /** Median of a numeric array (used as the cost of an unmeasured file). */
 export function median(xs) {

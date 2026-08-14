@@ -137,6 +137,45 @@ export interface OwnAppServer {
   stop(): void;
 }
 
+/**
+ * The spawn args and probe URL for an attest-owned app server — ONE function so
+ * the two can never disagree about the interface.
+ *
+ * ⚠ `127.0.0.1` EXPLICITLY, both ends, never `localhost` (#1614). Measured on
+ * macOS: `vite preview --port N` binds **[::1] ONLY** — `curl 127.0.0.1:N`
+ * refuses while `[::1]:N` answers. A `localhost` URL then makes every identity
+ * probe a per-lookup coin flip: Node's fetch resolves `localhost` each call,
+ * and whichever family getaddrinfo returns first is the one undici connects
+ * to. A 52/52-green collab attest was REFUSED at the pre-write re-assert this
+ * way — boot-time lookups picked ::1 (probe passed), the pre-write lookup
+ * picked 127.0.0.1 (ECONNREFUSED → null → refuse) — while chromium, which does
+ * its own happy-eyeballs, served every spec without noticing. Passing
+ * `--host 127.0.0.1` pins the server to one interface and the URL names that
+ * same interface, so the probe is deterministic by construction. The refusal
+ * was the gate failing CLOSED (correct!); this makes it also fail RARELY.
+ */
+export function serverBootPlan(
+  mode: 'dev' | 'preview',
+  port: number,
+): { url: string; args: string[] } {
+  const script = mode === 'preview' ? 'preview' : 'dev';
+  return {
+    url: `http://127.0.0.1:${port}`,
+    args: [
+      'run',
+      script,
+      '-w',
+      'packages/web',
+      '--',
+      '--host',
+      '127.0.0.1',
+      '--port',
+      String(port),
+      '--strictPort',
+    ],
+  };
+}
+
 /** Boot THIS worktree's app server (dev or preview) on a per-run ephemeral
  *  port, wait for it, and identity-verify it before returning. The caller
  *  passes `E2E_BASE_URL=<url>` + `E2E_SKIP_WEBSERVER=1` to Playwright so the
@@ -157,12 +196,9 @@ export async function bootOwnAppServer(opts: {
   const context = opts.context ?? 'attest';
   const timeoutMs = opts.timeoutMs ?? 120_000;
   const port = await freeEphemeralPort();
-  const url = `http://localhost:${port}`;
+  const { url, args } = serverBootPlan(mode, port);
   const logFile = join(mkdtempSync(join(tmpdir(), 'attest-app-server-')), `${mode}.log`);
   const logFd = openSync(logFile, 'a');
-
-  const script = mode === 'preview' ? 'preview' : 'dev';
-  const args = ['run', script, '-w', 'packages/web', '--', '--port', String(port), '--strictPort'];
   console.log(`[${context}] booting OWN ${mode} server on ${url} (npm ${args.join(' ')}; logs → ${logFile})`);
 
   // detached → its own process group, so stop() can kill npm AND the vite it
