@@ -167,7 +167,20 @@
   // Param plumbing (card-kit): identical closures every card carries, so the
   // shell's KnobConic cells are MIDI-assignable + live-motorized + right-click-
   // menu'd exactly like a hand-built card.
-  const params = cardParams({ params: (def?.params ?? []) as readonly ParamDef[] }, () => id, () => node);
+  // `params` is a GETTER for the same reason `getId`/`getNode` are thunks:
+  // cardParams is built ONCE at init but its closures run for the life of the
+  // shell, and `def` is a prop that changes when the shell is re-used for a
+  // different node. A plain `{ params: def?.params }` would pin defaultFor()
+  // to the def this instance happened to mount with.
+  const params = cardParams(
+    {
+      get params() {
+        return (def?.params ?? []) as readonly ParamDef[];
+      },
+    },
+    () => id,
+    () => node,
+  );
 
   // The tier-curated controls (top-N: mini=1 / compact=2 with a glyph, 3
   // without / full=8 / dock=all — faceTierCap, reconciled with laneBodyPlan).

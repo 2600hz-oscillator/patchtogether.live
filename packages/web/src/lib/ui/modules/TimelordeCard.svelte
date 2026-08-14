@@ -140,6 +140,9 @@
   // Wall-clock anchor: reset whenever the transport (re)starts so the flash
   // lands on the downbeat after a start rather than at an arbitrary offset.
   let beatAnchorMs = performance.now();
+  // svelte-ignore state_referenced_locally -- capturing the value is the POINT: this is the
+  // previous-value half of an edge detector (stopped→running), and the $effect below both
+  // reads the live `running` and writes this back. A reactive read here would never see an edge.
   let prevRunningForAnchor = running;
 
   function prefersReducedMotion(): boolean {

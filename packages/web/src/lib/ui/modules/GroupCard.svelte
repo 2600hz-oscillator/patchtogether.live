@@ -301,7 +301,6 @@
   <div class="stripe" style="background: var(--accent, #60a5fa);"></div>
   <header class="title">
     {#if editingLabel}
-      <!-- svelte-ignore a11y_autofocus -->
       <input
         bind:this={labelInputEl}
         bind:value={labelDraft}
@@ -314,7 +313,9 @@
         ondblclick={(e) => e.stopPropagation()}
       />
     {:else if expanded}
-      <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+      <!-- svelte-ignore a11y_no_static_element_interactions -- rename is double-click ONLY. The
+           keyboard entry point (Enter/F2 → startEditLabel) is tracked as #1572 and is itself
+           gated on #1508 unbinding bare Tab from rack-flip. -->
       <span
         data-testid="group-card-label"
         class="label-text nodrag"
@@ -323,7 +324,7 @@
       >{label}</span>
       <span class="thin-hint">editing knob positions</span>
     {:else if hasViz}
-      <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+      <!-- svelte-ignore a11y_no_static_element_interactions -- double-click-only rename; #1572. -->
       <span
         data-testid="group-card-label"
         class="label-text nodrag"
@@ -331,7 +332,7 @@
         title="Double-click to rename"
       >{label}</span>
     {:else}
-      <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+      <!-- svelte-ignore a11y_no_static_element_interactions -- double-click-only rename; #1572. -->
       <span
         data-testid="group-card-header-label"
         class="label-text nodrag"
@@ -379,7 +380,7 @@
             />
           </div>
         {:else}
-          <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+          <!-- svelte-ignore a11y_no_static_element_interactions -- double-click-only rename; #1572. -->
           <div
             class="group-label label-text nodrag"
             data-testid="group-card-label"

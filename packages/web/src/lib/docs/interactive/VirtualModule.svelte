@@ -75,6 +75,9 @@
 
   // ---- Sandbox bind lifecycle ------------------------------------------------
   const DEMO_ID = 'demo';
+  // svelte-ignore state_referenced_locally -- SANDBOX_ID is consumed once, inside onMount, and
+  // /docs/modules/[id] wraps this component in {#key mod.type}, so a different module type
+  // REMOUNTS rather than mutating this instance's `type`.
   const SANDBOX_ID = `__docs-sandbox__:${type}`;
   let prevBoundId: string | null = null;
   let bound = $state(false);

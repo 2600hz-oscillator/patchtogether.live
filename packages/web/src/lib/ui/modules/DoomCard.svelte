@@ -2061,9 +2061,11 @@
      fire on the document and we need to preventDefault BEFORE they do
      to keep arrow keys from moving the card on the canvas instead of
      reaching the in-game player. -->
-<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-<!-- svelte-ignore a11y_click_events_have_key_events -->
+<!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions, a11y_click_events_have_key_events
+     — `role="application"` is exactly right for a surface that OWNS its key handling: it must be
+     focusable and must take pointer + key handlers. Svelte's rules do not model `application` as
+     interactive. One comma-separated comment, not three: see the runes trap documented in
+     lib/dev/svelte-ignore-audit.ts. -->
 <div
   bind:this={cardEl}
   class="mod-card doom-card"

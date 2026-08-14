@@ -113,6 +113,10 @@
   const outputs = portsFromDef(nibblesDef.outputs, { dir_change: 'DIR', length_cv: 'LENGTH' });
 </script>
 
+<!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions
+     — `role="application"` is exactly right here: the card OWNS its key handling (arrows drive
+     the snake when AUTO is off), so it MUST be focusable and MUST take a keydown. Svelte's
+     rules do not model `application` as interactive. -->
 <div
   bind:this={cardEl}
   class="mod-card nibbles-card"

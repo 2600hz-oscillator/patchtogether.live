@@ -10,7 +10,12 @@
   let error: string | null = $state(null);
   let deletingId: string | null = $state(null);
   let leavingId: string | null = $state(null);
+  // svelte-ignore state_referenced_locally -- deliberate LOCAL MUTABLE COPY seeded from the
+  // load data. Delete/leave below filter these arrays optimistically instead of round-tripping
+  // through `invalidateAll()`; re-deriving from `data` would undo the optimistic removal.
   let rackspaces = $state(data.rackspaces);
+  // svelte-ignore state_referenced_locally -- same: seeded once, then filtered optimistically
+  // by deleteSavedGroup.
   let savedGroups = $state(data.savedGroups);
   let deletingSavedGroupId: string | null = $state(null);
   let savedGroupsError: string | null = $state(null);

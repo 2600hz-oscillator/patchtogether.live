@@ -105,9 +105,8 @@
     gap: 6px 10px;
     padding: 8px 16px 6px;
   }
-  .corner {
-    /* empty top-left cell */
-  }
+  /* `.corner` is the deliberately empty top-left grid cell — it needs a DOM
+     node to hold the grid slot, but no styles of its own. */
   .col-head,
   .row-head {
     font-size: 0.6rem;

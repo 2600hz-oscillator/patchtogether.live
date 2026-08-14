@@ -188,7 +188,9 @@
   }
 </script>
 
-<!-- svelte-ignore a11y_no_static_element_interactions a11y_no_noninteractive_element_interactions -->
+<!-- svelte-ignore a11y_no_static_element_interactions — double-click on the body is the ONLY way to bring the control row back once
+     `hideControls` is set — the row that carries the hide toggle is gone by then. That is a
+     real pointer-only trap, not a false positive; tracked as #1572. -->
 <div
   class="vcard card video"
   class:hide-controls={hideControls}

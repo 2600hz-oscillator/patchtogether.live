@@ -261,6 +261,9 @@
       {#each blocks as block, i (block.childId)}
         {@const key = `${block.childId}.__module`}
         {@const entry = entryFor(key, defaultEntry(i))}
+        <!-- svelte-ignore a11y_no_static_element_interactions -- drag-to-move layout box; there
+             is no keyboard nudge yet, tracked as #1572. Giving it a role now without an
+             operable model would only add a focus stop that does nothing. -->
         <div
           class="ctrl-box edit"
           data-testid="ctrl-box"
@@ -291,6 +294,9 @@
               {:else if c.kind === 'knob'}
                 {@const pd = paramDefFor(block.child, c.paramId)}
                 {#if pd}
+                  <!-- svelte-ignore a11y_no_static_element_interactions -- pointer PLUMBING only:
+                       stops the enclosing box's drag so the Knob inside gets the gesture. No user
+                       action happens on this div, so there is nothing to key-bind. -->
                   <div
                     class="knob-wrap"
                     data-testid={`ctrl-knob-${block.childId}-${c.id}`}
@@ -314,6 +320,8 @@
             {/each}
           </div>
           <!-- bottom-right corner resize handle; pointer-capture below -->
+          <!-- svelte-ignore a11y_no_static_element_interactions -- drag-to-resize handle; no
+               keyboard resize exists yet, tracked as #1572. -->
           <div
             class="resize-handle"
             data-testid="ctrl-resize"
@@ -324,6 +332,8 @@
       {#each sequenceChildren as sc, i (sc.childId)}
         {@const key = `${sc.childId}.__sequence`}
         {@const entry = entryFor(key, { ...defaultEntry(blocks.length + i), width: 260, height: 120 })}
+        <!-- svelte-ignore a11y_no_static_element_interactions -- drag-to-move layout box, same as
+             the control box above; keyboard nudge tracked as #1572. -->
         <div
           class="ctrl-box edit sequence-box"
           data-testid="ctrl-sequence-box"
@@ -337,6 +347,8 @@
         >
           <div class="ctrl-header">{sc.childLabel} — sequence</div>
           <div class="seq-body">step sequence (rendered on the source module card)</div>
+          <!-- svelte-ignore a11y_no_static_element_interactions -- drag-to-resize handle; no
+               keyboard resize exists yet, tracked as #1572. -->
           <div
             class="resize-handle"
             data-testid="ctrl-resize-sequence"

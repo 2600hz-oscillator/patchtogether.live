@@ -134,7 +134,9 @@
   const HS = 0.022;
 </script>
 
-<!-- svelte-ignore a11y_no_static_element_interactions -->
+<!-- svelte-ignore a11y_no_static_element_interactions — a drag-to-crop stage. The handles are
+     pointer-driven and a keyboard nudge model does not exist yet; grouped with the other
+     pointer-only surfaces in #1572. -->
 <div class="crop-stage nodrag nowheel" style="aspect-ratio: {aspect};" data-testid="crop-overlay">
   <svg
     bind:this={svgEl}
