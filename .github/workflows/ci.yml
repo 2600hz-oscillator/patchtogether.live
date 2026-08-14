@@ -1218,9 +1218,11 @@ jobs:
   # died this way — B simply never received A's update; retries=1 didn't help
   # because the contention is CONSTANT, not transient). Serializing to 1 worker
   # means at most one sync spec's contexts touch the relay at a time → it gets
-  # CPU → updates flow → reliably GREEN. The under-load stress coverage (does
-  # the app survive a CONTENDED relay?) lives in collab-nightly.yml, which keeps
-  # --workers=2 deliberately as a daily diagnostic canary.
+  # CPU → updates flow → reliably GREEN. (collab-nightly.yml is ALSO
+  # --workers=1 since #963 — it once kept --workers=2 as a contended-relay
+  # canary, but the relay deadlocks at >1 worker, the #97 flake. The nightly's
+  # remaining distinct value is the daily FROM-SCRATCH build off the PR path;
+  # deliberate under-load stress coverage has no lane today.)
   #
   # The DOOM 2-user test + the rest of the @collab suite stay a RELIABLE gate.
   # Same DB + DOOM-asset + DSP setup as e2e.
