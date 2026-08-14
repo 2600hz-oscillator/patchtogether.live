@@ -147,7 +147,7 @@
   // immutable for the card's life (the node IS its id), and `$derived` is not
   // an option because session() auto-vivifies (a $state write inside a derived
   // is a state_unsafe_mutation error).
-  // svelte-ignore state_referenced_locally
+  // svelte-ignore state_referenced_locally — deliberate init capture (see rationale above): the node IS its id for the card's whole life, and $derived cannot wrap session() because it auto-vivifies.
   const sess = nodeDoomSession.session(id);
 
   // Per-source fit/fill: DOOM's viewport is fixed 8:5; the Native badge never

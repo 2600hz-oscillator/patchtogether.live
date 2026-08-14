@@ -37,11 +37,13 @@
 // And what the GATE THIS SERVES cannot see: svelte-check runs the Svelte compiler
 // on `.svelte` files only — a `.svelte.ts` runes module is type-checked as plain
 // TS, so a compiler warning there (e.g. `state_referenced_locally` in
-// lib/audio/shared-clock.svelte.ts) reaches the vite-plugin-svelte build log and
-// NO gate. Measured on 2026-08-13: svelte-check reported 0 warnings over the same
-// tree where the vite build printed that warning. Tracked as #1602. This audit
-// still walks `.svelte.ts` files — the ignore COMMENTS there are auditable even
-// though the warnings they would suppress are not yet gated.
+// lib/audio/shared-clock.svelte.ts) reaches the vite-plugin-svelte build log and,
+// measured on 2026-08-13, NO gate: svelte-check reported 0 warnings over the same
+// tree where the vite build printed that warning. That half of the stream is now
+// gated by lib/dev/runes-module-warnings.test.ts (#1602), which compiles every
+// `*.svelte.{ts,js}` with the real `compileModule` and fails on any warning. This
+// audit walks `.svelte.ts` files too, so the ignore COMMENTS that gate honours
+// stay honest exemption records here.
 
 /** One `svelte-ignore` comment, parsed the way the Svelte compiler parses it. */
 export interface ParsedIgnore {
