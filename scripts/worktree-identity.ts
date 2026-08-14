@@ -183,7 +183,19 @@ export interface OwnAppServer {
   identity: WorktreeIdentity;
   child: ChildProcess;
   logFile: string;
+  /** Fire-and-forget group SIGTERM (+delayed SIGKILL). Safe from process
+   *  'exit' hooks (synchronous). Does NOT wait — the child may briefly
+   *  outlive the caller, which is why the attest runners' NORMAL paths use
+   *  stopAndWait() instead (#1630). */
   stop(): void;
+  /** Tear the server down and WAIT for the child to actually exit (bounded).
+   *  The #1630 wedge: teardown lived only in process-exit hooks, but the
+   *  un-torn-down child KEEPS THE EVENT LOOP ALIVE, so the success path
+   *  never exits and the hook never fires — the teardown waited on the exit
+   *  it had to cause. Await this in a finally instead. Also guarantees the
+   *  port is actually free before a chained task probes it, and awaits the
+   *  child's 'exit' EVENT (kill -0 lies about zombies). */
+  stopAndWait(timeoutMs?: number): Promise<void>;
 }
 
 /**
@@ -223,6 +235,75 @@ export function serverBootPlan(
       '--strictPort',
     ],
   };
+}
+
+/** The teardown pair for a DETACHED (own-process-group) child (#1630).
+ *
+ *  `stop()` — synchronous group SIGTERM + a delayed, unref'd SIGKILL. Safe
+ *  from process 'exit' hooks, but fire-and-forget: the child can briefly
+ *  outlive the caller (or, if the caller never exits, live forever — see
+ *  stopAndWait).
+ *
+ *  `stopAndWait()` — SIGTERM the group, await the child's 'exit' EVENT
+ *  (never `kill -0` polling — it reports zombies as alive), escalate to
+ *  group SIGKILL on a bounded deadline. This is what the attest runners'
+ *  normal paths must await: teardown that lives only in exit hooks can
+ *  never fire while the un-torn-down child keeps the event loop alive —
+ *  the #1630 wedge (task alive 8+ min after minting; orphaned
+ *  vite/workerd after an operator kill). */
+export function createGroupStopper(child: ChildProcess): {
+  stop(): void;
+  stopAndWait(timeoutMs?: number): Promise<void>;
+} {
+  let exited = false;
+  child.once('exit', () => {
+    exited = true;
+  });
+
+  const stop = () => {
+    if (child.pid === undefined) return;
+    try {
+      process.kill(-child.pid, 'SIGTERM');
+    } catch {
+      /* group already gone */
+    }
+    setTimeout(() => {
+      try {
+        if (child.pid !== undefined) process.kill(-child.pid, 'SIGKILL');
+      } catch {
+        /* already gone */
+      }
+    }, 5000).unref();
+  };
+
+  const stopAndWait = async (timeoutMs = 8000): Promise<void> => {
+    if (child.pid === undefined || exited) return;
+    const gone = new Promise<void>((res) => {
+      if (exited) return res();
+      child.once('exit', () => res());
+    });
+    try {
+      process.kill(-child.pid, 'SIGTERM');
+    } catch {
+      /* group already gone */
+    }
+    const termDeadline = new Promise<'timeout'>((res) =>
+      setTimeout(() => res('timeout'), Math.min(timeoutMs, 5000)).unref(),
+    );
+    if ((await Promise.race([gone.then(() => 'exited' as const), termDeadline])) === 'timeout') {
+      try {
+        process.kill(-child.pid, 'SIGKILL');
+      } catch {
+        /* already gone */
+      }
+      await Promise.race([
+        gone,
+        new Promise<void>((res) => setTimeout(res, Math.max(timeoutMs - 5000, 1000)).unref()),
+      ]);
+    }
+  };
+
+  return { stop, stopAndWait };
 }
 
 /** Boot THIS worktree's app server (dev or preview) on a per-run ephemeral
@@ -271,21 +352,7 @@ export async function bootOwnAppServer(opts: {
     );
   });
 
-  const stop = () => {
-    if (child.pid === undefined) return;
-    try {
-      process.kill(-child.pid, 'SIGTERM');
-    } catch {
-      /* group already gone */
-    }
-    setTimeout(() => {
-      try {
-        if (child.pid !== undefined) process.kill(-child.pid, 'SIGKILL');
-      } catch {
-        /* already gone */
-      }
-    }, 5000).unref();
-  };
+  const { stop, stopAndWait } = createGroupStopper(child);
 
   // Wait for HTTP, bounded. Any HTTP status counts as "up" (the beta gate 401s).
   const deadline = Date.now() + timeoutMs;
@@ -324,7 +391,7 @@ export async function bootOwnAppServer(opts: {
   console.log(
     `[${context}] own ${mode} server verified: ${url} serves ${identity.root} (commit ${identity.commit.slice(0, 12)})`,
   );
-  return { url, port, mode, identity, child, logFile, stop };
+  return { url, port, mode, identity, child, logFile, stop, stopAndWait };
 }
 
 function tail(file: string, lines: number): string {
