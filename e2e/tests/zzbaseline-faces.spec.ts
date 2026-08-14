@@ -74,11 +74,12 @@ const SLOW_RENDER = process.env.E2E_SWIFTSHADER === '1' || !!process.env.CI;
 // ── THE BUDGET IS PER-FACE AND SCALES WITH THAT FACE'S CELL COUNT ──
 //
 // This sweep's cost is DOMINATED by the per-cell operability loop: every cell
-// costs a `scrollIntoViewIfNeeded` + a `boundingBox` + a handful of CDP input
-// dispatches + a graph poll, against a live SvelteFlow rack whose video zone is
-// being software-rasterized the whole time. So a face's wall-clock is
-// essentially `fixed boot/spawn/dock + k × cells`, and the flat 30s default was
-// a budget for the SMALLEST face applied to the LARGEST one.
+// costs a `scrollIntoViewIfNeeded` + a `boundingBox` + ~11 CDP input dispatches
+// (`mouse.move`/`down`/`move{steps:8}`/`up`) + a graph poll — ~14 protocol
+// round-trips EACH, against a live SvelteFlow rack whose video zone is being
+// software-rasterized the whole time. So a face's wall-clock is essentially
+// `fixed boot/spawn/dock + k × cells`, and the flat 30s default was a budget
+// for the SMALLEST face applied to the LARGEST one.
 //
 // Measured (this worktree, warm dev server, 1 worker):
 //   real GPU     ≈ 1.2s + 0.12s/cell   (cloudseed's 46 cells → 6.7s)
@@ -105,75 +106,6 @@ const SLOW_RENDER = process.env.E2E_SWIFTSHADER === '1' || !!process.env.CI;
 // never flat; grow failure bounds only — no assertion or window below moves.
 const FACE_FIXED_MS = SLOW_RENDER ? 45_000 : 30_000;
 const FACE_PER_CELL_MS = SLOW_RENDER ? 1_800 : 600;
-
-// ── WHY THE MODEL DID NOT MOVE WHEN wavesculpt BLEW IT (#1454) ──────────────
-//
-// wavesculpt is 81 cells, 1.65× the next-largest face, and it timed out on CI
-// at exactly `45 000 + 1 800 × 81 = 190 800ms` — which reads as "the per-cell
-// constant is too small" and was NOT that. The numbers below come from the blob
-// reports of three runs of the same branch, and they are recorded here because
-// the wrong reading is the natural one.
-//
-//   * run 31442166517 (GREEN, 129 267ms): 81 cells, per-cell median 1 490ms,
-//     mean 1 500, max 2 241, fixed phase 7.7s. A flat profile that FITS the
-//     model — `7.7s + 1.5s × 81 = 129s`, which is what it measured.
-//   * runs 31445671865 / 31448195594 (RED, both 196 000ms): the same 81 cells,
-//     the same ~1.4s steady state — with the FIRST ~17 cells at 3.7–8.0s each,
-//     ≈100s of front-loaded cost that the green run does not have at all.
-//   * the red runs are the first two AFTER `8ad045c9`, which fixed
-//     "wavesculpt's video_out was SOLID BLACK under ?shell=1". Before it the
-//     shell installed no frame drawer, so the dock's video pipeline painted
-//     `fillRect` black and cost nothing. After it, the module genuinely renders
-//     — on CI, into SwiftShader. The face did not get bigger; it started
-//     DRAWING. That is "the result is genuinely different here", not "the
-//     runner is slower here", and the two need opposite fixes (CLAUDE.md).
-//   * and the last cell of run 31448195594 (`wall6_distort`, #81 of 81, reached
-//     at t+168.4s — every other cell already driven) then sat in ONE
-//     `mouse.move` for 22.4s without returning, against a distribution over all
-//     486 cells that run drove of median 1 291ms / p90 2 917 / max 7 974.
-//
-// ⚠ SO THE RESPONSE IS TO DO LESS WORK, NOT TO BUY MORE TIME. This shard is
-// already the one guarded by ci.yml's `--global-timeout 900000`, it measured
-// 749s green, and wavesculpt alone was eating 21 % of the cap — a bigger
-// per-cell constant would have turned a red test into a red SHARD. `dragKnob`
-// and `openTabFor` below each got cheaper by an amount measured on this face
-// (−27 % and −28 % of the drive loop), which is worth more than a constant
-// because every face in the sweep is paid the same discount.
-//
-// ⚠ AND NO PER-CELL STALL BOUND, deliberately — it was written, measured and
-// REMOVED. A rolling `elapsed + 30s` deadline names a hung cell beautifully and
-// costs the shard nothing on the green path, but it is a NEW WAY TO GO RED
-// under starvation: on a local box with macOS `mediaanalysisd` at 133 % it
-// tripped on `grn_color`, a cell whose measured cost is 140ms. Trading a rare
-// aggregate timeout for a per-cell one that CPU contention can fire is the
-// flake trade this repo does not take. What is kept is the DIAGNOSIS
-// (`driveProgress`) with no new gate.
-
-/**
- * What the per-cell loop had reached when the current test ended — printed ONLY
- * when it did not pass.
- *
- * ⚠ A TIMEOUT CARRIES NO ASSERTION MESSAGE, which is the whole reason this
- * exists. Every other failure in this file names its cell in an `expect`
- * message; a timeout names a line of Playwright's own API and leaves "how far
- * did it get" and "was it progressing" indistinguishable from the output. The
- * red run above needed the blob report's step stream to answer either.
- *
- * Module scope is safe: a worker runs one test at a time, and `afterEach`
- * clears it.
- */
-let driveProgress: string | null = null;
-
-test.afterEach(({}, testInfo) => {
-  const progress = driveProgress;
-  driveProgress = null;
-  // ⚠ SILENT ON GREEN. A per-cell trace on every passing row would bury the one
-  // run that needs reading, and the blob report already carries the step stream
-  // for anyone who wants the full profile.
-  if (!progress || testInfo.status === testInfo.expectedStatus) return;
-  testInfo.annotations.push({ type: 'drive-progress', description: progress });
-  console.log(`[faces-parity] ${progress}`);
-});
 
 interface SpecParam {
   id: string;
@@ -458,38 +390,14 @@ async function renderedCells(dockShell: Locator): Promise<RenderedCell[]> {
  * Verifying the tab actually TOOK matters: a rail that renders but does not
  * switch would leave the cell hidden and the failure would surface as a
  * confusing `toBeVisible` timeout on the control rather than on the tab.
- *
- * ⚠ IT ASKS THE DOM ONCE PER BAND, NOT ONCE PER CELL, and `settled` is what
- * carries that. The unmemoised version paid a `count()` AND a `getAttribute()`
- * for every cell, which on wavesculpt is 162 protocol round-trips to perform
- * EIGHT switches. Measured locally under `E2E_SWIFTSHADER=1`: 4 850ms of a
- * 17 612ms drive loop, 28 % of it, spent re-asking a question whose answer it
- * had already proven.
- *
- * The memo is sound because BOTH inputs are pinned for the length of the loop:
- * the rail's roster is `dockTabPlan(dockFacePlan(def))`, derived from the DEF
- * and so untouched by anything a cell writes, and the selection is
- * `requestedTab`, a `$state` in DockFullView that only a tab click or its
- * arrow-key handler assigns. Neither can move under a param commit, so "which
- * band is showing" can only change when this function changes it.
- *
- * Returns the band that is now showing, which the caller threads back in. Any
- * face whose bands are NOT a rail returns `null` every time and re-asks once
- * per band — cheap, and it keeps the no-rail path identical to the rail path.
  */
-async function openTabFor(
-  page: Page,
-  cell: RenderedCell,
-  settled: string | null,
-): Promise<string | null> {
-  if (!cell.page || cell.page === settled) return settled;
+async function openTabFor(page: Page, cell: RenderedCell): Promise<void> {
+  if (!cell.page) return;
   const tab = page.getByTestId('dock-full-view').getByTestId(`faceplate-tab-${cell.page}`);
-  if ((await tab.count()) === 0) return null; // untabbed face — one scrolling column
-  if ((await tab.getAttribute('aria-selected')) !== 'true') {
-    await tab.click();
-    await expect(tab, `tab '${cell.page}' activates`).toHaveAttribute('aria-selected', 'true');
-  }
-  return cell.page;
+  if ((await tab.count()) === 0) return; // untabbed face — one scrolling column
+  if ((await tab.getAttribute('aria-selected')) === 'true') return;
+  await tab.click();
+  await expect(tab, `tab '${cell.page}' activates`).toHaveAttribute('aria-selected', 'true');
 }
 
 /**
@@ -528,29 +436,9 @@ async function dragKnob(page: Page, knob: Locator, p: SpecParam, current: number
   if (up && cy - travel < 8) up = false;
   else if (!up && cy + travel > vh - 8) up = true;
 
-  // ⚠ TWO SAMPLES, NOT EIGHT — and the reason is the SAME MAIN THREAD, not
-  // protocol chatter. All three draggable primitives derive their value from an
-  // ABSOLUTE origin captured at pointerdown (`KnobConic`/`Fader`: `dy = startY -
-  // e.clientY`; `XyPad`: the pointer's position in the box) and `pointerup`
-  // calls `dragCommit.flush()`, so N intermediate samples commit EXACTLY the
-  // value one sample commits. What they add is N CDP dispatches AND up to N
-  // rAF-coalesced graph writes — and a graph write is a Yjs update → a fresh
-  // PatchSnapshot → the audio reconciler + every Canvas `$derived`
-  // (drag-commit.ts's own header documents that cascade). The next input
-  // dispatch queues behind all of it.
-  //
-  // MEASURED, CI blob report (run 31448195594): a single `steps: 8` move cost
-  // 2.1–2.7s on the software renderer. Locally under `E2E_SWIFTSHADER=1`,
-  // wavesculpt's 81-cell drive loop went 23 980ms → 17 612ms (−27 %) on this
-  // change alone, with the same 81 cells asserted the same way.
-  //
-  // Kept at 2 rather than Playwright's default 1 so the gesture still delivers
-  // an INTERMEDIATE position — a control that reacted only to the final move
-  // would be indistinguishable from a correct one at 1, and that is a distinction
-  // this gate should keep the ability to make.
   await page.mouse.move(cx, cy);
   await page.mouse.down();
-  await page.mouse.move(cx, up ? cy - travel : cy + travel, { steps: 2 });
+  await page.mouse.move(cx, up ? cy - travel : cy + travel, { steps: 8 });
   await page.mouse.up();
 }
 
@@ -1084,12 +972,6 @@ test.describe('faces render-parity: every STRICT_FACES dock full-view carries th
       // Stage 1 of the derived budget (see FACE_FIXED_MS): covers boot + spawn
       // + dock open + the parity reads, i.e. everything before the cell count
       // is even knowable.
-      //
-      // `startedAt` is the origin the ROLLING bound below does its arithmetic
-      // against, because `test.setTimeout(n)` means "n from the moment the test
-      // started" — not "n from now". Taken on the first line so the two origins
-      // differ by the fixture setup only.
-      const startedAt = Date.now();
       test.setTimeout(FACE_FIXED_MS);
       await gotoShell(page);
       await spawnPatch(page, [{ id: 'm', type, position: { x: 460, y: 240 } }]);
@@ -1145,29 +1027,12 @@ test.describe('faces render-parity: every STRICT_FACES dock full-view carries th
       // start, so this SUPERSEDES stage 1 rather than stacking on it). The
       // per-cell loop below is the whole cost — a 46-cell reverb gets ~7× the
       // driving budget of a 2-cell VCA because it does ~7× the driving.
-      const ceilingMs = FACE_FIXED_MS + FACE_PER_CELL_MS * cells.length;
-      test.setTimeout(ceilingMs);
+      test.setTimeout(FACE_FIXED_MS + FACE_PER_CELL_MS * cells.length);
 
-      let settledBand: string | null = null;
-      for (const [i, cell] of cells.entries()) {
-        // Restated before EVERY cell, so whatever the test dies inside, the
-        // record already names it. Costs one string per cell and nothing on the
-        // wire; read only when the test does not pass (see `driveProgress`).
-        driveProgress =
-          `${type}: STOPPED on cell ${i + 1}/${cells.length} — '${cell.key}' ` +
-          `(${cell.kind}/${cell.control}, band '${cell.page ?? '—'}'), ${i} cell(s) already ` +
-          `driven, ${Date.now() - startedAt}ms into a ${ceilingMs}ms budget ` +
-          `(${FACE_FIXED_MS} + ${FACE_PER_CELL_MS}×${cells.length}). ` +
-          `⚠ READ THE TWO NUMBERS TOGETHER: a cell named EARLY in the list with the ` +
-          `elapsed near the budget is a STALL — one interaction stopped returning, and the ` +
-          `cells after it never ran. A cell near ${cells.length}/${cells.length} with the ` +
-          `elapsed near the budget is PACING — the whole face got slower and the model is ` +
-          `the thing to re-measure. They look identical in a bare timeout and need ` +
-          `opposite fixes.`;
-        settledBand = await openTabFor(page, cell, settledBand);
+      for (const cell of cells) {
+        await openTabFor(page, cell);
         await driveCell(page, dockShell, 'm', spec, cell);
       }
-      driveProgress = null;
     });
   }
 });
