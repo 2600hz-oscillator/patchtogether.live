@@ -1,3 +1,15 @@
+<script lang="ts" module>
+  // No-provider fallback identity — PER TAB, deliberately NOT per component
+  // instance (#1590). resolveLocalUserId() documents "a stable random per-tab
+  // id when no provider is attached", but this const used to live in INSTANCE
+  // scope, so every card remount minted a NEW identity — and since the roster
+  // is keyed by user id, a re-expanded card could not find its own seat
+  // (mySlot came back null over a running local game). Module scope makes the
+  // fallback what the doc always claimed it was. With a provider attached the
+  // awareness `user.id` wins and this is never read.
+  const randomLocalId = `local-${Math.random().toString(36).slice(2, 10)}`;
+</script>
+
 <script lang="ts">
   // DoomCard — UI for the single-instance interactive DOOM video module.
   //
@@ -113,11 +125,30 @@
   import ModuleTitle from './ModuleTitle.svelte';
   import NativeFillToggle from './NativeFillToggle.svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
+  import { nodeDoomSession } from './node-doom-session-registry.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
   const engineCtx = useEngine();
   const providerCtx = useProvider();
+
+  // ── NODE-OWNED MULTIPLAYER SESSION (#1590, from the #1583 audit) ──────────
+  // The netcode instance, the lockstep transport + cursors, and the launch
+  // state (`launched` / pending / last-applied GAMESTART) live in the
+  // node-keyed registry, NOT in this component. The card ADOPTS and READS;
+  // it never creates-and-destroys on its own lifecycle. Rationale: a card
+  // unmount (collapse, dock LRU eviction, ESC, M/E, navigation) used to run
+  // `stopNetcode()` + kill the rAF pump, which mid-netgame froze EVERY peer —
+  // the pump was the only thing feeding the lockstep barrier, and a starved
+  // barrier PAUSES by design (#345 consistency-abort semantics). `sess` is the
+  // reactive session record; the registry's own frame loop keeps this mount's
+  // session pump running after the card is gone, until a newer mount adopts.
+  // The initial-value capture of `id` is deliberate: a SvelteFlow node's id is
+  // immutable for the card's life (the node IS its id), and `$derived` is not
+  // an option because session() auto-vivifies (a $state write inside a derived
+  // is a state_unsafe_mutation error).
+  // svelte-ignore state_referenced_locally
+  const sess = nodeDoomSession.session(id);
 
   // Per-source fit/fill: DOOM's viewport is fixed 8:5; the Native badge never
   // matches the output, so the fit/fill toggle is always shown (letterbox by
@@ -172,9 +203,9 @@
   let pending = $state<DoomRoster>({});      // node.data.pending (late joiners)
   let mySlot = $state<number | null>(null);  // this peer's ACTIVE slot, or null
   let myPendingSlot = $state<number | null>(null); // reserved-but-not-live slot
-  let netStarted = $state(false);           // our DoomNetcode is running
-  let isNetArbiter = $state(false);         // lex-min player == arbiter
-  let netcode: DoomNetcode | null = null;
+  // `sess.netStarted` / `sess.isNetArbiter` / `sess.netcode` — NODE-owned
+  // (#1590): the running DoomNetcode and its status live in the registry so a
+  // card unmount cannot tear down the transport mid-netgame.
   // ---- P1: true deterministic lockstep ----
   //
   // When a >1-player netgame launches, every peer runs a TRUE shared simulation:
@@ -185,20 +216,12 @@
   // awareness overlay + the #339 reinject band-aid on the lockstep path, so
   // monsters/barrels/health/positions are byte-identical across peers. A lone
   // (numPlayers==1) game leaves lockstep OFF → single-player is byte-identical.
-  let lockstep: LockstepTransport | null = null;
-  let lockstepActive = $state(false);
-  // The next consolidated tic we still need to deliver (== engine recvtic).
-  let lockstepNextTic = 0;
-  // Highest local tic we've appended to the shared log (gap-free append cursor).
-  let lockstepAppendedThru = -1;
-  // Launch generation of the active lockstep game (== launchId). Namespaces the
-  // shared log + the per-peer consolidated-tic awareness floor field so a
-  // relaunch starts fresh (issue #348).
-  let lockstepGeneration = 0;
-  // Throttle the barrier-floor prune so we delete a stale prefix ~1–2×/sec, not
-  // every rAF (deleting an empty prefix is a no-op, but recomputing the floor +
-  // scanning the log each frame is wasted work). Wall-clock millis of last prune.
-  let lockstepLastPruneMs = 0;
+  // `sess.lockstep` + every cursor (`lockstepNextTic` / `lockstepAppendedThru`
+  // / `lockstepGeneration` / `lockstepLastPruneMs`) — NODE-owned (#1590). The
+  // transport and its gap-free append cursor MUST survive a card remount: a
+  // reset cursor would re-append already-consolidated tics (CRDT first-write-
+  // wins makes them dead weight) while the CURRENT tic goes unfed — the exact
+  // barrier starvation the registry exists to prevent.
   // ---- Slice 4: New Game dialog + Launch state ----
   //
   // The arbiter (rack host = lex-min member = player 0) picks mode/skill/
@@ -212,7 +235,9 @@
   let skill = $state(1);     // 0..4 (ITYTD..Nightmare); default skill 2 = idx 1
   let episode = $state(1);   // 1..3 (shareware = episode 1 only)
   let mapNum = $state(1);    // 1..9
-  let launched = $state(false);           // a netgame has been launched
+  // `sess.launched` — NODE-owned (#1590): "a netgame has been launched" is a
+  // property of the SESSION, not of a mount. As card $state it was lost on
+  // collapse, so a remounted card came up idle over a running game.
   let gamestate = $state<number>(-1);     // polled DOOM gamestate_t (GS_LEVEL=0)
   // ---- Explicit multiplayer-session mode (the operator's "Host Multiplayer"
   //      vs "Single Player" choice) ----
@@ -280,7 +305,7 @@
    *  explicit session-mode transitions. */
   function refreshMpLiveAsHost(): void {
     if (!isHost) return;
-    const next = computeMpLive({ mpMode, launched, gamestate });
+    const next = computeMpLive({ mpMode, launched: sess.launched, gamestate });
     mpLive = next;
     writeNodeMpLive(next);
   }
@@ -337,7 +362,7 @@
   /** True while a level is actively running (so a join goes to PENDING + the
    *  New Game dialog is locked). Drives the late-join routing + dialog lock. */
   function isGameInProgress(): boolean {
-    return launched && gamestate === GS_LEVEL;
+    return sess.launched && gamestate === GS_LEVEL;
   }
 
   /** Build the net_gamesettings_t-equivalent from the dialog selections.
@@ -376,9 +401,9 @@
     if (mySlot === null) return;          // arbiter must be a player
     seatPendingAsArbiter();               // promote late joiners into this map
     const settings = buildSettings();     // numPlayers now includes them
-    if (netcode) {
+    if (sess.netcode) {
       // Multiplayer: broadcast → every joined peer (incl. arbiter) starts.
-      netcode.broadcastGameStart(settings);
+      sess.netcode.broadcastGameStart(settings);
     } else {
       // Lone peer (single-player, no netcode): start directly.
       applyGameStart({ launchId: 1, settings });
@@ -409,8 +434,9 @@
    *  AND the C side actually entered GS_LEVEL. This is the fix for the
    *  "host stuck on the title/attract menu after Launch" bug: previously
    *  startNetGame silently no-op'd when the runtime wasn't ready and nothing
-   *  ever re-applied it, so the host's WASM kept running the demo loop. */
-  let pendingLaunch: GameStartEnvelope | null = null;
+   *  ever re-applied it, so the host's WASM kept running the demo loop.
+   *  NODE-owned as `sess.pendingLaunch` (#1590): the retry must survive a
+   *  card remount or a collapse in the load window drops the launch. */
 
   /** Apply a launch on THIS peer: start the WASM netgame at our own slot.
    *
@@ -442,7 +468,7 @@
       // for "guest renders a spectator mirror instead of becoming active P2".
       // A genuine spectator never gains a slot, so the stash simply never
       // fires for them. pruneRoster clears the stash if we're dropped.
-      pendingLaunch = env;
+      sess.pendingLaunch = env;
       if (loadStatus === 'idle') void tryLoad();
       return;
     }
@@ -452,7 +478,12 @@
     mapNum = env.settings.map;
     episode = env.settings.episode;
     skill = env.settings.skill;
-    launched = true;
+    sess.launched = true;
+    // The last APPLIED launch — what a remounting card restores its dialog
+    // mirrors from (#1590; the arbiter's hot-drop relaunch rebuilds settings
+    // from those mirrors, so a remount that reset them to defaults would
+    // relaunch the WRONG MAP).
+    sess.lastLaunch = env;
 
     const extras = getExtras();
     const runtime = extras?.getRuntime();
@@ -460,7 +491,7 @@
       // Runtime not ready — stash + retry from the render loop. Make sure the
       // WASM is actually loading (a peer whose slot synced before it clicked
       // anything may not have started a load yet).
-      pendingLaunch = env;
+      sess.pendingLaunch = env;
       if (loadStatus === 'idle') void tryLoad();
       return;
     }
@@ -479,9 +510,9 @@
     // loaded immediately. If for any reason it didn't take (gamestate still on
     // the demo screen), keep the pending launch so the render loop re-applies.
     if (extras.getGameState() === GS_LEVEL) {
-      pendingLaunch = null;
+      sess.pendingLaunch = null;
     } else {
-      pendingLaunch = env;
+      sess.pendingLaunch = env;
     }
   }
 
@@ -495,9 +526,9 @@
     if (numPlayers <= 1) {
       extras.setLockstep(false);
       extras.setInputDelay(0);
-      lockstep = null;
-      lockstepActive = false;
-      clearConsolidatedTicAwareness(lockstepGeneration);
+      sess.lockstep = null;
+      sess.lockstepActive = false;
+      clearConsolidatedTicAwareness(sess.lockstepGeneration);
       return;
     }
     extras.setLockstep(true);
@@ -510,21 +541,21 @@
     extras.setInputDelay(DEFAULT_INPUT_DELAY_TICS);
     // A relaunch uses a fresh generation; clear our stale floor field from the
     // PREVIOUS generation so it can't linger in awareness (issue #348).
-    if (generation !== lockstepGeneration) clearConsolidatedTicAwareness(lockstepGeneration);
-    lockstep = new LockstepTransport({ doc: ydoc, moduleId: id, slot, numPlayers, generation });
-    lockstepActive = true;
-    lockstepNextTic = 0;
-    lockstepAppendedThru = -1;
-    lockstepGeneration = generation;
-    lockstepLastPruneMs = 0;
+    if (generation !== sess.lockstepGeneration) clearConsolidatedTicAwareness(sess.lockstepGeneration);
+    sess.lockstep = new LockstepTransport({ doc: ydoc, moduleId: id, slot, numPlayers, generation });
+    sess.lockstepActive = true;
+    sess.lockstepNextTic = 0;
+    sess.lockstepAppendedThru = -1;
+    sess.lockstepGeneration = generation;
+    sess.lockstepLastPruneMs = 0;
   }
 
   /** Render-loop hook: if a launch is pending (runtime wasn't ready when the
    *  GAMESTART arrived), re-attempt it now. Cleared by applyGameStart once the
    *  C side reports GS_LEVEL. Idempotent + cheap (a couple of ccalls). */
   function retryPendingLaunchIfNeeded(): void {
-    if (!pendingLaunch) return;
-    applyGameStart(pendingLaunch);
+    if (!sess.pendingLaunch) return;
+    applyGameStart(sess.pendingLaunch);
   }
   /** Slice 5: inject a remote peer's ticcmd into our runtime so its marine
    *  moves in our world. Ignores our own slot (the netcode already filters
@@ -560,14 +591,14 @@
    *  worlds. Only meaningful for a joined player running a launched netgame
    *  with active peers. */
   function broadcastLocalTiccmd(): void {
-    if (!netcode) return;
+    if (!sess.netcode) return;
     if (mySlot === null) return;
-    if (!launched) return;
+    if (!sess.launched) return;
     const extras = getExtras();
     if (!extras) return;
     const cmd = extras.readLocalTiccmd();
     if (!cmd) return;
-    netcode.broadcastLocalTiccmd(mySlot, cmd);
+    sess.netcode.broadcastLocalTiccmd(mySlot, cmd);
   }
 
   /** Approach A — lockstep gap-fill. Each tic, re-apply every present remote
@@ -576,10 +607,10 @@
    *  applyRemoteTiccmd → injectRemoteTiccmd, refreshing the C overlay table.
    *  Only meaningful for a joined player running a launched netgame. */
   function reinjectRemoteTiccmds(): void {
-    if (!netcode) return;
+    if (!sess.netcode) return;
     if (mySlot === null) return;
-    if (!launched) return;
-    netcode.reinjectKnownTiccmds();
+    if (!sess.launched) return;
+    sess.netcode.reinjectKnownTiccmds();
   }
 
   /** P1 true-lockstep pump (replaces broadcast + reinject on the lockstep path).
@@ -591,8 +622,9 @@
    *  missing. (3) The arbiter prunes consumed log entries. The sim never
    *  free-runs and never busy-waits. */
   function pumpLockstep(): void {
-    if (!lockstepActive || !lockstep) return;
-    if (mySlot === null || !launched) return;
+    const lockstep = sess.lockstep;
+    if (!sess.lockstepActive || !lockstep) return;
+    if (mySlot === null || !sess.launched) return;
     const extras = getExtras();
     if (!extras) return;
 
@@ -604,18 +636,18 @@
     // consolidates). Each entry is tagged with its engine tic so every peer
     // agrees which input belongs to which tic.
     const maketic = extras.getMaketic();
-    for (let t = lockstepAppendedThru + 1; t <= maketic - 1; t++) {
+    for (let t = sess.lockstepAppendedThru + 1; t <= maketic - 1; t++) {
       const c = extras.readLocalTiccmdAt(t);
       if (!c) break; // fell out of the ring (shouldn't happen at our cadence)
       lockstep.appendLocal(t, c);
-      lockstepAppendedThru = t;
+      sess.lockstepAppendedThru = t;
     }
 
     // (2) Drain ready TicSets in order, starting at the engine's recvtic. Each
     // delivered set bumps recvtic in the WASM, releasing one more tic for the
     // next runTic to advance.
-    lockstepNextTic = extras.getRecvtic();
-    lockstepNextTic = lockstep.drainReady(lockstepNextTic, (tic, numPlayers, set) => {
+    sess.lockstepNextTic = extras.getRecvtic();
+    sess.lockstepNextTic = lockstep.drainReady(sess.lockstepNextTic, (tic, numPlayers, set) => {
       extras.receiveTicSet(tic, numPlayers, set);
     });
 
@@ -632,10 +664,10 @@
     // floor back; a hopelessly-wedged peer trips the transport's hard cap +
     // must resync via synchronized restart). Throttled to ~2/sec — pruning a
     // consumed prefix doesn't change what any peer simulates (determinism kept).
-    if (isNetArbiter) {
+    if (sess.isNetArbiter) {
       const now = Date.now();
-      if (now - lockstepLastPruneMs >= LOCKSTEP_PRUNE_INTERVAL_MS) {
-        lockstepLastPruneMs = now;
+      if (now - sess.lockstepLastPruneMs >= LOCKSTEP_PRUNE_INTERVAL_MS) {
+        sess.lockstepLastPruneMs = now;
         const floor = readBarrierFloor();
         lockstep.pruneBelowFloor(floor);
       }
@@ -650,14 +682,14 @@
    *  state, keyed by module + launch generation. Idempotent-cheap: skips the
    *  write when the value is unchanged so an idle/paused peer doesn't churn
    *  awareness. Read by the arbiter via readBarrierFloor (issue #348). */
-  let lastPublishedConsolidatedTic = -1;
+  // (dedupe cursor NODE-owned as `sess.lastPublishedConsolidatedTic`, #1590)
   function publishConsolidatedTic(recvtic: number): void {
     const provider = providerCtx.get();
     const aw = provider?.awareness;
     if (!aw) return;
-    if (recvtic === lastPublishedConsolidatedTic) return;
-    lastPublishedConsolidatedTic = recvtic;
-    aw.setLocalStateField(consolidatedTicFieldFor(id, lockstepGeneration), { slot: mySlot, t: recvtic });
+    if (recvtic === sess.lastPublishedConsolidatedTic) return;
+    sess.lastPublishedConsolidatedTic = recvtic;
+    aw.setLocalStateField(consolidatedTicFieldFor(id, sess.lockstepGeneration), { slot: mySlot, t: recvtic });
   }
 
   /** Clear our published consolidated-tic field for `generation` (on relaunch /
@@ -667,7 +699,7 @@
     const aw = provider?.awareness;
     if (!aw) return;
     aw.setLocalStateField(consolidatedTicFieldFor(id, generation), null);
-    lastPublishedConsolidatedTic = -1;
+    sess.lastPublishedConsolidatedTic = -1;
   }
 
   /** Read every live peer's published consolidated tic from awareness and
@@ -679,7 +711,7 @@
     const aw = provider?.awareness;
     if (!aw) return 0;
     const numPlayers = Math.max(1, rosterSize(roster));
-    const field = consolidatedTicFieldFor(id, lockstepGeneration);
+    const field = consolidatedTicFieldFor(id, sess.lockstepGeneration);
     const bySlot: (number | undefined)[] = new Array(numPlayers).fill(undefined);
     for (const [, state] of aw.getStates()) {
       const v = (state as Record<string, unknown>)?.[field] as
@@ -700,7 +732,6 @@
    *  provider's awareness `user.id` field (set by /r/[id]'s presence
    *  init OR by tests calling __setAwarenessUser). Falls back to a
    *  stable random per-tab id when no provider is attached. */
-  const randomLocalId = `local-${Math.random().toString(36).slice(2, 10)}`;
   function resolveLocalUserId(): string {
     const provider = providerCtx.get();
     const aw = provider?.awareness;
@@ -993,7 +1024,7 @@
       memberCount: memberIds.length,
       outstandingRequests: outstandingRequests.length,
       rosterSize: rosterSize(combinedRoster(cur)),
-      hostLaunched: launched,
+      hostLaunched: sess.launched,
     });
     if (!wantsMp) return; // solo rack with host on single, or nobody wants MP yet
     // Persist mpMode='multi' (once) so EVERY peer's Join affordance + lobby UI
@@ -1089,8 +1120,8 @@
     if (!isSessionArbiter()) return;
     if (mySlot === null) return;
     const settings = buildSettings(); // numPlayers now includes the joiner
-    if (netcode) {
-      netcode.broadcastGameStart(settings);
+    if (sess.netcode) {
+      sess.netcode.broadcastGameStart(settings);
     } else {
       applyGameStart({ launchId: Date.now(), settings });
     }
@@ -1100,7 +1131,7 @@
   // (b) there is more than one member in the rack. A lone player needs no
   // netcode — that is the single-player path, untouched. Idempotent.
   function startNetcodeIfNeeded(): void {
-    if (netStarted) return;
+    if (sess.netStarted) return;
     // Active players run netcode (play); pending late joiners run it too so
     // they receive the arbiter's next-map GAMESTART broadcast + are ready to
     // spawn the instant they're promoted. Pure spectators (no slot at all)
@@ -1112,42 +1143,46 @@
     const extras = getExtras();
     const runtime = extras?.getRuntime();
     if (!runtime) return;                    // wait until our WASM is loaded
-    netcode = new DoomNetcode({
+    // NODE-owned construction (#1590): the registry keeps this instance alive
+    // across card remounts (a second call adopts it rather than building a
+    // rival transport over the same awareness fields). The callbacks are
+    // TRAMPOLINES through the registry's CURRENT wiring — the instance
+    // outlives any one mount, so it must never capture one mount's closures.
+    nodeDoomSession.ensureNetcode(id, () => new DoomNetcode({
       provider,
       moduleId: id,
       localUserId: resolveLocalUserId(),
       runtime,
-      onArbiter: (isArb) => { isNetArbiter = isArb; },
+      onArbiter: (isArb) => { nodeDoomSession.dispatch(id).onArbiter(isArb); },
       // Slice 4: the arbiter's Launch broadcast lands here on EVERY joined
       // peer (arbiter included) → start our WASM netgame at our own slot.
-      onGameStart: (env) => { applyGameStart(env); },
+      onGameStart: (env) => { nodeDoomSession.dispatch(id).onGameStart(env); },
       // Slice 5: a remote peer's latest ticcmd → inject it into our sim so
       // that peer's marine moves in OUR world (cross-peer visibility).
-      onRemoteTiccmd: (env: TiccmdEnvelope) => { applyRemoteTiccmd(env); },
-    });
-    netcode.start();
-    netStarted = true;
-    isNetArbiter = netcode.isArbiter();
+      onRemoteTiccmd: (env: TiccmdEnvelope) => { nodeDoomSession.dispatch(id).onRemoteTiccmd(env); },
+    }));
   }
 
-  function stopNetcode(): void {
-    if (netcode) {
-      try { netcode.stop(); } catch { /* provider may be gone */ }
-      netcode = null;
-    }
-    netStarted = false;
-    isNetArbiter = false;
-    // P1: tear down the lockstep transport + disarm the engine barrier so a
-    // dropped/spectating peer doesn't keep a stale barrier armed.
+  /** USER-INTENT leave — this peer lost (or gave up) its seat: pruned from the
+   *  roster, dropped to spectator. Stops the node's netcode + forgets the
+   *  lockstep transport (registry), disarms the WASM barrier and clears our
+   *  published tic floor (issue #348).
+   *
+   *  ⚠ NEVER called from onDestroy. The pre-#1590 card ran exactly this body
+   *  as `stopNetcode()` on unmount, which mid-netgame tore down every peer
+   *  connection + unbound Module.PTNet and froze EVERY peer (#345
+   *  consistency-abort semantics). Card unmount is a VIEW event; leaving the
+   *  game is a USER event; only the latter may reach this. */
+  function leaveNetSession(): void {
+    const generation = sess.lockstepGeneration;
+    nodeDoomSession.leaveGame(id);
+    // P1: disarm the engine barrier so a dropped/spectating peer doesn't keep
+    // a stale barrier armed.
     const ex = getExtras();
     try { ex?.setLockstep(false); } catch { /* runtime may be gone */ }
-    lockstep = null;
-    lockstepActive = false;
-    lockstepNextTic = 0;
-    lockstepAppendedThru = -1;
     // Drop our consolidated-tic floor field so we don't pin a future floor at a
     // stale value after we've left the game (issue #348).
-    clearConsolidatedTicAwareness(lockstepGeneration);
+    clearConsolidatedTicAwareness(generation);
   }
 
   // Arbiter-side roster cleanup: when a player closes their tab they drop
@@ -1187,9 +1222,10 @@
     if (mySlot === null && myPendingSlot === null) {
       // We left / were pruned / are a pure spectator: drop netcode + any
       // stashed launch (we'll never become active, so there's nothing to
-      // re-apply).
-      pendingLaunch = null;
-      stopNetcode();
+      // re-apply). This is the USER-level leave — the one legitimate caller
+      // besides the graph sweep (#1590).
+      sess.pendingLaunch = null;
+      leaveNetSession();
     } else {
       // We're a player (active) OR a pending late joiner. Ensure our own WASM
       // is loading (a returning/late player whose slot is already in the
@@ -1201,8 +1237,8 @@
       // We just gained (or changed) an ACTIVE slot and a launch is stashed
       // (the GAMESTART beat the roster sync) → apply it now so this peer
       // actually enters the level as its own player instead of spectating.
-      if (mySlot !== null && mySlot !== prevSlot && pendingLaunch) {
-        applyGameStart(pendingLaunch);
+      if (mySlot !== null && mySlot !== prevSlot && sess.pendingLaunch) {
+        applyGameStart(sess.pendingLaunch);
       }
     }
   }
@@ -1705,8 +1741,67 @@
     }
   }
 
-  // ---- Card-side framebuffer render loop ----
+  // ---- The SESSION pump (NODE lifetime) + the card blit loop (CARD lifetime) ----
   //
+  // Pre-#1590 these were ONE card rAF, and its death on unmount was the
+  // multiplayer freeze: the pump is the only thing appending this peer's
+  // ticcmds to the shared lockstep log + draining TicSets into the WASM
+  // barrier, so a collapsed card starved every other peer's barrier within a
+  // tic (#345 consistency-abort semantics — the sims PAUSE, correctly, and
+  // never resume). The pump is now registered as the node session's wiring and
+  // driven by the registry's own frame loop, which survives the card. Only the
+  // <canvas> blit below stays on a card rAF — a card that does not exist has
+  // nothing to paint.
+  /** One SESSION frame: gamestate poll + pending-launch retry + the lockstep
+   *  pump (or the non-lockstep broadcast/gap-fill) + mpLive + keyboard-inert
+   *  reapplication. Driven by nodeDoomSession's frame loop — NOT by a card
+   *  rAF — so it keeps running while the card is collapsed. */
+  function sessionPump(): void {
+    // Slice 4: poll the live DOOM gamestate so the New Game dialog can
+    // lock during play + re-open at intermission (GS_INTERMISSION) for the
+    // arbiter to pick the next map. Only meaningful once a netgame launched
+    // + our own WASM is running (a spectator has no runtime).
+    if (sess.launched) {
+      // Host-stuck-on-menu fix: if a launch arrived before our WASM was
+      // ready (the arbiter self-fires synchronously inside Launch), keep
+      // retrying until the C side enters GS_LEVEL.
+      retryPendingLaunchIfNeeded();
+      const ex = getExtras();
+      if (ex) gamestate = ex.getGameState();
+      if (sess.lockstepActive) {
+        // P1 TRUE LOCKSTEP path: append our per-tic ticcmd to the shared
+        // ordered log + drain complete consolidated TicSets into the WASM
+        // barrier. The sim advances only over complete TicSets and pauses
+        // (never spins) when starved — shared state, not an input overlay.
+        // Replaces the slice-5 broadcast + #339 reinject band-aid here.
+        pumpLockstep();
+      } else {
+        // Non-lockstep (lone player / legacy free-run): slice-5 last-value
+        // awareness overlay + #339 gap-fill. Kept so single-player + any
+        // non-lockstep usage is unchanged.
+        broadcastLocalTiccmd();
+        reinjectRemoteTiccmds();
+      }
+    }
+    // Round 5: the host publishes the "MP is live" flag every frame (the
+    // write is a no-op unless it actually flipped) so a guest's Join button
+    // enables the instant the host enters GS_LEVEL and disables at
+    // intermission / game end. Cheap: one node read + an early-out.
+    refreshMpLiveAsHost();
+    // Bug 3 ROBUSTNESS: re-push the keyboard-inert state into extras every
+    // frame (idempotent — extras/runtime no-op on no-change). The
+    // cvGatePatched $effect (above) fires the moment the derived flips,
+    // but its `getExtras()?.setKeyboardInert(...)` call is a no-op if
+    // extras is null at that instant — and the engine reconciler may
+    // materialize the doom node a beat AFTER the edge syncs (the order is
+    // not guaranteed under CI's slower scheduling). Without this rAF
+    // reapplication, the runtime keeps `keyboardInert=false` despite the
+    // CV gate being patched, and the e2e #3 test fails on the
+    // `isKeyboardInert()` read. Cheap: one map lookup + a boolean compare
+    // when no change (the extras + runtime setters both early-out).
+    getExtras()?.setKeyboardInert(cvGatePatched);
+  }
+
   // The video engine renders DOOM into its FBO every frame; this card
   // mirrors the FBO contents into the visible <canvas> via a per-card
   // rAF blit. Same pattern as VideoOutCard but the source is the DOOM
@@ -1715,52 +1810,9 @@
   // already in CPU memory via the runtime's HEAPU8 view) so the card
   // doesn't have to drive a GL pull from the engine.
   let raf: number | null = null;
-  function startRenderLoop(): void {
+  function startBlitLoop(): void {
     if (raf !== null) return;
     function tick(): void {
-      // Slice 4: poll the live DOOM gamestate so the New Game dialog can
-      // lock during play + re-open at intermission (GS_INTERMISSION) for the
-      // arbiter to pick the next map. Only meaningful once a netgame launched
-      // + our own WASM is running (a spectator has no runtime).
-      if (launched) {
-        // Host-stuck-on-menu fix: if a launch arrived before our WASM was
-        // ready (the arbiter self-fires synchronously inside Launch), keep
-        // retrying until the C side enters GS_LEVEL.
-        retryPendingLaunchIfNeeded();
-        const ex = getExtras();
-        if (ex) gamestate = ex.getGameState();
-        if (lockstepActive) {
-          // P1 TRUE LOCKSTEP path: append our per-tic ticcmd to the shared
-          // ordered log + drain complete consolidated TicSets into the WASM
-          // barrier. The sim advances only over complete TicSets and pauses
-          // (never spins) when starved — shared state, not an input overlay.
-          // Replaces the slice-5 broadcast + #339 reinject band-aid here.
-          pumpLockstep();
-        } else {
-          // Non-lockstep (lone player / legacy free-run): slice-5 last-value
-          // awareness overlay + #339 gap-fill. Kept so single-player + any
-          // non-lockstep usage is unchanged.
-          broadcastLocalTiccmd();
-          reinjectRemoteTiccmds();
-        }
-      }
-      // Round 5: the host publishes the "MP is live" flag every frame (the
-      // write is a no-op unless it actually flipped) so a guest's Join button
-      // enables the instant the host enters GS_LEVEL and disables at
-      // intermission / game end. Cheap: one node read + an early-out.
-      refreshMpLiveAsHost();
-      // Bug 3 ROBUSTNESS: re-push the keyboard-inert state into extras every
-      // frame (idempotent — extras/runtime no-op on no-change). The
-      // cvGatePatched $effect (above) fires the moment the derived flips,
-      // but its `getExtras()?.setKeyboardInert(...)` call is a no-op if
-      // extras is null at that instant — and the engine reconciler may
-      // materialize the doom node a beat AFTER the edge syncs (the order is
-      // not guaranteed under CI's slower scheduling). Without this rAF
-      // reapplication, the runtime keeps `keyboardInert=false` despite the
-      // CV gate being patched, and the e2e #3 test fails on the
-      // `isKeyboardInert()` read. Cheap: one map lookup + a boolean compare
-      // when no change (the extras + runtime setters both early-out).
-      getExtras()?.setKeyboardInert(cvGatePatched);
       if (canvasEl) {
         const ctx2d = canvasEl.getContext('2d');
         if (ctx2d) {
@@ -1822,7 +1874,7 @@
     }
     raf = requestAnimationFrame(tick);
   }
-  function stopRenderLoop(): void {
+  function stopBlitLoop(): void {
     if (raf !== null) cancelAnimationFrame(raf);
     raf = null;
   }
@@ -1868,7 +1920,65 @@
 
   // ---- Mount / unmount ----
   onMount(() => {
-    startRenderLoop();
+    // NODE-OWNED SESSION adopt (#1590). Runs FIRST: it atomically replaces the
+    // previous mount's wiring (detaching THAT mount's awareness/nodes
+    // observers) with this mount's, while the netcode / lockstep / launch
+    // state carry over untouched — a re-expanded card adopts the RUNNING game.
+    // The attach* calls just below then install this mount's observers in the
+    // same synchronous body, so no pump frame can run against half-initialized
+    // mirrors.
+    nodeDoomSession.adopt(id, {
+      pump: sessionPump,
+      detach: () => { detachAwareness(); detachNodesObserver(); },
+      onArbiter: (isArb) => { sess.isNetArbiter = isArb; },
+      onGameStart: (env) => { applyGameStart(env); },
+      onRemoteTiccmd: (env) => { applyRemoteTiccmd(env); },
+      // Live engine-side readings for `__nodeDoomSession` — the probe must not
+      // be limited to the registry's opinion of itself. Units: engine tics
+      // (gametic/maketic/recvtic), DOOM gamestate_t ordinal, booleans.
+      probeExtras: () => {
+        const ex = getExtras();
+        const rt = ex?.getRuntime();
+        return {
+          runtimeInitialized: !!rt?.isInitialized(),
+          gametic: ex ? ex.getGametic() : -1,
+          maketic: ex ? ex.getMaketic() : -1,
+          recvtic: ex ? ex.getRecvtic() : -1,
+          gamestate: ex ? ex.getGameState() : -1,
+          // Is the C-side transport still bound? `netcode.stop()` deletes
+          // Module.PTNet — the exact unbinding the old unmount performed.
+          ptnetBound: !!(rt?.getModule() as { PTNet?: unknown } | null)?.PTNet,
+        };
+      },
+      // GRAPH-lifetime extras teardown (sweep only): disarm the WASM barrier +
+      // drop our published tic floor, mirroring what the old delete path did.
+      onSweep: () => {
+        try { getExtras()?.setLockstep(false); } catch { /* runtime may be gone */ }
+        clearConsolidatedTicAwareness(sess.lockstepGeneration);
+      },
+    });
+    // REMOUNT RECOVERY (#1590): a card mounting onto a live session must come
+    // up showing the RUNNING game, not a fresh idle card. The runtime is
+    // engine-owned and never died with the card, so if it is already
+    // initialized this mount starts 'ready' — the pre-fix card came up 'idle'
+    // over a running game and painted black behind a "Click to load" button.
+    if (loadStatus === 'idle' && getExtras()?.getRuntime()?.isInitialized()) {
+      loadStatus = 'ready';
+    }
+    // …and the dialog mirrors restore from the last APPLIED launch, so the
+    // arbiter's hot-drop relaunch (which rebuilds settings from these) cannot
+    // relaunch the wrong map after a collapse/expand cycle.
+    if (sess.lastLaunch) {
+      const s = sess.lastLaunch.settings;
+      mapNum = s.map;
+      episode = s.episode;
+      skill = s.skill;
+      mode = s.deathmatch === 1 ? 'deathmatch'
+        : s.deathmatch === 2 ? 'deathmatch-2.0'
+        : s.respawnMonsters ? 'survival'
+        : 'coop';
+    }
+    startBlitLoop();
     // Auto-attach awareness if a provider is present (multi-user rack);
     // single-user `/` canvas skips quietly.
     attachAwareness();
@@ -1961,7 +2071,7 @@
       },
       // P1 diagnostic: shared-log size (so a test can see whether both peers'
       // appends are landing in the SAME ordered log).
-      getLockstepLogSize: () => (lockstep ? lockstep.size() : -1),
+      getLockstepLogSize: () => (sess.lockstep ? sess.lockstep.size() : -1),
       getState: () => ({
         roster: { ...roster },
         // Slice 6: the pending (late-join) map + this peer's pending slot +
@@ -1971,8 +2081,8 @@
         mySlot,
         myPendingSlot,
         viewerStatus,
-        netStarted,
-        isNetArbiter,
+        netStarted: sess.netStarted,
+        isNetArbiter: sess.isNetArbiter,
         isHost,
         memberIds: [...memberIds],
         // Explicit session mode + the owner-id set used for host/P0 election,
@@ -1984,9 +2094,9 @@
         // 2-user e2e asserts a guest's Join is disabled until this is true.
         mpLive,
         ownerIds: resolveOwnerIds(),
-        netcodePeers: netcode ? netcode.debugStats().peers : [],
-        launched,
-        lockstepActive,
+        netcodePeers: sess.netcode ? sess.netcode.debugStats().peers : [],
+        launched: sess.launched,
+        lockstepActive: sess.lockstepActive,
         gamestate,
         // New Game dialog selections (the custom dropdowns write these). The
         // mouse-pick e2e asserts a non-default MODE/SKILL took effect by
@@ -2024,16 +2134,28 @@
   onDestroy(() => {
     const g = globalThis as unknown as { __doomCards?: Record<string, unknown> };
     if (g.__doomCards) delete g.__doomCards[id];
-    stopRenderLoop();
-    detachAwareness();
-    detachNodesObserver();
+    stopBlitLoop();
     detachEdgesObserver();
-    stopNetcode();
     releaseHeldKeys();
     window.removeEventListener('keydown', onWindowKeyDownCapture, true);
     window.removeEventListener('keyup', onWindowKeyUpCapture, true);
     window.removeEventListener('pointerdown', onPointerDownCapture, true);
     document.removeEventListener('visibilitychange', onVisibilityChange);
+    // ⚠ DELIBERATELY ABSENT (#1590): no netcode/lockstep teardown, no session
+    // pump stop, no awareness/nodes observer detach. The multiplayer SESSION
+    // belongs to the NODE — a card unmount is a VIEW event (collapse, dock LRU
+    // eviction, ESC, M/E, navigation), and the pre-fix `stopNetcode()` +
+    // render-loop kill here tore down every peer's transport and starved the
+    // lockstep barrier, freezing EVERY peer mid-netgame (#345 semantics).
+    // Session teardown happens in exactly two places: the user losing its seat
+    // (leaveNetSession via syncRosterState) and the graph sweep
+    // (nodeDoomSession.sweep from Canvas, when the node itself is deleted).
+    // This mount's awareness/nodes observers stay attached so the LAST wiring
+    // keeps electing/seating/relaying while no card exists; the registry
+    // detaches them when a newer mount adopts or the node is swept. What DOES
+    // die with the card: the keyboard capture (a collapsed card must not eat
+    // the keyboard), the canvas blit, and the edges observer feeding the
+    // cvGatePatched UI derived.
   });
 
   // ---- PatchPanel port descriptors ----
@@ -2240,8 +2362,8 @@
   </div>
 
   {#if mpMode === 'multi' && mySlot !== null}
-    {@const inLevel = launched && gamestate === GS_LEVEL}
-    {@const atIntermission = launched && gamestate === GS_INTERMISSION}
+    {@const inLevel = sess.launched && gamestate === GS_LEVEL}
+    {@const atIntermission = sess.launched && gamestate === GS_INTERMISSION}
     {@const pendingCount = rosterSize(pending)}
     <!-- nodrag on the whole dialog: SvelteFlow treats a node as draggable, so a
          mousedown anywhere inside starts a node-drag + swallows the click
@@ -2382,7 +2504,7 @@
             onclick={() => { closeDropdowns(); launchGame(); }}
             title={inLevel ? 'Level in progress — pick the next map at the end' : 'Start the game on all joined players'}
           >
-            {launched ? (inLevel ? 'In Level' : 'Next Map') : 'Launch'}
+            {sess.launched ? (inLevel ? 'In Level' : 'Next Map') : 'Launch'}
           </button>
         </div>
         {#if pendingCount > 0}
@@ -2445,7 +2567,7 @@
         {memberIds.length} rack-mates · host: {isHost ? 'you' : 'remote'}
         {#if mpMode === 'multi'}
           {#if mySlot !== null}
-            · player {mySlot + 1}{netStarted ? (isNetArbiter ? ' · arbiter' : ' · client') : ''}
+            · player {mySlot + 1}{sess.netStarted ? (sess.isNetArbiter ? ' · arbiter' : ' · client') : ''}
           {:else if myPendingSlot !== null}
             · joining P{myPendingSlot + 1} next map
           {:else}
