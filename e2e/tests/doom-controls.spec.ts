@@ -121,13 +121,27 @@ test.describe('GAMEPAD card — button-LED labels match output port labels (#1)'
     const card = page.locator('[data-testid="gamepad-card"]');
     await expect(card).toHaveCount(1);
 
-    // Read the live LED text content.
-    const ledTexts = await card.locator('.btn-led').allInnerTexts();
     // The card is a 12-button row in the same order as BUTTON_LED_IDS in
     // GamepadCard.svelte: lb, rb, a, b, x, y, du, dd, dl, dr, start, back.
     // After fix #1 the LEDs use GAMEPAD_OUTPUTS[id].label (the chevron set
     // for d-pad, LB/RB/A/B/X/Y for face/shoulder, STA/SEL for start/back).
-    expect(ledTexts).toEqual(['LB', 'RB', 'A', 'B', 'X', 'Y', '⬆', '⬇', '⬅', '⮕', 'STA', 'SEL']);
+    //
+    // AUTO-RETRYING toHaveText, never a one-shot allInnerTexts() (#1616):
+    // xyflow's NodeWrapper renders a freshly-attached node `visibility:hidden`
+    // until its ResizeObserver measurement lands (NodeWrapper.svelte
+    // `style:visibility={hasDimensions ? …}`), and spawnPatch's mount wait
+    // proves ATTACHMENT, not visibility — the wrapper is hidden for ≥1 frame
+    // on EVERY mount (measured: 1 frame on a healthy renderer). innerText
+    // inside a rendered-but-hidden subtree is "" (textContent still holds the
+    // labels), so a one-shot read landing in that window saw 12 EMPTY strings
+    // while toHaveCount(1) passed — presence gates none of this. `useInnerText`
+    // keeps the subject the VISIBLE rendered glyphs; the retry loop waits for
+    // the LEDs' first paint instead of judging the half-born card (the same
+    // wait-for-boot-before-judging shape as #1620/#1621).
+    await expect(card.locator('.btn-led')).toHaveText(
+      ['LB', 'RB', 'A', 'B', 'X', 'Y', '⬆', '⬇', '⬅', '⮕', 'STA', 'SEL'],
+      { useInnerText: true },
+    );
   });
 });
 
