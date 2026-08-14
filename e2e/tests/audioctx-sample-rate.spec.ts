@@ -14,7 +14,7 @@ test('app AudioContext is pinned to 48 kHz', async ({ page }) => {
   await page.goto('/rack?shell=legacy&seed=none');
   // Boot the engine by spawning a trivial node (spawnPatch waits for mount,
   // which requires the engine — and therefore the AudioContext — to exist).
-  await spawnPatch(page, [{ id: 'noise-1', type: 'noise', x: 100, y: 100 }]);
+  await spawnPatch(page, [{ id: 'noise-1', type: 'noise', position: { x: 100, y: 100 } }]);
   const rate = await page.evaluate(() => {
     const w = globalThis as unknown as {
       __engine?: () => { getDomain: (d: string) => { ctx: AudioContext } };

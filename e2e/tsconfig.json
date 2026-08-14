@@ -1,0 +1,36 @@
+{
+  // #1499 — the entire Playwright surface typechecks. This config is wired into
+  // `npm run typecheck` (root --workspaces) via the `typecheck` script in
+  // e2e/package.json, so the CI typecheck job inherits it with no workflow edit.
+  // A workspace-coverage guard (packages/web/src/lib/ui/workspace-typecheck-guard.test.ts)
+  // asserts every TS-bearing workspace defines a typecheck script, so the
+  // `--if-present` hole cannot silently reopen.
+  "compilerOptions": {
+    "target": "ES2022",
+    // DOM libs are required: page.evaluate() callbacks are authored here but
+    // execute in the browser, so specs legitimately reference document/window.
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noEmit": true,
+    // Deps only: skips .d.ts of node_modules. Our own files are fully checked.
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "noUncheckedIndexedAccess": false,
+    // "node" for the Playwright runner side; "vite/client" + "svelte" because
+    // cross-imported packages/web model files are compiled under those ambients
+    // in their home workspace (import.meta.env, $state runes in .svelte.ts) —
+    // checking them here without the same ambients would report false errors.
+    "types": ["node", "vite/client", "svelte"],
+    // A handful of specs import pure model files from packages/web directly
+    // (face models, vfpga cells, …). Those files use $lib aliases internally.
+    "paths": {
+      "$lib/*": ["../packages/web/src/lib/*"]
+    }
+  },
+  "include": ["**/*.ts"],
+  "exclude": ["node_modules"]
+}

@@ -179,7 +179,6 @@
           >
             <div class="preview">
               {#if item.kind === 'video'}
-                <!-- svelte-ignore a11y_media_has_caption -- user-loaded media has no caption track -->
                 <video muted controls preload="metadata" src={item.objectUrl} data-testid="media-item-preview"
                 ></video>
               {:else if item.kind === 'image'}

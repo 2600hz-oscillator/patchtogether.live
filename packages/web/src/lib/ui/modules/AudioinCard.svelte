@@ -23,7 +23,7 @@
   import { useEngine } from '$lib/audio/engine-context';
   import { patch } from '$lib/graph/store';
   import { setNodeParam } from '$lib/graph/mutate';
-  import { audioInDef, audioInAttach } from '$lib/audio/modules/audioin';
+  import { audioInDef } from '$lib/audio/modules/audioin';
   import {
     buildAudioInConstraints,
     findDefaultInputDevice,
@@ -33,6 +33,7 @@
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
   import { portsFromDef } from './card-kit';
+  import { nodeAudioInput } from './node-audio-input-registry.svelte';
 
   type State =
     | 'idle'                 // no stream + no permission attempt yet
@@ -52,8 +53,13 @@
   // ----- local state -----
   let devices = $state<MinimalDevice[]>([]);
   let selectedDeviceId = $state<string | null>(null);
-  let inState: State = $state('idle');
-  let errorMsg = $state<string | null>(null);
+  // ⚠ inState / errorMsg / liveChannels are DERIVED from the node-keyed
+  // registry, not card-local $state (#1590). They used to be card-local, so a
+  // re-mounted card came up 'idle' while the input was still live — and worse,
+  // the unmount that preceded it had already stopped the tracks. The registry
+  // is the one home for both the resource and the status that describes it.
+  let inState: State = $derived(nodeAudioInput.view(id).state as State);
+  let errorMsg = $derived(nodeAudioInput.view(id).errorMsg);
   // "Music mode" — force the browser capture DSP (echo-cancel / noise-
   // suppress / auto-gain) OFF for a clean line-level feed. Persisted to
   // Yjs (node.data.musicMode) so it restores on reload + syncs to peers.
@@ -62,10 +68,9 @@
   let musicMode = $state(false);
   // The channelCount the live track actually delivered (for the status
   // display: "stereo" vs "mono"). 0 until a stream attaches.
-  let liveChannels = $state(0);
-  // Held so we can stop tracks on detach. The actual MediaStreamSource
-  // lives engine-side (created in the factory's attach handler).
-  let stream: MediaStream | null = null;
+  let liveChannels = $derived(nodeAudioInput.view(id).liveChannels);
+  // ⚠ THE CARD NO LONGER HOLDS THE STREAM. It belongs to the NODE — see
+  // node-audio-input-registry.svelte.ts. The card adopts and reads.
 
   // ----- helpers -----
 
@@ -134,22 +139,10 @@
    * the MediaStream to the engine module via `audioInAttach`.
    */
   async function requestStream(): Promise<void> {
-    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
-      inState = 'unsupported';
-      errorMsg = 'Browser does not support getUserMedia';
-      return;
-    }
-
-    inState = 'requesting';
-    errorMsg = null;
-
-    // Tear down any existing stream first.
-    stopStream();
-
     const targetId = selectedDeviceId ?? findDefaultInputDevice(devices);
     // ASK for a stereo pair — see buildAudioInConstraints. It's an IDEAL
     // constraint (channelCount: 2, no `exact:`), so a mono device still
-    // streams (and the wiring below keys off the DELIVERED channelCount,
+    // streams (and the engine wiring keys off the DELIVERED channelCount,
     // not this request). A multichannel USB interface (e.g. Expert
     // Sleepers ES-9) hands us a true L/R pair (its FIRST stereo pair,
     // device inputs 1/2) instead of a browser-downmixed mono signal.
@@ -160,136 +153,30 @@
     // `musicMode` forces the browser capture DSP off for a clean line feed.
     const constraints = buildAudioInConstraints(targetId, { musicMode });
 
-    try {
-      stream = await navigator.mediaDevices.getUserMedia(constraints);
-    } catch (err) {
-      const e = err as DOMException;
-      if (e.name === 'NotAllowedError' || e.name === 'PermissionDeniedError') {
-        inState = 'permission-denied';
-        errorMsg = 'Microphone permission denied — click to retry';
-      } else if (e.name === 'NotFoundError' || e.name === 'OverconstrainedError') {
-        inState = 'no-inputs-found';
-        errorMsg = 'No microphone matches the selected constraints.';
-      } else if (e.name === 'NotReadableError') {
-        inState = 'device-in-use';
-        errorMsg = 'Microphone is in use by another tab or application.';
-      } else {
-        inState = 'error';
-        errorMsg = `${e.name}: ${e.message}`;
-      }
-      return;
-    }
-
-    // Permission granted — re-enumerate to pick up real labels.
-    await refreshDevices();
-
-    // Determine channel layout — mono vs stereo. Some browsers don't
-    // report channelCount on getSettings; default to mono in that case.
-    const track = stream.getAudioTracks()[0];
-    if (!track) {
-      inState = 'error';
-      errorMsg = 'getUserMedia returned a stream with no audio tracks.';
-      stopStream();
-      return;
-    }
-    const settings = track.getSettings();
-    // Resolve the delivered channel layout for the engine's mono-vs-stereo
-    // wiring. We ALWAYS request a stereo pair (channelCount: 2, above), but
-    // the WIRING decision trusts what the track actually reports:
-    //   - reported >= 2  → splitter path (true L/R separation).
-    //   - reported 1     → fan-out path (L = R).
-    //   - UNREPORTED     → fan-out (mono), the SAFE default. A mono device
-    //     fed through the stereo splitter lands signal only on channel 0
-    //     (discrete interpretation, no up-mix) so R would be silent;
-    //     fan-out instead duplicates the single channel to both outs.
-    //     A genuine stereo device reports channelCount: 2 and gets the
-    //     splitter. (Chromium reports channelCount reliably for real
-    //     multichannel USB interfaces; the unreported case is the
-    //     built-in / fake mono mic, which we want fanned-out anyway.)
-    const channelCount = settings.channelCount ?? 1;
-    liveChannels = channelCount;
-    const realDeviceId = settings.deviceId ?? selectedDeviceId ?? null;
-    if (realDeviceId && realDeviceId !== selectedDeviceId) {
-      selectedDeviceId = realDeviceId;
-      setSavedDeviceId(realDeviceId);
-    } else if (selectedDeviceId) {
-      setSavedDeviceId(selectedDeviceId);
-    }
-
-    // Wire end-of-stream — covers permission revoke / hardware unplug.
-    track.addEventListener('ended', () => {
-      if (inState === 'streaming') {
-        inState = 'error';
-        errorMsg = 'Input stream ended (disconnected or revoked).';
-        stopStream();
-      }
+    // ⚠ ACQUISITION IS THE REGISTRY'S (#1590). The constraints are the card's
+    // business — device list, saved id, music mode; the STREAM, the engine
+    // attach and the late-engine reconciler are the NODE's, because all three
+    // used to die with this component. `t.stop()` is irreversible, so this is
+    // the one row in #1583 where the unmount could not be recovered from.
+    await nodeAudioInput.request(id, constraints, {
+      onResolved: (realDeviceId) => {
+        if (realDeviceId && realDeviceId !== selectedDeviceId) {
+          selectedDeviceId = realDeviceId;
+          setSavedDeviceId(realDeviceId);
+        } else if (selectedDeviceId) {
+          setSavedDeviceId(selectedDeviceId);
+        }
+      },
     });
 
-    // Hand the stream to the engine-side module runtime. Retry briefly
-    // if the engine hasn't reconciled the node yet (the card may mount
-    // before engine.addNode resolves under fast spawn paths).
-    const e = engineCtx.get();
-    let attached = false;
-    if (e) {
-      attached = audioInAttach(e, id, { stream, channelCount });
-    }
-    if (!attached) {
-      // Race window with engine reconcile — poll briefly.
-      const start = Date.now();
-      while (Date.now() - start < 1500) {
-        await new Promise((r) => setTimeout(r, 50));
-        const eng = engineCtx.get();
-        if (eng && audioInAttach(eng, id, { stream, channelCount })) {
-          attached = true;
-          break;
-        }
-      }
-    }
-    if (!attached) {
-      console.warn('[audioIn] could not attach stream — engine node not present yet');
-      // Hand off to the LATE-ENGINE reconciler below: the workflow topbar
-      // hosts this card as an always-on pinned module, so it can mount +
-      // start streaming BEFORE the audio engine ever boots — the bounded
-      // retry above is not enough there.
-      pendingAttach = { channelCount };
-    } else {
-      pendingAttach = null;
-    }
-
-    inState = 'streaming';
+    // Permission may have just been granted — re-enumerate for real labels.
+    if (nodeAudioInput.isStreaming(id)) await refreshDevices();
   }
 
-  // Late-engine attach reconciliation. When requestStream() acquired a
-  // stream but the engine (or its node handle) wasn't up yet, keep trying
-  // at a slow cadence until it lands, then stop. Idempotent with respect
-  // to a subsequent manual re-acquire (requestStream resets the marker).
-  let pendingAttach = $state<{ channelCount: number } | null>(null);
-  $effect(() => {
-    if (!pendingAttach) return;
-    const timer = setInterval(() => {
-      if (!stream || inState !== 'streaming') {
-        pendingAttach = null;
-        return;
-      }
-      const eng = engineCtx.get();
-      if (!eng) return;
-      const payload = pendingAttach;
-      if (payload && audioInAttach(eng, id, { stream, channelCount: payload.channelCount })) {
-        pendingAttach = null;
-      }
-    }, 500);
-    return () => clearInterval(timer);
-  });
-
+  /** USER-INITIATED release (the stop control + the re-acquire path). NEVER
+   *  call this from a lifecycle hook — that is the #1590 defect. */
   function stopStream(): void {
-    if (stream) {
-      for (const t of stream.getTracks()) t.stop();
-      stream = null;
-    }
-    pendingAttach = null;
-    liveChannels = 0;
-    const e = engineCtx.get();
-    if (e) audioInAttach(e, id, null);
+    nodeAudioInput.stop(id);
   }
 
   function onPickDevice(deviceId: string): void {
@@ -322,10 +209,19 @@
 
   // ----- lifecycle -----
 
+  // ADOPT the node's input entry before anything reads it. Non-destructive: if
+  // a previous mount left this node streaming, this picks that entry up rather
+  // than replacing it — which is what makes re-expanding show the LIVE input.
+  // (In an $effect, not at init: `id` is a prop, and reading it at init would
+  // capture only its first value — svelte-check's state_referenced_locally.
+  // Re-running is free: adopt is idempotent and non-destructive.)
+  $effect(() => {
+    nodeAudioInput.adopt(id, engineCtx);
+  });
+
   onMount(() => {
     if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
-      inState = 'unsupported';
-      errorMsg = 'Browser does not support getUserMedia';
+      nodeAudioInput.setStatus(id, 'unsupported', 'Browser does not support getUserMedia');
       return;
     }
 
@@ -338,8 +234,7 @@
     // permission grant; we wait for the user to click "Enable".
     refreshDevices().then((res) => {
       if (devices.length === 0) {
-        inState = 'no-inputs-found';
-        errorMsg = 'No audio inputs detected.';
+        nodeAudioInput.setStatus(id, 'no-inputs-found', 'No audio inputs detected.');
         return;
       }
       // If labels are already visible (permission previously granted
@@ -358,8 +253,17 @@
     }
   });
 
+  // ⚠ NO `stopStream()` HERE (#1590). This unmount runs on COLLAPSE, on dock
+  // LRU eviction, on ESC, on M/E and on navigation — none of which mean the
+  // user is done with the rack's live input. It used to call `stopStream()`,
+  // whose `t.stop()` is IRREVERSIBLE: the input went silent mid-performance,
+  // the OS mic indicator dropped, and re-expanding could not bring it back
+  // (only a fresh getUserMedia can, which is a new permission decision).
+  // The stream is keyed to the NODE now and released by Canvas's
+  // `nodeAudioInput.sweep(liveIds)` when the node itself is gone.
+  //
+  // The devicechange listener IS card-owned — it only refreshes the dropdown.
   onDestroy(() => {
-    stopStream();
     if (navigator.mediaDevices?.removeEventListener) {
       navigator.mediaDevices.removeEventListener('devicechange', onDeviceChange);
     }

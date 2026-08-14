@@ -42,7 +42,7 @@
 import { test, expect } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, type SpawnEdge } from './_helpers';
 import { visualChecksEnabled } from './_visual-checks';
 import { readScopeSnapshot, summarize } from './_module-coverage-helpers';
 
@@ -238,7 +238,7 @@ async function readNode(page: Page, nodeId: string, key: string): Promise<unknow
  *  must be added once wireAudio() has swapped the source's audio_l from the
  *  silent placeholder to the live MediaElementSource splitter (this mirrors the
  *  real session order: load the file, THEN patch its audio downstream). */
-async function addEdges(page: Page, edges: Parameters<typeof spawnPatch>[2]): Promise<void> {
+async function addEdges(page: Page, edges: SpawnEdge[]): Promise<void> {
   await page.evaluate((edges) => {
     const w = globalThis as unknown as {
       __patch: { edges: Record<string, unknown> };
@@ -266,7 +266,7 @@ async function addEdges(page: Page, edges: Parameters<typeof spawnPatch>[2]): Pr
  *  SEPARATELY so the caller adds them after loading files (see addEdges). */
 function buildTopology(n: number) {
   const nodes: Parameters<typeof spawnPatch>[1] = [];
-  const edges: Parameters<typeof spawnPatch>[2] = [];
+  const edges: SpawnEdge[] = [];
   const audioEdges: Parameters<typeof spawnPatch>[2] = [];
 
   // Cards are 320x420; lay them out on a wide grid with generous gaps so no

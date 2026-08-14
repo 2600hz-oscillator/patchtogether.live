@@ -97,6 +97,22 @@ const LIVE_SAMPLE_FRAMES = 5;
  *  the first changed frame, so the normal cost is 1-2 frames for WAVESCULPT and
  *  at most one beat for TIMELORDE. */
 const CHANGE_CAP_FRAMES = 300;
+/** Frame CAP on the producer-READINESS wait that precedes every samplePorts
+ *  call (#1620). It BOUNDS THE FAILURE, never gates the pass: the wait exits
+ *  the frame a source registers, so the normal cost is 0-2 frames. WHY IT
+ *  EXISTS: the never-mounted leg used to sample IMMEDIATELY after spawnPatch
+ *  for only LIVE_SAMPLE_FRAMES(5) rAF frames, with nothing waiting for the
+ *  node's producer to boot — solo that is plenty (10/10 measured), but under
+ *  the webgl attest's PARALLEL pass wavesculpt's headless producer (GL context
+ *  + shader compile) reliably loses the race and 5 frames of "no source" read
+ *  as "never produces": the same leg failed both retries on two consecutive
+ *  quiet-machine attest runs. The claim under test is that the never-mounted
+ *  node PRODUCES — how long its producer takes to boot under load is not the
+ *  subject. Counted in FRAMES (renderer-independent) per the repo rule; a
+ *  producer that genuinely never registers (the pre-#1587 defect) exhausts
+ *  this cap ONCE, bounded, and the sampler then reads no-source → the same
+ *  red as before, now carrying `waitedFrames` in the message. */
+const SOURCE_READY_CAP_FRAMES = 600;
 /** Frames sampled around the dock→headless handoff, every frame. */
 const HANDOFF_FRAMES = 90;
 /** How long the picture may be absent across that handoff, in FRAMES. The card
@@ -232,6 +248,52 @@ async function samplePorts(page: Page, nodeId: string, ports: string[]): Promise
       return out;
     },
     { nodeId, ports, frames: LIVE_SAMPLE_FRAMES, W: PROBE_W, H: PROBE_H, BLACK: BLACK_LUMA },
+  );
+}
+
+/**
+ * Wait (in-page, rAF-counted, BOUNDED) until the node's video producer is
+ * registered — i.e. `getVideoSource()` returns a source for at least one of
+ * the node's declared video outs (#1620). Registration is per-node in the
+ * engine, so any-port readiness means the boot race is over; which ports then
+ * CARRY A PICTURE stays entirely samplePorts' question. Applied before BOTH
+ * the never-mounted and the mounted probe, so the two phases remain the same
+ * instrument.
+ */
+async function waitForProducerRegistration(
+  page: Page,
+  nodeId: string,
+  ports: string[],
+): Promise<{ ready: boolean; waitedFrames: number }> {
+  return page.evaluate(
+    async ({ nodeId, ports, cap }) => {
+      const w = globalThis as unknown as {
+        __engine?: () => {
+          getDomain: (d: string) => {
+            getVideoSource?: (id: string, port: string) => unknown | null;
+          };
+        };
+      };
+      const hasSource = () => {
+        try {
+          const dom = w.__engine!().getDomain('audio');
+          return ports.some((p) => {
+            const s = dom.getVideoSource!(nodeId, p);
+            return !!s;
+          });
+        } catch {
+          return false;
+        }
+      };
+      let n = 0;
+      while (n < cap) {
+        if (hasSource()) return { ready: true, waitedFrames: n };
+        await new Promise((r) => requestAnimationFrame(() => r(null)));
+        n++;
+      }
+      return { ready: hasSource(), waitedFrames: n };
+    },
+    { nodeId, ports, cap: SOURCE_READY_CAP_FRAMES },
   );
 }
 
@@ -463,6 +525,10 @@ for (const subject of SUBJECTS) {
     );
 
     // ── 1. NEVER MOUNTED — nothing has been expanded, clicked or docked ──────
+    // Readiness first (#1620): sampling before the headless producer BOOTS
+    // reads "no source" for the whole 5-frame window and calls a loaded
+    // machine a regression. Bounded; the failure message carries the wait.
+    const neverReady = await waitForProducerRegistration(page, nodeId, videoOuts);
     const neverSamples = await samplePorts(page, nodeId, videoOuts);
     const liveNever = livePorts(neverSamples);
 
@@ -483,6 +549,8 @@ for (const subject of SUBJECTS) {
     ).toEqual({ headless: 0, dock: 1 });
     // The SAME port list in both states — the set comparison below is only
     // meaningful if the probe looked at the same thing twice.
+    // Same readiness gate as phase 1 — both phases stay the same instrument.
+    await waitForProducerRegistration(page, nodeId, videoOuts);
     const mountedSamples = await samplePorts(page, nodeId, videoOuts);
     const liveMounted = livePorts(mountedSamples);
 
@@ -493,7 +561,8 @@ for (const subject of SUBJECTS) {
     expect(
       liveNever,
       `#1587: the ports carrying a picture must be the same whether or not ${type}'s card is ` +
-        `mounted.\n  never-mounted: ${digest(neverSamples)}\n  card mounted:  ${digest(mountedSamples)}`,
+        `mounted.\n  never-mounted: ${digest(neverSamples)} (producer ready=${neverReady.ready} ` +
+        `after ${neverReady.waitedFrames} frames, cap ${SOURCE_READY_CAP_FRAMES})\n  card mounted:  ${digest(mountedSamples)}`,
     ).toEqual(liveMounted);
 
     // A subject whose ports show nothing even WITH the card mounted is not
@@ -542,6 +611,7 @@ for (const subject of SUBJECTS) {
         timeout: 20_000,
       })
       .toBe(1);
+    await waitForProducerRegistration(page, nodeId, videoOuts);
     const afterSamples = await samplePorts(page, nodeId, videoOuts);
     expect(
       livePorts(afterSamples),

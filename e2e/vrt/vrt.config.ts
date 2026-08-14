@@ -410,7 +410,12 @@ export default defineConfig({
     // 'disabled' (which freezes CSS animations at t=0) we get the
     // tightest determinism Playwright offers without a custom rAF
     // mock.
-    reducedMotion: 'reduce',
+    // ⚠ #1499: this MUST live inside `contextOptions` — Playwright 1.59 has no
+    // top-level `reducedMotion` test option, and a top-level key is SILENTLY
+    // IGNORED (verified against the fixture list in playwright/lib/index.js:
+    // only `contextOptions` is spread into browser.newContext). The previous
+    // top-level placement meant VRT captured WITHOUT prefers-reduced-motion.
+    contextOptions: { reducedMotion: 'reduce' },
     // Higher trace + screenshot fidelity: a VRT failure is itself the
     // signal, but we still want the full trace bundle so reviewers
     // can see the surrounding DOM state.

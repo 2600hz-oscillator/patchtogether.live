@@ -6,6 +6,7 @@
   "description": "End-to-end tests for patchtogether.live via Playwright. Doubles as an AI-agent self-validation harness — see scripts ai:check + ai:debug.",
   "scripts": {
     "test": "playwright test",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
     "ai:check": "playwright test --reporter=list ai-smoke.spec.ts",
     "ai:debug": "playwright test --reporter=list ai-debug.spec.ts",
     "vrt": "playwright test --config=vrt/vrt.config.ts",
@@ -14,6 +15,8 @@
     "vrt:annotated": "playwright test --config=vrt/vrt-annotated.config.ts --update-snapshots"
   },
   "devDependencies": {
-    "@playwright/test": "^1.50.0"
+    "@playwright/test": "^1.50.0",
+    "@types/node": "^22.10.0",
+    "typescript": "^5.6.3"
   }
 }

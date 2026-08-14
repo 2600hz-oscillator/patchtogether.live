@@ -34,7 +34,20 @@ test('blood in-game: drive the menu into a level + read the in-game framebuffer'
       { id: BLOOD_ID, type: 'blood', position: { x: 120, y: 80 }, domain: 'video' },
       { id: 'vout', type: 'videoOut', position: { x: 700, y: 80 }, domain: 'video' },
     ],
-    [{ from: BLOOD_ID, fromPort: 'out', to: 'vout', toPort: 'in' }],
+    // ⚠ #1499: this edge used to be `{ from: BLOOD_ID, fromPort: 'out', … }` —
+    // a shape spawnPatch never accepted (it reads `from.nodeId`/`from.portId`
+    // and keys the edge by `e.id`). The malformed edge landed keyed `undefined`
+    // with string endpoints; the test never noticed because it reads the
+    // runtime framebuffer via `extras`, not through videoOut.
+    [
+      {
+        id: 'e-blood-vout',
+        from: { nodeId: BLOOD_ID, portId: 'out' },
+        to: { nodeId: 'vout', portId: 'in' },
+        sourceType: 'video',
+        targetType: 'video',
+      },
+    ],
     // A PROBE, not a requirement: the `.catch` below is the designed path, and
     // a discardable attempt is exactly where a wall-clock cap belongs (the
     // helper's default is a 300-FRAME budget bounded at 30 s, which would make
@@ -55,7 +68,9 @@ test('blood in-game: drive the menu into a level + read the in-game framebuffer'
       const ve = w.__engine?.()?.getDomain('video');
       const ex = ve?.read(id, 'extras') as { getRuntime: () => { isInitialized: () => boolean; resolution: () => { width: number; height: number }; getFramebuffer: () => Uint8ClampedArray | null; setKey: (sc: number, p: boolean) => void } | null } | undefined;
       const rt = ex?.getRuntime();
-      if (!rt) return { ok: false, reason: 'no runtime' };
+      // `as const` keeps the discriminant literal so the caller's `!result.ok`
+      // guard actually narrows the union (inferred `boolean` cannot).
+      if (!rt) return { ok: false as const, reason: 'no runtime' };
 
       const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
       const sample = () => {
@@ -114,7 +129,7 @@ test('blood in-game: drive the menu into a level + read the in-game framebuffer'
       const moveDelta = await avgFrameDelta(6);
       rt.setKey(SC_UP_ARROW, false);
 
-      return { ok: true, menu, timeline, post, idleDelta, moveDelta };
+      return { ok: true as const, menu, timeline, post, idleDelta, moveDelta };
     },
     { id: BLOOD_ID, SC_ENTER, SC_DOWN, SC_SPACE },
   );
