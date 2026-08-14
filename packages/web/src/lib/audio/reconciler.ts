@@ -105,7 +105,7 @@ export function attachReconciler(
     // Helper: pick an edge's transport domain from its source node's
     // domain. The source's engine owns the routing primitives. The first
     // generation of this code hardcoded 'audio'; the Phase-0 video spike
-    // (.myrobots/plans/video-modules-mvp.md §1) introduces a second
+    // introduced a second
     // domain so we now look it up. Cross-domain edges (e.g. audio CV
     // feeding a video module's param input) keep the source-side dispatch
     // — the bridge module on the audio side handles the rate conversion.

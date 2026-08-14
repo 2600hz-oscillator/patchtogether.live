@@ -116,7 +116,7 @@ export interface AudioModuleDef {
    * reality (a flagged def whose card no longer renders WebGL, or a WebGL card
    * whose def forgot the flag, both fail the guard). Video-domain modules don't
    * need this — they are derived from `domain:'video'`. See
-   * .myrobots/plans/webgl-attestation-semaphore.md (§-1 fix V3).
+   * .claude/skills/webgl-attest.md (§-1 fix V3).
    */
   rendersWebGL?: boolean;
   /**

@@ -1,7 +1,7 @@
 // packages/web/src/lib/audio/modules/grand-attest-basis.test.ts
 //
 // Fail-CLOSED guard for the GRAND-INTEGRATION local attestation "semaphore"
-// (.myrobots/plans/grand-integration-e2e-art-2026-07-19.md). The grand analogue
+// (.claude/skills/grand-attest.md). The grand analogue
 // of webgl-attest-coverage.test.ts + collab-attest-basis.test.ts. Runs in the
 // REQUIRED `unit` job, so the basis + resolver can't silently rot.
 //

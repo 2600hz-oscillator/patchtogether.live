@@ -4,7 +4,7 @@
 // es9-bridge NATIVE companion app (repo: patchtogether.es9). The browser
 // cannot do this alone: getUserMedia caps the ES-9 at its first stereo pair
 // and setSinkId picks whole devices, never channel ranges (empirically
-// verified — see audioin.ts + .myrobots/plans/es9-stereo-io.md). The native
+// verified — see audioin.ts +). The native
 // app owns CoreAudio (16-in/16-out, one clock, DC-coupled ±10 V jacks,
 // bit-transparent) and serves a localhost WebSocket; this module is its
 // in-graph face.

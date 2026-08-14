@@ -1,6 +1,6 @@
 // packages/web/src/lib/audio/poly.ts
 //
-// The polyphony architecture (see .myrobots/plans/dx7-and-polyphony.md §5). The
+// The polyphony architecture. The
 // single concept here is the `polyPitchGate` cable: POLY_CHANNEL_PAIRS voice-pairs
 // of (pitch_v_oct, gate) packed into one POLY_CHANNELS-channel audio-rate
 // connection.

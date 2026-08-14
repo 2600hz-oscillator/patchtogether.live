@@ -5,9 +5,8 @@
   // those bytes to every rack-mate; each peer's PictureboxCard runs the
   // reverse path (base64 → ImageBitmap → engine.setImage) automatically.
   //
-  // Multiplayer: image content NOW syncs across rack-mates. See
-  // .myrobots/plans/picturebox-multiplayer-sync.md for the sizing,
-  // codec, and limit decisions.
+  // Multiplayer: image content NOW syncs across rack-mates — sizing,
+  // codec, and limit decisions are documented in picturebox-encode.ts.
   import { onMount, onDestroy } from 'svelte';
   import { type NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';

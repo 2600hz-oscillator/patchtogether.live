@@ -1,8 +1,7 @@
 // e2e/tests/keyer-functional.spec.ts
 //
 // FUNCTIONAL validation of the keyer/compositor family (LUMA / LUMAKEY /
-// CHROMA / CHROMAKEY) — phase 1 of the keyer-framework program (design doc:
-// .myrobots/plans/keyer-framework-2026-07-11.md).
+// CHROMA / CHROMAKEY) — phase 1 of the keyer-framework program.
 //
 // Unlike the render-smoke suite (which asserts "something structured renders"
 // and "a param moves pixels"), every test here asserts EXPECTED OUTPUT PIXELS

@@ -7,7 +7,7 @@
 // WHY: the sequencer currently refills a 200 ms audio lookahead from a
 // main-thread `tick()` (sequencer.ts). When a canvas drag pins the main thread
 // for the whole gesture, the lookahead drains and steps are DROPPED → audible
-// tempo freeze (see .myrobots/plans/clock-drag-jank-analysis-2026-06-29.md). An
+// tempo freeze. An
 // AudioWorklet runs on the audio thread, immune to main-thread jank, so a step
 // engine that lives there can never be starved by a drag. AudioParam scheduling
 // is main-thread-only, which is exactly why the engine must move INTO the worklet

@@ -14,7 +14,7 @@ import { buildCvCurve, sampleCvCurve, scaleCv } from '$lib/audio/cv-scale';
 // Modules whose CV input(s) intentionally omit cvScale because the
 // destination DSP (Faust .dsp source) implements its own ±1-cv-sweeps-
 // full-musical-range mapping. New entries here MUST be justified in
-// .myrobots/plans/cv-range-standard.md.
+// docs/adr/004-cv-range-convention.md.
 const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   // polarizer/depolarizer: 1-in/1-out CV-math UTILITIES — `in` is the
   // signal being transformed directly (out = f(in): polarizer 2·in−1, depolarizer
@@ -100,7 +100,7 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   // AudioParam the module never reads. Adding cvScale here would not fix
   // that bug — it'd modulate the wrong AudioParam. SCOPE's CV→param routing
   // needs an architectural fix (separate PR — see
-  // .myrobots/plans/cv-range-standard.md "Deferred" section).
+  // docs/adr/004-cv-range-convention.md "Deferred" section).
   scope: ['timeMs', 'ch1Scale', 'ch1Offset', 'ch1Range', 'ch2Scale', 'ch2Offset', 'ch2Range', 'mode', 'intensity'],
   // RASTERIZE: same architecture as SCOPE — CV inputs route through the
   // cross-domain CV bridge's setParam(portId), which writes into a JS-side

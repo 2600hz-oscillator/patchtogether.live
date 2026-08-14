@@ -22,8 +22,6 @@
 // and deleting a name here while its docs stay complete is RED — which the old
 // floor could not see, since it sat 13 below the set's actual size. To
 // un-promote for real, remove the docs, not the name.
-//
-// See .myrobots/plans/living-docs-drift-2026-06-24.md.
 
 export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   // ES-9 native-bridge I/O module (2026-07-10): born strict — every jack and
@@ -391,12 +389,11 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   'ninelives',
   // KICK DRUM (2026-07-02): the layered stereo kick voice (sub/body/click,
   // hard-switch drive, translate exciter, glue dynamics, M/S width — build
-  // plan .myrobots/plans/kick-drum-voice-2026-07-01.md). Ships documented.
+  // plan). Ships documented.
   'kickdrum',
   // SNARE DRUM (2026-07-04): the deep stereo snare voice + polyphonic two-hand
   // drumroll (head modal bank / body noise / shared re-excitable wire bed /
-  // crack, hard-switch drive, M/S width + two-hand pan — design
-  // .myrobots/snare-drum-module-design.md). Ships documented.
+  // crack, hard-switch drive, M/S width + two-hand pan). Ships documented.
   'snaredrum',
   // TOM DRUM (2026-07-11): the analog-modeled tom voice (membrane + 1.593×
   // overtone on one bend law, breath noise, warm drive — 808→909→Simmons
@@ -436,18 +433,17 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   'outToLaunch',
   // GRAINS OF VISION (2026-07-18): granular VIDEO synthesizer — 2 video in / 2
   // video out, a fixed grains → feedback → reverb chain with COMPOSITE modes
-  // (B modulates A's grains). Ships documented. Design:
-  // .myrobots/plans/grains-of-vision-2026-07-18.md.
+  // (B modulates A's grains). Ships documented.
   'grainsOfVision',
   // FRAMETABLE (2026-07-19): video WAVETABLE oscillator — 60-frame GPU ring
   // (TEXTURE_2D_ARRAY), per-pixel whole-frame selection via an analytic inverse-CDF
   // bell (MORPH/SPREAD/SHIMMER/SHAPE), FREEZE gate-toggle + SAVE trigger-snapshot.
-  // Ships documented. Design: .myrobots/plans/frametable-2026-07-19.md.
+  // Ships documented..
   'frametable',
   // VIDEOCUBE (2026-07-19): the VIDEO isomorph of the audio CUBE oscillator —
   // 3 60-frame video rings combined by the SAME cube-dsp occupancy field
   // (occ / MORPH FC / CONNECT / CRUSH / SPACE / WRAP / MATERIAL), emitting BOTH a
   // morphed video_out AND a derived cube-slice audio_out. Born strict — docs
-  // authored + verified against the source. Design: .myrobots/plans/videocube-2026-07-19.md.
+  // authored + verified against the source..
   'videocube',
 ]);

@@ -1,6 +1,6 @@
 // packages/web/src/lib/docs/contract-lock.test.ts
 //
-// The living-docs DRIFT GATE (.myrobots/plans/living-docs-drift-2026-06-24.md).
+// The living-docs DRIFT GATE.
 // Pure-unit, zero-flake: regenerate the canonical contract golden from the LIVE
 // registry and string-compare to the committed `contract-lock.txt`. Any module
 // I/O contract change (port add/remove/rename/retype, param range/curve/default,

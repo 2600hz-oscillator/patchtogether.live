@@ -1,8 +1,7 @@
 // e2e/tests/cellshade-functional.spec.ts
 //
 // FUNCTIONAL validation of CELLSHADE against CEL-SHADING THEORY — phases 1+4
-// of the cellshade-rebuild program (design doc:
-// .myrobots/plans/cellshade-rebuild-2026-07-11.md).
+// of the cellshade-rebuild program.
 //
 // Unlike the render-smoke bespoke spec (cellshade.spec.ts — "some colour, some
 // ink" over an animated ACIDWARP frame), every test here asserts EXPECTED

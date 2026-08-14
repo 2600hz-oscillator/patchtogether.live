@@ -1,7 +1,7 @@
 // packages/web/src/lib/docs/contract-signature.ts
 //
 // The DETERMINISTIC contract projection for the living-docs drift gate
-// (.myrobots/plans/living-docs-drift-2026-06-24.md). This is the "what is
+//. This is the "what is
 // pinned" layer — the analog of ART's `moduleSourceSha` and VRT's baseline
 // image, applied to a module's I/O CONTRACT instead of audio/pixels.
 //

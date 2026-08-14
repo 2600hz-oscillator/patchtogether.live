@@ -13,7 +13,7 @@
 // exponential frequency mapping (the freq_bus CV encodes pitch in V/oct;
 // the freqRange switch sets the FREQUENCY pot's compass) + width
 // passthrough. Permissive, not a port of any Moog schematic / copyleft
-// source (.myrobots/MOOG/LICENSING.md).
+// source.
 //
 // Inputs:
 //   freq_cv (pitch, paramTarget=frequency): summing frequency CONTROL INPUT

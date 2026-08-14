@@ -10,7 +10,7 @@
 //
 // DSP: own-code polyBLEP oscillator (packages/dsp/src/moog921-vco.ts +
 // lib/moog-vco-dsp.ts) — permissive, not a port of any Moog schematic or
-// copyleft source (.myrobots/MOOG/LICENSING.md).
+// copyleft source.
 //
 // Inputs:
 //   pitch (pitch): V/oct pitch input, 0 V = C4. Exponential frequency control.

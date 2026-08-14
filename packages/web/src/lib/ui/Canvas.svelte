@@ -362,7 +362,7 @@
   // DOCKING P2.5a — three dock zones (top rail / LEFT rail = the workflow
   // left toolbar / bottom drawer), plain-mount rail hosts (DockCardHost via
   // DockRail), the canvas-side DockStubCard swap, and the local tombstoned
-  // dock store. Design: .myrobots/docking-recommendation.md.
+  // dock store.
   import DockRail from '$lib/ui/dock/DockRail.svelte';
   import DockStubCard from '$lib/ui/dock/DockStubCard.svelte';
   // P0.3b — the workflow-shell lane components: the curated skeleton (migrated
@@ -1727,7 +1727,7 @@
   // canvas swaps its card for a DockStubCard (same node id — cables stay
   // attached there) and the real card face renders in a screen-fixed rail
   // (DockRail → DockCardHost, outside the SvelteFlow provider — PatchPanel
-  // self-gates). Design: .myrobots/docking-recommendation.md.
+  // self-gates).
 
   /** Transient dock toast (auto-evict / delete notices). LOCAL chrome. */
   let dockToast = $state<string | null>(null);

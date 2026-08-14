@@ -1,7 +1,7 @@
 // packages/web/src/lib/graph/no-persisted-transient-state-gate.test.ts
 //
 // PART A #2 of the schema/persistence cleanup — the "NO PERSISTED TRANSIENT
-// STATE" gate. See .myrobots/schema_cleanup_proposal_260606.md §5 (the
+// STATE" gate. (the
 // persist-transient-state class) + §6 Phase 0.
 //
 // THE PRINCIPLE (proposal §5): live / CV state is transient DISPLAY state,

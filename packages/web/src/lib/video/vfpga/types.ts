@@ -150,7 +150,7 @@ export interface VfpgaEffect {
 // lowers the fabric into the exact same `VfpgaEffect` shape the factory's
 // `buildEffect` already consumes — `effect.passes[]` becomes the *output* of
 // P&R, not the authoring surface. `effect` stays as a legacy escape hatch
-// (smpte-bars keeps it). See `.myrobots/plans/vfpga-fpga-authentic-architecture.md`.
+// (smpte-bars keeps it). See ``.
 // ----------------------------------------------------------------------
 
 /** A fabric tile TYPE (the silicon primitive it models, design §1.1):

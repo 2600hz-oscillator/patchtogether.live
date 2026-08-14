@@ -109,7 +109,7 @@ export const scoreDef: AudioModuleDef = {
   category: 'modulation',
   inputs: [
     { id: 'clock', type: 'gate', edge: 'trigger' },
-    // CV scaling per .myrobots/plans/cv-range-standard.md (mirrors ADSR's
+    // CV scaling per docs/adr/004-cv-range-convention.md (mirrors ADSR's
     // own param scaling — SCORE forwards these directly to its embedded
     // ADSR worklet).
     { id: 'attack', type: 'cv', paramTarget: 'attack', cvScale: { mode: 'log' } },

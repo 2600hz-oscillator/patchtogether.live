@@ -1,7 +1,7 @@
 // e2e/fixtures/grand-integration/clips.ts
 //
 // THE shared clip + automation fixture for the GRAND-INTEGRATION scenario
-// (.myrobots/plans/grand-integration-e2e-art-2026-07-19.md). It is imported by
+// (.claude/skills/grand-attest.md). It is imported by
 // BOTH:
 //   - the heavy browser attest spec (e2e/tests/grand-integration.attest.spec.ts)
 //     — seeds these exact clips into the pinned clip player, and

@@ -4,7 +4,7 @@
 // (see vitest.config.ts) — it can't instantiate the factory (no WebGL2
 // in node) but it CAN verify:
 //   - the def is registered under the right type / domain
-//   - the I/O surface matches the spec (.myrobots/plans/module-camera-input.md §2)
+//   - the I/O surface matches the spec
 //   - default param values are in-range and match defaults declared in the def
 //   - schema/version + maxInstances guardrails are wired
 //

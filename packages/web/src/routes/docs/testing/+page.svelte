@@ -88,7 +88,7 @@
     and asserts a <code>cvScale</code> hint is declared, then drives an LFO at ±1 to confirm
     the target slider sweeps edge-to-edge. Catches the regression where a new module is added
     with a raw <code>passthrough</code> CV input, leaving an LFO touching only ~10% of the
-    natural range. See <code>.myrobots/plans/cv-range-standard.md</code>.
+    natural range. See <code>docs/adr/004-cv-range-convention.md</code>.
   </li>
 </ul>
 <p>
@@ -173,7 +173,7 @@ flox activate -- task art:update    # regenerate .f32 + .sha baselines</code></p
 {:else}
   <div class="banner">
     <strong>Status: planned, not yet implemented.</strong> The plan
-    (<code>.myrobots/plans/testing-strategy.md</code>) calls for Playwright screenshot diffs
+    calls for Playwright screenshot diffs
     across pinned Chromium / WebKit / Firefox + a fixed font set in CI. The harness directory
     <code>vrt/</code> does not exist yet; this section will populate with a baseline gallery
     once it does.

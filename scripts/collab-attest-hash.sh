@@ -9,7 +9,7 @@
 #   HASH=$(bash scripts/collab-attest-hash.sh)          # the hash
 #   bash scripts/collab-attest-hash.sh --list           # the basis file set
 #
-# See .myrobots/plans/collab-attest-2026-06-15.md.
+# See .claude/skills/collab-attest.md.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

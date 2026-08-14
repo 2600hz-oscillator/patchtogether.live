@@ -10,7 +10,7 @@
   // lives in a shared global stylesheet so any route can adopt it by wrapping
   // its content in a `.docs-root` element. Every rule is `.docs-root`-scoped, so
   // importing it here is behavior-identical to the former inline <style> block.
-  // See .myrobots/plans/landing-page-ux-overhaul-2026-07-01.md (Phase 0).
+  // (Phase 0).
   import '$lib/styles/house.css';
 
   const nav = [

@@ -12,7 +12,7 @@
 // (readScopePeakOverWindow — flake-safe for percussive/decaying voices: a
 // single analyser snapshot can land in the inter-hit gap), and (2) a
 // SPECTRAL check that the <120 Hz band DOMINATES the voice — the "deep sub"
-// claim of the build plan (.myrobots/plans/kick-drum-voice-2026-07-01.md §6),
+// claim of the build plan,
 // measured with windowed max-hold Goertzel band energies on the scope's
 // time-domain tap.
 //

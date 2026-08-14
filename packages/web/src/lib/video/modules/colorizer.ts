@@ -76,7 +76,7 @@ export const colorizerDef: VideoModuleDef = {
     // manifest (module-manifest.ts) to render the correct "CV -> X
     // param." description; the runtime bridge looks up via port id
     // directly so it works without paramTarget — see issue #G.1 in
-    // .myrobots/plans/test-coverage-audit.md.
+    // cv-paramtarget-invariant.test.ts.
     { id: 'tintR', type: 'cv', paramTarget: 'tintR', cvScale: { mode: 'linear' } },
     { id: 'tintG', type: 'cv', paramTarget: 'tintG', cvScale: { mode: 'linear' } },
     { id: 'tintB', type: 'cv', paramTarget: 'tintB', cvScale: { mode: 'linear' } },

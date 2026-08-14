@@ -5,7 +5,7 @@
 //
 // Runs the sequencer's INTERNAL-clock step advance + gate/pitch emission on the
 // AUDIO thread, so a canvas-drag main-thread stall can never drop a step (the
-// clock-drop-on-drag bug — .myrobots/plans/clock-drag-jank-analysis-2026-06-29.md).
+// clock-drop-on-drag bug —).
 // AudioParam scheduling is main-thread-only, which is why the engine must live in
 // the worklet rather than being driven by a main-thread lookahead loop.
 //

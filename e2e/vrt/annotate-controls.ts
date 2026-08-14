@@ -1,7 +1,7 @@
 // e2e/vrt/annotate-controls.ts
 //
 // Numbered-control overlay helper for the docs-overhaul "numbered device-face"
-// screenshot pipeline (.myrobots/plans/docs-overhaul-plan-2026-06-23.md §4a).
+// screenshot pipeline.
 //
 // Given a spawned module card Locator, this:
 //   1. enumerates the card's interactive CONTROLS — preferring a stable

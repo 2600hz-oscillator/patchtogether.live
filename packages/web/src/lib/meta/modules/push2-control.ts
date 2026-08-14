@@ -5,7 +5,7 @@
 // / note-editor / arm / scene / KEYS parity surface by injecting itself as the
 // control surface of the shipped launchpad-control singleton (no forked parity
 // logic — see $lib/control/push2/push2-control.svelte.ts and the plan
-// .myrobots/plans/push2-control-phase1.md §3, decision A).
+//, decision A).
 //
 // ON TOP of parity, the additive Push-only features are built around the PUSH
 // CARD — the view every module shows on the 960×160 screen (up to 8 controls,

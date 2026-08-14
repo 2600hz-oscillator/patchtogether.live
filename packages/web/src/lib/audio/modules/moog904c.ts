@@ -15,7 +15,7 @@
 // the 904A (.lp4 tap) + 904B (hpDerive tap) consume. Series LP→HP = the
 // band-pass; mode=1 subtracts the band from the input for the notch. NOT a
 // port of the LGPLv3 Huovilainen code, the CC-BY-SA musicdsp model, or any
-// Moog schematic (.myrobots/MOOG/LICENSING.md: permissive / own-code only).
+// Moog schematic (permissive / own-code only).
 //
 // Inputs:
 //   audio (audio): signal to be band-passed.

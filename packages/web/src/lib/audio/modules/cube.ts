@@ -1,7 +1,7 @@
 // packages/web/src/lib/audio/modules/cube.ts
 //
 // CUBE — 3D wavetable-navigator oscillator (slice 3): the web AudioModuleDef +
-// factory. See .myrobots/CUBE/PLAN.md for the design.
+// factory. for the design.
 //
 // CUBE builds a 3D scalar field out of THREE e352 wavetables (FLOOR / WALL /
 // CEILING) and reads an arbitrary planar slice through it as the played

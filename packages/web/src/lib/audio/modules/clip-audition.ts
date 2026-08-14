@@ -2,8 +2,7 @@
 //
 // Per-machine, IN-MEMORY LIVE-AUDITION channel for the clip player — the bridge
 // that lets the dual-Launchpad KEYS keyboard SOUND its notes immediately, with
-// or without recording (design: .myrobots/plans/clip-record-note-mode-2026-07-01.md
-// P0/P3). It mirrors clip-playhead.ts exactly: the launchpad binding is a global
+// or without recording (// P0/P3). It mirrors clip-playhead.ts exactly: the launchpad binding is a global
 // `.svelte.ts` singleton with NO engine-context, so it CANNOT call the factory
 // handle directly. Instead it PUSHES note on/off events into an in-memory queue
 // keyed by nodeId; the clipplayer factory `tick` DRAINS the queue each tick and

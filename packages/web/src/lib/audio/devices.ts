@@ -106,7 +106,7 @@ export interface AudioInConstraintOpts {
  * We always request 2 channels — the browser hard-caps ES-9 capture at 2
  * (`getCapabilities().channelCount` max=2; `channelCount:{exact:4}` →
  * OverconstrainedError). >2-in / per-channel is the native track
- * (`patchtogether.es9`); see .myrobots/plans/es9-stereo-io.md.
+ * (`patchtogether.es9`).
  *
  * `opts.musicMode` (default false) forces echoCancellation /
  * noiseSuppression / autoGainControl OFF for a clean line-level feed.

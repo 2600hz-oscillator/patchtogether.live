@@ -12,7 +12,7 @@
 //         a short trigger releasing mid-attack still decays over T3).
 //
 // OWN CODE — clean-room exponential-segment contour (NOT a Moog schematic/copyleft
-// port; .myrobots/MOOG/LICENSING.md). Lives in `lib/` so the dist build does NOT
+// port;). Lives in `lib/` so the dist build does NOT
 // treat it as a worklet entry; esbuild `bundle:true` inlines it into the worklet
 // at no runtime cost. Consumer: moog911.ts.
 

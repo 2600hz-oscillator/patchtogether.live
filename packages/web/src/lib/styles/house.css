@@ -1,7 +1,7 @@
 /* house.css — the docs "house" stylesheet.
  *
  * Extracted verbatim from routes/docs/+layout.svelte's <style> block (Phase 0
- * of the UX-overhaul plan, .myrobots/plans/landing-page-ux-overhaul-2026-07-01.md).
+ * of the UX-overhaul plan,).
  * Any route becomes "same house" (the black / electric-blue / white Tron look)
  * simply by wrapping its content in a `.docs-root` element and importing this
  * file.

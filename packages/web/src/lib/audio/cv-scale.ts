@@ -1,7 +1,7 @@
 // packages/web/src/lib/audio/cv-scale.ts
 //
 // CV → AudioParam scaling. Project convention (see
-// .myrobots/plans/cv-range-standard.md): the `cv` cable type carries a
+// docs/adr/004-cv-range-convention.md): the `cv` cable type carries a
 // bipolar -1..+1 modulation signal. ±1 should sweep the destination
 // param through its FULL natural range, centered on the user-set knob
 // position.

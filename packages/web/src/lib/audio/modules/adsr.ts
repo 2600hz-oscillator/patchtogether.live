@@ -7,7 +7,7 @@
 // gate falling triggers the release stage back to 0. All segments are
 // LINEAR ramps (Faust stdlib en.adsr — see packages/dsp/src/adsr.dsp).
 // All four stage params respond to CV input scaled per the project
-// CV-range standard (see .myrobots/plans/cv-range-standard.md):
+// CV-range standard (see docs/adr/004-cv-range-convention.md):
 // attack/decay/release use log scaling so cv=±1 multiplies/divides the
 // stage time by 100x (two decades either way); sustain uses linear
 // because the param is already 0..1 native. An inverted envelope output
@@ -61,7 +61,7 @@ export const adsrDef: AudioModuleDef = {
     // CV inputs route to the corresponding AudioParam, with engine-level
     // scaling (cvScale) so a -1..+1 LFO sweeps each param's full natural
     // range centered on the user's knob position. See
-    // .myrobots/plans/cv-range-standard.md. Without scaling, an LFO would
+    // docs/adr/004-cv-range-convention.md. Without scaling, an LFO would
     // touch only ~10% of attack/decay/release (0.001-10s log range).
     //
     // attack/decay/release use log scaling: knob × (max/min)^(cv/2) so cv=±1

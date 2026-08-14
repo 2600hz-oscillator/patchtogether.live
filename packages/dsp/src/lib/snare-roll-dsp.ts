@@ -1,8 +1,7 @@
 // packages/dsp/src/lib/snare-roll-dsp.ts
 //
 // SNARE DRUM — the POLYPHONIC two-hand DRUMROLL engine + the fixed-ring
-// lowest-energy voice allocator (design .myrobots/snare-drum-module-design.md
-// §3). Pure, deterministic, allocation-free in the hot path; the unit-tested
+// lowest-energy voice allocator. Pure, deterministic, allocation-free in the hot path; the unit-tested
 // correctness gate for the roll. It emits STROKE EVENTS (velocity, hand, pan,
 // per-hand detune, and an alloc-vs-bed-only flag) that snaredrum-dsp.ts
 // consumes to strike pool voices and re-excite the shared wire-buzz bed.

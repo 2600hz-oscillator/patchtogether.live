@@ -2,7 +2,7 @@
 //
 // PURE PortDef/ParamDef → human-readable explanation layer for the docs
 // site's auto-generated Inputs & Outputs section (the (c) section of the
-// per-module doc page; see .myrobots/plans/docs-overhaul-plan-2026-06-23.md
+// per-module doc page;
 // §3c / §4b).
 //
 // Truth flows FROM the defs: every field on a PortDef / ParamDef maps to a

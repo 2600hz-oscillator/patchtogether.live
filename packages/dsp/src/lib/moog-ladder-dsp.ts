@@ -8,7 +8,7 @@
 // ladder stage for the Moog growl + self-oscillation. It is NOT a port of
 // any copyleft source: NOT the LGPLv3 Huovilainen reference C / CSound
 // `moogladder` opcodes, NOT the CC-BY-SA musicdsp.org "Moog VCF" model,
-// NOT any Moog schematic. Per .myrobots/MOOG/LICENSING.md (permissive /
+// NOT any Moog schematic. (permissive /
 // own-code DSP only). It deliberately mirrors the repo's existing TPT
 // idiom — lib/resofilter-dsp.ts (Cytomic/Zavalishin SVF) — so all the
 // VA filters in the codebase stay consistent.

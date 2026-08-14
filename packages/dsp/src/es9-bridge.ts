@@ -5,7 +5,7 @@
 // the bridge Worker (web-side, owns the ws://127.0.0.1 socket to the
 // es9-bridge native app) fills/drains. Everything stays OFF the main thread:
 // a canvas-drag stall can never glitch the hardware stream
-// (.myrobots/plans/clock-drag-jank-analysis-2026-06-29.md is why).
+// ( is why).
 //
 //   inRing  (worker writes ← WebSocket)  → this worklet → 32 outputs
 //   16 inputs → this worklet → outRing   (worker drains → WebSocket)

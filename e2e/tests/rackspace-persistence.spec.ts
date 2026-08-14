@@ -1,7 +1,6 @@
 // e2e/tests/rackspace-persistence.spec.ts
 //
-// End-to-end coverage for the rackspace-persistence audit (see
-// .myrobots/plans/rackspace-persistence.md). The audit's claim is:
+// End-to-end coverage for the rackspace-persistence audit. The audit's claim is:
 // "every asset stored under node.data already rides the Y.Doc, so the
 // .imp.json export envelope captures everything by construction." This
 // spec pins that claim from the browser side by:

@@ -47,7 +47,7 @@ export const charlottesEchosDef: AudioModuleDef = {
   inputs: [
     { id: 'L',     type: 'audio' },
     { id: 'R',     type: 'audio' },
-    // CV scaling per .myrobots/plans/cv-range-standard.md.
+    // CV scaling per docs/adr/004-cv-range-convention.md.
     // delay: log (0.001..1.5s).
     { id: 'delay', type: 'cv', paramTarget: 'delay', cvScale: { mode: 'log' } },
   ],

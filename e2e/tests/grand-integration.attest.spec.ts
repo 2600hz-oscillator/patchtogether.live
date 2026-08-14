@@ -1,7 +1,7 @@
 // e2e/tests/grand-integration.attest.spec.ts
 //
 // THE heavy GRAND-INTEGRATION workflow-mode scenario — the browser side of the
-// grand local attest (.myrobots/plans/grand-integration-e2e-art-2026-07-19.md).
+// grand local attest (.claude/skills/grand-attest.md).
 // It builds up, in WORKFLOW MODE, the owner's full patch and asserts HARD ENGINE
 // STATE on every claim:
 //

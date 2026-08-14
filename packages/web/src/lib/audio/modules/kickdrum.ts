@@ -1,7 +1,6 @@
 // packages/web/src/lib/audio/modules/kickdrum.ts
 //
-// KICK DRUM — layered stereo kick VOICE (build plan:
-// .myrobots/plans/kick-drum-voice-2026-07-01.md). A super-deep, pulsing
+// KICK DRUM — layered stereo kick VOICE. A super-deep, pulsing
 // bass kick built from three DECOUPLED generator layers on a serial
 // processing bus, so "deep pulse" (sub) and "punch" (body + click) live on
 // orthogonal knobs and can be maxed together without fighting:

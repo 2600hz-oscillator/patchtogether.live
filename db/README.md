@@ -68,7 +68,7 @@ Trigger a redeploy of the web tier afterward — env vars apply on next build, n
 
 ## Why not Fly Postgres + plain `pg` (the path we tried first)
 
-CF Workers' `node:net` shim under `nodejs_compat` returns "proxy request failed" on any `pg.Client.connect()` — `pg` doesn't speak the `cloudflare:sockets` protocol. The Neon serverless package's WebSocket `Pool` also fails: CF's egress proxy 403s the outbound WS handshake. **Only the HTTP `neon` template tag works.** See `cf-workers-pg-blocker.md` in agent memory + `.myrobots/plans/workers-pg-blocker.md` for the full diagnosis trail.
+CF Workers' `node:net` shim under `nodejs_compat` returns "proxy request failed" on any `pg.Client.connect()` — `pg` doesn't speak the `cloudflare:sockets` protocol. The Neon serverless package's WebSocket `Pool` also fails: CF's egress proxy 403s the outbound WS handshake. **Only the HTTP `neon` template tag works.** See `cf-workers-pg-blocker.md` in agent memory for the full diagnosis trail.
 
 The first iteration of B1 ran Fly Managed Postgres (3 instances, one per tier, with dedicated IPv4 + AAAA DNS). That whole stack is decommissioned post-Neon — no Fly Postgres in use today.
 

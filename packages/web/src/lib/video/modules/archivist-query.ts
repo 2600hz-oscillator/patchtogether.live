@@ -6,7 +6,7 @@
 // (see archivist-query.test.ts) and reused by the card + e2e mocks.
 //
 // Feasibility verified 2026-06-14 against the live endpoints — see
-// .myrobots/plans/archivist-module-2026-06-14.md. Headline: search +
+//. Headline: search +
 // metadata are CORS-open; image + audio served files are CORS-clean (real
 // downstream outputs); VIDEO served files lack CORS on the final hop, so
 // video is play-only (tainted texture, no clean `video` output).

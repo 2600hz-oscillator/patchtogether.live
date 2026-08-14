@@ -12,7 +12,7 @@
 // DSP: own-code, CLEAN-ROOM — CONSUMES the same shared transistor-ladder
 // core the 904A uses (packages/dsp/src/moog904b.ts via
 // lib/moog-ladder-dsp.ts's hpDerive). Permissive, not a port of any Moog
-// schematic / copyleft source (.myrobots/MOOG/LICENSING.md).
+// schematic / copyleft source.
 //
 // Inputs:
 //   audio (audio): signal to be filtered.

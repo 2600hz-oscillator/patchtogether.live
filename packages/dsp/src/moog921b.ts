@@ -19,7 +19,7 @@
 // sync the 921 VCO uses — but is SLAVED to the freq_bus / width_bus CONTROL
 // INPUTS (from the 921A) rather than carrying its own 1V/oct pitch jack.
 // Permissive, not a port of any Moog schematic / copyleft source
-// (.myrobots/MOOG/LICENSING.md: permissive / own-code only).
+// (permissive / own-code only).
 //
 // IMPORTANT: this file does NOT `export` anything at the top level —
 // top-level exports leak into the bundled dist/<name>.js + break the ART

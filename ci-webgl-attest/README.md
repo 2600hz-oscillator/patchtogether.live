@@ -96,4 +96,4 @@ This whole scheme is **retired the day a real-GPU CI runner lands**: re-enable
 `webgl-attest` job, `scripts/webgl-attest*`, the `webgl:attest*` Taskfile
 targets, and this folder (one cleanup PR). The umbrella name never changed, so
 retirement needs no ruleset edit. See
-`.myrobots/plans/webgl-attestation-semaphore.md` §11.
+`.claude/skills/webgl-attest.md` §11.

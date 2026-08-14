@@ -49,7 +49,7 @@
 // editing is patch DESIGN, not performance.
 //
 // Data-side state (all Yjs-synced, all persisted by Hocuspocus snapshots and
-// the .imp.json export envelope — see .myrobots/plans/rackspace-persistence.md):
+// the .imp.json export envelope):
 //   node.data.preset      — the ORIGIN voice name (a display label).
 //   node.data.userPatches — DX7Voice[] imported from .syx cartridges.
 //   node.data.voice       — the working EDIT BUFFER (plain JS, deep-unwrapped).

@@ -5,8 +5,7 @@
 // stage. Mate to KICK DRUM: it clones that proven template (state-object
 // discipline, sr-calibrated decay, seeded xorshift reseeded per strike,
 // FLUSH=1e-20, per-channel tanh ceiling, mono-safe M/S) and adds the polyphonic
-// two-hand drumroll (packages/dsp/src/lib/snare-roll-dsp.ts). Design + build
-// spec: .myrobots/snare-drum-module-design.md.
+// two-hand drumroll (packages/dsp/src/lib/snare-roll-dsp.ts).
 //
 // Four decoupled acoustic layers, each an independently-decaying generator
 // (design §1):

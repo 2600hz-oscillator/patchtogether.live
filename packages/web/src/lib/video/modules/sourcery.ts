@@ -23,7 +23,7 @@
 // Temporal amortization (mandatory): the expensive shape stage (readback + core
 // + LUT upload) runs every K frames; the cheap GPU fill sampling live B runs
 // every frame — so B motion stays smooth while the shape/label stage updates at
-// ~15-20 Hz. See sourcery-core.ts + .myrobots/sourcery-video-module-design.md.
+// ~15-20 Hz. See sourcery-core.ts +.
 //
 // Fallbacks: B unpatched → passthrough A (identity); an A region with no B match
 // → identity/passthrough (the LUT `valid` flag gates the shader), so the output

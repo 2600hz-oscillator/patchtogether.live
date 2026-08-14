@@ -3,7 +3,7 @@
 // The LOCAL @collab attestation RUNNER + WRITER (invoked by `task collab:attest`
 // via scripts/collab-attest.sh). The collab analogue of scripts/webgl-attest.ts.
 //
-// WHY THIS EXISTS (full rationale in .myrobots/plans/collab-attest-2026-06-15.md
+// WHY THIS EXISTS (full rationale in .claude/skills/collab-attest.md
 // and ci-collab-attest/README.md): the @collab CI lane is ~6.5-8 min and FLAKY —
 // the in-memory Hocuspocus relay buckles under CI's 10-parallel-shard contention,
 // so it's INFORMATIONAL (un-gated since 2026-06-06) and the DOOM-MP specs

@@ -3,7 +3,7 @@
 // Hocuspocus extension that emits a per-document heartbeat over Yjs
 // Awareness. Each tick carries `{ tick: int, ts_ms: float }` keyed under
 // the reserved field `__heartbeat`. Clients use these to derive a shared
-// clock (offset + RTT) per .myrobots/plans/shared-state-sync.md §3.
+// clock (offset + RTT)
 //
 // Cadence: 1 Hz steady-state, 8 Hz burst for the first BURST_DURATION_MS
 // after any client connects. Burst gives newly-arrived clients a stable

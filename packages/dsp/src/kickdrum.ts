@@ -2,7 +2,7 @@
 //
 // KICK DRUM — layered stereo kick-voice AudioWorkletProcessor.
 //
-// Build plan: .myrobots/plans/kick-drum-voice-2026-07-01.md. The per-sample
+//. The per-sample
 // DSP lives in ./lib/kickdrum-dsp.ts (the FULL Phases-1–5 chain: SUB +
 // BODY + CLICK layers, the oversampled `hard`-switch DRIVE, the own-code
 // RBJ EQ chain + TRANSLATE exciter, the DYNAMICS block, and the Phase-5

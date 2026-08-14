@@ -23,7 +23,7 @@
 export const MIN_MIDI = 12;  // c0  = 16.35   Hz
 export const MAX_MIDI = 108; // c8  = 4186.01 Hz
 //
-// Note: the spec text in .myrobots/plans/sequencer-cartesian-note-entry.md
+// Note: the spec text
 // lists f#8 as MIDI 102 in the "ART tests" table, but with the standard
 // convention (a4 = MIDI 69) and the listed frequency 5919.911 Hz, the correct
 // MIDI int for f#8 is 114. We use the correct value here since the two fixed

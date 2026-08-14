@@ -45,7 +45,7 @@
 //   returns `{ max: 2, min: 1 }` and `getUserMedia({ channelCount:
 //   { exact: 4 } })` throws OverconstrainedError. So 4-in / per-channel
 //   (3/4, 5/6, …) is NOT reachable in-browser — that's the native track
-//   (`patchtogether.es9`); see .myrobots/plans/es9-stereo-io.md. The WIRING decision still
+//   (`patchtogether.es9`). The WIRING decision still
 //   trusts the track's reported channelCount: >=2 takes the splitter
 //   (true L/R), 1 or UNREPORTED takes the mono fan-out (L=R) — the safe
 //   default, since a mono source through the stereo splitter would leave
@@ -82,8 +82,7 @@
 //   throws OverconstrainedError. So 4-in / per-channel capture is NOT
 //   reachable in-browser; it's the NATIVE track (`patchtogether.es9`).
 //   The earlier audio_3_out/audio_4_out ports were a phantom feature (they
-//   could never carry signal) and were removed. See
-//   .myrobots/plans/es9-stereo-io.md.
+//   could never carry signal) and were removed.
 //
 // Params:
 //   gain (linear 0..2, default 1.0): post-source gain. Useful for hot
@@ -124,7 +123,7 @@ export const audioInDef: AudioModuleDef = {
   // The stereo pair (L/R = device channels 1/2) — the hard browser ceiling
   // for ES-9 capture (getCapabilities().channelCount max=2; an exact:4
   // request throws OverconstrainedError). >2-in / per-channel is native-
-  // only (patchtogether.es9); see .myrobots/plans/es9-stereo-io.md.
+  // only (patchtogether.es9).
   outputs: [
     { id: 'audio_l_out', type: 'audio' },
     { id: 'audio_r_out', type: 'audio' },
@@ -178,7 +177,7 @@ export const audioInDef: AudioModuleDef = {
     // Only the stereo pair (L/R = device channels 1/2) is exposed: the
     // browser caps ES-9 capture at 2 channels (getCapabilities max=2;
     // channelCount:{exact:4} → OverconstrainedError), so 4-in / per-channel
-    // is native-only (the native track; see .myrobots/plans/es9-stereo-io.md).
+    // is native-only (the native track).
     const initialGain = (node.params ?? {}).gain ?? 1.0;
 
     const gainL = ctx.createGain();

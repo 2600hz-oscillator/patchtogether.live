@@ -10,7 +10,7 @@
 // fixed-frequency law are duplicated inline below and gated by
 // dx7-algorithms.test.ts + dx7-envelope-mirror.test.ts; keep them aligned.
 //
-// Architecture summary (see .myrobots/plans/dx7-and-polyphony.md §7 — Path C
+// Architecture summary ( — Path C
 // pure-TS implementation):
 //
 //   - 5 voices (matches Stage-1 polyPitchGate cable: 5 voice pairs).

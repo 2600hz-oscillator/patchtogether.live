@@ -1,6 +1,6 @@
 // art/scenarios/cv-range-uniformity/cv-scale-coverage.test.ts
 //
-// Per .myrobots/plans/cv-range-standard.md, an LFO at full ±1 amplitude
+// Per docs/adr/004-cv-range-convention.md, an LFO at full ±1 amplitude
 // connected to ANY module's `cv`-typed input MUST sweep the modulated
 // param through (close to) its full natural range — centered on the
 // user's knob position. This test pins the cv-scale math at the

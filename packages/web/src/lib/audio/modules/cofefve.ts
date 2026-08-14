@@ -168,7 +168,7 @@ export const cofefveDelayDef: AudioModuleDef = {
     { id: 'inR', type: 'audio' },
     // External clock for tempo sync (TIMELORDE or MIDICLOCK).
     { id: 'clock', type: 'gate', edge: 'trigger' },
-    // Per-param CV (range standard per .myrobots/plans/cv-range-standard.md).
+    // Per-param CV (range standard per docs/adr/004-cv-range-convention.md).
     { id: 'time_cv',     type: 'cv', paramTarget: 'delayTime', cvScale: { mode: 'log' } },
     { id: 'feedback_cv', type: 'cv', paramTarget: 'feedback',  cvScale: { mode: 'linear' } },
     { id: 'mix_cv',      type: 'cv', paramTarget: 'wetVolume', cvScale: { mode: 'linear' } },
