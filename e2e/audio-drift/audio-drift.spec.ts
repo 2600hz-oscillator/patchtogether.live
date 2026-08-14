@@ -18,6 +18,7 @@
 import { test } from '@playwright/test';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
+import { localBaseUrl } from '../worktree-port';
 import { fileURLToPath } from 'node:url';
 
 import { openTwoContexts, authorPatchAndAwaitSync, type PatchSpec } from './_collab';
@@ -537,7 +538,9 @@ test.afterAll(async () => {
   const run: RunResults = {
     startedAt: runStartedAt,
     finishedAt: new Date().toISOString(),
-    baseURL: process.env.E2E_BASE_URL ?? 'http://localhost:5173',
+    // Mirrors audio-drift.config.ts's target resolution (#1597: the default is
+    // this worktree's derived port, not the shared 5173).
+    baseURL: localBaseUrl(process.env.E2E_USE_PREVIEW === '1' ? 'preview' : 'dev').baseUrl,
     scenarios: allResults,
   };
   await writeFile(
