@@ -20,14 +20,6 @@ import {
   type GroupSettings,
 } from './marbles-core';
 
-declare const sampleRate: number;
-declare class AudioWorkletProcessor {
-  constructor(options?: unknown);
-  readonly port: MessagePort;
-  process(inputs: Float32Array[][], outputs: Float32Array[][], parameters: Record<string, Float32Array>): boolean;
-}
-declare function registerProcessor(name: string, ctor: new (options?: unknown) => AudioWorkletProcessor): void;
-
 function clamp(x: number, lo: number, hi: number): number {
   return x < lo ? lo : x > hi ? hi : x;
 }
@@ -71,7 +63,7 @@ class MarblesProcessor extends AudioWorkletProcessor {
   private cfgCounter = 0;
   private scaleLoaded = -1;
 
-  constructor(options?: unknown) {
+  constructor(options?: { processorOptions?: unknown }) {
     super(options);
     this.t.reset();
     for (let s = 0; s < PRESET_SCALES.length; s++) this.xy.loadScaleAll(s, PRESET_SCALES[s]!);

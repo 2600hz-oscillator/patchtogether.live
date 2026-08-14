@@ -28,21 +28,6 @@
 
 import { AnalogDelayCore, type AnalogDelaySettings } from './lib/analog-delay-core';
 
-declare const sampleRate: number;
-declare class AudioWorkletProcessor {
-  port: MessagePort;
-  constructor(options?: { processorOptions?: unknown });
-  process?(
-    inputs: Float32Array[][],
-    outputs: Float32Array[][],
-    parameters: Record<string, Float32Array>,
-  ): boolean;
-}
-declare function registerProcessor(
-  name: string,
-  ctor: typeof AudioWorkletProcessor,
-): void;
-
 // Shim worklet globals when running outside AudioWorkletGlobalScope (vitest +
 // the ART harness capture the class via these shims).
 const G = globalThis as unknown as {

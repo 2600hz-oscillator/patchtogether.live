@@ -52,18 +52,6 @@ import {
 } from './lib/treeohvox-dsp';
 import { WtParamSmoother } from './lib/wavetable-osc';
 
-declare const sampleRate: number;
-declare class AudioWorkletProcessor {
-  port: MessagePort;
-  constructor(options?: { processorOptions?: unknown });
-  process?(
-    inputs: Float32Array[][],
-    outputs: Float32Array[][],
-    parameters: Record<string, Float32Array>,
-  ): boolean;
-}
-declare function registerProcessor(name: string, ctor: typeof AudioWorkletProcessor): void;
-
 // Shim worklet globals for vitest. The worklet entry-point file itself is
 // classic-script-evaled by the AudioWorkletGlobalScope; in node/vitest we
 // fake the symbols so importing the module doesn't throw, then capture the

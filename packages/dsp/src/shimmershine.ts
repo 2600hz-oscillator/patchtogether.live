@@ -48,18 +48,6 @@
 //   never sounded like anything either. One 20 Hz one-pole in the loop takes
 //   the DC round-trip gain to zero and leaves the audio band untouched.
 
-declare const sampleRate: number;
-declare class AudioWorkletProcessor {
-  port: MessagePort;
-  constructor(options?: { processorOptions?: unknown });
-  process?(
-    inputs: Float32Array[][],
-    outputs: Float32Array[][],
-    parameters: Record<string, Float32Array>,
-  ): boolean;
-}
-declare function registerProcessor(name: string, ctor: typeof AudioWorkletProcessor): void;
-
 // ---------- Schroeder reverb tank ----------
 // Four parallel comb filters with hand-picked prime-ish lengths (Freeverb's
 // canonical numbers, normalized to 44.1 kHz then scaled to live sampleRate).

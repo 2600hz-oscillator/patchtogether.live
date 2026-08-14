@@ -24,22 +24,7 @@
 import { SeqClockCore } from './lib/seq-clock-core';
 import type { SeqClockConfig } from './lib/seq-clock-core';
 
-declare class AudioWorkletProcessor {
-  port: MessagePort;
-  constructor(options?: { processorOptions?: unknown });
-  process?(
-    inputs: Float32Array[][],
-    outputs: Float32Array[][],
-    parameters: Record<string, Float32Array>,
-  ): boolean;
-}
-declare function registerProcessor(
-  name: string,
-  ctor: typeof AudioWorkletProcessor,
-): void;
 // `sampleRate` is a global in AudioWorkletGlobalScope.
-declare const sampleRate: number;
-
 // Shim the worklet globals when running outside AudioWorkletGlobalScope (vitest).
 // Guarded so the real runtime is untouched.
 const G = globalThis as unknown as {
