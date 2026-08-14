@@ -187,8 +187,20 @@ export default defineConfig({
       // live in their own projects below and are unaffected.
       testIgnore:
         WEBGL_HEAVY_MODE === 'exclude'
-          ? ['**/camera-input.spec.ts', '**/audio-in.spec.ts', ...EFFECTIVE_HEAVY_GLOBS]
-          : ['**/camera-input.spec.ts', '**/audio-in.spec.ts'],
+          ? [
+              '**/camera-input.spec.ts',
+              '**/audio-in.spec.ts',
+              '**/audio-input-survives-card-collapse.spec.ts',
+              ...EFFECTIVE_HEAVY_GLOBS,
+            ]
+          : [
+              '**/camera-input.spec.ts',
+              '**/audio-in.spec.ts',
+              // #1590 — needs the fake mic, so it must NOT run here: the
+              // default project deliberately keeps getUserMedia FAILING, and
+              // several specs assert that predictable NotAllowedError.
+              '**/audio-input-survives-card-collapse.spec.ts',
+            ],
       ...(WEBGL_HEAVY_MODE === 'only' ? { testMatch: [...EFFECTIVE_HEAVY_GLOBS] } : {}),
       use: {
         ...devices['Desktop Chrome'],
@@ -212,7 +224,10 @@ export default defineConfig({
       // Not WebGL-heavy → it belongs in the functional (sharded) lane, not the
       // e2e-video lane. Disable it in 'only' mode (empty testMatch = no specs)
       // so the dedicated video job runs ONLY the WebGL-heavy globs.
-      testMatch: WEBGL_HEAVY_MODE === 'only' ? [] : ['**/audio-in.spec.ts'],
+      testMatch:
+        WEBGL_HEAVY_MODE === 'only'
+          ? []
+          : ['**/audio-in.spec.ts', '**/audio-input-survives-card-collapse.spec.ts'],
       use: {
         ...devices['Desktop Chrome'],
         permissions: ['microphone'],

@@ -82,6 +82,13 @@ export function loadContention(dir = join(ROOT, 'e2e/tests')) {
  */
 export const PENDING_FIRST_MEASUREMENT = [
   {
+    spec: 'audio-input-survives-card-collapse.spec.ts',
+    why:
+      'lands with the #1590 audioIn node-lifetime fix (#1611); no ci.yml run containing it has ' +
+      'completed yet, so there are no blob reports to accept a cost from. Run ' +
+      '`task e2e:timings:accept -- <run-id>` on the first green main run after #1611 and delete this entry.',
+  },
+  {
     spec: 'doom-session-survives-card-collapse.spec.ts',
     why:
       'landed 2026-08-14 with the #1618 doom node-lifetime fix; no ci.yml run containing it has ' +

@@ -1,22 +1,34 @@
 {
   "schemaVersion": 1,
-  "webglContentHash": "27479e869f4859f46a73cc2a184ba0b3557578286b8c15952a4cce9365a7f08c",
-  "attestedAt": "2026-08-13T23:22:52.014Z",
+  "webglContentHash": "d0353eddcaefcc6f34f0950733c5f288048c07386847d264630886444aa220a5",
+  "attestedAt": "2026-08-14T14:07:45.920Z",
   "attestedBy": "patchtogether-maintainer",
-  "gitHeadAtAttest": "d01cade61a434b8c229cba7b2029a1e624b2a161",
+  "gitHeadAtAttest": "c912f1ff8c35ea397fff294811a6e1c56659d876",
   "playwrightVersion": "1.50.0",
   "os": "darwin 25.4.0 (arm64)",
   "machineClass": "local-trusted-gpu-workstation",
   "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5, Unspecified Version)",
+  "appServer": {
+    "url": "http://127.0.0.1:51259",
+    "mode": "dev",
+    "root": "/Users/2600hz/Documents/workspace/inet.modular",
+    "commit": "c912f1ff8c35ea397fff294811a6e1c56659d876"
+  },
   "repeatEach": 1,
   "suites": {
     "A-heavy": {
       "specFiles": 57,
       "passed": 199,
       "failed": 0,
-      "flaky": 0,
-      "skipped": 3,
-      "flakyDetails": []
+      "flaky": 1,
+      "skipped": 2,
+      "flakyDetails": [
+        {
+          "test": "per-target menu items are correct + Escape closes",
+          "file": "toybox-node-menu.spec.ts",
+          "firstError": "Error: expect(locator).toBeVisible() failed |  | Locator: locator('[data-testid=\"toybox-menu-patch-output\"]') | Expected: visible"
+        }
+      ]
     },
     "A-serial": {
       "specFiles": 2,
@@ -43,5 +55,5 @@
       "flakyDetails": []
     }
   },
-  "durationSec": 202
+  "durationSec": 186
 }

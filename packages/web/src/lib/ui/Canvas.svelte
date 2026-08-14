@@ -225,6 +225,7 @@
   import { nodePresent } from '$lib/ui/modules/node-present-registry.svelte';
   import { nodeRecorder } from '$lib/ui/modules/node-recorder-registry.svelte';
   import { nodeSamsloop } from '$lib/ui/modules/node-samsloop-registry.svelte';
+  import { nodeAudioInput } from '$lib/ui/modules/node-audio-input-registry.svelte';
   import { nodeDoomSession } from '$lib/ui/modules/node-doom-session-registry.svelte';
   import { RACK_SIZE_DEFAULTS } from '$lib/ui/rack-sizes';
   // ModuleNameLabel moved INTO every module card's title chrome (see
@@ -741,6 +742,13 @@
       // is built by the registry so the spec and the registry cannot drift.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__samsloopRecording = (nodeId: string) => nodeSamsloop.probe(nodeId);
+      // #1590: the same probe for the NODE-owned live AUDIO INPUT. It reports
+      // `trackLive` — the actual `MediaStreamTrack.readyState` — and not just
+      // the registry's own opinion, because the defect was an IRREVERSIBLE
+      // `t.stop()`: a probe that only echoed registry state could stay happy
+      // while the device was already permanently `ended`.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__nodeAudioInput = (nodeId: string) => nodeAudioInput.probe(nodeId);
       // #1590: the NODE-owned DOOM session probe. `pumpRuns` is the CAUSAL
       // quantity (units: session-pump invocations, one per frame) — the exact
       // mechanism whose death starved every peer's lockstep barrier when the
@@ -2126,6 +2134,7 @@
     nodePresent.sweep(liveIds);
     nodeRecorder.sweep(liveIds);
     nodeSamsloop.sweep(liveIds);
+    nodeAudioInput.sweep(liveIds);
     nodeDoomSession.sweep(liveIds);
   });
 
