@@ -182,7 +182,6 @@
       <!-- The bundle controller binds to THIS canvas (window.SkiFree.create).
            tabindex makes it focusable so native mouse control can engage
            when x/y are unpatched. -->
-      <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
       <canvas
         bind:this={canvasEl}
         width={CSS}

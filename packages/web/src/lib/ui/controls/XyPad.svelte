@@ -280,8 +280,10 @@
   <!-- role="application" is the correct ARIA role for a 2-D manipulation surface
        with its own keyboard handling; Svelte's a11y linter still flags the
        tabindex + listeners on the <div>, so silence those specific rules. -->
-  <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+  <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions
+       — `role="application"` is exactly right for a control that OWNS its key handling: the pad
+       must be focusable and must take pointer + key handlers. Svelte's rules do not model
+       `application` as interactive. -->
   <div
     class="xy-pad nodrag"
     bind:this={padEl}

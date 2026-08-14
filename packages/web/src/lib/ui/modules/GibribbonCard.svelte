@@ -138,6 +138,10 @@
   ];
 </script>
 
+<!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions
+     — `role="application"` is exactly right here: the card OWNS its key handling (F/D/J/K and
+     arrows play ABXY), so it MUST be focusable and MUST take a keydown. Svelte's rules do not
+     model `application` as interactive. Same shape as the DOOM / BLOOD / CLIPPLAYER canvases. -->
 <div
   bind:this={cardEl}
   class="mod-card gibribbon-card"

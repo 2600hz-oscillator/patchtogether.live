@@ -171,7 +171,9 @@
           />
         {/each}
       </div>
-      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <!-- svelte-ignore a11y_no_static_element_interactions — a drag-to-resize splitter. The
+           dock can still be opened and closed from the keyboard through its rail buttons; only
+           the continuous size drag is pointer-only. -->
       <div
         class={`dock-grabber dock-grabber-${zone}`}
         data-testid={`dock-grabber-${zone}`}

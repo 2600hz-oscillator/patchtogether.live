@@ -785,7 +785,9 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
   <div class="body">
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <!-- svelte-ignore a11y_no_static_element_interactions — the only handler here is `oncontextmenu`, which opens the canvas menu. Right-click
+       already HAS a keyboard route the browser dispatches to this same event (the Menu key /
+       Shift+F10), so an extra key handler would be a second path to the same menu. -->
     <div
       bind:this={wrapEl}
       class="preview-wrap"
@@ -823,7 +825,12 @@
              next time. The <label> drives the native <input> on Firefox /
              Safari; onPickClick intercepts to use showOpenFilePicker on
              Chromium so the re-picked file gets a fresh remembered handle. -->
-        <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
+        <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions
+             — a <label> wrapping a file <input>, whose onclick opens the Chromium showOpenFilePicker
+             path. NOTE the codes are COMMA-separated: in runes mode svelte-ignore silently drops every
+             code after the first unless they are, and this exact comment used to be space-separated,
+             so the second rule was never actually suppressed. The picker is genuinely pointer-only
+             (.pick-btn input is display:none, so the input is not in the tab order) — #1572. -->
         <label
           class="overlay relink-hint"
           data-testid="videobox-relink-hint"
@@ -843,7 +850,12 @@
       {/if}
     </div>
 
-    <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
+    <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions
+         — a <label> wrapping a file <input>, whose onclick opens the Chromium showOpenFilePicker
+         path. NOTE the codes are COMMA-separated: in runes mode svelte-ignore silently drops every
+         code after the first unless they are, and this exact comment used to be space-separated,
+         so the second rule was never actually suppressed. The picker is genuinely pointer-only
+         (.pick-btn input is display:none, so the input is not in the tab order) — #1572. -->
     <label class="pick-btn" data-testid="videobox-pick-label" onclick={onPickClick}>
       <input
         type="file"

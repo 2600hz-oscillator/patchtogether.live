@@ -80,6 +80,9 @@
   // in `{#key data.rackspace.id}` so every Svelte subscription tears
   // down + reattaches when the bound rackspace changes — without that
   // the proxies seen by `$derived`/`$effect` blocks would dangle.
+  // svelte-ignore state_referenced_locally -- init-only ON PURPOSE, and paired with the
+  // onDestroy(unbindRackspace) below: one bind per page-component lifetime. It must run before
+  // any child subscribes to the store, which a $derived/$effect cannot guarantee.
   if (data.isMember) bindRackspace(data.rackspace.id);
 
 
@@ -87,7 +90,12 @@
   // session. Authed users pull displayName from Clerk's reactive context;
   // anon users get a per-tab UUID (sessionStorage) → "guest 1234" + a
   // deterministic palette color derived from that UUID.
+  // svelte-ignore state_referenced_locally -- both MUST run during component init:
+  // useClerkContext() is a getContext() call (illegal later), and getOrCreateAnonTabId()
+  // must mint the per-tab id exactly once. `data.isAnon` is a property of the loaded
+  // rackspace, so it cannot change without this component being torn down.
   const clerkCtx = data.isAnon ? null : useClerkContext();
+  // svelte-ignore state_referenced_locally -- see above; one per-tab anon id per mount.
   const anonId = data.isAnon ? getOrCreateAnonTabId() : null;
   let presenceUser = $derived.by<PresenceUser | null>(() => {
     if (!data.isMember) return null;
