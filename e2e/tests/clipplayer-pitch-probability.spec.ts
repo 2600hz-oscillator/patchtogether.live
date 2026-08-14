@@ -45,7 +45,7 @@ async function step0PitchProb(page: import('@playwright/test').Page) {
 
 async function openEditorWithNote(page: import('@playwright/test').Page) {
   await page.goto('/rack?shell=legacy&seed=none');
-  await spawnPatch(page, [{ id: 'pp-cp', type: 'clipplayer', domain: 'audio', x: 200, y: 120 }]);
+  await spawnPatch(page, [{ id: 'pp-cp', type: 'clipplayer', domain: 'audio', position: { x: 200, y: 120 } }]);
   const card = page.getByTestId('clipplayer-card').first();
   await card.waitFor({ state: 'visible' });
   await card.locator('.pad').first().dblclick(); // → editor, lane 0 / slot 0

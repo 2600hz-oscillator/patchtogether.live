@@ -42,6 +42,10 @@
 // lives in `_module-coverage-helpers.ts` — import it from there.
 
 import { test as base, expect, type Page } from '@playwright/test';
+
+// Several specs import `Page` from here alongside `test`/`expect` — keep the
+// type re-exported so the fixture module is a one-stop import (#1499).
+export type { Page };
 import { waitForMounted } from './_helpers';
 
 export interface ErrorWatch {

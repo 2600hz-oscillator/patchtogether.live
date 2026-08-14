@@ -44,9 +44,13 @@ import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 import { installRenderSmokeHooks } from './_render-smoke';
 
-type ObjMaterial = { surfaceSource?: number; [k: string]: number | undefined };
-
-type Edge = { id: string; from: string; to: string; toPort: string };
+// The REAL persisted shapes, imported from the app (#1499) — the previous
+// hand-redeclared copies here had drifted (no `params` on a layer, no
+// `modelId: string` on the material, no `layer`/`x`/`y`/`params` on combine
+// nodes), which is exactly the rot a local re-type invites. Both modules are
+// import-safe leaves (toybox-content has zero imports).
+import type { ToyboxLayer } from '../../packages/web/src/lib/video/toybox-content';
+import type { ToyboxCombineGraph } from '../../packages/web/src/lib/video/toybox-combine-graph';
 
 type PatchGlobal = {
   __patch: {
@@ -54,8 +58,8 @@ type PatchGlobal = {
       string,
       {
         data?: {
-          layers?: { kind?: string; contentId?: string | null; material?: ObjMaterial }[];
-          combine?: { nodes: { id: string; kind: string }[]; edges: Edge[] };
+          layers?: ToyboxLayer[];
+          combine?: ToyboxCombineGraph;
         };
       }
     >;
@@ -114,7 +118,7 @@ async function seedObjAndShader(page: Page): Promise<void> {
           { id: 'e1', from: 'src1', to: 'pass', toPort: 'in1' },
           { id: 'e2', from: 'pass', to: 'out', toPort: 'in0' },
         ],
-      } as PatchGlobal['__patch']['nodes'][string]['data']['combine'];
+      };
     });
   });
   await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));

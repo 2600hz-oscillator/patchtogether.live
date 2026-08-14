@@ -22,12 +22,23 @@ import { spawnPatch } from './_helpers';
 test.describe.configure({ mode: 'parallel' });
 
 type CPData = {
-  clips?: Record<string, { steps?: { step: number; midi: number; velocity: number }[] }>;
+  clips?: Record<
+    string,
+    {
+      kind?: string;
+      lengthSteps?: number;
+      root?: number;
+      loop?: boolean;
+      steps?: { step: number; midi: number; velocity: number; lengthSteps?: number }[];
+    }
+  >;
   muted?: boolean[];
   queued?: (number | 'stop' | null)[];
   playing?: (number | null)[];
   sceneLaunch?: { slot: number; n: number };
   sceneRepeats?: Record<string, number>;
+  /** Clip-store schema version — 2 = stride-64 keys (skips the legacy re-key migration). */
+  sv?: number;
 };
 type W = {
   __patch: { nodes: Record<string, { params?: Record<string, number>; data?: CPData }> };
@@ -46,7 +57,7 @@ async function seedClip(page: Page, id: string, idx: number) {
     w.__ydoc.transact(() => {
       const n = w.__patch.nodes[nid];
       if (!n.data) n.data = {};
-      const clips = (n.data.clips ?? {}) as Record<string, unknown>;
+      const clips = (n.data.clips ?? {}) as NonNullable<CPData['clips']>;
       clips[String(i)] = {
         kind: 'note', lengthSteps: 16, root: 48, loop: true,
         steps: [{ step: 0, midi: 60, velocity: 100, lengthSteps: 1 }],

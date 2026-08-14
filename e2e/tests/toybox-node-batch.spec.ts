@@ -542,7 +542,10 @@ test.describe('TOYBOX batch op nodes — multi-input exercise', () => {
       await page.locator('.svelte-flow__node-toybox').first().waitFor({ state: 'visible', timeout: 10_000 });
       await pinViewport(page);
 
-      const params = kind === 'over' ? { amount: 0.6 }
+      // Annotated so the ternary's branches don't infer a union of exact
+      // literal shapes (whose absent keys type as `undefined` and fail
+      // Record<string, number>).
+      const params: Record<string, number> = kind === 'over' ? { amount: 0.6 }
         : kind === 'displace' ? { amount: 0.35, channel: 1 }
         : { meltAmount: 0.8, dripSpeed: 0.6 };
       const steps = kind === 'dreammelt' ? 10 : 1;

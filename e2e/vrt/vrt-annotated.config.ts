@@ -72,7 +72,9 @@ export default defineConfig({
     baseURL: BASE_URL,
     viewport: { width: 1280, height: 720 },
     deviceScaleFactor: 1,
-    reducedMotion: 'reduce',
+    // ⚠ #1499: must be inside `contextOptions` — Playwright 1.59 silently
+    // ignores a top-level `reducedMotion` key (see vrt.config.ts note).
+    contextOptions: { reducedMotion: 'reduce' },
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     video: 'off',

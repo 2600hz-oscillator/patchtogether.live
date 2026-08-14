@@ -24,7 +24,7 @@ import { test, expect } from './_fixtures';
 import { type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, type SpawnEdge } from './_helpers';
 import { readScopeSnapshot, summarize } from './_module-coverage-helpers';
 
 const WEBM = readFileSync(fileURLToPath(new URL('../fixtures/av-clip.webm', import.meta.url)));
@@ -179,7 +179,7 @@ async function gotoApp(page: Page): Promise<string[]> {
 
 /** Add edges into the live patch in a single transact (post-attach), so the
  *  video->audio bridge captures the live splitter (mirrors video-audio-output). */
-async function addEdges(page: Page, edges: Parameters<typeof spawnPatch>[2]): Promise<void> {
+async function addEdges(page: Page, edges: SpawnEdge[]): Promise<void> {
   await page.evaluate((edges) => {
     const w = globalThis as unknown as {
       __patch: { edges: Record<string, unknown> };

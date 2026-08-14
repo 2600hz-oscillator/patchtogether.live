@@ -307,6 +307,9 @@ test.describe('ringback face — the readouts follow the graph', () => {
     // so every width below is an offsetWidth, and the glyph probe is appended
     // to document.body, OUTSIDE the transformed subtree.
     const fit = await readout.evaluate((el) => {
+      // Locator.evaluate hands us HTMLElement | SVGElement; offsetWidth (a
+      // layout-px box) only exists on HTMLElement — assert it, don't cast.
+      if (!(el instanceof HTMLElement)) throw new Error('readout is not an HTMLElement — offsetWidth (layout px) requires one');
       const cs = getComputedStyle(el);
       const kcol = el.closest('.kcol') as HTMLElement | null;
       if (!kcol) throw new Error('readout is not inside a .kcol — the cap does not apply');

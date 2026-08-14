@@ -131,7 +131,21 @@ test('a recording keeps GROWING while its card is collapsed', async ({ page }) =
       { id: 'src', type: 'acidwarp', domain: 'video' },
       { id: 'rec', type: 'recorderbox', domain: 'video' },
     ],
-    [{ from: 'src', fromPort: 'video_out', to: 'rec', toPort: 'video_in' }],
+    // ⚠ #1499: this edge was `{ from: 'src', fromPort: 'video_out', … }` — a
+    // shape spawnPatch never accepted (it reads `from.nodeId`/`from.portId` and
+    // keys by `e.id`), AND the port ids were wrong (acidwarp's out is 'out',
+    // recorderbox's in is 'in'). The acidwarp→recorderbox cable never actually
+    // materialized; the recording machinery was being exercised on an unfed
+    // input.
+    [
+      {
+        id: 'e-src-rec',
+        from: { nodeId: 'src', portId: 'out' },
+        to: { nodeId: 'rec', portId: 'in' },
+        sourceType: 'video',
+        targetType: 'video',
+      },
+    ],
     { mountTimeout: 40_000 },
   );
 
@@ -205,7 +219,21 @@ test('NEGATIVE CONTROL: deleting the node DOES end its recording', async ({ page
       { id: 'src', type: 'acidwarp', domain: 'video' },
       { id: 'rec', type: 'recorderbox', domain: 'video' },
     ],
-    [{ from: 'src', fromPort: 'video_out', to: 'rec', toPort: 'video_in' }],
+    // ⚠ #1499: this edge was `{ from: 'src', fromPort: 'video_out', … }` — a
+    // shape spawnPatch never accepted (it reads `from.nodeId`/`from.portId` and
+    // keys by `e.id`), AND the port ids were wrong (acidwarp's out is 'out',
+    // recorderbox's in is 'in'). The acidwarp→recorderbox cable never actually
+    // materialized; the recording machinery was being exercised on an unfed
+    // input.
+    [
+      {
+        id: 'e-src-rec',
+        from: { nodeId: 'src', portId: 'out' },
+        to: { nodeId: 'rec', portId: 'in' },
+        sourceType: 'video',
+        targetType: 'video',
+      },
+    ],
     { mountTimeout: 40_000 },
   );
   await page.evaluate(() => {
