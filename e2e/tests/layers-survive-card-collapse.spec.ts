@@ -217,28 +217,138 @@ test.describe('#1589 — TOYBOX layer media belongs to the NODE', () => {
     expect(control.videos[0]!.name).toBe('lobby-clip.webm');
     expect(control.byteLengths[0], 'control export must carry the WHOLE fixture').toBe(FIXTURE_BYTES);
 
-    const tBefore = (await layerState(page)).currentTime;
-
     // ── THE ACT UNDER TEST: collapse. This unmounts the card. ────────────────
     await page.getByTestId('faceplate-collapse').click();
     await expect(page.getByTestId('toybox-card')).toHaveCount(0, { timeout: 20_000 });
 
-    // The element survived, still holds its src, and its MEDIA CLOCK advances —
-    // "present" alone is the half-fix (#1531's projector that is open and dead).
+    // SAMPLE THE SETTLED STATE, NOT THE TRANSITION. The first CI failures of this
+    // spec read `currentTime: 0` at `where: "parking"` AFTER a waitForFunction had
+    // already seen the clock past its target — i.e. the clock went BACKWARDS
+    // between the wait and the read. The wait was sampling the pre-parking
+    // element/state; the collapse→parking hand-off then reset it, and the settled
+    // read got 0. On a fast machine parking completes before the wait's first
+    // sample, so the race is invisible locally (3x green under SwiftShader at
+    // workers=1) and fires under CI's 4-worker load. So: require the element to
+    // BE PARKED first, take the baseline from the PARKED element, and only then
+    // require the clock to advance. This pins every sample to the artifact the
+    // engine actually consumes, and it still reds if a parked layer's clock is
+    // dead — which is the property under test.
+    await expect
+      .poll(async () => (await layerState(page)).where, {
+        timeout: 20_000,
+        message: 'the layer video must land in the node-media parking lot after collapse',
+      })
+      .toBe('parking');
+    const parked = await layerState(page);
+    expect(parked.hasSrc, `parked element lost its src: ${JSON.stringify(parked)}`).toBe(true);
+
+    // The parked element's MEDIA CLOCK advances — "present" alone is the
+    // half-fix (#1531's projector that is open and dead).
+    //
+    // ⚠ MEASURE PLAYBACK, NEVER COMPARE TWO READINGS OF THIS CLOCK (#1612).
+    // The fixture LOOPS at ~4.004 s, so `currentTime` is CYCLIC — it
+    // legitimately goes backwards every 4 seconds. The previous shape here
+    // (`waitForFunction(currentTime > tBefore + 0.4)` followed by a settled
+    // re-read compared to tBefore) failed on CI shard 1 with `got 2.994` vs
+    // `tBefore 3.016`: the wait saw 3.42+, the video wrapped, and the re-read
+    // landed early in the NEXT loop. And when tBefore lands past ~3.6 s the
+    // wait's target exceeds the fixture's duration entirely — an UNREACHABLE
+    // gate that burns its whole 40 s bound. Same bug class collapse-keeps-
+    // playing had (fixed in add1bdea): a cyclic clock is not a number line.
+    //
+    // So: accumulate PLAYED media-time IN THE PAGE (rAF-sampled, wrap-aware),
+    // and gate on the accumulation. The wall-clock budget only bounds the
+    // failure; the samples/elapsed are reported so "frozen clock" and "never
+    // looked" stay distinguishable (blind-gates rule 5).
     const ADVANCE_S = 0.4;
-    await page.waitForFunction(
-      ({ sel, target }) => {
+    const played = await page.evaluate(
+      async ({ sel, need, budgetMs }) => {
         const v = document.querySelector(sel) as HTMLVideoElement | null;
-        return !!v && !!(v.currentSrc || v.getAttribute('src')) && !v.paused && v.currentTime > target;
+        if (!v) return { ok: false, reason: 'no element', played: 0, samples: 0, elapsedMs: 0 };
+        let acc = 0;
+        let prev = v.currentTime;
+        let samples = 1;
+        const t0 = performance.now();
+        while (performance.now() - t0 < budgetMs) {
+          await new Promise((r) => requestAnimationFrame(() => r(null)));
+          const cur = v.currentTime;
+          const d = cur - prev;
+          if (d > 0) acc += d;
+          // A large negative jump is the LOOP WRAP: credit the tail of the old
+          // lap plus the head of the new one. (Small negative jitter is
+          // ignored rather than credited.)
+          else if (d < -0.5 && Number.isFinite(v.duration)) acc += Math.max(0, v.duration - prev) + cur;
+          if (cur !== prev) samples += 1;
+          prev = cur;
+          const parked = !!v.closest('[data-testid="node-media-parking"]');
+          if (acc >= need && parked && !v.paused) {
+            return { ok: true, played: acc, samples, elapsedMs: performance.now() - t0, paused: v.paused, parked };
+          }
+        }
+        return {
+          ok: false,
+          played: acc,
+          samples,
+          elapsedMs: performance.now() - t0,
+          paused: v.paused,
+          parked: !!v.closest('[data-testid="node-media-parking"]'),
+          currentTime: v.currentTime,
+        };
       },
-      { sel: LAYER_VIDEO, target: tBefore + ADVANCE_S },
-      { timeout: 40_000 },
+      { sel: LAYER_VIDEO, need: ADVANCE_S, budgetMs: 40_000 },
     );
-    const collapsed = await layerState(page);
     expect(
-      collapsed.currentTime,
-      `the layer's media clock must advance past ${tBefore.toFixed(3)}s while the card is gone (got ${JSON.stringify(collapsed)})`,
-    ).toBeGreaterThan(tBefore);
+      played.ok,
+      `the PARKED layer must PLAY ≥${ADVANCE_S}s of media time (units: media seconds, wrap-aware accumulation — ` +
+        `NOT a currentTime comparison; the fixture loops at ~4s) while the card is gone. Got ${JSON.stringify(played)}`,
+    ).toBe(true);
+
+    // ── PERMANENT INSTRUMENT LEG: force a WRAP crossing every run. ──────────
+    // The accumulator's wrap-credit branch is the part #1612 existed for, and a
+    // natural run only crosses the loop boundary when the collapse happens to
+    // land late in the ~4 s lap (~10% of runs) — so without this leg the branch
+    // under test is mostly UNTESTED and a regression rides green CI until it
+    // meets an unlucky baseline. Seat the still-parked element just before the
+    // loop point; requiring ≥0.4 s of played time from there MUST cross the
+    // wrap, so a wrap-blind accumulator (or the old two-readings comparison)
+    // fails HERE, deterministically, not on shard 1 once a week.
+    await page.evaluate((sel) => {
+      const v = document.querySelector(sel) as HTMLVideoElement | null;
+      if (v && Number.isFinite(v.duration)) v.currentTime = Math.max(0, v.duration - 0.15);
+    }, LAYER_VIDEO);
+    const wrapped = await page.evaluate(
+      async ({ sel, need, budgetMs }) => {
+        const v = document.querySelector(sel) as HTMLVideoElement | null;
+        if (!v) return { ok: false, reason: 'no element', played: 0, samples: 0, elapsedMs: 0 };
+        let acc = 0;
+        let prev = v.currentTime;
+        let samples = 1;
+        let wraps = 0;
+        const t0 = performance.now();
+        while (performance.now() - t0 < budgetMs) {
+          await new Promise((r) => requestAnimationFrame(() => r(null)));
+          const cur = v.currentTime;
+          const d = cur - prev;
+          if (d > 0) acc += d;
+          else if (d < -0.5 && Number.isFinite(v.duration)) {
+            acc += Math.max(0, v.duration - prev) + cur;
+            wraps += 1;
+          }
+          if (cur !== prev) samples += 1;
+          prev = cur;
+          if (acc >= need && wraps > 0) {
+            return { ok: true, played: acc, wraps, samples, elapsedMs: performance.now() - t0 };
+          }
+        }
+        return { ok: false, played: acc, wraps, samples, elapsedMs: performance.now() - t0, currentTime: v.currentTime };
+      },
+      { sel: LAYER_VIDEO, need: ADVANCE_S, budgetMs: 20_000 },
+    );
+    expect(
+      wrapped.ok && wrapped.wraps > 0,
+      `wrap-crossing playback must accumulate ≥${ADVANCE_S}s THROUGH the loop boundary (wraps>0 required — ` +
+        `this leg is the permanent instrument control for #1612). Got ${JSON.stringify(wrapped)}`,
+    ).toBe(true);
 
     // The NODE still owns the bytes. This is the record Export reads.
     expect(

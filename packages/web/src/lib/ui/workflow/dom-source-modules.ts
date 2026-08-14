@@ -20,6 +20,17 @@
 // patched and is dead. Switching an already-running rack INTO the shell is worse:
 // the card unmounts and actively DETACHES the live source.
 //
+// THE SECOND HALF (#1587, owner P0 "wavesculpt/timelorde render BLACK unless
+// the card happens to be open"): a module can fail this way WITHOUT owning a
+// DOM media element. WAVESCULPT, TIMELORDE and SYNESTHESIA attach no source at
+// all — their CARD runs the rAF loop that PRODUCES the picture (or the analysis
+// of it) and pushes it into the module's own engine handle. The card is not the
+// source's lifecycle; the card IS the producer. Swap it away and the module's
+// own drawFrame paints solid black / its idle field, so a SAVED rack with
+// `WAVESCULPT.video_out → VIDEO OUT` is black ON LOAD, before the user touches
+// anything. Collapse is merely how you notice it. Same rule, same host, second
+// derived set — see CARD_PRODUCER_LANE_TYPES.
+//
 // THE RULE THIS FILE ENCODES: the ENGINE-VISIBLE state of a rack must not depend
 // on which UI renders a module. Node registration already satisfies that (it is
 // graph-driven). Source ATTACHMENT does not — so when the shell swaps a
@@ -68,6 +79,69 @@ export const DOM_SOURCE_LANE_TYPES: ReadonlySet<string> = new Set<string>([
   'videovarispeed',
 ]);
 
+/**
+ * Module TYPES whose card is the SOLE WRITER of engine-visible state that is
+ * not a DOM media element — the PRODUCER half of the same rule (#1587).
+ *
+ * The DOM-source set above is about a `<video>`/`<img>` the card ATTACHES.
+ * These modules attach nothing: their card runs a rAF loop that PUSHES the
+ * picture (or an analysis of it) into the module's own engine handle. Same
+ * invariant, different seam — and the same failure when the shell swaps the
+ * card away, except worse, because there is no "the user loaded a file" step
+ * to make it look like a user action caused it. A SAVED rack renders dark on
+ * LOAD, before anything is touched:
+ *
+ *   wavesculpt   the card installs a frame drawer
+ *                (`installWavesculptFrameDrawer`) that blits its WebGL ribbon
+ *                render into the canvas the audio→video texture bridge hands
+ *                it. With no drawer installed the module's own `drawFrame`
+ *                fills the canvas SOLID BLACK, so `WAVESCULPT.video_out →
+ *                VIDEO OUT` is a black screen. MEASURED with the card never
+ *                mounted: nonBlack 0/3072 px, maxLuma 0, ONE distinct frame
+ *                signature across 42 rAF frames.
+ *   timelorde    the card composites its big display (the patched video_in
+ *                feed, else the beat-pulsing owl) and pushes it with
+ *                `write(node,'displayFrame')`. Unpushed, `drawFrame` paints
+ *                the #07090d idle field. MEASURED never-mounted: nonBlack 0,
+ *                maxLuma 8 (that idle colour), 1 distinct signature / 42
+ *                frames; with the card mounted: nonBlack 2944/3072, maxLuma
+ *                232, 4 distinct signatures over 6 samples.
+ *   synesthesia  the card samples the two video inputs and pushes
+ *                `write(node,'video_levels_a'/'_b')` — the AUDIO-domain
+ *                outputs of a video→audio module. Unmounted, the levels
+ *                freeze at whatever was last sampled (or never leave zero),
+ *                so its audio outs are dead in the common case. Same seam,
+ *                same fix; it is a DERIVED member of this set, not a
+ *                judgement call (see the gate).
+ *
+ * DERIVED, never hand-maintained: dom-source-modules.test.ts greps every card
+ * component for these producer seams and asserts this set is EXACTLY what it
+ * finds, so a new producer-on-the-card module cannot ship dark either.
+ *
+ * ⚠ This is deliberately NOT folded into DOM_SOURCE_LANE_TYPES. That set has
+ * other consumers with genuinely media-specific meaning — the collapse-keeps-
+ * playing sweep (spawns each member as a video-domain node and drives a file
+ * player) and the face-migration inventory (asserts every member declares the
+ * `needs-media-controller` blocker). None of these three owns a media element,
+ * and none of them is blocked from a face by one.
+ */
+export const CARD_PRODUCER_LANE_TYPES: ReadonlySet<string> = new Set<string>([
+  'synesthesia',
+  'timelorde',
+  'wavesculpt',
+]);
+
+/**
+ * The union: every type whose ENGINE-VISIBLE state depends on its card being
+ * mounted somewhere, for either reason. This is what the headless host filters
+ * on — the decision below is the same for both halves, because the rule is the
+ * same: the engine state of a rack must not depend on which UI renders it.
+ */
+export const HEADLESS_MOUNT_LANE_TYPES: ReadonlySet<string> = new Set<string>([
+  ...DOM_SOURCE_LANE_TYPES,
+  ...CARD_PRODUCER_LANE_TYPES,
+]);
+
 /** Inputs to the headless-mount decision. */
 export interface HeadlessSourceInput {
   /** What the lane decided to render for this node (./legacy-fallback). */
@@ -80,7 +154,9 @@ export interface HeadlessSourceInput {
  * Does this node need its REAL card kept alive in the off-screen host?
  *
  * TRUE only when BOTH hold:
- *   - the module's source lives on its card (DOM_SOURCE_LANE_TYPES), AND
+ *   - the module's engine state lives on its card — either because the card
+ *     ATTACHES the source (DOM_SOURCE_LANE_TYPES) or because the card IS the
+ *     producer (CARD_PRODUCER_LANE_TYPES) — AND
  *   - the lane is NOT rendering that card:
  *       * 'shell' / 'placeholder' — the shell swapped it out  → YES,
  *       * 'legacy' — the card IS in the lane (?shell=legacy, or a
@@ -94,6 +170,6 @@ export interface HeadlessSourceInput {
  * produce 'shell'/'placeholder', so this is a strict no-op there.
  */
 export function needsHeadlessSourceMount(i: HeadlessSourceInput): boolean {
-  if (!DOM_SOURCE_LANE_TYPES.has(i.type)) return false;
+  if (!HEADLESS_MOUNT_LANE_TYPES.has(i.type)) return false;
   return i.kind === 'shell' || i.kind === 'placeholder';
 }

@@ -6,12 +6,15 @@
 // machine starve each other under load and produce false drift signals.
 
 import { defineConfig, devices } from '@playwright/test';
+// #1597: default to this WORKTREE'S OWN derived port (E2E_PORT/E2E_BASE_URL
+// win) — never the shared 5173/4173 that reuseExistingServer adopted blindly.
+import { localBaseUrl } from '../worktree-port';
 
 const USE_PREVIEW = process.env.E2E_USE_PREVIEW === '1';
-const DEFAULT_LOCAL = USE_PREVIEW ? 'http://localhost:4173' : 'http://localhost:5173';
-const BASE_URL = process.env.E2E_BASE_URL ?? DEFAULT_LOCAL;
+const { baseUrl: BASE_URL, port: APP_PORT } = localBaseUrl(USE_PREVIEW ? 'preview' : 'dev');
 const IS_LOCAL_TARGET =
-  BASE_URL.startsWith('http://localhost') || BASE_URL.startsWith('http://127.0.0.1');
+  (BASE_URL.startsWith('http://localhost') || BASE_URL.startsWith('http://127.0.0.1')) &&
+  APP_PORT !== null;
 
 export default defineConfig({
   testDir: '.',
@@ -61,9 +64,10 @@ export default defineConfig({
   webServer: IS_LOCAL_TARGET
     ? [
         {
+          // Boot on EXACTLY the port `url:` waits on (see vrt.config.ts, #1597).
           command: USE_PREVIEW
-            ? 'npm run preview -w packages/web -- --port 4173'
-            : 'npm run dev -w packages/web',
+            ? `npm run preview -w packages/web -- --port ${APP_PORT} --strictPort`
+            : `npm run dev -w packages/web -- --port ${APP_PORT} --strictPort`,
           // Config file is at e2e/audio-drift/audio-drift.config.ts, so '../..'
           // resolves to the workspace root where npm workspaces are anchored.
           cwd: '../..',

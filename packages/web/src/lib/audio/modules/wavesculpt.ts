@@ -101,7 +101,25 @@ const FRAME_DRAWERS: Map<string, FrameDrawer> = new Map();
 export function installWavesculptFrameDrawer(nodeId: string, fn: FrameDrawer): void {
   FRAME_DRAWERS.set(nodeId, fn);
 }
-export function uninstallWavesculptFrameDrawer(nodeId: string): void {
+/**
+ * OWNER-CHECKED (#1587). Pass the drawer you installed; the entry is dropped
+ * only if it is still YOURS.
+ *
+ * Under the faceplate shell one node's card MOVES between mounts — the
+ * off-screen <HeadlessSourceHost> and the dock full-view — and Svelte gives no
+ * cross-tree ordering guarantee between the new mount and the old unmount. An
+ * unconditional `delete` therefore lets a STALE card's `onDestroy` erase the
+ * drawer the LIVE card just installed, and the node goes permanently black
+ * with both mounts believing they are fine. Same hazard node-media-registry
+ * documents ("release is OWNER-CHECKED … so mount/unmount ORDER stops
+ * mattering — which is the only way to be safe"); this is the two-line form of
+ * it for a callback registry.
+ *
+ * `fn` is optional so the pre-existing unconditional call site stays valid,
+ * but every card path passes it.
+ */
+export function uninstallWavesculptFrameDrawer(nodeId: string, fn?: FrameDrawer): void {
+  if (fn !== undefined && FRAME_DRAWERS.get(nodeId) !== fn) return;
   FRAME_DRAWERS.delete(nodeId);
 }
 

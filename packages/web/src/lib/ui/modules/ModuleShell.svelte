@@ -1285,7 +1285,7 @@
   <!-- Jack rail = PatchPanel (lane-rail variant): domain jack dots open the
        drill-down; the "⤢" more-affordance opens the dock full-view.
        LANE ONLY. The dock full-view has its OWN, better patch surface — the
-       RearCard jack field on the TAB flip (DockFullView.svelte) — so down here
+       RearCard jack field on the flip key (DockFullView.svelte) — so down here
        the rail was a duplicate: a second, dot-only patch affordance with its
        EXPAND button already suppressed (onExpand is undefined at view
        'dock-full'), eating ~23px off the faceplate's fold budget and printing a

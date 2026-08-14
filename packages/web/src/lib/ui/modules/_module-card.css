@@ -157,9 +157,15 @@
 }
 
 /* P0.3b RACKLINE lane tiles (ModuleShell / ModuleShellPlaceholder). Their roots
- * are deliberately NOT .mod-card/.card/.moog-panel (so rear-view never
- * mirrors/hides them — their cables must stay traceable), so they need their own
+ * are deliberately NOT .mod-card/.card/.moog-panel, so they need their own
  * sizing rule.
+ *
+ * ⚠ That root choice used to be justified here as "so rear-view never
+ * mirrors/hides them". It no longer is, and the claim was removed rather than
+ * softened: the tile DOES flip (#1605) — it simply gets its own rear-view arm
+ * further down this file instead of riding the legacy roots' selector list.
+ * Nothing about cable traceability turned on it; the rear view has always kept
+ * cables painted on the edge layer, which is a separate surface from the card.
  *
  * UNIFORM WIDTH (re-spec): every shell/placeholder tile is the SAME `--shell-tile-w`
  * (192px, the mock's uniform tile) — NO LONGER keyed to the module's per-module
@@ -333,6 +339,39 @@
 .rear-view .svelte-flow__node > * > :is(.mod-card, .card, .moog-panel) > :not(.card-back-panel) {
   visibility: hidden;
   pointer-events: none;
+}
+/* RACKLINE LANE TILES — ModuleShell + ModuleShellPlaceholder (#1605).
+ *
+ * The tile root is `.module-shell.rl-tile`, deliberately NOT one of the three
+ * legacy card roots, so the rule above never reached it and the shell rack did
+ * not flip at all: `rearView` toggled, the Flip control read aria-pressed=true,
+ * and the screen did not change. Both tile components render PatchPanel
+ * (lane-rail) — which has ALWAYS put a live `.card-back-panel` in the tile — so
+ * the rear face exists and only the reveal was missing.
+ *
+ * SCOPED BY THE ARTIFACT, not by a view name: `:has(> .patch-panel-host >
+ * .card-back-panel)` means "a tile that actually has a rear face participates".
+ * ⚠ This is load-bearing, not decoration. The SAME root class is used by the
+ * dock full-view pane (`.rl-tile.dock-full`), which renders NO PatchPanel and
+ * therefore NO back panel — a tile-wide selector would hide that pane's entire
+ * front content whenever a canvas rear view was left on, with no route back to
+ * the front. That is verbatim the 2026-07-26 owner P0 the `.dock-fullview-
+ * drawer` exemptions below exist to fix, and a `:not(.dock-full)` spelling
+ * would only re-fix the one case we happened to think of. Derived from the
+ * presence of the rear face, it cannot regress a view that has none.
+ *
+ * Mechanics are identical to the legacy roots: `.patch-panel-host` is
+ * `display:contents`, so hiding it inherits `visibility` down onto the back
+ * panel — the shared `.rear-view .card-back-panel{visibility:visible}`
+ * re-assert below (already ancestor-generic) brings it back. */
+.rear-view .rl-tile:has(> .patch-panel-host > .card-back-panel) > :not(.card-back-panel) {
+  visibility: hidden;
+  pointer-events: none;
+}
+/* …and the return leg, so the tile "turns back over" instead of snapping —
+ * same keyframe, same 360ms `.flip-back` window as the legacy card roots. */
+.flow.flip-back .rl-tile:has(> .patch-panel-host > .card-back-panel) {
+  animation: card-front-flip-in 360ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
 }
 /* DOCK RAILS (workflow): the front-inert rule above is .svelte-flow__node-
  * scoped, and a dock-hosted card (DockCardHost) deliberately has no such

@@ -26,6 +26,7 @@ import { tmpdir, hostname, release, arch, cpus, loadavg } from 'node:os';
 import { join } from 'node:path';
 
 import { REPO_ROOT, GRAND_GREP, computeGrandHash } from './grand-attest-lib';
+import { bootOwnAppServer, assertServerIsThisWorktree, type OwnAppServer } from './worktree-identity';
 
 const REPEAT = Math.max(1, parseInt(process.env.REPEAT || '1', 10) || 1);
 const DRY = process.argv.includes('--dry-run'); // verify the mechanism w/o the long real run
@@ -280,7 +281,19 @@ function attestActor(): string {
 // ---------------------------------------------------------------------------
 // main
 // ---------------------------------------------------------------------------
-function main() {
+// The attest's OWN app server (#1597) — module-scoped so the exit/signal
+// handlers can always tear it down (refusal paths process.exit() directly,
+// which skips try/finally). stop() is synchronous.
+let ownServer: OwnAppServer | undefined;
+process.on('exit', () => ownServer?.stop());
+for (const sig of ['SIGINT', 'SIGTERM'] as const) {
+  process.on(sig, () => {
+    ownServer?.stop();
+    process.exit(130);
+  });
+}
+
+async function main() {
   // (1) Refuse SwiftShader — the whole point is the real GPU (synesthesia).
   if (process.env.E2E_SWIFTSHADER === '1') {
     console.error('E2E_SWIFTSHADER=1 is set — a SwiftShader attestation would be a lie. Unset it and run on the real GPU.');
@@ -301,6 +314,19 @@ function main() {
     process.exit(2);
   }
 
+  // (3b) BOOT OUR OWN APP SERVER (#1597) — never the config's reuse-happy
+  // webServer on the shared default port, which could adopt a SIBLING
+  // WORKTREE'S dev server and attest this tree's hash against that tree's app.
+  // Fresh dev server, per-run ephemeral port, identity-verified via
+  // GET /__worktree; E2E_BASE_URL + E2E_SKIP_WEBSERVER=1 point the scenario at
+  // exactly it. The relay webServer is skipped too — the grand scenario is
+  // solo workflow-mode (no provider attach).
+  if (!DRY) {
+    ownServer = await bootOwnAppServer({ repoRoot: REPO_ROOT, mode: 'dev', context: 'grand:attest' });
+    process.env.E2E_BASE_URL = ownServer.url;
+    process.env.E2E_SKIP_WEBSERVER = '1';
+  }
+
   // (4) Run the heavy scenario.
   const startedAt = Date.now();
   const summary = runGrand();
@@ -314,6 +340,13 @@ function main() {
     return;
   }
 
+  // (6a) RE-VERIFY the server identity immediately before writing — a green
+  // run only backs an attestation if the app that ran it is still, provably,
+  // THIS worktree's (#1597).
+  if (ownServer) {
+    await assertServerIsThisWorktree(ownServer.url, REPO_ROOT, 'grand:attest(pre-write)');
+  }
+
   // (6) Write the attestation.
   const attestation = {
     schemaVersion: 1,
@@ -325,6 +358,10 @@ function main() {
     os: `${process.platform} ${release()} (${arch()})`,
     machineClass: 'local-trusted-gpu-workstation', // was hostname()
     gpu: renderer,
+    // The attest booted + identity-verified its OWN app server (#1597).
+    appServer: ownServer
+      ? { url: ownServer.url, mode: ownServer.mode, root: ownServer.identity.root, commit: ownServer.identity.commit }
+      : undefined,
     /** The offline combined-master baseline `.sha` this run validated (the CI
      *  verify cross-checks it against the committed baseline). */
     combinedMasterSha,
@@ -357,4 +394,7 @@ function main() {
   console.log(`Now:  git add -A ci-grand-attest/ art/baselines/grand-integration/  and commit them with your PR.`);
 }
 
-main();
+main().catch((err: unknown) => {
+  console.error(err instanceof Error ? err.stack ?? err.message : String(err));
+  process.exit(1);
+});

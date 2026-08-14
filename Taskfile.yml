@@ -548,22 +548,64 @@ tasks:
       - task: vrt:run
         vars: { SCRIPT: 'vrt:strict', ARGS: '{{.CLI_ARGS}}' }
 
+  vrt:strict:plan:
+    desc: |
+      Print how the REQUIRED vrt-strict lane splits across shards, from MEASURED
+      per-test cost (e2e/vrt-strict-timings.generated.json). Read this before
+      changing the shard count in ci.yml — the answer is arithmetic, not a guess.
+      Examples:
+        task vrt:strict:plan          # the shard count ci.yml runs
+        task vrt:strict:plan -- 6     # what 6 would buy
+    cmds:
+      - |
+        set -eu
+        N="{{.CLI_ARGS}}"
+        if [ -z "$N" ]; then
+          # DERIVED from the workflow, never re-typed: the plan you are shown is
+          # the plan CI runs. Same expression scripts/vrt-shard-plan.test.ts uses.
+          N=$(node -e 'const y=require("node:fs").readFileSync(".github/workflows/ci.yml","utf8");const m=/vrt-strict-shard:[\s\S]*?shard:\s*\[([0-9,\s]+)\]/.exec(y);if(!m){console.error("no vrt-strict-shard matrix in ci.yml");process.exit(1);}console.log(m[1].split(",").filter(s=>s.trim()).length)')
+        fi
+        node scripts/vrt-shard-plan.mjs --report "$N"
+
+  vrt:strict:timings:accept:
+    desc: |
+      [accept] Refresh e2e/vrt-strict-timings.generated.json from a real CI run's
+      per-shard timing artifacts, then REVIEW THE DIFF — a cost that moved a lot
+      is a finding, not bookkeeping. The split is only as good as these numbers.
+      Usage: task vrt:strict:timings:accept -- <ci-run-id>
+    cmds:
+      - node scripts/vrt-strict-timings-accept.mjs {{.CLI_ARGS}}
+
+  e2e:timings:accept:
+    desc: |
+      [accept] Refresh e2e/e2e-timings.generated.json (the e2e shard planner's
+      cost artifact, #1600) from a real ci.yml run's blob-report artifacts, then
+      REVIEW THE DIFF — a cost that moved a lot is a finding, not bookkeeping.
+      Costs only: contention classes are derived at plan time
+      (scripts/e2e-contention-scan.mjs), never committed.
+      Usage: task e2e:timings:accept -- <ci-run-id>
+    cmds:
+      - node scripts/e2e-timings-accept.mjs {{.CLI_ARGS}}
+
   vrt:run:
     internal: true
     desc: 'Internal: run an e2e-workspace vrt script with E2E_PORT honoured.'
     cmds:
       - |
-        # ⚠ HONOUR E2E_PORT. `vrt.config.ts` reads ONLY `E2E_BASE_URL` and
-        # defaults to `http://localhost:5173` with `reuseExistingServer: true`,
-        # so an E2E_PORT-isolated worktree that did not set E2E_BASE_URL ran the
-        # WHOLE SWEEP against whatever was already serving 5173 — in practice the
-        # primary checkout's dev server, i.e. a DIFFERENT BRANCH. Measured
-        # 2026-08-09: a full `E2E_PORT=5251 task vrt` came back 276 passed / 1
-        # failed having never once loaded the branch under test. That is worse
-        # than useless — it is a green sweep that certifies someone else's code,
-        # and the result is indistinguishable from a real one. `e2e:one` and
-        # `vrt:one` were both fixed for exactly this; the full sweeps were not.
-        PORT="${E2E_PORT:-5173}"
+        # ⚠ HONOUR E2E_PORT. `vrt.config.ts` reads `E2E_BASE_URL` with
+        # `reuseExistingServer: true`, so an E2E_PORT-isolated worktree that did
+        # not set E2E_BASE_URL ran the WHOLE SWEEP against whatever was already
+        # serving the shared default port — in practice the primary checkout's
+        # dev server, i.e. a DIFFERENT BRANCH. Measured 2026-08-09: a full
+        # `E2E_PORT=5251 task vrt` came back 276 passed / 1 failed having never
+        # once loaded the branch under test. That is worse than useless — it is
+        # a green sweep that certifies someone else's code, and the result is
+        # indistinguishable from a real one. `e2e:one` and `vrt:one` were both
+        # fixed for exactly this; the full sweeps were not.
+        # The default is now the PER-WORKTREE derived port (#1597) — the SAME
+        # derivation every entry point uses (scripts/e2e-port.sh), so siblings
+        # stop colliding at the source.
+        PORT="$(bash scripts/e2e-port.sh)"
         E2E_BASE_URL="${E2E_BASE_URL:-http://localhost:$PORT}" \
           npm run {{.SCRIPT}} -w {{.E2E}} -- {{.ARGS}}
 
@@ -670,7 +712,7 @@ tasks:
           echo "smoke test, and 'task vrt:commit' authors baselines on CI. Skipping." >&2
           exit 1
         }
-        PORT="${E2E_PORT:-5173}"
+        PORT="$(bash scripts/e2e-port.sh)"   # E2E_PORT wins; else per-worktree derived (#1597)
         # The image tag MUST track e2e/package.json's @playwright/test pin —
         # a different Playwright means a different bundled Chromium means
         # different pixels, which is the whole reason for using the image.
@@ -713,10 +755,12 @@ tasks:
         REPEAT_FLAG=""; [ "${REPEAT:-1}" -gt 1 ] && REPEAT_FLAG="--repeat-each=${REPEAT}"
         # `npm run vrt -w` runs from the e2e package dir (so spec paths + the
         # vrt/vrt.config.ts reference resolve) and already passes --config.
-        # E2E_BASE_URL threading: vrt.config.ts reads it and defaults to 5173,
-        # so without this an E2E_PORT-isolated run would silently capture from
-        # whatever dev server is on 5173 — see the note in e2e:one.
-        PORT="${E2E_PORT:-5173}"; [ "${E2E_PREVIEW:-0}" = "1" ] && PORT="${E2E_PORT:-4173}"
+        # E2E_BASE_URL threading: vrt.config.ts reads it, so without this an
+        # E2E_PORT-isolated run would silently capture from whatever dev server
+        # holds the default port — see the note in e2e:one. Default = the
+        # per-worktree derived port (scripts/e2e-port.sh, #1597); E2E_PORT wins;
+        # the helper reads E2E_PREVIEW for the preview-mode range.
+        PORT="$(bash scripts/e2e-port.sh)"
         if [ -n "$GREP_PREFIX" ]; then
           E2E_BASE_URL="http://localhost:$PORT" \
             npm run vrt -w {{.E2E}} -- --workers=1 $HEADED_FLAG $REPEAT_FLAG --grep "$*"
@@ -1012,8 +1056,11 @@ tasks:
       `task e2e:one` / `task vrt:one` runs reuse it instead of paying the
       ~5-10s server boot every time. Readies the DSP dist (dsp:ensure, Faust-less
       OK) + registry manifest first, then starts the server in the background.
-      E2E_PREVIEW=1 serves the prod `vite preview` build (port 4173) instead of
-      the dev server (port 5173). Tear down with `task e2e:stop`.
+      The port defaults to a PER-WORKTREE derived value (scripts/e2e-port.sh —
+      dev 5600-5999, preview 4400-4799; #1597) so sibling checkouts never
+      collide on one shared port; E2E_PORT overrides. E2E_PREVIEW=1 serves the
+      prod `vite preview` build instead of the dev server. Tear down with
+      `task e2e:stop`.
     deps: [dsp:ensure, test:emit-manifest]
     cmds:
       # Build the prod bundle first when serving preview (preview needs a build).
@@ -1084,10 +1131,13 @@ tasks:
         # used to NOT, which made `E2E_PORT=N task e2e:one` actively dangerous
         # rather than merely useless: `assert-up` (above) checked the ISOLATED
         # server on N and passed, then Playwright was pointed at the hardcoded
-        # 5173 — i.e. whatever OTHER dev server the developer had open. Parallel
-        # agents were silently driving the human's session. The two must derive
-        # the port from the same place or the isolation is theatre.
-        PORT="${E2E_PORT:-5173}"; [ "${E2E_PREVIEW:-0}" = "1" ] && PORT="${E2E_PORT:-4173}"
+        # shared default — i.e. whatever OTHER dev server the developer had
+        # open. Parallel agents were silently driving the human's session. The
+        # two must derive the port from the same place or the isolation is
+        # theatre — which is why BOTH now resolve through scripts/e2e-port.sh
+        # (E2E_PORT wins; else the per-worktree derived port, #1597; the helper
+        # reads E2E_PREVIEW for the preview-mode range).
+        PORT="$(bash scripts/e2e-port.sh)"
         # `npm test -w` runs `playwright test` FROM the e2e package dir so spec
         # paths (tests/foo.spec.ts) resolve against testDir. E2E_SKIP_WEBSERVER
         # tells playwright.config NOT to boot its own server — we reuse the

@@ -1,5 +1,5 @@
 import { execSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -136,10 +136,62 @@ function ssrDropCardComponents(): Plugin {
   };
 }
 
+// ---------------------------------------------------------------------------
+// WORKTREE IDENTITY ENDPOINT (`GET /__worktree`) — dev + preview servers only.
+//
+// #1597: Playwright's `reuseExistingServer` (and any warm-server dev loop)
+// adopts WHATEVER answers on the target port. With several agent worktrees on
+// one machine that server can belong to a SIBLING CHECKOUT — the run then
+// exercises that tree's app while reporting (or ATTESTING) against this one,
+// and nothing in the output distinguishes the two. A liveness probe cannot
+// tell servers apart; this endpoint can: it names the checkout that BOOTED the
+// server (and its commit at boot), so a pre-flight can REFUSE on mismatch
+// instead of silently testing another worktree's code.
+//
+// Consumers: scripts/worktree-identity.ts (the attest runners' own-server
+// verify) and scripts/dev-server.sh (`status` / `assert-up` / `start`
+// ownership). Both fall back to lsof-cwd ownership when the endpoint is
+// absent (a server booted from a tree that predates this plugin).
+//
+// Vite-server-only BY CONSTRUCTION: middlewares exist only on `vite dev` /
+// `vite preview`, so a production deploy (adapter output) never exposes this.
+// `root` is the PHYSICAL path (realpath) so a symlinked checkout compares
+// equal to what the OS reports for the same tree.
+function worktreeIdentity(): Plugin {
+  const WEB_DIR = fileURLToPath(new URL('.', import.meta.url));
+  const REPO_ROOT = realpathSync(path.resolve(WEB_DIR, '../..'));
+  const startedAt = new Date().toISOString();
+  let commit = 'unknown';
+  try {
+    commit = execSync('git rev-parse HEAD', { cwd: REPO_ROOT, encoding: 'utf8' }).trim();
+  } catch {
+    /* not a git checkout / git unavailable — root is the refusal key, commit is informational */
+  }
+  const handler =
+    (mode: 'dev' | 'preview') =>
+    (req: { url?: string }, res: { setHeader(k: string, v: string): void; end(b: string): void }, next: () => void) => {
+      if ((req.url ?? '').split('?')[0] !== '/__worktree') return next();
+      res.setHeader('content-type', 'application/json');
+      res.setHeader('cache-control', 'no-store');
+      res.end(JSON.stringify({ root: REPO_ROOT, commit, mode, pid: process.pid, startedAt }));
+    };
+  return {
+    name: 'patchtogether:worktree-identity',
+    // Registered directly (NOT as a post-internal return-function) so the
+    // endpoint answers before SvelteKit's catch-all sees the request.
+    configureServer(server) {
+      server.middlewares.use(handler('dev'));
+    },
+    configurePreviewServer(server) {
+      server.middlewares.use(handler('preview'));
+    },
+  };
+}
+
 // COOP/COEP headers required for SharedArrayBuffer (Faust may want it).
 // Phase 1 dev sets these; Phase 2 sets them in production via _headers.
 export default defineConfig({
-  plugins: [ensureModuleDocs(), ssrDropCardComponents(), sveltekit()],
+  plugins: [ensureModuleDocs(), ssrDropCardComponents(), worktreeIdentity(), sveltekit()],
   // Inline the product version as a compile-time constant (see APP_VERSION
   // above). Applies in both `dev` (serve) and `build`, so the topbar heading
   // renders the real X.Y.Z locally, in e2e, and in the deployed bundle.
