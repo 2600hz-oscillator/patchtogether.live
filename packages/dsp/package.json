@@ -12,6 +12,7 @@
     "build": "node scripts/build.mjs",
     "watch": "node scripts/watch.mjs",
     "test": "vitest run --config vitest.config.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
     "clean": "rm -rf dist"
   },
   "devDependencies": {

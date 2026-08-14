@@ -18,21 +18,6 @@
 // of each block (see RATE_SAMPLE_HOLD below) — avoids audio-rate skew
 // between clients whose CV inputs trail by sub-block latency differences.
 
-declare const sampleRate: number;
-declare class AudioWorkletProcessor {
-  port: MessagePort;
-  constructor(options?: { processorOptions?: unknown });
-  process?(
-    inputs: Float32Array[][],
-    outputs: Float32Array[][],
-    parameters: Record<string, Float32Array>
-  ): boolean;
-}
-declare function registerProcessor(
-  name: string,
-  ctor: typeof AudioWorkletProcessor
-): void;
-
 const TWO_PI = Math.PI * 2;
 const CLOCK_THRESHOLD = 0.5;
 const RESYNC_SMOOTH_SAMPLES_DEFAULT = 0; // updated when init message arrives
@@ -225,8 +210,6 @@ class LfoProcessor extends AudioWorkletProcessor {
     return ((sharedSec * rateHz) % 1 + 1) % 1;
   }
 }
-
-declare const currentFrame: number;
 
 /** Morph between sine, saw, and square for the given normalized phase [0,1). */
 function morph(phase: number, shape: number): number {

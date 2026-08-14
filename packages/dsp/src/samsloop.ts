@@ -48,18 +48,6 @@
 // can convert this to stereo downstream — matching other one-shot sources
 // in the codebase (noise, analog-vco, macrooscillator's `out`).
 
-declare const sampleRate: number;
-declare class AudioWorkletProcessor {
-  port: MessagePort;
-  constructor(options?: { processorOptions?: unknown });
-  process?(
-    inputs: Float32Array[][],
-    outputs: Float32Array[][],
-    parameters: Record<string, Float32Array>,
-  ): boolean;
-}
-declare function registerProcessor(name: string, ctor: typeof AudioWorkletProcessor): void;
-
 interface LoadSampleMessage {
   type: 'loadSample';
   samples: ArrayBuffer; // Float32 PCM, mono-mixed-down at the host side

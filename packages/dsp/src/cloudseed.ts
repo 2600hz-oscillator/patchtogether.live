@@ -31,18 +31,6 @@
 // ModulatedAllpass) sized for 192 kHz worst-case — we mirror those so the
 // per-block heap allocation matches what the C++ does at construction.
 
-declare const sampleRate: number;
-declare class AudioWorkletProcessor {
-  port: MessagePort;
-  constructor(options?: { processorOptions?: unknown });
-  process?(
-    inputs: Float32Array[][],
-    outputs: Float32Array[][],
-    parameters: Record<string, Float32Array>,
-  ): boolean;
-}
-declare function registerProcessor(name: string, ctor: typeof AudioWorkletProcessor): void;
-
 // Block-size constant — Web Audio worklets always call with 128-sample
 // frames. The C++ uses BUFFER_SIZE=64 internally and chunks larger blocks.
 // We match the Web Audio convention.

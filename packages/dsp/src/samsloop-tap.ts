@@ -16,20 +16,6 @@
 // enabled: bool }` so we don't spam the main thread with chunks when no
 // recording is active. Default state is `enabled = false`.
 
-declare class AudioWorkletProcessor {
-  port: MessagePort;
-  constructor(options?: { processorOptions?: unknown });
-  process?(
-    inputs: Float32Array[][],
-    outputs: Float32Array[][],
-    parameters: Record<string, Float32Array>,
-  ): boolean;
-}
-declare function registerProcessor(
-  name: string,
-  ctor: typeof AudioWorkletProcessor,
-): void;
-
 interface EnableMessage {
   type: 'enable';
   enabled: boolean;
