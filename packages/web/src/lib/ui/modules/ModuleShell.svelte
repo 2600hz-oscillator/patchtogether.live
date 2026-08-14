@@ -48,12 +48,6 @@
   import { cardParams, portsFromDef } from './card-kit';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import VideoTileThumb from './VideoTileThumb.svelte';
-  // The one module-specific import in the shell, and it rides the seam that
-  // already declares itself special: `glyphBinding`'s 'algorithm' kind is
-  // hard-wired to the `algorithm` param (see its ⚠ note). A second topology
-  // module would generalise BOTH at once — until then a registry indirection
-  // here would be one indirection serving one caller.
-  import Dx7AlgorithmGlyph from './dx7/Dx7AlgorithmGlyph.svelte';
   import { Button, ColorField, Fader, KnobConic, ParamGrid, ScopeScreen, Segmented, Selector, Toggle, VuMeter, XyPad } from '$lib/ui/controls';
   import {
     curatedFace,
@@ -102,6 +96,7 @@
     waveMorphGlyphAmp,
     type ShellGlyphTap,
   } from '$lib/ui/workflow/shell-glyph-live';
+  import { loadShellExtension, type ShellExtension } from '$lib/ui/workflow/shell-extensions';
   import {
     sineWaveSamples,
     burstWaveSamples,
@@ -193,6 +188,31 @@
   // (tidyVco/kickdrum trace, vca/cloudseed RMS), a param-reactive envelope
   // (adsr) or wave-morph (lfo) curve, else the deterministic static fallback.
   let binding = $derived(glyphBinding(def));
+
+  // ── THE EXTENSION SEAM (#1512) — def-declared bespoke components ──
+  // A def may declare `face.extension: '<id>'`; the registry resolves it to a
+  // LAZILY-loaded slot map (glyph today — see WIRED_SHELL_EXTENSION_SLOTS).
+  // This is the shell's ONLY route to module-specific components: no module
+  // name appears in this file's imports, and module-shell-import-guard keeps
+  // it that way. Until the chunk resolves the slot renders nothing (a
+  // microtask + one chunk fetch on first mount, settled long before any
+  // screenshot or interaction); an undeclared/unknown id stays null and the
+  // generic shell is unchanged.
+  let ext = $state<ShellExtension | null>(null);
+  $effect(() => {
+    const extId = (def as FaceplateDefLike | undefined)?.face?.extension;
+    if (!extId) {
+      ext = null;
+      return;
+    }
+    let cancelled = false;
+    void loadShellExtension(extId).then((resolved) => {
+      if (!cancelled) ext = resolved;
+    });
+    return () => {
+      cancelled = true;
+    };
+  });
 
   // VIDEO-domain module → the glyph slot shows a LIVE THUMBNAIL of its actual
   // output (the legacy preview seam via VideoTileThumb), never a static trace:
@@ -693,7 +713,7 @@
               paramId={pd.id}
               hero={view === 'dock-full'}
               compact={view !== 'dock-full'}
-              cell={binding.kind === 'algorithm' && pd.id === binding.paramId
+              cell={binding.kind === 'algorithm' && pd.id === binding.paramId && ext?.glyph
                 ? algorithmCell
                 : undefined}
             />
@@ -1030,7 +1050,14 @@
             style:color={spine}
             style:height="{view === 'dock-full' ? 64 : 40}px"
           >
-            <Dx7AlgorithmGlyph num={topologyValue} testid="shell-glyph-algorithm" />
+            <!-- The diagram component is the module's OWN, resolved through
+                 the extension seam (`face.extension` → the `glyph` slot) —
+                 same props as when it was a direct import, so the rendered
+                 SVG is identical once the lazy chunk lands. -->
+            {#if ext?.glyph}
+              {@const TopologyGlyph = ext.glyph}
+              <TopologyGlyph num={topologyValue} testid="shell-glyph-algorithm" />
+            {/if}
           </div>
           <span class="topo-val">{topologyLabel}</span>
         </div>
@@ -1307,10 +1334,16 @@
      this roster's entries ARE diagrams — rendering them as the numbers 1..32
      would make the grid a worse Selector. Operator numbers are suppressed at
      this size: a cell is ~26px, so the digits would be sub-2px mush.
-     Only reachable when the shell already resolved an 'algorithm' binding. -->
+     Only reachable when the shell already resolved an 'algorithm' binding AND
+     the extension's glyph slot (the pass site guards on `ext?.glyph`, so a
+     not-yet-loaded extension renders ParamGrid's default labelled cells for a
+     frame instead of 32 empty boxes). -->
 {#snippet algorithmCell(c: { value: number; label: string; selected: boolean })}
   <span class="grid-alg" class:selected={c.selected}>
-    <Dx7AlgorithmGlyph num={c.value} numbers={false} />
+    {#if ext?.glyph}
+      {@const CellGlyph = ext.glyph}
+      <CellGlyph num={c.value} numbers={false} />
+    {/if}
     <span class="grid-alg-num">{c.label}</span>
   </span>
 {/snippet}

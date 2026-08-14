@@ -211,6 +211,79 @@ UNREPRESENTABLE?") is still an opt-in list of 7.
 
 ---
 
+## Bespoke surfaces — the EXTENSION registry (#1512)
+
+When a module needs more than the generic cells, there is a ladder, and the
+extension is its LAST rung — reach for the earlier ones first:
+
+1. **A family/static cell** (`shell-cells.ts` selector/toggle/action/file) —
+   the control is one of the shared primitives, driven by a declared spec.
+2. **A PF-14 `panel` cell** — ONE picture-you-edit *inside* the generic face
+   (an operator map, an envelope editor). Registered in `shell-cells.ts`,
+   probe required, dock-only by lint.
+3. **A `custom` sidebar block** (`sidebar-panels.ts`) — a context picture with
+   no `face.order` rank at all.
+4. **A SHELL EXTENSION** — the module needs to fill one of the SHELL'S OWN
+   SLOTS with bespoke code: the glyph, a whole editor surface, or the entire
+   dock full-view body. This is the seam the bespoke-surface cohort
+   (clipplayer, controlSurface, electraControl, launchpadControl, videoOut,
+   cameraInput) plugs into.
+
+### The contract
+
+- The def declares **`face.extension: '<id>'`** — a string, never a component,
+  so `face` stays serialisable data.
+- The extension lives at **`$lib/ui/modules/<id>/shell-extension.ts`** (the id
+  IS the directory name), default-exporting a `ShellExtension` slot map. The
+  module owns that file and statically imports its own components there.
+- ModuleShell resolves the id through `loadShellExtension()`
+  (`$lib/ui/workflow/shell-extensions.ts`) — a **non-eager `import.meta.glob`**,
+  so the bespoke code is a separate lazy chunk and **no module name ever
+  appears in ModuleShell's imports**. Registration is glob+declaration, like
+  the module registry and modules-card-map: no shared file is edited.
+
+**Slots** (`ShellExtension`): `glyph` (wired — renders inside the generic
+`.topo-glyph` plate AND as the `paramCells:'grid'` per-cell picture),
+`editorSurface` and `fullViewBody` (declared contract, **no render site yet**
+— the first adopter wires the `{#if ext?.…}` in ModuleShell and moves the slot
+into `WIRED_SHELL_EXTENSION_SLOTS` in the same diff; until then
+`shell-extensions.test.ts` refuses an extension exporting one, so a slot can
+never silently no-op).
+
+### The dx7 example (the proof migration)
+
+```ts
+// $lib/audio/modules/dx7.ts — the def declares data:
+face: { …, glyph: 'algorithm', extension: 'dx7', paramCells: { algorithm: 'grid' } }
+
+// $lib/ui/modules/dx7/shell-extension.ts — the module owns the components:
+import Dx7AlgorithmGlyph from './Dx7AlgorithmGlyph.svelte';
+export default { glyph: Dx7AlgorithmGlyph } satisfies ShellExtension;
+```
+
+The shell's `'algorithm'` glyph binding renders `ext?.glyph` with exactly the
+props the old direct import got (`num`, `numbers`, `testid`), so the pixels and
+the DOM contract did not move — the DX7 VRT scenes are the check.
+
+### The guards
+
+- **`module-shell-import-guard.test.ts`** — deny-by-default: ModuleShell plus
+  its static import closure across the shell layer may not reference a
+  module-owned directory, a module def path, or a module-named root file. The
+  declared registries (`shell-cells`, `face-readout-values`,
+  `shell-param-writes`) are typed BOUNDARY entries carrying the lints that own
+  them; everything else reddens. Negative-controlled with the exact dx7 import
+  the seam removed.
+- **`shell-extensions.test.ts`** — declared id ↔ discovered module in BOTH
+  directions; an `'algorithm'` glyph must resolve an extension exporting
+  `glyph`; unknown/unwired slot keys are refused.
+
+Docs note: `face` and this skill are hash-transparent by design (the attest
+normalizer strips `face:` and all prose), so declaring an extension or editing
+this section costs no re-attest.
+
+---
+
 ## The gates, by name
 
 Pure unit lane (~0 CI cost) — run these on every face:
@@ -220,6 +293,8 @@ flox activate -- task test:one -- module-face-lint    # order/pages/hero/sidebar
 flox activate -- task test:one -- dock-row-plan       # PF-21 packing + totality
 flox activate -- task test:one -- dock-faceplate-model # hero split totality, readout resolution
 flox activate -- task test:one -- shell-cells         # no inert cell on a promoted face; probe shape
+flox activate -- task test:one -- shell-extensions    # extension registry: declared ↔ discovered, slot shape
+flox activate -- task test:one -- module-shell-import-guard # the shared shell stays module-free
 flox activate -- task test:one -- curated-face
 flox activate -- task test:one -- rear-card-model     # ⚠ pins tidyVco/kickdrum/adsr/vca/lfo/cloudseed
 flox activate -- task test:one -- <mod>-face-model    # YOUR permanent negative controls
