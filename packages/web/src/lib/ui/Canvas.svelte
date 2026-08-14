@@ -224,6 +224,7 @@
   import { nodeMedia } from '$lib/ui/media/node-media-registry';
   import { nodePresent } from '$lib/ui/modules/node-present-registry.svelte';
   import { nodeRecorder } from '$lib/ui/modules/node-recorder-registry.svelte';
+  import { nodeSamsloop } from '$lib/ui/modules/node-samsloop-registry.svelte';
   import { RACK_SIZE_DEFAULTS } from '$lib/ui/rack-sizes';
   // ModuleNameLabel moved INTO every module card's title chrome (see
   // ModuleTitle.svelte) when the floating-overhead NodeToolbar was dropped.
@@ -728,6 +729,15 @@
         recording: nodeRecorder.isRecording(nodeId),
         ...(nodeRecorder.view(nodeId) ?? {}),
       });
+      // #1588: the same probe for the NODE-owned SAMSLOOP take. `frames` (and
+      // the `elapsed` derived from it) is the CAUSAL quantity — it moves only
+      // when the tap posts and the accumulator appends. `wallElapsed` is the
+      // wall clock and is deliberately reported alongside it, because a wall
+      // clock advances whether or not a single sample arrived: asserting on it
+      // would be a gate blind to exactly the defect this exists for. The shape
+      // is built by the registry so the spec and the registry cannot drift.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__samsloopRecording = (nodeId: string) => nodeSamsloop.probe(nodeId);
       // #1589: observe the NODE-owned media entries from a spec. Same reasoning
       // as __nodeRecording — the point of the registry is that these outlive the
       // card, so the probe must read the NODE's record and never a card's state.
@@ -2063,12 +2073,20 @@
    *  `recorder.abandon()` in the card's onDestroy and destroyed the take. Same
    *  cause, same owner, same sweep — a node deleted by ANY route (menu, lasso,
    *  undo, a peer's CRDT delete, Clear, a patch load) ends its recording here,
-   *  so no delete site has to remember. */
+   *  so no delete site has to remember.
+   *
+   *  ...and the NODE-OWNED SAMSLOOP TAKE ($lib/ui/modules/node-samsloop-registry),
+   *  fourth instance (#1588) and the worst of them: SamsloopCard's unmount
+   *  `$effect` disabled the tap and dropped the PCM accumulator, and NOTHING
+   *  called its `stopRecording()` on unmount — so unlike recorderbox there was
+   *  no commit path at all and up to 60 s of live audio was destroyed with no
+   *  recover candidate. Swept from here for the same reason as the other three. */
   $effect(() => {
     const liveIds = snapshot.nodes.map((n) => n.id);
     nodeMedia.sweep(liveIds);
     nodePresent.sweep(liveIds);
     nodeRecorder.sweep(liveIds);
+    nodeSamsloop.sweep(liveIds);
   });
 
   let headlessSourceNodes = $derived.by<ModuleNode[]>(() => {
