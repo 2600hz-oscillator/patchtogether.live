@@ -1094,6 +1094,19 @@
       return;
     }
     void (async () => {
+      // ⚠ RE-CHECK AT CALL TIME (#1623). The `engineBooted` guard above is
+      // evaluated when the EFFECT fires; this async body runs later. In that
+      // window something else can boot the engine (a user spawn, a test's
+      // bootWithFace) — and `ensureEngine()` RESUMES a suspended AudioContext
+      // on every call, so the stale queued boot then un-suspends a context
+      // its owner deliberately froze. Measured: vrt-strict's face capture
+      // (which suspends, then re-freezes SIX times) still caught a resume
+      // landing after its last retry — this queued call, surfaced by the
+      // 4-way shard co-schedule. For a user this TOCTOU is just redundant
+      // work; for any deliberately-suspended graph it is a state change
+      // nobody asked for. Same idempotence rule as the guard, applied at the
+      // moment that matters.
+      if (engine != null) return;
       await ensureEngine();
       // Explicit reconcile (mirrors handleDelete's shape) so the
       // restored graph is materialized deterministically on this load — the
