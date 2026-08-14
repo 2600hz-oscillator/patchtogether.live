@@ -16,6 +16,20 @@ import {
   type LaneRenderInput,
 } from './legacy-fallback';
 
+// Registry side-effect imports + resolvers, for the ANCHORING GATE below.
+// legacy-fallback.ts itself is deliberately registry-free; the anchoring
+// lives HERE so a bare string in the carve-out set cannot silently name
+// nothing (#1579 — 'launchpadControl' matched no def, the carve-out never
+// fired, and the pad-mapping surface rendered as a placeholder tile).
+import '$lib/audio/modules';
+import '$lib/video/modules';
+import '$lib/meta/modules';
+import { getModuleDef } from '$lib/audio/module-registry';
+import { getVideoModuleDef } from '$lib/video/module-registry';
+import { getMetaModuleDef } from '$lib/meta/module-registry';
+import { LAUNCHPAD_CONTROL_TYPE } from '$lib/meta/modules/launchpad-control';
+import type { ModuleType } from '$lib/graph/types';
+
 /** A fully-swappable, faces-on (default), un-migrated baseline. */
 const base: LaneRenderInput = {
   shellFaces: true,
@@ -137,5 +151,46 @@ describe('isShellSwappable — eligibility', () => {
     expect(
       laneRenderKind({ ...base, shellFaces: false, type: 'es9', hasCard: true }),
     ).toBe('legacy');
+  });
+});
+
+describe('NON_SHELL_LANE_TYPES is ANCHORED to the registry (#1579)', () => {
+  // A bare Set<string> keyed on module types degrades SILENTLY: a stale or
+  // misspelled id is just "this type is not carved out", and the module falls
+  // through to a placeholder tile with nothing red anywhere. That is how
+  // 'launchpadControl' (no def; the registered id is launchpadControlLeft)
+  // sat in this list from the shell rollout until the #1510 inventory tripped
+  // over it. Anchor to the ARTIFACT: every member must resolve to a def.
+  const resolve = (t: string) =>
+    getModuleDef(t as ModuleType) ??
+    getVideoModuleDef(t as ModuleType) ??
+    getMetaModuleDef(t as ModuleType);
+
+  it('every member resolves to a registered def — a stale id is RED, not a silent no-op', () => {
+    const unresolved = [...NON_SHELL_LANE_TYPES].filter((t) => !resolve(t));
+    expect(
+      unresolved,
+      `carve-out entries that match NO registered def — each is a carve-out that silently ` +
+        `never fires, which is exactly #1579. Fix the id (import the def's exported type ` +
+        `constant into this test to pin it) or delete the entry.`,
+    ).toEqual([]);
+  });
+
+  it("the launchpad entry IS the def's own exported type — re-typing cannot drift it again", () => {
+    // The def deliberately keeps the Left-suffixed id so saved LEFT nodes load;
+    // this pins the carve-out to that exported constant rather than to anyone's
+    // memory of it.
+    expect(LAUNCHPAD_CONTROL_TYPE).toBe('launchpadControlLeft');
+    expect(NON_SHELL_LANE_TYPES.has(LAUNCHPAD_CONTROL_TYPE)).toBe(true);
+    expect(NON_SHELL_LANE_TYPES.has('launchpadControl'), 'the unregistered id must be GONE').toBe(false);
+  });
+
+  it('…and the gate is not vacuous: the resolver really can fail (permanent negative control)', () => {
+    // Same predicate the gate uses, fed a name that must never register.
+    expect(resolve('zz-not-a-registered-type')).toBeUndefined();
+    // …and really can succeed on each domain the set draws from.
+    expect(resolve('clipplayer')).toBeTruthy(); // audio
+    expect(resolve('videoOut')).toBeTruthy(); // video
+    expect(resolve('sticky')).toBeTruthy(); // meta
   });
 });

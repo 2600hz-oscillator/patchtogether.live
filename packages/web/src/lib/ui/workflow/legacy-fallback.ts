@@ -70,7 +70,15 @@ export const NON_SHELL_LANE_TYPES: ReadonlySet<string> = new Set<string>([
   'clipplayer',
   'controlSurface',
   'electraControl',
-  'launchpadControl',
+  // ⚠ The REGISTERED id — `launchpadControlLeft`, not `launchpadControl`
+  // (#1579). The def keeps the Left-suffixed type so saved LEFT nodes load
+  // (launchpad-control.ts LAUNCHPAD_CONTROL_TYPE); this list once named the
+  // unsuffixed id, which resolves to NO def, so the carve-out silently never
+  // fired and the pad-mapping surface rendered as a placeholder tile. This
+  // file is deliberately registry-free, so the string is anchored in
+  // legacy-fallback.test.ts: every member of this set must resolve to a
+  // registered def, and this entry must equal the def's own exported type.
+  'launchpadControlLeft',
   'videoOut',
   'cameraInput',
 ]);
