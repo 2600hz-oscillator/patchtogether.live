@@ -1,20 +1,18 @@
 // e2e/tests/_flip-key.ts
 //
-// THE RACK-FLIP SHORTCUT, for specs (#1508).
+// THE RACK-FLIP SHORTCUT, for specs.
 //
-// The flip gesture used to be BARE TAB. That consumed the browser's
-// fundamental focus-traversal key across the entire shell, which for a
-// keyboard-only or screen-reader user is the only way to reach a control at
-// all — an accessibility defect, not a preference. Tab is native again and the
-// flip moved to a bare letter.
+// The flip gesture is BARE TAB, by owner ruling (#1629): the flip outranks
+// native focus traversal in this app (the #1508→#1599 rebind to `f` was
+// reversed). Shift-Tab and Tab inside typing targets remain native.
 //
 // `RACK_FLIP_KEY` is imported from the APP SOURCE, never re-typed here: the
 // binding then has exactly ONE definition, and a rebind updates the specs by
 // construction instead of leaving a suite that is green about the wrong key.
 //
-// ⚠ A spec that wants NATIVE TAB (blurring a field, walking the focus order)
-// should keep calling `page.keyboard.press('Tab')` directly — that is now a
-// real traversal and no longer a flip.
+// ⚠ A spec that wants NATIVE TAB semantics has exactly two sanctioned forms:
+// Tab while a typing target holds focus (blur/advance out of the field — see
+// in-card-title.spec.ts) and Shift-Tab. A bare Tab anywhere else IS a flip.
 
 import type { Page } from '@playwright/test';
 import { RACK_FLIP_KEY } from '../../packages/web/src/lib/graph/workflow-pins';

@@ -1529,17 +1529,15 @@
         return;
       }
       if (isRackFlipKey(e)) {
-        // FLIP SEAM (rear card): the bare flip key (`f`, see
-        // workflow-pins.ts `isRackFlipKey`) flips the OPEN full-view to its
-        // rear/patch face — both panes together (global flip). Only claim it
-        // while the full-view is open; with it closed the canvas-wide `isFlip`
-        // below owns the same key (SINGLE-OWNER, by occupancy).
+        // FLIP SEAM (rear card): the bare flip key (Tab, see workflow-pins.ts
+        // `isRackFlipKey`) flips the OPEN full-view to its rear/patch face —
+        // both panes together (global flip). Only claim it while the
+        // full-view is open; with it closed the canvas-wide `isFlip` below
+        // owns the same key (SINGLE-OWNER, by occupancy).
         //
-        // THIS USED TO BE BARE TAB (#1508) and that was an accessibility
-        // defect: Tab is how a keyboard-only or screen-reader user reaches any
-        // control at all, and the shell consumed it everywhere outside a text
-        // field. Tab is now 100% native in both occupancy states — nothing in
-        // this handler looks at it.
+        // Tab-as-flip is an OWNER RULING (#1629): the flip gesture outranks
+        // native focus traversal in this app (the #1508→#1599 rebind to `f`
+        // was reversed). Shift-Tab and Tab inside typing targets stay native.
         if (dockStore.fullViewNodeIds.length > 0) {
           e.preventDefault();
           dockStore.toggleFullViewFlipped();
@@ -1560,7 +1558,7 @@
         // SIDE-BY-SIDE 50/50 with a module instead of replacing it. It is a
         // REAL node (`pinned-clipplayer`), so it rides the SAME
         // fullViewNodeIds machinery: same faceplate + per-pane ✕, LRU
-        // third-expand replacement, the flip key (F) flips it with its sibling. Toggling is
+        // third-expand replacement, the flip key (Tab) flips it with its sibling. Toggling is
         // idempotent-by-construction (openFullView de-dupes), so two presses
         // can never stack two clip-player panes.
         dockStore.toggleFullView(spec.id);
@@ -7877,14 +7875,15 @@
       return false;
     }
     function isFlip(e: KeyboardEvent): boolean {
-      // The bare flip key (`f`) toggles rear view. ONE predicate shared with
-      // the dock owner above (workflow-pins.ts `isRackFlipKey`), so the two
-      // can never drift onto different keys; it rejects every modifier combo,
-      // so Cmd/Ctrl/Alt-F stay with the browser and Shift-F is just a capital.
+      // The bare flip key (Tab — owner ruling #1629) toggles rear view. ONE
+      // predicate shared with the dock owner above (workflow-pins.ts
+      // `isRackFlipKey`), so the two can never drift onto different keys; it
+      // rejects every modifier combo, so Shift-Tab stays native traversal and
+      // Cmd/Ctrl/Alt-Tab stay with the OS.
       if (!isRackFlipKey(e)) return false;
-      // A SELECT is a typing target for a single-letter shortcut (type-ahead)
-      // but is NOT caught by shouldIgnore() above, which exists for the
-      // undo/redo pair. Tab needed no such guard; a letter does.
+      // Typing targets keep native Tab (blur/advance out of the field); this
+      // also covers SELECT, which shouldIgnore() above (built for the
+      // undo/redo pair) does not.
       if (isTypingTarget(e.target)) return false;
       // SINGLE-OWNER FLIP KEY (double-handler fix): while the dock full-view is
       // OPEN the DOCK owns it — onDockKey (above) flips the full-view panes to
@@ -7911,10 +7910,9 @@
         undoManager.redo();
         trace('redo');
       } else if (isFlip(e)) {
-        // `f` flips the rack front↔rear. This WAS bare Tab, which overrode
-        // Tab's native focus traversal everywhere outside a text field —
-        // filed and fixed as #1508, because that removes keyboard navigation
-        // from the whole shell rather than trading one shortcut for another.
+        // Bare Tab flips the rack front↔rear (owner ruling #1629 — the flip
+        // gesture deliberately consumes Tab's native focus traversal outside
+        // typing targets; the #1599 rebind to `f` was reversed).
         e.preventDefault();
         toggleRearView();
         trace('flip-rack-key');
@@ -8280,7 +8278,7 @@
             aria-keyshortcuts={RACK_FLIP_KEY}
             data-testid="flip-rack-btn"
             data-active={rearView ? 'true' : undefined}
-            title={`${rearView ? 'Front view' : 'Flip rack (rear view)'} — shortcut: ${RACK_FLIP_KEY.toUpperCase()}`}
+            title={`${rearView ? 'Front view' : 'Flip rack (rear view)'} — shortcut: ${RACK_FLIP_KEY}`}
           >
             <!-- Flip/rotate glyph: a rounded arrow pair suggesting a Y-axis flip. -->
             <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="none">

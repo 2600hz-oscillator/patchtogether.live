@@ -11,10 +11,10 @@
 //      dock-unification split landed — so with the 50/50 side-by-side BOTH
 //      panes flip together (asserted below).
 //
-//      ⚠ The flip key USED to be bare TAB and is not any more (#1508): Tab is
-//      the browser's focus-traversal key and hijacking it removed keyboard
-//      navigation from the whole shell. `pressFlipKey` reads the binding from
-//      the app source (_flip-key.ts → RACK_FLIP_KEY); `pressTab` below is now
+//      ⚠ The flip key is BARE TAB by owner ruling (#1629 — the #1508→#1599
+//      rebind to `f` was reversed): the flip gesture deliberately consumes
+//      Tab outside typing targets. `pressFlipKey` reads the binding from the
+//      app source (_flip-key.ts → RACK_FLIP_KEY); `pressShiftTab` below is
 //      the NEGATIVE case, asserted to flip nothing.
 //   2) EVERY declared port renders exactly ONE hole (count + id ↔ the live
 //      def via window.__moduleSpecs — the no-orphan-holes guarantee), each
@@ -26,8 +26,8 @@
 //      → the SAME validated edge a front-view patch creates.
 //   4) SINGLE-OWNER FLIP KEY: exactly ONE flip handler acts per keystroke. The
 //      dock owns it while the full-view is open, the canvas-wide "Flip rack"
-//      rear view owns it when it's closed, and TAB / Shift-TAB own neither —
-//      so the two flip states can never phase-diverge.
+//      rear view owns it when it's closed, and Shift-TAB owns neither — so
+//      the two flip states can never phase-diverge.
 //
 // Runs on /rack (no DB/relay) — the normal e2e lane,
 // same recipe as workflow-shell-faces.spec.ts.
@@ -99,12 +99,8 @@ function paneOf(page: Page, nodeId: string) {
   return page.locator(`[data-testid="dock-full-view"][data-fullview-node="${nodeId}"]`);
 }
 
-/** BARE TAB — native forward focus traversal. Must flip NOTHING (#1508). */
-async function pressTab(page: Page): Promise<void> {
-  await page.keyboard.press('Tab');
-}
-
-/** SHIFT-TAB — reverse focus traversal. Must flip NOTHING, in either state. */
+/** SHIFT-TAB — reverse focus traversal, deliberately left native (#1629).
+ *  Must flip NOTHING, in either occupancy state. */
 async function pressShiftTab(page: Page): Promise<void> {
   await page.keyboard.press('Shift+Tab');
 }
@@ -466,46 +462,41 @@ test('full-view OPEN: the flip key flips ONLY the dock panes — the canvas rear
   await expect(flipRackBtn(page)).toHaveAttribute('aria-pressed', 'false');
 });
 
-// PERMANENT REGRESSION LEG for #1508. Tab USED to be the flip key, which meant
-// the shell ate the browser's focus-traversal key everywhere outside a text
-// field — a keyboard-only or screen-reader user could not reach a control at
-// all. Both traversal keys are asserted inert in BOTH occupancy states,
-// because that is exactly where the SINGLE-OWNER guard lives and where the
-// previous phase-divergence bug was.
-test('TAB and Shift-TAB flip NOTHING — full-view open or closed (focus traversal is not hijacked)', async ({
+// PERMANENT REGRESSION LEG for #1629 (which reversed #1508→#1599). Bare Tab
+// IS the flip key by owner ruling — every pressFlipKey() leg above exercises
+// exactly that keystroke. What must stay INERT is SHIFT-Tab (the one
+// traversal deliberately kept native), in BOTH occupancy states, because
+// that is exactly where the SINGLE-OWNER guard lives and where the previous
+// phase-divergence bug was.
+test('Shift-TAB flips NOTHING — full-view open or closed (reverse traversal stays native)', async ({
   page,
 }) => {
   await gotoWorkflow(page);
   await spawnPatch(page, [{ id: 'tv', type: 'tidyVco', position: { x: 460, y: 240 } }]);
   const drawer = page.getByTestId('dock-fullview-drawer');
 
-  // (a) full-view CLOSED — the canvas-wide rear view owns the flip key here,
-  //     so this is the state where bare Tab used to turn the whole rack around.
-  for (const press of [pressTab, pressShiftTab]) {
-    await resetFocus(page);
-    await press(page);
-    await expect(canvasFlow(page), 'a traversal key must not flip the canvas').not.toHaveClass(
-      /rear-view/,
-    );
-    await expect(flipRackBtn(page)).toHaveAttribute('aria-pressed', 'false');
-  }
+  // (a) full-view CLOSED — the canvas-wide rear view owns the flip key here.
+  await resetFocus(page);
+  await pressShiftTab(page);
+  await expect(canvasFlow(page), 'Shift-Tab must not flip the canvas').not.toHaveClass(
+    /rear-view/,
+  );
+  await expect(flipRackBtn(page)).toHaveAttribute('aria-pressed', 'false');
 
-  // (b) full-view OPEN — the DOCK owns the flip key here. ONE press per key is
-  //     the whole assertion: pre-fix a single press set fullViewFlipped=true
-  //     (a second would have masked it by flipping back).
+  // (b) full-view OPEN — the DOCK owns the flip key here. ONE press is the
+  //     whole assertion: a leaked flip would set fullViewFlipped=true (a
+  //     second press would mask it by flipping back).
   await resetFocus(page);
   await openFullView(page, 'tv');
   await expect(drawer).toHaveAttribute('data-fullview-flipped', 'false');
-  for (const press of [pressTab, pressShiftTab]) {
-    await press(page);
-    await expect(drawer, 'a traversal key must not flip the dock panes').toHaveAttribute(
-      'data-fullview-flipped',
-      'false',
-    );
-    await expect(rearCard(page)).toHaveCount(0);
-    await expect(faceplate(page).getByTestId('faceplate-editor')).toBeVisible();
-    await expect(canvasFlow(page)).not.toHaveClass(/rear-view/);
-  }
+  await pressShiftTab(page);
+  await expect(drawer, 'Shift-Tab must not flip the dock panes').toHaveAttribute(
+    'data-fullview-flipped',
+    'false',
+  );
+  await expect(rearCard(page)).toHaveCount(0);
+  await expect(faceplate(page).getByTestId('faceplate-editor')).toBeVisible();
+  await expect(canvasFlow(page)).not.toHaveClass(/rear-view/);
 });
 
 test('no phase divergence: open → flip → close → the flip key turns the canvas ON (not pre-inverted)', async ({
