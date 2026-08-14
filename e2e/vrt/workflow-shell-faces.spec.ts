@@ -311,7 +311,9 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
   // standing hazard in CLAUDE.md) is an UNTRACKED png; this leg reads the
   // filesystem, so it goes green again only when someone commits it.
   test('every shipped face has a scene, and every scene has its baselines', () => {
-    const rostered = new Set(FACES.map((f) => f.type));
+    // Widened to Set<string> so `.has()` accepts entries read from
+    // STRICT_FACES (ReadonlySet<string>) — the comparison is the point.
+    const rostered = new Set<string>(FACES.map((f) => f.type));
     const missingScene = [...STRICT_FACES].filter((t) => !rostered.has(t)).sort();
     const orphanScene = [...rostered].filter((t) => !STRICT_FACES.has(t)).sort();
 

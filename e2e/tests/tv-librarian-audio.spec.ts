@@ -32,7 +32,7 @@ import { test, expect } from './_fixtures';
 import type { Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, type SpawnEdge } from './_helpers';
 import { readScopeSnapshot, summarize } from './_module-coverage-helpers';
 
 // Committed AVC+AAC MP4 (≈13 KB) with a 440 Hz tone. See
@@ -83,7 +83,7 @@ async function installMocks(page: Page): Promise<void> {
  *  video→audio bridge captures the source AudioNode at edge-add time, so this
  *  runs AFTER wireAudio() swapped audio_l/audio_r from the silent placeholder
  *  to the live splitter — the real session order. */
-async function addEdges(page: Page, edges: Parameters<typeof spawnPatch>[2]): Promise<void> {
+async function addEdges(page: Page, edges: SpawnEdge[]): Promise<void> {
   await page.evaluate((edges) => {
     const w = globalThis as unknown as {
       __patch: { edges: Record<string, unknown> };

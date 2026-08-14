@@ -28,7 +28,7 @@
 import { test, expect } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, type SpawnEdge } from './_helpers';
 import { readScopeSnapshot, summarize } from './_module-coverage-helpers';
 
 const AV_FIXTURE = fileURLToPath(new URL('../fixtures/av-clip.webm', import.meta.url));
@@ -66,7 +66,7 @@ async function writePlaying(page: Page, nodeId: string, next: boolean): Promise<
  *  video->audio bridge captures the source AudioNode at edge-add time, so this
  *  must run AFTER wireAudio() has swapped audio_l from the silent placeholder
  *  to the live splitter — exactly the real session order. */
-async function addEdges(page: Page, edges: Parameters<typeof spawnPatch>[2]): Promise<void> {
+async function addEdges(page: Page, edges: SpawnEdge[]): Promise<void> {
   await page.evaluate((edges) => {
     const w = globalThis as unknown as {
       __patch: { edges: Record<string, unknown> };

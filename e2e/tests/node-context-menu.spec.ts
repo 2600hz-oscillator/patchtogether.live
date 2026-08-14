@@ -19,7 +19,9 @@ async function readNodeState(
 ): Promise<{ x: number; y: number; locked: boolean }> {
   return page.evaluate((nid) => {
     const w = globalThis as unknown as {
-      __patch: { nodes: Record<string, { position: { x: number; y: number }; data?: { locked?: boolean } }> };
+      // The rack-lock flag the app persists is `data.rackLocked` (Canvas.svelte)
+      // — distinct from a Control Surface's own `data.locked`.
+      __patch: { nodes: Record<string, { position: { x: number; y: number }; data?: { rackLocked?: boolean } }> };
     };
     const n = w.__patch.nodes[nid];
     return {

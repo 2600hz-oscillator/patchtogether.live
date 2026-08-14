@@ -31,12 +31,16 @@
 // mask. This is the CLAUDE.md instrument-validation failure in its purest
 // form — the measurement was taken with a knob that was not connected.
 //
-// ⚠ WHY TYPESCRIPT DID NOT CATCH IT: `defineConfig()` gets an object literal,
-// so excess-property checking would have rejected `timeout` on sight. But the
-// `e2e` workspace has NO `typecheck` script and NO tsconfig.json, so
-// `npm run typecheck --workspaces --if-present` (task typecheck) SKIPS IT
-// ENTIRELY. Nothing type-checks e2e/**. Until that changes, this test is the
-// only thing standing between the VRT gate and another dead knob.
+// ⚠ WHY TYPESCRIPT DID NOT CATCH IT (then): `defineConfig()` gets an object
+// literal, so excess-property checking would have rejected `timeout` on sight.
+// But at the time the `e2e` workspace had NO `typecheck` script and NO
+// tsconfig.json, so `npm run typecheck --workspaces --if-present` (task
+// typecheck) skipped it entirely. #1499 closed that hole (e2e/tsconfig.json +
+// a typecheck script, guarded by workspace-typecheck-guard.test.ts) — and the
+// burn-down promptly found a sibling of this very bug: `use.reducedMotion` at
+// the top level of both VRT configs, a knob Playwright 1.59 never read. This
+// test stays as the runtime-independent leg: tsc proves the KEYS are real,
+// this proves the VALUES/budgets are the ones Playwright actually turns.
 //
 // ─────────────────────────────────────────────────────────────────────────
 // WHAT IT CHECKS

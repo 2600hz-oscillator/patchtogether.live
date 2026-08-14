@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "webglContentHash": "89de47491febcbb541e29c8f38cc8010835153866c370909fd5375a253d1886b",
+  "attestedAt": "2026-08-14T13:25:13.363Z",
+  "attestedBy": "patchtogether-maintainer",
+  "gitHeadAtAttest": "bff565784f175597f6116015f093da24d930cfd8",
+  "playwrightVersion": "1.50.0",
+  "os": "darwin 25.4.0 (arm64)",
+  "machineClass": "local-trusted-gpu-workstation",
+  "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5, Unspecified Version)",
+  "appServer": {
+    "url": "http://127.0.0.1:62281",
+    "mode": "dev",
+    "root": "/Users/2600hz/Documents/workspace/inet.modular/.claude/worktrees/wf_97b45295-f38-3",
+    "commit": "bff565784f175597f6116015f093da24d930cfd8"
+  },
+  "repeatEach": 1,
+  "suites": {
+    "A-heavy": {
+      "specFiles": 57,
+      "passed": 200,
+      "failed": 0,
+      "flaky": 0,
+      "skipped": 2,
+      "flakyDetails": []
+    },
+    "A-serial": {
+      "specFiles": 2,
+      "passed": 4,
+      "failed": 0,
+      "flaky": 0,
+      "skipped": 0,
+      "flakyDetails": []
+    },
+    "B-leakers": {
+      "specFiles": 4,
+      "passed": 8,
+      "failed": 0,
+      "flaky": 0,
+      "skipped": 0,
+      "flakyDetails": []
+    },
+    "C-camera": {
+      "specFiles": 1,
+      "passed": 1,
+      "failed": 0,
+      "flaky": 0,
+      "skipped": 0,
+      "flakyDetails": []
+    }
+  },
+  "durationSec": 187
+}

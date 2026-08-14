@@ -78,7 +78,7 @@ export function monoVideoToScope(): PairPatch[] {
  *  Returns one test per ADSR CV input. */
 export function cvIntoAdsr(): PairPatch[] {
   const adsrParams = ['attack', 'decay', 'sustain', 'release'] as const;
-  return adsrParams.map((adsrParam) => ({
+  return adsrParams.map((adsrParam): PairPatch => ({
     label: `cv-family: LFO.phase0 (cv) → ADSR.${adsrParam} (cv) drives audible env`,
     nodes: [
       { id: 'lfo', type: 'lfo',      position: { x: 60, y: 60 } },

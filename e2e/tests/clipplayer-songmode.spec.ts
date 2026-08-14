@@ -17,6 +17,8 @@ type CPData = {
   arrangement?: { events?: { beat: number; lane: number; slot: number | 'stop' }[] };
   clipMode?: string;
   playing?: (number | null)[];
+  /** Clip-store schema version — 2 = stride-64 keys (skips the legacy re-key migration). */
+  sv?: number;
 };
 type W = {
   __patch: { nodes: Record<string, { data?: CPData }> };

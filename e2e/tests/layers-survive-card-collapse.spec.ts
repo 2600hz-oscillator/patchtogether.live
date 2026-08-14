@@ -319,7 +319,7 @@ test.describe('#1589 — TOYBOX layer media belongs to the NODE', () => {
     const wrapped = await page.evaluate(
       async ({ sel, need, budgetMs }) => {
         const v = document.querySelector(sel) as HTMLVideoElement | null;
-        if (!v) return { ok: false, reason: 'no element', played: 0, samples: 0, elapsedMs: 0 };
+        if (!v) return { ok: false, reason: 'no element', played: 0, samples: 0, elapsedMs: 0, wraps: 0 };
         let acc = 0;
         let prev = v.currentTime;
         let samples = 1;

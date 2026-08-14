@@ -40,7 +40,7 @@
 // playing" into a level that is renderer-independent and needs no calibration.
 
 import { test, expect, type Page } from '@playwright/test';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, type SpawnEdge, type SpawnNode } from './_helpers';
 import { readScopePeakOverWindow } from './_module-coverage-helpers';
 
 /** 16-bit mono WAV: a 220 Hz sine whose amplitude STEPS from 0.20 to 0.90 at the
@@ -182,7 +182,7 @@ async function trigger(page: Page): Promise<void> {
   await page.locator('[data-testid="samsloop-trigger-button"]').click();
 }
 
-const SAMS_AND_SCOPE = {
+const SAMS_AND_SCOPE: { nodes: SpawnNode[]; edges: SpawnEdge[] } = {
   nodes: [
     { id: 's', type: 'samsloop', position: { x: 200, y: 200 }, domain: 'audio', params: { mode: 1 } },
     { id: 'scp', type: 'scope', position: { x: 760, y: 200 }, domain: 'audio' },

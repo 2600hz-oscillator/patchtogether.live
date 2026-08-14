@@ -20,6 +20,7 @@
 // BACKDRAFT freezes after settle). This spec is the behavioural gate.
 
 import { test, expect } from './_fixtures';
+import type { Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 import { installRenderSmokeHooks, stepAndReadStats, type RenderStats } from './_render-smoke';
 
