@@ -241,6 +241,13 @@ export const dx7Def: AudioModuleDef = {
     // a rack — whereas the routing shape identifies the patch at a glance and
     // is the only thing that shows which operators are carriers.
     glyph: 'algorithm',
+    // The SHELL EXTENSION (#1512): the algorithm diagram is a bespoke dx7
+    // component, so it plugs into the shell through the extension seam —
+    // `$lib/ui/modules/dx7/shell-extension.ts` exports it at the `glyph`
+    // slot and ModuleShell resolves it lazily from this id. Without this
+    // declaration the 'algorithm' glyph has no picture (shell-extensions
+    // lint enforces the pairing).
+    extension: 'dx7',
     // ALGORITHM is a PICTURE-STATE param (PF-15): 32 wiring topologies whose
     // only readable presentation is the chart itself. `'grid'` gives it the
     // chip + portaled diagram picker, which is TIER-INDEPENDENT — the grid is

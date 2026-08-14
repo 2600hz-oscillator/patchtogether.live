@@ -57,7 +57,7 @@ test('audio health readout is live, and playbackStats exists in this browser', a
 
   // Spawn a SEQUENCER: it boots the AudioContext *and* subscribes to the
   // scheduler clock, so it lights both sensors with one node.
-  await spawnPatch(page, [{ id: 'seq-1', type: 'sequencer', x: 120, y: 120 }]);
+  await spawnPatch(page, [{ id: 'seq-1', type: 'sequencer', position: { x: 120, y: 120 } }]);
 
   // (1) The platform fact. Probed on the app's own context, not a throwaway.
   const platform = await page.evaluate(() => {

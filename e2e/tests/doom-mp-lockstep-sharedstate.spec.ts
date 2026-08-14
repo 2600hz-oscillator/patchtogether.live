@@ -122,6 +122,9 @@ interface CardState {
   launched: boolean;
   lockstepActive: boolean;
   gamestate: number;
+  /** lex-min player == netcode arbiter (DoomCard getState exposes it; the
+   *  bounded-ticcmd-log leg reads the arbiter's peer). */
+  isNetArbiter: boolean;
 }
 
 async function getState(page: Page, id: string): Promise<CardState> {

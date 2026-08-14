@@ -719,7 +719,9 @@ test.describe('patch only L / only R', () => {
     // peak-hold across the transition reports it (measured: R=0.40485 on the
     // way to zero). The instrument's own negative control requires L to STILL
     // be audible, so "the whole engine died" cannot pass as "R went quiet".
-    let t = await readTapsSettled(page, 'aout', {
+    // `settled` is only meaningful on the readTapsSettled read; the later
+    // readTaps re-read (plain Taps) reuses the same binding, so it is optional.
+    let t: Taps & { settled?: boolean } = await readTapsSettled(page, 'aout', {
       silent: 'r',
       minRms: AUDIBLE_RMS,
       silentRms: SILENT_RMS,

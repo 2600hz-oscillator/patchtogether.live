@@ -412,7 +412,6 @@
       <!-- The XY pad — pointer-events on the PAD (not the dot), so a dot
            right-click lands here on the pad for the 2-axis MIDI menu. -->
       <div class="pad-wrap">
-        <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div
           class="pad nodrag"
           bind:this={padEl}
@@ -551,7 +550,6 @@
 
 {#if menuOpen}
   <div use:portal>
-    <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
     <div
       class="ctx-overlay"
       onclick={closeMenu}

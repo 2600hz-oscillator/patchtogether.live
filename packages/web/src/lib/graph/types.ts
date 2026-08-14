@@ -622,6 +622,24 @@ export interface ModuleFace {
    */
   glyphDepthGain?: number;
   /**
+   * BESPOKE-SURFACE extension id (#1512) — names the module's shell-extension
+   * module (`$lib/ui/modules/<id>/shell-extension.ts`, default-exporting a
+   * `ShellExtension` slot map) which ModuleShell resolves LAZILY at its
+   * defined slots. The def declares a STRING, never a component, so `face`
+   * stays serialisable data and the shared shell never imports a module —
+   * the sidebar `custom.panelId` / PF-14 discipline, applied to the shell's
+   * own slots (glyph today; editor surface / full-view body are the declared
+   * contract for the bespoke-surface cohort).
+   *
+   * Deny-by-default both directions: an id the glob did not discover, and a
+   * discovered extension no def declares, are both red
+   * (shell-extensions.test.ts). A def with `glyph: 'algorithm'` MUST declare
+   * an extension exporting the `glyph` slot — the topology plate has no
+   * generic picture to fall back to. UI metadata like the rest of `face`:
+   * OUT of contract-signature/contract-lock (see FACE_FIELDS_NOT_IN_LOCK).
+   */
+  extension?: string;
+  /**
    * DECLARED render primitive for a param cell, keyed by param id.
    *
    * The primitives that CANNOT be inferred. `'toggle'` is derived from the

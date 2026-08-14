@@ -19,6 +19,14 @@ import { test, expect, type Page, type Browser } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 import { SYNC_BUDGET_MS, SYNC_POLL_INTERVALS } from './_collab-helpers';
 
+// Step shapes seeded into node.data inside page.evaluate blocks. Without these
+// annotations `midi: null` infers the literal type `null`, so re-assigning a
+// real note (`{ midi: 60 }`) is a type error (#1499). Types erase at compile
+// time, so referencing them inside evaluate callbacks is safe.
+type MonoStep = { on: boolean; midi: number | null; chord: string };
+type DrumStep = { on: boolean; midi: number | null };
+type MacStep = { on: boolean; midi: number | null; model: number | null };
+
 test.describe.configure({ mode: 'parallel' });
 
 const SEQUENCERS: Array<{ type: string; nodeId: string; spawnParams: Record<string, number>; cellSelector: string }> = [
@@ -78,13 +86,13 @@ for (const s of SEQUENCERS) {
           w.__ydoc.transact(() => {
             if (!t.data) t.data = {};
             if (type === 'sequencer') {
-              const steps = Array.from({ length: 32 }, () => ({ on: false, midi: null, chord: 'mono' }));
+              const steps = Array.from({ length: 32 }, (): MonoStep => ({ on: false, midi: null, chord: 'mono' }));
               steps[0] = { on: true, midi: 60, chord: 'mono' };
               steps[4] = { on: true, midi: 64, chord: 'mono' };
               (t.data as Record<string, unknown>).steps = steps;
             } else if (type === 'drumseqz') {
               const tracks = Array.from({ length: 4 }, () =>
-                Array.from({ length: 16 }, () => ({ on: false, midi: null })),
+                Array.from({ length: 16 }, (): DrumStep => ({ on: false, midi: null })),
               );
               tracks[0][0] = { on: true, midi: 60 };
               tracks[1][4] = { on: true, midi: 67 };
@@ -106,7 +114,7 @@ for (const s of SEQUENCERS) {
               steps[3] = { on: true, root: 67, quality: 'min7', inversion: 1, voicing: 'spread' };
               (t.data as Record<string, unknown>).steps = steps;
             } else if (type === 'macseq') {
-              const steps = Array.from({ length: 16 }, () => ({ on: false, midi: null, model: null }));
+              const steps = Array.from({ length: 16 }, (): MacStep => ({ on: false, midi: null, model: null }));
               steps[0] = { on: true, midi: 60, model: 8 };  // KICK
               steps[4] = { on: true, midi: 64, model: 3 };  // FM 6OP
               (t.data as Record<string, unknown>).steps = steps;
@@ -425,7 +433,7 @@ for (const s of NAV_SEQUENCERS) {
           const t = w.__patch.nodes[nodeId];
           if (!t) throw new Error('node missing');
           const mkSteps = (midi: number) => {
-            const arr = Array.from({ length: 4 }, () =>
+            const arr = Array.from({ length: 4 }, (): MonoStep | MacStep =>
               type === 'sequencer' ? { on: false, midi: null, chord: 'mono' } : { on: false, midi: null, model: null },
             );
             arr[0] = type === 'sequencer' ? { on: true, midi, chord: 'mono' } : { on: true, midi, model: null };
@@ -487,7 +495,7 @@ for (const s of NAV_SEQUENCERS) {
           const t = w.__patch.nodes[nodeId];
           if (!t) throw new Error('node missing');
           const mkSteps = (midi: number) => {
-            const arr = Array.from({ length: 4 }, () =>
+            const arr = Array.from({ length: 4 }, (): MonoStep | MacStep =>
               type === 'sequencer' ? { on: false, midi: null, chord: 'mono' } : { on: false, midi: null, model: null },
             );
             arr[0] = type === 'sequencer' ? { on: true, midi, chord: 'mono' } : { on: true, midi, model: null };
@@ -539,7 +547,7 @@ for (const s of NAV_SEQUENCERS) {
           const t = w.__patch.nodes[nodeId];
           if (!t) throw new Error('node missing');
           const mkSteps = (midi: number) => {
-            const arr = Array.from({ length: 4 }, () =>
+            const arr = Array.from({ length: 4 }, (): MonoStep | MacStep =>
               type === 'sequencer' ? { on: false, midi: null, chord: 'mono' } : { on: false, midi: null, model: null },
             );
             arr[0] = type === 'sequencer' ? { on: true, midi, chord: 'mono' } : { on: true, midi, model: null };
@@ -651,7 +659,7 @@ test.describe('@collab sequencer-transport multiplayer slot sync', () => {
           __ydoc: { transact: (fn: () => void) => void };
         };
         w.__ydoc.transact(() => {
-          const steps = Array.from({ length: 32 }, () => ({ on: false, midi: null, chord: 'mono' }));
+          const steps = Array.from({ length: 32 }, (): MonoStep => ({ on: false, midi: null, chord: 'mono' }));
           steps[0] = { on: true, midi: 60, chord: 'mono' };
           steps[8] = { on: true, midi: 67, chord: 'mono' };
           w.__patch.nodes[nodeId] = {

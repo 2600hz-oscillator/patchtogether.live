@@ -320,7 +320,9 @@
           data-testid="mappy-canvas"
           data-node-id={id}
         ></canvas>
-        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <!-- svelte-ignore a11y_no_static_element_interactions — a drag-the-corner-handles
+             projection-mapping overlay. Dragging a quad by keyboard needs a nudge model that does
+             not exist yet; grouped with the other pointer-only surfaces in #1572. -->
         <svg
           bind:this={svgEl}
           class="overlay nodrag"

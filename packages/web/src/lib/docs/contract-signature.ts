@@ -190,6 +190,10 @@ export const FACE_FIELDS_NOT_IN_LOCK: Readonly<
     why: 'A scalar on the glyph trace. Same argument as glyph — visible only as pixels.',
     coveredBy: 'VRT face-<type>-compact.',
   },
+  extension: {
+    why: 'Which bespoke-surface extension module the shell lazily resolves (#1512). Pure UI wiring — which component fills a shell slot — and a rebinding is a pixel change on surfaces the VRT scenes pin, never an I/O change any consumer reads.',
+    coveredBy: 'shell-extensions.test.ts (declared id ↔ discovered module, both directions; algorithm glyphs must resolve) + module-shell-import-guard + VRT face-<type>-*.',
+  },
   paramCells: {
     why: 'Which PRIMITIVE renders a param (grid/color/fader). Not the range or the mapping, which are pinned on the param line; the widget choice.',
     coveredBy: 'shell-cells (every key resolves to a registered cell spec) + param-cell-coverage + faces-parity driveCell.',

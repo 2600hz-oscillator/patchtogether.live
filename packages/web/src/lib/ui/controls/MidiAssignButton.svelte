@@ -75,7 +75,6 @@
   onDestroy(() => midi.unregister());
 </script>
 
-<!-- svelte-ignore a11y_no_static_element_interactions -->
 <span
   class="midi-assign-button"
   class:midi-learning={midi.learning}

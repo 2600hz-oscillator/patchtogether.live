@@ -76,7 +76,7 @@ test.describe('RECORDERBOX crash-recovery prompt', () => {
       });
     }, NODE_ID);
 
-    await spawnPatch(page, [{ id: NODE_ID, type: 'recorderbox', domain: 'video', x: 200, y: 120 }]);
+    await spawnPatch(page, [{ id: NODE_ID, type: 'recorderbox', domain: 'video', position: { x: 200, y: 120 } }]);
 
     const prompt = page.getByTestId('recorderbox-recover');
     await expect(prompt, 'the seeded manifest should raise the recovery prompt').toBeVisible({ timeout: 20_000 });
