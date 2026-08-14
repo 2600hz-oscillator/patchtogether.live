@@ -298,7 +298,13 @@
   // because the snap usually still lives at slots[N] in the same Y.Doc.
 
   const transportDeps: TransportCardDeps = {
-    nodeId: id,
+    // A GETTER, not `nodeId: id`: every other field of this object re-reads
+    // `patch.nodes[id]` live, and a plain `nodeId: id` would freeze the id at
+    // init. XYFlow may reuse a card instance for a different node, and a stale
+    // nodeId would write this sequencer's quicksave slots into ANOTHER node.
+    get nodeId() {
+      return id;
+    },
     patch,
     transact: (fn) => ydoc.transact(fn),
     snapshot: (): Snapshot => {

@@ -202,8 +202,6 @@
   let bars = $derived(Math.max(1, Math.ceil(arrangeLen / 4)));
 </script>
 
-<!-- svelte-ignore a11y_no_static_element_interactions -->
-<!-- svelte-ignore a11y_click_events_have_key_events -->
 <div
   class="editor-overlay nodrag nowheel"
   data-testid="cliparrange-editor"

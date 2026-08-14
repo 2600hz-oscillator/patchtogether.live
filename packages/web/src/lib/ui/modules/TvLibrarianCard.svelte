@@ -481,7 +481,6 @@
     <div class="body">
       <!-- Preview -->
       <div class="preview-wrap" data-testid="tv-preview">
-        <!-- svelte-ignore a11y_media_has_caption -->
         <!-- The <video> is NOT declared here: it belongs to the NODE and is
              adopted into this host div (see the $effect above). Declaring it
              in markup is what tied its lifetime to the card. -->
@@ -516,7 +515,6 @@
       {/if}
 
       {#if viewMode === 'map'}
-        <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
         <div class="map" onclick={onMapClick} data-testid="tv-map" role="presentation">
           <div class="map-grid"></div>
           {#each markers as m (m.code)}

@@ -225,7 +225,6 @@
 </script>
 
 <div class="grid-wrap" class:midi-learning={midi.learning} class:midi-bound={!!midi.binding}>
-  <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
   <div
     bind:this={chipEl}
     class="grid-chip nodrag"
@@ -252,7 +251,6 @@
     <div use:portal>
       <!-- transparent backdrop closes the popover on any outside click -->
       <button class="backdrop" type="button" aria-label="close" onclick={() => (open = false)}></button>
-      <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
       <div
         bind:this={gridEl}
         class="grid-menu"

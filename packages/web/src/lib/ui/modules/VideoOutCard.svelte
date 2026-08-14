@@ -351,7 +351,9 @@
   <ModuleTitle {id} {data} defaultLabel="OUTPUT" />
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <!-- svelte-ignore a11y_no_static_element_interactions — the only handler here is `oncontextmenu`, which opens the canvas menu. Right-click
+       already HAS a keyboard route the browser dispatches to this same event (the Menu key /
+       Shift+F10), so an extra key handler would be a second path to the same menu. -->
   <div
     bind:this={wrapEl}
     class="canvas-wrap"

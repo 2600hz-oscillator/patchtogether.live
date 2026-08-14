@@ -43,6 +43,9 @@
   const { set, engineCtx } = cardParams(es9Def, () => id, () => node);
 
   // ---- per-tab transient state (never in Yjs) — MIRRORED from the owner ----
+  // svelte-ignore state_referenced_locally -- SEED only. The $effect below re-reads
+  // es9Snapshot(nodeId) from the live id and subscribes, so this initial value is
+  // replaced before the first paint that could show a stale one.
   let snap = $state<Es9OwnerSnapshot>(es9Snapshot(id));
   let connState = $derived<Es9ConnectionState>(snap.state);
   let stateDetail = $derived<string | undefined>(snap.detail);

@@ -228,6 +228,7 @@ export function createSharedClock(opts: CreateSharedClockOptions): SharedClockHa
   // Yjs meta-map observer: another client (the owner) can resetEpoch();
   // we should react to that.
   let metaUnsub: (() => void) | null = null;
+  // svelte-ignore state_referenced_locally — init-only seed BY DESIGN: this is the change-detector's "epoch already observed", re-assigned by hand inside onMetaChange; seeding the CURRENT value (not a live mirror, which a `let` re-assigned below cannot be anyway) is what keeps the immediate onMetaChange() call from firing resetListeners spuriously at startup (#1602).
   let lastObservedEpoch = epoch_ms;
   if (meta) {
     const onMetaChange = (): void => {

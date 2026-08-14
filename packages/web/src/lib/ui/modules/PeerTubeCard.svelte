@@ -585,7 +585,6 @@
 
       <!-- Preview -->
       <div class="preview-wrap" data-testid="peertube-preview">
-        <!-- svelte-ignore a11y_media_has_caption -->
         <!-- The <video> is NOT declared here: it belongs to the NODE and is
              adopted into this host div (see the $effect above). Declaring it
              in markup is what tied its lifetime to the card. -->

@@ -333,7 +333,9 @@
             style:--cs-dial-h="48px"
           >
             {#each g.controls as c (c.paramId)}
-              <!-- svelte-ignore a11y_no_static_element_interactions -->
+              <!-- svelte-ignore a11y_no_static_element_interactions — pointer PLUMBING only: the handler stops the XYFlow canvas drag so the control
+                   inside receives the gesture. No user action happens on this div, so there is
+                   nothing to give a keyboard equivalent to. -->
               <div
                 class="cs-knob"
                 data-testid={`control-surface-knob-${g.moduleId}-${c.paramId}`}
@@ -364,7 +366,9 @@
                 />
                 <div class="cs-knob-label" title={c.label}>{c.label}</div>
                 {#if isEditing(g.moduleId, c.paramId)}
-                  <!-- svelte-ignore a11y_autofocus -->
+                  <!-- svelte-ignore a11y_autofocus — autofocus is the POINT: this input only exists while a rename is in progress,
+                       and it was opened by an explicit user action, so focusing it is what the
+                       user just asked for rather than a surprise focus steal on page load. -->
                   <input
                     class="cs-rename nodrag"
                     data-testid={`control-surface-rename-input-${g.moduleId}-${c.paramId}`}

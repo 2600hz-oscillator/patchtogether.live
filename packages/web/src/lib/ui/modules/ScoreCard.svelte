@@ -659,7 +659,13 @@
   // we capture LIVE state (Svelte 5 closures over $derived/$props snapshot
   // their initial value otherwise — see svelte.dev/e/state_referenced_locally).
   const transportDeps: TransportCardDeps = {
-    nodeId: id,
+    // A GETTER, not `nodeId: id`: every other field of this object re-reads
+    // `patch.nodes[id]` live, and a plain `nodeId: id` would freeze the id at
+    // init. XYFlow may reuse a card instance for a different node, and a stale
+    // nodeId would write this sequencer's quicksave slots into ANOTHER node.
+    get nodeId() {
+      return id;
+    },
     patch,
     transact: (fn) => ydoc.transact(fn),
     snapshot: (): Snapshot => {
@@ -838,6 +844,11 @@
   </div>
 
   <!-- Staff SVG -->
+  <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions
+       — `role="application"` is exactly right for a score editor: this <svg> OWNS its key
+       handling (onSvgKeyDown: Escape cancels, Arrow transposes the focused note, Delete removes
+       it), so it MUST be focusable and MUST take pointer + key handlers. Svelte's rules do not
+       model `application` as interactive. -->
   <svg
     bind:this={svgEl}
     class="staff"
@@ -937,6 +948,10 @@
 
     <!-- Notes (visible on this page) -->
     {#each visibleNotes as n (n.id)}
+      <!-- svelte-ignore a11y_no_noninteractive_tabindex — the tabindex is LOAD-BEARING: notes are
+           the focus targets the staff's own onSvgKeyDown reads back via
+           `event.target.closest('[data-note-id]')`, so Arrow/Delete act on the focused note. What
+           is genuinely missing is a role + aria-label so it ANNOUNCES; tracked as #1572. -->
       <g
         class="note"
         class:tie-pick={tiePickFirst === n.id}

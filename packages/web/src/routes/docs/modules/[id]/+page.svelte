@@ -98,7 +98,13 @@
   <div class="card-explore-left">
     {#if showLive && VirtualModule}
       {@const VM = VirtualModule}
-      <VM type={mod.type} {docIndex} {hoverState} def={data.defLite} />
+      <!-- {#key mod.type} because VirtualModule binds a throwaway sandbox rackspace
+           (`__docs-sandbox__:<type>`) and seeds its demo node in onMount. SvelteKit
+           re-uses this page component across /docs/modules/A → /docs/modules/B, so
+           without the key the sandbox stays bound to A while B's card is shown. -->
+      {#key mod.type}
+        <VM type={mod.type} {docIndex} {hoverState} def={data.defLite} />
+      {/key}
     {:else if data.face}
       <!-- FALLBACK: numbered screenshot of the real rendered card + its KEY. -->
       <div class="face-wrap" data-testid="module-face">

@@ -162,7 +162,6 @@
 </script>
 
 <div class="selector-wrap" class:midi-learning={midi.learning} class:midi-bound={!!midi.binding}>
-  <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
   <div
     bind:this={chipEl}
     class="selector nodrag"

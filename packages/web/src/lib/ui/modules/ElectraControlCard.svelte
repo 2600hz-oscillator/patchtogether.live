@@ -47,8 +47,9 @@
   import { resolveControlColor } from '$lib/graph/control-color';
 
   let { id, data }: NodeProps = $props();
-  let node = $derived(data?.node as ModuleNode);
-  void node; // (parity with ControlSurfaceCard; the card reads live via patch)
+  // No `node` binding here on purpose: this card reads every value live from
+  // `patch.nodes[...]` (see cardVersion below), so a $derived mirror of
+  // `data.node` would be a second, staler source of the same truth.
   const engineCtx = useEngine();
 
   // Re-derive on any Yjs update so live param reads + remote slot writes reflect
@@ -215,7 +216,9 @@
         {#each bank.rows as cells, ri (ri)}
           <div class="ec-row">
             {#each cells as c (c.slot)}
-              <!-- svelte-ignore a11y_no_static_element_interactions -->
+              <!-- svelte-ignore a11y_no_static_element_interactions — pointer PLUMBING only: the handler stops the XYFlow canvas drag so the control
+                   inside receives the gesture. No user action happens on this div, so there is
+                   nothing to give a keyboard equivalent to. -->
               <div
                 class="ec-slot"
                 class:filled={!!c.def}
@@ -248,7 +251,9 @@
                     paramId={c.paramId}
                   />
                   {#if editing === c.slot}
-                    <!-- svelte-ignore a11y_autofocus -->
+                    <!-- svelte-ignore a11y_autofocus — autofocus is the POINT: this input only exists while a rename is in progress,
+                       and it was opened by an explicit user action, so focusing it is what the
+                       user just asked for rather than a surprise focus steal on page load. -->
                     <input
                       class="ec-rename nodrag"
                       data-testid={`electra-control-rename-input-${c.row}-${c.knob}`}
