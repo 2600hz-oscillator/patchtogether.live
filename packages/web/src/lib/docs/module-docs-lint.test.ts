@@ -37,9 +37,10 @@ import { STRICT_DOCS } from './strict-docs';
 import { resolveLegend, staticKey, type LegendEntry } from './control-doc-resolver';
 import {
   UNDECLARED_EDGE_DEBT,
-  UNDECLARED_EDGE_CEILING,
+  UNDECLARED_EDGE_PIN,
   undeclaredEdgePairs,
 } from './undeclared-edge-ledger';
+import { checkRatchetPin } from '$lib/dev/ratchet-pin';
 
 interface DocPort {
   id: string;

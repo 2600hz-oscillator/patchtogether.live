@@ -116,13 +116,26 @@ export const UNDECLARED_EDGE_DEBT: Readonly<Record<string, readonly string[]>> =
   writeseq: ['clock', 'gate', 'play_cv', 'queue1_cv', 'queue2_cv', 'queue3_cv', 'queue4_cv', 'rec', 'reset_cv'],
 };
 
-/** The number of `(module, port)` pairs still owed an `edge` declaration.
- *  ⚠ ONLY SHRINKS — asserted from BOTH sides in module-docs-lint.test.ts.
- *  289 → 288 (2026-08-08): meowbox's `gate` declared `edge: 'gate'`. It is the
- *  case this ledger's header is about — the def's own prose said "responds to
- *  the edge, not how long the level stays up" over an `en.adsr` sustaining at
- *  0.4, and the skipped vocabulary check could not see the contradiction. */
-export const UNDECLARED_EDGE_CEILING = 288;
+/**
+ * The `(module, port)` pairs still owed an `edge` declaration, as a RATCHET PIN
+ * — `<count>@<digest of the exact set>` (see `$lib/dev/ratchet-pin`).
+ * ⚠ ONLY SHRINKS, asserted from BOTH sides in module-docs-lint.test.ts.
+ *
+ * 289 → 288 (2026-08-08): meowbox's `gate` declared `edge: 'gate'`. It is the
+ * case this ledger's header is about — the def's own prose said "responds to
+ * the edge, not how long the level stays up" over an `en.adsr` sustaining at
+ * 0.4, and the skipped vocabulary check could not see the contradiction.
+ *
+ * ⚠ WHY THIS IS NOT A BARE INTEGER ANY MORE. It was `= 288`, and on 2026-08-09
+ * a branch draining bluebox's 12 gate ports and a branch draining meowbox's one
+ * BOTH inherited 289 and wrote their own answer. Their entry deletions were
+ * lines apart, so the lists merged cleanly; the ceiling line took one side's
+ * value in silence and NEITHER number described the merge (the truth was 276).
+ * A count cannot express WHICH pairs it counted, so git had nothing to conflict
+ * on. The digest can, and does. To accept a drain: run module-docs-lint and
+ * paste the pin the failure prints.
+ */
+export const UNDECLARED_EDGE_PIN = '288@ac220c4b';
 
 /** Flattened `module.port` pairs (the countable form). */
 export function undeclaredEdgePairs(): string[] {
