@@ -47,7 +47,46 @@ export interface BloodModule {
   };
 }
 
-export type BloodModuleLoader = () => Promise<BloodModule>;
+export type BloodModuleLoader = (moduleArg?: {
+  print?: (line: string) => void;
+  printErr?: (line: string) => void;
+}) => Promise<BloodModule>;
+
+/**
+ * Route the engine's log stream to console channels BY ITS OWN SEVERITY
+ * (#1548).
+ *
+ * NBlood logs through loguru, which writes EVERYTHING — `INFO|`, `WARN|`,
+ * `ERROR|` — to stderr; emscripten's default `printErr` is console.error. So
+ * every line of a perfectly healthy boot ("Started at…", "Initializing SDL…")
+ * landed as a CONSOLE ERROR, and the modules render sweep — whose contract is
+ * "no console errors" — failed on a clean checkout of main the moment the
+ * engine booted fast enough to log inside the spec's window. The severity is
+ * IN the line; routing by it is not filtering, it is undoing a transport
+ * flattening.
+ *
+ * ⚠ ONE deliberate downgrade, named: SDL's "Failed setting window gamma ramp"
+ * is loguru-ERROR-level, but under emscripten the operation is DEFINITIONALLY
+ * unsupported (there is no OS gamma ramp to set) and the engine retries it on
+ * every boot. It reflects nothing about our integration, fires 3× per boot,
+ * and drowning the error channel with it teaches readers to ignore that
+ * channel — the same lesson the attest refusals must never teach. Downgraded
+ * to console.warn with the line kept verbatim, so it is still visible and
+ * still greppable. Any OTHER `ERROR|` line stays a real console.error — the
+ * sweep keeps its teeth for genuine engine failures.
+ */
+export function routeBloodLogLine(line: string): 'error' | 'warn' | 'info' {
+  if (line.includes('ERROR|')) {
+    return line.includes('Failed setting window gamma ramp') ? 'warn' : 'error';
+  }
+  if (line.includes('WARN|')) return 'warn';
+  return 'info';
+}
+
+function bloodLogSink(line: string): void {
+  // eslint-disable-next-line no-console
+  console[routeBloodLogLine(line)](line);
+}
 
 /** A user-supplied Blood data file written into MEMFS before boot. */
 export interface BloodDataFile {
@@ -161,7 +200,9 @@ export async function loadBloodData(): Promise<{ files: BloodDataFile[]; missing
 export async function loadBloodModule(): Promise<{ module: BloodModule | null; error?: string }> {
   try {
     const mod = (await import(/* @vite-ignore */ WASM_SHIM_URL)) as { default: BloodModuleLoader };
-    const loaded = await mod.default();
+    // Route BOTH streams: loguru writes to stderr, but SDL/engine printf-style
+    // output can land on stdout — same severity tokens either way.
+    const loaded = await mod.default({ print: bloodLogSink, printErr: bloodLogSink });
     return { module: loaded };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
