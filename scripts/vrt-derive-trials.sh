@@ -40,8 +40,10 @@ set -uo pipefail
 
 PATTERN="${1:?usage: vrt-derive-trials.sh <grep-pattern> [N]}"
 N="${2:-10}"
-PORT="${E2E_PORT:-5173}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# E2E_PORT wins; else the per-worktree derived default (#1597) — same
+# derivation as every other entry point (scripts/e2e-port.sh).
+PORT="$(bash "$HERE/scripts/e2e-port.sh")"
 OUT="$(mktemp -d)"
 
 echo "vrt-derive-trials: pattern='$PATTERN'  trials=$N  port=$PORT  VRT_UNMASKED=${VRT_UNMASKED:-0}"

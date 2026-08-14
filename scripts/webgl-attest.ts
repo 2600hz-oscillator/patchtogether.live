@@ -13,6 +13,12 @@
 // All on the REAL GPU (E2E_SWIFTSHADER must be UNSET — a SwiftShader attestation
 // would be a lie). retries=0 to surface flakes honestly; REPEAT=N → repeat-each.
 //
+// All passes run against an app server THIS RUNNER BOOTS ITSELF on a per-run
+// ephemeral port, identity-verified via GET /__worktree (#1597) — never the
+// config's reuse-happy webServer on the shared default port, which could adopt
+// a SIBLING WORKTREE'S dev server and attest this tree's hash against that
+// tree's app. See scripts/worktree-identity.ts.
+//
 // On a fully-green run where the MEASURED spec-file count equals the derived
 // expected set for every pass, writes ci-webgl-attest/<hash>.json with the
 // metadata + per-suite measured summary. On ANY failure/flake/shortfall: writes
@@ -40,6 +46,7 @@ import {
   leakedServers,
   type PsRow,
 } from './webgl-cotenancy';
+import { bootOwnAppServer, assertServerIsThisWorktree, type OwnAppServer } from './worktree-identity';
 
 const REPEAT = Math.max(1, parseInt(process.env.REPEAT || '1', 10) || 1);
 const DRY = process.argv.includes('--dry-run'); // verify the mechanism w/o the long real-GPU run
@@ -515,6 +522,18 @@ function preflightSolo(): void {
 // ---------------------------------------------------------------------------
 // main
 // ---------------------------------------------------------------------------
+// The attest's OWN app server (#1597) — module-scoped so the exit/signal
+// handlers can always tear it down (several refusal paths process.exit()
+// directly, which skips a try/finally in main). stop() is synchronous.
+let ownServer: OwnAppServer | undefined;
+process.on('exit', () => ownServer?.stop());
+for (const sig of ['SIGINT', 'SIGTERM'] as const) {
+  process.on(sig, () => {
+    ownServer?.stop();
+    process.exit(130);
+  });
+}
+
 async function main() {
   // (1) Refuse SwiftShader — the whole point is the real GPU.
   if (process.env.E2E_SWIFTSHADER === '1') {
@@ -533,6 +552,22 @@ async function main() {
   if (/swiftshader|software/i.test(renderer)) {
     console.error(`The active WebGL renderer reports SwiftShader/software ('${renderer}'). This machine cannot produce a real-GPU attestation. Abort.`);
     process.exit(2);
+  }
+
+  // (1c) BOOT OUR OWN APP SERVER — the attest must NEVER reuse a server it did
+  // not boot (#1597). The config's webServer has `reuseExistingServer: !CI` on
+  // the shared default port, so a bare Playwright run here would happily adopt
+  // a SIBLING WORKTREE'S dev server and attest THIS tree's hash against THAT
+  // tree's app. Instead: a fresh dev server on a per-run ephemeral port,
+  // identity-verified via GET /__worktree (refuses, naming both paths, if the
+  // port somehow serves another checkout), and E2E_BASE_URL +
+  // E2E_SKIP_WEBSERVER=1 exported so every pass targets exactly it. The relay
+  // webServer is skipped too — every @collab/@capacity test is grep-inverted
+  // out of the attest passes, so nothing here attaches a provider.
+  if (!DRY) {
+    ownServer = await bootOwnAppServer({ repoRoot: REPO_ROOT, mode: 'dev', context: 'webgl:attest' });
+    process.env.E2E_BASE_URL = ownServer.url;
+    process.env.E2E_SKIP_WEBSERVER = '1';
   }
 
   // (2) Compute the content hash up front.
@@ -640,6 +675,13 @@ async function main() {
     return;
   }
 
+  // (4a) RE-VERIFY the server identity immediately before writing — a green
+  // run only backs an attestation if the app that ran it is still, provably,
+  // THIS worktree's (closes the server-replaced-mid-run window; #1597).
+  if (ownServer) {
+    await assertServerIsThisWorktree(ownServer.url, REPO_ROOT, 'webgl:attest(pre-write)');
+  }
+
   // (4) Write the attestation — every pass green + counts matched.
   const attestation = {
     schemaVersion: 1,
@@ -651,6 +693,12 @@ async function main() {
     os: `${process.platform} ${release()} (${arch()})`,
     machineClass: 'local-trusted-gpu-workstation', // was hostname()
     gpu: renderer,
+    // The attest booted + identity-verified its OWN app server (#1597) — the
+    // per-run ephemeral port and the /__worktree identity it re-verified at
+    // write time. `serverCommit` is informational (dev serves live files).
+    appServer: ownServer
+      ? { url: ownServer.url, mode: ownServer.mode, root: ownServer.identity.root, commit: ownServer.identity.commit }
+      : undefined,
     repeatEach: REPEAT,
     suites: {
       'A-heavy': pick(results[0]),

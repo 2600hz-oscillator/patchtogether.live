@@ -13,10 +13,14 @@
 // the spec; the doc page resolves it to authored docs.controls blobs.
 
 import { defineConfig, devices } from '@playwright/test';
+// #1597: default to this WORKTREE'S OWN derived port (E2E_PORT/E2E_BASE_URL
+// win) — never the shared 5173 that reuseExistingServer adopted blindly.
+import { localBaseUrl } from '../worktree-port';
 
-const BASE_URL = process.env.E2E_BASE_URL ?? 'http://localhost:5173';
+const { baseUrl: BASE_URL, port: APP_PORT } = localBaseUrl('dev');
 const IS_LOCAL_TARGET =
-  BASE_URL.startsWith('http://localhost') || BASE_URL.startsWith('http://127.0.0.1');
+  (BASE_URL.startsWith('http://localhost') || BASE_URL.startsWith('http://127.0.0.1')) &&
+  APP_PORT !== null;
 
 export default defineConfig({
   testDir: '.',
@@ -105,7 +109,8 @@ export default defineConfig({
 
   webServer: IS_LOCAL_TARGET
     ? {
-        command: 'npm run dev -w packages/web',
+        // Boot on EXACTLY the port `url:` waits on (see vrt.config.ts).
+        command: `npm run dev -w packages/web -- --port ${APP_PORT} --strictPort`,
         cwd: '../..',
         url: BASE_URL,
         reuseExistingServer: true,

@@ -17,10 +17,13 @@
 #   wait         Block until the server answers on its port (used by callers).
 #
 # Modes (env):
-#   E2E_PREVIEW=1   serve `vite preview` (prod build, port 4173) instead of the
-#                   dev server (port 5173). Mirrors playwright.config's
-#                   E2E_USE_PREVIEW toggle so a single spec exercises the same
-#                   target the @smoke prod-build lane uses.
+#   E2E_PREVIEW=1   serve `vite preview` (prod build) instead of the dev
+#                   server. Mirrors playwright.config's E2E_USE_PREVIEW toggle
+#                   so a single spec exercises the same target the @smoke
+#                   prod-build lane uses.
+#   E2E_PORT=N      explicit port. Default is the PER-WORKTREE derived port
+#                   (scripts/e2e-port.sh; #1597) so sibling checkouts never
+#                   collide on one shared 5173/4173.
 #   HEADED / etc.   not used here (those affect Playwright, not the server).
 #
 # Machine-friendly by design (memory: don't leak dev-servers): the server is
@@ -34,11 +37,15 @@ cd "$ROOT"
 PREVIEW="${E2E_PREVIEW:-0}"
 if [ "$PREVIEW" = "1" ]; then
   MODE="preview"
-  PORT="${E2E_PORT:-4173}"
 else
   MODE="dev"
-  PORT="${E2E_PORT:-5173}"
 fi
+# Default port = the PER-WORKTREE derived value (#1597) — never the old shared
+# 5173/4173, where every agent worktree's long-lived server collided and any
+# reuse-happy consumer silently adopted a SIBLING TREE'S server. E2E_PORT
+# still wins (scripts/e2e-port.sh honours it), and a port recorded by `start`
+# still wins for a bare `stop` (below).
+PORT="$(bash "$ROOT/scripts/e2e-port.sh" "$MODE")"
 
 STATE_DIR="$ROOT/.dev-server"
 PID_FILE="$STATE_DIR/$MODE.pid"
@@ -113,11 +120,28 @@ port_is_serving() {
 # tool unusable on a machine without lsof, and lsof is only a soft dependency
 # elsewhere in this script).
 server_owner() {
+  # IDENTITY FIRST (#1597): a server built from this repo answers
+  # GET /__worktree naming the checkout that BOOTED it (the worktreeIdentity()
+  # vite plugin in packages/web/vite.config.ts, dev + preview). That is the
+  # authoritative answer — it names the tree whose CODE is being served, which
+  # is the thing a wrong-tree run actually gets wrong — and it needs no lsof.
+  # A server that predates the endpoint (or a non-vite squatter) falls through
+  # to the lsof-cwd check below.
+  local id_root root_phys
+  root_phys="$(cd "$ROOT" 2>/dev/null && pwd -P)"
+  id_root="$(curl -sS --max-time 2 "$URL/__worktree" 2>/dev/null | sed -n 's/.*"root":"\([^"]*\)".*/\1/p')"
+  if [ -n "$id_root" ]; then
+    case "$id_root" in
+      "$ROOT" | "$root_phys") echo "ours" ;;
+      *) echo "foreign:$id_root" ;;
+    esac
+    return 0
+  fi
   if ! command -v lsof >/dev/null 2>&1; then
     echo "no-instrument"
     return 0
   fi
-  local pid cwd root_phys
+  local pid cwd
   pid="$(lsof -ti tcp:"$PORT" -sTCP:LISTEN 2>/dev/null | head -1)"
   if [ -z "$pid" ]; then
     echo "unknown"
@@ -131,7 +155,6 @@ server_owner() {
   # Compare against the PHYSICAL path too — $ROOT is the logical one and lsof
   # always reports the resolved path, so a symlinked checkout would otherwise
   # read as foreign to itself.
-  root_phys="$(cd "$ROOT" 2>/dev/null && pwd -P)"
   case "$cwd" in
     "$ROOT" | "$ROOT"/* | "$root_phys" | "$root_phys"/*) echo "ours" ;;
     *) echo "foreign:$cwd" ;;
@@ -145,8 +168,8 @@ refuse_not_ours() {
   echo "────────────────────────────────────────────────────────────" >&2
   echo "[dev-server] REFUSING to $verb the server on port $PORT — it is NOT this worktree's." >&2
   case "$owner" in
-    foreign:*) echo "[dev-server]   listener cwd : ${owner#foreign:}" >&2 ;;
-    unknown) echo "[dev-server]   listener      : something is answering, but the OS would not say who" >&2 ;;
+    foreign:*) echo "[dev-server]   serves tree  : ${owner#foreign:}" >&2 ;;
+    unknown) echo "[dev-server]   listener      : something is answering, but neither /__worktree nor the OS would say whose" >&2 ;;
   esac
   echo "[dev-server]   this checkout: $ROOT" >&2
   echo "" >&2
@@ -310,8 +333,8 @@ cmd_assert_up() {
 
   Single-spec runs reuse a long-lived server for speed. Start it once with:
 
-      flox activate -- task e2e:serve          # dev server (port 5173)
-      flox activate -- E2E_PREVIEW=1 task e2e:serve   # prod preview (port 4173)
+      flox activate -- task e2e:serve          # dev server (per-worktree derived port)
+      flox activate -- E2E_PREVIEW=1 task e2e:serve   # prod preview (derived port)
 
   then re-run your single spec. (Or run \`task e2e -- <spec>\` to boot+teardown
   a server per-run — slower, but no persistent server needed.)
