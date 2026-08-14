@@ -42,6 +42,7 @@ import {
   resolveCollabSpecs,
   classifySkip,
 } from './collab-attest-lib';
+import { bootOwnAppServer, assertServerIsThisWorktree, type OwnAppServer } from './worktree-identity';
 
 const REPEAT = Math.max(1, parseInt(process.env.REPEAT || '1', 10) || 1);
 const DRY = process.argv.includes('--dry-run'); // verify the mechanism w/o the long run
@@ -53,7 +54,11 @@ const DRY = process.argv.includes('--dry-run'); // verify the mechanism w/o the 
 const RETRIES = REPEAT > 1 ? 0 : Math.max(0, parseInt(process.env.COLLAB_ATTEST_RETRIES || '0', 10) || 0);
 
 const RELAY_PORT = Number(process.env.PORT || 1235);
-const APP_PORT = 4173; // vite preview (E2E_USE_PREVIEW=1) — mirrors the CI collab job
+// The app server is no longer the config-managed `vite preview` on the SHARED
+// port 4173 (#1597: reuseExistingServer there could adopt a SIBLING WORKTREE'S
+// preview and attest this tree's hash against that tree's bundle). The runner
+// now boots ITS OWN preview server on a per-run ephemeral port and
+// identity-verifies it (GET /__worktree) — see bootOwnAppServer in main().
 
 interface RunSummary {
   specFiles: number;
@@ -237,7 +242,8 @@ function preflightAssets() {
     }
   }
   // (b) Build the preview bundle (after the DOOM/WAD assets exist so they're
-  //     baked in). Playwright's webServer runs `vite preview` against this. We
+  //     baked in). The runner's OWN preview server (bootOwnAppServer, #1597)
+  //     serves this bundle on a per-run ephemeral port. We
   //     are already inside `flox activate` (invoked via task collab:attest), so
   //     the toolchain is on PATH — build directly. CRITICAL: VITE_E2E_HOOKS=1
   //     bakes in the test hooks the @collab specs need (window.__attachProvider,
@@ -271,16 +277,21 @@ function bootRelay(databaseUrl: string): ChildProcess {
 }
 
 /** Run the @collab specs once with the JSON reporter to a temp file → summary.
- *  Throws on a non-zero exit OR any failure/flaky OR any RELAY-VACUITY skip. */
-function runCollab(): RunSummary {
+ *  Throws on a non-zero exit OR any failure/flaky OR any RELAY-VACUITY skip.
+ *  `appUrl` is the runner's OWN identity-verified preview server (#1597) —
+ *  E2E_SKIP_WEBSERVER=1 keeps the config's reuse-happy webServer out entirely
+ *  (the relay is ours too, booted by bootRelay on RELAY_PORT). */
+function runCollab(appUrl: string | null): RunSummary {
   const tmp = mkdtempSync(join(tmpdir(), 'collab-attest-'));
   const jsonOut = join(tmp, 'report.json');
   const env: Record<string, string | undefined> = {
     ...process.env,
     PLAYWRIGHT_JSON_OUTPUT_NAME: jsonOut,
     // Run against `vite preview` (built bundle) like the CI collab job — kills
-    // the HMR-reload flake class (#232/#225) and lowers CPU pressure.
+    // the HMR-reload flake class (#232/#225) and lowers CPU pressure. The
+    // bundle is served by OUR OWN preview server (appUrl), never a reused one.
     E2E_USE_PREVIEW: '1',
+    ...(appUrl ? { E2E_BASE_URL: appUrl, E2E_SKIP_WEBSERVER: '1' } : {}),
     // Opt the COLLAB_JOB-gated specs IN (they guard `process.env.CI &&
     // !process.env.COLLAB_JOB`). We are NOT CI, so they'd run anyway, but setting
     // it makes the local run identical to the dedicated CI collab lane.
@@ -514,25 +525,39 @@ async function main() {
   preflightAssets();
 
   // (4) Boot a FRESH dedicated relay + ASSERT it's actually up before we pay for
-  //     the full Playwright run. (Playwright's webServer config would also boot
-  //     one with reuseExistingServer, picking up the one we started.)
+  //     the full Playwright run. (E2E_SKIP_WEBSERVER=1 keeps Playwright's own
+  //     webServer config out of the picture entirely — both servers are ours.)
   let relay: ChildProcess | undefined;
   let relayUp = false;
+  let appServer: OwnAppServer | undefined;
   try {
     if (!DRY) {
       relay = bootRelay(databaseUrl as string);
       await waitForTcp('127.0.0.1', RELAY_PORT, 60_000, 'relay');
       relayUp = true;
       console.log(`Relay confirmed up on ws://localhost:${RELAY_PORT}.`);
+
+      // (4b) Boot OUR OWN preview server for the bundle preflightAssets just
+      // built, on a per-run ephemeral port, and identity-verify it (#1597).
+      // Never the config's shared-port webServer, whose reuseExistingServer
+      // could adopt a sibling worktree's preview and attest the wrong app.
+      appServer = await bootOwnAppServer({ repoRoot: REPO_ROOT, mode: 'preview', context: 'collab:attest' });
     }
 
     const startedAt = Date.now();
-    const summary = runCollab();
+    const summary = runCollab(appServer?.url ?? null);
     const durationSec = Math.round((Date.now() - startedAt) / 1000);
 
     if (DRY) {
       console.log('\n[--dry-run] Mechanism wired OK (DB/relay/asset checks + run + classify). NOT writing an attestation.');
       return;
+    }
+
+    // (5a) RE-VERIFY the app server's identity immediately before writing — a
+    // green run only backs an attestation if the bundle that served it is
+    // still, provably, THIS worktree's (#1597).
+    if (appServer) {
+      await assertServerIsThisWorktree(appServer.url, REPO_ROOT, 'collab:attest(pre-write)');
     }
 
     // (5) Write the attestation — green, zero relay-vacuity, DB + relay confirmed.
@@ -549,7 +574,11 @@ async function main() {
       databaseConfirmed: true,
       relayConfirmed: relayUp,
       relayPort: RELAY_PORT,
-      appPort: APP_PORT,
+      // The runner's OWN identity-verified preview server (#1597) — per-run
+      // ephemeral port; root/commit re-verified at write time.
+      appServer: appServer
+        ? { url: appServer.url, mode: appServer.mode, root: appServer.identity.root, commit: appServer.identity.commit }
+        : undefined,
       repeatEach: REPEAT,
       retries: RETRIES,
       run: {
@@ -574,6 +603,10 @@ async function main() {
     console.log(`Wrote ci-collab-attest/${hash}.json`);
     console.log(`Now:  git add ci-collab-attest/${hash}.json  and commit it with your PR.`);
   } finally {
+    if (appServer) {
+      console.log('Tearing down the attest-owned app preview server…');
+      appServer.stop();
+    }
     if (relay && !relay.killed) {
       console.log('Tearing down the dedicated relay…');
       relay.kill('SIGTERM');

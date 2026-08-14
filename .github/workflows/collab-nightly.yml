@@ -6,20 +6,31 @@
 # can hide there. This scheduled job runs the FULL real @collab lane on CI every
 # day, built FROM SCRATCH, so those surface daily off the PR critical path.
 #
+# ⚠ ROOT CAUSE OF THE 40/40 TIMEOUT-CANCEL STREAK (#1500, fixed 2026-08-13):
+# this workflow's inline `task build:web` was missing `VITE_E2E_HOOKS: '1'`
+# (ci.yml's build-web sets it; this file was born without it, #798), so every
+# nightly bundle had the `__attachProvider`/`__ensureEngine` test hooks
+# TREE-SHAKEN OUT. Every @collab spec then hung its full 120 s test budget in
+# `waitForFunction(() => typeof window.__attachProvider === 'function')` (+ one
+# retry = ~4 min/spec), so every shard needed ~52+ min of pure timeouts and the
+# 30-min ceiling killed all four, every night — conclusion `cancelled`, which
+# `if: failure()` on the alert never saw. Measured on run 31686747477
+# (2026-08-13): setup ≈ 4m20s/shard with warm caches, then 26+ min of hangs in
+# the test step on ALL FOUR shards; the same specs, same grep, same --workers=1
+# took 4m28s TOTAL (unsharded) in ci.yml's collab job the same day. The
+# workflow never once ran green from birth (2026-06-15) to the fix.
+#
 # WHY SHARDED (FIX 2026-06-29): run-step timing on the validation run
 # (28381443028) showed the inline builds finish in ~3 min but the SERIAL
-# @collab lane itself ran 57+ min and was cancelled at the ceiling — i.e. the
-# bottleneck is the lane (slow/hanging specs — the heavy COLLAB_JOB=1 DOOM set),
-# NOT the worker count or the builds. (--workers=2 was ALSO wrong: the relay is a
-# single in-memory process and deadlocks at >1 — the #97 flake.) So: keep
-# --workers=1 (serial, no relay deadlock) and SPLIT the lane across 4 parallel
-# shard jobs via `--shard=i/4`, each with its OWN relay+DB+ceiling. Each shard
-# runs ~1/4 of the specs (~15 min) and fits comfortably under a 30-min FAIL-FAST
-# ceiling — so the nightly COMPLETES and REPORTS (green/red per shard + the
-# alert) instead of dying as an opaque `cancelled`. A shard that still overruns
-# 30 min is a genuinely-hung spec to fix (the `alert` job surfaces it), not a
-# ceiling to raise. (Truly fast <10-min coverage + de-flaking the slow specs is
-# the deeper task #69; this makes the backstop functional again first.)
+# @collab lane itself ran 57+ min and was cancelled at the ceiling. ⚠ That
+# 57-min figure was measured on a hook-less bundle (see above), so it was
+# ~all per-spec timeout, not genuine spec cost — the true serial lane is
+# ~4.5 min (ci.yml collab job, 2026-08-13). Sharding is KEPT anyway: 4-way
+# split + per-shard relay/DB isolation keeps each shard's test phase ~1-2 min,
+# so the 30-min ceiling is honest headroom, and a shard that hits it again is
+# a genuinely-hung spec to fix (the `alert` job surfaces it), not a ceiling to
+# raise. (--workers=2 was ALSO wrong: the relay is a single in-memory process
+# and deadlocks at >1 — the #97 flake. --workers=1 stays.)
 #
 # DIAGNOSTIC backstop, NOT a per-PR gate: a red shard is a signal to investigate
 # (and re-attest after a fix), not a merge blocker.
@@ -153,7 +164,17 @@ jobs:
       - name: Emit registry manifest for E2E
         run: flox activate -- task test:emit-manifest
 
+      # VITE_E2E_HOOKS=1 is REQUIRED at BUILD time (it is a Vite build-time
+      # var, baked into the bundle): the @collab helpers drive the app through
+      # `window.__attachProvider` / `__ensureEngine` / `__patch`, and those
+      # hooks are TREE-SHAKEN OUT of a prod bundle without it
+      # (packages/web/src/lib/dev/test-hooks.ts; same flag ci.yml's build-web
+      # and Taskfile e2e:serve set, for the same reason). Its absence here was
+      # the #1500 root cause — every spec hung waiting for the hook, every
+      # shard hit the 30-min ceiling, every night, from this file's birth.
       - name: Build web (preview bundle, test hooks enabled)
+        env:
+          VITE_E2E_HOOKS: '1'
         run: flox activate -- task build:web
 
       # --- One shard of the full real @collab lane (serial within the shard) ---
@@ -190,14 +211,31 @@ jobs:
           retention-days: 14
 
   # --- Failure notification ------------------------------------------------
-  # Runs after ALL shards. `if: failure()` fires when ANY shard failed (or was
-  # ceiling-cancelled). Opens/refreshes a single GH issue (emails repo watchers),
-  # so a red OR hung nightly surfaces the same day instead of rotting unalerted.
+  # Runs after ALL shards. `if: !success()` fires when ANY shard did NOT end
+  # green — failed OR ceiling-cancelled. Opens/refreshes a single GH issue
+  # (emails repo watchers), so a red OR HUNG nightly surfaces the same day
+  # instead of rotting unalerted.
+  #
+  # ⚠ WHY NOT `failure()` (the #1500 defect): a job killed by its own
+  # `timeout-minutes` concludes `cancelled`, not `failure`, so `if: failure()`
+  # is STRUCTURALLY BLIND to the hung-shard case — the exact case a nightly
+  # backstop most needs to scream about. 40+ consecutive timeout-cancelled
+  # nights alerted zero times. Cancellation semantics differ per job and each
+  # choice here is deliberate (the cancellation-`if:` family):
+  #   - ci.yml merge-reports: `!cancelled()` — a cancelled run is NOT a signal
+  #     there; running anyway posted a false RED against a green SHA (#1581).
+  #   - vrt-strict aggregator: `always()` + explicit exit 1 — fail-closed
+  #     gate; it must report even when siblings fall over.
+  #   - THIS job: `!success()` — an ALERT for a diagnostic lane whose primary
+  #     observed failure mode IS the timeout-cancel. Anything other than all
+  #     shards green (failure, ceiling-cancel, or a skipped/cancelled shard)
+  #     must page. A human run-level cancel stops queued jobs before their
+  #     `if:` is evaluated, so it cannot false-page this.
   alert:
-    name: collab-nightly alert (any shard failed)
+    name: collab-nightly alert (any shard not green)
     runs-on: ubuntu-latest
     needs: collab-shard
-    if: failure()
+    if: ${{ !success() }}
     steps:
       - name: Alert on nightly failure (open/refresh a GH issue)
         uses: actions/github-script@v7
