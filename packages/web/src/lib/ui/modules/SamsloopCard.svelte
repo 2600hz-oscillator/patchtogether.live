@@ -11,10 +11,17 @@
   //   - All recording math (max-seconds budget, quantize, downsample, WAV
   //     header) is in $lib/audio/modules/samsloop-record.ts so it's unit-
   //     testable without a DOM (samsloop-record.test.ts).
-  //   - The mic-record state machine in $lib/audio/modules/samsloop.ts
-  //     (samsloopRec*) is REUSED as the in-progress accumulator — same
-  //     start/append/stop/fail/cap-stop transitions, just driven by the
-  //     samsloop-tap worklet's MessagePort instead of a ScriptProcessor.
+  //   - ⚠ THE RECORDING ITSELF BELONGS TO THE NODE, NOT TO THIS CARD (#1588).
+  //     The tap subscription, the accumulating PCM buffer, the live peak
+  //     buffer and the encode-and-commit all live in
+  //     $lib/ui/modules/node-samsloop-registry. This card ADOPTS and READS;
+  //     it does not CREATE and DESTROY. Before that, this card's unmount
+  //     `$effect` called `attachedTap.setEnabled(false)` and dropped the
+  //     buffer — and NOTHING called `stopRecording()` on unmount, so
+  //     collapsing the module (or an LRU dock evict, ESC, M/E, navigation)
+  //     silently destroyed up to 60 s of unrepeatable live audio with no
+  //     commit path at all. There is deliberately no method on the registry
+  //     this card could call to end a take.
   //   - The samsloop-tap worklet (packages/dsp/src/samsloop-tap.ts)
   //     captures patched audio and posts L+R Float32 chunks to the main
   //     thread when enabled.
@@ -24,10 +31,11 @@
   //     One pixel = one slice of that timeline. As samples accumulate we
   //     fill from the left, drawing peak-per-pixel just like the static
   //     waveform after a recording finishes.
-  //   - Local-only state (recRunningPeaks) — never written to Yjs. The
-  //     only Yjs write is the single `setData` on STOP (one update per
-  //     recording, not per frame — see relay-single-process-and-drift
-  //     memory).
+  //   - The peak buffer is registry-owned (never written to Yjs), so it keeps
+  //     filling while this card is unmounted and re-expanding shows the WHOLE
+  //     take rather than a hole where the collapse was. The only Yjs write is
+  //     the single commit on STOP (one update per recording, not per frame —
+  //     see relay-single-process-and-drift memory).
 
   import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
@@ -40,12 +48,7 @@
     samsloopDecodeBytesB64,
     SAMSLOOP_MAX_FILE_BYTES,
     SAMSLOOP_RATE_RANGE,
-    createSamsloopRecMachine,
-    samsloopRecStart,
-    samsloopRecStop,
-    samsloopRecFail,
     type SamsloopData,
-    type SamsloopRecMachine,
   } from '$lib/audio/modules/samsloop';
   import {
     knobToRate,
@@ -57,20 +60,14 @@
     samsloopMaxSecondsExact,
     samsloopAchievedRate,
     samsloopMaxCaptureFrames,
-    encodeRecordingBytes,
     decodeRecordedPcm,
-    buildRecordedSample,
-    clearSamsloopUploadKeys,
     makeWavBlob,
     samsloopDownloadFilename,
     bytesToBase64,
     base64ToBytes,
-    SamsloopCaptureBuffer,
-    foldCapturePeaks,
     samsloopRackLedger,
     samsloopRackFullMessage,
     samsloopBindingCap,
-    SAMSLOOP_PEAK_SLOT_NONE,
     SAMSLOOP_REC_DEFAULTS,
     SAMSLOOP_RATE_OPTIONS,
     SAMSLOOP_MIN_RECORD_SECONDS,
@@ -82,6 +79,7 @@
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
   import { cardParams, portsFromDef } from './card-kit';
+  import { nodeSamsloop, type SamsloopTap } from './node-samsloop-registry.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -158,47 +156,25 @@
 
   // ---------- recording state ----------
   //
-  // The state machine is the source of truth for the recording lifecycle
-  // (idle → recording → stopped/idle). The tap-worklet port is acquired
-  // lazily from the engine handle via the 'recTap' read key. We retry
-  // briefly because the handle isn't always present immediately after
-  // spawn — the engine factory finishes asynchronously.
-
-  let recMachine = $state<SamsloopRecMachine>(createSamsloopRecMachine(48000));
-  let recStartTimeMs = $state<number>(0);
-  let recCounterTicker: ReturnType<typeof setInterval> | null = null;
-  let recElapsedSec = $state<number>(0);
-
-  // Live peak-per-pixel buffer. One entry per "time slot" along the bar's
-  // horizontal axis (the bar maps `maxSeconds` to its width). When a
-  // recording starts we allocate a buffer sized to the current bar pixel
-  // width; the chunk handler folds incoming samples into the slot they
-  // belong to. State is local — never written to Yjs.
-  let recBarWidth = $state<number>(200);
-  let recRunningPeaks = $state<Float32Array>(new Float32Array(0));
-  // Column cursor threaded through foldCapturePeaks — which column the
-  // running max is currently accumulating into.
-  let recPeakSlot = SAMSLOOP_PEAK_SLOT_NONE;
-
-  // Tap port subscription bookkeeping. We attach the listener for the
-  // lifetime of an active recording and detach on stop/teardown so
-  // chunks don't fire after we've committed.
-  let attachedTap: { port: MessagePort; setEnabled: (e: boolean) => void; sampleRate: number } | null = null;
-  let tapHandler: ((e: MessageEvent) => void) | null = null;
-  // rAF throttle: chunks arrive every ~3 ms at 48 kHz; without throttle
-  // the waveform $effect would redraw 300+ times per second. We coalesce
-  // redraw requests to one per animation frame.
-  let pendingPeakRaf: number | null = null;
-
-  // L/R accumulator for the current recording. We keep raw Float32 so
-  // the quantize + downsample step on STOP works on the full-precision
-  // capture (not on the visual peak slots, which are lossy by design).
+  // ⚠ THE TAKE IS NOT HELD HERE. `$lib/ui/modules/node-samsloop-registry` owns
+  // the tap subscription, the PCM accumulator, the live peak buffer and the
+  // encode-and-commit for the whole lifetime of a recording, keyed to the NODE.
+  // Everything below is a READ of it. This card holds nothing it could kill,
+  // which is the point: collapsing the module used to destroy the take (#1588),
+  // and the fix is not "the card should be more careful" — it is that there is
+  // nothing for a card unmount to reach.
   //
-  // ⚠ FIXED CAPACITY, ALLOCATED ONCE AT REC START. This used to be a pair
-  // of plain Float32Arrays reallocated-and-copied on every tap chunk —
-  // O(n²) in the length of the take, at 375 chunks/second, on the audio
-  // thread's own thread. See SamsloopCaptureBuffer for the measurements.
-  let capture: SamsloopCaptureBuffer = new SamsloopCaptureBuffer(0);
+  // The tap-worklet port is still acquired lazily from the engine handle via
+  // the 'recTap' read key at REC-press time, because that is a user gesture on
+  // a mounted card. The registry owns it from there.
+
+  /** Arm-time refusals only (engine not ready / rack full). Genuinely
+   *  card-scoped: they are the response to a click on THIS card, and they must
+   *  NOT survive a remount pretending to describe a live take. */
+  let recError = $state<string | null>(null);
+
+  /** The node's own take — null when this node has never recorded. */
+  let take = $derived(nodeSamsloop.view(id));
 
   // The AudioContext rate the tap captures at. Everything downstream —
   // the achieved rate, the byte budget, the accumulator capacity — is a
@@ -208,9 +184,17 @@
   // value that reaches a recording is always the tap's own.
   let captureRate = $state<number>(48_000);
 
-  let isRecording = $derived(recMachine.state === 'recording');
+  // ⚠ READ FROM THE REGISTRY, NOT FROM CARD STATE. This is what makes a
+  // re-expanded card show STOP (and the running bar) for a take that started
+  // before it mounted — the collapse/re-expand round trip #1588 is about.
+  let isRecording = $derived(nodeSamsloop.isRecording(id));
+  // "max length reached". ⚠ ALSO GATED ON `hasRecorded`, which the card-local
+  // version got for free: the registry entry now outlives the card (that is the
+  // point), so without this an UPLOAD after a cap-stopped take would keep
+  // showing a message about a recording the module no longer holds. The upload
+  // path deletes `d.sample`, so `hasRecorded` is exactly the right term.
   let isCapStopped = $derived(
-    recMachine.state === 'stopped' && recMachine.stopReason === 'cap',
+    take?.state === 'stopped' && take.stopReason === 'cap' && hasRecorded,
   );
   let uploadInFlight = $derived(uploadStatus !== null);
   // NOTE: `recButtonDisabled` is declared AFTER `rackFull` below — it depends
@@ -296,9 +280,11 @@
     const d = t.data as SamsloopData;
     d[key] = value as never;
     // If the user changes a setting mid-recording: stop the recording
-    // cleanly. Whatever was captured up to that point is committed.
+    // cleanly. Whatever was captured up to that point is committed. (The
+    // registry freezes the settings for a take's duration precisely because
+    // this is the only way they can change under it.)
     if (isRecording) {
-      stopRecording('user');
+      stopRecording();
     }
   }
 
@@ -315,13 +301,13 @@
   /** Acquire the tap from the engine handle. Returns null until the engine
    *  has finished mounting this node's handle — the card retries via the
    *  REC click handler (no-op spam protection). */
-  function getTap(): { port: MessagePort; setEnabled: (e: boolean) => void; sampleRate: number } | null {
+  function getTap(): SamsloopTap | null {
     const eng = engineCtx.get();
     if (!eng || !node) return null;
     try {
       const r = eng.read(node, 'recTap');
       if (!r) return null;
-      const tap = r as { port: MessagePort; setEnabled: (e: boolean) => void; sampleRate: number };
+      const tap = r as SamsloopTap;
       if (tap.sampleRate > 0) captureRate = tap.sampleRate;
       return tap;
     } catch {
@@ -364,10 +350,7 @@
   function startRecording() {
     const tap = getTap();
     if (!tap) {
-      recMachine = samsloopRecFail(
-        recMachine,
-        'Audio engine not ready yet — start audio first.',
-      );
+      recError = 'Audio engine not ready yet — start audio first.';
       return;
     }
 
@@ -391,176 +374,44 @@
       liveLedger.freeBytes,
     );
     if (liveMaxSeconds < SAMSLOOP_MIN_RECORD_SECONDS) {
-      recMachine = samsloopRecFail(recMachine, samsloopRackFullMessage(liveLedger));
+      recError = samsloopRackFullMessage(liveLedger);
       return;
     }
 
+    recError = null;
     uploadStatus = null;
     uploadError = null;
 
-    // Allocate the visual peak slot buffer at the current bar pixel
-    // width. Reading the canvas width lazily so the bar is real (it can
-    // change if the user resizes the window between recordings).
-    const w = canvasEl?.width ?? 200;
-    recBarWidth = w;
-    recRunningPeaks = new Float32Array(w);
-    recPeakSlot = SAMSLOOP_PEAK_SLOT_NONE;
-
-    // ONE allocation for the whole take, sized so the encoded result is
-    // provably inside the byte budget (and the 60 s length cap). Sized from
-    // the tap's OWN rate — the settings are frozen for the duration because
-    // `pushRecSetting` stops the recording on any change.
-    capture = new SamsloopCaptureBuffer(
-      samsloopMaxCaptureFrames(
+    // Hand the fully-resolved configuration to the NODE-keyed registry. It owns
+    // the tap, the accumulator, the peak bar and the commit from here; this card
+    // keeps no handle it could tear down.
+    //
+    // The bar's pixel width is read lazily from the live canvas (it can change
+    // if the window was resized between recordings), and the accumulator is
+    // sized from the TAP'S OWN rate so the encoded result is provably inside
+    // the byte budget and the 60 s length cap.
+    nodeSamsloop.start(id, {
+      tap,
+      captureFrames: samsloopMaxCaptureFrames(
         tap.sampleRate, recRate, recBits, recChannels, liveLedger.freeBytes,
       ),
-    );
-
-    recMachine = samsloopRecStart(recMachine, tap.sampleRate);
-
-    attachedTap = tap;
-    tapHandler = (ev: MessageEvent) => {
-      const msg = ev.data as { type?: string; l?: Float32Array; r?: Float32Array; channels?: number } | null;
-      if (!msg || msg.type !== 'chunk' || !msg.l || !msg.r) return;
-      onTapChunk(msg.l, msg.r);
-    };
-    tap.port.addEventListener('message', tapHandler);
-    // start() on the port — addEventListener requires the port to be
-    // started; onmessage = ... auto-starts it but addEventListener does NOT.
-    try { tap.port.start(); } catch { /* */ }
-    tap.setEnabled(true);
-
-    recStartTimeMs = performance.now();
-    recElapsedSec = 0;
-    recCounterTicker = setInterval(() => {
-      recElapsedSec = (performance.now() - recStartTimeMs) / 1000;
-    }, 50);
-
+      barWidth: canvasEl?.width ?? 200,
+      barSeconds: liveMaxSeconds,
+      rate: recRate,
+      bits: recBits,
+      channels: recChannels,
+    });
   }
 
-  function onTapChunk(l: Float32Array, r: Float32Array) {
-    if (recMachine.state !== 'recording') return;
-
-    // Append into the pre-allocated accumulator — one bounded memcpy of the
-    // chunk, no allocation and no re-copy of what came before. `written`
-    // may be short of `l.length` on the last chunk before the cap.
-    const before = capture.frames;
-    const written = capture.append(l, r);
-
-    // Fold the new samples into the visual peak buffer (L only for display —
-    // keeps the bar shape stable regardless of CHAN). O(chunk): a running max
-    // per column, NOT a rescan of the whole column per chunk, which was
-    // quadratic in the budget. See foldCapturePeaks.
-    const sr = attachedTap?.sampleRate ?? captureRate;
-    // The bar's x-axis is `maxSeconds` long. Each slot's time width is
-    // `maxSecondsExact / barWidth` seconds.
-    const slotSec = maxSecondsExact / recBarWidth;
-    const samplesPerSlot = Math.max(1, Math.floor(sr * slotSec));
-    if (written > 0) {
-      recPeakSlot = foldCapturePeaks(
-        recRunningPeaks, samplesPerSlot, before, l, written, recPeakSlot,
-      );
-    }
-
-    // Force the waveform $effect to re-run by reassigning the reactive
-    // ref — coalesced to one per animation frame so we don't redraw
-    // 300+ times per second.
-    if (pendingPeakRaf === null) {
-      pendingPeakRaf = requestAnimationFrame(() => {
-        pendingPeakRaf = null;
-        recRunningPeaks = recRunningPeaks;
-      });
-    }
-
-    // Auto-stop on cap. The accumulator's capacity IS the budget (it was
-    // sized by samsloopMaxCaptureFrames from the tap's real rate), so
-    // "full" is the trigger — no separate elapsed-seconds arithmetic that
-    // could disagree with it.
-    if (capture.full) stopRecording('cap');
-  }
-
-  function stopRecording(reason: 'user' | 'cap') {
-    if (recMachine.state !== 'recording') return;
-    // Detach the tap first so no chunks land after we've committed.
-    if (attachedTap) {
-      try { attachedTap.setEnabled(false); } catch { /* */ }
-      if (tapHandler) {
-        try { attachedTap.port.removeEventListener('message', tapHandler); } catch { /* */ }
-      }
-    }
-    attachedTap = null;
-    tapHandler = null;
-    if (pendingPeakRaf !== null) {
-      cancelAnimationFrame(pendingPeakRaf);
-      pendingPeakRaf = null;
-    }
-    if (recCounterTicker !== null) {
-      clearInterval(recCounterTicker);
-      recCounterTicker = null;
-    }
-    recMachine = reason === 'cap'
-      ? { ...recMachine, state: 'stopped', stopReason: 'cap' }
-      : samsloopRecStop(recMachine);
-
-    // Encode + commit. ONE Yjs setData per recording — never per chunk.
-    // The byte payload is a base64 string (opaque to Yjs); broadcast is
-    // one update. (A 144 kB number[] would recurse syncedstore's YArray
-    // wrapper and blow the stack at insert.)
-    const captured = capture.channels();
-    if (captured.l.length === 0) return;
-    // ⚠ `rate` is the encoder's answer, NOT `recRate`. The RATE switch is a
-    // request; integer decimation may not be able to honour it, and tagging
-    // the bytes with the request is what detuned every take made from a
-    // 48 kHz context (−148 cents). There is no truncation step here any
-    // more either: the accumulator's capacity was derived from the same
-    // budget the encoder is bounded by, so the old
-    // `bytes.subarray(0, BUDGET)` "safety net" — whose comment said it
-    // should never fire, and which in fact fired on EVERY take, cutting
-    // ~0.118 s off the end — has nothing left to do. If that ever stops
-    // being true it must be a loud test failure, not a silent trim:
-    // `samsloop-record.test.ts` encodes a full-capacity capture at every
-    // settings combination and asserts the result fits.
-    const { bytes, rate: storedRate } = encodeRecordingBytes(
-      captured.l,
-      captured.r,
-      recMachine.sampleRate,
-      recRate,
-      recBits,
-      recChannels,
-    );
-    const t = patch.nodes[id];
-    if (!t) return;
-    if (!t.data) t.data = {};
-    const d = t.data as SamsloopData;
-    // Base64 the bytes for Yjs storage — see SamsloopData.sample comment.
-    // A 144 kB number[] would recurse syncedstore's YArray wrapper and
-    // blow the stack; a base64 string is one opaque value, one Yjs update.
-    // THE ONE-SAMPLE INVARIANT (samsloop.ts header): "a new mic recording
-    // REPLACES the previously loaded sample". Nothing used to enforce that in
-    // the DATA — a record-after-upload left both keys on node.data, and since
-    // the factory read only the upload keys the recording was SILENT. Clear
-    // the upload first, then commit; the upload path mirrors this on `sample`.
-    clearSamsloopUploadKeys(d as Record<string, unknown>);
-    const { sample, frames } = buildRecordedSample(bytes, storedRate, recBits, recChannels);
-    d.sample = sample;
-    // The window faders bound against these. Written straight from the encode
-    // rather than waiting on the factory's poll, so they are correct the
-    // instant REC stops. The factory still derives them independently — that
-    // path is what repairs a rack RECORDED BEFORE this fix, which has the
-    // bytes but no metadata.
-    d.sampleLength = frames;
-    d.sampleRate = storedRate;
-    // …and open the loop window over the whole take, exactly as the upload
-    // path does. Left at the declared default (end = 1e6) the worklet clamps
-    // to the buffer and plays it all, but the FADERS would read a window 700×
-    // longer than the sample.
-    t.params.start = 0;
-    t.params.end = frames;
+  /** USER INTENT ONLY. The cap-stop lives in the registry, because it has to
+   *  fire whether or not a card is mounted (`node-samsloop-registry`). */
+  function stopRecording() {
+    nodeSamsloop.stop(id, 'user');
   }
 
   function toggleRecord() {
     if (isRecording) {
-      stopRecording('user');
+      stopRecording();
     } else {
       startRecording();
     }
@@ -613,20 +464,34 @@
     }
   }
 
-  // Tear down the tap subscription on unmount so we don't leave the
-  // tap enabled if the user destroys the card mid-recording.
-  $effect(() => {
-    return () => {
-      if (attachedTap) {
-        try { attachedTap.setEnabled(false); } catch { /* */ }
-        if (tapHandler) {
-          try { attachedTap.port.removeEventListener('message', tapHandler); } catch { /* */ }
-        }
-      }
-      if (pendingPeakRaf !== null) cancelAnimationFrame(pendingPeakRaf);
-      if (recCounterTicker !== null) clearInterval(recCounterTicker);
-    };
-  });
+  // ⚠ THERE IS NO RECORDING TEARDOWN ON UNMOUNT, AND THAT IS THE FIX (#1588).
+  //
+  // What used to be here:
+  //
+  //     $effect(() => () => {
+  //       if (attachedTap) {
+  //         attachedTap.setEnabled(false);
+  //         attachedTap.port.removeEventListener('message', tapHandler);
+  //       }
+  //       if (pendingPeakRaf !== null) cancelAnimationFrame(pendingPeakRaf);
+  //       if (recCounterTicker !== null) clearInterval(recCounterTicker);
+  //     });
+  //
+  // …with no `stopRecording()` anywhere on the unmount path, so the buffer was
+  // dropped un-encoded. The comment that shipped with it — "so we don't leave
+  // the tap enabled if the user destroys the card mid-recording" — was correct
+  // when a card unmount implied the module was going away. Under the faceplate
+  // shell SAMSLOOP is un-migrated, so its card exists only inside the dock
+  // full-view and a COLLAPSE produces the identical unmount; the teardown could
+  // not tell the two apart, and the card is not entitled to decide because it
+  // cannot distinguish them.
+  //
+  // Teardown is keyed to GRAPH lifetime instead: `nodeSamsloop.sweep(liveIds)`
+  // runs from Canvas beside nodeMedia / nodePresent / nodeRecorder, so a node
+  // deleted by ANY route (menu, lasso, undo, a peer's CRDT delete, Clear, a
+  // patch load) ends its take and no delete site has to remember. The registry
+  // exposes NO per-card teardown method — the absence is the guard, and `tsc`
+  // refuses the regression before any test runs.
 
   async function onAudioFileChange(ev: Event) {
     const input = ev.target as HTMLInputElement;
@@ -779,7 +644,7 @@
   $effect(() => {
     // Track reactivity dependencies explicitly.
     void sampleLength; void start; void end;
-    void isRecording; void recRunningPeaks; void maxSeconds; void hasRecorded;
+    void isRecording; void maxSeconds; void hasRecorded;
     if (!canvasEl) return;
     const ctx2d = canvasEl.getContext('2d');
     if (!ctx2d) return;
@@ -790,13 +655,23 @@
     ctx2d.fillRect(0, 0, w, h);
 
     if (isRecording) {
-      // Live-record view: bar's x-axis = maxSeconds.
-      // Draw the running peaks. Each slot maps to one column.
-      const peaks = recRunningPeaks;
+      // Live-record view: bar's x-axis = the take's own barSeconds.
+      //
+      // ⚠ `progress()` is read ONLY on this branch, and that is deliberate: it
+      // subscribes to the registry's 20 Hz publish counter, and an IDLE
+      // samsloop card's draw below decodes its persisted PCM on every run. A
+      // single shared counter would have made every idle card re-decode 20×
+      // a second whenever any samsloop in the rack was recording.
+      const live = nodeSamsloop.progress(id);
+      const peaks = live?.peaks ?? new Float32Array(0);
       const cols = Math.min(w, peaks.length);
       ctx2d.fillStyle = 'rgba(255, 60, 60, 0.18)';
-      // Highlight already-filled region.
-      const filledFrac = Math.min(1, recElapsedSec / Math.max(maxSecondsExact, 0.001));
+      // Highlight already-filled region. ⚠ `elapsed` here is frames/rate — the
+      // LENGTH OF THE TAKE, not the wall clock. A wall clock would keep the bar
+      // sliding right even if the tap had gone silent, which is precisely the
+      // half-fix this whole change exists to make impossible to ship.
+      const axis = Math.max(live?.barSeconds ?? maxSecondsExact, 0.001);
+      const filledFrac = Math.min(1, (live?.elapsed ?? 0) / axis);
       ctx2d.fillRect(0, 0, filledFrac * w, h);
       ctx2d.strokeStyle = 'rgb(255, 80, 60)';
       ctx2d.lineWidth = 1;
@@ -1054,8 +929,8 @@
       {#if isCapStopped}
         <div class="upload-status" data-testid="samsloop-rec-cap-msg">max length reached</div>
       {/if}
-      {#if recMachine.error}
-        <div class="upload-error" data-testid="samsloop-rec-error">{recMachine.error}</div>
+      {#if recError}
+        <div class="upload-error" data-testid="samsloop-rec-error">{recError}</div>
       {/if}
 
       <div class="waveform-row">

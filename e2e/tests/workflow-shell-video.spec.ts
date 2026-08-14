@@ -597,9 +597,19 @@ test.describe('?shell=1 video CHAIN parity', () => {
       '…including the <video> element it hands to the engine (attachExternalSource)',
     ).toHaveCount(1);
 
-    // Exactly ONE mount for the node: a second live <video> would double
+    // Exactly ONE mount FOR THIS NODE: a second live <video> would double
     // getUserMedia/decode and the first to unmount would detach the survivor.
-    await expect(page.locator('[data-testid="headless-source-host"]')).toHaveCount(1);
+    //
+    // ⚠ SCOPED TO THE NODE, and that is the whole assertion — it used to count
+    // every host in the DOCUMENT, which said "for the node" while measuring
+    // something else entirely. The seeded rack's own TIMELORDE joined the
+    // headless set in #1587 (its card is the sole writer of its video_out), so
+    // the document count became 2 and this reddened without a single thing
+    // about videobox having changed. A per-node count states what it means and
+    // cannot be moved by an unrelated module joining the set.
+    await expect(
+      page.locator('[data-testid="headless-source-host"][data-node-id="vb1"]'),
+    ).toHaveCount(1);
 
     // cameraInput must NEVER be hosted — it keeps its real card IN the lane
     // (carve-out), so hosting it would be the double-mount above.
