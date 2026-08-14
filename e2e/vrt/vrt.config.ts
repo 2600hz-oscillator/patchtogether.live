@@ -24,10 +24,16 @@
 //   - VRT failures upload a different artifact bundle (the HTML gallery).
 
 import { defineConfig, devices } from '@playwright/test';
+// #1597: the default target is this WORKTREE'S OWN derived port (E2E_PORT /
+// E2E_BASE_URL still win) — never the shared 5173, where reuseExistingServer
+// silently adopted a sibling checkout's dev server and swept the wrong branch.
+// APP_PORT feeds the webServer command below so url/command cannot disagree.
+import { localBaseUrl } from '../worktree-port';
 
-const BASE_URL = process.env.E2E_BASE_URL ?? 'http://localhost:5173';
+const { baseUrl: BASE_URL, port: APP_PORT } = localBaseUrl('dev');
 const IS_LOCAL_TARGET =
-  BASE_URL.startsWith('http://localhost') || BASE_URL.startsWith('http://127.0.0.1');
+  (BASE_URL.startsWith('http://localhost') || BASE_URL.startsWith('http://127.0.0.1')) &&
+  APP_PORT !== null;
 
 // ── RENDERER SELECTION ─────────────────────────────────────────────────────
 //
@@ -456,7 +462,12 @@ export default defineConfig({
 
   webServer: IS_LOCAL_TARGET
     ? {
-        command: 'npm run dev -w packages/web',
+        // --port + --strictPort: boot on EXACTLY the port `url:` waits on (the
+        // derived per-worktree default, or the explicit E2E_PORT/E2E_BASE_URL
+        // port). The old bare `npm run dev` booted vite's own default port, so
+        // with any non-default target the command and the url disagreed and
+        // only an already-running server (whosever it was) could satisfy it.
+        command: `npm run dev -w packages/web -- --port ${APP_PORT} --strictPort`,
         cwd: '../..',
         url: BASE_URL,
         reuseExistingServer: true,
