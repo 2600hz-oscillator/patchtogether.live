@@ -33,7 +33,8 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 
-import { assertServerIsThisWorktree, fetchWorktreeIdentity, serverBootPlan } from './worktree-identity';
+import { spawn } from 'node:child_process';
+import { assertServerIsThisWorktree, createGroupStopper, fetchWorktreeIdentity, serverBootPlan } from './worktree-identity';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -164,6 +165,81 @@ describe('serverBootPlan — one interface, named explicitly, both ends (#1614)'
       const plan = serverBootPlan(mode, 5000);
       expect(plan.url).not.toContain('localhost');
       expect(plan.args.join(' ')).not.toContain('localhost');
+    }
+  });
+});
+
+// ── createGroupStopper (#1630) ──────────────────────────────────────────────
+// The teardown the attest runners' SUCCESS paths await. Real detached
+// processes, never mocks; death is asserted via the child's 'exit' EVENT
+// (kill -0 reports zombies as alive — the worktree-guard lesson).
+//
+// WHAT THIS BLOCK CANNOT SEE: that the runners actually await stopAndWait on
+// their success paths — that wiring is asserted source-anchored below, the
+// same shape as `the runners actually call the guard`.
+describe('createGroupStopper — teardown that the success path can await (#1630)', () => {
+  function spawnDetached(cmd: string): ReturnType<typeof spawn> {
+    return spawn('bash', ['-c', cmd], { detached: true, stdio: ['ignore', 'pipe', 'ignore'] });
+  }
+
+  it('a TERM-able child: stopAndWait resolves and the child has actually exited', async () => {
+    const child = spawnDetached('sleep 300');
+    await new Promise((r) => setTimeout(r, 150));
+    const { stopAndWait } = createGroupStopper(child);
+    await stopAndWait(4000);
+    expect(
+      child.exitCode !== null || child.signalCode !== null,
+      `child must be dead after stopAndWait (exitCode=${child.exitCode} signal=${child.signalCode})`,
+    ).toBe(true);
+  });
+
+  it('a SIGTERM-ignoring child is ESCALATED to SIGKILL within the bound', async () => {
+    const child = spawnDetached('trap "" TERM; sleep 300');
+    await new Promise((r) => setTimeout(r, 250));
+    const { stopAndWait } = createGroupStopper(child);
+    // Positive control on the subject first: it is alive before teardown.
+    expect(child.exitCode, 'the trap child must be running before teardown').toBeNull();
+    await stopAndWait(2500); // TERM window min(2500,5000)=2.5s → KILL
+    expect(
+      child.signalCode,
+      'a TERM-immune child must die by SIGKILL, not linger as an orphan',
+    ).toBe('SIGKILL');
+  }, 15_000);
+
+  it('kills the whole GROUP — a grandchild (the workerd analog) dies too', async () => {
+    // The wedge left ORPHANED grandchildren (vite → workerd) re-parented to
+    // launchd. The stopper signals the process GROUP, so the grandchild must
+    // die with its parent.
+    const child = spawnDetached('sleep 300 & echo $!; wait');
+    const grandchildPid: number = await new Promise((res, rej) => {
+      let buf = '';
+      child.stdout!.on('data', (d: Buffer) => {
+        buf += d.toString();
+        const m = buf.match(/^(\d+)\n/);
+        if (m) res(Number(m[1]));
+      });
+      setTimeout(() => rej(new Error(`no grandchild pid printed (got: ${JSON.stringify(buf)})`)), 5000);
+    });
+    const { stopAndWait } = createGroupStopper(child);
+    // Positive control: the grandchild is alive (kill 0 on a live non-child
+    // pid succeeds; it is NOT our child, so the zombie caveat does not apply).
+    expect(() => process.kill(grandchildPid, 0), 'grandchild alive pre-teardown').not.toThrow();
+    await stopAndWait(4000);
+    await new Promise((r) => setTimeout(r, 200));
+    expect(
+      () => process.kill(grandchildPid, 0),
+      `grandchild ${grandchildPid} must be dead after a GROUP stop`,
+    ).toThrow();
+  }, 15_000);
+
+  it('the runners actually await stopAndWait on their normal paths (source-anchored)', () => {
+    for (const f of ['webgl-attest.ts', 'grand-attest.ts', 'collab-attest.ts']) {
+      const src = readFileSync(join(__dirname, f), 'utf8');
+      expect(
+        /await\s+(ownServer|appServer)[?.]*\.stopAndWait\(/.test(src),
+        `${f} must await stopAndWait on its normal path — exit-hook-only teardown cannot fire ` +
+          `while the un-torn-down child keeps the event loop alive (#1630)`,
+      ).toBe(true);
     }
   });
 });
