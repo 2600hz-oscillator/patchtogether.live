@@ -24,6 +24,26 @@
 #   verify against — and any worktree with a LIVE agent. enforce() lists these
 #   so you can work through them; it never deletes them.
 #
+# ⚠ LIVENESS BEATS TIDINESS (#1571). A READ-ONLY investigation phase is
+# byte-for-byte the shape of abandonment: clean tree, zero commits, no writes
+# — the more carefully an agent reads before touching anything, the more
+# abandoned its worktree looks. Three live agents were once force-removed on
+# exactly that reasoning, at ~35 min of unrecoverable diagnosis each. So the
+# classifier now refuses "abandoned" on ANY sign of life, in order:
+#   1. the lock names a pid that is ALIVE                → live, never removed;
+#   2. the lock exists but carries NO parseable pid      → at-risk (an
+#      unidentifiable lock is not evidence of death — same refusal shape as
+#      the attest's unidentifiable-server rule, #1597);
+# An atime-based "recently READ" third rule was built, measured, and DROPPED:
+# APFS only updates atime on read when atime < mtime, so after any prior read
+# (including the guard's own `git status`) further reads leave NO trace — a
+# signal that structurally cannot fire is decoration, per the blind-gates
+# standard. The pid rules above are the load-bearing defense; agents are
+# additionally briefed to land a WIP commit on branching (making the tree
+# non-clean from minute one), which rule-of-three protects better than any
+# filesystem forensics.
+set -uo pipefail
+#
 # Run through flox:  flox activate -- task worktree:guard
 set -uo pipefail
 
@@ -62,8 +82,11 @@ flush() {
   [ -z "$unpushed" ] && unpushed="noup"
   if [ "$alive" = "1" ]; then
     LIVE+=("$path|live agent pid $pid: $label")
+  elif [ "$locked" = "1" ] && [ -z "$pid" ]; then
+    # An unidentifiable lock is NOT evidence of death (#1571 rule 2).
+    ATRISK+=("$path|locked with NO parseable pid — cannot verify death, refusing to classify as abandoned: $label")
   elif [ "$locked" = "1" ] && [ "$dirty" = "0" ] && [ "$unpushed" = "0" ]; then
-    SAFE+=("$path|abandoned (clean, pushed): $label")
+    SAFE+=("$path|abandoned (dead pid $pid, clean, pushed): $label")
   elif [ "$locked" = "1" ]; then
     ATRISK+=("$path|dead lock, dirty=$dirty unpushed=$unpushed: $label")
   else
@@ -103,6 +126,10 @@ remove_safe() {
 
 print_manual() {
   local e
+  if [ "${#SAFE[@]}" -gt 0 ]; then
+    echo "  auto-removable (dead lock, clean, pushed, cold — 'clean' removes these):"
+    for e in "${SAFE[@]}"; do echo "    - ${e#*|}"; done
+  fi
   if [ "${#ATRISK[@]}" -gt 0 ]; then
     echo "  needs a human (dead lock, but holds uncommitted/unpushed work):"
     for e in "${ATRISK[@]}"; do echo "    - ${e#*|}"; done
