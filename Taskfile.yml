@@ -548,6 +548,34 @@ tasks:
       - task: vrt:run
         vars: { SCRIPT: 'vrt:strict', ARGS: '{{.CLI_ARGS}}' }
 
+  vrt:strict:plan:
+    desc: |
+      Print how the REQUIRED vrt-strict lane splits across shards, from MEASURED
+      per-test cost (e2e/vrt-strict-timings.generated.json). Read this before
+      changing the shard count in ci.yml — the answer is arithmetic, not a guess.
+      Examples:
+        task vrt:strict:plan          # the shard count ci.yml runs
+        task vrt:strict:plan -- 6     # what 6 would buy
+    cmds:
+      - |
+        set -eu
+        N="{{.CLI_ARGS}}"
+        if [ -z "$N" ]; then
+          # DERIVED from the workflow, never re-typed: the plan you are shown is
+          # the plan CI runs. Same expression scripts/vrt-shard-plan.test.ts uses.
+          N=$(node -e 'const y=require("node:fs").readFileSync(".github/workflows/ci.yml","utf8");const m=/vrt-strict-shard:[\s\S]*?shard:\s*\[([0-9,\s]+)\]/.exec(y);if(!m){console.error("no vrt-strict-shard matrix in ci.yml");process.exit(1);}console.log(m[1].split(",").filter(s=>s.trim()).length)')
+        fi
+        node scripts/vrt-shard-plan.mjs --report "$N"
+
+  vrt:strict:timings:accept:
+    desc: |
+      [accept] Refresh e2e/vrt-strict-timings.generated.json from a real CI run's
+      per-shard timing artifacts, then REVIEW THE DIFF — a cost that moved a lot
+      is a finding, not bookkeeping. The split is only as good as these numbers.
+      Usage: task vrt:strict:timings:accept -- <ci-run-id>
+    cmds:
+      - node scripts/vrt-strict-timings-accept.mjs {{.CLI_ARGS}}
+
   vrt:run:
     internal: true
     desc: 'Internal: run an e2e-workspace vrt script with E2E_PORT honoured.'
