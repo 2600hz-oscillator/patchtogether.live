@@ -82,9 +82,9 @@ those at spec granularity and the lane audit checks the realized string.
 - `e2e/tests/doom-audio-output.spec.ts:292` — DOOM WASM and/or DOOM1.WAD not present locally — run `bash packages/web/native/build-doom-wasm.sh` + drop DOOM1.WAD i…
 - `e2e/tests/doom-cheat-gates.spec.ts:142` — DOOM WASM and/or DOOM1.WAD not present locally — run `bash packages/web/native/build-doom-wasm.sh` + drop DOOM1.WAD i…
 - `e2e/tests/doom-cheat-gates.spec.ts:221` — DOOM WASM and/or DOOM1.WAD not present locally — run `bash packages/web/native/build-doom-wasm.sh` + drop DOOM1.WAD i…
-- `e2e/tests/doom-controls.spec.ts:142` — (dynamic: `skip`)
-- `e2e/tests/doom-controls.spec.ts:198` — (dynamic: `skip`)
-- `e2e/tests/doom-controls.spec.ts:311` — (dynamic: `skip`)
+- `e2e/tests/doom-controls.spec.ts:156` — (dynamic: `skip`)
+- `e2e/tests/doom-controls.spec.ts:212` — (dynamic: `skip`)
+- `e2e/tests/doom-controls.spec.ts:325` — (dynamic: `skip`)
 - `e2e/tests/doom-identity-crossview.spec.ts:202` — @collab — runs on the dedicated COLLAB_JOB lane, not the sharded matrix
 - `e2e/tests/doom-identity-crossview.spec.ts:209` — (dynamic: `assets.reason`)
 - `e2e/tests/doom-identity-crossview.spec.ts:215` — DOOM runtime failed to load on A within 25s
