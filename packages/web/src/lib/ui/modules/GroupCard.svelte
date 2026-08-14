@@ -313,9 +313,9 @@
         ondblclick={(e) => e.stopPropagation()}
       />
     {:else if expanded}
-      <!-- svelte-ignore a11y_no_static_element_interactions -- rename is double-click ONLY. The
-           keyboard entry point (Enter/F2 → startEditLabel) is tracked as #1572 and is itself
-           gated on #1508 unbinding bare Tab from rack-flip. -->
+      <!-- svelte-ignore a11y_no_static_element_interactions -- rename is double-click ONLY,
+           by design: keyboard navigability is not a product goal (owner ruling #1629 —
+           bare Tab is the rack-flip gesture, so there is no traversal path to this span). -->
       <span
         data-testid="group-card-label"
         class="label-text nodrag"

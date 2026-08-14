@@ -78,7 +78,7 @@ export interface PinnedSpawnSpec {
  *    it). The pane is backed by the REAL `pinned-clipplayer` NODE, so it rides
  *    the existing dockStore.fullViewNodeIds machinery with zero synthetic-pane
  *    plumbing: same faceplate frame, same per-pane ✕, same LRU third-expand
- *    replacement, same flip-key (F) rear-card flip.
+ *    replacement, same flip-key (Tab) rear-card flip.
  */
 export type PinnedSurface = 'drawer' | 'fullView';
 
@@ -303,25 +303,23 @@ export function isTypingTarget(target: unknown): boolean {
   return t.isContentEditable === true;
 }
 
-// ── THE RACK-FLIP SHORTCUT (#1508) ────────────────────────────────────────
-// This used to be BARE TAB. Tab is the browser's fundamental focus-traversal
-// key, so hijacking it removed keyboard navigation from the entire shipping
-// shell — for a screen-reader or keyboard-only user that is not a preference,
-// it is the only way to reach a control at all. Tab is now fully native
-// everywhere; the flip moved to a bare letter, matching the shell's existing
-// single-letter idiom (M / E / C drawer toggles, V + 1-8 viewport nav).
+// ── THE RACK-FLIP SHORTCUT ────────────────────────────────────────────────
+// BARE TAB, by owner ruling (#1629, 2026-08-14): "this app is not intended to
+// be keyboard navigable by visually disabled users, and tab flipping is a
+// critical feature." #1599 briefly moved the flip to `f` to restore native
+// focus traversal (#1508); that trade was reversed — the flip gesture's
+// muscle-memory outranks Tab's browser role here, so Tab is CONSUMED by the
+// flip everywhere outside a typing target. Shift-Tab is left native.
 //
-// `f` was chosen because it is FREE at the window level — the only other
-// `f`/`KeyF` bindings in the app are GIBRIBBON's A-button and DOOM's FIRE, and
-// both are CARD-OWNED handlers that stopPropagation() before a window-bubble
-// listener can see the event (DoomCard listens in the CAPTURE phase on window
-// and stops there; GibribbonCard stops on its own element). The unit test
+// Do not re-litigate this toward a letter key or native traversal without an
+// explicit owner decision — this constant is the single definition both flip
+// owners (canvas rear view + dock full-view panes) read, and the unit test
 // beside this file re-derives the collision check against
-// DRAWER_KEY_TO_PINNED + the viewport-nav keys so a future pinned module
-// claiming `f` reddens instead of silently double-binding.
+// DRAWER_KEY_TO_PINNED + the viewport-nav keys so a future binding claiming
+// the flip key reddens instead of silently double-binding.
 
-/** The rack-flip / dock-flip shortcut key, lowercase. Bare — no modifiers. */
-export const RACK_FLIP_KEY = 'f';
+/** The rack-flip / dock-flip shortcut key (KeyboardEvent.key). Bare — no modifiers. */
+export const RACK_FLIP_KEY = 'Tab';
 
 /** Minimal keyboard-event shape for the flip predicate (structural, so unit
  *  tests need no DOM). Matches KeyboardEvent's relevant surface. */
@@ -341,11 +339,12 @@ export interface FlipKeyEventLike {
  * different keys — the same "a range comes from one place" rule the repo
  * applies to a def and its card.
  *
- * Every modifier combination is rejected: Cmd/Ctrl/Alt-F belong to the
- * browser and the OS (Cmd-F = find), and Shift-F is a capital letter someone
- * is typing. The caller is still responsible for the `isTypingTarget` guard.
+ * Every modifier combination is rejected: Shift-Tab stays native traversal
+ * (the one keyboard path deliberately kept), and Cmd/Ctrl/Alt-Tab belong to
+ * the OS. The caller is still responsible for the `isTypingTarget` guard, so
+ * Tab inside an input/textarea/select/contenteditable behaves natively.
  */
 export function isRackFlipKey(e: FlipKeyEventLike): boolean {
   if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return false;
-  return typeof e.key === 'string' && e.key.toLowerCase() === RACK_FLIP_KEY;
+  return typeof e.key === 'string' && e.key.toLowerCase() === RACK_FLIP_KEY.toLowerCase();
 }
