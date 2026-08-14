@@ -53,7 +53,7 @@ patchtogether is a collaborative modular synthesis studio: an infinite virtual r
 - Dragging empty canvas pans. Dragging a module card moves it freely (no forced snapping while floating). In a shared rack each participant keeps their **own** card layout — moving a card never moves it for anyone else; in single-user mode positions persist in the patch.
 - Hovering a card highlights its related cables and dims unrelated ones. While a cable is being dragged, cables render in front of cards (intentional).
 - A newly spawned card renders on top of anything it overlaps; this "spawn lift" ends as soon as the user touches a different card.
-- **Rear view**: pressing Tab (or a dedicated control) flips every card over in place to reveal a back panel of patch jacks for tracing wiring, with live per-port connection status. The flip animates both ways and is purely local view state — never shared, never saved.
+- **Rear view**: pressing **F** (or the Flip rack control) flips every card over in place to reveal a back panel of patch jacks for tracing wiring, with live per-port connection status. The flip animates both ways and is purely local view state — never shared, never saved.
 - An **Organize modules** action row-packs all cards tightly while preserving relative arrangement (top-left stays top-left); running it twice produces the identical layout (idempotent). Tidy-up is always the user's explicit choice, never automatic.
 
 ### Signals & cable types
@@ -155,7 +155,7 @@ The same compatibility rules govern every patching surface — drag preview, dro
 - **Lock ("screw down")**: right-click → Lock snaps the card to the grid — vertically to full tile rows, horizontally to a finer pitch of 8 lock positions per tile — and, if the slot collides with another card, relocates to the nearest free slot (preferring cheap sideways slides over row jumps; never overlapping). A locked card is undraggable and marked; Unlock frees it in place.
 
 ### Keyboard
-- **Tab** — flip rack front↔rear (bare Tab only; modifier combos untouched). **Esc** — cancel in-flight cable/lasso/menus. **Backspace/Delete** — delete selection. **Cmd/Ctrl-Z / Shift-Z / Y** — undo/redo. **Enter** in the palette — spawn top-ranked match. **Enter/Space** — activate the audio-enable overlay.
+- **F** — flip rack front↔rear (bare `f`/`F` only; every modifier combo untouched, and inert while typing). **Tab / Shift-Tab** — native focus traversal, never a flip (#1508: the flip used to live on bare Tab, which removed keyboard navigation from the whole shell). **Esc** — cancel in-flight cable/lasso/menus. **Backspace/Delete** — delete selection. **Cmd/Ctrl-Z / Shift-Z / Y** — undo/redo. **Enter** in the palette — spawn top-ranked match. **Enter/Space** — activate the audio-enable overlay.
 
 ### Examples & clear
 - A **Load example…** action menu loads a complete working patch in one action: **Sequenced VCO** (sequencer → VCO + ADSR → VCA → output, pre-loaded with an auto-playing 8-note motif at 180 BPM — a new user hears music before learning to patch), **Moog System 55** and **System 35** cabinets, **MEDIA BURN** (15 PICTUREBOX tiles reassembling the famous photo plus a CADILLAC that smashes through ~1 s after load, identically for every participant), **GLITCHES GET RICHES** (audio+video demo), and **GIBRIBBON** (game demo: a sequenced voice drives game events via analysis). The menu resets after each pick so the same example can be re-loaded; example loads are additive-idempotent (re-loading never duplicates what's already there).

@@ -24,6 +24,7 @@
 
 import { test, expect, type Locator, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+import { pressFlipKey } from './_flip-key';
 import {
   LANE_KCOL_MAX_PX,
   READOUT_MAX_CHARS,
@@ -221,9 +222,9 @@ test.describe('ringback face — the readouts follow the graph', () => {
     await spawnPatch(page, [{ id: 'rb', type: 'ringback', position: { x: 460, y: 240 } }]);
     await openDock(page, 'rb');
 
-    // TAB flips the OPEN dock full-view to the rear face (dockStore.
+    // The flip key flips the OPEN dock full-view to the rear face (dockStore.
     // fullViewFlipped — the one view-global flip seam).
-    await page.keyboard.press('Tab');
+    await pressFlipKey(page);
     const rear = page.getByTestId('rear-card');
     await expect(rear).toBeVisible();
 

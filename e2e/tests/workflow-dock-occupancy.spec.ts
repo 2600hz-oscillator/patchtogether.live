@@ -16,7 +16,7 @@
 // SPLIT EXTENSION (owner): the full-view holds up to TWO modules SIDE-BY-SIDE
 // (50/50), each pane its own overflow container (independent scroll, both
 // axes); closing one pane returns the survivor to full width; `m`/`e`
-// close the ENTIRE split; TAB is the rear-card flip seam.
+// close the ENTIRE split; the flip key is the rear-card flip seam.
 //
 // >>> THE BUILT-IN CLIP PLAYER IS A DOCK PANE (owner 2026-07-26) <<<
 // "need to be able to have clip player (built in) open along side a module in
@@ -26,7 +26,7 @@
 // dockStore.toggleFullView('pinned-clipplayer'), so the clip player is an
 // ordinary full-view PANE — backed by the REAL pinned node, with the same
 // faceplate frame, the same per-pane ✕, the same LRU third-expand replacement
-// and the same TAB flip. Only `m` / `e` still take the exclusive-drawer branch.
+// and the same flip key. Only `m` / `e` still take the exclusive-drawer branch.
 //
 // Contracts pinned here:
 //   1. `c` toggles the clip-player PANE (closed → open, open → closed) and
@@ -38,10 +38,10 @@
 //   4. ESC closes whichever occupant is open (the full-view as a WHOLE);
 //   5. per-pane ✕ closes ONLY the clip player's pane; `c` at capacity
 //      replaces the least-recently-opened pane (the shared LRU policy);
-//   6. TAB flips BOTH panes together — the clip player pane shows its
+//   6. the flip key flips BOTH panes together — the clip player pane shows its
 //      def-driven REAR jack field like any other un-migrated occupant;
 //   7. A+B split 50/50 with independent pane scroll; pane ✕ → survivor full
-//      width; `m` swaps out the whole split; TAB toggles the flip attr;
+//      width; `m` swaps out the whole split; the flip key toggles the flip attr;
 //   8. the `c` behavior is IDENTICAL with the `?shell=1` preview flag OFF
 //      (the dock full-view was never flag-gated — see the
 //      shell-flag-not-a-complete-gate finding), while `m`/`e` stay the shipped
@@ -52,6 +52,7 @@
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+import { pressFlipKey } from './_flip-key';
 import { installRenderSmokeHooks } from './_render-smoke';
 
 /** The pinned trio's deterministic node ids (graph/workflow-pins.ts). */
@@ -379,7 +380,7 @@ test.describe('bottom-drawer occupancy: pinned XOR full-view (?shell=1)', () => 
 });
 
 // (6) THE SPLIT (owner extension): two side-by-side 50/50 panes, independent
-// scroll, per-pane close, whole-split swap-out, and the TAB flip seam.
+// scroll, per-pane close, whole-split swap-out, and the flip-key seam.
 test.describe('full-view SPLIT: two panes, one drawer occupant (?shell=1)', () => {
   test.beforeEach(async ({ page }) => {
     await installRenderSmokeHooks(page);
@@ -516,28 +517,28 @@ test.describe('full-view SPLIT: two panes, one drawer occupant (?shell=1)', () =
     await expect(pill2).toContainText('CLOSE');
   });
 
-  test('TAB toggles the rear-card flip seam attr on the open view', async ({ page }) => {
+  test('the flip key toggles the rear-card flip seam attr on the open view', async ({ page }) => {
     await gotoShellWorkflow(page);
     const { pill1, pill2 } = await spawnTwoTiles(page);
     const drawer = page.getByTestId('dock-fullview-drawer');
 
     await pill1.click();
     await expect(drawer).toHaveAttribute('data-fullview-flipped', 'false');
-    await page.keyboard.press('Tab');
+    await pressFlipKey(page);
     await expect(drawer).toHaveAttribute('data-fullview-flipped', 'true');
     // The flip is GLOBAL for the view: a second pane joins the flipped state.
     await pill2.click();
     await expect(drawer).toHaveAttribute('data-pane-count', '2');
     await expect(drawer).toHaveAttribute('data-fullview-flipped', 'true');
-    await page.keyboard.press('Tab');
+    await pressFlipKey(page);
     await expect(drawer).toHaveAttribute('data-fullview-flipped', 'false');
   });
 
   // FLIP DECISION (owner-facing): the clip player pane is backed by a REAL node
   // with a REAL def, so it takes the SAME un-migrated branch every other
-  // un-migrated occupant takes — TAB flips it to its def-driven RearCard jack
+  // un-migrated occupant takes — the flip key flips it to its def-driven RearCard jack
   // field alongside its sibling. No synthetic "stays front" carve-out.
-  test('TAB flips the CLIP PLAYER pane to its REAR jack field alongside the module', async ({ page }) => {
+  test('the flip key flips the CLIP PLAYER pane to its REAR jack field alongside the module', async ({ page }) => {
     await gotoShellWorkflow(page);
     const { pill1 } = await spawnTwoTiles(page);
     const drawer = page.getByTestId('dock-fullview-drawer');
@@ -550,7 +551,7 @@ test.describe('full-view SPLIT: two panes, one drawer occupant (?shell=1)', () =
     const modFace = paneFor(page, 'm1').getByTestId('dock-full-view');
     await expect(clipFace).toHaveAttribute('data-flipped', 'false');
 
-    await page.keyboard.press('Tab');
+    await pressFlipKey(page);
     await expect(drawer).toHaveAttribute('data-fullview-flipped', 'true');
     // BOTH panes flipped — including the clip player.
     await expect(clipFace).toHaveAttribute('data-flipped', 'true');
@@ -563,7 +564,7 @@ test.describe('full-view SPLIT: two panes, one drawer occupant (?shell=1)', () =
     await expect(paneFor(page, CLIP_ID).getByTestId('clipplayer-snh-toggle')).toBeHidden();
 
     // Flip back → front controls return, no reboot of the occupant.
-    await page.keyboard.press('Tab');
+    await pressFlipKey(page);
     await expect(clipFace).toHaveAttribute('data-flipped', 'false');
     await expect(paneFor(page, CLIP_ID).getByTestId('clipplayer-snh-toggle')).toBeVisible();
   });

@@ -1,6 +1,6 @@
 // e2e/vrt/workflow-rear-card.spec.ts
 //
-// VRT: the REAR CARD — the dock full-view's TAB flip side (rear-card-spec.md).
+// VRT: the REAR CARD — the dock full-view's flip side (rear-card-spec.md).
 // PINNED scenes bracket the range and pin the curation shapes:
 //
 //   rear-tidyVco — the BUSIEST prototype (27 in + 2 out): voice band + the
@@ -37,6 +37,7 @@
 
 import { test, expect, type Page } from '@playwright/test';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
+import { pressFlipKey } from '../tests/_flip-key';
 
 test.describe.configure({ mode: 'default' });
 
@@ -124,7 +125,7 @@ async function bootWithMember(page: Page, type: string): Promise<string> {
   return memberId;
 }
 
-test.describe('VRT: rear card — the dock full-view TAB flip side', () => {
+test.describe('VRT: rear card — the dock full-view flip side', () => {
   for (const { type, ports, holes, stereoHoles } of SCENES) {
     test(`rear-${type}: the flip-side jack field matches baseline`, async ({ page }) => {
       const errors: string[] = [];
@@ -140,7 +141,7 @@ test.describe('VRT: rear card — the dock full-view TAB flip side', () => {
       );
       const faceplate = page.getByTestId('dock-full-view');
       await expect(faceplate).toBeVisible();
-      await page.keyboard.press('Tab');
+      await pressFlipKey(page);
       await expect(faceplate).toHaveAttribute('data-flipped', 'true');
 
       // Structural gate before the pixel pin: the field is up, every declared

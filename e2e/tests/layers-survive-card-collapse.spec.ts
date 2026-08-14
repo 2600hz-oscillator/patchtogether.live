@@ -217,19 +217,46 @@ test.describe('#1589 — TOYBOX layer media belongs to the NODE', () => {
     expect(control.videos[0]!.name).toBe('lobby-clip.webm');
     expect(control.byteLengths[0], 'control export must carry the WHOLE fixture').toBe(FIXTURE_BYTES);
 
-    const tBefore = (await layerState(page)).currentTime;
-
     // ── THE ACT UNDER TEST: collapse. This unmounts the card. ────────────────
     await page.getByTestId('faceplate-collapse').click();
     await expect(page.getByTestId('toybox-card')).toHaveCount(0, { timeout: 20_000 });
 
-    // The element survived, still holds its src, and its MEDIA CLOCK advances —
-    // "present" alone is the half-fix (#1531's projector that is open and dead).
+    // SAMPLE THE SETTLED STATE, NOT THE TRANSITION. The first CI failures of this
+    // spec read `currentTime: 0` at `where: "parking"` AFTER a waitForFunction had
+    // already seen the clock past its target — i.e. the clock went BACKWARDS
+    // between the wait and the read. The wait was sampling the pre-parking
+    // element/state; the collapse→parking hand-off then reset it, and the settled
+    // read got 0. On a fast machine parking completes before the wait's first
+    // sample, so the race is invisible locally (3x green under SwiftShader at
+    // workers=1) and fires under CI's 4-worker load. So: require the element to
+    // BE PARKED first, take the baseline from the PARKED element, and only then
+    // require the clock to advance. This pins every sample to the artifact the
+    // engine actually consumes, and it still reds if a parked layer's clock is
+    // dead — which is the property under test.
+    await expect
+      .poll(async () => (await layerState(page)).where, {
+        timeout: 20_000,
+        message: 'the layer video must land in the node-media parking lot after collapse',
+      })
+      .toBe('parking');
+    const parked = await layerState(page);
+    expect(parked.hasSrc, `parked element lost its src: ${JSON.stringify(parked)}`).toBe(true);
+    const tBefore = parked.currentTime;
+
+    // The parked element's MEDIA CLOCK advances — "present" alone is the
+    // half-fix (#1531's projector that is open and dead). Waited in-page; the
+    // wall-clock bound only bounds the failure, the clock is the gate.
     const ADVANCE_S = 0.4;
     await page.waitForFunction(
       ({ sel, target }) => {
         const v = document.querySelector(sel) as HTMLVideoElement | null;
-        return !!v && !!(v.currentSrc || v.getAttribute('src')) && !v.paused && v.currentTime > target;
+        return (
+          !!v &&
+          !!(v.currentSrc || v.getAttribute('src')) &&
+          !v.paused &&
+          !!v.closest('[data-testid="node-media-parking"]') &&
+          v.currentTime > target
+        );
       },
       { sel: LAYER_VIDEO, target: tBefore + ADVANCE_S },
       { timeout: 40_000 },
@@ -237,7 +264,7 @@ test.describe('#1589 — TOYBOX layer media belongs to the NODE', () => {
     const collapsed = await layerState(page);
     expect(
       collapsed.currentTime,
-      `the layer's media clock must advance past ${tBefore.toFixed(3)}s while the card is gone (got ${JSON.stringify(collapsed)})`,
+      `the PARKED layer's media clock must advance past ${tBefore.toFixed(3)}s (units: media seconds) while the card is gone (got ${JSON.stringify(collapsed)})`,
     ).toBeGreaterThan(tBefore);
 
     // The NODE still owns the bytes. This is the record Export reads.

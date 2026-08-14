@@ -17,6 +17,8 @@ import {
   planDefaultWires,
   isPinnedNode,
   isTypingTarget,
+  isRackFlipKey,
+  RACK_FLIP_KEY,
 } from './workflow-pins';
 
 /** Fixture: every always-on module present in its pinned form. */
@@ -258,5 +260,80 @@ describe('isTypingTarget — the M/E/C inert-while-typing guard', () => {
     expect(isTypingTarget(undefined)).toBe(false);
     expect(isTypingTarget('input')).toBe(false);
     expect(isTypingTarget({})).toBe(false);
+  });
+});
+
+// ── THE RACK-FLIP SHORTCUT (#1508) ────────────────────────────────────────
+// The flip used to be BARE TAB, which consumed the browser's focus-traversal
+// key across the whole shell. These tests pin the two properties that fix has
+// to keep true forever: TAB IS NEVER A FLIP (in any modifier combination),
+// and the replacement key does not silently double-bind onto another global
+// shortcut.
+describe('isRackFlipKey — the rack/dock flip shortcut', () => {
+  /** Every modifier permutation, generated (never a typed list of combos). */
+  const MODIFIERS = ['metaKey', 'ctrlKey', 'altKey', 'shiftKey'] as const;
+  function modifierCombos(): Array<Record<string, boolean>> {
+    const out: Array<Record<string, boolean>> = [];
+    for (let mask = 1; mask < 1 << MODIFIERS.length; mask++) {
+      const combo: Record<string, boolean> = {};
+      MODIFIERS.forEach((m, i) => {
+        if (mask & (1 << i)) combo[m] = true;
+      });
+      out.push(combo);
+    }
+    return out;
+  }
+
+  it('a bare flip key fires, in either letter case', () => {
+    expect(isRackFlipKey({ key: RACK_FLIP_KEY })).toBe(true);
+    expect(isRackFlipKey({ key: RACK_FLIP_KEY.toUpperCase() })).toBe(true);
+  });
+
+  it('TAB IS NOT A FLIP — bare, or under ANY modifier combination', () => {
+    // The regression leg for #1508. Bare Tab is the one that mattered (Shift-
+    // Tab was already exempt), but the predicate must reject the whole family
+    // so no future edit can re-hijack traversal through a side door.
+    const flipping = [{}, ...modifierCombos()]
+      .map((mods) => ({ key: 'Tab', ...mods }))
+      .filter((e) => isRackFlipKey(e));
+    expect(flipping, 'Tab must never be read as the rack-flip shortcut').toEqual([]);
+  });
+
+  it('every modifier combination on the flip key itself is rejected', () => {
+    // Cmd/Ctrl-F is the browser find bar; Alt-F opens a browser menu on
+    // Windows/Linux; Shift-F is a capital letter someone is typing.
+    const leaks = modifierCombos()
+      .map((mods) => ({ key: RACK_FLIP_KEY, ...mods }))
+      .filter((e) => isRackFlipKey(e));
+    expect(leaks, 'the flip shortcut is BARE — no modifier form of it exists').toEqual([]);
+  });
+
+  it('other keys are not the flip key', () => {
+    expect(isRackFlipKey({ key: 'Escape' })).toBe(false);
+    expect(isRackFlipKey({ key: 'Enter' })).toBe(false);
+    expect(isRackFlipKey({ key: ' ' })).toBe(false);
+    expect(isRackFlipKey({})).toBe(false);
+  });
+
+  // COLLISION GATE, derived from the artifact rather than restated: the flip
+  // key is read out of the SAME map the dock keymap dispatches on, so a future
+  // pinned module that claims `f` reddens here instead of double-firing at
+  // runtime. The viewport-nav keys ('v' + the lane digits) are the other
+  // bare-key family in the shell; the digits are generated from a char range,
+  // not enumerated.
+  it('does not collide with a pinned-drawer key or a viewport-nav key', () => {
+    const drawerKeys = [...DRAWER_KEY_TO_PINNED.keys()];
+    expect(drawerKeys.filter((k) => isRackFlipKey({ key: k }))).toEqual([]);
+
+    const navKeys = ['v', ...Array.from({ length: 10 }, (_, i) => String(i))];
+    expect(navKeys.filter((k) => isRackFlipKey({ key: k }))).toEqual([]);
+  });
+
+  // NEGATIVE CONTROL for the collision gate above — a gate that can only ever
+  // return [] proves nothing. Feed the SAME predicate shape a key that IS the
+  // flip key and confirm the filter catches it.
+  it('the collision gate can actually detect a collision', () => {
+    const colliding = ['x', RACK_FLIP_KEY, 'y'].filter((k) => isRackFlipKey({ key: k }));
+    expect(colliding).toEqual([RACK_FLIP_KEY]);
   });
 });
