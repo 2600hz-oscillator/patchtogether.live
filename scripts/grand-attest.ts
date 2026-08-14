@@ -392,6 +392,11 @@ async function main() {
     console.log(`Pruned ${superseded.length} superseded attestation(s) — ci-grand-attest/ now holds only the live hash.`);
   }
   console.log(`Now:  git add -A ci-grand-attest/ art/baselines/grand-integration/  and commit them with your PR.`);
+
+  // TEARDOWN ON THE SUCCESS PATH (#1630) — same wedge class as webgl-attest:
+  // the exit-hook stop() can never fire while the un-torn-down server child
+  // keeps the event loop alive. Await the child's actual exit.
+  await ownServer?.stopAndWait();
 }
 
 main().catch((err: unknown) => {
