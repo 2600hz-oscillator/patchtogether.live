@@ -44,6 +44,39 @@ export interface WorktreeIdentity {
   startedAt?: string;
 }
 
+/** One probe of `GET <baseUrl>/__worktree`, with the failure CAUSE preserved —
+ *  a timeout (alive-but-saturated server) and ECONNREFUSED (dead server) need
+ *  opposite handling upstream, and `null` alone cannot carry the difference
+ *  (#1632). */
+async function probeWorktreeIdentityOnce(
+  baseUrl: string,
+  timeoutMs: number,
+): Promise<{ id: WorktreeIdentity | null; cause: string }> {
+  try {
+    const res = await fetch(new URL('/__worktree', baseUrl), {
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!res.ok) return { id: null, cause: `HTTP ${res.status}` };
+    const body = (await res.json()) as Partial<WorktreeIdentity>;
+    if (typeof body.root !== 'string' || body.root.length === 0) {
+      return { id: null, cause: 'body has no root field' };
+    }
+    return {
+      id: {
+        root: body.root,
+        commit: typeof body.commit === 'string' ? body.commit : 'unknown',
+        mode: typeof body.mode === 'string' ? body.mode : 'unknown',
+        pid: typeof body.pid === 'number' ? body.pid : undefined,
+        startedAt: typeof body.startedAt === 'string' ? body.startedAt : undefined,
+      },
+      cause: 'ok',
+    };
+  } catch (e) {
+    const err = e as Error & { cause?: { code?: string } };
+    return { id: null, cause: err?.cause?.code ?? err?.name ?? String(e) };
+  }
+}
+
 /** Fetch `GET <baseUrl>/__worktree`. Returns the parsed identity, or null when
  *  the endpoint is absent / not JSON / unreachable (the caller decides whether
  *  null is refusable — for an attest it is). */
@@ -90,14 +123,30 @@ export async function assertServerIsThisWorktree(
   repoRoot: string,
   context: string,
 ): Promise<WorktreeIdentity> {
-  const id = await fetchWorktreeIdentity(baseUrl);
   const here = physical(repoRoot);
+  // RETRY before refusing (#1632): the pre-write re-assert fires at the exact
+  // moment a just-finished suite's teardown saturates the server's event loop
+  // (keep-alive socket churn + plugin disposal), and a ONE-SHOT probe against
+  // an alive-but-saturated server reads exactly like a dead one — four fully
+  // green 52/52 collab runs were refused that way. A saturated server answers
+  // on a later attempt; a dead one never does, so fail-closed is preserved.
+  let id: WorktreeIdentity | null = null;
+  let cause = 'unknown';
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    ({ id, cause } = await probeWorktreeIdentityOnce(baseUrl, 5000));
+    if (id !== null) break;
+    console.error(
+      `[${context}] identity probe attempt ${attempt}/3 failed (${cause})${attempt < 3 ? ' — retrying in 2s' : ''}`,
+    );
+    if (attempt < 3) await new Promise((r) => setTimeout(r, 2000));
+  }
   if (id === null) {
     throw new Error(
-      `${context}: the server at ${baseUrl} does not answer GET /__worktree, so it CANNOT be ` +
-        `verified as this worktree's (${here}). It is either another checkout's server (one that ` +
-        `predates the identity endpoint) or not this repo's app at all. An unidentifiable server ` +
-        `must never back an attestation — boot your own (bootOwnAppServer) or stop the squatter. [#1597]`,
+      `${context}: the server at ${baseUrl} does not answer GET /__worktree (3 attempts; last ` +
+        `cause: ${cause}), so it CANNOT be verified as this worktree's (${here}). It is either ` +
+        `another checkout's server (one that predates the identity endpoint), not this repo's app ` +
+        `at all, or dead. An unidentifiable server must never back an attestation — boot your own ` +
+        `(bootOwnAppServer) or stop the squatter. [#1597, #1632]`,
     );
   }
   if (physical(id.root) !== here) {
@@ -212,8 +261,14 @@ export async function bootOwnAppServer(opts: {
   closeSync(logFd);
 
   let exited = false;
-  child.on('exit', () => {
+  child.on('exit', (code, signal) => {
     exited = true;
+    // A server that dies MID-RUN dies silently otherwise (its own log just
+    // stops), and the pre-write identity re-assert then reads as a squatter
+    // refusal. Name the death loudly, with the signal, the moment it happens.
+    console.error(
+      `[${context}] ⚠ own ${mode} server (pid ${child.pid}) EXITED code=${code} signal=${signal} at ${new Date().toISOString()}`,
+    );
   });
 
   const stop = () => {
