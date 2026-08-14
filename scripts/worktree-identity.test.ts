@@ -33,7 +33,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 
-import { assertServerIsThisWorktree, fetchWorktreeIdentity } from './worktree-identity';
+import { assertServerIsThisWorktree, fetchWorktreeIdentity, serverBootPlan } from './worktree-identity';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -138,5 +138,32 @@ describe('assertServerIsThisWorktree (#1597)', () => {
     expect(src).toContain('configureServer');
     expect(src).toContain('configurePreviewServer');
     expect(src).toContain('worktreeIdentity()');
+  });
+});
+
+describe('serverBootPlan — one interface, named explicitly, both ends (#1614)', () => {
+  // Measured on macOS: `vite preview` binds [::1] ONLY, so a `localhost` URL
+  // makes the identity probe a per-lookup address-family coin flip — a
+  // 52/52-green collab attest was refused at the pre-write re-assert this way.
+  // The plan function exists so the spawn args and the probe URL are built in
+  // ONE place; these legs pin that they can never disagree again.
+  it.each(['dev', 'preview'] as const)('%s: the URL and --host name the SAME literal interface', (mode) => {
+    const plan = serverBootPlan(mode, 43210);
+    expect(plan.url).toBe('http://127.0.0.1:43210');
+    const hostIdx = plan.args.indexOf('--host');
+    expect(hostIdx, `--host must be passed explicitly (args: ${plan.args.join(' ')})`).toBeGreaterThan(-1);
+    expect(plan.args[hostIdx + 1]).toBe('127.0.0.1');
+    // strictPort stays: a squatter on the chosen ephemeral port must fail the
+    // boot loudly, never silently rebind.
+    expect(plan.args).toContain('--strictPort');
+    expect(plan.args).toContain(String(43210));
+  });
+
+  it('never says localhost — the resolver is the nondeterminism', () => {
+    for (const mode of ['dev', 'preview'] as const) {
+      const plan = serverBootPlan(mode, 5000);
+      expect(plan.url).not.toContain('localhost');
+      expect(plan.args.join(' ')).not.toContain('localhost');
+    }
   });
 });
