@@ -160,3 +160,48 @@ problem. #1214 proved sameness first — 10 bands both renderers, brightness
 ladder 1.000/0.741/0.631/0.561/0.506 vs 1.000/0.739/0.629/0.559/0.505 — and
 only then treated it as a pacing bug.
 
+
+### The helper lives in ONE place, and a new sleep is a LINT ERROR (#1523)
+
+`waitFrames(page, n)` and `settle(page)` are exported from **`e2e/_helpers/frames.ts`**
+and from nowhere else. `e2e/vrt/_shell-faces.ts` re-exports them so its existing
+callers are unchanged. Do not hand-roll another
+`new Promise(r => requestAnimationFrame(r))` in a spec — before this consolidated,
+the tree carried a dozen slightly different settles and no two agreed on how many
+frames "settled" meant.
+
+Both are ONE `page.evaluate` for the whole wait. A per-frame round trip is protocol
+traffic on the same main thread it is waiting for; on a loaded runner it costs
+several times what it measures (the #1303 trace: a single `waitForTimeout(60)`
+taking 392 ms).
+
+**`page.waitForTimeout` under `e2e/` is now denied by default.** The rule is
+`local/wait-for-timeout-needs-why`
+(`scripts/lint/rules/wait-for-timeout-needs-why.mjs`), NAMED and blocking — it is
+deliberately absent from `STAGED_RULES`, so a finding fails `task lint`, which is
+`$LINT` in the required `ci` umbrella. Three ways out, in order of preference:
+
+1. **RENDER/PAINT readiness** → `waitFrames(page, n)`.
+2. **STATE/DOM readiness** → an auto-retrying `await expect(locator)…`, or
+   `expect.poll` on the real subject. Usually the wait and the assertion turn out
+   to be the same statement, and merging them removes the guess entirely.
+3. **A genuine PRODUCT-SIDE interval** — a debounce the app defines, a decay tail,
+   a gate width, a MIDI pacing gap. Keep the wait, and say so ON the call site:
+
+   ```ts
+   // pacing: mirrors DEFAULT_GATE_LEN_S = 50 ms in
+   // packages/web/src/lib/audio/gate-trigger.ts — the pulse must be wider than
+   // one product gate width or the detector can miss it between audio blocks.
+   await page.waitForTimeout(60);
+   ```
+
+   The marker is `pacing:` and the prose must clear 40 characters — the same
+   `why.length` bar every other named exemption in this repo carries. A marker
+   with no substance behind it is refused (there is a permanent control for it).
+
+The waits that predate the rule live in `e2e/waitfortimeout-ledger.generated.txt`
+— **generated, never hand-edited**. `flox activate -- task lint:waits:accept`
+regenerates it and REFUSES TO ADD A LINE, so it can only shrink; a ledger entry
+that no longer names a live call site fails `task lint`. That is the burn-down
+ratchet: convert or annotate, re-run accept, commit the shrunk artifact, and read
+the removals in the diff as the measurement.

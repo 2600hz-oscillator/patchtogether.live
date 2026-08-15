@@ -16,6 +16,24 @@
 import { test, expect } from './_fixtures';
 import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+import { waitFrames } from '../_helpers/frames';
+
+/**
+ * READINESS, not a duration (#1523).
+ *
+ * Everything in this file used to start with `waitForTimeout(150…200)` — a
+ * guess at how long the card's rAF poll takes to notice the injected pad. The
+ * card already tells us: `class:on={snapshot.connected}` lands on the status
+ * line the first time that poll sees a gamepad, and the line switches from
+ * "press any button to connect" to the pad's id. Waiting on the class is
+ * waiting on the exact event the sleep was standing in for, so it is correct on
+ * a fast machine and on a starved CI shard alike.
+ */
+const cardConnected = (page: Page) =>
+  expect(
+    page.locator('[data-testid="gamepad-card"] .status.on'),
+    'the GAMEPAD card status never reported a connected pad — the rAF poll did not see the injected fake',
+  ).toBeVisible();
 
 /** Inject a fake gamepad into navigator.getGamepads(). Call BEFORE
  *  spawning the GAMEPAD module — the factory's rAF poll picks it up
@@ -93,8 +111,7 @@ test.describe('GAMEPAD module', () => {
   test('connected state + live values flow into engine.read snapshot', async ({ page, rack }) => {
     await installFakeGamepad(page, { axes: [0.6, -0.4, 0, 0] });
     await spawnPatch(page, [{ id: 'gp', type: 'gamepad', position: { x: 200, y: 200 } }]);
-    // Give the rAF poll a few frames to pick up the fake.
-    await page.waitForTimeout(200);
+    await cardConnected(page);
 
     const snap = await page.evaluate(() => {
       const w = globalThis as unknown as {
@@ -119,14 +136,18 @@ test.describe('GAMEPAD module', () => {
   test('LFO-style sweep: updating fake axes moves the engine.readParam(lx) over time', async ({ page, rack }) => {
     await installFakeGamepad(page, { axes: [0, 0, 0, 0] });
     await spawnPatch(page, [{ id: 'gp', type: 'gamepad', position: { x: 200, y: 200 } }]);
-    await page.waitForTimeout(150);
+    await cardConnected(page);
 
     const samples: number[] = [];
     for (let i = 0; i < 8; i++) {
       const ax = Math.sin(i * 0.5);   // moves between -1 .. +1
       await updateFakeGamepad(page, { axes: [ax, 0, 0, 0] });
-      // Give the rAF poll one frame to push the new value
-      await page.waitForTimeout(60);
+      // The factory reads navigator.getGamepads() on rAF and writes the
+      // ConstantSourceNode from there, so "the new axis has been published" is a
+      // FRAME count and nothing else: one frame to observe, one to publish. The
+      // old `waitForTimeout(60)` bought ~4 frames locally and ~0.5 on a
+      // SwiftShader shard — the same line asserting two different things.
+      await waitFrames(page, 2);
       const v = await page.evaluate(() => {
         const w = globalThis as unknown as {
           __engine?: () => { readParam: (n: unknown, k: string) => unknown } | null;
@@ -164,10 +185,9 @@ test.describe('GAMEPAD module', () => {
         },
       ],
     );
-    await page.waitForTimeout(200);
+    await cardConnected(page);
 
-    // With axes=[0,...], pos_x should be ~0 (knob default + zero CV).
-    const posBefore = await page.evaluate(() => {
+    const posX = () => page.evaluate(() => {
       const w = globalThis as unknown as {
         __engine?: () => { readParam: (n: unknown, k: string) => unknown } | null;
         __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
@@ -177,26 +197,18 @@ test.describe('GAMEPAD module', () => {
       if (!eng || !ws) return -99;
       return (eng.readParam(ws, 'pos_x') as number | undefined) ?? -99;
     });
-    expect(Math.abs(posBefore)).toBeLessThan(0.1);
 
-    // Push the fake stick fully right. After ~200ms, engine.readParam
-    // for wavesculpt.pos_x should report something > 0.5.
+    // With axes=[0,...], pos_x should be ~0 (knob default + zero CV). Polling
+    // the value IS the wait: sleeping first and reading once only differs from
+    // this in what it does when the read is early — it fails instead of
+    // retrying.
+    await expect
+      .poll(async () => Math.abs(await posX()), { timeout: 5_000 })
+      .toBeLessThan(0.1);
+
+    // Push the fake stick fully right → wavesculpt.pos_x follows it past 0.5.
     await updateFakeGamepad(page, { axes: [1, 0, 0, 0] });
-    await page.waitForTimeout(250);
-    const posAfter = await page.evaluate(() => {
-      const w = globalThis as unknown as {
-        __engine?: () => { readParam: (n: unknown, k: string) => unknown } | null;
-        __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
-      };
-      const eng = w.__engine?.();
-      const ws = w.__patch.nodes.ws;
-      if (!eng || !ws) return -99;
-      return (eng.readParam(ws, 'pos_x') as number | undefined) ?? -99;
-    });
-    expect(
-      posAfter,
-      `wavesculpt.pos_x with stick full-right = ${posAfter} (expected > 0.5)`,
-    ).toBeGreaterThan(0.5);
+    await expect.poll(posX, { timeout: 5_000 }).toBeGreaterThan(0.5);
   });
 
   test('GAMEPAD stick reaches BOTH extremes of WAVESCULPT.pos_x + moves the on-card joystick dot', async ({ page, rack }) => {
@@ -222,7 +234,7 @@ test.describe('GAMEPAD module', () => {
         },
       ],
     );
-    await page.waitForTimeout(200);
+    await cardConnected(page);
 
     const readPosX = () => page.evaluate(() => {
       const w = globalThis as unknown as {
@@ -259,7 +271,6 @@ test.describe('GAMEPAD module', () => {
     // deflection now maps to (near) ±1 on lx — i.e. observed-max → full-max.
     await installFakeGamepad(page, { axes: [0, 0, 0, 0] });
     await spawnPatch(page, [{ id: 'gp', type: 'gamepad', position: { x: 200, y: 200 } }]);
-    await page.waitForTimeout(150);
 
     const card = page.locator('[data-testid="gamepad-card"]');
     const readLx = () => page.evaluate(() => {
@@ -293,7 +304,12 @@ test.describe('GAMEPAD module', () => {
     for (let rep = 0; rep < 2; rep++) {
       for (const [x, y] of sweepPts) {
         await updateFakeGamepad(page, { axes: [x, y, 0, 0] });
-        await page.waitForTimeout(40);
+        // Calibration accumulates observed min/max ON THE rAF POLL, so a sweep
+        // point only counts if a frame runs while it is set. That is a frame
+        // count by definition; `waitForTimeout(40)` was a third of a frame on a
+        // SwiftShader shard, which silently drops sweep points and leaves
+        // "complete" disabled.
+        await waitFrames(page, 2);
       }
     }
     // Now the sweep is usable → "complete" enables.
@@ -330,7 +346,6 @@ test.describe('GAMEPAD module', () => {
   test('clear calibration reverts the left stick to the fixed-deadzone path', async ({ page, rack }) => {
     await installFakeGamepad(page, { axes: [0, 0, 0, 0] });
     await spawnPatch(page, [{ id: 'gp', type: 'gamepad', position: { x: 200, y: 200 } }]);
-    await page.waitForTimeout(150);
     const card = page.locator('[data-testid="gamepad-card"]');
 
     // Seed a calibration directly via node.data (the committed shape), then
@@ -382,18 +397,22 @@ test.describe('GAMEPAD module', () => {
     // All buttons released at rest (17 zeros) so the armed baseline is clean.
     await installFakeGamepad(page, { buttons: Array(17).fill(0) });
     await spawnPatch(page, [{ id: 'gp', type: 'gamepad', position: { x: 200, y: 200 } }]);
-    await page.waitForTimeout(200);
+    await cardConnected(page);
     const card = page.locator('[data-testid="gamepad-card"]');
 
     // Baseline: the `a` output follows physical A (button 0). Pressing X
     // (button 2) does NOT light `a` yet.
     const pressX = [...Array(17).fill(0)]; pressX[2] = 1;
     await updateFakeGamepad(page, { buttons: pressX });
-    await page.waitForTimeout(100);
+    // A NEGATIVE assertion cannot be polled — "still 0" is true at t=0 whether
+    // or not the poll ever looked. What it needs is proof that the reader RAN
+    // and chose not to change the value, which is a count of frames.
+    await waitFrames(page, 3);
     expect(await readGp(page, 'a')).toBe(0);
-    // Release before arming so the baseline diff starts from rest.
+    // Release before arming so the baseline diff starts from rest — the rest
+    // position only lands once the rAF poll has observed it.
     await updateFakeGamepad(page, { buttons: Array(17).fill(0) });
-    await page.waitForTimeout(100);
+    await waitFrames(page, 3);
 
     // Arm the `a` output's remap (right-click its LED) → banner appears.
     await card.getByTestId('gamepad-remap-a').click({ button: 'right' });
@@ -419,7 +438,7 @@ test.describe('GAMEPAD module', () => {
   test('"Remap X" under the left stick → move an axis → axis binding persists + output follows', async ({ page, rack }) => {
     await installFakeGamepad(page, { axes: [0, 0, 0, 0] });
     await spawnPatch(page, [{ id: 'gp', type: 'gamepad', position: { x: 200, y: 200 } }]);
-    await page.waitForTimeout(200);
+    await cardConnected(page);
     const card = page.locator('[data-testid="gamepad-card"]');
 
     // Arm the left-stick X remap (the user-preferred separate "Remap X" button).
@@ -444,7 +463,7 @@ test.describe('GAMEPAD module', () => {
   test('Esc cancels an armed remap with no binding written', async ({ page, rack }) => {
     await installFakeGamepad(page, { buttons: Array(17).fill(0) });
     await spawnPatch(page, [{ id: 'gp', type: 'gamepad', position: { x: 200, y: 200 } }]);
-    await page.waitForTimeout(200);
+    await cardConnected(page);
     const card = page.locator('[data-testid="gamepad-card"]');
 
     await card.getByTestId('gamepad-remap-b').click({ button: 'right' });
@@ -455,7 +474,9 @@ test.describe('GAMEPAD module', () => {
     // Now press a button — it must NOT bind anything (listener disarmed).
     const pressX = [...Array(17).fill(0)]; pressX[2] = 1;
     await updateFakeGamepad(page, { buttons: pressX });
-    await page.waitForTimeout(200);
+    // Negative assertion: give the detector real frames to run in and decline,
+    // rather than a duration that may be less than one frame on CI.
+    await waitFrames(page, 4);
     expect(await readBindings(page)).toBeNull();
   });
 
@@ -466,7 +487,7 @@ test.describe('GAMEPAD module', () => {
     // then remap the right-stick X, and assert the module STILL produces output.
     await installFakeGamepad(page, { axes: [0, 0, 0, 0], buttons: Array(17).fill(0) });
     await spawnPatch(page, [{ id: 'gp', type: 'gamepad', position: { x: 200, y: 200 } }]);
-    await page.waitForTimeout(200);
+    await cardConnected(page);
     const card = page.locator('[data-testid="gamepad-card"]');
 
     // FIRST remap: arm the left-stick X (left-click, the axis path → no context
@@ -477,8 +498,10 @@ test.describe('GAMEPAD module', () => {
     await expect.poll(async () => (await readBindings(page))?.lx ?? null, { timeout: 3000 }).not.toBeNull();
     expect((await readBindings(page))?.lx).toEqual({ kind: 'axis', index: 1 });
     // Settle ALL axes to rest so the NEXT armed baseline diff only sees axis 0.
+    // "At rest" is a state the rAF poll has to OBSERVE before the next arm, so
+    // this is frames, not milliseconds.
     await updateFakeGamepad(page, { axes: [0, 0, 0, 0] });
-    await page.waitForTimeout(100);
+    await waitFrames(page, 3);
 
     // SECOND remap (the one that broke): arm the right-stick X, move axis 0 →
     // binds rx→axis0. The shipped code threw out of the rAF poll HERE (the
@@ -505,7 +528,7 @@ test.describe('GAMEPAD module', () => {
   test('INVERT toggle flips the sign of a stick axis (composes with remap)', async ({ page, rack }) => {
     await installFakeGamepad(page, { axes: [0, 0, 0, 0] });
     await spawnPatch(page, [{ id: 'gp', type: 'gamepad', position: { x: 200, y: 200 } }]);
-    await page.waitForTimeout(200);
+    await cardConnected(page);
     const card = page.locator('[data-testid="gamepad-card"]');
 
     // Baseline: right-stick X (axis 2) hard-right → rx ≈ +1 (no invert).
@@ -549,25 +572,18 @@ test.describe('GAMEPAD module', () => {
   test('button press shows up as a gate (a-button)', async ({ page, rack }) => {
     await installFakeGamepad(page, { buttons: Array(17).fill(0) });
     await spawnPatch(page, [{ id: 'gp', type: 'gamepad', position: { x: 200, y: 200 } }]);
-    await page.waitForTimeout(150);
+    await cardConnected(page);
 
     // A-button = standard index 0.
     const pressed: number[] = [...Array(17).fill(0)];
     pressed[0] = 1;
     await updateFakeGamepad(page, { buttons: pressed });
-    await page.waitForTimeout(100);
 
-    const aValue = await page.evaluate(() => {
-      const w = globalThis as unknown as {
-        __engine?: () => { readParam: (n: unknown, k: string) => unknown } | null;
-        __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
-      };
-      const eng = w.__engine?.();
-      const gp = w.__patch.nodes.gp;
-      if (!eng || !gp) return -99;
-      return (eng.readParam(gp, 'a') as number | undefined) ?? -99;
-    });
-    expect(aValue).toBe(1);
+    // The gate value IS the subject — poll it instead of sleeping and reading
+    // once. Same assertion, but it cannot fail merely for being early.
+    await expect
+      .poll(() => readGp(page, 'a'), { timeout: 5_000 })
+      .toBe(1);
   });
 
   // ─────────────────────── RIGHT-STICK CALIBRATION ───────────────────────
@@ -578,7 +594,6 @@ test.describe('GAMEPAD module', () => {
   test('calibrate RIGHT stick: sweep (simulated) → complete → locked range remaps to full ±1', async ({ page, rack }) => {
     await installFakeGamepad(page, { axes: [0, 0, 0, 0] });
     await spawnPatch(page, [{ id: 'gp', type: 'gamepad', position: { x: 200, y: 200 } }]);
-    await page.waitForTimeout(150);
 
     const card = page.locator('[data-testid="gamepad-card"]');
     const readRx = () => page.evaluate(() => {
@@ -611,7 +626,9 @@ test.describe('GAMEPAD module', () => {
     for (let rep = 0; rep < 2; rep++) {
       for (const [rx, ry] of sweepPts) {
         await updateFakeGamepad(page, { axes: [0, 0, rx, ry] });
-        await page.waitForTimeout(40);
+        // Same as the left-stick sweep above: a point is only recorded if a
+        // frame runs while it is set, so the unit is frames.
+        await waitFrames(page, 2);
       }
     }
     await expect.poll(
@@ -656,7 +673,6 @@ test.describe('GAMEPAD module', () => {
   test('save mapping triggers a .json download of the current control config', async ({ page, rack }) => {
     await installFakeGamepad(page, { axes: [0, 0, 0, 0] });
     await spawnPatch(page, [{ id: 'gp', type: 'gamepad', position: { x: 200, y: 200 } }]);
-    await page.waitForTimeout(150);
     const card = page.locator('[data-testid="gamepad-card"]');
 
     // Seed some config so the saved mapping is non-trivial.
@@ -700,7 +716,7 @@ test.describe('GAMEPAD module', () => {
     await page.waitForLoadState('networkidle');
     await installFakeGamepad(page, { axes: [0, 0, 0, 0], buttons: Array(17).fill(0) });
     await spawnPatch(page, [{ id: 'gp', type: 'gamepad', position: { x: 200, y: 200 } }]);
-    await page.waitForTimeout(200);
+    await cardConnected(page);
     const card = page.locator('[data-testid="gamepad-card"]');
 
     const readGp = (port: string) => page.evaluate((p) => {
@@ -738,7 +754,7 @@ test.describe('GAMEPAD module', () => {
   test('load mapping from JSON file applies the bindings + survives a 2nd load (rAF alive)', async ({ page, rack }) => {
     await installFakeGamepad(page, { axes: [0, 0, 0, 0], buttons: Array(17).fill(0) });
     await spawnPatch(page, [{ id: 'gp', type: 'gamepad', position: { x: 200, y: 200 } }]);
-    await page.waitForTimeout(200);
+    await cardConnected(page);
     const card = page.locator('[data-testid="gamepad-card"]');
 
     const readGp = (port: string) => page.evaluate((p) => {

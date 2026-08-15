@@ -83,21 +83,37 @@ test('pong: ball moves across simulated time (game-loop ticks)', async ({ page, 
   // exist (which the spawnPatch path materialises).
   await page.locator('button:has-text("Tap to start")').first().click({ timeout: 2000 }).catch(() => { /* no gate */ });
 
-  // Sample the snapshot twice with a delay; the ball should move between
-  // them. (Even at scheduler-clock's 25 ms tick, ~500 ms gives 20 ticks of
-  // motion.)
-  await page.waitForTimeout(200);
-  const snap1 = await readPongSnapshot(page, 'p');
-  expect(snap1, 'pong snapshot must be readable').not.toBeNull();
-  await page.waitForTimeout(600);
-  const snap2 = await readPongSnapshot(page, 'p');
-  expect(snap2).not.toBeNull();
+  // Take a baseline, then wait for the ball to have MOVED away from it.
+  //
+  // #1523: this was `waitForTimeout(200)` → snap1 → `waitForTimeout(600)` →
+  // snap2 → assert they differ. Two guesses, and the second one had to be long
+  // enough for the game loop on the slowest machine while the assertion itself
+  // ("has anything changed?") is available at any moment. Polling asks the real
+  // question and stops as soon as the answer is yes.
+  await expect
+    .poll(() => readPongSnapshot(page, 'p'), {
+      timeout: 10_000,
+      message: 'pong snapshot must become readable',
+    })
+    .not.toBeNull();
+  const snap1 = (await readPongSnapshot(page, 'p'))!;
 
   // Either the ball position changed, OR a score event already happened
   // (which re-centers the ball — that's also evidence the loop is running).
-  const moved = Math.abs(snap2!.ballX - snap1!.ballX) + Math.abs(snap2!.ballY - snap1!.ballY) > 0.001;
-  const scored = (snap2!.scoreL + snap2!.scoreR) > (snap1!.scoreL + snap1!.scoreR);
-  expect(moved || scored, `ball did not move (snap1=${JSON.stringify(snap1)}, snap2=${JSON.stringify(snap2)})`)
+  await expect
+    .poll(
+      async () => {
+        const s = await readPongSnapshot(page, 'p');
+        if (!s) return false;
+        const moved = Math.abs(s.ballX - snap1.ballX) + Math.abs(s.ballY - snap1.ballY) > 0.001;
+        const scored = s.scoreL + s.scoreR > snap1.scoreL + snap1.scoreR;
+        return moved || scored;
+      },
+      {
+        timeout: 10_000,
+        message: `the game loop never moved the ball or scored (baseline=${JSON.stringify(snap1)})`,
+      },
+    )
     .toBe(true);
 });
 
@@ -119,23 +135,33 @@ test('pong: CV source patched into paddle_left moves the on-screen paddle', asyn
   );
   await page.locator('button:has-text("Tap to start")').first().click({ timeout: 2000 }).catch(() => { /* */ });
 
-  await page.waitForTimeout(300);
-  const initial = await readPongSnapshot(page, 'p');
-  expect(initial).not.toBeNull();
-
-  // Wait long enough for BUGGLES to fire several woggle events (its
-  // base rate is ~2 Hz; 1.5 s = ~3 events).
-  await page.waitForTimeout(1500);
-  const later = await readPongSnapshot(page, 'p');
-  expect(later).not.toBeNull();
+  await expect
+    .poll(() => readPongSnapshot(page, 'p'), {
+      timeout: 10_000,
+      message: 'pong snapshot must become readable',
+    })
+    .not.toBeNull();
+  const initial = (await readPongSnapshot(page, 'p'))!;
 
   // Threshold is a noise floor — the paddle is a low-passed integrator of
   // the incoming CV, so per-tick deltas are tiny (millivolts of position).
   // The load-bearing claim is "CV actually drove paddle motion" — not "by N
   // units". 0.001 separates real motion from float-equality jitter.
-  const paddleMoved = Math.abs(later!.paddleLY - initial!.paddleLY) > 0.001;
-  expect(
-    paddleMoved,
-    `left paddle did not move from ${initial!.paddleLY} to ${later!.paddleLY} despite CV source`,
-  ).toBe(true);
+  //
+  // The old form slept 1.5 s ("~3 BUGGLES woggle events at its ~2 Hz base
+  // rate") and read once. BUGGLES is stochastic, so that was a bet on the
+  // arrival time of a random event — poll for the motion instead and the bet
+  // disappears.
+  await expect
+    .poll(
+      async () => {
+        const s = await readPongSnapshot(page, 'p');
+        return s ? Math.abs(s.paddleLY - initial.paddleLY) : 0;
+      },
+      {
+        timeout: 15_000,
+        message: `left paddle never moved from ${initial.paddleLY} despite the CV source`,
+      },
+    )
+    .toBeGreaterThan(0.001);
 });

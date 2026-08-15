@@ -17,6 +17,7 @@
 import { expect, type Locator, type Page } from '@playwright/test';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
 import { freezeAudioContext, readAudioClock } from './vrt-audio-freeze';
+import { settle, waitFrames } from '../_helpers/frames';
 
 /** The P1 migrated set (= STRICT_FACES). `pages` = the declared face.pages
  *  count the dock scene must render as labeled section bands — a per-scene
@@ -899,39 +900,17 @@ export async function openDock(page: Page, memberId: string, pages: number): Pro
   return faceplate;
 }
 
-/** Two rAFs — long enough for a tier/content swap to land and paint. */
-export async function settle(page: Page): Promise<void> {
-  await page.evaluate(
-    () => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r()))),
-  );
-}
-
 /**
- * Wait `n` ANIMATION FRAMES, counted inside the page.
+ * `settle` (two rAFs — a tier/content swap lands and paints) and `waitFrames`
+ * (n rAFs) now live in ONE place for the whole harness: e2e/_helpers/frames.ts
+ * (#1523 asks for exactly one export site, so a spec reaching for a frame count
+ * has one obvious import rather than a local re-implementation).
  *
- * Frames rather than milliseconds because a wall-clock budget is a different
- * number of frames on every renderer (CLAUDE.md). ONE `page.evaluate` for the
- * whole run rather than one per frame: a per-frame round-trip is protocol
- * traffic on the same main thread it is waiting for, and on a loaded runner it
- * costs several times what it measures.
+ * Re-exported here so every existing `from './_shell-faces'` caller is
+ * unchanged. (Imported as well as re-exported: a bare `export … from` does NOT
+ * bind the names in this module's own scope, and this file calls both.)
  */
-export async function waitFrames(page: Page, n: number): Promise<void> {
-  await page.evaluate(
-    (count) =>
-      new Promise<void>((resolve) => {
-        let left = count;
-        const tick = (): void => {
-          if (--left <= 0) {
-            resolve();
-            return;
-          }
-          requestAnimationFrame(tick);
-        };
-        requestAnimationFrame(tick);
-      }),
-    n,
-  );
-}
+export { settle, waitFrames };
 
 /** What the dock capture box can and cannot contain, in CSS px. */
 export interface FoldGeometry {

@@ -60,6 +60,17 @@ vs ~60 fps on a real GPU, and CI runs ten shards in parallel on top of that.
 
 - **Wait on a frame count in the page via rAF** (`waitFrames(n)`), never
   `waitForTimeout`. Renderer-independent by construction, no per-machine tuning.
+  ONE export site: `e2e/_helpers/frames.ts`. Don't hand-roll another rAF settle.
+- **`page.waitForTimeout` under `e2e/` is DENIED BY DEFAULT** (#1523,
+  `local/wait-for-timeout-needs-why` — a named, blocking rule in `task lint`).
+  Paint readiness → `waitFrames`; state readiness → an auto-retrying `expect` /
+  `expect.poll` on the real subject; a genuine **product-side** interval (a
+  debounce the app defines, a decay tail, a gate width) → keep it and write
+  `// pacing: <which interval this mirrors, and where the product defines it>`
+  ON the call site. Waits that predate the rule sit in the GENERATED
+  `e2e/waitfortimeout-ledger.generated.txt`; `task lint:waits:accept` regenerates
+  it and **refuses to add a line**, so it only shrinks, and a ledger entry naming
+  a wait that no longer exists is RED.
 - Keep a wall-clock cap only to **bound the failure**, never as the gate.
 - ⚠ The ~2.5× "CI is slower" figure is a **unit-lane** number. Do not carry it to
   anything touching WebGL.

@@ -79,20 +79,25 @@ test('modtris: game-loop ticks (piece spawns + state evolves)', async ({ page, r
   // need the audio context to be running for input edge-detection.
   await page.locator('button:has-text("Tap to start")').first().click({ timeout: 2000 }).catch(() => { /* */ });
 
-  await page.waitForTimeout(200);
-  const snap1 = await readModtrisSnapshot(page, 'm');
-  expect(snap1, 'modtris snapshot must be readable').not.toBeNull();
-  expect(snap1!.wellLength).toBe(10 * 20);
+  // #1523: baseline-then-poll replaces sleep-read-sleep-read. "Has the tick
+  // advanced past the baseline?" is answerable at any moment, so the 1.2 s
+  // second sleep was only ever a bet that the game loop is faster than that on
+  // whatever machine is running — a bet with different odds on every renderer.
+  await expect
+    .poll(() => readModtrisSnapshot(page, 'm'), {
+      timeout: 10_000,
+      message: 'modtris snapshot must become readable',
+    })
+    .not.toBeNull();
+  const snap1 = (await readModtrisSnapshot(page, 'm'))!;
+  expect(snap1.wellLength).toBe(10 * 20);
 
-  await page.waitForTimeout(1200);
-  const snap2 = await readModtrisSnapshot(page, 'm');
-  expect(snap2).not.toBeNull();
-
-  // Either the tick advanced, OR a piece exists (the first step spawns
-  // one), OR gravity dropped the piece between samples — any of these
-  // proves the loop is running.
-  const tickAdvanced = snap2!.tick > snap1!.tick;
-  expect(tickAdvanced, `tick did not advance (snap1=${snap1!.tick}, snap2=${snap2!.tick})`).toBe(true);
+  await expect
+    .poll(async () => (await readModtrisSnapshot(page, 'm'))?.tick ?? -1, {
+      timeout: 10_000,
+      message: `the game loop tick never advanced past the baseline (${snap1.tick})`,
+    })
+    .toBeGreaterThan(snap1.tick);
 });
 
 test('modtris: BUGGLES.clock patched into drop_fast produces game-state evolution', async ({ page, rack }) => {
@@ -111,19 +116,22 @@ test('modtris: BUGGLES.clock patched into drop_fast produces game-state evolutio
   );
   await page.locator('button:has-text("Tap to start")').first().click({ timeout: 2000 }).catch(() => { /* */ });
 
-  await page.waitForTimeout(300);
-  const initial = await readModtrisSnapshot(page, 'm');
-  expect(initial).not.toBeNull();
+  await expect
+    .poll(() => readModtrisSnapshot(page, 'm'), {
+      timeout: 10_000,
+      message: 'modtris snapshot must become readable',
+    })
+    .not.toBeNull();
+  const initial = (await readModtrisSnapshot(page, 'm'))!;
 
-  // Wait for BUGGLES.clock to fire several pulses (it runs ~1-2 Hz on
-  // default settings; 2 s = at least 2 pulses).
-  await page.waitForTimeout(2000);
-  const later = await readModtrisSnapshot(page, 'm');
-  expect(later).not.toBeNull();
-
-  // Tick MUST have advanced (scheduler-clock keeps running regardless).
-  // The load-bearing claim is more specific though: the well or
-  // piece-row should differ between samples because drops happened.
-  const tickAdvanced = later!.tick > initial!.tick;
-  expect(tickAdvanced).toBe(true);
+  // Tick MUST advance (scheduler-clock keeps running regardless). The old form
+  // slept 2 s "for BUGGLES.clock to fire several pulses at ~1-2 Hz" — a bet on
+  // the arrival time of a stochastic source. Poll the tick instead: the same
+  // claim, without the bet.
+  await expect
+    .poll(async () => (await readModtrisSnapshot(page, 'm'))?.tick ?? -1, {
+      timeout: 15_000,
+      message: `tick never advanced past the baseline (${initial.tick}) under BUGGLES.clock`,
+    })
+    .toBeGreaterThan(initial.tick);
 });

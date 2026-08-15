@@ -8,6 +8,7 @@
 
 import { test, expect, loadVoiceDemo } from './_fixtures';
 import { openModulePalette } from './_helpers';
+import { waitFrames } from '../_helpers/frames';
 
 test.describe.configure({ mode: 'parallel' });
 
@@ -73,13 +74,19 @@ test.describe('Cable hover affordances', () => {
     );
 
     await firstEdge.evaluate((el) => el.classList.add('cable-hover'));
-    await page.waitForTimeout(150);
 
-    const afterHover = await edgePath.evaluate((el) =>
-      parseFloat(window.getComputedStyle(el).strokeWidth),
-    );
-
-    expect(afterHover, `stroke should thicken with .cable-hover class`).toBeGreaterThan(initial);
+    // The thickening is a CSS transition, so the value we want is the SETTLED
+    // one — poll for it rather than sleeping past an assumed transition
+    // duration. Units: CSS px of stroke-width.
+    await expect
+      .poll(
+        () => edgePath.evaluate((el) => parseFloat(window.getComputedStyle(el).strokeWidth)),
+        {
+          timeout: 5_000,
+          message: `stroke-width (CSS px) should thicken past ${initial} with .cable-hover`,
+        },
+      )
+      .toBeGreaterThan(initial);
   });
 
   test('hovering a card dims unrelated cables', async ({ page, rack }) => {
@@ -94,8 +101,9 @@ test.describe('Cable hover affordances', () => {
 
     const seqNode = page.locator('.svelte-flow__node-sequencer').first();
     await seqNode.hover();
-    await page.waitForTimeout(150);
 
+    // No settle: the attribute assertion below auto-retries, so the sleep only
+    // ever delayed a check that was already going to wait for the same thing.
     // The .svelte-flow root carries the data attribute; we use it to
     // assert the hover-dim mode is engaged.
     const sf = page.locator('.svelte-flow').first();
@@ -192,7 +200,11 @@ test.describe('Undo / redo', () => {
 
     const beforeCount = await page.locator('.svelte-flow__node').count();
     await page.keyboard.press('Meta+z');
-    await page.waitForTimeout(80);
+    // A NEGATIVE assertion: "the count did NOT change". An auto-retrying expect
+    // would pass at t=0 whether or not the undo handler ever ran, so what this
+    // needs is proof the app got to react and chose not to — frames, not a
+    // duration that is a different number of frames on every renderer.
+    await waitFrames(page, 4);
     const afterCount = await page.locator('.svelte-flow__node').count();
     expect(afterCount).toBe(beforeCount);
   });
@@ -203,7 +215,9 @@ test.describe('Undo / redo', () => {
     // Press Cmd-Z without any prior tracked edits.
     await page.locator('body').click({ position: { x: 5, y: 5 } });
     await page.keyboard.press('Meta+z');
-    await page.waitForTimeout(50);
+    // Same negative shape as above: give the undo path real frames to run in
+    // before asserting that nothing appeared.
+    await waitFrames(page, 4);
 
     // No errors logged, page still alive.
     await expect(page.locator('.svelte-flow__node')).toHaveCount(0);
