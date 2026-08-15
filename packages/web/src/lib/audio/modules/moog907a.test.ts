@@ -21,6 +21,7 @@ import { describe, it, expect } from 'vitest';
 import { moog907aDef } from './moog907a';
 import {
   FILTERBANK_907A_CENTERS,
+  FILTERBANK_914_CENTERS,
   FILTERBANK_Q,
   bandParamId,
 } from '../../../../../dsp/src/lib/moog-filterbank-dsp';
@@ -35,11 +36,26 @@ describe('moog907aDef: module def shape', () => {
   it('exposes params hp, band1..bandN, lp — N from the SHARED 907A centers', () => {
     const ids = moog907aDef.params.map((p) => p.id);
     expect(ids).toEqual(ALL_PARAM_IDS);
-    // The band count is exactly the shared lib's center count (8 for 907A).
     expect(BAND_IDS.length).toBe(N);
-    expect(N).toBe(8);
   });
 
+  // ⚠ THIS REPLACES `expect(N).toBe(8)` — a hand-typed population count (the 914
+  // test carried the same defect as `toBe(12)`). What it protected is "this is
+  // the STANDARD-RANGE bank", which is a relation to the 914's grid, not a
+  // number: the 907A is a strict interior window of the same series, so it has
+  // no band at the extremes the 914 reaches.
+  it('the 907A grid is the STANDARD RANGE: a strict interior window of the 914 grid', () => {
+    const start = FILTERBANK_914_CENTERS.indexOf(FILTERBANK_907A_CENTERS[0]!);
+    expect(start, '907A base is on the 914 grid').toBeGreaterThan(0);
+    expect(
+      FILTERBANK_914_CENTERS.slice(start, start + FILTERBANK_907A_CENTERS.length),
+      'contiguous window — the two banks share one series and one factory',
+    ).toEqual([...FILTERBANK_907A_CENTERS]);
+    expect(
+      start + FILTERBANK_907A_CENTERS.length,
+      'and the window stops short of the 914 top',
+    ).toBeLessThan(FILTERBANK_914_CENTERS.length);
+  });
 });
 
 // ───────────────────── Layer 2: factory wiring ─────────────────────
