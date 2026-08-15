@@ -73,6 +73,19 @@ describe('SCOPE.read("ch{1,2}_last_sample") returns the most-recent analyser sam
         n1 += 1;
         return n1 === 1 ? analyser(() => tail1) : analyser(() => tail2);
       },
+      // SCOPE's per-port CV shadows are ConstantSource(1) → GainNode →
+      // Analyser (see $lib/audio/cv-shadow, #1664). This fake only needs
+      // them to construct; `currentTime: 0` means the shadows report the
+      // knob rather than the analyser, which is what these `_last_sample`
+      // assertions want — they are about the ch1/ch2 signal analysers,
+      // which are still the FIRST TWO created.
+      createConstantSource: () => ({
+        offset: { value: 0 },
+        start() {},
+        stop() {},
+        connect() {},
+        disconnect() {},
+      }),
     } as unknown as AudioContext;
     return {
       ctx,

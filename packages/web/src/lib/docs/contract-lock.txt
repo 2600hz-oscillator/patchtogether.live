@@ -2646,11 +2646,11 @@ quadralogical param keyR 0..1 linear default=0
 quadralogical param pos_x -1..1 linear default=0
 quadralogical param pos_y -1..1 linear default=0
 rasterize meta domain=audio
-rasterize in cursor cv param=cursor
-rasterize in gain cv param=gain
+rasterize in cursor cv param=cursor cvScale=linear
+rasterize in gain cv param=gain cvScale=linear
 rasterize in in audio
-rasterize in samplesPerFrame cv param=samplesPerFrame
-rasterize in wrap cv param=wrap
+rasterize in samplesPerFrame cv param=samplesPerFrame cvScale=log
+rasterize in wrap cv param=wrap cvScale=discrete
 rasterize out out mono-video
 rasterize out thru audio
 rasterize param cursor 0..786432 linear default=0 unit=px
@@ -2775,16 +2775,16 @@ scaler out out audio adopts=in
 scaler param amount 0.1..10 log default=1
 scope meta domain=audio vizPassthrough
 scope in ch1 audio accepts=cv,gate,pitch
-scope in ch1Offset cv param=ch1Offset
-scope in ch1Range cv param=ch1Range
-scope in ch1Scale cv param=ch1Scale
+scope in ch1Offset cv param=ch1Offset cvScale=linear
+scope in ch1Range cv param=ch1Range cvScale=discrete
+scope in ch1Scale cv param=ch1Scale cvScale=log
 scope in ch2 audio accepts=cv,gate,pitch
-scope in ch2Offset cv param=ch2Offset
-scope in ch2Range cv param=ch2Range
-scope in ch2Scale cv param=ch2Scale
-scope in intensity cv param=intensity
-scope in mode cv param=mode
-scope in timeMs cv param=timeMs
+scope in ch2Offset cv param=ch2Offset cvScale=linear
+scope in ch2Range cv param=ch2Range cvScale=discrete
+scope in ch2Scale cv param=ch2Scale cvScale=log
+scope in intensity cv param=intensity cvScale=linear
+scope in mode cv param=mode cvScale=discrete
+scope in timeMs cv param=timeMs cvScale=log
 scope out ch1_out audio
 scope out ch2_out audio
 scope out out mono-video

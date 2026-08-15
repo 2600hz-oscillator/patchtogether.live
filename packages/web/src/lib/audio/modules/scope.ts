@@ -48,6 +48,7 @@ import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import { drawScope, type ScopeSnapshot, type ScopeDrawParams } from './scope-draw';
 import { detectPitch, type PitchResult } from '$lib/audio/pitch-detect';
+import { createCvShadow, type CvShadow } from '$lib/audio/cv-shadow';
 
 export type { ScopeSnapshot } from './scope-draw';
 export type { PitchResult } from '$lib/audio/pitch-detect';
@@ -66,12 +67,15 @@ export const scopeDef: AudioModuleDef = {
   // for the portal mechanics + ScopeCard.svelte for the canvas marker.
   vizPassthrough: true,
 
-  // CV inputs mirror every param 1:1 — port id == param id, which the
-  // cross-domain CV bridge (PatchEngine.addCrossDomainCvBridge) routes
-  // straight into setParam(portId, value). Discrete params (mode,
-  // ch{1,2}Range) accept any CV value; the consumer reads the canonical
-  // ≥0.5 threshold to decide their binary state, so a 5V CV pulse will
-  // toggle XY mode just as expected.
+  // CV inputs mirror every param 1:1 — port id == param id. Two different
+  // paths deliver a cable here, and the factory's shadows are what make
+  // them agree: a CROSS-DOMAIN cable (video → audio) is sampled per frame
+  // by PatchEngine.addCrossDomainCvBridge into setParam(portId, value),
+  // while a SAME-DOMAIN cable is summed at audio rate straight into the
+  // AudioParam by AudioEngine.addEdge. Both land on one junction.
+  // Discrete params (mode, ch{1,2}Range) accept any CV value; the consumer
+  // reads the canonical ≥0.5 threshold to decide their binary state, so a
+  // 5V CV pulse will toggle XY mode just as expected.
   inputs: [
     // ch1/ch2 are the signal probes. They're typed `audio` (the trace + the
     // clean passthrough), but a SCOPE is a VISUALIZER, not a master bus — so
@@ -81,15 +85,21 @@ export const scopeDef: AudioModuleDef = {
     // that only for the probe. The engine already routes these node-to-node.)
     { id: 'ch1', type: 'audio', accepts: ['cv', 'pitch', 'gate'] },
     { id: 'ch2', type: 'audio', accepts: ['cv', 'pitch', 'gate'] },
-    { id: 'timeMs',    type: 'cv', paramTarget: 'timeMs' },
-    { id: 'ch1Scale',  type: 'cv', paramTarget: 'ch1Scale' },
-    { id: 'ch1Offset', type: 'cv', paramTarget: 'ch1Offset' },
-    { id: 'ch1Range',  type: 'cv', paramTarget: 'ch1Range' },
-    { id: 'ch2Scale',  type: 'cv', paramTarget: 'ch2Scale' },
-    { id: 'ch2Offset', type: 'cv', paramTarget: 'ch2Offset' },
-    { id: 'ch2Range',  type: 'cv', paramTarget: 'ch2Range' },
-    { id: 'mode',      type: 'cv', paramTarget: 'mode' },
-    { id: 'intensity', type: 'cv', paramTarget: 'intensity' },
+    // cvScale per ADR-004: ±1 sweeps the param's FULL natural range. These
+    // hints were withheld while the CV landed on a stub AudioParam nobody
+    // read (scaling the wrong param would have changed nothing); now that
+    // each port owns a real shadow, they apply. Mode follows the param's
+    // own curve — log for the multiplicative ones, discrete for the
+    // two-state ones (the QBRT.mode convention).
+    { id: 'timeMs',    type: 'cv', paramTarget: 'timeMs',    cvScale: { mode: 'log' } },
+    { id: 'ch1Scale',  type: 'cv', paramTarget: 'ch1Scale',  cvScale: { mode: 'log' } },
+    { id: 'ch1Offset', type: 'cv', paramTarget: 'ch1Offset', cvScale: { mode: 'linear' } },
+    { id: 'ch1Range',  type: 'cv', paramTarget: 'ch1Range',  cvScale: { mode: 'discrete' } },
+    { id: 'ch2Scale',  type: 'cv', paramTarget: 'ch2Scale',  cvScale: { mode: 'log' } },
+    { id: 'ch2Offset', type: 'cv', paramTarget: 'ch2Offset', cvScale: { mode: 'linear' } },
+    { id: 'ch2Range',  type: 'cv', paramTarget: 'ch2Range',  cvScale: { mode: 'discrete' } },
+    { id: 'mode',      type: 'cv', paramTarget: 'mode',      cvScale: { mode: 'discrete' } },
+    { id: 'intensity', type: 'cv', paramTarget: 'intensity', cvScale: { mode: 'linear' } },
   ],
   outputs: [
     { id: 'ch1_out', type: 'audio' },
@@ -172,30 +182,53 @@ export const scopeDef: AudioModuleDef = {
     const buf1 = new Float32Array(analyser1.fftSize);
     const buf2 = new Float32Array(analyser2.fftSize);
 
-    // Scope params live ENTIRELY on this handle for two reasons:
-    //   1. The audio path doesn't use them (no Web Audio param to write
-    //      back to) — they only affect display.
-    //   2. Both the on-card canvas (via read('snapshot') + the card's
-    //      reactive $derived) AND the video bridge (via drawFrame) need
-    //      the live values. Keeping a single source of truth here means
-    //      a CV signal modulating timeMs reaches both renders without
-    //      drift.
-    // Initial values: take from the materialized node, fall back to def
-    // defaults. setParam updates both the live cache (for the bridge)
-    // AND triggers a graph mutation via patch.nodes[].params (the card
-    // reads the same source-of-truth — the patch graph — so manual
-    // fader changes and CV-driven setParam calls converge).
-    const params: Record<string, number> = {
-      timeMs:    (node.params ?? {}).timeMs    ?? 20,
-      ch1Scale:  (node.params ?? {}).ch1Scale  ?? 1,
-      ch1Offset: (node.params ?? {}).ch1Offset ?? 0,
-      ch1Range:  (node.params ?? {}).ch1Range  ?? 0,
-      ch2Scale:  (node.params ?? {}).ch2Scale  ?? 1,
-      ch2Offset: (node.params ?? {}).ch2Offset ?? 0,
-      ch2Range:  (node.params ?? {}).ch2Range  ?? 0,
-      mode:      (node.params ?? {}).mode      ?? 0,
-      intensity: (node.params ?? {}).intensity ?? 0.5,
+    // ── CV SHADOWS: where the knob and the cable meet (#1664) ────────
+    // Every scope param is DISPLAY-ONLY — applied in JS by `drawScope`,
+    // never by a Web Audio node — so none of them is a real AudioParam.
+    // Each therefore gets its OWN shadow: a ConstantSource(1) → GainNode
+    // whose `.gain` is published as that port's param, and whose output
+    // is the combined (knob + CV) value. See $lib/audio/cv-shadow.
+    //
+    // What was here before: six ports published `gain1.gain` and three
+    // published `gain2.gain` — the LIVE ch1/ch2 passthrough gains, one
+    // AudioParam shared across six inputs. So a cable into TIME did not
+    // move the timebase, it amplitude-modulated the passthrough (measured
+    // 7.010e+1 peak against a 5.0e-1 baseline), and `setParam` wrote a JS
+    // record the same-domain CV path never reached. The comment that
+    // justified it cited "the audio engine's sample-per-frame tap" for
+    // intra-domain CV; there is no such mechanism — `AudioEngine.addEdge`
+    // connects to the AudioParam and never calls `setParam`.
+    //
+    // The shadows are the single source of truth for BOTH render paths
+    // (the on-card canvas via read('drawParams'), the cross-domain video
+    // bridge via drawFrame), so the two cannot drift.
+    const shadows: Record<string, CvShadow> = {
+      timeMs:    createCvShadow(ctx, (node.params ?? {}).timeMs    ?? 20),
+      ch1Scale:  createCvShadow(ctx, (node.params ?? {}).ch1Scale  ?? 1),
+      ch1Offset: createCvShadow(ctx, (node.params ?? {}).ch1Offset ?? 0),
+      ch1Range:  createCvShadow(ctx, (node.params ?? {}).ch1Range  ?? 0),
+      ch2Scale:  createCvShadow(ctx, (node.params ?? {}).ch2Scale  ?? 1),
+      ch2Offset: createCvShadow(ctx, (node.params ?? {}).ch2Offset ?? 0),
+      ch2Range:  createCvShadow(ctx, (node.params ?? {}).ch2Range  ?? 0),
+      mode:      createCvShadow(ctx, (node.params ?? {}).mode      ?? 0),
+      intensity: createCvShadow(ctx, (node.params ?? {}).intensity ?? 0.5),
     };
+
+    /** The draw parameters for THIS frame: knob + CV, sampled together so
+     *  both render paths see one instant. */
+    function liveParams(): ScopeDrawParams {
+      return {
+        timeMs:    shadows.timeMs!.read(),
+        ch1Scale:  shadows.ch1Scale!.read(),
+        ch1Offset: shadows.ch1Offset!.read(),
+        ch1Range:  shadows.ch1Range!.read(),
+        ch2Scale:  shadows.ch2Scale!.read(),
+        ch2Offset: shadows.ch2Offset!.read(),
+        ch2Range:  shadows.ch2Range!.read(),
+        mode:      shadows.mode!.read(),
+        intensity: shadows.intensity!.read(),
+      };
+    }
 
     function readSnapshot(): ScopeSnapshot {
       analyser1.getFloatTimeDomainData(buf1);
@@ -217,19 +250,7 @@ export const scopeDef: AudioModuleDef = {
         | OffscreenCanvasRenderingContext2D
         | null;
       if (!ctx2d) return;
-      const snap = readSnapshot();
-      const dp: ScopeDrawParams = {
-        timeMs:    params.timeMs!,
-        ch1Scale:  params.ch1Scale!,
-        ch1Offset: params.ch1Offset!,
-        ch1Range:  params.ch1Range!,
-        ch2Scale:  params.ch2Scale!,
-        ch2Offset: params.ch2Offset!,
-        ch2Range:  params.ch2Range!,
-        mode:      params.mode!,
-        intensity: params.intensity!,
-      };
-      drawScope(ctx2d, snap, dp, canvas.width, canvas.height);
+      drawScope(ctx2d, readSnapshot(), liveParams(), canvas.width, canvas.height);
     }
 
     return {
@@ -240,24 +261,14 @@ export const scopeDef: AudioModuleDef = {
       inputs: new Map<string, { node: AudioNode; input: number; param?: AudioParam }>([
         ['ch1', { node: gain1, input: 0 }],
         ['ch2', { node: gain2, input: 0 }],
-        // CV inputs live on hidden internal AudioParams so the engine's
-        // per-param tap analyser still picks them up (motorized faders
-        // see the modulation). The actual VALUE coming from the CV
-        // source flows through setParam(portId) — the cross-domain CV
-        // bridge in VideoEngine writes one sample per video frame, the
-        // intra-domain CV path uses the audio engine's sample-per-frame
-        // tap. We use gain1.gain as a stable internal sink AudioParam
-        // since gain1 is always present; the actual gain value isn't
-        // affected (we never write to it from inside setParam).
-        ['timeMs',    { node: gain1, input: 0, param: gain1.gain }],
-        ['ch1Scale',  { node: gain1, input: 0, param: gain1.gain }],
-        ['ch1Offset', { node: gain1, input: 0, param: gain1.gain }],
-        ['ch1Range',  { node: gain1, input: 0, param: gain1.gain }],
-        ['ch2Scale',  { node: gain2, input: 0, param: gain2.gain }],
-        ['ch2Offset', { node: gain2, input: 0, param: gain2.gain }],
-        ['ch2Range',  { node: gain2, input: 0, param: gain2.gain }],
-        ['mode',      { node: gain1, input: 0, param: gain1.gain }],
-        ['intensity', { node: gain1, input: 0, param: gain1.gain }],
+        // One shadow per port — never shared, never in the audio path. The
+        // engine sums each cable into that port's own `.gain`; the draw
+        // paths read the combined value back through its analyser. `node`
+        // is the shadow too, so even the engine's no-param fallback branch
+        // cannot land a cable on the ch1/ch2 passthrough.
+        ...Object.entries(shadows).map(
+          ([id, s]) => [id, { node: s.node, input: 0, param: s.param }] as const,
+        ),
       ]),
       outputs: new Map([
         ['ch1_out', { node: gain1, output: 0 }],
@@ -271,23 +282,28 @@ export const scopeDef: AudioModuleDef = {
         ['out', { analyser: analyser1, sampleRate: ctx.sampleRate, drawFrame }],
       ]),
       setParam(paramId, value) {
-        // Live-update the local cache. The card mirrors patch.nodes[].params
-        // for its UI reads; CV-driven updates here flow into the same
-        // params record the card reads from via $derived. (We don't
-        // mutate patch.nodes here — the audio engine's reconciler owns
-        // the patch state. The card's $derived re-runs when a fader
-        // moves; the bridge's drawFrame reads our params record live
-        // without going through Svelte's reactive system.)
-        if (paramId in params) {
-          params[paramId] = value;
-        }
+        // A knob move lands on the SAME junction a cable does — the
+        // shadow's `.gain` intrinsic — so the two sum instead of racing.
+        // (We don't mutate patch.nodes here: the audio engine's reconciler
+        // owns the patch state, and the card's faders read it directly.)
+        shadows[paramId]?.set(value);
       },
       readParam(paramId) {
-        return params[paramId];
+        // The knob alone. The engine folds in the modulator tap on top of
+        // this for the motorized fader (see AudioEngine.readParam), so
+        // returning the combined value here would double-count the CV.
+        return shadows[paramId]?.knob();
       },
       read(key) {
         if (key === 'snapshot') {
           return readSnapshot();
+        }
+        // The COMBINED (knob + CV) draw parameters — what drawFrame is
+        // rendering with. The CARD reads this so its on-card trace and the
+        // video output are the same picture; reading the knob instead
+        // would leave the card blind to every patched cable.
+        if (key === 'drawParams') {
+          return liveParams();
         }
         if (key === 'pitch') {
           return readPitch();
@@ -320,6 +336,7 @@ export const scopeDef: AudioModuleDef = {
         gain2.disconnect();
         analyser1.disconnect();
         analyser2.disconnect();
+        for (const s of Object.values(shadows)) s.dispose();
       },
     };
   },
