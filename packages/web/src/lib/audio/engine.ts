@@ -437,7 +437,7 @@ export class AudioEngine implements DomainEngine {
       // AudioParams via Web Audio's lenient typing), interpose a scaling
       // chain so a -1..+1 CV signal sweeps the param's full natural range.
       // See packages/web/src/lib/audio/cv-scale.ts and
-      // .myrobots/plans/cv-range-standard.md.
+      // docs/adr/004-cv-range-convention.md.
       //
       // For passthrough / no-hint cases, the legacy direct-connect behavior
       // is preserved (Web Audio sums sout.node's signal into din.param at

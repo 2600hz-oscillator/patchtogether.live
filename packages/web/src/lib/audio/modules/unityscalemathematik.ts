@@ -24,7 +24,7 @@
 // zero curve. A bare AudioWorkletProcessor keeps the hot path inline
 // and lets the engine route audio-rate CV directly into each section's
 // AudioParam via the cvScale linear scaler (project convention; see
-// .myrobots/plans/cv-range-standard.md).
+// docs/adr/004-cv-range-convention.md).
 //
 // Inputs:
 //   u_in (cv): UNITY-section signal input (linear attenuvert).

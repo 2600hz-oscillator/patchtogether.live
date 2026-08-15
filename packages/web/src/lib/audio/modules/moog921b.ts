@@ -13,7 +13,7 @@
 // bus. AC MODULATE is cap-coupled (a DC-blocking high-pass on the mod input
 // before linear FM); DC MODULATE is straight linear FM; SYNC drives a
 // hard/soft/off phase reset. Permissive, not a port of any Moog schematic /
-// copyleft source (.myrobots/MOOG/LICENSING.md).
+// copyleft source.
 //
 // Inputs:
 //   freq_bus (cv): V/oct pitch CV from a 921A's freq_bus (0 = C4).

@@ -4,10 +4,10 @@
 //
 // CP3 console mixer slice of the Moog System 55 / 35 clone initiative
 // (.myrobots/MOOG/). Shared by BOTH systems (registered under SYS55, the
-// shared bucket, per the resolved Q4 decision in .myrobots/MOOG/PLAN.md).
+// shared bucket, per the resolved Q4 decision).
 //
 // DSP is OWN CODE — a forked + expanded version of the repo's `mixer`
-// (own code, permissive; .myrobots/MOOG/LICENSING.md), not a port of any
+// (own code, permissive;), not a port of any
 // Moog schematic / copyleft source. The math core lives in
 // ./lib/moog-cp3-dsp.ts so the worklet, the unit tests, and node-side ART
 // share the exact same code.

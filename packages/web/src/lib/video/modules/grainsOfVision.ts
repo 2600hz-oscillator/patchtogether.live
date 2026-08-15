@@ -11,8 +11,7 @@
 //     B (modulator)┘         │ (grains tap out)
 //         (B modulates A's grains — COMPOSITE modes; OFF when B unpatched)
 //
-// Design + rationale: .myrobots/plans/grains-of-vision-2026-07-18.md
-//
+////
 // ── What a video "grain" is ───────────────────────────────────────────────
 // A grain is a small WINDOWED PATCH sampled from source A at a jittered
 // position AND a jittered moment in time (from a short frame-history ring),

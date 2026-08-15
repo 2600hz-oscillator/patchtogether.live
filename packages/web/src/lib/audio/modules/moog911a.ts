@@ -7,8 +7,7 @@
 //
 // DSP: own-code pure timing (packages/dsp/src/lib/trigger-delay-dsp.ts —
 // DualTriggerDelay) wrapped by the worklet packages/dsp/src/moog911a.ts.
-// Permissive, not a port of any Moog schematic / copyleft source
-// (.myrobots/MOOG/LICENSING.md).
+// Permissive, not a port of any Moog schematic / copyleft source.
 //
 // Inputs (gates):
 //   trig1 (gate): trigger input for delay 1 (and the master trigger in

@@ -14,7 +14,7 @@
 //                synthetic table tracks the cube shape; out-of-cube is 0 without
 //                wrap and nonzero with wrap.
 //
-// See .myrobots/CUBE/PLAN.md §5 for the math + §2 for the locked decisions.
+// for the math + §2 for the locked decisions.
 
 import { describe, it, expect } from 'vitest';
 import {

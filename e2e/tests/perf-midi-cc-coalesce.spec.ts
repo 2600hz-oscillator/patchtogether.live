@@ -3,7 +3,7 @@
 // Regression gate for the MIDI-CC → video-render starvation fix (the owner's
 // "twisting Electra knobs murders video rendering" report, birds1 patch).
 //
-// MECHANISM (verified in .myrobots/plans/midi-cc-perf-fix-2026-07-05.md):
+// MECHANISM (verified):
 // every CC message used to run the RAW knob onchange → one ydoc.transact per
 // message → a synchronous per-transaction cascade (whole-snapshot rebuild,
 // full flowNodes/flowEdges rebuild into SvelteFlow, a reconciler pass that

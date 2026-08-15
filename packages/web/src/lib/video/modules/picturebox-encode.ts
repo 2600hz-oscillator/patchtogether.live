@@ -6,7 +6,7 @@
 //   3. browser-side downscaleAndEncode() that turns a File / Blob into a
 //      base64 JPEG q=85 string sized to TARGET_W x TARGET_H.
 //
-// See .myrobots/plans/picturebox-multiplayer-sync.md for the rationale
+// for the rationale
 // behind the codec + size choice.
 
 import { VIDEO_RES } from '../engine';

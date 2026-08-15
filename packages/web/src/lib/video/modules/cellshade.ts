@@ -1,7 +1,6 @@
 // packages/web/src/lib/video/modules/cellshade.ts
 //
-// CELLSHADE — real cel-shader (toon) video PROCESSOR. Total rebuild
-// (design + findings: .myrobots/plans/cellshade-rebuild-2026-07-11.md).
+// CELLSHADE — real cel-shader (toon) video PROCESSOR. Total rebuild.
 //
 // The canonical live-video cel pipeline (Winnemöller, Olsen & Gooch,
 // "Real-Time Video Abstraction", SIGGRAPH 2006) is: (1) edge-preserving

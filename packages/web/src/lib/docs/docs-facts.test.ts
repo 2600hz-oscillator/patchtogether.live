@@ -110,7 +110,7 @@ describe('runbooks enumerate the DB schemas that exist', () => {
 });
 
 describe('docs do not point at files that no longer exist', () => {
-  // README cited `.myrobots/plans/cv-range-standard.md`, which does not exist —
+  // README cited `docs/adr/004-cv-range-convention.md`, which does not exist —
   // the CV range convention lives in docs/adr/004-cv-range-convention.md. A
   // dangling pointer sends an agent looking for authority that isn't there.
   it('README repo-relative doc references resolve', () => {

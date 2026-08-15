@@ -1,7 +1,7 @@
 // doom-lockstep.ts
 //
 // P1 TRUE DETERMINISTIC LOCKSTEP transport + barrier (browser side).
-// Design: .myrobots/plans/doom-mp-true-lockstep.md (PR #346).
+//(PR #346).
 //
 // THE PROBLEM THIS FIXES
 //   The slice-5 live path shipped each peer's per-tic ticcmd over a single

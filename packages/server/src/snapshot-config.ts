@@ -1,7 +1,7 @@
 // packages/server/src/snapshot-config.ts
 //
 // Snapshot persistence knobs for Hocuspocus's onStoreDocument debouncer.
-// See ../.myrobots/plans/b1-snapshot-timing.md for the full reasoning.
+// The full reasoning is summarized below.
 //
 //   debounce      — wait this long after the last update before persisting.
 //                   Hocuspocus default 2000ms is correct for our edit rate;

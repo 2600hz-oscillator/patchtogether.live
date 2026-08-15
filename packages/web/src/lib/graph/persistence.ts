@@ -435,7 +435,7 @@ export function loadEnvelopeIntoStore(
     // Look up across both per-domain registries — video modules
     // (PICTUREBOX, CAMERA, LINES, ...) live in the video registry and
     // would otherwise be silently dropped on load. See
-    // .myrobots/plans/rackspace-persistence.md (Phase A audit).
+    // (Phase A audit).
     if (!isKnownModuleType(node.type)) {
       diagnostics.push({
         nodeId: id,

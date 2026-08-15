@@ -1,7 +1,7 @@
 // e2e/vrt/cellshade-composite.spec.ts
 //
-// Deterministic composite VRT for the CELLSHADE rebuild (4-pass cel engine —
-// design: .myrobots/plans/cellshade-rebuild-2026-07-11.md). Each scene feeds a
+// Deterministic composite VRT for the CELLSHADE rebuild (4-pass cel
+// engine). Each scene feeds a
 // deterministic pure-UV source chain into CELLSHADE dialed to a visually
 // distinct setting and captures the PAGE (the cube-adsr-composite recipe:
 // source cards + patch cords + the CELLSHADE card with its live OUT preview

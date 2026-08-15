@@ -10,7 +10,7 @@
 //   - WebGL2 + OffscreenCanvas. Each module owns one FBO (fullscreen-quad
 //     fragment shader pipeline). Topologically sorted; one rAF loop drives
 //     all nodes. Worker hoist is deferred to Phase 5 polish per
-//     .myrobots/plans/video-modules-mvp.md §1.
+//
 //   - Two demo modules: `lines` (procedural mono-video source) and
 //     `videoOut` (visible-canvas sink). Module defs live at
 //     packages/web/src/lib/video/modules/*.

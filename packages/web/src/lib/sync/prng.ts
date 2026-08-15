@@ -1,7 +1,6 @@
 // packages/web/src/lib/sync/prng.ts
 //
-// mulberry32 — chosen as the rack-wide deterministic PRNG (decision #1 in
-// .myrobots/plans/shared-state-sync.md). 32-bit state, only +, |, ^, >>>,
+// mulberry32 — chosen as the rack-wide deterministic PRNG. 32-bit state, only +, |, ^, >>>,
 // Math.imul, all operating on signed 32-bit integers under the JS spec, so
 // output is byte-identical across V8 / SpiderMonkey / JSC / Hermes.
 //

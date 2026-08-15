@@ -1,7 +1,7 @@
 // packages/web/src/lib/video/modules/video-out.ts
 //
 // OUTPUT — visible-canvas sink. Phase 0 implementation of the spec at
-// .myrobots/plans/video-modules-mvp.md §3.9.
+//
 //
 // What this module does:
 //   - Declares a single polymorphic input (`in`, type `video`). Implicit

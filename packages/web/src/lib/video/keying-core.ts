@@ -1,7 +1,7 @@
 // packages/web/src/lib/video/keying-core.ts
 //
 // THE shared keying core for the keyer/compositor family (design:
-// .myrobots/plans/keyer-framework-2026-07-11.md §4, as amended by the §11
+//, as amended by the §11
 // adversarial review). One source of truth for:
 //
 //   kcLuma        Rec. 601 luma Y' = dot(c, KEY_LUMA_WEIGHTS) — the app-wide

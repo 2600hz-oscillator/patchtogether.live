@@ -9,7 +9,7 @@
 // every frame, all on the MAIN THREAD — enough sustained contention to starve
 // the audio render thread and cause an output-buffer underrun (the audible
 // "slowdown" a user hears even on an AUDIO-ONLY patch; see
-// .myrobots/plans/audio-slowdown-forensics-2026-07-01.md, root cause C1/#2).
+//, root cause C1/#2).
 //
 // Coalescing them into a single rAF that visits each subscriber once per frame
 // collapses that to ONE callback + one paint flush, and lets us SKIP off-screen

@@ -27,7 +27,7 @@ interface ScopeSnap {
   sampleRate: number;
 }
 
-test('voice-chain: Seq → VCO + ADSR → VCA → Scope → Out produces audible signal', async ({ page, rack, errorWatch }) => {
+test('voice-chain: Seq → VCO + ADSR → VCA → Scope → Out produces audible signal', async ({ page, rackDefault, errorWatch }) => {
   // Deterministic patch: known step pattern + known knob values.
   await spawnPatch(
     page,
@@ -124,7 +124,7 @@ test('voice-chain: Seq → VCO + ADSR → VCA → Scope → Out produces audible
   expect(result.nonzeroSamples).toBeGreaterThan(50);
 });
 
-test('voice-chain: stopping the sequencer silences the output (gate goes low)', async ({ page, rack }) => {
+test('voice-chain: stopping the sequencer silences the output (gate goes low)', async ({ page, rackDefault }) => {
   await spawnPatch(
     page,
     [

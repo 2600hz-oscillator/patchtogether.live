@@ -1,7 +1,6 @@
 // packages/web/src/lib/video/modules/camera-input.ts
 //
-// CAMERA — webcam-as-source video module. Implementation of the spec at
-// .myrobots/plans/module-camera-input.md.
+// CAMERA — webcam-as-source video module.
 //
 // Frame ingestion path (the single technical decision): a card-owned
 // HTMLVideoElement is attached to the module's runtime via

@@ -5,7 +5,7 @@
 // a saved .frametable.png atlas back into it. Extracted from FRAMETABLE's factory
 // closure so VIDEOCUBE (which embeds THREE of these rings) reuses the exact same
 // allocation / clear / copy-detile primitives instead of duplicating them (the
-// spec's `frametable-ring.ts` helper — .myrobots/plans/videocube-2026-07-19.md).
+// spec's `frametable-ring.ts` helper —).
 //
 // NO per-frame state lives here — these are pure GL allocators + one shader
 // source. The ring HEAD / first-frame-fill / freeze REDUCERS remain in the pure

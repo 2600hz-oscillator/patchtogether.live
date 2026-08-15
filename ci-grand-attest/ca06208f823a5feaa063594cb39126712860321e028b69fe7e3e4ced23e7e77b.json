@@ -1,14 +1,20 @@
 {
   "schemaVersion": 1,
   "grandContentHash": "ca06208f823a5feaa063594cb39126712860321e028b69fe7e3e4ced23e7e77b",
-  "attestedAt": "2026-08-10T17:24:48.839Z",
+  "attestedAt": "2026-08-14T23:16:21.005Z",
   "attestedBy": "patchtogether-maintainer",
-  "gitHeadAtAttest": "b068da1e5c62c6b6afdd23f9e0f04bb0586bb13e",
+  "gitHeadAtAttest": "125ced423b040264660826ac41b620b93a9fd7e7",
   "playwrightVersion": "1.50.0",
   "os": "darwin 25.4.0 (arm64)",
   "machineClass": "local-trusted-gpu-workstation",
   "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5, Unspecified Version)",
-  "combinedMasterSha": "b3e637c8f8e2660c",
+  "appServer": {
+    "url": "http://127.0.0.1:60516",
+    "mode": "dev",
+    "root": "/Users/2600hz/Documents/workspace/inet.modular/.claude/worktrees/agent-myrobots",
+    "commit": "125ced423b040264660826ac41b620b93a9fd7e7"
+  },
+  "combinedMasterSha": "6b0581128c97ef05",
   "repeatEach": 1,
   "retries": 0,
   "run": {
@@ -18,5 +24,5 @@
     "flaky": 0,
     "skipped": 0
   },
-  "durationSec": 23
+  "durationSec": 21
 }

@@ -1,7 +1,7 @@
 // e2e/tests/grand-integration.attest.spec.ts
 //
 // THE heavy GRAND-INTEGRATION workflow-mode scenario — the browser side of the
-// grand local attest (.myrobots/plans/grand-integration-e2e-art-2026-07-19.md).
+// grand local attest (.claude/skills/grand-attest.md).
 // It builds up, in WORKFLOW MODE, the owner's full patch and asserts HARD ENGINE
 // STATE on every claim:
 //
@@ -314,7 +314,13 @@ test.describe('grand-integration @grand-attest', () => {
   test('workflow-mode: kick/snare/tidy-mono/sixstrum through clips + automation + synesthesia + recorderbox, hard state throughout', async ({ page }) => {
     // ── Step 1 — Enter workflow mode; wait for the pinned spine ──
     await page.goto('/rack?shell=legacy');
-    await expect(page.getByTestId('workflow-topbar')).toBeVisible();
+    // COLD-SERVER BUDGET (#1639): the attest boots its OWN dev server per run
+    // (#1597), so this first navigation ALWAYS pays SvelteKit's on-demand
+    // route compile — measured 14.8s on a cleared-.vite worktree vs 2.6-3.3s
+    // warm (the workflow-rear-card.spec.ts number; a fresh worktree's attest
+    // failed here at the 5s default). A budget, not a retry: a genuine
+    // regression still fails, just 10s later.
+    await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: 15_000 });
     await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
     await waitForPinned(page);
     // Bootstrap the audio engine (window.__engine() is null until __ensureEngine

@@ -1,7 +1,7 @@
 // packages/web/src/lib/graph/performance-bundle.ts
 //
 // "Performance Bundle" — the portable manifest half of the Save/Load Local
-// Performance feature (.myrobots/plans/save-load-local-performance.md §4a).
+// Performance feature.
 //
 // A PerformanceBundle is a SUPERSET of the existing PatchEnvelope. The
 // envelope already round-trips the entire patch graph: nodes, edges, params,

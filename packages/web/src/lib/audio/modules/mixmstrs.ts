@@ -172,7 +172,7 @@ const COMP_MACRO_IDS: readonly string[] = MIXMSTRS_CHANNELS.map((ch) => `comp${c
 // Inputs: 20 audio + 81 paramTarget CV inputs (73 originals + 8 comp macros).
 //
 // Every CV input gets a `cvScale: linear` hint per
-// .myrobots/plans/cv-range-standard.md so an LFO at ±1 sweeps the param's
+// docs/adr/004-cv-range-convention.md so an LFO at ±1 sweeps the param's
 // full natural range centered on the user's knob position. All MIXMSTRS
 // params have linear knob curves (volume, dB EQ bands, dB threshold,
 // ratio, send amounts); none use log scaling natively, so linear here is

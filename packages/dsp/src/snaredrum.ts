@@ -5,8 +5,7 @@
 // (HEAD modal bank + BODY noise + CRACK per-voice, the SHARED re-excitable
 // wire-buzz bed, the shared oversampled-drive/DC/ceiling bus, the mono-safe
 // M/S stereo stage) and ./lib/snare-roll-dsp.ts (the two-hand scheduler +
-// bounce structure + lowest-energy voice pool). Design + build spec:
-// .myrobots/snare-drum-module-design.md.
+// bounce structure + lowest-energy voice pool).
 //
 // IMPORTANT: this file does NOT `export` anything at the top level — top-level
 // exports leak into the bundled dist/snaredrum.js + break the ART classic-script

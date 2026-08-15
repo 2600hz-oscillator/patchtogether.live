@@ -7,7 +7,7 @@
 // debugging "what's in the hash".
 //
 // See scripts/collab-attest-lib.ts for the basis + algorithm and
-// .myrobots/plans/collab-attest-2026-06-15.md for the full design.
+// .claude/skills/collab-attest.md for the full design.
 
 import { computeCollabHash, resolveCollabBasis } from './collab-attest-lib';
 

@@ -5,8 +5,7 @@
 // Inputs: `fg` (foreground), `bg` (background). Output: composited video.
 //
 // Built on the SHARED KEYING CORE ($lib/video/keying-core — kcChromaMask /
-// kcDespill / kcComposite; design: .myrobots/plans/keyer-framework-2026-07-11.md
-// §4 + §11). Per-pixel algorithm:
+// kcDespill / kcComposite). Per-pixel algorithm:
 //   1. alpha = kcChromaMask(fg, key, thr, soft): distance between the pixel
 //      and the key colour IN THE CHROMA PLANE (full-swing Rec. 601 CbCr),
 //      normalized by the key's own chroma magnitude — the industry-standard

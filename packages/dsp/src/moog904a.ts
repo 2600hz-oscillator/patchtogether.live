@@ -14,7 +14,7 @@
 // ./lib/moog-ladder-dsp.ts (TPT/Zavalishin zero-delay feedback + the
 // Huovilainen tanh-per-stage TECHNIQUE). NOT a port of the LGPLv3
 // Huovilainen reference code / CSound opcodes, NOT the CC-BY-SA musicdsp
-// model, NOT any Moog schematic. (.myrobots/MOOG/LICENSING.md: permissive
+// model, NOT any Moog schematic. (permissive
 // / own-code only.) The same lib is reused by 904B (HPF) + 904C (coupler)
 // in later slices.
 //

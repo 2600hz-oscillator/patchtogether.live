@@ -9,7 +9,7 @@
 //
 // DSP: own-code (packages/dsp/src/moog-cp3.ts + lib/moog-cp3-dsp.ts) — a
 // forked + expanded version of the repo's `mixer`, permissive, not a port of
-// any Moog schematic or copyleft source (.myrobots/MOOG/LICENSING.md).
+// any Moog schematic or copyleft source.
 //
 // Inputs (the mixer accepts audio AND cv — the per-sample sum is DC- and
 // polarity-transparent, so it mixes AC and/or DC voltages):

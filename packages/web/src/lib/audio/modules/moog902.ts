@@ -20,8 +20,7 @@
 // DSP: own-code amplifier gain law forked from the repo's own existing `vca`
 // (packages/dsp/src/vca.dsp), re-implemented as a TS worklet with the added
 // EXPONENTIAL branch + the Moog ×2-at-6V / ×3-ceiling scaling. NOT a port of
-// any Moog schematic or copyleft source (.myrobots/MOOG/LICENSING.md:
-// permissive / own-code only).
+// any Moog schematic or copyleft source (// permissive / own-code only).
 //
 // Inputs:
 //   audio (audio): the SIGNAL input — the audio to be amplified.

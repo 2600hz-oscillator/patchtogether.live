@@ -6,7 +6,7 @@ scenario-content state. Each file is named by the deterministic **grand
 content-hash** and is committed alongside the PR that changed the scenario. It is
 the third sibling of `ci-webgl-attest/` and `ci-collab-attest/` — read those
 folders' READMEs for the shared honor-system framing. Design +
-rationale: `.myrobots/plans/grand-integration-e2e-art-2026-07-19.md`.
+rationale: `.claude/skills/grand-attest.md`.
 
 ## Why this exists
 

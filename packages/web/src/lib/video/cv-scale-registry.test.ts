@@ -31,7 +31,7 @@ import { collectVideoDefs } from '$lib/video/modules';
 // synthetic param the module samples raw), or a RAW game-control input the
 // module consumes directly — NOT a continuous knob modulator. New entries here
 // MUST be justified one-liner-per-port (mirrors the audio PASSTHROUGH_BY_DESIGN
-// convention + .myrobots/plans/cv-range-standard.md).
+// convention + docs/adr/004-cv-range-convention.md).
 const VIDEO_PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   // 4PLEXVID gate1..gate4: per-output GATE inputs routed onto synthetic gateN
   // params the factory EDGE-DETECTS (gateStates) to advance the active source.

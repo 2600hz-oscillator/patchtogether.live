@@ -1,7 +1,6 @@
 <script lang="ts">
   // DockCardHost — mounts ONE module card in a dock rail, OUTSIDE the
-  // SvelteFlow provider (P2.5a; design .myrobots/docking-recommendation.md
-  // §2.4). This is the spike-proven plain-mount host:
+  // SvelteFlow provider (P2.5a). This is the spike-proven plain-mount host:
   //
   //  * The card is the SAME component the canvas mounts (resolved via the
   //    shared nodeTypes map), fed the same `{ id, data: { node } }` shape.

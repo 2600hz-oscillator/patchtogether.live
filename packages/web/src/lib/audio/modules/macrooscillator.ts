@@ -882,7 +882,7 @@ export const macrooscillatorDef: AudioModuleDef = {
     { id: 'trig',     type: 'gate', edge: 'trigger' },
     // CV → AudioParam fast paths. Linear scale matches the project's
     // `cv ±1 → param full range` convention (see
-    // .myrobots/plans/cv-range-standard.md and the shimmershine/wavetable-vco
+    // docs/adr/004-cv-range-convention.md and the shimmershine/wavetable-vco
     // patterns).
     { id: 'model_cv', type: 'cv', paramTarget: 'model',     cvScale: { mode: 'discrete' } },
     { id: 'note_cv',  type: 'cv', paramTarget: 'note',      cvScale: { mode: 'linear' } },

@@ -121,4 +121,4 @@ dedicated single-tenant relay machine or a P2P/WebRTC sync that removes the
 single-process bottleneck): re-gate the real `@collab` lane in the `ci` umbrella,
 then delete the `collab-attest` job, `scripts/collab-attest*`, the
 `collab:attest*` Taskfile targets, this folder, and the nightly backstop (one
-cleanup PR). See `.myrobots/plans/collab-attest-2026-06-15.md`.
+cleanup PR). See `.claude/skills/collab-attest.md`.

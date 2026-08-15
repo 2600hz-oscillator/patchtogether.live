@@ -3,7 +3,7 @@
 // Shared resolver + content-hash for the GRAND-INTEGRATION local-attestation
 // "semaphore" — the third sibling of scripts/webgl-attest-lib.ts and
 // scripts/collab-attest-lib.ts. See
-// .myrobots/plans/grand-integration-e2e-art-2026-07-19.md and
+// .claude/skills/grand-attest.md and
 // ci-grand-attest/README.md.
 //
 // Imported by BOTH:

@@ -1,7 +1,7 @@
 // packages/web/src/lib/audio/modules/rasterize.ts
 //
 // RASTERIZE — audio → video raster mapper (slice 1 of "crossing the
-// streams"; see .myrobots/plans/audio-video-crossing.md, "Locked
+// streams";, "Locked
 // decisions").
 //
 // An explicit, draggable module: audio in → mono-video out. Each video

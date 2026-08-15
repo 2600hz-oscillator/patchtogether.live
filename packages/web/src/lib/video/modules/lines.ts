@@ -1,7 +1,7 @@
 // packages/web/src/lib/video/modules/lines.ts
 //
 // LINES — procedural line/grid mono-video source. Phase 0 implementation
-// of the spec at .myrobots/plans/video-modules-mvp.md §3.7.
+// of the spec at
 //
 // What renders this round:
 //   - Procedural sin-wave-edged lines at a chosen orientation, frequency,

@@ -2,7 +2,6 @@
   // Shared "QUICKSAVE" + 1-4 slot buttons + SAVE/LOAD/QUEUE mode buttons +
   // PLAY / RESET. Used by Sequencer / DRUMSEQZ / SCORE cards.
   //
-  // Spec: .myrobots/plans/sequencer-transport-and-quicksave.md
   //
   // The component is "controlled": parent passes the slot map + pendingMode
   // + queuedSlot + isPlaying via props, and receives action callbacks. The

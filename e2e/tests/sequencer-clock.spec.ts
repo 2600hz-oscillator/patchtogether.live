@@ -14,7 +14,7 @@ import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
-test('sequencer-clock: external clock advances slower sequencer at the faster rate', async ({ page, rack }) => {
+test('sequencer-clock: external clock advances slower sequencer at the faster rate', async ({ page, rackDefault }) => {
   await spawnPatch(
     page,
     [
@@ -65,7 +65,7 @@ test('sequencer-clock: external clock advances slower sequencer at the faster ra
   expect(seqBStep, `seqB.currentStep after 600ms should reflect external clock`).toBeGreaterThanOrEqual(3);
 });
 
-test('sequencer-clock: without chain, sequencer uses internal BPM', async ({ page, rack }) => {
+test('sequencer-clock: without chain, sequencer uses internal BPM', async ({ page, rackDefault }) => {
   await spawnPatch(
     page,
     [

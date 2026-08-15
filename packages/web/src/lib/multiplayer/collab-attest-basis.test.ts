@@ -1,7 +1,7 @@
 // packages/web/src/lib/multiplayer/collab-attest-basis.test.ts
 //
 // Guard for the @collab local-relay attestation "semaphore"
-// (.myrobots/plans/collab-attest-2026-06-15.md). The collab analogue of
+// (.claude/skills/collab-attest.md). The collab analogue of
 // packages/web/src/lib/video/webgl-attest-coverage.test.ts. Runs in the REQUIRED
 // `unit` job, so it can't silently rot.
 //

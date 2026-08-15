@@ -901,7 +901,7 @@ tasks:
   # the full WebGL set on THIS machine's REAL GPU and writes a content-hash-named
   # attestation that CI verifies (then skips the heavy lane, trusting the local
   # run). See ci-webgl-attest/README.md +
-  # .myrobots/plans/webgl-attestation-semaphore.md.
+  # .claude/skills/webgl-attest.md.
   webgl:attest:
     desc: |
       [pre-PR, REAL-GPU] Run the FULL WebGL test set on this machine's real GPU
@@ -947,7 +947,7 @@ tasks:
   # FRESH dedicated relay + DB with zero contention (where multiplayer actually
   # converges), runs the @collab specs, and writes a content-hash-named
   # attestation that CI verifies cheaply (~2 min). See ci-collab-attest/README.md
-  # + .myrobots/plans/collab-attest-2026-06-15.md.
+  # + .claude/skills/collab-attest.md.
   collab:attest:
     desc: |
       [pre-PR, LOCAL relay+DB] Boot a FRESH dedicated Hocuspocus relay + apply
@@ -996,7 +996,7 @@ tasks:
   # on CI: it runs on THIS machine's real GPU under `task grand:attest`, which
   # writes a content-hash-named attestation CI verifies cheaply. The DETERMINISTIC
   # audio pin is the OFFLINE combined-master ART (runs on the normal ART lane).
-  # See ci-grand-attest/README.md + .myrobots/plans/grand-integration-e2e-art-2026-07-19.md.
+  # See ci-grand-attest/README.md + .claude/skills/grand-attest.md.
   grand:attest:
     desc: |
       [pre-PR, REAL-GPU] Run the FULL workflow-mode grand-integration scenario on

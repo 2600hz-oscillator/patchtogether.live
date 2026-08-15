@@ -1,8 +1,7 @@
 // packages/web/src/lib/multiplayer/picturebox-limits.ts
 //
 // PICTUREBOX has both a per-user and per-workspace cap to keep the per-
-// rack snapshot bounded (image bytes ride in the Y.Doc; see
-// .myrobots/plans/picturebox-multiplayer-sync.md). 2 per user * 4 users
+// rack snapshot bounded (image bytes ride in the Y.Doc). 2 per user * 4 users
 // per rack = 8, matching the workspace cap exactly — it's the tightest
 // floor that still lets every user spawn their full quota without anyone
 // getting blocked because someone else already filled the workspace.

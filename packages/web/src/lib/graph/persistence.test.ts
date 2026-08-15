@@ -620,8 +620,7 @@ describe('persistence: CLIPPLAYER transient-field stripping', () => {
 
 // ---------------- Asset-bytes round-trip ----------------
 //
-// Regression net for the rackspace-persistence audit (see
-// .myrobots/plans/rackspace-persistence.md). The audit's working assumption
+// Regression net for the rackspace-persistence audit. The audit's working assumption
 // is that every "asset" (PICTUREBOX bytes, DX7 SYX user banks, sequencer
 // step data, ...) survives the export/import path because each one already
 // rides in `node.data`. These tests pin that assumption by stuffing

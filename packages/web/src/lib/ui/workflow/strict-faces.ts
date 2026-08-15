@@ -259,7 +259,7 @@
 // FACE BATCH 4 · noise (2026-08-10) — the SMALLEST module in the registry to
 // carry a face, and the entry that had to argue with its own spec to exist.
 //
-// `.myrobots/plans/face-specs-batch-3-noise.md` returns a verdict of NO FACE ON
+// `` returns a verdict of NO FACE ON
 // MERIT, and its arithmetic is correct: one param, zero inputs, zero modes, so
 // `faceTierCap` gives mini 1 and compact 2 and ALL FOUR TIERS RENDER THE SAME
 // SINGLE KNOB. This face does not dispute that and does not dress it up.
@@ -495,7 +495,7 @@
 //
 // ⚠ FOUR OF THE SPEC'S NUMBERS DID NOT SURVIVE RE-MEASUREMENT, and two of them
 // were the same mistake twice: a Q≈333 filter read before it had settled.
-// `.myrobots/plans/face-specs-batch-4-resofilter.md` reports the plateau gain
+// `` reports the plateau gain
 // as 50.441 dB and back-derives an "implied k_min ≈ 0.003006" from it — but
 // `resToK` floors k at EXACTLY 0.003 (50.4576 dB), and the measurement
 // converges there on a 2 s render (50.4547 / 50.4576 / 50.4576 / 50.4576 dB at

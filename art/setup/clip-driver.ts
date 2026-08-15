@@ -2,7 +2,7 @@
 //
 // A PURE, deterministic clip → per-sample note-frame driver for the offline
 // GRAND-INTEGRATION combined-master ART
-// (.myrobots/plans/grand-integration-e2e-art-2026-07-19.md §7.2).
+// (.claude/skills/grand-attest.md).
 //
 // The ART harness CANNOT run the real clip-player scheduler (it is a browser-only
 // web module driven by the real-time Web-Worker tick + the live Svelte store —

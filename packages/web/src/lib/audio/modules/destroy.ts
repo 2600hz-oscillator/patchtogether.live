@@ -39,7 +39,7 @@ export const destroyDef: AudioModuleDef = {
   category: 'effects',
   inputs: [
     { id: 'audio',    type: 'audio' },
-    // CV scaling per .myrobots/plans/cv-range-standard.md.
+    // CV scaling per docs/adr/004-cv-range-convention.md.
     // decimate: linear (1..64; cv=±1 sweeps ±31.5 from knob).
     // bits: linear (1..16).
     // wet: linear (0..1).

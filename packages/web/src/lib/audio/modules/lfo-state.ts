@@ -8,7 +8,7 @@
 // sharedDerivedPhase() as a sanity-check anchor point. Two clients
 // arriving at this function with the same (epoch_ms, t_shared, rate)
 // produce identical phase values, which is the load-bearing property
-// of Phase 1 of .myrobots/plans/shared-state-sync.md.
+// of Phase 1 of.
 
 import { lfoDepthGain, LFO_DEPTH_UNITY } from './lfo-face-model';
 

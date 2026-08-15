@@ -226,8 +226,7 @@ test.describe('CAMERA → OUTPUT (fake webcam) — getUserMedia integration @cam
     });
 
     // Local-only hint must be visible while streaming. The CAMERA stream
-    // is not multiplayer-streamed (deferred to a future phase — see
-    // .myrobots/plans/module-camera-input.md); the in-card text keeps
+    // is not multiplayer-streamed (deferred to a future phase); the in-card text keeps
     // user expectations honest.
     const localOnlyHint = page.locator('[data-testid="camera-local-only-hint"]');
     await expect(localOnlyHint, 'local-only hint visible while streaming').toBeVisible();

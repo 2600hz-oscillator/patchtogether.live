@@ -243,7 +243,7 @@ export const shimmershineDef: AudioModuleDef = {
   inputs: [
     { id: 'in_l',       type: 'audio' },
     { id: 'in_r',       type: 'audio' },
-    // CV scaling per .myrobots/plans/cv-range-standard.md — all linear 0..1.
+    // CV scaling per docs/adr/004-cv-range-convention.md — all linear 0..1.
     { id: 'decay_cv',   type: 'cv', paramTarget: 'decay',   cvScale: { mode: 'linear' } },
     { id: 'shimmer_cv', type: 'cv', paramTarget: 'shimmer', cvScale: { mode: 'linear' } },
     { id: 'size_cv',    type: 'cv', paramTarget: 'size',    cvScale: { mode: 'linear' } },

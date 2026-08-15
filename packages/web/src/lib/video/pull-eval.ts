@@ -1,7 +1,7 @@
 // packages/web/src/lib/video/pull-eval.ts
 //
 // SINK-DRIVEN PULL EVALUATION for the video engine (stack-study adoption
-// item 1 — see .myrobots/stack-study-compare-B-native-performance.md §"quick
+// item 1
 // wins": "walk backward from OUTPUT cards / visible previews / RECORDERBOX /
 // patched consumers; skip everything else").
 //

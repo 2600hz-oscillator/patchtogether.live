@@ -3,7 +3,7 @@
 # scripts/collab-attest.ts (run via tsx). The collab analogue of
 # scripts/webgl-attest.sh. See that .ts file's header for the design (fresh
 # dedicated relay+DB, relay-vacuity-skip = hard failure) and
-# .myrobots/plans/collab-attest-2026-06-15.md.
+# .claude/skills/collab-attest.md.
 #
 # Usage (normally via `task collab:attest`):
 #   bash scripts/collab-attest.sh             # full run on a fresh relay+DB + write attestation

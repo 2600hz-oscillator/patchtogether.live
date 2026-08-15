@@ -7,7 +7,7 @@
 --                keep rendering exactly what they always did)
 --   'workflow' — the workflow shell (WorkflowTopbar + left rail + pinned
 --                M/E/C drawer singletons; see
---                .myrobots/plans/workflow-mode-2026-07-10.md)
+--)
 --
 -- Idempotent (IF NOT EXISTS) — the collab-attest local recipe auto-applies
 -- every db/schema/*.sql, so re-running against an already-migrated DB must

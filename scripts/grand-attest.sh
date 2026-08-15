@@ -4,7 +4,7 @@
 # scripts/webgl-attest.sh + scripts/collab-attest.sh. See that .ts file's header
 # for the design (real GPU synesthesia + real H.264 recorderbox + real clip
 # scheduler + real automation; refuses SwiftShader / a busy machine) and
-# .myrobots/plans/grand-integration-e2e-art-2026-07-19.md.
+# .claude/skills/grand-attest.md.
 #
 # Usage (normally via `task grand:attest`):
 #   bash scripts/grand-attest.sh             # full real-GPU run + write attestation

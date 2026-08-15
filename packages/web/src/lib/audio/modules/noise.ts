@@ -121,7 +121,7 @@ export const noiseDef: AudioModuleDef = {
   // ── THE FACEPLATE ─────────────────────────────────────────────────────────
   //
   // The smallest face in the registry, and the one whose argument had to be
-  // made rather than assumed. `.myrobots/plans/face-specs-batch-3-noise.md`
+  // made rather than assumed.
   // recommends NO FACE ON MERIT, and its reasoning is sound as far as it goes:
   // one param, zero inputs, zero modes, so `faceTierCap` gives mini 1 and
   // compact 2 and ALL FOUR TIERS SHOW THE SAME SINGLE KNOB. That is true here
